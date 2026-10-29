@@ -18,11 +18,23 @@ meta import Strata.Languages.Core.Identifiers
 meta import Strata.Languages.Core.Options
 meta import Strata.Languages.Core.SMTEncoder
 meta import Strata.Languages.Core.Verifier
+meta import StrataTest.DL.SMT.EncodingTestUtils
 
 meta section
 
+open Strata.SMT.TestUtils
+
 /-!
 This file contains unit tests for SMT datatype encoding.
+
+These tests render commands to a buffer and compare strings; no solver runs
+behind them. So an expectation here is only as good as its agreement with what
+a solver accepts — check any change against `cvc5` and `z3` rather than against
+the encoder's current output.
+
+The type-parameter lists read `par (|α|)`: `α` is not an ASCII letter, so it is
+not a legal SMT-LIB simple symbol, and both solvers reject the unquoted
+spelling outright.
 -/
 
 namespace Core
@@ -78,28 +90,29 @@ def toSMTStringWithDatatypeBlocks (e : LExpr CoreLParams.mono) (blocks : List (L
   match Env.init.addDatatypes blocks with
   | .error msg => return s!"Error creating environment: {msg}"
   | .ok env =>
-    -- Set the TypeFactory for correct datatype emission ordering
-    let ctx := SMT.Context.default.withTypeFactory env.datatypes
-    match toSMTTerm env [] e ctx useArrayTheory with
+    -- Set the TypeFactory for correct datatype emission ordering, and the flag.
+    let ctx := { SMT.Context.default.withTypeFactory env.datatypes with useArrayTheory }
+    match toSMTTerm env.factory [] e ctx {} with
     | .error err => return err.pretty
-    | .ok (smt, ctx) =>
+    | .ok (smt, ctx, _) =>
       -- Emit the full SMT output including datatype declarations
       let b ← IO.mkRef { : IO.FS.Stream.Buffer }
       let solver ← Strata.SMT.Solver.bufferWriter b
-      match (← ((do
+      let action : Strata.SMT.SolverEncodingM Unit := do
         -- First emit datatypes
-        ctx.emitDatatypes useArrayTheory
+        ctx.emitDatatypes
         -- Then encode the term
         let _ ← (Strata.SMT.Encoder.encodeTerm smt).run Strata.SMT.EncoderState.init
         pure ()
-      ).run solver).toBaseIO) with
-      | .error e => return s!"Error: {e}"
-      | .ok _ =>
+      try
+        let _ ← runSolverEncoding solver action
         let contents ← b.get
         if h: contents.data.IsValidUTF8 then
           return String.fromUTF8 contents.data h
         else
           return "Invalid UTF-8 in output"
+      catch e =>
+        return s!"Error: {e}"
 
 /--
 Convert an expression to full SMT string including datatype declarations.
@@ -112,7 +125,7 @@ def toSMTStringWithDatatypes (e : LExpr CoreLParams.mono) (datatypes : List (LDa
 
 -- Test 1: Simple datatype (Option) - zero-argument constructor
 /--
-info: (declare-datatype TestOption (par (α) (
+info: (declare-datatype TestOption (par (|α|) (
   (None)
   (Some (TestOption..val |α|)))))
 ; x
@@ -125,7 +138,7 @@ info: (declare-datatype TestOption (par (α) (
 
 -- Test 2: Recursive datatype (List) - using List type
 /--
-info: (declare-datatype TestList (par (α) (
+info: (declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
@@ -138,7 +151,7 @@ info: (declare-datatype TestList (par (α) (
 
 -- Test 3: Multiple constructors - Tree with Leaf and Node
 /--
-info: (declare-datatype TestTree (par (α) (
+info: (declare-datatype TestTree (par (|α|) (
   (Leaf)
   (Node (TestTree..value |α|) (TestTree..left (TestTree |α|)) (TestTree..right (TestTree |α|))))))
 ; tree
@@ -151,7 +164,7 @@ info: (declare-datatype TestTree (par (α) (
 
 -- Test 4: Parametric datatype instantiation - List Int
 /--
-info: (declare-datatype TestList (par (α) (
+info: (declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; intList
@@ -164,7 +177,7 @@ info: (declare-datatype TestList (par (α) (
 
 -- Test 5: Parametric datatype instantiation - List Bool (should reuse same datatype)
 /--
-info: (declare-datatype TestList (par (α) (
+info: (declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; boolList
@@ -177,7 +190,7 @@ info: (declare-datatype TestList (par (α) (
 
 -- Test 6: Multi-field constructor - Tree with 3 fields
 /--
-info: (declare-datatype TestTree (par (α) (
+info: (declare-datatype TestTree (par (|α|) (
   (Leaf)
   (Node (TestTree..value |α|) (TestTree..left (TestTree |α|)) (TestTree..right (TestTree |α|))))))
 ; intTree
@@ -190,10 +203,10 @@ info: (declare-datatype TestTree (par (α) (
 
 -- Test 7: Nested parametric types - List of Option (should declare both datatypes)
 /--
-info: (declare-datatype TestOption (par (α) (
+info: (declare-datatype TestOption (par (|α|) (
   (None)
   (Some (TestOption..val |α|)))))
-(declare-datatype TestList (par (α) (
+(declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; listOfOption
@@ -208,7 +221,7 @@ info: (declare-datatype TestOption (par (α) (
 
 -- Test 8: None constructor (zero-argument)
 /--
-info: (declare-datatype TestOption (par (α) (
+info: (declare-datatype TestOption (par (|α|) (
   (None)
   (Some (TestOption..val |α|)))))
 -/
@@ -219,7 +232,7 @@ info: (declare-datatype TestOption (par (α) (
 
 -- Test 9: Some constructor (single-argument)
 /--
-info: (declare-datatype TestOption (par (α) (
+info: (declare-datatype TestOption (par (|α|) (
   (None)
   (Some (TestOption..val |α|)))))
 -/
@@ -230,7 +243,7 @@ info: (declare-datatype TestOption (par (α) (
 
 -- Test 10: Cons constructor (multi-argument)
 /--
-info: (declare-datatype TestList (par (α) (
+info: (declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 -/
@@ -246,7 +259,7 @@ info: (declare-datatype TestList (par (α) (
 
 -- Test 11: isNone tester
 /--
-info: (declare-datatype TestOption (par (α) (
+info: (declare-datatype TestOption (par (|α|) (
   (None)
   (Some (TestOption..val |α|)))))
 ; x
@@ -260,7 +273,7 @@ info: (declare-datatype TestOption (par (α) (
 
 -- Test 12: isCons tester
 /--
-info: (declare-datatype TestList (par (α) (
+info: (declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
@@ -276,7 +289,7 @@ info: (declare-datatype TestList (par (α) (
 
 -- Test 13: Some value destructor
 /--
-info: (declare-datatype TestOption (par (α) (
+info: (declare-datatype TestOption (par (|α|) (
   (None)
   (Some (TestOption..val |α|)))))
 ; x
@@ -290,7 +303,7 @@ info: (declare-datatype TestOption (par (α) (
 
 -- Test 14: Cons head destructor
 /--
-info: (declare-datatype TestList (par (α) (
+info: (declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
@@ -304,7 +317,7 @@ info: (declare-datatype TestList (par (α) (
 
 -- Test 15: Cons tail destructor
 /--
-info: (declare-datatype TestList (par (α) (
+info: (declare-datatype TestList (par (|α|) (
   (Nil)
   (Cons (TestList..head |α|) (TestList..tail (TestList |α|))))))
 ; xs
@@ -409,8 +422,8 @@ def forestDatatype : LDatatype Unit :=
 
 /--
 info: (declare-datatypes ((RoseTree 1) (Forest 1))
-  ((par (α) ((Node (RoseTree..node |α|) (RoseTree..children (Forest |α|)))))
-  (par (α) ((FNil) (FCons (Forest..hd (RoseTree |α|)) (Forest..tl (Forest |α|)))))))
+  ((par (|α|) ((Node (RoseTree..node |α|) (RoseTree..children (Forest |α|)))))
+  (par (|α|) ((FNil) (FCons (Forest..hd (RoseTree |α|)) (Forest..tl (Forest |α|)))))))
 ; tree
 (declare-const tree (RoseTree Int))
 -/
@@ -422,12 +435,12 @@ info: (declare-datatypes ((RoseTree 1) (Forest 1))
 -- Test 19: Mix of mutual and non-mutual datatypes
 -- TestOption (non-mutual), then RoseTree/Forest (mutual)
 /--
-info: (declare-datatype TestOption (par (α) (
+info: (declare-datatype TestOption (par (|α|) (
   (None)
   (Some (TestOption..val |α|)))))
 (declare-datatypes ((RoseTree 1) (Forest 1))
-  ((par (α) ((Node (RoseTree..node |α|) (RoseTree..children (Forest |α|)))))
-  (par (α) ((FNil) (FCons (Forest..hd (RoseTree |α|)) (Forest..tl (Forest |α|)))))))
+  ((par (|α|) ((Node (RoseTree..node |α|) (RoseTree..children (Forest |α|)))))
+  (par (|α|) ((FNil) (FCons (Forest..hd (RoseTree |α|)) (Forest..tl (Forest |α|)))))))
 ; optionTree
 (declare-const optionTree (TestOption (RoseTree Int)))
 -/
@@ -471,31 +484,50 @@ def toSMTStringWithRecFunc (e : LExpr CoreLParams.mono) (blocks : List (List (LD
     (func : Lambda.LFunc CoreLParams) : IO String := do
   match Env.init.addDatatypes blocks with
   | .error msg => return s!"Error creating environment: {msg}"
-  | .ok env =>
-    match env.addFactoryFunc func with
+  | .ok baseEnv =>
+    match baseEnv.addFactoryFunc func with
     | .error msg => return s!"Error adding function: {msg}"
-    | .ok env =>
+    | .ok envWithFunc =>
+      -- Recursive `@[cases]` axioms are pre-computed by `Core.generateRecursiveAxioms`
+      -- (a step of obligation-program construction) rather than on the fly inside
+      -- the encoder. Axiom generation needs the function registered so the partial
+      -- evaluator can inline it; the resulting axioms travel in `func.axioms`. We
+      -- then register the axiom-carrying function in a fresh env, mirroring how the
+      -- pipeline rebuilds the env from the obligation program's function decls.
+      match Core.generateRecursiveAxioms envWithFunc.datatypes envWithFunc.exprEval func with
+      | .error msg => return s!"Error generating recursive axioms: {msg}"
+      | .ok funcWithAxioms =>
+      match baseEnv.addFactoryFunc funcWithAxioms with
+      | .error msg => return s!"Error adding function: {msg}"
+      | .ok env =>
       let ctx := SMT.Context.default.withTypeFactory env.datatypes
-      match toSMTTerm env [] e ctx with
+      let factory := env.factory
+      match (do
+          let (smt, ctx, pending) ← toSMTTerm factory [] e ctx {}
+          -- Resolve and commit deferred function definitions/axioms (`toSMTOp`
+          -- schedules them rather than encoding inline).
+          let ctx ← Core.processPendingFnDefs factory ctx pending
+          .ok (smt, ctx)) with
       | .error err => return err.pretty
       | .ok (smt, ctx) =>
         let b ← IO.mkRef { : IO.FS.Stream.Buffer }
         let solver ← Strata.SMT.Solver.bufferWriter b
-        match (← ((do
+        let action : Strata.SMT.SolverEncodingM Unit := do
           ctx.emitDatatypes
-          let (_, estate) ← ctx.ufs.mapM (Strata.SMT.Encoder.encodeUF ·) |>.run Strata.SMT.EncoderState.init
-          let (axmIds, estate) ← ctx.axms.mapM (Strata.SMT.Encoder.encodeTerm ·) |>.run estate
+          let (_, estate) ← ctx.ufs.toArray.mapM (Strata.SMT.Encoder.encodeUF ·) |>.run Strata.SMT.EncoderState.init
+          let (axmIds, estate) ← ctx.axms.toArray.mapM (Strata.SMT.Encoder.encodeTerm ·) |>.run estate
           for id in axmIds do
             Strata.SMT.Solver.assert id
           let _ ← (Strata.SMT.Encoder.encodeTerm smt).run estate
-        ).run solver).toBaseIO) with
-        | .error e => return s!"Error: {e}"
-        | .ok _ =>
+        try
+          let _ ← runSolverEncoding solver action
           let contents ← b.get
           if h: contents.data.IsValidUTF8 then
             return String.fromUTF8 contents.data h
           else
             return "Invalid UTF-8 in output"
+        catch e =>
+          return s!"Error: {e}"
 
 -- Test: listLen(Nil) — should show datatype, UF declaration, axioms, and the encoded call
 /--

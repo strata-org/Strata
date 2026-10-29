@@ -24,7 +24,7 @@ def elabQuery (ctx : Core.SMT.Context) (assums : List SMT.Term) (conc : SMT.Term
 #guard_msgs in
 #eval
   let a := { id := "a", ty := .prim .int }
-  (elabQuery {} [] (.quant .all [a] a (.app .gt [.prim (.int 42), a] (.prim .int))))
+  (elabQuery {} [] (.quant .all [a] [] (.app .gt [.prim (.int 42), a] (.prim .int))))
 
 /--
 info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty (α α_1 α_2)] (β : Type) [inst : Nonempty β]
@@ -36,10 +36,10 @@ info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty
   let α := { name := "α", arity := 2 }
   let β := { name := "β", arity := 0 }
   let γ := { name := "γ", arity := 1 }
-  let f := { id := "f", args := [{ id := "x", ty := .constr α.name [.constr β.name [], .prim .bool] }], out := .constr β.name [] }
+  let f : UF := { id := "f", args := [.constr α.name [.constr β.name [], .prim .bool]], out := .constr β.name [] }
   let a := { id := "a", args := [], out := .constr α.name [.constr β.name [], .prim .bool] }
   let b := { id := "b", args := [], out := .constr γ.name [.constr α.name [.constr β.name [], .prim .bool]] }
-  elabQuery { sorts := #[α, β, γ], ufs := #[a, b, f] } [] (.app .and [(.app .eq [.app (.uf a) [] a.out, .app (.uf a) [] a.out] (.prim .bool)), (.app .eq [.app (.uf b) [] b.out, .app (.uf b) [] b.out] (.prim .bool))] (.prim .bool))
+  elabQuery { sorts := .ofArray #[α, β, γ], ufs := .ofArray #[a, b, f] } [] (.app .and [(.app .eq [.app (.uf a) [] a.out, .app (.uf a) [] a.out] (.prim .bool)), (.app .eq [.app (.uf b) [] b.out, .app (.uf b) [] b.out] (.prim .bool))] (.prim .bool))
 
 /-- info: (if -5 < 0 then - -5 else -5) = 5 -/
 #guard_msgs in
@@ -170,7 +170,7 @@ info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty
 #eval
   let a : SMT.TermVar := { id := "a", ty := .prim (.bitvec 8) }
   elabQuery {} []
-    (.quant .all [a] a
+    (.quant .all [a] []
       (.app .eq
         [(.app .bvadd [(.var a)] (.prim (.bitvec 8))), (.var a)]
         (.prim .bool)))
@@ -180,7 +180,7 @@ info: ∀ (α : Type → Type → Type) [inst : ∀ (α_1 α_2 : Type), Nonempty
 #eval
   let a : SMT.TermVar := { id := "a", ty := .prim (.bitvec 8) }
   elabQuery {} []
-    (.quant .all [a] a
+    (.quant .all [a] []
       (.app .eq
         [(.app .bvand [(.var a)] (.prim (.bitvec 8))), (.var a)]
         (.prim .bool)))

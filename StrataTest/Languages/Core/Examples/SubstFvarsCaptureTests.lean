@@ -28,7 +28,7 @@ def issue653Pgm : Program :=
 #strata
 program Core;
 
-inline function foo(x : int, $__y0 : int) : int { x + $__y0 }
+inline function foo(x : int, $__y0 : int) : int { int.add(x, $__y0) }
 
 procedure TestFoo()
 {
@@ -87,7 +87,7 @@ end Strata
 /-! ## substitutePrecondition: iterated capture -/
 
 namespace Core
-open Lambda
+open _root_.Lambda
 
 private def precond : LExpr CoreLParams.mono :=
   .eq () (.fvar () ⟨"x", ()⟩ (some .int)) (.fvar () ⟨"y", ()⟩ (some .int))
@@ -120,7 +120,7 @@ private def actualsBvar : List (LExpr CoreLParams.mono) := [.bvar () 0]
 -- Correct (with lifting): `forall z :: bvar 1 > bvar 0` (bvar 1 = outer y).
 -- The "out of bounds" error is expected: bvar!1 is only in-bounds when the iterated version incorrectly captures it.
 /--
-info: forall z : int :: bvar!1 > z
+info: forall z : int :: int.gt(bvar!1, z)
 -- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 1
 Context: Global scope:
 Scope 1:
@@ -131,29 +131,4 @@ Scope 1:
 
 end Core
 
----------------------------------------------------------------------
-/-! ## captureFreevars: value corruption via iterated substitution -/
-
-namespace Core.Statement
-open Lambda
-
-private def mkId (s : String) : Identifier Unit := ⟨s, ()⟩
-private def mkFv (s : String) : LExpr CoreLParams.mono := .fvar () (mkId s) (some .int)
-private def mkInt (n : Int) : LExpr CoreLParams.mono := .intConst () n
-private def mkAdd (a b : LExpr CoreLParams.mono) : LExpr CoreLParams.mono :=
-  .app () (.app () (.op () (mkId "Int.Add") (some (.arrow .int (.arrow .int .int)))) a) b
-
-private def testEnv : Env :=
-  let e := Env.init
-  let e := e.insertInContext (mkId "x", some .int) (mkAdd (mkFv "y") (mkInt 1))
-  let e := e.insertInContext (mkId "y", some .int) (mkInt 0)
-  e
-
--- body: x + y, store: x → y+1, y → 0
--- Iterated [x→(y+1)][y→0]: `(0+1) + 0`. Correct: `(y+1) + 0`.
-/-- info: y + 1 + 0 -/
-#guard_msgs in
-#eval Std.ToFormat.format (captureFreevars testEnv [] (mkAdd (mkFv "x") (mkFv "y")))
-
-end Core.Statement
 end

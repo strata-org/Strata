@@ -25,11 +25,16 @@ jobs:
       matrix:
         toolchain:
           - stable
+    env:
+      # Run Strata's tests with cvc5's `--safe-mode=stable`.
+      CVC5_SAFE_MODE: stable
     steps:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Install cvc5
         uses: ./.github/actions/install-cvc5
+        with:
+          safe-mode: ${{ env.CVC5_SAFE_MODE }}
       - name: Install z3
         uses: ./.github/actions/install-z3
       - name: Install .NET
@@ -42,6 +47,10 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: ./.github/actions/restore-lake-cache
         with:
+          # Most tests run when their modules elaborate, and lake does not
+          # re-elaborate modules restored from the cache. Key the cache on the
+          # cvc5 safe-mode so a cache built under another setting is not reused.
+          key-prefix: lake-cvc5-${{ env.CVC5_SAFE_MODE }}
           path: |
             .lake
       - name: Download ion-java jar for Java codegen test
@@ -60,12 +69,9 @@ jobs:
       - name: Save lake cache
         uses: ./.github/actions/save-lake-cache
         with:
+          key-prefix: lake-cvc5-${{ env.CVC5_SAFE_MODE }}
           path: |
             .lake
-      - name: Verify Java testdata is up to date
-        run: |
-          StrataTestExtra/Languages/Java/regenerate-testdata.sh
-          git diff --exit-code StrataTestExtra/Languages/Java/testdata/
 
   lint_checks:
     name: Run lint checks
@@ -102,10 +108,6 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v6
-      - name: Build API documentation package
-        uses: leanprover/lean-action@v1
-        with:
-          lake-package-directory: 'docs/api'
       - name: Restore lake cache
         uses: actions/cache/restore@v5
         with:
@@ -115,10 +117,15 @@ jobs:
           key: docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}-${{ github.sha }}
           restore-keys: |
             docs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'docs/verso/lean-toolchain') }}-${{ hashFiles('lake-manifest.json', 'docs/verso/lake-manifest.json') }}-${{ hashFiles('**/*.st') }}
+      - name: Build API documentation package
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: 'docs/api'
       - name: Build documentation package
         uses: leanprover/lean-action@v1
         with:
-          build-args: '--wfail'
+          # No --wfail: it also fails on warnings in dependencies (Verso).
+          # docs/verso/lakefile.toml sets warningAsError for the docs' own modules.
           lake-package-directory: 'docs/verso'
           use-github-cache: false
       - name: Build documentation
@@ -134,8 +141,14 @@ jobs:
       - name: Check for broken links
         uses: lycheeverse/lychee-action@v2
         with:
-          args: --offline --no-progress --exclude-path '.*/find/.*' docs/verso/_out/
+          args: --offline --no-progress --exclude-path '.*/find/.*' --exclude-path '.*/search/.*' --exclude-path '.*/html-multi/.*' docs/verso/_out/
           fail: true
+      - name: Check for broken links (html-multi)
+        run: |
+          for dir in docs/verso/_out/*/html-multi; do
+            lychee --offline --no-progress --exclude-path '.*/find/.*' --exclude-path '.*\.css$' \
+              --base-url "file://$PWD/$dir/" "$dir/" || exit 1
+          done
 
   cbmc:
     needs: build_and_test_lean

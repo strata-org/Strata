@@ -5,15 +5,15 @@
 -/
 module
 
-import Strata.Transform.LoopElim
 import Strata.Languages.Core.ObligationExtraction
-public import Strata.Languages.C_Simp.C_Simp
+import Strata.Transform.InsertLoopInvariantAsserts
+import Strata.Transform.LoopElim
+import Strata.Transform.PrecondElim
+import Strata.Transform.TerminationCheck
 public import Strata.Languages.Core.SMTEncoder
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.DL.Lambda.Denote.LExprAnnotated
 import Strata.DL.SMT.Denote
-import Strata.Languages.C_Simp.DDMTransform.Translate
-import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.Translate
 import Strata.Languages.Core.ProgramEval
@@ -37,25 +37,31 @@ public section
 namespace Strata.SMT
 
 structure SanitizedContext where
-  sorts : Array Core.SMT.Sort := #[]
+  sorts : Array Strata.DL.SMT.Sort := #[]
   ufs : Array UF := #[]
-  ifs : Array Core.SMT.IF := #[]
+  ifs : Array IF := #[]
   axms : Array Term := #[]
   tySubst : Map String TermType := []
 deriving Repr, Inhabited, DecidableEq
 
 def SanitizedContext.ofCore (ctx : Core.SMT.Context) : SanitizedContext :=
-  { sorts := ctx.sorts, ufs := ctx.ufs, ifs := ctx.ifs, axms := ctx.axms, tySubst := ctx.tySubst }
+  { sorts := ctx.sorts.toArray, ufs := ctx.ufs.toArray, ifs := ctx.ifs.toArray,
+    axms := ctx.axms.toArray, tySubst := ctx.tySubst }
 
 def SanitizedContext.toCore (ctx : SanitizedContext) : Core.SMT.Context :=
-  { sorts := ctx.sorts
-    ufs := ctx.ufs
-    ifs := ctx.ifs
-    axms := ctx.axms
+  -- Build each OrderedKeyedSet with `ofArrayUnchecked`, not `ofArray`.
+  -- The reflection tactic `gen_smt_vcs` evaluates this context in the
+  -- *kernel* and `ofArray` which uses `HashSet` insert-fold does not reduce.
+  -- The fields come from `ofCore` which are already-deduped,
+  -- so their keys are distinct and the invariant holds.
+  { sorts := .ofArrayUnchecked ctx.sorts
+    ufs := .ofArrayUnchecked ctx.ufs
+    ifs := .ofArrayUnchecked ctx.ifs
+    axms := .ofArrayUnchecked ctx.axms
     tySubst := ctx.tySubst
-    typeFactory := #[]
+    datatypes := .empty
     seenDatatypes := {}
-    datatypeFuns := Map.empty }
+    datatypeFuns := {} }
 
 abbrev SMTVC := String × SanitizedContext × List Term × Term
 abbrev SMTVCs := List SMTVC
@@ -68,33 +74,47 @@ abbrev CoreVC := Env × Imperative.ProofObligation Expression
 abbrev coreVCs := List (Env × Imperative.ProofObligation Expression)
 
 def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
-  let program := (loopElim program).fst
-  match Core.typeCheck options program with
+  -- Boole programs arrive with structured bodies and no calls. Mirror the
+  -- prefix of `transformPipelinePhases` that still applies to them: termination
+  -- checks for recursive functions and well-formedness checks for function
+  -- preconditions (both add obligations the full `Core.verify` pipeline emits),
+  -- then the loop phases, then the shared preSymbolicEvalPipelinePhases.
+  -- Without `precondElimPipelinePhase`, any function declared with a
+  -- `requires` makes `extractObligations` fail ("still carries a
+  -- precondition"), so `gen_smt_vcs` silently produced no goals for such
+  -- programs.
+  let phases := [termCheckPipelinePhase, precondElimPipelinePhase,
+                 insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
+                  ++ preSymbolicEvalPipelinePhases options
+  -- Validate phase composition from Boole's guaranteed invariants (structured
+  -- bodies, no calls).
+  let _ ← (ValidatedPipeline.ofListFrom
+              (factSet![.noCFGBodies, .noCalls]) phases).toOption
+  -- The factory is seeded with Core.Factory so monomorphizeFunctions can look
+  -- up built-in polymorphic functions.
+  let initState := { Transform.CoreTransformState.emp with factory := Core.Factory }
+  let (monoProgram, monoState) ←
+    phases.foldlM (init := (program, initState)) fun (prog, state) pp =>
+      let (result, newState) :=
+        Transform.runWith prog (fun q => do let (_, q') ← pp.transform q; return q') state
+      result.toOption.map fun q' => (q', newState)
+  -- symbolicEval (toCoreProofObligationProgram) runs separately so we can keep
+  -- monoProgram for buildEnv, which needs the pre-symbolic-evaluation program.
+  match Core.toCoreProofObligationProgram options monoProgram with
   | .error _ => none
-  | .ok tcProgram =>
-    match Core.toCoreProofObligationProgram options tcProgram with
+  | .ok (oblProgram, _stats) =>
+    match Core.ObligationExtraction.extractObligations oblProgram with
     | .error _ => none
-    | .ok (oblProgram, _stats) =>
-      match Core.ObligationExtraction.extractObligations oblProgram with
-      | .error _ => none
-      | .ok obligations =>
-        let E := match Core.buildEnv options tcProgram with
-          | .ok (initE, _) =>
-            match Program.eval initE with
-            | .ok (pEs, _) => pEs.head?.getD initE
-            | .error _ => initE
-          | .error _ => Env.init (empty_factory := true)
-        return obligations.toList.map (fun ob => (E, ob))
+    | .ok obligations =>
+      let E := match Core.buildEnv options monoProgram monoState.factory with
+        | .ok (initE, _) =>
+          match Program.eval initE with
+          | .ok (pEs, _) => pEs.head?.getD initE
+          | .error _ => initE
+        | .error _ => Env.init (empty_factory := true)
+      return obligations.toList.map (fun ob => (E, ob))
 
 end Core
-
-namespace C_Simp
-
-def genVCs (program : Strata.C_Simp.Program) (options : Core.VerifyOptions := .default) : Option Core.coreVCs := do
-  let program := Strata.to_core program
-  Core.genVCs program options
-
-end C_Simp
 
 namespace Strata
 
@@ -136,9 +156,6 @@ def genCoreVCs (program : Program)
   if program.dialect == "Core" then
     let (program, #[]) := TransM.run default (translateProgram program) | none
     Core.genVCs program options.toVerifyOptions
-  else if program.dialect == "C_Simp" then
-    let (program, #[]) := C_Simp.TransM.run default (C_Simp.translateProgram program.commands) | none
-    C_Simp.genVCs program options.toVerifyOptions
   else
     none
 
@@ -147,7 +164,7 @@ Remove solver-side caches that destabilize definitional equality in metaprograms
 
 At the moment this is semantically harmless for denotation because
 `Strata.DL.SMT.Denote.denoteQuery` rejects contexts with datatype machinery
-(`typeFactory`, `seenDatatypes`, `datatypeFuns`) populated anyway.
+(`datatypes`, `seenDatatypes`, `datatypeFuns`) populated anyway.
 -/
 private def sanitizeSMTContext (ctx : Core.SMT.Context) : SMT.SanitizedContext :=
   SMT.SanitizedContext.ofCore ctx
@@ -155,10 +172,15 @@ private def sanitizeSMTContext (ctx : Core.SMT.Context) : SMT.SanitizedContext :
 def Core.ProofObligation.toSMTObligation (E : Core.Env) (ob : Imperative.ProofObligation Core.Expression)
   (options : MetaVerifier.Options := {}) :
   Option SMT.SMTVC := do
-    let maybeTerms := Core.ProofObligation.toSMTTerms E ob (useArrayTheory := options.useArrayTheory)
+    -- Seed the encoding context with the env's datatypes and the array-theory flag.
+    let smtCtx := { Core.SMT.Context.default with
+      datatypes := .ofFactory E.datatypes, useArrayTheory := options.useArrayTheory }
+    -- Encode this single obligation from a fresh encoder state.
+    let encState : Core.SMTEncodeState := .init { ctx := smtCtx }
+    let maybeTerms := Core.encodeObligationToSMT E.factory encState ob
     match maybeTerms with
     | .error _ => none
-    | .ok (ts, varDefs, _varDecls, t, ctx, _stats) =>
+    | .ok ({ assumptions := ts, varDefs, goal := t, ctx, .. }, _) =>
       -- For denotational semantics, variable definitions are equivalent to equalities
       let defAssumptions := varDefs.map fun d =>
         Strata.SMT.Factory.eq (.app (.uf ⟨d.name, [], d.ty⟩) [] d.ty) d.body
@@ -241,8 +263,8 @@ deriving instance ToExpr for Op.Arrays
 deriving instance ToExpr for Op
 deriving instance ToExpr for QuantifierKind
 deriving instance ToExpr for SMT.Term
-deriving instance ToExpr for Core.SMT.Sort
-deriving instance ToExpr for Core.SMT.IF
+deriving instance ToExpr for Strata.DL.SMT.Sort
+deriving instance ToExpr for IF
 deriving instance ToExpr for SanitizedContext
 deriving instance ToExpr for Core.CoreExprMetadata
 deriving instance ToExpr for Lambda.LMonoTy
@@ -285,11 +307,45 @@ instance : ToExpr (Std.HashSet String) where
                      (.const ``instHashableString []) (toExpr s.toList)
   toTypeExpr := .app (.const ``Std.HashSet []) (toTypeExpr String)
 
+mutual
+
+/-- Does the term apply a datatype constructor, tester or selector?  `denoteTerm`
+    has no case for these, so a query containing one has no denotation. -/
+private def Term.hasDatatypeOp (t : Term) : Bool :=
+  match t with
+  | .app (.datatype_op ..) _ _ => true
+  | .app _ args _ => Term.anyHasDatatypeOp args
+  | .quant _ _ trs body => body.hasDatatypeOp || Term.anyHasDatatypeOps trs
+  | .some t => t.hasDatatypeOp
+  | _ => false
+
+private def Term.anyHasDatatypeOp (ts : List Term) : Bool :=
+  match ts with
+  | [] => false
+  | t :: ts => t.hasDatatypeOp || Term.anyHasDatatypeOp ts
+
+private def Term.anyHasDatatypeOps (tss : List (List Term)) : Bool :=
+  match tss with
+  | [] => false
+  | ts :: rest => Term.anyHasDatatypeOp ts || Term.anyHasDatatypeOps rest
+
+end
+
 def createGoal : SMTVC → MetaM MVarId := fun (label, ctx, ts, t) => do
+  -- The bridge axiom asserts that the goals imply `smtVCsCorrect`, which is the
+  -- denotation of the VCs. A VC the denotation does not cover makes that
+  -- statement `False`, and the axiom would prove it; refuse instead.
+  if t.hasDatatypeOp || ts.any Term.hasDatatypeOp || ctx.axms.any Term.hasDatatypeOp
+      || ctx.ifs.any (·.body.hasDatatypeOp) then
+    throwError m!"gen_smt_vcs: verification condition '{label}' uses a datatype, which the \
+      denotation of SMT queries does not cover yet, so no Lean goal can be created for it; \
+      the SMT path still checks it"
   match translateQuery ctx.toCore ts t with
   | .error e =>
-    logInfo m!"Error translating query"
-    throwError e
+    -- Name the VC: the tactic must not drop an obligation it cannot state in
+    -- Lean (that would weaken the bridge axiom's premise), so it fails, and the
+    -- user should learn which obligation and why.
+    throwError m!"gen_smt_vcs: cannot translate verification condition '{label}' to a Lean goal: {e}"
   | .ok e =>
     trace[debug] "e := {e}"
     Meta.check e
@@ -367,7 +423,13 @@ private unsafe def genSMTVCsUnsafe (mv : MVarId) : MetaM (List MVarId) := do
   trace[debug] m!"Created {mvs.length} SMT VC goals: {mvs}"
   let ps ← mvs.mapM MVarId.getType
   let hP := andNIntro (List.zip ps (mvs.map Expr.mvar))
-  mv.assign hP
+  let mvType ← mv.getType
+  let bridgeType := Lean.Expr.forallE `h (andN ps) mvType .default
+  let bridgeName ← Lean.mkAuxDeclName `_genSMTVCs_tcbBridge
+  Lean.addDecl (Declaration.axiomDecl {
+    name := bridgeName, levelParams := [], type := bridgeType, isUnsafe := false
+  })
+  mv.assign (mkApp (.const bridgeName []) hP)
   return mvs
 
 @[implemented_by genSMTVCsUnsafe]

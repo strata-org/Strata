@@ -1,5 +1,8 @@
 name = "StrataDoc"
-defaultTargets = ["ddm", "langdef", "laurel", "transforms", "irtranslation"]
+defaultTargets = ["ddm", "langdef", "langsem", "laureldesign", "laurelimpl", "laurelguide", "transforms", "irtranslation"]
+
+[leanOptions]
+warningAsError = true
 
 [[require]]
 name = "Strata"
@@ -8,7 +11,7 @@ path = "../.."
 [[require]]
 name = "verso"
 git = "https://github.com/leanprover/verso"
-rev = "v4.29.0"
+rev = "v4.34.0"
 
 [[lean_lib]]
 name = "DDMDoc"
@@ -25,11 +28,32 @@ name = "langdef"
 root = "LangDefDocMain"
 
 [[lean_lib]]
-name = "LaurelDoc"
+name = "LangSemDoc"
 
 [[lean_exe]]
-name = "laurel"
-root = "LaurelDocMain"
+name = "langsem"
+root = "LangSemDocMain"
+
+[[lean_lib]]
+name = "LaurelDesignerGuide"
+
+[[lean_exe]]
+name = "laureldesign"
+root = "LaurelDesignerGuideMain"
+
+[[lean_lib]]
+name = "LaurelImplementorGuide"
+
+[[lean_exe]]
+name = "laurelimpl"
+root = "LaurelImplementorGuideMain"
+
+[[lean_lib]]
+name = "LaurelUserGuide"
+
+[[lean_exe]]
+name = "laurelguide"
+root = "LaurelUserGuideMain"
 
 [[lean_lib]]
 name = "TransformsDoc"

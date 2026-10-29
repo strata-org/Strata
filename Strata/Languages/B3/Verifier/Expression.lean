@@ -111,11 +111,6 @@ end ConversionContext
 -- Operator Conversion
 ---------------------------------------------------------------------
 
-/-- Placeholder name for UF argument types in SMT encoding.
-SMT solvers don't require actual parameter names for uninterpreted functions,
-only the types matter for type checking. -/
-def UF_ARG_PLACEHOLDER := "_"
-
 /-- Convert B3 binary operators to SMT terms without constant folding -/
 def binaryOpToSMT : B3AST.BinaryOp M → (Term → Term → Term)
   | .iff _ => fun t1 t2 => Term.app .eq [t1, t2] .bool
@@ -241,7 +236,7 @@ def expressionToSMT (ctx : ConversionContext) (e : B3AST.Expression M) : Convers
       let argTerms := argResults.toList.map (·.term)
       let uf : UF := {
         id := fnName.val,
-        args := argTerms.map (fun t => ⟨UF_ARG_PLACEHOLDER, t.typeOf⟩),
+        args := argTerms.map (·.typeOf),
         out := .int
       }
       let term := Term.app (.uf uf) argTerms .int
@@ -289,19 +284,9 @@ def expressionToSMT (ctx : ConversionContext) (e : B3AST.Expression M) : Convers
         | .ok () => []
         | .error err => [err]
 
-      -- Build trigger from pattern terms
-      let allPatternTerms := patternTermLists.foldl (· ++ ·) []
-      let trigger := if patterns.val.isEmpty then
-        -- No patterns specified in source - don't generate a trigger
-        Term.app .triggers [] .trigger
-      else if allPatternTerms.isEmpty then
-        -- Patterns specified but empty (shouldn't happen) - generate simple trigger for first var
-        match varList.head? with
-        | some (name, _) => Factory.mkSimpleTrigger name .int
-        | none => Term.app .triggers [] .trigger
-      else
-        -- Patterns specified - use them
-        allPatternTerms.foldl (fun acc term => Factory.addTrigger term acc) (Term.app .triggers [] .trigger)
+      -- Each source `pattern` clause becomes one `:pattern` group (disjunctive across
+      -- clauses). Empty groups are dropped to avoid emitting `:pattern ()`.
+      let trigger : List (List Term) := patternTermLists.filter (fun g => !g.isEmpty)
 
       -- Build quantifier term with all variables
       let qk := match _: qkind with

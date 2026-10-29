@@ -1,0 +1,272 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+module
+
+public import Strata.Languages.Core.Logic.LangDefProps
+public import Strata.DL.Imperative.Logic.HoareTemplate
+public import Strata.Languages.Core.Logic.TraceInterpUsingDenote
+import all Strata.Languages.Core.Logic.LangDefProps
+import all Strata.DL.Imperative.Logic.HoareTemplate
+
+/-! # Hoare Logic for Core
+
+The structural Hoare rules of `Imperative.Logic.Hoare`, instantiated for Core directly
+over its own language of statement lists, `EventLang.coreBlock`: there is a single
+judgement, `Triple`, conditioned on `Core.Logic.BlockInitEnvWF`.
+
+## Contents
+
+`Triple`, and the rules `false_pre`, `consequence`, `cmd`, `set`, `init`, `seq`,
+`exit_cons`, `block`, `skip`, `ite` and `while_rule`.
+
+## Why the rules are here and not in a `HoareProps` module
+
+As in `Strata.DL.Imperative.Logic.HoareTemplate`: the rules below *are* the logic rather than
+properties of it, so they stay with the judgements they introduce.  What does live
+separately is the contract integration: `ContractToHoareTriple` defines the
+contract reading, `ContractToHoareTripleProps` discharges it, and `HoareCall`
+provides the rule for procedure calls.
+
+The current denotational domain of Core `real` is `Rat`, inherited from
+`Lambda.SortDenote`. Accordingly, these Hoare judgements currently state
+correctness over rational semantics rather than mathematical or SMT reals.
+-/
+
+public section
+
+namespace Core.Logic
+
+open Core Imperative Strata.Logic Imperative.Logic
+
+namespace Hoare
+
+variable (π : String → Option Procedure)
+
+/-! ## The Core triple -/
+
+/-- Core Hoare triple with an explicit event-condition interpretation. -/
+@[expose] def TripleWith (conditionInterp : ConditionInterp Expression)
+    (params : InitEnvWFParams)
+    (Pre : Imperative.Env Expression → Prop) (ss : Statements)
+    (Post : Imperative.Env Expression → Prop) : Prop :=
+  Strata.Logic.Hoare.TripleWith (EventLang.coreBlock π)
+    conditionInterp params Pre ss Post
+
+/-- Core Hoare triple in one model. -/
+@[expose] def TripleWithModel (model : Lambda.Interp Core.Factory)
+    (params : InitEnvWFParams)
+    (Pre : Imperative.Env Expression → Prop) (ss : Statements)
+    (Post : Imperative.Env Expression → Prop) : Prop :=
+  TripleWith π (DenoteBasedInterp model) params Pre ss Post
+
+/-- **Core Hoare triple** over statement lists.
+
+TODO: Extend the model factory with every function declared in the program before
+its procedure. -/
+@[expose] def Triple (params : InitEnvWFParams)
+    (Pre : Imperative.Env Expression → Prop) (ss : Statements)
+    (Post : Imperative.Env Expression → Prop) : Prop :=
+  ∀ model : Lambda.Interp Core.Factory,
+    TripleWithModel π model params Pre ss Post
+
+/-! ## Parametric rules -/
+
+/-- False precondition proves anything. -/
+theorem false_pre (params : InitEnvWFParams) (ss : Statements)
+    (Post : Imperative.Env Expression → Prop) :
+    Triple π params (fun _ => False) ss Post := by
+  intro model
+  exact Strata.Logic.Hoare.false_pre (EventLang.coreBlock π) params ss Post
+
+/-- Consequence (weakening): strengthen the precondition, weaken the
+    postcondition. -/
+theorem consequence (params : InitEnvWFParams)
+    {Pre Pre' Post Post' : Imperative.Env Expression → Prop} {ss : Statements}
+    (h : Triple π params Pre ss Post)
+    (hpre : ∀ ρ, Pre' ρ → Pre ρ) (hpost : ∀ ρ, Post ρ → Post' ρ) :
+    Triple π params Pre' ss Post' := by
+  intro model
+  exact Strata.Logic.Hoare.consequence (EventLang.coreBlock π) params (h model) hpre hpost
+
+/-! ## Rules for a single command -/
+
+/-- A generic single Core command.  `h` receives the full `InitEnvWF params (.cmd c) ρ₀`,
+    including the `WellFormedSemanticEval` bundle that `EvalCommandE` needs. -/
+theorem cmd (params : InitEnvWFParams) (c : Command)
+    (Pre Post : Imperative.Env Expression → Prop)
+    (h : ∀ (model : Lambda.Interp Core.Factory) ρ₀ σ' emitted,
+      Pre ρ₀ → InitEnvWF params (.cmd c) ρ₀ →
+      EvalCommandE π ρ₀.factory ρ₀.store c σ' emitted →
+      Trace.AssertionsValid Expression (DenoteBasedInterp model) emitted ∧
+        (Trace.Reachable Expression (DenoteBasedInterp model) emitted →
+          Post { ρ₀ with store := σ' })) :
+    Triple π params Pre [.cmd c] Post := by
+  intro model
+  exact Imperative.Logic.Hoare.singleton (EvalCommandE π)
+    InitEnvWF BlockInitEnvWF params params
+    (fun _ hb => blockInitEnvWF_singleton hb)
+    (Imperative.Logic.Hoare.cmd (EvalCommandE π)
+      InitEnvWF params c Pre Post (h model))
+
+/-- Assignment.  The value written is quantified inside `hpost`, next to the evaluation
+    that produced it: which value `e` takes depends on the environment, so fixing one
+    outside would demand that `Pre` determine it. -/
+theorem set (params : InitEnvWFParams)
+    (x : Expression.Ident) (e : Expression.Expr)
+    (md : Imperative.MetaData Expression)
+    (Pre Post : Imperative.Env Expression → Prop)
+    (hpost : ∀ (ρ₀ : Imperative.Env Expression) (σ' : CoreStore) (v : Expression.Expr),
+      Pre ρ₀ → Expression.eval ρ₀.factory ρ₀.store e = some v →
+      Imperative.UpdateState Expression ρ₀.store x v σ' →
+      Post { ρ₀ with store := σ' }) :
+    Triple π params Pre [Statement.set x e md] Post := by
+  refine cmd π params _ Pre Post (fun model ρ₀ σ' emitted hpre _ hstep => ?_)
+  cases hstep with
+  | cmd_sem hbase =>
+    cases hbase with
+    | eval_set heval hupdate _ _ =>
+        exact ⟨True.intro, fun _ => hpost ρ₀ σ' _ hpre heval hupdate⟩
+
+/-- Declaration.  `InitState` differs from `UpdateState` only in requiring the slot to
+    have been undefined beforehand, which the postcondition never inspects. -/
+theorem init (params : InitEnvWFParams)
+    (x : Expression.Ident) (ty : Expression.Ty) (e : Expression.Expr)
+    (md : Imperative.MetaData Expression)
+    (Pre Post : Imperative.Env Expression → Prop)
+    (hpost : ∀ (ρ₀ : Imperative.Env Expression) (σ' : CoreStore) (v : Expression.Expr),
+      Pre ρ₀ → Expression.eval ρ₀.factory ρ₀.store e = some v →
+      Imperative.InitState Expression ρ₀.store x v σ' →
+      Post { ρ₀ with store := σ' }) :
+    Triple π params Pre [Statement.init x ty (.det e) md] Post := by
+  refine cmd π params _ Pre Post (fun model ρ₀ σ' emitted hpre _ hstep => ?_)
+  cases hstep with
+  | cmd_sem hbase =>
+    cases hbase with
+    | eval_init heval hinit _ _ =>
+        exact ⟨True.intro, fun _ => hpost ρ₀ σ' _ hpre heval hinit⟩
+
+/-! ## Structural rules -/
+
+/-- Sequencing: glue two triples along the concatenation of their statement lists.
+    No statement step mutates the factory across the prefix's run, which is what lets
+    the well-formedness condition be re-established on the suffix; see
+    `Imperative.Logic.Hoare.seq_append` for why `hnoesc` is needed. -/
+theorem seq (params : InitEnvWFParams)
+    {ss₁ ss₂ : Statements}
+    {Pre Mid Post : Imperative.Env Expression → Prop}
+    (h₁ : Triple π params Pre ss₁ Mid)
+    (h₂ : Triple π params Mid ss₂ Post)
+    (hnoesc : Imperative.Block.exitsCoveredByBlocks
+      (P := Expression) (CmdT := Command) [] ss₁) :
+    Triple π params Pre (ss₁ ++ ss₂) Post := by
+  intro model
+  exact Imperative.Logic.Hoare.seq_append (EvalCommandE π)
+    BlockInitEnvWF params
+    (fun _ hb => blockInitEnvWF_append_head hb)
+    (fun _ _ _ hb hr => blockInitEnvWF_append_tailE π hb hr)
+    (h₁ model) (h₂ model) hnoesc
+
+/-- An `exit` ends the statement list where it stands, leaving the
+    environment untouched, so the precondition survives to the exiting configuration.
+    The statements after it never run.  An enclosing `block` catches the exit. -/
+theorem exit_cons (params : InitEnvWFParams) {lbl : String}
+    {md : Imperative.MetaData Expression} {ss : Statements}
+    (Pre : Imperative.Env Expression → Prop) :
+    Triple π params Pre (.exit lbl md :: ss) Pre := by
+  intro model
+  exact Imperative.Logic.Hoare.exit_cons (EvalCommandE π)
+    BlockInitEnvWF params
+
+/-- Wrap a statement list in a labelled block.  `Post` must not mention the names the
+    body scopes (`PostWF`); no statement step mutates the factory across the body, so
+    leaving the block restores nothing. -/
+theorem block (params : InitEnvWFParams)
+    {ss : Statements} {l : String} {md : Imperative.MetaData Expression}
+    {Pre Post : Imperative.Env Expression → Prop}
+    (h : Triple π params Pre ss Post)
+    (hpost_proj : Imperative.Logic.Hoare.PostWF ss Post) :
+    Triple π params Pre [.block l ss md] Post := by
+  intro model
+  exact Imperative.Logic.Hoare.singleton (EvalCommandE π)
+    InitEnvWF BlockInitEnvWF params params
+    (fun _ hb => blockInitEnvWF_singleton hb)
+    (Imperative.Logic.Hoare.block (EvalCommandE π)
+      InitEnvWF BlockInitEnvWF params params
+      (fun he hn hnd => evalCommandE_preserves_none_of_not_def π he hn hnd)
+      (fun _ hb => blockInitEnvWF_of_block hb)
+      (fun _ hb => blockInitEnvWF_bodyDefsUndefined (blockInitEnvWF_of_block hb))
+      (h model) hpost_proj)
+
+/-- Empty block is skip.  No lowering condition: the generic rule instantiates
+    `skip_block` at the trivial block condition. -/
+theorem skip (params : InitEnvWFParams) (l : String) (md : Imperative.MetaData Expression)
+    (Pre : Imperative.Env Expression → Prop) :
+    Triple π params Pre [.block l [] md] Pre := by
+  intro model
+  exact Imperative.Logic.Hoare.singleton (EvalCommandE π)
+    InitEnvWF BlockInitEnvWF params params
+    (fun _ hb => blockInitEnvWF_singleton hb)
+    (Imperative.Logic.Hoare.skip (EvalCommandE π)
+      InitEnvWF params
+      (fun he hn hnd => evalCommandE_preserves_none_of_not_def π he hn hnd) l md Pre)
+
+/-- If-then-else rule. -/
+theorem ite (params : InitEnvWFParams)
+    {cond : Expression.Expr} {tss ess : Statements} {md : Imperative.MetaData Expression}
+    {Pre Post : Imperative.Env Expression → Prop}
+    (ht : Triple π params
+      (fun ρ => Pre ρ ∧ Expression.eval ρ.factory ρ.store cond = some HasBool.tt) tss Post)
+    (he : Triple π params
+      (fun ρ => Pre ρ ∧ Expression.eval ρ.factory ρ.store cond = some HasBool.ff) ess Post)
+    (hthen_proj : Imperative.Logic.Hoare.PostWF tss Post)
+    (helse_proj : Imperative.Logic.Hoare.PostWF ess Post) :
+    Triple π params Pre [.ite (.det cond) tss ess md] Post := by
+  intro model
+  exact Imperative.Logic.Hoare.singleton (EvalCommandE π)
+    InitEnvWF BlockInitEnvWF params params
+    (fun _ hb => blockInitEnvWF_singleton hb)
+    (Imperative.Logic.Hoare.ite (EvalCommandE π)
+      InitEnvWF BlockInitEnvWF params params
+      (fun he hn hnd => evalCommandE_preserves_none_of_not_def π he hn hnd)
+      (fun _ hb => blockInitEnvWF_of_ite_then hb)
+      (fun _ hb => blockInitEnvWF_of_ite_else hb)
+      (fun _ hb => blockInitEnvWF_bodyDefsUndefined (blockInitEnvWF_of_ite_then hb))
+      (fun _ hb => blockInitEnvWF_bodyDefsUndefined (blockInitEnvWF_of_ite_else hb))
+      (ht model) (he model) hthen_proj helse_proj)
+
+/-- While rule.  `hcov` says the body's `exit`s are all caught inside the body,
+    and `hInv_proj` that the invariant survives the body block's store
+    projection. -/
+theorem while_rule (params : InitEnvWFParams)
+    {guard : Expression.Expr} {measure : Option Expression.Expr}
+    {inv : List (String × Expression.Expr)}
+    {body : Statements} {md : Imperative.MetaData Expression}
+    {Inv : Imperative.Env Expression → Prop}
+    (hbody : Triple π params
+      (fun ρ => Inv ρ ∧ Expression.eval ρ.factory ρ.store guard = some HasBool.tt) body Inv)
+    (hcov : Imperative.Block.exitsCoveredByBlocks
+      (P := Expression) (CmdT := Command) [] body)
+    (hInv_proj : Imperative.Logic.Hoare.PostWF body Inv) :
+    Triple π params Inv [.loop (.det guard) measure inv body md]
+      (fun ρ => Inv ρ ∧ Expression.eval ρ.factory ρ.store guard = some HasBool.ff) := by
+  intro model
+  exact Imperative.Logic.Hoare.singleton (EvalCommandE π)
+    InitEnvWF BlockInitEnvWF params params
+    (fun _ hb => blockInitEnvWF_singleton hb)
+    (Imperative.Logic.Hoare.while_rule (EvalCommandE π)
+      InitEnvWF BlockInitEnvWF params params
+      (fun he hn hnd => evalCommandE_preserves_none_of_not_def π he hn hnd)
+      (fun _ hl => blockInitEnvWF_bodyDefsUndefined (blockInitEnvWF_of_loop_body hl))
+      (fun _ hl => blockInitEnvWF_of_loop_body hl)
+      (fun _ _ _ hl hr => initEnvWF_loop_iterateE π hl hr)
+      (hbody model) hcov hInv_proj)
+
+end Hoare
+
+end Core.Logic
+
+end -- public section
+

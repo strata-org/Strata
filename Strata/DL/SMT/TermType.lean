@@ -23,7 +23,6 @@ inductive TermPrimType where
   | string
   /-- `regex`: regular expressions in the theory of unicode strings -/
   | regex
-  | trigger
 deriving instance Repr, Inhabited, DecidableEq, Hashable for TermPrimType
 
 def TermPrimType.mkName : TermPrimType → String
@@ -33,7 +32,6 @@ def TermPrimType.mkName : TermPrimType → String
   | .bitvec _ => "bitvec"
   | .string   => "string"
   | .regex   =>  "regex"
-  | .trigger  => "trigger"
 
 def TermPrimType.lt : TermPrimType → TermPrimType → Bool
   | .bitvec n₁, .bitvec n₂     => n₁ < n₂
@@ -172,7 +170,6 @@ abbrev TermType.real : TermType := .prim .real
 abbrev TermType.bitvec (n : Nat) : TermType := .prim (.bitvec n)
 abbrev TermType.string : TermType := .prim .string
 abbrev TermType.regex : TermType := .prim .regex
-abbrev TermType.trigger : TermType := .prim .trigger
 
 def TermType.isPrimType : TermType → Bool
   | .prim _ => true
@@ -191,4 +188,13 @@ def TermType.isConstrType : TermType → Bool
   | _         => false
 
 end Strata.SMT
+end
+
+public section
+-- In `Strata.DL.SMT` rather than `Strata.SMT` to avoid collision with
+-- `StrataDDM.Dialect.Sort` field projection on the `Strata.SMT` dialect instance.
+structure Strata.DL.SMT.Sort where
+  name : String
+  arity : Nat
+deriving Repr, DecidableEq, Inhabited, Hashable
 end

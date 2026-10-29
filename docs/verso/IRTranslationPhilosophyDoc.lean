@@ -419,7 +419,7 @@ other way around.
 ## 11. Core-to-Core translations
 
 Transforms over Core (loop elimination, call elimination, SSA,
-ANF encoding, structured-to-unstructured, ...) are the special
+CSE, structured-to-unstructured, ...) are the special
 case where both endpoints are Core itself.
 
 The default placement is *with the definition of Core*, in the
@@ -450,7 +450,7 @@ Strata/Languages/Python/
                               -- (imports Laurel; Laurel does not
                               -- import Python)
 
-Strata/Languages/Laurel/
+StrataLaurel/Implementation/
     LaurelToCoreTranslator.lean
                               -- Laurel.toCore : LaurelAST → CoreAST
                               -- (imports Core; Core does not import
@@ -549,7 +549,7 @@ The same rule used for the cross-package boundaries also governs
 these intra-package translations. The applied rule per direction:
 
 *Laurel → Core (lowering).* Lives in
-`Strata/Languages/Laurel/`, not in `Strata/Languages/Core/`.
+`StrataLaurel/Implementation/`, not in `Strata/Languages/Core/`.
 Laurel imports Core; Core does not import Laurel.
 
 The reasoning is the many-to-one-to-many test, not "who knows
@@ -562,7 +562,7 @@ elimination — which other consumers do not need.
 This direction matches today's `LaurelToCoreTranslator.lean`.
 
 *Core → Laurel (raising, if added).* Should live in
-`Strata/Languages/Laurel/`. Even though the source is Core, the
+`StrataLaurel/Implementation/`. Even though the source is Core, the
 _target_ is a spoke and Core is the waist; Laurel imports Core,
 not the reverse. The general guidance — both lowering and
 raising live at the source-facing end — applies here.
@@ -595,12 +595,15 @@ expressions is the SMT analysis's job; Core only owns the
 _shape_ of the result it ingests (`VCResult`, `ProofObligation`),
 not the conversion logic.
 
-*Core → GOTO (CBMC translator).* Already correct: lives in
-`Strata/Backends/CBMC/GOTO/`, imports Core, Core does not import
-the CBMC translator. Concrete model: `procedureToGotoCtx`,
-`functionToGotoCtx`, `CProverGOTO.Context.toJson` are all in the
-translator package, and the serialized `.goto.json` schema is
-the wire format the external CBMC tool consumes.
+*Core → GOTO.* GOTO is modeled as a Strata language under
+`Strata/Languages/GOTO/`, so the `Core → GOTO` translation
+(`CoreToGOTO.transformToGoto`) lives there alongside the GOTO IR
+and the other `X → GOTO` translations, importing Core; Core does
+not import it. The CBMC backend under `Strata/Backends/CBMC/GOTO/`
+then serializes the resulting GOTO program to CBMC's JSON
+(`procedureToGotoCtx`, `functionToGotoCtx`,
+`CProverGOTO.Context.toJson`), and the serialized `.goto.json`
+schema is the wire format the external CBMC tool consumes.
 
 When referring to "CBMC" in this document: the _external CBMC
 binary_ is the analysis tool; the _Strata-side translator_ is
@@ -618,11 +621,7 @@ Core stays inert. The deviations from this rule today are:
 
 1. `Strata/Languages/Core/SMTEncoder.lean` — Core imports
    SMT-specific code. See the note below.
-2. `Strata/DL/Imperative/ToCProverGOTO.lean` — A `ToX`
-   translation lives with the source side (DL/Imperative)
-   instead of with the CBMC translator. Restructuring this into
-   the backend follows the same principle.
-3. Any future helper that materializes Laurel-shaped output from
+2. Any future helper that materializes Laurel-shaped output from
    Core would belong in Laurel, not Core.
 
 ## A note on `Strata/Languages/Core/SMTEncoder.lean`

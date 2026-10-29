@@ -6,6 +6,7 @@
 module
 
 public import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
+import Strata.Backends.CBMC.GOTO.HoistFnApps
 import Strata.Transform.ProcedureInlining
 public import Strata.Languages.Core.Factory
 import Strata.Backends.CBMC.CollectSymbols
@@ -94,8 +95,6 @@ private partial def unwrapCmdExt
     .ok (.loop (g.map (renameExpr rn)) (m.map (renameExpr rn))
       (i.map (fun (l, e) => (l, renameExpr rn e))) body' md)
   | .exit l md => .ok (.exit l md)
-  | .funcDecl _d _md =>
-    .error f!"[unwrapCmdExt] Unexpected funcDecl; should have been lifted by collectFuncDecls."
   | .typeDecl _tc _md => .error f!"[unwrapCmdExt] Unexpected typeDecl."
 
 /--
@@ -108,34 +107,6 @@ private def hasCallStmt : List Core.Statement → Bool
   | .ite _ t e _ :: rest => hasCallStmt t || hasCallStmt e || hasCallStmt rest
   | .loop _ _ _ body _ :: rest => hasCallStmt body || hasCallStmt rest
   | _ :: rest => hasCallStmt rest
-
-/--
-Collect all funcDecl statements from a procedure body (recursively)
-and return them as Core.Functions, stripping them from the body.
--/
-def collectFuncDecls : List Core.Statement →
-    Except Std.Format (List Core.Function × List Core.Statement)
-  | [] => return ([], [])
-  | .funcDecl decl _ :: rest => do
-    let f ← Core.Function.ofPureFunc decl
-    let (fs, rest') ← collectFuncDecls rest
-    return (f :: fs, rest')
-  | .block l stmts md :: rest => do
-    let (fs1, stmts') ← collectFuncDecls stmts
-    let (fs2, rest') ← collectFuncDecls rest
-    return (fs1 ++ fs2, .block l stmts' md :: rest')
-  | .ite c t e md :: rest => do
-    let (fs1, t') ← collectFuncDecls t
-    let (fs2, e') ← collectFuncDecls e
-    let (fs3, rest') ← collectFuncDecls rest
-    return (fs1 ++ fs2 ++ fs3, .ite c t' e' md :: rest')
-  | .loop g m i body md :: rest => do
-    let (fs1, body') ← collectFuncDecls body
-    let (fs2, rest') ← collectFuncDecls rest
-    return (fs1 ++ fs2, .loop g m i body' md :: rest')
-  | s :: rest => do
-    let (fs, rest') ← collectFuncDecls rest
-    return (fs, s :: rest')
 
 /--
 Translate Core statements to GOTO instructions, handling calls at
@@ -154,11 +125,19 @@ private partial def coreStmtsToGoto
   | stmt :: rest =>
     let trans ← match stmt with
       | .cmd (.call procName callArgs _md) =>
-        let lhs := Core.CallArg.getLhs callArgs
+        let lhs := Imperative.CallArg.getLhs callArgs
         let args := Core.CallArg.getInputExprs callArgs
         let renamedLhs := lhs.map (renameIdent rn)
         let renamedArgs := args.map (renameExpr rn)
-        let argExprs ← renamedArgs.mapM toExpr
+        -- Inout args arrive as typeless fvars; `toGotoExprCtx` only accepts
+        -- `(some ty)`, so recover the type from the typing env.
+        let typedArgs := renamedArgs.map fun e => match e with
+          | .fvar m id none =>
+            match trans.T.context.types.find? id with
+            | some lty => Lambda.LExpr.fvar m id (some lty.toMonoTypeUnsafe)
+            | none => e
+          | _ => e
+        let argExprs ← typedArgs.mapM toExpr
         let lhsExpr := match renamedLhs with
           | id :: _ =>
             let name := Core.CoreIdent.toPretty id
@@ -228,9 +207,14 @@ private partial def coreStmtsToGoto
             Imperative.emitCondGoto (CProverGOTO.Expr.not guard_expr) srcLoc trans
           let trans ← coreStmtsToGoto Env pname rn body trans
           let mut backGuard := CProverGOTO.Expr.true
-          for (_, inv) in invariants do
-            let inv_expr ← toExpr (renameExpr rn inv)
-            backGuard := backGuard.setNamedField "#spec_loop_invariant" inv_expr
+          if !invariants.isEmpty then
+            -- CBMC stores the individual loop-invariant clauses as the operands
+            -- of the `#spec_loop_invariant` annotation (cf. the C front end).
+            let invExprs ← invariants.mapM (fun (_, inv) => toExpr (renameExpr rn inv))
+            let invAnnotation : CProverGOTO.Expr :=
+              { id := .multiary .And, type := CProverGOTO.Ty.Boolean,
+                operands := invExprs }
+            backGuard := backGuard.setNamedField "#spec_loop_invariant" invAnnotation
           match measure with
             | some meas =>
               let meas_expr ← toExpr (renameExpr rn meas)
@@ -254,11 +238,9 @@ private partial def coreStmtsToGoto
     coreStmtsToGoto Env pname rn rest trans
 
 /--
-Translate a Core procedure into a CProver GOTO context.
-Returns the GOTO context together with any local function declarations
-that were lifted out of the procedure body. Axioms and distinct
+Translate a Core procedure into a CProver GOTO context. Axioms and distinct
 declarations are emitted as ASSUME instructions at the start of the
-body. Procedure contracts (requires/ensures/modifies) are attached
+body. Procedure contracts (requires/ensures) are attached
 as named sub-expressions on the code type.
 -/
 def procedureToGotoCtx
@@ -267,14 +249,11 @@ def procedureToGotoCtx
     (axioms : List Core.Axiom := [])
     (distincts :
       List (Core.Expression.Ident × List Core.Expression.Expr) := [])
-    : Except Std.Format
-        (CoreToGOTO.CProverGOTO.Context × List Core.Function) := do
-  -- Lift local function declarations out of the body
-  -- TODO: This pass could be split into a two-stage transformation:
+    : Except Std.Format CoreToGOTO.CProverGOTO.Context := do
+  -- TODO: This translation could be split into a two-stage transformation:
   -- 1. structured → cfg (via StructuredToUnstructured)
   -- 2. cfg → CProverGOTO (always operates on CFG, no pattern matching needed)
-  let bodyStmts ← p.body.getStructured.mapError fun s => f!"{s}"
-  let (liftedFuncs, body) ← collectFuncDecls bodyStmts
+  let body ← p.body.getStructured.mapError fun s => f!"{s}"
   let pname := Core.CoreIdent.toPretty p.header.name
   if !p.header.typeArgs.isEmpty then
     .error f!"[procedureToGotoCtx] Polymorphic procedures unsupported."
@@ -283,23 +262,38 @@ def procedureToGotoCtx
   let formals_tys ← p.header.inputs.values.mapM Lambda.LMonoTy.toGotoType
   let new_formals := formals.map (CProverGOTO.mkFormalSymbol pname ·)
   let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
-  let outputs := p.header.outputs.keys.map Core.CoreIdent.toPretty
+  -- Inout params are in both `inputs` and `outputs`; drop them from `outputs`
+  -- so their local-symbol entry can't shadow the formal binding in `rn`.
+  let formalsSet : Std.HashSet String := formals.foldl (·.insert ·) ∅
+  let pureOutputPairs := (p.header.outputs.keys.map Core.CoreIdent.toPretty).zip
+    p.header.outputs.values |>.filter fun (n, _) => !formalsSet.contains n
+  let outputs := pureOutputPairs.map (·.1)
+  let outputTys := pureOutputPairs.map (·.2)
   let new_outputs := outputs.map (CProverGOTO.mkLocalSymbol pname ·)
   let locals := (Imperative.Block.definedVars body false).map Core.CoreIdent.toPretty
   let new_locals := locals.map (CProverGOTO.mkLocalSymbol pname ·)
+  -- Base-name substitutions (`x → test::1::x`, etc.).
+  let basePairs := formals.zip new_formals ++ outputs.zip new_outputs ++ locals.zip new_locals
+  -- Core encodes `old(x)` as a single fvar named `"old x"` (`CoreIdent.mkOld`).
+  -- Mirror every base entry with its `old`-prefixed counterpart so `renameExpr`
+  -- rewrites `"old x" → "old test::1::x"` before `oldAwareSymbol` strips the
+  -- `"old "` prefix; otherwise the pre-state operand is emitted as the bare,
+  -- unnamespaced `symbol("x")`, which is unbound in cprover's namespace.
+  let oldPairs := basePairs.map fun (k, v) =>
+    (Core.CoreIdent.oldStr ++ k, Core.CoreIdent.oldStr ++ v)
   let rn : Std.HashMap String String :=
-    (formals.zip new_formals ++ outputs.zip new_outputs ++ locals.zip new_locals).foldl
+    (basePairs ++ oldPairs).foldl
       (init := {}) fun m (k, v) => m.insert k v
   -- Seed the type environment with renamed input and output parameter types
   let inputEntries : Map Core.Expression.Ident Core.Expression.Ty :=
     (new_formals.zip p.header.inputs.values).map fun (n, ty) =>
       (((n : Core.CoreIdent)), .forAll [] ty)
   let outputEntries : Map Core.Expression.Ident Core.Expression.Ty :=
-    (new_outputs.zip p.header.outputs.values).map fun (n, ty) =>
+    (new_outputs.zip outputTys).map fun (n, ty) =>
       (((n : Core.CoreIdent)), .forAll [] ty)
   let Env' : Core.Expression.TyEnv :=
     Lambda.TEnv.addInNewestContext (T := ⟨Core.ExpressionMetadata, Unit⟩)
-      Env (inputEntries ++ outputEntries)
+      Env (Strata.Util.HMap.ofList (inputEntries ++ outputEntries))
   -- Emit axioms as ASSUME instructions at the start of the body
   let mut axiomInsts : Array CProverGOTO.Instruction := #[]
   let mut axiomLoc : Nat := 0
@@ -364,14 +358,14 @@ def procedureToGotoCtx
     contracts := contracts ++ [("#spec_ensures",
       Lean.Json.mkObj [("id", ""), ("sub", Lean.Json.arr postJson.toArray)])]
   -- Build localTypes map for output parameters (so they get proper types in symbol table)
-  let output_tys ← p.header.outputs.values.mapM Lambda.LMonoTy.toGotoType
+  let output_tys ← outputTys.mapM Lambda.LMonoTy.toGotoType
   let localTypes : Std.HashMap String CProverGOTO.Ty :=
     (outputs.zip output_tys).foldl (init := {}) fun m (k, v) => m.insert k v
   let ctx : CoreToGOTO.CProverGOTO.Context :=
     { program := pgm, formals := formals_tys, ret := ret_ty,
       locals := outputs ++ locals, contracts := contracts,
       localTypes := localTypes }
-  return (ctx, liftedFuncs)
+  return ctx
 
 /--
 Translate a Core function into a CProver GOTO context.
@@ -404,34 +398,163 @@ def functionToGotoCtx
   return { program := pgm, formals := formals_tys, ret := ret_ty, locals := [] }
 
 /--
-Emit a procedure context and its lifted functions as combined
-symtab/goto JSON.
+Translate the transitive closure of eligible top-level Core functions
+reachable — via `function_application` nodes — from the seed names. A
+function is *eligible* when it is monomorphic and carries a body; its GOTO
+translation is a real function body (`functionToGotoCtx`) that CBMC's symex
+can execute once call sites are hoisted (`Context.hoistFnApps`). This
+closure includes recursive functions; `collectHoistableFuncCtxs` decides
+whether they keep their bodies. Bodiless functions are not emitted: their
+applications remain uninterpreted. A function whose body fails to translate is
+skipped (left uninterpreted) rather than failing the pipeline; the skipped
+names are returned so the caller can warn, since a silently uninterpreted
+call otherwise looks like a clean verification result.
 -/
-def emitProcWithLifted (Env : Core.Expression.TyEnv) (procName : String)
-    (ctx : CoreToGOTO.CProverGOTO.Context) (liftedFuncs : List Core.Function)
+private partial def collectUsedFuncCtxs
+    (Env : Core.Expression.TyEnv)
+    (eligible : Std.HashMap String Core.Function)
+    (queue : List String) (defined : Std.HashSet String)
+    (acc : List (String × CoreToGOTO.CProverGOTO.Context))
+    (dropped : List (String × Std.Format)) :
+    List (String × CoreToGOTO.CProverGOTO.Context) × Std.HashSet String
+      × List (String × Std.Format) :=
+  match queue with
+  | [] => (acc, defined, dropped)
+  | n :: rest =>
+    if defined.contains n then
+      collectUsedFuncCtxs Env eligible rest defined acc dropped
+    else
+      match eligible.get? n with
+      | none => collectUsedFuncCtxs Env eligible rest defined acc dropped
+      | some f =>
+        match functionToGotoCtx Env f with
+        | .error e =>
+          collectUsedFuncCtxs Env eligible rest defined acc ((n, e) :: dropped)
+        | .ok fctx =>
+          let more := (CProverGOTO.collectFnApps fctx.program).map (·.name)
+          collectUsedFuncCtxs Env eligible (rest ++ more) (defined.insert n)
+            (acc ++ [(n, fctx)]) dropped
+
+/--
+Names of the emitted functions that lie on a call cycle among themselves:
+`n` is recursive when it reaches itself through the defined callees of the
+emitted bodies. Calls to functions outside `defined` stay uninterpreted, so
+they do not close a cycle.
+-/
+private def recursiveFuncs
+    (usedCtxs : List (String × CoreToGOTO.CProverGOTO.Context))
+    (defined : Std.HashSet String) : List String :=
+  let callees : Std.HashMap String (List String) :=
+    usedCtxs.foldl (init := {}) fun m (n, c) =>
+      m.insert n ((CProverGOTO.collectFnApps c.program).map (·.name) |>.filter defined.contains)
+  -- Depth-first reachability, bounded by the number of emitted functions.
+  let reaches (start : String) : Bool := Id.run do
+    let mut seen : Std.HashSet String := {}
+    let mut stack := callees.getD start []
+    for _ in [0:usedCtxs.length * usedCtxs.length + 1] do
+      match stack with
+      | [] => return false
+      | n :: rest =>
+        stack := rest
+        if n == start then return true
+        if !seen.contains n then
+          seen := seen.insert n
+          stack := callees.getD n [] ++ stack
+    return false
+  usedCtxs.filterMap fun (n, _) => if reaches n then some n else none
+
+/--
+Like `collectUsedFuncCtxs`, but additionally keeps out of `defined` every
+function that has an application hoisting must leave in place — under a
+quantifier, in a spec annotation (`CProverGOTO.residualFnApps`), or in the
+procedure's contracts. Such an application needs its callee to remain a
+`mathematical_function` symbol, which a function with an emitted GOTO body
+cannot also be, so such a function stays uninterpreted everywhere and none
+of its applications is hoisted.
+
+Unless `hoistRecursive` is set, functions on a call cycle
+(`recursiveFuncs`) are kept out of `defined` as well. Symex unwinds a
+recursive GOTO call just as it unwinds a loop, so a call whose recursion
+depth is symbolic (e.g. a list-processing prelude function on a list of
+symbolic length) diverges unless cbmc is given an `--unwind` bound; only
+callers that supply one should opt in.
+
+Excluding a function can only shrink the set of emitted bodies, so the loop
+terminates.
+-/
+private partial def collectHoistableFuncCtxs
+    (Env : Core.Expression.TyEnv)
+    (eligible : Std.HashMap String Core.Function)
+    (ctx : CoreToGOTO.CProverGOTO.Context)
+    (hoistRecursive : Bool) :
+    List (String × CoreToGOTO.CProverGOTO.Context) × Std.HashSet String
+      × List (String × Std.Format) :=
+  let seeds := (CProverGOTO.collectFnApps ctx.program).map (·.name)
+  let (usedCtxs, defined, dropped) := collectUsedFuncCtxs Env eligible seeds {} [] []
+  let residual := CProverGOTO.residualFnApps ctx.program
+    ++ ctx.contracts.flatMap (fun (_, j) => CProverGOTO.jsonFnAppNames j)
+    ++ usedCtxs.flatMap (fun (_, c) => CProverGOTO.residualFnApps c.program)
+  let recursive := if hoistRecursive then [] else recursiveFuncs usedCtxs defined
+  let excluded := (residual ++ recursive).filter defined.contains
+  if excluded.isEmpty then (usedCtxs, defined, dropped)
+  else
+    collectHoistableFuncCtxs Env (excluded.foldl (init := eligible) (·.erase ·)) ctx
+      hoistRecursive
+
+/--
+Emit a procedure context and its associated functions as combined
+symtab/goto JSON. Emits a real GOTO function body for every eligible
+top-level function in `topLevelFuncs` reachable from the procedure
+(`collectHoistableFuncCtxs`), then hoists their applications to statement-level
+`FUNCTION_CALL` instructions (`Context.hoistFnApps`) so CBMC executes the
+bodies instead of treating the calls as uninterpreted. With the default
+`topLevelFuncs := []` nothing is hoisted. `Env` is the type environment the
+function bodies are translated in. Recursive functions stay uninterpreted
+unless `hoistRecursive` is set; set it only when cbmc runs with an
+`--unwind` bound.
+-/
+def emitProc (procName : String)
+    (ctx : CoreToGOTO.CProverGOTO.Context)
     (extraSyms : Lean.Json) (moduleName : String)
+    (topLevelFuncs : List Core.Function := [])
+    (Env : Core.Expression.TyEnv := Lambda.TEnv.default)
+    (hoistRecursive : Bool := false)
     : IO (Lean.Json × Lean.Json) := do
+  let eligible : Std.HashMap String Core.Function :=
+    topLevelFuncs.foldl (init := {}) fun m f =>
+      if f.body.isSome && f.typeArgs.isEmpty then
+        m.insert (Core.CoreIdent.toPretty f.name) f
+      else m
+  let (usedCtxs, defined, dropped) := collectHoistableFuncCtxs Env eligible ctx hoistRecursive
+  for (n, e) in dropped do
+    IO.eprintln s!"warning: top-level function {n} could not be translated to GOTO ({e}); its applications remain uninterpreted"
+  let ctx := ctx.hoistFnApps defined procName
+  let allFuncCtxs := usedCtxs.map fun (n, c) =>
+    (n, c.hoistFnApps defined n)
   let json ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson procName ctx)
   let mut symtabObj := match json.symtab with | .obj m => m | _ => .empty
   let mut gotoFns := match json.goto with
     | .obj m => match m.toList.find? (·.1 == "functions") with
       | some (_, .arr fns) => fns | _ => #[]
     | _ => #[]
-  for f in liftedFuncs do
-    let funcName := Core.CoreIdent.toPretty f.name
-    match functionToGotoCtx Env f with
-    | .error e => throw (.userError s!"{e}")
-    | .ok fctx =>
-      let fjson ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson funcName fctx)
-      match fjson.symtab with
-      | .obj m => for (k, v) in m.toList do
+  for (funcName, fctx) in allFuncCtxs do
+    let fjson ← IO.ofExcept (CoreToGOTO.CProverGOTO.Context.toJson funcName fctx)
+    match fjson.symtab with
+    | .obj m => for (k, v) in m.toList do
+        -- A defined function's key is written only by its own context: any other
+        -- context's entry under that key is a nil-valued symbol synthesized for a
+        -- hoisted call's callee reference (`Context.toJson`'s `extraSymbols`), and
+        -- inserting it would clobber the real function symbol whenever the
+        -- reference is processed after the definition. Definitions win,
+        -- independent of emission order.
+        if k == funcName || !defined.contains k then
           symtabObj := symtabObj.insert k v
+    | _ => pure ()
+    match fjson.goto with
+    | .obj m => match m.toList.find? (·.1 == "functions") with
+      | some (_, .arr fns) => gotoFns := gotoFns ++ fns
       | _ => pure ()
-      match fjson.goto with
-      | .obj m => match m.toList.find? (·.1 == "functions") with
-        | some (_, .arr fns) => gotoFns := gotoFns ++ fns
-        | _ => pure ()
-      | _ => pure ()
+    | _ => pure ()
   match extraSyms with
   | .obj m => for (k, v) in m.toList do
       symtabObj := symtabObj.insert k v
@@ -459,11 +582,13 @@ public def typeCheckCore (program : Core.Program)
 /-- Translate a type-checked Core program to CProver GOTO JSON files.
     Finds an entry-point procedure from `entryPoints` (defaulting to
     `["main", "__main__"]`), translates it to GOTO, and writes
-    `<baseName>.symtab.json` and `<baseName>.goto.json`. -/
+    `<baseName>.symtab.json` and `<baseName>.goto.json`. Recursive top-level
+    functions get GOTO bodies only with `hoistRecursive` (see `emitProc`). -/
 public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
     (baseName : String)
     (sourceText : Option String := none)
     (entryPoints : List String := ["main", "__main__"])
+    (hoistRecursive : Bool := false)
     : EIO String Unit := do
   let findProc (name : String) := tcPgm.decls.find? fun d =>
       match d with
@@ -482,12 +607,18 @@ public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
   match procedureToGotoCtx Env p sourceText (axioms := axioms) (distincts := distincts)
         with
   | .error e => throw s!"{e}"
-  | .ok (ctx, liftedFuncs) =>
+  | .ok ctx =>
     let extraSyms ← match collectExtraSymbols tcPgm with
       | .ok s => pure (Lean.toJson s)
       | .error e => throw s!"{e}"
+    let topLevelFuncs := tcPgm.decls.flatMap fun d => match d with
+      | .func f _ => [f]
+      | .recFuncBlock fs _ => fs
+      | _ => []
     let (symtab, goto) ←
-      match ← emitProcWithLifted Env procName ctx liftedFuncs extraSyms (moduleName := baseName) |>.toBaseIO with
+      match ← emitProc procName ctx extraSyms (moduleName := baseName)
+              (topLevelFuncs := topLevelFuncs) (Env := Env)
+              (hoistRecursive := hoistRecursive) |>.toBaseIO with
       | .ok r => pure r
       | .error e => throw s!"{e}"
     let symTabFile := s!"{baseName}.symtab.json"
@@ -500,6 +631,35 @@ public def coreToGotoFiles (tcPgm : Core.Program) (Env : Core.Expression.TyEnv)
     | .error e => throw s!"Error writing {gotoFile}: {e}"
     let _ ← IO.println s!"Written {symTabFile} and {gotoFile}" |>.toBaseIO
 
+/-- Build a `void main()` verification harness for a parameter-carrying entry
+    procedure `entry`: havoc its parameters, `assume` its preconditions, then
+    call it. The procedure inliner then inlines `entry` into this harness,
+    yielding a parameterless `main` that `goto-cc`/CBMC/cprover accept, with the
+    precondition assumed — matching Core's "preconditions are assumed for the
+    body" semantics (otherwise the back-end's synthesized harness leaves inputs
+    unconstrained and reports spurious failures). -/
+private def mkVerificationHarness (entry : Core.Procedure) : Core.Procedure :=
+  let md : Imperative.MetaData Core.Expression := #[]
+  let inKeys := entry.header.inputs.keys
+  let outKeys := entry.header.outputs.keys
+  let inDecls : List Core.Statement := entry.header.inputs.toList.map (fun (id, ty) =>
+    .cmd (.cmd (.init id (.forAll [] ty) .nondet md)))
+  let outOnlyDecls : List Core.Statement :=
+    (entry.header.outputs.toList.filter (fun (id, _) => id ∉ inKeys)).map (fun (id, ty) =>
+      .cmd (.cmd (.init id (.forAll [] ty) .nondet md)))
+  let assumes : List Core.Statement := entry.spec.preconditions.toList.mapIdx (fun i (_, chk) =>
+    .cmd (.cmd (.assume s!"harness_pre_{i}" chk.expr md)))
+  let inArgs : List (Imperative.CallArg Core.Expression) := entry.header.inputs.toList.map (fun (id, _) =>
+    if id ∈ outKeys then .inoutArg id else .inArg (.fvar default id none))
+  let outArgs : List (Imperative.CallArg Core.Expression) :=
+    (entry.header.outputs.toList.filter (fun (id, _) => id ∉ inKeys)).map (fun (id, _) =>
+      .outArg id)
+  let callStmt : Core.Statement :=
+    .call (Core.CoreIdent.toPretty entry.header.name) (inArgs ++ outArgs) md
+  { header := { name := ⟨"main", ()⟩, typeArgs := [], inputs := [], outputs := [] },
+    spec := { preconditions := [], postconditions := [] },
+    body := .structured (inDecls ++ outOnlyDecls ++ assumes ++ [callStmt]) }
+
 /--
 Inline procedures, type-check, and emit CProver GOTO JSON files.
 -/
@@ -508,7 +668,19 @@ public def inlineCoreToGotoFiles (program : Core.Program)
     (sourceText : Option String := none)
     (entryPoints : List String := ["main", "__main__"])
     (factory : @Lambda.Factory Core.CoreLParams := Core.Factory)
+    (hoistRecursive : Bool := false)
     : EIO String Unit := do
+  -- If the chosen entry carries parameters, wrap it in a parameterless `main`
+  -- verification harness (havoc params + assume preconditions + call); the
+  -- inliner then folds the entry in. Keeps existing void `main` entries as-is.
+  let findEntry (name : String) := program.decls.find? fun d =>
+    match d with | .proc p _ => Core.CoreIdent.toPretty p.header.name == name | _ => false
+  let program := match entryPoints.findSome? findEntry with
+    | some (.proc p _) =>
+      if !p.header.inputs.isEmpty && Core.CoreIdent.toPretty p.header.name != "main" then
+        { program with decls := program.decls ++ [.proc (mkVerificationHarness p) #[]] }
+      else program
+    | _ => program
   let phase := Core.procedureInliningPipelinePhase
     { doInline := (fun _caller callee _ => callee ≠ "main"), maxIters := some 10 }
   let inlined ← match Core.Transform.run program (fun prog => do
@@ -519,6 +691,7 @@ public def inlineCoreToGotoFiles (program : Core.Program)
     | .ok r => pure r
     | .error msg => throw msg
   coreToGotoFiles tcPgm Env baseName sourceText entryPoints
+    (hoistRecursive := hoistRecursive)
 
 end -- public section
 

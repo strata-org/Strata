@@ -3,13 +3,13 @@ program Core;
 // A simple deterministic CFG: compute max of two integers.
 procedure Max(x : int, y : int, out m : int)
 spec {
-  ensures (m >= x);
-  ensures (m >= y);
+  ensures (int.ge(m, x));
+  ensures (int.ge(m, y));
   ensures (m == x || m == y);
 }
 cfg entry {
   entry: {
-    branch (x >= y) goto then_branch else goto else_branch;
+    branch (int.ge(x, y)) goto then_branch else goto else_branch;
   }
   then_branch: {
     m := x;
@@ -27,7 +27,7 @@ cfg entry {
 // A CFG with a simple loop: increment y until it reaches n.
 procedure CountUp(n : int, out y : int)
 spec {
-  requires (n >= 0);
+  requires (int.ge(n, 0));
   ensures (y == n);
 }
 cfg entry {
@@ -36,10 +36,10 @@ cfg entry {
     goto loop;
   }
   loop: {
-    branch (y < n) goto body else goto done;
+    branch (int.lt(y, n)) goto body else goto done;
   }
   body: {
-    y := y + 1;
+    y := int.add(y, 1);
     goto loop;
   }
   done: {

@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.DL.Util.Map
+public import Strata.Util.ListMapProps
 public import Lean.Data.Json.FromToJson.Basic
 
 public section

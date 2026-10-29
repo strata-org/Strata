@@ -7,14 +7,69 @@ module
 
 public import Strata.DL.Imperative.StmtSemantics
 import all Strata.DL.Imperative.StmtSemantics
+public import Strata.DL.Imperative.StmtProps
 public import Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.Cmd
-import all Strata.DL.Util.Relations
+import all Strata.Util.Relations
+import all Strata.Util.RelationsProps
 
 namespace Imperative
 
 public section
+
+/-! # Metatheory of statement-list small-step evaluation
+
+## Statement-level store and environment extension laws
+
+`StoreAgreement.of_projectStore` and `StoreAgreement.of_projectStore_parents`
+(block-scope `projectStore` survival for store agreement),
+`StoreExtendsWith.projectStore` (scope-projection of a classified store
+extension), and `Env.ExtendsWith.refl` / `Env.ExtendsWith.trans_union`
+(environment-extension reflexivity and composition).  These are the
+statement-level (`projectStore`- and `Env`-keyed) companions of the
+command-level store relations in `StoreRelationsProps`.
+
+## Failure-flag semantics
+
+Key results for `StepStmt` / `StepStmtStar`:
+
+- Store and expression plumbing: `projectStore_id`, the `StoreAgreement`
+  helpers, and the `eval_fvarExpr_*`, `eval_mkFvar_*`, and `mkTypedFvar_*`
+  families.
+- Block scope: `projectStore_eq_dropVars` shows that leaving a block drops
+  exactly the names scoped by its body.
+- Configuration invariants: `Config.varsDefined_star_of`,
+  `Config.varsUndefinedThroughout_star_of`,
+  `Config.varsUndefinedScoped_star_of`, and
+  `Config.storeWellDefined_star_of` preserve store-domain properties;
+  `block_run_terminal_preserves_eq_of_not_written` preserves the exact value of
+  variables a block does not write.
+- Run inversion and lifting results for `.seq`, `.block`, and `.stmts`,
+  including `peel_off_one_iteration_to_cont_det` for deterministic loops.
+
+## Event-trace semantics
+
+Key results for `StepStmtE` / `StepStmtStarE`:
+
+- `StepStmt.toStepStmtE` embeds failure-flag steps into event semantics while
+  preserving their deterministic event trace.
+- `stepE_preserves_factory` and `starE_preserves_factory` establish factory
+  invariance for single-step and multi-step event runs.
+- `seq_run_decomposeE`, `seq_reaches_terminalE`, and
+  `seq_reaches_exitingE` split traced sequence runs chronologically;
+  `stmtRun_to_singletonE` lifts a completed statement run to its singleton-list run.
+- `stepStmtStarE_from_terminal` / `stepStmtStarE_from_exiting`,
+  `block_reaches_doneE`, and `stmt_block_reaches_doneE` characterize completed
+  traced runs.
+- `projectStore_eq_dropVarsE` provides event-trace block-scope preservation.
+- `seqT_reaches_terminalE` and `stmtsT_cons_terminalE` provide step-counted
+  completion inversions used by the event loop rule.
+- `Config.varsDefined_star_ofE` and `Config.storeWellDefined_star_ofE`
+  preserve store-domain properties across traced runs.
+- `StepStmtE.imp` and `StepStmtStarE.imp`: `StepStmtE` and `StepStmtStarE` are
+  monotone in their command relation.
+-/
 
 variable {P : PureExpr} {CmdT : Type}
 
@@ -48,6 +103,48 @@ theorem projectStore_isSome {P : PureExpr} {σ_parent σ_inner : SemanticStore P
     (projectStore σ_parent σ_inner n).isSome := by
   simp [projectStore, hp, hi]
 
+/-! ## `Env.varsUndefined` properties -/
+
+/-- `Env.varsUndefined` unfolds to its original per-string shape.  The
+`SemanticStore.varsUndefined` delegation is over `∃ s, Q s ∧ y = ident s`; this
+recovers the equivalent `∀ s, Q s → ρ.store (ident s) = none` used at call sites. -/
+theorem Env.varsUndefined_iff {P : PureExpr} [HasIdent P]
+    {Q : String → Prop} {ρ : Env P} :
+    Env.varsUndefined Q ρ ↔ ∀ s : String, Q s → ρ.store (HasIdent.ident (P := P) s) = none := by
+  constructor
+  · intro h s hs; exact h (HasIdent.ident (P := P) s) ⟨s, hs, rfl⟩
+  · rintro h y ⟨s, hs, rfl⟩; exact h s hs
+
+/-- Apply `Env.varsUndefined` directly at a string key. -/
+theorem Env.varsUndefined_apply {P : PureExpr} [HasIdent P]
+    {Q : String → Prop} {ρ : Env P} (h : Env.varsUndefined Q ρ)
+    (s : String) (hs : Q s) : ρ.store (HasIdent.ident (P := P) s) = none :=
+  h (HasIdent.ident (P := P) s) ⟨s, hs, rfl⟩
+
+/-- Monotonicity of `Env.varsUndefined` in its name predicate: if `Q ⊆ R` and every
+`R`-named var is undefined, then every `Q`-named var is. -/
+theorem Env.varsUndefined_of_imp {P : PureExpr} [HasIdent P] {Q R : String → Prop}
+    {ρ : Env P} (himp : ∀ s, Q s → R s) (h : Env.varsUndefined R ρ) :
+    Env.varsUndefined Q ρ :=
+  Env.varsUndefined_iff.mpr (fun s hs => Env.varsUndefined_apply h s (himp s hs))
+
+/-- An empty statement list reaching `.terminal` leaves the environment
+unchanged: the only run of `.stmts [] ρ₀` to `.terminal ρ'` has `ρ₀ = ρ'`. -/
+theorem stmts_nil_terminal {P : PureExpr} [HasBoolOps P]
+    {CmdT : Type}
+    (EvalCmdR : EvalCmdParam P CmdT)
+
+    (ρ₀ ρ' : Env P)
+    (h : StepStmtStar P EvalCmdR (.stmts [] ρ₀) (.terminal ρ')) :
+    ρ₀ = ρ' := by
+  rcases h
+  rename_i h₁ h₂ h₃
+  cases h₂
+  cases h₃
+  · rfl
+  · rename_i h₁ _
+    cases h₁
+
 /-! ## Multi-step execution: properties -/
 
 section
@@ -55,36 +152,57 @@ section
 variable
   {CmdT : Type}
   (P : PureExpr)
-  [HasBool P] [HasBoolOps P] [HasOps P]
+  [HasFvars P] [HasBool P] [HasInt P] [HasIntOps P] [HasOps P]
   (EvalCmd : EvalCmdParam P CmdT)
-  (extendEval : ExtendEval P)
 
-omit [HasOps P] in
+
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Empty statement list evaluation. -/
 theorem evalStmtsSmallNil
     (ρ : Env P) :
-    EvalStmtsSmall P EvalCmd extendEval ρ [] ρ := by
+    EvalStmtsSmall P EvalCmd ρ [] ρ := by
   unfold EvalStmtsSmall
   exact .step _ _ _ StepStmt.step_stmts_nil (.refl _)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+/-- A single step preserves the environment's factory. -/
+theorem step_preserves_factory
+    (c₁ c₂ : Config P CmdT)
+    (hstep : StepStmt P EvalCmd c₁ c₂) :
+    c₁.getEnv.factory = c₂.getEnv.factory := by
+  induction hstep with
+  | step_seq_inner _ ih => simpa [Config.getEnv] using ih
+  | step_block_body _ ih => simpa [Config.getEnv] using ih
+  | _ => simp [Config.getEnv]
+
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+/-- A multi-step run preserves the environment's factory. -/
+theorem star_preserves_factory
+    {c₁ c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd c₁ c₂) :
+    c₁.getEnv.factory = c₂.getEnv.factory := by
+  induction hstar with
+  | refl => rfl
+  | step _ _ _ hstep _ ih => exact (step_preserves_factory P EvalCmd _ _ hstep).trans ih
+
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Terminal configurations are indeed terminal. -/
 theorem terminalIsTerminal
     (ρ : Env P) :
-    IsTerminal P EvalCmd extendEval (.terminal ρ) := by
+    IsTerminal P EvalCmd (.terminal ρ) := by
   unfold IsTerminal
   intro c' h
   cases h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Helper: if the inner config of a `.seq` takes multiple steps, the
     enclosing `.seq` takes the same number of steps.
     Proved by induction on the multi-step derivation. -/
 theorem seq_inner_star
     (inner inner' : Config P CmdT)
     (ss : List (Stmt P CmdT))
-    (h : StepStmtStar P EvalCmd extendEval inner inner') :
-    StepStmtStar P EvalCmd extendEval
+    (h : StepStmtStar P EvalCmd inner inner') :
+    StepStmtStar P EvalCmd
       (.seq inner ss)
       (.seq inner' ss) := by
   induction h with
@@ -92,22 +210,21 @@ theorem seq_inner_star
   | step _ mid _ hstep _ ih =>
     exact .step _ _ _ (.step_seq_inner hstep) ih
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Helper: if the inner config of a `.block` takes multiple steps, the
     enclosing `.block` takes the same number of steps. -/
 theorem block_inner_star
     (inner inner' : Config P CmdT)
     (label : Option String)
     (σ_parent : SemanticStore P)
-    (e_parent : SemanticEval P)
-    (h : StepStmtStar P EvalCmd extendEval inner inner') :
-    StepStmtStar P EvalCmd extendEval
-      (.block label σ_parent e_parent inner) (.block label σ_parent e_parent inner') := by
+    (h : StepStmtStar P EvalCmd inner inner') :
+    StepStmtStar P EvalCmd
+      (.block label σ_parent inner) (.block label σ_parent inner') := by
   induction h with
   | refl => exact .refl _
   | step _ mid _ hstep _ ih => exact .step _ _ _ (.step_block_body hstep) ih
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- When executing `.stmts (s :: ss) ρ`, if the head statement `s`
     multi-steps to `.terminal ρ'`, then the whole list multi-steps to
     `.stmts ss ρ'`.
@@ -117,9 +234,9 @@ omit [HasOps P] in
 theorem stmts_cons_step
     (s : Stmt P CmdT) (ss : List (Stmt P CmdT))
     (ρ ρ' : Env P)
-    (hstmt : StepStmtStar P EvalCmd extendEval
+    (hstmt : StepStmtStar P EvalCmd
       (.stmt s ρ) (.terminal ρ')) :
-    StepStmtStar P EvalCmd extendEval
+    StepStmtStar P EvalCmd
       (.stmts (s :: ss) ρ)
       (.stmts ss ρ') := by
   -- Step 1: .stmts (s :: ss) ρ  →  .seq (.stmt s ρ) ss
@@ -128,28 +245,28 @@ theorem stmts_cons_step
   · exact .step_stmts_cons
   -- Step 2: .seq (.stmt s ρ) ss  →*  .seq (.terminal ρ') ss
   --         by lifting hstmt through the seq context
-  have h2 := seq_inner_star P EvalCmd extendEval _ _ ss hstmt
+  have h2 := seq_inner_star P EvalCmd _ _ ss hstmt
   -- Step 3: .seq (.terminal ρ') ss  →  .stmts ss ρ'
   --         via step_seq_done, then chain with h2 by induction
-  suffices h3 : StepStmtStar P EvalCmd extendEval
+  suffices h3 : StepStmtStar P EvalCmd
       (.seq (.terminal ρ') ss) (.stmts ss ρ') from
     ReflTrans_Transitive _ _ _ _ h2 h3
   exact .step _ _ _ .step_seq_done (.refl _)
 
 /-! ## Inversion lemmas for seq and block execution -/
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Invert a seq execution reaching terminal: the inner terminates,
     then the tail stmts run to terminal. -/
 theorem seq_reaches_terminal
     {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {ρ' : Env P}
-    (hstar : StepStmtStar P EvalCmd extendEval (.seq inner ss) (.terminal ρ')) :
-    ∃ ρ₁, StepStmtStar P EvalCmd extendEval inner (.terminal ρ₁) ∧
-      StepStmtStar P EvalCmd extendEval (.stmts ss ρ₁) (.terminal ρ') := by
-  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+    (hstar : StepStmtStar P EvalCmd (.seq inner ss) (.terminal ρ')) :
+    ∃ ρ₁, StepStmtStar P EvalCmd inner (.terminal ρ₁) ∧
+      StepStmtStar P EvalCmd (.stmts ss ρ₁) (.terminal ρ') := by
+  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd src tgt →
       ∀ inner ss ρ', src = .seq inner ss → tgt = .terminal ρ' →
-      ∃ ρ₁, StepStmtStar P EvalCmd extendEval inner (.terminal ρ₁) ∧
-        StepStmtStar P EvalCmd extendEval (.stmts ss ρ₁) (.terminal ρ') from
+      ∃ ρ₁, StepStmtStar P EvalCmd inner (.terminal ρ₁) ∧
+        StepStmtStar P EvalCmd (.stmts ss ρ₁) (.terminal ρ') from
     h_gen _ _ hstar _ _ _ rfl rfl
   intro src tgt hstar_g
   induction hstar_g with
@@ -163,20 +280,20 @@ theorem seq_reaches_terminal
     | step_seq_done => subst htgt; exact ⟨_, .refl _, hrest⟩
     | step_seq_exit => subst htgt; cases hrest with | step _ _ _ h _ => cases h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Invert a seq execution reaching exiting: either the inner exited
     (propagated), or the inner terminated and the tail exited. -/
 theorem seq_reaches_exiting
     {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {lbl : String} {ρ' : Env P}
-    (hstar : StepStmtStar P EvalCmd extendEval (.seq inner ss) (.exiting lbl ρ')) :
-    (StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ')) ∨
-    (∃ ρ₁, StepStmtStar P EvalCmd extendEval inner (.terminal ρ₁) ∧
-      StepStmtStar P EvalCmd extendEval (.stmts ss ρ₁) (.exiting lbl ρ')) := by
-  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
+    (hstar : StepStmtStar P EvalCmd (.seq inner ss) (.exiting lbl ρ')) :
+    (StepStmtStar P EvalCmd inner (.exiting lbl ρ')) ∨
+    (∃ ρ₁, StepStmtStar P EvalCmd inner (.terminal ρ₁) ∧
+      StepStmtStar P EvalCmd (.stmts ss ρ₁) (.exiting lbl ρ')) := by
+  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd src tgt →
       ∀ inner ss lbl ρ', src = .seq inner ss → tgt = .exiting lbl ρ' →
-      (StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ')) ∨
-      (∃ ρ₁, StepStmtStar P EvalCmd extendEval inner (.terminal ρ₁) ∧
-        StepStmtStar P EvalCmd extendEval (.stmts ss ρ₁) (.exiting lbl ρ')) from
+      (StepStmtStar P EvalCmd inner (.exiting lbl ρ')) ∨
+      (∃ ρ₁, StepStmtStar P EvalCmd inner (.terminal ρ₁) ∧
+        StepStmtStar P EvalCmd (.stmts ss ρ₁) (.exiting lbl ρ')) from
     h_gen _ _ hstar _ _ _ _ rfl rfl
   intro src tgt hstar_g
   induction hstar_g with
@@ -191,88 +308,24 @@ theorem seq_reaches_exiting
     | step_seq_done => subst htgt; exact .inr ⟨_, .refl _, hrest⟩
     | step_seq_exit => exact .inl (htgt ▸ hrest)
 
-/-! ### EvalExtensionOf preservation along block executions -/
-
-omit [HasOps P] in
-/-- Structural invariant: every "stacked" eval inside `c` (the active eval
-    plus every `e_parent` saved at a `.block` wrapper) extends `e_root`. -/
-def Config.evalExtendsOf (e_root : SemanticEval P) :
-    Config P CmdT → Prop
-  | .stmt _ ρ => EvalExtensionOf extendEval e_root ρ.eval
-  | .stmts _ ρ => EvalExtensionOf extendEval e_root ρ.eval
-  | .terminal ρ => EvalExtensionOf extendEval e_root ρ.eval
-  | .exiting _ ρ => EvalExtensionOf extendEval e_root ρ.eval
-  | .block _ _ e_parent inner =>
-    EvalExtensionOf extendEval e_root e_parent ∧
-    Config.evalExtendsOf e_root inner
-  | .seq inner _ => Config.evalExtendsOf e_root inner
-
-omit [HasOps P] in
-/-- A single `StepStmt` step preserves `Config.evalExtendsOf e_root`. -/
-private theorem step_preserves_evalExtendsOf
-    {c c' : Config P CmdT} {e_root : SemanticEval P}
-    (hinv : Config.evalExtendsOf P extendEval e_root c)
-    (h : StepStmt P EvalCmd extendEval c c') :
-    Config.evalExtendsOf P extendEval e_root c' := by
-  induction h with
-  -- Rules whose post-config has the same active eval as the pre-config,
-  -- and no stacked block frames are added or removed.
-  | step_cmd _ | step_exit | step_typeDecl
-  | step_stmts_nil | step_stmts_cons | step_seq_done | step_seq_exit
-  | step_loop_exit _ _ _ _ | step_loop_nondet_exit _ _ =>
-    simp only [Config.evalExtendsOf] at hinv ⊢; exact hinv
-  -- Rules that wrap the body in a fresh block (or seq-of-block).  The active
-  -- eval is unchanged, and the new block's e_parent is also the pre-config's
-  -- eval, so both halves of the resulting product are `hinv`.
-  | step_block
-  | step_ite_true _ _ | step_ite_false _ _
-  | step_ite_nondet_true | step_ite_nondet_false
-  | step_loop_enter _ _ _ _ | step_loop_nondet_enter _ _ =>
-    simp only [Config.evalExtendsOf] at hinv ⊢; exact ⟨hinv, hinv⟩
-  -- Block-exit rules: drop the inner active eval and restore e_parent.
-  | step_block_done | step_block_exit_match _ | step_block_exit_mismatch _ =>
-    simp only [Config.evalExtendsOf] at hinv ⊢; exact hinv.1
-  -- Recursive (inner) cases.
-  | step_seq_inner _ ih =>
-    simp only [Config.evalExtendsOf] at hinv ⊢; exact ih hinv
-  | step_block_body _ ih =>
-    simp only [Config.evalExtendsOf] at hinv ⊢; exact ⟨hinv.1, ih hinv.2⟩
-  -- The only rule that mutates the active eval.
-  | step_funcDecl =>
-    simp only [Config.evalExtendsOf] at hinv ⊢
-    rename_i decl _ _ _
-    exact .step _ decl hinv
-
-omit [HasOps P] in
-/-- Multi-step lift of `step_preserves_evalExtendsOf`. -/
-theorem star_preserves_evalExtendsOf
-    {c c' : Config P CmdT} {e_root : SemanticEval P}
-    (hinv : Config.evalExtendsOf P extendEval e_root c)
-    (h : StepStmtStar P EvalCmd extendEval c c') :
-    Config.evalExtendsOf P extendEval e_root c' := by
-  induction h with
-  | refl => exact hinv
-  | step _ _ _ hstep _ ih =>
-    exact ih (step_preserves_evalExtendsOf P EvalCmd extendEval hinv hstep)
-
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Invert a block execution reaching terminal: the inner either
     terminated or exited (caught by the block).  In both cases the inner
     reaches a config whose env projects to `ρ'` via the parent store. -/
 theorem block_reaches_terminal
     {inner : Config P CmdT} {l : Option String}
-    {σ_parent : SemanticStore P} {e_parent : SemanticEval P} {ρ' : Env P}
-    (hstar : StepStmtStar P EvalCmd extendEval (.block l σ_parent e_parent inner) (.terminal ρ')) :
-    (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.terminal ρ_inner) ∧
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) ∨
-    (∃ lbl ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ_inner) ∧
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) := by
-  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
-      ∀ inner ρ', src = .block l σ_parent e_parent inner → tgt = .terminal ρ' →
-      (∃ ρ_inner, StepStmtStar P EvalCmd extendEval inner (.terminal ρ_inner) ∧
-        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) ∨
-      (∃ lbl ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ_inner) ∧
-        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent }) from
+    {σ_parent : SemanticStore P} {ρ' : Env P}
+    (hstar : StepStmtStar P EvalCmd (.block l σ_parent inner) (.terminal ρ')) :
+    (∃ ρ_inner, StepStmtStar P EvalCmd inner (.terminal ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store}) ∨
+    (∃ lbl ρ_inner, StepStmtStar P EvalCmd inner (.exiting lbl ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store}) := by
+  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd src tgt →
+      ∀ inner ρ', src = .block l σ_parent inner → tgt = .terminal ρ' →
+      (∃ ρ_inner, StepStmtStar P EvalCmd inner (.terminal ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store}) ∨
+      (∃ lbl ρ_inner, StepStmtStar P EvalCmd inner (.exiting lbl ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store}) from
     h_gen _ _ hstar _ _ rfl rfl
   intro src tgt hstar_g
   induction hstar_g with
@@ -295,19 +348,19 @@ theorem block_reaches_terminal
     | step_block_exit_mismatch =>
       subst htgt; cases hrest with | step _ _ _ h _ => cases h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Invert a block execution reaching exiting: the inner must have
     exited with a label that didn't match the block.  The env is projected. -/
 theorem block_reaches_exiting
     {inner : Config P CmdT} {l : Option String}
-    {σ_parent : SemanticStore P} {e_parent : SemanticEval P} {lbl : String} {ρ' : Env P}
-    (hstar : StepStmtStar P EvalCmd extendEval (.block l σ_parent e_parent inner) (.exiting lbl ρ')) :
-    ∃ lbl_inner ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl_inner ρ_inner) ∧
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } := by
-  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
-      ∀ inner lbl ρ', src = .block l σ_parent e_parent inner → tgt = .exiting lbl ρ' →
-      ∃ lbl_inner ρ_inner, StepStmtStar P EvalCmd extendEval inner (.exiting lbl_inner ρ_inner) ∧
-        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } from
+    {σ_parent : SemanticStore P} {lbl : String} {ρ' : Env P}
+    (hstar : StepStmtStar P EvalCmd (.block l σ_parent inner) (.exiting lbl ρ')) :
+    ∃ lbl_inner ρ_inner, StepStmtStar P EvalCmd inner (.exiting lbl_inner ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store} := by
+  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd src tgt →
+      ∀ inner lbl ρ', src = .block l σ_parent inner → tgt = .exiting lbl ρ' →
+      ∃ lbl_inner ρ_inner, StepStmtStar P EvalCmd inner (.exiting lbl_inner ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store} from
     h_gen _ _ hstar _ _ _ rfl rfl
   intro src tgt hstar_g
   induction hstar_g with
@@ -325,24 +378,49 @@ theorem block_reaches_exiting
     | step_block_done | step_block_exit_match =>
       subst htgt; cases hrest with | step _ _ _ h _ => cases h
 
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+/-- Invert a block execution that ends **terminal or exiting**: in either case the
+    inner ran to a terminal-or-exiting configuration and the block projected its
+    env.  Combines `block_reaches_terminal` and `block_reaches_exiting`, which
+    differ only in how the inner finished. -/
+theorem block_reaches_done
+    {inner : Config P CmdT} {l : Option String}
+    {σ_parent : SemanticStore P} {ρ' : Env P}
+    (hdone :
+      StepStmtStar P EvalCmd (.block l σ_parent inner) (.terminal ρ') ∨
+      ∃ lbl, StepStmtStar P EvalCmd
+        (.block l σ_parent inner) (.exiting lbl ρ')) :
+    ∃ ρ_inner,
+      (StepStmtStar P EvalCmd inner (.terminal ρ_inner) ∨
+       ∃ lbl, StepStmtStar P EvalCmd inner (.exiting lbl ρ_inner)) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store} := by
+  match hdone with
+  | .inl hterm =>
+    match block_reaches_terminal P EvalCmd hterm with
+    | .inl ⟨ρ_inner, h, heq⟩ => exact ⟨ρ_inner, .inl h, heq⟩
+    | .inr ⟨lbl, ρ_inner, h, heq⟩ => exact ⟨ρ_inner, .inr ⟨lbl, h⟩, heq⟩
+  | .inr ⟨_, hexit⟩ =>
+    have ⟨lbl_inner, ρ_inner, h, heq⟩ := block_reaches_exiting P EvalCmd hexit
+    exact ⟨ρ_inner, .inr ⟨lbl_inner, h⟩, heq⟩
+
 /-! ## Trace construction helpers -/
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Entering a block: a single step from `.stmt (.block l body md) ρ`
     to `.block (.some l) (.stmts body ρ)`. -/
 theorem step_block_enter (l : String) (body : List (Stmt P CmdT))
     (md : MetaData P) (ρ : Env P) :
-    StepStmtStar P EvalCmd extendEval
-      (.stmt (.block l body md) ρ) (.block (.some l) ρ.store ρ.eval (.stmts body ρ)) :=
+    StepStmtStar P EvalCmd
+      (.stmt (.block l body md) ρ) (.block (.some l) ρ.store (.stmts body ρ)) :=
   .step _ _ _ .step_block (.refl _)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- If a prefix of a statement list terminates, the full list steps
     to the suffix starting from the terminal environment. -/
 theorem stmts_prefix_terminal_append
     (pfx sfx : List (Stmt P CmdT)) (ρ ρ' : Env P)
-    (h : StepStmtStar P EvalCmd extendEval (.stmts pfx ρ) (.terminal ρ')) :
-    StepStmtStar P EvalCmd extendEval (.stmts (pfx ++ sfx) ρ) (.stmts sfx ρ') := by
+    (h : StepStmtStar P EvalCmd (.stmts pfx ρ) (.terminal ρ')) :
+    StepStmtStar P EvalCmd (.stmts (pfx ++ sfx) ρ) (.stmts sfx ρ') := by
   induction pfx generalizing ρ with
   | nil =>
     cases h with
@@ -354,18 +432,18 @@ theorem stmts_prefix_terminal_append
     cases h with
     | step _ _ _ h_step h_rest => cases h_step with
       | step_stmts_cons =>
-        have ⟨ρ₁, h_s, h_r⟩ := seq_reaches_terminal P EvalCmd extendEval h_rest
+        have ⟨ρ₁, h_s, h_r⟩ := seq_reaches_terminal P EvalCmd h_rest
         exact ReflTrans_Transitive _ _ _ _
-          (stmts_cons_step P EvalCmd extendEval s (rest ++ sfx) ρ ρ₁ h_s) (ih ρ₁ h_r)
+          (stmts_cons_step P EvalCmd s (rest ++ sfx) ρ ρ₁ h_s) (ih ρ₁ h_r)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Decompose a terminating execution of `ss₁ ++ ss₂` into a terminating
     execution of `ss₁` followed by a terminating execution of `ss₂`. -/
 theorem stmts_append_terminates
     (ss₁ ss₂ : List (Stmt P CmdT)) (ρ ρ' : Env P)
-    (h : StepStmtStar P EvalCmd extendEval (.stmts (ss₁ ++ ss₂) ρ) (.terminal ρ')) :
-    ∃ ρ₁, StepStmtStar P EvalCmd extendEval (.stmts ss₁ ρ) (.terminal ρ₁) ∧
-           StepStmtStar P EvalCmd extendEval (.stmts ss₂ ρ₁) (.terminal ρ') := by
+    (h : StepStmtStar P EvalCmd (.stmts (ss₁ ++ ss₂) ρ) (.terminal ρ')) :
+    ∃ ρ₁, StepStmtStar P EvalCmd (.stmts ss₁ ρ) (.terminal ρ₁) ∧
+           StepStmtStar P EvalCmd (.stmts ss₂ ρ₁) (.terminal ρ') := by
   induction ss₁ generalizing ρ with
   | nil =>
     exact ⟨ρ, .step _ _ _ .step_stmts_nil (.refl _), h⟩
@@ -374,68 +452,130 @@ theorem stmts_append_terminates
     | step _ _ _ hstep hrest => cases hstep with
       | step_stmts_cons =>
         have ⟨ρ_mid, h_s, h_rest_ss₂⟩ :=
-          seq_reaches_terminal P EvalCmd extendEval hrest
+          seq_reaches_terminal P EvalCmd hrest
         have ⟨ρ₁, h_rest, h_ss₂⟩ := ih ρ_mid h_rest_ss₂
         exact ⟨ρ₁, ReflTrans_Transitive _ _ _ _
-          (stmts_cons_step P EvalCmd extendEval
+          (stmts_cons_step P EvalCmd
             s rest ρ ρ_mid h_s) h_rest, h_ss₂⟩
+
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+/-- An exiting head statement makes the whole list exit with the same label: the
+    tail never runs. -/
+private theorem stmts_cons_exiting
+    (s : Stmt P CmdT) (ss : List (Stmt P CmdT)) (ρ ρ' : Env P) (lbl : String)
+    (h : StepStmtStar P EvalCmd (.stmt s ρ) (.exiting lbl ρ')) :
+    StepStmtStar P EvalCmd (.stmts (s :: ss) ρ) (.exiting lbl ρ') := by
+  refine .step _ _ _ .step_stmts_cons ?_
+  exact ReflTrans_Transitive _ _ _ _
+    (seq_inner_star P EvalCmd _ _ ss h)
+    (.step _ _ _ .step_seq_exit (.refl _))
+
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+/-- Decompose a *finished* execution of `ss₁ ++ ss₂` — terminal or exiting — by what
+    `ss₁` did: either `ss₁` exited on its own, and `ss₂` never ran, or `ss₁`
+    terminated at some `ρ₁` from which `ss₂` finished the same way.
+    `stmts_append_terminates` is the terminal-only special case. -/
+theorem stmts_append_done
+    (ss₁ ss₂ : List (Stmt P CmdT)) (ρ ρ' : Env P)
+    (h : StepStmtStar P EvalCmd (.stmts (ss₁ ++ ss₂) ρ) (.terminal ρ') ∨
+      ∃ lbl, StepStmtStar P EvalCmd (.stmts (ss₁ ++ ss₂) ρ) (.exiting lbl ρ')) :
+    (∃ lbl, StepStmtStar P EvalCmd (.stmts ss₁ ρ) (.exiting lbl ρ')) ∨
+    (∃ ρ₁, StepStmtStar P EvalCmd (.stmts ss₁ ρ) (.terminal ρ₁) ∧
+      (StepStmtStar P EvalCmd (.stmts ss₂ ρ₁) (.terminal ρ') ∨
+       ∃ lbl, StepStmtStar P EvalCmd (.stmts ss₂ ρ₁) (.exiting lbl ρ'))) := by
+  induction ss₁ generalizing ρ with
+  | nil => exact .inr ⟨ρ, .step _ _ _ .step_stmts_nil (.refl _), h⟩
+  | cons s rest ih =>
+    -- Peel the head off, then recurse on `rest ++ ss₂`.
+    have hhead : (∃ lbl, StepStmtStar P EvalCmd (.stmt s ρ) (.exiting lbl ρ')) ∨
+        ∃ ρ_mid, StepStmtStar P EvalCmd (.stmt s ρ) (.terminal ρ_mid) ∧
+          (StepStmtStar P EvalCmd (.stmts (rest ++ ss₂) ρ_mid) (.terminal ρ') ∨
+           ∃ lbl, StepStmtStar P EvalCmd
+             (.stmts (rest ++ ss₂) ρ_mid) (.exiting lbl ρ')) := by
+      match h with
+      | .inl hterm =>
+        cases hterm with
+        | step _ _ _ hstep hrest => cases hstep with
+          | step_stmts_cons =>
+            have ⟨ρ_mid, h_s, h_tail⟩ := seq_reaches_terminal P EvalCmd hrest
+            exact .inr ⟨ρ_mid, h_s, .inl h_tail⟩
+      | .inr ⟨lbl, hexit⟩ =>
+        cases hexit with
+        | step _ _ _ hstep hrest => cases hstep with
+          | step_stmts_cons =>
+            match seq_reaches_exiting P EvalCmd hrest with
+            | .inl h_s => exact .inl ⟨lbl, h_s⟩
+            | .inr ⟨ρ_mid, h_s, h_tail⟩ => exact .inr ⟨ρ_mid, h_s, .inr ⟨lbl, h_tail⟩⟩
+    match hhead with
+    | .inl ⟨lbl, h_s⟩ =>
+      exact .inl ⟨lbl, stmts_cons_exiting P EvalCmd s rest ρ ρ' lbl h_s⟩
+    | .inr ⟨ρ_mid, h_s, h_tail⟩ =>
+      have hcons := stmts_cons_step P EvalCmd s rest ρ ρ_mid h_s
+      match ih ρ_mid h_tail with
+      | .inl ⟨lbl, hexit_rest⟩ =>
+        exact .inl ⟨lbl, ReflTrans_Transitive _ _ _ _ hcons hexit_rest⟩
+      | .inr ⟨ρ₁, hterm_rest, hfin⟩ =>
+        exact .inr ⟨ρ₁, ReflTrans_Transitive _ _ _ _ hcons hterm_rest, hfin⟩
 
 /-- Try every non-recursive `StepStmt` constructor, using `‹_›` (term-level
     assumption) to fill arguments so that no hypothesis names are needed. -/
 local macro "apply_step" : tactic => `(tactic| first
-  | exact .step_cmd ‹_›        | exact .step_ite_true ‹_› ‹_›
-  | exact .step_ite_false ‹_› ‹_›
-  | exact .step_loop_enter ‹_› ‹_› ‹_› ‹_›
-  | exact .step_loop_exit ‹_› ‹_› ‹_› ‹_›
+  | exact .step_cmd ‹_›        | exact .step_ite_true ‹_›
+  | exact .step_ite_false ‹_›
+  | exact .step_loop_enter ‹_›
+  | exact .step_loop_exit ‹_›
   | exact .step_block
-  | exact .step_exit            | exact .step_funcDecl
+  | exact .step_exit
   | exact .step_typeDecl        | exact .step_stmts_nil
   | exact .step_stmts_cons)
 
-/-! ## Store/eval simulation and hasFailure irrelevance -/
+/-! ## Store/factory simulation and hasFailure irrelevance -/
 
-/-- Two configs agree on store/eval (may differ on hasFailure). -/
+/-- Two configs agree on control shape, store, and factory, but may differ on
+    `hasFailure`. Factory agreement lets corresponding guard and command steps,
+    which read `ρ.factory`, follow the same transition. -/
 private def ConfigSE : Config P CmdT → Config P CmdT → Prop
-  | .stmt s₁ ρ₁, .stmt s₂ ρ₂ => s₁ = s₂ ∧ ρ₁.store = ρ₂.store ∧ ρ₁.eval = ρ₂.eval
-  | .stmts ss₁ ρ₁, .stmts ss₂ ρ₂ => ss₁ = ss₂ ∧ ρ₁.store = ρ₂.store ∧ ρ₁.eval = ρ₂.eval
-  | .terminal ρ₁, .terminal ρ₂ => ρ₁.store = ρ₂.store ∧ ρ₁.eval = ρ₂.eval
-  | .exiting l₁ ρ₁, .exiting l₂ ρ₂ => l₁ = l₂ ∧ ρ₁.store = ρ₂.store ∧ ρ₁.eval = ρ₂.eval
-  | .block l₁ σ₁ e₁ i₁, .block l₂ σ₂ e₂ i₂ => l₁ = l₂ ∧ σ₁ = σ₂ ∧ e₁ = e₂ ∧ ConfigSE i₁ i₂
+  | .stmt s₁ ρ₁, .stmt s₂ ρ₂ => s₁ = s₂ ∧ ρ₁.store = ρ₂.store ∧ ρ₁.factory = ρ₂.factory
+  | .stmts ss₁ ρ₁, .stmts ss₂ ρ₂ => ss₁ = ss₂ ∧ ρ₁.store = ρ₂.store ∧ ρ₁.factory = ρ₂.factory
+  | .terminal ρ₁, .terminal ρ₂ => ρ₁.store = ρ₂.store ∧ ρ₁.factory = ρ₂.factory
+  | .exiting l₁ ρ₁, .exiting l₂ ρ₂ => l₁ = l₂ ∧ ρ₁.store = ρ₂.store ∧ ρ₁.factory = ρ₂.factory
+  | .block l₁ σ₁ i₁, .block l₂ σ₂ i₂ => l₁ = l₂ ∧ σ₁ = σ₂ ∧ ConfigSE i₁ i₂
   | .seq i₁ ss₁, .seq i₂ ss₂ => ss₁ = ss₂ ∧ ConfigSE i₁ i₂
   | _, _ => False
 
-/-- Single-step simulation: if two configs agree on store/eval and one steps,
-    the other can take the same step with store/eval preserved. -/
-private def step_simulation
+omit [HasFvars P] [HasInt P] [HasIntOps P] [HasOps P] in
+/-- Single-step simulation: if two configs agree on store and one steps,
+    the other can take the same step with store preserved. -/
+private theorem step_simulation
     (c₁ c₁' c₂ : Config P CmdT)
-    (hstep : StepStmt P EvalCmd extendEval c₁ c₁')
+    (hstep : StepStmt P EvalCmd c₁ c₁')
     (heq : ConfigSE P c₁ c₂) :
-    ∃ c₂', StepStmt P EvalCmd extendEval c₂ c₂' ∧ ConfigSE P c₁' c₂' := by
+    ∃ c₂', StepStmt P EvalCmd c₂ c₂' ∧ ConfigSE P c₁' c₂' := by
   cases hstep with
   -- Non-recursive cases where c₁ is `.stmt` or `.stmts`: exactly one c₂
   -- constructor is valid, and the output ConfigSE follows by `simp_all`.
-  | step_cmd _ | step_block | step_ite_true _ _ | step_ite_false _ _
-  | step_loop_enter _ _ _ _ | step_loop_exit _ _ _ _
-  | step_exit | step_funcDecl | step_typeDecl | step_stmts_nil | step_stmts_cons =>
+  | step_cmd _ | step_block | step_ite_true _ | step_ite_false _
+  | step_loop_enter _ | step_loop_exit _
+  | step_exit | step_typeDecl | step_stmts_nil | step_stmts_cons =>
     cases c₂ <;> try contradiction
-    obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; subst hs; subst he
+    obtain ⟨rfl, hs, hf⟩ := heq; rename_i ρ₂; cases ρ₂; subst hs; subst hf
     exact ⟨_, by apply_step, by simp_all [ConfigSE]⟩
   | step_ite_nondet_true =>
     cases c₂ <;> try contradiction
-    obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; simp at hs he; subst hs; subst he
+    obtain ⟨rfl, hs, hf⟩ := heq; rename_i ρ₂; cases ρ₂; subst hs; subst hf
     exact ⟨_, .step_ite_nondet_true, by simp [ConfigSE]⟩
   | step_ite_nondet_false =>
     cases c₂ <;> try contradiction
-    obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; simp at hs he; subst hs; subst he
+    obtain ⟨rfl, hs, hf⟩ := heq; rename_i ρ₂; cases ρ₂; subst hs; subst hf
     exact ⟨_, .step_ite_nondet_false, by simp [ConfigSE]⟩
-  | step_loop_nondet_enter _ _ =>
+  | step_loop_nondet_enter =>
     cases c₂ <;> try contradiction
-    obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; simp at hs he; subst hs; subst he
-    exact ⟨_, .step_loop_nondet_enter ‹_› ‹_›, by simp_all [ConfigSE]⟩
-  | step_loop_nondet_exit _ _ =>
+    obtain ⟨rfl, hs, hf⟩ := heq; rename_i ρ₂; cases ρ₂; subst hs; subst hf
+    exact ⟨_, .step_loop_nondet_enter, by simp_all [ConfigSE]⟩
+  | step_loop_nondet_exit =>
     cases c₂ <;> try contradiction
-    obtain ⟨rfl, hs, he⟩ := heq; rename_i ρ₂; cases ρ₂; simp at hs he; subst hs; subst he
-    exact ⟨_, .step_loop_nondet_exit ‹_› ‹_›, by simp_all [ConfigSE]⟩
+    obtain ⟨rfl, hs, hf⟩ := heq; rename_i ρ₂; cases ρ₂; subst hs; subst hf
+    exact ⟨_, .step_loop_nondet_exit, by simp_all [ConfigSE]⟩
   | step_seq_inner h =>
     cases c₂ with
     | seq i₂ _ =>
@@ -448,103 +588,99 @@ private def step_simulation
     | seq i₂ _ =>
       have hrs := heq.1; subst hrs
       cases i₂ with
-      | terminal ρ₂ => exact ⟨_, .step_seq_done, ⟨rfl, heq.2.1, heq.2.2⟩⟩
+      | terminal ρ₂ => exact ⟨_, .step_seq_done, ⟨rfl, heq.2⟩⟩
       | _ => exact nomatch heq.2
     | _ => exact nomatch heq
   | step_seq_exit =>
     cases c₂ with
     | seq i₂ _ =>
       cases i₂ with
-      | exiting _ _ => exact ⟨_, .step_seq_exit, ⟨heq.2.1, heq.2.2.1, heq.2.2.2⟩⟩
+      | exiting _ _ => exact ⟨_, .step_seq_exit, ⟨heq.2.1, heq.2.2⟩⟩
       | _ => exact nomatch heq.2
     | _ => exact nomatch heq
   | step_block_body h =>
     cases c₂ with
-    | block _ _ _ i₂ =>
+    | block _ _ i₂ =>
       have hrs := heq.1; subst hrs
       have hσ := heq.2.1; subst hσ
-      have he := heq.2.2.1; subst he
-      have ⟨c₂', h₂, heq₂⟩ := step_simulation _ _ _ h heq.2.2.2
-      exact ⟨_, .step_block_body h₂, ⟨rfl, rfl, rfl, heq₂⟩⟩
+      have ⟨c₂', h₂, heq₂⟩ := step_simulation _ _ _ h heq.2.2
+      exact ⟨_, .step_block_body h₂, ⟨rfl, rfl, heq₂⟩⟩
     | _ => exact nomatch heq
   | step_block_done =>
     cases c₂ with
-    | block _ _ _ i₂ =>
+    | block _ _ i₂ =>
       have hrs := heq.1; subst hrs
       have hσ := heq.2.1; subst hσ
-      have he := heq.2.2.1; subst he
       cases i₂ with
       | terminal ρ₂ =>
-        have hse := heq.2.2.2
-        exact ⟨_, .step_block_done, ⟨congrArg (projectStore _) hse.1, rfl⟩⟩
-      | _ => exact nomatch heq.2.2.2
+        have hse := heq.2.2
+        exact ⟨_, .step_block_done, congrArg (projectStore _) hse.1, hse.2⟩
+      | _ => exact nomatch heq.2.2
     | _ => exact nomatch heq
   | step_block_exit_match hl =>
     cases c₂ with
-    | block _ _ _ i₂ =>
+    | block _ _ i₂ =>
       have hlb := heq.1; subst hlb
       have hσ := heq.2.1; subst hσ
-      have he := heq.2.2.1; subst he
       cases i₂ with
       | exiting l₂ ρ₂ =>
-        have hl₂ := heq.2.2.2.1; subst hl₂
-        have hse := heq.2.2.2.2
-        exact ⟨_, .step_block_exit_match hl, ⟨congrArg (projectStore _) hse.1, rfl⟩⟩
-      | _ => exact nomatch heq.2.2.2
+        have hl₂ := heq.2.2.1; subst hl₂
+        have hse := heq.2.2.2
+        exact ⟨_, .step_block_exit_match hl, congrArg (projectStore _) hse.1, hse.2⟩
+      | _ => exact nomatch heq.2.2
     | _ => exact nomatch heq
   | step_block_exit_mismatch hl =>
     cases c₂ with
-    | block _ _ _ i₂ =>
+    | block _ _ i₂ =>
       have hlb := heq.1; subst hlb
       have hσ := heq.2.1; subst hσ
-      have he := heq.2.2.1; subst he
       cases i₂ with
       | exiting l₂ ρ₂ =>
-        have hl₂ := heq.2.2.2.1; subst hl₂
-        have hse := heq.2.2.2.2
-        exact ⟨_, .step_block_exit_mismatch hl, ⟨rfl, congrArg (projectStore _) hse.1, rfl⟩⟩
-      | _ => exact nomatch heq.2.2.2
+        have hl₂ := heq.2.2.1; subst hl₂
+        have hse := heq.2.2.2
+        exact ⟨_, .step_block_exit_mismatch hl, ⟨rfl, congrArg (projectStore _) hse.1, hse.2⟩⟩
+      | _ => exact nomatch heq.2.2
     | _ => exact nomatch heq
 
-omit [HasOps P] in
-/-- The terminal state's store and eval are independent of the starting
-    `hasFailure` flag.  Proved by simulation: each step preserves
-    store/eval equivalence, so the terminal states agree. -/
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+/-- The terminal state's store is independent of the starting `hasFailure`
+    flag.  Proved by simulation: each step preserves store equivalence, so the
+    terminal states agree. -/
 theorem smallStep_hasFailure_irrel
     (s : Stmt P CmdT) (ρ ρ' : Env P)
-    (h : StepStmtStar P EvalCmd extendEval (.stmt s ρ) (.terminal ρ')) :
-    ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.eval = ρ.eval →
-    ∃ ρ₂', StepStmtStar P EvalCmd extendEval (.stmt s ρ₂) (.terminal ρ₂') ∧
-      ρ₂'.store = ρ'.store ∧ ρ₂'.eval = ρ'.eval := by
-  intro ρ₂ hs he
+    (h : StepStmtStar P EvalCmd (.stmt s ρ) (.terminal ρ')) :
+    ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.factory = ρ.factory →
+    ∃ ρ₂', StepStmtStar P EvalCmd (.stmt s ρ₂) (.terminal ρ₂') ∧
+      ρ₂'.store = ρ'.store := by
+  intro ρ₂ hs hfac
   suffices h_sim : ∀ (c₁ c₂ : Config P CmdT),
       ConfigSE P c₁ c₂ →
-      ∀ c₁', StepStmtStar P EvalCmd extendEval c₁ c₁' →
-      ∃ c₂', StepStmtStar P EvalCmd extendEval c₂ c₂' ∧ ConfigSE P c₁' c₂' by
-    have heq_init : ConfigSE P (.stmt s ρ) (.stmt s ρ₂) := ⟨rfl, hs.symm, he.symm⟩
+      ∀ c₁', StepStmtStar P EvalCmd c₁ c₁' →
+      ∃ c₂', StepStmtStar P EvalCmd c₂ c₂' ∧ ConfigSE P c₁' c₂' by
+    have heq_init : ConfigSE P (.stmt s ρ) (.stmt s ρ₂) := ⟨rfl, hs.symm, hfac.symm⟩
     have ⟨c₂', hstar₂, heq₂⟩ := h_sim _ _ heq_init _ h
     match c₂', heq₂ with
-    | .terminal ρ₂', heq_t => exact ⟨ρ₂', hstar₂, heq_t.1.symm, heq_t.2.symm⟩
+    | .terminal ρ₂', heq_t => exact ⟨ρ₂', hstar₂, heq_t.1.symm⟩
   intro c₁ c₂ heq c₁' hstar
   induction hstar generalizing c₂ with
   | refl => exact ⟨c₂, .refl _, heq⟩
   | step _ mid _ hstep _ ih =>
-    have ⟨mid₂, hstep₂, heq_mid⟩ := step_simulation P EvalCmd extendEval _ _ _ hstep heq
+    have ⟨mid₂, hstep₂, heq_mid⟩ := step_simulation P EvalCmd _ _ _ hstep heq
     have ⟨c₂', hstar₂, heq_final⟩ := ih _ heq_mid
     exact ⟨c₂', .step _ _ _ hstep₂ hstar₂, heq_final⟩
 
 /-! ## Well-paired exits: preservation and no-escape -/
 
-omit [HasBool P] [HasBoolOps P] [HasOps P] in
+omit [HasBool P] [HasOps P] [HasFvars P] in
 /-- Helper: when the inner of a block reaches `.exiting l` and the
     block's label (if some) doesn't match `l`, then `l` must be in the outer
     labels list.  The conclusion is `l ∈ labels`, which is exactly the
     `Config.exitsCoveredByBlocks` of `.exiting l ρ''` for any ρ''. -/
 private theorem block_exit_mismatch_unfold {labels : List String}
-    {label : Option String} {σ_parent : SemanticStore P} {e_parent : SemanticEval P}
+    {label : Option String} {σ_parent : SemanticStore P}
     {l : String} {ρ' ρ'' : Env P}
     (h : Config.exitsCoveredByBlocks labels
-          (.block label σ_parent e_parent (.exiting l ρ' : Config P CmdT)))
+          (.block label σ_parent (.exiting l ρ' : Config P CmdT)))
     (hne : label ≠ .some l) :
     Config.exitsCoveredByBlocks labels (.exiting l ρ'' : Config P CmdT) := by
   show l ∈ labels
@@ -557,17 +693,17 @@ private theorem block_exit_mismatch_unfold {labels : List String}
     · exact absurd (by rw [hh]) hne
     · exact hh
 
-omit [HasOps P] in
+omit [HasOps P] [HasInt P] [HasIntOps P] [HasFvars P] in
 /-- A single step preserves `Config.exitsCoveredByBlocks`. -/
 theorem step_preserves_exitsCoveredByBlocks
     (labels : List String)
     (c₁ c₂ : Config P CmdT)
-    (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
+    (hstep : StepStmt P EvalCmd c₁ c₂)
     (hwp : c₁.exitsCoveredByBlocks labels) :
     c₂.exitsCoveredByBlocks labels := by
   -- Prove a generalized version where labels is universally quantified,
   -- so the IH works at any nesting depth (needed for step_block_body).
-  suffices h_gen : ∀ c₁ c₂, StepStmt P EvalCmd extendEval c₁ c₂ →
+  suffices h_gen : ∀ c₁ c₂, StepStmt P EvalCmd c₁ c₂ →
       ∀ labels, c₁.exitsCoveredByBlocks labels → c₂.exitsCoveredByBlocks labels by
     exact h_gen c₁ c₂ hstep labels hwp
   intro c₁ c₂ hstep
@@ -578,7 +714,7 @@ theorem step_preserves_exitsCoveredByBlocks
   | step_ite_false => intro _ hwp; exact hwp.2
   | step_ite_nondet_true => intro _ hwp; exact hwp.1
   | step_ite_nondet_false => intro _ hwp; exact hwp.2
-  | step_loop_enter _ _ =>
+  | step_loop_enter _ =>
     intro labels hwp
     -- Goal: .seq (.block .none ρ.store (.stmts body ρ')) [.loop ...] covers labels.
     -- The .block .none label doesn't extend the labels list (Config.exitsCoveredByBlocks's
@@ -595,7 +731,6 @@ theorem step_preserves_exitsCoveredByBlocks
     intro labels hwp
     -- hwp : l ∈ labels (from .stmt (.exit l)), goal: .exiting (.some l) covers labels = l ∈ labels
     exact hwp
-  | step_funcDecl => intro _ _; trivial
   | step_typeDecl => intro _ _; trivial
   | step_stmts_nil => intro _ _; trivial
   | step_stmts_cons => intro _ hwp; exact ⟨hwp.1, hwp.2⟩
@@ -604,7 +739,7 @@ theorem step_preserves_exitsCoveredByBlocks
   | step_seq_exit => intro _ hwp; exact hwp.1
   | step_block_body _ ih =>
     intro labels hwp
-    rename_i inner inner' label σ_parent e_parent _
+    rename_i inner inner' label σ_parent _
     cases label with
     | none => exact ih labels hwp
     | some l => exact ih (l :: labels) hwp
@@ -614,7 +749,7 @@ theorem step_preserves_exitsCoveredByBlocks
     intro labels hwp
     exact block_exit_mismatch_unfold (P := P) (CmdT := CmdT) hwp hne
 
-omit [HasOps P] in
+omit [HasOps P] [HasInt P] [HasIntOps P] [HasFvars P] in
 /-- Well-paired statements cannot escape via `.exiting`:
     if all exits in `s` are caught by enclosing blocks
     (`s.exitsCoveredByBlocks []`), then `s` never reaches `.exiting`. -/
@@ -622,12 +757,12 @@ theorem exitsCoveredByBlocks_noEscape
     (s : Stmt P CmdT)
     (hwp : s.exitsCoveredByBlocks []) :
     ∀ (ρ : Env P) (lbl : String) (ρ' : Env P),
-      ¬ StepStmtStar P EvalCmd extendEval (.stmt s ρ) (.exiting lbl ρ') := by
+      ¬ StepStmtStar P EvalCmd (.stmt s ρ) (.exiting lbl ρ') := by
   intro ρ lbl ρ' hstar
   -- Prove Config.exitsCoveredByBlocks [] is preserved, then show .exiting contradicts it.
   suffices h_pres : ∀ c₁ c₂,
       c₁.exitsCoveredByBlocks ([] : List String) →
-      StepStmtStar P EvalCmd extendEval c₁ c₂ →
+      StepStmtStar P EvalCmd c₁ c₂ →
       c₂.exitsCoveredByBlocks ([] : List String) by
     have hwp' := h_pres _ _ (show Config.exitsCoveredByBlocks [] (.stmt s ρ) from hwp) hstar
     -- Config.exitsCoveredByBlocks [] (.exiting lbl ρ') requires lbl ∈ [] (False).
@@ -636,21 +771,21 @@ theorem exitsCoveredByBlocks_noEscape
   induction hstar_c with
   | refl => exact hwp_c
   | step _ _ _ hstep _ ih =>
-    exact ih (step_preserves_exitsCoveredByBlocks P EvalCmd extendEval [] _ _ hstep hwp_c)
+    exact ih (step_preserves_exitsCoveredByBlocks P EvalCmd [] _ _ hstep hwp_c)
 
-omit [HasOps P] in
+omit [HasOps P] [HasInt P] [HasIntOps P] [HasFvars P] in
 /-- Well-paired statement lists cannot escape via `.exiting`:
     if all exits in `bss` are caught by enclosing blocks
     (`Block.exitsCoveredByBlocks [] bss`), then `.stmts bss ρ` never reaches `.exiting`. -/
 theorem block_exitsCoveredByBlocks_noEscape
     (bss : List (Stmt P CmdT))
-    (hwp : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] bss) :
+    (hwp : Block.exitsCoveredByBlocks [] bss) :
     ∀ (ρ : Env P) (lbl : String) (ρ' : Env P),
-      ¬ StepStmtStar P EvalCmd extendEval (.stmts bss ρ) (.exiting lbl ρ') := by
+      ¬ StepStmtStar P EvalCmd (.stmts bss ρ) (.exiting lbl ρ') := by
   intro ρ lbl ρ' hstar
   suffices h_pres : ∀ c₁ c₂,
       c₁.exitsCoveredByBlocks ([] : List String) →
-      StepStmtStar P EvalCmd extendEval c₁ c₂ →
+      StepStmtStar P EvalCmd c₁ c₂ →
       c₂.exitsCoveredByBlocks ([] : List String) by
     have hwp' := h_pres _ _ (show Config.exitsCoveredByBlocks [] (.stmts bss ρ) from hwp) hstar
     exact absurd hwp' (by simp [Config.exitsCoveredByBlocks])
@@ -658,29 +793,29 @@ theorem block_exitsCoveredByBlocks_noEscape
   induction hstar_c with
   | refl => exact hwp_c
   | step _ _ _ hstep _ ih =>
-    exact ih (step_preserves_exitsCoveredByBlocks P EvalCmd extendEval [] _ _ hstep hwp_c)
+    exact ih (step_preserves_exitsCoveredByBlocks P EvalCmd [] _ _ hstep hwp_c)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- If `.block l inner →* cfg`, the inner config never reaches `.exiting`,
     and `cfg` is neither terminal nor exiting, then `cfg = .block l inner'`
     for some `inner'` with `inner →* inner'`. -/
 theorem block_star_extract_inner
-    {l : Option String} {σ_parent : SemanticStore P} {e_parent : SemanticEval P}
+    {l : Option String} {σ_parent : SemanticStore P}
     {inner cfg : Config P CmdT}
-    (h_star : StepStmtStar P EvalCmd extendEval (.block l σ_parent e_parent inner) cfg)
-    (h_no_exit : ∀ lbl ρ', ¬ StepStmtStar P EvalCmd extendEval
+    (h_star : StepStmtStar P EvalCmd (.block l σ_parent inner) cfg)
+    (h_no_exit : ∀ lbl ρ', ¬ StepStmtStar P EvalCmd
         inner (.exiting lbl ρ'))
     (h_not_terminal : ∀ ρ', cfg ≠ .terminal ρ')
     (h_not_exiting : ∀ lbl ρ', cfg ≠ .exiting lbl ρ') :
-    ∃ inner', cfg = .block l σ_parent e_parent inner' ∧
-      StepStmtStar P EvalCmd extendEval inner inner' := by
+    ∃ inner', cfg = .block l σ_parent inner' ∧
+      StepStmtStar P EvalCmd inner inner' := by
   suffices h_gen : ∀ c₁ c₂,
-      StepStmtStar P EvalCmd extendEval c₁ c₂ →
-      ∀ inner₀, c₁ = .block l σ_parent e_parent inner₀ →
-      (∀ lbl ρ', ¬ StepStmtStar P EvalCmd extendEval inner₀ (.exiting lbl ρ')) →
+      StepStmtStar P EvalCmd c₁ c₂ →
+      ∀ inner₀, c₁ = .block l σ_parent inner₀ →
+      (∀ lbl ρ', ¬ StepStmtStar P EvalCmd inner₀ (.exiting lbl ρ')) →
       (∀ ρ', c₂ ≠ .terminal ρ') → (∀ lbl ρ', c₂ ≠ .exiting lbl ρ') →
-      ∃ inner', c₂ = .block l σ_parent e_parent inner' ∧
-        StepStmtStar P EvalCmd extendEval inner₀ inner' from
+      ∃ inner', c₂ = .block l σ_parent inner' ∧
+        StepStmtStar P EvalCmd inner₀ inner' from
     h_gen _ _ h_star _ rfl h_no_exit h_not_terminal h_not_exiting
   intro c₁ c₂ h_star
   induction h_star with
@@ -689,7 +824,7 @@ theorem block_star_extract_inner
     intro inner₀ heq h_ne h_nt h_nx; subst heq
     cases hstep with
     | step_block_body h_inner_step =>
-      have h_ne' : ∀ lbl ρ', ¬ StepStmtStar P EvalCmd extendEval _ (.exiting lbl ρ') :=
+      have h_ne' : ∀ lbl ρ', ¬ StepStmtStar P EvalCmd _ (.exiting lbl ρ') :=
         fun lbl ρ' h => h_ne lbl ρ' (.step _ _ _ h_inner_step h)
       obtain ⟨inner', rfl, h_inner_star⟩ := ih _ rfl h_ne' h_nt h_nx
       exact ⟨inner', rfl, .step _ _ _ h_inner_step h_inner_star⟩
@@ -700,181 +835,64 @@ theorem block_star_extract_inner
     | step_block_exit_match => exact absurd (.refl _) (h_ne _ _)
     | step_block_exit_mismatch => exact absurd (.refl _) (h_ne _ _)
 
-/-! ## noFuncDecl preserves eval (small-step) -/
+/-! ## WF preservation along a run -/
+
+variable [HasFvar P] [HasSubstFvar P] [HasBoolOps P]
 
 omit [HasOps P] in
-/-- A single step preserves eval when noFuncDecl holds.
-    The only step that changes eval is step_funcDecl, which is excluded. -/
-private theorem step_preserves_eval_noFuncDecl
+/-- Single step preserves `Config.wfEval` via the step's factory equality. -/
+private theorem step_preserves_wfEval_wfExtend
     (c₁ c₂ : Config P CmdT)
-    (hstep : StepStmt P EvalCmd extendEval c₁ c₂)
-    (hnofd : Config.noFuncDecl c₁) :
-    c₂.getEnv.eval = c₁.getEnv.eval ∧ Config.noFuncDecl c₂ := by
-  suffices h_gen : ∀ c₁ c₂, StepStmt P EvalCmd extendEval c₁ c₂ →
-      ∀ (_ : Config.noFuncDecl c₁),
-      c₂.getEnv.eval = c₁.getEnv.eval ∧ Config.noFuncDecl c₂ by
-    exact h_gen c₁ c₂ hstep hnofd
-  intro c₁ c₂ hstep
-  induction hstep with
-  | step_cmd => intro _; exact ⟨rfl, trivial⟩
-  | step_block =>
-    intro hnofd
-    simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd ⊢
-    exact ⟨rfl, hnofd, rfl⟩
-  | step_ite_true =>
-    intro hnofd
-    simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd
-    exact ⟨rfl, hnofd.1, rfl⟩
-  | step_ite_false =>
-    intro hnofd
-    simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd
-    exact ⟨rfl, hnofd.2, rfl⟩
-  | step_ite_nondet_true =>
-    intro hnofd
-    simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd
-    exact ⟨rfl, hnofd.1, rfl⟩
-  | step_ite_nondet_false =>
-    intro hnofd
-    simp only [Config.noFuncDecl, Stmt.noFuncDecl, Bool.and_eq_true] at hnofd
-    exact ⟨rfl, hnofd.2, rfl⟩
-  | step_loop_enter =>
-    intro hnofd
-    simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd
-    refine ⟨rfl, ⟨⟨?_, ?_⟩, ?_⟩⟩
-    · -- Goal: Block.noFuncDecl body = true
-      exact hnofd
-    · -- Goal: ρ.eval = (.stmts body ρ').getEnv.eval where ρ' is hasFailure-modified ρ
-      rfl
-    · -- Goal: rest = [loop ...] has Block.noFuncDecl
-      simp [Block.noFuncDecl, Stmt.noFuncDecl, hnofd]
-  | step_loop_exit => intro _; exact ⟨rfl, trivial⟩
-  | step_loop_nondet_enter =>
-    intro hnofd
-    simp only [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd
-    refine ⟨rfl, ⟨⟨?_, ?_⟩, ?_⟩⟩
-    · exact hnofd
-    · rfl
-    · simp [Block.noFuncDecl, Stmt.noFuncDecl, hnofd]
-  | step_loop_nondet_exit => intro _; exact ⟨rfl, trivial⟩
-  | step_exit => intro _; exact ⟨rfl, trivial⟩
-  | step_funcDecl =>
-    intro hnofd; simp [Config.noFuncDecl, Stmt.noFuncDecl] at hnofd
-  | step_typeDecl => intro _; exact ⟨rfl, trivial⟩
-  | step_stmts_nil => intro _; exact ⟨rfl, trivial⟩
-  | step_stmts_cons =>
-    intro hnofd
-    refine ⟨rfl, ?_⟩
-    simp only [Config.noFuncDecl, Block.noFuncDecl, Bool.and_eq_true] at hnofd ⊢
-    exact hnofd
-  | step_seq_inner _ ih =>
-    intro hnofd
-    have ⟨heq, hnofd'⟩ := ih hnofd.1
-    exact ⟨heq, hnofd', hnofd.2⟩
-  | step_seq_done => intro hnofd; exact ⟨rfl, hnofd.2⟩
-  | step_seq_exit => intro _; exact ⟨rfl, trivial⟩
-  | step_block_body _ ih =>
-    intro hnofd
-    -- hnofd : inner.noFuncDecl ∧ e_parent = inner.getEnv.eval
-    have ⟨heq_inner, hnofd_inner⟩ := ih hnofd.1
-    -- heq_inner : inner'.getEnv.eval = inner.getEnv.eval
-    refine ⟨heq_inner, hnofd_inner, ?_⟩
-    -- Goal: e_parent = inner'.getEnv.eval
-    rw [heq_inner]; exact hnofd.2
-  | step_block_done =>
-    intro hnofd
-    refine ⟨?_, trivial⟩
-    simp only [Config.getEnv]
-    exact hnofd.2
-  | step_block_exit_match =>
-    intro hnofd
-    refine ⟨?_, trivial⟩
-    simp only [Config.getEnv]
-    exact hnofd.2
-  | step_block_exit_mismatch =>
-    intro hnofd
-    refine ⟨?_, trivial⟩
-    simp only [Config.getEnv]
-    exact hnofd.2
+    (hstep : StepStmt P EvalCmd c₁ c₂)
+    (hwf : c₁.wfEval) :
+    c₂.wfEval := by
+  show WellFormedSemanticEval (P := P) c₂.getEnv.factory
+  rw [← step_preserves_factory P EvalCmd _ _ hstep]
+  exact hwf
 
 omit [HasOps P] in
-/-- When a statement has no function declarations, small-step execution
-    preserves the evaluator. -/
-theorem smallStep_noFuncDecl_preserves_eval
-    (s : Stmt P CmdT) (ρ ρ' : Env P)
-    (hnofd : Stmt.noFuncDecl s = true)
-    (hstar : StepStmtStar P EvalCmd extendEval (.stmt s ρ) (.terminal ρ')) :
-    ρ'.eval = ρ.eval := by
-  suffices h_gen : ∀ c₁ c₂,
-      Config.noFuncDecl c₁ →
-      StepStmtStar P EvalCmd extendEval c₁ c₂ →
-      c₂.getEnv.eval = c₁.getEnv.eval by
-    exact h_gen _ _ (show Config.noFuncDecl (.stmt s ρ) from hnofd) hstar
-  intro c₁ c₂ hnofd_c hstar_c
-  induction hstar_c with
-  | refl => rfl
-  | step _ mid _ hstep _ ih =>
-    have ⟨heq, hnofd_mid⟩ := step_preserves_eval_noFuncDecl P EvalCmd extendEval _ _ hstep hnofd_c
-    rw [ih hnofd_mid, heq]
+/-- `Config.wfEval` is preserved under `StepStmtStar`. -/
+theorem star_preserves_cfg_wfEval
+    {c₁ c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd c₁ c₂)
+    (hwf : c₁.wfEval) :
+    c₂.wfEval := by
+  induction hstar with
+  | refl => exact hwf
+  | step _ _ _ hstep _ ih =>
+    exact ih (step_preserves_wfEval_wfExtend P EvalCmd _ _ hstep hwf)
 
 omit [HasOps P] in
-/-- When a block has no function declarations, small-step execution
-    preserves the evaluator. -/
-theorem smallStep_noFuncDecl_preserves_eval_block
-    (bss : List (Stmt P CmdT)) (ρ ρ' : Env P)
-    (hnofd : Block.noFuncDecl bss = true)
-    (hstar : StepStmtStar P EvalCmd extendEval (.stmts bss ρ) (.terminal ρ')) :
-    ρ'.eval = ρ.eval := by
-  suffices h_gen : ∀ c₁ c₂,
-      Config.noFuncDecl c₁ →
-      StepStmtStar P EvalCmd extendEval c₁ c₂ →
-      c₂.getEnv.eval = c₁.getEnv.eval by
-    exact h_gen _ _ (show Config.noFuncDecl (.stmts bss ρ) from hnofd) hstar
-  intro c₁ c₂ hnofd_c hstar_c
-  induction hstar_c with
-  | refl => rfl
-  | step _ mid _ hstep _ ih =>
-    have ⟨heq, hnofd_mid⟩ := step_preserves_eval_noFuncDecl P EvalCmd extendEval _ _ hstep hnofd_c
-    rw [ih hnofd_mid, heq]
+/-- `WellFormedSemanticEval` of the factory is preserved under `StepStmtStar`
+    from a top-level `.stmt` start, using factory preservation. -/
+theorem star_preserves_wfEval
+    {s : Stmt P CmdT} {ρ : Env P} {c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd (.stmt s ρ) c₂)
+    (hwf : WellFormedSemanticEval (P := P) ρ.factory) :
+    WellFormedSemanticEval (P := P) c₂.getEnv.factory := by
+  have h := star_preserves_cfg_wfEval P EvalCmd hstar
+    (show Config.wfEval (P := P) (CmdT := CmdT) (Config.stmt s ρ) from hwf)
+  exact h
 
 omit [HasOps P] in
-/-- Alias for `smallStep_noFuncDecl_preserves_eval_block`, matching the
-    `Block.noFuncDecl` naming convention. -/
-theorem block_noFuncDecl_preserves_eval
-    (ss : List (Stmt P CmdT)) (ρ ρ' : Env P)
-    (hnofd : Block.noFuncDecl ss = true)
-    (hterm : StepStmtStar P EvalCmd extendEval (.stmts ss ρ) (.terminal ρ')) :
-    ρ'.eval = ρ.eval :=
-  smallStep_noFuncDecl_preserves_eval_block P EvalCmd extendEval ss ρ ρ' hnofd hterm
-
-omit [HasOps P] in
-/-- `.exiting` variant: When a block has no function declarations, an exiting
-    execution preserves the evaluator. -/
-theorem block_noFuncDecl_preserves_eval_exiting
-    (ss : List (Stmt P CmdT)) (ρ ρ' : Env P) (lbl : String)
-    (hnofd : Block.noFuncDecl ss = true)
-    (hexit : StepStmtStar P EvalCmd extendEval (.stmts ss ρ) (.exiting lbl ρ')) :
-    ρ'.eval = ρ.eval := by
-  suffices h_gen : ∀ c₁ c₂,
-      Config.noFuncDecl c₁ →
-      StepStmtStar P EvalCmd extendEval c₁ c₂ →
-      c₂.getEnv.eval = c₁.getEnv.eval by
-    exact h_gen _ _ (show Config.noFuncDecl (.stmts ss ρ) from hnofd) hexit
-  intro c₁ c₂ hnofd_c hstar_c
-  induction hstar_c with
-  | refl => rfl
-  | step _ mid _ hstep _ ih =>
-    have ⟨heq, hnofd_mid⟩ := step_preserves_eval_noFuncDecl P EvalCmd extendEval _ _ hstep hnofd_c
-    rw [ih hnofd_mid, heq]
-
+/-- Block-list variant of `star_preserves_wfEval`: starting at `.stmts ss ρ`. -/
+theorem star_preserves_wfEval_block
+    {ss : List (Stmt P CmdT)} {ρ : Env P} {c₂ : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd (.stmts ss ρ) c₂)
+    (hwf : WellFormedSemanticEval (P := P) ρ.factory) :
+    WellFormedSemanticEval (P := P) c₂.getEnv.factory := by
+  have h := star_preserves_cfg_wfEval P EvalCmd hstar
+    (show Config.wfEval (P := P) (CmdT := CmdT) (Config.stmts ss ρ) from hwf)
+  exact h
 
 end -- section
 
 section
 
-variable (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P]
-variable (extendEval : ExtendEval P)
+variable (P : PureExpr) [HasFvar P] [HasFvars P] [HasBool P]
+  [HasInt P] [HasIntOps P] [HasOps P]
 
-omit [HasFvar P] [HasOps P] [HasBool P] [HasBoolOps P] in
+omit [HasFvar P] [HasBool P] [HasOps P] [HasFvars P] in
 /-- If a config has no matching assert, then `isAtAssert` doesn't match. -/
 private theorem noMatchingAssert_not_isAtAssert
     (cfg : Config P (Cmd P)) (label : String) (expr : P.Expr)
@@ -888,12 +906,10 @@ private theorem noMatchingAssert_not_isAtAssert
   | .stmt (.cmd (.assume ..)) _
   | .stmt (.cmd (.cover ..)) _
   | .stmt (.block ..) _ | .stmt (.ite ..) _
-  | .stmt (.exit ..) _ | .stmt (.funcDecl ..) _ | .stmt (.typeDecl ..) _ =>
+  | .stmt (.exit ..) _ | .stmt (.typeDecl ..) _ =>
     simp [isAtAssert]
-  | .stmt (.loop _ m inv _ _) _ =>
-    simp [Config.noMatchingAssert, Stmt.noMatchingAssert] at hno
-    intro hat
-    exact hno.1 label expr hat rfl
+  | .stmt (.loop _ _ inv _ _) _ =>
+    simp [isAtAssert]
   | .stmts [] _ => simp [isAtAssert]
   | .stmts ((.cmd (.assert l _ _)) :: _) _ =>
     simp [Config.noMatchingAssert, Stmt.noMatchingAssert.Stmts.noMatchingAssert, Stmt.noMatchingAssert] at hno
@@ -903,18 +919,15 @@ private theorem noMatchingAssert_not_isAtAssert
   | .stmts ((.cmd (.cover ..)) :: _) _
   | .stmts ((.block ..) :: _) _ | .stmts ((.ite ..) :: _) _
   | .stmts ((.exit ..) :: _) _
-  | .stmts ((.funcDecl ..) :: _) _ | .stmts ((.typeDecl ..) :: _) _ =>
+  | .stmts ((.typeDecl ..) :: _) _ =>
     simp [isAtAssert]
-  | .stmts ((.loop _ m inv _ _) :: _) _ =>
-    simp [Config.noMatchingAssert, Stmt.noMatchingAssert.Stmts.noMatchingAssert,
-      Stmt.noMatchingAssert] at hno
-    intro hat
-    exact hno.1.1 label expr hat rfl
+  | .stmts ((.loop _ _ inv _ _) :: _) _ =>
+    simp [isAtAssert]
   | .terminal _ | .exiting _ _ => simp [isAtAssert]
-  | .block _ _ _ inner => exact noMatchingAssert_not_isAtAssert inner label expr hno
+  | .block _ _ inner => exact noMatchingAssert_not_isAtAssert inner label expr hno
   | .seq inner _ => exact noMatchingAssert_not_isAtAssert inner label expr hno.1
 
-omit [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P] in
+omit [HasFvar P] [HasBool P] [HasOps P] [HasFvars P] in
 /-- Helper: `Stmts.noMatchingAssert` for concatenation. -/
 private theorem stmts_noMatchingAssert_append
     (ss₁ ss₂ : List (Stmt P (Cmd P))) (label : String)
@@ -926,10 +939,11 @@ private theorem stmts_noMatchingAssert_append
   | cons s ss ih =>
     exact ⟨h₁.1, ih h₁.2⟩
 
+omit [HasFvars P] [HasInt P] [HasIntOps P] [HasOps P] in
 /-- A single step preserves `Config.noMatchingAssert`. -/
-private def step_preserves_noMatchingAssert
+private theorem step_preserves_noMatchingAssert [HasBoolOps P]
     (c₁ c₂ : Config P (Cmd P)) (label : String)
-    (hstep : StepStmt P (EvalCmd P) extendEval c₁ c₂)
+    (hstep : StepStmt P (EvalCmd P) c₁ c₂)
     (hno : c₁.noMatchingAssert label) :
     c₂.noMatchingAssert label := by
   cases hstep with
@@ -950,7 +964,6 @@ private def step_preserves_noMatchingAssert
     exact ⟨hno.2, hno, True.intro⟩
   | step_loop_nondet_exit => trivial
   | step_exit => trivial
-  | step_funcDecl => trivial
   | step_typeDecl => trivial
   | step_stmts_nil => trivial
   | step_stmts_cons => exact ⟨hno.1, hno.2⟩
@@ -968,19 +981,19 @@ private def step_preserves_noMatchingAssert
   | step_block_exit_match => trivial
   | step_block_exit_mismatch => trivial
 
-omit [HasOps P] in
+omit [HasOps P] [HasInt P] [HasIntOps P] [HasFvars P] in
 /-- The syntactic check implies that no reachable config from `st`
     satisfies `isAtAssert` for the given label and expression. -/
-theorem noMatchingAssert_implies_no_reachable_assert
+theorem noMatchingAssert_implies_no_reachable_assert [HasBoolOps P]
     (st : Stmt P (Cmd P)) (label : String) (expr : P.Expr)
     (hno : st.noMatchingAssert label) :
     ∀ (ρ : Env P) (cfg : Config P (Cmd P)),
-      StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ) cfg →
+      StepStmtStar P (EvalCmd P) (.stmt st ρ) cfg →
       ¬ isAtAssert P cfg ⟨label, expr⟩ := by
   intro ρ cfg hstar
   suffices h_pres : ∀ (c₁ c₂ : Config P (Cmd P)),
       c₁.noMatchingAssert label →
-      StepStmtStar P (EvalCmd P) extendEval c₁ c₂ →
+      StepStmtStar P (EvalCmd P) c₁ c₂ →
       c₂.noMatchingAssert label from
     noMatchingAssert_not_isAtAssert P cfg label expr
       (h_pres (.stmt st ρ) cfg (show Config.noMatchingAssert (.stmt st ρ) label from hno) hstar)
@@ -988,23 +1001,23 @@ theorem noMatchingAssert_implies_no_reachable_assert
   induction hstar_c with
   | refl => exact hno_c
   | step _ _ _ hstep _ ih =>
-    exact ih (step_preserves_noMatchingAssert (P := P) (extendEval := extendEval) _ _ _ hstep hno_c)
+    exact ih (step_preserves_noMatchingAssert (P := P) _ _ _ hstep hno_c)
 
 /-! ## isAtAssert inversion lemmas -/
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- If execution inside a block reaches a config where isAtAssert holds,
     then the config must be `.block label inner` where `inner` is reachable
     from the block's body and satisfies `isAtAssert`. -/
-theorem block_isAtAssert_inner
-    (label : Option String) (σ_parent : SemanticStore P) (e_parent : SemanticEval P)
+theorem block_isAtAssert_inner [HasBoolOps P]
+    (label : Option String) (σ_parent : SemanticStore P)
     (inner₀ cfg : Config P (Cmd P)) (a : AssertId P)
-    (hstar : StepStmtStar P (EvalCmd P) extendEval (.block label σ_parent e_parent inner₀) cfg)
+    (hstar : StepStmtStar P (EvalCmd P) (.block label σ_parent inner₀) cfg)
     (hat : isAtAssert P cfg a) :
-    ∃ inner, cfg = .block label σ_parent e_parent inner ∧
-      StepStmtStar P (EvalCmd P) extendEval inner₀ inner ∧
+    ∃ inner, cfg = .block label σ_parent inner ∧
+      StepStmtStar P (EvalCmd P) inner₀ inner ∧
       isAtAssert P inner a := by
-  generalize hsrc : Config.block label σ_parent e_parent inner₀ = src at hstar
+  generalize hsrc : Config.block label σ_parent inner₀ = src at hstar
   induction hstar generalizing inner₀ with
   | refl => subst hsrc; exact ⟨inner₀, rfl, .refl _, hat⟩
   | step _ mid _ hstep hrest ih =>
@@ -1022,19 +1035,19 @@ theorem block_isAtAssert_inner
       | refl => exact absurd hat (by simp [isAtAssert])
       | step _ _ _ h _ => exact absurd h (by intro h; cases h)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- If execution inside a seq reaches a config where isAtAssert holds,
     then either the inner config matches (first disjunct), or the inner
     completed and we're in the tail (second disjunct). -/
-theorem seq_isAtAssert_cases
+theorem seq_isAtAssert_cases [HasBoolOps P]
     (inner₀ cfg : Config P (Cmd P)) (ss : List (Stmt P (Cmd P))) (a : AssertId P)
-    (hstar : StepStmtStar P (EvalCmd P) extendEval (.seq inner₀ ss) cfg)
+    (hstar : StepStmtStar P (EvalCmd P) (.seq inner₀ ss) cfg)
     (hat : isAtAssert P cfg a) :
     (∃ inner, cfg = .seq inner ss ∧
-      StepStmtStar P (EvalCmd P) extendEval inner₀ inner ∧
+      StepStmtStar P (EvalCmd P) inner₀ inner ∧
       isAtAssert P inner a) ∨
-    (∃ ρ', StepStmtStar P (EvalCmd P) extendEval inner₀ (.terminal ρ') ∧
-      StepStmtStar P (EvalCmd P) extendEval (.stmts ss ρ') cfg ∧
+    (∃ ρ', StepStmtStar P (EvalCmd P) inner₀ (.terminal ρ') ∧
+      StepStmtStar P (EvalCmd P) (.stmts ss ρ') cfg ∧
       isAtAssert P cfg a) := by
   generalize hsrc : Config.seq inner₀ ss = src at hstar
   induction hstar generalizing inner₀ ss with
@@ -1053,21 +1066,22 @@ theorem seq_isAtAssert_cases
       | refl => exact absurd hat (by simp [isAtAssert])
       | step _ _ _ h _ => exact absurd h (by intro h; cases h)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- For a single assert command, any config reachable from `.stmts [assert] ρ`
-    that satisfies `isAtAssert` has getEval = ρ.eval and getStore = ρ.store. -/
-theorem assert_tail_getEvalStore
+    that satisfies `isAtAssert` has getStore = ρ.store.  (Assert steps are
+    no-ops on the store.) -/
+theorem assert_tail_getStore [HasBoolOps P]
     (ρ : Env P) (l : String) (e : P.Expr) (md : MetaData P)
     (cfg : Config P (Cmd P)) (a : AssertId P)
-    (hstar : StepStmtStar P (EvalCmd P) extendEval
+    (hstar : StepStmtStar P (EvalCmd P)
       (.stmts [Stmt.cmd (Cmd.assert l e md)] ρ) cfg)
     (hat : isAtAssert P cfg a) :
-    cfg.getEval = ρ.eval ∧ cfg.getStore = ρ.store := by
+    cfg.getStore = ρ.store := by
   cases hstar with
-  | refl => exact ⟨rfl, rfl⟩
+  | refl => exact rfl
   | step _ _ _ h1 hr1 => cases h1 with
     | step_stmts_cons => cases hr1 with
-      | refl => exact ⟨rfl, rfl⟩
+      | refl => exact rfl
       | step _ _ _ h2 hr2 =>
         cases h2 with
         | step_seq_inner hi =>
@@ -1096,39 +1110,7 @@ evaluator `EvalCmd`, and an `IsAtAssert` predicate.  Language extensions
 `IsAtAssert` predicate together with a few simple hypotheses relating it
 to the loop / seq / block structure of configurations. -/
 
-omit [HasFvar P] [HasOps P] in
-/-- Helper: when all asserts at a loop config pass (via `hv`), the
-    loop-step's `hasInvFailure` boolean is forced to `false`. -/
-theorem loop_step_hasInvFailure_false
-    {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
-    (IsAtAssert : Config P CmdT → AssertId P → Prop)
-    (h_IsAtAssert_loop_inv : ∀ {g m inv body md ρ lbl e},
-      (lbl, e) ∈ inv →
-      IsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lbl, e⟩)
-    {c : Config P CmdT} {ρ : Env P}
-    {inv : List (String × P.Expr)} {guard : ExprOrNondet P}
-    {m : Option P.Expr} {body : List (Stmt P CmdT)} {md : MetaData P}
-    {hasInvFailure : Bool}
-    (hc_shape : c = .stmt (.loop guard m inv body md) ρ)
-    (hv : ∀ a cfg, StepStmtStar P EvalCmd extendEval c cfg →
-      IsAtAssert cfg a → cfg.getEval cfg.getStore a.expr = some HasBool.tt)
-    (hff_iff : hasInvFailure = true ↔ ∃ le, le ∈ inv ∧
-      ρ.eval ρ.store le.snd = some HasBool.ff) :
-    hasInvFailure = false := by
-  cases hb : hasInvFailure with
-  | false => rfl
-  | true =>
-    exfalso
-    rw [hb] at hff_iff
-    have ⟨⟨lbl, e⟩, hmem, he_ff⟩ := hff_iff.mp rfl
-    have hat : IsAtAssert c ⟨lbl, e⟩ := hc_shape ▸ h_IsAtAssert_loop_inv hmem
-    have htt := hv ⟨lbl, e⟩ c (.refl _) hat
-    rw [hc_shape] at htt
-    simp only [Config.getEval, Config.getStore, Config.getEnv] at htt
-    rw [he_ff] at htt
-    exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
-
-omit [HasFvar P] [HasOps P] in
+omit [HasFvar P] [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Single-step: if hasFailure is false and all reachable asserts pass,
     then hasFailure stays false after one step.
 
@@ -1140,21 +1122,18 @@ theorem step_preserves_noFailure
     (IsAtAssert : Config P CmdT → AssertId P → Prop)
     (h_failure_implies_assert_ff :
       ∀ {ρ : Env P} {c : CmdT} {σ'},
-        EvalCmd ρ.eval ρ.store c σ' true →
+        EvalCmd ρ.factory ρ.store c σ' true →
         ∃ a : AssertId P, IsAtAssert (.stmt (.cmd c) ρ) a ∧
-          ρ.eval ρ.store a.expr = some HasBool.ff)
-    (h_IsAtAssert_loop : ∀ {g m inv body md ρ lbl e},
-      (lbl, e) ∈ inv →
-      IsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lbl, e⟩)
+          P.eval ρ.factory ρ.store a.expr = some HasBool.ff)
     (h_IsAtAssert_seq : ∀ {inner ss a},
       IsAtAssert inner a → IsAtAssert (.seq inner ss) a)
-    (h_IsAtAssert_block : ∀ {label σ_parent e_parent inner a},
-      IsAtAssert inner a → IsAtAssert (.block label σ_parent e_parent inner) a)
+    (h_IsAtAssert_block : ∀ {label σ_parent inner a},
+      IsAtAssert inner a → IsAtAssert (.block label σ_parent inner) a)
     (c₁ c₂ : Config P CmdT)
-    (hv : ∀ a cfg, StepStmtStar P EvalCmd extendEval c₁ cfg →
-      IsAtAssert cfg a → cfg.getEval cfg.getStore a.expr = some HasBool.tt)
+    (hv : ∀ a cfg, StepStmtStar P EvalCmd c₁ cfg →
+      IsAtAssert cfg a → P.eval cfg.getEnv.factory cfg.getStore a.expr = some HasBool.tt)
     (hnf : c₁.getEnv.hasFailure = false)
-    (hstep : StepStmt P EvalCmd extendEval c₁ c₂) :
+    (hstep : StepStmt P EvalCmd c₁ c₂) :
     c₂.getEnv.hasFailure = false := by
   induction hstep with
   | step_cmd hcmd =>
@@ -1166,43 +1145,38 @@ theorem step_preserves_noFailure
       exfalso
       have ⟨a, hat, hff⟩ := h_failure_implies_assert_ff (h ▸ hcmd)
       have htt := hv a _ (.refl _) hat
-      simp only [Config.getEval, Config.getStore, Config.getEnv] at htt
+      simp only [Config.getStore, Config.getEnv] at htt
       rw [hff] at htt
       exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
-  | step_block | step_funcDecl => simp [Config.getEnv]; exact hnf
-  | step_loop_enter _ _ hff_iff _
-  | step_loop_exit _ _ hff_iff _
-  | step_loop_nondet_enter _ hff_iff | step_loop_nondet_exit _ hff_iff =>
-    simp only [Config.getEnv]
-    have hinv := loop_step_hasInvFailure_false (P := P) (extendEval := extendEval)
-      IsAtAssert h_IsAtAssert_loop rfl hv hff_iff
-    simp [Config.getEnv] at hnf
-    rw [hnf, Bool.false_or]; exact hinv
+  | step_block => simp [Config.getEnv]; exact hnf
+  | step_loop_enter _ | step_loop_exit _
+  | step_loop_nondet_enter | step_loop_nondet_exit =>
+    simp only [Config.getEnv] at hnf ⊢; exact hnf
   | step_seq_inner h ih =>
     exact ih
       (fun a cfg hr hat =>
-        hv a (.seq cfg _) (seq_inner_star P EvalCmd extendEval _ _ _ hr) (h_IsAtAssert_seq hat)) hnf
+        hv a (.seq cfg _) (seq_inner_star P EvalCmd _ _ _ hr) (h_IsAtAssert_seq hat)) hnf
   | step_block_body h ih =>
     exact ih
       (fun a cfg hr hat =>
-        hv a (.block _ _ _ cfg) (block_inner_star P EvalCmd extendEval _ _ _ _ _ hr) (h_IsAtAssert_block hat)) hnf
+        hv a (.block _ _ cfg) (block_inner_star P EvalCmd _ _ _ _ hr) (h_IsAtAssert_block hat)) hnf
   | _ => intros; exact hnf
 
-omit [HasOps P] in
-theorem allAssertsValid_preserves_noFailure
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+theorem allAssertsValid_preserves_noFailure [HasBoolOps P]
     {ρ₀ ρ' : Env P}
     (st : Stmt P (Cmd P))
     (hvalid : ∀ (a : AssertId P) (cfg : Config P (Cmd P)),
-      StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ₀) cfg →
-      isAtAssert P cfg a → cfg.getEval cfg.getStore a.expr = some HasBool.tt)
+      StepStmtStar P (EvalCmd P) (.stmt st ρ₀) cfg →
+      isAtAssert P cfg a → P.eval cfg.getEnv.factory cfg.getStore a.expr = some HasBool.tt)
     (hf₀ : ρ₀.hasFailure = false)
-    (hstar : StepStmtStar P (EvalCmd P) extendEval (.stmt st ρ₀) (.terminal ρ')) :
+    (hstar : StepStmtStar P (EvalCmd P) (.stmt st ρ₀) (.terminal ρ')) :
     ρ'.hasFailure = false := by
   suffices h_gen : ∀ c₁ c₂,
-      (∀ a cfg, StepStmtStar P (EvalCmd P) extendEval c₁ cfg →
-        isAtAssert P cfg a → cfg.getEval cfg.getStore a.expr = some HasBool.tt) →
+      (∀ a cfg, StepStmtStar P (EvalCmd P) c₁ cfg →
+        isAtAssert P cfg a → P.eval cfg.getEnv.factory cfg.getStore a.expr = some HasBool.tt) →
       c₁.getEnv.hasFailure = false →
-      StepStmtStar P (EvalCmd P) extendEval c₁ c₂ →
+      StepStmtStar P (EvalCmd P) c₁ c₂ →
       c₂.getEnv.hasFailure = false by
     exact h_gen _ _ hvalid hf₀ hstar
   intro c₁ c₂ hv hnf hstar_c
@@ -1211,12 +1185,11 @@ theorem allAssertsValid_preserves_noFailure
   | step _ mid _ hstep _ ih =>
     refine ih
       (fun a cfg h hat => hv a _ (.step _ _ _ hstep h) hat)
-      (step_preserves_noFailure (P := P) (extendEval := extendEval)
+      (step_preserves_noFailure (P := P)
         (isAtAssert P)
         (fun hcmd => by
           cases hcmd with
           | eval_assert_fail hff _ => exact ⟨⟨_, _⟩, ⟨rfl, rfl⟩, hff⟩)
-        (fun hmem => hmem)
         (fun h => h)
         (fun h => h)
         _ _ hv hnf hstep)
@@ -1231,10 +1204,9 @@ same `store` and `eval` in the output).
 
 private theorem step_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
-  {extendEval : ExtendEval P}
   [HasBool P] [HasBoolOps P] [HasOps P]
   {c c' : Config P CmdT}
-  (hstep : StepStmt P EvalCmd extendEval c c')
+  (hstep : StepStmt P EvalCmd c c')
   (hf : c.getEnv.hasFailure = true) :
   c'.getEnv.hasFailure = true := by
   induction hstep with
@@ -1243,13 +1215,12 @@ private theorem step_hasFailure_monotone
 
 theorem EvalStmtSmall_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
-  {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {s : Stmt P CmdT}
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]:
-  EvalStmtSmall P EvalCmd extendEval ρ s ρ' →
+  [HasBool P] [HasBoolOps P] [HasOps P]:
+  EvalStmtSmall P EvalCmd ρ s ρ' →
   ρ.hasFailure = true → ρ'.hasFailure = true := by
   intro Heval Hf
-  suffices h_gen : ∀ c c', StepStmtStar P EvalCmd extendEval c c' →
+  suffices h_gen : ∀ c c', StepStmtStar P EvalCmd c c' →
       c.getEnv.hasFailure = true → c'.getEnv.hasFailure = true by
     exact h_gen _ _ Heval Hf
   intro c c' hstar hf
@@ -1259,13 +1230,12 @@ theorem EvalStmtSmall_hasFailure_monotone
 
 theorem EvalStmtsSmall_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
-  {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {ss : List (Stmt P CmdT)}
   [HasBool P] [HasBoolOps P] [HasOps P] :
-  EvalStmtsSmall P EvalCmd extendEval ρ ss ρ' →
+  EvalStmtsSmall P EvalCmd ρ ss ρ' →
   ρ.hasFailure = true → ρ'.hasFailure = true := by
   intro Heval Hf
-  suffices h_gen : ∀ c c', StepStmtStar P EvalCmd extendEval c c' →
+  suffices h_gen : ∀ c c', StepStmtStar P EvalCmd c c' →
       c.getEnv.hasFailure = true → c'.getEnv.hasFailure = true by
     exact h_gen _ _ Heval Hf
   intro c c' hstar hf
@@ -1275,10 +1245,9 @@ theorem EvalStmtsSmall_hasFailure_monotone
 
 theorem StepStmtStar_hasFailure_monotone
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
-  {extendEval : ExtendEval P}
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]
+  [HasBool P] [HasBoolOps P] [HasOps P]
   {c c' : Config P CmdT}
-  (hstar : StepStmtStar P EvalCmd extendEval c c')
+  (hstar : StepStmtStar P EvalCmd c c')
   (hf : c.getEnv.hasFailure = true) :
   c'.getEnv.hasFailure = true := by
   induction hstar with
@@ -1287,41 +1256,39 @@ theorem StepStmtStar_hasFailure_monotone
 
 theorem EvalStmtSmall_hasFailure_irrel
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
-  {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {s : Stmt P CmdT}
-  [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P]:
-  EvalStmtSmall P EvalCmd extendEval ρ s ρ' →
-  ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.eval = ρ.eval →
-  ∃ ρ₂', EvalStmtSmall P EvalCmd extendEval ρ₂ s ρ₂' ∧
-    ρ₂'.store = ρ'.store ∧ ρ₂'.eval = ρ'.eval :=
-  smallStep_hasFailure_irrel P EvalCmd extendEval s ρ ρ'
+  [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P]:
+  EvalStmtSmall P EvalCmd ρ s ρ' →
+  ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.factory = ρ.factory →
+  ∃ ρ₂', EvalStmtSmall P EvalCmd ρ₂ s ρ₂' ∧
+    ρ₂'.store = ρ'.store :=
+  smallStep_hasFailure_irrel P EvalCmd s ρ ρ'
 
 theorem EvalStmtsSmall_hasFailure_irrel
   {P : PureExpr} {CmdT : Type} {EvalCmd : EvalCmdParam P CmdT}
-  {extendEval : ExtendEval P}
   {ρ ρ' : Env P} {ss : List (Stmt P CmdT)}
-  [HasBool P] [HasBoolOps P] [HasOps P] :
-  EvalStmtsSmall P EvalCmd extendEval ρ ss ρ' →
-  ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.eval = ρ.eval →
-  ∃ ρ₂', EvalStmtsSmall P EvalCmd extendEval ρ₂ ss ρ₂' ∧
-    ρ₂'.store = ρ'.store ∧ ρ₂'.eval = ρ'.eval := by
-  intro Heval ρ₂ Hstore Heval_eq
+  [HasBool P] [HasBoolOps P] :
+  EvalStmtsSmall P EvalCmd ρ ss ρ' →
+  ∀ (ρ₂ : Env P), ρ₂.store = ρ.store → ρ₂.factory = ρ.factory →
+  ∃ ρ₂', EvalStmtsSmall P EvalCmd ρ₂ ss ρ₂' ∧
+    ρ₂'.store = ρ'.store := by
+  intro Heval ρ₂ Hstore Hfac
   -- Reuse the simulation-based proof from StmtSemantics
   -- smallStep_hasFailure_irrel works on .stmt configs; we need .stmts
   -- Use the same simulation technique directly
-  suffices h_sim : ∀ (c₁ c₂ : Config P CmdT),
+  suffices h_gen : ∀ (c₁ c₂ : Config P CmdT),
       ConfigSE P c₁ c₂ →
-      ∀ c₁', StepStmtStar P EvalCmd extendEval c₁ c₁' →
-      ∃ c₂', StepStmtStar P EvalCmd extendEval c₂ c₂' ∧ ConfigSE P c₁' c₂' by
-    have heq_init : ConfigSE P (.stmts ss ρ) (.stmts ss ρ₂) := ⟨rfl, Hstore.symm, Heval_eq.symm⟩
-    have ⟨c₂', hstar₂, heq₂⟩ := h_sim _ _ heq_init _ Heval
+      ∀ c₁', StepStmtStar P EvalCmd c₁ c₁' →
+      ∃ c₂', StepStmtStar P EvalCmd c₂ c₂' ∧ ConfigSE P c₁' c₂' by
+    have heq_init : ConfigSE P (.stmts ss ρ) (.stmts ss ρ₂) := ⟨rfl, Hstore.symm, Hfac.symm⟩
+    have ⟨c₂', hstar₂, heq₂⟩ := h_gen _ _ heq_init _ Heval
     match c₂', heq₂ with
-    | .terminal ρ₂', heq_t => exact ⟨ρ₂', hstar₂, heq_t.1.symm, heq_t.2.symm⟩
+    | .terminal ρ₂', heq_t => exact ⟨ρ₂', hstar₂, heq_t.1.symm⟩
   intro c₁ c₂ heq c₁' hstar
   induction hstar generalizing c₂ with
   | refl => exact ⟨c₂, .refl _, heq⟩
   | step _ mid _ hstep _ ih =>
-    have ⟨mid₂, hstep₂, heq_mid⟩ := step_simulation P EvalCmd extendEval _ _ _ hstep heq
+    have ⟨mid₂, hstep₂, heq_mid⟩ := step_simulation P EvalCmd _ _ _ hstep heq
     have ⟨c₂', hstar₂, heq_final⟩ := ih _ heq_mid
     exact ⟨c₂', .step _ _ _ hstep₂ hstar₂, heq_final⟩
 
@@ -1329,13 +1296,14 @@ end -- section
 
 section AssertSetProps
 
-variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P]
-variable {extendEval : ExtendEval P}
+variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P]
+  [HasInt P] [HasIntOps P] [HasOps P]
 
 /-! ### Assert command properties (statement-level) -/
 
+omit [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem eval_stmt_assert_store_cst :
-  EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l e md)) ρ' → ρ.store = ρ'.store := by
+  EvalStmtSmall P (EvalCmd P) ρ (.cmd (Cmd.assert l e md)) ρ' → ρ.store = ρ'.store := by
   intro Heval
   unfold EvalStmtSmall at Heval
   match Heval with
@@ -1344,26 +1312,17 @@ theorem eval_stmt_assert_store_cst :
     | refl => simp; exact eval_assert_store_cst hcmd
     | step _ _ _ hstep _ => exact absurd hstep (by intro h; cases h)
 
-omit [HasOps P] in
-theorem eval_stmt_assert_eval_cst :
-  EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l e md)) ρ' → ρ.eval = ρ'.eval := by
-  intro Heval
-  unfold EvalStmtSmall at Heval
-  match Heval with
-  | .step _ _ _ (.step_cmd _) hrest =>
-    cases hrest with
-    | refl => simp
-    | step _ _ _ hstep _ => exact absurd hstep (by intro h; cases h)
 
+omit [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem eval_stmts_assert_store_cst :
-  EvalStmtsSmall P (EvalCmd P) extendEval ρ [(.cmd (Cmd.assert l e md))] ρ' → ρ.store = ρ'.store := by
+  EvalStmtsSmall P (EvalCmd P) ρ [(.cmd (Cmd.assert l e md))] ρ' → ρ.store = ρ'.store := by
   intro Heval
-  have hstmt : EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l e md)) ρ' := by
+  have hstmt : EvalStmtSmall P (EvalCmd P) ρ (.cmd (Cmd.assert l e md)) ρ' := by
     unfold EvalStmtsSmall at Heval
     unfold EvalStmtSmall
     match Heval with
     | .step _ _ _ .step_stmts_cons hrest =>
-      have ⟨ρ₁, hterm, htail⟩ := seq_reaches_terminal P (EvalCmd P) extendEval hrest
+      have ⟨ρ₁, hterm, htail⟩ := seq_reaches_terminal P (EvalCmd P) hrest
       match htail with
       | .step _ _ _ .step_stmts_nil hrest' =>
         cases hrest' with
@@ -1371,11 +1330,11 @@ theorem eval_stmts_assert_store_cst :
         | step _ _ _ h _ => exact absurd h (by intro h; cases h)
   exact eval_stmt_assert_store_cst hstmt
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem eval_stmt_assert_eq_of_pure_expr_eq :
-  WellFormedSemanticEvalBool ρ.eval →
-  (EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l1 e md1)) ρ' ↔
-  EvalStmtSmall P (EvalCmd P) extendEval ρ (.cmd (Cmd.assert l2 e md2)) ρ') := by
+  WellFormedSemanticEvalBool (P := P) ρ.factory →
+  (EvalStmtSmall P (EvalCmd P) ρ (.cmd (Cmd.assert l1 e md1)) ρ' ↔
+  EvalStmtSmall P (EvalCmd P) ρ (.cmd (Cmd.assert l2 e md2)) ρ') := by
   intro Hwf
   constructor <;>
   (
@@ -1395,63 +1354,59 @@ theorem eval_stmt_assert_eq_of_pure_expr_eq :
 
 /-! ### Assert elimination -/
 
+omit [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem eval_stmts_assert_elim :
-  WellFormedSemanticEvalBool ρ.eval →
-  EvalStmtsSmall P (EvalCmd P) extendEval ρ (.cmd (.assert l1 e md1) :: cmds) ρ' →
-  ∃ ρ'', EvalStmtsSmall P (EvalCmd P) extendEval ρ cmds ρ'' ∧
-    ρ''.store = ρ'.store ∧ ρ''.eval = ρ'.eval ∧
+  WellFormedSemanticEvalBool (P := P) ρ.factory →
+  EvalStmtsSmall P (EvalCmd P) ρ (.cmd (.assert l1 e md1) :: cmds) ρ' →
+  ∃ ρ'', EvalStmtsSmall P (EvalCmd P) ρ cmds ρ'' ∧
+    ρ''.store = ρ'.store ∧
     (ρ'.hasFailure = false → ρ''.hasFailure = false) := by
   intro Hwf Heval
   unfold EvalStmtsSmall at Heval
   match Heval with
   | .step _ _ _ .step_stmts_cons hrest =>
-    have ⟨ρ₁, hterm_assert, htail⟩ := seq_reaches_terminal P (EvalCmd P) extendEval hrest
+    have ⟨ρ₁, hterm_assert, htail⟩ := seq_reaches_terminal P (EvalCmd P) hrest
     -- The assert takes exactly one step_cmd to terminal
-    have ⟨hcmd, hσ, hδ⟩ : (∃ σ' f, EvalCmd P ρ.eval ρ.store (.assert l1 e md1) σ' f) ∧
-        ρ.store = ρ₁.store ∧ ρ.eval = ρ₁.eval := by
+    have ⟨hcmd, hσ, hfac⟩ : (∃ σ' f, EvalCmd P ρ.factory ρ.store (.assert l1 e md1) σ' f) ∧
+        ρ.store = ρ₁.store ∧ ρ.factory = ρ₁.factory := by
       match hterm_assert with
       | .step _ _ _ (.step_cmd hcmd) (.refl _) =>
         exact ⟨⟨_, _, hcmd⟩, eval_assert_store_cst hcmd, rfl⟩
-    -- Use hasFailure_irrel to re-run cmds from ρ
-    have ⟨ρ'', Hblock, Hstore, Heval_eq⟩ := EvalStmtsSmall_hasFailure_irrel htail ρ hσ hδ
-    -- Determine whether the assert passed or failed
+    have ⟨ρ'', Hblock, Hstore⟩ := EvalStmtsSmall_hasFailure_irrel htail ρ hσ hfac
     match hterm_assert with
     | .step _ _ _ (.step_cmd hcmd) (.refl _) =>
       cases hcmd with
       | eval_assert_pass =>
-        -- ρ₁ = { ρ with hasFailure := ρ.hasFailure || false } = ρ
         exists ρ'
-        refine ⟨?_, rfl, rfl, id⟩
-        show StepStmtStar P (EvalCmd P) extendEval (.stmts cmds ρ) (.terminal ρ')
-        have h_eta : ρ = { store := ρ.store, eval := ρ.eval, hasFailure := ρ.hasFailure || false } := by
+        refine ⟨?_, rfl, id⟩
+        show StepStmtStar P (EvalCmd P) (.stmts cmds ρ) (.terminal ρ')
+        have h_eta : ρ = { store := ρ.store, factory := ρ.factory, hasFailure := ρ.hasFailure || false } := by
           cases ρ; simp
         rw [h_eta]; exact htail
       | eval_assert_fail =>
         exists ρ''
-        refine ⟨Hblock, Hstore, Heval_eq, ?_⟩
+        refine ⟨Hblock, Hstore, ?_⟩
         intro Hf
-        -- ρ₁.hasFailure = ρ.hasFailure || true = true
-        -- By monotonicity, ρ'.hasFailure = true, contradicting Hf
-        have hf1 : (Env.mk ρ.store ρ.eval (ρ.hasFailure || true)).hasFailure = true := by simp
+        have hf1 : (Env.mk ρ.store ρ.factory (ρ.hasFailure || true)).hasFailure = true := by simp
         exact absurd (EvalStmtsSmall_hasFailure_monotone htail hf1) (by simp [Hf])
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem assert_elim :
-  WellFormedSemanticEvalBool ρ.eval →
-  EvalStmtsSmall P (EvalCmd P) extendEval ρ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) ρ' →
-  EvalStmtsSmall P (EvalCmd P) extendEval ρ [.cmd (.assert l3 e md3)] ρ' := by
+  WellFormedSemanticEvalBool (P := P) ρ.factory →
+  EvalStmtsSmall P (EvalCmd P) ρ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) ρ' →
+  EvalStmtsSmall P (EvalCmd P) ρ [.cmd (.assert l3 e md3)] ρ' := by
   intro Hwf Heval
   unfold EvalStmtsSmall at Heval ⊢
   -- Invert: first assert
   match Heval with
   | .step _ _ _ .step_stmts_cons hrest =>
-    have ⟨ρ₁, hterm1, htail1⟩ := seq_reaches_terminal P (EvalCmd P) extendEval hrest
+    have ⟨ρ₁, hterm1, htail1⟩ := seq_reaches_terminal P (EvalCmd P) hrest
     match hterm1 with
     | .step _ _ _ (.step_cmd hcmd1) (.refl _) =>
       -- Invert: second assert (from htail1 which is .stmts [assert2] ρ₁ →* .terminal ρ')
       match htail1 with
       | .step _ _ _ .step_stmts_cons hrest2 =>
-        have ⟨ρ₂, hterm2, htail2⟩ := seq_reaches_terminal P (EvalCmd P) extendEval hrest2
+        have ⟨ρ₂, hterm2, htail2⟩ := seq_reaches_terminal P (EvalCmd P) hrest2
         match hterm2 with
         | .step _ _ _ (.step_cmd hcmd2) (.refl _) =>
           match htail2 with
@@ -1484,19 +1439,23 @@ theorem assert_elim :
 
 /-! ### Set command commutation -/
 
+omit [HasFvars P] [HasInt P] [HasIntOps P] in
 theorem eval_stmt_set_comm
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvars P]
   [DecidableEq P.Ident]:
-  WellFormedSemanticEvalExprCongr ρ.eval →
+  WellFormedSemanticEvalExprCongr (P := P) ρ.factory →
+  WellFormedStore ρ.store ρ.factory →
+  WellFormedStore ρ1.store ρ.factory →
+  WellFormedStore ρ2.store ρ.factory →
   ¬ x1 = x2 →
   ¬ x1 ∈ HasFvars.getFvars v2 →
   ¬ x2 ∈ HasFvars.getFvars v1 →
-  EvalStmtSmall P (EvalCmd P) evalFun ρ (.cmd (Cmd.set x1 (.det v1) md1)) ρ1 →
-  EvalStmtSmall P (EvalCmd P) evalFun ρ1 (.cmd (Cmd.set x2 (.det v2) md2)) ρ' →
-  EvalStmtSmall P (EvalCmd P) evalFun ρ (.cmd (Cmd.set x2 (.det v2) md2')) ρ2 →
-  EvalStmtSmall P (EvalCmd P) evalFun ρ2 (.cmd (Cmd.set x1 (.det v1) md1')) ρ'' →
+  EvalStmtSmall P (EvalCmd P) ρ (.cmd (Cmd.set x1 (.det v1) md1)) ρ1 →
+  EvalStmtSmall P (EvalCmd P) ρ1 (.cmd (Cmd.set x2 (.det v2) md2)) ρ' →
+  EvalStmtSmall P (EvalCmd P) ρ (.cmd (Cmd.set x2 (.det v2) md2')) ρ2 →
+  EvalStmtSmall P (EvalCmd P) ρ2 (.cmd (Cmd.set x1 (.det v1) md1')) ρ'' →
   ρ'.store = ρ''.store := by
-  intro Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
+  intro Hwf Hwfs Hwfs1 Hwfs2 Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
   unfold EvalStmtSmall at Hs1 Hs2 Hs3 Hs4
   match Hs1, Hs2, Hs3, Hs4 with
   | .step _ _ _ (.step_cmd Hc1) (.refl _),
@@ -1504,37 +1463,42 @@ theorem eval_stmt_set_comm
     .step _ _ _ (.step_cmd Hc3) (.refl _),
     .step _ _ _ (.step_cmd Hc4) (.refl _) =>
     simp
-    exact eval_cmd_set_comm Hwf Hneq Hnin1 Hnin2 Hc1 Hc2 Hc3 Hc4
+    exact eval_cmd_set_comm Hwf Hwfs Hwfs1 Hwfs2 Hneq Hnin1 Hnin2 Hc1 Hc2 Hc3 Hc4
 
+omit [HasInt P] [HasIntOps P] in
 theorem eval_stmts_set_comm
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvars P]
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
   [DecidableEq P.Ident] :
-  WellFormedSemanticEvalExprCongr ρ.eval →
+  WellFormedSemanticEvalExprCongr (P := P) ρ.factory →
+  WellFormedStore ρ.store ρ.factory →
+  (∀ ρ_mid, EvalStmtSmall P (EvalCmd P) ρ (.cmd (Cmd.set x1 (.det v1) md1)) ρ_mid →
+    WellFormedStore ρ_mid.store ρ.factory) →
+  (∀ ρ_mid, EvalStmtSmall P (EvalCmd P) ρ (.cmd (Cmd.set x2 (.det v2) md2')) ρ_mid →
+    WellFormedStore ρ_mid.store ρ.factory) →
   ¬ x1 = x2 →
   ¬ x1 ∈ HasFvars.getFvars v2 →
   ¬ x2 ∈ HasFvars.getFvars v1 →
-  EvalStmtsSmall P (EvalCmd P) evalFun ρ [(.cmd (Cmd.set x1 (.det v1) md1)), (.cmd (Cmd.set x2 (.det v2) md2))] ρ' →
-  EvalStmtsSmall P (EvalCmd P) evalFun ρ [(.cmd (Cmd.set x2 (.det v2) md2')), (.cmd (Cmd.set x1 (.det v1) md1'))] ρ'' →
+  EvalStmtsSmall P (EvalCmd P) ρ [(.cmd (Cmd.set x1 (.det v1) md1)), (.cmd (Cmd.set x2 (.det v2) md2))] ρ' →
+  EvalStmtsSmall P (EvalCmd P) ρ [(.cmd (Cmd.set x2 (.det v2) md2')), (.cmd (Cmd.set x1 (.det v1) md1'))] ρ'' →
   ρ'.store = ρ''.store := by
-  intro Hwf Hneq Hnin1 Hnin2 Heval1 Heval2
-  -- Extract the four EvalCmd's from the two list executions
+  intro Hwf Hwfs Hwfs1 Hwfs2 Hneq Hnin1 Hnin2 Heval1 Heval2
   have extract := fun (s1 s2 : Stmt P (Cmd P)) (ρ₀ ρ_final : Env P)
-      (h : EvalStmtsSmall P (EvalCmd P) evalFun ρ₀ [s1, s2] ρ_final) =>
-    show ∃ ρ_mid, EvalStmtSmall P (EvalCmd P) evalFun ρ₀ s1 ρ_mid ∧
-        EvalStmtSmall P (EvalCmd P) evalFun ρ_mid s2 ρ_final from by
+      (h : EvalStmtsSmall P (EvalCmd P) ρ₀ [s1, s2] ρ_final) =>
+    show ∃ ρ_mid, EvalStmtSmall P (EvalCmd P) ρ₀ s1 ρ_mid ∧
+        EvalStmtSmall P (EvalCmd P) ρ_mid s2 ρ_final from by
       unfold EvalStmtsSmall EvalStmtSmall at *
       match h with
       | .step _ _ _ .step_stmts_cons hrest =>
-        have ⟨ρ₁, hterm1, htail1⟩ := seq_reaches_terminal P (EvalCmd P) evalFun hrest
+        have ⟨ρ₁, hterm1, htail1⟩ := seq_reaches_terminal P (EvalCmd P) hrest
         match htail1 with
         | .step _ _ _ .step_stmts_cons hrest2 =>
-          have ⟨ρ₂, hterm2, htail2⟩ := seq_reaches_terminal P (EvalCmd P) evalFun hrest2
+          have ⟨ρ₂, hterm2, htail2⟩ := seq_reaches_terminal P (EvalCmd P) hrest2
           match htail2 with
           | .step _ _ _ .step_stmts_nil (.refl _) =>
             exact ⟨ρ₁, hterm1, hterm2⟩
-  have ⟨ρ_mid1, Hs1, Hs2⟩ := extract _ _ _ _ Heval1
-  have ⟨ρ_mid2, Hs3, Hs4⟩ := extract _ _ _ _ Heval2
-  exact eval_stmt_set_comm Hwf Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
+  have ⟨ρ_m1, Hs1, Hs2⟩ := extract _ _ _ _ Heval1
+  have ⟨ρ_m2, Hs3, Hs4⟩ := extract _ _ _ _ Heval2
+  exact eval_stmt_set_comm Hwf Hwfs (Hwfs1 _ Hs1) (Hwfs2 _ Hs3) Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
 
 end AssertSetProps
 
@@ -1547,18 +1511,19 @@ and the command-evaluation parameter. -/
 section ReflTransTHelpers
 
 variable {P : PureExpr} {CmdT : Type}
-  [HasBool P] [HasBoolOps P] [HasOps P]
-  {EvalCmd : EvalCmdParam P CmdT} {extendEval : ExtendEval P}
+  [HasFvars P] [HasBool P] [HasInt P] [HasIntOps P] [HasOps P]
+  {EvalCmd : EvalCmdParam P CmdT}
 
-omit [HasOps P] in
+
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Invert a `.seq` execution reaching terminal in `ReflTransT`: the inner
     terminates first, then the tail stmts run to terminal.  Length bound
     is strict so callers can recurse on `hstar.len`. -/
 theorem seqT_reaches_terminal
     {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {ρ' : Env P}
-    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.seq inner ss) (.terminal ρ')) :
-    ∃ (ρ₁ : Env P), ∃ (h1 : ReflTransT (StepStmt P EvalCmd extendEval) inner (.terminal ρ₁)),
-      ∃ (h2 : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts ss ρ₁) (.terminal ρ')),
+    (hstar : ReflTransT (StepStmt P EvalCmd) (.seq inner ss) (.terminal ρ')) :
+    ∃ (ρ₁ : Env P), ∃ (h1 : ReflTransT (StepStmt P EvalCmd) inner (.terminal ρ₁)),
+      ∃ (h2 : ReflTransT (StepStmt P EvalCmd) (.stmts ss ρ₁) (.terminal ρ')),
       h1.len + h2.len < hstar.len := by
   match hstar with
   | .step _ _ _ (.step_seq_inner h) hrest =>
@@ -1570,35 +1535,34 @@ theorem seqT_reaches_terminal
     match hrest with
     | .step _ _ _ h _ => exact nomatch h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Invert a `.stmts (s :: rest)` execution reaching terminal in `ReflTransT`. -/
 theorem stmtsT_cons_terminal
     {s : Stmt P CmdT} {rest : List (Stmt P CmdT)} {ρ₀ ρ' : Env P}
-    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts (s :: rest) ρ₀) (.terminal ρ')) :
-    ∃ (ρ₁ : Env P), ∃ (h1 : ReflTransT (StepStmt P EvalCmd extendEval) (.stmt s ρ₀) (.terminal ρ₁)),
-      ∃ (h2 : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts rest ρ₁) (.terminal ρ')),
+    (hstar : ReflTransT (StepStmt P EvalCmd) (.stmts (s :: rest) ρ₀) (.terminal ρ')) :
+    ∃ (ρ₁ : Env P), ∃ (h1 : ReflTransT (StepStmt P EvalCmd) (.stmt s ρ₀) (.terminal ρ₁)),
+      ∃ (h2 : ReflTransT (StepStmt P EvalCmd) (.stmts rest ρ₁) (.terminal ρ')),
       h1.len + h2.len + 2 ≤ hstar.len := by
   match hstar with
   | .step _ _ _ .step_stmts_cons hrest =>
     have ⟨ρ₁, h1, h2, hlen⟩ := seqT_reaches_terminal hrest
     exact ⟨ρ₁, h1, h2, by simp [ReflTransT.len]; omega⟩
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Invert a block execution reaching terminal when the inner config cannot
     exit: the inner reaches terminal with a strictly shorter derivation. -/
 theorem blockT_reaches_terminal_noExit
-    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P}
-    {e_parent : SemanticEval P} {ρ' : Env P}
-    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.block l σ_parent e_parent inner) (.terminal ρ'))
+    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P} {ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P EvalCmd) (.block l σ_parent inner) (.terminal ρ'))
     (h_no_exit : ∀ lbl ρ_x,
-      ¬ StepStmtStar P EvalCmd extendEval inner (.exiting lbl ρ_x)) :
-    ∃ (ρ_inner : Env P) (h : ReflTransT (StepStmt P EvalCmd extendEval) inner (.terminal ρ_inner)),
-      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store, eval := e_parent } ∧
+      ¬ StepStmtStar P EvalCmd inner (.exiting lbl ρ_x)) :
+    ∃ (ρ_inner : Env P) (h : ReflTransT (StepStmt P EvalCmd) inner (.terminal ρ_inner)),
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store} ∧
       h.len < hstar.len := by
   match hstar with
-  | .step _ (.block _ _ _ inner₁) _ (.step_block_body h) hrest =>
+  | .step _ (.block _ _ inner₁) _ (.step_block_body h) hrest =>
     have h_no_exit' : ∀ lbl ρ_x,
-        ¬ StepStmtStar P EvalCmd extendEval inner₁ (.exiting lbl ρ_x) := by
+        ¬ StepStmtStar P EvalCmd inner₁ (.exiting lbl ρ_x) := by
       intro lbl ρ_x hinner₁
       exact h_no_exit lbl ρ_x (.step _ _ _ h hinner₁)
     have ⟨ρ_inner, hterm, heq, hlen⟩ := blockT_reaches_terminal_noExit hrest h_no_exit'
@@ -1614,16 +1578,16 @@ theorem blockT_reaches_terminal_noExit
     match hrest with
     | .step _ _ _ h _ => exact nomatch h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Decompose `.stmts (ss₁ ++ [s])` reaching terminal into: a full `.stmts ss₁`
     run to some intermediate `ρ₁` followed by a strictly shorter `s`-run.
     The escape-free hypothesis `hcov` rules out the exiting case. -/
 theorem stmtsT_append_terminal
     (ss₁ : List (Stmt P CmdT)) (s : Stmt P CmdT) (ρ₀ ρ' : Env P)
-    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts (ss₁ ++ [s]) ρ₀) (.terminal ρ'))
-    (hcov : Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks (P := P) (CmdT := CmdT) [] ss₁) :
-    ∃ (ρ₁ : Env P), ∃ (_ : StepStmtStar P EvalCmd extendEval (.stmts ss₁ ρ₀) (.terminal ρ₁)),
-      ∃ (hs : ReflTransT (StepStmt P EvalCmd extendEval) (.stmt s ρ₁) (.terminal ρ')),
+    (hstar : ReflTransT (StepStmt P EvalCmd) (.stmts (ss₁ ++ [s]) ρ₀) (.terminal ρ'))
+    (hcov : Block.exitsCoveredByBlocks (P := P) (CmdT := CmdT) [] ss₁) :
+    ∃ (ρ₁ : Env P), ∃ (_ : StepStmtStar P EvalCmd (.stmts ss₁ ρ₀) (.terminal ρ₁)),
+      ∃ (hs : ReflTransT (StepStmt P EvalCmd) (.stmt s ρ₁) (.terminal ρ')),
       hs.len < hstar.len := by
   induction ss₁ generalizing ρ₀ with
   | nil =>
@@ -1636,28 +1600,31 @@ theorem stmtsT_append_terminal
   | cons s' rest' ih =>
     have ⟨ρ₁, h_s', h_rest, hlen₁⟩ := stmtsT_cons_terminal hstar
     have ⟨ρ₂, h_rest', h_s, hlen₂⟩ := ih ρ₁ h_rest hcov.2
+    have hle : h_rest.len ≤ hstar.len := by
+      have hb : h_rest.len ≤ h_s'.len + h_rest.len + 2 := by omega
+      exact Nat.le_trans hb hlen₁
     exact ⟨ρ₂,
       ReflTrans_Transitive _ _ _ _
-        (stmts_cons_step P EvalCmd extendEval s' rest' ρ₀ ρ₁ (reflTransT_to_prop h_s'))
+        (stmts_cons_step P EvalCmd s' rest' ρ₀ ρ₁ (reflTransT_to_prop h_s'))
         h_rest',
-      h_s, by grind⟩
+      h_s, Nat.lt_of_lt_of_le hlen₂ hle⟩
 
 /-! ## Failing-state decomposition helpers -/
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Decompose a `.seq` execution reaching a failing config in `ReflTransT`:
     either failure happens inside `inner`, or `inner` terminates and
     failure happens in the tail. -/
 theorem seqT_canfail
     {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {cfg : Config P CmdT}
-    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.seq inner ss) cfg)
+    (hstar : ReflTransT (StepStmt P EvalCmd) (.seq inner ss) cfg)
     (hf : cfg.getEnv.hasFailure = true) :
     (∃ (cfg' : Config P CmdT),
-      ∃ (h : ReflTransT (StepStmt P EvalCmd extendEval) inner cfg'),
+      ∃ (h : ReflTransT (StepStmt P EvalCmd) inner cfg'),
         cfg'.getEnv.hasFailure = true ∧ h.len ≤ hstar.len) ∨
     (∃ (ρ₁ : Env P),
-      ∃ (h1 : ReflTransT (StepStmt P EvalCmd extendEval) inner (.terminal ρ₁)),
-      ∃ (h2 : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts ss ρ₁) cfg),
+      ∃ (h1 : ReflTransT (StepStmt P EvalCmd) inner (.terminal ρ₁)),
+      ∃ (h2 : ReflTransT (StepStmt P EvalCmd) (.stmts ss ρ₁) cfg),
         h1.len + h2.len < hstar.len) := by
   match hstar with
   | .refl _ => exact .inl ⟨inner, .refl _, hf, Nat.le_refl _⟩
@@ -1674,12 +1641,12 @@ theorem seqT_canfail
     | .refl _ => exact .inl ⟨_, .refl _, hf, by simp [ReflTransT.len]⟩
     | .step _ _ _ h _ => exact nomatch h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- An empty-statement-list run that reaches a failing config must already
     have been failing. -/
 theorem stmts_nil_canfail_env
     {ρ : Env P} {cfg : Config P CmdT}
-    (hstar : StepStmtStar P EvalCmd extendEval
+    (hstar : StepStmtStar P EvalCmd
       (.stmts ([] : List (Stmt P CmdT)) ρ) cfg)
     (hf : cfg.getEnv.hasFailure = true) :
     ρ.hasFailure = true := by
@@ -1690,15 +1657,15 @@ theorem stmts_nil_canfail_env
       | refl => exact hf
       | step _ _ _ h _ => cases h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Decompose `.stmts [s] ρ₀` reaching a failing config: extract a failing
     trace from `.stmt s ρ₀`, with a length bound `≤`. -/
 theorem stmtsT_singleton_canfail
     {s : Stmt P CmdT} {ρ₀ : Env P} {cfg : Config P CmdT}
-    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.stmts [s] ρ₀) cfg)
+    (hstar : ReflTransT (StepStmt P EvalCmd) (.stmts [s] ρ₀) cfg)
     (hf : cfg.getEnv.hasFailure = true) :
     ∃ (cfg' : Config P CmdT)
-      (h : ReflTransT (StepStmt P EvalCmd extendEval) (.stmt s ρ₀) cfg'),
+      (h : ReflTransT (StepStmt P EvalCmd) (.stmt s ρ₀) cfg'),
         cfg'.getEnv.hasFailure = true ∧ h.len ≤ hstar.len := by
   match hstar with
   | .refl _ =>
@@ -1716,22 +1683,22 @@ theorem stmtsT_singleton_canfail
       refine ⟨_, h1, hf_x, ?_⟩
       simp [ReflTransT.len] at hlen ⊢; omega
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Decompose `.stmts (ss₁ ++ [s])` reaching a failing config: either
     failure happens before reaching `s`, or `ss₁` terminates at `ρ₁` and
     the failure happens in `s`. -/
 theorem stmtsT_append_canfail
     (ss₁ : List (Stmt P CmdT)) (s : Stmt P CmdT) (ρ₀ : Env P)
     {cfg : Config P CmdT}
-    (hstar : ReflTransT (StepStmt P EvalCmd extendEval)
+    (hstar : ReflTransT (StepStmt P EvalCmd)
       (.stmts (ss₁ ++ [s]) ρ₀) cfg)
     (hf : cfg.getEnv.hasFailure = true) :
     (∃ cfg', cfg'.getEnv.hasFailure = true ∧
-      StepStmtStar P EvalCmd extendEval (.stmts ss₁ ρ₀) cfg') ∨
+      StepStmtStar P EvalCmd (.stmts ss₁ ρ₀) cfg') ∨
     (∃ (ρ₁ : Env P),
-      StepStmtStar P EvalCmd extendEval (.stmts ss₁ ρ₀) (.terminal ρ₁) ∧
+      StepStmtStar P EvalCmd (.stmts ss₁ ρ₀) (.terminal ρ₁) ∧
       ∃ (cfg₂ : Config P CmdT),
-      ∃ (hs : ReflTransT (StepStmt P EvalCmd extendEval) (.stmt s ρ₁) cfg₂),
+      ∃ (hs : ReflTransT (StepStmt P EvalCmd) (.stmt s ρ₁) cfg₂),
         cfg₂.getEnv.hasFailure = true ∧ hs.len < hstar.len) := by
   induction ss₁ generalizing ρ₀ with
   | nil =>
@@ -1756,9 +1723,9 @@ theorem stmtsT_append_canfail
       | .inl ⟨cfg', h, hf', _⟩ =>
         exact .inl ⟨.seq cfg' rest', hf',
           .step _ _ _ .step_stmts_cons
-            (seq_inner_star P EvalCmd extendEval _ cfg' rest' (reflTransT_to_prop h))⟩
+            (seq_inner_star P EvalCmd _ cfg' rest' (reflTransT_to_prop h))⟩
       | .inr ⟨ρ₁, h1, h2, _⟩ =>
-        have hpre := stmts_cons_step P EvalCmd extendEval s' rest' ρ₀ ρ₁
+        have hpre := stmts_cons_step P EvalCmd s' rest' ρ₀ ρ₁
           (reflTransT_to_prop h1)
         match ih ρ₁ h2 with
         | .inl ⟨cfg'_rest, hf'_rest, hstar_rest⟩ =>
@@ -1768,20 +1735,19 @@ theorem stmtsT_append_canfail
           exact .inr ⟨ρ₂, ReflTrans_Transitive _ _ _ _ hpre hterm_rest,
             cfg₂, hs, hf₂, by simp [ReflTransT.len]; omega⟩
 
-omit [HasOps P] in
-/-- Unwrap a failing `.block l σ_parent e_parent inner` execution to a failing run on `inner`. -/
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
+/-- Unwrap a failing `.block l σ_parent inner` execution to a failing run on `inner`. -/
 theorem block_canfail_to_inner
-    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P}
-    {e_parent : SemanticEval P} {cfg : Config P CmdT}
-    (hstar : StepStmtStar P EvalCmd extendEval (.block l σ_parent e_parent inner) cfg)
+    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P} {cfg : Config P CmdT}
+    (hstar : StepStmtStar P EvalCmd (.block l σ_parent inner) cfg)
     (hf : cfg.getEnv.hasFailure = true) :
     ∃ inner', inner'.getEnv.hasFailure = true ∧
-      StepStmtStar P EvalCmd extendEval inner inner' := by
-  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd extendEval src tgt →
-      ∀ (inner : Config P CmdT), src = .block l σ_parent e_parent inner →
+      StepStmtStar P EvalCmd inner inner' := by
+  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd src tgt →
+      ∀ (inner : Config P CmdT), src = .block l σ_parent inner →
       tgt.getEnv.hasFailure = true →
       ∃ inner', inner'.getEnv.hasFailure = true ∧
-        StepStmtStar P EvalCmd extendEval inner inner' from
+        StepStmtStar P EvalCmd inner inner' from
     h_gen _ _ hstar _ rfl hf
   intro src tgt hstar_g
   induction hstar_g with
@@ -1799,17 +1765,16 @@ theorem block_canfail_to_inner
       | .refl _ => refine ⟨_, ?_, .refl _⟩; simp [Config.getEnv] at hf ⊢; exact hf
       | .step _ _ _ h _ => exact nomatch h
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Type-level variant of `block_canfail_to_inner` preserving length bounds
     on the inner derivation.  Required when the inner derivation must
     decrease for a recursive call. -/
 theorem blockT_canfail_to_inner
-    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P}
-    {e_parent : SemanticEval P} {cfg : Config P CmdT}
-    (hstar : ReflTransT (StepStmt P EvalCmd extendEval) (.block l σ_parent e_parent inner) cfg)
+    {inner : Config P CmdT} {l : Option String} {σ_parent : SemanticStore P} {cfg : Config P CmdT}
+    (hstar : ReflTransT (StepStmt P EvalCmd) (.block l σ_parent inner) cfg)
     (hf : cfg.getEnv.hasFailure = true) :
     ∃ (inner' : Config P CmdT),
-      ∃ (h : ReflTransT (StepStmt P EvalCmd extendEval) inner inner'),
+      ∃ (h : ReflTransT (StepStmt P EvalCmd) inner inner'),
         inner'.getEnv.hasFailure = true ∧ h.len ≤ hstar.len := by
   match hstar with
   | .refl _ => exact ⟨inner, .refl _, hf, Nat.le_refl _⟩
@@ -1838,22 +1803,2327 @@ theorem blockT_canfail_to_inner
   termination_by hstar.len
   decreasing_by all_goals (simp_wf; try simp [ReflTransT.len]; try omega)
 
-omit [HasOps P] in
+omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
 /-- Prop-level seq-canfail decomposition (without length bounds). -/
 theorem seq_canfail_prop
     {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {cfg : Config P CmdT}
-    (hstar : StepStmtStar P EvalCmd extendEval (.seq inner ss) cfg)
+    (hstar : StepStmtStar P EvalCmd (.seq inner ss) cfg)
     (hf : cfg.getEnv.hasFailure = true) :
     (∃ cfg', cfg'.getEnv.hasFailure = true ∧
-      StepStmtStar P EvalCmd extendEval inner cfg') ∨
-    (∃ ρ₁, StepStmtStar P EvalCmd extendEval inner (.terminal ρ₁) ∧
+      StepStmtStar P EvalCmd inner cfg') ∨
+    (∃ ρ₁, StepStmtStar P EvalCmd inner (.terminal ρ₁) ∧
       ∃ cfg', cfg'.getEnv.hasFailure = true ∧
-        StepStmtStar P EvalCmd extendEval (.stmts ss ρ₁) cfg') :=
+        StepStmtStar P EvalCmd (.stmts ss ρ₁) cfg') :=
   match seqT_canfail (reflTrans_to_T hstar) hf with
   | .inl ⟨cfg', h, hf', _⟩ => .inl ⟨cfg', hf', reflTransT_to_prop h⟩
   | .inr ⟨ρ₁, h1, h2, _⟩ => .inr ⟨ρ₁, reflTransT_to_prop h1, _, hf, reflTransT_to_prop h2⟩
 
 end ReflTransTHelpers
+
+/-! ## Factory preservation -/
+
+/-! ### Generic small-step inversion lemmas
+
+These structural inversions of `StepStmt` runs (terminal/exiting-stuck fixpoints,
+failing-config decompositions through `.seq` / `.block` / `.stmts` frames, labelled
+block terminal inversion, and the two `StoreAgreement` projection helpers) are
+consumed verbatim by the loop-init-hoist and structured-to-unstructured correctness
+proofs.  They live here so the several downstream transform proofs share one copy. -/
+
+/-- A `ReflTransT` run from a stuck `.terminal ρ` config stays there. -/
+theorem reflTransT_from_terminal (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {ρ : Env P} {c : Config P (Cmd P)}
+    (h : ReflTransT (StepStmt P (EvalCmd P)) (.terminal ρ) c) : c = .terminal ρ := by
+  match h with
+  | .refl _ => rfl
+  | .step _ _ _ hstep _ => exact nomatch hstep
+
+/-- A `ReflTransT` run from a stuck `.exiting l ρ` config stays there. -/
+theorem reflTransT_from_exiting (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {l : String} {ρ : Env P} {c : Config P (Cmd P)}
+    (h : ReflTransT (StepStmt P (EvalCmd P)) (.exiting l ρ) c) : c = .exiting l ρ := by
+  match h with
+  | .refl _ => rfl
+  | .step _ _ _ hstep _ => exact nomatch hstep
+
+/-- Failing-config inversion for a `.seq inner ss` frame. -/
+theorem seqT_reaches_failing' (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {inner : Config P (Cmd P)} {ss : List (Stmt P (Cmd P))} {c : Config P (Cmd P)}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P)) (.seq inner ss) c)
+    (hc : c.getEnv.hasFailure = true) :
+    (∃ d, ∃ (h : ReflTransT (StepStmt P (EvalCmd P)) inner d),
+        d.getEnv.hasFailure = true ∧ h.len ≤ hstar.len) ∨
+    (∃ (ρ₁ : Env P), ∃ d,
+      ∃ (h1 : ReflTransT (StepStmt P (EvalCmd P)) inner (.terminal ρ₁)),
+      ∃ (h2 : ReflTransT (StepStmt P (EvalCmd P)) (.stmts ss ρ₁) d),
+        d.getEnv.hasFailure = true ∧ h1.len + h2.len < hstar.len) := by
+  suffices H : ∀ n (inn : Config P (Cmd P))
+      (h : ReflTransT (StepStmt P (EvalCmd P)) (.seq inn ss) c),
+      h.len ≤ n → c.getEnv.hasFailure = true →
+      (∃ d, ∃ (h' : ReflTransT (StepStmt P (EvalCmd P)) inn d),
+          d.getEnv.hasFailure = true ∧ h'.len ≤ h.len) ∨
+      (∃ (ρ₁ : Env P), ∃ d,
+        ∃ (h1 : ReflTransT (StepStmt P (EvalCmd P)) inn (.terminal ρ₁)),
+        ∃ (h2 : ReflTransT (StepStmt P (EvalCmd P)) (.stmts ss ρ₁) d),
+          d.getEnv.hasFailure = true ∧ h1.len + h2.len < h.len) by
+    exact H hstar.len inner hstar (Nat.le_refl _) hc
+  intro n
+  induction n with
+  | zero =>
+    intro inn h hlen hc'
+    match h, hlen with
+    | .refl _, _ => left; exact ⟨inn, .refl _, hc', by simp [ReflTransT.len]⟩
+    | .step _ _ _ _ _, hl => simp [ReflTransT.len] at hl
+  | succ n ih =>
+    intro inn h hlen hc'
+    match h, hlen with
+    | .refl _, _ => left; exact ⟨inn, .refl _, hc', by simp [ReflTransT.len]⟩
+    | .step _ (.seq inner₁ _) _ (.step_seq_inner h_inner_step) hrest, hl =>
+      have hlen' : hrest.len ≤ n := by simp [ReflTransT.len] at hl; omega
+      rcases ih inner₁ hrest hlen' hc' with hA | hB
+      · obtain ⟨d, h', hd, hlen''⟩ := hA
+        exact .inl ⟨d, .step _ _ _ h_inner_step h', hd, by simp [ReflTransT.len]; omega⟩
+      · obtain ⟨ρ₁, d, h1, h2, hd, hlen''⟩ := hB
+        exact .inr ⟨ρ₁, d, .step _ _ _ h_inner_step h1, h2, hd, by simp [ReflTransT.len]; omega⟩
+    | .step _ _ _ .step_seq_done hrest, hl =>
+      rename_i ρ'
+      exact .inr ⟨ρ', _, .refl _, hrest, hc', by simp [ReflTransT.len]⟩
+    | .step _ _ _ .step_seq_exit hrest, hl =>
+      rename_i label ρ'
+      left
+      refine ⟨.exiting label ρ', .refl _, ?_, by simp [ReflTransT.len]⟩
+      match hrest with
+      | .refl _ => exact hc'
+      | .step _ _ _ h' _ => exact nomatch h'
+
+/-- Failing-config inversion for a `.block .none σp inner` frame. -/
+theorem blockT_none_reaches_failing' (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {inner : Config P (Cmd P)} {σ_parent : SemanticStore P} {c : Config P (Cmd P)}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P)) (.block .none σ_parent inner) c)
+    (hc : c.getEnv.hasFailure = true) :
+    ∃ d, ∃ (h : ReflTransT (StepStmt P (EvalCmd P)) inner d),
+      d.getEnv.hasFailure = true ∧ h.len ≤ hstar.len := by
+  suffices H : ∀ n (σ_p : SemanticStore P) (inn : Config P (Cmd P))
+      (h : ReflTransT (StepStmt P (EvalCmd P)) (.block .none σ_p inn) c),
+      h.len ≤ n → c.getEnv.hasFailure = true →
+      ∃ d, ∃ (h' : ReflTransT (StepStmt P (EvalCmd P)) inn d),
+        d.getEnv.hasFailure = true ∧ h'.len ≤ h.len by
+    exact H hstar.len σ_parent inner hstar (Nat.le_refl _) hc
+  intro n
+  induction n with
+  | zero =>
+    intro σ_p inn h hlen hc'
+    match h, hlen with
+    | .refl _, _ => exact ⟨inn, .refl _, hc', by simp [ReflTransT.len]⟩
+    | .step _ _ _ _ _, hl => simp [ReflTransT.len] at hl
+  | succ n ih =>
+    intro σ_p inn h hlen hc'
+    match h, hlen with
+    | .refl _, _ => exact ⟨inn, .refl _, hc', by simp [ReflTransT.len]⟩
+    | .step _ (.block _ _ inner₁) _ (.step_block_body h_inner_step) hrest, hl =>
+      have hlen' : hrest.len ≤ n := by simp [ReflTransT.len] at hl; omega
+      have ⟨d, h', hd, hlen''⟩ := ih σ_p inner₁ hrest hlen' hc'
+      exact ⟨d, .step _ _ _ h_inner_step h', hd, by simp [ReflTransT.len]; omega⟩
+    | .step _ _ _ .step_block_done hrest, hl =>
+      have hz := reflTransT_from_terminal P hrest
+      refine ⟨_, .refl _, ?_, by simp [ReflTransT.len]⟩
+      rw [hz] at hc'; simpa [Config.getEnv] using hc'
+    | .step _ _ _ (.step_block_exit_match heq) hrest, hl => exact (nomatch heq)
+    | .step _ _ _ (.step_block_exit_mismatch hne) hrest, hl =>
+      have hz := reflTransT_from_exiting P hrest
+      refine ⟨_, .refl _, ?_, by simp [ReflTransT.len]⟩
+      rw [hz] at hc'; simpa [Config.getEnv] using hc'
+
+/-- Failing-config inversion for a general `.block l σp inner` frame (Prop-level). -/
+theorem block_reaches_failing' (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {l : Option String} {inner : Config P (Cmd P)} {σ_parent : SemanticStore P} {c : Config P (Cmd P)}
+    (hstar : StepStmtStar P (EvalCmd P) (.block l σ_parent inner) c)
+    (hc : c.getEnv.hasFailure = true) :
+    ∃ d, StepStmtStar P (EvalCmd P) inner d ∧ d.getEnv.hasFailure = true := by
+  suffices H : ∀ src tgt, StepStmtStar P (EvalCmd P) src tgt →
+      ∀ (lp : Option String) (σ_p : SemanticStore P) (inn : Config P (Cmd P)),
+      src = .block lp σ_p inn → tgt.getEnv.hasFailure = true →
+      ∃ d, StepStmtStar P (EvalCmd P) inn d ∧ d.getEnv.hasFailure = true by
+    exact H _ _ hstar l σ_parent inner rfl hc
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl =>
+    intro lp σ_p inn hsrc hc'
+    subst hsrc; exact ⟨inn, .refl _, by simpa [Config.getEnv] using hc'⟩
+  | step _ mid _ hstep hrest ih =>
+    intro lp σ_p inn hsrc hc'
+    subst hsrc
+    cases hstep with
+    | step_block_body h_inner_step =>
+      rename_i inner₁
+      have ⟨d, h', hd⟩ := ih _ _ _ rfl hc'
+      exact ⟨d, .step _ _ _ h_inner_step h', hd⟩
+    | step_block_done =>
+      have hz := reflTransT_from_terminal P (reflTrans_to_T hrest)
+      rw [hz] at hc'; exact ⟨_, .refl _, by simpa [Config.getEnv] using hc'⟩
+    | step_block_exit_match heq =>
+      have hz := reflTransT_from_terminal P (reflTrans_to_T hrest)
+      rw [hz] at hc'; exact ⟨_, .refl _, by simpa [Config.getEnv] using hc'⟩
+    | step_block_exit_mismatch hne =>
+      have hz := reflTransT_from_exiting P (reflTrans_to_T hrest)
+      rw [hz] at hc'; exact ⟨_, .refl _, by simpa [Config.getEnv] using hc'⟩
+
+/-- Singleton-list peel for the failing case. -/
+theorem stmts_singleton_reaches_failing' (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {s : Stmt P (Cmd P)} {ρ₀ : Env P} {c : Config P (Cmd P)}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P)) (.stmts [s] ρ₀) c)
+    (hc : c.getEnv.hasFailure = true) :
+    ∃ d, ∃ (h : ReflTransT (StepStmt P (EvalCmd P)) (.stmt s ρ₀) d),
+      d.getEnv.hasFailure = true ∧ h.len ≤ hstar.len := by
+  match hstar with
+  | .refl _ => exact ⟨.stmt s ρ₀, .refl _, hc, by simp [ReflTransT.len]⟩
+  | .step _ _ _ .step_stmts_cons hrest =>
+    rcases seqT_reaches_failing' P hrest hc with hA | hB
+    · obtain ⟨d, h, hd, hlen⟩ := hA
+      exact ⟨d, h, hd, by simp [ReflTransT.len]; omega⟩
+    · obtain ⟨ρ₁, d, h1, h2, hd, hlen⟩ := hB
+      refine ⟨.terminal ρ₁, h1, ?_, by simp [ReflTransT.len]; omega⟩
+      have hρ₁ : ρ₁.hasFailure = true := by
+        have : d.getEnv = ρ₁ := by
+          match h2 with
+          | .refl _ => rfl
+          | .step _ _ _ .step_stmts_nil hr2 =>
+            match hr2 with
+            | .refl _ => rfl
+            | .step _ _ _ h' _ => exact nomatch h'
+        rw [this] at hd; exact hd
+      simpa [Config.getEnv] using hρ₁
+
+/-- Cons-list peel for the failing case. -/
+theorem stmts_cons_reaches_failing' (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} {ρ₀ : Env P} {c : Config P (Cmd P)}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P)) (.stmts (s :: rest) ρ₀) c)
+    (hc : c.getEnv.hasFailure = true) :
+    (∃ d, StepStmtStar P (EvalCmd P) (.stmt s ρ₀) d ∧
+        d.getEnv.hasFailure = true) ∨
+    (∃ (ρ₁ : Env P), ∃ d,
+      StepStmtStar P (EvalCmd P) (.stmt s ρ₀) (.terminal ρ₁) ∧
+      StepStmtStar P (EvalCmd P) (.stmts rest ρ₁) d ∧
+        d.getEnv.hasFailure = true) := by
+  match hstar with
+  | .refl _ => exact .inl ⟨.stmt s ρ₀, .refl _, by simpa [Config.getEnv] using hc⟩
+  | .step _ _ _ .step_stmts_cons hrest =>
+    rcases seqT_reaches_failing' P hrest hc with hA | hB
+    · obtain ⟨d, h, hd, _⟩ := hA
+      exact .inl ⟨d, reflTransT_to_prop h, hd⟩
+    · obtain ⟨ρ₁, d, h1, h2, hd, _⟩ := hB
+      exact .inr ⟨ρ₁, d, reflTransT_to_prop h1, reflTransT_to_prop h2, hd⟩
+
+/-- Inversion of a *labeled* (`.some label`) block reaching terminal: the inner
+config either terminates or exits via the block's own label (which the block then
+consumes); either way the result store is projected through the parent. -/
+theorem block_some_reaches_terminal (P : PureExpr) {CmdT : Type} [HasBoolOps P]
+    (EvalCmd : EvalCmdParam P CmdT)
+
+    {inner : Config P CmdT} {label : String} {σ_parent : SemanticStore P}
+    {ρ' : Env P}
+    (hstar : StepStmtStar P EvalCmd
+      (.block (.some label) σ_parent inner) (.terminal ρ')) :
+    (∃ ρ_inner, StepStmtStar P EvalCmd inner (.terminal ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store}) ∨
+    (∃ ρ_inner, StepStmtStar P EvalCmd inner (.exiting label ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store}) := by
+  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd src tgt →
+      ∀ inner ρ', src = .block (.some label) σ_parent inner → tgt = .terminal ρ' →
+      (∃ ρ_inner, StepStmtStar P EvalCmd inner (.terminal ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store}) ∨
+      (∃ ρ_inner, StepStmtStar P EvalCmd inner (.exiting label ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store}) from
+    h_gen _ _ hstar _ _ rfl rfl
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl => intro _ _ hsrc htgt; subst hsrc; cases htgt
+  | step _ mid _ hstep hrest ih =>
+    intro inner ρ' hsrc htgt; subst hsrc
+    cases hstep with
+    | step_block_body h =>
+      match ih _ _ rfl htgt with
+      | .inl ⟨ρ_inner, hterm, heq⟩ => exact .inl ⟨ρ_inner, .step _ _ _ h hterm, heq⟩
+      | .inr ⟨ρ_inner, hexit, heq⟩ => exact .inr ⟨ρ_inner, .step _ _ _ h hexit, heq⟩
+    | step_block_done =>
+      subst htgt; cases hrest with
+      | refl => exact .inl ⟨_, .refl _, rfl⟩
+      | step _ _ _ h _ => cases h
+    | step_block_exit_match heq =>
+      injection heq with h_eq
+      subst h_eq
+      subst htgt; cases hrest with
+      | refl => exact .inr ⟨_, .refl _, rfl⟩
+      | step _ _ _ h _ => cases h
+    | step_block_exit_mismatch =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+
+/-- The projected inner store agrees with the unprojected inner store on
+`σ_parent`'s domain. Variables present in the parent are unchanged by
+projection; variables absent from the parent become `none` in the projection,
+but those don't satisfy `isDefined (projectStore _ _) [x]`, so
+`StoreAgreement` doesn't constrain them. -/
+theorem StoreAgreement.of_projectStore {P : PureExpr}
+    (σ_parent σ_inner : SemanticStore P) :
+    StoreAgreement (projectStore σ_parent σ_inner) σ_inner := by
+  intro x h_def
+  have h := h_def x (List.mem_singleton.mpr rfl)
+  unfold projectStore at h ⊢
+  by_cases hp : (σ_parent x).isSome
+  · simp [hp]
+  · simp [hp] at h
+
+namespace StoreExtendsWith
+
+/-- Projecting related inner stores through related parent stores preserves
+classified extension. -/
+theorem projectStore {P : PureExpr} {Extra : P.Ident → Prop}
+    {sourceParent targetParent sourceInner targetInner : SemanticStore P}
+    (hparent : StoreExtendsWith Extra sourceParent targetParent)
+    (hinner : StoreExtendsWith Extra sourceInner targetInner) :
+    StoreExtendsWith Extra
+      (Imperative.projectStore sourceParent sourceInner)
+      (Imperative.projectStore targetParent targetInner) := by
+  refine ⟨?_, ?_⟩
+  · intro ident hdefined
+    have hsourceSome :
+        (Imperative.projectStore sourceParent sourceInner ident).isSome = true :=
+      hdefined ident (List.mem_singleton.mpr rfl)
+    simp only [Imperative.projectStore] at hsourceSome ⊢
+    by_cases hsp : (sourceParent ident).isSome
+    · rw [ite_eq_left hsp] at hsourceSome ⊢
+      have hparentEq : sourceParent ident = targetParent ident :=
+        hparent.1 ident (fun x hx => by
+          simpa [List.mem_singleton.mp hx] using hsp)
+      have htp : (targetParent ident).isSome := by
+        rw [← hparentEq]
+        exact hsp
+      rw [ite_eq_left htp]
+      exact hinner.1 ident (fun x hx => by
+        simpa [List.mem_singleton.mp hx] using hsourceSome)
+    · rw [ite_eq_right hsp] at hsourceSome
+      simp at hsourceSome
+  · intro ident htargetSome
+    simp only [Imperative.projectStore] at htargetSome ⊢
+    by_cases htp : (targetParent ident).isSome
+    · rw [ite_eq_left htp] at htargetSome
+      rcases hparent.2 ident htp with hsp | hextra
+      · rcases hinner.2 ident htargetSome with hsi | hextra
+        · rw [ite_eq_left hsp]
+          exact Or.inl hsi
+        · exact Or.inr hextra
+      · exact Or.inr hextra
+    · rw [ite_eq_right htp] at htargetSome
+      simp at htargetSome
+
+end StoreExtendsWith
+
+namespace Env.ExtendsWith
+
+/-- Every environment extends itself. -/
+theorem refl {P : PureExpr} (Extra : P.Ident → Prop) (env : Env P) :
+    env.ExtendsWith Extra env :=
+  ⟨rfl, rfl, StoreExtendsWith.refl Extra _⟩
+
+/-- Environment extension composes while unioning extra-register classes. -/
+theorem trans_union {P : PureExpr} {Extra₁ Extra₂ : P.Ident → Prop}
+    {source middle target : Env P}
+    (h₁ : source.ExtendsWith Extra₁ middle)
+    (h₂ : middle.ExtendsWith Extra₂ target) :
+    source.ExtendsWith (fun ident => Extra₁ ident ∨ Extra₂ ident) target :=
+  ⟨h₁.1.trans h₂.1, h₁.2.1.trans h₂.2.1,
+   StoreExtendsWith.trans_union h₁.2.2 h₂.2.2⟩
+
+end Env.ExtendsWith
+
+/-- **Two-parent `projectStore` survival for `StoreAgreement`.**  Agreeing parents
++ agreeing inner stores ⟹ the block-projected stores agree (a projected key is
+either parent-defined, where the inner stores agree, or parent-undefined, where
+both projections are `none`).  Re-establishes agreement across each loop
+iteration's `projectStore` boundary. -/
+theorem StoreAgreement.of_projectStore_parents {P : PureExpr}
+    {σp_src σp_tgt σi_src σi_tgt : SemanticStore P}
+    (h_par : StoreAgreement σp_src σp_tgt)
+    (h_inn : StoreAgreement σi_src σi_tgt) :
+    StoreAgreement (projectStore σp_src σi_src) (projectStore σp_tgt σi_tgt) := by
+  intro x h_def
+  have h := h_def x (List.mem_singleton.mpr rfl)
+  simp only [projectStore] at h ⊢
+  by_cases hp : (σp_src x).isSome
+  · rw [ite_eq_left hp] at h ⊢
+    have h_inn_x : σi_src x = σi_tgt x :=
+      h_inn x (fun z hz => by simpa [List.mem_singleton.mp hz] using h)
+    have h_par_x : σp_src x = σp_tgt x :=
+      h_par x (fun z hz => by simpa [List.mem_singleton.mp hz] using hp)
+    have hpt : (σp_tgt x).isSome := by rw [← h_par_x]; exact hp
+    rw [ite_eq_left hpt, h_inn_x]
+  · rw [ite_eq_right hp] at h; simp at h
+
+/-- When every read-var of `e` is defined in the source store, `StoreAgreement`
+pins the two stores to equal values on those vars.  No freshness side-condition
+is needed — a source-defined var is exactly where `StoreAgreement` constrains the
+target. -/
+theorem storeAgreement_pointwise_on_expr_vars {P : PureExpr}
+    [HasFvars P]
+    (σ_src σ_tgt : SemanticStore P) (e : P.Expr)
+    (h_agree : StoreAgreement σ_src σ_tgt)
+    (h_def : isDefined σ_src (HasFvars.getFvars e)) :
+    ∀ x ∈ HasFvars.getFvars e, σ_src x = σ_tgt x :=
+  fun x hx => h_agree x (fun z hz => by
+    simpa [List.mem_singleton.mp hz] using h_def x hx)
+
+/-! ## Structured small-step run inversions and singleton/seq/block helpers
+
+Generic `StepStmtStar`/`ReflTrans` decomposition and lifting lemmas over the statement small-step semantics, consumed by multiple pass-correctness proofs. -/
+
+/-- A terminating empty statement list leaves the environment unchanged. -/
+theorem stmts_nil_terminal_eq {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    (ρ ρ' : Env P)
+    (h : StepStmtStar P (EvalCmd P) (.stmts [] ρ) (.terminal ρ')) :
+    ρ = ρ' := by
+  cases h with
+  | step _ _ _ hstep hrest =>
+    cases hstep with
+    | step_stmts_nil =>
+      cases hrest with
+      | refl => rfl
+      | step _ _ _ h _ => cases h
+
+/-- A single statement that runs to terminal also runs to terminal when wrapped
+as a singleton statement list.  This is the bridge from the `.stmt s` shape of
+the source-side step rules to the `.stmts [s]` shape that the pass emits for the
+pass-through `.cmd` arm. -/
+theorem stmt_to_singleton_stmts {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    (s : Stmt P (Cmd P)) (ρ ρ' : Env P)
+    (h : StepStmtStar P (EvalCmd P) (.stmt s ρ) (.terminal ρ')) :
+    StepStmtStar P (EvalCmd P) (.stmts [s] ρ) (.terminal ρ') :=
+  ReflTrans_Transitive _ _ _ _
+    (stmts_cons_step P (EvalCmd P) s [] ρ ρ' h)
+    (evalStmtsSmallNil P (EvalCmd P) ρ')
+
+/-- Exiting variant of `stmt_to_singleton_stmts`: a single statement exiting
+yields the singleton list exiting. -/
+theorem stmt_to_singleton_stmts_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    (s : Stmt P (Cmd P)) (ρ ρ' : Env P) (lbl : String)
+    (h : StepStmtStar P (EvalCmd P) (.stmt s ρ) (.exiting lbl ρ')) :
+    StepStmtStar P (EvalCmd P) (.stmts [s] ρ) (.exiting lbl ρ') := by
+  refine .step _ _ _ .step_stmts_cons ?_
+  refine ReflTrans_Transitive _ _ _ _ (seq_inner_star P (EvalCmd P) _ _ [] h) ?_
+  exact .step _ _ _ .step_seq_exit (.refl _)
+
+/-- Outcome-generic variant of `stmt_to_singleton_stmts`: a single statement
+reaching `Env.outcomeConfig oc ρ'` yields the singleton list reaching the same
+outcome. -/
+theorem stmt_to_singleton_stmts_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    (s : Stmt P (Cmd P)) (ρ ρ' : Env P) (oc : Option String)
+    (h : StepStmtStar P (EvalCmd P) (.stmt s ρ) (Env.outcomeConfig oc ρ')) :
+    StepStmtStar P (EvalCmd P) (.stmts [s] ρ) (Env.outcomeConfig oc ρ') := by
+  cases oc with
+  | none => exact stmt_to_singleton_stmts s ρ ρ' h
+  | some lbl => exact stmt_to_singleton_stmts_exiting s ρ ρ' lbl h
+
+/-- Outcome-generic decomposition of `.stmts (s :: rest)`: a run reaching
+`Env.outcomeConfig oc ρ'` either (a) had the head `s` exit (so `oc = some lbl` and
+the whole list exits with that label, skipping `rest`), or (b) had `s` terminate
+to some `ρ_mid` after which `rest` reached the same outcome. -/
+theorem stmts_cons_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P))) (ρ ρ' : Env P) (oc : Option String)
+    (h : StepStmtStar P (EvalCmd P) (.stmts (s :: rest) ρ) (Env.outcomeConfig oc ρ')) :
+    (∃ lbl, oc = some lbl ∧
+        StepStmtStar P (EvalCmd P) (.stmt s ρ) (.exiting lbl ρ')) ∨
+    (∃ ρ_mid, StepStmtStar P (EvalCmd P) (.stmt s ρ) (.terminal ρ_mid) ∧
+        StepStmtStar P (EvalCmd P) (.stmts rest ρ_mid) (Env.outcomeConfig oc ρ')) := by
+  -- Reduce `Env.outcomeConfig` to a concrete constructor before inverting the run,
+  -- so dependent elimination on the `.stmts (s :: rest)` head step succeeds.
+  cases oc with
+  | none =>
+    simp only [Env.outcomeConfig] at h ⊢
+    cases h with
+    | step _ _ _ hstep hrest =>
+      cases hstep with
+      | step_stmts_cons =>
+        have ⟨ρ_mid, h_s, h_tail⟩ := seq_reaches_terminal P (EvalCmd P) hrest
+        exact .inr ⟨ρ_mid, h_s, h_tail⟩
+  | some lbl =>
+    simp only [Env.outcomeConfig] at h ⊢
+    cases h with
+    | step _ _ _ hstep hrest =>
+      cases hstep with
+      | step_stmts_cons =>
+        rcases seq_reaches_exiting P (EvalCmd P) hrest with
+          h_s | ⟨ρ_mid, h_s, h_tail⟩
+        · exact .inl ⟨lbl, rfl, h_s⟩
+        · exact .inr ⟨ρ_mid, h_s, h_tail⟩
+
+/-- Forward: if a prefix list `pfx` exits with `lbl`, then `pfx ++ sfx` exits
+with `lbl` (the suffix is skipped).  Mirrors `stmts_prefix_terminal_append` for
+the exiting outcome. -/
+theorem stmts_cons_head_exiting_append {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    (pfx sfx : List (Stmt P (Cmd P))) (ρ ρ' : Env P) (lbl : String)
+    (h : StepStmtStar P (EvalCmd P) (.stmts pfx ρ) (.exiting lbl ρ')) :
+    StepStmtStar P (EvalCmd P) (.stmts (pfx ++ sfx) ρ) (.exiting lbl ρ') := by
+  induction pfx generalizing ρ with
+  | nil =>
+    -- `.stmts [] ρ` cannot exit.
+    exfalso
+    cases h with
+    | step _ _ _ hstep hrest =>
+      cases hstep with
+      | step_stmts_nil => cases hrest with | step _ _ _ h _ => cases h
+  | cons s rest ih =>
+    cases h with
+    | step _ _ _ hstep hrest =>
+      cases hstep with
+      | step_stmts_cons =>
+        rcases seq_reaches_exiting P (EvalCmd P) hrest with
+          h_s | ⟨ρ₁, h_term, h_tail⟩
+        · -- head `s` exits: lift through `step_stmts_cons`/`step_seq_exit`.
+          refine .step _ _ _ .step_stmts_cons ?_
+          refine ReflTrans_Transitive _ _ _ _
+            (seq_inner_star P (EvalCmd P) _ _ (rest ++ sfx) h_s) ?_
+          exact .step _ _ _ .step_seq_exit (.refl _)
+        · -- head terminates to ρ₁, recurse on `rest`.
+          exact ReflTrans_Transitive _ _ _ _
+            (stmts_cons_step P (EvalCmd P) s (rest ++ sfx) ρ ρ₁ h_term)
+            (ih ρ₁ h_tail)
+
+/-- `init $g := *` (havoc-init) with the chosen value `b` steps `.stmt (init …)`
+to terminal with the slot defined to `b`, provided the slot was undefined.
+The havoc value is existentially chosen by `eval_init_unconstrained`. -/
+theorem step_init_havoc_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident]
+    (ident : P.Ident) (ty : P.Ty) (b : P.Expr) (md : MetaData P) (ρ : Env P)
+    (h_none : ρ.store ident = none)
+    (hval : HasVal.valueOfTy ρ.factory b ty)
+    (hwf_var : WellFormedSemanticEvalVar ρ.factory) :
+    StepStmtStar P (EvalCmd P)
+      (.stmt (.cmd (HasInit.init ident ty (.nondet) md)) ρ)
+      (.terminal ({ ρ with store := SemanticStore.update ρ.store ident b } : Env P)) := by
+  have h_init : EvalCmd P ρ.factory ρ.store (.init ident ty .nondet md)
+      (SemanticStore.update ρ.store ident b) false := by
+    apply EvalCmd.eval_init_unconstrained (v := b)
+    · exact InitState.init h_none (by simp [SemanticStore.update]) (by
+        intro y hy; simp [SemanticStore.update, Ne.symm hy])
+    · exact hval
+    · exact hwf_var
+  have h_step := StepStmt.step_cmd (P := P) (EvalCmd := EvalCmd P)
+    (ρ := ρ) (c := HasInit.init ident ty .nondet md)
+    (σ' := SemanticStore.update ρ.store ident b) (hasAssertFailure := false) h_init
+  refine .step _ _ _ ?_ (.refl _)
+  simpa [Bool.or_false] using h_step
+
+/-- `havoc $g` (= `set $g := *`) with the chosen value `b` steps
+`.stmt (.cmd (havoc ident))` to terminal with the slot re-defined to `b`,
+provided the slot was *already* defined (UpdateState's precondition).  The
+havoc value is existentially chosen by `eval_set_nondet`.  This is the
+per-iteration re-havoc emitted at the body tail of the rewritten nondet loop. -/
+theorem step_havoc_set_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident]
+    (ident : P.Ident) (b : P.Expr) (md : MetaData P) (ρ : Env P)
+    (v' : P.Expr) (h_def : ρ.store ident = some v')
+    (ty : P.Ty)
+    (hprev : HasVal.valueOfTy ρ.factory v' ty)
+    (hval : HasVal.valueOfTy ρ.factory b ty)
+    (hwf_var : WellFormedSemanticEvalVar ρ.factory) :
+    StepStmtStar P (EvalCmd P)
+      (.stmt (.cmd (HasHavoc.havoc ident md)) ρ)
+      (.terminal ({ ρ with store := SemanticStore.update ρ.store ident b } : Env P)) := by
+  have h_set : EvalCmd P ρ.factory ρ.store (.set ident .nondet md)
+      (SemanticStore.update ρ.store ident b) false := by
+    apply EvalCmd.eval_set_nondet (v := b)
+    · exact UpdateState.update h_def (by simp [SemanticStore.update]) (by
+        intro y hy; simp [SemanticStore.update, Ne.symm hy])
+    · exact ⟨v', ty, h_def, hprev, hval⟩
+    · exact hwf_var
+  have h_step := StepStmt.step_cmd (P := P) (EvalCmd := EvalCmd P)
+    (ρ := ρ) (c := HasHavoc.havoc ident md)
+    (σ' := SemanticStore.update ρ.store ident b) (hasAssertFailure := false)
+    (by simpa only [HasHavoc.havoc] using h_set)
+  refine .step _ _ _ ?_ (.refl _)
+  simpa [Bool.or_false] using h_step
+
+/-- Reading a free-variable expression out of any store where its variable maps
+to a *value* `b` yields exactly `b`.  The proof evaluates in a minimal
+well-formed store and extends to an arbitrary one via `WellFormedSemanticEvalVar`
+and `WellFormedSemanticEvalMono`.  Stated over any `e` that `getFvar` reads as
+`ident`, so it serves an annotated variable as well as a bare one. -/
+theorem eval_fvarExpr_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [LawfulHasFvar P]
+    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (e b : P.Expr)
+    (hfv : HasFvar.getFvar e = some ident)
+    (hval : HasVal.value δ b)
+    (h_def : σ ident = some b)
+    (hwf_var : WellFormedSemanticEvalVar δ)
+    (hwf_mono : WellFormedSemanticEvalMono δ) :
+    P.eval δ σ e = some b := by
+  let σ₀ : SemanticStore P := fun y => if y = ident then some b else none
+  have hwf₀ : WellFormedStore σ₀ δ := by
+    intro x v hx
+    simp only [σ₀] at hx
+    by_cases hxi : x = ident
+    · rw [ite_eq_left hxi] at hx
+      have : b = v := Option.some.inj hx
+      subst this; exact hval
+    · rw [ite_eq_right hxi] at hx; exact absurd hx (by simp)
+  have h₀ : P.eval δ σ₀ e = some b := by
+    have h := hwf_var e ident σ₀ hwf₀ hfv
+    rw [h]; simp only [σ₀, ite_eq_left rfl]
+  refine hwf_mono _ _ σ₀ σ ?_ h₀
+  intro x w hx
+  simp only [σ₀] at hx
+  by_cases hxi : x = ident
+  · rw [ite_eq_left hxi] at hx
+    have : b = w := Option.some.inj hx
+    subst this; rw [hxi]; exact h_def
+  · rw [ite_eq_right hxi] at hx; exact absurd hx (by simp)
+
+/-- Reading a bare free-variable expression `mkFvar ident` from a store that maps
+`ident` to a value yields that value. -/
+theorem eval_mkFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [LawfulHasFvar P]
+    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
+    (hval : HasVal.value δ b)
+    (h_def : σ ident = some b)
+    (hwf_var : WellFormedSemanticEvalVar δ)
+    (hwf_mono : WellFormedSemanticEvalMono δ) :
+    P.eval δ σ (HasFvar.mkFvar ident) = some b :=
+  eval_fvarExpr_of_value δ σ ident _ b (LawfulHasFvar.getFvar_mkFvar ident)
+    hval h_def hwf_var hwf_mono
+
+/-- Evaluating a type-annotated free variable in a store that holds a value for it
+yields that value: the annotation does not affect the lookup. -/
+theorem eval_mkTypedFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [LawfulHasFvar P]
+    {ty : P.Ty} (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
+    (hval : HasVal.value δ b)
+    (h_def : σ ident = some b)
+    (hwf_var : WellFormedSemanticEvalVar δ)
+    (hwf_mono : WellFormedSemanticEvalMono δ) :
+    P.eval δ σ (HasFvar.mkTypedFvar ident ty) = some b :=
+  eval_fvarExpr_of_value δ σ ident _ b (LawfulHasFvar.getFvar_mkTypedFvar ident ty)
+    hval h_def hwf_var hwf_mono
+
+/-- Evaluating a free-variable expression in a store just updated at the variable
+that expression denotes yields the value written there, given a well-formed
+evaluator. -/
+theorem eval_fvarExpr_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [LawfulHasFvar P]
+    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (e b : P.Expr)
+    (hfv : HasFvar.getFvar e = some ident)
+    (hval : HasVal.value δ b)
+    (hwf_var : WellFormedSemanticEvalVar δ)
+    (hwf_mono : WellFormedSemanticEvalMono δ) :
+    P.eval δ (SemanticStore.update σ ident b) e = some b :=
+  eval_fvarExpr_of_value δ (SemanticStore.update σ ident b) ident e b hfv hval
+    (by simp [SemanticStore.update]) hwf_var hwf_mono
+
+/-- Evaluating a bare free variable in a store just updated at that variable
+yields the value written there. -/
+theorem eval_mkFvar_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [LawfulHasFvar P]
+    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
+    (hval : HasVal.value δ b)
+    (hwf_var : WellFormedSemanticEvalVar δ)
+    (hwf_mono : WellFormedSemanticEvalMono δ) :
+    P.eval δ (SemanticStore.update σ ident b) (HasFvar.mkFvar ident) = some b :=
+  eval_fvarExpr_storeWith δ σ ident _ b (LawfulHasFvar.getFvar_mkFvar ident)
+    hval hwf_var hwf_mono
+
+/-- Evaluating a type-annotated free variable in a store just updated at that
+variable yields the value written there: the annotation does not affect the
+lookup. -/
+theorem eval_mkTypedFvar_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [LawfulHasFvar P]
+    {ty : P.Ty} (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
+    (hval : HasVal.value δ b)
+    (hwf_var : WellFormedSemanticEvalVar δ)
+    (hwf_mono : WellFormedSemanticEvalMono δ) :
+    P.eval δ (SemanticStore.update σ ident b) (HasFvar.mkTypedFvar ident ty) = some b :=
+  eval_fvarExpr_storeWith δ σ ident _ b
+    (LawfulHasFvar.getFvar_mkTypedFvar ident ty) hval hwf_var hwf_mono
+
+/-! ### Agreement-preserving replay of a single source command
+
+A source-side `EvalCmd c σ_src₀ σ_src₁ failed` can be replayed on a target store
+`σ_tgt₀` that agrees with `σ_src₀` (in the `StoreAgreement` sense), producing a
+`σ_tgt₁` that agrees with `σ_src₁`.  This is the workhorse of the pass-through
+`.cmd` arm: the rewrite is the identity on `.cmd`, so the target replays the
+exact same command, and we only need that the command's evaluation depends on
+the store solely through the source-visible part.  Mirrors the analogous replay
+machinery in `structuredToUnstructured_sound_kind`. -/
+
+/-- Invert a single `.cmd` execution: `.stmt (.cmd c) ρ →* .terminal ρ'` is
+exactly one `step_cmd`, exposing the `EvalCmd` witness and the post-state. -/
+theorem cmd_step_inv {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] (c : Cmd P) (ρ ρ' : Env P)
+    (h : StepStmtStar P (EvalCmd P) (.stmt (.cmd c) ρ) (.terminal ρ')) :
+    ∃ σ' haf, EvalCmd P ρ.factory ρ.store c σ' haf ∧
+      ρ' = { ρ with store := σ', hasFailure := ρ.hasFailure || haf } := by
+  cases h with
+  | step _ _ _ hstep hrest =>
+    cases hstep with
+    | step_cmd hcmd =>
+      cases hrest with
+      | refl => exact ⟨_, _, hcmd, rfl⟩
+      | step _ _ _ h _ => cases h
+
+/-- Invert a single `.stmt s` execution to terminal: the first step is
+`step_stmts_cons`-free; `s` itself steps to some `c`, then `c →* terminal`. -/
+theorem stmt_step_first_inv {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] (s : Stmt P (Cmd P)) (ρ ρ' : Env P)
+    (h : StepStmtStar P (EvalCmd P) (.stmt s ρ) (.terminal ρ')) :
+    ∃ c, StepStmt P (EvalCmd P) (.stmt s ρ) c ∧
+      StepStmtStar P (EvalCmd P) c (.terminal ρ') := by
+  cases h with
+  | step _ mid _ hstep hrest => exact ⟨mid, hstep, hrest⟩
+
+/-- First-step inversion to *any* target config: a `.stmt s ρ` reaching some
+non-`.stmt`-shaped `tgt` must take at least one step (a `.stmt` is never itself a
+terminal/exiting/etc. config), exposing the first step `c` and the residual run.
+Used by the unified (terminal-or-exiting) simulation arms. -/
+theorem stmt_step_first_inv_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] (s : Stmt P (Cmd P)) (ρ : Env P) (tgt : Config P (Cmd P))
+    (h_ne : ∀ ρ', tgt ≠ .stmt s ρ')
+    (h : StepStmtStar P (EvalCmd P) (.stmt s ρ) tgt) :
+    ∃ c, StepStmt P (EvalCmd P) (.stmt s ρ) c ∧
+      StepStmtStar P (EvalCmd P) c tgt := by
+  cases h with
+  | refl => exact absurd rfl (h_ne ρ)
+  | step _ mid _ hstep hrest => exact ⟨mid, hstep, hrest⟩
+
+/-- A `.seq` whose inner config runs to terminal and whose continuation list is
+empty itself runs to that same terminal.  (The trailing `step_seq_done` lands on
+`.stmts [] ρ'`, which is one `step_stmts_nil` from `.terminal ρ'`.) -/
+theorem seq_nil_terminal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    (inner : Config P (Cmd P)) (ρ' : Env P)
+    (h : StepStmtStar P (EvalCmd P) inner (.terminal ρ')) :
+    StepStmtStar P (EvalCmd P) (.seq inner []) (.terminal ρ') := by
+  have h1 : StepStmtStar P (EvalCmd P) (.seq inner []) (.seq (.terminal ρ') []) :=
+    seq_inner_star P (EvalCmd P) _ _ [] h
+  refine ReflTrans_Transitive _ _ _ _ h1 ?_
+  refine .step _ _ _ .step_seq_done ?_
+  exact evalStmtsSmallNil P (EvalCmd P) ρ'
+
+/-- Outcome-generic `.seq inner []`: if `inner` reaches `Env.outcomeConfig oc ρ'`,
+the seq with empty continuation reaches the same outcome (terminal flows through
+`step_seq_done`; exiting flows through `step_seq_exit`). -/
+theorem seq_nil_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    (inner : Config P (Cmd P)) (ρ' : Env P) (oc : Option String)
+    (h : StepStmtStar P (EvalCmd P) inner (Env.outcomeConfig oc ρ')) :
+    StepStmtStar P (EvalCmd P) (.seq inner []) (Env.outcomeConfig oc ρ') := by
+  cases oc with
+  | none => exact seq_nil_terminal inner ρ' h
+  | some lbl =>
+    have h1 : StepStmtStar P (EvalCmd P) (.seq inner []) (.seq (.exiting lbl ρ') []) :=
+      seq_inner_star P (EvalCmd P) _ _ [] h
+    refine ReflTrans_Transitive _ _ _ _ h1 ?_
+    exact .step _ _ _ .step_seq_exit (.refl _)
+
+/-- Outcome-generic block-scoped construction: an inner run of `ss` reaching
+`Env.outcomeConfig oc ρt'` drives the enclosing `.block .none σp (.stmts ss ·)` to
+the same outcome at the *projected* env (store projected through `σp`, factory
+restored to `fp`). -/
+theorem blockT_none_build_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    (inner : Config P (Cmd P)) (σp : SemanticStore P) (oc : Option String) (ρt' : Env P)
+    (h : StepStmtStar P (EvalCmd P) inner (Env.outcomeConfig oc ρt')) :
+    StepStmtStar P (EvalCmd P) (.block .none σp inner)
+      (Env.outcomeConfig oc ({ ρt' with store := projectStore σp ρt'.store} : Env P)) := by
+  cases oc with
+  | none =>
+    refine ReflTrans_Transitive _ _ _ _
+      (block_inner_star P (EvalCmd P) _ _ .none σp h) ?_
+    exact .step _ _ _ StepStmt.step_block_done (.refl _)
+  | some lbl =>
+    refine ReflTrans_Transitive _ _ _ _
+      (block_inner_star P (EvalCmd P) _ _ .none σp
+        (show StepStmtStar P (EvalCmd P) inner (.exiting lbl ρt') from h)) ?_
+    exact .step _ _ _ (StepStmt.step_block_exit_mismatch (by simp)) (.refl _)
+
+/-! ### Anonymous-block / seq / ite structural inversions (outcome-generic)
+
+Generic `StepStmt`/`ReflTransT` inversions for `.block .none` / `.seq` / nondet-`ite`
+reaching a terminal or exiting outcome, consumed by multiple pass-correctness proofs. -/
+
+/-- Type-valued inversion of an *anonymous* (`.none`-labeled) block reaching
+terminal: the inner config reaches terminal with a strictly shorter derivation,
+and the block's result store is the inner store projected through the parent
+store.  Unlike `blockT_reaches_terminal_noExit`, no `h_no_exit` premise is
+needed — a `.none` block can never match an exiting label, so the only way to
+reach `.terminal` is for the inner config to terminate. -/
+theorem blockT_none_reaches_terminal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {inner : Config P (Cmd P)} {σ_parent : SemanticStore P} {ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P)) (.block .none σ_parent inner) (.terminal ρ')) :
+    ∃ (ρ_inner : Env P) (h : ReflTransT (StepStmt P (EvalCmd P)) inner (.terminal ρ_inner)),
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store} ∧
+      h.len < hstar.len := by
+  match hstar with
+  | .step _ (.block _ _ inner₁) _ (.step_block_body h) hrest =>
+    have ⟨ρ_inner, hterm, heq, hlen⟩ := blockT_none_reaches_terminal hrest
+    exact ⟨ρ_inner, .step _ _ _ h hterm, heq, by simp [ReflTransT.len]; omega⟩
+  | .step _ _ _ .step_block_done hrest =>
+    match hrest with
+    | .refl _ => exact ⟨_, .refl _, rfl, by simp [ReflTransT.len]⟩
+    | .step _ _ _ h _ => exact nomatch h
+  | .step _ _ _ (.step_block_exit_match heq) hrest =>
+    -- `.none = .some l` is impossible.
+    exact nomatch heq
+  | .step _ _ _ (.step_block_exit_mismatch _) hrest =>
+    match hrest with
+    | .step _ _ _ h _ => exact nomatch h
+
+/-- Type-valued inversion of a `.seq inner ss` run reaching `.exiting lbl`:
+either the inner config exits (skipping `ss`), or the inner config terminates
+and `ss` reaches the exiting outcome.  Both pieces carry a strict len-decrease. -/
+theorem seqT_reaches_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {inner : Config P (Cmd P)} {ss : List (Stmt P (Cmd P))} {lbl : String} {ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P)) (.seq inner ss) (.exiting lbl ρ')) :
+    (∃ (h : ReflTransT (StepStmt P (EvalCmd P)) inner (.exiting lbl ρ')),
+        h.len < hstar.len) ∨
+    (∃ (ρ₁ : Env P)
+        (h1 : ReflTransT (StepStmt P (EvalCmd P)) inner (.terminal ρ₁))
+        (h2 : ReflTransT (StepStmt P (EvalCmd P)) (.stmts ss ρ₁) (.exiting lbl ρ')),
+        h1.len + h2.len < hstar.len) := by
+  match hstar with
+  | .step _ _ _ (.step_seq_inner h) hrest =>
+    rcases seqT_reaches_exiting hrest with ⟨hexit, hlen⟩ | ⟨ρ₁, h1, h2, hlen⟩
+    · exact .inl ⟨.step _ _ _ h hexit, by simp only [ReflTransT.len]; omega⟩
+    · exact .inr ⟨ρ₁, .step _ _ _ h h1, h2, by simp only [ReflTransT.len]; omega⟩
+  | .step _ _ _ .step_seq_done hrest =>
+    exact .inr ⟨_, .refl _, hrest, by simp only [ReflTransT.len]; omega⟩
+  | .step _ _ _ .step_seq_exit hrest =>
+    exact .inl ⟨hrest, by simp only [ReflTransT.len]; omega⟩
+
+/-- Type-valued inversion of `.stmts (s :: rest)` reaching `.exiting lbl`: either
+the head `s` exits (skipping `rest`), or `s` terminates and `rest` reaches the
+exiting outcome.  Both carry a strict len-decrease. -/
+theorem stmtsT_cons_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))}
+    {ρ₀ : Env P} {lbl : String} {ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P))
+              (.stmts (s :: rest) ρ₀) (.exiting lbl ρ')) :
+    (∃ (h : ReflTransT (StepStmt P (EvalCmd P))
+              (.stmt s ρ₀) (.exiting lbl ρ')),
+      h.len < hstar.len) ∨
+    (∃ (ρ₁ : Env P)
+      (h1 : ReflTransT (StepStmt P (EvalCmd P))
+              (.stmt s ρ₀) (.terminal ρ₁))
+      (h2 : ReflTransT (StepStmt P (EvalCmd P))
+              (.stmts rest ρ₁) (.exiting lbl ρ')),
+      h1.len + h2.len < hstar.len) := by
+  match hstar with
+  | .step _ _ _ .step_stmts_cons hrest =>
+    match seqT_reaches_exiting hrest with
+    | .inl ⟨hexit, hlen⟩ =>
+      exact .inl ⟨hexit, by simp [ReflTransT.len]; omega⟩
+    | .inr ⟨ρ₁, h1, h2, hlen⟩ =>
+      exact .inr ⟨ρ₁, h1, h2, by simp [ReflTransT.len]; omega⟩
+
+/-- Type-valued inversion of an anonymous (`.none`-labeled) block reaching
+`.exiting lbl`: the inner config exits with the *same* label `lbl` (the `.none`
+block never matches, so the exit propagates unchanged), with a strict
+len-decrease.  The result store is projected through the parent store. -/
+theorem blockT_none_reaches_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {inner : Config P (Cmd P)} {σ_parent : SemanticStore P} {lbl : String} {ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P)) (.block .none σ_parent inner) (.exiting lbl ρ')) :
+    ∃ (ρ_inner : Env P) (h : ReflTransT (StepStmt P (EvalCmd P)) inner (.exiting lbl ρ_inner)),
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store} ∧
+      h.len < hstar.len := by
+  match hstar with
+  | .step _ (.block _ _ inner₁) _ (.step_block_body h) hrest =>
+    have ⟨ρ_inner, hexit, heq, hlen⟩ := blockT_none_reaches_exiting hrest
+    exact ⟨ρ_inner, .step _ _ _ h hexit, heq, by simp only [ReflTransT.len]; omega⟩
+  | .step _ _ _ (.step_block_exit_mismatch _) hrest =>
+    match hrest with
+    | .refl _ => exact ⟨_, .refl _, rfl, by simp [ReflTransT.len]⟩
+    | .step _ _ _ h _ => exact nomatch h
+  | .step _ _ _ (.step_block_exit_match heq) hrest =>
+    exact nomatch heq
+  | .step _ _ _ .step_block_done hrest =>
+    match hrest with
+    | .step _ _ _ h _ => exact nomatch h
+
+/-- Outcome-generic inversion of an *anonymous* (`.none`-labeled) block reaching
+either outcome (terminal or exiting): the inner config reaches the *same* outcome
+at some inner env, and the block's result env is that inner env with its store
+projected through the parent store and factory restored to the parent. -/
+theorem blockT_none_reaches_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {inner : Config P (Cmd P)} {σ_parent : SemanticStore P}
+    {oc : Option String} {ρ' : Env P}
+    (hstar : StepStmtStar P (EvalCmd P) (.block .none σ_parent inner) (Env.outcomeConfig oc ρ')) :
+    ∃ ρ_inner, StepStmtStar P (EvalCmd P) inner (Env.outcomeConfig oc ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store} := by
+  cases oc with
+  | none =>
+    obtain ⟨ρ_inner, hterm, heq, _⟩ :=
+      blockT_none_reaches_terminal (reflTrans_to_T hstar)
+    exact ⟨ρ_inner, reflTransT_to_prop hterm, heq⟩
+  | some lbl =>
+    obtain ⟨ρ_inner, hexit, heq, _⟩ :=
+      blockT_none_reaches_exiting
+        (reflTrans_to_T (by simpa only [Env.outcomeConfig] using hstar))
+    exact ⟨ρ_inner, by simpa only [Env.outcomeConfig] using reflTransT_to_prop hexit, heq⟩
+
+/-- Outcome-generic source nondeterministic-`ite` inversion: the chosen branch,
+run inside its `.block .none` scope, reaches the same outcome at an inner env, and
+the observed env `ρ'` is that inner env projected through `ρ`'s store. -/
+theorem ite_nondet_step_inv_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    (tss ess : List (Stmt P (Cmd P))) (md : MetaData P) (ρ ρ' : Env P) (oc : Option String)
+    (h : StepStmtStar P (EvalCmd P)
+      (.stmt (.ite .nondet tss ess md) ρ) (Env.outcomeConfig oc ρ')) :
+    (∃ ρ_inner, StepStmtStar P (EvalCmd P) (.stmts tss ρ) (Env.outcomeConfig oc ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore ρ.store ρ_inner.store}) ∨
+    (∃ ρ_inner, StepStmtStar P (EvalCmd P) (.stmts ess ρ) (Env.outcomeConfig oc ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore ρ.store ρ_inner.store}) := by
+  obtain ⟨c, hstep, hrest⟩ :=
+    stmt_step_first_inv_to _ ρ (Env.outcomeConfig oc ρ')
+      (by intro ρ'' h; cases oc <;> simp only [Env.outcomeConfig] at h <;> cases h) h
+  cases hstep with
+  | step_ite_nondet_true => exact Or.inl (blockT_none_reaches_outcome hrest)
+  | step_ite_nondet_false => exact Or.inr (blockT_none_reaches_outcome hrest)
+
+/-- Stronger inversion of a labeled block reaching `.exiting lbl`: the block's own
+label `label'` differs from `lbl` (else it would be consumed), the inner config
+exits with `lbl`, and the result store is projected through the parent. -/
+theorem block_reaches_exiting_strong (P : PureExpr) {CmdT : Type} [HasBoolOps P]
+    (EvalCmd : EvalCmdParam P CmdT)
+
+    {inner : Config P CmdT} {label' : String} {σ_parent : SemanticStore P}
+    {lbl : String} {ρ' : Env P}
+    (hstar : StepStmtStar P EvalCmd
+      (.block (.some label') σ_parent inner) (.exiting lbl ρ')) :
+    label' ≠ lbl ∧
+    ∃ ρ_inner, StepStmtStar P EvalCmd inner (.exiting lbl ρ_inner) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store} := by
+  suffices h_gen : ∀ src tgt, StepStmtStar P EvalCmd src tgt →
+      ∀ inner lbl ρ', src = .block (.some label') σ_parent inner →
+        tgt = .exiting lbl ρ' →
+      label' ≠ lbl ∧
+      ∃ ρ_inner, StepStmtStar P EvalCmd inner (.exiting lbl ρ_inner) ∧
+        ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store} from
+    h_gen _ _ hstar _ _ _ rfl rfl
+  intro src tgt hstar_g
+  induction hstar_g with
+  | refl => intro _ _ _ hsrc htgt; subst hsrc; cases htgt
+  | step _ mid _ hstep hrest ih =>
+    intro inner lbl ρ' hsrc htgt; subst hsrc
+    cases hstep with
+    | step_block_body h =>
+      have ⟨hne, ρ_inner, hexit, heq⟩ := ih _ _ _ rfl htgt
+      exact ⟨hne, ρ_inner, .step _ _ _ h hexit, heq⟩
+    | step_block_exit_mismatch hne =>
+      subst htgt
+      cases hrest with
+      | refl =>
+        refine ⟨?_, _, .refl _, rfl⟩
+        intro h; apply hne; exact congrArg some h
+      | step _ _ _ h _ => cases h
+    | step_block_done | step_block_exit_match =>
+      subst htgt; cases hrest with | step _ _ _ h _ => cases h
+
+/-- Type-valued inversion of a singleton statement-list `[s]` reaching
+`.exiting lbl`: the head statement reaches the exiting outcome, with a strict
+len-decrease (the `step_stmts_cons` administrative step). -/
+theorem stmtsT_singleton_exiting {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {s : Stmt P (Cmd P)} {lbl : String} {ρ₀ ρ' : Env P}
+    (hstar : ReflTransT (StepStmt P (EvalCmd P)) (.stmts [s] ρ₀) (.exiting lbl ρ')) :
+    ∃ (h : ReflTransT (StepStmt P (EvalCmd P)) (.stmt s ρ₀) (.exiting lbl ρ')),
+      h.len < hstar.len := by
+  match hstar with
+  | .step _ _ _ .step_stmts_cons hrest =>
+    rcases seqT_reaches_exiting hrest with ⟨hexit, hlen⟩ | ⟨ρ₁, _, h2, hlen⟩
+    · exact ⟨hexit, by simp only [ReflTransT.len]; omega⟩
+    · -- The tail `[]` cannot reach `.exiting`: it steps to `.terminal` only.
+      match h2 with
+      | .step _ _ _ .step_stmts_nil hr =>
+        match hr with
+        | .step _ _ _ h _ => exact nomatch h
+
+/-- `_to_cont` peel for the det loop: given the body+continuation derivation
+reaches `.exiting label`, decompose into a `Sum`: either this iteration's body
+exits (caseA), or this iteration terminates and the next loop iteration exits
+(caseB, with strictly smaller derivation length). -/
+theorem peel_off_one_iteration_to_cont_det {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    (g : P.Expr) (m : Option P.Expr) (inv : List (String × P.Expr))
+    (body : List (Stmt P (Cmd P))) (md : MetaData P)
+    (ρ_pre ρ_post_loop : Env P) (label : String)
+    (hrest : ReflTransT (StepStmt P (EvalCmd P))
+       (.seq (.block .none ρ_pre.store
+                (.stmts body ρ_pre))
+             [.loop (.det g) m inv body md])
+       (.exiting label ρ_post_loop)) :
+    (∃ ρ_body_exit,
+      StepStmtStar P (EvalCmd P)
+        (.stmts body ρ_pre)
+        (.exiting label ρ_body_exit) ∧
+      ρ_post_loop = { ρ_body_exit with
+        store := projectStore ρ_pre.store ρ_body_exit.store}) ∨
+    (∃ (ρ_inner : Env P) (ρ_block : Env P),
+      StepStmtStar P (EvalCmd P)
+        (.stmts body ρ_pre)
+        (.terminal ρ_inner) ∧
+      ρ_block = { ρ_inner with store := projectStore ρ_pre.store ρ_inner.store} ∧
+      ∃ (h_inner_T : ReflTransT (StepStmt P (EvalCmd P))
+                      (.stmt (Stmt.loop (.det g) m inv body md) ρ_block)
+                      (.exiting label ρ_post_loop)),
+        h_inner_T.len < hrest.len) := by
+  match seqT_reaches_exiting hrest with
+  | .inl ⟨h_block_exit, _⟩ =>
+    have ⟨ρ_body_exit, h_body_exit_T, heq_ρ_post, _⟩ :=
+      blockT_none_reaches_exiting h_block_exit
+    exact .inl ⟨ρ_body_exit, reflTransT_to_prop h_body_exit_T, heq_ρ_post⟩
+  | .inr ⟨ρ_block_temp, h_block_term, h_loop_stmts, hlen_seq⟩ =>
+    have ⟨ρ_inner, h_inner_term, heq_ρ_block, hlen_inner⟩ :=
+      blockT_none_reaches_terminal h_block_term
+    match stmtsT_cons_exiting h_loop_stmts with
+    | .inl ⟨h_loop_T_E, hlen_cons⟩ =>
+      refine .inr ⟨ρ_inner, ρ_block_temp, reflTransT_to_prop h_inner_term,
+        heq_ρ_block, h_loop_T_E, ?_⟩
+      omega
+    | .inr ⟨_, _, h_nil, _⟩ =>
+      exfalso
+      match h_nil with
+      | .step _ _ _ .step_stmts_nil hr2 =>
+        match hr2 with
+        | .step _ _ _ h _ => exact nomatch h
+
+/-! ## Per-variable definedness through a run
+
+The `Config.varsDefined` / `Config.varDefined` predicates are defined in
+`StmtSemantics`; here we prove they are preserved across steps and runs. -/
+
+/-- A single step preserves `Config.varsDefined`: every tracked variable stays
+    defined, given a command evaluator that never undefines a store slot
+    (`h_cmd`). -/
+theorem Config.varsDefined_step_of {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [DecidableEq P.Ident]
+    {CmdT : Type} {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
+      evalCmd f σ c σ' hf → (σ y).isSome = true → (σ' y).isSome = true)
+    {Q : P.Ident → Prop} {c c' : Config P CmdT}
+    (hstep : StepStmt P evalCmd c c')
+    (h : Config.varsDefined Q c) :
+    Config.varsDefined Q c' := by
+  induction hstep with
+  | step_cmd hcmd =>
+    exact fun y hQ => h_cmd hcmd (h y hQ)
+  | step_block => exact ⟨h, h⟩
+  | step_ite_true _ => exact ⟨h, h⟩
+  | step_ite_false _ => exact ⟨h, h⟩
+  | step_ite_nondet_true => exact ⟨h, h⟩
+  | step_ite_nondet_false => exact ⟨h, h⟩
+  | step_loop_enter _ => exact ⟨h, h⟩
+  | step_loop_exit _ => exact h
+  | step_loop_nondet_enter => exact ⟨h, h⟩
+  | step_loop_nondet_exit => exact h
+  | step_exit => exact h
+  | step_typeDecl => exact h
+  | step_stmts_nil => exact h
+  | step_stmts_cons => exact h
+  | step_seq_inner _ ih => exact ih h
+  | step_seq_done => exact h
+  | step_seq_exit => exact h
+  | step_block_body _ ih =>
+    exact ⟨h.1, ih h.2⟩
+  | step_block_done =>
+    intro y hQ
+    simp only [projectStore]; rw [ite_eq_left (h.1 y hQ)]; exact h.2 y hQ
+  | step_block_exit_match heq =>
+    intro y hQ
+    simp only [projectStore]; rw [ite_eq_left (h.1 y hQ)]; exact h.2 y hQ
+  | step_block_exit_mismatch hne =>
+    intro y hQ
+    simp only [projectStore]; rw [ite_eq_left (h.1 y hQ)]; exact h.2 y hQ
+
+/-! ### `Config.storeWellDefined` preservation
+
+Store value-hood is relative to the factory `fac`, so a run preserves
+it given that the command evaluator preserves it. -/
+
+/-- A single step preserves `Config.storeWellDefined`, given that the command
+    evaluator does (`h_cmd`). -/
+private theorem Config.storeWellDefined_step_of {P : PureExpr} [HasBool P] [HasBoolOps P]
+    {CmdT : Type} {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {fl : Bool},
+      evalCmd f σ c σ' fl → WellFormedStore σ f → WellFormedStore σ' f)
+    {c c' : Config P CmdT}
+    (hstep : StepStmt P evalCmd c c')
+    (h : Config.storeWellDefined c) :
+    Config.storeWellDefined c' := by
+  induction hstep with
+  | step_cmd hcmd => exact h_cmd hcmd h
+  | step_seq_inner _ ih =>
+    exact ih h
+  | step_block_body hinner ih =>
+    exact ⟨step_preserves_factory P evalCmd _ _ hinner ▸ h.1, ih h.2⟩
+  -- The three exit rules project the store; projection keeps only slots that are
+  -- defined in `ρ'`, where `h.2` already witnesses value-hood against the factory.
+  | step_block_done | step_block_exit_match _ | step_block_exit_mismatch _ =>
+    intro x w hx
+    simp only [projectStore] at hx
+    split at hx
+    · exact h.2 x w hx
+    · exact absurd hx (by simp)
+  -- Everything else either leaves the operative store alone or pushes it into a
+  -- block frame, which repeats it as the saved parent store.
+  | _ => first | exact h | exact ⟨h, h⟩
+
+/-- Multi-step form of `Config.storeWellDefined_step_of`. -/
+theorem Config.storeWellDefined_star_of {P : PureExpr} [HasBool P] [HasBoolOps P]
+    {CmdT : Type} {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {fl : Bool},
+      evalCmd f σ c σ' fl → WellFormedStore σ f → WellFormedStore σ' f)
+    {c c' : Config P CmdT}
+    (hstar : StepStmtStar P evalCmd c c')
+    (h : Config.storeWellDefined c) :
+    Config.storeWellDefined c' := by
+  induction hstar with
+  | refl => exact h
+  | step _ _ _ hstep _ ih =>
+    exact ih (Config.storeWellDefined_step_of h_cmd hstep h)
+
+/-- Multi-step preservation of `Config.varsDefined`, over any command evaluator
+that never undefines a store slot. -/
+theorem Config.varsDefined_star_of {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [DecidableEq P.Ident]
+    {CmdT : Type} {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
+      evalCmd f σ c σ' hf → (σ y).isSome = true → (σ' y).isSome = true)
+    {Q : P.Ident → Prop} {c c' : Config P CmdT}
+    (hstar : StepStmtStar P evalCmd c c')
+    (h : Config.varsDefined Q c) :
+    Config.varsDefined Q c' := by
+  induction hstar with
+  | refl => exact h
+  | step _ _ _ hstep _ ih =>
+    exact ih (Config.varsDefined_step_of h_cmd hstep h)
+
+/-- Single-step preservation of `Config.varsDefined` at `EvalCmd`. -/
+theorem Config.varsDefined_step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident]
+    {Q : P.Ident → Prop} {c c' : Config P (Cmd P)}
+    (hstep : StepStmt P (EvalCmd P) c c')
+    (h : Config.varsDefined Q c) :
+    Config.varsDefined Q c' :=
+  Config.varsDefined_step_of
+    (fun hc hs => EvalCmd_preserves_isSome hc hs) hstep h
+
+/-- Multi-step preservation of `Config.varsDefined` at `EvalCmd`. -/
+theorem Config.varsDefined_star {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident]
+    {Q : P.Ident → Prop} {c c' : Config P (Cmd P)}
+    (hstar : StepStmtStar P (EvalCmd P) c c')
+    (h : Config.varsDefined Q c) :
+    Config.varsDefined Q c' :=
+  Config.varsDefined_star_of
+    (fun hc hs => EvalCmd_preserves_isSome hc hs) hstar h
+
+/-- The gen guard `y`, defined in the start store, stays defined after running a
+statement list to terminal.  A corollary of `Config.varsDefined_star` (at the
+singleton `Config.varDefined y`) that packages the `(.stmts ss ρ)` coercion; kept
+as a named cross-module convenience (used from the transform-correctness proofs)
+so those call sites need not spell out the coercion, and hence cannot be `private`. -/
+theorem stmts_preserves_isSome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident]
+    {y : P.Ident} {ss : List (Stmt P (Cmd P))} {ρ ρ' : Env P}
+    (hstar : StepStmtStar P (EvalCmd P) (.stmts ss ρ) (.terminal ρ'))
+    (h_some : (ρ.store y).isSome = true) :
+    (ρ'.store y).isSome = true :=
+  Config.varsDefined_star hstar
+    (show Config.varDefined y (.stmts ss ρ) from fun _ hz => hz ▸ h_some) y rfl
+
+
+/-! ## Per-variable undefinedness through a run, scope-aware
+
+The `excludeScoped := true` variant, which allows a block-local `init` of a tracked
+variable because leaving the block projects that binding away again. -/
+
+/-- Single-step preservation of `Config.varsUndefined true`, over any command
+    evaluator that only defines the slots the command itself declares.
+
+    Every case is immediate: entering a scope saves the parent store (which
+    carries the invariant), leaving one projects through it, and no case needs
+    to know anything about what happened inside. -/
+private theorem Config.varsUndefinedScoped_step_of {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasIdent P] [DecidableEq P.Ident]
+    {CmdT : Type} [HasVarsImp P CmdT] {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
+      evalCmd f σ c σ' hf → σ y = none →
+      y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
+    {Q : P.Ident → Prop} {cfg cfg' : Config P CmdT}
+    (h_step : StepStmt P evalCmd cfg cfg')
+    (h_inv : Config.varsUndefined true (P := P) Q cfg) :
+    Config.varsUndefined true (P := P) Q cfg' := by
+  induction h_step with
+  | step_cmd h_eval =>
+    intro y hQ
+    obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
+    exact h_cmd h_eval h_none (by simpa [Stmt.definedVars] using h_ndef)
+  | step_loop_enter _ | step_loop_nondet_enter =>
+    refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ s hs => ?_⟩
+    rcases List.mem_cons.mp hs with h_eq | h_in
+    · subst h_eq; simp [Stmt.definedVars]
+    · exact absurd h_in (List.not_mem_nil)
+  | step_stmts_cons =>
+    refine ⟨fun y hQ => ⟨(h_inv y hQ).1, (h_inv y hQ).2 _ List.mem_cons_self⟩,
+            fun y hQ s' hs' => (h_inv y hQ).2 s' (List.mem_cons_of_mem _ hs')⟩
+  | step_seq_inner _ ih => exact ⟨ih h_inv.1, h_inv.2⟩
+  | step_seq_done => exact fun y hQ => ⟨h_inv.1 y hQ, h_inv.2 y hQ⟩
+  | step_seq_exit => exact h_inv.1
+  | step_block_body _ _ => exact h_inv
+  | step_block_done | step_block_exit_match _ | step_block_exit_mismatch _ =>
+    intro y hQ
+    show projectStore _ _ y = none
+    unfold projectStore; rw [ite_eq_right]; rw [h_inv y hQ]; simp
+  | _ => exact fun y hQ => (h_inv y hQ).1
+
+/-- Trace lift of `Config.varsUndefinedScoped_step_of` (the `excludeScoped = true`
+    form of `Config.varsUndefined`). -/
+theorem Config.varsUndefinedScoped_star_of {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasIdent P] [DecidableEq P.Ident]
+    {CmdT : Type} [HasVarsImp P CmdT] {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
+      evalCmd f σ c σ' hf → σ y = none →
+      y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
+    {Q : P.Ident → Prop} {cfg cfg' : Config P CmdT}
+    (h_run : StepStmtStar P evalCmd cfg cfg')
+    (h_inv : Config.varsUndefined true (P := P) Q cfg) :
+    Config.varsUndefined true (P := P) Q cfg' := by
+  induction h_run with
+  | refl => exact h_inv
+  | step _ _ _ h_step _ ih => exact ih (Config.varsUndefinedScoped_step_of h_cmd h_step h_inv)
+
+/-- **Leaving a block drops exactly the names its body scopes**, so the store handed back
+    is determined by the body alone. -/
+theorem projectStore_eq_dropVars {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasIdent P] [DecidableEq P.Ident]
+    {CmdT : Type} [HasVarsImp P CmdT] {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
+      evalCmd f σ c σ' hf → σ y = none →
+      y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
+    {ss : List (Stmt P CmdT)} {ρ₀ ρ : Env P}
+    (hdefs : ∀ x ∈ Block.definedVars (P := P) (C := CmdT) ss true, ρ₀.store x = none)
+    (hrun : StepStmtStar P evalCmd (.stmts ss ρ₀) (.terminal ρ) ∨
+      ∃ lbl, StepStmtStar P evalCmd (.stmts ss ρ₀) (.exiting lbl ρ)) :
+    projectStore ρ₀.store ρ.store
+      = dropVars (Block.definedVars (P := P) (C := CmdT) ss true) ρ.store := by
+  funext n
+  by_cases hmem : n ∈ Block.definedVars (P := P) (C := CmdT) ss true
+  · simp [projectStore, dropVars, hmem, hdefs n hmem]
+  · cases hq : ρ₀.store n with
+    | some v => simp [projectStore, dropVars, hmem, hq]
+    | none =>
+      -- Undefined in the parent and not scoped by the body, so still undefined at `ρ`.
+      have hstart : Config.varsUndefined true (P := P) (· = n) (.stmts ss ρ₀) := by
+        rintro y rfl
+        exact ⟨hq, all_not_mem_definedVars_of_block hmem⟩
+      have hnone : ρ.store n = none := by
+        match hrun with
+        | .inl hterm => exact Config.varsUndefinedScoped_star_of h_cmd hterm hstart n rfl
+        | .inr ⟨_, hexit⟩ => exact Config.varsUndefinedScoped_star_of h_cmd hexit hstart n rfl
+      simp [projectStore, dropVars, hmem, hq, hnone]
+
+/-! ## Per-variable undefinedness through a run (dual of `Config.varsDefined`) -/
+
+/-- Single-step preservation of `Config.varsUndefined false`, over any command
+    evaluator that only ever defines the slots the command itself declares.
+
+    Every case but `step_cmd` is structural — a matter of how `Stmt.definedVars`
+    and `projectStore` decompose — so the evaluator enters only through `h_cmd`.
+    `Config.varsUndefinedThroughout_step` instantiates this at `EvalCmd`;
+    `Core.core_varsUndefinedThroughout_star` does so at `EvalCommand`. -/
+theorem Config.varsUndefinedThroughout_step_of {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [HasIdent P] [HasInt P] [DecidableEq P.Ident]
+    {CmdT : Type} [HasVarsImp P CmdT] {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
+      evalCmd f σ c σ' hf → σ y = none →
+      y ∉ HasVarsImp.definedVars (P := P) c false → σ' y = none)
+    {Q : P.Ident → Prop} {cfg cfg' : Config P CmdT}
+    (h_step : StepStmt P evalCmd cfg cfg')
+    (h_inv : Config.varsUndefined false (P := P) Q cfg) :
+    Config.varsUndefined false (P := P) Q cfg' := by
+  induction h_step with
+  | step_cmd h_eval =>
+    intro y hQ
+    obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
+    refine h_cmd h_eval h_none ?_
+    simpa [Stmt.definedVars] using h_ndef
+  | step_block =>
+    refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩
+    obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
+    exact ⟨h_none, all_not_mem_definedVars_of_block (by simpa [Stmt.definedVars] using h_ndef)⟩
+  | step_ite_true _ | step_ite_nondet_true =>
+    refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩
+    obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
+    rw [Stmt.definedVars] at h_ndef
+    simp only [Bool.false_eq_true, ite_false] at h_ndef
+    exact ⟨h_none, all_not_mem_definedVars_of_block (fun hc => h_ndef (List.mem_append.mpr (Or.inl hc)))⟩
+  | step_ite_false _ | step_ite_nondet_false =>
+    refine ⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩
+    obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
+    rw [Stmt.definedVars] at h_ndef
+    simp only [Bool.false_eq_true, ite_false] at h_ndef
+    exact ⟨h_none, all_not_mem_definedVars_of_block (fun hc => h_ndef (List.mem_append.mpr (Or.inr hc)))⟩
+  | step_loop_enter _ | step_loop_nondet_enter =>
+    refine ⟨⟨fun y hQ => (h_inv y hQ).1, fun y hQ => ?_⟩, fun y hQ s hs => ?_⟩
+    · obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
+      rw [Stmt.definedVars] at h_ndef
+      simp only [Bool.false_eq_true, ite_false] at h_ndef
+      exact ⟨h_none, all_not_mem_definedVars_of_block h_ndef⟩
+    · obtain ⟨_, h_ndef⟩ := h_inv y hQ
+      rw [Stmt.definedVars] at h_ndef
+      simp only [Bool.false_eq_true, ite_false] at h_ndef
+      rcases List.mem_cons.mp hs with h_eq | h_in
+      · subst h_eq; rw [Stmt.definedVars]; simp only [Bool.false_eq_true, ite_false]; exact h_ndef
+      · exact absurd h_in (List.not_mem_nil)
+  | step_stmts_cons =>
+    refine ⟨fun y hQ => ?_, fun y hQ s' hs' => ?_⟩
+    · obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
+      exact ⟨h_none, h_ndef _ (List.mem_cons_self)⟩
+    · exact (h_inv y hQ).2 s' (List.mem_cons_of_mem _ hs')
+  | step_seq_inner _ ih =>
+    obtain ⟨h_inner_inv, h_ndef⟩ := h_inv
+    exact ⟨ih h_inner_inv, h_ndef⟩
+  | step_seq_done =>
+    obtain ⟨h_inner, h_ndef⟩ := h_inv
+    intro y hQ
+    exact ⟨h_inner y hQ, h_ndef y hQ⟩
+  | step_seq_exit =>
+    exact h_inv.1
+  | step_block_body _ ih =>
+    obtain ⟨h_parent, h_inner_inv⟩ := h_inv
+    exact ⟨h_parent, ih h_inner_inv⟩
+  | step_block_done | step_block_exit_match _ | step_block_exit_mismatch _ =>
+    obtain ⟨h_parent, _⟩ := h_inv
+    intro y hQ
+    show projectStore _ _ y = none
+    unfold projectStore; rw [ite_eq_right]; rw [h_parent y hQ]; simp
+  | _ => intro y hQ; exact (h_inv y hQ).1
+
+/-- Trace lift of `Config.varsUndefinedThroughout_step_of` (the
+    `excludeScoped = false` form of `Config.varsUndefined`). -/
+theorem Config.varsUndefinedThroughout_star_of {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
+    {CmdT : Type} [HasVarsImp P CmdT] {evalCmd : EvalCmdParam P CmdT}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {hf : Bool} {y : P.Ident},
+      evalCmd f σ c σ' hf → σ y = none →
+      y ∉ HasVarsImp.definedVars (P := P) c false → σ' y = none)
+    {Q : P.Ident → Prop} {cfg cfg' : Config P CmdT}
+    (h_run : StepStmtStar P evalCmd cfg cfg')
+    (h_inv : Config.varsUndefined false (P := P) Q cfg) :
+    Config.varsUndefined false (P := P) Q cfg' := by
+  induction h_run with
+  | refl => exact h_inv
+  | step _ _ _ h_step _ ih =>
+    exact ih (Config.varsUndefinedThroughout_step_of h_cmd h_step h_inv)
+
+/-- Single-step preservation of `Config.varsUndefined false` at `EvalCmd`. -/
+theorem Config.varsUndefinedThroughout_step {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [HasIdent P] [HasInt P] [DecidableEq P.Ident]
+    {Q : P.Ident → Prop} {cfg cfg' : Config P (Cmd P)}
+    (h_step : StepStmt P (EvalCmd P) cfg cfg')
+    (h_inv : Config.varsUndefined false (P := P) Q cfg) :
+    Config.varsUndefined false (P := P) Q cfg' :=
+  Config.varsUndefinedThroughout_step_of
+    (fun he hn hnd => evalCmd_preserves_none_of_not_def he hn hnd) h_step h_inv
+
+/-- Trace lift: `Config.varsUndefined false` is preserved along a multi-step run. -/
+theorem Config.varsUndefinedThroughout_star {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
+    {Q : P.Ident → Prop} {cfg cfg' : Config P (Cmd P)}
+    (h_run : StepStmtStar P (EvalCmd P) cfg cfg')
+    (h_inv : Config.varsUndefined false (P := P) Q cfg) :
+    Config.varsUndefined false (P := P) Q cfg' :=
+  Config.varsUndefinedThroughout_star_of
+    (fun he hn hnd => evalCmd_preserves_none_of_not_def he hn hnd) h_run h_inv
+
+/-- A terminating `.stmts bss` run preserves `store y = none` for any
+`y ∉ Block.definedVars bss`.  Thin single-key corollary of the `Q`-keyed
+`Config.varsUndefinedThroughout_star` engine (specialize `Q` to the singleton `· = y`). -/
+theorem block_run_terminal_preserves_none_of_not_definedVars {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
+    {y : P.Ident} {bss : List (Stmt P (Cmd P))} {ρ ρ' : Env P}
+    (h_y_not_def : y ∉ Block.definedVars (P := P) (C := Cmd P) bss false)
+    (h_none : ρ.store y = none)
+    (h_run : StepStmtStar P (EvalCmd P) (.stmts bss ρ) (.terminal ρ')) :
+    ρ'.store y = none :=
+  Config.varsUndefinedThroughout_star (Q := (· = y)) h_run
+    (by rintro z rfl; exact ⟨h_none, all_not_mem_definedVars_of_block h_y_not_def⟩) y rfl
+
+/-! ## Per-variable *value* preservation through a run (frame lemma)
+
+Dual of `Config.varsUndefined`: rather than tracking that a variable stays
+`none`, we track that a variable holds a *fixed value option* `w` — both in the
+operative store and in every enclosing block's saved parent store — as long as no
+statement still to run writes it (neither `init`s it at any scope depth, nor
+`set`/`havoc`s it).  This lifts the command-level exact-value frame
+(`evalCmd_preserves_eq_of_not_written`) to a whole terminating/escaping run: a
+variable a block never writes exits the block with exactly its entry value. -/
+
+/-- A statement list writes `y` at neither scope: `y` is defined by no member (at
+any nesting depth) and modified by no member.  Companion of
+`all_not_mem_definedVars_of_block` for the modified-variable set. -/
+private theorem all_not_mem_modifiedVars_of_block {P : PureExpr} [HasFvars P]
+    {y : P.Ident} {ss : List (Stmt P (Cmd P))}
+    (h : y ∉ Block.modifiedVars (P := P) (C := Cmd P) ss) :
+    ∀ s ∈ ss, y ∉ Stmt.modifiedVars (P := P) (C := Cmd P) s := by
+  induction ss with
+  | nil => intro s hs; exact absurd hs (List.not_mem_nil)
+  | cons s rest ih =>
+    rw [Block.modifiedVars] at h
+    intro s' hs'
+    rcases List.mem_cons.mp hs' with h_eq | h_in
+    · exact h_eq ▸ (fun hc => h (List.mem_append.mpr (Or.inl hc)))
+    · exact ih (fun hc => h (List.mem_append.mpr (Or.inr hc))) s' h_in
+
+/-- Scope-aware value-preservation invariant: the variable `y` is bound to the
+fixed value option `w` in the operative store and in every enclosing block's
+saved parent store, and no statement still to run writes `y` (defines it at any
+depth or modifies it). -/
+@[expose] def Config.varEqUnwritten {P : PureExpr} [HasFvars P]
+    (y : P.Ident) (w : Option P.Expr) : Config P (Cmd P) → Prop
+  | .stmt s ρ => ρ.store y = w
+      ∧ y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false
+      ∧ y ∉ Stmt.modifiedVars (P := P) (C := Cmd P) s
+  | .stmts ss ρ => ρ.store y = w
+      ∧ (∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false)
+      ∧ (∀ s ∈ ss, y ∉ Stmt.modifiedVars (P := P) (C := Cmd P) s)
+  | .terminal ρ => ρ.store y = w
+  | .exiting _ ρ => ρ.store y = w
+  | .block _ σ_parent inner => σ_parent y = w ∧ Config.varEqUnwritten y w inner
+  | .seq inner ss => Config.varEqUnwritten y w inner
+      ∧ (∀ s ∈ ss, y ∉ Stmt.definedVars (P := P) (C := Cmd P) s false)
+      ∧ (∀ s ∈ ss, y ∉ Stmt.modifiedVars (P := P) (C := Cmd P) s)
+
+/-- A single `EvalCmd` statement step preserves `Config.varEqUnwritten`. -/
+theorem Config.varEqUnwritten_step {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [DecidableEq P.Ident]
+    {y : P.Ident} {w : Option P.Expr} {cfg cfg' : Config P (Cmd P)}
+    (h_step : StepStmt P (EvalCmd P) cfg cfg')
+    (h_inv : Config.varEqUnwritten (P := P) y w cfg) :
+    Config.varEqUnwritten (P := P) y w cfg' := by
+  induction h_step with
+  | step_cmd h_eval =>
+    obtain ⟨hw, hnd, hnm⟩ := h_inv
+    have heq := evalCmd_preserves_eq_of_not_written (y := y) h_eval
+      (by simpa [Stmt.definedVars, HasVarsImp.definedVars] using hnd)
+      (by simpa [Stmt.modifiedVars, HasVarsImp.modifiedVars] using hnm)
+    exact heq.trans hw
+  | step_block =>
+    obtain ⟨hw, hnd, hnm⟩ := h_inv
+    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, ite_false] at hnd
+    rw [Stmt.modifiedVars] at hnm
+    exact ⟨hw, hw, all_not_mem_definedVars_of_block hnd, all_not_mem_modifiedVars_of_block hnm⟩
+  | step_ite_true _ | step_ite_nondet_true =>
+    obtain ⟨hw, hnd, hnm⟩ := h_inv
+    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, ite_false] at hnd
+    rw [Stmt.modifiedVars] at hnm
+    exact ⟨hw, hw,
+      all_not_mem_definedVars_of_block (fun hc => hnd (List.mem_append.mpr (Or.inl hc))),
+      all_not_mem_modifiedVars_of_block (fun hc => hnm (List.mem_append.mpr (Or.inl hc)))⟩
+  | step_ite_false _ | step_ite_nondet_false =>
+    obtain ⟨hw, hnd, hnm⟩ := h_inv
+    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, ite_false] at hnd
+    rw [Stmt.modifiedVars] at hnm
+    exact ⟨hw, hw,
+      all_not_mem_definedVars_of_block (fun hc => hnd (List.mem_append.mpr (Or.inr hc))),
+      all_not_mem_modifiedVars_of_block (fun hc => hnm (List.mem_append.mpr (Or.inr hc)))⟩
+  | step_loop_enter _ | step_loop_nondet_enter =>
+    obtain ⟨hw, hnd, hnm⟩ := h_inv
+    have hnd' := hnd; have hnm' := hnm
+    rw [Stmt.definedVars] at hnd; simp only [Bool.false_eq_true, ite_false] at hnd
+    rw [Stmt.modifiedVars] at hnm
+    refine ⟨⟨hw, hw, all_not_mem_definedVars_of_block hnd, all_not_mem_modifiedVars_of_block hnm⟩,
+      ?_, ?_⟩
+    · intro s hs; rw [List.mem_singleton] at hs; subst hs; exact hnd'
+    · intro s hs; rw [List.mem_singleton] at hs; subst hs; exact hnm'
+  | step_loop_exit _ | step_loop_nondet_exit | step_exit | step_typeDecl =>
+    exact h_inv.1
+  | step_stmts_nil =>
+    exact h_inv.1
+  | step_stmts_cons =>
+    obtain ⟨hw, hnd, hnm⟩ := h_inv
+    exact ⟨⟨hw, hnd _ List.mem_cons_self, hnm _ List.mem_cons_self⟩,
+      fun s hs => hnd _ (List.mem_cons_of_mem _ hs),
+      fun s hs => hnm _ (List.mem_cons_of_mem _ hs)⟩
+  | step_seq_inner _ ih =>
+    obtain ⟨h_inner, h_nd, h_nm⟩ := h_inv
+    exact ⟨ih h_inner, h_nd, h_nm⟩
+  | step_seq_done =>
+    obtain ⟨h_inner, h_nd, h_nm⟩ := h_inv
+    exact ⟨h_inner, h_nd, h_nm⟩
+  | step_seq_exit =>
+    exact h_inv.1
+  | step_block_body _ ih =>
+    obtain ⟨h_parent, h_inner⟩ := h_inv
+    exact ⟨h_parent, ih h_inner⟩
+  | step_block_done | step_block_exit_match _ | step_block_exit_mismatch _ =>
+    obtain ⟨h_parent, h_inner⟩ := h_inv
+    have hi : _ = w := h_inner
+    show projectStore _ _ y = w
+    simp only [projectStore]
+    rw [h_parent, hi]
+    cases w with
+    | none => simp
+    | some v => simp
+
+/-- Trace lift: `Config.varEqUnwritten` is preserved along a multi-step run. -/
+theorem Config.varEqUnwritten_star {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [DecidableEq P.Ident]
+    {y : P.Ident} {w : Option P.Expr} {cfg cfg' : Config P (Cmd P)}
+    (h_run : StepStmtStar P (EvalCmd P) cfg cfg')
+    (h_inv : Config.varEqUnwritten (P := P) y w cfg) :
+    Config.varEqUnwritten (P := P) y w cfg' := by
+  induction h_run with
+  | refl => exact h_inv
+  | step _ _ _ h_step _ ih => exact ih (Config.varEqUnwritten_step h_step h_inv)
+
+/-- **Value frame lemma.**  A terminating `.stmts bss` run preserves the exact
+value at any `y` the block never writes: if `y ∉ Block.definedVars bss false`
+and `y ∉ Block.modifiedVars bss`, then `ρ'.store y = ρ.store y`.  The exact-value
+analogue of `block_run_terminal_preserves_none_of_not_definedVars`; instantiates
+the `Config.varEqUnwritten` engine at `w := ρ.store y`. -/
+theorem block_run_terminal_preserves_eq_of_not_written {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [DecidableEq P.Ident]
+    {y : P.Ident} {bss : List (Stmt P (Cmd P))} {ρ ρ' : Env P}
+    (h_y_not_def : y ∉ Block.definedVars (P := P) (C := Cmd P) bss false)
+    (h_y_not_mod : y ∉ Block.modifiedVars (P := P) (C := Cmd P) bss)
+    (h_run : StepStmtStar P (EvalCmd P) (.stmts bss ρ) (.terminal ρ')) :
+    ρ'.store y = ρ.store y :=
+  Config.varEqUnwritten_star (w := ρ.store y) h_run
+    ⟨rfl, all_not_mem_definedVars_of_block h_y_not_def,
+     all_not_mem_modifiedVars_of_block h_y_not_mod⟩
+
+/-- If a prefix run fails, so does the run of prefix ++ suffix. -/
+theorem stmts_prefix_failing_append (P : PureExpr) [HasFvar P] [HasFvars P] [HasBoolOps P]
+    (pfx sfx : List (Stmt P (Cmd P))) (ρ : Env P) (c : Config P (Cmd P))
+    (h : StepStmtStar P (EvalCmd P) (.stmts pfx ρ) c)
+    (hc : c.getEnv.hasFailure = true) :
+    ∃ c', StepStmtStar P (EvalCmd P) (.stmts (pfx ++ sfx) ρ) c'
+      ∧ c'.getEnv.hasFailure = true := by
+  induction pfx generalizing ρ c with
+  | nil =>
+    have h_c_env : c.getEnv = ρ := by
+      cases h with
+      | refl => rfl
+      | step _ _ _ h_step h_rest =>
+        cases h_step with
+        | step_stmts_nil =>
+          have := reflTransT_from_terminal P (reflTrans_to_T h_rest)
+          rw [this]; rfl
+    have hρ : ρ.hasFailure = true := by rw [h_c_env] at hc; simpa [Config.getEnv] using hc
+    refine ⟨Config.stmts sfx ρ, ?_, by simpa [Config.getEnv] using hρ⟩
+    exact .refl _
+  | cons s rest ih =>
+    rcases stmts_cons_reaches_failing' P (reflTrans_to_T h) hc with
+      ⟨d, h_head, hd⟩ | ⟨ρ₁, d, h_head_term, h_rest_run, hd⟩
+    · refine ⟨.seq d (rest ++ sfx),
+        .step _ _ _ StepStmt.step_stmts_cons
+          (seq_inner_star P (EvalCmd P) _ _ _ h_head), ?_⟩
+      simpa [Config.getEnv] using hd
+    · obtain ⟨c', h_rest_full, hc'⟩ := ih ρ₁ d h_rest_run hd
+      exact ⟨c', ReflTrans_Transitive _ _ _ _
+        (stmts_cons_step P (EvalCmd P) s (rest ++ sfx) ρ ρ₁ h_head_term) h_rest_full, hc'⟩
+
+/-- A command-free administrative step is already an event step after normalizing
+its silent trace and unchanged cumulative failure flag. -/
+private theorem StepStmt.adminToStepStmtE
+    {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
+    {c c' : Config P (Cmd P)}
+    (h : StepStmt P (noCommandEvalE P (Cmd P)) c c') :
+    StepStmtE P (EvalCmdE P) c (c.emittedEvents)
+      (c'.withFailure c.getEnv.hasFailure) := by
+  induction h <;>
+    simp_all [noCommandEvalE, Config.emittedEvents, Config.withFailure, Config.getEnv] <;>
+    first
+    | exact StepStmtE.step_seq_inner (by assumption)
+    | exact StepStmtE.step_block_body (by assumption)
+    | apply StepStmtE.step_admin
+      constructor <;> simp_all
+
+/-- A legacy statement step is reproduced by the event semantics with the
+source configuration's deterministic active-command trace. The event target is
+the legacy target with its cumulative failure flag normalized back to the
+source flag, because event semantics records assertion observations in the
+trace instead of mutating `hasFailure`. -/
+theorem StepStmt.toStepStmtE
+    {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
+    {c c' : Config P (Cmd P)}
+    (h : StepStmt P (EvalCmd P) c c') :
+    StepStmtE P (EvalCmdE P) c (c.emittedEvents)
+      (c'.withFailure c.getEnv.hasFailure) := by
+  induction h with
+  | step_cmd hcmd =>
+      simpa [Config.emittedEvents, Config.withFailure, Config.getEnv] using
+        (StepStmtE.step_cmd hcmd.toEvalCmdE)
+  | step_block => exact StepStmt.adminToStepStmtE .step_block
+  | step_ite_true heval =>
+      exact StepStmt.adminToStepStmtE (.step_ite_true heval)
+  | step_ite_false heval =>
+      exact StepStmt.adminToStepStmtE (.step_ite_false heval)
+  | step_ite_nondet_true =>
+      exact StepStmt.adminToStepStmtE .step_ite_nondet_true
+  | step_ite_nondet_false =>
+      exact StepStmt.adminToStepStmtE .step_ite_nondet_false
+  | step_loop_enter heval =>
+      exact StepStmt.adminToStepStmtE (.step_loop_enter heval)
+  | step_loop_exit heval =>
+      exact StepStmt.adminToStepStmtE (.step_loop_exit heval)
+  | step_loop_nondet_enter =>
+      exact StepStmt.adminToStepStmtE .step_loop_nondet_enter
+  | step_loop_nondet_exit =>
+      exact StepStmt.adminToStepStmtE .step_loop_nondet_exit
+  | step_exit => exact StepStmt.adminToStepStmtE .step_exit
+  | step_typeDecl => exact StepStmt.adminToStepStmtE .step_typeDecl
+  | step_stmts_nil => exact StepStmt.adminToStepStmtE .step_stmts_nil
+  | step_stmts_cons => exact StepStmt.adminToStepStmtE .step_stmts_cons
+  | step_seq_inner _ ih =>
+      simpa [Config.emittedEvents, Config.withFailure, Config.getEnv] using
+        (StepStmtE.step_seq_inner (ss := _) ih)
+  | step_seq_done => exact StepStmt.adminToStepStmtE .step_seq_done
+  | step_seq_exit => exact StepStmt.adminToStepStmtE .step_seq_exit
+  | step_block_body _ ih =>
+      simpa [Config.emittedEvents, Config.withFailure, Config.getEnv] using
+        (StepStmtE.step_block_body (label := _) (σ_parent := _) ih)
+  | step_block_done => exact StepStmt.adminToStepStmtE .step_block_done
+  | step_block_exit_match hlabel =>
+      exact StepStmt.adminToStepStmtE (.step_block_exit_match hlabel)
+  | step_block_exit_mismatch hlabel =>
+      exact StepStmt.adminToStepStmtE (.step_block_exit_mismatch hlabel)
+
+/-! ## Traced (`StepStmtStarE`) structural helpers
+
+Trace-carrying analogues of the failure-flag `seq`/`stmts` helpers, used to lift
+per-statement event-trace overapproximation to statement lists. Administrative
+steps arise two ways from a `.seq`: natively via `step_seq_inner` (carrying the
+inner event list) or through `step_admin` (empty trace); both are handled and
+produce the same chronological trace. -/
+
+section EventTraceStructural
+
+variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBool P]
+  (EvalCmd : EvalCmdParamE P CmdT EventT)
+
+
+/-- Lift a traced inner run through a `.seq` frame, preserving its trace. -/
+theorem seq_inner_starE
+    {inner inner' : Config P CmdT} {ss : List (Stmt P CmdT)} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd inner tr inner') :
+    StepStmtStarE P EvalCmd (.seq inner ss) tr (.seq inner' ss) := by
+  induction h with
+  | refl => exact .refl _
+  | step _ _ _ _ _ hstep _ ih => exact .step _ _ _ _ _ (.step_seq_inner hstep) ih
+
+/-- A traced run of an empty statement list emits no events and stays put or
+terminates. -/
+theorem stmts_nil_runE
+    {ρ₀ : Env P} {cfg : Config P CmdT} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd (.stmts [] ρ₀) tr cfg) :
+    tr = [] ∧ (cfg = .stmts [] ρ₀ ∨ cfg = .terminal ρ₀) := by
+  cases h with
+  | refl => exact ⟨rfl, .inl rfl⟩
+  | step _ _ _ _ _ hstep hrest =>
+    cases hstep with
+    | step_admin hadmin =>
+      cases hadmin with
+      | step_stmts_nil =>
+        cases hrest with
+        | refl => exact ⟨by simp, .inr rfl⟩
+        | step _ _ _ _ _ h' _ => cases h' with | step_admin h'' => cases h''
+
+/-- Strip the leading `step_stmts_cons` from a traced cons-list run: either the
+run is empty, or it continues from the head-in-`.seq` configuration with the
+same trace. -/
+theorem stmts_cons_headE
+    {s : Stmt P CmdT} {ss : List (Stmt P CmdT)} {ρ₀ : Env P}
+    {cfg : Config P CmdT} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd (.stmts (s :: ss) ρ₀) tr cfg) :
+    (cfg = .stmts (s :: ss) ρ₀ ∧ tr = []) ∨
+    StepStmtStarE P EvalCmd (.seq (.stmt s ρ₀) ss) tr cfg := by
+  cases h with
+  | refl => exact .inl ⟨rfl, rfl⟩
+  | step _ _ _ _ _ hstep hrest =>
+    cases hstep with
+    | step_admin hadmin =>
+      cases hadmin with
+      | step_stmts_cons => exact .inr (by simpa using hrest)
+
+/-- Terminate a head statement, then step the enclosing list to its tail with
+the head's trace. -/
+theorem stmts_cons_stepE
+    (s : Stmt P CmdT) (ss : List (Stmt P CmdT)) (ρ ρ' : Env P) {tr : List EventT}
+    (hstmt : StepStmtStarE P EvalCmd (.stmt s ρ) tr (.terminal ρ')) :
+    StepStmtStarE P EvalCmd (.stmts (s :: ss) ρ) tr (.stmts ss ρ') := by
+  have h2 := seq_inner_starE EvalCmd (ss := ss) hstmt
+  have hchain := ReflTransTrace.trans _
+    (ReflTransTrace.step _ _ _ _ _ (.step_admin .step_stmts_cons) h2)
+    (ReflTransTrace.step (r := StepStmtE P EvalCmd)
+      _ _ _ _ _ (.step_admin .step_seq_done) (.refl _))
+  simpa using hchain
+
+/-- A single statement whose event run terminates gives a terminating event run of the
+one-element statement list wrapping it, with the same trace. -/
+theorem stmtRun_to_singletonE
+    {s : Stmt P CmdT} {ρ ρ' : Env P} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd (.stmt s ρ) tr (.terminal ρ')) :
+    StepStmtStarE P EvalCmd (.stmts [s] ρ) tr (.terminal ρ') := by
+  have hcons := stmts_cons_stepE EvalCmd s [] ρ ρ' h
+  have hnil : StepStmtStarE P EvalCmd
+      (.stmts [] ρ') [] (.terminal ρ') :=
+    .step _ [] _ [] _ (.step_admin .step_stmts_nil) (.refl _)
+  simpa using ReflTransTrace.trans _ hcons hnil
+
+/-- Decompose a traced `.seq inner ss` run to an arbitrary target: still inside
+the head, the head terminated and the tail continues, or the head exited. The
+trace splits chronologically as head ++ tail. -/
+theorem seq_run_decomposeE
+    {inner : Config P CmdT} {ss : List (Stmt P CmdT)}
+    {cfg : Config P CmdT} {tr : List EventT}
+    (hstar : StepStmtStarE P EvalCmd (.seq inner ss) tr cfg) :
+    (∃ inner', cfg = .seq inner' ss ∧
+        StepStmtStarE P EvalCmd inner tr inner')
+    ∨ (∃ ρ₁ tr₁ tr₂, tr = tr₁ ++ tr₂ ∧
+        StepStmtStarE P EvalCmd inner tr₁ (.terminal ρ₁) ∧
+        StepStmtStarE P EvalCmd (.stmts ss ρ₁) tr₂ cfg)
+    ∨ (∃ lbl ρ₁, cfg = .exiting lbl ρ₁ ∧
+        StepStmtStarE P EvalCmd inner tr (.exiting lbl ρ₁)) := by
+  suffices h_gen : ∀ src tr' tgt,
+      StepStmtStarE P EvalCmd src tr' tgt →
+      ∀ inner ss, src = .seq inner ss →
+      (∃ inner', tgt = .seq inner' ss ∧
+          StepStmtStarE P EvalCmd inner tr' inner')
+      ∨ (∃ ρ₁ tr₁ tr₂, tr' = tr₁ ++ tr₂ ∧
+          StepStmtStarE P EvalCmd inner tr₁ (.terminal ρ₁) ∧
+          StepStmtStarE P EvalCmd (.stmts ss ρ₁) tr₂ tgt)
+      ∨ (∃ lbl ρ₁, tgt = .exiting lbl ρ₁ ∧
+          StepStmtStarE P EvalCmd inner tr' (.exiting lbl ρ₁)) by
+    exact h_gen _ _ _ hstar _ _ rfl
+  intro src tr' tgt hstar_g
+  induction hstar_g with
+  | refl x => intro inner ss hsrc; subst hsrc; exact .inl ⟨inner, rfl, .refl _⟩
+  | step x emitted y restTr z hstep hrest ih =>
+    intro inner ss hsrc; subst hsrc
+    cases hstep with
+    | step_seq_inner hinner =>
+      rcases ih _ _ rfl with
+        ⟨inner'', hcfg, hrun⟩ | ⟨ρ₁, tr₁, tr₂, htr, hterm, htail⟩ | ⟨lbl, ρ₁, hcfg, hexit⟩
+      · exact .inl ⟨inner'', hcfg, .step _ _ _ _ _ hinner hrun⟩
+      · exact .inr (.inl ⟨ρ₁, emitted ++ tr₁, tr₂, by rw [htr]; simp [List.append_assoc],
+          .step _ _ _ _ _ hinner hterm, htail⟩)
+      · exact .inr (.inr ⟨lbl, ρ₁, hcfg, .step _ _ _ _ _ hinner hexit⟩)
+    | step_admin hadmin =>
+      cases hadmin with
+      | step_seq_inner hinner' =>
+        rcases ih _ _ rfl with
+          ⟨inner'', hcfg, hrun⟩ | ⟨ρ₁, tr₁, tr₂, htr, hterm, htail⟩ | ⟨lbl, ρ₁, hcfg, hexit⟩
+        · exact .inl ⟨inner'', hcfg, .step _ _ _ _ _ (.step_admin hinner') hrun⟩
+        · exact .inr (.inl ⟨ρ₁, tr₁, tr₂, by rw [htr]; simp,
+            .step _ _ _ _ _ (.step_admin hinner') hterm, htail⟩)
+        · exact .inr (.inr ⟨lbl, ρ₁, hcfg, .step _ _ _ _ _ (.step_admin hinner') hexit⟩)
+      | step_seq_done =>
+        exact .inr (.inl ⟨_, [], restTr, by simp, .refl _, hrest⟩)
+      | step_seq_exit =>
+        cases hrest with
+        | refl => exact .inr (.inr ⟨_, _, rfl, .refl _⟩)
+        | step _ _ _ _ _ h' _ => cases h' with | step_admin h'' => cases h''
+
+/-- A traced `.seq inner ss` run reaching terminal splits into the inner
+terminating and the tail running to terminal. -/
+theorem seq_reaches_terminalE
+    {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {ρ' : Env P} {tr : List EventT}
+    (hstar : StepStmtStarE P EvalCmd (.seq inner ss) tr (.terminal ρ')) :
+    ∃ ρ₁ tr₁ tr₂, tr = tr₁ ++ tr₂ ∧
+      StepStmtStarE P EvalCmd inner tr₁ (.terminal ρ₁) ∧
+      StepStmtStarE P EvalCmd (.stmts ss ρ₁) tr₂ (.terminal ρ') := by
+  rcases seq_run_decomposeE EvalCmd hstar with
+    ⟨inner', hcfg, _⟩ | ⟨ρ₁, tr₁, tr₂, htr, hterm, htail⟩ | ⟨lbl, ρ₁, hcfg, _⟩
+  · simp at hcfg
+  · exact ⟨ρ₁, tr₁, tr₂, htr, hterm, htail⟩
+  · simp at hcfg
+
+/-- A traced `.seq inner ss` run reaching exiting: the inner exited, or the
+inner terminated and the tail exited. -/
+theorem seq_reaches_exitingE
+    {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {lbl : String}
+    {ρ' : Env P} {tr : List EventT}
+    (hstar : StepStmtStarE P EvalCmd (.seq inner ss) tr (.exiting lbl ρ')) :
+    StepStmtStarE P EvalCmd inner tr (.exiting lbl ρ') ∨
+    ∃ ρ₁ tr₁ tr₂, tr = tr₁ ++ tr₂ ∧
+      StepStmtStarE P EvalCmd inner tr₁ (.terminal ρ₁) ∧
+      StepStmtStarE P EvalCmd (.stmts ss ρ₁) tr₂ (.exiting lbl ρ') := by
+  rcases seq_run_decomposeE EvalCmd hstar with
+    ⟨inner', hcfg, _⟩ | ⟨ρ₁, tr₁, tr₂, htr, hterm, htail⟩ | ⟨lbl', ρ₁, hcfg, hexit⟩
+  · simp at hcfg
+  · exact .inr ⟨ρ₁, tr₁, tr₂, htr, hterm, htail⟩
+  · injection hcfg with hl hρ; subst hρ; subst hl; exact .inl hexit
+
+/-- A single traced step preserves `Config.exitsCoveredByBlocks`. -/
+private theorem stepStmtE_preserves_exitsCoveredByBlocks
+    {c₁ c₂ : Config P CmdT} {tr : List EventT}
+    (hstep : StepStmtE P EvalCmd c₁ tr c₂) :
+    ∀ labels, c₁.exitsCoveredByBlocks labels → c₂.exitsCoveredByBlocks labels := by
+  induction hstep with
+  | step_cmd _ => intro _ _; trivial
+  | step_admin hadmin =>
+      intro labels hcov
+      exact step_preserves_exitsCoveredByBlocks P (noCommandEvalE P CmdT)
+        labels _ _ hadmin hcov
+  | step_seq_inner _ ih =>
+      intro labels hcov
+      exact ⟨ih labels hcov.1, hcov.2⟩
+  | step_block_body _ ih =>
+      intro labels hcov
+      rename_i inner emitted inner' label σ_parent _
+      cases label with
+      | none => exact ih labels hcov
+      | some l => exact ih (l :: labels) hcov
+
+/-- Well-paired statement lists cannot escape via `.exiting` under the traced
+semantics: the event analogue of `block_exitsCoveredByBlocks_noEscape`. -/
+theorem stmts_exitsCoveredByBlocks_noEscapeE
+    (bss : List (Stmt P CmdT))
+    (hwp : Block.exitsCoveredByBlocks [] bss) :
+    ∀ (ρ : Env P) (lbl : String) (ρ' : Env P) {tr : List EventT},
+      ¬ StepStmtStarE P EvalCmd (.stmts bss ρ) tr (.exiting lbl ρ') := by
+  intro ρ lbl ρ' tr hstar
+  suffices h_pres : ∀ (c₁ : Config P CmdT) (tr' : List EventT) (c₂ : Config P CmdT),
+      StepStmtStarE P EvalCmd c₁ tr' c₂ →
+      c₁.exitsCoveredByBlocks ([] : List String) →
+      c₂.exitsCoveredByBlocks ([] : List String) by
+    have hwp' := h_pres _ _ _ hstar
+      (show Config.exitsCoveredByBlocks [] (.stmts bss ρ) from hwp)
+    exact absurd hwp' (by simp [Config.exitsCoveredByBlocks])
+  intro c₁ tr' c₂ hstar_c
+  induction hstar_c with
+  | refl => exact id
+  | step _ _ _ _ _ hstep _ ih =>
+      intro hcov
+      exact ih (stepStmtE_preserves_exitsCoveredByBlocks EvalCmd hstep _ hcov)
+
+/-- A statement whose exits are all caught by enclosing blocks cannot escape via
+`.exiting` under the traced semantics: the `.stmt` analogue of
+`stmts_exitsCoveredByBlocks_noEscapeE` (and the event analogue of
+`exitsCoveredByBlocks_noEscape`). -/
+theorem exitsCoveredByBlocks_noEscapeE
+    (s : Stmt P CmdT)
+    (hwp : s.exitsCoveredByBlocks []) :
+    ∀ (ρ : Env P) (lbl : String) (ρ' : Env P) {tr : List EventT},
+      ¬ StepStmtStarE P EvalCmd (.stmt s ρ) tr (.exiting lbl ρ') := by
+  intro ρ lbl ρ' tr hstar
+  suffices h_pres : ∀ (c₁ : Config P CmdT) (tr' : List EventT) (c₂ : Config P CmdT),
+      StepStmtStarE P EvalCmd c₁ tr' c₂ →
+      c₁.exitsCoveredByBlocks ([] : List String) →
+      c₂.exitsCoveredByBlocks ([] : List String) by
+    have hwp' := h_pres _ _ _ hstar
+      (show Config.exitsCoveredByBlocks [] (.stmt s ρ) from hwp)
+    exact absurd hwp' (by simp [Config.exitsCoveredByBlocks])
+  intro c₁ tr' c₂ hstar_c
+  induction hstar_c with
+  | refl => exact id
+  | step _ _ _ _ _ hstep _ ih =>
+      intro hcov
+      exact ih (stepStmtE_preserves_exitsCoveredByBlocks EvalCmd hstep _ hcov)
+
+/-- An exiting head statement makes the whole traced list exit with the same
+label and trace: the event analogue of `stmts_cons_exiting`. -/
+private theorem stmts_cons_exitE
+    (s : Stmt P CmdT) (ss : List (Stmt P CmdT)) (ρ ρ' : Env P) (lbl : String)
+    {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd (.stmt s ρ) tr (.exiting lbl ρ')) :
+    StepStmtStarE P EvalCmd (.stmts (s :: ss) ρ) tr (.exiting lbl ρ') := by
+  have hchain := ReflTransTrace.trans _
+    (ReflTransTrace.step _ _ _ _ _ (.step_admin .step_stmts_cons)
+      (seq_inner_starE EvalCmd (ss := ss) h))
+    (ReflTransTrace.step _ _ _ _ _ (.step_admin .step_seq_exit) (.refl _))
+  simpa using hchain
+
+/-- Decompose a *finished* traced run of `.stmts (ss₁ ++ ss₂)` — terminal or
+exiting — by what `ss₁` did: either `ss₁` escaped on its own (consuming the
+whole trace, `ss₂` never running), or `ss₁` terminated at some `ρ₁` with a
+prefix trace `tr₁` from which `ss₂` finished the same way with the remaining
+`tr₂`, splitting the trace chronologically as `tr₁ ++ tr₂`. The event analogue
+of `stmts_append_done`. -/
+theorem stmts_append_doneE
+    (ss₁ ss₂ : List (Stmt P CmdT)) (ρ ρ' : Env P) {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd (.stmts (ss₁ ++ ss₂) ρ) tr (.terminal ρ') ∨
+      ∃ lbl, StepStmtStarE P EvalCmd
+        (.stmts (ss₁ ++ ss₂) ρ) tr (.exiting lbl ρ')) :
+    (∃ lbl, StepStmtStarE P EvalCmd (.stmts ss₁ ρ) tr (.exiting lbl ρ')) ∨
+    (∃ ρ₁ tr₁ tr₂, tr = tr₁ ++ tr₂ ∧
+      StepStmtStarE P EvalCmd (.stmts ss₁ ρ) tr₁ (.terminal ρ₁) ∧
+      (StepStmtStarE P EvalCmd (.stmts ss₂ ρ₁) tr₂ (.terminal ρ') ∨
+       ∃ lbl, StepStmtStarE P EvalCmd
+         (.stmts ss₂ ρ₁) tr₂ (.exiting lbl ρ'))) := by
+  induction ss₁ generalizing ρ tr with
+  | nil =>
+      -- empty prefix: it terminates in place emitting nothing; ss₂ ran the whole trace
+      refine .inr ⟨ρ, [], tr, by simp, ?_, ?_⟩
+      · exact ReflTransTrace.step (r := StepStmtE P EvalCmd)
+          _ _ _ _ _ (StepStmtE.step_admin StepStmt.step_stmts_nil) (.refl _)
+      · simpa using h
+  | cons s rest ih =>
+      simp only [List.cons_append] at h
+      -- classify the head, splitting the trace at the head/tail boundary
+      have hhead :
+          (∃ lbl, StepStmtStarE P EvalCmd (.stmt s ρ) tr (.exiting lbl ρ')) ∨
+          (∃ ρ_mid trh trt, tr = trh ++ trt ∧
+            StepStmtStarE P EvalCmd (.stmt s ρ) trh (.terminal ρ_mid) ∧
+            (StepStmtStarE P EvalCmd
+                (.stmts (rest ++ ss₂) ρ_mid) trt (.terminal ρ') ∨
+             ∃ lbl, StepStmtStarE P EvalCmd
+                (.stmts (rest ++ ss₂) ρ_mid) trt (.exiting lbl ρ'))) := by
+        rcases h with hterm | ⟨lbl, hexit⟩
+        · rcases stmts_cons_headE EvalCmd hterm with ⟨hcfg, _⟩ | hseq
+          · simp at hcfg
+          · obtain ⟨ρ_mid, trh, trt, htr, hh, ht⟩ :=
+              seq_reaches_terminalE EvalCmd hseq
+            exact .inr ⟨ρ_mid, trh, trt, htr, hh, .inl ht⟩
+        · rcases stmts_cons_headE EvalCmd hexit with ⟨hcfg, _⟩ | hseq
+          · simp at hcfg
+          · rcases seq_reaches_exitingE EvalCmd hseq with hh | ⟨ρ_mid, trh, trt, htr, hh, ht⟩
+            · exact .inl ⟨lbl, hh⟩
+            · exact .inr ⟨ρ_mid, trh, trt, htr, hh, .inr ⟨lbl, ht⟩⟩
+      rcases hhead with ⟨lbl, hexit_s⟩ | ⟨ρ_mid, trh, trt, htr, hterm_s, htail⟩
+      · exact .inl ⟨lbl, stmts_cons_exitE EvalCmd s rest ρ ρ' lbl hexit_s⟩
+      · have hcons : StepStmtStarE P EvalCmd
+            (.stmts (s :: rest) ρ) trh (.stmts rest ρ_mid) :=
+          stmts_cons_stepE EvalCmd s rest ρ ρ_mid hterm_s
+        rcases ih ρ_mid htail with
+          ⟨lbl, hexit_rest⟩ | ⟨ρ₁, tr₁', tr₂', htr', hterm_rest, hfin⟩
+        · refine .inl ⟨lbl, ?_⟩
+          rw [htr]
+          exact ReflTransTrace.trans _ hcons hexit_rest
+        · refine .inr ⟨ρ₁, trh ++ tr₁', tr₂', ?_, ?_, hfin⟩
+          · rw [htr, htr']; simp [List.append_assoc]
+          · exact ReflTransTrace.trans _ hcons hterm_rest
+
+end EventTraceStructural
+
+/-! ## Traced block-frame lifting, completion inversion, and scope plumbing
+
+Event-trace (`StepStmtStarE`) analogues of the failure-flag block metatheory:
+lifting a run through a `.block` frame, inverting a finished block run (terminal
+or exiting) with the emitted trace preserved, factory preservation,
+and the scope-aware `varsUndefined`/`projectStore_eq_dropVars` plumbing.  Command
+none-preservation enters only through an abstract `h_cmd` premise so the results
+apply to any `EvalCmdParamE`. -/
+
+section EventBlockScope
+
+variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBool P]
+  {EvalCmd : EvalCmdParamE P CmdT EventT}
+
+
+/-- No traced event step leaves a terminal configuration. -/
+private theorem stepStmtE_from_terminal_none
+    {ρ : Env P} {emitted : List EventT} {cfg : Config P CmdT}
+    (h : StepStmtE P EvalCmd (.terminal ρ) emitted cfg) : False := by
+  cases h with
+  | step_admin hadmin => cases hadmin
+
+/-- A traced run from a stuck terminal config is reflexive and emits nothing. -/
+theorem stepStmtStarE_from_terminal
+    {ρ : Env P} {tr : List EventT} {cfg : Config P CmdT}
+    (h : StepStmtStarE P EvalCmd (.terminal ρ) tr cfg) :
+    cfg = .terminal ρ ∧ tr = [] := by
+  cases h with
+  | refl => exact ⟨rfl, rfl⟩
+  | step _ _ _ _ _ hstep _ => exact (stepStmtE_from_terminal_none hstep).elim
+
+/-- No traced event step leaves an exiting configuration. -/
+private theorem stepStmtE_from_exiting_none
+    {lbl : String} {ρ : Env P} {emitted : List EventT} {cfg : Config P CmdT}
+    (h : StepStmtE P EvalCmd (.exiting lbl ρ) emitted cfg) : False := by
+  cases h with
+  | step_admin hadmin => cases hadmin
+
+/-- A traced run from a stuck exiting config is reflexive and emits nothing. -/
+theorem stepStmtStarE_from_exiting
+    {lbl : String} {ρ : Env P} {tr : List EventT} {cfg : Config P CmdT}
+    (h : StepStmtStarE P EvalCmd (.exiting lbl ρ) tr cfg) :
+    cfg = .exiting lbl ρ ∧ tr = [] := by
+  cases h with
+  | refl => exact ⟨rfl, rfl⟩
+  | step _ _ _ _ _ hstep _ => exact (stepStmtE_from_exiting_none hstep).elim
+
+/-- Lift a traced inner run through a `.block` frame, preserving its trace. -/
+theorem block_inner_starE
+    {inner inner' : Config P CmdT} {label : Option String}
+    {σ_parent : SemanticStore P} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd inner tr inner') :
+    StepStmtStarE P EvalCmd
+      (.block label σ_parent inner) tr (.block label σ_parent inner') := by
+  induction h with
+  | refl => exact .refl _
+  | step _ _ _ _ _ hstep _ ih => exact .step _ _ _ _ _ (.step_block_body hstep) ih
+
+/-- General inversion of a finished traced `.block` run: either the block is
+still open, or its body reached a terminal/exiting outcome (with the *same*
+trace, since block enter/exit steps emit nothing) and the block projected the
+result store through the parent, restoring the parent factory. -/
+theorem block_run_to_finalE
+    {inner : Config P CmdT} {label : Option String}
+    {σ_parent : SemanticStore P}
+    {cfg : Config P CmdT} {tr : List EventT}
+    (hstar : StepStmtStarE P EvalCmd
+      (.block label σ_parent inner) tr cfg) :
+    (∃ inner', cfg = .block label σ_parent inner' ∧
+        StepStmtStarE P EvalCmd inner tr inner')
+    ∨ (∃ ρ_i, StepStmtStarE P EvalCmd inner tr (.terminal ρ_i) ∧
+        cfg = .terminal { ρ_i with store := projectStore σ_parent ρ_i.store})
+    ∨ (∃ l ρ_i, label = .some l ∧
+        StepStmtStarE P EvalCmd inner tr (.exiting l ρ_i) ∧
+        cfg = .terminal { ρ_i with store := projectStore σ_parent ρ_i.store})
+    ∨ (∃ lbl ρ_i, label ≠ .some lbl ∧
+        StepStmtStarE P EvalCmd inner tr (.exiting lbl ρ_i) ∧
+        cfg = .exiting lbl { ρ_i with store := projectStore σ_parent ρ_i.store}) := by
+  suffices h_gen : ∀ src tr cfg, StepStmtStarE P EvalCmd src tr cfg →
+      ∀ inner, src = .block label σ_parent inner →
+      (∃ inner', cfg = .block label σ_parent inner' ∧
+          StepStmtStarE P EvalCmd inner tr inner')
+      ∨ (∃ ρ_i, StepStmtStarE P EvalCmd inner tr (.terminal ρ_i) ∧
+          cfg = .terminal { ρ_i with store := projectStore σ_parent ρ_i.store})
+      ∨ (∃ l ρ_i, label = .some l ∧
+          StepStmtStarE P EvalCmd inner tr (.exiting l ρ_i) ∧
+          cfg = .terminal { ρ_i with store := projectStore σ_parent ρ_i.store})
+      ∨ (∃ lbl ρ_i, label ≠ .some lbl ∧
+          StepStmtStarE P EvalCmd inner tr (.exiting lbl ρ_i) ∧
+          cfg = .exiting lbl { ρ_i with store := projectStore σ_parent ρ_i.store}) from
+    h_gen _ _ _ hstar _ rfl
+  intro src tr cfg hstar_g
+  induction hstar_g with
+  | refl x => intro inner hsrc; subst hsrc; exact .inl ⟨inner, rfl, .refl _⟩
+  | step x emitted y restTr z hstep hrest ih =>
+    intro inner hsrc; subst hsrc
+    cases hstep with
+    | step_block_body hE =>
+      rcases ih _ rfl with
+        ⟨inner'', hcfg, hrun⟩ | ⟨ρ_i, hrun, hcfg⟩ | ⟨l, ρ_i, hl, hrun, hcfg⟩ | ⟨lbl, ρ_i, hne, hrun, hcfg⟩
+      · exact .inl ⟨inner'', hcfg, .step _ _ _ _ _ hE hrun⟩
+      · exact .inr (.inl ⟨ρ_i, .step _ _ _ _ _ hE hrun, hcfg⟩)
+      · exact .inr (.inr (.inl ⟨l, ρ_i, hl, .step _ _ _ _ _ hE hrun, hcfg⟩))
+      · exact .inr (.inr (.inr ⟨lbl, ρ_i, hne, .step _ _ _ _ _ hE hrun, hcfg⟩))
+    | step_admin hadmin =>
+      cases hadmin with
+      | step_block_body hinner =>
+        rcases ih _ rfl with
+          ⟨inner'', hcfg, hrun⟩ | ⟨ρ_i, hrun, hcfg⟩ | ⟨l, ρ_i, hl, hrun, hcfg⟩ | ⟨lbl, ρ_i, hne, hrun, hcfg⟩
+        · exact .inl ⟨inner'', hcfg, .step _ _ _ _ _ (.step_admin hinner) hrun⟩
+        · exact .inr (.inl ⟨ρ_i, .step _ _ _ _ _ (.step_admin hinner) hrun, hcfg⟩)
+        · exact .inr (.inr (.inl ⟨l, ρ_i, hl, .step _ _ _ _ _ (.step_admin hinner) hrun, hcfg⟩))
+        · exact .inr (.inr (.inr ⟨lbl, ρ_i, hne, .step _ _ _ _ _ (.step_admin hinner) hrun, hcfg⟩))
+      | step_block_done =>
+        obtain ⟨hz, hrestnil⟩ := stepStmtStarE_from_terminal hrest
+        subst hrestnil
+        exact .inr (.inl ⟨_, .refl _, hz⟩)
+      | step_block_exit_match hlabel =>
+        obtain ⟨hz, hrestnil⟩ := stepStmtStarE_from_terminal hrest
+        subst hrestnil
+        exact .inr (.inr (.inl ⟨_, _, hlabel, .refl _, hz⟩))
+      | step_block_exit_mismatch hne =>
+        obtain ⟨hz, hrestnil⟩ := stepStmtStarE_from_exiting hrest
+        subst hrestnil
+        exact .inr (.inr (.inr ⟨_, _, hne, .refl _, hz⟩))
+
+/-- Invert a *finished* traced `.block` run — terminal or exiting — into the
+inner run (carrying the same trace) plus the parent-store projection. -/
+theorem block_reaches_doneE
+    {inner : Config P CmdT} {label : Option String}
+    {σ_parent : SemanticStore P} {ρ' : Env P} {tr : List EventT}
+    (hdone :
+      StepStmtStarE P EvalCmd
+        (.block label σ_parent inner) tr (.terminal ρ') ∨
+      ∃ lbl, StepStmtStarE P EvalCmd
+        (.block label σ_parent inner) tr (.exiting lbl ρ')) :
+    ∃ ρ_inner,
+      (StepStmtStarE P EvalCmd inner tr (.terminal ρ_inner) ∨
+       ∃ lbl, StepStmtStarE P EvalCmd inner tr (.exiting lbl ρ_inner)) ∧
+      ρ' = { ρ_inner with store := projectStore σ_parent ρ_inner.store} := by
+  rcases hdone with hterm | ⟨lbl0, hexit⟩
+  · rcases block_run_to_finalE hterm with
+      ⟨_, hcfg, _⟩ | ⟨ρ_i, hrun, hcfg⟩ | ⟨l, ρ_i, _, hrun, hcfg⟩ | ⟨lbl, ρ_i, _, hrun, hcfg⟩
+    · simp at hcfg
+    · injection hcfg with hρ; exact ⟨ρ_i, .inl hrun, hρ⟩
+    · injection hcfg with hρ; exact ⟨ρ_i, .inr ⟨l, hrun⟩, hρ⟩
+    · simp at hcfg
+  · rcases block_run_to_finalE hexit with
+      ⟨_, hcfg, _⟩ | ⟨ρ_i, hrun, hcfg⟩ | ⟨l, ρ_i, _, hrun, hcfg⟩ | ⟨lbl, ρ_i, _, hrun, hcfg⟩
+    · simp at hcfg
+    · simp at hcfg
+    · simp at hcfg
+    · injection hcfg with _ hρ; exact ⟨ρ_i, .inr ⟨lbl, hrun⟩, hρ⟩
+
+/-- Invert a finished traced run of `.stmt (.block l ss md)`: step through the
+block-enter, then invert the block completion, yielding the body run at the same
+trace and the parent-store projection of the result. -/
+theorem stmt_block_reaches_doneE
+    {ss : List (Stmt P CmdT)} {l : String} {md : MetaData P} {ρ₀ ρ' : Env P} {tr : List EventT}
+    (hdone :
+      StepStmtStarE P EvalCmd (.stmt (.block l ss md) ρ₀) tr (.terminal ρ') ∨
+      ∃ lbl, StepStmtStarE P EvalCmd (.stmt (.block l ss md) ρ₀) tr (.exiting lbl ρ')) :
+    ∃ ρ_inner,
+      (StepStmtStarE P EvalCmd (.stmts ss ρ₀) tr (.terminal ρ_inner) ∨
+       ∃ lbl, StepStmtStarE P EvalCmd (.stmts ss ρ₀) tr (.exiting lbl ρ_inner)) ∧
+      ρ' = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store} := by
+  rcases hdone with hterm | ⟨lbl, hexit⟩
+  · cases hterm with
+    | step _ _ _ _ _ hstep hrest =>
+      cases hstep with
+      | step_admin hadmin => cases hadmin with
+        | step_block =>
+          obtain ⟨ρ_inner, hinner, heq⟩ := block_reaches_doneE (.inl hrest)
+          exact ⟨ρ_inner, by simpa using hinner, heq⟩
+  · cases hexit with
+    | step _ _ _ _ _ hstep hrest =>
+      cases hstep with
+      | step_admin hadmin => cases hadmin with
+        | step_block =>
+          obtain ⟨ρ_inner, hinner, heq⟩ := block_reaches_doneE (.inr ⟨lbl, hrest⟩)
+          exact ⟨ρ_inner, by simpa using hinner, heq⟩
+
+/-- Single-step preservation of scope-aware `Config.varsUndefined true` under a
+traced event step, given the command evaluator only defines what the command
+declares (`h_cmd`). -/
+private theorem Config.varsUndefinedScoped_stepE_of [HasBoolOps P]
+    [HasFvar P] [HasFvars P] [HasIdent P] [DecidableEq P.Ident] [HasVarsImp P CmdT]
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT} {y : P.Ident},
+      EvalCmd f σ c σ' emitted → σ y = none →
+      y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
+    {Q : P.Ident → Prop} {cfg cfg' : Config P CmdT} {tr : List EventT}
+    (h_step : StepStmtE P EvalCmd cfg tr cfg')
+    (h_inv : Config.varsUndefined true (P := P) Q cfg) :
+    Config.varsUndefined true (P := P) Q cfg' := by
+  induction h_step with
+  | step_cmd h_eval =>
+    intro y hQ
+    obtain ⟨h_none, h_ndef⟩ := h_inv y hQ
+    exact h_cmd h_eval h_none (by simpa [Stmt.definedVars] using h_ndef)
+  | step_admin hadmin =>
+    exact Config.varsUndefinedScoped_step_of (evalCmd := noCommandEvalE P CmdT)
+      (fun he _ _ => by simp [noCommandEvalE] at he) hadmin h_inv
+  | step_seq_inner _ ih => exact ⟨ih h_inv.1, h_inv.2⟩
+  | step_block_body _ _ => exact h_inv
+
+/-- A scope-aware `Config.varsUndefined true` invariant is preserved across a
+traced run when each command defines only the variables it declares. -/
+theorem Config.varsUndefinedScoped_star_ofE [HasBoolOps P]
+    [HasFvar P] [HasFvars P] [HasIdent P] [DecidableEq P.Ident] [HasVarsImp P CmdT]
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT} {y : P.Ident},
+      EvalCmd f σ c σ' emitted → σ y = none →
+      y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
+    {Q : P.Ident → Prop} {cfg cfg' : Config P CmdT} {tr : List EventT}
+    (h_run : StepStmtStarE P EvalCmd cfg tr cfg')
+    (h_inv : Config.varsUndefined true (P := P) Q cfg) :
+    Config.varsUndefined true (P := P) Q cfg' := by
+  induction h_run with
+  | refl => exact h_inv
+  | step _ _ _ _ _ h_step _ ih =>
+    exact ih (Config.varsUndefinedScoped_stepE_of h_cmd h_step h_inv)
+
+/-- **Leaving a block drops exactly the names its body scopes**, event-trace
+version: the store handed back after a finished traced body run is determined by
+the body alone. -/
+theorem projectStore_eq_dropVarsE [HasBoolOps P]
+    [HasFvar P] [HasFvars P] [HasIdent P] [DecidableEq P.Ident] [HasVarsImp P CmdT]
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT} {y : P.Ident},
+      EvalCmd f σ c σ' emitted → σ y = none →
+      y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
+    {ss : List (Stmt P CmdT)} {ρ₀ ρ : Env P} {tr : List EventT}
+    (hdefs : ∀ x ∈ Block.definedVars (P := P) (C := CmdT) ss true, ρ₀.store x = none)
+    (hrun :
+      StepStmtStarE P EvalCmd (.stmts ss ρ₀) tr (.terminal ρ) ∨
+      ∃ lbl, StepStmtStarE P EvalCmd (.stmts ss ρ₀) tr (.exiting lbl ρ)) :
+    projectStore ρ₀.store ρ.store
+      = dropVars (Block.definedVars (P := P) (C := CmdT) ss true) ρ.store := by
+  funext n
+  by_cases hmem : n ∈ Block.definedVars (P := P) (C := CmdT) ss true
+  · simp [projectStore, dropVars, hmem, hdefs n hmem]
+  · cases hq : ρ₀.store n with
+    | some v => simp [projectStore, dropVars, hmem, hq]
+    | none =>
+      have hstart : Config.varsUndefined true (P := P) (· = n) (.stmts ss ρ₀) := by
+        rintro y rfl
+        exact ⟨hq, all_not_mem_definedVars_of_block hmem⟩
+      have hnone : ρ.store n = none := by
+        rcases hrun with hterm | ⟨_, hexit⟩
+        · exact Config.varsUndefinedScoped_star_ofE h_cmd hterm hstart n rfl
+        · exact Config.varsUndefinedScoped_star_ofE h_cmd hexit hstart n rfl
+      simp [projectStore, dropVars, hmem, hq, hnone]
+
+end EventBlockScope
+
+/-! ## Type-valued traced completion inversion for the loop rule
+
+`Type`-valued (`ReflTransTraceT`) analogues of `seqT_reaches_terminal`,
+`stmtsT_cons_terminal` and `blockT_reaches_terminal_noExit`, carrying the
+emitted trace *and* a strict step-count bound.  The event `while_rule` recurses
+on the strictly shrinking length of the remaining loop derivation while
+composing each iteration's trace chronologically. -/
+
+section EventTraceReflTransTHelpers
+
+variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBool P]
+  {EvalCmd : EvalCmdParamE P CmdT EventT}
+
+
+/-- Invert a traced `.seq inner ss` run reaching terminal: the inner terminates
+emitting a prefix, then the tail runs to terminal emitting the suffix, splitting
+the trace chronologically with a strict length bound. -/
+theorem seqT_reaches_terminalE
+    {inner : Config P CmdT} {ss : List (Stmt P CmdT)} {ρ' : Env P} {tr : List EventT}
+    (hstar : ReflTransTraceT (StepStmtE P EvalCmd)
+      (.seq inner ss) tr (.terminal ρ')) :
+    ∃ (ρ₁ : Env P) (tr₁ tr₂ : List EventT), tr = tr₁ ++ tr₂ ∧
+      ∃ (h1 : ReflTransTraceT (StepStmtE P EvalCmd) inner tr₁ (.terminal ρ₁)),
+      ∃ (h2 : ReflTransTraceT (StepStmtE P EvalCmd) (.stmts ss ρ₁) tr₂ (.terminal ρ')),
+      h1.len + h2.len < hstar.len := by
+  match hstar with
+  | .step _ emitted _ restTr _ (.step_seq_inner hE) hrest =>
+    obtain ⟨ρ₁, tr₁, tr₂, htr, h1, h2, hlen⟩ := seqT_reaches_terminalE hrest
+    exact ⟨ρ₁, emitted ++ tr₁, tr₂, by rw [htr]; simp [List.append_assoc],
+      .step _ _ _ _ _ hE h1, h2, by simp only [ReflTransTraceT.len]; omega⟩
+  | .step _ _ _ restTr _ (.step_admin (.step_seq_inner hE')) hrest =>
+    obtain ⟨ρ₁, tr₁, tr₂, htr, h1, h2, hlen⟩ := seqT_reaches_terminalE hrest
+    exact ⟨ρ₁, tr₁, tr₂, by simp [htr],
+      .step _ _ _ _ _ (.step_admin hE') h1, h2, by simp only [ReflTransTraceT.len]; omega⟩
+  | .step _ _ _ restTr _ (.step_admin .step_seq_done) hrest =>
+    exact ⟨_, [], restTr, by simp, .refl _, hrest, by simp only [ReflTransTraceT.len]; omega⟩
+  | .step _ _ _ _ _ (.step_admin .step_seq_exit) hrest =>
+    obtain ⟨hc, _⟩ := stepStmtStarE_from_exiting (reflTransTraceT_to_prop hrest)
+    exact absurd hc (by simp)
+termination_by hstar.len
+decreasing_by all_goals (simp only [ReflTransTraceT.len]; omega)
+
+/-- Invert a traced `.stmts (s :: rest)` run reaching terminal: the head
+terminates emitting a prefix, then the tail list runs to terminal emitting the
+suffix, with a strict length bound (the leading `step_stmts_cons` is consumed). -/
+theorem stmtsT_cons_terminalE
+    {s : Stmt P CmdT} {rest : List (Stmt P CmdT)} {ρ₀ ρ' : Env P} {tr : List EventT}
+    (hstar : ReflTransTraceT (StepStmtE P EvalCmd)
+      (.stmts (s :: rest) ρ₀) tr (.terminal ρ')) :
+    ∃ (ρ₁ : Env P) (tr₁ tr₂ : List EventT), tr = tr₁ ++ tr₂ ∧
+      ∃ (h1 : ReflTransTraceT (StepStmtE P EvalCmd) (.stmt s ρ₀) tr₁ (.terminal ρ₁)),
+      ∃ (h2 : ReflTransTraceT (StepStmtE P EvalCmd) (.stmts rest ρ₁) tr₂ (.terminal ρ')),
+      h1.len + h2.len + 2 ≤ hstar.len := by
+  match hstar with
+  | .step _ _ _ restTr _ (.step_admin .step_stmts_cons) hrest =>
+    obtain ⟨ρ₁, tr₁, tr₂, htr, h1, h2, hlen⟩ := seqT_reaches_terminalE hrest
+    exact ⟨ρ₁, tr₁, tr₂, by simpa using htr, h1, h2, by simp only [ReflTransTraceT.len]; omega⟩
+
+end EventTraceReflTransTHelpers
+
+
+/-! ## Event-trace `varsDefined` / `storeWellDefined` preservation engines
+
+These reuse the failure-flag `_step_of` lemmas for administrative steps, so they
+are stated with `[HasBoolOps P]` only (never a *separate* `[HasBool P]`): that
+keeps `HasBool`/`HasVal` resolved uniformly through the `HasBoolOps → HasBool →
+HasVal` hierarchy, matching the instances the failure-flag lemmas use. -/
+
+section EventInvariantEngines
+
+variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBoolOps P]
+  {EvalCmd : EvalCmdParamE P CmdT EventT}
+
+
+/-- Single traced event step preserves `Config.varsDefined`, given a command
+evaluator that never undefines a slot (`h_cmd`). -/
+private theorem Config.varsDefined_stepE_of
+    [HasFvar P] [HasFvars P] [DecidableEq P.Ident]
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT} {y : P.Ident},
+      EvalCmd f σ c σ' emitted → (σ y).isSome = true → (σ' y).isSome = true)
+    {Q : P.Ident → Prop} {cfg cfg' : Config P CmdT} {tr : List EventT}
+    (h_step : StepStmtE P EvalCmd cfg tr cfg')
+    (h_inv : Config.varsDefined Q cfg) :
+    Config.varsDefined Q cfg' := by
+  induction h_step with
+  | step_cmd h_eval => exact fun y hQ => h_cmd h_eval (h_inv y hQ)
+  | step_admin hadmin =>
+    exact Config.varsDefined_step_of (evalCmd := noCommandEvalE P CmdT)
+      (fun he _ => by simp [noCommandEvalE] at he) hadmin h_inv
+  | step_seq_inner _ ih => exact ih h_inv
+  | step_block_body _ ih => exact ⟨h_inv.1, ih h_inv.2⟩
+
+/-- `Config.varsDefined` is preserved across a traced run when command
+evaluation never undefines an existing store slot. -/
+theorem Config.varsDefined_star_ofE
+    [HasFvar P] [HasFvars P] [DecidableEq P.Ident]
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT} {y : P.Ident},
+      EvalCmd f σ c σ' emitted → (σ y).isSome = true → (σ' y).isSome = true)
+    {Q : P.Ident → Prop} {cfg cfg' : Config P CmdT} {tr : List EventT}
+    (h_run : StepStmtStarE P EvalCmd cfg tr cfg')
+    (h_inv : Config.varsDefined Q cfg) :
+    Config.varsDefined Q cfg' := by
+  induction h_run with
+  | refl => exact h_inv
+  | step _ _ _ _ _ h_step _ ih =>
+    exact ih (Config.varsDefined_stepE_of h_cmd h_step h_inv)
+
+/-- A single traced event step preserves the environment's factory. -/
+theorem stepE_preserves_factory
+    {cfg cfg' : Config P CmdT} {tr : List EventT}
+    (h_step : StepStmtE P EvalCmd cfg tr cfg') :
+    cfg.getEnv.factory = cfg'.getEnv.factory := by
+  induction h_step with
+  | step_cmd _ => simp [Config.getEnv]
+  | step_admin hadmin => exact step_preserves_factory P (noCommandEvalE P CmdT) _ _ hadmin
+  | step_seq_inner _ ih => simpa [Config.getEnv] using ih
+  | step_block_body _ ih => simpa [Config.getEnv] using ih
+
+/-- A traced event run preserves the environment's factory. -/
+theorem starE_preserves_factory
+    {cfg cfg' : Config P CmdT} {tr : List EventT}
+    (h_run : StepStmtStarE P EvalCmd cfg tr cfg') :
+    cfg.getEnv.factory = cfg'.getEnv.factory := by
+  induction h_run with
+  | refl => rfl
+  | step _ _ _ _ _ h_step _ ih =>
+    exact (stepE_preserves_factory h_step).trans ih
+
+/-- Single traced event step preserves `Config.storeWellDefined`, given the
+command evaluator does (`h_cmd`). -/
+private theorem Config.storeWellDefined_stepE_of
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT},
+      EvalCmd f σ c σ' emitted → WellFormedStore σ f → WellFormedStore σ' f)
+    {cfg cfg' : Config P CmdT} {tr : List EventT}
+    (h_step : StepStmtE P EvalCmd cfg tr cfg')
+    (h_inv : Config.storeWellDefined cfg) :
+    Config.storeWellDefined cfg' := by
+  induction h_step with
+  | step_cmd h_eval => exact h_cmd h_eval h_inv
+  | step_admin hadmin =>
+    exact Config.storeWellDefined_step_of (evalCmd := noCommandEvalE P CmdT)
+      (fun he _ => by simp [noCommandEvalE] at he) hadmin h_inv
+  | step_seq_inner _ ih =>
+    exact ih h_inv
+  | step_block_body hinner ih =>
+    exact ⟨stepE_preserves_factory hinner ▸ h_inv.1, ih h_inv.2⟩
+
+/-- A configuration whose store holds only values remains store-well-defined
+across a traced run when commands preserve store well-formedness. -/
+theorem Config.storeWellDefined_star_ofE
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT},
+      EvalCmd f σ c σ' emitted → WellFormedStore σ f → WellFormedStore σ' f)
+    {cfg cfg' : Config P CmdT} {tr : List EventT}
+    (h_run : StepStmtStarE P EvalCmd cfg tr cfg')
+    (h_inv : Config.storeWellDefined cfg) :
+    Config.storeWellDefined cfg' := by
+  induction h_run with
+  | refl => exact h_inv
+  | step _ _ _ _ _ h_step _ ih =>
+    exact ih (Config.storeWellDefined_stepE_of h_cmd h_step h_inv)
+
+end EventInvariantEngines
+
+/-! ## Monotonicity in the command relation -/
+
+section EventCmdMonotonicity
+
+variable {P : PureExpr} {CmdT EventT : Type} [HasBool P]
+
+/-- `StepStmtE` is monotone in its command relation. -/
+theorem StepStmtE.imp {E E' : EvalCmdParamE P CmdT EventT}
+    (h : ∀ f σ c σ' evs, E f σ c σ' evs → E' f σ c σ' evs) :
+    ∀ {c evs c'}, StepStmtE P E c evs c' → StepStmtE P E' c evs c' :=
+  (by induction · <;> solve_by_elim)
+
+/-- `StepStmtStarE` is monotone in its command relation. -/
+theorem StepStmtStarE.imp {E E' : EvalCmdParamE P CmdT EventT}
+    (h : ∀ f σ c σ' evs, E f σ c σ' evs → E' f σ c σ' evs) :
+    ∀ {c evs c'}, StepStmtStarE P E c evs c' → StepStmtStarE P E' c evs c' :=
+  ReflTransTrace.imp fun _ _ _ => (·.imp h)
+
+end EventCmdMonotonicity
 
 end -- public section
 end Imperative

@@ -13,8 +13,9 @@ public import Strata.DL.Imperative.StmtSemanticsProps
 import all Strata.DL.Imperative.StmtSemanticsProps
 import all Strata.DL.Imperative.HasVars
 import all Strata.DL.Util.Nodup
-public import Strata.DL.Util.ListUtils
-import all Strata.DL.Util.ListUtils
+public import Strata.Util.ListUtilsProps
+import all Strata.Util.ListUtils
+import all Strata.Util.ListUtilsProps
 import all Strata.Languages.Core.Statement
 public import Strata.Languages.Core.StatementSemantics
 import all Strata.Languages.Core.StatementSemantics
@@ -24,21 +25,168 @@ import Std.Tactic.BVDecide.Normalize.BitVec
 
 public section
 
-/-! ## Theorems related to StatementSemantics -/
+/-! ## Theorems related to StatementSemantics
+
+Metatheory of Core's own statement semantics (`EvalCommand`, `CoreStepStar`).  Key
+results include `withOldSnapshots_preserves_wf` for constructing well-formed call
+frames, beyond the remaining `updatedStates`/`InitVars`/`HavocVars` plumbing:
+
+- Core's call semantics is the generic one at `Expression`: `callEntry_iff`,
+  `callExit_iff`, `havocVars_iff` and `evalCommandContractE_iff` (each `Iff.rfl`)
+  identify Core's `CallEntry`, `CallExit`, `HavocVars` and `EvalCommandContractE`
+  with `Calls.CallEntry`, `Calls.CallExit`, `Calls.HavocVars` and
+  `EvalCmdExtContractE`; `HavocVars.update_none` / `update_some`,
+  `EvalCommandE.cmd_sem` / `call_sem`, `CoreBodyExecE.structured` and
+  `EvalCommandContractE.cmd_sem` / `call_sem` are the generic constructors under
+  Core's names.
+
+- Store-domain characterization of a run: `evalCommand_preserves_none_of_not_def`
+  and `evalCommand_preserves_isSome` at the command level, lifted to
+  `core_stmt_run_terminal_preserves_none_of_not_definedVars_true`,
+  `core_block_run_terminal_preserves_none_of_not_definedVars` and
+  `core_stmts_preserves_isSome`, and combined in
+  `core_stmt_run_terminal_store_isSome_eq`, which pins the store domain after a
+  statement *exactly*: an inclusion either way is not enough, because
+  `defUseWellFormed` uses its definedness predicate in both directions.
+- `EvalExpressionsInjective`, `EvalChecksInjective`,
+  `InitCallFrameUniqueResult`, `CallEntryUniqueResult`, and
+  `CallExitUniqueResult`: deterministic expression/check lists and store-update
+  relations uniquely determine call frames, caller result stores, and aggregate
+  failure flags.
+- `CoreBodyExec.empty_unique` / `CoreBodyExecE.empty_unique`, the singleton
+  command inversion/uniqueness theorems, and
+  `EvalCommand.call_unique_of_body_unique` /
+  `EvalCommandE.call_unique_of_body_unique` compose body determinism into a
+  unique caller store together with its failure flag or chronological trace.
+  `EvalCommandContract.call_unique_of_outputs_nil` and its event counterpart give the corresponding
+  full-result guarantee when contract abstraction has no outputs to havoc.
+- `evalCommand_storeWellDefined`: a command leaves a store that holds only values,
+  given that it started from one.
+- `assertBodyE_preserves_store` and `setBodyE_frame`: one-command procedure
+  bodies establish exact store preservation or an output write frame.
+- Event-trace store-domain results:
+  `evalCommandE_preserves_none_of_not_def`, `evalCommandE_preserves_isSome`,
+  `evalCommandE_storeWellDefined`, `core_stmts_preserves_isSomeE`,
+  `core_stmt_run_terminal_preserves_none_of_not_definedVars_trueE`, and
+  `core_stmt_run_terminal_store_isSome_eqE` provide the corresponding
+  guarantees for `EvalCommandE` / `StepStmtStarE` runs.
+- `CoreStepStar_to_StepStmtStar` / `StepStmtStar_to_CoreStepStar`: the Core
+  failure-flag closure is a separate mutual inductive, so results over the
+  generic closure transfer only through these theorems. `CoreStepStarE` directly
+  reuses the generic `ReflTransTrace` closure.
+- `stmt_run_to_singleton_runE` / `singleton_run_to_stmt_runE`: a run of a
+  statement and a run of the one-element list holding it emit the same traces.
+-/
 
 namespace Core
 open Imperative
 
-theorem InitStatesEmpty :
-  @InitStates P σ [] [] σ' → σ = σ' := by
-  intros H; cases H <;> simp
+/-! ## Core's call semantics is the generic one at `Expression`
 
-theorem UpdateStatesEmpty :
-  @UpdateStates P σ [] [] σ' → σ = σ' := by
-  intros H; cases H <;> simp
+Core's call components and event relations are abbreviations of the generic ones at
+`Expression`: the equivalences hold by `Iff.rfl`, and the generic constructors are
+restated under Core's names. -/
 
-theorem HavocVarsEmpty :
-  @HavocVars P σ [] σ' → σ = σ' := by
+/-- Core's call-entry relation is the generic `Calls.CallEntry` at `Expression`. -/
+theorem callEntry_iff (fac : Expression.Factory) (σ : CoreStore) (p : Procedure)
+    (callArgs : List (CallArg Expression)) (σAO : CoreStore) :
+    CallEntry fac σ p callArgs σAO ↔ Calls.CallEntry fac σ p callArgs σAO := .rfl
+
+/-- Core's call-exit relation is the generic `Calls.CallExit` at `Expression`. -/
+theorem callExit_iff (fac : Expression.Factory) (σ : CoreStore) (p : Procedure)
+    (callArgs : List (CallArg Expression)) (σEnd σ' : CoreStore) :
+    CallExit fac σ p callArgs σEnd σ' ↔ Calls.CallExit fac σ p callArgs σEnd σ' := .rfl
+
+/-- Core's havoc relation is the generic `Calls.HavocVars` at `Expression`. -/
+theorem havocVars_iff (fac : Expression.Factory) (σ : CoreStore) (xs : List Expression.Ident)
+    (σ' : CoreStore) : HavocVars fac σ xs σ' ↔ Calls.HavocVars fac σ xs σ' := .rfl
+
+/-- Core's event contract relation is the generic `EvalCmdExtContractE` at `Expression`. -/
+theorem evalCommandContractE_iff (π : String → Option Procedure) (fac : Expression.Factory)
+    (σ : CoreStore) (c : Command) (σ' : CoreStore) (emitted : Trace Expression) :
+    EvalCommandContractE π fac σ c σ' emitted ↔ EvalCmdExtContractE π fac σ c σ' emitted :=
+  .rfl
+
+/-- No slot to havoc: the store is unchanged. -/
+theorem HavocVars.update_none {P : PureExpr} [HasVal P] {f : P.Factory}
+    {σ : SemanticStore P} : HavocVars f σ [] σ := Calls.HavocVars.update_none
+
+/-- Havoc the first slot `x` to a value `v` of its stored type, then the rest. -/
+theorem HavocVars.update_some {P : PureExpr} [HasVal P] {f : P.Factory}
+    {σ σ' σ'' : SemanticStore P} {x : P.Ident} {v : P.Expr} {xs : List P.Ident}
+    (hup : UpdateState P σ x v σ') (hty : HasVal.valueOfStoredTy (P := P) f σ x v)
+    (hrest : HavocVars f σ' xs σ'') : HavocVars f σ (x :: xs) σ'' :=
+  Calls.HavocVars.update_some hup hty hrest
+
+/-- Base-command step of Core's event command relation. -/
+theorem EvalCommandE.cmd_sem
+    {π : String → Option Procedure}
+    {fac : Expression.Factory} {σ σ' : CoreStore} {c : Imperative.Cmd Expression}
+    {emitted : Trace Expression}
+    (h : Imperative.EvalCmdE (P := Expression) fac σ c σ' emitted) :
+    EvalCommandE π fac σ (.cmd c) σ' emitted := EvalCmdExtE.cmd_sem h
+
+/-- Call step of Core's event command relation, stated with Core's `CallEntry` /
+    `CallExit` / `defaultAssertEvents`. -/
+theorem EvalCommandE.call_sem
+    {π : String → Option Procedure}
+    {σ : CoreStore} {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
+    {σ' σ_final : CoreStore} {bodyEvents : Trace Expression}
+    {md : MetaData Expression} {fac : Expression.Factory} {σAO : CoreStore}
+    (hπ : π n = some p)
+    (hentry : CallEntry fac σ p callArgs σAO)
+    (hbody : CoreBodyExecE π p.body ⟨σAO, fac, false⟩ σ_final bodyEvents)
+    (hexit : CallExit fac σ p callArgs σ_final σ') :
+    EvalCommandE π fac σ (.call n callArgs md) σ'
+      (defaultAssertEvents fac σAO p.spec.preconditions ++
+        bodyEvents ++
+        defaultAssertEvents fac σ_final p.spec.postconditions) :=
+  EvalCmdExtE.call_sem hπ hentry hbody hexit
+
+/-- Structured-body run of Core's event body relation. -/
+theorem CoreBodyExecE.structured
+    {π : String → Option Procedure}
+    {ss : List Statement} {ρ ρ' : Env Expression}
+    {emitted : Trace Expression}
+    (h : CoreStepStarE π
+      (.stmt (Stmt.block "" ss #[]) ρ) emitted (.terminal ρ')) :
+    CoreBodyExecE π (.structured ss) ρ ρ'.store emitted := BigStepE.structured h
+
+/-- Base-command step of Core's event contract relation. -/
+theorem EvalCommandContractE.cmd_sem {π : String → Option Procedure}
+    {fac : Expression.Factory} {σ σ' : CoreStore} {c : Imperative.Cmd Expression}
+    {emitted : Trace Expression}
+    (h : EvalCmdE (P := Expression) fac σ c σ' emitted) :
+    EvalCommandContractE π fac σ (.cmd c) σ' emitted := EvalCmdExtContractE.cmd_sem h
+
+/-- Call step of Core's event contract relation, stated with Core's `CallEntry` /
+`HavocVars` / `CallExit` / `defaultAssertEvents` / `assumeEvents`. -/
+theorem EvalCommandContractE.call_sem {π : String → Option Procedure}
+    {σ σO : CoreStore} {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
+    {σ' : CoreStore} {md : MetaData Expression} {fac : Expression.Factory} {σAO : CoreStore}
+    (hπ : π n = .some p)
+    (hentry : CallEntry fac σ p callArgs σAO)
+    (hhavoc : HavocVars fac σAO (ListMap.keys p.header.outputs) σO)
+    (hexit : CallExit fac σ p callArgs σO σ') :
+    EvalCommandContractE π fac σ (.call n callArgs md) σ'
+      (defaultAssertEvents fac σAO p.spec.preconditions ++
+        assumeEvents fac σO p.spec.postconditions) :=
+  EvalCmdExtContractE.call_sem hπ hentry hhavoc hexit
+
+/-- Adding `old` snapshots only copies existing bindings, so it preserves store
+well-formedness. -/
+theorem withOldSnapshots_preserves_wf {fac : Expression.Factory}
+    (snap : List Expression.Ident) (σ : CoreStore)
+    (hσ : WellFormedStore σ fac) :
+    WellFormedStore (withOldSnapshots snap σ) fac := by
+  intro w vw hw
+  simp only [withOldSnapshots, Calls.withOldSnapshots] at hw
+  split at hw
+  · exact hσ _ _ hw
+  · exact hσ _ _ hw
+
+theorem HavocVarsEmpty {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' : SemanticStore P} :
+  HavocVars f σ [] σ' → σ = σ' := by
   intros H; cases H <;> simp
 
 theorem InitVarsEmpty :
@@ -50,96 +198,27 @@ theorem TouchVarsEmpty :
   intros H; cases H <;> simp
 
 theorem EvalBlockEmpty' {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
-  {extendEval : ExtendEval P}
+
   { ρ ρ' : Env P }
   [HasBool P] [HasBoolOps P] [HasFvars P] [HasInt P] [HasIntOps P] :
-  EvalStmtsSmall P EvalCmd extendEval ρ ([]: (List (Stmt P Cmd))) ρ' → ρ = ρ' := by
+  EvalStmtsSmall P EvalCmd ρ ([]: (List (Stmt P Cmd))) ρ' → ρ = ρ' := by
   intro H
   match H with
   | .step _ _ _ .step_stmts_nil (.refl _) => rfl
 
 theorem EvalStatementsEmpty :
-  EvalStatements π φ ρ [] ρ' → ρ = ρ' := by
+  EvalStatements π ρ [] ρ' → ρ = ρ' := by
   intro H
   unfold EvalStatements EvalStmtsSmall at H
   match H with
   | .step _ _ _ .step_stmts_nil (.refl _) => rfl
 
 theorem EvalStatementsContractEmpty :
-  EvalStatementsContract π φ ρ [] ρ' → ρ = ρ' := by
+  EvalStatementsContract π ρ [] ρ' → ρ = ρ' := by
   intro H
   unfold EvalStatementsContract EvalStmtsSmall at H
   match H with
   | .step _ _ _ .step_stmts_nil (.refl _) => rfl
-
-theorem UpdateStateNotDefMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isNotDefined σ vs →
-  UpdateState P σ v e σ' →
-  isNotDefined σ' vs := by
-  intros Hdef Heval
-  cases Heval with
-  | update Hold HH Hsome =>
-  simp [isNotDefined] at *
-  intros v' Hv'
-  by_cases Heq: (v = v')
-  case pos =>
-    simp_all
-  case neg =>
-    specialize Hsome v' Heq
-    specialize Hdef v'
-    simp [Hsome]
-    exact Hdef Hv'
-
-theorem UpdateStatesNotDefMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
-  isNotDefined σ vs →
-  UpdateStates σ vs' es' σ' →
-  isNotDefined σ' vs := by
-  intros Hdef Heval
-  induction Heval with
-  | update_none => assumption
-  | update_some Hup Hups ih =>
-  intros v Hv
-  apply ih
-  exact UpdateStateNotDefMonotone Hdef Hup
-  assumption
-
-theorem UpdateStateNotDefMonotone'
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isNotDefined σ' vs →
-  UpdateState P σ v e σ' →
-  isNotDefined σ vs := by
-  intros Hdef Heval
-  cases Heval with
-  | update Hold HH Hsome =>
-  simp [isNotDefined] at *
-  intros v' Hv'
-  by_cases Heq: (v = v')
-  case pos =>
-    simp_all
-  case neg =>
-    specialize Hsome v' Heq
-    specialize Hdef v'
-    simp [← Hsome]
-    exact Hdef Hv'
-
-theorem UpdateStatesNotDefMonotone'
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
-  isNotDefined σ' vs →
-  UpdateStates σ vs' es' σ' →
-  isNotDefined σ vs := by
-  intros Hdef Heval
-  induction Heval with
-  | update_none => assumption
-  | update_some Hup Hups ih =>
-  intros v Hv
-  apply UpdateStateNotDefMonotone' (ih Hdef) Hup
-  exact Hv
 
 theorem InitStateDefined
   {P : PureExpr} {σ σ' : SemanticStore P} {e : P.Expr} {v : P.Ident} :
@@ -149,127 +228,6 @@ theorem InitStateDefined
   cases Hup with
   | init Hold Hsome Hall =>
   simp [isDefined, Option.isSome, Hsome]
-
-theorem UpdateStateDefined
-  {P : PureExpr} {σ σ' : SemanticStore P} {e : P.Expr} {v : P.Ident} :
-  @UpdateState P σ v e σ' →
-  isDefined σ' [v] := by
-  intros Hup
-  cases Hup with
-  | update Hold Hsome Hall =>
-  simp [isDefined, Option.isSome, Hsome]
-
-theorem UpdateStateDefined'
-  {P : PureExpr} {σ σ' : SemanticStore P} {e : P.Expr} {v : P.Ident} :
-  @UpdateState P σ v e σ' →
-  isDefined σ [v] := by
-  intros Hup
-  cases Hup with
-  | update Hold Hsome Hall =>
-  simp [isDefined, Option.isSome]
-  split <;> simp_all
-
-theorem UpdateStateDefMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isDefined σ vs →
-  UpdateState P σ v e σ' →
-  isDefined σ' vs := by
-  intros Hdef Heval
-  cases Heval with
-  | update Hold HH Hsome =>
-  simp [isDefined] at *
-  intros v' Hv'
-  by_cases Heq: (v = v')
-  case pos =>
-    simp [Option.isSome]
-    simp [Heq] at *
-    split <;> simp_all
-  case neg =>
-    specialize Hsome v' Heq
-    specialize Hdef v'
-    simp [Hsome]
-    exact Hdef Hv'
-
-theorem UpdateStatesDefMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
-  isDefined σ vs →
-  UpdateStates σ vs' es' σ' →
-  isDefined σ' vs := by
-  intros Hdef Heval
-  induction Heval with
-  | update_none => assumption
-  | update_some Hup Hups ih =>
-  intros v Hv
-  apply ih
-  exact UpdateStateDefMonotone Hdef Hup
-  assumption
-
-theorem UpdateStateDefMonotone'
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isDefined σ' vs →
-  UpdateState P σ v e σ' →
-  isDefined σ vs := by
-  intros Hdef Heval
-  cases Heval with
-  | update Hold HH Hsome =>
-  simp [isDefined] at *
-  intros v' Hv'
-  by_cases Heq: (v = v')
-  case pos =>
-    simp [Option.isSome]
-    simp [Heq] at *
-    split <;> simp_all
-  case neg =>
-    specialize Hsome v' Heq
-    specialize Hdef v'
-    simp [← Hsome]
-    exact Hdef Hv'
-
-theorem UpdateStatesDefMonotone'
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
-  isDefined σ' vs →
-  UpdateStates σ vs' es' σ' →
-  isDefined σ vs := by
-  intros Hdef Heval
-  induction Heval with
-  | update_none => assumption
-  | update_some Hup Hups ih =>
-  intros v Hv
-  apply UpdateStateDefMonotone' (ih Hdef) Hup
-  exact Hv
-
-theorem UpdateStatesDefined :
-  UpdateStates σ vs es σ' →
-  isDefined σ' vs := by
-  intros Hhavoc
-  induction vs generalizing es σ σ'
-  case nil => simp [isDefined]
-  case cons h t ih =>
-    cases Hhavoc with
-    | @update_some _ _ v σ₁ _ _ Hup Hhav =>
-    apply isDefinedCons
-    apply UpdateStatesDefMonotone <;> try assumption
-    exact UpdateStateDefined Hhav
-    apply ih <;> assumption
-
-theorem UpdateStatesDefined' :
-  UpdateStates σ vs es σ' →
-  isDefined σ vs := by
-  intros Hhavoc
-  induction vs generalizing es σ σ'
-  case nil => simp [isDefined]
-  case cons h t ih =>
-    cases Hhavoc with
-    | update_some Hup Hups =>
-    apply isDefinedCons
-    exact UpdateStateDefined' Hup
-    apply UpdateStatesDefMonotone'
-    apply ih Hups
-    exact UpdateStates.update_some Hup UpdateStates.update_none
 
 theorem updatedStateUpdate {P : PureExpr}
   {σ : SemanticStore P} {h : P.Ident} {v v' : P.Expr} :
@@ -323,21 +281,21 @@ theorem updatedStatesDefMonotone
   theorem updatedStatesDefined :
   ks.length = vs.length →
   isDefined (updatedStates σ ks vs) ks := by
-  intros Hlen k Hin
-  induction ks generalizing σ vs <;> simp_all
-  case cons h t ih =>
-  simp [updatedStates] at *
-  cases vs <;> simp at Hlen
-  case cons h' t' =>
-  cases Hin with
-  | inl Hin =>
-    simp [updatedStates']
-    have Hdef : isDefined (updatedStates' (updatedState σ h h') (t.zip t')) [h] := by
-      apply updatedStatesDefMonotone
-      simp [isDefined, updatedState]
-    simp_all [isDefined]
-  | inr Hin =>
-    apply ih <;> assumption
+    intros Hlen k Hin
+    induction ks generalizing σ vs <;> simp_all
+    case cons h t ih =>
+    simp [updatedStates] at *
+    cases vs <;> simp at Hlen
+    case cons h' t' =>
+    cases Hin with
+    | inl Hin =>
+      simp [updatedStates']
+      have Hdef : isDefined (updatedStates' (updatedState σ h h') (t.zip t')) [h] := by
+        apply updatedStatesDefMonotone
+        simp [isDefined, updatedState]
+      simp_all [isDefined]
+    | inr Hin =>
+      apply ih <;> assumption
 
 theorem updatedStatesUpdate {P : PureExpr}
   {σ : SemanticStore P} {hs : List P.Ident} {vs : List P.Expr} :
@@ -391,7 +349,6 @@ theorem updatedStatesInit {P : PureExpr}
     case cons h' t' =>
     simp [isNotDefined] at Hdef
     have Hlkup := Hdef.1
-    simp at Hlkup
     apply InitStates.init_some (updatedStateInit Hlkup)
     apply ih rfl
     simp [isNotDefined, updatedState]
@@ -425,81 +382,45 @@ theorem InitStatesInits :
   constructor
   exact InitStatesInitVars Hinit
 
-theorem InitStatesNotDefined :
-  InitStates σ hs vs σ' → isNotDefined σ hs := by
-  intros Hinit
-  induction Hinit <;> simp [isNotDefined]
-  case init_some x v σ' xs vs σ'' Hinit Hinits ih =>
-    simp [isNotDefined] at *
-    cases Hinit with
-    | init Hnone Hsome Heq =>
-    refine ⟨Hnone, ?_⟩
-    intros x' Hin
-    by_cases Heqx : x = x' <;> simp_all
-    specialize Heq x' Heqx
-    specialize ih x' Hin
-    simp_all
+/-- Evaluating the same expression list in the same factory and store yields the
+same value list. -/
+theorem EvalExpressionsInjective {f : Expression.Factory} {σ : CoreStore}
+    {es vs vs' : List Expression.Expr} :
+    EvalExpressions f σ es vs → EvalExpressions f σ es vs' → vs = vs' := by
+  intro h₁ h₂
+  induction h₁ generalizing vs' with
+  | eval_none => cases h₂; rfl
+  | eval_some _ heval₁ _ ih =>
+    cases h₂ with
+    | eval_some _ heval₂ hrest₂ =>
+      have hv := Option.some.inj (heval₁.symm.trans heval₂)
+      subst hv
+      exact congrArg (fun tail => _ :: tail) (ih hrest₂)
 
-theorem InitStatesNodup :
-  InitStates σ hs vs σ' → hs.Nodup := by
-  intros Hinit
-  induction Hinit <;> simp_all
-  case init_some x v σ' xs vs σ'' Hinit Hinits ih =>
-  apply Not.intro
-  intros Hin
-  cases Hinit with
-  | init Hnone Hsome Heq =>
-    have Hnd := InitStatesNotDefined Hinits
-    specialize Hnd x Hin
-    simp_all
-
-theorem InitStateInjective :
-  InitState P σ k1 k2 σ' →
-  InitState P σ k1 k2 σ'' →
-  σ' = σ'' := by
-  intros Hinit1 Hinit2
-  cases Hinit1
-  case init Hnone1 Heq1 Hsome1 =>
-  cases Hinit2
-  case init Hnone2 Heq2 Hsome2 =>
-  funext x
-  by_cases H : k1 = x
-  . simp_all
-  . rw [Heq1, Heq2] <;> simp_all
-
-theorem InitStatesInjective :
-  InitStates σ k1 k2 σ' →
-  InitStates σ k1 k2 σ'' →
-  σ' = σ'' := by
-  intros Hinit1 Hinit2
-  induction Hinit1 generalizing σ''
-  case init_none =>
-    have Heq := InitStatesEmpty Hinit2
-    simp_all
-  case init_some Hinit Hinits ih =>
-    cases Hinit2 with
-    | init_some Hinit2 Hinits2 =>
-    apply ih
-    have Hinj := InitStateInjective Hinit Hinit2
-    simp_all
-
-theorem ReadValuesInjective :
-  ReadValues σ ks vs →
-  ReadValues σ ks vs' →
-  vs = vs' := by
-  intros Hrd1 Hrd2
-  induction Hrd1 generalizing vs'
-  case read_none =>
-    cases Hrd2
-    rfl
-  case read_some Hrd Hrds ih =>
-    cases Hrd2 with
-    | read_some Hrd2 Hrds2 =>
-    congr
-    . simp_all
-    . apply ih
-      simp_all
-
+/-- Evaluating the same check list in the same factory and store yields the same
+aggregate failure flag. -/
+theorem EvalChecksInjective {fac : Expression.Factory} {σ : CoreStore}
+    {es : List Expression.Expr} {failed₁ failed₂ : Bool}
+    (h₁ : EvalChecks fac σ es failed₁) (h₂ : EvalChecks fac σ es failed₂) :
+    failed₁ = failed₂ := by
+  induction h₁ generalizing failed₂ with
+  | eval_none => cases h₂; rfl
+  | eval_pass _ heval _ ih =>
+    cases h₂ with
+    | eval_pass _ _ hrest => exact ih hrest
+    | eval_fail _ heval' _ =>
+      have hcontra := Option.some.inj (heval.symm.trans heval')
+      change (Lambda.LExpr.boolConst () true : Expression.Expr) =
+        Lambda.LExpr.boolConst () false at hcontra
+      simp [Lambda.LExpr.boolConst] at hcontra
+  | eval_fail _ heval _ _ =>
+    cases h₂ with
+    | eval_pass _ heval' _ =>
+      have hcontra := Option.some.inj (heval.symm.trans heval')
+      change (Lambda.LExpr.boolConst () false : Expression.Expr) =
+        Lambda.LExpr.boolConst () true at hcontra
+      simp [Lambda.LExpr.boolConst] at hcontra
+    | eval_fail => rfl
 theorem InitStateUpdated :
     InitState P σ' k v σ'' →
     σ'' = updatedState σ' k v := by
@@ -550,6 +471,680 @@ theorem UpdateStatesUpdated :
     have Heq := UpdateStateUpdated Hinit
     simp [Heq]
 
+/-- Building a call frame from the same procedure and argument values yields the
+same callee store. -/
+theorem InitCallFrameUniqueResult {p : Procedure} {inputVals outOnlyVals : List Expression.Expr}
+    {σ₁ σ₂ : CoreStore} :
+    InitCallFrame p inputVals outOnlyVals σ₁ →
+    InitCallFrame p inputVals outOnlyVals σ₂ →
+    σ₁ = σ₂ := by
+  rintro ⟨σA₁, σIO₁, hIn₁, hOut₁, hSnap₁⟩
+    ⟨σA₂, σIO₂, hIn₂, hOut₂, hSnap₂⟩
+  have hA : σA₁ = σA₂ := (InitStatesUpdated hIn₁).trans (InitStatesUpdated hIn₂).symm
+  subst σA₂
+  have hIO : σIO₁ = σIO₂ := (InitStatesUpdated hOut₁).trans (InitStatesUpdated hOut₂).symm
+  subst σIO₂
+  exact hSnap₁.trans hSnap₂.symm
+
+/-- The call-entry frame is uniquely determined by the procedure, caller store,
+and call arguments. -/
+theorem CallEntryUniqueResult {fac : Expression.Factory} {σ : CoreStore}
+    {p : Procedure} {callArgs : List (CallArg Expression)} {σ₁ σ₂ : CoreStore} :
+    CallEntry fac σ p callArgs σ₁ → CallEntry fac σ p callArgs σ₂ → σ₁ = σ₂ := by
+  rintro ⟨inputs₁, outs₁, hEval₁, hRead₁, hInit₁⟩
+    ⟨inputs₂, outs₂, hEval₂, hRead₂, hInit₂⟩
+  have hInputs : inputs₁ = inputs₂ := EvalExpressionsInjective hEval₁ hEval₂
+  have hOuts : outs₁ = outs₂ := ReadValuesInjective hRead₁ hRead₂
+  subst inputs₂
+  subst outs₂
+  exact InitCallFrameUniqueResult hInit₁ hInit₂
+
+/-- Given the same callee-exit store, call write-back uniquely determines the
+caller result store. -/
+theorem CallExitUniqueResult {fac : Expression.Factory} {σ : CoreStore}
+    {p : Procedure} {callArgs : List (CallArg Expression)} {σEnd σ₁ σ₂ : CoreStore} :
+    CallExit fac σ p callArgs σEnd σ₁ → CallExit fac σ p callArgs σEnd σ₂ → σ₁ = σ₂ := by
+  rintro ⟨_, outputs₁, hRead₁, hUpdate₁⟩ ⟨_, outputs₂, hRead₂, hUpdate₂⟩
+  have hOutputs : outputs₁ = outputs₂ := ReadValuesInjective hRead₁ hRead₂
+  subst outputs₂
+  exact (UpdateStatesUpdated hUpdate₁).trans (UpdateStatesUpdated hUpdate₂).symm
+
+/-- A call with no left-hand-side arguments cannot change the caller store. -/
+theorem CallExit.store_eq_of_getLhs_nil {fac : Expression.Factory} {σ : CoreStore}
+    {p : Procedure} {callArgs : List (CallArg Expression)} {σEnd σ' : CoreStore}
+    (hLhs : CallArg.getLhs callArgs = [])
+    (h : CallExit fac σ p callArgs σEnd σ') : σ' = σ := by
+  obtain ⟨_, outputs, _, hUpdate⟩ := h
+  rw [hLhs] at hUpdate
+  cases hUpdate
+  rfl
+
+/-- Executing a concrete call with no left-hand-side arguments leaves the caller
+store unchanged. -/
+theorem EvalCommand.store_eq_of_call_getLhs_nil
+    {π : String → Option Procedure}
+
+    {fac : Expression.Factory} {σ σ' : CoreStore} {n : String}
+    {callArgs : List (CallArg Expression)} {md : MetaData Expression} {failed : Bool}
+    (hLhs : CallArg.getLhs callArgs = [])
+    (h : EvalCommand π fac σ (.call n callArgs md) σ' failed) : σ' = σ := by
+  cases h with
+  | call_sem _ _ _ _ _ hExit => exact hExit.store_eq_of_getLhs_nil hLhs
+
+/-- Executing an event-producing concrete call with no left-hand-side arguments
+leaves the caller store unchanged. -/
+theorem EvalCommandE.store_eq_of_call_getLhs_nil
+    {π : String → Option Procedure}
+
+    {fac : Expression.Factory} {σ σ' : CoreStore} {n : String}
+    {callArgs : List (CallArg Expression)} {md : MetaData Expression}
+    {emitted : Trace Expression}
+    (hLhs : CallArg.getLhs callArgs = [])
+    (h : EvalCommandE π fac σ (.call n callArgs md) σ' emitted) : σ' = σ := by
+  cases h with
+  | call_sem _ _ _ hExit => exact CallExit.store_eq_of_getLhs_nil hLhs hExit
+
+/-- Executing an abstract contract call with no left-hand-side arguments leaves
+the caller store unchanged. -/
+theorem EvalCommandContract.store_eq_of_call_getLhs_nil
+    {π : String → Option Procedure} {fac : Expression.Factory} {σ σ' : CoreStore}
+    {n : String} {callArgs : List (CallArg Expression)} {md : MetaData Expression}
+    {failed : Bool}
+    (hLhs : CallArg.getLhs callArgs = [])
+    (h : EvalCommandContract π fac σ (.call n callArgs md) σ' failed) : σ' = σ := by
+  cases h with
+  | call_sem _ _ _ _ _ hExit => exact hExit.store_eq_of_getLhs_nil hLhs
+
+/-- Executing an event-producing abstract contract call with no left-hand-side
+arguments leaves the caller store unchanged. -/
+theorem EvalCommandContractE.store_eq_of_call_getLhs_nil
+    {π : String → Option Procedure} {fac : Expression.Factory} {σ σ' : CoreStore}
+    {n : String} {callArgs : List (CallArg Expression)} {md : MetaData Expression}
+    {emitted : Trace Expression}
+    (hLhs : CallArg.getLhs callArgs = [])
+    (h : EvalCommandContractE π fac σ (.call n callArgs md) σ' emitted) : σ' = σ := by
+  cases h with
+  | call_sem _ _ _ hExit => exact CallExit.store_eq_of_getLhs_nil hLhs hExit
+
+/-- Abstract contract calls for a procedure with no outputs have a unique caller
+store and failure result. -/
+theorem EvalCommandContract.call_unique_of_outputs_nil
+    {π : String → Option Procedure} {fac : Expression.Factory}
+    {σ σ₁ σ₂ : CoreStore} {n : String} {p : Procedure}
+    {callArgs : List (CallArg Expression)} {md : MetaData Expression}
+    {failed₁ failed₂ : Bool}
+    (hLookup : π n = some p) (hOutputs : ListMap.keys p.header.outputs = [])
+    (h₁ : EvalCommandContract π fac σ (.call n callArgs md) σ₁ failed₁)
+    (h₂ : EvalCommandContract π fac σ (.call n callArgs md) σ₂ failed₂) :
+    σ₁ = σ₂ ∧ failed₁ = failed₂ := by
+  cases h₁ with
+  | @call_sem _ out₁ _ p₁ _ _ pre₁ _ _ frame₁
+      lookup₁ entry₁ evalPre₁ havoc₁ _ exit₁ =>
+    cases h₂ with
+    | @call_sem _ out₂ _ p₂ _ _ pre₂ _ _ frame₂
+        lookup₂ entry₂ evalPre₂ havoc₂ _ exit₂ =>
+      have hp₁ : p₁ = p := Option.some.inj (lookup₁.symm.trans hLookup)
+      have hp₂ : p₂ = p := Option.some.inj (lookup₂.symm.trans hLookup)
+      subst p₁
+      subst p₂
+      have hframe : frame₁ = frame₂ := CallEntryUniqueResult entry₁ entry₂
+      subst frame₂
+      rw [hOutputs] at havoc₁ havoc₂
+      cases havoc₁
+      cases havoc₂
+      exact ⟨CallExitUniqueResult exit₁ exit₂,
+        EvalChecksInjective evalPre₁ evalPre₂⟩
+
+/-- Event-producing abstract contract calls for a procedure with no outputs have
+a unique caller store and event trace. -/
+theorem EvalCommandContractE.call_unique_of_outputs_nil
+    {π : String → Option Procedure} {fac : Expression.Factory}
+    {σ σ₁ σ₂ : CoreStore} {n : String} {p : Procedure}
+    {callArgs : List (CallArg Expression)} {md : MetaData Expression}
+    {emitted₁ emitted₂ : Trace Expression}
+    (hLookup : π n = some p) (hOutputs : ListMap.keys p.header.outputs = [])
+    (h₁ : EvalCommandContractE π fac σ (.call n callArgs md) σ₁ emitted₁)
+    (h₂ : EvalCommandContractE π fac σ (.call n callArgs md) σ₂ emitted₂) :
+    σ₁ = σ₂ ∧ emitted₁ = emitted₂ := by
+  cases h₁ with
+  | @call_sem _ out₁ _ p₁ _ _ _ _ frame₁ lookup₁ entry₁ havoc₁ exit₁ =>
+    cases h₂ with
+    | @call_sem _ out₂ _ p₂ _ _ _ _ frame₂ lookup₂ entry₂ havoc₂ exit₂ =>
+      have hp₁ : p₁ = p := Option.some.inj (lookup₁.symm.trans hLookup)
+      have hp₂ : p₂ = p := Option.some.inj (lookup₂.symm.trans hLookup)
+      subst p₁
+      subst p₂
+      have hframe : frame₁ = frame₂ := CallEntryUniqueResult entry₁ entry₂
+      subst frame₂
+      rw [show ProcedureHeader.outputParams p.header = [] from hOutputs] at havoc₁ havoc₂
+      cases havoc₁
+      cases havoc₂
+      exact ⟨CallExitUniqueResult exit₁ exit₂, rfl⟩
+
+/-- An empty structured body uniquely preserves its input store and factory and
+reports no failure. -/
+theorem CoreBodyExec.empty_unique
+    (π : String → Option Procedure)
+
+    (σ σ' : CoreStore) (fac : Expression.Factory) (failed : Bool)
+    (h : CoreBodyExec π (.structured []) ⟨σ, fac, false⟩ σ' failed) :
+    σ' = σ ∧ failed = false := by
+  cases h with
+  | structured hstar =>
+    cases hstar with
+    | step hs1 hr1 =>
+      cases hs1
+      case step_block =>
+        cases hr1 with
+        | step hs2 hr2 =>
+          cases hs2
+          case step_block_body hinner =>
+            cases hinner
+            case step_stmts_nil =>
+              cases hr2 with
+              | step hs3 hr3 =>
+                cases hs3
+                case step_block_body hinner => cases hinner
+                case step_block_done =>
+                  cases hr3 with
+                  | refl => simp [projectStore_self]
+                  | step hs4 _ => cases hs4
+
+/-- A singleton-command structured body exposes exactly the command result before
+the procedure block projects its store and restores its factory. -/
+theorem CoreBodyExec.singleton_cmd_invert
+    {π : String → Option Procedure}
+
+    {fac : Expression.Factory} {σ σ' : CoreStore}
+    {cmd : Command} {failed : Bool}
+    (h : CoreBodyExec π (.structured [.cmd cmd]) ⟨σ, fac, false⟩ σ' failed) :
+    ∃ σCmd, EvalCommand π fac σ cmd σCmd failed ∧
+      σ' = projectStore σ σCmd := by
+  cases h with
+  | structured hstar =>
+    cases hstar with
+    | step hs1 hr1 =>
+      cases hs1
+      case step_block =>
+        cases hr1 with
+        | step hs2 hr2 =>
+          cases hs2
+          case step_block_body hinner2 =>
+            cases hinner2
+            case step_stmts_cons =>
+              cases hr2 with
+              | step hs3 hr3 =>
+                cases hs3
+                case step_block_body hinner3 =>
+                  cases hinner3
+                  case step_seq_inner hcmdStep =>
+                    cases hcmdStep
+                    case step_cmd hcmd =>
+                      cases hr3 with
+                      | step hs4 hr4 =>
+                        cases hs4
+                        case step_block_body hinner4 =>
+                          cases hinner4
+                          case step_seq_inner hterminal =>
+                            exact (terminalIsTerminal Expression (EvalCommand π)
+                              _ _ hterminal).elim
+                          case step_seq_done =>
+                            cases hr4 with
+                            | step hs5 hr5 =>
+                              cases hs5
+                              case step_block_body hinner5 =>
+                                cases hinner5
+                                case step_stmts_nil =>
+                                  cases hr5 with
+                                  | step hs6 hr6 =>
+                                    cases hs6
+                                    case step_block_body hterminal =>
+                                      exact (terminalIsTerminal Expression (EvalCommand π)
+                                        _ _ hterminal).elim
+                                    case step_block_done =>
+                                      cases hr6 with
+                                      | refl => exact ⟨_, hcmd, rfl⟩
+                                      | step hs7 _ =>
+                                        exact (terminalIsTerminal Expression (EvalCommand π)
+                                          _ _ hs7).elim
+/-- A terminal configuration cannot take an event-producing statement step. -/
+private theorem no_stepE_from_terminal
+    (π : String → Option Procedure)
+
+    (ρ : Env Expression) (emitted : Trace Expression) (c : Config Expression Command)
+    (h : StepStmtE Expression (EvalCommandE π)
+      (.terminal ρ) emitted c) : False := by
+  cases h with
+  | step_admin hadmin => cases hadmin
+
+/-- Invert an event step from a command statement into its command result. -/
+private theorem stepE_stmt_cmd_inv
+    {π : String → Option Procedure}
+
+    {cmd : Command} {ρ : Env Expression} {e : Trace Expression}
+    {c' : Config Expression Command}
+    (h : CoreStepE π (.stmt (.cmd cmd) ρ) e c') :
+    ∃ σ', EvalCommandE π ρ.factory ρ.store cmd σ' e ∧
+      c' = .terminal { ρ with store := σ' } := by
+  cases h with
+  | step_cmd hcmd => exact ⟨_, hcmd, rfl⟩
+  | step_admin hadmin =>
+    cases hadmin with
+    | step_cmd hf => exact hf.elim
+
+/-- Invert an event step from a statement-list configuration. -/
+private theorem stepE_stmts_inv
+    {π : String → Option Procedure}
+
+    {ss : List (Stmt Expression Command)} {ρ : Env Expression}
+    {e : Trace Expression} {c' : Config Expression Command}
+    (h : CoreStepE π (.stmts ss ρ) e c') :
+    (ss = [] ∧ e = [] ∧ c' = .terminal ρ) ∨
+      (∃ s ss', ss = s :: ss' ∧ e = [] ∧ c' = .seq (.stmt s ρ) ss') := by
+  cases h with
+  | step_admin hadmin =>
+    cases hadmin with
+    | step_stmts_nil => exact .inl ⟨rfl, rfl, rfl⟩
+    | step_stmts_cons => exact .inr ⟨_, _, rfl, rfl, rfl⟩
+
+/-- Invert an event step from a sequence, identifying an inner step or one of
+its two administrative exits. -/
+private theorem stepE_seq_inv
+    {π : String → Option Procedure}
+
+    {inner : Config Expression Command} {ss : List (Stmt Expression Command)}
+    {e : Trace Expression} {c' : Config Expression Command}
+    (h : CoreStepE π (.seq inner ss) e c') :
+    (∃ inner', CoreStepE π inner e inner' ∧ c' = .seq inner' ss) ∨
+      (∃ ρ₁ : Env Expression,
+        inner = .terminal ρ₁ ∧ e = [] ∧ c' = .stmts ss ρ₁) ∨
+      (∃ (l : String) (ρ₁ : Env Expression),
+        inner = .exiting l ρ₁ ∧ e = [] ∧ c' = .exiting l ρ₁) := by
+  cases h with
+  | step_admin hadmin =>
+    cases hadmin with
+    | step_seq_inner hstep => exact .inl ⟨_, .step_admin hstep, rfl⟩
+    | step_seq_done => exact .inr (.inl ⟨_, rfl, rfl, rfl⟩)
+    | step_seq_exit => exact .inr (.inr ⟨_, _, rfl, rfl, rfl⟩)
+  | step_seq_inner hE => exact .inl ⟨_, hE, rfl⟩
+
+/-- Invert an event step from a block, merging the direct and administratively
+wrapped forms of inner steps. -/
+private theorem stepE_block_inv
+    {π : String → Option Procedure}
+
+    {label : Option String} {σp : SemanticStore Expression}
+    {inner : Config Expression Command}
+    {e : Trace Expression} {c' : Config Expression Command}
+    (h : CoreStepE π (.block label σp inner) e c') :
+    (∃ inner', CoreStepE π inner e inner' ∧
+      c' = .block label σp inner') ∨
+    (∃ ρ₁ : Env Expression, inner = .terminal ρ₁ ∧ e = [] ∧
+      c' = .terminal { ρ₁ with store := projectStore σp ρ₁.store }) ∨
+    (∃ (l : String) (ρ₁ : Env Expression),
+      inner = .exiting l ρ₁ ∧ label = some l ∧ e = [] ∧
+      c' = .terminal { ρ₁ with store := projectStore σp ρ₁.store }) ∨
+    (∃ (l : String) (ρ₁ : Env Expression),
+      inner = .exiting l ρ₁ ∧ label ≠ some l ∧ e = [] ∧
+      c' = .exiting l
+        { ρ₁ with store := projectStore σp ρ₁.store }) := by
+  cases h with
+  | step_admin hadmin =>
+    cases hadmin with
+    | step_block_body hstep => exact .inl ⟨_, .step_admin hstep, rfl⟩
+    | step_block_done => exact .inr (.inl ⟨_, rfl, rfl, rfl⟩)
+    | step_block_exit_match hlabel =>
+      exact .inr (.inr (.inl ⟨_, _, rfl, hlabel, rfl, rfl⟩))
+    | step_block_exit_mismatch hne =>
+      exact .inr (.inr (.inr ⟨_, _, rfl, hne, rfl, rfl⟩))
+  | step_block_body hE => exact .inl ⟨_, hE, rfl⟩
+
+/-- A singleton-command structured event body exposes exactly the command result
+before the procedure block projects its store and restores its factory. -/
+theorem CoreBodyExecE.singleton_cmd_invert
+    {π : String → Option Procedure}
+
+    {fac : Expression.Factory} {σ σ' : CoreStore}
+    {cmd : Command} {emitted : Trace Expression}
+    (h : CoreBodyExecE π (.structured [.cmd cmd]) ⟨σ, fac, false⟩ σ' emitted) :
+    ∃ σCmd, EvalCommandE π fac σ cmd σCmd emitted ∧
+      σ' = projectStore σ σCmd := by
+  cases h with
+  | structured hstar =>
+    cases hstar with
+    | step _ _ _ _ _ hs1 hr1 =>
+      cases hs1 with
+      | step_admin hadmin1 =>
+        cases hadmin1 with
+        | step_block =>
+          cases hr1 with
+          | step _ _ _ _ _ hs2 hr2 =>
+            rcases stepE_block_inv hs2 with
+              ⟨_, hin2, rfl⟩ | ⟨_, hc, _⟩ | ⟨_, _, hc, _⟩ | ⟨_, _, hc, _⟩
+            · rcases stepE_stmts_inv hin2 with
+                ⟨hc, _⟩ | ⟨_, _, hcons, rfl, rfl⟩
+              · simp at hc
+              · cases hcons
+                cases hr2 with
+                | step _ _ _ _ _ hs3 hr3 =>
+                  rcases stepE_block_inv hs3 with
+                    ⟨_, hin3, rfl⟩ | ⟨_, hc, _⟩ | ⟨_, _, hc, _⟩ | ⟨_, _, hc, _⟩
+                  · rcases stepE_seq_inv hin3 with
+                      ⟨_, hseq3, rfl⟩ | ⟨_, hc, _⟩ | ⟨_, _, hc, _⟩
+                    · obtain ⟨σCmd, hcmd, rfl⟩ := stepE_stmt_cmd_inv hseq3
+                      cases hr3 with
+                      | step _ _ _ _ _ hs4 hr4 =>
+                        rcases stepE_block_inv hs4 with
+                          ⟨_, hin4, rfl⟩ | ⟨_, hc, _⟩ | ⟨_, _, hc, _⟩ | ⟨_, _, hc, _⟩
+                        · rcases stepE_seq_inv hin4 with
+                            ⟨_, hseq4, rfl⟩ | ⟨_, he4, rfl, rfl⟩ | ⟨_, _, hc, _⟩
+                          · exact (no_stepE_from_terminal π _ _ _ hseq4).elim
+                          · injection he4 with he4
+                            subst he4
+                            cases hr4 with
+                            | step _ _ _ _ _ hs5 hr5 =>
+                              rcases stepE_block_inv hs5 with
+                                ⟨_, hin5, rfl⟩ | ⟨_, hc, _⟩ | ⟨_, _, hc, _⟩ | ⟨_, _, hc, _⟩
+                              · rcases stepE_stmts_inv hin5 with
+                                  ⟨_, rfl, rfl⟩ | ⟨_, _, hc, _⟩
+                                · cases hr5 with
+                                  | step _ _ _ _ _ hs6 hr6 =>
+                                    rcases stepE_block_inv hs6 with
+                                      ⟨_, hin6, _⟩ | ⟨_, he6, rfl, rfl⟩ |
+                                      ⟨_, _, hc, _⟩ | ⟨_, _, hc, _⟩
+                                    · exact (no_stepE_from_terminal π _ _ _ hin6).elim
+                                    · injection he6 with he6
+                                      subst he6
+                                      cases hr6 with
+                                      | refl => exact ⟨σCmd, by simpa using hcmd, rfl⟩
+                                      | step _ _ _ _ _ hs7 _ =>
+                                        exact (no_stepE_from_terminal π _ _ _ hs7).elim
+                                    · simp at hc
+                                    · simp at hc
+                                · simp at hc
+                              · simp at hc
+                              · simp at hc
+                              · simp at hc
+                          · simp at hc
+                        · simp at hc
+                        · simp at hc
+                        · simp at hc
+                    · simp at hc
+                    · simp at hc
+                  · simp at hc
+                  · simp at hc
+                  · simp at hc
+            · simp at hc
+            · simp at hc
+            · simp at hc
+
+/-- A concrete call has a unique store and failure result when every execution
+of its selected body has a unique store, factory, and failure result. -/
+theorem EvalCommand.call_unique_of_body_unique
+    {π : String → Option Procedure}
+
+    {fac : Expression.Factory} {σ σ₁ σ₂ : CoreStore}
+    {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
+    {md : MetaData Expression} {failed₁ failed₂ : Bool}
+    (hLookup : π n = some p)
+    (hBodyUnique : ∀ {frame end₁ end₂ : CoreStore}
+      {bodyFailed₁ bodyFailed₂ : Bool},
+      CoreBodyExec π p.body ⟨frame, fac, false⟩ end₁ bodyFailed₁ →
+      CoreBodyExec π p.body ⟨frame, fac, false⟩ end₂ bodyFailed₂ →
+      end₁ = end₂ ∧ bodyFailed₁ = bodyFailed₂)
+    (h₁ : EvalCommand π fac σ (.call n callArgs md) σ₁ failed₁)
+    (h₂ : EvalCommand π fac σ (.call n callArgs md) σ₂ failed₂) :
+    σ₁ = σ₂ ∧ failed₁ = failed₂ := by
+  cases h₁ with
+  | @call_sem _ _ _ p₁ _ _ end₁ bodyFailed₁ preFailed₁ postFailed₁ _ frame₁
+      lookup₁ entry₁ evalPre₁ bodyExec₁ evalPost₁ exit₁ =>
+    cases h₂ with
+    | @call_sem _ _ _ p₂ _ _ end₂ bodyFailed₂ preFailed₂ postFailed₂ _ frame₂
+        lookup₂ entry₂ evalPre₂ bodyExec₂ evalPost₂ exit₂ =>
+      have hp₁ : p₁ = p := Option.some.inj (lookup₁.symm.trans hLookup)
+      have hp₂ : p₂ = p := Option.some.inj (lookup₂.symm.trans hLookup)
+      subst p₁
+      subst p₂
+      have hframe : frame₁ = frame₂ := CallEntryUniqueResult entry₁ entry₂
+      subst frame₂
+      obtain ⟨hend, hbody⟩ := hBodyUnique bodyExec₁ bodyExec₂
+      subst end₂
+      subst bodyFailed₂
+      have hpre : preFailed₁ = preFailed₂ := EvalChecksInjective evalPre₁ evalPre₂
+      have hpost : postFailed₁ = postFailed₂ := EvalChecksInjective evalPost₁ evalPost₂
+      subst preFailed₂
+      subst postFailed₂
+      exact ⟨CallExitUniqueResult exit₁ exit₂, rfl⟩
+
+/-- A singleton-command body has a unique store, factory, and failure result when
+that command has a unique store and failure result. -/
+theorem CoreBodyExec.singleton_cmd_unique
+    {π : String → Option Procedure}
+
+    {fac : Expression.Factory} {σ end₁ end₂ : CoreStore}
+    {cmd : Command}
+    {failed₁ failed₂ : Bool}
+    (hCmdUnique : ∀ {σ₁ σ₂ : CoreStore} {result₁ result₂ : Bool},
+      EvalCommand π fac σ cmd σ₁ result₁ →
+      EvalCommand π fac σ cmd σ₂ result₂ →
+      σ₁ = σ₂ ∧ result₁ = result₂)
+    (h₁ : CoreBodyExec π (.structured [.cmd cmd]) ⟨σ, fac, false⟩ end₁ failed₁)
+    (h₂ : CoreBodyExec π (.structured [.cmd cmd]) ⟨σ, fac, false⟩ end₂ failed₂) :
+    end₁ = end₂ ∧ failed₁ = failed₂ := by
+  obtain ⟨σCmd₁, hcmd₁, hend₁⟩ := h₁.singleton_cmd_invert
+  obtain ⟨σCmd₂, hcmd₂, hend₂⟩ := h₂.singleton_cmd_invert
+  obtain ⟨hcmdStore, hresult⟩ := hCmdUnique hcmd₁ hcmd₂
+  subst σCmd₂
+  exact ⟨hend₁.trans hend₂.symm, hresult⟩
+
+/-- An event-producing call has a unique store and trace when every execution of
+its selected body has a unique store, factory, and trace. -/
+theorem EvalCommandE.call_unique_of_body_unique
+    {π : String → Option Procedure}
+
+    {fac : Expression.Factory} {σ σ₁ σ₂ : CoreStore}
+    {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
+    {md : MetaData Expression} {emitted₁ emitted₂ : Trace Expression}
+    (hLookup : π n = some p)
+    (hBodyUnique : ∀ {frame end₁ end₂ : CoreStore}
+      {bodyEvents₁ bodyEvents₂ : Trace Expression},
+      CoreBodyExecE π p.body ⟨frame, fac, false⟩ end₁ bodyEvents₁ →
+      CoreBodyExecE π p.body ⟨frame, fac, false⟩ end₂ bodyEvents₂ →
+      end₁ = end₂ ∧ bodyEvents₁ = bodyEvents₂)
+    (h₁ : EvalCommandE π fac σ (.call n callArgs md) σ₁ emitted₁)
+    (h₂ : EvalCommandE π fac σ (.call n callArgs md) σ₂ emitted₂) :
+    σ₁ = σ₂ ∧ emitted₁ = emitted₂ := by
+  cases h₁ with
+  | @call_sem _ _ p₁ _ _ end₁ bodyEvents₁ _ _ frame₁
+      lookup₁ entry₁ bodyExec₁ exit₁ =>
+    cases h₂ with
+    | @call_sem _ _ p₂ _ _ end₂ bodyEvents₂ _ _ frame₂
+        lookup₂ entry₂ bodyExec₂ exit₂ =>
+      have hp₁ : p₁ = p := Option.some.inj (lookup₁.symm.trans hLookup)
+      have hp₂ : p₂ = p := Option.some.inj (lookup₂.symm.trans hLookup)
+      subst p₁
+      subst p₂
+      have hframe : frame₁ = frame₂ := CallEntryUniqueResult entry₁ entry₂
+      subst frame₂
+      obtain ⟨hend, hbody⟩ := hBodyUnique bodyExec₁ bodyExec₂
+      subst end₂
+      subst bodyEvents₂
+      exact ⟨CallExitUniqueResult exit₁ exit₂, rfl⟩
+
+/-- A singleton-command event body has a unique store, factory, and trace when
+that command has a unique store and trace. -/
+theorem CoreBodyExecE.singleton_cmd_unique
+    {π : String → Option Procedure}
+
+    {fac : Expression.Factory} {σ end₁ end₂ : CoreStore}
+    {cmd : Command}
+    {emitted₁ emitted₂ : Trace Expression}
+    (hCmdUnique : ∀ {σ₁ σ₂ : CoreStore} {result₁ result₂ : Trace Expression},
+      EvalCommandE π fac σ cmd σ₁ result₁ →
+      EvalCommandE π fac σ cmd σ₂ result₂ →
+      σ₁ = σ₂ ∧ result₁ = result₂)
+    (h₁ : CoreBodyExecE π (.structured [.cmd cmd]) ⟨σ, fac, false⟩ end₁ emitted₁)
+    (h₂ : CoreBodyExecE π (.structured [.cmd cmd]) ⟨σ, fac, false⟩ end₂ emitted₂) :
+    end₁ = end₂ ∧ emitted₁ = emitted₂ := by
+  obtain ⟨σCmd₁, hcmd₁, hend₁⟩ := h₁.singleton_cmd_invert
+  obtain ⟨σCmd₂, hcmd₂, hend₂⟩ := h₂.singleton_cmd_invert
+  obtain ⟨hcmdStore, hresult⟩ := hCmdUnique hcmd₁ hcmd₂
+  subst σCmd₂
+  exact ⟨hend₁.trans hend₂.symm, hresult⟩
+
+/-- A fixed assertion command has a unique output store and failure result. -/
+theorem EvalCommand.assert_unique
+    {π : String → Option Procedure}
+
+    {fac : Expression.Factory} {σ σ₁ σ₂ : CoreStore}
+    {label : String} {e : Expression.Expr} {md : MetaData Expression}
+    {failed₁ failed₂ : Bool}
+    (h₁ : EvalCommand π fac σ (.cmd (.assert label e md)) σ₁ failed₁)
+    (h₂ : EvalCommand π fac σ (.cmd (.assert label e md)) σ₂ failed₂) :
+    σ₁ = σ₂ ∧ failed₁ = failed₂ := by
+  cases h₁ with
+  | cmd_sem cmd₁ =>
+    cases h₂ with
+    | cmd_sem cmd₂ =>
+      cases cmd₁ with
+      | eval_assert_pass heval₁ _ =>
+        cases cmd₂ with
+        | eval_assert_pass => exact ⟨rfl, rfl⟩
+        | eval_assert_fail heval₂ _ =>
+          have hcontra := Option.some.inj (heval₁.symm.trans heval₂)
+          change (Lambda.LExpr.boolConst () true : Expression.Expr) =
+            Lambda.LExpr.boolConst () false at hcontra
+          simp [Lambda.LExpr.boolConst] at hcontra
+      | eval_assert_fail heval₁ _ =>
+        cases cmd₂ with
+        | eval_assert_pass heval₂ _ =>
+          have hcontra := Option.some.inj (heval₁.symm.trans heval₂)
+          change (Lambda.LExpr.boolConst () false : Expression.Expr) =
+            Lambda.LExpr.boolConst () true at hcontra
+          simp [Lambda.LExpr.boolConst] at hcontra
+        | eval_assert_fail => exact ⟨rfl, rfl⟩
+
+/-- A fixed event-producing assertion command has a unique output store and
+single-event trace. -/
+theorem EvalCommandE.assert_unique
+    {π : String → Option Procedure}
+
+    {fac : Expression.Factory} {σ σ₁ σ₂ : CoreStore}
+    {label : String} {e : Expression.Expr} {md : MetaData Expression}
+    {emitted₁ emitted₂ : Trace Expression}
+    (h₁ : EvalCommandE π fac σ (.cmd (.assert label e md)) σ₁ emitted₁)
+    (h₂ : EvalCommandE π fac σ (.cmd (.assert label e md)) σ₂ emitted₂) :
+    σ₁ = σ₂ ∧ emitted₁ = emitted₂ := by
+  cases h₁ with
+  | cmd_sem cmd₁ =>
+    cases cmd₁
+    cases h₂ with
+    | cmd_sem cmd₂ =>
+      cases cmd₂
+      exact ⟨rfl, rfl⟩
+
+/-- An empty structured event body uniquely preserves its input store and factory
+and emits no events. -/
+theorem CoreBodyExecE.empty_unique
+    (π : String → Option Procedure)
+
+    (σ σ' : CoreStore) (fac : Expression.Factory) (emitted : Trace Expression)
+    (h : CoreBodyExecE π (.structured []) ⟨σ, fac, false⟩ σ' emitted) :
+    σ' = σ ∧ emitted = [] := by
+  cases h with
+  | structured hstar =>
+    cases hstar with
+    | step _ _ _ _ _ hs1 hr1 =>
+      cases hs1 with
+      | step_admin hadmin =>
+        cases hadmin
+        case step_block =>
+          cases hr1 with
+          | step _ _ _ _ _ hs2 hr2 =>
+            cases hs2 with
+            | step_admin hadmin2 =>
+              cases hadmin2
+              case step_block_body hinner =>
+                cases hinner
+                case step_stmts_nil =>
+                  cases hr2 with
+                  | step _ _ _ _ _ hs3 hr3 =>
+                    cases hs3 with
+                    | step_admin hadmin3 =>
+                      cases hadmin3
+                      case step_block_body hinner => cases hinner
+                      case step_block_done =>
+                        cases hr3 with
+                        | refl => simp [projectStore_self]
+                        | step _ _ _ _ _ hs4 _ =>
+                          exact (no_stepE_from_terminal π _ _ _ hs4).elim
+                    | step_block_body hinner3 =>
+                      exact (no_stepE_from_terminal π _ _ _ hinner3).elim
+            | step_block_body hinnerE =>
+              cases hinnerE with
+              | step_admin hadmin2 =>
+                cases hadmin2
+                case step_stmts_nil =>
+                  cases hr2 with
+                  | step _ _ _ _ _ hs3 hr3 =>
+                    cases hs3 with
+                    | step_admin hadmin3 =>
+                      cases hadmin3
+                      case step_block_body hinner => cases hinner
+                      case step_block_done =>
+                        cases hr3 with
+                        | refl => simp [projectStore_self]
+                        | step _ _ _ _ _ hs4 _ =>
+                          exact (no_stepE_from_terminal π _ _ _ hs4).elim
+                    | step_block_body hinner3 =>
+                      exact (no_stepE_from_terminal π _ _ _ hinner3).elim
+
+/-- A concrete call to an empty body has the unique caller result obtained from
+its uniquely determined entry frame and expected call exit. -/
+theorem EvalCommand.empty_body_call_store_unique
+    {π : String → Option Procedure}
+
+    {fac : Expression.Factory} {σ σAO expected σ' : CoreStore}
+    {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
+    {md : MetaData Expression} {failed : Bool}
+    (hLookup : π n = some p) (hBody : p.body = .structured [])
+    (hEntry : CallEntry fac σ p callArgs σAO)
+    (hExit : CallExit fac σ p callArgs σAO expected)
+    (h : EvalCommand π fac σ (.call n callArgs md) σ' failed) : σ' = expected := by
+  cases h with
+  | @call_sem _ _ _ q _ _ σFinal bodyFailed preFailed postFailed _ frame
+      hLookup' hEntry' _ hBodyExec _ hExit' =>
+    have hp : q = p := Option.some.inj (hLookup'.symm.trans hLookup)
+    subst q
+    have hFrame : frame = σAO := CallEntryUniqueResult hEntry' hEntry
+    subst frame
+    rw [hBody] at hBodyExec
+    obtain ⟨rfl, _⟩ := hBodyExec.empty_unique π σAO σFinal fac bodyFailed
+    exact CallExitUniqueResult hExit' hExit
+
+/-- An event-producing concrete call to an empty body has the unique caller
+result obtained from its uniquely determined entry frame and expected call exit. -/
+theorem EvalCommandE.empty_body_call_store_unique
+    {π : String → Option Procedure}
+
+    {fac : Expression.Factory} {σ σAO expected σ' : CoreStore}
+    {n : String} {p : Procedure} {callArgs : List (CallArg Expression)}
+    {md : MetaData Expression} {emitted : Trace Expression}
+    (hLookup : π n = some p) (hBody : p.body = .structured [])
+    (hEntry : CallEntry fac σ p callArgs σAO)
+    (hExit : CallExit fac σ p callArgs σAO expected)
+    (h : EvalCommandE π fac σ (.call n callArgs md) σ' emitted) : σ' = expected := by
+  cases h with
+  | @call_sem _ _ q _ _ σFinal bodyEvents _ _ frame
+      hLookup' hEntry' hBodyExec hExit' =>
+    have hp : q = p := Option.some.inj (hLookup'.symm.trans hLookup)
+    subst q
+    have hFrame : frame = σAO := CallEntryUniqueResult hEntry' hEntry
+    subst frame
+    rw [hBody] at hBodyExec
+    obtain ⟨rfl, _⟩ := CoreBodyExecE.empty_unique π σAO σFinal fac bodyEvents hBodyExec
+    exact CallExitUniqueResult hExit' hExit
+
 theorem InitStatesApp' :
   InitStates σ (k1 ++ k2) (v1 ++ v2) σ' →
   k1.length = v1.length →
@@ -581,193 +1176,12 @@ theorem InitStatesApp' :
   . simp [InitStateUpdated Hinit']
     exact Hup
 
-theorem ReadValuesApp :
-  ReadValues σ k1 v1 →
-  ReadValues σ k2 v2 →
-  ReadValues σ (k1 ++ k2) (v1 ++ v2) := by
-  intros Hrd1 Hrd2
-  induction Hrd1 <;> simp_all
-  case read_some Hsome Hrd Hrds =>
-  constructor <;> assumption
-
-theorem ReadValuesAppKeys' :
-  ReadValues σ (k1 ++ k2) vs →
-  exists v1 v2,
-  v1 ++ v2 = vs ∧
-  ReadValues σ k1 v1 ∧
-  ReadValues σ k2 v2 := by
-  intros Hrd
-  induction vs generalizing k1 k2
-  case nil =>
-    exists [],[]
-    generalize Hk12 : k1 ++ k2 = k12 at Hrd
-    cases Hrd
-    simp_all
-    constructor
-  case cons vh vt vih =>
-    cases k1
-    case nil =>
-      exists [],vh :: vt
-      simp_all
-      constructor
-    case cons kh kt =>
-      cases Hrd with
-      | read_some Hsome Hrd =>
-        specialize vih Hrd
-        cases vih with
-        | intro v1' vih =>
-        cases vih with
-        | intro v2 vih =>
-        exists vh::v1',v2
-        simp_all
-        constructor <;> simp_all
-
-theorem ReadValuesLength :
-  ReadValues σ ks vs →
-  ks.length = vs.length := by
-  intros Hrd
-  induction Hrd <;> simp_all
-
+/-- Evaluating a list of expressions yields exactly one value per expression. -/
 theorem EvalExpressionsLength :
-  EvalExpressions (P:=Core.Expression) δ σ ks vs →
+  EvalExpressions (P := Expression) fac σ ks vs →
   ks.length = vs.length := by
   intros Hrd
   induction Hrd <;> simp_all
-
-theorem InitStatesLength :
-  InitStates σ ks vs σ' →
-  ks.length = vs.length := by
-  intros Hinit
-  induction Hinit <;> simp_all
-
-theorem UpdateStatesLength {P : PureExpr}
-  {σ σ' : Imperative.SemanticStore P}
-  {ks : List P.Ident}
-  {vs : List P.Expr}
-  :
-  UpdateStates (P:=P) σ ks vs σ' →
-  List.length ks = List.length vs := by
-  intros Hup
-  induction Hup <;> simp_all
-
-theorem InitStateReadValuesMonotone {P : PureExpr} {σ σ' : SemanticStore P}
-  {ks : List P.Ident} {vs : List P.Expr} {e : P.Expr} {v : P.Ident} :
-  ReadValues σ ks vs →
-  InitState P σ v e σ' →
-  ReadValues σ' ks vs := by
-  intros Hdef Heval
-  cases Heval with
-  | init Hold HH Hsome =>
-  induction Hdef
-  case read_none => constructor
-  case read_some xs vs' x v' Hsome' Hrd Hrds =>
-  constructor <;> simp_all
-  rw [Hsome] <;> try simp_all
-  apply Not.intro
-  intros Heq
-  simp_all
-
-theorem InitStatesReadValuesMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {ks : List P.Ident} {vs : List P.Expr}
-  {es' : List P.Expr} {vs' : List P.Ident} :
-  ReadValues σ ks vs →
-  InitStates σ vs' es' σ' →
-  ReadValues σ' ks vs := by
-  intros Hdef Heval
-  induction Heval with
-  | init_none => assumption
-  | init_some Hinit Hinits ih =>
-    apply ih
-    apply InitStateReadValuesMonotone <;> assumption
-
-theorem UpdateStateReadValuesMonotone {P : PureExpr} {σ σ' : SemanticStore P}
-  {ks : List P.Ident} {vs : List P.Expr} {e : P.Expr} {v : P.Ident} :
-  ¬ v ∈ ks →
-  ReadValues σ ks vs →
-  UpdateState P σ v e σ' →
-  ReadValues σ' ks vs := by
-  intros Hnin Hdef Heval
-  cases Heval with
-  | update Hold HH Hsome =>
-  induction Hdef
-  case read_none => constructor
-  case read_some xs vs' x v' Hsome' Hrd Hrds =>
-  constructor <;> simp_all
-
-theorem UpdateStatesReadValuesMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {ks : List P.Ident} {vs : List P.Expr}
-  {es' : List P.Expr} {vs' : List P.Ident} :
-  (ks ++ vs').Nodup →
-  ReadValues σ ks vs →
-  UpdateStates σ vs' es' σ' →
-  ReadValues σ' ks vs := by
-  intros Hnd Hdef Heval
-  induction Heval with
-  | update_none => assumption
-  | update_some Hinit Hinits ih =>
-    have Hnd' := nodup_middle Hnd
-    simp_all
-    apply ih
-    apply UpdateStateReadValuesMonotone _ Hdef Hinit <;> try assumption
-    simp_all
-
-theorem InitStateReadValues :
-  InitState P σ v e σ' →
-  ReadValues σ' [v] [e] := by
-  intros Hinit
-  cases Hinit with
-  | init Hold HH Hsome =>
-  constructor
-  . assumption
-  . constructor
-
-theorem UpdateStateReadValues :
-  UpdateState P σ v e σ' →
-  ReadValues σ' [v] [e] := by
-  intros Hinit
-  cases Hinit with
-  | update Hold HH Hsome =>
-  constructor
-  . assumption
-  . constructor
-
-theorem InitStatesReadValues :
-  InitStates σ vs es σ' →
-  ReadValues σ' vs es := by
-  intros Hinit
-  induction Hinit
-  case init_none =>
-    constructor
-  case init_some x v σ₁ x' v' σ'' Hinit Hinits ih =>
-    constructor <;> try assumption
-    have Hrd : ReadValues σ'' [x] [v] := by
-      apply InitStatesReadValuesMonotone (σ:=σ₁)
-      apply InitStateReadValues <;> assumption
-      assumption
-    cases Hrd
-    assumption
-
-theorem UpdateStatesReadValues :
-  vs.Nodup →
-  UpdateStates σ vs es σ' →
-  ReadValues σ' vs es := by
-  intros Hnd Hinit
-  induction Hinit
-  case update_none =>
-    constructor
-  case update_some x v σ₁ x' v' σ'' Hupdate Hupdates ih =>
-    constructor <;> try assumption
-    have Hrd : ReadValues σ'' [x] [v] := by
-      apply UpdateStatesReadValuesMonotone (σ:=σ₁)
-      exact Hnd
-      apply UpdateStateReadValues <;> assumption
-      assumption
-    cases Hrd
-    assumption
-    apply ih
-    simp_all
 
 theorem InitVarsInitStates : InitVars σ vars σ' →
   ∃ modvals, InitStates σ vars modvals σ' := by
@@ -781,12 +1195,13 @@ theorem InitVarsInitStates : InitVars σ vars σ' →
     refine ⟨v::vs,?_⟩
     constructor <;> assumption
 
+/-- Values read from a store remain readable after `InitVars` extends it. -/
 theorem InitVarsReadValuesMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
+  {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' : SemanticStore P}
   {ks vs' : List P.Ident} {vs : List P.Expr} :
-  ReadValues σ ks vs →
+  ReadValues f σ ks vs →
   InitVars σ vs' σ' →
-  ReadValues σ' ks vs := by
+  ReadValues f σ' ks vs := by
   intros Hdef Hinit
   have Hinit' := InitVarsInitStates Hinit
   cases Hinit' with
@@ -824,7 +1239,7 @@ theorem updatedStateComm'
 theorem updatedStatesComm
   {P : PureExpr} {σ : SemanticStore P}
   {kvs kvs' : List (P.Ident × P.Expr)} :
-  kvs.unzip.1.Disjoint kvs'.unzip.1 →
+  kvs.unzip.1.Disj kvs'.unzip.1 →
   updatedStates' (updatedStates' σ kvs) kvs' =
   updatedStates' (updatedStates' σ kvs') kvs := by
   intros Hnd
@@ -836,116 +1251,15 @@ theorem updatedStatesComm
     rw [updatedStateComm]
     rw [updatedStateComm']
     . simp at Hnd
-      have Hnd' := List.Disjoint.symm Hnd
+      have Hnd' := List.Disj.symm Hnd
       apply List.Disjoint_cons_head
-      apply List.Disjoint.mono_right _ Hnd'
+      apply List.Disj.mono_right _ Hnd'
       simp_all
     . intros Hin
-      simp_all [List.Disjoint]
+      simp_all [List.Disj]
     . simp at *
-      refine List.Disjoint.mono_right ?_ Hnd
+      refine List.Disj.mono_right ?_ Hnd
       simp_all
-
-theorem UpdateStateSomeMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr} {e : P.Expr} {v : P.Ident} :
-  v ≠ k' →
-  σ k' = some v' →
-  UpdateState P σ v e σ' →
-  σ' k' = some v' := by
-  intros Hne Hdef Heval
-  have Hrd : ReadValues σ [k'] [v'] := by
-    cases Heval with
-    | update Hold HH Hsome =>
-    constructor <;> simp_all
-    constructor
-  have Hrd2 : ReadValues σ' [k'] [v'] := by
-    apply UpdateStateReadValuesMonotone ?_ Hrd Heval
-    simp_all
-  cases Hrd2
-  assumption
-
-theorem UpdateStatesSomeMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr}
-  {ks': List P.Ident} {vs': List P.Expr} :
-  ¬ k' ∈ ks' →
-  σ k' = some v' →
-  UpdateStates σ ks' vs' σ' →
-  σ' k' = some v' := by
-  intros Hnin Hsome Hinit
-  induction Hinit <;> try simp_all
-  next Hinit Hinits ih =>
-  apply ih
-  apply UpdateStateSomeMonotone ?_ Hsome Hinit
-  exact fun a => Hnin.1 (Eq.symm a)
-
-theorem InitStateSomeMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr} {e : P.Expr} {v : P.Ident} :
-  σ k' = some v' →
-  InitState P σ v e σ' →
-  σ' k' = some v' := by
-  intros Hdef Heval
-  have Hrd : ReadValues σ [k'] [v'] := by
-    cases Heval with
-    | init Hold HH Hsome =>
-    constructor <;> simp_all
-    constructor
-  have Hrd2 : ReadValues σ' [k'] [v'] :=
-    InitStateReadValuesMonotone Hrd Heval
-  cases Hrd2
-  assumption
-
-theorem InitStateSomeMonotone'
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr} {e : P.Expr} {v : P.Ident} :
-  k' ≠ v →
-  σ' k' = some v' →
-  InitState P σ v e σ' →
-  σ k' = some v' := by
-  intros Hne Hdef Heval
-  have Hrd : ReadValues σ [k'] [v'] := by
-    cases Heval with
-    | init Hold HH Hsome =>
-    constructor <;> simp_all
-    rw [← Hsome]
-    assumption
-    exact fun a => Hne (Eq.symm a)
-    constructor
-  have Hrd2 : ReadValues σ' [k'] [v'] :=
-    InitStateReadValuesMonotone Hrd Heval
-  cases Hrd
-  assumption
-
-theorem InitStatesSomeMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr}
-  {ks': List P.Ident} {vs': List P.Expr} :
-  σ k' = some v' →
-  InitStates σ ks' vs' σ' →
-  σ' k' = some v' := by
-  intros Hsome Hinit
-  induction Hinit <;> try simp_all
-  next Hinit Hinits ih =>
-  apply ih
-  apply InitStateSomeMonotone Hsome Hinit
-
-theorem InitStatesSomeMonotone'
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr}
-  {ks': List P.Ident} {vs': List P.Expr} :
-  ¬ k' ∈ ks' →
-  σ' k' = some v' →
-  InitStates σ ks' vs' σ' →
-  σ k' = some v' := by
-  intros Hnin Hsome Hinit
-  induction Hinit
-  case init_none => simp_all
-  case init_some Hinit Hinits ih =>
-  apply InitStateSomeMonotone' ?_ ?_ Hinit
-  . simp_all
-  . apply ih <;> simp_all
 
 theorem InitsUpdatesComm
   {P : PureExpr} {σ σ' σ'' : SemanticStore P}
@@ -1034,194 +1348,24 @@ theorem InitUpdateComm
     simp [UpdateStatesEmpty Hups, updatedStates, updatedStates'] at Hup
     assumption
 
-theorem isDefinedReadValues :
-  isDefined σ ks →
-  ∃ vs,
-  ReadValues σ ks vs := by
-  intros Hdef
-  simp [isDefined] at Hdef
-  induction ks <;> simp_all
-  case nil =>
-    exists []
-    constructor
-  case cons h t ih =>
-    cases ih with
-    | intro t' Hrd =>
-    have Hsome := Hdef.1
-    simp [Option.isSome] at Hsome
-    split at Hsome <;> simp_all
-    next h' Hh' =>
-    exists (h' :: t')
-    constructor <;> simp_all
-
-theorem ReadValuesIsDefined :
-  ReadValues σ ks vs →
-  isDefined σ ks := by
-  intros Hrd
-  induction Hrd <;> simp [isDefined, Option.isSome]
-  apply And.intro
-  . split <;> simp_all
-  . intros a Hin
-    split <;> simp_all
-    next ih ex Hnone =>
-    specialize ih a Hin
-    simp_all
-
-theorem InitStateSubstStores :
-σ k' = some v' →
-InitState Expression σ k v' σ' →
-substStores σ σ' [(k', k)] := by
-intros Hsome Hinit
-cases Hinit with
-| init Hone Hsome' Heq =>
-simp [substStores]
-simp [Hsome, Hsome']
-
-theorem InitStatesSubstStores :
-ReadValues σ ks' vs' →
-InitStates σ ks vs' σ' →
-substStores σ σ' (ks'.zip ks) := by
-intros Hrd Hinit
-induction Hinit generalizing ks' with
-| init_none =>
-  simp [substStores]
-| init_some Hinit Hinits ih =>
-  next σ x v σ₁ xs vs σ'' =>
-  cases Hrd with
-  | read_some Hsome'' Hrds =>
-  next ys y =>
-  have Hinit' := Hinit
-  cases Hinit with
-  | init Hnone Hsome' Heq =>
-  simp [substStores]
-  intros k1 k2 Hin
-  cases Hin with
-  | inl Hin =>
-    simp_all
-    apply Eq.symm
-    apply InitStatesSomeMonotone Hsome' Hinits
-  | inr Hin =>
-    specialize @ih ys ?_
-    exact InitStateReadValuesMonotone Hrds Hinit'
-    rw [← Heq]
-    exact ih k1 k2 Hin
-    apply Not.intro
-    intro Heq
-    simp_all
-    have Hin' := List.of_mem_zip Hin
-    have Hdef := ReadValuesIsDefined Hrds
-    specialize Hdef k1 Hin'.1
-    simp_all
-
 theorem substStoresInitInv :
 substDefined σ σ' substs →
 substStores σ σ' substs →
 InitState Expression σ' k v σ'' →
 substStores σ σ'' substs := by
-intros Hdef Hsubst Hinit
-simp [substStores, substDefined] at *
-intros k1 k2 Hin
-cases Hinit with
-| init Hnone Hsome' Heq =>
-rw [Heq] <;> simp_all
-rw [Hsubst] <;> simp_all
-apply Not.intro
-intro Heq'
-simp [Heq'] at *
-specialize Hdef k1 k2 Hin
-simp [Option.isSome] at Hdef
-split at Hdef <;> simp_all
-
-theorem substStoresInitsInv :
-substDefined σ σ' substs →
-substStores σ σ' substs →
-InitStates σ' ks vs σ'' →
-substStores σ σ'' substs := by
-intros Hdef Hsubst Hinit
-simp [substStores, substDefined] at *
-intros k1 k2 Hin
-induction Hinit generalizing σ
-case init_none =>
-  exact Hsubst k1 k2 Hin
-case init_some Hinit Hinits ih =>
-  simp [Hsubst k1 k2 Hin]
+  intros Hdef Hsubst Hinit
+  simp [substStores, substDefined] at *
+  intros k1 k2 Hin
+  cases Hinit with
+  | init Hnone Hsome' Heq =>
+  rw [Heq] <;> simp_all
+  rw [Hsubst] <;> simp_all
+  apply Not.intro
+  intro Heq'
+  simp [Heq'] at *
   specialize Hdef k1 k2 Hin
   simp [Option.isSome] at Hdef
   split at Hdef <;> simp_all
-  split at Hdef <;> simp_all
-  next x val Hsome =>
-  have Hsome' := InitStateSomeMonotone Hsome Hinit
-  have Hsome'' := InitStatesSomeMonotone Hsome' Hinits
-  simp_all
-
-theorem substStoresInitsInv' :
-substDefined σ σ' substs →
-substStores σ σ' substs →
-InitStates σ ks vs σ'' →
-substStores σ'' σ' substs := by
-  intros k1 k2 Hin
-  rw [← substSwapId _ substs]
-  apply substStoresFlip
-  apply substStoresInitsInv <;> try assumption
-  . exact substDefinedFlip k1
-  . exact substStoresFlip k2
-
-theorem substStoresUpdateInv {k : P.Ident} {substs : List (P.Ident × P.Ident)}:
-¬ k ∈ substs.unzip.2 →
-substStores (P:=P) σ σ' substs →
-UpdateState (P:=P) σ' k v σ'' →
-substStores (P:=P) σ σ'' substs := by
-intros Hnin Hsubst Hinit
-simp [substStores] at *
-intros k1 k2 Hin
-cases Hinit with
-| update Hnone Hsome' Heq =>
-rw [Heq] <;> simp_all
-rw [Hsubst] <;> simp_all
-intros Heq'
-specialize Hnin k1
-simp_all
-
-theorem substStoresUpdatesInv :
-ks.Disjoint substs.unzip.2 →
-substStores σ σ' substs →
-UpdateStates σ' ks vs σ'' →
-substStores σ σ'' substs := by
-intros Hnin Hsubst Hup
-simp [substStores] at *
-intros k1 k2 Hin
-induction Hup generalizing σ
-case update_none =>
-  exact Hsubst k1 k2 Hin
-case update_some σ x v σ' xs vs σ₁ Hup Hinits ih =>
-  have Hnin : ¬ x ∈ substs.unzip.2 := by
-    simp [List.Disjoint] at Hnin
-    intros Hin
-    have Hprod := List.mem_zip_2 (l₁:=substs.unzip.fst) (by simp) Hin
-    rw [List.zip_unzip] at Hprod
-    cases Hprod with
-    | intro w Hprod =>
-    have HH := Hnin.1 w
-    contradiction
-  have HH := substStoresUpdateInv (σ:=σ) Hnin Hsubst Hup
-  apply ih HH
-  simp [List.Disjoint] at *
-  simp_all
-
-theorem substStoresUpdatesInv' :
-ks.Disjoint substs.unzip.1 →
-substStores σ σ' substs →
-UpdateStates σ ks vs σ'' →
-substStores σ'' σ' substs := by
-  intros Hdisj Hsubst Hup
-  rw [← substSwapId _ substs]
-  apply substStoresFlip
-  apply substStoresUpdatesInv <;> try assumption
-  . intros a Hin Hin'
-    specialize Hdisj Hin
-    simp [substSwap] at Hin'
-    simp_all
-  . exact substStoresFlip Hsubst
 
 theorem substDefinedIsDefined :
   substDefined σ σ' substs →
@@ -1288,79 +1432,38 @@ theorem substStoresCons' :
       apply Hsubst
       exact Or.inr Hin
 
-theorem substStoresCons :
-  substStores σ σ' [(h,h')] →
-  substStores σ σ' (List.zip t t') →
-  substStores σ σ' ((h,h') :: (List.zip t t')) := by
-  intros Hh Ht
-  intros k1 k2 Hin
-  simp at Hin
-  cases Hin with
-  | inl Hin =>
-    apply Hh
-    simp_all
-  | inr Hin =>
-    apply Ht
-    simp_all
-
-theorem ReadValuesSubstStores :
-  ReadValues σ ks vs →
-  ReadValues σ' ks' vs →
-  Imperative.substStores σ σ' (List.zip ks ks') := by
-  intros H1 H2
-  induction vs generalizing ks ks'
-  case nil =>
-    cases H1
-    cases H2
-    intros h1 h2 Hin
-    cases Hin
-  case cons h t ih =>
-    cases ks
-    cases H1
-    cases ks'
-    cases H2
-    cases H1 with
-    | read_some Hh Ht =>
-    cases H2 with
-    | read_some Hh' Ht' =>
-    simp
-    apply substStoresCons
-    . simp [substStores]
-      simp_all
-    . exact ih Ht Ht'
-
-theorem EvalStatementsContractApp' {φ : CoreEval → PureFunc Expression → CoreEval} :
-  EvalStatementsContract π φ ρ (ss₁ ++ ss₂) ρ'' →
+theorem EvalStatementsContractApp' :
+  EvalStatementsContract π ρ (ss₁ ++ ss₂) ρ'' →
   ∃ ρ',
-    EvalStatementsContract π φ ρ ss₁ ρ' ∧
-    EvalStatementsContract π φ ρ' ss₂ ρ'' := by
+    EvalStatementsContract π ρ ss₁ ρ' ∧
+    EvalStatementsContract π ρ' ss₂ ρ'' := by
   intro Heval
   induction ss₁ generalizing ρ with
   | nil =>
     simp at Heval
-    exact ⟨ρ, evalStmtsSmallNil Expression (EvalCommandContract π) (EvalPureFunc φ) ρ, Heval⟩
+    exact ⟨ρ, evalStmtsSmallNil Expression (EvalCommandContract π) ρ, Heval⟩
   | cons s ss₁ ih =>
     simp [List.cons_append] at Heval
     unfold EvalStatementsContract EvalStmtsSmall at Heval
     match Heval with
     | .step _ _ _ .step_stmts_cons hrest =>
       have ⟨ρ₁, hterm_s, htail⟩ :=
-        seq_reaches_terminal Expression (EvalCommandContract π) (EvalPureFunc φ) hrest
+        seq_reaches_terminal Expression (EvalCommandContract π) hrest
       have ⟨ρ', Hss₁, Hss₂⟩ := ih htail
-      have Hcons : EvalStmtsSmall Expression (EvalCommandContract π) (EvalPureFunc φ) ρ (s :: ss₁) ρ' := by
+      have Hcons : EvalStmtsSmall Expression (EvalCommandContract π) ρ (s :: ss₁) ρ' := by
         unfold EvalStmtsSmall
         apply ReflTrans.step _ _ _ .step_stmts_cons
         exact ReflTrans_Transitive _ _ _ _
-          (seq_inner_star Expression (EvalCommandContract π) (EvalPureFunc φ) _ _ ss₁ hterm_s)
+          (seq_inner_star Expression (EvalCommandContract π) _ _ ss₁ hterm_s)
           (.step _ _ _ .step_seq_done
-            (show StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ)
+            (show StepStmtStar Expression (EvalCommandContract π)
               (.stmts ss₁ ρ₁) (.terminal ρ') from Hss₁))
       exact ⟨ρ', Hcons, Hss₂⟩
 
-theorem EvalStatementsContractApp {φ : CoreEval → PureFunc Expression → CoreEval} :
-  EvalStatementsContract π φ ρ ss₁ ρ' →
-  EvalStatementsContract π φ ρ' ss₂ ρ'' →
-  EvalStatementsContract π φ ρ (ss₁ ++ ss₂) ρ'' := by
+theorem EvalStatementsContractApp :
+  EvalStatementsContract π ρ ss₁ ρ' →
+  EvalStatementsContract π ρ' ss₂ ρ'' →
+  EvalStatementsContract π ρ (ss₁ ++ ss₂) ρ'' := by
   intro Heval1 Heval2
   induction ss₁ generalizing ρ ρ' with
   | nil =>
@@ -1374,24 +1477,24 @@ theorem EvalStatementsContractApp {φ : CoreEval → PureFunc Expression → Cor
     match Heval1 with
     | .step _ _ _ .step_stmts_cons hrest =>
       have ⟨ρ₁, hterm_s, htail⟩ :=
-        seq_reaches_terminal Expression (EvalCommandContract π) (EvalPureFunc φ) hrest
+        seq_reaches_terminal Expression (EvalCommandContract π) hrest
       -- hterm_s : .stmt s ρ →* .terminal ρ₁
       -- htail : .stmts ss₁ ρ₁ →* .terminal ρ'
       -- IH: EvalStmtsSmall ρ₁ ss₁ ρ' → EvalStmtsSmall ρ' ss₂ ρ'' → EvalStmtsSmall ρ₁ (ss₁ ++ ss₂) ρ''
       have Hconcat := ih htail Heval2
       -- Hconcat : EvalStmtsSmall ρ₁ (ss₁ ++ ss₂) ρ''
       -- Build: .stmts (s :: (ss₁ ++ ss₂)) ρ →* .terminal ρ''
-      show EvalStmtsSmall Expression (EvalCommandContract π) (EvalPureFunc φ) ρ (s :: (ss₁ ++ ss₂)) ρ''
+      show EvalStmtsSmall Expression (EvalCommandContract π) ρ (s :: (ss₁ ++ ss₂)) ρ''
       unfold EvalStmtsSmall
       apply ReflTrans.step _ _ _ .step_stmts_cons
       exact ReflTrans_Transitive _ _ _ _
-        (seq_inner_star Expression (EvalCommandContract π) (EvalPureFunc φ) _ _ (ss₁ ++ ss₂) hterm_s)
+        (seq_inner_star Expression (EvalCommandContract π) _ _ (ss₁ ++ ss₂) hterm_s)
         (.step _ _ _ .step_seq_done Hconcat)
 
-theorem EvalStatementsApp {φ : CoreEval → PureFunc Expression → CoreEval} :
-  EvalStatements π φ ρ ss₁ ρ' →
-  EvalStatements π φ ρ' ss₂ ρ'' →
-  EvalStatements π φ ρ (ss₁ ++ ss₂) ρ'' := by
+theorem EvalStatementsApp :
+  EvalStatements π ρ ss₁ ρ' →
+  EvalStatements π ρ' ss₂ ρ'' →
+  EvalStatements π ρ (ss₁ ++ ss₂) ρ'' := by
   intro Heval1 Heval2
   induction ss₁ generalizing ρ ρ' with
   | nil =>
@@ -1404,19 +1507,19 @@ theorem EvalStatementsApp {φ : CoreEval → PureFunc Expression → CoreEval} :
     match Heval1 with
     | .step _ _ _ .step_stmts_cons hrest =>
       have ⟨ρ₁, hterm_s, htail⟩ :=
-        seq_reaches_terminal Expression (EvalCommand π φ) (EvalPureFunc φ) hrest
+        seq_reaches_terminal Expression (EvalCommand π) hrest
       have Hconcat := ih htail Heval2
-      show EvalStmtsSmall Expression (EvalCommand π φ) (EvalPureFunc φ) ρ (s :: (ss₁ ++ ss₂)) ρ''
+      show EvalStmtsSmall Expression (EvalCommand π) ρ (s :: (ss₁ ++ ss₂)) ρ''
       unfold EvalStmtsSmall
       apply ReflTrans.step _ _ _ .step_stmts_cons
       exact ReflTrans_Transitive _ _ _ _
-        (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (ss₁ ++ ss₂) hterm_s)
+        (seq_inner_star Expression (EvalCommand π) _ _ (ss₁ ++ ss₂) hterm_s)
         (.step _ _ _ .step_seq_done Hconcat)
 
-theorem HavocVarsApp :
-  HavocVars σ vs₁ σ' →
-  HavocVars σ' vs₂ σ'' →
-  HavocVars σ (vs₁ ++ vs₂) σ'' := by
+theorem HavocVarsApp {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' σ'' : SemanticStore P} {vs₁ vs₂ : List P.Ident} :
+  HavocVars f σ vs₁ σ' →
+  HavocVars f σ' vs₂ σ'' →
+  HavocVars f σ (vs₁ ++ vs₂) σ'' := by
   intros Hv1 Hv2
   induction vs₁ generalizing σ
   case nil =>
@@ -1427,15 +1530,15 @@ theorem HavocVarsApp :
   case cons h t ih =>
     simp
     cases Hv1
-    next exp σ1 Hup Hhavoc =>
+    next exp σ1 Hup Hval Hhavoc =>
     apply HavocVars.update_some <;> try assumption
     exact ih Hhavoc
 
-theorem HavocVarsApp' :
-  HavocVars σ (vs₁ ++ vs₂) σ'' →
+theorem HavocVarsApp' {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ'' : SemanticStore P} {vs₁ vs₂ : List P.Ident} :
+  HavocVars f σ (vs₁ ++ vs₂) σ'' →
   ∃ σ',
-  HavocVars σ vs₁ σ' ∧
-  HavocVars σ' vs₂ σ'' := by
+  HavocVars f σ vs₁ σ' ∧
+  HavocVars f σ' vs₂ σ'' := by
   intros Hv
   induction vs₁ generalizing σ
   case nil =>
@@ -1444,7 +1547,7 @@ theorem HavocVarsApp' :
     constructor
   case cons h t ih =>
     cases Hv
-    next exp σ1 Hup Hhavoc =>
+    next exp σ1 Hup Hval Hhavoc =>
     specialize ih Hhavoc
     cases ih with
     | intro σ₁ Hand =>
@@ -1491,32 +1594,31 @@ theorem TouchVarsApp :
     | update_some Hup Htouch =>
       exact TouchVars.update_some Hup (ih Htouch)
 
-theorem HavocVarsCons :
-  HavocVars σ [v] σ' →
-  HavocVars σ' vs σ'' →
-  HavocVars σ (v :: vs) σ'' := by
+theorem HavocVarsCons {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' σ'' : SemanticStore P} {v : P.Ident} {vs : List P.Ident} :
+  HavocVars f σ [v] σ' →
+  HavocVars f σ' vs σ'' →
+  HavocVars f σ (v :: vs) σ'' := by
   intros Hv1 Hv2
   have Heq : (v :: vs = [v] ++ vs) := by rfl
   rw [Heq]
   exact HavocVarsApp Hv1 Hv2
 
-theorem HavocVarsId :
-  isDefined σ vs →
-  HavocVars σ vs σ := by
-  intros Hdef
-  induction vs
-  constructor
-  next P h t ih =>
-  have Hh := Hdef h List.mem_cons_self
-  simp [Option.isSome] at Hh
-  split at Hh <;> simp_all
-  next x v' heq =>
-  apply @HavocVars.update_some (σ':=σ) (v:=v')
-  exact UpdateState.update heq heq fun y => congrFun rfl
-  apply ih
-  simp [isDefined] at *
-  intros v Hin
-  apply Hdef.2 v Hin
+/-- A store can havoc a list of typed slots to their existing values. -/
+theorem HavocVarsId {P : PureExpr} [HasVal P] {f : P.Factory}
+    {σ : SemanticStore P} {vs : List P.Ident}
+    (htyped : ∀ x ∈ vs, ∃ v ty,
+      σ x = some v ∧ HasVal.valueOfTy f v ty) :
+    HavocVars f σ vs σ := by
+  induction vs with
+  | nil => constructor
+  | cons x xs ih =>
+    obtain ⟨v, ty, hx, hv⟩ := htyped x List.mem_cons_self
+    apply HavocVars.update_some (σ' := σ) (v := v)
+    · exact UpdateState.update hx hx (fun _ _ => rfl)
+    · exact ⟨v, ty, hx, hv, hv⟩
+    · apply ih
+      intro y hy
+      exact htyped y (List.mem_cons_of_mem x hy)
 
 theorem TouchVarsId :
   isDefined σ vs →
@@ -1536,39 +1638,6 @@ theorem TouchVarsId :
   intros v Hin
   apply Hdef.2 v Hin
 
-theorem InitStateDefMonotone
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isDefined σ vs →
-  InitState P σ v e σ' →
-  isDefined σ' vs := by
-  intros Hdef Heval
-  cases Heval with
-  | init Hold HH Hsome =>
-  simp [isDefined] at *
-  intros v' Hv'
-  by_cases Heq: (v = v')
-  case pos =>
-    simp [Option.isSome]
-    simp [Heq] at *
-    split <;> simp_all
-  case neg =>
-    specialize Hsome v' Heq
-    specialize Hdef v'
-    simp [Hsome]
-    exact Hdef Hv'
-
-theorem InitStatesDefMonotone :
-  isDefined σ vs →
-  InitStates σ vs' es' σ' →
-  isDefined σ' vs := by
-  intros Hdef Hhavoc
-  induction Hhavoc with
-  | init_some Hup Hhav ih =>
-  apply ih
-  apply InitStateDefMonotone <;> assumption
-  | init_none => simp_all
-
 theorem InitVarsDefMonotone :
   isDefined σ vs →
   InitVars σ vs' σ' →
@@ -1580,50 +1649,8 @@ theorem InitVarsDefMonotone :
   apply InitStateDefMonotone <;> assumption
   | init_none => simp_all
 
-theorem InitStateDefMonotone'
-  {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  ¬ v ∈ vs →
-  isDefined σ' vs →
-  InitState P σ v e σ' →
-  isDefined σ vs := by
-  intros Hnin Hdef Heval
-  cases Heval with
-  | init Hold HH Hsome =>
-  simp [isDefined] at *
-  intros v' Hv'
-  by_cases Heq: (v = v')
-  case pos =>
-    simp [Option.isSome]
-    simp [Heq] at *
-    split <;> simp_all
-  case neg =>
-    specialize Hsome v' Heq
-    specialize Hdef v'
-    simp [← Hsome]
-    exact Hdef Hv'
-
-theorem InitStatesDefMonotone' :
-  vs.Disjoint vs' →
-  isDefined σ' vs →
-  InitStates σ vs' es' σ' →
-  isDefined σ vs := by
-  intros Hdisj Hdef Hhavoc
-  induction Hhavoc with
-  | init_none => assumption
-  | init_some Hup Hhav ih =>
-  next σ x v σ' xs' ys' σ'' =>
-  apply InitStateDefMonotone' (σ':=σ') <;> try assumption
-  . intros Hin
-    apply Hdisj Hin
-    exact List.mem_cons_self
-  . apply ih
-    . apply List.Disjoint.mono_right _ Hdisj
-      exact List.sublist_cons_self x xs'
-    . assumption
-
 theorem InitVarsDefMonotone' :
-  vs.Disjoint vs' →
+  vs.Disj vs' →
   isDefined σ' vs →
   InitVars σ vs' σ' →
   isDefined σ vs := by
@@ -1634,7 +1661,7 @@ theorem InitVarsDefMonotone' :
   exact InitStatesDefMonotone' Hdisj Hdef Hinit
 
 -- theorem InitVarsNotDefMonotone' :
---   vs.Disjoint vs' →
+--   vs.Disj vs' →
 --   isDefined σ' vs →
 --   InitVars σ vs' σ' →
 --   isNotDefined σ vs := by
@@ -1644,53 +1671,42 @@ theorem InitVarsDefMonotone' :
 --   | intro es Hinit =>
 --   exact InitStatesDefMonotone' Hdisj Hdef Hinit
 
-theorem InitStatesDefined :
-  InitStates σ hs vs σ' → isDefined σ' hs := by
-  intros Hinit
-  induction Hinit <;> simp [isDefined]
-  case init_some x v σ' xs vs σ'' Hinit Hinits ih =>
-    simp [isDefined] at *
-    cases Hinit with
-    | init Hnone Hsome Heq =>
-    refine ⟨?_, by simp_all⟩
-    have Hdef : isDefined σ'' [x] := by
-      apply InitStatesDefMonotone ?_ Hinits
-      simp [isDefined, Option.isSome]
-      split <;> simp_all
-    simp [isDefined] at Hdef
-    assumption
-
-theorem HavocVarsDefMonotone :
+theorem HavocVarsDefMonotone {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' : SemanticStore P} {vs vs' : List P.Ident} :
   isDefined σ vs →
-  HavocVars σ vs' σ' →
+  HavocVars f σ vs' σ' →
   isDefined σ' vs := by
   intros Hdef Hhavoc
   induction Hhavoc with
-  | update_some Hup Hhav ih =>
+  | update_some Hup Hval Hhav ih =>
   apply ih
   apply UpdateStateDefMonotone <;> assumption
   | update_none => simp_all
 
-theorem HavocVarsUpdateStates : HavocVars σ vars σ' →
-  ∃ modvals, UpdateStates σ vars modvals σ' := by
+theorem HavocVarsUpdateStates {P : PureExpr} [HasVal P] [LawfulHasVal P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {vars : List P.Ident} :
+    HavocVars f σ vars σ' →
+    ∃ modvals, UpdateStates σ vars modvals σ' ∧
+      ∀ v, v ∈ modvals → HasVal.value f v := by
   intros Hhav
-  induction Hhav
-  case update_none =>
-    refine ⟨[], UpdateStates.update_none⟩
-  case update_some σ x v σ₁ xs σ'' Hup Hhav Hex =>
-    cases Hex with
-    | intro vs Hups =>
-    refine ⟨v::vs,?_⟩
-    constructor <;> assumption
+  induction Hhav with
+  | update_none =>
+    exact ⟨[], UpdateStates.update_none, by intro v hv; simp at hv⟩
+  | update_some Hup Htyped Hhav ih =>
+    obtain ⟨vs, Hups, Hvals⟩ := ih
+    obtain ⟨_, _, _, _, Hv⟩ := Htyped
+    refine ⟨_, UpdateStates.update_some Hup Hups, ?_⟩
+    intro w hw
+    cases hw with
+    | head => exact LawfulHasVal.valueOfTy_isVal _ _ _ Hv
+    | tail _ hm => exact Hvals w hm
 
-theorem HavocVarsDefMonotone' :
+theorem HavocVarsDefMonotone' {P : PureExpr} [HasVal P] [LawfulHasVal P] {f : P.Factory} {σ σ' : SemanticStore P} {vs vs' : List P.Ident} :
   isDefined σ' vs →
-  HavocVars σ vs' σ' →
+  HavocVars f σ vs' σ' →
   isDefined σ vs := by
   intros Hdef Hhavoc
   have Hup := HavocVarsUpdateStates Hhavoc
-  cases Hup with
-  | intro es Hinit =>
+  obtain ⟨es, Hinit, _⟩ := Hup
   exact UpdateStatesDefMonotone' Hdef Hinit
 
 theorem InitVarsDefined :
@@ -1708,71 +1724,36 @@ theorem InitVarsDefined :
     assumption
     apply ih <;> assumption
 
-theorem InitVarsReadValues :
+/-- Variables introduced by `InitVars` can be read back as values when the
+    resulting store contains only value bindings. -/
+theorem InitVarsReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
+  {σ σ' : SemanticStore P} {ks : List P.Ident} :
+  WellFormedStore σ' f →
   InitVars σ ks σ' →
-  exists vs,
-  ReadValues σ' ks vs := by
-  intros Hinit
-  induction Hinit
-  case init_none =>
-    exists []
-    constructor
-  case init_some x x' σ xs σ' Hinit Hinits ih =>
-  cases Hinit with
-  | init Hnone Hsome Hinv =>
-  cases ih with
-  | intro xs' Hrds =>
-  exists x' :: xs'
-  constructor <;> simp_all
-  have Hrd : ReadValues σ [x] [x'] :=
-    ReadValues.read_some Hsome ReadValues.read_none
-  have Hrd' := InitVarsReadValuesMonotone Hrd Hinits
-  cases Hrd'
-  assumption
+  ∃ vs, ReadValues f σ' ks vs := by
+  intro hwf hinit
+  exact isDefinedReadValues hwf (InitVarsDefined hinit)
 
-theorem HavocVarsDefined :
-  HavocVars σ vs σ' →
+theorem HavocVarsDefined {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' : SemanticStore P} {vs : List P.Ident} :
+  HavocVars f σ vs σ' →
   isDefined σ' vs := by
   intros Hhavoc
-  induction vs generalizing σ σ'
-  case nil => simp [isDefined]
-  case cons h t ih =>
-    cases Hhavoc with
-    | @update_some _ _ v σ₁ _ _ Hup Hhav =>
-    apply isDefinedCons
-    apply HavocVarsDefMonotone (σ:=σ₁)
-    apply UpdateStateDefined <;> assumption
-    assumption
-    apply ih <;> assumption
+  induction Hhavoc with
+  | update_none => simp [isDefined]
+  | update_some Hup Hval Hhav ih =>
+    exact isDefinedCons (HavocVarsDefMonotone (UpdateStateDefined Hup) Hhav) ih
 
 theorem EvalCmdDefMonotone' :
   isDefined σ v →
-  EvalCmd Core.Expression δ σ c σ' f →
+  EvalCmd Core.Expression fac σ c σ' f →
   isDefined σ' v := by
   intros Hdef Heval
   cases Heval with
   | eval_init Hsm Hup Hwf => exact InitStateDefMonotone Hdef Hup
-  | eval_init_unconstrained Hup Hwf => exact InitStateDefMonotone Hdef Hup
+  | eval_init_unconstrained Hup Hval Hwf => exact InitStateDefMonotone Hdef Hup
   | eval_set Hsm Hup Hwf => exact UpdateStateDefMonotone Hdef Hup
-  | eval_set_nondet Hup Hwf => exact UpdateStateDefMonotone Hdef Hup
+  | eval_set_nondet Hup Hval Hwf => exact UpdateStateDefMonotone Hdef Hup
   | _ => exact Hdef
-
-theorem UpdateStatesHavocVars : UpdateStates σ vars modvals σ' → HavocVars σ vars σ' := by
-  intros H
-  induction vars generalizing σ modvals
-  case nil =>
-    cases modvals
-    . have Heq := UpdateStatesEmpty H
-      simp [Heq]
-      apply HavocVars.update_none
-    . cases H
-  case cons h t ih =>
-    have HH := H
-    cases H
-    next Hup2 =>
-    constructor <;> try assumption
-    apply ih
-    apply Hup2
 
 theorem UpdateStatesTouchVars : UpdateStates σ vars modvals σ' → TouchVars σ vars σ' := by
   intros H
@@ -1792,9 +1773,9 @@ theorem UpdateStatesTouchVars : UpdateStates σ vars modvals σ' → TouchVars �
     apply Hup2
 
 theorem EvalCmdRefinesContract :
-EvalCmd Expression δ σ c σ' f →
-EvalCommandContract π δ σ (CmdExt.cmd c) σ' f := by
-intros H; constructor; exact H
+EvalCmd Expression fac σ c σ' f →
+EvalCommandContract π fac σ (CmdExt.cmd c) σ' f := by
+  intros H; constructor; exact H
 
 theorem InvStoresUpdatedStateDisjRightMono :
   ¬ k' ∈ ks →
@@ -1822,7 +1803,7 @@ theorem InvStoresUpdatedStateDisjRightMono :
       exact H
 
 theorem InvStoresUpdatedStatesDisjRightMono :
-  ks.Disjoint ks' →
+  ks.Disj ks' →
   invStores σ σ' ks →
   ks'.length = vs'.length →
   invStores σ (updatedStates σ' ks' vs') ks := by
@@ -1858,7 +1839,7 @@ theorem InvStoresUpdatedStateDisjLeftMono :
   exact InvStoresUpdatedStateDisjRightMono Hnin Hinv'
 
 theorem InvStoresUpdatedStatesDisjLeftMono :
-  ks.Disjoint ks' →
+  ks.Disj ks' →
   invStores σ σ' ks →
   ks'.length = vs'.length →
   invStores (updatedStates σ ks' vs') σ' ks := by
@@ -1881,7 +1862,7 @@ theorem InvStoresExceptApp :
   invStoresExcept σ σ' (ks ++ ks') := by
   intros Hinv x Hdisj
   apply Hinv
-  exact List.DisjointAppRight' Hdisj
+  exact List.DisjAppRight' Hdisj
 
 theorem InvStoresExceptUpdated :
   invStoresExcept σ σ' ks →
@@ -1891,9 +1872,9 @@ theorem InvStoresExceptUpdated :
   simp [invStoresExcept] at *
   intros vsInv Hdisj
   refine InvStoresUpdatedStatesDisjLeftMono ?_ ?_ Hlen
-  exact List.DisjointAppLeft' Hdisj
+  exact List.DisjAppLeft' Hdisj
   apply Hinv
-  exact List.DisjointAppRight' Hdisj
+  exact List.DisjAppRight' Hdisj
 
 theorem UpdatedStatesInSame :
   k ∈ ks' →
@@ -1983,34 +1964,13 @@ theorem InvStoresExceptUpdatedMem :
   exact List.Disjoint_Subset_right Hdisj Hsub
   exact Hinv _ Hdisj
 
-theorem InvStoresExceptUpdateStates :
+theorem InvStoresExceptHavocVars {P : PureExpr} [HasVal P] [LawfulHasVal P] {f : P.Factory} {σ σ' σ'' : SemanticStore P} {ks ks' : List P.Ident} :
   invStoresExcept σ σ' ks →
-  UpdateStates σ ks' vs' σ'' →
-  invStoresExcept σ'' σ' (ks ++ ks') := by
-  intros Hinv Hup
-  have Hup' := UpdateStatesUpdated Hup
-  simp [Hup']
-  refine InvStoresExceptUpdated Hinv ?_
-  exact UpdateStatesLength Hup
-
-theorem InvStoresExceptInitStates :
-  invStoresExcept σ σ' ks →
-  InitStates σ ks' vs' σ'' →
-  invStoresExcept σ'' σ' (ks ++ ks') := by
-  intros Hinv Hup
-  have Hup' := InitStatesUpdated Hup
-  simp [Hup']
-  refine InvStoresExceptUpdated Hinv ?_
-  exact InitStatesLength Hup
-
-theorem InvStoresExceptHavocVars :
-  invStoresExcept σ σ' ks →
-  HavocVars σ ks' σ'' →
+  HavocVars f σ ks' σ'' →
   invStoresExcept σ'' σ' (ks ++ ks') := by
   intros Hinv Hup
   have Hup' := HavocVarsUpdateStates Hup
-  cases Hup' with
-  | intro vs' Hups =>
+  obtain ⟨vs', Hups, _⟩ := Hup'
   exact InvStoresExceptUpdateStates Hinv Hups
 
 theorem InvStoresExceptInitVars :
@@ -2025,142 +1985,198 @@ theorem InvStoresExceptInitVars :
 
 theorem InvStoresExceptInvStores :
   invStoresExcept σ σ' ks →
-  List.Disjoint ks ks' →
+  List.Disj ks ks' →
   invStores σ σ' ks' := by
   intros Hinv Hdis k1 k2 Hin
   apply Hinv ks'
-  exact List.Disjoint.symm Hdis
+  exact List.Disj.symm Hdis
   assumption
 
-/-
+/-- A structured body consisting of one `assert` preserves its entry store on every
+completed event run. The assertion does not write, and leaving the procedure block
+projects the unchanged inner store through the identical parent store. -/
+theorem assertBodyE_preserves_store
+    (π : String → Option Procedure)
 
-/-
-NOTE:
-  In order to prove this refinement theorem, we need to reason about the
-  assymmetry between the two semantics regarding the temporary variables
-  created in the concrete semantics. That is, evaluating the procedure body may
-  create new variables in the store, and since the temporary variables are
-  discarded at the end of the call, it is possible to show that those created
-  variables are irrelevant.
--/
-theorem EvalCallBodyRefinesContract :
-  ∀ {π φ δ σ n callArgs σ' p md md'},
-  π n = .some p →
-  EvalCommand π φ δ σ (CmdExt.call n callArgs md) σ' false →
-  EvalCommandContract π δ σ (CmdExt.call n callArgs md') σ' false := by
-  intros π φ δ σ n callArgs σ' p md md' pFound H
-  cases H with
-  | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
-    sorry
+    (l : String) (e : Expression.Expr) (md : MetaData Expression)
+    (σ_entry : CoreStore) (fac : Expression.Factory) (ρ' : Env Expression)
+    (emitted : Trace Expression)
+    (hrun : CoreStepStarE π
+      (.stmt (Stmt.block "" [Stmt.cmd (CmdExt.cmd (Cmd.assert l e md))] #[])
+        ⟨σ_entry, fac, false⟩) emitted (.terminal ρ')) :
+    ρ'.store = σ_entry := by
+  obtain ⟨ρ_inner, hinner, hρ'⟩ :=
+    stmt_block_reaches_doneE (P := Expression) (EvalCmd := EvalCommandE π)
+      (.inl hrun)
+  have hbody_store : ρ_inner.store = σ_entry := by
+    rcases hinner with hterm | ⟨lbl, hexit⟩
+    · rcases stmts_cons_headE (EvalCmd := EvalCommandE π)
+        hterm with ⟨hcfg, _⟩ | hseq
+      · exact absurd hcfg (by simp)
+      · rcases seq_run_decomposeE (EvalCmd := EvalCommandE π)
+          hseq with
+          ⟨_, hcfg, _⟩ | ⟨ρ₁, tr₁, tr₂, _htr, hhead, htail⟩ | ⟨_, _, hcfg, _⟩
+        · exact absurd hcfg (by simp)
+        · obtain ⟨_, htailcfg⟩ := stmts_nil_runE (EvalCmd := EvalCommandE π)
+            htail
+          have hρ_inner : ρ_inner = ρ₁ := by
+            rcases htailcfg with h | h
+            · exact absurd h (by simp)
+            · exact Config.terminal.injEq _ _ ▸ h
+          cases hhead with
+          | step _ _ _ _ _ hstep hrest =>
+            cases hstep with
+            | step_cmd hcmd =>
+              obtain ⟨hz, _⟩ := stepStmtStarE_from_terminal
+                (EvalCmd := EvalCommandE π) hrest
+              cases hcmd with
+              | cmd_sem hbase =>
+                cases hbase with
+                | eval_assert =>
+                  rw [hρ_inner]
+                  injection hz with hz'
+                  rw [hz']
+            | step_admin hadmin =>
+              cases hadmin with
+              | step_cmd hfalse => exact hfalse.elim
+        · exact absurd hcfg (by simp)
+    · rcases stmts_cons_headE (EvalCmd := EvalCommandE π)
+        hexit with ⟨hcfg, _⟩ | hseq
+      · exact absurd hcfg (by simp)
+      · rcases seq_run_decomposeE (EvalCmd := EvalCommandE π)
+          hseq with
+          ⟨_, hcfg, _⟩ | ⟨ρ₁, tr₁, tr₂, _htr, hhead, htail⟩ | ⟨lbl2, ρ₁, hcfg, hhead⟩
+        · exact absurd hcfg (by simp)
+        · obtain ⟨_, htailcfg⟩ := stmts_nil_runE (EvalCmd := EvalCommandE π)
+            htail
+          rcases htailcfg with h | h
+          · exact absurd h (by simp)
+          · exact absurd h (by simp)
+        · cases hhead with
+          | step _ _ _ _ _ hstep hrest =>
+            cases hstep with
+            | step_cmd hcmd =>
+              obtain ⟨hz, _⟩ := stepStmtStarE_from_terminal
+                (EvalCmd := EvalCommandE π) hrest
+              exact absurd hz (by simp)
+            | step_admin hadmin =>
+              cases hadmin with
+              | step_cmd hfalse => exact hfalse.elim
+  rw [hρ']
+  show projectStore σ_entry ρ_inner.store = σ_entry
+  rw [hbody_store, projectStore_self]
 
-theorem EvalCommandRefinesContract :
-EvalCommand π φ δ σ c σ' f →
-EvalCommandContract π δ σ c σ' f := by
-  intros H
-  cases H with
-  | cmd_sem H => exact EvalCommandContract.cmd_sem H
-  | call_sem _ =>
-    apply EvalCallBodyRefinesContract <;> try assumption
-    constructor <;> assumption
+/-- Agreement off a single key `k` yields `invStoresExcept _ _ [k]`. -/
+private theorem invStoresExcept_singleton_of_agree_off
+    {σ σ' : CoreStore} {k : Expression.Ident}
+    (h : ∀ y, k ≠ y → σ y = σ' y) : Imperative.invStoresExcept σ σ' [k] := by
+  intro vs' hdisj k1 k2 hin
+  have heq : k1 = k2 := zip_self_eq hin
+  subst heq
+  have hmem : k1 ∈ vs' := (List.of_mem_zip hin).1
+  have hnotin : k1 ∉ [k] := hdisj hmem
+  have hne : k ≠ k1 := by
+    intro hc; exact hnotin (hc ▸ List.mem_singleton.mpr rfl)
+  exact h k1 hne
 
-/-- A single `StepStmt` with `EvalCommand` can be simulated by a single
-    `StepStmt` with `EvalCommandContract`. -/
-private theorem StepStmt_refines_contract
-    {c₁ c₂ : Imperative.Config Expression Command} :
-    Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
-    Imperative.StepStmt Expression (EvalCommandContract π) (EvalPureFunc φ) c₁ c₂ := by
-  intro H
-  induction H with
-  | step_cmd hcmd => exact .step_cmd (EvalCommandRefinesContract hcmd)
-  | step_seq_inner _ ih => exact .step_seq_inner ih
-  | step_block_body _ ih => exact .step_block_body ih
-  | step_block => exact .step_block
-  | step_ite_true h1 h2 => exact .step_ite_true h1 h2
-  | step_ite_false h1 h2 => exact .step_ite_false h1 h2
-  | step_ite_nondet_true => exact .step_ite_nondet_true
-  | step_ite_nondet_false => exact .step_ite_nondet_false
-  | step_loop_enter h1 h2 h3 h4 h5 h6 h7 => exact .step_loop_enter h1 h2 h3 h4 h5 h6 h7
-  | step_loop_exit h1 h2 h3 h4 => exact .step_loop_exit h1 h2 h3 h4
-  | step_loop_nondet_enter => exact .step_loop_nondet_enter
-  | step_loop_nondet_exit => exact .step_loop_nondet_exit
-  | step_exit => exact .step_exit
-  | step_funcDecl => exact .step_funcDecl
-  | step_typeDecl => exact .step_typeDecl
-  | step_stmts_nil => exact .step_stmts_nil
-  | step_stmts_cons => exact .step_stmts_cons
-  | step_seq_done => exact .step_seq_done
-  | step_seq_exit => exact .step_seq_exit
-  | step_block_done => exact .step_block_done
-  | step_block_exit_none => exact .step_block_exit_none
-  | step_block_exit_match h => exact .step_block_exit_match h
-  | step_block_exit_mismatch h => exact .step_block_exit_mismatch h
+/-- An `UpdateState` that writes only `k` gives `invStoresExcept` (to the
+projected store) with exception `[k]`. -/
+private theorem invStoresExcept_projectStore_of_update
+    {σ σ' : CoreStore} {k : Expression.Ident} {v : Expression.Expr}
+    (hupd : Imperative.UpdateState Expression σ k v σ') :
+    Imperative.invStoresExcept σ (Imperative.projectStore σ σ') [k] := by
+  cases hupd with
+  | update hv' hv hother =>
+    refine invStoresExcept_singleton_of_agree_off (fun y hy => ?_)
+    unfold Imperative.projectStore
+    by_cases hs : (σ y).isSome
+    · rw [ite_eq_left hs]; exact (hother y hy).symm
+    · rw [ite_eq_right hs]; exact Option.not_isSome_iff_eq_none.mp hs
 
-/-- Small-step execution with `EvalCommand` refines `EvalCommandContract`. -/
-theorem StepStmtStar_refines_contract
-    {c₁ c₂ : Imperative.Config Expression Command} :
-    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
-    Imperative.StepStmtStar Expression (EvalCommandContract π) (EvalPureFunc φ) c₁ c₂ := by
-  intro H
-  induction H with
-  | refl => exact .refl _
-  | step _ _ _ hstep _ ih =>
-    exact .step _ _ _ (StepStmt_refines_contract hstep) ih
+/-- **A one-`set` structured body respects the write set `[x]`.** Every completed
+event run of `{ x := e }` from `σ_entry` leaves a procedure-exit store that agrees
+with `σ_entry` everywhere except `x`. -/
+theorem setBodyE_frame
+    (π : String → Option Procedure)
 
-/-- `EvalStatements` with concrete semantics refines contract semantics. -/
-theorem EvalStatementsRefinesContract :
-    EvalStatements π φ ρ ss ρ' →
-    EvalStatementsContract π φ ρ ss ρ' :=
-  StepStmtStar_refines_contract
-
-/-- `EvalStatement` with concrete semantics refines contract semantics. -/
-theorem EvalStatementRefinesContract :
-    EvalStatement π φ ρ s ρ' →
-    EvalStatementContract π φ ρ s ρ' :=
-  StepStmtStar_refines_contract
-
--/
-
-/-- If an expression is defined, all its free variables are defined in the store.
-    Relies on the definedness propagation properties in `WellFormedCoreEvalCong`
-    together with the variable-evaluation condition in `WellFormedSemanticEvalVar`. -/
-theorem EvalExpressionIsDefined :
-  WellFormedCoreEvalCong δ →
-  WellFormedSemanticEvalVar δ →
-  (δ σ e).isSome →
-  isDefined σ (HasFvars.getFvars e) := by
-  intros Hwfc Hwfvr Hsome
-  intros v Hin
-  simp [WellFormedSemanticEvalVar] at Hwfvr
-  induction e generalizing v <;>
-    simp [HasFvars.getFvars, Lambda.LExpr.LExpr.getVars] at *
-  case fvar m v' ty' =>
-    specialize Hwfvr (Lambda.LExpr.fvar m v' ty') v' σ
-    simp [HasFvar.getFvar] at Hwfvr
-    simp_all
-  case abs m name ty e ih =>
-    exact ih (Hwfc.definedness.absdef σ m name ty e Hsome) v Hin
-  case quant m k name ty tr e trih eih =>
-    have ⟨htr, he⟩ := Hwfc.definedness.quantdef σ m k name ty tr e Hsome
-    grind
-  case app m e₁ e₂ ih₁ ih₂ =>
-    have ⟨h₁, h₂⟩ := Hwfc.definedness.appdef σ m e₁ e₂ Hsome
-    grind
-  case ite m c t e cih tih eih =>
-    have ⟨hc, ht, he⟩ := Hwfc.definedness.itedef σ m c t e Hsome
-    grind
-  case eq m e₁ e₂ ih₁ ih₂ =>
-    have ⟨h₁, h₂⟩ := Hwfc.definedness.eqdef σ m e₁ e₂ Hsome
-    grind
+    (x : Expression.Ident) (e : Expression.Expr) (md : MetaData Expression)
+    (σ_entry : CoreStore) (fac : Expression.Factory) (ρ' : Env Expression)
+    (emitted : Trace Expression)
+    (hrun : CoreStepStarE π
+      (.stmt (Stmt.block "" [Stmt.cmd (CmdExt.cmd (Cmd.set x (.det e) md))] #[])
+        ⟨σ_entry, fac, false⟩) emitted (.terminal ρ')) :
+    Imperative.invStoresExcept σ_entry ρ'.store [x] := by
+  obtain ⟨ρ_inner, hinner, hρ'⟩ :=
+    stmt_block_reaches_doneE (P := Expression) (EvalCmd := EvalCommandE π)
+      (.inl hrun)
+  rw [hρ']
+  show Imperative.invStoresExcept σ_entry
+    (Imperative.projectStore σ_entry ρ_inner.store) [x]
+  -- The single-command `UpdateState` that produced `ρ_inner.store`.
+  rcases hinner with hterm | ⟨lbl, hexit⟩
+  · rcases stmts_cons_headE (EvalCmd := EvalCommandE π)
+      hterm with ⟨hcfg, _⟩ | hseq
+    · exact absurd hcfg (by simp)
+    · rcases seq_run_decomposeE (EvalCmd := EvalCommandE π)
+        hseq with
+        ⟨_, hcfg, _⟩ | ⟨ρ₁, tr₁, tr₂, _htr, hhead, htail⟩ | ⟨_, _, hcfg, _⟩
+      · exact absurd hcfg (by simp)
+      · obtain ⟨_, htailcfg⟩ := stmts_nil_runE (EvalCmd := EvalCommandE π)
+          htail
+        have hρ_inner : ρ_inner = ρ₁ := by
+          rcases htailcfg with h | h
+          · exact absurd h (by simp)
+          · exact Config.terminal.injEq _ _ ▸ h
+        cases hhead with
+        | step _ _ _ _ _ hstep hrest =>
+          cases hstep with
+          | step_cmd hcmd =>
+            obtain ⟨hz, _⟩ := stepStmtStarE_from_terminal
+              (EvalCmd := EvalCommandE π) hrest
+            cases hcmd with
+            | cmd_sem hbase =>
+              cases hbase with
+              | eval_set heval hupd hwfv =>
+                subst hρ_inner
+                injection hz with hz'
+                subst hz'
+                exact invStoresExcept_projectStore_of_update hupd
+          | step_admin hadmin =>
+            cases hadmin with
+            | step_cmd hfalse => exact hfalse.elim
+      · exact absurd hcfg (by simp)
+  · rcases stmts_cons_headE (EvalCmd := EvalCommandE π)
+      hexit with ⟨hcfg, _⟩ | hseq
+    · exact absurd hcfg (by simp)
+    · rcases seq_run_decomposeE (EvalCmd := EvalCommandE π)
+        hseq with
+        ⟨_, hcfg, _⟩ | ⟨ρ₁, tr₁, tr₂, _htr, hhead, htail⟩ | ⟨lbl2, ρ₁, hcfg, hhead⟩
+      · exact absurd hcfg (by simp)
+      · obtain ⟨_, htailcfg⟩ := stmts_nil_runE (EvalCmd := EvalCommandE π)
+          htail
+        rcases htailcfg with h | h
+        · exact absurd h (by simp)
+        · exact absurd h (by simp)
+      · cases hhead with
+        | step _ _ _ _ _ hstep hrest =>
+          cases hstep with
+          | step_cmd hcmd =>
+            obtain ⟨hz, _⟩ := stepStmtStarE_from_terminal
+              (EvalCmd := EvalCommandE π) hrest
+            exact absurd hz (by simp)
+          | step_admin hadmin =>
+            cases hadmin with
+            | step_cmd hfalse => exact hfalse.elim
 
 /-! ## Properties of CoreStep and CoreStepStar. -/
 
 /-- `CoreStepStar` implies the generic `StepStmtStar` (i.e. `ReflTrans`). -/
 theorem CoreStepStar_to_StepStmtStar
     {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
+
     {c c' : Imperative.Config Expression Command}
-    (h : CoreStepStar π φ c c') :
-    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' :=
+    (h : CoreStepStar π c c') :
+    Imperative.StepStmtStar Expression (EvalCommand π) c c' :=
   match h with
   | .refl => .refl _
   | .step hstep hrest => .step _ _ _ hstep (CoreStepStar_to_StepStmtStar hrest)
@@ -2168,10 +2184,10 @@ theorem CoreStepStar_to_StepStmtStar
 /-- The generic `StepStmtStar` implies `CoreStepStar`. -/
 theorem StepStmtStar_to_CoreStepStar
     {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
+
     {c c' : Imperative.Config Expression Command} :
-    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c c' →
-    CoreStepStar π φ c c' := by
+    Imperative.StepStmtStar Expression (EvalCommand π) c c' →
+    CoreStepStar π c c' := by
   intro H
   induction H with
   | refl => exact .refl
@@ -2181,15 +2197,15 @@ theorem StepStmtStar_to_CoreStepStar
     not support mutual inductives). -/
 theorem CoreStepStar_rec
     {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
+
     {motive : CoreConfig → CoreConfig → Prop}
     (h_refl : ∀ c, motive c c)
-    (h_step : ∀ c₁ c₂ c₃, CoreStep π φ c₁ c₂ →
-      CoreStepStar π φ c₂ c₃ → motive c₂ c₃ → motive c₁ c₃)
+    (h_step : ∀ c₁ c₂ c₃, CoreStep π c₁ c₂ →
+      CoreStepStar π c₂ c₃ → motive c₂ c₃ → motive c₁ c₃)
     {c₁ c₂ : CoreConfig}
-    (h : CoreStepStar π φ c₁ c₂) : motive c₁ c₂ := by
+    (h : CoreStepStar π c₁ c₂) : motive c₁ c₂ := by
   suffices h_gen : ∀ c₁ c₂,
-      Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+      Imperative.StepStmtStar Expression (EvalCommand π) c₁ c₂ →
       motive c₁ c₂ by
     exact h_gen _ _ (CoreStepStar_to_StepStmtStar h)
   intro c₁ c₂ h'
@@ -2201,11 +2217,11 @@ theorem CoreStepStar_rec
 /-- `CoreStepStar` is transitive. -/
 theorem CoreStepStar_trans
     {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
+
     {c₁ c₂ c₃ : CoreConfig}
-    (h₁ : CoreStepStar π φ c₁ c₂)
-    (h₂ : CoreStepStar π φ c₂ c₃) :
-    CoreStepStar π φ c₁ c₃ :=
+    (h₁ : CoreStepStar π c₁ c₂)
+    (h₂ : CoreStepStar π c₂ c₃) :
+    CoreStepStar π c₁ c₃ :=
   StepStmtStar_to_CoreStepStar
     (ReflTrans_Transitive _ _ _ _
       (CoreStepStar_to_StepStmtStar h₁)
@@ -2214,362 +2230,550 @@ theorem CoreStepStar_trans
 /-- Lift `seq_inner_star` from `StepStmtStar` to `CoreStepStar`. -/
 theorem core_seq_inner_star
     {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
+
     (inner inner' : CoreConfig) (ss : List Statement)
-    (h : CoreStepStar π φ inner inner') :
-    CoreStepStar π φ (.seq inner ss) (.seq inner' ss) :=
+    (h : CoreStepStar π inner inner') :
+    CoreStepStar π (.seq inner ss) (.seq inner' ss) :=
   StepStmtStar_to_CoreStepStar
-    (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) inner inner' ss
+    (seq_inner_star Expression (EvalCommand π) inner inner' ss
       (CoreStepStar_to_StepStmtStar h))
 
 /-- Lift `block_inner_star` from `StepStmtStar` to `CoreStepStar`. -/
 theorem core_block_inner_star
     {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
+
     (inner inner' : CoreConfig) (label : Option String) (σ_parent : SemanticStore Expression)
-    (e_parent : Imperative.SemanticEval Expression)
-    (h : CoreStepStar π φ inner inner') :
-    CoreStepStar π φ (.block label σ_parent e_parent inner) (.block label σ_parent e_parent inner') :=
+    (h : CoreStepStar π inner inner') :
+    CoreStepStar π (.block label σ_parent inner) (.block label σ_parent inner') :=
   StepStmtStar_to_CoreStepStar
-    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) inner inner' label σ_parent e_parent
+    (block_inner_star Expression (EvalCommand π) inner inner' label σ_parent
       (CoreStepStar_to_StepStmtStar h))
 
 /-- Lift `seq_reaches_terminal` from `StepStmtStar` to `CoreStepStar`. -/
 theorem core_seq_reaches_terminal
     {π : String → Option Procedure}
-    {φ : CoreEval → PureFunc Expression → CoreEval}
+
     {inner : CoreConfig} {ss : List Statement} {ρ' : Env Expression}
-    (hstar : CoreStepStar π φ (.seq inner ss) (.terminal ρ')) :
-    ∃ ρ₁, CoreStepStar π φ inner (.terminal ρ₁) ∧
-      CoreStepStar π φ (.stmts ss ρ₁) (.terminal ρ') := by
-  have h := seq_reaches_terminal Expression (EvalCommand π φ) (EvalPureFunc φ)
+    (hstar : CoreStepStar π (.seq inner ss) (.terminal ρ')) :
+    ∃ ρ₁, CoreStepStar π inner (.terminal ρ₁) ∧
+      CoreStepStar π (.stmts ss ρ₁) (.terminal ρ') := by
+  have h := seq_reaches_terminal Expression (EvalCommand π)
     (CoreStepStar_to_StepStmtStar hstar)
   obtain ⟨ρ₁, h₁, h₂⟩ := h
   exact ⟨ρ₁, StepStmtStar_to_CoreStepStar h₁, StepStmtStar_to_CoreStepStar h₂⟩
 
-
 /-! ## Well-formed evaluator extension -/
 
 variable (π : String → Option Procedure)
-variable (φ : CoreEval → PureFunc Expression → CoreEval)
 
-/-! ### Config-level WF predicates for Core
+/-! ### Config-level WF predicate for Core
 
 `step_block_done`/`exit_match`/`exit_mismatch` restore `eval := e_parent`, so
 preservation of WF along a trace requires WF of every captured `e_parent`
 snapshot in addition to WF of the inner eval. -/
 
-@[expose] def CoreConfig.wfBool : CoreConfig → Prop
-  | .stmt _ ρ => WellFormedSemanticEvalBool ρ.eval
-  | .stmts _ ρ => WellFormedSemanticEvalBool ρ.eval
-  | .terminal ρ => WellFormedSemanticEvalBool ρ.eval
-  | .exiting _ ρ => WellFormedSemanticEvalBool ρ.eval
-  | .block _ _ e_parent inner =>
-    WellFormedSemanticEvalBool e_parent ∧ CoreConfig.wfBool inner
-  | .seq inner _ => CoreConfig.wfBool inner
+@[expose] def CoreConfig.wfEval (fac : Expression.Factory) : CoreConfig → Prop
+  | .stmt _ _ => WellFormedSemanticEval (P := Expression) fac
+  | .stmts _ _ => WellFormedSemanticEval (P := Expression) fac
+  | .terminal _ => WellFormedSemanticEval (P := Expression) fac
+  | .exiting _ _ => WellFormedSemanticEval (P := Expression) fac
+  | .block _ _ inner => CoreConfig.wfEval fac inner
+  | .seq inner _ => CoreConfig.wfEval fac inner
 
-@[expose] def CoreConfig.wfVar : CoreConfig → Prop
-  | .stmt _ ρ => WellFormedSemanticEvalVar ρ.eval
-  | .stmts _ ρ => WellFormedSemanticEvalVar ρ.eval
-  | .terminal ρ => WellFormedSemanticEvalVar ρ.eval
-  | .exiting _ ρ => WellFormedSemanticEvalVar ρ.eval
-  | .block _ _ e_parent inner =>
-    WellFormedSemanticEvalVar e_parent ∧ CoreConfig.wfVar inner
-  | .seq inner _ => CoreConfig.wfVar inner
-
-@[expose] def CoreConfig.wfCong : CoreConfig → Prop
-  | .stmt _ ρ => WellFormedCoreEvalCong ρ.eval
-  | .stmts _ ρ => WellFormedCoreEvalCong ρ.eval
-  | .terminal ρ => WellFormedCoreEvalCong ρ.eval
-  | .exiting _ ρ => WellFormedCoreEvalCong ρ.eval
-  | .block _ _ e_parent inner =>
-    WellFormedCoreEvalCong e_parent ∧ CoreConfig.wfCong inner
-  | .seq inner _ => CoreConfig.wfCong inner
-
-@[expose] def CoreConfig.wfExprCongr : CoreConfig → Prop
-  | .stmt _ ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval
-  | .stmts _ ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval
-  | .terminal ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval
-  | .exiting _ ρ => @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval
-  | .block _ _ e_parent inner =>
-    @Imperative.WellFormedSemanticEvalExprCongr Expression _ e_parent ∧
-    CoreConfig.wfExprCongr inner
-  | .seq inner _ => CoreConfig.wfExprCongr inner
-
-private theorem core_step_preserves_cfg_wfBool
-    (h_wf_ext : WFEvalExtension φ)
+private theorem core_step_preserves_cfg_wfEval
     (c₁ c₂ : CoreConfig)
-    (hwf : c₁.wfBool)
-    (hstep : CoreStep π φ c₁ c₂) :
-    c₂.wfBool := by
+    (hwf : c₁.wfEval fac)
+    (hstep : CoreStep π c₁ c₂) :
+    c₂.wfEval fac := by
   induction hstep with
   | step_cmd hcmd => cases hcmd with
-    | cmd_sem _ | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+    | cmd_sem _ | call_sem _ _ _ _ _ _ =>
         exact hwf
   | step_block | step_ite_true | step_ite_false | step_ite_nondet_true
-  | step_ite_nondet_false | step_loop_enter | step_loop_nondet_enter => exact ⟨hwf, hwf⟩
-  | step_block_done | step_block_exit_match | step_block_exit_mismatch => exact hwf.1
+  | step_ite_nondet_false | step_loop_enter | step_loop_nondet_enter => exact hwf
+  | step_block_done | step_block_exit_match | step_block_exit_mismatch => exact hwf
   | step_seq_inner _ ih => exact ih hwf
-  | step_block_body _ ih => exact ⟨hwf.1, ih hwf.2⟩
-  | step_funcDecl => exact h_wf_ext.preserves_wfBool _ _ _ hwf
+  | step_block_body hstep_inner ih => exact ih hwf
   | _ => exact hwf
 
-private theorem core_step_preserves_cfg_wfVar
-    (h_wf_ext : WFEvalExtension φ)
-    (c₁ c₂ : CoreConfig)
-    (hwf : c₁.wfVar)
-    (hstep : CoreStep π φ c₁ c₂) :
-    c₂.wfVar := by
-  induction hstep with
-  | step_cmd hcmd => cases hcmd with
-    | cmd_sem _ | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
-        exact hwf
-  | step_block | step_ite_true | step_ite_false | step_ite_nondet_true
-  | step_ite_nondet_false | step_loop_enter | step_loop_nondet_enter => exact ⟨hwf, hwf⟩
-  | step_block_done | step_block_exit_match | step_block_exit_mismatch => exact hwf.1
-  | step_seq_inner _ ih => exact ih hwf
-  | step_block_body _ ih => exact ⟨hwf.1, ih hwf.2⟩
-  | step_funcDecl => exact h_wf_ext.preserves_wfVar _ _ _ hwf
-  | _ => exact hwf
-
-private theorem core_step_preserves_cfg_wfCong
-    (h_wf_ext : WFEvalExtension φ)
-    (c₁ c₂ : CoreConfig)
-    (hwf : c₁.wfCong)
-    (hstep : CoreStep π φ c₁ c₂) :
-    c₂.wfCong := by
-  induction hstep with
-  | step_cmd hcmd => cases hcmd with
-    | cmd_sem _ | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
-        exact hwf
-  | step_block | step_ite_true | step_ite_false | step_ite_nondet_true
-  | step_ite_nondet_false | step_loop_enter | step_loop_nondet_enter => exact ⟨hwf, hwf⟩
-  | step_block_done | step_block_exit_match | step_block_exit_mismatch => exact hwf.1
-  | step_seq_inner _ ih => exact ih hwf
-  | step_block_body _ ih => exact ⟨hwf.1, ih hwf.2⟩
-  | step_funcDecl => exact h_wf_ext.preserves_wfCong _ _ _ hwf
-  | _ => exact hwf
-
-private theorem core_step_preserves_cfg_wfExprCongr
-    (h_wf_ext : WFEvalExtension φ)
-    (c₁ c₂ : CoreConfig)
-    (hwf : c₁.wfExprCongr)
-    (hstep : CoreStep π φ c₁ c₂) :
-    c₂.wfExprCongr := by
-  induction hstep with
-  | step_cmd hcmd => cases hcmd with
-    | cmd_sem _ | @call_sem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
-        exact hwf
-  | step_block | step_ite_true | step_ite_false | step_ite_nondet_true
-  | step_ite_nondet_false | step_loop_enter | step_loop_nondet_enter => exact ⟨hwf, hwf⟩
-  | step_block_done | step_block_exit_match | step_block_exit_mismatch => exact hwf.1
-  | step_seq_inner _ ih => exact ih hwf
-  | step_block_body _ ih => exact ⟨hwf.1, ih hwf.2⟩
-  | step_funcDecl => exact h_wf_ext.preserves_wfExprCongr _ _ _ hwf
-  | _ => exact hwf
-
-private theorem CoreConfig.wfBool_implies_wfEval (cfg : CoreConfig) :
-    cfg.wfBool → WellFormedSemanticEvalBool cfg.getEnv.eval := by
+private theorem CoreConfig.wfEval_implies_wfEval (cfg : CoreConfig) :
+    cfg.wfEval fac → WellFormedSemanticEval (P := Expression) fac := by
   induction cfg with
   | stmt | stmts | terminal | exiting => intro h; exact h
-  | block _ _ _ inner ih => intro h; exact ih h.2
+  | block _ _ inner ih => intro h; exact ih h
   | seq inner _ ih => intro h; exact ih h
 
-private theorem CoreConfig.wfVar_implies_wfEval (cfg : CoreConfig) :
-    cfg.wfVar → WellFormedSemanticEvalVar cfg.getEnv.eval := by
-  induction cfg with
-  | stmt | stmts | terminal | exiting => intro h; exact h
-  | block _ _ _ inner ih => intro h; exact ih h.2
-  | seq inner _ ih => intro h; exact ih h
-
-private theorem CoreConfig.wfCong_implies_wfEval (cfg : CoreConfig) :
-    cfg.wfCong → WellFormedCoreEvalCong cfg.getEnv.eval := by
-  induction cfg with
-  | stmt | stmts | terminal | exiting => intro h; exact h
-  | block _ _ _ inner ih => intro h; exact ih h.2
-  | seq inner _ ih => intro h; exact ih h
-
-private theorem CoreConfig.wfExprCongr_implies_wfEval (cfg : CoreConfig) :
-    cfg.wfExprCongr → @Imperative.WellFormedSemanticEvalExprCongr Expression _ cfg.getEnv.eval := by
-  induction cfg with
-  | stmt | stmts | terminal | exiting => intro h; exact h
-  | block _ _ _ inner ih => intro h; exact ih h.2
-  | seq inner _ ih => intro h; exact ih h
-
-private theorem core_star_preserves_cfg_wfBool
-    (h_wf_ext : WFEvalExtension φ)
+private theorem core_star_preserves_cfg_wfEval
     {c₁ c₂ : CoreConfig}
-    (hstar : CoreStepStar π φ c₁ c₂)
-    (hwf : c₁.wfBool) :
-    c₂.wfBool := by
+    (hstar : CoreStepStar π c₁ c₂)
+    (hwf : c₁.wfEval fac) :
+    c₂.wfEval fac := by
   suffices ∀ (c₁ c₂ : CoreConfig),
-      Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
-      c₁.wfBool → c₂.wfBool from
+      Imperative.StepStmtStar Expression (EvalCommand π) c₁ c₂ →
+      c₁.wfEval fac → c₂.wfEval fac from
     this c₁ c₂ (CoreStepStar_to_StepStmtStar hstar) hwf
   intro c₁ c₂ hstar
   induction hstar with
   | refl => intro h; exact h
   | step _ _ _ hstep _ ih =>
-    intro h; exact ih (core_step_preserves_cfg_wfBool π φ h_wf_ext _ _ h hstep)
+    intro h; exact ih (core_step_preserves_cfg_wfEval π _ _ h hstep)
 
-private theorem core_star_preserves_cfg_wfVar
-    (h_wf_ext : WFEvalExtension φ)
-    {c₁ c₂ : CoreConfig}
-    (hstar : CoreStepStar π φ c₁ c₂)
-    (hwf : c₁.wfVar) :
-    c₂.wfVar := by
-  suffices ∀ (c₁ c₂ : CoreConfig),
-      Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
-      c₁.wfVar → c₂.wfVar from
-    this c₁ c₂ (CoreStepStar_to_StepStmtStar hstar) hwf
-  intro c₁ c₂ hstar
-  induction hstar with
-  | refl => intro h; exact h
-  | step _ _ _ hstep _ ih =>
-    intro h; exact ih (core_step_preserves_cfg_wfVar π φ h_wf_ext _ _ h hstep)
-
-private theorem core_star_preserves_cfg_wfCong
-    (h_wf_ext : WFEvalExtension φ)
-    {c₁ c₂ : CoreConfig}
-    (hstar : CoreStepStar π φ c₁ c₂)
-    (hwf : c₁.wfCong) :
-    c₂.wfCong := by
-  suffices ∀ (c₁ c₂ : CoreConfig),
-      Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
-      c₁.wfCong → c₂.wfCong from
-    this c₁ c₂ (CoreStepStar_to_StepStmtStar hstar) hwf
-  intro c₁ c₂ hstar
-  induction hstar with
-  | refl => intro h; exact h
-  | step _ _ _ hstep _ ih =>
-    intro h; exact ih (core_step_preserves_cfg_wfCong π φ h_wf_ext _ _ h hstep)
-
-private theorem core_star_preserves_cfg_wfExprCongr
-    (h_wf_ext : WFEvalExtension φ)
-    {c₁ c₂ : CoreConfig}
-    (hstar : CoreStepStar π φ c₁ c₂)
-    (hwf : c₁.wfExprCongr) :
-    c₂.wfExprCongr := by
-  suffices ∀ (c₁ c₂ : CoreConfig),
-      Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
-      c₁.wfExprCongr → c₂.wfExprCongr from
-    this c₁ c₂ (CoreStepStar_to_StepStmtStar hstar) hwf
-  intro c₁ c₂ hstar
-  induction hstar with
-  | refl => intro h; exact h
-  | step _ _ _ hstep _ ih =>
-    intro h; exact ih (core_step_preserves_cfg_wfExprCongr π φ h_wf_ext _ _ h hstep)
-
-theorem core_wfBool_preserved_stmt
-    (h_wf_ext : WFEvalExtension φ)
+/-- WF-bundle preservation starting from `.stmt s ρ`. -/
+theorem core_wfEval_preserved_stmt
     {s : Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedSemanticEvalBool ρ.eval)
-    (hstar : CoreStepStar π φ (.stmt s ρ) c₂) :
-    WellFormedSemanticEvalBool c₂.getEnv.eval :=
-  CoreConfig.wfBool_implies_wfEval _
-    (core_star_preserves_cfg_wfBool π φ h_wf_ext hstar
-      (show CoreConfig.wfBool (.stmt s ρ) from hwf₀))
+    (hwf₀ : WellFormedSemanticEval (P := Expression) fac)
+    (hstar : CoreStepStar π (.stmt s ρ) c₂) :
+    WellFormedSemanticEval (P := Expression) fac :=
+  CoreConfig.wfEval_implies_wfEval _
+    (core_star_preserves_cfg_wfEval π hstar
+      (show CoreConfig.wfEval fac (.stmt s ρ) from hwf₀))
 
-theorem core_wfBool_preserved_stmts
-    (h_wf_ext : WFEvalExtension φ)
+/-- WF-bundle preservation starting from `.stmts ss ρ`. -/
+theorem core_wfEval_preserved_stmts
     {ss : List Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedSemanticEvalBool ρ.eval)
-    (hstar : CoreStepStar π φ (.stmts ss ρ) c₂) :
-    WellFormedSemanticEvalBool c₂.getEnv.eval :=
-  CoreConfig.wfBool_implies_wfEval _
-    (core_star_preserves_cfg_wfBool π φ h_wf_ext hstar
-      (show CoreConfig.wfBool (.stmts ss ρ) from hwf₀))
+    (hwf₀ : WellFormedSemanticEval (P := Expression) fac)
+    (hstar : CoreStepStar π (.stmts ss ρ) c₂) :
+    WellFormedSemanticEval (P := Expression) fac :=
+  CoreConfig.wfEval_implies_wfEval _
+    (core_star_preserves_cfg_wfEval π hstar
+      (show CoreConfig.wfEval fac (.stmts ss ρ) from hwf₀))
 
-theorem core_wfVar_preserved_stmt
-    (h_wf_ext : WFEvalExtension φ)
-    {s : Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedSemanticEvalVar ρ.eval)
-    (hstar : CoreStepStar π φ (.stmt s ρ) c₂) :
-    WellFormedSemanticEvalVar c₂.getEnv.eval :=
-  CoreConfig.wfVar_implies_wfEval _
-    (core_star_preserves_cfg_wfVar π φ h_wf_ext hstar
-      (show CoreConfig.wfVar (.stmt s ρ) from hwf₀))
+/-! ## Store-domain preservation along a Core run
 
-theorem core_wfVar_preserved_stmts
-    (h_wf_ext : WFEvalExtension φ)
-    {ss : List Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedSemanticEvalVar ρ.eval)
-    (hstar : CoreStepStar π φ (.stmts ss ρ) c₂) :
-    WellFormedSemanticEvalVar c₂.getEnv.eval :=
-  CoreConfig.wfVar_implies_wfEval _
-    (core_star_preserves_cfg_wfVar π φ h_wf_ext hstar
-      (show CoreConfig.wfVar (.stmts ss ρ) from hwf₀))
+Two dual facts about a terminating Core run, each an instantiation of the
+`Q`-keyed engine in `Strata.DL.Imperative.StmtSemanticsProps` at `EvalCommand`
+(the engine's non-`step_cmd` cases are purely structural, so only the
+command-level fact below is Core-specific):
 
-theorem core_wfCong_preserved_stmt
-    (h_wf_ext : WFEvalExtension φ)
-    {s : Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedCoreEvalCong ρ.eval)
-    (hstar : CoreStepStar π φ (.stmt s ρ) c₂) :
-    WellFormedCoreEvalCong c₂.getEnv.eval :=
-  CoreConfig.wfCong_implies_wfEval _
-    (core_star_preserves_cfg_wfCong π φ h_wf_ext hstar
-      (show CoreConfig.wfCong (.stmt s ρ) from hwf₀))
+* nothing already defined becomes undefined — `core_stmts_preserves_isSome`;
+* nothing outside the run's `definedVars` becomes defined —
+  `core_block_run_terminal_preserves_none_of_not_definedVars`.
 
-theorem core_wfCong_preserved_stmts
-    (h_wf_ext : WFEvalExtension φ)
-    {ss : List Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : WellFormedCoreEvalCong ρ.eval)
-    (hstar : CoreStepStar π φ (.stmts ss ρ) c₂) :
-    WellFormedCoreEvalCong c₂.getEnv.eval :=
-  CoreConfig.wfCong_implies_wfEval _
-    (core_star_preserves_cfg_wfCong π φ h_wf_ext hstar
-      (show CoreConfig.wfCong (.stmts ss ρ) from hwf₀))
+Together they pin the store domain after a run, which is what a compositional
+Hoare rule needs in order to re-establish a block-level well-formedness gate on
+the tail of a statement list (see `Strata.Languages.Core.Logic.Hoare`). -/
 
-theorem core_wfExprCongr_preserved_stmt
-    (h_wf_ext : WFEvalExtension φ)
-    {s : Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval)
-    (hstar : CoreStepStar π φ (.stmt s ρ) c₂) :
-    @Imperative.WellFormedSemanticEvalExprCongr Expression _ c₂.getEnv.eval :=
-  CoreConfig.wfExprCongr_implies_wfEval _
-    (core_star_preserves_cfg_wfExprCongr π φ h_wf_ext hstar
-      (show CoreConfig.wfExprCongr (.stmt s ρ) from hwf₀))
+/-- `UpdateState` cannot define a slot that was undefined: it requires its
+    target to already hold a value, and leaves every other slot unchanged. -/
+private theorem updateState_preserves_none
+    {σ σ' : SemanticStore Expression} {x : Expression.Ident} {v : Expression.Expr}
+    (h : UpdateState Expression σ x v σ') :
+    ∀ y, σ y = none → σ' y = none := by
+  cases h with
+  | update h_some _ h_other =>
+    intro y hy
+    by_cases hxy : x = y
+    · subst hxy; rw [hy] at h_some; exact absurd h_some (by simp)
+    · rw [h_other y hxy]; exact hy
 
-theorem core_wfExprCongr_preserved_stmts
-    (h_wf_ext : WFEvalExtension φ)
-    {ss : List Statement} {ρ : Env Expression} {c₂ : CoreConfig}
-    (hwf₀ : @Imperative.WellFormedSemanticEvalExprCongr Expression _ ρ.eval)
-    (hstar : CoreStepStar π φ (.stmts ss ρ) c₂) :
-    @Imperative.WellFormedSemanticEvalExprCongr Expression _ c₂.getEnv.eval :=
-  CoreConfig.wfExprCongr_implies_wfEval _
-    (core_star_preserves_cfg_wfExprCongr π φ h_wf_ext hstar
-      (show CoreConfig.wfExprCongr (.stmts ss ρ) from hwf₀))
+/-- `UpdateState` cannot undefine a slot: the target keeps a value and every
+    other slot is unchanged. -/
+private theorem updateState_preserves_isSome
+    {σ σ' : SemanticStore Expression} {x : Expression.Ident} {v : Expression.Expr}
+    (h : UpdateState Expression σ x v σ') :
+    ∀ y, (σ y).isSome = true → (σ' y).isSome = true := by
+  cases h with
+  | update _ h_some' h_other =>
+    intro y hy
+    by_cases hxy : x = y
+    · subst hxy; rw [h_some']; simp
+    · rw [h_other y hxy]; exact hy
+
+/-- Pointwise lift of `updateState_preserves_none` along a whole write-back. -/
+private theorem updateStates_preserves_none
+    {σ σ' : SemanticStore Expression} {xs : List Expression.Ident}
+    {vs : List Expression.Expr}
+    (h : UpdateStates σ xs vs σ') :
+    ∀ y, σ y = none → σ' y = none := by
+  induction h with
+  | update_none => exact fun _ hy => hy
+  | update_some hupd _ ih =>
+    exact fun y hy => ih y (updateState_preserves_none hupd y hy)
+
+/-- Pointwise lift of `updateState_preserves_isSome` along a whole write-back. -/
+private theorem updateStates_preserves_isSome
+    {σ σ' : SemanticStore Expression} {xs : List Expression.Ident}
+    {vs : List Expression.Expr}
+    (h : UpdateStates σ xs vs σ') :
+    ∀ y, (σ y).isSome = true → (σ' y).isSome = true := by
+  induction h with
+  | update_none => exact fun _ hy => hy
+  | update_some hupd _ ih =>
+    exact fun y hy => ih y (updateState_preserves_isSome hupd y hy)
+
+/-- Writing a list of *values* into a store that holds only values leaves a store
+    that holds only values. -/
+private theorem updateStates_preserves_wellFormedStore {f : Expression.Factory}
+    {σ σ' : SemanticStore Expression} {xs : List Expression.Ident}
+    {vs : List Expression.Expr}
+    (h : UpdateStates σ xs vs σ') (hvs : ∀ v ∈ vs, HasVal.value f v)
+    (hsv : Imperative.WellFormedStore σ f) :
+    Imperative.WellFormedStore σ' f := by
+  induction h with
+  | update_none => exact hsv
+  | update_some hupd _hrest ih =>
+    rename_i x v _xs _vs _σa _σb
+    refine ih (fun w hw => hvs w (List.mem_cons_of_mem _ hw)) ?_
+    cases hupd with
+    | update _hold hnew hoth =>
+      intro z w hz
+      by_cases hzx : x = z
+      · subst hzx; rw [hnew] at hz; cases hz
+        exact hvs v List.mem_cons_self
+      · rw [hoth z hzx] at hz; exact hsv z w hz
+
+/-- An `EvalCommand` step only defines the slots the command itself declares; a `call`
+    declares nothing. -/
+theorem evalCommand_preserves_none_of_not_def
+    {f : Expression.Factory} {σ σ' : SemanticStore Expression} {c : Command}
+    {hf : Bool} {y : Expression.Ident}
+    (h_eval : EvalCommand π f σ c σ' hf)
+    (h_none : σ y = none)
+    (h_not_def : y ∉ HasVarsImp.definedVars (P := Expression) c false) :
+    σ' y = none := by
+  cases h_eval with
+  | cmd_sem h =>
+    exact evalCmd_preserves_none_of_not_def h h_none
+      (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_not_def)
+  | call_sem _ _ _ _ _ hexit =>
+    unfold CallExit at hexit
+    obtain ⟨_, _, _, hupd⟩ := hexit
+    exact updateStates_preserves_none hupd y h_none
+
+/-- Event-trace analogue of `evalCommand_preserves_none_of_not_def`: an
+    `EvalCommandE` step preserves a `none` slot it does not declare. -/
+theorem evalCommandE_preserves_none_of_not_def
+    {f : Expression.Factory} {σ σ' : SemanticStore Expression} {c : Command}
+    {emitted : Imperative.Trace Expression} {y : Expression.Ident}
+    (h_eval : EvalCommandE π f σ c σ' emitted)
+    (h_none : σ y = none)
+    (h_not_def : y ∉ HasVarsImp.definedVars (P := Expression) c false) :
+    σ' y = none := by
+  cases h_eval with
+  | cmd_sem h =>
+    exact Imperative.evalCmdE_preserves_none_of_not_def h h_none
+      (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_not_def)
+  | call_sem _ _ _ hexit =>
+    unfold Calls.CallExit at hexit
+    obtain ⟨_, _, _, hupd⟩ := hexit
+    exact updateStates_preserves_none hupd y h_none
+
+/-- An `EvalCommand` step never undefines a store slot. -/
+theorem evalCommand_preserves_isSome
+    {f : Expression.Factory} {σ σ' : SemanticStore Expression} {c : Command}
+    {hf : Bool} {y : Expression.Ident}
+    (h_eval : EvalCommand π f σ c σ' hf)
+    (h_some : (σ y).isSome = true) :
+    (σ' y).isSome = true := by
+  cases h_eval with
+  | cmd_sem h => exact EvalCmd_preserves_isSome h h_some
+  | call_sem _ _ _ _ _ hexit =>
+    unfold CallExit at hexit
+    obtain ⟨_, _, _, hupd⟩ := hexit
+    exact updateStates_preserves_isSome hupd y h_some
+
+/-- An `EvalCommand` step leaves a store that holds only values. -/
+theorem evalCommand_storeWellDefined
+    {fac : Expression.Factory} {σ σ' : CoreStore} {c : Command} {fl : Bool}
+    (h : EvalCommand π fac σ c σ' fl)
+    (hsv : Imperative.WellFormedStore σ fac) :
+    Imperative.WellFormedStore σ' fac := by
+  cases h with
+  | cmd_sem hcmd =>
+    -- Core's `WellFormedSemanticEvalVal` holds at every factory, so nothing has to
+    -- be threaded through the run.
+    exact Imperative.evalCmd_storeWellDefined
+      (coreEvaluator_WellFormedSemanticEvalVal fac) hcmd hsv
+  | call_sem _ _ _ _ _ hexit =>
+    unfold CallExit at hexit
+    obtain ⟨_, _, hread, hupd⟩ := hexit
+    exact updateStates_preserves_wellFormedStore hupd
+      (ReadValues.all_values hread) hsv
+
+/-- Core analogue of `stmts_preserves_isSome`: a slot defined at the start of a
+    terminating `.stmts` run is still defined at the end. -/
+theorem core_stmts_preserves_isSome
+    {y : Expression.Ident} {ss : Statements} {ρ ρ' : Env Expression}
+    (h_run : CoreStepStar π (.stmts ss ρ) (.terminal ρ'))
+    (h_some : (ρ.store y).isSome = true) :
+    (ρ'.store y).isSome = true :=
+  Config.varsDefined_star_of (evalCmd := EvalCommand π)
+
+    (fun he hs => evalCommand_preserves_isSome π he hs)
+    (CoreStepStar_to_StepStmtStar h_run)
+    (show Config.varDefined y (.stmts ss ρ) from fun _ hz => hz ▸ h_some) y rfl
+
+/-- Core analogue of `block_run_terminal_preserves_none_of_not_definedVars`: a
+    terminating `.stmts bss` run leaves `store y = none` for every
+    `y ∉ Block.definedVars bss false`. -/
+theorem core_block_run_terminal_preserves_none_of_not_definedVars
+    {y : Expression.Ident} {bss : Statements} {ρ ρ' : Env Expression}
+    (h_y_not_def : y ∉ Block.definedVars (P := Expression) (C := Command) bss false)
+    (h_none : ρ.store y = none)
+    (h_run : CoreStepStar π (.stmts bss ρ) (.terminal ρ')) :
+    ρ'.store y = none :=
+  Config.varsUndefinedThroughout_star_of (Q := (· = y)) (evalCmd := EvalCommand π)
+
+    (fun he hn hnd => evalCommand_preserves_none_of_not_def π he hn hnd)
+    (CoreStepStar_to_StepStmtStar h_run)
+    (by rintro z rfl; exact ⟨h_none, all_not_mem_definedVars_of_block h_y_not_def⟩) y rfl
+
+/-- Scope-aware Core store-domain bound: a terminating run of `s` newly defines
+    only `Stmt.definedVars s true`.  Unlike
+    `core_block_run_terminal_preserves_none_of_not_definedVars` this permits `s`
+    to `init` `y` inside a nested scope, since leaving that scope projects the
+    inner store through the parent's. -/
+theorem core_stmt_run_terminal_preserves_none_of_not_definedVars_true
+    {y : Expression.Ident} {s : Statement} {ρ ρ' : Env Expression}
+    (h_y_not_def : y ∉ Stmt.definedVars (P := Expression) (C := Command) s true)
+    (h_none : ρ.store y = none)
+    (h_run : CoreStepStar π (.stmt s ρ) (.terminal ρ')) :
+    ρ'.store y = none :=
+  Config.varsUndefinedScoped_star_of (Q := (· = y)) (evalCmd := EvalCommand π)
+
+    (fun he hn hnd => evalCommand_preserves_none_of_not_def π he hn hnd)
+    (CoreStepStar_to_StepStmtStar h_run)
+    (by rintro z rfl; exact ⟨h_none, h_y_not_def⟩) y rfl
+
+/-- A terminating statement run never undefines a store slot: whatever was defined
+    on entry is still defined at the terminal environment.  `.stmt` variant of
+    `core_stmts_preserves_isSome`. -/
+private theorem core_stmt_preserves_isSome
+    {y : Expression.Ident} {s : Statement} {ρ ρ' : Env Expression}
+    (h_run : CoreStepStar π (.stmt s ρ) (.terminal ρ'))
+    (h_some : (ρ.store y).isSome = true) :
+    (ρ'.store y).isSome = true :=
+  Config.varsDefined_star_of (evalCmd := EvalCommand π)
+
+    (fun he hs => evalCommand_preserves_isSome π he hs)
+    (CoreStepStar_to_StepStmtStar h_run)
+    (show Config.varDefined y (.stmt s ρ) from fun _ hz => hz ▸ h_some) y rfl
+
+/-- Core lift of `evalCmd_definedVars_isSome`.  `Command.definedVars (.call ..) = []`
+    — a procedure call declares nothing, writing its results back through
+    `UpdateStates` — so that case is vacuous. -/
+private theorem evalCommand_definedVars_isSome
+    {f : Expression.Factory} {σ σ' : SemanticStore Expression} {c : Command}
+    {hf : Bool} {y : Expression.Ident}
+    (h_eval : EvalCommand π f σ c σ' hf)
+    (h_def : y ∈ HasVarsImp.definedVars (P := Expression) c true) :
+    (σ' y).isSome = true := by
+  cases h_eval with
+  | cmd_sem h =>
+    exact evalCmd_definedVars_isSome h
+      (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_def)
+  | call_sem => simp [HasVarsImp.definedVars, Command.definedVars] at h_def
+
+/-- **Exact store domain after a terminating statement run.**  A terminating run
+    of `s` from `ρ` leaves exactly `dom(ρ.store) ∪ Stmt.definedVars s true`
+    defined.
+
+    Equality, rather than either inclusion, is what `Block.defUseWellFormed` needs: it
+    uses its definedness predicate in both directions — reads and writes must be
+    defined, and `init` targets must *not* be. -/
+theorem core_stmt_run_terminal_store_isSome_eq
+    {s : Statement} {ρ ρ' : Env Expression}
+    (h_run : CoreStepStar π (.stmt s ρ) (.terminal ρ')) (n : Expression.Ident) :
+    (ρ'.store n).isSome
+      = ((ρ.store n).isSome ||
+          decide (n ∈ Stmt.definedVars (P := Expression) (C := Command) s true)) := by
+  by_cases hd : n ∈ Stmt.definedVars (P := Expression) (C := Command) s true
+  · -- `Stmt.definedVars _ true` is nonempty only for `.cmd`, whose run is one step.
+    simp only [hd, decide_true, Bool.or_true]
+    match s with
+    | .cmd c =>
+      cases h_run with
+      | step hstep hrest =>
+        cases hstep with
+        | step_cmd h_eval =>
+          cases hrest with
+          | refl =>
+            simp only [Stmt.definedVars] at hd
+            exact evalCommand_definedVars_isSome π h_eval hd
+          | step hstep' _ => exact nomatch hstep'
+    | .block .. | .ite .. | .loop .. | .exit .. | .typeDecl .. =>
+      simp [Stmt.definedVars] at hd
+  · simp only [hd, decide_false, Bool.or_false]
+    by_cases hs : (ρ.store n).isSome = true
+    · rw [hs, core_stmt_preserves_isSome π h_run hs]
+    · have hnone : ρ.store n = none := by
+        cases h : ρ.store n with
+        | none => rfl
+        | some v => rw [h] at hs; simp at hs
+      rw [hnone] at hs
+      rw [core_stmt_run_terminal_preserves_none_of_not_definedVars_true π hd hnone h_run,
+        hnone]
+
+/-! ### Event-trace store-domain characterization
+
+Event-trace (`StepStmtStarE` / `EvalCommandE`) analogues of the store-domain
+lemmas above, needed to re-establish `BlockInitEnvWF` on the tail of a statement
+list after an event-native run.  `EvalCommandE` base commands are the
+event-native `EvalCmdE`; a `call` emits `[]` and reuses the failure-flag
+`EvalCommand`, so the call cases delegate to the failure-flag results. -/
+
+/-- An `EvalCommandE` step never undefines a store slot that was already
+defined. -/
+theorem evalCommandE_preserves_isSome
+    {f : Expression.Factory} {σ σ' : SemanticStore Expression} {c : Command}
+    {emitted : Imperative.Trace Expression} {y : Expression.Ident}
+    (h_eval : EvalCommandE π f σ c σ' emitted)
+    (h_some : (σ y).isSome = true) :
+    (σ' y).isSome = true := by
+  cases h_eval with
+  | cmd_sem h => exact Imperative.evalCmdE_preserves_isSome h h_some
+  | call_sem _ _ _ hexit =>
+    unfold Calls.CallExit at hexit
+    obtain ⟨_, _, _, hupd⟩ := hexit
+    exact updateStates_preserves_isSome hupd y h_some
+
+/-- An `EvalCommandE` step preserves the property that every store binding is
+a value. -/
+theorem evalCommandE_storeWellDefined
+    {fac : Expression.Factory} {σ σ' : CoreStore} {c : Command}
+    {emitted : Imperative.Trace Expression}
+    (h : EvalCommandE π fac σ c σ' emitted)
+    (hsv : Imperative.WellFormedStore σ fac) :
+    Imperative.WellFormedStore σ' fac := by
+  cases h with
+  | cmd_sem hcmd =>
+    exact Imperative.evalCmdE_storeWellDefined
+      (coreEvaluator_WellFormedSemanticEvalVal fac) hcmd hsv
+  | call_sem _ _ _ hexit =>
+    unfold Calls.CallExit at hexit
+    obtain ⟨_, _, hread, hupd⟩ := hexit
+    exact updateStates_preserves_wellFormedStore hupd
+      (ReadValues.all_values hread) hsv
+
+/-- Event analogue of `evalCommand_definedVars_isSome`: a `call` declares
+nothing, so that case is vacuous. -/
+private theorem evalCommandE_definedVars_isSome
+    {f : Expression.Factory} {σ σ' : SemanticStore Expression} {c : Command}
+    {emitted : Imperative.Trace Expression} {y : Expression.Ident}
+    (h_eval : EvalCommandE π f σ c σ' emitted)
+    (h_def : y ∈ HasVarsImp.definedVars (P := Expression) c true) :
+    (σ' y).isSome = true := by
+  cases h_eval with
+  | cmd_sem h =>
+    exact Imperative.evalCmdE_definedVars_isSome h
+      (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_def)
+  | call_sem => simp [HasVarsImp.definedVars, Command.definedVars] at h_def
+
+/-- A store slot defined at the start of a terminating event-native `.stmt`
+run remains defined at the end. -/
+private theorem core_stmt_preserves_isSomeE
+    {y : Expression.Ident} {s : Statement} {ρ ρ' : Env Expression}
+    {tr : Imperative.Trace Expression}
+    (h_run : CoreStepStarE π
+      (.stmt s ρ) tr (.terminal ρ'))
+    (h_some : (ρ.store y).isSome = true) :
+    (ρ'.store y).isSome = true :=
+  Config.varsDefined_star_ofE
+    (fun he hs => evalCommandE_preserves_isSome π he hs)
+    h_run
+    (show Config.varDefined y (.stmt s ρ) from fun _ hz => hz ▸ h_some) y rfl
+
+/-- Event analogue of `core_stmts_preserves_isSome`: a slot defined at the start
+of a terminating event-native `.stmts` run is still defined at the end. -/
+theorem core_stmts_preserves_isSomeE
+    {y : Expression.Ident} {ss : Statements} {ρ ρ' : Env Expression}
+    {tr : Imperative.Trace Expression}
+    (h_run : CoreStepStarE π
+      (.stmts ss ρ) tr (.terminal ρ'))
+    (h_some : (ρ.store y).isSome = true) :
+    (ρ'.store y).isSome = true :=
+  Config.varsDefined_star_ofE
+    (fun he hs => evalCommandE_preserves_isSome π he hs)
+    h_run
+    (show Config.varDefined y (.stmts ss ρ) from fun _ hz => hz ▸ h_some) y rfl
+
+/-- A store slot that starts undefined and is not defined by the statement
+remains undefined after a terminating event-native `.stmt` run. -/
+theorem core_stmt_run_terminal_preserves_none_of_not_definedVars_trueE
+    {y : Expression.Ident} {s : Statement} {ρ ρ' : Env Expression}
+    {tr : Imperative.Trace Expression}
+    (h_y_not_def : y ∉ Stmt.definedVars (P := Expression) (C := Command) s true)
+    (h_none : ρ.store y = none)
+    (h_run : CoreStepStarE π
+      (.stmt s ρ) tr (.terminal ρ')) :
+    ρ'.store y = none :=
+  Config.varsUndefinedScoped_star_ofE
+    (fun he hn hnd => evalCommandE_preserves_none_of_not_def π he hn hnd)
+    h_run
+    (by rintro z rfl; exact ⟨h_none, h_y_not_def⟩) y rfl
+
+/-- After a terminating event-native `.stmt` run, a store slot is defined
+exactly when it was defined initially or the statement defines it. -/
+theorem core_stmt_run_terminal_store_isSome_eqE
+    {s : Statement} {ρ ρ' : Env Expression} {tr : Imperative.Trace Expression}
+    (h_run : CoreStepStarE π
+      (.stmt s ρ) tr (.terminal ρ')) (n : Expression.Ident) :
+    (ρ'.store n).isSome
+      = ((ρ.store n).isSome ||
+          decide (n ∈ Stmt.definedVars (P := Expression) (C := Command) s true)) := by
+  by_cases hd : n ∈ Stmt.definedVars (P := Expression) (C := Command) s true
+  · simp only [hd, decide_true, Bool.or_true]
+    match s with
+    | .cmd c =>
+      cases h_run with
+      | step _ _ _ _ _ hstep hrest =>
+        cases hstep with
+        | step_cmd h_eval =>
+          obtain ⟨hcfg, _⟩ := Imperative.stepStmtStarE_from_terminal hrest
+          injection hcfg with hρ
+          subst hρ
+          simp only [Stmt.definedVars] at hd
+          exact evalCommandE_definedVars_isSome π h_eval hd
+        | step_admin hadmin => cases hadmin with | step_cmd hfalse => exact hfalse.elim
+    | .block .. | .ite .. | .loop .. | .exit .. | .typeDecl .. =>
+      simp [Stmt.definedVars] at hd
+  · simp only [hd, decide_false, Bool.or_false]
+    by_cases hs : (ρ.store n).isSome = true
+    · rw [hs, core_stmt_preserves_isSomeE π h_run hs]
+    · have hnone : ρ.store n = none := by
+        cases h : ρ.store n with
+        | none => rfl
+        | some v => rw [h] at hs; simp at hs
+      rw [hnone] at hs
+      rw [core_stmt_run_terminal_preserves_none_of_not_definedVars_trueE π hd hnone h_run,
+        hnone]
 
 /-! ## projectStore and expression evaluation -/
 
 /-- If an expression evaluates in the projected store, it evaluates identically
-    in the full store.  The projected store only removes variables, and expression
-    evaluation depends only on the variables it references. -/
+    in the full store. The projected store only removes variables, and expression
+    evaluation depends only on the variables it references. The `hdom` hypothesis
+    ensures all free variables of `e` are bound in the projected store. -/
 theorem eval_projectStore_to_full
-    {δ : CoreEval} {σ₀ σ : SemanticStore Expression}
+    {f : Expression.Factory} {σ₀ σ : SemanticStore Expression}
     {e : Expression.Expr} {v : Expression.Expr}
-    (h_eval : δ (projectStore σ₀ σ) e = some v)
-    (h_wfVar : WellFormedSemanticEvalVar δ)
-    (h_wfCong : WellFormedCoreEvalCong δ)
-    (h_wfExprCongr : WellFormedSemanticEvalExprCongr δ) :
-    δ σ e = some v := by
-  have h_def := EvalExpressionIsDefined h_wfCong h_wfVar
-    (show (δ (projectStore σ₀ σ) e).isSome from by rw [h_eval]; simp)
+    (h_eval : Expression.eval f (projectStore σ₀ σ) e = some v)
+    (h_wfStore : WellFormedStore σ f)
+    (hWF : Lambda.FactoryWF f)
+    (hdom : ∀ x ∈ HasFvars.getFvars e, (projectStore σ₀ σ) x ≠ none) :
+    Expression.eval f σ e = some v := by
+  have h_wfStoreProj : WellFormedStore (projectStore σ₀ σ) f := by
+    intro x w hx
+    simp only [projectStore] at hx
+    split at hx
+    · exact h_wfStore x w hx
+    · exact absurd hx (by simp)
   have h_agree : ∀ x ∈ HasFvars.getFvars e, (projectStore σ₀ σ) x = σ x := by
     intro x hx
-    have h_x_def : (projectStore σ₀ σ x).isSome = true := h_def x hx
-    simp only [projectStore] at h_x_def ⊢
+    have h_ne := hdom x hx
+    simp only [projectStore] at h_ne ⊢
     split
     · rfl
-    · next h_neg => simp [h_neg] at h_x_def
-  rw [← h_wfExprCongr e (projectStore σ₀ σ) σ h_agree]; exact h_eval
+    · simp [*] at h_ne
+  rw [← coreEvaluator_WellFormedSemanticEvalExprCongr f hWF e _ _ h_wfStoreProj h_wfStore h_agree]
+  exact h_eval
 
 /-! ## Assert-only blocks preserve store -/
 
 theorem stmts_allAssert_preserves_store
     (ss : List Statement) (ρ ρ' : Env Expression)
     (h_all : ∀ s ∈ ss, ∃ l e md, s = Statement.assert l e md)
-    (hterm : CoreStepStar π φ (.stmts ss ρ) (.terminal ρ')) :
+    (hterm : CoreStepStar π (.stmts ss ρ) (.terminal ρ')) :
     ρ'.store = ρ.store := by
   induction ss generalizing ρ with
   | nil =>
@@ -2587,7 +2791,7 @@ theorem stmts_allAssert_preserves_store
         have ⟨ρ₁, h_s, h_r⟩ := core_seq_reaches_terminal h_rest
         have h_store₁ : ρ₁.store = ρ.store := by
           suffices h_gen : ∀ (c₁ c₂ : CoreConfig),
-              CoreStepStar π φ c₁ c₂ →
+              CoreStepStar π c₁ c₂ →
               c₁ = .stmt (Statement.assert l e md) ρ →
               c₂ = .terminal ρ₁ →
               ρ₁.store = ρ.store by
@@ -2619,47 +2823,58 @@ theorem stmts_allAssert_preserves_store
     derivation, with `coreIsAtAssert` playing the role of the
     `IsAtAssert` parameter. -/
 
-private theorem coreIsAtAssert_of_inv_mem
-    {g m inv body md} {ρ : Env Expression} {lbl e}
-    (hmem : (lbl, e) ∈ inv) :
-    coreIsAtAssert (.stmt (.loop g m inv body md) ρ) ⟨lbl, e⟩ := hmem
-
 private theorem coreIsAtAssert_seq_of_inner
     {inner : CoreConfig} {ss a}
     (h : coreIsAtAssert inner a) : coreIsAtAssert (.seq inner ss) a := h
 
 private theorem coreIsAtAssert_block_of_inner
-    {label} {σ_parent} {e_parent} {inner : CoreConfig} {a}
-    (h : coreIsAtAssert inner a) : coreIsAtAssert (.block label σ_parent e_parent inner) a := h
+    {label} {σ_parent} {inner : CoreConfig} {a}
+    (h : coreIsAtAssert inner a) : coreIsAtAssert (.block label σ_parent inner) a := h
 
+/-- If a command evaluation reports failure while every atomic call reports
+    success, then the command is at an assertion whose expression evaluates to
+    `ff`. -/
 private theorem evalCommand_failure_implies_assert_ff
-    {π : String → Option Procedure} {φ : CoreEval → PureFunc Expression → CoreEval}
+    {π : String → Option Procedure}
+    {fac : Expression.Factory}
+    (hcalls : ∀ {fac σ n args md σ' failed},
+      EvalCommand π fac σ (.call n args md) σ' failed → failed = false)
     {ρ : Env Expression} {c : Command} {σ'}
-    (hcmd : EvalCommand π φ ρ.eval ρ.store c σ' true) :
+    (hcmd : EvalCommand π fac ρ.store c σ' true) :
     ∃ a : AssertId Expression,
       coreIsAtAssert (.stmt (.cmd c) ρ) a ∧
-      ρ.eval ρ.store a.expr = some HasBool.ff := by
-  cases hcmd with
-  | cmd_sem heval =>
-    cases heval with
-    | eval_assert_fail hff _ => exact ⟨⟨_, _⟩, ⟨rfl, rfl⟩, hff⟩
+      Expression.eval fac ρ.store a.expr = some HasBool.ff := by
+  cases c with
+  | cmd base =>
+    cases hcmd with
+    | cmd_sem heval =>
+      cases heval with
+      | eval_assert_fail hff _ => exact ⟨⟨_, _⟩, ⟨rfl, rfl⟩, hff⟩
+  | call _ _ _ =>
+    have hfalse : true = false := hcalls hcmd
+    simp at hfalse
 
+/-- A failure-free Core configuration remains failure-free after a run when
+    every reachable assertion evaluates to `tt` and every atomic call reports
+    success. -/
 theorem core_noFailure_preserved
     (c₁ c₂ : CoreConfig)
     (hvalid : ∀ (a : AssertId Expression) (cfg : CoreConfig),
-      CoreStepStar π φ c₁ cfg →
+      CoreStepStar π c₁ cfg →
       coreIsAtAssert cfg a →
-      cfg.getEval cfg.getStore a.expr = some HasBool.tt)
+      Expression.eval cfg.getEnv.factory cfg.getStore a.expr = some HasBool.tt)
+    (hcalls : ∀ {fac σ n args md σ' failed},
+      EvalCommand π fac σ (.call n args md) σ' failed → failed = false)
     (hf₀ : c₁.getEnv.hasFailure = Bool.false)
-    (hstar : CoreStepStar π φ c₁ c₂) :
+    (hstar : CoreStepStar π c₁ c₂) :
     c₂.getEnv.hasFailure = Bool.false := by
   suffices h_gen : ∀ c₁ c₂,
       (∀ (a : AssertId Expression) (cfg : CoreConfig),
-        CoreStepStar π φ c₁ cfg →
+        CoreStepStar π c₁ cfg →
         coreIsAtAssert cfg a →
-        cfg.getEval cfg.getStore a.expr = some HasBool.tt) →
+        Expression.eval cfg.getEnv.factory cfg.getStore a.expr = some HasBool.tt) →
       c₁.getEnv.hasFailure = Bool.false →
-      Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
+      Imperative.StepStmtStar Expression (EvalCommand π) c₁ c₂ →
       c₂.getEnv.hasFailure = Bool.false from
     h_gen c₁ c₂ hvalid hf₀ (CoreStepStar_to_StepStmtStar hstar)
   intro c₁ c₂ hvalid hf₀ h
@@ -2669,10 +2884,9 @@ theorem core_noFailure_preserved
     exact ih
       (fun a cfg h hat => hvalid a _ (.step hstep h) hat)
       (Imperative.step_preserves_noFailure
-        (P := Expression) (extendEval := EvalPureFunc φ)
+        (P := Expression)
         coreIsAtAssert
-        evalCommand_failure_implies_assert_ff
-        coreIsAtAssert_of_inv_mem
+        (evalCommand_failure_implies_assert_ff hcalls)
         coreIsAtAssert_seq_of_inner
         coreIsAtAssert_block_of_inner
         _ _
@@ -2726,11 +2940,45 @@ theorem Statement.mapExprs_id (s : Statement) : Statement.mapExprs id s = s := b
     cases guard <;> simp [Statement.mapExprs, Imperative.Stmt.mapExpr,
                            block_mapExpr_id_of_forall ihb]
   | exit_case l md => simp [Statement.mapExprs, Imperative.Stmt.mapExpr]
-  | funcDecl_case decl md => simp [Statement.mapExprs, Imperative.Stmt.mapExpr]
   | typeDecl_case tc md => simp [Statement.mapExprs, Imperative.Stmt.mapExpr]
 
 theorem Statements.mapExprs_id (ss : Statements) : Statements.mapExprs id ss = ss := by
   exact list_mapExprs_id_of_forall (fun s _ => Statement.mapExprs_id s)
+
+
+/-! ## A statement and the one-element list holding it -/
+
+section SingletonRuns
+
+variable {π : String → Option Procedure}
+
+/-- A run of a statement is a run of the one-element list holding it, with the
+    same trace. -/
+theorem stmt_run_to_singleton_runE {s : Statement} {ρ : Imperative.Env Expression}
+    {cfg : CoreConfig} {tr : Trace Expression}
+    (h : CoreStepStarE π (.stmt s ρ) tr cfg) :
+    CoreStepStarE π (.stmts [s] ρ) tr (.seq cfg []) := by
+  have hcons : CoreStepE π (.stmts [s] ρ) [] (.seq (.stmt s ρ) []) :=
+    .step_admin .step_stmts_cons
+  simpa using ReflTransTrace.step _ _ _ _ _ hcons
+    (Imperative.seq_inner_starE _ (ss := []) h)
+
+/-- Every trace of the one-element list holding a statement is a trace of the
+    statement itself. -/
+theorem singleton_run_to_stmt_runE {s : Statement} {ρ : Imperative.Env Expression}
+    {cfg : CoreConfig} {tr : Trace Expression}
+    (h : CoreStepStarE π (.stmts [s] ρ) tr cfg) :
+    ∃ cfg', CoreStepStarE π (.stmt s ρ) tr cfg' := by
+  rcases Imperative.stmts_cons_headE _ h with ⟨_, rfl⟩ | h
+  · exact ⟨_, .refl _⟩
+  · rcases Imperative.seq_run_decomposeE _ h with
+      ⟨inner', _, hi⟩ | ⟨ρ₁, tr₁, tr₂, rfl, h1, h2⟩ | ⟨_, _, _, hi⟩
+    · exact ⟨_, hi⟩
+    · obtain ⟨rfl, _⟩ := Imperative.stmts_nil_runE _ h2
+      exact ⟨_, by simpa using h1⟩
+    · exact ⟨_, hi⟩
+
+end SingletonRuns
 
 end Core
 

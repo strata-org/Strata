@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 meta import Strata.Languages.Core.Verifier
 meta import Strata.Languages.Core.ProcedureEval
@@ -18,10 +19,9 @@ namespace Core
 
 section Tests
 open Std (ToFormat Format format)
-open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
+open Procedure Statement Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 
-/--
-info: Error:
+/-- info: Error:
 none
 Subst Map:
 
@@ -61,8 +61,11 @@ func Real.Lt :  ((x : real) (y : real)) → bool;
 func Real.Le :  ((x : real) (y : real)) → bool;
 func Real.Gt :  ((x : real) (y : real)) → bool;
 func Real.Ge :  ((x : real) (y : real)) → bool;
+@[shortCircuit]
 func Bool.And :  ((x : bool) (y : bool)) → bool;
+@[shortCircuit]
 func Bool.Or :  ((x : bool) (y : bool)) → bool;
+@[shortCircuit]
 func Bool.Implies :  ((x : bool) (y : bool)) → bool;
 func Bool.Equiv :  ((x : bool) (y : bool)) → bool;
 func Bool.Not :  ((x : bool)) → bool;
@@ -73,6 +76,12 @@ func Str.ToRegEx :  ((x : string)) → regex;
 func Str.InRegEx :  ((x : string) (y : regex)) → bool;
 func Str.PrefixOf :  ((x : string) (y : string)) → bool;
 func Str.SuffixOf :  ((x : string) (y : string)) → bool;
+func Str.Contains :  ((x : string) (y : string)) → bool;
+func Str.IndexOf :  ((x : string) (y : string) (i : int)) → int;
+func Str.Replace :  ((x : string) (y : string) (z : string)) → string;
+func Str.At :  ((x : string) (y : int)) → string;
+func Str.Lt :  ((x : string) (y : string)) → bool;
+func Str.Le :  ((x : string) (y : string)) → bool;
 func Re.All :  () → regex;
 func Re.AllChar :  () → regex;
 func Re.Range :  ((x : string) (y : string)) → regex;
@@ -84,22 +93,33 @@ func Re.Union :  ((x : regex) (y : regex)) → regex;
 func Re.Inter :  ((x : regex) (y : regex)) → regex;
 func Re.Comp :  ((x : regex)) → regex;
 func Re.None :  () → regex;
-func const : ∀[k, v]. ((d : v)) → (Map k v);
+func mapConst : ∀[k, v]. ((d : v)) → (Map k v);
 func select : ∀[k, v]. ((m : (Map k v)) (i : k)) → v;
 func update : ∀[k, v]. ((m : (Map k v)) (i : k) (x : v)) → (Map k v);
+func Set.empty : ∀[a]. () → (Set a);
+func Set.contains : ∀[a]. ((s : (Set a)) (x : a)) → bool;
+func Set.insert : ∀[a]. ((s : (Set a)) (x : a)) → (Set a);
+func Set.remove : ∀[a]. ((s : (Set a)) (x : a)) → (Set a);
+func Set.union : ∀[a]. ((s : (Set a)) (t : (Set a))) → (Set a);
+func Set.intersect : ∀[a]. ((s : (Set a)) (t : (Set a))) → (Set a);
+func Set.difference : ∀[a]. ((s : (Set a)) (t : (Set a))) → (Set a);
 func Sequence.length : ∀[a]. ((s : (Sequence a))) → int;
 func Sequence.empty : ∀[a]. () → (Sequence a);
 func Sequence.append : ∀[a]. ((s1 : (Sequence a)) (s2 : (Sequence a))) → (Sequence a);
 func Sequence.select : ∀[a]. ((s : (Sequence a)) (i : int)) → a
-  requires 0 <= i && i < Sequence.length(s);
+  requires int.le(0, i) && int.lt(i, Sequence.length(s));
+func Sequence.select! : ∀[a]. ((s : (Sequence a)) (i : int)) → a;
 func Sequence.build : ∀[a]. ((s : (Sequence a)) (v : a)) → (Sequence a);
 func Sequence.update : ∀[a]. ((s : (Sequence a)) (i : int) (v : a)) → (Sequence a)
-  requires 0 <= i && i < Sequence.length(s);
+  requires int.le(0, i) && int.lt(i, Sequence.length(s));
+func Sequence.update! : ∀[a]. ((s : (Sequence a)) (i : int) (v : a)) → (Sequence a);
 func Sequence.contains : ∀[a]. ((s : (Sequence a)) (v : a)) → bool;
 func Sequence.take : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a)
-  requires 0 <= n && n <= Sequence.length(s);
+  requires int.le(0, n) && int.le(n, Sequence.length(s));
+func Sequence.take! : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a);
 func Sequence.drop : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a)
-  requires 0 <= n && n <= Sequence.length(s);
+  requires int.le(0, n) && int.le(n, Sequence.length(s));
+func Sequence.drop! : ∀[a]. ((s : (Sequence a)) (n : int)) → (Sequence a);
 func Triggers.empty :  () → Triggers;
 func Triggers.addGroup :  ((g : TriggerGroup) (t : Triggers)) → Triggers;
 func TriggerGroup.empty :  () → TriggerGroup;
@@ -294,116 +314,170 @@ func Bv64.UNegOverflow :  ((x : bv64)) → bool;
 func Bv64.UAddOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv64.USubOverflow :  ((x : bv64) (y : bv64)) → bool;
 func Bv64.UMulOverflow :  ((x : bv64) (y : bv64)) → bool;
+func Bv128.Neg :  ((x : bv128)) → bv128;
+func Bv128.Add :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.Sub :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.Mul :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.UDiv :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.UMod :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.SDiv :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.SMod :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.Not :  ((x : bv128)) → bv128;
+func Bv128.And :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.Or :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.Xor :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.Shl :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.UShr :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.SShr :  ((x : bv128) (y : bv128)) → bv128;
+func Bv128.ULt :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.ULe :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.UGt :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.UGe :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SLt :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SLe :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SGt :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SGe :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SNegOverflow :  ((x : bv128)) → bool;
+func Bv128.SAddOverflow :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SSubOverflow :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SMulOverflow :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.SDivOverflow :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.UNegOverflow :  ((x : bv128)) → bool;
+func Bv128.UAddOverflow :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.USubOverflow :  ((x : bv128) (y : bv128)) → bool;
+func Bv128.UMulOverflow :  ((x : bv128) (y : bv128)) → bool;
 func Bv1.SafeAdd :  ((x : bv1) (y : bv1)) → bv1
-  requires !(Bv.SAddOverflow(x, y));
+  requires !(bv1.sAddOverflow(x, y));
 func Bv1.SafeSub :  ((x : bv1) (y : bv1)) → bv1
-  requires !(Bv.SSubOverflow(x, y));
+  requires !(bv1.sSubOverflow(x, y));
 func Bv1.SafeMul :  ((x : bv1) (y : bv1)) → bv1
-  requires !(Bv.SMulOverflow(x, y));
+  requires !(bv1.sMulOverflow(x, y));
 func Bv1.SafeNeg :  ((x : bv1)) → bv1
-  requires !(Bv.SNegOverflow(x));
+  requires !(bv1.sNegOverflow(x));
 func Bv1.SafeUAdd :  ((x : bv1) (y : bv1)) → bv1
-  requires !(Bv.UAddOverflow(x, y));
+  requires !(bv1.uAddOverflow(x, y));
 func Bv1.SafeUSub :  ((x : bv1) (y : bv1)) → bv1
-  requires !(Bv.USubOverflow(x, y));
+  requires !(bv1.uSubOverflow(x, y));
 func Bv1.SafeUMul :  ((x : bv1) (y : bv1)) → bv1
-  requires !(Bv.UMulOverflow(x, y));
+  requires !(bv1.uMulOverflow(x, y));
 func Bv1.SafeUNeg :  ((x : bv1)) → bv1
-  requires !(Bv.UNegOverflow(x));
+  requires !(bv1.uNegOverflow(x));
 func Bv8.SafeAdd :  ((x : bv8) (y : bv8)) → bv8
-  requires !(Bv.SAddOverflow(x, y));
+  requires !(bv8.sAddOverflow(x, y));
 func Bv8.SafeSub :  ((x : bv8) (y : bv8)) → bv8
-  requires !(Bv.SSubOverflow(x, y));
+  requires !(bv8.sSubOverflow(x, y));
 func Bv8.SafeMul :  ((x : bv8) (y : bv8)) → bv8
-  requires !(Bv.SMulOverflow(x, y));
+  requires !(bv8.sMulOverflow(x, y));
 func Bv8.SafeNeg :  ((x : bv8)) → bv8
-  requires !(Bv.SNegOverflow(x));
+  requires !(bv8.sNegOverflow(x));
 func Bv8.SafeUAdd :  ((x : bv8) (y : bv8)) → bv8
-  requires !(Bv.UAddOverflow(x, y));
+  requires !(bv8.uAddOverflow(x, y));
 func Bv8.SafeUSub :  ((x : bv8) (y : bv8)) → bv8
-  requires !(Bv.USubOverflow(x, y));
+  requires !(bv8.uSubOverflow(x, y));
 func Bv8.SafeUMul :  ((x : bv8) (y : bv8)) → bv8
-  requires !(Bv.UMulOverflow(x, y));
+  requires !(bv8.uMulOverflow(x, y));
 func Bv8.SafeUNeg :  ((x : bv8)) → bv8
-  requires !(Bv.UNegOverflow(x));
+  requires !(bv8.uNegOverflow(x));
 func Bv16.SafeAdd :  ((x : bv16) (y : bv16)) → bv16
-  requires !(Bv.SAddOverflow(x, y));
+  requires !(bv16.sAddOverflow(x, y));
 func Bv16.SafeSub :  ((x : bv16) (y : bv16)) → bv16
-  requires !(Bv.SSubOverflow(x, y));
+  requires !(bv16.sSubOverflow(x, y));
 func Bv16.SafeMul :  ((x : bv16) (y : bv16)) → bv16
-  requires !(Bv.SMulOverflow(x, y));
+  requires !(bv16.sMulOverflow(x, y));
 func Bv16.SafeNeg :  ((x : bv16)) → bv16
-  requires !(Bv.SNegOverflow(x));
+  requires !(bv16.sNegOverflow(x));
 func Bv16.SafeUAdd :  ((x : bv16) (y : bv16)) → bv16
-  requires !(Bv.UAddOverflow(x, y));
+  requires !(bv16.uAddOverflow(x, y));
 func Bv16.SafeUSub :  ((x : bv16) (y : bv16)) → bv16
-  requires !(Bv.USubOverflow(x, y));
+  requires !(bv16.uSubOverflow(x, y));
 func Bv16.SafeUMul :  ((x : bv16) (y : bv16)) → bv16
-  requires !(Bv.UMulOverflow(x, y));
+  requires !(bv16.uMulOverflow(x, y));
 func Bv16.SafeUNeg :  ((x : bv16)) → bv16
-  requires !(Bv.UNegOverflow(x));
+  requires !(bv16.uNegOverflow(x));
 func Bv32.SafeAdd :  ((x : bv32) (y : bv32)) → bv32
-  requires !(Bv.SAddOverflow(x, y));
+  requires !(bv32.sAddOverflow(x, y));
 func Bv32.SafeSub :  ((x : bv32) (y : bv32)) → bv32
-  requires !(Bv.SSubOverflow(x, y));
+  requires !(bv32.sSubOverflow(x, y));
 func Bv32.SafeMul :  ((x : bv32) (y : bv32)) → bv32
-  requires !(Bv.SMulOverflow(x, y));
+  requires !(bv32.sMulOverflow(x, y));
 func Bv32.SafeNeg :  ((x : bv32)) → bv32
-  requires !(Bv.SNegOverflow(x));
+  requires !(bv32.sNegOverflow(x));
 func Bv32.SafeUAdd :  ((x : bv32) (y : bv32)) → bv32
-  requires !(Bv.UAddOverflow(x, y));
+  requires !(bv32.uAddOverflow(x, y));
 func Bv32.SafeUSub :  ((x : bv32) (y : bv32)) → bv32
-  requires !(Bv.USubOverflow(x, y));
+  requires !(bv32.uSubOverflow(x, y));
 func Bv32.SafeUMul :  ((x : bv32) (y : bv32)) → bv32
-  requires !(Bv.UMulOverflow(x, y));
+  requires !(bv32.uMulOverflow(x, y));
 func Bv32.SafeUNeg :  ((x : bv32)) → bv32
-  requires !(Bv.UNegOverflow(x));
+  requires !(bv32.uNegOverflow(x));
 func Bv64.SafeAdd :  ((x : bv64) (y : bv64)) → bv64
-  requires !(Bv.SAddOverflow(x, y));
+  requires !(bv64.sAddOverflow(x, y));
 func Bv64.SafeSub :  ((x : bv64) (y : bv64)) → bv64
-  requires !(Bv.SSubOverflow(x, y));
+  requires !(bv64.sSubOverflow(x, y));
 func Bv64.SafeMul :  ((x : bv64) (y : bv64)) → bv64
-  requires !(Bv.SMulOverflow(x, y));
+  requires !(bv64.sMulOverflow(x, y));
 func Bv64.SafeNeg :  ((x : bv64)) → bv64
-  requires !(Bv.SNegOverflow(x));
+  requires !(bv64.sNegOverflow(x));
 func Bv64.SafeUAdd :  ((x : bv64) (y : bv64)) → bv64
-  requires !(Bv.UAddOverflow(x, y));
+  requires !(bv64.uAddOverflow(x, y));
 func Bv64.SafeUSub :  ((x : bv64) (y : bv64)) → bv64
-  requires !(Bv.USubOverflow(x, y));
+  requires !(bv64.uSubOverflow(x, y));
 func Bv64.SafeUMul :  ((x : bv64) (y : bv64)) → bv64
-  requires !(Bv.UMulOverflow(x, y));
+  requires !(bv64.uMulOverflow(x, y));
 func Bv64.SafeUNeg :  ((x : bv64)) → bv64
-  requires !(Bv.UNegOverflow(x));
+  requires !(bv64.uNegOverflow(x));
+func Bv128.SafeAdd :  ((x : bv128) (y : bv128)) → bv128
+  requires !(bv128.sAddOverflow(x, y));
+func Bv128.SafeSub :  ((x : bv128) (y : bv128)) → bv128
+  requires !(bv128.sSubOverflow(x, y));
+func Bv128.SafeMul :  ((x : bv128) (y : bv128)) → bv128
+  requires !(bv128.sMulOverflow(x, y));
+func Bv128.SafeNeg :  ((x : bv128)) → bv128
+  requires !(bv128.sNegOverflow(x));
+func Bv128.SafeUAdd :  ((x : bv128) (y : bv128)) → bv128
+  requires !(bv128.uAddOverflow(x, y));
+func Bv128.SafeUSub :  ((x : bv128) (y : bv128)) → bv128
+  requires !(bv128.uSubOverflow(x, y));
+func Bv128.SafeUMul :  ((x : bv128) (y : bv128)) → bv128
+  requires !(bv128.uMulOverflow(x, y));
+func Bv128.SafeUNeg :  ((x : bv128)) → bv128
+  requires !(bv128.uNegOverflow(x));
 func Bv1.SafeSDiv :  ((x : bv1) (y : bv1)) → bv1
   requires !(y == bv{1}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv1.sDivOverflow(x, y));
 func Bv1.SafeSMod :  ((x : bv1) (y : bv1)) → bv1
   requires !(y == bv{1}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv1.sDivOverflow(x, y));
 func Bv8.SafeSDiv :  ((x : bv8) (y : bv8)) → bv8
   requires !(y == bv{8}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv8.sDivOverflow(x, y));
 func Bv8.SafeSMod :  ((x : bv8) (y : bv8)) → bv8
   requires !(y == bv{8}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv8.sDivOverflow(x, y));
 func Bv16.SafeSDiv :  ((x : bv16) (y : bv16)) → bv16
   requires !(y == bv{16}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv16.sDivOverflow(x, y));
 func Bv16.SafeSMod :  ((x : bv16) (y : bv16)) → bv16
   requires !(y == bv{16}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv16.sDivOverflow(x, y));
 func Bv32.SafeSDiv :  ((x : bv32) (y : bv32)) → bv32
   requires !(y == bv{32}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv32.sDivOverflow(x, y));
 func Bv32.SafeSMod :  ((x : bv32) (y : bv32)) → bv32
   requires !(y == bv{32}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv32.sDivOverflow(x, y));
 func Bv64.SafeSDiv :  ((x : bv64) (y : bv64)) → bv64
   requires !(y == bv{64}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv64.sDivOverflow(x, y));
 func Bv64.SafeSMod :  ((x : bv64) (y : bv64)) → bv64
   requires !(y == bv{64}(0))
-  requires !(Bv.SDivOverflow(x, y));
+  requires !(bv64.sDivOverflow(x, y));
+func Bv128.SafeSDiv :  ((x : bv128) (y : bv128)) → bv128
+  requires !(y == bv{128}(0))
+  requires !(bv128.sDivOverflow(x, y));
+func Bv128.SafeSMod :  ((x : bv128) (y : bv128)) → bv128
+  requires !(y == bv{128}(0))
+  requires !(bv128.sDivOverflow(x, y));
 
 
 Datatypes:
@@ -417,9 +491,9 @@ Deferred Proof Obligations:
 Label: ret_y_lt_0
 Property: assert
 Assumptions:
-(0_lt_x, 0 < x@1)
+(0_lt_x, int.lt(0, x@1))
 Proof Obligation:
--x@1 < 0
+int.lt(int.neg(x@1), 0)
 -/
 #guard_msgs in
 #eval do let E := Env.init
@@ -447,10 +521,10 @@ section ConcreteInterpretation
 /-! ## Concrete Interpretation Tests
 -/
 
-open Lambda Strata
+open Strata Lambda.LTy.Syntax
 open Std (ToFormat Format format)
 
-private def parseAndTypeCheck (pgm : StrataDDM.Program) : Except DiagnosticModel Core.Program := do
+private def parseAndTypeCheck (pgm : StrataDDM.Program) : Except Message Core.Program := do
   let (cst, _errs) := TransM.run Inhabited.default (translateProgram pgm)
   Core.typeCheck { VerifyOptions.default with verbose := .quiet } cst
 
@@ -497,7 +571,7 @@ private def arithPgm : StrataDDM.Program :=
 program Core;
 procedure Test(x : int, out y : int)
 {
-  y := x + x;
+  y := int.add(x, x);
 };
 #end
 
@@ -511,10 +585,10 @@ private def itePgm : StrataDDM.Program :=
 program Core;
 procedure Test(x : int, out y : int)
 {
-  if (x > 0) {
+  if (int.gt(x, 0)) {
     y := x;
   } else {
-    y := 0 - x;
+    y := int.sub(0, x);
   }
 };
 #end
@@ -533,7 +607,7 @@ private def callPgm : StrataDDM.Program :=
 program Core;
 procedure Double(n : int, out result : int)
 {
-  result := n + n;
+  result := int.add(n, n);
 };
 procedure Test(x : int, out y : int)
 {
@@ -551,7 +625,7 @@ private def chainedCallPgm : StrataDDM.Program :=
 program Core;
 procedure Double(n : int, out result : int)
 {
-  result := n + n;
+  result := int.add(n, n);
 };
 procedure Test(x : int, out output : int)
 {
@@ -564,6 +638,24 @@ procedure Test(x : int, out output : int)
 #guard_msgs in
 #eval runProc chainedCallPgm "Test" [.intConst () 5]
 
+private def inoutCallPgm : StrataDDM.Program :=
+#strata
+program Core;
+procedure Bump(inout n : int, k : int)
+{
+  n := int.add(n, k);
+};
+procedure Test(out n : int)
+{
+  n := 5;
+  call Bump(inout n, 3);
+};
+#end
+
+/-- info: n = (some 8) -/
+#guard_msgs in
+#eval runProc inoutCallPgm "Test"
+
 -- Loop (sum of 0..n-1)
 private def loopPgm : StrataDDM.Program :=
 #strata
@@ -573,10 +665,10 @@ procedure Test(n : int, out sum : int)
   var i : int;
   sum := 0;
   i := 0;
-  while (i <= n)
+  while (int.le(i, n))
   {
-    sum := sum + i;
-    i := i + 1;
+    sum := int.add(sum, i);
+    i := int.add(i, 1);
   }
 };
 #end
@@ -635,6 +727,73 @@ procedure Test(out y : int)
 /-- info: y = (some 10) -/
 #guard_msgs in
 #eval runProc blockPgm "Test"
+
+-- ### `moreFns` threading
+--
+-- Regression coverage for the `moreFns` parameter on `Program.run`. A
+-- downstream language (e.g. StrataPython's `int_pow`, `int_rshift`) registers
+-- factory functions carrying a `concreteEval`. Those functions must reach the
+-- runtime evaluator, or every downstream assert referencing them stays
+-- symbolic — the exact failure mode this CR was written to fix. A revert here
+-- would surface as ~67 Python differential-test failures two packages away;
+-- this test fails next to the code instead.
+
+-- Minimal factory function with a `concreteEval` that doubles its Int arg.
+private def dummyDouble : Lambda.LFunc CoreLParams :=
+  { name := "dummy_double",
+    typeArgs := [],
+    inputs := [("x", mty[int])],
+    output := mty[int],
+    concreteEval := some (fun md args => match args with
+      | [x] => (Lambda.LExpr.denoteInt x).map (fun v => Lambda.LExpr.intConst md (2 * v))
+      | _ => none) }
+
+-- Empty Core program — no decls, no procedures. All we're testing is that
+-- `Program.run` threads `moreFns` into the runtime factory. Bypasses DDM
+-- parsing (which requires every referenced name to be declared) and
+-- procedure-call plumbing (which is exercised by every other test above).
+private def emptyProg : Core.Program := { decls := [] }
+
+-- Check that after `Program.run`, the runtime evaluator's factory contains
+-- `dummy_double` and its `concreteEval` folds `x → 2 * x` on a concrete
+-- argument. Without the `moreFns` plumbing on `Program.run` (i.e. before
+-- this CR), the factory would not receive the entry and the same call
+-- would stay as an unresolved `.op "dummy_double" …`.
+private def moreFnsFolds (moreFns : Lambda.Factory CoreLParams) : IO Unit := do
+  match emptyProg.run (moreFns := moreFns) with
+  | .error diag => IO.println s!"error: {diag}"
+  | .ok E =>
+    let call : Lambda.LExpr CoreLParams.mono :=
+      Lambda.LExpr.mkApp () (.op () "dummy_double" (some mty[int]))
+        [Lambda.LExpr.intConst () 21]
+    let result := (Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv call).fst
+    IO.println s!"result = {format result}"
+
+-- With `moreFns` supplying a `concreteEval` for `dummy_double`, the call
+-- folds to `2 * 21 = 42`.
+/-- info: result = 42 -/
+#guard_msgs in
+#eval moreFnsFolds (.ofArray #[dummyDouble])
+
+-- Sanity: without `moreFns`, the same call stays symbolic (no `concreteEval`
+-- reachable). This pins that the fold in the previous test comes from the
+-- `moreFns` plumbing, not a base-factory fallback.
+/-- info: result = dummy_double(21) -/
+#guard_msgs in
+#eval moreFnsFolds Lambda.Factory.default
+
+-- Collision: a `moreFns` entry that redefines a base-factory name makes
+-- `Program.run` error instead of silently keeping one of the two entries.
+-- `Int.Add` is a Core base-factory function, so this pins the checked
+-- `addFactory` fold-in on the `Program.run` path: weakening it back to a
+-- silent-skip append would turn this diagnostic into a successful run.
+/--
+info: error: A function of name Int.Add already exists! Redefinitions are not allowed.
+Existing Function: func Int.Add :  ((x : int) (y : int)) → int;
+New Function:func Int.Add :  ((x : int)) → int;
+-/
+#guard_msgs in
+#eval moreFnsFolds (.ofArray #[{ dummyDouble with name := "Int.Add" }])
 
 end ConcreteInterpretation
 

@@ -4,6 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+import all Strata.DL.Lambda.TypeFactoryWFProps
+import all Strata.DL.Lambda.LTyProps
 
 import all Strata.DL.Lambda.Denote.CallOfLFuncDenote
 import all Strata.DL.Lambda.Denote.LExprDenoteProps
@@ -95,8 +97,8 @@ theorem constr_callOfLFunc_argTys_eq
     {argTys₁ argTys₂ : List LMonoTy}
     (hcall₁ : Factory.callOfLFunc F e₁ = some (callee₁, args₁, fn))
     (hcall₂ : Factory.callOfLFunc F e₂ = some (callee₂, args₂, fn))
-    (h_args₁ : List.Forall₂ (LExpr.HasTypeA []) args₁ argTys₁)
-    (h_args₂ : List.Forall₂ (LExpr.HasTypeA []) args₂ argTys₂)
+    (h_args₁ : List.Rel₂ (LExpr.HasTypeA []) args₁ argTys₁)
+    (h_args₂ : List.Rel₂ (LExpr.HasTypeA []) args₂ argTys₂)
     (hoc₁ : OpsConsistent F e₁) (hoc₂ : OpsConsistent F e₂)
     (hfwf : FactoryWF F)
     (h_output_covers : ∀ v, v ∈ fn.typeArgs → v ∈ LMonoTy.freeVars fn.output)
@@ -117,11 +119,11 @@ theorem constr_callOfLFunc_argTys_eq
   have hlen₁ : argTys₁.length = ((fn.inputs.map Prod.snd).map (LMonoTy.subst tySubst₁)).length := by
     simp only [List.length_map]
     have := h_args₁.length_eq.symm.trans (Factory.callOfLFunc_arity hcall₁)
-    omega
+    grind
   have hlen₂ : argTys₂.length = ((fn.inputs.map Prod.snd).map (LMonoTy.subst tySubst₂)).length := by
     simp only [List.length_map]
     have := h_args₂.length_eq.symm.trans (Factory.callOfLFunc_arity hcall₂)
-    omega
+    grind
   have ⟨hτ₁, hargs₁_eq⟩ := LMonoTy.mkArrow'_injective hlen₁ htyop₁
   have ⟨hτ₂, hargs₂_eq⟩ := LMonoTy.mkArrow'_injective hlen₂ htyop₂
   -- Step 5: fn.output.subst tySubst₁ = fn.output.subst tySubst₂ (both = τ)
@@ -179,8 +181,8 @@ theorem constr_callOfLFunc_argTys_eq'
     {argTys₁ argTys₂ : List LMonoTy}
     (hcall₁ : Factory.callOfLFunc F e₁ = some (callee₁, args₁, fn))
     (hcall₂ : Factory.callOfLFunc F e₂ = some (callee₂, args₂, fn))
-    (h_args₁ : List.Forall₂ (LExpr.HasTypeA []) args₁ argTys₁)
-    (h_args₂ : List.Forall₂ (LExpr.HasTypeA []) args₂ argTys₂)
+    (h_args₁ : List.Rel₂ (LExpr.HasTypeA []) args₁ argTys₁)
+    (h_args₂ : List.Rel₂ (LExpr.HasTypeA []) args₂ argTys₂)
     (hoc₁ : OpsConsistent F e₁) (hoc₂ : OpsConsistent F e₂)
     (hfwf : FactoryWF F)
     (hcwf : Factory.ConstrWellFormed F tf)
@@ -237,7 +239,7 @@ theorem callOfLFunc_constr_disjoint_denote
   rw [subst_mkArrow'] at hty_op_subst₁
   have hlen₁ : argTys₁.length = ((f₁.inputs.map Prod.snd).map (LMonoTy.subst tySubst₁)).length := by
     simp only [List.length_map]
-    exact h_args₁.length_eq.symm.trans (Factory.callOfLFunc_arity hcall₁)
+    exact (h_args₁.length_eq.symm.trans (Factory.callOfLFunc_arity hcall₁)).trans (List.length_map _).symm
   have ⟨hτ_eq₁, hargTys_eq₁⟩ := LMonoTy.mkArrow'_injective hlen₁ hty_op_subst₁
   let vt'₁ : TyVarVal := fun x => match tySubst₁.find? x with
     | some t => LMonoTy.substTyVars vt t | none => vt x
@@ -246,7 +248,7 @@ theorem callOfLFunc_constr_disjoint_denote
   have h_inputSorts_eq₁ : argTys₁.map (LMonoTy.substTyVars vt) =
       (f₁.inputs.map Prod.snd).map (LMonoTy.substTyVars vt'₁) := by
     rw [hargTys_eq₁]; simp only [List.map_map]
-    congr 1; funext ⟨_, ty⟩
+    congr 1; funext ty
     exact substTyVars_subst vt tySubst₁ ty
   -- Sort alignment for f₂
   obtain ⟨tySubst₂, _, htySubst₂⟩ := OpsConsistent_callOfLFunc hoc₂ hcall₂
@@ -254,7 +256,7 @@ theorem callOfLFunc_constr_disjoint_denote
   rw [subst_mkArrow'] at hty_op_subst₂
   have hlen₂ : argTys₂.length = ((f₂.inputs.map Prod.snd).map (LMonoTy.subst tySubst₂)).length := by
     simp only [List.length_map]
-    exact h_args₂.length_eq.symm.trans (Factory.callOfLFunc_arity hcall₂)
+    exact (h_args₂.length_eq.symm.trans (Factory.callOfLFunc_arity hcall₂)).trans (List.length_map _).symm
   have ⟨hτ_eq₂, hargTys_eq₂⟩ := LMonoTy.mkArrow'_injective hlen₂ hty_op_subst₂
   let vt'₂ : TyVarVal := fun x => match tySubst₂.find? x with
     | some t => LMonoTy.substTyVars vt t | none => vt x
@@ -263,7 +265,7 @@ theorem callOfLFunc_constr_disjoint_denote
   have h_inputSorts_eq₂ : argTys₂.map (LMonoTy.substTyVars vt) =
       (f₂.inputs.map Prod.snd).map (LMonoTy.substTyVars vt'₂) := by
     rw [hargTys_eq₂]; simp only [List.map_map]
-    congr 1; funext ⟨_, ty⟩
+    congr 1; funext ty
     exact substTyVars_subst vt tySubst₂ ty
   -- Both constructors belong to the same datatype (outputs match after substitution)
   have hmem₁ := callOfLFunc_func_mem _ _ _ _ _ false hcall₁
@@ -295,7 +297,7 @@ theorem callOfLFunc_constr_disjoint_denote
   have h_inputSorts_eq₂_vt1 : argTys₂.map (LMonoTy.substTyVars vt) =
       (f₂.inputs.map Prod.snd).map (LMonoTy.substTyVars vt'₁) := by
     rw [hargTys_eq₂']; simp only [List.map_map]
-    congr 1; funext ⟨_, ty⟩
+    congr 1; funext ty
     exact substTyVars_subst vt tySubst₁ ty
   have h_outputSort_eq₂_vt1 : LMonoTy.substTyVars vt τ = LMonoTy.substTyVars vt'₁ f₂.output := by
     rw [h_outputSort_eq₁, h_same_output]
@@ -380,7 +382,7 @@ theorem callOfLFunc_constr_injective_denote
   rw [subst_mkArrow'] at hty_op_subst
   have hlen : argTys₁.length = ((f.inputs.map Prod.snd).map (LMonoTy.subst tySubst₁)).length := by
     simp only [List.length_map]
-    exact h_args₁.length_eq.symm.trans (Factory.callOfLFunc_arity hcall₁)
+    exact (h_args₁.length_eq.symm.trans (Factory.callOfLFunc_arity hcall₁)).trans (List.length_map _).symm
   have ⟨hτ_eq, hargTys_eq⟩ := LMonoTy.mkArrow'_injective hlen hty_op_subst
   -- Define vt' incorporating tySubst₁, prove sort equalities
   let vt' : TyVarVal := fun x => match tySubst₁.find? x with
@@ -388,7 +390,7 @@ theorem callOfLFunc_constr_injective_denote
   have h_inputSorts_eq : argTys₁.map (LMonoTy.substTyVars vt) =
       (f.inputs.map Prod.snd).map (LMonoTy.substTyVars vt') := by
     rw [hargTys_eq]; simp only [List.map_map]
-    congr 1; funext ⟨_, ty⟩
+    congr 1; funext ty
     exact substTyVars_subst vt tySubst₁ ty
   have h_outputSort_eq : LMonoTy.substTyVars vt τ = LMonoTy.substTyVars vt' f.output := by
     rw [hτ_eq]; exact substTyVars_subst vt tySubst₁ f.output
@@ -444,7 +446,7 @@ theorem callOfLFunc_constr_injective_denote
     exact cast_injective (congrArg (HList (SortDenote tcInterp)) (hvals ▸ h_inputSorts_eq)) (by grind)
   -- Extract pointwise denote equality from denoteArgs equality
   intro i a₁ a₂ σ ha₁ ha₂ hta₁ hta₂
-  obtain ⟨σ₁, hσ₁, hta₁'⟩ := List.Forall₂.getElem?_some h_args₁ ha₁
+  obtain ⟨σ₁, hσ₁, hta₁'⟩ := List.Rel₂.getElem?_some h_args₁ ha₁
   have hσ_eq : σ₁ = σ := HasTypeA_unique hta₁' hta₁
   subst hσ_eq
   exact denoteArgs_eq_implies_denote_eq tcInterp opInterp fvarVal vt .nil

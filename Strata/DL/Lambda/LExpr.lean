@@ -8,7 +8,8 @@ module
 public import Strata.DL.Lambda.LTy
 public import Strata.DL.Lambda.Identifiers
 public import Lean.Meta.Basic
-import Strata.DL.Util.DecidableEq
+public import Strata.Util.PtrCache
+import Strata.Util.DecidableEq
 
 /-! ## Lambda Expressions with Quantifiers
 
@@ -64,20 +65,20 @@ structure LExprParamsT : Type 1 where
 /--
 Dot notation syntax: T.mono transforms LExprParams into LExprParamsT with LMonoTy.
 -/
-@[expose] abbrev LExprParams.mono (T : LExprParams) : LExprParamsT :=
+abbrev LExprParams.mono (T : LExprParams) : LExprParamsT :=
   ⟨T, LMonoTy⟩
 
-@[expose] abbrev LExprParams.Identifier (T : LExprParams) := Lambda.Identifier T.IDMeta
+abbrev LExprParams.Identifier (T : LExprParams) := Lambda.Identifier T.IDMeta
 
 structure Typed (T: Type) where
   underlying: T
   type: LMonoTy
 
 -- Metadata annotated with a type
-@[expose] abbrev LExprParams.typed (T: LExprParams): LExprParams :=
+abbrev LExprParams.typed (T: LExprParams): LExprParams :=
   ⟨ Typed T.Metadata, T.IDMeta ⟩
 
-@[expose] abbrev LExprParamsT.typed (T: LExprParamsT): LExprParamsT :=
+abbrev LExprParamsT.typed (T: LExprParamsT): LExprParamsT :=
   ⟨T.base.typed, LMonoTy⟩
 
 /--
@@ -94,8 +95,11 @@ inductive LConst : Type where
   code points encoded with UTF-8. -/
   | strConst (s: String)
 
-  /-- A real constant, represented as a rational number. -/
-  | realConst (r: Rat)
+  /-- A literal of type `real`. Literals are exact rationals because every real
+  written in Strata's finite literal notation (a decimal or `frac{n, d}`) is
+  rational. `Rat` normalizes each value to a canonical representation, so two
+  literals are equal exactly when their stored values are equal. -/
+  | rationalConst (r: Rat)
 
   /-- A bit vector constant, represented using Lean's `BitVec` type. -/
   | bitvecConst (n: Nat) (b: BitVec n)
@@ -241,7 +245,7 @@ def LExpr.intConst (m : T.base.Metadata) (n: Int) : LExpr T := .const m <| LCons
 @[expose, match_pattern]
 def LExpr.strConst (m : T.base.Metadata) (s: String) : LExpr T := .const m <| LConst.strConst s
 @[expose, match_pattern]
-def LExpr.realConst (m : T.base.Metadata) (r: Rat) : LExpr T := .const m <| LConst.realConst r
+def LExpr.rationalConst (m : T.base.Metadata) (r: Rat) : LExpr T := .const m <| LConst.rationalConst r
 @[expose, match_pattern]
 def LExpr.bitvecConst (m : T.base.Metadata) (n: Nat) (b: BitVec n) : LExpr T := .const m <| LConst.bitvecConst n b
 @[expose, match_pattern]
@@ -252,6 +256,17 @@ abbrev LExpr.allUntypedTr {T : LExprParamsT} (m : T.base.Metadata) := @LExpr.qua
 abbrev LExpr.allUntyped {T : LExprParamsT} (m : T.base.Metadata) := @LExpr.quant T m .all "" .none (LExpr.noTrigger m)
 abbrev LExpr.existUntypedTr {T : LExprParamsT} (m : T.base.Metadata) := @LExpr.quant T m .exist "" .none
 abbrev LExpr.existUntyped {T : LExprParamsT} (m : T.base.Metadata) := @LExpr.quant T m .exist "" .none (LExpr.noTrigger m)
+
+/--
+A "have" binding `have x = value in body` is syntactic sugar for applying the
+abstraction `λ x. body` to `value`. It introduces no new AST node: it desugars
+to the corresponding `abs`/`app`, with `name` kept as the abstraction's pretty
+name and `ty` the (optional) annotation on the bound variable. As with the other
+binders, `body` refers to the bound value positionally (i.e., via `bvar 0`).
+-/
+def LExpr.mkHave {T : LExprParamsT} (m : T.base.Metadata) (name : String)
+    (ty : Option T.TypeType) (value body : LExpr T) : LExpr T :=
+  .app m (.abs m name ty body) value
 
 @[simp, expose]
 def LExpr.sizeOf: LExpr T → Nat
@@ -271,7 +286,7 @@ def LConst.ty (c: LConst) : LMonoTy :=
   | .intConst _ => .int
   | .strConst _ => .string
   | .bitvecConst n _ => .bitvec n
-  | .realConst _ => .real
+  | .rationalConst _ => .real
   | .boolConst _ => .bool
 
 /--
@@ -282,7 +297,7 @@ def LConst.tyName (c: LConst) : String :=
   | .intConst _ => "int"
   | .strConst _ => "string"
   | .bitvecConst _ _ => "bitvec"
-  | .realConst _ => "real"
+  | .rationalConst _ => "real"
   | .boolConst _ => "bool"
 
 /--
@@ -293,7 +308,7 @@ def LConst.tyNameFormat (c: LConst) : Format :=
   | .intConst _ => f!"Integers"
   | .strConst _ => f!"Strings"
   | .bitvecConst n _ => f!"Bit vectors of size {n}"
-  | .realConst _ => f!"Reals"
+  | .rationalConst _ => f!"Reals"
   | .boolConst _ => f!"Booleans"
 
 ---------------------------------------------------------------------
@@ -442,7 +457,7 @@ def hashOptTy [Hashable TT] (ty : Option TT) : UInt64 :=
 
 /-- Hash an expression structurally, including type annotations but ignoring
     metadata. Useful for HashMap-based deduplication. -/
-def hashExpr {T : LExprParamsT} [Hashable T.TypeType] : LExpr T → UInt64
+@[expose] def hashExpr {T : LExprParamsT} [Hashable T.TypeType] : LExpr T → UInt64
   | .const _ c => hashConst (hash c)
   | .bvar _ i => hashBVar (hash i)
   | .fvar _ n ty => hashFVar (hash n.name) (hashOptTy ty)
@@ -454,6 +469,93 @@ def hashExpr {T : LExprParamsT} [Hashable T.TypeType] : LExpr T → UInt64
   | .quant _ k name ty tr body =>
     let kh : UInt64 := match k with | .all => 0 | .exist => 1
     hashQuantExpr kh (hash name) (hashOptTy ty) (hashExpr tr) (hashExpr body)
+
+-------------------------------------------------------------------------
+-- Safe, graph-time structural operations.
+-------------------------------------------------------------------------
+
+section
+
+open Strata.PtrCache
+
+/-- Safe, pointer-address-memoized structural hash. Each physically distinct
+    subterm is hashed exactly once, keyed by its memory address via the safe
+    `PtrCache`. The returned `Result hashExpr e` carries a proof that the value
+    equals `hashExpr e`. -/
+def hashExprPtrCache {T : LExprParamsT} [Hashable T.TypeType] :
+    (e : LExpr T) → PtrCacheM (hashExpr : LExpr T → UInt64) e
+  | .const _ c => pure ⟨hashConst (hash c), by simp only [hashExpr]⟩
+  | .bvar _ i => pure ⟨hashBVar (hash i), by simp only [hashExpr]⟩
+  | .fvar _ n ty => pure ⟨hashFVar (hash n.name) (hashOptTy ty), by simp only [hashExpr]⟩
+  | .op _ o ty => pure ⟨hashOp (hash o.name) (hashOptTy ty), by simp only [hashExpr]⟩
+  | .app _ fn arg => do
+    let rfn ← evalPtrCache fn (hashExprPtrCache fn)
+    let rarg ← evalPtrCache arg (hashExprPtrCache arg)
+    pure ⟨hashApp rfn.output rarg.output, by simp only [hashExpr, rfn.h, rarg.h]⟩
+  | .ite _ c t f => do
+    let rc ← evalPtrCache c (hashExprPtrCache c)
+    let rt ← evalPtrCache t (hashExprPtrCache t)
+    let rf ← evalPtrCache f (hashExprPtrCache f)
+    pure ⟨hashIte rc.output rt.output rf.output, by simp only [hashExpr, rc.h, rt.h, rf.h]⟩
+  | .eq _ e1 e2 => do
+    let r1 ← evalPtrCache e1 (hashExprPtrCache e1)
+    let r2 ← evalPtrCache e2 (hashExprPtrCache e2)
+    pure ⟨hashEqExpr r1.output r2.output, by simp only [hashExpr, r1.h, r2.h]⟩
+  | .abs _ name ty body => do
+    let rb ← evalPtrCache body (hashExprPtrCache body)
+    pure ⟨hashAbs (hash name) (hashOptTy ty) rb.output, by simp only [hashExpr, rb.h]⟩
+  | .quant _ k name ty tr body => do
+    let rtr ← evalPtrCache tr (hashExprPtrCache tr)
+    let rb ← evalPtrCache body (hashExprPtrCache body)
+    pure ⟨hashQuantExpr (match k with | .all => 0 | .exist => 1)
+            (hash name) (hashOptTy ty) rtr.output rb.output,
+          by cases k <;> simp only [hashExpr, rtr.h, rb.h]⟩
+
+/-- Run the pointer-address-memoized structural hash on `e`.
+    hashExprCached_eq in LExprProps.lean proves that its result equals hashExpr. -/
+def hashExprCached {T : LExprParamsT} [Hashable T.TypeType] (e : LExpr T) : UInt64 :=
+  ((hashExprPtrCache e).run' PtrCache.empty).output
+
+/-- Safe, pointer-address-memoized `hasBVar`: each physically distinct subterm
+    is inspected exactly once, keyed by its memory address via the safe
+    `PtrCache`. The returned `Result hasBVar e` carries a proof that the value
+    equals `hasBVar e`. Unlike a bare `hasBVar` walk, this is proportional to the
+    number of distinct DAG nodes rather than the (possibly exponential) tree. -/
+def hasBVarPtrCache {T : LExprParamsT} :
+    (e : LExpr T) → PtrCacheM (hasBVar : LExpr T → Bool) e
+  | .bvar _ _ => pure ⟨true, by simp only [hasBVar]⟩
+  | .const _ _ => pure ⟨false, by simp only [hasBVar]⟩
+  | .fvar _ _ _ => pure ⟨false, by simp only [hasBVar]⟩
+  | .op _ _ _ => pure ⟨false, by simp only [hasBVar]⟩
+  | .app _ fn arg => do
+    let rfn ← evalPtrCache fn (hasBVarPtrCache fn)
+    let rarg ← evalPtrCache arg (hasBVarPtrCache arg)
+    pure ⟨rfn.output || rarg.output, by simp only [hasBVar, rfn.h, rarg.h]⟩
+  | .ite _ c t f => do
+    let rc ← evalPtrCache c (hasBVarPtrCache c)
+    let rt ← evalPtrCache t (hasBVarPtrCache t)
+    let rf ← evalPtrCache f (hasBVarPtrCache f)
+    pure ⟨rc.output || rt.output || rf.output, by simp only [hasBVar, rc.h, rt.h, rf.h]⟩
+  | .eq _ e1 e2 => do
+    let r1 ← evalPtrCache e1 (hasBVarPtrCache e1)
+    let r2 ← evalPtrCache e2 (hasBVarPtrCache e2)
+    pure ⟨r1.output || r2.output, by simp only [hasBVar, r1.h, r2.h]⟩
+  | .abs _ _ _ body => do
+    let rb ← evalPtrCache body (hasBVarPtrCache body)
+    pure ⟨rb.output, by simp only [hasBVar, rb.h]⟩
+  | .quant _ _ _ _ tr body => do
+    let rtr ← evalPtrCache tr (hasBVarPtrCache tr)
+    let rb ← evalPtrCache body (hasBVarPtrCache body)
+    pure ⟨rtr.output || rb.output, by simp only [hasBVar, rtr.h, rb.h]⟩
+
+/-- Run the pointer-address-memoized `hasBVar` on `e`.
+    hasBVarCached_eq in LExprProps.lean proves that its result equals hasBVar. -/
+def hasBVarCached {T : LExprParamsT} (e : LExpr T) : Bool :=
+  ((hasBVarPtrCache e).run' PtrCache.empty).output
+
+end
+
+-------------------------------------------------------------------------
 
 @[expose, match_pattern]
 protected def true {T : LExprParams} (m : T.Metadata) : LExpr T.mono := .boolConst m true
@@ -502,7 +604,7 @@ If `e` is an `LExpr` real, then denote that into a Lean `Rat`.
 -/
 def denoteReal {T : LExprParams} (e : LExpr ⟨T, TypeType⟩) : Option Rat :=
   match e with
-  | .realConst _ r => some r
+  | .rationalConst _ r => some r
   | _ => none
 
 /--
@@ -632,7 +734,7 @@ instance : ToString LConst where
     match c with
     | .intConst i => toString i
     | .strConst s => s
-    | .realConst r => toString r
+    | .rationalConst r => toString r
     | .bitvecConst _ b => toString (b.toNat)
     | .boolConst b => toString b
 

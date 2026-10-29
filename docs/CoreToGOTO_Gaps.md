@@ -68,7 +68,6 @@ Both pipelines require a patched CBMC build (see "CBMC Patches" below).
 - String/regex operations → `function_application` in GOTO; CBMC's string
   solver patch maps these to the corresponding SMT-LIB theories
   (`Str.Length` → `str.len`, `Re.Star` → `re.*`, etc.)
-- Local function declarations (`funcDecl`) → lifted to top-level GOTO functions
 - Multi-procedure programs: symbol table deduplication preserves proper code types
 - Output parameter types emitted in GOTO symbol table (not empty)
 - Source locations reconstructed from byte offsets in the source text and
@@ -83,9 +82,10 @@ the translation.
 
 ### Design principles
 
-- **Unhandled constructs abort.** Unrecognized types (`LMonoTy.ftvar`, `.arrow`),
-  expressions (`.abs`), and statements (`funcDecl` at the Imperative level) return
-  `Except.error`, halting the translation. They never silently produce wrong GOTO.
+- **Unhandled constructs abort.** Unrecognized types (`LMonoTy.ftvar`, `.arrow`)
+  and expressions (`.abs`) return `Except.error`, halting the translation. They
+  never silently produce wrong GOTO. An internal `function` declaration lowers to
+  a local initialized with a `.abs` value, so it aborts through this path.
 
 - **Unknown operators over-approximate.** Operators not explicitly mapped
   fall through to `functionApplication`, which CBMC encodes as uninterpreted
@@ -151,8 +151,7 @@ not handled:
   anonymous function `fun (x : ty) => body`. GOTO programs have no concept of
   anonymous functions or closures. To support this, lambdas would need to be
   eliminated before GOTO translation, either by:
-  - **Lambda-lifting**: extract each lambda into a named top-level function
-    (already done for `funcDecl` via `collectFuncDecls` in `StrataMain.lean`).
+  - **Lambda-lifting**: extract each lambda into a named top-level function.
   - **Inlining**: substitute the lambda body at every application site.
 
   In practice, well-prepared Core programs reaching the GOTO backend should not
@@ -173,7 +172,7 @@ big-endian architectures):
 1. Make `ArchConfig` configurable via a CLI flag (e.g., `--arch-config <file>`
    or `--target <triple>`).
 2. Thread the `ArchConfig` through `CProverGOTO.wrapSymtab` at each call site
-   (in `CoreToCProverGOTO.writeToGotoJson`, `CoreToGOTOPipeline.emitProcWithLifted`,
+   (in `CoreToCProverGOTO.writeToGotoJson`, `CoreToGOTOPipeline.emitProc`,
    and `StrataMain.laurelAnalyzeToGotoCommand`).
 3. Optionally provide preset configurations for common targets (e.g.,
    `ArchConfig.x86_64_linux`, `ArchConfig.arm64_macos`).
@@ -209,7 +208,7 @@ The CI builds CBMC 6.8.0 from source with four patches applied:
    `String` as a recognized type in CBMC's SMT2 backend, enabling string
    constants and operations to be encoded in SMT-LIB.
 
-2. **`cbmc-bounds-check.patch`** (`StrataTest/Languages/Laurel/`): Adjusts
+2. **`cbmc-bounds-check.patch`** (`StrataLaurel/Tests/CBMC`): Adjusts
    bounds checking for the Laurel pipeline.
 
 3. **`cbmc-regex-support.patch`** (`StrataTest/Backends/CBMC/`): Adds `regex`

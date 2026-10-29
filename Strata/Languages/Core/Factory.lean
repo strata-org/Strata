@@ -8,6 +8,7 @@ module
 public meta import Lean.Elab.Command
 
 public import Strata.Languages.Core.Expressions
+public meta import Strata.Languages.Core.Identifiers
 public import Strata.DL.Lambda.IntBoolFactory
 import all Strata.DL.Lambda.IntBoolFactory
 import all Strata.DL.Lambda.LTy
@@ -31,6 +32,17 @@ def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
 def seqTy (elemTy : LMonoTy) : LMonoTy :=
   .tcons "Sequence" [elemTy]
 
+/-- A mathematical (immutable, unordered, extensional) set of `elemTy`.
+
+    A distinct sort rather than a `Map elemTy bool` alias: keeping it distinct is what
+    lets the SMT encoder later target a dedicated set theory (or a specialized
+    axiomatization) without every `Map` paying for it. Until then it encodes as an
+    uninterpreted sort constrained by the `Set.*` axioms below, which is sound but not
+    especially efficient. -/
+@[expose, match_pattern]
+def setTy (elemTy : LMonoTy) : LMonoTy :=
+  .tcons "Set" [elemTy]
+
 def KnownLTys : LTys :=
   [t[bool],
    t[int],
@@ -44,7 +56,8 @@ def KnownLTys : LTys :=
    t[∀n. bitvec n],
    t[∀a b. %a → %b],
    t[∀a b. Map %a %b],
-   t[∀a. Sequence %a]]
+   t[∀a. Sequence %a],
+   t[∀a. Set %a]]
 
 def KnownTypes : KnownTypes :=
   makeKnownTypes (KnownLTys.map (fun ty => ty.toKnownType!))
@@ -217,7 +230,7 @@ elab "ExpandBVSafeOpFuncDefs" "[" sizes:num,* "]" : command => do
                 default⟩])
               (h_precond := by
                 intro p hp; simp at hp; subst hp
-                native_decide)))
+                cbv; grind)))
       else
         elabCommand (← `(
           def $funcName : Lambda.WFLFunc CoreLParams :=
@@ -231,7 +244,7 @@ elab "ExpandBVSafeOpFuncDefs" "[" sizes:num,* "]" : command => do
                 default⟩])
               (h_precond := by
                 intro p hp; simp at hp; subst hp
-                native_decide)))
+                cbv; grind)))
 
 open Lean Elab Command in
 /-- Generate safe signed division/modulo operations with both div-by-zero
@@ -270,16 +283,21 @@ elab "ExpandBVSafeDivOpFuncDefs" "[" sizes:num,* "]" : command => do
               intro p hp
               simp only [List.mem_cons, List.mem_singleton, List.mem_nil_iff, or_false] at hp
               cases hp with
-              | inl h => subst h; native_decide
-              | inr h => subst h; native_decide)))
+              | inl h => subst h; cbv; grind
+              | inr h => subst h; cbv; grind)))
 
 end -- public meta section
 
 public section
 
-ExpandBVOpFuncDefs[1, 2, 8, 16, 32, 64]
-ExpandBVSafeOpFuncDefs[1, 2, 8, 16, 32, 64]
-ExpandBVSafeDivOpFuncDefs[1, 2, 8, 16, 32, 64]
+-- Supported bitvector widths. This set is repeated in the name-registration and
+-- op-expr lists below (all three must agree) and must match the widths exposed by the
+-- surface syntax — the `W…` markers and `bv{…}` tokens in `DDMTransform/Grammar.lean`,
+-- their handling in `Translate.lean`, and `lmonoTyToCoreType`/`lconstToExpr` in
+-- `FormatCore.lean`. `BvWidthPrinterTest` checks the factory and printer agree.
+ExpandBVOpFuncDefs[1, 8, 16, 32, 64, 128]
+ExpandBVSafeOpFuncDefs[1, 8, 16, 32, 64, 128]
+ExpandBVSafeDivOpFuncDefs[1, 8, 16, 32, 64, 128]
 
 /- Real Arithmetic Operations -/
 
@@ -328,6 +346,30 @@ def strPrefixOfFunc : WFLFunc CoreLParams :=
 def strSuffixOfFunc : WFLFunc CoreLParams :=
   binaryOp "Str.SuffixOf" (fun s t => String.endsWith t s)
 
+-- The following string operations are left uninterpreted at the Core level
+-- (like `Str.Substr`); the SMT backend interprets them via their SMT-LIB names.
+def strContainsFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Str.Contains" mty[string] mty[string] mty[bool]
+
+def strIndexOfFunc : WFLFunc CoreLParams :=
+  polyUneval "Str.IndexOf" []
+    [("x", mty[string]), ("y", mty[string]), ("i", mty[int])] mty[int]
+
+def strReplaceFunc : WFLFunc CoreLParams :=
+  ternaryFuncUneval "Str.Replace" mty[string] mty[string] mty[string]
+
+def strAtFunc : WFLFunc CoreLParams :=
+  binaryFuncUneval "Str.At" mty[string] mty[int] mty[string]
+
+-- `Str.Lt`/`Str.Le` carry concrete evaluators so the interpreter can reduce
+-- string comparisons. The evaluators use code-point lexicographic order and
+-- must agree with the SMT-LIB `str.<`/`str.<=` operators emitted by the encoder.
+def strLtFunc : WFLFunc CoreLParams :=
+  binaryOp "Str.Lt" (fun (s t : String) => decide (s < t))
+
+def strLeFunc : WFLFunc CoreLParams :=
+  binaryOp "Str.Le" (fun (s t : String) => decide (s ≤ t))
+
 def reAllCharFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.AllChar" mty[regex]
 
@@ -350,6 +392,11 @@ def reLoopFunc : WFLFunc CoreLParams :=
   polyUneval "Re.Loop" []
     [("x", mty[regex]), ("n1", mty[int]), ("n2", mty[int])] mty[regex]
 
+/-- The operators whose arguments the SMT encoder accepts only as literals: `re.loop`
+    takes its bounds as SMT indices. A call applying one to a variable cannot be
+    encoded. -/
+def literalIndexOps : List String := ["Re.Loop"]
+
 def reUnionFunc : WFLFunc CoreLParams :=
   binaryFuncUneval "Re.Union" mty[regex] mty[regex] mty[regex]
 
@@ -363,18 +410,21 @@ def reNoneFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.None" mty[regex]
 
 /- A constant `Map` constructor with type `∀k, v. v → Map k v`.
-   `const(d)` returns a map where every key maps to the value `d`. -/
+   `mapConst(d)` returns a map where every key maps to the value `d`.
+   Named `mapConst` (not `const`) to avoid colliding with the `const`
+   declaration keyword in the Core grammar, which would otherwise make
+   pretty-printed programs fail to re-parse. -/
 def mapConstFunc : WFLFunc CoreLParams :=
-  polyUneval "const" ["k", "v"]
+  polyUneval "mapConst" ["k", "v"]
     [("d", mty[%v])]
     (mapTy mty[%k] mty[%v])
     (axioms := [
       esM[∀ (%v): -- %1 d
           (∀ (%k): -- %0 kk
             {(((~select : (Map %k %v) → %k → %v)
-                ((~const : %v → (Map %k %v)) %1)) %0)}
+                ((~mapConst : %v → (Map %k %v)) %1)) %0)}
             (((~select : (Map %k %v) → %k → %v)
-                ((~const : %v → (Map %k %v)) %1)) %0) == %1)]
+                ((~mapConst : %v → (Map %k %v)) %1)) %0) == %1)]
     ])
 
 /- A `Map` selection function with type `∀k, v. Map k v → k → v`. -/
@@ -415,6 +465,137 @@ def mapUpdateFunc : WFLFunc CoreLParams :=
                     ))))]
     ])
 
+/-! ## `Set` operations
+
+Every operation is characterized *pointwise through membership*: each axiom states what
+`Set.contains` yields on the result. That is the whole specification — two sets with the
+same members are interchangeable in every `Set.contains` position, so no operation can
+observe anything else about them.
+
+`Set.contains` itself carries no axiom: it is the primitive the others are defined against.
+
+Each axiom is triggered on the `Set.contains`-of-the-operation pattern, so it fires exactly
+when a membership question is asked about a constructed set, rather than eagerly on every
+construction.
+
+Note what is deliberately absent: there is no cardinality operation. `Set.card` cannot be
+axiomatized pointwise (it needs induction over a finite domain), so adding it would mean
+either an unsound partial axiomatization or real finite-set support in the encoder. It is
+left out until the encoder targets a set theory that provides it. -/
+
+/- The empty `Set`, with type `∀a. Set a`.
+   Like `Sequence.empty` this takes no value arguments, so the element type is not
+   inferable from a call site and must come from the `.op` type annotation. -/
+def setEmptyFunc : WFLFunc CoreLParams :=
+  polyUneval "Set.empty" ["a"] [] (setTy mty[%a])
+    (axioms := [
+      -- forall x :: !contains(empty, x)
+      esM[∀ (%a): -- %0 x
+          {(((~Set.contains : (Set %a) → %a → bool)
+              (~Set.empty : (Set %a))) %0)}
+          (((~Set.contains : (Set %a) → %a → bool)
+              (~Set.empty : (Set %a))) %0) == #false]
+    ])
+
+def setContainsFunc : WFLFunc CoreLParams :=
+  polyUneval "Set.contains" ["a"]
+    [("s", setTy mty[%a]), ("x", mty[%a])] mty[bool]
+
+/- A `Set` insertion with type `∀a. Set a → a → Set a`. Returns a NEW set; `s` is
+   unchanged, which is what makes the type immutable. -/
+def setInsertFunc : WFLFunc CoreLParams :=
+  polyUneval "Set.insert" ["a"]
+    [("s", setTy mty[%a]), ("x", mty[%a])] (setTy mty[%a])
+    (axioms := [
+      -- forall s, x, y :: contains(insert(s, x), y) == (y == x || contains(s, y))
+      esM[∀ (Set %a): -- %2 s
+          (∀ (%a):    -- %1 x
+            (∀ (%a):  -- %0 y
+              {(((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.insert : (Set %a) → %a → (Set %a)) %2) %1)) %0)}
+              (((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.insert : (Set %a) → %a → (Set %a)) %2) %1)) %0)
+              ==
+              (((~Bool.Or : bool → bool → bool)
+                (%0 == %1))
+                (((~Set.contains : (Set %a) → %a → bool) %2) %0))))]
+    ])
+
+/- A `Set` removal with type `∀a. Set a → a → Set a`. Removing an absent element is a
+   no-op rather than an error, so the operation is total. -/
+def setRemoveFunc : WFLFunc CoreLParams :=
+  polyUneval "Set.remove" ["a"]
+    [("s", setTy mty[%a]), ("x", mty[%a])] (setTy mty[%a])
+    (axioms := [
+      -- forall s, x, y :: contains(remove(s, x), y) == (!(y == x) && contains(s, y))
+      esM[∀ (Set %a): -- %2 s
+          (∀ (%a):    -- %1 x
+            (∀ (%a):  -- %0 y
+              {(((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.remove : (Set %a) → %a → (Set %a)) %2) %1)) %0)}
+              (((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.remove : (Set %a) → %a → (Set %a)) %2) %1)) %0)
+              ==
+              (((~Bool.And : bool → bool → bool)
+                ((~Bool.Not : bool → bool) (%0 == %1)))
+                (((~Set.contains : (Set %a) → %a → bool) %2) %0))))]
+    ])
+
+def setUnionFunc : WFLFunc CoreLParams :=
+  polyUneval "Set.union" ["a"]
+    [("s", setTy mty[%a]), ("t", setTy mty[%a])] (setTy mty[%a])
+    (axioms := [
+      -- forall s, t, y :: contains(union(s, t), y) == (contains(s, y) || contains(t, y))
+      esM[∀ (Set %a): -- %2 s
+          (∀ (Set %a): -- %1 t
+            (∀ (%a):   -- %0 y
+              {(((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.union : (Set %a) → (Set %a) → (Set %a)) %2) %1)) %0)}
+              (((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.union : (Set %a) → (Set %a) → (Set %a)) %2) %1)) %0)
+              ==
+              (((~Bool.Or : bool → bool → bool)
+                (((~Set.contains : (Set %a) → %a → bool) %2) %0))
+                (((~Set.contains : (Set %a) → %a → bool) %1) %0))))]
+    ])
+
+def setIntersectFunc : WFLFunc CoreLParams :=
+  polyUneval "Set.intersect" ["a"]
+    [("s", setTy mty[%a]), ("t", setTy mty[%a])] (setTy mty[%a])
+    (axioms := [
+      -- forall s, t, y :: contains(intersect(s, t), y) == (contains(s, y) && contains(t, y))
+      esM[∀ (Set %a): -- %2 s
+          (∀ (Set %a): -- %1 t
+            (∀ (%a):   -- %0 y
+              {(((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.intersect : (Set %a) → (Set %a) → (Set %a)) %2) %1)) %0)}
+              (((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.intersect : (Set %a) → (Set %a) → (Set %a)) %2) %1)) %0)
+              ==
+              (((~Bool.And : bool → bool → bool)
+                (((~Set.contains : (Set %a) → %a → bool) %2) %0))
+                (((~Set.contains : (Set %a) → %a → bool) %1) %0))))]
+    ])
+
+def setDifferenceFunc : WFLFunc CoreLParams :=
+  polyUneval "Set.difference" ["a"]
+    [("s", setTy mty[%a]), ("t", setTy mty[%a])] (setTy mty[%a])
+    (axioms := [
+      -- forall s, t, y :: contains(difference(s, t), y) == (contains(s, y) && !contains(t, y))
+      esM[∀ (Set %a): -- %2 s
+          (∀ (Set %a): -- %1 t
+            (∀ (%a):   -- %0 y
+              {(((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.difference : (Set %a) → (Set %a) → (Set %a)) %2) %1)) %0)}
+              (((~Set.contains : (Set %a) → %a → bool)
+                  (((~Set.difference : (Set %a) → (Set %a) → (Set %a)) %2) %1)) %0)
+              ==
+              (((~Bool.And : bool → bool → bool)
+                (((~Set.contains : (Set %a) → %a → bool) %2) %0))
+                ((~Bool.Not : bool → bool)
+                  (((~Set.contains : (Set %a) → %a → bool) %1) %0)))))]
+    ])
+
 /- A `Sequence` length function with type `∀a. Sequence a → int`. -/
 def seqLengthFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.length" ["a"]
@@ -440,14 +621,26 @@ def seqEmptyFunc : WFLFunc CoreLParams :=
             (~Sequence.empty : (Sequence %a))) == #0]
     ])
 
+/- Rename one operator throughout a list of axioms. Purely syntactic. -/
+private def renameOpIn («from» to : String) (axs : List Expression.Expr) :
+    List Expression.Expr :=
+  axs.map (·.substOps (Strata.Util.HMap.ofList
+    [(⟨«from», ()⟩, fun ty => .op () to ty)]))
+
+/- Each select-of-constructor axiom, paired with its `Sequence.select!` mirror
+   (same axiom with `Sequence.select` renamed), so the unsafe selector reasons
+   through constructors identically to the checked one. -/
+private def withSelectBang (axs : List Expression.Expr) : List Expression.Expr :=
+  axs ++ renameOpIn "Sequence.select" "Sequence.select!" axs
+
 /- A `Sequence` append function with type `∀a. Sequence a → Sequence a → Sequence a`. -/
 def seqAppendFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.append" ["a"]
     [("s1", seqTy mty[%a]), ("s2", seqTy mty[%a])]
     (seqTy mty[%a])
-    (axioms := [
+    (axioms :=
       -- length(append(s0, s1)) == length(s0) + length(s1)
-      esM[∀ (Sequence %a): -- %1 s0
+      [ esM[∀ (Sequence %a): -- %1 s0
           (∀ (Sequence %a): -- %0 s1
             {((~Sequence.length : (Sequence %a) → int)
               (((~Sequence.append : (Sequence %a) → (Sequence %a) → (Sequence %a)) %1) %0))}
@@ -456,9 +649,9 @@ def seqAppendFunc : WFLFunc CoreLParams :=
             ==
             (((~Int.Add : int → int → int)
               ((~Sequence.length : (Sequence %a) → int) %1))
-              ((~Sequence.length : (Sequence %a) → int) %0)))],
-      -- select(append(s0, s1), n):
-      --   0 <= n < length(s0) ==> select(append(s0,s1), n) == select(s0, n)
+              ((~Sequence.length : (Sequence %a) → int) %0)))] ]
+      ++ withSelectBang [
+      -- 0 <= n < length(s0) ==> select(append(s0,s1), n) == select(s0, n)
       esM[∀ (Sequence %a): -- %2 s0
           (∀ (Sequence %a): -- %1 s1
             (∀ (int): -- %0 n
@@ -494,7 +687,7 @@ def seqAppendFunc : WFLFunc CoreLParams :=
                 (((~Sequence.select : (Sequence %a) → int → %a) %1)
                     (((~Int.Sub : int → int → int) %0) ((~Sequence.length : (Sequence %a) → int) %2)))
               else #true))]
-    ])
+      ])
 
 /-! ### Sequence bounds preconditions
 
@@ -548,15 +741,23 @@ def seqSelectFunc : WFLFunc CoreLParams :=
     [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
     (preconditions := [mkSeqBoundsPrecond "i" .Lt])
 
+/- An *unsafe* total variant of `Sequence.select`: no bounds precondition, so
+   no out-of-bounds obligation per call site; out-of-range access is
+   unconstrained. Shares `Sequence.select`'s interaction axioms (mirrored on the
+   constructor functions), so it reasons through constructors identically. -/
+def seqSelectUnsafeFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.select!" ["a"]
+    [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
+
 /- A `Sequence` build (snoc) function with type `∀a. Sequence a → a → Sequence a`.
    `build(s, v)` appends a single element `v` to the end of `s`. -/
 def seqBuildFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.build" ["a"]
     [("s", seqTy mty[%a]), ("v", mty[%a])]
     (seqTy mty[%a])
-    (axioms := [
+    (axioms :=
       -- length(build(s, v)) == 1 + length(s)
-      esM[∀ (Sequence %a): -- %1 s
+      [ esM[∀ (Sequence %a): -- %1 s
           (∀ (%a): -- %0 v
             {((~Sequence.length : (Sequence %a) → int)
               (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %1) %0))}
@@ -565,9 +766,9 @@ def seqBuildFunc : WFLFunc CoreLParams :=
             ==
             (((~Int.Add : int → int → int)
               #1)
-              ((~Sequence.length : (Sequence %a) → int) %1)))],
-      -- select(build(s, v), i):
-      --   i == length(s) ==> select(build(s,v), i) == v
+              ((~Sequence.length : (Sequence %a) → int) %1)))] ]
+      ++ withSelectBang [
+      -- i == length(s) ==> select(build(s,v), i) == v
       esM[∀ (Sequence %a): -- %2 s
           (∀ (%a): -- %1 v
             (∀ (int): -- %0 i
@@ -579,8 +780,7 @@ def seqBuildFunc : WFLFunc CoreLParams :=
                     (((~Sequence.build : (Sequence %a) → %a → (Sequence %a)) %2) %1)) %0)
                 == %1
               else #true))],
-      -- select(build(s, v), i):
-      --   0 <= i < length(s) ==> select(build(s,v), i) == select(s, i)
+      -- 0 <= i < length(s) ==> select(build(s,v), i) == select(s, i)
       esM[∀ (Sequence %a): -- %2 s
           (∀ (%a): -- %1 v
             (∀ (int): -- %0 i
@@ -596,7 +796,7 @@ def seqBuildFunc : WFLFunc CoreLParams :=
                 ==
                 (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)
               else #true))]
-    ])
+      ])
 
 /- A `Sequence` update function with type `∀a. Sequence a → int → a → Sequence a`.
    `update(s, i, v)` returns a sequence identical to `s` except at index `i` where the value is `v`.
@@ -605,9 +805,9 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.update" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int]), ("v", mty[%a])]
     (seqTy mty[%a])
-    (axioms := [
+    (axioms :=
       -- length(update(s, i, v)) == length(s)
-      esM[∀ (Sequence %a): -- %2 s
+      [ esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 i
             (∀ (%a): -- %0 v
               {((~Sequence.length : (Sequence %a) → int)
@@ -615,7 +815,8 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
               ((~Sequence.length : (Sequence %a) → int)
                 ((((~Sequence.update : (Sequence %a) → int → %a → (Sequence %a)) %2) %1) %0))
               ==
-              ((~Sequence.length : (Sequence %a) → int) %2)))],
+              ((~Sequence.length : (Sequence %a) → int) %2)))] ]
+      ++ withSelectBang [
       -- 0 <= i < length(s) ==> select(update(s, i, v), i) == v  (same index)
       esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 i
@@ -650,8 +851,18 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
                   ==
                   (((~Sequence.select : (Sequence %a) → int → %a) %3) %0)
                 else #true)))]
-    ])
+      ])
     (preconditions := [mkSeqBoundsPrecond "i" .Lt])
+
+/- An *unsafe* total variant of `Sequence.update`: no bounds precondition, so no
+   out-of-bounds obligation per call site. The length axiom holds for any index, and
+   the select-of-update axioms stay guarded by their own bounds. -/
+def seqUpdateUnsafeFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.update!" ["a"]
+    [("s", seqTy mty[%a]), ("i", mty[int]), ("v", mty[%a])]
+    (seqTy mty[%a])
+    (axioms :=
+      renameOpIn "Sequence.update" "Sequence.update!" seqUpdateFunc.func.axioms)
 
 /- A `Sequence` contains function with type `∀a. Sequence a → a → bool`.
    `contains(s, v)` is true iff there exists an index `i` such that `select(s, i) == v`. -/
@@ -680,9 +891,9 @@ def seqTakeFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.take" ["a"]
     [("s", seqTy mty[%a]), ("n", mty[int])]
     (seqTy mty[%a])
-    (axioms := [
+    (axioms :=
       -- 0 <= n <= length(s) ==> length(take(s, n)) == n
-      esM[∀ (Sequence %a): -- %1 s
+      [ esM[∀ (Sequence %a): -- %1 s
           (∀ (int): -- %0 n
             {((~Sequence.length : (Sequence %a) → int)
               (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %1) %0))}
@@ -694,7 +905,8 @@ def seqTakeFunc : WFLFunc CoreLParams :=
               ((~Sequence.length : (Sequence %a) → int)
                 (((~Sequence.take : (Sequence %a) → int → (Sequence %a)) %1) %0))
               == %0
-            else #true)],
+            else #true)] ]
+      ++ withSelectBang [
       -- select(take(s, n), j) == select(s, j)  (when 0 <= j < n)
       esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 n
@@ -710,8 +922,19 @@ def seqTakeFunc : WFLFunc CoreLParams :=
                 ==
                 (((~Sequence.select : (Sequence %a) → int → %a) %2) %0)
               else #true))]
-    ])
+      ])
     (preconditions := [mkSeqBoundsPrecond "n" .Le])
+
+/- An *unsafe* total variant of `Sequence.take`. Its length axiom keeps
+   `Sequence.take`'s `0 <= n <= length(s)` guard: `Sequence.length` is axiomatised
+   as non-negative, so an unguarded `length(take!(s, n)) == n` would be false for a
+   negative `n` and make every goal provable. Out of range, `take!` is unconstrained. -/
+def seqTakeUnsafeFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.take!" ["a"]
+    [("s", seqTy mty[%a]), ("n", mty[int])]
+    (seqTy mty[%a])
+    (axioms :=
+      renameOpIn "Sequence.take" "Sequence.take!" seqTakeFunc.func.axioms)
 
 /- A `Sequence` drop function with type `∀a. Sequence a → int → Sequence a`.
    `drop(s, n)` returns the sequence with the first `n` elements removed.
@@ -720,9 +943,9 @@ def seqDropFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.drop" ["a"]
     [("s", seqTy mty[%a]), ("n", mty[int])]
     (seqTy mty[%a])
-    (axioms := [
+    (axioms :=
       -- 0 <= n <= length(s) ==> length(drop(s, n)) == length(s) - n
-      esM[∀ (Sequence %a): -- %1 s
+      [ esM[∀ (Sequence %a): -- %1 s
           (∀ (int): -- %0 n
             {((~Sequence.length : (Sequence %a) → int)
               (((~Sequence.drop : (Sequence %a) → int → (Sequence %a)) %1) %0))}
@@ -737,7 +960,8 @@ def seqDropFunc : WFLFunc CoreLParams :=
               (((~Int.Sub : int → int → int)
                 ((~Sequence.length : (Sequence %a) → int) %1))
                 %0)
-            else #true)],
+            else #true)] ]
+      ++ withSelectBang [
       -- 0 <= j < length(s) - n ==> select(drop(s, n), j) == select(s, j + n)
       esM[∀ (Sequence %a): -- %2 s
           (∀ (int): -- %1 n
@@ -757,8 +981,17 @@ def seqDropFunc : WFLFunc CoreLParams :=
                 (((~Sequence.select : (Sequence %a) → int → %a) %2)
                     (((~Int.Add : int → int → int) %0) %1))
               else #true))]
-    ])
+      ])
     (preconditions := [mkSeqBoundsPrecond "n" .Le])
+
+/- An *unsafe* total variant of `Sequence.drop`, keeping `Sequence.drop`'s bounds
+   guard on the length axiom for the reason given on `seqTakeUnsafeFunc`. -/
+def seqDropUnsafeFunc : WFLFunc CoreLParams :=
+  polyUneval "Sequence.drop!" ["a"]
+    [("s", seqTy mty[%a]), ("n", mty[int])]
+    (seqTy mty[%a])
+    (axioms :=
+      renameOpIn "Sequence.drop" "Sequence.drop!" seqDropFunc.func.axioms)
 
 def emptyTriggersFunc : WFLFunc CoreLParams :=
   nullaryUneval "Triggers.empty" mty[Triggers]
@@ -907,6 +1140,12 @@ def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[
   strInRegexFunc,
   strPrefixOfFunc,
   strSuffixOfFunc,
+  strContainsFunc,
+  strIndexOfFunc,
+  strReplaceFunc,
+  strAtFunc,
+  strLtFunc,
+  strLeFunc,
   reAllFunc,
   reAllCharFunc,
   reRangeFunc,
@@ -923,15 +1162,27 @@ def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[
   mapSelectFunc,
   mapUpdateFunc,
 
+  setEmptyFunc,
+  setContainsFunc,
+  setInsertFunc,
+  setRemoveFunc,
+  setUnionFunc,
+  setIntersectFunc,
+  setDifferenceFunc,
+
   seqLengthFunc,
   seqEmptyFunc,
   seqAppendFunc,
   seqSelectFunc,
+  seqSelectUnsafeFunc,
   seqBuildFunc,
   seqUpdateFunc,
+  seqUpdateUnsafeFunc,
   seqContainsFunc,
   seqTakeFunc,
+  seqTakeUnsafeFunc,
   seqDropFunc,
+  seqDropUnsafeFunc,
 
   emptyTriggersFunc,
   addTriggerGroupFunc,
@@ -968,9 +1219,9 @@ def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[
   bv64Extract_31_0_Func,
   bv64Extract_15_0_Func,
   bv64Extract_7_0_Func,
-] ++ (ExpandBVOpFuncNames [1,8,16,32,64])
-  ++ (ExpandBVSafeOpFuncNames [1,8,16,32,64])
-  ++ (ExpandBVSafeDivOpFuncNames [1,8,16,32,64])
+] ++ (ExpandBVOpFuncNames [1,8,16,32,64,128])
+  ++ (ExpandBVSafeOpFuncNames [1,8,16,32,64,128])
+  ++ (ExpandBVSafeDivOpFuncNames [1,8,16,32,64,128])
 
 @[expose]
 def WFFactory : Lambda.WFLFactory CoreLParams :=
@@ -982,8 +1233,24 @@ def Factory : @Factory CoreLParams := WFLFactory.toFactory WFFactory
 def FactoryFuncNames : List String :=
   (WFFactoryArray.map (·.func.name.name)).toList
 
+/-- The function names in the mapped factory array are pairwise distinct. -/
+theorem WFFactoryArray_func_name_nodup :
+    List.Nodup ((WFFactoryArray.map (·.func)).toList.map (·.name.name)) := by
+  native_decide
+
 /-- Decidable predicate: is `s` the name of a built-in factory function? -/
 def isNameInFactory (s : String) : Bool := s ∈ FactoryFuncNames
+
+/-! ### Membership lemmas for specific built-in ops
+
+Used by transforms (e.g. `LoopElim`) that synthesize references to standard
+ops to discharge downstream `factoryDeclared`-style preconditions. -/
+
+theorem boolNot_isNameInFactory :
+    Core.isNameInFactory "Bool.Not" = Bool.true := by native_decide
+
+theorem intLt_isNameInFactory :
+    Core.isNameInFactory "Int.Lt" = Bool.true := by native_decide
 
 end -- public section
 
@@ -1023,9 +1290,20 @@ public section
 instance : Inhabited CoreLParams.Metadata where
   default := ()
 
-DefBVOpFuncExprs [1, 8, 16, 32, 64]
-DefBVSafeOpFuncExprs [1, 8, 16, 32, 64]
-DefBVSafeDivOpFuncExprs [1, 8, 16, 32, 64]
+DefBVOpFuncExprs [1, 8, 16, 32, 64, 128]
+DefBVSafeOpFuncExprs [1, 8, 16, 32, 64, 128]
+DefBVSafeDivOpFuncExprs [1, 8, 16, 32, 64, 128]
+
+/-- The three Bv↔Int cast operators, as width-parameterized `opExpr`s.
+
+    Unlike the bitwise and comparison operators (whose per-width names
+    `DefBVOpFuncExprs` generates) these take the width as an argument, because
+    `bvToUIntFunc`/`bvToIntFunc`/`intToBvFunc` are already width-generic. A
+    caller that needs a name rather than an application can use these directly
+    instead of rebuilding an `.op` expression with a hand-written arrow type. -/
+def bvToUIntOp (size : Nat) : Expression.Expr := (bvToUIntFunc size).opExpr
+def bvToIntOp (size : Nat) : Expression.Expr := (bvToIntFunc size).opExpr
+def intToBvOp (size : Nat) : Expression.Expr := (intToBvFunc size).opExpr
 
 def bv8ConcatOp : Expression.Expr := bv8ConcatFunc.opExpr
 def bv16ConcatOp : Expression.Expr := bv16ConcatFunc.opExpr
@@ -1087,6 +1365,12 @@ def strToRegexOp : Expression.Expr := strToRegexFunc.opExpr
 def strInRegexOp : Expression.Expr := strInRegexFunc.opExpr
 def strPrefixOfOp : Expression.Expr := strPrefixOfFunc.opExpr
 def strSuffixOfOp : Expression.Expr := strSuffixOfFunc.opExpr
+def strContainsOp : Expression.Expr := strContainsFunc.opExpr
+def strIndexOfOp : Expression.Expr := strIndexOfFunc.opExpr
+def strReplaceOp : Expression.Expr := strReplaceFunc.opExpr
+def strAtOp : Expression.Expr := strAtFunc.opExpr
+def strLtOp : Expression.Expr := strLtFunc.opExpr
+def strLeOp : Expression.Expr := strLeFunc.opExpr
 def reAllOp : Expression.Expr := reAllFunc.opExpr
 def reAllCharOp : Expression.Expr := reAllCharFunc.opExpr
 def reRangeOp : Expression.Expr := reRangeFunc.opExpr
@@ -1101,6 +1385,20 @@ def reNoneOp : Expression.Expr := reNoneFunc.opExpr
 def mapConstOp : Expression.Expr := mapConstFunc.opExpr
 def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
+/-- `Set.empty` takes no value arguments, so its element type cannot be inferred from a
+    call site. Pass `elemTy` to annotate the op with the concrete `Set τ`; without it the
+    type variable reaches the SMT encoder unresolved. Mirrors `seqEmptyOp`. -/
+def setEmptyOp (elemTy : Option LMonoTy := none) : Expression.Expr :=
+  match elemTy with
+  | none => setEmptyFunc.opExpr
+  | some ty => .op default "Set.empty" (some (setTy ty))
+def setContainsOp : Expression.Expr := setContainsFunc.opExpr
+def setInsertOp : Expression.Expr := setInsertFunc.opExpr
+def setRemoveOp : Expression.Expr := setRemoveFunc.opExpr
+def setUnionOp : Expression.Expr := setUnionFunc.opExpr
+def setIntersectOp : Expression.Expr := setIntersectFunc.opExpr
+def setDifferenceOp : Expression.Expr := setDifferenceFunc.opExpr
+
 def seqLengthOp : Expression.Expr := seqLengthFunc.opExpr
 def seqEmptyOp (elemTy : Option LMonoTy := none) : Expression.Expr :=
   match elemTy with
@@ -1108,11 +1406,15 @@ def seqEmptyOp (elemTy : Option LMonoTy := none) : Expression.Expr :=
   | some ty => .op default "Sequence.empty" (some (seqTy ty))
 def seqAppendOp : Expression.Expr := seqAppendFunc.opExpr
 def seqSelectOp : Expression.Expr := seqSelectFunc.opExpr
+def seqSelectUnsafeOp : Expression.Expr := seqSelectUnsafeFunc.opExpr
 def seqBuildOp : Expression.Expr := seqBuildFunc.opExpr
 def seqUpdateOp : Expression.Expr := seqUpdateFunc.opExpr
+def seqUpdateUnsafeOp : Expression.Expr := seqUpdateUnsafeFunc.opExpr
 def seqContainsOp : Expression.Expr := seqContainsFunc.opExpr
 def seqTakeOp : Expression.Expr := seqTakeFunc.opExpr
+def seqTakeUnsafeOp : Expression.Expr := seqTakeUnsafeFunc.opExpr
 def seqDropOp : Expression.Expr := seqDropFunc.opExpr
+def seqDropUnsafeOp : Expression.Expr := seqDropUnsafeFunc.opExpr
 
 def mkTriggerGroup (ts : List Expression.Expr) : Expression.Expr :=
   ts.foldl (fun g t => .app () (.app () addTriggerOp t) g) emptyTriggerGroupOp

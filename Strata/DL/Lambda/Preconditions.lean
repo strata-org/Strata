@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Lambda.IntBoolFactory
+import Strata.DL.Lambda.LExprType
 
 /-! # Function Precondition Obligation Collection
 
@@ -52,6 +53,28 @@ def substitutePrecondition
   LExpr.substFvarsLifting precond substitution
 
 /--
+Type substitution instantiating a polymorphic precondition at a call site.
+Returns `Subst.empty` for monomorphic functions.
+-/
+private def callSiteTypeSubst (fn : LFunc T) (callee : LExpr T.mono)
+    (args : List (LExpr T.mono)) : Subst :=
+  if fn.typeArgs.isEmpty then Subst.empty
+  else
+    let opSubst := (fn.opTypeSubst callee).getD Subst.empty
+    let argConstraints := (args.zip fn.inputs.values).filterMap
+      (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal))
+    let argSubst :=
+      if argConstraints.isEmpty then Subst.empty
+      else match Constraints.unify argConstraints SubstInfo.empty with
+        | .ok substInfo => substInfo.subst
+        | .error _ => Subst.empty
+    -- Resolve `opSubst` into `argSubst`'s values before merging: `LMonoTy.subst`
+    -- is single-pass, so a binding like `%a ↦ Sequence %b` would otherwise leave
+    -- a residual `%b` that only `opSubst` binds. `opSubst` then fills any type
+    -- variable `argSubst` does not bind.
+    argSubst.mapValues (LMonoTy.subst opSubst) ++ opSubst
+
+/--
 Collect all WF obligations from an expression by traversing it and finding
 all calls to functions with preconditions.
 
@@ -69,12 +92,15 @@ where
     -- A function call generates an obligation that the precondition is
     -- satisfied under the current assumptions
     let callObligations := match Factory.callOfLFunc F e with
-      | some (_op, args, func) =>
+      | some (op, args, func) =>
         if func.preconditions.isEmpty then []
         else
           let md := e.metadata
+          -- Instantiate the precondition's type variables at this call site
+          let tySubst := callSiteTypeSubst func op args
           func.preconditions.map fun precond =>
             let substedPrecond := substitutePrecondition precond.expr func.inputs args
+            let substedPrecond := substedPrecond.applyTypeSubst tySubst
             { funcName := func.name.name
               obligation := wrapImplications implications substedPrecond
               callSiteMetadata := md
@@ -85,9 +111,15 @@ where
       -- Need to quantify over bound variable
       -- e.g. λ x => 2 / x gives precondition ∀ x, x != 0
       | .abs md name ty body =>
+        -- Entering the `abs` binder: shift the accumulated implication
+        -- hypotheses (captured at the enclosing depth) up by one so their
+        -- de Bruijn indices stay valid under the new binder.
+        let implications := implications.map fun (m, hyp) => (m, LExpr.liftBVars 1 hyp)
         (go F body implications).map fun ob =>
           { ob with obligation := .quant md .all name ty (.bvar md 0) ob.obligation }
       | .quant md _ name ty trigger body =>
+        -- Same de Bruijn shift as the `.abs` case above.
+        let implications := implications.map fun (m, hyp) => (m, LExpr.liftBVars 1 hyp)
         (go F body implications).map fun ob =>
           { ob with obligation := .quant md .all name ty trigger ob.obligation }
       /- If we are on the RHS of an implication, add assumption
@@ -118,7 +150,9 @@ where
          obligations from arg are collected directly -/
       | .app md (.abs amd name ty body) arg =>
         let argObs := go F arg implications
-        let bodyObs := (go F body implications).map fun ob =>
+        -- `body` is under the let/abs binder: shift implications for it.
+        let bodyImplications := implications.map fun (m, hyp) => (m, LExpr.liftBVars 1 hyp)
+        let bodyObs := (go F body bodyImplications).map fun ob =>
           { ob with obligation := .app md (.abs amd name ty ob.obligation) arg }
         argObs ++ bodyObs
       | .app _ fn arg => go F fn implications ++ go F arg implications

@@ -17,7 +17,7 @@ namespace Core
 namespace Procedure
 open Std
 
-open Statement Lambda LExpr
+open Statement Core.Lambda LExpr
 
 def fixupError (E : Env) : Env :=
   match E.error with
@@ -98,19 +98,19 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
                     -- that hides the expression from the evaluator, allowing us
                     -- to retain the postcondition body instead of replacing it
                     -- with "true".
-                  (.assume label (.true ())
+                  (Statement.assume label (.true ())
                                  ((Imperative.MetaData.pushElem
                                   #[]
                                   (.label label)
                                   (.expr check.expr)).pushElem
                                   (.label label)
                                   (.msg "FreePostCondition")))
-                | _ => (.assert label check.expr check.md))
+                | _ => (Statement.assert label check.expr check.md))
       p.spec.postconditions
   let precond_assumes :=
     List.map (fun (label, check) =>
       /- the assumptions from preconditions are set to have empty metadata  -/
-      (.assume label check.expr check.md))
+      (Statement.assume label check.expr check.md))
       p.spec.preconditions
   match p.body with
   | .structured bodyStmts =>
@@ -118,7 +118,8 @@ def eval (E : Env) (p : Procedure) : Env × Statistics :=
     (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
   | .cfg _ =>
     -- CFG bodies are not supported here.
-    let errEnv := { E with error := some (.Misc s!"procedure '{p.header.name}': CFG bodies not supported yet") }
+    -- The caller names the procedure, so this says only what went wrong.
+    let errEnv := { E with error := some (.Misc "CFG bodies not supported yet") }
     (errEnv, {})
 
 ---------------------------------------------------------------------

@@ -165,12 +165,15 @@ def BoolOpKind.ofString? (s : String) : Option BoolOpKind := lookupKind names s
 
 inductive StrOpKind where
   | Length | Concat | Substr | ToRegEx | InRegEx | PrefixOf | SuffixOf
+  | Contains | IndexOf | Replace | At | Lt | Le
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
 
 def StrOpKind.names : List (StrOpKind × String) :=
   [(.Length, "Length"), (.Concat, "Concat"), (.Substr, "Substr"),
    (.ToRegEx, "ToRegEx"), (.InRegEx, "InRegEx"),
-   (.PrefixOf, "PrefixOf"), (.SuffixOf, "SuffixOf")]
+   (.PrefixOf, "PrefixOf"), (.SuffixOf, "SuffixOf"),
+   (.Contains, "Contains"), (.IndexOf, "IndexOf"), (.Replace, "Replace"),
+   (.At, "At"), (.Lt, "Lt"), (.Le, "Le")]
 
 def StrOpKind.toString (k : StrOpKind) : String := lookupName names k
 instance : ToString StrOpKind := ⟨StrOpKind.toString⟩
@@ -199,7 +202,7 @@ inductive MapOpKind where
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
 
 def MapOpKind.names : List (MapOpKind × String) :=
-  [(.Const, "const"), (.Select, "select"), (.Update, "update")]
+  [(.Const, "mapConst"), (.Select, "select"), (.Update, "update")]
 
 def MapOpKind.toString (k : MapOpKind) : String := lookupName names k
 instance : ToString MapOpKind := ⟨MapOpKind.toString⟩
@@ -208,13 +211,16 @@ def MapOpKind.ofString? (s : String) : Option MapOpKind := lookupKind names s
 /-! ### Sequence Operations -/
 
 inductive SeqOpKind where
-  | Length | Empty | Append | Select | Build | Update | Contains | Take | Drop
+  | Length | Empty | Append | Select | SelectUnsafe | Build | Update | UpdateUnsafe
+  | Contains | Take | TakeUnsafe | Drop | DropUnsafe
   deriving Repr, DecidableEq, Inhabited, BEq, Hashable
 
 def SeqOpKind.names : List (SeqOpKind × String) :=
   [(.Length, "length"), (.Empty, "empty"), (.Append, "append"),
-   (.Select, "select"), (.Build, "build"), (.Update, "update"),
-   (.Contains, "contains"), (.Take, "take"), (.Drop, "drop")]
+   (.Select, "select"), (.SelectUnsafe, "select!"), (.Build, "build"),
+   (.Update, "update"), (.UpdateUnsafe, "update!"),
+   (.Contains, "contains"), (.Take, "take"), (.TakeUnsafe, "take!"),
+   (.Drop, "drop"), (.DropUnsafe, "drop!")]
 
 def SeqOpKind.toString (k : SeqOpKind) : String := lookupName names k
 instance : ToString SeqOpKind := ⟨SeqOpKind.toString⟩

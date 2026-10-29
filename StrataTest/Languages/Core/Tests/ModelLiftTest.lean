@@ -22,7 +22,7 @@ deliberately failing assertion, runs `verify`, and checks the
 -/
 
 namespace Strata.ModelLiftTest
-open Core Lambda
+open Lambda
 
 ---------------------------------------------------------------------
 -- Integer model
@@ -179,7 +179,7 @@ def quantModelPgm : Program :=
 program Core;
 procedure P(x : int)
 spec {
-  ensures [bad]: (forall q : int :: q < x);
+  ensures [bad]: (forall q : int :: int.lt(q, x));
 }
 {
 };

@@ -51,8 +51,8 @@ def getIrrelevantAxioms (prog : Program) (cache : Cache) (functions : List Strin
     match decl with | .ax a _ => some a.name | _ => none)
   let relevantAxioms := functions.flatMap (fun f =>
     let initialFns :=
-      (f :: cache.funcCG.getCalleesClosure f ++ cache.funcCG.getCallersClosure f).dedup
-    computeRelevantAxioms prog cache.funcCG cache.axiomMap allAxiomNames initialFns []) |>.dedup
+      (f :: cache.funcCG.getCalleesClosure f ++ cache.funcCG.getCallersClosure f).uniq
+    computeRelevantAxioms prog cache.funcCG cache.axiomMap allAxiomNames initialFns []) |>.uniq
   allAxiomNames.filter (fun a => a ∉ relevantAxioms)
 
 open Transform in
@@ -76,9 +76,17 @@ end IrrelevantAxioms
     If the user of this pass removes further axioms because e.g., it is in the
     'aggressive' mode, it will have to validate the model by itself. -/
 def irrelevantAxiomsPipelinePhase (functions : List String) : PipelinePhase :=
-  modelPreservingPipelinePhase "RemoveIrrelevantAxioms" fun prog => do
-    let pruned ← IrrelevantAxioms.run prog functions
-    return (true, pruned)
+  -- No statement is read or written, so every fact survives.
+  modelPreservingPipelinePhase "removeIrrelevantAxioms"
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .staticSingleAssignment,
+                         .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
+                         .noProcedureContracts,
+                         .noPolymorphicProcedures,
+                         .noPolymorphicFunctions])
+    fun prog => do
+      let pruned ← IrrelevantAxioms.run prog functions
+      return (true, pruned)
 
 end -- public section
 end Core

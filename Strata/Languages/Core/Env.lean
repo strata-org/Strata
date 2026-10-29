@@ -4,11 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.Program
 public import Strata.DL.Imperative.EvalContext
 public import Strata.DL.Lambda.LExprEval
 public import Strata.Languages.Core.Factory
+public import Strata.Util.OrderedSet
 
 public section
 
@@ -16,6 +18,7 @@ namespace Core
 open Std (ToFormat Format format)
 open Imperative
 open Strata
+open Strata.Util (OrderedSet)
 
 instance : ToFormat ExpressionMetadata :=
   show ToFormat Unit from inferInstance
@@ -55,6 +58,7 @@ private def formatCoreEntry : PathConditionEntry Expression → Format
   | .assumption label expr => f!"({label}, {expr.eraseTypes})"
   | .varDecl name ty (.det e) => f!"(init {name} : {ty} := {e.eraseTypes})"
   | .varDecl name ty .nondet => f!"(init {name} : {ty})"
+  | .distinct label exprs => f!"(distinct {label}: {exprs.map (·.eraseTypes)})"
 
 def PathCondition.format (p : PathCondition Expression) : Format :=
   match p with
@@ -73,20 +77,21 @@ private def entryExprs : PathConditionEntry Expression → List Expression.Expr
   | .assumption _ e => [e]
   | .varDecl _ _ (.det e) => [e]
   | .varDecl _ _ .nondet => []
+  | .distinct _ exprs => exprs
 
 def PathCondition.getVars (p : PathCondition Expression)
     : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
-  p.flatMap (fun e => (entryExprs e).flatMap Lambda.LExpr.freeVars) |> .eraseDups
+  p.flatMap (fun e => (entryExprs e).flatMap Lambda.LExpr.freeVars) |> OrderedSet.eraseDups
 
 def PathConditions.getVars (ps : PathConditions Expression)
     : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
-  ps.map (fun p => PathCondition.getVars p) |> .flatten |> .eraseDups
+  let exprs := ps.flatMap (fun p => p.flatMap entryExprs)
+  OrderedSet.eraseDups (exprs.flatMap Lambda.LExpr.freeVars)
 
 def ProofObligation.getVars (d : ProofObligation Expression)
     : List (Lambda.IdentT Lambda.LMonoTy Unit) :=
-  let o_vars := Lambda.LExpr.freeVars d.obligation
-  let pc_vars := PathConditions.getVars d.assumptions
-  (o_vars ++ pc_vars).eraseDups
+  let exprs := d.obligation :: d.assumptions.flatMap (fun p => p.flatMap entryExprs)
+  OrderedSet.eraseDups (exprs.flatMap Lambda.LExpr.freeVars)
 
 def ProofObligation.eraseTypes (d : ProofObligation Expression) : ProofObligation Expression :=
   { label := d.label,
@@ -94,7 +99,8 @@ def ProofObligation.eraseTypes (d : ProofObligation Expression) : ProofObligatio
     assumptions := d.assumptions.map (fun m => m.map (fun
       | .assumption label expr => .assumption label expr.eraseTypes
       | .varDecl name ty (.det e) => .varDecl name ty (.det e.eraseTypes)
-      | .varDecl name ty .nondet => .varDecl name ty .nondet)),
+      | .varDecl name ty .nondet => .varDecl name ty .nondet
+      | .distinct label exprs => .distinct label (exprs.map (·.eraseTypes)))),
     obligation := d.obligation.eraseTypes,
     metadata := d.metadata
     }
@@ -142,19 +148,32 @@ def ProofObligations.createAssertions
 /--
 A substitution map from variable identifiers to expressions.
 -/
-@[expose] abbrev SubstMap := Map Expression.Ident Expression.Expr
+abbrev SubstMap := Map Expression.Ident Expression.Expr
 
 structure Env where
   error : Option (Imperative.EvalError Expression)
   program : Program
   substMap : SubstMap
-  exprEnv : Expression.EvalEnv
+  exprEnv : Lambda.LState ⟨ExpressionMetadata, Unit⟩
   datatypes : @Lambda.TypeFactory Unit
   distinct : List (List Expression.Expr)
-  pathConditions : Imperative.PathConditions Expression
+  pathConditions : Imperative.RevPathConditions Expression
   warnings : List (Imperative.EvalWarning Expression)
   deferred : Imperative.ProofObligations Expression
   pathCap : Option Nat := .none
+  /-- When `true`, concrete execution records a failed assertion and keeps
+      going instead of halting on the first failure, so multiple assertion
+      failures can be collected in a single run. See `assertFailures`. -/
+  collectAllAssertFailures : Bool := false
+  /-- Assertion failures collected during concrete execution when
+      `collectAllAssertFailures` is set, most recent first. Each entry carries the
+      assert's label, its evaluated (false) condition, and the statement's
+      metadata — the last of which resolves the failure's source location and
+      property summary without consulting the label. -/
+  assertFailures : List (String × Expression.Expr × Imperative.MetaData Expression) := []
+  /-- When `true`, concrete execution treats `assume` statements as no-ops
+      instead of enforcing them. See `EvalContext.ignoreAssume`. -/
+  ignoreAssumes : Bool := false
 
 def Env.init (empty_factory:=false): Env :=
   let σ := Lambda.LState.init
@@ -165,10 +184,13 @@ def Env.init (empty_factory:=false): Env :=
     exprEnv := σ,
     datatypes := #[],
     distinct := [],
-    pathConditions := [],
+    pathConditions := ⟨[]⟩,
     warnings := []
     deferred := ∅
-    pathCap := .none }
+    pathCap := .none
+    collectAllAssertFailures := false
+    assertFailures := []
+    ignoreAssumes := false }
 
 instance : EmptyCollection Env where
   emptyCollection := Env.init (empty_factory := true)
@@ -178,12 +200,12 @@ instance : Inhabited Env where
 
 instance : ToFormat Env where
   format s :=
-    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred, pathCap := _ }  := s
+    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred, pathCap := _, collectAllAssertFailures := _, assertFailures := _, ignoreAssumes := _ }  := s
     format f!"Error:{Format.line}{error}{Format.line}\
               Subst Map:{Format.line}{substMap}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\
               Datatypes:{Format.line}{datatypes}{Format.line}\
-              Path Conditions:{Format.line}{PathConditions.format pathConditions}{Format.line}{Format.line}\
+              Path Conditions:{Format.line}{PathConditions.format pathConditions.consume}{Format.line}{Format.line}\
               Warnings:{Format.line}{warnings}{Format.line}\
               Deferred Proof Obligations:{Format.line}{deferred}{Format.line}"
 
@@ -201,7 +223,7 @@ def oldVarSubst (subst :  SubstMap) (E : Env) : SubstMap :=
   subst ++ oldLocalVarSubst E
 
 def Env.exprEval (E : Env) (e : Expression.Expr) : Expression.Expr :=
-  e.eval E.exprEnv.config.fuel E.exprEnv
+  (Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv e).fst
 
 def Env.pushScope (E : Env) (scope : (Lambda.Scope CoreLParams)) : Env :=
   { E with exprEnv.state := E.exprEnv.state.push scope }
@@ -215,7 +237,7 @@ def Env.popScope (E : Env) : Env :=
 def Env.factory (E : Env) : (@Lambda.Factory CoreLParams) :=
   E.exprEnv.config.factory
 
-def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except DiagnosticModel Env := do
+def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except Message Env := do
   let exprEnv ← E.exprEnv.addFactory f
   .ok { E with exprEnv := exprEnv }
 
@@ -223,7 +245,7 @@ def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except Diagno
     reference known datatypes. This is checked at evaluation time because
     it is an SMT backend limitation, not a type system constraint. -/
 def validateCasesTypes (funcs : List Function) (tf : @Lambda.TypeFactory Unit) :
-    Except DiagnosticModel Unit := do
+    Except Message Unit := do
   for func in funcs do
     match Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr with
     | none => pure ()
@@ -240,7 +262,7 @@ def validateCasesTypes (funcs : List Function) (tf : @Lambda.TypeFactory Unit) :
     the `@[cases]` attribute was provided (which sets `inlineIfConstr`), and
     rejects cases not yet supported for SMT verification (polymorphic recursive
     functions, missing `@[cases]` attribute). -/
-def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except DiagnosticModel Env := do
+def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except Message Env := do
   if func.isRecursive && !func.typeArgs.isEmpty then
     .error (.fromFormat f!"Polymorphic recursive functions are not yet supported for SMT \
       verification: '{func.name}'. SMT solvers require monomorphic axioms.")
@@ -366,12 +388,12 @@ def Env.merge (cond : Expression.Expr) (E1 E2 : Env) : Env :=
   else
     Env.performMerge cond E1 E2 (by simp_all) (by simp_all)
 
-def Env.addMutualDatatype (E: Env) (block: Lambda.MutualDatatype Unit) : Except DiagnosticModel Env := do
+def Env.addMutualDatatype (E: Env) (block: Lambda.MutualDatatype Unit) : Except Message Env := do
   let f ← Lambda.genBlockFactory (T:=CoreLParams) block
   let env ← E.addFactory f
   return { env with datatypes := E.datatypes.push block }
 
-def Env.addDatatypes (E: Env) (blocks: List (Lambda.MutualDatatype Unit)) : Except DiagnosticModel Env :=
+def Env.addDatatypes (E: Env) (blocks: List (Lambda.MutualDatatype Unit)) : Except Message Env :=
   blocks.foldlM Env.addMutualDatatype E
 
 end Core

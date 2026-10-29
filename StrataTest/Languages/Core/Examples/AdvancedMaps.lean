@@ -36,9 +36,9 @@ spec {
   assert [a0eq1]: a[0] == 1;
   assert [a0neq2]: a[0] != 2;
 
-  b := b[true := -1];
-  assert [bTrueEqTrue]: b[true] == -1;
-  assert [mix]: a[1] == -(b[true]);
+  b := b[true := int.neg(1)];
+  assert [bTrueEqTrue]: b[true] == int.neg(1);
+  assert [mix]: a[1] == int.neg((b[true]));
 };
 #end
 
@@ -69,9 +69,9 @@ spec {
   a[0] := 1;
   assert [a0eq1]: a[0] == 1;
   assert [a0neq2]: !(a[0] == 2);
-  b[true] := -1;
-  assert [bTrueEqTrue]: b[true] == -1;
-  assert [mix]: a[1] == -(b[true]);
+  b[true] := int.neg(1);
+  assert [bTrueEqTrue]: b[true] == int.neg(1);
+  assert [mix]: a[1] == int.neg(b[true]);
 };
 -/
 #guard_msgs in
@@ -136,7 +136,7 @@ Assumptions:
 P_requires_0: a@1[0] == 0
 P_requires_1: c@1[0] == a@1
 Obligation:
-(b@1[true:=-1])[true] == -1
+(b@1[true:=int.neg(1)])[true] == int.neg(1)
 
 Label: mix
 Property: assert
@@ -144,7 +144,7 @@ Assumptions:
 P_requires_0: a@1[0] == 0
 P_requires_1: c@1[0] == a@1
 Obligation:
-((a@1[1:=1])[0:=1])[1] == -((b@1[true:=-1])[true])
+((a@1[1:=1])[0:=1])[1] == int.neg((b@1[true:=int.neg(1)])[true])
 
 ---
 info:
@@ -242,7 +242,7 @@ Assumptions:
 P_requires_0: a@1[0] == 0
 P_requires_1: c@1[0] == a@1
 Obligation:
-(b@1[true:=-1])[true] == -1
+(b@1[true:=int.neg(1)])[true] == int.neg(1)
 
 Label: mix
 Property: assert
@@ -250,7 +250,7 @@ Assumptions:
 P_requires_0: a@1[0] == 0
 P_requires_1: c@1[0] == a@1
 Obligation:
-((a@1[1:=1])[0:=1])[1] == -((b@1[true:=-1])[true])
+((a@1[1:=1])[0:=1])[1] == int.neg((b@1[true:=int.neg(1)])[true])
 
 ---
 info:

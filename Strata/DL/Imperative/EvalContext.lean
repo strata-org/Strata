@@ -22,26 +22,67 @@ inductive PathConditionEntry (P : PureExpr) where
   | assumption (label : String) (expr : P.Expr)
   /-- A variable declaration with a name, type, and optional initializer. -/
   | varDecl (name : P.Ident) (ty : P.Ty) (value : ExprOrNondet P)
+  /-- A distinctness fact: the given expressions are pairwise distinct.
+      Carries a label for parity with `assumption`. -/
+  | distinct (label : String) (exprs : List P.Expr)
 
 /-- The label or name identifying a path condition entry. -/
 def PathConditionEntry.name {P : PureExpr} [ToFormat P.Ident] : PathConditionEntry P → String
   | .assumption label _ => label
   | .varDecl name _ _ => toString (f!"{name}")
+  | .distinct label _ => label
+
+@[grind] def PathConditionEntry.beq [BEq P.Ident] [BEq P.Ty] [BEq P.Expr]
+    (a b : PathConditionEntry P) : Bool :=
+  match a, b with
+  | .assumption l1 e1, .assumption l2 e2 => l1 == l2 && e1 == e2
+  | .varDecl n1 t1 v1, .varDecl n2 t2 v2 => n1 == n2 && t1 == t2 && v1 == v2
+  | .distinct l1 es1, .distinct l2 es2 => l1 == l2 && es1 == es2
+  | _, _ => false
 
 instance [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] : BEq (PathConditionEntry P) where
-  beq
-    | .assumption l1 e1, .assumption l2 e2 => l1 == l2 && e1 == e2
-    | .varDecl n1 t1 (.det e1), .varDecl n2 t2 (.det e2) => n1 == n2 && t1 == t2 && e1 == e2
-    | .varDecl n1 t1 .nondet, .varDecl n2 t2 .nondet => n1 == n2 && t1 == t2
-    | _, _ => false
+  beq := PathConditionEntry.beq
 
-@[expose] abbrev PathCondition (P : PureExpr)  := List (PathConditionEntry P)
-@[expose] abbrev PathConditions (P : PureExpr) := List (PathCondition P)
+theorem PathConditionEntry.beq_eq {P : PureExpr}
+    [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
+    (a b : PathConditionEntry P) : PathConditionEntry.beq a b = true ↔ a = b := by
+  solve_beq a b
+
+/-- Structural decidable equality on path-condition entries. Used by the
+    incremental encoder's pointer-accelerated delta detection as the fallback
+    when pointer identity is inconclusive. -/
+instance [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] :
+    DecidableEq (PathConditionEntry P) :=
+  beq_eq_DecidableEq PathConditionEntry.beq PathConditionEntry.beq_eq
+
+instance [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] :
+    LawfulBEq (PathConditionEntry P) where
+  eq_of_beq h := (PathConditionEntry.beq_eq _ _).mp h
+  rfl := (PathConditionEntry.beq_eq _ _).mpr rfl
+
+/-- Structural equality on path-condition entries, using `ptrFastEq` per field
+    so shared fields settle by pointer identity. Per field rather than on the
+    entry, since entries are usually fresh wrappers around shared fields. -/
+def PathConditionEntry.fastEq {P : PureExpr}
+    [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
+    (a b : PathConditionEntry P) : Bool :=
+  match a, b with
+  | .assumption l1 e1, .assumption l2 e2 =>
+    ptrFastEq l1 l2 && ptrFastEq e1 e2
+  | .varDecl n1 t1 v1, .varDecl n2 t2 v2 =>
+    ptrFastEq n1 n2 && ptrFastEq t1 t2 && ptrFastEq v1 v2
+  | .distinct l1 es1, .distinct l2 es2 =>
+    ptrFastEq l1 l2 && ptrFastEq es1 es2
+  | _, _ => false
+
+abbrev PathCondition (P : PureExpr)  := List (PathConditionEntry P)
+abbrev PathConditions (P : PureExpr) := List (PathCondition P)
 
 def PathConditionEntry.format' {P} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat P.Expr] : PathConditionEntry P → Format
   | .assumption label expr => f!"({label}, {expr})"
   | .varDecl name ty (.det e) => f!"(init {name} : {ty} := {e})"
   | .varDecl name ty .nondet => f!"(init {name} : {ty})"
+  | .distinct label exprs => f!"(distinct {label}: {exprs})"
 
 instance [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat P.Expr] : ToFormat (PathConditionEntry P) where
   format := PathConditionEntry.format'
@@ -93,6 +134,48 @@ def PathConditions.addInNewest (ps : PathConditions P) (m : PathCondition P) : P
 /-- Remove path condition entries with specified names -/
 def PathConditions.removeByNames [ToFormat P.Ident] (ps : PathConditions P) (names : List String) : PathConditions P :=
   ps.map (fun pc => pc.filter (fun e => !names.contains e.name))
+
+/-- A path-condition accumulator whose scopes are each stored reversed
+    (most-recent-first), so that growing the newest scope is O(1).
+
+    Invariant: every scope in `scopes` is stored most-recent-first.
+    The methods (`push`, `prepend`, `addInNewest`) maintain this.
+    Constructing this struct directly, bypasses these operations, so
+    the caller is responsible for supplying scopes already in
+    most-recent-first order. -/
+structure RevPathConditions (P : PureExpr) where
+  scopes : PathConditions P
+
+def RevPathConditions.newest (r : RevPathConditions P) : PathCondition P :=
+  match r.scopes with
+  | [] => []
+  /- Since we're emitting a PathCondition, we need to output the insertion order. -/
+  | p :: _ => p.reverse
+
+def RevPathConditions.pop (r : RevPathConditions P) : RevPathConditions P :=
+  match r.scopes with
+  | [] => ⟨[]⟩
+  | _ :: rest => ⟨rest⟩
+
+def RevPathConditions.push (r : RevPathConditions P) (p : PathCondition P) : RevPathConditions P :=
+  /- RevPathConditions store an individual PathCondition in reversed order. -/
+  ⟨p.reverse :: r.scopes⟩
+
+def RevPathConditions.prepend (r : RevPathConditions P) (e : PathConditionEntry P) : RevPathConditions P :=
+  match r.scopes with
+  /- Add a scope if it does not already exist. -/
+  | [] => ⟨[[e]]⟩
+  | p :: rest => ⟨(e :: p) :: rest⟩
+
+def RevPathConditions.addInNewest (r : RevPathConditions P) (m : PathCondition P) : RevPathConditions P :=
+  match r.scopes with
+  /- Add a scope if it does not already exist. -/
+  | [] => ⟨[m.reverse]⟩
+  | _  => m.foldl (·.prepend ·) r
+
+def RevPathConditions.consume (r : RevPathConditions P) : PathConditions P :=
+  /- Since we're emitting PathConditions, we need to reverse each scope to be in insertion order. -/
+  r.scopes.map (·.reverse)
 
 inductive PropertyType where
   | cover
@@ -155,7 +238,7 @@ instance [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat P.Expr] : ToFormat (ProofO
                   Obligation: {ob.obligation}\n\
                   Metadata: {ob.metadata}\n"
 
-@[expose] abbrev ProofObligations (P : PureExpr) := Array (ProofObligation P)
+abbrev ProofObligations (P : PureExpr) := Array (ProofObligation P)
 
 ---------------------------------------------------------------------
 
@@ -176,6 +259,32 @@ class EvalContext (P : PureExpr) (State : Type) where
   getPathConditions : State → (PathConditions P)
   addPathCondition  : State → (PathCondition P) → State
   deferObligation   : State → (ProofObligation P) → State
+
+  /-- Whether concrete execution (`Cmd.run`) should continue past a failed
+      assertion, recording it rather than halting on the first failure.
+      Defaults to `false`, preserving the halt-on-first-failure behavior. An
+      instance opts into multi-failure collection by overriding this together
+      with `recordAssertFailure`. If you override this to return `true` without
+      also overriding `recordAssertFailure`, failed assertions are silently
+      dropped. -/
+  continuePastAssert : State → Bool := fun _ => false
+  /-- Record a failed assertion (by label, evaluated condition, and the
+      statement's metadata) *without* halting execution. Only consulted by
+      `Cmd.run` when `continuePastAssert` returns `true`; the default is a no-op
+      since the default `continuePastAssert` never triggers it. The metadata lets
+      a consumer resolve the failure's source location without going through the
+      label. -/
+  recordAssertFailure : State → String → P.Expr → MetaData P → State := fun s _ _ _ => s
+
+  /-- Whether concrete execution (`Cmd.run`) should treat `assume` statements as
+      no-ops instead of enforcing them. Defaults to `false` (assumes are
+      enforced: a false or non-boolean assume is a runtime error). When `true`,
+      assumes are skipped entirely — useful for driving a contract-lowered
+      program concretely, where verification-scaffolding assumes (e.g. an
+      `assume false` in the body of a `requires false` procedure) would
+      otherwise derail execution even though the property under test is an
+      assertion, not the assume. -/
+  ignoreAssume : State → Bool := fun _ => false
 
   -- /-- If two states give the same result to all `lookup` calls, they also
   -- give the same result to all `eval` calls. -/

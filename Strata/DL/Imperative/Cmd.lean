@@ -37,6 +37,42 @@ inductive ExprOrNondet (P : PureExpr) where
   | nondet
   deriving Inhabited
 
+@[grind] def ExprOrNondet.beq [BEq P.Expr] (a b : ExprOrNondet P) : Bool :=
+  match a, b with
+  | .det e1, .det e2 => e1 == e2
+  | .nondet, .nondet => true
+  | _, _ => false
+
+instance [BEq P.Expr] : BEq (ExprOrNondet P) where
+  beq := ExprOrNondet.beq
+
+theorem ExprOrNondet.beq_eq {P : PureExpr} [DecidableEq P.Expr]
+    (a b : ExprOrNondet P) : ExprOrNondet.beq a b = true ↔ a = b := by
+  solve_beq a b
+
+instance [DecidableEq P.Expr] : DecidableEq (ExprOrNondet P) :=
+  beq_eq_DecidableEq ExprOrNondet.beq ExprOrNondet.beq_eq
+
+instance [DecidableEq P.Expr] : LawfulBEq (ExprOrNondet P) where
+  eq_of_beq h := (ExprOrNondet.beq_eq _ _).mp h
+  rfl := (ExprOrNondet.beq_eq _ _).mpr rfl
+
+/-! ## Assertion and cover identity -/
+
+/-- An assertion identifier: the label + expression attached to an
+    `assert` command. -/
+structure AssertId (P : PureExpr) where
+  label : String
+  expr  : P.Expr
+
+/-- A cover identifier: the source label and metadata attached to a `cover`
+command. Metadata distinguishes occurrences even when labels are reused.
+
+TODO: Update AssertId to have the identical definition, because labels can
+overlap, and expr may easily change after transformations.
+-/
+abbrev CoverId (P : PureExpr) := String × MetaData P
+
 /-! ## Commands
 
 Commands form the core of the Imperative dialect. They include constructs for
@@ -69,10 +105,35 @@ inductive Cmd (P : PureExpr) : Type where
   -/
   | cover    (label : String) (b : P.Expr) (md : (MetaData P))
 
-@[expose] abbrev Cmds (P : PureExpr) := List (Cmd P)
+abbrev Cmds (P : PureExpr) := List (Cmd P)
 
 instance [Inhabited P.Ident]: Inhabited (Cmd P) where
   default := .set default .nondet default
+
+@[grind] def Cmd.beq [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] [BEq (MetaData P)]
+    (a b : Cmd P) : Bool :=
+  match a, b with
+  | .init n1 t1 e1 md1, .init n2 t2 e2 md2 =>
+    n1 == n2 && t1 == t2 && e1 == e2 && md1 == md2
+  | .set n1 e1 md1, .set n2 e2 md2 => n1 == n2 && e1 == e2 && md1 == md2
+  | .assert l1 b1 md1, .assert l2 b2 md2 => l1 == l2 && b1 == b2 && md1 == md2
+  | .assume l1 b1 md1, .assume l2 b2 md2 => l1 == l2 && b1 == b2 && md1 == md2
+  | .cover l1 b1 md1, .cover l2 b2 md2 => l1 == l2 && b1 == b2 && md1 == md2
+  | _, _ => false
+
+instance [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] [BEq (MetaData P)] : BEq (Cmd P) where
+  beq := Cmd.beq
+
+theorem Cmd.beq_eq {P : PureExpr} [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
+    (a b : Cmd P) : Cmd.beq a b = true ↔ a = b := by
+  solve_beq a b
+
+instance [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] : DecidableEq (Cmd P) :=
+  beq_eq_DecidableEq Cmd.beq Cmd.beq_eq
+
+instance [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] : LawfulBEq (Cmd P) where
+  eq_of_beq h := (Cmd.beq_eq _ _).mp h
+  rfl := (Cmd.beq_eq _ _).mpr rfl
 
 ---------------------------------------------------------------------
 
@@ -82,6 +143,16 @@ def Cmd.getMetaData (c : Cmd P) : MetaData P :=
   | .assert _ _ md | .assume _ _ md | .cover _ _ md =>
    md
 
+/-- The declared types of the `init` commands in `c`: a singleton for `init`,
+    empty otherwise. -/
+@[expose] def Cmd.initTypes (c : Cmd P) : List P.Ty :=
+  match c with
+  | .init _ ty _ _ => [ty]
+  | _ => []
+
+instance (P : PureExpr) : HasInitTypesImp P (Cmd P) where
+  initTypes := Cmd.initTypes
+
 ---------------------------------------------------------------------
 
 class HasPassiveCmds (P : PureExpr) (CmdT : Type) where
@@ -89,8 +160,8 @@ class HasPassiveCmds (P : PureExpr) (CmdT : Type) where
   assert : String → P.Expr → MetaData P → CmdT
 
 instance : HasPassiveCmds P (Cmd P) where
-  assume l e (md := MetaData.empty):= .assume l e md
-  assert l e (md := MetaData.empty):= .assert l e md
+  assume l e md := .assume l e md
+  assert l e md := .assert l e md
 
 class HasHavoc (P : PureExpr) (CmdT : Type) where
   havoc : P.Ident → MetaData P → CmdT
@@ -104,6 +175,141 @@ class HasInit (P : PureExpr) (CmdT : Type) where
 
 instance : HasInit P (Cmd P) where
   init x ty e md := .init x ty e md
+
+---------------------------------------------------------------------
+
+/--
+A call argument is either an input expression, an in-out variable, or an
+output variable.
+-/
+inductive CallArg (P : PureExpr) where
+  /-- An input argument: a by-value expression. -/
+  | inArg (e : P.Expr)
+  /-- An input-output argument: a mutable variable passed by reference. -/
+  | inoutArg (id : P.Ident)
+  /-- An output-only argument: a variable whose final value is returned to the caller. -/
+  | outArg (id : P.Ident)
+
+@[grind] def CallArg.beq [BEq P.Expr] [BEq P.Ident] (a b : CallArg P) : Bool :=
+  match a, b with
+  | .inArg e1, .inArg e2 => e1 == e2
+  | .inoutArg id1, .inoutArg id2 => id1 == id2
+  | .outArg id1, .outArg id2 => id1 == id2
+  | _, _ => false
+
+instance [BEq P.Expr] [BEq P.Ident] : BEq (CallArg P) where
+  beq := CallArg.beq
+
+theorem CallArg.beq_eq {P : PureExpr} [DecidableEq P.Expr] [DecidableEq P.Ident]
+    (a b : CallArg P) : CallArg.beq a b = true ↔ a = b := by
+  solve_beq a b
+
+instance [DecidableEq P.Expr] [DecidableEq P.Ident] : DecidableEq (CallArg P) :=
+  beq_eq_DecidableEq CallArg.beq CallArg.beq_eq
+
+instance [DecidableEq P.Expr] [DecidableEq P.Ident] : LawfulBEq (CallArg P) where
+  eq_of_beq h := (CallArg.beq_eq _ _).mp h
+  rfl := (CallArg.beq_eq _ _).mpr rfl
+
+namespace CallArg
+
+def getInArgs (args : List (CallArg P)) : List P.Expr :=
+  args.filterMap fun | .inArg e => some e | _ => none
+
+def getInoutArgs (args : List (CallArg P)) : List P.Ident :=
+  args.filterMap fun | .inoutArg id => some id | _ => none
+
+@[expose] def getOutArgs (args : List (CallArg P)) : List P.Ident :=
+  args.filterMap fun | .outArg id => some id | _ => none
+
+@[expose] def getLhs (args : List (CallArg P)) : List P.Ident :=
+  args.filterMap fun | .inoutArg id | .outArg id => some id | _ => none
+
+/-- The arguments a call passes for its callee's input formals, in order: its `in`
+    and `inout` arguments. -/
+@[expose] def inputArgs (args : List (CallArg P)) : List (CallArg P) :=
+  args.filter fun | .outArg _ => false | _ => true
+
+/-- The arguments a call passes for its callee's output formals, in order: its
+    `inout` and `out` arguments. -/
+@[expose] def resultArgs (args : List (CallArg P)) : List (CallArg P) :=
+  args.filter fun | .inArg _ => false | _ => true
+
+def replaceInArgs (args : List (CallArg P)) (newExprs : List P.Expr) : List (CallArg P) :=
+  go args newExprs
+where
+  go : List (CallArg P) → List P.Expr → List (CallArg P)
+  | [], _ => []
+  | .inArg _ :: rest, e :: es => .inArg e :: go rest es
+  | .inArg e :: rest, [] => .inArg e :: go rest []
+  -- `getInputExprs` emits a slot for each `inoutArg` too; consume it (keeping
+  -- the id) so the cursor stays aligned with the `inArg` positions.
+  | .inoutArg id :: rest, _ :: es => .inoutArg id :: go rest es
+  | a :: rest, es => a :: go rest es
+
+theorem replaceInArgs_length (args : List (CallArg P)) (newExprs : List P.Expr) :
+    (replaceInArgs args newExprs).length = args.length := by
+  simp [replaceInArgs]
+  suffices h : ∀ es, (replaceInArgs.go args es).length = args.length from h newExprs
+  induction args with
+  | nil => simp [replaceInArgs.go]
+  | cons a rest ih =>
+    intro es
+    match a, es with
+    | .inArg _, e :: es => simp [replaceInArgs.go, ih]
+    | .inArg _, [] => simp [replaceInArgs.go, ih]
+    | .inoutArg _, e :: es => simp [replaceInArgs.go, ih]
+    | .inoutArg _, [] => simp [replaceInArgs.go, ih]
+    | .outArg _, es => simp [replaceInArgs.go, ih]
+
+end CallArg
+
+/--
+Extend Imperative's commands by adding a procedure call.
+-/
+inductive CmdExt (P : PureExpr) where
+  /-- A standard imperative command. -/
+  | cmd (c : Cmd P)
+  /-- A procedure call with the given name and arguments. -/
+  | call (procName : String) (args : List (CallArg P))
+         (md : MetaData P)
+
+@[grind] def CmdExt.beq [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] [BEq (MetaData P)]
+    (a b : CmdExt P) : Bool :=
+  match a, b with
+  | .cmd c1, .cmd c2 => c1 == c2
+  | .call n1 args1 md1, .call n2 args2 md2 => n1 == n2 && args1 == args2 && md1 == md2
+  | _, _ => false
+
+instance [BEq P.Ident] [BEq P.Ty] [BEq P.Expr] [BEq (MetaData P)] : BEq (CmdExt P) where
+  beq := CmdExt.beq
+
+theorem CmdExt.beq_eq {P : PureExpr} [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr]
+    (a b : CmdExt P) : CmdExt.beq a b = true ↔ a = b := by
+  solve_beq a b
+
+instance [DecidableEq P.Ident] [DecidableEq P.Ty] [DecidableEq P.Expr] : DecidableEq (CmdExt P) :=
+  beq_eq_DecidableEq CmdExt.beq CmdExt.beq_eq
+
+instance : HasPassiveCmds P (CmdExt P) where
+  assert l e md := .cmd (.assert l e md)
+  assume l e md := .cmd (.assume l e md)
+
+instance : HasHavoc P (CmdExt P) where
+  havoc x md := .cmd (.set x .nondet md)
+
+instance : HasInit P (CmdExt P) where
+  init x ty e md := .cmd (.init x ty e md)
+
+/-- The declared init-types of a `CmdExt`: those of the wrapped command; a
+    procedure `call` initializes nothing. -/
+@[expose] def CmdExt.initTypes (c : CmdExt P) : List P.Ty :=
+  match c with
+  | .cmd c => Cmd.initTypes c
+  | .call _ _ _ => []
+
+instance (P : PureExpr) : HasInitTypesImp P (CmdExt P) where
+  initTypes := CmdExt.initTypes
 
 ---------------------------------------------------------------------
 
@@ -141,17 +347,9 @@ def Cmds.getVars [HasFvars P] (cs : Cmds P) : List P.Ident :=
   termination_by (sizeOf cs)
 end
 
-instance (P : PureExpr) [HasFvars P]
-  : HasVarsPure P (Cmd P) where
-  getVars := Cmd.getVars
-
-instance (P : PureExpr) [HasFvars P]
-  : HasVarsPure P (Cmds P) where
-  getVars := Cmds.getVars
-
 
 /-- Get all variables defined by the command `c`. -/
-def Cmd.definedVars (c : Cmd P) : List P.Ident :=
+@[expose] def Cmd.definedVars (c : Cmd P) : List P.Ident :=
   match c with
   | .init name _ _ _ => [name]
   | _ => []
@@ -179,14 +377,10 @@ def Cmds.modifiedVars (cs : Cmds P) : List P.Ident :=
   | c :: crest => Cmd.modifiedVars c ++ Cmds.modifiedVars crest
   termination_by (sizeOf cs)
 
-instance (P : PureExpr) : HasVarsImp P (Cmd P) where
+instance (P : PureExpr) [HasFvars P] : HasVarsImp P (Cmd P) where
   definedVars c _ := Cmd.definedVars c
   modifiedVars := Cmd.modifiedVars
-
-instance (P : PureExpr) : HasVarsImp P (Cmds P) where
-  definedVars c _ := Cmds.definedVars c
-  modifiedVars := Cmds.modifiedVars
-  -- order matters for Havoc, so needs to override the default
+  readVars := Cmd.getVars
 
 mutual
 /-- Get all operator/function names referenced by `c`. -/

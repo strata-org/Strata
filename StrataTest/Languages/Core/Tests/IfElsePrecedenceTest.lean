@@ -25,7 +25,7 @@ def ifElsePlusPgm : Program :=
 program Core;
 
 function myFunc (b : bool, x : int) : int {
-  if b then 10 else 1 + x
+  if b then 10 else int.add(1, x)
 }
 
 procedure Test()

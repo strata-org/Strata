@@ -5,13 +5,11 @@
 -/
 import Lean.Data.Json
 
-import Strata.Backends.CBMC.StrataToCBMC
+import Strata.Cli.Framework
 import Strata.Backends.CBMC.CoreToCBMC
 import Strata.Backends.CBMC.GOTO.DefaultSymbols
 import Strata.Languages.Core.Verifier
-import Strata.Languages.C_Simp.Verify
 import StrataDDM.Util.IO
-import Std.Internal.Parsec
 
 open Strata
 open StrataDDM.Elab (LoadedDialects)
@@ -27,37 +25,26 @@ def main (args : List String) : IO Unit := do
   | [file] => do
     let text ← StrataDDM.Util.readInputSource file
     let inputCtx := Lean.Parser.mkInputContext text (StrataDDM.Util.displayName file)
-    let dctx := LoadedDialects.builtin
-    let dctx := dctx.addDialect! Core
-    let dctx := dctx.addDialect! C_Simp
+    let dctx := LoadedDialects.builtin.addDialect! Core
     let leanEnv ← Lean.mkEmptyEnvironment 0
     match StrataDDM.Elab.elabProgram dctx leanEnv inputCtx with
     | .ok pgm =>
       if pgm.commands.size != 1 then
         IO.println "Error: expected exactly 1 function"
-      else
-        let baseName := System.FilePath.fileName file |>.getD file
-        let baseName := if baseName.endsWith ".st" then (baseName.dropEnd 3).toString else baseName
-        if file.endsWith ".csimp.st" then
-          let csimp_prog := C_Simp.get_program pgm
-          match CSimp.testSymbols csimp_prog.funcs.head! with
+      else if file.endsWith ".core.st" then
+        let baseName := Strata.Cli.deriveBaseName [".st"] file
+        let coreProg := (Core.getProgram pgm inputCtx).fst
+        match coreProg.decls.head! with
+        | .proc f _ => match Core.testSymbols f with
           | .ok s =>
             let wrapped ← wrapOutput s (moduleName := baseName)
             IO.println wrapped
           | .error e => throw (IO.userError e)
-        else if file.endsWith ".core.st" then
-          let core_prog := (Core.getProgram pgm inputCtx).fst
-          match core_prog.decls.head! with
-            | .proc f _ => match Core.testSymbols f with
-              | .ok s =>
-                let wrapped ← wrapOutput s (moduleName := baseName)
-                IO.println wrapped
-              | .error e => throw (IO.userError e)
-            | _ => IO.println "Error: expected Strata Core procedure"
-        else
-          IO.println "Error: Unrecognized file extension"
+        | _ => IO.println "Error: expected Strata Core procedure"
+      else
+        IO.println "Error: expected a .core.st file"
     | .error errors =>
       for e in errors do
         let msg ← e.toString
         println! s!"Error: {msg}"
-  | _ => IO.println "Error: incorrect usage. Usage: StrataToCBMC filename or StrataToCBMC test"
+  | _ => IO.println "Error: incorrect usage. Usage: StrataToCBMC filename"

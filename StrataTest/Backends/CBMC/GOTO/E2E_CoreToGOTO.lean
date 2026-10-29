@@ -8,7 +8,7 @@ meta import Strata.Backends.CBMC.CollectSymbols
 meta import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
 import StrataDDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.DDMTransform.Translate
-import Lean.Server.Utils
+meta import Lean.Server.Utils
 
 /-! ## End-to-end tests: Core program → GOTO JSON
 
@@ -39,7 +39,7 @@ private def coreToGotoJson (p : StrataDDM.Program) :
   let p := procs[0]!
   let pname := Core.CoreIdent.toPretty p.header.name
   let ctx ← procedureToGotoCtx Env p (axioms := axioms) (distincts := distincts)
-  let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx.1).mapError (fun e => f!"{e}")
+  let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx).mapError (fun e => f!"{e}")
   let extraJson := Lean.toJson extraSyms
   let symtab := match json.symtab, extraJson with
     | .obj m1, .obj m2 => Lean.Json.obj (m2.mergeWith (fun _ v _ => v) m1)
@@ -53,12 +53,12 @@ def E2E_SimpleAssert :=
 #strata
 program Core;
 procedure test(x : int) {
-  assert (x > 0);
+  assert (int.gt(x, 0));
 };
 #end
 
 #eval do
-  let (.ok (symtab, goto)) := coreToGotoJson E2E_SimpleAssert | IO.throwServerError "translation failed"
+  let (.ok (symtab, goto)) := coreToGotoJson E2E_SimpleAssert | Lean.IO.throwServerError "translation failed"
   assert! symtab.getObjValD "test" != Lean.Json.null
   assert! goto.getObjValD "functions" != Lean.Json.null
 
@@ -70,14 +70,14 @@ def E2E_Precondition :=
 program Core;
 procedure test(x : int)
 spec {
-  requires (x > 0);
+  requires (int.gt(x, 0));
 } {
-  assert (x > 0);
+  assert (int.gt(x, 0));
 };
 #end
 
 #eval do
-  let (.ok (symtab, _)) := coreToGotoJson E2E_Precondition | IO.throwServerError "translation failed"
+  let (.ok (symtab, _)) := coreToGotoJson E2E_Precondition | Lean.IO.throwServerError "translation failed"
   let testSym := symtab.getObjValD "test"
   let codeType := testSym.getObjValD "type"
   let namedSub := codeType.getObjValD "namedSub"
@@ -92,14 +92,14 @@ def E2E_Postcondition :=
 program Core;
 procedure test(x : int)
 spec {
-  ensures (x > 0);
+  ensures (int.gt(x, 0));
 } {
-  assert (x > 0);
+  assert (int.gt(x, 0));
 };
 #end
 
 #eval do
-  let (.ok (symtab, _)) := coreToGotoJson E2E_Postcondition | IO.throwServerError "translation failed"
+  let (.ok (symtab, _)) := coreToGotoJson E2E_Postcondition | Lean.IO.throwServerError "translation failed"
   let testSym := symtab.getObjValD "test"
   let codeType := testSym.getObjValD "type"
   let namedSub := codeType.getObjValD "namedSub"
@@ -113,12 +113,12 @@ def E2E_Cover :=
 #strata
 program Core;
 procedure test(x : int) {
-  cover (x > 0);
+  cover (int.gt(x, 0));
 };
 #end
 
 #eval do
-  let (.ok (_, goto)) := coreToGotoJson E2E_Cover | IO.throwServerError "translation failed"
+  let (.ok (_, goto)) := coreToGotoJson E2E_Cover | Lean.IO.throwServerError "translation failed"
   assert! (goto.pretty.splitOn "ASSERT").length > 1
 
 -------------------------------------------------------------------------------
@@ -127,14 +127,14 @@ procedure test(x : int) {
 def E2E_BVOps :=
 #strata
 program Core;
-procedure test(x : bv32, y : bv32) {
-  var z : bv32 := x + y;
-  assert (z > bv{32}(0));
+procedure test(x : bv W32, y : bv W32) {
+  var z : bv W32 := bv32.add(x, y);
+  assert (bv32.uGt(z, bv{32}(0)));
 };
 #end
 
 #eval do
-  let (.ok (symtab, goto)) := coreToGotoJson E2E_BVOps | IO.throwServerError "translation failed"
+  let (.ok (symtab, goto)) := coreToGotoJson E2E_BVOps | Lean.IO.throwServerError "translation failed"
   assert! symtab.getObjValD "test" != Lean.Json.null
   assert! goto.getObjValD "functions" != Lean.Json.null
 
@@ -146,19 +146,19 @@ def E2E_FreeSpecs :=
 program Core;
 procedure test(x : int)
 spec {
-  free requires (x > 10);
-  requires (x >= 0);
-  free ensures (x > 5);
-  ensures (x >= 0);
+  free requires (int.gt(x, 10));
+  requires (int.ge(x, 0));
+  free ensures (int.gt(x, 5));
+  ensures (int.ge(x, 0));
 }
 {
-  assert (x >= 0);
+  assert (int.ge(x, 0));
 };
 #end
 
 #eval do
   match coreToGotoJson E2E_FreeSpecs with
-  | .error e => IO.throwServerError s!"translation failed: {e}"
+  | .error e => Lean.IO.throwServerError s!"translation failed: {e}"
   | .ok (symtab, _) =>
     let testSym := symtab.getObjValD "test"
     let codeType := testSym.getObjValD "type"
@@ -180,7 +180,7 @@ def E2E_Call :=
 #strata
 program Core;
 procedure callee(x : int, out r : int) {
-  r := x + 1;
+  r := int.add(x, 1);
 };
 procedure caller(out y : int) {
   call callee(42, out y);
@@ -201,7 +201,7 @@ private def coreToGotoJsonByName (p : StrataDDM.Program) (name : String) :
     | .error f!"procedure {name} not found"
   let pname := Core.CoreIdent.toPretty proc.header.name
   let ctx ← procedureToGotoCtx Env proc (axioms := axioms) (distincts := distincts)
-  let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx.1).mapError (fun e => f!"{e}")
+  let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx).mapError (fun e => f!"{e}")
   let extraJson := Lean.toJson extraSyms
   let symtab := match json.symtab, extraJson with
     | .obj m1, .obj m2 => Lean.Json.obj (m2.mergeWith (fun _ v _ => v) m1)
@@ -216,18 +216,48 @@ private def coreToGotoJsonByName (p : StrataDDM.Program) (name : String) :
 
 -------------------------------------------------------------------------------
 
--- Test: axioms are emitted as ASSUME instructions
-def E2E_Axiom :=
+-- Test: an inout call site translates without hitting the typeless-fvar path.
+-- `getInputExprs` emits a bare `fvar … none` for an inout argument; the call
+-- arm must recover its type so `toExpr` succeeds. Errors fail the test (a
+-- regression re-surfaces as `.error`, not a silent pass).
+def E2E_InoutCall :=
 #strata
 program Core;
-axiom [positive_fact]: (42 > 0);
-procedure test(x : int) {
-  assert (x > 0);
+procedure helper(inout y : int) { };
+procedure caller() {
+  var y : int := 0;
+  call helper(inout y);
 };
 #end
 
 #eval do
-  let (.ok (_, goto)) := coreToGotoJson E2E_Axiom | IO.throwServerError "translation failed"
+  let (.ok (_, goto)) := coreToGotoJsonByName E2E_InoutCall "caller"
+    | Lean.IO.throwServerError "translation failed"
+  assert! (goto.pretty.splitOn "FUNCTION_CALL").length > 1
+
+-- Translating `helper` (which owns the inout parameter) pins the rename-map
+-- dedup: the inout binds to the formal symbol `helper::y`, and no shadow local
+-- `helper::1::y` is emitted. Reverting the outputs-filter regresses this.
+#eval do
+  let (.ok (symtab, _)) := coreToGotoJsonByName E2E_InoutCall "helper"
+    | Lean.IO.throwServerError "translation failed"
+  assert! symtab.getObjValD "helper::y" != Lean.Json.null
+  assert! symtab.getObjValD "helper::1::y" == Lean.Json.null
+
+-------------------------------------------------------------------------------
+
+-- Test: axioms are emitted as ASSUME instructions
+def E2E_Axiom :=
+#strata
+program Core;
+axiom [positive_fact]: (int.gt(42, 0));
+procedure test(x : int) {
+  assert (int.gt(x, 0));
+};
+#end
+
+#eval do
+  let (.ok (_, goto)) := coreToGotoJson E2E_Axiom | Lean.IO.throwServerError "translation failed"
   -- The GOTO output should contain an ASSUME for the axiom
   assert! (goto.pretty.splitOn "ASSUME").length > 1
 
@@ -247,7 +277,7 @@ procedure test() {
 #end
 
 #eval do
-  let (.ok (_, goto)) := coreToGotoJson E2E_Distinct | IO.throwServerError "translation failed"
+  let (.ok (_, goto)) := coreToGotoJson E2E_Distinct | Lean.IO.throwServerError "translation failed"
   -- Should have 3 ASSUME instructions for pairwise != (a!=b, a!=c, b!=c)
   let assumes := (goto.pretty.splitOn "ASSUME").length - 1
   assert! assumes >= 3
@@ -267,7 +297,7 @@ procedure test(s : string) {
 #end
 
 #eval do
-  let (.ok (symtab, goto)) := coreToGotoJson E2E_Regex | IO.throwServerError "translation failed"
+  let (.ok (symtab, goto)) := coreToGotoJson E2E_Regex | Lean.IO.throwServerError "translation failed"
   let gotoStr := goto.pretty
   -- The GOTO output should contain function_application nodes
   assert! (gotoStr.splitOn "function_application").length > 1
@@ -284,12 +314,12 @@ program Core;
 function helper(x : int) : int;
 procedure caller(x : int) {
   var b : int;
-  if (x > 0) {
+  if (int.gt(x, 0)) {
     b := helper(x);
   } else {
     b := 0;
   }
-  assert (b >= 0);
+  assert (int.ge(b, 0));
 };
 #end
 
@@ -304,21 +334,23 @@ procedure caller(x : int) {
 
 -------------------------------------------------------------------------------
 
--- Test: local function declarations (funcDecl) are lifted to top-level GOTO functions
-def E2E_FuncDecl :=
+-- Test: internal function syntax becomes a Lambda-valued local. Core-to-GOTO
+-- does not yet support function-typed local variables, so it must reject this
+-- form.
+def E2E_LambdaValuedLocalFunction :=
 #strata
 program Core;
 procedure test(x : int) {
-  function double(n : int) : int { n + n }
-  assert (double(x) >= 0 || double(x) < 0);
+  function double(n : int) : int { int.add(n, n) }
+  assert (int.ge(double(x), 0) || int.lt(double(x), 0));
 };
 #end
 
-#eval do
-  let (.ok (symtab, _)) := coreToGotoJson E2E_FuncDecl | IO.throwServerError "translation failed"
-  let symStr := symtab.pretty
-  -- The lifted function "double" should appear in the symbol table
-  assert! (symStr.splitOn "double").length > 1
+#guard
+  match coreToGotoJson E2E_LambdaValuedLocalFunction with
+  | .error e =>
+    toString e == "[toGotoType] Function types not supported in GOTO translation"
+  | .ok _ => false
 
 -------------------------------------------------------------------------------
 
@@ -327,12 +359,12 @@ def E2E_SourceLoc :=
 #strata
 program Core;
 procedure test(x : int) {
-  assert (x > 0);
+  assert (int.gt(x, 0));
 };
 #end
 
 #eval do
-  let (.ok (_, goto)) := coreToGotoJson E2E_SourceLoc | IO.throwServerError "translation failed"
+  let (.ok (_, goto)) := coreToGotoJson E2E_SourceLoc | Lean.IO.throwServerError "translation failed"
   let gotoStr := goto.pretty
   -- The GOTO output should contain non-zero line numbers from source locations
   assert! (gotoStr.splitOn "\"line\"").length > 1
@@ -366,20 +398,20 @@ private def coreToGotoJsonWithSummary (p : StrataDDM.Program) (summary : String)
   let p' : Core.Procedure := { p with body := .structured (injectPropertySummary bodyStmts summary) }
   let pname := Core.CoreIdent.toPretty p'.header.name
   let ctx ← procedureToGotoCtx Env p'
-  let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx.1).mapError (fun e => f!"{e}")
+  let json ← (CoreToGOTO.CProverGOTO.Context.toJson pname ctx).mapError (fun e => f!"{e}")
   return (json.symtab, json.goto)
 
 def E2E_PropertySummary :=
 #strata
 program Core;
 procedure test(x : int) {
-  assert (x > 0);
+  assert (int.gt(x, 0));
 };
 #end
 
 #eval do
   let (.ok (_, goto)) := coreToGotoJsonWithSummary E2E_PropertySummary "x must be positive"
-    | IO.throwServerError "translation failed"
+    | Lean.IO.throwServerError "translation failed"
   let gotoStr := goto.pretty
   -- The GOTO JSON should contain the property summary as the comment
   assert! (gotoStr.splitOn "x must be positive").length > 1

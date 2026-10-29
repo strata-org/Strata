@@ -6,26 +6,38 @@
 module
 
 public import Strata.Transform.ProcBodyVerify
-public import Strata.Transform.CoreSpecification
+public import Strata.Transform.CoreSpecificationProps
+public import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Std.Tactic.BVDecide.Normalize.Prop
 import Strata.Languages.Core.ProcedureWF
 import Strata.Languages.Core.StatementSemanticsProps
+import Strata.DL.Imperative.Logic.TraceInterpProps
+import all Strata.Util.ListMap
 
 public section
 
-/-! # Procedure Body Verification Correctness Proof -/
+/-! # Procedure Body Verification Correctness Proof
+
+`procToVerifyStmt` turns a procedure into one verification statement: its
+parameters are initialized, its preconditions assumed, its body run, and its
+non-free postconditions asserted. The theorems here say that validity of that
+statement establishes the procedure's correctness.
+
+## Key results
+
+- `procBodyVerify_procedureCorrectOnTraces`: if every event trace of the
+  verification statement is assertion-valid under a condition interpretation
+  in which evaluator-true assumptions hold, the procedure satisfies
+  `ProcedureAssertsValidOnTraces` under it. A call emits its callee's contract
+  checks into the trace, so no assumption about calls is needed.
+- `procToVerifyStmt_structure`: the verification statement is a prefix of
+  initializations and assumptions, the body block, and the postcondition
+  asserts, and the prefix can reach every well-formed entry environment.
+-/
 
 namespace ProcBodyVerifyCorrect
 
 open Core Core.ProcBodyVerify Imperative Lambda Transform Core.WF
-
-/-! ## coreIsAtAssert helpers -/
-
-private theorem coreIsAtAssert_not_terminal (ρ : Env Expression) (a : AssertId Expression) :
-    ¬ coreIsAtAssert (.terminal ρ) a := by simp [coreIsAtAssert]
-
-private theorem coreIsAtAssert_not_exiting (lbl : String) (ρ : Env Expression) (a : AssertId Expression) :
-    ¬ coreIsAtAssert (.exiting lbl ρ) a := by simp [coreIsAtAssert]
 
 /-! ## Input Environment Reconstruction, from the prefix statements of ProcBodyVerify
 
@@ -55,14 +67,15 @@ private def prefixInitEnv : List Statement → Imperative.Env Expression → Imp
       | some x => { ρ' with store := fun y => if x = y then none else ρ'.store y }
       | none => ρ'
 
-@[simp] private theorem prefixInitEnv_eval (stmts : List Statement) (ρ : Imperative.Env Expression) :
-    (prefixInitEnv stmts ρ).eval = ρ.eval := by
+
+@[simp] private theorem prefixInitEnv_hasFailure (stmts : List Statement) (ρ : Imperative.Env Expression) :
+    (prefixInitEnv stmts ρ).hasFailure = ρ.hasFailure := by
   induction stmts with
   | nil => rfl
   | cons s rest ih => simp [prefixInitEnv]; cases stmtInitVar s <;> simp [ih]
 
-@[simp] private theorem prefixInitEnv_hasFailure (stmts : List Statement) (ρ : Imperative.Env Expression) :
-    (prefixInitEnv stmts ρ).hasFailure = ρ.hasFailure := by
+@[simp] private theorem prefixInitEnv_factory (stmts : List Statement) (ρ : Imperative.Env Expression) :
+    (prefixInitEnv stmts ρ).factory = ρ.factory := by
   induction stmts with
   | nil => rfl
   | cons s rest ih => simp [prefixInitEnv]; cases stmtInitVar s <;> simp [ih]
@@ -84,20 +97,41 @@ private theorem prefixInitEnv_store_noninit (s : Statement) (rest : List Stateme
     (prefixInitEnv (s :: rest) ρ).store = (prefixInitEnv rest ρ).store := by
   simp [prefixInitEnv, hs]
 
+/-- `prefixInitEnv` only ever clears bindings (sets them to `none`), so it
+    preserves store well-formedness (value-only-ness). -/
+private theorem prefixInitEnv_store_wf (stmts : List Statement)
+    (ρ : Imperative.Env Expression) (fac : Expression.Factory)
+    (h : Imperative.WellFormedStore ρ.store fac) :
+    Imperative.WellFormedStore (prefixInitEnv stmts ρ).store fac := by
+  induction stmts with
+  | nil => exact h
+  | cons s rest ih =>
+    intro y w hy
+    simp only [prefixInitEnv] at hy
+    cases hsv : stmtInitVar s with
+    | none => simp only [hsv] at hy; exact ih y w hy
+    | some x =>
+      simp only [hsv] at hy
+      split at hy
+      · exact absurd hy (by simp)
+      · exact ih y w hy
+
 /-- Recursive predicate: each statement in the list can step correctly
     from its `prefixInitEnv` state. -/
 private def PrefixStepsOK
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (π : String → Option Procedure)
     : List Statement → Imperative.Env Expression → Prop
   | [], _ => True
   | s :: rest, ρ =>
-    PrefixStepsOK π φ rest ρ ∧
+    PrefixStepsOK π rest ρ ∧
     ∃ c, s = Stmt.cmd c ∧
-      ∃ σ', EvalCommand π φ ρ.eval (prefixInitEnv (s :: rest) ρ).store c σ' false ∧
+      ∃ σ', EvalCommand π (prefixInitEnv (s :: rest) ρ).factory (prefixInitEnv (s :: rest) ρ).store c σ' false ∧
         σ' = (prefixInitEnv rest ρ).store
 
 private theorem Env_eq {ρ₁ ρ₂ : Imperative.Env Expression}
-    (h_s : ρ₁.store = ρ₂.store) (h_e : ρ₁.eval = ρ₂.eval) (h_f : ρ₁.hasFailure = ρ₂.hasFailure) :
+    (h_s : ρ₁.store = ρ₂.store)
+    (h_fac : ρ₁.factory = ρ₂.factory)
+    (h_f : ρ₁.hasFailure = ρ₂.hasFailure) :
     ρ₁ = ρ₂ := by
   cases ρ₁; cases ρ₂; simp_all
 
@@ -105,10 +139,10 @@ private theorem Env_eq {ρ₁ ρ₂ : Imperative.Env Expression}
     stepping from `prefixInitEnv stmts ρ` reaches `.terminal ρ`. -/
 private theorem prefixInitEnv_steps
     (stmts : List Statement) (ρ : Imperative.Env Expression)
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (π : String → Option Procedure)
     (h_hf : ρ.hasFailure = false)
-    (h_ok : PrefixStepsOK π φ stmts ρ) :
-    Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+    (h_ok : PrefixStepsOK π stmts ρ) :
+    Imperative.StepStmtStar Expression (EvalCommand π)
       (.stmts stmts (prefixInitEnv stmts ρ)) (.terminal ρ) := by
   induction stmts with
   | nil =>
@@ -117,22 +151,18 @@ private theorem prefixInitEnv_steps
   | cons s rest ih =>
     obtain ⟨h_ok_rest, c, rfl, σ', h_eval, h_σ'⟩ := h_ok
     have ih' := ih h_ok_rest
-    have h_eval' : EvalCommand π φ (prefixInitEnv (Stmt.cmd c :: rest) ρ).eval
-        (prefixInitEnv (Stmt.cmd c :: rest) ρ).store c σ' false := by
-      rwa [prefixInitEnv_eval]
     have h_env_eq : { (prefixInitEnv (Stmt.cmd c :: rest) ρ) with
         store := σ',
         hasFailure := (prefixInitEnv (Stmt.cmd c :: rest) ρ).hasFailure || false } =
         prefixInitEnv rest ρ :=
-      Env_eq h_σ'
-        (by simp [prefixInitEnv_eval])
+      Env_eq h_σ' (by simp [prefixInitEnv_factory])
         (by simp [prefixInitEnv_hasFailure, h_hf])
-    have h_one_step : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+    have h_one_step : StepStmtStar Expression (EvalCommand π)
         (.stmt (Stmt.cmd c) (prefixInitEnv (Stmt.cmd c :: rest) ρ))
         (.terminal (prefixInitEnv rest ρ)) :=
-      .step _ _ _ (.step_cmd h_eval') (h_env_eq ▸ .refl _)
+      .step _ _ _ (.step_cmd h_eval) (h_env_eq ▸ .refl _)
     exact ReflTrans_Transitive _ _ _ _
-      (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
+      (stmts_cons_step Expression (EvalCommand π)
         (Stmt.cmd c) rest (prefixInitEnv (Stmt.cmd c :: rest) ρ)
         (prefixInitEnv rest ρ) h_one_step)
       ih'
@@ -146,10 +176,9 @@ private theorem prefixInitEnv_append (a b : List Statement) (ρ : Imperative.Env
     rw [ih]
 
 private theorem PrefixStepsOK_append (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval)
     (a b : List Statement) (ρ : Imperative.Env Expression) :
-    PrefixStepsOK π φ (a ++ b) ρ ↔
-      PrefixStepsOK π φ b ρ ∧ PrefixStepsOK π φ a (prefixInitEnv b ρ) := by
+    PrefixStepsOK π (a ++ b) ρ ↔
+      PrefixStepsOK π b ρ ∧ PrefixStepsOK π a (prefixInitEnv b ρ) := by
   induction a with
   | nil => simp [PrefixStepsOK]
   | cons s rest ih =>
@@ -158,21 +187,17 @@ private theorem PrefixStepsOK_append (π : String → Option Procedure)
     constructor
     · rintro ⟨⟨hb, hrest⟩, c, hs, σ', heval, hσ'⟩
       refine ⟨hb, ⟨hrest, c, hs, σ', ?_, ?_⟩⟩
-      · have h1 : (prefixInitEnv b ρ).eval = ρ.eval := prefixInitEnv_eval b ρ
-        have h2 : prefixInitEnv (s :: rest) (prefixInitEnv b ρ) = prefixInitEnv (s :: (rest ++ b)) ρ := by
-          show prefixInitEnv (s :: rest) (prefixInitEnv b ρ) = prefixInitEnv ((s :: rest) ++ b) ρ
+      · have h2 : prefixInitEnv (s :: rest) (prefixInitEnv b ρ) = prefixInitEnv ((s :: rest) ++ b) ρ := by
           rw [← prefixInitEnv_append]
-        rw [h1, h2]; exact heval
+        rw [h2]; exact heval
       · have h2 : prefixInitEnv rest (prefixInitEnv b ρ) = prefixInitEnv (rest ++ b) ρ := by
           rw [← prefixInitEnv_append]
         rw [h2]; exact hσ'
     · rintro ⟨hb, hrest, c, hs, σ', heval, hσ'⟩
       refine ⟨⟨hb, hrest⟩, c, hs, σ', ?_, ?_⟩
-      · have h1 : (prefixInitEnv b ρ).eval = ρ.eval := prefixInitEnv_eval b ρ
-        have h2 : prefixInitEnv (s :: rest) (prefixInitEnv b ρ) = prefixInitEnv (s :: (rest ++ b)) ρ := by
-          show prefixInitEnv (s :: rest) (prefixInitEnv b ρ) = prefixInitEnv ((s :: rest) ++ b) ρ
+      · have h2 : prefixInitEnv (s :: rest) (prefixInitEnv b ρ) = prefixInitEnv ((s :: rest) ++ b) ρ := by
           rw [← prefixInitEnv_append]
-        rw [h1, h2] at heval; exact heval
+        rw [h2] at heval; exact heval
       · have h2 : prefixInitEnv rest (prefixInitEnv b ρ) = prefixInitEnv (rest ++ b) ρ := by
           rw [← prefixInitEnv_append]
         rw [h2] at hσ'; exact hσ'
@@ -207,18 +232,18 @@ private theorem prefixInitEnv_noninit_list (stmts : List Statement)
 
 /-- PrefixStepsOK for a list of assume statements, given preconditions hold. -/
 private theorem PrefixStepsOK_assumes
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (π : String → Option Procedure)
     (preconds : ListMap CoreLabel Procedure.Check)
     (ρ : Imperative.Env Expression)
     (h_preconds : ∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ preconds.toList →
-      ρ.eval ρ.store check.expr = some HasBool.tt)
-    (h_wfBool : WellFormedSemanticEvalBool ρ.eval) :
-    PrefixStepsOK π φ (requiresToAssumes preconds) ρ := by
+      Expression.eval ρ.factory ρ.store check.expr = some HasBool.tt)
+    (h_wfBool : WellFormedSemanticEvalBool (P := Expression) ρ.factory) :
+    PrefixStepsOK π (requiresToAssumes preconds) ρ := by
   suffices h : ∀ (items : List (CoreLabel × Procedure.Check)),
       (∀ (label : CoreLabel) (check : Procedure.Check),
-        (label, check) ∈ items → ρ.eval ρ.store check.expr = some HasBool.tt) →
-      PrefixStepsOK π φ (items.map fun (label, check) => Statement.assume label check.expr check.md) ρ from
+        (label, check) ∈ items → Expression.eval ρ.factory ρ.store check.expr = some HasBool.tt) →
+      PrefixStepsOK π (items.map fun (label, check) => Statement.assume label check.expr check.md) ρ from
     h _ h_preconds
   intro items h_items
   induction items with
@@ -233,14 +258,15 @@ private theorem PrefixStepsOK_assumes
     have h_env_eq : prefixInitEnv (rest.map fun x => Statement.assume x.1 x.2.expr x.2.md) ρ = ρ :=
       prefixInitEnv_noninit_list _ _ h_noninit_all
     unfold PrefixStepsOK
-    have h_rest_ok : PrefixStepsOK π φ
+    have h_rest_ok : PrefixStepsOK π
         (rest.map fun x => Statement.assume x.1 x.2.expr x.2.md) ρ :=
       ih (fun l c hmem => h_items l c (List.mem_cons_of_mem (label, check) hmem))
     have h_store_eq : (prefixInitEnv (Statement.assume label check.expr check.md ::
         rest.map fun x => Statement.assume x.1 x.2.expr x.2.md) ρ).store = ρ.store := by
       rw [prefixInitEnv_store_noninit _ _ _ rfl, h_env_eq]
     exact ⟨h_rest_ok, _, rfl, _,
-      by rw [h_store_eq]
+      by simp only [prefixInitEnv_factory]
+         rw [h_store_eq]
          exact EvalCommand.cmd_sem (EvalCmd.eval_assume
            (h_items label check List.mem_cons_self) h_wfBool),
       by show _ = (prefixInitEnv _ ρ).store; rw [h_env_eq]⟩
@@ -248,49 +274,53 @@ private theorem PrefixStepsOK_assumes
 /-- For a nondet init statement, if `x` is none in the pre-state and some in the target,
     and all other variables match, then PrefixStepsOK holds for the singleton. -/
 private theorem PrefixStepsOK_nondet_init_cons
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (π : String → Option Procedure)
     (x : Expression.Ident) (ty : Expression.Ty) (rest : List Statement)
     (ρ : Imperative.Env Expression)
-    (h_wfVar : WellFormedSemanticEvalVar ρ.eval)
-    (h_rest : PrefixStepsOK π φ rest ρ)
-    (h_some : ((prefixInitEnv rest ρ).store x).isSome) :
-    PrefixStepsOK π φ (Statement.init x ty .nondet #[] :: rest) ρ := by
+    (h_wfVar : WellFormedSemanticEvalVar (P := Expression) ρ.factory)
+    (h_rest : PrefixStepsOK π rest ρ)
+    (h_ty : ∃ v, (prefixInitEnv rest ρ).store x = some v ∧
+      HasVal.valueOfTy ρ.factory v ty) :
+    PrefixStepsOK π (Statement.init x ty .nondet #[] :: rest) ρ := by
   constructor
   · exact h_rest
   · refine ⟨_, rfl, (prefixInitEnv rest ρ).store, ?_, rfl⟩
+    simp only [prefixInitEnv_factory]
     have h_none : (prefixInitEnv (Statement.init x ty .nondet #[] :: rest) ρ).store x = none :=
       prefixInitEnv_store_init _ _ _ _ rfl
-    have h_some' := h_some
-    rw [Option.isSome_iff_exists] at h_some'
-    obtain ⟨v, hv⟩ := h_some'
+    obtain ⟨v, hv, hvty⟩ := h_ty
     exact EvalCommand.cmd_sem (EvalCmd.eval_init_unconstrained
       (InitState.init h_none hv (fun y hne => by
         exact (prefixInitEnv_store_other _ _ _ y x rfl hne).symm))
+      hvty
       h_wfVar)
 
 /-- PrefixStepsOK for a list of nondet init statements from a map. -/
 private theorem PrefixStepsOK_nondet_init_map
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (π : String → Option Procedure)
     (entries : List (Expression.Ident × Lambda.LMonoTy))
     (ρ : Imperative.Env Expression)
-    (h_wfVar : WellFormedSemanticEvalVar ρ.eval)
-    (h_defined : ∀ id ∈ entries.map Prod.fst,
-      (ρ.store id).isSome)
+    (h_wfVar : WellFormedSemanticEvalVar (P := Expression) ρ.factory)
+    (h_typed : ∀ id ty', (id, ty') ∈ entries →
+      ∃ v, ρ.store id = some v ∧
+        HasVal.valueOfTy ρ.factory v (Lambda.LTy.forAll [] ty'))
     (h_nodup : (entries.map Prod.fst).Nodup)
-    : PrefixStepsOK π φ
+    : PrefixStepsOK π
         (entries.map fun (id, ty) => Statement.init id (Lambda.LTy.forAll [] ty) .nondet #[]) ρ := by
   induction entries with
   | nil => exact trivial
   | cons e rest ih =>
     obtain ⟨id, ty⟩ := e
-    simp only [List.map] at h_defined h_nodup ⊢
+    simp only [List.map] at h_nodup ⊢
     rw [List.nodup_cons] at h_nodup
-    apply PrefixStepsOK_nondet_init_cons π φ id (Lambda.LTy.forAll [] ty)
+    apply PrefixStepsOK_nondet_init_cons π id (Lambda.LTy.forAll [] ty)
     · exact h_wfVar
-    · exact ih (fun i hi => h_defined i (List.mem_cons_of_mem _ hi)) h_nodup.2
-    · -- Need: ((prefixInitEnv (rest.map ...) ρ).store id).isSome
+    · exact ih (fun i t hi => h_typed i t (List.mem_cons_of_mem _ hi)) h_nodup.2
+    · -- typed value for id, transported across the rest's inits
+      obtain ⟨v, hv, hvty⟩ := h_typed id ty List.mem_cons_self
+      refine ⟨v, ?_, hvty⟩
       rw [prefixInitEnv_store_not_init]
-      · exact h_defined id (List.mem_cons_self)
+      · exact hv
       · intro s hs
         simp only [List.mem_map] at hs
         obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := hs
@@ -301,53 +331,59 @@ private theorem PrefixStepsOK_nondet_init_map
 /-- For a deterministic init `init oldG ty (.det (fvar id))`, if `id` has a value
     in the pre-state, `oldG` is none, and `oldG ≠ id`, then it steps correctly. -/
 private theorem PrefixStepsOK_det_init_cons
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (π : String → Option Procedure)
     (id : Expression.Ident) (oldG : Expression.Ident) (ty : Expression.Ty) (rest : List Statement)
     (ρ : Imperative.Env Expression)
-    (h_wfVar : WellFormedSemanticEvalVar ρ.eval)
-    (h_rest : PrefixStepsOK π φ rest ρ)
-    (_h_id_some : ((prefixInitEnv rest ρ).store id).isSome)
-    (h_old_some : ((prefixInitEnv rest ρ).store oldG).isSome)
+    (h_wfStore : Imperative.WellFormedStore ρ.store ρ.factory)
+    (h_wfVar : WellFormedSemanticEvalVar (P := Expression) ρ.factory)
+    (h_rest : PrefixStepsOK π rest ρ)
+    (h_ty : ∃ v, (prefixInitEnv rest ρ).store oldG = some v ∧
+      HasVal.valueOfTy ρ.factory v ty)
     (h_id_eq_old : (prefixInitEnv rest ρ).store id = (prefixInitEnv rest ρ).store oldG)
     (h_ne : oldG ≠ id) :
-    PrefixStepsOK π φ
+    PrefixStepsOK π
       (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ := by
   constructor
   · exact h_rest
   · refine ⟨_, rfl, (prefixInitEnv rest ρ).store, ?_, rfl⟩
+    simp only [prefixInitEnv_factory]
     have h_none : (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ).store oldG = none :=
       prefixInitEnv_store_init _ _ _ _ rfl
     have h_id_val : (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ).store id =
         (prefixInitEnv rest ρ).store id := by
       rw [prefixInitEnv_store_other _ _ _ id oldG rfl h_ne]
-    rw [Option.isSome_iff_exists] at h_old_some
-    obtain ⟨v, hv⟩ := h_old_some
+    obtain ⟨v, hv, hvty⟩ := h_ty
     have h_getFvar : HasFvar.getFvar (LExpr.fvar () id none : Expression.Expr) = some id := by
       simp [HasFvar.getFvar]
-    have h_eval : ρ.eval (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ).store
+    have h_eval : Expression.eval ρ.factory (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ).store
         (LExpr.fvar () id none) = some v := by
-      rw [h_wfVar _ _ _ h_getFvar, h_id_val, h_id_eq_old, hv]
+      have h_wfStore' := prefixInitEnv_store_wf
+        (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ ρ.factory h_wfStore
+      rw [h_wfVar _ _ _ h_wfStore' h_getFvar, h_id_val, h_id_eq_old, hv]
     exact EvalCommand.cmd_sem (EvalCmd.eval_init h_eval
       (InitState.init h_none hv (fun y hne => by
         exact (prefixInitEnv_store_other _ _ _ y oldG rfl hne).symm))
+      hvty
       h_wfVar)
 
 /-- PrefixStepsOK for a list of det init statements `init (mkOld id.name) ty (.det (fvar id))`. -/
 private theorem PrefixStepsOK_det_init_map
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
+    (π : String → Option Procedure)
     (entries : List (Expression.Ident × Lambda.LMonoTy))
     (ρ : Imperative.Env Expression)
-    (h_wfVar : WellFormedSemanticEvalVar ρ.eval)
+    (h_wfStore : Imperative.WellFormedStore ρ.store ρ.factory)
+    (h_wfVar : WellFormedSemanticEvalVar (P := Expression) ρ.factory)
     (h_defined : ∀ id ∈ entries.map Prod.fst,
       (ρ.store id).isSome)
-    (h_old_defined : ∀ id ∈ entries.map Prod.fst,
-      (ρ.store (CoreIdent.mkOld id.name)).isSome)
+    (h_old_typed : ∀ id ty', (id, ty') ∈ entries →
+      ∃ v, ρ.store (CoreIdent.mkOld id.name) = some v ∧
+        HasVal.valueOfTy ρ.factory v (Lambda.LTy.forAll [] ty'))
     (h_old_match : ∀ id ∈ entries.map Prod.fst,
       ρ.store id = ρ.store (CoreIdent.mkOld id.name))
     (h_nodup : (entries.map Prod.fst).Nodup)
     (h_not_old : ∀ id ∈ entries.map Prod.fst, ∀ x, id ≠ CoreIdent.mkOld x)
     (h_nodup_old : ((entries.map Prod.fst).map (fun id => CoreIdent.mkOld id.name)).Nodup)
-    : PrefixStepsOK π φ
+    : PrefixStepsOK π
         (entries.map fun (id, ty) =>
           Statement.init (CoreIdent.mkOld id.name) (Lambda.LTy.forAll [] ty)
             (.det (LExpr.fvar () id none)) #[]) ρ := by
@@ -355,27 +391,21 @@ private theorem PrefixStepsOK_det_init_map
   | nil => exact trivial
   | cons e rest ih =>
     obtain ⟨id, ty⟩ := e
-    simp only [List.map] at h_defined h_old_defined h_old_match h_nodup h_not_old h_nodup_old ⊢
+    simp only [List.map] at h_defined h_old_match h_nodup h_not_old h_nodup_old ⊢
     rw [List.nodup_cons] at h_nodup h_nodup_old
-    apply PrefixStepsOK_det_init_cons π φ id (CoreIdent.mkOld id.name)
-      (Lambda.LTy.forAll [] ty) _ ρ h_wfVar
+    apply PrefixStepsOK_det_init_cons π id (CoreIdent.mkOld id.name)
+      (Lambda.LTy.forAll [] ty) _ ρ h_wfStore h_wfVar
     · exact ih (fun i hi => h_defined i (List.mem_cons_of_mem _ hi))
-              (fun i hi => h_old_defined i (List.mem_cons_of_mem _ hi))
+              (fun i t hi => h_old_typed i t (List.mem_cons_of_mem _ hi))
               (fun i hi => h_old_match i (List.mem_cons_of_mem _ hi))
               h_nodup.2
               (fun i hi => h_not_old i (List.mem_cons_of_mem _ hi))
               h_nodup_old.2
-    · -- id not init'd by rest's old inits: id is not old-prefixed
+    · -- typed old snapshot for mkOld id.name, transported across rest's old inits
+      obtain ⟨v, hv, hvty⟩ := h_old_typed id ty List.mem_cons_self
+      refine ⟨v, ?_, hvty⟩
       rw [prefixInitEnv_store_not_init]
-      · exact h_defined id List.mem_cons_self
-      · intro s hs
-        simp only [List.mem_map] at hs
-        obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := hs
-        simp [stmtInitVar]
-        exact (h_not_old id List.mem_cons_self id'.name).symm
-    · -- mkOld id.name not init'd by rest's old inits: nodup of mkOld ids
-      rw [prefixInitEnv_store_not_init]
-      · exact h_old_defined id List.mem_cons_self
+      · exact hv
       · intro s hs
         simp only [List.mem_map] at hs
         obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := hs
@@ -408,9 +438,6 @@ private theorem mkOld_name_injective {a b : Expression.Ident}
     (h : CoreIdent.mkOld a.name = CoreIdent.mkOld b.name) : a = b := by
   have h1 := congrArg Lambda.Identifier.name h
   simp [CoreIdent.mkOld, CoreIdent.oldStr] at h1
-  have h2 := congrArg String.toList h1
-  simp at h2
-  have h3 := String.ext h2
   cases a; cases b; simp_all
 
 /-- If the original ids are Nodup, so are their mkOld images (since mkOld is injective). -/
@@ -454,7 +481,7 @@ theorem procToVerifyStmt_is_structured
     cases hb: proc.body with
     | structured ss => simp
     | cfg blk =>
-      simp [hb] at h
+      simp [hb, List.mapM_pure (l := proc.header.getInoutParams)] at h
       cases h
 
 /-- Structure: the output of `procToVerifyStmt` is a block
@@ -467,7 +494,6 @@ theorem procToVerifyStmt_structure
     (verifyStmt : Statement)
     (h : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st'))
     (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval)
     (h_wf_proc : WF.WFProcedureProp p proc) :
     ∃ (prefixStmts ss : List Statement),
       proc.body = .structured ss ∧
@@ -475,16 +501,16 @@ theorem procToVerifyStmt_structure
         (prefixStmts ++ [Stmt.block s!"body_{proc.header.name.name}" ss #[]] ++
           ensuresToAsserts proc.spec.postconditions) #[] ∧
       (∀ s ∈ prefixStmts, ∃ c, s = Stmt.cmd c) ∧
-      (∀ ρ₀, Core.Specification.ProcEnvWF proc ρ₀ →
+      (∀ params ρ₀, Core.Specification.ProcEnvWF params proc ρ₀ →
         ∃ ρ_init,
-          Imperative.StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
+          Imperative.StepStmtStar Expression (EvalCommand π)
             (.stmts prefixStmts ρ_init) (.terminal ρ₀)) := by
   obtain ⟨ss, h_body_eq⟩ := procToVerifyStmt_is_structured h
   unfold procToVerifyStmt at h
   rw [h_body_eq] at h
   simp only [bind, ExceptT.bind, ExceptT.mk, ExceptT.run, ExceptT.bindCont,
     pure, ExceptT.pure, StateT.bind] at h
-  rw [mapM_stateT_pure_eq] at h
+  rw [mapM_stateT_pure_eq _ proc.header.getInoutParams] at h
   have h_eq := (Prod.mk.inj h).1 |> Except.ok.inj
   -- Define the prefix components
   let inputInits := proc.header.inputs.toList.map fun (id, ty) =>
@@ -513,8 +539,22 @@ theorem procToVerifyStmt_structure
     · -- assumes
       simp only [assumes, requiresToAssumes, List.mem_map] at hs
       obtain ⟨⟨label, check⟩, _, rfl⟩ := hs; exact ⟨_, rfl⟩
-  · intro ρ₀ h_wf
-    refine ⟨prefixInitEnv _ ρ₀, prefixInitEnv_steps _ ρ₀ π φ h_wf.noFailure ?_⟩
+  · intro _ ρ₀ h_wf
+    -- Derive the typed-store witnesses directly from `ProcEnvWF`.
+    have h_in_typed : ∀ id ty', (id, ty') ∈ proc.header.inputs.toList →
+        ∃ v, ρ₀.store id = some v ∧
+          HasVal.valueOfTy ρ₀.factory v (Lambda.LTy.forAll [] ty') :=
+      fun id ty' hmem => h_wf.inputTyped hmem
+    have h_out_typed : ∀ id ty', (id, ty') ∈ proc.header.getOutputOnlyParams.toList →
+        ∃ v, ρ₀.store id = some v ∧
+          HasVal.valueOfTy ρ₀.factory v (Lambda.LTy.forAll [] ty') :=
+      fun id ty' hmem =>
+        h_wf.outputTyped (getOutputOnlyParams_subset_outputs proc.header _ hmem)
+    have h_oldinout_typed : ∀ id ty', (id, ty') ∈ proc.header.getInoutParams.toList →
+        ∃ v, ρ₀.store (CoreIdent.mkOld id.name) = some v ∧
+          HasVal.valueOfTy ρ₀.factory v (Lambda.LTy.forAll [] ty') :=
+      fun id ty' hmem => h_wf.oldInoutTyped hmem
+    refine ⟨prefixInitEnv _ ρ₀, prefixInitEnv_steps _ ρ₀ π h_wf.noFailure ?_⟩
     -- Split: (inputInits ++ outputOnlyInits ++ oldInoutInits) ++ assumes
     rw [show prefixStmts = (inputInits ++ outputOnlyInits ++ oldInoutInits) ++ assumes
         from by simp [prefixStmts, List.append_assoc]]
@@ -524,8 +564,8 @@ theorem procToVerifyStmt_structure
       intro s hs
       simp only [assumes, requiresToAssumes, List.mem_map] at hs
       obtain ⟨⟨l, c⟩, _, rfl⟩ := hs; simp [stmtInitVar]
-    refine ⟨PrefixStepsOK_assumes π φ proc.spec.preconditions ρ₀
-      h_wf.preconditionsHold h_wf.wfBool, ?_⟩
+    refine ⟨PrefixStepsOK_assumes π proc.spec.preconditions ρ₀
+      h_wf.preconditionsHold h_wf.bool, ?_⟩
     rw [h_assumes_id]
     -- Split: (inputInits ++ outputOnlyInits) ++ oldInoutInits
     rw [show inputInits ++ outputOnlyInits ++ oldInoutInits =
@@ -542,391 +582,264 @@ theorem procToVerifyStmt_structure
       exact absurd hsx.symm (h_wf_proc.ioNotOld x hx id.name)
     constructor
     · -- PrefixStepsOK for oldInoutInits at ρ₀
-      apply PrefixStepsOK_det_init_map π φ _ _ h_wf.wfVar
+      apply PrefixStepsOK_det_init_map π _ _ h_wf.storeValues h_wf.var
       · -- inout params are defined in store (they are inputs)
         intro id hid
-        rw [← ListMap.keys_eq_map_fst] at hid
-        have h_in_inputs := getInoutParams_keys_subset_inputs proc.header id hid
-        exact h_wf.storeDefined id (by
-          unfold Specification.procVerifyInitIdents
-          simp only [List.mem_append]; left; left; exact h_in_inputs)
-      · -- mkOld of inout params are defined in store
-        intro id hid
-        rw [← ListMap.keys_eq_map_fst] at hid
-        exact h_wf.storeDefined (CoreIdent.mkOld id.name) (by
-          unfold Specification.procVerifyInitIdents
-          simp only [List.mem_append]; right
-          exact List.mem_map.mpr ⟨id, hid, rfl⟩)
+        obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := List.mem_map.mp hid
+        obtain ⟨v, hv, _⟩ :=
+          h_in_typed id' ty' (getInoutParams_subset_inputs proc.header _ hmem)
+        rw [hv]; rfl
+      · -- mkOld of inout params hold typed old snapshots
+        exact h_oldinout_typed
       · -- inout params match their old snapshots
         intro id hid
-        rw [← ListMap.keys_eq_map_fst] at hid
+        rw [← ListMap.keys_eq_map_fst (ListMap.toList _)] at hid
         exact h_wf.oldInoutMatchesInout id hid
       · -- keys of getInoutParams are nodup
-        rw [← ListMap.keys_eq_map_fst]
+        rw [← ListMap.keys_eq_map_fst (ListMap.toList _)]
         exact getInoutParams_nodup proc.header h_wf_proc.inputsNodup
       · -- inout params are not old-prefixed (they are inputs)
         intro id hid
-        rw [← ListMap.keys_eq_map_fst] at hid
+        rw [← ListMap.keys_eq_map_fst (ListMap.toList _)] at hid
         have h_in_io := getInoutParams_keys_in_io proc.header id hid
         exact h_wf_proc.ioNotOld id h_in_io
       · -- mkOld images of inout params are nodup
         exact nodup_mkOld_map _ (by
-          rw [← ListMap.keys_eq_map_fst]
+          rw [← ListMap.keys_eq_map_fst (ListMap.toList _)]
           exact getInoutParams_nodup proc.header h_wf_proc.inputsNodup)
     · -- PrefixStepsOK for inputInits ++ outputOnlyInits at prefixInitEnv oldInoutInits ρ₀
-      have h_old_env := prefixInitEnv_eval oldInoutInits ρ₀
-      have h_wfVar_old : WellFormedSemanticEvalVar (prefixInitEnv oldInoutInits ρ₀).eval := by
-        rw [h_old_env]; exact h_wf.wfVar
+      have h_wfVar_old : WellFormedSemanticEvalVar (P := Expression) ρ₀.factory := h_wf.var
       rw [PrefixStepsOK_append]
       constructor
       · -- outputOnlyInits at prefixInitEnv oldInoutInits ρ₀
-        apply PrefixStepsOK_nondet_init_map π φ _ _ h_wfVar_old
-        · intro id hid
-          rw [prefixInitEnv_store_not_init]
-          · rw [← ListMap.keys_eq_map_fst] at hid
-            have h_in_outputs := getOutputOnlyParams_keys_subset_outputs proc.header id hid
-            exact h_wf.storeDefined id (by
-              unfold Specification.procVerifyInitIdents
-              simp only [List.mem_append]; left; right; exact h_in_outputs)
-          · rw [← ListMap.keys_eq_map_fst] at hid
-            have h_in_outputs := getOutputOnlyParams_keys_subset_outputs proc.header id hid
-            exact h_io_not_in_old id (List.mem_append_right _ h_in_outputs)
-        · rw [← ListMap.keys_eq_map_fst]
+        apply PrefixStepsOK_nondet_init_map π _ _
+        · simp only [prefixInitEnv_factory]; exact h_wfVar_old
+        · intro id ty' hmem
+          obtain ⟨v, hv, hvty⟩ := h_out_typed id ty' hmem
+          have hid_keys : id ∈ ListMap.keys proc.header.getOutputOnlyParams := by
+            rw [ListMap.keys_eq_map_fst]
+            exact List.mem_map_of_mem (f := Prod.fst) hmem
+          have h_in_outputs := getOutputOnlyParams_keys_subset_outputs proc.header id hid_keys
+          refine ⟨v, ?_, ?_⟩
+          · rw [prefixInitEnv_store_not_init]
+            · exact hv
+            · exact h_io_not_in_old id (List.mem_append_right _ h_in_outputs)
+          · simp only [prefixInitEnv_factory]; exact hvty
+        · rw [← ListMap.keys_eq_map_fst (ListMap.toList _)]
           exact getOutputOnlyParams_nodup proc.header h_wf_proc.outputsNodup
       · -- inputInits at prefixInitEnv outputOnlyInits (prefixInitEnv oldInoutInits ρ₀)
-        have h_outenv := prefixInitEnv_eval outputOnlyInits (prefixInitEnv oldInoutInits ρ₀)
-        have h_wfVar_out' : WellFormedSemanticEvalVar
-            (prefixInitEnv outputOnlyInits (prefixInitEnv oldInoutInits ρ₀)).eval := by
-          rw [h_outenv]; exact h_wfVar_old
-        apply PrefixStepsOK_nondet_init_map π φ _ _ h_wfVar_out'
-        · intro id hid
-          rw [prefixInitEnv_store_not_init]
+        have h_wfVar_out' : WellFormedSemanticEvalVar (P := Expression) ρ₀.factory := h_wf.var
+        apply PrefixStepsOK_nondet_init_map π _ _
+        · simp only [prefixInitEnv_factory]; exact h_wfVar_out'
+        · intro id ty' hmem_in
+          obtain ⟨v, hv, hvty⟩ := h_in_typed id ty' hmem_in
+          have hid_keys : id ∈ ListMap.keys proc.header.inputs := by
+            rw [ListMap.keys_eq_map_fst]
+            exact List.mem_map_of_mem (f := Prod.fst) hmem_in
+          refine ⟨v, ?_, ?_⟩
           · rw [prefixInitEnv_store_not_init]
-            · rw [← ListMap.keys_eq_map_fst] at hid
-              exact h_wf.storeDefined id (by
-                unfold Specification.procVerifyInitIdents
-                simp only [List.mem_append]; left; left; exact hid)
-            · rw [← ListMap.keys_eq_map_fst] at hid
-              exact h_io_not_in_old id (List.mem_append_left _ hid)
-          · -- input id not init'd in outputOnlyInits: by construction,
-            -- getOutputOnlyParams only contains ids NOT in inputs
-            intro s hs heq_s
-            simp only [outputOnlyInits, List.mem_map] at hs
-            obtain ⟨⟨oid, oty⟩, hmem, rfl⟩ := hs
-            simp [stmtInitVar] at heq_s
-            rw [← ListMap.keys_eq_map_fst] at hid
-            -- oid is in getOutputOnlyParams, so oid ∉ inputs
-            have h_oid_keys : oid ∈ ListMap.keys proc.header.getOutputOnlyParams := by
-              rw [ListMap.keys_eq_map_fst]
-              simp only [ListMap.toList] at hmem
-              exact List.mem_map_of_mem (f := Prod.fst) hmem
-            have h_oid_not_in_inputs := getOutputOnlyParams_keys_disjoint_inputs proc.header oid h_oid_keys
-            -- But heq_s says id = oid, so id ∉ inputs, contradiction
-            exact h_oid_not_in_inputs (heq_s ▸ hid)
-        · rw [← ListMap.keys_eq_map_fst]; exact h_wf_proc.inputsNodup
+            · rw [prefixInitEnv_store_not_init]
+              · exact hv
+              · exact h_io_not_in_old id (List.mem_append_left _ hid_keys)
+            · -- input id not init'd in outputOnlyInits: by construction,
+              -- getOutputOnlyParams only contains ids NOT in inputs
+              intro s hs heq_s
+              simp only [outputOnlyInits, List.mem_map] at hs
+              obtain ⟨⟨oid, oty⟩, hmem2, rfl⟩ := hs
+              simp [stmtInitVar] at heq_s
+              have h_oid_keys : oid ∈ ListMap.keys proc.header.getOutputOnlyParams := by
+                rw [ListMap.keys_eq_map_fst]
+                simp only [ListMap.toList] at hmem2
+                exact List.mem_map_of_mem (f := Prod.fst) hmem2
+              have h_oid_not_in_inputs := getOutputOnlyParams_keys_disjoint_inputs proc.header oid h_oid_keys
+              exact h_oid_not_in_inputs (heq_s ▸ hid_keys)
+          · simp only [prefixInitEnv_factory]; exact hvty
+        · rw [← ListMap.keys_eq_map_fst (ListMap.toList _)]; exact h_wf_proc.inputsNodup
 
-/-! ## Postcondition Assert Helpers -/
+/-! ## Correctness on event traces -/
 
-private theorem ensuresToAsserts_mem_is_assert
-    {s : Statement} {pcs : ListMap CoreLabel Procedure.Check}
-    (h : s ∈ ensuresToAsserts pcs) :
-    ∃ l e md, s = Statement.assert l e md := by
-  simp only [ensuresToAsserts, List.mem_filterMap] at h
-  obtain ⟨⟨label, check⟩, _, h_eq⟩ := h
-  split at h_eq
-  · simp at h_eq
-  · simp at h_eq; exact ⟨label, check.expr, check.md, h_eq.symm⟩
+/-- Running the postcondition asserts emits the non-free postconditions as
+    assertion events observed in the current environment. -/
+private theorem ensuresToAsserts_runE
+    (π : String → Option Procedure)
+    (ρ : Env Expression) :
+    ∀ (cs : ListMap CoreLabel Procedure.Check),
+      CoreStepStarE π (.stmts (ensuresToAsserts cs) ρ)
+        (defaultAssertEvents ρ.factory ρ.store cs) (.stmts [] ρ)
+  | [] => by
+    simp only [ensuresToAsserts, defaultAssertEvents, Imperative.Calls.defaultAssertEvents,
+      ListMap.toList, List.filterMap_nil]
+    exact .refl _
+  | (label, check) :: rest => by
+    have ih := ensuresToAsserts_runE π ρ rest
+    cases hattr : check.attr with
+    | Free =>
+      simpa [ensuresToAsserts, defaultAssertEvents, Imperative.Calls.defaultAssertEvents,
+        ListMap.toList, hattr] using ih
+    | Default =>
+      have hassert : CoreStepStarE π (.stmt (Statement.assert label check.expr check.md) ρ)
+          [Event.assert ⟨ρ.factory, ρ.store, label, check.expr, check.md⟩] (.terminal ρ) := by
+        have hstep : CoreStepE π (.stmt (.cmd (.cmd (.assert label check.expr check.md))) ρ)
+            [Event.assert ⟨ρ.factory, ρ.store, label, check.expr, check.md⟩]
+            (.terminal { ρ with store := ρ.store }) :=
+          .step_cmd (.cmd_sem .eval_assert)
+        simpa using ReflTransTrace.step _ _ _ _ _ hstep (ReflTransTrace.refl _)
+      have := ReflTransTrace.trans _
+        (Imperative.stmts_cons_stepE _ _ _ ρ ρ hassert) ih
+      simpa [ensuresToAsserts, defaultAssertEvents, Imperative.Calls.defaultAssertEvents,
+        ListMap.toList, hattr] using this
 
-/-! ## Main Theorem -/
+/-- An administrative event step as a one-step run. -/
+private theorem adminRunE
+    {π : String → Option Procedure}
+    {c c' : CoreConfig}
+    (h : StepStmt Expression (noCommandEvalE Expression Command) c c') :
+    CoreStepStarE π c [] c' := by
+  simpa using ReflTransTrace.step _ _ _ _ _ (StepStmtE.step_admin h) (ReflTransTrace.refl _)
 
-/-- If all asserts are valid in the verification statement produced by
-    `procToVerifyStmt` (for initial environments satisfying `ProcEnvWF`),
-    then `ProcedureCorrect` holds for the procedure. -/
-theorem procBodyVerify_procedureCorrect
-    (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval)
-    (proc : Procedure) (p : Program) (st : CoreTransformState)
-    (verifyStmt : Statement) (st' : CoreTransformState)
-    -- `h_transform`: procToVerifyStmt returned successfully.
+/-- If every event trace of the verification statement produced by
+    `procToVerifyStmt` is assertion-valid under `I`, then the procedure is
+    correct on event traces under `I`.
+
+    The verification statement reaches the body through initializations and
+    the assumed preconditions. A run only passes an assumption that the
+    evaluator makes true, so `h_assume` asks that such an assumption hold in
+    every world of `I`; this is what lets validity of the whole statement give
+    validity of the body's runs.
+
+    `h_assume` does not hold for `DenoteBasedInterp`: it covers conditions
+    captured under any factory, and the denotation reads those outside
+    `Core.Factory` through an arbitrary predicate of the world, so some world
+    refutes them. An instance for the denotation needs entry environments whose
+    factory is `Core.Factory`, and the hypothesis stated only for the typed
+    preconditions the verification statement assumes. -/
+theorem procBodyVerify_procedureCorrectOnTraces
+    (I : ConditionInterp Expression)
+    (h_assume : ∀ c : EventArg Expression,
+      Expression.eval c.factory c.store c.expr = some HasBool.tt → ∀ world, I.holds world c)
+    (procName : String) (proc : Procedure) (p : Program)
+    (st : CoreTransformState) (verifyStmt : Statement) (st' : CoreTransformState)
+    (h_lookup : p.findProcByString? procName = some proc)
     (h_transform : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st'))
-    -- `h_correct`: all asserts in `verifyStmt` are valid for all initial states
-    (h_correct : Specification.AllAssertsValid
-      (Core.Specification.Lang.core π φ) verifyStmt)
-    -- `h_wf_ext`: the evaluator extension `φ` is well-formed
-    (h_wf_ext : Core.WFEvalExtension φ)
-    -- `h_wf_proc`: the procedure is well-formed
-    (h_wf_proc : WF.WFProcedureProp p proc) :
-    -- Conclusion: ProcedureCorrect holds.
-    Core.Specification.ProcedureCorrect π φ proc p := by
-  obtain ⟨ss, h_body_eq⟩ := procToVerifyStmt_is_structured h_transform
-  obtain ⟨prefixStmts, ss', h_body, h_eq, h_prefix_cmd, h_prefix_trace⟩ :=
-    procToVerifyStmt_structure proc p st st' verifyStmt h_transform π φ h_wf_proc
-  have h_ss_eq : ss = ss' := by
-    have := h_body_eq.symm.trans h_body
-    exact Procedure.Body.structured.inj this
-  subst h_ss_eq
-  let verifyLabel := s!"verify_{proc.header.name.name}"
-  let bodyLabel := s!"body_{proc.header.name.name}"
-  let postAsserts := ensuresToAsserts proc.spec.postconditions
-
-  /- Helper: embed a body trace (.stmts body ρ₀ →* cfg) into a verifyStmt trace
-     (.stmt verifyStmt ρ_init →* cfg_wrapped), where cfg_wrapped has the same
-     getEval, getStore, and coreIsAtAssert as cfg but is wrapped in the
-     verifyStmt context (block verifyLabel > seq > block bodyLabel). -/
-  have h_embed_body : ∀ ρ₀ (h_wf : Specification.ProcEnvWF proc ρ₀)
-      (cfg : CoreConfig),
-      CoreStepStar π φ (.stmts ss ρ₀) cfg →
-      ∃ ρ_init,
-        StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-          (.stmt verifyStmt ρ_init)
-          (.block (.some verifyLabel) ρ_init.store ρ_init.eval (.seq (.block (.some bodyLabel) ρ₀.store ρ₀.eval cfg) postAsserts)) := by
-    intro ρ₀ h_wf cfg h_body
-    obtain ⟨ρ_init, h_prefix⟩ := h_prefix_trace ρ₀ h_wf
-    exact ⟨ρ_init, by
+    (h_correct : Specification.AllAssertsValidOnTraces
+      (Core.Logic.EventLang.core p.findProcByString?) I verifyStmt)
+    (h_wf_proc : WF.WFProcedureProp p proc) (params : Core.Logic.InitEnvWFParams) :
+    Core.Specification.ProcedureAssertsValidOnTraces I params procName p := by
+  let π : String → Option Procedure := p.findProcByString?
+  obtain ⟨prefixStmts, ss, h_body, h_eq, _, h_prefix_trace⟩ :=
+    procToVerifyStmt_structure proc p st st' verifyStmt h_transform π h_wf_proc
+  let vL := s!"verify_{proc.header.name.name}"
+  let bL := s!"body_{proc.header.name.name}"
+  let posts := ensuresToAsserts proc.spec.postconditions
+  -- The verification statement reaches the start of the body, and every
+  -- assumption it emits on the way holds.
+  have h_start : ∀ ρ₀, Specification.ProcEnvWF params proc ρ₀ → ∃ (ρ_i : Env Expression) (tP : Trace Expression),
+      CoreStepStarE π (.stmt verifyStmt ρ_i) tP
+        (.block (.some vL) ρ_i.store
+          (.seq (.block (.some bL) ρ₀.store (.stmts ss ρ₀)) posts)) ∧
+      ∀ c, Event.assume c ∈ tP → ∀ world, I.holds world c := by
+    intro ρ₀ hwf
+    obtain ⟨ρ_init, h_prefix⟩ := h_prefix_trace _ ρ₀ hwf
+    have hleg : StepStmtStar Expression (EvalCommand π)
+        (.stmt verifyStmt ρ_init)
+        (.block (.some vL) ρ_init.store
+          (.seq (.block (.some bL) ρ₀.store (.stmts ss ρ₀)) posts)) := by
       rw [h_eq]
       exact ReflTrans_Transitive _ _ _ _
-        (step_block_enter Expression (EvalCommand π φ) (EvalPureFunc φ) verifyLabel _ #[] ρ_init)
-        (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some verifyLabel) ρ_init.store ρ_init.eval
+        (step_block_enter Expression (EvalCommand π) vL _ #[] ρ_init)
+        (block_inner_star Expression (EvalCommand π) _ _ (.some vL)
+          ρ_init.store
           (ReflTrans_Transitive _ _ _ _
             (by rw [List.append_assoc]
-                exact stmts_prefix_terminal_append Expression (EvalCommand π φ) (EvalPureFunc φ)
+                exact stmts_prefix_terminal_append Expression (EvalCommand π)
                   prefixStmts _ ρ_init ρ₀ h_prefix)
             (ReflTrans_Transitive _ _ _ _
               (.step _ _ _ .step_stmts_cons (.refl _))
-              (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ postAsserts
-                (ReflTrans_Transitive _ _ _ _
-                  (step_block_enter Expression (EvalCommand π φ) (EvalPureFunc φ) bodyLabel _ #[] ρ₀)
-                  (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some bodyLabel) ρ₀.store ρ₀.eval
-                    (CoreStepStar_to_StepStmtStar h_body)))))))⟩
-
-  /- Helper: coreIsAtAssert and getEval/getStore are preserved through
-     the verifyStmt wrapping (block > seq > block). -/
-  have h_wrapped_assert : ∀ (σ_v σ_b : SemanticStore Expression) (e_v e_b : SemanticEval Expression) (cfg : CoreConfig) (a : AssertId Expression),
-      coreIsAtAssert cfg a →
-      coreIsAtAssert (.block (.some verifyLabel) σ_v e_v (.seq (.block (.some bodyLabel) σ_b e_b cfg) postAsserts)) a := by
-    intro σ_v σ_b e_v e_b cfg a h
-    simp only [coreIsAtAssert]
-    exact h
-
-  have h_wrapped_eval : ∀ (σ_v σ_b : SemanticStore Expression) (e_v e_b : SemanticEval Expression) (cfg : CoreConfig),
-      Config.getEval (.block (.some verifyLabel) σ_v e_v (.seq (.block (.some bodyLabel) σ_b e_b cfg) postAsserts)) =
-      Config.getEval cfg := by
-    intro σ_v σ_b e_v e_b cfg; simp [Config.getEval, Config.getEnv]
-
-  have h_wrapped_store : ∀ (σ_v σ_b : SemanticStore Expression) (e_v e_b : SemanticEval Expression) (cfg : CoreConfig),
-      Config.getStore (.block (.some verifyLabel) σ_v e_v (.seq (.block (.some bodyLabel) σ_b e_b cfg) postAsserts)) =
-      Config.getStore cfg := by
-    intro σ_v σ_b e_v e_b cfg; simp [Config.getStore, Config.getEnv]
-
-  -- Unfold h_correct for easier application
-  have h_correct' : ∀ (a : AssertId Expression) (ρ_init : Env Expression)
-      (cfg : CoreConfig),
-      StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-        (.stmt verifyStmt ρ_init) cfg →
-      coreIsAtAssert cfg a →
-      cfg.getEval cfg.getStore a.expr = some HasBool.tt := by
-    intro a ρ_init cfg h_star h_assert
-    exact h_correct a ρ_init cfg trivial h_star h_assert
-
-  -- Unified helper: all asserts reachable from proc.body are valid
-  have body_asserts_valid : ∀ ρ₀ (h_wf : Specification.ProcEnvWF proc ρ₀)
-      (a : AssertId Expression) (cfg : CoreConfig),
-      CoreStepStar π φ (.stmts ss ρ₀) cfg →
-      coreIsAtAssert cfg a →
-      cfg.getEval cfg.getStore a.expr = some HasBool.tt := by
-    intro ρ₀ h_wf a cfg h_body h_assert
-    obtain ⟨ρ_init, h_vt⟩ := h_embed_body ρ₀ h_wf cfg h_body
-    have h_v := h_correct' a ρ_init
-      (.block (.some verifyLabel) ρ_init.store ρ_init.eval (.seq (.block (.some bodyLabel) ρ₀.store ρ₀.eval cfg) postAsserts))
-      h_vt (h_wrapped_assert ρ_init.store ρ₀.store ρ_init.eval ρ₀.eval cfg a h_assert)
-    rw [h_wrapped_eval, h_wrapped_store] at h_v
-    exact h_v
-
-  refine ⟨?_, ?_⟩
-
-  · ----- Part 1: All asserts in proc.body are valid -----
+              (seq_inner_star Expression (EvalCommand π) _ _ posts
+                (step_block_enter Expression (EvalCommand π) bL _ #[] ρ₀)))))
+    obtain ⟨tP, hrun, hf⟩ := Core.Specification.coreStepStar_toEvent
+      (StepStmtStar_to_CoreStepStar hleg) Bool.false
+    have hρ₀ : ({ ρ₀ with hasFailure := Bool.false } : Env Expression) = ρ₀ := by
+      have := hwf.noFailure; cases ρ₀; simp_all
+    refine ⟨{ ρ_init with hasFailure := Bool.false }, tP, ?_, fun c hc => h_assume c (hf.assumes c hc)⟩
+    simpa [Config.withFailure, hρ₀] using hrun
+  -- A run of the body wrapped in its block is a run of the body itself.
+  have h_inner : ∀ (ρ₀ : Env Expression) tr cfg,
+      CoreStepStarE π (.stmt (Stmt.block "" ss #[]) ρ₀) tr cfg →
+      tr = [] ∨ ∃ inner', CoreStepStarE π (.stmts ss ρ₀) tr inner' := by
+    intro ρ₀ tr cfg h
+    cases h with
+    | refl => exact .inl rfl
+    | step _ _ _ _ _ hstep hrest =>
+      cases hstep with
+      | step_admin hadmin =>
+        cases hadmin
+        simp only [List.nil_append]
+        rcases Imperative.block_run_to_finalE hrest with
+          ⟨_, _, hi⟩ | ⟨_, hi, _⟩ | ⟨_, _, _, hi, _⟩ | ⟨_, _, _, hi, _⟩
+        all_goals exact .inr ⟨_, hi⟩
+  refine
+    { procedureExists := ⟨proc, h_lookup⟩
+      assertsValid := ?_
+      contract := ?_ }
+  · ----- Part 1: every assertion a run of the body reaches is valid -----
     intro a
-    unfold Specification.AssertValidInProcedure
-    rw [h_body_eq]
-    unfold Specification.AssertValidWhen
-    simp only [Specification.Lang.core, Specification.Lang.imperative]
-    intro ρ₀ cfg (h_wf : Specification.ProcEnvWF proc ρ₀)
-      (h_body : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-        (.stmt (Stmt.block "" ss #[]) ρ₀) cfg)
-      (h_assert : coreIsAtAssert cfg a)
-    -- Extract first step: .stmt (block "" body #[]) ρ₀ → .block (.some "") ρ₀.store (.stmts body ρ₀)
-    have h_block_star : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-        (.block (.some "") ρ₀.store ρ₀.eval (.stmts ss ρ₀)) cfg := by
-      cases h_body with
-      | refl => simp [coreIsAtAssert] at h_assert
-      | step _ _ _ hstep hrest => cases hstep; exact hrest
-    -- Body never exits (from WFProcedureProp.bodyExitsCovered)
-    have h_no_exit : ∀ lbl ρ', ¬ StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-        (.stmts ss ρ₀) (.exiting lbl ρ') :=
-      have hcov := h_wf_proc.bodyExitsCovered ss h_body_eq
-      block_exitsCoveredByBlocks_noEscape Expression (EvalCommand π φ) (EvalPureFunc φ) ss hcov ρ₀
-    -- cfg is not terminal or exiting (has an assert)
-    have h_nt : ∀ ρ', cfg ≠ .terminal ρ' := by
-      intro ρ' heq; subst heq; exact coreIsAtAssert_not_terminal ρ' a h_assert
-    have h_nx : ∀ lbl ρ', cfg ≠ .exiting lbl ρ' := by
-      intro lbl ρ' heq; subst heq; exact coreIsAtAssert_not_exiting lbl ρ' a h_assert
-    -- Extract inner: cfg = .block "" inner where .stmts body ρ₀ →* inner
-    obtain ⟨inner, rfl, h_inner_star⟩ :=
-      block_star_extract_inner Expression (EvalCommand π φ) (EvalPureFunc φ) h_block_star h_no_exit h_nt h_nx
-    -- coreIsAtAssert and getEval/getStore are transparent through block ""
-    have h_assert_inner : coreIsAtAssert inner a := by
-      simpa [coreIsAtAssert] using h_assert
-    -- Convert to CoreStepStar and use body_asserts_valid
-    have h_inner_core := StepStmtStar_to_CoreStepStar h_inner_star
-    have h_valid := body_asserts_valid ρ₀ h_wf a inner h_inner_core h_assert_inner
-    simpa [Config.getEval, Config.getStore] using h_valid
-
-  · ----- Part 2: Postconditions + hasFailure on termination -----
-    -- The unified field uses CoreBodyExec, which wraps the body in
-    -- `Stmt.block "" ss #[]`.  Since procToVerifyStmt only succeeds for
-    -- structured bodies, we invert the CoreBodyExec to get a CoreStepStar
-    -- witness through that wrapping.
-    intro h_wf_proc ρ₀ h_wf σ' δ' failed h_body_exec
-    rw [h_body_eq] at h_body_exec
-    -- ProcEnvWF gives us ρ₀.hasFailure = false, so
-    -- ⟨ρ₀.store, ρ₀.eval, false⟩ = ρ₀.
-    have h_env_eq : (⟨ρ₀.store, ρ₀.eval, false⟩ : Env Expression) = ρ₀ := by
-      have := h_wf.noFailure; cases ρ₀; simp_all
-    obtain ⟨ρ', h_term_block, rfl, rfl, rfl⟩ : ∃ ρ' : Env Expression,
-        CoreStepStar π φ (.stmt (Stmt.block "" ss #[]) ρ₀) (.terminal ρ') ∧
-        σ' = ρ'.store ∧ δ' = ρ'.eval ∧ failed = ρ'.hasFailure := by
-      cases h_body_exec with
-      | structured h_step => exact ⟨_, h_env_eq ▸ h_step, rfl, rfl, rfl⟩
-    obtain ⟨ρ_init, h_prefix⟩ := h_prefix_trace ρ₀ h_wf
-    -- Decompose the outer block-wrapped trace into the inner body trace.
-    -- h_term_block : CoreStepStar π φ (.stmt (Stmt.block "" body #[]) ρ₀) (.terminal ρ')
-    -- First step is step_block to .block (.some "") ρ₀.store ρ₀.eval (.stmts body ρ₀);
-    -- then block_reaches_terminal yields either an inner terminal or exiting.
-    have h_term_block' := CoreStepStar_to_StepStmtStar h_term_block
-    have h_block_star : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-        (.block (.some "") ρ₀.store ρ₀.eval (.stmts ss ρ₀)) (.terminal ρ') := by
-      cases h_term_block' with
-      | step _ _ _ hstep hrest => cases hstep; exact hrest
-    have h_no_exit : ∀ lbl ρ_x, ¬ StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-        (.stmts ss ρ₀) (.exiting lbl ρ_x) :=
-      block_exitsCoveredByBlocks_noEscape Expression (EvalCommand π φ) (EvalPureFunc φ)
-        ss (h_wf_proc.bodyExitsCovered ss h_body_eq) ρ₀
-    have ⟨ρ_inner, h_term, h_ρ'_eq⟩ : ∃ ρ_inner,
-        StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-          (.stmts ss ρ₀) (.terminal ρ_inner) ∧
-        ρ' = { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, eval := ρ₀.eval } := by
-      match block_reaches_terminal Expression (EvalCommand π φ) (EvalPureFunc φ) h_block_star with
-      | .inl ⟨ρ_inner, hterm, heq⟩ => exact ⟨ρ_inner, hterm, heq⟩
-      | .inr ⟨lbl, ρ_x, hexit, _⟩ => exact absurd hexit (h_no_exit lbl ρ_x)
-    -- Convert the inner trace to CoreStepStar.
-    have h_term_inner : CoreStepStar π φ (.stmts ss ρ₀) (.terminal ρ_inner) :=
-      StepStmtStar_to_CoreStepStar h_term
-    -- h_valid: all asserts in body from ρ₀ evaluate to true
-    have h_valid : ∀ (a : AssertId Expression) (cfg : CoreConfig),
-        CoreStepStar π φ (.stmts ss ρ₀) cfg →
-        coreIsAtAssert cfg a →
-        cfg.getEval cfg.getStore a.expr = some HasBool.tt :=
-      fun a cfg h h' => body_asserts_valid ρ₀ h_wf a cfg h h'
-    -- hasFailure = false on the inner env, hence on ρ' too.
-    have h_nf_inner : ρ_inner.hasFailure = Bool.false :=
-      Core.core_noFailure_preserved π φ
-        (.stmts ss ρ₀) (.terminal ρ_inner) h_valid h_wf.noFailure h_term_inner
-    have h_nf' : ρ'.hasFailure = Bool.false := by
-      rw [h_ρ'_eq]; exact h_nf_inner
-    -- wfBool preservation
-    have h_wfb_term : WellFormedSemanticEvalBool ρ_inner.eval :=
-      Core.core_wfBool_preserved_stmts π φ h_wf_ext h_wf.wfBool h_term_inner
-
-    -- After the body block terminates via step_block_done, the store and eval are projected.
-    -- ρ_proj coincides with ρ' by h_ρ'_eq.
-    let ρ_proj : Env Expression := { ρ_inner with store := projectStore ρ₀.store ρ_inner.store, eval := ρ₀.eval }
-    have h_ρ_proj_eq : ρ_proj = ρ' := by simp [ρ_proj, h_ρ'_eq]
-
-    have h_to_post : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-        (.stmt verifyStmt ρ_init) (.block (.some verifyLabel) ρ_init.store ρ_init.eval (.stmts postAsserts ρ_proj)) := by
-      rw [h_eq]
-      exact ReflTrans_Transitive _ _ _ _
-        (step_block_enter Expression (EvalCommand π φ) (EvalPureFunc φ) verifyLabel _ #[] ρ_init)
-        (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some verifyLabel) ρ_init.store ρ_init.eval
-          (ReflTrans_Transitive _ _ _ _
-            (by rw [List.append_assoc]
-                exact stmts_prefix_terminal_append Expression (EvalCommand π φ) (EvalPureFunc φ)
-                  prefixStmts _ ρ_init ρ₀ h_prefix)
-            (ReflTrans_Transitive _ _ _ _
-              (.step _ _ _ .step_stmts_cons (.refl _))
-              (ReflTrans_Transitive _ _ _ _
-                (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ postAsserts
-                  (ReflTrans_Transitive _ _ _ _
-                    (step_block_enter Expression (EvalCommand π φ) (EvalPureFunc φ) bodyLabel _ #[] ρ₀)
-                    (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some bodyLabel) ρ₀.store ρ₀.eval
-                      h_term)))
-                (ReflTrans_Transitive _ _ _ _
-                  (seq_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ postAsserts
-                    (.step _ _ _ .step_block_done (.refl _)))
-                  (.step _ _ _ .step_seq_done (.refl _)))))))
-
-    have h_proj_eval : ρ_proj.eval = ρ₀.eval := rfl
-
-    have h_all_post_valid : ∀ s ∈ postAsserts, ∀ l e md,
-        s = Statement.assert l e md →
-        ρ_proj.eval ρ_proj.store e = some HasBool.tt := by
-      suffices h_sfx :
-          ∀ (sfx : List Statement),
-            (∀ s ∈ sfx, ∃ l e md, s = Statement.assert l e md) →
-            StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-              (.stmt verifyStmt ρ_init) (.block (.some verifyLabel) ρ_init.store ρ_init.eval (.stmts sfx ρ_proj)) →
-            ∀ s ∈ sfx, ∀ l e md,
-              s = Statement.assert l e md →
-              ρ_proj.eval ρ_proj.store e = some HasBool.tt by
-        exact h_sfx postAsserts
-          (fun s hs => ensuresToAsserts_mem_is_assert hs) h_to_post
-      intro sfx h_all_assert h_trace
-      induction sfx with
-      | nil => intro _ h_mem; contradiction
-      | cons hd tl ih =>
-        intro s h_mem l e md h_s_eq
-        have ⟨lh, eh, mdh, h_hd_eq⟩ := h_all_assert hd (.head _)
-        subst h_hd_eq
-        have h_at_head : coreIsAtAssert
-            (.block (.some verifyLabel) ρ_init.store ρ_init.eval (.stmts (Statement.assert lh eh mdh :: tl) ρ_proj))
-            ⟨lh, eh⟩ := by
-          simp only [coreIsAtAssert]; exact ⟨trivial, trivial⟩
-        have h_head_eval := h_correct' ⟨lh, eh⟩ ρ_init _ h_trace h_at_head
-        simp only [Config.getEval, Config.getStore] at h_head_eval
-        cases h_mem with
-        | head _ =>
-          injection h_s_eq with h1; injection h1 with h2
-          injection h2 with _ h3; subst h3; exact h_head_eval
-        | tail _ h_in_tl =>
-          have h_assert_step : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-              (.stmt (Statement.assert lh eh mdh) ρ_proj) (.terminal ρ_proj) := by
-            have h1 : StepStmtStar Expression (EvalCommand π φ) (EvalPureFunc φ)
-                (.stmt (Statement.assert lh eh mdh) ρ_proj)
-                (.terminal ⟨ρ_proj.store, ρ_proj.eval, ρ_proj.hasFailure || false⟩) :=
-              .step _ _ _
-                (.step_cmd (@EvalCommand.cmd_sem π φ ρ_proj.eval ρ_proj.store
-                  (Cmd.assert lh eh mdh) ρ_proj.store false
-                  (EvalCmd.eval_assert_pass h_head_eval
-                    (by rw [h_proj_eval]; exact h_wf.wfBool))))
-                (.refl _)
-            have h2 : (⟨ρ_proj.store, ρ_proj.eval, ρ_proj.hasFailure || false⟩ : Env Expression) = ρ_proj := by
-              cases ρ_inner; simp [ρ_proj, Bool.or_false]
-            rw [h2] at h1; exact h1
-          have h_trace_tl := ReflTrans_Transitive _ _ _ _ h_trace
-            (block_inner_star Expression (EvalCommand π φ) (EvalPureFunc φ) _ _ (.some verifyLabel) ρ_init.store ρ_init.eval
-              (stmts_cons_step Expression (EvalCommand π φ) (EvalPureFunc φ)
-                (Statement.assert lh eh mdh) tl ρ_proj ρ_proj h_assert_step))
-          exact ih (fun s' hs' => h_all_assert s' (.tail _ hs'))
-            h_trace_tl s h_in_tl l e md h_s_eq
-    -- Prove postconditions hold and hasFailure is false
-    constructor
-    · -- Each non-free postcondition evaluates to true
-      intro label check h_mem h_attr
-      have h_in : Statement.assert label check.expr check.md ∈ postAsserts := by
-        simp only [postAsserts, ensuresToAsserts, List.mem_filterMap]
-        exact ⟨(label, check), h_mem, by simp [h_attr]⟩
-      have h := h_all_post_valid _ h_in label check.expr check.md rfl
-      rw [h_ρ_proj_eq] at h
-      exact h
-    · exact h_nf'
+    refine ⟨proc, ss, h_lookup, h_body, ?_⟩
+    intro ρ₀ cfg tr hpre hrun
+    obtain ⟨hwf, _⟩ := hpre
+    rcases h_inner ρ₀ tr cfg hrun with rfl | ⟨_, hi⟩
+    · simp [Trace.AssertionValid, Trace.AssertionValidFrom, Trace.AssertionsValidFromP]
+    · obtain ⟨ρ_i, tP, hs, hheld⟩ := h_start ρ₀ hwf
+      have hfull := ReflTransTrace.trans _ hs
+        (Imperative.block_inner_starE (Imperative.seq_inner_starE _
+          (Imperative.block_inner_starE hi)))
+      have hv := h_correct ρ_i _ _ trivial hfull
+      exact Trace.AssertionsValidFromP.mono_keep _ (fun _ _ => trivial)
+        (Trace.AssertionsValid.suffix _ tP tr hheld hv)
+  · ----- Part 2: the body meets the contract -----
+    intro proc' ss' hfind hb' ρ₀ ρ' tr hpre hrun
+    obtain ⟨hwf, _⟩ := hpre
+    have hproc : proc' = proc := Option.some.inj (hfind.symm.trans h_lookup)
+    subst hproc
+    have hss : ss' = ss := Imperative.Body.structured.inj (hb'.symm.trans h_body)
+    subst hss
+    -- A run of the one-element list `[block]` is a run of the block itself.
+    have hstmt : CoreStepStarE π (.stmt (Stmt.block "" ss' #[]) ρ₀) tr (.terminal ρ') ∨
+        ∃ lbl, CoreStepStarE π (.stmt (Stmt.block "" ss' #[]) ρ₀) tr (.exiting lbl ρ') := by
+      rcases hrun with h | ⟨lbl, h⟩
+      · rcases Imperative.stmts_cons_headE _ h with ⟨hc, _⟩ | h
+        · cases hc
+        · obtain ⟨ρ₁, tr₁, tr₂, rfl, h1, h2⟩ := Imperative.seq_reaches_terminalE _ h
+          obtain ⟨rfl, hc | hc⟩ := Imperative.stmts_nil_runE _ h2
+          · cases hc
+          · cases hc
+            exact .inl (by simpa using h1)
+      · rcases Imperative.stmts_cons_headE _ h with ⟨hc, _⟩ | h
+        · cases hc
+        · rcases Imperative.seq_reaches_exitingE _ h with h1 | ⟨ρ₁, tr₁, tr₂, rfl, _, h2⟩
+          · exact .inr ⟨lbl, h1⟩
+          · obtain ⟨_, hc | hc⟩ := Imperative.stmts_nil_runE _ h2 <;> cases hc
+    obtain ⟨ρ_inner, hdone, hρ'⟩ := Imperative.stmt_block_reaches_doneE hstmt
+    have hterm : CoreStepStarE π (.stmts ss' ρ₀) tr (.terminal ρ_inner) := by
+      rcases hdone with h | ⟨lbl, h⟩
+      · exact h
+      · exact absurd h (Imperative.stmts_exitsCoveredByBlocks_noEscapeE _ ss'
+          (h_wf_proc.bodyExitsCovered ss' hb') ρ₀ lbl ρ_inner)
+    subst hρ'
+    obtain ⟨ρ_i, tP, hs, hheld⟩ := h_start ρ₀ hwf
+    have hfull := ReflTransTrace.trans _ hs
+      (ReflTransTrace.trans _
+        (Imperative.block_inner_starE (Imperative.seq_inner_starE _
+          (Imperative.block_inner_starE hterm)))
+        (ReflTransTrace.trans _
+          (Imperative.block_inner_starE (Imperative.seq_inner_starE _
+            (adminRunE .step_block_done)))
+          (ReflTransTrace.trans _
+            (Imperative.block_inner_starE (adminRunE .step_seq_done))
+            (Imperative.block_inner_starE (ensuresToAsserts_runE π _
+              proc'.spec.postconditions)))))
+    simp only [List.nil_append] at hfull
+    have hv := h_correct ρ_i _ _ trivial hfull
+    exact Trace.AssertionsValid.suffix _ tP _ hheld hv
 
 end ProcBodyVerifyCorrect

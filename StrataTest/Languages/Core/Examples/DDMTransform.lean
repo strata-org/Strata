@@ -38,7 +38,7 @@ program Core;
 // Template: MS(inputs1, inputs2, globals1, globals2, globals1', globals2', returns, returns')
 function MS(x1: int, x2: int, g1: int, g2: int, g1': int, g2': int, r1: int, r2: int) : bool
 {
-    ((x1 == x2) && (x1 >= 0) && (g1 <= g2)) ==> g1' <= g2'
+    ((x1 == x2) && int.ge(x1, 0) && int.le(g1, g2)) ==> int.le(g1', g2')
 }
 
 // Template: <f>.token(inputs, globals, globals', returns);
@@ -74,9 +74,9 @@ procedure MS_check (x1: int, x2: int, g: int, out r1: int, out r2: int, out g': 
   g1 := g_cur;
 
   // inline Foo1:
-  if (x1 < 100) {
-    g_cur := g_cur + x1;
-    call Foo1(x1 + 1, g_cur, out r1, out g_cur);
+  if (int.lt(x1, 100)) {
+    g_cur := int.add(g_cur, x1);
+    call Foo1(int.add(x1, 1), g_cur, out r1, out g_cur);
   }
   g1' := g_cur;
 
@@ -84,9 +84,9 @@ procedure MS_check (x1: int, x2: int, g: int, out r1: int, out r2: int, out g': 
   g2 := g_cur;
 
   // inline Foo2:
-  if (x2 < 100) {
-    g_cur := g_cur + 2 * x2;
-    call Foo2(x2 + 1, g_cur, out r2, out g_cur);
+  if (int.lt(x2, 100)) {
+    g_cur := int.add(g_cur, int.mul(2, x2));
+    call Foo2(int.add(x2, 1), g_cur, out r2, out g_cur);
   }
   g2' := g_cur;
 

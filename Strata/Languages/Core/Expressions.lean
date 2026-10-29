@@ -10,6 +10,10 @@ public import Strata.Languages.Core.CoreOp
 public import Strata.DL.Imperative.HasVars
 public import Strata.DL.Lambda.LExprTypeEnv
 public import Strata.DL.Lambda.LState
+import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.LTy
+public import Strata.DL.Lambda.LExprEval
+public import Strata.DL.Lambda.IntBoolFactory
 
 namespace Core
 open Std (ToFormat Format format)
@@ -17,23 +21,25 @@ open Std (ToFormat Format format)
 
 public section
 
-@[expose] abbrev ExpressionMetadata := Unit
+open Imperative
 
-@[expose]
-abbrev Expression : Imperative.PureExpr :=
+abbrev ExpressionMetadata := Unit
+
+abbrev Expression : PureExpr :=
    { Ident := CoreIdent,
      EqIdent := inferInstanceAs (DecidableEq (Lambda.Identifier Unit))
      Expr := Lambda.LExpr ⟨⟨ExpressionMetadata, Unit⟩, Lambda.LMonoTy⟩,
      Ty := Lambda.LTy,
      ExprMetadata := ExpressionMetadata,
-     TyEnv := @Lambda.TEnv Unit,
+     TyEnv := @Lambda.TEnv Unit inferInstance inferInstance,
      TyContext := @Lambda.LContext ⟨ExpressionMetadata, Unit⟩,
-     EvalEnv := Lambda.LState ⟨ExpressionMetadata, Unit⟩ }
+     Factory := Lambda.Factory CoreLParams,
+     eval := Lambda.LExpr.evalFully }
 
-instance : Imperative.HasFvars Expression where
+instance : HasFvars Expression where
   getFvars := Lambda.LExpr.LExpr.getVars
 
-instance : Imperative.HasOps Expression where
+instance : HasOps Expression where
   getOps := Lambda.LExpr.getOps
 
 instance : Inhabited Expression.Expr where
@@ -42,6 +48,120 @@ instance : Inhabited Expression.Expr where
 /-- Build an `LExpr.op` node from a structured `CoreOp`. -/
 def coreOpExpr (op : CoreOp) (ty : Option Lambda.LMonoTy := none) : Expression.Expr :=
   .op () op.toString ty
+
+instance : HasVal Core.Expression where
+  value := fun f e => Lambda.LExpr.isValue f e = true
+  valueOfTy := fun f e ty =>
+    ∃ mty,
+      Lambda.LExpr.isValue f e = true ∧
+      ty.toMonoType? = some mty ∧
+      Lambda.LExpr.typeCheck [] e = some mty
+
+instance : LawfulHasVal Core.Expression where
+  valueOfTy_isVal := by
+    rintro _ _ _ ⟨_, hval, _, _⟩
+    exact hval
+  valueOfTy_congr := by
+    rintro f a b ty₁ ty₂
+      ⟨mty₁, _, hty₁, ha₁⟩
+      ⟨mty₂, _, hty₂, ha₂⟩
+      ⟨mty₃, hb, hty₃, hb₃⟩
+    have hmty₁₂ : mty₁ = mty₂ := Option.some.inj (ha₁.symm.trans ha₂)
+    have hmty₂₃ : mty₂ = mty₃ := Option.some.inj (hty₂.symm.trans hty₃)
+    subst mty₂
+    subst mty₃
+    exact ⟨mty₁, hb, hty₁, hb₃⟩
+
+instance : HasFvar Core.Expression where
+  mkFvar := (.fvar () · none)
+  -- A Core variable's annotation is a monomorphic type, so a polymorphic one
+  -- annotates nothing: `toMonoType?` yields `none` and the variable stays bare.
+  mkTypedFvar := fun v ty => .fvar () v ty.toMonoType?
+  getFvar
+  | .fvar _ v _ => some v
+  | _ => none
+
+instance : HasSubstFvar Core.Expression where
+  substFvar := Lambda.LExpr.substFvar
+  substFvars := Lambda.LExpr.substFvars
+
+instance : HasIdent Core.Expression where
+  ident s := ⟨s, ()⟩
+
+/-- Syntactic free-variable laws for `Core.Expression`'s structural `Has*`
+operations, independent of the evaluator: `mkFvar`/`getFvars`/`ident`
+agree with the abstract `Lawful*` contracts. -/
+instance : LawfulHasFvar Core.Expression where
+  getFvar_mkFvar := fun _ => rfl
+  getFvar_mkTypedFvar := fun _ _ => rfl
+
+instance : LawfulHasFvars Core.Expression where
+  mkFvar_getFvars := fun _ => by
+    simp [HasFvars.getFvars, HasFvar.mkFvar, Lambda.LExpr.LExpr.getVars]
+  mkTypedFvar_getFvars := fun _ _ => by
+    simp [HasFvars.getFvars, HasFvar.mkTypedFvar, Lambda.LExpr.LExpr.getVars]
+
+instance : LawfulHasIdent Core.Expression where
+  ident_inj := by
+    intro a b h
+    cases h
+    rfl
+
+@[expose, match_pattern]
+def Core.true : Core.Expression.Expr := .boolConst () Bool.true
+@[expose, match_pattern]
+def Core.false : Core.Expression.Expr := .boolConst () Bool.false
+
+/-- Syntactic check for integer numeral literals in Core. -/
+@[expose] def Core.isNumeral : Core.Expression.Expr → Bool
+  | .const _ (.intConst _) => Bool.true
+  | _ => Bool.false
+
+instance : HasBool Core.Expression where
+  tt := Core.true
+  ff := Core.false
+  tt_is_not_ff := by unfold Core.true Core.false; unfold Lambda.LExpr.boolConst; simp
+  boolTy := .forAll [] (.tcons "bool" [])
+  boolIsValOfTy := fun f => by
+    constructor
+    · refine ⟨Lambda.LMonoTy.bool, ?_, rfl, rfl⟩
+      simp [Core.true, Lambda.LExpr.boolConst, Lambda.LExpr.isValue]
+    · refine ⟨Lambda.LMonoTy.bool, ?_, rfl, rfl⟩
+      simp [Core.false, Lambda.LExpr.boolConst, Lambda.LExpr.isValue]
+
+instance : HasInt Core.Expression where
+  zero        := .intConst () 0
+  intTy       := .forAll [] (.tcons "int" [])
+  isNumeral   := Core.isNumeral
+  numeralIsValue f n hn := by
+    simp only [HasVal.value]
+    cases n with
+    | const m c =>
+      cases c with
+      | intConst _ => simp [Lambda.LExpr.isValue]
+      | _ => simp [Core.isNumeral] at hn
+    | _ => simp [Core.isNumeral] at hn
+  zeroIsNumeral := by
+    show Core.isNumeral (.intConst () 0) = Bool.true
+    rfl
+  numeralHasNoFvars n hn := by
+    cases n with
+    | const _ c => cases c <;> first | rfl | simp [Core.isNumeral] at hn
+    | _ => simp [Core.isNumeral] at hn
+
+instance : HasIntOps Core.Expression where
+  eq    e1 e2 := .eq () e1 e2
+  lt    e1 e2 := .app () (.app () (@Lambda.intLtFunc CoreLParams _).opExpr e1) e2
+
+instance : HasBoolOps Core.Expression where
+  not
+  | Core.true => Core.false
+  | Core.false => Core.true
+  | e => Lambda.LExpr.app () (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
+  and e1 e2 := Lambda.LExpr.app () (Lambda.LExpr.app ()
+    (Lambda.boolAndFunc (T:=CoreLParams)).opExpr e1) e2
+  imp e1 e2 := Lambda.LExpr.app () (Lambda.LExpr.app ()
+    (Lambda.boolImpliesFunc (T:=CoreLParams)).opExpr e1) e2
 
 ---------------------------------------------------------------------
 

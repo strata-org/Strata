@@ -4,87 +4,170 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+import all Strata.DL.Lambda.LTyProps
 
+public import Strata.DL.Imperative.PathConditionsFold
 public import Strata.DL.Imperative.SMTUtils
-public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.DL.SMT.Factory
 public import Strata.Languages.Core.Env
 public import Strata.Util.Name
+public import Strata.Util.OrderedSet
 public import Strata.Util.Statistics
+public import Strata.Languages.Core.NameMangling
 public import Strata.DL.SMT.DDMTransform.Translate -- shake: keep
+public import Strata.Util.PtrCache
 import Strata.Languages.Core.Statistics
+import Strata.Util.Tactics
 
 ---------------------------------------------------------------------
 
 namespace Core
 open Std (ToFormat Format format)
 open Lambda Strata.SMT Strata.SMT.Encoder
+open Strata.Util (OrderedSet OrderedKeyedSet)
+open Imperative (PathConditionEntry ExprOrNondet PathCondition PathConditions)
+open Imperative.PathConditions (Fold FoldState)
 
 public section
+/--
+A factory function whose UF declaration has been emitted but whose
+definition (interpreted body and/or axioms) has not been encoded as SMT.Term yet.
 
-structure SMT.IF where
+`fn`/`fnty` are the call-site identifier and function type. -/
+structure SMT.PendingFnDef where
+  fn : CoreIdent
   uf : UF
-  body : Term
-deriving Repr, DecidableEq, Inhabited
+  fnty : LMonoTy
+deriving Repr, Inhabited
 
-structure SMT.Sort where
-  name : String
-  arity : Nat
-deriving Repr, DecidableEq, Inhabited
+/--
+An insertion-ordered, `uf`-deduplicated queue of `PendingFnDef`s. -/
+abbrev SMT.PendingFnQueue : Type := OrderedKeyedSet ((·.uf) : SMT.PendingFnDef → UF)
 
--- (FIXME) Can/should we use Strata.SMT.EncoderState here directly?
+/--
+A factory function whose body and axioms have been encoded to SMT `Term`s,
+ready to be committed to the `SMT.Context`.
+-/
+structure SMT.EncodedFnDef where
+  id : String
+  args : List TermVar
+  out : TermType
+  body? : Option Term
+  axioms : List Term
+  /-- `body?` is a recursive definition to be emitted as `define-fun-rec`. -/
+  isRec : Bool := false
+deriving Repr, Inhabited
+
+/--
+The encoder's datatype registry: the env's `TypeFactory` (kept in topological,
+mutual-block order for emission) paired with a name→datatype index for O(1)
+lookup during encoding.
+-/
+structure SMT.Datatypes where
+  private mk ::
+  factory : @Lambda.TypeFactory CoreLParams.IDMeta
+  private index : Std.HashMap String (LDatatype CoreLParams.IDMeta)
+deriving Repr, Inhabited
+
+/-- Build a `Datatypes` from a `TypeFactory`, computing the name index in one
+    pass. -/
+def SMT.Datatypes.ofFactory (tf : @Lambda.TypeFactory CoreLParams.IDMeta) : SMT.Datatypes :=
+  .mk tf (tf.allDatatypes.foldl (fun m d => m.insertIfNew d.name d) {})
+
+/-- The empty registry (no datatypes). -/
+def SMT.Datatypes.empty : SMT.Datatypes := .ofFactory #[]
+
+/-- Lookup a datatype by name. -/
+def SMT.Datatypes.getType (d : SMT.Datatypes) (name : String) :
+    Option (LDatatype CoreLParams.IDMeta) :=
+  d.index.get? name
+
+/--
+SMT.Context holds the list of created SMT sorts, declared/defined functions, axioms,
+type substitutions and others while translating Imperative.ProofObligation Expression to
+SMT. This is one of the objects in an `EncodeResult` (see `encodeObligationToSMT`).
+
+SMT.Context also has fields that are invariant during translation; they are
+explicitly marked as invariant in their comments.
+-/
 structure SMT.Context where
-  sorts : Array SMT.Sort := #[]
-  ufs : Array UF := #[]
-  ifs : Array SMT.IF := #[]
-  axms : Array Term := #[]
+  /-- Declared SMT sorts, plus uninterpreted functions, defined functions, and
+  axioms. Each keeps insertion order for emit while deduplicating in O(1) via a
+  built-in membership index (the array and index cannot drift apart). -/
+  sorts : OrderedSet Strata.DL.SMT.Sort := .empty
+  ufs : OrderedSet UF := .empty
+  ifs : OrderedKeyedSet IF.toUF := .empty
+  axms : OrderedSet Term := .empty
+  /-- Unused by the encoder (all input is monomorphic); retained for type
+      compatibility with shared utilities. -/
   tySubst: Map String TermType := []
-  /-- Stores the TypeFactory purely for ordering datatype declarations
-  correctly (TypeFactory in topological order) -/
-  typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta := #[]
+  /-- The known datatypes: the `TypeFactory` (kept in topological order for
+  emission) together with a name→datatype index for O(1) lookup. Seeded by the
+  caller (from the env's datatype factory) before encoding, via
+  `SMT.Datatypes.ofFactory`/`withTypeFactory`, and not modified afterwards — it
+  holds *all* known datatypes, including ones never referenced by the encoded
+  terms; `seenDatatypes` records which of them are actually used. -/
+  datatypes : SMT.Datatypes := .empty
   seenDatatypes : Std.HashSet String := {}
-  datatypeFuns : Map String (Op.DatatypeFuncs × LConstr CoreLParams.IDMeta) := Map.empty
-  /-- Global counter for generating unique bound variable names across all terms. -/
-  bvCounter : Nat := 0
-  /-- When true, always use `$__bv{N}` names for bound variables instead of
-      human-readable names derived from user-provided names. -/
-  uniqueBoundNames : Bool := false
+  datatypeFuns : Std.HashMap String (Op.DatatypeFuncs × LConstr CoreLParams.IDMeta) := {}
+  /-- When true, encode `Map` types/operations using the SMT Array theory
+      (`select`/`store`) instead of an uninterpreted `Map` sort.
+      Invariant during translation. -/
+  useArrayTheory : Bool := false
+  /-- When true, a recursive function with a body is encoded as a
+      `define-fun-rec` definition instead of an uninterpreted function with
+      per-constructor axioms (`VerifyOptions.recursiveFnsAsDefineFunRec`).
+      Invariant during translation. -/
+  recFnsAsDefineFunRec : Bool := false
 deriving Repr, Inhabited
 
 def SMT.Context.default : SMT.Context := {}
 
-def SMT.Context.addSort (ctx : SMT.Context) (sort : SMT.Sort) : SMT.Context :=
-  if sort ∈ ctx.sorts then ctx else
-  { ctx with sorts := ctx.sorts.push sort }
+def SMT.Context.addSort (ctx : SMT.Context) (sort : Strata.DL.SMT.Sort) : SMT.Context :=
+  { ctx with sorts := ctx.sorts.insert sort }
 
 def SMT.Context.addUF (ctx : SMT.Context) (fn : UF) : SMT.Context :=
-  if fn ∈ ctx.ufs then ctx else
-  { ctx with ufs := ctx.ufs.push fn }
+  { ctx with ufs := ctx.ufs.insert fn }
 
-def SMT.Context.addIF (ctx : SMT.Context) (fn : UF) (body : Term) : SMT.Context :=
-  let smtif := { uf := fn, body := body }
-  if smtif ∈ ctx.ifs then ctx else
-  { ctx with ifs := ctx.ifs.push smtif }
+def SMT.Context.addIF (ctx : SMT.Context) (id : String) (args : List TermVar) (out : TermType) (body : Term)
+    (isRec : Bool := false) : SMT.Context :=
+  { ctx with ifs := ctx.ifs.insert { id, args, out, body, isRec } }
 
 def SMT.Context.addAxiom (ctx : SMT.Context) (axm : Term) : SMT.Context :=
-  if axm ∈ ctx.axms then ctx else
-  { ctx with axms := ctx.axms.push axm }
+  { ctx with axms := ctx.axms.insert axm }
 
-def SMT.Context.addSubst (ctx : SMT.Context) (newSubst: Map String TermType) : SMT.Context :=
-  { ctx with tySubst := ctx.tySubst ++ newSubst }
+/-- Commit a resolved function definition: emit its interpreted body (`addIF`)
+    or uninterpreted declaration (`addUF`), followed by its axioms (`addAxiom`). -/
+def SMT.Context.addResolvedFnDef (ctx : SMT.Context) (rdef : SMT.EncodedFnDef) : SMT.Context :=
+  let ctx := match rdef.body? with
+    | some body =>
+      ctx.addIF rdef.id rdef.args rdef.out body rdef.isRec
+    | none =>
+      let uf : UF := { id := rdef.id, args := rdef.args.map (·.ty), out := rdef.out }
+      ctx.addUF uf
+  rdef.axioms.foldl (init := ctx) (·.addAxiom ·)
 
-def SMT.Context.restoreSubst (ctx : SMT.Context) (savedSubst: Map String TermType) : SMT.Context :=
-  { ctx with tySubst := savedSubst }
+/-- True if the function `uf`'s declaration has already been committed: it is
+    in `ufs` (uninterpreted) or `ifs` (interpreted). -/
+def SMT.Context.committedFn (ctx : SMT.Context) (uf : UF) : Bool :=
+  ctx.ufs.contains uf || ctx.ifs.containsKey uf
 
 def SMT.Context.hasDatatype (ctx : SMT.Context) (name : String) : Bool :=
   ctx.seenDatatypes.contains name
+
+/-- Asserts the encoder invariant that all input is monomorphic. -/
+def SMT.Context.checkMonomorphic (ctx : SMT.Context) : Except Format Unit :=
+  if ctx.tySubst.isEmpty then .ok ()
+  else .error f!"SMT encoding: non-empty tySubst reached the encoder \
+                 ({ctx.tySubst.length} entries) — the input should be fully \
+                 monomorphic post-`MonomorphizeFunctions`."
 
 /-- Collect all sort, datatype, constructor, and selector names that have been
     pre-declared to the solver. Used to pre-populate the encoder's `usedNames`
     registry so that later UF/function encoding cannot collide with them. -/
 def SMT.Context.preDeclaredNames (ctx : SMT.Context) : Std.HashSet String :=
-  let sortNames := ctx.sorts.foldl (init := ({} : Std.HashSet String)) fun acc s => acc.insert s.name
-  let dtNames := ctx.typeFactory.toList.foldl (init := sortNames) fun acc block =>
+  let sortNames := ctx.sorts.toArray.foldl (init := ({} : Std.HashSet String)) fun acc s => acc.insert s.name
+  let dtNames := ctx.datatypes.factory.toList.foldl (init := sortNames) fun acc block =>
     block.foldl (init := acc) fun acc d =>
       if ctx.seenDatatypes.contains d.name then
         let acc := acc.insert d.name
@@ -92,7 +175,7 @@ def SMT.Context.preDeclaredNames (ctx : SMT.Context) : Std.HashSet String :=
         d.constrs.foldl (init := acc) fun acc c =>
           let acc := acc.insert c.name.name
           c.args.foldl (init := acc) fun acc (fieldName, _) =>
-            acc.insert (d.name ++ ".." ++ fieldName.name)
+            acc.insert (Lambda.destructorFuncName d fieldName)
       else acc
   -- Built-in Option datatype names
   let acc := dtNames.insert "Option"
@@ -104,14 +187,18 @@ def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype CoreLParams.IDMet
   if ctx.hasDatatype d.name then ctx
   else
     let (c, i, s, u) := d.genFunctionMaps
-    let m := Map.union ctx.datatypeFuns (c.fmap (fun (_, x) => (.constructor, x)))
-    let m := Map.union m (i.fmap (fun (_, x) => (.tester, x)))
-    let m := Map.union m (s.fmap (fun (_, x) => (.selector, x)))
-    let m := Map.union m (u.fmap (fun (_, x) => (.selector, x)))
+    -- First binding for a name wins (matching `Map.union` semantics), hence `insertIfNew`.
+    let insertNew := fun (m : Std.HashMap String (Op.DatatypeFuncs × LConstr CoreLParams.IDMeta))
+        (kind : Op.DatatypeFuncs) (entries : Map String (LDatatype CoreLParams.IDMeta × LConstr CoreLParams.IDMeta)) =>
+      entries.toList.foldl (fun m (name, _, c) => m.insertIfNew name (kind, c)) m
+    let m := insertNew ctx.datatypeFuns .constructor c
+    let m := insertNew m .tester i
+    let m := insertNew m .selector s
+    let m := insertNew m .selector u
     { ctx with seenDatatypes := ctx.seenDatatypes.insert d.name, datatypeFuns := m }
 
 def SMT.Context.withTypeFactory (ctx : SMT.Context) (tf : @Lambda.TypeFactory CoreLParams.IDMeta) : SMT.Context :=
-  { ctx with typeFactory := tf }
+  { ctx with datatypes := .ofFactory tf }
 
 /--
 Helper function to convert LMonoTy to TermType for datatype constructor fields.
@@ -125,6 +212,12 @@ def lMonoTyToTermType (useArrayTheory : Bool := false) (ty : LMonoTy) : TermType
   | .tcons "real" [] => .real
   | .tcons "string" [] => .string
   | .tcons "regex" [] => .regex
+  | .tcons "Set" [elem] =>
+    -- A set is its characteristic function: `Set τ` is the SMT array `Array τ Bool`.
+    if useArrayTheory then
+      .constr "Array" [lMonoTyToTermType useArrayTheory elem, .bool]
+    else
+      .constr "Set" [lMonoTyToTermType useArrayTheory elem]
   | .tcons name args =>
     if name == "Map" && useArrayTheory then
       .constr "Array" (args.map $ lMonoTyToTermType useArrayTheory)
@@ -136,7 +229,7 @@ def lMonoTyToTermType (useArrayTheory : Bool := false) (ty : LMonoTy) : TermType
 private def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) (useArrayTheory : Bool := false): List SMTConstructor :=
   d.constrs.map fun c =>
     let fields := c.args.map fun (name, fieldTy) =>
-      (d.name ++ ".." ++ name.name, lMonoTyToTermType useArrayTheory fieldTy)
+      (Lambda.destructorFuncName d name, lMonoTyToTermType useArrayTheory fieldTy)
     { name := c.name.name, args := fields }
 
 /-- Ensures that all datatypes in the SMT encoding do not have arrow-typed
@@ -159,44 +252,30 @@ Uses the TypeFactory ordering (already topologically sorted).
 Only emits datatypes that have been seen (added via addDatatype).
 Single-element blocks use declare-datatype, multi-element blocks use declare-datatypes.
 -/
-def SMT.Context.emitDatatypes (ctx : SMT.Context) (useArrayTheory : Bool := false): Strata.SMT.SolverM Unit := do
-  match validateDatatypesForSMT ctx.typeFactory ctx.seenDatatypes with
+def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverEncodingM Unit := do
+  match validateDatatypesForSMT ctx.datatypes.factory ctx.seenDatatypes with
   | .error msg => throw (IO.userError (toString msg))
   | .ok () => pure ()
-  for block in ctx.typeFactory.toList do
+  for block in ctx.datatypes.factory.toList do
     let usedBlock := block.filter (fun d => ctx.seenDatatypes.contains d.name)
     match usedBlock with
     | [] => pure ()
     | [d] =>
-      let constructors := datatypeConstructorsToSMT d useArrayTheory
+      let constructors := datatypeConstructorsToSMT d ctx.useArrayTheory
       Strata.SMT.Solver.declareDatatype d.name d.typeArgs constructors
     | _ =>
-      let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d useArrayTheory)
+      let dts := usedBlock.map fun d => (d.name, d.typeArgs, datatypeConstructorsToSMT d ctx.useArrayTheory)
       Strata.SMT.Solver.declareDatatypes dts
 
-@[expose] abbrev BoundVars := List (String × TermType)
+/-- Emit a context's sort declarations, then its datatype declarations (whose
+    constructors may mention the sorts). -/
+def SMT.writeSortsAndDatatypes (ctx : SMT.Context) : Strata.SMT.SolverEncodingM Unit := do
+  let _ ← ctx.sorts.toArray.mapM fun s => Strata.SMT.Solver.declareSort s.name s.arity
+  ctx.emitDatatypes
+
+abbrev BoundVars := List (String × TermType)
 
 ---------------------------------------------------------------------
-partial def unifyTypes (typeVars : List String) (pattern : LMonoTy) (concrete : LMonoTy) (acc : Map String LMonoTy) : Map String LMonoTy :=
-  match pattern, concrete with
-  | .ftvar name, concrete_ty =>
-    if typeVars.contains name then
-      acc.insert name concrete_ty
-    else acc
-  | .tcons pname pargs, .tcons cname cargs =>
-    if pname == cname && pargs.length == cargs.length then
-      (pargs.zip cargs).foldl (fun acc' (p, c) => unifyTypes typeVars p c acc') acc
-    else acc
-  | _, _ => acc
-
-def extractTypeInstantiations (typeVars : List String) (patterns : List LMonoTy) (concreteTypes : List LMonoTy) : Map String LMonoTy :=
-  if patterns.length == concreteTypes.length then
-    (patterns.zip concreteTypes).foldl (fun acc (pattern, concrete) =>
-      unifyTypes typeVars pattern concrete acc) Map.empty
-  else
-    Map.empty
-
-
 /--
 Returns true if the given type name is a built-in Core type whose SMT-LIB
 encoding is handled specially and should not be declared via `declare-sort`.
@@ -210,24 +289,30 @@ we must also ensure we add the types of all arguments in the constructors
 to the context, recursively. This is very tricky to prove terminating, so
 we leave as `partial` for now.
 -/
-partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx: SMT.Context) :
+partial def SMT.Context.addType (id: String) (args: List LMonoTy) (ctx: SMT.Context) :
   SMT.Context :=
   -- Always recurse into concrete args to register any type references
   let ctx := args.foldl (fun ctx arg =>
     match arg with
     | .tcons id1 args1 =>
       if isBuiltinCoreTy id1 then ctx
-      else SMT.Context.addType E id1 args1 ctx
+      else SMT.Context.addType id1 args1 ctx
     | _ => ctx) ctx
-  match E.datatypes.getType id with
+  -- Already registered: its constructors were recursed when first added, so
+  -- there is nothing to do. `seenDatatypes` only ever holds factory datatype
+  -- names (its sole writer is `addDatatype`, called below on a `getType`
+  -- result), so this branch fires only for factory datatypes (emitted as
+  -- declare-datatype), never for the opaque sorts (declare-sort) the `none`
+  -- branch handles.
+  if ctx.hasDatatype id then ctx
+  else match ctx.datatypes.getType id with
   | some d =>
-    if ctx.hasDatatype id then ctx else
     let ctx := ctx.addDatatype d
     d.constrs.foldl (fun (ctx : SMT.Context) c =>
       c.args.foldl (fun (ctx: SMT.Context) (_, t) =>
         match t with
         | .bool | .int | .real | .string | .tcons "regex" [] => ctx
-        | .tcons id1 args1 => SMT.Context.addType E id1 args1 ctx
+        | .tcons id1 args1 => SMT.Context.addType id1 args1 ctx
         | _ => ctx
         ) ctx
       ) ctx
@@ -235,7 +320,7 @@ partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx:
     ctx.addSort { name := id, arity := args.length }
 
 mutual
-def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) (useArrayTheory : Bool := false) :
+def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
   Except Format (TermType × SMT.Context) := do
   match ty with
   | .bitvec n => .ok (.bitvec n, ctx)
@@ -246,27 +331,40 @@ def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) (useArrayTheor
   | .tcons "regex" [] => .ok (.regex, ctx)
   | .tcons "Map" args =>
     -- When using Array theory, convert Map to Array
-    let id := if useArrayTheory then "Array" else "Map"
-    let ctx := if useArrayTheory then ctx
-               else SMT.Context.addType E id args ctx
-    let (args', ctx) ← LMonoTys.toSMTType E args ctx useArrayTheory
+    let id := if ctx.useArrayTheory then "Array" else "Map"
+    let ctx := if ctx.useArrayTheory then ctx
+               else SMT.Context.addType id args ctx
+    let (args', ctx) ← LMonoTys.toSMTType args ctx
     .ok ((.constr id args'), ctx)
+  | .tcons "Set" [elem] =>
+    -- Under array theory the sort is native, so it needs no `declare-sort` (and gains
+    -- extensionality: two sets with equal membership are the same term). Without array
+    -- theory it stays an uninterpreted sort constrained by the `Set.*` axioms.
+    if ctx.useArrayTheory then
+      let (elem', ctx) ← LMonoTy.toSMTType elem ctx
+      .ok (.constr "Array" [elem', .bool], ctx)
+    else
+      let ctx := SMT.Context.addType "Set" [elem] ctx
+      let (elem', ctx) ← LMonoTy.toSMTType elem ctx
+      .ok (.constr "Set" [elem'], ctx)
   | .tcons id args =>
-    let ctx := SMT.Context.addType E id args ctx
-    let (args', ctx) ← LMonoTys.toSMTType E args ctx useArrayTheory
+    let ctx := SMT.Context.addType id args ctx
+    let (args', ctx) ← LMonoTys.toSMTType args ctx
     .ok ((.constr id args'), ctx)
-  | .ftvar tyv => match ctx.tySubst.find? tyv with
-                    | .some termTy =>
-                      .ok (termTy, ctx)
-                    | _ => .error f!"Unimplemented encoding for type var {tyv}"
+  | .ftvar tyv =>
+    -- If the encoder sees a type variable, that's a bug — either
+    -- MonomorphizeFunctions failed to reach this reference, or something
+    -- re-introduced polymorphism.
+    .error f!"SMT encoding: unexpected type variable '{tyv}' — \
+              the input to SMTEncoder should be fully monomorphic."
 
-def LMonoTys.toSMTType (E: Env) (args : LMonoTys) (ctx : SMT.Context) (useArrayTheory : Bool := false) :
+def LMonoTys.toSMTType (args : LMonoTys) (ctx : SMT.Context) :
     Except Format ((List TermType) × SMT.Context) := do
   match args with
   | [] => .ok ([], ctx)
   | t :: trest =>
-    let (t', ctx) ← LMonoTy.toSMTType E t ctx useArrayTheory
-    let (trest', ctx) ← LMonoTys.toSMTType E trest ctx useArrayTheory
+    let (t', ctx) ← LMonoTy.toSMTType t ctx
+    let (trest', ctx) ← LMonoTys.toSMTType trest ctx
     .ok ((t' :: trest'), ctx)
 end
 
@@ -274,151 +372,224 @@ def convertQuantifierKind : Lambda.QuantifierKind -> Strata.SMT.QuantifierKind
   | .all => .all
   | .exist => .exist
 
-mutual
+/--
+Encode a Core *predefined* operator (Booleans, arithmetic, bitvectors,
+strings, regexes, triggers, and the overflow predicates) to the
+corresponding SMT operator builder.
+-/
+def corePredefinedOpToSMTOp (op : CoreOp) (ctx : SMT.Context) :
+    Option ((List Term → TermType → Term) × TermType × SMT.Context) :=
+  match op with
+  | .bool .And     => some (.app Op.and,        .bool,   ctx)
+  | .bool .Or      => some (.app Op.or,         .bool,   ctx)
+  | .bool .Not     => some (.app Op.not,        .bool,   ctx)
+  | .bool .Implies => some (.app Op.implies,    .bool,   ctx)
+  | .bool .Equiv   => some (.app Op.eq,         .bool,   ctx)
 
-@[expose]
-partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (ctx : SMT.Context)
-  (useArrayTheory : Bool := false)
-  : Except Format (Term × SMT.Context) := do
-  match e with
-  | .boolConst _ b => .ok (Term.bool b, ctx)
-  | .intConst _ i => .ok (Term.int i, ctx)
-  | .realConst _ r =>
-    match StrataDDM.Decimal.fromRat r with
-    | some d => .ok (Term.real d, ctx)
-    | none => .error f!"Non-decimal real value {e}"
-  | .bitvecConst _ n b => .ok (Term.bitvec b, ctx)
-  | .strConst _ s => .ok (Term.string s, ctx)
-  | .op _ fn fnty =>
-    match fnty with
-    | none => .error f!"Cannot encode unannotated operation {fn}."
-    | some fnty =>
-      -- 0-ary Operation.
-      let (op, retty, ctx) ← toSMTOp E fn fnty ctx useArrayTheory
-      .ok (op [] retty, ctx)
+  | .numeric ⟨.int, .Neg⟩      => some (.app Op.neg,        .int ,   ctx)
+  | .numeric ⟨.int, .Add⟩      => some (.app Op.add,        .int ,   ctx)
+  | .numeric ⟨.int, .Sub⟩      => some (.app Op.sub,        .int ,   ctx)
+  | .numeric ⟨.int, .Mul⟩      => some (.app Op.mul,        .int ,   ctx)
+  | .numeric ⟨.int, .Div⟩ | .numeric ⟨.int, .SafeDiv⟩ =>
+    -- Safe to encode as normal SMT div/mod: preconditions have already been
+    -- checked and generated well-formedness conditions in the environment.
+    some (.app Op.div,        .int ,   ctx)
+  | .numeric ⟨.int, .Mod⟩ | .numeric ⟨.int, .SafeMod⟩ =>
+    some (.app Op.mod,        .int ,   ctx)
+  -- Truncating division: tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
+  | .numeric ⟨.int, .DivT⟩ | .numeric ⟨.int, .SafeDivT⟩ =>
+    let divTApp := fun (args : List Term) (retTy : TermType) =>
+      match args with
+      | [a, b] =>
+        let zero := Term.prim (.int 0)
+        let ab := Term.app Op.mul [a, b] retTy
+        let abGeZero := Term.app Op.ge [ab, zero] .bool
+        let absA := Term.app Op.abs [a] retTy
+        let absB := Term.app Op.abs [b] retTy
+        let q := Term.app Op.div [absA, absB] retTy
+        let negQ := Term.app Op.neg [q] retTy
+        Factory.ite abGeZero q negQ
+      | _ => Term.app Op.div args retTy
+    some (divTApp, .int, ctx)
+  -- Truncating modulo: tmod(a,b) = a - b * tdiv(a,b)
+  -- tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
+  | .numeric ⟨.int, .ModT⟩ | .numeric ⟨.int, .SafeModT⟩ =>
+    let modTApp := fun (args : List Term) (retTy : TermType) =>
+      match args with
+      | [a, b] =>
+        let zero := Term.prim (.int 0)
+        let ab := Term.app Op.mul [a, b] retTy
+        let abGeZero := Term.app Op.ge [ab, zero] .bool
+        let absA := Term.app Op.abs [a] retTy
+        let absB := Term.app Op.abs [b] retTy
+        let q := Term.app Op.div [absA, absB] retTy
+        let negQ := Term.app Op.neg [q] retTy
+        let tdivAB := Term.app Op.ite [abGeZero, q, negQ] retTy
+        let bTimesTdiv := Term.app Op.mul [b, tdivAB] retTy
+        Term.app Op.sub [a, bTimesTdiv] retTy
+      | _ => Term.app Op.mod args retTy
+    some (modTApp, .int, ctx)
+  | .numeric ⟨.int, .Lt⟩       => some (.app Op.lt,         .bool,   ctx)
+  | .numeric ⟨.int, .Le⟩       => some (.app Op.le,         .bool,   ctx)
+  | .numeric ⟨.int, .Gt⟩       => some (.app Op.gt,         .bool,   ctx)
+  | .numeric ⟨.int, .Ge⟩       => some (.app Op.ge,         .bool,   ctx)
 
-  | .bvar _ i =>
-    if h: i < bvs.length
-    then do
-      let var := bvs[i]
-      .ok ((TermVar.mk var.fst var.snd), ctx)
-    else .error f!"Bound variable index is out of bounds: {i}"
+  | .numeric ⟨.real, .Neg⟩     => some (.app Op.neg,        .real,   ctx)
+  | .numeric ⟨.real, .Add⟩     => some (.app Op.add,        .real,   ctx)
+  | .numeric ⟨.real, .Sub⟩     => some (.app Op.sub,        .real,   ctx)
+  | .numeric ⟨.real, .Mul⟩     => some (.app Op.mul,        .real,   ctx)
+  | .numeric ⟨.real, .Div⟩     => some (.app Op.rdiv,       .real,   ctx)
+  | .numeric ⟨.real, .Lt⟩      => some (.app Op.lt,         .bool,   ctx)
+  | .numeric ⟨.real, .Le⟩      => some (.app Op.le,         .bool,   ctx)
+  | .numeric ⟨.real, .Gt⟩      => some (.app Op.gt,         .bool,   ctx)
+  | .numeric ⟨.real, .Ge⟩      => some (.app Op.ge,         .bool,   ctx)
 
-  | .fvar _ f ty =>
-    match ty with
-    | none => .error f!"Cannot encode unannotated free variable {e}"
-    | some ty =>
-      let (tty, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
-      let uf := { id := f.name, args := [], out := tty }
-      .ok (.app (.uf uf) [] tty, ctx.addUF uf)
+  -- Bitvector operations: size-generic via CoreOp
+  | .bv ⟨n, .Neg⟩  => some (.app Op.bvneg,      .bitvec n, ctx)
+  | .bv ⟨n, .Add⟩  => some (.app Op.bvadd,      .bitvec n, ctx)
+  | .bv ⟨n, .Sub⟩  => some (.app Op.bvsub,      .bitvec n, ctx)
+  | .bv ⟨n, .Mul⟩  => some (.app Op.bvmul,      .bitvec n, ctx)
+  | .bv ⟨n, .UDiv⟩ => some (.app Op.bvudiv,     .bitvec n, ctx)
+  | .bv ⟨n, .UMod⟩ => some (.app Op.bvurem,     .bitvec n, ctx)
+  | .bv ⟨n, .SDiv⟩ => some (.app Op.bvsdiv,     .bitvec n, ctx)
+  | .bv ⟨n, .SMod⟩ => some (.app Op.bvsrem,     .bitvec n, ctx)
+  | .bv ⟨n, .Not⟩  => some (.app Op.bvnot,      .bitvec n, ctx)
+  | .bv ⟨n, .And⟩  => some (.app Op.bvand,      .bitvec n, ctx)
+  | .bv ⟨n, .Or⟩   => some (.app Op.bvor,       .bitvec n, ctx)
+  | .bv ⟨n, .Xor⟩  => some (.app Op.bvxor,      .bitvec n, ctx)
+  | .bv ⟨n, .Shl⟩  => some (.app Op.bvshl,      .bitvec n, ctx)
+  | .bv ⟨n, .UShr⟩ => some (.app Op.bvlshr,     .bitvec n, ctx)
+  | .bv ⟨n, .SShr⟩ => some (.app Op.bvashr,     .bitvec n, ctx)
+  | .bv ⟨_, .ULt⟩  => some (.app Op.bvult,      .bool,   ctx)
+  | .bv ⟨_, .ULe⟩  => some (.app Op.bvule,      .bool,   ctx)
+  | .bv ⟨_, .UGt⟩  => some (.app Op.bvugt,      .bool,   ctx)
+  | .bv ⟨_, .UGe⟩  => some (.app Op.bvuge,      .bool,   ctx)
+  | .bv ⟨_, .SLt⟩  => some (.app Op.bvslt,      .bool,   ctx)
+  | .bv ⟨_, .SLe⟩  => some (.app Op.bvsle,      .bool,   ctx)
+  | .bv ⟨_, .SGt⟩  => some (.app Op.bvsgt,      .bool,   ctx)
+  | .bv ⟨_, .SGe⟩  => some (.app Op.bvsge,      .bool,   ctx)
+  | .bv ⟨n, .Concat⟩ => some (.app Op.bvconcat,    .bitvec (n * 2), ctx)
+  | .bv ⟨_, .ToUInt⟩  => some (.app Op.ubv_to_int,  .int,            ctx)
+  | .bv ⟨_, .ToInt⟩   => some (.app Op.sbv_to_int,  .int,            ctx)
+  | .intToBv n        => some (.app (Op.int_to_bv n), .bitvec n,     ctx)
 
-  | .abs _ _ _ _ =>
-    .error f!"Cannot encode lambda expression to SMT. \
-              Lambda abstractions must be eliminated (e.g., by beta-reduction) \
-              before SMT encoding.\n\
-              Lambda: {e}"
+  | .str .Length   => some (.app Op.str_length,    .int,    ctx)
+  | .str .Concat   => some (.app Op.str_concat,    .string, ctx)
+  | .str .Substr   => some (.app Op.str_substr,    .string, ctx)
+  | .str .ToRegEx  => some (.app Op.str_to_re,     .regex,  ctx)
+  | .str .InRegEx  => some (.app Op.str_in_re,     .bool,   ctx)
+  | .str .PrefixOf => some (.app Op.str_prefixof,  .bool,   ctx)
+  | .str .SuffixOf => some (.app Op.str_suffixof,  .bool,   ctx)
+  | .str .Contains => some (.app Op.str_contains,  .bool,   ctx)
+  | .str .IndexOf  => some (.app Op.str_indexof,   .int,    ctx)
+  | .str .Replace  => some (.app Op.str_replace,   .string, ctx)
+  | .str .At       => some (.app Op.str_at,        .string, ctx)
+  | .str .Lt       => some (.app Op.str_lt,        .bool,   ctx)
+  | .str .Le       => some (.app Op.str_le,        .bool,   ctx)
+  | .re .All       => some (.app Op.re_all,        .regex,  ctx)
+  | .re .AllChar   => some (.app Op.re_allchar,    .regex,  ctx)
+  | .re .Range     => some (.app Op.re_range,      .regex,  ctx)
+  | .re .Concat    => some (.app Op.re_concat,     .regex,  ctx)
+  | .re .Star      => some (.app Op.re_star,       .regex,  ctx)
+  | .re .Plus      => some (.app Op.re_plus,       .regex,  ctx)
+  | .re .Union     => some (.app Op.re_union,      .regex,  ctx)
+  | .re .Inter     => some (.app Op.re_inter,      .regex,  ctx)
+  | .re .Comp      => some (.app Op.re_comp,       .regex,  ctx)
+  | .re .None      => some (.app Op.re_none,       .regex,  ctx)
 
-  | .quant _ _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
-  | .quant _ qk name (.some ty) tr e =>
-    let fvarNames := (e.collectFvarNames.map (·.name)).toArray
-    -- Generate base name using global counter to ensure uniqueness across terms.
-    -- The `$__` prefix is reserved for internal use and cannot appear in user
-    -- identifiers.
-    let (baseName, startSuffix) :=
-      if ctx.uniqueBoundNames || name.isEmpty then
-        (s!"$__bv{ctx.bvCounter}", 1)
-      else
-        let (b, s) := Strata.Name.breakDisambiguated name
-        (Encoder.sanitizeSmtName b, s)
-    let ctx := { ctx with bvCounter := ctx.bvCounter + 1 }
-    -- Check for clashes with existing bvars, fvars, sorts, datatypes, and fvars in body
-    let usedNames := Std.HashSet.ofList (bvs.map (·.1) ++ ctx.ufs.toList.map (·.id) ++ fvarNames.toList
-      ++ ctx.sorts.toList.map (·.name) ++ ctx.seenDatatypes.toList)
-    let x := Strata.Name.findUnique baseName startSuffix usedNames
-    let (ety, ctx) ← LMonoTy.toSMTType E ty ctx useArrayTheory
-    let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx useArrayTheory
-    let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx useArrayTheory
-    .ok (Factory.quant (convertQuantifierKind qk) x ety trt et, ctx)
-  | .eq _ e1 e2 =>
-    let (e1t, ctx) ← toSMTTerm E bvs e1 ctx useArrayTheory
-    let (e2t, ctx) ← toSMTTerm E bvs e2 ctx useArrayTheory
-    .ok ((Factory.eq e1t e2t), ctx)
+  -- Note: Core `Triggers`/`TriggerGroup` operators are not lowered here; they are
+  -- handled structurally by `encodeTriggerGroups` in the `.quant` case.
 
-  | .ite _ c t f =>
-    let (ct, ctx) ← toSMTTerm E bvs c ctx useArrayTheory
-    let (tt, ctx) ← toSMTTerm E bvs t ctx useArrayTheory
-    let (ft, ctx) ← toSMTTerm E bvs f ctx useArrayTheory
-    .ok ((Factory.ite ct tt ft), ctx)
+  -- Safe BV operations: same encoding as unsafe (preconditions already checked)
+  | .bv ⟨n, .SafeAdd⟩ => some (.app Op.bvadd, .bitvec n, ctx)
+  | .bv ⟨n, .SafeSub⟩ => some (.app Op.bvsub, .bitvec n, ctx)
+  | .bv ⟨n, .SafeMul⟩ => some (.app Op.bvmul, .bitvec n, ctx)
+  | .bv ⟨n, .SafeNeg⟩ => some (.app Op.bvneg, .bitvec n, ctx)
+  | .bv ⟨n, .SafeUAdd⟩ => some (.app Op.bvadd, .bitvec n, ctx)
+  | .bv ⟨n, .SafeUSub⟩ => some (.app Op.bvsub, .bitvec n, ctx)
+  | .bv ⟨n, .SafeUMul⟩ => some (.app Op.bvmul, .bitvec n, ctx)
+  | .bv ⟨n, .SafeUNeg⟩ => some (.app Op.bvneg, .bitvec n, ctx)
+  | .bv ⟨n, .SafeSDiv⟩ => some (.app Op.bvsdiv, .bitvec n, ctx)
+  | .bv ⟨n, .SafeSMod⟩ => some (.app Op.bvsrem, .bitvec n, ctx)
+  -- Signed overflow predicates
+  | .bv ⟨_, .SAddOverflow⟩ => some (.app Op.bvsaddo, .bool, ctx)
+  | .bv ⟨_, .SSubOverflow⟩ => some (.app Op.bvssubo, .bool, ctx)
+  | .bv ⟨_, .SMulOverflow⟩ => some (.app Op.bvsmulo, .bool, ctx)
+  | .bv ⟨_, .SNegOverflow⟩ => some (.app Op.bvnego, .bool, ctx)
+  -- SDivOverflow(x, y) = (x == INT_MIN) ∧ (y == -1)
+  | .bv ⟨n, .SDivOverflow⟩ =>
+    let app := fun (args : List Term) (_retTy : TermType) =>
+      match args with
+      | [x, y] =>
+        let intMin := Term.prim (.bitvec (BitVec.intMin n))
+        let negOne := Term.prim (.bitvec (BitVec.allOnes n))
+        let xIsMin := Term.app Op.eq [x, intMin] .bool
+        let yIsNegOne := Term.app Op.eq [y, negOne] .bool
+        Term.app Op.and [xIsMin, yIsNegOne] .bool
+      | _ => Term.app Op.and [] .bool
+    some (app, .bool, ctx)
+  -- Unsigned overflow predicates
+  -- UAddOverflow(x, y) = bvult(bvadd(x, y), x) — wrapping add < operand means overflow
+  | .bv ⟨_, .UAddOverflow⟩ =>
+    let app := fun (args : List Term) (_retTy : TermType) =>
+      match args with
+      | [x, y] =>
+        let bvTy := x.typeOf
+        let sum := Term.app Op.bvadd [x, y] bvTy
+        Term.app Op.bvult [sum, x] .bool
+      | _ => Term.app Op.and [] .bool
+    some (app, .bool, ctx)
+  | .bv ⟨_, .USubOverflow⟩ => some (Term.app Op.bvult, .bool, ctx)
+  -- UMulOverflow(x, y) = bvugt(zero_extend(N, x) * zero_extend(N, y), zero_extend(N, MAX))
+  | .bv ⟨n, .UMulOverflow⟩ =>
+    let app := fun (args : List Term) (_retTy : TermType) =>
+      match args with
+      | [x, y] =>
+        let extTy := TermType.prim (.bitvec (n + n))
+        let xe := Term.app (.zero_extend n) [x] extTy
+        let ye := Term.app (.zero_extend n) [y] extTy
+        let prod := Term.app Op.bvmul [xe, ye] extTy
+        let maxVal := Term.prim (.bitvec (BitVec.allOnes n))
+        let maxExt := Term.app (.zero_extend n) [maxVal] extTy
+        Term.app Op.bvugt [prod, maxExt] .bool
+      | _ => Term.app Op.and [] .bool
+    some (app, .bool, ctx)
+  -- UNegOverflow(x) = x != 0
+  | .bv ⟨n, .UNegOverflow⟩ =>
+    let app := fun (args : List Term) (_retTy : TermType) =>
+      match args with
+      | [x] =>
+        let zero := Term.prim (.bitvec (BitVec.zero n))
+        Term.app Op.not [Term.app Op.eq [x, zero] .bool] .bool
+      | _ => Term.app Op.and [] .bool
+    some (app, .bool, ctx)
 
-  | .app _ _ _ =>
-    appToSMTTerm E bvs e [] ctx useArrayTheory
+  | _ => none
 
-partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (acc : List Term) (ctx : SMT.Context)
-  (useArrayTheory : Bool := false) :
-  Except Format (Term × SMT.Context) := do
-  match e with
-  -- Special case for indexed SMT operations.
-  | .app _ (.app _ (.app _ (.op _ "Re.Loop" _) x) n1) n2 =>
-    let (xt, ctx) ← toSMTTerm E bvs x ctx useArrayTheory
-    match Lambda.LExpr.denoteInt n1, Lambda.LExpr.denoteInt n2 with
-    | .some n1i, .some n2i =>
-      match Int.toNat? n1i, Int.toNat? n2i with
-      | .some n1n, .some n2n =>
-        .ok (.app (Op.re_loop n1n n2n) [xt] .regex, ctx)
-      | _, _ => .error f!"Natural numbers expected as indices for re.loop.\n\
-                          Original expression: {e.eraseTypes}"
-    | _, _ => .error f!"Natural numbers expected as indices for re.loop.\n\
-                        Original expression: {e.eraseTypes}"
+/-- Resolve a Core operator `fn` (of monomorphic type `fnty`) to its SMT builder.
 
-  | .app _ (.app m fn e1) e2 => do
-    match e1, e2 with
-    | _, _ =>
-      let (e2t, ctx) ← toSMTTerm E bvs e2 ctx useArrayTheory
-      appToSMTTerm E bvs (.app m fn e1) (e2t :: acc) ctx useArrayTheory
-
-  | .app _ (.op _ fn fnty) e1 => do
-    match fnty with
-    | none => .error f!"Cannot encode unannotated operation {fn}. \n\
-                        Appears in expression: {e}"
-    | some fnty =>
-      let (op, retty, ctx) ← toSMTOp E fn fnty ctx useArrayTheory
-      let (e1t, ctx) ← toSMTTerm E bvs e1 ctx useArrayTheory
-      .ok (op (e1t :: acc) retty, ctx)
-  | .app _ (.fvar _ fn (.some fnty)) e1 => do
-    let tys := LMonoTy.destructArrow fnty
-    let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
-    let intys := tys.take (tys.length - 1)
-    let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx useArrayTheory
-    let (e1t, ctx) ← toSMTTerm E bvs e1 ctx useArrayTheory
-    let allArgs := e1t :: acc
-    let mut argvars : List TermVar := []
-    let mut ctx := ctx
-    for inty in intys do
-      let (smt_inty, ctx') ← LMonoTy.toSMTType E inty ctx useArrayTheory
-      ctx := ctx'
-      argvars := argvars ++ [TermVar.mk (toString $ format inty) smt_inty]
-    let uf := UF.mk (id := (toString $ format fn)) (args := argvars) (out := smt_outty)
-    .ok (Term.app (.uf uf) allArgs smt_outty, ctx)
-  | .app _ _ _ =>
-    .error f!"Cannot encode expression {e}"
-
-  | _ => toSMTTerm E bvs e ctx useArrayTheory
-
-partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Context)
-  (useArrayTheory : Bool := false) :
-  Except Format ((List Term → TermType → Term) × TermType × SMT.Context) :=
+    Returns the updated `SMT.Context` and pending-definition queue `pending`:
+    for a user-defined factory function this only registers the `UF` and
+    *schedules* a `PendingFnDef` (deferring body/axiom encoding); the queue is
+    threaded through term encoding and drained later by `processPendingFnDefs`. -/
+def toSMTOp (factory : @Lambda.Factory CoreLParams) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Context)
+  (pending : SMT.PendingFnQueue) :
+  Except Format ((List Term → TermType → Term) × TermType × SMT.Context × SMT.PendingFnQueue) :=
   open LTy.Syntax in do
   -- Encode the type to ensure any datatypes are registered in the context
   let tys := LMonoTy.destructArrow fnty
   let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
   let intys := tys.take (tys.length - 1)
   -- Need to encode arg types also (e.g. for testers)
-  let ctx := match LMonoTys.toSMTType E intys ctx useArrayTheory with
+  let ctx := match LMonoTys.toSMTType intys ctx with
     | .ok (_, ctx') => ctx'
     | .error _ => ctx
-  let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx useArrayTheory
+  let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
 
-  match ctx.datatypeFuns.find? fn.name with
+  -- Demangle so a specialized datatype op (e.g. `$__mono#Cons#int`) matches its
+  -- `datatypeFuns` key and the solver sees the native constructor/selector name.
+  let baseFn := Core.NameMangling.demangledBaseName fn.name
+  match ctx.datatypeFuns.get? baseFn with
   | some (kind, c) =>
     let adtApp := fun (args : List Term) (retty : TermType) =>
         /-
@@ -427,218 +598,44 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
         Unsafe selectors (e.g. List..head!) use the safe name (List..head).
         -/
         let name := match kind with
-          | .selector => stripUnsafeDestructorSuffix fn.name
+          | .selector => stripUnsafeDestructorSuffix baseFn
           | _ => c.name.name
         Term.app (.datatype_op kind name) args retty
-    .ok (adtApp, smt_outty, ctx)
+    .ok (adtApp, smt_outty, ctx, pending)
   | none =>
     -- Not a constructor, tester, or destructor
-    -- Helper: SDivOverflow(x, y) = (x == INT_MIN) ∧ (y == -1)
-    let sdivOverflowEnc := fun (n : Nat) (ctx : SMT.Context) =>
-      let sdivOverflowApp := fun (args : List Term) (_retTy : TermType) =>
-        match args with
-        | [x, y] =>
-          let intMin := Term.prim (.bitvec (BitVec.intMin n))
-          let negOne := Term.prim (.bitvec (BitVec.allOnes n))
-          let xIsMin := Term.app Op.eq [x, intMin] .bool
-          let yIsNegOne := Term.app Op.eq [y, negOne] .bool
-          Term.app Op.and [xIsMin, yIsNegOne] .bool
-        | _ => Term.app Op.and [] .bool
-      Except.ok (sdivOverflowApp, TermType.prim .bool, ctx)
-    -- USubOverflow(x, y) = bvult(x, y)
-    let usubOverflowEnc := fun (ctx : SMT.Context) =>
-      Except.ok (Term.app Op.bvult, TermType.prim .bool, ctx)
-    -- UAddOverflow(x, y) = bvult(bvadd(x, y), x) — wrapping add < operand means overflow
-    let uaddOverflowEnc := fun (_n : Nat) (ctx : SMT.Context) =>
-      let app := fun (args : List Term) (_retTy : TermType) =>
-        match args with
-        | [x, y] =>
-          let bvTy := x.typeOf
-          let sum := Term.app Op.bvadd [x, y] bvTy
-          Term.app Op.bvult [sum, x] .bool
-        | _ => Term.app Op.and [] .bool
-      Except.ok (app, TermType.prim .bool, ctx)
-    -- UMulOverflow(x, y) = bvugt(zero_extend(N, x) * zero_extend(N, y), zero_extend(N, MAX))
-    let umulOverflowEnc := fun (n : Nat) (ctx : SMT.Context) =>
-      let app := fun (args : List Term) (_retTy : TermType) =>
-        match args with
-        | [x, y] =>
-          let extTy := TermType.prim (.bitvec (n + n))
-          let xe := Term.app (.zero_extend n) [x] extTy
-          let ye := Term.app (.zero_extend n) [y] extTy
-          let prod := Term.app Op.bvmul [xe, ye] extTy
-          let maxVal := Term.prim (.bitvec (BitVec.allOnes n))
-          let maxExt := Term.app (.zero_extend n) [maxVal] extTy
-          Term.app Op.bvugt [prod, maxExt] .bool
-        | _ => Term.app Op.and [] .bool
-      Except.ok (app, TermType.prim .bool, ctx)
-    -- UNegOverflow(x) = x != 0
-    let unegOverflowEnc := fun (n : Nat) (ctx : SMT.Context) =>
-      let app := fun (args : List Term) (_retTy : TermType) =>
-        match args with
-        | [x] =>
-          let zero := Term.prim (.bitvec (BitVec.zero n))
-          Term.app Op.not [Term.app Op.eq [x, zero] .bool] .bool
-        | _ => Term.app Op.and [] .bool
-      Except.ok (app, TermType.prim .bool, ctx)
-    match E.factory[fn.name]? with
+    match factory[fn.name]? with
     | none => .error f!"Cannot find function {fn} in Strata Core's Factory!"
     | some func =>
-      match CoreOp.ofString func.name.name with
-    | .bool .And     => .ok (.app Op.and,        .bool,   ctx)
-    | .bool .Or      => .ok (.app Op.or,         .bool,   ctx)
-    | .bool .Not     => .ok (.app Op.not,        .bool,   ctx)
-    | .bool .Implies => .ok (.app Op.implies,    .bool,   ctx)
-    | .bool .Equiv   => .ok (.app Op.eq,         .bool,   ctx)
-
-    | .numeric ⟨.int, .Neg⟩      => .ok (.app Op.neg,        .int ,   ctx)
-    | .numeric ⟨.int, .Add⟩      => .ok (.app Op.add,        .int ,   ctx)
-    | .numeric ⟨.int, .Sub⟩      => .ok (.app Op.sub,        .int ,   ctx)
-    | .numeric ⟨.int, .Mul⟩      => .ok (.app Op.mul,        .int ,   ctx)
-    | .numeric ⟨.int, .Div⟩ | .numeric ⟨.int, .SafeDiv⟩ =>
-      -- Safe to encode as normal SMT div/mod: preconditions have already been
-      -- checked and generated well-formedness conditions in the environment.
-      .ok (.app Op.div,        .int ,   ctx)
-    | .numeric ⟨.int, .Mod⟩ | .numeric ⟨.int, .SafeMod⟩ =>
-      .ok (.app Op.mod,        .int ,   ctx)
-    -- Truncating division: tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
-    | .numeric ⟨.int, .DivT⟩ | .numeric ⟨.int, .SafeDivT⟩ =>
-      let divTApp := fun (args : List Term) (retTy : TermType) =>
-        match args with
-        | [a, b] =>
-          let zero := Term.prim (.int 0)
-          let ab := Term.app Op.mul [a, b] retTy
-          let abGeZero := Term.app Op.ge [ab, zero] .bool
-          let absA := Term.app Op.abs [a] retTy
-          let absB := Term.app Op.abs [b] retTy
-          let q := Term.app Op.div [absA, absB] retTy
-          let negQ := Term.app Op.neg [q] retTy
-          Factory.ite abGeZero q negQ
-        | _ => Term.app Op.div args retTy
-      .ok (divTApp, .int, ctx)
-    -- Truncating modulo: tmod(a,b) = a - b * tdiv(a,b)
-    -- tdiv(a,b) = let q = ediv(abs(a), abs(b)) in ite(a*b >= 0, q, -q)
-    | .numeric ⟨.int, .ModT⟩ | .numeric ⟨.int, .SafeModT⟩ =>
-      let modTApp := fun (args : List Term) (retTy : TermType) =>
-        match args with
-        | [a, b] =>
-          let zero := Term.prim (.int 0)
-          let ab := Term.app Op.mul [a, b] retTy
-          let abGeZero := Term.app Op.ge [ab, zero] .bool
-          let absA := Term.app Op.abs [a] retTy
-          let absB := Term.app Op.abs [b] retTy
-          let q := Term.app Op.div [absA, absB] retTy
-          let negQ := Term.app Op.neg [q] retTy
-          let tdivAB := Term.app Op.ite [abGeZero, q, negQ] retTy
-          let bTimesTdiv := Term.app Op.mul [b, tdivAB] retTy
-          Term.app Op.sub [a, bTimesTdiv] retTy
-        | _ => Term.app Op.mod args retTy
-      .ok (modTApp, .int, ctx)
-    | .numeric ⟨.int, .Lt⟩       => .ok (.app Op.lt,         .bool,   ctx)
-    | .numeric ⟨.int, .Le⟩       => .ok (.app Op.le,         .bool,   ctx)
-    | .numeric ⟨.int, .Gt⟩       => .ok (.app Op.gt,         .bool,   ctx)
-    | .numeric ⟨.int, .Ge⟩       => .ok (.app Op.ge,         .bool,   ctx)
-
-    | .numeric ⟨.real, .Neg⟩     => .ok (.app Op.neg,        .real,   ctx)
-    | .numeric ⟨.real, .Add⟩     => .ok (.app Op.add,        .real,   ctx)
-    | .numeric ⟨.real, .Sub⟩     => .ok (.app Op.sub,        .real,   ctx)
-    | .numeric ⟨.real, .Mul⟩     => .ok (.app Op.mul,        .real,   ctx)
-    | .numeric ⟨.real, .Div⟩     => .ok (.app Op.rdiv,       .real,   ctx)
-    | .numeric ⟨.real, .Lt⟩      => .ok (.app Op.lt,         .bool,   ctx)
-    | .numeric ⟨.real, .Le⟩      => .ok (.app Op.le,         .bool,   ctx)
-    | .numeric ⟨.real, .Gt⟩      => .ok (.app Op.gt,         .bool,   ctx)
-    | .numeric ⟨.real, .Ge⟩      => .ok (.app Op.ge,         .bool,   ctx)
-
-    -- Bitvector operations: size-generic via CoreOp
-    | .bv ⟨n, .Neg⟩  => .ok (.app Op.bvneg,      .bitvec n, ctx)
-    | .bv ⟨n, .Add⟩  => .ok (.app Op.bvadd,      .bitvec n, ctx)
-    | .bv ⟨n, .Sub⟩  => .ok (.app Op.bvsub,      .bitvec n, ctx)
-    | .bv ⟨n, .Mul⟩  => .ok (.app Op.bvmul,      .bitvec n, ctx)
-    | .bv ⟨n, .UDiv⟩ => .ok (.app Op.bvudiv,     .bitvec n, ctx)
-    | .bv ⟨n, .UMod⟩ => .ok (.app Op.bvurem,     .bitvec n, ctx)
-    | .bv ⟨n, .SDiv⟩ => .ok (.app Op.bvsdiv,     .bitvec n, ctx)
-    | .bv ⟨n, .SMod⟩ => .ok (.app Op.bvsrem,     .bitvec n, ctx)
-    | .bv ⟨n, .Not⟩  => .ok (.app Op.bvnot,      .bitvec n, ctx)
-    | .bv ⟨n, .And⟩  => .ok (.app Op.bvand,      .bitvec n, ctx)
-    | .bv ⟨n, .Or⟩   => .ok (.app Op.bvor,       .bitvec n, ctx)
-    | .bv ⟨n, .Xor⟩  => .ok (.app Op.bvxor,      .bitvec n, ctx)
-    | .bv ⟨n, .Shl⟩  => .ok (.app Op.bvshl,      .bitvec n, ctx)
-    | .bv ⟨n, .UShr⟩ => .ok (.app Op.bvlshr,     .bitvec n, ctx)
-    | .bv ⟨n, .SShr⟩ => .ok (.app Op.bvashr,     .bitvec n, ctx)
-    | .bv ⟨_, .ULt⟩  => .ok (.app Op.bvult,      .bool,   ctx)
-    | .bv ⟨_, .ULe⟩  => .ok (.app Op.bvule,      .bool,   ctx)
-    | .bv ⟨_, .UGt⟩  => .ok (.app Op.bvugt,      .bool,   ctx)
-    | .bv ⟨_, .UGe⟩  => .ok (.app Op.bvuge,      .bool,   ctx)
-    | .bv ⟨_, .SLt⟩  => .ok (.app Op.bvslt,      .bool,   ctx)
-    | .bv ⟨_, .SLe⟩  => .ok (.app Op.bvsle,      .bool,   ctx)
-    | .bv ⟨_, .SGt⟩  => .ok (.app Op.bvsgt,      .bool,   ctx)
-    | .bv ⟨_, .SGe⟩  => .ok (.app Op.bvsge,      .bool,   ctx)
-    | .bv ⟨n, .Concat⟩ => .ok (.app Op.bvconcat,    .bitvec (n * 2), ctx)
-    | .bv ⟨_, .ToUInt⟩  => .ok (.app Op.ubv_to_int,  .int,            ctx)
-    | .bv ⟨_, .ToInt⟩   => .ok (.app Op.sbv_to_int,  .int,            ctx)
-    | .intToBv n        => .ok (.app (Op.int_to_bv n), .bitvec n,     ctx)
-
-    | .str .Length   => .ok (.app Op.str_length,    .int,    ctx)
-    | .str .Concat   => .ok (.app Op.str_concat,    .string, ctx)
-    | .str .Substr   => .ok (.app Op.str_substr,    .string, ctx)
-    | .str .ToRegEx  => .ok (.app Op.str_to_re,     .regex,  ctx)
-    | .str .InRegEx  => .ok (.app Op.str_in_re,     .bool,   ctx)
-    | .str .PrefixOf => .ok (.app Op.str_prefixof,  .bool,   ctx)
-    | .str .SuffixOf => .ok (.app Op.str_suffixof,  .bool,   ctx)
-    | .re .All       => .ok (.app Op.re_all,        .regex,  ctx)
-    | .re .AllChar   => .ok (.app Op.re_allchar,    .regex,  ctx)
-    | .re .Range     => .ok (.app Op.re_range,      .regex,  ctx)
-    | .re .Concat    => .ok (.app Op.re_concat,     .regex,  ctx)
-    | .re .Star      => .ok (.app Op.re_star,       .regex,  ctx)
-    | .re .Plus      => .ok (.app Op.re_plus,       .regex,  ctx)
-    | .re .Union     => .ok (.app Op.re_union,      .regex,  ctx)
-    | .re .Inter     => .ok (.app Op.re_inter,      .regex,  ctx)
-    | .re .Comp      => .ok (.app Op.re_comp,       .regex,  ctx)
-    | .re .None      => .ok (.app Op.re_none,       .regex,  ctx)
-
-    | .trigger .EmptyTriggers | .trigger .EmptyGroup =>
-      .ok (.app Op.triggers, .trigger, ctx)
-    | .trigger .AddTrigger | .trigger .AddGroup =>
-      .ok (Factory.addTriggerList, .trigger, ctx)
-
-    -- Safe BV operations: same encoding as unsafe (preconditions already checked)
-    | .bv ⟨n, .SafeAdd⟩ => .ok (.app Op.bvadd, .bitvec n, ctx)
-    | .bv ⟨n, .SafeSub⟩ => .ok (.app Op.bvsub, .bitvec n, ctx)
-    | .bv ⟨n, .SafeMul⟩ => .ok (.app Op.bvmul, .bitvec n, ctx)
-    | .bv ⟨n, .SafeNeg⟩ => .ok (.app Op.bvneg, .bitvec n, ctx)
-    | .bv ⟨n, .SafeUAdd⟩ => .ok (.app Op.bvadd, .bitvec n, ctx)
-    | .bv ⟨n, .SafeUSub⟩ => .ok (.app Op.bvsub, .bitvec n, ctx)
-    | .bv ⟨n, .SafeUMul⟩ => .ok (.app Op.bvmul, .bitvec n, ctx)
-    | .bv ⟨n, .SafeUNeg⟩ => .ok (.app Op.bvneg, .bitvec n, ctx)
-    | .bv ⟨n, .SafeSDiv⟩ => .ok (.app Op.bvsdiv, .bitvec n, ctx)
-    | .bv ⟨n, .SafeSMod⟩ => .ok (.app Op.bvsrem, .bitvec n, ctx)
-    -- Signed overflow predicates
-    | .bv ⟨_, .SAddOverflow⟩ => .ok (.app Op.bvsaddo, .bool, ctx)
-    | .bv ⟨_, .SSubOverflow⟩ => .ok (.app Op.bvssubo, .bool, ctx)
-    | .bv ⟨_, .SMulOverflow⟩ => .ok (.app Op.bvsmulo, .bool, ctx)
-    | .bv ⟨_, .SNegOverflow⟩ => .ok (.app Op.bvnego, .bool, ctx)
-    | .bv ⟨n, .SDivOverflow⟩ => sdivOverflowEnc n ctx
-    -- Unsigned overflow predicates
-    | .bv ⟨n, .UAddOverflow⟩ => uaddOverflowEnc n ctx
-    | .bv ⟨_, .USubOverflow⟩ => usubOverflowEnc ctx
-    | .bv ⟨n, .UMulOverflow⟩ => umulOverflowEnc n ctx
-    | .bv ⟨n, .UNegOverflow⟩ => unegOverflowEnc n ctx
-
-    | _ => do
-      let fnname := func.name.name
-      if (fnname == "select" || fnname == "update") && useArrayTheory then
-        .ok (.app (if fnname == "select" then Op.select else Op.store), smt_outty, ctx)
+      -- Demangle so built-in dispatch keys on the base name (see above).
+      let baseName := Core.NameMangling.demangledBaseName func.name.name
+      match corePredefinedOpToSMTOp (CoreOp.ofString baseName) ctx with
+      | some (op, retty, ctx) => .ok (op, retty, ctx, pending)
+      | none => do
+      if (baseName == "select" || baseName == "update") && ctx.useArrayTheory then
+        .ok (.app (if baseName == "select" then Op.select else Op.store), smt_outty, ctx, pending)
+      -- The three membership-level set operations are exactly array operations on the
+      -- characteristic function, so they go straight to the theory instead of being declared
+      -- and axiomatized. `insert`/`remove` take two arguments where `store` takes three, so
+      -- the stored boolean is appended here.
+      --
+      -- The axioms for `Set.empty` and the binary operations reference `Set.contains`, which
+      -- also routes here, so they remain consistent with the native encoding.
+      else if baseName == "Set.contains" && ctx.useArrayTheory then
+        .ok (.app Op.select, smt_outty, ctx, pending)
+      else if (baseName == "Set.insert" || baseName == "Set.remove") && ctx.useArrayTheory then
+        let stored := Term.bool (baseName == "Set.insert")
+        .ok ((fun args ty => .app Op.store (args ++ [stored]) ty), smt_outty, ctx, pending)
       else
         let formals := func.inputs.keys
         let formalStrs := formals.map (toString ∘ format)
         let tys := LMonoTy.destructArrow fnty
         let intys := tys.take (tys.length - 1)
-        let (smt_intys, ctx) ← LMonoTys.toSMTType E intys ctx useArrayTheory
+        let (smt_intys, ctx) ← LMonoTys.toSMTType intys ctx
         let bvs := formalStrs.zip smt_intys
-        let argvars := bvs.map (fun a => TermVar.mk (toString $ format a.fst) a.snd)
         let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
-        let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx useArrayTheory
-        let uf := ({id := (toString $ format fn), args := argvars, out := smt_outty})
+        let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
+        let uf : UF := { id := (toString $ format fn), args := smt_intys, out := smt_outty }
         let arrowParams := func.inputs.toList.filter (fun (_, ty) => ty.containsArrow)
         if !arrowParams.isEmpty then
           let names := arrowParams.map (fun (n, _) => toString (format n))
@@ -651,71 +648,381 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
                     it returns a function type '{func.output}'. \
                     Higher-order functions cannot be encoded to SMT. \
                     Consider marking the function as `inline`."
-        -- Note: hasAbs does not special-case directly-applied lambdas (let expressions)
-        -- because the partial evaluator beta-reduces those before SMT encoding.
+        -- Lambda redexes (let-alias bindings such as Core's `have`; see
+        -- `Strata/Transform/BetaReduce.lean`) are contracted by the
+        -- `betaReduce` pipeline phase before encoding, so an abstraction here
+        -- is a genuine higher-order body and is correctly rejected.
         else if func.body.any LExpr.hasAbs then
           .error f!"Cannot encode function '{func.name}' to SMT: \
                     its body contains a lambda expression. \
                     Lambda abstractions cannot be encoded to SMT. \
                     Consider marking the function as `inline`."
         else
-          let (ctx, isNew) ←
-            if func.isRecursive then
-              .ok (ctx.addUF uf, !ctx.ufs.contains uf)
-            else match func.body with
-            | none => .ok (ctx.addUF uf, !ctx.ufs.contains uf)
-            | some body =>
-              -- Substitute the formals in the function body with appropriate
-              -- `.bvar`s. Use substFvarsLifting to properly lift indices under binders.
-              let bvars := (List.range formals.length).map (fun i => LExpr.bvar () i)
-              let body := LExpr.substFvarsLifting body (formals.zip bvars)
-              let (term, ctx) ← toSMTTerm E bvs body ctx useArrayTheory
-              .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
-          -- For recursive functions with @[cases], generate per-constructor axioms.
-          -- Int-recursive functions (no @[cases]) are pure UFs with no axioms.
-          let recAxioms ← if func.isRecursive && isNew &&
-              (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).isSome then
-              Lambda.genRecursiveAxioms func ctx.typeFactory E.exprEval ()
-            else .ok []
-          let allAxioms := func.axioms ++ recAxioms
-          if isNew then
-            -- To ensure termination, we add the axioms only for new functions
-            -- Get the function's type patterns (input types + output type)
-            let inputPatterns := func.inputs.values
-            let outputPattern := func.output
-            let allPatterns := inputPatterns ++ [outputPattern]
+          -- Defer encoding the function's definition (interpreted body and/or
+          -- axioms). Those would require calling `toSMTTerm` on expressions
+          -- drawn from the factory; schedule a `PendingFnDef` instead. Skip
+          -- functions already committed.
+          let pending := if ctx.committedFn uf then pending
+            else pending.insert { fn := fn, uf := uf, fnty := fnty }
+          .ok (.app (Op.uf uf), smt_outty, ctx, pending)
 
-            -- Extract type instantiations by matching patterns against concrete types
-            let type_instantiations: Map String LMonoTy := extractTypeInstantiations func.typeArgs allPatterns (intys ++ [outty])
-            let smt_ty_inst ← type_instantiations.foldlM (fun acc_map (tyVar, monoTy) => do
-              let (smtTy, _) ← LMonoTy.toSMTType E monoTy ctx useArrayTheory
-              .ok (acc_map.insert tyVar smtTy)
-            ) Map.empty
-            -- Add all axioms for this function to the context, with types binding for the type variables in the expr
-            -- Save the original tySubst to restore after processing axioms
-            let savedSubst := ctx.tySubst
-            let ctx ← allAxioms.foldlM (fun acc_ctx (ax: LExpr CoreLParams.mono) => do
-              let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
-                let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx useArrayTheory
-                .ok (new_ctx.addAxiom axiom_term)
-            ) ctx
-            let ctx := ctx.restoreSubst savedSubst
-            .ok (.app (Op.uf uf), smt_outty, ctx)
-          else
-            .ok (.app (Op.uf uf), smt_outty, ctx)
+/-- Does `tr` denote a *structured* Core trigger list (a `Triggers.empty` /
+    `Triggers.addGroup` spine, or `LExpr.noTrigger`)? If not, the trigger is a bare
+    pattern term supplied directly and forms a single `:pattern` group. -/
+def isCoreTriggerListExpr (tr : LExpr CoreLParams.mono) : Bool :=
+  match tr with
+  | .bvar _ _ => true  -- LExpr.noTrigger
+  | .op _ opId _ =>
+    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    | .trigger .EmptyTriggers | .trigger .EmptyGroup => true
+    | _ => false
+  | .app _ (.app _ (.op _ opId _) _) _ =>
+    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    | .trigger .AddGroup => true
+    | _ => false
+  | _ => false
+
+mutual
+
+@[expose]
+def toSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (ctx : SMT.Context)
+  (pending : SMT.PendingFnQueue)
+  : Except Format (Term × SMT.Context × SMT.PendingFnQueue) := do
+  match e with
+  | .boolConst _ b => .ok (Term.bool b, ctx, pending)
+  | .intConst _ i => .ok (Term.int i, ctx, pending)
+  | .rationalConst _ r =>
+    match StrataDDM.Decimal.fromRat r with
+    | some d => .ok (Term.real d, ctx, pending)
+    | none =>
+      -- `r` has no terminating decimal expansion (e.g. `1/3`), so encode it as
+      -- the exact real division `(/ num den)` rather than erroring.
+      let num := Term.real (StrataDDM.Decimal.ofInt r.num)
+      let den := Term.real (StrataDDM.Decimal.ofInt (Int.ofNat r.den))
+      .ok (.app Op.rdiv [num, den] .real, ctx, pending)
+  | .bitvecConst _ n b => .ok (Term.bitvec b, ctx, pending)
+  | .strConst _ s => .ok (Term.string s, ctx, pending)
+  | .op _ fn fnty =>
+    match fnty with
+    | none => .error f!"Cannot encode unannotated operation {fn}."
+    | some fnty =>
+      -- 0-ary Operation.
+      let (op, retty, ctx, pending) ← toSMTOp factory fn fnty ctx pending
+      .ok (op [] retty, ctx, pending)
+
+  | .bvar _ i =>
+    if h: i < bvs.length
+    then do
+      let var := bvs[i]
+      .ok ((TermVar.mk var.fst var.snd), ctx, pending)
+    else .error f!"Bound variable index is out of bounds: {i}"
+
+  | .fvar _ f ty =>
+    match ty with
+    | none => .error f!"Cannot encode unannotated free variable {e}"
+    | some ty =>
+      let (tty, ctx) ← LMonoTy.toSMTType ty ctx
+      let uf := { id := f.name, args := [], out := tty }
+      .ok (.app (.uf uf) [] tty, ctx.addUF uf, pending)
+
+  | .abs _ _ _ _ =>
+    .error f!"Cannot encode lambda expression to SMT. \
+              Lambda abstractions must be eliminated (e.g., by beta-reduction) \
+              before SMT encoding.\n\
+              Lambda: {e}"
+
+  | .quant _ _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
+  | .quant _ qk name (.some ty) tr e =>
+    let fvarNames := (e.collectFvarNames.map (·.name)).toArray
+    -- Prefer the user-provided binder name; when absent, fall back to a
+    -- depth-based `$__bv{N}` name (`N` = the binder's de Bruijn depth, i.e. the
+    -- current binder-stack size). The `$__` prefix is reserved for internal use
+    -- and cannot appear in user identifiers. `findUnique` (below) then resolves
+    -- any residual clash against the names in scope, so the base need only be
+    -- unique along a root-to-leaf binder path — which depth guarantees.
+    let (baseName, startSuffix) :=
+      if name.isEmpty then
+        (s!"$__bv{bvs.length}", 1)
+      else
+        Strata.Name.breakDisambiguated name
+    -- Check for clashes with existing bvars, fvars, sorts, datatypes, and fvars in body
+    let usedNames := Std.HashSet.ofList (bvs.map (·.1) ++ ctx.ufs.toList.map (·.id) ++ fvarNames.toList
+      ++ ctx.sorts.toList.map (·.name) ++ ctx.seenDatatypes.toList)
+    let x := Strata.Name.findUnique baseName startSuffix usedNames
+    let (ety, ctx) ← LMonoTy.toSMTType ty ctx
+    -- Lower the Core trigger expression into `List (List Term)` pattern groups; leaf
+    -- pattern terms are encoded with the binder `x` in scope.
+    let trBvs := (x, ety) :: bvs
+    let (trGroups, ctx, pending) ←
+      if isCoreTriggerListExpr tr then
+        encodeTriggerGroups factory trBvs tr [] ctx pending
+      else
+        -- A single pattern term forms one `:pattern` group.
+        let (tt, ctx, pending) ← toSMTTerm factory trBvs tr ctx pending
+        .ok ([[tt]], ctx, pending)
+    let (et, ctx, pending) ← toSMTTerm factory trBvs e ctx pending
+    .ok (Factory.quant (convertQuantifierKind qk) x ety trGroups et, ctx, pending)
+  | .eq _ e1 e2 =>
+    let (e1t, ctx, pending) ← toSMTTerm factory bvs e1 ctx pending
+    let (e2t, ctx, pending) ← toSMTTerm factory bvs e2 ctx pending
+    .ok ((Factory.eq e1t e2t), ctx, pending)
+
+  | .ite _ c t f =>
+    let (ct, ctx, pending) ← toSMTTerm factory bvs c ctx pending
+    let (tt, ctx, pending) ← toSMTTerm factory bvs t ctx pending
+    let (ft, ctx, pending) ← toSMTTerm factory bvs f ctx pending
+    .ok ((Factory.ite ct tt ft), ctx, pending)
+
+  | .app _ fn arg =>
+    appToSMTTerm factory bvs fn arg [] ctx pending
+termination_by (sizeOf e, 1)
+decreasing_by
+  all_goals simp_wf
+  all_goals (first | omega | term_by_mem)
+
+/-- Encode an application `fn arg` (with already-encoded trailing arguments
+    `acc`) to an SMT term.
+
+    `fn`/`arg` are the two children of an `LExpr.app` node; splitting them out
+    in the signature (rather than taking the whole `.app`) makes it a type-level
+    invariant that this function is only ever called on applications, so there
+    is no "not an application" fallthrough to handle. The head of the spine is
+    reached by recursing on `fn`; `acc` accumulates the encoded arguments from
+    right to left as the spine is peeled. -/
+def appToSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (fn arg : LExpr CoreLParams.mono)
+  (acc : List Term) (ctx : SMT.Context)
+  (pending : SMT.PendingFnQueue) :
+  Except Format (Term × SMT.Context × SMT.PendingFnQueue) := do
+  match fn, arg with
+  -- Special case for indexed SMT operations. The loop bounds must be natural
+  -- number literals. Partial evaluation reduces the index expressions to
+  -- `.intConst` before SMT encoding *when the surrounding function is inlined*;
+  -- a `re.loop` inside a non-inlined function body (encoded as a UF) can still
+  -- carry symbolic indices, so we keep the explicit error for that case.
+  | .app _ (.app _ (.op _ "Re.Loop" _) x) n1, n2 =>
+    let (xt, ctx, pending) ← toSMTTerm factory bvs x ctx pending
+    match n1, n2 with
+    | .intConst _ n1i, .intConst _ n2i =>
+      match Int.toNat? n1i, Int.toNat? n2i with
+      | .some n1n, .some n2n =>
+        .ok (.app (Op.re_loop n1n n2n) [xt] .regex, ctx, pending)
+      | _, _ => .error f!"Natural numbers expected as indices for re.loop.\n\
+                          Original expression: {(LExpr.app () fn arg).eraseTypes}"
+    | _, _ => .error f!"Natural numbers expected as indices for re.loop.\n\
+                        Original expression: {(LExpr.app () fn arg).eraseTypes}"
+
+  | .app _ fn' e1, e2 => do
+    let (e2t, ctx, pending) ← toSMTTerm factory bvs e2 ctx pending
+    appToSMTTerm factory bvs fn' e1 (e2t :: acc) ctx pending
+
+  | .op _ fn fnty, e1 => do
+    match fnty with
+    | none => .error f!"Cannot encode unannotated operation {fn}. \n\
+                        Appears in expression: {LExpr.app () (LExpr.op () fn fnty) e1}"
+    | some fnty =>
+      let (op, retty, ctx, pending) ← toSMTOp factory fn fnty ctx pending
+      let (e1t, ctx, pending) ← toSMTTerm factory bvs e1 ctx pending
+      .ok (op (e1t :: acc) retty, ctx, pending)
+  | .fvar _ fn (.some fnty), e1 => do
+    let tys := LMonoTy.destructArrow fnty
+    let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
+    let intys := tys.take (tys.length - 1)
+    let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
+    let (e1t, ctx, pending) ← toSMTTerm factory bvs e1 ctx pending
+    let allArgs := e1t :: acc
+    let mut argTysRev : List TermType := []
+    let mut ctx := ctx
+    for inty in intys do
+      let (smt_inty, ctx') ← LMonoTy.toSMTType inty ctx
+      ctx := ctx'
+      argTysRev := smt_inty :: argTysRev
+    let argTys := argTysRev.reverse
+    let uf := UF.mk (id := (toString $ format fn)) (args := argTys) (out := smt_outty)
+    .ok (Term.app (.uf uf) allArgs smt_outty, ctx, pending)
+  | _, _ =>
+    .error f!"Cannot encode .app expression {LExpr.app () fn arg}"
+termination_by (sizeOf fn + sizeOf arg, 0)
+decreasing_by
+  all_goals simp_wf
+  all_goals (first | omega | term_by_mem)
+
+/-- Decompose one Core trigger *group* — a `TriggerGroup.addTrigger` spine ending
+    in `TriggerGroup.empty` (as produced by `Core.Factory.mkTriggerGroup`) — into
+    the list of encoded SMT pattern terms it holds, in source order. -/
+def encodeTriggerGroup (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars)
+  (g : LExpr CoreLParams.mono) (acc : List Term) (ctx : SMT.Context)
+  (pending : SMT.PendingFnQueue)
+  : Except Format (List Term × SMT.Context × SMT.PendingFnQueue) := do
+  match g with
+  | .op _ _ _ =>
+    -- `TriggerGroup.empty`: end of the group spine.
+    .ok (acc, ctx, pending)
+  | .app _ (.app _ (.op _ opId _) t) rest =>
+    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    | .trigger .AddTrigger =>
+      let (tt, ctx, pending) ← toSMTTerm factory bvs t ctx pending
+      encodeTriggerGroup factory bvs rest (tt :: acc) ctx pending
+    | _ => .error f!"Unexpected operator in trigger group: {opId.name}"
+  | _ => .error f!"Unexpected trigger group expression: {g}"
+termination_by (sizeOf g, 0)
+decreasing_by
+  all_goals simp_wf
+  all_goals (first | omega | term_by_mem)
+
+/-- Decompose a structured Core trigger LExpr — a `Triggers.addGroup` spine ending
+    in `Triggers.empty` (as produced by `Core.Factory.mkTriggerExpr`), or
+    `LExpr.noTrigger` (a bare `.bvar`) when absent — into SMT `:pattern` groups, in
+    source order. Direct (unstructured) pattern-term triggers are handled by the
+    caller, not here. -/
+def encodeTriggerGroups (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars)
+  (tr : LExpr CoreLParams.mono) (acc : List (List Term)) (ctx : SMT.Context)
+  (pending : SMT.PendingFnQueue)
+  : Except Format (List (List Term) × SMT.Context × SMT.PendingFnQueue) := do
+  match tr with
+  | .bvar _ _ =>
+    -- `LExpr.noTrigger`: no meaningful trigger.
+    .ok (acc, ctx, pending)
+  | .op _ _ _ =>
+    -- `Triggers.empty`: end of the group-list spine.
+    .ok (acc, ctx, pending)
+  | .app _ (.app _ (.op _ opId _) g) rest =>
+    match CoreOp.ofString (Core.NameMangling.demangledBaseName opId.name) with
+    | .trigger .AddGroup =>
+      let (group, ctx, pending) ← encodeTriggerGroup factory bvs g [] ctx pending
+      encodeTriggerGroups factory bvs rest (group :: acc) ctx pending
+    | _ => .error f!"Unexpected operator in trigger list: {opId.name}"
+  | _ => .error f!"Unexpected trigger expression: {tr}"
+termination_by (sizeOf tr, 0)
+decreasing_by
+  all_goals simp_wf
+  all_goals (first | omega | term_by_mem)
 
 end
 
-def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context)
-  (useArrayTheory : Bool := false) :
-  Except Format ((List Term) × SMT.Context) := do
-  let ctx := if ctx.typeFactory.isEmpty then ctx.withTypeFactory E.datatypes else ctx
-  match es with
-  | [] => .ok ([], ctx)
-  | e :: erest =>
-    let (et, ctx) ← toSMTTerm E [] e ctx useArrayTheory
-    let (erestt, ctx) ← toSMTTerms E erest ctx useArrayTheory
-    .ok ((et :: erestt), ctx)
+/--
+Encode a single deferred function `p`: encode its interpreted body (if any) and
+its axioms to SMT `Term`s, returning the resolved
+definition together with the (further) functions those terms reference.
+`seen` holds the functions whose resolution is in progress or done.
+-/
+def resolveOnePendingFnDef (factory : @Lambda.Factory CoreLParams)
+    (ctx : SMT.Context) (seen : Std.HashSet UF) (p : SMT.PendingFnDef) :
+    Except Format (SMT.EncodedFnDef × SMT.Context × List SMT.PendingFnDef) :=
+  open LTy.Syntax in do
+  ctx.checkMonomorphic
+  let some func := factory[p.fn.name]?
+    | .error f!"Cannot find function {p.fn} in Strata Core's Factory!"
+
+  let tys := LMonoTy.destructArrow p.fnty
+  let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty p.fnty)
+  let intys := tys.take (tys.length - 1)
+  let formals := func.inputs.keys
+  let formalStrs := formals.map (toString ∘ format)
+
+  -- Encode arg types (needed for both interpreted and uninterpreted paths).
+  let (smt_intys, ctx) ← LMonoTys.toSMTType intys ctx
+  let args := formalStrs.zip smt_intys |>.map fun (n, ty) => ({ id := n, ty } : TermVar)
+  -- Encode the body (interpreted functions) or leave it uninterpreted.  A
+  -- recursive function stays uninterpreted (its per-constructor axioms carry
+  -- the definition) unless `recFnsAsDefineFunRec` is on, in which case its
+  -- body is encoded like any other and emitted as `define-fun-rec`.
+  let recAsDef := func.isRecursive && ctx.recFnsAsDefineFunRec && func.body.isSome
+  let (body?, ctx, pending) ←
+    if func.isRecursive && !recAsDef then
+      .ok (none, ctx, ({} : SMT.PendingFnQueue))
+    else match func.body with
+    | none => .ok (none, ctx, ({} : SMT.PendingFnQueue))
+    | some body =>
+      -- Substitute the formals in the function body with appropriate `.bvar`s.
+      -- Use substFvarsLifting to properly lift indices under binders.
+      let bvs := args.map fun v => (v.id, v.ty)
+      let bvars := (List.range formals.length).map (fun i => LExpr.bvar () i)
+      let body := LExpr.substFvarsLifting body (formals.zip bvars)
+      let (term, ctx, pending) ← toSMTTerm factory bvs body ctx {}
+      .ok (some term, ctx, pending)
+
+  -- A `define-fun-rec` may refer to itself and to functions emitted before it;
+  -- a recursive callee that is not yet committed is resolved and committed
+  -- before `p`. A recursive callee whose resolution is still in progress
+  -- calls back into `p` (mutual recursion), which would need
+  -- `define-funs-rec`. That is not supported yet: fail rather than emit an
+  -- ill-formed query.
+  if recAsDef then
+    if let some d := pending.toList.find? (fun d =>
+        d.uf != p.uf && seen.contains d.uf && !ctx.committedFn d.uf
+        && (factory[d.fn.name]?.map (·.isRecursive)).getD false) then
+      throw f!"recursiveFnsAsDefineFunRec: '{p.fn}' and '{d.fn}' are mutually \
+               recursive; define-funs-rec is not supported yet."
+  -- Encode the function's axioms (recursive-function axioms are pre-computed by
+  -- `Core.generateRecursiveAxioms` and carried in `func.axioms`).  All types
+  -- are monomorphic post-`MonomorphizeFunctions`, so no type-variable
+  -- substitution is needed to encode them.
+  let (axiomTermsRev, ctx, pending) ← func.axioms.foldlM
+    (init := (([] : List Term), ctx, pending))
+    (fun (axs, ctx, pending) (ax : LExpr CoreLParams.mono) => do
+      let (axiom_term, ctx, pending) ← toSMTTerm factory [] ax ctx pending
+      .ok (axiom_term :: axs, ctx, pending))
+  .ok ({ id := p.uf.id, args, out := p.uf.out, body?, axioms := axiomTermsRev.reverse,
+         isRec := recAsDef },
+       ctx, pending.toList)
+
+/--
+Resolve and commit the transitive closure of deferred function definitions
+to `SMT.Context`.
+The fuel is set to factory.toArray.size + pending.length, which is enough to
+visit all bodies and axioms. It is used to make the termination proof easier.
+-/
+def processPendingFnDefsAux (factory : @Lambda.Factory CoreLParams) (fuel : Nat)
+    (ctx : SMT.Context) (seen : Std.HashSet UF)
+    (pending : List SMT.PendingFnDef) :
+    Except Format SMT.Context := do
+  match pending with
+  | [] => .ok ctx
+  | p :: rest =>
+    -- Skip functions already committed to `ctx` or already in progress.
+    if ctx.committedFn p.uf || seen.contains p.uf then
+      processPendingFnDefsAux factory fuel ctx seen rest
+    else
+      match fuel with
+      | 0 => .error f!"Ran out of fuel resolving SMT function definitions \
+                       (cycle or factory larger than expected) at '{p.fn}'."
+      | fuel + 1 =>
+        -- Mark `p` in progress *before* encoding so a self/mutual reference in
+        -- its body or axioms does not re-schedule it.
+        let seen := seen.insert p.uf
+        let (rdef, ctx, deps) ← resolveOnePendingFnDef factory ctx seen p
+        -- Commit the dependencies discovered while encoding `p` first, so they
+        -- are committed before `p` (callee-before-caller), then commit `p`.
+        let ctx ← processPendingFnDefsAux factory fuel ctx seen deps
+        let ctx := ctx.addResolvedFnDef rdef
+        processPendingFnDefsAux factory fuel ctx seen rest
+termination_by (fuel, pending.length)
+decreasing_by
+  all_goals simp_wf
+  all_goals omega
+
+/-- Resolve and commit all deferred function definitions in `pending` to `ctx`.
+    The initial fuel covers the factory size (each function is committed at most
+    once). -/
+def processPendingFnDefs (factory : @Lambda.Factory CoreLParams)
+    (ctx : SMT.Context) (pending : SMT.PendingFnQueue) : Except Format SMT.Context := do
+  ctx.checkMonomorphic
+  processPendingFnDefsAux factory (factory.toArray.size + pending.size) ctx {} pending.toList
+
+def toSMTTerms (factory : @Lambda.Factory CoreLParams) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context)
+  (pending : SMT.PendingFnQueue) :
+  Except Format ((List Term) × SMT.Context × SMT.PendingFnQueue) := do
+  ctx.checkMonomorphic
+  go es ctx pending #[]
+where
+  go (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context) (pending : SMT.PendingFnQueue)
+     (acc : Array Term) :
+     Except Format ((List Term) × SMT.Context × SMT.PendingFnQueue) := do
+    match es with
+    | [] => return (acc.toList, ctx, pending)
+    | e :: erest =>
+      let (et, ctx, pending) ← toSMTTerm factory [] e ctx pending
+      go erest ctx pending (acc.push et)
 
 /--
 A variable definition to be emitted as `define-fun` in SMT-LIB.
@@ -734,80 +1041,81 @@ structure VarDeclaration where
   name : String
   ty : Strata.SMT.TermType
 
-/--
-Encode a proof obligation into SMT terms: path conditions (P) and obligation (Q).
-The obligation Q is returned without negation; see `encodeCore` in Verifier.lean
-for the check-sat encoding that applies negation for validity checks.
+/-! ### Per-item encoding workers -/
 
-Variable definitions (from `init name ty (.det e)`) are returned separately as
-`VarDefinition`s so the caller can emit them as `define-fun`.
-Variable declarations (from `init name ty .nondet`) are returned separately as
-`VarDeclaration`s so the caller can emit them as `declare-fun`.
--/
-def ProofObligation.toSMTTerms (E : Env)
-  (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default)
-  (useArrayTheory : Bool := false) :
-  Except Format (List Term × List VarDefinition × List VarDeclaration × Term × SMT.Context × Statistics) := do
-  let flatEntries := d.assumptions.flatten
-  -- Separate assumptions from variable definitions/declarations
-  let mut assumptionExprsRev : List (LExpr CoreLParams.mono) := []
-  let mut varDefsRev : List (CoreIdent × Expression.Ty × LExpr CoreLParams.mono) := []
-  let mut varDeclsRev : List (CoreIdent × Expression.Ty) := []
-  for entry in flatEntries do
-    match entry with
-    | .assumption _ expr => assumptionExprsRev := expr :: assumptionExprsRev
-    | .varDecl name ty (.det e) => varDefsRev := (name, ty, e) :: varDefsRev
-    | .varDecl name ty .nondet => varDeclsRev := (name, ty) :: varDeclsRev
-  let assumptionExprs := assumptionExprsRev.reverse
-  let varDefs := varDefsRev.reverse
-  let varDecls := varDeclsRev.reverse
-  let (ctx, distinct_terms) ← E.distinct.foldlM (λ (ctx, tss) es =>
-    do let (ts, ctx') ← Core.toSMTTerms E es ctx useArrayTheory; pure (ctx', ts :: tss)) (ctx, [])
-  let distinct_assumptions := distinct_terms.map
-    (λ ts => Term.app (.core .distinct) ts .bool)
-  let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptionExprs ctx useArrayTheory
-  -- Encode variable definitions
-  let (smtVarDefsRev, ctx) ← varDefs.foldlM (init := (([] : List VarDefinition), ctx)) fun (defs, ctx) (name, ty, rhs) => do
-    if h : ty.isMonoType then
-      let (smtTy, ctx) ← LMonoTy.toSMTType E (ty.toMonoType h) ctx useArrayTheory
-      let (rhsTerm, ctx) ← Core.toSMTTerm E [] rhs ctx useArrayTheory
-      .ok ({ name := name.name, ty := smtTy, body := rhsTerm } :: defs, ctx)
-    else
-      .error f!"SMT encoding: variable definition '{name.name}' has non-monomorphic type"
-  let smtVarDefs := smtVarDefsRev.reverse
-  -- Encode variable declarations
-  let (smtVarDeclsRev, ctx) ← varDecls.foldlM (init := (([] : List VarDeclaration), ctx)) fun (decls, ctx) (name, ty) => do
-    if h : ty.isMonoType then
-      let (smtTy, ctx) ← LMonoTy.toSMTType E (ty.toMonoType h) ctx useArrayTheory
-      .ok ({ name := name.name, ty := smtTy } :: decls, ctx)
-    else
-      .error f!"SMT encoding: variable declaration '{name.name}' has non-monomorphic type"
-  let smtVarDecls := smtVarDeclsRev.reverse
-  let (obligation_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx useArrayTheory
-  let stats : Statistics := ({} : Statistics)
-    |>.increment s!"{Evaluator.Stats.smtProofObligation_numAssumptions}"
-        (distinct_assumptions.length + assumptions_terms.length)
-  .ok (distinct_assumptions ++ assumptions_terms, smtVarDefs, smtVarDecls, obligation_term, ctx, stats)
+/-- Encode one plain assumption entry. Lambda redexes in assumption/obligation
+    terms (e.g. an argument-value precondition modelled as
+    `(fun _ : string => true)(arg)`) are contracted by the `betaReduce`
+    pipeline phase; a redex reaching `appToSMTTerm`'s catch-all here would
+    fail with "Cannot encode .app expression". -/
+def SMT.encodeAssumptionItem (factory : @Lambda.Factory CoreLParams)
+    (e : LExpr CoreLParams.mono) (ctx : SMT.Context) (pending : SMT.PendingFnQueue) :
+    Except Format (Term × SMT.Context × SMT.PendingFnQueue) :=
+  Core.toSMTTerm factory [] e ctx pending
+
+/-- Encode one distinctness group entry into a single `distinct` assertion. -/
+def SMT.encodeDistinctItem (factory : @Lambda.Factory CoreLParams)
+    (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context) (pending : SMT.PendingFnQueue) :
+    Except Format (Term × SMT.Context × SMT.PendingFnQueue) := do
+  let (ts, ctx, pending) ← Core.toSMTTerms factory es ctx pending
+  .ok (Term.app (.core .distinct) ts .bool, ctx, pending)
+
+/-- Encode one variable-definition entry (`init name ty (.det e)`), emitted by
+    callers as `define-fun`. -/
+def SMT.encodeVarDefItem (factory : @Lambda.Factory CoreLParams)
+    (item : CoreIdent × Expression.Ty × LExpr CoreLParams.mono)
+    (ctx : SMT.Context) (pending : SMT.PendingFnQueue) :
+    Except Format (VarDefinition × SMT.Context × SMT.PendingFnQueue) := do
+  let (name, ty, rhs) := item
+  if h : ty.isMonoType then
+    let (smtTy, ctx) ← LMonoTy.toSMTType (ty.toMonoType h) ctx
+    let (rhsTerm, ctx, pending) ← Core.toSMTTerm factory [] rhs ctx pending
+    .ok ({ name := name.name, ty := smtTy, body := rhsTerm }, ctx, pending)
+  else
+    .error f!"SMT encoding: variable definition '{name.name}' has non-monomorphic type"
+
+/-- Encode one variable-declaration entry (`init name ty .nondet`), emitted by
+    callers as `declare-fun`. Declarations have no body, so they schedule no
+    deferred functions and need not thread the pending queue. -/
+def SMT.encodeVarDeclItem (item : CoreIdent × Expression.Ty) (ctx : SMT.Context) :
+    Except Format (VarDeclaration × SMT.Context) := do
+  let (name, ty) := item
+  if h : ty.isMonoType then
+    let (smtTy, ctx) ← LMonoTy.toSMTType (ty.toMonoType h) ctx
+    .ok ({ name := name.name, ty := smtTy }, ctx)
+  else
+    .error f!"SMT encoding: variable declaration '{name.name}' has non-monomorphic type"
 
 ---------------------------------------------------------------------
 
 /-- Convert an expression of type LExpr to a String representation in SMT-Lib syntax, for testing.
     Outputs variable declarations followed by the assertion of the encoded term. -/
-def toSMTCommandsWithAssert (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
-  (useArrayTheory : Bool := false)
+def toSMTCommandsWithAssert (e : LExpr CoreLParams.mono)
+  (factory : @Lambda.Factory CoreLParams := Core.Factory) (ctx : SMT.Context := SMT.Context.default)
   : IO String := do
-  let smtctx := toSMTTerm E [] e ctx useArrayTheory
+  let smtctx := toSMTTerm factory [] e ctx {}
   match smtctx with
   | .error e => return e.pretty
-  | .ok (smt, _) =>
+  | .ok (smt, _, _) =>
     let b ← IO.mkRef { : IO.FS.Stream.Buffer }
     let solver ← Solver.bufferWriter b
-    let ((enc, _), _) ← ((Encoder.encodeTerm smt).run EncoderState.init).run solver
-    let _ ← (Solver.assert enc).run solver
-    let contents ← b.get
-    if h: contents.data.IsValidUTF8
-    then return String.fromUTF8 contents.data h
-    else return "Converting SMT Term to bytes produced an invalid UTF-8 sequence."
+    let (encoded, _) ← (((Encoder.encodeTerm smt).run EncoderState.init).run).run solver
+    match encoded with
+    | .error err => return toString err
+    | .ok (enc, _) =>
+      let (asserted, _) ← ((Solver.assert enc).run).run solver
+      match asserted with
+      | .error err => return toString err
+      | .ok () =>
+        let contents ← b.get
+        if h: contents.data.IsValidUTF8
+        then return String.fromUTF8 contents.data h
+        else return "Converting SMT Term to bytes produced an invalid UTF-8 sequence."
+
+/-- Whether a term is a real literal (top-level only). -/
+def smtTermIsReal : Strata.SMT.Term → Bool
+  | .prim (.real _) => true
+  | _               => false
 
 /--
 Convert an `SMT.Term` back to a Core `LExpr` (best-effort, partial inverse of `toSMTTerm`).
@@ -831,7 +1139,7 @@ def smtTermToLExpr (t : Strata.SMT.Term)
   match t with
   | .prim (.bool b)       => .boolConst () b
   | .prim (.int i)        => .intConst () i
-  | .prim (.real d)       => .realConst () d.toRat
+  | .prim (.real d)       => .rationalConst () d.toRat
   | .prim (.bitvec b)     => .bitvecConst () _ b
   | .prim (.string s)     => .strConst () s
   | .var v                =>
@@ -843,12 +1151,19 @@ def smtTermToLExpr (t : Strata.SMT.Term)
       .fvar () v.id none
   | .app (.core (.uf uf)) args _retTy =>
     -- Constructor names use `.op` so the formatter can distinguish them
-    -- from plain variables (e.g., `Nil` constructor must not be .fvar)
+    -- from plain variables (e.g., `Nil` constructor must not be .fvar).
+    --
+    -- The model parser represents unary `-` as a UF application, but Core has
+    -- no `-` production.  Map it to `int.neg`/`real.neg` so models print
+    -- re-parseable syntax.
     let fnExpr : LExpr CoreLParams.mono :=
-      if constructorNames.contains uf.id then
-        .op () uf.id none
-      else
-        .fvar () uf.id none
+      match uf.id, args with
+      | "-", [arg] => .op () (if smtTermIsReal arg then "Real.Neg" else "Int.Neg") none
+      | _, _ =>
+        if constructorNames.contains uf.id then
+          .op () uf.id none
+        else
+          .fvar () uf.id none
     args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg constructorNames)) fnExpr
   | .app (.datatype_op _kind name) args _retTy =>
     let fnExpr : LExpr CoreLParams.mono := .op () name none
@@ -870,7 +1185,7 @@ def smtTermToLExpr (t : Strata.SMT.Term)
 Extract the set of datatype constructor names from an `SMT.Context`.
 -/
 def SMT.Context.getConstructorNames (ctx : SMT.Context) : Std.HashSet String :=
-  ctx.datatypeFuns.toList.foldl (init := {}) fun acc (name, (kind, _)) =>
+  ctx.datatypeFuns.fold (init := {}) fun acc name (kind, _) =>
     if kind == .constructor then acc.insert name else acc
 
 /--
@@ -887,6 +1202,267 @@ def convertModel (model : Imperative.SMT.Model Expression.Ident)
 
 /-- Backward-compatible alias. -/
 @[deprecated convertModel (since := "2026-04-03")] abbrev convertCounterEx := @convertModel
+
+/-! ## Shared-prefix obligation encoder
+
+Encodes an env's obligations in arrival order, encoding each
+`PathConditionEntry` of their `assumptions` once, instead of re-encoding
+every obligation's full `assumptions` from scratch.
+
+The incremental machinery is the `Imperative.PathConditionsFold` fold; this
+section instantiates it (`smtEncodingFold`): the checkpoint `σ` is an
+`SMTCheckpoint` (the accumulated `SMT.Context`), the per-frame output `ω` is an
+`SMTEncodedPathCondition` (each entry's encoded term or deferred error, plus the
+factory-function definitions that term depends on), and the step is
+`encodePathConditionEntry`. Per obligation, `encodeObligationToSMT` encodes
+whichever of the obligation's `assumptions` the state has not already encoded,
+then *snapshots* the obligation: it reads the obligation's complete
+`EncodeResult` out of the shared state without writing anything back, so the
+goal never enters the shared state.
+
+The state holds the full, unpruned `assumptions`, so entries stay shared
+across obligations that prune different irrelevant axioms. An entry's term,
+any encoding error, and its definition dependencies are attributed to that
+entry, so `snapshotObligation` selects only the entries an obligation keeps:
+a pruned entry's term is never asserted, its error is never surfaced, and its
+definitions are never drained — for these three mechanisms the result matches
+a from-scratch encoding of the pruned obligation.
+
+Declarations are the exception: encoding an entry registers the sorts and
+free-variable UFs it mentions in the shared `SMT.Context` by side effect
+(first mention wins), with no per-entry attribution. A pruned entry's
+registrations therefore remain in the context and are emitted as `declare-sort`
+/ `declare-fun` lines a pruned-first encoding would not contain. These are
+semantically inert (solvers treat unused declarations as no-ops; verification
+results are unaffected).
+
+See `SMTEncoderProps.lean` for `encodeRun_eq_reference`: threading one
+state across an env's obligations produces exactly the results of encoding
+each obligation independently from scratch. -/
+
+/-- The encoder's checkpoint: the accumulated `SMT.Context`. -/
+structure SMTCheckpoint where
+  ctx : SMT.Context
+
+/-- One entry's complete, self-contained encoding contribution: either the
+    encoded term together with the factory-function definitions it depends on
+    (its own fresh `PendingFnQueue`), or the encoding error.
+
+    Deferring the error into the output — rather than failing the fold — lets
+    `snapshotObligation` surface it only for obligations that keep the entry's
+    label; capturing the per-entry queue lets the drain be seeded from kept
+    entries alone. -/
+structure EncodedEntry where
+  label : String
+  result : Except Format (Term × SMT.PendingFnQueue)
+
+/-- The encoded contributions of one frame, one list per `PathConditionEntry`
+    kind, each reversed for O(1) accumulation.
+
+    Assumptions and distincts are label-prunable, so each is stored as an
+    `EncodedEntry` whose error is deferred. Variable definitions/declarations
+    are program variables, so they are stored eagerly; a `varDef` additionally
+    carries its definition dependencies. -/
+structure SMTEncodedPathCondition where
+  assumptionsRev : List EncodedEntry := []
+  distinctsRev : List EncodedEntry := []
+  varDefsRev : List (VarDefinition × SMT.PendingFnQueue) := []
+  varDeclsRev : List VarDeclaration := []
+
+/-- Encode one `PathConditionEntry` against the accumulated context
+    (`current.ctx`), returning the updated `SMTCheckpoint` and `out` extended
+    with the entry's contribution. Serves as the step function of the
+    incremental fold.
+
+    Each entry is encoded against a *fresh* PendingFnQueue, so the returned queue
+    is exactly this entry's direct factory-function references.
+    Assumption/distinct encoding errors are deferred into the output and leave
+    the checkpoint unchanged; they become fatal only if a snapshot keeps
+    the entry's label. -/
+def encodePathConditionEntry (factory : @Lambda.Factory CoreLParams) (current : SMTCheckpoint)
+    (out : SMTEncodedPathCondition) (e : PathConditionEntry Expression) :
+    Except Format (SMTCheckpoint × SMTEncodedPathCondition) := do
+  match e with
+  | .assumption label expr =>
+    match SMT.encodeAssumptionItem factory expr current.ctx {} with
+    | .ok (t, ctx, pending) =>
+      let entry : EncodedEntry := { label, result := .ok (t, pending) }
+      .ok ({ ctx }, { out with assumptionsRev := entry :: out.assumptionsRev })
+    | .error err =>
+      let entry : EncodedEntry := { label, result := .error err }
+      .ok (current, { out with assumptionsRev := entry :: out.assumptionsRev })
+  | .distinct label exprs =>
+    match SMT.encodeDistinctItem factory exprs current.ctx {} with
+    | .ok (t, ctx, pending) =>
+      let entry : EncodedEntry := { label, result := .ok (t, pending) }
+      .ok ({ ctx }, { out with distinctsRev := entry :: out.distinctsRev })
+    | .error err =>
+      let entry : EncodedEntry := { label, result := .error err }
+      .ok (current, { out with distinctsRev := entry :: out.distinctsRev })
+  | .varDecl name ty (.det rhs) =>
+    let (d, ctx, pending) ← SMT.encodeVarDefItem factory (name, ty, rhs) current.ctx {}
+    .ok ({ ctx }, { out with varDefsRev := (d, pending) :: out.varDefsRev })
+  | .varDecl name ty .nondet =>
+    let (d, ctx) ← SMT.encodeVarDeclItem (name, ty) current.ctx
+    .ok ({ ctx }, { out with varDeclsRev := d :: out.varDeclsRev })
+
+/-- The SMT instantiation of the `PathConditionsFold` backend: each
+    `PathConditionEntry` is encoded to an SMT term against an `SMTCheckpoint`,
+    accumulating per-frame `SMTEncodedPathCondition`s. -/
+def smtEncodingFold (factory : @Lambda.Factory CoreLParams) :
+    Fold Format SMTCheckpoint SMTEncodedPathCondition Expression where
+  stepEntry := encodePathConditionEntry factory
+  emptyOutput := {}
+
+/-- The SMT encoder's fold state: the generic
+    `Imperative.PathConditions.FoldState` instantiated at the SMT backend's
+    checkpoint and output types. -/
+abbrev SMTEncodeState := FoldState SMTCheckpoint SMTEncodedPathCondition Expression
+
+/-! ## Per-obligation snapshots
+
+The fold state holds entry encodings shared by many obligations. A *snapshot*
+builds one obligation's SMT query from it. The state is left untouched for
+the next obligation.
+
+Snapshots are built in two stages. `EncodeResult.Assembly` is the
+goal-independent part: the kept entries' terms and drain seed. It depends
+only on the fold state's `frames`, so it is memoizable. `Assembly.finish`
+then folds in the obligation's goal and drains its definition dependencies. -/
+
+/-- One obligation's encoded SMT query. -/
+structure EncodeResult where
+  /-- Terms to assert: kept distincts, then kept assumptions. -/
+  assumptions : List Term
+  /-- Variable definitions (emitted as `define-fun`). -/
+  varDefs : List VarDefinition
+  /-- Variable declarations (emitted as `declare-fun`). -/
+  varDecls : List VarDeclaration
+  /-- The encoded goal term. -/
+  goal : Term
+  /-- The context after draining the definitions the terms depend on. -/
+  ctx : SMT.Context
+  /-- Encoding statistics for this obligation. -/
+  stats : Statistics
+
+/-- The goal-independent stage of an `EncodeResult`: the kept entries' terms
+    and drain seed, assembled from the frame list. -/
+structure EncodeResult.Assembly where
+  distincts : List Term
+  assumptions : List Term
+  varDefs : List VarDefinition
+  varDecls : List VarDeclaration
+  /-- Seed queue from the kept entries and varDefs (goal's queue not yet folded in). -/
+  keptSeed : SMT.PendingFnQueue
+
+/-- Assemble the entries `keep` selects, forcing their deferred results (a
+    kept entry's encoding error surfaces here; a dropped entry's never does).
+    Emission order: newest frame first, in-frame program order. -/
+def EncodeResult.Assembly.ofFramesKept (keep : String → Bool)
+    (frames : List (Imperative.PathConditions.PathConditionFrame
+      SMTCheckpoint SMTEncodedPathCondition Expression)) :
+    Except Format EncodeResult.Assembly := do
+  let keptDistincts ← (frames.flatMap fun f =>
+    f.output.distinctsRev.reverse.filterMap fun e =>
+      if keep e.label then some e.result else none).mapM id
+  let keptAssumptions ← (frames.flatMap fun f =>
+    f.output.assumptionsRev.reverse.filterMap fun e =>
+      if keep e.label then some e.result else none).mapM id
+  let varDefsWithPending := frames.flatMap fun f => f.output.varDefsRev.reverse
+  -- Seed the drain from only the definitions the kept terms depend on;
+  -- `processPendingFnDefs` rediscovers the transitive closure.
+  let seedQueues : List SMT.PendingFnQueue :=
+    keptAssumptions.map (·.2) ++ keptDistincts.map (·.2)
+      ++ varDefsWithPending.map (·.2)
+  let keptSeed : SMT.PendingFnQueue :=
+    seedQueues.foldl (fun acc q => q.toList.foldl (·.insert ·) acc) ({} : SMT.PendingFnQueue)
+  .ok { distincts := keptDistincts.map (·.1),
+        assumptions := keptAssumptions.map (·.1),
+        varDefs := varDefsWithPending.map (·.1),
+        varDecls := frames.flatMap fun f => f.output.varDeclsRev.reverse,
+        keptSeed }
+
+/-- Complete an assembly into an `EncodeResult`: fold the goal's definition
+    dependencies onto the seed, drain, and package. `ctx` is the context the
+    goal was encoded against. -/
+def EncodeResult.Assembly.finish (factory : @Lambda.Factory CoreLParams)
+    (asm : EncodeResult.Assembly) (goalTerm : Term) (goalPending : SMT.PendingFnQueue)
+    (ctx : SMT.Context) : Except Format EncodeResult := do
+  let seed := goalPending.toList.foldl (·.insert ·) asm.keptSeed
+  let ctx ← processPendingFnDefs factory ctx seed
+  let stats : Statistics := ({} : Statistics)
+    |>.increment s!"{Evaluator.Stats.smtProofObligation_numAssumptions}"
+        (asm.distincts.length + asm.assumptions.length)
+  .ok { assumptions := asm.distincts ++ asm.assumptions,
+        varDefs := asm.varDefs, varDecls := asm.varDecls,
+        goal := goalTerm, ctx, stats }
+
+/-- Build one obligation's `EncodeResult` from `st` without writing back:
+    encode the goal against `st.current`, assemble the kept entries, finish. -/
+def snapshotObligation (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeState)
+    (goal : Expression.Expr) (prunedLabels : List String) :
+    Except Format EncodeResult := do
+  -- Obligation-specific fork: encode the goal against a fresh queue, capturing
+  -- the goal's own definition dependencies.
+  let (goalTerm, ctx, goalPending) ←
+    Core.toSMTTerm factory [] goal st.current.ctx {}
+  -- Emission-time pruning: O(1) membership.
+  let pruned : Std.HashSet String :=
+    prunedLabels.foldl (fun acc l => acc.insert l) ∅
+  let asm ← EncodeResult.Assembly.ofFramesKept (fun l => !pruned.contains l) st.frames
+  asm.finish factory goalTerm goalPending ctx
+
+/-- Advance the fold over the obligation's `assumptions` (encoding only what
+    the state has not already encoded), then `snapshotObligation` for its goal.
+    Returns the result and the advanced state. -/
+def encodeObligationToSMT (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeState)
+    (ob : Imperative.ProofObligation Expression) (prunedLabels : List String := []) :
+    Except Format (EncodeResult × SMTEncodeState) := do
+  -- `assumptions` lists its PathConditions newest first; the fold runs oldest first.
+  let st ← ((smtEncodingFold factory).advance ob.assumptions.reverse).exec st
+  let r ← snapshotObligation factory st ob.obligation prunedLabels
+  .ok (r, st)
+
+/-! ## Pointer-memoized snapshot assembly
+
+Unpruned, the assembly depends only on the frame list, and adjacent
+obligations usually share the identical list — so a single-slot
+`Strata.PtrCache.PtrCache1` captures the reuse and a miss merely recomputes.
+Pruning keeps a different entry subset per obligation, so pruned obligations
+reassemble each time. -/
+
+/-- Flatten the frames' per-kind outputs into one obligation's `Assembly`,
+    keeping every entry. A named def so `PtrCache1` can memoize it. -/
+def EncodeResult.Assembly.ofFrames
+    (frames : List (Imperative.PathConditions.PathConditionFrame
+      SMTCheckpoint SMTEncodedPathCondition Expression)) :
+    Except Format EncodeResult.Assembly :=
+  EncodeResult.Assembly.ofFramesKept (fun _ => true) frames
+
+/-- `encodeObligationToSMT` with the assembly memoized by the frame list's
+    pointer address. Pruned obligations delegate to `encodeObligationToSMT`,
+    which is also available for callers without a cache to thread. -/
+def encodeObligationToSMTCached (factory : @Lambda.Factory CoreLParams) (st : SMTEncodeState)
+    (ob : Imperative.ProofObligation Expression) (prunedLabels : List String)
+    (cache : Strata.PtrCache.PtrCache1 EncodeResult.Assembly.ofFrames) :
+    Except Format (EncodeResult × SMTEncodeState ×
+      Strata.PtrCache.PtrCache1 EncodeResult.Assembly.ofFrames) := do
+  if prunedLabels.isEmpty then
+    let st ← ((smtEncodingFold factory).advance ob.assumptions.reverse).exec st
+    -- Encode the goal before assembling the entries: if both fail, the
+    -- goal's error is reported.
+    let (goalTerm, ctx, goalPending) ← Core.toSMTTerm factory [] ob.obligation st.current.ctx {}
+    -- Miss continuation as an explicit lambda so the assembly runs only on a
+    -- miss.
+    let k : Strata.PtrCache.PtrCache1M EncodeResult.Assembly.ofFrames st.frames :=
+      fun c => (⟨EncodeResult.Assembly.ofFrames st.frames, rfl⟩, c)
+    let (res, cache) := (Strata.PtrCache.evalPtrCache1 st.frames k).run cache
+    let asm ← res.output
+    let r ← asm.finish factory goalTerm goalPending ctx
+    .ok (r, st, cache)
+  else
+    let (r, st) ← encodeObligationToSMT factory st ob prunedLabels
+    .ok (r, st, cache)
 
 end -- public section
 

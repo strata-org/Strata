@@ -155,10 +155,6 @@ structure VerifyOptions where
       without needing the solver). -/
   alwaysGenerateSMT : Bool
   -- Encoding options
-  /-- Use globally unique `$__bv{N}` names for quantifier-bound
-      variables instead of human-readable names derived from
-      user-provided names. -/
-  uniqueBoundNames : Bool
   /-- Use SMT-LIB Array theory instead of axiomatized maps. -/
   useArrayTheory : Bool
   -- Verification behavior
@@ -205,6 +201,51 @@ structure VerifyOptions where
       to concurrent solver processes using `IO.asTask`. Each task spawns its
       own solver instance. Default 1 (sequential). -/
   parallelWorkers : Nat
+  /-- With `incremental`, the least number of sessions the program is cut into, each checked from
+      a fresh solver. It decides which goals each solver checks, so runs with the same value give
+      the same results whatever `parallelWorkers` is. `none` uses `parallelWorkers`. -/
+  minSessions : Option Nat := none
+  /-- With `incremental`, make every node holding goals a session of its own: its path, then its
+      goals, and nothing below it, whatever `minSessions` is. Set by `--min-sessions nodes`. -/
+  splitByNode : Bool := false
+  /-- With `incremental` and `removeIrrelevantAxioms`, reset a solver when a goal drops an axiom
+      it holds, so every goal is asked the per-obligation question. Off by default: a solver
+      then keeps the axioms earlier goals needed. Set by `--incremental-pruning exact`. -/
+  exactPruning : Bool := false
+  /-- Extra SMT solver options applied verbatim (as `(set-option :NAME VALUE)`)
+      after the built-in solver prelude, so they override it. Populated by
+      `--set-option NAME=VALUE` (repeatable). Option names are solver-specific
+      (e.g. for z3, `smt.mbqi=true` enables model-based quantifier instantiation
+      for quantified spec lemmas). Intended for local experimentation on the
+      local solver invocation only. -/
+  solverOptions : Array (String × String) := #[]
+  /-- When set, verify only these procedures: the pipeline's `filterProcedures`
+      phases restrict the program to them and to the obligation procedures
+      generated for them. An empty list verifies nothing. -/
+  proceduresToVerify : Option (List String) := none
+  /-- When set, discharge only the obligations with these labels; the others
+      are skipped (no solver call, no result).  Lets a client re-query a subset
+      of obligations, e.g. those a first pass left `unknown`, under different
+      options. -/
+  obligationsToVerify : Option (List String) := none
+  /-- When set, the program state after each pipeline phase is written to
+      `{prefix}.{n}.{phase}.core.st` (1-indexed). Populated from
+      `--keep-all-files <dir>`, where the CLI derives the prefix as
+      `<dir>/<baseName>` so all intermediate files land inside the directory.
+      Threaded automatically into `Core.verify`; see `Cli/VerifyOptions.lean`. -/
+  keepAllFilesPrefix : Option String := none
+  /-- Emit recursive functions as SMT-LIB `define-fun-rec` definitions instead
+      of uninterpreted functions with per-constructor axioms.  Opt-in: the
+      axiom form (with its patterns) is the better encoding for proving; the
+      recursive definition is what lets cvc5 find models for recursively
+      defined functions (`--fmf-fun`, via `solverOptions`), e.g. to produce a
+      counterexample whose value must be computed through the function.
+      `fmf-fun` is an expert cvc5 option, which a cvc5 in stable mode rejects.
+      A recursive function may call other recursive functions; mutually
+      recursive functions are an error (`define-funs-rec` is not supported
+      yet).
+      Requires solver backend support for `define-fun-rec`. -/
+  recursiveFnsAsDefineFunRec : Bool := false
 
 def VerifyOptions.default : VerifyOptions := {
   verbose := .normal,
@@ -221,12 +262,15 @@ def VerifyOptions.default : VerifyOptions := {
   checkMode := .deductive
   checkLevel := .minimal
   alwaysGenerateSMT := false
-  uniqueBoundNames := false
   skipSolver := false
   profile := false
   incremental := false
+  solverOptions := #[]
   pathCap := .none
   parallelWorkers := 1
+  keepAllFilesPrefix := none
+  recursiveFnsAsDefineFunRec := false
+  obligationsToVerify := none
 }
 
 instance : Inhabited VerifyOptions where

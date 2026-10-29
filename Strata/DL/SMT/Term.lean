@@ -40,7 +40,7 @@ inductive TermPrim : Type where
   | real   : Decimal → TermPrim
   | bitvec : ∀ {n}, BitVec n → TermPrim
   | string : String → TermPrim
-deriving instance Repr, Inhabited, DecidableEq for TermPrim
+deriving instance Repr, Inhabited, DecidableEq, Hashable for TermPrim
 
 def TermPrim.mkName : TermPrim → String
   | .bool _   => "bool"
@@ -75,7 +75,7 @@ inductive Term : Type where
   | none    : TermType → Term
   | some    : Term → Term
   | app     : Op → (args: List Term) → (retTy: TermType) → Term
-  | quant   : QuantifierKind → (args: List TermVar) → (tr: Term) → (body: Term) → Term
+  | quant   : QuantifierKind → (args: List TermVar) → (tr: List (List Term)) → (body: Term) → Term
 deriving Repr, Inhabited
 
 def Term.isVar (t : Term) : Bool :=
@@ -101,7 +101,7 @@ def Term.hasDecEq (t t' : Term) : Decidable (t = t') := by
     | isFalse h₁, _, _ | _, isFalse h₁, _ | _, _, isFalse h₁ =>
       isFalse (by intro h₂; simp [h₁] at h₂)
   case quant.quant qk args tr t qk' args' tr' t' =>
-    exact match decEq qk qk', decEq args args', Term.hasDecEq tr tr', Term.hasDecEq t t' with
+    exact match decEq qk qk', decEq args args', Term.hasListListDec tr tr', Term.hasDecEq t t' with
     | isTrue h₁, isTrue h₂, isTrue h₃, isTrue h₄ => isTrue (by rw [h₁, h₂, h₃, h₄])
     | isFalse h₁, _, _, _ | _, isFalse h₁, _, _ | _, _, isFalse h₁, _ | _, _, _, isFalse h₁ =>
       isFalse (by intro h₂; simp [h₁] at h₂)
@@ -117,18 +117,46 @@ def Term.hasListDec (ts₁ ts₂ : List Term) : Decidable (ts₁ = ts₂) :=
         | isTrue h₂ => isTrue (by subst h₁ h₂; rfl)
         | isFalse _ => isFalse (by simp; intros; assumption)
     | isFalse _ => isFalse (by simp; intros; contradiction)
+
+def Term.hasListListDec (ts₁ ts₂ : List (List Term)) : Decidable (ts₁ = ts₂) :=
+  match ts₁, ts₂ with
+  | [], [] => isTrue rfl
+  | _::_, [] | [], _::_ => isFalse (by intro; contradiction)
+  | t₁ :: tl₁, t₂ :: tl₂ =>
+    match Term.hasListDec t₁ t₂ with
+    | isTrue h₁ =>
+        match Term.hasListListDec tl₁ tl₂ with
+        | isTrue h₂ => isTrue (by subst h₁ h₂; rfl)
+        | isFalse _ => isFalse (by simp; intros; assumption)
+    | isFalse _ => isFalse (by simp; intros; contradiction)
 end
 
 instance : DecidableEq Term := Term.hasDecEq
 
+mutual
+/-- Structural hash of a `Term`, recursing into `app` args and `quant` trigger/body. -/
 def hashTerm (t: Term): UInt64 :=
   match t with
-    | .prim _ => 2
-    | .var _ => 3
-    | .none _ => 5
-    | .some _ => 7
-    | .app op _ retTy => 11 * (hash op) * (hash retTy)
-    | .quant qk args _ _ => 13 * (hash qk) * (hash args)
+    | .prim p => mixHash 2 (hash p)
+    | .var v => mixHash 3 (hash v)
+    | .none ty => mixHash 5 (hash ty)
+    | .some t => mixHash 7 (hashTerm t)
+    | .app op args retTy =>
+        mixHash (mixHash 11 (mixHash (hash op) (hash retTy))) (hashTermList args)
+    | .quant qk args tr body =>
+        mixHash (mixHash 13 (mixHash (hash qk) (hash args)))
+                (mixHash (hashTermListList tr) (hashTerm body))
+
+def hashTermList (ts : List Term) : UInt64 :=
+  match ts with
+  | [] => 17
+  | t :: rest => mixHash (hashTerm t) (hashTermList rest)
+
+def hashTermListList (tss : List (List Term)) : UInt64 :=
+  match tss with
+  | [] => 19
+  | ts :: rest => mixHash (hashTermList ts) (hashTermListList rest)
+end
 
 instance : Hashable Term where
   hash := hashTerm
@@ -214,6 +242,17 @@ instance : Coe String Term where
 
 instance : Coe TermVar Term where
   coe v := .var v
+
+structure IF where
+  id : String
+  args : List TermVar
+  out : TermType
+  body : Term
+  /-- The body refers to the function itself: emit as `define-fun-rec`. -/
+  isRec : Bool := false
+deriving Repr, DecidableEq, Inhabited, Hashable
+
+@[expose] def IF.toUF (f : IF) : UF := { id := f.id, args := f.args.map (·.ty), out := f.out }
 
 end Strata.SMT
 end

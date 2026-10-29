@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+import all Strata.DL.Lambda.LExprWFProps
 
 public import Strata.DL.Lambda.LExprTypeEnv
 import all Strata.DL.Lambda.LExprTypeEnv
@@ -22,12 +23,13 @@ namespace Lambda
 
 open Std (ToFormat Format format)
 open LTy
+open Strata.Util (HMap HMaps)
 
 public section
 
-variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)]
+variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashable T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)]
 
-@[expose] abbrev LExprT (T : LExprParamsT) :=
+abbrev LExprT (T : LExprParamsT) :=
   LExpr (LExprParamsT.typed T)
 
 partial def LExprT.format {T : LExprParamsT} [ToFormat T.base.IDMeta] (et : LExprT T) : Std.Format :=
@@ -94,7 +96,7 @@ Convert a typed `LExprT` back to an `LExpr`:
 /--
 Apply type substitution `S` to `LExpr e`.
 This is for metadata-stored types.
-To change user-defined types, use applySubst
+To change user-defined types, use applyTypeSubst
 -/
 def applySubstT (e : LExprT T.mono) (S : Subst) : LExprT T.mono :=
   LExpr.replaceMetadata (T:=T.mono.typed) (NewMetadata:=T.mono.typed.base.Metadata) e <|
@@ -144,7 +146,7 @@ def typeBoundVar (C: LContext T) (Env : TEnv T.IDMeta) (ty : Option LMonoTy) :
       let (xtyid, Env) ← TEnv.genTyVar Env
       let xty := (LMonoTy.ftvar xtyid)
       .ok (xty, Env)
-  let Env := Env.addInNewestContext [(xv, (.forAll [] xty))]
+  let Env := Env.addInNewestContext (HMap.single xv (.forAll [] xty))
   return (xv, xty, Env)
 
 /-- Infer the type of `.fvar x fty`. -/
@@ -230,8 +232,8 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     let S ← Constraints.unify constraints Env.stateSubstInfo |>.mapError format
     let mty := LMonoTy.subst S.subst freshty
     -- `freshty` can now be safely removed from the substitution list.
-    have hWF : SubstWF (Maps.remove S.subst fresh_name) := by
-      apply @SubstWF_of_remove S.subst fresh_name S.isWF
+    have hWF : SubstWF (HMaps.remove S.subst fresh_name) := by
+      apply SubstWF_of_remove fresh_name S.isWF
     let S := { S with subst := S.subst.remove fresh_name, isWF := hWF }
     .ok (.app ⟨m, mty⟩ e1t e2t, TEnv.updateSubst Env S)
 
@@ -274,6 +276,8 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     let (et, Env) ← resolveAux C Env e'
     let (triggersT, Env) ← resolveAux C Env triggers'
     let ety := et.toLMonoTy
+    let S ← Constraints.unify [(ety, LMonoTy.bool)] Env.stateSubstInfo |>.mapError format
+    let Env := TEnv.updateSubst Env S
     let xty := LMonoTy.subst Env.stateSubstInfo.subst xty
     let etclosed := Lambda.LExpr.varCloseT 0 xv et
     let triggersClosed := Lambda.LExpr.varCloseT 0 xv triggersT
@@ -281,10 +285,7 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     -- Again, as in `abs`, we do not erase `xty` (if it was a fresh variable) from the
     -- substitution list.
     let Env := Env.eraseFromContext xv
-    if ety != LMonoTy.bool then do
-      .error f!"Quantifier body has non-Boolean type: {ety}"
-    else
-      .ok (.quant ⟨m, xty⟩ qk name xty triggersClosed etclosed, Env)
+    .ok (.quant ⟨m, xty⟩ qk name xty triggersClosed etclosed, Env)
 
   | .eq m e1 e2    =>
     -- `.eq A B` is well-typed if there is some instantiation of
@@ -311,7 +312,7 @@ def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
 /-- Check that all context types are closed (no free type variables).
     This is a precondition for soundness: `resolve_HasType` requires it. -/
 def checkContextTypesClosed (Env : TEnv T.IDMeta) : Bool :=
-  Env.context.types.all (·.all (fun (_, ty) => ty.freeVars == []))
+  Env.context.types.all (·.all (fun _ ty => ty.freeVars == []))
 
 protected def resolve (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     Except Format (LExprT T.mono × TEnv T.IDMeta) := do
@@ -320,7 +321,7 @@ protected def resolve (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
   -- addInNewestContext/eraseFromContext round-trip correctly only
   -- when there is at least one scope.
   let Env := if Env.context.types.isEmpty then
-      Env.updateContext { Env.context with types := [[]] }
+      Env.updateContext { Env.context with types := [.empty] }
     else Env
   let (et, Env) ← resolveAux C Env e
   .ok (LExpr.applySubstT et Env.stateSubstInfo.subst, Env)

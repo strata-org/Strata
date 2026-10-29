@@ -1,0 +1,327 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+module
+
+meta import Strata.DL.Lambda
+meta import Strata.DL.Lambda.LExpr
+meta import Strata.DL.Lambda.LState
+meta import Strata.DL.Lambda.LTy
+meta import Strata.DL.SMT.Term
+meta import Strata.DL.SMT.Encoder
+meta import Strata.Languages.Core.Env
+meta import Strata.Languages.Core.Factory
+meta import Strata.Languages.Core.Identifiers
+meta import Strata.Languages.Core.Options
+meta import Strata.Languages.Core.SMTEncoder
+meta import Strata.Languages.Core.Verifier
+
+meta section
+
+/-!
+Unit tests for SMT encoding of factory functions that carry axioms which
+reference *other* functions — including functions whose axioms (or bodies) call
+each other cyclically, and a polymorphic function instantiated at two types.
+
+Each test runs `runTest es funcs`, which calls `toSMTTerms` on `es` (the
+"obligation" expressions) in an environment whose factory holds `funcs`, then
+resolves the deferred function definitions, and prints the result captured by
+`#guard_msgs`. The printed report has four parts to read and check:
+
+* `Terms:`  — the obligation expressions `es`, encoded to SMT terms. Confirms
+  the goal itself is encoded as expected.
+* `UFs:`    — uninterpreted functions (`declare-fun`), one `id : (arg : ty, ...)
+  -> out` line each. Check that every referenced function is declared, and that
+  a *polymorphic* function appears once per distinct instantiation (e.g. both
+  `(Int) -> Int` and `(Real) -> Real` — two entries that share the source name
+  but are distinct `UF`s; they are given distinct SMT-LIB names at emission).
+* `IFs:`    — interpreted functions (`define-fun`), printed as `signature :=
+  body`. Check the body, and that an IF referenced by another IF's body appears
+  *before* that caller (see the ordering note below).
+* `Axioms:` — the asserted axiom terms. Check each function contributes its
+  axiom at the right type instantiation, and that the cycle terminates (no
+  duplicate or missing axioms).
+-/
+
+namespace Core
+
+open Lambda
+open Std
+open Strata.SMT
+
+section FuncWithAxiomsTests
+
+/- A little `SMT.Context` printer, via SMTDDM -/
+
+/-- Render a `UF` as a function signature `id : (argTy, ...) -> out`. -/
+def ppUF (uf : UF) : Except String String := do
+  let args ← uf.args.mapM fun ty => do
+    return s!"{← Strata.SMTDDM.termTypeToString ty}"
+  let outTy ← Strata.SMTDDM.termTypeToString uf.out
+  return s!"{uf.id} : ({", ".intercalate args}) -> {outTy}"
+
+/-- Render an `IF` as a function signature with param names. -/
+def ppIF (f : IF) : Except String String := do
+  let args ← f.args.mapM fun v => do
+    return s!"{v.id} : {← Strata.SMTDDM.termTypeToString v.ty}"
+  let outTy ← Strata.SMTDDM.termTypeToString f.out
+  return s!"{f.id} : ({", ".intercalate args}) -> {outTy}"
+
+/-- Pretty-print `SMT.Context` -/
+def ppContext (ctx : SMT.Context) : Except String String := do
+  let ufs ← ctx.ufs.toList.mapM ppUF
+  let ifs ← ctx.ifs.toList.mapM fun f => do
+    return s!"{← ppIF f} := {← Strata.SMTDDM.termToString f.body}"
+  let axms ← ctx.axms.toList.mapM Strata.SMTDDM.termToString
+  let sect (title : String) (lines : List String) : String :=
+    if lines.isEmpty then s!"{title}: (none)\n"
+    else s!"{title}:\n" ++ String.join (lines.map (s!"  {·}\n"))
+  return sect "UFs" ufs ++ sect "IFs" ifs ++ sect "Axioms" axms
+
+/-- A simplified version of ProofObligation.toSMTTerms.
+    Encode a list of `LExpr`, `es` in an environment whose factory has been
+    extended with `funcs`. -/
+def encodeFuncsToSMT (es : List (LExpr CoreLParams.mono))
+    (funcs : List (Lambda.LFunc CoreLParams)):
+    Except Format String := do
+  -- 1. Build an environment with all functions registered in the factory.
+  let env ← (funcs.foldlM (fun (env : Env) f => env.addFactoryFunc f) Env.init).mapError
+    (fun msg => f!"Error adding functions: {msg}")
+  let factory := env.factory
+  -- Seed the encoding context's `datatypes` from the env's datatypes.
+  let ctx := { SMT.Context.default with datatypes := .ofFactory env.datatypes }
+
+  -- 2. Encode the terms, then resolve/commit the deferred function definitions.
+  let (terms, ctx, pending) ← toSMTTerms factory es ctx {}
+  let ctx ← processPendingFnDefs factory ctx pending
+
+  -- 3/ Render terms and context through SMTDDM, lifting render errors into `Format`.
+  let termStrs ← (terms.mapM Strata.SMTDDM.termToString).mapError (f!"{·}")
+  let ctxStr ← (ppContext ctx).mapError (f!"{·}")
+  let termLines := String.join (termStrs.map (s!"  {·}\n"))
+  .ok s!"Terms:\n{termLines}{ctxStr}"
+
+/-- Run `encodeFuncsToSMT` and print the result, for `#guard_msgs`. -/
+def runTest (es : List (LExpr CoreLParams.mono))
+    (funcs : List (Lambda.LFunc CoreLParams)) : IO Unit :=
+  match encodeFuncsToSMT es funcs with
+  | .ok s => IO.println s
+  | .error e => IO.println s!"ERROR: {e.pretty}"
+
+/-! ## Builders -/
+
+private def intToInt : LMonoTy := .arrow .int .int
+
+/- `name(arg)` where `name : Int → Int`. -/
+private def appI (name : String) (arg : LExpr CoreLParams.mono) : LExpr CoreLParams.mono :=
+  .app () (.op () ⟨name, ()⟩ (.some intToInt)) arg
+
+/- `∀ (x : Int). lhs(x) == rhs(x)` -/
+private def eqAxiomI (lhs rhs : String) : LExpr CoreLParams.mono :=
+  .quant () .all "x" (.some .int) (LExpr.noTrigger ())
+    (.eq () (appI lhs (.bvar () 0)) (appI rhs (.bvar () 0)))
+
+/- A monomorphic `Int → Int` function `name` with a single axiom `∀ x. name(x) == callee(x)`. -/
+private def monoFuncWithAxiom (name callee : String) : Lambda.LFunc CoreLParams :=
+  { name := ⟨name, ()⟩,
+    inputs := [(⟨"v", ()⟩, .int)],
+    output := .int,
+    axioms := [eqAxiomI name callee] }
+
+/- A monomorphic `Int → Int` function `name` with an axiom `∀ x. name(x) == x`. -/
+private def monoFuncWithAxiomId (name : String) : Lambda.LFunc CoreLParams :=
+  { name := ⟨name, ()⟩,
+    inputs := [(⟨"v", ()⟩, .int)],
+    output := .int,
+    axioms := [.quant () .all "x" (.some .int) (LExpr.noTrigger ())
+                 (.eq () (appI name (.bvar () 0)) (.bvar () 0))] }
+
+/-- An `Int → Int` function `name` whose function body is `callee(v)`. -/
+private def monoDefFunc (name callee : String) : Lambda.LFunc CoreLParams :=
+  { name := ⟨name, ()⟩,
+    inputs := [(⟨"v", ()⟩, .int)],
+    output := .int,
+    body := some (appI callee (.fvar () ⟨"v", ()⟩ (.some .int))) }
+
+/-- An `Int → Int` function `name` with function body `body` and the axiom
+    `∀ x. name(x) == axiomCallee(x)`. -/
+private def monoDefFuncWithAxiom (name : String) (body : LExpr CoreLParams.mono)
+    (axiomCallee : String) : Lambda.LFunc CoreLParams :=
+  { name := ⟨name, ()⟩,
+    inputs := [(⟨"v", ()⟩, .int)],
+    output := .int,
+    body := some body,
+    axioms := [eqAxiomI name axiomCallee] }
+
+/-! ## Test 1: two monomorphic functions, one references the other -/
+
+-- `f` has axiom `∀ x. f(x) == g(x)`; encoding `f(0) == 0` must pull in `g`,
+-- which is declared before `f` (callee-before-caller). `g`'s axiom is
+-- `∀ x. g(x) == x`.
+/--
+info: Terms:
+  (= (f 0) 0)
+UFs:
+  g : (Int) -> Int
+  f : (Int) -> Int
+IFs: (none)
+Axioms:
+  (forall ((x Int)) (= (g x) x))
+  (forall ((x Int)) (= (f x) (g x)))
+-/
+#guard_msgs in
+#eval runTest
+  [(.eq () (appI "f" (.intConst () 0)) (.intConst () 0))]
+  [monoFuncWithAxiom "f" "g", monoFuncWithAxiomId "g"]
+
+/-! ## Test 2: three monomorphic functions whose axioms call each other cyclically -/
+
+-- f → g → h → f.  Encoding a term that references `f` must resolve the whole
+-- cycle (breaking it via the `seen` set) and declare callees before callers.
+/--
+info: Terms:
+  (= (f 0) 0)
+UFs:
+  h : (Int) -> Int
+  g : (Int) -> Int
+  f : (Int) -> Int
+IFs: (none)
+Axioms:
+  (forall ((x Int)) (= (h x) (f x)))
+  (forall ((x Int)) (= (g x) (h x)))
+  (forall ((x Int)) (= (f x) (g x)))
+-/
+#guard_msgs in
+#eval runTest
+  [(.eq () (appI "f" (.intConst () 0)) (.intConst () 0))]
+  [monoFuncWithAxiom "f" "g", monoFuncWithAxiom "g" "h", monoFuncWithAxiom "h" "f"]
+
+/-! ## Test 4: an interpreted function whose body calls an axiomatized function -/
+
+-- `d` is a `define-fun` with body `g(v)`; `g` is an uninterpreted function with
+-- axiom `∀ x. g(x) == x`. Encoding `d(0) == 0` registers `g` (callee) before the
+-- interpreted `d`, exercising the `IF` section.
+/--
+info: Terms:
+  (= (d 0) 0)
+UFs:
+  g : (Int) -> Int
+IFs:
+  d : (v : Int) -> Int := (g v)
+Axioms:
+  (forall ((x Int)) (= (g x) x))
+-/
+#guard_msgs in
+#eval runTest
+  [(.eq () (appI "d" (.intConst () 0)) (.intConst () 0))]
+  [monoDefFunc "d" "g", monoFuncWithAxiomId "g"]
+
+/-! ## Test 5: three interpreted functions with bodies and axioms calling each other -/
+
+private def vInt : LExpr CoreLParams.mono := .fvar () ⟨"v", ()⟩ (.some .int)
+
+/-- An interpreted identity `Int → Int` `name` (body `v`) with axiom `∀ x. name(x) == x` -/
+private def monoDefFuncWithAxiomId (name : String) : Lambda.LFunc CoreLParams :=
+  { name := ⟨name, ()⟩,
+    inputs := [(⟨"v", ()⟩, .int)],
+    output := .int,
+    body := some vInt,
+    axioms := [.quant () .all "x" (.some .int) (LExpr.noTrigger ())
+                 (.eq () (appI name (.bvar () 0)) (.bvar () 0))] }
+
+/--
+info: Terms:
+  (= (da 0) 0)
+UFs: (none)
+IFs:
+  dc : (v : Int) -> Int := v
+  db : (v : Int) -> Int := (dc v)
+  da : (v : Int) -> Int := (db v)
+Axioms:
+  (forall ((x Int)) (= (dc x) x))
+  (forall ((x Int)) (= (db x) (dc x)))
+  (forall ((x Int)) (= (da x) (db x)))
+-/
+#guard_msgs in
+#eval runTest
+  [(.eq () (appI "da" (.intConst () 0)) (.intConst () 0))]
+  [monoDefFuncWithAxiom "da" (appI "db" vInt) "db",
+   monoDefFuncWithAxiom "db" (appI "dc" vInt) "dc",
+   monoDefFuncWithAxiomId "dc"]
+
+/-! ## Test 8: encodeUF then encodeFunctionDef on the same UF errors -/
+
+-- Reference `g` first (emits `declare-fun g`), then try to define it:
+--   encodeUF g; encodeFunctionDef g body
+-- expect the IO.userError: "declared as uninterpreted before its definition".
+/--
+info: encodeFunctionDef: function 'g' was already declared as uninterpreted before its definition was encoded.
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  let g : UF := { id := "g", args := [.int], out := .int }
+  let gIF : IF := { id := "g", args := [⟨"v", .int⟩], out := .int, body := .var ⟨"v", .int⟩ }
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← Solver.bufferWriter b
+  try
+    let _ ← (do
+      let _ ← Encoder.encodeUF g
+      let _ ← Encoder.encodeFunctionDef gIF
+      : EncoderM Unit).run EncoderState.init |>.run |>.run solver
+    IO.println "ERROR: expected an error but succeeded"
+  catch e =>
+    IO.println s!"{e}"
+
+/-! ## Test 9: processPendingFnDefs commits all scheduled functions -/
+
+-- After `processPendingFnDefs` succeeds, every UF from the pending queue must
+-- satisfy `ctx'.committedFn`. This pins the "queue fully drained" invariant.
+private def testAllCommitted : Except Format String := do
+  let funcs := [monoFuncWithAxiom "f" "g", monoFuncWithAxiom "g" "h", monoFuncWithAxiom "h" "f"]
+  let env ← (funcs.foldlM (fun (env : Env) f => env.addFactoryFunc f) Env.init).mapError
+    (fun msg => f!"Error adding functions: {msg}")
+  let factory := env.factory
+  let ctx := { SMT.Context.default with datatypes := .ofFactory env.datatypes }
+  let (_, ctx, pending) ← toSMTTerms factory
+    [(.eq () (appI "f" (.intConst () 0)) (.intConst () 0))] ctx {}
+  let ctx' ← processPendingFnDefs factory ctx pending
+  let allCommitted := pending.toList.all (fun p => SMT.Context.committedFn ctx' p.uf)
+  return s!"{allCommitted}"
+
+/-- info: true -/
+#guard_msgs in
+#eval do
+  match testAllCommitted with
+  | .ok s => IO.println s
+  | .error e => IO.println s!"ERROR: {e.pretty}"
+
+/-! ## Test 10: scheduling deduplicates repeated references to the same function -/
+
+-- Referencing the same function several times within the obligation terms must
+-- schedule it into the pending queue exactly once. This directly exercises the
+-- dedup branch of `OrderedKeyedSet.insert` (`setIdx.contains`, keyed on `UF`)
+-- reached via `pending.insert` in `toSMTOp`: a regression there would grow the
+-- queue.
+private def testScheduleDedup : Except Format String := do
+  let funcs := [monoFuncWithAxiomId "f", monoFuncWithAxiomId "g", monoFuncWithAxiomId "h"]
+  let env ← (funcs.foldlM (fun (env : Env) f => env.addFactoryFunc f) Env.init).mapError
+    (fun msg => f!"Error adding functions: {msg}")
+  let factory := env.factory
+  let ctx := { SMT.Context.default with datatypes := .ofFactory env.datatypes }
+  -- Each of f, g, h is referenced twice; the six references share three `UF`s.
+  let (_, _, pending) ← toSMTTerms factory
+    [(.eq () (appI "f" (.intConst () 0)) (appI "f" (.intConst () 1))),
+     (.eq () (appI "g" (.intConst () 0)) (appI "g" (.intConst () 1))),
+     (.eq () (appI "h" (.intConst () 0)) (appI "h" (.intConst () 1)))] ctx {}
+  -- f, g, h scheduled exactly once each despite the duplicate references.
+  return s!"{pending.size}"
+
+/-- info: ok: 3 -/
+#guard_msgs in
+#eval testScheduleDedup
+
+end FuncWithAxiomsTests
+
+end Core

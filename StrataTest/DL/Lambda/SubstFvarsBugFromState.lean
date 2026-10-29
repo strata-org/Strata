@@ -8,7 +8,7 @@ module
 meta import Strata.DL.Lambda.LExprEval
 meta import Strata.DL.Lambda.IntBoolFactory
 
-/-! # Iterated substFvar bug in substFvarsFromState (LState) -/
+/-! # Iterated substFvar bug in substFvarsFromEnv -/
 
 meta section
 namespace Lambda
@@ -34,7 +34,7 @@ private def testState : LState TP :=
 -- Expression: x + y
 private def expr : LExpr TP.mono := mkAdd (mkFv "x") (mkFv "y")
 
-private def result := LExpr.substFvarsFromState testState expr
+private def result := LExpr.substFvarsFromEnv (Scopes.toEnv testState.state) expr
 
 -- Iterated [x→(y+1)][y→0] would produce `(0+1) + 0`. Simultaneous correctly gives `(y+1) + 0`.
 /-- info: ((~Int.Add : (arrow int (arrow int int))) ((~Int.Add : (arrow int (arrow int int))) (y : int) #1) #0) -/

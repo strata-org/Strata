@@ -5,9 +5,11 @@
 -/
 module
 
-public import Strata.DL.Util.ListUtils
-import all Strata.DL.Util.ListUtils
+public import Strata.Util.ListUtilsProps
+import all Strata.Util.ListUtils
+import all Strata.Util.ListUtilsProps
 public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.CallWF
 
 public section
 
@@ -49,12 +51,13 @@ structure WFcmdProp (p : Program) (c : Imperative.Cmd Expression) : Prop where
 
 structure WFargProp (p : Program) (arg : Expression.Expr) : Prop where
 
+/-- A call to `procName` with arguments `callArgs` is well-formed in `p`: the callee
+    is a declared procedure, the arguments match its signature, and the result
+    variables are distinct. -/
 structure WFcallProp (p : Program) (procName : String) (callArgs : List (CallArg Expression)) : Prop where
   defined : (Program.Procedure.find? p procName).isSome
-  arglen : (Program.Procedure.find? p procName = some proc) →
-          proc.header.inputs.length = (CallArg.getInputExprs callArgs).length
-  outlen : (Program.Procedure.find? p procName = some proc) →
-          proc.header.outputs.length = (CallArg.getLhs callArgs).length
+  argsMatch : (Program.Procedure.find? p procName = some proc) →
+          ArgsMatchSignature proc callArgs
   lhsWF : (CallArg.getLhs callArgs).Nodup
   wfargs : Forall (WFargProp p) (CallArg.getInputExprs callArgs)
 
@@ -70,20 +73,6 @@ structure WFloopProp    (Cmd : Type) (p : Program) (guard : ExprOrNondet Express
 
 structure WFexitProp  (p : Program) (label : String) : Prop where
 
-/-- Well-formedness for local function declarations.
-    Checks that function parameter names are unique.
-
-    This is kept separate from `FuncWF` (from `Strata.DL.Util.Func`) because:
-    1. `FuncWF` requires function parameters (`getName`, `getVarNames`) that add complexity
-    2. `FuncWF.concreteEval_argmatch` is not decidable, making it harder to use in proofs
-    3. For statement-level WF, only `arg_nodup` is needed; the additional `FuncWF`
-       properties (`body_freevars`, `concreteEval_argmatch`) are for factory functions
-
-    Note: `WFfuncDeclProp` checks uniqueness of full `CoreIdent` (including visibility),
-    while `FuncWF.arg_nodup` checks uniqueness of just the string names. -/
-structure WFfuncDeclProp (p : Program) (decl : Imperative.PureFunc Expression) : Prop where
-  arg_nodup : decl.inputs.keys.Nodup
-
 @[simp, expose]
 def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
   | .cmd   cmd => WFCmdExtProp p cmd
@@ -94,10 +83,9 @@ def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
            (invariant : List (String × Expression.Expr)) (body : Block) _ =>
      WFloopProp (CmdExt Expression) p guard measure invariant body
   | .exit (label : String) _ => WFexitProp p label
-  | .funcDecl decl _ => WFfuncDeclProp p decl
   | .typeDecl _ _ => True  -- Type declarations are always well-formed
 
-@[expose] abbrev WFStatementsProp (p : Program) := Forall (WFStatementProp p)
+abbrev WFStatementsProp (p : Program) := Forall (WFStatementProp p)
 
 instance (p : Program) : ListP (WFStatementProp p) (WFStatementsProp p) where
   split := by intros as a wfs
@@ -111,6 +99,14 @@ structure WFPrePostProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedu
 
 structure WFPreProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.Check)
   : Prop extends WFPrePostProp p d pp where
+  /-- A precondition carries no `old `-prefixed free variable. Unlike a
+      postcondition, a precondition is evaluated in the pre-state, where an
+      `old p` reference has no meaning; type checking rejects it because the
+      `old` bindings for inout parameters are only introduced when checking
+      postconditions and the body, not preconditions. This is the pre-state
+      counterpart of `WFPostProp.oldOnlyInout`. -/
+  noOldFvars : ∀ id ∈ Imperative.HasFvars.getFvars (P := Expression) pp.2.expr,
+    ¬ CoreIdent.isOldIdent id
 
 structure WFPostProp (p : Program) (d : Procedure) (pp : CoreLabel × Procedure.Check)
   : Prop extends WFPrePostProp p d pp where
@@ -134,6 +130,8 @@ structure WFTypeDeclarationProp (p : Program) (f : TypeDecl) : Prop where
 
 structure WFAxiomDeclarationProp (p : Program) (f : Axiom) : Prop where
 
+structure WFLemmaDeclarationProp (p : Program) (l : Lemma) : Prop where
+
 structure WFDistinctDeclarationProp (p : Program) (l : Expression.Ident) (es : List (Expression.Expr)) : Prop where
 
 -- NOTE: For CFG procedures, the structured-body fields (`wfstmts`, `wfloclnd`,
@@ -151,7 +149,7 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
       ∀ x, id ≠ CoreIdent.mkOld x
   wfspec : WFSpecProp p d.spec d
   bodyExitsCovered : ∀ ss, d.body = .structured ss →
-    Stmt.exitsCoveredByBlocks.Block.exitsCoveredByBlocks [] ss
+    Block.exitsCoveredByBlocks [] ss
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where
@@ -164,12 +162,13 @@ structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where
 def WFDeclProp (p : Program) (decl : Decl) : Prop := match decl with
   | .type t _ => WFTypeDeclarationProp p t
   | .ax a _ => WFAxiomDeclarationProp p a
+  | .lemma l _ => WFLemmaDeclarationProp p l
   | .distinct l es _ => WFDistinctDeclarationProp p l es
   | .proc d _ => WFProcedureProp p d
   | .func f _ => WFFunctionProp p f
   | .recFuncBlock fs _ => WFRecFuncBlockProp p fs
 
-@[expose, simp] abbrev WFDeclsProp (p : Program) := Forall (WFDeclProp p)
+@[simp] abbrev WFDeclsProp (p : Program) := Forall (WFDeclProp p)
 
 instance (p : Program) : ListP (WFDeclProp p) (WFDeclsProp p) where
   split := by intros as a wfs

@@ -473,7 +473,7 @@ theorem denote_replaceMetadata
         .app h_fn' h_arg'
       rw [denote_app bvarVal h_fn h_arg h₁]
       simp only [LExpr.replaceMetadata]
-      rw [denote_app bvarVal h_fn' h_arg' h_app',
+      rw [denote_app (T := ⟨NewMetadata, T.IDMeta⟩) (fvarVal := fvarVal) bvarVal h_fn' h_arg' h_app',
           ih_fn bvarVal h_fn, ih_arg bvarVal h_arg]
     | abs m name ty body ih_body =>
       cases ty with
@@ -485,7 +485,7 @@ theorem denote_replaceMetadata
           have h_body' := replaceMetadata_HasTypeA f h_body
           rw [denote_abs bvarVal h_body (LExpr.HasTypeA.abs h_body)]
           simp only [LExpr.replaceMetadata]
-          rw [denote_abs bvarVal h_body' (.abs h_body')]
+          rw [denote_abs (T := ⟨NewMetadata, T.IDMeta⟩) (fvarVal := fvarVal) bvarVal h_body' (.abs h_body')]
           funext x
           exact ih_body (.cons x bvarVal) h_body
     | ite m c t e ih_c ih_t ih_e =>
@@ -496,7 +496,7 @@ theorem denote_replaceMetadata
         have h_e' := replaceMetadata_HasTypeA f h_e
         rw [denote_ite bvarVal h_c h_t h_e]
         simp only [LExpr.replaceMetadata]
-        rw [denote_ite bvarVal h_c' h_t' h_e' (.ite h_c' h_t' h_e'),
+        rw [denote_ite (T := ⟨NewMetadata, T.IDMeta⟩) (fvarVal := fvarVal) bvarVal h_c' h_t' h_e' (.ite h_c' h_t' h_e'),
             ih_c bvarVal h_c, ih_t bvarVal h_t, ih_e bvarVal h_e]
     | eq m e1 e2 ih1 ih2 =>
       cases h₁ with
@@ -507,11 +507,11 @@ theorem denote_replaceMetadata
           LExpr.denote tcInterp opInterp fvarVal vt bvarVal e2 _ h_2
         · rw [denote_eq_true bvarVal h_1 h_2 _ heq]
           simp only [LExpr.replaceMetadata]
-          rw [denote_eq_true bvarVal h_1' h_2' (.eq h_1' h_2')
+          rw [denote_eq_true (T := ⟨NewMetadata, T.IDMeta⟩) (fvarVal := fvarVal) bvarVal h_1' h_2' (.eq h_1' h_2')
                 (by rw [← ih1 bvarVal h_1, ← ih2 bvarVal h_2]; exact heq)]
         · rw [denote_eq_false bvarVal h_1 h_2 _ heq]
           simp only [LExpr.replaceMetadata]
-          rw [denote_eq_false bvarVal h_1' h_2' (.eq h_1' h_2')
+          rw [denote_eq_false (T := ⟨NewMetadata, T.IDMeta⟩) (fvarVal := fvarVal) bvarVal h_1' h_2' (.eq h_1' h_2')
                 (by rw [← ih1 bvarVal h_1, ← ih2 bvarVal h_2]; exact heq)]
     | quant m k name ty tr body ih_tr ih_body =>
       cases ty with
@@ -562,8 +562,8 @@ theorem denoteArgs_eq_of_denote_eq
     {args1 args2 : List (LExpr T.mono)}
     {argTys : List LMonoTy}
     (bvarVal : BVarVal tcInterp vt Δ)
-    (h_args1 : List.Forall₂ (LExpr.HasTypeA Δ) args1 argTys)
-    (h_args2 : List.Forall₂ (LExpr.HasTypeA Δ) args2 argTys)
+    (h_args1 : List.Rel₂ (LExpr.HasTypeA Δ) args1 argTys)
+    (h_args2 : List.Rel₂ (LExpr.HasTypeA Δ) args2 argTys)
     (hpw : ∀ (i : Nat) (a1 a2 : LExpr T.mono) (τ : LMonoTy),
       args1[i]? = some a1 → args2[i]? = some a2 → argTys[i]? = some τ →
       ∀ (ht1 : LExpr.HasTypeA Δ a1 τ) (ht2 : LExpr.HasTypeA Δ a2 τ),
@@ -595,8 +595,8 @@ theorem denoteArgs_eq_implies_denote_eq
     {args₁ args₂ : List (LExpr T.mono)}
     {argTys : List LMonoTy}
     (bvarVal : BVarVal tcInterp vt Δ)
-    (h_args₁ : List.Forall₂ (LExpr.HasTypeA Δ) args₁ argTys)
-    (h_args₂ : List.Forall₂ (LExpr.HasTypeA Δ) args₂ argTys)
+    (h_args₁ : List.Rel₂ (LExpr.HasTypeA Δ) args₁ argTys)
+    (h_args₂ : List.Rel₂ (LExpr.HasTypeA Δ) args₂ argTys)
     (hdArgs : denoteArgs tcInterp opInterp fvarVal vt bvarVal args₁ argTys h_args₁ =
               denoteArgs tcInterp opInterp fvarVal vt bvarVal args₂ argTys h_args₂)
     : ∀ (i : Nat) (a₁ a₂ : LExpr T.mono) (σ : LMonoTy),
@@ -637,8 +637,8 @@ theorem denote_cast_ty {Δ : List LMonoTy} {e : LExpr T.mono} {τ₁ τ₂ : LMo
 
 theorem denoteArgs_cast_ty {Δ : List LMonoTy} {l : List (LExpr T.mono)}
   {τ₁ τ₂ : List LMonoTy} (h_eq : τ₁ = τ₂)
-  (h₁ : List.Forall₂ (LExpr.HasTypeA Δ) l τ₁)
-  (h₂ : List.Forall₂ (LExpr.HasTypeA Δ) l τ₂)
+  (h₁ : List.Rel₂ (LExpr.HasTypeA Δ) l τ₁)
+  (h₂ : List.Rel₂ (LExpr.HasTypeA Δ) l τ₂)
     (bv : BVarVal tcInterp vt Δ)
     : denoteArgs tcInterp opInterp fvarVal vt bv l τ₁ h₁ =
       HList.cast (congrArg (List.map (Lambda.LMonoTy.substTyVars vt)) h_eq.symm)

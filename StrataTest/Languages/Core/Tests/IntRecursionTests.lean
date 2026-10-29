@@ -35,11 +35,12 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 rec function bad (@[cases] xs : IntList, n : int) : int
   decreases n
 {
-  if IntList..isNil(xs) then 0 else bad(IntList..tl(xs), n - 1)
+  if IntList..isNil(xs) then 0 else bad(IntList..tl(xs), int.sub(n, 1))
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: bad_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
@@ -50,7 +51,8 @@ Result: ❌ fail
 
 Obligation: bad_terminates_1
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify decreasesIntNoPrecondPgm (options := .quiet)
 
@@ -65,7 +67,7 @@ program Core;
 rec function fib (n : int) : int
   decreases n
 {
-  if n <= 1 then n else fib(n - 1) + fib(n - 2)
+  if int.le(n, 1) then n else int.add(fib(int.sub(n, 1)), fib(int.sub(n, 2)))
 };
 #end
 
@@ -76,25 +78,26 @@ VCs:
 Label: fib_terminates_0
 Property: assert
 Obligation:
-!(n@1 <= 1) ==> 0 <= n@1 - 1
+!(int.le(n@1, 1)) ==> int.le(0, int.sub(n@1, 1))
 
 Label: fib_terminates_1
 Property: assert
 Obligation:
-!(n@1 <= 1) ==> n@1 - 1 < n@1
+!(int.le(n@2, 1)) ==> int.lt(int.sub(n@2, 1), n@2)
 
 Label: fib_terminates_2
 Property: assert
 Obligation:
-!(n@1 <= 1) ==> 0 <= n@1 - 2
+!(int.le(n@3, 1)) ==> int.le(0, int.sub(n@3, 2))
 
 Label: fib_terminates_3
 Property: assert
 Obligation:
-!(n@1 <= 1) ==> n@1 - 2 < n@1
+!(int.le(n@4, 1)) ==> int.lt(int.sub(n@4, 2), n@4)
 
 ---
-info: Obligation: fib_terminates_0
+info:
+Obligation: fib_terminates_0
 Property: assert
 Result: ✅ pass
 
@@ -121,14 +124,15 @@ def factorialPgm : Program :=
 program Core;
 
 rec function factorial (n : int) : int
-  requires n >= 0;
+  requires int.ge(n, 0);
   decreases n
 {
-  if n <= 0 then 1 else n * factorial(n - 1)
+  if int.le(n, 0) then 1 else int.mul(n, factorial(int.sub(n, 1)))
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: factorial_body_calls_factorial_0
 Property: assert
 Result: ✅ pass
@@ -139,7 +143,8 @@ Result: ✅ pass
 
 Obligation: factorial_terminates_1
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify factorialPgm (options := .quiet)
 
@@ -152,14 +157,15 @@ def nonTermIntPgm : Program :=
 program Core;
 
 rec function bad (n : int) : int
-  requires n >= 0;
+  requires int.ge(n, 0);
   decreases n
 {
-  if n <= 0 then 0 else bad(n + 1)
+  if int.le(n, 0) then 0 else bad(int.add(n, 1))
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: bad_body_calls_bad_0
 Property: assert
 Result: ✅ pass
@@ -170,7 +176,8 @@ Result: ✅ pass
 
 Obligation: bad_terminates_1
 Property: assert
-Result: ❌ fail-/
+Result: ❌ fail
+-/
 #guard_msgs in
 #eval Core.verify nonTermIntPgm (options := .quiet)
 
@@ -185,7 +192,7 @@ program Core;
 rec function power (base : int, exp : int) : int
   decreases exp
 {
-  if exp <= 0 then 1 else base * power(base, exp - 1)
+  if int.le(exp, 0) then 1 else int.mul(base, power(base, int.sub(exp, 1)))
 };
 #end
 
@@ -214,23 +221,24 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 };
 
 rec function merge (l1 : IntList, l2 : IntList) : IntList
-  requires listLen(l1) >= 0;
-  requires listLen(l2) >= 0;
-  decreases listLen(l1) + listLen(l2)
+  requires int.ge(listLen(l1), 0);
+  requires int.ge(listLen(l2), 0);
+  decreases int.add(listLen(l1), listLen(l2))
 {
   if IntList..isNil(l1) then l2
   else if IntList..isNil(l2) then l1
-  else if IntList..hd(l1) <= IntList..hd(l2)
+  else if int.le(IntList..hd(l1), IntList..hd(l2))
     then Cons(IntList..hd(l1), merge(IntList..tl(l1), l2))
     else Cons(IntList..hd(l2), merge(l1, IntList..tl(l2)))
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
@@ -293,7 +301,8 @@ Result: ❓ unknown
 
 Obligation: merge_terminates_3
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify compoundMeasurePgm (options := .quiet)
 
@@ -307,16 +316,17 @@ def compoundArithPgm : Program :=
 program Core;
 
 rec function diagonal (m : int, n : int) : int
-  requires m >= 0;
-  requires n >= 0;
-  decreases m + n
+  requires int.ge(m, 0);
+  requires int.ge(n, 0);
+  decreases int.add(m, n)
 {
-  if m <= 0 then (if n <= 0 then 0 else diagonal(m, n - 1))
-  else diagonal(m - 1, n)
+  if int.le(m, 0) then (if int.le(n, 0) then 0 else diagonal(m, int.sub(n, 1)))
+  else diagonal(int.sub(m, 1), n)
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: diagonal_body_calls_diagonal_0
 Property: assert
 Result: ✅ pass
@@ -347,7 +357,8 @@ Result: ✅ pass
 
 Obligation: diagonal_terminates_3
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify compoundArithPgm (options := .quiet)
 
@@ -360,20 +371,21 @@ def mutualIntRecPgm : Program :=
 program Core;
 
 rec function isEven (n : int) : bool
-  requires n >= 0;
+  requires int.ge(n, 0);
   decreases n
 {
-  if n <= 0 then true else isOdd(n - 1)
+  if int.le(n, 0) then true else isOdd(int.sub(n, 1))
 }
 function isOdd (n : int) : bool
-  requires n >= 0;
+  requires int.ge(n, 0);
   decreases n
 {
-  if n <= 0 then false else isEven(n - 1)
+  if int.le(n, 0) then false else isEven(int.sub(n, 1))
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: isEven_body_calls_isOdd_0
 Property: assert
 Result: ✅ pass
@@ -396,7 +408,8 @@ Result: ✅ pass
 
 Obligation: isOdd_terminates_1
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify mutualIntRecPgm (options := .quiet)
 
@@ -409,16 +422,16 @@ def mutualIntRecConcretePgm : Program :=
 program Core;
 
 rec function isEven (n : int) : bool
-  requires n >= 0;
+  requires int.ge(n, 0);
   decreases n
 {
-  if n <= 0 then true else isOdd(n - 1)
+  if int.le(n, 0) then true else isOdd(int.sub(n, 1))
 }
 function isOdd (n : int) : bool
-  requires n >= 0;
+  requires int.ge(n, 0);
   decreases n
 {
-  if n <= 0 then false else isEven(n - 1)
+  if int.le(n, 0) then false else isEven(int.sub(n, 1))
 };
 
 procedure TestMutualConcrete() spec {
@@ -432,7 +445,8 @@ procedure TestMutualConcrete() spec {
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: isEven_body_calls_isOdd_0
 Property: assert
 Result: ✅ pass
@@ -491,7 +505,8 @@ Result: ✅ pass
 
 Obligation: TestMutualConcrete_ensures_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify mutualIntRecConcretePgm (options := .quiet)
 
@@ -505,22 +520,23 @@ def intRecUFPgm : Program :=
 program Core;
 
 rec function fib (n : int) : int
-  requires n >= 0;
+  requires int.ge(n, 0);
   decreases n
 {
-  if n <= 1 then n else fib(n - 1) + fib(n - 2)
+  if int.le(n, 1) then n else int.add(fib(int.sub(n, 1)), fib(int.sub(n, 2)))
 };
 
 procedure TestFibUF(n : int) spec {
-  requires n > 1;
+  requires int.gt(n, 1);
   ensures true;
 }
 {
-  assert [fibDef]: fib(n) == fib(n - 1) + fib(n - 2);
+  assert [fibDef]: fib(n) == int.add(fib(int.sub(n, 1)), fib(int.sub(n, 2)));
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: fib_body_calls_fib_0
 Property: assert
 Result: ✅ pass
@@ -563,7 +579,8 @@ Result: ❌ fail
 
 Obligation: TestFibUF_ensures_1
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify intRecUFPgm (options := .quiet)
 
@@ -576,10 +593,10 @@ def factorialConcretePgm : Program :=
 program Core;
 
 rec function factorial (n : int) : int
-  requires n >= 0;
+  requires int.ge(n, 0);
   decreases n
 {
-  if n <= 0 then 1 else n * factorial(n - 1)
+  if int.le(n, 0) then 1 else int.mul(n, factorial(int.sub(n, 1)))
 };
 
 procedure TestFactConcrete() spec {
@@ -592,7 +609,8 @@ procedure TestFactConcrete() spec {
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: factorial_body_calls_factorial_0
 Property: assert
 Result: ✅ pass
@@ -631,7 +649,8 @@ Result: ✅ pass
 
 Obligation: TestFactConcrete_ensures_0
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify factorialConcretePgm (options := .quiet)
 
@@ -647,24 +666,25 @@ program Core;
 datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
 rec function sumFirst (@[cases] xs : IntList, n : int) : int
-  requires n >= 0;
+  requires int.ge(n, 0);
   decreases n
 {
-  if n <= 0 then 0
+  if int.le(n, 0) then 0
   else if IntList..isNil(xs) then 0
-  else IntList..hd(xs) + sumFirst(IntList..tl(xs), n - 1)
+  else int.add(IntList..hd(xs), sumFirst(IntList..tl(xs), int.sub(n, 1)))
 };
 
 procedure TestSumFirstCons(h : int, t : IntList, n : int) spec {
-  requires n >= 1;
+  requires int.ge(n, 1);
   ensures true;
 }
 {
-  assert [consUnfold]: sumFirst(Cons(h, t), 1) == h + sumFirst(t, 0);
+  assert [consUnfold]: sumFirst(Cons(h, t), 1) == int.add(h, sumFirst(t, 0));
 };
 #end
 
-/-- info:
+/--
+info:
 Obligation: sumFirst_body_calls_IntList..hd_0
 Property: assert
 Result: ✅ pass
@@ -699,7 +719,8 @@ Result: ✅ pass
 
 Obligation: TestSumFirstCons_ensures_1
 Property: assert
-Result: ✅ pass -/
+Result: ✅ pass
+-/
 #guard_msgs in
 #eval Core.verify casesWithIntMeasurePgm (options := .quiet)
 
@@ -714,7 +735,7 @@ program Core;
 rec function loop (n : int) : int
   decreases 10
 {
-  if n <= 0 then 0 else loop(n - 1)
+  if int.le(n, 0) then 0 else loop(int.sub(n, 1))
 };
 #end
 

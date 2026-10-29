@@ -6,10 +6,12 @@
 module
 
 import all Strata.Languages.Core.StatementType
-import all Strata.DL.Util.ListMap
+import all Strata.Util.ListMap
+import all Strata.Util.ListMapProps
 import all Strata.DL.Imperative.CmdType
 import all Strata.DL.Imperative.Stmt
-import all Strata.DL.Util.ListUtils
+import all Strata.Util.ListUtils
+import all Strata.Util.ListUtilsProps
 import all Strata.Languages.Core.Statement
 import all Strata.Languages.Core.FunctionType
 
@@ -146,52 +148,6 @@ private theorem Statement.typeCheckAux_go_WF :
       any_goals (have tcok := Statement.typeCheckAux_elim_singleton tcok; rw[List.append_cons])
       any_goals (apply ih tcok <;> try assumption)
       any_goals (try simp [WFStatementsProp] at *; try simp [List.Forall_append, *]; try constructor)
-    | funcDecl decl md =>
-      simp [Except.bind] at tcok
-      -- The isRecursive check: if true, typeCheck returns error, contradicting tcok
-      split at tcok <;> try contradiction
-      rename_i tcok'
-      -- Split through the tryCatch and PureFunc.typeCheck structure
-      simp only [tryCatch] at tcok'
-      repeat (split at tcok' <;> try contradiction)
-      -- After splits, we need to extract the Function.typeCheck success
-      simp only [Except.mapError, tryCatchThe] at *
-      -- Now split on the PureFunc.typeCheck result
-      split at * <;> try contradiction
-      rename_i v_go heq_go v_func heq_func_match heq_tryCatch
-      -- Case split on Function.ofPureFunc decl
-      match hofp_eq : Function.ofPureFunc decl with
-      | .error _ =>
-        simp only [hofp_eq, PureFunc.typeCheck, bind, Except.bind] at heq_func_match
-        contradiction
-      | .ok funcData =>
-      -- funcData is the same Function as the old ofPureFunc would have returned
-      have heq_func_tc : Function.typeCheck C T funcData
-        = .ok (v_func.2.1, v_func.2.2) := by
-          simp only [PureFunc.typeCheck, hofp_eq, bind, Except.bind] at heq_func_match
-          split at heq_func_match <;> try contradiction
-          rename_i v h
-          cases heq_func_match; assumption
-      have tcok := Statement.typeCheckAux_elim_singleton tcok
-      rw[List.append_cons];
-      apply ih tcok <;> try assumption
-      simp [WFStatementsProp] at *
-      simp [List.Forall_append, Forall, *]
-      constructor
-      -- Prove arg_nodup using Function.typeCheck_inputs_nodup
-      have h_nodup := Function.typeCheck_inputs_nodup C T
-        funcData
-        v_func.2.1 v_func.2.2 heq_func_tc
-      -- Idea: mapM preserves keys
-      have h_keys : funcData.inputs.keys = decl.inputs.keys := by
-        simp only [Function.ofPureFunc, bind, Except.bind] at hofp_eq
-        split at hofp_eq <;> try contradiction
-        split at hofp_eq <;> try contradiction
-        cases hofp_eq
-        apply listMap_keys_mapM_snd _ _ _ _ ‹_›
-        grind
-      rw [h_keys] at h_nodup
-      exact h_nodup
     | typeDecl tc md =>
       simp [Except.bind, tryCatch, tryCatchThe] at tcok
       split at tcok <;> try contradiction

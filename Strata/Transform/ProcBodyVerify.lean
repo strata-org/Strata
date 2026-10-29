@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.Transform.CoreTransform
 
@@ -88,7 +89,7 @@ open Core Imperative Transform
   -- ProcBodyVerify expects a structured body: the prefix (inits + assumes) and
   -- suffix (postcondition asserts) are statement-level constructs that embed
   -- around the body. Unstructured CFG bodies are not supported here.
-  let bodyStmts ← proc.body.getStructured.mapError Strata.DiagnosticModel.fromMessage
+  let bodyStmts ← proc.body.getStructured.mapError Strata.Message.fromString
   -- Wrap body in labeled block
   let bodyBlock := Stmt.block bodyLabel bodyStmts #[]
 

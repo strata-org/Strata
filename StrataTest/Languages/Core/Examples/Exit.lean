@@ -33,7 +33,7 @@ procedure Test2(x : int, out y : bool)
           l3_before: {
             l1: {
               assert [a4]: x == x;
-              if (x > 0) {
+              if (int.gt(x, 0)) {
                 exit l3_before;
               } else {
                 exit l4_before;
@@ -43,10 +43,10 @@ procedure Test2(x : int, out y : bool)
               assert [a5]: !(x == x); // skipped over
             }
           }
-          assert [a6]: x * 2 > x;
+          assert [a6]: int.gt(int.mul(x, 2), x);
           exit l5;
         }
-        assert [a7]: x <= 0;
+        assert [a7]: int.le(x, 0);
         exit l5;
       }
     }
@@ -76,16 +76,16 @@ true
 Label: a6
 Property: assert
 Assumptions:
-<label_ite_cond_true: x > 0>: x@2 > 0
+<label_ite_cond_true: int.gt(x, 0)>: int.gt(x@2, 0)
 Obligation:
-x@2 * 2 > x@2
+int.gt(int.mul(x@2, 2), x@2)
 
 Label: a7
 Property: assert
 Assumptions:
-<label_ite_cond_false: !(x > 0)>: if x@2 > 0 then false else true
+<label_ite_cond_false: !(int.gt(x, 0))>: if int.gt(x@2, 0) then false else true
 Obligation:
-x@2 <= 0
+int.le(x@2, 0)
 
 ---
 info:
@@ -145,17 +145,17 @@ l1:
   condGoto true ite$_5 ite$_5
 ite$_5:
   assert [a4]: x == x;
-  condGoto x > 0 block$l5$_2 block$l5$_1
+  condGoto int.gt(x, 0) block$l5$_2 block$l5$_1
 l2:
   condGoto true l$_3 l$_3
 l$_3:
   assert [a5]: !(x == x);
   condGoto true block$l5$_2 block$l5$_2
 block$l5$_2:
-  assert [a6]: x * 2 > x;
+  assert [a6]: int.gt(int.mul(x, 2), x);
   condGoto true end$_0 end$_0
 block$l5$_1:
-  assert [a7]: x <= 0;
+  assert [a7]: int.le(x, 0);
   condGoto true end$_0 end$_0
 end$_0:
   finish

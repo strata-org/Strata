@@ -1,0 +1,335 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+/-
+Tests for the generic `mapStmtExprM` traversal. Verifies that `mapStmtExpr id`
+is the identity: applying it to a parsed program produces identical output.
+-/
+
+import StrataLaurel.Tests.Util.TestLaurel
+import StrataLaurel.Implementation.MapStmtExpr
+import StrataLaurel.Implementation.Resolution
+
+open Strata
+open StrataTest.Util
+
+namespace Strata.Laurel
+
+private def parseAndResolve (program : StrataDDM.Program) : IO LaurelProgram := do
+  let laurelProgram ← translateLaurel program
+  pure (resolve laurelProgram).program
+
+private def printProcs (program : LaurelProgram) : IO String := do
+  let mut out := ""
+  for proc in program.staticProcedures do
+    let s := toString (Std.Format.pretty (Std.ToFormat.format proc))
+    out := out ++ s ++ "\n"
+  pure out
+
+/-- Verify `mapStmtExpr id` is the identity by comparing printed output before
+    and after the transformation. -/
+private def testMapStmtExprId (program : StrataDDM.Program) : IO Unit := do
+  let parsed ← parseAndResolve program
+  let mapped := mapLaurelProgram (mapStmtExpr id) parsed
+  let before ← printProcs parsed
+  let after ← printProcs mapped
+  if before == after then
+    IO.println "ok: mapStmtExpr id ≡ id"
+  else
+    IO.println s!"MISMATCH\nbefore:\n{before}\nafter:\n{after}"
+
+-- Exercises: IfThenElse, Block, Var Declare, While, Return, Assign,
+-- Assert, Assume, Forall, Exists, LiteralInt, LiteralBool, Identifier.
+
+/--
+info: ok: mapStmtExpr id ≡ id
+-/
+#guard_msgs in
+#eval testMapStmtExprId <|
+#strata
+program Laurel;
+procedure test(x: int, b: bool) returns (r: int)
+  requires x > 0
+  opaque
+  ensures r >= 0
+{
+  var y: int := x;
+  if b then {
+    y := y + 1
+  } else {
+    y := y - 1
+  };
+  while(y > 0)
+    invariant y >= 0
+  {
+    y := y - 1
+  };
+  assert y == 0;
+  assume y >= 0;
+  var q: bool := forall(i: int) => i >= 0;
+  var p: bool := exists(j: int) => j > 0;
+  return y
+};
+#end
+
+
+-- Direct coverage for `HighType.mapType`'s recursion — including the
+-- `.Applied` branch `ConstrainedTypeElim.resolveBaseType` relies on to lower a
+-- constrained type nested inside a generic type application. Laurel has no
+-- surface syntax for a generic/`.Applied`-typed datatype field, so it is
+-- exercised here at the `HighType` level via the shared combinator; the
+-- callback lowers `int32` to `int` (`.TInt`), mirroring `resolveBaseType`'s
+-- lookup. The `.TSet`/`.TMap`/`.Intersection`/`.MultiValuedExpr`
+-- recursive branches are pinned below (`.TMap` is additionally covered
+-- end-to-end by `ConstrainedTypes/ConstrainedDatatypeField.lean`).
+section MapTypeCoverage
+
+private def lowerInt32 : HighType → HighType
+  | .UserDefined name => if name.text == "int32" then .TInt else .UserDefined name
+  | t => t
+
+-- `Box int32` -> `Box int`: the callback fires inside `.Applied`'s type argument;
+-- the generic base `Box` is left untouched.
+#guard HighType.mapType lowerInt32
+    (.Applied ⟨.UserDefined (mkId "Box"), default⟩ [⟨.UserDefined (mkId "int32"), default⟩])
+  == .Applied ⟨.UserDefined (mkId "Box"), default⟩ [⟨.TInt, default⟩]
+
+-- `Box (Wrap int32)` -> `Box (Wrap int)`: recursion through two `.Applied` layers.
+#guard HighType.mapType lowerInt32
+    (.Applied ⟨.UserDefined (mkId "Box"), default⟩
+      [⟨.Applied ⟨.UserDefined (mkId "Wrap"), default⟩ [⟨.UserDefined (mkId "int32"), default⟩], default⟩])
+  == .Applied ⟨.UserDefined (mkId "Box"), default⟩
+      [⟨.Applied ⟨.UserDefined (mkId "Wrap"), default⟩ [⟨.TInt, default⟩], default⟩]
+
+-- `Set int32` -> `Set int`: recursion through `.TSet`'s element type.
+#guard HighType.mapType lowerInt32 (.TSet ⟨.UserDefined (mkId "int32"), default⟩)
+  == HighType.TSet ⟨.TInt, default⟩
+
+-- `TotalMap int32 string` -> `TotalMap int string`: recursion through `.TMap`'s key and
+-- value types (the non-constrained value type is untouched). Also covered
+-- end-to-end by `ConstrainedTypes/ConstrainedDatatypeField.lean`.
+#guard HighType.mapType lowerInt32
+    (.TMap ⟨.UserDefined (mkId "int32"), default⟩ ⟨.TString, default⟩)
+  == HighType.TMap ⟨.TInt, default⟩ ⟨.TString, default⟩
+
+-- `int32 & T` -> `int & T`: recursion through `.Intersection`'s components;
+-- the non-constrained component is untouched.
+#guard HighType.mapType lowerInt32
+    (.Intersection [⟨.UserDefined (mkId "int32"), default⟩, ⟨.UserDefined (mkId "T"), default⟩])
+  == HighType.Intersection [⟨.TInt, default⟩, ⟨.UserDefined (mkId "T"), default⟩]
+
+-- `(int32, bool)` -> `(int, bool)`: recursion through `.MultiValuedExpr`'s
+-- components; the non-constrained component is untouched.
+#guard HighType.mapType lowerInt32
+    (.MultiValuedExpr [⟨.UserDefined (mkId "int32"), default⟩, ⟨.TBool, default⟩])
+  == HighType.MultiValuedExpr [⟨.TInt, default⟩, ⟨.TBool, default⟩]
+
+end MapTypeCoverage
+
+section ProcedureTraversalCoverage
+
+private def testMd (expr : StmtExpr) : StmtExprMd := ⟨expr, default⟩
+private def taggedType (name : String) : HighTypeMd :=
+  ⟨.UserDefined (mkId name), default⟩
+
+private def specificationFixture : Procedure :=
+  { name := mkId "specificationFixture"
+    inputs := []
+    outputs := []
+    preconditions := [{ condition := testMd (.LiteralInt 1) }]
+    decreases := some (testMd (.LiteralInt 2))
+    invokeOn := some (testMd (.LiteralInt 3))
+    axioms := [testMd (.LiteralInt 4)]
+    body := .Transparent (testMd (.LiteralInt 5)) }
+
+private def literalIntValue (expr : StmtExprMd) : Option Int :=
+  match expr.val with
+  | .LiteralInt value => some value
+  | _ => none
+
+#guard (procedureSpecificationExprs specificationFixture).map literalIntValue ==
+  [some 1, some 2, some 3, some 4]
+
+private def incrementLiteral (expr : StmtExprMd) : StmtExprMd :=
+  match expr.val with
+  | .LiteralInt value => { expr with val := .LiteralInt (value + 10) }
+  | _ => expr
+
+private def mappedSpecificationFixture : Procedure :=
+  mapProcedureSpecificationsM (m := Id) incrementLiteral specificationFixture
+
+#guard (procedureSpecificationExprs mappedSpecificationFixture).map literalIntValue ==
+  [some 11, some 12, some 13, some 14]
+#guard match mappedSpecificationFixture.body with
+  | .Transparent body => literalIntValue body == some 5
+  | _ => false
+
+private def procedureExpressionOrder (proc : Procedure) : List Int :=
+  let visit (expr : StmtExprMd) : StateM (List Int) Unit :=
+    match expr.val with
+    | .LiteralInt value => modify (· ++ [value])
+    | _ => pure ()
+  (foldProcedureExprsM visit proc).run [] |>.2
+
+private def withSpecifications (body : Body) : Procedure :=
+  { name := mkId "wholeProcedure"
+    inputs := []
+    outputs := []
+    preconditions := [{ condition := testMd (.LiteralInt 5) }]
+    decreases := some (testMd (.LiteralInt 6))
+    invokeOn := some (testMd (.LiteralInt 7))
+    axioms := [testMd (.LiteralInt 8)]
+    body }
+
+#guard procedureExpressionOrder
+    (withSpecifications (.Transparent (testMd (.LiteralInt 1)))) ==
+  [1, 5, 6, 7, 8]
+
+#guard procedureExpressionOrder
+    (withSpecifications (.Opaque
+      [{ condition := testMd (.LiteralInt 1) }]
+      (some (testMd (.LiteralInt 2)))
+      [{ targets := [testMd (.LiteralInt 3), testMd (.LiteralInt 4)] }])) ==
+  [1, 2, 3, 4, 5, 6, 7, 8]
+
+#guard procedureExpressionOrder
+    (withSpecifications (.Abstract [{ condition := testMd (.LiteralInt 1) }])) ==
+  [1, 5, 6, 7, 8]
+
+#guard procedureExpressionOrder (withSpecifications .External) ==
+  [5, 6, 7, 8]
+
+private def highTypeOrderFixture : Procedure :=
+  { name := mkId "highTypeOrder"
+    inputs := [{ name := mkId "input", type := taggedType "input" }]
+    outputs := [{ name := mkId "output", type := taggedType "output" }]
+    preconditions := [{ condition := testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "pre")) }]
+    decreases := some (testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "decreases")))
+    invokeOn := some (testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "invokeOn")))
+    axioms := [testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "axiom"))]
+    body := .Transparent (testMd (.AsType (testMd (.LiteralInt 0)) (taggedType "body"))) }
+
+private def highTypeTraversalOrder : List String :=
+  let visit (type : HighTypeMd) : StateM (List String) HighTypeMd := do
+    let name := match type.val with
+      | .UserDefined id => id.text
+      | _ => "unexpected"
+    modify (· ++ [name])
+    pure type
+  (mapProcedureHighTypesM visit highTypeOrderFixture).run [] |>.2
+
+#guard highTypeTraversalOrder ==
+  ["body", "input", "output", "pre", "decreases", "invokeOn", "axiom"]
+
+end ProcedureTraversalCoverage
+
+section ResultUseCoverage
+
+private def resultCall (name : String) : StmtExprMd :=
+  ⟨.StaticCall (mkId name) [] [], default⟩
+
+private def exposeResultUsed (used : Bool) (node : StmtExprMd) : StmtExprMd :=
+  match node.val with
+  | .StaticCall _ _ _ => ⟨.LiteralBool used, node.source⟩
+  | _ => node
+
+private def assignedOperandIsIgnored : Bool :=
+  match (mapStmtExprUsed exposeResultUsed true
+      ⟨.Assigned (resultCall "ignored"), default⟩).val with
+  | .Assigned ⟨.LiteralBool false, _⟩ => true
+  | _ => false
+
+#guard assignedOperandIsIgnored
+
+private def proveByProofIsIgnored : Bool :=
+  match (mapStmtExprUsed exposeResultUsed true
+      ⟨.ProveBy (resultCall "value") (resultCall "proof"), default⟩).val with
+  | .ProveBy ⟨.LiteralBool true, _⟩ ⟨.LiteralBool false, _⟩ => true
+  | _ => false
+
+#guard proveByProofIsIgnored
+
+private def exposeFlattenResultUsed (expr : StmtExprMd) : StmtExprMd :=
+  mapStmtExprFlattenM (m := Id)
+    (fun _ _ => none)
+    (fun used node => [exposeResultUsed used node]) true expr
+
+private def flattenAssignedOperandIsIgnored : Bool :=
+  match (exposeFlattenResultUsed ⟨.Assigned (resultCall "ignored"), default⟩).val with
+  | .Assigned ⟨.LiteralBool false, _⟩ => true
+  | _ => false
+
+#guard flattenAssignedOperandIsIgnored
+
+private def flattenProveByProofIsIgnored : Bool :=
+  match (exposeFlattenResultUsed
+      ⟨.ProveBy (resultCall "value") (resultCall "proof"), default⟩).val with
+  | .ProveBy ⟨.LiteralBool true, _⟩ ⟨.LiteralBool false, _⟩ => true
+  | _ => false
+
+#guard flattenProveByProofIsIgnored
+
+end ResultUseCoverage
+
+/-! ## `boundNamesOfNode`
+
+The one enumeration of the `StmtExpr` forms that bind a name, shared by `EliminateExceptions`'s
+carrier freshening and `GlobalParameterization`'s global aliasing. A missing arm costs both
+callers, so the arms are pinned here rather than only in whichever consumer happens to have a
+fixture for them — and the `.IncrDecr` / `.CompoundAssign` arms have no such consumer at all,
+since `LaurelAST` rules a `Declare` target out in those positions.
+
+One node per handled form, reported by name. A form that stops being handled drops out of this
+list; a form that is added should join it. -/
+
+private def bDecl (n : String) : VariableMd :=
+  ⟨.Declare { name := mkId n, type := some (taggedType "T") }, default⟩
+
+private def bindingForms : List (String × StmtExprMd) := [
+  ("Assign",          testMd (.Assign [bDecl "a"] (testMd (.LiteralInt 0)))),
+  -- Two targets, so the fold over `.Assign`'s target list is exercised rather than assumed.
+  ("Assign/multi",    testMd (.Assign [bDecl "a1", bDecl "a2"] (testMd (.LiteralInt 0)))),
+  ("IncrDecr",        testMd (.IncrDecr .Post .Incr (bDecl "i"))),
+  ("CompoundAssign",  testMd (.CompoundAssign .Add (bDecl "c") (testMd (.LiteralInt 0)))),
+  ("Var",             testMd (.Var (.Declare { name := mkId "v", type := some (taggedType "T") }))),
+  ("Quantifier",      testMd (.Quantifier .Forall { name := mkId "q", type := taggedType "T" } none
+                                (testMd (.LiteralBool true)))),
+  ("Try/catch",       testMd (.Try (testMd (.LiteralBool true))
+                                [{ binding := mkId "e", body := testMd (.LiteralBool true) }] none)),
+  -- Two clauses, so the map over `.Try`'s clause list is exercised, as for `.Assign`'s targets.
+  ("Try/catch/multi", testMd (.Try (testMd (.LiteralBool true))
+                                [{ binding := mkId "e1", body := testMd (.LiteralBool true) },
+                                 { binding := mkId "e2", body := testMd (.LiteralBool true) }] none)),
+  -- A `.Declare` with no type annotation still binds its name: a scope query counts it, so
+  -- rebuilding this on an enumeration that reports only *typed* bindings would narrow the answer
+  -- and stop a shadowing untyped local from forcing a global rename.
+  ("Assign/no-type",  testMd (.Assign [⟨.Declare { name := mkId "u", type := none }, default⟩]
+                                (testMd (.LiteralInt 0)))),
+  -- Assigning to an existing local binds nothing, which is the distinction `usedNames` restates
+  -- for itself; and a form that binds nothing at all must stay silent.
+  ("Assign/local",    testMd (.Assign [⟨.Local (mkId "l"), default⟩] (testMd (.LiteralInt 0)))),
+  ("StaticCall",      testMd (.StaticCall (mkId "f") [] []))
+]
+
+/--
+info: Assign: a
+Assign/multi: a1, a2
+IncrDecr: i
+CompoundAssign: c
+Var: v
+Quantifier: q
+Try/catch: e
+Try/catch/multi: e1, e2
+Assign/no-type: u
+Assign/local: -
+StaticCall: -
+-/
+#guard_msgs in
+#eval bindingForms.forM fun (label, node) => do
+  let ns := (boundNamesOfNode node).map (fun (n : Identifier) => n.text)
+  IO.println s!"{label}: {if ns.isEmpty then "-" else ", ".intercalate ns}"
+
+end Strata.Laurel

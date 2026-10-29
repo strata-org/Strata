@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.DL.Lambda.LTyUnify
+meta import Strata.DL.Lambda.LExprTypeEnv
 
 /-! ## Tests for LTyUnify -/
 
@@ -14,7 +14,7 @@ namespace Lambda
 open Std (ToFormat Format format)
 open LTy.Syntax
 
-/-- info: [(a, int) (b, (arrow c d))] -/
+/-- info: [[(a, int), (b, (arrow c d))]] -/
 #guard_msgs in
 #eval match Constraints.unify [(mty[%a → %b], mty[int → (%c → %d)])] SubstInfo.empty with
   | .ok S => format S.subst

@@ -34,7 +34,9 @@ procedure caller() {
 };
 #end
 
-/-- info: "willFail: ❌ fail\n Assertion is 52 characters after the related location" -/
+-- Inlining freshens the callee's assertion label with its `$__inline<N>_`
+-- prefix, so the expected obligation label is `$__inline1_willFail`.
+/-- info: "$__inline1_willFail: ❌ fail\n Assertion is 52 characters after the related location" -/
 #guard_msgs in
 #eval show IO String from do
   let (coreProg, _) := Strata.Core.getProgram inlineAssertPgm
@@ -44,8 +46,9 @@ procedure caller() {
   let vcResults ←
     EIO.toIO (fun e => IO.Error.userError e)
       (Strata.Core.verifyProgram inlined
-        { Core.VerifyOptions.default with verbose := .quiet }
-        (proceduresToVerify := some ["caller"]))
+        { Core.VerifyOptions.default with
+          verbose := .quiet,
+          proceduresToVerify := some ["caller"] })
   let mut output := ""
   for vcr in vcResults do
     output := output ++ s!"{vcr.obligation.label}: {vcr.formatOutcome}"

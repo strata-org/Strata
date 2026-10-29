@@ -27,14 +27,17 @@ inductive RunConfig (P : PureExpr) (CmdT : Type) (S : Type) where
   | block  : String → RunConfig P CmdT S → RunConfig P CmdT S
   | seq    : RunConfig P CmdT S → List (Stmt P CmdT) → RunConfig P CmdT S
 
+def RunConfig.state : RunConfig P CmdT S → S
+  | .stmt _ s | .stmts _ s | .terminal s | .exiting _ s => s
+  | .block _ inner => inner.state
+  | .seq inner _ => inner.state
+
 /-- Operations the stepper needs from the state. -/
 structure RunOps (P : PureExpr) (CmdT : Type) (S : Type) where
   /-- Evaluate a expression to a value. -/
   evalExpr : S → P.Expr → Option P.Expr
   /-- Execute a command, producing a new state. -/
   evalCmd : S → CmdT → S
-  /-- Extend the evaluator with a function declaration. -/
-  extendEval : S → PureFunc P → S
   /-- Push a new variable scope (for blocks). -/
   pushScope : S → S := id
   /-- Pop a variable scope (for blocks). -/
@@ -76,8 +79,6 @@ def runStep [BEq P.Expr] [HasBool P]
       | none => .terminal (ops.addError ρ "Loop guard did not reduce to bool")
 
   | .stmt (.exit label _) ρ => .exiting label ρ
-
-  | .stmt (.funcDecl decl _) ρ => .terminal (ops.extendEval ρ decl)
 
   | .stmt (.typeDecl _ _) ρ => .terminal ρ
 

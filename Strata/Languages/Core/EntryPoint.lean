@@ -13,7 +13,14 @@ public section
 namespace Core
 
 /-- Which procedures to verify: all user procedures, only roots,
-    or only the main function. -/
+    or only the main function.
+
+    This is the *verifier's* entry-point selector — it decides which
+    procedures the SMT verifier targets. It has no relation to the
+    concrete-interpreter entry marker (`Procedure.isInterpretEntry` /
+    `Imperative.MetaData.interpretEntry` / `Program.runEntry` /
+    `Program.entryProcedures`), which is a distinct notion introduced for
+    `laurelInterpret`. -/
 inductive EntryPoint where
   /-- Only `__main__` -/
   | main

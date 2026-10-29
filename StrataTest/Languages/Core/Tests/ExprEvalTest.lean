@@ -17,10 +17,6 @@ meta import Strata.Languages.Core.Identifiers
 meta import Strata.Languages.Core.Options
 meta import Strata.Languages.Core.SMTEncoder
 meta import Strata.Languages.Core.Verifier
-meta import all StrataTest.DL.Lambda.TestGen
-meta import all StrataTest.DL.Lambda.PlausibleHelpers
-public meta import Plausible.Arbitrary
-meta import Plausible
 
 meta section
 
@@ -48,12 +44,12 @@ def encode (e:LExpr CoreLParams.mono)
   let lcont := { Lambda.LContext.default with
     functions := Core.Factory, knownTypes := Core.KnownTypes }
   let (e,_T) ← LExpr.annotate lcont tenv e
-  let e_res := LExpr.eval init_state.config.fuel init_state e
+  let e_res := (LExpr.evalWithLState init_state.config.fuel init_state e).fst
   match e_res with
   | .const _ _ =>
-    let env := Core.Env.init
-    let (smt_term_lhs,ctx) ← Core.toSMTTerm env [] e SMT.Context.default
-    let (smt_term_rhs,ctx) ← Core.toSMTTerm env [] e_res ctx
+    let factory := Core.Env.init.factory
+    let (smt_term_lhs,ctx,_) ← Core.toSMTTerm factory [] e SMT.Context.default {}
+    let (smt_term_rhs,ctx,_) ← Core.toSMTTerm factory [] e_res ctx {}
     let smt_term_eq := Strata.SMT.Factory.eq smt_term_lhs smt_term_rhs
     return (.some (smt_term_eq, ctx))
   | _ => return .none
@@ -124,7 +120,7 @@ private def mkRandConst (ty:LMonoTy): IO (Option (LExpr CoreLParams.mono))
   | .tcons "real" [] =>
     let i <- pickInterestingValue 1 [0,1,-1] (pickRandInt 2147483648)
     let n <- IO.rand 1 2147483648
-    return (.some (.realConst () (mkRat i n)))
+    return (.some (.rationalConst () (mkRat i n)))
   | .tcons "string" [] =>
     -- TODO: random string generator
     return (.some (.strConst () "a"))
@@ -200,29 +196,6 @@ open Lambda.LTy.Syntax
 
 -- This may take a while
 #eval (checkFactoryOps false)
-
-open Plausible TestGen
-
-deriving instance Arbitrary for Unit
-
-def test_lctx : LContext CoreLParams :=
-{
-  LContext.empty with
-  functions := Core.Factory
-  knownTypes := Core.KnownTypes
-}
-
-def test_ctx : TContext Unit := ⟨[[]], []⟩
-
-abbrev test_ty : LTy := .forAll [] <| .tcons "bool" []
-#guard_msgs(drop all) in
-#eval do
-    let P : LExpr CoreLParams.mono → Prop := fun t => HasType test_lctx test_ctx t test_ty
-    let t ← Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
-    IO.println s!"Generated {t}"
-    let b ← checkValid t
-    if ¬ b then
-      IO.println s!"Invalid!"
 
 end Tests
 

@@ -5,12 +5,12 @@
 -/
 module
 
-import Strata.DL.Lambda.Denote.LExprAnnotated
-import Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.Denote.LExprAnnotated
+public import Strata.DL.Lambda.Factory
 meta import Init.Grind.Cases
 import Std.Tactic.BVDecide.Normalize.BitVec
 import Std.Tactic.BVDecide.Normalize.Prop
-import Strata.DL.Util.HList
+public import Strata.Util.HListProps
 
 /-!
 ## Core Denotational Semantics
@@ -24,6 +24,8 @@ Also defines interpretation structures (`OpInterp`, `IdentInterp`,
 - `LExpr.denote` — denotation function for well-typed expressions
 - `Denotes` — relational specification of `denote`
 - `denote_Denotes` / `Denotes_denote` — soundness and completeness of `Denotes` w.r.t. `denote`
+- `denote_boolConst` / `denote_intConst` / `denote_strConst` / `denote_bitvecConst` —
+  denotations of primitive literals
 - `Interp` / `Satisfiable` / `Valid` / `LogConseq` — semantic notions over consistent interpretations
 -/
 
@@ -39,6 +41,19 @@ public inductive LSort where
   | tcons (name : String) (args : List LSort)
   /-- A bit vector sort of the given size. -/
   | bitvec (size : Nat)
+
+public section
+
+/-- The Boolean sort. -/
+protected abbrev LSort.bool : LSort := .tcons "bool" []
+/-- The integer sort. -/
+protected abbrev LSort.int : LSort := .tcons "int" []
+/-- The real sort. -/
+protected abbrev LSort.real : LSort := .tcons "real" []
+/-- The string sort. -/
+protected abbrev LSort.string : LSort := .tcons "string" []
+
+end
 
 def LSort_eqb (s1 s2: LSort) : Bool :=
   match s1, s2 with
@@ -118,7 +133,7 @@ instance : DecidableEq LSort := fun a b =>
 
 /-- Substitute all free type variables in a monomorphic type, producing a
 ground sort. -/
-def LMonoTy.substTyVars (ρ : TyIdentifier → LSort) : LMonoTy → LSort
+@[expose] public def LMonoTy.substTyVars (ρ : TyIdentifier → LSort) : LMonoTy → LSort
   | LMonoTy.ftvar name      => ρ name
   | LMonoTy.bitvec n        => .bitvec n
   | LMonoTy.tcons name args => .tcons name (map args)
@@ -146,12 +161,17 @@ kinds of type constructors may be encountered:
 /-- Every type produced by a `TyConstrInterp` is inhabited. This holds for
 inductive datatypes defined in Core because `adt_inhab` ensures the existence
 of an inhabited constructor. -/
-class TyConstrInterp.AllInhabited (tcInterp : TyConstrInterp) : Type where
+public class TyConstrInterp.AllInhabited (tcInterp : TyConstrInterp) : Type where
   inhabited : ∀ name args, Inhabited (tcInterp name args)
 
 /-- Interpret a sort into a Lean `Type`. Built-in sorts (bool, int, real,
 string, bitvec, arrow) are mapped to their Lean counterparts; all others
-are delegated to `tcInterp`. -/
+are delegated to `tcInterp`.
+
+The `real` sort intentionally denotes `Rat` in this semantics. Consequently,
+`Valid`, `LogConseq`, and clients such as the current Core Hoare logic quantify
+over rational values, not mathematical or SMT reals; no adequacy result relating
+this domain to SMT `Real` is claimed. -/
 @[expose] public def SortDenote (tcInterp : TyConstrInterp) : LSort → Type
   | .tcons "bool" []      => Bool
   | .tcons "int" []       => Int
@@ -166,7 +186,7 @@ Every sort denotes an inhabited type, given that the type constructor
 interpretation produces inhabited types.
 -/
 @[reducible]
-def SortDenote.inhabited (tcInterp : TyConstrInterp)
+public def SortDenote.inhabited (tcInterp : TyConstrInterp)
     (h : ∀ name args, Inhabited (tcInterp name args))
     (s : LSort) : Inhabited (SortDenote tcInterp s) := by
   induction s using LSort.rec' with
@@ -182,17 +202,17 @@ def SortDenote.inhabited (tcInterp : TyConstrInterp)
     · exact h _ _
   | hbitvec n => exact ⟨(0 : BitVec n)⟩
 
-instance SortDenote.instInhabited [TyConstrInterp.AllInhabited tcInterp]
+public instance SortDenote.instInhabited [TyConstrInterp.AllInhabited tcInterp]
     (s : LSort) : Inhabited (SortDenote tcInterp s) :=
   SortDenote.inhabited tcInterp TyConstrInterp.AllInhabited.inhabited s
 
 /-- Type-variable valuation: maps each type variable to a sort. This is a total
 function; type variables that do not appear in the term's type may be assigned
 any sort (e.g. `int`) since their value will never be used. -/
-def TyVarVal := TyIdentifier → LSort
+public abbrev TyVarVal := TyIdentifier → LSort
 
 /-- Two-pass type denotation: substitute type variables, then interpret. -/
-abbrev TyDenote (tcInterp : TyConstrInterp)
+public abbrev TyDenote (tcInterp : TyConstrInterp)
     (ρ : TyVarVal) (ty : LMonoTy) : Type :=
   SortDenote tcInterp (LMonoTy.substTyVars ρ ty)
 
@@ -200,7 +220,7 @@ abbrev TyDenote (tcInterp : TyConstrInterp)
 
 /-- Bound variable valuation: an `HList` of semantic values indexed by the
 typing context. -/
-abbrev BVarVal (tcInterp : TyConstrInterp)
+public abbrev BVarVal (tcInterp : TyConstrInterp)
     (ρ : TyVarVal) (Δ : List LMonoTy) :=
   HList (TyDenote tcInterp ρ) Δ
 
@@ -209,7 +229,7 @@ abbrev BVarVal (tcInterp : TyConstrInterp)
 /-- Maps each identifier and sort to a semantic value of that sort.
 Used for both operator interpretations (`OpInterp`) and free-variable
 valuations (`FreeVarVal`). -/
-def IdentInterp (T : LExprParams)
+@[expose] public def IdentInterp (T : LExprParams)
     (tcInterp : TyConstrInterp) :=
   Identifier T.IDMeta → (s : LSort) → SortDenote tcInterp s
 
@@ -217,11 +237,11 @@ def IdentInterp (T : LExprParams)
 Takes the string name (not the full identifier with metadata) so that
 the semantics is independent of metadata.
 Need because Factory lookup only depends on the name -/
-def OpInterp
+@[expose] public def OpInterp
     (tcInterp : TyConstrInterp) :=
   String → (s : LSort) → SortDenote tcInterp s
 /-- Free-variable valuation: maps each free variable to its value. -/
-abbrev FreeVarVal := IdentInterp
+public abbrev FreeVarVal := IdentInterp
 
 /-- Update an identifier interpretation so that the names in `bindings` map to
 the corresponding values from `vals`. Names not in `bindings` keep their
@@ -245,10 +265,10 @@ def IdentInterp.withArgs [DecidableEq T.IDMeta]
 /-! ### Denotational Semantics -/
 
 /-- Denote a constant literal. -/
-def denoteConst (tcInterp : TyConstrInterp) (vt : TyVarVal) : (c : LConst) → TyDenote tcInterp vt c.ty
+public def denoteConst (tcInterp : TyConstrInterp) (vt : TyVarVal) : (c : LConst) → TyDenote tcInterp vt c.ty
     | .boolConst b     => b
     | .intConst i      => i
-    | .realConst r     => r
+    | .rationalConst r => r
     | .strConst s      => s
     | .bitvecConst _ b => b
 
@@ -261,7 +281,7 @@ cleanly separates interpretations (fixed for a theory) from valuations
 
 Noncomputable due to `Classical.propDecidable` in the `eq` and `quant`
 cases; used only for reasoning, not computation. -/
-noncomputable def LExpr.denote
+public noncomputable def LExpr.denote
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp tcInterp)
@@ -526,7 +546,7 @@ theorem denote_Denotes
     typecheck_split h_body' h_body' h_body' h_tr' heq =>
       by_cases hv : ∀ x : TyDenote tcInterp vt qty,
         (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body' : Bool) = true
-      · simp [hv]
+      · rw [@decide_eq_true _ (Classical.propDecidable _) hv]
         exact .quant_all_true bvarVal fun x =>
           hv x ▸ denote_Denotes tcInterp opInterp fvarVal vt (.cons x bvarVal) body _ h_body'
       · simp [hv]
@@ -644,7 +664,7 @@ theorem Denotes_denote
     typecheck_split h_1 h_2 h_2 h_1 heq =>
       have := HasTypeA_unique htye1 h_1
       subst_vars
-      simp[ih2]
+      exact Eq.symm (@decide_eq_true _ (Classical.propDecidable _) ih2)
   | eq_false _ h1 h2 hne ih1 ih2 =>
     rename_i bvarVal  _ _ _ _ htye1 htye2 _ _ _
     unfold LExpr.denote
@@ -654,12 +674,12 @@ theorem Denotes_denote
     typecheck_split h_1 h_2 h_2 h_1 heq =>
       have := HasTypeA_unique htye1 h_1
       subst_vars
-      simp[hne]
+      exact Eq.symm (@decide_eq_false _ (Classical.propDecidable _) hne)
   | quant_all_true _ hall ih =>
     unfold LExpr.denote; simp only [HasTypeA.quant_inv]
     split; rename_i x τ_tr h_bool h_tr h_body heq
     typecheck_split h_body h_body h_body h_tr heq =>
-      simp [fun x => (ih x).symm]
+      exact Eq.symm (@decide_eq_true _ (Classical.propDecidable _) fun x => (ih x).symm)
   | quant_all_false _ w hbody ih =>
     unfold LExpr.denote; simp only [HasTypeA.quant_inv]
     split; rename_i x τ_tr h_bool h_tr h_body heq
@@ -673,7 +693,7 @@ theorem Denotes_denote
     typecheck_split h_body h_body h_body h_tr heq =>
       have hexists : ∃ x, LExpr.denote tcInterp opInterp fvarVal vt (.cons x _) _ .bool h_body = true :=
         ⟨w, ih.symm⟩
-      simp [hexists]
+      exact Eq.symm (@decide_eq_true _ (Classical.propDecidable _) hexists)
   | quant_exist_false _ hall ih =>
     unfold LExpr.denote; simp only [HasTypeA.quant_inv]
     split; rename_i x τ_tr h_bool h_tr h_body heq
@@ -688,7 +708,7 @@ These lemmas expose the structure of `denote` for each expression form,
 proved via `Denotes` to avoid dependent-type casts from the `_inv` lemmas. -/
 
 /-- Unfolding lemma for `denote` of a constant. -/
-theorem denote_const
+public theorem denote_const
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp tcInterp)
@@ -700,7 +720,7 @@ theorem denote_const
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m c) τ h =
       HasTypeA.const_inv h ▸ denoteConst tcInterp vt c := by rfl
 
-theorem denote_intConst
+public theorem denote_intConst
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp tcInterp)
@@ -710,9 +730,9 @@ theorem denote_intConst
     (bvarVal : BVarVal tcInterp vt Δ)
     (h : LExpr.HasTypeA Δ (.const m (.intConst i)) (.tcons "int" []))
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m (.intConst i)) (.tcons "int" []) h = i := by
-  rw [denote_const]; simp [denoteConst]
+  rw [denote_const]; rfl
 
-theorem denote_boolConst
+public theorem denote_boolConst
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp tcInterp)
@@ -722,10 +742,38 @@ theorem denote_boolConst
     (bvarVal : BVarVal tcInterp vt Δ)
     (h : LExpr.HasTypeA Δ (.const m (.boolConst b)) (.tcons "bool" []))
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal (.const m (.boolConst b)) (.tcons "bool" []) h = b := by
-  rw [denote_const]; simp [denoteConst]
+  rw [denote_const]; rfl
+
+/-- A string literal denotes to its string value. -/
+public theorem denote_strConst
+    {T : LExprParams}
+    (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp tcInterp)
+    (fvarVal : FreeVarVal T tcInterp)
+    (vt : TyVarVal)
+    {m : T.Metadata} {s : String} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h : LExpr.HasTypeA Δ (.const m (.strConst s)) .string) :
+    LExpr.denote tcInterp opInterp fvarVal vt bvarVal
+      (.const m (.strConst s)) .string h = s := by
+  rw [denote_const]; rfl
+
+/-- A bitvector literal denotes to its bitvector value. -/
+public theorem denote_bitvecConst
+    {T : LExprParams}
+    (tcInterp : TyConstrInterp)
+    (opInterp : OpInterp tcInterp)
+    (fvarVal : FreeVarVal T tcInterp)
+    (vt : TyVarVal)
+    {m : T.Metadata} {n : Nat} {b : BitVec n} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h : LExpr.HasTypeA Δ (.const m (.bitvecConst n b)) (.bitvec n)) :
+    LExpr.denote tcInterp opInterp fvarVal vt bvarVal
+      (.const m (.bitvecConst n b)) (.bitvec n) h = b := by
+  rw [denote_const]; rfl
 
 /-- Unfolding lemma for `denote` of an operator. -/
-theorem denote_op
+public theorem denote_op
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp tcInterp)
@@ -764,7 +812,7 @@ theorem denote_bvar
       bvarVal.get i (HasTypeA.bvar_inv h) := by rfl
 
 /-- Unfolding lemma for `denote` of an application. -/
-theorem denote_app
+public theorem denote_app
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -804,7 +852,7 @@ theorem denote_abs
   exact (Denotes_denote hd_abs).symm
 
 /-- Unfolding lemma for `denote` of `eq` when operands are equal. -/
-theorem denote_eq_true
+public theorem denote_eq_true
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -842,8 +890,41 @@ theorem denote_eq_false
   have hd2 := denote_Denotes tcInterp opInterp fvarVal vt bvarVal e2 ty' h_2
   exact (Denotes_denote (Denotes.eq_false bvarVal (h := h_eq) hd1 hd2 hne)).symm
 
+/-- If an equality denotes `true`, its operands have equal denotations. -/
+public theorem denote_eq_true_implies_eq
+    {T : LExprParams}
+    {tcInterp : TyConstrInterp}
+    {opInterp : OpInterp tcInterp}
+    {fvarVal : FreeVarVal T tcInterp}
+    {vt : TyVarVal}
+    {m : T.Metadata} {e1 e2 : LExpr T.mono} {ty' : LMonoTy} {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ)
+    (h_1 : LExpr.HasTypeA Δ e1 ty')
+    (h_2 : LExpr.HasTypeA Δ e2 ty')
+    (h_eq : LExpr.HasTypeA Δ (.eq m e1 e2) .bool)
+    (htrue : LExpr.denote tcInterp opInterp fvarVal vt bvarVal
+      (.eq m e1 e2) .bool h_eq = true) :
+    LExpr.denote tcInterp opInterp fvarVal vt bvarVal e1 ty' h_1 =
+      LExpr.denote tcInterp opInterp fvarVal vt bvarVal e2 ty' h_2 := by
+  let ⟨ty'', h_bool, h1', h2'⟩ := HasTypeA.eq_inv h_eq
+  cases h_bool
+  unfold LExpr.denote at htrue
+  simp only [HasTypeA.eq_inv] at htrue
+  split at htrue
+  rename_i x ty''' h_bool' h1'' h2'' heq
+  have hden : LExpr.denote tcInterp opInterp fvarVal vt bvarVal e1 ty''' h1'' =
+      LExpr.denote tcInterp opInterp fvarVal vt bvarVal e2 ty''' h2'' :=
+    @of_decide_eq_true _ (Classical.propDecidable _) htrue
+  have hty : ty''' = ty' := HasTypeA_unique h1'' h_1
+  subst ty'''
+  have hp1 : h1'' = h_1 := Subsingleton.elim _ _
+  have hp2 : h2'' = h_2 := Subsingleton.elim _ _
+  subst hp1
+  subst hp2
+  exact hden
+
 /-- Unfolding lemma for `denote` of an `ite`. -/
-theorem denote_ite
+public theorem denote_ite
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -876,7 +957,7 @@ theorem denote_ite
     exact (Denotes_denote hd_ite).symm
 
 /-- Unfolding lemma for `denote` of `quant .all` when the body is true for all values. -/
-theorem denote_quant_all_true
+public theorem denote_quant_all_true
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -966,7 +1047,7 @@ variable (opInterp : OpInterp tcInterp)
 
 /-- Apply a curried `SortDenote` value of iterated-arrow sort to an `HList`
 of argument values. -/
-def SortDenote.applyArgs
+public def SortDenote.applyArgs
     : {args : List LSort} → {ret : LSort} →
       SortDenote tcInterp (LSort.mkArrow ret args) →
       HList (SortDenote tcInterp) args →
@@ -978,7 +1059,7 @@ def SortDenote.applyArgs
 `body`: for every choice of argument values, the interpretation of the op
 applied to those arguments equals the denotation of the body under the
 valuation that maps the formal parameters to those arguments. -/
-def LFunc.InterpConsistentBody [DecidableEq T.IDMeta]
+public def LFunc.InterpConsistentBody [DecidableEq T.IDMeta]
     (f : LFunc T) (body : LExpr T.mono) : Prop :=
   ∀ (vt : TyVarVal)
     (fvarVal : FreeVarVal T tcInterp),
@@ -999,7 +1080,7 @@ noncomputable def denoteArgs
     (fvarVal : FreeVarVal T tcInterp) (vt : TyVarVal)
     {Δ : List LMonoTy} (bvarVal : BVarVal tcInterp vt Δ) :
     (argExprs : List (LExpr T.mono)) → (tys : List LMonoTy)  →
-      List.Forall₂ (LExpr.HasTypeA Δ) argExprs tys →
+      List.Rel₂ (LExpr.HasTypeA Δ) argExprs tys →
       HList (SortDenote tcInterp) (tys.map (LMonoTy.substTyVars vt))
   | [], [], _ => .nil
   | e :: es, ty :: tys, h =>
@@ -1011,7 +1092,7 @@ a `concreteEval` function: whenever `ceval md argExprs = some resultExpr` and
 all expressions are well-typed at the instantiated types (via a type
 substitution `tySubst`), the denotation of the result equals the
 interpretation of the op applied to the denotations of the arguments. -/
-def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
+public def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
     (f : LFunc T) (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) : Prop :=
   ∀ (vt : TyVarVal)
     (fvarVal : FreeVarVal T tcInterp)
@@ -1025,7 +1106,7 @@ def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
   let inputSorts := instInputTys.map (LMonoTy.substTyVars vt)
   let outputSort := LMonoTy.substTyVars vt instOutputTy
   let fullSort := LSort.mkArrow outputSort inputSorts
-  ∀ (h_args : List.Forall₂ (LExpr.HasTypeA []) argExprs instInputTys)
+  ∀ (h_args : List.Rel₂ (LExpr.HasTypeA []) argExprs instInputTys)
     (h_result : LExpr.HasTypeA [] resultExpr instOutputTy),
   LExpr.denote tcInterp opInterp fvarVal vt .nil resultExpr instOutputTy h_result =
     SortDenote.applyArgs tcInterp (opInterp f.name.name fullSort)
@@ -1042,7 +1123,7 @@ variable (opInterp : OpInterp tcInterp)
 /-- A factory is consistent with an `opInterp` when every function with a body
 is `InterpConsistentBody` and every function with a `concreteEval` is
 `InterpConsistentEval`. -/
-def Factory.InterpConsistent [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
+public def Factory.InterpConsistent [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
   (∀ (f : String), (hf : f ∈ F) → ∀ body, (F[f]).body = some body →
     LFunc.InterpConsistentBody tcInterp opInterp (F[f]) body) ∧
   (∀ (f : String), (hf : f ∈ F) → ∀ ceval, (F[f]).concreteEval = some ceval →
@@ -1077,7 +1158,7 @@ and a demonstration of how one could provide models for the axioms.
 
 /-- ADT interpretation consistency: the semantic interpretation of constructors
 satisfies disjointness and injectivity.-/
-structure ConstrInterpConsistent
+public structure ConstrInterpConsistent
     (F : @Factory T) : Prop where
   /-- Constructor disjointness (global): two constructor functions with
   different names, when fully applied, produce different values, provided
@@ -1132,7 +1213,7 @@ are defined over consistent interpretations. -/
 /-- A consistent interpretation of a factory: bundles `tcInterp` and
 `opInterp` with proofs that the interpretation is inhabited, consistent
 with function definitions, and respects ADT axioms. -/
-structure Interp {T : LExprParams} (F : @Factory T) [DecidableEq T.IDMeta] where
+public structure Interp {T : LExprParams} (F : @Factory T) [DecidableEq T.IDMeta] where
   tcInterp : TyConstrInterp
   opInterp : OpInterp tcInterp
   allInhabited : TyConstrInterp.AllInhabited tcInterp

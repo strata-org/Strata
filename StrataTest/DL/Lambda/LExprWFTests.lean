@@ -104,5 +104,43 @@ def qa (e : MonoExpr) : MonoExpr := .quant () .all "" .none (bv 0) e
 -- Empty substitution is identity
 #guard substFvarsLifting (fv "x") [] == fv "x"
 
+/-! ### fullyAnnotated tests -/
+
+def op' (name : String) (ty : Option LMonoTy := .none) : MonoExpr := .op () name ty
+def qaAnn (ty : LMonoTy) (e : MonoExpr) : MonoExpr := .quant () .all "" (.some ty) (bv 0) e
+
+-- Leaves that carry no annotation are annotated vacuously
+#guard fullyAnnotated (c 5) == true
+#guard fullyAnnotated (bv 0) == true
+
+-- The three annotated constructors, present and absent
+#guard fullyAnnotated (fv "x" (.some .int)) == true
+#guard fullyAnnotated (fv "x") == false
+#guard fullyAnnotated (op' "f" (.some .int)) == true
+#guard fullyAnnotated (op' "f") == false
+#guard fullyAnnotated (qaAnn .bool (c 1)) == true
+#guard fullyAnnotated (qa (c 1)) == false
+
+-- A quantifier's own annotation does not excuse its body
+#guard fullyAnnotated (qaAnn .bool (fv "x")) == false
+
+/-- Every recursive constructor at once, over leaves the caller chooses: an
+    `ite` of an `eq` and an `app` under an `abs`, inside an annotated
+    quantifier. `fullyAnnotated` recurses into all of them, so the whole is
+    annotated exactly when every leaf is. The `abs` here carries no type of its
+    own, which the predicate ignores by design. -/
+def nest (l₁ l₂ l₃ : MonoExpr) : MonoExpr :=
+  qaAnn .bool (ite' l₁ (eq' l₂ (c 0)) (lam (ap l₃ (bv 0))))
+
+-- Annotated everywhere, then one unannotated leaf per recursive position
+#guard fullyAnnotated (nest (fv "c" (.some .bool)) (fv "y" (.some .int))
+                            (fv "f" (.some .int))) == true
+#guard fullyAnnotated (nest (fv "c") (fv "y" (.some .int))
+                            (fv "f" (.some .int))) == false
+#guard fullyAnnotated (nest (fv "c" (.some .bool)) (op' "g")
+                            (fv "f" (.some .int))) == false
+#guard fullyAnnotated (nest (fv "c" (.some .bool)) (fv "y" (.some .int))
+                            (op' "g")) == false
+
 end Lambda.LExpr.WFTests
 end

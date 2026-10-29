@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Lambda.TypeConstructor
+public import Strata.Util.ListUtilsProps
 
 namespace Imperative
 
@@ -40,8 +41,8 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   termination) and labeled invariants. When `guard` is `.nondet`, the loop iterates
   a non-deterministic number of times. Each invariant carries a label string
   (expected to be distinct, like assert labels do).
-  TODO: measure will be moved to metadata md, since it doesn't contribute to
-  the small-step semantics (StepStmt).
+  TODO: invariants and measure will be moved to metadata md, since they don't
+  contribute to the small-step semantics (StepStmt).
   -/
   | loop     (guard : ExprOrNondet P) (measure : Option P.Expr)
              (invariants : List (String × P.Expr))
@@ -49,14 +50,12 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   /-- An exit statement that transfers control out of the enclosing block
   with the given label. -/
   | exit     (label : String) (md : MetaData P)
-  /-- A function declaration within a statement block. -/
-  | funcDecl (decl : PureFunc P) (md : MetaData P)
   /-- A type declaration within a statement block. -/
   | typeDecl (tc : TypeConstructor) (md : MetaData P)
   deriving Inhabited
 
 /-- A block is simply an abbreviation for a list of commands. -/
-@[expose] abbrev Block (P : PureExpr) (Cmd : Type) := List (Stmt P Cmd)
+abbrev Block (P : PureExpr) (Cmd : Type) := List (Stmt P Cmd)
 
 def Stmt.isCmd {P : PureExpr} {Cmd : Type} (s : Stmt P Cmd) : Bool :=
   match s with
@@ -84,24 +83,21 @@ def Stmt.inductionOn {P : PureExpr} {Cmd : Type}
       motive (Stmt.loop guard measure invariant body md))
     (exit_case : ∀ (label : String) (md : MetaData P),
       motive (Stmt.exit label md))
-    (funcDecl_case : ∀ (decl : PureFunc P) (md : MetaData P),
-      motive (Stmt.funcDecl decl md))
     (typeDecl_case : ∀ (tc : TypeConstructor) (md : MetaData P),
       motive (Stmt.typeDecl tc md))
     (s : Stmt P Cmd) : motive s :=
   match s with
   | Stmt.cmd c => cmd_case c
   | Stmt.block label b md =>
-    block_case label b md (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case typeDecl_case s)
+    block_case label b md (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case typeDecl_case s)
   | Stmt.ite cond thenb elseb md =>
     ite_case cond thenb elseb md
-      (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case typeDecl_case s)
-      (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case typeDecl_case s)
+      (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case typeDecl_case s)
+      (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case typeDecl_case s)
   | Stmt.loop guard measure invariant body md =>
     loop_case guard measure invariant body md
-      (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case funcDecl_case typeDecl_case s)
+      (fun s _ => inductionOn cmd_case block_case ite_case loop_case exit_case typeDecl_case s)
   | Stmt.exit label md => exit_case label md
-  | Stmt.funcDecl decl md => funcDecl_case decl md
   | Stmt.typeDecl tc md => typeDecl_case tc md
   termination_by s
 
@@ -118,7 +114,6 @@ def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   | .ite _ tss ess _ => 3 + Block.sizeOf tss + Block.sizeOf ess
   | .loop _ _ _ bss _ => 3 + Block.sizeOf bss
   | .exit _ _ => 1
-  | .funcDecl _ _ => 1
   | .typeDecl _ _ => 1
 
 @[simp]
@@ -131,32 +126,115 @@ end
 
 ---------------------------------------------------------------------
 
+/-! ### DecidableEq -/
+
+variable {P : PureExpr} {C : Type} [DecidableEq C] [DecidableEq P.Expr]
+         [DecidableEq P.Ident]
+
+mutual
+def Stmt.beq (s1 s2 : Stmt P C) : Bool :=
+  match s1, s2 with
+  | .cmd c1, .cmd c2 => decide (c1 = c2)
+  | .block l1 b1 md1, .block l2 b2 md2 =>
+    decide (l1 = l2) && Block.beq b1 b2 && decide (md1 = md2)
+  | .ite c1 t1 e1 md1, .ite c2 t2 e2 md2 =>
+    decide (c1 = c2) && Block.beq t1 t2 && Block.beq e1 e2 && decide (md1 = md2)
+  | .loop g1 m1 inv1 b1 md1, .loop g2 m2 inv2 b2 md2 =>
+    decide (g1 = g2) && decide (m1 = m2) && decide (inv1 = inv2) &&
+      Block.beq b1 b2 && decide (md1 = md2)
+  | .exit l1 md1, .exit l2 md2 => decide (l1 = l2) && decide (md1 = md2)
+  | .typeDecl t1 md1, .typeDecl t2 md2 => decide (t1 = t2) && decide (md1 = md2)
+  | _, _ => false
+  termination_by Stmt.sizeOf s1
+
+def Block.beq (b1 b2 : List (Stmt P C)) : Bool :=
+  match b1, b2 with
+  | [], [] => true
+  | s1 :: r1, s2 :: r2 => Stmt.beq s1 s2 && Block.beq r1 r2
+  | _, _ => false
+  termination_by Block.sizeOf b1
+end
+
+/-- Lift a per-element `beq_eq` (for the statements in `b1`) to the whole block. -/
+private theorem Block.beq_eq_of_forall {b1 b2 : List (Stmt P C)}
+    (h : ∀ s, s ∈ b1 → ∀ t, Stmt.beq s t = true ↔ s = t) :
+    Block.beq b1 b2 = true ↔ b1 = b2 := by
+  induction b1 generalizing b2 with
+  | nil => cases b2 <;> simp [Block.beq]
+  | cons s rest ih =>
+    cases b2 with
+    | nil => simp [Block.beq]
+    | cons s2 rest2 =>
+      simp only [Block.beq, Bool.and_eq_true, List.cons.injEq]
+      rw [h s (.head _) s2, ih (fun s hs => h s (.tail _ hs))]
+
+theorem Stmt.beq_eq (s t : Stmt P C) : Stmt.beq s t = true ↔ s = t := by
+  induction s using Stmt.inductionOn generalizing t with
+  | cmd_case c => cases t <;> simp [Stmt.beq]
+  | block_case l b md ih =>
+    cases t <;> simp only [Stmt.beq, Bool.and_eq_true, decide_eq_true_iff,
+      Stmt.block.injEq, reduceCtorEq, Block.beq_eq_of_forall ih] <;> grind
+  | ite_case c thn els md iht ihe =>
+    cases t <;> simp only [Stmt.beq, Bool.and_eq_true, decide_eq_true_iff,
+      Stmt.ite.injEq, reduceCtorEq, Block.beq_eq_of_forall iht,
+      Block.beq_eq_of_forall ihe] <;> grind
+  | loop_case g m inv b md ih =>
+    cases t <;> simp only [Stmt.beq, Bool.and_eq_true, decide_eq_true_iff,
+      Stmt.loop.injEq, reduceCtorEq, Block.beq_eq_of_forall ih] <;> grind
+  | exit_case l md => cases t <;> simp [Stmt.beq]
+  | typeDecl_case tc md => cases t <;> simp [Stmt.beq]
+
+instance : DecidableEq (Stmt P C) :=
+  beq_eq_DecidableEq Stmt.beq Stmt.beq_eq
+
 ---------------------------------------------------------------------
 
-/-! ### NoFuncDecl
+/-! ### LocalTypeDecls
 
-Predicate stating that a statement or block contains no function declarations.
-This is useful when converting to non-deterministic statements which don't have function declarations.
+Collect the type declarations (`typeDecl`) that appear inside a statement or
+block, recursing into nested `block` / `ite` / `loop` bodies.
 -/
 
 mutual
-/-- Returns true if the statement contains no function declarations. -/
-@[expose] def Stmt.noFuncDecl (s : Stmt P C) : Bool :=
+/-- All type declarations appearing in a statement, including those nested in
+    `block` / `ite` / `loop` bodies. -/
+@[expose] def Stmt.localTypeDecls (s : Stmt P C) : List TypeConstructor :=
   match s with
-  | .cmd _ => true
-  | .block _ bss _ => Block.noFuncDecl bss
-  | .ite _ tss ess _ => Block.noFuncDecl tss && Block.noFuncDecl ess
-  | .loop _ _ _ bss _ => Block.noFuncDecl bss
-  | .exit _ _ => true
-  | .funcDecl _ _ => false
-  | .typeDecl _ _ => true
+  | .cmd _ => []
+  | .block _ bss _ => Block.localTypeDecls bss
+  | .ite _ tss ess _ => Block.localTypeDecls tss ++ Block.localTypeDecls ess
+  | .loop _ _ _ bss _ => Block.localTypeDecls bss
+  | .exit _ _ => []
+  | .typeDecl tc _ => [tc]
   termination_by (Stmt.sizeOf s)
 
-/-- Returns true if the block contains no function declarations. -/
-@[expose] def Block.noFuncDecl (ss : Block P C) : Bool :=
+/-- All type declarations appearing in a block. -/
+@[expose] def Block.localTypeDecls (ss : Block P C) : List TypeConstructor :=
   match ss with
-  | [] => true
-  | s :: srest => Stmt.noFuncDecl s && Block.noFuncDecl srest
+  | [] => []
+  | s :: srest => Stmt.localTypeDecls s ++ Block.localTypeDecls srest
+  termination_by (Block.sizeOf ss)
+end
+
+mutual
+/-- Does the statement contain any `typeDecl` (recursively through
+    `block` / `ite` / `loop` bodies)?  Linear-time short-circuiting predicate;
+    prefer this over `Stmt.localTypeDecls.isEmpty` for emptiness checks. -/
+@[expose] def Stmt.hasLocalTypeDecl (s : Stmt P C) : Bool :=
+  match s with
+  | .typeDecl _ _ => true
+  | .block _ b _ => Block.hasLocalTypeDecl b
+  | .ite _ t e _ => Block.hasLocalTypeDecl t || Block.hasLocalTypeDecl e
+  | .loop _ _ _ b _ => Block.hasLocalTypeDecl b
+  | .cmd _ | .exit _ _ => false
+  termination_by (Stmt.sizeOf s)
+
+/-- Does the block contain any `typeDecl` (recursively)?  Linear-time
+    short-circuiting predicate. -/
+@[expose] def Block.hasLocalTypeDecl (ss : Block P C) : Bool :=
+  match ss with
+  | [] => false
+  | s :: rest => Stmt.hasLocalTypeDecl s || Block.hasLocalTypeDecl rest
   termination_by (Block.sizeOf ss)
 end
 
@@ -187,7 +265,6 @@ def Stmt.mapExpr (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
     .loop .nondet (measure.map fExpr) (inv.map fun (l, e) => (l, fExpr e))
       (Block.mapExpr fExpr mapCmd body) md
   | .exit l md => .exit l md
-  | .funcDecl decl md => .funcDecl decl md
   | .typeDecl tc md => .typeDecl tc md
   termination_by (Stmt.sizeOf s)
 
@@ -197,6 +274,37 @@ def Block.mapExpr (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
   match ss with
   | [] => []
   | s :: rest => Stmt.mapExpr fExpr mapCmd s :: Block.mapExpr fExpr mapCmd rest
+  termination_by (Block.sizeOf ss)
+end
+
+mutual
+/-- Monadic `Stmt.mapExpr`: apply `fExpr`/`mapCmd` threading a monad `M`. -/
+def Stmt.mapExprM {M : Type → Type} [Monad M] (fExpr : P.Expr → M P.Expr) (mapCmd : C → M C)
+    (s : Stmt P C) : M (Stmt P C) := do
+  match s with
+  | .cmd c => return .cmd (← mapCmd c)
+  | .block l ss md => return .block l (← Block.mapExprM fExpr mapCmd ss) md
+  | .ite (.det c) tss ess md =>
+    return .ite (.det (← fExpr c)) (← Block.mapExprM fExpr mapCmd tss)
+      (← Block.mapExprM fExpr mapCmd ess) md
+  | .ite .nondet tss ess md =>
+    return .ite .nondet (← Block.mapExprM fExpr mapCmd tss) (← Block.mapExprM fExpr mapCmd ess) md
+  | .loop (.det g) measure inv body md =>
+    return .loop (.det (← fExpr g)) (← measure.mapM fExpr)
+      (← inv.mapM (fun (l, e) => return (l, ← fExpr e))) (← Block.mapExprM fExpr mapCmd body) md
+  | .loop .nondet measure inv body md =>
+    return .loop .nondet (← measure.mapM fExpr)
+      (← inv.mapM (fun (l, e) => return (l, ← fExpr e))) (← Block.mapExprM fExpr mapCmd body) md
+  | .exit l md => return .exit l md
+  | .typeDecl tc md => return .typeDecl tc md
+  termination_by (Stmt.sizeOf s)
+
+/-- Monadic `Block.mapExpr`. -/
+def Block.mapExprM {M : Type → Type} [Monad M] (fExpr : P.Expr → M P.Expr) (mapCmd : C → M C)
+    (ss : Block P C) : M (Block P C) := do
+  match ss with
+  | [] => return []
+  | s :: rest => return (← Stmt.mapExprM fExpr mapCmd s) :: (← Block.mapExprM fExpr mapCmd rest)
   termination_by (Block.sizeOf ss)
 end
 
@@ -217,7 +325,6 @@ def Stmt.stripMetaData (s : Stmt P C) : Stmt P C :=
   | .ite cond tss ess _ => .ite cond (Block.stripMetaData tss) (Block.stripMetaData ess) .empty
   | .loop guard measure invariant bss _ => .loop guard measure invariant (Block.stripMetaData bss) .empty
   | .exit label _ => .exit label .empty
-  | .funcDecl decl _ => .funcDecl decl .empty
   | .typeDecl tc _ => .typeDecl tc .empty
   termination_by (Stmt.sizeOf s)
 
@@ -236,9 +343,9 @@ end
 mutual
 /-- Get all variables accessed by `s`. -/
 @[expose]
-def Stmt.getVars [HasFvars P] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
+def Stmt.getVars [HasFvars P] [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
-  | .cmd cmd => HasVarsPure.getVars cmd
+  | .cmd cmd => HasVarsImp.readVars cmd
   | .block _ bss _ => Block.getVars bss
   | .ite cond tbss ebss _ => cond.getVars ++ Block.getVars tbss ++ Block.getVars ebss
   | .loop guard measure invariants bss _ =>
@@ -247,31 +354,14 @@ def Stmt.getVars [HasFvars P] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
     (invariants.flatMap fun lp => HasFvars.getFvars lp.2) ++
     Block.getVars bss
   | .exit _ _  => []
-  | .funcDecl decl _ =>
-    -- Get free variables from function body and axioms, excluding formal
-    -- parameters. Axiom free variables are included.
-    (match decl.body with
-      | some body => (HasFvars.getFvars body).filter
-          (fun v => (decl.inputs.map (·.1)).all (fun f => !(P.EqIdent v f).decide))
-      | none => []) ++
-    decl.axioms.flatMap (fun ax => (HasFvars.getFvars ax).filter
-      (fun v => (decl.inputs.map (·.1)).all (fun f => !(P.EqIdent v f).decide)))
   | .typeDecl _ _ => []  -- Type declarations don't reference variables
 
 @[expose]
-def Block.getVars [HasFvars P] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
+def Block.getVars [HasFvars P] [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
   | s :: srest => Stmt.getVars s ++ Block.getVars srest
 end
-
-instance (P : PureExpr) [HasFvars P] [HasVarsPure P C]
-  : HasVarsPure P (Stmt P C) where
-  getVars := Stmt.getVars
-
-instance (P : PureExpr) [HasFvars P] [HasVarsPure P C]
-  : HasVarsPure P (Block P C) where
-  getVars := Block.getVars
 
 mutual
 /-- Get all operator/function names referenced by `s`.  Mirrors
@@ -290,11 +380,6 @@ def Stmt.getOps [HasOps P] [HasOpsImp P C] (s : Stmt P C) : List P.Ident :=
     (invariants.flatMap fun lp => HasOps.getOps (P := P) lp.2) ++
     Block.getOps bss
   | .exit _ _  => []
-  | .funcDecl decl _ =>
-    -- Operator names referenced by the function body and axioms.
-    -- (Operator names are global, so no formal-parameter filtering applies.)
-    ((decl.body.map (HasOps.getOps (P := P))).getD []) ++
-    decl.axioms.flatMap (HasOps.getOps (P := P))
   | .typeDecl _ _ => []
 
 @[expose]
@@ -323,10 +408,6 @@ def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C)
   | .ite _ tbss ebss _ =>
     if excludeScoped then [] else Block.definedVars tbss excludeScoped ++ Block.definedVars ebss excludeScoped
   | .loop _ _ _ body _ => if excludeScoped then [] else Block.definedVars body excludeScoped
-  -- `step_funcDecl` extends `eval`, leaving `store` unchanged.  `definedVars`
-  -- tracks store-level definitions, so funcDecl introduces nothing here; the
-  -- name is tracked separately via `Stmt.funcDeclNames`.
-  | .funcDecl _ _ => []
   | .typeDecl _ _ => []
   | _ => []
 
@@ -338,6 +419,51 @@ def Block.definedVars [HasVarsImp P C] (ss : Block P C)
   | s :: srest => Stmt.definedVars s excludeScoped ++ Block.definedVars srest excludeScoped
 end
 
+/-- Deep init-variable list of a statement: the variables it defines at any
+nesting level.  Definitionally `Stmt.definedVars s false`. -/
+@[reducible, expose]
+def Stmt.initVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
+  Stmt.definedVars s false
+
+/-- Deep init-variable list of a block.  Definitionally `Block.definedVars ss false`. -/
+@[reducible, expose]
+def Block.initVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
+  Block.definedVars ss false
+
+mutual
+/-- Deep init-type list of a statement: the declared type of every `init`
+    command at any nesting level.  Parallel to `Stmt.definedVars _ false`, but
+    collecting the `init` types rather than the names. -/
+@[expose]
+def Stmt.initTypes [HasInitTypesImp P C] (s : Stmt P C) : List P.Ty :=
+  match s with
+  | .cmd cmd => HasInitTypesImp.initTypes cmd
+  | .block _ bss _ => Block.initTypes bss
+  | .ite _ tbss ebss _ => Block.initTypes tbss ++ Block.initTypes ebss
+  | .loop _ _ _ body _ => Block.initTypes body
+  | .exit _ _ => []
+  | .typeDecl _ _ => []
+
+/-- Deep init-type list of a block. -/
+@[expose]
+def Block.initTypes [HasInitTypesImp P C] (ss : Block P C) : List P.Ty :=
+  match ss with
+  | [] => []
+  | s :: srest => Stmt.initTypes s ++ Block.initTypes srest
+end
+
+/-- Every init-type collected from the statement `s` has a `valueOfTy` witness in
+    the factory `f`; types absent from `s` need no witness. -/
+@[expose]
+def Stmt.InitTypesInhabited [HasVal P] [HasInitTypesImp P C] (f : P.Factory) (s : Stmt P C) : Prop :=
+  ∀ ty ∈ Stmt.initTypes s, ∃ v, HasVal.valueOfTy f v ty
+
+/-- Every init-type collected from the block `ss` has a `valueOfTy` witness in
+    the factory `f`.  See `Stmt.InitTypesInhabited`. -/
+@[expose]
+def Block.InitTypesInhabited [HasVal P] [HasInitTypesImp P C] (f : P.Factory) (ss : Block P C) : Prop :=
+  ∀ ty ∈ Block.initTypes ss, ∃ v, HasVal.valueOfTy f v ty
+
 mutual
 /-- Get all variables modified by the statement `s`. -/
 @[simp, expose]
@@ -348,7 +474,6 @@ def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .block _ bss _ => Block.modifiedVars bss
   | .ite _ tbss ebss _ => Block.modifiedVars tbss ++ Block.modifiedVars ebss
   | .loop _ _ _ bss _ => Block.modifiedVars bss
-  | .funcDecl _ _ => []  -- Function declarations don't modify variables
   | .typeDecl _ _ => []  -- Type declarations don't modify variables
 
 @[simp, expose]
@@ -372,12 +497,12 @@ def Block.modifiedOrDefinedVars [HasVarsImp P C] (ss : Block P C)
 mutual
 /-- Get all variables touched (modified, defined, or read) by the statement `s`. -/
 @[simp, expose]
-def Stmt.touchedVars [HasVarsImp P C] [HasFvars P] [HasVarsPure P C]
+def Stmt.touchedVars [HasVarsImp P C] [HasFvars P]
     (s : Stmt P C) : List P.Ident :=
   Stmt.modifiedOrDefinedVars s true ++ Stmt.getVars s
 
 @[simp, expose]
-def Block.touchedVars [HasVarsImp P C] [HasFvars P] [HasVarsPure P C]
+def Block.touchedVars [HasVarsImp P C] [HasFvars P]
     (ss : Block P C) : List P.Ident :=
   Block.modifiedOrDefinedVars ss true ++ Block.getVars ss
 end
@@ -391,7 +516,6 @@ mutual
   | .block _ bss _   => Block.labels bss
   | .ite _ tss ess _ => Block.labels tss ++ Block.labels ess
   | .loop _ _ _ bss _ => Block.labels bss
-  | .funcDecl _ _    => []
   | .typeDecl _ _    => []
 
 /-- Collect all labeled `exit` targets in a list of statements. -/
@@ -402,41 +526,69 @@ mutual
 end
 
 mutual
-/-- Collect `decl.name` from `funcDecl` AST nodes in a statement.
+/-- Def-use well-formedness check for a statement. Any read/write of a variable
+    must be preceded by the definition of the var, and fresh var definition must
+    not collide with previously defined vars.
 
-    `excludeScoped = false` (the recursive form): collect all `funcDecl`
-    names syntactically inside `s`.
-    `excludeScoped = true` (the scope-aware form): collect only `funcDecl`
-    names introduced at the top level of `s`. Parallel to `Stmt.definedVars _ true`. -/
-@[expose] def Stmt.funcDeclNames (s : Stmt P C) (excludeScoped : Bool) : List P.Ident :=
+    TODO: prove that `Statement.typeCheck` in
+    `Strata/Languages/Core/StatementType.lean` guarantees this well-formedness. -/
+@[expose] def Stmt.defUseWellFormed [HasVarsImp P C] [HasFvars P] [HasOps P]
+    [HasOpsImp P C] [DecidableEq P.Ident]
+    (definedVars : P.Ident → Bool) (declaredFuncs : P.Ident → Bool)
+    (s : Stmt P C) : Bool :=
   match s with
-  | .funcDecl decl _ => [decl.name]
-  | .cmd _           => []
-  | .exit _ _        => []
-  | .typeDecl _ _    => []
-  | .block _ bss _ => if excludeScoped then [] else Block.funcDeclNames bss excludeScoped
-  | .ite _ tss ess _ =>
-    if excludeScoped then [] else Block.funcDeclNames tss excludeScoped ++
-                                  Block.funcDeclNames ess excludeScoped
-  | .loop _ _ _ bss _ => if excludeScoped then [] else Block.funcDeclNames bss excludeScoped
+  | .cmd c =>
+    (HasVarsImp.readVars (P := P) c).all (fun n => definedVars n) &&
+    (HasVarsImp.modifiedVars (P := P) c).all (fun n => definedVars n) &&
+    -- All fresh variable names that are being initialized in command c must not
+    -- have existed in the already defined vars 'definedVars'. Otherwise, var
+    -- initialization in c will stuck due to duplicated name.
+    (HasVarsImp.definedVars (P := P) c false).all (fun n => ¬definedVars n) &&
+    -- All operator/function names referenced in c must have been declared.
+    (HasOpsImp.getOps (P := P) c).all (fun n => declaredFuncs n)
+  | .block _ bss _ => Block.defUseWellFormed definedVars declaredFuncs bss
+  | .ite cond tbss ebss _ =>
+    cond.getVars.all (fun n => definedVars n) &&
+    cond.getOps.all (fun n => declaredFuncs n) &&
+    Block.defUseWellFormed definedVars declaredFuncs tbss &&
+    Block.defUseWellFormed definedVars declaredFuncs ebss
+  | .loop guard measure invariants body _ =>
+    guard.getVars.all (fun n => definedVars n) &&
+    guard.getOps.all (fun n => declaredFuncs n) &&
+    ((measure.map HasFvars.getFvars).getD []).all (fun n => definedVars n) &&
+    ((measure.map (HasOps.getOps (P := P))).getD []).all
+      (fun n => declaredFuncs n) &&
+    (invariants.flatMap fun lp => HasFvars.getFvars lp.2).all
+      (fun n => definedVars n) &&
+    (invariants.flatMap fun lp => HasOps.getOps (P := P) lp.2).all
+      (fun n => declaredFuncs n) &&
+    Block.defUseWellFormed definedVars declaredFuncs body
+  | .exit _ _ => true
+  | .typeDecl _ _ => true
 
-/-- Collect `decl.name` from `funcDecl` AST nodes in a block.  See
-    `Stmt.funcDeclNames` for the meaning of `excludeScoped`. -/
-@[expose] def Block.funcDeclNames (ss : Block P C) (excludeScoped : Bool) : List P.Ident :=
-  match ss with
-  | []        => []
-  | s :: rest => Stmt.funcDeclNames s excludeScoped ++
-                 Block.funcDeclNames rest excludeScoped
+@[expose] def Block.defUseWellFormed [HasVarsImp P C] [HasFvars P] [HasOps P]
+    [HasOpsImp P C] [DecidableEq P.Ident]
+    (definedVars : P.Ident → Bool) (declaredFuncs : P.Ident → Bool)
+    (bss : Block P C) : Bool :=
+  match bss with
+  | [] => true
+  | s :: rest =>
+    Stmt.defUseWellFormed definedVars declaredFuncs s &&
+      Block.defUseWellFormed
+        (fun n => definedVars n || decide (n ∈ Stmt.definedVars s true))
+        declaredFuncs rest
 end
 
 
-instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
+instance (P : PureExpr) [HasFvars P] [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars
+  readVars := Stmt.getVars
 
-instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Block P C) where
+instance (P : PureExpr) [HasFvars P] [HasVarsImp P C] : HasVarsImp P (Block P C) where
   definedVars := Block.definedVars
   modifiedVars := Block.modifiedVars
+  readVars := Block.getVars
 
 ---------------------------------------------------------------------
 
@@ -468,7 +620,6 @@ def formatStmt (P : PureExpr) (s : Stmt P C)
       let children := group f!"{beforeBody}{line}{body}"
       f!"{md}while{children}"
   | .exit label md => f!"{md}exit {label}"
-  | .funcDecl _ md => f!"{md}funcDecl <function>"
   | .typeDecl tc md => f!"{md}type {tc.name} (arity {tc.numargs})"
 
 def formatBlock (P : PureExpr) (ss : List (Stmt P C))
@@ -501,20 +652,508 @@ by an enclosing `block` — either within `s` itself or with a label in
 
 When `s.exitsCoveredByBlocks []`, execution of `s` can never produce `.exiting`. -/
 
+mutual
 @[expose] def Stmt.exitsCoveredByBlocks : List String → Stmt P CmdT → Prop
   | _, .cmd _ => True
   | labels, .block l ss _ => Block.exitsCoveredByBlocks (l :: labels) ss
   | labels, .ite _ tss ess _ => Block.exitsCoveredByBlocks labels tss ∧ Block.exitsCoveredByBlocks labels ess
   | labels, .loop _ _ _ body _ => Block.exitsCoveredByBlocks labels body
   | labels, .exit l _ => l ∈ labels
-  | _, .funcDecl _ _ => True
   | _, .typeDecl _ _ => True
-where
-  Block.exitsCoveredByBlocks : List String → List (Stmt P CmdT) → Prop
-    | _, [] => True
-    | labels, s :: ss => Stmt.exitsCoveredByBlocks labels s ∧ Block.exitsCoveredByBlocks labels ss
+
+@[expose] def Block.exitsCoveredByBlocks : List String → List (Stmt P CmdT) → Prop
+  | _, [] => True
+  | labels, s :: ss => Stmt.exitsCoveredByBlocks labels s ∧ Block.exitsCoveredByBlocks labels ss
+
+end
+---------------------------------------------------------------------
+
 
 ---------------------------------------------------------------------
+-- S2U pipeline syntactic helpers: pure functions on Stmt/Block/Cmd.
+---------------------------------------------------------------------
+
+/-! ### UniqueInits
+
+Collect the names of every variable initialized by an `init` command anywhere
+in a statement (across all nesting levels). The companion predicate
+`Block.uniqueInits` asserts that the resulting list is `Nodup`, ruling out
+the edge case where a name is projected away by `step_block_done` and then
+reinitialized — a pattern the unstructured CFG cannot replicate because its
+flat namespace has no projection.
+-/
+
+/-- Every `init` in the program (across all nesting levels) names a unique
+variable. The flat-namespace CFG can simulate the structured semantics only
+when this holds — without uniqueness, structured `step_block_done` can
+project a name away that the structured semantics later reinitializes, a
+pattern the CFG cannot replicate. -/
+@[expose] def Block.uniqueInits [HasFvars P] (ss : List (Stmt P (Cmd P))) : Prop :=
+  (Block.initVars ss).Nodup
+
+---------------------------------------------------------------------
+
+/-! ### NoNondetGuards
+
+Predicate stating that no `.ite` or `.loop` guard in a statement or block is
+`.nondet`, at any nesting depth. Two consumers need it: the
+structured-to-CFG soundness proof under axiom-free assumptions, and symbolic
+evaluation, which rejects a nondeterministic guard outright. Nondet
+elimination is what replaces such a guard with a fresh boolean and a
+deterministic branch.
+
+Only guards are read, so the predicate is stated for any command type, and
+`.ite (.det _)`, `.block`, sequential `.cmd`s, `.exit`, and `.typeDecl` are all admitted. The auxiliary predicates `loopBodyNoInits`,
+`loopHasNoInvariants` and `noMeasureLoops` defined below restrict loops
+further for the proof's scope: no body-local variable inits, no labeled
+invariants, no termination measure.
+-/
+
+mutual
+/-- Returns true if no guard in `s` is nondeterministic, at any nesting depth. -/
+@[expose] def Stmt.noNondetGuards (s : Stmt P C) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.noNondetGuards bss
+  | .ite (.det _) tss ess _ => Block.noNondetGuards tss && Block.noNondetGuards ess
+  | .ite .nondet _ _ _ => false
+  | .loop guard _ _ bss _ =>
+    (match guard with | .det _ => true | .nondet => false) && Block.noNondetGuards bss
+  | .exit _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Is every guard in `ss` deterministic, at any nesting depth? -/
+@[expose] def Block.noNondetGuards (ss : List (Stmt P C)) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.noNondetGuards s && Block.noNondetGuards srest
+  termination_by (Block.sizeOf ss)
+end
+
+/-!
+`transportShape` is a second walker, finer than `noNondetGuards`: it carves out
+the fragment the loop-init hoist pass's body simulation can express (the same-name
+`StoreAgreement` body simulation in `Strata.Transform.LoopInitHoistCorrect`).
+Unlike `noNondetGuards`, which treats every `.cmd _` alike, `transportShape` inspects
+the command — `init`/`set` are admitted with either a `.det` or `.nondet` rhs, and it admits a nested `.loop` only when it is
+measure-free, invariant-free, and `.det`-guarded (`.loop (.det _) none [] _`).
+-/
+mutual
+@[expose] def Stmt.transportShape (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd (.init _ _ (.det _) _) => true
+  | .cmd (.init _ _ .nondet _) => true
+  | .cmd (.set _ (.det _) _) => true
+  | .cmd (.set _ .nondet _) => true
+  | .cmd (.assert _ _ _) => true
+  | .cmd (.assume _ _ _) => true
+  | .cmd (.cover _ _ _) => true
+  | .block _ bss _ => Block.transportShape bss
+  | .ite (.det _) tss ess _ => Block.transportShape tss && Block.transportShape ess
+  | .ite .nondet tss ess _ => Block.transportShape tss && Block.transportShape ess
+  | .loop (.det _) none [] lbody _ => Block.transportShape lbody
+  | .loop _ _ _ _ _ => false
+  | .exit _ _ => true
+  | .typeDecl _ _ => true
+  termination_by sizeOf s
+
+@[expose] def Block.transportShape (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => true
+  | s :: rest => Stmt.transportShape s && Block.transportShape rest
+  termination_by sizeOf ss
+end
+
+
+---------------------------------------------------------------------
+
+/-! ### LoopBodyNoInits
+
+Predicate stating that every `.loop _ _ _ bss _` reachable inside a
+statement (or block) has `Block.initVars bss = []`. Used by the
+structured-to-CFG soundness proof: the CFG flat namespace cannot
+re-execute body inits at iteration ≥ 2, so we restrict to loops whose
+body declares no local variables.
+-/
+
+mutual
+/-- Returns true if every reachable loop's body declares no local vars. -/
+@[expose] def Stmt.loopBodyNoInits [HasVarsImp P C] (s : Stmt P C) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.loopBodyNoInits bss
+  | .ite _ tss ess _ => Block.loopBodyNoInits tss && Block.loopBodyNoInits ess
+  | .loop _ _ _ bss _ =>
+      (Block.initVars bss).isEmpty && Block.loopBodyNoInits bss
+  | .exit _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Block-level lifting of `Stmt.loopBodyNoInits`. -/
+@[expose] def Block.loopBodyNoInits [HasVarsImp P C] (ss : List (Stmt P C)) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.loopBodyNoInits s && Block.loopBodyNoInits srest
+  termination_by (Block.sizeOf ss)
+end
+
+
+---------------------------------------------------------------------
+
+/-! ### AllSubstmts
+
+Lifts a predicate on a single statement to "holds of this statement and of
+every statement nested inside it", so a shape property that only inspects one
+statement's own form needs no traversal of its own.
+-/
+
+mutual
+/-- Does `f` hold of `s` and of every statement nested inside it? -/
+@[expose] def Stmt.allSubstmts (f : Stmt P C → Bool) (s : Stmt P C) : Bool :=
+  f s &&
+  match s with
+  | .block _ bss _ => Block.allSubstmts f bss
+  | .ite _ tss ess _ => Block.allSubstmts f tss && Block.allSubstmts f ess
+  | .loop _ _ _ bss _ => Block.allSubstmts f bss
+  | .cmd _ | .exit _ _ | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Does `f` hold of every statement in `ss`, including nested ones? -/
+@[expose] def Block.allSubstmts (f : Stmt P C → Bool) (ss : List (Stmt P C)) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.allSubstmts f s && Block.allSubstmts f srest
+  termination_by (Block.sizeOf ss)
+end
+
+---------------------------------------------------------------------
+
+/-! ### NoLoops
+
+Predicate stating that no `.loop` occurs anywhere in a statement (or block).
+Symbolic evaluation needs this: it rejects a `loop`, which is what loop
+elimination removes.
+-/
+
+@[expose] def Stmt.isNotLoop (s : Stmt P C) : Bool :=
+  match s with
+  | .loop _ _ _ _ _ => false
+  | _ => true
+
+/-- Does `s` contain no loop, at any nesting depth? -/
+@[expose] def Stmt.noLoops (s : Stmt P C) : Bool :=
+  Stmt.allSubstmts Stmt.isNotLoop s
+
+/-- Does `ss` contain no loop, at any nesting depth? -/
+@[expose] def Block.noLoops (ss : List (Stmt P C)) : Bool :=
+  Block.allSubstmts Stmt.isNotLoop ss
+
+---------------------------------------------------------------------
+
+/-! ### LoopHasNoInvariants
+
+Predicate stating that every `.loop _ _ is _ _` reachable inside a
+statement (or block) has `is = []` (no labeled invariants). Used by
+the structured-to-CFG soundness proof to collapse the assert-chain
+at the loop entry block to empty.
+-/
+
+mutual
+/-- Returns true if every reachable loop has no invariants. -/
+@[expose] def Stmt.loopHasNoInvariants (s : Stmt P C) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.loopHasNoInvariants bss
+  | .ite _ tss ess _ => Block.loopHasNoInvariants tss && Block.loopHasNoInvariants ess
+  | .loop _ _ is bss _ =>
+      is.isEmpty && Block.loopHasNoInvariants bss
+  | .exit _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Block-level lifting of `Stmt.loopHasNoInvariants`. -/
+@[expose] def Block.loopHasNoInvariants (ss : List (Stmt P C)) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.loopHasNoInvariants s && Block.loopHasNoInvariants srest
+  termination_by (Block.sizeOf ss)
+end
+
+
+---------------------------------------------------------------------
+
+/-! ### NoMeasureLoops
+
+Predicate stating that every `.loop _ m _ _ _` reachable inside a
+statement (or block) has `m = .none` (no termination measure). Used
+by the structured-to-CFG soundness proof to collapse the
+`measure_lb` / `measure_decrease` blocks in the translator's loop
+CFG layout.
+-/
+
+mutual
+/-- Returns true if every reachable loop has no termination measure. -/
+@[expose] def Stmt.noMeasureLoops (s : Stmt P C) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ bss _ => Block.noMeasureLoops bss
+  | .ite _ tss ess _ => Block.noMeasureLoops tss && Block.noMeasureLoops ess
+  | .loop _ m _ bss _ =>
+      m.isNone && Block.noMeasureLoops bss
+  | .exit _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Block-level lifting of `Stmt.noMeasureLoops`. -/
+@[expose] def Block.noMeasureLoops (ss : List (Stmt P C)) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.noMeasureLoops s && Block.noMeasureLoops srest
+  termination_by (Block.sizeOf ss)
+end
+
+
+---------------------------------------------------------------------
+
+/-! ### NoBlocks
+
+A boolean predicate asserting that a statement (or block) contains no
+`.block` constructor anywhere in its tree. Used by the structured-to-CFG
+correctness proof to identify subprograms whose CFG end-store is exactly
+the structured end-store (no projection occurs).
+-/
+
+mutual
+/-- Returns true if the statement contains no `.block` constructor. -/
+@[expose] def Stmt.noBlocks (s : Stmt P C) : Bool :=
+  match s with
+  | .cmd _ => true
+  | .block _ _ _ => false
+  | .ite _ tss ess _ => Block.noBlocks tss && Block.noBlocks ess
+  | .loop _ _ _ bss _ => Block.noBlocks bss
+  | .exit _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Returns true if the block contains no `.block` constructor. -/
+@[expose] def Block.noBlocks (ss : Block P C) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.noBlocks s && Block.noBlocks srest
+  termination_by (Block.sizeOf ss)
+end
+
+
+/-! ### NoInitsAnywhere -/
+
+mutual
+/-- Returns true if the statement contains no `.init` command anywhere. -/
+@[expose] def Stmt.noInitsAnywhere (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd (.init _ _ _ _) => false
+  | .cmd _ => true
+  | .block _ bss _ => Block.noInitsAnywhere bss
+  | .ite _ tss ess _ => Block.noInitsAnywhere tss && Block.noInitsAnywhere ess
+  | .loop _ _ _ bss _ => Block.noInitsAnywhere bss
+  | .exit _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Returns true if the block contains no `.init` command anywhere. -/
+@[expose] def Block.noInitsAnywhere (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.noInitsAnywhere s && Block.noInitsAnywhere srest
+  termination_by (Block.sizeOf ss)
+end
+
+/-! ### IsInitCmd helper -/
+
+/-- Helper: a statement is `.cmd (.init ...)`. Useful for the hoisting
+pass's per-statement classification (`liftInitsInLoopBody`). -/
+@[expose] def Stmt.isInitCmd (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd (.init _ _ _ _) => true
+  | _ => false
+
+/-! ### ContainsNondetLoop
+
+This predicate flags nondeterministic loops, which the deterministic
+trace-inversion swap lemma cannot admit without additional `WFCongr` API.
+-/
+
+mutual
+/-- Returns true if the statement contains a `.loop _ .nondet ...` somewhere. -/
+@[expose] def Stmt.containsNondetLoop (s : Stmt P (Cmd P)) : Bool :=
+  match s with
+  | .cmd _ => false
+  | .block _ bss _ => Block.containsNondetLoop bss
+  | .ite _ tss ess _ => Block.containsNondetLoop tss || Block.containsNondetLoop ess
+  | .loop guard _ _ bss _ =>
+      match guard with
+      | .nondet => true
+      | .det _ => Block.containsNondetLoop bss
+  | .exit _ _ => false
+  | .typeDecl _ _ => false
+  termination_by (Stmt.sizeOf s)
+
+/-- Returns true if any statement in `ss` contains a nondet loop. -/
+@[expose] def Block.containsNondetLoop (ss : List (Stmt P (Cmd P))) : Bool :=
+  match ss with
+  | [] => false
+  | s :: srest =>
+      Stmt.containsNondetLoop s || Block.containsNondetLoop srest
+  termination_by (Block.sizeOf ss)
+end
+
+
+/-! ## `getBlockLabels`
+
+`getBlockLabels` collects all user-provided `Stmt.block` labels appearing in a
+list of statements. The command type `C` is left abstract: `getBlockLabels`
+never inspects a command, so this applies uniformly to the pipeline's
+`Imperative.Cmd`-bodied statement lists and to extended command types. -/
+
+@[expose] def Block.getBlockLabels {P : PureExpr} {C : Type} :
+    List (Stmt P C) → List String
+  | [] => []
+  | s :: rest => stmtGetBlockLabels s ++ Block.getBlockLabels rest
+where
+  stmtGetBlockLabels : Stmt P C → List String
+    | .block l ss _ => l :: Block.getBlockLabels ss
+    | .ite _ tss ess _ => Block.getBlockLabels tss ++ Block.getBlockLabels ess
+    | .loop _ _ _ ss _ => Block.getBlockLabels ss
+    | _ => []
+
+
+/-! ## Strengthened freshness predicate `namesFreshInExprs`
+
+Parametric form: "every `names` element is fresh in every cmd
+expression / loop guard / inv / measure at any depth in `s`".
+
+The predicate is MONOTONE in `names`'s subset relation (smaller names
+list = weaker requirement). It checks freshness at every expression
+position — command RHS, loop/ite guard, invariant, and measure.
+
+Each leaf freshness condition "`names` avoids `vars`" is expressed as
+`List.Disj names vars` (i.e. `∀ z ∈ names, z ∉ vars`). -/
+
+/-- "names is fresh in s": no name `z ∈ names` appears in any read position
+(cmd expression, loop guard, invariant, or measure) at any depth in `s`.  This is
+exactly disjointness from `s`'s read-var set `Stmt.getVars s`. -/
+@[expose] def Stmt.namesFreshInExprs {P : PureExpr} [HasFvars P]
+    (names : List P.Ident) (s : Stmt P (Cmd P)) : Prop :=
+  List.Disj names (Stmt.getVars s)
+
+/-- "names is fresh in ss": disjointness from the block's read-var set. -/
+@[expose] def Block.namesFreshInExprs {P : PureExpr} [HasFvars P]
+    (names : List P.Ident) (ss : List (Stmt P (Cmd P))) : Prop :=
+  List.Disj names (Block.getVars ss)
+
+/-! ## RHS-only freshness predicate `namesFreshInRhsExprs`
+
+A relaxation of `namesFreshInExprs` that checks freshness only against
+command *right-hand-side* expressions (`init`/`set` rhs, assertion / assume /
+cover conditions) at every depth, but NOT against `.ite`/`.loop` *guard*,
+invariant, or measure expressions.
+
+The RHS-only form is load-bearing: `nondetElim` reads its own fresh guard
+`$__ndelim_loop$_0` in a guard position, so `nondetElimM_namesFreshInRhsExprs`
+(the preservation theorem) requires the predicate to NOT check guards. -/
+
+mutual
+
+/-- "names is fresh in every command RHS of `s`": every `z ∈ names` is absent
+from each `init`/`set` rhs and each `assert`/`assume`/`cover` condition at any
+depth in `s`, with `.ite`/`.loop` recursing into branches/body only (the
+guard/invariant/measure read positions are NOT checked). -/
+@[expose] def Stmt.namesFreshInRhsExprs {P : PureExpr} [HasFvars P]
+    (names : List P.Ident) (s : Stmt P (Cmd P)) : Prop :=
+  match s with
+  | .cmd (.init _ _ rhs _) => List.Disj names (ExprOrNondet.getVars rhs)
+  | .cmd (.set _ rhs _) => List.Disj names (ExprOrNondet.getVars rhs)
+  | .cmd (.assert _ e _) => List.Disj names (HasFvars.getFvars e)
+  | .cmd (.assume _ e _) => List.Disj names (HasFvars.getFvars e)
+  | .cmd (.cover _ e _) => List.Disj names (HasFvars.getFvars e)
+  | .block _ bss _ => Block.namesFreshInRhsExprs names bss
+  | .ite _ tss ess _ =>
+    Block.namesFreshInRhsExprs names tss ∧ Block.namesFreshInRhsExprs names ess
+  | .loop _ _ _ body _ =>
+    Block.namesFreshInRhsExprs names body
+  | .exit _ _ => True
+  | .typeDecl _ _ => True
+  termination_by sizeOf s
+
+/-- Block-level RHS-only freshness, lifted pointwise across the block. -/
+@[expose] def Block.namesFreshInRhsExprs {P : PureExpr} [HasFvars P]
+    (names : List P.Ident) (ss : List (Stmt P (Cmd P))) : Prop :=
+  match ss with
+  | [] => True
+  | s :: rest =>
+    Stmt.namesFreshInRhsExprs names s ∧ Block.namesFreshInRhsExprs names rest
+  termination_by sizeOf ss
+
+end
+
+/-- The freshness predicate the hoisting pass requires: RHS-only freshness
+for the body's own init-vars. It uses `namesFreshInRhsExprs` (not the full
+`namesFreshInExprs`): the hoisting preservation proof reads back only the
+RHS / body-recursion parts of this conjunct. -/
+@[expose] def Block.hoistedNamesFreshInRhsAndGuards {P : PureExpr} [HasFvars P]
+    (ss : List (Stmt P (Cmd P))) : Prop :=
+  Block.namesFreshInRhsExprs (Block.initVars ss) ss
+
+/-! ## Expression shape-freedom predicate `exprsShapeFree`
+
+A front-end well-formedness assumption on a source program: every variable
+read by any expression occurring in the program — `init`/`set` rhs, `assert`
+/`assume`/`cover` conditions, loop guards/measures/invariants, `.ite` guards
+— is a "kind-free" name: it never satisfies the *kind predicate* `Q` on the
+underlying label string (the kind of name a pass generates). -/
+
+/-- "Every read-var occurring in `s` is kind-free": no variable read by `s`
+is the identifier of a `Q`-kind label string.  Expressed directly over
+`Stmt.getVars` (the read-var collector). -/
+@[expose] def Stmt.exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvars P]
+    (Q : String → Prop)
+    (s : Stmt P (Cmd P)) : Prop :=
+  ∀ str : String, Q str → HasIdent.ident (P := P) str ∉ Stmt.getVars s
+
+/-- "Every read-var occurring in `ss` is kind-free": expressed directly over
+`Block.getVars` (the read-var collector). -/
+@[expose] def Block.exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvars P]
+    (Q : String → Prop)
+    (ss : List (Stmt P (Cmd P))) : Prop :=
+  ∀ str : String, Q str → HasIdent.ident (P := P) str ∉ Block.getVars ss
+
+/-! ## Identifiers
+
+Every identifier a statement over `CmdExt P` commands mentions (`Stmt.idents`,
+`Block.idents`): binders and free variables. -/
+
+mutual
+/-- Every identifier occurring in a statement (binders and free variables). -/
+@[expose] def Stmt.idents {P : PureExpr} [HasFvars P] : Stmt P (CmdExt P) → List P.Ident
+  | .cmd (.cmd (.init x _ (.det e) _)) | .cmd (.cmd (.set x (.det e) _)) =>
+    x :: HasFvars.getFvars e
+  | .cmd (.cmd (.init x _ .nondet _)) | .cmd (.cmd (.set x .nondet _)) => [x]
+  | .cmd (.cmd (.assume _ e _)) | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) =>
+    HasFvars.getFvars e
+  | .cmd (.call _ args _) =>
+    (CallArg.getInArgs args).flatMap HasFvars.getFvars ++ CallArg.getLhs args
+  | .block _ ss _ => Block.idents ss
+  | .ite c tss ess _ => c.getVars ++ Block.idents tss ++ Block.idents ess
+  | .loop g m inv body _ =>
+    g.getVars ++ (m.map HasFvars.getFvars).getD [] ++ inv.flatMap (HasFvars.getFvars ·.2) ++
+      Block.idents body
+  | .exit _ _ | .typeDecl _ _ => []
+/-- Every identifier occurring in a statement list (binders and free variables). -/
+@[expose] def Block.idents {P : PureExpr} [HasFvars P] :
+    List (Stmt P (CmdExt P)) → List P.Ident
+  | [] => []
+  | s :: rest => Stmt.idents s ++ Block.idents rest
+end
 
 end -- public section
 end Imperative

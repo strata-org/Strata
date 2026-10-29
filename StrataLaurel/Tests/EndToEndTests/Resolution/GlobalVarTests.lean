@@ -1,0 +1,1473 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+/-
+Tests that file-scope global variables (`var g: int`) parse (Gap C) and that
+bare references to them resolve to their `$static` field (Gap B). These are
+resolution-only tests: they assert that reads/writes of a declared global do
+*not* produce "Resolution failed", and that an undeclared bare name still does.
+No lowering pass runs yet, so nothing hits `FilterPrelude`.
+-/
+
+import StrataLaurel.Tests.Util.TestLaurel
+import StrataLaurel.Implementation.FilterPrelude
+
+open StrataTest.Util
+open Strata
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var someGlobal: int := 0
+procedure reader() returns (r: int) opaque {
+  return someGlobal + 1
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var someGlobal: int := 0
+procedure writer() opaque {
+  someGlobal := 3
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var counter: int := 0
+var flag: bool := false
+procedure touchBoth() opaque {
+  counter := 5;
+  flag := true
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure reader() returns (r: int) opaque {
+  return notAGlobal + 1
+//       ^^^^^^^^^^ error: Resolution failed: 'notAGlobal' is not defined
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure shadows() returns (r: int) opaque {
+  var g: int := 7;
+  return g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+var g: int := 0
+//  ^ error: Duplicate definition 'g' is already defined in this scope
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure keep()
+  opaque
+  ensures g == old(g)
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure keepPre()
+  requires old(g) == 0
+//             ^ error: file-scope globals inside `old(...)` are only supported in postconditions and guards
+  opaque
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure keepInv() opaque {
+  g := g;
+  while (false)
+    invariant old(g) == 0 {
+//                ^ error: file-scope globals inside `old(...)` are only supported in postconditions and guards
+  }
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure keepWrite()
+  opaque
+  ensures old((g := 3)) == 3
+//             ^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure keepCompound()
+  opaque
+  ensures old((g += 1)) == 1
+//             ^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure keepIncr()
+  opaque
+  ensures old((g++)) == 1
+//             ^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+{
+  g := g
+};
+#end
+
+/-! `throwsOn`: case `ensures` and guard admit `old(<global>)`. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Exception {}
+procedure mayThrow(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn b == 0 {
+    ensures g == old(g)
+  }
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Exception {}
+procedure mayThrowGuard(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn old(g) == 0 {
+    ensures b == b
+  }
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Exception {}
+procedure readG() returns (r: int) opaque
+  ensures r == g;
+procedure mayThrowGuardCall(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn old(readG()) == 0 {
+//             ^^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+    ensures b == b
+  }
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Exception {}
+procedure readG() returns (r: int) opaque
+  ensures r == g;
+procedure mayThrowCall(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn b == 0 {
+    ensures g == old(readG())
+//                   ^^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+  }
+{
+  g := g
+};
+#end
+
+/-! A `throwsOn` case's `modifies` targets are pre-state, so they stay strict. The modifies gate
+runs before the `old(...)`-globals validation, which sees only surviving targets, so a
+non-composite entry is reported as unframeable instead. Exempting `old(...)` from the gate would
+put `modifies old(<opaque>)` on the compiler-bug path. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Exception {}
+procedure mayThrowModifiesOld(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn b == 0 {
+    modifies old(g)
+//           ^^^^^^ error: modifies clause entry has non-composite type 'int'; only a heap object can be framed
+  }
+{
+  g := g
+};
+#end
+
+/-! The gate keeps only composites, and a composite target still reaches the rule above from a
+frame — so that position keeps its coverage. A composite-typed global has to be initialized with
+a hole: `new` is not effect-free, and omitting the initializer is rejected outright. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Holder {
+  var v: int
+}
+composite Exception {}
+var gh: Holder := <??>
+procedure mayThrowModifiesOldComposite(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn b == 0 {
+    modifies old(gh)
+//               ^^ error: file-scope globals inside `old(...)` are only supported in postconditions and guards
+  }
+{
+  b := b
+};
+#end
+
+/-! Bare writes and writer calls in `throwsOn` are rejected. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Exception {}
+procedure mayThrowBareWrite(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn b == 0 {
+    ensures (g := 1) == 1
+//           ^^^^^^ error: global mutations are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+  }
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Exception {}
+procedure bumpR() returns (r: int) opaque
+  ensures r == g
+{
+  g := g + 1;
+  r := g
+};
+procedure mayThrowBareCall(b: int)
+  throws (e: Exception)
+  opaque
+  throwsOn bumpR() == 0 {
+//         ^^^^^ error: calls to global-writing procedure 'bumpR' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+    ensures b == b
+  }
+{
+  g := g
+};
+#end
+
+/-! Guards reject calls/writes under `old(...)`; `invokeOn` stays fully strict. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure P(x: int): bool;
+procedure invokesOld()
+  invokeOn P(old(g))
+//               ^ error: file-scope globals inside `old(...)` are only supported in postconditions and guards
+  opaque;
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure guardedFrame()
+  opaque
+  modifies when old(g) == 0
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure guardedFrameWrite()
+  opaque
+  modifies when old((g := 1)) == 1
+//                   ^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure readG() returns (r: int)
+  opaque
+  ensures r == g;
+procedure keep()
+  opaque
+  ensures g == old(readG())
+//                 ^^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+composite Box {
+  procedure getG(self: Box) returns (r: int)
+    opaque
+    ensures r == g;
+}
+procedure keepInstance(b: Box)
+  opaque
+  ensures g == old(b#getG())
+//                 ^^^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval do
+  let prelude ← translateLaurel <|
+    #strata
+    program Laurel;
+    composite Needed { var value: int }
+    composite Unused { var value: int }
+    #end
+  let user ← translateLaurel <|
+    #strata
+    program Laurel;
+    var global: Needed := new Needed
+    #end
+  match Strata.Laurel.filterPrelude prelude user with
+  | .error message => throw (IO.userError message)
+  | .ok filtered =>
+      let names := filtered.types.map fun (type : Strata.Laurel.TypeDefinition) => type.name.text
+      unless names == ["Needed"] do
+        throw (IO.userError s!"unexpected retained types: {names}")
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var initialized: int := 5
+procedure reader() returns (r: int) opaque {
+  return initialized
+};
+#end
+
+/-- error: Translation errors: file-scope global 'uninitialized' must declare an initializer: 'var uninitialized: <type> := <value>' -/
+#guard_msgs in
+#eval do
+  let _ ← translateLaurel <|
+    #strata
+    program Laurel;
+    var uninitialized: int
+    #end
+  pure ()
+
+/-- info: resolution diagnostic: file-scope global 'bare' must declare an initializer: 'var bare: <type> := <value>' -/
+#guard_msgs in
+#eval do
+  let program ← translateLaurel <|
+    #strata
+    program Laurel;
+    procedure untouched() opaque {
+    };
+    #end
+  let bare : Strata.Laurel.Field :=
+    { name := Strata.Laurel.mkId "bare", isMutable := true,
+      type := ⟨.TInt, default⟩ }
+  let withBare := { program with staticFields := [bare] }
+  for diagnostic in (Strata.Laurel.resolve (withBuiltins withBare)).errors do
+    IO.println s!"resolution diagnostic: {diagnostic.message}"
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var typed: int := true
+//                ^^^^ error: expected 'int', got 'bool'
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var first: int := 0
+var second: int := first + 1
+//                 ^^^^^ error: the initializer of file-scope global 'second' cannot depend on file-scope globals
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var first: int := 0
+procedure readFirst() returns (r: int) {
+  return first
+};
+var second: int := readFirst()
+//                 ^^^^^^^^^^^ error: the initializer of file-scope global 'second' cannot depend on file-scope globals
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var effectful: int := { var tmp: int := 1; tmp }
+//                      ^^^^^^^^^^^^^^^^^ error: the initializer of file-scope global 'effectful' must be effect-free
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite HeapCell {
+  var value: int
+}
+procedure readCell(c: HeapCell) returns (r: int) {
+  return c#value
+};
+var fromHeap: int := readCell(new HeapCell)
+//                   ^^^^^^^^^^^^^^^^^^^^^^ error: the initializer of file-scope global 'fromHeap' must be effect-free
+#end
+
+-- A field READ in an initializer is a heap read, so the same rule rejects it.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite C { var v: int }
+procedure mkC() returns (r: C) external;
+var n: int := mkC()#v
+//                  ^ error: the initializer of file-scope global 'n' must be effect-free (no assignments or declarations, no allocation with 'new', no field reads, and no calls to heap-reading or heap-writing procedures)
+#end
+
+-- The rule folds over the whole initializer, so a nested read is found too — here the read's own
+-- target is a read.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Inner { var v: int }
+composite Outer { var i: Inner }
+procedure mkO() returns (r: Outer) external;
+var n: int := mkO()#i#v
+//                    ^ error: the initializer of file-scope global 'n' must be effect-free
+#end
+
+-- ... and here the read's target is a quantifier binder rather than a call.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite C { var v: int }
+var b: bool := forall(c: C) => c#v == 0
+//                               ^ error: the initializer of file-scope global 'b' must be effect-free
+#end
+
+-- A datatype's field is read through a selector call rather than a field access, so this arm leaves
+-- it alone.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+datatype Bx { MkBx(v: int) }
+var n: int := Bx..v(MkBx(5))
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure runMe()
+  requires g == 0
+//         ^ error: the contract of entry procedure 'runMe' cannot use file-scope globals: an entry procedure initializes its globals as locals inside its body, which contracts cannot see
+  entry
+  opaque
+{
+  g := 1
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure runMe()
+  entry
+  opaque
+  ensures g == 1
+//        ^ error: the contract of entry procedure 'runMe' cannot use file-scope globals: an entry procedure initializes its globals as locals inside its body, which contracts cannot see
+{
+  g := 1
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure runMe()
+  entry
+  opaque
+{
+  g := 1
+};
+procedure caller() opaque {
+  runMe()
+//^^^^^^^ error: entry procedure 'runMe' cannot be called here: it uses file-scope globals, which it initializes as locals rather than accepting as the hidden parameters this call would pass
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure runMe()
+  entry
+  opaque
+{
+  assert true
+};
+procedure caller() opaque {
+  g := 1;
+  runMe()
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+var count: nat := 0
+procedure runMe()
+//        ^^^^^ error: entry procedure 'runMe' cannot use constrained-typed global 'count': the global's type constraint is enforced through hidden-parameter contracts, which entry procedures do not receive
+  entry
+  opaque
+{
+  count := 1
+};
+#end
+
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var $result: int := 0
+//  ^^^^^^^ error: file-scope global name '$result' is reserved for compiler-generated variables
+var $writeValue0: int := 0
+//  ^^^^^^^^^^^^ error: file-scope global name '$writeValue0' is reserved for compiler-generated variables
+var $inputCopy0: int := 0
+//  ^^^^^^^^^^^ error: file-scope global name '$inputCopy0' is reserved for compiler-generated variables
+var $heap: int := 0
+//  ^^^^^ error: file-scope global name '$heap' is reserved for compiler-generated variables
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+constrained captured = $static.g: int where $static.g >= 0 witness 0
+//                     ^^^^^^^^^ error: name '$static.g' is reserved for compiler-generated variables
+var g: nat := 0
+procedure setG() { g := 1 };
+procedure reader($static.g: int) returns (r: nat) {
+//               ^^^^^^^^^ error: name '$static.g' is reserved for compiler-generated variables
+  return g
+};
+procedure conditionalWriter(flag: bool) returns ($static.g: int) opaque {
+//                                               ^^^^^^^^^ error: name '$static.g' is reserved for compiler-generated variables
+  if flag then setG();
+  $static.g := 0
+};
+#end
+
+
+#guard_msgs (drop info) in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure pair() returns (x: int, y: int) opaque {
+  g := 1;
+  x := 2;
+  y := 3
+};
+procedure caller() opaque {
+  pair()
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure bump() returns (r: int) opaque {
+  g := g + 1;
+  return g
+};
+procedure caller()
+  requires bump() > 0
+//         ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+  opaque
+{
+};
+#end
+
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure bump() returns (r: int) opaque {
+  g := g + 1;
+  return g
+};
+procedure caller() opaque {
+  while (false)
+    invariant bump() > 0 {
+//            ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+  }
+};
+#end
+
+
+#guard_msgs (drop info) in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+composite GlobalPair {
+  procedure pair(self: GlobalPair) returns (x: int, y: int) opaque {
+    g := 1;
+    x := 2;
+    y := 3
+  };
+}
+procedure caller(c: GlobalPair) opaque {
+  c#pair()
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure writeBoth(x: int, v: int) returns (x: int, r: int) opaque {
+  g := v;
+  x := x + v;
+  r := x
+};
+procedure caller() opaque {
+  var x: int := 1;
+  var r: int;
+  assign x, r := writeBoth(x, 5)
+//               ^^^^^^^^^ error: calls to global-writing procedure 'writeBoth' with explicit inout outputs are not yet supported
+};
+#end
+
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var floor: int := 0
+constrained AboveFloor = x: int where x >= floor witness 0
+//                                         ^^^^^ error: file-scope globals are not yet supported in constrained type predicates or witnesses
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure setG(v: int) returns (r: int) opaque {
+  g := v;
+  return v
+};
+procedure readMutate(x: int, y: int) returns (x: int, r: int) opaque {
+  x := x + g + y;
+  r := x
+};
+procedure caller() opaque {
+  var x: int := 1;
+  var r: int;
+  assign x, r := readMutate(x, setG(5))
+//               ^^^^^^^^^^ error: mutating arguments to global-dependent procedure 'readMutate' with explicit inout outputs are not yet supported
+};
+#end
+
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure readMutate(x: int, y: int) returns (x: int, r: int) opaque {
+  x := x + g + y;
+  r := x
+};
+procedure caller() opaque {
+  var r: int;
+  assign g, r := readMutate(g := 5, 0)
+//               ^^^^^^^^^^ error: mutating arguments to global-dependent procedure 'readMutate' with explicit inout outputs are not yet supported
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: bool := false
+constrained MutatesGlobal = x: bool where (g := true) witness false
+//                                         ^^^^^^^^^ error: file-scope globals are not yet supported in constrained type predicates or witnesses
+#end
+
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure pair() returns (x: int, y: int) opaque {
+  g := 1;
+  x := 2;
+  y := 3
+};
+procedure caller() opaque {
+  var x: int;
+  var y: int;
+  assign x, y := pair()
+//               ^^^^ error: calls to global-writing procedure 'pair' with more than one ordinary output are not yet supported
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure bumpInout(x: int) returns (x: int) opaque {
+  x := x + 1
+};
+procedure caller() opaque {
+  assign g := bumpInout(g)
+//            ^^^^^^^^^ error: passing file-scope globals to explicit inout parameters of 'bumpInout' is not yet supported
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure bump() returns (r: int) opaque {
+  g := g + 1;
+  return g
+};
+procedure caller() opaque {
+  assert forall(x: int) => bump() > x
+//                         ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure bump() returns (r: int) opaque {
+  g := g + 1;
+  return g
+};
+procedure caller() opaque
+  ensures g == old(bump())
+//                 ^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+{
+  g := g
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure bump() returns (r: int) opaque {
+  g := g + 1;
+  return g
+};
+procedure caller() opaque {
+  while (false)
+    invariant forall(x: int) => old(bump()) > x {
+//                                  ^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+  }
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: bool := false
+procedure caller() opaque {
+  assert forall(x: bool) => (g := x)
+//                           ^^^^^^ error: global mutations are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+};
+#end
+
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure bumpInout(x: int) returns (x: int) opaque {
+  x := x + 1
+};
+procedure caller() opaque {
+  bumpInout({g})
+//^^^^^^^^^ error: passing file-scope globals to explicit inout parameters of 'bumpInout' is not yet supported
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var $result: int := 0
+//  ^^^^^^^ error: file-scope global name '$result' may not start with '$': that namespace is reserved for compiler-generated names
+composite InitialErrorInstance {
+  procedure untouched(self: InitialErrorInstance) opaque {
+  };
+}
+#end
+
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure readG() returns (r: int) {
+  return g
+};
+constrained GlobalWitness = x: int where x >= 0 witness readG()
+//                                                      ^^^^^^^ error: file-scope globals are not yet supported in constrained type predicates or witnesses
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure caller() opaque {
+  assert forall(x: int) => g++ > x
+//                         ^^^ error: global mutations are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+};
+#end
+
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure readMutate(x: int) returns (x: int) opaque {
+  x := x + g
+};
+procedure caller() opaque {
+  var x: int;
+  assign x := readMutate(1)
+//            ^^^^^^^^^^ error: explicit inout arguments to 'readMutate' must be variable references
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure pair(a: int) returns (x: int, y: int) opaque {
+  x := g + a;
+  y := a
+};
+procedure caller() opaque {
+  var t: int := 0;
+  var x: int;
+  var y: int;
+  assign x, y := {
+    var t: int := 1;
+    pair(t)
+//  ^^^^ error: multi-output calls to global-dependent procedure 'pair' that require block-valued lowering are not yet supported
+  }
+};
+#end
+
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure globalPair(a: int) returns (x: int, y: int) opaque {
+  x := g + a;
+  y := a
+};
+procedure plainPair(a: int) returns (x: int, y: int) opaque {
+  x := a;
+  y := a + 1
+};
+procedure caller() opaque {
+  var x: int;
+  var y: int;
+  assign x, y := {
+    {
+      globalPair(0);
+      plainPair(1)
+    }
+  }
+};
+#end
+
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure setG(v: int) returns (r: int) opaque {
+  g := v;
+  return v
+};
+procedure pair(a: int) returns (x: int, y: int) opaque {
+  x := g + a;
+  y := a
+};
+procedure caller() opaque {
+  var x: int;
+  var y: int;
+  assign x, y := pair(setG(5))
+//               ^^^^ error: multi-output calls to global-dependent procedure 'pair' that require block-valued lowering are not yet supported
+};
+#end
+
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure setG(v: int)
+  opaque
+  ensures g == v
+//        ^^^^^^ error: global references in postconditions of procedure 'setG' without an implementation are not yet supported
+;
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure P(x: int): bool;
+procedure trigger()
+//        ^^^^^^^ error: global-writing 'invokeOn' procedure 'trigger' is not yet supported because its generated axiom cannot bind the hidden global output state
+  invokeOn P(g)
+  opaque
+{
+  g := g + 1
+};
+#end
+
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure setG(v: int) returns (r: int) opaque {
+  g := v;
+  return v
+};
+procedure pair(a: int) returns (x: int, y: int) opaque {
+  x := g + a;
+  y := a
+};
+procedure caller(c: bool) opaque {
+  var x: int;
+  var y: int;
+  assign x, y := if c then pair(setG(5)) else pair(0)
+//                         ^^^^ error: multi-output calls to global-dependent procedure 'pair' that require block-valued lowering are not yet supported
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure setG(v: int) returns (r: int)
+  opaque
+  ensures r == r && g == v
+//        ^^^^^^^^^^^^^^^^ error: global references in postconditions of procedure 'setG' without an implementation are not yet supported
+;
+#end
+
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure tick() returns (r: bool) opaque {
+  g := g + 1;
+  return g < 3
+};
+procedure caller() opaque {
+  while (tick()) {
+//       ^^^^ error: calls to global-writing procedure 'tick' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+  }
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure constrainGlobal() returns (r: int)
+  opaque
+  ensures r == r + g
+//        ^^^^^^^^^^ error: global references in postconditions of procedure 'constrainGlobal' without an implementation are not yet supported
+;
+#end
+
+/-! A file-scope global may carry a `$` that is not first, like every other
+declaration: only the leading position is reserved. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var my$global: int := 0
+procedure reader() returns (r: int) opaque {
+  return my$global + 1
+};
+#end
+
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure pair(a: int) returns (x: int, y: int) opaque {
+  x := g + a;
+  y := a
+};
+procedure caller() opaque {
+  g := g;
+  var x: int;
+  var y: int;
+  assign x, y := old(pair(1))
+//                   ^^^^^^^ error: calls to global-dependent procedures and global writes are not yet supported inside `old(...)`
+};
+#end
+
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure pair() returns (x: int, y: int) opaque {
+  x := g;
+  y := g + 1
+};
+procedure caller() opaque {
+  var a: int;
+  var b: int;
+  var x: int;
+  var y: int;
+  assign x, y := {
+    assign a, b := pair()
+//                 ^^^^ error: multi-output calls to global-dependent procedure 'pair' that require block-valued lowering are not yet supported
+  }
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure bump() returns (r: bool) opaque {
+  g := g + 1;
+  return true
+};
+procedure assertCaller() opaque {
+  assert bump()
+//       ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure bump() returns (r: bool) opaque {
+  g := g + 1;
+  return true
+};
+procedure assumeCaller() opaque {
+  assume bump()
+//       ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure bump() returns (r: bool) opaque {
+  g := g + 1;
+  return true
+};
+procedure trigger()
+  invokeOn bump()
+//         ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+  opaque
+{
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure runMe()
+  entry
+  opaque
+{
+  g += 1
+};
+procedure caller() opaque {
+  runMe()
+//^^^^^^^ error: entry procedure 'runMe' cannot be called here: it uses file-scope globals, which it initializes as locals rather than accepting as the hidden parameters this call would pass
+};
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite $static {
+//        ^^^^^^^ error: type name '$static' is reserved for file-scope global variables
+  var g: bool
+}
+var g: int := 0
+#end
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure readMutate(x: int) returns (x: int)
+  opaque
+  ensures x == old(x) + g
+{
+  x := x + g
+};
+procedure caller() opaque {
+  g := 3;
+  var x: int := 1;
+  readMutate(x)
+//^^^^^^^^^^ error: bare calls to global-dependent procedure 'readMutate' with explicit inout outputs are not yet supported
+};
+#end
+
+-- A generic global type is accepted whatever its head denotes: every lowering pass that rewrites
+-- types traverses a global's INITIALIZER alongside its type, so a generic-typed global is
+-- monomorphized like any other field. What each head then MEANS in Core is checked in
+-- Verification/Fundamentals/GlobalVars.lean; here only the heads that reach no further are
+-- covered. `Box<int>` is a composite.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+procedure mkBox() returns (r: Box<int>) external;
+var g: Box<int> := mkBox()
+#end
+
+-- A user-declared opaque head, whose initializer is also a polymorphic call.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+opaque MyBox<T>
+procedure mk<T>() returns (r: MyBox<T>) external;
+var m: MyBox<int> := mk()
+#end
+
+-- A generic ALIAS over an exempt head. `TypeAliasElim` runs before monomorphization, so an
+-- alias is unfolded and then monomorphized from its target.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+type S<T> = Set<T>
+var s: S<int> := setEmpty()
+#end
+
+-- Allocation in an initializer is still rejected: a file-scope initializer has no heap to
+-- mutate. This is the one rule that keeps `new` out, and it must fire on a generic `new` too.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+var s: Set<Box<int>> := setInsert(setEmpty(), new Box<int>)
+//                                            ^^^^^^^^^^^^ error: the initializer of file-scope global 's' must be effect-free
+#end
+
+-- The same global with a non-allocating initializer is accepted.
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+procedure mkBox() returns (r: Box<int>) external;
+var s: Set<Box<int>> := setInsert(setEmpty(), mkBox())
+#end
+
+
+/-! ## Declared global effects on a bodiless procedure
+
+`reads`/`writes` on an opaque spec declare the global effects of a procedure with no
+body. Effects are otherwise inferred from statements, and a bodiless procedure has none,
+so the declaration is the only evidence — the role `modifies` plays for the heap.
+
+What follows is only which declarations resolution ACCEPTS or REJECTS. That a declared
+effect then carries the right facts across a call — `writes g` replacing the caller's
+knowledge of `g` with what the postcondition states, `reads g` letting a postcondition
+relate the result to it — is a verification question, and those cases live in
+`Verification/Fundamentals/GlobalVars.lean`. They cannot live here: their subject is a
+passing `assert`, which `testLaurelResolution` never evaluates. -/
+
+/-! A declared effect must name a file-scope global. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure notAGlobal(p: int)
+  opaque
+  writes p;
+//       ^ error: 'p' is not a file-scope global, so it cannot appear in a 'reads'/'writes' clause
+#end
+
+/-! An undefined name in a declared effect is reported once, by resolution. The
+    "not a file-scope global" diagnostic is for names that resolved to something that
+    is not a global, so it would be a second report of the same mistake. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure typoedEffect()
+  opaque
+  writes undefinedGlobal;
+//       ^^^^^^^^^^^^^^^ error: Resolution failed: 'undefinedGlobal' is not defined
+#end
+
+/-! A procedure with an implementation has its effects inferred, so declaring them is
+    rejected rather than silently ignored. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+var g: int := 0
+procedure hasBody()
+//        ^^^^^^^ error: procedure 'hasBody' has an implementation, so its global effects are inferred from its body: remove the 'reads'/'writes' clause
+  opaque
+  writes g
+{
+  g := 1
+};
+#end
+
+/-! ## The entry-procedure rules cover instance procedures
+
+`LiftInstanceProcedures` lifts every instance procedure into `staticProcedures` before
+`HeapParameterization` runs, so this rule must inspect the instance half of the program
+too: a validator that walks only `program.staticProcedures` inspects a different program
+than the one compiled, and the unsupported shape reaches Core — reported against the
+compiler rather than the declaration that caused it.
+
+An `entry` instance procedure that uses the heap therefore gets the same clean diagnostic
+as its static twin. It takes no parameters because `self` is an input, and an entry point
+is invoked with no arguments; it reaches the heap by allocating instead. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Holder2 {
+  var v: int
+  procedure runsMe()
+//          ^^^^^^ error: entry procedure 'runsMe' uses the heap, so it must declare 'modifies *': its heap is a body local, so no narrower frame can be stated about it
+    entry
+    opaque
+  {
+    var h: Holder2 := new Holder2;
+    h#v := 1
+  };
+}
+#end
+
+/-! A `requires` clause on an entry procedure is rejected: the clause cannot see the
+    globals the procedure initializes as body locals. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure runMe()
+  requires true
+//         ^^^^ error: entry procedure 'runMe' cannot have a 'requires' clause: an entry procedure initializes its globals as locals inside its body, which a contract cannot see
+  entry
+  opaque
+{
+  var x: int := 1
+};
+#end
+
+/-! A narrow frame on an entry procedure is rejected. The procedure also uses the heap,
+    so the "must declare 'modifies *'" rule applies to it as well, but that diagnostic is
+    suppressed while a narrower frame is being reported: one mistake earns one diagnostic
+    from that rule.
+
+    The second diagnostic comes from a different rule, and states a different fact. A
+    narrow target can only name a file-scope global -- an entry procedure takes no inputs,
+    so there is nothing else in scope to name -- and a contract naming a global is
+    rejected in its own right. -/
+
+#guard_msgs in
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Cell3 { var v: int }
+var c3: Cell3 := <??>
+procedure runMe()
+  entry
+  opaque
+  modifies c3
+//         ^^ error: entry procedure 'runMe' may only declare 'modifies *': a narrower frame is stated in terms of the heap, which an entry procedure holds as a body local rather than a parameter
+//         ^^ error: the contract of entry procedure 'runMe' cannot use file-scope globals: an entry procedure initializes its globals as locals inside its body, which contracts cannot see
+{
+  c3#v := 1
+};
+#end

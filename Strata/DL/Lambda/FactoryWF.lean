@@ -5,8 +5,9 @@
 -/
 module
 
-public import Strata.DL.Lambda.Factory
-import all Strata.DL.Lambda.Factory
+public import Strata.DL.Lambda.LExprType
+import all Strata.DL.Lambda.LExprType
+import all Strata.DL.Lambda.FactoryProps
 
 /-!
 ## Well-formedness of LFunc and Factory
@@ -22,16 +23,19 @@ open Strata.DL.Util (Func FuncWF TyIdentifier)
 public section
 
 
-/-- Well-formedness properties for LFunc — extends generic `FuncWF` with
-    Lambda-specific extractors and the generated-prefix guard on `typeArgs`. -/
+/-- Well-formedness properties for `LFunc`: generic name, type-variable, body,
+    and precondition invariants; Lambda-specific evaluator invariants; and the
+    generated-prefix guard on `typeArgs`. In particular, `body_freevars` and
+    `precond_freevars` ensure that the body and preconditions have no free
+    variables beyond the function's inputs. -/
 structure LFuncWF {T : LExprParams} (f : LFunc T) extends
     FuncWF
       (fun id => id.name) -- getName
       (fun e => (LExpr.freeVars e).map (·.1.name)) -- getVarNames
       (fun e => e.freeVars) -- getTyFreeVars
-      f where
+      f.toFunc where
   /-- Constructors must not have a body or concreteEval. This ensures that
-      canonical values (which include fully-applied constructors) are normal
+      values (which include fully-applied constructors) are normal
       forms — they cannot be further reduced by `expand_fn` or `eval_fn`. -/
   constr_no_eval :
     f.isConstr → f.body = none ∧ f.concreteEval = none := by decide
@@ -39,6 +43,14 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
       prefix `$__ty` used by the type-checker. -/
   typeArgs_no_gen_prefix :
     ∀ ta, ta ∈ f.typeArgs → ¬ ("$__ty".toList.isPrefixOf ta.toList = true) := by decide
+  /-- `concreteEval` does not succeed if the length of args is incorrect. -/
+  concreteEval_argmatch :
+    ∀ fn md args res, f.concreteEval = .some fn
+      → fn md args = .some res
+      → args.length = f.inputs.length := by intro fn _ _ _ hfn; simp [LFunc.concreteEval] at hfn
+  /-- body and concreteEval cannot exist at once. -/
+  body_or_concreteEval :
+    ¬ (f.concreteEval.isSome ∧ f.body.isSome) := by simp [LFunc.concreteEval]
   /-- `concreteEval` is metadata-insensitive: it produces
       `eraseMetadata`-equivalent results for `eraseMetadata`-equivalent
       arguments, regardless of the metadata parameter. -/
@@ -49,7 +61,30 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
         ceval md1 args1 = some res1 →
         ∃ res2, ceval md2 args2 = some res2 ∧
           LExpr.eraseMetadata res1 = LExpr.eraseMetadata res2 := by
-    intro _ h; simp [Func.concreteEval] at h
+    intro _ h; simp [LFunc.concreteEval] at h
+  /-- `concreteEval` does not introduce fresh free variables: every free
+      variable of a successful result was already free in some argument. -/
+  concreteEval_freeVars :
+    ∀ ceval, f.concreteEval = some ceval →
+      ∀ md (args : List (LExpr T.mono)) res,
+        ceval md args = some res →
+        ∀ z ∈ LExpr.LExpr.getVars res, ∃ a ∈ args, z ∈ LExpr.LExpr.getVars a := by
+    intro _ h; simp [LFunc.concreteEval] at h
+  /-- The concrete evaluator of a `shortCircuit` function, which `eval` applies to
+      arguments after the first one that are not evaluated yet, commutes with
+      `substFvars` applied to those arguments, for any substitution `sm`. -/
+  shortCircuit_substFvars :
+    Strata.DL.Util.FuncAttr.hasShortCircuit f.attr = true →
+      ∀ ceval, f.concreteEval = some ceval →
+      ∀ [DecidableEq T.IDMeta] md (a : LExpr T.mono) (rest : List (LExpr T.mono))
+        (sm : Map T.Identifier (LExpr T.mono)),
+        ceval md (a :: rest.map (LExpr.substFvars · sm)) =
+          (ceval md (a :: rest)).map (LExpr.substFvars · sm) := by
+    intro h c hc
+    first
+      | (simp [Strata.DL.Util.FuncAttr.hasShortCircuit] at h; done)
+      | (simp [LFunc.concreteEval] at hc; done)
+      | (exfalso; revert h; decide)
 
 /-- An LFunc bundled with its well-formedness proof. -/
 structure WFLFunc (T : LExprParams) where
@@ -63,8 +98,8 @@ def WFLFunc.name (f : WFLFunc T) : T.Identifier := f.func.name
 @[expose] def WFLFunc.opExpr [Inhabited T.Metadata] (f : WFLFunc T) : LExpr T.mono :=
   f.func.opExpr
 
-/-- An array of well-formed LFuncs with a proof that function
-    names are unique. -/
+/-- An array-backed factory whose functions each carry an `LFuncWF` proof.
+    Function names are unique. -/
 structure WFLFactory (T : LExprParams) where
   toFactory : Factory T
   wf : ∀(func : LFunc T), func ∈ toFactory.toArray → LFuncWF func
@@ -90,7 +125,7 @@ structure WFLFactory (T : LExprParams) where
   }
 
 /--
-Well-formedness properties of Factory.
+Well-formedness properties of a factory.
 -/
 structure FactoryWF {T} (fac : Factory T) where
   lfuncs_wf : ∀ (lf:LFunc T), lf ∈ fac.toArray → LFuncWF lf

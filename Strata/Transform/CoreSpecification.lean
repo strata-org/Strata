@@ -6,62 +6,76 @@
 module
 
 public import Strata.Languages.Core.StatementSemantics
+public import Strata.Languages.Core.Logic.LangDef
 public import Strata.Transform.Specification
 public import Strata.Languages.Core.WF
+public import Strata.Languages.Core.Factory
+public import Strata.Languages.Core.Options
+public import Strata.Languages.Core.Verifier
+import all Strata.Languages.Core.Factory
+import all Strata.DL.Lambda.IntBoolFactory
+import all Strata.DL.Lambda.FactoryWF
+import all Strata.DL.Lambda.Factory
 
 public section
 
 /-! # Core-Level Specification
 
-Bridges Core procedures to the generic Imperative specification framework
-(`AssertValidWhen`, `AllAssertsValidWhen`).
-
-## Overview
-
-- **`Lang.core`** — the `Lang Expression` bundle for Core small-step semantics
-- **`ProcEnvWF`** — well-formedness condition on the initial verification env
-- **`AssertValidInProcedure`** — `AssertValidWhen` on the verification statement
-- **`ProcedureCorrect`** — assert validity + postconditions + hasFailure on termination
+The entry conditions of a Core procedure: `ProcEnvWF`, the well-formed program
+state at its entry, and `AxiomsBeforeProcedureDecl`, the axioms and distincts
+visible to it. What it means for a procedure to be correct, and for Core's
+verifier to be correct, is in `Strata.Languages.Core.Analysis.ProcedureCorrectness`.
+The `Lang` bundles themselves (`Lang.core`, `Lang.coreBlock`) and their gates
+(`InitEnvWFParams`, `InitEnvWF`, `BlockInitEnvWF`) live in
+`Strata.Languages.Core.Logic.LangDef`.
 -/
 
 namespace Core.Specification
 
-open Core Imperative
-
-/-! ## Core `Lang` bundle -/
-
-/-- The `Lang Expression` bundle for Core small-step semantics. -/
-@[expose] def Lang.core
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval) :
-    Imperative.Specification.Lang Expression :=
-  Imperative.Specification.Lang.imperative
-    Expression Command (EvalCommand π φ) (EvalPureFunc φ) coreIsAtAssert
+open Core Core.Logic Imperative Strata.Logic Imperative.Logic
 
 /-! ## Well-formed program state at the entry of procedure -/
 
-/-- The list of variables that must have been declared,
-    to make execution of the body of this procedure not stuck.
-    outputs are included because the body refers to the output variables without
-    initialization.
-    Old snapshot variables for in-out parameters (those appearing in both
-    inputs and outputs) are included because the body or spec of the
-    procedure may refer to those with "old g".  -/
-@[expose] def procVerifyInitIdents (proc : Procedure) : List Expression.Ident :=
-  ListMap.keys proc.header.inputs ++
-  ListMap.keys proc.header.outputs ++
-  (ListMap.keys proc.header.getInoutParams).map (fun id => CoreIdent.mkOld id.name)
+/-- The variables (paired with their declared monomorphic types) that must
+    have been declared to make execution of the body of this procedure not
+    stuck.
+
+    inputs and outputs are included because the body refers to those variables
+    without initialization.  Old snapshot variables for in-out parameters
+    (those appearing in both inputs and outputs) are included because the body
+    or spec of the procedure may refer to those with "old g".
+
+    Each entry pairs the identifier with the type at which its initial value
+    must be well-typed.  For an in-out parameter's old snapshot the type is the
+    parameter's original declared type. -/
+@[expose] def procVerifyInitIdents (proc : Procedure) :
+    List (Expression.Ident × Lambda.LMonoTy) :=
+  proc.header.inputs.toList ++
+  proc.header.outputs.toList ++
+  (proc.header.getInoutParams.toList).map (fun (id, ty) => (CoreIdent.mkOld id.name, ty))
 
 /-- A well-formed initial environment for executing the procedure body.
     This captures the state after inputs, outputs, modified globals have been
     initialized and preconditions assumed.
-    The well-formed environment also includes old snapshots in store -/
-structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
-  wfVar  : WellFormedSemanticEvalVar ρ.eval
-  wfBool : WellFormedSemanticEvalBool ρ.eval
-  wfCong : WellFormedCoreEvalCong ρ.eval
-  wfExprCongr : WellFormedSemanticEvalExprCongr ρ.eval
-  storeDefined : ∀ id ∈ procVerifyInitIdents proc, (ρ.store id).isSome
+    The well-formed environment also includes old snapshots in store, and the
+    body is well formed to run from it under `params`.
+
+    Procedure-correctness properties quantify over these environments, so they
+    say nothing when `params` admits none. For example, with
+    `declaredFuncs := fun _ => false`, `factoryDeclared` fails for every
+    environment, and every procedure, even one with `ensures false`, satisfies
+    them. Choose `params` so that it admits the program's entry environments. -/
+structure ProcEnvWF (params : InitEnvWFParams) (proc : Procedure)
+    (ρ : Imperative.Env Expression)
+    extends WellFormedSemanticEval (P := Expression) ρ.factory where
+  -- The verification env's store holds only values (true of reachable stores).
+  -- The factory is read from the environment (`ρ.factory`).
+  storeValues : Imperative.WellFormedStore ρ.store ρ.factory
+  -- Every variable required by the body holds a value of its declared type
+  -- in the initial verification environment.
+  storeDefinedAndWellTyped : ∀ id ty, (id, ty) ∈ procVerifyInitIdents proc →
+    ∃ v, ρ.store id = some v ∧
+      HasVal.valueOfTy ρ.factory v (Lambda.LTy.forAll [] ty)
   -- When a procedure is called, the value of "old g" must be equal to "g"
   -- for in-out parameters.
   oldInoutMatchesInout : ∀ id ∈ ListMap.keys proc.header.getInoutParams,
@@ -69,102 +83,46 @@ structure ProcEnvWF (proc : Procedure) (ρ : Env Expression) : Prop where
   -- Precondition holds in the body, and input state had no failure.
   preconditionsHold : ∀ (label : CoreLabel) (check : Procedure.Check),
     (label, check) ∈ proc.spec.preconditions.toList →
-    ρ.eval ρ.store check.expr = some HasBool.tt
+    Expression.eval ρ.factory ρ.store check.expr = some HasBool.tt
   noFailure : ρ.hasFailure = Bool.false
+  /-- A structured body, as the block the procedure's specifications wrap it
+      in, is well formed to run from `ρ`. -/
+  structuredBodyWF : ∀ ss, proc.body = .structured ss →
+    BlockInitEnvWF params [Stmt.block "" ss #[]] ρ
+  /-- A CFG body is well formed to run from `ρ`. -/
+  cfgBodyWF : ∀ cfg, proc.body = .cfg cfg → CFGInitEnvWF params cfg ρ
 
-/-! ## Procedure correctness -/
+/-! ## Axioms and distincts visible to a procedure
 
-variable (π : String → Option Procedure)
-variable (φ : CoreEval → PureFunc Expression → CoreEval)
+A program also contains `axiom` declarations (boolean expressions that holds
+globally) and `distinct` declarations (lists of expressions whose values must differ).
+For verification, the initial environment of a procedure must satisfy the
+axioms and distincts that have been declared *before* the procedure in the
+program. -/
 
-/-- A specific assertion `a` in procedure `proc` is valid
-    for initial program states satisfying the preconditions (`ProcEnvWF`). -/
-@[expose] def AssertValidInProcedure
-    (proc : Procedure)
-    (a : Imperative.AssertId Expression) : Prop :=
-  match proc.body with
-  | .structured ss =>
-    Imperative.Specification.AssertValidWhen (Specification.Lang.core π φ)
-      (ProcEnvWF proc) (Stmt.block "" ss #[]) a
-  -- CFG bodies don't yet have a small-step semantics, so there is nothing to
-  -- certify.  We pick `False` rather than `True` to be conservative: a CFG
-  -- procedure cannot be claimed asserts-valid (and hence cannot be proven
-  -- `ProcedureCorrect`) until CFG bodies gain an executable semantics.  This
-  -- is sound against the current proofs because the only producer of
-  -- `ProcedureCorrect` (`procBodyVerify_procedureCorrect`) is gated on
-  -- `procToVerifyStmt` succeeding, which forces `proc.body = .structured _`
-  -- (see `procToVerifyStmt_is_structured`), so this arm is never entered.
-  | .cfg _ => False
+/-- Declarations in `p` that appear strictly before the procedure named
+    `entryProcName`. -/
+@[expose] def declsBefore (entryProcName : String) (p : Program) : List Decl :=
+  p.decls.takeWhile fun d =>
+    match d with
+    | .proc proc _ => proc.header.name.name != entryProcName
+    | _ => true
 
-/-- A procedure is correct with respect to its specification.
-
-    1. Every reachable assert in the procedure body evaluates to `true`
-       (`AssertValidInProcedure`);
-
-    2. Postcondition: When the procedure body terminates from a `ProcEnvWF`
-       initial environment, every non-free postcondition holds and
-       `hasFailure` stays `false`.
-
-    This is partial correctness: if the program has an infinite loop, the
-    postcondition is considered to be satisfied. Since total correctness is
-    a conjunction of partial correctness and termination, having partial
-    correctness-only definition here is useful.
-
-    A possibly more succinct style of ProcedureCorrect is using Hoare triple
-    (`Hoare.Triple` in Specification.lean). Since `Hoare.Triple` also uses
-    partial correctness, this seems natural. However, there is a very subtle
-    issue due to the fact that programs can also have `assert`s in the middle
-    of procedures, which leads `Hoare.Triple` to too weak notion to use for us.
-
-    For example, let's consider this program:
-
-    ```
-    procedure P()
-    spec { ensures false; }
-    { while true {};
-    };
-    ```
-
-    Since the program iterates indefinitely, the postcondition is considered
-    met in our partial correctness definition; hence the contract is true.
-    This is OK.
-
-    However, if we slightly extend the body of P to include `assert false`:
-
-    ```
-    procedure P()
-    spec { ensures false; }
-    { assert false; // -- A
-      while true {};
-    };
-    ```
-
-    We know that the assert A does not hold. However, if we use `Hoare.Triple` which
-    inspects asserts and postconditions *only if the code terminates*,
-    we end up accepting this procedure P as 'correct'.
-
-    Therefore, we define ProcedureCorrect as a structure with two fields:
-    (1) assert validity in the body, and
-    (2) postcondition validity on termination.
--/
-structure ProcedureCorrect (proc : Procedure) (p : Program) : Prop where
-  /-- (1) The asserts in the body of proc are valid. -/
-  assertsValid : ∀ a, AssertValidInProcedure π φ proc a
-  /-- (2) The postconditions hold on termination.
-      Uses `CoreBodyExec` to abstract over both structured and CFG bodies.
-      For structured bodies, the terminal eval `δ'` comes from the terminal
-      `Env` (may differ from `δ` due to `funcDecl` extensions). For CFG
-      bodies, `δ' = δ` since `CoreCFGStepStar` does not track eval changes. -/
-  postconditionsValid :
-    WF.WFProcedureProp p proc →
-    ∀ (ρ₀ : Env Expression),
-      ProcEnvWF proc ρ₀ →
-      ∀ (σ' : CoreStore) (δ' : CoreEval) (failed : Bool),
-        CoreBodyExec π φ proc.body ρ₀.store ρ₀.eval σ' δ' failed →
-        (∀ (label : CoreLabel) (check : Procedure.Check),
-          (label, check) ∈ proc.spec.postconditions.toList →
-          check.attr = Procedure.CheckAttr.Default →
-          δ' σ' check.expr = some HasBool.tt) ∧
-        failed = Bool.false
+/-- The initial environment `ρ₀` satisfies all axioms and `distinct`
+    declarations that appear in `p.decls` before the procedure named
+    `entryProcName`. -/
+@[expose] def AxiomsBeforeProcedureDecl
+    (entryProcName : String) (p : Program)
+    (ρ₀ : Imperative.Env Expression) : Prop :=
+  (declsBefore entryProcName p).foldr
+    (fun d acc =>
+      match d with
+      | .ax a _ =>
+          Expression.eval ρ₀.factory ρ₀.store a.e = some HasBool.tt ∧ acc
+      | .distinct _ es _ =>
+          List.Pairwise (fun e₁ e₂ =>
+            Expression.eval ρ₀.factory ρ₀.store e₁ ≠ Expression.eval ρ₀.factory ρ₀.store e₂) es ∧ acc
+      | _ => acc)
+    True
 
 end Core.Specification

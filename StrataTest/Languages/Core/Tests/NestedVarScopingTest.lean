@@ -13,14 +13,14 @@ meta section
 
 namespace Strata
 
-open Core
-
 def translatePgm (p : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram p)).fst
 
 ---------------------------------------------------------------------
 -- Regression test for issue #436: function declared in if-branches
--- should have correct bodies. Without the fix, the second function's
+-- should have correct bodies. The input intentionally retains `function`
+-- syntax; only the expected translated AST uses Lambda-valued `var`s.
+-- Without the fix, the second function's
 -- body captured variables from the then-branch instead of the else-branch.
 ---------------------------------------------------------------------
 
@@ -30,10 +30,10 @@ program Core;
 
 procedure test(cond : bool, x : int, y : int) {
   if (cond) {
-    function f(a : int) : int { a + x }
+    function f(a : int) : int { int.add(a, x) }
     var r1 : int := f(10);
   } else {
-    function f(a : int) : int { a + y }
+    function f(a : int) : int { int.add(a, y) }
     var r2 : int := f(20);
   }
 };
@@ -49,10 +49,10 @@ info: ok: program Core;
 procedure test (cond : bool, x : int, y : int)
 {
   if (cond) {
-    function f (a : int) : int { a + x }
+    var f : int -> int := fun a : int => int.add(a, x);
     var r1 : int := f(10);
   } else {
-    function f (a : int) : int { a + y }
+    var f : int -> int := fun a : int => int.add(a, y);
     var r2 : int := f(20);
   }
 };
@@ -107,7 +107,7 @@ procedure test ()
 #eval (Std.format (Core.typeCheck .default (translatePgm blockScopePgm).stripMetaData))
 
 ---------------------------------------------------------------------
--- Regression test for issue #445: function declaration statement
+-- Regression test for issue #445: internal `function` declaration syntax
 -- had wrong arg order and scope, causing the body, subsequent
 -- variable references, and function calls to resolve incorrectly.
 ---------------------------------------------------------------------
@@ -120,8 +120,8 @@ procedure test()
 {
   var x : int := 1;
   function safeDiv(y : int) : int
-    { y div x }
-  assert 5 div x > 0;
+    { int.div(y, x) }
+  assert int.gt(int.div(5, x), 0);
   var z : int := safeDiv(5);
 };
 
@@ -136,13 +136,58 @@ info: ok: program Core;
 procedure test ()
 {
   var x : int := 1;
-  function safeDiv (y : int) : int { y div x }
-  assert [assert_0]: 5 div x > 0;
+  var safeDiv : int -> int := fun y : int => int.div(y, x);
+  assert [assert_0]: int.gt(int.div(5, x), 0);
   var z : int := safeDiv(5);
 };
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm issue445Pgm).stripMetaData))
+
+---------------------------------------------------------------------
+-- A lowered function lives in Core's variable namespace. Preserve source
+-- shadowing by binding the DDM declaration to a fresh internal local name.
+---------------------------------------------------------------------
+
+def shadowedParameterPgm :=
+#strata
+program Core;
+
+procedure test(f : int, out result : int)
+spec {
+  ensures result == 3;
+}
+{
+  function f(x : int) : int { int.add(x, 1) }
+  result := f(2);
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+procedure test (f : int, out result : int)
+spec {
+  ensures [test_ensures_0]: result == 3;
+  } {
+  var $__localfn_f_0 : int -> int := fun x : int => int.add(x, 1);
+  result := $__localfn_f_0(2);
+};
+-/
+#guard_msgs in
+#eval (Std.format (Core.typeCheck .default (translatePgm shadowedParameterPgm).stripMetaData))
+
+/-- info:
+Obligation: test_ensures_0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify shadowedParameterPgm (options := .quiet)
 
 end Strata
 

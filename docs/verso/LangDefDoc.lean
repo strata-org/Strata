@@ -12,9 +12,10 @@ import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.StmtSemantics
 import Strata.DL.Imperative.KleeneStmt
 import Strata.DL.Imperative.KleeneStmtSemantics
+import Strata.DL.Imperative.BasicBlock
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.Semantics
+import Strata.DL.Lambda.OperationalSemantics
 import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.Denote.LExprDenote
 import Strata.DL.Lambda.Denote.LExprResolveAnnotated
@@ -36,7 +37,7 @@ open Verso.Genre.Manual.InlineLean
 set_option pp.rawOnError true
 set_option verso.docstring.allowMissing false
 
-#doc (Manual) "The Strata Core Language Definition" =>
+#doc (Manual) "The Strata Core Language Syntax" =>
 %%%
 shortTitle := "The Strata Core Language"
 %%%
@@ -104,10 +105,12 @@ The remainder of this document is structured as follows:
    building blocks.
 2. Section 4 describes how Strata Core assembles these blocks into a concrete
    verification language with procedures, type declarations, functions, axioms,
-   and programs.
-3. Section 5 describes the semantics of each layer — operational and
-   denotational for `Lambda`, and operational for `Imperative` — and how they
-   compose to give meaning to Strata Core programs.
+   lemmas, and programs.
+
+The semantics of each layer — operational and denotational for `Lambda`, and
+operational for `Imperative` — and how they compose to give meaning to Strata
+Core programs, are described in a companion document,
+[The Strata Core Language Semantics](https://github.com/strata-org/Strata/blob/main/docs/verso/LangSemDoc.lean).
 
 We do not consider the Core language set in stone. It may evolve over time,
 particularly to add new fundamental constructs, and this document will be
@@ -189,9 +192,9 @@ well-typed according to the {name LExpr.HasType}`HasType` relation.
 This relation depends on two contexts:
 
 1. {name LContext}`LContext`: information that is typically constant during
-   expression type checking, but may be extended during statement type checking
-   (e.g., when a `funcDecl` statement adds a new function to the factory).
-   This includes information about built-in functions, using the
+   expression type checking, but may be extended during statement type checking.
+   For example, a `typeDecl` statement adds a new type. This context also
+   includes information about built-in functions, using the
    {name Lambda.Factory}`Factory` type, and built-in types, using the
    {name TypeFactory}`TypeFactory` type. Built-in functions optionally include
    concrete evaluation functions, which can be used in the semantics described
@@ -209,10 +212,15 @@ the valid type of each expression form.
 
 {docstring Lambda.LExpr.HasType}
 
+After Lambda's type inference ({name LExpr.resolve}`LExpr.resolve`), the type-annotated
+expressions follow tighter typing rules which are defined by
+{name LExpr.HasTypeA}`LExpr.HasTypeA`. The rule doesn't require typing
+contexts.
+
 # Imperative
 
 The `Imperative` language is a standard core imperative calculus, parameterized
-by a type of expressions and divided into two pieces: commands and statements.
+by a type of expressions (`PureExpr`) and divided into two pieces: commands and statements.
 Commands represent atomic operations that do not induce control flow.
 Statements are parameterized by a command type and describe the control flow
 surrounding those commands. This parameterization allows clients of `Imperative`
@@ -243,9 +251,12 @@ arrangements, including sequencing, alternation, and iteration. Sequencing
 statements occurs by grouping them into blocks. Loops can be annotated with
 optional invariants and decreasing measures, which can be used for deductive
 verification. An `exit` statement transfers control out of the nearest
-enclosing block with a matching label. In addition, statements include
-`funcDecl` for local function declarations (which extend the expression
-evaluator within a scope) and `typeDecl` for local type declarations.
+enclosing block with a matching label. Statements also include `typeDecl` for
+local type declarations. Core concrete syntax may use an internal `function`
+declaration; translation lowers that syntax to an ordinary local variable
+initialization whose value is a `Lambda` abstraction. Internal declarations with
+type parameters or preconditions are not supported by this lowering, because
+`Lambda` abstractions do not represent those features.
 
 {docstring Imperative.Stmt}
 
@@ -264,6 +275,31 @@ of times (possibly zero). Conditions can be encoded when the command type
 includes assumptions.
 
 {docstring Imperative.KleeneStmt}
+
+## Control-Flow Graphs
+
+`Imperative` offers a control-flow graph (CFG) as well.
+A CFG is a flat collection of labeled basic blocks wired together by terminators
+(explicit jumps). This is the natural representation for
+lowering unstructured source languages and for interacting with backends that
+already think in terms of basic blocks and jumps.
+
+A {name Imperative.BasicBlock}`BasicBlock` is a straight-line list of body
+commands.
+
+{docstring Imperative.BasicBlock}
+
+{docstring Imperative.DetTransferCmd}
+
+{docstring Imperative.NondetTransferCmd}
+
+Specializing the transfer type gives the two block flavors,
+{name Imperative.DetBlock}`DetBlock` and {name Imperative.NondetBlock}`NondetBlock`.
+
+A {name Imperative.CFG}`CFG` then bundles an entry label with the graph's labeled
+blocks.
+
+{docstring Imperative.CFG}
 
 ## Metadata
 
@@ -291,6 +327,43 @@ And, finally, the metadata attached to an AST node consists of an array of
 metadata elements.
 
 {docstring Imperative.MetaData}
+
+## Instantiating Imperative
+
+Using the `Imperative` dialect for a concrete language requires filling in three
+pieces:
+
+1. *The expression parameter `PureExpr`*, defined in
+   `Strata/DL/Imperative/PureExpr.lean`.
+   A `PureExpr` bundles the types the dialect will use for identifiers,
+   expressions, types, metadata, typing environments, factories, and the
+   expression evaluator (`eval`). Instantiating `Imperative` starts by
+   constructing a `PureExpr` for the target language (Strata Core does this
+   with {name Core.Expression}`Core.Expression`).
+
+   {docstring Imperative.PureExpr}
+
+2. *Structural typeclasses on `PureExpr`.* `Imperative`'s commands and
+   statements need to inspect and manipulate expressions in generic ways —
+   extracting free variables, constructing Boolean/integer literals, negating
+   conditions, and so on. These operations are provided via typeclasses whose
+   names start with `Has` (e.g., {name Imperative.HasVarsImp}`HasVarsImp`),
+   defined in `Strata/DL/Imperative/PureExpr.lean` and
+   `Strata/DL/Imperative/HasVars.lean`. See
+   `Strata/Languages/Core/InstWellFormedSemanticsEval.lean` for Strata Core's
+   instantiations of these typeclasses.
+
+3. *Well-formedness of the evaluator.* The semantics rules assume the evaluator
+   supplied via `PureExpr.eval` respects a few sanity conditions on values,
+   variable lookups, and Boolean negation. These predicates, and the bundle
+   {name Imperative.WellFormedSemanticEval}`WellFormedSemanticEval` that packages
+   them, are described in the companion document, "The Strata Core Language
+   Semantics" (see its "Well-Formedness of the Evaluator" section).
+
+The Strata Core language, described next, is a worked example of an
+`Imperative` instantiation: it picks `Lambda` expressions for `PureExpr`,
+supplies the required `Has`-typeclass instances, and discharges the
+well-formedness conditions against `LExpr.evalFully`.
 
 # Strata Core
 
@@ -429,8 +502,17 @@ function Name<TypeArgs>(x₁ : T₁, ..., xₙ : Tₙ) : ReturnType
 };
 ```
 
-A function may be prefixed with `inline` to request inlining during the partial
-evaluation transform, when applied.
+A function may be prefixed with `inline` to allow its calls to be replaced by its
+body. Inlining is a request, not a guarantee. The `simplify` phase expands a call to an
+`inline` function only where the copy cannot compound: when every parameter the body
+uses more than once receives a closed value (a literal or a constructor applied to
+closed values) or a single variable or constant, or, for an argument that is a
+constructor application, when the expanded call folds to something smaller. Symbolic
+evaluation then expands a call only when all its arguments are closed values. So
+`dup(3)` still folds to `6`, while `dup(dup(y))` keeps its outer call. A call to a
+function with a precondition is never expanded. Calls to a function that takes,
+returns or builds a function value are always expanded, because expanding them is what
+removes the lambdas the SMT encoder cannot represent.
 
 ### Recursive Functions
 
@@ -539,7 +621,6 @@ on its `_terminates_` obligations.
 
 #### Current Limitations
 
-- Polymorphic recursive functions are not yet supported.
 - Recursive functions must be declared at the top level (not as local
   declarations inside procedures).
 - Only single-expression termination measures are supported; lexicographic
@@ -561,19 +642,76 @@ The concrete syntax is:
 axiom [label]: expression;
 ```
 
+An axiom may also list parameters, with optional triggers after them. This
+form is sugar for a universal quantifier over the parameters:
+
+```
+axiom [label] (x : int, y : int) { f(x, y) }: expression;
+// stands for
+axiom [label]: forall x : int, y : int :: { f(x, y) } expression;
+```
+
+## Lemmas
+
+A lemma is a proposition that must be proved. It is written like an axiom,
+with the keyword `lemma`, and accepts the same parameter list and triggers:
+
+```
+lemma [label]: expression;
+lemma [label] (x : int) { f(x) }: expression;
+```
+
+`lemma` is a keyword, like `axiom`; an identifier of that name is written
+`|lemma|`.
+
+Each lemma yields one proof obligation, checked under the axioms and
+`distinct` facts declared before it, like an assertion in a procedure. A lemma
+is never assumed when checking other declarations, so proving it does not make
+it available to later proofs. Its outermost universal quantifiers are checked
+over fresh free variables, so a failing lemma reports a counterexample for
+them.
+
+A lemma may take type parameters, written after its label as for a procedure:
+
+```
+lemma [label] <a> (x : a, xs : List a): expression;
+lemma [label] <a>: expression;
+```
+
+Such a lemma must hold at every type. It is checked with each type parameter
+replaced by a fresh opaque type, so its formula cannot constrain a type
+parameter to a particular type.
+
+Functions and procedures list the lemmas they depend on. The
+well-formedness checks of a function's or procedure's contract are generated
+as such lemmas, one per check: each states that the preconditions of a partial
+function call hold under the conditions written before it. Procedure filtering
+keeps a procedure's lemmas exactly when it keeps the procedure.
+
+Preconditions describe the state on entry, so in these lemmas an in-out
+parameter `g` named in a precondition stands for its entry value `old g`. A
+postcondition that reads `g` reads its final value, which the preconditions do
+not constrain: with `requires !(g == 0)`, the check for `int.safeDiv(y, g)` in a
+postcondition fails, while the check for `int.safeDiv(y, old g)` succeeds.
+
+A lemma written in the program gets the same checks for the partial calls in
+its own formula, as an assertion does. Generated lemmas are named after their
+checks, with a `_k` suffix when that name is already declared in the program.
+
 ## Commands and Statements
 
-Strata Core extends the generic `Imperative` commands with a procedure call
-command. A {name CmdExt}`CmdExt` is either a standard `Imperative.Cmd` or
-a `call` to a named procedure with a list of arguments.
+`Imperative` extends its own commands with a procedure call command. A
+{name CmdExt}`CmdExt` is either a standard `Imperative.Cmd` or a `call` to a
+named procedure with a list of arguments. Strata Core's `Command` is `CmdExt`
+instantiated at Core's expression type.
 
-{docstring Core.CmdExt}
+{docstring Imperative.CmdExt}
 
 Each call argument specifies whether the corresponding parameter is passed by
 value (input), by mutable reference (input-output), or as an output-only
 variable.
 
-{docstring Core.CallArg}
+{docstring Imperative.CallArg}
 
 A Strata Core `Statement` is an `Imperative.Stmt` parameterized by Core's
 expression type and extended command type. Strata provides convenience
@@ -656,17 +794,14 @@ call ProcName([out/inout] e₁, ..., [out/inout] eₙ);
 
 Note that `out` and `inout` keywords can only be attached when `eᵢ` is a variable.
 
-The semantics of a call are:
-
-1. Evaluate the argument expressions `e₁, ..., eₙ`.
-2. *Assert* each (non-free) precondition, substituting actuals for formals.
-3. *Havoc* the output variables `y₁, ..., yₘ`.
-4. *Assume* each postcondition, substituting actuals for formals and binding
-   `old v` to the value of `v` immediately before the call.
-5. Update the caller's state with the new values of the output variables.
-
-This enables *modular verification*: each procedure is verified
-against its contract independently, and callers reason only about the contract.
+A call's arguments must match the procedure's parameters, in order: an argument
+without a keyword for each input parameter, `inout x` for each `inout` parameter
+and `out x` for each `out` parameter. An `inout` parameter is passed as one
+variable, as in `call P(inout x)`, not as a value and a separate result, as in
+`call P(x, out x)`. The variables passed for a call's `out` and `inout` parameters
+must be distinct: a variable may not be passed for two results of the same call,
+as in `call P(out x, out x)` or `call P(inout x, out x)`. Strata rejects any other
+call.
 
 ### Body and verification
 
@@ -686,6 +821,7 @@ one of:
 
 - a type declaration (abstract type, type synonym, or algebraic datatype),
 - an axiom,
+- a lemma,
 - a `distinct` declaration (asserting that a list of expressions are pairwise distinct),
 - a procedure,
 - a (non-recursive) function, or
@@ -694,151 +830,3 @@ one of:
 {docstring Core.Decl}
 
 {docstring Core.Program}
-
-# Semantics
-
-This section describes the formal semantics of the Strata Core building blocks.
-The layers compose: `Lambda` expressions are reduced via small-step reduction
-or interpreted via a denotational semantics. Commands use an expression
-evaluator over a variable store. Statements thread configurations through
-commands, managing control flow.
-
-## Lambda Operational Semantics
-
-The operational semantics of the {name LExpr}`LExpr` type are specified using
-the small-step inductive relation {name Lambda.Step}`Lambda.Step`.
-This relation is parameterized by a `Factory`, which describes built-in
-functions via an optional body and/or evaluation function.
-
-{docstring Lambda.Step}
-
-Typically we will want to talk about arbitrarily long sequences of steps, such
-as from an initial expression to a value. The
-{name Lambda.StepStar}`Lambda.StepStar` relation describes the reflexive,
-transitive closure of the {name Lambda.Step}`Lambda.Step` relation.
-
-{docstring Lambda.StepStar}
-
-## Lambda Denotational Semantics
-
-In addition to the operational semantics, Strata provides a denotational
-semantics for `Lambda` that interprets well-typed expressions as Lean values.
-This enables reasoning about program meaning without stepping through
-individual reductions.
-
-The denotation maps monomorphic types to Lean types via _sorts_. A
-{name Lambda.LSort}`LSort` is a ground monomorphic type — an `LMonoTy` with no
-free type variables. The {name Lambda.SortDenote}`SortDenote` function interprets
-sorts into Lean types: built-in sorts (bool, int, real, string, bitvec, arrow)
-are mapped to their Lean counterparts, and all others are delegated to a
-user-provided type constructor interpretation
-({name Lambda.TyConstrInterp}`TyConstrInterp`).
-
-{docstring Lambda.LSort}
-
-{docstring Lambda.SortDenote}
-
-The denotation function `LExpr.denote` interprets a well-typed annotated
-expression into a Lean value of the appropriate type. It is parameterized by
-interpretations for type constructors, operators, and free variables. Each
-Lambda construct is denoted into the corresponding Lean one; for example, an
-if-then-else becomes a Lean if-then-else, a `forall` quantifier becomes a Lean
-`forall`, and so on. Since Lambda allows unbounded quantification and equality
-over arbitrary types, this denotation can be used only for reasoning, not for
-computation. Validity of a Lambda expression means that `LExpr.denote` evaluates
-to `true` under all possible interpretations.
-
-### Well-Annotated Output of Type Resolution
-
-The theorem `resolve_HasTypeA` establishes
-that when type inference (`LExpr.resolve`) succeeds, the resulting expression
-satisfies `HasTypeA` — i.e., the type annotations placed by resolution are
-internally consistent. This allows us to give well-defined denotations for all
-terms that pass the typechecker.
-
-### Consistency with Operational Semantics
-
-A key metatheoretic result is that the operational and denotational semantics
-agree. The theorem `Step.denote_preserved` states that a single evaluation step
-preserves the denotation of an expression. `StepStar.denote_preserved` lifts
-this to `StepStar`, showing that denotation is preserved across arbitrary
-reduction sequences.
-
-## Command Semantics
-
-The semantics of commands are specified in terms of how they interact with a
-program state. An execution environment ({name Imperative.Env}`Env`) bundles
-three components:
-
-1. A *store* mapping variables to their current values.
-2. An expression *evaluator*.
-3. A cumulative *failure flag* that is the disjunction of per-command assertion failures.
-
-{docstring Imperative.Env}
-
-Given a state, the {name InitState}`InitState` relation describes how a
-variable obtains its initial value, and the
-{name UpdateState}`UpdateState` relation describes how a variable's value can
-change.
-
-{docstring Imperative.InitState}
-
-{docstring Imperative.UpdateState}
-
-Given these state relations, the semantics of each command is specified in
-a standard way.
-
-{docstring Imperative.EvalCmd}
-
-## Structured Statement Semantics
-
-The semantics of the {name Stmt}`Stmt` type is defined in terms of
-*configurations*, represented by the {name Imperative.Config}`Config` type.
-
-{docstring Imperative.Config}
-
-The {name StepStmt}`StepStmt` relation describes how each type of statement
-transforms configurations. It is parameterized by a command evaluator and an
-`extendEval` function (used by `funcDecl` to add new function definitions to
-the expression evaluator within a scope).
-
-{docstring Imperative.StepStmt}
-
-The {name StepStmtStar}`Imperative.StepStmtStar` relation describes
-the reflexive, transitive closure of the {name StepStmt}`Imperative.StepStmt`
-relation.
-
-{docstring Imperative.StepStmtStar}
-
-## Non-deterministic Statement Semantics
-
-The semantics of {name KleeneStmt}`KleeneStmt` follow the same small-step
-pattern, with configurations ({name Imperative.KleeneConfig}`KleeneConfig`) that
-can be: executing a single statement, in a sequence context, or terminal.
-
-{docstring Imperative.KleeneConfig}
-
-The {name Imperative.StepKleene}`StepKleene` relation describes a single
-execution step for non-deterministic statements.
-
-{docstring Imperative.StepKleene}
-
-The {name Imperative.StepKleeneStar}`StepKleeneStar` relation is the reflexive,
-transitive closure.
-
-{docstring Imperative.StepKleeneStar}
-
-## Program-wide Semantics
-
-The per-component semantics above are linked to program-wide specifications via
-two key definitions in
-[`Specification.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Transform/Specification.lean):
-
-- `Hoare.Triple`: a partial-correctness triple `{Pre} s {Post}` stating that
-  if `Pre` holds on entry and the statement terminates, the postcondition holds
-  and no assertion has failed.
-- `AllAssertsValid`: universally quantifies over all assertion sites in a
-  statement, requiring each to hold on every reachable path.
-
-The two are shown equivalent by `hoareTriple_implies_assertValid` and
-`allAssertsValid_implies_hoareTriple`.

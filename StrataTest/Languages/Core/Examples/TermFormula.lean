@@ -47,16 +47,16 @@ program Core;
 rec function eval (@[cases] t : Term) : int
   {
     if Term..isLit(t) then Term..val(t)
-    else if Term..isAdd(t) then eval(Term..lhs(t)) + eval(Term..rhs(t))
-    else if Term..isNeg(t) then 0 - eval(Term..inner(t))
+    else if Term..isAdd(t) then int.add(eval(Term..lhs(t)), eval(Term..rhs(t)))
+    else if Term..isNeg(t) then int.sub(0, eval(Term..inner(t)))
     else if holds(Term..cond(t)) then eval(Term..thn(t))
     else eval(Term..els(t))
   }
 function holds (@[cases] f : Formula) : bool
   {
     if Formula..isEq(f) then eval(Formula..eqL(f)) == eval(Formula..eqR(f))
-    else if Formula..isLt(f) then eval(Formula..ltL(f)) < eval(Formula..ltR(f))
-    else if Formula..isLe(f) then eval(Formula..leL(f)) <= eval(Formula..leR(f))
+    else if Formula..isLt(f) then int.lt(eval(Formula..ltL(f)), eval(Formula..ltR(f)))
+    else if Formula..isLe(f) then int.le(eval(Formula..leL(f)), eval(Formula..leR(f)))
     else if Formula..isFNot(f) then !holds(Formula..inner(f))
     else if Formula..isFAnd(f) then holds(Formula..andL(f)) && holds(Formula..andR(f))
     else if Formula..isFOr(f) then holds(Formula..orL(f)) || holds(Formula..orR(f))

@@ -103,7 +103,6 @@ instance : LabelGen.WFLabelGen CoreIdent CoreGenState where
     simp [CoreGenState.WF, StringGenState.WF, Counter.WF]
   wf_gen := CoreGenState.WFMono
 
-@[expose]
 abbrev CoreGenM := StateM CoreGenState
 
 end

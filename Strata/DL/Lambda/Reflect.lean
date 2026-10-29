@@ -9,7 +9,7 @@ public meta import Std.Do.Triple.SpecLemmas
 public import Strata.DL.Lambda.LExpr
 public meta import Strata.DL.Lambda.LExprWF
 import Lean.Meta.AppBuilder
-import Strata.DL.Util.Map
+import Strata.Util.ListMapProps
 
 /-!
 ## Reflect Lambda expressions into Lean's Logic

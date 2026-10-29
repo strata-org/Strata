@@ -230,52 +230,14 @@ def extractCallsFromFunction (func : Function) : List String :=
   | some body => extractFunctionCallsFromExpr body
   | none => []
 
-/-- Extract procedure calls from a CmdExt -/
-def extractCallsFromCmdExt (cmd : Command) : List String :=
-  match cmd with
-  | .call procName _ _ => [procName]
-  | .cmd _ => []
-
-mutual
-/-- Extract procedure calls from a single statement -/
-def extractCallsFromStatement (stmt : Statement) : List String :=
-  match stmt with
-  | .cmd c => extractCallsFromCmdExt c
-  | .block _ body _ => extractCallsFromStatements body
-  | .ite _ thenBody elseBody _ =>
-    extractCallsFromStatements thenBody ++
-    extractCallsFromStatements elseBody
-  | .loop _ _ _ body _ => extractCallsFromStatements body
-  | .exit _ _ => []
-  | .funcDecl _ _ => []
-  | .typeDecl _ _ => []
-
-/-- Extract procedure calls from a list of statements -/
-def extractCallsFromStatements (stmts : List Statement) : List String :=
-  match stmts with
-  | [] => []
-  | s :: rest => extractCallsFromStatement s ++
-                 extractCallsFromStatements rest
-end
-
-/-- Extract procedure calls from a deterministic CFG -/
-def extractCallsFromDetCFG (cfg : DetCFG) : List String :=
-  cfg.blocks.flatMap fun (_, blk) =>
-    blk.cmds.flatMap extractCallsFromCmdExt
-
-/-- Extract all procedure calls from a procedure's body -/
-def extractCallsFromProcedure (proc : Procedure) : List String :=
-  match proc.body with
-  | .structured ss => extractCallsFromStatements ss
-  | .cfg c => extractCallsFromDetCFG c
-
-@[expose] abbrev ProcedureCG := CallGraph
-@[expose] abbrev FunctionCG := CallGraph
+abbrev ProcedureCG := CallGraph
+abbrev FunctionCG := CallGraph
 
 def Program.toProcedureCG (prog : Program) : ProcedureCG :=
   let procedures := prog.decls.filterMap (fun decl =>
     match decl with
-    | .proc p _ => some (CoreIdent.toPretty p.header.name, extractCallsFromProcedure p)
+    | .proc p _ =>
+      some (CoreIdent.toPretty p.header.name, p.callSites.map (·.procName))
     | _ => none)
   buildCallGraph procedures
 
@@ -321,7 +283,7 @@ def Program.functionImmediateAxiomMap (prog : Program) : FuncAxMap :=
   functionAxiomPairs.foldl
     (fun acc (funcName, ax) =>
       let existing := Option.getD (acc.get? funcName) []
-      acc.insert funcName (ax.name :: existing).dedup)
+      acc.insert funcName (ax.name :: existing).uniq)
     Std.HashMap.emptyWithCapacity
 
 /--
@@ -347,7 +309,7 @@ Terminates because each iteration strictly grows `discoveredAxioms`
 def computeRelevantAxioms (prog : Program) (cg : FunctionCG)
     (fmap : FuncAxMap) (allAxiomNames : List String)
     (relevantFunctions discoveredAxioms : List String) : List String :=
-  let newAxioms := relevantFunctions.flatMap (fun fn => fmap.getD fn []) |>.dedup
+  let newAxioms := relevantFunctions.flatMap (fun fn => fmap.getD fn []) |>.uniq
   let newAxioms := newAxioms.filter (fun a => a ∉ discoveredAxioms)
   if newAxioms.isEmpty then discoveredAxioms
   else if allAxiomNames.length ≤ discoveredAxioms.length then discoveredAxioms
@@ -364,8 +326,8 @@ def computeRelevantAxioms (prog : Program) (cg : FunctionCG)
       | none => [])
     -- Expand with call graph neighbors.
     let expandedFunctions := newFunctions.flatMap (fun fn =>
-      fn :: cg.getCalleesClosure fn ++ cg.getCallersClosure fn) |>.dedup
-    let updatedRelevantFunctions := (relevantFunctions ++ expandedFunctions).dedup
+      fn :: cg.getCalleesClosure fn ++ cg.getCallersClosure fn) |>.uniq
+    let updatedRelevantFunctions := (relevantFunctions ++ expandedFunctions).uniq
     computeRelevantAxioms prog cg fmap allAxiomNames updatedRelevantFunctions
                           newDiscoveredAxioms
 termination_by allAxiomNames.length - discoveredAxioms.length

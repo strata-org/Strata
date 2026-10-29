@@ -11,11 +11,6 @@ namespace Imperative
 
 public section
 
-/-! # Pure Expression Variable Lookup : HasVarsPure -/
-
-class HasVarsPure (P : PureExpr) (α : Type) where
-  getVars : α → List P.Ident
-
 /-! # Imperative Variable Lookup : HasVarsImp -/
 
 class HasVarsImp (P : PureExpr) (α : Type) where
@@ -33,6 +28,9 @@ class HasVarsImp (P : PureExpr) (α : Type) where
       (example: Stmt.definedVars) -/ →
     List P.Ident
   modifiedVars : α → List P.Ident
+  /-- Free variables read by the construct, i.e. the variables referenced in
+    the expressions it contains. -/
+  readVars : α → List P.Ident
 
 /-! # Operator/Function Name Lookup over Commands : HasOpsImp
 
@@ -42,29 +40,15 @@ parallel to `HasOps` for expressions. -/
 class HasOpsImp (P : PureExpr) (α : Type) where
   getOps : α → List P.Ident
 
----------------------------------------------------------------------
+/-! # Init-Type Lookup over Commands : HasInitTypesImp
 
-/-! # Procedure Aware Variable Lookup : HasVarsTrans -/
+`HasInitTypesImp` collects the declared types of the variable-initialization
+(`init`) commands a construct contains, parallel to `HasVarsImp` for the
+variables themselves. -/
 
-/--
-  Extends HasVarsImp, but transitively look up on the procedures
-  `modifiedVarsTrans` differs from `modifiedVars` by taking a procedure lookup function
-  Note: This is still not fully transitive, in the sense that if the procedure body contains call statement,
-  the procedures associated with those call statements won't be looked up.
-  The problem with fully transitive lookup is that it does not guarantee termination.
-  E.g. mutually recursive procedure calls
--/
-class HasVarsTrans
-  (P : PureExpr) (α : Type) (PT : Type)
-  where
-  definedVarsTrans : (String → Option PT) → α → List P.Ident
-  modifiedVarsTrans : (String → Option PT) → α → List P.Ident
-  getVarsTrans : (String → Option PT) → α → List P.Ident
-  modifiedOrDefinedVarsTrans : (String → Option PT) → α → List P.Ident
-  allVarsTrans : (String → Option PT) → α → List P.Ident
-  := λ π a ↦ modifiedVarsTrans π a ++ getVarsTrans π a
-
-@[expose] abbrev HasVarsProcTrans (P : PureExpr) (PT : Type) := HasVarsTrans P PT PT
+class HasInitTypesImp (P : PureExpr) (α : Type) where
+  /-- The declared types of the `init` commands contained in the construct. -/
+  initTypes : α → List P.Ty
 
 end -- public section
 end Imperative

@@ -20,14 +20,29 @@ inductive SynthesizedOrigin where
   | structuredToUnstructured
   deriving DecidableEq, Repr, Inhabited
 
+/-- Single source of truth mapping each `SynthesizedOrigin` to its string form.
+Exhaustive — the compiler forces a case for every constructor.
+When adding a new variant, also update `ofFormatString` below. -/
+def SynthesizedOrigin.formatString : SynthesizedOrigin → String
+  | .smtEncode => "smt-encode"
+  | .nondetIte => "nondet-ite"
+  | .laurelParse => "laurel-parse"
+  | .laurel => "laurel"
+  | .laurelToCore => "laurel-to-core"
+  | .structuredToUnstructured => "structured-to-unstructured"
+
 instance : Std.ToFormat SynthesizedOrigin where
-  format
-    | .smtEncode => "smt-encode"
-    | .nondetIte => "nondet-ite"
-    | .laurelParse => "laurel-parse"
-    | .laurel => "laurel"
-    | .laurelToCore => "laurel-to-core"
-    | .structuredToUnstructured => "structured-to-unstructured"
+  format o := o.formatString
+
+/-- Inverse of `formatString`. -/
+def SynthesizedOrigin.ofFormatString : String → Option SynthesizedOrigin
+  | "smt-encode" => some .smtEncode
+  | "nondet-ite" => some .nondetIte
+  | "laurel-parse" => some .laurelParse
+  | "laurel" => some .laurel
+  | "laurel-to-core" => some .laurelToCore
+  | "structured-to-unstructured" => some .structuredToUnstructured
+  | _ => none
 
 /-- Provenance tracks where an AST node originated from — either a real source
 location or a synthesized origin (e.g., from a translator or encoding pass). -/

@@ -25,7 +25,7 @@ procedure main()
 LAUREL
 
 # Run the full pipeline (strata → symtab2gb → goto-cc → goto-instrument → cbmc)
-cbmc_out=$(lake -d "$PROJECT_ROOT" env lean --run "$PROJECT_ROOT/Scripts/LaurelToCBMC.lean" "$WORK/test.lr.st" 2>&1 || true)
+cbmc_out=$(lake -d "$PROJECT_ROOT" env lean --run "$PROJECT_ROOT/StrataLaurel/Scripts/LaurelToCBMC.lean" "$WORK/test.lr.st" 2>&1 || true)
 
 # Verify CBMC output contains property summaries
 for summary in "addition equals eight" "difference equals two"; do

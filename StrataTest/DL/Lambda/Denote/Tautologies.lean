@@ -23,70 +23,6 @@ Because HashMaps do not reduce well in the kernel, this file uses
 
 namespace Lambda
 
-/-! ## Section 1: InterpConsistentEvalReduce
-
-`InterpConsistentEval` (from `LExprDenote.lean`) uses `LMonoTy.subst` which has a
-well-founded recursion guard that prevents definitional reduction. We restate it
-using `LMonoTy.substReduce` (structural recursion, no guard) so that ground-type
-instantiations reduce in the kernel. The conversion theorem bridges the two via
-`subst_eq_substReduce`, `denote_cast_ty`, `denoteArgs_cast_ty`, and `applyArgs_cast_ty`.
--/
-
-private def LFunc.InterpConsistentEvalReduce
-    {T : LExprParams}
-    (tcInterp : TyConstrInterp) (opInterp : OpInterp tcInterp)
-    (f : LFunc T) (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) : Prop :=
-  ∀ (vt : TyVarVal) (fvarVal : FreeVarVal T tcInterp)
-    (md : T.Metadata) (tySubst : Subst)
-    (argExprs : List (LExpr T.mono)) (resultExpr : LExpr T.mono),
-  ceval md argExprs = some resultExpr →
-  let instInputTys := (List.map Prod.snd f.inputs).map (LMonoTy.substReduce tySubst)
-  let instOutputTy := LMonoTy.substReduce tySubst f.output
-  let inputSorts := instInputTys.map (LMonoTy.substTyVars vt)
-  let outputSort := LMonoTy.substTyVars vt instOutputTy
-  let fullSort := LSort.mkArrow outputSort inputSorts
-  ∀ (h_args : List.Forall₂ (LExpr.HasTypeA []) argExprs instInputTys)
-    (h_result : LExpr.HasTypeA [] resultExpr instOutputTy),
-  LExpr.denote tcInterp opInterp fvarVal vt .nil resultExpr instOutputTy h_result =
-    SortDenote.applyArgs tcInterp (opInterp f.name.name fullSort)
-      (denoteArgs tcInterp opInterp fvarVal vt .nil argExprs instInputTys h_args)
-
-/--
-Equivalence of InterpConsistentEval (for proofs) and InterpConsistentEvalReduce
-(reduces in kernel). This involves messy dependent types and typecasts, but must
-only be done once: now ground types will automatically reduce in proofs
--/
-private theorem InterpConsistentEval_to_Simple
-    {T : LExprParams} [DecidableEq T.IDMeta]
-    (tcInterp : TyConstrInterp) (opInterp : OpInterp tcInterp)
-    (f : LFunc T) (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
-    (h : LFunc.InterpConsistentEval tcInterp opInterp f ceval)
-    : LFunc.InterpConsistentEvalReduce tcInterp opInterp f ceval := by
-  unfold Lambda.LFunc.InterpConsistentEval at h
-  unfold LFunc.InterpConsistentEvalReduce
-  intros vt fvarVal md tySubst argExprs resultExprs hceval instInputTys
-    instOutputTy inputSorts outputSorts fullSort
-  subst instOutputTy
-  intros h_args
-  have heq:= LMonoTy.subst_eq_substReduce tySubst f.output
-  intros h_result
-  have hty2 : LExpr.HasTypeA [] resultExprs (LMonoTy.subst tySubst f.output) := by rw [heq]; assumption
-  rw[denote_cast_ty (h_eq:=heq.symm) (h₂:=hty2)]
-  have heq2 : instInputTys = List.map (LMonoTy.subst tySubst) (List.map Prod.snd f.inputs) := by
-    subst instInputTys
-    induction (List.map Prod.snd f.inputs)
-    . simp
-    . rw[List.map_cons, List.map_cons]
-      congr 1
-      rw [LMonoTy.subst_eq_substReduce]
-  have hty3 : List.Forall₂ (LExpr.HasTypeA []) argExprs (List.map (LMonoTy.subst tySubst) (List.map Prod.snd f.inputs)) := by
-    rw[←heq2]; assumption
-  rw[denoteArgs_cast_ty (h_eq:=heq2) (h₂:=hty3)]
-  specialize (h vt fvarVal md tySubst argExprs resultExprs hceval hty3 hty2)
-  rw[h]
-  rw[applyArgs_cast_ty (h_args :=heq2.symm) (h_ret:=heq)]
-  grind
-
 private abbrev TP : LExprParams := ⟨Unit, Unit⟩
 private abbrev F : @Factory TP := @IntBoolFactory TP ⟨()⟩ ⟨()⟩
 
@@ -146,7 +82,7 @@ private abbrev mkNot_ty (ha : LExpr.HasTypeA Δ a boolTy) :
 /-! ### 1. True is valid -/
 
 private def trueExpr : LExpr TP.mono := .const m (.boolConst true)
-private def trueExpr_ty : LExpr.HasTypeA [] trueExpr boolTy := .const
+private theorem trueExpr_ty : LExpr.HasTypeA [] trueExpr boolTy := .const
 
 theorem valid_true : Valid F trueExpr trueExpr_ty := by
   intro I vt fvarVal
@@ -159,7 +95,7 @@ theorem valid_true : Valid F trueExpr trueExpr_ty := by
 private def eq_refl_bool : LExpr TP.mono :=
   .quant m .all "p" (some boolTy) trg (.eq m bv0 bv0)
 
-private def eq_refl_bool_ty : LExpr.HasTypeA [] eq_refl_bool boolTy :=
+private theorem eq_refl_bool_ty : LExpr.HasTypeA [] eq_refl_bool boolTy :=
   .quant .const (.eq (.bvar (by rfl)) (.bvar (by rfl)))
 
 theorem valid_eq_refl_bool : Valid F eq_refl_bool eq_refl_bool_ty := by
@@ -178,7 +114,7 @@ theorem valid_eq_refl_bool : Valid F eq_refl_bool eq_refl_bool_ty := by
 private def eq_refl_poly : LExpr TP.mono :=
   .quant m .all "x" (some (.ftvar "T")) trg (.eq m bv0 bv0)
 
-private def eq_refl_poly_ty : LExpr.HasTypeA [] eq_refl_poly boolTy :=
+private theorem eq_refl_poly_ty : LExpr.HasTypeA [] eq_refl_poly boolTy :=
   .quant .const (.eq (.bvar (by rfl)) (.bvar (by rfl)))
 
 theorem valid_eq_refl_poly : Valid F eq_refl_poly eq_refl_poly_ty := by
@@ -199,11 +135,11 @@ interpret as its Lean counterpart in any consistent interpretation. The proof
 strategy is:
 
 1. Extract `ceval` from `concreteEval` via `native_decide` membership/isSome proofs
-2. Convert `InterpConsistentEval` to `InterpConsistentEvalReduce` (Section 1)
+2. Take the operator's `InterpConsistentEval` from `I.interpConsistent`
 3. Rewrite factory fields (name, inputs, output) using `native_decide` lemmas
 4. Instantiate with concrete boolean constant expressions
-5. Since `substReduce` reduces definitionally on ground types, typing proofs (`.const`) work directly
-6. Use `change` to normalize the goal (substReduce is defeq but not syntactically reduced)
+5. Since `subst` reduces definitionally on ground types, typing proofs (`.const`) work directly
+6. Use `change` to normalize the goal (`subst` is defeq but not syntactically reduced)
 -/
 
 private abbrev boolBinSort : LSort :=
@@ -222,12 +158,9 @@ private theorem bool_and_interp (I : Interp F) :
     I.opInterp "Bool.And" boolBinSort
     = fun (p : Bool) (q : Bool) => Bool.and p q := by
   obtain ⟨ceval, h_ceval_eq⟩ := Option.isSome_iff_exists.mp bool_and_has_ceval
-  have h_ic := InterpConsistentEval_to_Simple I.tcInterp I.opInterp _ ceval
-    (I.interpConsistent.2 "Bool.And" bool_and_mem ceval h_ceval_eq)
-  -- Unfold and simplify factory fields
-  unfold LFunc.InterpConsistentEvalReduce at h_ic
+  have h_ic := I.interpConsistent.2 "Bool.And" bool_and_mem ceval h_ceval_eq
+  unfold LFunc.InterpConsistentEval at h_ic
   rw [bool_and_input_tys, bool_and_output, bool_and_name] at h_ic
-  -- Now h_ic uses substReduce which reduces definitionally on ground types
   funext p q
   have h_eval : ceval () [.boolConst () p, .boolConst () q]
       = some (.boolConst () (p && q)) := by
@@ -247,15 +180,12 @@ private theorem bool_and_interp (I : Interp F) :
       [.boolConst () p, .boolConst () q]
       (.boolConst () (p && q))
       h_eval
-  -- substReduce reduces definitionally on ground types. Provide typing proofs.
-  have h_args : List.Forall₂ (LExpr.HasTypeA (T := TP) [])
+  have h_args : List.Rel₂ (LExpr.HasTypeA (T := TP) [])
       [.boolConst () p, .boolConst () q]
       [.tcons "bool" [], .tcons "bool" []] :=
     .cons .const (.cons .const .nil)
   have h_result : LExpr.HasTypeA (T := TP) [] (.boolConst () (p && q)) (.tcons "bool" []) := .const
   have h_eq := h_inst h_args h_result
-  -- substReduce reduces definitionally but Lean displays it unreduced.
-  -- Use change to normalize the type in h_eq.
   change (p && q) = I.opInterp "Bool.And" boolBinSort p q at h_eq
   exact h_eq.symm
 
@@ -269,9 +199,8 @@ private theorem bool_implies_interp (I : Interp F) :
     I.opInterp "Bool.Implies" boolBinSort
     = fun (p : Bool) (q : Bool) => (!p || q) := by
   obtain ⟨ceval, h_ceval_eq⟩ := Option.isSome_iff_exists.mp bool_implies_has_ceval
-  have h_ic := InterpConsistentEval_to_Simple I.tcInterp I.opInterp _ ceval
-    (I.interpConsistent.2 "Bool.Implies" bool_implies_mem ceval h_ceval_eq)
-  unfold LFunc.InterpConsistentEvalReduce at h_ic
+  have h_ic := I.interpConsistent.2 "Bool.Implies" bool_implies_mem ceval h_ceval_eq
+  unfold LFunc.InterpConsistentEval at h_ic
   rw [bool_implies_input_tys, bool_implies_output, bool_implies_name] at h_ic
   funext p q
   have h_eval : ceval () [.boolConst () p, .boolConst () q]
@@ -292,7 +221,7 @@ private theorem bool_implies_interp (I : Interp F) :
       [.boolConst () p, .boolConst () q]
       (.boolConst () (!p || q))
       h_eval
-  have h_args : List.Forall₂ (LExpr.HasTypeA (T := TP) [])
+  have h_args : List.Rel₂ (LExpr.HasTypeA (T := TP) [])
       [.boolConst () p, .boolConst () q]
       [.tcons "bool" [], .tcons "bool" []] :=
     .cons .const (.cons .const .nil)
@@ -311,9 +240,8 @@ private theorem bool_or_interp (I : Interp F) :
     I.opInterp "Bool.Or" boolBinSort
     = fun (p : Bool) (q : Bool) => Bool.or p q := by
   obtain ⟨ceval, h_ceval_eq⟩ := Option.isSome_iff_exists.mp bool_or_has_ceval
-  have h_ic := InterpConsistentEval_to_Simple I.tcInterp I.opInterp _ ceval
-    (I.interpConsistent.2 "Bool.Or" bool_or_mem ceval h_ceval_eq)
-  unfold LFunc.InterpConsistentEvalReduce at h_ic
+  have h_ic := I.interpConsistent.2 "Bool.Or" bool_or_mem ceval h_ceval_eq
+  unfold LFunc.InterpConsistentEval at h_ic
   rw [bool_or_input_tys, bool_or_output, bool_or_name] at h_ic
   funext p q
   have h_eval : ceval () [.boolConst () p, .boolConst () q]
@@ -334,7 +262,7 @@ private theorem bool_or_interp (I : Interp F) :
       [.boolConst () p, .boolConst () q]
       (.boolConst () (p || q))
       h_eval
-  have h_args : List.Forall₂ (LExpr.HasTypeA (T := TP) [])
+  have h_args : List.Rel₂ (LExpr.HasTypeA (T := TP) [])
       [.boolConst () p, .boolConst () q]
       [.tcons "bool" [], .tcons "bool" []] :=
     .cons .const (.cons .const .nil)
@@ -353,9 +281,8 @@ private theorem bool_not_interp (I : Interp F) :
     I.opInterp "Bool.Not" boolUnSort
     = fun (p : Bool) => Bool.not p := by
   obtain ⟨ceval, h_ceval_eq⟩ := Option.isSome_iff_exists.mp bool_not_has_ceval
-  have h_ic := InterpConsistentEval_to_Simple I.tcInterp I.opInterp _ ceval
-    (I.interpConsistent.2 "Bool.Not" bool_not_mem ceval h_ceval_eq)
-  unfold LFunc.InterpConsistentEvalReduce at h_ic
+  have h_ic := I.interpConsistent.2 "Bool.Not" bool_not_mem ceval h_ceval_eq
+  unfold LFunc.InterpConsistentEval at h_ic
   rw [bool_not_input_tys, bool_not_output, bool_not_name] at h_ic
   funext p
   have h_eval : ceval () [.boolConst () p]
@@ -376,7 +303,7 @@ private theorem bool_not_interp (I : Interp F) :
       [.boolConst () p]
       (.boolConst () (!p))
       h_eval
-  have h_args : List.Forall₂ (LExpr.HasTypeA (T := TP) [])
+  have h_args : List.Rel₂ (LExpr.HasTypeA (T := TP) [])
       [.boolConst () p]
       [.tcons "bool" []] :=
     .cons .const .nil
@@ -403,7 +330,7 @@ private def and_elim_left : LExpr TP.mono :=
     (.quant m .all "q" (some boolTy) trg
       (mkImpl (mkAnd bv1 bv0) bv1))
 
-private def and_elim_left_ty : LExpr.HasTypeA [] and_elim_left boolTy :=
+private theorem and_elim_left_ty : LExpr.HasTypeA [] and_elim_left boolTy :=
   .quant .const
     (.quant .const
       (mkImpl_ty (mkAnd_ty (.bvar (by rfl)) (.bvar (by rfl))) (.bvar (by rfl))))
@@ -455,7 +382,7 @@ theorem valid_and_elim_left : Valid F and_elim_left and_elim_left_ty := by
   simp at h_bv1 h_bv3 h_bv4; subst h_bv1 h_bv3 h_bv4
   simp [boolBinTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op2 h_op4
   subst_vars
-  cases p <;> simp
+  cases p <;> cases q <;> rfl
 
 /-! ### 5. p → p ∨ q (or-introduction left): ∀ p q, p → (p ∨ q) -/
 
@@ -464,7 +391,7 @@ private def or_intro_left : LExpr TP.mono :=
     (.quant m .all "q" (some boolTy) trg
       (mkImpl bv1 (mkOr bv1 bv0)))
 
-private def or_intro_left_ty : LExpr.HasTypeA [] or_intro_left boolTy :=
+private theorem or_intro_left_ty : LExpr.HasTypeA [] or_intro_left boolTy :=
   .quant .const
     (.quant .const
       (mkImpl_ty (.bvar (by rfl)) (mkOr_ty (.bvar (by rfl)) (.bvar (by rfl)))))
@@ -508,7 +435,7 @@ theorem valid_or_intro_left : Valid F or_intro_left or_intro_left_ty := by
   simp at h_bv1 h_bv3 h_bv4; subst h_bv1 h_bv3 h_bv4
   simp [boolBinTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op2 h_op4
   subst_vars
-  cases p <;> simp
+  cases p <;> rfl
 
 /-! ### 6. Excluded middle: ∀ p, p ∨ ¬p -/
 
@@ -516,7 +443,7 @@ private def excluded_middle : LExpr TP.mono :=
   .quant m .all "p" (some boolTy) trg
     (mkOr bv0 (mkNot bv0))
 
-private def excluded_middle_ty : LExpr.HasTypeA [] excluded_middle boolTy :=
+private theorem excluded_middle_ty : LExpr.HasTypeA [] excluded_middle boolTy :=
   .quant .const
     (mkOr_ty (.bvar (by rfl)) (mkNot_ty (.bvar (by rfl))))
 
@@ -550,7 +477,7 @@ theorem valid_excluded_middle : Valid F excluded_middle excluded_middle_ty := by
   simp at h_bv2 h_bv3; subst h_bv2 h_bv3
   simp [boolBinTy, boolUnTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op2 h_op3
   subst_vars
-  cases p <;> simp
+  cases p <;> rfl
 
 /-! ### 7. Modus ponens: ∀ p q, p → (p → q) → q -/
 
@@ -559,7 +486,7 @@ private def modus_ponens : LExpr TP.mono :=
     (.quant m .all "q" (some boolTy) trg
       (mkImpl bv1 (mkImpl (mkImpl bv1 bv0) bv0)))
 
-private def modus_ponens_ty : LExpr.HasTypeA [] modus_ponens boolTy :=
+private theorem modus_ponens_ty : LExpr.HasTypeA [] modus_ponens boolTy :=
   .quant .const
     (.quant .const
       (mkImpl_ty (.bvar (by rfl))
@@ -611,7 +538,7 @@ theorem valid_modus_ponens : Valid F modus_ponens modus_ponens_ty := by
   have h_op6 := HasTypeA.op_inv h_fn6
   simp [boolBinTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op2 h_op4 h_op6
   subst_vars
-  cases p <;> simp
+  cases p <;> cases q <;> rfl
 
 /-! ### 8. Non-contradiction: ∀ p, ¬(p ∧ ¬p) -/
 
@@ -619,7 +546,7 @@ private def non_contradiction : LExpr TP.mono :=
   .quant m .all "p" (some boolTy) trg
     (mkNot (mkAnd bv0 (mkNot bv0)))
 
-private def non_contradiction_ty : LExpr.HasTypeA [] non_contradiction boolTy :=
+private theorem non_contradiction_ty : LExpr.HasTypeA [] non_contradiction boolTy :=
   .quant .const
     (mkNot_ty (mkAnd_ty (.bvar (by rfl)) (mkNot_ty (.bvar (by rfl)))))
 
@@ -658,7 +585,7 @@ theorem valid_non_contradiction : Valid F non_contradiction non_contradiction_ty
   have h_op4 := HasTypeA.op_inv h_fn4
   simp [boolBinTy, boolUnTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op1 h_op3 h_op4
   subst_vars
-  cases p <;> simp
+  cases p <;> rfl
 
 /-! ### 9. Double negation: ∀ p, ¬¬p = p -/
 
@@ -666,7 +593,7 @@ private def double_negation : LExpr TP.mono :=
   .quant m .all "p" (some boolTy) trg
     (.eq m (mkNot (mkNot bv0)) bv0)
 
-private def double_negation_ty : LExpr.HasTypeA [] double_negation boolTy :=
+private theorem double_negation_ty : LExpr.HasTypeA [] double_negation boolTy :=
   .quant .const
     (.eq (mkNot_ty (mkNot_ty (.bvar (by rfl)))) (.bvar (by rfl)))
 
@@ -707,7 +634,7 @@ theorem valid_double_negation : Valid F double_negation double_negation_ty := by
   have h_op2 := HasTypeA.op_inv h_fn2
   simp [boolUnTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op1 h_op2
   subst_vars
-  cases p <;> simp
+  cases p <;> rfl
 
 /-! ### 10. Existential witness: ∀ x : int, ∃ y : int, y = x -/
 
@@ -716,7 +643,7 @@ private def exist_witness : LExpr TP.mono :=
     (.quant m .exist "y" (some intTy) trg
       (.eq m bv0 bv1))
 
-private def exist_witness_ty : LExpr.HasTypeA [] exist_witness boolTy :=
+private theorem exist_witness_ty : LExpr.HasTypeA [] exist_witness boolTy :=
   .quant .const
     (.quant .const
       (.eq (.bvar (by rfl)) (.bvar (by rfl))))
@@ -747,7 +674,7 @@ private abbrev emptyF : @Factory TP := Factory.default
 private def all_p : LExpr TP.mono :=
   .quant m .all "p" (some boolTy) trg bv0
 
-private def all_p_ty : LExpr.HasTypeA [] all_p boolTy :=
+private theorem all_p_ty : LExpr.HasTypeA [] all_p boolTy :=
   .quant .const (.bvar (by rfl))
 
 private def trivialInterp : Interp emptyF where
@@ -770,8 +697,7 @@ theorem not_valid_all_p : ¬ Valid emptyF all_p all_p_ty := by
   have h_false := denote_quant_all_false (T := TP)
     (tcInterp := trivialInterp.tcInterp) (opInterp := trivialInterp.opInterp)
     (fvarVal := h_fv) (vt := fun _ => .tcons "bool" [])
-    .nil h_body all_p_ty (w := false) (by
-      rw [denote_bvar]; rfl)
+    .nil h_body all_p_ty (w := false) rfl
   simp only [all_p] at h_eq
   unfold boolTy at h_eq
   unfold LMonoTy.bool at *

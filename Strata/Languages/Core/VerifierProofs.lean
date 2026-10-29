@@ -132,5 +132,7 @@ theorem ResultKind.merge_le {a b c : ResultKind} (ha : a ≤ c) (hb : b ≤ c) :
     above transfer to the concrete function at the kind level. -/
 theorem merge_kind (a b : Core.SMT.Result) :
     (a.merge b).toKind = a.toKind.merge b.toKind := by
-  unfold Core.SMT.Result.merge
-  cases a <;> cases b <;> rfl
+  -- The unknown×unknown case requires a payload split on both Option fields
+  -- since the new model-preserving branches pattern-match on Some/None.
+  cases a <;> cases b <;> simp [Core.SMT.Result.merge, Core.SMT.Result.toKind, ResultKind.merge] <;>
+    (try (rename_i m₁ m₂; cases m₁ <;> cases m₂ <;> rfl))

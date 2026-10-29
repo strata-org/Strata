@@ -134,15 +134,7 @@ info: true
 
 /--
 info:
-Obligation: set_v_calls_RoseTree..val_0
-Property: assert
-Result: ✅ pass
-
 Obligation: valIs42
-Property: assert
-Result: ✅ pass
-
-Obligation: set_c_calls_RoseTree..children_0
 Property: assert
 Result: ✅ pass
 
@@ -155,10 +147,6 @@ Property: assert
 Result: ✅ pass
 
 Obligation: headIsNode
-Property: assert
-Result: ✅ pass
-
-Obligation: assert_headVal_calls_RoseTree..val_0
 Property: assert
 Result: ✅ pass
 
@@ -284,10 +272,6 @@ info: true
 
 /--
 info:
-Obligation: assert_valIs42_calls_RoseTree..val_0
-Property: assert
-Result: ✅ pass
-
 Obligation: valIs42
 Property: assert
 Result: ✅ pass
@@ -301,10 +285,6 @@ Property: assert
 Result: ✅ pass
 
 Obligation: assert_headVal_calls_Forest..head_0
-Property: assert
-Result: ✅ pass
-
-Obligation: assert_headVal_calls_RoseTree..val_1
 Property: assert
 Result: ✅ pass
 

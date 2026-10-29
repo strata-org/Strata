@@ -7,9 +7,19 @@ module
 
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.CFGSemantics
+public import Strata.DL.Imperative.StmtCFGCallSemantics
 public import Strata.Languages.Core.CoreGen
 public import Strata.Languages.Core.Procedure
 public import Strata.Languages.Core.Factory
+public import Strata.Languages.Core.InstWellFormedSemanticsEval
+public import Strata.DL.Lambda.LExprEval
+import Strata.DL.Lambda.OperationalSemanticsProps
+import all Strata.DL.Lambda.LExprEvalProps
+import all Strata.DL.Lambda.FactoryProps
+import all Strata.DL.Lambda.IntBoolFactory
+import all Strata.DL.Lambda.Factory
+import all Strata.DL.Util.FuncAttr
+public import Strata.Languages.Core.FactoryWF
 import Std.Tactic.BVDecide.Normalize.Prop
 
 ---------------------------------------------------------------------
@@ -18,162 +28,47 @@ public section
 
 namespace Core
 
-/-- expressions that can't be reduced when evaluating -/
-inductive Value : Core.Expression.Expr → Prop where
-  | const :  Value (.const () _)
-  | bvar  :  Value (.bvar () _)
-  | op    :  Value (.op () _ _)
-  | abs   :  Value (.abs () _ _ _)
-
 open Imperative
 
-instance : HasVal Core.Expression where value := Value
+-- ---------------------------------------------------------------------------
+-- From this point on, we define the inductive relations that specify Core
+-- statement/expression semantics: check evaluation, variable initialization
+-- and havoc, and command/body execution.  Expression-list evaluation and
+-- reading/updating/initializing stores are Imperative's `EvalExpressions`,
+-- `ReadValues`, `UpdateStates` and `InitStates`.  Core's call semantics is the
+-- generic one at `Expression`: `HavocVars`, `withOldSnapshots`, `InitCallFrame`,
+-- `defaultAssertEvents`, `assumeEvents`, `CallEntry`, `CallExit` and the event
+-- relations `EvalCommandE`, `CoreBodyExecE`, `EvalCommandContractE` are
+-- abbreviations of their `Imperative` counterparts.
+-- ---------------------------------------------------------------------------
 
-instance : HasFvar Core.Expression where
-  mkFvar := (.fvar () · none)
-  getFvar
-  | .fvar _ v _ => some v
-  | _ => none
+/-- Evaluate assertion-style checks for failure-flag call semantics, reporting
+whether any check evaluates to false. The explicit `isDefined` premises cover
+all syntactic free variables, including variables in branches that evaluation
+does not take. Event semantics records the checks with `defaultAssertEvents`
+instead. -/
+inductive EvalChecks (fac : Expression.Factory) (σ : CoreStore) :
+    List Expression.Expr → Bool → Prop where
+  | eval_none : EvalChecks fac σ [] false
+  | eval_pass :
+      isDefined σ (HasFvars.getFvars e) →
+      Expression.eval fac σ e = some HasBool.tt →
+      EvalChecks fac σ es failed →
+      EvalChecks fac σ (e :: es) failed
+  | eval_fail :
+      isDefined σ (HasFvars.getFvars e) →
+      Expression.eval fac σ e = some HasBool.ff →
+      EvalChecks fac σ es failed →
+      EvalChecks fac σ (e :: es) true
 
-instance : HasSubstFvar Core.Expression where
-  substFvar := Lambda.LExpr.substFvar
-  substFvars := Lambda.LExpr.substFvars
-
-instance : HasIdent Core.Expression where
-  ident s := ⟨s, ()⟩
-
-@[expose, match_pattern]
-def Core.true : Core.Expression.Expr := .boolConst () Bool.true
-@[expose, match_pattern]
-def Core.false : Core.Expression.Expr := .boolConst () Bool.false
-
-/-- Syntactic check for integer numeral literals in Core. -/
-def Core.isNumeral : Core.Expression.Expr → Bool
-  | .const _ (.intConst _) => Bool.true
-  | _ => Bool.false
-
-instance : HasBool Core.Expression where
-  tt := Core.true
-  ff := Core.false
-  tt_is_not_ff := by unfold Core.true Core.false; unfold Lambda.LExpr.boolConst; simp
-  boolTy := .forAll [] (.tcons "bool" [])
-  boolIsVal := ⟨Value.const, Value.const⟩
-
-theorem numeralHasNoVars_aux : ∀ (n : Core.Expression.Expr),
-    Core.isNumeral n = Bool.true →
-    HasFvars.getFvars (P := Core.Expression) n = []
-  | .const _ (.intConst _), _ => rfl
-  | .const _ (.boolConst _), hn => by simp [Core.isNumeral] at hn
-  | .const _ (.strConst _), hn => by simp [Core.isNumeral] at hn
-  | .const _ (.realConst _), hn => by simp [Core.isNumeral] at hn
-  | .const _ (.bitvecConst _ _), hn => by simp [Core.isNumeral] at hn
-  | .bvar _ _, hn => by simp [Core.isNumeral] at hn
-  | .fvar _ _ _, hn => by simp [Core.isNumeral] at hn
-  | .op _ _ _, hn => by simp [Core.isNumeral] at hn
-  | .abs _ _ _ _, hn => by simp [Core.isNumeral] at hn
-  | .quant _ _ _ _ _ _, hn => by simp [Core.isNumeral] at hn
-  | .app _ _ _, hn => by simp [Core.isNumeral] at hn
-  | .ite _ _ _ _, hn => by simp [Core.isNumeral] at hn
-  | .eq _ _ _, hn => by simp [Core.isNumeral] at hn
-
-instance : HasInt Core.Expression where
-  zero        := .intConst () 0
-  intTy       := .forAll [] (.tcons "int" [])
-  isNumeral   := Core.isNumeral
-  numeralIsValue n hn := by
-    show Value n
-    cases n with
-    | const m c =>
-      cases c with
-      | intConst _ => exact Value.const
-      | _ => simp [Core.isNumeral] at hn
-    | _ => simp [Core.isNumeral] at hn
-  zeroIsNumeral := by
-    show Core.isNumeral (.intConst () 0) = Bool.true
-    rfl
-  numeralHasNoFvars := numeralHasNoVars_aux
-
-instance : HasIntOps Core.Expression where
-  eq    e1 e2 := .eq () e1 e2
-  lt    e1 e2 := .app () (.app () Core.intLtOp e1) e2
-
-instance : HasBoolOps Core.Expression where
-  not
-  | Core.true => Core.false
-  | Core.false => Core.true
-  | e => Lambda.LExpr.app () (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
-  and e1 e2 := Lambda.LExpr.app () (Lambda.LExpr.app ()
-    (Lambda.boolAndFunc (T:=CoreLParams)).opExpr e1) e2
-  imp e1 e2 := Lambda.LExpr.app () (Lambda.LExpr.app ()
-    (Lambda.boolImpliesFunc (T:=CoreLParams)).opExpr e1) e2
-
-@[expose] abbrev CoreEval := SemanticEval Expression
-@[expose] abbrev CoreStore := SemanticStore Expression
-
-/-- If a compound expression is defined, its subexpressions are defined. -/
-structure WellFormedCoreEvalDefinedness (δ : CoreEval) : Prop where
-  absdef:   (∀ σ m name ty e, (δ σ (.abs m name ty e)).isSome → (δ σ e).isSome)
-  appdef:   (∀ σ m e₁ e₂, (δ σ (.app m e₁ e₂)).isSome → (δ σ e₁).isSome ∧ (δ σ e₂).isSome)
-  eqdef:    (∀ σ m e₁ e₂, (δ σ (.eq m e₁ e₂)).isSome → (δ σ e₁).isSome ∧ (δ σ e₂).isSome)
-  quantdef: (∀ σ m k name ty tr e, (δ σ (.quant m k name ty tr e)).isSome → (δ σ tr).isSome ∧ (δ σ e).isSome)
-  itedef:   (∀ σ m c t e, (δ σ (.ite m c t e)).isSome → (δ σ c).isSome ∧ (δ σ t).isSome ∧ (δ σ e).isSome)
-
-structure WellFormedCoreEvalCong (δ : CoreEval): Prop where
-    abscongr: (∀ σ σ' e₁ e₁' ,
-      δ σ e₁ = δ σ' e₁' →
-      (∀ m name ty, δ σ (.abs m name ty e₁) = δ σ' (.abs m name ty e₁')))
-    appcongr: (∀ σ σ' m e₁ e₁' e₂ e₂',
-      δ σ e₁ = δ σ' e₁' →
-      δ σ e₂ = δ σ' e₂' →
-      (δ σ (.app m e₁ e₂) = δ σ' (.app m e₁' e₂')))
-    eqcongr: (∀ σ σ' m e₁ e₁' e₂ e₂',
-      δ σ e₁ = δ σ' e₁' →
-      δ σ e₂ = δ σ' e₂' →
-      (δ σ (.eq m e₁ e₂) = δ σ' (.eq m e₁' e₂')))
-    quantcongr: (∀ σ σ' m k name ty e₁ e₁' e₂ e₂',
-      δ σ e₁ = δ σ' e₁' →
-      δ σ e₂ = δ σ' e₂' →
-      (δ σ (.quant m k name ty e₁ e₂) = δ σ' (.quant m k name ty e₁' e₂')))
-    itecongr: (∀ σ σ' m e₁ e₁' e₂ e₂' e₃ e₃',
-      δ σ e₁ = δ σ' e₁' →
-      δ σ e₂ = δ σ' e₂' →
-      δ σ e₃ = δ σ' e₃' →
-      (δ σ (.ite m e₃ e₁ e₂) = δ σ' (.ite m e₃' e₁' e₂')))
-    /-- Definedness-propagation properties for compound expressions. -/
-    definedness : WellFormedCoreEvalDefinedness δ
-
-inductive EvalExpressions {P} [HasFvars P] : SemanticEval P → SemanticStore P → List P.Expr → List P.Expr → Prop where
-  | eval_none :
-    EvalExpressions δ σ [] []
-  | eval_some :
-    isDefined σ (HasFvars.getFvars e) →
-    δ σ e = .some v →
-    EvalExpressions δ σ es vs →
-    EvalExpressions δ σ (e :: es) (v :: vs)
-
-inductive ReadValues : SemanticStore P → List P.Ident → List P.Expr → Prop where
-  | read_none :
-    ReadValues _ [] []
-  | read_some :
-    σ x = .some v →
-    ReadValues σ xs vs →
-    ReadValues σ (x :: xs) (v :: vs)
-
-inductive UpdateStates : SemanticStore P → List P.Ident → List P.Expr → SemanticStore P → Prop where
-  | update_none :
-    UpdateStates σ [] [] σ
-  | update_some :
-    UpdateState P σ x v σ' →
-    UpdateStates σ' xs vs σ'' →
-    UpdateStates σ (x :: xs) (v :: vs) σ''
-
-inductive InitStates : SemanticStore P → List P.Ident → List P.Expr → SemanticStore P → Prop where
-  | init_none :
-    InitStates σ [] [] σ
-  | init_some :
-    InitState P σ x v σ' →
-    InitStates σ' xs vs σ'' →
-    InitStates σ (x :: xs) (v :: vs) σ''
+/-- Every assumption in a failure-flag contract call is syntactically defined
+and evaluates to true. A false assumption admits no execution. Event semantics
+records the assumptions with `assumeEvents` instead. -/
+abbrev AssumeExprs (fac : Expression.Factory) (σ : CoreStore)
+    (es : List Expression.Expr) : Prop :=
+  Forall (fun e =>
+    isDefined σ (HasFvars.getFvars e) ∧
+    Expression.eval fac σ e = some HasBool.tt) es
 
 inductive InitVars : SemanticStore P → List P.Ident → SemanticStore P → Prop where
   | init_none :
@@ -183,13 +78,11 @@ inductive InitVars : SemanticStore P → List P.Ident → SemanticStore P → Pr
     InitVars σ' xs σ'' →
     InitVars σ (x :: xs) σ''
 
-inductive HavocVars : SemanticStore P → List P.Ident → SemanticStore P → Prop where
-  | update_none :
-    HavocVars σ [] σ
-  | update_some :
-    UpdateState P σ x v σ' →
-    HavocVars σ' xs σ'' →
-    HavocVars σ (x :: xs) σ''
+/-- Nondeterministically updates existing slots while preserving each slot's
+monomorphic runtime type: the generic `Calls.HavocVars`. -/
+abbrev HavocVars {P : PureExpr} [HasVal P] :
+    P.Factory → SemanticStore P → List P.Ident → SemanticStore P → Prop :=
+  Calls.HavocVars
 
 inductive TouchVars : SemanticStore P → List P.Ident → SemanticStore P → Prop where
   | none :
@@ -230,76 +123,61 @@ def updatedStates
   : SemanticStore P :=
   updatedStates' σ $ idents.zip vals
 
-/-- The evaluator handles old expressions correctly
--- It should specify the exact expression form that would map to the old store
--- This can be used to implement more general two-state functions, as in Dafny
--- https://dafny.org/latest/DafnyRef/DafnyRef#sec-two-state
--- where this condition will be asserted at procedures utilizing those two-state functions
--/
-def WellFormedCoreEvalTwoState (δ : CoreEval) (σ₀ σ : CoreStore) : Prop :=
-      (∃ vs vs' σ₁, HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) ∧
-      (∀ vs vs' σ₀ σ₁ σ,
-        (HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) →
-        ∀ v,
-          -- "old g" in the post-state holds the pre-state value of g
-          (v ∈ vs →
-            δ σ (.fvar () (CoreIdent.mkOld v.name) none) = σ₀ v) ∧
-          -- if the variable is not modified, "old g" is the same as g
-          (¬ v ∈ vs →
-            δ σ (.fvar () (CoreIdent.mkOld v.name) none) = σ v))
+/-- Core's `old` identifiers are the `"old "`-prefixed names (`CoreIdent.mkOld`). -/
+instance : HasOldIdent Expression where
+  mkOld g := CoreIdent.mkOld g.name
 
-/-! ### Closure Capture for Function Declarations -/
+/-- Extend a store with `old` snapshots: every `g ∈ snapshot` gains a binding of
+    `CoreIdent.mkOld g.name` to `g`'s current value. All other lookups, `g`
+    itself included, are unchanged.  The generic `Calls.withOldSnapshots` at
+    `Expression`. -/
+abbrev withOldSnapshots (snapshot : List Expression.Ident) (σ : CoreStore) : CoreStore :=
+  Calls.withOldSnapshots snapshot σ
 
-/--
-Build a list of substitutions from the store for the given identifiers.
-Returns pairs of (identifier, value) for each identifier that has a value in the store.
--/
-@[expose] def buildSubstitutions (σ : CoreStore) (ids : List Expression.Ident) : List (Expression.Ident × Expression.Expr) :=
-  ids.filterMap (fun id =>
-    match σ id with
-    | some v => some (id, v)
-    | none => none)
+/-- Initialize a callee-local frame without colliding with caller names.
 
-/--
-Apply closure capture to a function declaration by substituting current variable
-values into the function body and axioms. Variables that are function parameters
-are not substituted (they are bound, not free in the closure sense).
--/
-@[expose] def closureCapture
-    (σ : CoreStore) (decl : PureFunc Expression) : PureFunc Expression :=
-  let paramNames := decl.inputs.map (·.1)
-  -- Get free variables from body (if it exists), excluding parameters
-  let bodyFreeVars := match decl.body with
-    | some body => (HasFvars.getFvars body).filter (· ∉ paramNames)
-    | none => []
-  -- Get free variables from axioms, excluding parameters
-  let axiomFreeVars := decl.axioms.flatMap (fun ax =>
-    (HasFvars.getFvars ax).filter (· ∉ paramNames))
-  -- Combine and deduplicate
-  let allFreeVars := (bodyFreeVars ++ axiomFreeVars).eraseDups
-  -- Build substitutions from the store
-  let substs := buildSubstitutions σ allFreeVars
-  -- The replacement expressions must be closed (no dangling bvars).
-  { decl with
-    body := decl.body.map (fun b => HasSubstFvar.substFvars b substs)
-    axioms := decl.axioms.map (fun ax => HasSubstFvar.substFvars ax substs) }
+Input and inout formals are initialized from evaluated `inputVals`, and
+output-only formals from the current values of the corresponding caller `out`
+actuals. The frame also snapshots each inout formal as `old`, so postconditions
+mentioning `old g` are evaluable in the callee.  The generic
+`Calls.InitCallFrame` at `Expression`. -/
+abbrev InitCallFrame
+    (p : Procedure) (inputVals outOnlyVals : List Expression.Expr)
+    (σAO : CoreStore) : Prop :=
+  Calls.InitCallFrame p inputVals outOnlyVals σAO
 
-/--
-Extend the evaluator with a new function definition by capturing the closure.
-The closure capture substitutes current variable values from the store into
-the function body and axioms. The returned evaluator handles applications of
-the newly declared function by substituting arguments into the captured body.
+/-- Capture non-free specification clauses as assertion events at a semantic
+snapshot. Free clauses are not call-site obligations.  The generic
+`Calls.defaultAssertEvents` at `Expression`. -/
+abbrev defaultAssertEvents
+    (fac : Expression.Factory) (σ : CoreStore)
+    (checks : ListMap CoreLabel Procedure.Check) : Trace Expression :=
+  Calls.defaultAssertEvents fac σ checks
 
-Takes a parameter `φ` that specifies how to extend the evaluator with a captured
-closure (without the store, since closure capture is handled here).
--/
-@[expose] def EvalPureFunc (φ : CoreEval → PureFunc Expression → CoreEval) : Imperative.ExtendEval Expression :=
-  fun δ σ decl =>
-    let capturedDecl := closureCapture σ decl
-    φ δ capturedDecl
+/-- Capture every specification clause as an assumption event at a semantic
+snapshot. Contract postconditions, including free ones, constrain the abstract
+callee result.  The generic `Calls.assumeEvents` at `Expression`. -/
+abbrev assumeEvents
+    (fac : Expression.Factory) (σ : CoreStore)
+    (checks : ListMap CoreLabel Procedure.Check) : Trace Expression :=
+  Calls.assumeEvents fac σ checks
 
 /-- Core-level small-step configuration. -/
-@[expose] abbrev CoreConfig := Imperative.Config Expression Command
+abbrev CoreConfig := Imperative.Config Expression Command
+
+/-- Shared prologue of every call rule: evaluate the input and inout arguments,
+    read the caller's `out` variables, and build the collision-free callee frame.
+    The generic `Calls.CallEntry` at `Expression`. -/
+abbrev CallEntry (fac : Expression.Factory) (σ : CoreStore) (p : Procedure)
+    (callArgs : List (CallArg Expression)) (σAO : CoreStore) : Prop :=
+  Calls.CallEntry fac σ p callArgs σAO
+
+/-- Shared epilogue of every call rule: read the callee's output formals in its
+    final store and write them back positionally to the caller's `out`/`inout`
+    variables.  The generic `Calls.CallExit` at `Expression`. -/
+abbrev CallExit (fac : Expression.Factory) (σ : CoreStore) (p : Procedure)
+    (callArgs : List (CallArg Expression)) (σEnd σ' : CoreStore) : Prop :=
+  Calls.CallExit fac σ p callArgs σEnd σ'
 
 /-!
 ### Mutual inductive: `EvalCommand` and `CoreStepStar`
@@ -318,107 +196,118 @@ mutual
 /-- Reflexive-transitive closure of `StepStmt` for the Core language,
     defined mutually with `EvalCommand` to satisfy strict positivity. -/
 inductive CoreStepStar
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval) :
+    (π : String → Option Procedure) :
     CoreConfig → CoreConfig → Prop where
-  | refl : CoreStepStar π φ c c
+  | refl : CoreStepStar π c c
   | step :
-    Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ) c₁ c₂ →
-    CoreStepStar π φ c₂ c₃ →
+    Imperative.StepStmt Expression (EvalCommand π) c₁ c₂ →
+    CoreStepStar π c₂ c₃ →
     ----
-    CoreStepStar π φ c₁ c₃
+    CoreStepStar π c₁ c₃
 
 /-- Execution of a procedure body. Only structured bodies have an executable
     semantics; the `.cfg` arm of `Procedure.Body` has no inhabitant of
     `CoreBodyExec`.
 
+    The initial execution environment `ρ` carries the store, active factory,
+    and entry failure flag.
+
     For structured bodies, the body is wrapped in `Stmt.block "" ss #[]` so that
-    `funcDecl` extensions and other inner scoping introduced by the body do not
-    leak past the procedure boundary.  This wrapping mirrors
+    variable scoping introduced by the body does not leak past the procedure
+    boundary.  This wrapping mirrors
     `Specification.AssertValidInProcedure` and the `procToVerifyStmt` pipeline. -/
 inductive CoreBodyExec
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval) :
-    Procedure.Body → CoreStore → CoreEval → CoreStore → CoreEval → Bool → Prop where
-  | structured :
-    CoreStepStar π φ
-      (.stmt (Stmt.block "" ss #[]) ⟨σ, δ, false⟩)
+    (π : String → Option Procedure) :
+    Procedure.Body → Env Expression → CoreStore → Bool → Prop where
+  | structured {ss ρ ρ'} :
+    CoreStepStar π
+      (.stmt (Stmt.block "" ss #[]) ρ)
       (.terminal ρ') →
-    CoreBodyExec π φ (.structured ss) σ δ ρ'.store ρ'.eval ρ'.hasFailure
+    CoreBodyExec π (.structured ss) ρ ρ'.store ρ'.hasFailure
 
-inductive EvalCommand (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) : CoreEval →
-  CoreStore → Command → CoreStore → Bool → Prop where
-  | cmd_sem {δ σ c σ' f} :
-    Imperative.EvalCmd (P := Expression) δ σ c σ' f →
+/-- Core command semantics. The first relation index `fac` is the active
+    expression factory. -/
+inductive EvalCommand (π : String → Option Procedure) :
+  Expression.Factory → CoreStore → Command → CoreStore → Bool → Prop where
+  | cmd_sem {fac σ c σ' f} :
+    Imperative.EvalCmd (P := Expression) fac σ c σ' f →
     ----
-    EvalCommand π φ δ σ (CmdExt.cmd c) σ' f
+    EvalCommand π fac σ (CmdExt.cmd c) σ' f
 
-  /-- Arguments are matched positionally: `inArgs` (from `getInputExprs`)
-      aligns with `p.header.inputs`, and `lhs` (from `getLhs`) aligns
-      with `p.header.outputs`. -/
-  | call_sem {δ σ₀ σ inArgs vals oVals σA σAO n p modvals callArgs σ' σ_final δ_final failed md} :
+  /-- Arguments are matched positionally in three alignments: `inArgs`
+      (`getInputExprs`) ↔ `p.header.inputs`; `lhs` (`getLhs`) ↔
+      `p.header.outputs`; and `getOutArgs callArgs` ↔
+      `ListMap.keys p.header.getOutputOnlyParams`. The third alignment follows
+      from the second because every inout formal is passed as `.inoutArg`. -/
+  -- TODO: Instantiate procedure type variables for polymorphic calls.
+  | call_sem {fac σ n p callArgs σ' σ_final
+      bodyFailed preFailed postFailed md σAO} :
     π n = .some p →
-    -- inArg exprs + fvar refs for inoutArg ids
-    CallArg.getInputExprs callArgs = inArgs →
-    -- caller-side output variables (inout + out);
-    -- used by ReadValues and UpdateStates below
-    CallArg.getLhs callArgs = lhs →
-    EvalExpressions (P:=Expression) δ σ inArgs vals →
-    -- pre-call values of lhs, needed to init callee output params
-    ReadValues σ lhs oVals →
-    WellFormedSemanticEvalVal δ →
-    WellFormedSemanticEvalVar δ →
-    WellFormedSemanticEvalBool δ →
-    WellFormedCoreEvalTwoState δ σ₀ σ →
-    isDefinedOver (HasVarsTrans.allVarsTrans π) σ (Statement.call n callArgs md) →
-    -- positional: vals[i] initializes p.header.inputs[i]
-    InitStates σ (ListMap.keys (p.header.inputs)) vals σA →
-    -- positional: oVals[i] initializes p.header.outputs[i]
-    InitStates σA (ListMap.keys (p.header.outputs)) oVals σAO →
-    (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
-      isDefinedOver (HasFvars.getFvars) σAO pre ∧
-      δ σAO pre = .some HasBool.tt) →
-    CoreBodyExec π φ p.body σAO δ σ_final δ_final failed →
-    (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
-      isDefinedOver (HasFvars.getFvars) σAO post ∧
-      δ_final σ_final post = .some HasBool.tt) →
-    ReadValues σ_final (ListMap.keys (p.header.outputs)) modvals →
-    -- positional: modvals[i] written back to lhs[i]
-    UpdateStates σ lhs modvals σ' →
+    CallEntry fac σ p callArgs σAO →
+    EvalChecks fac σAO
+      (Procedure.Spec.getDefaultCheckExprs p.spec.preconditions) preFailed →
+    CoreBodyExec π p.body ⟨σAO, fac, false⟩ σ_final bodyFailed →
+    EvalChecks fac σ_final
+      (Procedure.Spec.getDefaultCheckExprs p.spec.postconditions) postFailed →
+    CallExit fac σ p callArgs σ_final σ' →
     ----
-    EvalCommand π φ δ σ (CmdExt.call n callArgs md) σ' false
+    EvalCommand π fac σ (CmdExt.call n callArgs md) σ'
+      ((preFailed || bodyFailed) || postFailed)
 
 end
 
+/-!
+### Mutual event semantics: `EvalCommandE` and `CoreBodyExecE`
+-/
+
+/-- Event-producing execution of a Core procedure body, structured or CFG: the
+    generic `BigStepE` at `Expression`. -/
+abbrev CoreBodyExecE
+    (π : String → Option Procedure) :
+    Procedure.Body → Env Expression → CoreStore → Trace Expression → Prop :=
+  BigStepE π
+
+/-- Event-producing Core command semantics: the generic `EvalCmdExtE` at
+    `Expression`.  Base commands delegate to `EvalCmdE`; a procedure call emits
+    its non-free preconditions as assertions, runs its body run-to-completion,
+    and emits its non-free postconditions as assertions. -/
+abbrev EvalCommandE
+    (π : String → Option Procedure) :
+    Expression.Factory → CoreStore → Command → CoreStore → Trace Expression → Prop :=
+  EvalCmdExtE π
+
+/-- Reflexive-transitive Core statement execution with chronological events. -/
+abbrev CoreStepStarE
+    (π : String → Option Procedure) :=
+  StepStmtExtStarE π
+
+/-- Core-level event-producing single-step relation. -/
+abbrev CoreStepE
+    (π : String → Option Procedure) :=
+  StepStmtExtE π
+
 /-- Core-level single-step relation. -/
-@[expose] abbrev CoreStep
-    (π : String → Option Procedure)
-    (φ : CoreEval → PureFunc Expression → CoreEval) :=
-  Imperative.StepStmt Expression (EvalCommand π φ) (EvalPureFunc φ)
+abbrev CoreStep
+    (π : String → Option Procedure) :=
+  Imperative.StepStmt Expression (EvalCommand π)
 
-@[expose] abbrev EvalStatement (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
+abbrev EvalStatement (π : String → Option Procedure) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmtSmall Expression (EvalCommand π φ) (EvalPureFunc φ)
+  Imperative.EvalStmtSmall Expression (EvalCommand π)
 
-@[expose] abbrev EvalStatements (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
+abbrev EvalStatements (π : String → Option Procedure) :
     Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmtsSmall Expression (EvalCommand π φ) (EvalPureFunc φ)
-
+  Imperative.EvalStmtsSmall Expression (EvalCommand π)
 
 /-! ## Old-variable environment augmentation -/
 
-/-- Augment an environment with old-variable bindings for the modifies clause.
-
-    For each `g ∈ modifies`, the store is extended so that
-    `(withOldBindings modifies ρ).store (CoreIdent.mkOld g.name) = ρ.store g`.
-    All other store lookups (including `g` itself) are unchanged.
-    The evaluator and `hasFailure` flag are preserved. -/
+/-- Augment an environment with old-variable bindings for a set of variables
+    whose pre-state values are snapshotted (the inout parameters / referenced
+    globals of a procedure). This is the environment-level counterpart of
+    `withOldSnapshots`; `hasFailure` is preserved. -/
 def withOldBindings
     (modifies : List Expression.Ident) (ρ : Env Expression) : Env Expression :=
-  { ρ with store := fun id =>
-      match modifies.find? (fun g => CoreIdent.mkOld g.name == id) with
-      | some g => ρ.store g
-      | none   => ρ.store id }
+  { ρ with store := withOldSnapshots modifies ρ.store }
 
 /-! ## Assert detection -/
 
@@ -432,80 +321,52 @@ def withOldBindings
     aid.label = label ∧ aid.expr = expr
   | .stmts ((.cmd (.cmd (.assert label expr _))) :: _) _, aid =>
     aid.label = label ∧ aid.expr = expr
-  | .stmt (.loop _ _ inv _ _) _, aid =>
-    (aid.label, aid.expr) ∈ inv
-  | .stmts ((.loop _ _ inv _ _) :: _) _, aid =>
-    (aid.label, aid.expr) ∈ inv
-  | .block _ _ _ inner, aid => coreIsAtAssert inner aid
+  | .block _ _ inner, aid => coreIsAtAssert inner aid
   | .seq inner _, aid => coreIsAtAssert inner aid
   | _, _ => False
 
-/-! ## Well-formed evaluator extension -/
-
-/-- A well-formed evaluator extension preserves `WellFormedSemanticEvalBool`
-    through `funcDecl` steps.  This is the only step that modifies the
-    evaluator; all other small-step rules leave it unchanged.
-
-    Concrete instantiations of `φ` (e.g., lookup-table extensions) should
-    prove this once at the instantiation site. -/
-structure WFEvalExtension (φ : CoreEval → Imperative.PureFunc Expression → CoreEval) : Prop where
-  preserves_wfBool : ∀ δ σ decl, Imperative.WellFormedSemanticEvalBool δ →
-    Imperative.WellFormedSemanticEvalBool (EvalPureFunc φ δ σ decl)
-  preserves_wfVar : ∀ δ σ decl, Imperative.WellFormedSemanticEvalVar δ →
-    Imperative.WellFormedSemanticEvalVar (EvalPureFunc φ δ σ decl)
-  preserves_wfCong : ∀ δ σ decl, WellFormedCoreEvalCong δ →
-    WellFormedCoreEvalCong (EvalPureFunc φ δ σ decl)
-  preserves_wfExprCongr : ∀ δ σ decl,
-    @Imperative.WellFormedSemanticEvalExprCongr Expression _ δ →
-    @Imperative.WellFormedSemanticEvalExprCongr Expression _ (EvalPureFunc φ δ σ decl)
-
 ---------------------------------------------------------------------
 
-inductive EvalCommandContract : (String → Option Procedure)  → CoreEval →
-  CoreStore → Command → CoreStore → Bool → Prop where
-  | cmd_sem {π δ σ c σ' f} :
-    Imperative.EvalCmd (P := Expression) δ σ c σ' f →
+inductive EvalCommandContract : (String → Option Procedure)  →
+  Expression.Factory → CoreStore → Command → CoreStore → Bool → Prop where
+  | cmd_sem {π fac σ c σ' f} :
+    Imperative.EvalCmd (P := Expression) fac σ c σ' f →
     ----
-    EvalCommandContract π δ σ (CmdExt.cmd c) σ' f
+    EvalCommandContract π fac σ (CmdExt.cmd c) σ' f
 
   /-- Contract-based semantics: like `EvalCommand.call_sem` but replaces
-      body execution with havoc + postcondition check.
+      body execution with havoc + postcondition assumptions.
       Same positional matching as `EvalCommand.call_sem`. -/
-  | call_sem {π δ σ σ₀ inArgs oVals vals σA σAO σO n p modvals callArgs σ' md} :
+  -- TODO: Instantiate procedure type variables for polymorphic calls.
+  | call_sem {π σ σO n p callArgs σ' preFailed md fac σAO} :
     π n = .some p →
-    CallArg.getInputExprs callArgs = inArgs →
-    CallArg.getLhs callArgs = lhs →
-    EvalExpressions (P:=Core.Expression) δ σ inArgs vals →
-    ReadValues σ lhs oVals →
-    WellFormedSemanticEvalVal δ →
-    WellFormedSemanticEvalVar δ →
-    WellFormedSemanticEvalBool δ →
-    WellFormedCoreEvalTwoState δ σ₀ σ →
-    isDefinedOver (HasVarsTrans.allVarsTrans π) σ (Statement.call n callArgs md) →
-    -- positional: vals[i] initializes p.header.inputs[i]
-    InitStates σ (ListMap.keys (p.header.inputs)) vals σA →
-    -- positional: oVals[i] initializes p.header.outputs[i]
-    InitStates σA (ListMap.keys (p.header.outputs)) oVals σAO →
-    (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
-      isDefinedOver (HasFvars.getFvars) σAO pre ∧
-      δ σAO pre = .some HasBool.tt) →
-    HavocVars σAO (ListMap.keys p.header.outputs) σO →
-    (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
-      isDefinedOver (HasFvars.getFvars) σAO post ∧
-      δ σO post = .some HasBool.tt) →
-    ReadValues σO (ListMap.keys (p.header.outputs)) modvals →
-    -- positional: modvals[i] written back to lhs[i]
-    UpdateStates σ lhs modvals σ' →
+    CallEntry fac σ p callArgs σAO →
+    EvalChecks fac σAO
+      (Procedure.Spec.getDefaultCheckExprs p.spec.preconditions) preFailed →
+    HavocVars fac σAO (ListMap.keys p.header.outputs) σO →
+    AssumeExprs fac σO (Procedure.Spec.getCheckExprs p.spec.postconditions) →
+    CallExit fac σ p callArgs σO σ' →
     ----
-    EvalCommandContract π δ σ (.call n callArgs md) σ' false
+    EvalCommandContract π fac σ (.call n callArgs md) σ' preFailed
 
-@[expose] abbrev EvalStatementContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
+/-- Event-producing contract abstraction for Core commands: the generic
+`EvalCmdExtContractE` at `Expression`.
+
+Base commands retain `EvalCmdE` behavior. A procedure call emits non-free
+preconditions as assertions at the initialized callee frame, havocs the output
+formals, and then emits every postcondition as an assumption at the post-havoc
+snapshot. No procedure body is executed. -/
+abbrev EvalCommandContractE (π : String → Option Procedure) :
+    Expression.Factory → CoreStore → Command → CoreStore → Trace Expression → Prop :=
+  EvalCmdExtContractE π
+
+abbrev EvalStatementContract (π : String → Option Procedure) :
     Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmtSmall Expression (EvalCommandContract π) (EvalPureFunc φ)
+  Imperative.EvalStmtSmall Expression (EvalCommandContract π)
 
-@[expose] abbrev EvalStatementsContract (π : String → Option Procedure) (φ : CoreEval → PureFunc Expression → CoreEval) :
+abbrev EvalStatementsContract (π : String → Option Procedure) :
     Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmtsSmall Expression (EvalCommandContract π) (EvalPureFunc φ)
+  Imperative.EvalStmtsSmall Expression (EvalCommandContract π)
 
 end Core
 

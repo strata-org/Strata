@@ -6,7 +6,8 @@
 module
 
 public import Strata.DL.SMT.Term
-import StrataDDM.Util.String
+public import Strata.DL.SMT.StringLit
+import Strata.DL.SMT.Symbol
 import Strata.DL.SMT.DDMTransform.Translate
 import Strata.Languages.Core.Options
 
@@ -25,14 +26,13 @@ works purely with `Term` values and delegates string rendering to the Solver via
 
 namespace Strata.SMT
 
-open StrataDDM (escapeSMTStringLit quoteIdent)
-
 public section
 
 inductive Decision where
   | sat
   | unsat
   | unknown
+  | timeout
 deriving DecidableEq, Repr
 
 /--
@@ -47,8 +47,14 @@ deriving DecidableEq, Repr
  by the standard for each command. The solver's stderr is inherited by the parent process (see `spawnSolver`),
  so diagnostic output goes directly to the verifier's stderr rather than
  through a field on this structure.
+
+ Writes to `smtLibInput` are buffered; every read-after-write boundary owns its flush
+ by construction, which is why construction is sealed to `spawn`, `withFileWriter`,
+ and `bufferWriter`: `spawn` wraps `smtLibOutput` so reads flush pending input first,
+ and `withFileWriter` flushes before the written file becomes visible to its caller.
 -/
 structure SMTLibSolver where
+  private mk ::
   smtLibInput : IO.FS.Stream
   smtLibOutput : Option IO.FS.Stream
 
@@ -74,10 +80,18 @@ abbrev SolverState.init := SMTLibSolverState.init
 
 /-- SMT-LIB solver monad. Renamed from `SolverM` to `SMTLibSolverM`
     to distinguish from the abstract solver interface. -/
-@[expose] abbrev SMTLibSolverM (α) := StateT SolverState (ReaderT Solver IO) α
+abbrev SMTLibSolverM (α) := StateT SolverState (ReaderT Solver IO) α
 
 /-- Backward-compatible alias for `SMTLibSolverM`. -/
 abbrev SolverM := SMTLibSolverM
+
+/-- SMT-LIB actions that distinguish serialization failures from ordinary IO
+errors. The underlying `SolverM` still carries process and filesystem errors. -/
+abbrev SolverEncodingM := ExceptT StringLit.EncodingError SolverM
+
+instance : MonadExceptOf IO.Error SolverEncodingM where
+  throw e := ExceptT.mk <| throwThe IO.Error e
+  tryCatch x handle := ExceptT.mk <| tryCatchThe IO.Error x handle
 
 def SolverM.run (solver : Solver) (x : SolverM α) (state : SolverState := SolverState.init) : IO (α × SolverState) :=
   ReaderT.run (StateT.run x state) solver
@@ -111,7 +125,15 @@ def spawn (path : String) (args : Array String) : IO SMTLibSolver := do
       cmd    := path
       args   := args
     }
-    return ⟨IO.FS.Stream.ofHandle proc.stdin, IO.FS.Stream.ofHandle proc.stdout⟩
+    let input := IO.FS.Stream.ofHandle proc.stdin
+    let rawOut := IO.FS.Stream.ofHandle proc.stdout
+    -- Reads flush pending input first as commands are buffered.
+    -- Otherwise we would deadlock as we will wait for a reply while
+    -- the command sits in the write buffer.
+    let output := { rawOut with
+      getLine := do input.flush; rawOut.getLine
+      read := fun n => do input.flush; rawOut.read n }
+    return ⟨input, some output⟩
   catch e =>
     let suggestion := if path == Core.defaultSolver || path.endsWith Core.defaultSolver then s!" Ensure {Core.defaultSolver} is on your PATH or use --solver to specify another SMT solver." else ""
     throw (IO.userError s!"could not execute external process '{path}'.{suggestion} Original error: {e}")
@@ -126,14 +148,24 @@ def solver : IO SMTLibSolver := do
   | .none      => throw (IO.userError "SOLVER environment variable not defined.")
 
 /--
-  Returns a solver that writes all issued commands to the given file handle `h`.
-  Commands that produce output, such as `checkSat`, write the command to `h` and
-  return values that are sound according to the SMTLIb spec (but generally not
-  useful). For example, `Solver.checkSat` returns `Decision.unknown`. This
-  function expects `h` to be write-enabled.
+  Run `act` with a write-only recorder that saves all issued commands to
+  `filename` as an SMT-LIB script. No solver runs behind it — nothing is
+  checked or solved. Commands that produce output, such as `checkSat`, are
+  recorded and return values that are sound per the SMT-LIB spec but generally
+  not useful (e.g. `Solver.checkSat` returns `Decision.unknown`). Used to dump
+  VC scripts to disk (e.g. `vcs/*.smt2`); see `bufferWriter` for the in-memory
+  equivalent.
+
+  The file is flushed before this returns — including on exception.
 -/
-def fileWriter (h : IO.FS.Handle) : IO SMTLibSolver :=
-  return ⟨IO.FS.Stream.ofHandle h, .none⟩
+def withFileWriter (filename : String) (act : SolverM α)
+    (state : SolverState := SolverState.init) : IO (α × SolverState) := do
+  let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
+  let solver : SMTLibSolver := ⟨IO.FS.Stream.ofHandle handle, .none⟩
+  try
+    SolverM.run solver act state
+  finally
+    handle.flush
 
 /--
   Returns a solver that writes all issued commands to the given buffer `b`.
@@ -144,30 +176,53 @@ def fileWriter (h : IO.FS.Handle) : IO SMTLibSolver :=
 def bufferWriter (b : IO.Ref IO.FS.Stream.Buffer) : IO SMTLibSolver :=
   return ⟨IO.FS.Stream.ofBuffer b, .none⟩
 
+/-- Run `act` with a write-only recorder that saves all issued commands to an
+    in-memory buffer, returning `act`'s result, the recorded SMT-LIB text, and
+    the updated solver state. No solver runs behind it — nothing is checked or
+    solved; see `withFileWriter` for the on-disk equivalent. -/
+def recordToString {α : Type} (act : SolverM α)
+    (state : SolverState := SolverState.init) : IO (α × String × SolverState) := do
+  let b ← IO.mkRef { : IO.FS.Stream.Buffer }
+  let solver ← bufferWriter b
+  let (a, state) ← SolverM.run solver act state
+  let contents ← b.get
+  if h : contents.data.IsValidUTF8 then
+    return (a, String.fromUTF8 contents.data h, state)
+  else
+    throw (IO.userError "recordToString: emitted SMT-LIB text is not valid UTF-8")
+
 /-! ## Internal helpers -/
 
+/-- Write one SMT-LIB line to the input stream. -/
 private def emitln (str : String) : SolverM Unit := do
   let solver ← read
-  solver.smtLibInput.putStr s!"{str}\n"
-  solver.smtLibInput.flush
+  solver.smtLibInput.putStr str
+  solver.smtLibInput.putStr "\n"
+
+/-- Flush the solver input stream. Read-after-write boundaries inside this
+    module own their flushes (see `emitln`); call this only when handing
+    buffered data to a reader this module cannot see (e.g. to make the
+    disk-write cost of a batch file visible as its own pipeline phase). -/
+def flush : SolverM Unit := do
+  (← read).smtLibInput.flush
 
 /-- Convert a `Term` to its SMT-LIB string, using the `SMTLibSolverState` cache. -/
-def termToSMTString (t : Term) : SolverM String := do
+def termToSMTString (t : Term) : SolverEncodingM String := do
   if let (.some s) := (← get).termStrings.get? t then return s
   match Strata.SMTDDM.termToString t with
   | .ok s =>
     modify fun st => { st with termStrings := st.termStrings.insert t s }
     return s
-  | .error msg => throw (IO.userError s!"Solver.termToSMTString failed: {msg}")
+  | .error msg => throwThe StringLit.EncodingError (.termSerialization msg)
 
 /-- Convert a `TermType` to its SMT-LIB string, using the `SMTLibSolverState` cache. -/
-def typeToSMTString (ty : TermType) : SolverM String := do
+def typeToSMTString (ty : TermType) : SolverEncodingM String := do
   if let (.some s) := (← get).typeStrings.get? ty then return s
   match Strata.SMTDDM.termTypeToString ty with
   | .ok s =>
     modify fun st => { st with typeStrings := st.typeStrings.insert ty s }
     return s
-  | .error msg => throw (IO.userError s!"Solver.typeToSMTString failed: {msg}")
+  | .error msg => throwThe StringLit.EncodingError (.typeSerialization msg)
 
 /-! ## String-based commands (less critical, kept as-is) -/
 
@@ -181,101 +236,127 @@ def setInfo (name value : String) : SolverM Unit :=
   emitln s!"(set-info :{name} {value})"
 
 /-- Emit `(set-info :name "...")` with the given *raw* Lean string as the
-    attribute value. The string is quoted and escaped per SMT-LIB 2.6+ rules
-    (via `Strata.escapeSMTStringLit`): embedded double quotes are doubled
-    (`""`) and non-printable characters use `\u{XXXX}` escapes. Callers must
-    NOT pre-quote or pre-escape the argument — use `setInfo` for already-
-    formatted attribute values (integers, s-expressions, etc.). -/
+    attribute value. Callers must not pre-quote or pre-escape the argument; use
+    `setInfo` for already-formatted attribute values. Because `set-info` is
+    diagnostic metadata rather than a semantic string term, code points outside
+    SMT-LIB's `String` alphabet are rendered as visible `<U+...>` markers. -/
 def setInfoString (name value : String) : SolverM Unit :=
-  emitln s!"(set-info :{name} {escapeSMTStringLit value})"
+  emitln s!"(set-info :{name} {StringLit.toDiagnosticSMTString value})"
 
 def comment (comment : String) : SolverM Unit :=
   let inline := comment.replace "\n" " "
   emitln s!"; {inline}"
 
 def getValue (ids : List String) : SolverM Unit :=
-  let ids := Std.Format.joinSep (ids.map quoteIdent) " "
+  let ids := Std.Format.joinSep (ids.map Symbol.toSMTString) " "
   emitln s!"(get-value ({ids}))"
 
 def declareSort (id : String) (arity : Nat) : SolverM Unit :=
-  emitln s!"(declare-sort {id} {arity})"
+  emitln s!"(declare-sort {Symbol.toSMTString id} {arity})"
 
 /-- Convert a single constructor to its SMT-LIB string representation. -/
-private def constructorToSMTString (c : SMTConstructor) : SolverM String := do
-  if c.args.isEmpty then return s!"({c.name})"
+private def constructorToSMTString (c : SMTConstructor) : SolverEncodingM String := do
+  let cName := Symbol.toSMTString c.name
+  if c.args.isEmpty then return s!"({cName})"
   else
     let fieldStrs ← c.args.mapM fun (name, ty) => do
       let tyStr ← typeToSMTString ty
-      return s!"({name} {tyStr})"
-    return s!"({c.name} {String.intercalate " " fieldStrs})"
+      return s!"({Symbol.toSMTString name} {tyStr})"
+    return s!"({cName} {String.intercalate " " fieldStrs})"
 
-def declareDatatype (id : String) (params : List String) (constructors : List SMTConstructor) : SolverM Unit := do
+def declareDatatype (id : String) (params : List String)
+    (constructors : List SMTConstructor) : SolverEncodingM Unit := do
   let cStrs ← constructors.mapM constructorToSMTString
   let cInline := "\n  " ++ String.intercalate "\n  " cStrs
-  let pInline := String.intercalate " " params
+  let pInline := String.intercalate " " (params.map Symbol.toSMTString)
   if params.isEmpty
-  then emitln s!"(declare-datatype {id} ({cInline}))"
-  else emitln s!"(declare-datatype {id} (par ({pInline}) ({cInline})))"
+  then emitln s!"(declare-datatype {Symbol.toSMTString id} ({cInline}))"
+  else emitln s!"(declare-datatype {Symbol.toSMTString id} (par ({pInline}) ({cInline})))"
 
 /-- Declare multiple mutually recursive datatypes. Each element is (name, params, constructors). -/
-def declareDatatypes (dts : List (String × List String × List SMTConstructor)) : SolverM Unit := do
+def declareDatatypes (dts : List (String × List String × List SMTConstructor)) :
+    SolverEncodingM Unit := do
   if dts.isEmpty then return
-  let sortDecls := dts.map fun (name, params, _) => s!"({name} {params.length})"
+  let sortDecls := dts.map fun (name, params, _) => s!"({Symbol.toSMTString name} {params.length})"
   let sortDeclStr := String.intercalate " " sortDecls
   let bodies ← dts.mapM fun (_, params, constrs) => do
     let cStrs ← constrs.mapM constructorToSMTString
     let cInline := String.intercalate " " cStrs
     if params.isEmpty then return s!"({cInline})"
     else
-      let pInline := String.intercalate " " params
+      let pInline := String.intercalate " " (params.map Symbol.toSMTString)
       return s!"(par ({pInline}) ({cInline}))"
   let bodyStr := String.intercalate "\n  " bodies
   emitln s!"(declare-datatypes ({sortDeclStr})\n  ({bodyStr}))"
 
 /-! ## Typed commands -/
 
+/-- Assert an already-rendered term string. -/
+def assertRendered (s : String) : SolverM Unit := do
+  let solver ← read
+  solver.smtLibInput.putStr "(assert "
+  solver.smtLibInput.putStr s
+  solver.smtLibInput.putStr ")\n"
+
 /-- Assert a `Term` (must be Bool-typed). Converts via the cached `termToSMTString`. -/
-def assert (t : Term) : SolverM Unit := do
-  let s ← termToSMTString t
-  emitln s!"(assert {s})"
+def assert (t : Term) : SolverEncodingM Unit := do
+  assertRendered (← termToSMTString t)
 
 /-- Assert a raw SMT-LIB identifier string (e.g. an abbreviated name like `"t0"`).
-    Used by the Encoder after ANF decomposition, where the term has already been
+    Used by the Encoder after common subexpression elim, where the term has already been
     broken into `define-fun` definitions and only the short name needs asserting. -/
 def assertId (id : String) : SolverM Unit :=
   emitln s!"(assert {id})"
 
 /-- Declare a constant with a typed `TermType`. -/
-def declareConst (id : String) (ty : TermType) : SolverM Unit := do
+def declareConst (id : String) (ty : TermType) : SolverEncodingM Unit := do
   let tyStr ← typeToSMTString ty
-  emitln s!"(declare-const {quoteIdent id} {tyStr})"
+  emitln s!"(declare-const {Symbol.toSMTString id} {tyStr})"
 
 /-- Declare a function with typed argument and return types. -/
-def declareFun (id : String) (argTys : List TermType) (retTy : TermType) : SolverM Unit := do
+def declareFun (id : String) (argTys : List TermType) (retTy : TermType) :
+    SolverEncodingM Unit := do
   let retStr ← typeToSMTString retTy
   if argTys.isEmpty then
-    emitln s!"(declare-const {quoteIdent id} {retStr})"
+    emitln s!"(declare-const {Symbol.toSMTString id} {retStr})"
   else
     let argStrs ← argTys.mapM typeToSMTString
     let inline := String.intercalate " " argStrs
-    emitln s!"(declare-fun {quoteIdent id} ({inline}) {retStr})"
+    emitln s!"(declare-fun {Symbol.toSMTString id} ({inline}) {retStr})"
 
 /-- Define a function with typed return type and a raw SMT-LIB string body.
     This is an internal helper; prefer `defineFunTerm` for Term-based bodies. -/
 def defineFun (id : String) (args : List (String × TermType)) (retTy : TermType)
-    (body : String) : SolverM Unit := do
+    (body : String) : SolverEncodingM Unit := do
   let typedArgs ← args.mapM fun (name, ty) => do
     let tyStr ← typeToSMTString ty
-    return s!"({quoteIdent name} {tyStr})"
+    return s!"({Symbol.toSMTString name} {tyStr})"
   let inline := String.intercalate " " typedArgs
   let retStr ← typeToSMTString retTy
-  emitln s!"(define-fun {quoteIdent id} ({inline}) {retStr} {body})"
+  emitln s!"(define-fun {Symbol.toSMTString id} ({inline}) {retStr} {body})"
 
 /-- Define a function where the body is given as a `Term` (converted via cache). -/
 def defineFunTerm (id : String) (args : List (String × TermType)) (retTy : TermType)
-    (body : Term) : SolverM Unit := do
+    (body : Term) : SolverEncodingM Unit := do
   let bodyStr ← termToSMTString body
   defineFun id args retTy bodyStr
+
+/-- Define a recursive function (`define-fun-rec`) with a raw SMT-LIB string
+    body that may refer to `id` itself. -/
+def defineFunRec (id : String) (args : List (String × TermType)) (retTy : TermType)
+    (body : String) : SolverEncodingM Unit := do
+  let typedArgs ← args.mapM fun (name, ty) => do
+    let tyStr ← typeToSMTString ty
+    return s!"({Symbol.toSMTString name} {tyStr})"
+  let inline := String.intercalate " " typedArgs
+  let retStr ← typeToSMTString retTy
+  emitln s!"(define-fun-rec {Symbol.toSMTString id} ({inline}) {retStr} {body})"
+
+/-- `defineFunRec` with the body given as a `Term`. -/
+def defineFunRecTerm (id : String) (args : List (String × TermType)) (retTy : TermType)
+    (body : Term) : SolverEncodingM Unit := do
+  let bodyStr ← termToSMTString body
+  defineFunRec id args retTy bodyStr
 
 /-! ## Solver control -/
 
@@ -318,8 +399,20 @@ def checkSatAssuming (assumptions : List String) (vars : List String) : SolverM 
 def reset : SolverM Unit :=
   emitln "(reset)"
 
-def exit : SolverM Unit :=
+/-- Push `n` assertion scopes. Buffered like all commands (see `emitln`);
+    delivery to a live solver happens at the next read. -/
+def push (n : Nat := 1) : SolverM Unit :=
+  emitln s!"(push {n})"
+
+/-- Pop `n` assertion scopes. See `push`. -/
+def pop (n : Nat := 1) : SolverM Unit :=
+  emitln s!"(pop {n})"
+
+def exit : SolverM Unit := do
   emitln "(exit)"
+  -- The reader here is the solver process itself: without a flush it never
+  -- receives the command and lingers until pipe EOF.
+  flush
 
 end Solver
 

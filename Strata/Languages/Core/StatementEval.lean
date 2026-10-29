@@ -6,6 +6,9 @@
 module
 
 import all Strata.Languages.Core.Statement
+import Strata.DL.Lambda.LExprType
+import Strata.Languages.Core.StatementType
+import Strata.Languages.Core.CallWF
 public import Strata.Languages.Core.CmdEval
 public import Strata.Languages.Core.Statistics
 public import Strata.DL.Imperative.StmtEval
@@ -24,7 +27,7 @@ namespace Core
 namespace Statement
 
 open Std (ToFormat Format format)
-open Lambda
+open Imperative
 
 ---------------------------------------------------------------------
 
@@ -37,7 +40,7 @@ instance : ToString CondType where
   | .Requires => "Requires"
   | .Ensures => "Ensures"
 
-private abbrev VarSubst := List ((Expression.Ident × Option Lambda.LMonoTy) × Expression.Expr)
+abbrev VarSubst := List ((Expression.Ident × Option Lambda.LMonoTy) × Expression.Expr)
 
 /--
 Create proof obligations and path conditions originating from
@@ -54,7 +57,7 @@ private def callConditions (proc : Procedure)
   let sm := subst.map (fun (x, v) => (x.fst, v))
   let exprs := List.map
                 (fun p =>
-                  { p with expr := LExpr.substFvars p.expr sm })
+                  { p with expr := Lambda.LExpr.substFvars p.expr sm })
                 conditions.values
   List.zip names exprs
 
@@ -80,9 +83,16 @@ For example, if we have `call x := Inc(8)` where `Inc` returns a variable named 
 Return mapping: `[("ret", fresh_var)]`
 LHS mapping: `[("x", fresh_var)]`
 -/
-private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : Env) :
+def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : Env) :
     VarSubst × VarSubst × Env :=
-  let lhs_tys := lhs.map (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
+  -- `lhs` and `proc.header.outputs` are positionally aligned and equal length:
+  -- type-checking enforces this arity (and the pipeline runs it before symbolic
+  -- evaluation), so the declared output type at position `i` is the slot type
+  -- for `lhs[i]`. On a caller-state miss, recover that declared type rather than
+  -- leaving the fresh var untyped (`none`), which would fail to encode.
+  let output_tys := proc.header.outputs.values
+  let lhs_tys := lhs.mapIdx fun i l =>
+    (E.exprEnv.state.findD l (none, .fvar () l none)).fst.orElse fun _ => output_tys[i]?
   let lhs_typed := lhs.zip lhs_tys
   let (lhs_fvars, E') := E.genFVars lhs_typed
   let return_tys := proc.header.outputs.keys.map
@@ -94,9 +104,9 @@ private def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : 
 
 /--
 Extract the type from an expression that has already been typechecked (so e.g.
-`.fvar` and `.op` nodes have their types stored in the `Option LMonoTy` field).
+`.fvar` and `.op` nodes have their types stored in the `Option Lambda.LMonoTy` field).
 -/
-private def getExprType (e : Expression.Expr) : Option LMonoTy :=
+private def getExprType (e : Expression.Expr) : Option Lambda.LMonoTy :=
   match e with
   | .fvar _ _ ty => ty
   | .op _ _ ty => ty
@@ -121,18 +131,18 @@ private def getExprType (e : Expression.Expr) : Option LMonoTy :=
 Compute type substitution by unifying actual argument types with input types
 and LHS types with output types.
 -/
-private def computeTypeSubst (input_tys output_tys: List LMonoTy)
+private def computeTypeSubst (input_tys output_tys: List Lambda.LMonoTy)
   (args : List Expression.Expr) (lhs : List Expression.Ident) (E : Env) :
-  Subst :=
+  Lambda.Subst :=
   let actual_tys := args.filterMap getExprType
   let lhs_tys := lhs.filterMap (fun l =>
     (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
   let input_constraints := actual_tys.zip input_tys
   let output_constraints := lhs_tys.zip output_tys
   let constraints := input_constraints ++ output_constraints
-  match Constraints.unify constraints SubstInfo.empty with
+  match Lambda.Constraints.unify constraints Lambda.SubstInfo.empty with
   | .ok substInfo => substInfo.subst
-  | .error _ => Subst.empty
+  | .error _ => Lambda.Subst.empty
 
 /--
 Evaluate a procedure call by inlining its contract.
@@ -154,17 +164,17 @@ def Command.inlineCallContract (E : Env)
 
     -- Apply type substitution to preconditions to instantiate type variables.
     let preconditions_typed := proc.spec.preconditions.map
-        (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
+        (fun (l, c) => (l, { c with expr := c.expr.applyTypeSubst tySubst }))
     -- Generate precondition proof obligations.
     let preconditions := callConditions proc .Requires preconditions_typed formal_arg_subst
     let preconditions := preconditions.map
-        (fun (l, e) => (l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
-    let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
+        (fun (l, e) => (l, Imperative.Check.mk (E.exprEval e.expr) e.attr e.md))
+    let deferred_pre := ProofObligations.createAssertions E.pathConditions.consume preconditions
     let E := { E with deferred := E.deferred ++ deferred_pre }
 
     -- Apply type substitution to postconditions to instantiate type variables.
     let postconditions_typed := proc.spec.postconditions.map
-        (fun (l, c) => (l, { c with expr := c.expr.applySubst tySubst }))
+        (fun (l, c) => (l, { c with expr := c.expr.applyTypeSubst tySubst }))
     -- For inout parameters (in both inputs and outputs), the output mapping
     -- to a fresh post-call variable is the correct one; remove the duplicate
     -- input mapping so there is no ambiguity.
@@ -199,6 +209,9 @@ def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command ×
     let (c, E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
     (.cmd c, E)
   | .call pname callArgs md =>
+    if let some msg := callError? E.program pname callArgs then
+      (c, CmdEval.updateError E (.Misc (illFormedCallText msg)))
+    else
     let lhs := CallArg.getLhs callArgs
     let inArgs := CallArg.getInputExprs callArgs
     Command.inlineCallContract E lhs pname inArgs md
@@ -217,7 +230,7 @@ def Statement.containsCmd (predicate : Imperative.Cmd Expression → Bool) (s : 
   | .ite _ then_ss else_ss _ => Statements.containsCmds predicate then_ss ||
                                 Statements.containsCmds predicate else_ss
   | .loop _ _ _ body_ss _ => Statements.containsCmds predicate body_ss
-  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => false  -- Function/type declarations and exits don't contain commands
+  | .exit _ _ | .typeDecl _ _ => false  -- Type declarations and exits don't contain commands
   termination_by Imperative.Stmt.sizeOf s
 
 /--
@@ -256,7 +269,7 @@ def Statement.collectCovers (s : Statement) : List (String × Imperative.MetaDat
   | .block _ inner_ss _ => Statements.collectCovers inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectCovers then_ss ++ Statements.collectCovers else_ss
   | .loop _ _ _ body_ss _ => Statements.collectCovers body_ss
-  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain cover commands
+  | .exit _ _ | .typeDecl _ _ => []  -- Type declarations and exits don't contain cover commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `cover` commands from statements `ss` with their labels and metadata.
@@ -280,7 +293,7 @@ def Statement.collectAsserts (s : Statement) : List (String × Imperative.MetaDa
   | .block _ inner_ss _ => Statements.collectAsserts inner_ss
   | .ite _ then_ss else_ss _ => Statements.collectAsserts then_ss ++ Statements.collectAsserts else_ss
   | .loop _ _ _ body_ss _ => Statements.collectAsserts body_ss
-  | .funcDecl _ _ | .exit _ _ | .typeDecl _ _ => []  -- Function/type declarations and exits don't contain assert commands
+  | .exit _ _ | .typeDecl _ _ => []  -- Type declarations and exits don't contain assert commands
   termination_by Imperative.Stmt.sizeOf s
 /--
 Collect all `assert` commands from statements `ss` with their labels and metadata.
@@ -304,7 +317,7 @@ private def createUnreachableCoverObligations
     Imperative.ProofObligations Expression :=
   covers.toArray.map
     (fun (label, md) =>
-      (Imperative.ProofObligation.mk label .cover pathConditions (LExpr.false ()) md))
+      (Imperative.ProofObligation.mk label .cover pathConditions (Lambda.LExpr.false ()) md))
 
 /--
 Create assert obligations for asserts in an unreachable (dead) branch, including
@@ -318,27 +331,7 @@ private def createUnreachableAssertObligations
   asserts.toArray.map
     (fun (label, md) =>
       let propType := Imperative.convertMetaDataPropertyType md
-      (Imperative.ProofObligation.mk label propType pathConditions (LExpr.true ()) md))
-
-/--
-Substitute free variables in an expression with their current values from the environment,
-excluding the given parameter names (which are bound by the function, not free).
-This implements value capture semantics for local function declarations (`funcDecl`).
-
-Unlike global functions (which are evaluated at the top level with no local state),
-local functions capture the values of free variables at the point of declaration.
-Parameters are excluded because they are bound by the function definition and should
-not be substituted with values from the enclosing scope.
--/
-def captureFreevars (env : Env) (paramNames : List CoreIdent) (e : Expression.Expr) : Expression.Expr :=
-  let freeVars := Lambda.LExpr.freeVars e
-  let freeVarsToCapture := freeVars.filter (fun fv => fv.fst ∉ paramNames)
-  -- The replacement expressions must be closed (no dangling bvars).
-  let sm := freeVarsToCapture.filterMap (fun fv =>
-    match env.exprEnv.state.find? fv.fst with
-    | some (_, val) => some (fv.fst, val)
-    | none => none)
-  Lambda.LExpr.substFvars e sm
+      (Imperative.ProofObligation.mk label propType pathConditions (Lambda.LExpr.true ()) md))
 
 /--
 An environment with an optional exit label.
@@ -373,7 +366,7 @@ private def collectDeadBranchDeferred
     Imperative.ProofObligations Expression :=
   if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
     let deadLabel := toString (f!"<dead_branch: {cond.eraseTypes}>")
-    let deadPathConds := pathConditions.push [.assumption deadLabel (LExpr.false ())]
+    let deadPathConds := pathConditions.push [.assumption deadLabel (Lambda.LExpr.false ())]
     createUnreachableCoverObligations deadPathConds (Statements.collectCovers ss_f) ++
     createUnreachableAssertObligations deadPathConds (Statements.collectAsserts ss_f)
   else
@@ -576,18 +569,22 @@ private def evalOneStmt (old_var_subst : SubstMap)
   | .ite cond then_ss else_ss _ =>
     match cond with
     | .nondet =>
-      let freshName : CoreIdent := ⟨s!"$__nondet_cond_{Ewn.env.pathConditions.length}", ()⟩
-      let freshVar : Expression.Expr := .fvar () freshName none
-      let initStmt := Statement.init freshName (.forAll [] (.tcons "bool" [])) .nondet (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
-      let iteStmt := Imperative.Stmt.ite (.det freshVar) then_ss else_ss (Imperative.MetaData.ofProvenance (.synthesized .nondetIte))
-      evalSub Ewn [initStmt, iteStmt] nextSplitId
+      -- A nondeterministic `if *` must be eliminated (by the `nondetElim`
+      -- transform) before symbolic evaluation. Reject it so the failure
+      -- surfaces rather than producing an incomplete obligation set.
+      ([{ Ewn with
+            env := { Ewn.env with error := some (.Misc
+              f!"nondeterministic `if *` reached symbolic evaluation; run the \
+                 nondetElim transform to eliminate nondeterministic control first") },
+            exitLabel := .none }],
+        noStats, nextSplitId)
     | .det c =>
       let cond' := Ewn.env.exprEval c
       match cond' with
       | .true _ | .false _ =>
         let (ss_live, ss_dead) :=
           if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
-        let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions
+        let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions.consume
         let (Ewns, liveStats, nextSplitId) := evalSub Ewn ss_live nextSplitId
         match Ewns with
         | [] => ([], liveStats, nextSplitId)
@@ -596,26 +593,11 @@ private def evalOneStmt (old_var_subst : SubstMap)
               deadDeferred ++ first.env.deferred } :: restEwns, liveStats, nextSplitId)
       | _ => processBranches Ewn c cond' then_ss else_ss nextSplitId
   | .loop _ _ _ _ _ =>
-    panic! "Cannot evaluate `loop` statement. \
-            Please transform your program to eliminate loops before \
-            calling Core.Statement.evalAux"
-  | .funcDecl decl _ =>
-    let paramNames := decl.inputs.map (·.1)
-    let func : Lambda.LFunc CoreLParams := {
-      name := decl.name,
-      typeArgs := decl.typeArgs,
-      isConstr := decl.isConstr,
-      inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty)),
-      output := Lambda.LTy.toMonoTypeUnsafe decl.output,
-      body := decl.body.map (captureFreevars Ewn.env paramNames),
-      attr := decl.attr,
-      concreteEval := decl.concreteEval,
-      axioms := decl.axioms.map (captureFreevars Ewn.env paramNames)
-    }
-    match Ewn.env.addFactoryFunc func with
-    | .ok env' => ([{ Ewn with env := env' }], noStats, nextSplitId)
-    | .error e =>
-      ([{ Ewn with env := { Ewn.env with error := some (.Misc f!"{e}") } }], noStats, nextSplitId)
+    -- Symbolic evaluation requires `noLoops`; a loop here is reported as an
+    -- error rather than a panic.
+    ([{ Ewn with env := { Ewn.env with error := some (.Misc
+        f!"cannot evaluate a `loop` statement: eliminate loops before symbolic \
+           evaluation") } }], noStats, nextSplitId)
   | .typeDecl _ _ => ([Ewn], noStats, nextSplitId)
   | .exit l _ => ([{ Ewn with exitLabel := .some l}], noStats, nextSplitId)
 
@@ -672,7 +654,7 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   let label_false := toString (f!"<label_ite_cond_false: !({cond.eraseTypes})>")
   let path_conds_true := Ewn.env.pathConditions.push [.assumption label_true cond']
   let path_conds_false := Ewn.env.pathConditions.push
-                            [.assumption label_false (Lambda.LExpr.ite () cond' (LExpr.false ()) (LExpr.true ()))]
+                            [.assumption label_false (Lambda.LExpr.ite () cond' (Lambda.LExpr.false ()) (Lambda.LExpr.true ()))]
   have : 1 <= Imperative.Block.sizeOf then_ss := by
    unfold Imperative.Block.sizeOf; split <;> omega
   have : 1 <= Imperative.Block.sizeOf else_ss := by
@@ -767,39 +749,25 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
     | some proc =>
       if proc.body.isAbstract then CmdEval.updateError E (.Misc s!"procedure '{proc.header.name}' has no body")
       else
-        match args.mapM (LExpr.run E.exprEnv) with
+        match args.mapM (Lambda.LExpr.run E.exprEnv) with
         | .error s => CmdEval.updateError E (.Misc s)
         | .ok argVals =>
-          let formalBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+          let formalBindings : List (CoreIdent × (Option Lambda.LMonoTy × Expression.Expr)) :=
             proc.header.inputs.keys.zip proc.header.inputs.values |>.zip argVals
             |>.map fun ((name, ty), val) => (name, (some ty, val))
           if argVals.length != proc.header.inputs.keys.length then
             CmdEval.updateError E (.Misc s!"procedure '{procName}': expected {proc.header.inputs.keys.length} arguments, got {argVals.length}")
           else
-            let outputBindings : List (CoreIdent × (Option LMonoTy × Expression.Expr)) :=
+            let outputBindings : List (CoreIdent × (Option Lambda.LMonoTy × Expression.Expr)) :=
               proc.header.outputs.keys.zip proc.header.outputs.values
-              |>.map fun (name, ty) => (name, (some ty, LExpr.fvar () name none))
+              |>.map fun (name, ty) => (name, (some ty, Lambda.LExpr.fvar () name none))
             let callEnv : Env := { E with
               exprEnv := { E.exprEnv with
                 state := [formalBindings ++ outputBindings] } }
             let ops : Imperative.RunOps Expression Command Env := {
               evalExpr := fun E e =>
-                some (e.eval E.exprEnv.config.fuel E.exprEnv)
+                some (Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv e).fst
               evalCmd := Command.run fuel'
-              extendEval := fun E decl =>
-                match E.addFactoryFunc {
-                  name := decl.name
-                  typeArgs := decl.typeArgs
-                  isConstr := decl.isConstr
-                  inputs := decl.inputs.map (fun (id, ty) => (id, Lambda.LTy.toMonoTypeUnsafe ty))
-                  output := Lambda.LTy.toMonoTypeUnsafe decl.output
-                  body := decl.body
-                  attr := decl.attr
-                  concreteEval := decl.concreteEval
-                  axioms := decl.axioms
-                } with
-                | .ok E' => E'
-                | .error _ => E
               pushScope := fun E => E.pushEmptyScope
               popScope := fun E => E.popScope
               hasError := fun E => E.error.isSome
@@ -812,9 +780,10 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
                 Imperative.runStmt ops fuel' config
               | .cfg _ =>
                 .terminal (CmdEval.updateError callEnv
-                  (.Misc s!"procedure '{procName}': CFG bodies not supported yet"))
+                  (.Misc "CFG bodies not supported yet"))
             match configAfter with
             | .terminal callEnv' =>
+              let E := { E with assertFailures := callEnv'.assertFailures }
               match callEnv'.error with
               | some _ => { E with error := callEnv'.error }
               | none =>
@@ -822,17 +791,22 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
                   CmdEval.updateError E (.Misc s!"procedure '{procName}': expected {proc.header.outputs.keys.length} output arguments, got {lhs.length}")
                 else
                   let outputVals := proc.header.outputs.keys.map fun name =>
-                    (callEnv'.exprEnv.state.findD name (none, LExpr.fvar () name none)).snd
+                    (callEnv'.exprEnv.state.findD name (none, Lambda.LExpr.fvar () name none)).snd
                   lhs.zip outputVals |>.foldl (fun env (name, val) =>
                     env.insertInContext (name, none) val) E
-            | _ => CmdEval.updateError E (.Misc "failed to terminate")
+            | cfg => CmdEval.updateError
+                { E with assertFailures := cfg.state.assertFailures }
+                (.Misc "failed to terminate")
 
 def Command.run (fuel : Nat) (E : Env) (c : Command) : Env :=
   match c with
   | .cmd c =>
     Imperative.Cmd.run E c
   | .call pname args _md =>
-    Command.runCall (CallArg.getLhs args) pname (CallArg.getInArgs args) fuel E
+    if let some msg := callError? E.program pname args then
+      CmdEval.updateError E (.Misc (illFormedCallText msg))
+    else
+    Command.runCall (CallArg.getLhs args) pname (CallArg.getInputExprs args) fuel E
 
 end
 

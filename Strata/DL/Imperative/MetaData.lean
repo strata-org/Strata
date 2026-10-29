@@ -4,13 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
 
 public import Strata.DL.Imperative.PureExpr
-public import Strata.DL.Util.DecidableEq
+public import Strata.Util.DecidableEq
 public import Strata.Util.Provenance
 
 namespace Imperative
-open Strata (DiagnosticModel DiagnosticType FileRange Provenance Uri SourceRange)
+open Strata (Message MessageKind FileRange Provenance Uri SourceRange)
 
 public section
 
@@ -130,8 +131,11 @@ structure MetaDataElem (P : PureExpr) where
   /-- The value of the metadata. -/
   value : MetaDataElem.Value P
 
+instance : Inhabited (MetaDataElem P) :=
+  ⟨{ fld := .label "", value := .switch false }⟩
+
 /-- Metadata is an array of tagged elements. -/
-@[expose] abbrev MetaData (P : PureExpr) := Array (MetaDataElem P)
+abbrev MetaData (P : PureExpr) := Array (MetaDataElem P)
 
 @[expose]
 def MetaData.empty {P : PureExpr} : MetaData P := #[]
@@ -154,6 +158,9 @@ def MetaData.findElem {P : PureExpr} [BEq P.Ident]
 def MetaDataElem.beq {P : PureExpr} [DecidableEq P.Ident] [DecidableEq P.Expr]
   (e1 e2 : MetaDataElem P) : Bool := e1.fld.beq e2.fld && e1.value.beq e2.value
 
+instance [DecidableEq P.Ident] [DecidableEq P.Expr] : BEq (MetaDataElem P) where
+  beq := MetaDataElem.beq
+
 theorem MetaDataElem.beq_eq {P : PureExpr} [DecidableEq P.Ident] [DecidableEq P.Expr]
   (e1 e2 : MetaDataElem P) : MetaDataElem.beq e1 e2 = true ↔ e1 = e2 := by
   unfold MetaDataElem.beq
@@ -161,6 +168,12 @@ theorem MetaDataElem.beq_eq {P : PureExpr} [DecidableEq P.Ident] [DecidableEq P.
 
 instance [DecidableEq P.Ident] [DecidableEq P.Expr] : DecidableEq (MetaDataElem P) :=
   beq_eq_DecidableEq MetaDataElem.beq MetaDataElem.beq_eq
+
+-- Lawfulness lets `==` on `MetaData P` (= `Array (MetaDataElem P)`) rewrite to
+-- `=` when proving `beq_eq` for types with a metadata field.
+instance [DecidableEq P.Ident] [DecidableEq P.Expr] : LawfulBEq (MetaDataElem P) where
+  eq_of_beq h := (MetaDataElem.beq_eq _ _).mp h
+  rfl := (MetaDataElem.beq_eq _ _).mpr rfl
 
 instance [ToFormat (MetaDataElem.Field P)] [ToFormat (MetaDataElem.Value P)] :
     ToFormat (MetaDataElem P) where
@@ -180,6 +193,16 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 @[match_pattern]
 abbrev MetaData.provenanceField : MetaDataElem.Field P := .label "provenance"
 
+/-- Marks a procedure as a producer-chosen entry point for concrete
+    interpretation (see `laurelInterpret`). Carried as a `.switch true`
+    value; has no effect on verification.
+
+    Not to be confused with `Core.EntryPoint`, which is the verifier's
+    target-selector (`.main | .roots | .all`) and is unrelated to the
+    concrete interpreter. -/
+@[match_pattern]
+abbrev MetaData.interpretEntry : MetaDataElem.Field P := .label "interpretEntry"
+
 @[match_pattern]
 abbrev MetaData.reachCheck : MetaDataElem.Field P := .label "reachCheck"
 @[match_pattern]
@@ -188,6 +211,10 @@ abbrev MetaData.fullCheck : MetaDataElem.Field P := .label "fullCheck"
 abbrev MetaData.validityCheck : MetaDataElem.Field P := .label "validityCheck"
 @[match_pattern]
 abbrev MetaData.satisfiabilityCheck : MetaDataElem.Field P := .label "satisfiabilityCheck"
+
+/-- Key names for check-related metadata fields. -/
+def MetaData.checkKeys : Std.HashSet String :=
+  Std.HashSet.ofList ["reachCheck", "fullCheck", "validityCheck", "satisfiabilityCheck"]
 
 def MetaData.hasReachCheck {P : PureExpr} [BEq P.Ident] (md : MetaData P) : Bool :=
   match md.findElem MetaData.reachCheck with
@@ -242,19 +269,19 @@ def MetaData.ofProvenance {P : PureExpr} (p : Provenance) : MetaData P :=
 def MetaData.ofSourceRange {P : PureExpr} (uri : Uri) (sr : SourceRange) : MetaData P :=
   MetaData.ofProvenance (Provenance.ofSourceRange uri sr)
 
-/-- Create a DiagnosticModel from metadata and a message.
+/-- Create a Message from metadata and a message.
     Uses provenance or file range from metadata if available, otherwise uses a default location. -/
-def MetaData.toDiagnostic {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : String) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
+def MetaData.toDiagnostic {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : String) (type : MessageKind := MessageKind.userError): Message :=
   match getProvenance md with
-  | some (.loc uri range) => DiagnosticModel.withRange { file := uri, range } msg type
-  | some (.synthesized _) => DiagnosticModel.fromMessage msg type
-  | none => DiagnosticModel.fromMessage msg type
+  | some (.loc uri range) => Message.withRange { file := uri, range } msg type
+  | some (.synthesized _) => Message.fromString msg type
+  | none => Message.fromString msg type
 
-/-- Create a DiagnosticModel from metadata and a Format message. -/
-def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : Std.Format) (type : DiagnosticType := DiagnosticType.UserError): DiagnosticModel :=
+/-- Create a Message from metadata and a Format message. -/
+def MetaData.toDiagnosticF {P : PureExpr} [BEq P.Ident] (md : MetaData P) (msg : Std.Format) (type : MessageKind := MessageKind.userError): Message :=
   MetaData.toDiagnostic md (toString msg) type
 
-/-- Get the file range from metadata as a DiagnosticModel (for formatting).
+/-- Get the file range from metadata as a Message (for formatting).
     This is a compatibility function that formats the file range using byte offsets.
     For proper line/column display, use toDiagnostic and format with a FileMap at the top level. -/
 def MetaData.formatFileRangeD {P : PureExpr} [BEq P.Ident] (md : MetaData P) (fileMap : Option Lean.FileMap := none) (includeEnd? : Bool := false) : Format :=
@@ -292,6 +319,27 @@ private def getRelatedProvenances {P : PureExpr} [BEq P.Ident] (md: MetaData P) 
 def MetaData.eraseAllElems {P : PureExpr} [BEq P.Ident]
     (md : MetaData P) (fld : MetaDataElem.Field P) : MetaData P :=
   md.filter (fun e => !(e.fld == fld))
+
+/-- Label for a per-loop-invariant source provenance. Loop lowering stores one
+    such element per invariant, in invariant order, so that loop elimination can
+    attribute each invariant's verification condition to the specific invariant's
+    source location rather than to the whole loop. -/
+def MetaData.invariantProvenanceLabel : String := "invariantProvenance"
+
+/-- Append a loop invariant's provenance to metadata. These are appended in
+    invariant order. Note this matches on the `.label` constructor directly, so
+    it needs no `BEq P.Ident` instance. -/
+def MetaData.pushInvariantProvenance {P : PureExpr} (md : MetaData P) (p : Provenance) : MetaData P :=
+  md.push { fld := .label MetaData.invariantProvenanceLabel, value := .provenance p }
+
+/-- Get all per-invariant provenances from metadata, in the order they were
+    pushed (matching the loop's invariant order). -/
+def MetaData.getInvariantProvenances {P : PureExpr} (md : MetaData P) : Array Provenance :=
+  md.filterMap fun elem =>
+    match elem.fld, elem.value with
+    | .label l, .provenance p =>
+      if l == MetaData.invariantProvenanceLabel then some p else none
+    | _, _ => none
 
 /-- Replace the primary provenance with a new one, shifting existing related
     provenances and prepending the old primary provenance. -/
@@ -344,6 +392,10 @@ def MetaData.getPropertySummary {P : PureExpr} [BEq P.Ident] (md : MetaData P) :
 /-- Push a property summary into metadata. -/
 def MetaData.withPropertySummary {P : PureExpr} (md : MetaData P) (msg : String) : MetaData P :=
   md.pushElem MetaData.propertySummary (.msg msg)
+
+/-- Key names for property-related metadata fields (checks + propertyType/propertySummary). -/
+def MetaData.propertyKeys : Std.HashSet String :=
+  MetaData.checkKeys.insertMany ["propertyType", "propertySummary"]
 
 ---------------------------------------------------------------------
 

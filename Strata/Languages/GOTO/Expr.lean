@@ -1,0 +1,426 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+module
+
+public import Strata.Languages.GOTO.Type
+import Strata.Util.Tactics
+
+namespace CProverGOTO
+open Std (ToFormat Format format)
+
+-------------------------------------------------------------------------------
+
+public section
+namespace Expr
+
+namespace Identifier
+/-
+Ref.:
+cbmc/src/util/irep_ids.h
+cbmc/src/util/irep_ids.def
+-/
+
+inductive Nullary where
+  /-- `symbol_exprt` -/
+  | symbol (name : String)
+  /-- `constant_exprt` -/
+  | constant (value : String)
+  /-- `nondet_symbol_exprt` -/
+  | nondet (name : String)
+  /-- `nil_exprt` -/
+  | nil
+  deriving Repr, Inhabited, DecidableEq
+
+instance : ToFormat Nullary where
+  format n := match n with
+    | .symbol name => name
+    | .constant value => value
+    | .nondet name => f!"nondet({name})"
+    | .nil => "nil"
+
+inductive Unary where
+  /-- `unary_minus_exprt` -/
+  | UnaryMinus
+  /-- `unary_plus_exprt` -/
+  | UnaryPlus
+  /-- `not_exprt` -/
+  | Not
+  /-- `bitnot_exprt` -/
+  | Bitnot
+  /-- `history_exprt` with `ID_old` -/
+  | Old
+  /-- `array_of_exprt` (constant map/array) -/
+  | ArrayOf
+  /-- `typecast_exprt` -/
+  | Typecast
+  /-- `unary_minus_overflow_exprt` -/
+  | UnaryMinusOverflow
+  /-- `dereference_exprt` (`*p`) -/
+  | Dereference
+  deriving Repr, Inhabited, DecidableEq
+
+instance : ToFormat Unary where
+  format u := match u with
+    | .UnaryMinus => "unary-"
+    | .UnaryPlus => "unary+"
+    | .Not => "not"
+    | .Bitnot => "bitnot"
+    | .Old => "old"
+    | .ArrayOf => "array_of"
+    | .Typecast => "typecast"
+    | .UnaryMinusOverflow => "overflow-unary-"
+    | .Dereference => "dereference"
+
+/--
+Representation of identifiers specific to binary expressions,
+[binary_exprt](https://diffblue.github.io/cbmc/classbinary__exprt.html).
+-/
+inductive Binary where
+  /-- `div_exprt` -/
+  | Div
+  /-- `mod_exprt` -/
+  | Mod
+  /-- `minus_exprt` -/
+  | Minus
+  /-- `shl_exprt` -/
+  | Shl
+  /-- `ashr_exprt` -/
+  | Ashr
+  /-- `lshr_exprt` -/
+  | Lshr
+  /-- `plus_overflow_exprt` -/
+  | PlusOverflow
+  /-- `minus_overflow_exprt` -/
+  | MinusOverflow
+  /-- `mult_overflow_exprt` -/
+  | MultOverflow
+  /-- `implies_exprt` -/
+  | Implies
+  /-- `index_exprt` (map/array select) -/
+  | Index
+  /-- `forall_exprt` -/
+  | Forall
+  /-- `exists_exprt` -/
+  | Exists
+  | Gt | Lt | Ge | Le | Equal | NotEqual
+  /-- `bitand_exprt` -/
+  | Bitand
+  /-- `bitor_exprt` -/
+  | Bitor
+  /-- `bitxor_exprt` -/
+  | Bitxor
+  /-- `concatenation_exprt` (bitvector concatenation) -/
+  | Concatenation
+  /-- `extractbits_exprt` (bitvector extraction) -/
+  | Extractbits
+  deriving Repr, Inhabited, DecidableEq
+
+instance : ToFormat Binary where
+  format b := match b with
+    | .Div => "/"
+    | .Mod => "mod"
+    | .Minus => "-"
+    | .Shl => "shl"
+    | .Ashr => "ashr"
+    | .Lshr => "lshr"
+    | .PlusOverflow => "overflow-+"
+    | .MinusOverflow => "overflow--"
+    | .MultOverflow => "overflow-*"
+    | .Implies => "=>"
+    | .Index => "index"
+    | .Forall => "forall"
+    | .Exists => "exists"
+    | .Gt => ">"
+    | .Lt => "<"
+    | .Ge => ">="
+    | .Le => "<="
+    | .Equal => "="
+    | .NotEqual => "notequal"
+    | .Bitand => "bitand"
+    | .Bitor => "bitor"
+    | .Bitxor => "bitxor"
+    | .Concatenation => "concatenation"
+    | .Extractbits => "extractbits"
+
+inductive Ternary where
+  /-- `if_exprt` -/
+  | ite
+  /-- `with_exprt` (map/array update) -/
+  | «with»
+  deriving Repr, Inhabited, DecidableEq
+
+instance : ToFormat Ternary where
+  format t := match t with
+    | .ite => "if"
+    | .«with» => "with"
+
+inductive Multiary where
+  /-- `and_exprt` -/
+  | And
+  /-- `or_exprt` -/
+  | Or
+  /-- `mult_exprt` -/
+  | Mult
+  /-- `plus_exprt` -/
+  | Plus
+  deriving Repr, Inhabited, DecidableEq
+
+instance : ToFormat Multiary where
+  format m := match m with
+    | .And => "and"
+    | .Or => "or"
+    | .Mult => "*"
+    | .Plus => "+"
+
+inductive SideEffect where
+  /-- `side_effect_expr_nondett` -/
+  | Nondet
+  /-- `side_effect_expr_assignt` -/
+  | Assign
+  /-- `side_effect_exprt` with `ID_allocate` (native dynamic-object allocation;
+      `operands = [size, zeroInitFlag]`, type is the result pointer). -/
+  | Allocate
+  deriving Repr, Inhabited, DecidableEq
+
+instance : ToFormat SideEffect where
+  format s := match s with
+    | .Nondet => "nondet"
+    | .Assign => "assign"
+    | .Allocate => "allocate"
+
+end Identifier
+
+inductive Identifier where
+  | nullary (n : Identifier.Nullary)
+  | unary (u : Identifier.Unary)
+  | binary (b : Identifier.Binary)
+  | ternary (t : Identifier.Ternary)
+  | multiary (m : Identifier.Multiary)
+  | side_effect (s : Identifier.SideEffect)
+  /-- `function_application_exprt` - uninterpreted function application -/
+  | functionApplication (name : String)
+  deriving Repr, Inhabited, DecidableEq
+
+instance : ToFormat Identifier where
+  format i := match i with
+    | .nullary n => f!"{n}"
+    | .unary u => f!"{u}"
+    | .binary b => f!"{b}"
+    | .ternary t => f!"{t}"
+    | .multiary m => f!"{m}"
+    | .side_effect s => f!"{s}"
+    | .functionApplication name => f!"function_application({name})"
+
+end Expr
+-------------------------------------------------------------------------------
+
+/--
+GOTO [Expressions](https://diffblue.github.io/cbmc/classexprt.html)
+
+For now, we have primarily focused on `expr_protectedt` class.
+
+We will also confine ourselves to expressions that can appear at the lowest
+level of CProver IRs -- i.e., GOTO assembly instructions.
+-/
+structure Expr where
+  /--
+  The interpretation of `Expr` depends on the `id` field.
+  CBMC pre-defines some IDs here: `util/irep_ids.def`.
+  -/
+  id         : Expr.Identifier
+  type       : Ty
+  operands   : List Expr := []
+  sourceLoc  : SourceLocation := .nil
+  /--
+  Named fields for expressions that need additional data (e.g.,
+  `side_effect_exprt` has a `statement` field).
+  -/
+  namedFields : List (String × Expr) := []
+  deriving Repr, Inhabited
+
+def Expr.beq (x y : Expr) : Bool :=
+  x.id == y.id && x.type == y.type && x.sourceLoc == y.sourceLoc &&
+  go x.operands y.operands
+  termination_by (SizeOf.sizeOf x)
+  decreasing_by cases x; term_by_mem
+  where go xs ys :=
+  match xs, ys with
+  | [], [] => true
+  | _, [] | [], _ => false
+  | x :: xrest, y :: yrest =>
+    Expr.beq x y && go xrest yrest
+  termination_by (SizeOf.sizeOf xs)
+
+instance : BEq Expr where
+  beq := Expr.beq
+
+def formatExpr (e : Expr) : Format :=
+  match e.id, _: e.operands with
+  | .nullary n, [] => f!"({n} : {e.type})"
+  | .unary u, [op] => f!"(({u}{formatExpr op}) : {e.type})"
+  | .binary b, [left, right] => f!"(({formatExpr left} {b} {formatExpr right}) : {e.type})"
+  | .ternary .ite, [cond, then_expr, else_expr] => f!"(({formatExpr cond} ? {formatExpr then_expr} : {formatExpr else_expr}) : {e.type})"
+  | .multiary m, ops =>
+    let formatted := ops.map formatExpr
+    f!"(({Format.joinSep formatted f!" {m} "}) : {e.type})"
+  | .side_effect s, ops =>
+    let formatted := ops.map formatExpr
+    let operands := Format.joinSep formatted f!" "
+    if operands.isEmpty then f!"({s} : {e.type})" else f!"(({s} {operands}) : {e.type})"
+  | id, ops =>
+    let formatted := ops.map formatExpr
+    let operands := Format.joinSep formatted f!" "
+    if operands.isEmpty then f!"({id} : {e.type})" else f!"(({id} {operands}) : {e.type})"
+  termination_by (SizeOf.sizeOf e)
+  decreasing_by all_goals (cases e; term_by_mem)
+
+instance : ToFormat Expr where
+  format e := formatExpr e
+
+def Expr.true : Expr :=
+  { id := (.nullary $ .constant "true"), type := .Boolean }
+
+/-- Get a named field from the expression. -/
+def Expr.getNamedField (e : Expr) (name : String) : Option Expr :=
+  e.namedFields.find? (fun (n, _) => n == name) |>.map (·.2)
+
+/-- Set a named field in the expression. -/
+def Expr.setNamedField (e : Expr) (name : String) (value : Expr) : Expr :=
+  { e with namedFields := (name, value) :: e.namedFields.filter (fun (n, _) => n != name) }
+
+namespace Expr
+
+/-- Symbol expression -/
+def symbol (name : String) (type : Ty) : Expr :=
+  { id := .nullary (.symbol name), type := type }
+
+/-- Constant expression -/
+def constant (value : String) (type : Ty) : Expr :=
+  { id := .nullary (.constant value), type := type }
+
+/-- Nondet expression -/
+def nondet (name : String) (type : Ty) : Expr :=
+  { id := .nullary (.nondet name), type := type }
+
+/-- Unary minus -/
+def neg (operand : Expr) : Expr :=
+  { id := .unary .UnaryMinus, type := operand.type, operands := [operand] }
+
+/-- Logical not -/
+def not (operand : Expr) : Expr :=
+  { id := .unary .Not, type := operand.type, operands := [operand] }
+
+/-- Overflow-+ -/
+def plus_overflow (left right : Expr) : Expr :=
+  { id := .binary .PlusOverflow, type := Ty.Boolean, operands := [left, right] }
+
+/-- Overflow-- -/
+def minus_overflow (left right : Expr) : Expr :=
+  { id := .binary .MinusOverflow, type := Ty.Boolean, operands := [left, right] }
+
+/-- Overflow-* -/
+def mult_overflow (left right : Expr) : Expr :=
+  { id := .binary .MultOverflow, type := Ty.Boolean, operands := [left, right] }
+
+/-- Overflow-unary- -/
+def unary_minus_overflow (operand : Expr) : Expr :=
+  { id := .unary .UnaryMinusOverflow, type := Ty.Boolean, operands := [operand] }
+
+/-- Typecast expression -/
+def typecast (operand : Expr) (targetType : Ty) : Expr :=
+  { id := .unary .Typecast, type := targetType, operands := [operand] }
+
+/-- Dereference (`*ptr`) yielding a value of type `pointee`. -/
+def dereference (ptr : Expr) (pointee : Ty) : Expr :=
+  { id := .unary .Dereference, type := pointee, operands := [ptr] }
+
+/-- Native dynamic-object allocation (`side_effect ID_allocate`): allocate
+    `size` bytes, optionally zero-initialized, returning a pointer of type
+    `ptrTy`. Mirrors CBMC's `__CPROVER_allocate`. -/
+def allocate (size zeroFlag : Expr) (ptrTy : Ty) : Expr :=
+  { id := .side_effect .Allocate, type := ptrTy, operands := [size, zeroFlag] }
+
+/-- Cast a bitvector expression to its signed interpretation. -/
+def toSigned (e : Expr) : Expr :=
+  match e.type.id with
+  | .bitVector (.unsignedbv w) => typecast e (Ty.SignedBV w)
+  | _ => e
+
+/-- Division -/
+def div (left right : Expr) : Expr :=
+  { id := .binary .Div, type := left.type, operands := [left, right] }
+
+/-- Modulo -/
+def mod (left right : Expr) : Expr :=
+  { id := .binary .Mod, type := left.type, operands := [left, right] }
+
+/-- Greater than -/
+def gt (left right : Expr) : Expr :=
+  { id := .binary .Gt, type := Ty.Boolean, operands := [left, right] }
+
+/-- Less than -/
+def lt (left right : Expr) : Expr :=
+  { id := .binary .Lt, type := Ty.Boolean, operands := [left, right] }
+
+/-- Equal -/
+def eq (left right : Expr) : Expr :=
+  { id := .binary .Equal, type := Ty.Boolean, operands := [left, right] }
+
+/-- Addition -/
+def add (operands : List Expr) : Expr :=
+  match operands with
+  | [] => { id := .nullary (.constant "0"), type := Ty.Integer }
+  | [x] => x
+  | x :: _ => { id := .multiary .Plus, type := x.type, operands := operands }
+
+/-- Multiplication -/
+def mul (operands : List Expr) : Expr :=
+  match operands with
+  | [] => { id := .nullary (.constant "1"), type := Ty.Integer }
+  | [x] => x
+  | x :: _ => { id := .multiary .Mult, type := x.type, operands := operands }
+
+/-- Logical and -/
+def and (operands : List Expr) : Expr :=
+  match operands with
+  | [] => Expr.true
+  | [x] => x
+  | _ => { id := .multiary .And, type := Ty.Boolean, operands := operands }
+
+/-- Logical or -/
+def or (operands : List Expr) : Expr :=
+  match operands with
+  | [] => { id := .nullary (.constant "false"), type := Ty.Boolean }
+  | [x] => x
+  | _ => { id := .multiary .Or, type := Ty.Boolean, operands := operands }
+
+/-- If-then-else -/
+def ite (cond then_expr else_expr : Expr) : Expr :=
+  { id := .ternary .ite, type := then_expr.type, operands := [cond, then_expr, else_expr] }
+
+/-- Non-deterministic side effects -/
+def side_effect_nondet (namedFields : List (String × Expr)) : Expr :=
+  { id := .side_effect .Nondet, type := .Empty, namedFields := namedFields }
+
+/-- Check whether an expression contains quantifiers over types that CBMC's
+SMT2 backend cannot encode (e.g., struct_tag, regex). -/
+partial def hasUnsupportedQuantifierTypes (e : Expr) : Bool :=
+  match e.id with
+  | .binary .Forall =>
+    match e.operands with
+    | boundVar :: _ =>
+      match boundVar.type.id with
+      | .structTag _ | .primitive .regex | .primitive .empty
+      | .primitive .string => Bool.true
+      | _ => e.operands.any hasUnsupportedQuantifierTypes
+    | _ => false
+  | _ => e.operands.any hasUnsupportedQuantifierTypes
+
+end Expr
+
+-------------------------------------------------------------------------------
+
+end -- public section

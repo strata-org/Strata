@@ -23,10 +23,7 @@ deriving instance Repr, DecidableEq, Inhabited for Function
 
 def Function.argType (ff : Function) (i : Nat) : Option TermType :=
   match ff with
-  | .uf f =>
-    match f.args[i]? with
-    | none => none
-    | some arg => some arg.ty
+  | .uf f => f.args[i]?
 
 def Function.outType : Function → TermType
   | .uf f => f.out

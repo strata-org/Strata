@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.PureExpr
+public import Strata.DL.Imperative.MetaData
 
 namespace Imperative
 open Std (ToFormat Format format)
@@ -22,7 +23,10 @@ inductive EvalError (P : PureExpr) where
   | InitVarExists (tid : P.TypedIdent) (existing_value : P.Expr)
   | AssignVarNotExists (tid : P.Ident) (value : P.Expr)
   | HavocVarNotExists (tid : P.Ident)
-  | AssertFail (label : String) (b : P.Expr)
+  /-- A failed assertion. Carries the statement's `MetaData` so a consumer can
+      map the failure back to source (and recover the property summary) directly,
+      rather than round-tripping through `label` as a surrogate key. -/
+  | AssertFail (label : String) (b : P.Expr) (md : MetaData P)
   | LabelNotExists (label : String)
   | Misc (f : Format)
   | OutOfFuel
@@ -38,7 +42,7 @@ def EvalError.toFormat [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty]
   | HavocVarNotExists var =>
     (f!"[HAVOC ERROR] Variable {var} has not been declared yet, so it \
        cannot be havocked.")
-  | AssertFail label b =>
+  | AssertFail label b _ =>
     (f!"[ASSERT ERROR] Assertion {label} failed!{Format.line}{b}")
   | LabelNotExists label =>
     (f!"[EXIT ERROR] No enclosing block with label '{label}' exists.")

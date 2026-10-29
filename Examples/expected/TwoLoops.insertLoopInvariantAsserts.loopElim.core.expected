@@ -1,0 +1,6 @@
+Successfully parsed.
+TwoLoops.insertLoopInvariantAsserts.loopElim.core.st(10, 2) [insertLoopInvAssert_entry_invariant_loop_0_0]: ✅ pass
+TwoLoops.insertLoopInvariantAsserts.loopElim.core.st(20, 6) [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: ✅ pass
+TwoLoops.insertLoopInvariantAsserts.loopElim.core.st(30, 2) [insertLoopInvAssert_entry_invariant_loop_1_0]: ✅ pass
+TwoLoops.insertLoopInvariantAsserts.loopElim.core.st(40, 6) [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_1_0]: ✅ pass
+All 4 goals passed.

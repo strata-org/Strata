@@ -1,0 +1,97 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+module
+
+import all Init.Data.Repr
+
+public section
+
+/-! ## String / Nat Utilities
+
+General-purpose definitions and lemmas for parsing and printing natural numbers
+as decimal strings, and for `List.isPrefixOf` on `Char` lists.
+
+These are used by the Lambda type-inference machinery (`LExprTypeEnv.lean`,
+`LExprTypeSpec.lean`) but are not Lambda-specific.
+-/
+
+/-! ### Parsing: `listCharToNatAux` and `listCharToNat?` -/
+
+/-- Parse a `List Char` of decimal digits as a natural number.
+    Returns `none` for empty or non-digit input. -/
+def listCharToNatAux : Nat → List Char → Option Nat
+  | acc, [] => some acc
+  | acc, c :: cs =>
+    if '0' ≤ c ∧ c ≤ '9' then
+      listCharToNatAux (acc * 10 + (c.toNat - '0'.toNat)) cs
+    else none
+
+
+/-- Parse a non-empty `List Char` of decimal digits as a natural number. -/
+def listCharToNat? (cs : List Char) : Option Nat :=
+  match cs with
+  | [] => none
+  | _ => listCharToNatAux 0 cs
+
+
+/-! ### Printing: structurally recursive digit generation
+
+`Nat.toDigitsCore` uses `brecOn` (bounded recursion on Nat), which is hard to
+reason about directly. We define an equivalent structurally recursive version
+and prove it equal to `Nat.toDigitsCore`. -/
+
+def digitLoop : Nat → Nat → List Char → List Char
+  | 0, _, ds => ds
+  | fuel + 1, n, ds =>
+    let d := (n % 10).digitChar
+    let n' := n / 10
+    if n' = 0 then d :: ds else digitLoop fuel n' (d :: ds)
+
+/-! ### Characters: control characters and hex digits -/
+
+/-- A C0 control character or `DEL`. Neither is printable, so a format that admits
+    only printable and whitespace characters excludes them. -/
+def isControlChar (c : Char) : Bool := c.toNat < 0x20 || c.toNat == 0x7F
+
+/-- The hex digit for `n < 16`, as an uppercase character. -/
+def hexDigit (n : Nat) : Char :=
+  match n with
+  | 0 => '0' | 1 => '1' | 2 => '2' | 3 => '3'
+  | 4 => '4' | 5 => '5' | 6 => '6' | 7 => '7'
+  | 8 => '8' | 9 => '9' | 10 => 'A' | 11 => 'B'
+  | 12 => 'C' | 13 => 'D' | 14 => 'E' | _ => 'F'
+
+/-- Inverse of `hexDigit` on its range; anything else reads as `0`. -/
+def hexVal (c : Char) : Nat :=
+  match c with
+  | '0' => 0 | '1' => 1 | '2' => 2 | '3' => 3
+  | '4' => 4 | '5' => 5 | '6' => 6 | '7' => 7
+  | '8' => 8 | '9' => 9 | 'A' => 10 | 'B' => 11
+  | 'C' => 12 | 'D' => 13 | 'E' => 14 | 'F' => 15
+  | _ => 0
+
+/-- The characters `hexDigit` produces, and the only ones `hexVal` decodes. -/
+def isHexDigit (c : Char) : Bool :=
+  ('0' ≤ c && c ≤ '9') || ('A' ≤ c && c ≤ 'F')
+
+/-- The `w` hex digits naming `n`, most significant first. Fixed width, so a
+    reader knows where the digits end without a terminator. -/
+def hexDigits : Nat → Nat → List Char
+  | 0, _ => []
+  | w + 1, n => hexDigits w (n / 16) ++ [hexDigit (n % 16)]
+
+/-- The value a list of hex digits names, most significant first. Inverts
+    `hexDigits` on a value the width can name. -/
+def hexValue (ds : List Char) : Nat :=
+  ds.foldl (fun acc d => acc * 16 + hexVal d) 0
+
+/-! ### Counting in prose -/
+
+/-- `n` followed by `singular` or `plural` to agree with it. -/
+def countOf (n : Nat) (singular plural : String) : String :=
+  s!"{n} {if n == 1 then singular else plural}"
+
+end

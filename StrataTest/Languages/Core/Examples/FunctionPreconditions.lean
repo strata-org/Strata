@@ -20,7 +20,7 @@ program Core;
 
 function safeDiv(x : int, y : int) : int
   requires y != 0;
-{ x / y }
+{ int.safeDiv(x, y) }
 
 #end
 
@@ -31,10 +31,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
-Assumptions:
-precond_safeDiv_0: !(y@1 == 0)
 Obligation:
-!(y@1 == 0)
+!(y@1 == 0) ==> !(y@1 == 0)
 
 ---
 info:
@@ -51,10 +49,10 @@ def multiPrecondPgm :=
 program Core;
 
 function safeSub(x : int, y : int) : int
-  requires x >= 0;
-  requires y >= 0;
-  requires x >= y;
-{ x - y }
+  requires int.ge(x, 0);
+  requires int.ge(y, 0);
+  requires int.ge(x, y);
+{ int.sub(x, y) }
 
 #end
 
@@ -151,9 +149,9 @@ def dependentPrecondPgm :=
 program Core;
 
 function foo(x : int, y : int) : int
-  requires y > 0;
-  requires (x / y) > 0;
-{ x / y }
+  requires int.gt(y, 0);
+  requires int.gt(int.safeDiv(x, y), 0);
+{ int.safeDiv(x, y) }
 
 #end
 
@@ -164,18 +162,13 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: foo_precond_calls_Int.SafeDiv_0
 Property: division by zero check
-Assumptions:
-precond_foo_0: y@1 > 0
 Obligation:
-!(y@1 == 0)
+int.gt(y@1, 0) ==> !(y@1 == 0)
 
 Label: foo_body_calls_Int.SafeDiv_0
 Property: division by zero check
-Assumptions:
-precond_foo_0: y@1 > 0
-precond_foo_1: x@1 / y@1 > 0
 Obligation:
-!(y@1 == 0)
+int.gt(y@2, 0) ==> int.gt(int.safeDiv(x@2, y@2), 0) ==> !(y@2 == 0)
 
 ---
 info:
@@ -200,7 +193,7 @@ program Core;
 function doubleDiv(x : int, y : int, z : int) : int
   requires y != 0;
   requires z != 0;
-{ (x / y) / z }
+{ int.safeDiv(int.safeDiv(x, y), z) }
 
 #end
 
@@ -211,19 +204,13 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: doubleDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
-Assumptions:
-precond_doubleDiv_0: !(y@1 == 0)
-precond_doubleDiv_1: !(z@1 == 0)
 Obligation:
-!(y@1 == 0)
+!(y@1 == 0) ==> !(z@1 == 0) ==> !(y@1 == 0)
 
 Label: doubleDiv_body_calls_Int.SafeDiv_1
 Property: division by zero check
-Assumptions:
-precond_doubleDiv_0: !(y@1 == 0)
-precond_doubleDiv_1: !(z@1 == 0)
 Obligation:
-!(z@1 == 0)
+!(y@2 == 0) ==> !(z@2 == 0) ==> !(z@2 == 0)
 
 ---
 info:
@@ -245,7 +232,7 @@ def funcCallsFuncFailPgm :=
 program Core;
 
 function badDiv(x : int) : int
-{ x / 0 }
+{ int.safeDiv(x, 0) }
 
 #end
 
@@ -275,7 +262,7 @@ program Core;
 
 procedure test()
 {
-  var z : int := 10 / 2;
+  var z : int := int.safeDiv(10, 2);
 };
 
 #end
@@ -306,8 +293,8 @@ program Core;
 procedure test(a : int)
 {
   var z : int;
-  if (a > 0) {
-    z := 10 / a;
+  if (int.gt(a, 0)) {
+    z := int.safeDiv(10, a);
   } else {
   }
 };
@@ -322,7 +309,7 @@ VCs:
 Label: set_z_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-<label_ite_cond_true: a > 0>: a@1 > 0
+<label_ite_cond_true: int.gt(a, 0)>: int.gt(a@1, 0)
 Obligation:
 !(a@1 == 0)
 
@@ -342,7 +329,7 @@ program Core;
 
 function safeDiv(x : int, y : int) : int
   requires y != 0;
-{ x / y }
+{ int.safeDiv(x, y) }
 
 procedure test(a : int)
 {
@@ -359,10 +346,8 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
-Assumptions:
-precond_safeDiv_0: !(y@1 == 0)
 Obligation:
-!(y@1 == 0)
+!(y@1 == 0) ==> !(y@1 == 0)
 
 Label: init_calls_safeDiv_0
 Property: assert
@@ -393,11 +378,11 @@ program Core;
 
 function safeDiv(x : int, y : int) : int
   requires y != 0;
-{ x / y }
+{ int.safeDiv(x, y) }
 
 function allPositiveDiv(y : int) : bool
-  requires y >= 0;
-{ forall x : int :: x > 0 ==> safeDiv(y, x) > 0 }
+  requires int.ge(y, 0);
+{ forall x : int :: int.gt(x, 0) ==> int.gt(safeDiv(y, x), 0) }
 
 #end
 
@@ -408,17 +393,13 @@ info: [Strata.Core] Type checking succeeded.
 VCs:
 Label: safeDiv_body_calls_Int.SafeDiv_0
 Property: division by zero check
-Assumptions:
-precond_safeDiv_0: !(y@1 == 0)
 Obligation:
-!(y@1 == 0)
+!(y@1 == 0) ==> !(y@1 == 0)
 
 Label: allPositiveDiv_body_calls_safeDiv_0
 Property: assert
-Assumptions:
-precond_allPositiveDiv_0: y@2 >= 0
 Obligation:
-forall x : int :: x > 0 ==> !(x == 0)
+int.ge(y@2, 0) ==> (forall x : int :: int.gt(x, 0) ==> !(x == 0))
 
 ---
 info:
@@ -433,7 +414,8 @@ Result: ✅ pass
 #guard_msgs in
 #eval Core.verify funcInQuantifierPgm
 
--- Inline function declaration (funcDecl) with precondition
+-- Internal function preconditions are rejected: Lambda-valued locals cannot
+-- carry a precondition contract.
 def funcDeclPgm :=
 #strata
 program Core;
@@ -442,8 +424,8 @@ procedure test()
 {
   var x : int := 5;
   function addPositive(y : int) : int
-    requires y > 0;
-    { x + y }
+    requires int.gt(y, 0);
+    { int.add(x, y) }
   var z : int := addPositive(3);
   assert (z == 8);
 };
@@ -451,29 +433,8 @@ procedure test()
 #end
 
 /--
-info: [Strata.Core] Type checking succeeded.
-
-
-VCs:
-Label: init_calls_addPositive_0
-Property: assert
-Obligation:
-true
-
-Label: assert_0
-Property: assert
-Obligation:
-addPositive(3) == 8
-
----
-info:
-Obligation: init_calls_addPositive_0
-Property: assert
-Result: ✅ pass
-
-Obligation: assert_0
-Property: assert
-Result: ✅ pass
+error: Core DDM translation errors:
+local function 'addPositive': preconditions are not supported
 -/
 #guard_msgs in
 #eval Core.verify funcDeclPgm
@@ -489,10 +450,10 @@ spec {
 }
 {
   var i : int := 0;
-  while (i / n < 10)
-    invariant i >= 0
+  while (int.lt(int.safeDiv(i, n), 10))
+    invariant int.ge(i, 0)
   {
-    i := i + 1;
+    i := int.add(i, 1);
   }
 };
 
@@ -510,7 +471,7 @@ test_requires_0: !(n@1 == 0)
 Obligation:
 !(n@1 == 0)
 
-Label: entry_invariant_0_0
+Label: insertLoopInvAssert_entry_invariant_loop_0_0
 Property: assert
 Assumptions:
 test_requires_0: !(n@1 == 0)
@@ -520,22 +481,22 @@ true
 Label: loop_guard_end_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
-<label_ite_cond_true: i / n < 10>: 0 / n@1 < 10
-assume_guard_0: i@1 / n@1 < 10
-assume_invariant_0_0: i@1 >= 0
+<label_ite_cond_true: int.lt(int.safeDiv(0, n), 10)>: int.lt(int.safeDiv(0, n@1), 10)
+loopElimAssume_guard_loop_1: int.lt(int.safeDiv(i@1, n@1), 10)
+insertLoopInvAssume_invariant_loop_0_0: int.ge(i@1, 0)
 test_requires_0: !(n@1 == 0)
 Obligation:
 !(n@1 == 0)
 
-Label: arbitrary_iter_maintain_invariant_0_0
+Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
 Property: assert
 Assumptions:
-<label_ite_cond_true: i / n < 10>: 0 / n@1 < 10
-assume_guard_0: i@1 / n@1 < 10
-assume_invariant_0_0: i@1 >= 0
+<label_ite_cond_true: int.lt(int.safeDiv(0, n), 10)>: int.lt(int.safeDiv(0, n@1), 10)
+loopElimAssume_guard_loop_1: int.lt(int.safeDiv(i@1, n@1), 10)
+insertLoopInvAssume_invariant_loop_0_0: int.ge(i@1, 0)
 test_requires_0: !(n@1 == 0)
 Obligation:
-i@1 + 1 >= 0
+int.ge(int.add(i@1, 1), 0)
 
 ---
 info:
@@ -543,7 +504,7 @@ Obligation: loop_guard_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 
-Obligation: entry_invariant_0_0
+Obligation: insertLoopInvAssert_entry_invariant_loop_0_0
 Property: assert
 Result: ✅ pass
 
@@ -551,7 +512,7 @@ Obligation: loop_guard_end_calls_Int.SafeDiv_0
 Property: division by zero check
 Result: ✅ pass
 
-Obligation: arbitrary_iter_maintain_invariant_0_0
+Obligation: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
 Property: assert
 Result: ✅ pass
 -/

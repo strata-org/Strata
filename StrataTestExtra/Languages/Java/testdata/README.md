@@ -1,27 +1,20 @@
-# Java Roundtrip Test Data
+# Java Test Data
 
-`comprehensive.ion` is a Java-generated Ion file that tests all DDM types.
+`ion-java-1.11.11.jar` is the [ion-java](https://github.com/amazon-ion/ion-java)
+runtime used by the javac-gated tests in `../TestGen.lean` (`#testCompile`,
+`#testRoundtrip`, `#testCompileNested`). Those tests compile the Java emitted by
+`getIonSerializer%` against this jar, and `#testRoundtrip` additionally runs it to
+produce an Ion payload that Lean then decodes. Each test skips with a warning when
+javac or this jar is unavailable.
 
-## To regenerate
-
-From this directory:
+To refresh the jar:
 
 ```bash
-./regenerate-testdata.sh
+curl -sLo ion-java-1.11.11.jar \
+  https://github.com/amazon-ion/ion-java/releases/download/v1.11.11/ion-java-1.11.11.jar
 ```
 
-This will:
-1. Generate Java classes from `Simple.dialect.st`
-2. Build and run `GenerateTestData.java` to produce `comprehensive.ion`
-3. Clean up generated classes
-4. Verify the output with Lean
-
-## What's tested
-
-The test file covers all DDM types in a single AST:
-- Num, Str, Ident
-- Bool (true and false)
-- Decimal, ByteArray
-- Option (some and none)
-- Seq (with items and empty)
-- Nested operations (3 levels deep)
+This directory previously also held `comprehensive.ion` / `comprehensive-files.ion`
+and the `Simple.dialect.st` dialect used to generate them, for the DDM
+dialect-based Java generator. That generator has been removed in favour of
+`getIonSerializer%`, and no test read those fixtures, so they are gone.

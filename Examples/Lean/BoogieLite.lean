@@ -5,6 +5,7 @@
 -/
 
 -- Very rough dialect with some Boogie-like code for example purposes.
+import Strata.Pipeline.Messages
 import StrataDDM.Integration.Lean
 import StrataDDM.Util.Format
 

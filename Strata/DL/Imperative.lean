@@ -10,14 +10,28 @@ public import Strata.DL.Imperative.HasVars
 public import Strata.DL.Imperative.MetaData
 
 public import Strata.DL.Imperative.CmdEval
+public import Strata.DL.Imperative.EvalContextProps
 public import Strata.DL.Imperative.CmdType
+public import Strata.DL.Imperative.StoreRelations
+public import Strata.DL.Imperative.CmdTrace
 public import Strata.DL.Imperative.CmdSemantics
+public import Strata.DL.Imperative.StoreRelationsProps
 public import Strata.DL.Imperative.CmdSemanticsProps
 public import Strata.DL.Imperative.StmtProps
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.StmtSemanticsProps
+public import Strata.DL.Imperative.Logic.TraceRelations
+public import Strata.DL.Imperative.Logic.TraceRelationsProps
+public import Strata.DL.Imperative.Logic.TraceInterp
+public import Strata.DL.Imperative.Logic.TraceInterpProps
+public import Strata.DL.Imperative.Logic.Termination
+public import Strata.DL.Imperative.Logic.TerminationProps
+public import Strata.DL.Imperative.Analysis.Assertions
+public import Strata.DL.Imperative.Logic.HoareTemplate
 
 public import Strata.DL.Imperative.KleeneStmt
 public import Strata.DL.Imperative.KleeneStmtSemantics
+public import Strata.DL.Imperative.CallAwareSemantics
+public import Strata.DL.Imperative.StmtCFGCallSemanticsProps
 
 public import Strata.DL.Imperative.SMTUtils

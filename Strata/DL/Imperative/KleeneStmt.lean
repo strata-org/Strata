@@ -91,9 +91,19 @@ def KleeneStmts.modifiedVars [HasVarsImp P C] (ss : List (KleeneStmt P C)) : Lis
   | s :: srest => KleeneStmt.modifiedVars s ++ KleeneStmts.modifiedVars srest
 end
 
+/-- Get all variables read (referenced in expressions) by the statement `s`. -/
+def KleeneStmt.readVars [HasVarsImp P C] (s : KleeneStmt P C) : List P.Ident :=
+  match s with
+  | .cmd c => HasVarsImp.readVars c
+  | .seq s1 s2 => KleeneStmt.readVars s1 ++ KleeneStmt.readVars s2
+  | .choice s1 s2 => KleeneStmt.readVars s1 ++ KleeneStmt.readVars s2
+  | .loop s => KleeneStmt.readVars s
+  | .block s => KleeneStmt.readVars s
+
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (KleeneStmt P C) where
   definedVars := KleeneStmt.definedVars
   modifiedVars := KleeneStmt.modifiedVars
+  readVars := KleeneStmt.readVars
 
 ---------------------------------------------------------------------
 

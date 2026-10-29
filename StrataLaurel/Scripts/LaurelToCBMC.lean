@@ -1,0 +1,142 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+import Strata.Backends.CBMC.GOTO.CoreToGOTOPipeline
+import Strata.Cli.Framework
+import StrataLaurel.Implementation
+
+/-! # LaurelToCBMC
+
+Script that replaces `laurel_to_cbmc.sh`. Translates a Laurel `.lr.st` source
+file through the full Strata pipeline to CBMC verification:
+
+1. Parse Laurel source → Laurel AST
+2. Translate Laurel → Core
+3. Inline procedures, type-check, generate CProver GOTO JSON
+4. Invoke `symtab2gb` to produce a GOTO binary
+5. Invoke `goto-cc` to add C scaffolding
+6. Invoke `goto-instrument --dfcc` for contract instrumentation
+7. Invoke `cbmc` for bounded model checking
+
+Usage:
+  lake env lean --run StrataLaurel/Scripts/LaurelToCBMC.lean <file.lr.st>
+
+Environment variables:
+  CBMC              - path to cbmc binary (default: cbmc)
+  GOTO_CC           - path to goto-cc binary (default: goto-cc)
+  GOTO_INSTRUMENT   - path to goto-instrument binary (default: goto-instrument)
+  CBMC_ARGS         - extra whitespace-separated arguments appended to the cbmc
+                      invocation (e.g. "--unwind 10 --unwinding-assertions").
+                      Split on whitespace with no quoting support, so a single
+                      argument value cannot itself contain whitespace (file
+                      paths with spaces are not expressible here).
+                      Recursive top-level Core functions are given GOTO
+                      bodies only when CBMC_ARGS contains `--unwind`: symex
+                      unwinds recursive calls just as it unwinds loops, so
+                      without a bound they could diverge. Otherwise they stay
+                      uninterpreted.
+-/
+
+open Strata
+
+/-- Read an environment variable, returning a default if unset or empty. -/
+private def getEnvOrDefault (var : String) (default : String) : IO String := do
+  match ← IO.getEnv var with
+  | some v => if v.isEmpty then pure default else pure v
+  | none   => pure default
+
+/-- Run an external process. Prints stdout/stderr to the caller's streams and
+    returns the exit code. -/
+private def runProcess (step : String) (cmd : String) (args : Array String) : IO UInt32 := do
+  let proc ← IO.Process.spawn {
+    cmd := cmd
+    args := args
+    stdout := .inherit
+    stderr := .inherit
+    stdin := .inherit
+  }
+  let exitCode ← proc.wait
+  if exitCode != 0 then
+    IO.eprintln s!"Error: {step} failed (exit code {exitCode})"
+  return exitCode
+
+/-- The Laurel-to-GOTO translation pipeline. Parses a Laurel source file,
+    translates to Core, inlines procedures, type-checks, and emits CProver GOTO
+    JSON files (`<baseName>.symtab.json` and `<baseName>.goto.json`) in the
+    given output directory. -/
+private def laurelAnalyzeToGoto (path : System.FilePath) (outputDir : System.FilePath)
+    (baseName : String) (hoistRecursive : Bool) : IO Unit := do
+  let content ← IO.FS.readFile path
+  let laurelProgram ← Strata.parseLaurelText path content
+  match ← Strata.Laurel.translate {} laurelProgram with
+  | (none, diags) =>
+    throw (IO.userError s!"Core translation errors: {diags.map (·.message)}")
+  | (some coreProgram, _) =>
+    -- Use the output directory as a prefix so files land in tmpDir
+    let outputBaseName := (outputDir / baseName).toString
+    match ← Strata.inlineCoreToGotoFiles coreProgram outputBaseName
+              (sourceText := some content) (hoistRecursive := hoistRecursive)
+              |>.toBaseIO with
+    | .ok () => pure ()
+    | .error msg => throw (IO.userError msg)
+
+def main (args : List String) : IO UInt32 := do
+  match args with
+  | [file] =>
+    unless file.endsWith ".lr.st" || file.endsWith ".laurel.st" do
+      IO.eprintln s!"Error: expected a .lr.st file, got: {file}"
+      return 1
+    let path : System.FilePath := file
+    unless ← path.pathExists do
+      IO.eprintln s!"Error: file not found: {file}"
+      return 1
+    let baseName := Strata.Cli.deriveBaseName [".lr.st", ".laurel.st", ".st"] file
+
+    -- Use a temporary directory for intermediate files (cleaned up automatically)
+    IO.FS.withTempDir fun tmpDir => do
+
+    let cbmcArgs := (← getEnvOrDefault "CBMC_ARGS" "").split Char.isWhitespace
+      |>.toList.filterMap fun s => if s.isEmpty then none else some s.toString
+    let hoistRecursive := cbmcArgs.contains "--unwind"
+
+    -- Step 1: Laurel → GOTO JSON (in tmp dir)
+    let result ← (laurelAnalyzeToGoto path tmpDir baseName hoistRecursive).toBaseIO
+    match result with
+    | .error e =>
+      IO.eprintln s!"Error: {e}"
+      return 1
+    | .ok () => pure ()
+
+    let symTabFile := (tmpDir / s!"{baseName}.symtab.json").toString
+    let gotoFile := (tmpDir / s!"{baseName}.goto.json").toString
+    let gbFile := (tmpDir / s!"{baseName}.gb").toString
+    let ccGbFile := (tmpDir / s!"{baseName}_cc.gb").toString
+    let dfccGbFile := (tmpDir / s!"{baseName}_dfcc.gb").toString
+
+    -- Step 2: symtab2gb
+    let rc ← runProcess "symtab2gb" "symtab2gb"
+      #[symTabFile, "--goto-functions", gotoFile, "--out", gbFile]
+    if rc != 0 then return rc
+
+    -- Step 3: goto-cc (add C scaffolding)
+    let gotoCC ← getEnvOrDefault "GOTO_CC" "goto-cc"
+    let rc ← runProcess "goto-cc" gotoCC
+      #["--function", "main", "-o", ccGbFile, gbFile]
+    if rc != 0 then return rc
+
+    -- Step 4: goto-instrument --dfcc
+    let gotoInstrument ← getEnvOrDefault "GOTO_INSTRUMENT" "goto-instrument"
+    let rc ← runProcess "goto-instrument --dfcc" gotoInstrument
+      #["--dfcc", "main", ccGbFile, dfccGbFile]
+    if rc != 0 then return rc
+
+    -- Step 5: cbmc verification, with CBMC_ARGS appended.
+    let cbmc ← getEnvOrDefault "CBMC" "cbmc"
+    runProcess "cbmc" cbmc
+      (#[dfccGbFile, "--function", "main", "--z3", "--verbosity", "9"] ++ cbmcArgs.toArray)
+
+  | _ =>
+    IO.eprintln "Usage: LaurelToCBMC <file.lr.st>"
+    return 1

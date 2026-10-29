@@ -331,6 +331,20 @@ info: ((~List..tl : (arrow (List $__ty1) (List $__ty1))) (~Nil : (List $__ty1)))
   typeCheckAndPartialEval #[[listTy]]  (Factory.default : @Factory TestParams)
   ((LExpr.op () ("List..tl" : TestParams.Identifier) .none).mkApp () [nil])
 
+-- A safe destructor carries its tester as a precondition only when the tester can fail.
+-- Each entry below is one constructor's safe destructors, and each of those its
+-- preconditions.
+
+/-- info: [[[], []]] -/
+#guard_msgs in
+#eval format $ tupTy.constrs.map fun c =>
+  (destructorFuncs (T := TestParams) tupTy c).map fun f => f.preconditions.map (·.expr)
+
+/-- info: [[], [[(~isCons $__tvar0)], [(~isCons $__tvar0)]]] -/
+#guard_msgs in
+#eval format $ listTy.constrs.map fun c =>
+  (destructorFuncs (T := TestParams) listTy c).map fun f => f.preconditions.map (·.expr)
+
 
 -- Test 4: Multiple types and Factories
 

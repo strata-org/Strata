@@ -4,8 +4,10 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+import all Strata.DL.Lambda.LTyProps
 
-import all Strata.DL.Lambda.Semantics
+import all Strata.DL.Lambda.LExprEvalSound
+import all Strata.DL.Lambda.LExprType
 import all Strata.DL.Lambda.Denote.LExprDenoteEq
 
 /-!
@@ -79,17 +81,17 @@ private theorem state_map_forall₂_hasTypeA
     (hEnvTy : Env.Typed env)
     (hEnvLC : ∀ (x : T.Identifier) (v : LExpr T.mono),
       env x = some v → LExpr.lcAt 0 v = true)
-    : List.Forall₂ (LExpr.HasTypeA Δ) (entries.map Prod.snd)
+    : List.Rel₂ (LExpr.HasTypeA Δ) (entries.map Prod.snd)
         (entries.map (fun (k, _) =>
           match Map.find? hEnvTy.tyMap k with
           | some ty => ty
           | none => .bool)) := by
   induction entries with
-  | nil => exact List.Forall₂.nil
+  | nil => exact List.Rel₂.nil
   | cons p rest ih =>
     obtain ⟨k, v⟩ := p
     simp only [List.map_cons]
-    apply List.Forall₂.cons
+    apply List.Rel₂.cons
     · have h_mem_head : (k, v) ∈ (k, v) :: rest := List.mem_cons_self ..
       have h_env_kv := h_in_env k v h_mem_head
       obtain ⟨ty, h_envTys_k⟩ := hEnvTy.cover k v h_env_kv
@@ -144,224 +146,159 @@ private theorem fvars_annotated_by_keySet
     exact h_val_i ▸ h_envTys_k
 
 omit [Inhabited T.mono.base.IDMeta] in
-/-- Substituting (well-typed) free variables from the state preserves typing. -/
-private theorem substFvarsFromState_type_preserved
-    {σ : LState T} {e : LExpr T.mono} {τ : LMonoTy} {Δ : List LMonoTy}
+/-- Substituting free variables from an environment preserves typing. -/
+private theorem substFvarsFromEnv_type_preserved
+    {env : Env T} {e : LExpr T.mono} {τ : LMonoTy} {Δ : List LMonoTy}
     (h : LExpr.HasTypeA Δ e τ)
-    (env : T.Identifier → Option (LExpr T.mono))
-    (henv_eq : env = Scopes.toEnv σ.state)
     (hEnvLC : ∀ (x : T.Identifier) (v : LExpr T.mono), env x = some v → LExpr.lcAt 0 v = true)
     (hEnvTy : Env.Typed env)
     (hAnnot : fvars_annotated_by hEnvTy.tyMap e)
-    : LExpr.HasTypeA Δ (LExpr.substFvarsFromState σ e) τ := by
-  simp only [LExpr.substFvarsFromState]
-  let sm : Map T.Identifier (LExpr T.mono) :=
-    List.map (fun x => (x.fst, x.2.snd)) (Maps.toSingleMap σ.state)
-  have h_lc : ∀ (k : T.Identifier) (v : LExpr T.mono),
-      Map.find? sm k = some v → LExpr.lcAt 0 v = true := by
-    intro k v hfind
-    have h_fmap : sm = Map.fmap Prod.snd (Maps.toSingleMap σ.state) := rfl
-    rw [h_fmap, Map.find?_fmap] at hfind
-    cases htsm : (Maps.toSingleMap σ.state).find? k with
-    | none => simp [htsm] at hfind
-    | some p =>
-      simp [htsm] at hfind; subst hfind
-      apply hEnvLC k p.snd
-      rw [henv_eq]; simp only [Scopes.toEnv]
-      rw [Maps.find?_toSingleMap] at htsm; rw [htsm]; rfl
-  have h_substFvars_eq : LExpr.substFvars e sm = LExpr.substFvars e sm.keySet :=
-    LExpr.substFvars_congr_find e sm sm.keySet (fun k => (Map.find?_keySet (m := sm) (k := k)).symm)
-  rw [h_substFvars_eq]
-  have h_lc_ks : ∀ (k : T.Identifier) (v : LExpr T.mono),
-      Map.find? sm.keySet k = some v → LExpr.lcAt 0 v = true := by
-    intro k v hfind; rw [Map.find?_keySet] at hfind; exact h_lc k v hfind
-  rw [LExpr.substFvars_eq_substFvarsLifting_of_lcAt h_lc_ks]
-  let ks := sm.keySet
-  let envTys := hEnvTy.tyMap
-  let tys : List LMonoTy := ks.map (fun (k, _) =>
-    match Map.find? envTys k with
-    | some ty => ty
-    | none => .bool)
-  have h_in_env : ∀ (k : T.Identifier) (v : LExpr T.mono),
-      (k, v) ∈ (show List _ from ks) → env k = some v := by
-    intro k v h_mem_ks
-    have h_find_sm : Map.find? sm k = some v :=
-      (Map.find?_iff_mem_keySet (m := sm) (x := k) (v := v)).mpr h_mem_ks
-    have h_fmap : sm = Map.fmap Prod.snd (Maps.toSingleMap σ.state) := rfl
-    rw [h_fmap, Map.find?_fmap] at h_find_sm
-    cases htsm : (Maps.toSingleMap σ.state).find? k with
-    | none => simp [htsm] at h_find_sm
-    | some p =>
-      simp [htsm] at h_find_sm; subst h_find_sm
-      rw [henv_eq]; simp only [Scopes.toEnv]
-      rw [Maps.find?_toSingleMap] at htsm; rw [htsm]; rfl
-  have h_wt : List.Forall₂ (LExpr.HasTypeA Δ) (ks.map Prod.snd) tys :=
-    state_map_forall₂_hasTypeA ks h_in_env hEnvTy
-      (fun x v h => hEnvLC x v h)
-  have h_annot_ks : fvars_annotated_by (ks.map Prod.fst |>.zip tys) e :=
-    fvars_annotated_by_keySet ks e h_in_env hEnvTy hAnnot
-  exact substFvarsLifting_typeCheck h_wt h_annot_ks h
+    : LExpr.HasTypeA Δ (LExpr.substFvarsFromEnv env e) τ := by
+  induction e generalizing τ Δ with
+  | const => exact h
+  | op => exact h
+  | bvar => exact h
+  | fvar m name ty =>
+    simp only [LExpr.substFvarsFromEnv]
+    cases henv : env name with
+    | none => exact h
+    | some v =>
+      cases h with
+      | fvar =>
+        obtain ⟨ty', h_ty'⟩ := hEnvTy.cover name v henv
+        have h_annot_eq : τ = ty' := hAnnot ty' h_ty'
+        rw [h_annot_eq]
+        exact HasTypeA_weaken (hEnvTy.wt name v ty' henv h_ty') (hEnvLC name v henv)
+  | abs m nm aty body ih =>
+    simp only [LExpr.substFvarsFromEnv]
+    cases h with
+    | abs h_body => exact .abs (ih h_body hAnnot)
+  | quant m qk nm qty tr body ih_tr ih_body =>
+    simp only [LExpr.substFvarsFromEnv]
+    cases h with
+    | quant h_tr h_body =>
+      exact .quant (ih_tr h_tr hAnnot.1) (ih_body h_body hAnnot.2)
+  | app m fn arg ih_fn ih_arg =>
+    simp only [LExpr.substFvarsFromEnv]
+    cases h with
+    | app h_fn h_arg =>
+      exact .app (ih_fn h_fn hAnnot.1) (ih_arg h_arg hAnnot.2)
+  | ite m c t f ihc iht ihf =>
+    simp only [LExpr.substFvarsFromEnv]
+    cases h with
+    | ite h_c h_t h_f =>
+      exact .ite (ihc h_c hAnnot.1) (iht h_t hAnnot.2.1) (ihf h_f hAnnot.2.2)
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.substFvarsFromEnv]
+    cases h with
+    | eq h1 h2 =>
+      exact .eq (ih1 h1 hAnnot.1) (ih2 h2 hAnnot.2)
 
 omit [Inhabited T.mono.base.IDMeta] in
-/-- Substituting free variables from the state preserves denotation.
+/-- Substituting free variables from an environment preserves denotation.
 
 Requires that the environment is:
 - interpretation-consistent (`hEnv`): env values denote to what `fvarVal` gives,
 - locally closed (`hEnvLC`): env values have no dangling bound variables,
 - well-typed (`hEnvTy`): env values are well-typed at the types given by `hEnvTy.tyMap`,
 - annotated (`hAnnot`): fvar annotations in `e` match `hEnvTy.tyMap`. -/
-private theorem substFvarsFromState_denote_preserved
-    {σ : LState T} {e : LExpr T.mono} {τ : LMonoTy}
+private theorem substFvarsFromEnv_denote_preserved
+    {env : Env T} {e : LExpr T.mono} {τ : LMonoTy}
     {Δ : List LMonoTy} {bvarVal : BVarVal tcInterp vt Δ}
     (h₁ : LExpr.HasTypeA Δ e τ)
-    (h₂ : LExpr.HasTypeA Δ (LExpr.substFvarsFromState σ e) τ)
-    (hEnv : Env.InterpConsistent tcInterp opInterp (Scopes.toEnv σ.state) fvarVal)
+    (h₂ : LExpr.HasTypeA Δ (LExpr.substFvarsFromEnv env e) τ)
+    (hEnv : Env.InterpConsistent tcInterp opInterp env fvarVal)
     (hEnvLC : ∀ (x : T.Identifier) (v : LExpr T.mono),
-      Scopes.toEnv σ.state x = some v → LExpr.lcAt 0 v = true)
-    (hEnvTy : Env.Typed (Scopes.toEnv σ.state))
+      env x = some v → LExpr.lcAt 0 v = true)
+    (hEnvTy : Env.Typed env)
     (hAnnot : fvars_annotated_by hEnvTy.tyMap e)
     : LExpr.denote tcInterp opInterp fvarVal vt bvarVal e τ h₁ =
       LExpr.denote tcInterp opInterp fvarVal vt bvarVal
-        (LExpr.substFvarsFromState σ e) τ h₂ := by
-  simp only [LExpr.substFvarsFromState] at h₂ ⊢
-  let sm : Map T.Identifier (LExpr T.mono) :=
-    List.map (fun x => (x.fst, x.2.snd)) (Maps.toSingleMap σ.state)
-  have h_lc : ∀ (k : T.Identifier) (v : LExpr T.mono),
-      Map.find? sm k = some v → LExpr.lcAt 0 v = true := by
-    intro k v hfind
-    have h_fmap : sm = Map.fmap Prod.snd (Maps.toSingleMap σ.state) := rfl
-    rw [h_fmap, Map.find?_fmap] at hfind
-    cases htsm : (Maps.toSingleMap σ.state).find? k with
-    | none => simp [htsm] at hfind
-    | some p =>
-      simp [htsm] at hfind; subst hfind
-      apply hEnvLC k p.snd
-      simp only [Scopes.toEnv]
-      rw [Maps.find?_toSingleMap] at htsm
-      rw [htsm]
-      rfl
-  let ks := sm.keySet
-  let envTys := hEnvTy.tyMap
-  let tys : List LMonoTy := ks.map (fun (k, _) =>
-    match Map.find? envTys k with
-    | some ty => ty
-    | none => .bool)
-  let sortBindings : List (Identifier T.IDMeta × LSort) :=
-    (ks.map Prod.fst).zip (tys.map (LMonoTy.substTyVars vt))
-  have h_in_env : ∀ (k : T.Identifier) (v : LExpr T.mono),
-      (k, v) ∈ (show List _ from ks) → Scopes.toEnv σ.state k = some v := by
-    intro k v h_mem_ks
-    have h_find_sm : Map.find? sm k = some v :=
-      (Map.find?_iff_mem_keySet (m := sm) (x := k) (v := v)).mpr h_mem_ks
-    have h_fmap : sm = Map.fmap Prod.snd (Maps.toSingleMap σ.state) := rfl
-    rw [h_fmap, Map.find?_fmap] at h_find_sm
-    cases h_tsm : (Maps.toSingleMap σ.state).find? k with
-    | none => simp [h_tsm] at h_find_sm
-    | some p =>
-      simp [h_tsm] at h_find_sm; subst h_find_sm
-      simp only [Scopes.toEnv]
-      rw [Maps.find?_toSingleMap] at h_tsm
-      rw [h_tsm]; rfl
-  have h_wt : List.Forall₂ (LExpr.HasTypeA Δ) (ks.map Prod.snd) tys :=
-    state_map_forall₂_hasTypeA ks h_in_env hEnvTy hEnvLC
-  have h_sorts : sortBindings.map Prod.snd = tys.map (LMonoTy.substTyVars vt) := by
-    simp only [sortBindings]
-    apply zip_map_snd_eq
-    simp [tys]
-  let h_args : HList (SortDenote tcInterp) (sortBindings.map Prod.snd) :=
-    HList.cast h_sorts.symm
-      (denoteArgs tcInterp opInterp fvarVal vt bvarVal (ks.map Prod.snd) tys h_wt)
-  have h_ks_tys_len : (ks.map Prod.fst).length = (tys.map (LMonoTy.substTyVars vt)).length := by
-    simp [tys]
-  have h_keys : ks.map Prod.fst = sortBindings.map Prod.fst := by
-    simp only [sortBindings]
-    exact (zip_map_fst_eq _ _ h_ks_tys_len).symm
-  have h_len : ks.length = sortBindings.length := by
-    have h_keys_len := congrArg List.length h_keys
-    simp at h_keys_len; exact h_keys_len
-  have h_tys_len : tys.length = ks.length := by simp [tys]
-  have h_denotes : h_args = HList.cast h_sorts.symm
-      (denoteArgs tcInterp opInterp fvarVal vt bvarVal (ks.map Prod.snd) tys h_wt) := by
-    rfl
-  -- Prove fvars_annotated_by for the keySet-derived type map
-  have h_annot : fvars_annotated_by (ks.map Prod.fst |>.zip tys) e :=
-    fvars_annotated_by_keySet ks e h_in_env hEnvTy hAnnot
-  have h_lc_ks : ∀ (k : T.Identifier) (v : LExpr T.mono),
-      Map.find? ks k = some v → LExpr.lcAt 0 v = true := by
-    intro k v hfind
-    rw [Map.find?_keySet] at hfind
-    exact h_lc k v hfind
-  have h_substFvars_eq : LExpr.substFvars e sm = LExpr.substFvars e ks :=
-    LExpr.substFvars_congr_find e sm ks (fun k => (Map.find?_keySet (m := sm) (k := k)).symm)
-  -- Generalize typing proof, rewrite sm to ks, apply substFvars_denote
-  symm
-  generalize_lhs_last_arg
-  rename_i Hty
-  revert Hty
-  rw[h_substFvars_eq]
-  intros Hty
-  rw [substFvars_denote (tcInterp := tcInterp) (opInterp := opInterp)
-    (fvarVal := fvarVal) (vt := vt)
-    bvarVal h₁ Hty h_args h_keys h_len h_tys_len h_sorts h_wt h_denotes h_annot h_lc_ks]
-  -- Reduce to showing fvarVal = fvarVal.withArgs on free vars of e via denote_ext
-  symm
-  apply denote_ext
-  · intros; rfl
-  · intro name ty h_fv
-    by_cases h_mem : name ∈ sortBindings.map Prod.fst
-    · have h_mem_ks : name ∈ ks.map Prod.fst := h_keys ▸ h_mem
-      cases h_find_v : Map.find? ks name with
-      | none => exact absurd h_mem_ks (Map.findNone_eq_notmem_mapfst.mpr h_find_v)
-      | some v =>
-      obtain ⟨i, h_key_b, h_val_b, h_first_b⟩ := Map.find?_index h_find_v
-      have h_key : (sortBindings.map Prod.fst)[i]? = some name := by
-        rw [← h_keys]; exact h_key_b
-      have h_first : ∀ j < i, (sortBindings.map Prod.fst)[j]? ≠ some name := by
-        intro j hj; rw [← h_keys]; exact h_first_b j hj
-      -- Bridge ks.find? → sm.find? → Scopes.toEnv
-      have h_find_sm : Map.find? sm name = some v := by
-        rw [← Map.find?_keySet]; exact h_find_v
-      have h_env_v : Scopes.toEnv σ.state name = some v := by
-        have h_fmap : sm = Map.fmap Prod.snd (Maps.toSingleMap σ.state) := rfl
-        rw [h_fmap, Map.find?_fmap] at h_find_sm
-        cases h_tsm : (Maps.toSingleMap σ.state).find? name with
-        | none => simp [h_tsm] at h_find_sm
-        | some p =>
-          simp [h_tsm] at h_find_sm; subst h_find_sm
-          simp only [Scopes.toEnv]
-          rw [Maps.find?_toSingleMap] at h_tsm
-          rw [h_tsm]; rfl
-      have h_envTys_name : Map.find? envTys name = some ty := by
-        obtain ⟨ty', h_find_ty'⟩ := hEnvTy.cover name v h_env_v
-        have h_ty_eq := fvars_annotated_by_freeVars envTys e hAnnot name ty ty' h_fv h_find_ty'
-        rw [h_ty_eq]; exact h_find_ty'
-      have h_tys_i : tys[i]? = some ty := by
-        simp only [tys, List.getElem?_map]
-        cases h_ks_i : ks[i]? with
-        | none => simp [h_ks_i] at h_key_b
-        | some p =>
-          simp [h_ks_i] at h_key_b
-          simp [h_key_b, h_envTys_name]
-      have h_sort : (sortBindings.map Prod.snd)[i]? = some (LMonoTy.substTyVars vt ty) := by
-        rw [h_sorts, List.getElem?_map, h_tys_i]; rfl
-      -- Rewrite withArgs to index lookup, then match against env interpretation
-      rw [IdentInterp.withArgs_get (tcInterp := tcInterp) fvarVal sortBindings h_args
-        name _ i h_key h_sort h_first]
-      rw [h_denotes, HList.get_cast]
-      · have h_sort_mapped : (tys.map (LMonoTy.substTyVars vt))[i]? =
-            some (LMonoTy.substTyVars vt ty) := by
-          rw [List.getElem?_map, h_tys_i]; rfl
-        rw [denoteArgs_get (tcInterp := tcInterp) (opInterp := opInterp)
-          (fvarVal := fvarVal) (vt := vt) (bvarVal := bvarVal) h_wt i h_val_b h_tys_i h_sort_mapped]
-        have h_v_wt : LExpr.HasTypeA [] v ty := hEnvTy.wt name v ty h_env_v h_envTys_name
-        have h_v_lc : LExpr.lcAt 0 v = true := hEnvLC name v h_env_v
-        rw [denote_irrel_of_lcAt (tcInterp := tcInterp) (opInterp := opInterp)
-          (fvarVal := fvarVal) (vt := vt) h_v_lc _ h_v_wt bvarVal .nil]
-        exact (hEnv vt name v ty h_env_v h_v_wt).symm
-      · exact h_sorts ▸ h_sort
-    · exact (IdentInterp.withArgs_not_mem (tcInterp := tcInterp) (fvarVal := fvarVal)
-        h_args h_mem).symm
-  · intros; rfl
+        (LExpr.substFvarsFromEnv env e) τ h₂ := by
+  induction e generalizing τ Δ bvarVal with
+  | const => rfl
+  | op => rfl
+  | bvar => rfl
+  | fvar m name ty =>
+    cases h₁ with
+    | fvar =>
+      simp only [LExpr.substFvarsFromEnv] at h₂
+      split at h₂
+      · rename_i v henv
+        simp only [LExpr.substFvarsFromEnv, henv, LExpr.denote]
+        have ⟨ty', h_ty'⟩ := hEnvTy.cover name v henv
+        have h_annot_eq : τ = ty' := hAnnot ty' h_ty'
+        subst h_annot_eq
+        have h_wt := hEnvTy.wt name v τ henv h_ty'
+        have h_lc := hEnvLC name v henv
+        rw [← hEnv vt name v τ henv h_wt]
+        exact denote_irrel_of_lcAt tcInterp opInterp fvarVal vt h_lc h_wt h₂ .nil bvarVal
+      · rename_i henv
+        simp only [LExpr.substFvarsFromEnv, henv]
+  | abs m nm aty body ih =>
+    simp only [LExpr.substFvarsFromEnv] at h₂ ⊢
+    cases h₁ with
+    | abs h_body =>
+      cases h₂ with
+      | abs h_subst_body =>
+        rw [denote_abs bvarVal h_body, denote_abs bvarVal h_subst_body]
+        funext v
+        exact ih h_body h_subst_body hAnnot
+  | quant m qk nm qty tr body ih_tr ih_body =>
+    simp only [LExpr.substFvarsFromEnv] at h₂ ⊢
+    cases h₁ with
+    | quant h_tr h_body =>
+      cases h₂ with
+      | quant h_tr' h_subst_body =>
+        exact denote_quant_congr h_body h_subst_body _ _ fun v =>
+          ih_body h_body h_subst_body hAnnot.2
+  | app m fn arg ih_fn ih_arg =>
+    simp only [LExpr.substFvarsFromEnv] at h₂ ⊢
+    cases h₁ with
+    | app h_fn h_arg =>
+      cases h₂ with
+      | app h_fn' h_arg' =>
+        rename_i aty₁ aty₂
+        have h_fn_tp := substFvarsFromEnv_type_preserved h_fn hEnvLC hEnvTy hAnnot.1
+        have h_aty_eq : LMonoTy.arrow aty₁ τ = LMonoTy.arrow aty₂ τ :=
+          HasTypeA_unique h_fn_tp h_fn'
+        have h_aty : aty₁ = aty₂ := by cases h_aty_eq; rfl
+        subst h_aty
+        rw [denote_app bvarVal h_fn h_arg,
+            denote_app bvarVal h_fn' h_arg']
+        rw [ih_fn h_fn h_fn' hAnnot.1, ih_arg h_arg h_arg' hAnnot.2]
+  | ite m c t f ihc iht ihf =>
+    simp only [LExpr.substFvarsFromEnv] at h₂ ⊢
+    cases h₁ with
+    | ite h_c h_t h_f =>
+      cases h₂ with
+      | ite h_c' h_t' h_f' =>
+        have ihc_eq := ihc (bvarVal := bvarVal) h_c h_c' hAnnot.1
+        have iht_eq := iht (bvarVal := bvarVal) h_t h_t' hAnnot.2.1
+        have ihf_eq := ihf (bvarVal := bvarVal) h_f h_f' hAnnot.2.2
+        rw [denote_ite bvarVal h_c h_t h_f,
+            denote_ite bvarVal h_c' h_t' h_f',
+            ihc_eq, iht_eq, ihf_eq]
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.substFvarsFromEnv] at h₂ ⊢
+    cases h₁ with
+    | eq h_1 h_2 =>
+      cases h₂ with
+      | eq h_1' h_2' =>
+        rename_i ty₁ ty₂
+        have h_1_tp := substFvarsFromEnv_type_preserved h_1 hEnvLC hEnvTy hAnnot.1
+        have h_ty_eq : ty₁ = ty₂ := HasTypeA_unique h_1_tp h_1'
+        subst h_ty_eq
+        have ih_eq1 := ih1 (bvarVal := bvarVal) h_1 h_1' hAnnot.1
+        have ih_eq2 := ih2 (bvarVal := bvarVal) h_2 h_2' hAnnot.2
+        by_cases heq : LExpr.denote tcInterp opInterp fvarVal vt bvarVal e1 _ h_1 =
+            LExpr.denote tcInterp opInterp fvarVal vt bvarVal e2 _ h_2
+        · rw [denote_eq_true bvarVal h_1 h_2 _ heq,
+              denote_eq_true bvarVal h_1' h_2' _
+                (by rw [← ih_eq1, ← ih_eq2]; exact heq)]
+        · rw [denote_eq_false bvarVal h_1 h_2 _ heq,
+              denote_eq_false bvarVal h_1' h_2' _
+                (by rw [← ih_eq1, ← ih_eq2]; exact heq)]
 
 /-! ### Step relation preserves denotation -/
 
@@ -518,19 +455,16 @@ theorem Step.denote_preserved
         · rw [denote_eq_false .nil h_1 h_2 _ heq,
               denote_eq_false .nil h_1' h_2' _
                 (by rw [← ih_eq]; exact heq)]
-  | abs_subst_fvars body σ x _ h_env_eq =>
-    subst h_env_eq
-    -- Decompose abs typing
+  | abs_subst_fvars body x hfv =>
     cases h₁ with
     | abs h_body =>
       cases h₂ with
       | abs h_subst_body =>
         rw [denote_abs .nil h_body, denote_abs .nil h_subst_body]
         funext v
-        exact substFvarsFromState_denote_preserved tcInterp opInterp fvarVal vt
+        exact substFvarsFromEnv_denote_preserved tcInterp opInterp fvarVal vt
           h_body h_subst_body hEnv hEnvLC hEnvTy hAnnot
-  | quant_subst_fvars_body tr body σ x _ h_env_eq =>
-    subst h_env_eq
+  | quant_subst_fvars_body tr body x hfv =>
     cases h₁ with
     | quant h_tr h_body =>
       cases h₂ with
@@ -538,11 +472,11 @@ theorem Step.denote_preserved
         have h_body_eq : ∀ v, LExpr.denote tcInterp opInterp fvarVal vt (.cons v .nil)
               body .bool h_body =
             LExpr.denote tcInterp opInterp fvarVal vt (.cons v .nil)
-              (LExpr.substFvarsFromState σ body) .bool h_subst_body :=
-          fun v => substFvarsFromState_denote_preserved tcInterp opInterp fvarVal vt
+              (LExpr.substFvarsFromEnv env body) .bool h_subst_body :=
+          fun v => substFvarsFromEnv_denote_preserved tcInterp opInterp fvarVal vt
             h_body h_subst_body hEnv hEnvLC hEnvTy hAnnot.2
         exact denote_quant_congr h_body h_subst_body _ _ h_body_eq
-  | quant_subst_fvars_trigger tr body σ x _ h_env_eq =>
+  | quant_subst_fvars_trigger tr body x hfv =>
     cases h₁ with
     | quant h_tr h_body =>
       cases h₂ with
@@ -564,7 +498,8 @@ theorem Step.denote_preserved
     rw [h_subst_arrow] at h_ty_op_val
     rw [hty_op] at h_ty_op_val
     have h_len : argTys.length = ((fn.inputs.map Prod.snd).map (LMonoTy.subst tySubst')).length := by
-      simp; exact h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)
+      simp only [List.length_map]
+      exact (h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)).trans (List.length_map _).symm
     have ⟨h_τ_eq, h_argTys_eq⟩ := LMonoTy.mkArrow'_injective h_len h_ty_op_val
     -- Step 4: Define vt'
     let vt' : TyVarVal := fun x => match tySubst'.find? x with
@@ -572,9 +507,8 @@ theorem Step.denote_preserved
     -- Step 5-6: Sort equalities
     have h_sorts_eq : argTys.map (LMonoTy.substTyVars vt) =
         (fn.inputs.map (fun (id, ty) => (id, LMonoTy.substTyVars vt' ty))).map Prod.snd := by
-      rw [h_argTys_eq]; simp [List.map_map]
-      congr 1; funext; intros a ty a_in
-      exact substTyVars_subst vt tySubst' ty
+      rw [h_argTys_eq]; simp only [List.map_map (l := fn.inputs)]
+      exact List.map_congr_left fun x _ => substTyVars_subst vt tySubst' x.snd
     -- Step 7: Factory consistency
     obtain ⟨_, _, _, h_callee_op, h_get⟩ := Factory.callOfLFunc_getElem? hcall
     rw [h_callee_eq] at h_callee_op; cases h_callee_op
@@ -596,8 +530,8 @@ theorem Step.denote_preserved
       rw [h_tv, substTyVars_subst vt tySubst' (fn.output.mkArrow' (fn.inputs.map Prod.snd)),
           substTyVars_mkArrow']
       congr 1
-      simp [inputSorts_vt', bindings_vt', List.map_map]
-      intros; rfl
+      simp only [inputSorts_vt', bindings_vt', List.map_map (l := fn.inputs)]
+      rfl
     have h_ret_eq : LMonoTy.substTyVars vt' fn.output = LMonoTy.substTyVars vt τ := by
       rw [h_τ_eq]; exact (substTyVars_subst vt tySubst' fn.output).symm
     -- Step 8: Use applyArgs_cast_eq to connect h_denote_e with h_icb_inst
@@ -616,63 +550,64 @@ theorem Step.denote_preserved
         h_sorts_eq h_ret_eq.symm
         (opInterp name.name (LMonoTy.substTyVars vt (τ.mkArrow' argTys))) da
       grind
-    -- Part B: use denote_applySubst
-    have h_applySubst_wt : LExpr.HasTypeA [] (fnbody.applySubst tySubst') (LMonoTy.subst tySubst' fn.output) :=
-      applySubst_typeCheck tySubst' h_body_wt
+    -- Part B: use denote_applyTypeSubst
+    have h_applyTypeSubst_wt : LExpr.HasTypeA [] (fnbody.applyTypeSubst tySubst') (LMonoTy.subst tySubst' fn.output) :=
+      applyTypeSubst_typeCheck tySubst' h_body_wt
     have h_td2 : TyDenote tcInterp vt (LMonoTy.subst tySubst' fn.output) = TyDenote tcInterp vt' fn.output := by
       rw [h_τ_eq] at h_td; exact h_td.symm
-    have h_partB := denote_applySubst (tcInterp := tcInterp) (opInterp := opInterp)
+    have h_partB := denote_applyTypeSubst (tcInterp := tcInterp) (opInterp := opInterp)
       (fvarVal := fvarVal.withArgs bindings_vt' (HList.cast h_sorts_eq da))
       (rfl : vt' = fun x => match tySubst'.find? x with
         | some t => LMonoTy.substTyVars vt t | none => vt x)
-      h_body_wt h_applySubst_wt h_td2
-    -- h_partB : denote vt (applySubst tySubst' fnbody) ... = cast h_td2.symm (denote vt' fnbody ...)
-    -- Derive: cast h_td2 (denote vt (applySubst ...)) = denote vt' fnbody
+      h_body_wt h_applyTypeSubst_wt h_td2
+    -- h_partB : denote vt (applyTypeSubst tySubst' fnbody) ... = cast h_td2.symm (denote vt' fnbody ...)
+    -- Derive: cast h_td2 (denote vt (applyTypeSubst ...)) = denote vt' fnbody
     have h_partB' : cast h_td2
         (LExpr.denote tcInterp opInterp
           (fvarVal.withArgs bindings_vt' (HList.cast h_sorts_eq da)) vt .nil
-          (fnbody.applySubst tySubst') (LMonoTy.subst tySubst' fn.output) h_applySubst_wt) =
+          (fnbody.applyTypeSubst tySubst') (LMonoTy.subst tySubst' fn.output) h_applyTypeSubst_wt) =
         LExpr.denote tcInterp opInterp
           (fvarVal.withArgs bindings_vt' (HList.cast h_sorts_eq da)) vt' .nil fnbody fn.output h_body_wt := by
       rw [h_partB]; simp [cast_cast, cast_eq]
     rw [h_partA, ← h_partB']
     simp only [cast_cast]
-    -- Goal: cast _ (denote (withArgs ...) vt (applySubst tySubst' fnbody) (subst tySubst' fn.output)) = denote vt new_body τ h₂
+    -- Goal: cast _ (denote (withArgs ...) vt (applyTypeSubst tySubst' fnbody) (subst tySubst' fn.output)) = denote vt new_body τ h₂
     subst h_τ_eq heq
     simp only [cast_eq]
     -- Part C: use substFvarsLifting_denote
     have h_arity := Factory.callOfLFunc_arity hcall
     have h_keys_len : fn.inputs.keys.length = args.length := by
-      rw [ListMap.keys_eq_map_fst]; simp [h_arity]
+      rw [ListMap.keys_eq_map_fst]; exact (List.length_map _).trans h_arity.symm
     have h_zip_fst : (fn.inputs.keys.zip args).map Prod.fst = fn.inputs.keys :=
       zip_map_fst_eq _ _ h_keys_len
     have h_zip_snd : (fn.inputs.keys.zip args).map Prod.snd = args :=
       zip_map_snd_eq _ _ h_keys_len
     have h_keys : (fn.inputs.keys.zip args).map Prod.fst = bindings_vt'.map Prod.fst := by
-      rw [h_zip_fst]; simp [bindings_vt', List.map_map, ListMap.keys_eq_map_fst]
+      rw [h_zip_fst]; simp only [bindings_vt', ListMap.keys_eq_map_fst, List.map_map (l := fn.inputs)]
+      rfl
     have h_len : (fn.inputs.keys.zip args).length = bindings_vt'.length := by
       simp [List.length_zip, h_keys_len, bindings_vt']; grind
     have h_tys_len : argTys.length = (fn.inputs.keys.zip args).length := by
       rw [List.length_zip, h_keys_len, Nat.min_self]; grind
-    have h_wt : List.Forall₂ (LExpr.HasTypeA []) ((fn.inputs.keys.zip args).map Prod.snd) argTys := by
+    have h_wt : List.Rel₂ (LExpr.HasTypeA []) ((fn.inputs.keys.zip args).map Prod.snd) argTys := by
       rw [h_zip_snd]; exact h_args
     have h_denotes : HList.cast h_sorts_eq da = HList.cast h_sorts_eq.symm.symm
         (denoteArgs tcInterp opInterp fvarVal vt .nil ((fn.inputs.keys.zip args).map Prod.snd) argTys h_wt) := by
       simp [h_zip_snd]; grind
     have h_annot_subst : fvars_annotated_by
-        ((fn.inputs.keys.zip args).map Prod.fst |>.zip argTys) (fnbody.applySubst tySubst') := by
+        ((fn.inputs.keys.zip args).map Prod.fst |>.zip argTys) (fnbody.applyTypeSubst tySubst') := by
       rw [h_zip_fst, ListMap.keys_eq_map_fst, h_argTys_eq]
       have h_map_eq : (fn.inputs.map Prod.fst).zip (List.map (LMonoTy.subst tySubst') (fn.inputs.map Prod.snd)) =
           fn.inputs.map (fun (k, v) => (k, LMonoTy.subst tySubst' v)) := by
-          rw[List.map_map]
+          rw [List.map_map (l := fn.inputs)]
           induction fn.inputs with
           | nil => rfl
           | cons h t ih => simp [ih]
       rw [h_map_eq]
-      exact applySubst_fvars_annotated h_annot
+      exact applyTypeSubst_fvars_annotated h_annot
     symm
     exact substFvarsLifting_denote tcInterp opInterp fvarVal vt
-      .nil h_applySubst_wt h₂
+      .nil h_applyTypeSubst_wt h₂
       (HList.cast h_sorts_eq da)
       h_keys h_len h_tys_len h_sorts_eq.symm h_wt h_denotes h_annot_subst
   | eval_fn e callee e' args fn denotefn hcall heval hresult =>
@@ -688,7 +623,8 @@ theorem Step.denote_preserved
     rw [h_subst_arrow] at h_ty_op_val
     rw [hty_op] at h_ty_op_val
     have h_len : argTys.length = ((fn.inputs.map Prod.snd).map (LMonoTy.subst tySubst)).length := by
-      simp; exact h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)
+      simp only [List.length_map]
+      exact (h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)).trans (List.length_map _).symm
     have ⟨h_τ_eq, h_argTys_eq⟩ := LMonoTy.mkArrow'_injective h_len h_ty_op_val
     -- Step 4: Get InterpConsistentEval from Factory.InterpConsistent
     obtain ⟨_, _, _, h_callee_op, h_get⟩ := Factory.callOfLFunc_getElem? hcall
@@ -812,7 +748,8 @@ theorem Step.type_preserved
     rw [h_subst_arrow] at h_ty_op_val
     rw [hty_op] at h_ty_op_val
     have h_len : argTys.length = ((fn.inputs.map Prod.snd).map (LMonoTy.subst tySubst')).length := by
-      simp; exact h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)
+      simp only [List.length_map]
+      exact (h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)).trans (List.length_map _).symm
     have ⟨h_τ_eq, h_argTys_eq⟩ := LMonoTy.mkArrow'_injective h_len h_ty_op_val
     subst h_τ_eq h_argTys_eq
     -- Get body typing from Factory.WellTyped
@@ -821,27 +758,27 @@ theorem Step.type_preserved
     have h_fn_mem : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
     have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
     have ⟨h_body_wt, h_body_annot⟩ := h_fn_eq ▸ hFwt name.name h_fn_mem fnbody (h_fn_eq ▸ hbody)
-    -- applySubst preserves typing
-    have h_applySubst_wt : LExpr.HasTypeA [] (fnbody.applySubst tySubst') (LMonoTy.subst tySubst' fn.output) :=
-      applySubst_typeCheck tySubst' h_body_wt
-    -- Annotation after applySubst
-    have h_annot_subst := applySubst_fvars_annotated (S := tySubst') h_body_annot
+    -- applyTypeSubst preserves typing
+    have h_applyTypeSubst_wt : LExpr.HasTypeA [] (fnbody.applyTypeSubst tySubst') (LMonoTy.subst tySubst' fn.output) :=
+      applyTypeSubst_typeCheck tySubst' h_body_wt
+    -- Annotation after applyTypeSubst
+    have h_annot_subst := applyTypeSubst_fvars_annotated (S := tySubst') h_body_annot
     have h_map_eq : fn.inputs.map (fun (k, v) => (k, LMonoTy.subst tySubst' v)) =
         (fn.inputs.map Prod.fst).zip (fn.inputs.map Prod.snd |>.map (LMonoTy.subst tySubst')) := by
-      rw [List.map_map]; induction fn.inputs with
+      rw [List.map_map (l := fn.inputs)]; induction fn.inputs with
       | nil => rfl
       | cons h t ih => simp [ih]
     rw [h_map_eq] at h_annot_subst
     -- Connect bindings structure
     have h_arity := Factory.callOfLFunc_arity hcall
     have h_keys_len : fn.inputs.keys.length = args.length := by
-      rw [ListMap.keys_eq_map_fst]; simp [h_arity]
+      rw [ListMap.keys_eq_map_fst]; exact (List.length_map _).trans h_arity.symm
     have h_zip_fst : (fn.inputs.keys.zip args).map Prod.fst = fn.inputs.keys :=
       zip_map_fst_eq _ _ h_keys_len
     have h_zip_snd : (fn.inputs.keys.zip args).map Prod.snd = args :=
       zip_map_snd_eq _ _ h_keys_len
-    -- Forall₂ for bindings
-    have h_wt_bindings : List.Forall₂ (LExpr.HasTypeA [])
+    -- Rel₂ for bindings
+    have h_wt_bindings : List.Rel₂ (LExpr.HasTypeA [])
         ((fn.inputs.keys.zip args).map Prod.snd)
         (fn.inputs.map Prod.snd |>.map (LMonoTy.subst tySubst')) := by
       rw [h_zip_snd]; exact h_args
@@ -849,9 +786,9 @@ theorem Step.type_preserved
     have h_annot_match : fvars_annotated_by
         ((fn.inputs.keys.zip args).map Prod.fst |>.zip
           (fn.inputs.map Prod.snd |>.map (LMonoTy.subst tySubst')))
-        (fnbody.applySubst tySubst') := by
+        (fnbody.applyTypeSubst tySubst') := by
       rw [h_zip_fst, ListMap.keys_eq_map_fst]; exact h_annot_subst
-    exact substFvarsLifting_typeCheck h_wt_bindings h_annot_match h_applySubst_wt
+    exact substFvarsLifting_typeCheck h_wt_bindings h_annot_match h_applyTypeSubst_wt
   | eval_fn e callee e' args fn denotefn hcall heval hresult =>
     -- Get tySubst from OpsConsistent
     obtain ⟨tySubst, htySubst, h_ty_op_eq⟩ := OpsConsistent_callOfLFunc hOps hcall
@@ -863,7 +800,8 @@ theorem Step.type_preserved
     rw [h_subst_arrow] at h_ty_op_val
     rw [hty_op] at h_ty_op_val
     have h_len : argTys.length = ((fn.inputs.map Prod.snd).map (LMonoTy.subst tySubst)).length := by
-      simp; exact h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)
+      simp only [List.length_map]
+      exact (h_args.length_eq.symm.trans (Factory.callOfLFunc_arity hcall)).trans (List.length_map _).symm
     have ⟨h_τ_eq, h_argTys_eq⟩ := LMonoTy.mkArrow'_injective h_len h_ty_op_val
     subst h_τ_eq h_argTys_eq
     -- Get fn membership
@@ -874,70 +812,92 @@ theorem Step.type_preserved
     -- Apply EvalWellTyped
     exact h_fn_eq ▸ hFeval name.name h_fn_mem denotefn (h_fn_eq ▸ heval)
       _ args e' tySubst hresult.symm (h_fn_eq ▸ h_args)
-  | abs_subst_fvars body σ x hfv henv_eq =>
+  | abs_subst_fvars body x hfv =>
     cases h₁ with
     | abs h_body =>
       apply LExpr.HasTypeA.abs
-      exact substFvarsFromState_type_preserved h_body env henv_eq hEnvLC hEnvTy hAnnot
-  | quant_subst_fvars_body tr body σ x hfv henv_eq =>
+      exact substFvarsFromEnv_type_preserved h_body hEnvLC hEnvTy hAnnot
+  | quant_subst_fvars_body tr body x hfv =>
     cases h₁ with
     | quant h_tr h_body =>
       have ⟨h_annot_tr, h_annot_body⟩ := hAnnot
       exact LExpr.HasTypeA.quant h_tr
-        (substFvarsFromState_type_preserved h_body env henv_eq hEnvLC hEnvTy h_annot_body)
-  | quant_subst_fvars_trigger tr body σ x hfv henv_eq =>
+        (substFvarsFromEnv_type_preserved h_body hEnvLC hEnvTy h_annot_body)
+  | quant_subst_fvars_trigger tr body x hfv =>
     cases h₁ with
     | quant h_tr h_body =>
       have ⟨h_annot_tr, h_annot_body⟩ := hAnnot
       exact LExpr.HasTypeA.quant
-        (substFvarsFromState_type_preserved h_tr env henv_eq hEnvLC hEnvTy h_annot_tr)
+        (substFvarsFromEnv_type_preserved h_tr hEnvLC hEnvTy h_annot_tr)
         h_body
 
 omit [Inhabited T.mono.base.IDMeta] [DecidableEq T.IDMeta] in
-/-- `substFvarsFromState` preserves `fvars_annotated_by`, provided all environment
+/-- `substFvarsFromEnv` preserves `fvars_annotated_by`, provided all environment
 values satisfy `fvars_annotated_by`. -/
-private theorem substFvarsFromState_fvars_annotated [DecidableEq T.IDMeta]
-    {σ : LState T} {e : LExpr T.mono}
+private theorem substFvarsFromEnv_fvars_annotated [DecidableEq T.IDMeta]
+    {e : LExpr T.mono}
     {env : Env T} {tyMap : Map T.Identifier LMonoTy}
     (h : fvars_annotated_by tyMap e)
     (hEnvAnnot : ∀ (x : T.Identifier) (v : LExpr T.mono), env x = some v → fvars_annotated_by tyMap v)
-    (henv_eq : env = Scopes.toEnv σ.state)
-    : fvars_annotated_by tyMap (LExpr.substFvarsFromState σ e) := by
-  simp only [LExpr.substFvarsFromState]
-  apply fvars_annotated_by_substFvars h
-  intro k v hfind
-  have h_fmap : (List.map (fun x => (x.fst, x.2.snd)) (Maps.toSingleMap σ.state)) = Map.fmap Prod.snd (Maps.toSingleMap σ.state) := rfl
-  rw [h_fmap, Map.find?_fmap] at hfind
-  cases htsm : (Maps.toSingleMap σ.state).find? k with
-  | none => simp [htsm] at hfind
-  | some p =>
-    simp [htsm] at hfind; subst hfind
-    apply hEnvAnnot k p.snd
-    rw [henv_eq]; simp only [Scopes.toEnv]
-    rw [Maps.find?_toSingleMap] at htsm; rw [htsm]; rfl
+    : fvars_annotated_by tyMap (LExpr.substFvarsFromEnv env e) := by
+  induction e with
+  | const | bvar | op => exact h
+  | fvar m name ty =>
+    simp only [LExpr.substFvarsFromEnv]
+    cases henv : env name with
+    | none => exact h
+    | some v => exact hEnvAnnot name v henv
+  | abs m nm ty body ih =>
+    simp only [LExpr.substFvarsFromEnv]
+    exact ih h
+  | quant m qk nm ty tr body ih_tr ih_body =>
+    simp only [LExpr.substFvarsFromEnv]
+    simp only [fvars_annotated_by] at h ⊢
+    exact ⟨ih_tr h.1, ih_body h.2⟩
+  | app m fn arg ih_fn ih_arg =>
+    simp only [LExpr.substFvarsFromEnv]
+    simp only [fvars_annotated_by] at h ⊢
+    exact ⟨ih_fn h.1, ih_arg h.2⟩
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.substFvarsFromEnv]
+    simp only [fvars_annotated_by] at h ⊢
+    exact ⟨ih1 h.1, ih2 h.2⟩
+  | ite m c t f ihc iht ihf =>
+    simp only [LExpr.substFvarsFromEnv]
+    simp only [fvars_annotated_by] at h ⊢
+    exact ⟨ihc h.1, iht h.2.1, ihf h.2.2⟩
 
-omit [Inhabited T.mono.base.IDMeta] in
-/-- `substFvarsFromState` preserves `OpsConsistent`, provided all environment
+omit [Inhabited T.mono.base.IDMeta] [DecidableEq T.IDMeta] in
+/-- `substFvarsFromEnv` preserves `OpsConsistent`, provided all environment
 values satisfy `OpsConsistent`. -/
-private theorem substFvarsFromState_OpsConsistent
-    {F : @Factory T} {σ : LState T} {e : LExpr T.mono}
+private theorem substFvarsFromEnv_OpsConsistent
+    {F : @Factory T} {e : LExpr T.mono}
     {env : Env T}
     (hOps : OpsConsistent F e)
     (hEnvOps : ∀ (x : T.Identifier) (v : LExpr T.mono), env x = some v → OpsConsistent F v)
-    (henv_eq : env = Scopes.toEnv σ.state)
-    : OpsConsistent F (LExpr.substFvarsFromState σ e) := by
-  simp only [LExpr.substFvarsFromState]
-  apply OpsConsistent_substFvars hOps
-  intro k v hfind
-  have h_fmap : (List.map (fun x => (x.fst, x.2.snd)) (Maps.toSingleMap σ.state)) = Map.fmap Prod.snd (Maps.toSingleMap σ.state) := rfl
-  rw [h_fmap, Map.find?_fmap] at hfind
-  cases htsm : (Maps.toSingleMap σ.state).find? k with
-  | none => simp [htsm] at hfind
-  | some p =>
-    simp [htsm] at hfind; subst hfind
-    apply hEnvOps k p.snd
-    rw [henv_eq]; simp only [Scopes.toEnv]
-    rw [Maps.find?_toSingleMap] at htsm; rw [htsm]; rfl
+    : OpsConsistent F (LExpr.substFvarsFromEnv env e) := by
+  induction e with
+  | const | bvar | op => exact hOps
+  | fvar m name ty =>
+    simp only [LExpr.substFvarsFromEnv]
+    cases henv : env name with
+    | none => exact hOps
+    | some v => exact hEnvOps name v henv
+  | abs m nm ty body ih =>
+    simp only [LExpr.substFvarsFromEnv, OpsConsistent]
+    exact ih hOps
+  | quant m qk nm ty tr body ih_tr ih_body =>
+    simp only [LExpr.substFvarsFromEnv, OpsConsistent]
+    exact ⟨ih_tr hOps.1, ih_body hOps.2⟩
+  | app m fn arg ih_fn ih_arg =>
+    simp only [LExpr.substFvarsFromEnv, OpsConsistent]
+    exact ⟨ih_fn hOps.1, ih_arg hOps.2⟩
+  | ite m c t f ihc iht ihf =>
+    simp only [LExpr.substFvarsFromEnv, OpsConsistent]
+    exact ⟨ihc hOps.1, iht hOps.2.1, ihf hOps.2.2⟩
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.substFvarsFromEnv, OpsConsistent]
+    exact ⟨ih1 hOps.1, ih2 hOps.2⟩
 
 /-- A single step preserves `OpsConsistent`. -/
 theorem Step.OpsConsistent_preserved
@@ -983,9 +943,9 @@ theorem Step.OpsConsistent_preserved
     obtain ⟨md, name, ty_callee, h_callee_op, h_get⟩ := Factory.callOfLFunc_getElem? hcall
     have h_fn_mem : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
     have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
-    -- Body satisfies OpsConsistent after applySubst
+    -- Body satisfies OpsConsistent after applyTypeSubst
     have h_body_eq : (F[name.name]).body = some fnbody := by rw [h_fn_eq]; exact hbody
-    have h_body_ops : OpsConsistent F (fnbody.applySubst tySubst) :=
+    have h_body_ops : OpsConsistent F (fnbody.applyTypeSubst tySubst) :=
       hFBodyOps name.name h_fn_mem fnbody tySubst h_body_eq
     -- Args satisfy OpsConsistent
     have h_args_ops : ∀ a ∈ args, OpsConsistent F a :=
@@ -1003,12 +963,12 @@ theorem Step.OpsConsistent_preserved
     have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
     have h_eval_eq : (F[name.name]).concreteEval = some denotefn := by rw [h_fn_eq]; exact heval
     exact hFEvalOps name.name h_fn_mem denotefn _ args e' h_eval_eq hresult
-  | abs_subst_fvars body σ x hfv henv_eq =>
-    exact substFvarsFromState_OpsConsistent hOps hEnvOps henv_eq
-  | quant_subst_fvars_body tr body σ x hfv henv_eq =>
-    exact ⟨hOps.1, substFvarsFromState_OpsConsistent hOps.2 hEnvOps henv_eq⟩
-  | quant_subst_fvars_trigger tr body σ x hfv henv_eq =>
-    exact ⟨substFvarsFromState_OpsConsistent hOps.1 hEnvOps henv_eq, hOps.2⟩
+  | abs_subst_fvars body x hfv =>
+    exact substFvarsFromEnv_OpsConsistent hOps hEnvOps
+  | quant_subst_fvars_body tr body x hfv =>
+    exact ⟨hOps.1, substFvarsFromEnv_OpsConsistent hOps.2 hEnvOps⟩
+  | quant_subst_fvars_trigger tr body x hfv =>
+    exact ⟨substFvarsFromEnv_OpsConsistent hOps.1 hEnvOps, hOps.2⟩
 
 /-- A single step preserves `fvars_annotated_by`. -/
 theorem Step.fvars_annotated_preserved
@@ -1048,7 +1008,7 @@ theorem Step.fvars_annotated_preserved
     have h_fn_mem : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
     have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
     have h_body_eq : (F[name.name]).body = some fnbody := by rw [h_fn_eq]; exact hbody
-    have h_body_annot : fvars_annotated_by hEnvTy.tyMap (fnbody.applySubst tySubst) :=
+    have h_body_annot : fvars_annotated_by hEnvTy.tyMap (fnbody.applyTypeSubst tySubst) :=
       hFBodyAnnot name.name h_fn_mem fnbody tySubst h_body_eq
     have h_args_annot : ∀ a ∈ args, fvars_annotated_by hEnvTy.tyMap a :=
       fvars_annotated_by_callOfLFunc_args hAnnot hcall
@@ -1064,12 +1024,12 @@ theorem Step.fvars_annotated_preserved
     have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
     have h_eval_eq : (F[name.name]).concreteEval = some denotefn := by rw [h_fn_eq]; exact heval
     exact hFEvalAnnot name.name h_fn_mem denotefn _ args e' h_eval_eq hresult
-  | abs_subst_fvars body σ x hfv henv_eq =>
-    exact substFvarsFromState_fvars_annotated hAnnot hEnvAnnot henv_eq
-  | quant_subst_fvars_body tr body σ x hfv henv_eq =>
-    exact ⟨hAnnot.1, substFvarsFromState_fvars_annotated hAnnot.2 hEnvAnnot henv_eq⟩
-  | quant_subst_fvars_trigger tr body σ x hfv henv_eq =>
-    exact ⟨substFvarsFromState_fvars_annotated hAnnot.1 hEnvAnnot henv_eq, hAnnot.2⟩
+  | abs_subst_fvars body x hfv =>
+    exact substFvarsFromEnv_fvars_annotated hAnnot hEnvAnnot
+  | quant_subst_fvars_body tr body x hfv =>
+    exact ⟨hAnnot.1, substFvarsFromEnv_fvars_annotated hAnnot.2 hEnvAnnot⟩
+  | quant_subst_fvars_trigger tr body x hfv =>
+    exact ⟨substFvarsFromEnv_fvars_annotated hAnnot.1 hEnvAnnot, hAnnot.2⟩
 
 /-- Multi-step version: `HasTypeA` is preserved by `StepStar`.
 
@@ -1163,20 +1123,20 @@ theorem eval_denote_sound
     [DecidableEq T.Metadata] [Inhabited T.IDMeta]
     [Std.ToFormat T.Metadata] [Std.ToFormat T.IDMeta]
     [Traceable LExpr.EvalProvenance T.Metadata]
-    {σ : LState T} {e e₂ : LExpr T.mono} {τ : LMonoTy} {n : Nat}
+    {F : @Factory T} {env : Env T} {e e₂ : LExpr T.mono} {τ : LMonoTy} {n : Nat}
     {tf : @TypeFactory T.IDMeta}
-    (hEval : e₂ = LExpr.eval n σ e)
+    (hEval : e₂ = (LExpr.eval n F env e).fst)
     (h₁ : LExpr.HasTypeA [] e τ)
     (h₂ : LExpr.HasTypeA [] e₂ τ)
-    (hEnvWF : Env.StepWF σ.config.factory (Scopes.toEnv σ.state))
-    (hFWF : Factory.StepWF σ.config.factory hEnvWF.typed.tyMap)
-    (hFacWF : Factory.WF σ.config.factory tf)
-    (hIC : InterpConsistent tcInterp opInterp fvarVal σ.config.factory (Scopes.toEnv σ.state))
-    (hOps : OpsConsistent σ.config.factory e)
+    (hEnvWF : Env.StepWF F env)
+    (hFWF : Factory.StepWF F hEnvWF.typed.tyMap)
+    (hFacWF : Factory.WF F tf)
+    (hIC : InterpConsistent tcInterp opInterp fvarVal F env)
+    (hOps : OpsConsistent F e)
     (hAnnot : fvars_annotated_by hEnvWF.typed.tyMap e)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e τ h₁ =
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
-  obtain ⟨e', hsteps, h_erase⟩ := eval_StepStar σ e e₂ n hFacWF.factoryWF hEval
+  obtain ⟨e', hsteps, h_erase⟩ := eval_StepStar F env e e₂ n hFacWF.factoryWF hEval
   have h_ty_e' := StepStar.type_preserved hsteps h₁ hEnvWF hFWF hOps hAnnot
   have h_step_eq := StepStar.denote_preserved tcInterp opInterp fvarVal vt hsteps h₁ h_ty_e' hEnvWF hFWF hFacWF hIC hOps hAnnot
   have h_denote_e' := denote_replaceMetadata tcInterp opInterp fvarVal vt .nil (fun _ => ()) h_ty_e'

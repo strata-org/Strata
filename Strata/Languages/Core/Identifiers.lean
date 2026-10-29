@@ -14,14 +14,10 @@ public section
 
 open Std
 
-@[expose]
 abbrev CoreIdent := Lambda.Identifier Unit
 
-@[expose]
 abbrev CoreExprMetadata := Unit
-@[expose]
 abbrev CoreLParams: Lambda.LExprParams := {Metadata := CoreExprMetadata, IDMeta := Unit}
-@[expose]
 abbrev CoreLabel := String
 
 def CoreIdentDec : DecidableEq CoreIdent := inferInstanceAs (DecidableEq (Lambda.Identifier Unit))
@@ -55,12 +51,11 @@ theorem CoreIdent.mkOld_injective {a b : String} (h : CoreIdent.mkOld a = CoreId
     a = b := by
   have h_name := congrArg Lambda.Identifier.name h
   simp [CoreIdent.mkOld, CoreIdent.oldStr] at h_name
-  have h1 := congrArg String.toList h_name
-  simp at h1
-  exact String.ext h1
+  exact h_name
 
 /-- Check whether an identifier is already an `old`-prefixed global name. -/
-def CoreIdent.isOldIdent (ident : CoreIdent) : Bool := ident.name.startsWith CoreIdent.oldStr
+def CoreIdent.isOldIdent (ident : CoreIdent) : Bool :=
+  CoreIdent.oldStr.toList.isPrefixOf ident.name.toList
 
 instance : ToFormat CoreIdent where
   format i := CoreIdent.toPretty i
@@ -87,6 +82,31 @@ instance : Repr CoreIdent where
 instance : Inhabited CoreIdent where
   default := ⟨"_", ()⟩
 
+/-- Reserved prefix of the nullary type constants standing for rigid type parameters. -/
+@[expose] def skolemPrefix : String := "$__rigid_"
+
+/-- Name prefixes reserved for identifiers the type checker generates. -/
+@[expose]
+def reservedNamePrefixes : List String :=
+  [Lambda.genTyPrefix, skolemPrefix, Lambda.elimTyPrefix]
+
+/-- A name is allowed when it starts with no reserved prefix. -/
+@[expose]
+def isAllowedName (n : String) : Bool :=
+  !(reservedNamePrefixes.any (fun p => n.startsWith p))
+
+/-- Reject repeated type parameters; the error message starts with `pfx`. -/
+def checkTypeArgsNodup (pfx : String) (ta : List String) : Except Format Unit :=
+  if !(decide ta.Nodup) then
+    throw f!"{pfx}: duplicate type arguments {ta}"
+  else
+    pure ()
+
+/-- Reject a type parameter that is not an allowed name; the error message starts with `pfx`. -/
+def checkTypeArgsAllowed (pfx : String) (ta : List String) : Except Format Unit :=
+  match ta.find? (fun a => !isAllowedName a) with
+  | some a => throw f!"{pfx}: type parameter '{a}' is a reserved name"
+  | none => pure ()
 
 end -- public section
 

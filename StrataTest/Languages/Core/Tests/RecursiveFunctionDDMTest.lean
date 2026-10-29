@@ -29,7 +29,7 @@ datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
 
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 };
 
 #end
@@ -42,7 +42,7 @@ datatype IntList {
 };
 rec function listLen (@[cases] xs : IntList) : int
 {
-  if IntList..isNil(xs) then 0 else 1 + listLen(IntList..tl(xs))
+  if IntList..isNil(xs) then 0 else int.add(1, listLen(IntList..tl(xs)))
 };
 -/
 #guard_msgs in
@@ -62,7 +62,7 @@ datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
 
 rec function len<a>(@[cases] xs : MyList a) : int
 {
-  if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
+  if MyList..isNil(xs) then 0 else int.add(1, len(MyList..tl(xs)))
 };
 
 #end
@@ -74,7 +74,7 @@ datatype MyList (a : Type) {
 };
 rec function len<a> (@[cases] xs : MyList a) : int
 {
-  if MyList..isNil(xs) then 0 else 1 + len(MyList..tl(xs))
+  if MyList..isNil(xs) then 0 else int.add(1, len(MyList..tl(xs)))
 };
 -/
 #guard_msgs in

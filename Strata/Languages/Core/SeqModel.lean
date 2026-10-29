@@ -19,16 +19,25 @@ a doc-comment referencing the corresponding Factory function.
 | `Sequence a`              | `List α`                            |
 | `Sequence.length(s)`      | `s.length`                          |
 | `Sequence.select(s, i)`   | `s[i]`                              |
+| `Sequence.select!(s, i)`  | `s[i]`  (same model as `select`)    |
 | `Sequence.empty`          | `[]`                                |
 | `Sequence.append(s0, s1)` | `s0 ++ s1`                          |
 | `Sequence.build(s, v)`    | `s ++ [v]`  (snoc)                  |
 | `Sequence.update(s, i, v)`| `s.set i v`                         |
+| `Sequence.update!(s, i, v)`| `s.set i v`  (same model)          |
 | `Sequence.contains(s, v)` | `v ∈ s`                             |
 | `Sequence.take(s, n)`     | `s.take n`                          |
+| `Sequence.take!(s, n)`    | `s.take n`  (same model)            |
 | `Sequence.drop(s, n)`     | `s.drop n`                          |
+| `Sequence.drop!(s, n)`    | `s.drop n`  (same model)            |
 
 All index variables are `Nat` (the natural model of the non-negative `Int`
 indices used in the SMT axioms).
+
+Each unsafe (`!`) operation models to the same Lean op as its checked twin,
+because it denotes the same function and differs only in dropping the bounds
+precondition. Its axioms are the twin's with the operator renamed, so the
+theorems below model both.
 -/
 
 namespace Strata.SeqModel

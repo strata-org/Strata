@@ -38,6 +38,33 @@ namespace Strata.SMTDDM
 /-- info: Except.ok "0.001" -/
 #guard_msgs in #eval (termToString (.prim (.real (Decimal.mk 1 (-3)))))
 
+-- A decimal whose exponent leaves the pretty-print window must still render as
+-- a plain SMT-LIB literal. Without the `noExponent` render mode this emits
+-- `6283185307179586e-15`, which the solver parses as the free symbol `e-15`
+-- and rejects.
+/-- info: Except.ok "6.283185307179586" -/
+#guard_msgs in #eval (termToString (.prim (.real (Decimal.mk 6283185307179586 (-15)))))
+
+/-- info: Except.ok "27182800000000.0" -/
+#guard_msgs in #eval (termToString (.prim (.real (Decimal.mk 271828 8))))
+
+-- A negative decimal past the pretty-print window. SMT-LIB decimals are
+-- unsigned, so a bare `-6.28…` would lex as the free symbol `-`; the literal
+-- must be wrapped in unary minus, mirroring the negative-integer path.
+/-- info: Except.ok "(- 6.283185307179586)" -/
+#guard_msgs in #eval (termToString (.prim (.real (Decimal.mk (-6283185307179586) (-15)))))
+
+-- The unary-minus wrapping applies to every negative decimal, not just the
+-- large-exponent one above: a small in-window exponent is wrapped just the same.
+/-- info: Except.ok "(- 0.005)" -/
+#guard_msgs in #eval (termToString (.prim (.real (Decimal.mk (-5) (-3)))))
+
+-- Zero is the boundary of the `mantissa < 0` test: it is not negative, so it is
+-- not wrapped in unary minus. It renders as the plain literal `0.0`, never a
+-- degenerate `(- 0.0)` or scientific form.
+/-- info: Except.ok "0.0" -/
+#guard_msgs in #eval (termToString (.prim (.real (Decimal.mk 0 (-15)))))
+
 /-- info: Except.ok "(_ bv1 32)" -/
 #guard_msgs in #eval (termToString
     (.prim (.bitvec (BitVec.ofNat 32/-width-/ 1/-value-/))))
@@ -51,7 +78,21 @@ namespace Strata.SMTDDM
      let bv0 : SMT.Term := .prim (.bitvec (BitVec.ofNat 32 0))
      let abv0 : SMT.Term := .app .bvand [a, bv0] bv32
      let body : SMT.Term := .app .eq [abv0, bv0] (.prim .bool)
-     let trigger : SMT.Term := .app .triggers [.app .triggers [abv0] .trigger] .trigger
+     let trigger : List (List SMT.Term) := [[abv0]]
+     .quant .all [⟨"a", bv32⟩] trigger body))
+
+-- Test: multiple `:pattern` groups on one quantifier — each group serializes as its
+-- own `:pattern` attribute (disjunctive triggers). Exercises the multi-group
+-- iteration path in `translateFromTerm`'s `.quant` case.
+/-- info: Except.ok "(forall ((a (_ BitVec 32))) (! (= (bvand a (_ bv0 32)) (_ bv0 32)) :pattern ((bvand a (_ bv0 32))) :pattern ((= a (_ bv0 32)))))" -/
+#guard_msgs in #eval (termToString
+    (let bv32 : SMT.TermType := .prim (.bitvec 32)
+     let a : SMT.Term := .app (.uf { id := "a", args := [], out := bv32 }) [] bv32
+     let bv0 : SMT.Term := .prim (.bitvec (BitVec.ofNat 32 0))
+     let abv0 : SMT.Term := .app .bvand [a, bv0] bv32
+     let eqTerm : SMT.Term := .app .eq [a, bv0] (.prim .bool)
+     let body : SMT.Term := .app .eq [abv0, bv0] (.prim .bool)
+     let trigger : List (List SMT.Term) := [[abv0], [eqTerm]]
      .quant .all [⟨"a", bv32⟩] trigger body))
 
 /-- info: Except.ok "(as none (Option Bool))" -/

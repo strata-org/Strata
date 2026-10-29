@@ -4,8 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.Pipeline.Messages
+import all Strata.DL.Lambda.LExprWFProps
 
 public import Strata.DL.Lambda.LState
+public import Strata.DL.Lambda.LExprType
+import all Strata.DL.Lambda.FactoryProps
 
 /-! ## Partial evaluator for Lambda expressions
 
@@ -54,10 +58,10 @@ Returns `some true` if provably equal, `some false` if provably not equal,
 
 This test is relatively conservative:
 - Terms are equal if syntactically equal
-- Syntactically different, non-real constants are not equal
+- Syntactically different constants are not equal
 - Closed lambdas of the same type are compared extensionally (i.e.
 syntactically after substituting a fresh variable for the body). Note that this
-does not evaluate the body, which may not be a canonical value.
+does not evaluate the body, which may not be a value.
 - Datatype constructor applications are compared using known injectivity
 and disjointness properties of datatypes.
 -/
@@ -67,11 +71,8 @@ def eql (F : @Factory T.base) (e1 e2 : LExpr T) : Option Bool :=
   else
   -- Disproving equality is harder, we have several special cases
   match _he: e1, e2 with
-  -- Case 1: Syntactic inequality of (non-real) constants implies semantic inequality
-  | .const _ c1, .const _ c2 =>
-    match c1, c2 with
-    | .realConst _, .realConst _ => none
-    | _, _ =>  some (c1 == c2)
+  -- Case 1: Syntactic inequality of constants implies semantic inequality
+  | .const _ c1, .const _ c2 => some (c1 == c2)
   -- Case 2: Comparing Lambdas
   | .abs _ _ ty1 e1, .abs _ _ ty2 e2 =>
     if ty1 != ty2 then some false
@@ -104,25 +105,18 @@ def eql (F : @Factory T.base) (e1 e2 : LExpr T) : Option Bool :=
   termination_by e1.sizeOf
   decreasing_by
     . rw[varOpen_sizeOf]; simp_all
-    . have := Factory.callOfLFunc_smaller _h1; subst_vars; grind
+    . have := Factory.callOfLFunc_smaller _h1; subst_vars; exact this a1 (by assumption)
 
 
 /--
-Canonical values of `LExpr`s.
+Values of `LExpr`s.
 
-If `e:LExpr` is `.app`, say `e1 e2 .. en`, `e` is a canonical value if
-(1) `e1` is a constructor and `e2 .. en` are all canonical values, or
+If `e:LExpr` is `.app`, say `e1 e2 .. en`, `e` is a value if
+(1) `e1` is a constructor and `e2 .. en` are all values, or
 (2) `e1` is a named function `f` (not abstraction) and `n` is less than the
     number of arguments required to run the function `f`.
-
-The intuition of case (2) is as follows. Let's assume that we would like to
-calculate `Int.Add 1 (2+3)`. According to the small step semantics, we would
-like to calculate `2+3` to `5`, hence it becomes `Int.Add 1 5` and eventually 6.
-Without (2), this is impossible because the `reduce_2` rule of small step
-semantics only fires when `Int.Add 1` is a 'canonical value'. Therefore, without
-(2), the semantics stuck and `2+3` can never be evaluated to `5`.
 -/
-def isCanonicalValue (F : @Factory T.base) (e : LExpr T) : Bool :=
+@[expose] def isValue (F : @Factory T.base) (e : LExpr T) : Bool :=
   match he: e with
   | .const _ _ => true
   | .abs _ _ _ _ | .quant _ _ _ _ _ _ =>
@@ -138,7 +132,7 @@ def isCanonicalValue (F : @Factory T.base) (e : LExpr T) : Bool :=
       List.all (args.attach.map (fun ⟨ x, _⟩ =>
         have : x.sizeOf < e'.sizeOf := by
           have Hsmall := Factory.callOfLFunc_smaller h; grind
-        (isCanonicalValue F x))) id
+        (isValue F x))) id
     | none => false
   termination_by e.sizeOf
 
@@ -168,7 +162,7 @@ instance [ToFormat T.TypeType]: ToFormat (Except Format (LExpr T)) where
               | .ok e => format e
               | .error err => err
 
-instance [ToFormat T.TypeType]: ToFormat (Except Strata.DiagnosticModel (LExpr T)) where
+instance [ToFormat T.TypeType]: ToFormat (Except Strata.Message (LExpr T)) where
   format x := match x with
               | .ok e => format e
               | .error err => f!"{err.message}"
@@ -184,143 +178,262 @@ def mergeMetadataForSubst (metaAbs metaE2 metaReplacementVar: TBase.Metadata) :=
     (EvalProvenance.Abstraction,    metaAbs)]
 
 
+/--
+Classification of partial evaluation outcome.
+- `outOfFuel`: ran out of fuel before reaching a normal form.
+- `value`: the result is a value (satisfies `isValue`).
+  The Boolean flag `everyStepFullyReduced` records whether every recursive
+  invocation of `eval` performed by the current call itself returned
+  `.value true` — i.e. whether the entire evaluation was fully reduced end
+  to end, with no `.nonvalue`/`.outOfFuel`/`.value false` subterm masked.
+- `nonvalue`: evaluation terminated (not out of fuel) but the result is not a
+  value.
+-/
+inductive EvalResult where
+  | outOfFuel
+  | value (everyStepFullyReduced : Bool)
+  | nonvalue
+
+/-- Was `r` produced by an evaluation whose every recursive `eval` call itself
+    returned `.value true`? -/
+def EvalResult.isValueTrue : EvalResult → Bool
+  | .value true => true
+  | _ => false
+
+/-- Is `r` a `.value _`? -/
+def EvalResult.isValue : EvalResult → Bool
+  | .value _ => true
+  | _ => false
+
+def EvalResult.combineValueFlag (r : EvalResult) (b : Bool) : EvalResult :=
+  match r with
+  | .value b' => .value (b' && b)
+  | _ => r
+
+@[expose] def combineEvalResValueFlag {α : Type} (b : Bool) (p : α × EvalResult) : α × EvalResult :=
+  (p.fst, p.snd.combineValueFlag b)
+
+@[simp] theorem combineEvalResValueFlag_eq_pair {α : Type} (b : Bool) (p : α × EvalResult) :
+    combineEvalResValueFlag b p = (p.fst, p.snd.combineValueFlag b) := rfl
+
+@[simp] theorem List_map_fst_map_eval {α β γ : Type} (args : List α) (g : α → β × γ) :
+    List.map Prod.fst (List.map g args) = List.map (fun a => (g a).fst) args := by
+  induction args with
+  | nil => rfl
+  | cons a as ih => simp [ih]
+
+@[simp] theorem List_all_snd_isValueTrue_map_eval {α β : Type} (args : List α)
+    (g : α → β × EvalResult) :
+    (List.map g args).all (fun r => r.snd.isValueTrue) =
+    args.all (fun a => (g a).snd.isValueTrue) := by
+  induction args with
+  | nil => rfl
+  | cons a as ih => simp [ih]
+
+/-- The pieces `eval` needs to evaluate a call of a `shortCircuit` function: its
+    first argument, the other arguments, and the concrete evaluator. `none` when the
+    function lacks the attribute or a concrete evaluator, or the call has no argument. -/
+@[expose] def shortCircuitCall? (lfunc : LFunc TBase) (args : List (LExpr TBase.mono)) :
+    Option (LExpr TBase.mono × List (LExpr TBase.mono) ×
+      (TBase.Metadata → List (LExpr TBase.mono) → Option (LExpr TBase.mono))) :=
+  if FuncAttr.hasShortCircuit lfunc.attr then
+    match args, lfunc.concreteEval with
+    | a :: rest, some ceval => some (a, rest, ceval)
+    | _, _ => none
+  else none
+
+
 mutual
 /--
 (Partial) evaluator for Lambda expressions w.r.t. a module, written using a fuel
 argument.
 
-Note that this function ascribes Curry-style semantics to `LExpr`s, i.e., we
-can evaluate ill-typed terms w.r.t. a given type system here.
-
-We prefer Curry-style semantics because they separate the type system from
-evaluation, allowing us to potentially apply different type systems with our
-expressions, along with supporting dynamically-typed languages.
+The behavior of eval depends on the annotated types in expression `e` when
+`e` contains an equality; see `eql`.
 
 Currently evaluator only supports LExpr with LMonoTy because LFuncs registered
 at Factory must have LMonoTy.
 -/
-def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
-    : LExpr TBase.mono :=
+def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono))
+    : LExpr TBase.mono × EvalResult :=
   match n with
-  | 0 => e
+  | 0 => (e, if isValue F e then .value true else .outOfFuel)
   | n' + 1 =>
-    if isCanonicalValue σ.config.factory e then
-      e
+    if isValue F e then
+      (e, .value true)
     else
-      -- Special handling for Factory functions.
-      match σ.config.factory.callOfLFunc e with
+      match F.callOfLFunc e with
       | some (op_expr, args, lfunc) =>
-        let args := args.map (fun a => eval n' σ a)
-        let constrArgAt (idx : Option Nat) :=
-          match idx with
-          | some i => (args[i]? |>.map (isConstrApp σ.config.factory)).getD false
-          | none => false
-        let canonicalArgAt (idx : Option Nat) :=
-          match idx with
-          | some i => (args[i]? |>.map (isCanonicalValue σ.config.factory)).getD false
-          | none => false
-        if h: lfunc.body.isSome && (lfunc.attr.contains .inline ||
-          constrArgAt (FuncAttr.findInlineIfConstr lfunc.attr) ||
-          (FuncAttr.hasInlineIfAllCanonical lfunc.attr && args.all (isCanonicalValue σ.config.factory))) then
-          -- Inline a function only if it has a body.
-          let body := lfunc.body.get (by simp_all)
-          -- Apply type substitution to instantiate polymorphic type variables.
-          match LFunc.computeTypeSubst lfunc op_expr args with
-          | some tySubst =>
-            let body := body.applySubst tySubst
-            let input_map := lfunc.inputs.keys.zip args
-            let new_e := substFvarsLifting body input_map
-            eval n' σ new_e
-          | none => e -- cannot happen in well-typed terms
-        else
-          let new_e := @mkApp TBase.mono e.metadata op_expr args
-            -- All arguments in the function call are concrete.
-            -- We can, provided a denotation function, evaluate this function
-            -- call.
-          if args.all (isCanonicalValue σ.config.factory) ||
-            -- Other functions (e.g. Eliminators) only require the designated
-            -- arg to be a constructor
-            constrArgAt (FuncAttr.findEvalIfConstr lfunc.attr) ||
-            -- Some functions (e.g. regex) only require the designated
-            -- arg to be a canonical value (e.g. a constant string)
-            canonicalArgAt (FuncAttr.findEvalIfCanonical lfunc.attr) then
-            match lfunc.concreteEval with
-            | none => new_e
-            | some ceval =>
-              match ceval new_e.metadata args with
-              | .some e' => eval n' σ e'
-              | .none => new_e
+        match shortCircuitCall? lfunc args with
+        | some (a, rest, ceval) => evalShortCircuit n' F env e op_expr a rest ceval
+        | none =>
+          let argResults := args.map (fun a => eval n' F env a)
+          let argsAllFull := argResults.all (fun r => r.snd.isValueTrue)
+          let args := argResults.map Prod.fst
+          let constrArgAt (idx : Option Nat) :=
+            match idx with
+            | some i => (args[i]? |>.map (isConstrApp F)).getD false
+            | none => false
+          let valueArgAt (idx : Option Nat) :=
+            match idx with
+            | some i => (args[i]? |>.map (isValue F)).getD false
+            | none => false
+          if h: lfunc.body.isSome && (lfunc.attr.contains .inline ||
+            constrArgAt (FuncAttr.findInlineIfConstr lfunc.attr) ||
+            (FuncAttr.hasInlineIfAllValues lfunc.attr && args.all (isValue F))) then
+            -- Inline a function only if it has a body.
+            let body := lfunc.body.get (by simp_all)
+            -- Apply type substitution to instantiate polymorphic type variables.
+            match LFunc.computeTypeSubst lfunc op_expr args with
+            | some tySubst =>
+              let body := body.applyTypeSubst tySubst
+              let input_map := lfunc.inputs.keys.zip args
+              let new_e := substFvarsLifting body input_map
+              combineEvalResValueFlag argsAllFull (eval n' F env new_e)
+            | none => (e, .nonvalue) -- cannot happen in well-typed terms
           else
-            -- At least one argument in the function call is symbolic.
-            new_e
+            let new_e := @mkApp TBase.mono e.metadata op_expr args
+            if -- Case 1: All arguments in the function call are concrete.
+              -- We can, provided a denotation function, evaluate this function
+              -- call.
+              args.all (isValue F) ||
+              -- Case 2: Some functions (e.g. Eliminators) only require the designated
+              -- arg to be a constructor
+              constrArgAt (FuncAttr.findEvalIfConstr lfunc.attr) ||
+              -- Case 3: Some functions (e.g. regex) only require the designated
+              -- arg to be a value (e.g. a constant string)
+              valueArgAt (FuncAttr.findEvalIfValue lfunc.attr) then
+              match lfunc.concreteEval with
+              | none =>
+                -- No concrete evaluation available. The rebuilt call can still
+                -- be a value: constructor applications (and partial
+                -- applications) of value arguments are values (e.g.
+                -- `Cons (1+1) nil` rebuilds to `Cons 2 nil`, which is a value).
+                -- Canonicity alone decides value-hood; `argsAllFull` tempers
+                -- the every-step-fully-reduced bit as everywhere else.
+                combineEvalResValueFlag argsAllFull
+                  (new_e, if isValue F new_e then .value true else .nonvalue)
+              | some ceval =>
+                match ceval new_e.metadata args with
+                | .some e' =>
+                  combineEvalResValueFlag argsAllFull (eval n' F env e')
+                | .none => (new_e, .nonvalue)
+            else
+              -- At least one argument in the function call is symbolic.
+              (new_e, .nonvalue)
       | none =>
         -- Not a call of a factory function - go through evalCore
-        evalCore n' σ e
+        evalCore n' F env e
 
-@[expose] def evalCore  (n' : Nat) (σ : LState TBase) (e : LExpr TBase.mono) : LExpr TBase.mono :=
+def evalCore (n' : Nat) (F : @Factory TBase) (env : Env TBase) (e : LExpr TBase.mono)
+    : LExpr TBase.mono × EvalResult :=
   match e with
-  | .const _ _  => e
-  | .op _ _ _     => e
-  | .bvar _ _     => e
-  | .fvar _ x ty  => (σ.state.findD x (ty, e)).snd
-   -- Note: closed .abs terms are canonical values; we'll be here if .abs
-   -- contains free variables.
-  | .abs _ _ _ _   => LExpr.substFvarsFromState σ e
-  | .quant _ _ _ _ _ _ => LExpr.substFvarsFromState σ e
-  | .app _ e1 e2 => evalApp n' σ e e1 e2
-  | .eq m e1 e2 => evalEq n' σ m e1 e2
-  | .ite m c t f => evalIte n' σ m c t f
+  | .const _ _  => (e, .value true)
+  | .op _ _ _     => (e, .nonvalue)
+  | .bvar _ _     => (e, .nonvalue)
+  | .fvar _ x _  =>
+    -- Note: closed .abs terms are values; we'll be here if .abs
+    -- contains free variables.
+    match env x with
+    | some v => (v, if isValue F v then .value true else .nonvalue)
+    | none => (e, .nonvalue)
+  | .abs _ _ _ _   =>
+    let e' := LExpr.substFvarsFromEnv env e
+    (e', if isValue F e' then .value true else .nonvalue)
+  | .quant _ _ _ _ _ _ =>
+    let e' := LExpr.substFvarsFromEnv env e
+    (e', if isValue F e' then .value true else .nonvalue)
+  | .app _ e1 e2 => evalApp n' F env e e1 e2
+  | .eq m e1 e2 => evalEq n' F env m e1 e2
+  | .ite m c t f => evalIte n' F env m c t f
 
 -- Note: this evaluation is eager -- both branches are fully evaluated even when
 -- the condition is not resolved to true/false. This was originally lazy (only
--- substituting free variables via `substFvarsFromState`), but we switched to
+-- substituting free variables via `substFvarsFromEnv`), but we switched to
 -- eager evaluation to support recursive functions, where the branches may
 -- contain recursive calls that need to be unfolded. If we ever need a lazy mode
 -- again, we should add a flag.
-def evalIte (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (c t f : LExpr TBase.mono) : LExpr TBase.mono :=
-  let c' := eval n' σ c
+/-- A call of a `shortCircuit` function: evaluate the first argument `a` alone. If it
+    is a value, apply `ceval` to it and the other arguments `rest` unevaluated, and
+    evaluate whatever it returns. Otherwise, or if `ceval` declines, evaluate `rest`
+    and rebuild the call. Each argument is evaluated at most once, so a chain such as
+    `true && (z && (true && …))` takes time linear in its depth. -/
+def evalShortCircuit (n' : Nat) (F : @Factory TBase) (env : Env TBase)
+    (e op_expr a : LExpr TBase.mono) (rest : List (LExpr TBase.mono))
+    (ceval : TBase.Metadata → List (LExpr TBase.mono) → Option (LExpr TBase.mono))
+    : LExpr TBase.mono × EvalResult :=
+  let r1 := eval n' F env a
+  match (if isValue F r1.fst then ceval e.metadata (r1.fst :: rest) else none) with
+  | some e' => combineEvalResValueFlag r1.snd.isValueTrue (eval n' F env e')
+  | none =>
+    (@mkApp TBase.mono e.metadata op_expr (r1.fst :: rest.map (fun x => (eval n' F env x).fst)),
+      .nonvalue)
+
+def evalIte (n' : Nat) (F : @Factory TBase) (env : Env TBase) (m: TBase.Metadata)
+    (c t f : LExpr TBase.mono) : LExpr TBase.mono × EvalResult :=
+  let cRes := eval n' F env c
+  let c' := cRes.fst
   match c' with
-  | .true _ => eval n' σ t
-  | .false _ => eval n' σ f
+  | .true _ =>
+    let (e_out, res_out) := eval n' F env t
+    (e_out, res_out.combineValueFlag cRes.snd.isValueTrue)
+  | .false _ =>
+    let (e_out, res_out) := eval n' F env f
+    (e_out, res_out.combineValueFlag cRes.snd.isValueTrue)
   | _ =>
-    let t' := eval n' σ t
-    let f' := eval n' σ f
-    .ite m c' t' f'
+    let t' := (eval n' F env t).fst
+    let f' := (eval n' F env f).fst
+    (.ite m c' t' f', .nonvalue)
 
-def evalEq (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (e1 e2 : LExpr TBase.mono) : LExpr TBase.mono :=
+def evalEq (n' : Nat) (F : @Factory TBase) (env : Env TBase) (m: TBase.Metadata)
+    (e1 e2 : LExpr TBase.mono) : LExpr TBase.mono × EvalResult :=
   open LTy.Syntax in
-  let e1' := eval n' σ e1
-  let e2' := eval n' σ e2
-  match eql σ.config.factory e1' e2' with
-  | some b => .const m (.boolConst b)
-  | none => .eq m e1' e2'
+  let r1 := eval n' F env e1
+  let r2 := eval n' F env e2
+  let e1' := r1.fst
+  let e2' := r2.fst
+  match eql F e1' e2' with
+  | some b => (.const m (.boolConst b),
+      .value (r1.snd.isValueTrue && r2.snd.isValueTrue))
+  | none => (.eq m e1' e2', .nonvalue)
 
-def evalApp (n' : Nat) (σ : LState TBase) (e e1 e2 : LExpr TBase.mono) : LExpr TBase.mono :=
-  let e1' := eval n' σ e1
-  let e2' := eval n' σ e2
+def evalApp (n' : Nat) (F : @Factory TBase) (env : Env TBase) (e e1 e2 : LExpr TBase.mono)
+    : LExpr TBase.mono × EvalResult :=
+  let r1 := eval n' F env e1
+  let r2 := eval n' F env e2
+  let e1' := r1.fst
+  let e2' := r2.fst
+  let subsFull := r1.snd.isValueTrue && r2.snd.isValueTrue
   match e1' with
   | .abs mAbs _ _ e1' =>
     let e' := subst (fun metaReplacementVar =>
       let newMeta := mergeMetadataForSubst mAbs e2'.metadata metaReplacementVar
       replaceMetadata1 newMeta e2') e1'
-    if eqModuloMeta e e' then e else eval n' σ e'
+    if eqModuloMeta e e' then (e, .nonvalue)
+    else
+      let (e_out, res_out) := eval n' F env e'
+      (e_out, res_out.combineValueFlag subsFull)
   | _e =>
     -- Re-evaluate when subexpressions changed (e.g. fvar resolved to .op),
     -- so that `callOfLFunc` in `eval` can recognise the rebuilt expression
     -- as a factory function call.  When nothing changed, `eqModuloMeta`
     -- short-circuits and we return immediately.
     let e' := .app e.metadata e1' e2'
-    if eqModuloMeta e e' then e else eval n' σ e'
+    if eqModuloMeta e e' then (e, .nonvalue)
+    else
+      let (e_out, res_out) := eval n' F env e'
+      (e_out, res_out.combineValueFlag subsFull)
 end
 
 instance : Traceable EvalProvenance Unit where
   combine _ := ()
 
-
-/-! ## Expression Evaluation -/
+def evalWithLState (n : Nat) (σ : LState TBase) (e : LExpr TBase.mono)
+    : LExpr TBase.mono × EvalResult :=
+  eval n σ.config.factory (Scopes.toEnv σ.state) e
 
 /-- Walk a post-eval expression looking for a stuck redex: a fully-applied
-non-constructor factory function whose arguments are all canonical values.
+non-constructor factory function whose arguments are all values.
 Such a call *should* have reduced during `eval` but didn't (e.g. missing `body`
 or `concreteEval`). Returns the stuck subexpression if found.
 
@@ -335,7 +448,7 @@ def findStuckRedex (F : @Lambda.Factory TBase) : LExpr TBase.mono → Option (LE
   | e@(.app _m fn arg) =>
     match Factory.callOfLFunc F e false with
     | some (_, args, f) =>
-      if !f.isConstr && args.all (LExpr.isCanonicalValue F) then
+      if !f.isConstr && args.all (LExpr.isValue F) then
         some e
       else
         -- Non-stuck call: recurse into fn and arg (structural subterms)
@@ -347,20 +460,49 @@ def findStuckRedex (F : @Lambda.Factory TBase) : LExpr TBase.mono → Option (LE
 
 This is the interpreter's own expression evaluator, defined as a separate
 function so that we can later prove it consistent with the small-step
-`Lambda.Step` relation from `Strata.DL.Lambda.Semantics`.
+`Lambda.Step` relation from `Strata.DL.Lambda.OperationalSemantics`.
 
-Currently delegates to `LExpr.eval` with the fuel and state from `Env`.
+Currently delegates to `LExpr.eval` with the fuel and state from `LState`.
 If the result contains a stuck redex (a fully-applied function that should
 have reduced but didn't), returns an error.
 -/
 def run (σ : LState TBase) (e : (LExpr TBase.mono)) : Except String (LExpr TBase.mono) :=
-  let v := e.eval σ.config.fuel σ
-  if LExpr.isCanonicalValue σ.config.factory v then
-    .ok v
-  else
-    match findStuckRedex σ.config.factory v with
+  let result := evalWithLState σ.config.fuel σ e
+  match result.snd with
+  | .value _ => .ok result.fst
+  | .outOfFuel => .error "out of fuel"
+  | .nonvalue =>
+    match findStuckRedex σ.config.factory result.fst with
     | some _ => .error "expression contains stuck redex"
-    | none => .ok v
+    | none => .ok result.fst
+
+/-- Fully evaluate an expression `e` using `eval` with a given starting `fuel`,
+    incrementally increasing the fuel until the result becomes a
+    fully-reduced `.value true`.
+
+    Thanks to `partial_fixpoint`, this function is `.none` when no amount of fuel
+    ever yields a `.value true`.
+
+    TODO: Remove `expose` once `Strata` gets bumped to `Lean-4.36.0` is cut.
+    `expose` is used to prevent a panic in the `partial_fixpoint` code that always
+    assumes the visibility of the body, that eventually got fixed,
+    but the release was not cut yet. -/
+@[expose] def evalFullyAux (F : @Factory TBase) (env : Env TBase) (e : LExpr TBase.mono)
+    (fuel : Nat) : Option (LExpr TBase.mono) :=
+  let (e', res) := eval fuel F env e
+  match res with
+  | .value true => some e'
+  | .value false => evalFullyAux F env e (fuel + 1)
+  | .nonvalue => evalFullyAux F env e (fuel + 1)
+  | .outOfFuel => evalFullyAux F env e (fuel + 1)
+partial_fixpoint
+
+/-- Fully evaluate an expression by incrementally increasing the fuel given to
+    `eval` (starting from `0`) until the result is a `.value`.  See
+    `evalFullyAux` for details. -/
+def evalFully (F : @Factory TBase) (env : Env TBase) (e : LExpr TBase.mono)
+    : Option (LExpr TBase.mono) :=
+  evalFullyAux F env e 0
 
 end LExpr
 end -- public section
