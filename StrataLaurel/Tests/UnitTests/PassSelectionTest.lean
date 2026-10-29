@@ -69,8 +69,8 @@ private def translated (passes : Option (List String)) (p : LaurelProgram) : IO 
 
 /--
 info: This phase order does not satisfy the phases' declarations:
-  Phase 23 'Contracts' does not support Pseudo.overload, which is still present when it runs. 'UniqueOverloadNames' removes it; insert it before position 23.
-  Phase 24 'Transparency' does not support Pseudo.overload, which is still present when it runs. 'UniqueOverloadNames' removes it; insert it before position 24.
+  Phase 24 'Contracts' does not support Pseudo.overload, which is still present when it runs. 'UniqueOverloadNames' removes it; insert it before position 24.
+  Phase 25 'Transparency' does not support Pseudo.overload, which is still present when it runs. 'UniqueOverloadNames' removes it; insert it before position 25.
 -/
 #guard_msgs in
 #eval report (checkPassSelection (dropping ["UniqueOverloadNames"]))
@@ -83,10 +83,10 @@ private def requirements (names : List String) : Except String (List String) :=
 #eval requirements defaultPassNames
 
 /--
-info: Except.ok ["StmtExpr.Hole.type.none <- 16 UniqueOverloadNames", "StmtExpr.Yield <- 26 LaurelToCoreSchema",
- "StmtExpr.Resume <- 26 LaurelToCoreSchema", "StmtExpr.HasNext <- 26 LaurelToCoreSchema",
- "StmtExpr.Hole.deterministic.true <- 26 LaurelToCoreSchema", "Procedure.contracts.Coroutine <- 26 LaurelToCoreSchema",
- "StmtExpr.OldGuarantee <- 26 LaurelToCoreSchema", "StmtExpr.OldRelies <- 26 LaurelToCoreSchema"]
+info: Except.ok ["StmtExpr.Hole.type.none <- 17 UniqueOverloadNames", "StmtExpr.Yield <- 27 LaurelToCoreSchema",
+ "StmtExpr.Resume <- 27 LaurelToCoreSchema", "StmtExpr.HasNext <- 27 LaurelToCoreSchema",
+ "StmtExpr.Hole.deterministic.true <- 27 LaurelToCoreSchema", "Procedure.contracts.Coroutine <- 27 LaurelToCoreSchema",
+ "StmtExpr.OldGuarantee <- 27 LaurelToCoreSchema", "StmtExpr.OldRelies <- 27 LaurelToCoreSchema"]
 -/
 #guard_msgs in
 #eval requirements (dropping ["CoroutineElaboration", "YieldElim", "InferHoleTypes",
@@ -94,28 +94,28 @@ info: Except.ok ["StmtExpr.Hole.type.none <- 16 UniqueOverloadNames", "StmtExpr.
 
 /--
 info: This phase order does not satisfy the phases' declarations:
-  Phase 23 'Contracts' does not support StmtExpr.Return, which is still present when it runs. 'EliminateReturnStatements' removes it; insert it before position 23.
+  Phase 24 'Contracts' does not support StmtExpr.Return, which is still present when it runs. 'EliminateReturnStatements' removes it; insert it before position 24.
 -/
 #guard_msgs in
 #eval report (checkPassSelection (dropping ["EliminateReturnStatements"]))
 
 /--
 info: This phase order does not satisfy the phases' declarations:
-  Phase 29 'LaurelToCoreSchema' does not support Pseudo.needsLoopInvariantChecks, which is still present when it runs. 'LoopInvariantWellFormedness' removes it; insert it before position 29.
+  Phase 30 'LaurelToCoreSchema' does not support Pseudo.needsLoopInvariantChecks, which is still present when it runs. 'LoopInvariantWellFormedness' removes it; insert it before position 30.
 -/
 #guard_msgs in
 #eval report (checkPassSelection (dropping ["LoopInvariantWellFormedness"]))
 
 /--
 info: This phase order does not satisfy the phases' declarations:
-  Phase 29 'LaurelToCoreSchema' does not support Pseudo.mutatedInput, which is still present when it runs. 'CopyMutatedInputs' removes it; insert it before position 29.
+  Phase 30 'LaurelToCoreSchema' does not support Pseudo.mutatedInput, which is still present when it runs. 'CopyMutatedInputs' removes it; insert it before position 30.
 -/
 #guard_msgs in
 #eval report (checkPassSelection (dropping ["CopyMutatedInputs"]))
 
 /--
 info: This phase order does not satisfy the phases' declarations:
-  Phase 26 'LiftImperativeExpressions' does not support Pseudo.imperativeShortCircuit, which is still present when it runs. 'DesugarShortCircuit' removes it; insert it before position 26.
+  Phase 27 'LiftImperativeExpressions' does not support Pseudo.imperativeShortCircuit, which is still present when it runs. 'DesugarShortCircuit' removes it; insert it before position 27.
 -/
 #guard_msgs in
 #eval report (checkPassSelection (dropping ["DesugarShortCircuit"]))
@@ -135,22 +135,22 @@ info: This phase order does not satisfy the phases' declarations:
 
 /--
 info: This phase order does not satisfy the phases' declarations:
-  Phase 29 'LaurelToCoreSchema' does not support Pseudo.imperativeFunction, which is still present when it runs. 'FunctionalRewritePass' removes it; insert it before position 29.
+  Phase 30 'LaurelToCoreSchema' does not support Pseudo.imperativeFunction, which is still present when it runs. 'FunctionalRewritePass' removes it; insert it before position 30.
 -/
 #guard_msgs in
 #eval report (checkPassSelection (dropping ["FunctionalRewritePass"]))
 
 /--
 info: This phase order does not satisfy the phases' declarations:
-  Phase 29 'LaurelToCoreSchema' does not support StmtExpr.OldGuarantee, which is still present when it runs. 'YieldElim' removes it; insert it before position 29.
-  Phase 29 'LaurelToCoreSchema' does not support StmtExpr.OldRelies, which is still present when it runs. 'YieldElim' removes it; insert it before position 29.
+  Phase 30 'LaurelToCoreSchema' does not support StmtExpr.OldGuarantee, which is still present when it runs. 'YieldElim' removes it; insert it before position 30.
+  Phase 30 'LaurelToCoreSchema' does not support StmtExpr.OldRelies, which is still present when it runs. 'YieldElim' removes it; insert it before position 30.
 -/
 #guard_msgs in
 #eval report (checkPassSelection (dropping ["YieldElim"]))
 
 /--
 info: This phase order does not satisfy the phases' declarations:
-  Phase 23 'Contracts' does not support Pseudo.overload, which is still present when it runs. 'UniqueOverloadNames' at position 24 removes it; move it before position 23.
+  Phase 24 'Contracts' does not support Pseudo.overload, which is still present when it runs. 'UniqueOverloadNames' at position 25 removes it; move it before position 24.
 -/
 #guard_msgs in
 #eval report (checkPassSelection (movingAfter "UniqueOverloadNames" "Contracts"))
@@ -192,7 +192,7 @@ info: Phase 'Contracts' runs before Transparency, so it cannot follow 'InlineLoc
 #eval translated (some (swapping "PushOldInward" "InferHoleTypes")) aliasProgram
 
 /--
-info: false [The program contains TypeDefinition.Alias, which phase 29 'LaurelToCoreSchema' does not support. 'TypeAliasElim' removes it; insert it before position 29.]
+info: false [The program contains TypeDefinition.Alias, which phase 30 'LaurelToCoreSchema' does not support. 'TypeAliasElim' removes it; insert it before position 30.]
 -/
 #guard_msgs in
 #eval translated (some (dropping ["TypeAliasElim"])) aliasProgram
@@ -202,7 +202,7 @@ info: false [The program contains TypeDefinition.Alias, which phase 29 'LaurelTo
 #eval translated (some (dropping ["InferHoleTypes"])) (holeProgram false)
 
 /--
-info: false [The program contains StmtExpr.Hole.deterministic.true, which phase 29 'LaurelToCoreSchema' does not support. 'EliminateDeterministicHoles' removes it; insert it before position 29.]
+info: false [The program contains StmtExpr.Hole.deterministic.true, which phase 30 'LaurelToCoreSchema' does not support. 'EliminateDeterministicHoles' removes it; insert it before position 30.]
 -/
 #guard_msgs in
 #eval translated (some (dropping ["EliminateDeterministicHoles"])) (holeProgram true)
@@ -213,14 +213,14 @@ info: false [The program contains StmtExpr.Hole.deterministic.true, which phase 
   "EliminateDeterministicHoles"])) aliasProgram
 
 /--
-info: false [The program contains Procedure.contracts.Coroutine, which phase 28 'LaurelToCoreSchema' does not support. 'CoroutineElaboration' removes it; insert it before position 28.]
+info: false [The program contains Procedure.contracts.Coroutine, which phase 29 'LaurelToCoreSchema' does not support. 'CoroutineElaboration' removes it; insert it before position 29.]
 -/
 #guard_msgs in
 #eval translated (some (dropping ["CoroutineElaboration", "YieldElim"])) coroutineProgram
 
 /--
 info: false [This phase order does not satisfy the phases' declarations:
-  Phase 29 'LaurelToCoreSchema' does not support Pseudo.needsLoopInvariantChecks, which is still present when it runs. 'LoopInvariantWellFormedness' removes it; insert it before position 29.]
+  Phase 30 'LaurelToCoreSchema' does not support Pseudo.needsLoopInvariantChecks, which is still present when it runs. 'LoopInvariantWellFormedness' removes it; insert it before position 30.]
 -/
 #guard_msgs in
 #eval translated (some (dropping ["LoopInvariantWellFormedness"])) aliasProgram

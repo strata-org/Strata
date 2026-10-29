@@ -145,8 +145,7 @@ def Laurel.withEntryHarness (program : Laurel.LaurelProgram) (name : String)
     throw s!"entry procedure '{name}' cannot take inputs or type parameters: \
              an entry point is invoked with no arguments"
   let src := target.name.source
-  let taken : Std.HashSet String :=
-    (Laurel.declaredNames program).foldl (fun s (_, text, _) => s.insert text) {}
+  let taken : Std.HashSet String := Laurel.declaredNameSet program
   let fresh (base : String) : Laurel.Identifier :=
     { text := Strata.Name.findUnique base 1 taken, source := src }
   -- Lowering keeps a transparent procedure without an assert or assume of its own only as a

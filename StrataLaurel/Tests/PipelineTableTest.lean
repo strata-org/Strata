@@ -37,31 +37,32 @@ phase                                   O   I   Ic  In  Co  Tr  Ts  Tf  Sc  pI  
  3 LiftInstanceProcedures             + + + : : V : V : : : : : : : : : : : : : : : : : : | : : | | : : | V | : : : : | : :
  4 TypeAliasElim                      + + | : : | : | : : : : : : : : : : : : : : : : : : | : : | | : : | | | : V : : | : :
  5 MonomorphizeComposites             + + | : : | : | V : : : : : : : : : : : : : : : : : | : : | | : : | | | : | : : | : :
- 6 EliminateDoWhile                   | | | : : | : | | : : : : : : : : : : : V : : : : : | : : | | : : | | | : | : : | : :
- 7 EliminateIncrDecrAndCompoundAssign | | | V V | : | | : : : : : : : : : : : |   : : : : | : : | | : : | | | : | : : | : :
- 8 CopyMutatedInputs                  | | | + + | : | | : : : : : : : : : : : | : : : : : | : : | | : : | | | : | : V | : :
- 9 EliminateValueInReturns            | | | | | + V | | : : : : : : :   : : : | : : : : : | : : | | : : | | | : | : | | : :
-10 ConstrainedTypeElim                + + | | | | + | | V : : : : : : : : : : | : : : : : | : : | | : : | | | : | : | | : :
-11 EliminateExceptions                + + | | | | + | | | V V : V : V : : : : | : : : : : | : : | | : : | | | : | : | | : :
-12 YieldElim                          + + | | | | | + | | | | : | : | : :   : | : : : : : ' : V | | : : | | | : | : | | V V
-13 HeapParameterization               + + | | | | + | + + + + V | : | :   : : | V V : V : V   | | | :   | | | : | : | | | |
-14 TypeHierarchyTransform             + + | | | | | | | | | | + | : | : : : : | | | V | V | : | | | : : | | | : | : | | | |
-15 ModifiesClausesTransform           + + | | | | | | | | | | + | : | : :   : | | | | | | |   | | | : : | | | : | : | | | |
-16 GlobalParameterization             + + | | | + + | | | | | | + : | : V : : | | | | | | | : | | | :   | | | : | : | | | |
-17 PushOldInward                      | | | | | | | | | | | | | | : | : | : : | | | | | | | V | | | : : | | | : | : | | | |
-18 InferHoleTypes                     | | | | | | | | | | | | | | V | : | : : | | | | | | | | | | | : : | | | : | : | | | |
-19 EliminateDeterministicHoles        + + | | | | | | | | | | | | + | : | : : | | | | | | | | | | | V : | | | : | : | | | |
-20 UniqueOverloadNames                + + | | | | | | | | | | | | + | : | V : | | | | | | | | | | | | : | | | : | : | | | |
-21 DesugarShortCircuit                + + | | | | | | | | | | | | | | : | | V | | | | | | | | | | | |   | | | : | : | | | |
-22 EliminateReturnStatements          | | | | | | | | | | | | | | | + V | | | | | | | | | | | | | | | : | | | : | : | | | |
-23 LoopInvariantWellFormedness        | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | : | | | : | V | | | |
-24 Contracts                          + + | | | | | | | | | | | | | | + + + | | | | | | | | | | | | | : | | | : | | | | | |
-25 Transparency                       ' + | | | | | | | | | | | | | | | | + | | | | | | | | | | | | |   ' | ' : | | | | | |
-26 FunctionalRewritePass              : + | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | :   | V : | | | | | |
-27 LiftImperativeExpressions          : + | + + | | | | | | | | | | | | | | + | | | | | | | | | | | | V : | | : | | | | | |
-28 InlineLocalVariables               : + | + | | | | | | | | | | | | | | | | | | | | | | | | | | | | | V | | : | | | | | |
-29 Ordering                           : ' | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | V | | | | | |
-30 LaurelToCoreSchema                 : : | + + + | + + | + + | | | | | | | | + + + + + + + + + + + + + + + + + + + + + + + -/
+ 6 OpaqueUnusedTypeParams             + + | : : | : | | : : : : : : : : : : : : : : : : : | : : | | : : | | | : | : : | : :
+ 7 EliminateDoWhile                   | | | : : | : | | : : : : : : : : : : : V : : : : : | : : | | : : | | | : | : : | : :
+ 8 EliminateIncrDecrAndCompoundAssign | | | V V | : | | : : : : : : : : : : : |   : : : : | : : | | : : | | | : | : : | : :
+ 9 CopyMutatedInputs                  | | | + + | : | | : : : : : : : : : : : | : : : : : | : : | | : : | | | : | : V | : :
+10 EliminateValueInReturns            | | | | | + V | | : : : : : : :   : : : | : : : : : | : : | | : : | | | : | : | | : :
+11 ConstrainedTypeElim                + + | | | | + | | V : : : : : : : : : : | : : : : : | : : | | : : | | | : | : | | : :
+12 EliminateExceptions                + + | | | | + | | | V V : V : V : : : : | : : : : : | : : | | : : | | | : | : | | : :
+13 YieldElim                          + + | | | | | + | | | | : | : | : :   : | : : : : : ' : V | | : : | | | : | : | | V V
+14 HeapParameterization               + + | | | | + | + + + + V | : | :   : : | V V : V : V   | | | :   | | | : | : | | | |
+15 TypeHierarchyTransform             + + | | | | | | | | | | + | : | : : : : | | | V | V | : | | | : : | | | : | : | | | |
+16 ModifiesClausesTransform           + + | | | | | | | | | | + | : | : :   : | | | | | | |   | | | : : | | | : | : | | | |
+17 GlobalParameterization             + + | | | + + | | | | | | + : | : V : : | | | | | | | : | | | :   | | | : | : | | | |
+18 PushOldInward                      | | | | | | | | | | | | | | : | : | : : | | | | | | | V | | | : : | | | : | : | | | |
+19 InferHoleTypes                     | | | | | | | | | | | | | | V | : | : : | | | | | | | | | | | : : | | | : | : | | | |
+20 EliminateDeterministicHoles        + + | | | | | | | | | | | | + | : | : : | | | | | | | | | | | V : | | | : | : | | | |
+21 UniqueOverloadNames                + + | | | | | | | | | | | | + | : | V : | | | | | | | | | | | | : | | | : | : | | | |
+22 DesugarShortCircuit                + + | | | | | | | | | | | | | | : | | V | | | | | | | | | | | |   | | | : | : | | | |
+23 EliminateReturnStatements          | | | | | | | | | | | | | | | + V | | | | | | | | | | | | | | | : | | | : | : | | | |
+24 LoopInvariantWellFormedness        | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | : | | | : | V | | | |
+25 Contracts                          + + | | | | | | | | | | | | | | + + + | | | | | | | | | | | | | : | | | : | | | | | |
+26 Transparency                       ' + | | | | | | | | | | | | | | | | + | | | | | | | | | | | | |   ' | ' : | | | | | |
+27 FunctionalRewritePass              : + | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | :   | V : | | | | | |
+28 LiftImperativeExpressions          : + | + + | | | | | | | | | | | | | | + | | | | | | | | | | | | V : | | : | | | | | |
+29 InlineLocalVariables               : + | + | | | | | | | | | | | | | | | | | | | | | | | | | | | | | V | | : | | | | | |
+30 Ordering                           : ' | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | V | | | | | |
+31 LaurelToCoreSchema                 : : | + + + | + + | + + | | | | | | | | + + + + + + + + + + + + + + + + + + + + + + + -/
 #guard_msgs in
 #eval IO.println Strata.Laurel.shapeLifelineTable
 

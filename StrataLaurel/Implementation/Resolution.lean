@@ -6580,6 +6580,10 @@ def declaredNames (program : LaurelProgram) : List (String × String × FileRang
     ++ program.constants.flatMap (fun c =>
          ofId "constant" c.name :: c.initializer.toList.flatMap inExprs)
 
+/-- The spellings of every name a program declares. -/
+def declaredNameSet (program : LaurelProgram) : Std.HashSet String :=
+  (declaredNames program).foldl (fun s (_, text, _) => s.insert text) {}
+
 /-- A leading `$` marks the compiler's own namespace, so a *source* program may not
     declare a name that starts with one. Everything in that namespace is generated
     deliberately: the prelude's operator delegates (`$add`, `$intAdd`), the parser's

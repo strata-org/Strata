@@ -152,33 +152,6 @@ private def usedNames (proc : Procedure) : Std.HashSet String :=
   (proc.throwsOn.foldl (fun acc blk =>
     blk.postconditions.foldl (fun acc c => fromBody c.condition acc) acc) acc)
 
-/-- `base` if unused in `taken`, else `base_1`, `base_2`, … -/
-private def freshName (base : String) (taken : Std.HashSet String) : String :=
-  if !taken.contains base then base
-  else
-    let rec go (i : Nat) (fuel : Nat) : String :=
-      match fuel with
-      -- Unreachable by pigeonhole: the search visits `taken.size + 1` candidates,
-      -- all distinct (`_1`, `_2`, … suffixes), and `taken` can contain at most
-      -- `taken.size` of them — so a free candidate is found before the fuel runs
-      -- out. The fuel exists only to make termination structural; this arm keeps
-      -- the function total without an in-proof pigeonhole argument.
-      | 0 => s!"{base}_{i}"
-      | fuel + 1 =>
-        let cand := s!"{base}_{i}"
-        if taken.contains cand then go (i + 1) fuel else cand
-    go 1 (taken.size + 1)
-
--- Pin `freshName`'s outputs for the cases the carrier naming relies on: the
--- preferred spelling when free, the first suffix when taken (the short-form
--- procedure's case), and stepping past consecutive taken names. Checked at compile
--- time; the end-to-end tests in `ThrowsClause.lean` only assert that the lowered
--- program verifies, which would not catch a freshener returning a wrong-but-unused
--- name.
-#guard freshName "$result" {} == "$result"
-#guard freshName "$result" (Std.HashSet.ofList ["$result"]) == "$result_1"
-#guard freshName "$result" (Std.HashSet.ofList ["$result", "$result_1"]) == "$result_2"
-#guard freshName "$result" (Std.HashSet.ofList ["$result_1"]) == "$result"
 /-- Label of the block a `throw`/`return` exits to leave the body region; the
     `Result` construction is placed immediately after this block. Distinct from
     the translator's `$body` label (which it auto-wraps around every body). -/
@@ -1148,7 +1121,7 @@ private def lowerProc (proc : Procedure) : EM Procedure := do
   -- is the ubiquitous case: it mints its value output under this very name, so such
   -- a procedure's carrier freshens to `$result_1`, keeping the value output and the
   -- carrier distinct identifiers in the lowered signature's scope.
-  let carrier := freshName exnResultVar (usedNames proc)
+  let carrier := freshNameAvoiding exnResultVar (usedNames proc)
   let newOutputs := inoutOutputs ++ [⟨mkId carrier, resultTyOf valTy throwsTy⟩]
   -- Postconditions.
   let goodWrap (p : StmtExprMd) : StmtExprMd :=

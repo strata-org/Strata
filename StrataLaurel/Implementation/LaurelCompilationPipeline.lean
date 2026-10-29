@@ -44,6 +44,7 @@ import StrataLaurel.Implementation.CheckOverrideRefinement
 import StrataLaurel.Implementation.TypeAliasElim
 import StrataLaurel.Implementation.EliminateExceptions
 import StrataLaurel.Implementation.MonomorphizeComposites
+import StrataLaurel.Implementation.OpaqueUnusedTypeParams
 import StrataLaurel.Implementation.LaurelNodeKindCheck
 public import StrataLaurel.Implementation.LaurelPass
 public import Strata.Languages.Core
@@ -141,6 +142,9 @@ def laurelPipeline : Array LaurelPass := #[
   -- into the non-parametric Box datatype, so any generic composite still un-monomorphized at
   -- that point would be boxed with no concrete instantiation and reach Core un-lowered.
   monomorphizeCompositesPass,
+  -- Runs before the passes that derive declarations from a procedure (constraint lemmas, contract
+  -- helpers, `$asFunction` copies), so each such declaration shares its opaque types.
+  opaqueUnusedTypeParamsPass,
   eliminateDoWhilePass,
   eliminateIncrDecrAndCompoundAssignPass,
   -- Placement rationale in the pass's module header.

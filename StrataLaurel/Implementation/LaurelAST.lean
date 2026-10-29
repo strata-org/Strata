@@ -48,6 +48,25 @@ instance : Coe String Identifier where
 
 @[expose] def mkId (name: String): Identifier := { text := name }
 
+/-- `base` if unused in `taken`, else `base_1`, `base_2`, … -/
+def freshNameAvoiding (base : String) (taken : Std.HashSet String) : String :=
+  if !taken.contains base then base
+  else
+    let rec go (i : Nat) (fuel : Nat) : String :=
+      match fuel with
+      -- Unreachable: the `taken.size + 1` distinct candidates cannot all be in `taken`. The fuel
+      -- only makes termination structural.
+      | 0 => s!"{base}_{i}"
+      | fuel + 1 =>
+        let cand := s!"{base}_{i}"
+        if taken.contains cand then go (i + 1) fuel else cand
+    go 1 (taken.size + 1)
+
+#guard freshNameAvoiding "$result" {} == "$result"
+#guard freshNameAvoiding "$result" (Std.HashSet.ofList ["$result"]) == "$result_1"
+#guard freshNameAvoiding "$result" (Std.HashSet.ofList ["$result", "$result_1"]) == "$result_2"
+#guard freshNameAvoiding "$result" (Std.HashSet.ofList ["$result_1"]) == "$result"
+
 /-- Extract the unique ID, or fail with a descriptive message when unresolved. -/
 def Identifier.getUniqueId (id : Identifier) : Except String Nat :=
   match id.uniqueId with
