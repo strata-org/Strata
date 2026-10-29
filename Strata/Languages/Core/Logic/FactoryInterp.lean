@@ -569,7 +569,6 @@ private theorem shortCircuit_func_consistent
   subst hce
   exact shortCircuit_consistent _ _ rfl rfl rfl hlook absorb decided (by intro md x y; rfl)
 
-set_option maxRecDepth 2000 in
 /-- For every `Core.Factory` function with a concrete evaluator, `opInterp` agrees
     with that evaluator. -/
 private theorem eval_consistent :
@@ -580,9 +579,12 @@ private theorem eval_consistent :
       wf.func.concreteEval = some ceval →
       Core.Factory.get? wf.func.name.name = some wf.func →
       LFunc.InterpConsistentEval tcInterp opInterp wf.func ceval := by
-    simp only [Core.WFFactoryArray, Array.toList_appendList, List.cons_append, List.nil_append]
-    repeat (refine List.forall_mem_cons.mpr ⟨?_, ?_⟩; rotate_left)
-    exact List.forall_mem_nil _
+    unfold Core.WFFactoryArray
+    simp only [Array.toList_appendList, List.forall_mem_append]
+    repeat' apply And.intro
+    all_goals
+      repeat (refine List.forall_mem_cons.mpr ⟨?_, ?_⟩; rotate_left)
+      exact List.forall_mem_nil _
     all_goals
       intro ceval hce hlook
       first

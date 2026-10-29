@@ -2005,13 +2005,6 @@ private def thrownTypesJoin (lattice : TypeLattice) (tys : List HighTypeMd)
 -- look unused to the linter, but each one is referenced by that helper's
 -- `decreasing_by` tactic to relate `sizeOf args` to `sizeOf exprMd`.
 set_option linter.unusedVariables false in
--- The well-founded-recursion termination proofs for every helper in this
--- large mutual block share a single elaboration heartbeat budget. Each
--- `decreasing_by` rewrites the node equation (`rw [h]`) and then discharges
--- the size goal with `term_by_mem` (which adds `List`/`Array` membership-size
--- lemmas, then `simp_all` and `omega`). Their cumulative cost across ~30
--- functions sits above the 200k default, so the budget is raised for the block.
-set_option maxHeartbeats 400000 in
 mutual
 
 -- ### Dispatch
@@ -2142,11 +2135,11 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd)
     let r ← Check.tryCatch exprMd body catches finally? source (by rw [h_node, h_expr])
     return (r, ⟨ .TVoid, source ⟩)
   return ({ val := val', source := source }, ty)
-  termination_by (exprMd, 2)
+  termination_by sizeOf exprMd * 5 + 2
   decreasing_by all_goals first
-    | (apply Prod.Lex.left; term_by_mem)
-    | (try subst h_expr; try subst h_node; apply Prod.Lex.right; decide)
-    | (apply Prod.Lex.right; decide)
+    | (term_by_mem)
+    | (try subst h_expr; try subst h_node; omega)
+    | (omega)
 
 /-- Check-mode resolution (rule **Sub** at the boundary): resolve `e` and
     verify its type is a consistent subtype of `expected`, written
@@ -2239,12 +2232,12 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
       | none => coerceTo source expected actual e'
     else
       coerceTo source expected actual e'
-  termination_by (exprMd, 3)
+  termination_by sizeOf exprMd * 5 + 3
   decreasing_by all_goals first
-    | (apply Prod.Lex.left; term_by_mem)
-    | (try subst_eqs; apply Prod.Lex.right; decide)
-    | (try subst h_expr; try subst h_node; apply Prod.Lex.right; decide)
-    | (apply Prod.Lex.right; decide)
+    | (term_by_mem)
+    | (try subst_eqs; omega)
+    | (try subst h_expr; try subst h_node; omega)
+    | (omega)
 
 -- ### Literals
 
@@ -2304,9 +2297,8 @@ def Synth.varField (exprMd : StmtExprMd)
   -- that read came through this same rule — so chains concretize transitively.
   let ty ← concretizeFieldType holderTy fieldName'
   pure (.Var (.Field target' fieldName'), ty)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -2397,10 +2389,9 @@ def Check.while (exprMd : StmtExprMd)
   -- `postTest` (the `do … while` variant) resolves identically and is carried
   -- through unchanged for the `EliminateDoWhile` pass to lower afterwards.
   pure { val := .While cond' invs' dec' body' postTest, source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -2517,10 +2508,9 @@ def Check.return (exprMd : StmtExprMd)
   -- The return value (if any) was already checked against the declared
   -- output above via `answerType`.
   pure { val := .Return val', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -2568,8 +2558,8 @@ def Synth.emptyBlock (source : FileRange) : HighTypeMd :=
     (`expected = TVoid`). -/
 def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
   let (s', _) ← Synth.resolveStmtExpr s; pure s'
-  termination_by (s, 4)
-  decreasing_by all_goals (apply Prod.Lex.right; decide)
+  termination_by sizeOf s * 5 + 4
+  decreasing_by all_goals (omega)
 
 /-- (Block) Check-mode typing rule for a non-empty block.
 
@@ -2656,10 +2646,9 @@ def Check.block (exprMd : StmtExprMd)
       have := List.mem_of_getLast? _lastResult
       let last' ← checkLast last ‹_›
       pure { val := .Block (init' ++ [last']) label, source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -2698,10 +2687,9 @@ def Check.ifThenElse (exprMd : StmtExprMd)
   if elseBr.isNone then
     checkSubtype source expected { val := .TVoid, source := source }
   pure { val := .IfThenElse cond' thenBr' elseBr', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -2781,10 +2769,9 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
           modify fun s => { s with errors := s.errors.push diag }
           pure { val := .Unknown, source := source }
     pure (.IfThenElse cond' thenBr' (some e'), ty)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       simp only [StmtExpr.IfThenElse.sizeOf_spec, Option.some.sizeOf_spec] at hsz
@@ -2843,10 +2830,9 @@ def Synth.block (exprMd : StmtExprMd)
       have := List.mem_of_getLast? _lastResult
       let (last', lastTy) ← Synth.resolveStmtExpr last expected?
       pure (.Block (init' ++ [last']) label, lastTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -2868,9 +2854,8 @@ def Check.assert (exprMd : StmtExprMd)
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr condExpr { val := .TBool, source := condExpr.source }
   pure { val := .Assert cond' summary, source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -2889,9 +2874,8 @@ def Check.assume (exprMd : StmtExprMd)
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
   pure { val := .Assume cond', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -2918,9 +2902,8 @@ def Check.throw (exprMd : StmtExprMd)
   -- `throw` is a statement (yields `TVoid`).
   let (value', _) ← Synth.resolveStmtExpr value
   pure { val := .Throw value', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     simp only [StmtExpr.Throw.sizeOf_spec] at hsz
@@ -2996,10 +2979,9 @@ def Check.tryCatch (exprMd : StmtExprMd)
   let finally'? ← finally?.attach.mapM fun ⟨fexpr, _⟩ =>
     Check.resolveStmtExpr fexpr { val := .Unknown, source := fexpr.source }
   pure { val := .Try body' catches' finally'?, source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       simp only [StmtExpr.Try.sizeOf_spec] at hsz
@@ -3103,10 +3085,9 @@ def Synth.assign (exprMd : StmtExprMd)
       pure (⟨.Declare ⟨name', some ty'⟩, vs⟩ : VariableMd)
   reportDuplicateTargets targets'
   pure (.Assign targets' value', expectedTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -3136,9 +3117,9 @@ def Check.assign (exprMd : StmtExprMd)
   unless expected.val matches .TVoid do
     checkSubtype source expected expectedTy
   pure { val := synthExpr, source := source }
-  termination_by (exprMd, 2)
+  termination_by sizeOf exprMd * 5 + 2
   decreasing_by
-    all_goals (apply Prod.Lex.right; omega)
+    all_goals (omega)
 
 /-- (Decl-Synth, synth mode)
     ```
@@ -3180,9 +3161,8 @@ def Synth.declInfer (exprMd : StmtExprMd)
   let bindTy ← declInferValueType name value'.source valueTy
   let name' ← defineNameCheckDup name (.var name bindTy)
   pure (.Assign [⟨.Declare ⟨name', some bindTy⟩, vs⟩] value', bindTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     simp only [StmtExpr.Assign.sizeOf_spec] at hsz
@@ -3205,9 +3185,8 @@ def Check.declInfer (exprMd : StmtExprMd)
   unless expected.val matches .TVoid do
     checkSubtype source expected bindTy
   pure { val := .Assign [⟨.Declare ⟨name', some bindTy⟩, vs⟩] value', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     simp only [StmtExpr.Assign.sizeOf_spec] at hsz
@@ -3256,9 +3235,8 @@ def Synth.incrDecr (exprMd : StmtExprMd)
       pure ((⟨.Declare ⟨param.name, some ty'⟩, target.source⟩ : VariableMd), ty')
   checkIncrDecrTargetType op target' source
   pure (.IncrDecr mode op target', resultTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     have hsz2 := target.sizeOf_val_lt
@@ -3313,7 +3291,7 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
     | .Field _ fieldName => getVarType fieldName
   let rhs' ← Check.resolveStmtExpr rhs resultTy
   pure (.CompoundAssign op target' rhs', resultTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     -- Two recursive calls, two obligations. `Check rhs` (rhs is a direct subterm)
     -- needs only the CompoundAssign step; `Synth tgt` (the `.Field` arm, where `tgt`
@@ -3321,7 +3299,6 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
     -- This is `Synth.incrDecr`'s proof generalised with `all_goals` to also cover
     -- the rhs obligation, using mainline's `term_by_mem` to close.
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       try (have hsz2 := target.sizeOf_val_lt
@@ -3424,8 +3401,8 @@ def Synth.genericCallArgs (exprMd : StmtExprMd) (callee : Identifier) (proc : Pr
     (List.range args.length).filterMap fun i =>
       (resolvedByIdx.find? (·.1 == i)).map (fun (_, a', aTy) => (a', aTy))
   return (resolved.map (·.1), resolved.map (·.2), retSubst)
-  termination_by (exprMd, 0)
-  decreasing_by all_goals (apply Prod.Lex.left; apply hArgs; assumption)
+  termination_by sizeOf exprMd * 5 + 0
+  decreasing_by all_goals (have := hArgs _ ‹_ ∈ args›; omega)
 
 /-- Cases on the arity of the callee's declared outputs.
     ```
@@ -3837,12 +3814,11 @@ def Synth.staticCall (exprMd : StmtExprMd)
         s!"call to '{callee}' expects {arity} argument(s) but {args.length} were provided"
       modify fun s => { s with errors := s.errors.push diag }
   pure (.StaticCall callee' args' [], retTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals first
-      | (apply Prod.Lex.right; decide)
-      | (apply Prod.Lex.left
-         have hsz := exprMd.sizeOf_val_lt
+      | omega
+      | (have hsz := exprMd.sizeOf_val_lt
          rw [h] at hsz
          term_by_mem)
 
@@ -4011,12 +3987,11 @@ def Synth.instanceCall (exprMd : StmtExprMd)
         s!"call to '{callee}' expects {arity} argument(s) but {args.length} were provided"
       modify fun s => { s with errors := s.errors.push diag }
   pure (.InstanceCall target' callee' args', retTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals first
-      | (apply Prod.Lex.right; decide)
-      | (apply Prod.Lex.left
-         have hsz := exprMd.sizeOf_val_lt
+      | omega
+      | (have hsz := exprMd.sizeOf_val_lt
          rw [h] at hsz
          term_by_mem)
 
@@ -4190,9 +4165,8 @@ def Synth.asType (exprMd : StmtExprMd)
       s!"cannot cast unrelated type '{formatType targetTy}' to '{formatType ty'}'"
     modify fun s => { s with errors := s.errors.push diag }
   pure (.AsType target' ty', ty')
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4234,9 +4208,8 @@ def Synth.isType (exprMd : StmtExprMd)
         s!"cannot test unrelated type '{formatType targetTy}' against '{formatType ty'}'"
       modify fun s => { s with errors := s.errors.push diag }
   pure (.IsType target' ty', { val := .TBool, source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4275,10 +4248,9 @@ def Synth.refEq (exprMd : StmtExprMd) (expr : StmtExpr)
       s!"'{expr.constrName}' operands have incompatible types '{formatType lhsTy}' and '{formatType rhsTy}'"
     modify fun s => { s with errors := s.errors.push diag }
   pure (.ReferenceEquals lhs' rhs', { val := .TBool, source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -4305,10 +4277,9 @@ def Synth.pureFieldUpdate (exprMd : StmtExprMd)
   let fieldTy ← concretizeFieldType targetTy fieldName'
   let newVal' ← Check.resolveStmtExpr newVal fieldTy
   pure (.PureFieldUpdate target' fieldName' newVal', targetTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -4338,10 +4309,9 @@ def Synth.quantifier (exprMd : StmtExprMd)
       let (e', _) ← Synth.resolveStmtExpr pv.val; pure e')
     let body' ← Check.resolveStmtExpr body { val := .TBool, source := body.source }
     pure (.Quantifier mode ⟨paramName', paramTy'⟩ trigger' body', { val := .TBool, source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -4372,9 +4342,8 @@ def Synth.assigned (exprMd : StmtExprMd)
     ResolveM (StmtExpr × HighTypeMd) := do
   let (name', _) ← Synth.resolveStmtExpr name
   pure (.Assigned name', { val := .TBool, source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4404,9 +4373,8 @@ def Check.old (exprMd : StmtExprMd)
     ResolveM StmtExprMd := do
   let val' ← Check.resolveStmtExpr val expected
   pure { val := .Old val' label?, source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4418,9 +4386,8 @@ def Check.oldGuarantee (exprMd : StmtExprMd)
     ResolveM StmtExprMd := do
   let val' ← Check.resolveStmtExpr val expected
   pure { val := .OldGuarantee val', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4432,9 +4399,8 @@ def Check.oldRelies (exprMd : StmtExprMd)
     ResolveM StmtExprMd := do
   let val' ← Check.resolveStmtExpr val expected
   pure { val := .OldRelies val', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4468,9 +4434,8 @@ def Synth.old (exprMd : StmtExprMd)
   let _ := source
   let (val', valTy) ← Synth.resolveStmtExpr val expected?
   pure (.Old val' label?, valTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4487,9 +4452,8 @@ def Synth.oldGuarantee (exprMd : StmtExprMd)
   let _ := source
   let (val', valTy) ← Synth.resolveStmtExpr val expected?
   pure (.OldGuarantee val', valTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4505,9 +4469,8 @@ def Synth.oldRelies (exprMd : StmtExprMd)
   let _ := source
   let (val', valTy) ← Synth.resolveStmtExpr val expected?
   pure (.OldRelies val', valTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4532,9 +4495,8 @@ def Synth.fresh (exprMd : StmtExprMd) (expr : StmtExpr)
   unless isReference (← get).typeLattice valTy do
     typeMismatch val'.source (some expr) "expected a reference type" valTy
   pure (.Fresh val', { val := .TBool, source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4630,10 +4592,9 @@ def Synth.resume (exprMd : StmtExprMd)
     | some proc => proc.yields.head?.map (·.type) |>.getD { val := .TVoid, source := source }
     | none => { val := .Unknown, source := source }
   pure (.Resume target' value', { yieldTy with source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       simp only [StmtExpr.Resume.sizeOf_spec] at hsz
@@ -4648,9 +4609,8 @@ def Synth.hasNext (exprMd : StmtExprMd)
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', _) ← Synth.resolveStmtExpr target
   pure (.HasNext target', { val := .TBool, source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     simp only [StmtExpr.HasNext.sizeOf_spec] at hsz
@@ -4674,10 +4634,9 @@ def Check.proveBy (exprMd : StmtExprMd)
   let val' ← Check.resolveStmtExpr val expected
   let (proof', _) ← Synth.resolveStmtExpr proof
   pure { val := .ProveBy val' proof', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -4707,10 +4666,9 @@ def Synth.proveBy (exprMd : StmtExprMd)
   let (val', valTy) ← Synth.resolveStmtExpr val expected?
   let (proof', _) ← Synth.resolveStmtExpr proof
   pure (.ProveBy val' proof', valTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -4830,9 +4788,8 @@ def Synth.contractOf (exprMd : StmtExprMd)
     | .Precondition | .PostCondition | .Relies | .Guarantees => .TBool
     | .Reads | .Modifies => .TSet { val := .Unknown, source := fn.source }
   pure (.ContractOf ty fn', { val := resultTy, source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem

@@ -24,9 +24,8 @@ namespace Strata
 ---------------------------------------------------------------------
 
 -- Sequence operations and lambda/application syntax increase the grammar size enough
--- to require higher recursion and heartbeat limits.
+-- to require a higher recursion limit.
 set_option maxRecDepth 20000
-set_option maxHeartbeats 400000
 
 /- DDM support for parsing and pretty-printing Strata Core -/
 
