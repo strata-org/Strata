@@ -123,6 +123,22 @@ theorem field_ws {ts : List TermType} {as : List (DArg P)} (h : WSArgs ds S ts a
     | k + 1 => field_ws h' k (by simpa using hk)
 termination_by structural h
 
+/-! ## Looking up declarations -/
+
+/-- The constructor, field index and field sort of selector `sel` in `cs`. -/
+@[expose] def findSel (cs : List SMTConstructor) (sel : String) :
+    Option (SMTConstructor × Nat × TermType) :=
+  cs.findSome? fun c =>
+    (c.args.findIdx? (·.1 == sel)).bind fun k => (c.args[k]?).map fun f => (c, k, f.2)
+
+/-- The constructor of a value, read off `WS`: the value is built by a declared
+constructor of `d`. -/
+theorem WS.ctor_mem {v : DVal P} (h : WS ds S d v) :
+    ∃ cs c fields, (d, cs) ∈ ds ∧ (⟨c, fields⟩ : SMTConstructor) ∈ cs ∧ v.ctor = c ∧
+      WSArgs ds S (fields.map (·.2)) v.args := by
+  cases h with
+  | mk hd hc ha => exact ⟨_, _, _, hd, hc, rfl, ha⟩
+
 /-! ## Sanity: `nat` as `pos`/`nat`, as Boole declares them -/
 
 @[expose] def posNat : Decls :=

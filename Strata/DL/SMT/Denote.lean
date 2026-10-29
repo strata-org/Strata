@@ -317,6 +317,31 @@ theorem denoteSortArray_Some :
              Option.get_of_eq_some _ kp,
              Option.get_of_eq_some _ vp]
 
+theorem denoteSortDt_isSome (hd : sctx.isDatatype d = true) :
+    (denoteSort sctx (.constr d [])).isSome := by
+  simp [denoteSort, hd]
+
+theorem denoteSortDt_Some (hd : sctx.isDatatype d = true)
+    (h : (denoteSort sctx (.constr d [])).isSome) :
+    (denoteSort sctx (.constr d [])).get h sΓ = DT.Carrier sctx.dts (dtSorted sctx sΓ) d := by
+  have hdt : denoteSort sctx (.constr d [])
+      = some fun sΓ => DT.Carrier sctx.dts (dtSorted sctx sΓ) d := by simp [denoteSort, hd]
+  simp only [Option.get_of_eq_some h hdt]
+
+/-- A primitive sort's denotation, as the payload type of a datatype field sees it. -/
+theorem denoteSortPrim_Some (h : (denoteSort sctx (.prim pty)).isSome) :
+    (denoteSort sctx (.prim pty)).get h sΓ = (denotePrimSort sctx pty).elim Unit (fun f => f sΓ) := by
+  obtain ⟨f, hf⟩ := Option.isSome_iff_exists.mp h
+  have hf' : denotePrimSort sctx pty = some f := hf
+  simp only [Option.get_of_eq_some h hf, hf', Option.elim]
+
+/-- Can a denoted argument be a field of a datatype value: a primitive sort or a
+declared datatype sort? -/
+@[expose] def dtArgSortOK (sctx : SortContext) : TermType → Bool
+  | .prim _ => true
+  | .constr d [] => sctx.isDatatype d
+  | _ => false
+
 theorem denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out).isSome) :
     (denoteSort sctx a).isSome ∧ (denoteFunSort sctx as out).isSome := by
   simp only [denoteFunSort, Option.pure_def, Option.bind_eq_bind,
@@ -627,6 +652,35 @@ def buildForall (ctx : Context) (vs : List TermVar)
     : Prop :=
   buildQuant bindForallVar ctx vs hTys bodyFt tdi
 
+
+
+/-- The denoted arguments of a constructor application, as `DArg`s of the generic carrier,
+with the proof that they are well sorted for their own sorts. Total once every argument
+sort passed `dtArgSortOK`. -/
+noncomputable def dtArgs (ctx : Context) (tdi : TermDenoteInput ctx) :
+    (as : List (TermDenoteResult ctx)) → (hok : as.all (dtArgSortOK ctx.sctx ·.ty) = true) →
+    { args : List (DT.DArg (DtPayload ctx.sctx ⟨tdi.sΓ, tdi.hsΓ⟩)) //
+      DT.WSArgs ctx.sctx.dts (dtSorted ctx.sctx ⟨tdi.sΓ, tdi.hsΓ⟩) (as.map (·.ty)) args }
+  | [], _ => ⟨[], .nil⟩
+  | ⟨.prim pty, h, res⟩ :: as, hok =>
+    have hok' : as.all (dtArgSortOK ctx.sctx ·.ty) = true := by
+      simp only [List.all_cons, Bool.and_eq_true] at hok; exact hok.2
+    let ⟨rest, hrest⟩ := dtArgs ctx tdi as hok'
+    let x : DtPayload ctx.sctx ⟨tdi.sΓ, tdi.hsΓ⟩ := ⟨pty, denoteSortPrim_Some h ▸ res tdi⟩
+    ⟨.prim x :: rest, .prim rfl rfl hrest⟩
+  | ⟨.constr d [], h, res⟩ :: as, hok =>
+    have hd : ctx.sctx.isDatatype d = true := by
+      simp only [List.all_cons, Bool.and_eq_true, dtArgSortOK] at hok; exact hok.1
+    have hok' : as.all (dtArgSortOK ctx.sctx ·.ty) = true := by
+      simp only [List.all_cons, Bool.and_eq_true] at hok; exact hok.2
+    let ⟨rest, hrest⟩ := dtArgs ctx tdi as hok'
+    let v : DT.Carrier ctx.sctx.dts (dtSorted ctx.sctx ⟨tdi.sΓ, tdi.hsΓ⟩) d :=
+      denoteSortDt_Some hd h ▸ res tdi
+    have hds : DT.isDtSort ctx.sctx.dts (.constr d []) = some d := by
+      simp [DT.isDtSort, SortContext.isDatatype] at hd ⊢; exact hd
+    ⟨.dt v.1 :: rest, .dt hds v.2 hrest⟩
+  | ⟨.constr _ (_ :: _), _, _⟩ :: _, hok => by simp [dtArgSortOK] at hok
+  | ⟨.option _, _, _⟩ :: _, hok => by simp [dtArgSortOK] at hok
 
 mutual
 
@@ -971,6 +1025,104 @@ and semantics when successful.
     if hαβ : αTy' = αTy ∧ βTy' = βTy then
       return ⟨.constr "Array" [αTy, βTy], h, fun Γ => denoteSortArray_Some ▸
               @SmtArray.store _ _ (Classical.typeDecidableEq _) (denoteSortArray_Some ▸ x Γ) (hαβ.left ▸ i Γ) (hαβ.right ▸ v Γ)⟩
+    else
+      none
+  -- Datatypes: tester `is-c` on a value of a declared datatype sort
+  | .app (.datatype_op .tester c) [a] _ =>
+    let ⟨.constr d [], h, a⟩ ← denoteTerm ctx a | none
+    if hd : ctx.sctx.isDatatype d then
+      return ⟨.prim .bool, rfl, fun Γ => DT.tester c (denoteSortDt_Some hd h ▸ a Γ)⟩
+    else
+      none
+  -- Datatypes: constructor application, at the declared field sorts
+  | .app (.datatype_op .constructor c) as (.constr d []) =>
+    if hd : ctx.sctx.isDatatype d then
+      let as ← denoteTerms ctx as
+      match hfd : ctx.sctx.dts.find? (·.1 == d) with
+      | none => none
+      | some (d', cs) =>
+        match hfc : cs.find? (·.name == c) with
+        | none => none
+        | some ctor =>
+          if hok : as.all (dtArgSortOK ctx.sctx ·.ty) = true then
+            if hsorts : as.map (·.ty) = ctor.args.map (·.2) then
+              have hd' : d' = d := by
+                have := List.find?_some hfd; simpa using this
+              have hc' : ctor.name = c := by
+                have := List.find?_some hfc; simpa using this
+              have hmem : (d, cs) ∈ ctx.sctx.dts := hd' ▸ List.mem_of_find?_eq_some hfd
+              have hcm : (⟨c, ctor.args⟩ : SMTConstructor) ∈ cs := by
+                have := List.mem_of_find?_eq_some hfc; rwa [← hc']
+              return ⟨.constr d [], denoteSortDt_isSome hd, fun Γ =>
+                let ⟨args, hargs⟩ := dtArgs ctx Γ as hok
+                (denoteSortDt_Some hd (denoteSortDt_isSome hd)).symm ▸
+                  (⟨.mk c args, .mk hmem hcm (hsorts ▸ hargs)⟩ :
+                    DT.Carrier ctx.sctx.dts (dtSorted ctx.sctx ⟨Γ.sΓ, Γ.hsΓ⟩) d)⟩
+            else none
+          else none
+    else
+      none
+  -- Datatypes: selector, reading the field back at its sort; on another constructor the
+  -- value is that of the uninterpreted function `<sel>$unspec`, declared per selector
+  | .app (.datatype_op .selector sel) [a] ty =>
+    let ⟨.constr d [], h, a⟩ ← denoteTerm ctx a | none
+    if hd : ctx.sctx.isDatatype d then
+      match ctx.sctx.dts.find? (·.1 == d) with
+      | none => none
+      | some (_, cs) =>
+        match DT.findSel cs sel with
+        | none => none
+        | some (ctor, k, fty) =>
+          if hty : ty = fty then
+            if hTy : (denoteSort ctx.sctx ty).isSome then
+              let uf : UF := { id := sel ++ "$unspec", args := [.constr d []], out := ty }
+              if hTys : (denoteFunSort ctx.sctx uf.args uf.out).isSome then
+                match hu : ctx.tctx.ufs.findIdx? (· == uf) with
+                | none => none
+                | some i =>
+                  have hi := (List.findIdx?_eq_some_iff_findIdx_eq.mp hu).left
+                  have hiuf := of_decide_eq_true (List.getElem_of_findIdx?_eq_some hu)
+                  let aRes : TermDenoteResult ctx := ⟨.constr d [], h, a⟩
+                  if hufas : argTypesAlign [aRes] uf.args then
+                    return ⟨ty, hTy, fun Γ =>
+                      -- the unspecified value: the UF applied to the argument
+                      let unspec : (denoteSort ctx.sctx ty).get hTy ⟨Γ.sΓ, Γ.hsΓ⟩ :=
+                        have _ : i < Γ.tΓ.ufs.length := Γ.htΓ.huf.h ▸ hi
+                        have hufΓ : denoteFunSort ctx.sctx uf.args uf.out =
+                            denoteFunSort ctx.sctx Γ.tΓ.ufs[i].uf.args Γ.tΓ.ufs[i].uf.out :=
+                          hiuf.symm ▸ Γ.htΓ.huf.ha i hi ▸ rfl
+                        @applyUF ctx uf.args uf.out hTys Γ
+                          (Option.get_congr hufΓ ▸ Γ.tΓ.ufs[i].ufΓ) [aRes] hufas
+                      let v : DT.Carrier ctx.sctx.dts (dtSorted ctx.sctx ⟨Γ.sΓ, Γ.hsΓ⟩) d :=
+                        denoteSortDt_Some hd h ▸ a Γ
+                      if v.1.ctor = ctor.name then
+                        match v.1.args[k]? with
+                        | some (.prim ⟨pty, x⟩) =>
+                          if hp : fty = .prim pty then
+                            have hcast : (denotePrimSort ctx.sctx pty).elim Unit (fun f => f ⟨Γ.sΓ, Γ.hsΓ⟩)
+                                = (denoteSort ctx.sctx ty).get hTy ⟨Γ.sΓ, Γ.hsΓ⟩ := by
+                              subst hty; subst hp; exact (denoteSortPrim_Some hTy).symm
+                            cast hcast x
+                          else unspec
+                        | some (.dt w) =>
+                          match hfty : fty with
+                          | .constr d'' [] =>
+                            if hd'' : ctx.sctx.isDatatype d'' then
+                              @dite _ (DT.WS ctx.sctx.dts (dtSorted ctx.sctx ⟨Γ.sΓ, Γ.hsΓ⟩) d'' w)
+                                (Classical.propDecidable _) (fun hw =>
+                                have hcast : DT.Carrier ctx.sctx.dts (dtSorted ctx.sctx ⟨Γ.sΓ, Γ.hsΓ⟩) d''
+                                    = (denoteSort ctx.sctx ty).get hTy ⟨Γ.sΓ, Γ.hsΓ⟩ := by
+                                  subst hty; subst hfty; exact (denoteSortDt_Some hd'' hTy).symm
+                                cast hcast (⟨w, hw⟩ : DT.Carrier _ _ d''))
+                                (fun _ => unspec)
+                            else unspec
+                          | _ => unspec
+                        | none => unspec
+                      else unspec⟩
+                  else none
+              else none
+            else none
+          else none
     else
       none
   | _ => none
