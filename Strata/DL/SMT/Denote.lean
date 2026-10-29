@@ -1508,9 +1508,13 @@ def dtFieldsDenotable (sctx : SortContext) : Bool :=
 Interpret an SMT query by universally quantifying assumptions and returning the semantic proposition.
 -/
 @[simp]
-noncomputable def denoteQuery (ctx : Core.SMT.Context) (assums : List Term) (conc : Term) : Option Prop := do
-  -- The datatypes the query uses; parametric ones have no denotation yet
-  let dts ← ctx.denotedDatatypes
+noncomputable def denoteQuery (ctx : Core.SMT.Context) (assums : List Term) (conc : Term)
+    (dts? : Option DT.Decls := none) : Option Prop := do
+  -- The datatypes the query uses; parametric ones have no denotation yet. A caller that
+  -- holds them as a plain list (one that must reduce in the kernel) passes `dts?`.
+  let dts ← match dts? with
+    | some dts => some dts
+    | none => ctx.denotedDatatypes
   let stmt := assums.foldr (.app .implies [·, ·] (.prim .bool)) conc
   let t := ctx.axms.toList.foldr (.app .implies [·, ·] (.prim .bool)) stmt
   let uss := ctx.sorts.toList.reverse
