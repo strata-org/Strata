@@ -7420,7 +7420,7 @@ private def validateInvokeOnGlobalWrites (program : LaurelProgram)
     else none
 
 /-- Reject direct writes to outer locals and parameters in assertions. -/
-private def validateAssertionWrites (model : SemanticModel) (program : Program) : Array Message :=
+private def validateAssertionWrites (model : SemanticModel) (program : LaurelProgram) : Array Message :=
   let visit (node : StmtExprMd) : StateM (Array Message) (Option StmtExprMd) := do
     match node.val with
     | .Assert condition _ =>
@@ -7445,7 +7445,7 @@ private def validateAssertionWrites (model : SemanticModel) (program : Program) 
       return some node
     | _ => return none
   let check := mapStmtExprPrePostM visit pure
-  ((mapProgramProceduresM (mapProcedureM check) program).run #[]).2
+  ((mapLaurelProgramProceduresM (mapProcedureM check) program).run #[]).2
 
 /-- Run the full resolution pass on a Laurel program. -/
 public def resolve (program : LaurelProgram) (existingModel: Option SemanticModel := none)
