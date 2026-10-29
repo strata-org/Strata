@@ -1493,17 +1493,29 @@ where
   | [] => isctx
   | (n, ty) :: iss => go ((n, substituteIS isctx ty) :: isctx) iss
 
+/-- One uninterpreted function per selector, `<sel>$unspec`, giving the selector's
+value on the constructors it does not belong to; `denoteTerm` applies it there. -/
+def dtUnspecUFs (ds : DT.Decls) : List UF :=
+  ds.flatMap fun (d, cs) => cs.flatMap fun c => c.args.map fun (sel, fty) =>
+    { id := sel ++ "$unspec", args := [.constr d []], out := fty }
+
+/-- Are the field sorts of these datatypes ones the carrier can hold: primitive sorts
+and declared datatype sorts? -/
+def dtFieldsDenotable (sctx : SortContext) : Bool :=
+  sctx.dts.all fun (_, cs) => cs.all fun c => c.args.all fun (_, t) => dtArgSortOK sctx t
+
 /--
 Interpret an SMT query by universally quantifying assumptions and returning the semantic proposition.
 -/
 @[simp]
 noncomputable def denoteQuery (ctx : Core.SMT.Context) (assums : List Term) (conc : Term) : Option Prop := do
-  -- Datatypes not supported yet
-  if !ctx.datatypes.factory.isEmpty || !ctx.seenDatatypes.isEmpty || !ctx.datatypeFuns.isEmpty then none
+  -- The datatypes the query uses; parametric ones have no denotation yet
+  let dts ← ctx.denotedDatatypes
   let stmt := assums.foldr (.app .implies [·, ·] (.prim .bool)) conc
   let t := ctx.axms.toList.foldr (.app .implies [·, ·] (.prim .bool)) stmt
   let uss := ctx.sorts.toList.reverse
   let iss := (mkISContext ctx.tySubst).reverse
-  let ufs := ctx.ufs.toList.reverse
+  if !dtFieldsDenotable ⟨uss, iss, dts⟩ then none
+  let ufs := dtUnspecUFs dts ++ ctx.ufs.toList.reverse
   let ifs := ctx.ifs.toList.reverse
-  (denoteBoolTermFromContext uss iss ufs ifs t).map PLift.down
+  (denoteBoolTermFromContext uss iss ufs ifs t dts).map PLift.down
