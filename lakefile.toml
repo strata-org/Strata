@@ -1,6 +1,6 @@
 name = "Strata"
 version = "0.1.0"
-defaultTargets = ["Strata", "StrataToCBMC", "StrataCoreToGoto", "laurelJavaGen"]
+defaultTargets = ["Strata", "StrataToCBMC", "StrataCoreToGoto", "laurelJavaGen", "laurelGoGen", "strataLaurel", "laurelToCBMC", "CoreSyntaxGen"]
 testDriver = "StrataTestMain"
 lintDriver = "CheckImports"
 
@@ -15,7 +15,7 @@ rev = "main"
 [[require]]
 name = "plausible"
 git = "https://github.com/leanprover-community/plausible.git"
-rev = "bump_to_v4.29.0-rc8"
+rev = "v4.34.0"
 
 [[lean_lib]]
 name = "Strata"
@@ -53,9 +53,9 @@ root = "Scripts.StrataTestMain"
 # `Strata` is listed explicitly because the driver spawns `lean` on files
 # under `StrataTestExtra/` (which is not a `lean_lib`). Those files import
 # modules from the `Strata` library that are not in `StrataTest`'s transitive
-# closure (e.g., `Strata.Java.Gen`), so without this the oleans would be
-# missing when running `lake test` from a clean `.lake`.
-needs = ["Strata", "StrataLaurel", "StrataTest", "StrataLaurelTest", "laurelJavaGen"]
+# closure (e.g., `Strata.Java.Gen`, `Strata.Go.Gen`), so without this the
+# oleans would be missing when running `lake test` from a clean `.lake`.
+needs = ["Strata", "StrataLaurel", "StrataTest", "StrataLaurelTest", "laurelJavaGen", "laurelGoGen"]
 
 [[lean_exe]]
 name = "StrataToCBMC"
@@ -78,3 +78,17 @@ root = "Scripts.GenerateEmbedded"
 [[lean_exe]]
 name = "laurelJavaGen"
 root = "StrataLaurel.Scripts.LaurelJavaGen"
+
+[[lean_exe]]
+name = "laurelGoGen"
+root = "StrataLaurel.Scripts.LaurelGoGen"
+
+[[lean_exe]]
+name = "strataLaurel"
+root = "StrataLaurel.Scripts.StrataLaurelMain"
+
+# `StrataLaurel/Tests/CBMC/run_laurel_cbmc_tests.sh` runs this script with
+# `lean --run`; building it as a default target keeps it compiling.
+[[lean_exe]]
+name = "laurelToCBMC"
+root = "StrataLaurel.Scripts.LaurelToCBMC"

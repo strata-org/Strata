@@ -6,7 +6,8 @@ def file_starts_with_header(path : Path, header: str) -> bool:
         contents = f.read()
     return contents.startswith(header)
 
-def check_all_source_files(directory: Path, ext: str, header: str) -> bool:
+def check_all_source_files(directory: Path, ext: str, header: str,
+                           exceptions: dict[str, str] = {}) -> bool:
     """
     Recursively check all files with extension `ext` in the given directory for copyright headers.
     
@@ -38,7 +39,9 @@ def check_all_source_files(directory: Path, ext: str, header: str) -> bool:
 
     for path in source_files:
         try:
-            if not file_starts_with_header(path, header):
+            relative = path.relative_to(directory).as_posix()
+            expected = exceptions.get(relative, header)
+            if not file_starts_with_header(path, expected):
                 files_without_header.append(path)
         except Exception as e:
             print(f"Error reading file '{path}': {e}")
@@ -59,6 +62,19 @@ lean_copyright_header = """/-
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/"""
 
+# Files ported from third-party projects licensed under Apache-2.0 only.
+# They cannot be relicensed under MIT, so they carry an Apache-2.0 header.
+apache_only_header = """/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0
+"""
+
+lean_header_exceptions = {
+    # Ported from Mathlib.
+    "Strata/Linter/FlexibleLinter.lean": apache_only_header,
+}
+
 def main():
     """Main function to handle command line arguments"""
     if len(sys.argv) != 2:
@@ -67,7 +83,8 @@ def main():
         sys.exit(1)
 
     directory_path = Path(sys.argv[1])
-    success = check_all_source_files(directory_path, ext=".lean", header=lean_copyright_header)
+    success = check_all_source_files(directory_path, ext=".lean", header=lean_copyright_header,
+                                     exceptions=lean_header_exceptions)
     sys.exit(0 if success else 1)
 
 if __name__ == "__main__":

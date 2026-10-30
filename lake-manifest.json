@@ -6,10 +6,10 @@
     "type" : "git",
     "subDir" : null,
     "scope" : "",
-    "rev" : "4bdad1f417437e3331492708ce8320aec350280a",
+    "rev" : "118aa17ee84656b8bd727fef7c458ee8c833385c",
     "name" : "plausible",
     "manifestFile" : "lake-manifest.json",
-    "inputRev" : "bump_to_v4.29.0-rc8",
+    "inputRev" : "v4.34.0",
     "inherited" : false,
     "configFile" : "lakefile.toml"
   }, {
