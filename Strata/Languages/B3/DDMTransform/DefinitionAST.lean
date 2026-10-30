@@ -311,7 +311,7 @@ def Statement.mapMetadata [Inhabited N] (f : M → N) (s: Statement M) : Stateme
     all_goals (try term_by_mem)
     . cases stmts; term_by_mem
     . cases branches; term_by_mem
-    . cases elseB; cases x; simp_all; term_by_mem
+    . cases elseB; cases x; simp_all only [Statement.ifStmt.sizeOf_spec, sizeOf_default, Nat.add_zero, Ann.mk.sizeOf_spec]; term_by_mem
     . cases cases; term_by_mem
 
 def ParamMode.mapMetadata [Inhabited N] (f : M → N) : ParamMode M → ParamMode N

@@ -138,7 +138,7 @@ theorem denote_suffix_irrel
   | app _ fn arg ih_fn ih_arg =>
     have ⟨aty, h_fn₁, h_arg₁⟩ := HasTypeA.app_inv h₁
     have ⟨aty', h_fn₂, h_arg₂⟩ := HasTypeA.app_inv h₂
-    simp [LExpr.lcAt, Bool.and_eq_true] at h_lc
+    simp only [LExpr.lcAt, Bool.and_eq_true] at h_lc
     have h_aty : aty = aty' := by
       have h_tc₁ := LExpr.HasTypeA_to_typeCheck h_fn₁
       have h_tc₂ := LExpr.HasTypeA_to_typeCheck h_fn₂
@@ -155,13 +155,13 @@ theorem denote_suffix_irrel
     have ⟨h_c₁, h_t₁, h_e₁⟩ := HasTypeA.ite_inv h₁
     have ⟨h_c₂, h_t₂, h_e₂⟩ := HasTypeA.ite_inv h₂
     rw [denote_ite _ h_c₁ h_t₁ h_e₁, denote_ite _ h_c₂ h_t₂ h_e₂]
-    simp [LExpr.lcAt, Bool.and_eq_true] at h_lc
+    simp only [LExpr.lcAt, Bool.and_eq_true] at h_lc
     rw [ih_c h_lc.1.1 h_c₁ h_c₂ bv₁, ih_t h_lc.1.2 h_t₁ h_t₂ bv₁, ih_e h_lc.2 h_e₁ h_e₂ bv₁]
   | eq _ e1 e2 ih1 ih2 =>
     have ⟨ty', h_bool₁, h_1₁, h_2₁⟩ := HasTypeA.eq_inv h₁
     have ⟨ty'', h_bool₂, h_1₂, h_2₂⟩ := HasTypeA.eq_inv h₂
     subst h_bool₁; cases h_bool₂
-    simp [LExpr.lcAt, Bool.and_eq_true] at h_lc
+    simp only [LExpr.lcAt, Bool.and_eq_true] at h_lc
     have h_ty : ty' = ty'' := by
       have h_tc₁ := LExpr.HasTypeA_to_typeCheck h_1₁
       have h_tc₂ := LExpr.HasTypeA_to_typeCheck h_1₂
@@ -188,14 +188,14 @@ theorem denote_suffix_irrel
       subst h_eq₁; cases h_eq₂
       rw [denote_abs _ h_body₁ h₁, denote_abs _ h_body₂ h₂]
       funext x
-      simp [LExpr.lcAt] at h_lc
+      simp only [LExpr.lcAt] at h_lc
       have h_len : (aty :: Δ₁).length = Δ₁.length + 1 := by simp
       exact ih_body (h_len ▸ h_lc) h_body₁ h_body₂ (.cons x bv₁)
   | quant _ qk _ ty tr body ih_tr ih_body =>
     cases ty with
     | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
     | some qty =>
-      simp [LExpr.lcAt, Bool.and_eq_true] at h_lc
+      simp only [LExpr.lcAt, Bool.and_eq_true] at h_lc
       have ⟨_, h_τ₁, h_tr₁, h_body₁⟩ := HasTypeA.quant_inv h₁
       have ⟨_, h_τ₂, h_tr₂, h_body₂⟩ := HasTypeA.quant_inv h₂
       subst h_τ₁; cases h_τ₂
@@ -289,13 +289,13 @@ theorem denote_ext
     cases ty with
     | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
     | some ty =>
-      simp [LExpr.denote]
+      simp only [LExpr.denote]
       rw[h_op _ _ (List.Mem.head _)]
   | fvar _ _ ty =>
     cases ty with
     | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
     | some ty =>
-      simp [LExpr.denote]
+      simp only [LExpr.denote]
       rw[h_fvar _ _ (List.Mem.head _)]
   | bvar m i =>
     rw [denote_bvar _ _ _ _ bvarVal₁ h₁, denote_bvar _ _ _ _ bvarVal₂ h₂]
@@ -617,7 +617,8 @@ theorem denoteArgs_eq_implies_denote_eq
       intro i a₁ a₂ σ ha₁ ha₂ hσ hta₁ hta₂
       cases i with
       | zero =>
-        simp at ha₁ ha₂ hσ
+        simp only [List.length_cons, Nat.zero_lt_succ, getElem?_pos, List.getElem_cons_zero,
+    Option.some.injEq] at ha₁ ha₂ hσ
         cases ha₁; cases ha₂; cases hσ
         have h_eq₁ := HasTypeA_unique h1_head hta₁
         have h_eq₂ := HasTypeA_unique h2_head hta₂
@@ -703,7 +704,7 @@ theorem fvars_annotated_by_freeVars
     cases annot with
     | none => exact absurd h_annot (by simp [fvars_annotated_by])
     | some t =>
-      simp at h_annot_eq; subst h_annot_eq
+      simp only [Option.some.injEq] at h_annot_eq; subst h_annot_eq
       exact h_annot ty' h_find
   | const => simp [LExpr.freeVars] at h_fv
   | bvar => simp [LExpr.freeVars] at h_fv

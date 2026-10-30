@@ -384,7 +384,7 @@ theorem Constraint.unifyOne_sound (c : Constraint) (S : SubstInfo)
               · right; right; exact Subst.freeVars_of_find_subset S.subst h_some h_sty
               · rcases List.mem_append.mp (LMonoTy.freeVars_of_subst_subset S.subst orig_lty h_lty) with
                   h_orig | h_vals
-                · right; left; simp [Constraint.freeVars]; right; exact h_orig
+                · right; left; simp only [freeVars, List.mem_append]; right; exact h_orig
                 · right; right; exact h_vals
             · right; right; exact h3
           exact ⟨h_sound, h_abs, h_keys⟩
@@ -462,7 +462,7 @@ theorem Constraint.unifyOne_sound (c : Constraint) (S : SubstInfo)
               · right; right; exact Subst.freeVars_of_find_subset S.subst h_some h_sty
               · rcases List.mem_append.mp (LMonoTy.freeVars_of_subst_subset S.subst orig_lty h_lty) with
                   h_orig | h_vals
-                · right; left; simp [Constraint.freeVars]; left; exact h_orig
+                · right; left; simp only [freeVars, List.mem_append]; left; exact h_orig
                 · right; right; exact h_vals
             · right; right; exact h3
           exact ⟨h_sound, h_abs, h_keys⟩
@@ -524,7 +524,7 @@ theorem Constraint.unifyOne_sound (c : Constraint) (S : SubstInfo)
               cases l2 with
               | nil => simp at h_len
               | cons b rest2 =>
-                simp at h_len
+                simp only [List.length_cons, Nat.add_right_cancel_iff] at h_len
                 simp only [List.map_cons]
                 have h_ab : LMonoTy.subst relS'.newS.subst a = LMonoTy.subst relS'.newS.subst b :=
                   h_pw (a, b) List.mem_cons_self
@@ -591,12 +591,12 @@ theorem Constraint.unifyOne_sound (c : Constraint) (S : SubstInfo)
           rcases ih_rest.keys_incl k hk with hk1 | hk2 | hk3
           · rcases ih_one.keys_incl k hk1 with h1a | h1b | h1c
             · left; exact h1a
-            · right; left; simp [Constraints.freeVars]; left; exact h1b
+            · right; left; simp only [Constraints.freeVars, List.mem_append]; left; exact h1b
             · right; right; exact h1c
-          · right; left; simp [Constraints.freeVars]; right; exact hk2
+          · right; left; simp only [Constraints.freeVars, List.mem_append]; right; exact hk2
           · rcases List.mem_append.mp (relS_one.goodSubset hk3) with h_c | h_s
-            · right; left; simp [Constraints.freeVars]; left
-              simp [Constraints.freeVars] at h_c; exact h_c
+            · right; left; simp only [Constraints.freeVars, List.mem_append]; left
+              simp only [Constraints.freeVars, List.append_nil] at h_c; exact h_c
             · right; right; exact h_s
 
 /-- Combined soundness, absorption, and key-inclusion for `unifyCore`.
@@ -648,12 +648,12 @@ theorem Constraints.unifyCore_sound (cs : Constraints) (S : SubstInfo)
           rcases ih_rest.keys_incl k hk with hk1 | hk2 | hk3
           · rcases ih_one.keys_incl k hk1 with h1a | h1b | h1c
             · left; exact h1a
-            · right; left; simp [Constraints.freeVars]; left; exact h1b
+            · right; left; simp only [freeVars, List.mem_append]; left; exact h1b
             · right; right; exact h1c
-          · right; left; simp [Constraints.freeVars]; right; exact hk2
+          · right; left; simp only [freeVars, List.mem_append]; right; exact hk2
           · rcases List.mem_append.mp (relS_one.goodSubset hk3) with h_c | h_s
-            · right; left; simp [Constraints.freeVars]; left
-              simp [Constraints.freeVars] at h_c; exact h_c
+            · right; left; simp only [freeVars, List.mem_append]; left
+              simp only [freeVars, List.append_nil] at h_c; exact h_c
             · right; right; exact h_s
 
 /-- Unification produces a substitution that absorbs the input substitution. -/

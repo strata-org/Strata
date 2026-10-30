@@ -155,7 +155,8 @@ private theorem flushCmds_invariant {P : PureExpr} [HasBool P]
       · intros l hl; simp at hl
       · simp
       · intro l hl
-        simp at hl; subst hl
+        simp only [DetTransferCmd.goto_eq_condGoto, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+    or_false] at hl; subst hl
         left
         refine ⟨?_, ?_⟩
         · rw [StringGenState.stringGens_gen]; exact List.mem_cons.mpr (Or.inl rfl)
@@ -172,7 +173,7 @@ private theorem flushCmds_invariant {P : PureExpr} [HasBool P]
     · intros l hl; simp at hl
     · simp
     · intro l hl
-      simp at hl; subst hl
+      simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil, or_false] at hl; subst hl
       left
       refine ⟨?_, ?_⟩
       · rw [StringGenState.stringGens_gen]; exact List.mem_cons.mpr (Or.inl rfl)
@@ -491,11 +492,12 @@ private theorem stmtsToBlocks_genStep
     simp only [stmtsToBlocks, bind, StateT.bind, pure] at h_gen
     generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
     obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
-    simp at h_gen
+    simp only [beq_iff_eq, List.append_assoc, DetTransferCmd.goto_eq_condGoto, List.cons_append,
+    List.nil_append] at h_gen
     generalize h_body_eq : stmtsToBlocks kNext bss
       ((some l, kNext) :: exitConts) [] gen_r = r_body at h_gen
     obtain ⟨⟨bl, bbs⟩, gen_b⟩ := r_body
-    simp at h_gen
+    simp only at h_gen
     generalize h_flush_eq : @flushCmds P (Cmd P) _ blockFlushPrefix accum .none bl gen_b = r_flush at h_gen
     obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
     have h_step_rest := stmtsToBlocks_genStep k rest exitConts [] gen gen_r
@@ -876,11 +878,12 @@ private theorem stmtsToBlocks_allMem
     simp only [stmtsToBlocks, bind, StateT.bind, pure] at h_gen
     generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
     obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
-    simp at h_gen
+    simp only [beq_iff_eq, List.append_assoc, DetTransferCmd.goto_eq_condGoto, List.cons_append,
+    List.nil_append] at h_gen
     generalize h_body_eq : stmtsToBlocks kNext bss
       ((some l, kNext) :: exitConts) [] gen_r = r_body at h_gen
     obtain ⟨⟨bl, bbs⟩, gen_b⟩ := r_body
-    simp at h_gen
+    simp only at h_gen
     generalize h_flush_eq : @flushCmds P (Cmd P) _ blockFlushPrefix accum .none bl gen_b = r_flush at h_gen
     obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
     have h_in_rest := stmtsToBlocks_allMem hgens k rest exitConts [] gen gen_r
@@ -1204,11 +1207,12 @@ private theorem stmtsToBlocks_invariant_block_arm
   -- Decompose the monadic chain
   generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
   obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
-  simp at h_gen
+  simp only [beq_iff_eq, List.append_assoc, DetTransferCmd.goto_eq_condGoto, List.cons_append,
+    List.nil_append] at h_gen
   generalize h_body_eq : stmtsToBlocks kNext bss
     ((some l, kNext) :: exitConts) [] gen_r = r_body at h_gen
   obtain ⟨⟨bl, bbs⟩, gen_b⟩ := r_body
-  simp at h_gen
+  simp only at h_gen
   generalize h_flush_eq : @flushCmds P (Cmd P) _ blockFlushPrefix accum .none bl gen_b = r_flush at h_gen
   obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
   -- Disjointness for sub-lists w.r.t. gen' (the outer final state)
@@ -2935,7 +2939,7 @@ private theorem flushCmds_simulation_agree {P : PureExpr} [HasFvar P] [HasFvars 
     have ⟨h_store, h_fail⟩ := EvalCmds_inv ρ₀.factory σ_struct_base ρ₀.store hf_accum
       (h_nil ▸ h_accum)
     subst h_store; subst h_fail
-    simp [Bool.or_false] at h_hf
+    simp only [Bool.or_false] at h_hf
     rw [h_hf]
     refine ⟨σ_base, ReflTrans.refl _, h_agree_entry, ?_⟩
     intro x h_σ_x _
@@ -3231,7 +3235,7 @@ private theorem fresh_rest_inits_body_step {P : PureExpr} [HasFvars P] [HasIdent
     (fun s heq => Or.inr
       (h_foreign_b s
         (fun hQ => h_rest_no_gen_suffix s hQ
-          (heq ▸ (by simp [Cmds.definedVars]; exact hx)))))
+          (heq ▸ (by simp only [List.reverse_nil, Cmds.definedVars, List.nil_append]; exact hx)))))
 
 /-- Project all three slot init-vars `Nodup` facts (`thenBranch`, `elseBranch`,
     `rest`) out of the .ite-arm `h_unique_outer_inits`.  Components are consumed
@@ -5303,11 +5307,12 @@ private theorem stmtsToBlocks_simulation_block_arm {P : PureExpr} [HasFvar P] [H
     -- Decompose the monadic chain
     generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
     obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
-    simp at h_gen
+    simp only [beq_iff_eq, List.append_assoc, DetTransferCmd.goto_eq_condGoto, List.cons_append,
+    List.nil_append] at h_gen
     generalize h_body_eq : stmtsToBlocks kNext body
       ((some label, kNext) :: exitConts) [] gen_r = r_body at h_gen
     obtain ⟨⟨bl, bbs⟩, gen_b⟩ := r_body
-    simp at h_gen
+    simp only at h_gen
     generalize h_flush_eq : @flushCmds P (Cmd P) _ blockFlushPrefix accum .none bl gen_b
       = r_flush at h_gen
     obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
@@ -5315,7 +5320,7 @@ private theorem stmtsToBlocks_simulation_block_arm {P : PureExpr} [HasFvar P] [H
     have ⟨ρ_blk, h_block_star, h_rest_star⟩ :=
       stmts_append_terminates P (EvalCmd P)
         [.block label body md] rest ρ₀ ρ'
-        (by simp at h_term ⊢; exact h_term)
+        (by simp only [List.cons_append, List.nil_append] at h_term ⊢; exact h_term)
     -- Invert: structured execution of [.block label body md] to terminal ρ_blk.
     -- Step 1: step_stmts_cons.
     -- Step 2: step_block enters the block (saves parent store ρ₀.store).
@@ -5370,7 +5375,7 @@ private theorem stmtsToBlocks_simulation_block_arm {P : PureExpr} [HasFvar P] [H
     -- Convert h_gen via the if: extract entry and the blocks shape.
     by_cases h_l_eq_bl : label = bl
     · -- Case l = bl: blocks = accumBlocks ++ bbs ++ bsNext, entry = accumEntry.
-      simp [h_l_eq_bl] at h_gen
+      simp only [h_l_eq_bl, ↓reduceIte] at h_gen
       have h_entry_eq : accumEntry = entry :=
         (Prod.mk.inj (Prod.mk.inj h_gen).1).1
       have h_gen_eq_f : gen_f = gen' := (Prod.mk.inj h_gen).2
@@ -5470,7 +5475,7 @@ private theorem stmtsToBlocks_simulation_block_arm {P : PureExpr} [HasFvar P] [H
       -- entry = accumEntry (after the bug fix).  CFG flow is the same as l = bl:
       -- accumEntry → bl (via accumBlocks) → kNext (via body) → k (via rest).
       -- The (label, ...) block is vestigial — not on the reachable path.
-      simp [h_l_eq_bl] at h_gen
+      simp only [h_l_eq_bl, ↓reduceIte] at h_gen
       have h_entry_eq : accumEntry = entry :=
         (Prod.mk.inj (Prod.mk.inj h_gen).1).1
       let lBlk : DetBlock String (Cmd P) P :=
@@ -6003,11 +6008,12 @@ private theorem stmtsToBlocks_simulation_to_cont_block_arm {P : PureExpr} [HasFv
     -- Decompose the monadic chain
     generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
     obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
-    simp at h_gen
+    simp only [beq_iff_eq, List.append_assoc, DetTransferCmd.goto_eq_condGoto, List.cons_append,
+    List.nil_append] at h_gen
     generalize h_body_eq : stmtsToBlocks kNext body
       ((some label', kNext) :: exitConts) [] gen_r = r_body at h_gen
     obtain ⟨⟨bl, bbs⟩, gen_b⟩ := r_body
-    simp at h_gen
+    simp only at h_gen
     generalize h_flush_eq : @flushCmds P (Cmd P) _ blockFlushPrefix accum .none bl gen_b
       = r_flush at h_gen
     obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
@@ -6072,7 +6078,7 @@ private theorem stmtsToBlocks_simulation_to_cont_block_arm {P : PureExpr} [HasFv
     -- Block membership distribution. Split on l = bl vs l ≠ bl.
     by_cases h_l_eq_bl : label' = bl
     · -- Case label' = bl: blocks = accumBlocks ++ bbs ++ bsNext, entry = accumEntry.
-      simp [h_l_eq_bl] at h_gen
+      simp only [h_l_eq_bl, ↓reduceIte] at h_gen
       have h_entry_eq : accumEntry = entry :=
         (Prod.mk.inj (Prod.mk.inj h_gen).1).1
       have h_blocks_eq : accumBlocks ++ (bbs ++ bsNext) = blocks :=
@@ -6137,7 +6143,7 @@ private theorem stmtsToBlocks_simulation_to_cont_block_arm {P : PureExpr} [HasFv
           sim simToCont ρ_blk h_body_or_match h_rest_exit
     · -- Case label' ≠ bl: blocks = accumBlocks ++ (label', lBlk) :: (bbs ++ bsNext),
       -- entry = accumEntry.  Same flow as label' = bl plus a vestigial (label', goto bl) block.
-      simp [h_l_eq_bl] at h_gen
+      simp only [h_l_eq_bl, ↓reduceIte] at h_gen
       have h_entry_eq : accumEntry = entry :=
         (Prod.mk.inj (Prod.mk.inj h_gen).1).1
       let lBlk : DetBlock String (Cmd P) P :=
@@ -6557,11 +6563,12 @@ private theorem stmtsToBlocks_simulation_to_fail_block_arm {P : PureExpr} [HasFv
     simp only [stmtsToBlocks, bind, StateT.bind, pure] at h_gen
     generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
     obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
-    simp at h_gen
+    simp only [beq_iff_eq, List.append_assoc, DetTransferCmd.goto_eq_condGoto, List.cons_append,
+    List.nil_append] at h_gen
     generalize h_body_eq : stmtsToBlocks kNext body
       ((some label, kNext) :: exitConts) [] gen_r = r_body at h_gen
     obtain ⟨⟨bl, bbs⟩, gen_b⟩ := r_body
-    simp at h_gen
+    simp only at h_gen
     generalize h_flush_eq : @flushCmds P (Cmd P) _ blockFlushPrefix accum .none bl gen_b
       = r_flush at h_gen
     obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
@@ -6623,7 +6630,7 @@ private theorem stmtsToBlocks_simulation_to_fail_block_arm {P : PureExpr} [HasFv
       h_initvars_eq, h_body_no_gen_suffix, h_rest_no_gen_suffix, h_modvars_eq,
       h_step_b_to_f, h_step_r_to_b, h_step_gen_to_r, h_step_gen_to_b⟩ := sc
     by_cases h_l_eq_bl : label = bl
-    · simp [h_l_eq_bl] at h_gen
+    · simp only [h_l_eq_bl, ↓reduceIte] at h_gen
       have h_entry_eq : accumEntry = entry :=
         (Prod.mk.inj (Prod.mk.inj h_gen).1).1
       have h_gen_eq_f : gen_f = gen' := (Prod.mk.inj h_gen).2
@@ -6726,7 +6733,7 @@ private theorem stmtsToBlocks_simulation_to_fail_block_arm {P : PureExpr} [HasFv
             simToCont simToFail ρ_blk d_rest ρ_inner h_body_match h_ρ_blk_eq h_rest_reach hd_rest_fail
     · -- label ≠ bl: the materialized vestigial (label, goto bl) block prepends a
       -- single extra block; the flow is otherwise identical.
-      simp [h_l_eq_bl] at h_gen
+      simp only [h_l_eq_bl, ↓reduceIte] at h_gen
       have h_entry_eq : accumEntry = entry :=
         (Prod.mk.inj (Prod.mk.inj h_gen).1).1
       let lBlk : DetBlock String (Cmd P) P :=
@@ -6979,20 +6986,20 @@ private theorem stmtsToBlocks_simulation_ite_arm {P : PureExpr} [HasFvar P] [Has
               s ∉ StringGenState.stringGens gen') →
           σ_cfg x = none) := by
     unfold stmtsToBlocks at h_gen
-    simp [bind, StateT.bind, pure, StateT.pure, List.append_nil] at h_gen
+    simp only [bind, StateT.bind, pure, List.append_assoc, StateT.pure, List.append_nil] at h_gen
     -- Decompose the monadic h_gen into component computations
     generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
     obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
-    simp at h_gen
+    simp only at h_gen
     generalize h_ite_label : StringGenState.gen iteLabelPrefix gen_r = r_ite at h_gen
     obtain ⟨l_ite, gen_ite⟩ := r_ite
-    simp at h_gen
+    simp only at h_gen
     generalize h_then_eq : stmtsToBlocks kNext thenBranch exitConts [] gen_ite = r_then at h_gen
     obtain ⟨⟨tl, tbs⟩, gen_t⟩ := r_then
-    simp at h_gen
+    simp only at h_gen
     generalize h_else_eq : stmtsToBlocks kNext elseBranch exitConts [] gen_t = r_else at h_gen
     obtain ⟨⟨fl, fbs⟩, gen_e⟩ := r_else
-    simp at h_gen
+    simp only at h_gen
     generalize h_flush_eq : flushCmds iteFlushPrefix accum
       (some (DetTransferCmd.condGoto e tl fl .empty)) l_ite gen_e = r_flush at h_gen
     obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
@@ -7004,7 +7011,7 @@ private theorem stmtsToBlocks_simulation_ite_arm {P : PureExpr} [HasFvar P] [Has
     have ⟨ρ₁, h_ite_star, h_rest_star⟩ :=
       stmts_append_terminates P (EvalCmd P)
         [.ite (.det e) thenBranch elseBranch md] rest ρ₀ ρ'
-        (by simp at h_term ⊢; exact h_term)
+        (by simp only [List.cons_append, List.nil_append] at h_term ⊢; exact h_term)
     -- Invert: the ite steps to either then-branch or else-branch
     have h_ite_inv : (∃ ρ_inner, StepStmtStar P (EvalCmd P)
           (.stmts thenBranch ρ₀) (.terminal ρ_inner) ∧
@@ -7113,7 +7120,7 @@ private theorem stmtsToBlocks_simulation_ite_arm {P : PureExpr} [HasFvar P] [Has
           (fun s heq => Or.inr
             (fun h_in => h_foreign s
               (fun hQ => h_rest_no_gen_suffix s hQ
-                (heq ▸ (by simp [Cmds.definedVars]; exact hx)))
+                (heq ▸ (by simp only [List.reverse_nil, Cmds.definedVars, List.nil_append]; exact hx)))
               (h_outer_upper_t h_in)))
       -- Combined freshness for rest recursion.
       have h_combined_rest :
@@ -7205,7 +7212,7 @@ private theorem stmtsToBlocks_simulation_ite_arm {P : PureExpr} [HasFvar P] [Has
           (fun s heq => Or.inr
             (fun h_in => h_foreign s
               (fun hQ => h_rest_no_gen_suffix s hQ
-                (heq ▸ (by simp [Cmds.definedVars]; exact hx)))
+                (heq ▸ (by simp only [List.reverse_nil, Cmds.definedVars, List.nil_append]; exact hx)))
               (h_outer_upper_e h_in)))
       -- Combined freshness for rest recursion.
       have h_combined_rest :
@@ -7469,20 +7476,20 @@ private theorem stmtsToBlocks_simulation_to_cont_ite_arm {P : PureExpr} [HasFvar
               s ∉ StringGenState.stringGens gen') →
           σ_cfg x = none) := by
     unfold stmtsToBlocks at h_gen
-    simp [bind, StateT.bind, pure, StateT.pure, List.append_nil] at h_gen
+    simp only [bind, StateT.bind, pure, List.append_assoc, StateT.pure, List.append_nil] at h_gen
     -- Decompose the monadic h_gen
     generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
     obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
-    simp at h_gen
+    simp only at h_gen
     generalize h_ite_label : StringGenState.gen iteLabelPrefix gen_r = r_ite at h_gen
     obtain ⟨l_ite, gen_ite⟩ := r_ite
-    simp at h_gen
+    simp only at h_gen
     generalize h_then_eq : stmtsToBlocks kNext thenBranch exitConts [] gen_ite = r_then at h_gen
     obtain ⟨⟨tl, tbs⟩, gen_t⟩ := r_then
-    simp at h_gen
+    simp only at h_gen
     generalize h_else_eq : stmtsToBlocks kNext elseBranch exitConts [] gen_t = r_else at h_gen
     obtain ⟨⟨fl, fbs⟩, gen_e⟩ := r_else
-    simp at h_gen
+    simp only at h_gen
     generalize h_flush_eq : flushCmds iteFlushPrefix accum
       (some (DetTransferCmd.condGoto e tl fl .empty)) l_ite gen_e = r_flush at h_gen
     obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
@@ -7684,7 +7691,7 @@ private theorem stmtsToBlocks_simulation_to_cont_ite_arm {P : PureExpr} [HasFvar
             (fun s heq => Or.inr
               (fun h_in => h_foreign s
                 (fun hQ => h_rest_no_gen_suffix s hQ
-                  (heq ▸ (by simp [Cmds.definedVars]; exact hx)))
+                  (heq ▸ (by simp only [List.reverse_nil, Cmds.definedVars, List.nil_append]; exact hx)))
                 (h_outer_upper_t h_in)))
         have h_combined_rest :
             ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
@@ -7770,7 +7777,7 @@ private theorem stmtsToBlocks_simulation_to_cont_ite_arm {P : PureExpr} [HasFvar
             (fun s heq => Or.inr
               (fun h_in => h_foreign s
                 (fun hQ => h_rest_no_gen_suffix s hQ
-                  (heq ▸ (by simp [Cmds.definedVars]; exact hx)))
+                  (heq ▸ (by simp only [List.reverse_nil, Cmds.definedVars, List.nil_append]; exact hx)))
                 (h_outer_upper_e h_in)))
         have h_combined_rest :
             ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars rest,
@@ -7914,7 +7921,7 @@ private theorem stmtsToBlocks_simulation_to_fail_ite_arm_caseB
       (fun s heq => Or.inr
         (fun h_in => h_foreign s
           (fun hQ => h_rest_no_gen_suffix s hQ
-            (heq ▸ (by simp [Cmds.definedVars]; exact hx)))
+            (heq ▸ (by simp only [List.reverse_nil, Cmds.definedVars, List.nil_append]; exact hx)))
           (h_outer_upper_branch h_in)))
   have h_combined_rest :
       ∀ x ∈ Cmds.definedVars ([] : List (Cmd P)).reverse ++ Block.initVars rest,
@@ -8002,19 +8009,19 @@ private theorem stmtsToBlocks_simulation_to_fail_ite_arm {P : PureExpr} [HasFvar
         (.atBlock cfg entry { store := σ_base, factory := ρ₀.factory, hasFailure := hf_base }) d
       ∧ d.getFailure = true := by
     unfold stmtsToBlocks at h_gen
-    simp [bind, StateT.bind, pure, StateT.pure, List.append_nil] at h_gen
+    simp only [bind, StateT.bind, pure, List.append_assoc, StateT.pure, List.append_nil] at h_gen
     generalize h_rest_eq : stmtsToBlocks k rest exitConts [] gen = r_rest at h_gen
     obtain ⟨⟨kNext, bsNext⟩, gen_r⟩ := r_rest
-    simp at h_gen
+    simp only at h_gen
     generalize h_ite_label : StringGenState.gen iteLabelPrefix gen_r = r_ite at h_gen
     obtain ⟨l_ite, gen_ite⟩ := r_ite
-    simp at h_gen
+    simp only at h_gen
     generalize h_then_eq : stmtsToBlocks kNext thenBranch exitConts [] gen_ite = r_then at h_gen
     obtain ⟨⟨tl, tbs⟩, gen_t⟩ := r_then
-    simp at h_gen
+    simp only at h_gen
     generalize h_else_eq : stmtsToBlocks kNext elseBranch exitConts [] gen_t = r_else at h_gen
     obtain ⟨⟨fl, fbs⟩, gen_e⟩ := r_else
-    simp at h_gen
+    simp only at h_gen
     generalize h_flush_eq : flushCmds iteFlushPrefix accum
       (some (DetTransferCmd.condGoto e tl fl .empty)) l_ite gen_e = r_flush at h_gen
     obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
@@ -9449,7 +9456,7 @@ private theorem cmdArmHeadStep {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
     single_cmd_eval c ρ₀ ρ₁ h_c_star
   have h_accum' : EvalCmds P (EvalCmd P) ρ₀.factory σ_struct_base
       (c :: accum).reverse ρ₁.store (hf_accum || failed_c) := by
-    simp [List.reverse_cons]
+    simp only [List.reverse_cons]
     rw [hstore_c]
     exact EvalCmds_snoc ρ₀.factory σ_struct_base ρ₀.store σ_c accum.reverse c hf_accum failed_c
       h_accum heval_c
@@ -9535,7 +9542,7 @@ private theorem stmtsToBlocks_simulation_cmd_arm {P : PureExpr} [HasFvar P] [Has
     -- Structured semantics: execute c then rest
     have ⟨ρ₁, h_c_star, h_rest_star⟩ :=
       stmts_append_terminates P (EvalCmd P) [.cmd c] rest ρ₀ ρ'
-        (by simp at h_term ⊢; exact h_term)
+        (by simp only [List.cons_append, List.nil_append] at h_term ⊢; exact h_term)
     obtain ⟨σ_c, failed_c, heval_c, hstore_c, hfail_c, h_accum', h_hf',
         h_simple_rest, h_unique_rest, h_lbni_rest, h_lhni_rest, h_nml_rest,
         h_definedVars_snoc, h_fresh_combined', h_unique_combined', h_combined_no_gen_suffix'⟩ :=
@@ -9576,7 +9583,7 @@ private theorem stmtsToBlocks_simulation_cmd_arm {P : PureExpr} [HasFvar P] [Has
         -- x in Cmd.definedVars c; this means c is .init x ...
         cases c with
         | init x' _ _ _ =>
-          simp [Cmd.definedVars] at h
+          simp only [Cmd.definedVars, List.mem_cons, List.not_mem_nil, or_false] at h
           subst h
           apply h_x_not_inits
           simp [Cmd.definedVars, HasVarsImp.definedVars]
@@ -9586,7 +9593,8 @@ private theorem stmtsToBlocks_simulation_cmd_arm {P : PureExpr} [HasFvar P] [Has
       apply h_x_not_inits
       rw [Block.initVars]
       -- Stmt.initVars (.cmd _) is either [x'] or [], in either case x ∈ rhs ∪ Block.initVars rest
-      cases c <;> simp [Cmd.definedVars, HasVarsImp.definedVars] <;> first | right; exact h | exact h
+      cases c <;> simp only [Block.definedVars, Stmt.definedVars, HasVarsImp.definedVars, Cmd.definedVars, List.cons_append,
+    List.nil_append, List.mem_cons] <;> first | right; exact h | exact h
     exact h_preserve x h_σ_x h_x_not_new_accum h_x_not_rest_inits h_outer_guard
 
 /-- Extracted `.cmd` arm of `stmtsToBlocks_simulation_to_cont` (see the `stmtsToBlocks_simulation*` dispatchers).
@@ -9723,7 +9731,7 @@ private theorem stmtsToBlocks_simulation_to_cont_cmd_arm {P : PureExpr} [HasFvar
       | inr h =>
         cases c with
         | init x' _ _ _ =>
-          simp [Cmd.definedVars] at h
+          simp only [Cmd.definedVars, List.mem_cons, List.not_mem_nil, or_false] at h
           subst h
           apply h_x_not_inits
           simp [Cmd.definedVars, HasVarsImp.definedVars]
@@ -9732,7 +9740,8 @@ private theorem stmtsToBlocks_simulation_to_cont_cmd_arm {P : PureExpr} [HasFvar
       intro h
       apply h_x_not_inits
       rw [Block.initVars]
-      cases c <;> simp [Cmd.definedVars, HasVarsImp.definedVars] <;> first | right; exact h | exact h
+      cases c <;> simp only [Block.definedVars, Stmt.definedVars, HasVarsImp.definedVars, Cmd.definedVars, List.cons_append,
+    List.nil_append, List.mem_cons] <;> first | right; exact h | exact h
     exact h_preserve x h_σ_x h_x_not_new_accum h_x_not_rest h_outer_guard
 
 /-- Extracted `.cmd` arm of `stmtsToBlocks_simulation_to_fail` (see the `stmtsToBlocks_simulation*` dispatchers).
@@ -10029,7 +10038,7 @@ private theorem stmtsToBlocks_simulation_typeDecl_arm {P : PureExpr} [HasFvar P]
     -- typeDecl is a no-op; structured semantics steps to terminal with unchanged env
     have ⟨ρ₁, h_td_star, h_rest_star⟩ :=
       stmts_append_terminates P (EvalCmd P) [.typeDecl tc md] rest ρ₀ ρ'
-        (by simp at h_term ⊢; exact h_term)
+        (by simp only [List.cons_append, List.nil_append] at h_term ⊢; exact h_term)
     have h_ρ₁ : ρ₁ = ρ₀ := by
       cases h_td_star with
       | step _ _ _ hstep1 hrest1 =>
@@ -10069,7 +10078,7 @@ private theorem stmtsToBlocks_simulation_typeDecl_arm {P : PureExpr} [HasFvar P]
     have h_x_not_rest : x ∉ Block.initVars rest := by
       intro hx
       apply h_x_not_inits
-      simp [Block.initVars]; exact hx
+      simp only [Block.initVars, Block.definedVars, Stmt.definedVars, List.nil_append]; exact hx
     exact h_preserve x h_σ_x h_x_not_accum h_x_not_rest
 
 /-- Extracted `.typeDecl` arm of `stmtsToBlocks_simulation_to_cont` (see the `stmtsToBlocks_simulation*` dispatchers).
@@ -10168,7 +10177,7 @@ private theorem stmtsToBlocks_simulation_to_cont_typeDecl_arm {P : PureExpr} [Ha
     have h_x_not_rest : x ∉ Block.initVars rest := by
       intro hx
       apply h_x_not_inits
-      simp [Block.initVars]; exact hx
+      simp only [Block.initVars, Block.definedVars, Stmt.definedVars, List.nil_append]; exact hx
     exact h_preserve x h_σ_x h_x_not_accum h_x_not_rest h_outer_guard
 
 /-- Extracted `.typeDecl` arm of `stmtsToBlocks_simulation_to_fail` (see the `stmtsToBlocks_simulation*` dispatchers).
@@ -10374,11 +10383,11 @@ private theorem stmtsToBlocks_simulation_step {P : PureExpr} [HasFvar P] [HasFva
     have h_fresh_accum : ∀ x ∈ Cmds.definedVars accum.reverse, σ_base x = none := by
       intro x hx
       apply h_fresh_combined x
-      simp [Block.initVars]
+      simp only [Block.initVars, Block.definedVars, List.append_nil]
       exact hx
     have h_unique_accum : (Cmds.definedVars accum.reverse).Nodup := by
       have h := h_unique_combined
-      simp [Block.initVars] at h
+      simp only [Block.initVars, Block.definedVars, List.append_nil] at h
       exact h
     have ⟨σ_cfg, h_step, h_agree, h_preserve⟩ :=
       flushCmds_simulation_agree listTailPrefix k accum gen gen' entry blocks h_gen
@@ -10727,9 +10736,9 @@ private theorem stmtsToBlocks_simulation_to_fail {P : PureExpr} [HasFvar P] [Has
       rw [h_c_env] at h_c_fail
       simpa [Config.getEnv] using h_c_fail
     have h_fresh_accum : ∀ x ∈ Cmds.definedVars accum.reverse, σ_base x = none := by
-      intro x hx; apply h_fresh_combined x; simp [Block.initVars]; exact hx
+      intro x hx; apply h_fresh_combined x; simp only [Block.initVars, Block.definedVars, List.append_nil]; exact hx
     have h_unique_accum : (Cmds.definedVars accum.reverse).Nodup := by
-      have h := h_unique_combined; simp [Block.initVars] at h; exact h
+      have h := h_unique_combined; simp only [Block.initVars, Block.definedVars, List.append_nil] at h; exact h
     have ⟨σ_cfg, h_step, _, _⟩ :=
       flushCmds_simulation_agree listTailPrefix k accum gen gen' entry blocks h_gen
         σ_struct_base σ_base hf_base hf_accum ρ₀ hwfv hwf_def h_accum
@@ -10857,7 +10866,7 @@ theorem stmtsToCFG_stmtsToBlocks_spec {P : PureExpr}
     StringGenState.WFMono StringGenState.wf_emp rfl
   refine ⟨lend, gen0, r.2, r.1.1, r.1.2, rfl, ?_, ?_, ?_, hwf0, rfl⟩
   · simp [h_cfg]
-  · intro b hb; simp [h_cfg]; exact Or.inl hb
+  · intro b hb; simp only [h_cfg, List.mem_append, List.mem_cons, List.not_mem_nil, or_false]; exact Or.inl hb
   · -- Show lookup of lend in (r.1.2 ++ [(lend, finish)]) is the finish block.
     -- Strategy: use stmtsToBlocks_invariant to show lend ∉ r.1.2.map Prod.fst,
     -- then List.lookup skips past r.1.2 to find lend at the end.
@@ -10896,11 +10905,11 @@ theorem stmtsToCFG_stmtsToBlocks_spec {P : PureExpr}
         obtain ⟨k', v'⟩ := hd
         by_cases h_eq : k = k'
         · subst h_eq
-          simp [List.lookup] at hlk
+          simp only [List.lookup, BEq.rfl, Option.some.injEq] at hlk
           subst hlk
           exact List.Mem.head _
         · have h_neq : ¬(k == k') = true := by simp [h_eq]
-          simp [List.lookup, h_neq] at hlk
+          simp only [List.lookup, h_neq] at hlk
           exact List.mem_cons_of_mem _ (ih hlk)
     have h_lookup_none : List.lookup lend r.1.2 = none := by
       rcases h : List.lookup lend r.1.2 with _ | v
@@ -10994,10 +11003,10 @@ theorem stmtsToCFG_terminal_compositional {P : PureExpr} [HasFvar P] [HasFvars P
   have h_fresh_combined : ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars ss,
       σ_ext x = none := by
     intro x hx
-    simp [Cmds.definedVars] at hx
+    simp only [List.reverse_nil, Cmds.definedVars, List.nil_append] at hx
     exact h_fresh_inits x hx
   have h_unique_combined : (Cmds.definedVars [].reverse ++ Block.initVars ss).Nodup := by
-    simp [Cmds.definedVars]
+    simp only [List.reverse_nil, Cmds.definedVars, List.nil_append]
     exact h_unique
   have h_combined_no_gen_suffix :
       (∀ s : String, Q s → HasIdent.ident (P := P) s ∉ (Cmds.definedVars [].reverse ++ Block.initVars ss)) := by
@@ -11089,10 +11098,10 @@ theorem stmtsToCFG_terminal_compositional_shape {P : PureExpr} [HasFvar P] [HasF
   have h_fresh_combined : ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars ss,
       σ_ext x = none := by
     intro x hx
-    simp [Cmds.definedVars] at hx
+    simp only [List.reverse_nil, Cmds.definedVars, List.nil_append] at hx
     exact h_fresh_inits x hx
   have h_unique_combined : (Cmds.definedVars [].reverse ++ Block.initVars ss).Nodup := by
-    simp [Cmds.definedVars]
+    simp only [List.reverse_nil, Cmds.definedVars, List.nil_append]
     exact h_unique
   have h_combined_no_gen_suffix :
       (∀ s : String, Q s → HasIdent.ident (P := P) s ∉ (Cmds.definedVars [].reverse ++ Block.initVars ss)) := by
@@ -11190,10 +11199,10 @@ theorem stmtsToCFG_terminal {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps 
   have h_fresh_combined : ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars ss,
       ρ₀.store x = none := by
     intro x hx
-    simp [Cmds.definedVars] at hx
+    simp only [List.reverse_nil, Cmds.definedVars, List.nil_append] at hx
     exact h_fresh_inits x hx
   have h_unique_combined : (Cmds.definedVars [].reverse ++ Block.initVars ss).Nodup := by
-    simp [Cmds.definedVars]
+    simp only [List.reverse_nil, Cmds.definedVars, List.nil_append]
     exact h_unique
   have h_combined_no_gen_suffix :
       (∀ s : String, Q s → HasIdent.ident (P := P) s ∉ (Cmds.definedVars [].reverse ++ Block.initVars ss)) := by
@@ -11289,10 +11298,10 @@ theorem stmtsToCFG_to_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P
   have h_fresh_combined : ∀ x ∈ Cmds.definedVars [].reverse ++ Block.initVars ss,
       σ_ext x = none := by
     intro x hx
-    simp [Cmds.definedVars] at hx
+    simp only [List.reverse_nil, Cmds.definedVars, List.nil_append] at hx
     exact h_fresh_inits x hx
   have h_unique_combined : (Cmds.definedVars [].reverse ++ Block.initVars ss).Nodup := by
-    simp [Cmds.definedVars]
+    simp only [List.reverse_nil, Cmds.definedVars, List.nil_append]
     exact h_unique
   have h_combined_no_gen_suffix :
       (∀ s : String, Q s → HasIdent.ident (P := P) s ∉ (Cmds.definedVars [].reverse ++ Block.initVars ss)) := by

@@ -222,7 +222,7 @@ def Program.find? (P : Program) (k : DeclKind) (x : Expression.Ident) : Option D
 
 theorem Program.find?_kind : ∀ {p : Program}, (p.find? k x) = some d → d.kind = k := by
   intros p Hfind
-  simp [Program.find?] at Hfind
+  simp only [find?] at Hfind
   generalize Hdecls : p.decls = decls at Hfind
   induction decls generalizing p
   case nil =>
@@ -300,8 +300,8 @@ theorem Program.find_kind : ∀ (p : Program) {H: (p.find? k x).isSome = true}, 
   next d' Hsome d Hsome' Heq Heq' =>
   split at H <;> try contradiction
   next x' val heq =>
-  simp_all
-  simp [Heq] at *
+  simp_all only [Option.some.injEq, heq_eq_eq]
+  simp only [Option.isSome_some, Heq] at *
   expose_names
   apply find?_kind
   apply heq

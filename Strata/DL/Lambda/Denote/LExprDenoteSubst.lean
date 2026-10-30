@@ -76,9 +76,10 @@ theorem substK_denote
     · rename_i h_eq
       have h_ieq : i = Δ₁.length := by grind
       subst h_ieq
-      simp [LExpr.substK] at h_subst
+      simp only [LExpr.substK, BEq.rfl, ↓reduceIte] at h_subst
       have h_lookup := HasTypeA.bvar_inv h_body
-      simp at h_lookup; subst h_lookup
+      simp only [List.length_append, List.length_cons, List.length_nil, Nat.zero_add, Nat.lt_add_one, getElem?_pos,
+    Std.le_refl, List.getElem_append_right, Nat.sub_self, List.getElem_cons_zero, Option.some.injEq] at h_lookup; subst h_lookup
       rw [denote_irrel_of_lcAt tcInterp opInterp fvarVal vt (h_lc m) h_subst (h_v m) bvarVal₁ .nil]
       rw [h_denote_eq m]
       rw [denote_bvar tcInterp opInterp fvarVal vt _ h_body]
@@ -86,7 +87,7 @@ theorem substK_denote
         val .nil
         (HasTypeA.bvar_inv h_body)).symm
     · rename_i h_ne
-      simp [LExpr.substK, h_ne] at h_subst
+      simp only [LExpr.substK, h_ne, Bool.false_eq_true, ↓reduceIte] at h_subst
       rw [denote_bvar tcInterp opInterp fvarVal vt bvarVal₁ h_subst,
           denote_bvar tcInterp opInterp fvarVal vt _ h_body]
       exact (HList.get_append_left bvarVal₁ _ i (HasTypeA.bvar_inv h_body) (HasTypeA.bvar_inv h_subst)).symm
@@ -157,7 +158,7 @@ theorem substK_denote
       subst h_τ_b
       exact denote_quant_congr h_body_s h_body_b h_subst h_body fun x => by
         specialize ih_body (.cons x bvarVal₁) h_body_b h_body_s
-        simp at ih_body
+        simp only [List.length_cons, List.cons_append] at ih_body
         exact ih_body
 
 /-- Bound-variable substitution commutes with denotation. -/
@@ -223,7 +224,7 @@ theorem liftBVars_typeCheck
       simp only [LExpr.typeCheck]
       grind
   | abs m name ty body ih =>
-    simp [LExpr.liftBVars]
+    simp only [List.append_assoc, LExpr.liftBVars]
     cases ty with
     | none => rfl
     | some aty =>
@@ -231,7 +232,7 @@ theorem liftBVars_typeCheck
       specialize ih (Δ₁ := aty :: Δ₁)
       grind
   | quant m qk name ty tr body ih_tr ih_body =>
-    simp [LExpr.liftBVars]
+    simp only [List.append_assoc, LExpr.liftBVars]
     cases ty with
     | none => rfl
     | some qty =>
@@ -258,7 +259,7 @@ theorem liftBVars_hasTypeA_inv
     : LExpr.HasTypeA Δ_outer e τ := by
   rw [LExpr.HasTypeA_iff_typeCheck] at h ⊢
   have hty := liftBVars_typeCheck (Δ₁ := []) (Δ_insert := Δ_body) (Δ_outer := Δ_outer) (e := e)
-  simp at hty
+  simp only [List.nil_append, List.length_nil] at hty
   rw [hty] at h
   exact h
 
@@ -298,7 +299,7 @@ theorem liftBVars_denote
     simp only [LExpr.liftBVars] at h_lifted ⊢
     by_cases h_ge : i ≥ Δ₁.length
     · -- i ≥ |Δ₁|: shifted to i + |Δ_insert|
-      simp [h_ge] at h_lifted ⊢
+      simp only [ge_iff_le, h_ge, ↓reduceIte] at h_lifted ⊢
       rw [denote_bvar _ _ _ _ _ h_lifted, denote_bvar _ _ _ _ _ h_orig]
       rw [HList.get_append_right bv₁ (bv_insert.append bv_outer) (i + Δ_insert.length)
             (HasTypeA.bvar_inv h_lifted)
@@ -313,7 +314,7 @@ theorem liftBVars_denote
       congr 1; omega
       grind
     · -- i < |Δ₁|: not shifted
-      simp [h_ge] at h_lifted ⊢
+      simp only [ge_iff_le, h_ge, ↓reduceIte] at h_lifted ⊢
       rw [denote_bvar _ _ _ _ _ h_lifted, denote_bvar _ _ _ _ _ h_orig]
       have h_bv := HasTypeA.bvar_inv h_orig
       rw [HList.get_append_left bv₁ (bv_insert.append bv_outer) i
@@ -411,10 +412,11 @@ theorem denoteArgs_get
   | cons h_head h_tail ih =>
     cases i with
     | zero =>
-      simp at h_e h_ty; cases h_e; cases h_ty
+      simp only [List.length_cons, Nat.zero_lt_succ, getElem?_pos, List.getElem_cons_zero,
+    Option.some.injEq] at h_e h_ty; cases h_e; cases h_ty
       simp [denoteArgs]
     | succ n =>
-      simp at h_e h_ty
+      simp only [List.getElem?_cons_succ] at h_e h_ty
       simp only [denoteArgs]
       exact ih n h_e h_ty (by simpa using h_sort)
 
@@ -456,24 +458,28 @@ theorem IdentInterp.withArgs_get [DecidableEq T.IDMeta]
     rfl
   | case3 =>
     have: i ≠ 0 := by
-      intros heq; subst_vars; simp at h_sort; subst_vars; contradiction
+      intros heq; subst_vars; simp only [List.map_cons, List.length_cons, List.length_map, Nat.zero_lt_succ, getElem?_pos,
+    List.getElem_cons_zero, Option.some.injEq] at h_sort; subst_vars; contradiction
     cases i <;> try contradiction
     rename_i IH i'
-    simp
-    apply IH <;> simp_all
-    intros j hj x
-    specialize h_first (j + 1) (by omega)
-    simp_all
+    simp only [HList.get_cons_succ]
+    apply IH
+    · simpa using h_key
+    · intro j hj
+      have := h_first (j + 1) (by omega)
+      simpa using this
   | case4 =>
     have: i ≠ 0 := by
-      intros heq; subst_vars; simp at h_key; subst_vars; contradiction
+      intros heq; subst_vars; simp only [List.map_cons, List.length_cons, List.length_map, Nat.zero_lt_succ, getElem?_pos,
+    List.getElem_cons_zero, Option.some.injEq] at h_key; subst_vars; contradiction
     cases i <;> try contradiction
     rename_i IH i'
-    simp
-    apply IH <;> simp_all
-    intros j hj x
-    specialize h_first (j + 1) (by omega)
-    simp_all
+    simp only [HList.get_cons_succ]
+    apply IH
+    · simpa using h_key
+    · intro j hj
+      have := h_first (j + 1) (by omega)
+      simpa using this
 
 /-- `go` preserves `typeCheck` when fvar annotations match binding types. -/
 private theorem go_typeCheck [DecidableEq T.IDMeta]
@@ -500,7 +506,7 @@ private theorem go_typeCheck [DecidableEq T.IDMeta]
       | some e' =>
         simp only [LExpr.typeCheck]
         have h := liftBVars_typeCheck e' (Δ₁ := []) (Δ_insert := Δ_body) (Δ_outer := Δ_outer)
-        simp at h
+        simp only [List.nil_append, List.length_nil] at h
         rw[h]
         -- Need: typeCheck Δ_outer e' = some ty
         -- From find?_zip: get ty' with find? tyMap name = some ty' and index i
@@ -514,31 +520,31 @@ private theorem go_typeCheck [DecidableEq T.IDMeta]
         subst hty_eq
         exact (LExpr.HasTypeA_iff_typeCheck _ _ _).mp (h_wt.get? i hsnd htys)
   | app m fn arg ih_fn ih_arg =>
-    simp [LExpr.substFvarsLifting.go, LExpr.typeCheck]
+    simp only [LExpr.substFvarsLifting.go, LExpr.typeCheck, beq_iff_eq, Option.bind_eq_bind]
     rw [ih_fn h_annot.1, ih_arg h_annot.2]
   | abs m name ty body ih =>
-    simp [LExpr.substFvarsLifting.go]
+    simp only [LExpr.substFvarsLifting.go]
     cases ty with
     | none => rfl
     | some aty =>
-      simp [LExpr.typeCheck]
+      simp only [LExpr.typeCheck, Option.bind_eq_bind]
       have h_len : (aty :: Δ_body).length = Δ_body.length + 1 := by simp
       rw [← h_len]
       have h_cons : aty :: (Δ_body ++ Δ_outer) = (aty :: Δ_body) ++ Δ_outer := by simp
       rw [h_cons]
       rw [ih (Δ_body := aty :: Δ_body) h_annot]
   | ite m c t e ih_c ih_t ih_e =>
-    simp [LExpr.substFvarsLifting.go, LExpr.typeCheck]
+    simp only [LExpr.substFvarsLifting.go, LExpr.typeCheck, beq_iff_eq, Option.bind_eq_bind]
     rw [ih_c h_annot.1, ih_t h_annot.2.1, ih_e h_annot.2.2]
   | eq m e1 e2 ih1 ih2 =>
-    simp [LExpr.substFvarsLifting.go, LExpr.typeCheck]
+    simp only [LExpr.substFvarsLifting.go, LExpr.typeCheck, beq_iff_eq, Option.bind_eq_bind]
     rw [ih1 h_annot.1, ih2 h_annot.2]
   | quant m qk name ty tr body ih_tr ih_body =>
-    simp [LExpr.substFvarsLifting.go]
+    simp only [LExpr.substFvarsLifting.go]
     cases ty with
     | none => rfl
     | some qty =>
-      simp [LExpr.typeCheck]
+      simp only [LExpr.typeCheck, beq_iff_eq, Option.bind_eq_bind]
       have h_len : (qty :: Δ_body).length = Δ_body.length + 1 := by simp
       rw [← h_len]
       have h_cons : qty :: (Δ_body ++ Δ_outer) = (qty :: Δ_body) ++ Δ_outer := by simp
@@ -561,7 +567,7 @@ theorem substFvarsLifting_typeCheck [DecidableEq T.IDMeta]
   · exact h
   · rw [LExpr.HasTypeA_iff_typeCheck] at h ⊢
     have h_tc := go_typeCheck (Δ_body := []) h_wt h_annot
-    simp at h_tc
+    simp only [List.nil_append, List.length_nil] at h_tc
     rw [h_tc, h]
 
 /-! ### Free-variable substitution commutes with denotation -/
@@ -597,12 +603,12 @@ private theorem substFvarsLifting_go_denote [DecidableEq T.IDMeta]
   | const m c =>
     simp [LExpr.substFvarsLifting.go, LExpr.denote] at h_subst ⊢
   | op m o ty =>
-    simp [LExpr.substFvarsLifting.go] at h_subst ⊢
+    simp only [LExpr.substFvarsLifting.go] at h_subst ⊢
     cases ty with
     | none => exact absurd (LExpr.HasTypeA_to_typeCheck h_body) (by simp [LExpr.typeCheck])
     | some ty => rfl
   | bvar m i =>
-    simp [LExpr.substFvarsLifting.go] at h_subst ⊢
+    simp only [LExpr.substFvarsLifting.go] at h_subst ⊢
     rw [denote_bvar _ _ _ _ _ h_subst, denote_bvar _ _ _ _ _ h_body]
   | fvar m name ty =>
     cases ty with
@@ -617,7 +623,7 @@ private theorem substFvarsLifting_go_denote [DecidableEq T.IDMeta]
       cases hfind : Map.find? bindings name with
       | some e =>
         rename_i hfind
-        simp
+        simp only
         intro heq
         -- LHS: liftBVars_denote with Δ₁=[], Δ_insert=Δ_body
         -- Need h_orig : HasTypeA Δ_outer e τ from h_wt and hfind
@@ -625,7 +631,7 @@ private theorem substFvarsLifting_go_denote [DecidableEq T.IDMeta]
           exact liftBVars_hasTypeA_inv heq
         have h_lift := liftBVars_denote (tcInterp := tcInterp) (opInterp := opInterp)
           (fvarVal := fvarVal) (vt := vt) (Δ₁ := []) h_orig heq .nil bvarVal_body bvarVal_outer
-        simp [HList.append] at h_lift
+        simp only [List.nil_append, HList.append, List.length_nil] at h_lift
         rw [h_lift]
         -- RHS: denote_fvar then withArgs_mem
         rw [denote_fvar _ _ _ _ _ h_body]
@@ -633,7 +639,7 @@ private theorem substFvarsLifting_go_denote [DecidableEq T.IDMeta]
         -- Step 1: subst τ = ty from fvar_inv
         have h_ty_eq := HasTypeA.fvar_inv h_body
         subst h_ty_eq
-        simp
+        simp only
         -- Goal: denote ... e τ h_orig = withArgs ... name (τ.substTyVars vt)
         -- Get index from Map.find?_index
         obtain ⟨i, h_key_b, h_val_b, h_first_bindings⟩ := Map.find?_index hfind
@@ -643,7 +649,7 @@ private theorem substFvarsLifting_go_denote [DecidableEq T.IDMeta]
           have h_i_lt : i < tys.length := by
             rw [h_tys_len]
             have ⟨h_bound, _⟩ := List.getElem?_eq_some_iff.mp h_val_b
-            simp at h_bound ⊢; exact h_bound
+            simp only [List.length_map, gt_iff_lt] at h_bound ⊢; exact h_bound
           have h_tys_eq : tys[i]? = some tys[i] :=
             List.getElem?_eq_some_iff.mpr ⟨h_i_lt, rfl⟩
           have h_wt_i := List.Rel₂.get? h_wt i h_val_b h_tys_eq
@@ -657,7 +663,7 @@ private theorem substFvarsLifting_go_denote [DecidableEq T.IDMeta]
             have h_i_lt : i < tys.length := by
               rw [h_tys_len]
               have ⟨h_bound, _⟩ := List.getElem?_eq_some_iff.mp h_val_b
-              simp at h_bound ⊢; exact h_bound
+              simp only [List.length_map, gt_iff_lt] at h_bound ⊢; exact h_bound
             have h_tys_i := List.getElem?_eq_some_iff.mpr ⟨h_i_lt, rfl⟩
             have h_wt_i := List.Rel₂.get? h_wt i h_val_b h_tys_i
             rw [HasTypeA_unique h_wt_i h_orig] at h_tys_i
@@ -667,7 +673,7 @@ private theorem substFvarsLifting_go_denote [DecidableEq T.IDMeta]
       | none =>
         -- find? name = none
         rename_i hfind
-        simp
+        simp only
         intros h_subst
         rw [denote_fvar _ _ _ _ _ h_subst, denote_fvar _ _ _ _ _ h_body]
         congr 1
@@ -799,7 +805,7 @@ theorem substFvarsLifting_denote [DecidableEq T.IDMeta]
       _ h_body
   · -- bindings.isEmpty = false → apply go_denote with Δ_body = [], bvarVal_body = .nil
     rename_i h_not_empty
-    simp [h_not_empty] at h_subst
+    simp only [h_not_empty, Bool.false_eq_true, ↓reduceIte] at h_subst
     have h_go := substFvarsLifting_go_denote (tcInterp := tcInterp) (opInterp := opInterp)
       (fvarVal := fvarVal) (vt := vt)
       bvarVal_outer h_args h_keys h_tys_len h_sorts h_wt h_denotes

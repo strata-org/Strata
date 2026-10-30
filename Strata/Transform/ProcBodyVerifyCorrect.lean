@@ -146,7 +146,7 @@ private theorem prefixInitEnv_steps
       (.stmts stmts (prefixInitEnv stmts ρ)) (.terminal ρ) := by
   induction stmts with
   | nil =>
-    simp [prefixInitEnv]
+    simp only [prefixInitEnv]
     exact .step _ _ _ .step_stmts_nil (.refl _)
   | cons s rest ih =>
     obtain ⟨h_ok_rest, c, rfl, σ', h_eval, h_σ'⟩ := h_ok
@@ -211,7 +211,7 @@ private theorem prefixInitEnv_store_not_init (stmts : List Statement)
   | cons s rest ih =>
     have hs := h s List.mem_cons_self
     have hrest := ih (fun s' hs' => h s' (List.mem_cons_of_mem s hs'))
-    simp [prefixInitEnv]
+    simp only [prefixInitEnv, prefixInitEnv_factory, prefixInitEnv_hasFailure]
     cases hv : stmtInitVar s with
     | none => exact hrest
     | some y =>
@@ -324,7 +324,7 @@ private theorem PrefixStepsOK_nondet_init_map
       · intro s hs
         simp only [List.mem_map] at hs
         obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := hs
-        simp [stmtInitVar]
+        simp only [stmtInitVar, ne_eq, Option.some.injEq]
         intro heq
         exact h_nodup.1 (heq ▸ List.mem_map_of_mem (f := Prod.fst) hmem)
 
@@ -409,7 +409,7 @@ private theorem PrefixStepsOK_det_init_map
       · intro s hs
         simp only [List.mem_map] at hs
         obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := hs
-        simp [stmtInitVar]
+        simp only [stmtInitVar, ne_eq, Option.some.injEq]
         intro heq
         apply h_nodup_old.1
         rw [show CoreIdent.mkOld id.name = CoreIdent.mkOld id'.name from heq.symm]
@@ -421,7 +421,7 @@ private theorem PrefixStepsOK_det_init_map
         intro s hs
         simp only [List.mem_map] at hs
         obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := hs
-        simp [stmtInitVar]
+        simp only [stmtInitVar, ne_eq, Option.some.injEq]
         intro heq
         apply h_nodup_old.1
         rw [show CoreIdent.mkOld id.name = CoreIdent.mkOld id'.name from heq.symm]
@@ -430,7 +430,7 @@ private theorem PrefixStepsOK_det_init_map
         intro s hs
         simp only [List.mem_map] at hs
         obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := hs
-        simp [stmtInitVar]
+        simp only [stmtInitVar, ne_eq, Option.some.injEq]
         exact (h_not_old id List.mem_cons_self id'.name).symm
     · exact (CoreIdent.ne_mkOld id).symm
 
@@ -477,11 +477,12 @@ private theorem mapM_stateT_pure_eq {α β : Type} {σ : Type} {ε : Type}
 theorem procToVerifyStmt_is_structured
     (h : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st')) :
       ∃ ss, proc.body = .structured ss := by
-    simp [ExceptT.run, procToVerifyStmt] at h
+    simp only [ExceptT.run, procToVerifyStmt, Body.getStructured, List.append_assoc, List.cons_append,
+    List.nil_append, bind_pure_comp] at h
     cases hb: proc.body with
     | structured ss => simp
     | cfg blk =>
-      simp [hb, List.mapM_pure (l := proc.header.getInoutParams)] at h
+      simp only [List.mapM_pure (l := proc.header.getInoutParams), hb, pure_bind] at h
       cases h
 
 /-- Structure: the output of `procToVerifyStmt` is a block
@@ -646,7 +647,7 @@ theorem procToVerifyStmt_structure
               intro s hs heq_s
               simp only [outputOnlyInits, List.mem_map] at hs
               obtain ⟨⟨oid, oty⟩, hmem2, rfl⟩ := hs
-              simp [stmtInitVar] at heq_s
+              simp only [stmtInitVar, Option.some.injEq] at heq_s
               have h_oid_keys : oid ∈ ListMap.keys proc.header.getOutputOnlyParams := by
                 rw [ListMap.keys_eq_map_fst]
                 simp only [ListMap.toList] at hmem2

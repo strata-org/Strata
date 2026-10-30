@@ -72,7 +72,7 @@ theorem substTyVars_subst (vt : TyVarVal) (S : Subst) (ty : LMonoTy) :
       · exact iha (fun t ht => ih t (List.Mem.tail _ ht))
 
 private theorem LConst.subst_ty (S : Subst) (c : LConst) : LMonoTy.subst S c.ty = c.ty := by
-  cases c <;> simp [LConst.ty, LMonoTy.int, LMonoTy.real, LMonoTy.string, LMonoTy.bool] <;> try rw [LMonoTy.subst_tcons, LMonoTys.subst_nil]<;> rfl
+  cases c <;> simp only [ty, LMonoTy.int, LMonoTy.string, LMonoTy.real, LMonoTy.bool] <;> try rw [LMonoTy.subst_tcons, LMonoTys.subst_nil]<;> rfl
   apply LMonoTy.subst_bitvec
 
 /-- `applyTypeSubst` preserves typing, mapping types through `subst S`. -/
@@ -86,10 +86,10 @@ theorem applyTypeSubst_typeCheck (S : Subst)
     simp only [LExpr.replaceUserProvidedType]
     rename_i c
     rw [LConst.subst_ty S c]; exact .const
-  | op => simp [LExpr.replaceUserProvidedType, Option.map]; exact .op
-  | fvar => simp [LExpr.replaceUserProvidedType, Option.map]; exact .fvar
+  | op => simp only [LExpr.replaceUserProvidedType, Option.map]; exact .op
+  | fvar => simp only [LExpr.replaceUserProvidedType, Option.map]; exact .fvar
   | bvar h_lookup =>
-    simp [LExpr.replaceUserProvidedType]
+    simp only [LExpr.replaceUserProvidedType]
     exact .bvar (by simp [List.getElem?_map, h_lookup])
   | abs _ ih =>
     simp only [LExpr.replaceUserProvidedType, Option.map]
@@ -134,7 +134,7 @@ theorem applyTypeSubst_fvars_annotated [DecidableEq T.IDMeta] {S : Subst}
       rw [Map.find?_fmap] at h_find
       cases h_orig : Map.find? tyMap name with
       | none => simp [h_orig] at h_find
-      | some v => simp [h_orig] at h_find; rw [← h_find, h v h_orig]
+      | some v => simp only [h_orig, Option.map_some, Option.some.injEq] at h_find; rw [← h_find, h v h_orig]
   | const | bvar | op => trivial
   | app _ fn arg ih_fn ih_arg =>
     simp only [LExpr.replaceUserProvidedType, fvars_annotated_by] at *

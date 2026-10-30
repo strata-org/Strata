@@ -135,7 +135,7 @@ theorem sound_comp (I : ConditionInterp P)
     (h₂ : Sound I L₂ L₃ T₂ params₂ params₃) :
     Sound I L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ := by
   intro s s'' a hrun hvalid
-  simp [bind, Option.bind] at hrun
+  simp only [bind, Option.bind] at hrun
   match h1 : T₁ s with
   | some s' => rw [h1] at hrun; exact h₁ s s' a h1 (h₂ s' s'' a hrun hvalid)
   | none => rw [h1] at hrun; exact absurd hrun (by nofun)
@@ -177,7 +177,7 @@ theorem sound_allAsserts (I : ConditionInterp P)
 interpretation. -/
 theorem sound_id (I : ConditionInterp P) (L : EventLang P (Event P))
     (params : L.InitEnvWFParamsTy) : Sound I L L some params params := by
-  intro s s' a ht hvalid; simp at ht; subst ht; exact hvalid
+  intro s s' a ht hvalid; simp only [Option.some.injEq] at ht; subst ht; exact hvalid
 
 end Connection
 
@@ -195,7 +195,7 @@ theorem OverapproximatesTraces.id
     (L : EventLang P EventT) (params : L.InitEnvWFParamsTy) :
     OverapproximatesTraces Rtrace L L some params params := by
   intro st st' ht _ ρ₀ ρ₀' heq hinit
-  simp at ht
+  simp only [Option.some.injEq] at ht
   subst ht
   subst heq
   refine ⟨?_, ?_, ?_, hinit⟩
@@ -225,7 +225,7 @@ theorem OverapproximatesTraces.rel_comp
       L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ := by
   intro st st'' ht _ ρ₀ ρ₀' heq hinit
   subst heq
-  simp [bind, Option.bind] at ht
+  simp only [bind, Option.bind] at ht
   match hmid : T₁ st with
   | none => simp [hmid] at ht
   | some st' =>
@@ -400,7 +400,7 @@ omit [HasOps P] [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [
 theorem overapproximates_id (L₁ : Lang P) (params₁ : L₁.InitEnvWFParamsTy) :
     Overapproximates L₁ L₁ some params₁ params₁ := by
   intro st s' ht _ ρ₀ ρ₀' heq hinit
-  simp at ht; subst ht; subst heq
+  simp only [Option.some.injEq] at ht; subst ht; subst heq
   exact ⟨fun ρ' => ⟨fun h => ⟨ρ', rfl, h⟩, fun _ h => ⟨ρ', rfl, h⟩⟩, fun h => h, hinit⟩
 
 /-- Composition of two overapproximations under relation composition. -/
@@ -414,7 +414,7 @@ theorem overapproximatesUpto_comp (L₁ L₂ L₃ : Lang P)
     OverapproximatesUpto (RComp R₁ R₂) L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ := by
   intro st s'' ht _ ρ₀ ρ₀'' hR hinit
   obtain ⟨ρmid, hR₁mid, hR₂mid⟩ := hR
-  simp [bind, Option.bind] at ht
+  simp only [bind, Option.bind] at ht
   match h : T₁ st with
   | some s' =>
     rw [h] at ht
@@ -672,7 +672,7 @@ theorem overapproximatesAggressively_comp (L₁ L₂ L₃ : Lang P)
     OverapproximatesAggressively L₁ L₃ (fun s => T₁ s >>= T₂) params₁ params₃ := by
   intro st s'' ht _ ρ₀ ρ₀' hEq hinit
   subst hEq
-  simp [bind, Option.bind] at ht
+  simp only [bind, Option.bind] at ht
   match hT₁ : T₁ st with
   | some s' =>
     rw [hT₁] at ht
@@ -952,7 +952,7 @@ theorem OverapproximatesUptoWhen.comp_aggressivelyWhen (L₁ L₂ L₃ : Lang P)
 theorem underapproximates_id (L₁ : Lang P) (params₁ : L₁.InitEnvWFParamsTy) :
     Underapproximates L₁ L₁ some params₁ params₁ := by
   intro st s' ht ρ₀ hinit
-  simp at ht; subst ht
+  simp only [Option.some.injEq] at ht; subst ht
   exact ⟨fun ρ' => ⟨id, fun _ => id⟩, fun h => h, hinit⟩
 
 /-- `SemanticallyEquivalent` identity: the identity transform is semantically
@@ -1105,7 +1105,7 @@ private theorem overapproximates_stmts_aux
   induction ss with
   | nil =>
     intro ss' hmap ρ₀ ρ' _
-    have : ss' = [] := by simp [List.mapM_nil] at hmap; exact hmap
+    have : ss' = [] := by simp only [List.mapM_nil, Option.pure_def, Option.some.injEq, List.nil_eq] at hmap; exact hmap
     subst this; exact ⟨id, fun _ => id⟩
   | cons s rest ih =>
     intro ss' hmap ρ₀ ρ' hwf
@@ -1180,7 +1180,7 @@ private theorem overapproximates_stmts_canfail
       StepStmtStar P evalCmd (.stmts ss' ρ₀) cfg' := by
   induction ss generalizing ss' ρ₀ with
   | nil =>
-    have : ss' = [] := by simp [List.mapM_nil] at hmap; exact hmap
+    have : ss' = [] := by simp only [List.mapM_nil, Option.pure_def, Option.some.injEq, List.nil_eq] at hmap; exact hmap
     subst this
     obtain ⟨cfg, hfcfg, hstar⟩ := hcf
     exact ⟨cfg, hfcfg, hstar⟩
@@ -1322,7 +1322,7 @@ private theorem overapproximatesUpto_stmts_aux
   induction ss with
   | nil =>
     intro ss' hmap ρ₀ ρ₀' ρ' hR _
-    have hss' : ss' = [] := by simp [List.mapM_nil] at hmap; exact hmap
+    have hss' : ss' = [] := by simp only [List.mapM_nil, Option.pure_def, Option.some.injEq, List.nil_eq] at hmap; exact hmap
     subst hss'
     constructor
     · intro h
@@ -1404,7 +1404,7 @@ private theorem overapproximatesUpto_stmts_canfail
   induction ss with
   | nil =>
     intro ss' hmap ρ₀ ρ₀' hR _ hcf
-    have hss' : ss' = [] := by simp [List.mapM_nil] at hmap; exact hmap
+    have hss' : ss' = [] := by simp only [List.mapM_nil, Option.pure_def, Option.some.injEq, List.nil_eq] at hmap; exact hmap
     subst hss'
     obtain ⟨cfg, hfcfg, hstar⟩ := hcf
     -- All configs reachable from `.stmts [] ρ₀` have env `ρ₀`, so it must be
@@ -1511,7 +1511,7 @@ theorem canFail_head_to_block
     CanFailBlock evalCmd (s :: ss) ρ₀ := by
   obtain ⟨cfg, hfail, hreach⟩ := h
   refine ⟨.seq cfg ss, ?_, ?_⟩
-  · simp [Config.getEnv]; exact hfail
+  · simp only [Config.getEnv]; exact hfail
   · exact ReflTrans_Transitive _ _ _ _
       (.step _ _ _ .step_stmts_cons (.refl _))
       (seq_inner_star P evalCmd _ _ ss hreach)
@@ -1540,7 +1540,7 @@ private theorem overapproximatesAggressively_stmts_canfail
       StepStmtStar P evalCmd (.stmts ss' ρ₀) cfg' := by
   induction ss generalizing ss' ρ₀ with
   | nil =>
-    have : ss' = [] := by simp [List.mapM_nil] at hmap; exact hmap
+    have : ss' = [] := by simp only [List.mapM_nil, Option.pure_def, Option.some.injEq, List.nil_eq] at hmap; exact hmap
     subst this
     obtain ⟨cfg, hfcfg, hstar⟩ := hcf
     exact ⟨cfg, hfcfg, hstar⟩
@@ -1568,7 +1568,7 @@ private theorem overapproximatesAggressively_stmts_canfail
           match (OverapproximatesAggressivelyWhen.flat_apply hsem s s' hs trivial ρ₀ (hGate hwf)).1 ρ₁ hterm_s with
           | .inl canfail_s' =>
             obtain ⟨cfg'', hf'', hreach''⟩ := canfail_s'
-            exact ⟨.seq cfg'' rest', by simp [Config.getEnv]; exact hf'',
+            exact ⟨.seq cfg'' rest', by simp only [Config.getEnv]; exact hf'',
               .step _ _ _ .step_stmts_cons
                 (seq_inner_star P evalCmd _ cfg'' rest' hreach'')⟩
           | .inr hterm_s' =>
@@ -1585,9 +1585,9 @@ private theorem overapproximatesAggressively_stmts_canfail
                 cases h : ρ₁.hasFailure <;> simp_all
               have hcanfail_s :
                   CanFail (Lang.imperative P CmdT evalCmd isAtAssertFn) s ρ₀ :=
-                ⟨.terminal ρ₁, by simp [Config.getEnv]; exact hf₁', hterm_s⟩
+                ⟨.terminal ρ₁, by simp only [Config.getEnv]; exact hf₁', hterm_s⟩
               have ⟨cfg'', hf'', hreach''⟩ := (OverapproximatesAggressivelyWhen.flat_apply hsem s s' hs trivial ρ₀ (hGate hwf)).2.2.1 hcanfail_s
-              exact ⟨.seq cfg'' rest', by simp [Config.getEnv]; exact hf'',
+              exact ⟨.seq cfg'' rest', by simp only [Config.getEnv]; exact hf'',
                 .step _ _ _ .step_stmts_cons
                   (seq_inner_star P evalCmd _ cfg'' rest' hreach'')⟩
 
@@ -1620,7 +1620,7 @@ private theorem overapproximatesAggressively_stmts_aux
   induction ss with
   | nil =>
     intro ss' hmap ρ₀ ρ' _
-    have : ss' = [] := by simp [List.mapM_nil] at hmap; exact hmap
+    have : ss' = [] := by simp only [List.mapM_nil, Option.pure_def, Option.some.injEq, List.nil_eq] at hmap; exact hmap
     subst this; exact ⟨fun h => .inr (fun _ => h), fun lbl h => .inr (fun _ => h)⟩
   | cons s rest ih =>
     intro ss' hmap ρ₀ ρ' hwf
@@ -1642,7 +1642,7 @@ private theorem overapproximatesAggressively_stmts_aux
       intro ρ₁ hterm_s hf₁
       have hcanfail_s :
           CanFail (Lang.imperative P CmdT evalCmd isAtAssertFn) s ρ₀ :=
-        ⟨.terminal ρ₁, by simp [Config.getEnv]; exact hf₁, hterm_s⟩
+        ⟨.terminal ρ₁, by simp only [Config.getEnv]; exact hf₁, hterm_s⟩
       exact canFail_head_to_block evalCmd isAtAssertFn s' rest' ρ₀
         (hsem_fail hcanfail_s)
     constructor

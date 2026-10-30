@@ -155,7 +155,7 @@ theorem EvalCmds_snoc {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
   induction cs generalizing σ f₁ with
   | nil =>
     cases h₁
-    simp
+    simp only [List.nil_append, Bool.false_or]
     have : f₂ = (f₂ || false) := by simp
     rw [this]
     exact EvalCmds.eval_cmds_some h₂ EvalCmds.eval_cmds_none

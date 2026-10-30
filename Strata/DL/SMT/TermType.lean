@@ -103,69 +103,51 @@ def TermType.beq : TermType → TermType → Bool
 
 @[simp]
 theorem TermType.beq_refl : TermType.beq ty ty := by
-  induction ty <;> simp_all [TermType.beq]
-  rename_i name args ih
-  induction args
-  case constr.nil => simp [TermType.beq.go]
-  case constr.cons =>
-    rename_i head tail ih'
-    simp_all [TermType.beq.go]
-  done
+  induction ty with
+  | prim p => simp only [TermType.beq, BEq.rfl]
+  | option t ih => simp only [TermType.beq, ih]
+  | constr id args ih =>
+    simp only [TermType.beq, BEq.rfl, Bool.true_and]
+    induction args with
+    | nil => simp only [TermType.beq.go]
+    | cons head tail ih' =>
+      simp only [List.mem_cons, forall_eq_or_imp] at ih
+      simp only [TermType.beq.go, Bool.and_eq_true]
+      exact ⟨ih.1, ih' ih.2⟩
 
--- (FIXME) Golf.
+/-- Soundness of the boolean equality test: if `TermType.beq x y` returns `true`,
+then the term types `x` and `y` are equal. -/
+theorem TermType.beq_eq (x y : TermType) (h : TermType.beq x y = true) : x = y := by
+  induction x generalizing y with
+  | prim p =>
+    cases y <;> simp only [TermType.beq, Bool.false_eq_true, beq_iff_eq] at h
+    rw [h]
+  | option t ih =>
+    cases y <;> simp only [TermType.beq, Bool.false_eq_true] at h
+    rename_i t'
+    rw [ih t' h]
+  | constr id args ih =>
+    cases y <;> simp only [TermType.beq, Bool.false_eq_true, Bool.and_eq_true, beq_iff_eq] at h
+    rename_i id' args'
+    obtain ⟨h1, h2⟩ := h
+    rw [h1]
+    suffices args = args' by rw [this]
+    induction args generalizing args' with
+    | nil =>
+      cases args' with
+      | nil => rfl
+      | cons _ _ => simp only [TermType.beq.go, Bool.false_eq_true] at h2
+    | cons x xrest ihl =>
+      cases args' with
+      | nil => simp only [TermType.beq.go, Bool.false_eq_true] at h2
+      | cons y yrest =>
+        simp only [TermType.beq.go, Bool.and_eq_true] at h2
+        simp only [List.mem_cons, forall_eq_or_imp] at ih
+        rw [ih.1 y h2.1, ihl ih.2 yrest h2.2]
 instance : DecidableEq TermType :=
   fun x y =>
-    if h: TermType.beq x y then
-      isTrue (by
-                induction x generalizing y
-                case prim =>
-                  unfold TermType.beq at h <;> split at h <;> simp_all
-                case option =>
-                  unfold TermType.beq at h <;> split at h <;> simp_all
-                  rename_i _ _ _ _ ty2 h1 _
-                  exact h1 ty2 h
-                case constr =>
-                  rename_i id args ih
-                  cases y <;> try simp_all [TermType.beq]
-                  rename_i id' args'
-                  obtain ⟨h1, h2⟩ := h
-                  induction args generalizing args' <;> simp_all
-                  case constr.nil =>
-                    unfold TermType.beq.go at h2
-                    split at h2 <;> simp_all
-                  case constr.cons head tail tail_ih =>
-                    unfold TermType.beq.go at h2; split at h2 <;> simp_all
-                    obtain ⟨h2_1, h2_2⟩ := h2
-                    obtain ⟨ih1, ih2⟩ := ih
-                    rename_i _ _ _ _ a2 rst2 _
-                    exact ⟨ih1 a2 h2_1, tail_ih ih2 rst2 h2_2⟩)
-    else
-      isFalse (by
-                induction x generalizing y
-                case prim =>
-                  unfold TermType.beq at h; split at h <;> simp_all
-                  rename_i pty _ _ _ h
-                  exact fun a => h pty pty rfl (id (Eq.symm a))
-                case option =>
-                  unfold TermType.beq at h <;> split at h <;> simp_all
-                  rename_i ty _ _ _ _ h2
-                  exact fun a => h2 ty ty rfl (id (Eq.symm a))
-                case constr =>
-                  rename_i id args ih
-                  cases y <;> try simp_all [TermType.beq]
-                  rename_i id' args'
-                  induction args generalizing args' <;> simp_all
-                  case constr.nil =>
-                    unfold TermType.beq.go at h
-                    split at h <;> simp_all
-                  case constr.cons head tail tail_ih =>
-                    intro h1; subst id'; simp_all
-                    obtain ⟨ih1, ih2⟩ := ih
-                    cases args' <;> simp_all
-                    rename_i head1 tail1; intro h_head; subst head1
-                    have tail_ih' := @tail_ih tail1
-                    unfold TermType.beq.go at h
-                    simp at h; exact tail_ih tail1 h)
+    if h : TermType.beq x y then isTrue (TermType.beq_eq x y h)
+    else isFalse (fun e => h (e ▸ TermType.beq_refl))
 
 abbrev TermType.bool : TermType := .prim .bool
 abbrev TermType.int  : TermType := .prim .int

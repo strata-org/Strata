@@ -3367,13 +3367,13 @@ theorem prelude_runner {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     have h_agree_mid : StoreAgreement ρ_s.store ρ_mid.store :=
       storeAgreement_storeWith _ _ _ _ h_agree h_y_src_none
     have h_src_none_rest : ∀ z ∈ preludeNames rest, ρ_s.store z = none := fun z hz =>
-      h_src_none z (by simp [preludeNames] at hz ⊢; exact Or.inr hz)
+      h_src_none z (List.mem_cons_of_mem _ hz)
     have h_tgt_none_rest : ∀ z ∈ preludeNames rest, ρ_mid.store z = none := by
       intro z hz
       have h_zy : z ≠ y := fun h => h_y_notin (h ▸ hz)
       show SemanticStore.update ρ_h.store y v z = none
       simp only [SemanticStore.update, ite_eq_right h_zy]
-      exact h_tgt_none z (by simp [preludeNames] at hz ⊢; exact Or.inr hz)
+      exact h_tgt_none z (List.mem_cons_of_mem _ hz)
     -- the accumulator stays typed across the head havoc; add `y : ty`.
     have h_head_star : StepStmtStar P (EvalCmd P)
         (.stmt (.cmd (Cmd.init y ty .nondet md)) ρ_h) (.terminal ρ_mid) := h_head_step

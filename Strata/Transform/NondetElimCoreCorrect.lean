@@ -71,7 +71,8 @@ private theorem nondetElimDecls_proc_mem
         simp only [List.mapM_cons, nondetElimDecl, bind, Except.bind,
           pure, Except.pure] at h
       all_goals
-        repeat' first | split at h | simp_all
+        repeat' first | split at h | simp_all only [Except.ok.injEq, forall_const, forall_eq', List.mem_cons, reduceCtorEq, or_true,
+    Decl.proc.injEq]
         subst results
         exact List.mem_cons_of_mem _ ih
 

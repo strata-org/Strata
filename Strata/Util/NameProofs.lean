@@ -32,15 +32,15 @@ theorem findUniqueFast_not_mem (baseName candidate : String) (suffix : Nat)
   | zero =>
     unfold findUniqueFast at h
     split at h
-    · simp at h; subst h
-      rename_i hc; simp [Std.HashSet.contains_eq_false_iff_not_mem] at hc
+    · simp only [Option.some.injEq] at h; subst h
+      rename_i hc; simp only [Bool.not_eq_eq_eq_not, Bool.not_true, Std.HashSet.contains_eq_false_iff_not_mem] at hc
       exact hc
     · simp at h
   | succ n ih =>
     unfold findUniqueFast at h
     split at h
-    · simp at h; subst h
-      rename_i hc; simp [Std.HashSet.contains_eq_false_iff_not_mem] at hc
+    · simp only [Option.some.injEq] at h; subst h
+      rename_i hc; simp only [Bool.not_eq_eq_eq_not, Bool.not_true, Std.HashSet.contains_eq_false_iff_not_mem] at hc
       exact hc
     · exact ih _ _ h
 
@@ -54,8 +54,8 @@ theorem findUniqueSlow_not_mem (baseName candidate : String) (suffix : Nat)
   | _ n ih =>
     unfold findUniqueSlow at h
     split at h
-    · simp at h; subst h
-      rename_i hc; simp [Std.HashSet.contains_eq_false_iff_not_mem] at hc
+    · simp only [Option.some.injEq] at h; subst h
+      rename_i hc; simp only [Bool.not_eq_eq_eq_not, Bool.not_true, Std.HashSet.contains_eq_false_iff_not_mem] at hc
       exact hc
     · split at h
       · have : (remaining.erase candidate).length < remaining.length := by grind
@@ -80,7 +80,8 @@ private theorem findUniqueSlow_ne_none
     split
     · simp
     · rename_i h_in_set
-      simp at h_in_set
+      simp only [Bool.not_eq_eq_eq_not, Bool.not_true, Std.HashSet.contains_eq_false_iff_not_mem,
+    Decidable.not_not] at h_in_set
       have h_in_rem : disambiguate baseName suffix ∈ remaining := by
         rcases h_covers _ h_in_set with h | ⟨k, hk, heq⟩
         · exact h

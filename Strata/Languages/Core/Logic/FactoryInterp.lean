@@ -1367,7 +1367,7 @@ private theorem AxOK.withSelectBang {axs : List (LExpr T.mono)} (h : AxOK axs) :
 /-- Every axiom of `mapConst` holds in the model. -/
 private theorem ax_mapConst : AxOK mapConstFunc.func.axioms := by
   intro ax hax
-  simp [mapConstFunc, polyUneval] at hax
+  simp only [mapConstFunc, polyUneval, List.mem_cons, List.not_mem_nil, or_false] at hax
   subst hax
   refine ⟨LExpr.typeCheck_to_HasTypeA rfl, ?_⟩
   intro vt fv h
@@ -1383,55 +1383,57 @@ private theorem ax_mapConst : AxOK mapConstFunc.func.axioms := by
 /-- Every axiom of `update` holds in the model. -/
 private theorem ax_mapUpdate : AxOK mapUpdateFunc.func.axioms := by
   intro ax hax
-  simp [mapUpdateFunc, polyUneval] at hax
+  simp only [mapUpdateFunc, polyUneval, List.mem_cons, List.not_mem_nil, or_false] at hax
   ax_cases hax
 
 /-- Every axiom of `Set.empty` holds in the model. -/
 private theorem ax_setEmpty : AxOK setEmptyFunc.func.axioms := by
   intro ax hax
-  simp [setEmptyFunc, polyUneval] at hax
+  simp only [setEmptyFunc, polyUneval, List.mem_cons, List.not_mem_nil, or_false] at hax
   ax_cases hax
 
 /-- Every axiom of `Set.insert` holds in the model. -/
 private theorem ax_setInsert : AxOK setInsertFunc.func.axioms := by
   intro ax hax
-  simp [setInsertFunc, polyUneval] at hax
+  simp only [setInsertFunc, polyUneval, List.mem_cons, List.not_mem_nil, or_false] at hax
   ax_cases hax
 
 /-- Every axiom of `Set.remove` holds in the model. -/
 private theorem ax_setRemove : AxOK setRemoveFunc.func.axioms := by
   intro ax hax
-  simp [setRemoveFunc, polyUneval] at hax
+  simp only [setRemoveFunc, polyUneval, List.mem_cons, List.not_mem_nil, or_false] at hax
   ax_cases hax
 
 /-- Every axiom of `Set.union` holds in the model. -/
 private theorem ax_setUnion : AxOK setUnionFunc.func.axioms := by
   intro ax hax
-  simp [setUnionFunc, polyUneval] at hax
+  simp only [setUnionFunc, polyUneval, List.mem_cons, List.not_mem_nil, or_false] at hax
   ax_cases hax
 
 /-- Every axiom of `Set.intersect` holds in the model. -/
 private theorem ax_setIntersect : AxOK setIntersectFunc.func.axioms := by
   intro ax hax
-  simp [setIntersectFunc, polyUneval] at hax
+  simp only [setIntersectFunc, polyUneval, List.mem_cons, List.not_mem_nil, or_false] at hax
   ax_cases hax
 
 /-- Every axiom of `Set.difference` holds in the model. -/
 private theorem ax_setDifference : AxOK setDifferenceFunc.func.axioms := by
   intro ax hax
-  simp [setDifferenceFunc, polyUneval] at hax
+  simp only [setDifferenceFunc, polyUneval, List.mem_cons, List.not_mem_nil, or_false] at hax
   ax_cases hax
 
 /-- Every axiom of `Sequence.length` holds in the model. -/
 private theorem ax_seqLength : AxOK seqLengthFunc.func.axioms := by
   intro ax hax
-  simp [seqLengthFunc, polyUneval] at hax
+  simp only [seqLengthFunc, polyUneval, Int.ofNat_eq_natCast, Int.cast_ofNat_Int, List.mem_cons,
+    List.not_mem_nil, or_false] at hax
   ax_cases hax
 
 /-- Every axiom of `Sequence.empty` holds in the model. -/
 private theorem ax_seqEmpty : AxOK seqEmptyFunc.func.axioms := by
   intro ax hax
-  simp [seqEmptyFunc, polyUneval] at hax
+  simp only [seqEmptyFunc, polyUneval, Int.ofNat_eq_natCast, Int.cast_ofNat_Int, List.mem_cons,
+    List.not_mem_nil, or_false] at hax
   ax_cases hax
 
 /-- The `i`-th axiom of a built-in function, used to prove a long axiom list one axiom per
@@ -1511,7 +1513,8 @@ private theorem ax_seqUpdateBang : AxOK seqUpdateUnsafeFunc.func.axioms := by
 /-- Every axiom of `Sequence.contains` holds in the model. -/
 private theorem ax_seqContains : AxOK seqContainsFunc.func.axioms := by
   intro ax hax
-  simp [seqContainsFunc, polyUneval] at hax
+  simp only [seqContainsFunc, polyUneval, Int.ofNat_eq_natCast, Int.cast_ofNat_Int, List.mem_cons,
+    List.not_mem_nil, or_false] at hax
   ax_cases hax
   -- The right-hand side is an existential whose body is still a `denote`: compute it
   -- under the binder.

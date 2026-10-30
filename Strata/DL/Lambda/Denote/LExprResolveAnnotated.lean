@@ -185,12 +185,12 @@ private theorem inferFVar_mono_aliasFree [DecidableEq T.IDMeta] [Hashable T.IDMe
   rw [resolveAliases_aliasFree xty Env h_af] at h
   elim_err h
   rename_i heq_iwc
-  simp at heq_iwc
+  simp only [Bool.not_eq_eq_eq_not, Bool.not_true] at heq_iwc
   elim_err heq_iwc
   split at heq_iwc
-  · simp [Pure.pure, Except.pure] at heq_iwc
+  · simp only [pure, Except.pure, Except.ok.injEq] at heq_iwc
     subst heq_iwc
-    simp at h
+    simp only at h
     split at h
     · cases h; rfl
     · elim_errs h
@@ -266,7 +266,7 @@ private theorem resolveAux_allFvarAnnot_aux
     intro m c et C Env Env' h_res h_envwf h_ne h_fwf xv xty h_ctx h_af
     simp only [resolveAux, Bind.bind, Except.bind] at h_res
     elim_err h_res
-    rename_i v1 h_ic; obtain ⟨ty, Env1⟩ := v1; simp at h_res
+    rename_i v1 h_ic; obtain ⟨ty, Env1⟩ := v1; simp only [Except.ok.injEq, Prod.mk.injEq] at h_res
     obtain ⟨h_et, _⟩ := h_res; subst h_et
     simp [LExprT.allFvarAnnot]
   case h_op =>
@@ -285,7 +285,7 @@ private theorem resolveAux_allFvarAnnot_aux
     elim_err h_res
     rename_i v1 h_infer
     obtain ⟨ty_res, Env_res⟩ := v1
-    simp at h_res h_infer
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h_res h_infer
     obtain ⟨h_et, h_env'⟩ := h_res
     subst h_et h_env'
     simp only [LExprT.allFvarAnnot]
@@ -427,7 +427,7 @@ private theorem varCloseT_unresolved_HasTypeA_gen [DecidableEq T.IDMeta] (k : Na
     | none =>
       unfold unresolved at h_typed ⊢
       rw [h_isA] at h_typed ⊢
-      simp at h_typed ⊢
+      simp only at h_typed ⊢
       cases bty with
       | none => cases h_typed
       | some aty =>
@@ -554,7 +554,7 @@ theorem resolve_TEnvWF [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMe
   match h_res : resolveAux C Env0 e with
   | .error _ => simp [h_res] at h
   | .ok (et, Env_out) =>
-    simp [h_res] at h
+    simp only [h_res, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨_, h_env'⟩ := h
     subst h_env'
     have h_envwf0 : TEnvWF Env0 := h_init ▸ TEnvWF_resolve_init Env h_envwf
@@ -562,7 +562,7 @@ theorem resolve_TEnvWF [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMe
       subst h_init
       split
       · exact List.cons_ne_nil _ _
-      · rename_i h_not_empty; intro h_abs; simp_all; contradiction
+      · rename_i h_not_empty; intro h_abs; simp_all only [Bool.not_eq_true, Bool.false_eq_true, ↓reduceIte]; contradiction
     exact resolveAux_TEnvWF e et C Env0 Env_out h_res h_envwf0 h_ne0 h_fwf
 
 /-! ### Layer 3: Main induction -/
@@ -596,12 +596,12 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [Hashable T.IDMet
     simp only [Except.ok.injEq, Prod.mk.injEq] at heq
     obtain ⟨h_et, h_env⟩ := heq
     subst h_et h_env
-    simp [applySubstT, replaceMetadata, unresolved, toLMonoTy]
+    simp only [applySubstT, replaceMetadata, unresolved, toLMonoTy]
     rename_i heq_inferConst
     split at heq_inferConst
-    · simp at heq_inferConst ⊢
+    · simp only [Except.ok.injEq] at heq_inferConst ⊢
       rw [← heq_inferConst]
-      simp
+      simp only
       rw [LConst.ty_subst]
       exact HasTypeA.const
     · simp at heq_inferConst
@@ -611,11 +611,11 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [Hashable T.IDMet
     elim_errs h
     split at h
     · cases h
-      simp [applySubstT, replaceMetadata, unresolved, toLMonoTy]
+      simp only [applySubstT, replaceMetadata, unresolved, toLMonoTy]
       exact HasTypeA.op
     · elim_errs h
       cases h
-      simp [applySubstT, replaceMetadata, unresolved, toLMonoTy]
+      simp only [applySubstT, replaceMetadata, unresolved, toLMonoTy]
       exact HasTypeA.op
   case h_fvar =>
     intro m x fty et C Env Env' h h_envwf h_ne h_fwf h_resolved S h_absorbs
@@ -625,7 +625,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [Hashable T.IDMet
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h_et, h_env⟩ := h
     subst h_et h_env
-    simp [applySubstT, replaceMetadata, unresolved, toLMonoTy]
+    simp only [applySubstT, replaceMetadata, unresolved, toLMonoTy]
     exact HasTypeA.fvar
   case h_app =>
     intro m e1 e2 et C Env Env' e1t Env1 e2t Env2 fresh_name Env_gen substInfo
@@ -668,7 +668,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [Hashable T.IDMet
       exact h_congr
     have h_ih_e1 := h_ih1 h_resolved S h_abs_e1
     have h_ih_e2 := h_ih2 h_resolved1 S h_abs_e2
-    simp [applySubstT, replaceMetadata, unresolved, toLMonoTy]
+    simp only [applySubstT, replaceMetadata, unresolved, toLMonoTy]
     rw [applySubstT_toLMonoTy] at h_ih_e1 h_ih_e2
     rw [h_eq_S] at h_ih_e1
     exact HasTypeA.app h_ih_e1 h_ih_e2
@@ -680,7 +680,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [Hashable T.IDMet
     have h_resolved1 : TContext.AliasesResolved Env1.context := by
       intro a h_mem; rw [h_aliases_eq] at h_mem ⊢; exact h_resolved a h_mem
     have h_abs_Env2 : S.absorbs Env2.stateSubstInfo.subst := by
-      simp [TEnv.eraseFromContext, TEnv.updateContext] at h_absorbs
+      simp only [TEnv.eraseFromContext, TEnv.updateContext] at h_absorbs
       exact h_absorbs
     have h_ih_body := h_ih h_resolved1 S h_abs_Env2
     show HasTypeA []
@@ -733,7 +733,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [Hashable T.IDMet
     have h_resolved2 : TContext.AliasesResolved Env2.context := by
       intro a h_mem; rw [h_ctx2.2] at h_mem ⊢; exact h_resolved1 a h_mem
     have h_abs_sub : S.absorbs substInfo.subst := by
-      simp [TEnv.eraseFromContext, TEnv.updateContext, TEnv.updateSubst] at h_absorbs
+      simp only [TEnv.eraseFromContext, TEnv.updateContext, TEnv.updateSubst] at h_absorbs
       exact h_absorbs
     have h_abs_Env3 : S.absorbs Env3.stateSubstInfo.subst :=
       Subst.absorbs_trans _ _ _ (Constraints.unify_absorbs _ _ _ h_unify) h_abs_sub
@@ -815,9 +815,9 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [Hashable T.IDMet
       rw [applySubstT_toLMonoTy, applySubstT_toLMonoTy]
       have h_sound := Constraints.unify_sound _ _ _ h_unify
       have h_pair := h_sound _ (List.Mem.head _)
-      simp at h_pair
+      simp only at h_pair
       exact LMonoTy.subst_eq_of_absorbs S substInfo.subst _ _ h_absorbs h_pair
-    simp [applySubstT, replaceMetadata, unresolved, toLMonoTy]
+    simp only [applySubstT, replaceMetadata, unresolved, toLMonoTy]
     rw [LMonoTy.subst_bool]
     apply HasTypeA.eq (τ := toLMonoTy (applySubstT e1t S))
     · exact h_ih1 h_resolved S h_abs_e1
@@ -843,11 +843,11 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [Hashable T.IDMet
     have h_sound := Constraints.unify_sound _ _ _ h_unify
     have h_c_bool : LMonoTy.subst substInfo.subst ct.toLMonoTy = LMonoTy.bool := by
       have h_p := h_sound _ (List.Mem.head _)
-      simp [LMonoTy.subst_bool] at h_p; exact h_p
+      simp only [LMonoTy.subst_bool] at h_p; exact h_p
     have h_th_el : LMonoTy.subst substInfo.subst tht.toLMonoTy =
         LMonoTy.subst substInfo.subst elt.toLMonoTy := by
       have h_p := h_sound _ (List.Mem.tail _ (List.Mem.head _))
-      simp at h_p; exact h_p
+      simp only at h_p; exact h_p
     have h_c_type_bool : LMonoTy.subst S (toLMonoTy ct) = LMonoTy.bool := by
       have h_c_bool' : LMonoTy.subst substInfo.subst ct.toLMonoTy =
           LMonoTy.subst substInfo.subst LMonoTy.bool := by
@@ -908,7 +908,7 @@ theorem resolve_HasTypeA [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.ID
   cases res with
   | error => simp at h_resolve
   | ok val =>
-    simp at h_resolve
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h_resolve
     obtain ⟨h_et, h_env⟩ := h_resolve
     subst h_et h_env
     have h_envwf0 := TEnvWF_resolve_init Env h_envwf
@@ -919,7 +919,7 @@ theorem resolve_HasTypeA [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.ID
       · exact List.cons_ne_nil _ _
       · rename_i h_not_empty
         intro h_abs
-        simp_all
+        simp_all only [Bool.not_eq_true, Bool.false_eq_true, ↓reduceIte]
         contradiction
     have h_resolved0 : (if Env.context.types.isEmpty = true then
         Env.updateContext { Env.context with types := [.empty] }

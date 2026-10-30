@@ -387,10 +387,12 @@ def expressionToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) (e: B3
   termination_by e
   decreasing_by
   all_goals(try term_by_mem)
-  . cases args; simp_all; term_by_mem
+  . cases args; simp_all only [Array.mem_toList_iff, B3AST.Expression.functionCall.sizeOf_spec, sizeOf_default, Nat.add_zero,
+    Ann.mk.sizeOf_spec]; term_by_mem
   . cases e; cases exprs; cases patterns;
     -- For some reason, need both simps to simplify the ∈ .toList
-    simp at *; simp_all; term_by_mem
+    simp only [Array.mem_toList_iff, Expression.quantifierExpr.sizeOf_spec, sizeOf_default, Nat.add_zero,
+    Ann.mk.sizeOf_spec] at *; simp_all only [Array.mem_toList_iff]; term_by_mem
 
 def callArgToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) : Strata.B3AST.CallArg M → B3CST.CallArg M × List (ASTToCSTError M)
   | .callArgExpr m e =>
@@ -505,10 +507,12 @@ def stmtToCST [Inhabited (B3CST.Expression M)] [Inhabited (B3CST.Statement M)] (
   termination_by s
   decreasing_by
   all_goals(try term_by_mem)
-  . cases stmts; simp_all; term_by_mem
-  . cases branches; simp_all; term_by_mem
+  . cases stmts; simp_all only [Array.mem_toList_iff, Statement.blockStmt.sizeOf_spec, sizeOf_default, Nat.add_zero,
+    Ann.mk.sizeOf_spec]; term_by_mem
+  . cases branches; simp_all only [Array.mem_toList_iff, Statement.choose.sizeOf_spec, sizeOf_default, Nat.add_zero,
+    Ann.mk.sizeOf_spec]; term_by_mem
   . cases elseB; term_by_mem
-  . cases c; cases cases; simp_all; simp_all; term_by_mem
+  . cases c; cases cases; simp_all only [Statement.ifCase.sizeOf_spec, sizeOf_default, Nat.add_zero, Ann.mk.sizeOf_spec]; simp_all only [Array.mem_toList_iff]; term_by_mem
 end
 
 def fParameterToCST : Strata.B3AST.FParameter M → B3CST.FParam M
@@ -752,7 +756,7 @@ def expressionFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) (e: 
             ) ([], [])
             (.pattern (B3AnnFromCST.annForPattern pann) ⟨B3AnnFromCST.annForPatternExprs pann, exprsConverted.toArray⟩, errors)
       let (patternsConverted, patternErrors) := patterns.val.toList.attach.foldl (fun (acc, errs) p =>
-        let (p', e) := convertPattern p.1 (by have hp := p.2; simp at hp; exact hp)
+        let (p', e) := convertPattern p.1 (by have hp := p.2; simp only [Array.mem_toList_iff] at hp; exact hp)
         (acc ++ [p'], errs ++ e)
       ) ([], [])
       let (body', bodyErrs) := expressionFromCST ctx' body
@@ -783,7 +787,7 @@ def expressionFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) (e: 
             ) ([], [])
             (.pattern (B3AnnFromCST.annForPattern pann) ⟨B3AnnFromCST.annForPatternExprs pann, exprsConverted.toArray⟩, errors)
       let (patternsConverted, patternErrors) := patterns.val.toList.attach.foldl (fun (acc, errs) p =>
-        let (p', e) := convertPattern p.1 (by have hp := p.2; simp at hp; exact hp)
+        let (p', e) := convertPattern p.1 (by have hp := p.2; simp only [Array.mem_toList_iff] at hp; exact hp)
         (acc ++ [p'], errs ++ e)
       ) ([], [])
       let (body', bodyErrs) := expressionFromCST ctx' body
@@ -802,11 +806,12 @@ def expressionFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) (e: 
   termination_by e
   decreasing_by
   all_goals(try term_by_mem)
-  . cases args; simp_all; term_by_mem
+  . cases args; simp_all only [Array.mem_toList_iff, B3CST.Expression.functionCall.sizeOf_spec, sizeOf_default, Nat.add_zero,
+    Ann.mk.sizeOf_spec]; term_by_mem
   . cases e; cases exprs; cases patterns;
-    simp_all; simp_all; term_by_mem
+    simp_all only [Expression.forall_expr.sizeOf_spec, sizeOf_default, Nat.add_zero, Ann.mk.sizeOf_spec]; simp_all only [Array.mem_toList_iff]; term_by_mem
   . cases e; cases exprs; cases patterns;
-    simp_all; simp_all; term_by_mem
+    simp_all only [Expression.exists_expr.sizeOf_spec, sizeOf_default, Nat.add_zero, Ann.mk.sizeOf_spec]; simp_all only [Array.mem_toList_iff]; term_by_mem
 
 def callArgFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) : B3CST.CallArg M → Strata.B3AST.CallArg M × List (CSTToASTError M)
   | .call_arg_expr m expr =>
@@ -844,7 +849,8 @@ SizeOf.sizeOf stmt < SizeOf.sizeOf bs :=
   match hbs: bs with
   | .choiceAtom _ (.choice_branch _ s) => by simp_all; grind
   | .choicePush _ branches (.choice_branch _ s) => by
-    simp_all; rcases h with rfl | h
+    simp_all only [mem, ChoiceBranches.choicePush.sizeOf_spec, sizeOf_default, Nat.add_zero,
+    ChoiceBranch.choice_branch.sizeOf_spec]; rcases h with rfl | h
     · omega
     · have hbs := B3CST.ChoiceBranches.mem_sizeOf h; omega
 
@@ -968,10 +974,11 @@ def stmtFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) (s: B3CST.
   termination_by s
   decreasing_by
   all_goals(try term_by_mem)
-  . cases stmts; simp_all; term_by_mem
+  . cases stmts; simp_all only [Array.mem_toList_iff, Statement.block.sizeOf_spec, sizeOf_default, Nat.add_zero,
+    Ann.mk.sizeOf_spec]; term_by_mem
   . cases elseB; term_by_mem
   . have := B3CST.ChoiceBranches.mem_sizeOf hmem; term_by_mem
-  . cases case; cases cases; simp_all; simp_all; term_by_mem
+  . cases case; cases cases; simp_all only [Statement.if_case_statement.sizeOf_spec, sizeOf_default, Nat.add_zero, Ann.mk.sizeOf_spec]; simp_all only [Array.mem_toList_iff]; term_by_mem
 
 def paramModeFromCST [Inhabited M] : Ann (Option (B3CST.PParamMode M)) M → Strata.B3AST.ParamMode M
   | ⟨m, none⟩ => .paramModeIn m

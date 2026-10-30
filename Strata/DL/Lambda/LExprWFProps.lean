@@ -115,7 +115,7 @@ theorem varClose_of_varOpen [LawfulBEq T.IDMeta] [BEq T.Metadata] [ReflBEq T.Met
   case fvar _ name ty =>
     intro h1
     have ⟨x1, x2⟩ := x
-    simp at h h1
+    simp only [Prod.mk.injEq, not_and] at h h1
     exact fun a => h h1 (id (Eq.symm a))
   done
 
@@ -165,20 +165,20 @@ theorem lcAt_varOpen_inv (hs: lcAt k (varOpen i x e)) (hik: k ≤ i) : lcAt (i +
 theorem lcAt_varOpen_abs
   (h1 : lcAt k (varOpen i x y)) (h2 : k <= i) :
   lcAt i (abs m name ty y) := by
-  simp[lcAt]; apply (@lcAt_varOpen_inv k i)<;> assumption
+  simp only [lcAt]; apply (@lcAt_varOpen_inv k i)<;> assumption
 
 theorem lcAt_varOpen_quant
   (hy : lcAt k (varOpen i x y)) (hki : k <= i)
   (htr: lcAt k (varOpen i x tr)) :
   lcAt i (quant m qk name ty tr y) := by
-  simp[lcAt]; constructor<;> apply (@lcAt_varOpen_inv k i) <;> assumption
+  simp only [lcAt, Bool.and_eq_true]; constructor<;> apply (@lcAt_varOpen_inv k i) <;> assumption
 
 theorem varOpen_of_varClose {T} {GenericTy} [BEq T.Metadata] [LawfulBEq T.Metadata] [DecidableEq T.IDMeta] [DecidableEq GenericTy] {i : Nat} {x : IdentT GenericTy T.IDMeta} {e : LExpr ⟨T, GenericTy⟩} (h : LExpr.WF e) :
   varOpen i x (varClose i x e) = e := by
-  simp_all [LExpr.WF]
+  simp_all only [WF]
   rename_i r1 r2 r3
   have c := varOpen_varClose_when_lcAt (GenericTy:=GenericTy) (k:=0) (e:=e) (i:=i) (x:=x) h
-  simp at c
+  simp only [Nat.zero_le, forall_const] at c
   exact c
 
 ---------------------------------------------------------------------
@@ -194,11 +194,11 @@ theorem liftBVars_eq_of_lcAt
   induction e generalizing cutoff with
   | const | op | fvar => rfl
   | bvar => simp [liftBVars, lcAt] at h ⊢; omega
-  | abs _ _ _ _ ih => simp [liftBVars, lcAt] at h ⊢; exact ih h
-  | quant _ _ _ _ _ _ ih_tr ih_body => simp [liftBVars, lcAt] at h ⊢; exact ⟨ih_tr h.1, ih_body h.2⟩
-  | app _ _ _ ih1 ih2 => simp [liftBVars, lcAt] at h ⊢; exact ⟨ih1 h.1, ih2 h.2⟩
-  | ite _ _ _ _ ih1 ih2 ih3 => simp [liftBVars, lcAt] at h ⊢; exact ⟨ih1 h.1.1, ih2 h.1.2, ih3 h.2⟩
-  | eq _ _ _ ih1 ih2 => simp [liftBVars, lcAt] at h ⊢; exact ⟨ih1 h.1, ih2 h.2⟩
+  | abs _ _ _ _ ih => simp only [lcAt, liftBVars, abs.injEq, true_and] at h ⊢; exact ih h
+  | quant _ _ _ _ _ _ ih_tr ih_body => simp only [lcAt, Bool.and_eq_true, liftBVars, quant.injEq, true_and] at h ⊢; exact ⟨ih_tr h.1, ih_body h.2⟩
+  | app _ _ _ ih1 ih2 => simp only [lcAt, Bool.and_eq_true, liftBVars, app.injEq, true_and] at h ⊢; exact ⟨ih1 h.1, ih2 h.2⟩
+  | ite _ _ _ _ ih1 ih2 ih3 => simp only [lcAt, Bool.and_eq_true, liftBVars, ite.injEq, true_and] at h ⊢; exact ⟨ih1 h.1.1, ih2 h.1.2, ih3 h.2⟩
+  | eq _ _ _ ih1 ih2 => simp only [lcAt, Bool.and_eq_true, liftBVars, eq.injEq, true_and] at h ⊢; exact ⟨ih1 h.1, ih2 h.2⟩
 
 private theorem substFvarsAux_eq_go_of_lcAt
     (e : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) (depth : Nat)
@@ -324,7 +324,7 @@ theorem substFvars_eraseMetadata_congr
     (h : e₁.eraseMetadata = e₂.eraseMetadata) :
     (LExpr.substFvars e₁ sm).eraseMetadata = (LExpr.substFvars e₂ sm).eraseMetadata := by
   cases sm with
-  | nil => simp [LExpr.substFvars, Map.isEmpty]; exact h
+  | nil => simp only [substFvars, Map.isEmpty, ↓reduceIte]; exact h
   | cons p rest =>
   -- sm is nonempty, so substFvars = substFvarsAux
   suffices hsuff : ∀ (e₁ e₂ : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)),
@@ -409,7 +409,7 @@ theorem substFvars_eraseMetadata_values_congr
         rw [h_keys.1]
         split
         · simp [h_vals.1]
-        · exact ih rest₂ (by simp [List.length_cons] at h_len; exact h_len) h_keys.2 h_vals.2
+        · exact ih rest₂ (by simp only [List.length_cons, Nat.add_right_cancel_iff] at h_len; exact h_len) h_keys.2 h_vals.2
   -- Main proof: structural induction on e
   cases sm₁ with
   | nil =>
@@ -440,7 +440,7 @@ theorem substFvars_eraseMetadata_values_congr
       | some v₁ =>
         cases h2 : Map.find? (p₂ :: rest₂) x with
         | none => simp [h1, h2] at hfc
-        | some v₂ => simp [h1, h2] at hfc; exact hfc
+        | some v₂ => simp only [h1, Option.map_some, h2, Option.some.injEq] at hfc; exact hfc
     | abs m n t b ih =>
       simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
       exact congrArg _ ih
@@ -564,28 +564,28 @@ theorem substK_eraseMetadata_congr
     rename_i c'; subst_vars
     simp [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
   | op m₁ n t =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, op.injEq, true_and] at h_eM <;> try contradiction
     have ⟨hn, ht⟩ := h_eM; subst_vars
     simp [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
   | bvar m₁ i =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, bvar.injEq, true_and] at h_eM <;> try contradiction
     rename_i m₂ i'; subst i'
     simp only [LExpr.substK]
     split
-    · simp [LExpr.eraseMetadata]; exact h_s _ _
+    · simp only [eraseMetadata]; exact h_s _ _
     · simp [LExpr.eraseMetadata, LExpr.replaceMetadata]
   | fvar m₁ x ty =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, fvar.injEq, true_and] at h_eM <;> try contradiction
     have ⟨hx, hty⟩ := h_eM; subst_vars
     simp [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
   | abs m₁ n t b ih =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, abs.injEq, true_and] at h_eM <;> try contradiction
     rename_i m₂ n₂ t₂ b₂
     have ⟨hn, ht, hb⟩ := h_eM; subst_vars
     simp only [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
     congr 1; apply ih; exact hb
   | quant m₁ qk n ty tr b ihtr ihb =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, quant.injEq, true_and] at h_eM <;> try contradiction
     rename_i m₂ qk₂ n₂ ty₂ tr₂ b₂
     have ⟨hqk, hn, hty, htr, hb⟩ := h_eM; subst_vars
     simp only [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
@@ -593,7 +593,7 @@ theorem substK_eraseMetadata_congr
     · apply ihtr; exact htr
     · apply ihb; exact hb
   | app m₁ f a ihf iha =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, app.injEq, true_and] at h_eM <;> try contradiction
     rename_i m₂ f₂ a₂
     have ⟨hf, ha⟩ := h_eM
     simp only [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
@@ -601,7 +601,7 @@ theorem substK_eraseMetadata_congr
     · apply ihf; exact hf
     · apply iha; exact ha
   | ite m₁ c t f ihc iht ihf =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, ite.injEq, true_and] at h_eM <;> try contradiction
     rename_i m₂ c₂ t₂ f₂
     have ⟨hc, ht, hf⟩ := h_eM
     simp only [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
@@ -610,7 +610,7 @@ theorem substK_eraseMetadata_congr
     · apply iht; exact ht
     · apply ihf; exact hf
   | eq m₁ l r ihl ihr =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, eq.injEq, true_and] at h_eM <;> try contradiction
     rename_i m₂ l₂ r₂
     have ⟨hl, hr⟩ := h_eM
     simp only [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]

@@ -396,7 +396,7 @@ private def collectFnAppsExpr (e : Expr) : List FnAppInfo :=
   | _ => children
   termination_by (SizeOf.sizeOf e)
   decreasing_by all_goals (
-    cases e; simp_all; rename_i x_in;
+    cases e; simp_all only [Expr.mk.sizeOf_spec]; rename_i x_in;
     have := List.sizeOf_lt_of_mem x_in; omega)
 
 private def collectFnAppsCode (c : Code) : List FnAppInfo :=
@@ -405,7 +405,7 @@ private def collectFnAppsCode (c : Code) : List FnAppInfo :=
   fromOps ++ fromStmts
   termination_by (SizeOf.sizeOf c)
   decreasing_by
-    all_goals (cases c; simp_all; rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega)
+    all_goals (cases c; simp_all only [Code.mk.sizeOf_spec]; rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega)
 
 /-- Collect all function application symbols from a GOTO program. -/
 def collectFnApps (program : Program) : List FnAppInfo :=
@@ -443,7 +443,7 @@ private def collectSymbolRefsExpr (e : Expr) : List SymbolRefInfo :=
   | _ => children
   termination_by (SizeOf.sizeOf e)
   decreasing_by all_goals (
-    cases e; simp_all; rename_i x_in;
+    cases e; simp_all only [Expr.mk.sizeOf_spec]; rename_i x_in;
     have := List.sizeOf_lt_of_mem x_in; omega)
 
 private def collectSymbolRefsCode (c : Code) : List SymbolRefInfo :=
@@ -452,7 +452,7 @@ private def collectSymbolRefsCode (c : Code) : List SymbolRefInfo :=
   fromOps ++ fromStmts
   termination_by (SizeOf.sizeOf c)
   decreasing_by
-    all_goals (cases c; simp_all; rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega)
+    all_goals (cases c; simp_all only [Code.mk.sizeOf_spec]; rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega)
 
 /-- Collect all symbol references from a GOTO program, deduplicated by name. -/
 def collectSymbolRefs (program : Program) : List SymbolRefInfo :=

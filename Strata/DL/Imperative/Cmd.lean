@@ -304,7 +304,7 @@ where
 
 theorem replaceInArgs_length (args : List (CallArg P)) (newExprs : List P.Expr) :
     (replaceInArgs args newExprs).length = args.length := by
-  simp [replaceInArgs]
+  simp only [replaceInArgs]
   suffices h : ∀ es, (replaceInArgs.go args es).length = args.length from h newExprs
   induction args with
   | nil => simp [replaceInArgs.go]

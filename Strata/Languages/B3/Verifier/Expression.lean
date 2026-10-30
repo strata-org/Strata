@@ -157,7 +157,8 @@ def collectPatternBoundVars (expr : B3AST.Expression M) (exprM : M) : Except (Co
       return results.flatten
   | _ => .error (ConversionError.invalidPattern "patterns must consist only of function applications, variables, and literals" exprM)
   termination_by SizeOf.sizeOf expr
-  decreasing_by (cases args; simp_all; term_by_mem)
+  decreasing_by (cases args; simp_all only [Array.mem_toList_iff, Expression.functionCall.sizeOf_spec, sizeOf_default, Nat.add_zero,
+    Ann.mk.sizeOf_spec]; term_by_mem)
 
 /-- Validate pattern expressions for a quantifier -/
 def validatePatternExprs (patterns : Array (B3AST.Expression M)) (patternM : M) : Except (ConversionError M) Unit :=

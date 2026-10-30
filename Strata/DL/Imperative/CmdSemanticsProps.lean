@@ -150,7 +150,7 @@ theorem InitStateDefCons
   intros Hdef Heval
   cases Heval with
   | init Hold HH Hsome =>
-  simp [isDefined, HH] at *
+  simp only [isDefined, ne_eq, HH, List.mem_cons, forall_eq_or_imp, Option.isSome_some, true_and] at *
   intros v' Hv'
   have Heq: ¬ v = v' :=by
     false_or_by_contra; rename_i Heq
@@ -188,7 +188,7 @@ theorem UpdateStateDefMonotone
   intros Hdef Heval
   cases Heval with
   | update Hold HH Hsome =>
-  simp [isDefined] at *
+  simp only [isDefined, ne_eq] at *
   intros v' Hv'
   by_cases Heq: (v = v')
   case pos =>
@@ -198,7 +198,7 @@ theorem UpdateStateDefMonotone
   case neg =>
     specialize Hsome v' Heq
     specialize Hdef v'
-    simp [Hsome]
+    simp only [Hsome]
     exact Hdef Hv'
 
 theorem UpdateStateUniqueResult
@@ -256,7 +256,7 @@ theorem UpdateStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ1 σ2: Sem
   cases Hu1; cases Hu2; cases Hu3; cases Hu4
   ext i e
   rename_i Hfa1 _ _ _ Hfa2 _ _ _ Hfa3 _ _ _ Hfa4 _
-  simp at Hfa1 Hfa2 Hfa3 Hfa4
+  simp only [ne_eq] at Hfa1 Hfa2 Hfa3 Hfa4
   rw[Eq.comm] at Hneq
   by_cases Heq1: x1 = i
   simp_all
@@ -282,7 +282,7 @@ theorem UpdateState_InitStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ
   cases Hu1; cases Hu2; cases Hu3; cases Hu4
   ext i e
   rename_i Hfa1 _ _ Hfa2 _ _ Hfa3 _ _ _ Hfa4 _
-  simp at Hfa1 Hfa2 Hfa3 Hfa4
+  simp only [ne_eq] at Hfa1 Hfa2 Hfa3 Hfa4
   rw[Eq.comm] at Hneq
   by_cases Heq1: x1 = i
   simp_all
@@ -336,7 +336,7 @@ theorem eval_cmd_set_comm'
   cases Hs2 with | eval_set _ Hu2 _ =>
   cases Hs3 with | eval_set _ Hu3 _ =>
   cases Hs4 with | eval_set _ Hu4 _ =>
-  simp_all
+  simp_all only [Option.some.injEq]
   exact UpdateStateComm Hneq Hu1 Hu2 Hu3 Hu4
 
 theorem eval_cmd_set_comm

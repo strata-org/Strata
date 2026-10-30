@@ -134,7 +134,7 @@ private theorem denoteBoolTermAux_literal_form {t : Term} {p : Prop}
   | .none _ => simp [denoteBoolTermAux, denoteTerm] at h
   | .some t' =>
     exfalso
-    simp [denoteBoolTermAux, denoteTerm] at h
+    simp only [denoteBoolTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind] at h
     rcases hd : denoteTerm {} t' with _ | ⟨ty', _, _⟩ <;> rw [hd] at h <;> simp at h
   | .var _ | .app _ _ _ | .quant _ _ _ _ => simp [Term.isLiteral] at hlit
 
@@ -144,7 +144,7 @@ private theorem denoteIntTermAux_literal_form {t : Term} {n : Int}
     t = .prim (.int n) := by
   match t with
   | .prim (.int i) =>
-    simp [denoteIntTermAux, denoteTerm] at h
+    simp only [denoteIntTermAux, denoteTerm, Option.pure_def, Option.some.injEq] at h
     rw [h]
   | .prim (.bool b) =>
     exfalso
@@ -154,7 +154,7 @@ private theorem denoteIntTermAux_literal_form {t : Term} {n : Int}
   | .none _ => simp [denoteIntTermAux, denoteTerm] at h
   | .some t' =>
     exfalso
-    simp [denoteIntTermAux, denoteTerm] at h
+    simp only [denoteIntTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind] at h
     rcases hd : denoteTerm {} t' with _ | ⟨ty', _, _⟩ <;> rw [hd] at h <;> simp at h
   | .var _ | .app _ _ _ | .quant _ _ _ _ => simp [Term.isLiteral] at hlit
 
@@ -164,7 +164,8 @@ private theorem denoteBVTermAux_literal_form {n : Nat} {t : Term} {b : BitVec n}
     t = .prim (.bitvec b) := by
   match t with
   | .prim (@TermPrim.bitvec m b') =>
-    simp [denoteBVTermAux, denoteTerm] at h
+    simp only [denoteBVTermAux, denoteTerm, Option.pure_def, Option.dite_none_right_eq_some,
+    Option.some.injEq] at h
     obtain ⟨hmn, hb⟩ := h; subst hmn; subst hb; rfl
   | .prim (.bool bb) =>
     exfalso
@@ -174,7 +175,7 @@ private theorem denoteBVTermAux_literal_form {n : Nat} {t : Term} {b : BitVec n}
   | .none _ => simp [denoteBVTermAux, denoteTerm] at h
   | .some t' =>
     exfalso
-    simp [denoteBVTermAux, denoteTerm] at h
+    simp only [denoteBVTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind] at h
     rcases hd : denoteTerm {} t' with _ | ⟨ty', _, _⟩ <;> rw [hd] at h <;> simp at h
   | .var _ | .app _ _ _ | .quant _ _ _ _ => simp [Term.isLiteral] at hlit
 
@@ -184,7 +185,7 @@ private theorem denoteStringTermAux_literal_form {t : Term} {s : String}
     t = .prim (.string s) := by
   match t with
   | .prim (.string s') =>
-    simp [denoteStringTermAux, denoteTerm] at h
+    simp only [denoteStringTermAux, denoteTerm, Option.pure_def, Option.some.injEq] at h
     rw [h]
   | .prim (.bool b) =>
     exfalso
@@ -194,7 +195,7 @@ private theorem denoteStringTermAux_literal_form {t : Term} {s : String}
   | .none _ => simp [denoteStringTermAux, denoteTerm] at h
   | .some t' =>
     exfalso
-    simp [denoteStringTermAux, denoteTerm] at h
+    simp only [denoteStringTermAux, denoteTerm, Option.pure_def, Option.bind_eq_bind] at h
     rcases hd : denoteTerm {} t' with _ | ⟨ty', _, _⟩ <;> rw [hd] at h <;> simp at h
   | .var _ | .app _ _ _ | .quant _ _ _ _ => simp [Term.isLiteral] at hlit
 
@@ -211,7 +212,8 @@ theorem Factory.not_correct {t : Term} {p : Prop}
     cases b <;> simp [denoteBoolTermAux, denoteTerm, hp]
   · exact denoteBoolTermAux_not_inv h
   · obtain ⟨f, hdt, hiff⟩ := denoteBoolTermAux_extract h
-    simp [denoteBoolTermAux, denoteTerm, hdt]
+    simp only [denoteBoolTermAux, denoteTerm, hdt, Option.pure_def, Option.bind_eq_bind, Option.bind_some,
+    Option.some.injEq, eq_iff_iff]
     rw [propext hiff]
 
 /-! ## Factory.opposites spec -/
@@ -263,7 +265,8 @@ theorem Factory.and_correct {t₁ t₂ : Term} {p₁ p₂ : Prop}
             rw [← hpq]; simp [denoteBoolTermAux, denoteTerm]
       · obtain ⟨f₁, hdt₁, hiff₁⟩ := denoteBoolTermAux_extract h₁
         obtain ⟨f₂, hdt₂, hiff₂⟩ := denoteBoolTermAux_extract h₂
-        simp [denoteBoolTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂]
+        simp only [denoteBoolTermAux, denoteTerm, denoteTerms, hdt₁, hdt₂, Option.pure_def, Option.bind_eq_bind,
+    Option.bind_some, leftAssoc, ↓reduceDIte, leftAssoc.go, Option.some.injEq, eq_iff_iff]
         rw [propext hiff₁, propext hiff₂]
 
 /-! ## Factory.or correctness -/
@@ -298,20 +301,23 @@ theorem Factory.or_correct {t₁ t₂ : Term} {p₁ p₂ : Prop}
           · have hq := denoteBoolTermAux_not_inv h₂
             have hpq := denoteBoolTermAux_eq hq h₁
             rw [← hpq]
-            simp [denoteBoolTermAux, denoteTerm]
+            simp only [denoteBoolTermAux, denoteTerm, ↓reduceIte, Option.pure_def, Option.some.injEq, eq_iff_iff,
+    true_iff]
             cases Classical.em p₂ with
             | inl h => exact Or.inr h
             | inr h => exact Or.inl h
           · have hq := denoteBoolTermAux_not_inv h₁
             have hpq := denoteBoolTermAux_eq hq h₂
             rw [← hpq]
-            simp [denoteBoolTermAux, denoteTerm]
+            simp only [denoteBoolTermAux, denoteTerm, ↓reduceIte, Option.pure_def, Option.some.injEq, eq_iff_iff,
+    true_iff]
             cases Classical.em p₁ with
             | inl h => exact Or.inl h
             | inr h => exact Or.inr h
       · obtain ⟨f₁, hdt₁, hiff₁⟩ := denoteBoolTermAux_extract h₁
         obtain ⟨f₂, hdt₂, hiff₂⟩ := denoteBoolTermAux_extract h₂
-        simp [denoteBoolTermAux, denoteTerm, denoteTerms, leftAssoc, leftAssoc.go, hdt₁, hdt₂]
+        simp only [denoteBoolTermAux, denoteTerm, denoteTerms, hdt₁, hdt₂, Option.pure_def, Option.bind_eq_bind,
+    Option.bind_some, leftAssoc, ↓reduceDIte, leftAssoc.go, Option.some.injEq, eq_iff_iff]
         rw [propext hiff₁, propext hiff₂]
 
 /-! ## Factory.implies correctness -/
@@ -753,13 +759,14 @@ theorem Factory.eq_correct_bool {t₁ t₂ : Term} {p₁ p₂ : Prop}
   · rename_i hne
     split
     · rename_i hlit
-      simp [Bool.and_eq_true] at hlit
+      simp only [Bool.and_eq_true] at hlit
       obtain ⟨hl₁, hl₂⟩ := hlit
       obtain ⟨b₁, ht₁, hbp₁⟩ := denoteBoolTermAux_literal_form h₁ hl₁
       obtain ⟨b₂, ht₂, hbp₂⟩ := denoteBoolTermAux_literal_form h₂ hl₂
       have hbne : b₁ ≠ b₂ := by
         intro heq; apply hne; rw [ht₁, ht₂, heq]
-      simp [denoteBoolTermAux, denoteTerm]
+      simp only [denoteBoolTermAux, denoteTerm, Bool.false_eq_true, ↓reduceIte, Option.pure_def, Option.some.injEq,
+    eq_iff_iff, false_iff]
       intro hiff
       apply hbne
       have : (b₁ = true) ↔ (b₂ = true) := hbp₁.symm.trans (hiff.trans hbp₂)
@@ -801,11 +808,12 @@ theorem Factory.eq_correct_int {t₁ t₂ : Term} {n₁ n₂ : Int}
   · rename_i hne
     split
     · rename_i hlit
-      simp [Bool.and_eq_true] at hlit
+      simp only [Bool.and_eq_true] at hlit
       obtain ⟨hl₁, hl₂⟩ := hlit
       have ht₁ := denoteIntTermAux_literal_form h₁ hl₁
       have ht₂ := denoteIntTermAux_literal_form h₂ hl₂
-      simp [denoteBoolTermAux, denoteTerm]
+      simp only [denoteBoolTermAux, denoteTerm, Bool.false_eq_true, ↓reduceIte, Option.pure_def, Option.some.injEq,
+    eq_iff_iff, false_iff, ne_eq]
       intro heq; subst heq; apply hne; rw [ht₁, ht₂]
     · split
       iterate 3
@@ -840,11 +848,12 @@ theorem Factory.eq_correct_bv {n : Nat} {t₁ t₂ : Term} {x y : BitVec n}
   · rename_i hne
     split
     · rename_i hlit
-      simp [Bool.and_eq_true] at hlit
+      simp only [Bool.and_eq_true] at hlit
       obtain ⟨hl₁, hl₂⟩ := hlit
       have ht₁ := denoteBVTermAux_literal_form h₁ hl₁
       have ht₂ := denoteBVTermAux_literal_form h₂ hl₂
-      simp [denoteBoolTermAux, denoteTerm]
+      simp only [denoteBoolTermAux, denoteTerm, Bool.false_eq_true, ↓reduceIte, Option.pure_def, Option.some.injEq,
+    eq_iff_iff, false_iff, ne_eq]
       intro heq; subst heq; apply hne; rw [ht₁, ht₂]
     · split
       iterate 3
@@ -879,11 +888,12 @@ theorem Factory.eq_correct_string {t₁ t₂ : Term} {s₁ s₂ : String}
   · rename_i hne
     split
     · rename_i hlit
-      simp [Bool.and_eq_true] at hlit
+      simp only [Bool.and_eq_true] at hlit
       obtain ⟨hl₁, hl₂⟩ := hlit
       have ht₁ := denoteStringTermAux_literal_form h₁ hl₁
       have ht₂ := denoteStringTermAux_literal_form h₂ hl₂
-      simp [denoteBoolTermAux, denoteTerm]
+      simp only [denoteBoolTermAux, denoteTerm, Bool.false_eq_true, ↓reduceIte, Option.pure_def, Option.some.injEq,
+    eq_iff_iff, false_iff, ne_eq]
       intro heq; subst heq; apply hne; rw [ht₁, ht₂]
     · split
       iterate 3

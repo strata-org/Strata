@@ -117,13 +117,13 @@ private theorem escape_chars (s : EscapeScheme) (cs : List Char) {c : Char}
     | cons d ds ih =>
       intro h
       by_cases hd : s.mustEscape d = true
-      · simp [escapeAfterFirst, hd, esc] at h
+      · simp only [escapeAfterFirst, hd, ↓reduceIte, esc, List.mem_cons, List.mem_append] at h
         rcases h with h | h | h
         · exact Or.inl h
         · exact Or.inr (digits _ h)
         · exact ih h
-      · simp at hd
-        simp [escapeAfterFirst, hd] at h
+      · simp only [Bool.not_eq_true] at hd
+        simp only [escapeAfterFirst, hd, Bool.false_eq_true, ↓reduceIte, List.mem_cons] at h
         rcases h with h | h
         · exact Or.inr (h ▸ hd)
         · exact ih h
@@ -131,14 +131,14 @@ private theorem escape_chars (s : EscapeScheme) (cs : List Char) {c : Char}
   | nil => simp [escape] at hc
   | cons d ds =>
     by_cases hd : (s.mustEscape d || s.mustEscapeFirst d) = true
-    · simp [escape, hd, esc] at hc
+    · simp only [escape, hd, ↓reduceIte, esc, List.mem_cons, List.mem_append] at hc
       rcases hc with h | h | h
       · exact Or.inl h
       · exact Or.inr (digits _ h)
       · exact after ds h
     · rw [Bool.not_eq_true, Bool.or_eq_false_iff] at hd
       obtain ⟨hm, hf⟩ := hd
-      simp [escape, hm, hf] at hc
+      simp only [escape, hm, hf, Bool.or_self, Bool.false_eq_true, ↓reduceIte, List.mem_cons] at hc
       rcases hc with h | h
       · exact Or.inr (h ▸ hm)
       · exact after ds h
@@ -203,7 +203,9 @@ private theorem escapeAfterFirst_legalChars (cs : List Char) :
   | nil => rfl
   | cons c cs ih =>
     by_cases h : smtMustEscape c = true
-    · simp [escapeAfterFirst, h, esc, ih, hexDigits_legalChars]
+    · simp only [escapeAfterFirst, smtScheme_mustEscape, h, ↓reduceIte, esc, smtScheme_escapeChar,
+    smtScheme_hexWidth, ↓Char.isValue, List.all_cons, List.all_append, hexDigits_legalChars, ih, Bool.and_self,
+    Bool.and_true, Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.not_eq_eq_eq_not, Bool.not_true]
       decide
     · simp at h
       simp [escapeAfterFirst, h, ih, unescaped_legal c h]
@@ -216,8 +218,10 @@ private theorem escape_isLegalSMTSymbol (cs : List Char) :
   | nil => rfl
   | cons c cs =>
     by_cases h : (smtMustEscape c || smtMustEscapeFirst c) = true
-    · simp [escape, h, esc, isLegalSMTSymbol, escapeAfterFirst_legalChars,
-            hexDigits_legalChars]
+    · simp only [isLegalSMTSymbol, escape, smtScheme_mustEscape, smtScheme_mustEscapeFirst, h, ↓reduceIte, esc,
+    smtScheme_escapeChar, smtScheme_hexWidth, ↓Char.isValue, List.all_cons, List.all_append, hexDigits_legalChars,
+    escapeAfterFirst_legalChars, Bool.and_self, Bool.and_true, Bool.and_eq_true, bne_iff_ne, ne_eq,
+    Bool.not_eq_eq_eq_not, Bool.not_true]
       decide
     · rw [Bool.not_eq_true, Bool.or_eq_false_iff] at h
       obtain ⟨hm, hf⟩ := h
@@ -263,10 +267,11 @@ private theorem hexDigits_readable_mem (w n : Nat) {x : Char} (h : x ∈ hexDigi
 private theorem unescaped_readable (c : Char) (h : smtMustEscape c = false) :
     isSmtBare c = false ∨ strataIsIdRest c = true := by
   by_cases hascii : c.toNat ≤ 0x7F
-  · simp [smtMustEscape, hascii] at h
+  · simp only [smtMustEscape, hascii, decide_true, ↓Char.isValue, Bool.true_and, Bool.or_eq_false_iff,
+    beq_eq_false_iff_ne, ne_eq, Bool.and_eq_false_imp, Bool.not_eq_eq_eq_not, Bool.not_false] at h
     by_cases hs : isSmtBare c = true
     · exact Or.inr (h.2 hs)
-    · simp at hs; exact Or.inl hs
+    · simp only [Bool.not_eq_true] at hs; exact Or.inl hs
   · left; simp [isSmtBare]; omega
 
 /-- Every character `escapeAfterFirst` produces that a solver would echo bare is
@@ -280,10 +285,13 @@ private theorem escapeAfterFirst_readableChars (cs : List Char) :
   | nil => rfl
   | cons c cs ih =>
     by_cases h : smtMustEscape c = true
-    · simp [escapeAfterFirst, h, esc] at ih ⊢
+    · simp only [List.all_eq_true, Bool.or_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, escapeAfterFirst,
+    smtScheme_mustEscape, h, ↓reduceIte, esc, smtScheme_escapeChar, smtScheme_hexWidth, List.all_cons, List.all_append,
+    Bool.and_eq_true] at ih ⊢
       exact ⟨by decide, fun x hx => hexDigits_readable_mem _ _ hx, ih⟩
-    · simp at h
-      simp [escapeAfterFirst, h] at ih ⊢
+    · simp only [Bool.not_eq_true] at h
+      simp only [List.all_eq_true, Bool.or_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, escapeAfterFirst,
+    smtScheme_mustEscape, h, Bool.false_eq_true, ↓reduceIte, List.all_cons, Bool.and_eq_true] at ih ⊢
       exact ⟨unescaped_readable c h, ih⟩
 
 /-- Every escaped name can be read back: each of its characters that a solver
@@ -297,7 +305,9 @@ private theorem escape_isReadableBack (cs : List Char) :
   | cons c cs =>
     have ht := escapeAfterFirst_readableChars cs
     by_cases h : (smtMustEscape c || smtMustEscapeFirst c) = true
-    · simp [escape, h, esc, isReadableBack] at ht ⊢
+    · simp only [List.all_eq_true, Bool.or_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, isReadableBack, escape,
+    smtScheme_mustEscape, smtScheme_mustEscapeFirst, h, ↓reduceIte, esc, smtScheme_escapeChar, smtScheme_hexWidth,
+    List.all_cons, List.all_append, Bool.and_eq_true] at ht ⊢
       exact ⟨⟨by decide, fun x hx => hexDigits_readable_mem _ _ hx, ht⟩, by decide⟩
     · rw [Bool.not_eq_true, Bool.or_eq_false_iff] at h
       obtain ⟨hm, hf⟩ := h
@@ -306,7 +316,9 @@ private theorem escape_isReadableBack (cs : List Char) :
         by_cases hb : isSmtBare c = true
         · simp [hf hb]
         · simp at hb; simp [hb]
-      simp [escape, hm, hf, isReadableBack, hhead] at ht ⊢
+      simp only [List.all_eq_true, Bool.or_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, isReadableBack, escape,
+    smtScheme_mustEscape, hm, smtScheme_mustEscapeFirst, hf, Bool.or_self, Bool.false_eq_true, ↓reduceIte,
+    List.all_cons, hhead, Bool.and_true, Bool.and_eq_true] at ht ⊢
       exact ⟨unescaped_readable c hm, ht⟩
 
 
@@ -327,15 +339,19 @@ fails this file rather than emitting an illegal script. -/
     the `A-Z`, `a-z` and `0-9` ranges. -/
 private theorem isAlphanum_ascii (c : Char) (h : c.isAlphanum = true) :
     c.toNat ≤ 0x7F := by
-  simp [Char.isAlphanum, Char.isAlpha, Char.isUpper, Char.isLower, Char.isDigit,
-        UInt32.le_iff_toNat_le] at h ⊢
+  simp only [Char.isAlphanum, Char.isAlpha, Char.isUpper, ↓Char.isValue, Char.reduceVal, ge_iff_le,
+    UInt32.le_iff_toNat_le, UInt32.reduceToNat, Char.toNat_val, Bool.decide_and, Char.isLower, Char.isDigit,
+    Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at h ⊢
   rcases h with (⟨h1, h2⟩ | ⟨h1, h2⟩) | ⟨h1, h2⟩ <;> omega
 
 /-- A letter is not a digit; the two ranges are disjoint. -/
 private theorem isAlpha_not_isDigit (c : Char) (h : c.isAlpha = true) :
     c.isDigit = false := by
-  simp [Char.isAlpha, Char.isUpper, Char.isLower, UInt32.le_iff_toNat_le] at h
-  simp [Char.isDigit, UInt32.le_iff_toNat_le]
+  simp only [Char.isAlpha, Char.isUpper, ↓Char.isValue, Char.reduceVal, ge_iff_le, UInt32.le_iff_toNat_le,
+    UInt32.reduceToNat, Char.toNat_val, Bool.decide_and, Char.isLower, Bool.or_eq_true, Bool.and_eq_true,
+    decide_eq_true_eq] at h
+  simp only [Char.isDigit, ↓Char.isValue, Char.reduceVal, ge_iff_le, UInt32.le_iff_toNat_le, UInt32.reduceToNat,
+    Char.toNat_val, Bool.and_eq_false_imp, decide_eq_true_eq, decide_eq_false_iff_not, Nat.not_le]
   rcases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ <;> omega
 
 /-- Every character DDM admits in a bare identifier, SMT-LIB admits in a bare simple
@@ -345,7 +361,7 @@ private theorem isIdContinue_isSmtBare (c : Char) (h : StrataDDM.isIdContinue c 
     isSmtBare c = true := by
   by_cases ha : c.isAlphanum = true
   · simp [isSmtBare, ha, isAlphanum_ascii c ha]
-  · simp [StrataDDM.isIdContinue, ha] at h
+  · simp only [StrataDDM.isIdContinue, ha, ↓Char.isValue, Bool.false_or, Bool.or_eq_true, beq_iff_eq] at h
     rcases h with ((((h | h) | h) | h) | h) | h <;> subst h <;> decide
 
 /-- Every character DDM admits *first* in a bare identifier, SMT-LIB also admits
@@ -359,7 +375,7 @@ private theorem isIdBegin_isBareSmtFirst (c : Char) (h : StrataDDM.isIdBegin c =
       intro he; subst he; simp [Char.isAlpha, Char.isUpper, Char.isLower] at ha
     · simp only [bne_iff_ne, ne_eq]
       intro he; subst he; simp [Char.isAlpha, Char.isUpper, Char.isLower] at ha
-  · simp [StrataDDM.isIdBegin, ha] at h
+  · simp only [StrataDDM.isIdBegin, ha, ↓Char.isValue, Bool.false_or, Bool.or_eq_true, beq_iff_eq] at h
     rcases h with h | h <;> subst h <;> exact ⟨by decide, by decide, by decide, by decide⟩
 
 /-- The parser's alphabet and the formatter's differ only by `'`, which SMT-LIB does
@@ -369,7 +385,7 @@ private theorem isIdContinue_of_strataIsIdRest (c : Char)
     StrataDDM.isIdContinue c = true := by
   by_cases ha : c.isAlphanum = true
   · simp [StrataDDM.isIdContinue, ha]
-  · simp [strataIsIdRest, ha] at hr
+  · simp only [strataIsIdRest, ha, ↓Char.isValue, Bool.false_or, Bool.or_eq_true, beq_iff_eq] at hr
     rcases hr with (((((h | h) | h) | h) | h) | h) | h <;> subst h <;> first
       | decide
       | (exfalso; revert hs; decide)

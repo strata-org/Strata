@@ -50,7 +50,7 @@ private theorem ite_transform_some_det
       ns = .choice
         (.block (.seq (.cmd (.assume "true_cond" cond md)) t))
         (.block (.seq (.cmd (.assume "false_cond" (HasBoolOps.not cond) md)) e)) := by
-  simp [StmtToKleeneStmt] at ht
+  simp only [StmtToKleeneStmt, Option.pure_def, Option.bind_eq_bind] at ht
   match h1 : BlockToKleeneStmt tss, h2 : BlockToKleeneStmt ess with
   | some t, some e =>
     simp [h1, h2, Option.bind] at ht
@@ -65,7 +65,7 @@ private theorem ite_transform_some_nondet
     (ht : StmtToKleeneStmt (.ite .nondet tss ess md) = some ns) :
     ∃ t e, BlockToKleeneStmt tss = some t ∧ BlockToKleeneStmt ess = some e ∧
       ns = .choice (.block t) (.block e) := by
-  simp [StmtToKleeneStmt] at ht
+  simp only [StmtToKleeneStmt, Option.pure_def, Option.bind_eq_bind] at ht
   match h1 : BlockToKleeneStmt tss, h2 : BlockToKleeneStmt ess with
   | some t, some e =>
     simp [h1, h2, Option.bind] at ht
@@ -81,10 +81,11 @@ private theorem loop_transform_some_det
     (ht : StmtToKleeneStmt (.loop (.det g) m inv body md) = some ns) :
     inv = [] ∧ ∃ b, BlockToKleeneStmt body = some b ∧
       ns = .loop (.seq (.cmd (.assume "guard" g md)) b) := by
-  simp [StmtToKleeneStmt] at ht
+  simp only [StmtToKleeneStmt, Bool.not_eq_eq_eq_not, Bool.not_true, List.isEmpty_eq_false_iff, ne_eq,
+    Option.pure_def, Option.bind_eq_bind, ite_not, Option.ite_none_right_eq_some] at ht
   match hinv : inv with
   | [] =>
-    simp [Option.bind] at ht
+    simp only [Option.bind, true_and] at ht
     match hb : BlockToKleeneStmt body with
     | some b => simp [hb] at ht; exact ⟨rfl, b, rfl, ht.symm⟩
     | none => simp [hb] at ht
@@ -98,10 +99,11 @@ private theorem loop_transform_some_nondet
     (ht : StmtToKleeneStmt (.loop .nondet m inv body md) = some ns) :
     inv = [] ∧ ∃ b, BlockToKleeneStmt body = some b ∧
       ns = .loop b := by
-  simp [StmtToKleeneStmt] at ht
+  simp only [StmtToKleeneStmt, Bool.not_eq_eq_eq_not, Bool.not_true, List.isEmpty_eq_false_iff, ne_eq,
+    Option.pure_def, Option.bind_eq_bind, ite_not, Option.ite_none_right_eq_some] at ht
   match hinv : inv with
   | [] =>
-    simp [Option.bind] at ht
+    simp only [Option.bind, true_and] at ht
     match hb : BlockToKleeneStmt body with
     | some b => simp [hb] at ht; exact ⟨rfl, b, rfl, ht.symm⟩
     | none => simp [hb] at ht
@@ -116,7 +118,7 @@ private theorem block_stmt_transform_some
     (ns : KleeneStmt P (Cmd P))
     (ht : StmtToKleeneStmt (.block label bss md) = some ns) :
     ∃ b, BlockToKleeneStmt bss = some b ∧ ns = .block b := by
-  simp [StmtToKleeneStmt] at ht
+  simp only [StmtToKleeneStmt, Option.pure_def, Option.bind_eq_bind] at ht
   match hb : BlockToKleeneStmt bss with
   | some b => simp [hb, Option.bind] at ht; exact ⟨b, rfl, ht.symm⟩
   | none => simp [hb, Option.bind] at ht

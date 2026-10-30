@@ -234,9 +234,10 @@ theorem updatedStateUpdate {P : PureExpr}
   σ h = some v' →
   UpdateState P σ h v (@updatedState P σ h v) := by
   intros Hsome
-  constructor <;> try simp [updatedState]
-  assumption
-  intros v Hneq Heq; simp_all
+  constructor
+  · assumption
+  · simp [updatedState]
+  · intro y Hneq; simp [updatedState, Ne.symm Hneq]
 
 theorem updatedStateId {P : PureExpr}
   {σ : SemanticStore P} {h : P.Ident} {v : P.Expr} :
@@ -253,7 +254,7 @@ theorem updatedStateDefMonotone :
   induction vs
   case nil => simp [isDefined]
   case cons h t ih =>
-    simp [isDefined] at *
+    simp only [isDefined, List.mem_cons, forall_eq_or_imp] at *
     apply And.intro
     . simp [Option.isSome]
       split <;> simp_all
@@ -272,7 +273,7 @@ theorem updatedStatesDefMonotone
   induction ves generalizing σ <;>
   unfold updatedStates' <;> try simp_all
   case cons h t ih =>
-    simp [isDefined]
+    simp only [isDefined]
     intros v Hin
     apply ih
     exact updatedStateDefMonotone Hdef
@@ -284,7 +285,7 @@ theorem updatedStatesDefMonotone
     intros Hlen k Hin
     induction ks generalizing σ vs <;> simp_all
     case cons h t ih =>
-    simp [updatedStates] at *
+    simp only [updatedStates] at *
     cases vs <;> simp at Hlen
     case cons h' t' =>
     cases Hin with
@@ -305,15 +306,15 @@ theorem updatedStatesUpdate {P : PureExpr}
   intros Hlen Hdef
   induction hs generalizing vs σ
   case nil =>
-    simp_all
+    simp_all only [List.length_nil]
     have Hemp : vs = [] := by
       exact List.length_eq_zero_iff.mp (id (Eq.symm Hlen))
-    simp [Hemp, updatedStates]
+    simp only [Hemp, updatedStates, List.zip_nil_right]
     exact UpdateStates.update_none
   case cons h t ih =>
     induction vs <;> simp_all
     case cons h' t' =>
-    simp [isDefined] at Hdef
+    simp only [isDefined, List.mem_cons, forall_eq_or_imp] at Hdef
     have Hlkup := Hdef.1
     simp [Option.isSome] at Hlkup
     split at Hlkup <;> simp_all
@@ -326,9 +327,10 @@ theorem updatedStateInit {P : PureExpr}
   σ h = none →
   InitState P σ h v (@updatedState P σ h v) := by
   intros Hsome
-  constructor <;> try simp [updatedState]
-  assumption
-  intros v Hneq Heq; simp_all
+  constructor
+  · assumption
+  · simp [updatedState]
+  · intro y Hneq; simp [updatedState, Ne.symm Hneq]
 
 theorem updatedStatesInit {P : PureExpr}
   {σ : SemanticStore P} {hs : List P.Ident} {vs : List P.Expr} :
@@ -339,21 +341,21 @@ theorem updatedStatesInit {P : PureExpr}
   intros Hlen Hdef Hnd
   induction hs generalizing vs σ
   case nil =>
-    simp_all
+    simp_all only [List.length_nil, List.nodup_nil]
     have Hemp : vs = [] := by
       exact List.length_eq_zero_iff.mp (id (Eq.symm Hlen))
-    simp [Hemp, updatedStates]
+    simp only [Hemp, updatedStates, List.zip_nil_right]
     exact InitStates.init_none
   case cons h t ih =>
     induction vs <;> simp_all
     case cons h' t' =>
-    simp [isNotDefined] at Hdef
+    simp only [isNotDefined, List.mem_cons, forall_eq_or_imp] at Hdef
     have Hlkup := Hdef.1
     apply InitStates.init_some (updatedStateInit Hlkup)
     apply ih rfl
-    simp [isNotDefined, updatedState]
+    simp only [isNotDefined, updatedState, decide_eq_true_eq]
     intros v Hin
-    simp_all
+    simp_all only [true_and, ite_eq_right_iff, reduceCtorEq, imp_false]
     exact ne_of_mem_of_not_mem Hin Hnd.1
 
 /-- use the zipped version to avoid needing to prove length equivalent -/
@@ -364,7 +366,7 @@ theorem updatedStates'App :
   case nil =>
     simp [updatedStates']
   case cons h t ih =>
-    simp [updatedStates']
+    simp only [List.cons_append, updatedStates']
     rw [ih]
 
 theorem InitStatesInitVars :
@@ -428,8 +430,8 @@ theorem InitStateUpdated :
   cases Hinit with
   | init Hnone Hsome Heq =>
   funext x
-  simp [updatedState]
-  by_cases Hxk : x = k <;> simp_all
+  simp only [updatedState, decide_eq_true_eq]
+  by_cases Hxk : x = k <;> simp_all only [ne_eq, ↓reduceIte]
   rw [Heq]
   exact fun a => Hxk (Eq.symm a)
 
@@ -453,8 +455,8 @@ theorem UpdateStateUpdated :
   cases Hinit with
   | update Hnone Hsome Heq =>
   funext x
-  simp [updatedState]
-  by_cases Hxk : x = k <;> simp_all
+  simp only [updatedState, decide_eq_true_eq]
+  by_cases Hxk : x = k <;> simp_all only [ne_eq, ↓reduceIte]
   rw [Heq]
   exact fun a => Hxk (Eq.symm a)
 
@@ -1171,9 +1173,9 @@ theorem InitStatesApp' :
   apply ih
   . cases Hinit with
     | init_some Hinit Hinits =>
-      simp [InitStateInjective Hinit Hinit'] at *
+      simp only [InitStateInjective Hinit Hinit'] at *
       assumption
-  . simp [InitStateUpdated Hinit']
+  . simp only [InitStateUpdated Hinit']
     exact Hup
 
 /-- Evaluating a list of expressions yields exactly one value per expression. -/
@@ -1217,7 +1219,7 @@ theorem updatedStateComm
   intros Hne
   funext x
   unfold updatedState
-  by_cases Hxk' : x = k' <;> simp [Hxk']
+  by_cases Hxk' : x = k' <;> simp only [Hxk', decide_true, ↓reduceIte, decide_eq_true_eq, right_eq_ite_iff, Option.some.injEq]
   intros Heq
   by_cases Hxk : x = k <;> simp_all
 
@@ -1233,7 +1235,7 @@ theorem updatedStateComm'
   case cons h t ih =>
   rw [ih]
   rw [updatedStateComm]
-  simp_all; exact fun a => Hnd.1 (Eq.symm a)
+  simp_all only [List.unzip_fst, List.mem_map, Prod.exists, exists_and_right, exists_eq_right, not_exists, List.unzip_cons, List.unzip_snd, List.mem_cons, not_or, ne_eq, not_false_eq_true, implies_true, forall_const]; exact fun a => Hnd.1 (Eq.symm a)
   simp_all
 
 theorem updatedStatesComm
@@ -1250,14 +1252,14 @@ theorem updatedStatesComm
     rw [← ih']
     rw [updatedStateComm]
     rw [updatedStateComm']
-    . simp at Hnd
+    . simp only [List.unzip_cons, List.unzip_fst, List.unzip_snd] at Hnd
       have Hnd' := List.Disj.symm Hnd
       apply List.Disjoint_cons_head
       apply List.Disj.mono_right _ Hnd'
       simp_all
     . intros Hin
       simp_all [List.Disj]
-    . simp at *
+    . simp only [List.unzip_fst, List.unzip_cons, List.unzip_snd, Prod.forall] at *
       refine List.Disj.mono_right ?_ Hnd
       simp_all
 
@@ -1277,7 +1279,7 @@ theorem InitsUpdatesComm
   have Hlen2 := UpdateStatesLength Hup
   induction Hup generalizing σ''
   case update_none =>
-    simp_all
+    simp_all only [List.length_nil, true_and]
     apply And.intro
     refine updatedStatesInit Hlen1 ?_ ?_
     exact InitStatesNotDefined Hinit
@@ -1292,7 +1294,7 @@ theorem InitsUpdatesComm
       exact InitStatesNotDefined Hinit
       exact InitStatesNodup Hinit
     . apply UpdateStates.update_some (σ':=updatedStates σ₀ ks' vs')
-      . simp [UpdateStateUpdated Hup, updatedStates]
+      . simp only [updatedStates, UpdateStateUpdated Hup]
         rw [← updatedStateComm']
         . have Hdef := UpdateStateDefined' Hup
           simp [isDefined, Option.isSome] at Hdef
@@ -1306,9 +1308,9 @@ theorem InitsUpdatesComm
             apply UpdateStatesNotDefMonotone' ?_ Hups
             apply InitStatesNotDefined Hinit
           . exact InitStatesNodup Hinit
-        . rw [List.unzip_zip] <;> simp_all
+        . rw [List.unzip_zip] <;> simp_all only [true_and, List.length_cons, Nat.add_right_cancel_iff, forall_const, and_true]
           have Hnd := InitStatesNotDefined Hinit
-          simp [isNotDefined, isDefined] at *
+          simp only [isDefined, List.mem_cons, forall_eq_or_imp, isNotDefined] at *
           apply Not.intro
           intros Hin
           specialize Hnd _ Hin
@@ -1335,7 +1337,7 @@ theorem InitUpdateComm
   have Hinits : InitStates σ' [k'] [v'] σ'' := by
     apply InitStates.init_some Hinit InitStates.init_none
   have Hcomms := InitsUpdatesComm Hups Hinits
-  simp at Hcomms
+  simp only [exists_eq_left] at Hcomms
   refine ⟨rfl, ?_, ?_⟩
   . have Hinit := Hcomms.1
     cases Hinit with
@@ -1354,15 +1356,15 @@ substStores σ σ' substs →
 InitState Expression σ' k v σ'' →
 substStores σ σ'' substs := by
   intros Hdef Hsubst Hinit
-  simp [substStores, substDefined] at *
+  simp only [substDefined, substStores] at *
   intros k1 k2 Hin
   cases Hinit with
   | init Hnone Hsome' Heq =>
-  rw [Heq] <;> simp_all
+  rw [Heq] <;> simp_all only [ne_eq]
   rw [Hsubst] <;> simp_all
   apply Not.intro
   intro Heq'
-  simp [Heq'] at *
+  simp only [Heq'] at *
   specialize Hdef k1 k2 Hin
   simp [Option.isSome] at Hdef
   split at Hdef <;> simp_all
@@ -1404,7 +1406,7 @@ theorem substStoresCons' :
     substStores σ σ' [(h,h')] ∧
     substStores σ' σ'' substs := by
   intros Hnd Hdef Hsubst
-  simp [substStores, substDefined] at *
+  simp only [substDefined, List.mem_cons, Prod.mk.injEq, substStores, List.not_mem_nil, or_false, and_imp, forall_eq_apply_imp_iff, forall_eq] at *
   have Hsome : (σ h).isSome = true := by
     simp [Option.isSome]
     specialize Hdef h h'
@@ -1416,14 +1418,14 @@ theorem substStoresCons' :
     simp_all
   | some v =>
     exists (updatedState σ h' v)
-    simp [updatedState]
+    simp only [Option.some.injEq, updatedState, decide_true, ↓reduceIte, decide_eq_true_eq, true_and, exists_eq_left']
     simp [substNodup] at Hnd
     intros k1 k2 Hin
     split <;> simp_all
     next heq =>
       have Hnd' := Hnd.2
       have Hin' : h' ∈ substs.unzip.1 := by
-        simp_all
+        simp_all only [and_true, List.unzip_fst, List.mem_map, Prod.exists, exists_and_right, exists_eq_right]
         exists k2
       exfalso
       have Hnd' := nodup_middle Hnd'
@@ -1440,10 +1442,10 @@ theorem EvalStatementsContractApp' :
   intro Heval
   induction ss₁ generalizing ρ with
   | nil =>
-    simp at Heval
+    simp only [List.nil_append] at Heval
     exact ⟨ρ, evalStmtsSmallNil Expression (EvalCommandContract π) ρ, Heval⟩
   | cons s ss₁ ih =>
-    simp [List.cons_append] at Heval
+    simp only [List.cons_append] at Heval
     unfold EvalStatementsContract EvalStmtsSmall at Heval
     match Heval with
     | .step _ _ _ .step_stmts_cons hrest =>
@@ -1467,11 +1469,11 @@ theorem EvalStatementsContractApp :
   intro Heval1 Heval2
   induction ss₁ generalizing ρ ρ' with
   | nil =>
-    simp
+    simp only [List.nil_append]
     have Heq := EvalStatementsContractEmpty Heval1
     rw [Heq]; exact Heval2
   | cons s ss₁ ih =>
-    simp [List.cons_append]
+    simp only [List.cons_append]
     -- Peel off s from Heval1
     unfold EvalStatementsContract EvalStmtsSmall at Heval1
     match Heval1 with
@@ -1498,11 +1500,11 @@ theorem EvalStatementsApp :
   intro Heval1 Heval2
   induction ss₁ generalizing ρ ρ' with
   | nil =>
-    simp
+    simp only [List.nil_append]
     have Heq := EvalStatementsEmpty Heval1
     rw [Heq]; exact Heval2
   | cons s ss₁ ih =>
-    simp [List.cons_append]
+    simp only [List.cons_append]
     unfold EvalStatements EvalStmtsSmall at Heval1
     match Heval1 with
     | .step _ _ _ .step_stmts_cons hrest =>
@@ -1523,9 +1525,9 @@ theorem HavocVarsApp {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' σ'' : Se
   intros Hv1 Hv2
   induction vs₁ generalizing σ
   case nil =>
-    simp
+    simp only [List.nil_append]
     have Heq := HavocVarsEmpty Hv1
-    simp [Heq]
+    simp only [Heq]
     assumption
   case cons h t ih =>
     simp
@@ -1554,7 +1556,7 @@ theorem HavocVarsApp' {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ'' : Seman
     cases Hand with
     | intro Havoc1 Havoc2 =>
     exists σ₁
-    simp_all
+    simp_all only [List.append_eq, and_true]
     constructor <;> assumption
 
 theorem InitVarsApp :
@@ -1564,9 +1566,9 @@ theorem InitVarsApp :
   intros Hv1 Hv2
   induction vs₁ generalizing σ
   case nil =>
-    simp
+    simp only [List.nil_append]
     have Heq := InitVarsEmpty Hv1
-    simp [Heq]
+    simp only [Heq]
     assumption
   case cons h t ih =>
     simp
@@ -1582,12 +1584,12 @@ theorem TouchVarsApp :
   intros Hv1 Hv2
   induction vs₁ generalizing σ
   case nil =>
-    simp
+    simp only [List.nil_append]
     have Heq := TouchVarsEmpty Hv1
-    simp [Heq]
+    simp only [Heq]
     assumption
   case cons h t ih =>
-    simp
+    simp only [List.cons_append]
     cases Hv1 with
     | init_some Hinit Htouch =>
       exact TouchVars.init_some Hinit (ih Htouch)
@@ -1634,7 +1636,7 @@ theorem TouchVarsId :
   apply @TouchVars.update_some (σ':=σ) (v:=v')
   exact UpdateState.update heq heq fun y => congrFun rfl
   apply ih
-  simp [isDefined] at *
+  simp only [isDefined, List.mem_cons, forall_eq_or_imp] at *
   intros v Hin
   apply Hdef.2 v Hin
 
@@ -1761,7 +1763,7 @@ theorem UpdateStatesTouchVars : UpdateStates σ vars modvals σ' → TouchVars �
   case nil =>
     cases modvals
     . have Heq := UpdateStatesEmpty H
-      simp [Heq]
+      simp only [Heq]
       apply TouchVars.none
     . cases H
   case cons h t ih =>
@@ -1791,10 +1793,12 @@ theorem InvStoresUpdatedStateDisjRightMono :
     simp_all
     cases Hin
     case inl H =>
-      simp [updatedState]
-      split <;> simp_all
-      apply Hinv
-      exact List.mem_of_mem_head? rfl
+      simp only [updatedState, decide_eq_true_eq]
+      split
+      · simp_all
+      · simp_all only
+        apply Hinv
+        exact List.mem_of_mem_head? rfl
     case inr H =>
       apply ih Hnin.2
       intros k1 k2 Hin
@@ -1808,16 +1812,16 @@ theorem InvStoresUpdatedStatesDisjRightMono :
   ks'.length = vs'.length →
   invStores σ (updatedStates σ' ks' vs') ks := by
   intros Hdis Hinv Hlen k1 k2 Hin
-  simp [updatedStates]
-  simp [zip_self_eq Hin] at *
+  simp only [updatedStates]
+  simp only [zip_self_eq Hin] at *
   induction ks' generalizing vs' σ σ'
   case nil =>
-    simp [updatedStates']
+    simp only [List.zip_nil_left, updatedStates']
     exact Hinv k2 k2 Hin
   case cons h t ih =>
     induction vs' generalizing h t σ σ' <;> simp_all
     case cons h' t' ih' =>
-      simp [updatedStates']
+      simp only [updatedStates']
       rw [← ih] <;> try simp_all
       . intros k Hin1 Hin2
         apply Hdis Hin1
@@ -1832,9 +1836,9 @@ theorem InvStoresUpdatedStateDisjLeftMono :
   invStores (updatedState σ k' v') σ' ks := by
   intros Hnin Hinv
   have Hinv' := substStoresFlip Hinv
-  simp [invStores]
+  simp only [invStores]
   apply substStoresFlip'
-  simp [substSwap] at *
+  simp only [substSwap, zip_swap] at *
   rw [← invStores]
   exact InvStoresUpdatedStateDisjRightMono Hnin Hinv'
 
@@ -1845,9 +1849,9 @@ theorem InvStoresUpdatedStatesDisjLeftMono :
   invStores (updatedStates σ ks' vs') σ' ks := by
   intros Hnin Hinv Hlen
   have Hinv' := substStoresFlip Hinv
-  simp [invStores]
+  simp only [invStores]
   apply substStoresFlip'
-  simp [substSwap] at *
+  simp only [substSwap, zip_swap] at *
   rw [← invStores]
   apply InvStoresUpdatedStatesDisjRightMono Hnin Hinv' Hlen
 
@@ -1869,7 +1873,7 @@ theorem InvStoresExceptUpdated :
   ks'.length = vs'.length →
   invStoresExcept (updatedStates σ ks' vs') σ' (ks ++ ks') := by
   intros Hinv Hlen
-  simp [invStoresExcept] at *
+  simp only [invStoresExcept] at *
   intros vsInv Hdisj
   refine InvStoresUpdatedStatesDisjLeftMono ?_ ?_ Hlen
   exact List.DisjAppLeft' Hdisj
@@ -1888,18 +1892,18 @@ theorem UpdatedStatesInSame :
     cases vs'
     case nil => simp_all
     case cons =>
-    simp [updatedStates']
+    simp only [List.zip_cons_cons, updatedStates']
     cases Hin with
     | inl Heq =>
-      simp_all
+      simp_all only [List.length_cons, Nat.add_right_cancel_iff]
       rw [← updatedStateComm']
       rw [← updatedStateComm']
       simp [updatedState]
-      . simp_all
+      . simp_all only [List.unzip_fst, List.mem_map, Prod.exists, exists_and_right, exists_eq_right, not_exists]
         intros x Hin
         have HH := List.of_mem_zip Hin
         simp_all
-      . simp_all
+      . simp_all only [List.unzip_fst, List.mem_map, Prod.exists, exists_and_right, exists_eq_right, not_exists]
         intros x Hin
         have HH := List.of_mem_zip Hin
         simp_all
@@ -1919,17 +1923,19 @@ theorem UpdatedStatesNotinSame :
     cases vs'
     case nil => simp_all
     case cons =>
-    simp [updatedStates']
+    simp only [List.zip_cons_cons, updatedStates']
     rw [← updatedStateComm']
     rw [← updatedStateComm']
-    . simp [updatedState]
-      split <;> simp_all
-      apply ih <;> simp_all
-    . simp_all
+    . simp only [updatedState, decide_eq_true_eq]
+      split
+      · simp_all
+      · simp_all only [not_false_eq_true, true_and, List.length_cons, Nat.add_right_cancel_iff]
+        apply ih <;> simp_all
+    . simp_all only [List.length_cons, Nat.add_right_cancel_iff, List.unzip_fst, List.mem_map, Prod.exists, exists_and_right, exists_eq_right, not_exists]
       intros x Hin
       have HH := List.of_mem_zip Hin
       simp_all
-    . simp_all
+    . simp_all only [List.length_cons, Nat.add_right_cancel_iff, List.unzip_fst, List.mem_map, Prod.exists, exists_and_right, exists_eq_right, not_exists]
       intros x Hin
       have HH := List.of_mem_zip Hin
       simp_all
@@ -1940,10 +1946,10 @@ theorem InvStoresExceptUpdatedSame :
   ks'.Nodup →
   invStoresExcept (updatedStates σ ks' vs') (updatedStates σ' ks' vs') ks := by
   intros Hinv Hlen Hnd
-  simp [invStoresExcept] at *
+  simp only [invStoresExcept] at *
   intros vsInv Hdisj k1 k2 Hin
   have Heq := zip_self_eq Hin
-  simp [Heq]
+  simp only [Heq]
   by_cases Hin : k2 ∈ ks'
   case pos =>
     exact UpdatedStatesInSame Hin Hlen Hnd
@@ -1958,7 +1964,7 @@ theorem InvStoresExceptUpdatedMem :
   ks'.Subset ks →
   invStoresExcept (updatedStates σ ks' vs') σ' ks := by
   intros Hinv Hlen
-  simp [invStoresExcept] at *
+  simp only [invStoresExcept] at *
   intros Hsub vs Hdisj
   refine InvStoresUpdatedStatesDisjLeftMono ?_ ?_ Hlen
   exact List.Disjoint_Subset_right Hdisj Hsub
@@ -2808,11 +2814,11 @@ theorem stmts_allAssert_preserves_store
                 cases heval with
                 | eval_assert_pass =>
                   cases hrest₂ with
-                  | refl => simp at heq₂ ⊢; exact heq₂ ▸ rfl
+                  | refl => simp only [Bool.or_false, Config.terminal.injEq] at heq₂ ⊢; exact heq₂ ▸ rfl
                   | step h _ => exact nomatch h
                 | eval_assert_fail =>
                   cases hrest₂ with
-                  | refl => simp at heq₂ ⊢; exact heq₂ ▸ rfl
+                  | refl => simp only [Bool.or_true, Config.terminal.injEq] at heq₂ ⊢; exact heq₂ ▸ rfl
                   | step h _ => exact nomatch h
         exact (ih ρ₁ (fun s' hs' => h_all s' (.tail _ hs')) h_r).trans h_store₁
 
@@ -2921,7 +2927,7 @@ private theorem Command.mapExpr_id (c : Command) : Command.mapExpr id c = c := b
     | init n ty e md => cases e <;> simp [Command.mapExpr]
     | set n e md => cases e <;> simp [Command.mapExpr]
   | call pname args md =>
-    simp [Command.mapExpr]
+    simp only [mapExpr, id_eq, CmdExt.call.injEq, and_true, true_and]
     induction args with
     | nil => rfl
     | cons h t ih => simp [ih]; cases h <;> rfl

@@ -319,7 +319,7 @@ theorem coreEvaluator_WellFormedSemanticEvalBool (f : Expression.Factory)
         obtain ⟨β, hβpair, hval⟩ := (eval_boolNot_value_iff f σ e0 j _ hBN).mp hm
         have hβeq : β_out = !β := by
           have := hval
-          simp [Lambda.LExpr.boolConst] at this
+          simp only [Lambda.LExpr.boolConst, Lambda.LExpr.const.injEq, Lambda.LConst.boolConst.injEq, true_and] at this
           exact this
         subst hβeq
         have hbb : (!(!β)) = β := by cases β <;> rfl

@@ -138,7 +138,7 @@ theorem listCharToNatAux_digits (acc : Nat) (cs : List Char)
   | cons c cs ih =>
     simp only [listCharToNatAux, List.foldl_cons]
     have hc := h_digits c (List.mem_cons_self ..)
-    simp [hc]
+    simp only [↓Char.isValue, hc, and_self, ↓reduceIte, Char.reduceToNat]
     exact ih _ (fun c' hc' => h_digits c' (List.mem_cons_of_mem c hc'))
 
 
@@ -146,16 +146,16 @@ theorem digitLoop_all_digits (fuel n : Nat) (ds : List Char)
     (h_ds : ∀ c, c ∈ ds → '0' ≤ c ∧ c ≤ '9') :
     ∀ c, c ∈ digitLoop fuel n ds → '0' ≤ c ∧ c ≤ '9' := by
   induction fuel generalizing n ds with
-  | zero => simp [digitLoop]; exact h_ds
+  | zero => simp only [digitLoop, ↓Char.isValue]; exact h_ds
   | succ fuel ih =>
     simp only [digitLoop]
     split
-    · intro c hc; simp at hc
+    · intro c hc; simp only [List.mem_cons] at hc
       rcases hc with rfl | hc
       · exact digitChar_is_digit (n % 10) (Nat.mod_lt n (by omega))
       · exact h_ds c hc
     · exact ih _ _ (fun c hc => by
-        simp at hc; rcases hc with rfl | hc
+        simp only [List.mem_cons] at hc; rcases hc with rfl | hc
         · exact digitChar_is_digit (n % 10) (Nat.mod_lt n (by omega))
         · exact h_ds c hc)
 
@@ -277,7 +277,7 @@ theorem mem_hexDigits (w n : Nat) {c : Char} (h : c ∈ hexDigits w n) :
   induction w generalizing n with
   | zero => simp [hexDigits] at h
   | succ w ih =>
-    simp [hexDigits] at h
+    simp only [hexDigits, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at h
     rcases h with h | h
     · exact ih _ h
     · exact ⟨n % 16, by omega, h⟩

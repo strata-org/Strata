@@ -641,7 +641,10 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
     all_goals try (apply Prod.Lex.right; omega)
     all_goals (try have := CatchClause.sizeOf_body_lt ‹_›)
     all_goals (try have := CatchClause.sizeOf_predicate_lt ‹_›)
-    all_goals (try simp_all; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
+    all_goals (try simp_all only [AstNode.mk.sizeOf_spec, StmtExpr.Assert.sizeOf_spec, StmtExpr.Assume.sizeOf_spec,
+    StmtExpr.Block.sizeOf_spec, List.contains_eq_mem, decide_eq_true_eq, StmtExpr.Assign.sizeOf_spec,
+    StmtExpr.StaticCall.sizeOf_spec, StmtExpr.IfThenElse.sizeOf_spec, Option.some.sizeOf_spec,
+    StmtExpr.While.sizeOf_spec, Bool.sizeOf_eq_one, StmtExpr.Return.sizeOf_spec]; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
     all_goals (try (apply Prod.Lex.left); try term_by_mem; try omega)
 end
 

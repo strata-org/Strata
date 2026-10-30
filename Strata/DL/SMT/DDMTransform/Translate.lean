@@ -192,7 +192,8 @@ private def sortToSExpr (s : SMTDDM.SMTSort Provenance)
     return .se_ls smtProv (smtAnn ((.se_symbol smtProv sym :: argsSExpr).toArray))
   | _ => throw s!"Doesn't know how to convert sort {repr s} to SMTDDM.SExpr"
   termination_by SizeOf.sizeOf s
-  decreasing_by cases args; simp_all; term_by_mem
+  decreasing_by cases args; simp_all only [Array.mem_toList_iff, SMTSort.smtsort_param.sizeOf_spec, SMTIdentifier.iden_simple.sizeOf_spec,
+    Ann.mk.sizeOf_spec]; term_by_mem
 
 
 -- Helper: convert a QualIdentifier to an SExpr for use in pattern attributes

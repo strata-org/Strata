@@ -2577,7 +2577,8 @@ def translateDatatypes (p : Program) (bindings : TransBindings) (op : Operation)
       else
         let lConstrs := buildLConstrs datatypeName constructors
         have constrs_ne : lConstrs.length != 0 := by
-          simp [lConstrs, buildLConstrs]
+          simp only [buildLConstrs, List.map_id_fun', id_eq, List.length_map, Array.length_toList, bne_iff_ne, ne_eq,
+    Array.size_eq_zero_iff, lConstrs]
           intro heq; subst_vars; apply h; rfl
         pure { name := datatypeName, typeArgs := typeArgs, constrs := lConstrs, constrs_ne := constrs_ne }
 

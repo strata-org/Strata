@@ -147,7 +147,7 @@ private theorem genTyVarName_generated (γ γ' : CoreGenState) (f : Lambda.TyIde
     (h : genTyVarName prefixStr γ = (f, γ')) :
     γ'.generated = (⟨f, ()⟩ : CoreIdent) :: γ.generated := by
   have hg := genTyVarName_gen prefixStr γ γ' f h
-  simp [CoreGenState.gen] at hg; rw [← hg.2, ← hg.1]
+  simp only [CoreGenState.gen, Prod.mk.injEq, Lambda.Identifier.mk.injEq, and_true] at hg; rw [← hg.2, ← hg.1]
 
 /-- One type-var draw preserves generator well-formedness. -/
 private theorem genTyVarName_wf (γ γ' : CoreGenState) (f : Lambda.TyIdentifier)

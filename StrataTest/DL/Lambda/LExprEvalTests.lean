@@ -340,7 +340,7 @@ macro "prove_ceval_freeVars" : tactic => `(tactic|
           all_goals (refine ⟨_, ?_, hz⟩; simp))))))
 
 private theorem each_testFunc_wf : ∀ lf, lf ∈ testFuncs → LFuncWF lf := by
-  intro lf hmem; simp [testFuncs] at hmem
+  intro lf hmem; simp only [testFuncs, beq_iff_eq, List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at hmem
   rcases hmem with rfl | rfl | rfl | rfl | rfl <;> exact {
     arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
@@ -639,7 +639,7 @@ private def polyState : LState TestParams :=
 private theorem polyState_wf : FactoryWF polyState.config.factory := by
   constructor; intro lf hmem
   have := Factory.ofArray_mem hmem
-  simp [polyFuncs] at this
+  simp only [polyFuncs, List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at this
   rcases this with rfl <;> exact {
     arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
@@ -681,7 +681,7 @@ private def polyPairState : LState TestParams :=
 private theorem polyPairState_wf : FactoryWF polyPairState.config.factory := by
   constructor; intro lf hmem
   have := Factory.ofArray_mem hmem
-  simp [polyPairFuncs] at this
+  simp only [polyPairFuncs, List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at this
   rcases this with rfl <;> exact {
     arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide
@@ -743,7 +743,7 @@ private def evalIfValueState : LState TestParams :=
 
 private theorem each_evalIfValueFunc_wf :
     ∀ lf, lf ∈ evalIfValueFuncs → LFuncWF lf := by
-  intro lf hmem; simp [evalIfValueFuncs] at hmem
+  intro lf hmem; simp only [evalIfValueFuncs, List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at hmem
   rcases hmem with rfl | rfl <;> exact {
     arg_nodup := by decide, body_or_concreteEval := by decide
     typeArgs_nodup := by decide, inputs_typevars_in_typeArgs := by decide

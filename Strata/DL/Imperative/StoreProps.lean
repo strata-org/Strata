@@ -48,9 +48,9 @@ theorem isDefinedApp :
     isDefined σ vs2 →
     isDefined σ (vs1 ++ vs2) := by
   intros Hd1 Hd2
-  simp [isDefined] at *
+  simp only [isDefined, List.mem_append] at *
   intros ident hmem
-  simp [Option.isSome] at *
+  simp only [Option.isSome] at *
   cases hmem with
   | inl hmem =>
     split <;> simp
@@ -72,7 +72,7 @@ theorem isDefinedApp' :
     isDefined σ (t1 ++ t2) →
     isDefined σ t1 ∧ isDefined σ t2 := by
   intros hdefined
-  simp [isDefined] at *
+  simp only [isDefined, List.mem_append] at *
   apply And.intro
   · intros ident hmem
     apply hdefined
@@ -98,7 +98,7 @@ theorem isNotDefinedApp :
     isNotDefined σ vs2 →
     isNotDefined σ (vs1 ++ vs2) := by
   intros Hd1 Hd2
-  simp [isNotDefined] at *
+  simp only [isNotDefined, List.mem_append] at *
   intros ident hmem
   cases hmem with
   | inl hmem =>
@@ -119,7 +119,7 @@ theorem isNotDefinedApp' :
     isNotDefined σ (t1 ++ t2) →
     isNotDefined σ t1 ∧ isNotDefined σ t2 := by
   intros hundefined
-  simp [isNotDefined] at *
+  simp only [isNotDefined, List.mem_append] at *
   apply And.intro
   · intros ident hmem
     apply hundefined
@@ -143,9 +143,10 @@ theorem substStoresFlip :
     substStores σ₁ σ₂ substs →
     substStores σ₂ σ₁ (substSwap substs) := by
   intros hsubst
-  simp [substStores, substSwap] at *
+  simp only [substStores, substSwap, List.mem_map, Prod.exists, Prod.swap_prod_mk, Prod.mk.injEq,
+    forall_exists_index, and_imp] at *
   intros targetIdent sourceIdent targetValue sourceValue hmem hsource htarget
-  simp_all
+  simp_all only
   apply Eq.symm
   apply hsubst
   exact hmem
@@ -156,7 +157,7 @@ theorem substStoresFlip' :
     substStores σ₁ σ₂ substs := by
   intros hsubst
   have hsubst' := substStoresFlip hsubst
-  simp [substSwapId] at hsubst'
+  simp only [substSwapId] at hsubst'
   exact hsubst'
 
 /-- Pairwise definedness is symmetric after swapping substitution pairs. -/
@@ -164,9 +165,10 @@ theorem substDefinedFlip :
     substDefined σ₁ σ₂ substs →
     substDefined σ₂ σ₁ (substSwap substs) := by
   intros hsubst
-  simp [substDefined, substSwap] at *
+  simp only [substDefined, substSwap, List.mem_map, Prod.exists, Prod.swap_prod_mk, Prod.mk.injEq,
+    forall_exists_index, and_imp] at *
   intros targetIdent sourceIdent targetValue sourceValue hmem hsource htarget
-  simp_all
+  simp_all only
   exact And.comm.mp (hsubst sourceIdent targetIdent hmem)
 
 /-- Swapped pairwise definedness can be flipped back. -/
@@ -175,7 +177,7 @@ theorem substDefinedFlip' :
     substDefined σ₁ σ₂ substs := by
   intros hsubst
   have hsubst' := substDefinedFlip hsubst
-  simp [substSwapId] at hsubst'
+  simp only [substSwapId] at hsubst'
   exact hsubst'
 
 /-- Store invariance is symmetric. -/
@@ -183,9 +185,9 @@ theorem invStoresComm :
     invStores σ₁ σ₂ ks →
     invStores σ₂ σ₁ ks := by
   intros hinvariant
-  simp [invStores] at *
+  simp only [invStores] at *
   apply substStoresFlip'
-  simp [substSwap]
+  simp only [substSwap, zip_swap]
   assumption
 
 /-- Store invariance outside a key set is symmetric. -/
@@ -193,7 +195,7 @@ theorem invStoresExceptComm :
     invStoresExcept σ₁ σ₂ ks →
     invStoresExcept σ₂ σ₁ ks := by
   intros hinvariant other hdisjoint
-  simp [invStoresExcept] at *
+  simp only [invStoresExcept] at *
   exact invStoresComm (hinvariant other hdisjoint)
 
 /-! ## Generated-name reservations -/

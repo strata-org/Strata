@@ -976,10 +976,10 @@ example
     intro σ' failed h
     cases h with
     | call_sem hlookup _ _ _ hassume _ =>
-      simp [calleeEnv] at hlookup
+      simp only [calleeEnv, ↓reduceIte, Option.some.injEq] at hlookup
       subst hlookup
-      simp [oneInputContractProc, Procedure.Spec.getCheckExprs, ListMap.values,
-        AssumeExprs] at hassume
+      simp only [AssumeExprs, Procedure.Spec.getCheckExprs, oneInputContractProc, ListMap.values, List.map_cons,
+    List.map_nil, List.Forall_cons, List.Forall_nil, and_true] at hassume
       have hff : (Lambda.LExpr.boolConst () false : Expression.Expr)
           = Lambda.LExpr.boolConst () true :=
         Option.some.inj ((eval_boolConst fac _ false).symm.trans hassume.2)

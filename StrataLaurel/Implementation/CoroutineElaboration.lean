@@ -439,7 +439,8 @@ private def linearize (naming : FieldNaming) (resumeParam : Option Identifier)
   termination_by sizeOf stmt
   decreasing_by
     all_goals (have := AstNode.sizeOf_val_lt stmt)
-    all_goals (simp_all; try term_by_mem)
+    all_goals (simp_all only [Bool.not_eq_eq_eq_not, Bool.not_true, Bool.not_eq_false, StmtExpr.Block.sizeOf_spec, gt_iff_lt,
+    StmtExpr.IfThenElse.sizeOf_spec, Option.some.sizeOf_spec, StmtExpr.While.sizeOf_spec, Bool.sizeOf_eq_one]; try term_by_mem)
     all_goals (cases stmt; simp_all; omega)
 
 

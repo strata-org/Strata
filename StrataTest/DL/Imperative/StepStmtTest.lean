@@ -196,7 +196,8 @@ theorem progReachesTerminal :
   -- The store projection equals ρ₀.store since no inits happened.
   have hproj : projectStore (P := MiniPureExpr) ρ₀.store ρ₀.store = ρ₀.store := by
     funext x
-    simp [projectStore]
+    simp only [projectStore, ite_eq_left_iff, Bool.not_eq_true, Option.isSome_eq_false_iff,
+    Option.isNone_iff_eq_none]
     intro h; rfl
   conv => rhs; rw [show ρ₀ = { ρ₀ with store := projectStore ρ₀.store ρ₀.store } from by
     simp [hproj]]
@@ -240,7 +241,8 @@ theorem progIteThenReachesTerminal :
   refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_seq_exit) ?_
   -- Outer block "L" matches the labeled exit; project store (identity here).
   have hproj : projectStore (P := MiniPureExpr) ρ₀.store ρ₀.store = ρ₀.store := by
-    funext x; simp [projectStore]; intro _; rfl
+    funext x; simp only [projectStore, ite_eq_left_iff, Bool.not_eq_true, Option.isSome_eq_false_iff,
+    Option.isNone_iff_eq_none]; intro _; rfl
   conv => rhs; rw [show ρ₀ = { ρ₀ with store := projectStore ρ₀.store ρ₀.store } from by
     simp [hproj]]
   exact .step _ _ _ (StepStmt.step_block_exit_match rfl) (.refl _)
@@ -283,7 +285,8 @@ theorem progIteElseReachesTerminal :
   refine .step _ _ _ (StepStmt.step_block_body StepStmt.step_seq_exit) ?rest8
   -- Outer block "L" matches the labeled exit; project store (identity here).
   have hproj : projectStore (P := MiniPureExpr) ρ₀.store ρ₀.store = ρ₀.store := by
-    funext x; simp [projectStore]; intro _; rfl
+    funext x; simp only [projectStore, ite_eq_left_iff, Bool.not_eq_true, Option.isSome_eq_false_iff,
+    Option.isNone_iff_eq_none]; intro _; rfl
   conv => rhs; rw [show ρ₀ = { ρ₀ with store := projectStore ρ₀.store ρ₀.store } from by
     simp [hproj]]
   exact .step _ _ _ (StepStmt.step_block_exit_match rfl) (.refl _)

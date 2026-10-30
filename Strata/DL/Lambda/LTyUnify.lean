@@ -892,7 +892,7 @@ theorem Constraints.freeVars_of_zip_subset :
     unfold List.zip List.zipWith
     split
     · rename_i xs ys xs' y ys' heq
-      simp_all [freeVars]
+      simp_all only [List.cons.injEq, freeVars, LMonoTys.freeVars_of_cons, List.append_assoc, List.append_subset]
       obtain ⟨heq1, heq2⟩ := heq
       subst ys xs'
       apply And.intro
@@ -1159,9 +1159,11 @@ private theorem Constraint.unify_termination_goal_1
   have h_subset_right := @List.length_dedup_append_subset_right _ _ (id :: l1) (id :: l2) h_subset
   have h_len := @List.length_dedup_append_le_left _ _ (id :: l1) (id :: l2)
   have h_id : id ∉ l1 := by
-    subst l1; simp_all
+    subst l1; simp_all only [List.cons_subset, List.mem_cons, true_or, List.append_subset, List.subset_cons_of_subset,
+    true_and, List.cons_append, List.append_assoc, List.mem_append, false_or, not_or]
     have h_S_ok := S.isWF
-    simp [SubstWF] at h_S_ok
+    simp only [SubstWF, decide_not, List.all_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true,
+    decide_eq_false_iff_not] at h_S_ok
     apply And.intro
     · have h_sty_values := HMaps.find?_mem_values S.subst _h5
       have h_id_keys := HMaps.find?_mem_keys S.subst _h5
@@ -1228,14 +1230,14 @@ private theorem Constraint.unify_termination_goal_3
     Constraints.size [(LMonoTy.tcons name2 args1, LMonoTy.tcons name2 args2)] =
     1 + LMonoTys.size args1 + (1 + LMonoTys.size args2) := by
     simp_all [Constraints.size, Constraint.size, LMonoTy.size]
-  simp_all
+  simp_all only [List.append_subset, List.append_assoc]
   clear h_size_tcons h_zip_size h_tcons h_fvs_tcons
   generalize Constraints.freeVars (args1.zip args2) = A at *
   generalize LMonoTys.freeVars args1 = B1 at *
   generalize LMonoTys.freeVars args2 = B2 at *
   generalize S.subst.freeVars = C at *
   have h1 : (A ++ C) ⊆ (B1 ++ (B2 ++ C)) := by
-    simp_all
+    simp_all only [List.append_subset, List.Subset.refl, List.subset_append_of_subset_right, and_true]
     have : B1 ++ B2 ⊆ B1 ++ (B2 ++ C) := by simp_all
     exact fun _ x => this (h_zip_fvs_sub x)
   have h2 : (B1 ++ (B2 ++ C)) ⊆ (A ++ C) := by
@@ -1253,7 +1255,8 @@ private theorem Constraints.unify_termination_goal_1
         (Constraints.freeVars (c :: cs) ++ S.subst.freeVars).uniq.length ∧
     (Constraints.size [c] < Constraints.size (c :: cs) ∨
      Constraints.size [c] = Constraints.size (c :: cs)) := by
-  simp_all [Constraints.freeVars, Constraints.size]
+  simp_all only [Constraints.freeVars, List.append_nil, List.append_assoc, Constraints.size, Nat.add_zero,
+    Nat.lt_add_right_iff_pos, Nat.left_eq_add]
   have h_sub : (c.freeVars ++ S.subst.freeVars) ⊆
                (c.freeVars ++ (cs.freeVars ++ S.subst.freeVars)) := by
     simp_all
@@ -1262,8 +1265,9 @@ private theorem Constraints.unify_termination_goal_1
   have h1 : (l1.uniq.length < l2.uniq.length) ∨ (l1.uniq.length = l2.uniq.length) := by
     have := @List.length_dedup_of_subset_le _ _ l1 l2 h_sub
     exact Or.symm (Nat.eq_or_lt_of_le this)
-  cases h1 <;> try simp_all
-  exact Or.symm (Nat.eq_zero_or_pos (Constraints.size cs))
+  rcases h1 with h | h
+  · exact Or.inl h
+  · exact Or.inr ⟨h, Or.symm (Nat.eq_zero_or_pos (Constraints.size cs))⟩
   done
 
 private theorem Constraints.unify_termination_goal_2
@@ -1274,11 +1278,12 @@ private theorem Constraints.unify_termination_goal_2
     (Constraints.freeVars cs ++ relS.newS.subst.freeVars).uniq.length =
     (Constraints.freeVars (c :: cs) ++ S.subst.freeVars).uniq.length := by
   obtain ⟨newS, h_subset_prop⟩ := relS
-  simp [Subst.freeVars_subset_prop, Constraints.freeVars] at h_subset_prop
-  simp [Constraints.freeVars] at *
+  simp only [Subst.freeVars_subset_prop, freeVars, List.append_nil] at h_subset_prop
+  simp only [freeVars, List.append_assoc] at *
   have h_sub : (cs.freeVars ++ newS.subst.freeVars) ⊆
                (c.freeVars ++ (cs.freeVars ++ S.subst.freeVars)) := by
-    simp_all
+    simp_all only [List.append_subset, List.Subset.refl, List.subset_append_of_subset_left,
+    List.subset_append_of_subset_right, true_and]
     generalize newS.subst.freeVars = A at *
     generalize c.freeVars = B at *
     generalize cs.freeVars = C at *
@@ -1408,8 +1413,8 @@ def Constraint.unifyOne (c : Constraint) (S : SubstInfo) :
                   Constraints.size [c],
                   0)
   decreasing_by
-    all_goals simp_all [Prod.lex_def]
-    -- Subgoal 1
+    all_goals simp_all only [beq_iff_eq, Prod.lex_def, Nat.lt_irrefl, and_false, or_false, LMonoTy.tcons.injEq, not_and,
+    Bool.and_eq_true, Nat.not_lt_zero, forall_const, not_false_eq_true]
     · exact Constraint.unify_termination_goal_1 S id orig_lty lty sty (by exact rfl) _h4 _h5
     -- Subgoal 2
     · exact Constraint.unify_termination_goal_2 S id orig_lty lty sty (by exact rfl) _h4 _h5
@@ -1433,8 +1438,8 @@ def Constraints.unifyCore (cs : Constraints) (S : SubstInfo) :
                   1)
 
   decreasing_by
-    all_goals simp_all [Prod.lex_def]
-    -- Subgoal 1
+    all_goals simp_all only [Prod.lex_def, Nat.lt_add_one, and_true, Constraints.size_cons, Nat.lt_irrefl, and_false,
+    or_false]
     · exact Constraints.unify_termination_goal_1 c_rest c S
     -- Subgoal 2
     · exact Constraints.unify_termination_goal_2 c_rest c S relS

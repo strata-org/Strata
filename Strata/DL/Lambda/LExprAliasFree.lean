@@ -73,7 +73,7 @@ private theorem aliasFree_of_mem (aliases : List TypeAlias) (vals : LMonoTys) (v
   induction vals with
   | nil => simp at h_mem
   | cons hd tl ih =>
-    simp [LMonoTys.aliasFree] at h_vals
+    simp only [LMonoTys.aliasFree] at h_vals
     cases List.mem_cons.mp h_mem with
     | inl h_eq => subst h_eq; exact h_vals.1
     | inr h_tl => exact ih h_vals.2 h_tl
@@ -145,22 +145,22 @@ private theorem resolveAliases_output_aliasFree_aux
     LMonoTy.aliasFree Env.context.aliases result := by
   match mty with
   | .ftvar _ =>
-    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    simp only [LMonoTy.resolveAliases, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h_res, _⟩ := h
     subst h_res
     simp [LMonoTy.aliasFree]
   | .bitvec _ =>
-    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    simp only [LMonoTy.resolveAliases, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h_res, _⟩ := h
     subst h_res
     simp [LMonoTy.aliasFree]
   | .tcons name args =>
-    simp [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
+    simp only [LMonoTy.resolveAliases, bind, Except.bind] at h
     elim_err h
     rename_i args_result h_args
     obtain ⟨args', Env_mid⟩ := args_result
     dsimp at h h_args
-    simp [Pure.pure, Except.pure] at h
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h_res, h_env⟩ := h
     subst h_res h_env
     have h_ctx_mid := LMonoTys.resolveAliases_context args Env args' Env_mid h_args
@@ -182,12 +182,12 @@ private theorem resolveAliasesList_output_aliasFree
     LMonoTys.aliasFree Env.context.aliases results := by
   match mtys with
   | [] =>
-    simp [LMonoTys.resolveAliases, Pure.pure, Except.pure] at h
+    simp only [LMonoTys.resolveAliases, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq, List.nil_eq] at h
     obtain ⟨h_res, _⟩ := h
     subst h_res
     simp [LMonoTys.aliasFree]
   | hd :: tl =>
-    simp [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
+    simp only [LMonoTys.resolveAliases, bind, Except.bind] at h
     elim_err h
     rename_i hd_result h_hd
     obtain ⟨hd', Env_hd⟩ := hd_result
@@ -196,7 +196,7 @@ private theorem resolveAliasesList_output_aliasFree
     rename_i tl_result h_tl
     obtain ⟨tl', Env_tl⟩ := tl_result
     dsimp at h h_tl
-    simp [Pure.pure, Except.pure] at h
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h_res, h_env⟩ := h
     subst h_res h_env
     have h_ctx_hd := LMonoTy.resolveAliases_context hd Env hd' Env_hd h_hd

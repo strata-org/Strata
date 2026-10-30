@@ -116,10 +116,10 @@ structure WFLFactory (T : LExprParams) where
     wf := by
       intro func mem
       have q : List.Nodup (a.toList |>.map (fun fn => fn.name.name)) := by
-        simp [a]
+        simp only [Array.toList_map, List.map_map, a]
         exact name_nodup
       have mem_a := Factory.ofArray_mem mem
-      simp [a] at mem_a
+      simp only [Array.mem_map, a] at mem_a
       have ⟨⟨func2, func2WF⟩, wfMem⟩ := mem_a
       grind
   }

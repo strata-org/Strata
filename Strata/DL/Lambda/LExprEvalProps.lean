@@ -274,11 +274,11 @@ private theorem evalCore_value_isValue
     intro p hp hv
     cases e with
     | const m c =>
-      simp [LExpr.evalCore] at hp; subst hp; unfold LExpr.isValue; rfl
+      simp only [LExpr.evalCore] at hp ; subst hp; unfold LExpr.isValue; rfl
     | op m n args =>
-      simp [LExpr.evalCore] at hp; subst hp; simp at hv
+      simp only [LExpr.evalCore] at hp ; subst hp; simp at hv
     | bvar m n =>
-      simp [LExpr.evalCore] at hp; subst hp; simp at hv
+      simp only [LExpr.evalCore] at hp; subst hp; simp at hv
     | fvar m x ty =>
       simp only [LExpr.evalCore] at hp
       split at hp
@@ -1324,10 +1324,10 @@ private theorem evalIte_value_true_mono
       LExpr.eval (n'+1) F env br = (v, .value true) := by
     intro br mc bcond h_c_eq h
     have h_fst : (LExpr.eval n' F env br).fst = v := by
-      have := congrArg Prod.fst h; simp at this; exact this
+      have := congrArg Prod.fst h; simp only at this; exact this
     have h_snd_and : (LExpr.eval n' F env br).snd.combineValueFlag
         (LExpr.eval n' F env c).snd.isValueTrue = .value true := by
-      have := congrArg Prod.snd h; simp at this; exact this
+      have := congrArg Prod.snd h; simp only at this; exact this
     have h_and := (andValue_eq_valueTrue_iff _ _).mp h_snd_and
     have h_c_snd : LExpr.eval n' F env c =
         ((LExpr.eval n' F env c).fst, .value true) := by
@@ -1362,10 +1362,10 @@ private theorem evalEq_value_true_mono
   · -- eql = some b
     rename_i b0 h_eql
     have h_fst : LExpr.const m (LConst.boolConst b0) = v := by
-      have := congrArg Prod.fst h; simp at this; exact this
+      have := congrArg Prod.fst h; simp only at this; exact this
     have h_snd_pair : (LExpr.eval n' F env e1).snd.isValueTrue = true ∧
                       (LExpr.eval n' F env e2).snd.isValueTrue = true := by
-      have := congrArg Prod.snd h; simp at this; exact this
+      have := congrArg Prod.snd h; simp only [LExpr.EvalResult.value.injEq, Bool.and_eq_true] at this ; exact this
     have h_e1_snd : LExpr.eval n' F env e1 =
         ((LExpr.eval n' F env e1).fst, .value true) := by
       rw [← (isValueTrue_eq_true_iff _).mp h_snd_pair.1]
@@ -1375,7 +1375,7 @@ private theorem evalEq_value_true_mono
     rw [ih_eval _ _ h_e1_snd, ih_eval _ _ h_e2_snd]
     simp only
     rw [h_eql]
-    simp [LExpr.EvalResult.isValueTrue]
+    simp only [LExpr.EvalResult.isValueTrue, Bool.and_self, Prod.mk.injEq, and_true]
     exact h_fst
   · -- eql = none → (.eq, .nonvalue), contradicting .value true
     exfalso
@@ -1404,11 +1404,11 @@ private theorem evalApp_value_true_mono
       LExpr.eval (n'+1) F env inner = (v, .value true) := by
     intro inner h
     have h_fst : (LExpr.eval n' F env inner).fst = v := by
-      have := congrArg Prod.fst h; simp at this; exact this
+      have := congrArg Prod.fst h; simp only at this; exact this
     have h_snd : (LExpr.eval n' F env inner).snd.combineValueFlag
         ((LExpr.eval n' F env e1).snd.isValueTrue &&
          (LExpr.eval n' F env e2).snd.isValueTrue) = .value true := by
-      have := congrArg Prod.snd h; simp at this; exact this
+      have := congrArg Prod.snd h; simp only at this; exact this
     have h_and := (andValue_eq_valueTrue_iff _ _).mp h_snd
     have h_e12 : (LExpr.eval n' F env e1).snd.isValueTrue = true ∧
                  (LExpr.eval n' F env e2).snd.isValueTrue = true := by
@@ -1562,7 +1562,7 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
     by_cases hcan : LExpr.isValue F e = true
     · rw [ite_eq_left hcan] at h
       have hfe : v = e := by
-        have := congrArg Prod.fst h; simp at this; exact this.symm
+        have := congrArg Prod.fst h; simp only at this; exact this.symm
       subst hfe
       exact eval_value_identity (0 + 1) F env v hcan
     · rw [ite_eq_right hcan] at h
@@ -1613,7 +1613,7 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
     split
     · rename_i hcan; intro h
       have hfe : v = e := by
-        have := congrArg Prod.fst h; simp at this; exact this.symm
+        have := congrArg Prod.fst h; simp only at this; exact this.symm
       subst hfe
       exact eval_value_identity (n' + 1 + 1) F env v hcan
     · rename_i h_not_can
@@ -1646,10 +1646,10 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
                 (lfunc.inputs.keys.zip
                   (List.map (fun a => (LExpr.eval n' F env a).fst) args))
             have h_fst : (LExpr.eval n' F env inner).fst = v := by
-              have := congrArg Prod.fst h; simp at this; exact this
+              have := congrArg Prod.fst h; simp only [List.all_map, List.map_map, LExpr.combineEvalResValueFlag_eq_pair] at this ; exact this
             have h_snd_and : (LExpr.eval n' F env inner).snd.combineValueFlag
                 (args.all fun a => (LExpr.eval n' F env a).snd.isValueTrue) = .value true := by
-              have := congrArg Prod.snd h; simp at this; exact this
+              have := congrArg Prod.snd h; simp only [List.all_map, List.map_map, LExpr.combineEvalResValueFlag_eq_pair] at this ; exact this
             obtain ⟨h_inner_snd, h_argsAllFull⟩ := args_from_andValue inner args h_snd_and
             obtain ⟨h_map_eq', h_argsAllFull_lift⟩ := list_lifts args h_argsAllFull
             have h_new_lift := ih _ _ h_inner_snd
@@ -1726,10 +1726,10 @@ theorem eval_value_true_mono (F : @Factory Tbase) (env : Env Tbase)
               · rename_i e' h_ceval_res
                 intro h
                 have h_fst : (LExpr.eval n' F env e').fst = v := by
-                  have := congrArg Prod.fst h; simp at this; exact this
+                  have := congrArg Prod.fst h; simp only [List.all_map, LExpr.combineEvalResValueFlag_eq_pair] at this ; exact this
                 have h_snd_and : (LExpr.eval n' F env e').snd.combineValueFlag
                     (args.all fun a => (LExpr.eval n' F env a).snd.isValueTrue) = .value true := by
-                  have := congrArg Prod.snd h; simp at this; exact this
+                  have := congrArg Prod.snd h; simp only [List.all_map, LExpr.combineEvalResValueFlag_eq_pair] at this; exact this
                 obtain ⟨h_e'_snd, h_argsAllFull⟩ := args_from_andValue _ _ h_snd_and
                 obtain ⟨h_map_eq, h_argsAllFull_lift⟩ := list_lifts args h_argsAllFull
                 have h_map_eq_prod : List.map Prod.fst
@@ -1924,10 +1924,10 @@ private theorem evalIte_frame
       LExpr.eval n' F env' br = (v, .value true) := by
     intro br mc bcond h_c_eq h
     have h_fst : (LExpr.eval n' F env br).fst = v := by
-      have := congrArg Prod.fst h; simp at this; exact this
+      have := congrArg Prod.fst h; simp only at this; exact this
     have h_snd_and : (LExpr.eval n' F env br).snd.combineValueFlag
         (LExpr.eval n' F env c).snd.isValueTrue = .value true := by
-      have := congrArg Prod.snd h; simp at this; exact this
+      have := congrArg Prod.snd h; simp only at this; exact this
     have h_and := (andValue_eq_valueTrue_iff _ _).mp h_snd_and
     have h_c_snd : LExpr.eval n' F env c =
         ((LExpr.eval n' F env c).fst, .value true) := by
@@ -1960,10 +1960,10 @@ private theorem evalEq_frame
   split at h
   · rename_i b0 h_eql
     have h_fst : LExpr.const m (LConst.boolConst b0) = v := by
-      have := congrArg Prod.fst h; simp at this; exact this
+      have := congrArg Prod.fst h; simp only at this; exact this
     have h_snd_pair : (LExpr.eval n' F env e1).snd.isValueTrue = true ∧
                       (LExpr.eval n' F env e2).snd.isValueTrue = true := by
-      have := congrArg Prod.snd h; simp at this; exact this
+      have := congrArg Prod.snd h; simp only [LExpr.EvalResult.value.injEq, Bool.and_eq_true] at this ; exact this
     have h_e1_snd : LExpr.eval n' F env e1 =
         ((LExpr.eval n' F env e1).fst, .value true) := by
       rw [← (isValueTrue_eq_true_iff _).mp h_snd_pair.1]
@@ -1973,7 +1973,7 @@ private theorem evalEq_frame
     rw [ih_eval _ _ h_e1_snd, ih_eval _ _ h_e2_snd]
     simp only
     rw [h_eql]
-    simp [LExpr.EvalResult.isValueTrue]
+    simp only [LExpr.EvalResult.isValueTrue, Bool.and_self, Prod.mk.injEq, and_true]
     exact h_fst
   · exfalso
     have := congrArg Prod.snd h; simp at this
@@ -1997,11 +1997,11 @@ private theorem evalApp_frame
       LExpr.eval n' F env' inner = (v, .value true) := by
     intro inner h
     have h_fst : (LExpr.eval n' F env inner).fst = v := by
-      have := congrArg Prod.fst h; simp at this; exact this
+      have := congrArg Prod.fst h; simp only at this; exact this
     have h_snd : (LExpr.eval n' F env inner).snd.combineValueFlag
         ((LExpr.eval n' F env e1).snd.isValueTrue &&
          (LExpr.eval n' F env e2).snd.isValueTrue) = .value true := by
-      have := congrArg Prod.snd h; simp at this; exact this
+      have := congrArg Prod.snd h; simp only at this; exact this
     have h_and := (andValue_eq_valueTrue_iff _ _).mp h_snd
     have h_e12 : (LExpr.eval n' F env e1).snd.isValueTrue = true ∧
                  (LExpr.eval n' F env e2).snd.isValueTrue = true := by
@@ -2127,7 +2127,7 @@ theorem eval_frame
     by_cases hcan : LExpr.isValue F e = true
     · rw [ite_eq_left hcan] at h
       have hfe : v = e := by
-        have := congrArg Prod.fst h; simp at this; exact this.symm
+        have := congrArg Prod.fst h; simp only at this; exact this.symm
       subst hfe
       exact eval_value_identity 0 F env' v hcan
     · rw [ite_eq_right hcan] at h
@@ -2171,7 +2171,7 @@ theorem eval_frame
     split
     · rename_i hcan; intro h
       have hfe : v = e := by
-        have := congrArg Prod.fst h; simp at this; exact this.symm
+        have := congrArg Prod.fst h; simp only at this; exact this.symm
       subst hfe
       exact eval_value_identity (n' + 1) F env' v hcan
     · rename_i h_not_can
@@ -2202,10 +2202,10 @@ theorem eval_frame
                 (lfunc.inputs.keys.zip
                   (List.map (fun a => (LExpr.eval n' F env a).fst) args))
             have h_fst : (LExpr.eval n' F env inner).fst = v := by
-              have := congrArg Prod.fst h; simp at this; exact this
+              have := congrArg Prod.fst h; simp only [List.all_map, List.map_map, LExpr.combineEvalResValueFlag_eq_pair] at this ; exact this
             have h_snd_and : (LExpr.eval n' F env inner).snd.combineValueFlag
                 (args.all fun a => (LExpr.eval n' F env a).snd.isValueTrue) = .value true := by
-              have := congrArg Prod.snd h; simp at this; exact this
+              have := congrArg Prod.snd h; simp only [List.all_map, List.map_map, LExpr.combineEvalResValueFlag_eq_pair] at this ; exact this
             obtain ⟨h_inner_snd, h_argsAllFull⟩ := args_from_andValue inner args h_snd_and
             obtain ⟨h_map_eq', h_argsAllFull_lift⟩ := list_lifts args h_argsAllFull
             have h_new_lift := ih _ _ h_inner_snd
@@ -2282,10 +2282,10 @@ theorem eval_frame
               · rename_i e' h_ceval_res
                 intro h
                 have h_fst : (LExpr.eval n' F env e').fst = v := by
-                  have := congrArg Prod.fst h; simp at this; exact this
+                  have := congrArg Prod.fst h; simp only [List.all_map, LExpr.combineEvalResValueFlag_eq_pair] at this ; exact this
                 have h_snd_and : (LExpr.eval n' F env e').snd.combineValueFlag
                     (args.all fun a => (LExpr.eval n' F env a).snd.isValueTrue) = .value true := by
-                  have := congrArg Prod.snd h; simp at this; exact this
+                  have := congrArg Prod.snd h; simp only [List.all_map, LExpr.combineEvalResValueFlag_eq_pair] at this; exact this
                 obtain ⟨h_e'_snd, h_argsAllFull⟩ := args_from_andValue _ _ h_snd_and
                 obtain ⟨h_map_eq, h_argsAllFull_lift⟩ := list_lifts args h_argsAllFull
                 have h_map_eq_prod : List.map Prod.fst
@@ -4049,7 +4049,7 @@ theorem eval_eraseMetadata_invariant
     (LExpr.eval n F env e₁).fst.eraseMetadata = (LExpr.eval n F env e₂).fst.eraseMetadata := by
   induction n generalizing e₁ e₂ with
   | zero =>
-    simp [LExpr.eval]
+    simp only [LExpr.eval]
     exact h_eM
   | succ n' ih =>
     simp only [LExpr.eval, LExpr.List_map_fst_map_eval,
@@ -4066,7 +4066,7 @@ theorem eval_eraseMetadata_invariant
         rw [h_call₂]; simp only []
         -- Derive length equality
         have h_len : args₁.length = args₂.length := by
-          have h_len_eq := congrArg List.length h_args_eM_raw; simp at h_len_eq; exact h_len_eq
+          have h_len_eq := congrArg List.length h_args_eM_raw; simp only [List.length_map] at h_len_eq ; exact h_len_eq
         -- Show evaluated args have the same eraseMetadata
         have h_eval_args_eM :
             (args₁.map (fun a => (LExpr.eval n' F env a).fst)).map LExpr.eraseMetadata =
@@ -4078,8 +4078,8 @@ theorem eval_eraseMetadata_invariant
             have h_arg_eM : (args₁[i]'(by simp at hi₁; omega)).eraseMetadata =
                 (args₂[i]'(by simp at hi₂; omega)).eraseMetadata := by
               have h_eM_i := congrArg (·[i]?) h_args_eM_raw
-              simp [show i < args₁.length from by simp at hi₁; omega,
-                    show i < args₂.length from by simp at hi₂; omega] at h_eM_i
+              simp only [List.length_map, show i < args₁.length from by simp at hi₁; omega, getElem?_pos, List.getElem_map,
+    show i < args₂.length from by simp at hi₂; omega, Option.some.injEq] at h_eM_i
               exact h_eM_i
             exact ih _ _ h_arg_eM
         -- Show constrArgAt equality
@@ -4105,7 +4105,8 @@ theorem eval_eraseMetadata_invariant
               simp only [List.getElem_map]
               have h_arg_eM : (args₁[i]'(by omega)).eraseMetadata = (args₂[i]'(by omega)).eraseMetadata := by
                 have h_eM_i := congrArg (·[i]?) h_args_eM_raw
-                simp [h, show i < args₂.length from by omega] at h_eM_i
+                simp only [List.length_map, h, getElem?_pos, List.getElem_map, show i < args₂.length from by omega,
+    Option.some.injEq] at h_eM_i
                 exact h_eM_i
               exact isConstrApp_eraseMetadata_eq F _ _ (ih _ _ h_arg_eM)
             · have hi₁ : (args₁.map (fun a => (LExpr.eval n' F env a).fst)).length ≤ i := by simp; omega
@@ -4134,7 +4135,8 @@ theorem eval_eraseMetadata_invariant
               simp only [List.getElem_map]
               have h_arg_eM : (args₁[i]'(by omega)).eraseMetadata = (args₂[i]'(by omega)).eraseMetadata := by
                 have h_eM_i := congrArg (·[i]?) h_args_eM_raw
-                simp [h, show i < args₂.length from by omega] at h_eM_i
+                simp only [List.length_map, h, getElem?_pos, List.getElem_map, show i < args₂.length from by omega,
+    Option.some.injEq] at h_eM_i
                 exact h_eM_i
               exact isValue_eraseMetadata_eq F _ _ (ih _ _ h_arg_eM)
             · have hi₁ : (args₁.map (fun a => (LExpr.eval n' F env a).fst)).length ≤ i := by simp; omega
@@ -4154,8 +4156,8 @@ theorem eval_eraseMetadata_invariant
               have h_arg_eM : (args₁[i]'(by simp at hi₁; omega)).eraseMetadata =
                   (args₂[i]'(by simp at hi₂; omega)).eraseMetadata := by
                 have h_eM_i := congrArg (·[i]?) h_args_eM_raw
-                simp [show i < args₁.length from by simp at hi₁; omega,
-                  show i < args₂.length from by simp at hi₂; omega] at h_eM_i
+                simp only [List.length_map, show i < args₁.length from by simp at hi₁; omega, getElem?_pos, List.getElem_map,
+    show i < args₂.length from by simp at hi₂; omega, Option.some.injEq] at h_eM_i
                 exact h_eM_i
               exact isValue_eraseMetadata_eq F _ _ (ih _ _ h_arg_eM)
           rw [show (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F) =
@@ -4262,7 +4264,7 @@ theorem eval_eraseMetadata_invariant
                 have h := h_computeTypeSubst_eq; rw [h_none₁, h_tySubst₂] at h
                 exact absurd h (by simp)
               · -- RHS: none
-                simp; exact h_eM
+                exact h_eM
             · -- RHS: inline condition false (contradicts h_inline₁)
               rename_i h_ninline₂
               exfalso; exact h_ninline₂ (h_inline_cond_eq.symm.trans h_inline₁)

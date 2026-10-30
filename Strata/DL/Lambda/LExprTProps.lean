@@ -222,7 +222,7 @@ theorem typeBoundVar_knownVars_reverse
     rw [show Env_mid.genEnv.context.types = Env.genEnv.context.types from congrArg TContext.types h_mid_ctx] at hv
     exact mem_keys_addInNewest_single_reverse _ _ _ v hv
   | none =>
-    simp; intro h; elim_err h
+    simp only [pure, Except.pure]; intro h; elim_err h
     rename_i v_tg h_tg; obtain ⟨xtyid, Env_mid⟩ := v_tg
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h_xv, _, h_env'⟩ := h; subst h_xv; subst h_env'

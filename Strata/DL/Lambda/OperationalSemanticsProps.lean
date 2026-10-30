@@ -374,7 +374,7 @@ theorem getLFuncCall_mkApp_op
       (LExpr.op m_op name ty, args) := by
   simp only [getLFuncCall]
   have h := getLFuncCall_go_mkApp_op m_app m_op name ty args []
-  simp at h; exact h
+  simp only [List.append_nil] at h; exact h
 
 -- callOfLFunc on mkApp returns the same lfunc when the head is .op with
 -- the same factory entry and matching arity.
@@ -394,7 +394,7 @@ theorem callOfLFunc_mkApp_op
   | some func =>
     simp only [h_gf] at h_call ⊢
     split at h_call
-    · simp at h_call; obtain ⟨rfl, rfl⟩ := h_call
+    · simp only [Option.some.injEq, Prod.mk.injEq, true_and] at h_call; obtain ⟨rfl, rfl⟩ := h_call
       rw [show args'.length = args.length from h_len]
       simp_all
     · simp at h_call
@@ -606,14 +606,14 @@ private theorem callOfLFunc_partial_implies_full
   simp only [Factory.callOfLFunc] at h_partial h_full_some ⊢
   cases h_lfc : getLFuncCall e with | mk op' args' =>
   simp only [h_lfc] at h_partial h_full_some ⊢
-  cases op' <;> simp at h_partial h_full_some ⊢
+  cases op' <;> simp only [↓reduceIte, Bool.false_eq_true, reduceCtorEq] at h_partial h_full_some ⊢
   rename_i m_op name_op ty_op
   cases h_gf : F[name_op.name]? with
   | none => simp [h_gf] at h_partial
   | some func' =>
     simp only [h_gf] at h_partial h_full_some ⊢
     split at h_full_some <;> simp at h_full_some
-    split at h_partial <;> simp at h_partial
+    split at h_partial <;> simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at h_partial
     obtain ⟨_, rfl, rfl⟩ := h_partial
     simp_all
 
@@ -638,23 +638,23 @@ private theorem callOfLFunc_partial_full_isConstr
   simp only [Factory.callOfLFunc] at h_partial
   cases h_lfc : getLFuncCall e with | mk op' args' =>
   simp only [h_lfc] at h_partial
-  cases op' <;> simp at h_partial
+  cases op' <;> simp only [↓reduceIte, reduceCtorEq] at h_partial
   rename_i m_op name_op ty_op
   cases h_gf : F[name_op.name]? with
   | none => simp [h_gf] at h_partial
   | some func' =>
     simp only [h_gf] at h_partial
-    split at h_partial <;> simp at h_partial
+    split at h_partial <;> simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at h_partial
     obtain ⟨_, _, rfl⟩ := h_partial
     rename_i h_ble
     -- From h_same (full arity), args.length = f.inputs.length
     simp only [Factory.callOfLFunc, h_lfc, h_gf] at h_same
     split at h_same <;> simp at h_same
-    rename_i h_eq; simp at h_eq
+    rename_i h_eq; simp only [Bool.false_eq_true, ↓reduceIte, beq_iff_eq] at h_eq
     simp only [Bool.or_eq_true] at h_cond
     cases h_cond with
     | inl h => exact h
-    | inr h => simp [Nat.blt] at h; rw [← h_eq, h_ble] at h; omega
+    | inr h => simp only [Nat.blt, Nat.succ_eq_add_one, Nat.ble_eq] at h; rw [← h_eq, h_ble] at h; omega
 
 -- Helper: for e = .app m e1 e2, if callOfLFunc (with any allowPartialApp)
 -- succeeds with nonempty args, then e2 is the last arg and thus e2 ∈ args.
@@ -680,7 +680,7 @@ private theorem callOfLFunc_app_arg_mem
     · rename_i func h_func
       split at h
       · rename_i h_arity
-        simp at h
+        simp only [Option.some.injEq, Prod.mk.injEq] at h
         obtain ⟨_, rfl, _⟩ := h
         -- Now: e2 ∈ args', h_lfc : getLFuncCall (.app m e1 e2) = (.op .., args')
         unfold getLFuncCall at h_lfc
@@ -788,7 +788,7 @@ private theorem isValue_app_left
       | none => simp [h_gf] at h_call
       | some func =>
         simp only [h_gf] at h_call
-        split at h_call <;> simp at h_call
+        split at h_call <;> simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at h_call
         rename_i h_ble
         obtain ⟨rfl, rfl, rfl⟩ := h_call
         -- Now: args = args', f = func
@@ -863,7 +863,8 @@ private theorem isValue_app_left
               | inl h => exact Or.inl h
               | inr h =>
                 right
-                simp [Nat.blt] at h ⊢
+                simp only [Nat.blt, Nat.succ_eq_add_one, Nat.ble_eq, List.length_append, List.length_cons, List.length_nil,
+    Nat.zero_add] at h ⊢
                 rw [h_eq] at h; simp [List.length_append, List.length_cons, List.length_nil] at h ⊢
                 omega
             · rw [h_eq] at h_all
@@ -936,20 +937,20 @@ theorem isValue_getVars_nil
     | fvar =>
       simp [LExpr.isValue, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
     | abs m n ty body =>
-      simp [LExpr.LExpr.getVars]
+      simp only [LExpr.LExpr.getVars]
       have h_closed : LExpr.closed (.abs m n ty body) = true := by
-        simp [LExpr.isValue] at hc; exact hc
+        simp only [LExpr.isValue, LExpr.closed_abs] at hc; exact hc
       have h_body_closed : LExpr.closed body = true := by
-        simp [LExpr.closed, LExpr.freeVars] at h_closed ⊢; exact h_closed
+        simp only [LExpr.closed, LExpr.freeVars, List.isEmpty_iff] at h_closed ⊢; exact h_closed
       exact closed_implies_getVars_nil body h_body_closed
     | quant m qk n ty tr body =>
       have h_closed : LExpr.closed (.quant m qk n ty tr body) = true := by
-        simp [LExpr.isValue] at hc; exact hc
+        simp only [LExpr.isValue] at hc; exact hc
       exact closed_implies_getVars_nil (.quant m qk n ty tr body) h_closed
     | app m e1 e2 =>
       simp only [LExpr.LExpr.getVars, List.append_eq_nil_iff]
       have hc_app := hc
-      simp [LExpr.isValue] at hc
+      simp only [LExpr.isValue, List.map_subtype, List.unattach_attach, List.all_map, Function.id_comp] at hc
       split at hc
       · rename_i op args f h_call
         simp only [Bool.and_eq_true] at hc
@@ -999,17 +1000,17 @@ theorem value_not_step
   | abs _ _ _ body ih_body =>
     intro e' hstep
     -- An abstraction that is a value is closed → freeVars body = []
-    simp [LExpr.isValue] at hc
+    simp only [LExpr.isValue, LExpr.closed_abs] at hc
     cases hstep with
     | expand_fn _ _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | eval_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | abs_subst_fvars _ _ h_fv =>
       have h_fvs : LExpr.freeVars body = [] := by
-        simp [LExpr.closed, List.isEmpty_iff] at hc; exact hc
+        simp only [LExpr.closed, List.isEmpty_iff] at hc; exact hc
       simp [h_fvs] at h_fv
   | quant _ _ _ _ tr body ih_tr ih_body =>
     intro e' hstep
-    simp [LExpr.isValue] at hc
+    simp only [LExpr.isValue] at hc
     cases hstep with
     | expand_fn _ _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
     | eval_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
@@ -1021,7 +1022,7 @@ theorem value_not_step
       simp [hc.1] at h_fv
   | op =>
     intro e' hstep
-    simp [LExpr.isValue] at hc
+    simp only [LExpr.isValue, List.map_subtype, List.unattach_attach, List.all_map, Function.id_comp] at hc
     cases hstep with
     | expand_fn _ _ _ _ _ fn _ h_call h_body _ _ =>
       split at hc
@@ -1045,7 +1046,7 @@ theorem value_not_step
       · simp at hc
   | app m_app e1 e2 ih1 ih2 =>
     intro e' hstep
-    simp [LExpr.isValue] at hc
+    simp only [LExpr.isValue, List.map_subtype, List.unattach_attach, List.all_map, Function.id_comp] at hc
     cases hstep with
     | beta _ _ _ =>
       simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hc
@@ -1060,7 +1061,7 @@ theorem value_not_step
     | reduce_1 _ e1' _ h_step_e1 =>
       have h_e1_can : LExpr.isValue F e1 = true := by
         apply isValue_app_left F m_app e1 e2
-        simp [LExpr.isValue]
+        simp only [LExpr.isValue, List.map_subtype, List.unattach_attach, List.all_map, Function.id_comp]
         split at hc
         · exact hc
         · simp at hc
@@ -1154,7 +1155,7 @@ theorem StepStar_getLFuncCall_args
     simp only [getLFuncCall.go] at h_get
     obtain ⟨inner_args, h_split, h_get_inner⟩ :=
       getLFuncCall_go_acc_change e_inner [a1, a2] [] op args h_get
-    simp at h_get_inner
+    simp only [List.append_nil] at h_get_inner
     -- args = inner_args ++ [a1, a2], getLFuncCall e_inner = (op, inner_args)
     -- Decompose args' similarly
     have h_ia_len : inner_args.length + 2 = args'.length := by
@@ -1210,7 +1211,8 @@ theorem StepStar_getLFuncCall_args
     match args', h_len with
     | [a1'], _ =>
       have h_a := h_steps 0 (by simp)
-      simp at h_a
+      simp only [List.cons_append, List.nil_append, List.length_cons, List.length_nil, Nat.reduceAdd, Fin.zero_eta,
+    Fin.isValue, List.get_eq_getElem, Fin.val_eq_zero, List.getElem_cons_zero] at h_a
       exact ⟨.app m1 (.op m2 fn ty) a1', StepStar_app_arg F rf _ _ _ m1 h_a, rfl⟩
   | .app m1 (.const _ _) _ => simp only [getLFuncCall.go] at h_get; obtain ⟨rfl, rfl⟩ := h_get; match args', h_len with | [], _ => exact ⟨_, ReflTrans.refl _, rfl⟩
   | .app m1 (.bvar _ _) _ => simp only [getLFuncCall.go] at h_get; obtain ⟨rfl, rfl⟩ := h_get; match args', h_len with | [], _ => exact ⟨_, ReflTrans.refl _, rfl⟩
@@ -1299,7 +1301,7 @@ theorem callOfLFunc_eraseMetadata_congr
   cases h_glfc₁ : getLFuncCall e₁ with | mk op₁ args₁ =>
   cases h_glfc₂ : getLFuncCall e₂ with | mk op₂ args₂ =>
   rw [h_glfc₁, h_glfc₂] at h_op h_args
-  simp at h_op h_args
+  simp only at h_op h_args
   -- Now case split on op₁, op₂
   match op₁, op₂, h_op with
   | .op m₁ name₁ ty₁, .op m₂ name₂ ty₂, h_op =>
@@ -1316,7 +1318,7 @@ theorem callOfLFunc_eraseMetadata_congr
         simp only
         -- Same arity check since args have same length (from same eraseMetadata map)
         have h_len : args₁.length = args₂.length := by
-          have h_len_eq := congrArg List.length h_args; simp [List.length_map] at h_len_eq; exact h_len_eq
+          have h_len_eq := congrArg List.length h_args; simp only [List.length_map] at h_len_eq; exact h_len_eq
         -- The arity check uses h_len to show both sides get the same matchesArg
         simp only [h_len]
         -- Now both sides compute the same matchesArg value
@@ -1405,9 +1407,9 @@ private theorem foldl_zip_eql_congr
       LExpr.eqlCombine acc (LExpr.eql F x.fst x.snd)) init (args₁'.zip args₂') := by
   -- Derive length equalities from map equalities
   have h_len₁ : args₁.length = args₁'.length := by
-    have h_len_eq := congrArg List.length h_eM₁; simp at h_len_eq; exact h_len_eq
+    have h_len_eq := congrArg List.length h_eM₁; simp only [List.length_map] at h_len_eq; exact h_len_eq
   have h_len₂ : args₂.length = args₂'.length := by
-    have h_len_eq := congrArg List.length h_eM₂; simp at h_len_eq; exact h_len_eq
+    have h_len_eq := congrArg List.length h_eM₂; simp only [List.length_map] at h_len_eq; exact h_len_eq
   -- Use generic foldl_zip_congr
   apply List.foldl_zip_congr (fun acc a b => LExpr.eqlCombine acc (LExpr.eql F a b)) _ _ _ _ h_len₁ h_len₂
   · intro i hi₁ hi₂ acc
@@ -1416,11 +1418,11 @@ private theorem foldl_zip_eql_congr
     have hi₂' : i < args₂'.length := h_len₂ ▸ hi₂
     have h_eM_a : (args₁[i]).eraseMetadata = (args₁'[i]'hi₁').eraseMetadata := by
       have h1 := congrArg (·[i]?) h_eM₁
-      simp [hi₁, hi₁'] at h1
+      simp only [List.length_map, hi₁, getElem?_pos, List.getElem_map, hi₁', Option.some.injEq] at h1
       exact h1
     have h_eM_b : (args₂[i]).eraseMetadata = (args₂'[i]'hi₂').eraseMetadata := by
       have h1 := congrArg (·[i]?) h_eM₂
-      simp [hi₂, hi₂'] at h1
+      simp only [List.length_map, hi₂, getElem?_pos, List.getElem_map, hi₂', Option.some.injEq] at h1
       exact h1
     -- Apply ih with membership proof
     have h_mem : args₁[i] ∈ args₁ := by
@@ -1645,8 +1647,8 @@ theorem step_to_const_via_IH
     (hstep : StepStar F env e e')
     (h_eM : e'.eraseMetadata = (LExpr.const mc c).eraseMetadata) :
     ∃ mc', StepStar F env e (.const mc' c) := by
-  simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM
-  cases e' <;> simp [LExpr.replaceMetadata] at h_eM <;> try contradiction
+  simp only [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM
+  cases e' <;> simp only [LExpr.replaceMetadata, LExpr.const.injEq, true_and] at h_eM <;> try contradiction
   rename_i mc' c'; subst c'
   exact ⟨_, hstep⟩
 
@@ -1672,23 +1674,23 @@ private theorem substFvars_closed_identity
     | bvar => simp [LExpr.substFvars.substFvarsAux]
     | fvar => simp [LExpr.freeVars] at h_closed
     | abs _ _ _ _ ih =>
-      simp [LExpr.substFvars.substFvarsAux]
-      simp [LExpr.freeVars] at h_closed
+      simp only [Bool.false_eq_true, ↓reduceIte, LExpr.substFvars.substFvarsAux, LExpr.abs.injEq, true_and]
+      simp only [LExpr.freeVars] at h_closed
       exact ih h_closed
     | app _ _ _ ih1 ih2 =>
-      simp [LExpr.substFvars.substFvarsAux]
-      simp [LExpr.freeVars, List.append_eq_nil_iff] at h_closed
+      simp only [Bool.false_eq_true, ↓reduceIte, LExpr.substFvars.substFvarsAux, LExpr.app.injEq, true_and]
+      simp only [LExpr.freeVars, List.append_eq_nil_iff] at h_closed
       exact ⟨ih1 h_closed.1, ih2 h_closed.2⟩
     | eq _ _ _ ih1 ih2 =>
-      simp [LExpr.substFvars.substFvarsAux]
-      simp [LExpr.freeVars, List.append_eq_nil_iff] at h_closed
+      simp only [Bool.false_eq_true, ↓reduceIte, LExpr.substFvars.substFvarsAux, LExpr.eq.injEq, true_and]
+      simp only [LExpr.freeVars, List.append_eq_nil_iff] at h_closed
       exact ⟨ih1 h_closed.1, ih2 h_closed.2⟩
     | quant _ _ _ _ _ _ ih1 ih2 =>
-      simp [LExpr.substFvars.substFvarsAux]
-      simp [LExpr.freeVars, List.append_eq_nil_iff] at h_closed
+      simp only [Bool.false_eq_true, ↓reduceIte, LExpr.substFvars.substFvarsAux, LExpr.quant.injEq, true_and]
+      simp only [LExpr.freeVars, List.append_eq_nil_iff] at h_closed
       exact ⟨ih1 h_closed.1, ih2 h_closed.2⟩
     | ite _ c t e ih1 ih2 ih3 =>
-      simp [LExpr.substFvars.substFvarsAux]
+      simp only [Bool.false_eq_true, ↓reduceIte, LExpr.substFvars.substFvarsAux, LExpr.ite.injEq, true_and]
       have h_fv_all : LExpr.freeVars c ++ LExpr.freeVars t ++ LExpr.freeVars e = [] := h_closed
       have h_app1 : LExpr.freeVars c ++ LExpr.freeVars t = [] ∧ LExpr.freeVars e = [] :=
         List.append_eq_nil_iff.mp h_fv_all
@@ -1807,11 +1809,11 @@ theorem isValue_eraseMetadata_eq
             have h1' := h1
             unfold Factory.callOfLFunc at h1'
             simp only [getLFuncCall, getLFuncCall.go] at h1'
-            split at h1' <;> simp at h1'
-            split at h1' <;> simp at h1'
+            split at h1' <;> simp only [↓reduceIte, List.length_nil, reduceCtorEq] at h1'
+            split at h1' <;> simp only [Option.some.injEq, reduceCtorEq] at h1'
             rw [← h1']
           have h_len : v1.snd.fst.length = args₂.length := by
-            have h_len_eq := congrArg List.length h_args_eM; simp [List.length_map] at h_len_eq; exact h_len_eq
+            have h_len_eq := congrArg List.length h_args_eM; simp only [List.length_map] at h_len_eq; exact h_len_eq
           have h_args₂_nil : args₂ = [] := by
             rw [h_args_nil] at h_len; simp at h_len
             exact List.eq_nil_of_length_eq_zero h_len.symm
@@ -1836,20 +1838,20 @@ theorem isValue_eraseMetadata_eq
             callOfLFunc_some_of_eraseMetadata_eq F _ _ true heM op₁ args₁ f₁ h1
           rw [h2]; simp only
           have h_len : args₁.length = args₂.length := by
-            have h_len_eq := congrArg List.length h_args_eM; simp [List.length_map] at h_len_eq; exact h_len_eq
+            have h_len_eq := congrArg List.length h_args_eM; simp only [List.length_map] at h_len_eq; exact h_len_eq
           simp only [h_len]
           -- The first part of `&&` is the same; show that all arguments are values on both sides.
           congr 1
           -- Extract getLFuncCall from h1 to prove args are smaller
           have h_gl : getLFuncCall (.app m fn arg : LExpr Tbase.mono) = (op₁, args₁) := by
-            simp [Factory.callOfLFunc] at h1
+            simp only [Factory.callOfLFunc, ↓reduceIte] at h1
             cases h_lfc : getLFuncCall (.app m fn arg : LExpr Tbase.mono) with | mk op' args' =>
             simp only [h_lfc] at h1
-            cases op' <;> simp at h1
+            cases op' <;> simp only [reduceCtorEq] at h1
             rename_i name_op _ _
             split at h1
             · simp at h1
-            · split at h1 <;> simp at h1
+            · split at h1 <;> simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at h1
               obtain ⟨rfl, rfl, _⟩ := h1; exact rfl
           have h_smaller := getLFuncCall_smaller h_gl
           -- Prove the two mapped-attach lists are equal by list induction
@@ -1866,7 +1868,7 @@ theorem isValue_eraseMetadata_eq
             · have := h_smaller (args₁[i]) (List.getElem_mem hi₁')
               omega
             · have h_eM_i := congrArg (fun l => l[i]?) h_args_eM
-              simp [hi₁', hi₂'] at h_eM_i
+              simp only [List.length_map, hi₁', getElem?_pos, List.getElem_map, hi₂', Option.some.injEq] at h_eM_i
               exact h_eM_i
     | eq m l r =>
       have hv := EMEquiv.of_eraseMetadata_eq _ e₂ heM
@@ -1896,7 +1898,7 @@ theorem isConstrApp_eraseMetadata_eq
     | some v₂ =>
       obtain ⟨op₂, args₂, f₂⟩ := v₂
       rw [h₁, h₂] at h
-      simp at h
+      simp only at h
       rw [h.1]
 
 ---------------------------------------------------------------------
@@ -1962,7 +1964,7 @@ theorem substFvarsLifting_zip_eraseMetadata_congr
     (LExpr.substFvarsLifting e (keys.zip vals₁)).eraseMetadata =
     (LExpr.substFvarsLifting e (keys.zip vals₂)).eraseMetadata := by
   have h_vals_len : vals₁.length = vals₂.length := by
-    have h_len_eq := congrArg List.length h_vals; simp at h_len_eq; exact h_len_eq
+    have h_len_eq := congrArg List.length h_vals; simp only [List.length_map] at h_len_eq; exact h_len_eq
   have find_congr : ∀ (x : Tbase.Identifier),
       (Map.find? (keys.zip vals₁) x).map LExpr.eraseMetadata =
       (Map.find? (keys.zip vals₂) x).map LExpr.eraseMetadata := by
@@ -1980,7 +1982,7 @@ theorem substFvarsLifting_zip_eraseMetadata_congr
           simp only [List.map_cons, List.cons.injEq] at h_vals
           split
           · simp [h_vals.1]
-          · exact ih vs₁ vs₂ h_vals.2 (by simp at h_vals_len; exact h_vals_len)
+          · exact ih vs₁ vs₂ h_vals.2 (by simp only [List.length_cons, Nat.add_right_cancel_iff] at h_vals_len; exact h_vals_len)
   cases keys with
   | nil => simp [LExpr.substFvarsLifting, Map.isEmpty]
   | cons k ks =>
@@ -2018,7 +2020,7 @@ theorem substFvarsLifting_zip_eraseMetadata_congr
           cases h2 : Map.find? ((k, v₂) :: ks.zip vs₂) x with
           | none => simp [h1, h2] at hfc
           | some w₂ =>
-            simp [h1, h2] at hfc
+            simp only [h1, Option.map_some, h2, Option.some.injEq] at hfc
             exact LExpr.liftBVars_eraseMetadata_congr depth w₁ w₂ 0 hfc
       | abs m n t b ih =>
         simp only [LExpr.substFvarsLifting.go, LExpr.eraseMetadata, LExpr.replaceMetadata]
@@ -2204,9 +2206,9 @@ theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
       | hd₂ :: tl₂, v :: vs' =>
         simp only [List.zip_cons_cons, List.filterMap_cons]
         have h_hd : hd₁.eraseMetadata = hd₂.eraseMetadata := by
-          have h_head_eq := congrArg List.head? h_eM; simp at h_head_eq; exact h_head_eq
+          have h_head_eq := congrArg List.head? h_eM; simp only [List.map_cons, List.head?_cons, Option.some.injEq] at h_head_eq; exact h_head_eq
         have h_tl : tl₁.map LExpr.eraseMetadata = tl₂.map LExpr.eraseMetadata := by
-          have h_tail_eq := congrArg List.tail h_eM; simp at h_tail_eq; exact h_tail_eq
+          have h_tail_eq := congrArg List.tail h_eM; simp only [List.map_cons, List.tail_cons] at h_tail_eq; exact h_tail_eq
         rw [typeCheck_of_eraseMetadata_eq _ _ h_hd, ih tl₂ vs' h_tl]
       | hd₂ :: tl₂, [] => simp [List.zip]
       | [], _ => simp at h_eM
@@ -2214,7 +2216,7 @@ theorem computeTypeSubst_eraseMetadata_congr {T : LExprParams}
   have h_opTS : fn.opTypeSubst op₁ = fn.opTypeSubst op₂ := by
     simp only [LFunc.opTypeSubst]
     cases op₁ <;> cases op₂ <;>
-      simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_op ⊢
+      simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.op.injEq, true_and, List.isEmpty_iff, reduceCtorEq] at h_op ⊢
     rename_i ty
     cases ty <;> grind
   simp only [LFunc.computeTypeSubst, h_opTS, h_argC]

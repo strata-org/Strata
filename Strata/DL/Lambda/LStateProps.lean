@@ -96,28 +96,28 @@ public theorem LExpr.substFvarsFromEnv_closed_identity
   | fvar m name ty => simp [LExpr.freeVars] at h
   | abs m nm ty body ih =>
     simp only [LExpr.substFvarsFromEnv]
-    congr 1; exact ih (by simp [LExpr.freeVars] at h; exact h)
+    congr 1; exact ih (by simp only [freeVars] at h; exact h)
   | quant m qk nm ty tr body ih_tr ih_body =>
     simp only [LExpr.substFvarsFromEnv]
-    simp [LExpr.freeVars] at h
+    simp only [freeVars, List.append_eq_nil_iff] at h
     congr 1
     · exact ih_tr h.1
     · exact ih_body h.2
   | app m fn arg ih_fn ih_arg =>
     simp only [LExpr.substFvarsFromEnv]
-    simp [LExpr.freeVars] at h
+    simp only [freeVars, List.append_eq_nil_iff] at h
     congr 1
     · exact ih_fn h.1
     · exact ih_arg h.2
   | eq m e1 e2 ih1 ih2 =>
     simp only [LExpr.substFvarsFromEnv]
-    simp [LExpr.freeVars] at h
+    simp only [freeVars, List.append_eq_nil_iff] at h
     congr 1
     · exact ih1 h.1
     · exact ih2 h.2
   | ite m c t f ihc iht ihf =>
     simp only [LExpr.substFvarsFromEnv]
-    simp [LExpr.freeVars] at h
+    simp only [freeVars, List.append_assoc, List.append_eq_nil_iff] at h
     exact congr (congr (congr rfl (ihc h.1)) (iht h.2.1)) (ihf h.2.2)
 
 /-- `substFvarsFromEnv` agrees on expressions when the environments agree on the

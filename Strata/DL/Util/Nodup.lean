@@ -26,7 +26,7 @@ theorem nodup_shrink : ∀ α {h : α} {l l' : List α} [BEq α],
   induction l
   case nil =>
     intros Hp
-    simp [List.nil_append] at *
+    simp only [ne_eq, List.nil_append, List.pairwise_cons] at *
     exact Hp.2
   case cons head tail tail_ih =>
     intros Hp
@@ -50,26 +50,27 @@ theorem nodup_insert : ∀ α {h : α} {l l' : List α} [BEq α],
   case nil => simp_all
   case cons h' t ih =>
     unfold List.Nodup at *
-    simp at *
+    simp only [ne_eq, List.mem_cons, not_or, List.cons_append, List.pairwise_cons, List.mem_append] at *
     apply And.intro
     intros a' Hcond
     cases Hcond with
     | inl Hcond => apply Hnodup.1; left; assumption
     | inr Hcond => cases Hcond with
-      | inl Hcond => simp [Hcond]; exact fun a => Hnotin1.1 (Eq.symm a)
+      | inl Hcond => simp only [Hcond]; exact fun a => Hnotin1.1 (Eq.symm a)
       | inr Hcond => apply Hnodup.1; right; assumption
     simp_all
 
 theorem nodup_notin : (l ++ h :: l').Nodup → ¬h ∈ l ∧ ¬ h ∈ l' := by
   intros Hnodup
-  simp [List.Nodup] at Hnodup
+  simp only [List.Nodup, ne_eq] at Hnodup
   induction l
   case nil =>
-    simp_all
+    simp_all only [List.nil_append, List.pairwise_cons, List.not_mem_nil, not_false_eq_true, true_and]
     cases Hnodup with
     | intro left right => exact fun a => left h a rfl
   case cons h' t ih =>
-    simp_all
+    simp_all only [List.cons_append, List.pairwise_cons, List.mem_append, List.mem_cons, or_false,
+    not_false_eq_true, and_true, forall_const]
     cases Hnodup with
     | intro left right =>
     specialize left h'
@@ -78,7 +79,7 @@ theorem nodup_notin : (l ++ h :: l').Nodup → ¬h ∈ l ∧ ¬ h ∈ l' := by
 theorem nodup_swap :
   List.Nodup (l ++ l') → List.Nodup (l' ++ l) := by
   intros Hnodup
-  simp [List.Nodup] at *
+  simp only [List.Nodup, ne_eq] at *
   refine (List.pairwise_append_comm ?_).mp Hnodup
   exact fun {x y} a a_1 => a (Eq.symm a_1)
 
@@ -88,7 +89,7 @@ theorem nodup_swap' :
 theorem nodup_reverse :
   List.Nodup l → List.Nodup l.reverse := by
   intros Hnodup
-  simp [List.Nodup] at *
+  simp only [List.Nodup, ne_eq] at *
   apply List.pairwise_reverse.mpr
   induction l <;> simp_all
   case cons h t _ =>
@@ -120,10 +121,11 @@ theorem loop_middle_nodup : ∀ α {h: α} {t l l' : List α} [BEq α] [LawfulBE
 (List.eraseDupsBy.loop (· == ·) t (l' ++ h :: l)).Nodup →
 (List.eraseDupsBy.loop (· == ·) t (h :: (l' ++ l))).Nodup := by
     intros α h t l l' inst inst2 H
-    induction t generalizing l l' h <;> simp [List.eraseDupsBy.loop] at *
+    induction t generalizing l l' h <;> simp only [List.eraseDupsBy.loop, List.reverse_append, List.reverse_cons, List.append_assoc, List.cons_append,
+      List.nil_append] at *
     case nil =>
       -- rw [← List.append_assoc]; simp
-      apply nodup_swap; simp
+      apply nodup_swap; simp only [List.append_assoc, List.cons_append, List.nil_append]
       apply nodup_middle'
       rw [← List.cons_append]
       apply nodup_swap
@@ -133,21 +135,23 @@ theorem loop_middle_nodup : ∀ α {h: α} {t l l' : List α} [BEq α] [LawfulBE
       . rw [eq_of_beq Heq] at H ⊢
         simp at H
         by_cases (h ∈ l)
-        case pos hh => simp; exact t_ih H
+        case pos hh => simp only [List.any_cons, BEq.rfl, List.any_append, Bool.true_or]; exact t_ih H
         case neg hh =>
           split
           . exact t_ih H
           . next x heq => simp_all
       . split
-        . simp_all
+        . simp_all only [List.any_append, List.any_cons, Bool.false_or, beq_iff_eq, Bool.or_eq_true, List.any_eq_true,
+            exists_eq_right', false_or]
           apply t_ih
           split at H <;> simp_all
           grind
         . next x heq =>
-          simp_all
+          simp_all only [List.any_append, List.any_cons, Bool.false_or, beq_iff_eq, Bool.or_eq_false_iff,
+            beq_eq_false_iff_ne, ne_eq, not_false_eq_true, List.any_eq_false, true_and]
           have Heq1 : (h' :: h :: (l' ++ l)) = (h' :: [h] ++ (l' ++ l)) := by rfl
           rw [Heq1]
-          apply t_ih; simp
+          apply t_ih; simp only [List.cons_append, List.nil_append]
           have Heq2 : (h :: h' :: (l' ++ l)) = (h :: (h' :: l') ++ l) := by simp
           rw [Heq2]
           apply t_ih; simp
@@ -160,11 +164,14 @@ theorem loop_shrink_nodup : ∀ α {h: α} {t l l' : List α} [BEq α] [LawfulBE
   (List.eraseDupsBy.loop (· == ·) t (l' ++ h :: l)).Nodup →
   (List.eraseDupsBy.loop (· == ·) t (l' ++ l)).Nodup := by
     intros α h t l l' inst inst2 H
-    induction t generalizing h l' l <;> simp [List.eraseDupsBy.loop] at *
+    induction t generalizing h l' l <;> simp only [List.eraseDupsBy.loop, List.reverse_append, List.reverse_cons, List.append_assoc, List.cons_append,
+      List.nil_append] at *
     case nil => exact nodup_shrink α H
     case cons h' t t_ih =>
-      split at H <;> simp_all
-      . split <;> simp_all
+      split at H <;> simp_all only [List.any_append, List.any_cons, Bool.or_eq_true, List.any_eq_true, beq_iff_eq,
+        exists_eq_right', Bool.or_eq_false_iff, List.any_eq_false, beq_eq_false_iff_ne, ne_eq]
+      . split <;> simp_all only [Bool.or_eq_true, List.any_eq_true, beq_iff_eq, exists_eq_right', Bool.or_eq_false_iff,
+          List.any_eq_false]
         . apply t_ih <;> assumption
         . apply loop_middle_nodup
           grind
@@ -182,7 +189,8 @@ theorem loop_insert_nodup : ∀ α {h : α} {t l l': List α} [BEq α] [LawfulBE
   (List.eraseDupsBy.loop (· == ·) t (l ++ l')).Nodup →
   (List.eraseDupsBy.loop (· == ·) t (l ++ h :: l')).Nodup := by
   intros α h t l l' inst inst2 Hnotin1 Hnotin2 Hnodup
-  induction t generalizing l l' h <;> simp [List.eraseDupsBy.loop] at *
+  induction t generalizing l l' h <;> simp only [List.eraseDupsBy.loop, List.reverse_append, List.reverse_cons, List.append_assoc, List.cons_append,
+      List.nil_append] at *
   case nil =>
     apply nodup_insert
     . exact not_in_reverse.mp Hnotin2
@@ -203,17 +211,19 @@ theorem loop_insert_nodup : ∀ α {h : α} {t l l': List α} [BEq α] [LawfulBE
     next x heq =>
     split
     . next x' heq' =>
-      simp_all
+      simp_all only [List.any_append, Bool.or_eq_false_iff, List.any_eq_false, beq_iff_eq, List.any_cons,
+        Bool.or_eq_true, List.any_eq_true, exists_eq_right', not_false_eq_true]
       apply ih <;> try assumption
       have Heq : (l ++ l') = ([] ++ (l ++ l')) := by rfl
       rw [Heq]
       apply loop_shrink_nodup <;> assumption
     . next x' heq' =>
-      simp_all
+      simp_all only [List.any_append, Bool.or_eq_false_iff, List.any_eq_false, beq_iff_eq, List.any_cons,
+        not_false_eq_true, implies_true, beq_eq_false_iff_ne, ne_eq, and_true, true_and]
       have Heq : (h' :: (l ++ h :: l')) = ((h' :: l) ++ h :: l') := by rfl
       rw [Heq]
       apply ih <;> try assumption
-      simp_all
+      simp_all only [List.cons_append, List.mem_cons, or_false]
       exact fun a => heq' (Eq.symm a)
 
 theorem eraseDups_Nodup : ∀ α {l : List α} [BEq α] [LawfulBEq α], l.eraseDups.Nodup := by
@@ -226,16 +236,16 @@ theorem eraseDups_Nodup : ∀ α {l : List α} [BEq α] [LawfulBEq α], l.eraseD
     case nil =>
       simp [List.eraseDupsBy, List.eraseDupsBy.loop] at *
     case cons h' t' t_ih' =>
-      simp [List.eraseDupsBy, List.eraseDupsBy.loop] at *
+      simp only [List.eraseDupsBy, List.eraseDupsBy.loop, List.any_nil, List.any_cons, Bool.or_false] at *
       by_cases Heq : (h' == h)
-      . simp [Heq]
-        simp at *
+      . simp only [Heq]
+        simp only [beq_iff_eq] at *
         rw [←Heq]
         exact t_ih
-      . simp [Heq]
+      . simp only [Heq]
         have Heq' : [h',h] = [] ++ h' :: [h] := by rfl
         rw [Heq']
-        apply loop_insert_nodup <;> simp_all
+        apply loop_insert_nodup <;> simp_all only [beq_iff_eq, List.nil_append, List.mem_cons, List.not_mem_nil, or_self, not_false_eq_true]
         apply t_ih'
         have Heq' : [h'] = [] ++ h' :: [] := by rfl
         rw [Heq'] at t_ih
@@ -248,7 +258,7 @@ end Nodup
 theorem eraseDupsBy.loop_mem_bs {α : Type u} [BEq α] [LawfulBEq α] {h : α} {as bs : List α}:
   h ∈ bs → h ∈ List.eraseDupsBy.loop (· == ·) as bs := by
   intros Hin
-  induction as generalizing bs <;> simp [List.eraseDupsBy.loop]
+  induction as generalizing bs <;> simp only [List.eraseDupsBy.loop, List.mem_reverse]
   case nil => assumption
   case cons h t ih => split <;> simp_all
 
@@ -266,7 +276,7 @@ theorem eraseDupsBy.loop_mem_as {α : Type u} [BEq α] [LawfulBEq α] {h : α} {
       . next h' b hnin hin =>
         by_cases h = h'
         case pos heq =>
-          simp_all
+          simp_all only
           exact loop_mem_bs List.mem_cons_self
         case neg hne =>
           apply ih
@@ -275,22 +285,22 @@ theorem eraseDupsBy.loop_mem_as {α : Type u} [BEq α] [LawfulBEq α] {h : α} {
 theorem eraseDupsBy.sound {α : Type u} [BEq α] [LawfulBEq α] {a : α} {as : List α}:
 a ∈ as → a ∈ as.eraseDups := by
   intros Hin
-  simp [List.eraseDups]
+  simp only [List.eraseDups]
   generalize Hbs : ([] : List α) = bs
   induction as
   case nil => cases Hin
   case cons h t ih =>
-  simp [List.eraseDupsBy] at *
+  simp only [List.nil_eq, List.eraseDupsBy, List.mem_cons] at *
   unfold List.eraseDupsBy.loop
   split <;> simp_all
   cases Hin
   case inl x eq =>
-    simp [eq]
+    simp only [eq]
     exact loop_mem_bs (List.mem_singleton.mpr rfl)
   case inr x eq =>
     by_cases a = h
     case pos =>
-      simp_all
+      simp_all only [forall_const]
       exact loop_mem_bs (List.mem_singleton.mpr rfl)
     case neg ne =>
       apply loop_mem_as ?_ eq

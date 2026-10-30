@@ -368,7 +368,7 @@ private def testEstablisher : PipelinePhase where
   provesContract := true
   establishes_ok := PhaseContractObligation.intro (by
     intro p s b p' s' h f hf
-    simp [ExceptT.run, ExceptT.pure, ExceptT.mk, StateT.pure, Pure.pure] at h
+    simp only [ExceptT.run, pure, ExceptT.pure, ExceptT.mk, StateT.pure] at h
     injection h with hok _
     injection hok with hbp
     injection hbp with _ hp'
@@ -389,7 +389,7 @@ private def testPreserver : PipelinePhase where
     intro _ _ _ _ _ _ f hf; cases hf)
   preserves_ok := PhaseContractObligation.intro (by
     intro f _ p s hp b p' s' hrun
-    simp [ExceptT.run, ExceptT.pure, ExceptT.mk, StateT.pure, Pure.pure] at hrun
+    simp only [ExceptT.run, pure, ExceptT.pure, ExceptT.mk, StateT.pure] at hrun
     injection hrun with hok _
     injection hok with hbp
     injection hbp with _ hp'

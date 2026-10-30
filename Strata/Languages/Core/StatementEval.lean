@@ -402,7 +402,7 @@ private theorem extractMatchingSplitId_length (splitId : Nat)
     split at h
     · next sid _ _ =>
       split at h
-      · simp at h; obtain ⟨_, rfl⟩ := h
+      · simp only [Option.some.injEq, Prod.mk.injEq] at h; obtain ⟨_, rfl⟩ := h
         simp [List.length_reverse, List.length_append]; omega
       · have := ih (e_t :: acc) h; simp [List.length] at this ⊢; omega
     · have := ih (e_t :: acc) h; simp [List.length] at this ⊢; omega
@@ -504,7 +504,7 @@ private def mergeCondPairs (ewns : List EnvWithNext)
     have h_fcpl : 2 * r.paired.length + r.unmatched_t.length + r.unmatched_f.length =
         parts.1.length + parts.2.length := by
       have h := findCondPairs_length parts.1 [] parts.2 []
-      simp at h; exact h
+      simp only [List.length_nil, Nat.add_zero, Nat.mul_zero] at h; exact h
     have h_pos : r.paired.length ≥ 1 := by
       cases h : r.paired
       · simp [h, List.isEmpty] at h_nonempty

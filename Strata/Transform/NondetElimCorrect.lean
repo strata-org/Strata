@@ -2720,8 +2720,8 @@ theorem Stmt.nondetElimM_initTypes_classified [HasIdent P] [HasFvar P] [HasFvars
   | .ite .nondet tss ess md =>
       intro ty hty
       rw [Stmt.nondetElimM_ite_nondet_out] at hty
-      simp [HasInit.init, Block.initTypes, Stmt.initTypes,
-        HasInitTypesImp.initTypes, Cmd.initTypes] at hty ⊢
+      simp only [Block.initTypes, Stmt.initTypes, HasInitTypesImp.initTypes, Cmd.initTypes, HasInit.init,
+        List.append_nil, List.cons_append, List.nil_append, List.mem_cons, List.mem_append] at hty ⊢
       rcases hty with h_g | h_t | h_e
       · exact Or.inr h_g
       · rcases Block.nondetElimM_initTypes_classified tss _ ty h_t with h' | h'
@@ -2738,8 +2738,8 @@ theorem Stmt.nondetElimM_initTypes_classified [HasIdent P] [HasFvar P] [HasFvars
   | .loop .nondet m inv body md =>
       intro ty hty
       rw [Stmt.nondetElimM_loop_nondet_out] at hty
-      simp [HasInit.init, HasHavoc.havoc, Block.initTypes, Stmt.initTypes,
-        HasInitTypesImp.initTypes, Cmd.initTypes, Block.initTypes_append] at hty ⊢
+      simp only [Block.initTypes, Stmt.initTypes, HasInitTypesImp.initTypes, Cmd.initTypes, HasInit.init,
+        HasHavoc.havoc, Block.initTypes_append, List.append_nil, List.cons_append, List.nil_append, List.mem_cons] at hty ⊢
       rcases hty with h_g | h_body
       · exact Or.inr h_g
       · rcases Block.nondetElimM_initTypes_classified body _ ty h_body with h' | h'
@@ -5008,7 +5008,7 @@ private theorem NdLeaf.init_guard {P : PureExpr} [HasBool P] [HasIdent P] [Decid
   change SemanticStore.update ρt.store _ v x = some w at hw
   by_cases hxg : x = HasIdent.ident (StringGenState.gen pf σ).1
   · subst hxg
-    simp [SemanticStore.update] at hw
+    simp only [SemanticStore.update, ↓reduceIte, Option.some.injEq] at hw
     subst hw
     exact hv
   · simp only [SemanticStore.update, ite_eq_right hxg] at hw
@@ -5029,7 +5029,7 @@ private theorem NdLeaf.latch {P : PureExpr} [HasBool P] [HasIdent P] [DecidableE
     intro x w hx hw
     by_cases hxg : x = g
     · subst hxg
-      simp [SemanticStore.update] at hw
+      simp only [SemanticStore.update, ↓reduceIte, Option.some.injEq] at hw
       subst hw
       exact hv
     · simp only [SemanticStore.update, ite_eq_right hxg] at hw

@@ -39,7 +39,7 @@ def CoreIdent.mkOld (name : String) : CoreIdent := ⟨CoreIdent.oldStr ++ name, 
 theorem CoreIdent.ne_mkOld (g : CoreIdent) : g ≠ CoreIdent.mkOld g.name := by
   intro h
   have h_name := congrArg Lambda.Identifier.name h
-  simp [CoreIdent.mkOld, CoreIdent.oldStr] at h_name
+  simp only [mkOld, oldStr] at h_name
   have h1 : g.name.length < ("old " ++ g.name).length := by
     rw [String.length_append]
     have : (0 : Nat) < "old ".length := by decide
@@ -50,7 +50,7 @@ theorem CoreIdent.ne_mkOld (g : CoreIdent) : g ≠ CoreIdent.mkOld g.name := by
 theorem CoreIdent.mkOld_injective {a b : String} (h : CoreIdent.mkOld a = CoreIdent.mkOld b) :
     a = b := by
   have h_name := congrArg Lambda.Identifier.name h
-  simp [CoreIdent.mkOld, CoreIdent.oldStr] at h_name
+  simp only [mkOld, oldStr, String.append_right_inj] at h_name
   exact h_name
 
 /-- Check whether an identifier is already an `old`-prefixed global name. -/

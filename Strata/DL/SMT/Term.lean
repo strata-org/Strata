@@ -115,8 +115,8 @@ def Term.hasListDec (ts₁ ts₂ : List Term) : Decidable (ts₁ = ts₂) :=
     | isTrue h₁ =>
         match Term.hasListDec tl₁ tl₂ with
         | isTrue h₂ => isTrue (by subst h₁ h₂; rfl)
-        | isFalse _ => isFalse (by simp; intros; assumption)
-    | isFalse _ => isFalse (by simp; intros; contradiction)
+        | isFalse _ => isFalse (by simp only [List.cons.injEq, not_and]; intros; assumption)
+    | isFalse _ => isFalse (by simp only [List.cons.injEq, not_and]; intros; contradiction)
 
 def Term.hasListListDec (ts₁ ts₂ : List (List Term)) : Decidable (ts₁ = ts₂) :=
   match ts₁, ts₂ with
@@ -127,8 +127,8 @@ def Term.hasListListDec (ts₁ ts₂ : List (List Term)) : Decidable (ts₁ = ts
     | isTrue h₁ =>
         match Term.hasListListDec tl₁ tl₂ with
         | isTrue h₂ => isTrue (by subst h₁ h₂; rfl)
-        | isFalse _ => isFalse (by simp; intros; assumption)
-    | isFalse _ => isFalse (by simp; intros; contradiction)
+        | isFalse _ => isFalse (by simp only [List.cons.injEq, not_and]; intros; assumption)
+    | isFalse _ => isFalse (by simp only [List.cons.injEq, not_and]; intros; contradiction)
 end
 
 instance : DecidableEq Term := Term.hasDecEq

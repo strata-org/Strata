@@ -39,14 +39,14 @@ theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Id
   have m_contains := (Std.HashMap.containsThenInsertIfNew_fst (m:=m) (k:=x.name) (v:=x.metadata));
   have m'_def := (Std.HashMap.containsThenInsertIfNew_snd (m:=m) (k:=x.name) (v:=x.metadata));
   revert m_contains m'_def
-  rcases (Std.HashMap.containsThenInsertIfNew m x.name x.metadata) with ⟨b, m''⟩; simp; intros b_eq m''_eq; subst b m'';
+  rcases (Std.HashMap.containsThenInsertIfNew m x.name x.metadata) with ⟨b, m''⟩; simp only; intros b_eq m''_eq; subst b m'';
   split <;> intros m_contains; contradiction
   injection m_contains; subst m'; intros y; rw[Std.HashMap.getElem?_insertIfNew]
   cases name_eq: (x.name == y.name); grind
   rw[beq_iff_eq] at name_eq
   rename_i m_contains
   have name_notin : ¬ x.name ∈ m := by grind
-  simp; rw[ite_eq_right name_notin]
+  simp only [true_and, ite_not]; rw[ite_eq_right name_notin]
   cases meta_eq: (x.metadata == y.metadata); grind
   rw[beq_iff_eq] at meta_eq
   constructor
@@ -72,7 +72,7 @@ theorem Identifiers.addListWithErrorContains {IDMeta} [DecidableEq IDMeta]
   {m m': Identifiers IDMeta} {l: List (Identifier IDMeta)} {f: Identifier IDMeta → Message}: m.addListWithError l f = .ok m' → ∀ y, m'.contains y ↔ y ∈ l ∨ m.contains y := by
   unfold addListWithError
   induction l generalizing m m' with
-  | nil => simp; intros Heq; cases Heq; grind
+  | nil => simp only [List.foldlM_nil, List.not_mem_nil, false_or, Bool.coe_iff_coe]; intros Heq; cases Heq; grind
   | cons h t IH =>
     simp only[List.foldlM, bind, Except.bind]
     split <;> intros Hid; try contradiction

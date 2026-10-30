@@ -230,7 +230,7 @@ private theorem extractGo_ok (pc : RevPathConditions Expression) (ss : Statement
       | ok v1 =>
         cases extractGo pc elseSs #[] with
         | error => intro _ h; simp [Except.isOk, Except.toBool] at h
-        | ok v2 => intro _ _; simp; exact extractGo_ok _ _ _ hrest
+        | ok v2 => intro _ _; simp only [Array.append_assoc]; exact extractGo_ok _ _ _ hrest
     · exact extractGo_ok _ _ _ hrest
     · -- `isObligationForm` rejects every statement that reaches this case.
       unfold Statement.isObligationForm at hs; simp at hs

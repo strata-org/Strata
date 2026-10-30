@@ -84,7 +84,8 @@ theorem projectStore_id {P : PureExpr} {σ σ' : SemanticStore P}
     (h : ∀ x, σ' x ≠ none → σ x ≠ none) :
     projectStore σ σ' = σ' := by
   funext x
-  simp [projectStore]
+  simp only [projectStore, ite_eq_left_iff, Bool.not_eq_true, Option.isSome_eq_false_iff,
+    Option.isNone_iff_eq_none]
   intro hx
   cases heq : σ' x
   · rfl
@@ -905,8 +906,8 @@ private theorem noMatchingAssert_not_isAtAssert
     ¬ isAtAssert P cfg ⟨label, expr⟩ := by
   match cfg with
   | .stmt (.cmd (.assert l _ _)) _ =>
-    simp [Config.noMatchingAssert, Stmt.noMatchingAssert] at hno
-    simp [isAtAssert]; exact fun h _ => hno (h ▸ rfl)
+    simp only [Config.noMatchingAssert, Stmt.noMatchingAssert, ne_eq] at hno
+    simp only [isAtAssert, not_and]; exact fun h _ => hno (h ▸ rfl)
   | .stmt (.cmd (.init ..)) _ | .stmt (.cmd (.set ..)) _
   | .stmt (.cmd (.assume ..)) _
   | .stmt (.cmd (.cover ..)) _
@@ -917,8 +918,9 @@ private theorem noMatchingAssert_not_isAtAssert
     simp [isAtAssert]
   | .stmts [] _ => simp [isAtAssert]
   | .stmts ((.cmd (.assert l _ _)) :: _) _ =>
-    simp [Config.noMatchingAssert, Stmt.noMatchingAssert.Stmts.noMatchingAssert, Stmt.noMatchingAssert] at hno
-    simp [isAtAssert]; exact fun h _ => hno.1 (h ▸ rfl)
+    simp only [Config.noMatchingAssert, Stmt.noMatchingAssert.Stmts.noMatchingAssert, Stmt.noMatchingAssert,
+    ne_eq] at hno
+    simp only [isAtAssert, not_and]; exact fun h _ => hno.1 (h ▸ rfl)
   | .stmts ((.cmd (.init ..)) :: _) _ | .stmts ((.cmd (.set ..)) :: _) _
   | .stmts ((.cmd (.assume ..)) :: _) _
   | .stmts ((.cmd (.cover ..)) :: _) _
@@ -1153,7 +1155,7 @@ theorem step_preserves_noFailure
       simp only [Config.getStore, Config.getEnv] at htt
       rw [hff] at htt
       exact absurd (Option.some.inj htt) HasBool.tt_is_not_ff.symm
-  | step_block => simp [Config.getEnv]; exact hnf
+  | step_block => simp only [Config.getEnv]; exact hnf
   | step_loop_enter _ | step_loop_exit _
   | step_loop_nondet_enter | step_loop_nondet_exit =>
     simp only [Config.getEnv] at hnf ⊢; exact hnf
@@ -1314,7 +1316,7 @@ theorem eval_stmt_assert_store_cst :
   match Heval with
   | .step _ _ _ (.step_cmd hcmd) hrest =>
     cases hrest with
-    | refl => simp; exact eval_assert_store_cst hcmd
+    | refl => exact eval_assert_store_cst hcmd
     | step _ _ _ hstep _ => exact absurd hstep (by intro h; cases h)
 
 
@@ -1424,9 +1426,8 @@ theorem assert_elim :
                 apply ReflTrans.step _ _ _ (.step_seq_inner (.step_cmd (EvalCmd.eval_assert_pass h1 Hwf)))
                 apply ReflTrans.step _ _ _ .step_seq_done
                 apply ReflTrans.step _ _ _ .step_stmts_nil
-                simp_all [Bool.or_false]; exact .refl _
+                simp_all only [Bool.or_false]; exact .refl _
               | eval_assert_fail h2 _ =>
-                simp at h2
                 exact absurd (h1.symm.trans h2)
                   (by exact fun h => HasBool.tt_is_not_ff (Option.some.inj h))
             | eval_assert_fail h1 _ =>
@@ -1440,7 +1441,7 @@ theorem assert_elim :
                 apply ReflTrans.step _ _ _ (.step_seq_inner (.step_cmd (EvalCmd.eval_assert_fail h1 Hwf)))
                 apply ReflTrans.step _ _ _ .step_seq_done
                 apply ReflTrans.step _ _ _ .step_stmts_nil
-                simp_all [Bool.or_true]; exact .refl _
+                simp_all only [Bool.or_true, Bool.or_self]; exact .refl _
 
 /-! ### Set command commutation -/
 
@@ -1467,7 +1468,6 @@ theorem eval_stmt_set_comm
     .step _ _ _ (.step_cmd Hc2) (.refl _),
     .step _ _ _ (.step_cmd Hc3) (.refl _),
     .step _ _ _ (.step_cmd Hc4) (.refl _) =>
-    simp
     exact eval_cmd_set_comm Hwf Hwfs Hwfs1 Hwfs2 Hneq Hnin1 Hnin2 Hc1 Hc2 Hc3 Hc4
 
 omit [HasInt P] [HasIntOps P] in
@@ -1767,7 +1767,7 @@ theorem block_canfail_to_inner
     | .step_block_done
     | .step_block_exit_match _ | .step_block_exit_mismatch _ =>
       match hrest with
-      | .refl _ => refine ⟨_, ?_, .refl _⟩; simp [Config.getEnv] at hf ⊢; exact hf
+      | .refl _ => refine ⟨_, ?_, .refl _⟩; simp only [Config.getEnv] at hf ⊢; exact hf
       | .step _ _ _ h _ => exact nomatch h
 
 omit [HasOps P] [HasFvars P] [HasInt P] [HasIntOps P] in
@@ -1791,19 +1791,19 @@ theorem blockT_canfail_to_inner
     match hrest with
     | .refl _ =>
       refine ⟨.terminal _, .refl _, ?_, by simp [ReflTransT.len]⟩
-      simp [Config.getEnv] at hf ⊢; exact hf
+      simp only [Config.getEnv] at hf ⊢; exact hf
     | .step _ _ _ h _ => exact nomatch h
   | .step _ _ _ (.step_block_exit_match _) hrest =>
     match hrest with
     | .refl _ =>
       refine ⟨.exiting _ _, .refl _, ?_, by simp [ReflTransT.len]⟩
-      simp [Config.getEnv] at hf ⊢; exact hf
+      simp only [Config.getEnv] at hf ⊢; exact hf
     | .step _ _ _ h _ => exact nomatch h
   | .step _ _ _ (.step_block_exit_mismatch _) hrest =>
     match hrest with
     | .refl _ =>
       refine ⟨.exiting _ _, .refl _, ?_, by simp [ReflTransT.len]⟩
-      simp [Config.getEnv] at hf ⊢; exact hf
+      simp only [Config.getEnv] at hf ⊢; exact hf
     | .step _ _ _ h _ => exact nomatch h
   termination_by hstar.len
   decreasing_by all_goals (simp_wf; try simp [ReflTransT.len]; try omega)
@@ -3442,7 +3442,7 @@ private theorem StepStmt.adminToStepStmtE
     StepStmtE P (EvalCmdE P) c (c.emittedEvents)
       (c'.withFailure c.getEnv.hasFailure) := by
   induction h <;>
-    simp_all [noCommandEvalE, Config.emittedEvents, Config.withFailure, Config.getEnv] <;>
+    simp_all only [noCommandEvalE, Config.emittedEvents, Config.withFailure, Config.getEnv, ne_eq] <;>
     first
     | exact StepStmtE.step_seq_inner (by assumption)
     | exact StepStmtE.step_block_body (by assumption)

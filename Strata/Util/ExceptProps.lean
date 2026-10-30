@@ -28,7 +28,7 @@ theorem mapError_ok_h' {α β γ : Type} {f : α → β} {e : Except α γ} {v :
     (h : Except.mapError f e = .ok v) : e = .ok v := by
   cases e with
   | error a => simp [Except.mapError] at h
-  | ok val => simp [Except.mapError] at h; exact congrArg Except.ok h
+  | ok val => simp only [Except.mapError, ok.injEq] at h; exact congrArg Except.ok h
 
 /-- Bind inversion: a bind succeeds exactly when it factors through a
     successful intermediate result. The `mp` direction replaces manual case

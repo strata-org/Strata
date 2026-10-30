@@ -51,7 +51,7 @@ public section
 theorem Store.update_other (σ : Store) (name name' : String) (v : Value)
     (h : name' ≠ name) :
     (σ.update name v) name' = σ name' := by
-  simp [Store.update]
+  simp only [update, beq_iff_eq, ite_eq_right_iff]
   intro heq; exact absurd heq h
 
 @[simp] theorem Store.declare_same (σ : Store) (name : String) :
@@ -61,7 +61,7 @@ theorem Store.update_other (σ : Store) (name name' : String) (v : Value)
 theorem Store.declare_other (σ : Store) (name name' : String)
     (h : name' ≠ name) :
     (σ.declare name) name' = σ name' := by
-  simp [Store.declare]
+  simp only [declare, beq_iff_eq, ite_eq_right_iff]
   intro heq; exact absurd heq h
 
 @[simp] theorem Store.kill_same (σ : Store) (name : String) :
@@ -71,7 +71,7 @@ theorem Store.declare_other (σ : Store) (name name' : String)
 theorem Store.kill_other (σ : Store) (name name' : String)
     (h : name' ≠ name) :
     (σ.kill name) name' = σ name' := by
-  simp [Store.kill]
+  simp only [kill, beq_iff_eq, ite_eq_right_iff]
   intro heq; exact absurd heq h
 
 @[simp] theorem Store.update_update (σ : Store) (name : String) (v₁ v₂ : Value) :

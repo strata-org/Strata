@@ -45,13 +45,14 @@ theorem LMonoTy.mkArrow'_injective {ret₁ ret₂ : LMonoTy} {ins₁ ins₂ : Li
   induction ins₁ generalizing ins₂ with
   | nil =>
     cases ins₂ with
-    | nil => simp [mkArrow'] at h; exact ⟨h, rfl⟩
+    | nil => simp only [mkArrow'] at h; exact ⟨h, rfl⟩
     | cons => simp at h_len
   | cons x xs ih =>
     cases ins₂ with
     | nil => simp at h_len
     | cons y ys =>
-      simp [mkArrow', LMonoTy.arrow] at h h_len
+      simp only [mkArrow', arrow, tcons.injEq, List.cons.injEq, and_true, true_and, List.length_cons,
+    Nat.add_right_cancel_iff] at h h_len
       have ⟨h_ret, h_tl⟩ := ih h_len h.2
       exact ⟨h_ret, by rw [h.1, h_tl]⟩
 
@@ -89,9 +90,7 @@ theorem destructArrow_eq_self_or_arrow (mty : LMonoTy) :
 
 theorem LMonoTy.size_gt_zero :
   0 < LMonoTy.size ty := by
-  induction ty <;>  simp_all [LMonoTy.size]
-  unfold LMonoTys.size; split
-  simp_all; omega
+  cases ty <;> simp only [LMonoTy.size] <;> omega
 
 theorem LMonoTy.size_lt_of_mem {ty: LMonoTy} {tys: LMonoTys} (h: ty ∈ tys):
   ty.size <= tys.size := by

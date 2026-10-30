@@ -227,13 +227,12 @@ private theorem assertFact_run {f : ProgramFact} {hc : f.check?.isSome = true}
   split at h
   · rename_i hf
     refine ⟨?_, hf⟩
-    simp [ExceptT.run, ExceptT.pure, ExceptT.mk, StateT.pure, Pure.pure] at h
+    simp only [ExceptT.run, pure, ExceptT.pure, ExceptT.mk, StateT.pure] at h
     injection h with hok _
     injection hok with hbp
     injection hbp with _ hp'
     exact hp'.symm
-  · simp [ExceptT.run, throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure,
-      StateT.pure] at h
+  · simp only [ExceptT.run, throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at h
     injection h with he _
     simp at he
 

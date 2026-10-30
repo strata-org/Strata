@@ -138,7 +138,7 @@ theorem merge_kind (a b : Core.SMT.Result) :
     (a.merge b).toKind = a.toKind.merge b.toKind := by
   -- The unknown×unknown case requires a payload split on both Option fields
   -- since the new model-preserving branches pattern-match on Some/None.
-  cases a <;> cases b <;> simp [Core.SMT.Result.merge, Core.SMT.Result.toKind, ResultKind.merge] <;>
+  cases a <;> cases b <;> simp only [Core.SMT.Result.toKind, Core.SMT.Result.merge, ResultKind.merge] <;>
     (try (rename_i m₁ m₂; cases m₁ <;> cases m₂ <;> rfl))
 
 /-! ## When the evaluator reports an assertion failing
@@ -193,7 +193,7 @@ theorem evaluatorResults_valid_sat_not_dead {obligation : Imperative.ProofObliga
     pathConditionShape obligation ≠ .hasFalseAssumption := by
   obtain ⟨-, -, h | h⟩ := evaluatorResults_valid_sat h
   · simp [h]
-  · simp [usesSatisfiablePathsPremise] at h
+  · simp only [usesSatisfiablePathsPremise, Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq] at h
     exact h.2
 
 end Core

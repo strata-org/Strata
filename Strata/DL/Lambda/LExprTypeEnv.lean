@@ -595,25 +595,25 @@ instance : HasGen Unit where
   genVar := TEnv.genExprVar
   genVar_tyGen_mono := by
     intro Env xv Env' h
-    simp [TEnv.genExprVar] at h
+    simp only [TEnv.genExprVar] at h
     split at h
     · simp at h
-    · simp at h
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨_, h_env⟩ := h
       rw [← h_env]
       simp [TState.genExprSym, TState.incExprGen]
   genVar_context := by
     intro Env xv Env' h
-    simp [TEnv.genExprVar] at h
+    simp only [TEnv.genExprVar] at h
     split at h
     · simp at h
-    · simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
   genVar_fresh := by
     intro Env xv Env' h
-    simp [TEnv.genExprVar] at h
+    simp only [TEnv.genExprVar] at h
     split at h
     · simp at h
-    · rename_i h_not_in; simp at h; obtain ⟨h_xv, _⟩ := h; rw [← h_xv]; exact h_not_in
+    · rename_i h_not_in; simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨h_xv, _⟩ := h; rw [← h_xv]; exact h_not_in
 
 /-- `liftGenEnv` preserves the context. -/
 theorem liftGenEnv_context [HasGen IDMeta] [ToFormat IDMeta]
@@ -625,7 +625,7 @@ theorem liftGenEnv_context [HasGen IDMeta] [ToFormat IDMeta]
   match res with
   | .error _ => simp at h
   | .ok (xv_inner, Env_g) =>
-    simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.context]
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp only [TEnv.context]
     exact HasGen.genVar_context Env.genEnv xv_inner Env_g h_gen
 
 /-- `liftGenEnv HasGen.genVar` produces a fresh variable. -/
@@ -638,7 +638,7 @@ theorem liftGenEnv_genVar_fresh [HasGen IDMeta] [ToFormat IDMeta]
   match res with
   | .error _ => simp at h
   | .ok (xv_inner, Env_g) =>
-    simp at h; obtain ⟨h_xv, _⟩ := h; rw [← h_xv]
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨h_xv, _⟩ := h; rw [← h_xv]
     exact HasGen.genVar_fresh Env.genEnv xv_inner Env_g h_gen
 
 /--
@@ -694,10 +694,10 @@ theorem LMonoTys.instantiate_length [ToFormat IDMeta]
     (mtys' : LMonoTys) (Env' : TGenEnv IDMeta)
     (h : LMonoTys.instantiate ids mty Env = .ok (mtys', Env')) :
     mtys'.length = mty.length := by
-  simp [instantiate, Bind.bind, Except.bind] at h
+  simp only [instantiate, bind, Except.bind] at h
   split at h
   · simp at h
-  · simp at h
+  · simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h1, _⟩ := h
     rw [← h1, LMonoTys.subst_eq_map]
     exact List.length_map _
@@ -712,7 +712,7 @@ theorem LMonoTys.instantiateEnv_length [ToFormat IDMeta]
   match result, h_inst with
   | .error _, _ => simp at h
   | .ok (a, gE), h_inst =>
-    simp at h; obtain ⟨h1, _⟩ := h
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨h1, _⟩ := h
     rw [← h1]
     exact LMonoTys.instantiate_length ids mty Env.genEnv a gE h_inst
 
@@ -745,13 +745,13 @@ theorem LTy_subst_instantiate [ToFormat IDMeta]
   | forAll xs body =>
     cases xs with
     | nil =>
-      simp [LTy.instantiate] at h
+      simp only [LTy.instantiate, Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨h_eq, h_env⟩ := h; subst h_eq; subst h_env
       exact ⟨LMonoTy.subst S body, by simp [LTy.subst, LTy.subst.go, LTy.instantiate]⟩
     | cons x rest =>
       simp only [LTy.instantiate, Bind.bind, Except.bind] at h
       split at h; · simp at h
-      rename_i v1 h_gen; obtain ⟨freshtvs, genEnv1⟩ := v1; simp at h
+      rename_i v1 h_gen; obtain ⟨freshtvs, genEnv1⟩ := v1; simp only [Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨h_mty, h_env⟩ := h; subst h_mty; subst h_env
       refine ⟨LMonoTy.subst (Strata.Util.HMaps.ofScopes [List.zip (x :: rest) (List.map LMonoTy.ftvar freshtvs)])
         (LMonoTy.subst (LTy.subst.go (x :: rest) S) body), ?_⟩
@@ -1009,7 +1009,7 @@ theorem LMonoTy.instantiateWithCheck_decompose
   · -- instantiateEnv succeeded
     rename_i instTypes Env_ie h_ie
     have h_len : instTypes.length = 1 := by
-      have := LMonoTys.instantiateEnv_length _ _ _ _ _ h_ie; simp at this; exact this
+      have := LMonoTys.instantiateEnv_length _ _ _ _ _ h_ie; simp only [List.length_cons, List.length_nil, Nat.zero_add] at this ; exact this
     obtain ⟨mty_ie, rfl⟩ : ∃ m, instTypes = [m] := by
       match instTypes, h_len with | [x], _ => exact ⟨x, rfl⟩
     -- Second split: on the resolveAliases result
@@ -1021,7 +1021,7 @@ theorem LMonoTy.instantiateWithCheck_decompose
       · simp at h
       · -- Fourth split: isInstanceOfKnownType
         split at h
-        · simp [Pure.pure, Except.pure] at h
+        · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
           obtain ⟨h1, _⟩ := h
           subst h1
           exact ⟨mty_ie, _, _, h_ie, h_ra⟩
@@ -1154,10 +1154,10 @@ theorem TGenEnv.genTyVar_context {IDMeta : Type} [DecidableEq IDMeta] [Hashable 
     (Env : TGenEnv IDMeta) (tv : TyIdentifier) (Env' : TGenEnv IDMeta)
     (h : TGenEnv.genTyVar Env = .ok (tv, Env')) :
     Env'.context = Env.context := by
-  simp [TGenEnv.genTyVar] at h
+  simp only [genTyVar] at h
   split at h
   · simp at h
-  · simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+  · simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
 
 /-- `genTyVars` preserves the context. -/
 theorem TGenEnv.genTyVars_context {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMeta] [ToFormat IDMeta]
@@ -1167,18 +1167,18 @@ theorem TGenEnv.genTyVars_context {IDMeta : Type} [DecidableEq IDMeta] [Hashable
     Env'.context = Env.context := by
   induction n generalizing Env tvs Env' with
   | zero =>
-    simp [TGenEnv.genTyVars] at h
+    simp only [genTyVars, Except.ok.injEq, Prod.mk.injEq, List.nil_eq] at h
     obtain ⟨_, h2⟩ := h; rw [← h2]
   | succ n ih =>
-    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    simp only [genTyVars, bind, Except.bind] at h
     split at h
     · simp at h
     · rename_i v1 h_gen
-      obtain ⟨tv, Env1⟩ := v1; simp at h h_gen
+      obtain ⟨tv, Env1⟩ := v1; simp only at h h_gen
       split at h
       · simp at h
       · rename_i v2 h_rest
-        obtain ⟨tvs', Env2⟩ := v2; simp at h
+        obtain ⟨tvs', Env2⟩ := v2; simp only [Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨_, h2⟩ := h; rw [← h2]
         rw [ih Env1 tvs' Env2 h_rest, TGenEnv.genTyVar_context Env tv Env1 h_gen]
 
@@ -1222,17 +1222,17 @@ theorem TEnv.genTyVar_subst {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMet
   simp only [TEnv.genTyVar] at h
   split at h
   · simp at h
-  · simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+  · simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
 
 /-- `genTyVar` produces a variable not in `knownTypeVars`. -/
 theorem TGenEnv.genTyVar_not_mem_knownTypeVars [ToFormat IDMeta]
     (Env : TGenEnv IDMeta) (tv : TyIdentifier) (Env' : TGenEnv IDMeta)
     (h : TGenEnv.genTyVar Env = .ok (tv, Env')) :
     tv ∉ TContext.knownTypeVars Env.context := by
-  simp [TGenEnv.genTyVar] at h
+  simp only [genTyVar] at h
   split at h
   · simp at h
-  · rename_i h_not_in; simp at h; obtain ⟨h_tv, _⟩ := h; subst h_tv; exact h_not_in
+  · rename_i h_not_in; simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨h_tv, _⟩ := h; subst h_tv; exact h_not_in
 
 /-- `genTyVars` produces variables each not in `knownTypeVars` of the initial environment. -/
 theorem TGenEnv.genTyVars_not_mem_knownTypeVars [ToFormat IDMeta]
@@ -1242,19 +1242,19 @@ theorem TGenEnv.genTyVars_not_mem_knownTypeVars [ToFormat IDMeta]
     ∀ tv, tv ∈ tvs → tv ∉ TContext.knownTypeVars Env.context := by
   induction n generalizing Env tvs Env' with
   | zero =>
-    simp [TGenEnv.genTyVars] at h
+    simp only [genTyVars, Except.ok.injEq, Prod.mk.injEq, List.nil_eq] at h
     obtain ⟨h1, _⟩ := h; subst h1
     intro tv hm; exact absurd hm List.not_mem_nil
   | succ n ih =>
-    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    simp only [genTyVars, bind, Except.bind] at h
     split at h
     · simp at h
     · rename_i v1 h_gen1
-      obtain ⟨hd, Env1⟩ := v1; simp at h h_gen1
+      obtain ⟨hd, Env1⟩ := v1; simp only at h h_gen1
       split at h
       · simp at h
       · rename_i v2 h_rest
-        obtain ⟨tl, Env2⟩ := v2; simp at h
+        obtain ⟨tl, Env2⟩ := v2; simp only [Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨h_tvs, _⟩ := h; subst h_tvs
         have h_ctx := TGenEnv.genTyVar_context Env hd Env1 h_gen1
         have h_hd_not := TGenEnv.genTyVar_not_mem_knownTypeVars Env hd Env1 h_gen1
@@ -1273,18 +1273,18 @@ theorem TGenEnv.genTyVars_length {IDMeta : Type} [ToFormat IDMeta] [DecidableEq 
     tvs.length = n := by
   induction n generalizing Env tvs Env' with
   | zero =>
-    simp [TGenEnv.genTyVars] at h
+    simp only [genTyVars, Except.ok.injEq, Prod.mk.injEq, List.nil_eq] at h
     obtain ⟨h1, _⟩ := h; subst h1; simp
   | succ n ih =>
-    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    simp only [genTyVars, bind, Except.bind] at h
     split at h
     · simp at h
     · rename_i v1 h_gen
-      obtain ⟨tv, Env1⟩ := v1; simp at h h_gen
+      obtain ⟨tv, Env1⟩ := v1; simp only at h h_gen
       split at h
       · simp at h
       · rename_i v2 h_rest
-        obtain ⟨tvs', Env2⟩ := v2; simp at h
+        obtain ⟨tvs', Env2⟩ := v2; simp only [Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨h1, _⟩ := h; subst h1
         simp [ih Env1 tvs' Env2 h_rest]
 
@@ -1319,12 +1319,12 @@ theorem genTyVar_name_eq (Env : TEnv T.IDMeta) (tv : TyIdentifier) (Env' : TEnv 
   · simp at h
   · rename_i v h_gen_env
     obtain ⟨a, genEnv'⟩ := v
-    simp at h; rw [← h.1]
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h ; rw [← h.1]
     -- Step 2: Decompose TGenEnv.genTyVar: it returns genTySym's name
     simp only [TGenEnv.genTyVar] at h_gen_env
     split at h_gen_env
     · simp at h_gen_env
-    · simp at h_gen_env; rw [← h_gen_env.1]
+    · simp only [Except.ok.injEq, Prod.mk.injEq, TGenEnv.mk.injEq] at h_gen_env; rw [← h_gen_env.1]
       -- Step 3: genTySym.1 = tyPrefix ++ toString tyGen
       simp [TState.genTySym, TState.incTyGen]
 
@@ -1339,12 +1339,12 @@ theorem genTyVar_tyGen (Env : TEnv T.IDMeta) (tv : TyIdentifier) (Env' : TEnv T.
   · simp at h
   · rename_i v h_gen_env
     obtain ⟨a, genEnv'⟩ := v
-    simp at h; rw [← h.2]
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h ; rw [← h.2]
     -- Step 2: Decompose TGenEnv.genTyVar
     simp only [TGenEnv.genTyVar] at h_gen_env
     split at h_gen_env
     · simp at h_gen_env
-    · simp at h_gen_env; rw [← h_gen_env.2.2]
+    · simp only [Except.ok.injEq, Prod.mk.injEq, TGenEnv.mk.injEq] at h_gen_env; rw [← h_gen_env.2.2]
       -- Step 3: genTySym increments tyGen by 1
       simp [TState.genTySym, TState.incTyGen]
 
@@ -1356,25 +1356,25 @@ theorem genTyVars_tyGen_mono {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMe
     Env'.genState.tyGen ≥ Env.genState.tyGen := by
   induction n generalizing Env tvs Env' with
   | zero =>
-    simp [TGenEnv.genTyVars] at h
+    simp only [TGenEnv.genTyVars, Except.ok.injEq, Prod.mk.injEq, List.nil_eq] at h
     obtain ⟨_, h2⟩ := h; subst h2; omega
   | succ n ih =>
-    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    simp only [TGenEnv.genTyVars, bind, Except.bind] at h
     split at h
     · simp at h
     · rename_i v1 h_gen
-      obtain ⟨tv, Env1⟩ := v1; simp at h h_gen
+      obtain ⟨tv, Env1⟩ := v1; simp only at h h_gen
       split at h
       · simp at h
       · rename_i v2 h_rest
-        obtain ⟨tvs', Env2⟩ := v2; simp at h
+        obtain ⟨tvs', Env2⟩ := v2; simp only [Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨_, h2⟩ := h; rw [← h2]
         -- Env.genState.tyGen ≤ Env1.genState.tyGen ≤ Env2.genState.tyGen
         have h1 : Env1.genState.tyGen ≥ Env.genState.tyGen := by
           simp only [TGenEnv.genTyVar] at h_gen
           split at h_gen
           · simp at h_gen
-          · simp at h_gen; rw [← h_gen.2]
+          · simp only [Except.ok.injEq, Prod.mk.injEq] at h_gen; rw [← h_gen.2]
             simp [TState.genTySym, TState.incTyGen]
         exact Nat.le_trans h1 (ih Env1 tvs' Env2 h_rest)
 
@@ -1384,11 +1384,11 @@ theorem LMonoTys.instantiate_tyGen_mono {IDMeta : Type} [DecidableEq IDMeta] [Ha
     (result : LMonoTys) (Env' : TGenEnv IDMeta)
     (h : LMonoTys.instantiate ids mtys Env = .ok (result, Env')) :
     Env'.genState.tyGen ≥ Env.genState.tyGen := by
-  simp [LMonoTys.instantiate, Bind.bind, Except.bind] at h
+  simp only [instantiate, bind, Except.bind] at h
   split at h
   · simp at h
   · rename_i v1 h_gen
-    obtain ⟨freshtvs, Env1⟩ := v1; simp at h
+    obtain ⟨freshtvs, Env1⟩ := v1; simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨_, h2⟩ := h; rw [← h2]
     exact genTyVars_tyGen_mono ids.length Env freshtvs Env1 h_gen
 
@@ -1403,7 +1403,7 @@ theorem LMonoTys.instantiateEnv_tyGen_mono {IDMeta : Type} [DecidableEq IDMeta] 
   match r, h_inst with
   | .error _, _ => simp at h
   | .ok (a, gE), h_inst =>
-    simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp only [ge_iff_le]
     exact LMonoTys.instantiate_tyGen_mono ids mtys Env.genEnv a gE h_inst
 
 /-- `LTy.instantiate` never decreases `tyGen`. -/
@@ -1416,14 +1416,14 @@ theorem LTy.instantiate_tyGen_mono {IDMeta : Type} [DecidableEq IDMeta] [Hashabl
   | forAll vars body =>
     cases vars with
     | nil =>
-      simp [LTy.instantiate] at h
+      simp only [instantiate, Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨_, h2⟩ := h; subst h2; omega
     | cons v vs =>
-      simp [LTy.instantiate, Bind.bind, Except.bind] at h
+      simp only [instantiate, bind, Except.bind, List.length_cons] at h
       split at h
       · simp at h
       · rename_i v1 h_gen
-        obtain ⟨freshtvs, Env1⟩ := v1; simp at h
+        obtain ⟨freshtvs, Env1⟩ := v1; simp only [Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨_, h2⟩ := h; rw [← h2]
         exact genTyVars_tyGen_mono (v :: vs).length Env freshtvs Env1 h_gen
 
@@ -1441,7 +1441,7 @@ theorem tconsAlias_tyGen_mono
   split at h
   case h_1 =>
     -- No matching alias: Env' = Env
-    simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h ; obtain ⟨_, h2⟩ := h; subst h2; omega
   case h_2 alias_val =>
     -- Matching alias found: calls instantiateEnv then unify + updateSubst
     split at h
@@ -1450,8 +1450,8 @@ theorem tconsAlias_tyGen_mono
       -- unify + updateSubst only change stateSubstInfo, not genEnv
       split at h
       · simp at h
-      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2
-        simp [TEnv.updateSubst]
+      · simp only [pure, Except.pure, List.getD_eq_getElem?_getD, Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h2⟩ := h; subst h2
+        simp only [TEnv.updateSubst, ge_iff_le]
         exact LMonoTys.instantiateEnv_tyGen_mono _ _ Env instTypes Env1 h_inst
 
 omit [ToString T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
@@ -1464,9 +1464,9 @@ theorem aliasDef_tyGen_mono
   simp only [LMonoTy.aliasDef?] at h
   split at h
   · -- tconsAliasSimple doesn't change Env
-    simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
-  · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
-  · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h ; obtain ⟨_, h2⟩ := h; subst h2; omega
+  · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h ; obtain ⟨_, h2⟩ := h; subst h2; omega
+  · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
 
 omit [ToString T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 mutual
@@ -1478,20 +1478,20 @@ theorem LMonoTy_resolveAliases_tyGen_mono
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
   match mty with
   | .ftvar _ =>
-    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    simp only [LMonoTy.resolveAliases, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨_, h2⟩ := h; subst h2; omega
   | .bitvec _ =>
-    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    simp only [LMonoTy.resolveAliases, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨_, h2⟩ := h; subst h2; omega
   | .tcons name args =>
     simp only [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
     split at h
     · simp at h
     · rename_i v1 h_args
-      obtain ⟨args', Env1⟩ := v1; simp at h h_args
+      obtain ⟨args', Env1⟩ := v1; simp only at h h_args
       -- tconsAliasSimple doesn't change Env, so Env' = Env1
       simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
-      split at h <;> simp at h <;> obtain ⟨_, h_env⟩ := h <;> subst h_env
+      split at h <;> simp only [Except.ok.injEq, Prod.mk.injEq] at h <;> obtain ⟨_, h_env⟩ := h <;> subst h_env
       all_goals exact LMonoTys_resolveAliases_tyGen_mono args Env args' Env1 h_args
 
 theorem LMonoTys_resolveAliases_tyGen_mono
@@ -1501,19 +1501,19 @@ theorem LMonoTys_resolveAliases_tyGen_mono
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
   match mtys with
   | [] =>
-    simp [LMonoTys.resolveAliases, Pure.pure, Except.pure] at h
+    simp only [LMonoTys.resolveAliases, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq, List.nil_eq] at h
     obtain ⟨_, h2⟩ := h; subst h2; omega
   | mty :: mrest =>
     simp only [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
     split at h
     · simp at h
     · rename_i v1 h_one
-      obtain ⟨mty'', Env1⟩ := v1; simp at h h_one
+      obtain ⟨mty'', Env1⟩ := v1; simp only at h h_one
       split at h
       · simp at h
       · rename_i v2 h_rest
-        obtain ⟨mrest', Env2⟩ := v2; simp at h
-        simp [Pure.pure, Except.pure] at h
+        obtain ⟨mrest', Env2⟩ := v2; simp only at h h_rest
+        simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨_, h_env⟩ := h; subst h_env
         exact Nat.le_trans
           (LMonoTy_resolveAliases_tyGen_mono mty Env mty'' Env1 h_one)
@@ -1532,14 +1532,14 @@ theorem LTy_resolveAliases_tyGen_mono
   split at h
   · simp at h
   · rename_i v1 h_inst
-    obtain ⟨mty_mid, genEnv1⟩ := v1; simp at h h_inst
+    obtain ⟨mty_mid, genEnv1⟩ := v1; simp only at h h_inst
     -- h : mty_mid.resolveAliases {genEnv := genEnv1, stateSubstInfo := Env.stateSubstInfo} = .ok (mty, Env')
     have h1 : genEnv1.genState.tyGen ≥ Env.genEnv.genState.tyGen :=
       LTy.instantiate_tyGen_mono ty Env.genEnv mty_mid genEnv1 h_inst
     have h2 : Env'.genEnv.genState.tyGen ≥ genEnv1.genState.tyGen := by
       have := LMonoTy_resolveAliases_tyGen_mono mty_mid
         { Env with genEnv := genEnv1 } mty Env' h
-      simp at this; exact this
+      simp only [ge_iff_le] at this; exact this
     exact Nat.le_trans h1 h2
 
 omit [ToString T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
@@ -1552,11 +1552,11 @@ theorem LTy_instantiateWithCheck_tyGen_mono
   split at h
   · simp at h
   · rename_i v1 h_resolve
-    obtain ⟨mty_res, Env1⟩ := v1; simp at h h_resolve
+    obtain ⟨mty_res, Env1⟩ := v1; simp only [Bool.not_eq_eq_eq_not, Bool.not_true] at h h_resolve
     split at h  -- checkNoFutureGenVars
     · simp at h
     · split at h  -- isInstanceOfKnownType
-      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h_env⟩ := h; subst h_env
+      · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h_env⟩ := h; subst h_env
         exact LTy_resolveAliases_tyGen_mono ty Env mty_res Env1 h_resolve
       · simp at h
 
@@ -1574,11 +1574,11 @@ theorem LMonoTy_instantiateWithCheck_tyGen_mono
     split at h
     · simp at h
     · rename_i v2 h_resolve
-      obtain ⟨mty_res, Env2⟩ := v2; simp at h h_resolve
+      obtain ⟨mty_res, Env2⟩ := v2; simp only [Bool.not_eq_eq_eq_not, Bool.not_true] at h h_resolve
       split at h  -- checkNoFutureGenVars
       · simp at h
       · split at h  -- isInstanceOfKnownType
-        · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h_env⟩ := h; subst h_env
+        · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h_env⟩ := h; subst h_env
           exact Nat.le_trans
             (LMonoTys.instantiateEnv_tyGen_mono _ _ Env instTypes Env1 h_inst)
             (LMonoTy_resolveAliases_tyGen_mono _ Env1 mty_res Env2 h_resolve)
