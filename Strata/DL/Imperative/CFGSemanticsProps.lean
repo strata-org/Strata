@@ -38,7 +38,9 @@ Key theorems:
   * `run_block_goto` — run a deterministic block from `.atBlock` to the selected
     successor of a `condGoto` (the `Bool` index selects the branch).
   * `run_block_finish` — run a deterministic block to its `finish` terminal.
-    (Reusable CFG-simulation building blocks consumed by the S2U proof.) -/
+    (Reusable CFG-simulation building blocks consumed by the S2U proof.)
+  * `StepCFGE.semanticWF_evalCmdE` / `StepCFGStarE.semanticWF_evalCmdE` — CFG
+    runs from well-formed stores emit semantically well-formed event snapshots. -/
 
 /-- `StepCFG` is deterministic: from a single source config, at most one target
     is reachable in one step.  The shared source config carries the factory in its
@@ -743,5 +745,49 @@ theorem StepCFGStarE.preserves_factory
   | step _ _ _ _ _ hstep _ ih => exact hstep.preserves_factory.trans ih
 
 end StepCFGE
+
+section CFGEventSnapshots
+
+variable {l : Type} [BEq l] {P : PureExpr}
+  [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
+
+/-- A base-command CFG step preserves store well-formedness and emits only
+well-formed event snapshots. -/
+theorem StepCFGE.semanticWF_evalCmdE
+    {c c' : CFGConfig l (Cmd P) P} {trace : Trace P}
+    (hstep : StepCFGE P (EvalCmdE P) c trace c')
+    (hval : WellFormedSemanticEvalVal c.getEnv.factory)
+    (hcongr : WellFormedSemanticEvalExprCongr c.getEnv.factory)
+    (hstore : WellFormedStore c.getEnv.store c.getEnv.factory) :
+    WellFormedStore c'.getEnv.store c'.getEnv.factory ∧ Trace.semanticWF trace := by
+  cases hstep with
+  | step_cmd heval =>
+      refine ⟨evalCmdE_storeWellDefined hval heval hstore, ?_⟩
+      rw [heval.emitted_eq]
+      exact Cmd.emittedEvents_semanticWF _ _ _ hstore hcongr
+  | step_admin hadmin =>
+      refine ⟨?_, by simp [Trace.semanticWF]⟩
+      cases hadmin with
+      | step_cmd heval => simp [noCommandEvalE] at heval
+      | _ => exact hstore
+
+/-- A base-command CFG run from a well-formed store emits only well-formed
+event snapshots. -/
+theorem StepCFGStarE.semanticWF_evalCmdE
+    {c c' : CFGConfig l (Cmd P) P} {trace : Trace P}
+    (hrun : StepCFGStarE P (EvalCmdE P) c trace c')
+    (hval : WellFormedSemanticEvalVal c.getEnv.factory)
+    (hcongr : WellFormedSemanticEvalExprCongr c.getEnv.factory)
+    (hstore : WellFormedStore c.getEnv.store c.getEnv.factory) :
+    Trace.semanticWF trace := by
+  induction hrun with
+  | refl => simp [Trace.semanticWF]
+  | step _ _ _ _ _ hstep _ ih =>
+      have hfactory := hstep.preserves_factory
+      obtain ⟨hstore', hhead⟩ := hstep.semanticWF_evalCmdE hval hcongr hstore
+      exact Trace.semanticWF_append hhead
+        (ih (hfactory ▸ hval) (hfactory ▸ hcongr) hstore')
+
+end CFGEventSnapshots
 
 end Imperative

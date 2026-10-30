@@ -34,7 +34,8 @@ import Strata.Languages.Core.SMTEmitter
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Core.WFProps
-
+import Strata.DL.Imperative.StmtExtendCallBridge
+import Strata.Languages.Core.StmtExtendCallBridgeProps
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
 import Strata.Transform.CoreSpecification
@@ -51,7 +52,9 @@ import Strata.Transform.FunctionInlining
 import Strata.Transform.FunctionInliningProps
 import Strata.Transform.UnrollBoundedQuantifiersProps
 import Strata.Transform.LoopInitHoist
+import Strata.Transform.LoopInitHoistProps
 import Strata.Transform.LoopInitHoistCorrect
+import Strata.Transform.LoopInitHoistCoreCorrect
 import Strata.Transform.NondetElim
 import Strata.Transform.NondetElimCorrect
 import Strata.Transform.NondetElimCoreCorrect
@@ -62,9 +65,13 @@ import Strata.Transform.Simplify.Expr
 import Strata.Transform.RecursiveFunctionAxioms
 import Strata.Transform.SpecHoareConnection
 import Strata.Transform.StructuredToUnstructured
+import Strata.Transform.StructuredToUnstructuredProps
 import Strata.Transform.StructuredToUnstructuredCorrect
+import Strata.Transform.StructuredToUnstructuredCoreCorrect
 import Strata.Transform.StructuredToUnstructuredPipeline
 import Strata.Transform.StructuredToUnstructuredPipelineCorrect
+import Strata.Transform.StructuredToUnstructuredPipelineProps
+import Strata.Transform.StructuredToUnstructuredPipelineCoreCorrect
 
 /- Program Logics -/
 import Strata.DL.Imperative.Logic.HoareTemplate

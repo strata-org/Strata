@@ -123,8 +123,8 @@ theorem ProcEnvWF.of_sameSignature {params : InitEnvWFParams} {proc proc' : Proc
     {ρ : Imperative.Env Expression} (h : ProcEnvWF params proc ρ)
     (h_header : proc'.header = proc.header) (h_spec : proc'.spec = proc.spec)
     (h_structured : ∀ ss, proc'.body = .structured ss →
-      BlockInitEnvWF params [Stmt.block "" ss #[]] ρ)
-    (h_cfg : ∀ cfg, proc'.body = .cfg cfg → CFGInitEnvWF params cfg ρ) :
+      Core.Logic.BlockInitEnvWF params [Stmt.block "" ss #[]] ρ)
+    (h_cfg : ∀ cfg, proc'.body = .cfg cfg → Core.Logic.CFGInitEnvWF params cfg ρ) :
     ProcEnvWF params proc' ρ where
   toWellFormedSemanticEval := h.toWellFormedSemanticEval
   storeValues := h.storeValues

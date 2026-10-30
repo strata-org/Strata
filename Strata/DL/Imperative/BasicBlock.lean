@@ -105,6 +105,15 @@ commands. -/
 @[expose] def DetBlock (Label Cmd : Type) (P : PureExpr) :=
   BasicBlock (DetTransferCmd Label P) Cmd
 
+/-- A list of labeled deterministic basic blocks. -/
+abbrev DetBlocks (Label Cmd : Type) (P : PureExpr) :=
+  List (Label × DetBlock Label Cmd P)
+
+/-- A one-command deterministic block with an unconditional successor. -/
+def detCmdBlock [HasBool P] (c : Cmd) (k : Label) :
+    DetBlock Label Cmd P :=
+  { cmds := [c], transfer := .goto k }
+
 -- `DetBlock` is a `def`, so instance search won't unfold it to the underlying
 -- `BasicBlock`; provide the `DecidableEq` instance explicitly.
 instance [DecidableEq Cmd] [DecidableEq P.Expr] [DecidableEq P.Ident] [DecidableEq Label] :

@@ -193,7 +193,7 @@ private theorem guard_assume_event_true
     Event.isTrueAssumeOrAssert
       (Event.assume (EventArg.mk ρ.factory ρ.store label expr md)) := h
 
-omit [HasFvar P] [HasBoolOps P] [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P]
+omit [HasFvar P] [HasBoolOps P] [HasOps P] [HasInt P] [HasIntOps P]
   [HasSubstFvar P] in
 /-- The trailing skip assertion inserted by the block translation is
 semantically true, hence stutter-eligible. -/
@@ -291,7 +291,7 @@ private theorem detToKleene_stmt_step
     | step_exit => simp [StmtToKleeneStmt.eq_6] at ht
     | step_typeDecl => simp [StmtToKleeneStmt.eq_5] at ht
 
-omit [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P] in
+omit [HasOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P] in
 /-- The structural configuration invariant is a forward simulation: one source
 step is matched by a finite Kleene run that preserves the invariant and matches
 the emitted trace up to stuttering. -/
@@ -408,7 +408,7 @@ private theorem detToKleene_config_step [LawfulHasVal P]
         | step_block_exit_match _ => cases hinner
         | step_block_exit_mismatch _ => cases hinner
 
-omit [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P] in
+omit [HasOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P] in
 /-- Every finite source trace prefix has a related target trace prefix. -/
 private theorem detToKleene_config_trace [LawfulHasVal P]
     {source source' : Config P (Cmd P)}

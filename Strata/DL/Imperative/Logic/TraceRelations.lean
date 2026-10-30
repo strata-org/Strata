@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.CmdTrace
+public import Strata.DL.Imperative.CmdTraceWF
 public import Strata.Util.Relations
 public import Strata.Util.ListUtils
 
@@ -29,6 +30,11 @@ Index of relations defined here:
 * `TraceExtendsEnv` — the stutter-free, genuinely transitive refinement of
   `TraceStuttersEnv`: equal-length traces related event-by-event by
   `Event.ExtendsEnv`.
+* `EventArg.WithWF R` — an event-argument relation `R` strengthened with
+  free-variable store agreement and evaluator evidence on both snapshots, with
+  its event and trace liftings `Event.WithWF` and `Trace.WithWF`. The
+  structured transforms relate their traces by
+  `Trace.WithWF (EventArg.ExtendsEnv Extra)`.
 -/
 
 namespace Imperative
@@ -78,6 +84,28 @@ that target-only bindings do not change the interpreted truth of a condition. -/
 @[expose] def TraceExtendsEnv {P : PureExpr} (allowedVarName : P.Ident → Prop)
     (source target : Trace P) : Prop :=
   List.Rel₂ (Event.ExtendsEnv allowedVarName) source target
+
+/-- An event-argument relation `R` strengthened with the semantic evidence
+needed to transport the captured expression's value: the stores agree on the
+expression's free variables, both stores hold only values, and the source
+factory's evaluator respects free-variable store agreement. -/
+structure EventArg.WithWF {P : PureExpr} [HasVal P] [HasFvars P]
+    (R : EventArg P → EventArg P → Prop) (source target : EventArg P) : Prop where
+  rel : R source target
+  store_fv : StoreAgreesOnFvars source.store target.store source.expr
+  sourceStoreWF : WellFormedStore source.store source.factory
+  targetStoreWF : WellFormedStore target.store target.factory
+  exprCongr : WellFormedSemanticEvalExprCongr source.factory
+
+/-- Same-kind event matching induced by `EventArg.WithWF R`. -/
+abbrev Event.WithWF {P : PureExpr} [HasVal P] [HasFvars P]
+    (R : EventArg P → EventArg P → Prop) : Event P → Event P → Prop :=
+  Event.Matches (EventArg.WithWF R)
+
+/-- Pointwise `Event.WithWF R` matching for traces. -/
+abbrev Trace.WithWF {P : PureExpr} [HasVal P] [HasFvars P]
+    (R : EventArg P → EventArg P → Prop) : Trace P → Trace P → Prop :=
+  List.Rel₂ (Event.WithWF (P := P) R)
 
 end -- public section
 end Imperative

@@ -27,7 +27,8 @@ Equational theory for the boolean shape walkers defined in
   `loopHasNoInvariants`, `noMeasureLoops`, `initVars`, `exitsCoveredByBlocks`,
   and `getBlockLabels` (the `_cons_iff` / `_branch_*` / `_loop_*` / `_block_*`
   families), plus the two non-structural results `exitsCoveredByBlocks_weaken`
-  (label-list monotonicity) and `all_cmd_exitsCoveredByBlocks`.
+  (label-list monotonicity) and `all_cmd_exitsCoveredByBlocks`, and the
+  soundness of the executable check, `Block.exitsCoveredByBlocks_of_check`.
 - Distribution of the block-level walkers over `++`
   (`initVars`/`initTypes`/`noNondetGuards`/`loopHasNoInvariants`/`modifiedVars`/
   `noInitsAnywhere`/`loopBodyNoInits`/`getBlockLabels`_append).
@@ -373,6 +374,46 @@ theorem all_cmd_exitsCoveredByBlocks
     · obtain ⟨c, hc⟩ := h hd (.head _)
       subst hc; exact True.intro
     · exact ih (fun s hs => h s (.tail _ hs))
+
+/-- `Block.checkExitsCoveredByBlocks` is sound for `Block.exitsCoveredByBlocks`. -/
+theorem Block.exitsCoveredByBlocks_of_check
+    {P : PureExpr} {CmdT : Type}
+    {labels : List String} {ss : List (Stmt P CmdT)}
+    (h : Block.checkExitsCoveredByBlocks labels ss = true) :
+    Block.exitsCoveredByBlocks labels ss := by
+  suffices hstmt : ∀ (s : Stmt P CmdT) labels,
+      Stmt.checkExitsCoveredByBlocks labels s = true →
+        Stmt.exitsCoveredByBlocks labels s by
+    induction ss with
+    | nil => trivial
+    | cons s ss ih =>
+      simp only [Block.checkExitsCoveredByBlocks, Bool.and_eq_true] at h
+      exact ⟨hstmt s labels h.1, ih h.2⟩
+  intro s
+  induction s using Stmt.rec (motive_2 := fun ss => ∀ labels,
+      Block.checkExitsCoveredByBlocks labels ss = true →
+        Block.exitsCoveredByBlocks labels ss) with
+  | cmd _ => intros; trivial
+  | block l ss _ ih =>
+    intro labels h
+    exact ih (l :: labels) h
+  | ite _ tss ess _ ih_t ih_e =>
+    intro labels h
+    simp only [Stmt.checkExitsCoveredByBlocks, Bool.and_eq_true] at h
+    exact ⟨ih_t labels h.1, ih_e labels h.2⟩
+  | loop _ _ _ body _ ih =>
+    intro labels h
+    exact ih labels h
+  | exit l _ =>
+    intro labels h
+    simp only [Stmt.checkExitsCoveredByBlocks, decide_eq_true_eq] at h
+    exact h
+  | typeDecl _ _ => intros; trivial
+  | nil => intros; trivial
+  | cons s ss ih_s ih_ss =>
+    rename_i labels h
+    simp only [Block.checkExitsCoveredByBlocks, Bool.and_eq_true] at h
+    exact ⟨ih_s labels h.1, ih_ss labels h.2⟩
 
 theorem Block.getBlockLabels_block_cons {P : PureExpr} {C : Type}
     (l : String) (bss : List (Stmt P C)) (md : MetaData P)

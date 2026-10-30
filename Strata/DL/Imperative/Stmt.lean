@@ -666,6 +666,26 @@ mutual
   | labels, s :: ss => Stmt.exitsCoveredByBlocks labels s ∧ Block.exitsCoveredByBlocks labels ss
 
 end
+
+mutual
+/-- Executable check for `Stmt.exitsCoveredByBlocks`; `Block.exitsCoveredByBlocks_of_check`
+in `StmtProps` proves it sound. -/
+@[expose] def Stmt.checkExitsCoveredByBlocks : List String → Stmt P CmdT → Bool
+  | _, .cmd _ => true
+  | labels, .block l ss _ => Block.checkExitsCoveredByBlocks (l :: labels) ss
+  | labels, .ite _ tss ess _ =>
+    Block.checkExitsCoveredByBlocks labels tss && Block.checkExitsCoveredByBlocks labels ess
+  | labels, .loop _ _ _ body _ => Block.checkExitsCoveredByBlocks labels body
+  | labels, .exit l _ => decide (l ∈ labels)
+  | _, .typeDecl _ _ => true
+
+/-- Executable check for `Block.exitsCoveredByBlocks`. -/
+@[expose] def Block.checkExitsCoveredByBlocks : List String → List (Stmt P CmdT) → Bool
+  | _, [] => true
+  | labels, s :: ss =>
+    Stmt.checkExitsCoveredByBlocks labels s && Block.checkExitsCoveredByBlocks labels ss
+
+end
 ---------------------------------------------------------------------
 
 
@@ -1060,8 +1080,8 @@ cover conditions) at every depth, but NOT against `.ite`/`.loop` *guard*,
 invariant, or measure expressions.
 
 The RHS-only form is load-bearing: `nondetElim` reads its own fresh guard
-`$__ndelim_loop$_0` in a guard position, so `nondetElimM_namesFreshInRhsExprs`
-(the preservation theorem) requires the predicate to NOT check guards. -/
+`$__ndelim_loop$_0` in a guard position, so a freshness-preservation result for
+`nondetElim` requires the predicate to NOT check guards. -/
 
 mutual
 

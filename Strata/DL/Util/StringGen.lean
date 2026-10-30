@@ -368,6 +368,34 @@ theorem StringGenState.gen_hasUnderscoreDigitSuffix
   refine ⟨pf, σ.cs.counter, ?_⟩
   exact StringGenState.gen_eq pf σ
 
+/-- Executable check for the `_<digits>` suffix shape: the trailing run of
+digits is nonempty and preceded by `_`. It accepts every string with
+`String.HasUnderscoreDigitSuffix`
+(`String.endsWithUnderscoreDigits_of_hasUnderscoreDigitSuffix`), so a string it
+rejects cannot be the output of `gen`. -/
+@[expose] def String.endsWithUnderscoreDigits (s : String) : Bool :=
+  let r := s.toList.reverse
+  let ds := r.takeWhile Char.isDigit
+  !ds.isEmpty && (r.drop ds.length).head? == some '_'
+
+/-- `String.endsWithUnderscoreDigits` accepts every string with the
+`_<digits>` suffix shape. -/
+theorem String.endsWithUnderscoreDigits_of_hasUnderscoreDigitSuffix {s : String}
+    (h : String.HasUnderscoreDigitSuffix s) :
+    String.endsWithUnderscoreDigits s = true := by
+  obtain ⟨pf, n, rfl⟩ := h
+  have hdig : ∀ c ∈ (Nat.toDigits 10 n).reverse, c.isDigit = true := fun c hc =>
+    Nat.isDigit_of_mem_toDigits (by decide) (by decide) (List.mem_reverse.mp hc)
+  have hrev : (pf ++ "_" ++ toString n).toList.reverse =
+      (Nat.toDigits 10 n).reverse ++ '_' :: pf.toList.reverse := by
+    simp [String.toList_append, Nat.toString_eq_repr, Nat.toList_repr]
+  have htake : ((Nat.toDigits 10 n).reverse ++ '_' :: pf.toList.reverse).takeWhile
+      Char.isDigit = (Nat.toDigits 10 n).reverse := by
+    rw [List.takeWhile_append_of_pos hdig]
+    simp [show Char.isDigit '_' = false from by decide]
+  simp only [String.endsWithUnderscoreDigits, hrev, htake]
+  simp
+
 /-- Every label inside a WF `StringGenState`'s `generated` list has the
 `_<digits>` suffix shape. -/
 theorem StringGenState.hasUnderscoreDigitSuffix_of_mem_generated

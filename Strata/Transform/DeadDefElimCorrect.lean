@@ -250,7 +250,7 @@ private theorem agree_def {N : List P.Ident} {σ σ1 σ' : SemanticStore P}
     exact hv
   · exact hC y w (hfr y hyx ▸ hw)
 
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvars P] in
+omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] in
 /-- An `init` step defines its undefined variable as a value, keeps the other variables and
     emits no event. -/
 private theorem evalE_init_inv {σ σ1 : SemanticStore P} {x : P.Ident} {ty : P.Ty}
@@ -341,7 +341,7 @@ private theorem erasable_inv {live : List P.Ident} {s : PStmt P}
     ∃ x ty e md, s = .cmd (.cmd (.init x ty e md)) ∧ x ∉ live := by
   rcases s with ((x | _ | _ | _ | _) | _) | _ | _ | _ | _ | _ <;> simp_all [erasable]
 
-omit [BEq P.Ident] [LawfulBEq P.Ident] [HasFvars P] in
+omit [BEq P.Ident] [LawfulBEq P.Ident] in
 /-- Erasing an `init` of a variable outside `N` from a run: the store after the `init`
     still agrees with the replaying store on `N`. -/
 private theorem erase_init {s : PStmt P} {x : P.Ident} {ty : P.Ty} {e : ExprOrNondet P}
@@ -663,7 +663,7 @@ private theorem EvReplay.dd (hcong : WellFormedSemanticEvalExprCongr F) {e e' : 
 theorem deadDefElim_reach_rel (hcong : WellFormedSemanticEvalExprCongr F) (live : List P.Ident)
     {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)} (h : BReach F ss σ evs)
     (hne : evs ≠ []) (hC : WellFormedStore σ F) :
-    ∃ evs', BReach F (deadDefElim live ss) σ evs' ∧ List.Rel₂ (DDEventRel) evs evs' := by
+    ∃ evs', BReach F (deadDefElim live ss) σ evs' ∧ List.Rel₂ DDEventRel evs evs' := by
   have hE := evCongr_of_congr hcong
   obtain ⟨evs', h', hm⟩ := dd_reach hE h hne hC ⟨fun _ _ => rfl, StoreProjected.refl _⟩
   exact ⟨evs', h', hm.imp fun _ _ hr => hr.dd hcong⟩
@@ -675,7 +675,7 @@ theorem deadDefElim_reach_rel (hcong : WellFormedSemanticEvalExprCongr F) (live 
 theorem deadDefElim_run_rel (hcong : WellFormedSemanticEvalExprCongr F) (live : List P.Ident)
     {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)} {o : Outcome P}
     (h : BRun F ss σ evs o) (hC : WellFormedStore σ F) :
-    ∃ evs' o', BRun F (deadDefElim live ss) σ evs' o' ∧ List.Rel₂ (DDEventRel) evs evs' ∧
+    ∃ evs' o', BRun F (deadDefElim live ss) σ evs' o' ∧ List.Rel₂ DDEventRel evs evs' ∧
       DDOutcomeRel o o' := by
   have hE := evCongr_of_congr hcong
   obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE h hC ⟨fun _ _ => rfl, StoreProjected.refl _⟩
@@ -706,7 +706,7 @@ omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P]
     stable under `DDArgRel`, validity of every occurrence of `aid` in `trace'`
     reflects to an event-by-event corresponding `trace`. -/
 theorem dd_assertValid_reflect {I : ConditionInterp P} (hI : I.StableUnder DDArgRel) :
-    ∀ trace trace', List.Rel₂ (DDEventRel) trace trace' → ∀ aid,
+    ∀ trace trace', List.Rel₂ DDEventRel trace trace' → ∀ aid,
       Trace.AssertionValid P I aid trace' → Trace.AssertionValid P I aid trace :=
   fun _ _ h aid =>
     Trace.AssertionValidFrom_matches_reflect hI
@@ -751,7 +751,7 @@ theorem deadDefElimH_failsE [HasBoolOps P] (hcong : WellFormedSemanticEvalExprCo
 theorem deadDefElimH_reach_rel (hcong : WellFormedSemanticEvalExprCongr F) (live : List P.Ident)
     {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)} (h : BReach F ss σ evs)
     (hne : evs ≠ []) (hC : WellFormedStore σ F) :
-    ∃ evs', BReach F (deadDefElimH live ss) σ evs' ∧ List.Rel₂ (DDEventRel) evs evs' :=
+    ∃ evs', BReach F (deadDefElimH live ss) σ evs' ∧ List.Rel₂ DDEventRel evs evs' :=
   deadDefElimH_eq live ss ▸ deadDefElim_reach_rel hcong live h hne hC
 
 /-- **A run of a list, and of the executable pass's output**: a run of `ss` from the
@@ -762,7 +762,7 @@ theorem deadDefElimH_reach_rel (hcong : WellFormedSemanticEvalExprCongr F) (live
 theorem deadDefElimH_run_rel (hcong : WellFormedSemanticEvalExprCongr F) (live : List P.Ident)
     {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)} {o : Outcome P}
     (h : BRun F ss σ evs o) (hC : WellFormedStore σ F) :
-    ∃ evs' o', BRun F (deadDefElimH live ss) σ evs' o' ∧ List.Rel₂ (DDEventRel) evs evs' ∧
+    ∃ evs' o', BRun F (deadDefElimH live ss) σ evs' o' ∧ List.Rel₂ DDEventRel evs evs' ∧
       DDOutcomeRel o o' :=
   deadDefElimH_eq live ss ▸ deadDefElim_run_rel hcong live h hC
 

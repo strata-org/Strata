@@ -46,23 +46,9 @@ open Core Imperative Strata.Logic Imperative.Logic
 
 /-! ## Core `Lang` bundle -/
 
-/-- Parameters threaded into `Core.Logic.InitEnvWF` (the Core language's
-    `Lang.InitEnvWFParamsTy`).
-
-    The `prefixIdents : List String` lists "fresh-prefixes": prefixes of
-    identifiers that must NOT appear in the initial environment.  Downstream
-    transforms reserve such prefixes so they can introduce fresh names with
-    that prefix without colliding with user names.
-
-    The `declaredFuncs : Expression.Ident → Bool` characterizes the set of
-    operator/function names already defined in the initial evaluator.  Concrete
-    instantiations use this to enforce a `defUseWellFormed` invariant that all
-    operator references in the program are pre-declared. -/
-structure InitEnvWFParams where
-  /-- Reserved "fresh-prefixes" that must not appear in the initial env. -/
-  prefixIdents : List String
-  /-- Predicate of operator/function names already defined in the evaluator. -/
-  declaredFuncs : Expression.Ident → Bool
+/-- Core specialization of the shared imperative initial-environment
+parameters. -/
+abbrev InitEnvWFParams := Imperative.Logic.InitEnvWFParams Expression
 
 /-- Store-well-formedness needed for a statement `s` to execute in env `ρ` without
     getting stuck.
@@ -100,21 +86,10 @@ structure InitEnvWF (params : InitEnvWFParams)
 structure BlockInitEnvWF (params : InitEnvWFParams)
     (bss : Statements)
     (ρ : Imperative.Env Expression) : Prop
-    extends WellFormedSemanticEval (P := Expression) ρ.factory where
-  /-- The store holds only values; see `InitEnvWF.storeWellDefined`. -/
-  storeWellDefined : Imperative.WellFormedStore ρ.store ρ.factory
-  readWritesDefined : ∀ n ∈ Block.touchedVars bss, n ∉ Block.definedVars bss false →
-    (ρ.store n).isSome
-  defsUndefined : ∀ n ∈ Block.definedVars bss false, (ρ.store n).isNone
-  definedVarsNotReserved : ∀ n ∈ Block.definedVars bss false, ∀ p ∈ params.prefixIdents,
-    ¬ p.toList.isPrefixOf n.name.toList
-  reservedFresh : ∀ n, (ρ.store n).isSome →
-    ∀ p ∈ params.prefixIdents, ¬ p.toList.isPrefixOf n.name.toList
-  defUseOk : Block.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs bss = Bool.true
+    extends Imperative.Logic.BlockInitEnvWF
+      (P := Expression) (CmdT := Command) params bss ρ where
   factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
     params.declaredFuncs ⟨s, ()⟩ = Bool.true
-  /-- Every init-type the block declares has a value witness in `ρ`'s factory. -/
-  initTypesInhabited : Block.InitTypesInhabited (P := Expression) (C := Command) ρ.factory bss
 
 /-- Initial-environment well-formedness for a Core CFG. This mirrors
 `BlockInitEnvWF`'s store, freshness, factory, and init-type conditions using
@@ -123,34 +98,11 @@ relies on structured list order, whereas arbitrary CFG control flow needs a
 path-sensitive definite-assignment analysis. -/
 structure CFGInitEnvWF (params : InitEnvWFParams)
     (cfg : Core.DetCFG) (ρ : Imperative.Env Expression) : Prop
-    extends WellFormedSemanticEval (P := Expression) ρ.factory where
-  /-- The initial store contains only values. -/
-  storeWellDefined : Imperative.WellFormedStore ρ.store ρ.factory
-  /-- External reads and updates have an existing slot at CFG entry. -/
-  readWritesDefined : ∀ n ∈
-      HasVarsImp.modifiedVars (P := Expression) cfg ++
-        HasVarsImp.definedVars (P := Expression) cfg false ++
-        HasVarsImp.readVars (P := Expression) cfg,
-    n ∉ HasVarsImp.definedVars (P := Expression) cfg false → (ρ.store n).isSome
-  /-- CFG-local declarations start without a slot. -/
-  defsUndefined : ∀ n ∈ HasVarsImp.definedVars (P := Expression) cfg false,
-    (ρ.store n).isNone
-  /-- CFG-local declarations avoid prefixes reserved by earlier transforms. -/
-  definedVarsNotReserved :
-    ∀ n ∈ HasVarsImp.definedVars (P := Expression) cfg false,
-    ∀ p ∈ params.prefixIdents,
-    ¬ p.toList.isPrefixOf n.name.toList
-  /-- Existing variables also avoid reserved prefixes. -/
-  reservedFresh : ∀ n, (ρ.store n).isSome →
-    ∀ p ∈ params.prefixIdents, ¬ p.toList.isPrefixOf n.name.toList
+    extends Imperative.Logic.CFGInitEnvWF
+      (P := Expression) (CmdT := Command) params cfg ρ where
   /-- Every builtin referenced by the CFG is included among the declared functions. -/
   factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
     params.declaredFuncs ⟨s, ()⟩ = Bool.true
-  /-- Every init-type the CFG declares has a value witness in `ρ`'s factory.  The
-      CFG analog of `BlockInitEnvWF.initTypesInhabited`; the CFG's blocks contain
-      `init … .nondet` commands, so every declared type needs a value witness. -/
-  initTypesInhabited : Imperative.DetCFG.InitTypesInhabited
-    (P := Expression) (C := Command) ρ.factory cfg
 
 /-- The `Lang Expression` bundle for Core small-step semantics. -/
 @[expose] def Lang.core

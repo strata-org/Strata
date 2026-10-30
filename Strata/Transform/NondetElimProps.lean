@@ -37,6 +37,13 @@ Key results:
     command-generic `Stmt`/`Block.nondetElimM_noNondetGuards` pair).
   * Generator advance — `Stmt.nondetElimM_genStep` / `Block.nondetElimM_genStep`:
     the pass advances the `StringGenState` by a `GenStep`.
+  * Generator-state projections — `Stmt.nondetElimM_block_state`,
+    `Stmt.nondetElimM_ite_det_state`, `Stmt.nondetElimM_ite_nondet_state`,
+    `Stmt.nondetElimM_loop_det_state`, `Stmt.nondetElimM_loop_nondet_state`,
+    `Block.nondetElimM_cons_state`: the output state of one pass step.
+  * Generated names — `NondetElim.isGeneratedName_gen`: both guard prefixes
+    generate `NondetElim.isGeneratedName` names. `SrcNoGenWrites` is the source
+    precondition that no such name is defined or modified.
   * Core call-extension bridge — `Stmt.nondetElimM_isNotCall` and
     `Block.nondetElimM_isNotCall` preserve call-freeness, while
     `embedStmt_nondetElimM`, `embedStmts_nondetElimM`, and
@@ -428,19 +435,16 @@ open LabelGen (StringGenM)
 
 /-! ### Source-shape precondition
 
-The simulation is only sound for source programs that never `init`/`set` a
-gen-shaped (`HasUnderscoreDigitSuffix`) variable.  This is carried as an
-explicit assumption: the front-ends feeding this pipeline never write such
-names, and a source program that re-`init`s a parent-scoped variable inside a
-loop body is already stuck under the existing semantics, independent of this
-pass.  Without it the theorem is false — a pass-through source
-`.cmd (set "$g_0" .nondet)` defines a gen-shaped slot, after which a later
+The trace simulation is only sound for source programs that never `init`/`set` a
+variable whose name the pass could generate.  This is carried as an explicit
+assumption: the front-ends feeding this pipeline never write such names.
+Without it the simulation fails: a pass-through source
+`.cmd (set "$g_0" .nondet)` defines a generated-name slot, after which a later
 `.ite .nondet`'s inserted `init $g := *` would collide and be stuck.
 
-We carry it as "no `Q`-kind identifier appears among the block's defined +
-modified variables" (mirroring the analogous threaded freshness obligation on
-`definedVars ++ initVars` / `modifiedVars`).  Membership in `++` distributes
-the obligation across sequencing and recursion automatically. -/
+`SrcNoGenWrites Q ss` states that no `Q`-kind identifier appears among the
+block's defined and modified variables.  Membership in `++` distributes the
+obligation across sequencing and recursion automatically. -/
 
 /-- The source-shape precondition over a source block: no statement in `ss`
 ever defines or modifies a `Q`-kind variable. -/
@@ -450,14 +454,21 @@ ever defines or modifies a `Q`-kind variable. -/
   (∀ s : String, Q s → HasIdent.ident (P := P) s ∉
     (Block.definedVars ss false ++ Block.modifiedVars ss))
 
+/-- Expanded form of `isGeneratedName` for its two reserved prefixes. -/
+@[simp] theorem NondetElim.isGeneratedName_iff (name : String) :
+    NondetElim.isGeneratedName name ↔
+      (∃ state, name = (StringGenState.gen NondetElim.prefixIte state).1) ∨
+      (∃ state, name = (StringGenState.gen NondetElim.prefixLoop state).1) := by
+  simp [NondetElim.isGeneratedName, NondetElim.prefixesReserved]
+
 /-- Every guard name generated under either `nondetElim` prefix satisfies
 `NondetElim.isGeneratedName`. -/
 theorem NondetElim.isGeneratedName_gen :
     (∀ sg, NondetElim.isGeneratedName (StringGenState.gen NondetElim.prefixIte sg).1)
   ∧ (∀ sg, NondetElim.isGeneratedName (StringGenState.gen NondetElim.prefixLoop sg).1) := by
   refine ⟨fun sg => ?_, fun sg => ?_⟩
-  · exact Or.inl ⟨sg, rfl⟩
-  · exact Or.inr ⟨sg, rfl⟩
+  · exact (NondetElim.isGeneratedName_iff _).2 (Or.inl ⟨sg, rfl⟩)
+  · exact (NondetElim.isGeneratedName_iff _).2 (Or.inr ⟨sg, rfl⟩)
 
 section NondetElimStructuralState
 variable {P : PureExpr}
@@ -646,15 +657,13 @@ statement under a defined-register relation yields def-use well-formed output an
 extends the relation by the statement's newly defined variables. -/
 theorem Stmt.nondetElimM_defUseWellFormed {P : PureExpr}
     [HasIdent P] [LawfulHasIdent P] [DecidableEq P.Ident]
-    [HasFvar P] [HasFvars P] [LawfulHasFvars P]
-    [HasBool P] [HasOps P]
+    [HasFvar P] [HasFvars P] [HasBool P] [HasOps P]
+    [LawfulHasFvar P] [LawfulHasFvars P]
     (s : Stmt P (Cmd P)) (σ : StringGenState)
     (source target declaredSource declaredTarget : P.Ident → Bool)
     (hrel : NondetElimDefinedRel σ source target)
     (hwf : StringGenState.WF σ)
     (hdecl : ∀ x, declaredSource x = true → declaredTarget x = true)
-    (hfvarops : ∀ x, HasOps.getOps
-      (HasFvar.mkTypedFvar (P := P) x HasBool.boolTy) = [])
     (hdu : Stmt.defUseWellFormed source declaredSource s = true)
     (hnogen : ∀ str, NondetElim.isGeneratedName str →
       HasIdent.ident (P := P) str ∉
@@ -705,7 +714,7 @@ theorem Stmt.nondetElimM_defUseWellFormed {P : PureExpr}
         intro str hs hm
         exact hnogen str hs (by simpa [Stmt.definedVars, Stmt.modifiedVars] using hm)
       obtain ⟨hbody, _⟩ := Block.nondetElimM_defUseWellFormed bss σ source target
-        declaredSource declaredTarget hrel hwf hdecl hfvarops hdu hng
+        declaredSource declaredTarget hrel hwf hdecl hdu hng
       refine ⟨?_, ?_⟩
       · rw [Stmt.nondetElimM_block_out]
         simpa [Block.defUseWellFormed, Stmt.defUseWellFormed] using hbody
@@ -742,12 +751,12 @@ theorem Stmt.nondetElimM_defUseWellFormed {P : PureExpr}
             simp only [Stmt.modifiedVars, List.mem_append]
             exact Or.inr hm))
       obtain ⟨ht, _⟩ := Block.nondetElimM_defUseWellFormed tss σ source target
-        declaredSource declaredTarget hrel hwf hdecl hfvarops hdu.1.2 hngt
+        declaredSource declaredTarget hrel hwf hdecl hdu.1.2 hngt
       let σ₁ := (Block.nondetElimM tss σ).2
       have hstep₁ : StringGenState.GenStep σ σ₁ := Block.nondetElimM_genStep tss σ
       obtain ⟨he, _⟩ := Block.nondetElimM_defUseWellFormed ess σ₁ source target
         declaredSource declaredTarget (NondetElimDefinedRel.mono hstep₁ hrel)
-        (hstep₁.wf_mono hwf) hdecl hfvarops hdu.2 hnge
+        (hstep₁.wf_mono hwf) hdecl hdu.2 hnge
       refine ⟨?_, ?_⟩
       · rw [Stmt.nondetElimM_ite_det_out]
         simp only [Block.defUseWellFormed, Stmt.defUseWellFormed, Bool.and_eq_true,
@@ -799,12 +808,12 @@ theorem Stmt.nondetElimM_defUseWellFormed {P : PureExpr}
             simp only [Stmt.modifiedVars, List.mem_append]
             exact Or.inr hm))
       obtain ⟨ht, _⟩ := Block.nondetElimM_defUseWellFormed tss σ₁ source target₁
-        declaredSource declaredTarget hrel₁ (hstep₀.wf_mono hwf) hdecl hfvarops hdu.1.2 hngt
+        declaredSource declaredTarget hrel₁ (hstep₀.wf_mono hwf) hdecl hdu.1.2 hngt
       let σ₂ := (Block.nondetElimM tss σ₁).2
       have hstep₁ : StringGenState.GenStep σ₁ σ₂ := Block.nondetElimM_genStep tss σ₁
       obtain ⟨he, _⟩ := Block.nondetElimM_defUseWellFormed ess σ₂ source target₁
         declaredSource declaredTarget (NondetElimDefinedRel.mono hstep₁ hrel₁)
-        (hstep₁.wf_mono (hstep₀.wf_mono hwf)) hdecl hfvarops hdu.2 hnge
+        (hstep₁.wf_mono (hstep₀.wf_mono hwf)) hdecl hdu.2 hnge
       have hguard : (ExprOrNondet.det
           (HasFvar.mkTypedFvar (P := P) (HasIdent.ident (P := P) g) HasBool.boolTy)).getVars.all
           target₁ = true := by
@@ -818,7 +827,8 @@ theorem Stmt.nondetElimM_defUseWellFormed {P : PureExpr}
       have hguardops : (ExprOrNondet.det
           (HasFvar.mkTypedFvar (P := P) (HasIdent.ident (P := P) g) HasBool.boolTy)).getOps.all
           declaredTarget = true := by
-        simp only [ExprOrNondet.getOps, hfvarops]
+        simp only [ExprOrNondet.getOps,
+          LawfulHasFvar.getOps_mkTypedFvar]
         rfl
       have hinit : Stmt.defUseWellFormed target declaredTarget
           (.cmd (HasInit.init (P := P) (CmdT := Cmd P)
@@ -878,7 +888,7 @@ theorem Stmt.nondetElimM_defUseWellFormed {P : PureExpr}
         intro str hs hm
         exact hnogen str hs (by simpa [Stmt.definedVars, Stmt.modifiedVars] using hm)
       obtain ⟨hb, _⟩ := Block.nondetElimM_defUseWellFormed body σ source target
-        declaredSource declaredTarget hrel hwf hdecl hfvarops hdu.2 hng
+        declaredSource declaredTarget hrel hwf hdecl hdu.2 hng
       refine ⟨?_, ?_⟩
       · rw [Stmt.nondetElimM_loop_det_out]
         simp only [Block.defUseWellFormed, Stmt.defUseWellFormed, Bool.and_eq_true,
@@ -918,7 +928,7 @@ theorem Stmt.nondetElimM_defUseWellFormed {P : PureExpr}
         intro str hs hm
         exact hnogen str hs (by simpa [Stmt.definedVars, Stmt.modifiedVars] using hm)
       obtain ⟨hb, hrelb⟩ := Block.nondetElimM_defUseWellFormed body σ₁ source target₁
-        declaredSource declaredTarget hrel₁ (hstep₀.wf_mono hwf) hdecl hfvarops
+        declaredSource declaredTarget hrel₁ (hstep₀.wf_mono hwf) hdecl
         hdu.2 hng
       have hguard : (ExprOrNondet.det
           (HasFvar.mkTypedFvar (P := P) (HasIdent.ident (P := P) g) HasBool.boolTy)).getVars.all
@@ -937,7 +947,8 @@ theorem Stmt.nondetElimM_defUseWellFormed {P : PureExpr}
       have hguardops : (ExprOrNondet.det
           (HasFvar.mkTypedFvar (P := P) (HasIdent.ident (P := P) g) HasBool.boolTy)).getOps.all
           declaredTarget = true := by
-        simp only [ExprOrNondet.getOps, hfvarops]
+        simp only [ExprOrNondet.getOps,
+          LawfulHasFvar.getOps_mkTypedFvar]
         rfl
       have hinit : Stmt.defUseWellFormed target declaredTarget
           (.cmd (HasInit.init (P := P) (CmdT := Cmd P)
@@ -1027,15 +1038,13 @@ block and extends the defined-register relation by the block's newly defined
 variables. -/
 theorem Block.nondetElimM_defUseWellFormed {P : PureExpr}
     [HasIdent P] [LawfulHasIdent P] [DecidableEq P.Ident]
-    [HasFvar P] [HasFvars P] [LawfulHasFvars P]
-    [HasBool P] [HasOps P]
+    [HasFvar P] [HasFvars P] [HasBool P] [HasOps P]
+    [LawfulHasFvar P] [LawfulHasFvars P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (source target declaredSource declaredTarget : P.Ident → Bool)
     (hrel : NondetElimDefinedRel σ source target)
     (hwf : StringGenState.WF σ)
     (hdecl : ∀ x, declaredSource x = true → declaredTarget x = true)
-    (hfvarops : ∀ x, HasOps.getOps
-      (HasFvar.mkTypedFvar (P := P) x HasBool.boolTy) = [])
     (hdu : Block.defUseWellFormed source declaredSource ss = true)
     (hnogen : SrcNoGenWrites NondetElim.isGeneratedName ss) :
     Block.defUseWellFormed target declaredTarget (Block.nondetElimM ss σ).1 = true ∧
@@ -1066,14 +1075,14 @@ theorem Block.nondetElimM_defUseWellFormed {P : PureExpr}
         · exact List.mem_append_left _ (List.mem_append_right _ hd)
         · exact List.mem_append_right _ (List.mem_append_right _ hm)
       obtain ⟨hs, hrels⟩ := Stmt.nondetElimM_defUseWellFormed s σ source target
-        declaredSource declaredTarget hrel hwf hdecl hfvarops hdu.1 hngs
+        declaredSource declaredTarget hrel hwf hdecl hdu.1 hngs
       let σ₁ := (Stmt.nondetElimM s σ).2
       let source₁ := fun x => source x || decide (x ∈ Stmt.definedVars s true)
       let target₁ := fun x => target x || decide
         (x ∈ Block.definedVars (Stmt.nondetElimM s σ).1 true)
       obtain ⟨hr, hrelr⟩ := Block.nondetElimM_defUseWellFormed rest σ₁ source₁ target₁
         declaredSource declaredTarget hrels
-        ((Stmt.nondetElimM_genStep s σ).wf_mono hwf) hdecl hfvarops hdu.2 hngr
+        ((Stmt.nondetElimM_genStep s σ).wf_mono hwf) hdecl hdu.2 hngr
       refine ⟨?_, ?_⟩
       · rw [Block.nondetElimM_cons_out, Block.defUseWellFormed_append]
         simpa only [Bool.and_eq_true] using And.intro hs hr
@@ -1111,15 +1120,13 @@ end
 whose source never defines a generated guard name. -/
 theorem Block.nondetElim_defUseWellFormed {P : PureExpr}
     [HasIdent P] [LawfulHasIdent P] [DecidableEq P.Ident]
-    [HasFvar P] [HasFvars P] [LawfulHasFvars P]
-    [HasBool P] [HasOps P]
+    [HasFvar P] [HasFvars P] [HasBool P] [HasOps P]
+    [LawfulHasFvar P] [LawfulHasFvars P]
     (ss : List (Stmt P (Cmd P)))
     (defined declaredSource declaredTarget : P.Ident → Bool)
     (hkind : ∀ s, NondetElim.isGeneratedName s →
       defined (HasIdent.ident (P := P) s) = false)
     (hdecl : ∀ x, declaredSource x = true → declaredTarget x = true)
-    (hfvarops : ∀ x, HasOps.getOps
-      (HasFvar.mkTypedFvar (P := P) x HasBool.boolTy) = [])
     (hdu : Block.defUseWellFormed defined declaredSource ss = true)
     (hnogen : SrcNoGenWrites NondetElim.isGeneratedName ss) :
     Block.defUseWellFormed defined declaredTarget (Block.nondetElim ss) = true := by
@@ -1131,7 +1138,7 @@ theorem Block.nondetElim_defUseWellFormed {P : PureExpr}
       rfl
   exact (Block.nondetElimM_defUseWellFormed ss StringGenState.emp
     defined defined declaredSource declaredTarget hrel StringGenState.wf_emp
-    hdecl hfvarops hdu hnogen).1
+    hdecl hdu hnogen).1
 
 end Imperative
 

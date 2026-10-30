@@ -14,6 +14,7 @@ meta import Strata.Languages.Core.DDMTransform.Translate
 meta section
 
 open Imperative Core
+open Imperative.StructuredToUnstructuredPipeline
 open Lambda.LTy.Syntax
 open Strata
 

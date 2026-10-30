@@ -15,6 +15,7 @@ import all Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.LTy
 public import Strata.DL.Lambda.LExprEval
 public import Strata.DL.Lambda.IntBoolFactory
+import Strata.DL.Lambda.OperationalSemanticsProps
 
 namespace Core
 open Std (ToFormat Format format)
@@ -72,6 +73,7 @@ instance : LawfulHasVal Core.Expression where
     subst mty₂
     subst mty₃
     exact ⟨mty₁, hb, hty₁, hb₃⟩
+  value_getFvars := fun f e hval => Lambda.isValue_getVars_nil f e hval
 
 instance : HasFvar Core.Expression where
   mkFvar := (.fvar () · none)
@@ -130,6 +132,7 @@ agree with the abstract `Lawful*` contracts. -/
 instance : LawfulHasFvar Core.Expression where
   getFvar_mkFvar := fun _ => rfl
   getFvar_mkTypedFvar := fun _ _ => rfl
+  getOps_mkTypedFvar := fun _ _ => rfl
 
 instance : LawfulHasFvars Core.Expression where
   mkFvar_getFvars := fun _ => by

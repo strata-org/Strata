@@ -98,7 +98,7 @@ the relation directly without going through `StoreAgreement`/`isDefined`. -/
 
 /-- The substitution-map store pullback along `substMapOf subst` is the
 first-match pullback `fun x => σ (renameLookup subst x)`. -/
-theorem substStoreExpr_substMapOf {P : PureExpr} [HasFvar P] [LawfulHasFvar P]
+theorem substStoreExpr_substMapOf {P : PureExpr} [HasFvar P] [HasOps P] [LawfulHasFvar P]
     (subst : List (P.Ident × P.Ident)) (σ : SemanticStore P)
     (x : P.Ident) :
     substStoreExpr σ (substMapOf subst) x = σ (renameLookup subst x) := by
@@ -116,7 +116,7 @@ by-name rename (`h_rename`) and is monotone under store extension (`h_mono`); an
 the source and target stores agree at every defined variable up to the rename
 (`h_agree` — `SubstStoreAgreement`). Under these, evaluating the renamed
 expression in `σ_tgt` reproduces the source value. -/
-theorem eval_rename_seam {P : PureExpr} [HasVal P] [HasFvar P] [LawfulHasFvar P] [HasSubstFvar P]
+theorem eval_rename_seam {P : PureExpr} [HasVal P] [HasFvar P] [HasOps P] [LawfulHasFvar P] [HasSubstFvar P]
     (f : P.Factory)
     (subst : List (P.Ident × P.Ident))
     {σ_src σ_tgt : SemanticStore P} {e v : P.Expr}
@@ -430,7 +430,7 @@ theorem InitState_typedAt {P : PureExpr} [HasVal P] [DecidableEq P.Ident]
 preserves a typed slot: an untouched slot is unchanged; the written slot receives a
 value that shares the old value's type, and `valueOfTy_congr` carries the recorded
 type across. -/
-theorem UpdateState_typedAt {P : PureExpr} [HasVal P] [LawfulHasVal P]
+theorem UpdateState_typedAt {P : PureExpr} [HasVal P] [HasFvars P] [LawfulHasVal P]
     [DecidableEq P.Ident]
     {f : P.Factory} {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Expr} {y : P.Ident} {ty : P.Ty}
     (h : UpdateState P σ x v σ')
@@ -450,7 +450,7 @@ theorem UpdateState_typedAt {P : PureExpr} [HasVal P] [LawfulHasVal P]
 
 /-- A single `EvalCmd` preserves a typed slot at any fixed type. -/
 theorem EvalCmd_preserves_typedAt {P : PureExpr}
-    [HasFvar P] [HasBool P] [HasBoolOps P] [DecidableEq P.Ident] [LawfulHasVal P]
+    [HasFvar P] [HasBool P] [HasBoolOps P] [DecidableEq P.Ident] [HasFvars P] [LawfulHasVal P]
     {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
     (h : EvalCmd P f σ c σ' haf)
     {y : P.Ident} {ty : P.Ty}
@@ -875,7 +875,7 @@ theorem evalCmdE_definedVars_isSome {P : PureExpr} [HasFvar P] [HasBool P]
 /-- **A command leaves the store holding only values.**  Every writing rule supplies
     value-hood for what it writes, and the rest do not touch the store. -/
 theorem evalCmd_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
-    [LawfulHasVal P]
+    [HasFvars P] [LawfulHasVal P]
     {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {fl : Bool}
     (hval : WellFormedSemanticEvalVal (P := P) f)
     (h : EvalCmd P f σ c σ' fl) (hsv : WellFormedStore σ f) :
@@ -913,7 +913,7 @@ theorem evalCmd_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBool
 a store that holds only values.  `assert`/`assume`/`cover` keep the store;
 `init`/`set` write a value. -/
 theorem evalCmdE_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
-    [LawfulHasVal P]
+    [HasFvars P] [LawfulHasVal P]
     {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P}
     (hval : WellFormedSemanticEvalVal (P := P) f)
     (h : EvalCmdE P f σ c σ' emitted) (hsv : WellFormedStore σ f) :

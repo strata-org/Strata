@@ -67,13 +67,22 @@ class HasFvar (P : PureExpr) where
   mkTypedFvar : P.Ident → P.Ty → P.Expr
   getFvar : P.Expr → Option P.Ident
 
-/-- Lawfulness of `HasFvar`: the round-trip `getFvar (mkFvar x) = some x`. -/
-class LawfulHasFvar (P : PureExpr) [HasFvar P] where
+/-- Returns ALL operator/function names referenced in an expression
+    (e.g., `.op` constructs in Lambda). -/
+class HasOps (P : PureExpr) where
+  getOps : P.Expr → List P.Ident
+
+/-- Lawfulness of `HasFvar`: variable constructors round-trip through `getFvar`
+and a typed variable contains no operator references. -/
+class LawfulHasFvar (P : PureExpr) [HasFvar P] [HasOps P] where
   getFvar_mkFvar : ∀ x : P.Ident,
     HasFvar.getFvar (HasFvar.mkFvar (P := P) x) = some x
   /-- The annotation does not change which variable the expression is. -/
   getFvar_mkTypedFvar : ∀ (x : P.Ident) (ty : P.Ty),
     HasFvar.getFvar (HasFvar.mkTypedFvar (P := P) x ty) = some x
+  /-- A typed variable has no operator or function references. -/
+  getOps_mkTypedFvar : ∀ (x : P.Ident) (ty : P.Ty),
+    HasOps.getOps (HasFvar.mkTypedFvar (P := P) x ty) = []
 
 /-- Multi-variable version of `HasFvar.getFvar`: returns ALL free variables in
     a (possibly compound) expression.  `HasFvar.getFvar` only returns Some when
@@ -92,18 +101,13 @@ class LawfulHasFvars (P : PureExpr) [HasFvar P] [HasFvars P] where
   mkTypedFvar_getFvars : ∀ (x : P.Ident) (ty : P.Ty),
     HasFvars.getFvars (HasFvar.mkTypedFvar (P := P) x ty) ⊆ [x]
 
-/-- Returns ALL operator/function names referenced in an expression
-    (e.g., `.op` constructs in Lambda). -/
-class HasOps (P : PureExpr) where
-  getOps : P.Expr → List P.Ident
-
 class HasVal (P : PureExpr) where
   value : P.Factory → P.Expr → Prop
   /-- `e` is a value of the monomorphic type `ty`. -/
   valueOfTy : P.Factory → P.Expr → P.Ty → Prop
 
 /-- Laws for the abstract typed-value predicate. -/
-class LawfulHasVal (P : PureExpr) [HasVal P] where
+class LawfulHasVal (P : PureExpr) [HasVal P] [HasFvars P] where
   /-- Every typed value is a value. -/
   valueOfTy_isVal : ∀ f e ty,
     HasVal.valueOfTy (P := P) f e ty → HasVal.value (P := P) f e
@@ -113,6 +117,9 @@ class LawfulHasVal (P : PureExpr) [HasVal P] where
   valueOfTy_congr : ∀ f (a b : P.Expr) (ty₁ ty₂ : P.Ty),
     HasVal.valueOfTy (P := P) f a ty₁ → HasVal.valueOfTy (P := P) f a ty₂ →
     HasVal.valueOfTy (P := P) f b ty₂ → HasVal.valueOfTy (P := P) f b ty₁
+  /-- Values contain no free variables. -/
+  value_getFvars : ∀ f e,
+    HasVal.value (P := P) f e → HasFvars.getFvars (P := P) e = []
 
 /-- Boolean expressions.  Extends `HasVal P` (folding in the former
     `HasBoolVal`).  `boolIsVal` ensures `tt`/`ff` are values. -/
@@ -128,7 +135,7 @@ class HasBool (P : PureExpr) extends HasVal P where
 
 set_option linter.defProp false in
 /-- Boolean constants are values, induced by their typed-value proofs. -/
-@[expose] def HasBool.boolIsVal {P : PureExpr} [HasBool P] [LawfulHasVal P]
+@[expose] def HasBool.boolIsVal {P : PureExpr} [HasBool P] [HasFvars P] [LawfulHasVal P]
     (f : P.Factory) :
     HasVal.value f HasBool.tt ∧ HasVal.value f HasBool.ff :=
   ⟨LawfulHasVal.valueOfTy_isVal f HasBool.tt HasBool.boolTy

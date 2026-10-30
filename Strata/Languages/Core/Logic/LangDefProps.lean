@@ -54,6 +54,17 @@ namespace Core.Logic
 
 open Core Imperative Strata.Logic Imperative.Logic
 
+/-- The reserved prefixes of `base.extend prefixes` are `prefixes` followed by
+the base's reserved prefixes. -/
+@[simp] theorem InitEnvWFParams.extend_prefixIdents
+    (base : InitEnvWFParams) (prefixes : List String) :
+    (base.extend prefixes).prefixIdents = prefixes ++ base.prefixIdents := rfl
+
+/-- Extending the reserved prefixes keeps the declared functions. -/
+@[simp] theorem InitEnvWFParams.extend_declaredFuncs
+    (base : InitEnvWFParams) (prefixes : List String) :
+    (base.extend prefixes).declaredFuncs = base.declaredFuncs := rfl
+
 variable (π : String → Option Procedure)
 
 /-! ## Builders that discharge `readWritesDefined` from `defUseOk` -/
@@ -63,6 +74,57 @@ variable (π : String → Option Procedure)
     `Imperative.Stmt.defined_of_mem_touchedVars`. -/
 private theorem cmdDefinedVarsFlagIrrelevant :
     Imperative.CmdDefinedVarsFlagIrrelevant Expression Command := fun _ _ h => h
+
+/-- Every Core identifier is represented by its string name. -/
+private theorem ident_eq_ident_name (ident : Expression.Ident) :
+    ident = HasIdent.ident (P := Expression) ident.name := by
+  cases ident with
+  | mk name metadata => cases metadata; rfl
+
+/-- Core-shaped view of the generic reserved-prefix condition on block
+definitions. -/
+theorem BlockInitEnvWF.definedVarsNotReservedCore
+    {params : InitEnvWFParams} {bss : Statements}
+    {ρ : Imperative.Env Expression} (h : BlockInitEnvWF params bss ρ)
+    (ident : Expression.Ident) (hident : ident ∈ Block.definedVars bss false)
+    (pfx : String) (hpfx : pfx ∈ params.prefixIdents) :
+    ¬ pfx.toList.isPrefixOf ident.name.toList :=
+  h.definedVarsNotReserved ident hident ident.name
+    (ident_eq_ident_name ident) pfx hpfx
+
+/-- Core-shaped view of the generic reserved-prefix condition on existing
+bindings. -/
+theorem BlockInitEnvWF.reservedFreshCore
+    {params : InitEnvWFParams} {bss : Statements}
+    {ρ : Imperative.Env Expression} (h : BlockInitEnvWF params bss ρ)
+    (ident : Expression.Ident) (hdefined : (ρ.store ident).isSome)
+    (pfx : String) (hpfx : pfx ∈ params.prefixIdents) :
+    ¬ pfx.toList.isPrefixOf ident.name.toList :=
+  h.reservedFresh ident hdefined ident.name
+    (ident_eq_ident_name ident) pfx hpfx
+
+/-- Core-shaped view of the generic reserved-prefix condition on CFG
+definitions. -/
+theorem CFGInitEnvWF.definedVarsNotReservedCore
+    {params : InitEnvWFParams} {cfg : Core.DetCFG}
+    {ρ : Imperative.Env Expression} (h : CFGInitEnvWF params cfg ρ)
+    (ident : Expression.Ident)
+    (hident : ident ∈ HasVarsImp.definedVars (P := Expression) cfg false)
+    (pfx : String) (hpfx : pfx ∈ params.prefixIdents) :
+    ¬ pfx.toList.isPrefixOf ident.name.toList :=
+  h.definedVarsNotReserved ident hident ident.name
+    (ident_eq_ident_name ident) pfx hpfx
+
+/-- Core-shaped view of the generic reserved-prefix condition on existing CFG
+bindings. -/
+theorem CFGInitEnvWF.reservedFreshCore
+    {params : InitEnvWFParams} {cfg : Core.DetCFG}
+    {ρ : Imperative.Env Expression} (h : CFGInitEnvWF params cfg ρ)
+    (ident : Expression.Ident) (hdefined : (ρ.store ident).isSome)
+    (pfx : String) (hpfx : pfx ∈ params.prefixIdents) :
+    ¬ pfx.toList.isPrefixOf ident.name.toList :=
+  h.reservedFresh ident hdefined ident.name
+    (ident_eq_ident_name ident) pfx hpfx
 
 /-- Build an `InitEnvWF` without supplying `readWritesDefined`: it follows from
     `defUseOk` via `Imperative.Stmt.defined_of_mem_touchedVars`. -/
@@ -97,8 +159,8 @@ theorem BlockInitEnvWF.getVarsNotReserved {params : InitEnvWFParams}
     (hn : n ∈ Block.getVars bss) {p : String} (hp : p ∈ params.prefixIdents) :
     ¬ p.toList.isPrefixOf n.name.toList := by
   by_cases hd : n ∈ Block.definedVars bss false
-  · exact h.definedVarsNotReserved n hd p hp
-  · exact h.reservedFresh n
+  · exact h.definedVarsNotReservedCore n hd p hp
+  · exact h.reservedFreshCore n
       (h.readWritesDefined n (by simp [Block.touchedVars, hn]) hd) p hp
 
 /-- Build a `BlockInitEnvWF` without supplying `readWritesDefined`: it follows from
@@ -119,11 +181,20 @@ theorem BlockInitEnvWF.of_defUseOk {params : InitEnvWFParams} {bss : Statements}
   toWellFormedSemanticEval := hwf
   storeWellDefined := hsv
   readWritesDefined := fun _ hn hnd =>
-    Imperative.Block.defined_of_mem_touchedVars cmdDefinedVarsFlagIrrelevant hdu hn hnd
+    Imperative.Block.defined_of_mem_touchedVars
+      cmdDefinedVarsFlagIrrelevant hdu hn hnd
   defsUndefined := hdefs
-  definedVarsNotReserved := hdnr
-  reservedFresh := hres
   defUseOk := hdu
+  definedVarsNotReserved := by
+    intro ident hident name heq pfx hpfx
+    have hname : ident.name = name := congrArg (fun i : Expression.Ident => i.name) heq
+    rw [← hname]
+    exact hdnr ident hident pfx hpfx
+  reservedFresh := by
+    intro ident hdefined name heq pfx hpfx
+    have hname : ident.name = name := congrArg (fun i : Expression.Ident => i.name) heq
+    rw [← hname]
+    exact hres ident hdefined pfx hpfx
   factoryDeclared := hfd
   initTypesInhabited := hinit
 
@@ -144,8 +215,9 @@ theorem blockInitEnvWF_cons_head {params : InitEnvWFParams} {s : Statement} {ss 
   simp only [Block.defUseWellFormed, Bool.and_eq_true] at hdu
   refine InitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined
     (fun n hn => h.defsUndefined n (by rw [Block.definedVars]; exact List.mem_append.mpr (Or.inl hn)))
-    (fun n hn => h.definedVarsNotReserved n (by rw [Block.definedVars]; exact List.mem_append.mpr (Or.inl hn)))
-    h.reservedFresh hdu.1 h.factoryDeclared
+    (fun n hn => h.definedVarsNotReservedCore n
+      (by rw [Block.definedVars]; exact List.mem_append.mpr (Or.inl hn)))
+    h.reservedFreshCore hdu.1 h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty
       (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inl hty)))
 
@@ -175,12 +247,13 @@ theorem blockInitEnvWF_append_head {params : InitEnvWFParams} {ss₁ ss₂ : Sta
     {ρ : Imperative.Env Expression} (h : BlockInitEnvWF params (ss₁ ++ ss₂) ρ) :
     BlockInitEnvWF params ss₁ ρ := by
   have hdefs := h.defsUndefined
-  have hdnr := h.definedVarsNotReserved
-  rw [Imperative.Block.definedVars_append] at hdefs hdnr
+  rw [Imperative.Block.definedVars_append] at hdefs
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined
     (fun n hn => hdefs n (List.mem_append.mpr (Or.inl hn)))
-    (fun n hn => hdnr n (List.mem_append.mpr (Or.inl hn)))
-    h.reservedFresh (Imperative.Block.defUseWellFormed_of_append_left h.defUseOk)
+    (fun n hn => h.definedVarsNotReservedCore n
+      (by rw [Imperative.Block.definedVars_append]
+          exact List.mem_append.mpr (Or.inl hn)))
+    h.reservedFreshCore (Imperative.Block.defUseWellFormed_of_append_left h.defUseOk)
     h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty
       (by rw [Block.initTypes_append]; exact List.mem_append.mpr (Or.inl hty)))
@@ -305,7 +378,7 @@ theorem blockInitEnvWF_cons_tail {params : InitEnvWFParams} {s : Statement} {ss 
       (evalCmd := EvalCommand π) hpres
       (Core.CoreStepStar_to_StepStmtStar hrun)
       h.storeWellDefined)
-    (fun n hn => ?_) (fun n hn => h.definedVarsNotReserved n ?_)
+    (fun n hn => ?_) (fun n hn => h.definedVarsNotReservedCore n ?_)
     (fun n hn => ?_) ?_ h.factoryDeclared
     (fun ty hty => hfac ▸ h.initTypesInhabited ty
       (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inr hty)))
@@ -320,8 +393,8 @@ theorem blockInitEnvWF_cons_tail {params : InitEnvWFParams} {s : Statement} {ss 
         decide (n ∈ Stmt.definedVars (P := Expression) (C := Command) s true)) = Bool.true := by
       rw [← congrFun hstore n]; exact hn
     rcases Bool.or_eq_true_iff.mp hn' with hold | hnew
-    · exact h.reservedFresh n hold
-    · refine h.definedVarsNotReserved n ?_
+    · exact h.reservedFreshCore n hold
+    · refine h.definedVarsNotReservedCore n ?_
       rw [Block.definedVars]
       exact List.mem_append.mpr (Or.inl
         (Imperative.Stmt.definedVars_true_subset_false cmdDefinedVarsFlagIrrelevant
@@ -411,7 +484,7 @@ theorem blockInitEnvWF_cons_tailE {params : InitEnvWFParams} {s : Statement} {ss
       (EvalCmd := EvalCommandE π) hpres
       hrun
       h.storeWellDefined)
-    (fun n hn => ?_) (fun n hn => h.definedVarsNotReserved n ?_)
+    (fun n hn => ?_) (fun n hn => h.definedVarsNotReservedCore n ?_)
     (fun n hn => ?_) ?_ h.factoryDeclared
     (fun ty hty => hfac ▸ h.initTypesInhabited ty
       (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inr hty)))
@@ -423,8 +496,8 @@ theorem blockInitEnvWF_cons_tailE {params : InitEnvWFParams} {s : Statement} {ss
         decide (n ∈ Stmt.definedVars (P := Expression) (C := Command) s true)) = Bool.true := by
       rw [← congrFun hstore n]; exact hn
     rcases Bool.or_eq_true_iff.mp hn' with hold | hnew
-    · exact h.reservedFresh n hold
-    · refine h.definedVarsNotReserved n ?_
+    · exact h.reservedFreshCore n hold
+    · refine h.definedVarsNotReservedCore n ?_
       rw [Block.definedVars]
       exact List.mem_append.mpr (Or.inl
         (Imperative.Stmt.definedVars_true_subset_false cmdDefinedVarsFlagIrrelevant
@@ -626,30 +699,13 @@ theorem blockInitEnvWF_procBlock_nil {params : InitEnvWFParams} {ρ : Imperative
   · rw [hpref] at hp; simp at hp
   · simp [Block.defUseWellFormed, Stmt.defUseWellFormed]
 
-/-! ## Weakening to the generic Imperative block condition -/
-
-/-- A Core `BlockInitEnvWF` weakens to the generic `Imperative.Logic.BlockInitEnvWF`
-    at the reserved-prefix name predicate `Q`. The generic gate keeps evaluator
-    and store well-formedness, that the block's defined variables start
-    undefined, and that no `Q`-name is initially defined — the last of which is
-    exactly Core's `reservedFresh` read at `Q`. The init-type witnesses
-    are the same predicate on both sides, so they transfer unchanged. -/
-theorem BlockInitEnvWF.toImperative {params : InitEnvWFParams} {bss : Statements}
-    {ρ : Imperative.Env Expression} (h : BlockInitEnvWF params bss ρ) :
+/-- A Core block condition projects to its generic Imperative parent. -/
+theorem BlockInitEnvWF.toImperative {params : InitEnvWFParams}
+    {bss : Statements} {ρ : Imperative.Env Expression}
+    (h : BlockInitEnvWF params bss ρ) :
     Imperative.Logic.BlockInitEnvWF (P := Expression) (CmdT := Command)
-      (fun s => ∃ p ∈ params.prefixIdents, p.toList.isPrefixOf s.toList) bss ρ where
-  toWellFormedSemanticEval := h.toWellFormedSemanticEval
-  storeWellDefined := h.storeWellDefined
-  defsUndefined := fun x hx => Option.isNone_iff_eq_none.mp (h.defsUndefined x hx)
-  definedVarsNotReserved := by
-    intro y hy
-    obtain ⟨s, ⟨p, hp, hpre⟩, rfl⟩ := hy
-    cases hq : ρ.store (HasIdent.ident (P := Expression) s) with
-    | none => rfl
-    | some v =>
-      exact absurd hpre
-        (h.reservedFresh (HasIdent.ident (P := Expression) s) (by rw [hq]; rfl) p hp)
-  initTypesInhabited := h.initTypesInhabited
+      params bss ρ :=
+  h.toBlockInitEnvWF
 
 end Core.Logic
 

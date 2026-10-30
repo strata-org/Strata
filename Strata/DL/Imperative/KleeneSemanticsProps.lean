@@ -42,7 +42,7 @@ theorem assume_env_eq (ρ : Env P) :
   cases ρ; simp [Bool.or_false]
 
 omit [HasFvar P] [HasBoolOps P] in
-theorem eval_tt_is_tt [LawfulHasVal P]
+theorem eval_tt_is_tt [HasFvars P] [LawfulHasVal P]
     (σ : SemanticStore P) (f : P.Factory)
     (hwfv : WellFormedSemanticEvalVal (P := P) f) :
     P.eval f σ HasBool.tt = some HasBool.tt :=

@@ -75,7 +75,6 @@ cfg entry {
 };
 #end
 
-set_option linter.unusedSimpArgs false
 
 namespace Strata
 
@@ -868,8 +867,8 @@ private theorem false_ens_initEnvWF :
         m ∈ HasVarsImp.definedVars (P := Core.Expression) falseEnsCFG false := by native_decide
     exact absurd (key n hn) hnd
   defsUndefined := by intro n _; simp [ρ0N, Imperative.emptyStore]
-  definedVarsNotReserved := by intro n _ p hp; simp [testParams] at hp
-  reservedFresh := by intro n _ p hp; simp [testParams] at hp
+  definedVarsNotReserved := by intro n _ name _ p hp; simp [testParams] at hp
+  reservedFresh := by intro n _ name _ p hp; simp [testParams] at hp
   factoryDeclared := by intro nm _; rfl
   initTypesInhabited := by
     intro ty hty
@@ -1505,11 +1504,11 @@ theorem copy_call_triple :
               from by native_decide] at hn
             simp at hn
           definedVarsNotReserved := by
-            intro n hn
+            intro n hn _ _
             rw [show HasVarsImp.definedVars (P := Core.Expression) copyCFG false = []
               from by native_decide] at hn
             simp at hn
-          reservedFresh := by intro n _ p hp; simp [testParams] at hp
+          reservedFresh := by intro n _ name _ p hp; simp [testParams] at hp
           factoryDeclared := by intro nm _; rfl
           initTypesInhabited := by
             intro ty hty

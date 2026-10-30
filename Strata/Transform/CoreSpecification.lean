@@ -88,9 +88,9 @@ structure ProcEnvWF (params : InitEnvWFParams) (proc : Procedure)
   /-- A structured body, as the block the procedure's specifications wrap it
       in, is well formed to run from `ρ`. -/
   structuredBodyWF : ∀ ss, proc.body = .structured ss →
-    BlockInitEnvWF params [Stmt.block "" ss #[]] ρ
+    Core.Logic.BlockInitEnvWF params [Stmt.block "" ss #[]] ρ
   /-- A CFG body is well formed to run from `ρ`. -/
-  cfgBodyWF : ∀ cfg, proc.body = .cfg cfg → CFGInitEnvWF params cfg ρ
+  cfgBodyWF : ∀ cfg, proc.body = .cfg cfg → Core.Logic.CFGInitEnvWF params cfg ρ
 
 /-! ## Axioms and distincts visible to a procedure
 

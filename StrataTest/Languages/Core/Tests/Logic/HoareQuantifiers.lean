@@ -21,7 +21,6 @@ import Strata.DL.Lambda.LStateProps
 import Strata.DL.Lambda.IntBoolFactory
 import Strata.DL.Imperative.StmtSemanticsProps
 
-set_option linter.unusedSimpArgs false
 set_option linter.unusedVariables false
 
 /-! # Core procedure contracts over quantifier/branch bodies, via `Procedure.contractTriple`
@@ -365,7 +364,7 @@ private theorem xFalse_notHolds {factory : Core.Expression.Factory}
     have hstore : ρ.store xIdent = some ff0 := by rw [← hvar]; exact hc
     have hcap : Core.Logic.capturedExpr
         (⟨ρ.factory, ρ.store, lbl, xExpr, md⟩ : Imperative.EventArg Core.Expression) = ff0 := by
-      simp only [Core.Logic.capturedExpr, xExpr, Lambda.LExpr.substFvarsFromEnv,
+      simp only [Core.Logic.capturedExpr, Lambda.LExpr.substFvarsFromEnv,
         Lambda.Env.mk, hstore]
     rw [hcap] at hex
     obtain ⟨_hty, hd⟩ := hex

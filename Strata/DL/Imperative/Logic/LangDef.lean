@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.CFGSemantics
+public import Strata.DL.Imperative.Procedure
 public import Strata.DL.Imperative.KleeneStmtSemantics
 import all Strata.DL.Imperative.CmdSemantics
 
@@ -261,38 +262,106 @@ abbrev Lang.imperative (P : PureExpr) [HasBool P] [HasBoolOps P]
   ⟨Stmt P CmdT, Config P CmdT, StepStmtStar P evalCmd,
    .stmt, .terminal, .exiting, isAtAssert, Config.getEnv, ParamsTy, initEnvWF⟩
 
-/-- Block-level initial-environment well-formedness for the imperative-block
-language.
+/-- Initial-environment parameters shared by imperative language instances.
+Reserved prefixes identify names that must be fresh, while `declaredFuncs`
+records evaluator operators available at entry. -/
+structure InitEnvWFParams (P : PureExpr) where
+  prefixIdents : List String
+  declaredFuncs : P.Ident → Bool
 
-TODO: erase this.  What a well-formed initial state is depends on the language
-instantiating Imperative, so an Imperative-level default is not the right thing to
-have. -/
+/-- Add reserved prefixes while preserving the declared-function predicate. -/
+@[expose] def InitEnvWFParams.extend
+    (base : InitEnvWFParams P) (prefixes : List String) : InitEnvWFParams P where
+  prefixIdents := prefixes ++ base.prefixIdents
+  declaredFuncs := base.declaredFuncs
+
+/-- Default generic parameters reserve no prefixes and admit every operator. -/
+def InitEnvWFParams.default (P : PureExpr) : InitEnvWFParams P where
+  prefixIdents := []
+  declaredFuncs := fun _ => true
+
+/-- Block-level initial-environment well-formedness for the imperative-block
+language. -/
 structure BlockInitEnvWF {P : PureExpr} [HasBool P] [HasBoolOps P]
-    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P] [HasIdent P]
-    {CmdT : Type} [HasVarsImp P CmdT] [HasInitTypesImp P CmdT]
-    (Q : String → Prop) (ss : List (Stmt P CmdT)) (ρ : Env P) : Prop
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
+    [HasIdent P] [HasOps P] [DecidableEq P.Ident]
+    {CmdT : Type} [HasVarsImp P CmdT] [HasOpsImp P CmdT]
+    [HasInitTypesImp P CmdT]
+    (params : InitEnvWFParams P)
+    (ss : List (Stmt P CmdT)) (ρ : Env P) : Prop
     extends WellFormedSemanticEval (P := P) ρ.factory where
   /-- Every binding in the initial store is a semantic value. -/
   storeWellDefined : WellFormedStore ρ.store ρ.factory
+  /-- Reads and updates not introduced by this block are defined at entry. -/
+  readWritesDefined : ∀ x ∈ Block.touchedVars ss,
+    x ∉ Block.definedVars ss false → (ρ.store x).isSome
   /-- Every variable the block defines starts undefined in `ρ`. -/
-  defsUndefined : ∀ x ∈ Block.definedVars ss false, ρ.store x = none
-  /-- No name satisfying `Q` is defined in the initial store. -/
-  definedVarsNotReserved : Env.varsUndefined (P := P) Q ρ
+  defsUndefined : ∀ x ∈ Block.definedVars ss false,
+    (ρ.store x).isNone = true
+  /-- Source definitions represented by strings avoid every reserved prefix.
+  The equality witness keeps this generic over identifier types that do not
+  expose a string projection. -/
+  definedVarsNotReserved : ∀ x ∈ Block.definedVars ss false,
+    ∀ name, x = HasIdent.ident (P := P) name →
+    ∀ p ∈ params.prefixIdents, ¬ p.toList.isPrefixOf name.toList
+  /-- Existing string-represented bindings avoid every reserved prefix. -/
+  reservedFresh : ∀ x, (ρ.store x).isSome →
+    ∀ name, x = HasIdent.ident (P := P) name →
+    ∀ p ∈ params.prefixIdents, ¬ p.toList.isPrefixOf name.toList
+  /-- Reads and updates occur only after definition, and referenced operators
+  are included in `declaredFuncs`. -/
+  defUseOk : Block.defUseWellFormed
+    (fun x => (ρ.store x).isSome) params.declaredFuncs ss = true
   /-- Every init-type the block declares has a value witness in the factory. -/
   initTypesInhabited : Block.InitTypesInhabited (P := P) (C := CmdT) ρ.factory ss
+
+/-- Initial-environment well-formedness for a deterministic CFG. Unlike the
+structured block gate, this gate has no list-ordered `defUseOk`; arbitrary CFG
+control flow requires a path-sensitive definite-assignment analysis. -/
+structure CFGInitEnvWF {P : PureExpr} [HasBool P] [HasBoolOps P]
+    [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
+    [HasIdent P] [HasOps P] [DecidableEq P.Ident]
+    {CmdT : Type} [HasVarsImp P CmdT] [HasOpsImp P CmdT]
+    [HasInitTypesImp P CmdT]
+    (params : InitEnvWFParams P)
+    (cfg : CFG String (DetBlock String CmdT P)) (ρ : Env P) : Prop
+    extends WellFormedSemanticEval (P := P) ρ.factory where
+  storeWellDefined : WellFormedStore ρ.store ρ.factory
+  readWritesDefined : ∀ ident ∈
+      HasVarsImp.modifiedVars (P := P) cfg ++
+        HasVarsImp.definedVars (P := P) cfg false ++
+        HasVarsImp.readVars (P := P) cfg,
+    ident ∉ HasVarsImp.definedVars (P := P) cfg false →
+      (ρ.store ident).isSome
+  defsUndefined : ∀ ident ∈ HasVarsImp.definedVars (P := P) cfg false,
+    (ρ.store ident).isNone
+  definedVarsNotReserved :
+    ∀ ident ∈ HasVarsImp.definedVars (P := P) cfg false,
+      ∀ name, ident = HasIdent.ident (P := P) name →
+      ∀ pfx ∈ params.prefixIdents,
+        ¬ pfx.toList.isPrefixOf name.toList
+  reservedFresh : ∀ ident, (ρ.store ident).isSome →
+    ∀ name, ident = HasIdent.ident (P := P) name →
+    ∀ pfx ∈ params.prefixIdents,
+      ¬ pfx.toList.isPrefixOf name.toList
+  initTypesInhabited : DetCFG.InitTypesInhabited
+    (P := P) (C := CmdT) ρ.factory cfg
 
 /-- `Lang` for block-level (statement-list) overapproximation.
     `StmtT` is `List (Stmt P CmdT)` and `stmtCfg` embeds via `.stmts`. -/
 abbrev Lang.imperativeBlock {P : PureExpr} [HasFvar P] [HasFvars P]
-    [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P] [HasIdent P]
-    {CmdT : Type} [HasVarsImp P CmdT] [HasInitTypesImp P CmdT]
+    [HasBool P] [HasBoolOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
+    [HasIdent P] [HasOps P] [DecidableEq P.Ident]
+    {CmdT : Type} [HasVarsImp P CmdT] [HasOpsImp P CmdT]
+    [HasInitTypesImp P CmdT]
     (evalCmd : EvalCmdParam P CmdT)
     (isAtAssertFn : Config P CmdT → AssertId P → Prop)
-    -- Default: `BlockInitEnvWF`, which is slated for removal (see its doc comment).
-    -- A real language overrides it (see `Core.Logic.Lang.coreBlock`).  The factory
-    -- is read from the initial environment (`ρ.factory`).
-    (wfPkg : (ParamsTy : Type) × (ParamsTy → List (Stmt P CmdT) → Env P → Prop) :=
-      ⟨String → Prop, BlockInitEnvWF⟩) : Lang P where
+    -- Default: the shared `BlockInitEnvWF` gate; Core extends it in
+    -- `Core.Logic.Lang.coreBlock`.  The factory is read from the initial
+    -- environment (`ρ.factory`).
+    (wfPkg : (ParamsTy : Type) ×
+      (ParamsTy → List (Stmt P CmdT) → Env P → Prop) :=
+      ⟨InitEnvWFParams P, BlockInitEnvWF⟩) : Lang P where
   StmtT := List (Stmt P CmdT)
   CfgT := Config P CmdT
   star := StepStmtStar P evalCmd

@@ -9,6 +9,7 @@ public import Strata.DL.Imperative.StmtSemantics
 import all Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.StmtProps
 public import Strata.DL.Imperative.CmdSemanticsProps
+public import Strata.DL.Imperative.CmdTraceWF
 import all Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.Cmd
 import all Strata.Util.Relations
@@ -74,6 +75,22 @@ Key results for `StepStmtE` / `StepStmtStarE`:
   evaluator value law at the run's unchanged factory.
 - `StepStmtE.imp` and `StepStmtStarE.imp`: `StepStmtE` and `StepStmtStarE` are
   monotone in their command relation.
+- `stmts_prefix_terminal_appendE`, `stmts_prefix_exiting_appendE`, and
+  `stmts_prefix_appendE` extend a traced run of a statement-list prefix to the
+  whole list.
+
+## Event snapshots
+
+- `Event.readsDefined` / `Trace.readsDefined` state that every captured free
+  variable is defined at its event snapshot; `Cmd.emittedEvents_readsDefined`
+  establishes it for a single command.
+- `Trace.semanticWF_of_stepE` / `Trace.semanticWF_of_starE` show that traced
+  runs from well-formed stores emit semantically well-formed snapshots.
+- `Config.defUseReady` lifts `Block.defUseWellFormed` to configurations;
+  `Config.defUseReady_stepE` / `Config.defUseReady_starE` preserve it, and
+  `Block.run_readsDefined` concludes that every run of a def-use well-formed
+  block emits read-defined events. `block_run_terminal_store_isSome_eqE`
+  supports this by tracking which names a terminating block run defines.
 -/
 
 variable {P : PureExpr} {CmdT : Type}
@@ -2380,7 +2397,7 @@ to a *value* `b` yields exactly `b`.  The proof evaluates in a minimal
 well-formed store and extends to an arbitrary one via `WellFormedSemanticEvalVar`
 and `WellFormedSemanticEvalMono`.  Stated over any `e` that `getFvar` reads as
 `ident`, so it serves an annotated variable as well as a bare one. -/
-theorem eval_fvarExpr_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [LawfulHasFvar P]
+theorem eval_fvarExpr_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [HasOps P] [LawfulHasFvar P]
     (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (e b : P.Expr)
     (hfv : HasFvar.getFvar e = some ident)
     (hval : HasVal.value δ b)
@@ -2411,7 +2428,7 @@ theorem eval_fvarExpr_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableE
 
 /-- Reading a bare free-variable expression `mkFvar ident` from a store that maps
 `ident` to a value yields that value. -/
-theorem eval_mkFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [LawfulHasFvar P]
+theorem eval_mkFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [HasOps P] [LawfulHasFvar P]
     (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
     (hval : HasVal.value δ b)
     (h_def : σ ident = some b)
@@ -2423,7 +2440,7 @@ theorem eval_mkFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq 
 
 /-- Evaluating a type-annotated free variable in a store that holds a value for it
 yields that value: the annotation does not affect the lookup. -/
-theorem eval_mkTypedFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [LawfulHasFvar P]
+theorem eval_mkTypedFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [HasOps P] [LawfulHasFvar P]
     {ty : P.Ty} (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
     (hval : HasVal.value δ b)
     (h_def : σ ident = some b)
@@ -2436,7 +2453,7 @@ theorem eval_mkTypedFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [Decidab
 /-- Evaluating a free-variable expression in a store just updated at the variable
 that expression denotes yields the value written there, given a well-formed
 evaluator. -/
-theorem eval_fvarExpr_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [LawfulHasFvar P]
+theorem eval_fvarExpr_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [HasOps P] [LawfulHasFvar P]
     (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (e b : P.Expr)
     (hfv : HasFvar.getFvar e = some ident)
     (hval : HasVal.value δ b)
@@ -2448,7 +2465,7 @@ theorem eval_fvarExpr_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars 
 
 /-- Evaluating a bare free variable in a store just updated at that variable
 yields the value written there. -/
-theorem eval_mkFvar_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [LawfulHasFvar P]
+theorem eval_mkFvar_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [HasOps P] [LawfulHasFvar P]
     (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
     (hval : HasVal.value δ b)
     (hwf_var : WellFormedSemanticEvalVar δ)
@@ -2460,7 +2477,7 @@ theorem eval_mkFvar_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P]
 /-- Evaluating a type-annotated free variable in a store just updated at that
 variable yields the value written there: the annotation does not affect the
 lookup. -/
-theorem eval_mkTypedFvar_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [LawfulHasFvar P]
+theorem eval_mkTypedFvar_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [HasOps P] [LawfulHasFvar P]
     {ty : P.Ty} (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
     (hval : HasVal.value δ b)
     (hwf_var : WellFormedSemanticEvalVar δ)
@@ -2476,8 +2493,7 @@ A source-side `EvalCmd c σ_src₀ σ_src₁ failed` can be replayed on a target
 `σ_tgt₁` that agrees with `σ_src₁`.  This is the workhorse of the pass-through
 `.cmd` arm: the rewrite is the identity on `.cmd`, so the target replays the
 exact same command, and we only need that the command's evaluation depends on
-the store solely through the source-visible part.  Mirrors the analogous replay
-machinery in `structuredToUnstructured_sound_kind`. -/
+the store solely through the source-visible part. -/
 
 /-- Invert a single `.cmd` execution: `.stmt (.cmd c) ρ →* .terminal ρ'` is
 exactly one `step_cmd`, exposing the `EvalCmd` witness and the post-state. -/
@@ -4167,6 +4183,96 @@ theorem stmtsT_cons_terminalE
     obtain ⟨ρ₁, tr₁, tr₂, htr, h1, h2, hlen⟩ := seqT_reaches_terminalE hrest
     exact ⟨ρ₁, tr₁, tr₂, by simpa using htr, h1, h2, by simp only [ReflTransTraceT.len]; omega⟩
 
+/-- Extend a terminating statement-list run with an unexecuted suffix. -/
+theorem stmts_prefix_terminal_appendE
+    (pfx sfx : List (Stmt P CmdT)) (ρ ρ' : Env P)
+    {trace : List EventT}
+    (h : StepStmtStarE P EvalCmd (.stmts pfx ρ) trace (.terminal ρ')) :
+    StepStmtStarE P EvalCmd (.stmts (pfx ++ sfx) ρ) trace (.stmts sfx ρ') := by
+  induction pfx generalizing ρ trace with
+  | nil =>
+      obtain ⟨htrace, hcfg⟩ := stmts_nil_runE EvalCmd h
+      subst htrace
+      rcases hcfg with hcfg | hcfg
+      · simp at hcfg
+      · injection hcfg with hρ
+        subst hρ
+        exact .refl _
+  | cons s rest ih =>
+      rcases stmts_cons_headE EvalCmd h with hcfg | hseq
+      · simp at hcfg
+      · obtain ⟨ρ₁, tr₁, tr₂, htrace, hs, hr⟩ :=
+          seq_reaches_terminalE EvalCmd hseq
+        subst trace
+        exact ReflTransTrace.trans _
+          (stmts_cons_stepE EvalCmd s (rest ++ sfx) ρ ρ₁ hs)
+          (ih ρ₁ hr)
+
+/-- Extend an exiting statement-list run with an unexecuted suffix. -/
+theorem stmts_prefix_exiting_appendE
+    (pfx sfx : List (Stmt P CmdT)) (ρ ρ' : Env P) (label : String)
+    {trace : List EventT}
+    (h : StepStmtStarE P EvalCmd (.stmts pfx ρ) trace (.exiting label ρ')) :
+    StepStmtStarE P EvalCmd (.stmts (pfx ++ sfx) ρ) trace
+      (.exiting label ρ') := by
+  induction pfx generalizing ρ trace with
+  | nil =>
+      obtain ⟨_, hcfg⟩ := stmts_nil_runE EvalCmd h
+      rcases hcfg with hcfg | hcfg <;> simp at hcfg
+  | cons s rest ih =>
+      rcases stmts_cons_headE EvalCmd h with hcfg | hseq
+      · simp at hcfg
+      · rcases seq_reaches_exitingE EvalCmd hseq with hs | htail
+        · have hrun := ReflTransTrace.trans _
+            (ReflTransTrace.step _ _ _ _ _ (.step_admin .step_stmts_cons)
+              (seq_inner_starE EvalCmd (ss := rest ++ sfx) hs))
+            (StepStmtStarE.single
+              (c := .seq (.exiting label ρ') (rest ++ sfx))
+              (.step_admin .step_seq_exit))
+          simpa using hrun
+        · obtain ⟨ρ₁, tr₁, tr₂, htrace, hs, hr⟩ := htail
+          subst trace
+          exact ReflTransTrace.trans _
+            (stmts_cons_stepE EvalCmd s (rest ++ sfx) ρ ρ₁ hs)
+            (ih ρ₁ hr)
+
+/-- Extend a finite statement-list prefix run with an unexecuted suffix. -/
+theorem stmts_prefix_appendE
+    (pfx sfx : List (Stmt P CmdT)) (ρ : Env P)
+    {cfg : Config P CmdT} {trace : List EventT}
+    (h : StepStmtStarE P EvalCmd (.stmts pfx ρ) trace cfg) :
+    ∃ cfg', StepStmtStarE P EvalCmd (.stmts (pfx ++ sfx) ρ) trace cfg' := by
+  induction pfx generalizing ρ trace cfg with
+  | nil =>
+      obtain ⟨htrace, _⟩ := stmts_nil_runE EvalCmd h
+      subst htrace
+      exact ⟨_, .refl _⟩
+  | cons s rest ih =>
+      rcases stmts_cons_headE EvalCmd h with ⟨hcfg, htrace⟩ | hseq
+      · subst hcfg
+        subst htrace
+        exact ⟨_, .refl _⟩
+      · rcases seq_run_decomposeE EvalCmd hseq with
+          ⟨inner', hcfg, hs⟩ | ⟨ρ₁, tr₁, tr₂, htrace, hs, hr⟩ |
+            ⟨label, ρ₁, hcfg, hs⟩
+        · subst hcfg
+          refine ⟨.seq inner' (rest ++ sfx), ?_⟩
+          exact ReflTransTrace.step _ _ _ _ _ (.step_admin .step_stmts_cons)
+            (seq_inner_starE EvalCmd hs)
+        · obtain ⟨cfg', hr'⟩ := ih ρ₁ hr
+          subst trace
+          exact ⟨cfg', ReflTransTrace.trans _
+            (stmts_cons_stepE EvalCmd s (rest ++ sfx) ρ ρ₁ hs) hr'⟩
+        · subst hcfg
+          refine ⟨.exiting label ρ₁, ?_⟩
+          have hrun := ReflTransTrace.trans _
+            (ReflTransTrace.step _ _ _ _ _ (.step_admin .step_stmts_cons)
+              (seq_inner_starE EvalCmd (ss := rest ++ sfx) hs))
+            (StepStmtStarE.single
+              (c := .seq (.exiting label ρ₁) (rest ++ sfx))
+              (.step_admin .step_seq_exit))
+          simpa using hrun
+
 end EventTraceReflTransTHelpers
 
 
@@ -4273,7 +4379,7 @@ theorem Config.storeWellDefined_star_ofE
 /-- A base-command event step preserves store well-formedness using the
 value law at the step's unchanged factory. -/
 theorem Config.storeWellDefined_step_evalCmdE
-    {P : PureExpr} [HasFvar P] [HasBoolOps P] [LawfulHasVal P]
+    {P : PureExpr} [HasFvar P] [HasBoolOps P] [HasFvars P] [LawfulHasVal P]
     {cfg cfg' : Config P (Cmd P)} {tr : Trace P}
     (hval : WellFormedSemanticEvalVal (P := P) cfg.getEnv.factory)
     (h_step : StepStmtE P (EvalCmdE P) cfg tr cfg')
@@ -4291,7 +4397,7 @@ theorem Config.storeWellDefined_step_evalCmdE
 /-- A base-command event run preserves store well-formedness using the value law
 at its factory. -/
 theorem Config.storeWellDefined_star_evalCmdE
-    {P : PureExpr} [HasFvar P] [HasBoolOps P] [LawfulHasVal P]
+    {P : PureExpr} [HasFvar P] [HasBoolOps P] [HasFvars P] [LawfulHasVal P]
     {cfg cfg' : Config P (Cmd P)} {tr : Trace P}
     (hval : WellFormedSemanticEvalVal (P := P) cfg.getEnv.factory)
     (h_run : StepStmtStarE P (EvalCmdE P) cfg tr cfg')
@@ -4304,7 +4410,347 @@ theorem Config.storeWellDefined_star_evalCmdE
     have hfac : c.getEnv.factory = c₁.getEnv.factory := stepE_preserves_factory h_step
     exact ih (hfac ▸ hval) h_inv₁
 
+/-- A slot defined at the start of a terminating base-command statement run
+remains defined at the end. -/
+private theorem stmt_preserves_isSomeE
+    {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
+    [DecidableEq P.Ident]
+    {y : P.Ident} {s : Stmt P (Cmd P)} {ρ ρ' : Env P} {tr : Trace P}
+    (h_run : StepStmtStarE P (EvalCmdE P)
+      (.stmt s ρ) tr (.terminal ρ'))
+    (h_some : (ρ.store y).isSome = true) :
+    (ρ'.store y).isSome = true :=
+  Config.varsDefined_star_ofE
+    (fun he hs => evalCmdE_preserves_isSome he hs)
+    h_run
+    (show Config.varDefined y (.stmt s ρ) from fun _ hz => hz ▸ h_some)
+    y rfl
+
+/-- A slot that starts undefined and is not defined at statement scope remains
+undefined after a terminating base-command statement run. -/
+theorem stmt_run_terminal_preserves_none_of_not_definedVars_trueE
+    {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
+    [DecidableEq P.Ident]
+    {y : P.Ident} {s : Stmt P (Cmd P)} {ρ ρ' : Env P} {tr : Trace P}
+    (h_y_not_def : y ∉ Stmt.definedVars s true)
+    (h_none : ρ.store y = none)
+    (h_run : StepStmtStarE P (EvalCmdE P)
+      (.stmt s ρ) tr (.terminal ρ')) :
+    ρ'.store y = none :=
+  Config.varsUndefinedScoped_star_ofE
+    (fun he hn hnd =>
+      evalCmdE_preserves_none_of_not_def he hn (fun hmem => hnd (by
+        with_unfolding_all exact hmem)))
+    h_run (by rintro z rfl; exact ⟨h_none, h_y_not_def⟩) y rfl
+
+/-- A terminating base-command statement run changes the store domain exactly
+by adding the statement's scope-level definitions. -/
+theorem stmt_run_terminal_store_isSome_eqE
+    {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
+    [DecidableEq P.Ident]
+    {s : Stmt P (Cmd P)} {ρ ρ' : Env P} {tr : Trace P}
+    (h_run : StepStmtStarE P (EvalCmdE P)
+      (.stmt s ρ) tr (.terminal ρ')) (n : P.Ident) :
+    (ρ'.store n).isSome =
+      ((ρ.store n).isSome || decide (n ∈ Stmt.definedVars s true)) := by
+  by_cases hd : n ∈ Stmt.definedVars s true
+  · simp only [hd, decide_true, Bool.or_true]
+    match s with
+    | .cmd c =>
+      cases h_run with
+      | step _ _ _ _ _ hstep hrest =>
+        cases hstep with
+        | step_cmd h_eval =>
+          obtain ⟨hcfg, _⟩ := stepStmtStarE_from_terminal hrest
+          injection hcfg with hρ
+          subst hρ
+          simp only [Stmt.definedVars] at hd
+          exact evalCmdE_definedVars_isSome h_eval hd
+        | step_admin hadmin =>
+          cases hadmin with
+          | step_cmd hfalse => exact hfalse.elim
+    | .block .. | .ite .. | .loop .. | .exit .. | .typeDecl .. =>
+      simp [Stmt.definedVars] at hd
+  · simp only [hd, decide_false, Bool.or_false]
+    by_cases hs : (ρ.store n).isSome = true
+    · rw [hs, stmt_preserves_isSomeE h_run hs]
+    · have hnone : ρ.store n = none := by
+        cases h : ρ.store n with
+        | none => rfl
+        | some v => rw [h] at hs; simp at hs
+      rw [hnone] at hs
+      rw [stmt_run_terminal_preserves_none_of_not_definedVars_trueE
+        hd hnone h_run, hnone]
+
+/-- Every free variable captured by an event has a slot in its snapshot. -/
+@[expose] def Event.readsDefined {P : PureExpr} [HasFvars P] : Event P → Prop
+  | .assert arg | .assume arg | .cover arg =>
+      ∀ ident ∈ HasFvars.getFvars arg.expr, (arg.store ident).isSome = true
+
+/-- Every event in a trace captures only defined free variables. -/
+@[expose] def Trace.readsDefined {P : PureExpr} [HasFvars P] (trace : Trace P) : Prop :=
+  ∀ event ∈ trace, Event.readsDefined event
+
+/-- Defined-read evidence composes across trace concatenation. -/
+theorem Trace.readsDefined_append {P : PureExpr} [HasFvars P]
+    {first second : Trace P} (hfirst : first.readsDefined)
+    (hsecond : second.readsDefined) : (first ++ second).readsDefined := by
+  intro event hevent
+  exact (List.mem_append.mp hevent).elim (hfirst event) (hsecond event)
+
+/-- A command whose reads are defined emits only defined-read snapshots. -/
+theorem Cmd.emittedEvents_readsDefined {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBool P]
+    (command : Cmd P) (factory : P.Factory) (store : SemanticStore P)
+    (hreads : (Cmd.getVars command).all (fun ident => (store ident).isSome) = true) :
+    (Cmd.emittedEvents P command factory store).readsDefined := by
+  rw [List.all_eq_true] at hreads
+  cases command with
+  | init | set => simp [Cmd.emittedEvents, Trace.readsDefined]
+  | assert label expr metadata | assume label expr metadata | cover label expr metadata =>
+      intro event hevent
+      simp only [Cmd.emittedEvents, List.mem_singleton] at hevent
+      subst event
+      intro ident hident
+      exact hreads ident (by simpa [Cmd.getVars] using hident)
+
+/-- A terminating statement-list run changes the store domain exactly by adding
+the list's scope-level definitions: a slot is defined afterwards iff it was
+defined on entry or the list defines it at scope level. -/
+theorem block_run_terminal_store_isSome_eqE
+    {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
+    [DecidableEq P.Ident]
+    {ss : List (Stmt P (Cmd P))} {ρ ρ' : Env P} {tr : Trace P}
+    (h_run : StepStmtStarE P (EvalCmdE P)
+      (.stmts ss ρ) tr (.terminal ρ')) (n : P.Ident) :
+    (ρ'.store n).isSome =
+      ((ρ.store n).isSome || decide (n ∈ Block.definedVars ss true)) := by
+  induction ss generalizing ρ ρ' tr with
+  | nil =>
+      obtain ⟨htrace, hfinal⟩ := stmts_nil_runE (EvalCmdE P) h_run
+      subst htrace
+      rcases hfinal with hbad | hfinal
+      · simp at hbad
+      · injection hfinal with henv
+        subst henv
+        simp [Block.definedVars]
+  | cons head tail ih =>
+      rcases stmts_cons_headE (EvalCmdE P) h_run with hbad | hseq
+      · simp at hbad
+      · obtain ⟨middle, headTrace, tailTrace, htrace, hhead, htail⟩ :=
+          seq_reaches_terminalE (EvalCmdE P) hseq
+        rw [ih htail, stmt_run_terminal_store_isSome_eqE hhead n]
+        simp only [Block.definedVars, List.mem_append]
+        by_cases hheadDef : n ∈ Stmt.definedVars head true <;>
+          by_cases htailDef : n ∈ Block.definedVars tail true <;>
+          simp [hheadDef, htailDef]
+
 end EventInvariantEngines
+
+/-! ## Event snapshots are read-defined and semantically well formed
+
+`Config.defUseReady` is the configuration-level form of
+`Block.defUseWellFormed`. Pending statement lists are checked against a
+definedness predicate whose names are already in the store. For a sequence,
+the pending tail's predicate is justified semantically: every terminating run of
+the active head defines it. A traced run from a ready configuration emits only
+events whose captured free variables are defined at the event snapshot. -/
+
+section EventSnapshots
+
+/-- A command evaluated from a well-formed store emits well-formed snapshots. -/
+theorem Cmd.emittedEvents_semanticWF {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBool P]
+    (command : Cmd P) (factory : P.Factory) (store : SemanticStore P)
+    (hstore : WellFormedStore store factory)
+    (hcongr : WellFormedSemanticEvalExprCongr factory) :
+    Trace.semanticWF (Cmd.emittedEvents P command factory store) := by
+  cases command with
+  | init | set => simp [Cmd.emittedEvents, Trace.semanticWF]
+  | assert label expr metadata | assume label expr metadata | cover label expr metadata =>
+      intro event hevent
+      simp only [Cmd.emittedEvents, List.mem_singleton] at hevent
+      subst event
+      exact ⟨hstore, hcongr⟩
+
+/-- Events emitted by one structured step capture the step's well-formed input
+store and evaluator congruence law. -/
+theorem Trace.semanticWF_of_stepE {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P]
+    {cfg cfg' : Config P (Cmd P)} {trace : Trace P}
+    (hstep : StepStmtE P (EvalCmdE P) cfg trace cfg')
+    (hstore : Config.storeWellDefined cfg)
+    (hcongr : WellFormedSemanticEvalExprCongr cfg.getEnv.factory) :
+    Trace.semanticWF trace := by
+  induction hstep with
+  | step_cmd heval =>
+      rw [heval.emitted_eq]
+      exact Cmd.emittedEvents_semanticWF _ _ _ hstore hcongr
+  | step_admin _ => simp [Trace.semanticWF]
+  | step_seq_inner _ ih => exact ih hstore hcongr
+  | step_block_body _ ih => exact ih hstore.2 hcongr
+
+/-- A structured run from a well-formed configuration emits only well-formed
+event snapshots. -/
+theorem Trace.semanticWF_of_starE {P : PureExpr}
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
+    {cfg cfg' : Config P (Cmd P)} {trace : Trace P}
+    (hrun : StepStmtStarE P (EvalCmdE P) cfg trace cfg')
+    (hval : WellFormedSemanticEvalVal cfg.getEnv.factory)
+    (hcongr : WellFormedSemanticEvalExprCongr cfg.getEnv.factory)
+    (hstore : Config.storeWellDefined cfg) :
+    Trace.semanticWF trace := by
+  induction hrun with
+  | refl => simp [Trace.semanticWF]
+  | step _ _ _ _ _ hstep _ ih =>
+      have hfactory := stepE_preserves_factory hstep
+      exact Trace.semanticWF_append (Trace.semanticWF_of_stepE hstep hstore hcongr)
+        (ih (hfactory ▸ hval) (hfactory ▸ hcongr)
+          (Config.storeWellDefined_step_evalCmdE hval hstep hstore))
+
+variable {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
+  [HasOps P] [DecidableEq P.Ident]
+
+/-- Def-use readiness of a base-command configuration. -/
+@[expose] def Config.defUseReady (declared : P.Ident → Bool) :
+    Config P (Cmd P) → Prop
+  | .stmt s ρ => ∃ defined : P.Ident → Bool,
+      Stmt.defUseWellFormed defined declared s = true ∧
+      ∀ x, defined x = true → (ρ.store x).isSome = true
+  | .stmts ss ρ => ∃ defined : P.Ident → Bool,
+      Block.defUseWellFormed defined declared ss = true ∧
+      ∀ x, defined x = true → (ρ.store x).isSome = true
+  | .terminal _ => True
+  | .exiting _ _ => True
+  | .block _ _ inner => Config.defUseReady declared inner
+  | .seq inner rest => Config.defUseReady declared inner ∧
+      ∃ defined : P.Ident → Bool,
+        Block.defUseWellFormed defined declared rest = true ∧
+        ∀ ρ' tr, StepStmtStarE P (EvalCmdE P) inner tr (.terminal ρ') →
+          ∀ x, defined x = true → (ρ'.store x).isSome = true
+
+omit [HasIdent P] [HasOps P] in
+/-- A terminating run preserves a slot defined in every store of its start. -/
+private theorem run_terminal_isSome_of_varDefined
+    {cfg : Config P (Cmd P)} {ρ' : Env P} {trace : Trace P} {x : P.Ident}
+    (hrun : StepStmtStarE P (EvalCmdE P) cfg trace (.terminal ρ'))
+    (hdefined : Config.varDefined x cfg) : (ρ'.store x).isSome = true :=
+  Config.varsDefined_star_ofE (fun he hs => evalCmdE_preserves_isSome he hs)
+    hrun hdefined x rfl
+
+omit [HasFvars P] [HasIdent P] [HasOps P] [DecidableEq P.Ident] in
+/-- A definedness promise about every terminating run is preserved by a step. -/
+private theorem terminalDefined_of_stepE
+    {inner inner' : Config P (Cmd P)} {emitted : Trace P}
+    (hstep : StepStmtE P (EvalCmdE P) inner emitted inner')
+    {defined : P.Ident → Bool}
+    (h : ∀ ρ' tr, StepStmtStarE P (EvalCmdE P) inner tr (.terminal ρ') →
+      ∀ x, defined x = true → (ρ'.store x).isSome = true) :
+    ∀ ρ' tr, StepStmtStarE P (EvalCmdE P) inner' tr (.terminal ρ') →
+      ∀ x, defined x = true → (ρ'.store x).isSome = true :=
+  fun ρ' tr hrun => h ρ' (emitted ++ tr) (.step _ _ _ _ _ hstep hrun)
+
+/-- Command-free structured steps preserve def-use readiness. -/
+private theorem Config.defUseReady_admin {declared : P.Ident → Bool}
+    {cfg cfg' : Config P (Cmd P)}
+    (hstep : StepStmt P (noCommandEvalE P (Cmd P)) cfg cfg')
+    (hready : Config.defUseReady declared cfg) :
+    Config.defUseReady declared cfg' := by
+  induction hstep with
+  | step_cmd heval => simp [noCommandEvalE] at heval
+  | step_block =>
+      obtain ⟨defined, hdu, hdefined⟩ := hready
+      exact ⟨defined, by simpa [Stmt.defUseWellFormed] using hdu, hdefined⟩
+  | step_ite_true _ | step_ite_nondet_true =>
+      obtain ⟨defined, hdu, hdefined⟩ := hready
+      simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
+      exact ⟨defined, hdu.1.2, hdefined⟩
+  | step_ite_false _ | step_ite_nondet_false =>
+      obtain ⟨defined, hdu, hdefined⟩ := hready
+      simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
+      exact ⟨defined, hdu.2, hdefined⟩
+  | step_loop_enter _ | step_loop_nondet_enter =>
+      obtain ⟨defined, hdu, hdefined⟩ := hready
+      have hloop := hdu
+      simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
+      refine ⟨⟨defined, hdu.2, hdefined⟩, defined, ?_, ?_⟩
+      · simp [Block.defUseWellFormed, hloop]
+      · intro ρ' tr hrun x hx
+        exact run_terminal_isSome_of_varDefined hrun
+          ⟨fun _ hz => hz ▸ hdefined x hx, fun _ hz => hz ▸ hdefined x hx⟩
+  | step_loop_exit _ | step_loop_nondet_exit | step_exit | step_typeDecl
+  | step_stmts_nil | step_seq_exit | step_block_done
+  | step_block_exit_match _ | step_block_exit_mismatch _ =>
+      simp [Config.defUseReady]
+  | step_stmts_cons =>
+      obtain ⟨defined, hdu, hdefined⟩ := hready
+      simp only [Block.defUseWellFormed, Bool.and_eq_true] at hdu
+      refine ⟨⟨defined, hdu.1, hdefined⟩, _, hdu.2, ?_⟩
+      intro ρ' tr hrun x hx
+      rw [stmt_run_terminal_store_isSome_eqE hrun x]
+      rcases Bool.or_eq_true_iff.mp hx with hold | hnew
+      · simp [hdefined x hold]
+      · simp only [decide_eq_true_eq] at hnew
+        simp [hnew]
+  | step_seq_inner hinner ih =>
+      obtain ⟨hinnerReady, defined, hdu, hsem⟩ := hready
+      exact ⟨ih hinnerReady, defined, hdu,
+        terminalDefined_of_stepE (.step_admin hinner) hsem⟩
+  | step_seq_done =>
+      obtain ⟨_, defined, hdu, hsem⟩ := hready
+      exact ⟨defined, hdu, hsem _ [] (.refl _)⟩
+  | step_block_body _ ih => exact ih hready
+
+/-- A structured event step from a def-use-ready configuration emits only
+read-defined snapshots and preserves readiness. -/
+theorem Config.defUseReady_stepE {declared : P.Ident → Bool}
+    {cfg cfg' : Config P (Cmd P)} {trace : Trace P}
+    (hstep : StepStmtE P (EvalCmdE P) cfg trace cfg')
+    (hready : Config.defUseReady declared cfg) :
+    Trace.readsDefined trace ∧ Config.defUseReady declared cfg' := by
+  induction hstep with
+  | step_cmd heval =>
+      obtain ⟨defined, hdu, hdefined⟩ := hready
+      simp only [Stmt.defUseWellFormed, Bool.and_eq_true] at hdu
+      have hreads := hdu.1.1.1
+      refine ⟨?_, by simp [Config.defUseReady]⟩
+      rw [heval.emitted_eq]
+      apply Cmd.emittedEvents_readsDefined
+      rw [List.all_eq_true] at hreads ⊢
+      intro x hx
+      exact hdefined x (hreads x hx)
+  | step_admin hadmin =>
+      exact ⟨by simp [Trace.readsDefined], Config.defUseReady_admin hadmin hready⟩
+  | step_seq_inner hinner ih =>
+      obtain ⟨hinnerReady, defined, hdu, hsem⟩ := hready
+      obtain ⟨hreads, hready'⟩ := ih hinnerReady
+      exact ⟨hreads, hready', defined, hdu, terminalDefined_of_stepE hinner hsem⟩
+  | step_block_body _ ih => exact ih hready
+
+/-- A structured run from a def-use-ready configuration emits only read-defined
+snapshots. -/
+theorem Config.defUseReady_starE {declared : P.Ident → Bool}
+    {cfg cfg' : Config P (Cmd P)} {trace : Trace P}
+    (hrun : StepStmtStarE P (EvalCmdE P) cfg trace cfg')
+    (hready : Config.defUseReady declared cfg) :
+    Trace.readsDefined trace ∧ Config.defUseReady declared cfg' := by
+  induction hrun with
+  | refl => exact ⟨by simp [Trace.readsDefined], hready⟩
+  | step _ _ _ _ _ hstep _ ih =>
+      obtain ⟨hhead, hmiddle⟩ := Config.defUseReady_stepE hstep hready
+      obtain ⟨htail, hfinal⟩ := ih hmiddle
+      exact ⟨Trace.readsDefined_append hhead htail, hfinal⟩
+
+/-- A def-use-well-formed statement list emits only read-defined snapshots. -/
+theorem Block.run_readsDefined {declared : P.Ident → Bool}
+    {ss : List (Stmt P (Cmd P))} {ρ : Env P}
+    {cfg : Config P (Cmd P)} {trace : Trace P}
+    (hdu : Block.defUseWellFormed (fun x => (ρ.store x).isSome) declared ss = true)
+    (hrun : StepStmtStarE P (EvalCmdE P) (.stmts ss ρ) trace cfg) :
+    Trace.readsDefined trace :=
+  (Config.defUseReady_starE hrun ⟨_, hdu, fun _ h => h⟩).1
+
+end EventSnapshots
 
 /-! ## Monotonicity in the command relation -/
 

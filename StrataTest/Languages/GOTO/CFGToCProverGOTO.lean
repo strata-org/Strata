@@ -59,12 +59,13 @@ instance : Imperative.HasVal LExprTP where
   valueOfTy _ _ _ := True
 
 
+instance : Imperative.HasFvars LExprTP where
+  getFvars _ := []
+
 instance : Imperative.LawfulHasVal LExprTP where
   valueOfTy_isVal := fun _ _ _ h => h
   valueOfTy_congr := fun _ _ _ _ _ _ _ _ => trivial
-
-instance : Imperative.HasFvars LExprTP where
-  getFvars _ := []
+  value_getFvars := fun _ _ _ => rfl
 
 instance : Imperative.HasBool LExprTP where
   tt := .const { underlying := (), type := mty[bool] } (.boolConst true)

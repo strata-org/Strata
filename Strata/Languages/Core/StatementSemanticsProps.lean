@@ -1684,7 +1684,7 @@ theorem HavocVarsDefMonotone {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' :
   apply UpdateStateDefMonotone <;> assumption
   | update_none => simp_all
 
-theorem HavocVarsUpdateStates {P : PureExpr} [HasVal P] [LawfulHasVal P]
+theorem HavocVarsUpdateStates {P : PureExpr} [HasVal P] [HasFvars P] [LawfulHasVal P]
     {f : P.Factory} {σ σ' : SemanticStore P} {vars : List P.Ident} :
     HavocVars f σ vars σ' →
     ∃ modvals, UpdateStates σ vars modvals σ' ∧
@@ -1702,7 +1702,7 @@ theorem HavocVarsUpdateStates {P : PureExpr} [HasVal P] [LawfulHasVal P]
     | head => exact LawfulHasVal.valueOfTy_isVal _ _ _ Hv
     | tail _ hm => exact Hvals w hm
 
-theorem HavocVarsDefMonotone' {P : PureExpr} [HasVal P] [LawfulHasVal P] {f : P.Factory} {σ σ' : SemanticStore P} {vs vs' : List P.Ident} :
+theorem HavocVarsDefMonotone' {P : PureExpr} [HasVal P] [HasFvars P] [LawfulHasVal P] {f : P.Factory} {σ σ' : SemanticStore P} {vs vs' : List P.Ident} :
   isDefined σ' vs →
   HavocVars f σ vs' σ' →
   isDefined σ vs := by
@@ -1970,7 +1970,7 @@ theorem InvStoresExceptUpdatedMem :
   exact List.Disjoint_Subset_right Hdisj Hsub
   exact Hinv _ Hdisj
 
-theorem InvStoresExceptHavocVars {P : PureExpr} [HasVal P] [LawfulHasVal P] {f : P.Factory} {σ σ' σ'' : SemanticStore P} {ks ks' : List P.Ident} :
+theorem InvStoresExceptHavocVars {P : PureExpr} [HasVal P] [HasFvars P] [LawfulHasVal P] {f : P.Factory} {σ σ' σ'' : SemanticStore P} {ks ks' : List P.Ident} :
   invStoresExcept σ σ' ks →
   HavocVars f σ ks' σ'' →
   invStoresExcept σ'' σ' (ks ++ ks') := by

@@ -27,7 +27,7 @@ Over Core's event language for statement lists (`EventLang.coreBlock`), erasing 
 (`Statements.noCalls`) is a trace over-approximation in the general form
 `OverapproximatesTracesUptoWhen` (`deadDefElim_overapproximatesTraces`): the initial
 environments are equal; a source trace and its target trace correspond event by event
-(`List.Rel₂ (DDEventRel)`: same kind, factory, label, condition and metadata, the target store
+(`List.Rel₂ DDEventRel`: same kind, factory, label, condition and metadata, the target store
 being the source store with some bindings removed and agreeing with it on the condition's free
 variables); final environments correspond by `DDOut`; and the output satisfies the initial-
 environment gate `BlockInitEnvWF` wherever the input does.  Consequently assertion validity on
@@ -114,7 +114,7 @@ theorem deadDefElimPipelinePhase_over {program out : Program}
     * `deadDefElim [] ss` satisfies `BlockInitEnvWF params` at `ρ₀`. -/
 theorem deadDefElim_overapproximatesTraces (π : String → Option Procedure)
     (params : InitEnvWFParams) :
-    OverapproximatesTracesUptoWhen (List.Rel₂ (DDEventRel)) (· = ·) DDOut
+    OverapproximatesTracesUptoWhen (List.Rel₂ DDEventRel) (· = ·) DDOut
       (EventLang.coreBlock π) (EventLang.coreBlock π) (fun ss => some (deadDefElim [] ss))
       (fun ss => Block.noLoops ss = true ∧ Statements.noCalls ss = true) params params := by
   intro ss st' hT ⟨hss, hnc⟩ ρ₀ _ rfl hwf
@@ -169,13 +169,13 @@ theorem deadDefElim_assertValid (π : String → Option Procedure) (params : Ini
     `deadDefElimH`, the pass the phase runs. -/
 theorem deadDefElimH_overapproximatesTraces (π : String → Option Procedure)
     (params : InitEnvWFParams) :
-    OverapproximatesTracesUptoWhen (List.Rel₂ (DDEventRel)) (· = ·) DDOut
+    OverapproximatesTracesUptoWhen (List.Rel₂ DDEventRel) (· = ·) DDOut
       (EventLang.coreBlock π) (EventLang.coreBlock π) (fun ss => some (deadDefElimH [] ss))
       (fun ss => Block.noLoops ss = true ∧ Statements.noCalls ss = true) params params := by
   have key : (fun ss : Statements => some (deadDefElimH (P := Expression) [] ss))
       = fun ss => some (deadDefElim (P := Expression) [] ss) :=
     funext fun ss => congrArg some (deadDefElimH_eq [] ss)
-  exact (congrArg (fun F => OverapproximatesTracesUptoWhen (List.Rel₂ (DDEventRel)) (· = ·) DDOut
+  exact (congrArg (fun F => OverapproximatesTracesUptoWhen (List.Rel₂ DDEventRel) (· = ·) DDOut
       (EventLang.coreBlock π) (EventLang.coreBlock π) F
       (fun ss => Block.noLoops ss = true ∧ Statements.noCalls ss = true) params params) key).mpr
     (deadDefElim_overapproximatesTraces π params)

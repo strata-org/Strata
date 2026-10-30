@@ -60,7 +60,6 @@ macro "denoteQuery_rfl" : tactic =>
 private theorem mkISContext_nil : mkISContext [] = ∅ := by rfl
 private theorem list_reverse_empty_map : List.reverse (∅ : Map α β) = ∅ := by rfl
 
-set_option linter.unusedSimpArgs false in
 macro "denoteQuery_sorts_rfl" : tactic =>
   `(tactic| (
     unfold denoteQuery;

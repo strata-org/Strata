@@ -73,6 +73,13 @@ inductive ProgramFact where
       measure's verification conditions have to be materialized before the
       loop is dissolved. -/
   | noLoopMeasures
+  /-- Initializer names are globally unique within each procedure body. Required
+      by loop-initializer hoisting and structured-to-CFG lowering, which move
+      declarations across structured scopes. -/
+  | uniqueInits
+  /-- No loop body contains an initializer at any nesting depth. Established by
+      loop-initializer hoisting and required by structured-to-CFG lowering. -/
+  | loopBodyNoInits
   /-- Every variable is written exactly once: no `set` (and so no `havoc`,
       which is a `set` to a nondeterministic value) overwrites a variable.
       This is the assignment half of SSA only: shadowing an outer `init`
@@ -173,15 +180,12 @@ by construction.
 ### The lowering's preconditions
 
 `Strata.DL.Imperative.Stmt` states five preconditions of the
-structured-to-unstructured lowering, and three of them are facts above:
-`noLoopInvariants`, `noLoopMeasures` and `noNondetGuards`. The remaining
-two — `Block.loopBodyNoInits` and `Block.uniqueInits` — are deliberately *not*
-facts: no phase here establishes or requires them, so a fact for each would
-be a claim nobody makes and nobody reads. They belong with the change that
-gives `StructuredToUnstructured` a `PipelinePhase`, which is what will
-require them. Wiring
-them to that phase also needs a bridge from each fact to the Imperative
-predicate its soundness theorem is stated over. -/
+structured-to-unstructured lowering. They are represented by
+`noLoopInvariants`, `noLoopMeasures`, `noNondetGuards`, `uniqueInits`, and
+`loopBodyNoInits`; the latter two connect the lowering to the loop-init-hoist
+phase that establishes the required declaration shape.
+The `ProgramFact.*_of_program` lemmas in `ProgramFactProps` turn these facts
+into the matching `Block` conditions on each structured procedure body. -/
 
 /-- Short, human-readable name for each fact. Used in diagnostic
     messages produced by the pipeline-composition check and by
@@ -193,6 +197,8 @@ def ProgramFact.name : ProgramFact → String
   | .noLoops => "noLoops"
   | .noLoopInvariants => "noLoopInvariants"
   | .noLoopMeasures => "noLoopMeasures"
+  | .uniqueInits => "uniqueInits"
+  | .loopBodyNoInits => "loopBodyNoInits"
   | .staticSingleAssignment => "staticSingleAssignment"
   | .noBetaRedexes => "noBetaRedexes"
   | .noPrecondsFromFuncs => "noPrecondsFromFuncs"
@@ -212,9 +218,10 @@ def ProgramFact.name : ProgramFact → String
     lets `canon_facts` discharge it statically. -/
 @[expose] def ProgramFact.all : List ProgramFact :=
   [.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
-   .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
-   .hasObligationForm, .noProcedureContracts, .noPolymorphicProcedures,
-   .noPolymorphicFunctions, .typeAnnotated]
+   .noLoopMeasures, .uniqueInits, .loopBodyNoInits, .staticSingleAssignment,
+   .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
+   .noProcedureContracts, .noPolymorphicProcedures, .noPolymorphicFunctions,
+   .typeAnnotated]
 
 /-- `ProgramFact` is a fact vocabulary: a closed enumeration with names, which
     is all the language-neutral pipeline machinery needs of it. Completeness and
@@ -251,7 +258,14 @@ than the `Prop` being bent into the shape of a `Bool`. -/
   | .noCalls          => some (Program.allStatements Statements.noCalls)
   | .noLoops          => some (Program.allStatements Imperative.Block.noLoops)
   | .noLoopInvariants => some (Program.allStatements Imperative.Block.loopHasNoInvariants)
-  | .noLoopMeasures   => some (Program.allStatements Imperative.Block.noMeasureLoops)
+  | .noLoopMeasures   =>
+    some (Program.allStatements Imperative.Block.noMeasureLoops)
+  | .uniqueInits      =>
+    some (Program.allStatements fun ss =>
+      (Imperative.Block.initVars (C := Command) ss).eraseDups ==
+        Imperative.Block.initVars (C := Command) ss)
+  | .loopBodyNoInits  =>
+    some (Program.allStatements Imperative.Block.loopBodyNoInits)
   | .staticSingleAssignment =>
     some (Program.allStatements Statements.staticSingleAssignment)
   | .noBetaRedexes    => some (Program.allExprs Lambda.LExpr.noBetaRedex)
@@ -274,6 +288,12 @@ than the `Prop` being bent into the shape of a `Bool`. -/
     fun p => Program.allStatements Imperative.Block.loopHasNoInvariants p = true
   | .noLoopMeasures   =>
     fun p => Program.allStatements Imperative.Block.noMeasureLoops p = true
+  | .uniqueInits      =>
+    fun p => Program.allStatements (fun ss =>
+      (Imperative.Block.initVars (C := Command) ss).eraseDups ==
+        Imperative.Block.initVars (C := Command) ss) p = true
+  | .loopBodyNoInits  =>
+    fun p => Program.allStatements Imperative.Block.loopBodyNoInits p = true
   | .staticSingleAssignment =>
     fun p => Program.allStatements Statements.staticSingleAssignment p = true
   | .noBetaRedexes    => fun p => Program.allExprs Lambda.LExpr.noBetaRedex p = true

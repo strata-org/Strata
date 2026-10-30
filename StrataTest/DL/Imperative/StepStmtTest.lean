@@ -66,12 +66,13 @@ instance : HasVal MiniPureExpr where
   value _ _ := True
   valueOfTy _ _ _ := True
 
+instance : HasFvars MiniPureExpr where
+  getFvars _ := []
+
 instance : LawfulHasVal MiniPureExpr where
   valueOfTy_isVal := fun _ _ _ h => h
   valueOfTy_congr := fun _ _ _ _ _ _ _ _ => trivial
-
-instance : HasFvars MiniPureExpr where
-  getFvars _ := []
+  value_getFvars := fun _ _ _ => rfl
 
 instance : HasBool MiniPureExpr where
   tt := .tt
@@ -315,26 +316,6 @@ abbrev MiniPureExpr2 : PureExpr :=
       | .var x => σ x
       | _ => some e }
 
-instance : HasVal MiniPureExpr2 where
-  value _ _ := True
-  valueOfTy _ _ _ := True
-
-
-instance : LawfulHasVal MiniPureExpr2 where
-  valueOfTy_isVal := fun _ _ _ h => h
-  valueOfTy_congr := fun _ _ _ _ _ _ _ _ => trivial
-instance : HasBool MiniPureExpr2 where
-  tt := .tt
-  ff := .ff
-  tt_is_not_ff := by intro h; cases h
-  boolTy := .Bool
-  boolIsValOfTy := fun _ => ⟨trivial, trivial⟩
-
-instance : HasBoolOps MiniPureExpr2 where
-  not := .not
-  and := fun _ _ => .tt
-  imp := fun _ _ => .tt
-
 /-- Get free variables from `Expr2`. -/
 def Expr2.getVars : Expr2 → List String
   | .var n => [n]
@@ -343,6 +324,28 @@ def Expr2.getVars : Expr2 → List String
 
 instance : HasFvars MiniPureExpr2 where
   getFvars := Expr2.getVars
+
+/-- Values are the variable-free expressions. -/
+instance : HasVal MiniPureExpr2 where
+  value _ e := e.getVars = []
+  valueOfTy _ e _ := e.getVars = []
+
+instance : LawfulHasVal MiniPureExpr2 where
+  valueOfTy_isVal := fun _ _ _ h => h
+  valueOfTy_congr := fun _ _ _ _ _ _ _ h => h
+  value_getFvars := fun _ _ h => h
+
+instance : HasBool MiniPureExpr2 where
+  tt := .tt
+  ff := .ff
+  tt_is_not_ff := by intro h; cases h
+  boolTy := .Bool
+  boolIsValOfTy := fun _ => ⟨rfl, rfl⟩
+
+instance : HasBoolOps MiniPureExpr2 where
+  not := .not
+  and := fun _ _ => .tt
+  imp := fun _ _ => .tt
 
 /-- Test: `set x := var "y"` has `modifiedOrDefinedVars = ["x"]` (write-set only)
     but `touchedVars = ["x", "y"]` (includes the read variable "y"). -/
