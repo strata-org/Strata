@@ -162,9 +162,11 @@ def genCoreVCs (program : Program)
 /--
 Remove solver-side caches that destabilize definitional equality in metaprograms.
 
-At the moment this is semantically harmless for denotation because
-`Strata.DL.SMT.Denote.denoteQuery` rejects contexts with datatype machinery
-(`datatypes`, `seenDatatypes`, `datatypeFuns`) populated anyway.
+The sanitized context carries no datatypes, so `Strata.DL.SMT.Denote.denoteQuery`
+sees none through this path and a verification condition that mentions a
+datatype has no denotation; `createGoal` refuses such conditions before this
+matters. Passing the datatypes through, as the plain list `denoteQuery` accepts,
+is what lifts that refusal.
 -/
 private def sanitizeSMTContext (ctx : Core.SMT.Context) : SMT.SanitizedContext :=
   SMT.SanitizedContext.ofCore ctx

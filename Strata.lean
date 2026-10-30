@@ -97,6 +97,7 @@ import Strata.Backends.CBMC
 
 /- Dialect Library — additional (can't go in aggregates due to cycles) -/
 import Strata.DL.SMT.Denote
+import Strata.DL.SMT.DenoteDatatypes
 import Strata.DL.SMT.FactoryCorrect
 import Strata.DL.SMT.Translate
 import Strata.DL.SMT.DenoteTyped
