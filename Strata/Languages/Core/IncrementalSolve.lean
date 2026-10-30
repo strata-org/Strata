@@ -1532,15 +1532,17 @@ def coreSMTSolver (sessions : Nat := 1) (options : VerifyOptions := VerifyOption
         | .error m => throw (ofMsg m)
       let ob := obligationOf item
       let ob := if anyUnsupportedCSE then pruneUnusedCSEDefinitions ob else ob
-      -- The caller's worker count is kept: several workers may send goals at once, and a back end
-      -- that shares one connection across a sequential run relies on `parallelWorkers` to tell it
-      -- when obligations may be sent concurrently. Each goal gets a pipeline context of its own,
-      -- since a context's phase stack is not meant to be shared by concurrent workers, and nothing
-      -- reads these contexts back.
+      -- A goal sent alone is a single obligation, so it is discharged with one worker whatever
+      -- the caller's worker count. That count describes this call only: several of the walk's
+      -- workers may send goals at once, so a back end that shares one connection between
+      -- obligations decides from the options of the run it was created for, not from these.
+      -- Each goal gets a pipeline context of its own, since a context's phase stack is not
+      -- meant to be shared by concurrent workers, and nothing reads these contexts back.
       let goalCtx ← (Strata.Pipeline.PipelineContext.create (outputMode := .quiet) : BaseIO _)
       let (rs, _) ← EIO.toIO ofMsg (dischargeObligations E #[ob]
-        { options with stopOnFirstError := false } counter tempDir
-        axiomCache axiomNames (axiomProgram := axProg) (mkDischarge := mkDischarge) (pctx := goalCtx))
+        { options with parallelWorkers := 1, stopOnFirstError := false } counter tempDir
+        axiomCache axiomNames (axiomProgram := axProg) (mkDischarge := mkDischarge)
+        (pctx := goalCtx))
       match rs[0]? with
       | some r => pure r
       | none => throw (IO.userError s!"no result for {item.goal.label}")
