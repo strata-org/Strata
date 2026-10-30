@@ -6,20 +6,22 @@
 module
 
 meta import Strata.Languages.Core
+meta import Strata.Transform.EqualitySimplification
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
 
 /-! # Equality simplification
 
-The `equalitySimplification` phase substitutes into each `assert` and `cover`
-goal the values that ground axioms, `assume`s and definitions give its terms,
-and folds the result. A goal that becomes `true` is proved, and a `cover` whose
-goal becomes `false` is unreachable, without a solver.
+The `equalitySimplification` phase substitutes into each `assert`, `cover` and
+lemma goal the values that ground axioms, `assume`s and definitions give its
+terms, and folds the result. A goal that becomes `true` is proved, and a
+`cover` whose goal becomes `false` is unreachable, without a solver.
 
-Each test verifies a program with the phase added after `simplify` in the
+Most tests verify a program with the phase added after `simplify` in the
 default order, under a discharge that proves every query it receives and counts
-them: a goal the phase decides never reaches it. -/
+them: a goal the phase decides never reaches it. The lemma tests print the
+program after the phase alone. -/
 
 namespace Strata.EqualitySimplificationTest
 
@@ -741,6 +743,201 @@ beyondDepth: pass
 -/
 #guard_msgs in
 #eval allAgreeWithSolver .deductiveAssumingSatisfiablePaths
+
+/-! ## Lemmas
+
+A lemma is rewritten under the ground axioms declared before it, as an `assert`
+is. Each test prints the program after the phase alone; the agreement section
+at the end verifies them. -/
+
+/-- Run the phase alone on `p` and print the result. -/
+private def rewriteAndPrint (p : StrataDDM.Program) : IO Unit :=
+  match Core.Transform.run (parse p)
+      Core.EqualitySimplification.runEqualitySimplification
+      { Core.Transform.CoreTransformState.emp with
+        factory := Core.Factory } with
+  | .error e => IO.println s!"error: {e}"
+  | .ok (_, p') =>
+    let s := (Core.formatProgram p').pretty
+    IO.println (String.ofList (s.toList.reverse.dropWhile (· == '\n')).reverse)
+
+/-! ### A lemma that folds to `true` -/
+
+private def lemmaPgm :=
+#strata
+program Core;
+datatype Option () { None(), Some(val: int) };
+function f(n : int) : Option;
+axiom [fZero]: f(0) == Some(3);
+lemma [lemmaFolds]: Option..isSome(f(0));
+#end
+
+/--
+info: program Core;
+
+datatype Option {
+  None(),
+  Some(val : int)
+};
+function f (n : int) : Option;
+axiom [fZero]: f(0) == Some(3);
+lemma [lemmaFolds]: true;
+-/
+#guard_msgs in
+#eval rewriteAndPrint lemmaPgm
+
+/--
+info: lemmaFolds: pass
+discharge calls: 0
+-/
+#guard_msgs in
+#eval countedDischarge lemmaPgm
+
+/-! ### Which facts a lemma sees
+
+A lemma's obligation assumes only the axioms declared before it, so `cBefore`
+is left as written and reaches the solver; `cAfter` folds. A lemma gives no
+fact, so `dFirst` does not decide `dAgain`. The `assume` in `P` holds only
+inside `P`, so `afterProc` is left as written. -/
+
+private def lemmaOrderPgm :=
+#strata
+program Core;
+const c : int;
+const d : int;
+lemma [cBefore]: c == 1;
+axiom [cOne]: c == 1;
+lemma [cAfter]: c == 1;
+lemma [dFirst]: d == 2;
+lemma [dAgain]: d == 2;
+const e : int;
+procedure P() {
+  assume e == 3;
+};
+lemma [afterProc]: e == 3;
+#end
+
+/--
+info: program Core;
+
+function c () : int;
+function d () : int;
+lemma [cBefore]: c == 1;
+axiom [cOne]: c == 1;
+lemma [cAfter]: true;
+lemma [dFirst]: d == 2;
+lemma [dAgain]: d == 2;
+function e () : int;
+procedure P ()
+{
+  assume [assume_0]: e == 3;
+};
+lemma [afterProc]: e == 3;
+-/
+#guard_msgs in
+#eval rewriteAndPrint lemmaOrderPgm
+
+/-! ### Contradictory axioms
+
+After `x == 1` and `!(x == 1)`, the lemma `x == 1` would fold to `false`. The
+phase leaves it alone, as it leaves the `assert` with the same goal, and the
+solver finds both vacuously valid. -/
+
+private def lemmaContradictionPgm :=
+#strata
+program Core;
+const x : int;
+axiom [xOne]: x == 1;
+axiom [xNotOne]: !(x == 1);
+lemma [vacuousLemma]: x == 1;
+procedure P()
+{
+  assert [vacuousAssert]: x == 1;
+};
+#end
+
+/--
+info: program Core;
+
+function x () : int;
+axiom [xOne]: x == 1;
+axiom [xNotOne]: !(x == 1);
+lemma [vacuousLemma]: x == 1;
+procedure P ()
+{
+  assert [vacuousAssert]: x == 1;
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint lemmaContradictionPgm
+
+/-! ### A quantified lemma
+
+Under a binder, a term without the bound variable is replaced as in an
+`assert`: `f(0)` becomes `5` in both, and `f(n)` is left alone. -/
+
+private def lemmaQuantPgm :=
+#strata
+program Core;
+function f(n : int) : int;
+axiom [fZero]: f(0) == 5;
+lemma [quantLemma]: forall n : int :: int.gt(f(n), f(0)) ==> int.gt(f(n), 4);
+procedure P()
+{
+  assert [quantAssert]:
+    forall n : int :: int.gt(f(n), f(0)) ==> int.gt(f(n), 4);
+};
+#end
+
+/--
+info: program Core;
+
+function f (n : int) : int;
+axiom [fZero]: f(0) == 5;
+lemma [quantLemma] (n : int): int.gt(f(n), 5) ==> int.gt(f(n), 4);
+procedure P ()
+{
+  assert [quantAssert]: forall n : int :: int.gt(f(n), 5) ==> int.gt(f(n), 4);
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint lemmaQuantPgm
+
+/-! ### Agreement with the solver
+
+Each lemma program above, verified by `agreesWithSolver` in both modes. -/
+
+/--
+info: lemmaFolds: pass
+cBefore: fail
+cAfter: pass
+dFirst: fail
+dAgain: fail
+afterProc: fail
+vacuousLemma: pass
+vacuousAssert: pass
+quantLemma: pass
+quantAssert: pass
+lemmaFolds: pass
+cBefore: fail
+cAfter: pass
+dFirst: fail
+dAgain: fail
+afterProc: fail
+vacuousLemma: pass
+vacuousAssert: pass
+quantLemma: pass
+quantAssert: pass
+-/
+#guard_msgs in
+#eval do
+  let modes : List Core.VerificationMode :=
+    [.deductive, .deductiveAssumingSatisfiablePaths]
+  for mode in modes do
+    let ps : List StrataDDM.Program :=
+      [lemmaPgm, lemmaOrderPgm, lemmaContradictionPgm, lemmaQuantPgm]
+    for p in ps do
+      agreesWithSolver mode p
 
 end Strata.EqualitySimplificationTest
 

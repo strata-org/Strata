@@ -225,8 +225,9 @@ def Core.passMonomorphizeFunctions : Core.PipelinePhase :=
 def Core.passSimplify : Core.PipelinePhase :=
   Core.simplifyPhase
 
-/-- Substitute into each `assert` and `cover` goal the values that ground axioms,
-    `assume`s and definitions give its terms, and fold. No default pipeline lists it. -/
+/-- Substitute into each `assert`, `cover` and lemma goal the values that
+    ground axioms, `assume`s and definitions give its terms, and fold. No
+    default pipeline lists it. -/
 def Core.passEqualitySimplification : Core.PipelinePhase :=
   _root_.Core.equalitySimplificationPhase
 

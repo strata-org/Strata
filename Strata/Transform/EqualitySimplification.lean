@@ -13,10 +13,10 @@ public import Strata.Transform.Simplify
 A program often pins terms its goals mention to values: an axiom
 `f(x) == "a"`, an `assume o == Some(3)`, a definition `init y := Cons(1, Nil)`, or a
 bare boolean fact such as `b` or `!c`. This phase substitutes those values into
-the goal of each `assert` and `cover` and folds the result with `LExpr.eval`.
-Folding reduces a selector or tester applied to a constructor, so a goal often
-becomes `true` or `false`, which the obligation checks then decide without a
-solver; a goal that does not still reaches the solver smaller.
+the goal of each `assert`, `cover` and lemma and folds the result with
+`LExpr.eval`. Folding reduces a selector or tester applied to a constructor, so
+a goal often becomes `true` or `false`, which the obligation checks then decide
+without a solver; a goal that does not still reaches the solver smaller.
 
 The rule is: in a fact `a == b`, a side that is a concrete value (a literal, or a
 constructor applied to values) or a constructor application replaces the other
@@ -27,8 +27,10 @@ The facts at a statement are the ground axioms, and the `assume`s and
 definitions on the way to it. Each holds in every state that reaches the
 statement, so each replacement leaves the goal's value unchanged in those
 states, and so does evaluation: the phase is model-preserving. A write to a
-variable drops the facts that mention it, and the facts learned inside a block or
-branch are forgotten when it ends.
+variable drops the facts that mention it, and the facts learned inside a block
+or branch are forgotten when it ends. The facts at a lemma are the ground
+axioms declared before it, and its statement keeps its value in every model of
+them.
 
 Facts are read as written. An axiom whose value side only appears once it is folded,
 such as `g(0) == Box..w(box())` with `box()` an inline function returning `MkBox(5)`,
@@ -391,9 +393,11 @@ def rewriteProc (fs : Facts) (fuel : Nat) (proc : Procedure) : Procedure :=
     { proc with body := .structured (stepStmts F fs fuel ss).1 }
   | .cfg _ => proc
 
-/-- Rewrite the goal of every `assert` and `cover` in `p`'s procedure bodies. Facts are
-    collected in declaration order, as obligation extraction builds the global path
-    condition, so a procedure sees only the axioms declared before it. -/
+/-- Rewrite every lemma of `p`, and the goal of every `assert` and `cover` in
+    its procedure bodies. Facts are collected in declaration order, as
+    obligation extraction builds the global path condition, so a procedure or
+    lemma sees only the axioms declared before it. A lemma gives no fact: it is
+    never assumed when checking other declarations. -/
 def runEqualitySimplification (p : Program) : Transform.CoreTransformM (Bool × Program) := do
   let ctx := Simplify.Ctx.ofFactory (← Simplify.programFactory p) (Simplify.lambdaCarriers p)
   let F := ctx.foldFactory
@@ -401,6 +405,8 @@ def runEqualitySimplification (p : Program) : Transform.CoreTransformM (Bool × 
     match d with
     | .ax a _ => (if a.e.hasBVar then fs else assumeFact F fs ctx.evalFuel a.e, d :: acc)
     | .proc proc md => (fs, .proc (rewriteProc F fs ctx.evalFuel proc) md :: acc)
+    | .lemma l md =>
+      (fs, .lemma { l with e := rewriteGoal F fs ctx.evalFuel l.e } md :: acc)
     | other => (fs, other :: acc)
   let p' := { p with decls := declsRev.reverse }
   return (decide (p' ≠ p), p')
@@ -413,14 +419,18 @@ public section
 
 /-- Equality simplification pipeline phase.
 
-    Model-preserving: each rewrite replaces a goal by one with the same value in every
-    state that reaches it, and no statement is added, removed or reordered. It needs
-    structured bodies and no calls, since a callee may write globals the call does not
-    name, and no function preconditions, since folding can expand a function body, which is
-    only right where its precondition holds. It preserves what `simplify` preserves, for the
-    same reason: only the expressions of `assert` and `cover` change, and those are built from the
-    program's own annotated terms and constants. It also preserves `noBetaRedexes`, which
-    `simplify` cannot claim, because a rewritten goal that contains a redex is discarded.
+    Model-preserving: each rewrite replaces a goal by one with the same value
+    in every state that reaches it, and a lemma by one with the same value in
+    every model of the ground axioms declared before it; no declaration or
+    statement is added, removed or reordered. It needs structured bodies and no
+    calls, since a callee may write globals the call does not name, and no
+    function preconditions, since folding can expand a function body, which is
+    only right where its precondition holds. It preserves what `simplify`
+    preserves, for the same reason: only the expressions of `assert`, `cover`
+    and lemmas change, and those are built from the program's own annotated
+    terms and constants. It also preserves `noBetaRedexes`, which `simplify`
+    cannot claim, because a rewritten goal that contains a redex is
+    discarded.
 
     Limitation: a goal on a path whose assumptions contradict each other can fold to
     `false`. The phase leaves such goals alone only when an assumption itself folds to
