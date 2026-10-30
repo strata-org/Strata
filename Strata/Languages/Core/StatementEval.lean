@@ -585,7 +585,11 @@ private def evalOneStmt (old_var_subst : SubstMap)
         let (ss_live, ss_dead) :=
           if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
         let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions.consume
-        let (Ewns, liveStats, nextSplitId) := evalSub Ewn ss_live nextSplitId
+        -- The live arm is scoped as in `processIteBranches`: its declarations
+        -- are popped on every resulting path.
+        let (Ewns, liveStats, nextSplitId) :=
+          evalSub { Ewn with env := Ewn.env.pushEmptyScope } ss_live nextSplitId
+        let Ewns := Ewns.map fun (ewn : EnvWithNext) => { ewn with env := ewn.env.popScope }
         match Ewns with
         | [] => ([], liveStats, nextSplitId)
         | first :: restEwns =>

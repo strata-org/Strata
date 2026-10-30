@@ -28,9 +28,10 @@ def fixupError (E : Env) : Env :=
 /--
 Merge multiple procedure evaluation results into one.
 
-After `fixupError`, all paths through a procedure have identical variable state
-and path conditions — the procedure scope and its path-condition scope have been
-popped, leaving only the outer (global) scope which is the same on every path.
+After `fixupError`, all paths through a procedure that did not fail have
+identical variable state and path conditions — the procedure scope and its
+path-condition scope have been popped, leaving only the outer (global) scope
+which is the same on every path.
 The differences across paths are:
 
 - `deferred`: path-specific proof obligations (each already carries its own
@@ -41,6 +42,10 @@ The differences across paths are:
 - `exprEnv.config.usedNames`: may diverge when branches generate different
   variables. We union the sets to prevent fresh-variable name collisions in
   subsequent evaluation.
+- `error`: a path whose evaluation failed is not popped by `fixupError` and
+  carries no obligations for the statements after the failure. The merged Env
+  takes the first error of any path, so the caller reports the procedure as
+  failed instead of dropping that path.
 
 The `fallback` Env is returned when `results` is empty (which should not occur
 in practice, since `Statement.eval` always produces at least one result).
@@ -54,6 +59,7 @@ private def mergeResults (fallback : Env) (results : List Env) : Env :=
     let mergedNames := rest.foldl (fun acc e =>
       acc.union e.exprEnv.config.usedNames) E.exprEnv.config.usedNames
     { E with
+      error := results.findSome? (·.error),
       deferred := allDeferred,
       exprEnv  := { E.exprEnv with config := { E.exprEnv.config with usedNames := mergedNames } } }
 
