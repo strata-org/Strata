@@ -28,6 +28,7 @@ the ordered values always agree in size.
   well-formedness; `ofArrayUnchecked_wf` does so given key-distinct input.
 * `size_setIdx_eq_size` — in a well-formed set the key index and the
   ordered values have equal cardinality.
+* `mem_eraseDups` — `eraseDups` keeps exactly the elements of the list.
 -/
 
 namespace Strata.Util
@@ -269,6 +270,9 @@ variable {α : Type _} [BEq α] [Hashable α]
 theorem toList_empty : (empty : OrderedSet α).toList = [] :=
   OrderedKeyedSet.toList_empty
 
+/-- `eraseDups` of the empty list is empty. -/
+public theorem eraseDups_nil : eraseDups ([] : List α) = [] := (rfl)
+
 theorem toList_ofArray_of_nodup [LawfulBEq α] [LawfulHashable α] {xs : Array α}
     (h : xs.toList.Nodup) : (ofArray xs : OrderedSet α).toList = xs.toList :=
   OrderedKeyedSet.toList_ofArray_of_keys_nodup (by simpa using h)
@@ -424,4 +428,27 @@ theorem size_setIdx_eq_size [LawfulBEq κ] [LawfulHashable κ]
   rw [← Std.HashSet.length_toList, hlen, List.length_map, length_toList]
 
 end OrderedKeyedSetWF
+
+namespace OrderedSet
+
+variable {α : Type _} [BEq α] [Hashable α] [LawfulBEq α]
+
+/-- `eraseDups` keeps exactly the elements of the list. -/
+public theorem mem_eraseDups {xs : List α} {a : α} : a ∈ eraseDups xs ↔ a ∈ xs := by
+  suffices h : ∀ (l : List α) (s : OrderedSet α), OrderedKeyedSetWF s →
+      (a ∈ (l.foldl OrderedSet.insert s).toList ↔ a ∈ s.toList ∨ a ∈ l) by
+    simpa [eraseDups, toList_empty] using h xs empty OrderedKeyedSetWF.empty_wf
+  intro l
+  induction l with
+  | nil => simp
+  | cons b t ih =>
+    intro s hs
+    rw [List.foldl_cons, ih (s.insert b) (hs.insert_wf b)]
+    have hb : OrderedKeyedSet.contains s b = true → b ∈ OrderedKeyedSet.toList s := fun h => by
+      obtain ⟨c, hc, hcb⟩ := Array.any_eq_true'.1 ((hs.contains_eq_any b).symm.trans h)
+      exact (eq_of_beq hcb : c = b) ▸ Array.mem_toList_iff.2 hc
+    simp only [OrderedSet.insert, OrderedSet.toList, OrderedKeyedSet.toList_insert]
+    split <;> grind
+
+end OrderedSet
 end Strata.Util

@@ -12,6 +12,10 @@ public import Strata.Languages.Core.Factory
 public import Strata.DL.Lambda.LExprEval
 import Strata.DL.Lambda.OperationalSemanticsProps
 import all Strata.DL.Lambda.LExprEvalProps
+import all Strata.DL.Lambda.LExprWFProps
+import all Strata.DL.Lambda.LExprWF
+import all Strata.DL.Lambda.LExpr
+import Strata.Util.ListMapProps
 import all Strata.DL.Lambda.FactoryProps
 import all Strata.DL.Lambda.IntBoolFactory
 import all Strata.DL.Lambda.Factory
@@ -809,6 +813,89 @@ theorem coreEvaluator_WellFormedSemanticEvalRename (f : Expression.Factory)
       = Lambda.LExpr.evalFully f (substStoreExpr σ' sm) e
   rw [hpb]
   exact Lambda.rename_commute hIdent f σ' hWF hwfs' sm hVar' hTgt' e
+
+/-- The Core evaluator satisfies the well-formedness conditions that do not involve the Boolean
+    or integer operations (variables, values, agreement on free variables, renaming) for a
+    well-formed factory. -/
+theorem coreEvaluator_WellFormedSemanticEvalBase {f : Expression.Factory}
+    (hWF : Lambda.FactoryWF f) : WellFormedSemanticEvalBase (P := Expression) f :=
+  ⟨coreEvaluator_WellFormedSemanticEvalVar f, coreEvaluator_WellFormedSemanticEvalVal f,
+    coreEvaluator_WellFormedSemanticEvalExprCongr f hWF,
+    coreEvaluator_WellFormedSemanticEvalRename f hWF⟩
+
+/-- Substituting variables for variables preserves evaluation: if `sm` maps each `k` to a
+    variable `y` whose value in `σ'` is the (defined) value of `k` in `σ`, and every other
+    free variable of `e` has the same value in `σ'` and `σ`, then `e` with `sm` substituted
+    evaluates in `σ'` as `e` evaluates in `σ`. -/
+theorem coreEvaluator_substVars {F : Expression.Factory} {σ σ' : SemanticStore Expression}
+    (hF : Lambda.FactoryWF F) (hσ' : WellFormedStore σ' F)
+    (hσ : WellFormedStore σ F) (sm : Map CoreIdent Expression.Expr) (e : Expression.Expr)
+    (hsm : ∀ k v, Map.find? sm k = some v →
+      ∃ y, (v = HasFvar.mkFvar y ∨ ∃ ty, v = HasFvar.mkTypedFvar (P := Expression) y ty) ∧
+        σ' y = σ k ∧ (σ k).isSome)
+    (hrest : ∀ x ∈ (Lambda.LExpr.freeVars e).map (·.1), Map.find? sm x = none → σ' x = σ x) :
+    Lambda.LExpr.evalFully F σ' (Lambda.LExpr.substFvars e sm) = Lambda.LExpr.evalFully F σ e := by
+  have hDef : SubstVarsDefined (P := Expression) σ' sm := fun k v hk => by
+    obtain ⟨y, hv | ⟨_, hv⟩, hy, hdef⟩ := hsm _ _ hk <;> subst hv <;> exact ⟨y, rfl, hy ▸ hdef⟩
+  refine (coreEvaluator_WellFormedSemanticEvalRename F hF e σ' sm hσ' hDef).trans
+    (coreEvaluator_WellFormedSemanticEvalExprCongr F hF e _ σ (fun x v hx => ?_) hσ fun x hx => ?_)
+  all_goals simp only [Imperative.substStoreExpr] at hx ⊢
+  · split at hx <;> (try split at hx) <;> exact hσ' _ _ hx
+  rcases hf : Map.find? sm x with _ | w
+  · exact hrest x (by simpa [HasFvars.getFvars, Lambda.getVars_eq_freeVars_idents] using hx) hf
+  · obtain ⟨y, hv | ⟨_, hv⟩, hy, -⟩ := hsm _ _ hf <;> subst hv <;> exact hy
+
+/-- Substituting variables by variables holding the same value, or by Boolean literals equal to
+    the value, preserves evaluation: if `sm` maps each `k` either to a variable `y` whose value in
+    `σ'` is the (defined) value of `k` in `σ`, or to the literal `true` or `false` that is the
+    value of `k` in `σ`, and every other free variable of `e` has the same value in `σ'` and `σ`,
+    then `e` with `sm` substituted evaluates in `σ'` as `e` evaluates in `σ`. -/
+theorem coreEvaluator_substVarsLits {F : Expression.Factory} {σ σ' : SemanticStore Expression}
+    (hF : Lambda.FactoryWF F) (hσ' : WellFormedStore σ' F)
+    (hσ : WellFormedStore σ F) (sm : Map CoreIdent Expression.Expr) (e : Expression.Expr)
+    (hsm : ∀ k v, Map.find? sm k = some v →
+      (∃ y, (v = HasFvar.mkFvar y ∨ ∃ ty, v = HasFvar.mkTypedFvar (P := Expression) y ty) ∧
+        σ' y = σ k ∧ (σ k).isSome) ∨
+      (v = HasBool.tt ∧ σ k = some HasBool.tt) ∨ (v = HasBool.ff ∧ σ k = some HasBool.ff))
+    (hrest : ∀ x ∈ (Lambda.LExpr.freeVars e).map (·.1), Map.find? sm x = none → σ' x = σ x) :
+    Lambda.LExpr.evalFully F σ' (Lambda.LExpr.substFvars e sm) = Lambda.LExpr.evalFully F σ e := by
+  let lit : CoreIdent → Bool := fun k => ((Map.find? sm k).bind Lambda.LExpr.denoteBool).isSome
+  have hL := Map.find?_filter_key sm lit
+  have hV := Map.find?_filter_key sm fun k => !lit k
+  have hcls : ∀ k v, Map.find? sm k = some v →
+      (lit k ∧ (∃ m c, v = .const m c) ∧ σ k = some v) ∨ (lit k = false ∧ ∃ y,
+        (v = HasFvar.mkFvar y ∨ ∃ ty, v = HasFvar.mkTypedFvar (P := Expression) y ty) ∧
+          σ' y = σ k ∧ (σ k).isSome) := fun k v hk => by
+    rcases hsm k v hk with hv | ⟨rfl, hσk⟩ | ⟨rfl, hσk⟩
+    · refine .inr ⟨?_, hv⟩
+      obtain ⟨y, rfl | ⟨ty, rfl⟩, -⟩ := hv <;>
+        simp [lit, hk, Lambda.LExpr.denoteBool, HasFvar.mkFvar, HasFvar.mkTypedFvar]
+    all_goals exact .inl ⟨by simp [lit, hk, Lambda.LExpr.denoteBool, HasBool.tt, HasBool.ff,
+      Core.false, Core.true], ⟨_, _, rfl⟩, hσk⟩
+  have hsplit : Lambda.LExpr.substFvars e sm = Lambda.LExpr.substFvars
+      (Lambda.LExpr.substFvars e (sm.filter fun p => lit p.1)) (sm.filter fun p => !lit p.1) := by
+    erw [Lambda.LExpr.substFvars_eq_substFvarsBy (T := CoreLParams),
+      Lambda.LExpr.substFvars_eq_substFvarsBy (T := CoreLParams),
+      Lambda.LExpr.substFvars_eq_substFvarsBy (T := CoreLParams), Lambda.LExpr.substFvarsBy_comp]
+    refine Lambda.LExpr.substFvarsBy_congr e _ _ fun x _ => ?_
+    rw [hL, hV]
+    rcases hx : Map.find? sm x with _ | v
+    · simp
+    · rcases hcls x v hx with ⟨hl, ⟨m, c, rfl⟩, -⟩ | ⟨hl, -⟩ <;>
+        simp [hl, Lambda.LExpr.substFvarsBy]
+  rw [hsplit]
+  refine (coreEvaluator_substVars hF hσ' hσ _ _ (fun k v hk => ?_) fun x hx _ => ?_).trans
+    (Lambda.evalFully_substFvars_const hF (fun k v hk => ?_) e)
+  · grind [hcls k v]
+  · grind [Lambda.LExpr.freeVars_substFvars _ e x hx, Lambda.LExpr.freeVars]
+  · grind [hcls k v]
+
+/-- The Core evaluator commutes with substituting variables or Boolean literals holding the
+    values (`WellFormedSemanticEvalSubstLits`) for a well-formed factory. -/
+theorem coreEvaluator_WellFormedSemanticEvalSubstLits {F : Expression.Factory}
+    (hF : Lambda.FactoryWF F) : WellFormedSemanticEvalSubstLits (P := Expression) F :=
+  fun hσ' hσ sm e hsm hrest => coreEvaluator_substVarsLits hF hσ' hσ sm e hsm fun x hx hn =>
+    hrest x (by simpa [HasFvars.getFvars, Lambda.getVars_eq_freeVars_idents] using hx) hn
 
 /-!
 ## Instance of the full `WellFormedSemanticEval` bundle

@@ -314,6 +314,19 @@ theorem Stmt.initVars_cmd_substIdentMany_cover [HasSubstFvar P] [HasFvars P]
     Stmt.initVars (P := P) (Stmt.cmd (Cmd.substIdentMany scope (Cmd.cover label b md))) = [] :=
   Stmt.initVars_cmd_substIdentMany_of_definedVars_nil scope _ rfl
 
+section
+variable [HasFvars P]
+
+/-- The free variables of a deterministic guard or right-hand side are those of its
+    expression. -/
+theorem ExprOrNondet.getVars_det (e : P.Expr) :
+    (ExprOrNondet.det e).getVars = HasFvars.getFvars e := (rfl)
+
+/-- A nondeterministic guard or right-hand side has no free variables. -/
+theorem ExprOrNondet.getVars_nondet : (ExprOrNondet.nondet : ExprOrNondet P).getVars = [] := (rfl)
+
+end
+
 end -- public section
 
 end Imperative

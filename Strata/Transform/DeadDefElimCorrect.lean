@@ -9,6 +9,7 @@ public import Strata.Transform.DeadDefElimProps
 public import Strata.DL.Imperative.BigStep.Adequacy
 public import Strata.DL.Imperative.StmtProps
 public import Strata.DL.Imperative.CmdSemanticsProps
+public import Strata.DL.Imperative.BigStep.StoreAgree
 public import Strata.Util.ListUtilsProps
 public import Strata.DL.Imperative.Logic.TraceInterp
 import Strata.DL.Imperative.Logic.TraceInterpProps
@@ -45,7 +46,7 @@ Key theorems: `deadDefElim_fails`, `deadDefElim_failsE`, `deadDefElim_run_rel`,
 `deadDefElim_reach_rel`, `dd_assertValid_reflect`, `evalInterp_stableUnder`, and their
 `deadDefElimH` forms.
 
-Key definitions: `StoreProjected`, `DDArgRel`, `Event.Matches`, `DDOutcomeRel`. -/
+Key definitions: `DDArgRel`, `Event.Matches`, `DDOutcomeRel`. -/
 
 namespace Imperative
 namespace DeadDefElim
@@ -59,196 +60,7 @@ variable {P : PureExpr} [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
 
 /-! ## The run of the output follows the run of the input -/
 
-/-- What a failure check observes of an event: its kind, label, condition, and the value of
-    the condition in the event's store. -/
-private def Event.obs : Event P → Nat × String × P.Expr × Option P.Expr
-  | .assert a => (0, a.label, a.expr, P.eval a.factory a.store a.expr)
-  | .assume a => (1, a.label, a.expr, P.eval a.factory a.store a.expr)
-  | .cover a => (2, a.label, a.expr, P.eval a.factory a.store a.expr)
-
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P] [LawfulHasVal P]
-    [HasFvars P] in
-/-- Assumptions evaluating to `true` along a trace evaluate to `true` along every trace observed
-    like it. -/
-private theorem feasible_obs {evs evs' : List (Event P)}
-    (hm : evs'.map Event.obs = evs.map Event.obs) (h : Trace.AssumptionsHold P evalInterp () evs) :
-    Trace.AssumptionsHold P evalInterp () evs' := by
-  intro a ha
-  obtain ⟨e, he, heq⟩ := List.mem_map.1 (hm ▸ List.mem_map_of_mem (f := Event.obs) ha)
-  cases e with
-  | assume a' =>
-    simp only [Event.obs, Prod.mk.injEq] at heq
-    show P.eval _ _ _ = _
-    rw [← heq.2.2.2]
-    exact h a' he
-  | assert | cover => simp [Event.obs] at heq
-
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P] [LawfulHasVal P]
-    [HasFvars P] in
-/-- An event observed like a failing occurrence of `t` is one. -/
-private theorem failsAt_obs {t : AssertId P} {e e' : Event P}
-    (hm : Event.obs e' = Event.obs e) (h : FailsAt t e) : FailsAt t e' := by
-  cases e <;> cases e' <;> simp only [Event.obs, FailsAt, Prod.mk.injEq] at hm h ⊢ <;> grind
-
-/-- `σ'` agrees with `σ` on `N` and is a projection of `σ`. -/
-private def Agree (N : List P.Ident) (σ σ' : SemanticStore P) : Prop :=
-  (∀ y ∈ N, σ' y = σ y) ∧ StoreProjected σ σ'
-
-/-- The outcomes have the same kind and label, their stores agree on `N`, and the first
-    store is value-valued. -/
-private def OAgree (F : P.Factory) (N : List P.Ident) : Outcome P → Outcome P → Prop
-  | .normal σ, .normal σ' => Agree N σ σ' ∧ WellFormedStore σ F
-  | .exit l σ, .exit l' σ' => l = l' ∧ Agree N σ σ' ∧ WellFormedStore σ F
-  | _, _ => False
-
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasBool P] [HasFvar P]
-    [LawfulHasVal P] [HasFvars P] in
-/-- Agreement on `N` gives agreement on any subset of `N`. -/
-private theorem Agree.mono {N N' : List P.Ident} {σ σ' : SemanticStore P}
-    (h : Agree N σ σ') (hN : ∀ y ∈ N', y ∈ N) : Agree N' σ σ' :=
-  ⟨fun y hy => h.1 y (hN y hy), h.2⟩
-
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasBool P] [HasFvar P]
-    [LawfulHasVal P] [HasFvars P] in
-/-- Leaving a scope keeps agreement. -/
-private theorem Agree.proj {N : List P.Ident} {σp σp' σ σ' : SemanticStore P}
-    (hp : Agree N σp σp') (h : Agree N σ σ') :
-    Agree N (projectStore σp σ) (projectStore σp' σ') := by
-  refine ⟨fun y hy => by simp [projectStore, hp.1 y hy, h.1 y hy], storeAgreement_iff.2 ?_⟩
-  intro y
-  simp only [projectStore]
-  rcases storeAgreement_iff.1 hp.2 y with hy | hy <;>
-    rcases storeAgreement_iff.1 h.2 y with hz | hz <;> simp [hy, hz]
-
-section
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P]
-  [LawfulHasVal P]
-
-omit [HasFvars P] in
-/-- Leaving a scope keeps the store value-valued. -/
-private theorem _root_.Imperative.WellFormedStore.proj {F : P.Factory}
-    {σp σ : SemanticStore P} (h : WellFormedStore σ F) :
-    WellFormedStore (projectStore σp σ) F := fun y v hv => by
-  simp only [projectStore] at hv
-  split at hv
-  · exact h y v hv
-  · cases hv
-
-omit [HasFvars P] in
-/-- Leaving an `ite` branch keeps outcome agreement. -/
-private theorem OAgree.proj {F : P.Factory} {N : List P.Ident} {σ σ' : SemanticStore P}
-    {o o' : Outcome P} (hA : Agree N σ σ') (h : OAgree F N o o') :
-    OAgree F N (o.proj σ) (o'.proj σ') := by
-  rcases o with _ | _ <;> rcases o' with _ | _ <;> simp only [OAgree] at h
-  · exact ⟨hA.proj h.1, h.2.proj⟩
-  · exact ⟨h.1, hA.proj h.2.1, h.2.2.proj⟩
-
-omit [HasFvars P] in
-/-- Leaving a block keeps outcome agreement. -/
-private theorem OAgree.block {F : P.Factory} {N : List P.Ident} {σ σ' : SemanticStore P}
-    {o o' : Outcome P} (l : String) (hA : Agree N σ σ') (h : OAgree F N o o') :
-    OAgree F N (o.block l σ) (o'.block l σ') := by
-  rcases o with _ | _ <;> rcases o' with _ | _ <;> simp only [OAgree] at h
-  · exact ⟨hA.proj h.1, h.2.proj⟩
-  · obtain ⟨rfl, h1, h2⟩ := h
-    simp only [Outcome.block]
-    split
-    · exact ⟨hA.proj h1, h2.proj⟩
-    · exact ⟨rfl, hA.proj h1, h2.proj⟩
-
-omit [HasFvars P] in
-/-- Outcome agreement on `N` gives outcome agreement on any subset of `N`. -/
-private theorem OAgree.mono {F : P.Factory} {N N' : List P.Ident} {o o' : Outcome P}
-    (h : OAgree F N o o') (hN : ∀ y ∈ N', y ∈ N) : OAgree F N' o o' := by
-  rcases o with _ | _ <;> rcases o' with _ | _ <;> simp only [OAgree] at h ⊢
-  · exact ⟨h.1.mono hN, h.2⟩
-  · exact ⟨h.1, h.2.1.mono hN, h.2.2⟩
-
-omit [HasFvars P] in
-/-- A store agreeing with a value-valued store, elsewhere undefined, is value-valued. -/
-private theorem Agree.canon {F : P.Factory} {N : List P.Ident} {σ σ' : SemanticStore P}
-    (hA : Agree N σ σ') (hC : WellFormedStore σ F) : WellFormedStore σ' F := fun y v hv =>
-  hC y v (hA.2.supplies_mono_premise y v hv)
-
-end
-
 variable {F : P.Factory}
-
-/-- Value-valued stores agreeing on the free variables of an expression evaluate it alike
-    under the factory `F`. -/
-private def EvCongr (F : P.Factory) : Prop :=
-  ∀ ⦃σ σ' : SemanticStore P⦄, WellFormedStore σ F → WellFormedStore σ' F → ∀ e : P.Expr,
-    (∀ y ∈ HasFvars.getFvars e, σ' y = σ y) → P.eval F σ' e = P.eval F σ e
-
-omit [LawfulHasVal P] [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P] in
-/-- A factory evaluating alike on well-formed stores agreeing on the free variables
-    (`WellFormedSemanticEvalExprCongr`) evaluates alike in value-valued stores agreeing on the
-    free variables. -/
-private theorem evCongr_of_congr (hcong : WellFormedSemanticEvalExprCongr F) : EvCongr F :=
-  fun _ _ hC hC' e he => hcong e _ _ hC' hC he
-
-omit [LawfulHasVal P] [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P] in
-/-- An expression whose free variables are in `N` evaluates alike in two stores agreeing on
-    `N`, the first value-valued. -/
-private theorem ev_agree (hE : EvCongr F) {N : List P.Ident} {σ σ' : SemanticStore P}
-    (hC : WellFormedStore σ F) (hA : Agree N σ σ') {e : P.Expr}
-    (he : ∀ y ∈ HasFvars.getFvars e, y ∈ N) :
-    P.eval F σ' e = P.eval F σ e :=
-  hE hC (hA.canon hC) e fun y hy => hA.1 y (he y hy)
-
-/-- The argument `a'` replays the argument `a` of an event of factory `F`: both have factory
-    `F` and the same label, condition and metadata; the store of `a` is value-valued, and the
-    store of `a'` agrees with it on the free variables of the condition and elsewhere agrees
-    with it or is undefined. -/
-private def ArgReplay (F : P.Factory) (a a' : EventArg P) : Prop :=
-  a.factory = F ∧ a'.factory = F ∧ a'.label = a.label ∧ a'.expr = a.expr ∧
-    a'.metadata = a.metadata ∧ Agree (HasFvars.getFvars a.expr) a.store a'.store ∧
-    WellFormedStore a.store F
-
-/-- The event `e'` replays the event `e` of factory `F`: same kind, with replaying
-    arguments (`ArgReplay`). -/
-private def EvReplay (F : P.Factory) : Event P → Event P → Prop
-  | .assert a, .assert a' => ArgReplay F a a'
-  | .assume a, .assume a' => ArgReplay F a a'
-  | .cover a, .cover a' => ArgReplay F a a'
-  | _, _ => False
-
-omit [LawfulHasVal P] [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P] in
-/-- A replaying event is observed like the event it replays. -/
-private theorem EvReplay.obs (hE : EvCongr F) {e e' : Event P} (h : EvReplay F e e') :
-    Event.obs e' = Event.obs e := by
-  have key : ∀ {a a' : EventArg P}, ArgReplay F a a' →
-      (a'.label, a'.expr, P.eval a'.factory a'.store a'.expr) =
-        (a.label, a.expr, P.eval a.factory a.store a.expr) := by
-    rintro ⟨f, s, l, x, m⟩ ⟨f', s', l', x', m'⟩ ⟨rfl, rfl, rfl, rfl, -, hA, hC⟩
-    exact congrArg _ (congrArg _ (ev_agree hE hC hA fun _ hy => hy))
-  rcases e with a | a | a <;> rcases e' with a' | a' | a' <;> simp only [EvReplay] at h <;>
-    simp only [Event.obs, key h]
-
-omit [LawfulHasVal P] [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P] in
-/-- A trace replaying a trace event by event is observed like it. -/
-private theorem _root_.List.Rel₂.map_obs (hE : EvCongr F) {evs evs' : List (Event P)} :
-    List.Rel₂ (EvReplay F) evs evs' → evs'.map Event.obs = evs.map Event.obs
-  | .nil => rfl
-  | .cons h hs => by simp only [List.map_cons, h.obs hE, hs.map_obs hE]
-
-omit [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P] [LawfulHasVal P] [HasFvars P] in
-/-- Defining `x` as the value `v` in both stores keeps agreement and value-validity. -/
-private theorem agree_def {N : List P.Ident} {σ σ1 σ' : SemanticStore P}
-    {x : P.Ident} {v : P.Expr} (hA : Agree (x :: N) σ σ') (hC : WellFormedStore σ F)
-    (hv : HasVal.value F v) (h1 : σ1 x = some v) (hfr : ∀ y, x ≠ y → σ1 y = σ y) :
-    Agree N σ1 (SemanticStore.update σ' x v) ∧ WellFormedStore σ1 F := by
-  refine ⟨⟨fun y hy => ?_, storeAgreement_iff.2 fun y => ?_⟩, fun y w hw => ?_⟩ <;>
-    by_cases hyx : x = y
-  · simp [SemanticStore.update, ← hyx, h1]
-  · simp [SemanticStore.update, Ne.symm hyx, hfr y hyx, hA.1 y (.tail _ hy)]
-  · simp [SemanticStore.update, ← hyx, h1]
-  · simp only [SemanticStore.update, ite_eq_right (Ne.symm hyx), hfr y hyx]
-    exact storeAgreement_iff.1 hA.2 y
-  · rw [← hyx, h1] at hw
-    cases hw
-    exact hv
-  · exact hC y w (hfr y hyx ▸ hw)
 
 omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] in
 /-- An `init` step defines its undefined variable as a value, keeps the other variables and
@@ -263,76 +75,6 @@ private theorem evalE_init_inv {σ σ1 : SemanticStore P} {x : P.Ident} {ty : P.
     obtain ⟨v, -, h0, h1, hfr, rfl, hty⟩ := evalE_init_det_inv_typed h
     exact ⟨v, LawfulHasVal.valueOfTy_isVal _ _ _ hty, h0, h1, hfr, rfl⟩
   | nondet => exact evalE_init_nondet_inv h
-
-omit [BEq P.Ident] [LawfulBEq P.Ident] in
-/-- **A command step, replayed.**  A command step from the value-valued `σ`, replayed from
-    a store agreeing with `σ` on the identifiers of the command and on `N`: a step of the
-    same command, observed alike, to a store agreeing on `N` with the value-valued result. -/
-private theorem cmd_sim (hE : EvCongr F) {c : Cmd P} {σ σ1 σ' : SemanticStore P}
-    {evs : List (Event P)} {N : List P.Ident} (h : EvalE F σ (.cmd c) σ1 evs)
-    (hC : WellFormedStore σ F) (hA : Agree (Stmt.idents (.cmd (.cmd c) : PStmt P) ++ N) σ σ') :
-    ∃ σ1' evs', EvalE F σ' (.cmd c) σ1' evs' ∧ List.Rel₂ (EvReplay F) evs evs' ∧
-      Agree N σ1 σ1' ∧ WellFormedStore σ1 F := by
-  have hev : ∀ e, (∀ y ∈ HasFvars.getFvars e, y ∈ Stmt.idents (.cmd (.cmd c) : PStmt P)) →
-      P.eval F σ' e = P.eval F σ e := fun e he =>
-    ev_agree hE hC hA fun y hy => List.mem_append_left _ (he y hy)
-  have hobl : ∀ e, Stmt.idents (.cmd (.cmd c) : PStmt P) = HasFvars.getFvars e →
-      Agree (HasFvars.getFvars e) σ σ' := fun e he =>
-    hA.mono fun y hy => List.mem_append_left _ (he ▸ hy)
-  cases c with
-  | init x ty e md =>
-    have hx : σ' x = σ x := hA.1 x (by cases e <;> simp [Stmt.idents])
-    have hA' : Agree (x :: N) σ σ' := hA.mono fun y hy => by
-      rcases List.mem_cons.1 hy with rfl | hy
-      · cases e <;> simp [Stmt.idents]
-      · exact List.mem_append_right _ hy
-    cases e with
-    | det e =>
-      match h with
-      | .eval_init (v := v) hv (.init h0 h1 hfr) hty hwf =>
-        obtain ⟨hU1, hU2⟩ := update_facts σ' x v
-        exact ⟨_, [], .eval_init ((hev e fun y hy => by simp [Stmt.idents, hy]).trans hv)
-          (.init (hx.trans h0) hU1 hU2) hty hwf, .nil,
-          agree_def hA' hC (LawfulHasVal.valueOfTy_isVal _ _ _ hty) h1 hfr⟩
-    | nondet =>
-      match h with
-      | .eval_init_unconstrained (v := v) (.init h0 h1 hfr) hty hwf =>
-        obtain ⟨hU1, hU2⟩ := update_facts σ' x v
-        exact ⟨_, [], .eval_init_unconstrained (.init (hx.trans h0) hU1 hU2) hty hwf, .nil,
-          agree_def hA' hC (LawfulHasVal.valueOfTy_isVal _ _ _ hty) h1 hfr⟩
-  | set x e md =>
-    have hx : σ' x = σ x := hA.1 x (by cases e <;> simp [Stmt.idents])
-    have hA' : Agree (x :: N) σ σ' := hA.mono fun y hy => by
-      rcases List.mem_cons.1 hy with rfl | hy
-      · cases e <;> simp [Stmt.idents]
-      · exact List.mem_append_right _ hy
-    cases e with
-    | det e =>
-      match h with
-      | .eval_set (v := v) hv (.update h0 h1 hfr) ⟨p, ty, hp, hpt, hvt⟩ hwf =>
-        obtain ⟨hU1, hU2⟩ := update_facts σ' x v
-        exact ⟨_, [], .eval_set ((hev e fun y hy => by simp [Stmt.idents, hy]).trans hv)
-          (.update (hx.trans h0) hU1 hU2) ⟨p, ty, hx.trans hp, hpt, hvt⟩ hwf, .nil,
-          agree_def hA' hC (LawfulHasVal.valueOfTy_isVal _ _ _ hvt) h1 hfr⟩
-    | nondet =>
-      match h with
-      | .eval_set_nondet (v := v) (.update h0 h1 hfr) ⟨p, ty, hp, hpt, hvt⟩ hwf =>
-        obtain ⟨hU1, hU2⟩ := update_facts σ' x v
-        exact ⟨_, [], .eval_set_nondet (.update (hx.trans h0) hU1 hU2)
-          ⟨p, ty, hx.trans hp, hpt, hvt⟩ hwf, .nil,
-          agree_def hA' hC (LawfulHasVal.valueOfTy_isVal _ _ _ hvt) h1 hfr⟩
-  | assert l e md =>
-    obtain ⟨rfl, rfl⟩ := evalE_assert_inv h
-    exact ⟨σ', _, .eval_assert, .cons ⟨rfl, rfl, rfl, rfl, rfl, hobl e rfl, hC⟩ .nil,
-      hA.mono fun y hy => List.mem_append_right _ hy, hC⟩
-  | assume l e md =>
-    obtain ⟨rfl, rfl⟩ := evalE_assume_inv h
-    exact ⟨σ', _, .eval_assume, .cons ⟨rfl, rfl, rfl, rfl, rfl, hobl e rfl, hC⟩ .nil,
-      hA.mono fun y hy => List.mem_append_right _ hy, hC⟩
-  | cover l e md =>
-    obtain ⟨rfl, rfl⟩ := evalE_cover_inv h
-    exact ⟨σ', _, .eval_cover, .cons ⟨rfl, rfl, rfl, rfl, rfl, hobl e rfl, hC⟩ .nil,
-      hA.mono fun y hy => List.mem_append_right _ hy, hC⟩
 
 omit [DecidableEq P.Ident] [HasBool P] [HasFvar P] [LawfulHasVal P] [HasFvars P] in
 /-- An erasable statement is an `init` whose variable is not in `live`. -/
@@ -665,8 +407,8 @@ theorem deadDefElim_reach_rel (hcong : WellFormedSemanticEvalExprCongr F) (live 
     (hne : evs ≠ []) (hC : WellFormedStore σ F) :
     ∃ evs', BReach F (deadDefElim live ss) σ evs' ∧ List.Rel₂ DDEventRel evs evs' := by
   have hE := evCongr_of_congr hcong
-  obtain ⟨evs', h', hm⟩ := dd_reach hE h hne hC ⟨fun _ _ => rfl, StoreProjected.refl _⟩
-  exact ⟨evs', h', hm.imp fun _ _ hr => hr.dd hcong⟩
+  obtain ⟨evs', h', hm⟩ := dd_reach hE h hne hC ⟨fun _ _ => rfl, StoreAgreement.refl _⟩
+  exact ⟨evs', h', hm.imp fun _ _ hr => EvReplay.dd hcong hr⟩
 
 /-- **A run of a list, and of its output.**  A run of `ss` from the value-valued `σ` gives a
     run of `deadDefElim live ss` from `σ` whose trace corresponds to it event by event
@@ -678,8 +420,8 @@ theorem deadDefElim_run_rel (hcong : WellFormedSemanticEvalExprCongr F) (live : 
     ∃ evs' o', BRun F (deadDefElim live ss) σ evs' o' ∧ List.Rel₂ DDEventRel evs evs' ∧
       DDOutcomeRel o o' := by
   have hE := evCongr_of_congr hcong
-  obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE h hC ⟨fun _ _ => rfl, StoreProjected.refl _⟩
-  exact ⟨evs', o', h', hm.imp fun _ _ hr => hr.dd hcong, hO.dd⟩
+  obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE h hC ⟨fun _ _ => rfl, StoreAgreement.refl _⟩
+  exact ⟨evs', o', h', hm.imp fun _ _ hr => EvReplay.dd hcong hr, OAgree.dd hO⟩
 
 end
 
@@ -765,6 +507,7 @@ theorem deadDefElimH_run_rel (hcong : WellFormedSemanticEvalExprCongr F) (live :
     ∃ evs' o', BRun F (deadDefElimH live ss) σ evs' o' ∧ List.Rel₂ DDEventRel evs evs' ∧
       DDOutcomeRel o o' :=
   deadDefElimH_eq live ss ▸ deadDefElim_run_rel hcong live h hC
+
 
 end
 

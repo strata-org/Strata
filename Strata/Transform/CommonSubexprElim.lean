@@ -407,13 +407,14 @@ def Core.commonSubexprElimPhase : Core.PipelinePhase :=
   Core.modelPreservingPipelinePhase "commonSubexprElim" Core.CSE.runCSE
     -- Abbreviating an expression is only sound if its value cannot change
     -- between the definition and the uses, which is what
-    -- `staticSingleAssignment` gives.
-    (requires := factSet![.noCFGBodies, .staticSingleAssignment])
+    -- `staticSingleAssignment` gives. The abbreviations are prepended to the
+    -- body, so the body must declare no variable they could read: `noInits`.
+    (requires := factSet![.noCFGBodies, .staticSingleAssignment, .noInits])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                          .hasObligationForm, .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated])
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered])
 
 end -- public section

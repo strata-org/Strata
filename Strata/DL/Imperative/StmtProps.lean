@@ -7,6 +7,8 @@ module
 
 public import Strata.DL.Imperative.Stmt
 public import Strata.DL.Util.StringGen
+public import Strata.DL.Imperative.CmdCallFormals
+import Strata.Util.OrderedSetProps
 import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Imperative.Cmd
 import all Strata.Util.ListUtils
@@ -47,10 +49,10 @@ Equational theory for the boolean shape walkers defined in
   the dual for names a statement list defines.
   `Strata.Languages.Core.Logic.LangDefProps` consumes both to move a
   well-formedness condition around a derivation.
-- Per-constructor equations for `noLoops` (`Block.noLoops_cons`,
-  `Stmt.noLoops_cmd`/`_ite`/`_block`/`_loop`/`_exit`/`_typeDecl`): a non-empty list has
-  no loops exactly when its head and its rest have none; a loop is not loop-free, and
-  any other statement has no loops exactly when its sub-lists have none.
+- Per-constructor equations for `noLoops` (`Block.noLoops_nil`, `Block.noLoops_cons`,
+  `Stmt.noLoops_cmd`/`_ite`/`_block`/`_loop`/`_exit`/`_typeDecl`): the empty list has no
+  loops, a non-empty list has no loops exactly when its head and its rest have none; a loop
+  is not loop-free, and any other statement has no loops exactly when its sub-lists have none.
 -/
 
 /-! ### Decomposition lemmas for the structural shape predicates
@@ -2094,6 +2096,10 @@ end
 
 /-! ## `noLoops` by constructor -/
 
+/-- The empty list has no loops. -/
+theorem Block.noLoops_nil : Block.noLoops ([] : List (Stmt P C)) = true := by
+  simp [Block.noLoops, Block.allSubstmts]
+
 /-- A list has no loops exactly when its head and its rest have none. -/
 theorem Block.noLoops_cons (s : Stmt P C) (ss : List (Stmt P C)) :
     Block.noLoops (s :: ss) = (Stmt.noLoops s && Block.noLoops ss) := by
@@ -2128,6 +2134,222 @@ theorem Stmt.noLoops_exit (l : String) (md : MetaData P) :
 theorem Stmt.noLoops_typeDecl (tc : TypeConstructor) (md : MetaData P) :
     Stmt.noLoops (.typeDecl tc md : Stmt P C) = true := by
   simp [Stmt.noLoops, Stmt.allSubstmts, Stmt.isNotLoop]
+
+/-! ## Tree form -/
+
+/-- A list in tree form satisfies `Block.allSubstmts f` for every `f` holding of every command
+    and of every `ite *`. -/
+theorem Block.treeForm_allSubstmts {f : Stmt P (CmdExt P) → Bool}
+    (hc : ∀ c : Cmd P, f (.cmd (.cmd c)) = true) (hi : ∀ t e md, f (.ite .nondet t e md) = true) :
+    ∀ {ss : Block P (CmdExt P)}, Block.treeForm ss = true → Block.allSubstmts f ss = true := by
+  intro ss h
+  induction ss using Block.treeForm.induct <;>
+    simp_all [Block.treeForm, Block.allSubstmts, Stmt.allSubstmts]
+
+/-! ## Checks after assertions -/
+
+/-- A list of checks has only checks after each `assert`. -/
+theorem Block.onlyChecksAfterAssert_of_all_isCheck {cs : Block P (CmdExt P)}
+    (h : cs.all Stmt.isCheck = true) : Block.onlyChecksAfterAssert cs = true := by
+  fun_induction Block.onlyChecksAfterAssert cs <;> grind [Stmt.isCheck]
+
+/-! ## Def-use well-formedness of passive lists in tree form -/
+
+section DefUseCmdExt
+variable [HasFvar P] [HasFvars P] [HasOps P] [DecidableEq P.Ident]
+
+/-- A passive statement list in tree form that reads only names defined before it from the names
+    `D` (`Block.readsDefined D`) is def-use well formed from the defined-names predicate of `D`
+    when its operators are declared; it modifies no name, its top-level definitions are among its
+    definitions, and it reads only names of `D` or names it defines. -/
+theorem Block.defUseWellFormed_of_readsDefined {df : P.Ident → Bool} (ss : Block P (CmdExt P)) :
+    ∀ {D : List P.Ident} {dv : P.Ident → Bool}, Block.readsDefined D ss = true →
+    Block.treeForm ss = true → Block.passiveForm ss = true → (∀ n, dv n = true ↔ n ∈ D) →
+    (∀ o ∈ Block.getOps ss, df o = true) →
+    Block.defUseWellFormed dv df ss = true ∧ Block.modifiedVars ss = [] ∧
+      (∀ n ∈ Block.definedVars ss true, n ∈ Block.definedVars ss false) ∧
+      ∀ n ∈ Block.getVars ss, n ∈ D ∨ n ∈ Block.definedVars ss false := by
+  induction ss using Block.passiveForm.induct
+  case case1 => simp [Block.defUseWellFormed, Block.getVars]
+  case case2 x ty e md rest ih =>
+    intro D dv hr hT hP hd ho
+    have hd' : ∀ n, (dv n || decide (n ∈ [x])) = true ↔ n ∈ x :: D := by simp [hd, or_comm]
+    rcases e with e | _ <;>
+      simp only [Block.readsDefined, Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true,
+        List.contains_iff_mem] at hr
+    all_goals
+      obtain ⟨i1, i2, i3, i4⟩ := ih hr.2 (by simpa [Block.treeForm] using hT)
+        (by simpa [Block.passiveForm] using hP) hd' fun o h => ho o (by simp [Block.getOps, h])
+      simp only [Block.getOps, Stmt.getOps, HasOpsImp.getOps, CmdExt.getOps, Cmd.getOps,
+        List.mem_append] at ho
+      simp only [Block.defUseWellFormed, Stmt.defUseWellFormed, Stmt.definedVars,
+        HasVarsImp.readVars, CmdExt.readVars, Cmd.getVars, ExprOrNondet.getVars,
+        HasVarsImp.modifiedVars, CmdExt.modifiedVars, Cmd.modifiedVars, HasVarsImp.definedVars,
+        CmdExt.definedVars, Cmd.definedVars, HasOpsImp.getOps, CmdExt.getOps, Cmd.getOps,
+        Block.modifiedVars, Stmt.modifiedVars, Block.definedVars, Block.getVars, Stmt.getVars, i2]
+      refine ⟨by simp_all, rfl, fun n hn => by grind, fun n hn => by grind⟩
+  case case3 l e md rest ih | case4 l e md rest ih | case5 l e md rest ih =>
+    intro D dv hr hT hP hd ho
+    simp only [Block.readsDefined, Bool.and_eq_true, List.all_eq_true,
+      List.contains_iff_mem] at hr
+    simp only [Block.getOps, Stmt.getOps, HasOpsImp.getOps, CmdExt.getOps, Cmd.getOps,
+      List.mem_append] at ho
+    obtain ⟨i1, i2, i3, i4⟩ := ih hr.2 (by simpa [Block.treeForm] using hT)
+      (by simpa [Block.passiveForm] using hP) (dv := fun n => dv n || decide (n ∈ []))
+      (by simp [hd]) fun o h => ho o (.inr h)
+    simp only [Block.defUseWellFormed, Stmt.defUseWellFormed, Stmt.definedVars,
+      HasVarsImp.readVars, CmdExt.readVars, Cmd.getVars, HasVarsImp.modifiedVars,
+      CmdExt.modifiedVars, Cmd.modifiedVars, HasVarsImp.definedVars, CmdExt.definedVars,
+      Cmd.definedVars, HasOpsImp.getOps, CmdExt.getOps, Cmd.getOps, Block.modifiedVars,
+      Stmt.modifiedVars, Block.definedVars, Block.getVars, Stmt.getVars, i2]
+    refine ⟨by simp_all, rfl, fun n hn => by grind, fun n hn => by grind⟩
+  case case6 t e md rest ihT ihE _ =>
+    intro D dv hr hT hP hd ho
+    simp only [Block.treeForm, List.isEmpty_iff, Bool.and_eq_true] at hT
+    obtain ⟨⟨rfl, hT1⟩, hT2⟩ := hT
+    simp only [Block.passiveForm, Bool.and_eq_true] at hP
+    simp only [Block.readsDefined, Bool.and_eq_true] at hr
+    simp only [Block.getOps, Stmt.getOps, ExprOrNondet.getOps, List.nil_append,
+      List.append_nil, List.mem_append] at ho
+    obtain ⟨t1, t2, t3, t4⟩ := ihT hr.1 hT1 hP.1.1 hd fun o h => ho o (.inl h)
+    obtain ⟨e1, e2, e3, e4⟩ := ihE hr.2 hT2 hP.1.2 hd fun o h => ho o (.inr h)
+    simp only [Block.defUseWellFormed, Stmt.defUseWellFormed, ExprOrNondet.getVars,
+      ExprOrNondet.getOps, Block.modifiedVars, Stmt.modifiedVars, Block.definedVars,
+      Stmt.definedVars, Block.getVars, Stmt.getVars, t1, e1, t2, e2]
+    refine ⟨by simp, by simp, fun n hn => by simp at hn, fun n hn => by grind⟩
+  case case7 =>
+    intro D dv hr hT hP
+    simp_all [Block.passiveForm]
+
+/-- The operators of a def-use well-formed list in tree form are declared. -/
+theorem Block.getOps_declared_of_defUseWellFormed {df : P.Ident → Bool} (ss : Block P (CmdExt P)) :
+    ∀ {dv : P.Ident → Bool}, Block.treeForm ss = true →
+    Block.defUseWellFormed dv df ss = true → ∀ o ∈ Block.getOps ss, df o = true := by
+  induction ss using Block.treeForm.induct
+  case case1 => simp [Block.getOps]
+  case case7 t e md rest ihT ihE =>
+    intro dv hT hd o ho
+    simp only [Block.treeForm, List.isEmpty_iff, Bool.and_eq_true] at hT
+    obtain ⟨⟨rfl, hT1⟩, hT2⟩ := hT
+    simp only [Block.defUseWellFormed, Stmt.defUseWellFormed, ExprOrNondet.getVars,
+      ExprOrNondet.getOps, List.all_nil, Bool.true_and, Bool.and_eq_true] at hd
+    simp only [Block.getOps, Stmt.getOps, ExprOrNondet.getOps, List.nil_append, List.append_nil,
+      List.mem_append] at ho
+    exact ho.elim (ihT hT1 hd.1.1 o) (ihE hT2 hd.1.2 o)
+  case case8 => intro dv hT; simp_all [Block.treeForm]
+  all_goals
+    rename_i ih
+    intro dv hT hd o ho
+    simp only [Block.defUseWellFormed, Bool.and_eq_true] at hd
+    simp only [Block.getOps, List.mem_append] at ho
+    refine ho.elim (fun ho => ?_) (ih (by simpa [Block.treeForm] using hT) hd.2 o)
+    simp only [Stmt.getOps, Stmt.defUseWellFormed, Bool.and_eq_true, List.all_eq_true] at ho hd
+    exact hd.1.2 o ho
+
+end DefUseCmdExt
+
+/-! ## Free, assigned and checked variables
+
+The linear implementations compute the analyses they implement (`Block.freeVarsH_eq`,
+`Block.assignedVarsH_eq`), and `exprFV e` holds exactly the free variables of `e`
+(`mem_exprFV`). -/
+
+section FreeVars
+
+variable [BEq P.Ident] [LawfulBEq P.Ident] [Hashable P.Ident] [HasFvars P]
+
+omit [BEq P.Ident] [LawfulBEq P.Ident] [Hashable P.Ident] [HasFvars P] in
+/-- `Block.assignedVarsH` computes `Block.assignedVars`, linearly where the nested appends of
+    `Block.assignedVars` copy the variables of a statement once per enclosing level. -/
+theorem Block.assignedVarsH_eq (ss : Block P (CmdExt P)) :
+    Block.assignedVarsH ss = Block.assignedVars ss := by
+  have h : ∀ acc, Block.assignedVarsAcc ss acc = Block.assignedVars ss ++ acc := by
+    intro acc
+    induction ss, acc using Block.assignedVarsAcc.induct
+      (motive_2 := fun s acc => Stmt.assignedVarsAcc s acc = Stmt.assignedVars s ++ acc) <;>
+      simp_all [Block.assignedVarsAcc, Stmt.assignedVarsAcc, Block.assignedVars, Stmt.assignedVars]
+  simpa [Block.assignedVarsH] using h []
+
+omit [LawfulBEq P.Ident] [HasFvars P] in
+/-- `ScopeCount.emitFree b xs acc` prepends, reversed, the variables of `xs` not declared in `b`. -/
+private theorem ScopeCount.emitFree_eq (b : ScopeCount P) : ∀ (xs acc : List P.Ident),
+    ScopeCount.emitFree b xs acc = (xs.filter fun x => !b.contains x).reverse ++ acc := by
+  intro xs
+  induction xs <;> intro acc <;> grind [ScopeCount.emitFree]
+
+omit [HasFvars P] in
+/-- A scope hash map holds the names of the scope list it represents. -/
+theorem ScopeCountRep.contains_eq {b : ScopeCount P} {T : List P.Ident} (h : ScopeCountRep b T) :
+    b.contains = T.contains := by
+  funext x
+  rw [Std.HashMap.contains_eq_isSome_getElem?, h x]
+  split <;> simp_all [List.count_eq_zero]
+
+omit [HasFvars P] in
+/-- Declaring `x` adds `x` to the represented scope list. -/
+theorem ScopeCountRep.inc {b : ScopeCount P} {T : List P.Ident} (h : ScopeCountRep b T)
+    (x : P.Ident) :
+    ScopeCountRep (b.inc x) (x :: T) :=
+  fun y => by grind [ScopeCountRep, ScopeCount.inc, Std.HashMap.getD_eq_getD_getElem?]
+
+omit [HasFvars P] in
+/-- Leaving the scopes of the names `d` removes them from the represented scope list. -/
+theorem ScopeCountRep.decs {d T : List P.Ident} :
+    ∀ {b : ScopeCount P}, ScopeCountRep b (d ++ T) →
+      ScopeCountRep (d.foldl ScopeCount.dec b) T := by
+  induction d with
+  | nil => exact id
+  | cons x d ih =>
+    refine fun h => ih fun y => ?_
+    cases hc : (d ++ T).count x <;> grind [h x, h y, ScopeCount.dec]
+
+/-- The walks `Block.freeVarsWalk`, `Block.freeVarsGo`, `Stmt.freeVarsWalk` on a scope hash map
+    representing the scope list `T` prepend, reversed, the free variables not in `T`;
+    `Block.freeVarsGo` also prepends the declarations `d`
+    of the list to `added`, its map representing `d ++ T`, and the other maps represent `T`. -/
+private theorem freeVars_walk_spec :
+    (∀ b acc (ss : Block P (CmdExt P)), ∀ T, ScopeCountRep b T → (Block.freeVarsWalk b acc ss).2 =
+        ((Block.freeVars ss).filter fun x => !T.contains x).reverse ++ acc ∧
+      ScopeCountRep (Block.freeVarsWalk b acc ss).1 T) ∧
+    (∀ b acc added (ss : Block P (CmdExt P)), ∀ T, ScopeCountRep b T →
+      (Block.freeVarsGo b acc added ss).2.1 =
+        ((Block.freeVars ss).filter fun x => !T.contains x).reverse ++ acc ∧
+      ∃ d, (Block.freeVarsGo b acc added ss).2.2 = d ++ added ∧
+        ScopeCountRep (Block.freeVarsGo b acc added ss).1 (d ++ T)) ∧
+    (∀ b acc (s : Stmt P (CmdExt P)), ∀ T, ScopeCountRep b T → (Stmt.freeVarsWalk b acc s).2 =
+        ((Stmt.freeVars s).filter fun x => !T.contains x).reverse ++ acc ∧
+      ScopeCountRep (Stmt.freeVarsWalk b acc s).1 T) := by
+  apply Block.freeVarsWalk.mutual_induct (P := P)
+  case case2 => exact fun _ _ _ T h =>
+    ⟨by simp [Block.freeVarsGo, Block.freeVars], [], by simp [Block.freeVarsGo, h]⟩
+  case case3 =>
+    intro b acc added x ty e md rest acc1 ih T h
+    obtain ⟨h1, d, h2, h3⟩ := ih _ (h.inc x)
+    rw [Block.freeVarsGo.eq_def]
+    refine ⟨h1.trans ?_, d ++ [x], h2.trans (List.append_cons ..), List.append_cons d x T ▸ h3⟩
+    cases e <;>
+      simp [acc1, Block.freeVars, ScopeCount.emitFree_eq, h.contains_eq, Bool.and_comm, bne,
+        Bool.beq_eq_decide_eq]
+  all_goals intros
+  all_goals grind [Block.freeVarsWalk, Block.freeVarsGo, Stmt.freeVarsWalk, Block.freeVars,
+    Stmt.freeVars, ScopeCount.emitFree_eq, ScopeCountRep.contains_eq, ScopeCountRep.inc,
+    ScopeCountRep.decs]
+
+/-- `Block.freeVarsH` computes `Block.freeVars`, linearly where `Block.freeVars` filters the free
+    variables of the rest of a list at each `init`. -/
+theorem Block.freeVarsH_eq (ss : Block P (CmdExt P)) : Block.freeVarsH ss = Block.freeVars ss :=
+  by simp [Block.freeVarsH, (freeVars_walk_spec.1 {} [] ss [] fun _ => by simp).1]
+
+/-- The deduplicated free variables `exprFV e` are the free variables of `e`. -/
+theorem mem_exprFV {e : P.Expr} {x : P.Ident} :
+    x ∈ exprFV e ↔ x ∈ HasFvars.getFvars e := Strata.Util.OrderedSet.mem_eraseDups
+
+/-- A free variable of `e` is a deduplicated free variable of `e` (`mem_exprFV` reversed, the
+    form in which the free variables of the identifier lists `Block.idents` meet `exprFV`). -/
+theorem getFvars_mem_exprFV {e : P.Expr} {x : P.Ident} :
+    x ∈ HasFvars.getFvars e ↔ x ∈ exprFV e := mem_exprFV.symm
+
+end FreeVars
 
 end -- public section
 

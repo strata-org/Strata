@@ -101,6 +101,21 @@ def Decl.metadata (d : Decl) : MetaData Expression :=
   | .recFuncBlock fs _ => fs.map (·.name)
   | _ => [d.name]
 
+/-- The function names a declaration introduces: its functions (constants are 0-ary
+    functions), and the constructors, testers and destructors a datatype declaration generates,
+    a nullary constructor being a constant too. -/
+@[expose] def Decl.funcNames : Decl → List Expression.Ident
+  | .func f _ => [f.name]
+  | .recFuncBlock fs _ => fs.map (·.name)
+  | .type (.data d) _ =>
+    match Lambda.genBlockFactory (T := CoreLParams) d with
+    | .ok F => F.toArray.toList.map (·.name)
+    | .error _ => d.flatMap fun dt => dt.constrs.flatMap fun c =>
+        c.name :: ⟨c.testerName, ()⟩ ::
+          c.args.flatMap fun (f, _) => let n := Lambda.destructorFuncName dt f
+            [⟨n, ()⟩, ⟨n ++ Lambda.unsafeDestructorSuffix, ()⟩]
+  | _ => []
+
 def Decl.getTypeDecl? (d : Decl) : Option TypeDecl :=
   match d with
   | .type t _ => some t

@@ -360,6 +360,16 @@ directly; what is left here is what genuinely mentions a Core command. -/
 @[expose] def Statements.staticSingleAssignment (ss : Statements) : Bool :=
   Imperative.Block.allSubstmts Statement.isNotReassignment ss
 
+/-- Not a declaration: `init` introduces a variable. -/
+@[expose] def Statement.isNotInit (s : Statement) : Bool :=
+  match s with
+  | .cmd (.cmd (.init ..)) => false
+  | _ => true
+
+/-- Does `ss` declare no variable, at any depth? -/
+@[expose] def Statements.noInits (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.isNotInit ss
+
 /-- Is this statement an `assume`, `assert`, `cover`, `init`, or `ite *`?
     These are the statements obligation extraction accepts. -/
 @[expose] def Statement.isObligationForm (s : Statement) : Bool :=
@@ -373,6 +383,20 @@ directly; what is left here is what genuinely mentions a Core command. -/
     `ite *` to any depth? -/
 @[expose] def Statements.hasObligationForm (ss : Statements) : Bool :=
   Imperative.Block.allSubstmts Statement.isObligationForm ss
+
+/-- Is this statement an `init`, `set`, `assume`, `assert`, `cover`, or `ite *`?
+    These are the statements of a guarded program (the output of the WP phase). -/
+@[expose] def Statement.isTreeForm (s : Statement) : Bool :=
+  match s with
+  | .cmd (.cmd (.assert ..)) | .cmd (.cmd (.assume ..)) | .cmd (.cmd (.cover ..))
+  | .cmd (.cmd (.init ..)) | .cmd (.cmd (.set ..)) => true
+  | .ite .nondet _ _ _ => true
+  | _ => false
+
+/-- Is `ss` in tree form: only `init`, `set`, `assume`, `assert` and `cover`, nested under
+    `ite *` to any depth, every `ite *` the last statement of its list? -/
+@[expose] def Statements.treeForm (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.isTreeForm ss && Imperative.Block.nondetIteLast ss
 
 ---------------------------------------------------------------------
 

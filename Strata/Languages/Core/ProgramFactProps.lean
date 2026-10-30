@@ -28,7 +28,10 @@ Key results:
   `ProgramFact.noLoopInvariants_of_program`, and
   `ProgramFact.noLoopMeasures_of_program` — bridges from these facts to the
   matching `Statements` / `Block` condition on each structured procedure
-  body. -/
+  body.
+* `Statements.treeForm_eq`, `Statements.hasObligationForm_eq` — the checks of the
+  `treeForm` and `hasObligationForm` facts are the language-generic shapes
+  `Imperative.Block.treeForm` and `Imperative.Block.passiveForm`. -/
 
 namespace Core
 
@@ -133,6 +136,31 @@ theorem ProgramFact.noLoopMeasures_of_program
     (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
     Imperative.Block.noMeasureLoops ss = Bool.true :=
   Program.allStatements_of_proc h hq hb
+
+/-- The check of the `treeForm` fact is the language-generic tree form `Block.treeForm`. -/
+theorem Statements.treeForm_eq (ss : Statements) :
+    Statements.treeForm ss = Imperative.Block.treeForm ss := by
+  induction ss using Imperative.Block.treeForm.induct <;>
+    simp_all [Statements.treeForm, Imperative.Block.treeForm, Imperative.Block.allSubstmts,
+      Imperative.Stmt.allSubstmts, Imperative.Block.nondetIteLast, Statement.isTreeForm]
+  case case7 rest ih2 ih1 =>
+    rw [← ih1, ← ih2]
+    cases rest <;>
+      simp [Imperative.Block.allSubstmts, Bool.and_assoc, Bool.and_comm, Bool.and_left_comm]
+  case case8 s _ _ _ _ _ _ _ =>
+    rcases s with ((_ | _ | _ | _ | _) | _) | _ | ⟨_ | _⟩ | _ | _ | _ <;>
+      grind [Imperative.Stmt.allSubstmts, Statement.isTreeForm]
+
+/-- The check of the `hasObligationForm` fact is the language-generic passive form
+    `Block.passiveForm`. -/
+theorem Statements.hasObligationForm_eq (ss : Statements) :
+    Statements.hasObligationForm ss = Imperative.Block.passiveForm ss := by
+  induction ss using Imperative.Block.passiveForm.induct <;>
+    simp_all [Statements.hasObligationForm, Imperative.Block.passiveForm,
+      Imperative.Block.allSubstmts, Imperative.Stmt.allSubstmts, Statement.isObligationForm]
+  case case7 s _ _ _ _ _ _ =>
+    rcases s with ((_ | _ | _ | _ | _) | _) | _ | ⟨_ | _⟩ | _ | _ | _ <;>
+      grind [Imperative.Stmt.allSubstmts, Statement.isObligationForm]
 
 end -- public section
 

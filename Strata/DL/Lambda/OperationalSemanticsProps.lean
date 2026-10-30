@@ -656,10 +656,10 @@ private theorem callOfLFunc_partial_full_isConstr
     | inl h => exact h
     | inr h => simp only [Nat.blt, Nat.succ_eq_add_one, Nat.ble_eq] at h; rw [← h_eq, h_ble] at h; omega
 
--- Helper: for e = .app m e1 e2, if callOfLFunc (with any allowPartialApp)
--- succeeds with nonempty args, then e2 is the last arg and thus e2 ∈ args.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-private theorem callOfLFunc_app_arg_mem
+/-- If `callOfLFunc` (with either `allowPartialApp`) recognizes `.app m e1 e2` as a call, its
+    argument `e2` is among the call's arguments (the last one). -/
+theorem callOfLFunc_app_arg_mem
     (F : @Factory Tbase) (e1 e2 : LExpr Tbase.mono) (m : Tbase.Metadata)
     (op : LExpr Tbase.mono) (args : List (LExpr Tbase.mono)) (f : LFunc Tbase)
     (aPA : Bool)
@@ -761,10 +761,9 @@ private theorem getLFuncCall_go_app_acc
   | .eq _ _ _ => simp only [getLFuncCall.go] at h; simp [Prod.mk.injEq] at h
   termination_by e1.sizeOf
 
--- Helper: if `.app m e1 e2` is a value, then `e1` is also a value.
--- Needed for the `reduce_1` case: stepping the function part of a value app.
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-private theorem isValue_app_left
+/-- The function part `e1` of an application `.app m e1 e2` that is a value is a value. -/
+theorem isValue_app_left
     (F : @Factory Tbase) (m : Tbase.Metadata)
     (e1 e2 : LExpr Tbase.mono)
     (hc : LExpr.isValue F (.app m e1 e2) = true) :

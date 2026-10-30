@@ -762,7 +762,7 @@ def Core.unrollBoundedQuantifiersPipelinePhase : Core.PipelinePhase :=
                          .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
                          .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits])
     fun prog => do
       let baseF ← Core.Transform.getFactory
       let blocks := prog.decls.filterMap fun d =>

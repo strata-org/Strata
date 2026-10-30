@@ -8,6 +8,8 @@ module
 public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Lambda.TypeConstructor
 public import Strata.Util.ListUtilsProps
+public import Std.Data.HashMap
+public import Strata.Util.OrderedSet
 
 namespace Imperative
 
@@ -1148,10 +1150,22 @@ is the identifier of a `Q`-kind label string.  Expressed directly over
     (ss : List (Stmt P (Cmd P))) : Prop :=
   ∀ str : String, Q str → HasIdent.ident (P := P) str ∉ Block.getVars ss
 
-/-! ## Identifiers
+/-! ## Identifiers, statement order and scoping
 
-Every identifier a statement over `CmdExt P` commands mentions (`Stmt.idents`,
-`Block.idents`): binders and free variables. -/
+Over statements whose commands are `CmdExt P`: every identifier a statement list mentions
+(`Stmt.idents`, `Block.idents`: binders and free variables); two conditions on the order of
+statements: a nondeterministic `ite` is the last statement of its list
+(`Block.nondetIteLast`) and only `assert`s and `cover`s follow an `assert`
+(`Block.onlyChecksAfterAssert`); and the condition that every statement reads only names
+defined before it, with no re-initialization (`Block.readsDefined`).
+
+The order conditions restrict no statement kind; `Core.Statements.hasObligationForm`, which
+restricts *which* statements occur, says nothing about their order or about scoping. -/
+
+/-- A check: an `assert` or a `cover`. -/
+@[expose] def Stmt.isCheck {P : PureExpr} : Stmt P (CmdExt P) → Bool
+  | .cmd (.cmd (.assert _ _ _)) | .cmd (.cmd (.cover _ _ _)) => true
+  | _ => false
 
 mutual
 /-- Every identifier occurring in a statement (binders and free variables). -/
@@ -1175,6 +1189,275 @@ mutual
   | [] => []
   | s :: rest => Stmt.idents s ++ Block.idents rest
 end
+
+/-- Every nondeterministic `.ite` is the last statement of its list, checked in the branches
+    of nondeterministic `.ite`s too (not inside blocks, loops or deterministic `.ite`s).
+    It allows every statement kind and constrains only where a nondeterministic `.ite` may
+    stand. -/
+@[expose] def Block.nondetIteLast {P : PureExpr} : Block P (CmdExt P) → Bool
+  | [] => true
+  | (.ite .nondet thenSs elseSs _) :: rest =>
+      rest.isEmpty && Block.nondetIteLast thenSs && Block.nondetIteLast elseSs
+  | _ :: rest => Block.nondetIteLast rest
+
+/-- Every `.assert` is followed in its list only by `assert`s and `cover`s, checked in the
+    branches of every `.ite` too (not inside blocks or loops). It allows every statement kind
+    before an `assert` and constrains only what may follow one. -/
+@[expose] def Block.onlyChecksAfterAssert {P : PureExpr} : Block P (CmdExt P) → Bool
+  | [] => true
+  | (.cmd (.cmd (.assert _ _ _))) :: rest => rest.all Stmt.isCheck
+  | (.ite _ thenSs elseSs _) :: rest =>
+      Block.onlyChecksAfterAssert thenSs && Block.onlyChecksAfterAssert elseSs &&
+        Block.onlyChecksAfterAssert rest
+  | _ :: rest => Block.onlyChecksAfterAssert rest
+
+/-- Is the list in tree form: only `init`, `set`, `assume`, `assert`, `cover` and `ite *`, every
+    `ite *` the last statement of its list? This is the shape of the guarded programs the WP phase
+    produces, and the form `Core.Statements.treeForm` checks. -/
+@[expose] def Block.treeForm {P : PureExpr} : Block P (CmdExt P) → Bool
+  | [] => true
+  | .cmd (.cmd (.init _ _ _ _)) :: rest | .cmd (.cmd (.set _ _ _)) :: rest
+  | .cmd (.cmd (.assume _ _ _)) :: rest | .cmd (.cmd (.assert _ _ _)) :: rest
+  | .cmd (.cmd (.cover _ _ _)) :: rest => Block.treeForm rest
+  | .ite .nondet t e _ :: rest => rest.isEmpty && Block.treeForm t && Block.treeForm e
+  | _ :: _ => false
+  termination_by ss => sizeOf ss
+
+/-- Is the list passive: only `init`, `assume`, `assert`, `cover` and `ite *`, no assignment? This
+    is the shape of the obligation programs the SSA phase produces, and the form
+    `Core.Statements.hasObligationForm` checks. -/
+@[expose] def Block.passiveForm {P : PureExpr} : Block P (CmdExt P) → Bool
+  | [] => true
+  | .cmd (.cmd (.init _ _ _ _)) :: rest | .cmd (.cmd (.assume _ _ _)) :: rest
+  | .cmd (.cmd (.assert _ _ _)) :: rest | .cmd (.cmd (.cover _ _ _)) :: rest =>
+    Block.passiveForm rest
+  | .ite .nondet t e _ :: rest =>
+    Block.passiveForm t && Block.passiveForm e && Block.passiveForm rest
+  | _ :: _ => false
+  termination_by ss => sizeOf ss
+
+/-- Store-independent well-scopedness: threading the set of names defined so far
+    (`defined`), the free variables of every `init` value, `assume`, `assert` and `cover`
+    are already defined, and each `.init` adds its binder and requires it not to be defined
+    yet. Both branches of a nondeterministic `.ite` are checked from the pre-branch `defined`
+    set, and the statements after it are not checked; other statements are skipped. -/
+@[expose] def Block.readsDefined {P : PureExpr} [BEq P.Ident] [HasFvars P]
+    (defined : List P.Ident) : Block P (CmdExt P) → Bool
+  | [] => true
+  | (.cmd (.cmd (.init name _ (.det e) _))) :: rest =>
+      !defined.contains name &&
+      (HasFvars.getFvars e).all (fun x => defined.contains x) &&
+        Block.readsDefined (name :: defined) rest
+  | (.cmd (.cmd (.init name _ .nondet _))) :: rest =>
+      !defined.contains name &&
+        Block.readsDefined (name :: defined) rest
+  | (.cmd (.cmd (.assume _ e _))) :: rest =>
+      (HasFvars.getFvars e).all (fun x => defined.contains x) &&
+        Block.readsDefined defined rest
+  | (.cmd (.cmd (.assert _ e _))) :: rest =>
+      (HasFvars.getFvars e).all (fun x => defined.contains x) &&
+        Block.readsDefined defined rest
+  | (.cmd (.cmd (.cover _ e _))) :: rest =>
+      (HasFvars.getFvars e).all (fun x => defined.contains x) &&
+        Block.readsDefined defined rest
+  | (.ite .nondet thenSs elseSs _) :: _ =>
+      Block.readsDefined defined thenSs && Block.readsDefined defined elseSs
+  | _ :: rest => Block.readsDefined defined rest
+
+/-! ## Free, assigned and checked variables
+
+Syntactic analyses of statement lists over `CmdExt P` commands: free variables respecting the
+scope of `init` (`exprFV`, `Block.freeVars`), assigned variables (`Block.assignedVars`), whether
+an `exit` or a check occurs (`Block.hasExit`, `Block.hasCheck`), and whether every arm of every
+`ite` contains a check (`Block.armsHaveChecks`); straight-line statements
+(`Stmt.IsLetOrAssume`).
+
+`Block.freeVars` and `Block.assignedVars` are specified by recursions that copy or filter lists;
+`Block.freeVarsH` and `Block.assignedVarsH` compute them linearly, with an accumulator and, for
+scopes, a hash map (proved equal in `StmtProps`). -/
+
+section FreeVars
+
+variable {P : PureExpr} [BEq P.Ident] [LawfulBEq P.Ident] [Hashable P.Ident] [HasFvars P]
+
+/-- Free variables of an expression, without duplicates (the first occurrence of each kept). -/
+@[expose] def exprFV {P : PureExpr} [BEq P.Ident] [LawfulBEq P.Ident] [Hashable P.Ident]
+    [HasFvars P] (e : P.Expr) : List P.Ident :=
+  Strata.Util.OrderedSet.eraseDups (HasFvars.getFvars e)
+
+mutual
+/-- Free (read) variables of a statement list, respecting `init` binding within a
+    list (a block/branch scopes its inits). -/
+@[expose] def Block.freeVars : Block P (CmdExt P) → List P.Ident
+  | [] => []
+  | s :: rest =>
+    match s with
+    | .cmd (.cmd (.init x _ e _)) =>
+      (match e with | .det e => exprFV e | .nondet => []) ++ (Block.freeVars rest).filter (· != x)
+    | _ => Stmt.freeVars s ++ Block.freeVars rest
+/-- Free (read) variables of a statement. -/
+@[expose] def Stmt.freeVars : Stmt P (CmdExt P) → List P.Ident
+  | .cmd (.cmd (.init _ _ (.det e) _)) => exprFV e
+  | .cmd (.cmd (.init _ _ .nondet _)) => []
+  | .cmd (.cmd (.set x (.det e) _)) => x :: exprFV e
+  | .cmd (.cmd (.set x .nondet _)) => [x]
+  | .cmd (.cmd (.assume _ e _)) | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) =>
+    exprFV e
+  | .cmd (.call _ _ _) => []
+  | .block _ ss _ => Block.freeVars ss
+  | .ite c tss ess _ =>
+    (match c with | .det c => exprFV c | .nondet => []) ++ Block.freeVars tss ++ Block.freeVars ess
+  | .loop _ _ _ body _ => Block.freeVars body
+  | .exit _ _ | .typeDecl _ _ => []
+end
+
+mutual
+/-- Variables assigned (by `init` or `set`) anywhere in a statement list. -/
+@[expose] def Block.assignedVars : Block P (CmdExt P) → List P.Ident
+  | [] => []
+  | s :: rest => Stmt.assignedVars s ++ Block.assignedVars rest
+/-- Variables assigned (by `init` or `set`) anywhere in a statement. -/
+@[expose] def Stmt.assignedVars : Stmt P (CmdExt P) → List P.Ident
+  | .cmd (.cmd (.init x _ _ _)) | .cmd (.cmd (.set x _ _)) => [x]
+  | .block _ ss _ => Block.assignedVars ss
+  | .ite _ tss ess _ => Block.assignedVars tss ++ Block.assignedVars ess
+  | .loop _ _ _ body _ => Block.assignedVars body
+  | _ => []
+end
+
+mutual
+/-- Does the statement list contain an `exit`, at any depth? -/
+@[expose] def Block.hasExit : Block P (CmdExt P) → Bool
+  | [] => false
+  | s :: rest => Stmt.hasExit s || Block.hasExit rest
+/-- Does the statement contain an `exit`, at any depth? -/
+@[expose] def Stmt.hasExit : Stmt P (CmdExt P) → Bool
+  | .exit _ _ => true
+  | .block _ ss _ => Block.hasExit ss
+  | .ite _ tss ess _ => Block.hasExit tss || Block.hasExit ess
+  | .loop _ _ _ body _ => Block.hasExit body
+  | _ => false
+end
+
+mutual
+/-- Does the statement list contain an `assert` or a `cover`, at any depth? -/
+@[expose] def Block.hasCheck : Block P (CmdExt P) → Bool
+  | [] => false
+  | s :: rest => Stmt.hasCheck s || Block.hasCheck rest
+/-- Does the statement contain an `assert` or a `cover`, at any depth? -/
+@[expose] def Stmt.hasCheck : Stmt P (CmdExt P) → Bool
+  | .cmd (.cmd (.assert _ _ _)) | .cmd (.cmd (.cover _ _ _)) => true
+  | .block _ ss _ => Block.hasCheck ss
+  | .ite _ tss ess _ => Block.hasCheck tss || Block.hasCheck ess
+  | .loop _ _ _ body _ => Block.hasCheck body
+  | _ => false
+end
+
+mutual
+/-- Does every arm of every `ite` of the list, at any depth, contain an `assert` or a `cover`
+    (`Block.hasCheck`)? -/
+@[expose] def Block.armsHaveChecks : Block P (CmdExt P) → Bool
+  | [] => true
+  | s :: rest => Stmt.armsHaveChecks s && Block.armsHaveChecks rest
+/-- Does every arm of every `ite` of the statement, at any depth, contain an `assert` or a
+    `cover`? -/
+@[expose] def Stmt.armsHaveChecks : Stmt P (CmdExt P) → Bool
+  | .ite _ tss ess _ =>
+    Block.hasCheck tss && Block.hasCheck ess && Block.armsHaveChecks tss && Block.armsHaveChecks ess
+  | .block _ ss _ => Block.armsHaveChecks ss
+  | .loop _ _ _ body _ => Block.armsHaveChecks body
+  | _ => true
+end
+
+mutual
+/-- `Block.assignedVars ss ++ acc`, with an accumulator. -/
+@[expose] def Block.assignedVarsAcc : Block P (CmdExt P) → List P.Ident → List P.Ident
+  | [], acc => acc
+  | s :: rest, acc => Stmt.assignedVarsAcc s (Block.assignedVarsAcc rest acc)
+/-- `Stmt.assignedVars s ++ acc`, with an accumulator. -/
+@[expose] def Stmt.assignedVarsAcc : Stmt P (CmdExt P) → List P.Ident → List P.Ident
+  | .cmd (.cmd (.init x _ _ _)), acc | .cmd (.cmd (.set x _ _)), acc => x :: acc
+  | .block _ ss _, acc => Block.assignedVarsAcc ss acc
+  | .ite _ tss ess _, acc => Block.assignedVarsAcc tss (Block.assignedVarsAcc ess acc)
+  | .loop _ _ _ body _, acc => Block.assignedVarsAcc body acc
+  | _, acc => acc
+end
+
+/-- `Block.assignedVars` with an accumulator. -/
+@[expose] def Block.assignedVarsH (ss : Block P (CmdExt P)) : List P.Ident :=
+  Block.assignedVarsAcc ss []
+
+/-- The names declared in scope, with multiplicities. -/
+abbrev ScopeCount (P : PureExpr) [BEq P.Ident] [Hashable P.Ident] := Std.HashMap P.Ident Nat
+
+/-- Declare `x`. -/
+@[expose] def ScopeCount.inc (b : ScopeCount P) (x : P.Ident) : ScopeCount P :=
+  b.insert x (b.getD x 0 + 1)
+
+/-- Leave the scope of one declaration of `x`. -/
+@[expose] def ScopeCount.dec (b : ScopeCount P) (x : P.Ident) : ScopeCount P :=
+  match b[x]? with
+  | some (n + 2) => b.insert x (n + 1)
+  | _ => b.erase x
+
+/-- Prepend (reversed) the variables of `xs` not declared in scope. -/
+@[expose] def ScopeCount.emitFree (b : ScopeCount P) (xs : List P.Ident) (acc : List P.Ident) :
+    List P.Ident :=
+  xs.foldl (fun acc x => if b.contains x then acc else x :: acc) acc
+
+mutual
+/-- The free variables of a list prepended reversed to `acc`, the declarations of the list
+    leaving scope at its end. -/
+@[expose] def Block.freeVarsWalk (b : ScopeCount P) (acc : List P.Ident) (ss : Block P (CmdExt P)) :
+    ScopeCount P × List P.Ident :=
+  let (b, acc, added) := Block.freeVarsGo b acc [] ss
+  (added.foldl ScopeCount.dec b, acc)
+  termination_by (sizeOf ss, 1)
+/-- `Block.freeVarsWalk` before the declarations of the list leave scope; `added` collects them. -/
+@[expose] def Block.freeVarsGo (b : ScopeCount P) (acc added : List P.Ident) :
+    Block P (CmdExt P) → ScopeCount P × List P.Ident × List P.Ident
+  | [] => (b, acc, added)
+  | .cmd (.cmd (.init x _ e _)) :: rest =>
+    let acc := ScopeCount.emitFree b (match e with | .det e => exprFV e | .nondet => []) acc
+    Block.freeVarsGo (b.inc x) acc (x :: added) rest
+  | s :: rest =>
+    let (b, acc) := Stmt.freeVarsWalk b acc s
+    Block.freeVarsGo b acc added rest
+  termination_by ss => (sizeOf ss, 0)
+/-- The free variables of a statement prepended reversed to `acc`. -/
+@[expose] def Stmt.freeVarsWalk (b : ScopeCount P) (acc : List P.Ident) :
+    Stmt P (CmdExt P) → ScopeCount P × List P.Ident
+  | .cmd (.cmd (.init _ _ (.det e) _)) => (b, ScopeCount.emitFree b (exprFV e) acc)
+  | .cmd (.cmd (.init _ _ .nondet _)) => (b, acc)
+  | .cmd (.cmd (.set x (.det e) _)) => (b, ScopeCount.emitFree b (x :: exprFV e) acc)
+  | .cmd (.cmd (.set x .nondet _)) => (b, ScopeCount.emitFree b [x] acc)
+  | .cmd (.cmd (.assume _ e _)) | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) =>
+    (b, ScopeCount.emitFree b (exprFV e) acc)
+  | .cmd (.call _ _ _) => (b, acc)
+  | .block _ ss _ => Block.freeVarsWalk b acc ss
+  | .ite c tss ess _ =>
+    let acc := ScopeCount.emitFree b (match c with | .det c => exprFV c | .nondet => []) acc
+    let (b, acc) := Block.freeVarsWalk b acc tss
+    Block.freeVarsWalk b acc ess
+  | .loop _ _ _ body _ => Block.freeVarsWalk b acc body
+  | .exit _ _ | .typeDecl _ _ => (b, acc)
+  termination_by s => (sizeOf s, 1)
+end
+
+/-- `Block.freeVars` in one forward pass with the declarations in scope in a hash map. -/
+@[expose] def Block.freeVarsH (ss : Block P (CmdExt P)) : List P.Ident :=
+  (Block.freeVarsWalk {} [] ss).2.reverse
+
+/-- The scope hash map `b` holds each name of the scope list `T` with its multiplicity. -/
+@[expose] def ScopeCountRep (b : ScopeCount P) (T : List P.Ident) : Prop :=
+  ∀ x, b[x]? = if T.count x = 0 then none else some (T.count x)
+
+/-- A straight-line statement of the flat translation: an `init` or an `assume`. -/
+@[expose] def Stmt.IsLetOrAssume : Stmt P (CmdExt P) → Prop
+  | .cmd (.cmd (.init _ _ _ _)) | .cmd (.cmd (.assume _ _ _)) => True
+  | _ => False
+
+end FreeVars
 
 end -- public section
 end Imperative

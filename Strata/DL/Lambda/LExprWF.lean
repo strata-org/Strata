@@ -538,6 +538,23 @@ where
     | .eq m e1 e2 => .eq m (substFvarsAux e1 sm) (substFvarsAux e2 sm)
 
 /--
+Simultaneous substitution of free variables by a lookup function: each free variable `x` with
+`look x = some v` is replaced by `v`, in one traversal. `substFvars e sm` is
+`substFvarsBy e sm.find?` (`substFvars_eq_substFvarsBy`), which looks every variable up in the
+list `sm`. Like `substFvars`, it does not lift de Bruijn indices under binders.
+-/
+@[expose] def substFvarsBy (e : LExpr ⟨T, GenericTy⟩)
+    (look : T.Identifier → Option (LExpr ⟨T, GenericTy⟩)) : LExpr ⟨T, GenericTy⟩ :=
+  match e with
+  | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
+  | .fvar _ name _ => match look name with | some to => to | none => e
+  | .abs m name ty e' => .abs m name ty (substFvarsBy e' look)
+  | .quant m qk name ty tr' e' => .quant m qk name ty (substFvarsBy tr' look) (substFvarsBy e' look)
+  | .app m fn e' => .app m (substFvarsBy fn look) (substFvarsBy e' look)
+  | .ite m c t e' => .ite m (substFvarsBy c look) (substFvarsBy t look) (substFvarsBy e' look)
+  | .eq m e1 e2 => .eq m (substFvarsBy e1 look) (substFvarsBy e2 look)
+
+/--
 Simultaneous substitution of operator references (`.op`).  Replaces every
 `.op name ty` whose `name` is a key of `sm` with `(sm name) ty` — i.e. the
 mapped *builder* is applied to that occurrence's own type annotation `ty`, so

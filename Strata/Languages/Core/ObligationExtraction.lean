@@ -108,21 +108,10 @@ def renameShadowingParams (taken : List String) (proc : Procedure) (ss : Stateme
       (Block.renameLhs (Block.substFvar ss x (.fvar () x' (some ty))) x x', name :: used)
     else (ss, used)).1
 
-/-- The names a procedure's parameters are kept apart from: the program's functions and
-    constants, which are 0-ary functions, and the constructors, testers and destructors a
-    datatype declaration generates, a nullary constructor being a constant too. -/
+/-- The names a procedure's parameters are kept apart from: the function names the program's
+    declarations introduce (`Decl.funcNames`). -/
 def programFuncNames (p : Program) : List String :=
-  p.decls.flatMap fun
-    | .func f _ => [f.name.name]
-    | .recFuncBlock fs _ => fs.map (·.name.name)
-    | .type (.data d) _ =>
-      match Lambda.genBlockFactory (T := CoreLParams) d with
-      | .ok F => F.toArray.toList.map (·.name.name)
-      | .error _ => d.flatMap fun dt => dt.constrs.flatMap fun c =>
-          c.name.name :: c.testerName ::
-            c.args.flatMap fun (f, _) => let n := Lambda.destructorFuncName dt f
-              [n, n ++ Lambda.unsafeDestructorSuffix]
-    | _ => []
+  p.decls.flatMap fun d => d.funcNames.map (·.name)
 
 /-- The statements a procedure's obligations are read from: its structured body, with the
     parameters named like a function in `funcNames` renamed apart. A procedure that still

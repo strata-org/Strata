@@ -1065,6 +1065,55 @@ theorem replaceUserProvidedType_varOpen (f : LMonoTy → LMonoTy) (k : Nat)
           (LExpr.varOpen k (x.1, x.2.map f) (LExpr.replaceUserProvidedType e2 f))
     rw [ih1 k, ih2 k]
 
+/-! ### Substitution by a lookup function -/
+
+/-- Substitution of a map is the substitution by its lookup. -/
+theorem substFvars_eq_substFvarsBy (e : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars e sm = LExpr.substFvarsBy e (Map.find? sm) := by
+  induction e <;> rw [substFvars_unfold] <;> grind [substFvarsBy]
+
+omit [DecidableEq T.IDMeta] in
+/-- Substitutions by lookup functions that agree on the free variables are equal. -/
+theorem substFvarsBy_congr (e : LExpr T.mono) (f g : T.Identifier → Option (LExpr T.mono))
+    (h : ∀ x ∈ (LExpr.freeVars e).map (·.1), f x = g x) :
+    LExpr.substFvarsBy e f = LExpr.substFvarsBy e g := by
+  induction e <;> grind [substFvarsBy, LExpr.freeVars]
+
+omit [DecidableEq T.IDMeta] in
+/-- Substituting by `f` then by `g` is substituting by their composition. -/
+theorem substFvarsBy_comp (e : LExpr T.mono) (f g : T.Identifier → Option (LExpr T.mono)) :
+    LExpr.substFvarsBy (LExpr.substFvarsBy e f) g =
+      LExpr.substFvarsBy e fun x => match f x with
+        | some v => some (LExpr.substFvarsBy v g) | none => g x := by
+  induction e <;> grind [substFvarsBy]
+
+/-- A free variable of `e` with the map `sm` substituted is either a free variable of `e`
+    that `sm` does not map, or a free variable of the image under `sm` of a free variable
+    of `e`. -/
+theorem freeVars_substFvars (sm : Map T.Identifier (LExpr T.mono)) :
+    ∀ (e : LExpr T.mono) (y : T.Identifier),
+      y ∈ (LExpr.freeVars (LExpr.substFvars e sm)).map (·.1) →
+      (y ∈ (LExpr.freeVars e).map (·.1) ∧ Map.find? sm y = none) ∨
+      ∃ x v, x ∈ (LExpr.freeVars e).map (·.1) ∧ Map.find? sm x = some v ∧
+        y ∈ (LExpr.freeVars v).map (·.1) := fun e y => by
+  induction e <;> rw [substFvars_unfold] <;> grind [LExpr.freeVars]
+
+omit [DecidableEq T.IDMeta] in
+/-- Substituting expressions without operators for free variables adds no operator. -/
+theorem getOps_substFvarsBy {look : T.Identifier → Option (LExpr T.mono)}
+    (hl : ∀ x v, look x = some v → LExpr.getOps v = []) (e : LExpr T.mono) :
+    ∀ o ∈ LExpr.getOps (LExpr.substFvarsBy e look), o ∈ LExpr.getOps e := by
+  induction e <;> intro o ho
+  case fvar m x ty =>
+    simp only [substFvarsBy] at ho
+    split at ho
+    · rename_i v hv
+      exact absurd ho (by rw [show LExpr.getOps v = [] from hl _ _ hv]; simp)
+    · exact ho
+  case const | op | bvar => exact ho
+  all_goals simp only [substFvarsBy, LExpr.getOps, List.mem_append] at ho ⊢
+  all_goals grind
+
 end LExpr
 
 end

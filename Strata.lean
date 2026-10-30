@@ -133,6 +133,23 @@ import Strata.Cli.VerifyOptions
 
 -- Dead-definition elimination: its over-approximation proofs.
 import Strata.Transform.DeadDefElimCoreCorrect
+-- The WP and SSA phases: their properties, the failure preservation of the SSA phase, and
+-- the properties of their Core instance.
+import Strata.Transform.SSA.SSAEval
+import Strata.Transform.SSA.SSAOver
+import Strata.Transform.WP.WPProps
+import Strata.Util.RopeProps
+import Strata.Transform.Passive.CoreProgram
+import Strata.Transform.Passive.CoreProgramProps
+import Strata.Transform.Passive.DeclObligationsCoreCorrect
+import Strata.Transform.Passive.CoreWPSSA
+import Strata.Transform.Passive.CoreWPSSAProps
+import Strata.Transform.WP.WPCoreProgram
+import Strata.Transform.WP.WPCoreProgramProps
+import Strata.Transform.WP.WPCoreCorrect
+import Strata.Transform.SSA.SSACoreProgram
+import Strata.Transform.SSA.SSACoreProgramProps
+import Strata.Transform.SSA.SSACoreCorrect
 
  -- deletion candidates: nothing imports these modules:
 

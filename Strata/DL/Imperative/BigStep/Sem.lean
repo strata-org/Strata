@@ -23,7 +23,7 @@ with one factory:
 Blocks and `ite` branches project the store on exit (`projectStore`), as the small-step
 semantics does.
 
-Key definitions: `PStmts`, `BRun`, `BReach`, `evalInterp`, `FailsAt`, `Fails`. -/
+Key definitions: `PStmts`, `BRun`, `BReach`, `evalInterp`, `FailsAt`, `Claim`, `Fails`. -/
 
 namespace Imperative
 namespace BigStep
@@ -117,6 +117,12 @@ end
   | .cover arg => arg.label = t.label ∧ arg.expr = t.expr ∧
       P.eval arg.factory arg.store arg.expr = some HasBool.tt
   | .assume _ => False
+
+/-- The events `tr` claim a failure of the target `t`: they end with a failing occurrence of
+    `t`, every assumption before it evaluating to `true`. A list fails `t` exactly when a reach
+    of it emits events that claim a failure of `t` (`fails_iff_claim`). -/
+@[expose] def Claim (t : AssertId P) (tr : List (Event P)) : Prop :=
+  ∃ evs e, tr = evs ++ [e] ∧ Trace.AssumptionsHold P evalInterp () evs ∧ FailsAt t e
 
 /-- A statement list fails target `t` from store `σ`: a run reaches a failing occurrence
     of `t`, every assumption before it evaluating to `true` (`Trace.AssumptionsHold` under

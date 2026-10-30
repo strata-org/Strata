@@ -20,6 +20,10 @@ removal/erasure and key/value membership.
 * `find?_mem_keys`, `find?_mem_values`, `find?_of_not_mem_values`
 * `find?_iff_mem_keySet`, `keySet_nodup`
 * `find?_insert_self`, `find?_insert_ne`, `find?_erase_self`, `find?_erase_ne`
+* `Map.find?_filterMap_some`, `Map.find?_filterMap_none`, `Map.find?_filterMap_self` — lookups
+  in a map built by `filterMap`
+* `Map.find?_filter_key` — restricting a map to the keys satisfying a predicate keeps their
+  lookups and drops the others
 -/
 
 public section
@@ -1067,5 +1071,36 @@ theorem listMap_keys_filter {α β : Type} (q : α → Bool) :
     ∀ l : List (α × β),
       ListMap.keys (l.filter fun (a, _) => q a) = (ListMap.keys l).filter q :=
   (by induction · <;> grind [ListMap.keys])
+
+/-! ## Lookups in maps built by `filterMap` -/
+
+/-- A key found in a `filterMap`-built map comes from an element of the list that `f` maps
+    to that entry. -/
+theorem Map.find?_filterMap_some {α β : Type} [DecidableEq α] (f : α → Option (α × β)) :
+    ∀ (l : List α) (x : α) (v : β), Map.find? (l.filterMap f) x = some v →
+      ∃ z ∈ l, f z = some (x, v) := fun _ _ _ h => List.mem_filterMap.1 (Map.find?_mem _ _ _ h)
+
+/-- When `f` keeps each element as its own key, an element of the list that is not found in
+    the `filterMap`-built map is dropped by `f`. -/
+theorem Map.find?_filterMap_none {α β : Type} [DecidableEq α] (f : α → Option (α × β))
+    (hkey : ∀ z p, f z = some p → p.1 = z) :
+    ∀ (l : List α) (x : α), x ∈ l → Map.find? (l.filterMap f) x = none → f x = none :=
+  fun l => by induction l <;> grind [Map.find?]
+
+/-- In a list built by `filterMap` with each element as its own key, the entry of an element of
+    the list is its image. -/
+theorem Map.find?_filterMap_self {α β : Type} [DecidableEq α] (g : α → Option β) (l : List α)
+    (x : α) (hx : x ∈ l) :
+    Map.find? (l.filterMap fun z => (g z).map fun w => (z, w)) x = g x := by
+  cases h : Map.find? (l.filterMap fun z => (g z).map fun w => (z, w)) x
+  · exact (Option.map_eq_none_iff.1 (Map.find?_filterMap_none _ (by simp) l x hx h)).symm
+  · obtain ⟨z, -, hz⟩ := Map.find?_filterMap_some _ l x _ h
+    simp only [Option.map_eq_some_iff, Prod.mk.injEq] at hz
+    grind
+
+/-- Restricting a map to the keys that satisfy `q` keeps their lookups and drops the others. -/
+theorem Map.find?_filter_key {α β : Type} [DecidableEq α] (sm : Map α β) (q : α → Bool) (k : α) :
+    Map.find? (sm.filter fun p => q p.1 : Map α β) k = if q k then Map.find? sm k else none := by
+  induction sm <;> grind [Map.find?]
 
 end

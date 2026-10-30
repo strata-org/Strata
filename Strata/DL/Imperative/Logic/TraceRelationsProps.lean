@@ -52,6 +52,9 @@ Key theorem families:
   `label_expr`, with trace-level `Trace.WithWF.append` / `toExtendsEnv` /
   `of_extends` / `mono` / `trans` / `toTraceStuttersEnv` /
   `assertionValidFrom_reflect`.
+* **`Trace.WeakensAssumes`** is reflexive and transitive
+  (`Trace.WeakensAssumes.refl`, `Trace.WeakensAssumes.trans`), as is its event-level
+  counterpart relation `Event.WeakensAssume`.
 -/
 
 namespace Imperative
@@ -748,6 +751,48 @@ theorem assertionValidFrom_reflect {P : PureExpr} [HasVal P] [HasFvars P]
     (fun h => EventArg.WithWF.label_expr h) aid .nil h
 
 end Trace.WithWF
+
+section WeakensAssumes
+
+variable {P : PureExpr}
+
+/-- Every event is its own counterpart. -/
+theorem Event.WeakensAssume.refl (I : ConditionInterp P) : ∀ e : Event P, Event.WeakensAssume I e e
+  | .assert _ | .cover _ => ⟨rfl, rfl, fun _ => .rfl⟩
+  | .assume _ => ⟨rfl, rfl, fun _ => id⟩
+
+/-- Counterparts compose. -/
+theorem Event.WeakensAssume.trans {I : ConditionInterp P} {e₁ e₂ e₃ : Event P}
+    (h₁ : Event.WeakensAssume I e₁ e₂) (h₂ : Event.WeakensAssume I e₂ e₃) :
+    Event.WeakensAssume I e₁ e₃ := by
+  cases e₁ <;> cases e₂ <;> cases e₃ <;> simp only [Event.WeakensAssume] at h₁ h₂ ⊢ <;>
+    first
+    | exact ⟨h₁.1.trans h₂.1, h₁.2.1.trans h₂.2.1, fun w => (h₁.2.2 w).trans (h₂.2.2 w)⟩
+    | exact ⟨h₁.1.trans h₂.1, h₁.2.1.trans h₂.2.1, fun w h => h₂.2.2 w (h₁.2.2 w h)⟩
+
+/-- `Trace.WeakensAssumes I` is reflexive. -/
+theorem Trace.WeakensAssumes.refl (I : ConditionInterp P) :
+    ∀ t : Trace P, Trace.WeakensAssumes I t t
+  | [] => .nil
+  | e :: t => .cons (Event.WeakensAssume.refl I e) (Trace.WeakensAssumes.refl I t)
+
+/-- `Trace.WeakensAssumes I` is transitive: an event of the middle trace that is dropped from
+    the last one is an assumption, so its counterpart in the first trace is one too and is
+    dropped. -/
+theorem Trace.WeakensAssumes.trans {I : ConditionInterp P} {t₁ t₂ t₃ : Trace P}
+    (h₁ : Trace.WeakensAssumes I t₁ t₂) (h₂ : Trace.WeakensAssumes I t₂ t₃) :
+    Trace.WeakensAssumes I t₁ t₃ := by
+  induction h₁ generalizing t₃ with
+  | nil => exact h₂
+  | @cons e e' _ _ he _ ih =>
+    cases h₂ with
+    | cons he' h => exact .cons (he.trans he') (ih h)
+    | dropAssume h =>
+      cases e <;> simp only [Event.WeakensAssume] at he
+      exact .dropAssume (ih h)
+  | dropAssume _ ih => exact .dropAssume (ih h₂)
+
+end WeakensAssumes
 
 end -- public section
 end Imperative

@@ -35,7 +35,8 @@ together with basic assumption-prefix algebra.
 - `Trace.AssertionValidFrom.drop_true_assumption` — removes a universally true
   assumption from an accumulated validity prefix.
 - `Trace.AssumptionsHold_append_assume` and `Trace.AssumptionsHold_append` —
-  characterize assumption satisfaction under trace extension and concatenation.
+  characterize assumption satisfaction under trace extension and concatenation;
+  `Trace.AssumptionsHold.append` is the direction that concatenates.
 - `Trace.Reachable.left_of_append` / `right_of_append` — project reachability
   from a concatenated trace to either component.
 - `Trace.AssertionsValid.append`, `Trace.AssertionsValid.left_of_append`, and
@@ -281,6 +282,14 @@ theorem Trace.AssumptionsHold_append
     rcases List.mem_append.mp hc with hc | hc
     · exact hl c hc
     · exact hr c hc
+
+/-- The assumptions of a concatenated trace hold when those of both parts hold (the `mpr`
+    direction of `Trace.AssumptionsHold_append`). -/
+theorem Trace.AssumptionsHold.append {P : PureExpr} {I : ConditionInterp P} {world : I.World}
+    {left right : Trace P} (hl : Trace.AssumptionsHold P I world left)
+    (hr : Trace.AssumptionsHold P I world right) :
+    Trace.AssumptionsHold P I world (left ++ right) :=
+  (Trace.AssumptionsHold_append I world left right).2 ⟨hl, hr⟩
 
 /-- Reachability of a concatenated trace implies reachability of its prefix. -/
 theorem Trace.Reachable.left_of_append

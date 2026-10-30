@@ -151,7 +151,9 @@ def nondetElim (p : Program) : Transform.CoreTransformM (Bool × Program) := do
 /-- Nondet-elimination pipeline phase. Model-preserving: havoc'ing a fresh
     boolean and branching on it realizes exactly the nondeterministic choice it
     replaces, introducing no over-approximation. Requires call-free structured
-    bodies, which the correctness proof's base-command bridge needs. -/
+    bodies, which the correctness proof's base-command bridge needs. It keeps every
+    block, `exit` and branch and adds only commands, so an `exit` covered by an
+    enclosing block stays covered (`Block.nondetElim_exitsCoveredByBlocks`). -/
 def nondetElimPipelinePhase : PipelinePhase :=
   -- `staticSingleAssignment` is not claimed because the loop case `havoc`s the
   -- fresh boolean at the end of the body.
@@ -162,7 +164,7 @@ def nondetElimPipelinePhase : PipelinePhase :=
                          .noLoopMeasures, .noBetaRedexes, .noPrecondsFromFuncs,
                          .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated])
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered])
 
 end NondetElim
 end Core

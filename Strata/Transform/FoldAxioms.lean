@@ -62,6 +62,7 @@ def Core.foldAxiomsPhase : Core.PipelinePhase :=
                          .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
                          .noProcedureContracts,
                          .noPolymorphicProcedures, .noPolymorphicFunctions,
-                         .typeAnnotated])
+                         .typeAnnotated, .noInits, .treeForm, .exitsCovered,
+                         .armsHaveObligations])
 
 end

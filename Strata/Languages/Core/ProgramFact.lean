@@ -161,6 +161,34 @@ inductive ProgramFact where
       typing rules, which is future work. `typeCheck` is therefore its only
       source. -/
   | typeAnnotated
+  /-- No procedure body contains an `init`: every variable a body reads is free in it.
+      Established by symbolic evaluation, whose obligation procedures only assume, assert
+      and cover. Required by `CommonSubexprElim`, which names each shared subexpression in an
+      `init` it prepends to the body: a subexpression that reads a variable declared by an
+      `init` of the body would be evaluated before that declaration, and the SMT encoding
+      would declare the variable twice. The obligation program of the SSA phase declares
+      its variables in place, so it does not have this fact. -/
+  | noInits
+  /-- Every procedure body is in tree form: it contains only `init`, `set`, `assume`,
+      `assert` and `cover`, nested under `ite *` to any depth, and every `ite *` is the last
+      statement of its list. Established by the WP phase, whose output (a guarded program)
+      has this shape. Required by the SSA phase, which translates exactly these statements
+      and needs no join after an `ite *`. -/
+  | treeForm
+  /-- Every `exit` in a structured procedure body targets an enclosing `block` of the body
+      (`Imperative.Block.exitsCoveredByBlocks []`), so no body can end by exiting.
+      Established by `typeCheck`, which rejects an `exit` whose label names no enclosing
+      block. Required by the WP phase, which resolves each `exit` at the enclosing block it
+      targets, and which checks this of each procedure body again (`Core.WP.checkLoopFree`),
+      failing on an `exit` that targets no enclosing block. -/
+  | exitsCovered
+  /-- Every arm of every `ite` of every procedure body, at any depth, contains an `assert` or a
+      `cover` (`Imperative.Block.armsHaveChecks`). Established by the WP phase, whose guarded
+      program opens an `ite` only for a run of obligations or for a branch both of whose arms
+      carry one. Required by the SSA phase, which drops an arm without obligations and inlines
+      the other one: a run through the dropped arm would be replayed by running the other
+      arm's definitions, which need not agree with it. -/
+  | armsHaveObligations
   deriving DecidableEq, Repr
 
 /-! ### Adding a fact
@@ -208,6 +236,10 @@ def ProgramFact.name : ProgramFact → String
   | .noPolymorphicProcedures => "noPolymorphicProcedures"
   | .noPolymorphicFunctions => "noPolymorphicFunctions"
   | .typeAnnotated => "typeAnnotated"
+  | .noInits => "noInits"
+  | .treeForm => "treeForm"
+  | .exitsCovered => "exitsCovered"
+  | .armsHaveObligations => "armsHaveObligations"
 
 /-- All known facts, in the order that defines canonical form. Verified
     complete by `ProgramFact.all_complete` and duplicate-free by
@@ -221,7 +253,7 @@ def ProgramFact.name : ProgramFact → String
    .noLoopMeasures, .uniqueInits, .loopBodyNoInits, .staticSingleAssignment,
    .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
    .noProcedureContracts, .noPolymorphicProcedures, .noPolymorphicFunctions,
-   .typeAnnotated]
+   .typeAnnotated, .noInits, .treeForm, .exitsCovered, .armsHaveObligations]
 
 /-- `ProgramFact` is a fact vocabulary: a closed enumeration with names, which
     is all the language-neutral pipeline machinery needs of it. Completeness and
@@ -276,6 +308,10 @@ than the `Prop` being bent into the shape of a `Bool`. -/
   | .noPolymorphicProcedures => some Program.noPolymorphicProcedures
   | .noPolymorphicFunctions => some Program.noPolymorphicFunctions
   | .typeAnnotated => none
+  | .noInits => some (Program.allStatements Statements.noInits)
+  | .treeForm => some (Program.allStatements Statements.treeForm)
+  | .exitsCovered => some (Program.allStatements (Imperative.Block.checkExitsCoveredByBlocks []))
+  | .armsHaveObligations => some (Program.allStatements Imperative.Block.armsHaveChecks)
 
 /-- What a fact asserts about a program: the `Prop` that a phase claiming
     the fact will have to prove of its output. -/
@@ -306,6 +342,12 @@ than the `Prop` being bent into the shape of a `Bool`. -/
   | .noPolymorphicProcedures => fun p => Program.noPolymorphicProcedures p = true
   | .noPolymorphicFunctions => fun p => Program.noPolymorphicFunctions p = true
   | .typeAnnotated => fun p => Program.allExprs Lambda.LExpr.fullyAnnotated p = true
+  | .noInits => fun p => Program.allStatements Statements.noInits p = true
+  | .treeForm => fun p => Program.allStatements Statements.treeForm p = true
+  | .exitsCovered =>
+    fun p => Program.allStatements (Imperative.Block.checkExitsCoveredByBlocks []) p = true
+  | .armsHaveObligations =>
+    fun p => Program.allStatements Imperative.Block.armsHaveChecks p = true
 
 end -- public section
 

@@ -160,25 +160,45 @@ structure WellFormedSemanticEvalInt {P : PureExpr}
       P.eval f σ' (HasSubstFvar.renameFvars e subst)
         = P.eval f (fun x => σ' (renameLookup subst x)) e
 
+/-- The evaluator commutes with substituting variables or Boolean literals holding the values:
+    substituting, for each substituted variable `k`, a variable (bare or annotated) holding `k`'s
+    value in `σ` or the Boolean literal equal to `k`'s value in `σ`, preserves evaluation, when
+    the variables not substituted agree and both stores are well formed. -/
+@[expose] def WellFormedSemanticEvalSubstLits {P : PureExpr} [DecidableEq P.Ident] [HasBool P]
+    [HasFvar P] [HasFvars P] [HasSubstFvar P] (f : P.Factory) : Prop :=
+  ∀ {σ σ' : SemanticStore P}, WellFormedStore σ' f → WellFormedStore σ f →
+    ∀ (sm : Map P.Ident P.Expr) (e : P.Expr),
+    (∀ k v, Map.find? sm k = some v →
+      (∃ y, (v = HasFvar.mkFvar y ∨ ∃ ty, v = HasFvar.mkTypedFvar y ty) ∧ σ' y = σ k ∧
+        (σ k).isSome) ∨
+      (v = HasBool.tt ∧ σ k = some HasBool.tt) ∨ (v = HasBool.ff ∧ σ k = some HasBool.ff)) →
+    (∀ x ∈ HasFvars.getFvars e, Map.find? sm x = none → σ' x = σ x) →
+    P.eval f σ' (HasSubstFvar.substFvars e sm) = P.eval f σ e
+
+/-- The well-formedness conditions on `P.eval` against a factory `f` that do not involve the
+    Boolean or integer operations: variables, values, agreement on free variables, renaming. -/
+structure WellFormedSemanticEvalBase {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P]
+    [HasSubstFvar P] (f : P.Factory) : Prop where
+  /-- The evaluator resolves free variables via the store. -/
+  var : WellFormedSemanticEvalVar f
+  /-- The evaluator only outputs values and is the identity on values. -/
+  val : WellFormedSemanticEvalVal f
+  /-- The evaluator agrees on stores that agree on free variables. -/
+  exprCongr : WellFormedSemanticEvalExprCongr f
+  /-- The evaluator commutes with variable renaming (targets defined). -/
+  rename : WellFormedSemanticEvalRename f
+
 /-- Bundle of well-formedness conditions on `P.eval` against a factory `f`. -/
 structure WellFormedSemanticEval {P : PureExpr} [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
-    (f : P.Factory) : Prop where
+    (f : P.Factory) : Prop extends WellFormedSemanticEvalBase f where
   /-- The evaluator respects boolean negation:
       `eval e = some tt` iff `eval (not e) = some ff`, and dually. -/
   bool : WellFormedSemanticEvalBool f
-  /-- The evaluator only outputs values and is the identity on values. -/
-  val : WellFormedSemanticEvalVal f
-  /-- The evaluator resolves free variables via the store. -/
-  var : WellFormedSemanticEvalVar f
-  /-- The evaluator agrees on stores that agree on free variables. -/
-  exprCongr : WellFormedSemanticEvalExprCongr f
   /-- The evaluator reduces integer comparisons to booleans. -/
   int : WellFormedSemanticEvalInt f
   /-- The evaluator is monotone under store extension. -/
   mono : WellFormedSemanticEvalMono f
-  /-- The evaluator commutes with variable renaming (targets defined). -/
-  rename : WellFormedSemanticEvalRename f
 
 
 /-- Store agreement modulo a rename: wherever `σ_src` is defined, `σ_tgt` assigns

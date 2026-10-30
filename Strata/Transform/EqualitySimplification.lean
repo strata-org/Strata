@@ -430,7 +430,8 @@ public section
     and lemmas change, and those are built from the program's own annotated
     terms and constants. It also preserves `noBetaRedexes`, which `simplify`
     cannot claim, because a rewritten goal that contains a redex is
-    discarded.
+    discarded, and `armsHaveObligations`, because every `assert` and `cover`
+    stays where it is.
 
     Limitation: a goal on a path whose assumptions contradict each other can fold to
     `false`. The phase leaves such goals alone only when an assumption itself folds to
@@ -448,6 +449,7 @@ def Core.equalitySimplificationPhase : Core.PipelinePhase :=
                          .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
                          .noProcedureContracts,
                          .noPolymorphicProcedures, .noPolymorphicFunctions,
-                         .typeAnnotated])
+                         .typeAnnotated, .noInits, .treeForm, .exitsCovered,
+                         .armsHaveObligations])
 
 end

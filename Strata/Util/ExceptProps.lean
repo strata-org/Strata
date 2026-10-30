@@ -61,6 +61,14 @@ theorem ite_error_then_eq_ok {ε β : Type} {c : Prop} [Decidable c]
     (if c then Except.error e else x) = .ok b ↔ ¬ c ∧ x = .ok b := by
   split <;> simp_all
 
+/-- `pure a` succeeds with `b` exactly when `a = b`. -/
+theorem pure_is_ok {E α} {a b : α} : ((pure a : Except E α) = .ok b) ↔ a = b := by
+  simp [pure, Except.pure]
+
+/-- `throw e` never succeeds. -/
+theorem throw_is_ok {E α} {e : E} {b : α} : ((throw e : Except E α) = .ok b) ↔ False := by
+  simp [throw, throwThe, MonadExceptOf.throw]
+
 end Except
 
 /-- If `mapM f` succeeds, `f` succeeds on every input, with a result among the outputs. -/

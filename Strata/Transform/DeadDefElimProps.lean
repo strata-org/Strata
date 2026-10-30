@@ -19,6 +19,12 @@ import all Strata.DL.Lambda.LExprWFProps
 (`deadDefElimH_eq`): the hash set holds exactly the identifiers that `deadDefElim`
 recomputes.
 
+Erasure keeps every property of all nested statements that does not look into branches or
+bodies (`deadDefElim_allSubstmts`), the order conditions `Block.nondetIteLast` and
+`Block.onlyChecksAfterAssert` (`deadDefElim_nondetIteLast`,
+`deadDefElim_onlyChecksAfterAssert`) and the reads of defined names `Block.readsDefined`
+(`deadDefElim_readsDefined`).
+
 For Core statement lists, the facts the trace over-approximation (`DeadDefElimCoreCorrect`) is
 built from: the correspondence of final environments (`DDOut`); a Core run of a call-free
 configuration is a run over `EvalE` and back (`star_evalE`, `star_core`); and erasure keeps the
@@ -26,7 +32,9 @@ initial-environment gate `BlockInitEnvWF` of a list without loops and calls
 (`blockInitEnvWF_dd`), through its defined variables (`dd_definedVars`), its `init` types
 (`dd_initTypes`) and def-use well-formedness (`dd_defUse`).
 
-Key theorems: `deadDefElimH_eq`, `star_evalE`, `star_core`, `blockInitEnvWF_dd`.
+Key theorems: `deadDefElimH_eq`, `deadDefElim_allSubstmts`, `deadDefElim_nondetIteLast`,
+`deadDefElim_onlyChecksAfterAssert`, `deadDefElim_readsDefined`, `star_evalE`, `star_core`,
+`blockInitEnvWF_dd`.
 
 Key definitions: `Core.DeadDefElim.DDOut`, `Core.DeadDefElim.CallFree`. -/
 
@@ -144,6 +152,97 @@ private theorem deadDefElimHL_spec (h : Std.HashSet P.Ident) (ss : PStmts P) (li
 theorem deadDefElimH_eq (live : List P.Ident) (ss : PStmts P) :
     deadDefElimH live ss = deadDefElim live ss :=
   (deadDefElimHL_spec _ ss live fun y => by simp).1
+
+/-! ## Erasure keeps the order conditions and the reads of defined names -/
+
+section
+omit [Hashable P.Ident]
+
+section
+omit [LawfulBEq P.Ident]
+
+/-- **Erasure keeps every property of all nested statements** whose value on an `ite` or a
+    `block` does not depend on its branches or body: if `f` holds of every statement of `ss`,
+    nested ones included (`Block.allSubstmts f`), it holds of every statement of
+    `deadDefElim live ss`. -/
+theorem deadDefElim_allSubstmts {f : Stmt P (CmdExt P) → Bool}
+    (hite : ∀ c t e t' e' md, f (.ite c t e md) = f (.ite c t' e' md))
+    (hblock : ∀ l b b' md, f (.block l b md) = f (.block l b' md)) :
+    ∀ (live : List P.Ident) (ss : PStmts P),
+      Block.allSubstmts f ss = true → Block.allSubstmts f (deadDefElim live ss) = true := by
+  refine (deadDefElim.mutual_induct _ (fun live s => Stmt.allSubstmts f s = true →
+    Stmt.allSubstmts f (deadDefElimS live s) = true) ?_ ?_ ?_ ?_ ?_ ?_).1
+  all_goals grind [deadDefElim, deadDefElimS, Stmt.allSubstmts, Block.allSubstmts]
+
+/-- **Erasure keeps every nondeterministic `ite` last in its list**
+    (`Block.nondetIteLast`). -/
+theorem deadDefElim_nondetIteLast : ∀ (live : List P.Ident) (ss : PStmts P),
+    Block.nondetIteLast ss = true → Block.nondetIteLast (deadDefElim live ss) = true := by
+  refine (deadDefElim.mutual_induct _ (fun live s => ∀ r r', Block.nondetIteLast (s :: r) = true →
+    Block.nondetIteLast r' = true → (r = [] → r' = []) →
+    Block.nondetIteLast (deadDefElimS live s :: r') = true) ?_ ?_ ?_ ?_ ?_ ?_).1
+  all_goals intros
+  all_goals try cases ‹Stmt P (CmdExt P)›
+  all_goals try cases ‹ExprOrNondet P›
+  all_goals grind [deadDefElim, deadDefElimS, Block.nondetIteLast]
+
+/-- Erasure leaves a list of checks unchanged. -/
+private theorem deadDefElim_checks (live : List P.Ident) : ∀ ss : PStmts P,
+    ss.all Stmt.isCheck = true → deadDefElim live ss = ss
+  | [], _ => rfl
+  | s :: rest, h => by
+    rcases s with ((_ | _ | _ | _ | _) | _) | _ | _ | _ | _ | _ <;>
+      simp_all [Stmt.isCheck, deadDefElim, erasable, deadDefElimS, deadDefElim_checks live rest]
+
+/-- **Erasure keeps only checks after every `assert`**
+    (`Block.onlyChecksAfterAssert`). -/
+theorem deadDefElim_onlyChecksAfterAssert : ∀ (live : List P.Ident) (ss : PStmts P),
+    Block.onlyChecksAfterAssert ss = true →
+      Block.onlyChecksAfterAssert (deadDefElim live ss) = true := by
+  refine (deadDefElim.mutual_induct _ (fun live s => ∀ r r',
+    Block.onlyChecksAfterAssert (s :: r) = true → Block.onlyChecksAfterAssert r' = true →
+    (r.all Stmt.isCheck = true → r'.all Stmt.isCheck = true) →
+    Block.onlyChecksAfterAssert (deadDefElimS live s :: r') = true) ?_ ?_ ?_ ?_ ?_ ?_).1
+  all_goals intros
+  all_goals try cases ‹Stmt P (CmdExt P)›
+  all_goals try cases ‹CmdExt P›
+  all_goals try cases ‹Cmd P›
+  all_goals grind [deadDefElim, deadDefElimS, Block.onlyChecksAfterAssert, erasable,
+    deadDefElim_checks]
+
+end
+
+/-- Erasure keeps the reads of defined names, also from fewer defined names: the output
+    satisfies `Block.readsDefined` from any `D'` of names of `D` containing every name of `D`
+    the output mentions, when the input satisfies it from `D`. -/
+private theorem deadDefElim_ws (live : List P.Ident) : ∀ (ss : PStmts P) (D D' : List P.Ident),
+    Block.readsDefined D ss = true → (∀ y ∈ D', y ∈ D) →
+    (∀ y ∈ D, y ∈ Block.idents (deadDefElim live ss) → y ∈ D') →
+    Block.readsDefined D' (deadDefElim live ss) = true
+  | [], _, _, _, _, _ => by simp [deadDefElim, Block.readsDefined]
+  | .ite .nondet t e md :: rest, D, D', h, h1, h2 => by
+    have iht := fun l => deadDefElim_ws l t
+    have ihe := fun l => deadDefElim_ws l e
+    grind [deadDefElim, erasable, deadDefElimS, Block.idents, Stmt.idents, Block.readsDefined]
+  | .cmd c :: rest, D, D', h, h1, h2 => by
+    have ih := deadDefElim_ws live rest
+    rcases c with (⟨_, _, _ | _, _⟩ | ⟨_, _ | _, _⟩ | _ | _ | _) | _ <;>
+      grind [deadDefElim, erasable, deadDefElimS, Block.idents, Stmt.idents, Block.readsDefined]
+  | .ite (.det _) .. :: rest, D, D', h, h1, h2 | .block .. :: rest, D, D', h, h1, h2
+  | .loop .. :: rest, D, D', h, h1, h2 | .exit .. :: rest, D, D', h, h1, h2
+  | .typeDecl .. :: rest, D, D', h, h1, h2 => by
+    have ih := deadDefElim_ws live rest
+    grind [deadDefElim, erasable, deadDefElimS, Block.idents, Stmt.idents, Block.readsDefined]
+
+/-- **Erasure keeps the reads of defined names**: if `ss` reads only names defined before each
+    statement, starting from the defined names `D` (`Block.readsDefined`), so does
+    `deadDefElim live ss`. -/
+theorem deadDefElim_readsDefined (live : List P.Ident) {D : List P.Ident} {ss : PStmts P}
+    (h : Block.readsDefined D ss = true) :
+    Block.readsDefined D (deadDefElim live ss) = true :=
+  deadDefElim_ws live ss D D h (fun _ hy => hy) fun _ hy _ => hy
+
+end
 
 end -- public section
 

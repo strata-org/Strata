@@ -111,6 +111,15 @@ structure PipelineResolver where
   flagNames : Core.PhaseFlagNames :=
     { select := "--phases", displayContracts := "--display-phase-contracts" }
 
+/-- The text `--display-phases` prints under `options`: the default order of `options`, then the
+    phases the resolver accepts a name for that are not in it, by name, so the text cannot
+    advertise less than `--phases` takes. -/
+def displayPhasesFor (resolver : PipelineResolver) (options : Core.VerifyOptions) : String :=
+  let dflt := Strata.Core.corePipelinePhases options
+  let extras := resolver.nameable.filter fun p =>
+    !dflt.any fun d => Strata.Core.phaseName d == Strata.Core.phaseName p
+  Strata.Core.displayPhasesText resolver.flagNames dflt (extras := extras)
+
 /-- Walk the ordered flag entries and bind each `--procedures`/`--functions`
     to the most recent `--pass`. -/
 private def buildPassConfigs (entries : Array (String × Option String))
@@ -203,6 +212,20 @@ private def withContractsHint (resolver : PipelineResolver) (pflags : ParsedFlag
     msg ++ s!"\n\nTo see where each phase's requirements are met across this order, run {flag}."
   else msg
 
+/-- What `verify --phases` with no input file reports for the flags `pflags` and the options
+    `opts` they parse to: the lines it prints when the order composes and the options apply to
+    it; otherwise the refusal a run of the same flags on an input file gives, from
+    `resolver.resolve` or from `vcgenFlagIssues`. -/
+def phasesReport (resolver : PipelineResolver) (pflags : ParsedFlags)
+    (opts : Core.VerifyOptions) : Except String (List String) := do
+  let choice ← (resolver.resolve pflags opts).mapError (withContractsHint resolver pflags)
+  let issues := vcgenFlagIssues opts (choice.pipeline.map (·.phases))
+  unless issues.isEmpty do throw (String.intercalate "\n" issues)
+  let verdict := match choice.pipeline with
+    | none => "This is the default order."
+    | some vp => s!"This order composes: {", ".intercalate (vp.phases.map Strata.Core.phaseName)}"
+  return choice.notes ++ [verdict]
+
 /-- The `verify` command. `backendOf` gives the discharge and the sessions of the solver
     backend an invocation selects, both `none` to use Core's own discharge and local solver
     processes; the discharge uses Core's own default when both are `none`. -/
@@ -229,13 +252,10 @@ def verifyCommand (dialects : LoadedDialects)
   help := "Verify a Strata program file (.core.st or .b3.st)."
   -- Both answer without a file to verify: one lists the phases, the other checks an order.
   reportFlags :=
-    [("display-phases", fun _ =>
-        -- The extras are whatever the resolver accepts beyond the default order, so the
-        -- text cannot advertise less than `--phases` takes.
-        let dflt := Strata.Core.corePipelinePhases
-        let extras := resolver.nameable.filter fun p =>
-          !dflt.any fun d => Strata.Core.phaseName d == Strata.Core.phaseName p
-        IO.println (Strata.Core.displayPhasesText resolver.flagNames dflt (extras := extras))),
+    [("display-phases", fun pflags => do
+        -- The default order of the options in effect, so the text follows `--vcgen`.
+        let options ← parseVerifyOptions pflags { VerifyOptions.default with verbose := .quiet }
+        IO.println (displayPhasesFor resolver options)),
      -- Tables the order asked for, so `#` marks a requirement that order leaves unmet; with no
      -- `--phases` it tables the default order, which is the one a caller is comparing against.
      ("display-phase-contracts", fun pflags => do
@@ -254,15 +274,9 @@ def verifyCommand (dialects : LoadedDialects)
         -- the default order for the options in effect: reporting under different ones could
         -- accept a list the run then refuses.
         let opts ← parseVerifyOptions pflags { VerifyOptions.default with verbose := .quiet }
-        match resolver.resolve pflags opts with
-        | .ok choice =>
-          choice.notes.forM IO.println
-          match choice.pipeline with
-          | none => IO.println "This is the default order."
-          | some vp =>
-            let names := ", ".intercalate (vp.phases.map Strata.Core.phaseName)
-            IO.println s!"This order composes: {names}"
-        | .error msg => exitUserError (withContractsHint resolver pflags msg))]
+        match phasesReport resolver pflags opts with
+        | .ok lines => lines.forM IO.println
+        | .error msg => exitUserError msg)]
   callback := fun v pflags => do
     let file := v[0]
     let proceduresToVerify := pflags.getString "procedures" |>.map (·.splitToList (· == ','))
@@ -282,6 +296,11 @@ def verifyCommand (dialects : LoadedDialects)
       | .ok c => pure c
       | .error msg => exitUserError (withContractsHint resolver pflags msg)
     let pipeline := choice.pipeline
+    -- Checked against the pipeline that runs, since a resolver may return one that runs
+    -- symbolic evaluation, and so reads the path cap, whatever `--vcgen` says.
+    let vcgenIssues := vcgenFlagIssues opts (pipeline.map (·.phases))
+    unless vcgenIssues.isEmpty do
+      exitUserError (String.intercalate "\n" vcgenIssues)
     -- `--procedures` narrows verification by splicing `filterProcedures`, which only the
     -- default pipeline does. A caller-supplied pipeline is run exactly as given, so the
     -- filter would be silently dropped and the run would report procedures the caller did

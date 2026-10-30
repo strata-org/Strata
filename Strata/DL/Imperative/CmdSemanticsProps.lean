@@ -77,7 +77,7 @@ evaluation relation `EvalCmd`. Key results:
   `substStoresUpdatesInv`, `ReadValuesSubstStores`), agreement outside written
   keys (`InvStoresExceptUpdateStates`, `InvStoresExceptInitStates`), and
   `initStates_preserves_wf`: initializing slots with values preserves store
-  well-formedness.
+  well-formedness, as does updating a name to a value (`wfStore_update`).
 -/
 
 public section
@@ -912,8 +912,8 @@ theorem evalCmd_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBool
 /-- Event-trace analogue of `evalCmd_storeWellDefined`: an `EvalCmdE` step leaves
 a store that holds only values.  `assert`/`assume`/`cover` keep the store;
 `init`/`set` write a value. -/
-theorem evalCmdE_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
-    [HasFvars P] [LawfulHasVal P]
+theorem evalCmdE_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasFvars P]
+    [LawfulHasVal P]
     {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P}
     (hval : WellFormedSemanticEvalVal (P := P) f)
     (h : EvalCmdE P f σ c σ' emitted) (hsv : WellFormedStore σ f) :
@@ -1876,5 +1876,12 @@ theorem InvStoresExceptInitStates :
       rw [hfr k1 fun h => hws (h ▸ Hmem) (by simp)]
       exact Hinv ws (fun a ha hk => hws ha (by simp [hk])) k1 k1 hin
     simpa using ih Hstep
+
+/-- Updating a name of a value-valued store (`WellFormedStore`) to a value keeps it
+    value-valued. -/
+theorem wfStore_update {P : PureExpr} [DecidableEq P.Ident] [HasBool P] {F : P.Factory}
+    {σ : SemanticStore P} (hC : WellFormedStore σ F) (x : P.Ident) {v : P.Expr}
+    (hv : HasVal.value F v) : WellFormedStore (SemanticStore.update σ x v) F :=
+  fun y w hy => by grind [SemanticStore.update, WellFormedStore]
 
 end -- public section

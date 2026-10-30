@@ -43,6 +43,13 @@ Key results (organized roughly in the order they appear below):
 - `evalFully_const` / `evalFully_fvar_of_value` / `evalFully_eq_of_evalFully` /
   `eql_true_of_evalFully_eq_true` — point-wise laws for individual expression
   forms (Part V), including both directions needed to reason about `==`.
+- `evalIte_value_true_iff` — an `ite` evaluates to a fully reduced value exactly
+  when its guard evaluates to a fully reduced Boolean literal and the selected
+  branch to that value.
+- `evalFully_ite_true`, `evalFully_ite_false`, `evalFully_ite_inv` — an `ite` evaluates as
+  the branch its guard's Boolean value selects, and conversely.
+- `evalFully_substFvars_const` — with a single metadata value, substituting free
+  variables by constants that the store binds them to does not change `evalFully`.
 - `eval_eraseMetadata_invariant` — expressions that differ only in metadata
   evaluate to results that also differ only in metadata.
 -/
@@ -3963,6 +3970,448 @@ theorem evalFully_eq_self (F : @Factory Tbase) (env : Env Tbase)
   evalFully_eq_of_evalFully F env m e1 e2 v v true h1 h2 (eql_self F v)
 
 end evalFully_forms
+
+/-! ## Invariance under substitution of constants bound in the store
+
+Substituting free variables by constants that the store binds them to does not change
+`evalFully` (`evalFully_substFvars_const`), when metadata has a single value.  The substituted
+expression may be a value where the original is not (a constructor applied to a variable), so
+the two runs differ in fuel: a fully reduced value of the original is reached by the
+substituted expression at the same fuel, and conversely at some fuel. -/
+
+section const_subst
+
+/-- Every image of `sm` is a constant that `σ` binds its key to. -/
+private def ConstImages (σ : Env Tbase) (sm : Map Tbase.Identifier (LExpr Tbase.mono)) : Prop :=
+  ∀ k v, sm.find? k = some v → (∃ m c, v = .const m c) ∧ σ k = some v
+
+section
+
+omit [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata]
+
+omit [DecidableEq Tbase.IDMeta] in
+/-- With a single metadata value, expressions whose metadata-erased forms are equal are equal. -/
+private theorem eq_of_eraseMetadata_eq [Subsingleton Tbase.Metadata]
+    (X Y : LExpr Tbase.mono) (h : X.eraseMetadata = Y.eraseMetadata) : X = Y := by
+  induction X generalizing Y <;> cases Y <;>
+    simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.const.injEq, LExpr.op.injEq,
+      LExpr.bvar.injEq, LExpr.fvar.injEq, LExpr.app.injEq, LExpr.abs.injEq, LExpr.quant.injEq,
+      LExpr.ite.injEq, LExpr.eq.injEq, reduceCtorEq, eq_iff_true_of_subsingleton, true_and] at * <;>
+    grind
+
+/-- With a single metadata value, expressions that `eqModuloMeta` identifies are equal. -/
+private theorem eq_of_eqModuloMeta [Subsingleton Tbase.Metadata] {X Y : LExpr Tbase.mono}
+    (h : LExpr.eqModuloMeta X Y = true) : X = Y :=
+  eq_of_eraseMetadata_eq X Y ((LExpr.beq_eq _ _).mp h)
+
+/-- Substituting constants maps an expression that is not a fully applied call of a factory
+    function to one that is not. -/
+private theorem callOfLFunc_substFvars_const {σ : Env Tbase}
+    {sm : Map Tbase.Identifier (LExpr Tbase.mono)} (hC : ConstImages σ sm)
+    (F : @Factory Tbase) (e : LExpr Tbase.mono) (h : F.callOfLFunc e = none) :
+    F.callOfLFunc (e.substFvars sm) = none := by
+  have hf : ∀ m x ty, (LExpr.fvar m x ty).substFvars sm = .fvar m x ty ∨
+      ∃ m' c, (LExpr.fvar m x ty).substFvars sm = .const m' c := fun m x ty => by
+    rcases hx : sm.find? x with _ | v
+    · exact .inl (LExpr.substFvars_fvar_none _ _ _ _ hx)
+    · exact .inr ((hC _ _ hx).1.imp fun _ ⟨c, hv⟩ =>
+        ⟨c, hv ▸ LExpr.substFvars_fvar_find _ _ _ _ _ hx⟩)
+  have hg : ∀ e acc, getLFuncCall.go (e.substFvars sm) (acc.map (·.substFvars sm)) =
+      ((getLFuncCall.go e acc).1.substFvars sm,
+        (getLFuncCall.go e acc).2.map (·.substFvars sm)) := fun e acc => by
+    fun_induction getLFuncCall.go e acc
+    case case3 t acc h1 h2 =>
+      rcases t with _ | _ | _ | ⟨mx, x, ty⟩ | _ | _ | ⟨m, f, a⟩ | _ | _
+      all_goals try (rcases f with _ | _ | _ | ⟨mx, x, ty⟩ | _ | _ | _ | _ | _)
+      case fvar | app.fvar =>
+        rcases hf mx x ty with h | ⟨_, _, h⟩ <;>
+          simp only [LExpr.substFvars_app, h, getLFuncCall.go]
+      all_goals first | grind [getLFuncCall.go] | simp [getLFuncCall.go]
+    all_goals simp_all [getLFuncCall.go]
+  have hg0 : getLFuncCall.go (e.substFvars sm) [] = _ := hg e []
+  simp only [Factory.callOfLFunc, getLFuncCall, hg0] at h ⊢
+  rcases hp : getLFuncCall.go e [] with ⟨_ | _ | _ | ⟨mx, x, ty⟩ | _ | _ | _ | _ | _, args⟩
+  case fvar => rcases hf mx x ty with h | ⟨_, _, h⟩ <;> rw [h]
+  all_goals clear hg hf hg0
+  all_goals (repeat' split) <;> simp_all
+
+/-- Reading the store `σ` after substituting constants that `σ` binds is reading `σ`. -/
+private theorem substFvarsFromEnv_substFvars_const {σ : Env Tbase}
+    {sm : Map Tbase.Identifier (LExpr Tbase.mono)} (hC : ConstImages σ sm) (e : LExpr Tbase.mono) :
+    LExpr.substFvarsFromEnv σ (e.substFvars sm) = LExpr.substFvarsFromEnv σ e := by
+  induction e with
+  | fvar m x ty =>
+    rcases hf : sm.find? x with _ | v
+    · rw [LExpr.substFvars_fvar_none _ _ _ _ hf]
+    · obtain ⟨⟨_, _, rfl⟩, hσ⟩ := hC _ _ hf
+      simp [LExpr.substFvars_fvar_find _ _ _ _ _ hf, LExpr.substFvarsFromEnv, hσ]
+  | _ => simp_all [LExpr.substFvarsFromEnv]
+
+/-- In a well-formed factory, the concrete evaluator of a short-circuited call commutes with
+    substituting the arguments after the first. -/
+private theorem shortCircuit_ceval_substFvars {F : @Factory Tbase} (hWF : FactoryWF F)
+    {e op a : LExpr Tbase.mono} {args rest : List (LExpr Tbase.mono)} {f : LFunc Tbase}
+    {ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono)}
+    (hcall : F.callOfLFunc e = some (op, args, f))
+    (hsc : LExpr.shortCircuitCall? f args = some (a, rest, ceval))
+    (md : Tbase.Metadata) (a' : LExpr Tbase.mono) (sm : Map Tbase.Identifier (LExpr Tbase.mono)) :
+    ceval md (a' :: rest.map (LExpr.substFvars · sm)) =
+      (ceval md (a' :: rest)).map (LExpr.substFvars · sm) := by
+  have hattr : Strata.DL.Util.FuncAttr.hasShortCircuit f.attr = true := Bool.of_not_eq_false
+    fun h => by simp [LExpr.shortCircuitCall?_of_not_attr args h] at hsc
+  exact (hWF.lfuncs_wf f (callOfLFunc_func_mem F _ _ _ f false hcall)).shortCircuit_substFvars
+    hattr ceval (LExpr.shortCircuitCall?_some hsc).2 md a' rest sm
+
+omit [DecidableEq Tbase.IDMeta] in
+/-- A (possibly partial) call of a factory function is a value exactly when the function is a
+    constructor or is not fully applied, and every argument is a value. -/
+private theorem isValue_of_callOfLFunc (F : @Factory Tbase) {e op : LExpr Tbase.mono}
+    {args : List (LExpr Tbase.mono)} {f : LFunc Tbase}
+    (h : F.callOfLFunc e true = some (op, args, f)) :
+    LExpr.isValue F e =
+      ((f.isConstr || Nat.blt args.length f.inputs.length) && args.all (LExpr.isValue F)) := by
+  rw [LExpr.isValue.eq_def]
+  split
+  case' h_4 => split <;> try cases h.symm.trans ‹_›
+  all_goals simp_all [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]
+
+omit [DecidableEq Tbase.IDMeta] in
+/-- Properties, monotone in a fuel, that every element of a list has at some fuel hold of all
+    the elements at one fuel. -/
+private theorem exists_fuel_forall {α : Type} {P : Nat → α → Prop}
+    (hmono : ∀ n k x, n ≤ k → P n x → P k x) :
+    ∀ l : List α, (∀ x ∈ l, ∃ n, P n x) → ∃ n, ∀ x ∈ l, P n x
+  | [], _ => ⟨0, by simp⟩
+  | x :: l, h => by
+    obtain ⟨n1, h1⟩ := h x (by simp)
+    obtain ⟨n2, h2⟩ := exists_fuel_forall hmono l fun y hy => h y (by simp [hy])
+    exact ⟨max n1 n2, by grind [Nat.le_max_left, Nat.le_max_right]⟩
+
+end
+
+/-- An `ite` evaluates to a fully reduced value exactly when its guard evaluates to a fully
+    reduced Boolean literal and the branch the literal selects to that value. -/
+theorem evalIte_value_true_iff (n : Nat) (F : @Factory Tbase) (env : Env Tbase)
+    (m : Tbase.Metadata) (c t f v : LExpr Tbase.mono) :
+    LExpr.evalIte n F env m c t f = (v, .value true) ↔
+      ∃ mc b, LExpr.eval n F env c = (.const mc (.boolConst b), .value true) ∧
+        LExpr.eval n F env (if b then t else f) = (v, .value true) := by
+  simp only [LExpr.evalIte]
+  rcases LExpr.eval n F env c with ⟨c', rc⟩
+  split <;> simp_all [andValue_eq_valueTrue_iff, isValueTrue_eq_true_iff, Prod.ext_iff, and_comm,
+    and_left_comm]
+
+/-- An `ite` whose guard evaluates to the Boolean `b` evaluates as the branch `b` selects. -/
+private theorem evalFully_ite_of_guard {F : @Factory Tbase} {σ : Env Tbase} {m mc : Tbase.Metadata}
+    {c t e v : LExpr Tbase.mono} (b : Bool)
+    (hc : LExpr.evalFully F σ c = some (.const mc (.boolConst b)))
+    (h : LExpr.evalFully F σ (if b then t else e) = some v) :
+    LExpr.evalFully F σ (.ite m c t e) = some v := by
+  obtain ⟨nc, hcRun, -⟩ := evalFully_some_exists _ _ _ _ hc
+  obtain ⟨nb, hbRun, -⟩ := evalFully_some_exists _ _ _ _ h
+  refine evalFully_of_value_true _ _ _ (nc + nb + 1) _ ?_
+  simp only [eval_succ_ite, evalIte_value_true_iff]
+  cases b <;> exact ⟨_, _, eval_value_true_mono_le _ _ nc _ (Nat.le_add_right _ _) _ _ hcRun,
+    eval_value_true_mono_le _ _ nb _ (Nat.le_add_left _ _) _ _ hbRun⟩
+
+/-- An `ite` whose guard evaluates to `true` evaluates as its then-branch. -/
+theorem evalFully_ite_true {F : @Factory Tbase} {σ : Env Tbase} {m mc : Tbase.Metadata}
+    {c t e v : LExpr Tbase.mono} (hc : LExpr.evalFully F σ c = some (.const mc (.boolConst true)))
+    (ht : LExpr.evalFully F σ t = some v) : LExpr.evalFully F σ (.ite m c t e) = some v :=
+  evalFully_ite_of_guard true hc ht
+
+/-- An `ite` whose guard evaluates to `false` evaluates as its else-branch. -/
+theorem evalFully_ite_false {F : @Factory Tbase} {σ : Env Tbase} {m mc : Tbase.Metadata}
+    {c t e v : LExpr Tbase.mono} (hc : LExpr.evalFully F σ c = some (.const mc (.boolConst false)))
+    (he : LExpr.evalFully F σ e = some v) : LExpr.evalFully F σ (.ite m c t e) = some v :=
+  evalFully_ite_of_guard false hc he
+
+/-- An `ite` that evaluates to `v` has a guard that evaluates to `true` and a then-branch
+    that evaluates to `v`, or a guard that evaluates to `false` and an else-branch that
+    evaluates to `v`. -/
+theorem evalFully_ite_inv {F : @Factory Tbase} {σ : Env Tbase} {m : Tbase.Metadata}
+    {c t e v : LExpr Tbase.mono} (h : LExpr.evalFully F σ (.ite m c t e) = some v) :
+    (∃ mc, LExpr.evalFully F σ c = some (.const mc (.boolConst true)) ∧
+        LExpr.evalFully F σ t = some v) ∨
+      ∃ mc, LExpr.evalFully F σ c = some (.const mc (.boolConst false)) ∧
+        LExpr.evalFully F σ e = some v := by
+  obtain ⟨_ | n, hrun, -⟩ := evalFully_some_exists _ _ _ _ h
+  · simp [LExpr.eval, isValue_ite_false] at hrun
+  simp only [eval_succ_ite, evalIte_value_true_iff] at hrun
+  obtain ⟨_, _ | _, hc, hb⟩ := hrun
+  · exact .inr ⟨_, evalFully_of_value_true _ _ _ n _ hc, evalFully_of_value_true _ _ _ n _ hb⟩
+  · exact .inl ⟨_, evalFully_of_value_true _ _ _ n _ hc, evalFully_of_value_true _ _ _ n _ hb⟩
+
+/-- An equality evaluates to a fully reduced value exactly when both sides evaluate to fully
+    reduced values that `eql` decides, the value being the decided Boolean. -/
+private theorem evalEq_value_true_iff (n : Nat) (F : @Factory Tbase) (env : Env Tbase)
+    (m : Tbase.Metadata) (e1 e2 v : LExpr Tbase.mono) :
+    LExpr.evalEq n F env m e1 e2 = (v, .value true) ↔
+      ∃ w1 w2 b, LExpr.eval n F env e1 = (w1, .value true) ∧
+        LExpr.eval n F env e2 = (w2, .value true) ∧ LExpr.eql F w1 w2 = some b ∧
+        v = .const m (.boolConst b) := by
+  simp only [LExpr.evalEq]
+  rcases LExpr.eval n F env e1 with ⟨w1, r1⟩
+  rcases LExpr.eval n F env e2 with ⟨w2, r2⟩
+  split <;> grind [isValueTrue_eq_true_iff]
+
+/-- The expression that `evalApp` evaluates once the operands of an application with
+    metadata `md` are reduced to `w1` and `w2`: the beta-reduct when `w1` is an abstraction,
+    and the application of `w1` to `w2` otherwise. -/
+private def appReduct (md : Tbase.Metadata) (w1 w2 : LExpr Tbase.mono) : LExpr Tbase.mono :=
+  match w1 with
+  | .abs mAbs _ _ body => LExpr.subst (fun mv => LExpr.replaceMetadata1
+      (LExpr.mergeMetadataForSubst mAbs w2.metadata mv) w2) body
+  | _ => .app md w1 w2
+
+/-- An application that is not a call evaluates to a fully reduced value exactly when both
+    operands evaluate to fully reduced values, the reduct differs from the application up to
+    metadata, and the reduct evaluates to that value. -/
+private theorem evalApp_value_true_iff (n : Nat) (F : @Factory Tbase) (env : Env Tbase)
+    (e e1 e2 v : LExpr Tbase.mono) :
+    LExpr.evalApp n F env e e1 e2 = (v, .value true) ↔
+      ∃ w1 w2, LExpr.eval n F env e1 = (w1, .value true) ∧
+        LExpr.eval n F env e2 = (w2, .value true) ∧
+        LExpr.eqModuloMeta e (appReduct e.metadata w1 w2) = false ∧
+        LExpr.eval n F env (appReduct e.metadata w1 w2) = (v, .value true) := by
+  simp only [LExpr.evalApp]
+  rcases LExpr.eval n F env e1 with ⟨w1, r1⟩
+  rcases LExpr.eval n F env e2 with ⟨w2, r2⟩
+  constructor
+  · intro h
+    split at h <;> split at h <;>
+      grind [appReduct, andValue_eq_valueTrue_iff, isValueTrue_eq_true_iff]
+  · rintro ⟨w1, w2, ⟨⟩, ⟨⟩, hg, h⟩
+    cases w1 <;> simp_all [appReduct, andValue_eq_valueTrue_iff, LExpr.EvalResult.isValueTrue]
+
+omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
+/-- The reduct of an application whose function is not an abstraction is the application. -/
+private theorem appReduct_of_ne_abs {md : Tbase.Metadata} {w1 w2 : LExpr Tbase.mono}
+    (h : ∀ mA n t b, w1 ≠ .abs mA n t b) : appReduct md w1 w2 = .app md w1 w2 := by
+  cases w1 <;> first | rfl | exact (h _ _ _ _ rfl).elim
+
+/-- With a single metadata value, an expression that becomes a value once substituted by
+    constants that `σ` binds evaluates in `σ` to that value, also after substituting other
+    constants that `σ` binds. -/
+private theorem eval_substFvars_const_value [Subsingleton Tbase.Metadata] {F : @Factory Tbase}
+    (hWF : FactoryWF F) {σ : Env Tbase} {sm sm' : Map Tbase.Identifier (LExpr Tbase.mono)}
+    (hC : ConstImages σ sm) (hC' : ConstImages σ sm') (a : LExpr Tbase.mono)
+    (hv : LExpr.isValue F (a.substFvars sm) = true) :
+    ∃ n, LExpr.eval n F σ (a.substFvars sm') = (a.substFvars sm, .value true) := by
+  have hfix : ∀ s, ConstImages σ s → LExpr.isValue F (a.substFvars s) = true →
+      LExpr.substFvarsFromEnv σ a = a.substFvars s := fun s hs hvs =>
+    (substFvarsFromEnv_substFvars_const hs a).symm.trans <| LExpr.substFvarsFromEnv_closed_identity
+      _ _ (List.map_eq_nil_iff.1 (getVars_eq_freeVars_idents _ ▸ isValue_getVars_nil F _ hvs))
+  rcases hva' : LExpr.isValue F (a.substFvars sm')
+  case true =>
+    exact ⟨0, (hfix sm' hC' hva').symm.trans (hfix sm hC hv) ▸ eval_value_identity 0 F σ _ hva'⟩
+  have hE := (substFvarsFromEnv_substFvars_const hC' a).trans (hfix sm hC hv)
+  match a with
+  | .const _ _ | .op _ _ _ | .bvar _ _ => simp_all
+  | .ite .. | .eq .. => simp [isValue_ite_false, isValue_eq_false] at hv
+  | .fvar m x ty =>
+    rcases hf : sm.find? x with _ | w
+    · simp_all [LExpr.substFvars_fvar_none _ _ _ _ hf, isValue_fvar_false]
+    obtain ⟨⟨mc, c, rfl⟩, hσ⟩ := hC _ _ hf
+    rcases hf' : sm'.find? x with _ | w'
+    · exact ⟨1, by simp_all [LExpr.eval, LExpr.evalCore, callOfLFunc_fvar_none,
+        LExpr.substFvars_fvar_find _ _ _ _ _ hf, isValue_const_true,
+        LExpr.substFvars_fvar_none _ _ _ _ hf']⟩
+    obtain ⟨⟨_, _, rfl⟩, -⟩ := hC' _ _ hf'
+    simp [LExpr.substFvars_fvar_find _ _ _ _ _ hf', isValue_const_true] at hva'
+  | .abs .. | .quant .. =>
+    simp only [LExpr.substFvars_abs, LExpr.substFvars_quant] at hva' hE hv ⊢
+    exact ⟨1, by simp only [LExpr.eval, hva', Bool.false_eq_true, ite_false, LExpr.evalCore, hE,
+      hv, ite_true, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]⟩
+  | .app m e1 e2 =>
+    rcases hcall : F.callOfLFunc (.app m e1 e2) with _ | ⟨op, args, f⟩
+    · have hcallS := fun s (hs : ConstImages σ s) => callOfLFunc_substFvars_const hs F _ hcall
+      simp only [LExpr.substFvars_app] at hv hva' hcallS ⊢
+      obtain ⟨hv1, hv2, hnabs⟩ : LExpr.isValue F (e1.substFvars sm) = true ∧
+          LExpr.isValue F (e2.substFvars sm) = true ∧
+            ∀ mA n t b, e1.substFvars sm ≠ .abs mA n t b := by
+        generalize e1.substFvars sm = x, e2.substFvars sm = y at hv ⊢
+        rcases hcall : F.callOfLFunc (.app m x y) true with _ | ⟨op, args, f⟩
+        · rw [LExpr.isValue.eq_def] at hv
+          split at hv
+          all_goals (try split at hv) <;> simp_all
+        refine ⟨isValue_app_left F m x y hv, ?_, fun mA n t b h => ?_⟩
+        · rw [isValue_of_callOfLFunc F hcall] at hv
+          exact List.all_eq_true.1 (Bool.and_eq_true _ _ ▸ hv).2 y
+            (callOfLFunc_app_arg_mem F x y m op args f true hcall)
+        · simp [h, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at hcall
+      obtain ⟨n1, h1⟩ := eval_substFvars_const_value hWF hC hC' e1 hv1
+      obtain ⟨n2, h2⟩ := eval_substFvars_const_value hWF hC hC' e2 hv2
+      refine ⟨max n1 n2 + 1, ?_⟩
+      rw [eval_succ_app_none _ F σ m _ _ hva' (hcallS sm' hC'), evalApp_value_true_iff]
+      simp only [LExpr.metadata]
+      refine ⟨_, _, eval_value_true_mono_le F σ _ _ (Nat.le_max_left _ _) _ _ h1,
+        eval_value_true_mono_le F σ _ _ (Nat.le_max_right _ _) _ _ h2, ?_, ?_⟩ <;>
+        rw [appReduct_of_ne_abs hnabs]
+      · exact Bool.eq_false_iff.2 fun hg => by simp [← eq_of_eqModuloMeta hg, hva'] at hv
+      · exact eval_value_identity _ F σ _ hv
+    · obtain ⟨mo, no, to, rfl, hF, hlen⟩ := callOfLFunc_eq_some hcall
+      have hcallS := fun s => callOfLFunc_substFvars F _ s _ args f hcall
+      have hcallT : F.callOfLFunc ((LExpr.app m e1 e2).substFvars sm) true =
+          some (.op mo no to, args.map (·.substFvars sm), f) := by
+        rw [Factory.callOfLFunc, callOfLFunc_getLFuncCall (hcallS sm)]
+        simp [hF, hlen, Nat.ble_eq.mpr (Nat.le_refl f.inputs.length)]
+      have hv' := LExpr.substFvars_app m e1 e2 sm ▸ hv
+      rw [isValue_of_callOfLFunc F hcallT] at hv
+      have hwf := hWF.lfuncs_wf f (callOfLFunc_func_mem F _ _ _ f false hcall)
+      have hconstr : f.isConstr = true := by simp_all [Nat.blt_eq]
+      obtain ⟨hbody, hce⟩ := hwf.constr_no_eval hconstr
+      obtain ⟨N, hN⟩ := exists_fuel_forall
+        (P := fun n x => LExpr.eval n F σ (x.substFvars sm') = (x.substFvars sm, .value true))
+        (fun n k x hle h => eval_value_true_mono_le F σ n k hle (x.substFvars sm') _ h) args
+        fun x hx => eval_substFvars_const_value hWF hC hC' x (by simp_all)
+      have hshape : LExpr.mkApp m (.op mo no to) (args.map (·.substFvars sm)) =
+          (LExpr.app m e1 e2).substFvars sm := by
+        refine (eq_of_eraseMetadata_eq _ _ ?_).symm
+        rw [LExpr.eraseMetadata_mkApp]
+        simpa [LExpr.mkApp] using
+          getLFuncCall_go_eraseMetadata _ [] _ _ (callOfLFunc_getLFuncCall (hcallS sm))
+      refine ⟨N + 1, ?_⟩
+      have hmap : args.map (fun x => LExpr.eval N F σ (x.substFvars sm')) =
+          args.map (fun x => (x.substFvars sm, .value true)) := List.map_congr_left hN
+      simp only [Bool.and_eq_true, LExpr.substFvars_app] at hv hva' hcallS
+      simp [LExpr.eval, hva', hcallS, LExpr.shortCircuitCall?, hmap, hbody, hce, LExpr.metadata,
+        Function.comp_def, hshape, hv', LExpr.EvalResult.isValueTrue, hv.2,
+        LExpr.EvalResult.combineValueFlag]
+termination_by a.sizeOf
+decreasing_by
+  · simp only [LExpr.sizeOf]; omega
+  · simp only [LExpr.sizeOf]; omega
+  · exact Factory.callOfLFunc_smaller (T := Tbase.mono) hcall _ ‹_›
+
+/-- With a single metadata value and a well-formed factory, substituting free variables by
+    constants that the store `σ` binds them to does not change the full evaluation in `σ`. -/
+public theorem evalFully_substFvars_const [Subsingleton Tbase.Metadata] {F : @Factory Tbase}
+    (hWF : FactoryWF F) {σ : Env Tbase} {sm : Map Tbase.Identifier (LExpr Tbase.mono)}
+    (hC : ∀ k v, sm.find? k = some v → (∃ m c, v = .const m c) ∧ σ k = some v)
+    (e : LExpr Tbase.mono) :
+    LExpr.evalFully F σ (e.substFvars sm) = LExpr.evalFully F σ e := by
+  have hmono := fun {k K} (hle : k ≤ K) {x w} (hx : LExpr.eval k F σ x = (w, .value true)) =>
+    eval_value_true_mono_le F σ k K hle x w hx
+  have core : ∀ sm₁ sm₂, ConstImages σ sm₁ → ConstImages σ sm₂ →
+      ∀ n (x v : LExpr Tbase.mono), LExpr.eval n F σ (x.substFvars sm₁) = (v, .value true) →
+        ∃ k, LExpr.eval k F σ (x.substFvars sm₂) = (v, .value true) := by
+    intro sm₁ sm₂ hC₁ hC₂ n
+    induction n <;> intro x v h
+    all_goals rcases hv₁ : LExpr.isValue F (x.substFvars sm₁)
+    case zero.true | succ.true =>
+      cases (eval_value_identity _ F σ _ hv₁).symm.trans h
+      exact eval_substFvars_const_value hWF hC₁ hC₂ x hv₁
+    all_goals rcases hv₂ : LExpr.isValue F (x.substFvars sm₂)
+    case zero.false.true | succ.false.true =>
+      obtain ⟨k, hk⟩ := eval_substFvars_const_value hWF hC₂ hC₁ x hv₂
+      rw [eval_value_true_deterministic F σ _ _ _ _ _ h hk]
+      exact ⟨0, eval_value_identity _ F σ _ hv₂⟩
+    case zero.false.false => exact absurd (congrArg Prod.snd h) (by simp [LExpr.eval, hv₁])
+    rename_i n ih
+    rcases hcall : F.callOfLFunc x with _ | ⟨op, args, f⟩
+    · have hcall₁ := callOfLFunc_substFvars_const hC₁ F x hcall
+      have hcall₂ := callOfLFunc_substFvars_const hC₂ F x hcall
+      have hE₁ := substFvarsFromEnv_substFvars_const hC₁ x
+      have hE₂ := substFvarsFromEnv_substFvars_const hC₂ x
+      match x with
+      | .const _ _ | .op _ _ _ | .bvar _ _ => exact ⟨n + 1, by simpa using h⟩
+      | .fvar m y ty =>
+        have hid : ∀ sm', ConstImages σ sm' →
+            LExpr.isValue F ((LExpr.fvar m y ty).substFvars sm') = false →
+            (LExpr.fvar m y ty).substFvars sm' = .fvar m y ty := fun sm' hC' hv' => by
+          rcases hf : sm'.find? y with _ | w
+          · exact LExpr.substFvars_fvar_none _ _ _ _ hf
+          · obtain ⟨⟨mc, c, rfl⟩, -⟩ := hC' _ _ hf
+            simp [LExpr.substFvars_fvar_find _ _ _ _ _ hf, isValue_const_true] at hv'
+        exact ⟨n + 1, by rwa [hid _ hC₂ hv₂, ← hid _ hC₁ hv₁]⟩
+      | .abs .. | .quant .. =>
+        simp only [LExpr.substFvars_abs, LExpr.substFvars_quant] at *
+        refine ⟨n + 1, ?_⟩
+        simp only [LExpr.eval, hv₁, hv₂, hcall₁, hcall₂, LExpr.evalCore, hE₁, hE₂] at h ⊢
+        exact h
+      | .ite m c t f =>
+        rw [LExpr.substFvars_ite, eval_succ_ite, evalIte_value_true_iff] at h
+        obtain ⟨mc, b, hc, hb⟩ := h
+        obtain ⟨k1, h1⟩ := ih c _ hc
+        obtain ⟨k2, h2⟩ := ih (if b then t else f) v (by cases b <;> simpa using hb)
+        refine ⟨max k1 k2 + 1, ?_⟩
+        rw [LExpr.substFvars_ite, eval_succ_ite, evalIte_value_true_iff]
+        refine ⟨mc, b, hmono (Nat.le_max_left _ _) h1, ?_⟩
+        cases b <;> simpa using hmono (Nat.le_max_right _ _) h2
+      | .eq m e1 e2 =>
+        rw [LExpr.substFvars_eq, eval_succ_eq, evalEq_value_true_iff] at h
+        obtain ⟨w1, w2, b, h1, h2, hb, rfl⟩ := h
+        obtain ⟨k1, h1⟩ := ih e1 _ h1
+        obtain ⟨k2, h2⟩ := ih e2 _ h2
+        refine ⟨max k1 k2 + 1, ?_⟩
+        rw [LExpr.substFvars_eq, eval_succ_eq, evalEq_value_true_iff]
+        exact ⟨w1, w2, b, hmono (by omega) h1, hmono (by omega) h2, hb, rfl⟩
+      | .app m e1 e2 =>
+        rw [LExpr.substFvars_app] at h hv₁ hv₂ hcall₁ hcall₂ ⊢
+        rw [eval_succ_app_none n F σ m _ _ hv₁ hcall₁, evalApp_value_true_iff] at h
+        obtain ⟨w1, w2, h1, h2, -, hr⟩ := h
+        simp only [LExpr.metadata] at hr
+        obtain ⟨k1, h1⟩ := ih e1 _ h1
+        obtain ⟨k2, h2⟩ := ih e2 _ h2
+        rcases hg : LExpr.eqModuloMeta (.app m (e1.substFvars sm₂) (e2.substFvars sm₂))
+          (appReduct m w1 w2) with _ | _
+        · refine ⟨max (max k1 k2) n + 1, ?_⟩
+          rw [eval_succ_app_none _ F σ m _ _ hv₂ hcall₂, evalApp_value_true_iff]
+          exact ⟨w1, w2, hmono (by omega) h1, hmono (by omega) h2, hg, hmono (by omega) hr⟩
+        · exact ⟨n, by rw [eq_of_eqModuloMeta hg]; exact hr⟩
+    · have hcallS := fun s => callOfLFunc_substFvars F x s op args f hcall
+      have hmd : ∀ sm', (x.substFvars sm').metadata = x.metadata := fun sm' =>
+        substFvars_metadata_of_ne_fvar x sm' fun m y ty hx => by
+          simp [hx, callOfLFunc_fvar_none] at hcall
+      rcases hsc : LExpr.shortCircuitCall? f args with _ | ⟨a1, rest, ceval⟩
+      · have hfull : ((args.map (·.substFvars sm₁)).all
+            fun x => (LExpr.eval n F σ x).snd.isValueTrue) = true :=
+          Bool.ne_false_iff.mp fun hb => eval_call_not_full_snd n F σ _ (op, _, f) (hcallS _) hv₁
+            (LExpr.shortCircuitCall?_none_of_length hsc (List.length_map _).symm) hb
+            (congrArg Prod.snd h)
+        obtain ⟨K, hK⟩ := exists_fuel_forall (P := fun k (x : LExpr Tbase.mono) => ∀ j, k ≤ j →
+            LExpr.eval j F σ (x.substFvars sm₁) = LExpr.eval j F σ (x.substFvars sm₂))
+          (fun _ _ _ hle h j hj => h j (Nat.le_trans hle hj)) args fun x hx => by
+            have hx' := (isValueTrue_eq_true_iff _).mp
+              (List.all_eq_true.mp hfull _ (List.mem_map_of_mem hx))
+            obtain ⟨k, hk⟩ := ih x _ (Prod.ext rfl hx')
+            exact ⟨max k n, fun j hj => (hmono (by omega) (Prod.ext rfl hx')).trans
+              (hmono (by omega) hk).symm⟩
+        have hargs : (args.map (·.substFvars sm₁)).map (fun x => LExpr.eval (max K n) F σ x) =
+            (args.map (·.substFvars sm₂)).map (fun x => LExpr.eval (max K n) F σ x) := by
+          simpa only [List.map_map, Function.comp_def] using
+            List.map_congr_left fun x hx => hK x hx _ (Nat.le_max_left K n)
+        have h' := hmono (show n + 1 ≤ max K n + 1 by omega) h
+        have key : (LExpr.eval (max K n + 1) F σ (x.substFvars sm₁)).snd = .value true →
+            LExpr.eval (max K n + 1) F σ (x.substFvars sm₁) =
+              LExpr.eval (max K n + 1) F σ (x.substFvars sm₂) := by
+          simp only [LExpr.eval, hcallS,
+            LExpr.shortCircuitCall?_none_of_length hsc (List.length_map _).symm, hv₁, hv₂, hmd]
+          generalize args.map (·.substFvars sm₁) = A₁, args.map (·.substFvars sm₂) = A₂ at hargs ⊢
+          simp only [hargs]
+          repeat' split
+          all_goals first | rfl | exact (Bool.false_ne_true ‹_›).elim | simp
+        exact ⟨max K n + 1, key (by rw [h']) ▸ h'⟩
+      · simp only [LExpr.eval, hv₁, hcallS, LExpr.shortCircuitCall?_map_some _ hsc,
+          Bool.false_eq_true, ite_false, evalShortCircuit_eq_value_true_iff, hmd] at h
+        obtain ⟨a', e'', ha, hval, hce, he⟩ := h
+        rw [shortCircuit_ceval_substFvars hWF hcall hsc] at hce
+        obtain ⟨e', hce', rfl⟩ := Option.map_eq_some_iff.mp hce
+        obtain ⟨k1, h1⟩ := ih a1 _ ha
+        obtain ⟨k2, h2⟩ := ih e' _ he
+        refine ⟨max k1 k2 + 1, ?_⟩
+        simp only [LExpr.eval, hv₂, hcallS, LExpr.shortCircuitCall?_map_some _ hsc,
+          Bool.false_eq_true, ite_false, evalShortCircuit_eq_value_true_iff, hmd]
+        exact ⟨a', _, hmono (Nat.le_max_left _ _) h1, hval,
+          by rw [shortCircuit_ceval_substFvars hWF hcall hsc, hce']; rfl,
+          hmono (Nat.le_max_right _ _) h2⟩
+  refine Option.ext fun v => ?_
+  constructor <;> intro h <;> obtain ⟨n, hn, -⟩ := evalFully_some_exists F σ _ v h
+  · exact (core sm [] hC nofun n e v hn).elim fun k hk => evalFully_of_value_true F σ e k v hk
+  · exact (core [] sm nofun hC n e v hn).elim fun k hk => evalFully_of_value_true F σ _ k v hk
+
+end const_subst
 
 
 ---------------------------------------------------------------------
