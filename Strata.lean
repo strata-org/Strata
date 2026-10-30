@@ -86,8 +86,6 @@ import Strata.Languages.Core.ProgramFactSet
 import Strata.Languages.Core.ProgramFactSetProps
 import Strata.Languages.Core.PipelinePhaseProps
 import Strata.Languages.Core.VerifierProofs
-import Strata.Languages.Dyn.Dyn
-import Strata.Languages.Dyn.Verify
 import Strata.Languages.GOTO
 
 /- DDM -/
@@ -159,8 +157,6 @@ import Strata.DL.Lambda.DatatypeWF
 import Strata.Languages.Core.ProcedureTypeSpec
 import Strata.Languages.Core.DatatypeTypeSpec
 import Strata.Languages.Core.ProgramTypeSpec
-import Strata.Languages.Dyn.DDMTransform.Parse
-import Strata.Languages.Dyn.DDMTransform.Translate
 import Strata.Util.Random
 
 import Strata.Examples.Embedded
