@@ -944,8 +944,10 @@ Apply `f` to every `HighType` annotation carried *directly* by a single
 `StmtExpr` node: local declarations (in `Var`, `Assign` targets, and `IncrDecr`
 targets), quantifier binders, `AsType`/`IsType` type arguments, a generic
 `StaticCall`'s inferred type arguments, and typed
-`Hole`s. Does **not** recurse into child expressions — compose with
-`mapStmtExprM` (see `mapStmtExprHighTypesM`) for a whole-tree traversal.
+`Hole`s. Not the type arguments of a `new C<τ…>`, which `MonomorphizeComposites`
+reads, unrewritten, as an instantiation. Does **not** recurse
+into child expressions; `mapStmtExprHighTypesM` is the whole-tree traversal, `new`'s
+type arguments included.
 -/
 def mapNodeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (expr : StmtExprMd) : m StmtExprMd := do
   let source := expr.source
@@ -971,23 +973,30 @@ def mapNodeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (expr : StmtEx
   | .Hole det (some ty) => pure ⟨.Hole det (some (← f ty)), source⟩
   | _ => pure expr
 
-/-- Apply `f` to every `HighType` annotation appearing anywhere in a `StmtExprMd`. -/
+/-- Apply `f` to every `HighType` annotation appearing anywhere in a `StmtExprMd`: the slots
+    `mapNodeHighTypesM` visits, and the explicit type arguments of a `new C<τ…>`. -/
 def mapStmtExprHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (expr : StmtExprMd) : m StmtExprMd :=
-  mapStmtExprM (mapNodeHighTypesM f) expr
+  mapStmtExprM (fun e => do
+    let e ← mapNodeHighTypesM f e
+    match e.val with
+    | .New ref tyArgs => pure ⟨.New ref (← tyArgs.mapM f), e.source⟩
+    | _ => pure e) expr
 
 /-- Pure version of `mapStmtExprHighTypesM`. -/
 def mapStmtExprHighTypes (f : HighTypeMd → HighTypeMd) (expr : StmtExprMd) : StmtExprMd :=
   mapStmtExprHighTypesM (m := Id) f expr
 
 /-- Apply `f` to every `HighType` annotation in a procedure: parameter types,
-    body, preconditions, decreases measure, auto-invocation trigger, and axioms. -/
+    body, preconditions, decreases measure, auto-invocation trigger, axioms, and the
+    declared `throws` type. -/
 def mapProcedureHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (proc : Procedure) : m Procedure := do
   let mapExpr := mapStmtExprHighTypesM f
   let mapParam (p : Parameter) : m Parameter := do pure { p with type := ← f p.type }
   let proc ← mapProcedureBodiesM mapExpr proc
   let proc := { proc with
     inputs := ← proc.inputs.mapM mapParam
-    outputs := ← proc.outputs.mapM mapParam }
+    outputs := ← proc.outputs.mapM mapParam
+    throwsType := ← proc.throwsType.mapM f }
   mapProcedureSpecificationsM mapExpr proc
 
 def mapDatatypeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (dt : DatatypeDefinition) :

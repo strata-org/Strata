@@ -69,13 +69,18 @@ partial def resolveAliasType (amap : AliasMap) (ty : HighTypeMd)
   | _ => ty
 
 /-- Eliminate all type aliases from a program. Replaces every `UserDefined`
-    reference (in any type position, via `mapLaurelProgramHighTypes`) with the alias
+    reference (in any type position, via `mapLaurelProgramHighTypes`, and in a composite's
+    `extending`, which that walk leaves out as naming a class) with the alias
     target (transitively) and removes `.Alias` entries from `program.types`. -/
 public def typeAliasElim (_model : SemanticModel) (program : LaurelProgram) : LaurelProgram :=
   let amap := buildAliasMap program.types
   if amap.isEmpty then program else
   let program := mapLaurelProgramHighTypes (resolveAliasType amap) program
-  { program with types := program.types.filter fun | .Alias _ => false | _ => true }
+  let types := program.types.filterMap fun
+    | .Alias _ => none
+    | .Composite ct => some (.Composite { ct with extending := ct.extending.map (resolveAliasType amap) })
+    | td => some td
+  { program with types }
 
 /-- Pipeline pass: type alias elimination. -/
 public def typeAliasElimPass : LaurelPass := .onUnordered {

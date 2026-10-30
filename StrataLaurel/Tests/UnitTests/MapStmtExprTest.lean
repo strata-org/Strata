@@ -206,11 +206,14 @@ private def highTypeOrderFixture : Procedure :=
   { name := mkId "highTypeOrder"
     inputs := [{ name := mkId "input", type := taggedType "input" }]
     outputs := [{ name := mkId "output", type := taggedType "output" }]
+    throwsType := some (taggedType "throws")
     preconditions := [{ condition := testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "pre")) }]
     decreases := some (testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "decreases")))
     invokeOn := some (testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "invokeOn")))
     axioms := [testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "axiom"))]
-    body := .Transparent (testMd (.AsType (testMd (.LiteralInt 0)) (taggedType "body"))) }
+    body := .Transparent (testMd (.Block
+      [testMd (.AsType (testMd (.LiteralInt 0)) (taggedType "body")),
+       testMd (.New (mkId "C") [taggedType "new"])] none)) }
 
 private def highTypeTraversalOrder : List String :=
   let visit (type : HighTypeMd) : StateM (List String) HighTypeMd := do
@@ -222,7 +225,7 @@ private def highTypeTraversalOrder : List String :=
   (mapProcedureHighTypesM visit highTypeOrderFixture).run [] |>.2
 
 #guard highTypeTraversalOrder ==
-  ["body", "input", "output", "pre", "decreases", "invokeOn", "axiom"]
+  ["body", "new", "input", "output", "throws", "pre", "decreases", "invokeOn", "axiom"]
 
 end ProcedureTraversalCoverage
 

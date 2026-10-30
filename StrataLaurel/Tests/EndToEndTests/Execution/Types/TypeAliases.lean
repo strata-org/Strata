@@ -292,3 +292,49 @@ procedure chainedGenericAlias()
   assert b#val == 5
 };
 #end
+
+/-! ## An alias in `new`'s type arguments, as a `throws` type, and in a parent's type arguments -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+type A = int
+composite Box<T> { var val: T }
+composite IntBox extends Box<A> { }
+procedure thrower()
+  throws (e: A)
+  opaque
+  throwsOn true {
+    ensures e == 7
+  }
+{
+  throw 7
+};
+
+procedure aliasInNew()
+  entry
+  opaque
+  modifies *
+{
+  var b: Box<A> := new Box<A>;
+  b#val := 1;
+  assert b#val == 1
+};
+
+procedure aliasAsThrowsType()
+  entry
+  opaque
+{
+  try { thrower() } catch c { assert c == 7 }
+};
+
+procedure aliasInParent()
+  entry
+  opaque
+  modifies *
+{
+  var b: IntBox := new IntBox;
+  b#val := 1;
+  assert b#val == 1
+};
+#end

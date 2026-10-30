@@ -623,9 +623,9 @@ private def processWorklistItem (genComposites : Std.HashMap String (List Identi
         for di in discovered do
           unless s.clonedProcs.contains (procInstKey di) do
             s := { s with worklist := s.worklist ++ [.inr di] }
-        -- composite instantiations from the clone's signature AND body.
-        for p in pproc.inputs ++ pproc.outputs do
-          for inst in collectInTy genComposites (substTypeVars subst p.type) do
+        -- composite instantiations from the clone's signature (its `throws` type included) AND body.
+        for t in (pproc.inputs ++ pproc.outputs).map (·.type) ++ pproc.throwsType.toList do
+          for inst in collectInTy genComposites (substTypeVars subst t) do
             unless s.emitted.contains (monoName inst.1 inst.2) do
               s := { s with worklist := s.worklist ++ [.inl inst] }
         for inst in procBodyCompInsts genComposites clone do
