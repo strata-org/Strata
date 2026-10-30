@@ -340,6 +340,29 @@ private def emptyCollectionElemTy! (typeName : String) (callTypeArgs : List High
 def runTranslateM (s : TranslateState) (m : TranslateM α) : (Except String α × TranslateState) :=
   m.run s
 
+/-- Allocate a `kind(<fresh id>)` label that is not already used in the current
+    procedure.
+
+    The retry is not paranoia. A fresh id and a source offset are *both* bare
+    decimals in the same namespace, so `kind(<fresh id>)` can coincide with the
+    POSITIONAL label of an unrelated statement in the same procedure — the fresh
+    id is a counter over the whole translation, nothing ties its magnitude to the
+    offsets in play. Returning such a label would reintroduce exactly the clash
+    this function exists to avoid.
+
+    `fuel` bounds the search. `freshId` is monotonic, so every attempt is a
+    distinct candidate, and every *failed* attempt is a distinct member of the
+    taken set; `taken.size` failures therefore exhaust it, and attempt
+    `taken.size + 1` cannot fail. -/
+private def freshUnusedStmtLabel (kind : String) : Nat → TranslateM String
+  | 0 => do return s!"{kind}({← freshId})"
+  | fuel + 1 => do
+    let candidate := s!"{kind}({← freshId})"
+    if (← get).procStmtLabels.contains candidate then
+      freshUnusedStmtLabel kind fuel
+    else
+      return candidate
+
 /-- Label an assert/assume as `kind(pos)`, falling back to `kind(<fresh id>)`
     when that label is already used in the current procedure. `pos` is derived
     from the source position, so two synthesized statements sharing a position
@@ -347,12 +370,14 @@ def runTranslateM (s : TranslateState) (m : TranslateM α) : (Except String α �
 
     Both forms keep the `kind(<digits>)` shape, which downstream consumers rely
     on to recognize a positional label (and to normalize away the unstable
-    id). -/
+    id). The fallback is checked against the taken set as well — see
+    `freshUnusedStmtLabel`. -/
 private def freshStmtLabel (kind pos : String) : TranslateM String := do
+  let taken := (← get).procStmtLabels
   let base := kind ++ pos
   let label ←
-    if !(← get).procStmtLabels.contains base then pure base
-    else do pure s!"{kind}({← freshId})"
+    if !taken.contains base then pure base
+    else freshUnusedStmtLabel kind taken.size
   modify fun s => { s with procStmtLabels := s.procStmtLabels.insert label }
   return label
 
