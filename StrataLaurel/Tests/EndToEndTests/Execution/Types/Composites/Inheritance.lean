@@ -183,9 +183,9 @@ procedure runAll() entry
 
 /-! ## Inheritance where the child, the parent, or both are GENERIC
 
-Monomorphization has to emit the parent's clone BEFORE the child's, because re-resolution
-builds the child's inherited-field scope by looking the parent up. Three shapes, by how the
-parent's type arguments relate to the child's:
+Re-resolution builds the child's inherited-field scope from the parent's clone, so
+monomorphization has to clone the parent at the arguments the child gives it. Three shapes, by
+how the parent's type arguments relate to the child's:
 
 * a CONCRETE parent (`Box<T> extends Base`) — nothing to substitute;
 * a generic parent at the child's own argument (`Box<T> extends Base<T>`) — the ordinary
@@ -444,14 +444,12 @@ procedure driveRemappedInheritedFieldWrite()
 /-! ## A CONCRETE composite extending a generic INSTANTIATION
 
 `IntBox extends BoxI<int>` inverts the earlier shapes: the child is not generic, but its
-parent is a monomorph, so the emission order has to put a GENERATED composite before a
-user-written one. The transitive case puts the monomorph two levels up
-(`Super extends IntBox extends BoxI<int>`), which needs the topological sort to run over the
-whole list rather than pairwise.
+parent is a monomorph, so a user-written composite inherits from a GENERATED one. The
+transitive case puts the monomorph two levels up (`Super extends IntBox extends BoxI<int>`).
 
-Each case reads the inherited field back, once on the child directly and once through the
-upcast, so an ordering bug shows up as a missing field rather than only as a re-resolution
-failure. The wrong-target rejections are in `Resolution/Types/Composites/Inheritance.lean`. -/
+Each case reads the inherited field back, once on the child directly, which re-resolution
+rejects if the child did not inherit it, and once through the upcast, which the subtyping check
+covers. The wrong-target rejections are in `Resolution/Types/Composites/Inheritance.lean`. -/
 
 #eval testLaurelExecution {} <|
 #strata
@@ -460,9 +458,9 @@ composite BoxI<T> { var val: T }
 composite IntBox extends BoxI<int> { var w: int }
 composite Super extends IntBox { var z: int }
 
-// No upcast here, which is what isolates the EMISSION ORDER from the subtyping check: the
-// field is only in scope on `IntBox` if the monomorph parent was emitted before it, so a
-// wrong order fails at re-resolution rather than at the assertion.
+// No upcast here, which is what isolates the inherited field from the subtyping check: the
+// field is only in scope on `IntBox` if it inherits it from the monomorph parent, so a lost
+// field fails at re-resolution rather than at the assertion.
 procedure concreteChildInheritedFieldDirect()
   entry
   opaque

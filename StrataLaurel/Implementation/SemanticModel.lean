@@ -190,25 +190,20 @@ Compute the flattened set of ancestors for a composite type, including itself.
 Traverses the `extending` list transitively.
 -/
 def computeAncestors (model: SemanticModel) (name : Identifier) : Except String (List CompositeType) := do
-  let rec go (fuel : Nat) (current : Identifier) : List CompositeType :=
-    match fuel with
-    | 0 =>
-      match model.get current with
-      | .compositeType (ty : CompositeType) => [ty]
-      | _ => []
-    | fuel' + 1 =>
-      match model.get current with
-        | .compositeType (ty : CompositeType) =>
-          -- `extending` is `List HighTypeMd`; ancestry keys on the parent NAME (an
-          -- instantiation `Base<T>` shares `Base`'s ancestor chain), so peel the base.
-          [ty] ++ ty.extending.flatMap (fun parent =>
-            match highBaseName? parent.val with | some n => go fuel' n | none => [])
-        | _ => []
-  let mut seen : Std.HashSet Nat := {}
-  let mut acc : List CompositeType := []
-  for ct in go model.compositeCount name do
-    let uid ← Identifier.getUniqueId ct.name
-    if !seen.contains uid then
-      acc := acc ++ [ct]
-      seen := seen.insert uid
-  pure acc
+  -- Depth-first, self first; an ancestor already visited is not walked again.
+  let rec go (fuel : Nat) (current : Identifier) (acc : Array CompositeType × Std.HashSet Nat) :
+      Except String (Array CompositeType × Std.HashSet Nat) := do
+    match model.get current with
+    | .compositeType (ty : CompositeType) =>
+      let uid ← Identifier.getUniqueId ty.name
+      if acc.2.contains uid then return acc
+      let mut acc := (acc.1.push ty, acc.2.insert uid)
+      if let fuel' + 1 := fuel then
+        -- `extending` is `List HighTypeMd`; ancestry keys on the parent NAME (an
+        -- instantiation `Base<T>` shares `Base`'s ancestor chain), so peel the base.
+        for parent in ty.extending do
+          if let some n := highBaseName? parent.val then
+            acc ← go fuel' n acc
+      return acc
+    | _ => return acc
+  return (← go model.compositeCount name (#[], {})).1.toList

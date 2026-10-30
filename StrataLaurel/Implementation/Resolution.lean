@@ -82,9 +82,9 @@ Three forms of scope are maintained on `ResolveState`:
 - `currentScopeNames` — names defined at the current nesting level only, used
   by `defineNameCheckDup` to detect duplicates.
 - `typeScopes` — per-composite-type scopes mapping field names to scope
-  entries. Built by `resolveTypeDefinition` *before* descending into instance
-  procedures (and inheriting from `extending` parents), so that field
-  references inside method bodies can be resolved.
+  entries, inherited ones included. Built by `preRegisterTopLevel` before any
+  body is resolved, so that field references resolve whatever the declaration
+  order.
 - `instanceTypeName` — when resolving inside an instance procedure, the
   owning composite type's name. Used by `resolveFieldRef` as a fallback so
   that a bare `self.field` reference resolves through the type scope when
@@ -5147,26 +5147,6 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
           modify fun s => { s with errors := s.errors.push (diagnosticFromSource parent.source
             "a composite type can only extend another composite type") }
       let fields' ← ct.fields.mapM (resolveField ctName')
-      -- Build the per-type scope BEFORE instance procedures, so `self.field` resolves in methods.
-      let s ← get
-      let mut typeScope : Scope := {}
-      for parent in extending' do
-        -- Inherit the parent's field scope by base name (`Base<T>` shares `Base`'s fields).
-        match highBaseName? parent.val with
-        | some pname =>
-          match s.typeScopes.get? pname.text with
-          | some parentScope =>
-            for (k, v) in parentScope do
-              typeScope := typeScope.insert k v
-          | none => pure ()
-        | none => pure ()
-      -- Add own fields (these override inherited ones with the same name)
-      for field in fields' do
-        let qualifiedKey := ctName'.text ++ "." ++ field.name.text
-        match s.scope.get? qualifiedKey with
-        | some entry => typeScope := typeScope.insert field.name.text entry
-        | none => pure ()
-      modify fun s => { s with typeScopes := s.typeScopes.insert ctName'.text typeScope }
       let instProcs' ← ct.instanceProcedures.mapM (resolveInstanceProcedure ctName')
       pure (extending', fields', instProcs')
     return .Composite { ct with name := ctName', extending := extending',
@@ -5567,11 +5547,41 @@ private def tvarizeProcSignature (params : List Identifier) (proc : Procedure) :
     outputs := proc.outputs.map (tvarizeParam params),
     throwsType := proc.throwsType.map (tvarizeType params) }
 
+/-- Register `ct`'s field scope after its parents', inheriting theirs by base name (`Base<T>`
+    shares `Base`'s fields); own fields override inherited ones of the same name. `path` holds
+    the composites the walk went through to reach `ct`, so a parent among them closes an
+    inheritance cycle; `fuel` only satisfies termination. -/
+private def registerTypeScope (path : List String) : Nat → CompositeType → ResolveM Unit
+  | 0, _ => pure ()
+  | fuel + 1, ct => do
+    if (← get).typeScopes.contains ct.name.text then return
+    let path := ct.name.text :: path
+    let mut typeScope : Scope := {}
+    for parent in ct.extending do
+      let some pname := highBaseName? parent.val | continue
+      if path.contains pname.text then
+        modify fun s => { s with errors := s.errors.push (diagnosticFromSource parent.source
+          "a composite type can not inherit from itself") }
+        continue
+      if let some (_, .compositeType p) := (← get).scope.get? pname.text then
+        registerTypeScope path fuel p
+      if let some parentScope := (← get).typeScopes.get? pname.text then
+        for (k, v) in parentScope do
+          typeScope := typeScope.insert k v
+    let s ← get
+    for field in ct.fields do
+      match s.scope.get? (ct.name.text ++ "." ++ field.name.text) with
+      | some entry => typeScope := typeScope.insert field.name.text entry
+      | none => pure ()
+    modify fun s => { s with typeScopes := s.typeScopes.insert ct.name.text typeScope }
+
 /-- Pre-register all top-level names into scope so that declaration order doesn't matter.
     This assigns fresh IDs and adds placeholder scope entries for:
     - Type names (composite, constrained, datatype) and their constructors/destructors/fields
     - Constant names
-    - Static procedure names -/
+    - Static procedure names
+
+    It also builds every composite's field scope (`registerTypeScope`). -/
 private def preRegisterDefinitions (types : List TypeDefinition)
     (constants : List Constant) (staticFields : List Field)
     (procs : List Procedure) : ResolveM Unit := do
@@ -5610,6 +5620,8 @@ private def preRegisterDefinitions (types : List TypeDefinition)
       let _ ← defineNameCheckDup ta.name (.typeAlias ta)
     | .Opaque ot =>
       let _ ← defineNameCheckDup ot.name (.opaqueType ot)
+  for td in types do
+    if let .Composite ct := td then registerTypeScope [] types.length ct
   for c in constants do
     let _ ← defineNameCheckDup c.name (.constant c)
   -- Register both lookup forms for each file-scope global with one definition ID.

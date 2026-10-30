@@ -1028,7 +1028,7 @@ theorem resolveTypeDefinition_clean (td : TypeDefinition) :
     -- cleanliness we need is that each resolved instance procedure has clean fields, which
     -- the `resolveInstanceProcedure_clean` fold inside the scope establishes. The `repeat'`
     -- absorbs the intervening plumbing binds (`scopeTypeParams`, `extending'`, the parent
-    -- field-scope loops, `fields'`, `get`, `modify`).
+    -- kind checks, `fields'`).
     refine postM_bind_any fun ctName' => ?_
     refine postM_bind (postM_withScope
         (P := fun (r : List HighTypeMd × List Field × List Procedure) =>

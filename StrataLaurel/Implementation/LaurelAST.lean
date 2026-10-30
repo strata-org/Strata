@@ -1493,11 +1493,10 @@ partial def TypeLattice.ancestors (ctx : TypeLattice) (name : String) : Std.Hash
     `ancestors` is reflexive (`go {} [name]` seeds with `name`), so an element
     dominates itself with no special case. On an acyclic `extending` graph at most one
     element can dominate -- two dominators would be mutually reachable, which needs a
-    cycle -- so `find?` is equivalent to demanding a singleton. Nothing rejects a cycle
-    (`A extends B`, `B extends A` type-checks today), and in one `find?` returns whichever
-    mutually-reachable name it reaches first; that pick is order-dependent, unlike every
-    acyclic case. Out of scope here: a cycle needs rejecting where types are defined, not
-    working around at each use.
+    cycle -- so `find?` is equivalent to demanding a singleton. Resolution rejects a cycle
+    (`A extends B`, `B extends A`) but still checks calls through it, and in one `find?`
+    returns whichever mutually-reachable name it reaches first; that pick is
+    order-dependent, unlike every acyclic case.
 
     Each ancestor set is computed ONCE, outside the inner `all`: that lambda runs per
     pair, so computing it inside would cost a graph walk per pair.
@@ -1523,14 +1522,15 @@ private def TypeLattice.mostSpecific (ctx : TypeLattice) (names : List String) :
     ancestor, so an unguarded test would find each element dominated by itself and
     return nothing.
 
-    Dominance is STRICT (`!nAnc.contains other`), which matters only because nothing
-    rejects an `extending` cycle: two mutually-extending names each contain the other,
-    so a non-strict test calls each dominated by the other and drops BOTH. For
-    `Ac <-> Bc` both declaring `m` with unrelated `Cc`, and `Tc extends Bc, Cc`, a
-    non-strict test yields "the unrelated types Cc" -- one name, for an ambiguity, and a
-    set that no longer contains the branch the user has to choose between. Strictness
-    keeps a cyclic pair in the list, where the message is at least honest about what
-    competes. `InheritedCallDominance` D7 pins this.
+    Dominance is STRICT (`!nAnc.contains other`), which matters only for an `extending`
+    cycle (resolution rejects one but still checks calls through it): two
+    mutually-extending names each contain the other, so a non-strict test calls each
+    dominated by the other and drops BOTH. For `Ac <-> Bc` both declaring `m` with
+    unrelated `Cc`, and `Tc extends Bc, Cc`, a non-strict test yields "the unrelated
+    types Cc" -- one name, for an ambiguity, and a set that no longer contains the
+    branch the user has to choose between. Strictness keeps a cyclic pair in the list,
+    where the message is at least honest about what competes. `InheritedCallDominance`
+    D7 pins this.
 
     Filtering never changes WHETHER a call is ambiguous, only which names are reported:
     `mostSpecific` returns `some` exactly when this antichain is a singleton. (Acyclic
@@ -1849,8 +1849,8 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
     `mostSpecific`'s `find?`, the winner is required to be UNIQUE rather than merely
     first: with the candidates deduplicated by `highEq` (the same equality
     `substitutedAncestors` dedups by), a second dominator means two structurally distinct
-    types are mutually subtypes, which needs an `extending` cycle — nothing rejects one
-    today — and picking whichever came first would be silently order-dependent.
+    types are mutually subtypes, which needs an `extending` cycle (rejected by resolution),
+    and picking whichever came first would be silently order-dependent.
 
     A singleton list joins to itself (a type is its own most-specific ancestor). -/
 def TypeLattice.commonAncestorType (ctx : TypeLattice) (tys : List HighTypeMd)

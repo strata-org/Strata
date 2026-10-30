@@ -32,8 +32,7 @@ contract statements) and from `new C<τ>` allocation sites, then driven to a fix
 depth-capped worklist that also clones poly procedures materializing a generic composite.
 The pipeline reads, top to bottom: `indexGenerics` and `indexOpenCallers` → `collectSeeds`, call
 settling (`settleCallNode`) and renaming (`rewritePolyCallNode`) → fixpoint drain
-(`processWorklistItem`) → uncalled-proc witnesses → `topoSortMonomorphs` → rewrite all
-type/`new` positions.
+(`processWorklistItem`) → uncalled-proc witnesses → rewrite all type/`new` positions.
 -/
 
 namespace Strata.Laurel
@@ -590,7 +589,7 @@ private def processWorklistItem (genComposites : Std.HashMap String (List Identi
         -- `extending`: substitute the child's type args into each parent, then rewrite
         -- generic instantiations to their mono name (concrete `Base` unchanged; generic
         -- `Base<T>` → `Base$int`). Also collect the substituted parent inst so `Base$int`
-        -- is emitted (and topo-ordered before this child).
+        -- is emitted.
         let extending' := ct.extending.map fun p =>
           clearTyIds (rewriteTy genComposites (substTypeVars subst p))
         for p in ct.extending do
@@ -653,62 +652,6 @@ private def drainWorklist (genComposites : Std.HashMap String (List Identifier))
     | item :: rest =>
       drainWorklist genComposites genDefs ctx polyProcDefs model maxInstDepth fuel
         (processWorklistItem genComposites genDefs ctx polyProcDefs model maxInstDepth item { s with worklist := rest })
-
-/-- Topologically order composites by the `extends` relation so a PARENT precedes its
-    CHILD — required because re-resolution builds a composite's inherited field-scope by
-    reading the parent's already-built scope in `program.types` LIST ORDER. Called on the
-    WHOLE type list (concrete ++ monomorphs), since edges run BOTH ways: a monomorph child
-    extends a concrete parent, and a concrete child may extend a monomorph parent
-    (`IntBox extends Box<int>` → `Box$a1$int`). Stable DFS post-order; a `visiting` guard
-    makes a malformed cycle terminate rather than hang (valid programs are acyclic). -/
-private def topoSortMonomorphs (mono : List TypeDefinition) : List TypeDefinition := Id.run do
-  -- Index every composite by name to look up a parent for ORDERING. NOTE: a USER composite
-  -- can share a name with a monomorph (`composite Box$a1$int` vs the `Box<int>` monomorph —
-  -- the `$`-tag non-injectivity). That collision MUST be preserved as TWO entries so the
-  -- re-resolution net reports the duplicate-definition; so emission is tracked by LIST INDEX,
-  -- not by name. `firstIdxByName` (first-write-wins on a dup) is used only to pick *a* parent
-  -- to order before — harmless, since both collided entries land adjacent regardless.
-  let arr := mono.toArray
-  let monoNames : Std.HashSet String :=
-    arr.foldl (fun s td => match td with | .Composite c => s.insert c.name.text | _ => s) {}
-  let firstIdxByName : Std.HashMap String Nat := Id.run do
-    let mut m : Std.HashMap String Nat := {}
-    for h : i in [0:arr.size] do
-      match arr[i] with
-      | .Composite c => unless m.contains c.name.text do m := m.insert c.name.text i
-      | _ => pure ()
-    return m
-  let mut out : List TypeDefinition := []
-  let mut placed : Std.HashSet Nat := {}        -- emitted entries, by INDEX (so dups both emit)
-  -- visit the entry at `idx`, emitting its in-list parents (by name → first index) first
-  let rec visit (fuel : Nat) (visiting : Std.HashSet Nat)
-      (idx : Nat) (acc : List TypeDefinition × Std.HashSet Nat)
-      : List TypeDefinition × Std.HashSet Nat :=
-    match fuel with
-    | 0 => acc
-    | fuel'+1 =>
-      let (out, placed) := acc
-      if placed.contains idx || visiting.contains idx then (out, placed)
-      else match arr[idx]? with
-        | some (.Composite c) =>
-          let acc' := c.extending.foldl (fun a p =>
-            match highBaseName? p.val with
-            | some pn =>
-              if monoNames.contains pn.text then
-                match firstIdxByName.get? pn.text with
-                | some pIdx => visit fuel' (visiting.insert idx) pIdx a
-                | none => a
-              else a
-            | none => a) (out, placed)
-          let (out', placed') := acc'
-          (out' ++ [.Composite c], placed'.insert idx)
-        | some other => (out ++ [other], placed.insert idx)
-        | none => (out, placed)
-  let fuel := arr.size + 1
-  for h : i in [0:arr.size] do
-    let (out', placed') := visit fuel {} i (out, placed)
-    out := out'; placed := placed'
-  return out
 
 /-- Index the program's generic entities: the generic composites (name → type params,
     name → definition), and the poly procedures that MATERIALIZE a generic composite at
@@ -928,12 +871,6 @@ def monomorphizeComposites (program : LaurelProgram) (model : SemanticModel)
   let staticProcs' := (keptProcs ++ procClones).map rwProcSig
   let constants' := program.constants.map (fun c => { c with type := rewriteTy genComposites c.type })
   let staticFields' := program.staticFields.map (fun f => { f with type := rewriteTy genComposites f.type })
-  -- Ordering: re-resolution builds each composite's field-inheritance scope in type-LIST order,
-  -- reading its parent's already-built scope — so every composite must come AFTER its parents
-  -- (else an inherited field resolves to nothing → un-lowered access → StrataBug). Topo-sort the
-  -- WHOLE list (concrete ++ monomorphs), since edges run BOTH ways: a monomorph child extends a
-  -- concrete parent, and a concrete child may extend a monomorph parent (`IntBox extends Box<int>`
-  -- → `Box$a1$int`). Witnesses are zero-field/no-extends → position-independent, appended after.
   -- Flag a USER identifier that collides with a generated monomorph name (`Box$a1$int`):
   -- `$` and the `$aN$` tag shape are legal in source, and `instTagCommon` is non-injective,
   -- so a user type can share a monomorph's name. Point the diagnostic at the user's own
@@ -950,7 +887,7 @@ def monomorphizeComposites (program : LaurelProgram) (model : SemanticModel)
     else none
 
   let program := { program with
-                     types := topoSortMonomorphs (types' ++ monoComposites) ++ witnessComposites,
+                     types := types' ++ monoComposites ++ witnessComposites,
                      staticProcedures := staticProcs',
                      constants := constants', staticFields := staticFields' }
   -- 5. Rewrite statement-level types + new sites (`rewriteStmt`).

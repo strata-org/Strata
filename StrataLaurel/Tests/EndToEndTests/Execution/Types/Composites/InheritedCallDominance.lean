@@ -193,19 +193,18 @@ procedure go(t: T6)
 };
 #end
 
-/-! D7: the antichain filter must use STRICT dominance. Nothing rejects an `extending`
-    cycle, and two mutually-extending names are each an ancestor of the other, so a
-    non-strict "is some other declarer's ancestor" test calls each of them dominated and
-    drops BOTH. Under such a test this program reports "the unrelated types Cc" -- one
-    candidate for an ambiguity, with the cyclic branch the user must choose between
-    missing entirely.
+/-! D7: the antichain filter must use STRICT dominance. Resolution rejects an `extending`
+    cycle but still checks the call, and two mutually-extending names are each an ancestor
+    of the other, so a non-strict "is some other declarer's ancestor" test calls each of
+    them dominated and drops BOTH. Under such a test this program reports "the unrelated
+    types Cc" -- one candidate for an ambiguity, with the cyclic branch the user must choose
+    between missing entirely.
 
     A cycle is not otherwise meaningful here and is not endorsed by this test: it is the
     only shape that distinguishes strict from non-strict dominance, so it is what pins
     the distinction. `mostSpecific`'s own behaviour on a cycle (an order-dependent pick,
-    since mutual reachability makes both names dominate) is a separate pre-existing gap;
-    rejecting cycles belongs where composites are defined. -/
--- No interpreters: the annotated error is a resolution rejection, so there is no program to run.
+    since mutual reachability makes both names dominate) is a separate pre-existing gap. -/
+-- No interpreters: the annotated errors are resolution rejections, so there is no program to run.
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
@@ -213,6 +212,7 @@ composite Ac extends Bc {
   procedure m(self: Ac) returns (r: int) opaque ensures r == 1 { return 1 };
 }
 composite Bc extends Ac {
+//                   ^^ error: a composite type can not inherit from itself
   procedure m(self: Bc) returns (r: int) opaque ensures r == 2 { return 2 };
 }
 composite Cc {

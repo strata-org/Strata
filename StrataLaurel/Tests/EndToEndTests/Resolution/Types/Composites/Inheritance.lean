@@ -311,9 +311,9 @@ procedure upcastToUnrelatedType()
 /-! ## A CONCRETE composite extending a generic INSTANTIATION
 
 `IntBox extends Box<int>` is the other direction from the cases above: the child has no type
-parameters, but its parent is a monomorph that has to be emitted before it. So the topological
-sort has to order a concrete composite after a generated one — and transitively, through a
-`Super extends IntBox extends Box<int>` chain where the monomorph is two levels up.
+parameters, but its parent is a monomorph, so a concrete composite inherits from a generated one —
+and transitively, through a `Super extends IntBox extends Box<int>` chain where the monomorph is
+two levels up.
 
 Subtyping compares the SUBSTITUTED ancestor with invariant arguments, so `IntBox`'s only
 `Box` supertype is `Box<int>`; `Box<bool>` and a swapped `Pair<bool, int>` are both rejected.
@@ -477,4 +477,15 @@ procedure noTypeArgumentAtStake(d: DG<int>) opaque {
   var r: int := upcastOnly(d, 1);
   assert r == 1
 };
+#end
+
+-- An `extends` cycle is rejected at the parent that closes it, a self cycle included.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite A extends B { var x: int }
+composite B extends A { var y: int }
+//                  ^ error: a composite type can not inherit from itself
+composite C extends C { var z: int }
+//                  ^ error: a composite type can not inherit from itself
 #end
