@@ -462,13 +462,7 @@ procedure testDestructiveUpdates()
 };
 #end
 
--- An `exit` inside an assigned *block value*. The block-value arms translate the block
--- with its last element as the continuation, which would turn the `exit` into that
--- label's continuation as the assigned *value* and leave the statements after the
--- assignment to run anyway — so this body would evaluate to 1 + 100 where leaving the
--- labelled block before either assignment gives 1. An exit abandons the enclosing
--- statements, and a value's continuation is not the statement's continuation, so it is
--- reported rather than mistranslated.
+-- An `exit` inside an assigned *block value* is reported (see `containsExitOrReturn`).
 #guard_msgs (drop info) in
 #eval testLaurelVerification <|
 #strata
@@ -485,8 +479,7 @@ procedure exitInBlockValue(c: bool) returns (r: int)
 };
 #end
 
--- A block value with no exit is unaffected, so the rejection above is not over-broad:
--- the block's statements are functionalized with its last element as the value.
+-- A block value with no exit is translated, so the rejection above is not over-broad.
 #guard_msgs (drop info) in
 #eval testLaurelVerification <|
 #strata
@@ -504,10 +497,33 @@ procedure testBlockValueNoExit()
 };
 #end
 
--- Assigning to an input parameter is a destructive assignment that must still be
--- rejected: rewriting it into a shadowing declaration would silently accept the
--- program. `FunctionalRewrite` therefore reports it rather than rewriting it.
--- Kept in its own program because the error aborts verification of the rest.
+-- An assignment inside a block value to a variable declared *outside* the block is
+-- visible after the assignment, as at statement level. `ConstrainedTypeElim` makes
+-- `u := (t := t + 1)` such a block value, as it does any assignment used as a value on
+-- a constrained type. Run as well as verified, so the two must agree.
+#guard_msgs (drop info) in
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+procedure blockValueOuterLocal(y: nat): int
+{
+  var t: nat := y;
+  var u: nat := (t := t + 1);
+  return t + u
+};
+
+procedure testBlockValueOuterLocal()
+  entry
+  opaque
+{
+  assert blockValueOuterLocal(1) == 4;
+  assert blockValueOuterLocal(1) == 3
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+-- A transparent body may assign to its input parameter, as it may to a local.
 #guard_msgs (drop info) in
 #eval testLaurelVerification <|
 #strata
@@ -515,8 +531,13 @@ program Laurel;
 procedure updateInputParameter(a: int) returns (r: int)
 {
   a := a + 1;
-//^^^^^^^^^^ error: a transparent body or contract cannot YET mutate any of its inputs, and this mutates 'a'
   return a
+};
+
+procedure testUpdateInputParameter()
+  opaque
+{
+  assert updateInputParameter(1) == 2
 };
 #end
 

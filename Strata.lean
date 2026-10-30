@@ -41,6 +41,8 @@ import Strata.Transform.CoreSpecification
 import Strata.Transform.CoreSpecificationProps
 import Strata.Languages.Core.Analysis.ProcedureCorrectness
 import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
+import Strata.Languages.Core.Analysis.DeductiveVerification
+import Strata.Languages.Core.Analysis.DeductiveVerificationProps
 import Strata.Languages.Core.ProcedureProps
 import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
@@ -51,6 +53,7 @@ import Strata.Transform.LoopInitHoist
 import Strata.Transform.LoopInitHoistCorrect
 import Strata.Transform.NondetElim
 import Strata.Transform.NondetElimCorrect
+import Strata.Transform.NondetElimCoreCorrect
 import Strata.Transform.NondetElimProps
 import Strata.Transform.ProcBodyVerifyCorrect
 import Strata.Transform.Simplify
@@ -74,8 +77,6 @@ import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 
 /- Strata Languages — additional -/
 import Strata.Languages.B3
-import Strata.Languages.C_Simp.C_Simp
-import Strata.Languages.C_Simp.Verify
 import Strata.Languages.Core.EntryPoint
 import Strata.Languages.Core.IncrementalSolve
 import Strata.Languages.Core.ProgramFact
@@ -168,3 +169,5 @@ import Strata.Examples.EmbeddedData
 -- noimport: Strata.Util.IOTests (used for tests)
 -- noimport: Strata.CodeGen.TypeShape (meta module, used by the code generators)
 -- noimport: Strata.Java.Gen (meta module, used by laurelJavaGen executable)
+-- noimport: Strata.Go.Gen (meta module, used by laurelGoGen executable)
+-- noimport: Strata.Go.GoIonRuntime (embedded Go support templates, used by Strata.Go.Gen)

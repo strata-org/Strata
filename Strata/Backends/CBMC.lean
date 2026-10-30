@@ -9,4 +9,3 @@ import Strata.Backends.CBMC.CProver
 import Strata.Backends.CBMC.CollectSymbols
 import Strata.Backends.CBMC.CoreToCBMC
 import Strata.Backends.CBMC.GOTO
-import Strata.Backends.CBMC.StrataToCBMC

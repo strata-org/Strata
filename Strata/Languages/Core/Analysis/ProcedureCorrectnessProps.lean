@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Analysis.ProcedureCorrectness
 public import Strata.Transform.CoreSpecificationProps
+public import Strata.DL.Imperative.Logic.TerminationProps
 import Strata.Languages.Core.StatementSemanticsProps
 import Strata.DL.Imperative.CmdSemanticsProps
 import Strata.DL.Imperative.StmtSemanticsProps

@@ -5,7 +5,7 @@
 -/
 module
 
-meta import Strata.Languages.Core.Verifier
+meta import Strata.Languages.Core.IncrementalSolve
 meta import Strata.Transform.CallElim
 import StrataDDM.Integration.Lean.HashCommands
 

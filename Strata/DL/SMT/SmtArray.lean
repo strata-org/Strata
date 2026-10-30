@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 /-!
 # A Lean Model of SMT-LIB Arrays
 

@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 /-! # Shared test runner harness
 
 `testMain` is the concurrent file-runner used by every package's `lake test`.

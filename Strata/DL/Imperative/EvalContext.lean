@@ -133,6 +133,7 @@ def PathConditions.addInNewest (ps : PathConditions P) (m : PathCondition P) : P
 
 /-- Remove path condition entries with specified names -/
 def PathConditions.removeByNames [ToFormat P.Ident] (ps : PathConditions P) (names : List String) : PathConditions P :=
+  let names : Std.HashSet String := Std.HashSet.ofList names
   ps.map (fun pc => pc.filter (fun e => !names.contains e.name))
 
 /-- A path-condition accumulator whose scopes are each stored reversed

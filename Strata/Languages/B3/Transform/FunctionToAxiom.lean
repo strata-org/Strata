@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Init
 public import Strata.Languages.B3.DDMTransform.DefinitionAST
 open StrataDDM
 

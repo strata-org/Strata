@@ -119,7 +119,6 @@ calling `concreteEval`, and decoding the result. -/
       | none => (SortDenote.instInhabited s).default
       | some ceval => gatherEval ceval [] s
 
-set_option maxRecDepth 750 in
 /-- No function in the built-in `Core.Factory` has a body. -/
 private theorem all_bodies_none : ∀ f ∈ Core.Factory.toArray, f.body = none := by
   intro f hf
@@ -127,15 +126,11 @@ private theorem all_bodies_none : ∀ f ∈ Core.Factory.toArray, f.body = none 
     Lambda.Factory.ofArray_mem (a := Core.WFFactoryArray.map (·.func)) hf
   obtain ⟨wf, hwf, rfl⟩ := Array.mem_map.mp hmem
   rw [Array.mem_def] at hwf
-  simp only [Core.WFFactoryArray, Array.toList_appendList,
-    List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hwf
-  repeat'
-    first
-    | (rcases hwf with hwf | hwf)
-    | subst hwf
-  all_goals rfl
+  simp only [Core.WFFactoryArray, Array.toList_appendList] at hwf
+  have h := (List.all_eq_true (p := fun wf => wf.func.body.isNone)).mp ?_ wf hwf
+  · simpa using h
+  · decide +kernel
 
-set_option maxRecDepth 750 in
 /-- No function in the built-in `Core.Factory` is a constructor. -/
 private theorem all_not_constr : ∀ f ∈ Core.Factory.toArray, f.isConstr = false := by
   intro f hf
@@ -143,13 +138,10 @@ private theorem all_not_constr : ∀ f ∈ Core.Factory.toArray, f.isConstr = fa
     Lambda.Factory.ofArray_mem (a := Core.WFFactoryArray.map (·.func)) hf
   obtain ⟨wf, hwf, rfl⟩ := Array.mem_map.mp hmem
   rw [Array.mem_def] at hwf
-  simp only [Core.WFFactoryArray, Array.toList_appendList,
-    List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hwf
-  repeat'
-    first
-    | (rcases hwf with hwf | hwf)
-    | subst hwf
-  all_goals rfl
+  simp only [Core.WFFactoryArray, Array.toList_appendList] at hwf
+  have h := (List.all_eq_true (p := fun wf => !wf.func.isConstr)).mp ?_ wf hwf
+  · simpa using h
+  · decide +kernel
 
 /-- A function looked up by name belongs to `Core.Factory`'s underlying array. -/
 private theorem get_mem (name : String) (p : name ∈ Core.Factory) :
@@ -523,49 +515,91 @@ instance (n : Nat) : OutPrim (.bitvec n) (BitVec n) where
     unfold decodeAt
     simp
 
-set_option maxRecDepth 750 in
-set_option maxHeartbeats 500000 in
+/-- `concreteEval` consistency for any `unaryOp`-built function whose
+`LambdaLeanType` decoder/builder agree with the `InPrim`/`OutPrim` bridges.
+Stated over `unaryOp` itself so a factory entry unifies with it directly. -/
+private theorem unaryOp_func_consistent
+    {inTy outTy : LMonoTy} {InV OutV : Type} [ToString OutV]
+    [LambdaLeanType inTy InV] [LambdaLeanType outTy OutV]
+    [ip : InPrim inTy InV] [opr : OutPrim outTy OutV]
+    (hcin : ip.cevalIn = LambdaLeanType.cevalTy T := by rfl)
+    (hmk : opr.mkOut = LambdaLeanType.mkConst T := by rfl)
+    {n : T.Identifier} {f : InV → OutV} {pre hI hO hp}
+    {ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)}
+    (hce : (unaryOp n f pre hI hO hp).func.concreteEval = some ceval)
+    (hlook : Core.Factory.get? n.name = some (unaryOp n f pre hI hO hp).func) :
+    LFunc.InterpConsistentEval tcInterp opInterp (unaryOp n f pre hI hO hp).func ceval := by
+  injection hce with hce
+  subst hce
+  refine unaryOp_consistent (inTy := inTy) (outTy := outTy) _ _ rfl rfl rfl hlook f ?_
+  intro md x
+  rw [hcin, hmk]
+  rfl
+
+/-- `concreteEval` consistency for any `binaryOp`-built function whose
+`LambdaLeanType` decoder/builder agree with the `InPrim`/`OutPrim` bridges.
+Stated over `binaryOp` itself so a factory entry unifies with it directly. -/
+private theorem binaryOp_func_consistent
+    {inTy outTy : LMonoTy} {InV OutV : Type} [ToString OutV]
+    [LambdaLeanType inTy InV] [LambdaLeanType outTy OutV]
+    [ip : InPrim inTy InV] [opr : OutPrim outTy OutV]
+    (hcin : ip.cevalIn = LambdaLeanType.cevalTy T := by rfl)
+    (hmk : opr.mkOut = LambdaLeanType.mkConst T := by rfl)
+    {n : T.Identifier} {g : InV → InV → OutV} {guard pre hI hO hp}
+    {ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)}
+    (hce : (binaryOp n g guard pre hI hO hp).func.concreteEval = some ceval)
+    (hlook : Core.Factory.get? n.name = some (binaryOp n g guard pre hI hO hp).func) :
+    LFunc.InterpConsistentEval tcInterp opInterp (binaryOp n g guard pre hI hO hp).func ceval := by
+  injection hce with hce
+  subst hce
+  refine binaryOp_consistent (inTy := inTy) (outTy := outTy) _ _ rfl rfl rfl hlook g guard ?_
+  intro md x y
+  rw [hcin, hmk]
+  rfl
+
+/-- `concreteEval` consistency for any `shortCircuitOp`-built function.
+Stated over `shortCircuitOp` itself so a factory entry unifies with it directly. -/
+private theorem shortCircuit_func_consistent
+    {n : T.Identifier} {absorb decided : Bool}
+    {ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)}
+    (hce : (shortCircuitOp n absorb decided).func.concreteEval = some ceval)
+    (hlook : Core.Factory.get? n.name = some (shortCircuitOp n absorb decided).func) :
+    LFunc.InterpConsistentEval tcInterp opInterp (shortCircuitOp n absorb decided).func ceval := by
+  injection hce with hce
+  subst hce
+  exact shortCircuit_consistent _ _ rfl rfl rfl hlook absorb decided (by intro md x y; rfl)
+
 /-- For every `Core.Factory` function with a concrete evaluator, `opInterp` agrees
     with that evaluator. -/
 private theorem eval_consistent :
     ∀ (f : String), (hf : f ∈ Core.Factory) → ∀ ceval, (Core.Factory[f]).concreteEval = some ceval →
       LFunc.InterpConsistentEval tcInterp opInterp (Core.Factory[f]) ceval := by
+  -- Each entry is either evaluator-free or built by `unaryOp`/`binaryOp`.
+  have hall : ∀ wf ∈ Core.WFFactoryArray.toList, ∀ ceval,
+      wf.func.concreteEval = some ceval →
+      Core.Factory.get? wf.func.name.name = some wf.func →
+      LFunc.InterpConsistentEval tcInterp opInterp wf.func ceval := by
+    unfold Core.WFFactoryArray
+    simp only [Array.toList_appendList, List.forall_mem_append]
+    repeat' apply And.intro
+    all_goals
+      repeat (refine List.forall_mem_cons.mpr ⟨?_, ?_⟩; rotate_left)
+      exact List.forall_mem_nil _
+    all_goals
+      intro ceval hce hlook
+      first
+      | (injection hce; done)
+      | exact binaryOp_func_consistent (hce := hce) (hlook := hlook)
+      | exact unaryOp_func_consistent (hce := hce) (hlook := hlook)
+      | exact shortCircuit_func_consistent (hce := hce) (hlook := hlook)
   intro f hf ceval hce
   have hmem : Core.Factory[f] ∈ Core.WFFactoryArray.map (·.func) :=
     Lambda.Factory.ofArray_mem (a := Core.WFFactoryArray.map (·.func)) (get_mem f hf)
-  generalize hfn : Core.Factory[f] = fn at hmem hce ⊢
-  clear hfn hf
-  have hlook : Core.Factory.get? fn.name.name = some fn := by
-    have hCoreEq : Core.Factory
-        = Lambda.Factory.ofArray (Core.WFFactoryArray.map (·.func)) := rfl
-    rw [hCoreEq]
-    exact Lambda.Factory.get?_ofArray_of_mem hmem Core.WFFactoryArray_func_name_nodup
+  generalize Core.Factory[f] = fn at hmem hce ⊢
+  have hlook : Core.Factory.get? fn.name.name = some fn :=
+    Lambda.Factory.get?_ofArray_of_mem hmem Core.WFFactoryArray_func_name_nodup
   obtain ⟨wf, hwf, rfl⟩ := Array.mem_map.mp hmem
-  rw [Array.mem_def] at hwf
-  simp only [Core.WFFactoryArray, Array.toList_appendList,
-    List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hwf
-  repeat'
-    first
-    | (injection hce with hce'
-       all_goals
-         subst hce'
-         first
-         | exact unaryOp_consistent (inTy := LMonoTy.bool) (outTy := LMonoTy.bool) _ _ rfl rfl rfl hlook _ (by intro md x; rfl)
-         | exact unaryOp_consistent (inTy := LMonoTy.int) (outTy := LMonoTy.int) _ _ rfl rfl rfl hlook _ (by intro md x; rfl)
-         | exact unaryOp_consistent (inTy := LMonoTy.string) (outTy := LMonoTy.int) _ _ rfl rfl rfl hlook _ (by intro md x; rfl)
-         | exact unaryOp_consistent (inTy := .bitvec _) (outTy := .bitvec _) _ _ rfl rfl rfl hlook _ (by intro md x; rfl)
-         | exact unaryOp_consistent (inTy := .bitvec _) (outTy := LMonoTy.bool) _ _ rfl rfl rfl hlook _ (by intro md x; rfl)
-         | exact binaryOp_consistent (inTy := LMonoTy.int) (outTy := LMonoTy.int) _ _ rfl rfl rfl hlook _ _ (by intro md x y; rfl)
-         | exact binaryOp_consistent (inTy := LMonoTy.int) (outTy := LMonoTy.bool) _ _ rfl rfl rfl hlook _ _ (by intro md x y; rfl)
-         | exact binaryOp_consistent (inTy := LMonoTy.bool) (outTy := LMonoTy.bool) _ _ rfl rfl rfl hlook _ _ (by intro md x y; rfl)
-         | exact binaryOp_consistent (inTy := LMonoTy.string) (outTy := LMonoTy.string) _ _ rfl rfl rfl hlook _ _ (by intro md x y; rfl)
-         | exact binaryOp_consistent (inTy := LMonoTy.string) (outTy := LMonoTy.bool) _ _ rfl rfl rfl hlook _ _ (by intro md x y; rfl)
-         | exact binaryOp_consistent (inTy := .bitvec _) (outTy := .bitvec _) _ _ rfl rfl rfl hlook _ _ (by intro md x y; rfl)
-         | exact binaryOp_consistent (inTy := .bitvec _) (outTy := LMonoTy.bool) _ _ rfl rfl rfl hlook _ _ (by intro md x y; rfl)
-         | exact shortCircuit_consistent _ _ rfl rfl rfl hlook _ _ (by intro md x y; rfl))
-    | injection hce
-    | (rcases hwf with hwf | hwf)
-    | subst hwf
+  exact hall wf (Array.mem_def.mp hwf) ceval hce hlook
 
 /-- `ConstrInterpConsistent`: vacuous, since no factory function is a
 constructor. -/

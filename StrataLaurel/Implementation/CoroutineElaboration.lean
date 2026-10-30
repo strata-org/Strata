@@ -1207,7 +1207,9 @@ public def coroutineElaborationPass : LaurelPass := .onUnordered {
       NodeKind.TypeDefinition.Composite,
       NodeKind.CompositeType.instanceProcedures.cons,
       NodeKind.StmtExpr.InstanceCall,
-      NodeKind.Pseudo.coroutineOverride
+      NodeKind.Pseudo.coroutineOverride,
+      NodeKind.StmtExpr.OldGuarantee,
+      NodeKind.StmtExpr.OldRelies
     ]
   removes := [
       NodeKind.Procedure.contracts.Coroutine,

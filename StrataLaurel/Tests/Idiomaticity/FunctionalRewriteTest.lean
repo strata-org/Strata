@@ -479,14 +479,15 @@ procedure labelledBlockNotLast(x: int) returns (r: int) {
 };
 #end
 
-/-! ## A block-valued assignment functionalizes the block's statements
+/-! ## A block-valued assignment is flattened into the enclosing statements
 
 An assignment's value is normally an expression, but the transparency pass can emit
 a transparent body as `$result := { <statements>; <tail expression> }`, whose
-statements are genuinely in statement position. Those are functionalized with the
-block's own last element as the continuation — so the destructive update inside the
-block below becomes a nested shadowing declaration, exactly as it would at
-statement level. This is the only shape where a *value* is descended into. -/
+statements are genuinely in statement position. The block is flattened:
+`r := { S; e }` is translated as `S` followed by `r := e` — so the destructive
+update inside the block below becomes a nested shadowing declaration, exactly as it
+would at statement level, and its scope extends over the statements after the
+assignment. This is the only shape where a *value* is descended into. -/
 
 /--
 info: procedure $declHole_blockValued_6(a: int): int
@@ -499,16 +500,16 @@ procedure blockValued(a: int)
 {
   var r: int := $declHole_blockValued_6(a);
   {
-    var r: int := {
-      var $v_7: int := a;
-      {
-        var $v_7: int := step($v_7);
-        $v_7
-      }
-    };
+    var $v_7: int := a;
     {
-      var r: int := r;
-      r
+      var $v_7: int := step($v_7);
+      {
+        var r: int := $v_7;
+        {
+          var r: int := r;
+          r
+        }
+      }
     }
   }
 };
@@ -747,9 +748,13 @@ procedure hasAssume(b: bool) returns (r: int) {
 
 /-! ### An assignment to an input parameter
 
-This is a destructive assignment the Core translator must keep rejecting.
-Turning it into a shadowing declaration would silently accept the program, so
-input names are checked before the binding rule applies. -/
+In the full pipeline this construct is accepted: `CopyMutatedInputs` redirects
+the write to a fresh local before `FunctionalRewrite` runs, so the input-uid
+check there only ever sees *inout* writes (`$heap`, promoted globals). This
+harness drives `functionalRewritePass` directly, without that pass, so a
+plain-input write still reaches the check — turning it into a shadowing
+declaration here would silently change its meaning, hence input names are
+checked before the binding rule applies, and this pins the diagnostic. -/
 
 /--
 info: FunctionalRewritePass diagnostic[userError]: a transparent body or contract cannot YET mutate any of its inputs, and this mutates 'a'

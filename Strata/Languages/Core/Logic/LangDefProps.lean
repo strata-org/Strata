@@ -90,6 +90,17 @@ theorem InitEnvWF.of_defUseOk {params : InitEnvWFParams} {s : Statement}
   factoryDeclared := hfd
   initTypesInhabited := hinit
 
+/-- Every variable read by a well-formed block avoids every reserved prefix. -/
+theorem BlockInitEnvWF.getVarsNotReserved {params : InitEnvWFParams}
+    {bss : Statements} {ρ : Imperative.Env Expression}
+    (h : BlockInitEnvWF params bss ρ) {n : Expression.Ident}
+    (hn : n ∈ Block.getVars bss) {p : String} (hp : p ∈ params.prefixIdents) :
+    ¬ p.toList.isPrefixOf n.name.toList := by
+  by_cases hd : n ∈ Block.definedVars bss false
+  · exact h.definedVarsNotReserved n hd p hp
+  · exact h.reservedFresh n
+      (h.readWritesDefined n (by simp [Block.touchedVars, hn]) hd) p hp
+
 /-- Build a `BlockInitEnvWF` without supplying `readWritesDefined`: it follows from
     `defUseOk`. -/
 theorem BlockInitEnvWF.of_defUseOk {params : InitEnvWFParams} {bss : Statements}
@@ -618,16 +629,17 @@ theorem blockInitEnvWF_procBlock_nil {params : InitEnvWFParams} {ρ : Imperative
 /-! ## Weakening to the generic Imperative block condition -/
 
 /-- A Core `BlockInitEnvWF` weakens to the generic `Imperative.Logic.BlockInitEnvWF`
-    at the reserved-prefix name predicate `Q`.  The generic gate keeps only three
-    of Core's conditions: evaluator well-formedness, that the block's defined
-    variables start undefined, and that no `Q`-name is initially defined — the last
-    of which is exactly Core's `reservedFresh` read at `Q`.  The init-type witnesses
+    at the reserved-prefix name predicate `Q`. The generic gate keeps evaluator
+    and store well-formedness, that the block's defined variables start
+    undefined, and that no `Q`-name is initially defined — the last of which is
+    exactly Core's `reservedFresh` read at `Q`. The init-type witnesses
     are the same predicate on both sides, so they transfer unchanged. -/
 theorem BlockInitEnvWF.toImperative {params : InitEnvWFParams} {bss : Statements}
     {ρ : Imperative.Env Expression} (h : BlockInitEnvWF params bss ρ) :
     Imperative.Logic.BlockInitEnvWF (P := Expression) (CmdT := Command)
       (fun s => ∃ p ∈ params.prefixIdents, p.toList.isPrefixOf s.toList) bss ρ where
   toWellFormedSemanticEval := h.toWellFormedSemanticEval
+  storeWellDefined := h.storeWellDefined
   defsUndefined := fun x hx => Option.isNone_iff_eq_none.mp (h.defsUndefined x hx)
   definedVarsNotReserved := by
     intro y hy

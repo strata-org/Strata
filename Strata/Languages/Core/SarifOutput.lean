@@ -32,7 +32,8 @@ def outcomeToLevel (mode : VerificationMode) (property : Imperative.PropertyType
   | _, .cover, .sat _, _ => .none
   -- Unreachable (both unsat): deductive=warning for assert-like properties
   -- (those that pass vacuously), error for cover and bugFinding modes.
-  | .deductive, p, .unsat, .unsat => if p.passWhenUnreachable then .warning else .error
+  | .deductive, p, .unsat, .unsat | .deductiveAssumingSatisfiablePaths, p, .unsat, .unsat =>
+    if p.passWhenUnreachable then .warning else .error
   | _, _, .unsat, .unsat => .error
   -- Pass: validity proven (unsat on P∧¬Q)
   | _, _, _, .unsat => .none
@@ -41,7 +42,7 @@ def outcomeToLevel (mode : VerificationMode) (property : Imperative.PropertyType
   -- Always false if reached (unsat unknown): error in all modes
   | _, _, .unsat, _ => .error
   -- Deductive: everything non-pass is error
-  | .deductive, _, _, _ => .error
+  | .deductive, _, _, _ | .deductiveAssumingSatisfiablePaths, _, _, _ => .error
   -- BugFinding+CompleteSpec: any counterexample (sat on P∧¬Q) is error
   | .bugFindingAssumingCompleteSpec, _, _, .sat _ => .error
   -- BugFinding: everything else is note

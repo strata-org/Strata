@@ -17,6 +17,7 @@ import StrataLaurel.Implementation.EliminateDoWhileProps
 import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssignProps
 import StrataLaurel.Implementation.ResolutionProps
 import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssign
+import StrataLaurel.Implementation.CopyMutatedInputs
 import StrataLaurel.Implementation.EliminateValueInReturns
 import StrataLaurel.Implementation.ModifiesClauses
 import StrataLaurel.Implementation.HeapParameterization
@@ -43,6 +44,7 @@ import StrataLaurel.Implementation.CheckOverrideRefinement
 import StrataLaurel.Implementation.TypeAliasElim
 import StrataLaurel.Implementation.EliminateExceptions
 import StrataLaurel.Implementation.MonomorphizeComposites
+import StrataLaurel.Implementation.LaurelNodeKindCheck
 public import StrataLaurel.Implementation.LaurelPass
 public import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.ASTtoCST
@@ -141,16 +143,18 @@ def laurelPipeline : Array LaurelPass := #[
   monomorphizeCompositesPass,
   eliminateDoWhilePass,
   eliminateIncrDecrAndCompoundAssignPass,
-  constrainedTypeElimPass,
+  -- Placement rationale in the pass's module header.
+  copyMutatedInputsPass,
   -- `liftInstanceProceduresPass` runs before monomorphization; that also places it before
   -- `eliminateValueInReturnsPass`, as value-returning instance methods require, so no entry
   -- is needed here.
+  eliminateValueInReturnsPass,
+  constrainedTypeElimPass,
   -- Note: the exception contract checks (the declared `throws` upper bound, plus the
   -- "not yet lowerable" source-shape guards) are *not* a pipeline pass. They are
   -- properties of the authored program, so `resolve` runs them on the initial
   -- resolution only — see `validateExceptionEscapes` /
   -- `validateExceptionLowerability` in `Resolution.lean`.
-  eliminateValueInReturnsPass,
   eliminateExceptionsPass,
   -- The heap trio: `HeapParameterization` declares `$heap` as a file-scope global
   -- and rewrites field access against it; `TypeHierarchy` lowers `New` (which also
@@ -189,6 +193,14 @@ def laurelPipeline : Array LaurelPass := #[
   laurelToCoreSchemaPass
 ]
 
+/-- A shape the input must not contain: phase `pass`, at `position` in the order, does not
+    support `kind`, and no earlier phase removes it. -/
+structure InputRequirement where
+  kind : NodeKind
+  pass : String
+  position : Nat
+  message : String
+
 def newPostPassResolutionErrors (initialDiags : Std.HashSet Message)
     (diagsSoFar : List Message) (postPassDiags : Array Message) : Array Message :=
   if diagsSoFar.any (·.kind != .warning) then #[]
@@ -204,7 +216,8 @@ program state after each pass is written to
 `{prefix}.{n}.{passName}.{Program.fileExtension}`.
 -/
 private def runLaurelPasses
-    (options: LaurelTranslateOptions)
+    (options: LaurelTranslateOptions) (passes : Array LaurelPass)
+    (inputRequirements : List InputRequirement)
     (pctx : Strata.Pipeline.PipelineContext) (program : LaurelProgram)
     : PipelineM (Program × LaurelProgram × List Message × List Message × Statistics) := do
   -- Must run HERE, before the prelude is prepended below and before the first resolve:
@@ -247,7 +260,16 @@ private def runLaurelPasses
   if result.errors.any (·.kind != .warning) then
     return (program, laurelProgram, allDiags, lastDiags, allStats)
 
-  for pass in laurelPipeline do
+  let required := inputRequirements.map (·.kind)
+  unless required.isEmpty || Program.containsB (fun k => !required.contains k) program do
+    let present := Program.presentKinds required program
+    unless present.isEmpty do
+      let inputDiags := inputRequirements.filterMap fun r =>
+        if present.contains r.kind then some (Message.fromString r.message MessageKind.userError)
+        else none
+      return (program, laurelProgram, allDiags ++ inputDiags, lastDiags, allStats)
+
+  for pass in passes do
     let (program', diags, stats) ← pctx.withPhase pass.name do pure (pass.run options program model)
     program := program'
     if let .Unordered p := program then laurelProgram := p
@@ -366,6 +388,208 @@ private def runLaurelPasses
 
   return (program, laurelProgram, allDiags, lastDiags, allStats)
 
+/-- A pass whose declarations are not satisfied by the pipeline order. -/
+structure OrderingFailure where
+  pass : String
+  kind : NodeKind
+  stillPresent : Bool := false
+  /-- What went wrong, for the failure message. -/
+  reason : String
+  deriving Repr
+
+/-- A dependency between two passes, as the fold observed it: `later` names `kind` in its
+    `unsupported`, and `earlier` is the pass that last removed it. -/
+structure PassDependency where
+  earlier : String
+  later : String
+  kind : NodeKind
+  reason : String
+  deriving Repr
+
+private inductive ShapeOrigin where
+  | input
+  | created
+  deriving BEq, Repr
+
+private structure PhaseObservation where
+  pass : String
+  position : Nat
+  declarationFailures : List OrderingFailure
+  live : List (NodeKind × ShapeOrigin)
+
+private def stillLive (pass : String) (k : NodeKind) : OrderingFailure :=
+  { pass, kind := k, reason := "declared unsupported but still live here", stillPresent := true }
+
+private def shapeFoldOf (passes : List PassMeta) (entry : NodeKind → Bool) :
+    List PhaseObservation × List PassDependency := Id.run do
+  let mut origin : NodeKind → Option ShapeOrigin := fun k => if entry k then some .input else none
+  -- The pass that last removed each shape, for dependency provenance.
+  let mut lastRemover : Std.HashMap NodeKind String := {}
+  let mut observations : List PhaseObservation := []
+  let mut deps : List PassDependency := []
+  for (p, i) in passes.zipIdx do
+    let mut declarationFailures : List OrderingFailure := []
+    for k in p.creates do
+      if p.removes.contains k then
+        declarationFailures := declarationFailures ++
+          [{ pass := p.name, kind := k, reason := "declared in both creates and removes" }]
+      if p.unsupported.contains k then
+        declarationFailures := declarationFailures ++
+          [{ pass := p.name, kind := k, reason := "declared in both creates and unsupported" }]
+    let mut live : List (NodeKind × ShapeOrigin) := []
+    for k in p.unsupported do
+      if let some o := origin k then
+        live := live ++ [(k, o)]
+      else if let some earlier := lastRemover[k]? then
+        deps := deps ++
+          [{ earlier, later := p.name, kind := k, reason := "removes → unsupported" }]
+    observations := observations ++ [{ pass := p.name, position := i + 1, declarationFailures, live }]
+    -- Bind the declarations before updating `origin`, so the closure does not capture it.
+    let (removes, creates, name) := (p.removes, p.creates, p.name)
+    for k in removes do lastRemover := lastRemover.insert k name
+    -- `creates` wins, which the check above has already rejected as a declaration: the shape
+    -- stays live, so a downstream `unsupported` on it fails loudly rather than in silence.
+    origin := fun k =>
+      if creates.contains k then some .created
+      else if removes.contains k then none
+      else origin k
+  return (observations, deps)
+
+/-- The result of folding the live shape set over the pipeline: the failures, and the
+    dependencies observed on the way.
+
+    The live set starts at `NodeKind.inSource` — the shapes an authored program can
+    contain — and each pass updates it to `(live \ removes) ∪ creates`. Before a pass runs,
+    nothing in its `unsupported` list may be live: every shape it cannot handle must already
+    have been removed on this path. Delete the pass that removes a shape and the pass
+    declaring it `unsupported` fails.
+
+    `NodeKind.inSource` is therefore load-bearing. Misclassifying a source shape as
+    pipeline-generated weakens this check silently — see the note there.
+
+    Re-creating a shape after it has been removed is allowed, so long as nothing downstream
+    declares it `unsupported`. A *single* pass declaring the same shape twice is not: a shape
+    in both `creates` and `removes`, or in both `creates` and `unsupported`, is rejected here
+    rather than resolved. Such a declaration carries no information — the live-set update
+    treats a shape in `creates` and `removes` exactly as it treats one in neither — while
+    reading as though the shape is gone, and a pass's `Contains` specification cannot
+    contradict it: `(s \ removes) ∪ creates` holds the shape either way. The way to say
+    "the source form is gone, mine remains" is to declare the two forms as separate refined
+    kinds, as `EliminateDoWhile` does with `While` and `While.postTest.true`. -/
+def orderingAnalysisOf (passes : List PassMeta) (entry : NodeKind → Bool := NodeKind.inSource) :
+    List OrderingFailure × List PassDependency :=
+  let (observations, deps) := shapeFoldOf passes entry
+  (observations.flatMap fun o => o.declarationFailures ++ o.live.map (stillLive o.pass ·.1), deps)
+
+private structure PassSelection where
+  passes : Array LaurelPass
+  inputRequirements : List InputRequirement := []
+
+private def PassSelection.default : PassSelection := { passes := laurelPipeline }
+
+private def PassSelection.metas (s : PassSelection) : List PassMeta :=
+  s.passes.toList.map (·.toPassMeta)
+
+def structuralPassNames : List String :=
+  [transparencyPass.name, orderingPass.name, laurelToCoreSchemaPass.name]
+
+def defaultPassNames : List String :=
+  (laurelPipeline.toList.map (·.name)).filter (!structuralPassNames.contains ·)
+
+def unselectablePassName (nm hint : String) : String :=
+  if structuralPassNames.contains nm then s!"Phase '{nm}' always runs and cannot be named."
+  else Pipeline.unknownPhaseName nm hint
+
+private def beforeTransparency : List LaurelPass :=
+  laurelPipeline.toList.takeWhile (·.name != transparencyPass.name)
+
+private def afterTransparency : List LaurelPass :=
+  ((laurelPipeline.toList.dropWhile (·.name != transparencyPass.name)).drop 1).filter
+    (!structuralPassNames.contains ·.name)
+
+private def selectPasses (names : List String) (hint : String) : Except String PassSelection := do
+  if let some dup := names.find? (fun n => names.count n > 1) then
+    throw s!"Phase '{dup}' is named more than once; each phase may be named only once."
+  let mut lowering : Array LaurelPass := #[]
+  let mut unorderedCore : Array LaurelPass := #[]
+  let mut lastAfterTransparency : Option String := none
+  for nm in names do
+    if let some p := beforeTransparency.find? (·.name == nm) then
+      if let some later := lastAfterTransparency then
+        throw s!"Phase '{nm}' runs before {transparencyPass.name}, so it cannot follow '{later}', which runs after it."
+      lowering := lowering.push p
+    else if let some p := afterTransparency.find? (·.name == nm) then
+      lastAfterTransparency := some nm
+      unorderedCore := unorderedCore.push p
+    else
+      throw (unselectablePassName nm hint)
+  return { passes := lowering ++ #[transparencyPass] ++ unorderedCore ++ #[orderingPass, laurelToCoreSchemaPass] }
+
+private def removerHint (run : List PassMeta) (pos : Nat) (k : NodeKind) : String :=
+  let later := run.drop pos
+  match later.findIdx? (·.removes.contains k), later.find? (·.removes.contains k) with
+  | some j, some p => s!" '{p.name}' at position {pos + j + 1} removes it; move it before position {pos}."
+  | _, _ =>
+    let unused := PassSelection.default.metas.filter fun d => !run.any (·.name == d.name)
+    match unused.find? (·.removes.contains k) with
+    | some p => s!" '{p.name}' removes it; insert it before position {pos}."
+    | none => ""
+
+private def describeFailure (run : List PassMeta) (f : OrderingFailure) : String :=
+  if !f.stillPresent then s!"  {f.pass}: {f.kind} {f.reason}" else
+  let pos := ((run.findIdx? (·.name == f.pass)).getD 0) + 1
+  s!"  Phase {pos} '{f.pass}' does not support {f.kind}, which is still present when it runs."
+    ++ removerHint run pos f.kind
+
+private def orderCheckOf (run : List PassMeta) :
+    List OrderingFailure × List InputRequirement := Id.run do
+  let mut failures : List OrderingFailure := []
+  let mut requirements : List InputRequirement := []
+  let mut reported : List NodeKind := []
+  for o in (shapeFoldOf run NodeKind.inSource).fst do
+    let mut created : List OrderingFailure := []
+    let mut fromInput : List OrderingFailure := []
+    for (k, origin) in o.live do
+      match origin with
+      | .created => created := created ++ [stillLive o.pass k]
+      | .input =>
+        if reported.contains k then continue
+        reported := reported ++ [k]
+        if !k.isPseudo then
+          requirements := requirements ++ [{
+            kind := k, pass := o.pass, position := o.position
+            message := s!"The program contains {k}, which phase {o.position} '{o.pass}' does not support."
+              ++ removerHint run o.position k }]
+        else if !o.declarationFailures.any (·.kind == k) then
+          fromInput := fromInput ++ [stillLive o.pass k]
+    failures := failures ++ o.declarationFailures ++ created ++ fromInput
+  return (failures, requirements)
+
+private def resolvePassSelection (names : List String) (hint : String := "") :
+    Except String PassSelection := do
+  let sel ← selectPasses names hint
+  let run := sel.metas
+  let (failures, requirements) := orderCheckOf run
+  unless failures.isEmpty do
+    throw ("This phase order does not satisfy the phases' declarations:\n"
+      ++ "\n".intercalate (failures.map (describeFailure run)))
+  return { sel with inputRequirements := requirements }
+
+def checkPassSelection (names : List String) (hint : String := "") :
+    Except String (List String) :=
+  (resolvePassSelection names hint).map fun sel => sel.metas.map (·.name)
+
+def passSelectionContracts (names : Option (List String)) (hint : String := "") :
+    Except String (List PassMeta) := do
+  let sel ← match names with
+    | none => pure PassSelection.default
+    | some ns => selectPasses ns hint
+  return sel.metas
+
+def resolvePassOrder (names : List String) (hint : String := "") :
+    Except String (List String × List InputRequirement) :=
+  (resolvePassSelection names hint).map fun sel => (sel.metas.map (·.name), sel.inputRequirements)
+
 /--
 Soundness backstop: a discarded Core program (`none`) MUST carry at least
 one error diagnostic. The downstream pipeline treats a `none` program as
@@ -395,8 +619,14 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : LaurelProg
   let pctx ← match pipelineCtx with
     | some ctx => pure ctx
     | none => Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
+  let selection ← match options.passes with
+    | none => pure PassSelection.default
+    | some names => match resolvePassSelection names with
+      | .ok sel => pure sel
+      | .error msg => return (none, [Message.fromString msg MessageKind.userError], program, {})
   runPipelineM options.keepAllFilesPrefix do
-  let (program, laurelProgram, diags, lastDiags, stats) ← runLaurelPasses options pctx program
+  let (program, laurelProgram, diags, lastDiags, stats) ←
+    runLaurelPasses options selection.passes selection.inputRequirements pctx program
   if diags.any (·.kind != .warning) then
     return (none, diags, laurelProgram, stats)
   let coreProgramOption := match program with
@@ -415,10 +645,15 @@ def translate (options : LaurelTranslateOptions) (program : LaurelProgram) : IO 
   return (core, diags)
 
 /-- The effective `Core.VerifyOptions` that `runVerify` actually runs with
-    (the caller's options plus Laurel's fixed adjustments). -/
-private def effectiveCoreVerifyOptions (options : LaurelVerifyOptions) : Core.VerifyOptions :=
+    (the caller's options plus Laurel's fixed adjustments).
+
+    Laurel asks that each goal see only the axioms its `Precise` pruning keeps, so under
+    `--incremental` it prunes exactly: a solver that holds an axiom a goal drops starts again,
+    and Laurel verdicts do not depend on `--incremental`. -/
+def effectiveCoreVerifyOptions (options : LaurelVerifyOptions) : Core.VerifyOptions :=
   { options.verifyOptions with
     removeIrrelevantAxioms := .Precise
+    exactPruning := true
     keepAllFilesPrefix := options.translateOptions.keepAllFilesPrefix }
 
 /-- Run `Core.verify` on a translated Core program, returning the verify-phase
@@ -550,75 +785,8 @@ def verifyToMessagesCapturing (program : LaurelProgram)
 end -- public section
 
 
-/-- A pass whose declarations are not satisfied by the pipeline order. -/
-public structure OrderingFailure where
-  pass : String
-  kind : NodeKind
-  /-- What went wrong, for the failure message. -/
-  reason : String
-  deriving Repr
-
-/-- A dependency between two passes, as the fold observed it: `later` names `kind` in its
-    `unsupported`, and `earlier` is the pass that last removed it. -/
-public structure PassDependency where
-  earlier : String
-  later : String
-  kind : NodeKind
-  reason : String
-  deriving Repr
-
-/-- The result of folding the live shape set over the pipeline: the failures, and the
-    dependencies observed on the way.
-
-    The live set starts at `NodeKind.inSource` — the shapes an authored program can
-    contain — and each pass updates it to `(live \ removes) ∪ creates`. Before a pass runs,
-    nothing in its `unsupported` list may be live: every shape it cannot handle must already
-    have been removed on this path. Delete the pass that removes a shape and the pass
-    declaring it `unsupported` fails.
-
-    `NodeKind.inSource` is therefore load-bearing. Misclassifying a source shape as
-    pipeline-generated weakens this check silently — see the note there.
-
-    Re-creating a shape after it has been removed is allowed, so long as nothing downstream
-    declares it `unsupported`. A *single* pass declaring the same shape twice is not: a shape
-    in both `creates` and `removes`, or in both `creates` and `unsupported`, is rejected here
-    rather than resolved. Such a declaration carries no information — the live-set update
-    treats a shape in `creates` and `removes` exactly as it treats one in neither — while
-    reading as though the shape is gone, and a pass's `Contains` specification cannot
-    contradict it: `(s \ removes) ∪ creates` holds the shape either way. The way to say
-    "the source form is gone, mine remains" is to declare the two forms as separate refined
-    kinds, as `EliminateDoWhile` does with `While` and `While.postTest.true`. -/
-public def orderingAnalysis : List OrderingFailure × List PassDependency := Id.run do
-  let mut live : NodeKind → Bool := NodeKind.inSource
-  -- The pass that last removed each shape, for dependency provenance.
-  let mut lastRemover : Std.HashMap NodeKind String := {}
-  let mut failures : List OrderingFailure := []
-  let mut deps : List PassDependency := []
-  for p in laurelPipeline do
-    for k in p.creates do
-      if p.removes.contains k then
-        failures := failures ++
-          [{ pass := p.name, kind := k, reason := "declared in both creates and removes" }]
-      if p.unsupported.contains k then
-        failures := failures ++
-          [{ pass := p.name, kind := k, reason := "declared in both creates and unsupported" }]
-    for k in p.unsupported do
-      if live k then
-        failures := failures ++
-          [{ pass := p.name, kind := k, reason := "declared unsupported but still live here" }]
-      else if let some earlier := lastRemover[k]? then
-        deps := deps ++
-          [{ earlier, later := p.name, kind := k, reason := "removes → unsupported" }]
-    -- Bind the declarations before updating `live`, so the closure does not capture it.
-    let (removes, creates, name) := (p.removes, p.creates, p.name)
-    for k in removes do lastRemover := lastRemover.insert k name
-    -- `creates` wins, which the check above has already rejected as a declaration: the shape
-    -- stays live, so a downstream `unsupported` on it fails loudly rather than in silence.
-    live := fun k =>
-      if creates.contains k then true
-      else if removes.contains k then false
-      else live k
-  return (failures, deps)
+public def orderingAnalysis : List OrderingFailure × List PassDependency :=
+  orderingAnalysisOf PassSelection.default.metas
 
 /-- Passes whose declarations the pipeline order does not satisfy. Empty when the order is
     valid with respect to the declarations. -/

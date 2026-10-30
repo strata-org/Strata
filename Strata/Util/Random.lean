@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 namespace Strata.Util
 
 /--

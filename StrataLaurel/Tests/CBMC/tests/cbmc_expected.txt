@@ -28,9 +28,11 @@ test_failing_assert.lr.st
 test_operators.lr.st
   [main.1] line 7 assert: SUCCESS
   [main.2] line 9 assert: SUCCESS
-  [main.3] line 11 assert: SUCCESS
-  [main.4] line 13 assert: SUCCESS
-  [main.5] line 18 assert: SUCCESS
+  [main.3] line 10 precondition: SUCCESS
+  [main.4] line 11 assert: SUCCESS
+  [main.5] line 12 precondition: SUCCESS
+  [main.6] line 13 assert: SUCCESS
+  [main.7] line 18 assert: SUCCESS
 
 test_strings.lr.st
   [main.1] line 7 assert: SUCCESS

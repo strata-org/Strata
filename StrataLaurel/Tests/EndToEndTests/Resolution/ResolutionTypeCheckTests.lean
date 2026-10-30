@@ -522,6 +522,71 @@ procedure callOverArity() opaque {
 };
 #end
 
+/-! ### A generic callee's mismatched argument is reported where it is passed, and alone
+
+Not where its type is declared, which for `flag` is the parameter list, and not together with
+`wrap`'s `T`, which the argument would have bound, as undetermined. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+procedure keep<T>(x: T, xs: Set<T>) opaque;
+procedure wrap<T>(x: Box<T>) opaque;
+procedure mismatchedGenericArguments(flag: bool) opaque {
+  keep(1, flag);
+//        ^^^^ error: cannot pass 'bool' as the 'Set<int>' parameter of 'keep'
+  wrap(5);
+//     ^ error: cannot pass 'int' as the 'Box<T>' parameter of 'wrap'
+  assert 1 == 1
+};
+#end
+
+/-! ### A generic callee's parameter without type variables checks its argument
+
+As a non-generic callee's does: the `if` joins its branches at the `Animal` the parameter
+declares, and `2` is reported in the same words. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Animal { }
+composite Dog extends Animal { }
+composite Cat extends Animal { }
+procedure tagged<T>(x: T, a: Animal) opaque;
+procedure checkedGenericArguments(c: bool, d: Dog, k: Cat) opaque {
+  tagged(1, if c then d else k);
+  tagged(1, 2);
+//          ^ error: expected 'Animal', got 'int'
+  assert 1 == 1
+};
+#end
+
+/-! ### A nested call gets its slot from a later argument too
+
+From the declared result of a later call, `getS()`, which is known before that call is resolved,
+and, inside an `if` or a block, from a later argument these wait for, `s`. A declared result in
+the callee's type parameters says nothing, also where they are the caller's own: `rec(true)` is a
+`Set<bool>`, not the `Set<T>` it declares. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+procedure same2<U>(x: U, y: U) opaque;
+procedure getS() returns (r: Set<int>) opaque;
+procedure laterArguments(c: bool, s: Set<int>) opaque {
+  same2(setEmpty(), getS());
+  same2(if c then setEmpty() else s, s);
+  same2({ var n: int := 1; setEmpty() }, s);
+  assert 1 == 1
+};
+procedure rec<T>(x: T) returns (r: Set<T>) opaque {
+  same2(setEmpty(), rec(true));
+//      ^^^^^^^^^^ error: cannot infer type argument 'T' of 'setEmpty': annotate the variable or output it is assigned to with a concrete type
+  r := setEmpty()
+};
+#end
+
 /-! ## Multi-output procedures -/
 
 #eval testLaurelResolution <|

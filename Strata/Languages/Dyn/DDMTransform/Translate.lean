@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 -- TODO: Translation from concrete syntax to abstract syntax
 
 namespace Strata

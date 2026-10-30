@@ -2074,6 +2074,11 @@ procedure bump(x: int) returns (x: int)
 };
 ```
 
+A body may also assign to an input that is not an output. The write is local to the body: a
+contract or an `old(...)` that mentions the input still reads its value on entry. A coroutine's
+`relies`/`guarantees`, and a body `oldRelies(...)`/`oldGuarantee(...)`, may not mention an input
+the body assigns; copy the input into a local and assign that instead.
+
 Top-level procedures may share a name when their parameter signatures do not overlap; resolution
 picks the unique overload the argument types accept, and both no match and several matches are
 errors. `external` procedures cannot be overloaded.
@@ -3911,7 +3916,7 @@ right — an SMT query derived from wrong Core is rarely informative.
    * Print elapsed time per pipeline step — the first thing to try when a run is slow.
  *
    * `--check-mode MODE`
-   * `deductive` (default), `bugFinding`, or `bugFindingAssumingCompleteSpec`.
+   * `deductive` (default), `bugFinding`, `bugFindingAssumingCompleteSpec`, or `deductiveAssumingSatisfiablePaths`.
  *
    * `--check-level LEVEL`
    * `minimal` (default), `minimalVerbose`, or `full`; controls how many checks are emitted.

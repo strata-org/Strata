@@ -19,7 +19,7 @@ meta section
 
 -- `.st`-family inputs: drop both the `st` and the dialect component.
 #guard keepAllFilesBaseName (some "Foo.core.st") == "Foo"
-#guard keepAllFilesBaseName (some "/tmp/x/Foo.csimp.st") == "Foo"
+#guard keepAllFilesBaseName (some "/tmp/x/Foo.b3.st") == "Foo"
 #guard keepAllFilesBaseName (some "Foo.python.st.ion") == "Foo"
 -- A bare `.st` keeps at least the first component.
 #guard keepAllFilesBaseName (some "Foo.st") == "Foo"

@@ -27,6 +27,16 @@ Environment variables:
   CBMC              - path to cbmc binary (default: cbmc)
   GOTO_CC           - path to goto-cc binary (default: goto-cc)
   GOTO_INSTRUMENT   - path to goto-instrument binary (default: goto-instrument)
+  CBMC_ARGS         - extra whitespace-separated arguments appended to the cbmc
+                      invocation (e.g. "--unwind 10 --unwinding-assertions").
+                      Split on whitespace with no quoting support, so a single
+                      argument value cannot itself contain whitespace (file
+                      paths with spaces are not expressible here).
+                      Recursive top-level Core functions are given GOTO
+                      bodies only when CBMC_ARGS contains `--unwind`: symex
+                      unwinds recursive calls just as it unwinds loops, so
+                      without a bound they could diverge. Otherwise they stay
+                      uninterpreted.
 -/
 
 open Strata
@@ -57,7 +67,7 @@ private def runProcess (step : String) (cmd : String) (args : Array String) : IO
     JSON files (`<baseName>.symtab.json` and `<baseName>.goto.json`) in the
     given output directory. -/
 private def laurelAnalyzeToGoto (path : System.FilePath) (outputDir : System.FilePath)
-    (baseName : String) : IO Unit := do
+    (baseName : String) (hoistRecursive : Bool) : IO Unit := do
   let content ← IO.FS.readFile path
   let laurelProgram ← Strata.parseLaurelText path content
   match ← Strata.Laurel.translate {} laurelProgram with
@@ -67,7 +77,8 @@ private def laurelAnalyzeToGoto (path : System.FilePath) (outputDir : System.Fil
     -- Use the output directory as a prefix so files land in tmpDir
     let outputBaseName := (outputDir / baseName).toString
     match ← Strata.inlineCoreToGotoFiles coreProgram outputBaseName
-              (sourceText := some content) |>.toBaseIO with
+              (sourceText := some content) (hoistRecursive := hoistRecursive)
+              |>.toBaseIO with
     | .ok () => pure ()
     | .error msg => throw (IO.userError msg)
 
@@ -86,8 +97,12 @@ def main (args : List String) : IO UInt32 := do
     -- Use a temporary directory for intermediate files (cleaned up automatically)
     IO.FS.withTempDir fun tmpDir => do
 
+    let cbmcArgs := (← getEnvOrDefault "CBMC_ARGS" "").split Char.isWhitespace
+      |>.toList.filterMap fun s => if s.isEmpty then none else some s.toString
+    let hoistRecursive := cbmcArgs.contains "--unwind"
+
     -- Step 1: Laurel → GOTO JSON (in tmp dir)
-    let result ← (laurelAnalyzeToGoto path tmpDir baseName).toBaseIO
+    let result ← (laurelAnalyzeToGoto path tmpDir baseName hoistRecursive).toBaseIO
     match result with
     | .error e =>
       IO.eprintln s!"Error: {e}"
@@ -117,10 +132,10 @@ def main (args : List String) : IO UInt32 := do
       #["--dfcc", "main", ccGbFile, dfccGbFile]
     if rc != 0 then return rc
 
-    -- Step 5: cbmc verification
+    -- Step 5: cbmc verification, with CBMC_ARGS appended.
     let cbmc ← getEnvOrDefault "CBMC" "cbmc"
     runProcess "cbmc" cbmc
-      #[dfccGbFile, "--function", "main", "--z3", "--verbosity", "9"]
+      (#[dfccGbFile, "--function", "main", "--z3", "--verbosity", "9"] ++ cbmcArgs.toArray)
 
   | _ =>
     IO.eprintln "Usage: LaurelToCBMC <file.lr.st>"

@@ -92,7 +92,9 @@ def mkConstraintProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
   { name := mkId s!"{ct.name.text}$constraint"
     inputs := [{ name := ct.valueName, type := baseType }]
     outputs := [{ name := mkId resultOutputName, type := { val := .TBool, source := src } }]
-    body := .Transparent { val := .Return bodyExpr, source := src }
+    body := .Transparent { val := .Block [
+      { val := .Assign [{ val := .Local (mkId resultOutputName), source := src }] bodyExpr, source := src },
+      { val := .Return none, source := src }] none, source := src }
     decreases := none
     preconditions := [] }
 
@@ -205,7 +207,85 @@ def elimNode (ptMap : ConstrainedTypeMap) (model : SemanticModel)
 def elimStmts (ptMap : ConstrainedTypeMap) (model : SemanticModel) (body : StmtExprMd) : StmtExprMd :=
   (mapStmtExprFlattenM (fun _ _ => pure none) (elimNode ptMap model) false body).run' 0
 
-def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Procedure) : Procedure :=
+private def isSpecStatement (s : StmtExprMd) : Bool :=
+  match s.val with
+  | .Assert .. | .Assume _ => true
+  | _ => false
+
+mutual
+/-- Turn the value a transparent body ends in into an assignment to `out`, following
+    `FunctionalRewrite`'s reading of the body: the last element that is not a
+    statement is the function's value, also inside the branches of a trailing `if`
+    and inside a trailing block. A `void` element, such as a call to a lemma, is not
+    a value. -/
+private def assignTail (model : SemanticModel) (lattice : TypeLattice) (out : Identifier)
+    (outTy : HighTypeMd) (s : StmtExprMd) : StmtExprMd :=
+  match s with
+  | ⟨.IfThenElse c t e, sSrc⟩ =>
+    ⟨.IfThenElse c (assignTail model lattice out outTy t)
+      (assignTailOpt model lattice out outTy e), sSrc⟩
+  | ⟨.Block stmts label, sSrc⟩ =>
+    ⟨.Block (assignTailList model lattice out outTy stmts) label, sSrc⟩
+  | ⟨.While .., _⟩ | ⟨.Exit _, _⟩ | ⟨.Return _, _⟩ | ⟨.Assign .., _⟩ | ⟨.IncrDecr .., _⟩
+  | ⟨.CompoundAssign .., _⟩ | ⟨.Var (.Declare _), _⟩ | ⟨.Assert .., _⟩ | ⟨.Assume _, _⟩
+  | ⟨.Throw _, _⟩ | ⟨.Try .., _⟩ | ⟨.Yield .., _⟩ | ⟨.Resume .., _⟩ => s
+  | _ =>
+    if isConsistentSubtype lattice (computeExprType model s) outTy then
+      ⟨.Assign [{ val := .Local out, source := s.source }] s, s.source⟩
+    else s
+
+private def assignTailOpt (model : SemanticModel) (lattice : TypeLattice) (out : Identifier)
+    (outTy : HighTypeMd) : Option StmtExprMd → Option StmtExprMd
+  | some s => some (assignTail model lattice out outTy s)
+  | none => none
+
+private def assignTailList (model : SemanticModel) (lattice : TypeLattice) (out : Identifier)
+    (outTy : HighTypeMd) : List StmtExprMd → List StmtExprMd
+  | [] => []
+  | s :: rest =>
+    if rest.all isSpecStatement then assignTail model lattice out outTy s :: rest
+    else s :: assignTailList model lattice out outTy rest
+end
+
+/-- Assert each constrained output's constraint where a transparent body exits without
+    having just assigned it: before a `return` that does not directly follow an assignment
+    to an output, which is already asserted, and after the body for the path that falls
+    off its end. -/
+private def addExitChecks (ptMap : ConstrainedTypeMap) (outputs : List Parameter)
+    (body : StmtExprMd) : StmtExprMd :=
+  let checks (at? : Option FileRange) : List StmtExprMd := outputs.filterMap fun p =>
+    let src := at?.getD p.type.source
+    (constraintCallFor ptMap p.type.val p.name (src := src)).map (⟨.Assert · none, src⟩)
+  let assignsOutput (s : StmtExprMd) : Bool := match s.val with
+    | .Assign [⟨.Local n, _⟩] _ =>
+      outputs.any fun p => p.name.text == n.text && p.name.uniqueId == n.uniqueId
+    | _ => false
+  let guardReturns (stmts : List StmtExprMd) : List StmtExprMd :=
+    (stmts.foldl (init := (([] : List StmtExprMd), false)) fun (acc, justAssigned) s =>
+      match s.val with
+      | .Return none =>
+        (acc ++ (if justAssigned then [] else checks (some s.source)) ++ [s], false)
+      | .Assert .. => (acc ++ [s], justAssigned)
+      | _ => (acc ++ [s], assignsOutput s)).1
+  let guardBranch (b : StmtExprMd) : StmtExprMd := match b.val with
+    | .Return none => ⟨.Block (checks (some b.source) ++ [b]) none, b.source⟩
+    | _ => b
+  let guard (e : StmtExprMd) : StmtExprMd := match e.val with
+    | .Block stmts label => ⟨.Block (guardReturns stmts) label, e.source⟩
+    | .IfThenElse c t el => ⟨.IfThenElse c (guardBranch t) (el.map guardBranch), e.source⟩
+    | _ => e
+  let body' := mapStmtExpr guard body
+  let endsInReturn (stmts : List StmtExprMd) : Bool := match stmts.getLast? with
+    | some ⟨.Return _, _⟩ => true
+    | _ => false
+  match body'.val with
+  | .Block stmts none =>
+    if endsInReturn stmts then body' else ⟨.Block (stmts ++ checks none) none, body'.source⟩
+  | .Return _ => ⟨.Block (checks (some body'.source) ++ [body']) none, body'.source⟩
+  | _ => ⟨.Block (body' :: checks none) none, body'.source⟩
+
+def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (lattice : TypeLattice)
+    (proc : Procedure) : Procedure :=
   let inputRequires : List Condition := proc.inputs.filterMap fun p =>
     (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
       fun c => { condition := c }
@@ -216,9 +296,16 @@ def elimProc (ptMap : ConstrainedTypeMap) (model : SemanticModel) (proc : Proced
   -- A transparent body stays transparent: demoting it to `.Opaque` to carry
   -- `outputEnsures` would hide the body callers need to reason about the value
   -- produced. `.Transparent` has nowhere to put a postcondition, so the outputs'
-  -- type constraints are discharged separately, by the lemma
-  -- `mkOutputConstraintLemma` generates.
-  | .Transparent bodyExpr => .Transparent (elimStmts ptMap model bodyExpr)
+  -- type constraints are asserted where the body exits instead.
+  | .Transparent bodyExpr =>
+    let constrained := proc.outputs.filter fun p =>
+      (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).isSome
+    if constrained.isEmpty then .Transparent (elimStmts ptMap model bodyExpr) else
+    let tailed := match proc.outputs with
+      | [out] => assignTail model lattice out.name (resolveType ptMap out.type) bodyExpr
+      | _ => bodyExpr
+    let body := elimStmts ptMap model tailed
+    .Transparent (addExitChecks ptMap constrained body)
   -- Output type-constraints go FIRST, before the user's own `ensures`. The order
   -- matters: ContractPass gives `$post_i` the `ensures` clauses before it, so a user
   -- postcondition is well-formed given its outputs' type constraints --
@@ -295,60 +382,6 @@ private def mkFieldConstraintProcs (ptMap : ConstrainedTypeMap)
         decreases := none
         invokeOn := some fieldRead }
 
-/-- Discharge a TRANSPARENT procedure's output type-constraints in a separate lemma
-    procedure: call it under its own preconditions and assert each constrained
-    output's constraint on the result.
-
-    A transparent body must stay transparent -- the caller needs it to reason about
-    the value produced, which an `ensures` cannot supply -- so the obligation cannot
-    ride along as a postcondition and is checked here instead, once.
-
-    Depends on the per-field axiom above: without it a body returning a constrained
-    field read cannot be shown to satisfy the constraint from outside.
-
-    Every output is bound, since a call yields all of them, and `none` when no output
-    is constrained so ordinary procedures gain nothing. Assertions are anchored at the
-    output's type, so a bad return is reported on the return type the reader wrote.
-
-    `typeArgs` carries the source procedure's type parameters, for the same reason
-    `ContractPass.mkConditionProc` does: the mirrored inputs of a polymorphic
-    procedure mention `T`, so the lemma must bind `T` too or Core rejects it with
-    "type variables [T] appear in the signature but are not declared in typeArgs". -/
-private def mkOutputConstraintLemma (ptMap : ConstrainedTypeMap)
-    (proc : Procedure) : Option Procedure :=
-  let src := proc.name.source
-  let isConstrained (p : Parameter) : Bool :=
-    (constraintCallFor ptMap p.type.val p.name (src := src)).isSome
-  if !(proc.outputs.any isConstrained) then none else
-  let inputRequires : List Condition := proc.inputs.filterMap fun p =>
-    (constraintCallFor ptMap p.type.val p.name (src := p.type.source)).map
-      fun c => { condition := c }
-  let lemmaVar (p : Parameter) : Identifier := mkId s!"$lemma_{p.name.text}"
-  let targets : List VariableMd := proc.outputs.map fun p =>
-    ⟨.Declare ⟨lemmaVar p, some (resolveType ptMap p.type)⟩, src⟩
-  let call : StmtExprMd :=
-    ⟨.StaticCall proc.name (proc.inputs.map fun p => ⟨.Var (.Local p.name), src⟩) [], src⟩
-  let bind : StmtExprMd := ⟨.Assign targets call, src⟩
-  let asserts : List StmtExprMd := (proc.outputs.filter isConstrained).filterMap fun p =>
-    (constraintCallFor ptMap p.type.val (lemmaVar p) (src := p.type.source)).map
-      (⟨.Assert · none, p.type.source⟩)
-  some <| mapProcedureM (m := Id) (mapStmtExpr (resolveExprNode ptMap))
-    { name := mkId s!"$constraintLemma_{proc.name.text}"
-      typeArgs := proc.typeArgs
-      inputs := proc.inputs.map fun p => { p with type := resolveType ptMap p.type }
-      outputs := []
-      body := .Opaque [] (some ⟨.Block (bind :: asserts) none, src⟩) []
-      preconditions := inputRequires ++ proc.preconditions
-      decreases := none }
-
-/-- The output-constraint lemma for a procedure that needs one: a transparent body
-    with at least one constrained output. -/
-private def outputConstraintLemmaFor (ptMap : ConstrainedTypeMap)
-    (proc : Procedure) : Option Procedure :=
-  match proc.body with
-  | .Transparent _ => mkOutputConstraintLemma ptMap proc
-  | _ => none
-
 /-- Eliminate constrained types within a composite type definition: resolve
     constrained field types to their base types and run constrained type
     elimination on the composite's instance procedures.
@@ -357,11 +390,11 @@ private def outputConstraintLemmaFor (ptMap : ConstrainedTypeMap)
     definitions from the program. Any reference to a constrained type left inside
     a composite (e.g. a `count: nat` field) would otherwise dangle and fail to
     resolve in later passes and the final Core translation. -/
-def elimCompositeType (ptMap : ConstrainedTypeMap) (model : SemanticModel)
+def elimCompositeType (ptMap : ConstrainedTypeMap) (model : SemanticModel) (lattice : TypeLattice)
     (ct : CompositeType) (prepare : Procedure → Procedure := id) : CompositeType :=
   { ct with
     fields := ct.fields.map fun f => { f with type := resolveType ptMap f.type }
-    instanceProcedures := ct.instanceProcedures.map (elimProc ptMap model ∘ prepare) }
+    instanceProcedures := ct.instanceProcedures.map (elimProc ptMap model lattice ∘ prepare) }
 
 private def procedureHasEffect (ids : Std.HashSet Nat) (proc : Procedure) : Bool :=
   proc.name.uniqueId.any ids.contains
@@ -405,6 +438,7 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
     : LaurelProgram × List Message :=
   let ptMap := buildConstrainedTypeMap program.types
   if ptMap.isEmpty then (program, []) else
+  let lattice := TypeLattice.ofTypes program.types
   let constraintProcs := program.types.filterMap fun
     | .Constrained ct => some (mkConstraintProc ptMap ct) | _ => none
   let witnessProcedures := program.types.filterMap fun
@@ -419,12 +453,10 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
   let addGlobalConditions :=
     addConstrainedGlobalConditions ptMap effects program.staticFields
   let prepared := program.staticProcedures.map addGlobalConditions
-  let outputConstraintLemmas := prepared.filterMap (outputConstraintLemmaFor ptMap)
   ({ program with
     staticProcedures := constraintProcs ++
-      prepared.map (elimProc ptMap model)
+      prepared.map (elimProc ptMap model lattice)
                         ++ witnessProcedures ++ fieldAxiomProcedures
-                        ++ outputConstraintLemmas
     staticFields := program.staticFields.map fun field =>
       { field with
         type := resolveType ptMap field.type
@@ -432,7 +464,7 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
     types := program.types.filterMap fun
       | .Constrained _ => none
       | .Composite ct =>
-          some (.Composite (elimCompositeType ptMap model ct addGlobalConditions))
+          some (.Composite (elimCompositeType ptMap model lattice ct addGlobalConditions))
       | .Datatype dt =>
         -- Resolve constrained types used as datatype constructor field
         -- types (e.g. `int32` -> `int`). Without this, the constrained
@@ -453,7 +485,8 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
 public def constrainedTypeElimPass : LaurelPass := .onUnordered {
   name := "ConstrainedTypeElim"
   unsupported := [
-      NodeKind.LaurelProgram.staticFunctions.cons
+      NodeKind.LaurelProgram.staticFunctions.cons,
+      NodeKind.StmtExpr.Return.value.some
     ]
   creates := [NodeKind.LaurelProgram.staticProcedures.cons, NodeKind.StmtExpr.StaticCall]
   removes := [NodeKind.TypeDefinition.Constrained]

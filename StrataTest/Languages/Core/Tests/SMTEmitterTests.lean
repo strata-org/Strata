@@ -118,8 +118,9 @@ private def runScenario
       let managed : Std.HashSet String :=
         (res.varDefs.map (·.name) ++ res.varDecls.map (·.name)).foldl
           (·.insert ·) ∅
+      let defined : Std.HashSet String := (res.varDefs.map (·.name)).foldl (·.insert ·) ∅
       let (es', cf?) ← es.syncAndEmit Core.Factory encState'.frames
-        encState'.current.ctx pruned res.ctx res.goal {} ob.label managed
+        encState'.current.ctx pruned res.ctx res.goal {} ob.label managed defined
         (satisfiabilityCheck := false) (validityCheck := true)
       es := es'
       match cf? with

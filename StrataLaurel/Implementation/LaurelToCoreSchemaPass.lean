@@ -340,6 +340,29 @@ private def emptyCollectionElemTy! (typeName : String) (callTypeArgs : List High
 def runTranslateM (s : TranslateState) (m : TranslateM α) : (Except String α × TranslateState) :=
   m.run s
 
+/-- Allocate a `kind(<fresh id>)` label that is not already used in the current
+    procedure.
+
+    The retry is not paranoia. A fresh id and a source offset are *both* bare
+    decimals in the same namespace, so `kind(<fresh id>)` can coincide with the
+    POSITIONAL label of an unrelated statement in the same procedure — the fresh
+    id is a counter over the whole translation, nothing ties its magnitude to the
+    offsets in play. Returning such a label would reintroduce exactly the clash
+    this function exists to avoid.
+
+    `fuel` bounds the search. `freshId` is monotonic, so every attempt is a
+    distinct candidate, and every *failed* attempt is a distinct member of the
+    taken set; `taken.size` failures therefore exhaust it, and attempt
+    `taken.size + 1` cannot fail. -/
+private def freshUnusedStmtLabel (kind : String) : Nat → TranslateM String
+  | 0 => do return s!"{kind}({← freshId})"
+  | fuel + 1 => do
+    let candidate := s!"{kind}({← freshId})"
+    if (← get).procStmtLabels.contains candidate then
+      freshUnusedStmtLabel kind fuel
+    else
+      return candidate
+
 /-- Label an assert/assume as `kind(pos)`, falling back to `kind(<fresh id>)`
     when that label is already used in the current procedure. `pos` is derived
     from the source position, so two synthesized statements sharing a position
@@ -347,12 +370,14 @@ def runTranslateM (s : TranslateState) (m : TranslateM α) : (Except String α �
 
     Both forms keep the `kind(<digits>)` shape, which downstream consumers rely
     on to recognize a positional label (and to normalize away the unstable
-    id). -/
+    id). The fallback is checked against the taken set as well — see
+    `freshUnusedStmtLabel`. -/
 private def freshStmtLabel (kind pos : String) : TranslateM String := do
+  let taken := (← get).procStmtLabels
   let base := kind ++ pos
   let label ←
-    if !(← get).procStmtLabels.contains base then pure base
-    else do pure s!"{kind}({← freshId})"
+    if !taken.contains base then pure base
+    else freshUnusedStmtLabel kind taken.size
   modify fun s => { s with procStmtLabels := s.procStmtLabels.insert label }
   return label
 
@@ -361,6 +386,10 @@ def emitExprDiagnostic (d : Message): TranslateM Core.Expression.Expr := do
   emitDiagnostic d
   emitCoreDiagnostic d
   return default
+
+private def unliftedInstanceCall (source : FileRange) : Message :=
+  diagnosticFromSource source "instance call bound to a non-instance procedure reached Core translation"
+    MessageKind.strataBug
 
 /-- Whether `name` is a type Core already provides natively (`Set`, `Map`, `Sequence`,
     `int`, …). Read from `Core.KnownTypes` rather than spelled out here, so a type added to
@@ -937,7 +966,7 @@ def translateExpr (expr : StmtExprMd)
   | .ContractOf _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "contractOf expression translation" MessageKind.notYetImplemented
   | .Abstract => emitExprDiagnostic $ diagnosticFromSource expr.source "abstract expression translation" MessageKind.notYetImplemented
   | .All => emitExprDiagnostic $ diagnosticFromSource expr.source "all expression translation" MessageKind.notYetImplemented
-  | .InstanceCall target callee args => emitExprDiagnostic $ diagnosticFromSource expr.source "instance call expression translation" MessageKind.notYetImplemented
+  | .InstanceCall .. => emitExprDiagnostic (unliftedInstanceCall expr.source)
   | .PureFieldUpdate _ _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "pure field update expression translation" MessageKind.notYetImplemented
   | .This => emitExprDiagnostic $ diagnosticFromSource expr.source "this expression translation" MessageKind.notYetImplemented
   -- The exceptional channel is lowered to ordinary Laurel by the
@@ -1188,8 +1217,7 @@ def translateStmt (stmt : StmtExprMd)
             return result
           | _ =>
             throwStmtDiagnostic $ md.toDiagnostic "function call without a single target" MessageKind.strataBug
-      | .InstanceCall _target callee args =>
-          translateCallTargets callee args
+      | .InstanceCall .. => throwStmtDiagnostic (unliftedInstanceCall value.source)
       | .Hole _ _ =>
           -- Hole RHS: havoc all targets (unmodeled call side-effect).
           dispatchTargets
@@ -1230,9 +1258,7 @@ def translateStmt (stmt : StmtExprMd)
           inits := inits ++ [Core.Statement.init ident coreType .nondet md]
           outArgs := outArgs ++ [.outArg ident]
         return inits ++ [Core.Statement.call callee.text (callArgs ++ outArgs) md]
-  | .InstanceCall .. =>
-      -- Instance method call as statement: no return value, treated as no-op
-      return ([])
+  | .InstanceCall .. => throwStmtDiagnostic (unliftedInstanceCall stmt.source)
   | .Return _ =>
       let d := md.toDiagnostic "Return statement should have been eliminated by EliminateReturnStatements pass" MessageKind.strataBug
       emitCoreDiagnostic d
@@ -1569,7 +1595,13 @@ public def laurelToCoreSchemaPass : LaurelPass where
       NodeKind.CompositeType.instanceProcedures.cons,
       NodeKind.StmtExpr.This,
       NodeKind.Pseudo.imperativeFunction,
-      NodeKind.Program.Unordered
+      NodeKind.Program.Unordered,
+      NodeKind.TypeDefinition.Alias,
+      NodeKind.Pseudo.needsLoopInvariantChecks,
+      NodeKind.Pseudo.mutatedInput,
+      NodeKind.Procedure.contracts.Coroutine,
+      NodeKind.StmtExpr.OldGuarantee,
+      NodeKind.StmtExpr.OldRelies
     ]
   documentation := "Produce a `Core` program from a `CoreWithLaurelTypes` program. Intended to be dumb 1-to-1 translation. However, there are several smart translations still happening:
   - The @[cases] parameter is inferred for recursive functions.

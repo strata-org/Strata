@@ -46,7 +46,9 @@ Key results for `StepStmt` / `StepStmtStar`:
   `block_run_terminal_preserves_eq_of_not_written` preserves the exact value of
   variables a block does not write.
 - Run inversion and lifting results for `.seq`, `.block`, and `.stmts`,
-  including `peel_off_one_iteration_to_cont_det` for deterministic loops.
+  including `cmd_replay_agreement_storeAgree` for replaying a terminating
+  command under store agreement and `peel_off_one_iteration_to_cont_det` for
+  deterministic loops.
 
 ## Event-trace semantics
 
@@ -66,7 +68,10 @@ Key results for `StepStmtE` / `StepStmtStarE`:
 - `seqT_reaches_terminalE` and `stmtsT_cons_terminalE` provide step-counted
   completion inversions used by the event loop rule.
 - `Config.varsDefined_star_ofE` and `Config.storeWellDefined_star_ofE`
-  preserve store-domain properties across traced runs.
+  preserve store-domain properties across traced runs;
+  `Config.storeWellDefined_step_evalCmdE` and
+  `Config.storeWellDefined_star_evalCmdE` specialize this preservation to the
+  evaluator value law at the run's unchanged factory.
 - `StepStmtE.imp` and `StepStmtStarE.imp`: `StepStmtE` and `StepStmtStarE` are
   monotone in their command relation.
 -/
@@ -2189,6 +2194,36 @@ theorem stmts_nil_terminal_eq {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
       | refl => rfl
       | step _ _ _ h _ => cases h
 
+/-- A run from a clean statement configuration to a failing configuration must
+take at least one step. -/
+theorem clean_stmt_first_step {P : PureExpr} [HasFvar P] [HasFvars P]
+    [HasBoolOps P]
+    {s : Stmt P (Cmd P)} {ρ : Env P} {c : Config P (Cmd P)}
+    (hreach : StepStmtStar P (EvalCmd P) (.stmt s ρ) c)
+    (hfailed : c.getEnv.hasFailure = true)
+    (hclean : ρ.hasFailure = false) :
+    ∃ cfg, StepStmt P (EvalCmd P) (.stmt s ρ) cfg ∧
+      StepStmtStar P (EvalCmd P) cfg c := by
+  cases hreach with
+  | refl =>
+    exact absurd (by simpa [Config.getEnv] using hfailed)
+      (by rw [hclean]; simp)
+  | step _ mid _ hstep hrest => exact ⟨mid, hstep, hrest⟩
+
+/-- A single statement reaching a failing configuration also reaches a failing
+configuration when wrapped as a singleton statement list. -/
+theorem stmt_to_singleton_stmts_fail {P : PureExpr} [HasFvar P] [HasFvars P]
+    [HasBoolOps P]
+    (s : Stmt P (Cmd P)) (ρ : Env P) (target : Config P (Cmd P))
+    (hrun : StepStmtStar P (EvalCmd P) (.stmt s ρ) target)
+    (hfailed : target.getEnv.hasFailure = true) :
+    ∃ target', StepStmtStar P (EvalCmd P) (.stmts [s] ρ) target' ∧
+      target'.getEnv.hasFailure = true :=
+  ⟨.seq target ([] : List (Stmt P (Cmd P))),
+    .step _ _ _ StepStmt.step_stmts_cons
+      (seq_inner_star P (EvalCmd P) _ _ _ hrun),
+    by simpa [Config.getEnv] using hfailed⟩
+
 /-- A single statement that runs to terminal also runs to terminal when wrapped
 as a singleton statement list.  This is the bridge from the `.stmt s` shape of
 the source-side step rules to the `.stmts [s]` shape that the pass emits for the
@@ -2458,6 +2493,37 @@ theorem cmd_step_inv {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] (c :
       | refl => exact ⟨_, _, hcmd, rfl⟩
       | step _ _ _ h _ => cases h
 
+/-- Replay a terminating `.cmd` run in an agreeing environment. The target uses
+the same evaluator and failure flag, and every command initialization target
+must be undefined in the target store. -/
+theorem cmd_replay_agreement_storeAgree {P : PureExpr} [HasFvar P]
+    [HasFvars P] [HasBoolOps P] [HasIdent P] [DecidableEq P.Ident]
+    [LawfulHasIdent P]
+    (c : Cmd P) (ρ_src ρ_src' ρ_tgt : Env P)
+    (h_fail_eq : ρ_tgt.hasFailure = ρ_src.hasFailure)
+    (h_fac_eq : ρ_tgt.factory = ρ_src.factory)
+    (h_agree : StoreAgreement ρ_src.store ρ_tgt.store)
+    (h_wf_def : WellFormedSemanticEvalMono ρ_src.factory)
+    (h_tgt_init_undef : ∀ x ∈ Cmd.definedVars c, ρ_tgt.store x = none)
+    (h_term : StepStmtStar P (EvalCmd P)
+      (.stmt (.cmd c) ρ_src) (.terminal ρ_src')) :
+    ∃ ρ_tgt', StepStmtStar P (EvalCmd P)
+          (.stmt (.cmd c) ρ_tgt) (.terminal ρ_tgt')
+        ∧ StoreAgreement ρ_src'.store ρ_tgt'.store
+        ∧ ρ_tgt'.hasFailure = ρ_src'.hasFailure := by
+  obtain ⟨σ', haf, h_cmd, h_eq⟩ := cmd_step_inv c ρ_src ρ_src' h_term
+  obtain ⟨σ_tgt', h_eval_tgt, h_agree'⟩ :=
+    cmd_replay_storeAgree ρ_src.factory ρ_src.store ρ_tgt.store c σ' haf
+      h_agree h_cmd h_wf_def h_tgt_init_undef
+  have h_eval_tgt' : EvalCmd P ρ_tgt.factory ρ_tgt.store c σ_tgt' haf :=
+    h_fac_eq ▸ h_eval_tgt
+  refine ⟨{ ρ_tgt with store := σ_tgt', hasFailure := ρ_tgt.hasFailure || haf },
+    .step _ _ _ (StepStmt.step_cmd h_eval_tgt') (.refl _), ?_, ?_⟩
+  · subst h_eq
+    exact h_agree'
+  · subst h_eq
+    simp [h_fail_eq]
+
 /-- Invert a single `.stmt s` execution to terminal: the first step is
 `step_stmts_cons`-free; `s` itself steps to some `c`, then `c →* terminal`. -/
 theorem stmt_step_first_inv {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] (s : Stmt P (Cmd P)) (ρ ρ' : Env P)
@@ -2479,6 +2545,58 @@ theorem stmt_step_first_inv_to {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolO
   cases h with
   | refl => exact absurd rfl (h_ne ρ)
   | step _ mid _ hstep hrest => exact ⟨mid, hstep, hrest⟩
+
+/-! ## Single-outcome reachability classifiers
+
+Three-way terminal/exiting/stuck inversions of a small-step run started from a
+`.cmd`, `.exit`, or `.typeDecl` config. -/
+
+/-- Inversion of a small-step run started from a `.cmd c` config: it is either still
+at the start config, or has taken the single command step to a terminal config. -/
+theorem cmd_run_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident]
+    {c : Cmd P} {ρ : Env P} {d : Config P (Cmd P)}
+    (h_run : StepStmtStar P (EvalCmd P) (.stmt (.cmd c) ρ) d) :
+    (∃ ρ', d = .terminal ρ') ∨ (∃ l ρ', d = .exiting l ρ') ∨ d = .stmt (.cmd c) ρ := by
+  cases h_run with
+  | refl => exact Or.inr (Or.inr rfl)
+  | step _ _ _ h1 hr1 =>
+    cases h1 with
+    | step_cmd hev =>
+      cases hr1 with
+      | refl => exact Or.inl ⟨_, rfl⟩
+      | step _ _ _ hd _ => exact nomatch hd
+
+/-- Inversion of a small-step run started from an `.exit lbl` config: it is either still
+at the start config, or has taken the single exit step to an `.exiting lbl` config
+(a terminal config is also admitted by the disjunction). -/
+theorem exit_run_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident]
+    {lbl : String} {md : MetaData P} {ρ : Env P} {d : Config P (Cmd P)}
+    (h_run : StepStmtStar P (EvalCmd P) (.stmt (.exit lbl md) ρ) d) :
+    (∃ ρ', d = .terminal ρ') ∨ (∃ l ρ', d = .exiting l ρ') ∨ d = .stmt (.exit lbl md) ρ := by
+  cases h_run with
+  | refl => exact Or.inr (Or.inr rfl)
+  | step _ _ _ h1 hr1 =>
+    cases h1
+    cases hr1 with
+    | refl => exact Or.inr (Or.inl ⟨_, _, rfl⟩)
+    | step _ _ _ hd _ => exact nomatch hd
+
+/-- Inversion of a small-step run started from a `.typeDecl` config: it is either still
+at the start config or has stepped to a terminal config (`.typeDecl` performs no exit). -/
+theorem typeDecl_run_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [HasIdent P] [DecidableEq P.Ident]
+    {tc : TypeConstructor} {md : MetaData P} {ρ : Env P} {d : Config P (Cmd P)}
+    (h_run : StepStmtStar P (EvalCmd P) (.stmt (.typeDecl tc md) ρ) d) :
+    (∃ ρ', d = .terminal ρ') ∨ (∃ l ρ', d = .exiting l ρ') ∨ d = .stmt (.typeDecl tc md) ρ := by
+  cases h_run with
+  | refl => exact Or.inr (Or.inr rfl)
+  | step _ _ _ h1 hr1 =>
+    cases h1
+    cases hr1 with
+    | refl => exact Or.inl ⟨_, rfl⟩
+    | step _ _ _ hd _ => exact nomatch hd
 
 /-- A `.seq` whose inner config runs to terminal and whose continuation list is
 empty itself runs to that same terminal.  (The trailing `step_seq_done` lands on
@@ -3703,6 +3821,55 @@ section EventBlockScope
 variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBool P]
   {EvalCmd : EvalCmdParamE P CmdT EventT}
 
+/-- A single event step is a one-step run carrying the same trace. -/
+theorem StepStmtStarE.single
+    {c c' : Config P CmdT} {e : List EventT}
+    (h : StepStmtE P EvalCmd c e c') : StepStmtStarE P EvalCmd c e c' := by
+  simpa using ReflTransTrace.step c e c' [] c' h (.refl _)
+
+/-- A command configuration steps by running the command's event semantics,
+reaching a terminal configuration carrying the updated store. -/
+theorem StepStmtE.cmd_cases
+    {c : CmdT} {ρ : Env P} {e : List EventT} {c' : Config P CmdT}
+    (h : StepStmtE P EvalCmd (.stmt (.cmd c) ρ) e c') :
+    ∃ σ', EvalCmd ρ.factory ρ.store c σ' e ∧ c' = .terminal { ρ with store := σ' } := by
+  cases h with
+  | step_cmd h => exact ⟨_, h, rfl⟩
+  | step_admin h =>
+    cases h with
+    | step_cmd h => exact h.elim
+
+/-- Case analysis on one event step of a `.block` configuration: either the inner
+configuration steps, or it was terminal/exiting, in which case the scope is left
+by projecting the inner store and the result finishes, matches the block's label,
+or propagates a mismatched exit. -/
+theorem StepStmtE.block_cases
+    {l : Option String} {σp : SemanticStore P} {inner : Config P CmdT} {e : List EventT}
+    {c' : Config P CmdT}
+    (h : StepStmtE P EvalCmd (.block l σp inner) e c') :
+    (∃ inner', StepStmtE P EvalCmd inner e inner' ∧ c' = .block l σp inner') ∨
+    (∃ ρ, inner = .terminal ρ ∧ e = [] ∧
+      c' = .terminal { ρ with store := projectStore σp ρ.store }) ∨
+    (∃ l' ρ, inner = .exiting l' ρ ∧ e = [] ∧ l = some l' ∧
+      c' = .terminal { ρ with store := projectStore σp ρ.store }) ∨
+    (∃ l' ρ, inner = .exiting l' ρ ∧ e = [] ∧ l ≠ some l' ∧
+      c' = .exiting l' { ρ with store := projectStore σp ρ.store }) := by
+  cases h with
+  | step_block_body h => exact .inl ⟨_, h, rfl⟩
+  | step_admin h =>
+    cases h with
+    | step_block_body h => exact .inl ⟨_, .step_admin h, rfl⟩
+    | step_block_done => exact .inr (.inl ⟨_, rfl, rfl, rfl⟩)
+    | step_block_exit_match hl => exact .inr (.inr (.inl ⟨_, _, rfl, rfl, hl, rfl⟩))
+    | step_block_exit_mismatch hl => exact .inr (.inr (.inr ⟨_, _, rfl, rfl, hl, rfl⟩))
+
+/-- An exiting configuration takes no event step. -/
+theorem StepStmtE.exiting_false
+    {l : String} {ρ : Env P} {e : List EventT} {c' : Config P CmdT}
+    (h : StepStmtE P EvalCmd (.exiting l ρ) e c') : False := by
+  cases h with
+  | step_admin h => cases h
+
 
 /-- No traced event step leaves a terminal configuration. -/
 private theorem stepStmtE_from_terminal_none
@@ -4102,6 +4269,40 @@ theorem Config.storeWellDefined_star_ofE
   | refl => exact h_inv
   | step _ _ _ _ _ h_step _ ih =>
     exact ih (Config.storeWellDefined_stepE_of h_cmd h_step h_inv)
+
+/-- A base-command event step preserves store well-formedness using the
+value law at the step's unchanged factory. -/
+theorem Config.storeWellDefined_step_evalCmdE
+    {P : PureExpr} [HasFvar P] [HasBoolOps P] [LawfulHasVal P]
+    {cfg cfg' : Config P (Cmd P)} {tr : Trace P}
+    (hval : WellFormedSemanticEvalVal (P := P) cfg.getEnv.factory)
+    (h_step : StepStmtE P (EvalCmdE P) cfg tr cfg')
+    (h_inv : Config.storeWellDefined cfg) :
+    Config.storeWellDefined cfg' := by
+  induction h_step with
+  | step_cmd h_eval => exact evalCmdE_storeWellDefined hval h_eval h_inv
+  | step_admin hadmin =>
+    exact Config.storeWellDefined_step_of (evalCmd := noCommandEvalE P (Cmd P))
+      (fun he _ => by simp [noCommandEvalE] at he) hadmin h_inv
+  | step_seq_inner _ ih => exact ih hval h_inv
+  | step_block_body hinner ih =>
+      exact ⟨stepE_preserves_factory hinner ▸ h_inv.1, ih hval h_inv.2⟩
+
+/-- A base-command event run preserves store well-formedness using the value law
+at its factory. -/
+theorem Config.storeWellDefined_star_evalCmdE
+    {P : PureExpr} [HasFvar P] [HasBoolOps P] [LawfulHasVal P]
+    {cfg cfg' : Config P (Cmd P)} {tr : Trace P}
+    (hval : WellFormedSemanticEvalVal (P := P) cfg.getEnv.factory)
+    (h_run : StepStmtStarE P (EvalCmdE P) cfg tr cfg')
+    (h_inv : Config.storeWellDefined cfg) :
+    Config.storeWellDefined cfg' := by
+  induction h_run with
+  | refl => exact h_inv
+  | step c _ c₁ _ _ h_step _ ih =>
+    have h_inv₁ := Config.storeWellDefined_step_evalCmdE hval h_step h_inv
+    have hfac : c.getEnv.factory = c₁.getEnv.factory := stepE_preserves_factory h_step
+    exact ih (hfac ▸ hval) h_inv₁
 
 end EventInvariantEngines
 

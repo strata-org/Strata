@@ -35,6 +35,7 @@ procedure outputInvalid(): nat
   opaque
 {
   return -1
+//^^^^^^^^^ error: assertion does not hold
 };
 
 // Return value of constrained type — caller gets ensures via call elimination
@@ -277,12 +278,12 @@ procedure callerSeesValue(n: nat)
   assert double(n) == n + n
 };
 
-// A transparent procedure's constrained output is checked at the definition, by the
-// generated `$constraintLemma_badDouble`: `n - 1` leaves nat's range for n == 0.
+// A transparent procedure's constrained output is checked at the definition, at the
+// return: `n - 1` leaves nat's range for n == 0.
 procedure badDouble(n: nat) : nat
-//                            ^^^ error: assertion does not hold
 {
   return n - 1
+//^^^^^^^^^^^^ error: assertion does not hold
 };
 
 // And enforced again wherever the value is relied on. Assigning to a
@@ -318,10 +319,7 @@ procedure quantifiedPreconditionHolds(n: nat) : int
   return r
 };
 
-// The generated lemma binds the source procedure's TYPE PARAMETERS. Its inputs
-// mirror `countOf`'s, so they mention `T`; without `typeArgs := proc.typeArgs` the
-// lemma reaches Core with `T` free and is rejected outright:
-//   type variables [T] appear in the signature but are not declared in typeArgs []
+// A polymorphic transparent procedure with a constrained output stays transparent.
 procedure countOf<T>(x: T) : nat
 {
   return 0
@@ -335,9 +333,9 @@ procedure usesCountOf(b: bool)
 // The constraint is still checked for a polymorphic procedure, not merely
 // well-formed: `-1` leaves nat's range regardless of `T`.
 procedure badCountOf<T>(x: T) : nat
-//                              ^^^ error: assertion does not hold
 {
   return 0 - 1
+//^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 
@@ -399,4 +397,88 @@ program Laurel;
 constrained int32c = v: int where v >= -2147483648 && v <= 2147483647 witness 0
 composite BaseH { procedure compute(self: BaseH) : int32c { return 1 }; }
 composite ChildH extends BaseH { procedure compute(self: ChildH) : int32c { return 2 }; }
+#end
+
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+composite Inner { var x: nat }
+composite Outer { var i: Inner }
+composite Exception {}
+
+procedure opq(x: int) : nat opaque;
+procedure viaOpq(x: int) : nat { return opq(x) };
+procedure viaOpqBad(x: int) : nat
+{
+  return opq(x) - 1
+//^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+
+procedure getNested(o: Outer) : nat { return o#i#x };
+procedure getNestedBad(o: Outer) : nat
+{
+  return o#i#x - 1
+//^^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+
+procedure throwsNat(x: nat) : nat throws (e: Exception) { return x };
+procedure throwsNatBad(x: nat) : nat throws (e: Exception)
+{
+  return x - 1
+//^^^^^^^^^^^^ error: assertion could not be proved
+};
+#end
+
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+
+procedure unassignedOutput(): nat
+//                            ^^^ error: postcondition does not hold
+  opaque
+{
+  -1
+};
+
+procedure unassignedOnOnePath(b: bool) returns (r: nat)
+//                                                 ^^^ error: postcondition does not hold
+  opaque
+{
+  if b then { r := 1 }
+};
+
+procedure tailValue(): nat { 3 };
+procedure tailValueIf(b: bool): nat { if b then 1 else 2 };
+procedure usesTailValues() opaque { assert tailValue() == 3; assert tailValueIf(true) == 1 };
+
+procedure badTailValue(): nat { -1 };
+//                        ^^^ error: assertion does not hold
+//                              ^^ error: assertion does not hold
+procedure badTailValueIf(b: bool): nat { if b then 1 else -1 };
+//                                 ^^^ error: assertion does not hold
+//                                                        ^^ error: assertion does not hold
+procedure badTailValueBeforeAssert(): nat { -1; assert true };
+//                                    ^^^ error: assertion does not hold
+//                                          ^^ error: assertion does not hold
+
+procedure knowsPositive(x: int) opaque ensures x > 0;
+procedure tailLemma(x: nat) returns (r: nat) { r := x * x; knowsPositive(x) };
+procedure useTailLemma(x: nat) opaque { assert tailLemma(x) == x * x };
+
+procedure partialNat(b: bool): nat { if b then { return 1 } };
+//                             ^^^ error: assertion does not hold
+procedure neverNat() returns (r: nat) { assert true };
+//                               ^^^ error: assertion does not hold
+procedure earlyBadReturn(x: int): nat { if x < 0 then { return x }; return 0 };
+//                                                      ^^^^^^^^ error: assertion does not hold
+#end
+
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+procedure q0() returns (r: nat) { r := 1; true };
+//        ^^ error: ❌ Type checking error.
 #end

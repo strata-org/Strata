@@ -36,7 +36,15 @@ procedure caller() {
 
 -- Inlining freshens the callee's assertion label with its `$__inline<N>_`
 -- prefix, so the expected obligation label is `$__inline1_willFail`.
-/-- info: "$__inline1_willFail: ❌ fail\n Assertion is 52 characters after the related location" -/
+/--
+info:
+
+Obligation $__inline1_willFail: failed!
+
+Result obtained during evaluation.
+---
+info: "$__inline1_willFail: ❌ fail\n Assertion is 52 characters after the related location"
+-/
 #guard_msgs in
 #eval show IO String from do
   let (coreProg, _) := Strata.Core.getProgram inlineAssertPgm

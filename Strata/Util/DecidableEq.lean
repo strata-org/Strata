@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 public section
 
 /-- Decides `x = y` by trying pointer identity before the structural comparison. -/
