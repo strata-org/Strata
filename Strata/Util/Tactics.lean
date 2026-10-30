@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Init
 public meta import Init.Grind.Cases
 public meta import Init.Grind.Ext
 public meta import Lean.Elab.Tactic.Basic

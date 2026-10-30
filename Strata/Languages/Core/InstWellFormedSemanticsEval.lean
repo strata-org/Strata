@@ -372,7 +372,6 @@ theorem coreEvaluator_WellFormedSemanticEvalBool (f : Expression.Factory)
   | ite m cc t el => exact hApp _
   | eq m e1 e2 => exact hApp _
 
-set_option maxRecDepth 8000 in
 /-- `Bool.Not` resolves in the concrete `Core.Factory` to `boolNotFunc`. -/
 theorem coreFactory_boolNot :
     (Core.Factory)["Bool.Not"]? = some (Lambda.boolNotFunc (T := CoreLParams)).func := by
@@ -381,9 +380,10 @@ theorem coreFactory_boolNot :
       = Lambda.Factory.ofArray (WFFactoryArray.map (·.func)) := rfl
   have hmem : (Lambda.boolNotFunc (T := CoreLParams)).func ∈ WFFactoryArray.map (·.func) := by
     refine Array.mem_map.mpr ⟨Lambda.boolNotFunc (T := CoreLParams), ?_, rfl⟩
+    rw [Array.mem_def]
     unfold WFFactoryArray
-    simp only [Array.mem_def, Array.toList_appendList, List.mem_append, List.mem_cons]
-    grind
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail)
   have hnodup : List.Nodup ((WFFactoryArray.map (·.func)).toList.map (·.name.name)) :=
     WFFactoryArray_func_name_nodup
   rw [hCoreFactory, ← hname]
@@ -618,7 +618,6 @@ theorem coreEvaluator_WellFormedSemanticEvalInt (f : Expression.Factory)
           (.app () (.app () (Lambda.intLtFunc (T := CoreLParams)).opExpr x) y) = _
       exact Lambda.evalFully_of_value_true f σ _ _ _ h_out
 
-set_option maxRecDepth 8000 in
 /-- A function in `WFFactoryArray` resolves in `Core.Factory` under its own name
     when supplied with its array-membership witness. -/
 private theorem coreFactory_get?_of_mem {wf : Lambda.WFLFunc CoreLParams}
@@ -631,55 +630,55 @@ private theorem coreFactory_get?_of_mem {wf : Lambda.WFLFunc CoreLParams}
   rw [hCoreFactory]
   exact Lambda.Factory.get?_ofArray_of_mem hmem hnodup
 
-set_option maxRecDepth 8000 in
 /-- `Int.Lt` resolves in the concrete `Core.Factory` to `intLtFunc`. -/
 theorem coreFactory_intLt :
     (Core.Factory)["Int.Lt"]? = some (Lambda.intLtFunc (T := CoreLParams)).func :=
   coreFactory_get?_of_mem (wf := Lambda.intLtFunc (T := CoreLParams)) (by
     refine Array.mem_map.mpr ⟨Lambda.intLtFunc (T := CoreLParams), ?_, rfl⟩
+    rw [Array.mem_def]
     unfold WFFactoryArray
-    simp only [Array.mem_def, Array.toList_appendList, List.mem_append, List.mem_cons]
-    grind)
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
 
-set_option maxRecDepth 8000 in
 /-- `Int.Le` resolves in the concrete `Core.Factory` to `intLeFunc`. -/
 theorem coreFactory_intLe :
     (Core.Factory)["Int.Le"]? = some (Lambda.intLeFunc (T := CoreLParams)).func :=
   coreFactory_get?_of_mem (wf := Lambda.intLeFunc (T := CoreLParams)) (by
     refine Array.mem_map.mpr ⟨Lambda.intLeFunc (T := CoreLParams), ?_, rfl⟩
+    rw [Array.mem_def]
     unfold WFFactoryArray
-    simp only [Array.mem_def, Array.toList_appendList, List.mem_append, List.mem_cons]
-    grind)
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
 
-set_option maxRecDepth 8000 in
 /-- `Int.Add` resolves in the concrete `Core.Factory` to `intAddFunc`. -/
 theorem coreFactory_intAdd :
     (Core.Factory)["Int.Add"]? = some (Lambda.intAddFunc (T := CoreLParams)).func :=
   coreFactory_get?_of_mem (wf := Lambda.intAddFunc (T := CoreLParams)) (by
     refine Array.mem_map.mpr ⟨Lambda.intAddFunc (T := CoreLParams), ?_, rfl⟩
+    rw [Array.mem_def]
     unfold WFFactoryArray
-    simp only [Array.mem_def, Array.toList_appendList, List.mem_append, List.mem_cons]
-    grind)
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
 
-set_option maxRecDepth 8000 in
 /-- `Int.Ge` resolves in the concrete `Core.Factory` to `intGeFunc`. -/
 theorem coreFactory_intGe :
     (Core.Factory)["Int.Ge"]? = some (Lambda.intGeFunc (T := CoreLParams)).func :=
   coreFactory_get?_of_mem (wf := Lambda.intGeFunc (T := CoreLParams)) (by
     refine Array.mem_map.mpr ⟨Lambda.intGeFunc (T := CoreLParams), ?_, rfl⟩
+    rw [Array.mem_def]
     unfold WFFactoryArray
-    simp only [Array.mem_def, Array.toList_appendList, List.mem_append, List.mem_cons]
-    grind)
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
 
-set_option maxRecDepth 8000 in
 /-- `Int.Mul` resolves in the concrete `Core.Factory` to `intMulFunc`. -/
 theorem coreFactory_intMul :
     (Core.Factory)["Int.Mul"]? = some (Lambda.intMulFunc (T := CoreLParams)).func :=
   coreFactory_get?_of_mem (wf := Lambda.intMulFunc (T := CoreLParams)) (by
     refine Array.mem_map.mpr ⟨Lambda.intMulFunc (T := CoreLParams), ?_, rfl⟩
+    rw [Array.mem_def]
     unfold WFFactoryArray
-    simp only [Array.mem_def, Array.toList_appendList, List.mem_append, List.mem_cons]
-    grind)
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail))
 
 /-- The concrete `Int.Le` operator expression on `Core.Factory`.  Exposed as a plain
     `def` (not `intLeFunc.opExpr` inline) so downstream modules — e.g. tests that are not

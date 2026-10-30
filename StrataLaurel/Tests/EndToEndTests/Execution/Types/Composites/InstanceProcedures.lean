@@ -302,8 +302,7 @@ composite's and the method's.
 
 Every block from here on marks an `entry`, so the clone is also CALLED: `self#val` is read
 concretely through the monomorphized method and the negative cases' contract failures are
-reproduced at runtime. One of them runs the Core interpreter only, for a localization reason
-it states at the block. -/
+reproduced at runtime. Those that skip an interpreter say why at the block. -/
 
 #eval testLaurelExecution {} <|
 #strata
@@ -486,6 +485,248 @@ procedure methodOwnTypeParamFalsePostcondition()
 {
   var b: BoxW<int> := new BoxW<int>;
   var z: int := b#bad(true);
+  assert 1 == 1
+};
+#end
+
+-- A method's own type parameter cannot reuse its composite's name. The clash is reported by the
+-- re-resolution after `LiftInstanceProcedures`, where both stand in one type-parameter list, not
+-- by the first resolution. No interpreters: each words the clash its own way
+-- (`interpret: Laurel→Core failed: …`), which one annotation cannot pin.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite BoxC<T> {
+  var v: T
+  procedure f<T>(self: BoxC<T>, x: T)
+//            ^ error: Duplicate definition 'T' is already defined in this scope
+    returns (r: T)
+    opaque
+    ensures r == x
+  { r := x };
+}
+
+procedure methodTypeParamSpelledLikeTheComposites()
+  entry
+  opaque
+  modifies *
+{
+  var b: BoxC<int> := new BoxC<int>;
+  var z: bool := b#f(true);
+  assert 1 == 1
+};
+#end
+
+/-! ### Type arguments the receiver brings in
+
+`b#m(5)` in `outer<U>` instantiates `m`'s `T` at the caller's `U`, which `m`'s own `U` must not
+capture; likewise the composite `E` and `n`'s own `E`. Inside the composite, a call on `self` is
+at its own type parameters. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+composite E { var k: int }
+composite BoxR<T> {
+  var v: T
+  procedure m<U>(self: BoxR<T>, x: U)
+    returns (r: T)
+    opaque
+    ensures r == self#v
+  { r := self#v };
+  procedure n<E>(self: BoxR<T>, x: E)
+    returns (r: T)
+    opaque
+    ensures r == self#v
+  { r := self#v };
+  procedure idu<U>(self: BoxR<T>, x: U)
+    returns (r: U)
+    opaque
+    ensures r == x
+  { r := x };
+  procedure viaSelf<W>(self: BoxR<T>, w: W)
+    returns (r: W)
+    opaque
+    ensures r == w
+  { r := self#idu(w) };
+  procedure getV(self: BoxR<T>)
+    returns (r: T)
+    opaque
+    ensures r == self#v
+  { r := self#idu(self#v) };
+}
+
+procedure outer<U>(b: BoxR<U>)
+  opaque
+{
+  var z: bool := b#m(5);
+  assert 1 == 1
+};
+
+procedure receiverTypesAreNotCaptured()
+  entry
+  opaque
+  modifies *
+{
+  var bb: BoxR<bool> := new BoxR<bool>;
+  bb#v := true;
+  outer(bb);
+  var be: BoxR<E> := new BoxR<E>;
+  var e: E := new E;
+  be#v := e;
+  var y: E := be#n(5);
+  var bi: BoxR<int> := new BoxR<int>;
+  bi#v := 3;
+  var w: bool := bi#viaSelf(true);
+  var g: int := bi#getV();
+  assert w == true && g == 3
+};
+#end
+
+/-! ### A receiver's type argument in the caller's type parameter
+
+`b#put(x)` in `inCell<U>` passes a `Cell<int>` at the receiver's `T := Cell<U>`, as the static call
+the lift makes does, and runs at `U := int`. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+composite Cell<X> { var c: X }
+composite BoxN<T> {
+  var v: T
+  procedure put(self: BoxN<T>, a: T)
+    returns (r: T)
+    opaque
+    ensures r == a
+  { r := a };
+}
+
+procedure inCell<U>(b: BoxN<Cell<U>>, x: Cell<int>)
+  returns (r: Cell<int>)
+  opaque
+  ensures r == x
+{ r := b#put(x) };
+
+procedure receiverInstantiatedByTheArgument()
+  entry
+  opaque
+  modifies *
+{
+  var b: BoxN<Cell<int>> := new BoxN<Cell<int>>;
+  var x: Cell<int> := new Cell<int>;
+  x#c := 4;
+  var r: Cell<int> := inCell(b, x);
+  assert r#c == 4
+};
+#end
+
+/-! ### An argument is resolved against its instantiated parameter
+
+So a generic call in argument position, also inside an `if` or a block, takes its type argument
+from the slot, whether the receiver, a sibling argument, a later sibling call's declared result or
+the expected type fixes it. -/
+
+-- No standalone Laurel interpreter: it has no backend for the external `setEmpty`.
+#eval testLaurelExecution { skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite BoxS<T> {
+  var v: T
+  procedure take(self: BoxS<T>, a: T)
+    opaque
+    ensures true
+  { };
+  procedure mix<U>(self: BoxS<T>, a: T, b: U)
+    returns (r: T)
+    opaque
+    ensures r == a
+  { r := a };
+  procedure same<U>(self: BoxS<T>, x: U, y: U)
+    opaque
+    ensures true
+  { };
+  procedure choose<U>(self: BoxS<T>, x: U, y: U)
+    returns (r: U)
+    opaque
+    ensures r == x
+  { r := x };
+  procedure getSet(self: BoxS<T>)
+    returns (r: Set<int>)
+    opaque
+    ensures true
+  { r := setEmpty() };
+}
+composite Holder {
+  var k: int
+  procedure mkEmpty<V>(self: Holder)
+    returns (r: Set<V>)
+    opaque
+    ensures true
+  { r := setEmpty() };
+  procedure getS(self: Holder)
+    returns (r: Set<int>)
+    opaque
+    ensures true
+  { r := setEmpty() };
+}
+procedure same2<U>(x: U, y: U)
+  opaque
+  ensures true
+{ };
+
+procedure slotsOfNestedGenericCalls()
+  entry
+  opaque
+  modifies *
+{
+  var h: Holder := new Holder;
+  var s: Set<int> := setEmpty();
+  var c: bool := true;
+  var bs: BoxS<Set<int>> := new BoxS<Set<int>>;
+  bs#take(setEmpty());
+  bs#take(if c then setEmpty() else s);
+  bs#take({ var n: int := 1; setEmpty() });
+  var m := bs#mix(setEmpty(), 5);
+  bs#same(setEmpty(), s);
+  bs#same(bs#getSet(), setEmpty());
+  bs#same(setEmpty(), h#getS());
+  same2(setEmpty(), h#getS());
+  bs#same(h#mkEmpty(), s);
+  same2(h#mkEmpty(), s);
+  var e: Set<int> := bs#choose(setEmpty(), setEmpty());
+  assert 1 == 1
+};
+#end
+
+/-! ### An argument to a parameter without type variables is checked against it
+
+As for a non-generic method, so the `if` joins its branches at the `Animal` the parameter
+declares. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+composite Animal { var a: int }
+composite Dog extends Animal { var d: int }
+composite Cat extends Animal { var k: int }
+composite BoxA<T> {
+  var v: T
+  procedure feed(self: BoxA<T>, x: Animal)
+    opaque
+    ensures true
+  { };
+}
+
+procedure checkedArgument()
+  entry
+  opaque
+  modifies *
+{
+  var b: BoxA<int> := new BoxA<int>;
+  var c: bool := true;
+  var dog: Dog := new Dog;
+  var cat: Cat := new Cat;
+  b#feed(if c then dog else cat);
   assert 1 == 1
 };
 #end

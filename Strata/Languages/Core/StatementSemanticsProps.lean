@@ -2434,7 +2434,7 @@ theorem evalCommand_preserves_none_of_not_def
   cases h_eval with
   | cmd_sem h =>
     exact evalCmd_preserves_none_of_not_def h h_none
-      (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_not_def)
+      (by simpa [HasVarsImp.definedVars, Command.definedVars, CmdExt.definedVars] using h_not_def)
   | call_sem _ _ _ _ _ hexit =>
     unfold CallExit at hexit
     obtain ⟨_, _, _, hupd⟩ := hexit
@@ -2452,7 +2452,7 @@ theorem evalCommandE_preserves_none_of_not_def
   cases h_eval with
   | cmd_sem h =>
     exact Imperative.evalCmdE_preserves_none_of_not_def h h_none
-      (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_not_def)
+      (by simpa [HasVarsImp.definedVars, Command.definedVars, CmdExt.definedVars] using h_not_def)
   | call_sem _ _ _ hexit =>
     unfold Calls.CallExit at hexit
     obtain ⟨_, _, _, hupd⟩ := hexit
@@ -2561,8 +2561,8 @@ private theorem evalCommand_definedVars_isSome
   cases h_eval with
   | cmd_sem h =>
     exact evalCmd_definedVars_isSome h
-      (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_def)
-  | call_sem => simp [HasVarsImp.definedVars, Command.definedVars] at h_def
+      (by simpa [HasVarsImp.definedVars, Command.definedVars, CmdExt.definedVars] using h_def)
+  | call_sem => simp [HasVarsImp.definedVars, CmdExt.definedVars] at h_def
 
 /-- **Exact store domain after a terminating statement run.**  A terminating run
     of `s` from `ρ` leaves exactly `dom(ρ.store) ∪ Stmt.definedVars s true`
@@ -2656,8 +2656,8 @@ private theorem evalCommandE_definedVars_isSome
   cases h_eval with
   | cmd_sem h =>
     exact Imperative.evalCmdE_definedVars_isSome h
-      (by simpa [HasVarsImp.definedVars, Command.definedVars] using h_def)
-  | call_sem => simp [HasVarsImp.definedVars, Command.definedVars] at h_def
+      (by simpa [HasVarsImp.definedVars, Command.definedVars, CmdExt.definedVars] using h_def)
+  | call_sem => simp [HasVarsImp.definedVars, CmdExt.definedVars] at h_def
 
 /-- A store slot defined at the start of a terminating event-native `.stmt`
 run remains defined at the end. -/

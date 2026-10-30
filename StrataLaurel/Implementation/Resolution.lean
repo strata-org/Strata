@@ -1812,28 +1812,78 @@ private def returnPositionSubst (ctx : TypeLattice) (callee : Identifier) (proc 
         (fun acc (name, ty) => acc.insert name { val := ty, source := exp.source })
         (∅ : Std.HashMap String HighTypeMd)
 
+/-- Which of `tyName` and its ancestors declares the method `callee`: the most specific one, unless
+    unrelated ones do. -/
+private def methodDeclarer (tyName : String) (callee : Identifier) : ResolveM MemberResolution := do
+  let s ← get
+  let declares := fun n => s.scope.contains (containerScopedName (mkId n) callee).text
+  return s.typeLattice.resolveInheritedMember tyName declares
+
+/-- The declared result of the procedure the call `e` calls, read before `e` is resolved: for an
+    instance call, the method of the composite that `targetTypeName` reads off the receiver without
+    resolving it; for a static call, the procedure its name is bound to, unless overloaded. Its type
+    variables are the callee's, which the call has yet to instantiate, so they lose their binders:
+    in a recursive call, or a call to a method of the caller's own composite, they would otherwise
+    read as the caller's. -/
+private def declaredCallResult? (e : StmtExprMd) : ResolveM (Option HighTypeMd) := do
+  let s ← get
+  let key? ← match e.val with
+    | .InstanceCall target callee _ => do
+      let some tyName ← targetTypeName target | pure none
+      let .resolved owner ← methodDeclarer tyName callee | pure none
+      pure (some (callee, containerScopedName (mkId owner) callee))
+    | .StaticCall callee _ _ =>
+      pure (if (s.overloads.getD callee.text []).length > 1 then none else some (callee, callee))
+    | _ => pure none
+  let some (callee, key) := key? | pure none
+  match s.scope.get? key.text with
+  | some (_, .staticProcedure proc) | some (_, .instanceProcedure _ proc) =>
+    pure (some (mapHighTypeNames (fun mk n => match mk n with
+      | .TVar _ => .TVar { n with uniqueId := none }
+      | t => t) (procReturnType callee proc)))
+  | _ => pure none
+
 /-- The tail of a generic call: infer the type arguments from the actual argument types, check
     each argument against its instantiated parameter, report anything left undetermined, and
     report the declared return type at that instantiation.
 
-    Shared by the single-definition generic path and a uniquely selected generic overload. Takes
-    the SELECTED procedure rather than looking it up, since `scope` keeps only the last definition
-    of an overloaded name.
+    Shared by the single-definition generic path, a uniquely selected generic overload, and an
+    instance call into a generic composite or to a generic method. Takes the SELECTED procedure
+    rather than looking it up, since `scope` keeps only the last definition of an overloaded
+    name.
 
     The arguments arrive already resolved, and the lattice is read HERE, after them: resolving an
     argument can extend it, and every subtype/coercion decision below must see the final one.
-    `retSubst` is the caller's stage-1 binding from the return position.
+    `retSubst` is the caller's stage-1 binding from the return position. `receiver?` pairs an
+    instance call's `self` type with its receiver's. Inference takes them as the first parameter
+    and argument of the static call that `LiftInstanceProcedures` makes the instance call, so that
+    its re-resolution after the lift agrees. Where that call is rejected, over a type parameter the
+    receiver binds or at the receiver itself, what the receiver binds, unless a gradual type, is
+    kept instead, so that the argument check blames the argument rather than a conflict being
+    reported.
 
     An overloaded name's arguments are resolved before selection, so they get no instantiated slot
     handed down; a nested generic call inside such an argument has nothing to infer from. -/
 private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
     (args' : List StmtExprMd) (argTys : List HighTypeMd)
     (expected? : Option HighTypeMd) (retSubst : Std.HashMap String HighTypeMd)
-    (source : FileRange) : ResolveM (StmtExpr × HighTypeMd) := do
+    (source : FileRange) (receiver? : Option (HighTypeMd × HighTypeMd) := none) :
+    ResolveM (StmtExpr × HighTypeMd) := do
   let ctx := (← get).typeLattice
   let inScope := tvarInScope (← get).scope
   let paramTys := proc.inputs.map (·.type)
-  let (argSubst, conflicts) := callSiteTypeSubst ctx inScope paramTys argTys
+  let (argSubst, conflicts) := match receiver? with
+    | none => callSiteTypeSubst ctx inScope paramTys argTys
+    | some (selfTy, recvTy) =>
+      let (lifted, conflicts) :=
+        callSiteTypeSubst ctx inScope (selfTy :: paramTys) (recvTy :: argTys)
+      if conflicts.isEmpty && isConsistentSubtype ctx recvTy (substTypeVars lifted selfTy) then
+        (lifted, conflicts)
+      else
+        let recv := (callSiteTypeSubst ctx inScope [selfTy] [recvTy]).1.filter
+          fun _ ty => !ctx.isGradualTop ty
+        (recv.fold (fun acc name ty => acc.insert name ty) lifted,
+          conflicts.filter fun (name, _, _) => !recv.contains name)
   -- STAGE 3 — merge. Argument bindings WIN over the stage-1 return bindings: an argument is
   -- direct evidence, whereas the expected type has already passed through subsumption and may
   -- be a supertype (`var a: Animal := identity(aDog)` must keep `T ↦ Dog`, not widen it to
@@ -1863,13 +1913,17 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
   -- another, and the substitution then carries whichever binding won — so checking the
   -- losing argument against it restates the same problem in weaker words ("cannot pass
   -- 'real' as the 'int' parameter of '$eq'" next to "cannot compare 'int' with 'real'").
+  --
+  -- Anchored on the argument, not on its type, whose range is wherever the type was written.
+  let mut rejectedAt : List HighTypeMd := []
   if conflicts.isEmpty then
-    for (aTy, pTy) in argTys.zip paramTys do
+    for ((a, aTy), pTy) in (args'.zip argTys).zip paramTys do
       let pTy' := substTypeVars subst pTy
       unless isConsistentSubtype ctx aTy pTy' do
-        let diag := diagnosticFromSource aTy.source
+        let diag := diagnosticFromSource a.source
           s!"cannot pass '{formatType aTy}' as the '{formatType pTy'}' parameter of '{callee.text}'"
         modify fun s => { s with errors := s.errors.push diag }
+        rejectedAt := pTy :: rejectedAt
   -- `zip` above pairs only as far as the shorter list, so a surplus argument would otherwise
   -- reach Core and fail there as an arity mismatch with no source range and no callee name.
   -- Under-arity is deliberately not flagged.
@@ -1886,7 +1940,9 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
   --
   -- Suppressed when the call already has a diagnostic (a conflict, or an argument that failed
   -- to resolve and so synthesized `Unknown`): inference genuinely had nothing to work with
-  -- there, and a second error about a type argument would only bury the first.
+  -- there, and a second error about a type argument would only bury the first. Likewise for a
+  -- type parameter mentioned where an argument was rejected (`wrap(5)` at `x: Box<T>`): that
+  -- argument would have determined it.
   --
   -- Determinacy is asked of `callSiteDeterminedTypeParams`, not of `subst`: an ambiguous diamond
   -- binds nothing in `subst` yet the parameter IS determined.
@@ -1896,7 +1952,8 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
       (match expected? with
        | some exp => [(procReturnType callee proc, exp)]
        | none => [])
-  let unbound := proc.typeArgs.filter (fun tv => !determined.contains tv.text)
+  let unbound := proc.typeArgs.filter fun tv =>
+    !determined.contains tv.text && !rejectedAt.any (mentionsTypeParam ctx [tv.text])
   if conflicts.isEmpty && !unbound.isEmpty && !argTys.any (·.val matches .Unknown) then
     let names := String.intercalate ", " (unbound.map (fun tv => s!"'{tv.text}'"))
     let what := if unbound.length == 1 then "type argument" else "type arguments"
@@ -1948,13 +2005,6 @@ private def thrownTypesJoin (lattice : TypeLattice) (tys : List HighTypeMd)
 -- look unused to the linter, but each one is referenced by that helper's
 -- `decreasing_by` tactic to relate `sizeOf args` to `sizeOf exprMd`.
 set_option linter.unusedVariables false in
--- The well-founded-recursion termination proofs for every helper in this
--- large mutual block share a single elaboration heartbeat budget. Each
--- `decreasing_by` rewrites the node equation (`rw [h]`) and then discharges
--- the size goal with `term_by_mem` (which adds `List`/`Array` membership-size
--- lemmas, then `simp_all` and `omega`). Their cumulative cost across ~30
--- functions sits above the 200k default, so the budget is raised for the block.
-set_option maxHeartbeats 400000 in
 mutual
 
 -- ### Dispatch
@@ -2020,7 +2070,7 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd)
   | .IsType target ty =>
     Synth.isType exprMd target ty source (by rw [h_node, h_expr])
   | .InstanceCall target callee args =>
-    Synth.instanceCall exprMd target callee args source (by rw [h_node, h_expr])
+    Synth.instanceCall exprMd target callee args source (by rw [h_node, h_expr]) expected?
   | .Quantifier mode param trigger body =>
     Synth.quantifier exprMd mode param trigger body source (by rw [h_node, h_expr])
   | .Assigned name =>
@@ -2085,11 +2135,11 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd)
     let r ← Check.tryCatch exprMd body catches finally? source (by rw [h_node, h_expr])
     return (r, ⟨ .TVoid, source ⟩)
   return ({ val := val', source := source }, ty)
-  termination_by (exprMd, 2)
+  termination_by sizeOf exprMd * 5 + 2
   decreasing_by all_goals first
-    | (apply Prod.Lex.left; term_by_mem)
-    | (try subst h_expr; try subst h_node; apply Prod.Lex.right; decide)
-    | (apply Prod.Lex.right; decide)
+    | (term_by_mem)
+    | (try subst h_expr; try subst h_node; omega)
+    | (omega)
 
 /-- Check-mode resolution (rule **Sub** at the boundary): resolve `e` and
     verify its type is a consistent subtype of `expected`, written
@@ -2182,12 +2232,12 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
       | none => coerceTo source expected actual e'
     else
       coerceTo source expected actual e'
-  termination_by (exprMd, 3)
+  termination_by sizeOf exprMd * 5 + 3
   decreasing_by all_goals first
-    | (apply Prod.Lex.left; term_by_mem)
-    | (try subst_eqs; apply Prod.Lex.right; decide)
-    | (try subst h_expr; try subst h_node; apply Prod.Lex.right; decide)
-    | (apply Prod.Lex.right; decide)
+    | (term_by_mem)
+    | (try subst_eqs; omega)
+    | (try subst h_expr; try subst h_node; omega)
+    | (omega)
 
 -- ### Literals
 
@@ -2247,9 +2297,8 @@ def Synth.varField (exprMd : StmtExprMd)
   -- that read came through this same rule — so chains concretize transitively.
   let ty ← concretizeFieldType holderTy fieldName'
   pure (.Var (.Field target' fieldName'), ty)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -2340,10 +2389,9 @@ def Check.while (exprMd : StmtExprMd)
   -- `postTest` (the `do … while` variant) resolves identically and is carried
   -- through unchanged for the `EliminateDoWhile` pass to lower afterwards.
   pure { val := .While cond' invs' dec' body' postTest, source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -2460,10 +2508,9 @@ def Check.return (exprMd : StmtExprMd)
   -- The return value (if any) was already checked against the declared
   -- output above via `answerType`.
   pure { val := .Return val', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -2511,8 +2558,8 @@ def Synth.emptyBlock (source : FileRange) : HighTypeMd :=
     (`expected = TVoid`). -/
 def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
   let (s', _) ← Synth.resolveStmtExpr s; pure s'
-  termination_by (s, 4)
-  decreasing_by all_goals (apply Prod.Lex.right; decide)
+  termination_by sizeOf s * 5 + 4
+  decreasing_by all_goals (omega)
 
 /-- (Block) Check-mode typing rule for a non-empty block.
 
@@ -2599,10 +2646,9 @@ def Check.block (exprMd : StmtExprMd)
       have := List.mem_of_getLast? _lastResult
       let last' ← checkLast last ‹_›
       pure { val := .Block (init' ++ [last']) label, source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -2641,10 +2687,9 @@ def Check.ifThenElse (exprMd : StmtExprMd)
   if elseBr.isNone then
     checkSubtype source expected { val := .TVoid, source := source }
   pure { val := .IfThenElse cond' thenBr' elseBr', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -2724,10 +2769,9 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
           modify fun s => { s with errors := s.errors.push diag }
           pure { val := .Unknown, source := source }
     pure (.IfThenElse cond' thenBr' (some e'), ty)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       simp only [StmtExpr.IfThenElse.sizeOf_spec, Option.some.sizeOf_spec] at hsz
@@ -2786,10 +2830,9 @@ def Synth.block (exprMd : StmtExprMd)
       have := List.mem_of_getLast? _lastResult
       let (last', lastTy) ← Synth.resolveStmtExpr last expected?
       pure (.Block (init' ++ [last']) label, lastTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -2811,9 +2854,8 @@ def Check.assert (exprMd : StmtExprMd)
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr condExpr { val := .TBool, source := condExpr.source }
   pure { val := .Assert cond' summary, source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -2832,9 +2874,8 @@ def Check.assume (exprMd : StmtExprMd)
     ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
   pure { val := .Assume cond', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -2861,9 +2902,8 @@ def Check.throw (exprMd : StmtExprMd)
   -- `throw` is a statement (yields `TVoid`).
   let (value', _) ← Synth.resolveStmtExpr value
   pure { val := .Throw value', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     simp only [StmtExpr.Throw.sizeOf_spec] at hsz
@@ -2939,10 +2979,9 @@ def Check.tryCatch (exprMd : StmtExprMd)
   let finally'? ← finally?.attach.mapM fun ⟨fexpr, _⟩ =>
     Check.resolveStmtExpr fexpr { val := .Unknown, source := fexpr.source }
   pure { val := .Try body' catches' finally'?, source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       simp only [StmtExpr.Try.sizeOf_spec] at hsz
@@ -3046,10 +3085,9 @@ def Synth.assign (exprMd : StmtExprMd)
       pure (⟨.Declare ⟨name', some ty'⟩, vs⟩ : VariableMd)
   reportDuplicateTargets targets'
   pure (.Assign targets' value', expectedTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -3079,9 +3117,9 @@ def Check.assign (exprMd : StmtExprMd)
   unless expected.val matches .TVoid do
     checkSubtype source expected expectedTy
   pure { val := synthExpr, source := source }
-  termination_by (exprMd, 2)
+  termination_by sizeOf exprMd * 5 + 2
   decreasing_by
-    all_goals (apply Prod.Lex.right; omega)
+    all_goals (omega)
 
 /-- (Decl-Synth, synth mode)
     ```
@@ -3123,9 +3161,8 @@ def Synth.declInfer (exprMd : StmtExprMd)
   let bindTy ← declInferValueType name value'.source valueTy
   let name' ← defineNameCheckDup name (.var name bindTy)
   pure (.Assign [⟨.Declare ⟨name', some bindTy⟩, vs⟩] value', bindTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     simp only [StmtExpr.Assign.sizeOf_spec] at hsz
@@ -3148,9 +3185,8 @@ def Check.declInfer (exprMd : StmtExprMd)
   unless expected.val matches .TVoid do
     checkSubtype source expected bindTy
   pure { val := .Assign [⟨.Declare ⟨name', some bindTy⟩, vs⟩] value', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     simp only [StmtExpr.Assign.sizeOf_spec] at hsz
@@ -3199,9 +3235,8 @@ def Synth.incrDecr (exprMd : StmtExprMd)
       pure ((⟨.Declare ⟨param.name, some ty'⟩, target.source⟩ : VariableMd), ty')
   checkIncrDecrTargetType op target' source
   pure (.IncrDecr mode op target', resultTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     have hsz2 := target.sizeOf_val_lt
@@ -3256,7 +3291,7 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
     | .Field _ fieldName => getVarType fieldName
   let rhs' ← Check.resolveStmtExpr rhs resultTy
   pure (.CompoundAssign op target' rhs', resultTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     -- Two recursive calls, two obligations. `Check rhs` (rhs is a direct subterm)
     -- needs only the CompoundAssign step; `Synth tgt` (the `.Field` arm, where `tgt`
@@ -3264,7 +3299,6 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
     -- This is `Synth.incrDecr`'s proof generalised with `all_goals` to also cover
     -- the rhs obligation, using mainline's `term_by_mem` to close.
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       try (have hsz2 := target.sizeOf_val_lt
@@ -3272,6 +3306,103 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
       term_by_mem
 
 -- ### Calls
+
+/-- STAGES 1–2 of a call to the generic `proc`: bind type parameters from the return position,
+    then resolve each argument against its parameter type as instantiated so far. Returns the
+    resolved arguments, their types, and the stage-1 bindings, for `genericCallResult`.
+
+    `receiver?` pairs `self`'s type with the receiver's, for an instance call resolved in its
+    lifted form: the receiver is then evidence alongside the first group below. -/
+def Synth.genericCallArgs (exprMd : StmtExprMd) (callee : Identifier) (proc : Procedure)
+    (args : List StmtExprMd) (hArgs : ∀ a ∈ args, sizeOf a < sizeOf exprMd)
+    (expected? : Option HighTypeMd) (receiver? : Option (HighTypeMd × HighTypeMd) := none) :
+    ResolveM (List StmtExprMd × List HighTypeMd × Std.HashMap String HighTypeMd) := do
+  -- Two reads of the lattice on purpose. `ctx0` is what stages 1–2 need, before the arguments
+  -- are resolved; `genericCallResult` re-reads it afterwards, because resolving an argument can
+  -- extend the lattice and every subtype/coercion decision downstream must see the final one.
+  -- Reusing the pre-argument lattice there would silently change which coercions get realized.
+  let ctx0 := (← get).typeLattice
+  let inScope := tvarInScope (← get).scope
+  let paramTys := proc.inputs.map (·.type)
+  let retSubst := returnPositionSubst ctx0 callee proc expected?
+  -- STAGE 2 — resolve each argument, handing it its parameter type instantiated by stage 1.
+  -- This is the check direction reaching one level down: the argument of
+  -- `mapConst(mapConst(false))` is declared `V`, and only the outer call's expected type says
+  -- what `V` is, so without this the inner call has nothing to infer `K` from. Each argument is
+  -- still resolved exactly ONCE — the expected type is passed into synthesis rather than checked
+  -- in a second pass — so no diagnostic or `uniqueId` is produced twice.
+  -- Unfolded so an alias-declared slot (`m: Map<K,V>`) hands down the structural type the
+  -- nested call's own inference can match against.
+  let slotAt := fun (subst : Std.HashMap String HighTypeMd) (i : Nat) =>
+    match (paramTys[i]?).map (fun pTy => substTypeVars subst (ctx0.unfold pTy)) with
+    -- A BARE type variable slot is withheld: it carries no structure, so `matchTypeArg` (which
+    -- keys off the declared shape) can bind nothing from it, while handing it down perturbs
+    -- how generated exceptional code resolves. A STRUCTURED slot that merely MENTIONS a
+    -- variable is kept, and must be: `mapRemove<K,V>`'s `update(m, k, $MapAbsent())` has slot
+    -- `$MapEntry V`, which is what tells `$MapAbsent` which datatype to build even though `V`
+    -- is not ground, so the prelude's own bodies resolve only with such slots.
+    | some ⟨.TVar _, _⟩ => none
+    | other => other
+  -- The arguments are resolved in TWO GROUPS, because a slot is only worth having for an
+  -- argument that can use one, and the evidence for that slot lives in the siblings.
+  -- `choose<T>(setEmpty(), known)` determines `T` from `known` alone, and only then is there a
+  -- slot to hand `setEmpty()`. So the arguments that cannot consume a slot go first and their
+  -- bindings extend the working substitution; those that can follow, each seeing everything
+  -- resolved before it. They are the calls, `.InstanceCall` included, which
+  -- `LiftInstanceProcedures` makes a static call, and the wrappers that forward the slot to the
+  -- value they produce, such as an `.IfThenElse` or a `.Block`; the wrappers go first, since
+  -- their type may give a call its slot.
+  --
+  -- An argument whose parameter mentions no type variable is CHECKED against it, as for a
+  -- non-generic callee: inference needs nothing from it, and checking keeps the bidirectional
+  -- push and the coercion a frontend realizes into the parameter. It needs no slot either, so it
+  -- goes in the first group.
+  let concreteParam := fun (i : Nat) => (paramTys[i]?).filter (!mentionsTVar ·.val)
+  let isCall := fun (a : StmtExprMd) => a.val matches .StaticCall .. | .New .. | .InstanceCall ..
+  let forwardsSlot := fun (a : StmtExprMd) =>
+    a.val matches .IfThenElse .. | .Block (_ :: _) _ | .Old .. | .OldGuarantee .. | .OldRelies ..
+      | .ProveBy ..
+  let (deferred, immediate) :=
+    args.attach.zipIdx.partition fun (⟨a, _⟩, i) =>
+      (isCall a || forwardsSlot a) && (concreteParam i).isNone
+  let deferred := deferred.filter (!isCall ·.1.1) ++ deferred.filter (isCall ·.1.1)
+  let resolvedImmediate ← immediate.mapM (fun (⟨a, hMem⟩, i) => do
+    have := hMem
+    match concreteParam i with
+    | some pTy => return (i, ← Check.resolveStmtExpr a pTy, pTy)
+    | none =>
+      let (a', aTy) ← Synth.resolveStmtExpr a
+      return (i, a', aTy))
+  -- Their evidence merged OVER `retSubst`, matching stage 3: an argument is direct evidence and
+  -- outranks the expected type. Conflicts are dropped here — `genericCallResult` recomputes them
+  -- over all the arguments, and reporting them twice would duplicate the diagnostic.
+  --
+  -- So is a deferred call's declared result, which is known before the call is resolved:
+  -- `choose(setEmpty(), getS())` needs it to type `setEmpty()`. An instance call's counts too, as
+  -- it will once the lift makes it a static call.
+  let declared ← deferred.filterMapM fun (⟨a, _⟩, i) => do
+    pure ((← declaredCallResult? a).bind fun ty => (paramTys[i]?).map (·, ty))
+  let mut working : Std.HashMap String HighTypeMd := retSubst
+  let evidence : List (HighTypeMd × HighTypeMd) := receiver?.toList ++ declared ++
+    resolvedImmediate.filterMap fun (i, _, aTy) => (paramTys[i]?).map (fun pTy => (pTy, aTy))
+  working := (callSiteTypeSubst ctx0 inScope (evidence.map (·.1)) (evidence.map (·.2))).1.fold
+    (fun acc name ty => acc.insert name ty) working
+  let mut resolvedDeferred : List (Nat × StmtExprMd × HighTypeMd) := []
+  for (⟨a, hMem⟩, i) in deferred do
+    have := hMem
+    let (a', aTy) ← Synth.resolveStmtExpr a (slotAt working i)
+    resolvedDeferred := resolvedDeferred ++ [(i, a', aTy)]
+    if let some pTy := paramTys[i]? then
+      working := (callSiteTypeSubst ctx0 inScope [pTy] [aTy]).1.fold
+        (fun acc name ty => acc.insert name ty) working
+  -- Back to SOURCE ORDER: `genericCallResult` index-zips against `paramTys`.
+  let resolvedByIdx := resolvedImmediate ++ resolvedDeferred
+  let resolved : List (StmtExprMd × HighTypeMd) :=
+    (List.range args.length).filterMap fun i =>
+      (resolvedByIdx.find? (·.1 == i)).map (fun (_, a', aTy) => (a', aTy))
+  return (resolved.map (·.1), resolved.map (·.2), retSubst)
+  termination_by sizeOf exprMd * 5 + 0
+  decreasing_by all_goals (have := hArgs _ ‹_ ∈ args›; omega)
 
 /-- Cases on the arity of the callee's declared outputs.
     ```
@@ -3426,11 +3557,12 @@ def Synth.staticCall (exprMd : StmtExprMd)
   -- Runs AFTER overload selection: `scope` keeps only the last definition of an overloaded
   -- name, so an overloaded generic must go through `selectOverloads` above, not this lookup.
   --
-  -- Arguments are SYNTHESIZED rather than checked against their declared types, because
-  -- inference needs the actual types before the expected ones are known. That gives up the
-  -- bidirectional push for generic calls (an impure-expression argument bottoms out at the
-  -- synth wildcard instead of its own check rule), the same trade the overload path makes.
-  -- Coercions lose nothing: a `.TVar` parameter coerces as `refl`.
+  -- Arguments are SYNTHESIZED rather than checked when their parameter mentions a type variable,
+  -- because inference needs their actual types before the expected ones are known. That gives up
+  -- the bidirectional push for them (an impure-expression argument bottoms out at the synth
+  -- wildcard instead of its own check rule), the same trade the overload path makes; a `.TVar`
+  -- parameter loses no coercion, since it coerces as `refl`. Other arguments are checked, as for
+  -- a non-generic callee.
   let genericProc? : Option Procedure := match (← get).scope.get? callee.text with
     | some (_, .staticProcedure proc) | some (_, .instanceProcedure _ proc) =>
       if proc.typeArgs.isEmpty then none else some proc
@@ -3438,72 +3570,8 @@ def Synth.staticCall (exprMd : StmtExprMd)
   if let some gproc := genericProc? then
     let callee' ← resolveRef callee source
       (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
-    -- Two reads of the lattice on purpose. `ctx0` is what stages 1–2 need, before the arguments
-    -- are resolved; `genericCallResult` re-reads it afterwards, because resolving an argument can
-    -- extend the lattice and every subtype/coercion decision downstream must see the final one.
-    -- Reusing the pre-argument lattice there would silently change which coercions get realized.
-    let ctx0 := (← get).typeLattice
-    let inScope := tvarInScope (← get).scope
-    let paramTys := gproc.inputs.map (·.type)
-    let retSubst := returnPositionSubst ctx0 callee gproc expected?
-    -- STAGE 2 — resolve each argument, handing it its parameter type instantiated by stage 1.
-    -- This is the check direction reaching one level down: the argument of
-    -- `mapConst(mapConst(false))` is declared `V`, and only the outer call's expected type says
-    -- what `V` is, so without this the inner call has nothing to infer `K` from. Each argument is
-    -- still resolved exactly ONCE — the expected type is passed into synthesis rather than checked
-    -- in a second pass — so no diagnostic or `uniqueId` is produced twice.
-    -- Unfolded so an alias-declared slot (`m: Map<K,V>`) hands down the structural type the
-    -- nested call's own inference can match against.
-    let slotAt := fun (subst : Std.HashMap String HighTypeMd) (i : Nat) =>
-      match (paramTys[i]?).map (fun pTy => substTypeVars subst (ctx0.unfold pTy)) with
-      -- A BARE type variable slot is withheld: it carries no structure, so `matchTypeArg` (which
-      -- keys off the declared shape) can bind nothing from it, while handing it down perturbs
-      -- how generated exceptional code resolves. A STRUCTURED slot that merely MENTIONS a
-      -- variable is kept, and must be: `mapRemove<K,V>`'s `update(m, k, $MapAbsent())` has slot
-      -- `$MapEntry V`, which is what tells `$MapAbsent` which datatype to build even though `V`
-      -- is not ground. Withholding those made the prelude's own bodies unresolvable.
-      | some ⟨.TVar _, _⟩ => none
-      | other => other
-    -- The arguments are resolved in TWO GROUPS, because a slot is only worth having for an
-    -- argument that can use one, and the evidence for that slot lives in the siblings.
-    -- `choose<T>(setEmpty(), known)` determines `T` from `known` alone, and only then is there a
-    -- slot to hand `setEmpty()`. So the arguments that cannot consume a slot go first and their
-    -- bindings extend the working substitution; the nested generic calls follow and each sees
-    -- everything resolved before it. Kept to `.StaticCall`/`.New` on purpose: a call buried in an
-    -- `.IfThenElse` or `.Block` would need the slot pushed through those too.
-    -- Still exactly ONE resolution per argument — nothing is resolved again for a better slot.
-    let (deferred, immediate) :=
-      args.attach.zipIdx.partition fun (⟨a, _⟩, _) =>
-        a.val matches .StaticCall .. | .New ..
-    let resolvedImmediate ← immediate.mapM (fun (⟨a, hMem⟩, i) => do
-      have := hMem
-      let (a', aTy) ← Synth.resolveStmtExpr a (slotAt retSubst i)
-      return (i, a', aTy))
-    -- Their evidence merged OVER `retSubst`, matching stage 3: an argument is direct evidence and
-    -- outranks the expected type. Conflicts are dropped here — `genericCallResult` recomputes them
-    -- over all the arguments, and reporting them twice would duplicate the diagnostic.
-    let mut working : Std.HashMap String HighTypeMd := retSubst
-    let immediatePairs : List (HighTypeMd × HighTypeMd) :=
-      resolvedImmediate.filterMap fun (i, _, aTy) => (paramTys[i]?).map (fun pTy => (pTy, aTy))
-    working := (callSiteTypeSubst ctx0 inScope (immediatePairs.map (·.1))
-        (immediatePairs.map (·.2))).1.fold
-      (fun acc name ty => acc.insert name ty) working
-    let mut resolvedDeferred : List (Nat × StmtExprMd × HighTypeMd) := []
-    for (⟨a, hMem⟩, i) in deferred do
-      have := hMem
-      let (a', aTy) ← Synth.resolveStmtExpr a (slotAt working i)
-      resolvedDeferred := resolvedDeferred ++ [(i, a', aTy)]
-      if let some pTy := paramTys[i]? then
-        working := (callSiteTypeSubst ctx0 inScope [pTy] [aTy]).1.fold
-          (fun acc name ty => acc.insert name ty) working
-    -- Back to SOURCE ORDER: the guards below and `genericCallResult` both index-zip against
-    -- `paramTys`.
-    let resolvedByIdx := resolvedImmediate ++ resolvedDeferred
-    let resolved : List (StmtExprMd × HighTypeMd) :=
-      (List.range args.length).filterMap fun i =>
-        (resolvedByIdx.find? (·.1 == i)).map (fun (_, a', aTy) => (a', aTy))
-    let args' := resolved.map (·.1)
-    let argTys := resolved.map (·.2)
+    let (args', argTys, retSubst) ← Synth.genericCallArgs exprMd callee gproc args
+      (fun _ hMem => by have hsz := exprMd.sizeOf_val_lt; rw [h] at hsz; term_by_mem) expected?
     -- OPERAND SHAPE guards for the equality wrappers. These are not typing rules — no signature
     -- can express them — so they live here rather than in the inference: a `MultiValuedExpr`
     -- operand is a multi-output call used in value position, an internal pseudo-type with no
@@ -3746,13 +3814,13 @@ def Synth.staticCall (exprMd : StmtExprMd)
         s!"call to '{callee}' expects {arity} argument(s) but {args.length} were provided"
       modify fun s => { s with errors := s.errors.push diag }
   pure (.StaticCall callee' args' [], retTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    all_goals
-      apply Prod.Lex.left
-      have hsz := exprMd.sizeOf_val_lt
-      rw [h] at hsz
-      term_by_mem
+    all_goals first
+      | omega
+      | (have hsz := exprMd.sizeOf_val_lt
+         rw [h] at hsz
+         term_by_mem)
 
 /-- Cases on the arity of the callee's declared outputs.
     ```
@@ -3782,6 +3850,14 @@ def Synth.staticCall (exprMd : StmtExprMd)
     `Synth.staticCall`, the push is bidirectional so block- and
     conditional-shaped arguments route through their own check rules.
 
+    **Generic composites and methods.** A method of a generic composite, or a generic
+    method, is resolved instead the way `Synth.staticCall`'s generic path will resolve the
+    static call `Owner$m(obj, args)` that `LiftInstanceProcedures` turns it into. Only its
+    errors differ: where that call is rejected, what the receiver binds a type parameter to is
+    kept, so that a mismatched argument is the one blamed (on a `Box<int>`, `mix(true, 5)`
+    reports `true`, not a conflict over `T`). A method that redeclares a type parameter of its
+    composite follows the rules above.
+
     **Ambiguity.** With no single most-specific declarer
     (`MemberResolution.ambiguous`) the call reports the ambiguity and stops, typed
     `Unknown`, binding no candidate: binding one would propagate a return type that
@@ -3790,7 +3866,8 @@ def Synth.staticCall (exprMd : StmtExprMd)
 def Synth.instanceCall (exprMd : StmtExprMd)
     (target : StmtExprMd) (callee : Identifier) (args : List StmtExprMd)
     (source : FileRange)
-    (h : exprMd.val = .InstanceCall target callee args) :
+    (h : exprMd.val = .InstanceCall target callee args)
+    (expected? : Option HighTypeMd := none) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', targetTy) ← Synth.resolveStmtExpr target
   -- An instance procedure is registered under the container-scoped key
@@ -3825,9 +3902,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
       -- refines its parent's contract (Parent.pre ⇒ Child.pre, Child.post ⇒ Parent.post), so
       -- the parent contract bound here holds for whatever override dispatch selects. (jverify
       -- enforces its own monomorphism check on its side.)
-      let s ← get
-      let declares := fun n => s.scope.contains (containerScopedName (mkId n) callee).text
-      match s.typeLattice.resolveInheritedMember tyName declares with
+      match ← methodDeclarer tyName callee with
       | .resolved owner => pure (containerScopedName (mkId owner) callee)
       | .ambiguous candidates =>
         let names := String.intercalate ", " candidates
@@ -3857,7 +3932,6 @@ def Synth.instanceCall (exprMd : StmtExprMd)
   -- Preserve the user-facing callee text for diagnostics; only stamp the
   -- resolved `uniqueId` from the container-scoped lookup.
   let callee' := { callee with uniqueId := resolved.uniqueId }
-  let (retTy, paramTypes) ← getCallInfo lookupKey
   -- The callee resolves to either an instance- or a static-procedure. An
   -- instance procedure's first parameter is the implicit `self` receiver,
   -- which is not supplied positionally here, so it must be dropped before
@@ -3865,9 +3939,31 @@ def Synth.instanceCall (exprMd : StmtExprMd)
   -- on this path) has no `self`, so all its parameters are real and none may
   -- be dropped. We distinguish the two by the same scope lookup `getCallInfo`
   -- uses.
-  let dropSelf : Bool := match (← get).scope.get? lookupKey.text with
-    | some (_, .instanceProcedure ..) => true
-    | _ => false
+  let method? : Option (Identifier × Procedure) := match (← get).scope.get? lookupKey.text with
+    | some (_, .instanceProcedure owner proc) => some (owner, proc)
+    | _ => none
+  let dropSelf := method?.isSome
+  -- The receiver is the lifted call's first argument, with `self` its parameter. Not for a method
+  -- that redeclares a type parameter of its composite: the re-resolution after the lift reports
+  -- that clash as a duplicate definition.
+  if let some (owner, proc) := method? then
+    let ownerParams := match (← get).scope.get? owner.text with
+      | some (_, .compositeType ct) => ct.typeArgs
+      | _ => []
+    if let self :: params := proc.inputs then
+      if (!ownerParams.isEmpty || !proc.typeArgs.isEmpty)
+          && !proc.typeArgs.any (fun tv => ownerParams.any (·.text == tv.text)) then
+        let receiver? := some (self.type, targetTy)
+        let proc := { proc with inputs := params }
+        let (args', argTys, retSubst) ← Synth.genericCallArgs exprMd callee proc args
+          (fun _ hMem => by have hsz := exprMd.sizeOf_val_lt; rw [h] at hsz; term_by_mem) expected?
+          receiver?
+        let (_, ty) ← genericCallResult callee callee' proc args' argTys expected? retSubst source
+          receiver?
+        -- An `.InstanceCall` has no slot for the inferred type arguments; the re-resolution after
+        -- `LiftInstanceProcedures` records them on the static call it becomes.
+        return (.InstanceCall target' callee' args', ty)
+  let (retTy, paramTypes) ← getCallInfo lookupKey
   let callParamTypes :=
     if dropSelf then (match paramTypes with | _ :: rest => rest | [] => [])
     else paramTypes
@@ -3891,13 +3987,13 @@ def Synth.instanceCall (exprMd : StmtExprMd)
         s!"call to '{callee}' expects {arity} argument(s) but {args.length} were provided"
       modify fun s => { s with errors := s.errors.push diag }
   pure (.InstanceCall target' callee' args', retTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    all_goals
-      apply Prod.Lex.left
-      have hsz := exprMd.sizeOf_val_lt
-      rw [h] at hsz
-      term_by_mem
+    all_goals first
+      | omega
+      | (have hsz := exprMd.sizeOf_val_lt
+         rw [h] at hsz
+         term_by_mem)
 
 
 -- ### Object forms
@@ -4069,9 +4165,8 @@ def Synth.asType (exprMd : StmtExprMd)
       s!"cannot cast unrelated type '{formatType targetTy}' to '{formatType ty'}'"
     modify fun s => { s with errors := s.errors.push diag }
   pure (.AsType target' ty', ty')
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4113,9 +4208,8 @@ def Synth.isType (exprMd : StmtExprMd)
         s!"cannot test unrelated type '{formatType targetTy}' against '{formatType ty'}'"
       modify fun s => { s with errors := s.errors.push diag }
   pure (.IsType target' ty', { val := .TBool, source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4154,10 +4248,9 @@ def Synth.refEq (exprMd : StmtExprMd) (expr : StmtExpr)
       s!"'{expr.constrName}' operands have incompatible types '{formatType lhsTy}' and '{formatType rhsTy}'"
     modify fun s => { s with errors := s.errors.push diag }
   pure (.ReferenceEquals lhs' rhs', { val := .TBool, source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -4184,10 +4277,9 @@ def Synth.pureFieldUpdate (exprMd : StmtExprMd)
   let fieldTy ← concretizeFieldType targetTy fieldName'
   let newVal' ← Check.resolveStmtExpr newVal fieldTy
   pure (.PureFieldUpdate target' fieldName' newVal', targetTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -4217,10 +4309,9 @@ def Synth.quantifier (exprMd : StmtExprMd)
       let (e', _) ← Synth.resolveStmtExpr pv.val; pure e')
     let body' ← Check.resolveStmtExpr body { val := .TBool, source := body.source }
     pure (.Quantifier mode ⟨paramName', paramTy'⟩ trigger' body', { val := .TBool, source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -4251,9 +4342,8 @@ def Synth.assigned (exprMd : StmtExprMd)
     ResolveM (StmtExpr × HighTypeMd) := do
   let (name', _) ← Synth.resolveStmtExpr name
   pure (.Assigned name', { val := .TBool, source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4283,9 +4373,8 @@ def Check.old (exprMd : StmtExprMd)
     ResolveM StmtExprMd := do
   let val' ← Check.resolveStmtExpr val expected
   pure { val := .Old val' label?, source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4297,9 +4386,8 @@ def Check.oldGuarantee (exprMd : StmtExprMd)
     ResolveM StmtExprMd := do
   let val' ← Check.resolveStmtExpr val expected
   pure { val := .OldGuarantee val', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4311,9 +4399,8 @@ def Check.oldRelies (exprMd : StmtExprMd)
     ResolveM StmtExprMd := do
   let val' ← Check.resolveStmtExpr val expected
   pure { val := .OldRelies val', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4347,9 +4434,8 @@ def Synth.old (exprMd : StmtExprMd)
   let _ := source
   let (val', valTy) ← Synth.resolveStmtExpr val expected?
   pure (.Old val' label?, valTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4366,9 +4452,8 @@ def Synth.oldGuarantee (exprMd : StmtExprMd)
   let _ := source
   let (val', valTy) ← Synth.resolveStmtExpr val expected?
   pure (.OldGuarantee val', valTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4384,9 +4469,8 @@ def Synth.oldRelies (exprMd : StmtExprMd)
   let _ := source
   let (val', valTy) ← Synth.resolveStmtExpr val expected?
   pure (.OldRelies val', valTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4411,9 +4495,8 @@ def Synth.fresh (exprMd : StmtExprMd) (expr : StmtExpr)
   unless isReference (← get).typeLattice valTy do
     typeMismatch val'.source (some expr) "expected a reference type" valTy
   pure (.Fresh val', { val := .TBool, source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -4509,10 +4592,9 @@ def Synth.resume (exprMd : StmtExprMd)
     | some proc => proc.yields.head?.map (·.type) |>.getD { val := .TVoid, source := source }
     | none => { val := .Unknown, source := source }
   pure (.Resume target' value', { yieldTy with source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       simp only [StmtExpr.Resume.sizeOf_spec] at hsz
@@ -4527,9 +4609,8 @@ def Synth.hasNext (exprMd : StmtExprMd)
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', _) ← Synth.resolveStmtExpr target
   pure (.HasNext target', { val := .TBool, source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     simp only [StmtExpr.HasNext.sizeOf_spec] at hsz
@@ -4553,10 +4634,9 @@ def Check.proveBy (exprMd : StmtExprMd)
   let val' ← Check.resolveStmtExpr val expected
   let (proof', _) ← Synth.resolveStmtExpr proof
   pure { val := .ProveBy val' proof', source := source }
-  termination_by (exprMd, 0)
+  termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -4586,10 +4666,9 @@ def Synth.proveBy (exprMd : StmtExprMd)
   let (val', valTy) ← Synth.resolveStmtExpr val expected?
   let (proof', _) ← Synth.resolveStmtExpr proof
   pure (.ProveBy val' proof', valTy)
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
-      apply Prod.Lex.left
       have hsz := exprMd.sizeOf_val_lt
       rw [h] at hsz
       term_by_mem
@@ -4709,9 +4788,8 @@ def Synth.contractOf (exprMd : StmtExprMd)
     | .Precondition | .PostCondition | .Relies | .Guarantees => .TBool
     | .Reads | .Modifies => .TSet { val := .Unknown, source := fn.source }
   pure (.ContractOf ty fn', { val := resultTy, source := source })
-  termination_by (exprMd, 1)
+  termination_by sizeOf exprMd * 5 + 1
   decreasing_by
-    apply Prod.Lex.left
     have hsz := exprMd.sizeOf_val_lt
     rw [h] at hsz
     term_by_mem
@@ -6229,6 +6307,27 @@ private def mentionsInout (inoutNames : List String) (e : StmtExprMd) : Bool :=
     | .Var (.Local name) => inoutNames.contains name.text
     | _ => false) e
 
+/-- UniqueIds of the inputs the body assigns to (`assignedLocalIds`, shared with
+    `CopyMutatedInputs`). Inside the BODY, `x` then reads the live value (the
+    pass redirects it to a mutable copy) while `old(x)` keeps the entry value, so
+    a body `old` over such an input is meaningful even in a heap-free procedure. -/
+private def bodyAssignedInputIds (proc : Procedure) : Std.HashSet Nat :=
+  match proc.body.implementation with
+  | none => {}
+  | some body =>
+    let assigned := assignedLocalIds body
+    proc.inputs.foldl (fun acc p =>
+      match p.name.uniqueId with
+      | some uid => if assigned.contains uid then acc.insert uid else acc
+      | none => acc) {}
+
+/-- True when `e` references an input the body assigns (see
+    `bodyAssignedInputIds`). -/
+private def mentionsMutatedInput (mutatedIds : Std.HashSet Nat) (e : StmtExprMd) : Bool :=
+  anyStmtExpr (fun n => match n.val with
+    | .Var (.Local name) => name.uniqueId.any mutatedIds.contains
+    | _ => false) e
+
 /-- Collect no-op `old(...)` warnings for one procedure. `writesHeap` says
     whether the enclosing procedure (transitively) writes the heap.
 
@@ -6243,6 +6342,11 @@ private def mentionsInout (inoutNames : List String) (e : StmtExprMd) : Bool :=
     output value is the post-state (see the language definition), so `old(x)`
     over an inout `x` is meaningful regardless of heap effects.
 
+    An input the body assigns matters for a BODY `old` only: there `x` reads the
+    live value while `old(x)` keeps the entry value. In a specification a bare
+    `x` already denotes the entry value, so `old(x)` is a no-op there and keeps
+    its warning.
+
     Additionally, any `old` nested inside another `old` is redundant. These are
     the warnings `PushOldInward` used to emit; they live here so resolution is
     the single source of user-program diagnostics. The two notions stay in sync
@@ -6253,12 +6357,14 @@ private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Boo
   match procInoutNames proc with
   | .error e => [Message.fromString e .strataBug]
   | .ok inoutNames =>
-  let visit (n : StmtExprMd) : StateM (List Message) (Option StmtExprMd) := do
+  let mutatedInputIds := bodyAssignedInputIds proc
+  let visit (inBody : Bool) (n : StmtExprMd) : StateM (List Message) (Option StmtExprMd) := do
     match n.val with
     | .Old inner _ =>
       -- Warn on any `old` nested within this one's operand.
       modify (· ++ nestedOldWarnings inner)
       let refsInout := mentionsInout inoutNames inner
+        || (inBody && mentionsMutatedInput mutatedInputIds inner)
       if !writesHeap && !refsInout then
         modify (· ++ [diagnosticFromSource n.source
           "`old(...)` has no effect: the enclosing procedure does not modify the heap" .warning])
@@ -6275,10 +6381,23 @@ private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Boo
   -- changed between yields, so "the enclosing procedure does not modify the heap"
   -- is not a reason for it to have no effect.
   ((do
-    let proc ← mapProcedureBodiesM (m := StateM (List Message))
-      (fun e => mapStmtExprPrePostM visit pure e) proc
+    -- Only the implementation is an in-body position; an opaque body's
+    -- postconditions and modifies groups are specifications, even though
+    -- `mapProcedureBodiesM` walks them together with the body.
+    if let some impl := proc.body.implementation then
+      let _ ← mapStmtExprPrePostM (visit true) pure impl
+    for c in proc.body.postconditions do
+      let _ ← mapStmtExprPrePostM (visit false) pure c.condition
+    match proc.body with
+    | .Opaque _ _ mods =>
+      for g in mods do
+        for t in g.targets do
+          let _ ← mapStmtExprPrePostM (m := StateM (List Message)) (visit false) pure t
+        if let some gd := g.guard then
+          let _ ← mapStmtExprPrePostM (visit false) pure gd
+    | _ => pure ()
     mapProcedureSpecificationsM (m := StateM (List Message))
-      (fun e => mapStmtExprPrePostM visit pure e) proc) |>.run []).2
+      (fun e => mapStmtExprPrePostM (visit false) pure e) proc) |>.run []).2
 
 /-- Diagnose no-op `old(...)` usage across a program. This is a property of the
     user's *source* program (it does not depend on the heap-parameterized form),

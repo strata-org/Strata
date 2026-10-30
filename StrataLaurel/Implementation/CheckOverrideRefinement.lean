@@ -112,8 +112,14 @@ def refinementCheckers (model : SemanticModel) (childTypeName : Identifier)
   -- re-resolution folds into an internal `.strataBug`, MASKING the clean diagnostic. Skip it
   -- here (using the SAME `outputSignatureCompatible` relation `validateDispatchFamilies` rejects
   -- on, so the skip and the reject stay in lockstep) and let the dedicated check report it.
+  -- Likewise one on a composite that does not repeat a generic parent's type parameters
+  -- (`renamesBaseTypeParams`, its RENAMED-TYPE-PARAMS reject).
+  let parentTypeArgs := match model.get parentTypeName with
+    | .compositeType ct => ct.typeArgs
+    | _ => []
   if parent.inputs.length != child.inputs.length
-     || ! outputSignatureCompatible model parent child then []
+     || ! outputSignatureCompatible model parent child
+     || renamesBaseTypeParams parentTypeArgs childTypeArgs then []
   else
   let src := child.name.source
   -- Qualify every synthesized checker name by the PARENT type, so a method overriding

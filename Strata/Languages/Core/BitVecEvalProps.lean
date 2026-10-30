@@ -93,7 +93,6 @@ def bvXor (width : Nat) : Lambda.WFLFunc CoreLParams :=
 
 /-! ## `Bv16` factory membership used by compatibility wrappers -/
 
-set_option maxRecDepth 8000 in
 /-- `Bv16.ULe` resolves in the concrete `Core.Factory` to `bv16ULeFunc`. -/
 private theorem coreFactory_bv16ULe :
     Core.Factory["Bv16.ULe"]? = some bv16ULeFunc.func := by
@@ -102,15 +101,15 @@ private theorem coreFactory_bv16ULe :
       = Lambda.Factory.ofArray (WFFactoryArray.map (·.func)) := rfl
   have hmem : bv16ULeFunc.func ∈ WFFactoryArray.map (·.func) := by
     refine Array.mem_map.mpr ⟨bv16ULeFunc, ?_, rfl⟩
+    rw [Array.mem_def]
     unfold WFFactoryArray
-    simp only [Array.mem_def, Array.toList_appendList, List.mem_append, List.mem_cons]
-    grind
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail)
   have hnodup : List.Nodup ((WFFactoryArray.map (·.func)).toList.map (·.name.name)) :=
     WFFactoryArray_func_name_nodup
   rw [hCoreFactory, ← hname]
   exact Lambda.Factory.get?_ofArray_of_mem hmem hnodup
 
-set_option maxRecDepth 8000 in
 /-- `Bv16.And` resolves to its generated function in `Core.Factory`. -/
 private theorem coreFactory_bv16And :
     Core.Factory["Bv16.And"]? = some bv16AndFunc.func := by
@@ -118,15 +117,15 @@ private theorem coreFactory_bv16And :
       = Lambda.Factory.ofArray (WFFactoryArray.map (·.func)) := rfl
   have hmem : bv16AndFunc.func ∈ WFFactoryArray.map (·.func) := by
     refine Array.mem_map.mpr ⟨bv16AndFunc, ?_, rfl⟩
+    rw [Array.mem_def]
     unfold WFFactoryArray
-    simp only [Array.mem_def, Array.toList_appendList, List.mem_append, List.mem_cons]
-    grind
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail)
   have hnodup : List.Nodup ((WFFactoryArray.map (·.func)).toList.map (·.name.name)) :=
     WFFactoryArray_func_name_nodup
   rw [hCoreFactory]
   exact Lambda.Factory.get?_ofArray_of_mem hmem hnodup
 
-set_option maxRecDepth 8000 in
 /-- `Bv16.Xor` resolves to its generated function in `Core.Factory`. -/
 private theorem coreFactory_bv16Xor :
     Core.Factory["Bv16.Xor"]? = some bv16XorFunc.func := by
@@ -134,9 +133,10 @@ private theorem coreFactory_bv16Xor :
       = Lambda.Factory.ofArray (WFFactoryArray.map (·.func)) := rfl
   have hmem : bv16XorFunc.func ∈ WFFactoryArray.map (·.func) := by
     refine Array.mem_map.mpr ⟨bv16XorFunc, ?_, rfl⟩
+    rw [Array.mem_def]
     unfold WFFactoryArray
-    simp only [Array.mem_def, Array.toList_appendList, List.mem_append, List.mem_cons]
-    grind
+    simp only [Array.toList_appendList]
+    repeat (first | exact List.Mem.head _ | apply List.Mem.tail)
   have hnodup : List.Nodup ((WFFactoryArray.map (·.func)).toList.map (·.name.name)) :=
     WFFactoryArray_func_name_nodup
   rw [hCoreFactory]
@@ -211,7 +211,6 @@ private theorem eval_bvPredicate_value
   simp [Lambda.LExpr.combineEvalResValueFlag_eq_pair,
     Lambda.LExpr.EvalResult.combineValueFlag]
 
-set_option maxRecDepth 8000 in
 private theorem eval_bvBinary_value
     (width : Nat) (name : CoreIdent)
     (op : BitVec width → BitVec width → BitVec width)

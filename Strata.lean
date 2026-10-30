@@ -53,6 +53,7 @@ import Strata.Transform.LoopInitHoist
 import Strata.Transform.LoopInitHoistCorrect
 import Strata.Transform.NondetElim
 import Strata.Transform.NondetElimCorrect
+import Strata.Transform.NondetElimCoreCorrect
 import Strata.Transform.NondetElimProps
 import Strata.Transform.ProcBodyVerifyCorrect
 import Strata.Transform.Simplify

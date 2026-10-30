@@ -319,7 +319,7 @@ private theorem dd_defUse (fs : Expression.Ident → Bool) : ∀ (live : List Ex
     simp only [Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts, Statement.isNotCall,
       Bool.true_and] at hnc
     simp only [Block.defUseWellFormed, Bool.and_eq_true, Stmt.definedVars,
-      HasVarsImp.definedVars, Command.definedVars] at h
+      HasVarsImp.definedVars] at h
     obtain ⟨hc, hr⟩ := h
     have hcI : ∀ n, n ∈ Cmd.getVars c ∨ n ∈ Cmd.modifiedVars c ∨ n ∈ Cmd.definedVars c →
         n ∈ Stmt.idents (P := Expression) (.cmd (.cmd c)) := by
@@ -335,16 +335,15 @@ private theorem dd_defUse (fs : Expression.Ident → Bool) : ∀ (live : List Ex
       rcases Bool.or_eq_true_iff.1 hn with hd | hd
       · exact h2 n hd hk
       · rcases c with ⟨x, _, _, _⟩ | _ | _ | _ | _ <;>
-          simp_all [erasable, Cmd.definedVars]
+          simp_all [erasable, CmdExt.definedVars, Cmd.definedVars]
     · next he =>
       rw [ite_eq_right he] at h2
       simp only [Block.defUseWellFormed, Bool.and_eq_true, Stmt.definedVars,
-        HasVarsImp.definedVars, Command.definedVars]
+        HasVarsImp.definedVars]
       refine ⟨?_, dd_defUse fs live rest _ _ hss hnc hr (fun n hn => by
         rcases Bool.or_eq_true_iff.1 hn with hd | hd <;> simp [h1 n, hd]) fun n hn hk => ?_⟩
       · simp only [Stmt.defUseWellFormed, HasVarsImp.readVars, HasVarsImp.modifiedVars,
-          HasVarsImp.definedVars, Command.getVars, Command.modifiedVars, Command.definedVars,
-          Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at hc ⊢
+          HasVarsImp.definedVars, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at hc ⊢
         obtain ⟨⟨⟨hrd, hmd⟩, hdf⟩, hop⟩ := hc
         refine ⟨⟨⟨fun n hn => ?_, fun n hn => ?_⟩, fun n hn hd => hdf n hn (h1 n hd)⟩, hop⟩
         · exact h2 n (hrd n hn) (by simp [Block.idents, hcI n (.inl hn)])

@@ -256,6 +256,24 @@ private def dummyObligation : Imperative.ProofObligation Core.Expression :=
 #guard (satResult.adjustForPhases [] dummyObligation).1 == satResult
 #guard (satResult.adjustForPhases [] dummyObligation).2 == []
 
+/-- The validity verdict after `validateModels` for an unknown with a model,
+    with or without axioms dropped by `directed` pruning. -/
+private def validityAfterValidation (phases : List AbstractedPhase)
+    (axiomsDropped : Bool) : Option Result :=
+  let o : VCOutcome :=
+    { satisfiabilityProperty := .unknown none,
+      validityProperty := unknownResult,
+      axiomsDropped := axiomsDropped }
+  let r : VCResult := { obligation := dummyObligation, outcome := .ok o }
+  match (r.validateModels phases).outcome with
+  | .ok o => some o.validityProperty
+  | .error _ => none
+
+-- validateModels: an accepted model stays unknown when axioms were dropped
+#guard validityAfterValidation [acceptingPhase] true == some unknownResult
+-- validateModels: an accepted model becomes sat when none were dropped
+#guard validityAfterValidation [acceptingPhase] false == some satResult
+
 /-! ### Combined and front-end phase validation tests -/
 
 /-- Obligation with call-elimination labels in path conditions. -/

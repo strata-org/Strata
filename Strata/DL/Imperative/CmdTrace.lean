@@ -78,6 +78,14 @@ themselves; their property proofs live in
 @[expose] def Event.condition {P : PureExpr} : Event P → EventArg P
   | .assert condition | .assume condition | .cover condition => condition
 
+/-- Lift a relation on captured event arguments to events of the same kind. -/
+@[expose] def Event.Matches {P : PureExpr}
+    (ArgRel : EventArg P → EventArg P → Prop) : Event P → Event P → Prop
+  | .assert source, .assert target => ArgRel source target
+  | .assume source, .assume target => ArgRel source target
+  | .cover source, .cover target => ArgRel source target
+  | _, _ => False
+
 /-- An event may stutter when it is an assumption or assertion whose captured
 condition evaluates to true. Covers remain observable even when their condition
 is true. -/
@@ -100,11 +108,8 @@ fields are unchanged and its target-only register bindings satisfy `Extra`. -/
 /-- Events correspond under environment extension when they have the same kind
 and their captured arguments correspond under `EventArg.ExtendsEnv`. -/
 @[expose] def Event.ExtendsEnv {P : PureExpr} (Extra : P.Ident → Prop) :
-    Event P → Event P → Prop
-  | .assert source, .assert target => source.ExtendsEnv Extra target
-  | .assume source, .assume target => source.ExtendsEnv Extra target
-  | .cover source, .cover target => source.ExtendsEnv Extra target
-  | _, _ => False
+    Event P → Event P → Prop :=
+  Event.Matches (EventArg.ExtendsEnv Extra)
 
 end -- public section
 end Imperative

@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 /-! # Successful completion of monadic computations
 
 `MonadIsSuccess m` says which values a computation in `m` can complete

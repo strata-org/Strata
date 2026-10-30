@@ -105,67 +105,6 @@ theorem DTyped.projectStore {P : PureExpr} [HasVal P]
   show (if (ρ_parent.store y).isSome then ρ_body.store y else none) = some prevB
   rw [ite_eq_left hsome]; exact hB
 
-/-! ## Typed-slot preservation through a single command.
-
-The hoisted `set` premise (`valueOfStoredTy`) only forces the new value to SHARE a
-type with the old one; `valueOfTy_congr` (from `LawfulHasVal`) then transfers the
-old slot's declared type to the new value, so a slot keeps its recorded type across
-any command that writes it. -/
-
-/-- `InitState` preserves a typed slot: the init target starts `none`, so it cannot
-be the (already-defined) slot `y`, whose value is left untouched. -/
-theorem InitState_typedAt {P : PureExpr} [HasVal P] [DecidableEq P.Ident]
-    {f : P.Factory} {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Expr} {y : P.Ident} {ty : P.Ty}
-    (h : InitState P σ x v σ')
-    (hy : ∃ prev, σ y = some prev ∧ HasVal.valueOfTy f prev ty) :
-    ∃ prev, σ' y = some prev ∧ HasVal.valueOfTy f prev ty := by
-  obtain ⟨prev, hprev, hprev_ty⟩ := hy
-  cases h with
-  | init h_xn h_xv h_other =>
-    by_cases hxy : x = y
-    · subst hxy; rw [h_xn] at hprev; exact absurd hprev (by simp)
-    · rw [h_other y hxy]; exact ⟨prev, hprev, hprev_ty⟩
-
-/-- `UpdateState` (a `set`/`havoc`), together with its typed-store premise,
-preserves a typed slot: an untouched slot is unchanged; the written slot receives a
-value that shares the old value's type, and `valueOfTy_congr` carries the recorded
-type across. -/
-theorem UpdateState_typedAt {P : PureExpr} [HasVal P] [LawfulHasVal P]
-    [DecidableEq P.Ident]
-    {f : P.Factory} {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Expr} {y : P.Ident} {ty : P.Ty}
-    (h : UpdateState P σ x v σ')
-    (hstored : HasVal.valueOfStoredTy (P := P) f σ x v)
-    (hy : ∃ prev, σ y = some prev ∧ HasVal.valueOfTy f prev ty) :
-    ∃ prev, σ' y = some prev ∧ HasVal.valueOfTy f prev ty := by
-  obtain ⟨prev, hprev, hprev_ty⟩ := hy
-  cases h with
-  | update h_xold h_xv h_other =>
-    by_cases hxy : x = y
-    · subst hxy
-      obtain ⟨p, t, hp, hp_t, hv_t⟩ := hstored
-      have hp_prev : p = prev := Option.some.inj (hp.symm.trans hprev)
-      subst hp_prev
-      exact ⟨v, h_xv, LawfulHasVal.valueOfTy_congr f p v ty t hprev_ty hp_t hv_t⟩
-    · rw [h_other y hxy]; exact ⟨prev, hprev, hprev_ty⟩
-
-/-- A single `EvalCmd` preserves a typed slot at any fixed type. -/
-theorem EvalCmd_preserves_typedAt {P : PureExpr}
-    [HasFvar P] [HasBool P] [HasBoolOps P] [DecidableEq P.Ident] [LawfulHasVal P]
-    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
-    (h : EvalCmd P f σ c σ' haf)
-    {y : P.Ident} {ty : P.Ty}
-    (hy : ∃ prev, σ y = some prev ∧ HasVal.valueOfTy f prev ty) :
-    ∃ prev, σ' y = some prev ∧ HasVal.valueOfTy f prev ty := by
-  cases h with
-  | eval_init _ hinit _ _ => exact InitState_typedAt hinit hy
-  | eval_init_unconstrained hinit _ _ => exact InitState_typedAt hinit hy
-  | eval_set _ hupd hstored _ => exact UpdateState_typedAt hupd hstored hy
-  | eval_set_nondet hupd hstored _ => exact UpdateState_typedAt hupd hstored hy
-  | eval_assert_pass _ _ => exact hy
-  | eval_assert_fail _ _ => exact hy
-  | eval_assume _ _ => exact hy
-  | eval_cover _ => exact hy
-
 /-- A single `.cmd` step preserves the `DTyped` invariant (the factory is
 unchanged by a command step). -/
 theorem DTyped.step_cmd {P : PureExpr}
@@ -6459,8 +6398,8 @@ foreignness. -/
 theorem Stmt.nondetElimM_exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P]
     [LawfulHasFvars P] [HasBool P]
     [LawfulHasFvar P] [LawfulHasFvars P] [LawfulHasIdent P] {Q : String → Prop}
-    (hfi : ∀ sg, ¬ Q (StringGenState.gen ndelimItePrefix sg).1)
-    (hfl : ∀ sg, ¬ Q (StringGenState.gen ndelimLoopPrefix sg).1)
+    (hfi : ∀ sg, ¬ Q (StringGenState.gen NondetElim.prefixIte sg).1)
+    (hfl : ∀ sg, ¬ Q (StringGenState.gen NondetElim.prefixLoop sg).1)
     (s : Stmt P (Cmd P)) (σ : StringGenState)
     (h : Stmt.exprsShapeFree (P := P) Q s) :
     Block.exprsShapeFree (P := P) Q (Stmt.nondetElimM s σ).1 := by
@@ -6485,7 +6424,7 @@ theorem Stmt.nondetElimM_exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvar P] 
       rw [Block.exprsShapeFree_cons_iff]
       refine ⟨Stmt.exprsShapeFree_cmd_init_nondet _ _ _, ?_⟩
       rw [Block.exprsShapeFree_singleton, Stmt.exprsShapeFree_ite]
-      refine ⟨ndelim_guard_fresh ndelimItePrefix σ HasBool.boolTy (hfi σ),
+      refine ⟨ndelim_guard_fresh NondetElim.prefixIte σ HasBool.boolTy (hfi σ),
               Block.nondetElimM_exprsShapeFree hfi hfl tss _ h.2.1,
               Block.nondetElimM_exprsShapeFree hfi hfl ess _ h.2.2⟩
   | .loop (.det e) m inv body md =>
@@ -6501,9 +6440,12 @@ theorem Stmt.nondetElimM_exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvar P] 
       refine ⟨Stmt.exprsShapeFree_cmd_init_nondet _ _ _, ?_⟩
       rw [Block.exprsShapeFree_singleton]
       refine loop_sf_transport .nondet
-        (.det (HasFvar.mkTypedFvar (HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix σ).1) HasBool.boolTy))
+        (.det (HasFvar.mkTypedFvar
+          (HasIdent.ident (P := P)
+            (StringGenState.gen NondetElim.prefixLoop σ).1)
+          HasBool.boolTy))
         m inv body _ md h
-        (ndelim_guard_fresh ndelimLoopPrefix σ HasBool.boolTy (hfl σ)) ?_
+        (ndelim_guard_fresh NondetElim.prefixLoop σ HasBool.boolTy (hfl σ)) ?_
       refine Block.exprsShapeFree_append _ _
         ⟨Block.nondetElimM_exprsShapeFree hfi hfl body _ hbody, ?_⟩
       exact Block.exprsShapeFree_singleton.mpr (Stmt.exprsShapeFree_cmd_havoc _ _)
@@ -6518,8 +6460,8 @@ theorem Stmt.nondetElimM_exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvar P] 
 theorem Block.nondetElimM_exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P]
     [LawfulHasFvars P] [HasBool P]
     [LawfulHasFvar P] [LawfulHasFvars P] [LawfulHasIdent P] {Q : String → Prop}
-    (hfi : ∀ sg, ¬ Q (StringGenState.gen ndelimItePrefix sg).1)
-    (hfl : ∀ sg, ¬ Q (StringGenState.gen ndelimLoopPrefix sg).1)
+    (hfi : ∀ sg, ¬ Q (StringGenState.gen NondetElim.prefixIte sg).1)
+    (hfl : ∀ sg, ¬ Q (StringGenState.gen NondetElim.prefixLoop sg).1)
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (h : Block.exprsShapeFree (P := P) Q ss) :
     Block.exprsShapeFree (P := P) Q (Block.nondetElimM ss σ).1 := by
@@ -6537,29 +6479,30 @@ theorem Block.nondetElimM_exprsShapeFree {P : PureExpr} [HasIdent P] [HasFvar P]
 end
 
 /-- The freshly generated ndelim guard satisfies the `HoistInitClass` fresh
-disjunct at `ndelimKind` over a one-`gen`-step window. -/
+disjunct at `NondetElim.isGeneratedName` over a one-`gen`-step window. -/
 private theorem ndelim_fresh_class {P : PureExpr} [HasIdent P] (pf : String) (σ : StringGenState)
     (h_wf : StringGenState.WF σ)
-    (hpf : ndelimKind (StringGenState.gen pf σ).1) :
+    (hpf : NondetElim.isGeneratedName (StringGenState.gen pf σ).1) :
     ∃ str : String, HasIdent.ident (P := P) (StringGenState.gen pf σ).1 = HasIdent.ident str
       ∧ str ∈ StringGenState.stringGens (StringGenState.gen pf σ).2
       ∧ str ∉ StringGenState.stringGens σ
-      ∧ ndelimKind str :=
+      ∧ NondetElim.isGeneratedName str :=
   ⟨(StringGenState.gen pf σ).1, rfl,
     by rw [StringGenState.stringGens_gen]; exact List.mem_cons.mpr (Or.inl rfl),
     StringGenState.stringGens_gen_not_in pf σ h_wf, hpf⟩
 
 mutual
 /-- Strengthened nondetElim `initVars` classification: window-tracked
-`HoistInitClass` at `ndelimKind`, plus `Nodup`.  Mirrors the hoist
+`HoistInitClass` at `NondetElim.isGeneratedName`, plus `Nodup`.  Mirrors the hoist
 `_initVars_classified`. -/
 theorem Stmt.nondetElimM_initVars_nodup {P : PureExpr} [HasIdent P] [LawfulHasIdent P] [HasFvar P]
     [HasFvars P] [HasBool P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_unique : (Stmt.initVars s).Nodup)
-    (h_sf : ∀ str : String, ndelimKind str → HasIdent.ident (P := P) str ∉ Stmt.initVars s) :
+    (h_sf : ∀ str : String, NondetElim.isGeneratedName str →
+      HasIdent.ident (P := P) str ∉ Stmt.initVars s) :
     (∀ x ∈ Block.initVars (P := P) (Stmt.nondetElimM s σ).1,
-        HoistInitClass ndelimKind (Stmt.initVars s) σ (Stmt.nondetElimM s σ).2 x)
+        HoistInitClass NondetElim.isGeneratedName (Stmt.initVars s) σ (Stmt.nondetElimM s σ).2 x)
       ∧ (Block.initVars (P := P) (Stmt.nondetElimM s σ).1).Nodup := by
   match s with
   | .cmd c =>
@@ -6573,7 +6516,7 @@ theorem Stmt.nondetElimM_initVars_nodup {P : PureExpr} [HasIdent P] [LawfulHasId
       rw [Stmt.nondetElimM_block_out, Stmt.nondetElimM_block_state]
       have h_unique' : (Block.initVars bss).Nodup := by
         simpa only [Stmt.initVars_block] using h_unique
-      have h_sf' : ∀ str : String, ndelimKind str →
+      have h_sf' : ∀ str : String, NondetElim.isGeneratedName str →
           HasIdent.ident (P := P) str ∉ Block.initVars bss := by
         intro str hsuf; simpa only [Stmt.initVars_block] using h_sf str hsuf
       have ih := Block.nondetElimM_initVars_nodup bss σ h_wf h_unique' h_sf'
@@ -6592,11 +6535,11 @@ theorem Stmt.nondetElimM_initVars_nodup {P : PureExpr} [HasIdent P] [LawfulHasId
       have h_uni_e : (Block.initVars ess).Nodup := (List.nodup_append.mp h_uni).2.1
       have h_disj_te : ∀ a ∈ Block.initVars tss, ∀ b ∈ Block.initVars ess, a ≠ b :=
         (List.nodup_append.mp h_uni).2.2
-      have h_sf_t : ∀ str : String, ndelimKind str →
+      have h_sf_t : ∀ str : String, NondetElim.isGeneratedName str →
           HasIdent.ident (P := P) str ∉ Block.initVars tss := by
         intro str hsuf hmem; exact h_sf str hsuf (by
           rw [Stmt.initVars_ite, List.mem_append]; exact Or.inl hmem)
-      have h_sf_e : ∀ str : String, ndelimKind str →
+      have h_sf_e : ∀ str : String, NondetElim.isGeneratedName str →
           HasIdent.ident (P := P) str ∉ Block.initVars ess := by
         intro str hsuf hmem; exact h_sf str hsuf (by
           rw [Stmt.initVars_ite, List.mem_append]; exact Or.inr hmem)
@@ -6628,10 +6571,10 @@ theorem Stmt.nondetElimM_initVars_nodup {P : PureExpr} [HasIdent P] [LawfulHasId
           h_disj_te h_sf_t h_sf_e _ _ ih_t.1 ih_e.1⟩
   | .ite .nondet tss ess md =>
       rw [Stmt.nondetElimM_ite_nondet_out, Stmt.nondetElimM_ite_nondet_state]
-      have h_wf₀ : StringGenState.WF (StringGenState.gen ndelimItePrefix σ).2 :=
-          (StringGenState.GenStep.of_gen ndelimItePrefix σ).wf_mono h_wf
-      have h_step_g : StringGenState.GenStep σ (StringGenState.gen ndelimItePrefix σ).2 :=
-          StringGenState.GenStep.of_gen ndelimItePrefix σ
+      have h_wf₀ : StringGenState.WF (StringGenState.gen NondetElim.prefixIte σ).2 :=
+          (StringGenState.GenStep.of_gen NondetElim.prefixIte σ).wf_mono h_wf
+      have h_step_g : StringGenState.GenStep σ (StringGenState.gen NondetElim.prefixIte σ).2 :=
+          StringGenState.GenStep.of_gen NondetElim.prefixIte σ
       -- the source `.ite .nondet` initVars are the branches'.
       have h_uni : (Block.initVars tss ++ Block.initVars ess).Nodup := by
         simpa only [Stmt.initVars_ite] using h_unique
@@ -6639,45 +6582,51 @@ theorem Stmt.nondetElimM_initVars_nodup {P : PureExpr} [HasIdent P] [LawfulHasId
       have h_uni_e : (Block.initVars ess).Nodup := (List.nodup_append.mp h_uni).2.1
       have h_disj_te : ∀ a ∈ Block.initVars tss, ∀ b ∈ Block.initVars ess, a ≠ b :=
         (List.nodup_append.mp h_uni).2.2
-      have h_sf_src : ∀ str : String, ndelimKind str →
+      have h_sf_src : ∀ str : String, NondetElim.isGeneratedName str →
           HasIdent.ident (P := P) str ∉ Block.initVars tss ++ Block.initVars ess := by
         intro str hsuf; simpa only [Stmt.initVars_ite] using h_sf str hsuf
-      have h_sf_t : ∀ str : String, ndelimKind str →
+      have h_sf_t : ∀ str : String, NondetElim.isGeneratedName str →
           HasIdent.ident (P := P) str ∉ Block.initVars tss :=
         fun str hsuf hmem => h_sf_src str hsuf (List.mem_append.mpr (Or.inl hmem))
-      have h_sf_e : ∀ str : String, ndelimKind str →
+      have h_sf_e : ∀ str : String, NondetElim.isGeneratedName str →
           HasIdent.ident (P := P) str ∉ Block.initVars ess :=
         fun str hsuf hmem => h_sf_src str hsuf (List.mem_append.mpr (Or.inr hmem))
-      have ih_t := Block.nondetElimM_initVars_nodup tss (StringGenState.gen ndelimItePrefix σ).2
-          h_wf₀ h_uni_t h_sf_t
-      have h_wf_t : StringGenState.WF (Block.nondetElimM tss (StringGenState.gen ndelimItePrefix
-          σ).2).2 :=
-        (Block.nondetElimM_genStep tss (StringGenState.gen ndelimItePrefix σ).2).wf_mono h_wf₀
+      have ih_t := Block.nondetElimM_initVars_nodup tss
+        (StringGenState.gen NondetElim.prefixIte σ).2 h_wf₀ h_uni_t h_sf_t
+      have h_wf_t : StringGenState.WF
+          (Block.nondetElimM tss
+            (StringGenState.gen NondetElim.prefixIte σ).2).2 :=
+        (Block.nondetElimM_genStep tss
+          (StringGenState.gen NondetElim.prefixIte σ).2).wf_mono h_wf₀
       have ih_e := Block.nondetElimM_initVars_nodup ess (Block.nondetElimM tss (StringGenState.gen
-          ndelimItePrefix σ).2).2 h_wf_t h_uni_e h_sf_e
-      have h_step_t : StringGenState.GenStep (StringGenState.gen ndelimItePrefix σ).2
-          (Block.nondetElimM tss (StringGenState.gen ndelimItePrefix σ).2).2 :=
-          Block.nondetElimM_genStep tss (StringGenState.gen ndelimItePrefix σ).2
+          NondetElim.prefixIte σ).2).2 h_wf_t h_uni_e h_sf_e
+      have h_step_t : StringGenState.GenStep (StringGenState.gen NondetElim.prefixIte σ).2
+          (Block.nondetElimM tss (StringGenState.gen NondetElim.prefixIte σ).2).2 :=
+          Block.nondetElimM_genStep tss (StringGenState.gen NondetElim.prefixIte σ).2
       have h_step_e : StringGenState.GenStep (Block.nondetElimM tss (StringGenState.gen
-          ndelimItePrefix σ).2).2
-          (Block.nondetElimM ess (Block.nondetElimM tss (StringGenState.gen ndelimItePrefix
+          NondetElim.prefixIte σ).2).2
+          (Block.nondetElimM ess (Block.nondetElimM tss (StringGenState.gen NondetElim.prefixIte
               σ).2).2).2 := Block.nondetElimM_genStep ess _
-      -- the freshly generated guard, classified over the `σ → (StringGenState.gen ndelimItePrefix
-      -- σ).2` gen window.
+      -- The freshly generated guard is classified over the one-step generator
+      -- window beginning at `σ`.
       have h_guard_iv : Stmt.initVars (P := P) (C := Cmd P)
-          (Stmt.cmd (HasInit.init (HasIdent.ident (P := P) (StringGenState.gen ndelimItePrefix σ).1)
+          (Stmt.cmd (HasInit.init
+            (HasIdent.ident (P := P)
+              (StringGenState.gen NondetElim.prefixIte σ).1)
             HasBool.boolTy ExprOrNondet.nondet md)) =
-          [HasIdent.ident (P := P) (StringGenState.gen ndelimItePrefix σ).1] := by
+          [HasIdent.ident (P := P) (StringGenState.gen NondetElim.prefixIte σ).1] := by
         with_unfolding_all rfl
       -- branch inits classified together over the post-gen window `(StringGenState.gen
-      -- ndelimItePrefix σ).2 → σ₂`.
+      -- NondetElim.prefixIte σ).2 → σ₂`.
       have h_branchClass : ∀ y ∈ Block.initVars (Block.nondetElimM tss (StringGenState.gen
-          ndelimItePrefix σ).2).1 ++
+          NondetElim.prefixIte σ).2).1 ++
             Block.initVars (Block.nondetElimM ess (Block.nondetElimM tss (StringGenState.gen
-                ndelimItePrefix σ).2).2).1,
-          HoistInitClass ndelimKind (Block.initVars tss ++ Block.initVars ess) (StringGenState.gen
-              ndelimItePrefix σ).2
-            (Block.nondetElimM ess (Block.nondetElimM tss (StringGenState.gen ndelimItePrefix
+                NondetElim.prefixIte σ).2).2).1,
+          HoistInitClass NondetElim.isGeneratedName
+            (Block.initVars tss ++ Block.initVars ess)
+            (StringGenState.gen
+              NondetElim.prefixIte σ).2
+            (Block.nondetElimM ess (Block.nondetElimM tss (StringGenState.gen NondetElim.prefixIte
                 σ).2).2).2 y := by
         intro y hy
         rw [List.mem_append] at hy
@@ -6689,21 +6638,21 @@ theorem Stmt.nondetElimM_initVars_nodup {P : PureExpr} [HasIdent P] [LawfulHasId
           · exact Or.inl (List.mem_append.mpr (Or.inr h_o))
           · exact Or.inr ⟨str, he, hin, fun hσ => hnot (h_step_t.subset hσ), hQ⟩
       have h_branchNodup : (Block.initVars (Block.nondetElimM tss (StringGenState.gen
-          ndelimItePrefix σ).2).1 ++
+          NondetElim.prefixIte σ).2).1 ++
             Block.initVars (Block.nondetElimM ess (Block.nondetElimM tss (StringGenState.gen
-                ndelimItePrefix σ).2).2).1).Nodup := by
+                NondetElim.prefixIte σ).2).2).1).Nodup := by
         rw [List.nodup_append]
         exact ⟨ih_t.2, ih_e.2, hoistInitClass_disjoint (Block.initVars tss) (Block.initVars ess)
-          (StringGenState.gen ndelimItePrefix σ).2 (Block.nondetElimM tss (StringGenState.gen
-              ndelimItePrefix σ).2).2 _
+          (StringGenState.gen NondetElim.prefixIte σ).2 (Block.nondetElimM tss (StringGenState.gen
+              NondetElim.prefixIte σ).2).2 _
           h_disj_te h_sf_t h_sf_e _ _ ih_t.1 ih_e.1⟩
       refine ⟨?_, ?_⟩
       · intro x hx
         simp only [Block.initVars_cons, Stmt.initVars_ite, Block.initVars_nil, List.append_nil,
           h_guard_iv, List.singleton_append, List.mem_cons, List.mem_append] at hx
         rcases hx with h_g | h_t | h_e
-        · obtain ⟨str, he, hin, hnot, hQ⟩ := ndelim_fresh_class (P := P) ndelimItePrefix σ h_wf
-            (ndelimKind_gen.1 σ)
+        · obtain ⟨str, he, hin, hnot, hQ⟩ := ndelim_fresh_class (P := P) NondetElim.prefixIte σ h_wf
+            (NondetElim.isGeneratedName_gen.1 σ)
           exact Or.inr ⟨str, h_g.trans he, h_step_e.subset (h_step_t.subset hin), hnot, hQ⟩
         · rcases ih_t.1 x h_t with h_o | ⟨str, he, hin, hnot, hQ⟩
           · exact Or.inl (by rw [Stmt.initVars_ite, List.mem_append]; exact Or.inl h_o)
@@ -6717,12 +6666,12 @@ theorem Stmt.nondetElimM_initVars_nodup {P : PureExpr} [HasIdent P] [LawfulHasId
           h_guard_iv, List.singleton_append]
         rw [List.nodup_cons]
         refine ⟨?_, h_branchNodup⟩
-        -- guard ∉ branchInits: a guard ident is `∈ stringGens (StringGenState.gen ndelimItePrefix
-        -- σ).2 \ σ`; classify each
-        -- branch member and refute each cross-class collision.
+        -- The guard is absent from branch initializers. Classify each branch
+        -- member and refute each cross-class collision.
         intro hmem
-        have h_guard_fresh := ndelim_fresh_class (P := P) ndelimItePrefix σ h_wf (ndelimKind_gen.1
-            σ)
+        have h_guard_fresh := ndelim_fresh_class (P := P)
+          NondetElim.prefixIte σ h_wf
+          (NondetElim.isGeneratedName_gen.1 σ)
         obtain ⟨gstr, geq, gin, gnot, gQ⟩ := h_guard_fresh
         rcases h_branchClass _ hmem with h_o | ⟨str, he, hin, hnot, hQ⟩
         · exact h_sf_src gstr gQ (geq ▸ h_o)
@@ -6732,7 +6681,7 @@ theorem Stmt.nondetElimM_initVars_nodup {P : PureExpr} [HasIdent P] [LawfulHasId
       rw [Stmt.nondetElimM_loop_det_out, Stmt.nondetElimM_loop_det_state]
       have h_unique' : (Block.initVars body).Nodup := by
         simpa only [Stmt.initVars_loop] using h_unique
-      have h_sf' : ∀ str : String, ndelimKind str →
+      have h_sf' : ∀ str : String, NondetElim.isGeneratedName str →
           HasIdent.ident (P := P) str ∉ Block.initVars body := by
         intro str hsuf; simpa only [Stmt.initVars_loop] using h_sf str hsuf
       have ih := Block.nondetElimM_initVars_nodup body σ h_wf h_unique' h_sf'
@@ -6745,30 +6694,31 @@ theorem Stmt.nondetElimM_initVars_nodup {P : PureExpr} [HasIdent P] [LawfulHasId
         exact ih.2
   | .loop .nondet m inv body md =>
       rw [Stmt.nondetElimM_loop_nondet_out, Stmt.nondetElimM_loop_nondet_state]
-      have h_wf₀ : StringGenState.WF (StringGenState.gen ndelimLoopPrefix σ).2 :=
-        (StringGenState.GenStep.of_gen ndelimLoopPrefix σ).wf_mono h_wf
-      have h_step_g : StringGenState.GenStep σ (StringGenState.gen ndelimLoopPrefix σ).2 :=
-        StringGenState.GenStep.of_gen ndelimLoopPrefix σ
+      have h_wf₀ : StringGenState.WF (StringGenState.gen NondetElim.prefixLoop σ).2 :=
+        (StringGenState.GenStep.of_gen NondetElim.prefixLoop σ).wf_mono h_wf
+      have h_step_g : StringGenState.GenStep σ (StringGenState.gen NondetElim.prefixLoop σ).2 :=
+        StringGenState.GenStep.of_gen NondetElim.prefixLoop σ
       have h_unique' : (Block.initVars body).Nodup := by
         simpa only [Stmt.initVars_loop] using h_unique
-      have h_sf' : ∀ str : String, ndelimKind str →
+      have h_sf' : ∀ str : String, NondetElim.isGeneratedName str →
           HasIdent.ident (P := P) str ∉ Block.initVars body := by
         intro str hsuf; simpa only [Stmt.initVars_loop] using h_sf str hsuf
-      have ih := Block.nondetElimM_initVars_nodup body (StringGenState.gen ndelimLoopPrefix σ).2
-          h_wf₀ h_unique' h_sf'
-      have h_step_body : StringGenState.GenStep (StringGenState.gen ndelimLoopPrefix σ).2
-          (Block.nondetElimM body (StringGenState.gen ndelimLoopPrefix σ).2).2 :=
+      have ih := Block.nondetElimM_initVars_nodup body
+        (StringGenState.gen NondetElim.prefixLoop σ).2 h_wf₀ h_unique' h_sf'
+      have h_step_body : StringGenState.GenStep (StringGenState.gen NondetElim.prefixLoop σ).2
+          (Block.nondetElimM body (StringGenState.gen NondetElim.prefixLoop σ).2).2 :=
         Block.nondetElimM_genStep body _
       -- the new loop body is `body' ++ [havoc guard]`; havoc has no inits.
       have h_havoc_init : Block.initVars (P := P) (C := Cmd P)
-          [Stmt.cmd (HasHavoc.havoc (HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix
-              σ).1) md)] = [] := by
+          [Stmt.cmd (HasHavoc.havoc
+            (HasIdent.ident (P := P)
+              (StringGenState.gen NondetElim.prefixLoop σ).1) md)] = [] := by
         with_unfolding_all rfl
       have h_guard_iv : Stmt.initVars (P := P) (C := Cmd P)
-          (Stmt.cmd (HasInit.init (HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix
+          (Stmt.cmd (HasInit.init (HasIdent.ident (P := P) (StringGenState.gen NondetElim.prefixLoop
               σ).1)
             HasBool.boolTy ExprOrNondet.nondet md)) =
-          [HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix σ).1] := by
+          [HasIdent.ident (P := P) (StringGenState.gen NondetElim.prefixLoop σ).1] := by
         with_unfolding_all rfl
       refine ⟨?_, ?_⟩
       · intro x hx
@@ -6777,8 +6727,9 @@ theorem Stmt.nondetElimM_initVars_nodup {P : PureExpr} [HasIdent P] [LawfulHasId
         rw [Block.initVars_append, h_havoc_init, List.append_nil] at hx
         simp only [Stmt.initVars_loop]
         rcases hx with h_g | h_body
-        · obtain ⟨str, he, hin, hnot, hQ⟩ := ndelim_fresh_class (P := P) ndelimLoopPrefix σ h_wf
-            (ndelimKind_gen.2 σ)
+        · obtain ⟨str, he, hin, hnot, hQ⟩ :=
+            ndelim_fresh_class (P := P) NondetElim.prefixLoop σ h_wf
+            (NondetElim.isGeneratedName_gen.2 σ)
           exact Or.inr ⟨str, h_g.trans he, h_step_body.subset hin, hnot, hQ⟩
         · rcases ih.1 x h_body with h_o | ⟨str, he, hin, hnot, hQ⟩
           · exact Or.inl h_o
@@ -6788,8 +6739,9 @@ theorem Stmt.nondetElimM_initVars_nodup {P : PureExpr} [HasIdent P] [LawfulHasId
         rw [Block.initVars_append, h_havoc_init, List.append_nil, List.nodup_cons]
         refine ⟨?_, ih.2⟩
         intro hmem
-        obtain ⟨gstr, geq, gin, gnot, gQ⟩ := ndelim_fresh_class (P := P) ndelimLoopPrefix σ h_wf
-            (ndelimKind_gen.2 σ)
+        obtain ⟨gstr, geq, gin, gnot, gQ⟩ :=
+          ndelim_fresh_class (P := P) NondetElim.prefixLoop σ h_wf
+            (NondetElim.isGeneratedName_gen.2 σ)
         rcases ih.1 _ hmem with h_o | ⟨str, he, hin, hnot, hQ⟩
         · exact h_sf' gstr gQ (geq ▸ h_o)
         · have : gstr = str := LawfulHasIdent.ident_inj (geq.symm.trans he)
@@ -6816,9 +6768,11 @@ theorem Block.nondetElimM_initVars_nodup {P : PureExpr} [HasIdent P] [LawfulHasI
     [HasFvars P] [HasBool P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) (h_wf : StringGenState.WF σ)
     (h_unique : (Block.initVars ss).Nodup)
-    (h_sf : ∀ str : String, ndelimKind str → HasIdent.ident (P := P) str ∉ Block.initVars ss) :
+    (h_sf : ∀ str : String, NondetElim.isGeneratedName str →
+      HasIdent.ident (P := P) str ∉ Block.initVars ss) :
     (∀ x ∈ Block.initVars (P := P) (Block.nondetElimM ss σ).1,
-        HoistInitClass ndelimKind (Block.initVars ss) σ (Block.nondetElimM ss σ).2 x)
+        HoistInitClass NondetElim.isGeneratedName (Block.initVars ss) σ
+          (Block.nondetElimM ss σ).2 x)
       ∧ (Block.initVars (P := P) (Block.nondetElimM ss σ).1).Nodup := by
   match ss with
   | [] =>
@@ -6833,11 +6787,11 @@ theorem Block.nondetElimM_initVars_nodup {P : PureExpr} [HasIdent P] [LawfulHasI
       have h_uni_r : (Block.initVars rest).Nodup := (List.nodup_append.mp h_uni).2.1
       have h_disj_sr : ∀ a ∈ Stmt.initVars s, ∀ b ∈ Block.initVars rest, a ≠ b :=
         (List.nodup_append.mp h_uni).2.2
-      have h_sf_s : ∀ str : String, ndelimKind str →
+      have h_sf_s : ∀ str : String, NondetElim.isGeneratedName str →
           HasIdent.ident (P := P) str ∉ Stmt.initVars s := by
         intro str hsuf hmem; exact h_sf str hsuf (by
           rw [Block.initVars_cons, List.mem_append]; exact Or.inl hmem)
-      have h_sf_r : ∀ str : String, ndelimKind str →
+      have h_sf_r : ∀ str : String, NondetElim.isGeneratedName str →
           HasIdent.ident (P := P) str ∉ Block.initVars rest := by
         intro str hsuf hmem; exact h_sf str hsuf (by
           rw [Block.initVars_cons, List.mem_append]; exact Or.inr hmem)
@@ -6911,8 +6865,9 @@ theorem Stmt.nondetElimM_namesFreshInRhsExprs {P : PureExpr} [HasIdent P] [HasFv
       simp only [Stmt.namesFreshInRhsExprs] at h
       simp only [Block.namesFreshInRhsExprs, Stmt.namesFreshInRhsExprs, and_true]
       have h_havoc : Block.namesFreshInRhsExprs (P := P) names
-          [Stmt.cmd (HasHavoc.havoc (HasIdent.ident (P := P) (StringGenState.gen ndelimLoopPrefix
-              σ).1) md)] := by
+          [Stmt.cmd (HasHavoc.havoc
+            (HasIdent.ident (P := P)
+              (StringGenState.gen NondetElim.prefixLoop σ).1) md)] := by
         simp only [Block.namesFreshInRhsExprs, and_true]
         exact Stmt.namesFreshInRhsExprs_cmd_havoc _ _ _
       refine ⟨Stmt.namesFreshInRhsExprs_cmd_init_nondet _ _ _ _, ?_⟩
@@ -6942,27 +6897,26 @@ theorem Block.nondetElimM_namesFreshInRhsExprs {P : PureExpr} [HasIdent P] [HasF
   termination_by sizeOf ss
 end
 
-/-- An `ndelimKind` guard ident is RHS-fresh in the kind-free source: it is the
-identifier of an `ndelimKind` label, and the source reads no `ndelimKind` ident
-in any expression (`exprsShapeFree ndelimKind`), so a fortiori not in any RHS. -/
+/-- A generated NondetElim guard is RHS-fresh in a source that reads no
+generated identifier. -/
 private theorem ndelim_guard_namesFreshInRhsExprs_src {P : PureExpr} [HasIdent P] [HasFvars P]
-    {str : String} (h_kind : ndelimKind str) (ss : List (Stmt P (Cmd P)))
-    (h_sf : Block.exprsShapeFree (P := P) ndelimKind ss) :
+    {str : String} (h_kind : NondetElim.isGeneratedName str) (ss : List (Stmt P (Cmd P)))
+    (h_sf : Block.exprsShapeFree (P := P) NondetElim.isGeneratedName ss) :
     Block.namesFreshInRhsExprs (P := P) [HasIdent.ident (P := P) str] ss :=
   Block.namesFreshInRhsExprs_of_namesFreshInExprs _ ss
-    (Block.namesFreshInExprs_of_exprsShapeFree' (Q := ndelimKind)
+    (Block.namesFreshInExprs_of_exprsShapeFree' (Q := NondetElim.isGeneratedName)
       (fun z hz => by
         rw [List.mem_singleton] at hz; exact ⟨str, hz, h_kind⟩)
       ss h_sf)
 
 /-- Every name in `initVars (nondetElim ss)` is RHS-fresh in the source `ss`:
-source inits inherit the source RHS-freshness; freshly generated `ndelimKind`
+source inits inherit the source RHS-freshness; freshly generated `NondetElim.isGeneratedName`
 guards are RHS-fresh by source kind-freedom. -/
 theorem nondetElim_initVars_namesFreshInRhsExprs_src {P : PureExpr} [HasIdent P] [HasFvar P]
     [HasFvars P] [HasBool P]
     (ss : List (Stmt P (Cmd P)))
     (h_src_rhs : Block.namesFreshInRhsExprs (P := P) (Block.initVars ss) ss)
-    (h_sf : Block.exprsShapeFree (P := P) ndelimKind ss) :
+    (h_sf : Block.exprsShapeFree (P := P) NondetElim.isGeneratedName ss) :
     Block.namesFreshInRhsExprs (P := P)
       (Block.initVars (Block.nondetElim ss)) ss := by
   refine Block.namesFreshInRhsExprs_of_forall_mem _ ss (fun z hz => ?_)
@@ -6980,7 +6934,7 @@ theorem nondetElim_namesFreshInRhsExprs {P : PureExpr} [HasIdent P] [HasFvar P] 
     [HasBool P]
     (ss : List (Stmt P (Cmd P)))
     (h_src_rhs : Block.namesFreshInRhsExprs (P := P) (Block.initVars ss) ss)
-    (h_sf : Block.exprsShapeFree (P := P) ndelimKind ss) :
+    (h_sf : Block.exprsShapeFree (P := P) NondetElim.isGeneratedName ss) :
     Block.namesFreshInRhsExprs (P := P)
       (Block.initVars (Block.nondetElim ss)) (Block.nondetElim ss) :=
   Block.nondetElimM_namesFreshInRhsExprs _ ss StringGenState.emp
@@ -6989,7 +6943,7 @@ theorem nondetElim_namesFreshInRhsExprs {P : PureExpr} [HasIdent P] [HasFvar P] 
 /-- Top-level Direction-A bridge: `nondetElim` establishes the
 `hoistedNamesFreshInRhsAndGuards` postcondition on its output, given the
 front-end source facts (its own `hoistedNamesFreshInRhsAndGuards` and its
-`ndelimKind`-freedom). This discharges the hoist `h_fresh` precondition at
+`NondetElim.isGeneratedName`-freedom). This discharges the hoist `h_fresh` precondition at
 the `nondetElim` output: the predicate is the RHS-only `initVars` freshness,
 preserved verbatim because `nondetElim` only ever adds variable-free command
 RHS positions (its fresh guard is read only in a `.ite`/`.loop` guard). -/
@@ -6997,7 +6951,7 @@ theorem nondetElim_hoistedNamesFreshInRhsAndGuards {P : PureExpr} [HasIdent P] [
     [HasFvar P] [HasFvars P] [HasBool P] [LawfulHasFvar P] [LawfulHasFvars P]
     (ss : List (Stmt P (Cmd P)))
     (h_fresh_src : Block.hoistedNamesFreshInRhsAndGuards (P := P) ss)
-    (h_sf : Block.exprsShapeFree (P := P) ndelimKind ss) :
+    (h_sf : Block.exprsShapeFree (P := P) NondetElim.isGeneratedName ss) :
     Block.hoistedNamesFreshInRhsAndGuards (P := P) (Block.nondetElim ss) := by
   unfold Block.hoistedNamesFreshInRhsAndGuards at h_fresh_src ⊢
   exact nondetElim_namesFreshInRhsExprs ss h_fresh_src h_sf

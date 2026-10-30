@@ -25,8 +25,17 @@ private def translateCore (p : StrataDDM.Program) : Core.Program :=
 /-- Symbolic evaluation rejects surviving nondeterministic guards, so eliminate
     them first. -/
 private def elimNondet (p : Core.Program) : Core.Program :=
-  let (res, _) := StateT.run (ExceptT.run (Core.nondetElim p)) Transform.CoreTransformState.emp
+  let (res, _) := StateT.run (ExceptT.run (Core.NondetElim.nondetElim p))
+    Transform.CoreTransformState.emp
   match res with | .ok (_, p') => p' | .error _ => p
+
+/-- Run nondeterminism elimination and return its change flag. -/
+private def nondetElimChanged (p : Core.Program) : Option Bool :=
+  let (res, _) := StateT.run (ExceptT.run (Core.NondetElim.nondetElim p))
+    Transform.CoreTransformState.emp
+  match res with
+  | .ok (changed, _) => some changed
+  | .error _ => none
 
 private def evalAndPrint (p : StrataDDM.Program) : IO Unit := do
   match Core.typeCheck .quiet (translateCore p) with
@@ -117,6 +126,10 @@ spec {
   }
 };
 #end
+
+/-! The pass reports a change exactly when it rewrites a nondeterministic guard. -/
+#guard nondetElimChanged (translateCore simpleProg) == some false
+#guard nondetElimChanged (translateCore nondetIfProg) == some true
 
 /--
 info: program Core;

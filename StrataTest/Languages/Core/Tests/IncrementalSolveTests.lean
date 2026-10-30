@@ -9,6 +9,7 @@ meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.Languages.Core.IncrementalSolve
 meta import Strata.Languages.Core.ObligationExtraction
+meta import Strata.Transform.CommonSubexprElim
 meta import Strata.Examples.EmbeddedData
 meta import StrataDDM.Elab
 meta import StrataDDM.BuiltinDialects.Init
@@ -1581,6 +1582,91 @@ usesG: proved
 #guard_msgs in
 #eval withPruning twoAxioms .Aggressive (exact := true)
 
+/-! The axioms of `twoAxioms` mention no constant, so `Directed` pruning keeps both. Below, each
+goal keeps only the axiom about its own constant, and as above, exact pruning needs a second
+context. -/
+
+private def twoConstants :=
+#strata
+program Core;
+
+function a(): int;
+function b(): int;
+axiom [aPos]: int.gt(a, 0);
+axiom [bNeg]: int.lt(b, 0);
+
+procedure P()
+{
+  assert [usesA]: int.gt(a, 0);
+  assert [usesB]: int.lt(b, 0);
+};
+#end
+
+/--
+info: usesA: proved
+usesB: proved
+2 contexts, 2 asserts
+-/
+#guard_msgs in
+#eval withPruning twoConstants .Directed (exact := true)
+
+/-! `c_one` reaches only `c`, which `c_def` does not define, so `Directed`
+pruning drops both axioms, and its counterexample, which may violate them,
+reports as unknown. `d_one` keeps both axioms and is refuted. -/
+
+private def droppedNeeded :=
+#strata
+program Core;
+
+function c(): int;
+function d(): int;
+axiom [c_def]: int.add(d, 1) == c;
+axiom [d_def]: d == 0;
+
+procedure P()
+{
+  assert [c_one]: c == 1;
+  assert [d_one]: d == 1;
+};
+#end
+
+/--
+info: c_one: unknown
+d_one: REFUTED
+1 contexts, 2 asserts
+-/
+#guard_msgs in
+#eval withPruning droppedNeeded .Directed
+
+/-! `c_d` keeps both axioms and is proved, and lazy pruning leaves them on the
+solver for `c_two`, whose pruning drops them. The solver refutes `c_two` with
+both axioms present, and it still reports as unknown, as it does without
+`--incremental`. -/
+
+private def keptThenDropped :=
+#strata
+program Core;
+
+function c(): int;
+function d(): int;
+axiom [c_def]: int.add(d, 1) == c;
+axiom [d_def]: d == 0;
+
+procedure P()
+{
+  assert [c_d]: c == int.add(d, 1);
+  assert [c_two]: c == 2;
+};
+#end
+
+/--
+info: c_d: proved
+c_two: unknown
+1 contexts, 2 asserts
+-/
+#guard_msgs in
+#eval withPruning keptThenDropped .Directed
+
 /-! ### z3 reports a per-check time limit as a timeout too
 
 Started with `-t:`, z3 answers a check it abandons with `unknown`, and gives the reason only
@@ -1978,6 +2064,30 @@ discharge calls: 2
 #guard_msgs in
 #eval countedDischarge twoGoals
 
+/-! A goal sent alone goes to the per-obligation discharge with the caller's worker count. Under
+`--parallel` several workers send goals at once, and a back end that shares one connection
+between the obligations of a sequential run learns that it must not from that count. -/
+
+/-- info: s1: proved; worker counts the discharge saw: [3] -/
+#guard_msgs in
+#eval show IO Unit from do
+  let seen ← IO.mkRef (#[] : Array Nat)
+  let mk : Core.MkDischargeFn := fun options _ _ _ _ _ _ _ _ =>
+    fun _ _ _ _ _ _ _ => do
+      seen.modify fun a => if a.contains options.parallelWorkers then a
+        else a.push options.parallelWorkers
+      pure (.ok (.unsat, .unsat, Strata.SMT.EncoderState.init))
+  let options := { VerifyOptions.quiet with parallelWorkers := 3 }
+  let solver : Core.CoreSMTSolver :=
+    Core.IncrementalSolve.coreSMTSolver 3 options (mkDischarge := mk)
+  match ← (solver Core.Factory (parse oneGoalBetweenTwo)).toBaseIO with
+  | .ok (results, _) =>
+    let lone := results.toList.filter (·.obligation.label == "s1")
+    let verdicts := lone.map fun r => s!"{r.obligation.label}: {verdictOf r}"
+    let counts := (← seen.get).toList
+    IO.println s!"{"; ".intercalate verdicts}; worker counts the discharge saw: {counts}"
+  | .error e => IO.println s!"error: {e.format none}"
+
 /-! ### A function's body reads its own parameters
 
 Two defined functions share a parameter name. Each body has to read its own parameter, not
@@ -2173,6 +2283,58 @@ afterBranch: agree on 3, 3 with a counterexample
       for walkAll in [false, true] do
         bothWays name (parse p) { VerifyOptions.quiet with checkMode := mode } (walkAll := walkAll)
 
+/-! `deductiveAssumingSatisfiablePaths` reaches `evaluatorResults` through the incremental back
+end too, so the two back ends must agree under it as well. `foldedFalse` holds the goals the
+mode's premise decides (`folded`), ones it leaves to the solver (`dead`, under a literally false
+assumption, and the cover `never`), and one only a solver can decide (`solver`). -/
+
+private def foldedFalse :=
+#strata
+program Core;
+
+procedure P()
+{
+  var x : int;
+  assume [pos]: int.gt(x, 0);
+  assert [folded]: false;
+  if * {
+    assume [contra]: false;
+    assert [dead]: false;
+  }
+  cover [never]: false;
+  assert [solver]: int.lt(x, 0);
+};
+#end
+
+/--
+info: refutable: agree on 1, 1 with a counterexample
+refutable: agree on 1, 1 with a counterexample
+withCover: agree on 2, 1 with a counterexample
+withCover: agree on 2, 1 with a counterexample
+afterBranch: agree on 3, 1 with a counterexample
+afterBranch: agree on 3, 1 with a counterexample
+
+
+Obligation folded: failed!
+
+Result obtained during evaluation.
+foldedFalse: agree on 4, 1 with a counterexample
+
+
+Obligation folded: failed!
+
+Result obtained during evaluation.
+foldedFalse: agree on 4, 1 with a counterexample
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  for (name, p) in [("refutable", refutable), ("withCover", withCover),
+                    ("afterBranch", afterBranch), ("foldedFalse", foldedFalse)] do
+    for walkAll in [false, true] do
+      bothWays name (parse p)
+        { VerifyOptions.quiet with checkMode := .deductiveAssumingSatisfiablePaths }
+        (walkAll := walkAll)
+
 /-! A solver option the solver rejects gives every goal the verdict it gets without
 `--incremental`: cvc5 has no `timeout` option, and z3 none spelled `tlimit-per` or `:timeout`.
 A solver that cannot be started does the same. The two modes word the solver's message
@@ -2245,7 +2407,7 @@ several goals on one session, and the walk is compared with the per-obligation p
 /--
 info: chainOfThree: agree on 3
 twoGoals: agree on 2
-refutable: agree on 1
+refutable: agree on 1, 1 with a counterexample
 -/
 #guard_msgs in
 #eval show IO Unit from do
@@ -2319,6 +2481,172 @@ leave the definition holding it out. -/
 #eval bothWays "cseHoistedLiteral walked" (parse cseHoistedLiteral) VerifyOptions.quiet
   (walkAll := true)
 
+/-! ### A counterexample reports the declared variables and no defined or generated name
+
+Whether a variable gets a value in a counterexample depends on whether its value is free, not on
+how it is encoded. Through the pipeline without symbolic evaluation, `var x` stays a declaration
+of the passive program, and the counterexample to `x >= 11` still gives `x` a value, without
+`--incremental`, with it, and with every goal walked, while a variable defined from `x` is left
+out. Through the default pipeline, common-subexpression elimination hoists `f(x + 1)` into a
+variable of its own, which the counterexample leaves out, while it reports `x`. -/
+
+/-- The names each goal's counterexample reports, without `--incremental`, with it,
+    and with every goal walked, and the generated names its path declares. -/
+private def modelNames (p : Core.Program)
+    (pipeline : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) := none) :
+    IO Unit := do
+  for (mode, incremental, walkAll) in
+      [("per-obligation", false, false), ("incremental", true, false), ("walked", true, true)] do
+    let options := { VerifyOptions.quiet with incremental }
+    let solver := if walkAll then
+        some (Core.IncrementalSolve.coreSMTSolver options.parallelWorkers options
+          (axiomProgram := some p) (sendAlone := false))
+      else none
+    match ← (Strata.Core.verifyProgram p options (pipeline := pipeline)
+        (solver := solver)).toBaseIO with
+    | .ok rs =>
+      for r in rs do
+        let generated := r.obligation.assumptions.flatten.filterMap fun
+          | .varDecl name _ _ => if _root_.Core.CSE.isCSEGeneratedName name.name then some name.name
+            else none
+          | _ => none
+        IO.println s!"{mode} {r.obligation.label}: {r.lexprModel.map (·.1.name)}\
+          {if generated.isEmpty then "" else s!", generated {generated}"}"
+    | .error e => IO.println s!"{mode}: error {e}"
+
+private def declaredVar :=
+#strata
+program Core;
+procedure P()
+{
+  var x : int;
+  assume [pos]: int.gt(x, 0);
+  assert [big]: int.ge(x, 11);
+};
+#end
+
+/--
+info: per-obligation big: [x]
+incremental big: [x]
+walked big: [x]
+-/
+#guard_msgs in
+#eval modelNames (parse declaredVar) (pipeline := withoutSymbolicEval)
+
+/-- A variable the passive program defines is left out, since its value follows from the ones
+    reported: `y := x + 1` reports `x` alone. -/
+private def definedVar :=
+#strata
+program Core;
+procedure P()
+{
+  var x : int;
+  assume [pos]: int.gt(x, 0);
+  var y : int := int.add(x, 1);
+  assert [big]: int.ge(y, 11);
+};
+#end
+
+/--
+info: per-obligation big: [x]
+incremental big: [x]
+walked big: [x]
+-/
+#guard_msgs in
+#eval modelNames (parse definedVar) (pipeline := withoutSymbolicEval)
+
+/-- A chain of fifty definitions reaches `x` from the goal, and reports `x` alone: the closure
+    over definitions follows the whole chain, and leaves every defined link out. -/
+private def definitionChain :=
+#strata
+program Core;
+procedure P()
+{
+  var x : int;
+  assume [pos]: int.gt(x, 0);
+  var x1 : int := int.add(x, 1);
+  var x2 : int := int.add(x1, 1);
+  var x3 : int := int.add(x2, 1);
+  var x4 : int := int.add(x3, 1);
+  var x5 : int := int.add(x4, 1);
+  var x6 : int := int.add(x5, 1);
+  var x7 : int := int.add(x6, 1);
+  var x8 : int := int.add(x7, 1);
+  var x9 : int := int.add(x8, 1);
+  var x10 : int := int.add(x9, 1);
+  var x11 : int := int.add(x10, 1);
+  var x12 : int := int.add(x11, 1);
+  var x13 : int := int.add(x12, 1);
+  var x14 : int := int.add(x13, 1);
+  var x15 : int := int.add(x14, 1);
+  var x16 : int := int.add(x15, 1);
+  var x17 : int := int.add(x16, 1);
+  var x18 : int := int.add(x17, 1);
+  var x19 : int := int.add(x18, 1);
+  var x20 : int := int.add(x19, 1);
+  var x21 : int := int.add(x20, 1);
+  var x22 : int := int.add(x21, 1);
+  var x23 : int := int.add(x22, 1);
+  var x24 : int := int.add(x23, 1);
+  var x25 : int := int.add(x24, 1);
+  var x26 : int := int.add(x25, 1);
+  var x27 : int := int.add(x26, 1);
+  var x28 : int := int.add(x27, 1);
+  var x29 : int := int.add(x28, 1);
+  var x30 : int := int.add(x29, 1);
+  var x31 : int := int.add(x30, 1);
+  var x32 : int := int.add(x31, 1);
+  var x33 : int := int.add(x32, 1);
+  var x34 : int := int.add(x33, 1);
+  var x35 : int := int.add(x34, 1);
+  var x36 : int := int.add(x35, 1);
+  var x37 : int := int.add(x36, 1);
+  var x38 : int := int.add(x37, 1);
+  var x39 : int := int.add(x38, 1);
+  var x40 : int := int.add(x39, 1);
+  var x41 : int := int.add(x40, 1);
+  var x42 : int := int.add(x41, 1);
+  var x43 : int := int.add(x42, 1);
+  var x44 : int := int.add(x43, 1);
+  var x45 : int := int.add(x44, 1);
+  var x46 : int := int.add(x45, 1);
+  var x47 : int := int.add(x46, 1);
+  var x48 : int := int.add(x47, 1);
+  var x49 : int := int.add(x48, 1);
+  var x50 : int := int.add(x49, 1);
+  assert [big]: int.gt(x50, 1000);
+};
+#end
+
+/--
+info: per-obligation big: [x]
+incremental big: [x]
+walked big: [x]
+-/
+#guard_msgs in
+#eval modelNames (parse definitionChain) (pipeline := withoutSymbolicEval)
+
+private def hoistedTerm :=
+#strata
+program Core;
+function f (x : int) : int;
+procedure P()
+{
+  var x : int;
+  assume [pos]: int.gt(f(int.add(x, 1)), 0);
+  assume [small]: int.lt(f(int.add(x, 1)), 5);
+  assert [big]: int.gt(f(int.add(x, 1)), 10);
+};
+#end
+
+/--
+info: per-obligation big: [x], generated [$__cse.0]
+incremental big: [x], generated [$__cse.0]
+walked big: [x], generated [$__cse.0]
+-/
+#guard_msgs in
+#eval modelNames (parse hoistedTerm)
+
 /-! ### A goal the solver cannot be told fails alone, inside the walk
 
 `bad` and `good` sit on one node of one session, so the walk itself meets the literal SMT-LIB
@@ -2378,6 +2706,51 @@ spec {
 #guard_msgs in
 #eval bothWays "twoGoals subset" (parse twoGoals)
   { VerifyOptions.quiet with obligationsToVerify := some ["fair"] }
+
+/-! A counterexample that holds a datatype value, walked: its constructors come back as
+constructors, as on the per-obligation path, and not as free variables of the same name. -/
+
+private def datatypeCounterexample :=
+#strata
+program Core;
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+procedure P(xs : IntList)
+spec {
+  requires IntList..isCons(xs);
+}
+{
+  assert [short]: IntList..isNil(IntList..tl(xs));
+  assert [positive]: int.gt(IntList..hd(xs), 0);
+};
+#end
+
+/-- The constructors and variables a counterexample value is built from, each with what it was
+    read as, since a constructor and a variable of the same name print alike. -/
+private def headsOf : Lambda.LExpr Core.CoreLParams.mono → List String
+  | .op _ o _ => [s!"constructor {o.name}"]
+  | .fvar _ v _ => [s!"variable {v.name}"]
+  | .app _ f a => headsOf f ++ headsOf a
+  | _ => []
+
+/--
+info: per-obligation: [constructor Cons, constructor Nil]
+walked: [constructor Cons, constructor Nil]
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  let p := parse datatypeCounterexample
+  let options := { VerifyOptions.quiet with checkMode := .bugFinding }
+  for (name, incremental) in [("per-obligation", false), ("walked", true)] do
+    let options := { options with incremental }
+    let solver := if incremental then
+        some (Core.IncrementalSolve.coreSMTSolver 1 options (axiomProgram := some p)
+          (sendAlone := false))
+      else none
+    match ← (Strata.Core.verifyProgram p options (solver := solver)).toBaseIO with
+    | .ok rs =>
+      let heads := rs.toList.flatMap fun r => r.lexprModel.flatMap (headsOf ·.2)
+      IO.println s!"{name}: {heads.eraseDups}"
+    | .error e => IO.println s!"{name}: error {e}"
 
 /-! Symbolic evaluation leaves two copies of `A`, one per path to it, with the same label and
 the same metadata. Each is a session of one goal and is sent alone, and each keeps its own
