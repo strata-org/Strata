@@ -17,7 +17,9 @@ motives and ordinary `induction` cannot use it directly.
 induction hypothesis re-states the callee run over the command relation
 "`EvalCmdExtE` and the motive holds", for either a structured or CFG body.
 `evalCmdExtE_cmd_iff` characterizes evaluation of an embedded base command as
-exactly `EvalCmdE`, with no call event behavior. -/
+exactly `EvalCmdE`, with no call event behavior. `Calls.mem_checksAtCall`: a clause checked
+at a call site (`Calls.checksAtCall`) is a clause of the callee's specification with the same
+label, expression and attribute. -/
 
 namespace Imperative
 
@@ -51,7 +53,8 @@ theorem EvalCmdExtE.induct
         StepCFGStarE P (fun fac σ c σ' evs => ∃ h, motive fac σ c σ' evs h)
           (.atBlock g g.entry ⟨σAO, fac, false⟩) bodyEvents (.terminal ρ'))) →
       motive fac σ (.call n callArgs md) σ'
-        (Calls.defaultAssertEvents fac σAO p.spec.preconditions ++ bodyEvents ++
+        (Calls.defaultAssertEvents fac σAO (Calls.checksAtCall md p.spec.preconditions) ++
+          bodyEvents ++
           Calls.defaultAssertEvents fac σFinal p.spec.postconditions)
         (.call_sem hπ hentry hbody hexit)) :
     motive fac σ c σ' evs h :=
@@ -98,5 +101,28 @@ theorem evalCmdExtE_cmd_iff
   · intro h; exact EvalCmdExtE.cmd_sem h
 
 end
+
+/-! ## Clauses checked at a call site -/
+
+namespace Calls
+
+public section
+
+variable {P : PureExpr} [DecidableEq P.Ident]
+
+/-- A clause of `checksAtCall callMd checks` is a clause of `checks` with the same label,
+    expression and attribute. -/
+theorem mem_checksAtCall {callMd : MetaData P}
+    {checks : ListMap String (Check P)} {label : String} {check : Check P}
+    (h : (label, check) ∈ (checksAtCall callMd checks).toList) :
+    ∃ check₀, (label, check₀) ∈ checks.toList ∧ check.expr = check₀.expr ∧
+      check.attr = check₀.attr := by
+  obtain ⟨⟨l, c⟩, hmem, he⟩ := List.mem_map.mp h
+  cases he
+  exact ⟨c, hmem, rfl, rfl⟩
+
+end
+
+end Calls
 
 end Imperative

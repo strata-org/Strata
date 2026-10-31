@@ -63,13 +63,13 @@ theorem bool_valueOfTy (hb : v = tt ∨ v = ff) : HasVal.valueOfTy F v HasBool.b
 /-! ## Splitting a failing trace -/
 
 omit iDE iFv in
-/-- If the events `a ++ b`, with `b` nonempty, claim a failure of `t`, then `a` is feasible
-    and `b` claims it. -/
-theorem claim_split (hb : b ≠ []) (h : Claim t (a ++ b)) :
-    Trace.AssumptionsHold P evalInterp () a ∧ Claim t b := by
-  obtain ⟨evs, e, he, hA, hf⟩ := h
+/-- If the events `a ++ b`, with `b` nonempty, claim a failure of `t` with the condition `e`,
+    then `a` is feasible and `b` claims it. -/
+theorem claim_split (hb : b ≠ []) (h : Claim t e (a ++ b)) :
+    Trace.AssumptionsHold P evalInterp () a ∧ Claim t e b := by
+  obtain ⟨evs, ev, he, hA, hf⟩ := h
   obtain ⟨b, e', rfl⟩ := (List.eq_nil_or_concat b).resolve_left hb
-  obtain ⟨rfl, ⟨⟩⟩ := List.append_inj' (by simpa using he : a ++ b ++ [e'] = evs ++ [e]) rfl
+  obtain ⟨rfl, ⟨⟩⟩ := List.append_inj' (by simpa using he : a ++ b ++ [e'] = evs ++ [ev]) rfl
   exact ⟨fun c hc => hA c (by simp [hc]), b, _, by simp, fun c hc => hA c (by simp [hc]), hf⟩
 
 end -- public section

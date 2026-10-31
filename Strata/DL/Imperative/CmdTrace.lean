@@ -78,12 +78,13 @@ themselves; their property proofs live in
 @[expose] def Event.condition {P : PureExpr} : Event P → EventArg P
   | .assert condition | .assume condition | .cover condition => condition
 
-/-- What a failure check observes of an event: its kind, label, condition, and the value of
-    the condition in the event's store. -/
-@[expose] def Event.obs {P : PureExpr} : Event P → Nat × String × P.Expr × Option P.Expr
-  | .assert a => (0, a.label, a.expr, P.eval a.factory a.store a.expr)
-  | .assume a => (1, a.label, a.expr, P.eval a.factory a.store a.expr)
-  | .cover a => (2, a.label, a.expr, P.eval a.factory a.store a.expr)
+/-- What a failure check observes of an event: its kind, label, condition, metadata, and the
+    value of the condition in the event's store. -/
+@[expose] def Event.obs {P : PureExpr} :
+    Event P → Nat × String × P.Expr × MetaData P × Option P.Expr
+  | .assert a => (0, a.label, a.expr, a.metadata, P.eval a.factory a.store a.expr)
+  | .assume a => (1, a.label, a.expr, a.metadata, P.eval a.factory a.store a.expr)
+  | .cover a => (2, a.label, a.expr, a.metadata, P.eval a.factory a.store a.expr)
 
 /-- Lift a relation on captured event arguments to events of the same kind. -/
 @[expose] def Event.Matches {P : PureExpr}

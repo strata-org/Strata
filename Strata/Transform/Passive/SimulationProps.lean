@@ -80,11 +80,13 @@ theorem wflBH_eq (Lc S : List P.Ident) (ss : PStmts P) : wflBH Lc S ss = wflB Lc
 /-! ## Feasibility of traces -/
 
 include iBo in
-/-- A feasible prefix keeps a failing feasible trace failing and feasible. -/
+/-- A feasible prefix keeps a trace claiming a failure of `t` with the condition `e` claiming
+    it. -/
 theorem claim_prepend (h1 : Trace.AssumptionsHold P evalInterp () tr1)
-    (h2 : Claim t tr2) : Claim t (tr1 ++ tr2) :=
+    (h2 : Claim t e tr2) : Claim t e (tr1 ++ tr2) :=
   match h2 with
-  | ⟨evs, e, htr, hf, ht⟩ => ⟨tr1 ++ evs, e, by simp [htr], Trace.AssumptionsHold.append h1 hf, ht⟩
+  | ⟨evs, ev, htr, hf, ht⟩ =>
+    ⟨tr1 ++ evs, ev, by simp [htr], Trace.AssumptionsHold.append h1 hf, ht⟩
 
 end -- public section
 

@@ -108,29 +108,30 @@ end
 @[expose] def evalInterp : ConditionInterp P :=
   ⟨Unit, fun _ c => P.eval c.factory c.store c.expr = some HasBool.tt⟩
 
-/-- The event is a failing occurrence of the target: an assertion with the target id whose
-    condition evaluates to false, or a cover with the target id whose condition evaluates
-    to true. -/
-@[expose] def FailsAt (t : AssertId P) : Event P → Prop
-  | .assert arg => arg.label = t.label ∧ arg.expr = t.expr ∧
+/-- The event is a failing occurrence of the target `t` with the condition `e`: an assertion
+    with the label and metadata of `t` and the condition `e`, evaluating to false, or a cover
+    with the label and metadata of `t` and the condition `e`, evaluating to true. -/
+@[expose] def FailsAt (t : AssertId P) (e : P.Expr) : Event P → Prop
+  | .assert arg => arg.label = t.label ∧ arg.metadata = t.md ∧ arg.expr = e ∧
       P.eval arg.factory arg.store arg.expr = some HasBool.ff
-  | .cover arg => arg.label = t.label ∧ arg.expr = t.expr ∧
+  | .cover arg => arg.label = t.label ∧ arg.metadata = t.md ∧ arg.expr = e ∧
       P.eval arg.factory arg.store arg.expr = some HasBool.tt
   | .assume _ => False
 
-/-- The events `tr` claim a failure of the target `t`: they end with a failing occurrence of
-    `t`, every assumption before it evaluating to `true`. A list fails `t` exactly when a reach
-    of it emits events that claim a failure of `t` (`fails_iff_claim`). -/
-@[expose] def Claim (t : AssertId P) (tr : List (Event P)) : Prop :=
-  ∃ evs e, tr = evs ++ [e] ∧ Trace.AssumptionsHold P evalInterp () evs ∧ FailsAt t e
+/-- The events `tr` claim a failure of the target `t` with the condition `e`: they end with a
+    failing occurrence of `t` with the condition `e`, every assumption before it evaluating to
+    `true`. A list fails `t` with the condition `e` exactly when a reach of it emits events that
+    claim that failure (`fails_iff_claim`). -/
+@[expose] def Claim (t : AssertId P) (e : P.Expr) (tr : List (Event P)) : Prop :=
+  ∃ evs ev, tr = evs ++ [ev] ∧ Trace.AssumptionsHold P evalInterp () evs ∧ FailsAt t e ev
 
-/-- A statement list fails target `t` from store `σ`: a run reaches a failing occurrence
-    of `t`, every assumption before it evaluating to `true` (`Trace.AssumptionsHold` under
-    `evalInterp`). -/
+/-- A statement list fails target `t` with the condition `e` from store `σ`: a run reaches a
+    failing occurrence of `t` with the condition `e`, every assumption before it evaluating to
+    `true` (`Trace.AssumptionsHold` under `evalInterp`). -/
 @[expose] def Fails (F : P.Factory) (ss : (PStmts P)) (σ : SemanticStore P)
-    (t : AssertId P) : Prop :=
-  ∃ evs e, BReach F ss σ (evs ++ [e]) ∧ Trace.AssumptionsHold P evalInterp () evs ∧
-    FailsAt t e
+    (t : AssertId P) (e : P.Expr) : Prop :=
+  ∃ evs ev, BReach F ss σ (evs ++ [ev]) ∧ Trace.AssumptionsHold P evalInterp () evs ∧
+    FailsAt t e ev
 
 end -- public section
 

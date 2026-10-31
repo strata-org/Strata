@@ -604,7 +604,8 @@ example
       ⟨_, _, evalExpressions_intVal fac σ 2, .read_none, initCallFrame_oneInput .int (intVal 2)⟩
       .eval_none (emptyBodyExec _ _ _) .eval_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
-    simpa [defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList, oneInputProc] using
+    simpa [defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+      MetaData.setCallSiteFileRange_empty, ListMap.toList, oneInputProc] using
       EvalCommandE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 2, .read_none, initCallFrame_oneInput .int (intVal 2)⟩
         (emptyBodyExecE _ _ _) ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
@@ -613,7 +614,8 @@ example
       ⟨_, _, evalExpressions_intVal fac σ 2, .read_none, initCallFrame_oneInput .int (intVal 2)⟩
       .eval_none .update_none (by trivial) ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
-    simpa [defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList, assumeEvents,
+    simpa [defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+      MetaData.setCallSiteFileRange_empty, ListMap.toList, assumeEvents,
       Calls.assumeEvents, oneInputProc] using
       EvalCommandContractE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 2, .read_none, initCallFrame_oneInput .int (intVal 2)⟩
@@ -717,13 +719,15 @@ example
         (oldYIs7_defined _ inoutFrame_old)
         (oldYIs7_eval fac _ inoutFrame_old) .eval_none) hexit
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
-    simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList,
+    simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+      MetaData.setCallSiteFileRange_empty, ListMap.toList,
       assertEvent, oneInoutOldProc] using
       EvalCommandE.call_sem (calleeEnv_callee _) hentry
         (emptyBodyExecE _ _ _) hexit
   · exact EvalCommandContract.call_sem (calleeEnv_callee _) hentry
       .eval_none hhavoc hassume hexitO
-  · simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList,
+  · simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+      MetaData.setCallSiteFileRange_empty, ListMap.toList,
       assumeEvents, Calls.assumeEvents, assumeEvent,
       oneInoutOldProc, σO] using
       EvalCommandContractE.call_sem (calleeEnv_callee _) hentry hhavoc hexitO
@@ -814,13 +818,15 @@ example
     exact EvalCommand.call_sem (calleeEnv_callee _) hentry
       .eval_none (emptyBodyExec _ _ _) .eval_none hexit
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
-    simpa [defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList, oneOutputProc] using
+    simpa [defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+      MetaData.setCallSiteFileRange_empty, ListMap.toList, oneOutputProc] using
       EvalCommandE.call_sem (calleeEnv_callee _) hentry
         (emptyBodyExecE _ _ _) hexit
   · exact EvalCommandContract.call_sem (calleeEnv_callee _)
       ⟨_, _, .eval_none, hcopied, hframe⟩
       .eval_none hhavoc (by trivial) ⟨(by simp [Imperative.CallArg.getLhs]), _, hcontractResult, hcontractUpdate⟩
-  · simpa [defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList, assumeEvents,
+  · simpa [defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+      MetaData.setCallSiteFileRange_empty, ListMap.toList, assumeEvents,
       Calls.assumeEvents, oneOutputProc] using
       EvalCommandContractE.call_sem (calleeEnv_callee _)
         ⟨_, _, .eval_none, hcopied, hframe⟩
@@ -891,9 +897,10 @@ example
       simpa [passingBodyProc, oneInputContractBodyProc] using
         assertBodyExecEUnique h₁ h₂)
     simpa [MetaData.empty, passingBodyProc, defaultAssertEvents, Calls.defaultAssertEvents,
+      Calls.checksAtCall, MetaData.setCallSiteFileRange_empty,
       ListMap.toList, assertEvent,
       oneInputContractBodyProc, oneInputContractProc] using
-      EvalCommandE.call_sem (calleeEnv_callee _)
+      EvalCommandE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty) (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal Core.Factory σ 0, .read_none, hframe⟩
         hbodyE ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · apply uniqueEvalCommandContract (calleeEnv_callee _) (by rfl)
@@ -903,9 +910,11 @@ example
       ⟨isDefined_boolConst _ true, eval_boolConst _ _ true⟩ ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
     simpa [MetaData.empty, passingBodyProc, defaultAssertEvents, Calls.defaultAssertEvents,
+      Calls.checksAtCall, MetaData.setCallSiteFileRange_empty,
       ListMap.toList, assumeEvents, Calls.assumeEvents,
       assertEvent, assumeEvent, oneInputContractBodyProc, oneInputContractProc] using
-      EvalCommandContractE.call_sem (calleeEnv_callee _)
+      EvalCommandContractE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty)
+        (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal Core.Factory σ 0, .read_none, hframe⟩
         .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
 
@@ -966,9 +975,10 @@ example
       (.eval_fail (isDefined_boolConst _ false) (eval_boolConst _ _ false) .eval_none)
       ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
-    simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList,
+    simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+      MetaData.setCallSiteFileRange_empty, ListMap.toList,
       assertEvent, oneInputContractProc] using
-      EvalCommandE.call_sem (calleeEnv_callee _)
+      EvalCommandE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty) (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
         (emptyBodyExecE _ _ _) ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · -- Inverting the contract rule exposes its assumption of `post`, but `post`
@@ -985,10 +995,12 @@ example
         Option.some.inj ((eval_boolConst fac _ false).symm.trans hassume.2)
       simp [Lambda.LExpr.boolConst] at hff
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
-    simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList,
+    simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+      MetaData.setCallSiteFileRange_empty, ListMap.toList,
       assumeEvents, Calls.assumeEvents, assertEvent, assumeEvent,
       oneInputContractProc] using
-      EvalCommandContractE.call_sem (calleeEnv_callee _)
+      EvalCommandContractE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty)
+        (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
         .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
 
@@ -1057,10 +1069,11 @@ example
   · apply uniqueEvalCommandE (calleeEnv_callee _) (fun h₁ h₂ => by
       simpa [failingBodyProc, oneInputContractBodyProc] using
         assertBodyExecEUnique h₁ h₂)
-    simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList,
+    simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+      MetaData.setCallSiteFileRange_empty, ListMap.toList,
       assertEvent, failingBodyProc,
       oneInputContractBodyProc, oneInputContractProc] using
-      EvalCommandE.call_sem (calleeEnv_callee _)
+      EvalCommandE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty) (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal Core.Factory σ 0, .read_none, hframe⟩
         hbodyE ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · apply uniqueEvalCommandContract (calleeEnv_callee _) (by rfl)
@@ -1069,10 +1082,12 @@ example
       (.eval_pass (isDefined_boolConst _ true) (eval_boolConst _ _ true) .eval_none) .update_none
       ⟨isDefined_boolConst _ true, eval_boolConst _ _ true⟩ ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
-    simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList,
+    simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+      MetaData.setCallSiteFileRange_empty, ListMap.toList,
       assumeEvents, Calls.assumeEvents, assertEvent, assumeEvent,
       failingBodyProc, oneInputContractBodyProc, oneInputContractProc] using
-      EvalCommandContractE.call_sem (calleeEnv_callee _)
+      EvalCommandContractE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty)
+        (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal Core.Factory σ 0, .read_none, hframe⟩
         .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
 
@@ -1131,9 +1146,10 @@ example
       (.eval_pass (isDefined_boolConst _ true) (eval_boolConst _ _ true) .eval_none)
       ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
-    simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList,
+    simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+      MetaData.setCallSiteFileRange_empty, ListMap.toList,
       assertEvent, oneInputContractProc] using
-      EvalCommandE.call_sem (calleeEnv_callee _)
+      EvalCommandE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty) (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
         (emptyBodyExecE _ _ _) ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · apply uniqueEvalCommandContract (calleeEnv_callee _) (by rfl)
@@ -1142,10 +1158,12 @@ example
       (.eval_fail (isDefined_boolConst _ false) (eval_boolConst _ _ false) .eval_none) .update_none
       ⟨isDefined_boolConst _ true, eval_boolConst _ _ true⟩ ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
-    simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList,
+    simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+      MetaData.setCallSiteFileRange_empty, ListMap.toList,
       assumeEvents, Calls.assumeEvents, assertEvent, assumeEvent,
       oneInputContractProc] using
-      EvalCommandContractE.call_sem (calleeEnv_callee _)
+      EvalCommandContractE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty)
+        (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
         .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
 
@@ -1216,7 +1234,8 @@ example
   -- so its call emits no events.
   have hleafE : EvalCommandE nestedProcEnv fac emptyStore
       (.call "leaf" [] .empty) emptyStore [] := by
-    simpa [defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList, leafProc,
+    simpa [defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+      MetaData.setCallSiteFileRange_empty, ListMap.toList, leafProc,
       noArgProc] using
       EvalCommandE.call_sem (π := nestedProcEnv) (by simp [nestedProcEnv, leafProc])
         ⟨_, _, .eval_none, .read_none, emptyFrame "leaf" []⟩
@@ -1302,7 +1321,8 @@ example
       ⟨_, _, .eval_none, .read_none, emptyFrame "middle" [.cmd (.call "leaf" [] .empty)]⟩
       .eval_none hmiddleBody .eval_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · apply uniqueEvalCommandE (p := middleProc) (by simp [nestedProcEnv, middleProc]) hmiddleBodyEUnique
-    simpa [defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList, middleProc,
+    simpa [defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+      MetaData.setCallSiteFileRange_empty, ListMap.toList, middleProc,
       noArgProc] using
       EvalCommandE.call_sem (by simp [nestedProcEnv, middleProc])
         ⟨_, _, .eval_none, .read_none, emptyFrame "middle" [.cmd (.call "leaf" [] .empty)]⟩
@@ -1314,7 +1334,8 @@ example
       .eval_none .update_none (by trivial) ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (p := middleProc)
       (by simp [nestedProcEnv, middleProc]) (by rfl)
-    simpa [defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList, assumeEvents,
+    simpa [defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+      MetaData.setCallSiteFileRange_empty, ListMap.toList, assumeEvents,
       Calls.assumeEvents, middleProc, noArgProc] using
       EvalCommandContractE.call_sem (by simp [nestedProcEnv, middleProc])
         ⟨_, _, .eval_none, .read_none, emptyFrame "middle" [.cmd (.call "leaf" [] .empty)]⟩

@@ -310,32 +310,34 @@ private theorem dd_reachS [LawfulBEq P.Ident] (hE : EvCongr F) :
 end
 
 /-- **Erasing unread definitions keeps failures (big-step).**  If the statement list `ss`
-    fails the target `t` from the value-valued store `σ` (`Fails`: a run reaches a failing
-    occurrence of `t`, every earlier assumption holding), then `deadDefElim live ss` (the
-    list without the `init`s that no later statement, nor `live`, mentions) fails `t` from
-    `σ`, for any factory evaluating alike on well-formed stores agreeing on the free variables
+    fails the target `t` with the condition `e` from the value-valued store `σ` (`Fails`: a run
+    reaches a failing occurrence of `t` with the condition `e`, every earlier assumption
+    holding), then `deadDefElim live ss` (the list without the `init`s that no later statement,
+    nor `live`, mentions) fails `t` with the condition `e` from `σ`, for any factory evaluating
+    alike on well-formed stores agreeing on the free variables
     (`WellFormedSemanticEvalExprCongr`). -/
 theorem deadDefElim_fails (hcong : WellFormedSemanticEvalExprCongr F)
-    (live : List P.Ident) {ss : PStmts P} {σ : SemanticStore P} {t : AssertId P}
-    (hC : WellFormedStore σ F) (h : Fails F ss σ t) : Fails F (deadDefElim live ss) σ t := by
-  obtain ⟨evs, e, hb, hfeas, hfe⟩ := h
+    (live : List P.Ident) {ss : PStmts P} {σ : SemanticStore P} {t : AssertId P} {e : P.Expr}
+    (hC : WellFormedStore σ F) (h : Fails F ss σ t e) : Fails F (deadDefElim live ss) σ t e := by
+  obtain ⟨evs, ev, hb, hfeas, hfe⟩ := h
   have hE := evCongr_of_congr hcong
   obtain ⟨evs', hb', hm⟩ :=
     dd_reach hE hb (by simp) hC ⟨fun _ _ => rfl, StoreProjected.refl _⟩
-  obtain ⟨a, e', rfl, ha, he⟩ := hm.append_singleton
-  exact ⟨a, e', hb', feasible_obs (ha.map_obs hE) hfeas, failsAt_obs (he.obs hE) hfe⟩
+  obtain ⟨a, ev', rfl, ha, he⟩ := hm.append_singleton
+  exact ⟨a, ev', hb', feasible_obs (ha.map_obs hE) hfeas, failsAt_obs (he.obs hE) hfe⟩
 
 /-- **Erasing unread definitions keeps failures (reference event semantics).**  If the
-    statement list `ss` without loops (`Block.noLoops`) fails the target `t` from the value-valued
-    store `σ` under the reference event semantics (`FailsE`, with failure flag `hf`), then
-    `deadDefElim live ss` fails `t` from `σ` under it (with any failure flag `hf'`), for any
-    factory evaluating alike on well-formed stores agreeing on the free variables
-    (`WellFormedSemanticEvalExprCongr`) and evaluating Boolean guards to Booleans. -/
+    statement list `ss` without loops (`Block.noLoops`) fails the target `t` with the condition
+    `e` from the value-valued store `σ` under the reference event semantics (`FailsE`, with
+    failure flag `hf`), then `deadDefElim live ss` fails `t` with the condition `e` from `σ` under
+    it (with any failure flag `hf'`), for any factory evaluating alike on well-formed stores
+    agreeing on the free variables (`WellFormedSemanticEvalExprCongr`) and evaluating Boolean
+    guards to Booleans. -/
 theorem deadDefElim_failsE [HasBoolOps P] (hcong : WellFormedSemanticEvalExprCongr F)
     (hWB : WellFormedSemanticEvalBool (P := P) F)
     (live : List P.Ident) {ss : PStmts P} (hss : Block.noLoops ss = true) {σ : SemanticStore P}
-    {t : AssertId P} (hC : WellFormedStore σ F) {hf : Bool} (h : FailsE F hf ss σ t) (hf' : Bool) :
-    FailsE F hf' (deadDefElim live ss) σ t :=
+    {t : AssertId P} {e : P.Expr} (hC : WellFormedStore σ F) {hf : Bool}
+    (h : FailsE F hf ss σ t e) (hf' : Bool) : FailsE F hf' (deadDefElim live ss) σ t e :=
   fails_failsE hWB hf' (deadDefElim_fails hcong live hC (failsE_fails_noLoops hss h))
 
 /-! ## Traces of the output related event by event
@@ -452,7 +454,7 @@ theorem dd_assertValid_reflect {I : ConditionInterp P} (hI : I.StableUnder DDArg
       Trace.AssertionValid P I aid trace' → Trace.AssertionValid P I aid trace :=
   fun _ _ h aid =>
     Trace.AssertionValidFrom_matches_reflect hI
-      (fun h => ⟨h.label_eq.symm, h.expr_eq.symm⟩) aid .nil h
+      (fun h => ⟨h.label_eq.symm, h.metadata_eq.symm⟩) aid .nil h
 
 end
 
@@ -465,24 +467,25 @@ section
 variable [Hashable P.Ident]
 
 /-- **The executable pass keeps failures (big-step)**: if the statement list `ss` fails the
-    target `t` from the value-valued store `σ` (`Fails`), so does `deadDefElimH live ss`, for any
-    factory evaluating alike on well-formed stores agreeing on the free variables
-    (`WellFormedSemanticEvalExprCongr`) (`deadDefElim_fails` for `deadDefElimH`). -/
+    target `t` with the condition `e` from the value-valued store `σ` (`Fails`), so does
+    `deadDefElimH live ss`, for any factory evaluating alike on well-formed stores agreeing on the
+    free variables (`WellFormedSemanticEvalExprCongr`) (`deadDefElim_fails` for
+    `deadDefElimH`). -/
 theorem deadDefElimH_fails (hcong : WellFormedSemanticEvalExprCongr F)
-    (live : List P.Ident) {ss : PStmts P} {σ : SemanticStore P} {t : AssertId P}
-    (hC : WellFormedStore σ F) (h : Fails F ss σ t) : Fails F (deadDefElimH live ss) σ t :=
+    (live : List P.Ident) {ss : PStmts P} {σ : SemanticStore P} {t : AssertId P} {e : P.Expr}
+    (hC : WellFormedStore σ F) (h : Fails F ss σ t e) : Fails F (deadDefElimH live ss) σ t e :=
   deadDefElimH_eq live ss ▸ deadDefElim_fails hcong live hC h
 
 /-- **The executable pass keeps failures (reference event semantics)**: if the statement list
-    `ss` without loops fails the target `t` from the value-valued store `σ` under the reference
-    event semantics, so does `deadDefElimH live ss`, for any factory satisfying
+    `ss` without loops fails the target `t` with the condition `e` from the value-valued store `σ`
+    under the reference event semantics, so does `deadDefElimH live ss`, for any factory satisfying
     `WellFormedSemanticEvalExprCongr` and evaluating Boolean guards to Booleans
     (`deadDefElim_failsE` for `deadDefElimH`). -/
 theorem deadDefElimH_failsE [HasBoolOps P] (hcong : WellFormedSemanticEvalExprCongr F)
     (hWB : WellFormedSemanticEvalBool (P := P) F)
     (live : List P.Ident) {ss : PStmts P} (hss : Block.noLoops ss = true) {σ : SemanticStore P}
-    {t : AssertId P} (hC : WellFormedStore σ F) {hf : Bool} (h : FailsE F hf ss σ t) (hf' : Bool) :
-    FailsE F hf' (deadDefElimH live ss) σ t :=
+    {t : AssertId P} {e : P.Expr} (hC : WellFormedStore σ F) {hf : Bool}
+    (h : FailsE F hf ss σ t e) (hf' : Bool) : FailsE F hf' (deadDefElimH live ss) σ t e :=
   deadDefElimH_eq live ss ▸ deadDefElim_failsE hcong hWB live hss hC h hf'
 
 /-- **A reach of a list, and of the executable pass's output**: a reach of `ss` from the

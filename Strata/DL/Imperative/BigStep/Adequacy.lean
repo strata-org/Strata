@@ -165,22 +165,23 @@ end
 /-! ## Failure over the reference event semantics -/
 
 /-- `ss` run from `σ` (factory `F`, failure flag `hf`) under the reference event semantics
-    reaches a failing occurrence of `t`, every assumption before it evaluating to `true`. -/
+    reaches a failing occurrence of `t` with the condition `e`, every assumption before it
+    evaluating to `true`. -/
 @[expose] def FailsE (F : P.Factory) (hf : Bool) (ss : (PStmts P))
-    (σ : SemanticStore P) (t : AssertId P) : Prop :=
-  ∃ evs e cfg, StepStmtStarE P EvalE (.stmts ss { store := σ, factory := F, hasFailure := hf })
-      (evs ++ [e]) cfg ∧
-    Trace.AssumptionsHold P evalInterp () evs ∧ FailsAt t e
+    (σ : SemanticStore P) (t : AssertId P) (e : P.Expr) : Prop :=
+  ∃ evs ev cfg, StepStmtStarE P EvalE (.stmts ss { store := σ, factory := F, hasFailure := hf })
+      (evs ++ [ev]) cfg ∧
+    Trace.AssumptionsHold P evalInterp () evs ∧ FailsAt t e ev
 
 omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
     in
 /-- A big-step failure is a failure under the reference event semantics. -/
 theorem fails_failsE {F : P.Factory} (hWB : WellFormedSemanticEvalBool (P := P) F)
-    (hf : Bool) {ss : (PStmts P)} {σ : SemanticStore P} {t : AssertId P}
-    (h : Fails F ss σ t) : FailsE F hf ss σ t := by
-  obtain ⟨evs, e, hb, hfeas, hfe⟩ := h
+    (hf : Bool) {ss : (PStmts P)} {σ : SemanticStore P} {t : AssertId P} {e : P.Expr}
+    (h : Fails F ss σ t e) : FailsE F hf ss σ t e := by
+  obtain ⟨evs, ev, hb, hfeas, hfe⟩ := h
   obtain ⟨cfg, hc⟩ := breach_star hWB hb hf
-  exact ⟨evs, e, cfg, hc, hfeas, hfe⟩
+  exact ⟨evs, ev, cfg, hc, hfeas, hfe⟩
 
 /-! ## Small-step failures are big-step failures
 
@@ -401,10 +402,11 @@ omit [HasBoolOps P] in
     (`Block.noLoops`) that fails the target `t` from `σ` under the reference event semantics
     (`FailsE`) fails it in the big-step semantics (`Fails`), with the same trace. -/
 theorem failsE_fails_noLoops {ss : PStmts P} (hss : Block.noLoops ss = true) {hf : Bool}
-    {σ : SemanticStore P} {t : AssertId P} (h : FailsE F hf ss σ t) : Fails F ss σ t := by
-  obtain ⟨evs, e, cfg, hr, hfeas, hfe⟩ := h
+    {σ : SemanticStore P} {t : AssertId P} {e : P.Expr} (h : FailsE F hf ss σ t e) :
+    Fails F ss σ t e := by
+  obtain ⟨evs, ev, cfg, hr, hfeas, hfe⟩ := h
   cases creach_star hr ⟨hss, rfl⟩ (by simp) with
-  | stmts h => exact ⟨evs, e, h, hfeas, hfe⟩
+  | stmts h => exact ⟨evs, ev, h, hfeas, hfe⟩
 
 omit [HasBoolOps P] in
 /-- A step keeps the factory and the failure flag of the environment. -/

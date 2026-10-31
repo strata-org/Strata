@@ -18,10 +18,9 @@ evaluating alike on well-formed stores agreeing on the free variables (`EvCongr`
 kept by leaving a scope or a block, by restricting the agreed variables, and by defining a
 variable as a value in both stores (`agree_def`); a command step is replayed event by event
 (`cmd_sim`, events related by `EvReplay`).  A failure check observes of an event its kind, label,
-condition and the condition's value (`Event.obs`, defined in `CmdTrace`): replaying events are
-observed alike
-(`List.Rel₂.map_obs`), and traces observed alike have the same feasibility (`feasible_obs`) and
-the same failing occurrences (`failsAt_obs`).
+condition, metadata and the condition's value (`Event.obs`, defined in `CmdTrace`): replaying
+events are observed alike (`List.Rel₂.map_obs`), and traces observed alike have the same
+feasibility (`feasible_obs`) and the same failing occurrences (`failsAt_obs`).
 
 Key definitions: `Agree`, `OAgree`, `EvCongr`, `ArgReplay`, `EvReplay`.
 
@@ -50,16 +49,16 @@ theorem feasible_obs {evs evs' : List (Event P)}
   | assume a' =>
     simp only [Event.obs, Prod.mk.injEq] at heq
     show P.eval _ _ _ = _
-    rw [← heq.2.2.2]
+    rw [← heq.2.2.2.2]
     exact h a' he
   | assert | cover => simp [Event.obs] at heq
 
 omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P] [LawfulHasVal P]
     [HasFvars P] in
-/-- An event observed like a failing occurrence of `t` is one. -/
-theorem failsAt_obs {t : AssertId P} {e e' : Event P}
-    (hm : Event.obs e' = Event.obs e) (h : FailsAt t e) : FailsAt t e' := by
-  cases e <;> cases e' <;> simp only [Event.obs, FailsAt, Prod.mk.injEq] at hm h ⊢ <;> grind
+/-- An event observed like a failing occurrence of `t` with the condition `e` is one. -/
+theorem failsAt_obs {t : AssertId P} {e : P.Expr} {ev ev' : Event P}
+    (hm : Event.obs ev' = Event.obs ev) (h : FailsAt t e ev) : FailsAt t e ev' := by
+  cases ev <;> cases ev' <;> simp only [Event.obs, FailsAt, Prod.mk.injEq] at hm h ⊢ <;> grind
 
 /-- `σ'` agrees with `σ` on `N`, and wherever `σ'` is defined (`StoreAgreement σ' σ`). -/
 @[expose] def Agree (N : List P.Ident) (σ σ' : SemanticStore P) : Prop :=
@@ -171,10 +170,10 @@ omit [LawfulHasVal P] [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [H
 theorem EvReplay.obs (hE : EvCongr F) {e e' : Event P} (h : EvReplay F e e') :
     Event.obs e' = Event.obs e := by
   have key : ∀ {a a' : EventArg P}, ArgReplay F a a' →
-      (a'.label, a'.expr, P.eval a'.factory a'.store a'.expr) =
-        (a.label, a.expr, P.eval a.factory a.store a.expr) := by
-    rintro ⟨f, s, l, x, m⟩ ⟨f', s', l', x', m'⟩ ⟨rfl, rfl, rfl, rfl, -, hA, hC⟩
-    exact congrArg _ (congrArg _ (ev_agree hE hC hA fun _ hy => hy))
+      (a'.label, a'.expr, a'.metadata, P.eval a'.factory a'.store a'.expr) =
+        (a.label, a.expr, a.metadata, P.eval a.factory a.store a.expr) := by
+    rintro ⟨f, s, l, x, m⟩ ⟨f', s', l', x', m'⟩ ⟨rfl, rfl, rfl, rfl, rfl, hA, hC⟩
+    exact congrArg _ (congrArg _ (congrArg _ (ev_agree hE hC hA fun _ hy => hy)))
   rcases e with a | a | a <;> rcases e' with a' | a' | a' <;> simp only [EvReplay] at h <;>
     simp only [Event.obs, key h]
 

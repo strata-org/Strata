@@ -13,8 +13,9 @@ import Strata.DL.Imperative.CmdSemanticsProps
 
 A failing occurrence of a target that a guarded program reaches on a feasible path from a store
 `σL` is also reached by its obligation program from any store `σS` holding, under the entry
-names, the values `σL` gives the free variables, at the target under the substitution of the
-SSA entry of an obligation with its label (`ssaEntry_over`).  The proof is an induction on the
+names, the values `σL` gives the free variables: an occurrence of the same target whose condition
+is the guarded occurrence's under the substitution of the SSA entry of an obligation with its
+label (`ssaEntry_over`).  The proof is an induction on the
 guarded program along the traversal, with the two stores agreeing on the free variables of the
 rest of the list (`SAgree`); folding is a refinement of evaluation (`evalsTo_foldE`).
 
@@ -42,7 +43,7 @@ variable {P : PureExpr} [iDE : DecidableEq P.Ident] [iBE : BEq P.Ident] [iLB : L
 omit iOp iLFv iLFvs
 variable {F : P.Factory} {σS σL σ σS' σS1 : SemanticStore P} {x y : P.Ident} {D : List P.Ident}
   {t : AssertId P} {A : AvoidSet P} {n0 n : Nat} {w : P.Expr} {ρ : Std.HashMap P.Ident (SVal P)}
-  {out o : PStmts P} {tr evs : List (Event P)} {s s1 : SSt P}
+  {out o : PStmts P} {tr evs : List (Event P)} {s s1 : SSt P} {cond : P.Expr}
 
 
 /-! ## Agreement of the two stores
@@ -149,15 +150,14 @@ private theorem ssaAssign_sim (hF : SSALaws F) (hCL : WellFormedStore σL F)
 
 omit iLI iLV in
 /-- **An obligation of the traversal.**  The condition the traversal emits for a guarded
-    obligation on the target's condition `e` is the target's condition under the substitution of
-    its entry, with the facts of `SClaim` on that substitution. -/
+    obligation on the condition `e` is `e` under the substitution of its entry, with the facts of
+    `SClaim` on that substitution. -/
 private theorem obl_claim (hD : SDom A D n0 σS n) {e : P.Expr}
-    (hA : ∀ x ∈ HasFvars.getFvars e, SAgree F ρ σL σS x) (he : e = t.expr) :
-    renM' ρ e = substObl (oblSubS ρ e) t.expr ∧
-      (∀ q ∈ oblSubS ρ e, q.1 ∈ exprFV t.expr) ∧
-      ∀ y ∈ exprFV t.expr, (∃ z ty, (y, z, ty) ∈ oblSubS ρ e) ∨ y ∈ D ∨
+    (hA : ∀ x ∈ HasFvars.getFvars e, SAgree F ρ σL σS x) :
+    renM' ρ e = substObl (oblSubS ρ e) e ∧
+      (∀ q ∈ oblSubS ρ e, q.1 ∈ exprFV e) ∧
+      ∀ y ∈ exprFV e, (∃ z ty, (y, z, ty) ∈ oblSubS ρ e) ∨ y ∈ D ∨
         ∃ b j, n0 ≤ j ∧ y = freshName b j ∧ y ∉ A.toList := by
-  subst he
   refine ⟨?_, fun q hq => ?_, fun y hy => ?_⟩
   · refine WPLang.substFn_eq _ _ _ fun x hx => ?_
     refine (Map.find?_filterMap_self (fun z => (oblVar ρ z).map fun (y, ty) => var y ty) _ x
@@ -172,25 +172,25 @@ private theorem obl_claim (hD : SDom A D n0 σS n) {e : P.Expr}
 
 /-! ## The simulation -/
 
-/-- The obligation program `out` fails, from `σS`, the target `t` under the substitution `ssub`
-    of an entry `obl t.label ssub` of `obls`, whose keys are free variables of `t`; every free
-    variable of `t` without an entry is in `D` or a fresh name with a counter at least `n0`
-    outside `A`. -/
-@[expose] def SClaim (F : P.Factory) (t : AssertId P) (A : AvoidSet P) (D : List P.Ident)
-    (n0 : Nat) (out : PStmts P) (σS : SemanticStore P) (obls : List (Option (LogEntry P))) :
-    Prop :=
+/-- A reach of the obligation program `out` from `σS` claims a failure of the target `t` at an
+    occurrence whose condition is `e` under the substitution `ssub` of an entry
+    `obl t.label ssub` of `obls`, whose keys are free variables of `e`; every free variable of
+    `e` without an entry is in `D` or a fresh name with a counter at least `n0` outside `A`. -/
+@[expose] def SClaim (F : P.Factory) (t : AssertId P) (e : P.Expr) (A : AvoidSet P)
+    (D : List P.Ident) (n0 : Nat) (out : PStmts P) (σS : SemanticStore P)
+    (obls : List (Option (LogEntry P))) : Prop :=
   ∃ ssub tr, some (.obl t.label ssub) ∈ obls ∧ BReach F out σS tr ∧
-    Claim ⟨t.label, substObl ssub t.expr⟩ tr ∧ (∀ q ∈ ssub, q.1 ∈ exprFV t.expr) ∧
-    ∀ y ∈ exprFV t.expr, (∃ z ty, (y, z, ty) ∈ ssub) ∨ y ∈ D ∨
+    Claim t (substObl ssub e) tr ∧ (∀ q ∈ ssub, q.1 ∈ exprFV e) ∧
+    ∀ y ∈ exprFV e, (∃ z ty, (y, z, ty) ∈ ssub) ∨ y ∈ D ∨
       ∃ b j, n0 ≤ j ∧ y = freshName b j ∧ y ∉ A.toList
 
 omit iLI iWL iLV in
 /-- `SClaim` holds for more choice-record entries and for any list a reach of `out` is a
     reach of. -/
 private theorem SClaim.mono {out' : PStmts P} {obls obls' : List (Option (LogEntry P))}
-    (h : SClaim F t A D n0 out σS obls) (ho : ∃ l, obls' = l ++ obls)
+    (h : SClaim F t cond A D n0 out σS obls) (ho : ∃ l, obls' = l ++ obls)
     (hr : ∀ {tr}, BReach F out σS tr → ∃ tr0, BReach F out' σS' (tr0 ++ tr) ∧
-      Trace.AssumptionsHold P evalInterp () tr0) : SClaim F t A D n0 out' σS' obls' :=
+      Trace.AssumptionsHold P evalInterp () tr0) : SClaim F t cond A D n0 out' σS' obls' :=
   let ⟨_, _, hm, hb, hc, hk⟩ := h
   let ⟨_, hb', hf⟩ := hr hb
   ⟨_, _, ho.elim fun l hl => hl ▸ List.mem_append_right l hm, hb', claim_prepend hf hc, hk⟩
@@ -211,21 +211,24 @@ private theorem reach_after_stmt {c : PStmt P} (hc : BRunS F c σS evs (.normal 
   ⟨evs, .later hc h, hf⟩
 
 omit iHF in
-/-- A single event claiming a failure is a failing occurrence of the target. -/
-private theorem claim_single {e : Event P} (h : Claim t [e]) : FailsAt t e := by
+/-- A single event claiming a failure at an occurrence of condition `cond` is a failing
+    occurrence of the target with the condition `cond`. -/
+private theorem claim_single {e : Event P} (h : Claim t cond [e]) : FailsAt t cond e := by
   obtain ⟨evs, e', he, -, hf⟩ := h
   cases evs <;> simp_all
 
 omit iHF in
 /-- No trace claims a failure without events. -/
-private theorem claim_nil' : ¬ Claim t [] := fun ⟨_, _, h, _⟩ => by simp at h
+private theorem claim_nil' : ¬ Claim t cond [] := fun ⟨_, _, h, _⟩ => by simp at h
 
-/-- A reach of a list headed by a command, claiming a failure, runs the command, whose events
-    claim the failure, or are feasible and followed by a reach of the rest claiming it. -/
+/-- A reach of a list headed by a command, claiming a failure at an occurrence of condition `cond`,
+    runs the command, whose events claim it, or are feasible and followed by a reach of the rest
+    claiming it. -/
 private theorem reach_cmd_claim {c : Cmd P} {rest : PStmts P}
     (h : BReach F (.cmd (.cmd c) :: rest) σ tr)
-    (hC : Claim t tr) : ∃ σ1 evs, EvalE F σ (.cmd c) σ1 evs ∧ (Claim t evs ∨
-      ∃ tr', BReach F rest σ1 tr' ∧ Trace.AssumptionsHold P evalInterp () evs ∧ Claim t tr') := by
+    (hC : Claim t cond tr) : ∃ σ1 evs, EvalE F σ (.cmd c) σ1 evs ∧ (Claim t cond evs ∨
+      ∃ tr', BReach F rest σ1 tr' ∧ Trace.AssumptionsHold P evalInterp () evs ∧
+        Claim t cond tr') := by
   rcases h with ⟨⟨hE⟩⟩ | @⟨_, _, _, _, _, tr', ⟨hE⟩, hR⟩
   · exact ⟨_, _, hE, .inl hC⟩
   · by_cases hb : tr' = []
@@ -242,16 +245,18 @@ private theorem SAgree.assign {σL1 : SemanticStore P} {v : SVal P} {V : List P.
     (hold : ∀ y ∈ V, y ≠ x → SAgree F ρ σL σS y) : ∀ y ∈ V, SAgree F (ρ.insert x v) σL1 σS1 y :=
   fun y hy => by by_cases h : x = y <;> grind [SAgree, SAgree.transfer]
 
-/-- **The traversal preserves failures.**  A failure of the target `t` reached by a guarded list
-    from `σL` is one of the traversal's output from `σS` (`SClaim`), when the two stores agree on
-    the free variables of the list and the obligation store binds only the names `SDom`
+/-- **The traversal preserves failures.**  A failure of the target `t` at an occurrence of
+    condition `cond` reached by a guarded list from `σL` is one of the traversal's output from
+    `σS` at an occurrence of `cond` under a recorded substitution (`SClaim`), when the two stores
+    agree on the free variables of the list and the obligation store binds only the names `SDom`
     allows. -/
-private theorem ssaList_over (hF : SSALaws F) (t : AssertId P) (A : AvoidSet P) (D : List P.Ident)
-    (n0 : Nat) (ss : PStmts P) :
+private theorem ssaList_over (hF : SSALaws F) (t : AssertId P) (cond : P.Expr) (A : AvoidSet P)
+    (D : List P.Ident) (n0 : Nat) (ss : PStmts P) :
     ∀ {s s' : SSt P} {out : PStmts P}, ssaList ss s = .ok (out, s') →
     ∀ {σL σS : SemanticStore P} {tr : List (Event P)}, s.avoid = A → n0 ≤ s.next →
     (∀ x ∈ Block.freeVars ss, SAgree F s.ρ σL σS x) → WellFormedStore σL F → WellFormedStore σS F →
-    SDom A D n0 σS s.next → BReach F ss σL tr → Claim t tr → SClaim F t A D n0 out σS s'.obls := by
+    SDom A D n0 σS s.next → BReach F ss σL tr → Claim t cond tr →
+    SClaim F t cond A D n0 out σS s'.obls := by
   intro s s' out h
   refine no_implicit_lambda% (ssaList_ind (fun _ _ _ _ _ _ _ _ _ _ hR => by cases hR) ?initDet
     ?initNondet ?setDet ?setNondet ?assume ?check ?ite ?typeDecl h)
@@ -311,11 +316,13 @@ private theorem ssaList_over (hF : SSALaws F) (t : AssertId P) (A : AvoidSet P) 
       all_goals
         have hA' : ∀ x ∈ HasFvars.getFvars e, SAgree F s.ρ σL σS x :=
           fun x hx => hA x (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hx])
-        obtain ⟨hl, hx, hf⟩ := failsAt_transfer (by simp)
-          (fun _ => evalsTo_renM' hF hCL hCS hA') (claim_single hc)
-        obtain ⟨h1, h3, h4⟩ := obl_claim hD hA' hx
-        exact ⟨_, _, hl ▸ hmem, .here (.cmd (by constructor)),
-          ⟨[], _, rfl, nofun, by rw [← hl, ← h1]; exact hf⟩, h3, h4⟩
+        have hfa := claim_single hc
+        obtain rfl : e = cond := hfa.2.2.1
+        obtain ⟨h1, h3, h4⟩ := obl_claim hD hA'
+        obtain ⟨hl, hmd, -, hv⟩ :=
+          failsAt_transfer (by simp) (fun _ => evalsTo_renM' hF hCL hCS hA') hfa
+        refine ⟨_, _, hl ▸ hmem, .here (.cmd (by constructor)), ⟨[], _, rfl, nofun, ?_⟩, h3, h4⟩
+        exact ⟨hl, hmd, h1, hv⟩
     · rcases hmk with rfl | rfl <;> cases hE <;>
         exact (ih hav hn (fun x hx => hA x (by simp [Block.freeVars, Stmt.freeVars, hx]))
             hCL hCS hD hR' hc).mono
@@ -534,8 +541,9 @@ private theorem entryMap_agree {tys : Tys P} {ρ0 : Ren P} {lay : PStmts P}
   cases hp : ρ0.find? (·.1 == x) <;> grind [SAgree, SHolds, Ren.get, TyOK, entryMap_lookup]
 
 /-- **The SSA phase preserves failures.**  If the guarded program `lay` fails the target `t` from
-    the store `σL`, then its obligation program `so.out` fails, from the store `σS`, the target
-    under the substitution `ssub` of an entry `obl t.label ssub` the phase records.  Hypotheses:
+    the store `σL` at an occurrence whose condition is `e`, then its obligation program `so.out`
+    fails `t`, from the store `σS`, at an occurrence whose condition is `e` under the substitution
+    `ssub` of an entry `obl t.label ssub` the phase records.  Hypotheses:
     every free variable `x` of `lay` is defined in `σL` with the value `σS` gives its entry name
     `ρ0.get x`, and has its declared type (`TyOK`); both stores hold values; `σS` binds only names
     of `D`, and every name of `D` of the form of a fresh name the phase may introduce is avoided
@@ -544,24 +552,25 @@ private theorem ssaBody_over (hF : SSALaws F) {st : FreshSt P} {ρ0 : Ren P} {la
     {so : SOut P} (h : ssaBody st ρ0 lay = .ok so) (hN : NamesOK st.avoid.toList D st.next)
     (hρ : ∀ x ∈ Block.freeVars lay, σL x = σS (ρ0.get x) ∧ (σL x).isSome)
     (hty : TyOK F st.tys (Block.freeVars lay) (Block.freeVars lay) σL) (hCL : WellFormedStore σL F)
-    (hCS : WellFormedStore σS F) (hdom : DomIn σS D) (hfail : Fails F lay σL t) :
-    ∃ ssub, some (.obl t.label ssub) ∈ so.obls ∧ Fails F so.out σS ⟨t.label, substObl ssub t.expr⟩ ∧
-      (∀ q ∈ ssub, q.1 ∈ exprFV t.expr) ∧
-      ∀ y ∈ exprFV t.expr, (∃ z ty, (y, z, ty) ∈ ssub) ∨ y ∈ D ∨
+    (hCS : WellFormedStore σS F) (hdom : DomIn σS D) {e : P.Expr} (hfail : Fails F lay σL t e) :
+    ∃ ssub, some (.obl t.label ssub) ∈ so.obls ∧ Fails F so.out σS t (substObl ssub e) ∧
+      (∀ q ∈ ssub, q.1 ∈ exprFV e) ∧
+      ∀ y ∈ exprFV e, (∃ z ty, (y, z, ty) ∈ ssub) ∨ y ∈ D ∨
         ∃ b j, st.next ≤ j ∧ y = freshName b j ∧ y ∉ st.avoid.toList := by
   obtain ⟨s1, h1, hobls⟩ := ssaBody_ok h
-  obtain ⟨evs, e, hr, hf, hfa⟩ := hfail
-  obtain ⟨ssub, tr, hm, hr', ⟨evs', e', rfl, hf', hfa'⟩, hk, hy⟩ :=
-    ssaList_over hF t st.avoid D st.next lay h1 rfl (Nat.le_refl _) (entryMap_agree hρ hty) hCL hCS
-      ⟨D, hN, hdom, fun z hz => .inl hz⟩ hr ⟨evs, e, rfl, hf, hfa⟩
-  exact ⟨ssub, hobls ▸ List.mem_reverse.2 hm, ⟨evs', e', hr', hf', hfa'⟩, hk, hy⟩
+  obtain ⟨evs, ev, hr, hf, hfa⟩ := hfail
+  obtain ⟨ssub, tr, hm, hr', ⟨evs', ev', rfl, hf', hfa'⟩, hk, hy⟩ :=
+    ssaList_over hF t e st.avoid D st.next lay h1 rfl (Nat.le_refl _) (entryMap_agree hρ hty) hCL
+      hCS ⟨D, hN, hdom, fun z hz => .inl hz⟩ hr ⟨evs, ev, rfl, hf, hfa⟩
+  exact ⟨ssub, hobls ▸ List.mem_reverse.2 hm, ⟨evs', ev', hr', hf', hfa'⟩, hk, hy⟩
 
 /-- **The SSA phase preserves failures.**  Let `ssaEntry G tys xs al lay` give the entry renaming
     `ρ0` and the obligation program `so.out` of the guarded program `lay`.  If `lay` fails the
-    target `t` from the store `σL`, then `so.out` fails, from the store `σS`, the target under
-    the substitution `ssub` of an entry `obl t.label ssub` the phase records; the keys of `ssub`
-    are free variables of `t`, and every free variable of `t` is a key of `ssub` or a name `σS`
-    may bind.  Hypotheses: every `(a, x)` of `al` has `x` in `xs`; every free variable `x` of
+    target `t` from the store `σL` at an occurrence whose condition is `e`, then `so.out` fails
+    `t`, from the store `σS`, at an occurrence whose condition is `e` under the substitution
+    `ssub` of an entry `obl t.label ssub` the phase records; the keys of `ssub` are free
+    variables of `e`, and every free variable of `e` is a key of `ssub` or a name `σS` may
+    bind.  Hypotheses: every `(a, x)` of `al` has `x` in `xs`; every free variable `x` of
     `lay` is defined in `σL` with the value `σS` gives its entry name `ρ0.get x`, and has its
     type in `tys` (`TyOK`); both stores hold values; `σS` binds only names of `D`, each an entry
     name or not of the form of a fresh name.  Hypotheses on the factory: the mainline evaluator
@@ -574,11 +583,11 @@ theorem ssaEntry_over {F : P.Factory} (hVar : WellFormedSemanticEvalVar (P := P)
     {σL σS : SemanticStore P} (hρ : ∀ x ∈ Block.freeVars lay, σL x = σS (ρ0.get x) ∧ (σL x).isSome)
     (hty : TyOK F tys (Block.freeVars lay) (Block.freeVars lay) σL) (hCL : WellFormedStore σL F)
     (hCS : WellFormedStore σS F) {D : List P.Ident} (hdom : DomIn σS D)
-    (hD : ∀ y ∈ D, y ∈ ρ0.map (·.2) ∨ ∀ b j, y ≠ freshName b j) {t : AssertId P}
-    (hfail : Fails F lay σL t) :
-    ∃ ssub, some (.obl t.label ssub) ∈ so.obls ∧ Fails F so.out σS ⟨t.label, substObl ssub t.expr⟩ ∧
-      (∀ q ∈ ssub, q.1 ∈ exprFV t.expr) ∧
-      ∀ y ∈ exprFV t.expr, (∃ z ty, (y, z, ty) ∈ ssub) ∨ y ∈ D := by
+    (hD : ∀ y ∈ D, y ∈ ρ0.map (·.2) ∨ ∀ b j, y ≠ freshName b j) {t : AssertId P} {e : P.Expr}
+    (hfail : Fails F lay σL t e) :
+    ∃ ssub, some (.obl t.label ssub) ∈ so.obls ∧ Fails F so.out σS t (substObl ssub e) ∧
+      (∀ q ∈ ssub, q.1 ∈ exprFV e) ∧
+      ∀ y ∈ exprFV e, (∃ z ty, (y, z, ty) ∈ ssub) ∨ y ∈ D := by
   obtain ⟨rfl, hs⟩ := ssaEntry_ok h
   obtain ⟨ssub, hm, hfs, hk, hc⟩ := ssaBody_over ⟨hVar, hVal, hLits⟩ hs
       (ssaEntryRen_namesOK _ xs al hal hD) hρ hty hCL hCS hdom hfail

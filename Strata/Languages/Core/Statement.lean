@@ -115,21 +115,20 @@ end
 mutual
 /--
 Collect the `AssertId Expression` of every reachable assertion in `s`:
-`.assert` commands and each entry of a `.loop`'s invariant list. Mirrors
-the shape of `coreIsAtAssert`.
-
-NOTE: Once loop invariant is dropped from coreIsAtAssert, this will be a simple
-filtering of .assert commands.
+`.assert` commands (their label and metadata) and each entry of a `.loop`'s
+invariant list (its label and `MetaData.invariantMd`, the metadata that loop
+invariant elimination gives the asserts it generates for that invariant).
 -/
 def Statement.collectAssertIds (s : Statement) : List (Imperative.AssertId Expression) :=
   match s with
-  | .cmd (.cmd (.assert label expr _)) => [⟨label, expr⟩]
+  | .cmd (.cmd (.assert label _ md)) => [⟨label, md⟩]
   | .cmd _ => []
   | .block _ inner_ss _ => Statements.collectAssertIds inner_ss
   | .ite _ then_ss else_ss _ =>
     Statements.collectAssertIds then_ss ++ Statements.collectAssertIds else_ss
-  | .loop _ _ inv body_ss _ =>
-    inv.map (fun lp => ⟨lp.1, lp.2⟩) ++ Statements.collectAssertIds body_ss
+  | .loop _ _ inv body_ss md =>
+    inv.mapIdx (fun i lp => ⟨lp.1, md.invariantMd i⟩) ++
+      Statements.collectAssertIds body_ss
   | .exit _ _ | .typeDecl _ _ => []
   termination_by Imperative.Stmt.sizeOf s
 

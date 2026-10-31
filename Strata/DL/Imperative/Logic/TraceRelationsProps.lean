@@ -49,7 +49,7 @@ Key theorem families:
   `Trace.matches_comp` compose such matches.
 * **`WithWF` strengthenings** of `EventArg.ExtendsEnv` (`EventArg.WithWF` is
   defined in `TraceRelations`): `EventArg.WithWF.mono` / `trans` /
-  `label_expr`, with trace-level `Trace.WithWF.append` / `toExtendsEnv` /
+  `label_metadata`, with trace-level `Trace.WithWF.append` / `toExtendsEnv` /
   `of_extends` / `mono` / `trans` / `toTraceStuttersEnv` /
   `assertionValidFrom_reflect`.
 * **`Trace.WeakensAssumes`** is reflexive and transitive
@@ -652,13 +652,13 @@ theorem trans {P : PureExpr} [HasVal P] [HasFvars P]
   exprCongr := h₁.exprCongr
 
 /-- Arguments related by `WithWF (ExtendsEnv _)` carry the same assertion label
-and expression. -/
-theorem label_expr {P : PureExpr} [HasVal P] [HasFvars P]
+and metadata. -/
+theorem label_metadata {P : PureExpr} [HasVal P] [HasFvars P]
     {Extra : P.Ident → Prop} {source target : EventArg P}
     (h : EventArg.WithWF (EventArg.ExtendsEnv Extra) source target) :
-    source.label = target.label ∧ source.expr = target.expr := by
-  obtain ⟨_, _, hlabel, hexpr, _⟩ := h.rel
-  exact ⟨hlabel, hexpr⟩
+    source.label = target.label ∧ source.metadata = target.metadata := by
+  obtain ⟨_, _, hlabel, _, hmd⟩ := h.rel
+  exact ⟨hlabel, hmd⟩
 
 end EventArg.WithWF
 
@@ -748,7 +748,7 @@ theorem assertionValidFrom_reflect {P : PureExpr} [HasVal P] [HasFvars P]
     Trace.AssertionValidFrom P I aid [] target →
       Trace.AssertionValidFrom P I aid [] source :=
   Trace.AssertionValidFrom_matches_reflect hstable
-    (fun h => EventArg.WithWF.label_expr h) aid .nil h
+    (fun h => EventArg.WithWF.label_metadata h) aid .nil h
 
 end Trace.WithWF
 

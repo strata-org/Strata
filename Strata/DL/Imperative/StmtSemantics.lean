@@ -157,42 +157,6 @@ Administrative configurations and non-command statements are silent. -/
   | none => .terminal ρ
   | some lbl => .exiting lbl ρ
 
-/-! ## noMatchingAssert
-
-`noMatchingAssert` checks that a statement, list of statements, or
-configuration does not syntactically contain an `assert` command with
-a given label.  This is specific to `Cmd P`. -/
-
-/-- `noMatchingAssert` for statements and statement lists.
-    Returns `True` when `s` does not syntactically contain any `assert`
-    command or loop invariant with the given label. -/
-@[expose] def Stmt.noMatchingAssert : Stmt P (Cmd P) → String → Prop
-  | .cmd (.assert l _ _), label => l ≠ label
-  | .cmd _, _ => True
-  | .block _ ss _, label => Stmts.noMatchingAssert ss label
-  | .ite _ tss ess _, label =>
-    Stmts.noMatchingAssert tss label ∧ Stmts.noMatchingAssert ess label
-  | .loop _ _ inv body _, label =>
-    (∀ (le : String × P.Expr), le ∈ inv → le.1 ≠ label) ∧
-    Stmts.noMatchingAssert body label
-  | .exit _ _, _ => True
-  | .typeDecl _ _, _ => True
-where
-  /-- Helper for lists of statements. -/
-  Stmts.noMatchingAssert : List (Stmt P (Cmd P)) → String → Prop
-    | [], _ => True
-    | s :: ss, label => s.noMatchingAssert label ∧ Stmts.noMatchingAssert ss label
-
-/-- Extend `noMatchingAssert` to configurations. -/
-@[expose] def Config.noMatchingAssert : Config P (Cmd P) → String → Prop
-  | .stmt s _, label => s.noMatchingAssert label
-  | .stmts ss _, label => Stmt.noMatchingAssert.Stmts.noMatchingAssert ss label
-  | .terminal _, _ => True
-  | .exiting _ _, _ => True
-  | .block _ _ inner, label => inner.noMatchingAssert label
-  | .seq inner ss, label =>
-    inner.noMatchingAssert label ∧ Stmt.noMatchingAssert.Stmts.noMatchingAssert ss label
-
 /-- Extend `exitsCoveredByBlocks` to configurations.
 
     The label list has type `List String` (matching `Stmt.exit`'s mandatory-label
@@ -586,27 +550,6 @@ variable [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P] [HasInt P] [HasIntO
     factory. -/
 def Config.wfEval (c : Config P CmdT) : Prop :=
   WellFormedSemanticEval (P := P) c.getEnv.factory
-
-end -- section
-
-section
-
-variable (P : PureExpr) [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]
-
-/-! ## Detecting an assert in a configuration -/
-
-/-- `isAtAssert cfg aid` holds when the head of `cfg` is an `assert`
-    command whose label and expression match `aid`. Recurses into `block`
-    and `seq` wrappers so that assertions inside compound statements are
-    visible. -/
-@[expose] def isAtAssert : Config P (Cmd P) → AssertId P → Prop
-  | .stmt (.cmd (.assert label expr _)) _, aid =>
-    aid.label = label ∧ aid.expr = expr
-  | .stmts ((.cmd (.assert label expr _)) :: _) _, aid =>
-    aid.label = label ∧ aid.expr = expr
-  | .block _ _ inner, aid => isAtAssert inner aid
-  | .seq inner _, aid => isAtAssert inner aid
-  | _, _ => False
 
 end -- section
 

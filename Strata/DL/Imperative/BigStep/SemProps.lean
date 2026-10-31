@@ -185,12 +185,12 @@ theorem breach_cmd_cons {c : CmdExt P} {rest : PStmts P} {σ σ1 : SemanticStore
     BReach F (.cmd c :: rest) σ (evs ++ tr) :=
   h.elim (fun h => h ▸ (List.append_nil evs).symm ▸ .here (.cmd hE)) (.later (.cmd hE))
 
-/-- A list fails the target `t` exactly when a reach of it emits events that claim a failure of
-    `t`. -/
-theorem fails_iff_claim {ss : PStmts P} {σ : SemanticStore P} {t : AssertId P} :
-    Fails F ss σ t ↔ ∃ tr, BReach F ss σ tr ∧ Claim t tr :=
-  ⟨fun ⟨evs, e, hb, hA, hf⟩ => ⟨_, hb, evs, e, rfl, hA, hf⟩,
-    fun ⟨_, hb, evs, e, he, hA, hf⟩ => ⟨evs, e, he ▸ hb, hA, hf⟩⟩
+/-- A list fails the target `t` with the condition `e` exactly when a reach of it emits events
+    that claim a failure of `t` with the condition `e`. -/
+theorem fails_iff_claim {ss : PStmts P} {σ : SemanticStore P} {t : AssertId P} {e : P.Expr} :
+    Fails F ss σ t e ↔ ∃ tr, BReach F ss σ tr ∧ Claim t e tr :=
+  ⟨fun ⟨evs, ev, hb, hA, hf⟩ => ⟨_, hb, evs, ev, rfl, hA, hf⟩,
+    fun ⟨_, hb, evs, ev, he, hA, hf⟩ => ⟨evs, ev, he ▸ hb, hA, hf⟩⟩
 
 end Sequencing
 
@@ -251,13 +251,13 @@ private theorem breachS_fv : ∀ {s : PStmt P} {σ : SemanticStore P} {evs : Lis
   | _, _, _, .block h => breach_fv h
 end
 
-/-- The target a list fails reads only identifiers of the list. -/
-theorem fails_fv {ss : PStmts P} {σ : SemanticStore P} {t : AssertId P}
-    (h : Fails F ss σ t) : ∀ y ∈ exprFV t.expr, y ∈ Block.idents ss := by
-  obtain ⟨evs, e, hb, -, hfe⟩ := h
-  have he : e.condition.expr = t.expr := by
-    cases e <;> simp only [FailsAt] at hfe <;> exact hfe.2.1
-  exact he ▸ breach_fv hb e (List.mem_append_right _ (List.mem_singleton_self _))
+/-- The condition of a failing occurrence a list reaches reads only identifiers of the list. -/
+theorem fails_fv {ss : PStmts P} {σ : SemanticStore P} {t : AssertId P} {e : P.Expr}
+    (h : Fails F ss σ t e) : ∀ y ∈ exprFV e, y ∈ Block.idents ss := by
+  obtain ⟨evs, ev, hb, -, hfe⟩ := h
+  have he : ev.condition.expr = e := by
+    cases ev <;> simp only [FailsAt] at hfe <;> exact hfe.2.2.1
+  exact he ▸ breach_fv hb ev (List.mem_append_right _ (List.mem_singleton_self _))
 
 end Idents
 

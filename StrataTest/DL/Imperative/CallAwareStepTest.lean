@@ -84,7 +84,8 @@ private theorem callCmd_sem (fac : Expression.Factory)
     (by simp [calleeEnv])
     ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
     hbody ⟨(by simp [Imperative.CallArg.getLhs]), [], .read_none, .update_none⟩
-  simpa [Calls.defaultAssertEvents, ListMap.toList, callee, callCmd, callTrace, trueEvent,
+  simpa [Calls.defaultAssertEvents, Calls.checksAtCall, MetaData.setCallSiteFileRange_empty,
+    ListMap.toList, callee, callCmd, callTrace, trueEvent,
     MetaData.empty]
     using h
 
@@ -101,7 +102,8 @@ private theorem callCmd_semCore
     (by simp [calleeEnv])
     ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
     hbody ⟨(by simp [Imperative.CallArg.getLhs]), [], .read_none, .update_none⟩
-  simpa [Core.defaultAssertEvents, Calls.defaultAssertEvents, ListMap.toList, callee, callCmd,
+  simpa [Core.defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
+    MetaData.setCallSiteFileRange_empty, ListMap.toList, callee, callCmd,
     callTrace, trueEvent, MetaData.empty]
     using h
 

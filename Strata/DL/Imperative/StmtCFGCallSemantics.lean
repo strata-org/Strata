@@ -22,7 +22,10 @@ step:
   formal `g` is also bound under `HasOldIdent.mkOld g` to its entry value (its
   *old snapshot*), so that postconditions can refer to it.
 - *Precondition events*: each non-free precondition is emitted as an assertion
-  event, evaluated in the entry frame.
+  event, evaluated in the entry frame, with its *site metadata*: the clause's
+  metadata with the call statement's provenance as primary provenance
+  (`Calls.checksAtCall`), so that the checks of two calls at different source
+  positions are different assertions.
 - *Body*: the body runs from the entry frame until it terminates, emitting its own
   events.
 - *Postcondition events*: each non-free postcondition is emitted as an assertion
@@ -105,6 +108,16 @@ variable [DecidableEq P.Ident] [HasOldIdent P]
     else
       none
 
+/-- The specification clauses `checks` as checked at a call whose statement has metadata
+    `callMd`: each clause's metadata takes the call site as its primary provenance
+    (`MetaData.setCallSiteFileRange`), the metadata call elimination gives the assertion it
+    generates for the clause, so that the checks of two calls at different source positions
+    are different assertions. -/
+@[expose] def checksAtCall (callMd : MetaData P)
+    (checks : ListMap String (Check P)) : ListMap String (Check P) :=
+  checks.toList.map fun (label, check) =>
+    (label, { check with md := check.md.setCallSiteFileRange callMd })
+
 /-- Capture every specification clause in `checks` as an assumption event at the
     semantic snapshot `(fac, σ)`, free clauses included: a caller relying on a
     contract assumes all of the callee's postconditions. -/
@@ -182,9 +195,11 @@ inductive BigStepE
 
 /-- Event-producing command semantics of `CmdExt P`.  Base commands delegate to
     `EvalCmdE`.  A call emits its non-free preconditions as assertions at the
-    callee entry frame, executes its body from that frame, and emits its non-free
-    postconditions as assertions at the callee's final frame. The call runs its
-    body and interprets each contract clause with the active factory `fac`. -/
+    callee entry frame, each with its site metadata at the call
+    (`Calls.checksAtCall md`), executes its body from that frame, and emits its
+    non-free postconditions, with their own metadata, as assertions at the callee's
+    final frame. The call runs its body and interprets each contract clause with the
+    active factory `fac`. -/
 inductive EvalCmdExtE
     (π : String → Option (Procedure P (CmdExt P) Hdr)) :
     P.Factory → SemanticStore P → CmdExt P → SemanticStore P → Trace P → Prop where
@@ -207,7 +222,7 @@ inductive EvalCmdExtE
       Calls.CallExit fac σ p callArgs σ_final σ' →
       ----
       EvalCmdExtE π fac σ (.call n callArgs md) σ'
-        (Calls.defaultAssertEvents fac σAO p.spec.preconditions ++
+        (Calls.defaultAssertEvents fac σAO (Calls.checksAtCall md p.spec.preconditions) ++
           bodyEvents ++
           Calls.defaultAssertEvents fac σ_final p.spec.postconditions)
 
@@ -218,8 +233,9 @@ end
 /-- Event-producing contract abstraction of `CmdExt P`: a call is replaced by its
     specification instead of running its body.  Base commands delegate to
     `EvalCmdE`.  A call emits its non-free preconditions as assertions at the callee
-    entry frame, havocs the output formals, emits every postcondition as an
-    assumption at the post-havoc frame, and writes the outputs back to the caller.
+    entry frame, each with its site metadata at the call (`Calls.checksAtCall md`),
+    havocs the output formals, emits every postcondition as an assumption at the
+    post-havoc frame, and writes the outputs back to the caller.
     No procedure body is executed. -/
 inductive EvalCmdExtContractE [HasVal P]
     (π : String → Option (Procedure P (CmdExt P) Hdr)) :
@@ -238,7 +254,7 @@ inductive EvalCmdExtContractE [HasVal P]
       Calls.CallExit fac σ p callArgs σO σ' →
       ----
       EvalCmdExtContractE π fac σ (.call n callArgs md) σ'
-        (Calls.defaultAssertEvents fac σAO p.spec.preconditions ++
+        (Calls.defaultAssertEvents fac σAO (Calls.checksAtCall md p.spec.preconditions) ++
           Calls.assumeEvents fac σO p.spec.postconditions)
 
 /-- Reflexive-transitive statement execution over the call-aware command relation,

@@ -136,7 +136,7 @@ private theorem callCmd_sem (fac : Expression.Factory) :
       .read_some (by simp [projectStore, frame, σ2, bind, yId])
         (HasBool.boolIsVal fac).1 .read_none,
       .update_some (updateState_bind (v' := HasBool.ff) (by simp [σ0, bind])) .update_none⟩
-  simpa [Calls.defaultAssertEvents, callee, callCmd] using h
+  simpa [Calls.defaultAssertEvents, Calls.checksAtCall, callee, callCmd] using h
 
 /-- The call's callee body ends with the body-local `t` dropped and `y ↦ true`. -/
 example : projectStore frame σ2 tId = none ∧ projectStore frame σ2 yId = some HasBool.tt := by

@@ -630,7 +630,7 @@ private theorem failExpr_eq :
   native_decide
 
 /-- The assertion's identifier. -/
-private def failId : AssertId Core.Expression := ⟨"a", failParts.1⟩
+private def failId : AssertId Core.Expression := ⟨"a", failParts.2⟩
 
 /-- **`assert [a]: false;` has a correct `failed` verdict** in every model,
     witnessed by any entry state `ρ`. -/
@@ -692,7 +692,7 @@ private theorem okExpr_eq :
   native_decide
 
 /-- The assertion's identifier. -/
-private def okId : AssertId Core.Expression := ⟨"b", okParts.1⟩
+private def okId : AssertId Core.Expression := ⟨"b", okParts.2⟩
 
 /-- The configurations a run of `assert [b]: true;` from `ρ` passes through. -/
 private def OkShape (ρ : Env Core.Expression) (c : Core.CoreConfig) : Prop :=

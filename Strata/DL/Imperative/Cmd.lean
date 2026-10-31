@@ -60,19 +60,19 @@ instance [DecidableEq P.Expr] : LawfulBEq (ExprOrNondet P) where
 
 /-! ## Assertion and cover identity -/
 
-/-- An assertion identifier: the label + expression attached to an
-    `assert` command. -/
+/-- An assertion identifier: the label and metadata attached to an `assert`
+    command. Metadata carries the source location, so assertions at different
+    source positions have different identifiers even when labels are reused. The
+    identifier does not depend on the asserted expression, so a phase that
+    rewrites the expression but keeps the metadata keeps the identifier. Cover
+    identifiers (`CoverId`) are the same type. -/
 structure AssertId (P : PureExpr) where
   label : String
-  expr  : P.Expr
+  md    : MetaData P
 
-/-- A cover identifier: the source label and metadata attached to a `cover`
-command. Metadata distinguishes occurrences even when labels are reused.
-
-TODO: Update AssertId to have the identical definition, because labels can
-overlap, and expr may easily change after transformations.
--/
-abbrev CoverId (P : PureExpr) := String × MetaData P
+/-- A cover identifier: the label and metadata attached to a `cover` command,
+    the same type as `AssertId`, with the same meaning for covers. -/
+abbrev CoverId (P : PureExpr) := AssertId P
 
 /-! ## Commands
 

@@ -341,6 +341,14 @@ def MetaData.getInvariantProvenances {P : PureExpr} (md : MetaData P) : Array Pr
       if l == MetaData.invariantProvenanceLabel then some p else none
     | _, _ => none
 
+/-- The metadata attributed to the invariant at position `i` of a loop whose
+    metadata is `md`: the invariant's own source location when `md` records one
+    for that position, and `md` otherwise. -/
+def MetaData.invariantMd {P : PureExpr} (md : MetaData P) (i : Nat) : MetaData P :=
+  match (MetaData.getInvariantProvenances md)[i]? with
+  | some (p@(.loc ..)) => MetaData.ofProvenance p
+  | _ => md
+
 /-- Replace the primary provenance with a new one, shifting existing related
     provenances and prepending the old primary provenance. -/
 def MetaData.setCallSiteFileRange {P : PureExpr} [BEq P.Ident]
@@ -357,6 +365,11 @@ def MetaData.setCallSiteFileRange {P : PureExpr} [BEq P.Ident]
     let md := md.eraseElem MetaData.provenanceField
     md.pushElem MetaData.provenanceField (.provenance csProv)
   | none, _ => md
+
+/-- A call site without provenance leaves the metadata unchanged. -/
+@[simp] theorem MetaData.setCallSiteFileRange_empty {P : PureExpr} [BEq P.Ident]
+    (md : MetaData P) : md.setCallSiteFileRange #[] = md := by
+  simp [MetaData.setCallSiteFileRange, getProvenance, MetaData.findElem]
 
 /-- Metadata field for property type classification (e.g., "divisionByZero"). -/
 def MetaData.propertyType : MetaDataElem.Field P := .label "propertyType"

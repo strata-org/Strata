@@ -131,7 +131,7 @@ theorem EvalCommandE.call_sem
     (hbody : CoreBodyExecE π p.body ⟨σAO, fac, false⟩ σ_final bodyEvents)
     (hexit : CallExit fac σ p callArgs σ_final σ') :
     EvalCommandE π fac σ (.call n callArgs md) σ'
-      (defaultAssertEvents fac σAO p.spec.preconditions ++
+      (defaultAssertEvents fac σAO (Imperative.Calls.checksAtCall md p.spec.preconditions) ++
         bodyEvents ++
         defaultAssertEvents fac σ_final p.spec.postconditions) :=
   EvalCmdExtE.call_sem hπ hentry hbody hexit
@@ -162,7 +162,7 @@ theorem EvalCommandContractE.call_sem {π : String → Option Procedure}
     (hhavoc : HavocVars fac σAO (ListMap.keys p.header.outputs) σO)
     (hexit : CallExit fac σ p callArgs σO σ') :
     EvalCommandContractE π fac σ (.call n callArgs md) σ'
-      (defaultAssertEvents fac σAO p.spec.preconditions ++
+      (defaultAssertEvents fac σAO (Imperative.Calls.checksAtCall md p.spec.preconditions) ++
         assumeEvents fac σO p.spec.postconditions) :=
   EvalCmdExtContractE.call_sem hπ hentry hhavoc hexit
 

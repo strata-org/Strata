@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 import Strata.DL.Imperative.CFGSemanticsProps
+import Strata.DL.Imperative.StmtCFGCallSemanticsProps
 import all Strata.Languages.Core.Logic.ContractToHoareTripleProps
 
 /-! # Hoare rule for Core procedure calls
@@ -134,9 +135,12 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
     -- The precondition assertions are valid once, independent of the body kind.
     have hvalidA :
         Trace.AssertionsValid Expression I
-          (defaultAssertEvents ρ₀.factory σAO cproc.spec.preconditions) :=
-      assertionsValid_defaultAssertEvents I ρ₀.factory σAO cproc.spec.preconditions
-        (fun label check hmem _ => hcontractPre.1 label check hmem)
+          (defaultAssertEvents ρ₀.factory σAO (Calls.checksAtCall md cproc.spec.preconditions)) :=
+      assertionsValid_defaultAssertEvents I ρ₀.factory σAO _
+        (fun label check hmem _ => by
+          obtain ⟨c₀, hmem₀, hexpr, -⟩ := Calls.mem_checksAtCall hmem
+          exact Procedure.checkAsPredicate_of_exprEq label check hcontractPre.2.1 hexpr.symm
+            (hcontractPre.1 label c₀ hmem₀))
     -- Shared proof tail: given the body triple's conclusion about a post-env
     -- `ρpost` whose store is the callee's final store, discharge the call's
     -- obligation.  Both body kinds instantiate it, differing only in `ρpost`.
@@ -149,10 +153,13 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
           (Trace.Reachable Expression I bodyEvents →
             Procedure.contractPost model cproc ρpost)) →
         Trace.AssertionsValid Expression I
-            (defaultAssertEvents ρ₀.factory σAO cproc.spec.preconditions ++ bodyEvents ++
+            (defaultAssertEvents ρ₀.factory σAO (Calls.checksAtCall md cproc.spec.preconditions) ++
+              bodyEvents ++
               defaultAssertEvents ρ₀.factory ρpost.store cproc.spec.postconditions) ∧
           (Trace.Reachable Expression I
-              (defaultAssertEvents ρ₀.factory σAO cproc.spec.preconditions ++ bodyEvents ++
+              (defaultAssertEvents ρ₀.factory σAO
+                  (Calls.checksAtCall md cproc.spec.preconditions) ++
+                bodyEvents ++
                 defaultAssertEvents ρ₀.factory ρpost.store cproc.spec.postconditions) →
             Post { ρ₀ with store := σ' }) := by
       intro ρpost bodyEvents hρpostfac houtputsρ hframeρ hcallexitρ htb

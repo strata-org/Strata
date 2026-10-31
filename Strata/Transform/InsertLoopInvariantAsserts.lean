@@ -132,23 +132,18 @@ def insertInvariantAsserts (s : Statement)
     -- invariant's generated assert/assume is attributed to that invariant's own
     -- source location instead of the whole loop; otherwise we fall back to the
     -- loop metadata `md`. A size mismatch degrades gracefully via the index
-    -- lookup below rather than mis-attributing ranges.
-    let invProvs := MetaData.getInvariantProvenances md
-    let invMd : Nat → MetaData Expression := fun i =>
-      match invProvs[i]? with
-      | some (p@(.loc ..)) => MetaData.ofProvenance p
-      | _ => md
+    -- lookup in `MetaData.invariantMd` rather than mis-attributing ranges.
     -- Before the loop: assert(I) (VC1) and assume(I) (zero-iteration path).
     let entry_asserts := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assert s!"{insertLoopInvAssertPrefix}entry_invariant_{loop_num}_{invSuffix i lbl}" inv (invMd i))
+      Stmt.cmd (HasPassiveCmds.assert s!"{insertLoopInvAssertPrefix}entry_invariant_{loop_num}_{invSuffix i lbl}" inv (md.invariantMd i))
     let entry_assumes := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assume s!"{insertLoopInvAssumePrefix}entry_invariant_{loop_num}_{invSuffix i lbl}" inv (invMd i))
+      Stmt.cmd (HasPassiveCmds.assume s!"{insertLoopInvAssumePrefix}entry_invariant_{loop_num}_{invSuffix i lbl}" inv (md.invariantMd i))
     -- Top of the body: assume(I) (invariant at the arbitrary mid-loop state).
     let mid_assumes := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assume s!"{insertLoopInvAssumePrefix}invariant_{loop_num}_{invSuffix i lbl}" inv (invMd i))
+      Stmt.cmd (HasPassiveCmds.assume s!"{insertLoopInvAssumePrefix}invariant_{loop_num}_{invSuffix i lbl}" inv (md.invariantMd i))
     -- Bottom of the body: assert(I) (VC2, invariant maintained).
     let maintain_asserts := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assert s!"{insertLoopInvAssertPrefix}arbitrary_iter_maintain_invariant_{loop_num}_{invSuffix i lbl}" inv (invMd i))
+      Stmt.cmd (HasPassiveCmds.assert s!"{insertLoopInvAssertPrefix}arbitrary_iter_maintain_invariant_{loop_num}_{invSuffix i lbl}" inv (md.invariantMd i))
     -- After the loop: assume(I ∧ ¬g) — the invariant, and the negated guard, at
     -- the exit state. The `¬g` conjunct is only added for a deterministic
     -- guard; a nondeterministic loop has no guard to negate.
@@ -157,7 +152,7 @@ def insertInvariantAsserts (s : Statement)
           s!"{insertLoopInvAssumePrefix}exit_not_guard_{loop_num}" (HasBoolOps.not g) md)]
       | none => []
     let exit_assumes := (invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assume s!"{insertLoopInvAssumePrefix}exit_invariant_{loop_num}_{invSuffix i lbl}" inv (invMd i)))
+      Stmt.cmd (HasPassiveCmds.assume s!"{insertLoopInvAssumePrefix}exit_invariant_{loop_num}_{invSuffix i lbl}" inv (md.invariantMd i)))
       ++ exit_not_guard
     -- Measure: init m_old := D; assert(!(m_old<0)) at the top of the body, and
     -- assert(D < m_old) at the bottom.

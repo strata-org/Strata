@@ -257,17 +257,14 @@ theorem weakensAssume_check {E : EventArg P → Event P} (hE : E = .assert ∨ E
   rcases hE with rfl | rfl <;> exact ⟨rfl, rfl, fun _ => (h _).symm⟩
 
 omit iDE iBE iLB iHF iSF iHI iLI iHa iHFs iWL iLV in
-/-- A failing occurrence of the target `t` by an assertion (a cover) of the guarded store has
-    the target's label and condition, and the assertion (cover) of the obligation store with a
-    condition evaluating to the same values is a failing occurrence of its own label and
-    condition. -/
+/-- An assertion (a cover) of the obligation store with the label and metadata of a failing
+    occurrence of the target `t` with the condition `e` in the guarded store, and a condition `e'`
+    evaluating to the values of `e`, is a failing occurrence of `t` with the condition `e'`. -/
 theorem failsAt_transfer {E : EventArg P → Event P} (hE : E = .assert ∨ E = .cover)
     {t : AssertId P} {e e' : P.Expr} (h : ∀ v, EvalsTo F σS e' v ↔ EvalsTo F σL e v)
-    (hf : FailsAt t (E { factory := F, store := σL, label := l, expr := e, metadata := md })) :
-    l = t.label ∧ e = t.expr ∧
-      FailsAt ⟨l, e'⟩
-        (E { factory := F, store := σS, label := l, expr := e', metadata := md }) := by
-  rcases hE with rfl | rfl <;> exact ⟨hf.1, hf.2.1, rfl, rfl, (h _).2 hf.2.2⟩
+    (hf : FailsAt t e (E { factory := F, store := σL, label := l, expr := e, metadata := md })) :
+    FailsAt t e' (E { factory := F, store := σS, label := l, expr := e', metadata := md }) := by
+  rcases hE with rfl | rfl <;> exact ⟨hf.1, hf.2.1, rfl, (h _).2 hf.2.2.2⟩
 
 end -- public section
 

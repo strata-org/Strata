@@ -57,10 +57,10 @@ public section
 /-- **The dead-definition transform over-approximates.**  Let a run of `deadDefElimProgram` on
     the program `prog` succeed with `out`, and let `q` be a procedure of `prog` with structured
     body `ss`.  Then `out` contains the procedure with body `deadDefElimH [] ss`, and, if `ss`
-    has no loops and fails the target `t` from the value-valued store `σ` under the reference
-    event semantics, so does that body, from `σ`, for every factory evaluating alike on
-    well-formed stores agreeing on the free variables (`WellFormedSemanticEvalExprCongr`) and
-    evaluating Boolean guards to Booleans. -/
+    has no loops and fails the target `t` with the condition `e` from the value-valued store `σ`
+    under the reference event semantics, so does that body, from `σ`, for every factory
+    evaluating alike on well-formed stores agreeing on the free variables
+    (`WellFormedSemanticEvalExprCongr`) and evaluating Boolean guards to Booleans. -/
 theorem deadDefElimProgram_over {prog out : Program} {s s' : Transform.CoreTransformState}
     {b : Bool} (h : (deadDefElimProgram prog).run s = (.ok (b, out), s')) {q : Procedure}
     {md : Imperative.MetaData Expression} {ss : Statements} (hq : Decl.proc q md ∈ prog.decls)
@@ -69,10 +69,10 @@ theorem deadDefElimProgram_over {prog out : Program} {s s' : Transform.CoreTrans
       ∀ {F : Expression.Factory}, WellFormedSemanticEvalExprCongr (P := Expression) F →
         WellFormedSemanticEvalBool (P := Expression) F → Block.noLoops ss = true →
         ∀ {σ : SemanticStore Expression}, WellFormedStore σ F →
-        ∀ {t : AssertId Expression} {hf : Bool},
-        FailsE F hf ss σ t → ∀ hf' : Bool, FailsE F hf' (deadDefElimH [] ss) σ t := by
+        ∀ {t : AssertId Expression} {e : Expression.Expr} {hf : Bool},
+        FailsE F hf ss σ t e → ∀ hf' : Bool, FailsE F hf' (deadDefElimH [] ss) σ t e := by
   cases h
-  refine ⟨?_, fun hF hWB hss _ hC _ _ h hf' => deadDefElimH_failsE hF hWB _ hss hC h hf'⟩
+  refine ⟨?_, fun hF hWB hss _ hC _ _ _ h hf' => deadDefElimH_failsE hF hWB _ hss hC h hf'⟩
   simp only [List.map_map, List.mem_map]
   exact ⟨_, hq, by simp [deadDefElimDecl, hb]⟩
 
@@ -84,10 +84,10 @@ theorem deadDefElimPipelinePhase_ok (program : Program) (s : Transform.CoreTrans
 /-- **The dead-definition phase over-approximates.**  Let a run of `deadDefElimPipelinePhase`
     on `program` succeed with `out`, and let `q` be a procedure of `program` with structured
     body `ss`.  Then `out` contains the procedure with body `deadDefElimH [] ss`, and, if `ss`
-    has no loops and fails the target `t` from the value-valued store `σ` under the reference event
-    semantics, so does that body, from `σ`, for every factory evaluating alike on well-formed
-    stores agreeing on the free variables (`WellFormedSemanticEvalExprCongr`) and evaluating
-    Boolean guards to Booleans. -/
+    has no loops and fails the target `t` with the condition `e` from the value-valued store `σ`
+    under the reference event semantics, so does that body, from `σ`, for every factory
+    evaluating alike on well-formed stores agreeing on the free variables
+    (`WellFormedSemanticEvalExprCongr`) and evaluating Boolean guards to Booleans. -/
 theorem deadDefElimPipelinePhase_over {program out : Program}
     {s s' : Transform.CoreTransformState} {b : Bool}
     (h : (deadDefElimPipelinePhase.transform program).run s = (.ok (b, out), s'))
@@ -97,8 +97,8 @@ theorem deadDefElimPipelinePhase_over {program out : Program}
       ∀ {F : Expression.Factory}, WellFormedSemanticEvalExprCongr (P := Expression) F →
         WellFormedSemanticEvalBool (P := Expression) F → Block.noLoops ss = true →
         ∀ {σ : SemanticStore Expression}, WellFormedStore σ F →
-        ∀ {t : AssertId Expression} {hf : Bool},
-        FailsE F hf ss σ t → ∀ hf' : Bool, FailsE F hf' (deadDefElimH [] ss) σ t :=
+        ∀ {t : AssertId Expression} {e : Expression.Expr} {hf : Bool},
+        FailsE F hf ss σ t e → ∀ hf' : Bool, FailsE F hf' (deadDefElimH [] ss) σ t e :=
   deadDefElimProgram_over (deadDefElimPipelinePhase_ok program s ▸ h) hq hb
 
 /-! ## The trace over-approximation -/
