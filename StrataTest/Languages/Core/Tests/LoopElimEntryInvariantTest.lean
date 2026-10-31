@@ -41,6 +41,11 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
+Label: insertLoopInvAssert_entry_invariant_loop_0_0
+Property: assert
+Obligation:
+false
+
 Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
 Property: assert
 Assumptions:
@@ -49,11 +54,6 @@ insertLoopInvAssume_entry_invariant_loop_0_0: false
 Obligation:
 true
 
-Label: insertLoopInvAssert_entry_invariant_loop_0_0
-Property: assert
-Obligation:
-false
-
 
 
 Obligation insertLoopInvAssert_entry_invariant_loop_0_0: failed!
@@ -61,13 +61,13 @@ Obligation insertLoopInvAssert_entry_invariant_loop_0_0: failed!
 Result obtained during evaluation.
 ---
 info:
-Obligation: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
-Property: assert
-Result: ✅ pass (❗unreachable in this context)
-
 Obligation: insertLoopInvAssert_entry_invariant_loop_0_0
 Property: assert
 Result: ❌ always false and is reachable from declaration entry
+
+Obligation: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
+Property: assert
+Result: ✅ pass (❗unreachable in this context)
 -/
 #guard_msgs in
 #eval Core.verify falseInvariantNeverExecuted

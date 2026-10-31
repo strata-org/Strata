@@ -11,6 +11,7 @@ public import Strata.Util.ExceptProps
 import Strata.Util.ListUtilsProps
 import all Strata.DL.Imperative.CFG
 import all Strata.Languages.Core.ProcedureType
+import Strata.Languages.Core.IdentifiersProps
 
 /-! # Well-formedness established by the CFG type checker
 
@@ -26,6 +27,11 @@ The scoping conjuncts are stated over the same graph analyses the guards compute
 holds whatever those analyses return. That they agree with path-based dominance,
 cycles and reachability is not proved here (see the
 `Strata.DL.Imperative.CFGDominators` module header).
+
+`Procedure.typeCheck_ioNotOld`: no parameter of a procedure that passes `Procedure.typeCheck`
+is named `old x` (the proposition of `WF.WFProcedureProp.ioNotOld`);
+`Procedure.typeCheck_oldNamesFresh`: such a procedure satisfies
+`Procedure.Header.oldNamesFresh`.
 -/
 
 public section
@@ -210,6 +216,41 @@ private theorem checkNoLoopInits_sound
     | cons _ _ => rfl
   simp only [hemp, hr, Bool.true_and, Bool.false_or, Bool.not_eq_true'] at hl
   exact hl
+
+/-- No parameter of a procedure that passes `checkParamNames` is named `old x`. -/
+private theorem checkParamNames_ioNotOld {proc : Procedure} {sourceLoc : FileRange}
+    (h : checkParamNames proc sourceLoc = .ok ()) :
+    ∀ id ∈ proc.header.inputs.keys ++ proc.header.outputs.keys,
+      ∀ x, id ≠ CoreIdent.mkOld x := by
+  intro id hid x heq
+  unfold checkParamNames at h
+  simp only [bind, Except.bind, pure, Except.pure] at h
+  split at h <;> try contradiction
+  split at h <;> try contradiction
+  split at h
+  · contradiction
+  · rename_i hnone
+    have hnot := List.find?_eq_none.mp hnone id hid
+    exact hnot ((isOldIdent_iff_exists_mkOld id).2 ⟨x, heq⟩)
+
+/-- No parameter of a procedure that passes type checking is named `old x`
+    (`WF.WFProcedureProp.ioNotOld`). -/
+theorem typeCheck_ioNotOld
+    (h : typeCheck C Env p proc md = .ok r) :
+    ∀ id ∈ proc.header.inputs.keys ++ proc.header.outputs.keys,
+      ∀ x, id ≠ CoreIdent.mkOld x := by
+  unfold typeCheck at h
+  simp only [bind, Except.bind] at h
+  split at h
+  · contradiction
+  · rename_i hc
+    exact checkParamNames_ioNotOld hc
+
+/-- A procedure that passes type checking has no parameter named `old g` for an in-out
+    parameter `g`. -/
+theorem typeCheck_oldNamesFresh
+    (h : typeCheck C Env p proc md = .ok r) : proc.header.oldNamesFresh :=
+  fun g _ hmem => typeCheck_ioNotOld h _ hmem g.name rfl
 
 end Procedure
 

@@ -29,12 +29,19 @@ open Strata (Message FileRange)
 
 namespace Procedure
 
-private def checkNoDuplicates (proc : Procedure) (sourceLoc : FileRange) :
+private def checkParamNames (proc : Procedure) (sourceLoc : FileRange) :
     Except Message Unit := do
   if !proc.header.inputs.keys.Nodup then
     .error <| Message.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the formals!"
   if !proc.header.outputs.keys.Nodup then
     .error <| Message.withRange sourceLoc f!"[{proc.header.name}] Duplicates found in the return variables!"
+  -- Names starting with `old ` are reserved for the initial values of in-out parameters.
+  match (proc.header.inputs.keys ++ proc.header.outputs.keys).find? CoreIdent.isOldIdent with
+  | some id =>
+    .error <| Message.withRange sourceLoc
+      f!"[{proc.header.name}] Parameter {id}: a name starting with \"old \" denotes the \
+         initial value of an in-out parameter!"
+  | none => pure ()
 
 private def checkModificationRights (proc : Procedure) (sourceLoc : FileRange) :
     Except Message Unit := do
@@ -535,7 +542,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p :
   let fileRange := Imperative.getFileRange md |>.getD FileRange.unknown
 
   -- Validate well-formedness of formals and returns.
-  checkNoDuplicates proc fileRange
+  checkParamNames proc fileRange
   checkModificationRights proc fileRange
 
   let (inp_mty_sig, out_mty_sig, Env) ← proc.header.instantiate C Env.pushEmptyContext

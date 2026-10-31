@@ -2640,9 +2640,9 @@ procedure P()
 #end
 
 /--
-info: per-obligation big: [x], generated [$__cse.0]
-incremental big: [x], generated [$__cse.0]
-walked big: [x], generated [$__cse.0]
+info: per-obligation big: [x@1], generated [$__cse.0]
+incremental big: [x@1], generated [$__cse.0]
+walked big: [x@1], generated [$__cse.0]
 -/
 #guard_msgs in
 #eval modelNames (parse hoistedTerm)

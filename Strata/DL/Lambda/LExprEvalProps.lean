@@ -12,6 +12,7 @@ import all Strata.DL.Lambda.LExprEval
 import all Strata.DL.Lambda.LExprType
 import all Strata.DL.Lambda.FactoryProps
 import all Strata.DL.Lambda.LState
+public import Strata.DL.Lambda.LStateProps
 import all Strata.DL.Lambda.LStateProps
 import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprProps
@@ -26,6 +27,8 @@ Key results (organized roughly in the order they appear below):
   `.fst` satisfies `isValue`.
 - `eval_value_identity` — if `e` is a value, `eval n F env e = (e, .value true)`
   at any fuel.
+- `eval_getVars_origin` — under an idempotent store (`Env.Idempotent`), every
+  free variable in the result has an origin (`VarOrigin`) in the input.
 - `eval_getVars_subset` — `eval` does not introduce fresh free variables:
   every free variable in the result was already free in the input.
 - `eval_env_congr` — `eval` respects environment agreement: two well-formed
@@ -470,111 +473,296 @@ theorem eval_value_identity
 
 end eval_value_identity
 
-/-! ### `eval_getVars_subset`
+/-! ### `eval_getVars_origin`
 
-`eval` does not introduce free variables: every free variable in the result
-was already free in the input.  Preceded by per-sub-evaluator `getVars_subset`
-helpers, chained by induction on fuel. -/
+Under an idempotent store, every free variable of `eval`'s result has an origin
+in the input.  Preceded by per-sub-evaluator `getVars_origin` helpers, chained by induction on
+fuel.  `eval_getVars_subset` follows. -/
 
-section eval_getVars_subset
+section eval_getVars_origin
 
-/-- `evalIte` does not introduce free variables outside the `.ite`. -/
-theorem evalIte_getVars_subset (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
+omit [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
+/-- `eqModuloMeta X Y = true` forces `X` and `Y` to have the same free variables
+    (metadata does not affect `getVars`). -/
+theorem gv_eq_of_eqModuloMeta (X Y : LExpr Tbase.mono)
+    (h : LExpr.eqModuloMeta X Y = true) :
+    LExpr.LExpr.getVars X = LExpr.LExpr.getVars Y := by
+  have heq : X.eraseMetadata = Y.eraseMetadata := by
+    unfold LExpr.eqModuloMeta at h; exact (LExpr.beq_eq _ _).mp h
+  have hfv := LExpr.freeVars_of_eraseMetadata_eq X Y heq
+  rw [getVars_eq_freeVars_idents X, getVars_eq_freeVars_idents Y, hfv]
+
+omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
+  [Traceable LExpr.EvalProvenance Tbase.Metadata] in
+/-- Under an idempotent store, an origin of `y` in `a` is an origin in `b` when every
+    variable of `a` is one of `b` or has an origin in `b`. -/
+private theorem getVars_origin_trans {env : Env Tbase}
+    (hidem : env.Idempotent)
+    {a b : LExpr Tbase.mono} {y : Tbase.Identifier}
+    (hab : ∀ z ∈ LExpr.LExpr.getVars a, z ∈ LExpr.LExpr.getVars b ∨ VarOrigin env b z)
+    (hy : VarOrigin env a y) : VarOrigin env b y := by
+  rcases hy with ⟨hya, hnone⟩ | ⟨x, v, hxa, hxv, hyv⟩
+  · rcases hab y hya with h | h
+    · exact Or.inl ⟨h, hnone⟩
+    · exact h
+  · rcases hab x hxa with h | ⟨_, hnone⟩ | ⟨x', v', _, hx'v', hxv'⟩
+    · exact Or.inr ⟨x, v, h, hxv, hyv⟩
+    · rw [hnone] at hxv; cases hxv
+    · rw [hidem x' v' hx'v' x hxv'] at hxv; cases hxv
+
+/-- Every free variable of `evalIte`'s result has an origin in the `.ite`. -/
+private theorem evalIte_getVars_origin (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
     (m : Tbase.Metadata) (c t f : LExpr Tbase.mono)
-    (ih : ∀ e', ∀ z ∈ LExpr.LExpr.getVars (LExpr.eval n' F env e').fst, z ∈ LExpr.LExpr.getVars e')
+    (ih : ∀ e', ∀ z ∈ LExpr.LExpr.getVars (LExpr.eval n' F env e').fst, VarOrigin env e' z)
     (y : Tbase.Identifier)
     (hy : y ∈ LExpr.LExpr.getVars (LExpr.evalIte n' F env m c t f).fst) :
-    y ∈ LExpr.LExpr.getVars (LExpr.ite m c t f) := by
-  have hvc := ih c; have hvt := ih t; have hvf := ih f
-  simp only [LExpr.LExpr.getVars, List.mem_append]
+    VarOrigin env (LExpr.ite m c t f) y := by
+  have sub : ∀ a, (∀ z ∈ LExpr.LExpr.getVars a, z ∈ LExpr.LExpr.getVars (LExpr.ite m c t f)) →
+      y ∈ LExpr.LExpr.getVars (LExpr.eval n' F env a).fst → _ :=
+    fun a hsub hya => getVars_origin_mono hsub (ih a y hya)
   simp only [LExpr.evalIte] at hy
   split at hy
-  · exact Or.inl (Or.inr (hvt y hy))
-  · exact Or.inr (hvf y hy)
+  · exact sub t (fun z hz => by simp [LExpr.LExpr.getVars, hz]) hy
+  · exact sub f (fun z hz => by simp [LExpr.LExpr.getVars, hz]) hy
   · simp only [LExpr.LExpr.getVars, List.mem_append] at hy
     rcases hy with (h | h) | h
-    · exact Or.inl (Or.inl (hvc y h))
-    · exact Or.inl (Or.inr (hvt y h))
-    · exact Or.inr (hvf y h)
+    · exact sub c (fun z hz => by simp [LExpr.LExpr.getVars, hz]) h
+    · exact sub t (fun z hz => by simp [LExpr.LExpr.getVars, hz]) h
+    · exact sub f (fun z hz => by simp [LExpr.LExpr.getVars, hz]) h
 
-/-- `evalEq` does not introduce free variables outside the `.eq`. -/
-theorem evalEq_getVars_subset (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
+/-- Every free variable of `evalEq`'s result has an origin in the `.eq`. -/
+private theorem evalEq_getVars_origin (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
     (m : Tbase.Metadata) (e1 e2 : LExpr Tbase.mono)
-    (ih : ∀ e', ∀ z ∈ LExpr.LExpr.getVars (LExpr.eval n' F env e').fst, z ∈ LExpr.LExpr.getVars e')
+    (ih : ∀ e', ∀ z ∈ LExpr.LExpr.getVars (LExpr.eval n' F env e').fst, VarOrigin env e' z)
     (y : Tbase.Identifier)
     (hy : y ∈ LExpr.LExpr.getVars (LExpr.evalEq n' F env m e1 e2).fst) :
-    y ∈ LExpr.LExpr.getVars (LExpr.eq m e1 e2) := by
-  have hv1 := ih e1; have hv2 := ih e2
-  simp only [LExpr.LExpr.getVars, List.mem_append]
+    VarOrigin env (LExpr.eq m e1 e2) y := by
   simp only [LExpr.evalEq] at hy
   split at hy
   · simp [LExpr.LExpr.getVars] at hy
   · simp only [LExpr.LExpr.getVars, List.mem_append] at hy
     rcases hy with h | h
-    · exact Or.inl (hv1 y h)
-    · exact Or.inr (hv2 y h)
+    · exact getVars_origin_mono (fun z hz => by simp [LExpr.LExpr.getVars, hz]) (ih e1 y h)
+    · exact getVars_origin_mono (fun z hz => by simp [LExpr.LExpr.getVars, hz]) (ih e2 y h)
 
-/-- `evalApp` does not introduce free variables outside the application. -/
-theorem evalApp_getVars_subset (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
+/-- Every free variable of `evalApp`'s result has an origin in the application. -/
+private theorem evalApp_getVars_origin (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
+    (hidem : env.Idempotent)
     (m : Tbase.Metadata) (e1 e2 : LExpr Tbase.mono)
-    (ih : ∀ e', ∀ z ∈ LExpr.LExpr.getVars (LExpr.eval n' F env e').fst, z ∈ LExpr.LExpr.getVars e')
+    (ih : ∀ e', ∀ z ∈ LExpr.LExpr.getVars (LExpr.eval n' F env e').fst, VarOrigin env e' z)
     (y : Tbase.Identifier)
     (hy : y ∈ LExpr.LExpr.getVars (LExpr.evalApp n' F env (LExpr.app m e1 e2) e1 e2).fst) :
-    y ∈ LExpr.LExpr.getVars (LExpr.app m e1 e2) := by
-  have hv1 := ih e1; have hv2 := ih e2
-  simp only [LExpr.LExpr.getVars, List.mem_append]
+    VarOrigin env (LExpr.app m e1 e2) y := by
+  have h1 := fun z hz => getVars_origin_mono (b := LExpr.app m e1 e2)
+    (fun w hw => by simp [LExpr.LExpr.getVars, hw]) (ih e1 z hz)
+  have h2 := fun z hz => getVars_origin_mono (b := LExpr.app m e1 e2)
+    (fun w hw => by simp [LExpr.LExpr.getVars, hw]) (ih e2 z hz)
   simp only [LExpr.evalApp] at hy
   split at hy
-  · -- abs arm
+  · -- abs arm: every variable of the substituted body has an origin in the application
     rename_i mAbs nm ty0 body1' heq
+    have key : ∀ (s : Tbase.Metadata → LExpr Tbase.mono),
+        (∀ md, LExpr.LExpr.getVars (s md) = LExpr.LExpr.getVars (LExpr.eval n' F env e2).fst) →
+        ∀ z ∈ LExpr.LExpr.getVars (LExpr.subst s body1'),
+          VarOrigin env (LExpr.app m e1 e2) z := by
+      intro s hs z hz
+      simp only [LExpr.subst] at hz
+      rcases getVars_substK_mem 0 _ body1' z hz with hb | ⟨mv, hmv⟩
+      · exact h1 z (by rw [heq]; exact hb)
+      · rw [hs] at hmv; exact h2 z hmv
     split at hy
-    · simp only [LExpr.LExpr.getVars, List.mem_append] at hy; exact hy
-    · have h1 := ih _ y hy
-      simp only [LExpr.subst] at h1
-      rcases getVars_substK_mem 0 _ body1' y h1 with hb | ⟨mv, hmv⟩
-      · refine Or.inl (hv1 y ?_); rw [heq]; exact hb
-      · rw [getVars_replaceMetadata1] at hmv; exact Or.inr (hv2 y hmv)
+    · rename_i h_eq
+      rw [gv_eq_of_eqModuloMeta _ _ h_eq] at hy
+      exact key _ (fun _ => getVars_replaceMetadata1 _ _) y hy
+    · exact getVars_origin_trans hidem
+        (fun z hz => Or.inr (key _ (fun _ => getVars_replaceMetadata1 _ _) z hz)) (ih _ y hy)
   · -- default arm
+    have key : ∀ z ∈ LExpr.LExpr.getVars (LExpr.app m (LExpr.eval n' F env e1).fst
+        (LExpr.eval n' F env e2).fst),
+          VarOrigin env (LExpr.app m e1 e2) z := by
+      intro z hz
+      simp only [LExpr.LExpr.getVars, List.mem_append] at hz
+      rcases hz with h | h
+      · exact h1 z h
+      · exact h2 z h
     split at hy
-    · simp only [LExpr.LExpr.getVars, List.mem_append] at hy; exact hy
-    · have h1 := ih _ y hy
-      simp only [LExpr.LExpr.getVars, List.mem_append] at h1
-      rcases h1 with h | h
-      · exact Or.inl (hv1 y h)
-      · exact Or.inr (hv2 y h)
+    · rename_i h_eq
+      rw [gv_eq_of_eqModuloMeta _ _ h_eq] at hy
+      exact key y hy
+    · exact getVars_origin_trans hidem (fun z hz => Or.inr (key z hz)) (ih _ y hy)
 
-/-- `evalCore` does not introduce free variables. -/
-theorem evalCore_getVars_subset (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
-    (henv : ∀ x v, env x = some v → LExpr.LExpr.getVars v = [])
+/-- Every free variable of `evalCore`'s result has an origin in its input. -/
+private theorem evalCore_getVars_origin (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
+    (hidem : env.Idempotent)
     (e : LExpr Tbase.mono)
-    (ih : ∀ e', ∀ z ∈ LExpr.LExpr.getVars (LExpr.eval n' F env e').fst, z ∈ LExpr.LExpr.getVars e')
+    (ih : ∀ e', ∀ z ∈ LExpr.LExpr.getVars (LExpr.eval n' F env e').fst, VarOrigin env e' z)
     (y : Tbase.Identifier)
     (hy : y ∈ LExpr.LExpr.getVars (LExpr.evalCore n' F env e).fst) :
-    y ∈ LExpr.LExpr.getVars e := by
+    VarOrigin env e y := by
   cases e with
-  | const _ _ => simp only [LExpr.evalCore] at hy; exact hy
-  | op _ _ _ => simp only [LExpr.evalCore] at hy; exact hy
-  | bvar _ _ => simp only [LExpr.evalCore] at hy; exact hy
+  | const _ _ => simp [LExpr.evalCore, LExpr.LExpr.getVars] at hy
+  | op _ _ _ => simp [LExpr.evalCore, LExpr.LExpr.getVars] at hy
+  | bvar _ _ => simp [LExpr.evalCore, LExpr.LExpr.getVars] at hy
   | fvar m x ty =>
     simp only [LExpr.evalCore] at hy
     cases hv : env x with
-    | none => simp only [hv] at hy; exact hy
-    | some v => simp only [hv] at hy; rw [henv x v hv] at hy; simp at hy
+    | none =>
+      simp only [hv, LExpr.LExpr.getVars, List.mem_singleton] at hy
+      subst hy
+      exact Or.inl ⟨by simp [LExpr.LExpr.getVars], hv⟩
+    | some v =>
+      simp only [hv] at hy
+      exact Or.inr ⟨x, v, by simp [LExpr.LExpr.getVars], hv, hy⟩
   | abs m n ty body =>
     simp only [LExpr.evalCore] at hy
-    exact getVars_substFvarsFromEnv_mem env henv _ y hy
+    exact getVars_substFvarsFromEnv_origin env _ y hy
   | quant m qk n ty tr body =>
     simp only [LExpr.evalCore] at hy
-    exact getVars_substFvarsFromEnv_mem env henv _ y hy
+    exact getVars_substFvarsFromEnv_origin env _ y hy
   | app m e1 e2 =>
     simp only [LExpr.evalCore] at hy
-    exact evalApp_getVars_subset n' F env m e1 e2 ih y hy
+    exact evalApp_getVars_origin n' F env hidem m e1 e2 ih y hy
   | eq m e1 e2 =>
     simp only [LExpr.evalCore] at hy
-    exact evalEq_getVars_subset n' F env m e1 e2 ih y hy
+    exact evalEq_getVars_origin n' F env m e1 e2 ih y hy
   | ite m c t f =>
     simp only [LExpr.evalCore] at hy
-    exact evalIte_getVars_subset n' F env m c t f ih y hy
+    exact evalIte_getVars_origin n' F env m c t f ih y hy
+
+/-- If no value the store holds mentions a variable the store binds (`Env.Idempotent`), then
+    every variable of `eval`'s result is an unbound variable of `e`, or a variable of the value
+    the store gives a variable of `e` (`VarOrigin`). -/
+public theorem eval_getVars_origin
+    (hIdent : ∀ a b : Tbase.Identifier, a.name = b.name → a = b)
+    (F : @Factory Tbase) (env : Env Tbase) (n : Nat) (e : LExpr Tbase.mono)
+    (hWF : FactoryWF F)
+    (hidem : env.Idempotent) :
+    ∀ y ∈ LExpr.LExpr.getVars (LExpr.eval n F env e).fst, VarOrigin env e y := by
+  induction n generalizing e with
+  | zero =>
+    intro y hy; simp only [LExpr.eval] at hy
+    split at hy
+    · rename_i hv; rw [isValue_getVars_nil F e hv] at hy; simp at hy
+    · exact getVars_substFvarsFromEnv_origin env e y hy
+  | succ n' ih =>
+    intro y hy
+    simp only [LExpr.eval, LExpr.List_map_fst_map_eval,
+      LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair] at hy
+    revert hy
+    split
+    · -- value: (e, .value), which has no free variables
+      rename_i hv; intro hy; rw [isValue_getVars_nil F e hv] at hy; simp at hy
+    · split
+      · -- factory call
+        rename_i op_expr args lfunc h_call
+        have h_mem := callOfLFunc_func_mem F _ _ _ lfunc false h_call
+        have h_wf := hWF.lfuncs_wf lfunc h_mem
+        obtain ⟨mo, no, to, hop_eq, _, h_arity⟩ := callOfLFunc_eq_some h_call
+        -- a free variable of an evaluated argument has an origin in `e`
+        have h_arg : ∀ a ∈ args, ∀ z ∈ LExpr.LExpr.getVars (LExpr.eval n' F env a).fst, _ :=
+          fun a ha z hz => getVars_origin_mono
+            (callOfLFunc_getVars_args F e op_expr args lfunc h_call a ha) (ih a z hz)
+        -- so does a free variable of the call rebuilt from the evaluated arguments
+        have h_app : ∀ z ∈ LExpr.LExpr.getVars (@LExpr.mkApp Tbase.mono e.metadata op_expr
+            (args.map (fun a => (LExpr.eval n' F env a).fst))),
+              VarOrigin env e z := by
+          intro z hz
+          rcases getVars_mkApp_mem _ _ _ z hz with hop | ⟨a, ha_mem, hza⟩
+          · rw [hop_eq] at hop; simp [LExpr.LExpr.getVars] at hop
+          · rw [List.mem_map] at ha_mem
+            obtain ⟨a0, ha0_mem, ha0_eq⟩ := ha_mem
+            exact h_arg a0 ha0_mem z (by rw [ha0_eq]; exact hza)
+        split
+        · -- shortCircuit call
+          rename_i a rest ceval h_sc
+          obtain ⟨h_args, h_ce⟩ := LExpr.shortCircuitCall?_some h_sc
+          subst h_args
+          simp only [LExpr.evalShortCircuit, LExpr.combineEvalResValueFlag_eq_pair]
+          split
+          · rename_i e' h_if
+            intro hy
+            have h_ceval : ceval e.metadata ((LExpr.eval n' F env a).fst :: rest) = some e' := by
+              split at h_if
+              · exact h_if
+              · simp at h_if
+            refine getVars_origin_trans hidem (fun z hz => ?_) (ih _ y hy)
+            obtain ⟨x, hx_mem, hzx⟩ :=
+              h_wf.concreteEval_freeVars ceval h_ce _ _ e' h_ceval z hz
+            rcases List.mem_cons.mp hx_mem with rfl | hx_rest
+            · exact Or.inr (h_arg a (by simp) z hzx)
+            · exact Or.inl (callOfLFunc_getVars_args F e op_expr _ lfunc h_call x
+                (by simp [hx_rest]) z hzx)
+          · intro hy
+            rcases getVars_mkApp_mem _ _ _ y hy with hop | ⟨x, hx_mem, hyx⟩
+            · rw [hop_eq] at hop; simp [LExpr.LExpr.getVars] at hop
+            · rcases List.mem_cons.mp hx_mem with rfl | hx_rest
+              · exact h_arg a (by simp) y hyx
+              · rw [List.mem_map] at hx_rest
+                obtain ⟨x0, hx0, rfl⟩ := hx_rest
+                exact h_arg x0 (by simp [hx0]) y hyx
+        split
+        · -- inline
+          rename_i h_cond
+          split
+          · -- computeTypeSubst = some tySubst → eval n' new_e
+            rename_i tySubst h_ts
+            intro hy
+            refine getVars_origin_trans hidem (fun z hz => Or.inr ?_) (ih _ y hy)
+            rcases getVars_substFvarsLifting_mem _ _ z hz with ⟨hin, hnone⟩ | ⟨k, v, hk, hv⟩
+            · exfalso
+              rw [getVars_applyTypeSubst] at hin
+              have hsome : lfunc.body.isSome = true := by
+                simp only [Bool.and_eq_true] at h_cond; exact h_cond.1
+              have hbody_eq : lfunc.body = some (lfunc.body.get hsome) := by
+                simp [Option.some_get]
+              have hz_key := lfunc_body_getVars_subset_keys hIdent lfunc h_wf _ hbody_eq z hin
+              have h_len : lfunc.inputs.keys.length =
+                  (args.map (fun a => (LExpr.eval n' F env a).fst)).length := by
+                rw [ListMap.keys_eq_map_fst]; exact (List.length_map _).trans (h_arity.symm.trans (List.length_map _).symm)
+              have h_mem_keys : z ∈ Map.keys (lfunc.inputs.keys.zip
+                  (args.map (fun a => (LExpr.eval n' F env a).fst))) := by
+                rw [Map.keys_eq_map_fst (lfunc.inputs.keys.zip _), List.map_fst_zip (by omega)]
+                exact hz_key
+              exact Map_find?_ne_none_of_mem_keys _ z h_mem_keys hnone
+            · have hv_mem : v ∈ (lfunc.inputs.keys.zip
+                  (args.map (fun a => (LExpr.eval n' F env a).fst))).map Prod.snd :=
+                Map_find?_some_mem_values _ k v hk
+              have hv_args' : v ∈ args.map (fun a => (LExpr.eval n' F env a).fst) :=
+                List.mem_map_snd_zip _ _ v hv_mem
+              rw [List.mem_map] at hv_args'
+              obtain ⟨a, ha_mem, ha_eq⟩ := hv_args'
+              exact h_arg a ha_mem z (by rw [ha_eq]; exact hv)
+          · -- computeTypeSubst = none → (mkApp, .nonvalue)
+            exact h_app y
+        · -- non-inline
+          cases h_fEC : Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr <;>
+          cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfValue lfunc.attr <;> (
+            simp only []
+            split
+            · -- value/constr condition holds
+              split
+              · -- concreteEval = none → (mkApp, .nonvalue)
+                exact h_app y
+              · -- concreteEval = some ceval
+                rename_i ceval h_ce
+                split
+                · -- ceval succeeds → eval n' e'
+                  rename_i e'c h_ceval_eq
+                  intro hy
+                  refine getVars_origin_trans hidem (fun z hz => Or.inr ?_) (ih _ y hy)
+                  obtain ⟨a, ha_mem, hza⟩ :=
+                    h_wf.concreteEval_freeVars ceval h_ce _ _ e'c h_ceval_eq z hz
+                  rw [List.mem_map] at ha_mem
+                  obtain ⟨a0, ha0_mem, ha0_eq⟩ := ha_mem
+                  exact h_arg a0 ha0_mem z (by rw [ha0_eq]; exact hza)
+                · -- ceval fails → (mkApp, .nonvalue)
+                  exact h_app y
+            · -- symbolic args → (mkApp, .nonvalue)
+              exact h_app y
+          )
+      · -- evalCore
+        intro hy
+        exact evalCore_getVars_origin n' F env hidem e ih y hy
 
 /-- `eval` does not introduce free variables: every free variable in the result
     was already free in the input.  Requires a well-formed factory, an
@@ -587,142 +775,13 @@ theorem eval_getVars_subset
     (n : Nat) :
     ∀ (e : LExpr Tbase.mono) (y : Tbase.Identifier),
       y ∈ LExpr.LExpr.getVars (LExpr.eval n F env e).fst → y ∈ LExpr.LExpr.getVars e := by
-  induction n with
-  | zero => intro e y hy; simp only [LExpr.eval] at hy; exact hy
-  | succ n' ih =>
-    intro e y hy
-    simp only [LExpr.eval, LExpr.List_map_fst_map_eval,
-      LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair] at hy
-    revert hy
-    split
-    · -- value: (e, .value)
-      intro hy; exact hy
-    · split
-      · -- factory call
-        rename_i op_expr args lfunc h_call
-        have h_mem := callOfLFunc_func_mem F _ _ _ lfunc false h_call
-        have h_wf := hWF.lfuncs_wf lfunc h_mem
-        obtain ⟨mo, no, to, hop_eq, _, h_arity⟩ := callOfLFunc_eq_some h_call
-        split
-        · -- shortCircuit call
-          rename_i a rest ceval h_sc
-          obtain ⟨h_args, h_ce⟩ := LExpr.shortCircuitCall?_some h_sc
-          subst h_args
-          have h_arg : ∀ x ∈ a :: rest, ∀ z, z ∈ LExpr.LExpr.getVars x →
-              z ∈ LExpr.LExpr.getVars e :=
-            fun x hx z hz => callOfLFunc_getVars_args F e op_expr (a :: rest) lfunc h_call x hx z hz
-          simp only [LExpr.evalShortCircuit, LExpr.combineEvalResValueFlag_eq_pair]
-          split
-          · rename_i e' h_if
-            intro hy
-            have h_ceval : ceval e.metadata ((LExpr.eval n' F env a).fst :: rest) = some e' := by
-              split at h_if
-              · exact h_if
-              · simp at h_if
-            obtain ⟨x, hx_mem, hyx⟩ :=
-              h_wf.concreteEval_freeVars ceval h_ce _ _ e' h_ceval y (ih _ y hy)
-            rcases List.mem_cons.mp hx_mem with rfl | hx_rest
-            · exact h_arg a (by simp) y (ih a y hyx)
-            · exact h_arg x (by simp [hx_rest]) y hyx
-          · intro hy
-            rcases getVars_mkApp_mem _ _ _ y hy with hop | ⟨x, hx_mem, hyx⟩
-            · rw [hop_eq] at hop; simp [LExpr.LExpr.getVars] at hop
-            · rcases List.mem_cons.mp hx_mem with rfl | hx_rest
-              · exact h_arg _ (by simp) y (ih a y hyx)
-              · rw [List.mem_map] at hx_rest
-                obtain ⟨x0, hx0, rfl⟩ := hx_rest
-                exact h_arg x0 (by simp [hx0]) y (ih x0 y hyx)
-        split
-        · -- inline
-          rename_i h_cond
-          split
-          · -- computeTypeSubst = some tySubst → eval n' new_e
-            rename_i tySubst h_ts
-            intro hy
-            have h1 := ih _ y hy
-            rcases getVars_substFvarsLifting_mem _ _ y h1 with ⟨hin, hnone⟩ | ⟨k, v, hk, hv⟩
-            · exfalso
-              rw [getVars_applyTypeSubst] at hin
-              have hsome : lfunc.body.isSome = true := by
-                simp only [Bool.and_eq_true] at h_cond; exact h_cond.1
-              have hbody_eq : lfunc.body = some (lfunc.body.get hsome) := by
-                simp [Option.some_get]
-              have hy_key := lfunc_body_getVars_subset_keys hIdent lfunc h_wf _ hbody_eq y hin
-              have h_len : lfunc.inputs.keys.length =
-                  (args.map (fun a => (LExpr.eval n' F env a).fst)).length := by
-                rw [ListMap.keys_eq_map_fst]; exact (List.length_map _).trans (h_arity.symm.trans (List.length_map _).symm)
-              have h_mem_keys : y ∈ Map.keys (lfunc.inputs.keys.zip
-                  (args.map (fun a => (LExpr.eval n' F env a).fst))) := by
-                rw [Map.keys_eq_map_fst (lfunc.inputs.keys.zip _), List.map_fst_zip (by omega)]
-                exact hy_key
-              exact Map_find?_ne_none_of_mem_keys _ y h_mem_keys hnone
-            · have hv_mem : v ∈ (lfunc.inputs.keys.zip
-                  (args.map (fun a => (LExpr.eval n' F env a).fst))).map Prod.snd :=
-                Map_find?_some_mem_values _ k v hk
-              have hv_args' : v ∈ args.map (fun a => (LExpr.eval n' F env a).fst) :=
-                List.mem_map_snd_zip _ _ v hv_mem
-              rw [List.mem_map] at hv_args'
-              obtain ⟨a, ha_mem, ha_eq⟩ := hv_args'
-              have hya : y ∈ LExpr.LExpr.getVars a := by
-                apply ih a y; rw [ha_eq]; exact hv
-              exact callOfLFunc_getVars_args F e op_expr args lfunc h_call a ha_mem y hya
-          · -- computeTypeSubst = none → (e, .nonvalue)
-            intro hy; exact hy
-        · -- non-inline
-          cases h_fEC : Strata.DL.Util.FuncAttr.findEvalIfConstr lfunc.attr <;>
-          cases h_fEV : Strata.DL.Util.FuncAttr.findEvalIfValue lfunc.attr <;> (
-            simp only []
-            split
-            · -- value/constr condition holds
-              split
-              · -- concreteEval = none → (mkApp, .nonvalue)
-                intro hy
-                rcases getVars_mkApp_mem _ _ _ y hy with hop | ⟨a, ha_mem, hya⟩
-                · rw [hop_eq] at hop; simp [LExpr.LExpr.getVars] at hop
-                · rw [List.mem_map] at ha_mem
-                  obtain ⟨a0, ha0_mem, ha0_eq⟩ := ha_mem
-                  have hya0 : y ∈ LExpr.LExpr.getVars a0 := by
-                    apply ih a0 y; rw [ha0_eq]; exact hya
-                  exact callOfLFunc_getVars_args F e op_expr args lfunc h_call a0 ha0_mem y hya0
-              · -- concreteEval = some ceval
-                rename_i ceval h_ce
-                split
-                · -- ceval succeeds → eval n' e'
-                  rename_i e'c h_ceval_eq
-                  intro hy
-                  have h1 := ih _ y hy
-                  have hexists := h_wf.concreteEval_freeVars ceval h_ce _ _ e'c h_ceval_eq y h1
-                  obtain ⟨a, ha_mem, hya⟩ := hexists
-                  rw [List.mem_map] at ha_mem
-                  obtain ⟨a0, ha0_mem, ha0_eq⟩ := ha_mem
-                  have hya0 : y ∈ LExpr.LExpr.getVars a0 := by
-                    apply ih a0 y; rw [ha0_eq]; exact hya
-                  exact callOfLFunc_getVars_args F e op_expr args lfunc h_call a0 ha0_mem y hya0
-                · -- ceval fails → (mkApp, .nonvalue)
-                  intro hy
-                  rcases getVars_mkApp_mem _ _ _ y hy with hop | ⟨a, ha_mem, hya⟩
-                  · rw [hop_eq] at hop; simp [LExpr.LExpr.getVars] at hop
-                  · rw [List.mem_map] at ha_mem
-                    obtain ⟨a0, ha0_mem, ha0_eq⟩ := ha_mem
-                    have hya0 : y ∈ LExpr.LExpr.getVars a0 := by
-                      apply ih a0 y; rw [ha0_eq]; exact hya
-                    exact callOfLFunc_getVars_args F e op_expr args lfunc h_call a0 ha0_mem y hya0
-            · -- symbolic args → (mkApp, .nonvalue)
-              intro hy
-              rcases getVars_mkApp_mem _ _ _ y hy with hop | ⟨a, ha_mem, hya⟩
-              · rw [hop_eq] at hop; simp [LExpr.LExpr.getVars] at hop
-              · rw [List.mem_map] at ha_mem
-                obtain ⟨a0, ha0_mem, ha0_eq⟩ := ha_mem
-                have hya0 : y ∈ LExpr.LExpr.getVars a0 := by
-                  apply ih a0 y; rw [ha0_eq]; exact hya
-                exact callOfLFunc_getVars_args F e op_expr args lfunc h_call a0 ha0_mem y hya0
-          )
-      · -- evalCore
-        rename_i h_nocall
-        intro hy
-        exact evalCore_getVars_subset n' F env henv e ih y hy
+  intro e y hy
+  rcases eval_getVars_origin hIdent F env n e hWF (Env.idempotent_of_getVars_nil henv) y hy with
+    ⟨h, _⟩ | ⟨x, v, _, hv, hyv⟩
+  · exact h
+  · rw [henv x v hv] at hyv; simp at hyv
 
-end eval_getVars_subset
+end eval_getVars_origin
 
 /-! ### `eval_env_congr`
 
@@ -872,7 +931,7 @@ theorem eval_env_congr
       LExpr.eval n F env₁ e = LExpr.eval n F env₂ e from H n e hagree
   intro n
   induction n with
-  | zero => intro e hag; simp only [LExpr.eval]
+  | zero => intro e hag; simp only [LExpr.eval, substFvarsFromEnv_env_congr env₁ env₂ e hag]
   | succ n' ih =>
     intro e hag
     simp only [LExpr.eval, LExpr.List_map_fst_map_eval,
@@ -1213,9 +1272,8 @@ theorem evalFully_fvar_store
     intro hcan
     have h_no_vars := isValue_getVars_nil F _ hcan
     simp [LExpr.LExpr.getVars] at h_no_vars
-  have eval0 : LExpr.eval 0 F env (.fvar m v ty : LExpr Tbase.mono) =
-      (.fvar m v ty, .outOfFuel) := by
-    simp only [LExpr.eval]; rw [ite_eq_right (Bool.eq_false_iff.mp hnotcan)]
+  have eval0 : (LExpr.eval 0 F env (.fvar m v ty : LExpr Tbase.mono)).snd = .outOfFuel := by
+    simp only [LExpr.eval, hnotcan, Bool.false_eq_true, ite_false]
   have heval_succ : ∀ n', LExpr.eval (n' + 1) F env (.fvar m v ty : LExpr Tbase.mono) =
       LExpr.evalCore n' F env (.fvar m v ty : LExpr Tbase.mono) := by
     intro n'
@@ -2953,17 +3011,6 @@ theorem ite_match_imp
     exact absurd this (by simp)
 
 omit [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
-/-- `eqModuloMeta X Y = true` forces `X` and `Y` to have the same free variables
-    (metadata does not affect `getVars`). -/
-theorem gv_eq_of_eqModuloMeta (X Y : LExpr Tbase.mono)
-    (h : LExpr.eqModuloMeta X Y = true) :
-    LExpr.LExpr.getVars X = LExpr.LExpr.getVars Y := by
-  have heq : X.eraseMetadata = Y.eraseMetadata := by
-    unfold LExpr.eqModuloMeta at h; exact (LExpr.beq_eq _ _).mp h
-  have hfv := LExpr.freeVars_of_eraseMetadata_eq X Y heq
-  rw [getVars_eq_freeVars_idents X, getVars_eq_freeVars_idents Y, hfv]
-
-omit [Inhabited Tbase.IDMeta] [Traceable LExpr.EvalProvenance Tbase.Metadata] in
 /-- Against a CLOSED comparand `X`, the `eqModuloMeta` guard is invariant under a
     variable-only rename of `A`: if either side matches, that side (hence both)
     is closed and the rename is the identity on it. -/
@@ -3532,9 +3579,12 @@ theorem eval_rename_commute
     ↔ LExpr.eval n F (substStoreExpr σ' sm) e = (v, .value true) := by
   induction n generalizing e with
   | zero =>
-    apply bicond_of_twisted F σ' sm 0 e
+    intro v
     simp only [LExpr.eval]
     rw [isValue_substFvars_eq F sm hVar e]
+    split
+    · rename_i hcan; rw [substFvars_value_id F sm e hcan]
+    · simp
   | succ n' ih =>
     -- Leaf/structural arms reuse the TWISTED equality (which holds there) via
     -- `bicond_of_twisted`; the recursive walls (ite/app/eq/callOfLFunc-some) are
@@ -3924,7 +3974,8 @@ theorem eql_true_of_evalFully_eq_true
   obtain ⟨n, hn, _⟩ := evalFully_some_exists F env (LExpr.eq m e1 e2) _ heq
   cases n with
   | zero =>
-    simp [LExpr.eval] at hn
+    simp only [LExpr.eval] at hn
+    split at hn <;> simp at hn
   | succ n =>
     rw [eval_succ_eq] at hn
     simp only [LExpr.evalEq] at hn
@@ -4499,7 +4550,10 @@ theorem eval_eraseMetadata_invariant
   induction n generalizing e₁ e₂ with
   | zero =>
     simp only [LExpr.eval]
-    exact h_eM
+    rw [isValue_eraseMetadata_eq F e₁ e₂ h_eM]
+    split
+    · exact h_eM
+    · exact LExpr.substFvarsFromEnv_eraseMetadata_congr env e₁ e₂ h_eM
   | succ n' ih =>
     simp only [LExpr.eval, LExpr.List_map_fst_map_eval,
       LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair]
@@ -4713,7 +4767,7 @@ theorem eval_eraseMetadata_invariant
                 have h := h_computeTypeSubst_eq; rw [h_none₁, h_tySubst₂] at h
                 exact absurd h (by simp)
               · -- RHS: none
-                exact h_eM
+                simp [LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]
             · -- RHS: inline condition false (contradicts h_inline₁)
               rename_i h_ninline₂
               exfalso; exact h_ninline₂ (h_inline_cond_eq.symm.trans h_inline₁)

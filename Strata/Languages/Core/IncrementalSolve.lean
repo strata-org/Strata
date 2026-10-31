@@ -245,7 +245,7 @@ private def readDecls (funcNames : List String)
     That agreement is proved: whenever this succeeds, so does `extractObligations`, with exactly
     the tree's obligations. -/
 def readProgram (p : Program) : Except String VTree :=
-  readDecls (ObligationExtraction.programFuncNames p) #[] #[] #[] p.decls
+  readDecls p.funcNames #[] #[] #[] p.decls
 
 /-- A position in the tree, as the child indices taken from the root. -/
 abbrev Pos := Array Nat

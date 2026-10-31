@@ -427,8 +427,9 @@ Result: ❌ fail
 --
 -- When an ITE condition is a concrete `true` or `false`, one branch is
 -- unreachable. The evaluator must still generate obligations for any
--- `assert` or `cover` commands in the dead branch. Dead-branch
--- obligations come before any live-branch obligations.
+-- `assert` or `cover` commands in the dead branch. Obligations are in program
+-- order on the first path: a dead `then` branch's before the live `else`
+-- branch's, a dead `else` branch's after the live `then` branch's.
 ---------------------------------------------------------------------
 
 def concreteTrueDeadElse :=
@@ -445,11 +446,11 @@ procedure p() {
 
 /--
 info:
-Obligation: dead_else
+Obligation: live_then
 Property: assert
 Result: ✅ pass
 
-Obligation: live_then
+Obligation: dead_else
 Property: assert
 Result: ✅ pass
 -/
@@ -522,11 +523,11 @@ procedure p() {
 
 /--
 info:
-Obligation: dead_then
+Obligation: pre
 Property: assert
 Result: ✅ pass
 
-Obligation: pre
+Obligation: dead_then
 Property: assert
 Result: ✅ pass
 
@@ -603,15 +604,15 @@ procedure p(x : bool) {
 
 /--
 info:
-Obligation: dead_else
-Property: assert
-Result: ✅ pass
-
 Obligation: pre
 Property: assert
 Result: ✅ pass
 
 Obligation: then_path
+Property: assert
+Result: ✅ pass
+
+Obligation: dead_else
 Property: assert
 Result: ✅ pass
 
@@ -649,11 +650,11 @@ procedure q(x : bool) {
 
 /--
 info:
-Obligation: dead_then
+Obligation: pre
 Property: assert
 Result: ✅ pass
 
-Obligation: pre
+Obligation: dead_then
 Property: assert
 Result: ✅ pass
 
@@ -813,9 +814,9 @@ VCs:
 Label: yw
 Property: assert
 Assumptions:
-p: int.gt(y@1, w@1)
+p: int.gt(y@2, w@2)
 Obligation:
-int.ge(y@1, w@1)
+int.ge(y@2, w@2)
 
 ---
 info:
@@ -849,9 +850,9 @@ VCs:
 Label: yw
 Property: assert
 Assumptions:
-p: int.gt(y@1, w@1)
+p: int.gt(y@2, w@2)
 Obligation:
-int.ge(y@1, w@1)
+int.ge(y@2, w@2)
 
 ---
 info:
@@ -884,7 +885,7 @@ VCs:
 Label: w0
 Property: assert
 Obligation:
-int.ge(w@1, w@1)
+int.ge(w@2, w@2)
 
 ---
 info:

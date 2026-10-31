@@ -1756,6 +1756,35 @@ theorem StepStar_to_substFvarsFromEnv_quant
         (ReflTrans.step _ _ _
           (Step.quant_subst_fvars_trigger (m' := m) tr (LExpr.substFvarsFromEnv env body) p2.fst h_mem_tr) (ReflTrans.refl _))
 
+/-- Every expression steps to its free-variable substitution from the environment. -/
+theorem StepStar_to_substFvarsFromEnv
+    {Tbase : LExprParams}
+    [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
+    [Inhabited Tbase.IDMeta] [ToFormat Tbase.Metadata] [ToFormat Tbase.IDMeta]
+    [Traceable LExpr.EvalProvenance Tbase.Metadata]
+    (F : @Factory Tbase) (env : Env Tbase) (e : LExpr Tbase.mono) :
+    StepStar F env e (LExpr.substFvarsFromEnv env e) := by
+  induction e with
+  | const | bvar | op => exact ReflTrans.refl _
+  | fvar m x ty =>
+    simp only [LExpr.substFvarsFromEnv]
+    split
+    · rename_i v hv; exact ReflTrans.step _ _ _ (Step.expand_fvar x v hv) (ReflTrans.refl _)
+    · exact ReflTrans.refl _
+  | abs m name ty body => exact StepStar_to_substFvarsFromEnv_abs F env m name ty body
+  | quant m qk name ty tr body =>
+    exact StepStar_to_substFvarsFromEnv_quant F env m qk name ty tr body
+  | app m fn a ih1 ih2 =>
+    exact ReflTrans_Transitive _ _ _ _ (StepStar_app_fn F env _ _ _ m ih1)
+      (StepStar_app_arg F env _ _ _ m ih2)
+  | ite m c t f ihc iht ihf =>
+    exact ReflTrans_Transitive _ _ _ _ (StepStar_ite_cond_pres F env _ _ _ _ m ihc)
+      (ReflTrans_Transitive _ _ _ _ (StepStar_ite_then_pres F env _ _ _ _ m iht)
+        (StepStar_ite_else_pres F env _ _ _ _ m ihf))
+  | eq m e1 e2 ih1 ih2 =>
+    exact ReflTrans_Transitive _ _ _ _ (StepStar_eq_lhs_pres F env _ _ _ m ih1)
+      (StepStar_eq_rhs_pres F env _ _ _ m ih2)
+
 ---------------------------------------------------------------------
 
 -- isValue depends only on eraseMetadata.

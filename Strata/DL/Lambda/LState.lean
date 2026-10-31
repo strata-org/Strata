@@ -10,6 +10,7 @@ public import Strata.DL.Lambda.Factory
 public import Strata.DL.Lambda.Scopes
 import all Strata.DL.Lambda.LExpr
 import Strata.Util.Name
+public import Std.Data.HashMap.Basic
 
 /-! ## State for (Partial) Evaluation of Lambda Expressions
 
@@ -25,15 +26,32 @@ public section
 variable {T : LExprParams} [Inhabited T.Metadata] [BEq T.Metadata] [DecidableEq T.IDMeta] [BEq T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat (Scopes T)] [Inhabited (LExpr T.mono)]
 ---------------------------------------------------------------------
 
+/-- The names in use (reserved or generated), and for each base name the suffix after that
+    of the last name generated with it. -/
+structure NameSupply where
+  usedNames : Std.HashSet String := {}
+  nextSuffix : Std.HashMap String Nat := {}
+
+/-- A name not in `usedNames`, with the base name of `x`. The search starts at `x`'s own
+    suffix or at the suffix after that of the last name generated with the same base name,
+    whichever is larger, so generating many names with one base name does not try the earlier ones
+    again. -/
+def NameSupply.fresh (x : String) (s : NameSupply) : String × NameSupply :=
+  let (base, startSuffix) := Strata.Name.breakDisambiguated x
+  let startSuffix := max startSuffix (s.nextSuffix.getD base 1)
+  let new_var := Strata.Name.findUnique base startSuffix s.usedNames
+  let (_, next) := Strata.Name.breakDisambiguated new_var
+  (new_var, { usedNames := s.usedNames.insert new_var,
+              nextSuffix := s.nextSuffix.insert base next })
+
 /-
-Configuration for symbolic execution, where we have `usedNames` for tracking
-which variable names have been generated. We also have a `fuel` argument for
-the evaluation function, and support for factory functions.
+Configuration for symbolic execution: the supply of generated names, a `fuel` argument
+for the evaluation function, and the factory functions.
 -/
 structure EvalConfig (T : LExprParams) where
   factory : @Factory T
   fuel : Nat := 200
-  usedNames : Std.HashSet String := {}
+  names : NameSupply := {}
 
 instance : ToFormat (EvalConfig T) where
   format c :=
@@ -43,14 +61,12 @@ instance : ToFormat (EvalConfig T) where
 
 def EvalConfig.init : EvalConfig T :=
   { factory := @Factory.default T,
-    fuel := 200,
-    usedNames := {} }
+    fuel := 200 }
 
+/-- A name not used so far, with the base name of `x` (`NameSupply.fresh`). -/
 def EvalConfig.genSym (x : String) (c : EvalConfig T) : String × EvalConfig T :=
-  let (base, startSuffix) := Strata.Name.breakDisambiguated x
-  let new_var := Strata.Name.findUnique base startSuffix c.usedNames
-  let c := { c with usedNames := c.usedNames.insert new_var }
-  (new_var, c)
+  let (new_var, names) := c.names.fresh x
+  (new_var, { c with names })
 
 ---------------------------------------------------------------------
 

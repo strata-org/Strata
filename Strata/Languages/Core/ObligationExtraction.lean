@@ -108,11 +108,6 @@ def renameShadowingParams (taken : List String) (proc : Procedure) (ss : Stateme
       (Block.renameLhs (Block.substFvar ss x (.fvar () x' (some ty))) x x', name :: used)
     else (ss, used)).1
 
-/-- The names a procedure's parameters are kept apart from: the function names the program's
-    declarations introduce (`Decl.funcNames`). -/
-def programFuncNames (p : Program) : List String :=
-  p.decls.flatMap fun d => d.funcNames.map (·.name)
-
 /-- The statements a procedure's obligations are read from: its structured body, with the
     parameters named like a function in `funcNames` renamed apart. A procedure that still
     carries a contract is refused, since only the body is read: an `ensures` would be left
@@ -181,7 +176,7 @@ private def extractDecl (funcNames : List String) :
 def extractObligations (p : Program) : Except String (ProofObligations Expression) := do
   -- Accumulate global path-condition facts (axioms and distinct groups) and
   -- obligations as we walk declarations in order.
-  let (_, allObs) ← p.decls.foldlM (extractDecl (programFuncNames p))
+  let (_, allObs) ← p.decls.foldlM (extractDecl p.funcNames)
     (([] : PathCondition Expression), (#[] : Array (ProofObligation Expression)))
   return allObs
 

@@ -76,9 +76,9 @@ VCs:
 Label: constr_destr_cancel
 Property: assert
 Assumptions:
-assume_0: b == true
+assume_0: b@1 == true
 Obligation:
-b
+b@1
 
 ---
 info:

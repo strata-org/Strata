@@ -283,6 +283,10 @@ def Program.getAxiom? (P: Program) (n : Expression.Ident) : Option Axiom := do
   let ax ← decl.getAxiom?
   return ax
 
+/-- The function names the program's declarations introduce (`Decl.funcNames`). -/
+def Program.funcNames (p : Program) : List String :=
+  p.decls.flatMap fun d => d.funcNames.map (·.name)
+
 @[expose]
 def Program.getNames (P: Program) : List Expression.Ident :=
   go P.decls

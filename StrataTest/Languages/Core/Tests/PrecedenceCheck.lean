@@ -46,27 +46,27 @@ VCs:
 Label: implies_and_eq_not_or_1
 Property: assert
 Obligation:
-((a ==> b) && (c ==> d)) == foo(a, b, c, d)
+((a@1 ==> b@1) && (c@1 ==> d@1)) == foo(a@1, b@1, c@1, d@1)
 
 Label: implies_and_eq_not_or_2
 Property: assert
 Obligation:
-((a ==> b) && (c ==> d)) == foo(a, b, c, d)
+((a@1 ==> b@1) && (c@1 ==> d@1)) == foo(a@1, b@1, c@1, d@1)
 
 Label: implies_and_eq_not_or_3
 Property: assert
 Obligation:
-((a ==> b) && (c ==> d)) == foo(a, b, c, d)
+((a@1 ==> b@1) && (c@1 ==> d@1)) == foo(a@1, b@1, c@1, d@1)
 
 Label: implies_and_eq_not_or_4
 Property: assert
 Obligation:
-((a ==> b) && (c ==> d)) == foo(a, b, c, d)
+((a@1 ==> b@1) && (c@1 ==> d@1)) == foo(a@1, b@1, c@1, d@1)
 
 Label: implies_equiv
 Property: assert
 Obligation:
-a ==> b <==> !a || b
+a@1 ==> b@1 <==> !a@1 || b@1
 
 ---
 info:

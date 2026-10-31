@@ -73,6 +73,70 @@ procedure test ()
 #guard_msgs (whitespace := lax) in
 #eval evalAndPrint simpleProg
 
+/-! A call argument's `old` value is the caller's initial value -/
+
+private def callOldArgProg :=
+#strata
+program Core;
+procedure Q(a : int)
+spec { requires [qa]: int.gt(a, 0); }
+{
+};
+procedure P(inout x : int)
+spec { requires [r]: int.gt(x, 0); }
+{
+  x := 0;
+  call Q(old(x));
+};
+#end
+
+/--
+info: program Core;
+
+procedure Q ()
+{
+  assume [r]: int.gt(x@1, 0);
+  assert [|(Origin_Q_Requires)qa|]: int.gt(x@1, 0);
+};
+-/
+#guard_msgs (whitespace := lax) in
+#eval evalAndPrint callOldArgProg
+
+/-! A callee postcondition's `old` value is the argument value at that call -/
+
+private def calleeOldProg :=
+#strata
+program Core;
+procedure Q(inout x : int)
+spec { ensures [q_post]: x == int.add(old(x), 1); }
+{
+  x := int.add(x, 1);
+};
+procedure P(inout x : int)
+spec { ensures [p_post]: x == int.add(old(x), 2); }
+{
+  call Q(inout x);
+  call Q(inout x);
+};
+#end
+
+/--
+info: program Core;
+
+procedure Q ()
+{
+  if * {
+    assert [q_post]: true;
+  } else {
+    assume [|(Origin_Q_Ensures)q_post|]: x@3 == int.add(x@2, 1);
+    assume [|(Origin_Q_Ensures)q_post|]: x@4 == int.add(x@3, 1);
+    assert [p_post]: x@4 == int.add(x@2, 2);
+  }
+};
+-/
+#guard_msgs (whitespace := lax) in
+#eval evalAndPrint calleeOldProg
+
 /-! Deterministic if: condition becomes an assume on each branch -/
 
 private def detIfProg :=
@@ -137,9 +201,9 @@ info: program Core;
 procedure nondetIfTest ()
 {
   assume [pre]: int.ge(x@1, 0);
-  assume [|<label_ite_cond_true: $__ndelim_ite$_0>|]: if $__ndelim_ite$_0 then $__ndelim_ite$_0 else true;
-  assume [|<label_ite_cond_false: !($__ndelim_ite$_0)>|]: if if $__ndelim_ite$_0 then false else true then if $__ndelim_ite$_0 then false else true else true;
-  assert [post]: int.ge(if $__ndelim_ite$_0 then x@1 else int.add(x@1, 1), 0);
+  assume [|<label_ite_cond_true: $__ndelim_ite$_0>|]: if $__ndelim_ite$_0@1 then $__ndelim_ite$_0@1 else true;
+  assume [|<label_ite_cond_false: !($__ndelim_ite$_0)>|]: if if $__ndelim_ite$_0@1 then false else true then if $__ndelim_ite$_0@1 then false else true else true;
+  assert [post]: int.ge(if $__ndelim_ite$_0@1 then x@1 else int.add(x@1, 1), 0);
 };
 -/
 #guard_msgs (whitespace := lax) in
@@ -243,25 +307,25 @@ procedure blockTest ()
         assume [pre_x]: int.ge(x@1, 0);
         assume [pre_y]: int.ge(y@1, 0);
         assume [|<label_ite_cond_false: !(int.gt(x, 10))>|]: if int.gt(x@1, 10) then false else true;
-        assume [|<label_ite_cond_true: $__ndelim_ite$_0>|]: if $__ndelim_ite$_0 then $__ndelim_ite$_0 else true;
-        assume [|<label_ite_cond_false: !($__ndelim_ite$_0)>|]: if if $__ndelim_ite$_0 then false else true then if $__ndelim_ite$_0 then false else true else true;
-        assert [after_inner]: int.ge(if $__ndelim_ite$_0 then y@1 else int.add(x@1, y@1), 0);
+        assume [|<label_ite_cond_true: $__ndelim_ite$_0>|]: if $__ndelim_ite$_0@1 then $__ndelim_ite$_0@1 else true;
+        assume [|<label_ite_cond_false: !($__ndelim_ite$_0)>|]: if if $__ndelim_ite$_0@1 then false else true then if $__ndelim_ite$_0@1 then false else true else true;
+        assert [after_inner]: int.ge(if $__ndelim_ite$_0@1 then y@1 else int.add(x@1, y@1), 0);
       }
     } else {
       assume [pre_x]: int.ge(x@1, 0);
       assume [pre_y]: int.ge(y@1, 0);
       assume [|<label_ite_cond_false: !(int.gt(x, 10))>|]: if int.gt(x@1, 10) then false else true;
-      assume [|<label_ite_cond_true: $__ndelim_ite$_0>|]: if $__ndelim_ite$_0 then $__ndelim_ite$_0 else true;
-      assume [|<label_ite_cond_false: !($__ndelim_ite$_0)>|]: if if $__ndelim_ite$_0 then false else true then if $__ndelim_ite$_0 then false else true else true;
-      assert [final]: int.ge(if $__ndelim_ite$_0 then y@1 else int.add(x@1, y@1), 0);
+      assume [|<label_ite_cond_true: $__ndelim_ite$_0>|]: if $__ndelim_ite$_0@1 then $__ndelim_ite$_0@1 else true;
+      assume [|<label_ite_cond_false: !($__ndelim_ite$_0)>|]: if if $__ndelim_ite$_0@1 then false else true then if $__ndelim_ite$_0@1 then false else true else true;
+      assert [final]: int.ge(if $__ndelim_ite$_0@1 then y@1 else int.add(x@1, y@1), 0);
     }
   } else {
     assume [pre_x]: int.ge(x@1, 0);
     assume [pre_y]: int.ge(y@1, 0);
     assume [|<label_ite_cond_false: !(int.gt(x, 10))>|]: if int.gt(x@1, 10) then false else true;
-    assume [|<label_ite_cond_true: $__ndelim_ite$_0>|]: if $__ndelim_ite$_0 then $__ndelim_ite$_0 else true;
-    assume [|<label_ite_cond_false: !($__ndelim_ite$_0)>|]: if if $__ndelim_ite$_0 then false else true then if $__ndelim_ite$_0 then false else true else true;
-    assert [post]: int.ge(if $__ndelim_ite$_0 then y@1 else int.add(x@1, y@1), 0);
+    assume [|<label_ite_cond_true: $__ndelim_ite$_0>|]: if $__ndelim_ite$_0@1 then $__ndelim_ite$_0@1 else true;
+    assume [|<label_ite_cond_false: !($__ndelim_ite$_0)>|]: if if $__ndelim_ite$_0@1 then false else true then if $__ndelim_ite$_0@1 then false else true else true;
+    assert [post]: int.ge(if $__ndelim_ite$_0@1 then y@1 else int.add(x@1, y@1), 0);
   }
 };
 -/

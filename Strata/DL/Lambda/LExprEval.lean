@@ -257,7 +257,10 @@ at Factory must have LMonoTy.
 def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono))
     : LExpr TBase.mono × EvalResult :=
   match n with
-  | 0 => (e, if isValue F e then .value true else .outOfFuel)
+  | 0 =>
+    -- Out of fuel, the free variables take their values from `env`, so that the
+    -- result means what `e` means under `env`.
+    if isValue F e then (e, .value true) else (LExpr.substFvarsFromEnv env e, .outOfFuel)
   | n' + 1 =>
     if isValue F e then
       (e, .value true)
@@ -278,6 +281,7 @@ def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono
             match idx with
             | some i => (args[i]? |>.map (isValue F)).getD false
             | none => false
+          let rebuilt := @mkApp TBase.mono e.metadata op_expr args
           if h: lfunc.body.isSome && (lfunc.attr.contains .inline ||
             constrArgAt (FuncAttr.findInlineIfConstr lfunc.attr) ||
             (FuncAttr.hasInlineIfAllValues lfunc.attr && args.all (isValue F))) then
@@ -288,11 +292,10 @@ def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono
             | some tySubst =>
               let body := body.applyTypeSubst tySubst
               let input_map := lfunc.inputs.keys.zip args
-              let new_e := substFvarsLifting body input_map
-              combineEvalResValueFlag argsAllFull (eval n' F env new_e)
-            | none => (e, .nonvalue) -- cannot happen in well-typed terms
+              let inlined := substFvarsLifting body input_map
+              combineEvalResValueFlag argsAllFull (eval n' F env inlined)
+            | none => (rebuilt, .nonvalue) -- cannot happen in well-typed terms
           else
-            let new_e := @mkApp TBase.mono e.metadata op_expr args
             if -- Case 1: All arguments in the function call are concrete.
               -- We can, provided a denotation function, evaluate this function
               -- call.
@@ -312,15 +315,15 @@ def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono
                 -- Canonicity alone decides value-hood; `argsAllFull` tempers
                 -- the every-step-fully-reduced bit as everywhere else.
                 combineEvalResValueFlag argsAllFull
-                  (new_e, if isValue F new_e then .value true else .nonvalue)
+                  (rebuilt, if isValue F rebuilt then .value true else .nonvalue)
               | some ceval =>
-                match ceval new_e.metadata args with
+                match ceval rebuilt.metadata args with
                 | .some e' =>
                   combineEvalResValueFlag argsAllFull (eval n' F env e')
-                | .none => (new_e, .nonvalue)
+                | .none => (rebuilt, .nonvalue)
             else
               -- At least one argument in the function call is symbolic.
-              (new_e, .nonvalue)
+              (rebuilt, .nonvalue)
       | none =>
         -- Not a call of a factory function - go through evalCore
         evalCore n' F env e

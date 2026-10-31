@@ -9,6 +9,8 @@ public import Strata.DL.Lambda.LState
 import all Strata.DL.Lambda.LState
 public import Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprWF
+import all Strata.Util.NameProofs
+import Std.Data.HashSet.Lemmas
 
 /-!
 ## Properties of LState substitution operations
@@ -16,10 +18,35 @@ import all Strata.DL.Lambda.LExprWF
 Theorems about `substFvarsFromEnv`:
 - `eraseMetadata` congruence
 - Simplification lemmas for specific constructors
+
+Stores and the origin of variables:
+- `Env.Idempotent`: no value the store holds mentions a variable the store binds;
+  `Env.idempotent_of_getVars_nil` gives it for stores of closed values.
+- `VarOrigin`: a variable is an unbound variable of an expression, or a variable of the
+  value the store gives a variable of it.
+- `getVars_substFvarsFromEnv_origin`: every variable of `substFvarsFromEnv env e` has an
+  origin in `e`; `getVars_origin_mono` carries an origin to a larger expression.
+
+Generated names:
+- `NameSupply.fresh_not_mem`: a generated name is not in use; `NameSupply.fresh_mem`: it is in
+  use afterwards.
 -/
 
 namespace Lambda
 open Strata
+
+/-- `NameSupply.fresh` returns a name not in use, given that `disambiguate` is injective in
+    its suffix. -/
+theorem NameSupply.fresh_not_mem (h_inj : Strata.Name.DisambiguateInjective)
+    (x : String) (s : NameSupply) : (s.fresh x).1 ∉ s.usedNames := by
+  simp only [NameSupply.fresh]
+  exact Strata.Name.findUnique_not_mem h_inj _ _ _
+
+/-- After `NameSupply.fresh`, the name it returns is in use. -/
+theorem NameSupply.fresh_mem (x : String) (s : NameSupply) :
+    (s.fresh x).1 ∈ (s.fresh x).2.usedNames := by
+  simp only [NameSupply.fresh]
+  exact Std.HashSet.mem_insert_self
 
 /-- `substFvarsFromEnv` preserves `eraseMetadata` equality. -/
 theorem LExpr.substFvarsFromEnv_eraseMetadata_congr
@@ -150,6 +177,70 @@ theorem substFvarsFromEnv_env_congr {Tbase : LExprParams}
     rw [ih1 (fun x hx => hagree x (List.mem_append_left _ hx)),
         ih2 (fun x hx => hagree x (List.mem_append_right _ hx))]
 
+/-- No value the store holds mentions a variable the store binds. -/
+@[expose] public def Env.Idempotent {T : LExprParams} (env : Env T) : Prop :=
+  ∀ x v, env x = some v → ∀ y ∈ LExpr.LExpr.getVars v, env y = none
+
+/-- `y` is an unbound variable of `e` or a variable of the value `env` gives a variable of `e`. -/
+@[expose] public def VarOrigin {T : LExprParams} (env : Env T) (e : LExpr T.mono)
+    (y : T.Identifier) : Prop :=
+  (y ∈ LExpr.LExpr.getVars e ∧ env y = none) ∨
+    ∃ x v, x ∈ LExpr.LExpr.getVars e ∧ env x = some v ∧ y ∈ LExpr.LExpr.getVars v
+
+/-- A store whose values have no variables is idempotent. -/
+public theorem Env.idempotent_of_getVars_nil {T : LExprParams} {env : Env T}
+    (henv : ∀ x v, env x = some v → LExpr.LExpr.getVars v = []) : env.Idempotent := by
+  intro x v hv y hy; rw [henv x v hv] at hy; simp at hy
+
+/-- An origin of `y` in `a` is an origin in `b` when every variable of `a` is one of `b`. -/
+theorem getVars_origin_mono {Tbase : LExprParams} {env : Env Tbase}
+    {a b : LExpr Tbase.mono} {y : Tbase.Identifier}
+    (hab : ∀ z ∈ LExpr.LExpr.getVars a, z ∈ LExpr.LExpr.getVars b)
+    (hy : VarOrigin env a y) : VarOrigin env b y := by
+  rcases hy with ⟨hya, hnone⟩ | ⟨x, v, hxa, hxv, hyv⟩
+  · exact Or.inl ⟨hab y hya, hnone⟩
+  · exact Or.inr ⟨x, v, hab x hxa, hxv, hyv⟩
+
+/-- Every variable of `substFvarsFromEnv env e` is a variable of `e` that `env` does not
+    bind, or a variable of the value `env` gives a variable of `e`. -/
+theorem getVars_substFvarsFromEnv_origin {Tbase : LExprParams} (env : Env Tbase)
+    (e : LExpr Tbase.mono) (y : Tbase.Identifier)
+    (hy : y ∈ LExpr.LExpr.getVars (LExpr.substFvarsFromEnv env e)) :
+    VarOrigin env e y := by
+  induction e with
+  | const | op | bvar => simp [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars] at hy
+  | fvar m x ty =>
+    simp only [LExpr.substFvarsFromEnv] at hy
+    cases hv : env x with
+    | none =>
+      rw [hv] at hy
+      simp only [LExpr.LExpr.getVars, List.mem_singleton] at hy
+      subst hy
+      exact Or.inl ⟨by simp [LExpr.LExpr.getVars], hv⟩
+    | some v => rw [hv] at hy; exact Or.inr ⟨x, v, by simp [LExpr.LExpr.getVars], hv, hy⟩
+  | abs _ _ _ _ ih => exact ih hy
+  | quant _ _ _ _ _ _ iht ihb =>
+    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
+    rcases hy with h | h
+    · exact getVars_origin_mono (fun z hz => by simp [LExpr.LExpr.getVars, hz]) (iht h)
+    · exact getVars_origin_mono (fun z hz => by simp [LExpr.LExpr.getVars, hz]) (ihb h)
+  | app _ _ _ ih1 ih2 =>
+    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
+    rcases hy with h | h
+    · exact getVars_origin_mono (fun z hz => by simp [LExpr.LExpr.getVars, hz]) (ih1 h)
+    · exact getVars_origin_mono (fun z hz => by simp [LExpr.LExpr.getVars, hz]) (ih2 h)
+  | ite _ _ _ _ ih1 ih2 ih3 =>
+    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
+    rcases hy with (h | h) | h
+    · exact getVars_origin_mono (fun z hz => by simp [LExpr.LExpr.getVars, hz]) (ih1 h)
+    · exact getVars_origin_mono (fun z hz => by simp [LExpr.LExpr.getVars, hz]) (ih2 h)
+    · exact getVars_origin_mono (fun z hz => by simp [LExpr.LExpr.getVars, hz]) (ih3 h)
+  | eq _ _ _ ih1 ih2 =>
+    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
+    rcases hy with h | h
+    · exact getVars_origin_mono (fun z hz => by simp [LExpr.LExpr.getVars, hz]) (ih1 h)
+    · exact getVars_origin_mono (fun z hz => by simp [LExpr.LExpr.getVars, hz]) (ih2 h)
+
 /-- If the environment maps only to closed expressions, `substFvarsFromEnv`
     does not introduce free variables. -/
 theorem getVars_substFvarsFromEnv_mem {Tbase : LExprParams} (env : Env Tbase)
@@ -157,39 +248,9 @@ theorem getVars_substFvarsFromEnv_mem {Tbase : LExprParams} (env : Env Tbase)
     (e : LExpr Tbase.mono) (y : Tbase.Identifier)
     (hy : y ∈ LExpr.LExpr.getVars (LExpr.substFvarsFromEnv env e)) :
     y ∈ LExpr.LExpr.getVars e := by
-  induction e with
-  | const | op | bvar => exact hy
-  | fvar m x ty =>
-    simp only [LExpr.substFvarsFromEnv] at hy
-    cases hv : env x with
-    | none => rw [hv] at hy; exact hy
-    | some v => rw [hv, hcl x v hv] at hy; simp at hy
-  | abs _ _ _ _ ih => exact ih hy
-  | quant _ _ _ _ _ _ iht ihb =>
-    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
-    simp only [LExpr.LExpr.getVars, List.mem_append]
-    rcases hy with h | h
-    · exact Or.inl (iht h)
-    · exact Or.inr (ihb h)
-  | app _ _ _ ih1 ih2 =>
-    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
-    simp only [LExpr.LExpr.getVars, List.mem_append]
-    rcases hy with h | h
-    · exact Or.inl (ih1 h)
-    · exact Or.inr (ih2 h)
-  | ite _ _ _ _ ih1 ih2 ih3 =>
-    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
-    simp only [LExpr.LExpr.getVars, List.mem_append]
-    rcases hy with (h | h) | h
-    · exact Or.inl (Or.inl (ih1 h))
-    · exact Or.inl (Or.inr (ih2 h))
-    · exact Or.inr (ih3 h)
-  | eq _ _ _ ih1 ih2 =>
-    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
-    simp only [LExpr.LExpr.getVars, List.mem_append]
-    rcases hy with h | h
-    · exact Or.inl (ih1 h)
-    · exact Or.inr (ih2 h)
+  rcases getVars_substFvarsFromEnv_origin env e y hy with ⟨h, _⟩ | ⟨x, v, _, hv, hyv⟩
+  · exact h
+  · rw [hcl x v hv] at hyv; simp at hyv
 
 /-- `env'` extends `env`: every binding present in `env` is present, identically,
     in `env'`. -/

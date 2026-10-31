@@ -258,7 +258,10 @@ theorem eval_StepStar
   unfold StepStar
   induction fuel generalizing e with
   | zero =>
-    exact ⟨e, ReflTrans.refl e, by simp [LExpr.eval]⟩
+    simp only [LExpr.eval]
+    split
+    · exact ⟨e, ReflTrans.refl e, rfl⟩
+    · exact ⟨_, StepStar_to_substFvarsFromEnv F env e, rfl⟩
   | succ fuel ih =>
     simp only [LExpr.eval, LExpr.List_map_fst_map_eval,
       LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair]
@@ -267,7 +270,7 @@ theorem eval_StepStar
       rename_i h_value
       have h_eval_n : (LExpr.eval fuel F env e).fst = e := by
         cases fuel with
-        | zero => simp [LExpr.eval]
+        | zero => simp [LExpr.eval, h_value]
         | succ fuel' => simp [LExpr.eval, h_value]
       obtain ⟨e', hstep, hve⟩ := ih e
       rw [h_eval_n] at hve
@@ -354,8 +357,8 @@ theorem eval_StepStar
             show _ = ((LExpr.eval fuel F env _).fst).eraseMetadata
             rw [h_body_get, show (fun a => (LExpr.eval fuel F env a).fst) = (fun a => (LExpr.eval fuel F env a).fst) from rfl]
             exact h_ve_s.trans (eval_eraseMetadata_invariant F env _ _ fuel hWF h_subst_eM)
-          · -- computeTypeSubst = none: eval returns e unchanged
-            exact ⟨e, ReflTrans.refl e, rfl⟩
+          · -- computeTypeSubst = none: eval returns the call on the evaluated arguments
+            exact eval_StepStar_factory_terminal F env e fuel op_expr args lfunc h_call ih
         · -- Non-inline
           rename_i h_not_inline
           -- Case on both attribute lookups to eliminate inner matches

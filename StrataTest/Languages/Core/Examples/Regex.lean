@@ -222,7 +222,7 @@ VCs:
 Label: assert_0
 Property: assert
 Obligation:
-!(str.in.re(s, re.none()))
+!(str.in.re(s@1, re.none()))
 
 ---
 info:

@@ -44,7 +44,7 @@ Obligation: must_be_42
 Property: assert
 Result: ❌ fail
 Model:
-(x@1, 0)
+(x@2, 0)
 -/
 #guard_msgs in
 #eval Core.verify intModelPgm (options := .models)
@@ -84,7 +84,7 @@ Obligation: must_be_true
 Property: assert
 Result: ❌ fail
 Model:
-(b@1, false)
+(b@2, false)
 -/
 #guard_msgs in
 #eval Core.verify boolModelPgm (options := .models)
@@ -110,7 +110,7 @@ Obligation: must_be_cons
 Property: assert
 Result: ❌ fail
 Model:
-(xs@1, Nil)
+(xs@2, Nil)
 -/
 #guard_msgs in
 #eval Core.verify datatypeModelPgm (options := .models)
@@ -136,7 +136,7 @@ Obligation: must_be_cons
 Property: assert
 Result: ❌ fail
 Model:
-(xs@1, Cons(0, Nil))
+(xs@2, Cons(0, Nil))
 -/
 #guard_msgs in
 #eval Core.verify datatypeModelPgm2 (options := .models)
@@ -162,7 +162,7 @@ Obligation: must_be_left
 Property: assert
 Result: ❌ fail
 Model:
-(e@1, Right(true))
+(e@2, Right(true))
 -/
 #guard_msgs in
 #eval Core.verify eitherModelPgm (options := .models)
