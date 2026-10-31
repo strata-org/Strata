@@ -203,8 +203,11 @@ def CoreVerifierInput.reachableProcedures (input : CoreVerifierInput) : List Str
     one; this resets that option. With a given pipeline, `proceduresToVerify`
     is not read, and `ValidConfig` requires the pipeline to filter no
     procedure, so every procedure is verified. With `options.incremental` set,
-    `Core.verify` discharges the obligations by walking the obligation tree
-    (`IncrementalSolve`) instead of running `verifyPipeline`. -/
+    and neither `vcDirectory` nor `alwaysGenerateSMT`, `verifyPipeline`
+    discharges the obligations by walking the obligation tree
+    (`IncrementalSolve`), except for goals alone in their session, and for
+    every goal when no solver session can be started, which go one solver
+    per obligation. -/
 def VerifyConfig.verify (cfg : VerifyConfig) (input : CoreVerifierInput) :=
   Core.verify input.prog cfg.tempDir
     { cfg.options with
@@ -216,9 +219,10 @@ def VerifyConfig.verify (cfg : VerifyConfig) (input : CoreVerifierInput) :=
     covers.** For every valid configuration, one whose pipeline phases each
     preserve deductive verification and filter no procedure, every `VCResults`
     that `Core.verify` returns is deductive verification of the program the
-    user wrote, in every model of Core's factory. It covers both back ends
-    `Core.verify` chooses between: `verifyPipeline`, and, with
-    `options.incremental` set, the obligation-tree walk of `IncrementalSolve`.
+    user wrote, in every model of Core's factory. It covers both ways
+    `verifyPipeline` can discharge the obligations: one solver per obligation,
+    and, with `options.incremental` set and neither `vcDirectory` nor
+    `alwaysGenerateSMT`, the obligation-tree walk of `IncrementalSolve`.
     This is the statement, not yet a theorem: proving it needs the
     correctness of the back end, symbolic evaluation and obligation extraction,
     and the soundness of the solver. -/

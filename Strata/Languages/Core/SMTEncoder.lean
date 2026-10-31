@@ -228,7 +228,8 @@ def lMonoTyToTermType (useArrayTheory : Bool := false) (ty : LMonoTy) : TermType
 
 /-- Convert a datatype's constructors to typed SMT constructors: the one place that names
     constructors and selectors and lowers field types, for every solver interface. -/
-def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) (useArrayTheory : Bool := false): List SMTConstructor :=
+def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) (useArrayTheory : Bool := false)
+    : List SMTConstructor :=
   d.constrs.map fun c =>
     let fields := c.args.map fun (name, fieldTy) =>
       (Lambda.destructorFuncName d name, lMonoTyToTermType useArrayTheory fieldTy)

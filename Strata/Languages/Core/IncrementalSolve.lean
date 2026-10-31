@@ -1575,7 +1575,12 @@ programs read by `strata verify`, and the programs the Laurel and Python front e
 translate to Core. It decides which back end discharges the obligations, the obligation-tree
 walk above or one solver per obligation, and runs the pipeline of
 `verifyPipeline` with it. Making that choice here, in the one function they all call, is
-what gives every front end the tree walk under `--incremental`.
+what lets every front end get the tree walk under `--incremental`. A caller gets it when it
+passes no `mkDischarge`, as `strata verify` does on its default solvers and Laurel does, or
+when it opens sessions with `mkSession`, unless one of the cases listed at `verify` keeps
+one solver per obligation. A caller that passes any `mkDischarge`, even
+`mkDischargeFn`, and no `mkSession` keeps one solver per obligation: the Python front end's
+`pyAnalyzeLaurel`, and `strata verify` with a `--solver` back end that opens no sessions.
 -/
 
 namespace Core
@@ -1590,9 +1595,9 @@ The back end is chosen as follows.
 - A `solver` passed in is used as it is.
 - Otherwise, under `--incremental`, the obligation tree is walked, sharing one solver
   session down a branch. The tree is walked on the sessions `mkSession` opens, or on local
-  solver processes, but never on local processes for a caller with its own `mkDischarge`
-  and no sessions: that caller decides where queries go. Goals alone in their procedure
-  go through `mkDischarge` either way.
+  solver processes, but never on local processes for a caller that passes any
+  `mkDischarge` and no `mkSession`: that caller decides where queries go. A session of one
+  goal goes through `mkDischarge` either way.
 - Otherwise each obligation is sent on its own through `mkDischarge`.
 
 The per-obligation path is kept, under `--incremental` too, when SMT files are to be kept
@@ -1600,6 +1605,19 @@ The per-obligation path is kept, under `--incremental` too, when SMT files are t
 (`obligationsToVerify`): that path is the only one that writes and filters them. A
 `vcDirectory` also turns `--incremental` off for that path, which writes SMT files only
 when it is not incremental.
+
+With `removeIrrelevantAxioms`, the tree walk prunes lazily unless `exactPruning` is set
+(`--incremental-pruning lazy`, the default, or `exact`): a solver keeps the axioms earlier
+goals on its path needed, so a goal checked on that shared solver may see more axioms than
+its own pruning keeps. Those axioms are the program's own, so a goal they prove still
+follows from the program, but its verdict may differ from the one it gets from one solver
+per obligation or exact pruning: an assertion may pass where it is refuted or unknown
+there, and a cover may be reported unreachable where it is reachable or unknown there.
+Goals sent alone, and goals that skip a definition the path holds, are checked on a fresh
+solver and see only their own axioms. With `exactPruning`, the solver is reset whenever a
+goal drops an axiom it holds, so every goal is checked with exactly its own axioms and is
+asked the per-obligation question. A caller that compares verdicts across modes should set
+`exactPruning`, as Laurel does.
 -/
 def verify (program : Program)
     (tempDir : System.FilePath)
