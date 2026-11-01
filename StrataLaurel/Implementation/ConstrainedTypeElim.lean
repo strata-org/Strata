@@ -23,7 +23,7 @@ A Laurel-to-Laurel pass that eliminates constrained types by:
 4. Inserting `assert constraintProc(var)` for local variable init and reassignment
 5. Assuming the constraint for uninitialized constrained-typed variables (havoc + assume) and holes
 6. Adding a synthetic witness-validation procedure per constrained type
-7. Injecting constraint procedure calls into quantifier bodies (`forall` → `implies`, `exists` → `and`)
+7. Injecting constraint procedure calls into quantifier bodies (`forall` → `==>`, `exists` → `&&`)
 8. Resolving all constrained type references to their base types
 -/
 
@@ -60,6 +60,9 @@ structure CteCtx where
   dtMap : DatatypeMap := {}
   mixed : Std.HashSet String := {}
   aliased : Std.HashSet String := {}
+  /-- Off in a witness procedure: an assumed constraint there could presume the type the
+      witness is to inhabit, as `var y: T` in `T`'s own witness would. -/
+  assumes : Bool := true
 
 private def conjoin (src : FileRange) : List StmtExprMd → Option StmtExprMd
   | [] => none
@@ -113,7 +116,8 @@ def conditionsFor (cx : CteCtx) (ty : HighType) (varName : Identifier)
   conditionsForExpr cx ty ⟨.Var (.Local varName), src⟩ src
 
 /-- Generate a constraint procedure for a constrained type.
-    For nested types, the procedure calls the parent's constraint procedure. -/
+    For nested types, the procedure calls the parent's constraint procedure first, with a
+    short-circuit `&&`, so the checks in `ct.constraint` may rely on the base type. -/
 def mkConstraintProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Procedure :=
   let baseType := resolveType ptMap ct.base
   let src := ct.constraint.source
@@ -125,7 +129,7 @@ def mkConstraintProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
           { val := .Var (.Local paramId), source := src }
         let parentCall : StmtExprMd :=
           { val := .StaticCall (mkId s!"{parent.text}$constraint") [paramRef] [], source := src }
-        { val := .StaticCall (mkId Operation.And.procName) [ct.constraint, parentCall] [], source := src }
+        { val := .StaticCall (mkId Operation.AndThen.procName) [parentCall, ct.constraint] [], source := src }
       else ct.constraint
     | _ => ct.constraint
   { name := mkId s!"{ct.name.text}$constraint"
@@ -154,11 +158,12 @@ def resolveExprNode (cx : CteCtx) (expr : StmtExprMd) : StmtExprMd :=
     ⟨.Var (.Declare { param with type := param.type.map (resolveType cx.ptMap ·) }), source⟩
   | .Quantifier mode param trigger body =>
     let param' := { param with type := resolveType cx.ptMap param.type }
+    -- Short-circuit, so the constraint guards the checks in `body`.
+    let combiner := match mode with | .Forall => Operation.Implies | .Exists => Operation.AndThen
     -- With bottom-up traversal, `body` is already recursed into. The newly
     -- created operator call won't be visited again, which is safe because
     -- `c` (from `constraintCallFor`) is a StaticCall with Identifier leaves
     -- that don't need further resolution.
-    let combiner := match mode with | .Forall => Operation.Implies | .Exists => Operation.And
     let injected := match constraintCallFor cx param.type.val param.name (src := source) with
       | some c => ⟨.StaticCall (mkId combiner.procName) [c, body] [], source⟩
       | none => body
@@ -200,6 +205,7 @@ def elimNode (cx : CteCtx) (model : SemanticModel)
   let source := node.source
   match node.val with
   | .Var (.Declare ⟨name, some ty⟩) =>
+    if !cx.assumes then return [node]
     let check := (constraintCallFor cx ty.val name (src := source) (only := some false)).toList.map
       fun c => ⟨.Assume c, source⟩
     return [node] ++ check
@@ -214,7 +220,7 @@ def elimNode (cx : CteCtx) (model : SemanticModel)
     return [node] ++ asserts ++ suffix
   | .Var (.Field _ fieldName) =>
     -- Constrained field read → `{ assume T$constraint(read); read }`.
-    -- `elimCompositeType` lowers the declared type to its base without restating the
+    -- `constrainedTypeElim` lowers the declared type to its base without restating the
     -- predicate on READ, while the range OBLIGATION still lands at the destination
     -- (`ensures` on a constrained output, `assert` on a constrained local) --
     -- unprovable rather than imprecise: without this assume, `return self#x` on an
@@ -244,11 +250,13 @@ def elimNode (cx : CteCtx) (model : SemanticModel)
         return [⟨.Assert c (some summary), source⟩, node]
       | none => return [node]
     else
+    if !cx.assumes then return [node] else
     match constraintCallForExpr cx (computeExprType model node).val node (src := source) with
     | some c => return [⟨.Assume c, source⟩, node]
     | none => return [node]
   | .Hole _ (some ty) =>
-    if !resultUsed || (constraintCallFor cx ty.val (mkId "") (src := source) (only := some false)).isNone then
+    if !cx.assumes || !resultUsed
+        || (constraintCallFor cx ty.val (mkId "") (src := source) (only := some false)).isNone then
       return [node]
     let n ← modifyGet fun n => (n, n + 1)
     let h := mkId s!"$constrainedHole{n}"
@@ -328,8 +336,7 @@ def elimProc (cx : CteCtx) (model : SemanticModel)
     .Opaque (outputEnsures ++ postconds) impl' modif
   | .Abstract postconds => .Abstract (outputEnsures ++ postconds)
   | .External => .External
-  let resolve := mapStmtExpr (resolveExprNode cx)
-  let proc := { proc with
+  { proc with
     body := body'
     inputs := proc.inputs.map fun p => { p with type := resolveType cx.ptMap p.type }
     outputs := proc.outputs.map fun p => { p with type := resolveType cx.ptMap p.type }
@@ -337,7 +344,6 @@ def elimProc (cx : CteCtx) (model : SemanticModel)
     -- reason as `outputEnsures` above: `$pre_i` sees the `requires` clauses before
     -- it, so `(x: nonzero)` with `requires 10 / x > 1` needs `x != 0`.
     preconditions := inputRequires ++ proc.preconditions }
-  mapProcedureM (m := Id) resolve proc
 
 private def mkWitnessProc (cx : CteCtx) (ct : ConstrainedType) : Procedure :=
   let src := ct.witness.source
@@ -446,20 +452,6 @@ private def mkHeapFieldConstraintProc (cx : CteCtx) (f : HeapField) : Option Pro
       decreases := none
       invokeOn := some fieldRead }
 
-/-- Eliminate constrained types within a composite type definition: resolve
-    constrained field types to their base types and run constrained type
-    elimination on the composite's instance procedures.
-
-    This is necessary because `constrainedTypeElim` removes the constrained type
-    definitions from the program. Any reference to a constrained type left inside
-    a composite (e.g. a `count: nat` field) would otherwise dangle and fail to
-    resolve in later passes and the final Core translation. -/
-def elimCompositeType (cx : CteCtx) (model : SemanticModel)
-    (ct : CompositeType) (prepare : Procedure → Procedure := id) : CompositeType :=
-  { ct with
-    fields := ct.fields.map fun f => { f with type := resolveType cx.ptMap f.type }
-    instanceProcedures := ct.instanceProcedures.map (elimProc cx model ∘ prepare) }
-
 private def procedureHasEffect (ids : Std.HashSet Nat) (proc : Procedure) : Bool :=
   proc.name.uniqueId.any ids.contains
 
@@ -507,7 +499,8 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
   let constraintProcs := program.types.filterMap fun
     | .Constrained ct => some (mkConstraintProc ptMap ct) | _ => none
   let witnessProcedures := program.types.filterMap fun
-    | .Constrained ct => some (mkWitnessProc cx ct) | _ => none
+    | .Constrained ct => some (elimProc { cx with assumes := false } model (mkWitnessProc cx ct))
+    | _ => none
   let downcastProcedures := program.types.filterMap fun
     | .Constrained ct => mkDowncastProc cx ct | _ => none
   let firstAtLocation := (program.heapFields.foldl (init := (([] : List HeapField), ({} : Std.HashSet String)))
@@ -521,21 +514,10 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
   let effects := computeGlobalEffectsByProcId model allProcedures program.staticFields
   let addGlobalConditions :=
     addConstrainedGlobalConditions cx effects program.staticFields
-  let prepared := program.staticProcedures.map addGlobalConditions
-  (mapLaurelProgramHighTypes (resolveType ptMap) { program with
-    staticProcedures := constraintProcs ++
-      prepared.map (elimProc cx model)
-                        ++ witnessProcedures ++ fieldAxiomProcedures ++ downcastProcedures
-    staticFields := program.staticFields.map fun field =>
-      { field with
-        type := resolveType ptMap field.type
-        initializer := field.initializer.map (mapStmtExpr (resolveExprNode cx)) }
-    heapFields := program.heapFields.map fun field =>
-      { field with type := resolveType ptMap field.type }
+  let eliminated := mapLaurelProgramProcedures (elimProc cx model ∘ addGlobalConditions) { program with
+    staticProcedures := constraintProcs ++ program.staticProcedures
     types := program.types.filterMap fun
       | .Constrained _ => none
-      | .Composite ct =>
-          some (.Composite (elimCompositeType cx model ct addGlobalConditions))
       | .Datatype dt =>
         -- Resolve constrained types used as datatype constructor field
         -- types (e.g. `int32` -> `int`). Without this, the constrained
@@ -544,12 +526,17 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
         -- This lowers the field *type* only; the range predicate is not
         -- re-asserted on field reads, so field range constraints are
         -- intentionally over-approximated away (a `MkCell(out_of_range).val`
-        -- read is not caught) — matching bare-parameter and `elimCompositeType`
-        -- handling.
+        -- read is not caught) — matching how bare parameters and composite
+        -- fields lower their declared types.
         some (.Datatype { dt with constructors := dt.constructors.map fun c =>
           { c with args := c.args.map fun p =>
             { p with type := resolveType ptMap p.type } } })
-      | other => some other },
+      | other => some other }
+  -- The witness procedures are already eliminated, assuming nothing; the map would assume.
+  -- The type walk comes last: a quantifier's constraint is injected from its binder's type.
+  (mapLaurelProgramHighTypes (resolveType ptMap) <| mapLaurelProgramStmtExpr (resolveExprNode cx)
+    { eliminated with staticProcedures :=
+        eliminated.staticProcedures ++ witnessProcedures ++ fieldAxiomProcedures ++ downcastProcedures },
    [])
 
 /-- Pipeline pass: constrained type elimination. -/

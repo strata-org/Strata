@@ -206,6 +206,11 @@ procedure constrainedInExpr()
 constrained bad = x: int where x > 0 witness -1
 //                                           ^^ error: assertion does not hold
 
+// A witness checks its locals but assumes nothing of them, not even of a hole of its own type
+constrained selfHole = x: int where false witness { var y: selfHole := <?>; y }
+//                                                  ^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+//                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+
 // Uninitialized constrained variable — havoc + assume constraint
 procedure uninitNat()
   opaque
@@ -258,6 +263,12 @@ procedure existsNat() opaque {
   assert b
 };
 
+// Quantifier constraint injection — exists, guarding its body
+// natToInt(n) needs n >= 0, which holds only if the injected constraint short-circuits
+procedure existsGuardsBody() opaque {
+  var b: bool := exists(n: nat) => natToInt(n) >= 0
+};
+
 // Quantifier constraint injection — nested constrained type
 // n - 1 >= 0 is only provable with n > 0 injected
 procedure forallPosnat()
@@ -266,6 +277,22 @@ procedure forallPosnat()
   var b: bool := forall(n: posnat) => n - 1 >= 0;
   assert b
 };
+
+// Quantifier constraint injection — in a constraint and in a witness
+// Both `e >= 0` and the witness being 1 need k >= 0 injected
+constrained evenNat = x: int where exists(k: nat) => x == 2 * k witness 0
+constrained one = x: int where x == 1 witness (if (forall(k: nat) => k >= 0) then 1 else 0)
+procedure evenNatIsNat(e: evenNat)
+  opaque
+{
+  assert e >= 0
+};
+
+// A constrained local in a constraint is checked, as in a transparent body: x need not be a nat
+constrained checkedLocal = x: int where { var y: nat := x; true } witness 0
+//                                        ^^^^^^^^^^^^^^^ error: assertion does not hold
+// ...where the base type's constraint holds: x is a nat here
+constrained natLocal = x: nat where { var y: nat := x; true } witness 0
 
 // Capture avoidance — bound var y in constraint must not collide with parameter y
 // Without capture avoidance, requires becomes exists(y) => y > y (false), making body vacuously true
@@ -349,6 +376,14 @@ procedure badCountOf<T>(x: T) : nat
   return 0 - 1
 //^^^^^^^^^^^^ error: assertion does not hold
 };
+#end
+
+-- A witness's uninitialized local of its own type is rejected, not assumed to meet the constraint
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+constrained selfLocal = x: int where false witness { var y: selfLocal; y }
+//                                                   ^^^^^^^^^^^^^^^^ error: local variables must have initializers in transparent bodies or contracts
 #end
 
 -- A constrained type's base can be a generic composite instantiation: `Box<int>` is
