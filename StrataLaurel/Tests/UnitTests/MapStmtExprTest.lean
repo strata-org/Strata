@@ -211,21 +211,37 @@ private def highTypeOrderFixture : Procedure :=
     decreases := some (testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "decreases")))
     invokeOn := some (testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "invokeOn")))
     axioms := [testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "axiom"))]
+    contracts := .Coroutine
+      [{ condition := testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "relies")) }]
+      [{ condition := testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "guarantees")) }]
+      [{ name := mkId "yielded", type := taggedType "yields" }]
+      [{ name := mkId "resumed", type := taggedType "resumes" }]
     body := .Transparent (testMd (.Block
       [testMd (.AsType (testMd (.LiteralInt 0)) (taggedType "body")),
-       testMd (.New (mkId "C") [taggedType "new"])] none)) }
+       testMd (.New (mkId "new") [taggedType "arg"]),
+       testMd (.New (mkId "bareNew") [])] none)) }
 
-private def highTypeTraversalOrder : List String :=
-  let visit (type : HighTypeMd) : StateM (List String) HighTypeMd := do
-    let name := match type.val with
-      | .UserDefined id => id.text
-      | _ => "unexpected"
-    modify (· ++ [name])
-    pure type
-  (mapProcedureHighTypesM visit highTypeOrderFixture).run [] |>.2
+private def visitTagged (type : HighTypeMd) : StateM (List String) HighTypeMd := do
+  let name := match type.val with
+    | .UserDefined id | .Applied ⟨.UserDefined id, _⟩ _ => id.text
+    | _ => "unexpected"
+  modify (· ++ [name])
+  pure type
 
-#guard highTypeTraversalOrder ==
-  ["body", "new", "input", "output", "throws", "pre", "decreases", "invokeOn", "axiom"]
+#guard ((mapProcedureHighTypesM visitTagged highTypeOrderFixture).run [] |>.2) ==
+  ["body", "new", "bareNew", "input", "output", "throws", "yields", "resumes", "pre", "decreases",
+   "invokeOn", "axiom", "relies", "guarantees"]
+
+private def compositeOrderFixture : TypeDefinition :=
+  .Composite
+    { name := mkId "compositeOrder"
+      extending := [taggedType "parent"]
+      fields := [{ name := mkId "f", isMutable := true, type := taggedType "field",
+                   initializer := some (testMd (.IsType (testMd (.LiteralInt 0)) (taggedType "initializer"))) }]
+      instanceProcedures := [] }
+
+#guard ((mapTypeDefinitionHighTypesM visitTagged compositeOrderFixture).run [] |>.2) ==
+  ["parent", "field", "initializer"]
 
 end ProcedureTraversalCoverage
 

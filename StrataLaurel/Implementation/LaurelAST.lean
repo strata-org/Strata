@@ -1147,6 +1147,13 @@ def applyAliasArgs (params : List Identifier) (args : List HighTypeMd) (target :
     some (substTypeVars subst target)
   else none
 
+/-- The type `new ref<typeArgs…>` allocates: `ref`, or the application `ref<typeArgs…>`, which
+    lets monomorphization see the instantiation. -/
+def allocatedType (ref : Identifier) (typeArgs : List HighTypeMd) (source : FileRange) :
+    HighTypeMd :=
+  if typeArgs.isEmpty then ⟨.UserDefined ref, source⟩
+  else ⟨.Applied ⟨.UserDefined ref, source⟩ typeArgs, source⟩
+
 theorem Condition.sizeOf_condition_lt (c : Condition) : sizeOf c.condition < 1 + sizeOf c := by
   cases c; grind
 

@@ -1582,17 +1582,10 @@ private def collectThrownTypes (env : Std.HashMap String HighTypeMd) (expr : Stm
       | .LiteralString _ => pure (some { val := .TString, source := op.source })
       | .LiteralDecimal _ => pure (some { val := .TReal, source := op.source })
       | .LiteralBv _ width => pure (some { val := .TBv width, source := op.source })
-      -- `new T<τ…>` contributes the APPLIED type `T<τ…>` (a bare `T` only when there
-      -- are no arguments), built exactly as `computeExprType`'s `.New` arm builds it so
-      -- the two agree. Dropping the arguments here would not merely lose precision: a
-      -- callee's `throws (e: Box<int>)` contributes the full `.Applied`, and a join over
-      -- a bare `Box` and a `Box<int>` cannot be reconciled at all.
-      | .New ref typeArgs =>
-        if typeArgs.isEmpty then
-          pure (some { val := .UserDefined ref, source := op.source })
-        else
-          pure (some { val := .Applied { val := .UserDefined ref, source := op.source } typeArgs,
-                       source := op.source })
+      -- `new T<τ…>` contributes the APPLIED type `T<τ…>`. Dropping the arguments here would
+      -- not merely lose precision: a callee's `throws (e: Box<int>)` contributes the full
+      -- `.Applied`, and a join over a bare `Box` and a `Box<int>` cannot be reconciled at all.
+      | .New ref typeArgs => pure (some (allocatedType ref typeArgs op.source))
       | .AsType _ ty => pure (some ty)
       | .Var (.Local id) =>
         match env.get? id.text with
@@ -3962,8 +3955,8 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     When `ref` resolves to a composite or datatype, the type is
     `UserDefined ref` — or, for an explicit instantiation `new C<τ…>`, the
     applied type `Applied (UserDefined ref) [τ…]`, so the type checker and
-    `MonomorphizeComposites` see the concrete instantiation (mirroring
-    `computeExprType`'s `.New` arm). A bare `new C` carries no type args and
+    `MonomorphizeComposites` see the concrete instantiation (`allocatedType`).
+    A bare `new C` carries no type args and
     keeps the plain `UserDefined` type. The `Unknown` fallback fires *only*
     when `ref` resolves to a present definition whose kind is neither
     composite nor datatype (e.g. a variable or procedure name); this
@@ -4035,11 +4028,8 @@ def Synth.new (ref : Identifier) (typeArgs : List HighTypeMd) (source : FileRang
           s!"cannot infer {what} {names} of '{ref.text}': write the instantiation explicitly \
              (`new {ref.text}<…>`) or annotate the variable it is assigned to"
         modify fun st => { st with errors := st.errors.push diag }
-  -- Applied type so mono sees the instantiation; mirrors `computeExprType`'s `.New` arm.
-  let ty :=
-    if !kindOk then { val := HighType.Unknown, source := source }
-    else if typeArgs'.isEmpty then { val := HighType.UserDefined ref', source := source }
-    else { val := HighType.Applied { val := .UserDefined ref', source := source } typeArgs', source := source }
+  let ty := if kindOk then allocatedType ref' typeArgs' source
+    else { val := HighType.Unknown, source := source }
   pure (.New ref' typeArgs', ty)
 
 /-- The user-facing reason the target type of an `is`/`as` cannot be accepted, or `none` if it can

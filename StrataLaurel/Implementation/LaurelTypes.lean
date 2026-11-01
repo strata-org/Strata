@@ -164,11 +164,7 @@ def computeExprTypeWith (fieldType? : Option (Identifier → HighTypeMd → Opti
   | .Throw _ => ⟨ .TVoid, source ⟩
   | .Try _ _ _ => ⟨ .TVoid, source ⟩
   -- Instance related
-  -- `new C` has type `C`; `new C<τ…>` has the applied type `C<τ…>` so downstream
-  -- (e.g. monomorphization) sees the concrete instantiation.
-  | .New name typeArgs =>
-    if typeArgs.isEmpty then ⟨ .UserDefined name, source ⟩
-    else ⟨ .Applied ⟨ .UserDefined name, source ⟩ typeArgs, source ⟩
+  | .New name typeArgs => allocatedType name typeArgs source
   | .This => default -- TODO: implement
   | .ReferenceEquals _ _ => ⟨ .TBool, source ⟩
   | .AsType _ ty => ty

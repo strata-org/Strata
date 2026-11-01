@@ -117,22 +117,6 @@ private abbrev ProcInst := String × List HighType
 
 private def procInstKey (p : ProcInst) : String := monoName p.1 p.2
 
-/-- The SINGLE source of truth for the instantiation an explicit `new C<τ…>`
-    denotes. Returns `some (C, args)` exactly when the `new` carries explicit type
-    args, `C` is a generic composite, and the args are taggable (else `none` →
-    left generic, fails LOUD at re-resolution rather than silently coalescing).
-    Both the COLLECT path (`collectInStmt`) and the REWRITE path (`rewriteStmt`'s
-    `.New` arm) consume this one function, so they cannot drift on which monomorph
-    a `new<>` denotes: collect turns the `Inst` into `instKey = monoName C args`,
-    rewrite turns the same `Inst` into `mkId (monoName C args)`. -/
-private def newInst? (genComposites : Std.HashMap String (List Identifier))
-    (c : Identifier) (typeArgs : List HighTypeMd) : Option Inst :=
-  if typeArgs.isEmpty then none
-  else if genComposites.contains c.text then
-    let argVals := typeArgs.map (·.val)
-    (monoName? c.text argVals).map (fun _ => (c.text, argVals))
-  else none
-
 /-- Collect all `.Applied (UserDefined C) args` instantiations appearing in a
     `HighType`, where `C` is a generic composite in `genComposites`. -/
 private def collectInTy (genComposites : Std.HashMap String (List Identifier))
@@ -159,20 +143,6 @@ private def collectInTy (genComposites : Std.HashMap String (List Identifier))
   here ++ nested
   termination_by ty
   decreasing_by ast_recursion_decreasing
-
-/-- Apply `f` to every type slot of a type definition, for the COLLECT and REWRITE paths alike
-    (`f` records in the first, rewrites in the second), so they cannot disagree about which slots
-    a definition has.
-
-    That is `mapTypeDefinitionHighTypesM` plus a composite's `extending`, which it excludes
-    because `extending` names a composite AS A CLASS rather than a value. This pass must rewrite
-    it anyway: `IntBox extends Box<int>` has to point at the monomorph `Box$a1$int`. (Cloned
-    generics do not need this: their parent is seeded separately.) -/
-private def mapTypeDefTypesM [Monad m] (f : HighTypeMd → m HighTypeMd)
-    (td : TypeDefinition) : m TypeDefinition := do
-  match ← mapTypeDefinitionHighTypesM f td with
-  | .Composite ct => pure (.Composite { ct with extending := ← ct.extending.mapM f })
-  | other => pure other
 
 /-- Does `ty` mention a generic composite instantiated at a type variable in `tvSet` —
     an `.Applied (UserDefined C) args` (`C` a generic composite) some of whose args is a
@@ -223,9 +193,7 @@ private def rewriteTy (genComposites : Std.HashMap String (List Identifier))
     every node, so this need only report the node's own type slots). Both `stmtTypeSlots`
     (collect) and `rewriteStmt` (rewrite) route through `mapNodeHighTypesM` — the ONE
     enumeration of a node's type-annotation positions (MapStmtExpr.lean) — so they cannot
-    drift: a new type slot added there is picked up by both automatically. (`new C<τ…>` is
-    an instantiation site but NOT a type slot; its args are handled by the shared `newInst?`,
-    not here.) -/
+    drift: a new type slot added there is picked up by both automatically. -/
 private def stmtTypeSlots (e : StmtExprMd) : List HighTypeMd :=
   -- Collect (not rewrite) every type slot `mapNodeHighTypesM` visits, by running it in a
   -- StateM whose `f` records its argument and returns it unchanged.
@@ -234,9 +202,9 @@ private def stmtTypeSlots (e : StmtExprMd) : List HighTypeMd :=
 
 /-- Rewrite types and `new` sites inside a single `StmtExpr` node (applied bottom-up by
     `mapStmtExpr`). Every type-annotation slot is rewritten via `mapNodeHighTypesM` (the same
-    enumeration `stmtTypeSlots` collects from — so they cannot drift), THEN the `new` sites
-    are handled on top: an explicit `new C<τ…>` → its monomorph, and a bare
-    `var b: Box<int> := new Box` recovers `τ` from the declared `.Applied` type. -/
+    enumeration `stmtTypeSlots` collects from — so they cannot drift), an explicit `new C<τ…>`
+    included, THEN a bare `var b: Box<int> := new Box` recovers `τ` from the declared `.Applied`
+    type. -/
 private def rewriteStmt (genComposites : Std.HashMap String (List Identifier))
     (e : StmtExprMd) : StmtExprMd :=
   -- The legacy bare-`new C` correlation (below) reads the DECLARED type, so compute it from
@@ -253,22 +221,11 @@ private def rewriteStmt (genComposites : Std.HashMap String (List Identifier))
       | _ => none
     | _ => none
   let e := mapNodeHighTypesM (m := Id) (rewriteTy genComposites) e
-  -- `new C<τ…>` is NOT a type slot, so handle it here. Explicit args → monomorph, using the
-  -- site's OWN args (so it works wherever a `new` appears). The args-vs-declared mismatch
-  -- `var b: Box<bool> := new Box<int>` never reaches here — the gradual checker catches it
-  -- at resolution (`Check.assign` → `checkSubtype` → `isConsistentSubtype` in Resolution.lean,
-  -- which stays strict on concrete-vs-concrete args).
-  let rewriteNew (c : Identifier) (typeArgs : List HighTypeMd) : Option Identifier :=
-    (newInst? genComposites c typeArgs).map (fun i => mkId (monoName i.1 i.2))
   let val' := match e.val with
-    | .New c typeArgs =>
-      match rewriteNew c typeArgs with
-      | some mn => .New mn []
-      | none => e.val
     | .Assign targets value =>
       -- Legacy backward-compat: a bare `new C` RHS of `var x: C<τ> := new C` recovers `τ` from
       -- the declared type (`newFromDecl`, computed pre-rewrite), keeping arg-less programs
-      -- working (explicit `new C<τ>` uses `.New` above).
+      -- working.
       let value' := match newFromDecl with
         | some mn => { value with val := .New mn [] }
         | none => value
@@ -276,18 +233,11 @@ private def rewriteStmt (genComposites : Std.HashMap String (List Identifier))
     | other => other
   { e with val := val' }
 
-/-- Collect instantiations from a single `StmtExpr` node's embedded types. Driven
-    off `stmtTypeSlots` for type-annotation positions, PLUS the `new C<τ…>`
-    allocation site via the shared `newInst?` helper — the SAME function
-    `rewriteStmt`'s `.New` arm consumes, so collect and rewrite cannot disagree on
-    which monomorph a `new<>` denotes (the anti-drift guarantee). -/
+/-- Collect instantiations from a single `StmtExpr` node's embedded types, driven off
+    `stmtTypeSlots`, as `rewriteStmt` rewrites them. -/
 private def collectInStmt (genComposites : Std.HashMap String (List Identifier))
     (e : StmtExprMd) : List Inst :=
-  let fromSlots := (stmtTypeSlots e).flatMap (collectInTy genComposites)
-  let fromNew := match e.val with
-    | .New c typeArgs => (newInst? genComposites c typeArgs).toList
-    | _ => []
-  fromSlots ++ fromNew
+  (stmtTypeSlots e).flatMap (collectInTy genComposites)
 
 /-! ### Procedure monomorphization — clone a poly proc at a concrete inst -/
 
@@ -661,7 +611,7 @@ private def drainWorklist (genComposites : Std.HashMap String (List Identifier))
     hybrid), unless it calls one that does at its typevar (`indexOpenCallers`). The body case
     matters: a body-local `Box<T>` on the freshening path has no Core representation, so its
     field write would survive un-lowered (a StrataBug). -/
-private def indexGenerics (program : LaurelProgram) (model : SemanticModel)
+private def indexGenerics (program : LaurelProgram)
     : Std.HashMap String (List Identifier) × Std.HashMap String CompositeType × Std.HashMap String Procedure :=
   Id.run do
   let mut genComposites : Std.HashMap String (List Identifier) := {}
@@ -682,16 +632,10 @@ private def indexGenerics (program : LaurelProgram) (model : SemanticModel)
     -- `mapProcedureM` runs over the throwsOn guard/postconditions.)
     let inSig := (p.inputs ++ p.outputs).any (fun param => hitsTV param.type)
                  || p.throwsType.any hitsTV
-    -- Body: any statement TYPE SLOT, OR a `new C<τ…>` site. We get the `new` site's
-    -- instantiation for free from `computeExprType` — a `.New` node's type IS
-    -- `.Applied (UserDefined C) typeArgs` (LaurelTypes.lean) — so the SAME `hitsTV`
-    -- predicate covers slots and `new` uniformly, with no inline re-derivation of what
-    -- a `new` denotes (avoids drift from the `stmtTypeSlots`/`newInst?` split).
+    -- Body: any statement TYPE SLOT, a `new C<τ…>` site included.
     let inBody := ((mapProcedureM (m := StateM Bool)
       (mapStmtExprM (fun e => do
-        let slotHit := (stmtTypeSlots e).any hitsTV
-        let newHit := match e.val with | .New .. => hitsTV (computeExprType model e) | _ => false
-        if slotHit || newHit then modify (fun _ => true)
+        if (stmtTypeSlots e).any hitsTV then modify (fun _ => true)
         pure e)) p).run false).2
     inSig || inBody
   let mut polyProcDefs : Std.HashMap String Procedure := {}
@@ -728,9 +672,9 @@ private def collectSeeds (program : LaurelProgram)
   let mut insts : Std.HashMap String Inst := {}
   let recordInsts (is : List Inst) (m : Std.HashMap String Inst) : Std.HashMap String Inst :=
     is.foldl (fun m i => m.insert (instKey i) i) m
-  -- Type slots of every type definition (see `mapTypeDefTypesM`).
+  -- Type slots of every type definition (see `mapTypeDefinitionHighTypesM`).
   for td in program.types do
-    let (_, insts') := (mapTypeDefTypesM (m := StateM (Std.HashMap String Inst))
+    let (_, insts') := (mapTypeDefinitionHighTypesM (m := StateM (Std.HashMap String Inst))
       (fun ty => do modify (recordInsts (collectInTy genComposites ty)); pure ty) td).run insts
     insts := insts'
   -- top-level constants and global (static) fields
@@ -755,7 +699,7 @@ private def collectSeeds (program : LaurelProgram)
 def monomorphizeComposites (program : LaurelProgram) (model : SemanticModel)
     : LaurelProgram × List Message := Id.run do
   -- 1. Index the generic composites + the poly procs that materialize them.
-  let (genComposites, genDefs, polyProcDefs) := indexGenerics program model
+  let (genComposites, genDefs, polyProcDefs) := indexGenerics program
   if genComposites.isEmpty then return (program, [])
   -- 1b. Index, too, the poly procs that call an indexed one at their own type variables.
   let polyProcDefs := indexOpenCallers program polyProcDefs
@@ -847,7 +791,7 @@ def monomorphizeComposites (program : LaurelProgram) (model : SemanticModel)
 
   -- 4. Rewrite all type positions + replace generic composites.
   let rwTypeDef (td : TypeDefinition) : TypeDefinition :=
-    mapTypeDefTypesM (m := Id) (rewriteTy genComposites) td
+    mapTypeDefinitionHighTypesM (m := Id) (rewriteTy genComposites) td
   let types' : List TypeDefinition := program.types.map fun td =>
     match td with
     -- A generic composite is replaced by its family parent, which the monomorphs emitted for it

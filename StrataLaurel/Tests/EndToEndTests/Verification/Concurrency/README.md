@@ -31,6 +31,7 @@ the feature regressed.
 | `AllocAcrossYield.lean` | Allocation against the per-yield environment havoc (the monotone allocation counter) |
 | `CallerPath.lean` | Caller-side reasoning: `relies` → `requires` and `guarantees` → two-state `ensures` on the generated opaque `resume` |
 | `GlobalInContract.lean` | Regression: a rely/guarantee that references a file-scope global still verifies after `GlobalParameterization` |
+| `AliasInContract.lean` | Regression: a type alias in a rely/guarantee or a `yields`/`resumes` binding is expanded by `TypeAliasElim` |
 
 `CoroutineTest.lean` is the shared options value, not a test.
 

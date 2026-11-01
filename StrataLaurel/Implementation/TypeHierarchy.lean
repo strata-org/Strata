@@ -196,6 +196,9 @@ def typeHierarchyTransform (model: SemanticModel) (program : LaurelProgram) : Ex
             { c with args := c.args ++ [{ name := ("typeTag" : Identifier), type := typeTagTy }] }
           else c }
       else td
+    -- The erasure below would turn the parents into `Composite`; the hierarchy now lives in the
+    -- `ancestorsFor<Type>` constants.
+    | .Composite ct => .Composite { ct with extending := [] }
     | _ => td
   let transformed : LaurelProgram :=
     { lowered with
