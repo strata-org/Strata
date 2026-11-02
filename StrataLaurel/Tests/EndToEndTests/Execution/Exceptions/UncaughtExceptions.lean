@@ -541,7 +541,7 @@ procedure unrelatedTestInBody(x: int) returns (r: int)
 #end
 
 -- A read at the arm type (`c as MyEx`), as a front end emits it, reads the arm's fields.
-#eval testLaurelExecution { skipCoreInterpreter := true, skipVerification := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite RtEx {}
@@ -564,7 +564,7 @@ procedure readAtArmType() entry opaque modifies * {
 
 -- So does the binding without the cast: the clause sees it at what its guard admits, the
 -- arm type, or for a multi-catch its alternatives' join (`Mid`).
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite RtEx {}

@@ -891,7 +891,7 @@ procedure asGenericInstantiation()
 {
   var b: Box<int> := new Box<int>;
   var c: Box<int> := b as Box<int>;
-  assert c#val == c#val
+  assert c == b
 };
 
 // A NESTED instantiation as the target: the tag nests too (`Box$a1$Pair$a2$int$bool`).

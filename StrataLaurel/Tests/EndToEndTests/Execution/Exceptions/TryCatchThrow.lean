@@ -308,9 +308,7 @@ procedure runAll() entry
 -- checks a *condition* on it: the caught `IndexError` records the offending
 -- index, and on the handler path (reached only via the out-of-bounds throw) that
 -- recorded index is provably out of bounds.
--- No Core interpreter: a field read through an `as` cast does not reduce, so the assert
--- "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Exception {}
@@ -352,9 +350,7 @@ procedure runAll() entry
 -- refer to the original `Outer` (tag == 1), not the inner exception. This
 -- exercises the per-handler snapshot of the caught value (a single shared `$exc`
 -- is overwritten by the inner throw).
--- No Core interpreter: a field read through an `as` cast does not reduce, so the assert
--- "did not reduce to bool".
-#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite Outer {
