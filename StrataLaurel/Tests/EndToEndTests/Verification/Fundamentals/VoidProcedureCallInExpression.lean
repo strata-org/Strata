@@ -334,8 +334,7 @@ procedure withoutTheHint(x: int) returns (r: int)
   r := 0
 };
 
-// A `requires` is a separate path — its helper comes from `mkConditionProc`, not
-// `mkPostConditionProc` — so it is covered too.
+// A `requires` helper takes only the inputs, so it is covered too.
 procedure hintInRequires(x: int) returns (r: int)
   requires { knowsPositive(x); needsPositive(x) == needsPositive(x) }
   opaque

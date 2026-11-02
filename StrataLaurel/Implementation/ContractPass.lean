@@ -55,35 +55,25 @@ private def mkCall (callee : String) (args : List StmtExprMd) (source : FileRang
 private def paramsToArgs (params : List Parameter) (source : FileRange) : List StmtExprMd :=
   params.map fun p => mkMd (.Var (.Local p.name)) source
 
-/-- Build a helper function for a single condition over the given parameters.
-    Preconditions pass `proc.inputs`; postconditions use `mkPostConditionProc`.
+/-- Build the helper procedure for one contract clause.
 
-    `assumptions` are emitted as `assume` statements ahead of the condition. The
-    `i`-th precondition helper may be given `requires` clauses `0 … i-1`, because a
-    precondition may rely on the preceding ones to be well-formed; see
-    `needsPrecedingClauses`. -/
-private def mkConditionProc (name : String)
-    (params : List Parameter) (assumptions : List Condition) (condition : Condition) : Procedure :=
-  let src := condition.condition.source
-  -- Give the pre/post helper procedure a shape the current lowering can turn
-  -- into a Core function: assign the condition to the `$result` output and exit
-  -- via `returnLabel`, rather than emitting the condition directly as a
-  -- transparent expression body. `transparencyPass` makes the `$asFunction` copy
-  -- and `functionalRewritePass` then turns `{ $result := …; exit $return }` into
-  -- the pure expression `$result`, so this shape reaches Core as a function.
-  -- Helpers could be emitted as expression bodies directly, which would make
-  -- this block wrapping unnecessary; that simplification is not attempted here.
-  let assumes : List StmtExprMd :=
-    assumptions.map fun c => ⟨.Assume c.condition, c.condition.source⟩
-  let assign : StmtExprMd := ⟨.Assign [⟨.Local (mkId "$result"), src⟩] condition.condition, src⟩
+    `assumptions` are earlier clauses that `clause` may need in order to be well-formed: after
+    `ensures r != 0`, the division in `ensures 10 / r > 1` is safe only given the first.
+
+    The body ends in `clause` assigned to the output and `exit $return`, which is how
+    `EliminateReturnStatements`, run before this pass, lowers `return clause`. -/
+private def mkClauseHelper (name : String) (params : List Parameter)
+    (assumptions : List StmtExprMd) (clause : StmtExprMd) : Procedure :=
+  let src := clause.source
+  let assumes : List StmtExprMd := assumptions.map fun e => ⟨.Assume e, e.source⟩
+  let assign : StmtExprMd := ⟨.Assign [⟨.Local (mkId resultOutputName), src⟩] clause, src⟩
   let exit : StmtExprMd := ⟨.Exit returnLabel, src⟩
-  let body : StmtExprMd := ⟨.Block (assumes ++ [assign, exit]) (some returnLabel), src⟩
   { name := mkId name
     inputs := params
-    outputs := [⟨mkId "$result", { val := .TBool, source := src }⟩]
+    outputs := [⟨mkId resultOutputName, { val := .TBool, source := src }⟩]
     preconditions := []
     decreases := none
-    body := .Transparent body }
+    body := .Transparent ⟨.Block (assumes ++ [assign, exit]) (some returnLabel), src⟩ }
 
 /-- Suffix appended to a procedure's output-parameter names when they are lowered
     into a postcondition helper *function*.
@@ -125,64 +115,6 @@ private def renameOutputsInPostExpr (outputNames : List String) (expr : StmtExpr
       | .Var (.Local n) => ⟨.Var (.Local (suffixIfOutput n)), e.source⟩
       | _ => e)
     expr
-
-/-- Build a postcondition helper function over the procedure's inputs and outputs.
-    Output parameters are renamed (see `outParamSuffix`) to avoid colliding with
-    identically-named inputs, and the condition body is rewritten to match.
-
-    When the helper needs them (see `needsPrecedingClauses`), the original procedure's
-    `preconditions` are assumed at the start of its body, so a postcondition may rely
-    on them for its well-formedness — e.g. a postcondition that calls a partial function
-    `safe(x) requires x > 0` is well-formed only because the procedure declares
-    `requires x > 0`. They are emitted as `assume` statements rather than helper
-    preconditions: the helper only needs them to hold in order to be well-formed,
-    and the procedure's own lowering already checks them at every site, so
-    re-asserting them at the helper's call sites would be redundant. A
-    precondition references only input parameters, which keep their names in the
-    helper (only outputs are suffixed) and cannot contain `old(...)`, so they are
-    assumed without the output-renaming applied to the postcondition body.
-
-    `precedingPosts` are the `ensures` clauses before this one, assumed for the same
-    reason: `ensures r != 0` followed by `ensures 10 / r > 1` makes the second clause
-    well-formed only given the first. They do mention outputs, so they are renamed
-    like the condition. -/
-private def mkPostConditionProc (name : String)
-    (inputs outputs : List Parameter)
-    (preconditions precedingPosts : List Condition) (condition : Condition) : Procedure :=
-  let outputNames := outputs.map (·.name.text)
-  let renamedOutputs := outputs.map (fun p => { p with name := mkId (p.name.text ++ outParamSuffix) })
-  let postExpr := renameOutputsInPostExpr outputNames condition.condition
-  let resultName := mkId "$result"
-  let preAssumes : List StmtExprMd :=
-    preconditions.map fun c => ⟨.Assume c.condition, c.condition.source⟩
-  let postAssumes : List StmtExprMd :=
-    precedingPosts.map fun c =>
-      let e := renameOutputsInPostExpr outputNames c.condition
-      ⟨.Assume e, e.source⟩
-  -- The helper is a procedure, so its body assigns the postcondition to the
-  -- `$result` output. The preconditions are assumed first so the postcondition's
-  -- well-formedness may rely on them; those assumes are erased when
-  -- TransparencyPass builds the pure `$asFunction` twin.
-  let assignResult : StmtExprMd :=
-    ⟨.Assign [⟨.Local resultName, postExpr.source⟩] postExpr, postExpr.source⟩
-  -- Emit the assignment followed by `exit $return` inside a `$return`-labelled
-  -- block: this is the shape `functionalRewritePass` turns into a pure return.
-  -- After TransparencyPass strips the leading assumes from the `$asFunction` twin,
-  -- the remaining `{ $result := post; exit $return }$return` block becomes the
-  -- expression `$result` (the assignment becomes a declaration, the exit becomes a
-  -- reference to it), so the twin translates to a function body. Without the
-  -- `exit $return`, the twin's bare assignment would instead be reported as a
-  -- destructive assignment.
-  let exitReturn : StmtExprMd := ⟨.Exit "$return", postExpr.source⟩
-  let body : StmtExprMd :=
-    ⟨.Block (preAssumes ++ postAssumes ++ [assignResult, exitReturn]) (some "$return"),
-     postExpr.source⟩
-  { name := mkId name
-    inputs := inputs ++ renamedOutputs
-    outputs := [⟨resultName, { val := .TBool, source := postExpr.source }⟩]
-    preconditions := []
-    decreases := none
-    body := .Transparent body }
 
 /-- Information about a procedure's contracts. -/
 private structure ContractInfo where
@@ -499,27 +431,27 @@ private def needsPrecedingClauses (twinned : Std.HashSet String) (condition : St
 
     Runs inside `ContractM` so `$inputCopyN` temporaries share a counter with body
     rewriting; a separate counter would hand the same name to both, which Core rejects
-    ("already in context").
-
-    Only the condition expressions are rewritten; the assumes `mkPostConditionProc`
-    prepends are left alone, for the reason given in its docstring. -/
+    ("already in context"). -/
 private def mkHelperProcs (model : SemanticModel) (contractInfoMap : Std.HashMap String ContractInfo)
     (twinned : Std.HashSet String) (proc : Procedure) : ContractM (List Procedure) := do
   let rw := rewriteCallSites model contractInfoMap
-  let preProcs ← proc.preconditions.zipIdx.mapM fun (c, i) => do
-    let condition' ← rw c.condition
-    -- See `mkConditionProc` for why the preceding preconditions are assumed.
-    let context :=
-      if needsPrecedingClauses twinned condition' then proc.preconditions.take i else []
-    pure (mkConditionProc (preCondProcName proc.name.text i) proc.inputs
-      context { c with condition := condition' })
-  let postProcs ← proc.body.postconditions.zipIdx.mapM fun (c, i) => do
-    let condition' ← rw c.condition
-    let (pres, posts) := if needsPrecedingClauses twinned condition'
-      then (proc.preconditions, proc.body.postconditions.take i) else ([], [])
-    pure (mkPostConditionProc (postCondProcName proc.name.text i) proc.inputs
-      proc.outputs pres posts { c with condition := condition' })
-  return (preProcs ++ postProcs).map (bindMentionedTypeArgs proc.typeArgs)
+  let postParams := proc.inputs ++ proc.outputs.map fun p =>
+    { p with name := mkId (p.name.text ++ outParamSuffix) }
+  let renamePost := renameOutputsInPostExpr (proc.outputs.map (·.name.text))
+  -- A precondition is not renamed even where a postcondition helper assumes it: an inout input
+  -- such as `$heap` shares its name with an output, so it would read the exit state.
+  let clauses := proc.preconditions.zipIdx.map (fun (c, i) =>
+      (c, preCondProcName proc.name.text i, proc.inputs, id))
+    ++ proc.body.postconditions.zipIdx.map fun (c, i) =>
+      (c, postCondProcName proc.name.text i, postParams, renamePost)
+  -- A helper may assume the clauses before it, with their call sites not rewritten: each clause's
+  -- calls are checked in its own helper.
+  let earlier := clauses.map fun (c, _, _, rename) => rename c.condition
+  let helpers ← clauses.zipIdx.mapM fun ((c, name, params, rename), k) => do
+    let clause ← rw c.condition
+    let assumptions := if needsPrecedingClauses twinned clause then earlier.take k else []
+    pure (mkClauseHelper name params assumptions (rename clause))
+  return helpers.map (bindMentionedTypeArgs proc.typeArgs)
 
 /-- Conjoin a list of conditions into a single expression with `&&`. -/
 private def conjoin (conds : List Condition) (source : FileRange) : Option StmtExprMd :=
