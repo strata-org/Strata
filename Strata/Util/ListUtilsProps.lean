@@ -1346,7 +1346,7 @@ theorem List.Rel₂.refl {α : Type _} {R : α → α → Prop} (hR : ∀ a, R a
   | a :: l => .cons (hR a) (List.Rel₂.refl hR l)
 
 /-- `flatMap` preserves the sublist relation. -/
-theorem List.Sublist.flatMap {α β : Type _} (f : α → List β) {l1 l2 : List α}
+theorem List.Sublist.flatMap_of_sublist {α β : Type _} (f : α → List β) {l1 l2 : List α}
     (h : List.Sublist l1 l2) : List.Sublist (l1.flatMap f) (l2.flatMap f) := by
   induction h with
   | slnil => exact List.Sublist.slnil
