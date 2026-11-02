@@ -647,6 +647,33 @@ procedure rethrowMultiCatchWrong(k: int) returns (r: int)
 };
 #end
 
+-- A guard that names an alternative through an alias narrows the binding as one naming the
+-- target does, to `Mid`: reading `code` would fail at the `try`'s join `Top`, testing for `B`
+-- at `A`, and testing for `AE` at `B`.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Top {}
+composite Mid extends Top { var code: int }
+composite A extends Mid {}
+composite B extends Mid {}
+composite C extends Top {}
+type AE = A
+procedure aliasMultiCatch(k: int) returns (r: int)
+  opaque
+  ensures k > 0 ==> r == 4
+  ensures k < 0 ==> r == 1
+{
+  r := 0;
+  try {
+    if k > 0 then { var a: A := new A; a#code := 4; throw a }
+    else { if k < 0 then { throw new B } else { throw new C } }
+  } catch c when c is AE || c is B {
+    if c is AE then { r := c#code } else { if c is B then { r := 1 } }
+  } catch c2 { r := 3 }
+};
+#end
+
 -- Narrowing to `A` keeps a cast to `B` that a `D extends A, B` makes possible.
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
