@@ -42,8 +42,8 @@ The resolution pass operates in two phases.
 Walks the AST under `ResolveM`, a state monad over `ResolveState`. Phase 1:
 - assigns fresh unique IDs to all definition nodes via `defineNameCheckDup`,
 - resolves references by looking up names in the current lexical scope via
-  `resolveRef` (and `resolveFieldRef` for fields, which uses the target's
-  declared type to build a qualified lookup key),
+  `resolveRef` (and `resolveFieldRef` for fields, which looks the field up in
+  the field scope of the target's synthesized type),
 - opens fresh nested scopes via `withScope` for blocks, quantifiers,
   procedure bodies, and constrained-type constraint/witness expressions,
 - synthesizes a `HighType` for every `StmtExpr` and checks it (via
@@ -86,9 +86,7 @@ Three forms of scope are maintained on `ResolveState`:
   body is resolved, so that field references resolve whatever the declaration
   order.
 - `instanceTypeName` — when resolving inside an instance procedure, the
-  owning composite type's name. Used by `resolveFieldRef` as a fallback so
-  that a bare `self.field` reference resolves through the type scope when
-  `self` has type `Any`.
+  owning composite type's name.
 
 ### Definition nodes (introduce a name into scope)
 - `Variable.Declare` — local variable declaration (in `Assign` targets or `Var`)
@@ -165,8 +163,7 @@ structure ResolveState where
   labelScope : Std.HashSet String := {}
   /-- Diagnostics collected during resolution. -/
   errors : Array Message := #[]
-  /-- When resolving inside an instance procedure, the owning composite type name.
-      Used by `resolveFieldRef` to resolve `self.field` when `self` has type `Any`. -/
+  /-- When resolving inside an instance procedure, the owning composite type name. -/
   instanceTypeName : Option String := none
   /-- The declared output types of the enclosing procedure body, in
       declaration order. `none` means we are not currently resolving
@@ -284,9 +281,7 @@ private def containerScopedName (containerName memberName : Identifier) : Identi
   mkId s!"{containerName.text}${memberName.text}"
 
 /-- Declared type of `fieldName` in the scope of composite type `typeName`; `none` if
-    unknown. Shared by `targetTypeName` and `incrDecrTargetType`. (`resolveFieldInTypeScope`
-    below returns the field's *id* instead of its type, and additionally unfolds a type
-    alias to its target before the lookup — this function does a direct scope lookup.) -/
+    unknown. Shared by `targetTypeName` and `incrDecrTargetType`. -/
 private def fieldTypeInScope (typeName : String) (fieldName : Identifier) : ResolveM (Option HighType) := do
   let s ← get
   match s.typeScopes.get? typeName with
@@ -351,98 +346,38 @@ private def nonValueName? (target : StmtExprMd) :
       | .constrainedType | .datatypeDefinition | .typeAlias | .coroutineType | .opaqueType
     then some (ref.text, node.kind) else none
 
-/-- Try to resolve a field name via a type scope lookup. Returns `some id` on success. -/
-private def resolveFieldInTypeScope (typeName : String) (fieldName : Identifier) : ResolveM (Option Identifier) := do
-  let s ← get
-  -- A type alias (`type P = Pt`) has no type-scope of its own — its fields live under the
-  -- target composite's name. The first resolution runs BEFORE `TypeAliasElim`, so `p : P`'s
-  -- field access reaches here with the alias name; unfold it to the target's base name
-  -- (transitively, fuel-guarded against cycles) before the lookup.
-  let rec unfoldAlias (name : String) (fuel : Nat) : String :=
-    match fuel with
-    | 0 => name
-    | fuel + 1 =>
-      match s.scope.get? name with
-      | some (_, (.typeAlias ta : ResolvedNode)) =>
-        match ta.target.val with
-        | .UserDefined tgt => unfoldAlias tgt.text fuel
-        | .Applied base _ => match base.val with
-          | .UserDefined tgt => unfoldAlias tgt.text fuel
-          | _ => name
-        | _ => name
-      | _ => name
-  let typeName := unfoldAlias typeName 16
-  match s.typeScopes.get? typeName with
-  | some typeScope =>
-    match typeScope.get? fieldName.text with
-    | some (defId, _) => return some { fieldName with uniqueId := some defId }
-    | none => return none
-  | none => return none
+/-- Resolve a field reference in the field scope of its holder's type.
 
-/-- Resolve a field reference using the target's type to build a qualified lookup key.
-
-    `holderTy?` is the *authoritative* concrete type of the receiver, as synthesized
-    by `Synth.resolveStmtExpr` at the call site. When supplied it is tried FIRST: its
-    base composite name (peeled via `unfold`+`highBaseName?`) keys the field-scope
+    `holderTy` is the concrete type of the receiver, as synthesized by
+    `Synth.resolveStmtExpr` at the call site. Its base composite name, after `unfold`
+    (which substitutes an alias's arguments) and `highBaseName?`, keys the field-scope
     lookup. This is what makes a CHAINED access through a generic composite field
     resolve — e.g. `p#b#az` where `p : Pair<int,Z>` and field `b : B` (a type
     variable): the receiver `p#b` synthesizes to the concrete `Z` (via
-    `concretizeFieldType`), so `#az` finds `Z`'s field. The string-based
-    `targetTypeName` fallback below cannot recover this because a `.TVar`/`.Applied`
-    field type carries no composite name on its own — it dropped to `none`, falling
-    through to `resolveRef` and the spurious "'az' is not defined".
+    `concretizeFieldType`), so `#az` finds `Z`'s field.
 
-    Falls back (when `holderTy?` is absent or names no known composite) to
-    `targetTypeName target`, then to the instance type name (for `self.field` in
-    instance methods), then to unqualified `resolveRef`.
-
-    Every call site in this file now passes `holderTy?`, so the `targetTypeName`
-    fallback is reached only for a holder type with no name to key on. It is kept
-    because `highBaseName?` yields `none` for a primitive / `.TSet` / `.TMap`
-    holder, and because the two later fallbacks are still needed.
-
-    Threading the holder type never changes which field a resolvable holder binds
-    to: `targetTypeName` reads its name out of the same declarations the
-    synthesizer types the holder from, and both then key the SAME per-type field
-    map (aliases unfolded on both sides — `TypeLattice.unfold` here,
-    `resolveFieldInTypeScope`'s `unfoldAlias` there). Nor is it a wrong-accept: a
-    field absent from the concrete holder still falls through.
-
-    It is NOT, however, unconditionally additive, because of the third fallback.
-    When `targetTypeName` yields `none`, an unsupplied `holderTy?` let the
-    *enclosing instance type* answer — binding the field to the host composite's
-    same-named field rather than the holder's. Supplying `holderTy?` makes the
-    holder win, which is the intended meaning; see
-    `Tests/EndToEndTests/Verification/Objects/ModifiesFieldOwnerShapes.lean`. -/
+    The receiver's declared type, from `targetTypeName`, only tells a gradual receiver
+    apart: it is not substituted, so through an alias its name can denote another
+    composite. -/
 def resolveFieldRef (target : StmtExprMd) (fieldName : Identifier)
-    (source : FileRange) (holderTy? : Option HighTypeMd := none) : ResolveM Identifier := do
-  -- Authoritative path: use the synthesized concrete holder type when available.
-  if let some holderTy := holderTy? then
-    let s ← get
-    if let some baseName := highBaseName? (s.typeLattice.unfold holderTy).val then
-      if let some resolved ← resolveFieldInTypeScope baseName.text fieldName then
-        return resolved
+    (source : FileRange) (holderTy : HighTypeMd) : ResolveM Identifier := do
+  match ((← get).typeLattice.unfold holderTy).val with
+  -- A type variable's name keys no composite, even one that shares it.
+  | .TVar _ => pure ()
+  | holder =>
+    if let some baseName := highBaseName? holder then
+      if let some (defId, _) := (← get).typeScopes.get? baseName.text >>= (·.get? fieldName.text) then
+        return { fieldName with uniqueId := some defId }
   let typeName? ← targetTypeName target
-  -- Try type scope from the target's declared type
-  if let some typeName := typeName? then
-    if let some resolved ← resolveFieldInTypeScope typeName fieldName then
-      return resolved
-  -- Fallback: use the owning instance type (handles `self.field` when self has type `Any`)
-  if let some instTypeName := (← get).instanceTypeName then
-    if let some resolved ← resolveFieldInTypeScope instTypeName fieldName then
-      return resolved
-  -- The field name (an attribute, not a variable) did not resolve in any type scope.
-  -- Leave it unresolved with no diagnostic ONLY for a genuinely gradual receiver:
-  -- Unknown/Any, or a `UserDefined` name registered in `gradualTypes` (the dynamic top).
+  -- The field name (an attribute, not a variable) did not resolve in the holder's type scope.
+  -- Leave it unresolved with no diagnostic ONLY for a genuinely gradual receiver, one
+  -- declared with a type registered in `gradualTypes` (the dynamic top).
   -- Such a field access is sound-but-uninterpreted. For every other receiver — a known
   -- composite that lacks this field, OR a primitive (`int`/`bool`/… whose `targetTypeName`
   -- is `none`) — a missing field is a real bug (typo'd attribute), so fall through to
   -- `resolveRef` and preserve the "Resolution failed: 'field' is not defined" diagnostic.
-  let s ← get
-  let isGradualReceiver (n? : Option String) : Bool := match n? with
-    | some n => s.typeLattice.gradualTypes.contains n
-    | none => false  -- primitive / void / inferred receiver: NOT a gradual escape
-  if isGradualReceiver typeName? || isGradualReceiver s.instanceTypeName then
+  -- `resolveRef` also binds a variable of the field's name.
+  if typeName?.any (← get).typeLattice.gradualTypes.contains then
     return { fieldName with uniqueId := none }
   else
     resolveRef fieldName source
@@ -2230,14 +2165,13 @@ def Synth.varLocal (ref : Identifier) (source : FileRange) :
     ───────────────────────────
     Γ ⊢ Var (.Field e f) ⇒ T_f
     ```
-    `f` is looked up against the type of `e` (or the enclosing instance type
-    for `self.f`); the typing rule itself is path-agnostic. -/
+    `f` is looked up against the type of `e`. -/
 def Synth.varField (exprMd : StmtExprMd)
     (target : StmtExprMd) (fieldName : Identifier) (source : FileRange)
     (h : exprMd.val = .Var (.Field target fieldName)) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', holderTy) ← Synth.resolveStmtExpr target
-  let fieldName' ← resolveFieldRef target' fieldName source (holderTy? := holderTy)
+  let fieldName' ← resolveFieldRef target' fieldName source holderTy
   -- Concretize the field's `.TVar` against the holder's instantiation. `holderTy` is
   -- the synthesized holder type — already concretized for a nested `g#inner` because
   -- that read came through this same rule — so chains concretize transitively.
@@ -2994,7 +2928,7 @@ def Synth.assign (exprMd : StmtExprMd)
       pure (Sum.inl ((⟨.Local ref', vs⟩ : VariableMd), ← getVarType ref))
     | ⟨.Field target fieldName, vs⟩ =>
       let (target', holderTy) ← Synth.resolveStmtExpr target
-      let fieldName' ← resolveFieldRef target' fieldName source (holderTy? := holderTy)
+      let fieldName' ← resolveFieldRef target' fieldName source holderTy
       pure (Sum.inl ((⟨.Field target' fieldName', vs⟩ : VariableMd),
         ← concretizeFieldType holderTy fieldName'))
     | ⟨.Declare param, vs⟩ =>
@@ -3175,7 +3109,7 @@ def Synth.incrDecr (exprMd : StmtExprMd)
       pure ((⟨.Local ref', target.source⟩ : VariableMd), ← getVarType ref)
     | .Field tgt fieldName =>
       let (tgt', holderTy) ← Synth.resolveStmtExpr tgt
-      let fieldName' ← resolveFieldRef tgt' fieldName source (holderTy? := holderTy)
+      let fieldName' ← resolveFieldRef tgt' fieldName source holderTy
       pure ((⟨.Field tgt' fieldName', target.source⟩ : VariableMd), ← concretizeFieldType holderTy fieldName')
     | .Declare param =>
       -- Should not occur — the translator rejects a declaration target;
@@ -3219,14 +3153,8 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
       let ref' ← resolveRef ref source
       pure (⟨.Local ref', target.source⟩ : VariableMd)
     | .Field tgt fieldName =>
-      -- Thread the synthesized holder type, exactly as `Synth.incrDecr` does: without
-      -- it `resolveFieldRef` falls back to `targetTypeName`, which types only a local,
-      -- a field chain of `.UserDefined`s, and an `as`-cast — so `x#f += e` failed to
-      -- resolve `f` whenever the holder came from anything else (a call, e.g. a
-      -- datatype destructor application) or from a generic field whose declared type
-      -- is a `.TVar`. `x#f++` already resolved both, via 2752.
       let (tgt', holderTy) ← Synth.resolveStmtExpr tgt
-      let fieldName' ← resolveFieldRef tgt' fieldName source (holderTy? := holderTy)
+      let fieldName' ← resolveFieldRef tgt' fieldName source holderTy
       pure (⟨.Field tgt' fieldName', target.source⟩ : VariableMd)
     | .Declare param =>
       -- Should not occur — the translator rejects a declaration target;
@@ -4202,16 +4130,15 @@ def Synth.refEq (exprMd : StmtExprMd) (expr : StmtExpr)
     ─────────────────────────────────────────────────────
     Γ ⊢ PureFieldUpdate target f newVal ⇒ T_t
     ```
-    `target` is synthesized, `f` resolved against `T_t` (or the enclosing
-    instance type), and `newVal` checked against the field's declared
-    type. The synthesized type is `T_t` — updating a field on a pure type
-    produces a new value of the same type. -/
+    `target` is synthesized, `f` resolved against `T_t`, and `newVal` checked
+    against the field's declared type. The synthesized type is `T_t` — updating
+    a field on a pure type produces a new value of the same type. -/
 def Synth.pureFieldUpdate (exprMd : StmtExprMd)
     (target : StmtExprMd) (fieldName : Identifier) (newVal : StmtExprMd)
     (h : exprMd.val = .PureFieldUpdate target fieldName newVal) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let (target', targetTy) ← Synth.resolveStmtExpr target
-  let fieldName' ← resolveFieldRef target' fieldName target.source (holderTy? := targetTy)
+  let fieldName' ← resolveFieldRef target' fieldName target.source targetTy
   -- Concretize against the holder's instantiation.
   let fieldTy ← concretizeFieldType targetTy fieldName'
   let newVal' ← Check.resolveStmtExpr newVal fieldTy
@@ -4802,23 +4729,13 @@ private def resolveModifiesEntry (e : StmtExprMd) : ResolveM (Option StmtExprMd)
     let e' ← resolveStmtExpr e
     return some e'
   | .Var (.Field target fieldName) =>
-    -- Resolve the owner directly (as `Synth.varField` does) to gate on its type, and
-    -- thread that type into field resolution as `Synth.varField` also does. Without it
-    -- `resolveFieldRef` falls back to `targetTypeName`, which types only a local, a
-    -- field chain of `.UserDefined`s, and an `as`-cast — so `modifies o#f` failed to
-    -- resolve `f` for any other owner shape (notably a call, e.g. a datatype destructor
-    -- application `D..g!(d)#f`) and reported "'f' is not defined", naming the field
-    -- rather than the owner. Note the field is resolved BEFORE the heap-relevance gate
-    -- below, so a non-composite owner passes through here first — and still reaches the
-    -- gate unchanged. An unnamed owner type (`int`, `bool`, a bare `.TSet`) skips the
-    -- `holderTy?` branch entirely (`highBaseName?` is `none`); a NAMED non-composite
-    -- (`Box<int>`, `Sequence<int>`, an opaque) takes it, but keys the same per-type
-    -- field map `targetTypeName`'s path would have keyed under the same name, which
-    -- holds no fields for a non-composite — so the field stays unresolved and the gate
-    -- still reports "non-composite owner type". `NonCompositeModifies.lean`'s
+    -- Resolve the owner directly (as `Synth.varField` does) to gate on its type. The field
+    -- is resolved BEFORE the heap-relevance gate below, so a non-composite owner passes
+    -- through here first: its type holds no fields, so the field stays unresolved and the
+    -- gate still reports "non-composite owner type". `NonCompositeModifies.lean`'s
     -- `fieldTargetOnValueOwner` pins that pair of diagnostics for `Box<int>`.
     let (target', ownerTy) ← Synth.resolveStmtExpr target
-    let fieldName' ← resolveFieldRef target' fieldName e.source (holderTy? := ownerTy)
+    let fieldName' ← resolveFieldRef target' fieldName e.source ownerTy
     let e' : StmtExprMd := { val := .Var (.Field target' fieldName'), source := e.source }
     let ownerTy' := (ctx.unfold ownerTy).val
     if isHeapRelevantModifiesTarget st.scope ownerTy' then

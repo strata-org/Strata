@@ -98,8 +98,8 @@ procedure mapAlias()
 
 /-! ## An alias for a COMPOSITE
 
-A field access through a composite alias needs `resolveFieldInTypeScope` to unfold the alias
-before looking the field up — `p#x` is not a field of `P`, only of what `P` expands to. -/
+A field access through a composite alias needs the alias unfolded before the field is looked
+up — `p#x` is not a field of `P`, only of what `P` expands to. -/
 
 #eval testLaurelExecution {} <|
 #strata
