@@ -228,13 +228,12 @@ def heapFieldOwner (ct : CompositeType) : String :=
   | some family => (family.text.drop genericFamilyPrefix.length).toString
   | none => ct.name.text
 
-/-- The heap field that `field` of `ct` is stored as: `Owner.field`, as `heapFieldOwner` names
-    the owner. -/
+/-- The name of the heap field storing `field`, which `ct` declares. -/
 def heapFieldName (ct : CompositeType) (field : String) : String := s!"{heapFieldOwner ct}.{field}"
 
 /--
-Resolve the owning composite type name for a field access by computing the target expression's type.
-Returns the qualified field name "DeclaringType.fieldName", as `heapFieldName` names it.
+The qualified name of the field that `fieldName` resolves to: `heapFieldName` of its declaring
+composite, or `$static.fieldName` for a static field; `none` if `fieldName` is unresolved.
 -/
 def resolveQualifiedFieldName (model: SemanticModel) (fieldName : Identifier) : Option String :=
   match model.get fieldName with

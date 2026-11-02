@@ -6,9 +6,11 @@
 
 /-
 One object seen at two instantiations of a generic composite has one copy of each field, so a
-write through one view is seen through the other. The views can be one object when a composite
-extends two instantiations, or whenever a generic procedure's type variables are instantiated
-alike.
+write through one view is seen through the other, and no constraint is assumed for a field two
+instantiations declare at different types. The views can be one object when a composite extends
+two instantiations, or whenever a generic procedure's type variables are instantiated alike.
+Tests that need a constrained instantiation such as `Box<int8>` reach it through a
+`TotalMap int int8` argument, since Resolution rejects `Box<int8>` as a declared type.
 -/
 
 import StrataLaurel.Tests.Util.TestLaurel
@@ -72,7 +74,8 @@ procedure typeVariableField<A, B>(x: Box<A>, y: Box<B>, a: A, b: B)
 };
 #end
 
--- Two concrete instantiations as parameters, which one object extending both can be.
+-- Parameters at two concrete instantiations are not assumed to be different objects, though no
+-- composite here extends both.
 #eval testLaurelVerification <|
 #strata
 program Laurel;

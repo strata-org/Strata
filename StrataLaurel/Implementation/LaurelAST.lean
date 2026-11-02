@@ -2741,9 +2741,9 @@ def TypeDefinition.name : TypeDefinition → Identifier
 
 /-- Reserved prefix of the field-free parent that `MonomorphizeComposites` gives
     every instantiation of one generic composite; the rest of the name is the
-    generic composite's own. `HeapParameterization` stores a field of an
-    instantiation under its family, so one object seen at two instantiations
-    (`Box<A>` and `Box<B>` with `A = B`) has one heap location for each field. -/
+    generic composite's own. `HeapParameterization` stores a field an instantiation
+    declares under its family, so one object seen at two instantiations (a
+    `D extends Box<int>, Box<bool>` is both) has one heap location for each field. -/
 def genericFamilyPrefix : String := "$Family$"
 
 def isGenericFamilyName (name : String) : Bool := name.startsWith genericFamilyPrefix
@@ -2755,8 +2755,8 @@ def isGenericFamilyParent (parent : HighTypeMd) : Bool :=
 /-- Build a `TypeLattice` from a list of `TypeDefinition`s.
     Aliases populate `unfoldMap` with their target; constrained types populate
     it with their base; composites populate `parentExprMap` with their direct
-    parent expressions, less a family parent (`genericFamilyPrefix`), which is no type:
-    beside a real common parent, two instantiations would have no single common ancestor.
+    parent expressions, less a family parent (`genericFamilyPrefix`): beside a real
+    common parent, two instantiations would have no single least common ancestor.
     Datatypes and opaque types contribute nothing — they're nominal and irreducible. -/
 def TypeLattice.ofTypes (types : List TypeDefinition) : TypeLattice :=
   types.foldl (init := {}) fun ctx td =>

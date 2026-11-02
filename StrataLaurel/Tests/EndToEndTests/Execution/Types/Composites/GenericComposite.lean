@@ -913,7 +913,7 @@ with it. Rejecting any of the three forms below would be a regression, and each 
 with a false twin so "accepted" cannot be mistaken for "verified vacuously".
 
 A generic `composite Box<T>` is legal for a different reason and so is not repeated here:
-it is monomorphized to `Box$a1$int`, so the plain name never reaches heap lowering. The
+it is monomorphized to `Box$a1$int`, so no type named `Box` reaches heap lowering. The
 forms below are the ones that do. (Contrast `Heap`, `Field`, `TypeTag` and `Composite`,
 whose generated forms carry no `$` and so genuinely are reserved.) -/
 

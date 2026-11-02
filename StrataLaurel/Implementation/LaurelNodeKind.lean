@@ -203,8 +203,7 @@ inductive NodeKind where
   | Pseudo.heapVar
   /-- Object state held implicitly, in each composite's own fields, rather than explicitly in
       the heap. `HeapParameterization` removes it: it empties every composite's `fields`
-      (`HeapParameterization.lean`, the `.Composite ct => .Composite { ct with fields := [] }`
-      arm) and rewrites field access into `readField`/`updateField` over
+      and rewrites field access into `readField`/`updateField` over
       `TotalMap Composite (TotalMap Field $Box)`. `TypeHierarchy` and `ModifiesClauses`
       declare it `unsupported` because both work over that explicit form — the former lowers
       `New`/type tests against it, the latter builds frames over `Composite` and `Field`.

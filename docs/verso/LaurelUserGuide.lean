@@ -4058,6 +4058,12 @@ These parse and resolve, so nothing warns you early, and they fail or misbehave 
 - `new` should be used only with composites, even though the resolver also accepts datatypes.
 - A composite field whose type is a generic datatype instantiation is rejected, because the heap
   representation cannot distinguish instantiations.
+- A generic composite's field is one field for all its instantiations, and references at two
+  instantiations are not assumed to be different objects: for parameters `x: Box<int>` and
+  `y: Box<bool>`, writing `y#item` may change `x#item`, even where no composite extends both.
+- A constraint is not assumed for a field two instantiations declare at different types: `item`
+  of a `new Box<int8>` is not known to be an `int8` once `Box` is used at another type anywhere,
+  even by an uncalled generic procedure.
 - A transparent procedure's body is turned into a function only for supported control and effect
   shapes; `opaque` is the robust choice for imperative code.
 - Passing too *few* arguments to a procedure is not currently diagnosed, while passing too many

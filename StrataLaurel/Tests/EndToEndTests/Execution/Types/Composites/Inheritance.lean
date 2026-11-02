@@ -258,8 +258,8 @@ procedure genericChildGenericParent()
   assert b#tag == 1 && b#val == 7
 };
 
-// Two instantiations get two distinct parent clones (`BaseG$int`, `BaseG$bool`), so the
-// inherited field is typed per instantiation rather than shared.
+// Two instantiations get two distinct parent clones, so the inherited field is typed per
+// instantiation.
 procedure genericChildGenericParentTwoInstantiations()
   entry
   opaque
