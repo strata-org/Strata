@@ -314,6 +314,9 @@ def lmonoTyToCoreType {M} [Inhabited M] (ty : Lambda.LMonoTy) :
   | .tcons "Sequence" [e] => do
     let ety ← lmonoTyToCoreType e
     pure (.Sequence default ety)
+  | .tcons "Set" [e] => do
+    let ety ← lmonoTyToCoreType e
+    pure (.Set default ety)
   | .tcons "arrow" [a, b] => do
     let aty ← lmonoTyToCoreType a
     let bty ← lmonoTyToCoreType b
@@ -791,15 +794,28 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   -- Map operations
   | .map .Select => pure (.map_get default ty ty arg1 arg2)
   -- Sequence operations
-  | .seq .Select => pure (.seq_select default ty arg1 arg2)
-  | .seq .SelectUnsafe => pure (.seq_select_unsafe default ty arg1 arg2)
+  | .seq .Select =>
+    pure (.seqSelectOp default ty (.seq_select default) arg1 arg2)
+  | .seq .SelectUnsafe =>
+    pure (.seqSelectOp default ty (.seq_select_unsafe default) arg1 arg2)
   | .seq .Append => pure (.seq_append default ty arg1 arg2)
   | .seq .Build => pure (.seq_build default ty arg1 arg2)
   | .seq .Contains => pure (.seq_contains default ty arg1 arg2)
-  | .seq .Take => pure (.seq_take default ty arg1 arg2)
-  | .seq .TakeUnsafe => pure (.seq_take_unsafe default ty arg1 arg2)
-  | .seq .Drop => pure (.seq_drop default ty arg1 arg2)
-  | .seq .DropUnsafe => pure (.seq_drop_unsafe default ty arg1 arg2)
+  | .seq .Take => pure (.seqSliceOp default ty (.seq_take default) arg1 arg2)
+  | .seq .TakeUnsafe =>
+    pure (.seqSliceOp default ty (.seq_take_unsafe default) arg1 arg2)
+  | .seq .Drop => pure (.seqSliceOp default ty (.seq_drop default) arg1 arg2)
+  | .seq .DropUnsafe =>
+    pure (.seqSliceOp default ty (.seq_drop_unsafe default) arg1 arg2)
+  -- Set operations
+  | .set .Contains => pure (.set_contains default ty arg1 arg2)
+  | .set .Insert => pure (.setElemOp default ty (.set_insert default) arg1 arg2)
+  | .set .Remove => pure (.setElemOp default ty (.set_remove default) arg1 arg2)
+  | .set .Union => pure (.setBinOp default ty (.set_union default) arg1 arg2)
+  | .set .Intersect =>
+    pure (.setBinOp default ty (.set_intersect default) arg1 arg2)
+  | .set .Difference =>
+    pure (.setBinOp default ty (.set_difference default) arg1 arg2)
   -- String and Regex operations
   | .str .Concat => pure (.str_concat default arg1 arg2)
   | .str .InRegEx => pure (.str_inregex default arg1 arg2)
@@ -828,8 +844,10 @@ def handleTernaryOps {M} [Inhabited M] (name : String)
   -- Maps
   | .map .Update => pure (.map_set default ty ty arg1 arg2 arg3)
   -- Sequences
-  | .seq .Update => pure (.seq_update default ty arg1 arg2 arg3)
-  | .seq .UpdateUnsafe => pure (.seq_update_unsafe default ty arg1 arg2 arg3)
+  | .seq .Update =>
+    pure (.seqUpdateOp default ty (.seq_update default) arg1 arg2 arg3)
+  | .seq .UpdateUnsafe =>
+    pure (.seqUpdateOp default ty (.seq_update_unsafe default) arg1 arg2 arg3)
   -- Strings and regexes
   | .str .Substr => pure (.str_substr default arg1 arg2 arg3)
   | .str .IndexOf => pure (.str_indexof default arg1 arg2 arg3)
@@ -935,14 +953,21 @@ partial def lexprToExpr {M} [Inhabited M]
   | .ite _ c t f => liteToExpr c t f qLevel
   | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
   | .op _ name ty => do
-    -- seq_empty needs the type annotation to render the explicit type parameter
-    if Core.NameMangling.demangledBaseName name.name == "Sequence.empty" then
-      let tyCST ← match ty with
-        | some (.tcons "Sequence" [ety]) => lmonoTyToCoreType ety
-        | _ => pure (CoreType.tvar default unknownTypeVar)
-      pure (.seq_empty default tyCST)
-    else
-      lopToExpr name.name []
+    -- An empty collection renders its element type, taken from the op's
+    -- type annotation, as an explicit type parameter.
+    let elemTy (coll : String) : ToCSTM M (CoreType M) :=
+      let unknown := do
+        ToCSTM.logError "lexprToExpr"
+          "empty collection without element type" s!"{coll}.empty"
+        pure (CoreType.tvar default unknownTypeVar)
+      match ty with
+      | some (.tcons c [ety]) =>
+        if c == coll then lmonoTyToCoreType ety else unknown
+      | _ => unknown
+    match CoreOp.ofString (Core.NameMangling.demangledBaseName name.name) with
+    | .seq .Empty => pure (.seq_empty default (← elemTy "Sequence"))
+    | .set .Empty => pure (.set_empty default (← elemTy "Set"))
+    | _ => lopToExpr name.name []
   | .app _ _ _ => lappToExpr e qLevel
   | .abs _ prettyName ty body => labsToExpr prettyName ty body (qLevel + 1)
   | .quant _ qkind prettyName ty trigger body =>

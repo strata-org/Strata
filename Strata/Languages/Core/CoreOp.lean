@@ -228,6 +228,21 @@ def SeqOpKind.toString (k : SeqOpKind) : String := lookupName names k
 instance : ToString SeqOpKind := ⟨SeqOpKind.toString⟩
 def SeqOpKind.ofString? (s : String) : Option SeqOpKind := lookupKind names s
 
+/-! ### Set Operations -/
+
+inductive SetOpKind where
+  | Empty | Contains | Insert | Remove | Union | Intersect | Difference
+  deriving Repr, DecidableEq, Inhabited, BEq, Hashable
+
+def SetOpKind.names : List (SetOpKind × String) :=
+  [(.Empty, "empty"), (.Contains, "contains"), (.Insert, "insert"),
+   (.Remove, "remove"), (.Union, "union"), (.Intersect, "intersect"),
+   (.Difference, "difference")]
+
+def SetOpKind.toString (k : SetOpKind) : String := lookupName names k
+instance : ToString SetOpKind := ⟨SetOpKind.toString⟩
+def SetOpKind.ofString? (s : String) : Option SetOpKind := lookupKind names s
+
 /-! ### Trigger Operations -/
 
 inductive TriggerOpKind where
@@ -252,6 +267,7 @@ inductive CoreOp where
   | re (kind : ReOpKind)
   | map (kind : MapOpKind)
   | seq (kind : SeqOpKind)
+  | set (kind : SetOpKind)
   | bvExtract (size hi lo : Nat)
   | intToBv (n : Nat)  -- int → bv of width n (int_to_bv)
   | trigger (kind : TriggerOpKind)
@@ -269,6 +285,7 @@ def CoreOp.toString : CoreOp → String
   | .re kind => s!"Re.{kind}"
   | .map kind => kind.toString
   | .seq kind => s!"Sequence.{kind}"
+  | .set kind => s!"Set.{kind}"
   | .bvExtract size hi lo => s!"Bv{size}.Extract_{hi}_{lo}"
   | .intToBv n => s!"Int.ToBv{n}"
   | .trigger kind => kind.toString
@@ -340,6 +357,10 @@ def CoreOp.ofString (name : String) : CoreOp :=
     match SeqOpKind.ofString? (name.drop 9).toString with
     | some kind => .seq kind
     | none => .other name
+  else if name.startsWith "Set." then
+    match SetOpKind.ofString? (name.drop 4).toString with
+    | some kind => .set kind
+    | none => .other name
   else match MapOpKind.ofString? name with
   | some kind => .map kind
   | none =>
@@ -383,6 +404,10 @@ theorem MapOpKind.ofString_toString (k : MapOpKind) :
 
 theorem SeqOpKind.ofString_toString (k : SeqOpKind) :
     SeqOpKind.ofString? k.toString = some k := by cases k <;> decide
+
+/-- Parsing the name of a set operation gives back that operation. -/
+theorem SetOpKind.ofString_toString (k : SetOpKind) :
+    SetOpKind.ofString? k.toString = some k := by cases k <;> decide
 
 theorem TriggerOpKind.ofString_toString (k : TriggerOpKind) :
     TriggerOpKind.ofString? k.toString = some k := by cases k <;> decide

@@ -56,14 +56,16 @@ def extractSyntaxInfo (d : Dialect) : SyntaxInfo :=
     | Decl.op od => (extractStrLiterals od.syntaxDef).filter
         (fun s => (strip s).length > 0 && (strip s).all Char.isAlpha) |>.map strip |>.toArray
     | _ => #[]
-  -- Grouped type-specific operators are `op` members of wrapper categories whose
-  -- token is a dotted name (`int.add`, `bv8.uLt`, `bv8.toUInt`). These are neither
+  -- Grouped operators are `op` members of wrapper categories whose
+  -- token is a dotted name (`int.add`, `bv8.uLt`, `Set.union`). These are neither
   -- all-alpha keywords nor `function` builtins, so collect them here and highlight
   -- them as builtin functions alongside `Sequence.length` etc. Require an
   -- alphanumeric on both sides of a dot so bare-punctuation tokens (e.g. the
   -- `dialect "." name` separator) are not misclassified as operators.
+  -- A dotted name may end in `!` (`Sequence.select!`).
   let isDottedName (s : String) : Bool :=
-    match s.splitOn "." with
+    let base := if s.endsWith "!" then String.ofList s.toList.dropLast else s
+    match base.splitOn "." with
     | [] => false
     | parts => parts.length ≥ 2 && parts.all (fun p => p.length > 0 && p.all Char.isAlphanum)
   let dottedOpTokens := d.declarations.flatMap fun
@@ -161,8 +163,13 @@ def generateTextMate (info : SyntaxInfo) : String :=
   let wordOpPattern := "\\\\b(" ++ "|".intercalate (info.wordOperators.map escapeRegexForJson) ++ ")\\\\b"
   let sortedSymOps := info.symbolOperators.toArray.qsort (fun a b => a.length > b.length) |>.toList
   let symOpPattern := "(" ++ "|".intercalate (sortedSymOps.map escapeRegexForJson) ++ ")"
-  let builtinPattern := "\\\\b(" ++ "|".intercalate (info.builtinFunctions.map escapeRegexForJson) ++
-    "|bvconcat\\\\{[0-9]+\\\\}\\\\{[0-9]+\\\\}|bvextract\\\\{[0-9]+\\\\}\\\\{[0-9]+\\\\}\\\\{[0-9]+\\\\})\\\\b"
+  -- Some builtins end in `!`, `}`, `*` or `+`, where `\b` fails or cuts the
+  -- match short, so require no following word character, `!` or `.`.
+  let bvPattern := "|bvconcat\\\\{[0-9]+\\\\}\\\\{[0-9]+\\\\}" ++
+    "|bvextract\\\\{[0-9]+\\\\}\\\\{[0-9]+\\\\}\\\\{[0-9]+\\\\}"
+  let builtinPattern := "\\\\b(" ++
+    "|".intercalate (info.builtinFunctions.map escapeRegexForJson) ++
+    bvPattern ++ ")(?![\\\\w!.])"
   -- Use ` to avoid Lean string interpolation issues with { }
   let q := "\""
   let ob := "{"  -- open brace
@@ -322,12 +329,16 @@ def generateEmacs (info : SyntaxInfo) : String :=
     "        (ty-re  (regexp-opt core-st-types     'symbols))",
     "        (ct-re  (regexp-opt core-st-constants 'symbols))",
     "        (op-re  (regexp-opt core-st-operators 'symbols))",
-    "        (bi-re  (regexp-opt core-st-builtins  'symbols)))",
+    -- `'symbols` cannot end a match after `!`, `*` or `+` (punctuation here),
+    -- so the builtin must be followed by a character other than a word
+    -- character, `!` or `.`.
+    "        (bi-re  (concat \"\\\\_<\" (regexp-opt core-st-builtins t)",
+    "                        \"\\\\(?:[^[:alnum:]_!.]\\\\|$\\\\)\")))",
     "    `((,kw-re . font-lock-keyword-face)",
     "      (,ty-re . font-lock-type-face)",
     "      (,ct-re . font-lock-constant-face)",
     "      (,op-re . font-lock-keyword-face)",
-    "      (,bi-re . font-lock-builtin-face)",
+    "      (,bi-re 1 font-lock-builtin-face)",
     "      ;; Attributes: @[...]",
     "      (\"@\\\\[[^]]*\\\\]\" . font-lock-preprocessor-face)",
     "      ;; Labels: [name]:",

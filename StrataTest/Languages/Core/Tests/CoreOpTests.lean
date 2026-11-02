@@ -52,6 +52,9 @@ private def checkRoundTrip (name : String) : Bool :=
 -- Sequence ops
 #guard SeqOpKind.names.all (fun (_, n) => checkRoundTrip s!"Sequence.{n}")
 
+-- Set ops
+#guard SetOpKind.names.all (fun (_, n) => checkRoundTrip s!"Set.{n}")
+
 -- Trigger ops (names are the full canonical string, no prefix)
 #guard TriggerOpKind.names.all (fun (_, n) => checkRoundTrip n)
 
