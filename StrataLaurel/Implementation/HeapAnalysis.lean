@@ -60,7 +60,7 @@ private def collectExprNode (expr : StmtExprMd) : StateM AnalysisResult Unit := 
           modify fun s => { s with writesHeapDirectly := true, allocatesDirectly := true }
         else
           modify fun s => { s with callees := callee :: s.callees }
-    | .InstanceCall _ callee _ => modify fun s => { s with callees := callee :: s.callees }
+    | .InstanceCall _ callee _ _ => modify fun s => { s with callees := callee :: s.callees }
     | .New .. => modify fun s => { s with writesHeapDirectly := true, allocatesDirectly := true }
     | .Assign assignTargets _ =>
         for ⟨assignTarget, _⟩ in assignTargets.attach do

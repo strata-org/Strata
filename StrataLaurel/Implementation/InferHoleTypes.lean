@@ -257,8 +257,8 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
         | none =>
           inferArgs args (unresolvedOperatorArgType model callee args expectedType source) outputType
       return ⟨.StaticCall callee args' tyArgs, source⟩
-  | .InstanceCall target callee args =>
-      return ⟨.InstanceCall (← inferExpr target ⟨ .Unknown, source ⟩ outputType) callee (← inferArgs args ⟨ .Unknown, source ⟩ outputType), source⟩
+  | .InstanceCall target callee args tys =>
+      return ⟨.InstanceCall (← inferExpr target ⟨ .Unknown, source ⟩ outputType) callee (← inferArgs args ⟨ .Unknown, source ⟩ outputType) tys, source⟩
   | .ReferenceEquals lhs rhs =>
       let lhsType := computeExprType model lhs
       let rhsType := computeExprType model rhs

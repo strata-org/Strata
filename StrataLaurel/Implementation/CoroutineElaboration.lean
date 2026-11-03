@@ -952,10 +952,10 @@ private def rewriteCallerNode (coros : CoroutineSet) (e : StmtExprMd) : StmtExpr
   match e.val with
   | .Resume target value =>
     let resumeName : Identifier := { text := "resume", uniqueId := none, source := e.source }
-    { e with val := .InstanceCall target resumeName value.toList }
+    { e with val := .InstanceCall target resumeName value.toList [] }
   | .HasNext target =>
     let methodName : Identifier := { text := "has_next", uniqueId := none, source := e.source }
-    { e with val := .InstanceCall target methodName [] }
+    { e with val := .InstanceCall target methodName [] [] }
   | .New ref =>
     if coros.contains ref.text then { e with val := .New (stateTypeName ref) } else e
   | .AsType target ty =>
@@ -1116,10 +1116,10 @@ private def rewriteCallerNodeForVerification (coros : CoroutineSet)
     let spawnArgs := match target.val with
       | .Var (.Local name) => (spawns.getD name.text [])
       | _ => []
-    { e with val := .InstanceCall target resumeName (spawnArgs ++ value.toList) }
+    { e with val := .InstanceCall target resumeName (spawnArgs ++ value.toList) [] }
   | .HasNext target =>
     let methodName : Identifier := { text := "has_next", uniqueId := none, source := e.source }
-    { e with val := .InstanceCall target methodName [] }
+    { e with val := .InstanceCall target methodName [] [] }
   | _ => rewriteCallerNode coros e
 
 /-- Rewrite a spawn statement into its snapshot bindings followed by the spawn

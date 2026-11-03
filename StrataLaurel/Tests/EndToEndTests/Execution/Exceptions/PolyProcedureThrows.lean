@@ -22,6 +22,7 @@ The cases go up in difficulty by what the `throws` type is made of: a concrete t
 that always worked), the bare type variable, and a generic composite instantiated at it — the last
 of which also has to be SEEDED for monomorphization from the `throws` clause, a position the
 collector could easily not walk.
+Two more read what a call at a concrete type throws: its `catch` binding, and its lowered result.
 
 The escape cases are separate because they take a different path. Everything else here wraps the
 call in `try`/`catch`, so the exception never leaves the caller. When it escapes into a caller that
@@ -173,6 +174,49 @@ procedure doesNotCatchCloneThrows() returns (out: int)
   bx#val := 7;
   out := mayThrow(bx)
 //       ^^^^^^^^^^^^ error: call does not throw an uncaught 'Err$a1$int' does not hold
+};
+#end
+
+/-! ## A call throws at its instantiation
+
+`thrS` throws its own `S`, but the binding of a call at a `Cell` is a `Cell`, so the handler reads
+and writes it as one. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+composite Cell { var v: int }
+procedure thrS<S>(x: S) throws (e: S) opaque throwsOn true { ensures e == x } { throw x };
+
+procedure bindingAtInstantiation() returns (out: int)
+  entry
+  opaque
+  modifies *
+{
+  var c: Cell := new Cell;
+  c#v := 5;
+  try { thrS(c) } catch e { e#v := 7 };
+  out := c#v;
+  assert out == 7
+};
+#end
+
+-- Called at an `int` and at a `bool`, each call's lowered result is declared at its own
+-- instantiation. At the callee's `T` the two would be one type.
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+procedure g<T>(x: T, b: bool) returns (r: T) throws (e: T)
+  opaque ensures r == x throwsOn b { ensures e == x } { if b then { throw x }; r := x };
+
+procedure twoInstantiations() returns (out: int)
+  entry
+  opaque
+{
+  var flag: bool := true;
+  try { out := g(5, true) } catch c { out := c + 1 };
+  try { flag := g(false, false) } catch d { flag := true };
+  assert out == 6 && !flag
 };
 #end
 

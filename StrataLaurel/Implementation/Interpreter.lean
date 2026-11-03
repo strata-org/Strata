@@ -806,10 +806,10 @@ private partial def liftExpr (e : StmtExprMd) : LiftM (List StmtExprMd × StmtEx
   | .StaticCall callee args tys => do
       let (pre, args') ← liftArgs args
       pure (pre, ⟨.StaticCall callee args' tys, src⟩)
-  | .InstanceCall target callee args => do
+  | .InstanceCall target callee args tys => do
       let (pre, all') ← liftArgs (target :: args)
       match all' with
-      | t' :: args' => pure (pre, ⟨.InstanceCall t' callee args', src⟩)
+      | t' :: args' => pure (pre, ⟨.InstanceCall t' callee args' tys, src⟩)
       | [] => pure (pre, e)
   | .Var (.Field target field) => do
       let (pre, t') ← liftExpr target
@@ -1538,7 +1538,7 @@ partial def evalExpr (cfg : ExternalBackend) : StmtExpr → EvalM Value
       let new ← liftM (evalOp cfg op [old, r])
       write new
       pure new
-  | .InstanceCall target callee args => do
+  | .InstanceCall target callee args _ => do
       let site := (← get).callSite
       let tv ← evalExprMd cfg target
       let argVals ← args.mapM (evalExprMd cfg)
@@ -2150,7 +2150,7 @@ partial def evalCallOutputs (cfg : ExternalBackend) (e : StmtExpr) : EvalM (Arra
       match callBuiltin callee.text argVals absent with
       | some act => do let v ← liftM act; pure #[v]
       | none => invokeCallee cfg site callee argVals
-  | .InstanceCall target callee args => do
+  | .InstanceCall target callee args _ => do
     let site := (← get).callSite
     let tv ← evalExprMd cfg target
     let argVals ← args.mapM (evalExprMd cfg)

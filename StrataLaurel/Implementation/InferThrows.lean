@@ -83,12 +83,15 @@ private def currentThrowsOf (current : InferredThrows) (q : Procedure) : Option 
   if q.throwsInferred then (current.get? (procKey q)).join else q.throwsType
 
 /-- The types that may leave `proc` on its own: its declared type (`declaredOf`)
-    plus the body's escapes, reading callee types from `current`. -/
+    plus the body's escapes, reading callee types from `current`. An escape of unknown type is
+    left out, as one that mentions a type variable is, and reported on its own. -/
 private def ownLeavingTypes (model : SemanticModel) (lattice : TypeLattice)
     (declaredOf : Procedure → Option HighTypeMd) (current : InferredThrows) (proc : Procedure)
     : List HighTypeMd :=
   let escapes := match procBody? proc with
-    | some body => (exceptionEscapesWith model lattice (currentThrowsOf current) body (atCallTypeArgs := true)).map Prod.fst
+    | some body =>
+      ((Resolution.exceptionEscapesWith model lattice (currentThrowsOf current) body).map
+        Prod.fst).filter (!·.val matches .Unknown)
     | none => []
   (declaredOf proc).toList ++ escapes
 
@@ -184,14 +187,18 @@ def inferThrows (model : SemanticModel) (program : LaurelProgram)
     acc.insert (procKey p) (declaredOf p)
   let final := inferFixpoint model lattice declaredOf bases procs fuel initial
   -- An escape whose type mentions a type variable is not concrete until
-  -- monomorphization, so no type can be inferred for it.
+  -- monomorphization, and one of unknown type has no type, so no type can be inferred for it.
   let tvarDiags := procs.filterMap fun proc =>
     let escapes := match procBody? proc with
-      | some body => exceptionEscapesWith model lattice (currentThrowsOf final) body (keepTVars := true) (atCallTypeArgs := true)
+      | some body =>
+        Resolution.exceptionEscapesWith model lattice (currentThrowsOf final) body
+          (keepTVars := true)
       | none => []
-    (escapes.find? (mentionsTVar ·.1.val)).map fun (ty, _) =>
+    (escapes.find? fun (ty, _) => ty.val matches .Unknown || mentionsTVar ty.val).map fun (ty, _) =>
+      let why := if ty.val matches .Unknown then "an exception that may escape it has no known type"
+        else s!"the exception type '{formatHighTypeVal ty.val}' that may escape it mentions a type variable"
       (procKey proc, diagnosticFromSource proc.name.source
-        s!"cannot infer the `throws` type of procedure '{displayName proc}': the exception type '{formatHighTypeVal ty.val}' that may escape it mentions a type variable. Declare the `throws` type instead.")
+        s!"cannot infer the `throws` type of procedure '{displayName proc}': {why}. Declare the `throws` type instead.")
   let joinDiags := procs.filterMap fun proc =>
     let tys := ownLeavingTypes model lattice declaredOf final proc
     if (ownType lattice tys).isNone then

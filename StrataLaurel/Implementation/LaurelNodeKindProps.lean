@@ -251,7 +251,7 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
   | .ReferenceEquals lhs rhs => [lhs, rhs]
   | .AsType target _ => [target]
   | .IsType target _ => [target]
-  | .InstanceCall target _ arguments => [target] ++ arguments
+  | .InstanceCall target _ arguments _ => [target] ++ arguments
   | .Quantifier _ _ trigger body => trigger.toList ++ [body]
   | .Assigned name => [name]
   | .Old value _ => [value]

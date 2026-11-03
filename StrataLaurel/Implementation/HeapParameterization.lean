@@ -246,10 +246,10 @@ where
         let args' ← args.mapM (recurseOne ·)
         -- No heap threading: handled by `GlobalParameterization` (see `heapGlobalField`).
         return [⟨ .StaticCall callee args' tyArgs, source ⟩]
-    | .InstanceCall callTarget callee args =>
+    | .InstanceCall callTarget callee args tys =>
         let t ← recurseOne callTarget
         let args' ← args.mapM (recurseOne ·)
-        return [⟨ .InstanceCall t callee args', source ⟩]
+        return [⟨ .InstanceCall t callee args' tys, source ⟩]
     | .IfThenElse c t e =>
         let e' ← match e with | some x => some <$> recurseOne x valueUsed | none => pure none
         return [⟨ .IfThenElse (← recurseOne c) (← recurseOne t valueUsed) e', source ⟩]

@@ -148,9 +148,9 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
     pure ⟨.AsType (← mapStmtExprUsedM f true target) ty, source⟩
   | .IsType target ty =>
     pure ⟨.IsType (← mapStmtExprUsedM f true target) ty, source⟩
-  | .InstanceCall target callee args =>
+  | .InstanceCall target callee args tys =>
     pure ⟨.InstanceCall (← mapStmtExprUsedM f true target) callee
-      (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e), source⟩
+      (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e) tys, source⟩
   | .Quantifier mode param trigger body =>
     pure ⟨.Quantifier mode param (← trigger.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e)
       (← mapStmtExprUsedM f true body), source⟩
@@ -428,9 +428,9 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
       pure ⟨.AsType (collapse (← go true target) target.source) ty, source⟩
     | .IsType target ty =>
       pure ⟨.IsType (collapse (← go true target) target.source) ty, source⟩
-    | .InstanceCall target callee args =>
+    | .InstanceCall target callee args tys =>
       pure ⟨.InstanceCall (collapse (← go true target) target.source) callee
-        (← args.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)), source⟩
+        (← args.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)) tys, source⟩
     | .Quantifier mode param trigger body =>
       pure ⟨.Quantifier mode param (← trigger.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source))
         (collapse (← go true body) body.source), source⟩
@@ -529,9 +529,9 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
     pure ⟨.AsType (← mapStmtExprPrePostM pre post target) ty, source⟩
   | .IsType target ty =>
     pure ⟨.IsType (← mapStmtExprPrePostM pre post target) ty, source⟩
-  | .InstanceCall target callee args =>
+  | .InstanceCall target callee args tys =>
     pure ⟨.InstanceCall (← mapStmtExprPrePostM pre post target) callee
-      (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
+      (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) tys, source⟩
   | .Quantifier mode param trigger body =>
     pure ⟨.Quantifier mode param (← trigger.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e)
       (← mapStmtExprPrePostM pre post body), source⟩
@@ -636,7 +636,7 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
     foldStmtExprM f target
   | .IsType target _ =>
     foldStmtExprM f target
-  | .InstanceCall target _ args =>
+  | .InstanceCall target _ args _ =>
     foldStmtExprM f target
     args.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
   | .Quantifier _ _ trigger body =>
@@ -1206,7 +1206,7 @@ private def covProbes : List (StmtExprMd × Nat) := [
   (covMd (.ReferenceEquals covS covS), 2),
   (covMd (.AsType covS covTy), 1),
   (covMd (.IsType covS covTy), 1),
-  (covMd (.InstanceCall covS (covId "c") [covS, covS]), 3),
+  (covMd (.InstanceCall covS (covId "c") [covS, covS] []), 3),
   (covMd (.Quantifier .Forall covParam (some covS) covS), 2),
   (covMd (.Assigned covS), 1),
   (covMd (.Old covS), 1),

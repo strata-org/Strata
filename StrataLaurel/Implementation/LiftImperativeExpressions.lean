@@ -426,10 +426,10 @@ def transformExpr (expr : StmtExprMd) (discard : Bool := false) : LiftM StmtExpr
       let seqTarget ← transformExpr target
       return ⟨.IsType seqTarget ty, source⟩
 
-  | .InstanceCall target callee args =>
+  | .InstanceCall target callee args tys =>
       let seqArgs ← args.reverse.mapM transformExpr
       let seqTarget ← transformExpr target
-      return ⟨.InstanceCall seqTarget callee seqArgs.reverse, source⟩
+      return ⟨.InstanceCall seqTarget callee seqArgs.reverse tys, source⟩
 
   | .Quantifier .. =>
       -- The body and trigger are *spec* positions under a binder, like a loop

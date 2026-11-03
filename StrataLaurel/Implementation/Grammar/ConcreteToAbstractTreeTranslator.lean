@@ -534,7 +534,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       -- expression — preserved to match prior behavior).
       match callee.val with
       | .Var (.Field target fieldName) =>
-        return mkStmtExprMd (.InstanceCall target fieldName argsList) src
+        return mkStmtExprMd (.InstanceCall target fieldName argsList []) src
       | .Var (.Local name) =>
         -- `resume(target [, value])` and `has_next(target)` flow through the
         -- same `Laurel.call` production; special-case them by callee text

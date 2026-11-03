@@ -45,6 +45,36 @@ procedure wrongThrows()
 };
 #end
 
+-- A generic callee throws at the instantiation its call records, so `g(c)` throws a `Cell`,
+-- which is not the declared `Err`.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Cell {}
+composite Err {}
+procedure g<T>(x: T) returns (r: int) throws (e: T) opaque throwsOn true { ensures e == x } { throw x };
+procedure genericCallee(c: Cell) returns (r: int) throws (e: Err) opaque {
+  r := g(c)
+//     ^^^^ error: 'genericCallee' may throw 'Cell', which is not a subtype
+};
+#end
+
+-- A method's own type parameter that only the expected type determines is read at the call's
+-- instantiation, so `mk` throws a `Cell` here, which the declared `throws` admits.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Cell {}
+composite Plain {
+  procedure mk<U>(self: Plain) returns (r: U) throws (e: U) opaque throwsOn false { ensures true };
+}
+procedure expectedTypeOnlyMethod(pl: Plain) returns (r: int) throws (e: Cell) opaque {
+  var c: Cell := new Cell;
+  c := pl#mk();
+  r := 0
+};
+#end
+
 -- No static error for a propagated call: `callsThrower` invokes a throwing
 -- procedure without catching it and without declaring `throws` itself. The escape
 -- is a verification obligation at the call instead, which fails here because the

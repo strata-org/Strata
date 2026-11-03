@@ -12,35 +12,11 @@ open Strata
 /-
 A `catch` binding that resolution cannot type is typed `Unknown`, and
 `EliminateExceptions.lowerTry` reads an `Unknown` binding as "this handler can
-never fire" and DISCARDS the clause — the body is then verified as if no handler
-were present, and the handler's own obligations vanish with it. Carrying only a
-`.warning` for that, as `Check.tryCatch` does, is not enough: every pipeline gate
-is spelled `kind != .warning`, so a program whose handler was dropped verifies
-green.
+never fire" and DISCARDS the clause, with only a `.warning`. So each shape of
+thrown value has to type the binding: the failing `assert` inside each handler is
+the evidence that the clause was kept.
 
-Two halves, both pinned here:
-
-  1. The shapes that `collectThrownTypes` now types, so the handler survives and
-     its obligations are real again — a `throw` of a call's result (typed from the
-     callee's single output) and a `throw` of an unannotated local (typed from its
-     initializer). The failing `assert` inside each handler is the evidence: it is
-     only reachable if the clause was kept.
-  2. A shape it still cannot type structurally — a `throw` of a field read — where
-     `checkPropagationEdges` backstops with a hard error. That check runs
-     post-resolution with the model, so `exceptionEscapes` CAN type the operand;
-     the disagreement between the two analyses is exactly the hole.
-
-The backstop fires on "a type was available and the binding did not get it", not
-merely on "the binding is `Unknown`". It re-derives the join over what escapes, so
-the *other* producer of an `Unknown` binding — thrown types with no common ancestor,
-where no valid type exists at all — joins to `none` and stays this check's business
-to ignore: `Check.tryCatch` already rejects it, and reporting twice would say
-nothing new. That case is pinned by `noCommonAncestor` in
-`EndToEndTests/Execution/Exceptions/TryCatchThrow.lean`, which still expects exactly
-one error.
-
-A `try` whose body genuinely throws nothing typeable keeps the plain `.warning`
-and no error — an empty escape set joins to `none` as well. Pinned by the
+A `try` whose body throws nothing keeps the plain `.warning`. Pinned by the
 `badGuard` block in `CatchGuardTyping.lean`, whose body is just `assert true`.
 -/
 
@@ -81,10 +57,7 @@ procedure throwsInferredLocal() returns (r: int) opaque
 };
 #end
 
--- (2) A `throw` of a field read is still not typed structurally, so the binding is
--- `Unknown` and the clause would be dropped — on a body that demonstrably throws.
--- The hard error is the backstop: without it this program verifies green with only
--- the warning, even though the handler (and any obligation inside it) is gone.
+-- (2) A `throw` of a field read is typed from the field.
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
@@ -92,12 +65,29 @@ composite Box { var v: int }
 procedure throwsFieldRead(b: Box) returns (r: int) opaque
 {
   try {
-//^ warning: the `catch` clause(s) of this `try` can never fire
-//^ error: the `catch` binding of this `try` was left untyped, but the body throws an exception of type 'int'
     throw b#v
   } catch c {
     assert false
+//  ^^^^^^^^^^^^ error: assertion does not hold
   };
   r := 0
+};
+#end
+
+-- (3) A body that throws only a value of unknown type does throw, so discarding its handler
+-- is an error: verified without it, `ensures out == 1` would hold, as the declared `throws`
+-- lets the exception escape.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Err {}
+procedure throwsHole(k: bool) returns (out: int) throws (e: Err) opaque ensures out == 1 {
+  out := 1;
+  try {
+//^ error: the `catch` binding of this `try` cannot be typed: the body throws a value of unknown type
+    if k then { throw <?> }
+  } catch c {
+    out := 2
+  }
 };
 #end

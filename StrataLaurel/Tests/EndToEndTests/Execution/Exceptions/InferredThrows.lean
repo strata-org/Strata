@@ -704,6 +704,25 @@ procedure thrower<T>(x: T)
 };
 #end
 
+-- A method of a generic composite called on a bare `Holder` throws a value of no known
+-- type, so no type can be inferred for it, whatever else escapes.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite ArithError {}
+composite Holder<T> {
+  procedure raise(self: Holder<T>) throws (e: T) opaque throwsOn true { ensures true };
+}
+procedure bareReceiver(h: Holder, k: bool)
+//        ^^^^^^^^^^^^ error: cannot infer the `throws` type of procedure 'bareReceiver': an exception that may escape it has no known type. Declare the `throws` type instead.
+  throws (e: inferred)
+  opaque
+{
+  if k then { throw new ArithError };
+  h#raise()
+};
+#end
+
 -- A call to a generic callee escapes the callee's `throws` type at the call's type
 -- arguments: `thrower(a)` at `a : ArithError` throws `ArithError`, so `caller` is
 -- inferred as `throws (e: ArithError)` and `main` handles it.

@@ -578,14 +578,16 @@ private def lowerThrowingCall (ctx : Ctx) (callNode : StmtExprMd)
     (targets : List VariableMd) : EM (List StmtExprMd) := do
   markUsedExc
   let model := (← get).model
-  let callee := match callNode.val with
-    | .StaticCall c _ _ => c
-    | .InstanceCall _ c _ => c
-    | _ => mkId "?"
+  let (callee, tyArgs) := match callNode.val with
+    | .StaticCall c _ ts => (c, ts)
+    | .InstanceCall _ c _ _ => (c, [])
+    | _ => (mkId "?", [])
   let p? := calleeProc model callee
-  let valTy := p?.map valTyOf |>.getD boolTy
-  -- The callee's `Result` carries its declared `throws` type on the Bad path.
-  let errTy := (p?.bind (·.throwsType)).getD boolTy
+  -- At the call's instantiation: at the callee's own type variables, calls at two instantiations
+  -- would collide.
+  let valTy := (p?.map (typeAtCall model callee tyArgs ∘ valTyOf)).getD boolTy
+  -- The callee's `Result` carries its `throws` type on the Bad path.
+  let errTy := ((p?.bind (·.throwsType)).map (typeAtCall model callee tyArgs)).getD boolTy
   let calleeInputNames := (p?.map (·.inputs.map (·.name.text))).getD []
   let calleeOutputs := (p?.map (·.outputs)).getD []
   let tid ← freshNat
@@ -748,7 +750,7 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
       -- A call to a throwing procedure on the RHS needs the propagate/unwrap
       -- dispatch; any other assignment is left untouched.
       match value.val with
-      | .StaticCall callee _ _ | .InstanceCall _ callee _ =>
+      | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
           if calleeThrows (← get).model callee then
             lowerThrowingCall ctx value targets
           else pure [stmt]
@@ -757,7 +759,7 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
       if calleeThrows (← get).model callee then
         lowerThrowingCall ctx stmt []
       else pure [stmt]
-  | .InstanceCall _ callee _ =>
+  | .InstanceCall _ callee _ _ =>
       if calleeThrows (← get).model callee then
         lowerThrowingCall ctx stmt []
       else pure [stmt]
@@ -801,7 +803,7 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   -- no handler to inspect it, so nothing narrows its type).
   -- A `catch` clause is *reachable* only if resolution found a thrown type for
   -- it. A try whose body throws nothing determinable has `bindingType = Unknown`
-  -- (resolution's `collectThrownTypes` reached no throw it could type), so its
+  -- (resolution's `thrownTypes` reached no throw it could type), so its
   -- catches can never fire; drop them and lower the try as finally-only. This also
   -- avoids an `Unknown`-typed `$exc_<i>` (which Core rejects) and dead catch guards
   -- (`e is T`) that, at the erased Unknown type, have no valid pre-heap type to
@@ -887,7 +889,7 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
         if hStmts.any (localOccursById eid) then do
           let bid ← freshNat
           let bindLocal := s!"$exc_{c.binding.text}_{bid}"
-          let clauseTy := Resolution.catchClauseBindingType lattice (·.uniqueId == some eid) excTy c.predicate
+          let clauseTy := Resolution.catchClauseBindingType lattice c.binding excTy c.predicate
           let init := if highEq clauseTy excTy then localRef excVar
             else asTypeOf (localRef excVar) clauseTy
           pure ([declInit bindLocal clauseTy init],
@@ -1077,7 +1079,7 @@ private def stmtUsesExn (model : SemanticModel) (stmt : StmtExprMd) : Bool :=
   | .Throw _ => true
   | .Try _ _ _ => true
   | .StaticCall callee _ _ => calleeThrows model callee
-  | .InstanceCall _ callee _ => calleeThrows model callee
+  | .InstanceCall _ callee _ _ => calleeThrows model callee
   | .Assign _ v => stmtUsesExn model v
   | .Block stmts _ _ _ => stmts.attach.any (fun ⟨s, _⟩ => stmtUsesExn model s)
   | .IfThenElse c t e =>

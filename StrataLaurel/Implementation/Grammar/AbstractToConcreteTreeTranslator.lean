@@ -285,7 +285,7 @@ where
       laurelOp "isType" #[stmtExprToArg target, highTypeToArg ty]
     | .AsType target ty =>
       laurelOp "asType" #[stmtExprToArg target, highTypeToArg ty]
-    | .InstanceCall target callee args =>
+    | .InstanceCall target callee args _ =>
       -- Emit as a static call on target.callee(args)
       let calleeExpr := laurelOp "fieldAccess" #[stmtExprToArg target, ident callee.text]
       let argsArr := args.map stmtExprToArg |>.toArray

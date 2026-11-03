@@ -13,7 +13,7 @@ decides whether the handler survives into the verified program at all. A regress
 here is therefore a silently weaker program three passes later, which is why this
 pins the type where it is computed rather than reading the lowered output.
 
-The fragile case is a thrown type with no name to key on. `collectThrownTypes` has to
+The fragile case is a thrown type with no name to key on. `thrownTypes` has to
 carry a primitive `throws (e: int)` or a `throw 7` as a type, because neither names a
 composite; if such a type fails to reach the binding, the binding is `Unknown` and the
 handler is deleted silently. The primitive cases below are what hold that up.
@@ -259,6 +259,195 @@ warning: the `catch` clause(s) of this `try` can never fire: no exception type c
 #guard_msgs in
 #eval report nothingThrown
 
+/-! ## A generic thrower throws at the call's instantiation
+
+A generic thrower's `throws (e: S)` names its own `S`, which the handler cannot bind and which
+would accept the binding as any type. Both routes read the instantiation the call records: the
+callee's `throws`, and a thrown call's output. -/
+
+private def genericThrower := r"
+composite Cell { var v: int }
+procedure thrS<S>(x: S) throws (e: S) opaque { throw x };
+procedure idg<T>(x: T) returns (r: T) opaque { r := x };
+procedure demo(c: Cell) returns (r: int) opaque {
+  try { thrS(c) } catch e { r := 1 };
+  try { throw idg(c) } catch e2 { r := 2 };
+  r := 0
+};
+"
+
+/-- info: demo: Cell, Cell -/
+#guard_msgs in
+#eval report genericThrower
+
+/-- A generic composite's members are read at the receiver's type arguments: its method's
+    `throws`, a thrown method result and a thrown field. -/
+private def instanceThrower := r"
+composite Err {}
+composite Holder<T> {
+  var item: T
+  procedure raise(self: Holder<T>) throws (e: T) opaque { throw self#item };
+  procedure get(self: Holder<T>) returns (r: T) opaque { r := self#item };
+}
+composite Plain {
+  procedure fail(self: Plain) throws (e: Err) opaque { throw new Err };
+}
+procedure demo(h: Holder<Err>, p: Plain) returns (r: int) opaque {
+  try { h#raise() } catch e { r := 1 };
+  try { throw h#get() } catch e2 { r := 2 };
+  try { throw h#item } catch e3 { r := 3 };
+  try { p#fail() } catch e4 { r := 4 };
+  r := 0
+};
+"
+
+/-- info: demo: Err, Err, Err, Err -/
+#guard_msgs in
+#eval report instanceThrower
+
+/-- A method's own type parameters are read at the call's instantiation, which its arguments or
+    the type it is assigned at determine: its `throws`, and a thrown result. -/
+private def methodTypeParamThrower := r"
+composite Err {}
+composite Plain {
+  procedure raise<U>(self: Plain, x: U) throws (e: U) opaque { throw x };
+  procedure idm<U>(self: Plain, x: U) returns (r: U) opaque { r := x };
+  procedure mk<U>(self: Plain) returns (r: U) throws (e: U) opaque;
+}
+procedure demo(p: Plain, er: Err) returns (r: int) opaque {
+  try { p#raise(er) } catch e { r := 1 };
+  try { throw p#idm(er) } catch e2 { r := 2 };
+  var x: Err := new Err;
+  try { x := p#mk() } catch e3 { r := 3 };
+  r := 0
+};
+"
+
+/-- info: demo: Err, Err, Err -/
+#guard_msgs in
+#eval report methodTypeParamThrower
+
+/-- A value of no known type thrown beside a concrete one gives the binding no type either: the
+    concrete type alone would accept it as that type. -/
+private def unknownBesideConcrete := r"
+composite A {}
+composite B {}
+composite Plain {
+  procedure get<U>(self: Plain, x: U) returns (r: U) throws (e: U) opaque { throw x };
+}
+procedure demo(p: Plain, k: bool) returns (r: int) opaque {
+  var a: A := new A;
+  try { if k then { a := p#get(<?>) } else { throw new B } } catch e { r := 1 };
+  try { if k then { throw <?> } else { throw new B } } catch e2 { r := 2 };
+  r := 0
+};
+"
+
+/-- info: demo: Unknown, Unknown
+userError: the `catch` binding of this `try` cannot be typed: the body throws a value of unknown type
+userError: the `catch` binding of this `try` cannot be typed: the body throws a value of unknown type -/
+#guard_msgs in
+#eval report unknownBesideConcrete
+
+/-- A caller's type variable that the receiver passes on is not the method's own, though spelled
+    alike. -/
+private def callerTypeVariable := r"
+composite B {}
+composite Holder<T> {
+  var item: T
+  procedure raise<U>(self: Holder<T>, x: U) throws (e: T) opaque { throw self#item };
+  procedure get<U>(self: Holder<T>, x: U) returns (r: T) opaque { r := self#item };
+}
+procedure demo<U>(h: Holder<U>, b: B) returns (r: int) opaque {
+  try { h#raise(b) } catch e { r := 1 };
+  try { throw h#get(b) } catch e2 { r := 2 };
+  r := 0
+};
+"
+
+/-- info: demo: U, U -/
+#guard_msgs in
+#eval report callerTypeVariable
+
+/-- An assignment throws its target's type, as resolution types it, a generic holder's field at
+    the holder's type arguments. -/
+private def assignThrower := r"
+composite Base {}
+composite A extends Base {}
+composite Holder<T> { var item: T }
+procedure demo(h: Holder<Base>) returns (r: int) opaque modifies * {
+  var x: Base;
+  var a: A := new A;
+  try { throw (x := a) } catch e { r := 1 };
+  try { throw (h#item := a) } catch e2 { r := 2 };
+  r := 0
+};
+"
+
+/-- info: demo: Base, Base -/
+#guard_msgs in
+#eval report assignThrower
+
+/-- A method's own type parameter that the arguments leave unbound, or bind inconsistently, gives
+    the binding no type, as does a generic composite's that the receiver does not supply. Where the
+    call already reports that, the `try` adds no error of its own. -/
+private def unboundMethodTypeParam := r"
+composite A {}
+composite B {}
+composite Plain {
+  procedure get<U>(self: Plain, x: U) returns (r: U) throws (e: U) opaque { throw x };
+  procedure both<U>(self: Plain, x: U, y: U) throws (e: U) opaque { throw x };
+}
+composite Holder<T> {
+  var item: T
+  procedure raise(self: Holder<T>) throws (e: T) opaque { throw self#item };
+}
+procedure demo(p: Plain, h: Holder) returns (r: int) opaque {
+  var a: A := new A;
+  try { a := p#get(<?>) } catch e { r := 1 };
+  try { p#both(new A, new B) } catch e2 { r := 2 };
+  try { h#raise() } catch e3 { r := 3 };
+  r := 0
+};
+"
+
+/-- info: demo: Unknown, Unknown, Unknown
+userError: the `catch` binding of this `try` cannot be typed: the body throws a value of unknown type
+userError: cannot infer type argument 'U' of 'both': 'A' and 'B' disagree
+userError: the `catch` binding of this `try` cannot be typed: the body throws a value of unknown type -/
+#guard_msgs in
+#eval report unboundMethodTypeParam
+
+/-- A handler that can never fire throws nothing, though it rethrows its binding. -/
+private def deadRethrow := r"
+procedure demo() returns (r: int) opaque {
+  try { try { r := 1 } catch c { throw c } } catch d { r := 2 };
+  r := 0
+};
+"
+
+/-- info: demo: Unknown, Unknown
+warning: the `catch` clause(s) of this `try` can never fire: no exception type could be determined for the `try` body, so they are discarded and the body is verified as if no handler were present
+warning: the `catch` clause(s) of this `try` can never fire: no exception type could be determined for the `try` body, so they are discarded and the body is verified as if no handler were present -/
+#guard_msgs in
+#eval report deadRethrow
+
+/-- An overloaded thrower throws the `throws` of the overload the call binds. -/
+private def overloadedThrower := r"
+composite A {}
+composite B {}
+procedure t(x: int) throws (e: A) opaque { throw new A };
+procedure t(x: bool) throws (e: B) opaque { throw new B };
+procedure demo() returns (r: int) opaque {
+  try { t(1) } catch e { r := 1 };
+  r := 0
+};
+"
+
+/-- info: demo: A -/
+#guard_msgs in
+#eval report overloadedThrower
+
 /-! ## A type variable is a type, not a deferral
 
 `T` is the procedure's own bound parameter, so a `try` whose body throws only `T` binds
@@ -267,11 +456,12 @@ monomorphization specializes a program, it does not decide what the program mean
 cloning is driven by generic composites, so a `g<T>(x: T) throws (e: T)` is never cloned
 at all. -/
 
-/-- A poly callee throwing its own `T`, and nothing else: the binding is that `T`. -/
+/-- A poly callee called at the procedure's own `T`, and nothing else: the binding is that
+    `T`. -/
 private def polyOnly := r"
 procedure g<T>(x: T) returns (r: int) throws (e: T) opaque { throw x };
-procedure u() returns (r: int) opaque {
-  try { r := g(5) } catch c { r := 1 }
+procedure u<T>(x: T) returns (r: int) opaque {
+  try { r := g(x) } catch c { r := 1 }
 };
 "
 
@@ -281,26 +471,18 @@ procedure u() returns (r: int) opaque {
 
 /-- A `T` alongside a concrete thrown type has no join: pre-monomorphization `T` could be
     instantiated at anything, so no single binding type is known to receive both. Binding
-    at the concrete one would accept a handler declared `Err` that holds a `T` value.
-
-    Two errors, for one problem. The backstop re-derives its join from
-    `exceptionEscapes`, which DOES set a type-variable type aside, so it sees only `Err`,
-    concludes a type was available and reports as well. Reconciling the two means making
-    `exceptionEscapes` keep type variables too, which changes what the escape check sees;
-    the no-common-ancestor error is the actionable one of the pair. -/
+    at the concrete one would accept a handler declared `Err` that holds a `T` value. -/
 private def polyAndConcrete := r"
 composite Err {}
 procedure g<T>(x: T) returns (r: int) throws (e: T) opaque { throw x };
 procedure risky() returns (r: int) throws (e: Err) opaque { r := 0 };
-procedure u() returns (r: int) opaque {
-  var er: Err := new Err;
-  try { r := g(er); r := risky() } catch c { r := 1 }
+procedure u<T>(x: T) returns (r: int) opaque {
+  try { r := g(x); r := risky() } catch c { r := 1 }
 };
 "
 
 /-- info: u: Unknown
-userError: the exception types thrown in this `try` block (T, Err) have no common ancestor; a `catch` binding needs a single least-common-ancestor type
-userError: the `catch` binding of this `try` was left untyped, but the body throws an exception of type 'Err': the clause(s) would be discarded and that exception would go uncaught. This is a gap in Strata's exception-type inference, not an error in this program — binding the thrown value to a local with an explicit type annotation and throwing that (e.g. `var t: Err := …; throw t`) works around it. -/
+userError: the exception types thrown in this `try` block (T, Err) have no common ancestor; a `catch` binding needs a single least-common-ancestor type -/
 #guard_msgs in
 #eval report polyAndConcrete
 

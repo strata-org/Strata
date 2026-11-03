@@ -96,7 +96,7 @@ private def collectExprNames (expr : StmtExprMd) : CollectM Unit :=
       -- `New`'s explicit ones are. Missing them would filter out a prelude type the program
       -- still mentions after lowering.
       tyArgs.forM collectHighTypeNames
-    | .InstanceCall _ callee _ => addProcName callee.text
+    | .InstanceCall _ callee _ _ => addProcName callee.text
     -- `New` gained a `typeArgs` field with polymorphism; collect any explicit
     -- instantiation type names (`new Box<int>`) as well as the composite name.
     | .New ref typeArgs => addTypeName ref.text; typeArgs.forM collectHighTypeNames

@@ -52,7 +52,7 @@ private def rewriteCallNode (model : SemanticModel) (expr : StmtExprMd) : StmtEx
       let lifted := liftedProcName typeName callee
       { expr with val := .StaticCall lifted args tyArgs }
     | _ => expr
-  | .InstanceCall target callee args =>
+  | .InstanceCall target callee args _ =>
     -- `obj#method(args)` surface syntax parses to InstanceCall. Flatten it to
     -- a static call against the lifted name, prepending the receiver as the
     -- first argument to match the lifted procedure's `self` parameter.

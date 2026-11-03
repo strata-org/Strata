@@ -484,7 +484,7 @@ private def instanceAxiomProgram : LaurelProgram :=
   let predicate := externalProc "predicate" [selfParam] [param "$result" .TBool]
   let owner := {
     externalProc "owner" [selfParam] with
-    axioms := [md (.InstanceCall (localExpr "self") (mkId "predicate") [])] }
+    axioms := [md (.InstanceCall (localExpr "self") (mkId "predicate") [] [])] }
   { staticProcedures := []
     staticFields := []
     types := [.Composite {

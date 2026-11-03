@@ -96,7 +96,7 @@ Resolution types `yield` from `Context.resumeType` instead, so nothing needs it
 from here.
 
 `lattice?`, when given, types a field at its holder's type and an instance call at the type
-arguments its receiver and arguments bind, neither of which `model` records.
+arguments it records or its receiver and arguments bind, none of which `model` records.
 -/
 def computeExprTypeWith (lattice? : Option TypeLattice)
     (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
@@ -126,13 +126,21 @@ def computeExprTypeWith (lattice? : Option TypeLattice)
   -- instantiation rather than its declared `T`. `ContractPass` types a polymorphic callee's
   -- argument temp from the argument itself and needs that instantiation.
   | .StaticCall callee _ tyArgs => getCallType source model callee tyArgs
-  | .InstanceCall target callee args =>
+  | .InstanceCall target callee args tyArgs =>
     match lattice?, model.get callee with
-    | some lattice, .instanceProcedure _ proc =>
-      let argTys := computeExprTypeWith lattice? model target ::
-        args.attach.map fun ⟨a, _⟩ => computeExprTypeWith lattice? model a
-      let subst := (callSiteTypeSubst lattice (fun _ => false) (proc.inputs.map (·.type)) argTys).1
-      substTypeVars subst (procResultTypeAt source proc [])
+    | some lattice, .instanceProcedure owner proc =>
+      let receiverTy := computeExprTypeWith lattice? model target
+      let argTys := receiverTy :: args.attach.map fun ⟨a, _⟩ => computeExprTypeWith lattice? model a
+      -- The holder's own type arguments come from the receiver, even when they name the caller's
+      -- type variables, which `callSiteTypeSubst` leaves unbound.
+      let fromArgs := (callSiteTypeSubst lattice (fun _ => false) (proc.inputs.map (·.type)) argTys).1
+      let fromHolder := ((lattice.holderSubst? owner receiverTy).getD {}).fold (·.insert) fromArgs
+      let subst := (proc.typeArgs.zip tyArgs).foldl (fun m (a, t) => m.insert a.text t) fromHolder
+      let result := procResultTypeAt source proc []
+      -- A type parameter neither the call's recorded type arguments nor its receiver and
+      -- arguments bind, as a bare `Holder`'s, is not known here.
+      if (tvarIdents result.val).any (!subst.contains ·.text) then { result with val := .Unknown }
+      else substTypeVars subst result
     | _, _ => getCallType source model callee []
   -- Control flow
   -- A then-branch typed `Unknown`, as a hole is, takes the else-branch's type, as in `Resolution`.

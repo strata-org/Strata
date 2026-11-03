@@ -694,11 +694,11 @@ private def hoistExpr (model : SemanticModel) (e : StmtExprMd)
     | some .OrElse, [ha, hb] => ha.bindM fun a' => return .branch [] a' src (lit true) hb
     | _, _ =>
       return (← hoistSequence model hs).map fun args' => ⟨.StaticCall callee args' tyArgs, src⟩
-  | ⟨.InstanceCall target callee args, src⟩ => do
+  | ⟨.InstanceCall target callee args tys, src⟩ => do
     let ht ← hoistExpr model target
     let hs ← args.attach.mapM fun ⟨a, _⟩ => hoistExpr model a
     return (← hoistSequence model (ht :: hs)).map fun
-      | t' :: args' => ⟨.InstanceCall t' callee args', src⟩
+      | t' :: args' => ⟨.InstanceCall t' callee args' tys, src⟩
       | [] => e
   | ⟨.ReferenceEquals l r, src⟩ => do
     hoistPair model (← hoistExpr model l) (← hoistExpr model r)

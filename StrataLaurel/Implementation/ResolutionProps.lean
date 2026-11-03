@@ -258,7 +258,7 @@ def childCollect {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd) : Lis
   | .ReferenceEquals lhs rhs => collectStmtExprList g lhs ++ collectStmtExprList g rhs
   | .AsType target _ => collectStmtExprList g target
   | .IsType target _ => collectStmtExprList g target
-  | .InstanceCall target _ args =>
+  | .InstanceCall target _ args _ =>
     collectStmtExprList g target ++ args.flatMap (collectStmtExprList g)
   | .Quantifier _ _ trigger body =>
     trigger.elim [] (collectStmtExprList g) ++ collectStmtExprList g body

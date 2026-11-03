@@ -1456,20 +1456,20 @@ private def catchGuardCatches (lattice : TypeLattice) (binding : Identifier)
     test or a disjunction of them, the shape of a Java multi-catch; `none` for any other
     guard (`false`, a conjunction, a test of something else).
 
-    `isBinding` recognizes the binding: by `uniqueId` once the guard has been resolved,
-    which is immune to shadowing, and by name before the clause bindings are defined. -/
-private def catchGuardTestedTypes? (isBinding : Identifier → Bool) (pred : StmtExprMd) :
+    The binding is recognized by `uniqueId`, which is immune to shadowing. -/
+private def catchGuardTestedTypes? (binding : Identifier) (pred : StmtExprMd) :
     Option (List HighTypeMd) :=
   match _h : pred.val with
   | .IsType target ty =>
     match target.val with
-    | .Var (.Local id) => if isBinding id then some [ty] else none
+    | .Var (.Local id) =>
+      if id.uniqueId.isSome && id.uniqueId == binding.uniqueId then some [ty] else none
     | _ => none
   | .StaticCall callee [p1, p2] _ =>
     match Operation.ofProcName? callee.text with
     | some .Or | some .OrElse =>
-      (catchGuardTestedTypes? isBinding p1).bind fun t1 =>
-        (catchGuardTestedTypes? isBinding p2).map (t1 ++ ·)
+      (catchGuardTestedTypes? binding p1).bind fun t1 =>
+        (catchGuardTestedTypes? binding p2).map (t1 ++ ·)
     | _ => none
   | _ => none
   termination_by sizeOf pred
@@ -1482,18 +1482,18 @@ private def catchGuardTestedTypes? (isBinding : Identifier → Bool) (pred : Stm
 /-- Whether a `catch` clause's guard can never hold for its binding, typed `bindTy`: each
     type it tests is unrelated to `bindTy` (`TypeLattice.unrelatedToCatchBinding`), as when
     none of a Java multi-catch's alternatives can be thrown by the `try` body. -/
-private def catchGuardNeverHolds (lattice : TypeLattice) (isBinding : Identifier → Bool)
+private def catchGuardNeverHolds (lattice : TypeLattice) (binding : Identifier)
     (bindTy : HighTypeMd) (pred? : Option StmtExprMd) : Bool :=
-  (pred?.bind (catchGuardTestedTypes? isBinding)).any fun (tys : List HighTypeMd) =>
+  (pred?.bind (catchGuardTestedTypes? binding)).any fun (tys : List HighTypeMd) =>
     tys.all (lattice.unrelatedToCatchBinding bindTy ·)
 
 /-- The type a `catch` clause's body sees its binding (typed `bindTy`) at: what its guard
     admits, the join of the types it tests, where that narrows `bindTy`, and `bindTy`
     otherwise. The clause runs only when its guard holds, and Java types a catch parameter
     so. A guard wider than the binding (`bindTy = A`, guard `c is Base`) does not widen it. -/
-def catchClauseBindingType (lattice : TypeLattice) (isBinding : Identifier → Bool)
+def catchClauseBindingType (lattice : TypeLattice) (binding : Identifier)
     (bindTy : HighTypeMd) (pred? : Option StmtExprMd) : HighTypeMd :=
-  match pred?.bind (catchGuardTestedTypes? isBinding) with
+  match pred?.bind (catchGuardTestedTypes? binding) with
   | some tys =>
     match lattice.commonAncestorType tys with
     | some j =>
@@ -1508,189 +1508,148 @@ private def clauseCatches (lattice : TypeLattice) (c : CatchClause) (ty : HighTy
   | none => true
   | some p => catchGuardCatches lattice c.binding p ty
 
-/-- Over-approximate the exception *types* thrown within `expr`: the operand
-    types of direct `throw`s plus the declared `throws` type of any procedure it
-    calls. Used to type a `catch` binding at the join of these (so `e#field`
-    type-checks against the shared supertype without a downcast).
+/-- `ty`, from the signature of `p`, a method of `owner`, at a call on a receiver of type
+    `receiverTy`: `owner`'s type parameters at the receiver's type arguments, and the method's own
+    at `tyArgs`, the type arguments Resolution inferred for the call. Both at once: the receiver's
+    arguments may name the caller's own type variables, spelled like the method's. -/
+private def methodTypeAt (lattice : TypeLattice) (owner : Identifier) (p : Procedure)
+    (receiverTy : HighTypeMd) (tyArgs : List HighTypeMd) (ty : HighTypeMd) :
+    HighTypeMd :=
+  let subst := (p.typeArgs.zip tyArgs).foldl (fun m (a, t) => m.insert a.text t)
+    ((lattice.holderSubst? owner receiverTy).getD {})
+  -- A type parameter that Resolution could not infer, or of `owner` that the receiver does not
+  -- supply, as a bare `Holder` does, is not known here.
+  if (tvarIdents ty.val).any (!subst.contains ·.text) then { ty with val := .Unknown }
+  else substTypeVars subst ty
 
-    `throw` operands are read structurally — a literal types itself; `new T`/`(x
-    as T)` give `T` directly; a `Var` local/parameter is looked up (inner-block
-    declarations via the threaded `env`, outer names via the current scope).
-    Callee `throws` is available because `preRegisterTopLevel` stores each
-    procedure's full signature in scope before any body is resolved. Operands
-    whose type cannot be determined contribute nothing (the join is over what is
-    known), and `Unknown` counts as undetermined — see `determinate`.
+/-- `computeExprType`, with a generic composite's field or method result read at its holder's
+    type arguments, and a method's result at its own as well. -/
+private def exprTypeAt (model : SemanticModel) (lattice : TypeLattice) : StmtExprMd → HighTypeMd :=
+  computeExprTypeWith (some lattice) model
 
-    Types, not names: a thrown type that is not a `.UserDefined` composite — a
-    primitive from `throws (e: int)` or `throw 7`, a set/map, an applied generic
-    — has no name to collect, and must still reach the binding. Typing it
-    `Unknown` is not a harmless approximation: `EliminateExceptions` reads an
-    `Unknown` binding as "this handler can never fire" and discards the clause,
-    verifying the program as if the `catch` were absent.
+/-- Whether `stmt` *definitely* completes abruptly — every path through it ends
+    in a `return`, a `throw`, or an `exit` that leaves it — so a completion left
+    pending by a `try` body or handler cannot survive past it (Java JLS §14.20.2 /
+    C#: the `finally`'s own abrupt completion supersedes it, which is what
+    `EliminateExceptions` lowers).
 
-    The sibling post-resolution traversal `exceptionEscapes` has the same shape
-    and the same operand cases but cannot be shared: it types operands with
-    `computeExprType`, which needs the finished `SemanticModel`. This one runs
-    *during* resolution, where only `scope` is available — hence the structural
-    read. A throw operand this cannot type (e.g. `throw f()`, whose type is the
-    callee's *output*) still yields `Unknown`; `Check.tryCatch` reports that
-    rather than letting the clause be dropped quietly. -/
-private def collectThrownTypes (env : Std.HashMap String HighTypeMd) (expr : StmtExprMd)
-    : ResolveM (List HighTypeMd) := do
-  -- Only `Unknown` stays out of the join: a dangling reference, diagnosed elsewhere,
-  -- denoting no type. Mixed into the join it would make a perfectly good set of thrown
-  -- types look irreconcilable.
-  --
-  -- A type variable is NOT set aside, even though `exceptionEscapes` sets one aside.
-  -- `T` is a real type here — the procedure's own bound parameter — and it is the
-  -- binding's type for a `try` whose body throws only `T`. Deferring it to the
-  -- post-`MonomorphizeComposites` re-resolution would make monomorphization decide the
-  -- semantics, which it must not: it specializes a program, it does not change what the
-  -- program means. It also would not work. Cloning is driven by generic COMPOSITES, so
-  -- a `g<T>(x: T) throws (e: T)` is never cloned, nothing ever makes its binding
-  -- concrete, and the handler would be dropped outright.
-  --
-  -- The consequence is that a `T` alongside a concrete thrown type has no join, and that
-  -- is the honest answer rather than a defect: pre-monomorphization `T` could be
-  -- instantiated at anything, so no single binding type can be known to receive both.
-  -- Picking the concrete one would accept a program in which the handler binds `Err`
-  -- while holding a `T` value.
-  let determinate (ty? : Option HighTypeMd) : Option HighTypeMd :=
-    ty?.filter (fun t => !(t.val matches .Unknown))
-  let operandType (op : StmtExprMd) : ResolveM (Option HighTypeMd) := do
-    let ty? : Option HighTypeMd ← match op.val with
-      | .LiteralInt _ => pure (some { val := .TInt, source := op.source })
-      | .LiteralBool _ => pure (some { val := .TBool, source := op.source })
-      | .LiteralString _ => pure (some { val := .TString, source := op.source })
-      | .LiteralDecimal _ => pure (some { val := .TReal, source := op.source })
-      | .LiteralBv _ width => pure (some { val := .TBv width, source := op.source })
-      -- `new T<τ…>` contributes the APPLIED type `T<τ…>`. Dropping the arguments here would
-      -- not merely lose precision: a callee's `throws (e: Box<int>)` contributes the full
-      -- `.Applied`, and a join over a bare `Box` and a `Box<int>` cannot be reconciled at all.
-      | .New ref typeArgs => pure (some (allocatedType ref typeArgs op.source))
-      | .AsType _ ty => pure (some ty)
-      | .Var (.Local id) =>
-        match env.get? id.text with
-        | some ty => pure (some ty)
-        | none =>
-          match (← get).scope.get? id.text with
-          | some (_, node) => pure (some node.getType)
-          | none => pure none
-      -- `throw f()` throws the callee's *output*, so read the signature from
-      -- scope exactly as `calleeThrowsType` reads `throwsType` below, and derive
-      -- the call's type from `outputs` as `getCallType` does. Only a single
-      -- output is a value that can be thrown: zero outputs is void and several is
-      -- a tuple, neither of which is a legal `throw` operand, so both contribute
-      -- nothing rather than a type the join would have to reconcile.
-      | .StaticCall callee _ _
-      | .InstanceCall _ callee _ =>
-        match (← get).scope.get? callee.text with
-        | some (_, .staticProcedure p) | some (_, .instanceProcedure _ p) =>
-          match p.outputs with
-          | [singleOutput] => pure (some singleOutput.type)
-          | _ => pure none
-        | _ => pure none
-      | _ => pure none
-    pure (determinate ty?)
-  let calleeThrowsType (callee : Identifier) : ResolveM (Option HighTypeMd) := do
-    match (← get).scope.get? callee.text with
-    | some (_, .staticProcedure p) | some (_, .instanceProcedure _ p) =>
-      pure (determinate p.throwsType)
-    | _ => pure none
+    A sound under-approximation: anything it cannot prove abrupt is `false`, so
+    the caller stays conservative. `opened` carries the labels of blocks opened
+    within `stmt`, which is what distinguishes an `exit` that leaves it from one
+    that merely jumps ahead inside it; the top-level entry point starts empty. -/
+private def alwaysCompletesAbruptlyIn (opened : List String) (stmt : StmtExprMd) : Bool :=
+  match _h : stmt.val with
+  | .Return _ => true
+  | .Throw _ => true
+  -- An `exit` completes the statement abruptly only when it *leaves* it: a jump
+  -- to a label opened inside just skips ahead within it. (`EliminateExceptions`
+  -- unwinds a leaving `exit` through the `finally` arms it crosses, dropping the
+  -- pending completion exactly as a `return`/`throw` would.)
+  | .Goto label _ => !opened.contains label
+  -- Statements after an unconditional terminator are unreachable, so a block is
+  -- abrupt as soon as any of its statements is.
+  | .Block stmts label _ _ =>
+    let inner := match label with | some l => l :: opened | none => opened
+    stmts.attach.any (fun ⟨s, _⟩ => alwaysCompletesAbruptlyIn inner s)
+  | .IfThenElse _ t (some e) =>
+    alwaysCompletesAbruptlyIn opened t && alwaysCompletesAbruptlyIn opened e
+  | _ => false
+  termination_by sizeOf stmt
+  decreasing_by
+    all_goals simp_wf
+    all_goals (have hsz := AstNode.sizeOf_val_lt stmt; rw [_h] at hsz)
+    all_goals (try term_by_mem)
+    all_goals (try (simp_all; omega))
+
+private def alwaysCompletesAbruptly (stmt : StmtExprMd) : Bool :=
+  alwaysCompletesAbruptlyIn [] stmt
+
+/-- Over-approximate the exception types (each with a source location) that can escape the
+    resolved `expr` uncaught: the types of the values it throws and the thrown types of the
+    procedures it calls, both at the call: at the instantiation a static call records, and for a
+    method, at its receiver's type arguments and at the type arguments it records. A generic
+    thrower's `throws (e: S)` names its own `S`, which means nothing at a call to
+    it.
+
+    `throwsOf` gives a callee's thrown type: its declared `throwsType`, or for `inferThrows` the
+    type inferred so far.
+
+    Expression forms not matched below (casts, type tests, field reads, compound assignments, …)
+    contribute every throwing call and `throw` nested in them, without regard to any `try` inside,
+    which over-approximates. -/
+private def thrownTypesWith (model : SemanticModel) (lattice : TypeLattice)
+    (throwsOf : Procedure → Option HighTypeMd) (expr : StmtExprMd) :
+    List (HighTypeMd × FileRange) :=
+  let calleeThrows (callee : Identifier) (atCall : HighTypeMd → HighTypeMd) (src : FileRange) :
+      List (HighTypeMd × FileRange) :=
+    match model.get callee with
+    | .staticProcedure p | .instanceProcedure _ p =>
+      ((throwsOf p).map fun t => (atCall t, src)).toList
+    | _ => []
+  let atMethodCall (target : StmtExprMd) (callee : Identifier) (tyArgs : List HighTypeMd)
+      (ty : HighTypeMd) : HighTypeMd := match model.get callee with
+    | .instanceProcedure owner p =>
+      methodTypeAt lattice owner p (exprTypeAt model lattice target) tyArgs ty
+    | _ => ty
   -- Recursive descents go through `attach` (and named discriminant equations) so
   -- each child carries the membership/shape proof the termination argument needs.
   match _h : expr.val with
-  | .Throw op => pure ((← operandType op).toList ++ (← collectThrownTypes env op))
-  | .StaticCall callee args _ =>
-    let rs ← args.attach.mapM (fun ⟨a, _⟩ => collectThrownTypes env a)
-    pure ((← calleeThrowsType callee).toList ++ rs.flatten)
-  | .InstanceCall target callee args =>
-    let rs ← args.attach.mapM (fun ⟨a, _⟩ => collectThrownTypes env a)
-    pure ((← calleeThrowsType callee).toList ++ (← collectThrownTypes env target) ++ rs.flatten)
-  | .IfThenElse c t el =>
-    let ee ← match _hel : el with | some x => collectThrownTypes env x | none => pure []
-    pure ((← collectThrownTypes env c) ++ (← collectThrownTypes env t) ++ ee)
-  | .While c _ _ b _ => pure ((← collectThrownTypes env c) ++ (← collectThrownTypes env b))
-  | .Assign targets v =>
-    -- A `Field` target carries an arbitrary object expression (`mk()#x := 1`), so
-    -- a throw reached through it must contribute to the enclosing binding's join
-    -- too. The generic traversals in `MapStmtExpr` walk these; the hand-written
-    -- descents here have to match them.
-    let ts ← targets.attach.mapM (fun ⟨t, _⟩ =>
-      match _ht : t.val with
-      | .Field obj _ => collectThrownTypes env obj
-      | _ => pure [])
-    pure (ts.flatten ++ (← collectThrownTypes env v))
-  | .Return vs =>
-    pure (← vs.attach.mapM (fun ⟨v, _⟩ => collectThrownTypes env v)).flatten
-  | .ProveBy v pf => pure ((← collectThrownTypes env v) ++ (← collectThrownTypes env pf))
+  | .Throw e =>
+    -- Also recurse into the operand: a throwing call inside it (e.g. `throw f()`
+    -- where `f` throws) escapes too.
+    (exprTypeAt model lattice e, expr.source) :: thrownTypesWith model lattice throwsOf e
+  | .StaticCall callee args tyArgs =>
+    calleeThrows callee (typeAtCall model callee tyArgs) expr.source
+      ++ args.attach.flatMap (fun ⟨a, _⟩ => thrownTypesWith model lattice throwsOf a)
+  | .InstanceCall target callee args tyArgs =>
+    calleeThrows callee (atMethodCall target callee tyArgs) expr.source
+      ++ thrownTypesWith model lattice throwsOf target
+      ++ args.attach.flatMap (fun ⟨a, _⟩ => thrownTypesWith model lattice throwsOf a)
   | .Try body catches finally? =>
-    let ff ← match _hf : finally? with | some f => collectThrownTypes env f | none => pure []
-    let bodyThrows ← collectThrownTypes env body
-    let lattice := (← get).typeLattice
-    -- A handler sees its own binding, so a rethrow (`catch c { throw c }`) has a type:
-    -- the binding's, which is the join of what this `try`'s body throws — the same type
-    -- `Check.tryCatch` will give it. Without this the rethrow contributes nothing and an
-    -- enclosing `catch` ends up untyped.
-    --
-    -- A clause whose guard can never hold for that binding type is skipped
-    -- entirely: it never runs, so nothing in it (a rethrow included) can reach an
-    -- enclosing `catch`. This mirrors `Check.tryCatch`, which discards such a
-    -- body unresolved. Keyed on the binding's name, not its `uniqueId`, because the
-    -- clause bindings are not defined yet here.
-    --
-    -- A clause that is NOT skipped sees its binding at what its guard admits
-    -- (`catchClauseBindingType`), so a rethrow in it contributes that. Contributing the
-    -- whole join instead would widen an enclosing `catch`'s binding past what can actually
-    -- reach it — enough to stop a field read on the enclosing binding from resolving.
-    -- The lowering assumes the rethrown value is of that type on its way out, which
-    -- holds because the body is typed at it too.
-    let cc ← catches.attach.mapM (fun ⟨c, _⟩ =>
-      match lattice.commonAncestorType bodyThrows with
-      | some bindTy =>
-        let isBinding := fun (id : Identifier) => id.text == c.binding.text
-        if catchGuardNeverHolds lattice isBinding bindTy c.predicate then pure []
-        else
-          let clauseTy := catchClauseBindingType lattice isBinding bindTy c.predicate
-          collectThrownTypes (env.insert c.binding.text clauseTy) c.body
-      | none => collectThrownTypes env c.body)
-    -- Only what escapes this nested `try` can reach an outer `catch` binding, so
-    -- drop the body throws its own catches provably absorb (mirroring
-    -- `exceptionEscapes`); otherwise an inner-handled type would pollute the
-    -- outer binding's least-common-ancestor and could spuriously report "no
-    -- common ancestor". Handler and `finally` throws still escape outward.
-    let residual := bodyThrows.filter fun t => !catches.any (fun c => clauseCatches lattice c t)
-    pure (residual ++ cc.flatten ++ ff)
+    let bodyEsc := thrownTypesWith model lattice throwsOf body
+    let uncaught := bodyEsc.filter (fun p => !catches.any (fun c => clauseCatches lattice c p.1))
+    -- `EliminateExceptions` drops a handler whose binding is `Unknown`, so its throws never happen.
+    let handlersEsc := catches.attach.flatMap fun ⟨c, _⟩ =>
+      if c.bindingType.val matches .Unknown then []
+      else thrownTypesWith model lattice throwsOf c.body
+    let finallyEsc := match _hf : finally? with
+      | some f => thrownTypesWith model lattice throwsOf f
+      | none => []
+    -- A `finally` that definitely completes abruptly *supersedes* whatever the
+    -- body or a handler left pending, so nothing from them escapes through it
+    -- (only the `finally`'s own throws do). Without this the check reports a
+    -- spurious escape for e.g. `try { throw e } finally { return }`, whose
+    -- `return` provably swallows the exception, and rejects a legal program.
+    let finallyAbrupt := match finally? with
+      | some f => alwaysCompletesAbruptly f
+      | none => false
+    if finallyAbrupt then finallyEsc
+    else uncaught ++ handlersEsc ++ finallyEsc
   | .Block stmts _ _ _ =>
-    let (_, acc) ← stmts.attach.foldlM (init := (env, ([] : List HighTypeMd))) fun (st) ⟨s, _⟩ => do
-      let (env', acc) := st
-      let more ← collectThrownTypes env' s
-      -- A local declaration contributes its type so a later
-      -- `catch e when e is T` guard can be resolved against it, and so that
-      -- `var e := 7; throw e` has a type to contribute at all. The annotation is
-      -- optional (`Parameter?`); when it is absent the initializer stands in,
-      -- typed by the same structural `operandType` used for a `throw` operand.
-      -- An annotated declaration still wins — the annotation is what the rest of
-      -- resolution will give the local. A declaration with neither annotation nor
-      -- a typeable initializer contributes nothing.
-      let noteDeclaredType (param : Parameter?) (init? : Option StmtExprMd)
-          (e : Std.HashMap String HighTypeMd)
-          : ResolveM (Std.HashMap String HighTypeMd) := do
-        let ty? ← match determinate param.type with
-          | some ty => pure (some ty)
-          | none => match init? with
-            | some init => operandType init
-            | none => pure none
-        match ty? with
-        | some ty => pure (e.insert param.name.text ty)
-        | none => pure e
-      let env'' ← match s.val with
-        | .Var (.Declare param) => noteDeclaredType param none env'
-        | .Assign [⟨.Declare param, _⟩] v => noteDeclaredType param (some v) env'
-        | _ => pure env'
-      pure (env'', acc ++ more)
-    pure acc
-  | _ => pure []
+    stmts.attach.flatMap (fun ⟨s, _⟩ => thrownTypesWith model lattice throwsOf s)
+  | .IfThenElse c t e =>
+    thrownTypesWith model lattice throwsOf c ++ thrownTypesWith model lattice throwsOf t
+      ++ (match _he : e with | some eb => thrownTypesWith model lattice throwsOf eb | none => [])
+  | .While c _ _ b _ =>
+    thrownTypesWith model lattice throwsOf c ++ thrownTypesWith model lattice throwsOf b
+  | .Assign targets value =>
+    -- A `Field` target's object expression (`mk()#x := 1`) can throw or call a
+    -- throwing procedure, so it escapes exactly like the assigned value does.
+    targets.attach.flatMap (fun ⟨t, _⟩ =>
+      match _ht : t.val with
+      | .Field obj _ => thrownTypesWith model lattice throwsOf obj
+      | _ => [])
+      ++ thrownTypesWith model lattice throwsOf value
+  | .Return vs => vs.attach.flatMap (fun ⟨v, _⟩ => thrownTypesWith model lattice throwsOf v)
+  | .ProveBy v pf =>
+    thrownTypesWith model lattice throwsOf v ++ thrownTypesWith model lattice throwsOf pf
+  | _ =>
+    collectStmtExprList (fun n => match n.val with
+      | .StaticCall callee _ tyArgs => calleeThrows callee (typeAtCall model callee tyArgs) n.source
+      | .InstanceCall target callee _ tyArgs =>
+        calleeThrows callee (atMethodCall target callee tyArgs) n.source
+      | .Throw e => [(exprTypeAt model lattice e, n.source)]
+      | _ => []) expr
   termination_by sizeOf expr
   decreasing_by
     all_goals simp_wf
@@ -1705,6 +1664,29 @@ private def collectThrownTypes (env : Std.HashMap String HighTypeMd) (expr : Stm
       simp at hsz
       omega))
     all_goals (try (simp_all; omega))
+
+/-- `thrownTypesWith`, reading each callee's thrown type from its declared `throwsType`. -/
+private def thrownTypes (model : SemanticModel) (lattice : TypeLattice) (expr : StmtExprMd) :
+    List (HighTypeMd × FileRange) :=
+  thrownTypesWith model lattice (·.throwsType) expr
+
+/-- The `thrownTypesWith` that the escape checks see. A type that MENTIONS a type
+    variable (a poly `throws (e:T)` or `throws Box<T>` called at the enclosing procedure's own
+    `T`, via `mentionsTVar`) is dropped: at the initial resolution `T` is not concrete, so —
+    exactly as a poly RETURN flows gradually through `isConsistent`'s recursive `.TVar`
+    wildcard — the escape is deferred to the post-mono re-resolution, where the clone's throws
+    type is concrete and genuinely checkable (the un-gated `validateExceptionEscapes` in
+    `resolve`). With `keepTVars`, such types are kept, so `inferThrows` can tell that it cannot
+    infer them. -/
+public def exceptionEscapesWith (model : SemanticModel) (lattice : TypeLattice)
+    (throwsOf : Procedure → Option HighTypeMd) (expr : StmtExprMd) (keepTVars : Bool := false) :
+    List (HighTypeMd × FileRange) :=
+  (thrownTypesWith model lattice throwsOf expr).filter (keepTVars || !mentionsTVar ·.1.val)
+
+/-- `exceptionEscapesWith`, reading each callee's thrown type from its declared `throwsType`. -/
+private def exceptionEscapes (model : SemanticModel) (lattice : TypeLattice)
+    (expr : StmtExprMd) : List (HighTypeMd × FileRange) :=
+  exceptionEscapesWith model lattice (·.throwsType) expr
 
 /-- Whether `n` is one of the enclosing entity's type parameters, by binder: matching on text would
     accept a callee's own parameter that happens to be spelled like one of ours. -/
@@ -1756,7 +1738,7 @@ private def methodDeclarer (tyName : String) (callee : Identifier) : ResolveM Me
 private def declaredCallResult? (e : StmtExprMd) : ResolveM (Option HighTypeMd) := do
   let s ← get
   let key? ← match e.val with
-    | .InstanceCall target callee _ => do
+    | .InstanceCall target callee _ _ => do
       let some tyName ← targetTypeName target | pure none
       let .resolved owner ← methodDeclarer tyName callee | pure none
       pure (some (callee, containerScopedName (mkId owner) callee))
@@ -1925,16 +1907,6 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
       then bound.filterMap id else []
   return (.StaticCall callee' args' inferredTypeArgs,
           substTypeVars subst (procReturnType callee proc))
-/-- The type to give a `catch` binding: the join of the exception types that can reach
-    it, or `none` when they have no join — unrelated composites, or two instantiations
-    of one generic — which the caller reports as an error.
-
-    Stated over types rather than type names, so that a generic exception keeps its type
-    arguments. `TypeLattice.commonAncestorType` is where that join is defined. -/
-private def thrownTypesJoin (lattice : TypeLattice) (tys : List HighTypeMd)
-    : Option HighTypeMd :=
-  lattice.commonAncestorType tys
-
 -- The `h : exprMd.val = .Foo args ...` parameters on the recursive helpers
 -- look unused to the linter, but each one is referenced by that helper's
 -- `decreasing_by` tactic to relate `sizeOf args` to `sizeOf exprMd`.
@@ -2003,8 +1975,8 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd)
     Synth.asType exprMd target ty (by rw [h_node, h_expr])
   | .IsType target ty =>
     Synth.isType exprMd target ty source (by rw [h_node, h_expr])
-  | .InstanceCall target callee args =>
-    Synth.instanceCall exprMd target callee args source (by rw [h_node, h_expr]) expected?
+  | .InstanceCall target callee args tyArgs =>
+    Synth.instanceCall exprMd target callee args tyArgs source (by rw [h_node, h_expr]) expected?
   | .Quantifier mode param trigger body =>
     Synth.quantifier exprMd mode param trigger body source (by rw [h_node, h_expr])
   | .Assigned name =>
@@ -2932,16 +2904,36 @@ def Check.tryCatch (exprMd : StmtExprMd)
     (source : FileRange)
     (h : exprMd.val = .Try body catches finally?) :
     ResolveM StmtExprMd := do
+  let errorsBefore := (← get).errors.size
   let body' ← Check.resolveStmtExpr body { val := .Unknown, source := body.source }
   -- Type each catch binding at the join of the exception types that can reach it
-  -- — the operand types of direct `throw`s plus the declared `throws` of
-  -- procedures called in the body. `e#field` then type-checks against the shared
+  -- (`thrownTypes`). `e#field` then type-checks against the shared
   -- supertype without a downcast, so a front end can use its own exception
   -- hierarchy directly. A non-empty set with no join (unrelated types, or an
   -- ambiguous least common ancestor under multiple inheritance) is a hard error;
   -- an empty set falls back to `Unknown` (gradual).
-  let thrownTys ← collectThrownTypes {} body
-  let bindTy : HighTypeMd ← match thrownTys with
+  --
+  -- A type variable, which `exceptionEscapes` sets aside, is kept: `T` is the procedure's own
+  -- bound parameter, and monomorphization, which clones only for generic composites, never makes
+  -- it concrete. So a `T` alongside a concrete type has no join, as `T` could be instantiated at
+  -- anything.
+  let s ← get
+  -- The model so far, of which `thrownTypes` reads only `refToDef`.
+  let model : SemanticModel := { nextId := s.nextId, compositeCount := 0, refToDef := s.idToNode }
+  let thrown := (thrownTypes model s.typeLattice body').map (·.1)
+  let bodyFailed := (s.errors.extract errorsBefore).any (·.kind != .warning)
+  -- A body that throws a value of no known type (a hole, a type name used as a value, a method
+  -- whose type argument resolution could not infer) gives the binding no type: one that ignored
+  -- the value would accept it as the others' type, and an `Unknown` binding would discard the
+  -- handler. That is an error, unless the body already reported one.
+  let untypeable : ResolveM HighTypeMd := do
+    unless catches.isEmpty || bodyFailed do
+      modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
+        "the `catch` binding of this `try` cannot be typed: the body throws a value of \
+         unknown type") }
+    pure { val := .Unknown, source := body.source }
+  let bindTy : HighTypeMd ← if thrown.any (·.val matches .Unknown) then untypeable else
+    match thrown with
     | [] =>
       -- An `Unknown` binding is how `EliminateExceptions` recognises a handler that
       -- cannot fire, and it DISCARDS such clauses (see `lowerTry`). That is a change
@@ -2949,22 +2941,20 @@ def Check.tryCatch (exprMd : StmtExprMd)
       -- program in which the exception is never caught. So it must not be silent —
       -- this is the only place that knows *why* the type is undetermined, and
       -- `lowerTry` relies on the warning being emitted here.
-      --
-      -- Deliberately not phrased "the body cannot throw": this analysis
-      -- over-approximates only what it can type structurally, so a body that
-      -- genuinely throws (`throw f()`, whose type is the callee's output) lands here
-      -- too. The message states what is known — no type — and the consequence.
       unless catches.isEmpty do
         modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
-          "the `catch` clause(s) of this `try` can never fire: no exception type could be determined for the `try` body, so they are discarded and the body is verified as if no handler were present" .warning) }
+          "the `catch` clause(s) of this `try` can never fire: no exception type could be \
+           determined for the `try` body, so they are discarded and the body is verified as \
+           if no handler were present" .warning) }
       pure { val := .Unknown, source := body.source }
     | _ =>
-      match thrownTypesJoin (← get).typeLattice thrownTys with
+      match s.typeLattice.commonAncestorType thrown with
       | some joined => resolveHighType { joined with source := source }
       | none =>
-        let names := ", ".intercalate (thrownTys.map formatType).eraseDups
+        let names := ", ".intercalate (thrown.map formatType).eraseDups
         modify fun s => { s with errors := s.errors.push (diagnosticFromSource source
-          s!"the exception types thrown in this `try` block ({names}) have no common ancestor; a `catch` binding needs a single least-common-ancestor type") }
+          s!"the exception types thrown in this `try` block ({names}) have no common \
+             ancestor; a `catch` binding needs a single least-common-ancestor type") }
         pure { val := .Unknown, source := body.source }
   let catches' ← catches.attach.mapM fun ⟨c, _⟩ => withScope do
     let binding' ← defineNameCheckDup c.binding (.var c.binding bindTy)
@@ -2979,9 +2969,8 @@ def Check.tryCatch (exprMd : StmtExprMd)
     -- the binding at the arm's type there (`c as T`), which would otherwise be rejected as
     -- a cast between unrelated types.
     let lattice := (← get).typeLattice
-    let isBinding := fun (id : Identifier) => binding'.uniqueId.isSome && id.uniqueId == binding'.uniqueId
-    let clauseTy := catchClauseBindingType lattice isBinding bindTy predicate'
-    let dead := catchGuardNeverHolds lattice isBinding bindTy predicate'
+    let clauseTy := catchClauseBindingType lattice binding' bindTy predicate'
+    let dead := catchGuardNeverHolds lattice binding' bindTy predicate'
     -- Both maps: a re-resolution types an already-stamped reference through `idToNode`.
     if let some bid := binding'.uniqueId then
       unless highEq clauseTy bindTy do
@@ -3876,11 +3865,13 @@ def Synth.staticCall (exprMd : StmtExprMd)
     way, and is reported unless an error already rejects the program: one for the receiver,
     or, for an `Unknown` receiver other than a hole or the name of a procedure or a type,
     any earlier one, which may be what typed it (`var x;` does). Arguments are still
-    checked, against `Unknown`, so an error in one is not masked. -/
+    checked, against `Unknown`, so an error in one is not masked.
+
+    `priorTypeArgs` is ignored and recomputed, as in `Synth.staticCall`. -/
 def Synth.instanceCall (exprMd : StmtExprMd)
     (target : StmtExprMd) (callee : Identifier) (args : List StmtExprMd)
-    (source : FileRange)
-    (h : exprMd.val = .InstanceCall target callee args)
+    (priorTypeArgs : List HighTypeMd) (source : FileRange)
+    (h : exprMd.val = .InstanceCall target callee args priorTypeArgs)
     (expected? : Option HighTypeMd := none) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let errorsBefore := (← get).errors.size
@@ -3889,7 +3880,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     let args' ← args.attach.mapM (fun ⟨a, hMem⟩ => do
       have := hMem
       Check.resolveStmtExpr a { val := .Unknown, source := a.source })
-    return (.InstanceCall target' callee args', { val := .Unknown, source := callee.source })
+    return (.InstanceCall target' callee args' [], { val := .Unknown, source := callee.source })
   -- An instance procedure is registered under the container-scoped key
   -- `TypeName$method` (see `preRegisterTopLevel` / `resolveInstanceProcedure`),
   -- matching the lifted top-level static procedure that `LiftInstanceProcedures`
@@ -3964,11 +3955,10 @@ def Synth.instanceCall (exprMd : StmtExprMd)
       let (args', argTys, retSubst) ← Synth.genericCallArgs exprMd callee proc args
         (fun _ hMem => by have hsz := exprMd.sizeOf_val_lt; rw [h] at hsz; term_by_mem) expected?
         receiver?
-      let (_, ty) ← genericCallResult callee callee' proc args' argTys expected? retSubst source
-        receiver?
-      -- An `.InstanceCall` has no slot for the inferred type arguments; the re-resolution after
-      -- `LiftInstanceProcedures` records them on the static call it becomes.
-      return (.InstanceCall target' callee' args', ty)
+      let (call, ty) ← genericCallResult callee callee' proc args' argTys expected? retSubst
+        source receiver?
+      let tyArgs := match call with | .StaticCall _ _ tyArgs => tyArgs | _ => []
+      return (.InstanceCall target' callee' args' tyArgs, ty)
   let retTy := procReturnType lookupKey proc
   -- The first parameter is the implicit `self` receiver, which is not supplied
   -- positionally here, so it is dropped before pairing parameter types with `args`.
@@ -3988,7 +3978,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     let diag := diagnosticFromSource source
       s!"call to '{callee}' expects {callParamTypes.length} argument(s) but {args.length} were provided"
     modify fun s => { s with errors := s.errors.push diag }
-  pure (.InstanceCall target' callee' args', retTy)
+  pure (.InstanceCall target' callee' args' [], retTy)
   termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals first
@@ -5765,169 +5755,21 @@ impossible when it might not be.
 It runs from `resolve` on **every** resolution (NOT gated on
 `existingModel.isNone`, unlike the sibling `validateException*` guards). The
 initial resolution checks the program as the user wrote it, where `throw`
-operands and concrete `throws` types carry their real types. A poly `throws
-(e:T)` is DEFERRED there (`exceptionEscapes` drops any escaping type that mentions
-a type var, via `mentionsTVar`) because `T` is not concrete yet — exactly as
-a poly RETURN flows gradually through `isConsistent`. The deferred case is caught
-at the post-`MonomorphizeComposites` re-resolution, where the clone's throws type
-is concrete (`g$a1$int` throws `int`) and a genuine `int </: bool` escape is a
-real subtype violation. A concrete escape already reported at the initial resolve
-is deduped by the caller's `newErrors` filter, so it is reported once. Once
+operands and concrete `throws` types carry their real types, and a call's `throws`
+is read at the instantiation it records. A poly `throws (e:T)` called at the
+enclosing procedure's own `T` is DEFERRED there (`exceptionEscapes` drops any
+escaping type that mentions a type var, via `mentionsTVar`) because `T` is not
+concrete yet — exactly as a poly RETURN flows gradually through `isConsistent`.
+The deferred case is caught at the post-`MonomorphizeComposites` re-resolution,
+where the clone's throws type is concrete (`g$a1$int` throws `int`) and a genuine
+`int </: bool` escape is a real subtype violation. A concrete escape already
+reported at the initial resolve is deduped by the caller's `newErrors` filter, so
+it is reported once. Once
 `EliminateExceptions` sets `throwsType := none` and erases `throw`/`try`, the
 check is a no-op on later re-resolutions. Instance procedures are not lifted at
 the initial resolve, so the check walks them inside their composites; a
 method→method `throws` still resolves because `calleeThrows` reads
 `.instanceProcedure` from the model as well as `.staticProcedure`. -/
-
-/-- Whether `stmt` *definitely* completes abruptly — every path through it ends
-    in a `return`, a `throw`, or an `exit`/`goto` that leaves it — so a completion left
-    pending by a `try` body or handler cannot survive past it (Java JLS §14.20.2 /
-    C#: the `finally`'s own abrupt completion supersedes it, which is what
-    `EliminateExceptions` lowers).
-
-    A sound under-approximation: anything it cannot prove abrupt is `false`, so
-    the caller stays conservative. `opened` carries the labels of blocks opened
-    within `stmt`, which is what distinguishes an `exit` that leaves it from one
-    that merely jumps ahead inside it; the top-level entry point starts empty. -/
-private def alwaysCompletesAbruptlyIn (opened : List String) (stmt : StmtExprMd) : Bool :=
-  match _h : stmt.val with
-  | .Return _ => true
-  | .Throw _ => true
-  -- An `exit` completes the statement abruptly only when it *leaves* it: a jump
-  -- to a label opened inside just skips ahead within it. (`EliminateExceptions`
-  -- unwinds a leaving `exit` through the `finally` arms it crosses, dropping the
-  -- pending completion exactly as a `return`/`throw` would.)
-  | .Goto label _ => !opened.contains label
-  -- Statements after an unconditional terminator are unreachable, so a block is
-  -- abrupt as soon as any of its statements is.
-  | .Block stmts label _ _ =>
-    let inner := match label with | some l => l :: opened | none => opened
-    stmts.attach.any (fun ⟨s, _⟩ => alwaysCompletesAbruptlyIn inner s)
-  | .IfThenElse _ t (some e) =>
-    alwaysCompletesAbruptlyIn opened t && alwaysCompletesAbruptlyIn opened e
-  | _ => false
-  termination_by sizeOf stmt
-  decreasing_by
-    all_goals simp_wf
-    all_goals (have hsz := AstNode.sizeOf_val_lt stmt; rw [_h] at hsz)
-    all_goals (try term_by_mem)
-    all_goals (try (simp_all; omega))
-
-private def alwaysCompletesAbruptly (stmt : StmtExprMd) : Bool :=
-  alwaysCompletesAbruptlyIn [] stmt
-
-/-- Over-approximate the exception types (each with a source location) that can
-    escape `expr` uncaught. A type that MENTIONS a type variable (a poly `throws
-    (e:T)` or `throws Box<T>`, via `mentionsTVar`) is dropped here: at the initial
-    resolution `T` is not concrete, so — exactly as a poly RETURN flows gradually
-    through `isConsistent`'s recursive `.TVar` wildcard — the escape is deferred to
-    the post-mono re-resolution, where the clone's throws type is concrete and
-    genuinely checkable (the un-gated `validateExceptionEscapes` in `resolve`).
-
-    `throwsOf` gives a callee's thrown type. `exceptionEscapes` reads the declared
-    `throwsType`; `inferThrows` passes the types inferred so far, and sets
-    `atCallTypeArgs` so a callee's type is taken at the type arguments the call
-    records (`typeAtCall`): a call `g(a)` to `g<T>(x: T) throws (e: T)` at
-    `a : E` escapes `E`. (The declared-`throws` check leaves that to the post-mono
-    re-resolution, as described above.) With `keepTVars`, types that mention a type
-    variable are kept, so `inferThrows` can tell that it cannot infer them.
-
-    Expression forms not matched below (casts, type tests, field reads, compound
-    assignments, …) contribute every throwing call and `throw` nested in them,
-    without regard to any `try` inside, which over-approximates. -/
-public def exceptionEscapesWith (model : SemanticModel) (lattice : TypeLattice)
-    (throwsOf : Procedure → Option HighTypeMd) (expr : StmtExprMd)
-    (keepTVars : Bool := false) (atCallTypeArgs : Bool := false) : List (HighTypeMd × FileRange) :=
-  let calleeThrowsAt (callee : Identifier) (typeArgs : List HighTypeMd) (src : FileRange)
-      : List (HighTypeMd × FileRange) :=
-    match model.get callee with
-    | .staticProcedure p | .instanceProcedure _ p =>
-      match throwsOf p with
-      | some t =>
-        let t := if atCallTypeArgs then typeAtCall model callee typeArgs t else t
-        if !keepTVars && mentionsTVar t.val then [] else [(t, src)]
-      | none => []
-    | _ => []
-  let calleeThrows (callee : Identifier) (typeArgs : List HighTypeMd) :=
-    calleeThrowsAt callee typeArgs expr.source
-  -- Recursive descents go through `attach` (and named discriminant equations) so
-  -- each child carries the membership/shape proof the termination argument needs.
-  match _h : expr.val with
-  | .Throw e =>
-    -- Every `throw` is on the exceptional channel (there is no root type to
-    -- gate on); the thrown value's type is what may escape. Also recurse into
-    -- the operand: a throwing call inside it (e.g. `throw f()` where `f` throws)
-    -- escapes too. A thrown value of poly type (`throw x` where `x : T`) is
-    -- dropped like a poly `throws` type — deferred to the post-mono re-check.
-    let thrownTy := computeExprType model e
-    (if !keepTVars && mentionsTVar thrownTy.val then [] else [(thrownTy, expr.source)])
-      ++ exceptionEscapesWith model lattice throwsOf e keepTVars atCallTypeArgs
-  | .StaticCall callee args typeArgs =>
-    calleeThrows callee typeArgs ++ args.attach.flatMap (fun ⟨a, _⟩ => exceptionEscapesWith model lattice throwsOf a keepTVars atCallTypeArgs)
-  | .InstanceCall target callee args =>
-    calleeThrows callee [] ++ exceptionEscapesWith model lattice throwsOf target keepTVars atCallTypeArgs
-      ++ args.attach.flatMap (fun ⟨a, _⟩ => exceptionEscapesWith model lattice throwsOf a keepTVars atCallTypeArgs)
-  | .Try body catches finally? =>
-    let bodyEsc := exceptionEscapesWith model lattice throwsOf body keepTVars atCallTypeArgs
-    let uncaught := bodyEsc.filter (fun p => !catches.any (fun c => clauseCatches lattice c p.1))
-    let handlersEsc := catches.attach.flatMap (fun ⟨c, _⟩ => exceptionEscapesWith model lattice throwsOf c.body keepTVars atCallTypeArgs)
-    let finallyEsc := match _hf : finally? with
-      | some f => exceptionEscapesWith model lattice throwsOf f keepTVars atCallTypeArgs
-      | none => []
-    -- A `finally` that definitely completes abruptly *supersedes* whatever the
-    -- body or a handler left pending, so nothing from them escapes through it
-    -- (only the `finally`'s own throws do). Without this the check reports a
-    -- spurious escape for e.g. `try { throw e } finally { return }`, whose
-    -- `return` provably swallows the exception, and rejects a legal program.
-    let finallyAbrupt := match finally? with
-      | some f => alwaysCompletesAbruptly f
-      | none => false
-    if finallyAbrupt then finallyEsc
-    else uncaught ++ handlersEsc ++ finallyEsc
-  | .Block stmts _ _ _ => stmts.attach.flatMap (fun ⟨s, _⟩ => exceptionEscapesWith model lattice throwsOf s keepTVars atCallTypeArgs)
-  | .IfThenElse c t e =>
-    exceptionEscapesWith model lattice throwsOf c keepTVars atCallTypeArgs ++ exceptionEscapesWith model lattice throwsOf t keepTVars atCallTypeArgs
-      ++ (match _he : e with | some eb => exceptionEscapesWith model lattice throwsOf eb keepTVars atCallTypeArgs | none => [])
-  | .While c _ _ b _ =>
-    exceptionEscapesWith model lattice throwsOf c keepTVars atCallTypeArgs ++ exceptionEscapesWith model lattice throwsOf b keepTVars atCallTypeArgs
-  | .Assign targets value =>
-    -- A `Field` target's object expression (`mk()#x := 1`) can throw or call a
-    -- throwing procedure, so it escapes exactly like the assigned value does.
-    targets.attach.flatMap (fun ⟨t, _⟩ =>
-      match _ht : t.val with
-      | .Field obj _ => exceptionEscapesWith model lattice throwsOf obj keepTVars atCallTypeArgs
-      | _ => [])
-      ++ exceptionEscapesWith model lattice throwsOf value keepTVars atCallTypeArgs
-  | .Return vs => vs.attach.flatMap (fun ⟨v, _⟩ => exceptionEscapesWith model lattice throwsOf v keepTVars atCallTypeArgs)
-  | .ProveBy v pf => exceptionEscapesWith model lattice throwsOf v keepTVars atCallTypeArgs ++ exceptionEscapesWith model lattice throwsOf pf keepTVars atCallTypeArgs
-  | _ =>
-    collectStmtExprList (fun n => match n.val with
-      | .StaticCall callee _ typeArgs => calleeThrowsAt callee typeArgs n.source
-      | .InstanceCall _ callee _ => calleeThrowsAt callee [] n.source
-      | .Throw e =>
-        let ty := computeExprType model e
-        if !keepTVars && mentionsTVar ty.val then [] else [(ty, n.source)]
-      | _ => []) expr
-  termination_by sizeOf expr
-  decreasing_by
-    all_goals simp_wf
-    all_goals (have hsz := AstNode.sizeOf_val_lt expr; rw [_h] at hsz)
-    all_goals (try have hcatch := CatchClause.sizeOf_body_lt ‹_›)
-    all_goals (try term_by_mem)
-    -- Descent into a `Field` assignment target's object expression: the target is
-    -- a member of `targets` and the object is smaller than the target.
-    all_goals (try (
-      have hobj := Variable.sizeOf_field_target_lt_of_eq _ht
-      have hmem := List.sizeOf_lt_of_mem ‹_›
-      simp at hsz
-      omega))
-    all_goals (try (simp_all; omega))
-
-/-- `exceptionEscapesWith`, reading each callee's thrown type from its declared
-    `throwsType`. -/
-private def exceptionEscapes (model : SemanticModel) (lattice : TypeLattice)
-    (expr : StmtExprMd) : List (HighTypeMd × FileRange) :=
-  exceptionEscapesWith model lattice (·.throwsType) expr
 
 /-- Guard: reject a `try` whose escaping exception cannot be copied into the region
     it propagates into.
@@ -5968,55 +5810,7 @@ private def checkPropagationEdges (model : SemanticModel) (lattice : TypeLattice
             MessageKind.notYetImplemented]
         else []
       | _, _ => []
-    -- Backstop for an untyped handler whose `try` body demonstrably throws.
-    -- `Check.tryCatch` types a `catch` binding `Unknown` whenever its structural
-    -- `collectThrownTypes` could type none of the body's throws, and
-    -- `EliminateExceptions.lowerTry` reads that `Unknown` as "this handler can
-    -- never fire" and DISCARDS the clause — so the body is then verified as if no
-    -- handler were present, and the `catch` body's own obligations disappear with
-    -- it. Resolution's structural read is an under-approximation; this check runs
-    -- with the finished model, so `exceptionEscapes` can type operands that
-    -- `collectThrownTypes` could not. When the two disagree — no type for the
-    -- binding, yet a typeable escape from the body — the clause would be dropped
-    -- on a body that really throws, and that must be a hard error rather than the
-    -- `.warning` the drop otherwise carries (every pipeline gate is spelled
-    -- `kind != .warning`).
-    --
-    -- The escape is computed over `body`, not `stmt`: on a `try` with a catch-all
-    -- `exceptionEscapes stmt` is empty by construction (the catches absorb
-    -- everything), so `stmt` would never fire. A body that genuinely throws
-    -- nothing typeable yields no escape and keeps the existing warning.
-    --
-    -- An `Unknown` binding has exactly two producers in `Check.tryCatch`, and only
-    -- one of them is this check's business. So rather than keying on the symptom
-    -- (`Unknown`, which both produce), re-derive the join over what actually
-    -- escapes and let that separate them:
-    --
-    --   * No valid type EXISTS — the thrown types have no common ancestor. The join
-    --     over the escapes is `none` too, and `Check.tryCatch` has already reported
-    --     it as a hard error, so the pipeline never reaches the lowering and the
-    --     discard never materialises. Nothing to add: stay quiet.
-    --   * A valid type exists and resolution MISSED it — the structural read could
-    --     type none of the throws, so the binding came out `Unknown` even though
-    --     the model can type the escape and join it. That is the whole soundness
-    --     hole, and the join names the type the binding should have had.
-    --
-    -- `thrownTypesJoin` returns `none` on an empty list, so a body that throws
-    -- nothing typeable falls into the quiet arm on its own and keeps the warning.
-    let untypedHandlerError : List Message :=
-      match thisTy with
-      | some ti =>
-        if ti.val matches .Unknown then
-          let escaping := (exceptionEscapes model lattice body).map Prod.fst
-          match thrownTypesJoin lattice escaping with
-          | some joined =>
-            [diagnosticFromSource stmt.source
-              s!"the `catch` binding of this `try` was left untyped, but the body throws an exception of type '{formatType joined}': the clause(s) would be discarded and that exception would go uncaught. This is a gap in Strata's exception-type inference, not an error in this program — binding the thrown value to a local with an explicit type annotation and throwing that (e.g. `var t: {formatType joined} := …; throw t`) works around it."]
-          | none => []
-        else []
-      | none => []
     edgeError
-      ++ untypedHandlerError
       ++ checkPropagationEdges model lattice (match thisTy with
            | some _ => thisTy
            | none => parentTy) body
@@ -6115,7 +5909,7 @@ private def procDeclaresThrows (model : SemanticModel) (callee : Identifier) : B
 private def throwingCallSources (model : SemanticModel) (e : StmtExprMd) : List FileRange :=
   collectStmtExprList (fun n =>
     match n.val with
-    | .StaticCall callee _ _ | .InstanceCall _ callee _ =>
+    | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
       if procDeclaresThrows model callee then [n.source] else []
     | _ => []) e
 
@@ -6129,7 +5923,7 @@ private def checkThrowingCallPositions (model : SemanticModel) (stmt : StmtExprM
   -- its head is fine, but its arguments are nested value expressions.
   let checkValue (v : StmtExprMd) : List FileRange :=
     match v.val with
-    | .StaticCall _ args _ | .InstanceCall _ _ args => args.flatMap (throwingCallSources model)
+    | .StaticCall _ args _ | .InstanceCall _ _ args _ => args.flatMap (throwingCallSources model)
     | _ => throwingCallSources model v
   match _h : stmt.val with
   | .Block stmts _ _ _ =>
@@ -6155,7 +5949,7 @@ private def checkThrowingCallPositions (model : SemanticModel) (stmt : StmtExprM
       ++ checkValue value
   | .Return vs => vs.flatMap checkValue
   | .Throw op => throwingCallSources model op
-  | .StaticCall _ args _ | .InstanceCall _ _ args => args.flatMap (throwingCallSources model)
+  | .StaticCall _ args _ | .InstanceCall _ _ args _ => args.flatMap (throwingCallSources model)
   | _ => throwingCallSources model stmt
   termination_by sizeOf stmt
   decreasing_by
@@ -6755,7 +6549,7 @@ private def isGlobalUse (model : SemanticModel) (dependentIds : Std.HashSet Nat)
   | .Var _ => isGlobalRef model expr
   | .Assign targets _ => targets.any (isGlobalTarget model)
   | .IncrDecr _ _ target | .CompoundAssign _ target _ => isGlobalTarget model target
-  | .StaticCall callee _ _ | .InstanceCall _ callee _ => containsProcId dependentIds callee
+  | .StaticCall callee _ _ | .InstanceCall _ callee _ _ => containsProcId dependentIds callee
   | _ => false
 
 private def firstGlobalUseSource (model : SemanticModel) (dependentIds : Std.HashSet Nat)
@@ -6833,7 +6627,7 @@ private def foldRestrictedStmtExprM [Monad m]
   | .ReferenceEquals lhs rhs => foldRestrictedStmtExprM f restricted lhs; foldRestrictedStmtExprM f restricted rhs
   | .AsType target _ => foldRestrictedStmtExprM f restricted target
   | .IsType target _ => foldRestrictedStmtExprM f restricted target
-  | .InstanceCall target _ args =>
+  | .InstanceCall target _ args _ =>
     foldRestrictedStmtExprM f restricted target
     args.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f restricted e
   | .Quantifier _ _ trigger body =>
@@ -6920,7 +6714,7 @@ private def containsArgumentMutation (ctx : GlobalCallValidationContext)
     (expr : StmtExprMd) : Bool :=
   anyStmtExpr (fun node => match node.val with
     | .Assign _ _ | .IncrDecr _ _ _ | .CompoundAssign _ _ _ => true
-    | .StaticCall callee _ _ | .InstanceCall _ callee _ =>
+    | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
         containsProcId ctx.writerIds callee || hasExplicitInout ctx.model callee
     | _ => false) expr
 
@@ -6974,7 +6768,7 @@ private def blockTupleCall (ctx : GlobalCallValidationContext)
   | .Block _ _ _ _ | .IfThenElse _ _ _ | .ProveBy _ _ | .Old _ _ | .Fresh _
   | .Assigned _ | .AsType _ _ | .Assign _ _ | .CompoundAssign _ _ _ =>
       (collectResultPathStmtExprList (fun node => match node.val with
-        | .StaticCall callee _ _ | .InstanceCall _ callee _ => [callee]
+        | .StaticCall callee _ _ | .InstanceCall _ callee _ _ => [callee]
         | _ => []) expr).find? fun callee =>
           containsProcId ctx.dependentIds callee &&
             ordinaryOutputCount ctx.model callee > 1
@@ -6984,7 +6778,7 @@ private def effectfulTupleCall (ctx : GlobalCallValidationContext)
     (expr : StmtExprMd) : Option Identifier :=
   let candidate := match expr.val with
     | .StaticCall callee args _ => some (callee, args)
-    | .InstanceCall target callee args => some (callee, target :: args)
+    | .InstanceCall target callee args _ => some (callee, target :: args)
     | _ => none
   candidate.bind fun (callee, args) =>
     if containsProcId ctx.dependentIds callee &&
@@ -7006,7 +6800,7 @@ private def globalCallErrors (ctx : GlobalCallValidationContext)
     (fun restricted node => do
       match node.val with
       | .StaticCall callee args _ => validateGlobalCall ctx restricted callee args
-      | .InstanceCall target callee args =>
+      | .InstanceCall target callee args _ =>
           validateGlobalCall ctx restricted callee (target :: args)
       | .Assign targets rhs => do
           if targets.length > 1 then
@@ -7025,14 +6819,14 @@ private def resultUseGlobalCallErrors (ctx : GlobalCallValidationContext)
     | .Assign targets rhs =>
         if targets.length > 1 then
           match rhs.val with
-          | .StaticCall callee _ _ | .InstanceCall _ callee _ =>
+          | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
               if containsProcId ctx.writerIds callee then [callee.source] else []
           | _ => []
         else []
     | _ => []) expr
   (mapStmtExprUsedM (m := GlobalValidationM) (fun resultUsed node => do
     match node.val with
-    | .StaticCall callee _ _ | .InstanceCall _ callee _ =>
+    | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
         if resultUsed then
           if containsProcId ctx.writerIds callee &&
               ordinaryOutputCount ctx.model callee > 1 &&
@@ -7083,7 +6877,7 @@ private def oldGlobalErrorsInExpr (model : SemanticModel)
       if !allowDirectReads && isGlobalRef model node then
         some "file-scope globals inside `old(...)` are only supported in postconditions and guards"
       else none
-    | .StaticCall callee _ _ | .InstanceCall _ callee _ =>
+    | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
       if containsProcId dependentIds callee then some effectMessage else none
     | .Assign targets _ =>
       if targets.any (isGlobalTarget model) then some effectMessage else none
@@ -7140,7 +6934,7 @@ private def validateBodilessGlobalPostconditions (model : SemanticModel)
   let usesGlobal (expr : StmtExprMd) : Bool :=
     anyStmtExpr (fun node => match node.val with
       | .Var _ => isGlobalRef model node
-      | .StaticCall callee _ _ | .InstanceCall _ callee _ =>
+      | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
           containsProcId dependentIds callee
       | _ => false) expr
   let isOutputRef (proc : Procedure) (expr : StmtExprMd) : Bool :=
@@ -7160,7 +6954,7 @@ private def validateBodilessGlobalPostconditions (model : SemanticModel)
     ids.union (globalEffectIdsFor analysis.globals.writers field)
   let hasWriterCall (expr : StmtExprMd) : Bool :=
     anyStmtExpr (fun node => match node.val with
-      | .StaticCall callee _ _ | .InstanceCall _ callee _ =>
+      | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
           containsProcId writerIds callee
       | _ => false) expr
   analysis.allProcs.filterMap fun proc =>
@@ -7219,7 +7013,7 @@ private def firstInitializerEffectSource (model : SemanticModel)
     -- as `var c: C := <??>`. `..`, not `_`: `typeArgs` is a defaulted field, so `.New _` means
     -- `.New _ []` and would match `new C` alone, letting `new Box<int>` through.
     | .New .. => true
-    | .StaticCall callee _ _ | .InstanceCall _ callee _ =>
+    | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
         containsProcId model.heapReaders callee || containsProcId model.heapWriters callee
     -- A field read is a heap read; every constructor `HeapAnalysis` flags as a heap effect needs an
     -- arm here.
@@ -7353,7 +7147,7 @@ private def validateCallsToGlobalEntryProcedures (program : LaurelProgram)
   if globalEntryIds.isEmpty then [] else
   let errorsIn (expr : StmtExprMd) : List Message :=
     collectStmtExprList (fun node => match node.val with
-      | .StaticCall callee _ _ | .InstanceCall _ callee _ =>
+      | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
         if containsProcId globalEntryIds callee then
           [diagnosticFromSource node.source
             s!"entry procedure '{callee.text}' cannot be called here: it uses file-scope globals, which it initializes as locals rather than accepting as the hidden parameters this call would pass"
@@ -7473,7 +7267,7 @@ private def effectiveOutputCount (proc : Procedure) : Except String Nat := do
 private def calleesOf (e : StmtExprMd) : List (Identifier × FileRange) :=
   collectStmtExprList (fun n => match n.val with
     | .StaticCall callee _ _ => [(callee, n.source)]
-    | .InstanceCall _ callee _ => [(callee, n.source)]
+    | .InstanceCall _ callee _ _ => [(callee, n.source)]
     | _ => []) e
 
 /-- A procedure's transparent body, whose whole implementation is transparent — the
@@ -7505,7 +7299,7 @@ private def destructuredCallSources (outputCount : Identifier → Option Nat)
     | .Assign targets value =>
       let callee? := match value.val with
         | .StaticCall callee _ _ => some callee
-        | .InstanceCall _ callee _ => some callee
+        | .InstanceCall _ callee _ _ => some callee
         | _ => none
       match callee? with
       | some callee =>
@@ -7695,7 +7489,7 @@ private def validateInvokeOnGlobalWrites (program : LaurelProgram)
   let writerIds := globalWriterIds program analysis
   let invokeOnCallsWriter (proc : Procedure) : Bool := proc.invokeOn.any fun trigger =>
     anyStmtExpr (fun node => match node.val with
-      | .StaticCall callee _ _ | .InstanceCall _ callee _ => containsProcId writerIds callee
+      | .StaticCall callee _ _ | .InstanceCall _ callee _ _ => containsProcId writerIds callee
       | _ => false) trigger
   analysis.allProcs.filterMap fun proc =>
     if proc.invokeOn.isNone || !proc.outputs.isEmpty || invokeOnCallsWriter proc then none

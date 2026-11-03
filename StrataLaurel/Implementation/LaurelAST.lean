@@ -649,8 +649,11 @@ inductive StmtExpr : Type where
   | AsType (target : AstNode StmtExpr) (targetType : AstNode HighType)
   /-- Type test: check whether the target is an instance of the given type. -/
   | IsType (target : AstNode StmtExpr) (type : AstNode HighType)
-  /-- Call an instance method on a target object. -/
+  /-- Call an instance method on a target object. `typeArgs` carries the type arguments inferred
+      for the method's own type parameters, as `StaticCall`'s does. Not defaulted: a pattern
+      `.InstanceCall t c args` would then match only a call that carries none. -/
   | InstanceCall (target : AstNode StmtExpr) (callee : Identifier) (arguments : List (AstNode StmtExpr))
+      (typeArgs : List (AstNode HighType))
   /-- Quantification (universal or existential) over a typed parameter with an optional trigger. -/
   | Quantifier (mode : QuantifierMode) (param : Parameter) (trigger : Option (AstNode StmtExpr)) (body : AstNode StmtExpr)
   /-- Check whether a variable has been assigned. -/
@@ -1753,15 +1756,15 @@ partial def TypeLattice.substitutedAncestors (ctx : TypeLattice)
             | _ => pure ()
   return out
 
-/-- A field's declared type `fldType` at a holder of type `holderTy`: the parameters of the
-    field's DECLARING composite `declType` replaced by the arguments the holder supplies for it.
+/-- The arguments a holder of type `holderTy` supplies for the parameters of the composite
+    `declType` that declares a member, by parameter name.
     - OWN: `{D.params := holderArgs}`.
     - INHERITED: find `D<dArgs>` in `substitutedAncestors holder holderArgs` (remap-aware:
       `GHolder<A,B> extends Base<B,A>` → `Base<bool,int>`), then `{D.params := dArgs}`.
     `none` where the holder supplies no arguments for `D`: it is not a composite, or the arities
     differ (the legacy bare `new C`). -/
-def TypeLattice.fieldTypeAt (ctx : TypeLattice) (declType : Identifier)
-    (fldType holderTy : HighTypeMd) : Option HighTypeMd :=
+def TypeLattice.holderSubst? (ctx : TypeLattice) (declType : Identifier) (holderTy : HighTypeMd) :
+    Option (Std.HashMap String HighTypeMd) :=
   -- Peel the holder to (base name, concrete args).
   let holder? : Option (String × List HighTypeMd) := match (ctx.unfold holderTy).val with
     | .UserDefined n => some (n.text, [])
@@ -1782,11 +1785,14 @@ def TypeLattice.fieldTypeAt (ctx : TypeLattice) (declType : Identifier)
     match declArgs?, ctx.parentExprMap.get? declType.text with
     | some declArgs, some (declParams, _) =>
       if declParams.length == declArgs.length && !declParams.isEmpty then
-        let subst : Std.HashMap String HighTypeMd :=
-          (declParams.zip declArgs).foldl (fun m (p, a) => m.insert p.text a) {}
-        some (substTypeVars subst fldType)
+        some ((declParams.zip declArgs).foldl (fun m (p, a) => m.insert p.text a) {})
       else none
     | _, _ => none
+
+/-- A field's declared type `fldType` at a holder of type `holderTy` (`holderSubst?`). -/
+def TypeLattice.fieldTypeAt (ctx : TypeLattice) (declType : Identifier)
+    (fldType holderTy : HighTypeMd) : Option HighTypeMd :=
+  (ctx.holderSubst? declType holderTy).map (substTypeVars · fldType)
 
 /-- Match a SUBSTITUTED ancestor `anc` (from `substitutedAncestors`) against a target `sup`,
     wildcarding a `.TVar`/`.Unknown` on either side and recursing element-wise through
