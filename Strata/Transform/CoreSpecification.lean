@@ -25,9 +25,9 @@ The entry conditions of a Core procedure: `ProcEnvWF`, the well-formed program
 state at its entry, and `AxiomsBeforeProcedureDecl`, the axioms and distincts
 visible to it. What it means for a procedure to be correct, and for Core's
 verifier to be correct, is in `Strata.Languages.Core.Analysis.ProcedureCorrectness`.
-The `Lang` bundles themselves (`Lang.core`, `Lang.coreBlock`) and their gates
-(`InitEnvWFParams`, `InitEnvWF`, `BlockInitEnvWF`) live in
-`Strata.Languages.Core.Logic.LangDef`.
+The `EventLang` bundles themselves (`EventLang.core`, `EventLang.coreBlock`,
+`EventLang.coreCFG`) and their gates (`InitEnvWFParams`, `InitEnvWF`,
+`BlockInitEnvWF`, `CFGInitEnvWF`) live in `Strata.Languages.Core.Logic.LangDef`.
 -/
 
 namespace Core.Specification
@@ -80,11 +80,10 @@ structure ProcEnvWF (params : InitEnvWFParams) (proc : Procedure)
   -- for in-out parameters.
   oldInoutMatchesInout : ∀ id ∈ ListMap.keys proc.header.getInoutParams,
     ρ.store id = ρ.store (CoreIdent.mkOld id.name)
-  -- Precondition holds in the body, and input state had no failure.
+  -- Precondition holds in the body.
   preconditionsHold : ∀ (label : CoreLabel) (check : Procedure.Check),
     (label, check) ∈ proc.spec.preconditions.toList →
     Expression.eval ρ.factory ρ.store check.expr = some HasBool.tt
-  noFailure : ρ.hasFailure = Bool.false
   /-- A structured body, as the block the procedure's specifications wrap it
       in, is well formed to run from `ρ`. -/
   structuredBodyWF : ∀ ss, proc.body = .structured ss →

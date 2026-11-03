@@ -166,27 +166,21 @@ theorem safe_no_assert_fail
     ¬ AssertFails eval prog pc σ :=
   fun hsafe hreach => hsafe pc σ hreach
 
-/-! ## Alignment with `Specification.lean`
+/-! ## Failure reachability
 
-`Strata.Transform.Specification` states its transform-correctness framework over
-`Lang P` executions, with
-`CanFail L s ρ₀ := ∃ cfg, (L.getEnv cfg).hasFailure = true ∧ L.star (L.stmtCfg s ρ₀) cfg`.
-The GOTO-IL notions here line up with that shape one-for-one — `Reachable` plays
-the role of `L.star`, and `AssertFails` the role of `hasFailure = true` — so the
-GOTO analog of `CanFail` and the fact that `ProgramSafe` is exactly its negation
-are provable *now*, at phase 1, with no dependency on `Specification.lean`. The
-only piece still missing is the Phase-2 Core⟹GOTO simulation that instantiates
-`Specification.lean`'s `Lang` with GOTO and transports these facts across it. -/
+`CanFail` says some configuration reachable from the entry has a failing
+assertion; `Reachable` provides the multi-step closure and `AssertFails` the
+failure check. `ProgramSafe` is exactly its negation. Both are stated directly
+over GOTO-IL, with no dependency on `Strata.Transform.Specification`; relating
+them to Core's event-trace specifications needs the Phase-2 Core⟹GOTO
+simulation. -/
 
-/-- GOTO-level analog of `Specification.CanFail`: some reachable configuration
-    has a failing assertion. -/
+/-- Some reachable configuration has a failing assertion. -/
 def CanFail (callResult : CallResultRel) (eval : ExprEval) (fenv : FuncEnv)
     (prog : Program) (σ₀ : Store) : Prop :=
   ∃ pc σ, Reachable callResult eval fenv prog 0 σ₀ pc σ ∧ AssertFails eval prog pc σ
 
-/-- `ProgramSafe` is exactly the negation of `CanFail`, confirming the phase-1
-    GOTO safety notion aligns structurally with `Specification.lean`'s
-    `CanFail`/overapproximation framework. -/
+/-- `ProgramSafe` is exactly the negation of `CanFail`. -/
 theorem programSafe_iff_not_canFail
     {callResult : CallResultRel} {eval : ExprEval} {fenv : FuncEnv}
     {prog : Program} {σ₀ : Store} :

@@ -971,7 +971,7 @@ mutual
     `defined ∪ Stmt.definedVars s true` for the preceding head `s`, this yields
     both `defined n = false` and `n ∉ Stmt.definedVars s true` at once — which is
     exactly what re-establishing a block-level gate on `ss` after running `s`
-    needs (see `Core.Logic.blockInitEnvWF_cons_tail`). -/
+    needs (see `Core.Logic.blockInitEnvWF_cons_tailE`). -/
 theorem Stmt.not_defined_of_mem_definedVars
     {defined declared : P.Ident → Bool} {s : Stmt P C} {n : P.Ident}
     (h : Stmt.defUseWellFormed defined declared s = true)

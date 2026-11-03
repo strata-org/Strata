@@ -15,23 +15,21 @@ import all Strata.DL.Imperative.StmtSemanticsProps
 /-! # Lowering and preservation of the Core initial-environment conditions
 
 `Core.Logic.InitEnvWF` and `BlockInitEnvWF` are the initial-environment
-well-formedness conditions of `Lang.core` and
-`Lang.coreBlock`.  A *compositional* program logic over those languages needs to
+well-formedness conditions of `EventLang.core` and
+`EventLang.coreBlock`.  A *compositional* program logic over those languages needs to
 move a condition around a derivation, in two directions:
 
 * **lowering** — from an enclosing statement (or statement list) to a
   sub-derivation: `blockInitEnvWF_cons_head`, `blockInitEnvWF_singleton`,
   `blockInitEnvWF_append_head`, `blockInitEnvWF_of_block`,
   `blockInitEnvWF_of_ite_then` / `_else`, `blockInitEnvWF_of_loop_body`;
-* **preservation** — re-establishing a condition at the environment a
-  sub-derivation terminates in: `blockInitEnvWF_cons_tail`,
-  `blockInitEnvWF_append_tail`, and `initEnvWF_loop_iterate`; their event-trace
-  counterparts are `blockInitEnvWF_cons_tailE`,
+* **preservation** — re-establishing a condition at the environment an
+  event-trace sub-derivation terminates in: `blockInitEnvWF_cons_tailE`,
   `blockInitEnvWF_append_tailE`, and `initEnvWF_loop_iterateE`.
 
 Together these are exactly the side conditions the structural rules of
 `Imperative.Logic.Hoare` ask for, so `Strata.Languages.Core.Logic.Hoare` can
-state its rules directly over `Lang.core` / `Lang.coreBlock`.
+state its rules directly over `EventLang.core` / `EventLang.coreBlock`.
 
 ## Two facts do the work
 
@@ -242,7 +240,7 @@ theorem blockInitEnvWF_bodyDefsUndefined {params : InitEnvWFParams} {ss : Statem
 /-- Prefix of a statement list: the block condition on `ss₁ ++ ss₂` lowers to the
     block condition on `ss₁`.  There is no suffix counterpart at the same
     environment — `ss₂` was checked against the predicates `ss₁` extends, so it needs
-    the environment `ss₁` terminates in; that is `blockInitEnvWF_append_tail`. -/
+    the environment `ss₁` terminates in; that is `blockInitEnvWF_append_tailE`. -/
 theorem blockInitEnvWF_append_head {params : InitEnvWFParams} {ss₁ ss₂ : Statements}
     {ρ : Imperative.Env Expression} (h : BlockInitEnvWF params (ss₁ ++ ss₂) ρ) :
     BlockInitEnvWF params ss₁ ρ := by
@@ -328,127 +326,17 @@ theorem blockInitEnvWF_of_loop_body {params : InitEnvWFParams} {g : Expression.E
 
 Every field of the conditions transfers structurally except `storeWellDefined`, which
 is a statement about *values* rather than about the store's domain, and so is the one
-field a run has to be shown to preserve.  Both lemmas below get it from
-`Imperative.Config.storeWellDefined_star_of`. Factory preservation keeps
-value-hood measured against the same evaluator throughout the run.
+field a run has to be shown to preserve. Factory preservation keeps value-hood
+measured against the same evaluator throughout the run.
 
 The call needs no recursion into the callee: every rule that writes to the store,
-`call` included, supplies a value of the factory in force. -/
+`call` included, supplies a value of the factory in force.
 
-/-- Tail of a statement list: after the head `s` runs to `ρ'`, the block condition
-    holds on the tail `ss` at `ρ'`.
+The lemmas below are stated for the event semantics (`StepStmtStarE` /
+`EvalCommandE`), so the event Hoare rule `Core.Logic.Hoare.seq` can re-establish
+`BlockInitEnvWF` on the suffix after a prefix run. -/
 
--/
-theorem blockInitEnvWF_cons_tail {params : InitEnvWFParams} {s : Statement} {ss : Statements}
-    {ρ ρ' : Imperative.Env Expression}
-    (h : BlockInitEnvWF params (s :: ss) ρ)
-    (hrun : CoreStepStar π (.stmt s ρ) (.terminal ρ')) :
-    BlockInitEnvWF params ss ρ' := by
-  -- The tail was checked against `defined ∪ Stmt.definedVars s true` …
-  have hdu := h.defUseOk
-  simp only [Block.defUseWellFormed, Bool.and_eq_true] at hdu
-  -- … and that predicate is exactly `ρ'`'s definedness predicate.
-  have hstore : (fun n => (ρ'.store n).isSome)
-      = (fun n => (ρ.store n).isSome ||
-          decide (n ∈ Stmt.definedVars (P := Expression) (C := Command) s true)) := by
-    funext n; exact core_stmt_run_terminal_store_isSome_eq π hrun n
-  -- Names the tail defines are fresh in that predicate, hence undefined in `ρ`
-  -- and not defined at the head's top level — so they survive `s` undefined.
-  have hfresh : ∀ n ∈ Block.definedVars (P := Expression) (C := Command) ss false,
-      ρ.store n = none ∧ n ∉ Stmt.definedVars (P := Expression) (C := Command) s true := by
-    intro n hn
-    have hb := Imperative.Block.not_defined_of_mem_definedVars hdu.2 hn
-    obtain ⟨h1, h2⟩ := Bool.or_eq_false_iff.mp hb
-    refine ⟨?_, by simpa using h2⟩
-    cases hq : ρ.store n with
-    | none => rfl
-    | some v => rw [hq] at h1; simp at h1
-  have hpres : ∀ {f : Expression.Factory} {σ σ' : CoreStore} {c : Command} {fl : Bool},
-      EvalCommand π f σ c σ' fl →
-      Imperative.WellFormedStore σ f → Imperative.WellFormedStore σ' f :=
-    fun hc hs => Core.evalCommand_storeWellDefined π hc hs
-  -- The run preserves the factory, so the enclosing condition's
-  -- evaluator- and init-type witnesses transfer to `ρ'`'s factory unchanged.
-  have hfac : ρ.factory = ρ'.factory :=
-    Imperative.star_preserves_factory Expression (EvalCommand π)
-      (Core.CoreStepStar_to_StepStmtStar hrun)
-  refine BlockInitEnvWF.of_defUseOk
-    (hfac ▸ h.toWellFormedSemanticEval)
-    (Imperative.Config.storeWellDefined_star_of
-      (evalCmd := EvalCommand π) hpres
-      (Core.CoreStepStar_to_StepStmtStar hrun)
-      h.storeWellDefined)
-    (fun n hn => ?_) (fun n hn => h.definedVarsNotReservedCore n ?_)
-    (fun n hn => ?_) ?_ h.factoryDeclared
-    (fun ty hty => hfac ▸ h.initTypesInhabited ty
-      (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inr hty)))
-  · -- defsUndefined on the tail
-    obtain ⟨hnone, hnotdef⟩ := hfresh n hn
-    rw [core_stmt_run_terminal_preserves_none_of_not_definedVars_true π hnotdef hnone hrun]
-    rfl
-  · rw [Block.definedVars]; exact List.mem_append.mpr (Or.inr hn)
-  · -- reservedFresh at `ρ'`: a name defined there was defined in `ρ`, or is one
-    -- of the head's top-level definitions (which the enclosing condition covers).
-    have hn' : ((ρ.store n).isSome ||
-        decide (n ∈ Stmt.definedVars (P := Expression) (C := Command) s true)) = Bool.true := by
-      rw [← congrFun hstore n]; exact hn
-    rcases Bool.or_eq_true_iff.mp hn' with hold | hnew
-    · exact h.reservedFreshCore n hold
-    · refine h.definedVarsNotReservedCore n ?_
-      rw [Block.definedVars]
-      exact List.mem_append.mpr (Or.inl
-        (Imperative.Stmt.definedVars_true_subset_false cmdDefinedVarsFlagIrrelevant
-          (by simpa using hnew)))
-  · -- defUseOk on the tail, by rewriting the definedness predicate
-    rw [hstore]; exact hdu.2
-
-/-- Suffix of a statement list: after the prefix `ss₁` runs to `ρ'`, the block
-    condition holds on `ss₂` at `ρ'`.
-
-    One statement at a time, by `blockInitEnvWF_cons_tail`: `ss₁`'s run splits at each
-    head, and the enclosing condition on `(s :: rest) ++ ss₂` is literally the one on
-    `s :: (rest ++ ss₂)` that the cons lemma consumes. -/
-theorem blockInitEnvWF_append_tail {params : InitEnvWFParams} {ss₁ ss₂ : Statements}
-    {ρ ρ' : Imperative.Env Expression}
-    (h : BlockInitEnvWF params (ss₁ ++ ss₂) ρ)
-    (hrun : CoreStepStar π (.stmts ss₁ ρ) (.terminal ρ')) :
-    BlockInitEnvWF params ss₂ ρ' := by
-  suffices hgen : ∀ (pfx : Statements) (ρ₀ : Imperative.Env Expression),
-      BlockInitEnvWF params (pfx ++ ss₂) ρ₀ →
-      CoreStepStar π (.stmts pfx ρ₀) (.terminal ρ') →
-      BlockInitEnvWF params ss₂ ρ' from hgen ss₁ ρ h hrun
-  intro pfx
-  induction pfx with
-  | nil =>
-    intro ρ₀ hb hr
-    have heq : ρ₀ = ρ' :=
-      Imperative.stmts_nil_terminal (EvalCommand π) ρ₀ ρ'
-        (Core.CoreStepStar_to_StepStmtStar hr)
-    subst heq; simpa using hb
-  | cons s rest ih =>
-    intro ρ₀ hb hr
-    have hsplit : ∃ ρ_mid,
-        Imperative.StepStmtStar Expression (EvalCommand π)
-          (.stmt s ρ₀) (.terminal ρ_mid) ∧
-        Imperative.StepStmtStar Expression (EvalCommand π)
-          (.stmts rest ρ_mid) (.terminal ρ') := by
-      cases Core.CoreStepStar_to_StepStmtStar hr with
-      | step _ _ _ hstep hrest => cases hstep with
-        | step_stmts_cons =>
-          exact Imperative.seq_reaches_terminal Expression (EvalCommand π)
-            hrest
-    obtain ⟨ρ_mid, hs, hrest⟩ := hsplit
-    exact ih ρ_mid
-      (blockInitEnvWF_cons_tail π hb (Core.StepStmtStar_to_CoreStepStar hs))
-      (Core.StepStmtStar_to_CoreStepStar hrest)
-
-/-! ## Event-trace preservation
-
-Event-native (`StepStmtStarE` / `EvalCommandE`) analogues of the tail-preservation
-lemmas above, so the event Hoare rule `Core.Logic.Hoare.seq` can re-establish
-`BlockInitEnvWF` on the suffix after an event-native prefix run. -/
-
-/-- Event analogue of `blockInitEnvWF_cons_tail`: after the head `s` runs to `ρ'`
+/-- After the head `s` runs to `ρ'`
 along the event semantics, the block condition holds on the tail `ss` at `ρ'`. -/
 theorem blockInitEnvWF_cons_tailE {params : InitEnvWFParams} {s : Statement} {ss : Statements}
     {ρ ρ' : Imperative.Env Expression} {tr : Imperative.Trace Expression}
@@ -504,7 +392,7 @@ theorem blockInitEnvWF_cons_tailE {params : InitEnvWFParams} {s : Statement} {ss
           (by simpa using hnew)))
   · rw [hstore]; exact hdu.2
 
-/-- Event analogue of `blockInitEnvWF_append_tail`: after the prefix `ss₁` runs to
+/-- After the prefix `ss₁` runs to
     `ρ'` along the event semantics, the block condition holds on `ss₂` at `ρ'`.
     One statement at a time, splitting the event run with `stmts_cons_headE` /
     `seq_reaches_terminalE`. -/
@@ -538,72 +426,8 @@ theorem blockInitEnvWF_append_tailE {params : InitEnvWFParams} {ss₁ ss₂ : St
       exact ih ρ_mid _
         (blockInitEnvWF_cons_tailE π hb hs) hrest
 
-/-- One loop iteration: the loop's own condition is re-established at the environment
-    the body's block leaves behind.
 
-    Leaving the body's block projects the inner store through the parent's and
-    restores the parent factory, so that environment has *pointwise the same*
-    definedness predicate and the same factory as the one the iteration started
-    from.  Every field of `InitEnvWF` sees the environment only through those two,
-    so the condition transfers unchanged. -/
-theorem initEnvWF_loop_iterate {params : InitEnvWFParams} {g : Expression.Expr}
-    {m : Option Expression.Expr} {inv : List (String × Expression.Expr)}
-    {body : Statements} {md : Imperative.MetaData Expression}
-    {ρ ρ_inner : Imperative.Env Expression}
-    (h : InitEnvWF params (.loop (.det g) m inv body md) ρ)
-    (hrun : CoreStepStar π (.stmts body ρ) (.terminal ρ_inner)) :
-    InitEnvWF params (.loop (.det g) m inv body md)
-      { ρ_inner with store := projectStore ρ.store ρ_inner.store } := by
-  have hstore : ∀ n, ((projectStore ρ.store ρ_inner.store) n).isSome = (ρ.store n).isSome := by
-    intro n
-    by_cases hn : (ρ.store n).isSome = Bool.true
-    · simp only [projectStore, hn, ite_true]
-      exact core_stmts_preserves_isSome π hrun hn
-    · have hnone : ρ.store n = none := by
-        cases hq : ρ.store n with
-        | none => rfl
-        | some v => rw [hq] at hn; simp at hn
-      simp [projectStore, hnone]
-  have hfun : (fun n => ((projectStore ρ.store ρ_inner.store) n).isSome)
-      = (fun n => (ρ.store n).isSome) := funext hstore
-  -- The body run preserves the factory.
-  have hfac : ρ.factory = ρ_inner.factory :=
-    Imperative.star_preserves_factory Expression (EvalCommand π)
-      (Core.CoreStepStar_to_StepStmtStar hrun)
-  -- The inner store holds only values of `ρ_inner.factory`; and `projectStore` only ever
-  -- keeps a binding or drops it.
-  have hproj : Imperative.WellFormedStore (projectStore ρ.store ρ_inner.store) ρ_inner.factory := by
-    have hpres : ∀ {f : Expression.Factory} {σ σ' : CoreStore} {c : Command} {fl : Bool},
-        EvalCommand π f σ c σ' fl →
-        Imperative.WellFormedStore σ f → Imperative.WellFormedStore σ' f :=
-      fun hc hs => Core.evalCommand_storeWellDefined π hc hs
-    have hinner : Imperative.WellFormedStore ρ_inner.store ρ_inner.factory :=
-      Imperative.Config.storeWellDefined_star_of
-        (evalCmd := EvalCommand π) hpres
-        (Core.CoreStepStar_to_StepStmtStar hrun)
-        h.storeWellDefined
-    intro x w hx
-    simp only [projectStore] at hx
-    split at hx
-    · exact hinner x w hx
-    · exact absurd hx (by simp)
-  refine InitEnvWF.of_defUseOk (hfac ▸ h.toWellFormedSemanticEval) hproj (fun n hn => ?_)
-    h.definedVarsNotReserved (fun n hn => ?_) ?_ h.factoryDeclared
-    (hfac ▸ h.initTypesInhabited)
-  · -- defsUndefined: `isNone` is `¬ isSome`, and the predicate is unchanged.
-    have := h.defsUndefined n hn
-    show (projectStore ρ.store ρ_inner.store n).isNone
-    rw [Option.isNone_iff_eq_none] at this ⊢
-    simp [projectStore, this]
-  · -- reservedFresh: same predicate.
-    exact h.reservedFresh n (by rw [← hstore n]; exact hn)
-  · -- defUseOk: same predicate.
-    show Stmt.defUseWellFormed
-      (fun n => ((projectStore ρ.store ρ_inner.store) n).isSome) params.declaredFuncs _ = Bool.true
-    rw [hfun]; exact h.defUseOk
-
-
-/-- Event analogue of `initEnvWF_loop_iterate`: after one event-native loop-body
+/-- After one event-native loop-body
 iteration the loop's own condition is re-established at the environment the
 body's block leaves behind. Leaving the block projects the inner store through
 the parent's and restores the parent factory, preserving the definedness

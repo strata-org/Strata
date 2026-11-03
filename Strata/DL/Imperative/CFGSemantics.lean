@@ -33,7 +33,7 @@ Configuration for small-step CFG semantics. Every configuration carries:
 
 Active configurations carry `cfg` because it is needed for future fetches.
 Terminal configurations cannot step, so retaining a program there would be
-unobservable and would prevent the generic `Lang.terminalCfg` operation from
+unobservable and would prevent the generic `EventLang.terminalCfg` operation from
 constructing exact outcomes.
 -/
 inductive CFGConfig (l CmdT : Type) (P : PureExpr) : Type where

@@ -451,35 +451,25 @@ in the program, unless the referred declaration is in the same `rec` block.
 
 # Formally Reasoning about Imperative and Strata Core
 
-## The Language Bundle (`Strata.Logic.Lang P`)
+## The Language Bundle (`Strata.Logic.EventLang P EventT`)
 
 Strata provides formal definitions for reasoning about Imperative and Strata
-Core. The framework is built on a small, language-agnostic abstraction
-{name Strata.Logic.Lang}`Strata.Logic.Lang P` bundle
-(`P` is a parameter for the pure-expression type `PureExpr`).
-It packages exactly what a program logic or a transform specification needs from a
-language:
-
-{docstring Strata.Logic.Lang}
-
-The `Lang` structure itself belongs to no dialect, and the definitions in this
-chapter quantify over an arbitrary `Lang P`. For the Imperative dialect there are
-three instances, in the `Imperative.Logic` namespace:
-{name Imperative.Logic.Lang.imperative}`Lang.imperative` (structured
-statements), {name Imperative.Logic.Lang.imperativeBlock}`Lang.imperativeBlock`
-(block bodies), and {name Imperative.Logic.Lang.cfg}`Lang.cfg` (unstructured
-control-flow graphs).
-
-### The Event Language Bundle
-
-Event-trace reasoning uses {name Strata.Logic.EventLang}`EventLang P EventT`.
-It replaces unlabeled reachability and syntactic assertion-head detection with a
-trace-producing closure whose event alphabet is explicit in the type.
+Core. The framework is built on a small, language-agnostic abstraction, the
+{name Strata.Logic.EventLang}`EventLang P EventT` bundle
+(`P` is a parameter for the pure-expression type `PureExpr`, and `EventT` is the
+event alphabet). It packages exactly what a program logic or a transform
+specification needs from a language: a one-step relation that emits events,
+together with a trace-producing closure, `EventLang.traceStar`.
 
 {docstring Strata.Logic.EventLang}
 
-The structured Imperative constructors package `StepStmtE` for individual
-statements and statement lists; `EventLang.traceStar` derives its traced closure.
+The `EventLang` structure itself belongs to no dialect, and the definitions in
+this chapter quantify over an arbitrary `EventLang`. For the Imperative dialect
+the instances live in the `Imperative.Logic` namespace: structured statements,
+block bodies, deterministic control-flow graphs
+({name Imperative.Logic.EventLang.cfgE}`EventLang.cfgE`), and Kleene statements
+({name Imperative.Logic.EventLang.kleeneE}`EventLang.kleeneE`). The structured
+constructors package `StepStmtE` for individual statements and statement lists.
 Their command evaluator determines `EventT`.
 
 {docstring Strata.Logic.EventLang.TerminatesAt}
@@ -490,15 +480,17 @@ Their command evaluator determines `EventT`.
 
 {docstring Imperative.Logic.EventLang.imperativeBlockE}
 
-Strata Core instantiates `Lang.imperative` as well as `Lang.imperativeBlock`, and
-defines {name Core.Logic.Lang.core}`Lang.core` /
-{name Core.Logic.Lang.coreBlock}`Lang.coreBlock`. The Core's language bundle uses
-its own initial-environment well-formedness predicate
-{name Core.Logic.InitEnvWF}`InitEnvWF` and
-{name Core.Logic.BlockInitEnvWF}`BlockInitEnvWF`.
-Core's logic and analysis judgements are mostly all over `Lang.coreBlock` because
-it is more convenient than `Lang.core` which is about a single statement
-(but still can have nested sub-statements).
+Strata Core instantiates these as
+{name Core.Logic.EventLang.core}`EventLang.core`,
+{name Core.Logic.EventLang.coreBlock}`EventLang.coreBlock`, and
+{name Core.Logic.EventLang.coreCFG}`EventLang.coreCFG`. The Core language
+bundles use their own initial-environment well-formedness predicates
+{name Core.Logic.InitEnvWF}`InitEnvWF`,
+{name Core.Logic.BlockInitEnvWF}`BlockInitEnvWF`, and
+{name Core.Logic.CFGInitEnvWF}`CFGInitEnvWF`.
+Core's logic and analysis judgements are mostly all over `EventLang.coreBlock`
+because it is more convenient than `EventLang.core` which is about a single
+statement (but still can have nested sub-statements).
 
 ## Interpreting Event Traces
 
@@ -596,17 +588,8 @@ derived from procedure contracts and their proofs.
 ## Satisfiability and Validity of Assertions
 
 To reason about assertion commands, Strata has two different notions of
-properties: validity and satisfiability.
-An assertion is valid ({name Imperative.Specification.AssertValid}`AssertValid`, or
-{name Imperative.Specification.AssertValidWhen}`AssertValidWhen` relative to a
-precondition) when it holds in every reachable configuration where it is about to
-execute. {name Imperative.Specification.AllAssertsValid}`AllAssertsValid` lifts
-this to all assertions of a statement. Dually, an assertion is satisfiable
-({name Imperative.Specification.AssertSatisfiable}`AssertSatisfiable`) when some
-reachable run makes it hold.
-
-The event-trace formulation quantifies directly over traces produced by an
-`EventLang`. Assertion validity remains universal over all reachable finite
+properties: validity and satisfiability. Both quantify over traces produced by
+an `EventLang`. Assertion validity is universal over all reachable finite
 traces. Assertion satisfiability existentially selects a reachable trace and a
 matching occurrence satisfiable under its preceding assumptions; cover
 satisfiability follows the same existential trace pattern.
@@ -664,24 +647,10 @@ The operational definitions are more general across analyses and support
 horizontal and vertical composition. They are the primary specifications for
 program transformations.
 
-- The `Overapproximates` family states this operationally. Plain
-  {name Imperative.Specification.Transform.Overapproximates}`Overapproximates` requires that every terminal or exiting state reachable in
-  the source is reachable in the target, and that any source assertion failure is
-  reproduced in the target. The variants generalize it: {name Imperative.Specification.Transform.OverapproximatesWhen}`OverapproximatesWhen` adds
-  a precondition; `OverapproximatesUpto(When)` relates source and target states
-  up to input/output relations (needed when a transform renames or generates
-  variables); and the `...Aggressively...` variants permit the target to fail
-  spuriously (needed when a transform prunes paths).
-- {name Imperative.Specification.Transform.Underapproximates}`Underapproximates` is the dual — every terminal/exiting state reachable in the
-  target is reachable in the source, and target failures are reflected back —
-  which is what bug-finding soundness needs.
-- {name Imperative.Specification.Transform.SemanticallyEquivalent}`SemanticallyEquivalent` is their conjunction: source and target reach exactly
-  the same terminal/exiting states and fail on exactly the same initial states.
-
-For `EventLang`, the `OverapproximatesTraces` family additionally relates the
-chronological event lists produced by source and target executions. The most
-general member carries separate input/output environment relations and simulates
-all finite prefixes as well as terminal and exiting runs.
+The `OverapproximatesTraces` family relates the chronological event lists
+produced by source and target executions. The most general member carries
+separate input/output environment relations and simulates all finite prefixes as
+well as terminal and exiting runs.
 
 {docstring Imperative.Specification.Transform.OverapproximatesTracesUptoWhen}
 
@@ -696,35 +665,27 @@ triple holds on the target `T(st)`, the same triple holds on the source `st`.
 The terminal or exiting simulation supplies the identical event trace and final
 environment required by the target triple.
 
-Strata proves that sequentially chaining multiple transformations is correct through
-(vertical composition),
-{name Imperative.Specification.Transform.overapproximates_comp}`overapproximates_comp`
-which turns overapproximations `L₁ → L₂` and `L₂ → L₃` into one `L₁ → L₃`.
-{name Imperative.Specification.Transform.overapproximatesUpto_comp}`overapproximatesUpto_comp`
-does the same for the up-to-relation form, composing the two state relations with
-relation composition (`RComp`); and
-{name Imperative.Specification.Transform.overapproximatesAggressively_comp}`overapproximatesAggressively_comp`
-composes the assertion-failure-relaxed variant.
-
-Trace overapproximations compose their trace relations explicitly. The general
-composition theorem produces relational composition, while the shared-start
-up-to theorem accepts stage-specific trace relations and a transitive output
-state relation.
+Strata proves that sequentially chaining multiple transformations is correct
+(vertical composition). Trace overapproximations compose their trace relations
+explicitly.
+{name Imperative.Specification.Transform.OverapproximatesTraces.rel_comp}`OverapproximatesTraces.rel_comp`
+produces the relational composition of the stages' trace relations, while
+{name Imperative.Specification.Transform.OverapproximatesTracesUptoWhen.comp_trans_eq}`OverapproximatesTracesUptoWhen.comp_trans_eq`
+handles a shared start, accepting stage-specific trace relations and a
+transitive output state relation.
 
 {docstring Imperative.Specification.Transform.OverapproximatesTraces.rel_comp}
 
 {docstring Imperative.Specification.Transform.OverapproximatesTracesUptoWhen.comp_trans_eq}
 
 Composition across a statement list (horizontal composition):
-{name Imperative.Specification.Transform.overapproximates_stmts}`overapproximates_stmts`
-and {name Imperative.Specification.Transform.overapproximatesUpto_stmts}`overapproximatesUpto_stmts`
-lift a per-statement overapproximation to the whole block (`fun ss => ss.mapM T`).
-Like the Hoare rules above, these carry well-formedness side conditions: the
-lift needs an environment invariant that holds at block entry, is preserved as
-each statement runs, and implies the per-statement source well-formedness. When no
-such statement-independent invariant exists, the block-level result has to be
-proved directly instead.
-
-The trace-aware counterpart, {name Imperative.Specification.Transform.overapproximatesTraces_stmts}`overapproximatesTraces_stmts`, additionally requires the trace relation to relate empty traces and respect chronological append. It simulates arbitrary finite prefixes as well as terminal and exiting runs.
+{name Imperative.Specification.Transform.overapproximatesTraces_stmts}`overapproximatesTraces_stmts`
+lifts a per-statement trace overapproximation to the whole block
+(`fun ss => ss.mapM T`). It requires the trace relation to relate empty traces
+and respect chronological append. Like the Hoare rules above, it carries
+well-formedness side conditions: the lift needs an environment invariant that
+holds at block entry, is preserved as each statement runs, and implies the
+per-statement source well-formedness. When no such statement-independent
+invariant exists, the block-level result has to be proved directly instead.
 
 {docstring Imperative.Specification.Transform.overapproximatesTraces_stmts}

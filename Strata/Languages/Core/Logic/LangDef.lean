@@ -12,7 +12,7 @@ import all Strata.Languages.Core.Factory
 
 /-! # Core language bundles and initial-environment well-formedness
 
-The Core instances of `Strata.Logic.Lang` and `Strata.Logic.EventLang`, together
+The Core instances of `Strata.Logic.EventLang`, together
 with the well-formedness predicates that gate them. Split out from
 `Strata.Transform.CoreSpecification` so that Core program logics do not depend
 on the transform-specification framework, mirroring
@@ -31,8 +31,6 @@ on the transform-specification framework, mirroring
   to be inhabited in the factory. Unlike the structured gates, it has no
   `defUseOk` field: arbitrary control flow requires a path-sensitive definite-
   assignment analysis rather than `Block.defUseWellFormed`'s list order.
-- **`Lang.core`** / **`Lang.coreBlock`** — non-event language bundles for Core
-  statements and statement lists.
 - **`EventLang.core`** / **`EventLang.coreBlock`** / **`EventLang.coreCFG`** —
   event-trace bundles for statements, statement lists, and CFGs, gated by
   `InitEnvWF`, `BlockInitEnvWF`, and `CFGInitEnvWF`, respectively.
@@ -44,7 +42,7 @@ namespace Core.Logic
 
 open Core Imperative Strata.Logic Imperative.Logic
 
-/-! ## Core `Lang` bundle -/
+/-! ## Core initial-environment well-formedness -/
 
 /-- Core specialization of the shared imperative initial-environment
 parameters. -/
@@ -103,29 +101,6 @@ structure CFGInitEnvWF (params : InitEnvWFParams)
   /-- Every builtin referenced by the CFG is included among the declared functions. -/
   factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
     params.declaredFuncs ⟨s, ()⟩ = Bool.true
-
-/-- The `Lang Expression` bundle for Core small-step semantics. -/
-@[expose] def Lang.core
-    (π : String → Option Procedure) :
-    Strata.Logic.Lang Expression :=
-  Imperative.Logic.Lang.imperative
-    Expression Command (EvalCommand π) coreIsAtAssert
-    (ParamsTy := InitEnvWFParams) (initEnvWF := InitEnvWF)
-
-/-- The `Lang Expression` bundle for Core small-step semantics over *statement
-    lists* (block bodies): the Core counterpart of
-    `Imperative.Logic.Lang.imperativeBlock`, with the generic
-    `Imperative.Logic.BlockInitEnvWF` replaced by Core's own `BlockInitEnvWF`.
-
-    `StmtT` is `Statements` and `stmtCfg` embeds via `.stmts`, so this is the
-    language a block-level overapproximation or Hoare-style block judgement is
-    stated over, exactly as `Lang.core` is for single statements. -/
-@[expose] def Lang.coreBlock
-    (π : String → Option Procedure) :
-    Strata.Logic.Lang Expression :=
-  Imperative.Logic.Lang.imperativeBlock
-    (EvalCommand π) coreIsAtAssert
-    (wfPkg := ⟨InitEnvWFParams, BlockInitEnvWF⟩)
 
 /-! ## Core event-trace language bundles -/
 

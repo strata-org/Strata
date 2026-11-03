@@ -19,15 +19,12 @@ double-struck (\bbP) to avoid clashing with the pure-expression parameter `P`.
 
 It also defines when the runs of one program overapproximate those of another,
 `EventLang.RunsOverapproximate`, and a verifier run after a sequence of
-transformations, `thenVerify` and `runTransforms`, so that a verifier's
-soundness on the transformed program can be carried back to the original.
+transformations, `thenVerify` and `runTransforms`, both over `EventLang`.
 -/
 
 public section
 
 namespace Imperative.Analysis
-
-open Strata.Logic
 
 variable {ℙ D : Type}
 
@@ -58,7 +55,9 @@ def Complete (property : ℙ → Prop) (pass : D → Prop) : ℙ → D → Prop 
 
 /-- Transform with `T`, then run `analyze` on the result. A statement `T`
     rejects does not pass. -/
-@[expose] def thenVerify {P : PureExpr} {L₁ L₂ : Lang P} (T : L₁.StmtT → Option L₂.StmtT)
+@[expose] def thenVerify {P : PureExpr} {EventT₁ EventT₂ : Type}
+    {L₁ : Strata.Logic.EventLang P EventT₁} {L₂ : Strata.Logic.EventLang P EventT₂}
+    (T : L₁.StmtT → Option L₂.StmtT)
     (analyze : L₂.StmtT → Bool) (s : L₁.StmtT) : Bool :=
   match T s with
   | some s' => analyze s'
@@ -66,7 +65,8 @@ def Complete (property : ℙ → Prop) (pass : D → Prop) : ℙ → D → Prop 
 
 /-- Run transformations of one language in order, stopping at the first that
     rejects. -/
-@[expose] def runTransforms {P : PureExpr} {L : Lang P} :
+@[expose] def runTransforms {P : PureExpr} {EventT : Type}
+    {L : Strata.Logic.EventLang P EventT} :
     List (L.StmtT → Option L.StmtT) → L.StmtT → Option L.StmtT
   | [], s => some s
   | T :: rest, s => (T s).bind (runTransforms rest)

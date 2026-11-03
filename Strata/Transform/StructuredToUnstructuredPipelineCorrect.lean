@@ -30,10 +30,10 @@ Key results:
   * `StructuredToUnstructuredPipeline.overapproximatesTraces` composes the three event-trace
     simulations into one source-block-to-CFG refinement under `Trace.WithWF` matching.
   * `PipelinePre` is the syntactic source precondition of the generic
-    pipeline theorem.
-  * `pipeline_source_noEscape` states the accompanying source no-escape
-    guarantee, and `pipelinePre_nil` shows that the syntactic source
-    precondition is inhabited. -/
+    pipeline theorem. `pipeline_source_noEscapeE` states the accompanying
+    source no-escape guarantee: `EventLang.cfgE` maps exiting outcomes to
+    `.terminal`, and a `PipelinePre` source never reaches `.exiting`.
+    `pipelinePre_nil` shows that the precondition is inhabited. -/
 
 public section
 
@@ -444,15 +444,16 @@ theorem overapproximatesTraces [HasSubstFvar P] [LawfulHasVal P]
 omit [HasOps P] [LawfulHasFvar P] [LawfulHasFvars P] [LawfulHasIdent P] in
 /-- **A `PipelinePre` source never escapes via a top-level exit.**
 
-`Lang.cfg` maps its generic exiting outcome to `.terminal` because CFGs have no
-escaping state. This theorem preserves the source-side guarantee separately:
+`EventLang.cfgE` maps the exiting outcome to `.terminal` because CFGs have no
+escaping state, so `overapproximatesTraces` alone would let a source run that
+escapes via `exit` be matched by a target run that just terminates.
 `PipelinePre` requires every exit to be caught by an enclosing block, so no
-source execution can reach `.exiting`. -/
-theorem pipeline_source_noEscape [HasSubstFvar P]
+source event run reaches `.exiting`, and that case cannot arise. -/
+theorem pipeline_source_noEscapeE [HasSubstFvar P]
     (ss : List (Stmt P (Cmd P))) (hpre : PipelinePre ss)
-    (ρ₀ : Env P) (label : String) (ρ' : Env P) :
-    ¬ StepStmtStar P (EvalCmd P) (.stmts ss ρ₀) (.exiting label ρ') :=
-  block_exitsCoveredByBlocks_noEscape P (EvalCmd P) ss hpre.h_covered ρ₀ label ρ'
+    (ρ₀ : Env P) (label : String) (ρ' : Env P) {tr : List (Event P)} :
+    ¬ StepStmtStarE P (EvalCmdE P) (.stmts ss ρ₀) tr (.exiting label ρ') :=
+  stmts_exitsCoveredByBlocks_noEscapeE _ ss hpre.h_covered ρ₀ label ρ'
 
 /-- **The syntactic precondition is inhabited.**  The empty program satisfies
 `PipelinePre`, ruling out global vacuity of the `fun ss => PipelinePre ss`
