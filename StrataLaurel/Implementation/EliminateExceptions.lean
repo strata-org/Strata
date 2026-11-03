@@ -459,6 +459,10 @@ private structure Ctx where
       `try`'s exit edge can be reported at the site rather than at the `try`.
       `none` everywhere else. -/
   siteVar : Option String := none
+  /-- Inside a `try` whose exception is copied across a shared descendant (and any
+      region nested in it): an exception raised here is assumed to have its type, so
+      the verifier can tell which `catch` takes it before that copy checks it. -/
+  assumeThrownType : Bool := false
 
 /-- The innermost enclosing `try` frame, if any. Labeled blocks are transparent
     to `throw`/`return` routing (only `exit` cares about them). -/
@@ -497,16 +501,21 @@ private def crossedFinallyOf (frames : List Frame) (target : String) : Option St
   | .labeledBlock l :: rest => if l == target then none else crossedFinallyOf rest target
   | .tryRegion f :: rest => if f.hasFinally then some f.finallyLabel else crossedFinallyOf rest target
 
-/-- Raise an exception at the throw site `src`: write `value` into the current
+/-- Raise an exception of type `ty` at the throw site `src`: write `value` into the current
     region's `$exc` (a region with none -- a finally-only `try` in a procedure that
     declares no `throws` -- drops it), record the site with the `summary` its escape
     assertion carries (see `recordThrowSite`), set `$thrown` and leave for the
     nearest handler. Every raising edge goes through here, so an exception is never
     raised without its site being recorded. -/
-private def raiseAt (ctx : Ctx) (src : FileRange) (summary : String) (value : StmtExprMd) :
-    EM (List StmtExprMd) := do
+private def raiseAt (ctx : Ctx) (src : FileRange) (summary : String) (ty : HighTypeMd)
+    (value : StmtExprMd) : EM (List StmtExprMd) := do
+  let lattice := (← get).lattice
   let setExc := match currentExc ctx with
-    | some (v, _) => [setLocal v value]
+    | some (v, excTy) =>
+      setLocal v value ::
+        -- `$exc is ty` is well-formed only for a composite `ty` that an `excTy` can be.
+        (if ctx.assumeThrownType && lattice.shareDescendant ty excTy
+         then [assumeOf (isTypeOf (localRef v) ty)] else [])
     | none => []
   let setSite ← recordThrowSite ctx.siteVar src summary
   pure (setExc ++ setSite ++ [ setLocal exnThrownVar (litBool true), exitTo (throwTargetOf ctx) ])
@@ -569,7 +578,7 @@ private def lowerThrowingCall (ctx : Ctx) (callNode : StmtExprMd)
   -- reached only when the call did not throw. An else-less `if` keeps this void.
   -- The propagated exception is written into the current region's `$exc` (whose
   -- type is a supertype of the callee's `throws` type, so no cast is needed).
-  let onBad ← raiseAt ctx callNode.source (callEscapeSummary errTy)
+  let onBad ← raiseAt ctx callNode.source (callEscapeSummary errTy) errTy
     (resultApp exnResultErr (localRef callres))
   let propagate := iteOf (resultApp exnResultIsBad (localRef callres))
     (blockOf onBad) none
@@ -656,7 +665,7 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
       -- here, so the value needs no cast. A region with no `$exc` drops it, and if
       -- it escapes the `try` the re-dispatch asserts that it does not.
       let ty := computeExprType (← get).model value
-      raiseAt ctx src (throwEscapeSummary ty) value
+      raiseAt ctx src (throwEscapeSummary ty) ty value
   | .Return _ =>
       -- Value payloads were removed by EliminateValueInReturns, so this is a
       -- valueless return. Route it so that any enclosing `finally` runs,
@@ -763,18 +772,28 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
     | c :: _ => (some (s!"$exc_{tryId}", c.bindingType), true)
   let excVar := (thisExc.map Prod.fst).getD exnExcVar
   let excTy := (thisExc.map Prod.snd).getD boolTy
+  let lattice := (← get).lattice
+  -- Whether this try's `$exc` is copied into the enclosing one across a shared
+  -- descendant (see `reDispatch`).
+  let crossesShared : Bool := match thisExc, parentExc with
+    | some (_, ti), some (_, tp) =>
+      introducedExc && !isSubtype lattice ti tp && !isSubtype lattice tp ti
+        && lattice.shareDescendant ti tp
+    | _, _ => false
+  let assumeThrownType := ctx.assumeThrownType || crossesShared
   let hasFinally := finally?.isSome
   -- Body phase: a `throw` enters the catch chain ($try); a `return` runs
   -- `finally` first ($tryfin).
   let bodyFrame : TryFrame :=
     { throwLabel := tryLbl, finallyLabel := tryFinLbl, exc := thisExc, hasFinally }
   let bStmts := fillSrcs body.source
-    (← lowerStmt { ctx with frames := .tryRegion bodyFrame :: saved, siteVar } body)
+    (← lowerStmt { ctx with frames := .tryRegion bodyFrame :: saved, siteVar, assumeThrownType } body)
   -- Catch phase: a re-`throw` or `return` in a handler skips the (remaining)
   -- catch chain but still runs `finally` ($tryfin).
   let catchFrame : TryFrame :=
     { throwLabel := tryFinLbl, finallyLabel := tryFinLbl, exc := thisExc, hasFinally }
-  let catchCtx : Ctx := { ctx with frames := .tryRegion catchFrame :: saved, siteVar }
+  let catchCtx : Ctx :=
+    { ctx with frames := .tryRegion catchFrame :: saved, siteVar, assumeThrownType }
   -- Map over the `catches` *parameter* (via `attach`, so each clause carries its
   -- membership proof for the termination argument); the unreachable-catch case is
   -- handled by the `catchesReachable` guard rather than by mapping over the
@@ -889,23 +908,29 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   -- exception edge, copy this try's `$exc` into the enclosing region's `$exc`,
   -- relating this try's LCA `ti` to the enclosing type `tp`:
   --   * `ti <: tp` — plain copy (the residual widens to a supertype).
-  --   * `tp <: ti`, or a composite extends both — assumed checked cast
-  --     (`assume … is tp; … as tp`), sound because the residual analysis proved
-  --     only types `<: tp` actually escape.
+  --   * `tp <: ti` — assumed checked cast (`assume … is tp; … as tp`), relying on
+  --     only types `<: tp` escaping.
+  --   * a composite extends both — the same cast, asserted first: `tp` joins only
+  --     the throws resolution could type. Each exception is assumed to have its own
+  --     type where it is thrown (see `Ctx.assumeThrownType`), so the assertion holds
+  --     whenever every escaping throw fits.
   --   * neither — no copy is emitted. Nothing can escape this try into `tp`:
   --     it would be a common subtype of the two, and resolution rejects a
   --     generic one up front in `checkPropagationEdges`.
   -- A finally-only try shares the enclosing `$exc` (same variable), so no copy.
   let thrownExit := ((innerTry saved).map (·.throwLabel)).getD exnExitLabel
   let returnExit := ((innerTry saved).map (·.finallyLabel)).getD exnExitLabel
-  let lattice := (← get).lattice
   let copyStmts : List StmtExprMd :=
     match thisExc, parentExc with
     | some (vi, ti), some (vp, tp) =>
+        let isTp := isTypeOf (localRef vi) tp
+        let cast := [ assumeOf isTp, setLocal vp (asTypeOf (localRef vi) tp) ]
         if vi == vp then []
         else if isSubtype lattice ti tp then [ setLocal vp (localRef vi) ]
-        else if isSubtype lattice tp ti || lattice.shareDescendant ti tp then
-          [ assumeOf (isTypeOf (localRef vi) tp), setLocal vp (asTypeOf (localRef vi) tp) ]
+        else if isSubtype lattice tp ti then cast
+        else if crossesShared then
+          ⟨.Assert isTp (some s!"the exception escaping this try fits the '{showType tp}' \
+              it propagates into"), src⟩ :: cast
         else []
     | _, _ => []
   -- Pending unwinding `exit`s, one arm each: continue to the next crossed

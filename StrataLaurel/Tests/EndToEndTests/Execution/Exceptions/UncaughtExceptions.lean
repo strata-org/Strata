@@ -460,6 +460,71 @@ procedure escapesThroughSharedDescendantFalse(pick: bool)
 };
 #end
 
+-- The cast is asserted where the exception crosses into an `A`-typed `try`. In
+-- `untypedEscape`, `collectThrownTypes` cannot type the handler's `throw h#b`, so the
+-- outer `try` is typed `A` (its `C` and `A2`). In `nestedInHandler`, the inner `try`
+-- propagates into its handler's `try`, typed `A` by that `try`'s body alone.
+-- `parameterEscape` verifies: its `h#b` is a `B4` and is caught, the parameter `c`,
+-- thrown in a nested `try` and rethrown by the handler, is an `A`, and the `int` raised
+-- inside, which `is` cannot test, is caught.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite A {}
+composite A2 extends A {}
+composite B {}
+composite B3 extends B {}
+composite B4 extends B {}
+composite C extends A, B {}
+composite H { var b: B }
+procedure untypedEscape(h: H, k: int)
+  opaque
+{
+  var c: C := new C;
+  var b4: B4 := new B4;
+  var a2: A2 := new A2;
+  try {
+    try {
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: the exception escaping this try fits the 'A' it propagates into could not be proved
+      if k == 0 then { throw c } else { throw b4 }
+    } catch e when e is B4 { throw h#b };
+    if k == 5 then { throw a2 }
+  } catch e { assert e is A }
+};
+
+procedure nestedInHandler(k: int)
+  opaque
+{
+  var c: C := new C;
+  var a2: A2 := new A2;
+  var b3: B3 := new B3;
+  var b4: B4 := new B4;
+  try {
+    if k == 0 then { throw a2 } else { throw c }
+  } catch x {
+    try {
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: the exception escaping this try fits the 'A' it propagates into could not be proved
+      if k == 1 then { throw b4 } else { throw b3 }
+    } catch e when e is B4 { }
+  }
+};
+
+procedure parameterEscape(h: H, c: C, b4: B4, k: int)
+  requires h#b is B4
+  opaque
+{
+  var a2: A2 := new A2;
+  try {
+    try {
+      try { throw 42 } catch n { };
+      if k == 0 then { try { throw c } finally { } }
+      else { if k == 1 then { throw b4 } else { throw h#b } }
+    } catch e when e is B4 { throw c };
+    if k == 5 then { throw a2 }
+  } catch e { assert e is A }
+};
+#end
+
 -- A guard that can never hold makes its clause dead, and its body is discarded
 -- unresolved, so a front end's read of the binding at the arm type
 -- (`c as StateEx`, an unrelated cast here) is not rejected.
