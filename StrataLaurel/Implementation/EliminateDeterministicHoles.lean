@@ -29,6 +29,7 @@ public section
 
 structure ElimHoleState where
   counter : Nat := 0
+  currentTypeArgs : List Identifier := []
   currentInputs : List Parameter := []
   generatedFunctions : List Procedure := []
 
@@ -41,8 +42,13 @@ private def mkHoleCall (source : FileRange) (holeType : HighTypeMd) : ElimHoleM 
   modify fun s => { s with counter := n + 1 }
   let holeName : Identifier := s!"$hole_{n}"
   let inputs := s.currentInputs
+  -- The hole's procedure declares the enclosing type parameters that its inputs mention, since the
+  -- arguments at its call determine them. One that only the hole's type mentions is not declared:
+  -- nothing at the call could determine it.
+  let mentioned := inputs.flatMap (tvarNames ·.type.val)
   let holeProc : Procedure := {
     name := holeName
+    typeArgs := s.currentTypeArgs.filter (mentioned.contains ·.text)
     inputs := inputs
     outputs := [{ name := "$result", type := holeType }]
     preconditions := []
@@ -62,7 +68,7 @@ private def elimHoleNode (expr : StmtExprMd) : ElimHoleM StmtExprMd := do
   | _ => return expr
 
 private def elimProcedure (proc : Procedure) : ElimHoleM Procedure := do
-  modify fun s => { s with currentInputs := proc.inputs }
+  modify fun s => { s with currentTypeArgs := proc.typeArgs, currentInputs := proc.inputs }
   mapProcedureM (mapStmtExprM elimHoleNode) proc
 
 inductive ElimHoleStats where

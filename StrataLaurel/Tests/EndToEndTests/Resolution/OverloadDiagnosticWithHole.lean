@@ -26,13 +26,12 @@ checks for exactly that, and only a blameless hole silences the report.
 
 `$eq`/`$neq` need matching care in `InferHoleTypes`. `CoreDefinitionsForLaurel`
 declares them `procedure $eq<T>(x: T, y: T) : bool external`, so both slots are the
-same uninstantiated `T` and neither can type a hole. Their operands must agree,
-though, which makes the first non-hole sibling a sound guess — so `calleeParamTypes`
-declines for these two names and `unresolvedOperatorArgType` supplies it, letting
-`<?> == "hello"` infer `string`. Typing the hole from `T` would leave it with
-nothing and report "could not infer type"; the general rule for a generic callee
-blanks only the slots whose declared type mentions a type variable (`mentionsTVar`),
-which is right where the slots differ, as in `select<K,V>(map: TotalMap K V, key: K)`.
+same `T`. Their operands must agree, which makes the first non-hole sibling a sound
+guess also where the call records no usable instantiation, as `x == <?>` at a caller's
+type variable — so `calleeParamTypes` declines for these two names and
+`unresolvedOperatorArgType` supplies it, letting `<?> == "hello"` infer `string`; the
+general rule for a generic callee types a slot that mentions a type variable at the
+instantiation resolution records on the call, and blanks it where there is none.
 -/
 
 -- Baseline, no hole: the operator reports.
@@ -81,26 +80,26 @@ procedure holeComparedToString(s: string) opaque {
 
 /-! ## A hole in a GENERIC callee's slot
 
-The rule above blanks only the slots whose declared type mentions a type variable, which is
-what lets a hole in a *concrete* slot of a partly-generic signature still be typed. Both
-halves need pinning, because they fail in opposite directions: blanking every slot turns the
-first case into "could not infer type", and blanking none makes the second report Core's
-internal `$hole_N$asFunction` instead of a user-level error.
+The rule above blanks only the slots whose declared type mentions a type variable the call does
+not instantiate, which is what lets a hole in a *concrete* slot of a partly-generic signature
+still be typed. Both halves need pinning, because they fail in opposite directions: blanking
+every slot turns the first case into "could not infer type", and blanking none makes the second
+report Core's internal `$hole_N$asFunction` instead of a user-level error.
 
 `InferHoleTypes` should be part of Laurel resolution. Typing a hole from its context is a
 resolution question, and "this hole has no type to take" is the same question answered
 negatively. It is not done there today: `inferHoleTypesPass` runs in the lowering pipeline, so
-`resolve` says nothing about holes either way. That is why ALL THREE cases below run the full
-pipeline under `testLaurelExecution` — on `testLaurelResolution` none of them can fail, the
-rejecting two because their diagnostic is never emitted and the accepting one because the pass
-whose output it describes never runs. Moving the pass into resolution would let all three use
+`resolve` says nothing about holes either way. That is why BOTH cases below run the full
+pipeline under `testLaurelExecution` — on `testLaurelResolution` neither can fail, the
+rejecting one because its diagnostic is never emitted and the accepting one because the pass
+whose output it describes never runs. Moving the pass into resolution would let both use
 `testLaurelResolution` and mean something.
 
 Only the ACCEPTING case runs: it marks an `entry`, so the typed hole is also executed. The
-other two are verification-only because they pin a REJECTION — `could not infer type` comes
-out of `inferHoleTypesPass` during Laurel→Core, so the Core path stops there, and the
-standalone Laurel interpreter never runs that pass at all and so would report nothing while
-the annotation waited to fire. -/
+other is verification-only because it pins a REJECTION — `could not infer type` comes out of
+`inferHoleTypesPass` during Laurel→Core, so the Core path stops there, and the standalone Laurel
+interpreter never runs that pass at all and so would report nothing while the annotation waited
+to fire. -/
 
 -- A hole in the `int` slot of `f<T>(x: int, y: T)`: concrete, so it is typed from the
 -- parameter and the program resolves. On the full pipeline, so that blanking every slot in
@@ -128,21 +127,5 @@ procedure holeInGenericSlot() opaque {
   f(1, <?>);
 //     ^^^ error: could not infer type
   assert 1 == 1
-};
-#end
-
--- The same shape through a built-in: `select<K, V>(map: TotalMap K V, key: K)`'s key slot is
--- a type variable too, even though it is instantiated at `int` by the map argument. This is
--- the case that makes the rule's granularity visible — the slots of `select` differ, unlike
--- `$eq`'s two identical `T`s.
--- Verification-only for the same reason as the case above.
-#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
-#strata
-program Laurel;
-procedure holeInMapKeySlot() opaque {
-  var m: TotalMap int bool := mapConst(false);
-  var b: bool := select(m, <?>);
-//                         ^^^ error: could not infer type
-  assert b == b
 };
 #end

@@ -135,6 +135,18 @@ procedure holeInTransparentBody()
 //^^^^^^^^^^^^^ error: assertion does not hold
 };
 
+// A hole at a type parameter that a binding nested in another type binds to a constrained type is
+// a value of the base: no argument there is checked against the constraint, so `pickV(-1, m)` is
+// accepted too
+procedure pickV<V>(x: V, m: TotalMap int V) returns (r: V) opaque ensures r == x;
+procedure holeAtNestedConstrainedBinding(m: TotalMap int nat)
+  opaque
+{
+  var y: int := pickV(<?>, m);
+  assert y >= 0
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+
 // Argument to constrained-typed parameter — valid
 procedure takesNat(n: nat) returns (r: int)
   opaque

@@ -1869,7 +1869,9 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
   -- to resolve and so synthesized `Unknown`): inference genuinely had nothing to work with
   -- there, and a second error about a type argument would only bury the first. Likewise for a
   -- type parameter mentioned where an argument was rejected (`wrap(5)` at `x: Box<T>`): that
-  -- argument would have determined it.
+  -- argument would have determined it. Not for one that no input or output mentions, which no
+  -- call determines: beside a hole, as `U` of `two<T, U>(x: T, y: T)` at `two(1, <?>)`, it
+  -- would go unreported, since `OpaqueUnusedTypeParams` then drops it and the hole is typed.
   --
   -- Determinacy is asked of `callSiteDeterminedTypeParams`, not of `subst`: an ambiguous diamond
   -- binds nothing in `subst` yet the parameter IS determined.
@@ -1881,7 +1883,11 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
        | none => [])
   let unbound := proc.typeArgs.filter fun tv =>
     !determined.contains tv.text && !rejectedAt.any (mentionsTypeParam ctx [tv.text])
-  if conflicts.isEmpty && !unbound.isEmpty && !argTys.any (·.val matches .Unknown) then
+  let unbound := if argTys.any (·.val matches .Unknown) then
+      unbound.filter fun tv =>
+        !(proc.inputs ++ proc.outputs).any (mentionsTypeParam ctx [tv.text] ·.type)
+    else unbound
+  if conflicts.isEmpty && !unbound.isEmpty then
     let names := String.intercalate ", " (unbound.map (fun tv => s!"'{tv.text}'"))
     let what := if unbound.length == 1 then "type argument" else "type arguments"
     -- Laurel has no syntax for type arguments at a call (only `new C<τ…>`), so the actionable

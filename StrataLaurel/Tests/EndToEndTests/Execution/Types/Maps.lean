@@ -72,3 +72,54 @@ procedure constantMaps()
   assert !(a == b)
 };
 #end
+
+/-! A hole as a map key: `select<K,V>(map: TotalMap K V, key: K)` declares the key slot `K`, which
+types nothing until the call is instantiated, at `int` by `m`. The Core interpreter does not reduce
+an assertion over the hole's opaque value, so it does not run these blocks. -/
+
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+procedure readsMapAtHole()
+  entry
+  opaque
+{
+  var m: TotalMap int bool := mapConst(false);
+  var b: bool := select(m, <?>);
+  assert !b
+};
+#end
+
+/-! The twin: `mapConst(false)` reads `false` at every key, so asserting the read holds must fail.
+The verifier reports it as not proved and the Laurel interpreter as not holding; the annotation is
+the prefix both share. -/
+
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+procedure readsMapAtHoleTwin()
+  entry
+  opaque
+{
+  var m: TotalMap int bool := mapConst(false);
+  var b: bool := select(m, <?>);
+  assert b
+//^^^^^^^^ error: assertion
+};
+#end
+
+/-! The other hole spelling, typed the same: `<??>` is havoced rather than turned into a procedure,
+so the read is asserted for every key, not just for one opaque one. -/
+
+#eval testLaurelExecution { skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+procedure readsMapAtNondetHole()
+  entry
+  opaque
+{
+  var m: TotalMap int bool := mapConst(false);
+  var b: bool := select(m, <??>);
+  assert !b
+};
+#end

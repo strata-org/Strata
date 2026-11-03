@@ -489,23 +489,6 @@ procedure compareRelated() opaque {
 };
 #end
 
-/-! ### Holes are not typed from a generic signature
-
-A `<?>` in an argument slot of a generic callee cannot take its type from the declared
-parameter, whose type variables are not instantiated at that point: doing so carries free
-variables into the `$hole_N$asFunction` procedure `EliminateDeterministicHoles` emits, which
-Core rejects. `calleeParamTypes` leaves such slots to sibling-based inference instead. -/
-
-#eval testLaurelResolution <|
-#strata
-program Laurel;
-procedure holeInMapKey() opaque {
-  var m: TotalMap int bool := mapConst(false);
-  var b: bool := select(m, <?>);
-  assert b == b
-};
-#end
-
 /-! ### Over-arity is reported for a generic callee too
 
 The generic-callee branch pairs arguments with parameters by `zip`, which ignores a surplus

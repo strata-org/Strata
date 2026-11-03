@@ -522,4 +522,34 @@ datatype IntList { Nil(), Cons(head: int, tail: IntList) }
 procedure test() { assert IntList..isCons(<?>) };
 #end
 
+/-! ## Holes in a generic body -/
+
+-- A hole's procedure declares the enclosing type parameters its inputs mention, `A`, and no others:
+-- nothing at the call of `$hole_1`, an `==` operand, would determine `B`, which only its type does,
+-- so Core rejects `$hole_1`, `B` being undeclared.
+/--
+info: procedure $hole_0<A>(x: A): int
+  opaque;
+procedure $hole_1<A>(x: A): B
+  opaque;
+procedure test<A, B>(x: A)
+  returns (r: B)
+  opaque
+{
+  var n: int := $hole_0(x);
+  assume $hole_1(x) == r
+};
+-/
+#guard_msgs in
+#eval parseElimAndPrint <|
+#strata
+program Laurel;
+procedure test<A, B>(x: A) returns (r: B)
+  opaque
+{
+  var n: int := <?>;
+  assume <?> == r
+};
+#end
+
 end Laurel
