@@ -157,6 +157,7 @@ inductive NodeKind where
   | StmtExpr.Hole.deterministic.false
   /-- A field read, `o#f`. -/
   | StmtExpr.Var.var.Field
+  | StmtExpr.Var.var.Stack
   -- Types
   | TypeDefinition.Composite
   | TypeDefinition.Constrained

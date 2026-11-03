@@ -427,6 +427,14 @@ theorem postM_option_mapM {α β : Type} (o : Option α) (f : α → ResolveM β
       rw [hrun] at hv
       exact hv
 
+private theorem postM_withStackWindow {α : Type} {stmt : StmtExprMd} {a : ResolveM α} {P : α → Prop}
+    (h : PostM a P) : PostM (withStackWindow stmt a) P := by
+  unfold withStackWindow
+  exact postM_bind_any fun _ =>
+    postM_bind h fun result hres =>
+    postM_bind_any fun _ =>
+    postM_pure hres
+
 /-- withScope preserves value postconditions. -/
 theorem postM_withScope {α : Type} {a : ResolveM α} {P : α → Prop}
     (h : PostM a P) : PostM (withScope a) P := by
@@ -602,9 +610,9 @@ private theorem statement_clean (e : StmtExprMd) :
     PostM (Check.statement e) Clean := by
   unfold Check.statement
   split
-  · exact masterCheck _ _
-  · exact masterCheck _ _
-  · exact postM_bind (masterSynth _) fun ⟨r, _⟩ hr => postM_pure hr
+  · exact postM_withStackWindow (masterCheck _ _)
+  · exact postM_withStackWindow (masterCheck _ _)
+  · exact postM_bind (postM_withStackWindow (masterSynth _)) fun ⟨r, _⟩ hr => postM_pure hr
 
 include masterSynth masterCheck in
 theorem resolveBody_clean (body : Body) :
@@ -698,6 +706,7 @@ theorem resolveProcedure_clean (proc : Procedure) :
   all_goals
     refine postM_bind_any fun procName' => ?_
     apply postM_withScope
+    refine postM_bind_any fun _ => ?_
     -- Polymorphism: `scopeTypeParams proc.typeArgs` is the first bind inside the scope.
     refine postM_bind_any fun typeArgs' => ?_
     refine postM_bind_any fun inputs' => ?_
@@ -951,6 +960,7 @@ theorem resolveInstanceProcedure_clean (typeName : Identifier) (proc : Procedure
   unfold resolveInstanceProcedure
   refine postM_bind_any fun resolved => ?_
   apply postM_withScope
+  refine postM_bind_any fun _ => ?_
   refine postM_bind_any fun savedInstType => ?_
   refine postM_bind_any fun _ => ?_
   -- Polymorphism: `scopeTypeParams proc.typeArgs` binds before the inputs.

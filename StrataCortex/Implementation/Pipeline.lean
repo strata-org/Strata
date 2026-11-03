@@ -29,7 +29,17 @@ def resolveLaurel (options : LaurelTranslateOptions) (program : LaurelProgram) :
     (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
     (reservedNames := options.reservedNames)
   let errs := result.errors.toList
-  if errs.any (·.kind != .warning) then .error errs else .ok (result.program, result.model, errs)
+  if errs.any (·.kind != .warning) then .error errs else
+  if !programTouchesStack result.program then .ok (result.program, result.model, errs) else
+  let (eliminated, stackDiags) := eliminateStack result.program (exprReadsHeap result.model.heapReaders)
+    (some result.model.heapWriters)
+  if !stackDiags.isEmpty then .error (errs ++ stackDiags) else
+  let again := resolveWithInferredThrows eliminated (gradualTypes := options.gradualTypes)
+    (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
+    (reservedNames := options.reservedNames)
+  let errs' := again.errors.toList
+  let all := errs ++ errs'.filter (!errs.contains ·)
+  if errs'.any (·.kind != .warning) then .error all else .ok (again.program, again.model, all)
 
 /-- Translate a Laurel program to Core through Cortex. With `cfg`, procedure
 bodies are Core CFG bodies; otherwise they are structured. The verifier

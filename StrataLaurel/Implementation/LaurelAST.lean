@@ -535,6 +535,7 @@ inductive Variable : Type where
   | Field (target : AstNode StmtExpr) (fieldName : Identifier)
   /-- A local variable declaration with a name and an optional type annotation (see `Parameter?`). -/
   | Declare (parameter : Parameter?)
+  | Stack (type : Option (AstNode HighType))
 
 /--
 The unified statement-expression type for Laurel programs.
@@ -2524,6 +2525,7 @@ def Variable.toReadbackExpr : Variable → StmtExpr
   | .Local name => .Var (.Local name)
   | .Declare param => .Var (.Local param.name)
   | .Field target fieldName => .Var (.Field target fieldName)
+  | .Stack type => .Var (.Stack type)
 
 /-- Source-preserving read-back expression for a `VariableMd`
     (see `Variable.toReadbackExpr`). -/

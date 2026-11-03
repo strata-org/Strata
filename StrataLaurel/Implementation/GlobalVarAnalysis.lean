@@ -62,7 +62,7 @@ private def recordGlobalTarget (model : SemanticModel) (globals : Std.HashSet Na
     (target : VariableMd) (record : Nat → GlobalAnalysisM Unit) : GlobalAnalysisM Unit :=
   match target.val with
   | .Local name => recordGlobalRef model globals name record
-  | .Field _ _ | .Declare _ => pure ()
+  | .Field _ _ | .Declare _ | .Stack _ => pure ()
 
 private def recordCallee (callee : Identifier) : GlobalAnalysisM Unit :=
   modify fun result => { result with callees := callee :: result.callees }

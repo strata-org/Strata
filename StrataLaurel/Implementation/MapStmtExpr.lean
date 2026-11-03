@@ -126,13 +126,13 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
       match (dependent := true) v with
       | ⟨.Field target fieldName, vs⟩ =>
         pure ⟨Variable.Field (← mapStmtExprUsedM f true target) fieldName, vs⟩
-      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure v
+      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure v
     pure ⟨.Assign targets' (← mapStmtExprUsedM f true value), source⟩
   | .Var (.Field target fieldName) =>
     pure ⟨.Var (.Field (← mapStmtExprUsedM f true target) fieldName), source⟩
   | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
     pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprUsedM f true tgt) fieldName, vs⟩, source⟩
-  | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ => pure expr
+  | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ | .IncrDecr _ _ ⟨.Stack _, _⟩ => pure expr
   -- `.CompoundAssign` carries an `rhs` that must be traversed even for Local/Declare targets.
   | .CompoundAssign op ⟨.Field tgt fieldName, vs⟩ rhs =>
     pure ⟨.CompoundAssign op ⟨.Field (← mapStmtExprUsedM f true tgt) fieldName, vs⟩ (← mapStmtExprUsedM f true rhs), source⟩
@@ -189,7 +189,7 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
   -- it must get its own arm above; otherwise all passes will silently
   -- skip recursion into those children.
   | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-  | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole ..
+  | .Var (.Local _) | .Var (.Declare _) | .Var (.Stack _) | .New .. | .This | .Abstract | .All | .Hole ..
   | .Snapshot _ => pure expr
   f resultUsed rebuilt
 termination_by sizeOf expr
@@ -404,13 +404,13 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
         match (dependent := true) v with
         | ⟨.Field target fieldName, vs⟩ =>
           pure ⟨Variable.Field (collapse (← go true target) target.source) fieldName, vs⟩
-        | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure v
+        | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure v
       pure ⟨.Assign targets' (collapse (← go true value) value.source), source⟩
     | .Var (.Field target fieldName) =>
       pure ⟨.Var (.Field (collapse (← go true target) target.source) fieldName), source⟩
     | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
       pure ⟨.IncrDecr mode op ⟨.Field (collapse (← go true tgt) tgt.source) fieldName, vs⟩, source⟩
-    | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ => pure e
+    | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ | .IncrDecr _ _ ⟨.Stack _, _⟩ => pure e
     -- `.CompoundAssign` carries an `rhs` that must be traversed even for Local/Declare targets.
     | .CompoundAssign op ⟨.Field tgt fieldName, vs⟩ rhs =>
       pure ⟨.CompoundAssign op ⟨.Field (collapse (← go true tgt) tgt.source) fieldName, vs⟩
@@ -454,7 +454,7 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
       pure ⟨.ProveBy (collapse (← go true value) value.source) (collapse (← go false proof) proof.source), source⟩
     | .ContractOf ty func => pure ⟨.ContractOf ty (collapse (← go true func) func.source), source⟩
     | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-    | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole ..
+    | .Var (.Local _) | .Var (.Declare _) | .Var (.Stack _) | .New .. | .This | .Abstract | .All | .Hole ..
     | .Snapshot _ => pure e
     post used rebuilt
   termination_by sizeOf e
@@ -504,14 +504,15 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
       match (dependent := true) v with
       | ⟨.Field target fieldName, vs⟩ =>
         pure ⟨Variable.Field (← mapStmtExprPrePostM pre post target) fieldName, vs⟩
-      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure v
+      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure v
     pure ⟨.Assign targets' (← mapStmtExprPrePostM pre post value), source⟩
   | .Var (.Field target fieldName) =>
     pure ⟨.Var (.Field (← mapStmtExprPrePostM pre post target) fieldName), source⟩
   | .IncrDecr mode op target => match (dependent := true) target with
     | ⟨.Field tgt fieldName, vs⟩ => pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprPrePostM pre post tgt) fieldName, vs⟩, source⟩
     | ⟨.Local _, _⟩
-    | ⟨.Declare _, _⟩ => pure expr
+    | ⟨.Declare _, _⟩
+    | ⟨.Stack _, _⟩ => pure expr
   -- `.CompoundAssign` carries an `rhs` that must be traversed even for Local/Declare targets.
   | .CompoundAssign op ⟨.Field tgt fieldName, vs⟩ rhs =>
     pure ⟨.CompoundAssign op ⟨.Field (← mapStmtExprPrePostM pre post tgt) fieldName, vs⟩
@@ -567,7 +568,7 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
   -- it must get its own arm above; otherwise all passes will silently
   -- skip recursion into those children.
   | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-  | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole ..
+  | .Var (.Local _) | .Var (.Declare _) | .Var (.Stack _) | .New .. | .This | .Abstract | .All | .Hole ..
   | .Snapshot _ => pure expr
   post rebuilt
 termination_by sizeOf expr
@@ -614,17 +615,17 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
     targets.attach.forM fun ⟨v, _⟩ =>
       match v with
       | ⟨.Field target _, _⟩ => foldStmtExprM f target
-      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
+      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure ()
     foldStmtExprM f value
   | .Var (.Field target _) =>
     foldStmtExprM f target
   | .IncrDecr _ _ target => match (dependent := true) target with
     | ⟨.Field tgt _, _⟩ => foldStmtExprM f tgt
-    | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
+    | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure ()
   | .CompoundAssign _ target rhs =>
     (match target with
      | ⟨.Field tgt _, _⟩ => foldStmtExprM f tgt
-     | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ())
+     | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure ())
     foldStmtExprM f rhs
   | .PureFieldUpdate target _ newValue =>
     foldStmtExprM f target; foldStmtExprM f newValue
@@ -677,7 +678,7 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
   | .Yield
   | .Snapshot _
   | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-  | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole .. => pure ()
+  | .Var (.Local _) | .Var (.Declare _) | .Var (.Stack _) | .New .. | .This | .Abstract | .All | .Hole .. => pure ()
 termination_by sizeOf expr
 decreasing_by map_stmt_expr_decreasing expr
 
@@ -728,7 +729,7 @@ def boundNamesOfNode (e : StmtExprMd) : List Identifier :=
   let ofVariable (v : Variable) : List Identifier :=
     match v with
     | .Declare param => [param.name]
-    | .Local _ | .Field _ _ => []
+    | .Local _ | .Field _ _ | .Stack _ => []
   match e.val with
   | .Assign targets _ => targets.flatMap (ofVariable ·.val)
   | .IncrDecr _ _ target | .CompoundAssign _ target _ => ofVariable target.val
@@ -767,6 +768,35 @@ def assignedLocalIds (expr : StmtExprMd) : Std.HashSet Nat :=
 def boundNamesInStmtExpr (expr : StmtExprMd) : Std.HashSet String :=
   foldStmtExpr (fun e acc =>
     (boundNamesOfNode e).foldl (fun acc name => acc.insert name.text) acc) {} expr
+
+def declaredIdentifiers (e : StmtExprMd) : List Identifier :=
+  ((foldStmtExprM (m := StateM (List Identifier)) (fun n => do
+    match n.val with
+    | .Assign targets _ => modify (targets.filterMap (fun t => match t.val with
+        | .Declare p => some p.name
+        | _ => none) ++ ·)
+    | .Var (.Declare p) => modify (p.name :: ·)
+    | _ => pure ()) e).run []).2
+
+def freshenDeclared (suffix : String) (e : StmtExprMd) : StmtExprMd :=
+  let names := declaredIdentifiers e
+  if names.isEmpty then e else
+  let ids := names.filterMap (·.uniqueId)
+  let untracked := (names.filter (·.uniqueId.isNone)).map (·.text)
+  let declared (x : Identifier) : Bool :=
+    (match x.uniqueId with
+      | some id => ids.contains id
+      | none => false) || untracked.contains x.text
+  let rename (x : Identifier) : Identifier :=
+    if declared x then { x with text := x.text ++ suffix, uniqueId := none } else x
+  let renameVar (v : VariableMd) : VariableMd := match v.val with
+    | .Declare p => ⟨.Declare { p with name := rename p.name }, v.source⟩
+    | .Local x => ⟨.Local (rename x), v.source⟩
+    | _ => v
+  mapStmtExpr (fun n => match n.val with
+    | .Var v => ⟨.Var (renameVar ⟨v, n.source⟩).val, n.source⟩
+    | .Assign targets v => ⟨.Assign (targets.map renameVar) v, n.source⟩
+    | _ => n) e
 
 /-- Apply a monadic transformation to all procedure bodies. -/
 @[expose]
@@ -930,6 +960,7 @@ responsible for recursing into compound types (`TSet`/`TMap`/`Applied`/…). -/
 def mapVariableHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (v : Variable) : m Variable := do
   match v with
   | .Declare param => pure (.Declare { param with type := ← param.type.mapM f })
+  | .Stack t => pure (.Stack (← t.mapM f))
   | .Local _ | .Field _ _ => pure v
 
 /--

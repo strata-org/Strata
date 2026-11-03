@@ -429,6 +429,12 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
           exact types ty (by
             simp only [stmtExprTypes, List.mem_flatMap]
             exact ⟨_, hmem, hty⟩)
+        | Stack type =>
+          refine post_pure ⟨?_, by simp [variableChildren]⟩
+          intro ty hty
+          exact types ty (by
+            simp only [stmtExprTypes, List.mem_flatMap]
+            exact ⟨_, hmem, hty⟩)
       · refine post_bind (ih value (by simp [stmtExprChildren]) true) (fun value' hvalue' => ?_)
         refine post_bind (Q := Rebuilt s t) (post_pure ⟨?_, ?_, ?_⟩) (fun x hx => hf u x hx)
         · simpa [NodeKind.ofStmtExpr] using head
@@ -444,7 +450,7 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
           · exact hc ▸ hvalue'
     -- Non-field `CompoundAssign`: the target is passed through, so the negative
     -- pattern hypothesis is what says it has no children.
-    case h_14 op target rhs hne =>
+    case h_15 op target rhs hne =>
       obtain ⟨tv, ts⟩ := target
       cases tv
       case Field tgt fieldName => exact absurd rfl (hne tgt fieldName ts)
@@ -464,7 +470,7 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
           exact hc ▸ hrhs'
     -- `Old`: `StmtExpr.Old.value.Var.Local` reads the child's constructor, so it
     -- transfers to the rebuilt node only because `f` is `ShapeStable`.
-    case h_23 value label? =>
+    case h_24 value label? =>
       refine post_bind (post_and (ih value (by simp [stmtExprChildren]) true)
         (mapStmtExprUsedM_isVarLocal hshape true value)) (fun value' hvalue' => ?_)
       refine post_bind (Q := Rebuilt s t) (post_pure ⟨?_, ?_, ?_⟩) (fun x hx => hf u x hx)
@@ -485,7 +491,7 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
         exact hc ▸ hvalue'.1
     -- `Try`: children sit inside `CatchClause`es, whose `bindingType` is also a
     -- type annotation the node carries.
-    case h_30 body catches finally? =>
+    case h_31 body catches finally? =>
       refine post_bind (ih body (by simp [stmtExprChildren]) false) (fun body' hbody' => ?_)
       refine post_bind (post_attach_mapM
         (P := fun c' => ContainsType s c'.bindingType

@@ -286,6 +286,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
           | .Local name => computeExprType model ⟨.Var (.Local name), target.source⟩
           | .Field _ fieldName => computeExprType model ⟨.Var (.Field ⟨.Hole, target.source⟩ fieldName), target.source⟩
           | .Declare param => param.type.getD ⟨ .Unknown, target.source ⟩
+          | .Stack t => t.getD ⟨ .Unknown, target.source ⟩
         | _ => ⟨ .Unknown, source ⟩
       -- An unmodeled field-write target yields `targetType = .Unknown`. The RHS of an assignment whose
       -- target type is Unknown is a sound gradual hole: annotate it `.Unknown` directly so hole
@@ -303,7 +304,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
             return ⟨.Field
               (← inferExpr receiver (fieldOwnerType model fieldName receiver.source) outputType)
               fieldName, target.source⟩
-        | .Local _ | .Declare _ => pure target
+        | .Local _ | .Declare _ | .Stack _ => pure target
       return ⟨.Assign targets' value', source⟩
   | .Var (.Field receiver fieldName) =>
       return ⟨.Var (.Field
@@ -315,19 +316,20 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
             pure ⟨.Field
               (← inferExpr receiver (fieldOwnerType model fieldName receiver.source) outputType)
               fieldName, target.source⟩
-        | .Local _ | .Declare _ => pure target
+        | .Local _ | .Declare _ | .Stack _ => pure target
       return ⟨.IncrDecr mode op target', source⟩
   | .CompoundAssign op target rhs =>
       let targetType := match target.val with
         | .Local name => computeExprType model ⟨.Var (.Local name), target.source⟩
         | .Field _ fieldName => computeExprType model ⟨.Var (.Field ⟨.Hole, target.source⟩ fieldName), target.source⟩
         | .Declare param => param.type.getD ⟨ .Unknown, target.source ⟩
+        | .Stack t => t.getD ⟨ .Unknown, target.source ⟩
       let target' ← match _targetEq : target.val with
         | .Field receiver fieldName =>
             pure ⟨.Field
               (← inferExpr receiver (fieldOwnerType model fieldName receiver.source) outputType)
               fieldName, target.source⟩
-        | .Local _ | .Declare _ => pure target
+        | .Local _ | .Declare _ | .Stack _ => pure target
       return ⟨.CompoundAssign op target' (← inferExpr rhs targetType outputType), source⟩
   | .PureFieldUpdate target fieldName newValue =>
       let valueType := computeExprType model ⟨.Var (.Field target fieldName), source⟩
@@ -378,7 +380,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
         | none => pure none
       return ⟨.Quantifier mode p trigger' (← inferExpr b ⟨ .TBool, source ⟩ outputType), source⟩
   | .Goto _ _ | .Return [] | .LiteralInt _ | .LiteralBool _ | .LiteralString _
-  | .LiteralDecimal _ | .LiteralBv _ _ | .Var (.Local _) | .Var (.Declare _)
+  | .LiteralDecimal _ | .LiteralBv _ _ | .Var (.Local _) | .Var (.Declare _) | .Var (.Stack _)
   | .New .. | .This | .Abstract | .All | .Yield | .Snapshot _ => return expr
   termination_by sizeOf expr
   decreasing_by

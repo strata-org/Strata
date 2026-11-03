@@ -128,6 +128,12 @@ private theorem targetAsRead_contains {s : KindSet} {target : VariableMd}
     have hk' : k = NodeKind.StmtExpr.Var := by
       simpa [NodeKind.ofStmtExpr, NodeKind.ofVariable] using hk
     exact mem_outSet_of_creates (by simp [hk', eliminateIncrDecrAndCompoundAssignPass])
+  case h_4 t heq =>
+    refine .node _ (fun k hk => ?_) (by simp [stmtExprTypes, variableTypes])
+      (by intro c hc; simp [stmtExprChildren, variableChildren] at hc)
+    have hk' : k = NodeKind.StmtExpr.Var := by
+      simpa [NodeKind.ofStmtExpr, NodeKind.ofVariable] using hk
+    exact mem_outSet_of_creates (by simp [hk', eliminateIncrDecrAndCompoundAssignPass])
 
 /-- `x := x ⊕ rhs`: an `Assign` whose value is a call to the operator's wrapper,
     reading the target. The operator's own kind, if it has one, is carried over

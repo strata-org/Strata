@@ -368,6 +368,10 @@ def transformExpr (expr : StmtExprMd) (discard : Bool := false) : LiftM StmtExpr
         return ⟨.IfThenElse seqCond seqThen seqElse, source⟩
 
   | .Block stmts labelOption invs dec =>
+      if discard && labelOption.isSome then
+        let (_, seqStmts) ← inFreshScope (stmts.attach.mapM fun ⟨s, _⟩ => transformStmt s)
+        prepend ⟨.Block seqStmts.flatten labelOption invs dec, source⟩
+        return ⟨.Hole, source⟩
       -- Only the last element's value is the block's.
       let newStmts := (← stmts.attach.reverse.mapIdxM fun i ⟨s, _⟩ =>
         transformExpr s (discard := discard || i != 0)).reverse

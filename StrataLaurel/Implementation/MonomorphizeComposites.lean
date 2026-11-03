@@ -190,6 +190,7 @@ private def clearIdsInStmtNode (e : StmtExprMd) : StmtExprMd :=
     | .Declare param => { v with val := .Declare (clrDeclParam param) }
     | .Local n => { v with val := .Local (clearId n) }
     | .Field tgt fn => { v with val := .Field tgt (clearId fn) }
+    | .Stack _ => v
   let val' := match e.val with
     | .Var (.Local n) => .Var (.Local (clearId n))
     | .Var (.Field tgt fn) => .Var (.Field tgt (clearId fn))

@@ -65,7 +65,8 @@ private def paramsToArgs (params : List Parameter) (source : FileRange) : List S
 private def mkClauseHelper (name : String) (params : List Parameter)
     (assumptions : List StmtExprMd) (clause : StmtExprMd) : Procedure :=
   let src := clause.source
-  let assumes : List StmtExprMd := assumptions.map fun e => ⟨.Assume e, e.source⟩
+  let assumes : List StmtExprMd := assumptions.zipIdx.map fun (e, k) =>
+    ⟨.Assume (freshenDeclared s!"$assumed{k}" e), e.source⟩
   let assign : StmtExprMd := ⟨.Assign [⟨.Local (mkId resultOutputName), src⟩] clause, src⟩
   let exit : StmtExprMd := ⟨.Goto returnLabel .blockEnd, src⟩
   { name := mkId name

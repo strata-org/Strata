@@ -9,6 +9,7 @@ public import StrataLaurel.Implementation.LaurelPass
 public import StrataLaurel.Implementation.CoreWithLaurelTypes
 import StrataLaurel.Implementation.TransparencyPass
 import StrataLaurel.Implementation.LaurelTypes
+import StrataLaurel.Implementation.LaurelNodeKindProps
 import StrataLaurel.Implementation.EliminateReturnStatements
 import Strata.Util.Tactics
 
@@ -307,18 +308,18 @@ private def declHoleValName (uid : Nat) : Identifier := s!"$declHoleVal_{uid}"
     the hole and the fall-through read sees the assigned value. -/
 private abbrev HoleBinding := Nat × Identifier × HighTypeMd
 
-/-- Whether `e` contains an `exit` or a `return` anywhere inside it.
+private partial def leavesBlockValue (inside : List String) (e : StmtExprMd) : Bool :=
+  match e.val with
+  | .Goto target _ => !inside.contains target
+  | .Return _ => true
+  | .Block stmts label invs dec =>
+    (invs ++ dec.toList ++ stmts).any (leavesBlockValue (label.toList ++ inside))
+  | _ => (stmtExprChildren e.val).any (leavesBlockValue inside)
 
-    Used to reject a block *value* that contains control flow, as in
-    `r := { if c then { exit L }; 5 }`, rather than translate it. `hoistExpr` moves a
-    block value's statements ahead of the statement that evaluates it and drops the
-    block's own label, so an `exit` naming that label would lose its target. -/
-private def containsExitOrReturn (e : StmtExprMd) : Bool :=
-  let check (n : StmtExprMd) : StateM Bool StmtExprMd := do
-    match n.val with
-    | .Goto _ _ | .Return _ => set true; pure n
-    | _ => pure n
-  ((mapStmtExprM check e).run false).2
+private def leavesBlockValueOf (e : StmtExprMd) : Bool :=
+  match e.val with
+  | .Block stmts _ invs dec => (invs ++ dec.toList ++ stmts).any (leavesBlockValue [])
+  | _ => leavesBlockValue [] e
 
 /-- The message for a block value the rewrite will not translate. -/
 private def blockValueExitMsg : String :=
@@ -674,7 +675,7 @@ private def hoistExpr (model : SemanticModel) (e : StmtExprMd)
   if !isBlock && !containsBlockWrite e then return .done [] e
   match e with
   | ⟨.Block stmts _ _ _, src⟩ =>
-    if containsExitOrReturn e then
+    if leavesBlockValueOf e then
       throw (diagnosticFromSource src blockValueExitMsg .userError)
     hoistBlockValue model e stmts
   | ⟨.IfThenElse c t (some el), src⟩ => do
@@ -1017,6 +1018,70 @@ private def rewriteFunctionBody (model : SemanticModel)
       | .error diag => (proc, [], [diag])
   | _ => (proc, [], [])
 
+private def specExitMsg : String :=
+  "an `exit` or `return` inside a loop invariant or decreases clause is not YET supported"
+
+private def specBareDeclMsg : String :=
+  "local variables must have initializers in loop invariants and decreases clauses"
+
+private def specValueMsg : String :=
+  "a loop invariant or decreases clause must end with an expression"
+
+private def isValueStmt (s : StmtExprMd) : Bool :=
+  match s.val with
+  | .Assign .. | .Var (.Declare _) | .While .. | .Goto .. | .Return .. | .Assert .. | .Assume ..
+  | .Block .. => false
+  | _ => true
+
+private def functionalizeSpec (model : SemanticModel) (spec : StmtExprMd)
+    : Except Message StmtExprMd := do
+  if leavesBlockValueOf spec then
+    throw (diagnosticFromSource spec.source specExitMsg .userError)
+  if !(bareDecls spec).isEmpty then
+    throw (diagnosticFromSource spec.source specBareDeclMsg .userError)
+  let declared := declaredLocalUids spec
+  let outer := ((assignedLocals spec).filterMap (·.uniqueId)).filter (!declared.contains ·)
+  let body := alphaConvertLocals spec
+  let stmts := match body.val with
+    | .Block stmts none _ _ => stmts
+    | _ => [body]
+  let hoisted ← (hoistStmts model stmts).run' 0
+  match hoisted.getLast? with
+  | some tail =>
+    if !isValueStmt tail then
+      throw (diagnosticFromSource spec.source specValueMsg .userError)
+    let result ← functionalizeStmts model outer tail [] hoisted.dropLast tail
+    pure ⟨(stripLocalUids result).val, spec.source⟩
+  | none => throw (diagnosticFromSource spec.source specValueMsg .userError)
+
+private def functionalizeLoopSpecs (model : SemanticModel) (body : StmtExprMd)
+    : StmtExprMd × List Message :=
+  let rewrite (n : StmtExprMd) : StateM (List Message) StmtExprMd := do
+    match n.val with
+    | .While cond invs dec loopBody postTest =>
+      let convert (spec : StmtExprMd) : StateM (List Message) StmtExprMd :=
+        match functionalizeSpec model spec with
+        | .ok spec' => pure spec'
+        | .error msg => do
+          modify (· ++ [msg])
+          pure spec
+      let invs' ← invs.mapM convert
+      let dec' ← dec.mapM convert
+      pure ⟨.While cond invs' dec' loopBody postTest, n.source⟩
+    | _ => pure n
+  (mapStmtExprM rewrite body).run []
+
+private def functionalizeProcedureLoops (model : SemanticModel) (proc : Procedure)
+    : Procedure × List Message :=
+  match proc.body with
+  | .Transparent body =>
+    let (body', diags) := functionalizeLoopSpecs model body
+    ({ proc with body := .Transparent body' }, diags)
+  | .Opaque posts (some impl) mods =>
+    let (impl', diags) := functionalizeLoopSpecs model impl
+    ({ proc with body := .Opaque posts (some impl') mods }, diags)
+  | _ => (proc, [])
+
 private def functionalRewrite (uc : LaurelProgram) (model : SemanticModel)
     : LaurelProgram × List Message :=
   -- Every entry of `staticFunctions` is produced by the transparency pass's
@@ -1025,7 +1090,9 @@ private def functionalRewrite (uc : LaurelProgram) (model : SemanticModel)
   -- The generated hole functions are uninterpreted, so they need no rewriting of
   -- their own and simply join the program alongside the rewritten bodies.
   let holes := results.flatMap (·.2.1)
-  ({ uc with staticFunctions := holes ++ results.map (·.1) }, results.flatMap (·.2.2))
+  let procs := uc.staticProcedures.map (functionalizeProcedureLoops model)
+  ({ uc with staticFunctions := holes ++ results.map (·.1), staticProcedures := procs.map (·.1) },
+   results.flatMap (·.2.2) ++ procs.flatMap (·.2))
 
 public def functionalRewritePass : LaurelPass := .onUnordered {
   name := "FunctionalRewritePass"

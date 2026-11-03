@@ -158,6 +158,40 @@ procedure driveSend()
 };
 #end
 
+/-! ## A value sent in by `resume`, stored into a field by `yield`
+
+`b#v := yield` stores the sent value into the field, as `z := yield` does into a local. -/
+
+-- No Core interpreter: lowering it to Core fails with an internal resolution error.
+#eval testLaurelExecution laurelOnly <|
+#strata
+program Laurel;
+composite Box { var v: int }
+coroutine store(b: Box) yields (x: int) resumes (y: int)
+  modifies *
+{
+  x := 0;
+  b#v := yield;
+  x := b#v;
+  yield
+};
+
+procedure driveFieldSend()
+  entry
+  opaque
+  modifies *
+{
+  var b: Box := new Box;
+  b#v := 1;
+  var co: store := store(b);
+  var a: int := resume(co);
+  assert a == 0;
+  var c: int := resume(co, 5);
+  assert c == 5;
+  assert b#v == 5
+};
+#end
+
 /-! ## `has_next` after the body falls off its end
 
 `has_next(co)` stays true until the body has actually run off its end, which is one

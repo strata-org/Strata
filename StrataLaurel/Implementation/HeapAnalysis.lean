@@ -66,7 +66,7 @@ private def collectExprNode (expr : StmtExprMd) : StateM AnalysisResult Unit := 
         for ⟨assignTarget, _⟩ in assignTargets.attach do
           match assignTarget.val with
           | .Field _ _fieldName => modify fun s => { s with writesHeapDirectly := true }
-          | .Local _ | .Declare _ => pure ()
+          | .Local _ | .Declare _ | .Stack _ => pure ()
     -- `c#f++` / `c#f--` mutate a field just like `.Assign` with a `.Field`
     -- target. This analysis runs at initial resolution, before
     -- `EliminateIncrDecrAndCompoundAssign` lowers `IncrDecr` to `.Assign .Field`, so the
@@ -74,18 +74,25 @@ private def collectExprNode (expr : StmtExprMd) : StateM AnalysisResult Unit := 
     | .IncrDecr _ _ target =>
         match target.val with
         | .Field _ _fieldName => modify fun s => { s with writesHeapDirectly := true }
-        | .Local _ | .Declare _ => pure ()
+        | .Local _ | .Declare _ | .Stack _ => pure ()
     -- `c#f += e` mutates a field just like `c#f++`; recognized here for the same
     -- reason (analysis runs before `EliminateIncrDecrAndCompoundAssign` lowers it).
     | .CompoundAssign _ target _ =>
         match target.val with
         | .Field _ _fieldName => modify fun s => { s with writesHeapDirectly := true }
-        | .Local _ | .Declare _ => pure ()
+        | .Local _ | .Declare _ | .Stack _ => pure ()
     | _ => pure ()
 
 /-- Collect direct heap effects from every node in one expression tree. -/
 def collectExprMd (expr : StmtExprMd) : StateM AnalysisResult Unit :=
   foldStmtExprM collectExprNode expr
+
+def exprReadsHeap (heapReaders : Std.HashSet Nat) (e : StmtExprMd) : Bool :=
+  let result := ((collectExprMd e).run {}).2
+  result.readsHeapDirectly || result.callees.any fun c =>
+    match c.uniqueId with
+    | some id => heapReaders.contains id
+    | none => false
 
 def analyzeProc (proc : Procedure) : AnalysisResult :=
   let result := (foldProcedureExprsM collectExprNode proc).run {} |>.2

@@ -577,6 +577,9 @@ procedure $gt(x: int, y: int) : bool
 procedure $ge(x: int, y: int) : bool
   return $intGe(x, y);
 
+procedure $cmp3(x: int, y: int) : int
+  return if x < y then -1 else if x == y then 0 else 1;
+
 // Comparisons (real overload)
 procedure $lt(x: real, y: real) : bool
   return $realLt(x, y);

@@ -135,6 +135,7 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
     `StmtExpr`: a field read is `StmtExpr.Var.var.Field`. -/
 @[expose] def NodeKind.ofVariable : Variable → List NodeKind
   | .Field .. => [NodeKind.StmtExpr.Var.var.Field]
+  | .Stack _ => [NodeKind.StmtExpr.Var.var.Stack]
   | _ => []
 
 /-- The kinds an operator denotes. Only the two short-circuit operators have a kind
@@ -226,11 +227,12 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
 /-- The `StmtExprMd` a `Variable` holds (only a field read holds one). -/
 @[expose] def variableChildren : Variable → List StmtExprMd
   | .Field target _ => [target]
-  | .Local _ | .Declare _ => []
+  | .Local _ | .Declare _ | .Stack _ => []
 
 /-- The declared type a `Variable` carries (only a `Declare` carries one). -/
 @[expose] def variableTypes : Variable → List HighTypeMd
   | .Declare p => p.type.toList
+  | .Stack t => t.toList
   | .Local _ | .Field .. => []
 
 /-- A node's immediate `StmtExprMd` children. -/

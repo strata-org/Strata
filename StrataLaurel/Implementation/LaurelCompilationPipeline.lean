@@ -50,6 +50,8 @@ import StrataLaurel.Implementation.InferThrows
 import StrataLaurel.Implementation.MonomorphizeComposites
 import StrataLaurel.Implementation.OpaqueUnusedTypeParams
 import StrataLaurel.Implementation.LaurelNodeKindCheck
+public import StrataLaurel.Implementation.EliminateStack
+public import StrataLaurel.Implementation.InlinePreconditionOf
 public import StrataLaurel.Implementation.LaurelPass
 public import Strata.Languages.Core
 import Strata.Languages.Core.DDMTransform.ASTtoCST
@@ -125,6 +127,7 @@ abbrev TranslateResultWithLaurel := (Option Core.Program) × (List Message) × L
 
 /-- The ordered sequence of passes, from a Laurel program to a Core program. -/
 def laurelPipeline : Array LaurelPass := #[
+  eliminateStackPass,
   -- Coroutine elaboration emits instance procedures, so it must precede instance lifting.
   coroutineElaborationPass,
   -- Behavioral-subtyping (Liskov) check for method overrides: purely additive (appends
@@ -136,6 +139,7 @@ def laurelPipeline : Array LaurelPass := #[
   -- Polymorphism: lift instance procedures, then monomorphize (the lift must precede
   -- monomorphization).
   liftInstanceProceduresPass,
+  inlinePreconditionOfPass,
   -- TypeAliasElim runs BEFORE monomorphization: an alias of a generic-composite instantiation
   -- (`type BInt = Box<int>`, or a generic `type Foo<T> = Box<T>` used at `Foo<int>`) must unfold
   -- to `Box<int>` so the monomorphizer sees the real `.Applied` and rewrites it to `Box$a1$int`.

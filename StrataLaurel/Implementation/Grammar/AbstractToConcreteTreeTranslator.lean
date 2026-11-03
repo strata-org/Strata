@@ -148,6 +148,7 @@ where
     -- Declare is handled specially in the `Assign [⟨.Declare …⟩]` case of `go`.
     -- This fallback drops the type; it should not be reached in normal operation.
     | .Declare param => laurelOp "identifier" #[ident param.name.text]
+    | .Stack _ => laurelOp "identifier" #[ident "$stack"]
   go : StmtExpr → Arg
     | .LiteralBool b => laurelOp "literalBool" #[boolToArg b]
     | .LiteralInt n =>
@@ -160,6 +161,7 @@ where
     | .Hole true _ => laurelOp "hole"
     | .Hole false _ => laurelOp "nondetHole"
     | .Var (.Local name) => laurelOp "identifier" #[ident name.text]
+    | .Var (.Stack _) => laurelOp "identifier" #[ident "$stack"]
     | .Block stmts label invs _decreases =>
       let stmtArgs := stmts.map stmtExprToArg |>.toArray
       let invArgs := invs.map (fun i => laurelOp "invariantClause" #[stmtExprToArg i]) |>.toArray
@@ -182,6 +184,7 @@ where
             let typeOpt := optionArg (ty?.map fun t => laurelOp "typeAnnotation" #[highTypeToArg t])
             laurelOp "assignTargetDecl" #[ident name.text, typeOpt]
           | .Local name => laurelOp "assignTargetVar" #[ident name.text]
+          | .Stack _ => laurelOp "assignTargetVar" #[ident "$stack"]
           | .Field target fieldName =>
             -- `obj` is a FieldPath: emit the path chain. A `w#b#val` target
             -- round-trips; a non-path object (shouldn't occur for a write target) falls
@@ -208,6 +211,7 @@ where
           laurelOp "fieldAccess" #[stmtExprToArg obj, ident fieldName.text]
         | .Local name => laurelOp "identifier" #[ident name.text]
         | .Declare param => laurelOp "identifier" #[ident param.name.text]
+        | .Stack _ => laurelOp "identifier" #[ident "$stack"]
       laurelOp opName #[targetArg]
     | .CompoundAssign op target rhs =>
       -- `op` is invariably Add/Sub/Mul/Div/Mod/StrConcat (the C2A translator only
@@ -222,6 +226,7 @@ where
           laurelOp "fieldAccess" #[stmtExprToArg obj, ident fieldName.text]
         | .Local name => laurelOp "identifier" #[ident name.text]
         | .Declare param => laurelOp "identifier" #[ident param.name.text]
+        | .Stack _ => laurelOp "identifier" #[ident "$stack"]
       laurelOp opName #[targetArg, stmtExprToArg rhs]
     -- The inferred `typeArgs` are DROPPED when printing: the grammar's `call` op has no
     -- type-argument slot (unlike `new`), so there is nothing to print them as. Nothing is lost —

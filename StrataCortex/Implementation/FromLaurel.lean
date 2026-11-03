@@ -444,6 +444,9 @@ partial def purify (e : StmtExprMd) : CM StmtExprMd := do
       | .Local i => return varNode i src
       | .Declare p => return varNode p.name src
       | .Field o f => return { e with val := .Var (.Field o f) } |> fun n => n
+      | .Stack _ =>
+        unsupported src "a stack value"
+        return e
     | _ =>
       unsupported src "a multi-target assignment in expression position"
       return e
@@ -512,6 +515,9 @@ partial def readVar (v : AstNode Variable) : CM Expr := do
   | .Local i => pureExpr (varNode i v.source)
   | .Field o f => expr { val := .Var (.Field o f), source := v.source }
   | .Declare p => return mkFvar p.name.text
+  | .Stack _ =>
+    unsupported v.source "a stack value"
+    return mkFvar "$stack"
 
 partial def writeVar (v : AstNode Variable) (val : Expr) (md : MD) : CM Unit := do
   match v.val with
@@ -522,6 +528,7 @@ partial def writeVar (v : AstNode Variable) (val : Expr) (md : MD) : CM Unit := 
   | .Field o f =>
     let o' ← expr o
     emit (.writeField o' (← fieldRefOf f) val md)
+  | .Stack _ => unsupported v.source "a stack push"
 
 partial def incrDecrExpr (op : IncrDecrOp) (x : Expr) : Expr :=
   match op with
@@ -705,6 +712,7 @@ partial def assignCall (targets : List (AstNode Variable)) (md : MD) (src : File
         declLocal p.name.text (← lty (p.type.getD ⟨.Unknown, src⟩))
         pure p.name.text
       | .Field _ f => pure f.text
+      | .Stack _ => pure "$stack"
     k names
   else
     let temps ← targets.mapM fun t => do
@@ -712,6 +720,7 @@ partial def assignCall (targets : List (AstNode Variable)) (md : MD) (src : File
         | .Field o f => typeOf { val := .Var (.Field o f), source := t.source }
         | .Local i => typeOf (varNode i t.source)
         | .Declare p => pure (p.type.getD ⟨.Unknown, src⟩)
+        | .Stack _ => pure ⟨.Unknown, src⟩
       freshTemp ty src
     k (temps.map (·.text))
     for (t, tv) in targets.zip temps do
@@ -844,7 +853,7 @@ def renameVar (r : Std.HashMap Nat String) (v : AstNode Variable) : AstNode Vari
   match v.val with
   | .Local i => { v with val := .Local (renameId r i) }
   | .Declare p => { v with val := .Declare { p with name := renameId r p.name } }
-  | .Field .. => v
+  | .Field .. | .Stack _ => v
 
 def renameShadowed (params : List Identifier) (body : StmtExprMd) : StmtExprMd :=
   let r := shadowRenames params body

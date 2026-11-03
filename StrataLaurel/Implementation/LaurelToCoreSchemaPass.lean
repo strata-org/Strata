@@ -658,6 +658,8 @@ def translateExpr (expr : StmtExprMd)
         | astNode => return .fvar () ⟨name.text, ()⟩ (some (← translateType astNode.getType))
   | .Var (.Declare _) =>
       emitExprDiagnostic $ md.toDiagnostic "variable declaration in expression context should have been lowered" MessageKind.strataBug
+  | .Var (.Stack _) =>
+      emitExprDiagnostic $ md.toDiagnostic "a stack value should have been turned into a local" MessageKind.strataBug
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond ← translateExpr cond boundVars isPureContext
       let bthen ← translateExpr thenBranch boundVars isPureContext
@@ -1121,6 +1123,8 @@ def translateStmt (stmt : StmtExprMd)
       let hasField := targets.any fun t => match t.val with | .Field _ _ => true | _ => false
       if hasField then
         throwStmtDiagnostic $ md.toDiagnostic "Field targets in assignment should have been lowered by heap parameterization" MessageKind.strataBug
+      else if targets.any (·.val matches .Stack _) then
+        throwStmtDiagnostic $ md.toDiagnostic "a stack value should have been turned into a local" MessageKind.strataBug
       else
       -- Dispatch over targets, calling onDeclare/onLocal per target type.
       let dispatchTargets
@@ -1137,7 +1141,7 @@ def translateStmt (stmt : StmtExprMd)
           | .Local name =>
             let ident : Core.CoreIdent := ⟨name.text, ()⟩
             result := result ++ (← onLocal ident)
-          | .Field _ _ => pure () -- already handled above
+          | .Field _ _ | .Stack _ => pure () -- already handled above
         return result
       -- Partition targets into init-nondet statements and CoreIdent list (for procedure calls).
       let initTargetsNondet : TranslateM (List Core.Statement × List Core.CoreIdent) := do
@@ -1153,7 +1157,7 @@ def translateStmt (stmt : StmtExprMd)
           | .Local name =>
             let ident : Core.CoreIdent := ⟨name.text, ()⟩
             lhs := lhs ++ [ident]
-          | .Field _ _ => pure () -- already handled above
+          | .Field _ _ | .Stack _ => pure () -- already handled above
         return (inits, lhs)
       -- Translate a procedure/instance call: init Declare targets with nondet, then emit call.
       let translateCallTargets (calleeId : Identifier) (args : List StmtExprMd) : TranslateM (List Core.Statement) := do
@@ -1164,7 +1168,7 @@ def translateStmt (stmt : StmtExprMd)
         let targetTypes : List HighTypeMd := targets.filterMap fun t => match t.val with
           | .Declare param => some (param.type.getD ⟨.Unknown, t.source⟩)
           | .Local name => some (model.get name).getType
-          | .Field _ _ => none
+          | .Field _ _ | .Stack _ => none
         let mut callArgs := callArgs
         let mut outArgs : List (Imperative.CallArg Core.Expression) := []
         let mut tempInits : List Core.Statement := []

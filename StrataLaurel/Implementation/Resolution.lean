@@ -18,6 +18,7 @@ import StrataLaurel.Implementation.HeapAnalysis
 import StrataLaurel.Implementation.GlobalVarAnalysis
 import StrataLaurel.Implementation.MapStmtExpr
 import StrataLaurel.Implementation.PushOldInward
+import StrataLaurel.Implementation.StackShape
 
 /-!
 # Name Resolution Pass
@@ -183,6 +184,10 @@ structure ResolveState where
       chains) used by the subtyping/consistency checks. Built once from
       `program.types` at the start of `resolve`. -/
   typeLattice : TypeLattice := {}
+  usesStack : Bool := false
+  stackTypes : List HighTypeMd := []
+  stackWindow : Option (List HighTypeMd) := none
+  exitStacks : List (String × List HighTypeMd) := []
   /-- Overload table for static procedures: each name maps to the list of
       registered overloads as `(uniqueId, procedure)` pairs, in declaration
       order. A name with more than one entry is overloaded. The flat `scope`
@@ -313,6 +318,14 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
         | _ => pure none
       | _ => pure none
     | none => pure none
+  | .Var (.Stack (some ty)) =>
+    match ty.val with
+    | .UserDefined typRef => pure (some typRef.text)
+    | .Applied base _ =>
+      match base.val with
+      | .UserDefined typRef => pure (some typRef.text)
+      | _ => pure none
+    | _ => pure none
   | .Var (.Field inner fieldName) => do
     let innerIsRef := match inner.val with
       | .StaticCall callee [_] _ => callee.text == compositeRefAccessor
@@ -1215,6 +1228,122 @@ private def compoundAssignAccepts (op : Operation) (baseTy : HighType) : Bool :=
 /-- Look up the declared type of an `IncrDecr` target during resolution.
     Handles `Local` (scope lookup) and `Field` (type-scope lookup); returns
     `none` when the type cannot be determined (e.g. an unresolved name). -/
+private def stackNotUpdatable (source : FileRange) : ResolveM Unit :=
+  let diag := diagnosticFromSource source "a stack value cannot be updated in place"
+  modify fun s => { s with errors := s.errors.push diag }
+
+private def pushStackType (ty : HighTypeMd) : ResolveM Unit :=
+  modify fun s => { s with stackTypes := ty :: s.stackTypes }
+
+private def popStackType (source : FileRange) : ResolveM HighTypeMd := do
+  let s ← get
+  match s.stackWindow with
+  | some (ty :: rest) =>
+    set { s with stackWindow := some rest }
+    pure ty
+  | _ =>
+    match s.stackTypes with
+    | ty :: rest =>
+      set { s with stackTypes := rest }
+      pure ty
+    | [] => pure { val := .Unknown, source := source }
+
+private def openStackWindow (stmt : StmtExprMd) : ResolveM (Option (List HighTypeMd)) := do
+  let s ← get
+  let saved := s.stackWindow
+  if !s.usesStack then return saved
+  match saved with
+  | some (_ :: _) => return saved
+  | _ =>
+    let n := stackWindowReads stmt
+    set { s with stackWindow := some (s.stackTypes.take n).reverse, stackTypes := s.stackTypes.drop n }
+    return saved
+
+private def closeStackWindow (saved : Option (List HighTypeMd)) : ResolveM Unit :=
+  modify fun s => { s with stackWindow := saved }
+
+def withStackWindow (stmt : StmtExprMd) (act : ResolveM α) : ResolveM α := do
+  let saved ← openStackWindow stmt
+  let r ← act
+  closeStackWindow saved
+  pure r
+
+private def currentStack : ResolveM (List HighTypeMd) := do
+  pure (← get).stackTypes
+
+private def resetStack (base : List HighTypeMd) : ResolveM (List HighTypeMd) := do
+  let s ← get
+  set { s with stackTypes := base }
+  pure s.stackTypes
+
+private def stackTargetType (targets : List VariableMd) (inferInfo : Option (StmtExprMd × HighTypeMd))
+    (compTy : Option HighTypeMd) (vs : FileRange) : HighTypeMd :=
+  match compTy, targets, inferInfo with
+  | some ty, _, _ => ty
+  | none, [_], some (_, ty) => ty
+  | _, _, _ => { val := .Unknown, source := vs }
+
+private def pushStackTargets (targets : List VariableMd) : ResolveM Unit :=
+  targets.forM fun t => do
+    if let .Stack (some ty) := t.val then
+      if ty.val matches .TVoid then
+        modify fun s => { s with errors := s.errors.push (diagnosticFromSource t.source "a stack push needs a value") }
+      pushStackType ty
+
+private def stackPushType (targets : List VariableMd) (source : FileRange) (r : StmtExpr × HighTypeMd) :
+    StmtExpr × HighTypeMd :=
+  if targets.all isStackVar then (r.1, { val := .TVoid, source := source }) else r
+
+private def Synth.stackRead (source : FileRange) : ResolveM (StmtExpr × HighTypeMd) := do
+  let ty ← popStackType source
+  pure (.Var (.Stack (some ty)), ty)
+
+private def Synth.stackPermute (targets : List VariableMd) (value : StmtExprMd) (order : List Nat)
+    (source : FileRange) : ResolveM (StmtExpr × HighTypeMd) := do
+  let (callee, args) := match value.val with
+    | .StaticCall callee args _ => (callee, args)
+    | _ => (mkId "$permute", [])
+  let tys ← args.mapM fun a => popStackType a.source
+  let tyAt (i : Nat) : HighTypeMd := tys.getD i { val := .Unknown, source := source }
+  for i in order do pushStackType (tyAt i)
+  let args' := (args.zip tys).map fun (a, ty) => (⟨.Var (.Stack (some ty)), a.source⟩ : StmtExprMd)
+  pure (.Assign ((targets.zip order).map fun (t, i) => ⟨.Stack (some (tyAt i)), t.source⟩)
+      ⟨.StaticCall callee args' [], value.source⟩,
+    { val := .TVoid, source := source })
+
+private def mergeStackArms (thenStack elseStack : List HighTypeMd) (thenAbrupt elseAbrupt : Bool := false) :
+    ResolveM Unit := do
+  let s ← get
+  if !s.usesStack then return
+  let merged :=
+    if thenAbrupt then elseStack
+    else if elseAbrupt then thenStack
+    else if thenStack.length == elseStack.length then
+      (thenStack.zip elseStack).map fun (a, b) =>
+        ((join s.typeLattice a b).orElse fun _ => s.typeLattice.commonAncestorType [a, b]).getD a
+    else thenStack
+  set { s with stackTypes := merged }
+
+private def withOwnStack (act : ResolveM α) : ResolveM α := do
+  let s ← get
+  let saved := (s.stackTypes, s.stackWindow)
+  set { s with stackTypes := [], stackWindow := none }
+  let r ← act
+  modify fun st => { st with stackTypes := saved.1, stackWindow := saved.2 }
+  pure r
+
+private def mergeExitStacks (label : String) (naturalAbrupt : Bool) : ResolveM Unit := do
+  let s ← get
+  if !s.usesStack then return
+  let mine := (s.exitStacks.filter (·.1 == label)).map (·.2)
+  set { s with exitStacks := s.exitStacks.filter (·.1 != label) }
+  match (if naturalAbrupt then [] else [s.stackTypes]) ++ mine.reverse with
+  | [] => pure ()
+  | first :: rest =>
+    let _ ← resetStack first
+    for other in rest do
+      mergeStackArms (← currentStack) other
+
 private def incrDecrTargetType (target : VariableMd) : ResolveM (Option HighType) := do
   let s ← get
   match target.val with
@@ -1227,6 +1356,7 @@ private def incrDecrTargetType (target : VariableMd) : ResolveM (Option HighType
     | some typeName => fieldTypeInScope typeName fieldName
     | none => pure none
   | .Declare param => pure (param.type.map (·.val))
+  | .Stack t => pure (t.map (·.val))
 
 /-- Emit a diagnostic if `++`/`--` is applied to an unsupported element type.
     Only `int` and int-based constrained types (e.g. `nat`) are supported by the
@@ -1950,6 +2080,7 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd)
   | .LiteralDecimal v => pure (Synth.litDecimal v source)
   | .LiteralBv v width => pure (Synth.litBv v width source)
   | .Var (.Local ref) => Synth.varLocal ref source
+  | .Var (.Stack _) => Synth.stackRead source
   | .IncrDecr mode op target =>
     Synth.incrDecr exprMd mode op target source (by rw [h_node, h_expr])
   | .CompoundAssign op target rhs =>
@@ -1962,7 +2093,8 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd)
   | .Assign [⟨.Declare ⟨name, none⟩, vs⟩] value =>
     Synth.declInfer exprMd name vs value source (by rw [h_node, h_expr])
   | .Assign targets value =>
-    Synth.assign exprMd targets value source (by rw [h_node, h_expr])
+    if let some order := stackPermutation targets value then Synth.stackPermute targets value order source
+    else stackPushType targets source <$> Synth.assign exprMd targets value source (by rw [h_node, h_expr])
   | .PureFieldUpdate target fieldName newVal =>
     Synth.pureFieldUpdate exprMd target fieldName newVal (by rw [h_node, h_expr])
   | .StaticCall callee args tyArgs =>
@@ -2086,7 +2218,10 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   | .Assign [⟨.Declare ⟨name, none⟩, vs⟩] value =>
     Check.declInfer exprMd name vs value expected source (by rw [h_node, h_expr])
   | .Assign targets value =>
-    Check.assign exprMd targets value expected source (by rw [h_node, h_expr])
+    if let some order := stackPermutation targets value then do
+      let (e', _) ← Synth.stackPermute targets value order source
+      pure { val := e', source := source }
+    else Check.assign exprMd targets value expected source (by rw [h_node, h_expr])
   | .Hole det none => pure (Check.holeNone det expected source)
   | .Hole det (some ty) => Check.holeSome det ty expected source
   | .Old val label? =>
@@ -2323,6 +2458,8 @@ def Check.goto (target : String) (destination : GotoDestination) (source : FileR
     let diag := diagnosticFromSource source
       s!"label '{target}' is not in scope"
     modify fun s => { s with errors := s.errors.push diag }
+  if destination matches .blockEnd then
+    modify fun s => if s.usesStack then { s with exitStacks := (target, s.stackTypes) :: s.exitStacks } else s
   pure { val := .Goto target destination, source := source }
 
 /-- (Return)
@@ -2481,9 +2618,9 @@ def Synth.emptyBlock (source : FileRange) : HighTypeMd :=
 def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
   match s.val with
   | .IfThenElse .. | .Block (_ :: _) .. =>
-    Check.resolveStmtExpr s { val := .TVoid, source := s.source }
+    withStackWindow s (Check.resolveStmtExpr s { val := .TVoid, source := s.source })
   | _ =>
-    let (s', _) ← Synth.resolveStmtExpr s; pure s'
+    let (s', _) ← withStackWindow s (Synth.resolveStmtExpr s); pure s'
   termination_by sizeOf s * 5 + 4
   decreasing_by all_goals (omega)
 
@@ -2562,7 +2699,7 @@ def Check.block (exprMd : StmtExprMd)
   let checkLast (s : StmtExprMd) (_h_mem : s ∈ stmts) : ResolveM StmtExprMd := do
     match expected.val with
     | .TVoid => Check.statement s
-    | _ => Check.resolveStmtExpr s expected
+    | _ => withStackWindow s (Check.resolveStmtExpr s expected)
   withScope <| withLabel label do
     let init' ← stmts.dropLast.attach.mapM fun ⟨s, hMem⟩ => do
       have h_mem : s ∈ stmts := List.dropLast_subset stmts hMem
@@ -2598,6 +2735,7 @@ def Check.block (exprMd : StmtExprMd)
     | some last =>
       have := List.mem_of_getLast? _lastResult
       let last' ← checkLast last ‹_›
+      if let some l := label then mergeExitStacks l (endsAbruptly last')
       pure { val := .Block (init' ++ [last']) label invs' dec', source := source }
   termination_by sizeOf exprMd * 5 + 0
   decreasing_by
@@ -2662,8 +2800,11 @@ def Check.ifThenElse (exprMd : StmtExprMd)
     match expected.val with
     | .TVoid => Check.statement e
     | _ => Check.resolveStmtExpr e expected
+  let base ← currentStack
   let thenBr' ← checkArm thenBr hthen
+  let thenStack ← resetStack base
   let elseBr' ← elseBr.attach.mapM (fun ⟨e, he⟩ => checkArm e (helse e he))
+  mergeStackArms thenStack (← currentStack) (endsAbruptly thenBr) (elseBr.any endsAbruptly)
   if elseBr.isNone then
     checkSubtype source expected { val := .TVoid, source := source }
   pure { val := .IfThenElse cond' thenBr' elseBr', source := source }
@@ -2717,12 +2858,16 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
     (expected? : Option HighTypeMd := none) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
+  let base ← currentStack
   let (thenBr', thenTy) ← Synth.resolveStmtExpr thenBr expected?
+  let thenStack ← resetStack base
   match (dependent := true) elseBr with
   | none =>
+    mergeStackArms thenStack base (endsAbruptly thenBr)
     pure (.IfThenElse cond' thenBr' none, { val := .TVoid, source := source })
   | some e =>
     let (e', elseTy) ← Synth.resolveStmtExpr e expected?
+    mergeStackArms thenStack (← currentStack) (endsAbruptly thenBr) (endsAbruptly e)
     let ctx := (← get).typeLattice
     -- A branch ending in a heap-threading assign synthesizes the plumbing type `Heap`, while a
     -- sibling branch with no field-write stays `void`. These are not incompatible: in statement
@@ -2810,7 +2955,8 @@ def Synth.block (exprMd : StmtExprMd)
       pure (.Block init' label invs' dec', Synth.emptyBlock source)
     | some last =>
       have := List.mem_of_getLast? _lastResult
-      let (last', lastTy) ← Synth.resolveStmtExpr last expected?
+      let (last', lastTy) ← withStackWindow last (Synth.resolveStmtExpr last expected?)
+      if let some l := label then mergeExitStacks l (endsAbruptly last')
       pure (.Block (init' ++ [last']) label invs' dec', lastTy)
   termination_by sizeOf exprMd * 5 + 1
   decreasing_by
@@ -3025,7 +3171,7 @@ def Synth.assign (exprMd : StmtExprMd)
   -- the synthesized tuple (the callee's declared output); the RHS/target
   -- compatibility is then enforced by a tuple-level Sub check at the end
   -- instead of the usual push-in.
-  let inferInfo ← if targets.any (fun t => t.val matches .Declare ⟨_, none⟩) then
+  let inferInfo ← if targets.any (fun t => t.val matches .Declare ⟨_, none⟩ || t.val matches .Stack none) then
       some <$> Synth.resolveStmtExpr value
     else pure none
   let (compTys, arityError) ← componentTypes targets inferInfo
@@ -3051,6 +3197,11 @@ def Synth.assign (exprMd : StmtExprMd)
       let fieldName' ← resolveFieldRef target' fieldName source holderTy
       pure (Sum.inl ((⟨.Field target' fieldName', vs⟩ : VariableMd),
         ← concretizeFieldType holderTy fieldName'))
+    | ⟨.Stack t, vs⟩ => do
+      let ty' ← match t with
+        | some ty => resolveHighType ty
+        | none => pure (stackTargetType targets inferInfo compTy vs)
+      pure (Sum.inl ((⟨.Stack (some ty'), vs⟩ : VariableMd), ty'))
     | ⟨.Declare param, vs⟩ =>
       let ty' ← match param.type with
         | some ty => resolveHighType ty
@@ -3089,6 +3240,7 @@ def Synth.assign (exprMd : StmtExprMd)
       let name' ← defineNameCheckDup param.name (.var param.name ty')
       pure (⟨.Declare ⟨name', some ty'⟩, vs⟩ : VariableMd)
   reportDuplicateTargets targets'
+  pushStackTargets targets'
   pure (.Assign targets' value', expectedTy)
   termination_by sizeOf exprMd * 5 + 1
   decreasing_by
@@ -3231,6 +3383,9 @@ def Synth.incrDecr (exprMd : StmtExprMd)
       let (tgt', holderTy) ← Synth.resolveStmtExpr tgt
       let fieldName' ← resolveFieldRef tgt' fieldName source holderTy
       pure ((⟨.Field tgt' fieldName', target.source⟩ : VariableMd), ← concretizeFieldType holderTy fieldName')
+    | .Stack t => do
+      stackNotUpdatable target.source
+      pure ((⟨.Stack t, target.source⟩ : VariableMd), t.getD { val := .Unknown, source := target.source })
     | .Declare param =>
       -- Should not occur — the translator rejects a declaration target;
       -- treat conservatively by resolving its type only.
@@ -3276,6 +3431,9 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
       let (tgt', holderTy) ← Synth.resolveStmtExpr tgt
       let fieldName' ← resolveFieldRef tgt' fieldName source holderTy
       pure (⟨.Field tgt' fieldName', target.source⟩ : VariableMd)
+    | .Stack t => do
+      stackNotUpdatable target.source
+      pure (⟨.Stack t, target.source⟩ : VariableMd)
     | .Declare param =>
       -- Should not occur — the translator rejects a declaration target;
       -- treat conservatively by resolving its type only.
@@ -3287,6 +3445,7 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
   let resultTy ← match target'.val with
     | .Local ref => getVarType ref
     | .Declare param => pure (param.type.getD { val := .Unknown, source := target.source })
+    | .Stack t => pure (t.getD { val := .Unknown, source := target.source })
     | .Field _ fieldName => getVarType fieldName
   let rhs' ← Check.resolveStmtExpr rhs resultTy
   pure (.CompoundAssign op target' rhs', resultTy)
@@ -4295,7 +4454,7 @@ def Synth.quantifier (exprMd : StmtExprMd)
     let paramName' ← defineNameCheckDup param.name (.quantifierVar param.name paramTy')
     let trigger' ← trigger.attach.mapM (fun pv => have := pv.property; do
       let (e', _) ← Synth.resolveStmtExpr pv.val; pure e')
-    let body' ← Check.resolveStmtExpr body { val := .TBool, source := body.source }
+    let body' ← withOwnStack (Check.resolveStmtExpr body { val := .TBool, source := body.source })
     pure (.Quantifier mode ⟨paramName', paramTy'⟩ trigger' body', { val := .TBool, source := source })
   termination_by sizeOf exprMd * 5 + 1
   decreasing_by
@@ -4767,6 +4926,7 @@ def Synth.contractOf (exprMd : StmtExprMd)
         node.kind == .instanceProcedure ||
         node.kind == .unresolved
       | none => true  -- unresolved name already reported
+    | .StaticCall .. | .InstanceCall .. => match ty with | .Precondition => true | _ => false
     | _ => false
   unless fnIsProcRef do
     let diag := diagnosticFromSource fn.source
@@ -5023,6 +5183,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
     | some id => pure { proc.name with uniqueId := some id }
     | none => resolveRef proc.name
   withScope do
+    modify fun s => { s with stackTypes := [], stackWindow := none, exitStacks := [] }
     -- Scope type params first, so `T` in inputs/outputs/body resolves to `.TVar`.
     let typeArgs' ← scopeTypeParams proc.typeArgs
     let inputs' ← proc.inputs.mapM resolveParameter
@@ -5115,6 +5276,7 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
   let resolved ← resolveRef scopedKey
   let procName' := { proc.name with uniqueId := resolved.uniqueId }
   withScope do
+    modify fun s => { s with stackTypes := [], stackWindow := none, exitStacks := [] }
     let savedInstType := (← get).instanceTypeName
     modify fun s => { s with instanceTypeName := some typeName.text }
     -- Scope the method's OWN type params (`id2<U>`); the composite's `T` is already in
@@ -6069,11 +6231,7 @@ private def containsProcId (ids : Std.HashSet Nat) (name : Identifier) : Bool :=
     The latter uses the `heapReaders` set precomputed on the `SemanticModel`, so
     e.g. `old(f(x))` is recognized as meaningful when `f` reads the heap. -/
 private def containsHeapRead (heapReaders : Std.HashSet Nat) (e : StmtExprMd) : Bool :=
-  let result := ((collectExprMd e).run {}).2
-  result.readsHeapDirectly || result.callees.any fun c =>
-    match c.uniqueId with
-    | some id => heapReaders.contains id
-    | none => false
+  exprReadsHeap heapReaders e
 
 /-- Reject the exception source shapes `EliminateExceptions` does not yet handle
     (each would otherwise miscompile or hit a `strata-bug`). Run from `resolve` on
@@ -6220,6 +6378,7 @@ private def oldWarningsForProc (heapReaders : Std.HashSet Nat) (writesHeap : Boo
       modify (· ++ nestedOldWarnings inner)
       let refsInout := mentionsInout inoutNames inner
         || (inBody && mentionsMutatedInput mutatedInputIds inner)
+        || countStackReads inner > 0
       if !writesHeap && !refsInout then
         modify (· ++ [diagnosticFromSource n.source
           "`old(...)` has no effect: the enclosing procedure does not modify the heap" .warning])
@@ -6537,7 +6696,7 @@ private def isGlobalTarget (model : SemanticModel) (target : VariableMd) : Bool 
   | .Local name => match model.get? name with
       | some (.field owner _) => owner.text == "$static"
       | _ => false
-  | .Field _ _ | .Declare _ => false
+  | .Field _ _ | .Declare _ | .Stack _ => false
 
 
 private def globalDependentIds (program : LaurelProgram) (analysis : InitialEffectAnalysis) : Std.HashSet Nat :=
@@ -6610,16 +6769,16 @@ private def foldRestrictedStmtExprM [Monad m]
   | .Assign targets value =>
     targets.attach.forM fun ⟨target, _⟩ => match target with
       | ⟨.Field receiver _, _⟩ => foldRestrictedStmtExprM f restricted receiver
-      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
+      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure ()
     foldRestrictedStmtExprM f restricted value
   | .Var (.Field target _) => foldRestrictedStmtExprM f restricted target
   | .IncrDecr _ _ target => match (dependent := true) target with
     | ⟨.Field receiver _, _⟩ => foldRestrictedStmtExprM f restricted receiver
-    | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
+    | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure ()
   | .CompoundAssign _ target rhs =>
     match (dependent := true) target with
     | ⟨.Field receiver _, _⟩ => foldRestrictedStmtExprM f restricted receiver
-    | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ => pure ()
+    | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure ()
     foldRestrictedStmtExprM f restricted rhs
   | .PureFieldUpdate target _ value => foldRestrictedStmtExprM f restricted target; foldRestrictedStmtExprM f restricted value
   | .StaticCall _ args _ =>
@@ -6658,7 +6817,7 @@ private def foldRestrictedStmtExprM [Monad m]
   | .HasNext target => foldRestrictedStmtExprM f restricted target
   | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _
   | .LiteralDecimal _ | .LiteralBv _ _ | .Var (.Local _)
-  | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole ..
+  | .Var (.Declare _) | .Var (.Stack _) | .New .. | .This | .Abstract | .All | .Hole ..
   | .Yield | .Snapshot _ => pure ()
 termination_by sizeOf expr
 decreasing_by
@@ -7524,7 +7683,7 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
   let typeLattice := { TypeLattice.ofTypes program.types with
     gradualTypes := gradualTypes, realizeCoercion := realizeCoercion, toBool := toBool,
     reservedNames := reservedNames }
-  let (program', finalState) := phase1.run { nextId := nextId, typeLattice }
+  let (program', finalState) := phase1.run { nextId := nextId, typeLattice, usesStack := programTouchesStack program }
   -- Phase 2: build refToDef from the resolved program (all definitions now have UUIDs)
   let refToDef := buildRefToDef program'
   -- Heap-effect classification over all procedures (static plus composite

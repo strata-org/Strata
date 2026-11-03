@@ -359,6 +359,9 @@ structure EvalState where
   /-- Set while an `old(e)` is being evaluated, so a read of an object the
       procedure allocated can say so. -/
   inOld : Bool := false
+  usesStack : Bool := false
+  operands : List Value := []
+  operandWindow : Option (List Value) := none
   deriving Inhabited
 
 abbrev DisplayStackFrame := Std.HashMap String String
@@ -649,6 +652,9 @@ private def callBuiltin (name : String) (args : List Value) (absent : Value := .
   let bad : IO Value := throw (IO.userError
     s!"builtin '{name}' applied to {args.map reprVariant}")
   match name, args with
+  | "$cmp3", [.int ⟨x⟩, .int ⟨y⟩] =>
+      some (pure (.int ⟨if x < y then -1 else if x == y then 0 else 1⟩))
+  | "$cmp3", _ => some bad
   -- Sequences. An index out of range violates the operation's `requires`, which the
   -- call reports; the result is then unconstrained, and answers a fixed value.
   | "seqEmpty",    []                          => some (pure (.seq #[]))
@@ -1245,10 +1251,40 @@ partial def withBlockScope (stmts : List StmtExprMd) (act : EvalM α) : EvalM α
 /-- Run a statement that is the body of an `if` arm or a loop. One that is not a
     block is still a scope of its own, so a declaration it makes is undone when it
     finishes, as it would be inside braces. -/
+partial def popOperand : EvalM Value := do
+  let s ← get
+  match s.operandWindow with
+  | some (v :: rest) =>
+    set { s with operandWindow := some rest }
+    pure v
+  | _ =>
+    match s.operands with
+    | v :: rest =>
+      set { s with operands := rest }
+      pure v
+    | [] => evalError "this reads more stack values than were pushed"
+
+partial def withOperandWindow (stmt : StmtExprMd) (act : EvalM α) : EvalM α := do
+  let s ← get
+  if !s.usesStack then return ← act
+  let saved := s.operandWindow
+  match saved with
+  | some (_ :: _) => act
+  | _ =>
+    let n := stackWindowReads stmt
+    if s.operands.length < n then
+      evalError "this reads more stack values than were pushed"
+    set { s with operandWindow := some (s.operands.take n).reverse, operands := s.operands.drop n }
+    let r ← tryCatch act fun e => do
+      modify fun st => { st with operandWindow := saved }
+      throw e
+    modify fun st => { st with operandWindow := saved }
+    pure r
+
 partial def evalScopedStmt (cfg : ExternalBackend) (s : StmtExprMd) : EvalM Unit :=
   match s.val with
   | .Block .. => evalStmt cfg s
-  | _ => withBlockScope [s] (evalStmt cfg s)
+  | _ => withBlockScope [s] (withOperandWindow s (evalStmt cfg s))
 
 /-- `evalExpr` on a node, recording a call's own source range in
     `EvalState.callSite` first so the call can report a violated precondition
@@ -1283,6 +1319,7 @@ partial def evalExpr (cfg : ExternalBackend) : StmtExpr → EvalM Value
           | some v => pure v
           | none =>
             liftM (m := IO) (throw (IO.userError s!"undefined identifier '{name.text}'"))
+  | .Var (Variable.Stack _) => popOperand
   | .LiteralDecimal d => pure (.real (StrataDDM.Decimal.toRat d))
   -- A hole stands for an unconstrained value. Concretely there is nothing to choose,
   -- so it evaluates to `unset`, and USING one is an error -- which is the useful
@@ -1359,6 +1396,16 @@ partial def evalExpr (cfg : ExternalBackend) : StmtExpr → EvalM Value
       let tv ← evalExprMd cfg target
       let (_, co) ← coroInstance tv "has_next"
       pure (.bool ⟨!co.finished⟩)
+  | .ContractOf .Precondition ⟨.StaticCall callee args _, _⟩ => do
+      let argVals ← args.mapM (evalExprMd cfg)
+      match lookupCallee (← get).index callee with
+      | some proc => preconditionValue cfg proc argVals
+      | none => evalError s!"unknown procedure '{callee.text}'"
+  | .ContractOf .Precondition ⟨.InstanceCall target callee args _, _⟩ => do
+      let tv ← evalExprMd cfg target
+      let argVals ← args.mapM (evalExprMd cfg)
+      let proc ← resolveMethod tv callee.text
+      preconditionValue cfg proc (tv :: argVals)
   | .StaticCall callee args typeArgs => do
       let site := (← get).callSite
       -- `coroCompletion(co)`: the reserved reader for a coroutine's completion
@@ -1634,6 +1681,7 @@ partial def assignTarget (cfg : ExternalBackend) (target : Variable) : EvalM (Va
   | .Field tgt field => do
       let tv ← evalExprMd cfg tgt
       pure fun v => writeField tv field.text v
+  | .Stack _ => pure fun v => modify fun s => { s with operands := v :: s.operands }
 
 /-- The current value of an update target, and how to write it back, with any
     receiver evaluated exactly once. -/
@@ -1648,6 +1696,7 @@ partial def readForUpdate (cfg : ExternalBackend) (target : Variable)
       let v ← readField tv field.text
       pure (v, fun nv => writeField tv field.text nv)
   | .Declare param => evalError s!"cannot update the declaration of '{param.name.text}'"
+  | .Stack _ => evalError "a stack value cannot be updated in place"
 
 /-- The instance procedure `name` that a receiver dispatches to: its runtime
     type's own, else the nearest ancestor's. -/
@@ -1723,22 +1772,35 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
   | ⟨.Assign targets value, _⟩ => do
       match targets with
       | [t] => do
+          if let some order := stackPermutation targets value then
+            let vals ← match value.val with
+              | .StaticCall _ args _ => args.mapM (evalExprMd cfg)
+              | _ => pure []
+            (← assignTarget cfg t.val) (vals.getD (order.headD 0) .unset)
+            return
           let write ← assignTarget cfg t.val
           let v ← match value.val with
             | .Yield => evalYield
             | _ => evalExprMd cfg value
           write v
       | _ => do
-          -- Multiple targets only arise from a call with multiple outputs, so the
-          -- right-hand side is evaluated once and its outputs distributed.
-          let writes ← targets.mapM (assignTarget cfg ·.val)
-          modify fun s => { s with callSite := value.source }
-          let outs ← evalCallOutputs cfg value.val
-          if outs.size != targets.length then
-            liftM (m := IO) (throw (IO.userError
-              s!"assignment expects {targets.length} values, call produced {outs.size}"))
-          for (write, v) in writes.zip outs.toList do
-            write v
+          if let some order := stackPermutation targets value then
+            let vals ← match value.val with
+              | .StaticCall _ args _ => args.mapM (evalExprMd cfg)
+              | _ => pure []
+            for (t, i) in targets.zip order do
+              (← assignTarget cfg t.val) (vals.getD i .unset)
+          else
+            -- Multiple targets only arise from a call with multiple outputs, so the
+            -- right-hand side is evaluated once and its outputs distributed.
+            let writes ← targets.mapM (assignTarget cfg ·.val)
+            modify fun s => { s with callSite := value.source }
+            let outs ← evalCallOutputs cfg value.val
+            if outs.size != targets.length then
+              liftM (m := IO) (throw (IO.userError
+                s!"assignment expects {targets.length} values, call produced {outs.size}"))
+            for (write, v) in writes.zip outs.toList do
+              write v
   -- A bare declaration with no initializer.
   | ⟨.Var (Variable.Declare param), _⟩ => do
       if let some ⟨.UserDefined n, _⟩ := param.type then
@@ -1989,7 +2051,7 @@ partial def evalStmtList (cfg : ExternalBackend) (stmts : List Strata.Laurel.Stm
     (asExpr : Bool) : EvalM Value := do
   let runStmt (s : Strata.Laurel.StmtExprMd) : EvalM Unit := do
     modify fun st => { st with stmtSite := s.source }
-    evalStmt cfg s
+    withOperandWindow s (evalStmt cfg s)
   let st ← get
   if st.coroSelf.isNone then
     if asExpr then
@@ -1998,7 +2060,7 @@ partial def evalStmtList (cfg : ExternalBackend) (stmts : List Strata.Laurel.Stm
       | last :: earlier => do
           earlier.reverse.forM (fun s => runStmt s)
           modify fun s => { s with stmtSite := last.source }
-          evalExprMd cfg last
+          withOperandWindow last (evalExprMd cfg last)
     else do
       stmts.forM (fun s => runStmt s)
       pure default
@@ -2010,7 +2072,7 @@ partial def evalStmtList (cfg : ExternalBackend) (stmts : List Strata.Laurel.Stm
       | k, s :: rest => do
         enterChild base k (if k == start then inner else none)
         if rest.isEmpty then do
-          let v ← if asExpr then evalExprMd cfg s else do runStmt s; pure default
+          let v ← if asExpr then withOperandWindow s (evalExprMd cfg s) else do runStmt s; pure default
           modify fun s' => { s' with cursor := base, seek := none }
           pure v
         else do
@@ -2184,6 +2246,26 @@ partial def invokeCallee (cfg : ExternalBackend) (site : FileRange) (callee : Id
     | [], some init => do let v ← evalExprMd cfg init; pure #[v]
     | _, _ => evalError s!"unknown procedure '{callee.text}'"
 
+partial def preconditionValue (cfg : ExternalBackend) (proc : Procedure) (argVals : List Value) :
+    EvalM Value := do
+  let caller ← get
+  let restore : EvalM Unit := modify fun st =>
+    { st with stack := caller.stack, cursor := caller.cursor, seek := caller.seek,
+              coroSelf := caller.coroSelf }
+  let frame : StackFrame :=
+    (proc.inputs.zip argVals).foldl (fun acc (param, v) => acc.insert param.name.text v) {}
+  modify fun st => { st with stack := frame, cursor := [], seek := none, coroSelf := none }
+  tryCatch
+    (do
+      let mut holds := true
+      for c in proc.preconditions.filter (·.mode.doesAssert) do
+        if holds then
+          let v ← evalExprMd cfg c.condition
+          holds ← liftM (isTrue cfg v)
+      restore
+      pure (.bool ⟨holds⟩))
+    fun sig => do restore; throw sig
+
 /-- Check `proc`'s call-site preconditions against `argVals`, recording each one
     that is false at `site` and carrying on, as a failing `assert` does. A free
     precondition is assumed by the callee and not checked. -/
@@ -2243,6 +2325,17 @@ partial def checkPostconditions (cfg : ExternalBackend) (proc : Procedure)
   modify fun st => { st with entryState := enclosing }
 
 partial def invokeProc (cfg : ExternalBackend) (site : FileRange) (proc : Procedure)
+    (argVals : List Value) : EvalM (Array Value) := do
+  let s ← get
+  if !s.usesStack then return ← invokeProcBody cfg site proc argVals
+  let saved := (s.operands, s.operandWindow)
+  set { s with operands := [], operandWindow := none }
+  let restore : EvalM Unit := modify fun st => { st with operands := saved.1, operandWindow := saved.2 }
+  let r ← tryCatch (invokeProcBody cfg site proc argVals) fun e => do restore; throw e
+  restore
+  pure r
+
+partial def invokeProcBody (cfg : ExternalBackend) (site : FileRange) (proc : Procedure)
     (argVals : List Value) : EvalM (Array Value) := do
   let name := proc.name.text
   if argVals.length != proc.inputs.length then
@@ -2380,10 +2473,11 @@ inductive Outcome where
     iterates over `entry`-marked procedures and calls this once per entry. -/
 def evalProgramWithOutcome (cfg : ExternalBackend) (opts : Options) (p : LaurelProgram)
     : IO (DisplayEvalState × Array Strata.Message × Outcome) := do
+  let p := if programReadsStackUnderOld p || programUsesStackInQuantifier p then (eliminateStack p).1 else p
   try
     let initState : EvalState :=
       { stack := {}, program := p, index := buildIndex p
-        fuel := opts.fuel, quiet := !opts.printAsserts }
+        fuel := opts.fuel, quiet := !opts.printAsserts, usesStack := programTouchesStack p }
     let (outcome, finalState) ←
       match p.staticProcedures.find? (·.name.text == opts.entryProcedure) with
       | none => throw (IO.userError s!"no `{opts.entryProcedure}` procedure")
