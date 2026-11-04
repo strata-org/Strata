@@ -15,7 +15,9 @@ motives and ordinary `induction` cannot use it directly.
 
 `EvalCmdExtE.induct` exposes a single command motive. In its call case, the
 induction hypothesis re-states the callee run over the command relation
-"`EvalCmdExtE` and the motive holds", for either a structured or CFG body. -/
+"`EvalCmdExtE` and the motive holds", for either a structured or CFG body.
+`evalCmdExtE_cmd_iff` characterizes evaluation of an embedded base command as
+exactly `EvalCmdE`, with no call event behavior. -/
 
 namespace Imperative
 
@@ -83,6 +85,17 @@ theorem EvalCmdExtE.induct
     (fun h ih => .step_cmd ⟨h, ih⟩)
     .step_admin
     h
+
+/-- `EvalCmdExtE π` on an embedded base command is exactly `EvalCmdE`: a call's
+    rule can never fire on a `CmdExt.cmd`, so no event is added or dropped. -/
+theorem evalCmdExtE_cmd_iff
+    {π : String → Option (Procedure P (CmdExt P) Hdr)}
+    {fac : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {tr : Trace P} :
+    EvalCmdExtE π fac σ (CmdExt.cmd c) σ' tr ↔
+    EvalCmdE (P := P) fac σ c σ' tr := by
+  constructor
+  · intro h; cases h with | cmd_sem hb => exact hb
+  · intro h; exact EvalCmdExtE.cmd_sem h
 
 end
 

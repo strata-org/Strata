@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Init
 public meta import Lean.Elab.Term.TermElabM
 public meta import Init.Data.String.Legacy
 public import StrataDDM.Util.Decimal

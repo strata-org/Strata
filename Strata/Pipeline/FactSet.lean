@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Init
 public meta import Lean
 
 /-! # Fact sets, independent of any language

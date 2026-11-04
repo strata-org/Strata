@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 /-!
 # Fixed Go support files for `getIonGoSerializer%`
 

@@ -39,14 +39,17 @@ import Strata.Util.Tactics
 
 open Strata.Pipeline (PipelineContext)
 
+/-- The names the obligation's variable definitions give a `define-fun`. -/
+private def definedNameSet (varDefinitions : List Core.VarDefinition) : Std.HashSet String :=
+  varDefinitions.foldl (fun s d => s.insert d.name) ∅
+
 /-- The obligation's managed names — every define-fun/declare-fun name from its
     variable definitions and declarations — as a hash set for O(1) membership.
     Defined at the root namespace so it is visible unqualified from both the
     `Strata.SMT.Encoder` and `Core` namespaces. -/
 private def managedNameSet (varDefinitions : List Core.VarDefinition)
     (varDeclarations : List Core.VarDeclaration) : Std.HashSet String :=
-  varDeclarations.foldl (fun s d => s.insert d.name)
-    (varDefinitions.foldl (fun s d => s.insert d.name) ∅)
+  varDeclarations.foldl (fun s d => s.insert d.name) (definedNameSet varDefinitions)
 
 ---------------------------------------------------------------------
 
@@ -300,19 +303,15 @@ def encodeFunctionDef (solver : AbstractSolver τ σ m) (f : IF) : AbstractEncod
 
 end AbstractEncoder
 
-/-- Build constructor declarations for a datatype, converting field types
-    through the solver's `termTypeToSort`. -/
+/-- Build constructor declarations for a datatype, lowering field types as the batch path does
+    (`datatypeConstructorsToSMT`) and converting them through the solver's `termTypeToSort`. -/
 private def datatypeConstrsM [Monad m] [MonadExceptOf IO.Error m] (solver : AbstractSolver τ σ m)
-    (d : Lambda.LDatatype Core.CoreLParams.IDMeta)
-    : m (List (String × List (String × σ))) := do
-  let mut result := []
-  for c in d.constrs.reverse do
-    let mut fields := []
-    for (name, fieldTy) in c.args.reverse do
-      let s ← AbstractEncoder.termTypeToSort solver (Core.lMonoTyToTermType (ty := fieldTy))
-      fields := (Lambda.destructorFuncName d name, s) :: fields
-    result := (c.name.name, fields) :: result
-  return result
+    (useArrayTheory : Bool) (d : Lambda.LDatatype Core.CoreLParams.IDMeta)
+    : m (List (String × List (String × σ))) :=
+  (Core.datatypeConstructorsToSMT d useArrayTheory).mapM fun c => do
+    let fields ← c.args.mapM fun (name, fieldTy) => do
+      pure (name, ← AbstractEncoder.termTypeToSort solver fieldTy)
+    pure (c.name, fields)
 
 /-- Emit datatype declarations through the `AbstractSolver` API. -/
 def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
@@ -326,14 +325,46 @@ def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
     match usedBlock with
     | [] => pure ()
     | [d] =>
-      let constrs ← datatypeConstrsM solver d
+      let constrs ← datatypeConstrsM solver ctx.useArrayTheory d
       let _ ← solver.declareDatatype d.name d.typeArgs
         fun _ _ => .ok constrs
     | _ =>
       let dtHeaders := usedBlock.map fun d => (d.name, d.typeArgs)
-      let allConstrs ← usedBlock.mapM (datatypeConstrsM solver)
+      let allConstrs ← usedBlock.mapM (datatypeConstrsM solver ctx.useArrayTheory)
       let _ ← solver.declareDatatypes dtHeaders
         fun _ _ => .ok allConstrs
+
+/-- Send part of an encoding context to a solver: the given sorts, datatypes, uninterpreted
+    and defined functions, and axioms, in that order: sorts come first since a datatype's
+    constructors may mention them (a heap holds a `Map`). A one-shot solve sends the whole context;
+    a long-lived session sends only what it has not sent before.
+
+    A sort that `ctx` declares as a datatype is left to the datatype declaration, since strict
+    solver APIs (e.g. cvc5 FFI) reject a redefinition. A function named in `managed` is a
+    program variable: it is only registered here, because the caller declares or defines it
+    with the rest of its path. -/
+def declareContextAbstract [Monad m] [MonadExceptOf IO.Error m]
+    (solver : AbstractSolver τ σ m) (ctx : Core.SMT.Context)
+    (sorts : List Strata.DL.SMT.Sort) (datatypes : Std.HashSet String)
+    (ufs : List UF) (ifs : List IF) (axms : List Term) (managed : Std.HashSet String) :
+    AbstractEncoderM τ m Unit := do
+  for s in sorts do
+    if !ctx.seenDatatypes.contains s.name then
+      let _ ← liftM (solver.declareSort s.name s.arity)
+  if !datatypes.isEmpty then
+    liftM (emitDatatypesAbstract solver { ctx with seenDatatypes := datatypes })
+  for uf in ufs do
+    if !managed.contains uf.id then
+      let _ ← AbstractEncoder.encodeUF solver uf
+  -- Registering a variable lets `encodeTerm` recognize it without declaring it.
+  for uf in ufs do
+    if managed.contains uf.id then
+      modify fun st => { st with base := seedManagedName st.base uf }
+  for fn in ifs do
+    let _ ← AbstractEncoder.encodeFunctionDef solver fn
+  let axmIds ← axms.mapM (AbstractEncoder.encodeTerm solver)
+  for id in axmIds do
+    liftM (solver.assert id)
 
 /-- Encode declarations and assertions through the `AbstractSolver` API.
     Replaces `encodeDeclarations` for the incremental path — all commands
@@ -356,31 +387,13 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
     : m (τ × List String × EncoderState) := do
   solver.setLogic "ALL"
   prelude
-  for s in ctx.sorts.toArray do
-    -- Skip sorts that will be defined as datatypes by emitDatatypesAbstract,
-    -- since strict solver APIs (e.g. cvc5 FFI) reject redefinition.
-    if !ctx.seenDatatypes.contains s.name then
-      let _ ← solver.declareSort s.name s.arity
-  emitDatatypesAbstract solver ctx
   -- Pre-populate usedNames with sort/datatype names already emitted to the solver
-  let preDeclaredNames := ctx.preDeclaredNames
-  let initState : AbstractEncoderState τ := { base := EncoderState.initWithNames preDeclaredNames }
+  let initState : AbstractEncoderState τ :=
+    { base := EncoderState.initWithNames ctx.preDeclaredNames }
   let managedNames := managedNameSet varDefinitions varDeclarations
-  -- Filter out managed variables from UF declarations (they will be emitted separately)
-  let ufsToDecl := if managedNames.isEmpty then ctx.ufs.toArray
-    else ctx.ufs.toArray.filter fun uf => !managedNames.contains uf.id
-  let (_ufs, estate) ← ufsToDecl.mapM (fun uf => AbstractEncoder.encodeUF solver uf) |>.run initState
-  -- Pre-populate encoder state with managed variable names so encodeTerm
-  -- recognizes them without emitting declareFun
-  let estate := if managedNames.isEmpty then estate
-    else
-      let managedUfs := ctx.ufs.toArray.filter fun uf => managedNames.contains uf.id
-      managedUfs.foldl (init := estate) fun estate uf =>
-        { estate with base := seedManagedName estate.base uf }
-  let (_ifs, estate) ← ctx.ifs.toArray.mapM (fun fn => AbstractEncoder.encodeFunctionDef solver fn) |>.run estate
-  let (_axms, estate) ← ctx.axms.toArray.mapM (fun ax => AbstractEncoder.encodeTerm solver ax) |>.run estate
-  for id in _axms do
-    solver.assert id
+  let ((), estate) ← (declareContextAbstract solver ctx ctx.sorts.toArray.toList ctx.seenDatatypes
+    ctx.ufs.toArray.toList ctx.ifs.toArray.toList ctx.axms.toArray.toList managedNames).run
+      initState
   -- Emit variable declarations as declareFun
   for decl in varDeclarations do
     let sort ← AbstractEncoder.termTypeToSort solver decl.ty
@@ -395,8 +408,9 @@ def encodeDeclarationsAbstract [Monad m] [MonadExceptOf IO.Error m]
   for id in assumptionIds do
     solver.assert id
   let (obligationId, estate) ← (AbstractEncoder.encodeTerm solver obligationTerm) |>.run estate
+  let definedNames := definedNameSet varDefinitions
   let ids := estate.base.functions.toList.filterMap fun (uf, id) =>
-    if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
+    if uf.args.isEmpty && Core.SMT.isReportedName definedNames uf.id then some id else none
   return (obligationId, ids, estate.base)
 
 /-- Encode a verification condition into SMT-LIB format, including check-sat
@@ -456,7 +470,7 @@ def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit)
 
   let ids ← phase "writeObligation" do
     Core.SMT.writeCheckSatBlock obligationId obligationTerm md satisfiabilityCheck validityCheck
-      label managedNames |>.run' estate
+      label (definedNameSet varDefinitions) |>.run' estate
 
   return (ids, estate)
 
@@ -518,9 +532,12 @@ def solverPreludeOptions (solver : String) (solverOptions : Array (String × Str
   -- built-in prelude (e.g. `--set-option smt.mbqi=true` for quantified lemmas).
   tuning ++ solverOptions
 
-def getSolverPrelude (solver : String) (solverOptions : Array (String × String)) :
+def setSolverPrelude (solver : String) (solverOptions : Array (String × String)) :
     SolverM Unit := do
   (solverPreludeOptions solver solverOptions).forM fun (name, value) => Solver.setOption name value
+
+@[deprecated setSolverPrelude (since := "2026-10-27")]
+abbrev getSolverPrelude := @setSolverPrelude
 
 def getSolverFlags (options : VerifyOptions) : Array String :=
   let produceModels :=
@@ -623,7 +640,7 @@ def dischargeObligation
       Core.SMT.Emitter.emitPrerendered cf.pieces
       pure (cf.ids, cf.estate)
     | none =>
-      Strata.SMT.Encoder.encodeCore ctx (getSolverPrelude options.solver options.solverOptions)
+      Strata.SMT.Encoder.encodeCore ctx (setSolverPrelude options.solver options.solverOptions)
         assumptionTerms obligationTerm md satisfiabilityCheck validityCheck
         (label := label) (varDefinitions := varDefinitions) (varDeclarations := varDeclarations)
         (pctx := pctx)
@@ -963,6 +980,9 @@ structure VCOutcome where
       Used by the rendering phase to compute per-path classification summaries
       without storing rendering-mode-dependent strings. -/
   mergedFrom : Array VCOutcome := #[]
+  /-- Set when `directed` pruning dropped axioms from the query; a `sat` then
+      reports as `unknown`, see `VCOutcome.withAxiomsDropped`. -/
+  axiomsDropped : Bool := false
   deriving Repr
 
 instance : Inhabited VCOutcome where
@@ -1088,9 +1108,7 @@ def isReachableAndCanBeFalse := canBeFalseAndIsReachable
     in other modes, unreachable always fails. -/
 private def unreachableMsg (checkMode : VerificationMode) (passWhenUnreachable : Bool)
     (passMsg failMsg : α) : α :=
-  match checkMode with
-  | .deductive => if passWhenUnreachable then passMsg else failMsg
-  | _ => failMsg
+  if checkMode.isDeductive && passWhenUnreachable then passMsg else failMsg
 
 def label (o : VCOutcome) (property : Imperative.PropertyType)
     (checkLevel : CheckLevel) (checkMode : VerificationMode) : String :=
@@ -1102,7 +1120,7 @@ def label (o : VCOutcome) (property : Imperative.PropertyType)
   else if checkLevel == .minimal then
     if property.passWhenUnreachable then
       -- Assert-like property (i.e. passes vacuously on unreachable paths).
-      if checkMode == .deductive then
+      if checkMode.isDeductive then
         match o.validityProperty with
         | .unsat => "pass"
         | .sat _ => "fail"
@@ -1138,7 +1156,7 @@ def emoji (o : VCOutcome) (property : Imperative.PropertyType)
   -- Simplified emojis for minimal check level
   else if checkLevel == .minimal then
     if property.passWhenUnreachable then
-      if checkMode == .deductive then
+      if checkMode.isDeductive then
         match o.validityProperty with
         | .unsat => "✅"
         | .sat _ => "❌"
@@ -1461,14 +1479,57 @@ def checksFor (property : Imperative.PropertyType)
     match options.checkMode, options.checkLevel with
     | _, .full => (true, true)
     | .bugFindingAssumingCompleteSpec, _ => (true, true)
-    | .deductive, _ =>
+    | .deductive, _ | .deductiveAssumingSatisfiablePaths, _ =>
       if property.passWhenUnreachable then (false, true) else (true, false)
     | .bugFinding, _ => (true, false)
+
+/-- What `evaluatorResults` needs to know about a path condition, read in one pass over it. -/
+inductive PathConditionShape where
+  /-- Every entry only declares or defines a variable. Such a path condition is satisfiable: each
+      entry is sent to the solver as a `declare-fun` or a non-recursive `define-fun`, which some
+      model always satisfies.
+
+      The solver also receives axioms that are not entries of the path condition: those of the
+      built-in functions the definitions use, such as `mapConst`'s, and those attached to the
+      program's own functions (`func.axioms`, and the per-constructor axioms of recursive
+      functions). Taking the path condition to be satisfiable therefore assumes that these
+      axioms are satisfiable together. If they are not, an assertion the solver would pass
+      vacuously is reported failing; no assertion is ever reported passing because of this.
+      `Core.factoryInterp` models the built-ins' bodies and evaluators but not their axioms.
+      The evaluator also decides before encoding, so a definition the encoder cannot encode is
+      reported as this failure rather than as an analysis error. -/
+  | onlyDefinitions
+  /-- Some assumption is literally `false`: the evaluator already knows the path is dead. -/
+  | hasFalseAssumption
+  /-- Anything else. -/
+  | other
+  deriving DecidableEq
+
+/-- The shape of `obligation`'s path condition, read in one pass over its entries. -/
+def pathConditionShape (obligation : ProofObligation Expression) : PathConditionShape :=
+  obligation.assumptions.foldl (init := .onlyDefinitions) fun shape pc =>
+    pc.foldl (init := shape) fun shape entry =>
+      match shape, entry with
+      | .hasFalseAssumption, _ => .hasFalseAssumption
+      | _, .assumption _ e => if e.isFalse then .hasFalseAssumption else .other
+      | _, .distinct .. => .other
+      | shape, .varDecl .. => shape
+
+/-- Whether the premise of `deductiveAssumingSatisfiablePaths`, that every path to an assertion
+    can be taken, lets the evaluator decide that `obligation`, whose goal is literally `false`
+    and whose path condition has shape `shape`, fails: its path condition, whatever it holds, is
+    taken to be satisfiable without asking a solver. Covers are left to the solver, so they are
+    reported as in `deductive`, and so is a path condition with a literally false assumption,
+    which the evaluator already knows is dead. -/
+def usesSatisfiablePathsPremise (obligation : ProofObligation Expression)
+    (checkMode : VerificationMode) (shape : PathConditionShape) : Bool :=
+  checkMode == .deductiveAssumingSatisfiablePaths && obligation.property.passWhenUnreachable &&
+    shape != .hasFalseAssumption
 
 /-- The results the evaluator decides without a solver, for satisfiability and validity: `some r`
     when the obligation alone settles that check, `none` when a solver is needed. A check not
     asked for is `unknown`. -/
-def evaluatorResults (obligation : ProofObligation Expression)
+def evaluatorResults (obligation : ProofObligation Expression) (checkMode : VerificationMode)
     (satisfiabilityCheck validityCheck : Bool) : Option SMT.Result × Option SMT.Result :=
   -- Satisfiability is settled if the obligation is literally false (unsat).
   let sat : Option SMT.Result :=
@@ -1476,13 +1537,26 @@ def evaluatorResults (obligation : ProofObligation Expression)
     else if obligation.obligation.isFalse then some .unsat
     else none
   -- Validity is settled if the obligation is literally true (valid = unsat), or literally false
-  -- with no assumptions (invalid = sat).
+  -- with a path condition known to be satisfiable (invalid = sat): one that only declares or
+  -- defines variables, or one that `usesSatisfiablePathsPremise` takes to be satisfiable.
   let valid : Option SMT.Result :=
     if !validityCheck then some .unknown
     else if obligation.obligation.isTrue then some .unsat
-    else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then some (.sat [])
+    else if obligation.obligation.isFalse then
+      let shape := pathConditionShape obligation
+      if shape == .onlyDefinitions || usesSatisfiablePathsPremise obligation checkMode shape then
+        some (.sat [])
+      else none
     else none
   (sat, valid)
+
+/-- The axiom-relevance cache that `mode` needs for `prog`, or `none` when
+    pruning is off. -/
+def axiomCacheFor (mode : IrrelevantAxiomsMode) (prog : Program) :
+    Option IrrelevantAxioms.Cache :=
+  if mode == .Off then none
+  else some (IrrelevantAxioms.Cache.build prog
+    (directed := mode == .Directed))
 
 /--
 Preprocess a proof obligation using symbolic simulation.
@@ -1497,14 +1571,14 @@ the pruning at emission time instead.
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     (options : VerifyOptions) (satisfiabilityCheck validityCheck : Bool)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
-    -- Names of axiom assumptions, used to exclude axioms from the
-    -- relevant-function seed set during irrelevant axiom removal.
+    -- Names of axiom assumptions, excluded from the relevance seeds.
     (axiomNames : List String := [])
-    -- A program whose declarations consist of axioms only, used by
-    -- irrelevant axiom removal to determine which axioms to prune.
+    -- The program the non-directed relevance query runs against; defaults
+    -- to `p`.
     (axiomProgram : Option Program := .none)
     : EIO Message (ProofObligation Expression × Option SMT.Result × Option SMT.Result × List String) := do
-  let (peSatResult, peValResult) := evaluatorResults obligation satisfiabilityCheck validityCheck
+  let (peSatResult, peValResult) :=
+    evaluatorResults obligation options.checkMode satisfiabilityCheck validityCheck
   -- If evaluator resolved both, log for the assert(false) case
   if let (some _, some (.sat _)) := (peSatResult, peValResult) then
     if obligation.property == .assert then
@@ -1531,28 +1605,26 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
         -- are unaffected.)
         let opName := fun (op : CoreIdent) => Core.NameMangling.demangledBaseName op.toPretty
         let consequentFns := obligation.obligation.getOps.map opName
-        let relevantFns :=
-          match mode with
-          | .Aggressive => consequentFns
-          | .Precise =>
-            -- Extract functions from non-axiom path conditions only. Axioms
-            -- are excluded because including them would seed the relevant-function
-            -- set with every function they mention, causing those axioms to be
-            -- found trivially relevant and never removed.
-            let antecedentFns :=
-              obligation.assumptions.flatten.flatMap
-                (fun entry =>
-                  match entry with
-                  | .assumption label e =>
-                    if axiomNames.contains label then []
-                    else (Lambda.LExpr.getOps e).map opName
-                  | .varDecl _ _ (.det e) => (Lambda.LExpr.getOps e).map opName
-                  | .varDecl _ _ .nondet => []
-                  | .distinct _ exprs => exprs.flatMap (fun e => (Lambda.LExpr.getOps e).map opName))
-            (consequentFns ++ antecedentFns).uniq
-          | .Off => consequentFns  -- unreachable; handled above
+        -- Seeding from axioms would keep every axiom.
+        let axiomSet := Std.HashSet.ofList axiomNames
+        let antecedentFns := fun () =>
+          obligation.assumptions.flatten.flatMap
+            (fun entry =>
+              match entry with
+              | .assumption label e =>
+                if axiomSet.contains label then []
+                else (Lambda.LExpr.getOps e).map opName
+              | .varDecl _ _ (.det e) => (Lambda.LExpr.getOps e).map opName
+              | .varDecl _ _ .nondet => []
+              | .distinct _ exprs =>
+                exprs.flatMap (fun e => (Lambda.LExpr.getOps e).map opName))
+        let seeds := match cache with
+          | .directed _ => consequentFns ++ antecedentFns ()
+          | .callGraph .. =>
+            if mode == .Precise then (consequentFns ++ antecedentFns ()).uniq
+            else consequentFns
         let irrelevantAxioms :=
-          IrrelevantAxioms.getIrrelevantAxioms (axiomProgram.getD p) cache relevantFns
+          IrrelevantAxioms.getIrrelevantAxioms (axiomProgram.getD p) cache seeds
         let newAssumptions :=
           Imperative.PathConditions.removeByNames obligation.assumptions irrelevantAxioms
         pure ({ obligation with assumptions := newAssumptions }, irrelevantAxioms)
@@ -1634,7 +1706,7 @@ def typeCheckPipelinePhase
 /-- Symbolic-evaluation pipeline phase: partially evaluates the program into
     the passive proof-obligation form consumed by obligation extraction.
 
-    Requires `noNondetGuards`, which `nondetElimPipelinePhase` establishes:
+    Requires `noNondetGuards`, which `NondetElim.nondetElimPipelinePhase` establishes:
     `Core.Statement.eval` rejects a surviving nondeterministic guard. -/
 def symbolicEvalPipelinePhase
     (options : VerifyOptions := VerifyOptions.default)
@@ -1676,7 +1748,7 @@ def preSymbolicEvalPipelinePhases (options : VerifyOptions := .default)
    typeCheckPipelinePhase options typeCheckFactory,
    monomorphizeFunctionsPipelinePhase,
    simplifyPhase,
-   nondetElimPipelinePhase]
+   NondetElim.nondetElimPipelinePhase]
 
 /-- The full pipeline phases for program-to-program transforms, including
     type checking, symbolic evaluation, and common subexpression elim.
@@ -1759,6 +1831,27 @@ def SMT.Result.adjustForPhases (r : SMT.Result)
   | .sat _ | .unknown _ => AbstractedPhase.validateModel phases r obligation
   | other => (other, [])
 
+/-- The outcome as reported. When `axiomsDropped` is set, a `sat` becomes
+    `unknown`, keeping its model, because the model may violate a dropped
+    axiom, so a real violation found this way also reports as `unknown`. An
+    `unsat` stands: adding the dropped axioms back keeps the query
+    unsatisfiable. -/
+def VCOutcome.withAxiomsDropped (o : VCOutcome) : VCOutcome :=
+  if !o.axiomsDropped then o else
+  let demote : SMT.Result → SMT.Result
+    | .sat m => .unknown (some m)
+    | r => r
+  { o with satisfiabilityProperty := demote o.satisfiabilityProperty,
+           validityProperty := demote o.validityProperty }
+
+/-- The outcome of a query from which pruning in `mode` dropped the axioms
+    `dropped`. In `directed` mode it is marked and reported as
+    `withAxiomsDropped` says; other modes keep the solver's answer. -/
+def VCOutcome.afterPruning (mode : IrrelevantAxiomsMode)
+    (dropped : List String) (o : VCOutcome) : VCOutcome :=
+  let dropsHere := mode == .Directed && !dropped.isEmpty
+  { o with axiomsDropped := o.axiomsDropped || dropsHere }.withAxiomsDropped
+
 /-- Pass a result's two verdicts through the phases' model validation, as the default back end
     does for each obligation it discharges, and record what each phase decided. -/
 def VCResult.validateModels (r : VCResult) (phases : List AbstractedPhase) : VCResult :=
@@ -1767,9 +1860,11 @@ def VCResult.validateModels (r : VCResult) (phases : List AbstractedPhase) : VCR
   | .ok o =>
     let (sat, satLog) := o.satisfiabilityProperty.adjustForPhases phases r.obligation
     let (valid, validLog) := o.validityProperty.adjustForPhases phases r.obligation
-    { r with outcome := .ok { o with
+    -- A model a phase accepts may still violate an axiom pruning dropped.
+    { r with outcome := .ok ({ o with
         satisfiabilityProperty := sat, validityProperty := valid,
-        solverLog := o.solverLog.push (satLog ++ validLog).toArray } }
+        solverLog := o.solverLog.push (satLog ++ validLog).toArray }
+        |>.withAxiomsDropped) }
 
 /-- A discharge function encapsulates the solver backend. It takes assumption
     terms, the obligation term, the SMT context, and the satisfiability/validity
@@ -1840,6 +1935,8 @@ def mkDischargeFn : MkDischargeFn := fun (options : VerifyOptions) (counter : IO
         (captured := captured)
         (pctx := pctx)
 
+open CSE (isCSEGeneratedName)
+
 /--
 Invoke a backend engine and get the analysis result for a
 given proof obligation.
@@ -1853,6 +1950,8 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
     (phases : List AbstractedPhase)
     (varDefinitions : List VarDefinition := [])
     (varDeclarations : List VarDeclaration := [])
+    -- Labels of the axioms pruning dropped from this query.
+    (prunedAxiomLabels : List String := [])
     : EIO Message VCResult := do
   -- Formatting the whole program is costly on a large one, so it is done only when the debug
   -- trace below shows it.
@@ -1891,14 +1990,15 @@ def getObligationResult (assumptionTerms : List Term) (obligationTerm : Term)
       validityProperty := adjVal,
       solverLog := #[smtLog] }
     let outcome := maskOutcome rawOutcome satisfiabilityCheck validityCheck
+      |>.afterPruning options.removeIrrelevantAxioms prunedAxiomLabels
     -- Extract model from sat or unknown-with-candidate results.
     -- unknown (some m) arises when the solver returns a candidate model it cannot
     -- certify (e.g. cvc5 with quantified bridge axioms). Phases may promote it
     -- to sat; we still want the model available for display.
     let model := modelOfResults ctx satResult validityResult
-    -- Filter out managed variables from model display
-    let managedVarNames := (varDefinitions.map (·.name)) ++ (varDeclarations.map (·.name))
-    let model := model.filter fun (name, _) => !managedVarNames.contains name.name
+    -- A counterexample reports the variables `Core.SMT.isReportedName` names.
+    let definedNames := definedNameSet varDefinitions
+    let model := model.filter fun (name, _) => Core.SMT.isReportedName definedNames name.name
     let result := { obligation,
                     outcome := .ok outcome,
                     estate,
@@ -1923,6 +2023,8 @@ private structure SolverJob where
   typedVarsInObligation : List Expression.TypedIdent
   varDefs : List VarDefinition := []
   varDecls : List VarDeclaration := []
+  /-- Labels of the axioms irrelevant-axiom removal dropped from this query. -/
+  prunedAxiomLabels : List String := []
 
 /-- Disposition of one obligation coming out of the `smtDischarge` phase: either
     solved inline with a ready `VCResult` (`resolved` -- also used for encoding
@@ -1945,7 +2047,8 @@ private def dispatchSolverJob (job : SolverJob) (p : Program)
     job.typedVarsInObligation job.obligation.metadata job.obligation.label none none pctx
   let resultOrErr ← (getObligationResult job.assumptionTerms job.obligationTerm job.ctx
     job.obligation p options discharge job.needSatCheck job.needValCheck phases
-    (varDefinitions := job.varDefs) (varDeclarations := job.varDecls)).toBaseIO
+    (varDefinitions := job.varDefs) (varDeclarations := job.varDecls)
+    (prunedAxiomLabels := job.prunedAxiomLabels)).toBaseIO
   match resultOrErr with
   | .error diag => return .error diag
   | .ok result =>
@@ -2020,9 +2123,6 @@ private def dispatchJobsParallel (jobs : List SolverJob) (p : Program)
     results := rmap[idx]? :: results
   return results
 
-def isCSEGeneratedName (name : String) : Bool :=
-  name.startsWith CSE.cseVarPrefix
-
 private
 def addCSEReferences (refs : Std.HashSet String) (e : Expression.Expr) :
     Std.HashSet String :=
@@ -2034,14 +2134,39 @@ def addFreeVarNames (refs : Std.HashSet String) (e : Expression.Expr) :
     Std.HashSet String :=
   (Lambda.LExpr.freeVars e).foldl (fun refs (id, _) => refs.insert id.name) refs
 
+/-- The names `roots` reach through `definitions`: the least set that contains `roots` and, for
+    every definition whose name it contains, the names `refs` returns for that definition's body.
+    A worklist expands each defined name once, so the cost is linear in the size of the
+    definitions, whatever their order and however long their chains. -/
+private
+def defClosure (refs : Expression.Expr → List String)
+    (definitions : List (String × Expression.Expr)) (roots : Std.HashSet String) :
+    Std.HashSet String :=
+  let bodies : Std.HashMap String (List Expression.Expr) :=
+    definitions.foldl (fun m (n, e) => m.insert n (e :: m.getD n [])) {}
+  -- A name enters the worklist once, when it is first reached, and only if it is defined, so
+  -- the fuel `definitions.length` never runs out.
+  go bodies definitions.length (roots.toList.filter bodies.contains) roots
+where
+  go (bodies : Std.HashMap String (List Expression.Expr)) :
+      Nat → List String → Std.HashSet String → Std.HashSet String
+    | 0, _, reached | _, [], reached => reached
+    | fuel + 1, n :: pending, reached =>
+      let (pending, reached) := (bodies.getD n []).foldl (fun acc e =>
+        (refs e).foldl (fun (pending, reached) v =>
+          if reached.contains v then (pending, reached)
+          else (if bodies.contains v then v :: pending else pending, reached.insert v)) acc)
+        (pending, reached)
+      go bodies fuel pending reached
+
 /-- The variables a counterexample for `obligation` should report: those its goal and
-    assumptions reach, through the managed definitions they use, less the managed names
-    themselves. With `withDeclared`, a reachable variable the obligation declares without a value
-    is reported too, since a passive program declares its variables. -/
+    assumptions reach, through the managed definitions they use, that
+    `Core.SMT.isReportedName` names. A variable the passive program declares (`var x`) is
+    reported; one it defines (`init x := e`) is not, since its value follows from the others. -/
 def collectModelVars
     (obligation : Imperative.ProofObligation Expression)
     (varDefinitions : List VarDefinition)
-    (varDeclarations : List VarDeclaration) (withDeclared : Bool := false) :
+    (varDeclarations : List VarDeclaration) :
     List (Lambda.IdentT Lambda.LMonoTy Unit) :=
   let managedNames := managedNameSet varDefinitions varDeclarations
   let definitions := obligation.assumptions.flatMap fun pathCondition =>
@@ -2058,22 +2183,11 @@ def collectModelVars
         if managedNames.contains name.name then refs else addFreeVarNames refs rhs
       | .varDecl _ _ .nondet => refs) refs)
     (addFreeVarNames {} obligation.obligation)
-  let relevantNames := close definitions.length definitions rootRefs
-  let declared : Std.HashSet String :=
-    if withDeclared then Std.HashSet.ofList (varDeclarations.map (·.name)) else {}
+  let relevantNames :=
+    defClosure (fun e => (Lambda.LExpr.freeVars e).map (·.1.name)) definitions rootRefs
+  let definedNames := definedNameSet varDefinitions
   (ProofObligation.getVars obligation).filter fun (v, _) =>
-    relevantNames.contains v.name && (!managedNames.contains v.name || declared.contains v.name)
-where
-  close : Nat → List (String × Expression.Expr) → Std.HashSet String →
-      Std.HashSet String
-    | 0, _, relevant => relevant
-    | fuel + 1, definitions, relevant =>
-      let relevant' := definitions.foldl (fun refs definition =>
-        if relevant.contains definition.1
-        then addFreeVarNames refs definition.2
-        else refs) relevant
-      if relevant'.size == relevant.size then relevant
-      else close fuel definitions relevant'
+    relevantNames.contains v.name && Core.SMT.isReportedName definedNames v.name
 
 private
 def containsUnsupportedSMTString : Expression.Expr → Bool
@@ -2140,24 +2254,14 @@ def pruneUnusedCSEDefinitions
           else addCSEReferences refs rhs
         | .varDecl _ _ .nondet => refs) refs)
       (addCSEReferences {} obligation.obligation)
-    let needed := close definitions.length definitions rootRefs
+    let needed := defClosure (fun e => (Lambda.LExpr.freeVars e).filterMap fun (id, _) =>
+      if isCSEGeneratedName id.name then some id.name else none) definitions rootRefs
     let assumptions := obligation.assumptions.map fun pathCondition =>
       pathCondition.filter fun
         | .varDecl name _ (.det _) =>
           !isCSEGeneratedName name.name || needed.contains name.name
         | _ => true
     { obligation with assumptions }
-where
-  close : Nat → List (String × Expression.Expr) → Std.HashSet String →
-      Std.HashSet String
-    | 0, _, needed => needed
-    | fuel + 1, definitions, needed =>
-      let needed' := definitions.foldl (fun refs definition =>
-        if needed.contains definition.1
-        then addCSEReferences refs definition.2
-        else refs) needed
-      if needed'.size == needed.size then needed
-      else close fuel definitions needed'
 
 /-- Discharge `obligations`, in order, against the environment `E` built for the program they
     come from: each is asked of the solver `mkDischarge` gives, after the evaluator and the
@@ -2167,11 +2271,7 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
     (axiomCache : Option IrrelevantAxioms.Cache := .none)
-    -- Names of axiom assumptions, used to exclude axioms from the
-    -- relevant-function seed set during irrelevant axiom removal.
     (axiomNames : List String := [])
-    -- A program whose declarations consist of axioms only, used by
-    -- irrelevant axiom removal to determine which axioms to prune.
     (axiomProgram : Option Program := .none)
     (externalPhases : List AbstractedPhase := [])
     (corePhases : List AbstractedPhase := coreAbstractedPhases)
@@ -2217,7 +2317,7 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     if useCapture then
       IO.toEIO (fun e => Message.fromFormat f!"{e}")
         (some <$> Core.SMT.Emitter.EmitterState.init smtCtx
-          (SMT.getSolverPrelude options.solver options.solverOptions))
+          (SMT.setSolverPrelude options.solver options.solverOptions))
     else pure none
   let mut emState := emStateInit
   for obligation in obligations do
@@ -2304,7 +2404,7 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
           let job : SolverJob := {
             obligation, assumptionTerms, obligationTerm, ctx,
             needSatCheck, needValCheck, peSatResult?, peValResult?,
-            typedVarsInObligation, varDefs, varDecls }
+            typedVarsInObligation, varDefs, varDecls, prunedAxiomLabels }
           -- Capture is sequential-path only; `emState0` is left untouched.
           pure (ObligationDisposition.deferred job, encStats, encState', snapCache', emState0)
         else
@@ -2315,7 +2415,8 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
               let (es, cf) ← es.syncAndEmit E.factory encState'.frames
                 encState'.current.ctx (pruned := !prunedAxiomLabels.isEmpty)
                 ctx obligationTerm obligation.metadata obligation.label
-                (managedNameSet varDefs varDecls) needSatCheck needValCheck
+                (managedNameSet varDefs varDecls) (definedNameSet varDefs) needSatCheck
+                needValCheck
               pure (some es, cf)
           let discharge := mkDischarge options counter tempDir
             typedVarsInObligation obligation.metadata obligation.label (some termCache)
@@ -2323,6 +2424,7 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
           let result ← getObligationResult assumptionTerms obligationTerm ctx obligation p options
                         discharge needSatCheck needValCheck (externalPhases ++ corePhases)
                         (varDefinitions := varDefs) (varDeclarations := varDecls)
+                        (prunedAxiomLabels := prunedAxiomLabels)
           -- Merge evaluator results with solver results
           let result := match result.outcome with
             | .ok solverOutcome =>
@@ -2408,8 +2510,8 @@ def verifySingleEnv (oblProgram : Program)
 
 /-- Construct the default `CoreSMTSolver` that discharges obligations
     sequentially using the batch or incremental SMT-LIB backend (selected
-    by `options.incremental`). This is the standard solver used by `verify`
-    when no custom solver is provided. -/
+    by `options.incremental`). This is the standard solver used by
+    `verifyPipeline` when no custom solver is provided. -/
 def mkDefaultCoreSMTSolver
     (options : VerifyOptions)
     (counter : IO.Ref Nat) (tempDir : System.FilePath)
@@ -2427,7 +2529,9 @@ def mkDefaultCoreSMTSolver
       (mkDischarge := mkDischarge) pctx
 
 /-- Run the Strata Core verification pipeline on a program: transform,
-type-check, partially evaluate, and discharge proof obligations via SMT.
+type-check, partially evaluate, and discharge proof obligations via SMT, on
+`solver` when given and otherwise one obligation at a time. `Core.verify` chooses
+`solver`, the obligation-tree walk under `--incremental`, and calls this.
 All program-wide transformations that occur before any analyses
 (including type inference) should be placed here.
 
@@ -2438,7 +2542,7 @@ When `pipelineCtx` is provided, its `outputMode` — not `options.profile` —
 drives all profiling output. Callers that want profiling should supply a context whose `outputMode`
 `showsProfiling`; `options.profile` only decides the `outputMode` of the
 context created internally when `pipelineCtx` is `none`. -/
-def verify (program : Program)
+def verifyPipeline (program : Program)
     (tempDir : System.FilePath)
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default)
@@ -2499,8 +2603,7 @@ def verify (program : Program)
   let axiomNames := program.decls.filterMap fun decl =>
     match decl with | .ax a _ => some a.name | _ => none
   let axiomCache? ← pctx.withPhasePure "buildAxiomCache" fun _ =>
-    if options.removeIrrelevantAxioms == .Off then .none
-    else .some (IrrelevantAxioms.Cache.build program)
+    axiomCacheFor options.removeIrrelevantAxioms program
   let counter ← IO.toEIO (fun e => Message.fromFormat f!"{e}") (IO.mkRef 0)
   let VCss ← pctx.withPhase "vcDischarge" do
     if options.checkOnly then

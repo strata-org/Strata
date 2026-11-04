@@ -12,10 +12,22 @@ public import Strata.Transform.Specification
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.StmtSemanticsProps
+public import Strata.DL.Imperative.Logic.TraceRelations
+import Strata.DL.Imperative.Logic.TraceRelationsProps
 import all Strata.DL.Imperative.StmtSemanticsProps
 import all Strata.DL.Util.StringGen
 import all Strata.Util.Relations
 import all Strata.Util.RelationsProps
+
+/-! # Nondeterminism elimination correctness
+
+This module proves the base-command simulation used by the Core-specific result
+in `NondetElimCoreCorrect`. Generated guard commands are event-silent, source
+commands replay one-for-one, and final environments extend the source only with
+generated guard registers.
+
+The module also retains the failure-flag overapproximation used by
+`StructuredToUnstructuredPipelineCorrect`. -/
 
 public section
 
@@ -25,64 +37,10 @@ namespace Imperative
 
 `Block.noNondetGuards` holds of every output of `Block.nondetElim` (spec guarantee
 2): the rewrite replaces each nondeterministic `.ite`/`.loop` guard with a
-deterministic read, so no `.ite .nondet`/`.loop .nondet` survives. -/
-
-mutual
-/-- The output of `Stmt.nondetElimM s σ` satisfies `noNondetGuards` (no
-nondeterministic control). -/
-theorem Stmt.nondetElimM_noNondetGuards {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
-    (s : Stmt P (Cmd P)) (σ : StringGenState) :
-    Block.noNondetGuards (Stmt.nondetElimM s σ).1 = true := by
-  match s with
-  | .cmd c => simp [Stmt.nondetElimM, Block.noNondetGuards, Stmt.noNondetGuards]
-  | .block lbl bss md =>
-      rw [Stmt.nondetElimM_block_out]
-      simp only [Block.noNondetGuards, Stmt.noNondetGuards, Bool.and_true]
-      exact Block.nondetElimM_noNondetGuards bss σ
-  | .ite (.det e) tss ess md =>
-      rw [Stmt.nondetElimM_ite_det_out]
-      simp only [Block.noNondetGuards, Stmt.noNondetGuards, Bool.and_true,
-                 Block.nondetElimM_noNondetGuards tss σ,
-                 Block.nondetElimM_noNondetGuards ess _]
-  | .ite .nondet tss ess md =>
-      rw [Stmt.nondetElimM_ite_nondet_out]
-      simp only [Block.noNondetGuards, Stmt.noNondetGuards, Bool.and_true,
-                 Block.nondetElimM_noNondetGuards tss _,
-                 Block.nondetElimM_noNondetGuards ess _]
-  | .loop (.det e) m inv body md =>
-      rw [Stmt.nondetElimM_loop_det_out]
-      simp only [Block.noNondetGuards, Stmt.noNondetGuards, Bool.and_true]
-      exact Block.nondetElimM_noNondetGuards body σ
-  | .loop .nondet m inv body md =>
-      rw [Stmt.nondetElimM_loop_nondet_out]
-      simp only [Block.noNondetGuards, Stmt.noNondetGuards, Block.noNondetGuards_append,
-                 Bool.and_true,
-                 Block.nondetElimM_noNondetGuards body _]
-  | .exit lbl md => simp [Stmt.nondetElimM, Block.noNondetGuards, Stmt.noNondetGuards]
-  | .typeDecl t md => simp [Stmt.nondetElimM, Block.noNondetGuards, Stmt.noNondetGuards]
-  termination_by sizeOf s
-
-/-- Block-level counterpart of the statement case: the output of
-    `Block.nondetElimM ss σ` has no nondeterministic guard, in any of its
-    statements. -/
-theorem Block.nondetElimM_noNondetGuards {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
-    (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
-    Block.noNondetGuards (Block.nondetElimM ss σ).1 = true := by
-  match ss with
-  | [] => simp [Block.nondetElimM, Block.noNondetGuards]
-  | s :: rest =>
-      rw [Block.nondetElimM_cons_out, Block.noNondetGuards_append]
-      simp only [Stmt.nondetElimM_noNondetGuards s σ,
-                 Block.nondetElimM_noNondetGuards rest _, Bool.and_true]
-  termination_by sizeOf ss
-end
-
-/-- Top-level structural postcondition: `Block.nondetElim` output has no
-nondeterministic control (spec guarantee 2). -/
-theorem nondetElim_noNondetGuards {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
-    (ss : List (Stmt P (Cmd P))) :
-    Block.noNondetGuards (Block.nondetElim ss) = true :=
-  Block.nondetElimM_noNondetGuards ss StringGenState.emp
+deterministic read, so no `.ite .nondet`/`.loop .nondet` survives. The generic
+mutual `Stmt.nondetElimM_noNondetGuards` / `Block.nondetElimM_noNondetGuards` and
+the top-level `nondetElim_noNondetGuards` are proved (over an arbitrary command
+type) in `NondetElimProps`; the corollary below specialises them. -/
 
 /-- `nondetElim` removes nondeterministic loops, so its output satisfies
 `containsNondetLoop = false` (via the `noNondetGuards` postcondition). -/
@@ -149,35 +107,6 @@ theorem step_ndelim_ite_prefix_outcome {P : PureExpr} [HasFvar P] [HasFvars P] [
       exact .step _ _ _ (.step_seq_inner (.step_ite_false h_guard))
         (seq_nil_outcome _ _ oc h_blk)
   exact ReflTrans_Transitive _ _ _ _ h1 h2
-
-/-- From a *clean*-start statement run reaching a *failing* config, the run takes
-at least one step.  (A refl run would keep the config at `.stmt s ρ`, whose
-`getEnv` is the clean `ρ`, contradicting the failing flag.)  Exposes the first
-step and residual. -/
-theorem clean_stmt_first_step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    {s : Stmt P (Cmd P)} {ρ : Env P} {c : Config P (Cmd P)}
-    (h_reach : StepStmtStar P (EvalCmd P) (.stmt s ρ) c)
-    (hc : c.getEnv.hasFailure = true)
-    (h_clean : ρ.hasFailure = false) :
-    ∃ cfg, StepStmt P (EvalCmd P) (.stmt s ρ) cfg ∧
-      StepStmtStar P (EvalCmd P) cfg c := by
-  cases h_reach with
-  | refl => exact absurd (by simpa [Config.getEnv] using hc) (by rw [h_clean]; simp)
-  | step _ mid _ hstep hrest => exact ⟨mid, hstep, hrest⟩
-
-/-- Singleton-list failing lift: a single statement reaching a *failing* config
-(not necessarily terminal/exiting) yields the singleton list reaching a failing
-config.  The residual `d` is wrapped as `.seq d []`, whose `getEnv` (hence failure
-flag) is `d`'s. -/
-theorem stmt_to_singleton_stmts_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    (s : Stmt P (Cmd P)) (ρ : Env P) (d : Config P (Cmd P))
-    (h : StepStmtStar P (EvalCmd P) (.stmt s ρ) d)
-    (hd : d.getEnv.hasFailure = true) :
-    ∃ d', StepStmtStar P (EvalCmd P) (.stmts [s] ρ) d'
-      ∧ d'.getEnv.hasFailure = true :=
-  ⟨.seq d ([] : List (Stmt P (Cmd P))),
-    .step _ _ _ StepStmt.step_stmts_cons (seq_inner_star P (EvalCmd P) _ _ _ h),
-    by simpa [Config.getEnv] using hd⟩
 
 /-- Failing `.ite .nondet` prefix replay (then side): the chosen branch `tss`
 reaching a *failing* config drives the emitted `init $g; ite $g` prefix to a
@@ -369,273 +298,6 @@ gives `g`'s slot is `none` — exactly the `init`/`set` precondition.  After
 defining `g`, the advanced state's `stringGens` gains `g`, so any *still*-ungenerated
 gen-shaped `s` differs from `g` (`ident` injective) and stays `none`. -/
 
-section Freshness
-
-/-- Target-store freshness invariant relative to a generator state `σ`, for a
-*kind predicate* `Q` on label strings: every `Q`-string not yet generated by
-`σ` is undefined in `σ_tgt`.  Instantiating `Q := HasUnderscoreDigitSuffix`
-recovers the blanket gen-shape freshness invariant; a per-kind `Q` lets a
-composition argument restrict freshness to just the labels *this* pass generates. -/
-@[expose] def GenFreshStore {P : PureExpr} [HasIdent P]
-    (Q : String → Prop)
-    (σ : StringGenState) (σ_tgt : SemanticStore P) : Prop :=
-  ∀ s, Q s → s ∉ σ.stringGens →
-    σ_tgt (HasIdent.ident (P := P) s) = none
-
-/-- The freshly-generated guard's slot is undefined in a `GenFreshStore` target,
-given `WF σ` and that the freshly generated label satisfies the kind predicate. -/
-theorem GenFreshStore_gen_slot_none {P : PureExpr} [HasIdent P]
-    {Q : String → Prop}
-    {σ : StringGenState} {σ_tgt : SemanticStore P}
-    (pf : String) (h_fresh : GenFreshStore Q σ σ_tgt) (hwf : StringGenState.WF σ)
-    (hQ : Q (StringGenState.gen pf σ).1) :
-    σ_tgt (HasIdent.ident (P := P) (StringGenState.gen pf σ).1) = none :=
-  h_fresh _ hQ (StringGenState.stringGens_gen_not_in pf σ hwf)
-
-/-- `GenFreshStore` is preserved across defining the freshly-generated guard
-`g := (gen pf σ).1` (via `SemanticStore.update`), advancing the state to `(gen pf σ).2`. -/
-theorem GenFreshStore_storeWith_gen {P : PureExpr} [HasIdent P] [DecidableEq P.Ident]
-    [LawfulHasIdent P]
-    {Q : String → Prop}
-    {σ : StringGenState} {σ_tgt : SemanticStore P}
-    (pf : String) (b : P.Expr) (h_fresh : GenFreshStore Q σ σ_tgt) :
-    GenFreshStore Q (StringGenState.gen pf σ).2
-      (SemanticStore.update σ_tgt (HasIdent.ident (P := P) (StringGenState.gen pf σ).1) b) := by
-  intro s h_suf h_nin
-  rw [StringGenState.stringGens_gen] at h_nin
-  have h_ne_g : s ≠ (StringGenState.gen pf σ).1 := fun h => h_nin (h ▸ List.mem_cons_self)
-  have h_nin_σ : s ∉ σ.stringGens := fun h => h_nin (List.mem_cons_of_mem _ h)
-  have h_ident_ne :
-      HasIdent.ident (P := P) s ≠ HasIdent.ident (P := P) (StringGenState.gen pf σ).1 :=
-    fun h => h_ne_g (LawfulHasIdent.ident_inj h)
-  show (if HasIdent.ident (P := P) s = _ then some b else _) = none
-  rw [ite_eq_right h_ident_ne]
-  exact h_fresh s h_suf h_nin_σ
-
-/-- `GenFreshStore` strengthens as the generator advances: once more names have
-been generated (`GenStep σ σ'`), there are *fewer* ungenerated gen-shaped names,
-so the "ungenerated ⟹ undefined" obligation is easier to meet. -/
-theorem GenFreshStore_mono {P : PureExpr} [HasIdent P]
-    {Q : String → Prop}
-    {σ σ' : StringGenState} {σ_tgt : SemanticStore P}
-    (h_step : StringGenState.GenStep σ σ')
-    (h_fresh : GenFreshStore Q σ σ_tgt) :
-    GenFreshStore Q σ' σ_tgt := by
-  intro s h_suf h_nin
-  exact h_fresh s h_suf (fun h => h_nin (h_step.subset h))
-
-end Freshness
-
-/-! ### Source-shape precondition
-
-The simulation is only sound for source programs that never `init`/`set` a
-gen-shaped (`HasUnderscoreDigitSuffix`) variable.  This is carried as an
-explicit assumption: the front-ends feeding this pipeline never write such
-names, and a source program that re-`init`s a parent-scoped variable inside a
-loop body is already stuck under the existing semantics, independent of this
-pass.  Without it the theorem is false — a pass-through source
-`.cmd (set "$g_0" .nondet)` defines a gen-shaped slot, after which a later
-`.ite .nondet`'s inserted `init $g := *` would collide and be stuck.
-
-We carry it as "no `Q`-kind identifier appears among the block's defined +
-modified variables" (mirroring the analogous threaded freshness obligation on
-`definedVars ++ initVars` / `modifiedVars`).  Membership in `++` distributes
-the obligation across sequencing and recursion automatically. -/
-
-/-- The source-shape precondition over a source block: no statement in `ss`
-ever defines or modifies a `Q`-kind variable. -/
-@[expose] def SrcNoGenWrites {P : PureExpr} [HasFvars P] [HasIdent P]
-    (Q : String → Prop)
-    (ss : List (Stmt P (Cmd P))) : Prop :=
-  (∀ s : String, Q s → HasIdent.ident (P := P) s ∉ (Block.definedVars ss false ++ Block.modifiedVars ss))
-
-/-- A single `EvalCmd` whose command writes no `Q`-kind variable preserves the
-"no `Q`-kind slot is defined" invariant on its store. -/
-theorem evalCmd_preserves_src_fresh {P : PureExpr} [HasFvar P] [HasFvars P]
-    [HasBoolOps P] [HasIdent P]
-    {Q : String → Prop}
-    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
-    (h : EvalCmd P f σ c σ' haf)
-    (h_src_fresh : ∀ s, Q s →
-      σ (HasIdent.ident (P := P) s) = none)
-    (h_no_writes : (∀ s : String, Q s → HasIdent.ident (P := P) s ∉ (Cmd.definedVars c ++ Cmd.modifiedVars c))) :
-    ∀ s, Q s →
-      σ' (HasIdent.ident (P := P) s) = none := by
-  intro s h_suf
-  have h_none : σ (HasIdent.ident (P := P) s) = none := h_src_fresh s h_suf
-  refine evalCmd_preserves_none (P := P) h h_none ?_ ?_
-  · intro h_mem
-    exact h_no_writes s h_suf (List.mem_append_left _ h_mem)
-  · intro h_mem
-    exact h_no_writes s h_suf (List.mem_append_right _ h_mem)
-
-section CmdReplayStoreAgree
-
-/-- Replay a source `EvalCmd` step on a target store that *agrees* with the
-source (`StoreAgreement`, source-on-left — target may bind strictly more),
-given every variable the command `init`s is undefined in the target.  Produces
-a target post-store still agreeing with the source post-store.
-
-The target-undefinedness at an `init` site comes from the explicit
-`h_tgt_init_undef` premise; the non-init cases need no freshness, since
-`StoreAgreement` supplies the expression-variable pointwise equality directly. -/
-theorem cmd_replay_storeAgree {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
-    [DecidableEq P.Ident] [LawfulHasIdent P]
-    (f : P.Factory) (σ_src₀ σ_tgt₀ : SemanticStore P)
-    (c : Cmd P) (σ_src₁ : SemanticStore P) (failed : Bool)
-    (h_agree : StoreAgreement σ_src₀ σ_tgt₀)
-    (h_eval : EvalCmd P f σ_src₀ c σ_src₁ failed)
-    (h_wf_def : WellFormedSemanticEvalMono f)
-    (h_tgt_init_undef : ∀ x ∈ Cmd.definedVars c, σ_tgt₀ x = none) :
-    ∃ σ_tgt₁, EvalCmd P f σ_tgt₀ c σ_tgt₁ failed
-            ∧ StoreAgreement σ_src₁ σ_tgt₁ := by
-  cases h_eval with
-  | eval_init heval hinit htyped hwfvar =>
-    rename_i e v x ty md
-    have h_tgt_x_none : σ_tgt₀ x = none := by
-      apply h_tgt_init_undef x
-      show x ∈ (Cmd.init x ty (ExprOrNondet.det e) md).definedVars
-      with_unfolding_all exact List.mem_singleton.mpr rfl
-    have h_eval_tgt : P.eval f σ_tgt₀ e = .some v :=
-      h_wf_def e v σ_src₀ σ_tgt₀ (storeAgreement_supplies_mono_premise σ_src₀ σ_tgt₀ h_agree) heval
-    cases hinit with
-    | init h_xn h_xv h_other =>
-      let σ_tgt₁ : SemanticStore P := fun y => if y = x then some v else σ_tgt₀ y
-      have h_tgt_x : σ_tgt₁ x = some v := by show (if x = x then _ else _) = _; simp
-      have h_tgt_other : ∀ y, x ≠ y → σ_tgt₁ y = σ_tgt₀ y := by
-        intro y hxy; show (if y = x then _ else _) = _; rw [ite_eq_right (fun h => hxy h.symm)]
-      refine ⟨σ_tgt₁, EvalCmd.eval_init h_eval_tgt (InitState.init h_tgt_x_none h_tgt_x h_tgt_other) htyped hwfvar, ?_⟩
-      intro y h_def_y
-      have h_y_some : (σ_src₁ y).isSome = true := h_def_y y (List.mem_singleton.mpr rfl)
-      by_cases hyx : y = x
-      · subst hyx; rw [h_xv, h_tgt_x]
-      · rw [h_other y (fun h => hyx h.symm)]
-        rw [h_other y (fun h => hyx h.symm)] at h_y_some
-        rw [h_tgt_other y (fun h => hyx h.symm)]
-        exact h_agree y (fun z hz => by simpa [List.mem_singleton.mp hz] using h_y_some)
-  | eval_init_unconstrained hinit hval hwfvar =>
-    rename_i x v ty md
-    have h_tgt_x_none : σ_tgt₀ x = none := by
-      apply h_tgt_init_undef x
-      show x ∈ (Cmd.init x ty (ExprOrNondet.nondet) md).definedVars
-      with_unfolding_all exact List.mem_singleton.mpr rfl
-    cases hinit with
-    | init h_xn h_xv h_other =>
-      let σ_tgt₁ : SemanticStore P := fun y => if y = x then some v else σ_tgt₀ y
-      have h_tgt_x : σ_tgt₁ x = some v := by show (if x = x then _ else _) = _; simp
-      have h_tgt_other : ∀ y, x ≠ y → σ_tgt₁ y = σ_tgt₀ y := by
-        intro y hxy; show (if y = x then _ else _) = _; rw [ite_eq_right (fun h => hxy h.symm)]
-      refine ⟨σ_tgt₁, EvalCmd.eval_init_unconstrained (InitState.init h_tgt_x_none h_tgt_x h_tgt_other) hval hwfvar, ?_⟩
-      intro y h_def_y
-      have h_y_some : (σ_src₁ y).isSome = true := h_def_y y (List.mem_singleton.mpr rfl)
-      by_cases hyx : y = x
-      · subst hyx; rw [h_xv, h_tgt_x]
-      · rw [h_other y (fun h => hyx h.symm)]
-        rw [h_other y (fun h => hyx h.symm)] at h_y_some
-        rw [h_tgt_other y (fun h => hyx h.symm)]
-        exact h_agree y (fun z hz => by simpa [List.mem_singleton.mp hz] using h_y_some)
-  | eval_set heval hupd htyped hwfvar =>
-    rename_i e v x md
-    have h_eval_tgt : P.eval f σ_tgt₀ e = .some v :=
-      h_wf_def e v σ_src₀ σ_tgt₀ (storeAgreement_supplies_mono_premise σ_src₀ σ_tgt₀ h_agree) heval
-    cases hupd with
-    | update h_xv' h_xv h_other =>
-      rename_i v'
-      have h_x_def_src : isDefined σ_src₀ [x] := by intro z hz; rw [List.mem_singleton.mp hz, h_xv']; rfl
-      have h_tgt_x_old : σ_tgt₀ x = some v' := by rw [← h_agree x h_x_def_src]; exact h_xv'
-      let σ_tgt₁ : SemanticStore P := fun y => if y = x then some v else σ_tgt₀ y
-      have h_tgt_x : σ_tgt₁ x = some v := by show (if x = x then _ else _) = _; simp
-      have h_tgt_other : ∀ y, x ≠ y → σ_tgt₁ y = σ_tgt₀ y := by
-        intro y hxy; show (if y = x then _ else _) = _; rw [ite_eq_right (fun h => hxy h.symm)]
-      obtain ⟨previous, valueTy, h_previous, h_previous_ty, h_v_ty⟩ := htyped
-      have h_previous_eq : previous = v' := Option.some.inj (h_previous.symm.trans h_xv')
-      subst previous
-      have h_typed_tgt : HasVal.valueOfStoredTy (P := P) f σ_tgt₀ x v :=
-        ⟨v', valueTy, h_tgt_x_old, h_previous_ty, h_v_ty⟩
-      refine ⟨σ_tgt₁, EvalCmd.eval_set h_eval_tgt
-        (UpdateState.update h_tgt_x_old h_tgt_x h_tgt_other) h_typed_tgt hwfvar, ?_⟩
-      intro y h_def_y
-      have h_y_some : (σ_src₁ y).isSome = true := h_def_y y (List.mem_singleton.mpr rfl)
-      by_cases hyx : y = x
-      · subst hyx; rw [h_xv, h_tgt_x]
-      · rw [h_other y (fun h => hyx h.symm)]
-        rw [h_other y (fun h => hyx h.symm)] at h_y_some
-        rw [h_tgt_other y (fun h => hyx h.symm)]
-        exact h_agree y (fun z hz => by simpa [List.mem_singleton.mp hz] using h_y_some)
-  | eval_set_nondet hupd hval hwfvar =>
-    rename_i x v md
-    cases hupd with
-    | update h_xv' h_xv h_other =>
-      rename_i v'
-      have h_x_def_src : isDefined σ_src₀ [x] := by intro z hz; rw [List.mem_singleton.mp hz, h_xv']; rfl
-      have h_tgt_x_old : σ_tgt₀ x = some v' := by rw [← h_agree x h_x_def_src]; exact h_xv'
-      let σ_tgt₁ : SemanticStore P := fun y => if y = x then some v else σ_tgt₀ y
-      have h_tgt_x : σ_tgt₁ x = some v := by show (if x = x then _ else _) = _; simp
-      have h_tgt_other : ∀ y, x ≠ y → σ_tgt₁ y = σ_tgt₀ y := by
-        intro y hxy; show (if y = x then _ else _) = _; rw [ite_eq_right (fun h => hxy h.symm)]
-      obtain ⟨previous, valueTy, h_previous, h_previous_ty, h_v_ty⟩ := hval
-      have h_previous_eq : previous = v' := Option.some.inj (h_previous.symm.trans h_xv')
-      subst previous
-      have h_typed : HasVal.valueOfStoredTy (P := P) f σ_tgt₀ x v :=
-        ⟨v', valueTy, h_tgt_x_old, h_previous_ty, h_v_ty⟩
-      refine ⟨σ_tgt₁, EvalCmd.eval_set_nondet
-        (UpdateState.update h_tgt_x_old h_tgt_x h_tgt_other) h_typed hwfvar, ?_⟩
-      intro y h_def_y
-      have h_y_some : (σ_src₁ y).isSome = true := h_def_y y (List.mem_singleton.mpr rfl)
-      by_cases hyx : y = x
-      · subst hyx; rw [h_xv, h_tgt_x]
-      · rw [h_other y (fun h => hyx h.symm)]
-        rw [h_other y (fun h => hyx h.symm)] at h_y_some
-        rw [h_tgt_other y (fun h => hyx h.symm)]
-        exact h_agree y (fun z hz => by simpa [List.mem_singleton.mp hz] using h_y_some)
-  | eval_assert_pass hcond hwfb =>
-    rename_i l md e
-    have h_eval_tgt : P.eval f σ_tgt₀ e = .some HasBool.tt :=
-      h_wf_def e HasBool.tt σ_src₀ σ_tgt₀ (storeAgreement_supplies_mono_premise σ_src₀ σ_tgt₀ h_agree) hcond
-    exact ⟨σ_tgt₀, EvalCmd.eval_assert_pass h_eval_tgt hwfb, h_agree⟩
-  | eval_assert_fail hcond hwfb =>
-    rename_i l md e
-    have h_eval_tgt : P.eval f σ_tgt₀ e = .some HasBool.ff :=
-      h_wf_def e HasBool.ff σ_src₀ σ_tgt₀ (storeAgreement_supplies_mono_premise σ_src₀ σ_tgt₀ h_agree) hcond
-    exact ⟨σ_tgt₀, EvalCmd.eval_assert_fail h_eval_tgt hwfb, h_agree⟩
-  | eval_assume hcond hwfb =>
-    rename_i l md e
-    have h_eval_tgt : P.eval f σ_tgt₀ e = .some HasBool.tt :=
-      h_wf_def e HasBool.tt σ_src₀ σ_tgt₀ (storeAgreement_supplies_mono_premise σ_src₀ σ_tgt₀ h_agree) hcond
-    exact ⟨σ_tgt₀, EvalCmd.eval_assume h_eval_tgt hwfb, h_agree⟩
-  | eval_cover hwfb =>
-    exact ⟨σ_tgt₀, EvalCmd.eval_cover hwfb, h_agree⟩
-
-/-- Trace-level `.cmd` replay under `StoreAgreement`: a terminating source
-`.cmd c` execution is matched by a terminating target `.cmd c` execution from
-any agreeing store (matching evaluator and failure flag), provided every `init`
-target of `c` is undefined in the target, with the post-stores agreeing and the
-failure flags / evaluators equal. -/
-theorem cmd_replay_agreement_storeAgree {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    [HasIdent P] [DecidableEq P.Ident] [LawfulHasIdent P]
-    (c : Cmd P) (ρ_src ρ_src' ρ_tgt : Env P)
-    (h_fail_eq : ρ_tgt.hasFailure = ρ_src.hasFailure)
-    (h_fac_eq : ρ_tgt.factory = ρ_src.factory)
-    (h_agree : StoreAgreement ρ_src.store ρ_tgt.store)
-    (h_wf_def : WellFormedSemanticEvalMono ρ_src.factory)
-    (h_tgt_init_undef : ∀ x ∈ Cmd.definedVars c, ρ_tgt.store x = none)
-    (h_term : StepStmtStar P (EvalCmd P)
-      (.stmt (.cmd c) ρ_src) (.terminal ρ_src')) :
-    ∃ ρ_tgt', StepStmtStar P (EvalCmd P)
-          (.stmt (.cmd c) ρ_tgt) (.terminal ρ_tgt')
-        ∧ StoreAgreement ρ_src'.store ρ_tgt'.store
-        ∧ ρ_tgt'.hasFailure = ρ_src'.hasFailure := by
-  obtain ⟨σ', haf, h_cmd, h_eq⟩ := cmd_step_inv c ρ_src ρ_src' h_term
-  obtain ⟨σ_tgt', h_eval_tgt, h_agree'⟩ :=
-    cmd_replay_storeAgree ρ_src.factory ρ_src.store ρ_tgt.store c σ' haf
-      h_agree h_cmd h_wf_def h_tgt_init_undef
-  have h_eval_tgt' : EvalCmd P ρ_tgt.factory ρ_tgt.store c σ_tgt' haf := h_fac_eq ▸ h_eval_tgt
-  refine ⟨{ ρ_tgt with store := σ_tgt', hasFailure := ρ_tgt.hasFailure || haf },
-    .step _ _ _ (StepStmt.step_cmd h_eval_tgt') (.refl _), ?_, ?_⟩
-  · subst h_eq; exact h_agree'
-  · subst h_eq; simp [h_fail_eq]
-
-end CmdReplayStoreAgree
 
 /-! ## `StoreAgreement` re-thread of the nondetElim engine (`*_sa`)
 
@@ -651,7 +313,7 @@ inductive workhorses the top-level soundness theorems compose — not merely
 carried explicitly as `h_tgt_init_undef` (re-established across each loop
 iteration's `projectStore` boundary, since parent-undefined keys stay `none`);
 the `_gen` lemmas add a `uniqueInits`/`Nodup` premise; and the
-`GenFreshStore`/`h_src_fresh` machinery quarantines the generated guard slots,
+`SemanticStore.isReserved`/`h_src_fresh` machinery quarantines the generated guard slots,
 orthogonal to the source-var relation.  Each docstring below notes only what is
 distinctive to that lemma. -/
 
@@ -672,7 +334,7 @@ private theorem nondetElim_loop_det_sim_iteration_sa {P : PureExpr} [HasFvar P] 
       StringGenState.WF σ →
       (∀ t, Q t →
         ρb_src.store (HasIdent.ident (P := P) t) = none) →
-      GenFreshStore Q σ ρb_tgt.store →
+      SemanticStore.isReserved Q σ ρb_tgt.store →
       (∀ y ∈ Block.initVars body, ρb_tgt.store y = none) →
       StepStmtStar P (EvalCmd P) (.stmts body ρb_src) (Env.outcomeConfig oc_b ρb') →
       (∀ t, Q t →
@@ -681,7 +343,7 @@ private theorem nondetElim_loop_det_sim_iteration_sa {P : PureExpr} [HasFvar P] 
             (.stmts body' ρb_tgt) (Env.outcomeConfig oc_b ρb_out)
           ∧ StoreAgreement ρb'.store ρb_out.store
           ∧ ρb_out.hasFailure = ρb'.hasFailure
-          ∧ GenFreshStore Q σ_out ρb_out.store)
+          ∧ SemanticStore.isReserved Q σ_out ρb_out.store)
     (oc : Option String)
     (ρ_src ρ' ρ_tgt : Env P) (n : Nat)
     (h_fail_eq : ρ_tgt.hasFailure = ρ_src.hasFailure)
@@ -691,7 +353,7 @@ private theorem nondetElim_loop_det_sim_iteration_sa {P : PureExpr} [HasFvar P] 
     (h_wf_gen : StringGenState.WF σ)
     (h_src_fresh : ∀ t, Q t →
       ρ_src.store (HasIdent.ident (P := P) t) = none)
-    (h_tgt_fresh : GenFreshStore Q σ ρ_tgt.store)
+    (h_tgt_fresh : SemanticStore.isReserved Q σ ρ_tgt.store)
     (h_tgt_init_undef : ∀ y ∈ Block.initVars body, ρ_tgt.store y = none)
     (hstarT : ReflTransT (StepStmt P (EvalCmd P))
       (.stmt (.loop (.det e) m inv body md) ρ_src) (Env.outcomeConfig oc ρ'))
@@ -703,7 +365,7 @@ private theorem nondetElim_loop_det_sim_iteration_sa {P : PureExpr} [HasFvar P] 
           (Env.outcomeConfig oc ρ_out)
         ∧ StoreAgreement ρ'.store ρ_out.store
         ∧ ρ_out.hasFailure = ρ'.hasFailure
-        ∧ GenFreshStore Q σ ρ_out.store := by
+        ∧ SemanticStore.isReserved Q σ ρ_out.store := by
   induction n generalizing oc ρ_src ρ_tgt ρ' with
   | zero =>
     rcases loop_det_step_first_inv hstarT with
@@ -810,7 +472,7 @@ private theorem nondetElim_loop_det_sim_iteration_sa {P : PureExpr} [HasFvar P] 
           by_cases hp : (ρ_src.store (HasIdent.ident (P := P) t)).isSome
           · rw [ite_eq_left hp]; exact h_inner_fresh t h_suf
           · rw [ite_eq_right hp]
-        have h_tgt_fresh_next : GenFreshStore Q σ ρ_tgt_next.store := by
+        have h_tgt_fresh_next : SemanticStore.isReserved Q σ ρ_tgt_next.store := by
           intro s h_suf h_notin
           show projectStore ρ_tgt.store ρ_inner_tgt.store (HasIdent.ident (P := P) s) = none
           show (if (ρ_tgt.store (HasIdent.ident (P := P) s)).isSome
@@ -930,7 +592,7 @@ private theorem nondetElim_loop_det_sim_iteration_sa {P : PureExpr} [HasFvar P] 
             by_cases hp : (ρ_src.store (HasIdent.ident (P := P) t)).isSome
             · rw [ite_eq_left hp]; exact h_inner_fresh t h_suf
             · rw [ite_eq_right hp]
-          have h_tgt_fresh_next : GenFreshStore Q σ ρ_tgt_next.store := by
+          have h_tgt_fresh_next : SemanticStore.isReserved Q σ ρ_tgt_next.store := by
             intro s h_suf h_notin
             show projectStore ρ_tgt.store ρ_inner_tgt.store (HasIdent.ident (P := P) s) = none
             show (if (ρ_tgt.store (HasIdent.ident (P := P) s)).isSome
@@ -987,7 +649,7 @@ private theorem loop_nondet_exit_close_sa {P : PureExpr} [HasFvar P] [HasFvars P
     (hwf : WellFormedSemanticEval ρ_src.factory)
     (h_src_fresh : ∀ t, Q t →
       ρ_src.store (HasIdent.ident (P := P) t) = none)
-    (h_tgt_fresh : GenFreshStore Q σ ρ_tgt.store)
+    (h_tgt_fresh : SemanticStore.isReserved Q σ ρ_tgt.store)
     (h_guard_def : ρ_tgt.store ident = some HasBool.ff)
     (hrest : ReflTransT (StepStmt P (EvalCmd P))
       (.terminal ρ_src)
@@ -1000,7 +662,7 @@ private theorem loop_nondet_exit_close_sa {P : PureExpr} [HasFvar P] [HasFvars P
           (Env.outcomeConfig oc ρ_out)
         ∧ StoreAgreement ρ'.store ρ_out.store
         ∧ ρ_out.hasFailure = ρ'.hasFailure
-        ∧ GenFreshStore Q σ ρ_out.store := by
+        ∧ SemanticStore.isReserved Q σ ρ_out.store := by
   cases oc with
   | some lbl =>
     exfalso
@@ -1042,7 +704,7 @@ private theorem nondetElim_loop_nondet_sim_iteration_sa {P : PureExpr} [HasFvar 
       StringGenState.WF σ →
       (∀ t, Q t →
         ρb_src.store (HasIdent.ident (P := P) t) = none) →
-      GenFreshStore Q σ ρb_tgt.store →
+      SemanticStore.isReserved Q σ ρb_tgt.store →
       (∀ y ∈ Block.initVars body, ρb_tgt.store y = none) →
       StepStmtStar P (EvalCmd P) (.stmts body ρb_src) (Env.outcomeConfig oc_b ρb') →
       (∀ t, Q t →
@@ -1051,7 +713,7 @@ private theorem nondetElim_loop_nondet_sim_iteration_sa {P : PureExpr} [HasFvar 
             (.stmts body' ρb_tgt) (Env.outcomeConfig oc_b ρb_out)
           ∧ StoreAgreement ρb'.store ρb_out.store
           ∧ ρb_out.hasFailure = ρb'.hasFailure
-          ∧ GenFreshStore Q σ_out ρb_out.store)
+          ∧ SemanticStore.isReserved Q σ_out ρb_out.store)
     (h_g_gen : Q g)
     (_h_g_in : g ∈ σ.stringGens)
     (h_g_ndef : HasIdent.ident (P := P) g ∉ Block.definedVars (P := P) (C := Cmd P) body' false)
@@ -1065,7 +727,7 @@ private theorem nondetElim_loop_nondet_sim_iteration_sa {P : PureExpr} [HasFvar 
     (h_wf_gen : StringGenState.WF σ)
     (h_src_fresh : ∀ t, Q t →
       ρ_src.store (HasIdent.ident (P := P) t) = none)
-    (h_tgt_fresh : GenFreshStore Q σ ρ_tgt.store)
+    (h_tgt_fresh : SemanticStore.isReserved Q σ ρ_tgt.store)
     (h_tgt_init_undef : ∀ y ∈ Block.initVars body, ρ_tgt.store y = none)
     (entering : Bool)
     (h_guard_def : ρ_tgt.store (HasIdent.ident (P := P) g)
@@ -1087,7 +749,7 @@ private theorem nondetElim_loop_nondet_sim_iteration_sa {P : PureExpr} [HasFvar 
           (Env.outcomeConfig oc ρ_out)
         ∧ StoreAgreement ρ'.store ρ_out.store
         ∧ ρ_out.hasFailure = ρ'.hasFailure
-        ∧ GenFreshStore Q σ ρ_out.store := by
+        ∧ SemanticStore.isReserved Q σ ρ_out.store := by
   induction n generalizing oc ρ_src ρ_tgt ρ' entering with
   | zero =>
     rcases h_src_first with ⟨h_ent, hrest, hl⟩ | ⟨h_ent, hrest, hl⟩
@@ -1226,7 +888,7 @@ private theorem nondetElim_loop_nondet_sim_iteration_sa {P : PureExpr} [HasFvar 
             by_cases hp : (ρ_src.store (HasIdent.ident (P := P) t)).isSome
             · rw [ite_eq_left hp]; exact h_inner_fresh t h_suf
             · rw [ite_eq_right hp]
-          have h_tgt_fresh_next : GenFreshStore Q σ ρ_tgt_next.store := by
+          have h_tgt_fresh_next : SemanticStore.isReserved Q σ ρ_tgt_next.store := by
             intro s h_suf h_notin
             show (if (ρ_tgt.store (HasIdent.ident (P := P) s)).isSome
                 then SemanticStore.update ρ_inner_tgt.store (HasIdent.ident (P := P) g) HasBool.ff
@@ -1333,7 +995,7 @@ private theorem nondetElim_loop_nondet_sim_iteration_sa {P : PureExpr} [HasFvar 
             by_cases hp : (ρ_src.store (HasIdent.ident (P := P) t)).isSome
             · rw [ite_eq_left hp]; exact h_inner_fresh t h_suf
             · rw [ite_eq_right hp]
-          have h_tgt_fresh_next : GenFreshStore Q σ ρ_tgt_next.store := by
+          have h_tgt_fresh_next : SemanticStore.isReserved Q σ ρ_tgt_next.store := by
             intro s h_suf h_notin
             show (if (ρ_tgt.store (HasIdent.ident (P := P) s)).isSome
                 then SemanticStore.update ρ_inner_tgt.store (HasIdent.ident (P := P) g) HasBool.tt
@@ -1532,7 +1194,7 @@ private theorem nondetElim_loop_nondet_sim_iteration_sa {P : PureExpr} [HasFvar 
             by_cases hp : (ρ_src.store (HasIdent.ident (P := P) t)).isSome
             · rw [ite_eq_left hp]; exact h_inner_fresh t h_suf
             · rw [ite_eq_right hp]
-          have h_tgt_fresh_next : GenFreshStore Q σ ρ_tgt_next.store := by
+          have h_tgt_fresh_next : SemanticStore.isReserved Q σ ρ_tgt_next.store := by
             intro s h_suf h_notin
             show (if (ρ_tgt.store (HasIdent.ident (P := P) s)).isSome
                 then SemanticStore.update ρ_inner_tgt.store (HasIdent.ident (P := P) g) HasBool.tt
@@ -1581,7 +1243,7 @@ private theorem nondetElim_loop_nondet_sim_iteration_sa {P : PureExpr} [HasFvar 
 Every init target of the rewritten output is either an original source init
 target or a freshly-generated `Q`-guard (the `.ite .nondet`/`.loop .nondet` arms
 emit `init $g := *` for a `Q`-kind `g`).  This is the `Q`-generic analogue of the
-`ndelimKind`-keyed `nondetElimM_initVars_classified` below (proved here so the
+`NondetElim.isGeneratedName`-keyed `nondetElimM_initVars_classified` below (proved here so the
 cons-arm tail premise can be re-established without a forward import). -/
 
 section InitVarsClassified
@@ -1590,8 +1252,8 @@ mutual
 private theorem Stmt.nondetElimM_initVars_classified_Q {P : PureExpr}
     [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     {Q : String → Prop}
-    (hQgen : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
-            ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
+    (hQgen : (∀ sg, Q (StringGenState.gen NondetElim.prefixIte sg).1)
+            ∧ (∀ sg, Q (StringGenState.gen NondetElim.prefixLoop sg).1))
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     ∀ x ∈ Block.initVars (P := P) (Stmt.nondetElimM s σ).1,
       x ∈ Stmt.initVars s ∨
@@ -1626,7 +1288,7 @@ private theorem Stmt.nondetElimM_initVars_classified_Q {P : PureExpr}
         Cmd.definedVars, Bool.false_eq_true, ↓reduceIte, List.append_nil, List.cons_append,
         List.nil_append, List.mem_cons, List.mem_append] at hx ⊢
       rcases hx with h_g | h_t | h_e
-      · exact Or.inr ⟨(StringGenState.gen ndelimItePrefix σ).1, h_g, hQgen.1 σ⟩
+      · exact Or.inr ⟨(StringGenState.gen NondetElim.prefixIte σ).1, h_g, hQgen.1 σ⟩
       · rcases Block.nondetElimM_initVars_classified_Q hQgen tss _ x h_t with h' | h'
         · exact Or.inl (Or.inl h')
         · exact Or.inr h'
@@ -1647,7 +1309,7 @@ private theorem Stmt.nondetElimM_initVars_classified_Q {P : PureExpr}
         Block.initVars_append, List.append_nil, List.cons_append, List.nil_append,
         List.mem_cons] at hx ⊢
       rcases hx with h_g | h_body
-      · exact Or.inr ⟨(StringGenState.gen ndelimLoopPrefix σ).1, h_g, hQgen.2 σ⟩
+      · exact Or.inr ⟨(StringGenState.gen NondetElim.prefixLoop σ).1, h_g, hQgen.2 σ⟩
       · rcases Block.nondetElimM_initVars_classified_Q hQgen body _ x h_body with h' | h'
         · exact Or.inl h'
         · exact Or.inr h'
@@ -1664,8 +1326,8 @@ private theorem Stmt.nondetElimM_initVars_classified_Q {P : PureExpr}
 private theorem Block.nondetElimM_initVars_classified_Q {P : PureExpr}
     [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     {Q : String → Prop}
-    (hQgen : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
-            ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
+    (hQgen : (∀ sg, Q (StringGenState.gen NondetElim.prefixIte sg).1)
+            ∧ (∀ sg, Q (StringGenState.gen NondetElim.prefixLoop sg).1))
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ∀ x ∈ Block.initVars (P := P) (Block.nondetElimM ss σ).1,
       x ∈ Block.initVars ss ∨
@@ -1743,20 +1405,26 @@ private theorem Stmt.nondetElimM_initVars_fresh {P : PureExpr}
       simp only [HasInit.init, Block.definedVars, Stmt.definedVars, HasVarsImp.definedVars,
         Cmd.definedVars, Bool.false_eq_true, ↓reduceIte, List.append_nil, List.cons_append,
         List.nil_append, List.mem_cons, List.mem_append] at hx ⊢
-      have hstep0 : StringGenState.GenStep σ (StringGenState.gen ndelimItePrefix σ).2 :=
-        StringGenState.GenStep.of_gen ndelimItePrefix σ
-      have hwf1 : StringGenState.WF (StringGenState.gen ndelimItePrefix σ).2 := hstep0.wf_mono hwf
-      have hstep1 : StringGenState.GenStep (StringGenState.gen ndelimItePrefix σ).2
-          (Block.nondetElimM tss (StringGenState.gen ndelimItePrefix σ).2).2 :=
+      have hstep0 : StringGenState.GenStep σ (StringGenState.gen NondetElim.prefixIte σ).2 :=
+        StringGenState.GenStep.of_gen NondetElim.prefixIte σ
+      have hwf1 : StringGenState.WF
+          (StringGenState.gen NondetElim.prefixIte σ).2 :=
+        hstep0.wf_mono hwf
+      have hstep1 : StringGenState.GenStep (StringGenState.gen NondetElim.prefixIte σ).2
+          (Block.nondetElimM tss (StringGenState.gen NondetElim.prefixIte σ).2).2 :=
         Block.nondetElimM_genStep tss _
       rcases hx with h_g | h_t | h_e
-      · exact Or.inr ⟨(StringGenState.gen ndelimItePrefix σ).1, h_g,
-          StringGenState.stringGens_gen_not_in ndelimItePrefix σ hwf⟩
-      · rcases Block.nondetElimM_initVars_fresh tss (StringGenState.gen ndelimItePrefix σ).2 hwf1 x h_t with h' | ⟨str, heq, hfr⟩
+      · exact Or.inr ⟨(StringGenState.gen NondetElim.prefixIte σ).1, h_g,
+          StringGenState.stringGens_gen_not_in NondetElim.prefixIte σ hwf⟩
+      · rcases Block.nondetElimM_initVars_fresh tss
+          (StringGenState.gen NondetElim.prefixIte σ).2 hwf1 x h_t with
+          h' | ⟨str, heq, hfr⟩
         · exact Or.inl (Or.inl h')
         · exact Or.inr ⟨str, heq, fun hc => hfr (hstep0.subset hc)⟩
-      · rcases Block.nondetElimM_initVars_fresh ess (Block.nondetElimM tss (StringGenState.gen ndelimItePrefix σ).2).2
-            (hstep1.wf_mono hwf1) x h_e with h' | ⟨str, heq, hfr⟩
+      · rcases Block.nondetElimM_initVars_fresh ess
+          (Block.nondetElimM tss
+            (StringGenState.gen NondetElim.prefixIte σ).2).2
+          (hstep1.wf_mono hwf1) x h_e with h' | ⟨str, heq, hfr⟩
         · exact Or.inl (Or.inr h')
         · exact Or.inr ⟨str, heq, fun hc => hfr (hstep1.subset (hstep0.subset hc))⟩
   | .loop (.det e) m inv body md =>
@@ -1771,12 +1439,14 @@ private theorem Stmt.nondetElimM_initVars_fresh {P : PureExpr}
         HasVarsImp.definedVars, Cmd.definedVars, Bool.false_eq_true, ↓reduceIte,
         Block.initVars_append, List.append_nil, List.cons_append, List.nil_append,
         List.mem_cons] at hx ⊢
-      have hstep0 : StringGenState.GenStep σ (StringGenState.gen ndelimLoopPrefix σ).2 :=
-        StringGenState.GenStep.of_gen ndelimLoopPrefix σ
+      have hstep0 : StringGenState.GenStep σ (StringGenState.gen NondetElim.prefixLoop σ).2 :=
+        StringGenState.GenStep.of_gen NondetElim.prefixLoop σ
       rcases hx with h_g | h_body
-      · exact Or.inr ⟨(StringGenState.gen ndelimLoopPrefix σ).1, h_g,
-          StringGenState.stringGens_gen_not_in ndelimLoopPrefix σ hwf⟩
-      · rcases Block.nondetElimM_initVars_fresh body (StringGenState.gen ndelimLoopPrefix σ).2 (hstep0.wf_mono hwf) x h_body with h' | ⟨str, heq, hfr⟩
+      · exact Or.inr ⟨(StringGenState.gen NondetElim.prefixLoop σ).1, h_g,
+          StringGenState.stringGens_gen_not_in NondetElim.prefixLoop σ hwf⟩
+      · rcases Block.nondetElimM_initVars_fresh body
+          (StringGenState.gen NondetElim.prefixLoop σ).2
+          (hstep0.wf_mono hwf) x h_body with h' | ⟨str, heq, hfr⟩
         · exact Or.inl h'
         · exact Or.inr ⟨str, heq, fun hc => hfr (hstep0.subset hc)⟩
   | .exit lbl md =>
@@ -1815,17 +1485,6 @@ private theorem Block.nondetElimM_initVars_fresh {P : PureExpr}
   termination_by sizeOf ss
 end
 
-/-- An `init` command defines its target but does not modify an existing slot. -/
-private theorem init_modVars {P : PureExpr} [HasFvars P] (x : P.Ident) (ty : P.Ty)
-    (e : ExprOrNondet P) (md : MetaData P) :
-    HasVarsImp.modifiedVars (HasInit.init (CmdT := Cmd P) x ty e md) = ([] : List P.Ident) := by
-  with_unfolding_all rfl
-
-/-- A `havoc x` command modifies exactly `[x]`. -/
-private theorem havoc_modVars {P : PureExpr} [HasFvars P] (x : P.Ident) (md : MetaData P) :
-    HasVarsImp.modifiedVars (HasHavoc.havoc (CmdT := Cmd P) x md) = [x] := by
-  with_unfolding_all rfl
-
 mutual
 /-- With a well-formed generator state, every modified variable in a rewritten
 statement comes from the source statement or has a name fresh for that state. -/
@@ -1862,18 +1521,24 @@ private theorem Stmt.nondetElimM_modVars_fresh {P : PureExpr}
       rw [Stmt.nondetElimM_ite_nondet_out] at hx
       simp only [Block.modifiedVars, Stmt.modifiedVars, init_modVars, List.nil_append,
         List.append_nil, List.mem_append] at hx ⊢
-      have hstep0 : StringGenState.GenStep σ (StringGenState.gen ndelimItePrefix σ).2 :=
-        StringGenState.GenStep.of_gen ndelimItePrefix σ
-      have hwf1 : StringGenState.WF (StringGenState.gen ndelimItePrefix σ).2 := hstep0.wf_mono hwf
-      have hstep1 : StringGenState.GenStep (StringGenState.gen ndelimItePrefix σ).2
-          (Block.nondetElimM tss (StringGenState.gen ndelimItePrefix σ).2).2 :=
+      have hstep0 : StringGenState.GenStep σ (StringGenState.gen NondetElim.prefixIte σ).2 :=
+        StringGenState.GenStep.of_gen NondetElim.prefixIte σ
+      have hwf1 : StringGenState.WF
+          (StringGenState.gen NondetElim.prefixIte σ).2 :=
+        hstep0.wf_mono hwf
+      have hstep1 : StringGenState.GenStep (StringGenState.gen NondetElim.prefixIte σ).2
+          (Block.nondetElimM tss (StringGenState.gen NondetElim.prefixIte σ).2).2 :=
         Block.nondetElimM_genStep tss _
       rcases hx with h | h
-      · rcases Block.nondetElimM_modVars_fresh tss (StringGenState.gen ndelimItePrefix σ).2 hwf1 x h with h' | ⟨str, heq, hfr⟩
+      · rcases Block.nondetElimM_modVars_fresh tss
+          (StringGenState.gen NondetElim.prefixIte σ).2 hwf1 x h with
+          h' | ⟨str, heq, hfr⟩
         · exact Or.inl (Or.inl h')
         · exact Or.inr ⟨str, heq, fun hc => hfr (hstep0.subset hc)⟩
-      · rcases Block.nondetElimM_modVars_fresh ess (Block.nondetElimM tss (StringGenState.gen ndelimItePrefix σ).2).2
-            (hstep1.wf_mono hwf1) x h with h' | ⟨str, heq, hfr⟩
+      · rcases Block.nondetElimM_modVars_fresh ess
+          (Block.nondetElimM tss
+            (StringGenState.gen NondetElim.prefixIte σ).2).2
+          (hstep1.wf_mono hwf1) x h with h' | ⟨str, heq, hfr⟩
         · exact Or.inl (Or.inr h')
         · exact Or.inr ⟨str, heq, fun hc => hfr (hstep1.subset (hstep0.subset hc))⟩
   | .loop (.det e) m inv body md =>
@@ -1889,14 +1554,16 @@ private theorem Stmt.nondetElimM_modVars_fresh {P : PureExpr}
       rw [Block.modifiedVars_append] at hx
       simp only [Block.modifiedVars, Stmt.modifiedVars, havoc_modVars, List.append_nil,
         List.mem_append, List.mem_singleton] at hx ⊢
-      have hstep0 : StringGenState.GenStep σ (StringGenState.gen ndelimLoopPrefix σ).2 :=
-        StringGenState.GenStep.of_gen ndelimLoopPrefix σ
+      have hstep0 : StringGenState.GenStep σ (StringGenState.gen NondetElim.prefixLoop σ).2 :=
+        StringGenState.GenStep.of_gen NondetElim.prefixLoop σ
       rcases hx with h | h_g
-      · rcases Block.nondetElimM_modVars_fresh body (StringGenState.gen ndelimLoopPrefix σ).2 (hstep0.wf_mono hwf) x h with h' | ⟨str, heq, hfr⟩
+      · rcases Block.nondetElimM_modVars_fresh body
+          (StringGenState.gen NondetElim.prefixLoop σ).2
+          (hstep0.wf_mono hwf) x h with h' | ⟨str, heq, hfr⟩
         · exact Or.inl h'
         · exact Or.inr ⟨str, heq, fun hc => hfr (hstep0.subset hc)⟩
-      · exact Or.inr ⟨(StringGenState.gen ndelimLoopPrefix σ).1, h_g,
-          StringGenState.stringGens_gen_not_in ndelimLoopPrefix σ hwf⟩
+      · exact Or.inr ⟨(StringGenState.gen NondetElim.prefixLoop σ).1, h_g,
+          StringGenState.stringGens_gen_not_in NondetElim.prefixLoop σ hwf⟩
   | .exit lbl md =>
       intro x hx
       simp only [Stmt.nondetElimM, Block.modifiedVars, Stmt.modifiedVars, List.append_nil] at hx
@@ -1969,7 +1636,7 @@ combination of `StoreAgreement` and `h_src_fresh` below.
 Invariants threaded:
 - `StoreAgreement ρ_src.store ρ_tgt.store`: wherever the source is defined, the
   target agrees (so a fresh user var stays fresh in the target — the `.cmd`/`init` arm);
-- `GenFreshStore Q σ ρ_tgt.store`: the target store has no *ungenerated* gen-shaped
+- `SemanticStore.isReserved Q σ ρ_tgt.store`: the target store has no *ungenerated* gen-shaped
   slot defined (so each freshly-generated guard slot is `none` for the inserted
   `init`/`set`);
 - `h_src_fresh`: the source store has *no* gen-shaped slot defined (so the
@@ -1987,8 +1654,8 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P] [HasSubstFvar P]
     {Q : String → Prop}
-    (hQgen : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
-            ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
+    (hQgen : (∀ sg, Q (StringGenState.gen NondetElim.prefixIte sg).1)
+            ∧ (∀ sg, Q (StringGenState.gen NondetElim.prefixLoop sg).1))
     (s : Stmt P (Cmd P)) (σ : StringGenState)
     (ρ_src ρ' ρ_tgt : Env P)
     (h_fail_eq : ρ_tgt.hasFailure = ρ_src.hasFailure)
@@ -1998,7 +1665,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
     (h_wf_gen : StringGenState.WF σ)
     (h_src_fresh : ∀ t, Q t →
       ρ_src.store (HasIdent.ident (P := P) t) = none)
-    (h_tgt_fresh : GenFreshStore Q σ ρ_tgt.store)
+    (h_tgt_fresh : SemanticStore.isReserved Q σ ρ_tgt.store)
     (h_tgt_init_undef : ∀ y ∈ Stmt.initVars s, ρ_tgt.store y = none)
     (h_unique : (Stmt.initVars s).Nodup)
     (h_no_writes : (∀ t : String, Q t → HasIdent.ident (P := P) t ∉ (Stmt.definedVars s false ++ Stmt.modifiedVars s)))
@@ -2010,7 +1677,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
           (.stmts (Stmt.nondetElimM s σ).1 ρ_tgt) (Env.outcomeConfig oc ρ_out)
         ∧ StoreAgreement ρ'.store ρ_out.store
         ∧ ρ_out.hasFailure = ρ'.hasFailure
-        ∧ GenFreshStore Q (Stmt.nondetElimM s σ).2 ρ_out.store := by
+        ∧ SemanticStore.isReserved Q (Stmt.nondetElimM s σ).2 ρ_out.store := by
   match s, h_no_writes, h_tgt_init_undef, h_unique, oc, h_term with
   | .cmd c, h_no_writes, h_tgt_init_undef, _, oc, h_term =>
     -- A `.cmd` only ever reaches `.terminal`, so the exiting outcome is vacuous.
@@ -2040,7 +1707,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
       cmd_replay_agreement_storeAgree c ρ_src ρ' ρ_tgt
         h_fail_eq h_fac_eq h_agree hwf.mono h_tgt_init_undef_c h_term
     -- Invert the target replay run to recover the target's `EvalCmd`, which drives
-    -- the GenFreshStore preservation step (the target writes no gen-shaped var).
+    -- the SemanticStore.isReserved preservation step (the target writes no gen-shaped var).
     obtain ⟨σ_tgt', haf_t, h_cmd_tgt, h_eq_tgt⟩ :=
       cmd_step_inv c ρ_tgt ρ_tgt' h_run
     refine ⟨h_src'_fresh, ρ_tgt', ?_, h_agree', h_fail', ?_⟩
@@ -2099,7 +1766,8 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
                 (Env.outcomeConfig oc ρ_out)
               ∧ StoreAgreement ρ'.store ρ_out.store
               ∧ ρ_out.hasFailure = ρ'.hasFailure
-              ∧ GenFreshStore Q (Stmt.nondetElimM (.block lbl bss md) σ).2 ρ_out.store := by
+              ∧ SemanticStore.isReserved Q
+                (Stmt.nondetElimM (.block lbl bss md) σ).2 ρ_out.store := by
         intro oc_inner ρ_inner h_inner_run wrap_run h_ρ'_eq
         obtain ⟨h_fresh_inner, ρ_out_inner, h_run_inner, h_off_inner, h_fail_inner, h_fresh_out⟩ :=
           nondetElim_simulation_gen_sa hQgen bss σ ρ_src ρ_inner ρ_tgt
@@ -2236,8 +1904,10 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
         show (if (ρ_tgt.store (HasIdent.ident (P := P) s)).isSome then ρ_out.store (HasIdent.ident (P := P) s) else none) = none
         by_cases hp : (ρ_tgt.store (HasIdent.ident (P := P) s)).isSome
         · rw [ite_eq_left hp]
-          have h_fresh_σ₁ : GenFreshStore Q σ₁ ρ_out.store := by rw [h_eq1]; exact h_fresh_out
-          exact (GenFreshStore_mono h_step12 h_fresh_σ₁) s h_suf h_notin
+          have h_fresh_σ₁ : SemanticStore.isReserved Q σ₁ ρ_out.store := by
+            rw [h_eq1]
+            exact h_fresh_out
+          exact (SemanticStore.isReserved.mono h_step12 h_fresh_σ₁) s h_suf h_notin
         · rw [ite_eq_right hp]
     | step_ite_false h_cond =>
       obtain ⟨ρ_inner, hbranch_inner, h_ρ'_eq⟩ :=
@@ -2249,8 +1919,8 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
         · exact h_no_writes t hQ (by rw [h_mv]; exact List.mem_append_right _ (List.mem_append_right _ hm))
       have h_wf₁ : StringGenState.WF (Block.nondetElimM tss σ).2 :=
         (Block.nondetElimM_genStep tss σ).wf_mono h_wf_gen
-      have h_tgt_fresh₁ : GenFreshStore Q (Block.nondetElimM tss σ).2 ρ_tgt.store :=
-        GenFreshStore_mono (Block.nondetElimM_genStep tss σ) h_tgt_fresh
+      have h_tgt_fresh₁ : SemanticStore.isReserved Q (Block.nondetElimM tss σ).2 ρ_tgt.store :=
+        SemanticStore.isReserved.mono (Block.nondetElimM_genStep tss σ) h_tgt_fresh
       obtain ⟨h_fresh', ρ_out, h_run, h_off', h_fail', h_fresh_out⟩ :=
         nondetElim_simulation_gen_sa hQgen ess (Block.nondetElimM tss σ).2 ρ_src ρ_inner ρ_tgt
           h_fail_eq h_fac_eq h_agree hwf
@@ -2290,17 +1960,18 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
           exact h_fresh_out s h_suf h_notin
         · rw [ite_eq_right hp]
   | .ite .nondet tss ess md, h_no_writes, h_tgt_init_undef, h_unique, oc, h_term =>
-    rcases hgen : StringGenState.gen ndelimItePrefix σ with ⟨g, σ₁⟩
+    rcases hgen : StringGenState.gen NondetElim.prefixIte σ with ⟨g, σ₁⟩
     have h_g_gen : Q g := by
       have := hQgen.1 σ
       rw [hgen] at this; exact this
     have h_tgt_g_none : ρ_tgt.store (HasIdent.ident (P := P) g) = none := by
-      have := GenFreshStore_gen_slot_none ndelimItePrefix h_tgt_fresh h_wf_gen (hQgen.1 σ)
+      have := SemanticStore.isReserved.gen_slot_none NondetElim.prefixIte
+        h_tgt_fresh h_wf_gen (hQgen.1 σ)
       rw [hgen] at this; exact this
     have hwf_var_t : WellFormedSemanticEvalVar ρ_tgt.factory := h_fac_eq ▸ hwf.var
     have hwf_def_t : WellFormedSemanticEvalMono ρ_tgt.factory := h_fac_eq ▸ hwf.mono
     have h_step01 : StringGenState.GenStep σ σ₁ := by
-      have := StringGenState.GenStep.of_gen ndelimItePrefix σ; rw [hgen] at this; exact this
+      have := StringGenState.GenStep.of_gen NondetElim.prefixIte σ; rw [hgen] at this; exact this
     have h_wf₁ : StringGenState.WF σ₁ := h_step01.wf_mono h_wf_gen
     have h_dv : Stmt.definedVars (P := P) (.ite .nondet tss ess md) false
         = Block.definedVars tss false ++ Block.definedVars ess false := by
@@ -2347,9 +2018,10 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
     · have h_off_g : StoreAgreement ρ_src.store
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.tt) :=
         storeAgreement_storeWith _ _ _ _ h_agree (h_src_fresh g h_g_gen)
-      have h_fresh_g : GenFreshStore Q σ₁
+      have h_fresh_g : SemanticStore.isReserved Q σ₁
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.tt) := by
-        have := GenFreshStore_storeWith_gen (P := P) ndelimItePrefix HasBool.tt h_tgt_fresh
+        have := SemanticStore.isReserved.storeWith_gen (P := P)
+          NondetElim.prefixIte HasBool.tt h_tgt_fresh
         rw [hgen] at this; exact this
       obtain ⟨ρ_inner, h_br_inner, h_ρ'_eq⟩ := h_br
       let ρ_tgt_g : Env P := { ρ_tgt with store := SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.tt }
@@ -2383,12 +2055,16 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
         have h_eq2 : σ₂ = (Block.nondetElimM tss σ₁).2 := by rw [h₁]
         have h_step23 : StringGenState.GenStep σ₂ σ₃ := by
           have := Block.nondetElimM_genStep ess σ₂; rw [h₂] at this; exact this
-        have h_fresh_σ₂ : GenFreshStore Q σ₂ ρ_out.store := by rw [h_eq2]; exact h_fresh_out
+        have h_fresh_σ₂ : SemanticStore.isReserved Q σ₂ ρ_out.store := by
+          rw [h_eq2]
+          exact h_fresh_out
         intro s h_suf h_notin
         show projectStore ρ_tgt_g.store ρ_out.store (HasIdent.ident (P := P) s) = none
         show (if (ρ_tgt_g.store (HasIdent.ident (P := P) s)).isSome then ρ_out.store (HasIdent.ident (P := P) s) else none) = none
         by_cases hp : (ρ_tgt_g.store (HasIdent.ident (P := P) s)).isSome
-        · rw [ite_eq_left hp]; exact (GenFreshStore_mono h_step23 h_fresh_σ₂) s h_suf h_notin
+        · rw [ite_eq_left hp]
+          exact (SemanticStore.isReserved.mono h_step23 h_fresh_σ₂)
+            s h_suf h_notin
         · rw [ite_eq_right hp]
     · have h_step12 : StringGenState.GenStep σ₁ (Block.nondetElimM tss σ₁).2 :=
         Block.nondetElimM_genStep tss σ₁
@@ -2396,13 +2072,14 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
       have h_off_g : StoreAgreement ρ_src.store
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.ff) :=
         storeAgreement_storeWith _ _ _ _ h_agree (h_src_fresh g h_g_gen)
-      have h_fresh_g1 : GenFreshStore Q σ₁
+      have h_fresh_g1 : SemanticStore.isReserved Q σ₁
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.ff) := by
-        have := GenFreshStore_storeWith_gen (P := P) ndelimItePrefix HasBool.ff h_tgt_fresh
+        have := SemanticStore.isReserved.storeWith_gen (P := P)
+          NondetElim.prefixIte HasBool.ff h_tgt_fresh
         rw [hgen] at this; exact this
-      have h_fresh_g : GenFreshStore Q (Block.nondetElimM tss σ₁).2
+      have h_fresh_g : SemanticStore.isReserved Q (Block.nondetElimM tss σ₁).2
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.ff) :=
-        GenFreshStore_mono h_step12 h_fresh_g1
+        SemanticStore.isReserved.mono h_step12 h_fresh_g1
       obtain ⟨ρ_inner, h_br_inner, h_ρ'_eq⟩ := h_br
       let ρ_tgt_g : Env P := { ρ_tgt with store := SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.ff }
       obtain ⟨h_fresh', ρ_out, h_run, h_off', h_fail', h_fresh_out⟩ :=
@@ -2460,7 +2137,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
         StringGenState.WF σ →
         (∀ t, Q t →
           ρb_src.store (HasIdent.ident (P := P) t) = none) →
-        GenFreshStore Q σ ρb_tgt.store →
+        SemanticStore.isReserved Q σ ρb_tgt.store →
         (∀ y ∈ Block.initVars body, ρb_tgt.store y = none) →
         StepStmtStar P (EvalCmd P) (.stmts body ρb_src) (Env.outcomeConfig oc_b ρb') →
         (∀ t, Q t →
@@ -2469,7 +2146,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
               (.stmts (Block.nondetElimM body σ).1 ρb_tgt) (Env.outcomeConfig oc_b ρb_out)
             ∧ StoreAgreement ρb'.store ρb_out.store
             ∧ ρb_out.hasFailure = ρb'.hasFailure
-            ∧ GenFreshStore Q (Block.nondetElimM body σ).2 ρb_out.store :=
+            ∧ SemanticStore.isReserved Q (Block.nondetElimM body σ).2 ρb_out.store :=
       fun oc_b ρb_src ρb' ρb_tgt h_fl h_fac_b h_ag hwf hwfg hsf htf htiu hrun =>
         nondetElim_simulation_gen_sa hQgen body σ ρb_src ρb' ρb_tgt
           h_fl h_fac_b h_ag hwf hwfg hsf htf htiu h_unique_body
@@ -2490,7 +2167,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
         rcases hh : Block.nondetElimM body σ with ⟨body', σ'⟩
         simp only [hh]
       rw [h_out_eq]
-      exact GenFreshStore_mono (Block.nondetElimM_genStep body σ) h_fresh_out
+      exact SemanticStore.isReserved.mono (Block.nondetElimM_genStep body σ) h_fresh_out
   | .loop .nondet m inv body md, h_no_writes, h_tgt_init_undef, h_unique, oc, h_term =>
     have h_no_writes_body : SrcNoGenWrites (P := P) Q body := by
       have h_dv : Stmt.definedVars (P := P) (.loop .nondet m inv body md) false
@@ -2500,18 +2177,19 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
           = Block.modifiedVars body := rfl
       show (∀ s : String, Q s → HasIdent.ident (P := P) s ∉ (Block.definedVars body false ++ Block.modifiedVars body))
       rw [h_dv, h_mv] at h_no_writes; exact h_no_writes
-    rcases hgen : StringGenState.gen ndelimLoopPrefix σ with ⟨g, σ₁⟩
+    rcases hgen : StringGenState.gen NondetElim.prefixLoop σ with ⟨g, σ₁⟩
     have h_g_gen : Q g := by
       have := hQgen.2 σ
       rw [hgen] at this; exact this
     have h_g_in : g ∈ σ₁.stringGens := by
-      have h := StringGenState.stringGens_gen ndelimLoopPrefix σ
+      have h := StringGenState.stringGens_gen NondetElim.prefixLoop σ
       rw [hgen] at h; rw [h]; exact List.mem_cons_self
     have h_step01 : StringGenState.GenStep σ σ₁ := by
-      have := StringGenState.GenStep.of_gen ndelimLoopPrefix σ; rw [hgen] at this; exact this
+      have := StringGenState.GenStep.of_gen NondetElim.prefixLoop σ; rw [hgen] at this; exact this
     have h_wf₁ : StringGenState.WF σ₁ := h_step01.wf_mono h_wf_gen
     have h_tgt_g_none : ρ_tgt.store (HasIdent.ident (P := P) g) = none := by
-      have := GenFreshStore_gen_slot_none ndelimLoopPrefix h_tgt_fresh h_wf_gen (hQgen.2 σ)
+      have := SemanticStore.isReserved.gen_slot_none NondetElim.prefixLoop
+        h_tgt_fresh h_wf_gen (hQgen.2 σ)
       rw [hgen] at this; exact this
     have hwf_var_t : WellFormedSemanticEvalVar ρ_tgt.factory := h_fac_eq ▸ hwf.var
     -- Body init-targets are source-shaped, distinct from gen guard `g`; the
@@ -2537,7 +2215,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
         StringGenState.WF σ₁ →
         (∀ t, Q t →
           ρb_src.store (HasIdent.ident (P := P) t) = none) →
-        GenFreshStore Q σ₁ ρb_tgt.store →
+        SemanticStore.isReserved Q σ₁ ρb_tgt.store →
         (∀ y ∈ Block.initVars body, ρb_tgt.store y = none) →
         StepStmtStar P (EvalCmd P) (.stmts body ρb_src) (Env.outcomeConfig oc_b ρb') →
         (∀ t, Q t →
@@ -2546,7 +2224,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
               (.stmts (Block.nondetElimM body σ₁).1 ρb_tgt) (Env.outcomeConfig oc_b ρb_out)
             ∧ StoreAgreement ρb'.store ρb_out.store
             ∧ ρb_out.hasFailure = ρb'.hasFailure
-            ∧ GenFreshStore Q (Block.nondetElimM body σ₁).2 ρb_out.store :=
+            ∧ SemanticStore.isReserved Q (Block.nondetElimM body σ₁).2 ρb_out.store :=
       fun oc_b ρb_src ρb' ρb_tgt h_fl h_fac_b h_ag hwf hwfg hsf htf htiu hrun =>
         nondetElim_simulation_gen_sa hQgen body σ₁ ρb_src ρb' ρb_tgt
           h_fl h_fac_b h_ag hwf hwfg hsf htf htiu h_unique_body
@@ -2563,7 +2241,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
               (Env.outcomeConfig oc ρ_out)
             ∧ StoreAgreement ρ'.store ρ_out.store
             ∧ ρ_out.hasFailure = ρ'.hasFailure
-            ∧ GenFreshStore Q σ₁ ρ_out.store) →
+            ∧ SemanticStore.isReserved Q σ₁ ρ_out.store) →
         (∀ t, Q t →
             ρ'.store (HasIdent.ident (P := P) t) = none)
           ∧ ∃ ρ_out, StepStmtStar P (EvalCmd P)
@@ -2571,7 +2249,9 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
               (Env.outcomeConfig oc ρ_out)
             ∧ StoreAgreement ρ'.store ρ_out.store
             ∧ ρ_out.hasFailure = ρ'.hasFailure
-            ∧ GenFreshStore Q (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2 ρ_out.store := by
+            ∧ SemanticStore.isReserved Q
+              (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2
+              ρ_out.store := by
       intro entering b h_b ⟨h_fresh', ρ_out, h_loop_run, h_off', h_fail', h_fresh_out⟩
       have hval_b : HasVal.valueOfTy ρ_tgt.factory b HasBool.boolTy := by
         rw [h_b]; split
@@ -2594,7 +2274,7 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
           rcases hh : Block.nondetElimM body σ₁ with ⟨body', σ₂⟩
           simp only [hgen, hh]
         rw [h_out_eq2]
-        exact GenFreshStore_mono (Block.nondetElimM_genStep body σ₁) h_fresh_out
+        exact SemanticStore.isReserved.mono (Block.nondetElimM_genStep body σ₁) h_fresh_out
     have h_g_nowrite := nondetElimM_not_writes_gen body σ₁ h_wf₁ g h_g_in
       (fun hc => h_no_writes_body g h_g_gen (List.mem_append_left _ hc))
       (fun hc => h_no_writes_body g h_g_gen (List.mem_append_right _ hc))
@@ -2604,9 +2284,10 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
     · have h_off_g : StoreAgreement ρ_src.store
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.ff) :=
         storeAgreement_storeWith _ _ _ _ h_agree (h_src_fresh g h_g_gen)
-      have h_fresh_g : GenFreshStore Q σ₁
+      have h_fresh_g : SemanticStore.isReserved Q σ₁
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.ff) := by
-        have := GenFreshStore_storeWith_gen (P := P) ndelimLoopPrefix HasBool.ff h_tgt_fresh
+        have := SemanticStore.isReserved.storeWith_gen (P := P)
+          NondetElim.prefixLoop HasBool.ff h_tgt_fresh
         rw [hgen] at this; exact this
       have h_guard_def : (({ ρ_tgt with store := SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.ff } : Env P).store)
           (HasIdent.ident (P := P) g) = some (if false then HasBool.tt else HasBool.ff) := by
@@ -2621,9 +2302,10 @@ private theorem nondetElim_stmt_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P] [
     · have h_off_g : StoreAgreement ρ_src.store
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.tt) :=
         storeAgreement_storeWith _ _ _ _ h_agree (h_src_fresh g h_g_gen)
-      have h_fresh_g : GenFreshStore Q σ₁
+      have h_fresh_g : SemanticStore.isReserved Q σ₁
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.tt) := by
-        have := GenFreshStore_storeWith_gen (P := P) ndelimLoopPrefix HasBool.tt h_tgt_fresh
+        have := SemanticStore.isReserved.storeWith_gen (P := P)
+          NondetElim.prefixLoop HasBool.tt h_tgt_fresh
         rw [hgen] at this; exact this
       have h_guard_def : (({ ρ_tgt with store := SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.tt } : Env P).store)
           (HasIdent.ident (P := P) g) = some (if true then HasBool.tt else HasBool.ff) := by
@@ -2695,8 +2377,8 @@ private theorem nondetElim_simulation_gen_sa {P : PureExpr} [HasFvar P] [HasFvar
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P] [HasSubstFvar P]
     {Q : String → Prop}
-    (hQgen : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
-            ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
+    (hQgen : (∀ sg, Q (StringGenState.gen NondetElim.prefixIte sg).1)
+            ∧ (∀ sg, Q (StringGenState.gen NondetElim.prefixLoop sg).1))
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (ρ_src ρ' ρ_tgt : Env P)
     (h_fail_eq : ρ_tgt.hasFailure = ρ_src.hasFailure)
@@ -2706,7 +2388,7 @@ private theorem nondetElim_simulation_gen_sa {P : PureExpr} [HasFvar P] [HasFvar
     (h_wf_gen : StringGenState.WF σ)
     (h_src_fresh : ∀ t, Q t →
       ρ_src.store (HasIdent.ident (P := P) t) = none)
-    (h_tgt_fresh : GenFreshStore Q σ ρ_tgt.store)
+    (h_tgt_fresh : SemanticStore.isReserved Q σ ρ_tgt.store)
     (h_tgt_init_undef : ∀ y ∈ Block.initVars ss, ρ_tgt.store y = none)
     (h_unique : (Block.initVars ss).Nodup)
     (h_no_writes : SrcNoGenWrites (P := P) Q ss)
@@ -2718,7 +2400,7 @@ private theorem nondetElim_simulation_gen_sa {P : PureExpr} [HasFvar P] [HasFvar
           (.stmts (Block.nondetElimM ss σ).1 ρ_tgt) (Env.outcomeConfig oc ρ_out)
         ∧ StoreAgreement ρ'.store ρ_out.store
         ∧ ρ_out.hasFailure = ρ'.hasFailure
-        ∧ GenFreshStore Q (Block.nondetElimM ss σ).2 ρ_out.store := by
+        ∧ SemanticStore.isReserved Q (Block.nondetElimM ss σ).2 ρ_out.store := by
   match ss, h_no_writes, h_tgt_init_undef, h_unique, oc, h_term with
   | [], _, _, _, oc, h_term =>
     match oc, h_term with
@@ -2771,7 +2453,9 @@ private theorem nondetElim_simulation_gen_sa {P : PureExpr} [HasFvar P] [HasFvar
           rcases hk : Block.nondetElimM rest σ_s with ⟨ss_r, σ_r⟩
           simp only [hh, hk]
         rw [h_out_eq]
-        exact GenFreshStore_mono (Block.nondetElimM_genStep rest (Stmt.nondetElimM s σ).2) h_fresh_s
+        exact SemanticStore.isReserved.mono
+          (Block.nondetElimM_genStep rest (Stmt.nondetElimM s σ).2)
+          h_fresh_s
     · have h_s_run' : StepStmtStar P (EvalCmd P) (.stmt s ρ_src) (.terminal ρ_mid) :=
         h_s_run
       have h_no_writes_s : (∀ t : String, Q t → HasIdent.ident (P := P) t ∉ (Stmt.definedVars s false ++ Stmt.modifiedVars s)) := by
@@ -2877,8 +2561,8 @@ private theorem nondetElim_simulation {P : PureExpr} [HasFvar P] [HasFvars P] [H
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P] [HasSubstFvar P]
     {Q : String → Prop}
-    (hQgen : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
-            ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
+    (hQgen : (∀ sg, Q (StringGenState.gen NondetElim.prefixIte sg).1)
+            ∧ (∀ sg, Q (StringGenState.gen NondetElim.prefixLoop sg).1))
     (ss : List (Stmt P (Cmd P))) (ρ₀ ρ' : Env P)
     (hwf : WellFormedSemanticEval ρ₀.factory)
     (h_no_gen_suffix :
@@ -2892,7 +2576,7 @@ private theorem nondetElim_simulation {P : PureExpr} [HasFvar P] [HasFvars P] [H
         (.stmts (Block.nondetElim ss) ρ₀) (.terminal ρ_out)
       ∧ StoreAgreement ρ'.store ρ_out.store
       ∧ ρ_out.hasFailure = ρ'.hasFailure := by
-  have h_tgt_fresh : GenFreshStore Q StringGenState.emp ρ₀.store := by
+  have h_tgt_fresh : SemanticStore.isReserved Q StringGenState.emp ρ₀.store := by
     intro s h_suf _; exact h_no_gen_suffix s h_suf
   obtain ⟨_, ρ_out, h_run, h_off, h_fl, _⟩ :=
     nondetElim_simulation_gen_sa hQgen ss StringGenState.emp ρ₀ ρ' ρ₀
@@ -2912,8 +2596,8 @@ private theorem nondetElim_simulation_exit {P : PureExpr} [HasFvar P] [HasFvars 
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P] [HasSubstFvar P]
     {Q : String → Prop}
-    (hQgen : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
-            ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
+    (hQgen : (∀ sg, Q (StringGenState.gen NondetElim.prefixIte sg).1)
+            ∧ (∀ sg, Q (StringGenState.gen NondetElim.prefixLoop sg).1))
     (ss : List (Stmt P (Cmd P))) (ρ₀ ρ' : Env P)
     (hwf : WellFormedSemanticEval ρ₀.factory)
     (h_no_gen_suffix :
@@ -2928,7 +2612,7 @@ private theorem nondetElim_simulation_exit {P : PureExpr} [HasFvar P] [HasFvars 
         (.stmts (Block.nondetElim ss) ρ₀) (.exiting lbl ρ_out)
       ∧ StoreAgreement ρ'.store ρ_out.store
       ∧ ρ_out.hasFailure = ρ'.hasFailure := by
-  have h_tgt_fresh : GenFreshStore Q StringGenState.emp ρ₀.store := by
+  have h_tgt_fresh : SemanticStore.isReserved Q StringGenState.emp ρ₀.store := by
     intro s h_suf _; exact h_no_gen_suffix s h_suf
   obtain ⟨_, ρ_out, h_run, h_off, h_fl, _⟩ :=
     nondetElim_simulation_gen_sa hQgen ss StringGenState.emp ρ₀ ρ' ρ₀
@@ -2968,104 +2652,41 @@ theorem nondetElim_sound {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] 
       ∧ ρ_out.hasFailure = ρ'.hasFailure :=
   nondetElim_simulation
     (Q := String.HasUnderscoreDigitSuffix)
-    ⟨fun sg => StringGenState.gen_hasUnderscoreDigitSuffix ndelimItePrefix sg,
-     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix ndelimLoopPrefix sg⟩
+    ⟨fun sg => StringGenState.gen_hasUnderscoreDigitSuffix NondetElim.prefixIte sg,
+     fun sg => StringGenState.gen_hasUnderscoreDigitSuffix NondetElim.prefixLoop sg⟩
     ss ρ₀ ρ'
     hwf h_no_gen_suffix h_no_writes
     h_store_inits h_unique h_term
 
 /-! ### The nondetElim label *kind*
 
-`nondetElim` generates labels under exactly two prefixes: `ndelimItePrefix` and
-`ndelimLoopPrefix`.  `ndelimKind s` is the precise predicate "`s` is a label this
-pass could have generated": it carries the matching generator prefix and is equal to
-some `gen`-output.  This is the per-kind `Q` to instantiate the kind-generalized
+`nondetElim` generates labels under exactly two prefixes: `NondetElim.prefixIte` and
+`NondetElim.prefixLoop`. `NondetElim.isGeneratedName s` is the precise predicate
+"`s` is a name this pass could have generated": it equals a `gen` output for one
+of those prefixes. This is the per-kind `Q` to instantiate the kind-generalized
 simulation at, replacing the blanket `HasUnderscoreDigitSuffix` (which would
 overcommit a composition partner to keeping *every* gen-shaped name fresh). -/
 
-/-- A label that `nondetElim` could have generated: it has the ite- or loop-prefix
-and equals a corresponding `gen` output. -/
-@[expose] def ndelimKind (s : String) : Prop :=
-  (∃ sg, String.HasGenPrefix ndelimItePrefix s
-      ∧ s = (StringGenState.gen ndelimItePrefix sg).1)
-  ∨ (∃ sg, String.HasGenPrefix ndelimLoopPrefix s
-      ∧ s = (StringGenState.gen ndelimLoopPrefix sg).1)
-
-/-- The two prefixes `nondetElim` generates under both land inside `ndelimKind`:
-this is exactly the `hQgen` conjunction at `Q := ndelimKind`. -/
-theorem ndelimKind_gen :
-    (∀ sg, ndelimKind (StringGenState.gen ndelimItePrefix sg).1)
-  ∧ (∀ sg, ndelimKind (StringGenState.gen ndelimLoopPrefix sg).1) := by
-  refine ⟨fun sg => ?_, fun sg => ?_⟩
-  · exact Or.inl ⟨sg, StringGenState.gen_hasGenPrefix ndelimItePrefix sg, rfl⟩
-  · exact Or.inr ⟨sg, StringGenState.gen_hasGenPrefix ndelimLoopPrefix sg, rfl⟩
 
 section NondetElimStructural
 variable {P : PureExpr}
 
-theorem Stmt.nondetElimM_block_state [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P] (lbl : String) (bss : List (Stmt P (Cmd P)))
-    (md : MetaData P) (σ : StringGenState) :
-    (Stmt.nondetElimM (.block lbl bss md) σ).2 = (Block.nondetElimM bss σ).2 := by
-  rw [Stmt.nondetElimM]; rcases h : Block.nondetElimM bss σ with ⟨bss', σ'⟩; simp only [h]
-
-theorem Stmt.nondetElimM_ite_det_state [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P] (e : P.Expr) (tss ess : List (Stmt P (Cmd P)))
-    (md : MetaData P) (σ : StringGenState) :
-    (Stmt.nondetElimM (.ite (.det e) tss ess md) σ).2 =
-      (Block.nondetElimM ess (Block.nondetElimM tss σ).2).2 := by
-  rw [Stmt.nondetElimM]
-  rcases h₁ : Block.nondetElimM tss σ with ⟨tss', σ₁⟩
-  rcases h₂ : Block.nondetElimM ess σ₁ with ⟨ess', σ₂⟩
-  simp only [h₁, h₂]
-
-theorem Stmt.nondetElimM_ite_nondet_state [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P] (tss ess : List (Stmt P (Cmd P)))
-    (md : MetaData P) (σ : StringGenState) :
-    (Stmt.nondetElimM (.ite .nondet tss ess md) σ).2 =
-      (Block.nondetElimM ess (Block.nondetElimM tss (StringGenState.gen ndelimItePrefix σ).2).2).2 := by
-  rw [Stmt.nondetElimM]
-  rcases hg : StringGenState.gen ndelimItePrefix σ with ⟨g, σ₁⟩
-  rcases h₁ : Block.nondetElimM tss σ₁ with ⟨tss', σ₂⟩
-  rcases h₂ : Block.nondetElimM ess σ₂ with ⟨ess', σ₃⟩
-  simp only [hg, h₁, h₂]
-
-theorem Stmt.nondetElimM_loop_det_state [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P] (e : P.Expr) (m : Option P.Expr)
-    (inv : List (String × P.Expr)) (body : List (Stmt P (Cmd P)))
-    (md : MetaData P) (σ : StringGenState) :
-    (Stmt.nondetElimM (.loop (.det e) m inv body md) σ).2 = (Block.nondetElimM body σ).2 := by
-  rw [Stmt.nondetElimM]; rcases h : Block.nondetElimM body σ with ⟨body', σ'⟩; simp only [h]
-
-theorem Stmt.nondetElimM_loop_nondet_state [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P] (m : Option P.Expr) (inv : List (String × P.Expr))
-    (body : List (Stmt P (Cmd P))) (md : MetaData P) (σ : StringGenState) :
-    (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2 =
-      (Block.nondetElimM body (StringGenState.gen ndelimLoopPrefix σ).2).2 := by
-  rw [Stmt.nondetElimM]
-  rcases hg : StringGenState.gen ndelimLoopPrefix σ with ⟨g, σ₁⟩
-  rcases h : Block.nondetElimM body σ₁ with ⟨body', σ₂⟩
-  simp only [hg, h]
-
-theorem Block.nondetElimM_cons_state [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P] (s : Stmt P (Cmd P)) (rest : List (Stmt P (Cmd P)))
-    (σ : StringGenState) :
-    (Block.nondetElimM (s :: rest) σ).2 = (Block.nondetElimM rest (Stmt.nondetElimM s σ).2).2 := by
-  rw [Block.nondetElimM]
-  rcases h₁ : Stmt.nondetElimM s σ with ⟨ss_s, σ₁⟩
-  rcases h₂ : Block.nondetElimM rest σ₁ with ⟨ss_r, σ₂⟩
-  simp only [h₁, h₂]
-
 /-- Every `initVars` element of the `nondetElim` output of a statement is either
-an original source `initVars` element or a freshly-generated `ndelimKind` guard. -/
+an original source `initVars` element or a freshly-generated `NondetElim.isGeneratedName` guard. -/
 theorem Stmt.nondetElimM_initVars_classified [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     ∀ x ∈ Block.initVars (P := P) (Stmt.nondetElimM s σ).1,
       x ∈ Stmt.initVars s ∨
-      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) :=
-  Stmt.nondetElimM_initVars_classified_Q ndelimKind_gen s σ
+      (∃ str : String, x = HasIdent.ident (P := P) str ∧ NondetElim.isGeneratedName str) :=
+  Stmt.nondetElimM_initVars_classified_Q NondetElim.isGeneratedName_gen s σ
 
 /-- Block-level `initVars` classification of the `nondetElim` output. -/
 theorem Block.nondetElimM_initVars_classified [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ∀ x ∈ Block.initVars (P := P) (Block.nondetElimM ss σ).1,
       x ∈ Block.initVars ss ∨
-      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) :=
-  Block.nondetElimM_initVars_classified_Q ndelimKind_gen ss σ
+      (∃ str : String, x = HasIdent.ident (P := P) str ∧ NondetElim.isGeneratedName str) :=
+  Block.nondetElimM_initVars_classified_Q NondetElim.isGeneratedName_gen ss σ
 
 mutual
 /-- Every `initTypes` element of the `nondetElim` output of a statement is either
@@ -3158,16 +2779,38 @@ theorem Block.nondetElimM_initTypes_classified [HasIdent P] [HasFvar P] [HasFvar
   termination_by sizeOf ss
 end
 
+/-- NondetElim preserves initial-variable undefinedness and init-type
+inhabitance, accounting for its fresh Boolean guard initializers. -/
+theorem Block.nondetElim_initsUndefinedAndInhabited
+    {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
+    (ss : List (Stmt P (Cmd P))) (ρ : Env P)
+    (hdefs : ∀ x ∈ Block.initVars ss, ρ.store x = none)
+    (hgens : Env.varsUndefined (P := P) NondetElim.isGeneratedName ρ)
+    (hinhab : Block.InitTypesInhabited (P := P) ρ.factory ss) :
+    (∀ x ∈ Block.initVars (Block.nondetElim ss), ρ.store x = none)
+    ∧ Block.InitTypesInhabited (P := P) ρ.factory (Block.nondetElim ss) := by
+  constructor
+  · intro x hx
+    rcases Block.nondetElimM_initVars_classified ss StringGenState.emp x hx with
+      hsource | ⟨name, rfl, hname⟩
+    · exact hdefs x hsource
+    · exact Env.varsUndefined_apply hgens name hname
+  · intro ty hty
+    rcases Block.nondetElimM_initTypes_classified ss StringGenState.emp ty hty with
+      hsource | rfl
+    · exact hinhab ty hsource
+    · exact ⟨HasBool.tt, (HasBool.boolIsValOfTy ρ.factory).1⟩
+
 
 mutual
 /-- Every `modifiedVars` element of the `nondetElim` output of a statement is
 either an original source `modifiedVars` element or a freshly-generated
-`ndelimKind` guard (the loop re-havoc target). -/
+`NondetElim.isGeneratedName` guard (the loop re-havoc target). -/
 theorem Stmt.nondetElimM_modVars_classified [HasIdent P] [HasFvar P] [HasFvars P] [HasBool P]
     (s : Stmt P (Cmd P)) (σ : StringGenState) :
     ∀ x ∈ Block.modifiedVars (P := P) (Stmt.nondetElimM s σ).1,
       x ∈ Stmt.modifiedVars s ∨
-      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) := by
+      (∃ str : String, x = HasIdent.ident (P := P) str ∧ NondetElim.isGeneratedName str) := by
   match s with
   | .cmd c =>
       intro x hx
@@ -3218,7 +2861,9 @@ theorem Stmt.nondetElimM_modVars_classified [HasIdent P] [HasFvar P] [HasFvars P
       · rcases Block.nondetElimM_modVars_classified body _ x h with h' | h'
         · exact Or.inl h'
         · exact Or.inr h'
-      · exact Or.inr ⟨(StringGenState.gen ndelimLoopPrefix σ).1, h_g, ndelimKind_gen.2 σ⟩
+      · exact Or.inr
+          ⟨(StringGenState.gen NondetElim.prefixLoop σ).1, h_g,
+            NondetElim.isGeneratedName_gen.2 σ⟩
   | .exit lbl md =>
       intro x hx
       simp only [Stmt.nondetElimM, Block.modifiedVars, Stmt.modifiedVars, List.append_nil] at hx
@@ -3234,7 +2879,7 @@ theorem Block.nondetElimM_modVars_classified [HasIdent P] [HasFvar P] [HasFvars 
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
     ∀ x ∈ Block.modifiedVars (P := P) (Block.nondetElimM ss σ).1,
       x ∈ Block.modifiedVars ss ∨
-      (∃ str : String, x = HasIdent.ident (P := P) str ∧ ndelimKind str) := by
+      (∃ str : String, x = HasIdent.ident (P := P) str ∧ NondetElim.isGeneratedName str) := by
   match ss with
   | [] =>
       intro x hx
@@ -3301,7 +2946,7 @@ theorem Stmt.nondetElimM_exitsCoveredByBlocks
       (⟨trivial, trivial⟩ :
         Block.exitsCoveredByBlocks labels
           [Stmt.cmd (HasHavoc.havoc (HasIdent.ident (P := P)
-            (StringGenState.gen ndelimLoopPrefix σ).1) md)])
+            (StringGenState.gen NondetElim.prefixLoop σ).1) md)])
   | .exit lbl md =>
     simp only [Stmt.nondetElimM]
     exact coveredBlock_singleton labels (.exit lbl md) h
@@ -3338,8 +2983,8 @@ end NondetElimCoverage
 end NondetElimStructural
 
 /-- Kind-generalized soundness: `nondetElim` is sound for any source store whose
-only `ndelimKind`-labelled slots are undefined, and any source block that never
-writes an `ndelimKind` label.  Weaker entry precondition than `nondetElim_sound`
+only `NondetElim.isGeneratedName`-labelled slots are undefined, and any source block that never
+writes an `NondetElim.isGeneratedName` label.  Weaker entry precondition than `nondetElim_sound`
 (it constrains only the labels this pass generates, not every gen-shaped name),
 which is what lets a composition partner — e.g. one that generates under a disjoint
 prefix — satisfy it vacuously. -/
@@ -3349,8 +2994,8 @@ theorem nondetElim_sound_kind {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
     [LawfulHasFvar P] [LawfulHasIdent P] [HasSubstFvar P]
     (ss : List (Stmt P (Cmd P))) (ρ₀ ρ' : Env P)
     (hwf : WellFormedSemanticEval ρ₀.factory)
-    (h_no_gen_suffix : Env.varsUndefined (P := P) ndelimKind ρ₀)
-    (h_no_writes : SrcNoGenWrites (P := P) ndelimKind ss)
+    (h_no_gen_suffix : Env.varsUndefined (P := P) NondetElim.isGeneratedName ρ₀)
+    (h_no_writes : SrcNoGenWrites (P := P) NondetElim.isGeneratedName ss)
     (h_store_inits : ∀ y ∈ Block.initVars ss, ρ₀.store y = none)
     (h_unique : Block.uniqueInits ss)
     (h_term : StepStmtStar P (EvalCmd P) (.stmts ss ρ₀) (.terminal ρ')) :
@@ -3359,12 +3004,12 @@ theorem nondetElim_sound_kind {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
       ∧ StoreAgreement ρ'.store ρ_out.store
       ∧ ρ_out.hasFailure = ρ'.hasFailure :=
   nondetElim_simulation
-    (Q := ndelimKind) ndelimKind_gen
+    (Q := NondetElim.isGeneratedName) NondetElim.isGeneratedName_gen
     ss ρ₀ ρ'
     hwf (Env.varsUndefined_iff.mp h_no_gen_suffix) h_no_writes
     h_store_inits h_unique h_term
 
-/-- Escaping companion of `nondetElim_sound_kind` (at `Q := ndelimKind`): every
+/-- Escaping companion of `nondetElim_sound_kind` (at `Q := NondetElim.isGeneratedName`): every
 escaping source run of `ss` reaching `.exiting lbl` is matched by an escaping run
 of `Block.nondetElim ss` to the *same* label, agreeing on the source's variables
 and the failure flag.  A thin forwarder to `nondetElim_simulation_exit`; the
@@ -3376,8 +3021,8 @@ theorem nondetElim_sound_kind_exit {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
     [LawfulHasFvar P] [LawfulHasIdent P] [HasSubstFvar P]
     (ss : List (Stmt P (Cmd P))) (ρ₀ ρ' : Env P)
     (hwf : WellFormedSemanticEval ρ₀.factory)
-    (h_no_gen_suffix : Env.varsUndefined (P := P) ndelimKind ρ₀)
-    (h_no_writes : SrcNoGenWrites (P := P) ndelimKind ss)
+    (h_no_gen_suffix : Env.varsUndefined (P := P) NondetElim.isGeneratedName ρ₀)
+    (h_no_writes : SrcNoGenWrites (P := P) NondetElim.isGeneratedName ss)
     (h_store_inits : ∀ y ∈ Block.initVars ss, ρ₀.store y = none)
     (h_unique : Block.uniqueInits ss)
     (lbl : String)
@@ -3387,7 +3032,7 @@ theorem nondetElim_sound_kind_exit {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
       ∧ StoreAgreement ρ'.store ρ_out.store
       ∧ ρ_out.hasFailure = ρ'.hasFailure :=
   nondetElim_simulation_exit
-    (Q := ndelimKind) ndelimKind_gen
+    (Q := NondetElim.isGeneratedName) NondetElim.isGeneratedName_gen
     ss ρ₀ ρ'
     hwf (Env.varsUndefined_iff.mp h_no_gen_suffix) h_no_writes
     h_store_inits h_unique lbl h_exit
@@ -3397,11 +3042,11 @@ theorem nondetElim_sound_kind_exit {P : PureExpr} [HasFvar P] [HasFvars P] [HasB
 Unlike the diagonal kind wrappers above, these run the target from an arbitrary
 `ρ_tgt` that store-agrees with the source `ρ₀` (an overapproximating target
 store), as the up-to-relation overapproximation instance needs.  Thin forwarders
-to the `_sa` engine at `σ := StringGenState.emp`, `Q := ndelimKind`. -/
+to the `_sa` engine at `σ := StringGenState.emp`, `Q := NondetElim.isGeneratedName`. -/
 
 /-- A terminating source run of `ss` from `ρ₀` is matched by a run of
 `Block.nondetElim ss` from any store-agreeing target `ρ_tgt`, with the outputs
-again store-agreeing (the `ndelimKind`-keyed compositional soundness the
+again store-agreeing (the `NondetElim.isGeneratedName`-keyed compositional soundness the
 overapproximation instance consumes). -/
 theorem nondetElim_sound_kind_compositional {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
@@ -3412,20 +3057,21 @@ theorem nondetElim_sound_kind_compositional {P : PureExpr} [HasFvar P] [HasFvars
     (h_fac_eq : ρ_tgt.factory = ρ₀.factory)
     (h_agree : StoreAgreement ρ₀.store ρ_tgt.store)
     (hwf : WellFormedSemanticEval ρ₀.factory)
-    (h_src_no_gen : Env.varsUndefined (P := P) ndelimKind ρ₀)
-    (h_tgt_no_gen : Env.varsUndefined (P := P) ndelimKind ρ_tgt)
+    (h_src_no_gen : Env.varsUndefined (P := P) NondetElim.isGeneratedName ρ₀)
+    (h_tgt_no_gen : Env.varsUndefined (P := P) NondetElim.isGeneratedName ρ_tgt)
     (h_tgt_inits : ∀ y ∈ Block.initVars ss, ρ_tgt.store y = none)
-    (h_no_writes : SrcNoGenWrites (P := P) ndelimKind ss)
+    (h_no_writes : SrcNoGenWrites (P := P) NondetElim.isGeneratedName ss)
     (h_unique : Block.uniqueInits ss)
     (h_term : StepStmtStar P (EvalCmd P) (.stmts ss ρ₀) (.terminal ρ')) :
     ∃ ρ_out, StepStmtStar P (EvalCmd P)
         (.stmts (Block.nondetElim ss) ρ_tgt) (.terminal ρ_out)
       ∧ StoreAgreement ρ'.store ρ_out.store
       ∧ ρ_out.hasFailure = ρ'.hasFailure := by
-  have h_tgt_fresh : GenFreshStore ndelimKind StringGenState.emp ρ_tgt.store := by
+  have h_tgt_fresh : SemanticStore.isReserved NondetElim.isGeneratedName
+      StringGenState.emp ρ_tgt.store := by
     intro s h_suf _; exact Env.varsUndefined_apply h_tgt_no_gen s h_suf
   obtain ⟨_, ρ_out, h_run, h_off, h_fl, _⟩ :=
-    nondetElim_simulation_gen_sa ndelimKind_gen ss StringGenState.emp ρ₀ ρ' ρ_tgt
+    nondetElim_simulation_gen_sa NondetElim.isGeneratedName_gen ss StringGenState.emp ρ₀ ρ' ρ_tgt
       h_fail_eq h_fac_eq h_agree hwf
       StringGenState.wf_emp (Env.varsUndefined_iff.mp h_src_no_gen) h_tgt_fresh h_tgt_inits h_unique h_no_writes
       none h_term
@@ -3441,10 +3087,10 @@ theorem nondetElim_sound_kind_exit_compositional {P : PureExpr} [HasFvar P] [Has
     (h_fac_eq : ρ_tgt.factory = ρ₀.factory)
     (h_agree : StoreAgreement ρ₀.store ρ_tgt.store)
     (hwf : WellFormedSemanticEval ρ₀.factory)
-    (h_src_no_gen : Env.varsUndefined (P := P) ndelimKind ρ₀)
-    (h_tgt_no_gen : Env.varsUndefined (P := P) ndelimKind ρ_tgt)
+    (h_src_no_gen : Env.varsUndefined (P := P) NondetElim.isGeneratedName ρ₀)
+    (h_tgt_no_gen : Env.varsUndefined (P := P) NondetElim.isGeneratedName ρ_tgt)
     (h_tgt_inits : ∀ y ∈ Block.initVars ss, ρ_tgt.store y = none)
-    (h_no_writes : SrcNoGenWrites (P := P) ndelimKind ss)
+    (h_no_writes : SrcNoGenWrites (P := P) NondetElim.isGeneratedName ss)
     (h_unique : Block.uniqueInits ss)
     (lbl : String)
     (h_exit : StepStmtStar P (EvalCmd P) (.stmts ss ρ₀) (.exiting lbl ρ')) :
@@ -3452,10 +3098,11 @@ theorem nondetElim_sound_kind_exit_compositional {P : PureExpr} [HasFvar P] [Has
         (.stmts (Block.nondetElim ss) ρ_tgt) (.exiting lbl ρ_out)
       ∧ StoreAgreement ρ'.store ρ_out.store
       ∧ ρ_out.hasFailure = ρ'.hasFailure := by
-  have h_tgt_fresh : GenFreshStore ndelimKind StringGenState.emp ρ_tgt.store := by
+  have h_tgt_fresh : SemanticStore.isReserved NondetElim.isGeneratedName
+      StringGenState.emp ρ_tgt.store := by
     intro s h_suf _; exact Env.varsUndefined_apply h_tgt_no_gen s h_suf
   obtain ⟨_, ρ_out, h_run, h_off, h_fl, _⟩ :=
-    nondetElim_simulation_gen_sa ndelimKind_gen ss StringGenState.emp ρ₀ ρ' ρ_tgt
+    nondetElim_simulation_gen_sa NondetElim.isGeneratedName_gen ss StringGenState.emp ρ₀ ρ' ρ_tgt
       h_fail_eq h_fac_eq h_agree hwf
       StringGenState.wf_emp (Env.varsUndefined_iff.mp h_src_no_gen) h_tgt_fresh h_tgt_inits h_unique h_no_writes
       (some lbl) (by simpa only [Env.outcomeConfig] using h_exit)
@@ -3500,7 +3147,7 @@ private theorem nondetElim_loop_det_to_fail_iteration_sa {P : PureExpr} [HasFvar
       StringGenState.WF σ →
       (∀ t, Q t →
         ρb_src.store (HasIdent.ident (P := P) t) = none) →
-      GenFreshStore Q σ ρb_tgt.store →
+      SemanticStore.isReserved Q σ ρb_tgt.store →
       (∀ y ∈ Block.initVars body, ρb_tgt.store y = none) →
       StepStmtStar P (EvalCmd P) (.stmts body ρb_src) (Env.outcomeConfig oc_b ρb') →
       (∀ t, Q t →
@@ -3509,7 +3156,7 @@ private theorem nondetElim_loop_det_to_fail_iteration_sa {P : PureExpr} [HasFvar
             (.stmts body' ρb_tgt) (Env.outcomeConfig oc_b ρb_out)
           ∧ StoreAgreement ρb'.store ρb_out.store
           ∧ ρb_out.hasFailure = ρb'.hasFailure
-          ∧ GenFreshStore Q σ_out ρb_out.store)
+          ∧ SemanticStore.isReserved Q σ_out ρb_out.store)
     -- Failing per-iteration body simulation, used for the FAILING iteration.
     (h_body_sim_fail : ∀ (ρb_src ρb_tgt : Env P) (d : Config P (Cmd P)),
       ρb_tgt.hasFailure = ρb_src.hasFailure →
@@ -3519,7 +3166,7 @@ private theorem nondetElim_loop_det_to_fail_iteration_sa {P : PureExpr} [HasFvar
       StringGenState.WF σ →
       (∀ t, Q t →
         ρb_src.store (HasIdent.ident (P := P) t) = none) →
-      GenFreshStore Q σ ρb_tgt.store →
+      SemanticStore.isReserved Q σ ρb_tgt.store →
       (∀ y ∈ Block.initVars body, ρb_tgt.store y = none) →
       StepStmtStar P (EvalCmd P) (.stmts body ρb_src) d →
       d.getEnv.hasFailure = true →
@@ -3533,7 +3180,7 @@ private theorem nondetElim_loop_det_to_fail_iteration_sa {P : PureExpr} [HasFvar
     (h_wf_gen : StringGenState.WF σ)
     (h_src_fresh : ∀ t, Q t →
       ρ_src.store (HasIdent.ident (P := P) t) = none)
-    (h_tgt_fresh : GenFreshStore Q σ ρ_tgt.store)
+    (h_tgt_fresh : SemanticStore.isReserved Q σ ρ_tgt.store)
     (h_tgt_init_undef : ∀ y ∈ Block.initVars body, ρ_tgt.store y = none)
     (hT : ReflTransT (StepStmt P (EvalCmd P))
       (.stmt (.loop (.det e) m inv body md) ρ_src) a')
@@ -3653,7 +3300,7 @@ private theorem nondetElim_loop_det_to_fail_iteration_sa {P : PureExpr} [HasFvar
           by_cases hp : (ρ_src.store (HasIdent.ident (P := P) t)).isSome
           · rw [ite_eq_left hp]; exact h_inner_fresh t h_suf
           · rw [ite_eq_right hp]
-        have h_tgt_fresh_next : GenFreshStore Q σ ρ_tgt_next.store := by
+        have h_tgt_fresh_next : SemanticStore.isReserved Q σ ρ_tgt_next.store := by
           intro s h_suf h_notin
           show projectStore ρ_tgt.store ρ_inner_tgt.store (HasIdent.ident (P := P) s) = none
           show (if (ρ_tgt.store (HasIdent.ident (P := P) s)).isSome
@@ -3699,7 +3346,7 @@ private theorem nondetElim_loop_nondet_to_fail_iteration_sa {P : PureExpr} [HasF
       StringGenState.WF σ →
       (∀ t, Q t →
         ρb_src.store (HasIdent.ident (P := P) t) = none) →
-      GenFreshStore Q σ ρb_tgt.store →
+      SemanticStore.isReserved Q σ ρb_tgt.store →
       (∀ y ∈ Block.initVars body, ρb_tgt.store y = none) →
       StepStmtStar P (EvalCmd P) (.stmts body ρb_src) (Env.outcomeConfig oc_b ρb') →
       (∀ t, Q t →
@@ -3708,7 +3355,7 @@ private theorem nondetElim_loop_nondet_to_fail_iteration_sa {P : PureExpr} [HasF
             (.stmts body' ρb_tgt) (Env.outcomeConfig oc_b ρb_out)
           ∧ StoreAgreement ρb'.store ρb_out.store
           ∧ ρb_out.hasFailure = ρb'.hasFailure
-          ∧ GenFreshStore Q σ_out ρb_out.store)
+          ∧ SemanticStore.isReserved Q σ_out ρb_out.store)
     (h_body_sim_fail : ∀ (ρb_src ρb_tgt : Env P) (d : Config P (Cmd P)),
       ρb_tgt.hasFailure = ρb_src.hasFailure →
       ρb_tgt.factory = ρb_src.factory →
@@ -3717,7 +3364,7 @@ private theorem nondetElim_loop_nondet_to_fail_iteration_sa {P : PureExpr} [HasF
       StringGenState.WF σ →
       (∀ t, Q t →
         ρb_src.store (HasIdent.ident (P := P) t) = none) →
-      GenFreshStore Q σ ρb_tgt.store →
+      SemanticStore.isReserved Q σ ρb_tgt.store →
       (∀ y ∈ Block.initVars body, ρb_tgt.store y = none) →
       StepStmtStar P (EvalCmd P) (.stmts body ρb_src) d →
       d.getEnv.hasFailure = true →
@@ -3734,7 +3381,7 @@ private theorem nondetElim_loop_nondet_to_fail_iteration_sa {P : PureExpr} [HasF
     (h_wf_gen : StringGenState.WF σ)
     (h_src_fresh : ∀ t, Q t →
       ρ_src.store (HasIdent.ident (P := P) t) = none)
-    (h_tgt_fresh : GenFreshStore Q σ ρ_tgt.store)
+    (h_tgt_fresh : SemanticStore.isReserved Q σ ρ_tgt.store)
     (h_tgt_init_undef : ∀ y ∈ Block.initVars body, ρ_tgt.store y = none)
     (entering : Bool)
     (h_guard_def : ρ_tgt.store (HasIdent.ident (P := P) g)
@@ -3934,7 +3581,7 @@ private theorem nondetElim_loop_nondet_to_fail_iteration_sa {P : PureExpr} [HasF
             by_cases hp : (ρ_src.store (HasIdent.ident (P := P) t)).isSome
             · rw [ite_eq_left hp]; exact h_inner_fresh t h_suf
             · rw [ite_eq_right hp]
-          have h_tgt_fresh_next : GenFreshStore Q σ ρ_tgt_next.store := by
+          have h_tgt_fresh_next : SemanticStore.isReserved Q σ ρ_tgt_next.store := by
             intro s h_suf h_notin
             show (if (ρ_tgt.store (HasIdent.ident (P := P) s)).isSome
                 then SemanticStore.update ρ_inner_tgt.store (HasIdent.ident (P := P) g) bval
@@ -4008,8 +3655,8 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P] [HasSubstFvar P]
     {Q : String → Prop}
-    (hQgen : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
-            ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
+    (hQgen : (∀ sg, Q (StringGenState.gen NondetElim.prefixIte sg).1)
+            ∧ (∀ sg, Q (StringGenState.gen NondetElim.prefixLoop sg).1))
     (s : Stmt P (Cmd P)) (σ : StringGenState)
     (ρ_src ρ_tgt : Env P) (c : Config P (Cmd P))
     (h_fail_eq : ρ_tgt.hasFailure = ρ_src.hasFailure)
@@ -4019,7 +3666,7 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
     (h_wf_gen : StringGenState.WF σ)
     (h_src_fresh : ∀ t, Q t →
       ρ_src.store (HasIdent.ident (P := P) t) = none)
-    (h_tgt_fresh : GenFreshStore Q σ ρ_tgt.store)
+    (h_tgt_fresh : SemanticStore.isReserved Q σ ρ_tgt.store)
     (h_tgt_init_undef : ∀ y ∈ Stmt.initVars s, ρ_tgt.store y = none)
     (h_unique : (Stmt.initVars s).Nodup)
     (h_no_writes : (∀ t : String, Q t → HasIdent.ident (P := P) t ∉ (Stmt.definedVars s false ++ Stmt.modifiedVars s)))
@@ -4143,8 +3790,8 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
         · exact h_no_writes t hQ (by rw [h_mv]; exact List.mem_append_right _ (List.mem_append_right _ hm))
       have h_wf₁ : StringGenState.WF (Block.nondetElimM tss σ).2 :=
         (Block.nondetElimM_genStep tss σ).wf_mono h_wf_gen
-      have h_tgt_fresh₁ : GenFreshStore Q (Block.nondetElimM tss σ).2 ρ_tgt.store :=
-        GenFreshStore_mono (Block.nondetElimM_genStep tss σ) h_tgt_fresh
+      have h_tgt_fresh₁ : SemanticStore.isReserved Q (Block.nondetElimM tss σ).2 ρ_tgt.store :=
+        SemanticStore.isReserved.mono (Block.nondetElimM_genStep tss σ) h_tgt_fresh
       obtain ⟨d_inner, h_inner_fail, hd_inner_fail, _⟩ :=
         blockT_none_reaches_failing' P (reflTrans_to_T hrest) h_c_fail
       obtain ⟨d_tgt, h_run_tgt, hd_tgt_fail⟩ :=
@@ -4164,15 +3811,16 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
         (.step _ _ _ (StepStmt.step_ite_false h_cond_t)
           (block_inner_star P (EvalCmd P) _ _ .none ρ_tgt.store h_run_tgt))
   | .ite .nondet tss ess md, h_no_writes, h_tgt_init_undef, h_unique, h_reach =>
-    rcases hgen : StringGenState.gen ndelimItePrefix σ with ⟨g, σ₁⟩
+    rcases hgen : StringGenState.gen NondetElim.prefixIte σ with ⟨g, σ₁⟩
     have h_g_gen : Q g := by have := hQgen.1 σ; rw [hgen] at this; exact this
     have h_tgt_g_none : ρ_tgt.store (HasIdent.ident (P := P) g) = none := by
-      have := GenFreshStore_gen_slot_none ndelimItePrefix h_tgt_fresh h_wf_gen (hQgen.1 σ)
+      have := SemanticStore.isReserved.gen_slot_none NondetElim.prefixIte
+        h_tgt_fresh h_wf_gen (hQgen.1 σ)
       rw [hgen] at this; exact this
     have hwf_var_t : WellFormedSemanticEvalVar ρ_tgt.factory := h_fac_eq ▸ hwf.var
     have hwf_def_t : WellFormedSemanticEvalMono ρ_tgt.factory := h_fac_eq ▸ hwf.mono
     have h_step01 : StringGenState.GenStep σ σ₁ := by
-      have := StringGenState.GenStep.of_gen ndelimItePrefix σ; rw [hgen] at this; exact this
+      have := StringGenState.GenStep.of_gen NondetElim.prefixIte σ; rw [hgen] at this; exact this
     have h_wf₁ : StringGenState.WF σ₁ := h_step01.wf_mono h_wf_gen
     have h_dv : Stmt.definedVars (P := P) (.ite .nondet tss ess md) false
         = Block.definedVars tss false ++ Block.definedVars ess false := by
@@ -4221,9 +3869,10 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
       have h_off_g : StoreAgreement ρ_src.store
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.tt) :=
         storeAgreement_storeWith _ _ _ _ h_agree (h_src_fresh g h_g_gen)
-      have h_fresh_g : GenFreshStore Q σ₁
+      have h_fresh_g : SemanticStore.isReserved Q σ₁
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.tt) := by
-        have := GenFreshStore_storeWith_gen (P := P) ndelimItePrefix HasBool.tt h_tgt_fresh
+        have := SemanticStore.isReserved.storeWith_gen (P := P)
+          NondetElim.prefixIte HasBool.tt h_tgt_fresh
         rw [hgen] at this; exact this
       obtain ⟨d_inner, h_inner_fail, hd_inner_fail, _⟩ :=
         blockT_none_reaches_failing' P (reflTrans_to_T hrest) h_c_fail
@@ -4244,13 +3893,14 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
       have h_off_g : StoreAgreement ρ_src.store
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.ff) :=
         storeAgreement_storeWith _ _ _ _ h_agree (h_src_fresh g h_g_gen)
-      have h_fresh_g1 : GenFreshStore Q σ₁
+      have h_fresh_g1 : SemanticStore.isReserved Q σ₁
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.ff) := by
-        have := GenFreshStore_storeWith_gen (P := P) ndelimItePrefix HasBool.ff h_tgt_fresh
+        have := SemanticStore.isReserved.storeWith_gen (P := P)
+          NondetElim.prefixIte HasBool.ff h_tgt_fresh
         rw [hgen] at this; exact this
-      have h_fresh_g : GenFreshStore Q (Block.nondetElimM tss σ₁).2
+      have h_fresh_g : SemanticStore.isReserved Q (Block.nondetElimM tss σ₁).2
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) HasBool.ff) :=
-        GenFreshStore_mono h_step12 h_fresh_g1
+        SemanticStore.isReserved.mono h_step12 h_fresh_g1
       obtain ⟨d_inner, h_inner_fail, hd_inner_fail, _⟩ :=
         blockT_none_reaches_failing' P (reflTrans_to_T hrest) h_c_fail
       obtain ⟨d_tgt, h_run_tgt, hd_tgt_fail⟩ :=
@@ -4282,14 +3932,14 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
         StoreAgreement ρb_src.store ρb_tgt.store →
         WellFormedSemanticEval ρb_src.factory → StringGenState.WF σ →
         (∀ t, Q t → ρb_src.store (HasIdent.ident (P := P) t) = none) →
-        GenFreshStore Q σ ρb_tgt.store →
+        SemanticStore.isReserved Q σ ρb_tgt.store →
         (∀ y ∈ Block.initVars body, ρb_tgt.store y = none) →
         StepStmtStar P (EvalCmd P) (.stmts body ρb_src) (Env.outcomeConfig oc_b ρb') →
         (∀ t, Q t → ρb'.store (HasIdent.ident (P := P) t) = none)
           ∧ ∃ ρb_out, StepStmtStar P (EvalCmd P)
               (.stmts (Block.nondetElimM body σ).1 ρb_tgt) (Env.outcomeConfig oc_b ρb_out)
             ∧ StoreAgreement ρb'.store ρb_out.store ∧ ρb_out.hasFailure = ρb'.hasFailure
-            ∧ GenFreshStore Q (Block.nondetElimM body σ).2 ρb_out.store :=
+            ∧ SemanticStore.isReserved Q (Block.nondetElimM body σ).2 ρb_out.store :=
       fun oc_b ρb_src ρb' ρb_tgt h_fl h_fac_b h_ag hwf hwfg hsf htf htiu hrun =>
         nondetElim_simulation_gen_sa hQgen body σ ρb_src ρb' ρb_tgt
           h_fl h_fac_b h_ag hwf hwfg hsf htf htiu h_unique_body
@@ -4300,7 +3950,7 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
         StoreAgreement ρb_src.store ρb_tgt.store →
         WellFormedSemanticEval ρb_src.factory → StringGenState.WF σ →
         (∀ t, Q t → ρb_src.store (HasIdent.ident (P := P) t) = none) →
-        GenFreshStore Q σ ρb_tgt.store →
+        SemanticStore.isReserved Q σ ρb_tgt.store →
         (∀ y ∈ Block.initVars body, ρb_tgt.store y = none) →
         StepStmtStar P (EvalCmd P) (.stmts body ρb_src) d → d.getEnv.hasFailure = true →
         ∃ d', StepStmtStar P (EvalCmd P) (.stmts (Block.nondetElimM body σ).1 ρb_tgt) d'
@@ -4328,19 +3978,20 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
           = Block.modifiedVars body := rfl
       show (∀ s : String, Q s → HasIdent.ident (P := P) s ∉ (Block.definedVars body false ++ Block.modifiedVars body))
       rw [h_dv, h_mv] at h_no_writes; exact h_no_writes
-    rcases hgen : StringGenState.gen ndelimLoopPrefix σ with ⟨g, σ₁⟩
+    rcases hgen : StringGenState.gen NondetElim.prefixLoop σ with ⟨g, σ₁⟩
     have h_g_gen : Q g := by have := hQgen.2 σ; rw [hgen] at this; exact this
     have h_step01 : StringGenState.GenStep σ σ₁ := by
-      have := StringGenState.GenStep.of_gen ndelimLoopPrefix σ; rw [hgen] at this; exact this
+      have := StringGenState.GenStep.of_gen NondetElim.prefixLoop σ; rw [hgen] at this; exact this
     have h_wf₁ : StringGenState.WF σ₁ := h_step01.wf_mono h_wf_gen
     have h_g_in : g ∈ σ₁.stringGens := by
-      have h := StringGenState.stringGens_gen ndelimLoopPrefix σ
+      have h := StringGenState.stringGens_gen NondetElim.prefixLoop σ
       rw [hgen] at h; rw [h]; exact List.mem_cons_self
     have h_g_nowrite := nondetElimM_not_writes_gen body σ₁ h_wf₁ g h_g_in
       (fun hc => h_no_writes_body g h_g_gen (List.mem_append_left _ hc))
       (fun hc => h_no_writes_body g h_g_gen (List.mem_append_right _ hc))
     have h_tgt_g_none : ρ_tgt.store (HasIdent.ident (P := P) g) = none := by
-      have := GenFreshStore_gen_slot_none ndelimLoopPrefix h_tgt_fresh h_wf_gen (hQgen.2 σ)
+      have := SemanticStore.isReserved.gen_slot_none NondetElim.prefixLoop
+        h_tgt_fresh h_wf_gen (hQgen.2 σ)
       rw [hgen] at this; exact this
     have hwf_var_t : WellFormedSemanticEvalVar ρ_tgt.factory := h_fac_eq ▸ hwf.var
     have h_unique_body : (Block.initVars body).Nodup := by
@@ -4364,14 +4015,14 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
         StoreAgreement ρb_src.store ρb_tgt.store →
         WellFormedSemanticEval ρb_src.factory → StringGenState.WF σ₁ →
         (∀ t, Q t → ρb_src.store (HasIdent.ident (P := P) t) = none) →
-        GenFreshStore Q σ₁ ρb_tgt.store →
+        SemanticStore.isReserved Q σ₁ ρb_tgt.store →
         (∀ y ∈ Block.initVars body, ρb_tgt.store y = none) →
         StepStmtStar P (EvalCmd P) (.stmts body ρb_src) (Env.outcomeConfig oc_b ρb') →
         (∀ t, Q t → ρb'.store (HasIdent.ident (P := P) t) = none)
           ∧ ∃ ρb_out, StepStmtStar P (EvalCmd P)
               (.stmts (Block.nondetElimM body σ₁).1 ρb_tgt) (Env.outcomeConfig oc_b ρb_out)
             ∧ StoreAgreement ρb'.store ρb_out.store ∧ ρb_out.hasFailure = ρb'.hasFailure
-            ∧ GenFreshStore Q (Block.nondetElimM body σ₁).2 ρb_out.store :=
+            ∧ SemanticStore.isReserved Q (Block.nondetElimM body σ₁).2 ρb_out.store :=
       fun oc_b ρb_src ρb' ρb_tgt h_fl h_fac_b h_ag hwf hwfg hsf htf htiu hrun =>
         nondetElim_simulation_gen_sa hQgen body σ₁ ρb_src ρb' ρb_tgt
           h_fl h_fac_b h_ag hwf hwfg hsf htf htiu h_unique_body
@@ -4382,7 +4033,7 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
         StoreAgreement ρb_src.store ρb_tgt.store →
         WellFormedSemanticEval ρb_src.factory → StringGenState.WF σ₁ →
         (∀ t, Q t → ρb_src.store (HasIdent.ident (P := P) t) = none) →
-        GenFreshStore Q σ₁ ρb_tgt.store →
+        SemanticStore.isReserved Q σ₁ ρb_tgt.store →
         (∀ y ∈ Block.initVars body, ρb_tgt.store y = none) →
         StepStmtStar P (EvalCmd P) (.stmts body ρb_src) d → d.getEnv.hasFailure = true →
         ∃ d', StepStmtStar P (EvalCmd P) (.stmts (Block.nondetElimM body σ₁).1 ρb_tgt) d'
@@ -4413,9 +4064,9 @@ private theorem nondetElim_stmt_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFv
       have h_off_g : StoreAgreement ρ_src.store
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) b) :=
         storeAgreement_storeWith _ _ _ _ h_agree (h_src_fresh g h_g_gen)
-      have h_fresh_g : GenFreshStore Q σ₁
+      have h_fresh_g : SemanticStore.isReserved Q σ₁
           (SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) b) := by
-        have := GenFreshStore_storeWith_gen (P := P) ndelimLoopPrefix b h_tgt_fresh
+        have := SemanticStore.isReserved.storeWith_gen (P := P) NondetElim.prefixLoop b h_tgt_fresh
         rw [hgen] at this; exact this
       have h_guard_def : (({ ρ_tgt with store := SemanticStore.update ρ_tgt.store (HasIdent.ident (P := P) g) b } : Env P).store)
           (HasIdent.ident (P := P) g) = some (if entering then HasBool.tt else HasBool.ff) := by
@@ -4472,8 +4123,8 @@ private theorem nondetElim_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P] [HasSubstFvar P]
     {Q : String → Prop}
-    (hQgen : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
-            ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
+    (hQgen : (∀ sg, Q (StringGenState.gen NondetElim.prefixIte sg).1)
+            ∧ (∀ sg, Q (StringGenState.gen NondetElim.prefixLoop sg).1))
     (ss : List (Stmt P (Cmd P))) (σ : StringGenState)
     (ρ_src ρ_tgt : Env P) (c : Config P (Cmd P))
     (h_fail_eq : ρ_tgt.hasFailure = ρ_src.hasFailure)
@@ -4483,7 +4134,7 @@ private theorem nondetElim_to_fail_gen_sa {P : PureExpr} [HasFvar P] [HasFvars P
     (h_wf_gen : StringGenState.WF σ)
     (h_src_fresh : ∀ t, Q t →
       ρ_src.store (HasIdent.ident (P := P) t) = none)
-    (h_tgt_fresh : GenFreshStore Q σ ρ_tgt.store)
+    (h_tgt_fresh : SemanticStore.isReserved Q σ ρ_tgt.store)
     (h_tgt_init_undef : ∀ y ∈ Block.initVars ss, ρ_tgt.store y = none)
     (h_unique : (Block.initVars ss).Nodup)
     (h_no_writes : SrcNoGenWrites (P := P) Q ss)
@@ -4613,8 +4264,8 @@ private theorem nondetElim_simulation_to_fail {P : PureExpr} [HasFvar P] [HasFva
     [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P] [HasSubstFvar P]
     {Q : String → Prop}
-    (hQgen : (∀ sg, Q (StringGenState.gen ndelimItePrefix sg).1)
-            ∧ (∀ sg, Q (StringGenState.gen ndelimLoopPrefix sg).1))
+    (hQgen : (∀ sg, Q (StringGenState.gen NondetElim.prefixIte sg).1)
+            ∧ (∀ sg, Q (StringGenState.gen NondetElim.prefixLoop sg).1))
     (ss : List (Stmt P (Cmd P))) (ρ₀ : Env P) (c : Config P (Cmd P))
     (hwf : WellFormedSemanticEval ρ₀.factory)
     (h_no_gen_suffix : ∀ s, Q s → ρ₀.store (HasIdent.ident (P := P) s) = none)
@@ -4626,13 +4277,13 @@ private theorem nondetElim_simulation_to_fail {P : PureExpr} [HasFvar P] [HasFva
     ∃ d, StepStmtStar P (EvalCmd P)
         (.stmts (Block.nondetElim ss) ρ₀) d
       ∧ d.getEnv.hasFailure = true := by
-  have h_tgt_fresh : GenFreshStore Q StringGenState.emp ρ₀.store := by
+  have h_tgt_fresh : SemanticStore.isReserved Q StringGenState.emp ρ₀.store := by
     intro s h_suf _; exact h_no_gen_suffix s h_suf
   exact nondetElim_to_fail_gen_sa hQgen ss StringGenState.emp ρ₀ ρ₀ c
     rfl rfl (StoreAgreement.refl _) hwf
     StringGenState.wf_emp h_no_gen_suffix h_tgt_fresh h_store_inits h_unique h_no_writes h_reach h_c_fail
 
-/-- **`Block.nondetElim` failing-config preservation (at `Q := ndelimKind`).**  A
+/-- **`Block.nondetElim` failing-config preservation (at `Q := NondetElim.isGeneratedName`).**  A
 reachable failing source configuration of `ss` is matched by a reachable failing
 configuration of `Block.nondetElim ss`, with no terminal/exiting endpoint
 required.  This is the `_to_fail` sibling of `nondetElim_sound_kind`; the
@@ -4645,8 +4296,8 @@ theorem nondetElim_to_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P
     [LawfulHasFvar P] [LawfulHasIdent P] [HasSubstFvar P]
     (ss : List (Stmt P (Cmd P))) (ρ₀ : Env P) (c : Config P (Cmd P))
     (hwf : WellFormedSemanticEval ρ₀.factory)
-    (h_no_gen_suffix : Env.varsUndefined (P := P) ndelimKind ρ₀)
-    (h_no_writes : SrcNoGenWrites (P := P) ndelimKind ss)
+    (h_no_gen_suffix : Env.varsUndefined (P := P) NondetElim.isGeneratedName ρ₀)
+    (h_no_writes : SrcNoGenWrites (P := P) NondetElim.isGeneratedName ss)
     (h_store_inits : ∀ y ∈ Block.initVars ss, ρ₀.store y = none)
     (h_unique : Block.uniqueInits ss)
     (h_reach : StepStmtStar P (EvalCmd P) (.stmts ss ρ₀) c)
@@ -4654,7 +4305,7 @@ theorem nondetElim_to_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P
     ∃ d, StepStmtStar P (EvalCmd P)
         (.stmts (Block.nondetElim ss) ρ₀) d
       ∧ d.getEnv.hasFailure = true :=
-  nondetElim_simulation_to_fail (Q := ndelimKind) ndelimKind_gen
+  nondetElim_simulation_to_fail (Q := NondetElim.isGeneratedName) NondetElim.isGeneratedName_gen
     ss ρ₀ c hwf
     (Env.varsUndefined_iff.mp h_no_gen_suffix) h_no_writes h_store_inits h_unique h_reach h_c_fail
 
@@ -4662,7 +4313,7 @@ theorem nondetElim_to_fail {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P
 config of `ss` (run from `ρ₀`) is matched by a reachable failing config of
 `Block.nondetElim ss` run from an *overapproximating* target env `ρ_tgt`
 (`StoreAgreement ρ₀.store ρ_tgt.store`).  Thin forwarder to
-`nondetElim_to_fail_gen_sa` at `σ := .emp`, `Q := ndelimKind`. -/
+`nondetElim_to_fail_gen_sa` at `σ := .emp`, `Q := NondetElim.isGeneratedName`. -/
 theorem nondetElim_to_fail_compositional {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
     [HasIdent P] [HasInt P] [HasIntOps P]
     [DecidableEq P.Ident]
@@ -4672,19 +4323,20 @@ theorem nondetElim_to_fail_compositional {P : PureExpr} [HasFvar P] [HasFvars P]
     (h_fac_eq : ρ_tgt.factory = ρ₀.factory)
     (h_agree : StoreAgreement ρ₀.store ρ_tgt.store)
     (hwf : WellFormedSemanticEval ρ₀.factory)
-    (h_src_no_gen : Env.varsUndefined (P := P) ndelimKind ρ₀)
-    (h_tgt_no_gen : Env.varsUndefined (P := P) ndelimKind ρ_tgt)
+    (h_src_no_gen : Env.varsUndefined (P := P) NondetElim.isGeneratedName ρ₀)
+    (h_tgt_no_gen : Env.varsUndefined (P := P) NondetElim.isGeneratedName ρ_tgt)
     (h_tgt_inits : ∀ y ∈ Block.initVars ss, ρ_tgt.store y = none)
-    (h_no_writes : SrcNoGenWrites (P := P) ndelimKind ss)
+    (h_no_writes : SrcNoGenWrites (P := P) NondetElim.isGeneratedName ss)
     (h_unique : Block.uniqueInits ss)
     (h_reach : StepStmtStar P (EvalCmd P) (.stmts ss ρ₀) c)
     (h_c_fail : c.getEnv.hasFailure = true) :
     ∃ d, StepStmtStar P (EvalCmd P)
         (.stmts (Block.nondetElim ss) ρ_tgt) d
       ∧ d.getEnv.hasFailure = true := by
-  have h_tgt_fresh : GenFreshStore ndelimKind StringGenState.emp ρ_tgt.store := by
+  have h_tgt_fresh : SemanticStore.isReserved NondetElim.isGeneratedName
+      StringGenState.emp ρ_tgt.store := by
     intro s h_suf _; exact Env.varsUndefined_apply h_tgt_no_gen s h_suf
-  exact nondetElim_to_fail_gen_sa ndelimKind_gen ss StringGenState.emp ρ₀ ρ_tgt c
+  exact nondetElim_to_fail_gen_sa NondetElim.isGeneratedName_gen ss StringGenState.emp ρ₀ ρ_tgt c
     h_fail_eq h_fac_eq h_agree hwf
     StringGenState.wf_emp (Env.varsUndefined_iff.mp h_src_no_gen) h_tgt_fresh h_tgt_inits h_unique h_no_writes
     h_reach h_c_fail
@@ -4781,68 +4433,1528 @@ theorem Block.nondetElim_getBlockLabels {P : PureExpr} [HasIdent P] [HasFvar P] 
     Block.getBlockLabels (Block.nondetElim ss) = Block.getBlockLabels ss := by
   rw [Block.nondetElim, Block.nondetElimM_getBlockLabels]
 
-/-! ## `nondetElim` per-pass overapproximation instance
+/-! ## `nondetElim` per-pass event-trace overapproximation instance
 
-The pass's own `OverapproximatesUptoWhen` instance, over pass-local neutral
-languages whose `initEnvWF` mentions only the pass's own generated-name kind
-`ndelimKind`.  The output relation is the store-agreement / failure-flag /
-factory triple (the shared `EnvStoreAgree`).  Terminal / exiting reuse the
-`nondetElim_sound_kind*_compositional` sims and `CanFail` reuses
-`nondetElim_to_fail_compositional`, at the diagonal `ρ_tgt := ρ₀`. -/
+The pass's `OverapproximatesTracesUptoWhen` instance uses the event-trace block
+language with `EvalCmdE P`. Target-only registers are generated guards;
+`NETraceRel` relates same-kind event snapshots with environment extension,
+free-variable store agreement, and evaluator well-formedness. Its
+`toExtendsEnv` theorem recovers the weaker `TraceExtendsEnv` relation.
+`Env.ExtendsWith` relates final environments. Nondeterministic loops are
+represented by separate preheader, body, and latch states so the source loop
+choice selects the corresponding silent target guard update. -/
 section NondetElimOverapprox
 open Specification Specification.Transform Imperative.Logic
 
-/-- `Block.nondetElim` overapproximates its source up to `EnvStoreAgree`: for a
-block that is func-decl-free, has unique inits, and never writes an `ndelimKind`
-name, every terminating, exiting, or failing source run is matched by a run of the
-rewritten block ending in a store-agreeing, failure-matching, factory-preserving
-target state.  Terminal / exiting cases discharge via the
-`nondetElim_sound_kind*_compositional` sims and `CanFail` via
-`nondetElim_to_fail_compositional`, at the diagonal `ρ_tgt := ρ₀` (the evaluator is
-preserved since no statement step mutates the factory); the target `initEnvWF` classifies
-the output `initVars` via `nondetElimM_initVars_classified_Q`. -/
-theorem nondetElim_overapproximates_upto_local {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [LawfulHasVal P]
-    [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
+namespace NondetElimTrace
+
+/-! ### Classified registers and leaf invariants -/
+
+/-- Target-only registers introduced by `nondetElim`: the identifiers of the
+generated guard names. -/
+abbrev NdExtra {P : PureExpr} [HasIdent P] : P.Ident → Prop :=
+  IdentOfStringKind (P := P) NondetElim.isGeneratedName
+
+/-- Event arguments matched by nondeterminism elimination. Besides the
+classified environment extension, the stores agree on the captured condition's
+free variables and carry the well-formedness evidence needed by evaluator
+congruence. -/
+structure NEArgRel {P : PureExpr} [HasVal P] [HasFvars P] [HasIdent P]
+    (source target : EventArg P) : Prop where
+  envExtends : source.ExtendsEnv (NdExtra (P := P)) target
+  store_fv : StoreAgreesOnFvars source.store target.store source.expr
+  sourceStoreWF : WellFormedStore source.store source.factory
+  targetStoreWF : WellFormedStore target.store target.factory
+  exprCongr : WellFormedSemanticEvalExprCongr source.factory
+
+/-- Same-kind event matching induced by `NEArgRel`. -/
+abbrev NEEventRel {P : PureExpr} [HasVal P] [HasFvars P] [HasIdent P] :
+    Event P → Event P → Prop :=
+  Event.Matches (NEArgRel (P := P))
+
+/-- Pointwise NondetElim event matching for traces. -/
+abbrev NETraceRel {P : PureExpr} [HasVal P] [HasFvars P] [HasIdent P] :
+    Trace P → Trace P → Prop :=
+  List.Rel₂ (NEEventRel (P := P))
+
+/-- Forgetting semantic evidence recovers ordinary event-environment extension. -/
+theorem NEEventRel.toExtendsEnv {P : PureExpr} [HasVal P] [HasFvars P] [HasIdent P]
+    {source target : Event P} (h : NEEventRel (P := P) source target) :
+    Event.ExtendsEnv (NdExtra (P := P)) source target := by
+  cases source <;> cases target <;>
+    simp_all only [NEEventRel, Event.Matches, Event.ExtendsEnv]
+  all_goals exact h.envExtends
+
+/-- Forgetting semantic evidence pointwise recovers `TraceExtendsEnv`. -/
+theorem NETraceRel.toExtendsEnv {P : PureExpr} [HasVal P] [HasFvars P] [HasIdent P]
+    {source target : Trace P} (h : NETraceRel (P := P) source target) :
+    TraceExtendsEnv (NdExtra (P := P)) source target :=
+  h.imp fun _ _ => NEEventRel.toExtendsEnv
+
+/-- Leaf invariant relating a source environment to its target counterpart at
+generator position `σ`: the target extends the source with generated guards
+only, the source holds no generated guard, every generated name not yet
+produced by `σ` is undefined in the target, and every generated guard bound in
+the target holds a Boolean value. -/
+structure NdLeaf {P : PureExpr} [HasBool P] [HasIdent P]
+    (σ : StringGenState) (ρs ρt : Env P) : Prop where
+  ext : Env.ExtendsWith (NdExtra (P := P)) ρs ρt
+  srcFresh : ∀ x, NdExtra (P := P) x → ρs.store x = none
+  fresh : SemanticStore.isReserved (P := P) NondetElim.isGeneratedName σ ρt.store
+  typed : ∀ x v, NdExtra (P := P) x → ρt.store x = some v →
+    HasVal.valueOfTy ρt.factory v HasBool.boolTy
+
+/-- The trailing target statements of a statement list: none, or the pending
+latch havoc of an enclosing rewritten nondeterministic loop. -/
+@[expose] def ndTail {P : PureExpr} : Option (P.Ident × MetaData P) → List (Stmt P (Cmd P))
+  | none => []
+  | some (g, md) => [.cmd (HasHavoc.havoc g md)]
+
+/-- The latch guard of the trailing tail (if any) is defined in a store. -/
+@[expose] def NdTailDef {P : PureExpr} (tail : Option (P.Ident × MetaData P))
+    (σ : SemanticStore P) : Prop :=
+  ∀ g md, tail = some (g, md) → (σ g).isSome = true
+
+/-- The latch guard of the trailing tail (if any) is defined throughout a
+configuration (operative store and every enclosing parent store). -/
+@[expose] def NdTailCfg {P : PureExpr} (tail : Option (P.Ident × MetaData P))
+    (c : Config P (Cmd P)) : Prop :=
+  ∀ g md, tail = some (g, md) → Config.varsDefined (· = g) c
+
+/-- Guard generated for a nondeterministic `ite` at generator state `σ`. -/
+abbrev ndIteGuard {P : PureExpr} [HasIdent P] (σ : StringGenState) : P.Ident :=
+  HasIdent.ident (P := P) (StringGenState.gen NondetElim.prefixIte σ).1
+
+/-- Guard generated for a nondeterministic loop at generator state `σ`. -/
+abbrev ndLoopGuard {P : PureExpr} [HasIdent P] (σ : StringGenState) : P.Ident :=
+  HasIdent.ident (P := P) (StringGenState.gen NondetElim.prefixLoop σ).1
+
+/-- The rewritten deterministic `ite` emitted for a nondeterministic `ite`. -/
+abbrev ndIteTgt {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
+    (tss ess : List (Stmt P (Cmd P))) (md : MetaData P) (σ : StringGenState) :
+    Stmt P (Cmd P) :=
+  .ite (.det (HasFvar.mkTypedFvar (ndIteGuard (P := P) σ) HasBool.boolTy))
+    (Block.nondetElimM tss (StringGenState.gen NondetElim.prefixIte σ).2).1
+    (Block.nondetElimM ess
+      (Block.nondetElimM tss (StringGenState.gen NondetElim.prefixIte σ).2).2).1 md
+
+/-- The rewritten deterministic loop emitted for a nondeterministic loop: its
+body is the rewritten source body followed by the latch havoc. -/
+abbrev ndLoopTgt {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
+    (m : Option P.Expr) (inv : List (String × P.Expr)) (body : List (Stmt P (Cmd P)))
+    (md : MetaData P) (σ : StringGenState) : Stmt P (Cmd P) :=
+  .loop (.det (HasFvar.mkTypedFvar (ndLoopGuard (P := P) σ) HasBool.boolTy)) m inv
+    ((Block.nondetElimM body (StringGenState.gen NondetElim.prefixLoop σ).2).1 ++
+      [.cmd (HasHavoc.havoc (ndLoopGuard (P := P) σ) md)]) md
+
+/-- Shared invariant of the nondeterministic-loop head states: the source has
+finished one body iteration (and possibly left its scope), while the target
+sits before its latch havoc inside the iteration scope. -/
+structure NdHeadInv {P : PureExpr} [HasFvars P] [HasBool P] [HasIdent P]
+    (σ σb : StringGenState) (body : List (Stmt P (Cmd P)))
+    (σps σpt : SemanticStore P) (ρsb ρtb : Env P) : Prop where
+  wf : StringGenState.WF (StringGenState.gen NondetElim.prefixLoop σ).2
+  noGen : SrcNoGenWrites (P := P) NondetElim.isGeneratedName body
+  noRead : Block.exprsShapeFree (P := P) NondetElim.isGeneratedName body
+  parent : StoreExtendsWith (NdExtra (P := P)) σps σpt
+  parentFresh : SemanticStore.isReserved (P := P)
+    NondetElim.isGeneratedName
+    (StringGenState.gen NondetElim.prefixLoop σ).2 σpt
+  parentGuard : (σpt (ndLoopGuard (P := P) σ)).isSome = true
+  leaf : NdLeaf σb ρsb ρtb
+  guard : (ρtb.store (ndLoopGuard (P := P) σ)).isSome = true
+
+/-! ### Generator-indexed configuration simulation
+
+`NdSim tail σe cs ct` relates an in-flight source configuration `cs` to a
+target configuration `ct` of the rewritten program.  `σe` is the generator
+state reached once the source configuration's pending code has been
+rewritten; the continuation of an enclosing sequence was generated from it.
+`tail` records whether the enclosing statement list is the body of a rewritten
+nondeterministic loop, whose target list carries the trailing latch havoc. -/
+inductive NdSim {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] :
+    Option (P.Ident × MetaData P) → StringGenState →
+    Config P (Cmd P) → Config P (Cmd P) → Prop where
+  /-- A source statement list and its rewrite (plus the tail). -/
+  | stmts {tail : Option (P.Ident × MetaData P)} {σ : StringGenState}
+      {ss : List (Stmt P (Cmd P))} {ρs ρt : Env P} :
+      StringGenState.WF σ → NdLeaf σ ρs ρt →
+      SrcNoGenWrites (P := P) NondetElim.isGeneratedName ss →
+      Block.exprsShapeFree (P := P) NondetElim.isGeneratedName ss →
+      NdTailDef tail ρt.store →
+      NdSim tail (Block.nondetElimM ss σ).2 (.stmts ss ρs)
+        (.stmts ((Block.nondetElimM ss σ).1 ++ ndTail tail) ρt)
+  /-- A source statement whose rewrite is a single statement. -/
+  | stmt {σ : StringGenState} {s s' : Stmt P (Cmd P)} {ρs ρt : Env P} :
+      StringGenState.WF σ → NdLeaf σ ρs ρt →
+      SrcNoGenWrites (P := P) NondetElim.isGeneratedName [s] →
+      Block.exprsShapeFree (P := P) NondetElim.isGeneratedName [s] →
+      (Stmt.nondetElimM s σ).1 = [s'] →
+      NdSim none (Stmt.nondetElimM s σ).2 (.stmt s ρs) (.stmt s' ρt)
+  /-- Terminated configurations. -/
+  | terminal {σe : StringGenState} {ρs ρt : Env P} :
+      NdLeaf σe ρs ρt → NdSim none σe (.terminal ρs) (.terminal ρt)
+  /-- A finished loop body: the target still has to run the latch havoc. -/
+  | pendingHavoc {σe : StringGenState} {g : P.Ident} {md : MetaData P} {ρs ρt : Env P} :
+      NdLeaf σe ρs ρt → (ρt.store g).isSome = true →
+      NdSim (some (g, md)) σe (.terminal ρs) (.stmts [.cmd (HasHavoc.havoc g md)] ρt)
+  /-- Exiting configurations. -/
+  | exiting {tail : Option (P.Ident × MetaData P)} {σe : StringGenState} {l : String}
+      {ρs ρt : Env P} :
+      NdLeaf σe ρs ρt → NdSim tail σe (.exiting l ρs) (.exiting l ρt)
+  /-- A sequence frame whose continuation was rewritten from `σr`. -/
+  | seq {tail : Option (P.Ident × MetaData P)} {σr : StringGenState}
+      {inner inner' : Config P (Cmd P)} {rest : List (Stmt P (Cmd P))} :
+      NdSim none σr inner inner' → StringGenState.WF σr →
+      SrcNoGenWrites (P := P) NondetElim.isGeneratedName rest →
+      Block.exprsShapeFree (P := P) NondetElim.isGeneratedName rest →
+      NdTailCfg tail inner' →
+      NdSim tail (Block.nondetElimM rest σr).2 (.seq inner rest)
+        (.seq inner' ((Block.nondetElimM rest σr).1 ++ ndTail tail))
+  /-- A block frame; projection through the parents restores freshness at `σe`. -/
+  | block {σi σe : StringGenState} {l : Option String} {σps σpt : SemanticStore P}
+      {inner inner' : Config P (Cmd P)} :
+      NdSim none σi inner inner' → StoreExtendsWith (NdExtra (P := P)) σps σpt →
+      SemanticStore.isReserved (P := P) NondetElim.isGeneratedName σe σpt →
+      NdSim none σe (.block l σps inner) (.block l σpt inner')
+  /-- Preheader of a nondeterministic `ite`: the target has not yet chosen its
+  guard; the source's branch choice will drive the guard's initial value. -/
+  | seqIte {tail : Option (P.Ident × MetaData P)} {σ : StringGenState}
+      {tss ess : List (Stmt P (Cmd P))} {md : MetaData P}
+      {rest : List (Stmt P (Cmd P))} {ρs ρt : Env P} :
+      StringGenState.WF σ → NdLeaf σ ρs ρt →
+      SrcNoGenWrites (P := P) NondetElim.isGeneratedName [.ite .nondet tss ess md] →
+      Block.exprsShapeFree (P := P) NondetElim.isGeneratedName
+        [.ite .nondet tss ess md] →
+      SrcNoGenWrites (P := P) NondetElim.isGeneratedName rest →
+      Block.exprsShapeFree (P := P) NondetElim.isGeneratedName rest →
+      NdTailDef tail ρt.store →
+      NdSim tail (Block.nondetElimM rest (Stmt.nondetElimM (.ite .nondet tss ess md) σ).2).2
+        (.seq (.stmt (.ite .nondet tss ess md) ρs) rest)
+        (.seq (.stmt (.cmd (HasInit.init (ndIteGuard (P := P) σ) HasBool.boolTy .nondet md)) ρt)
+          (ndIteTgt tss ess md σ ::
+            ((Block.nondetElimM rest (Stmt.nondetElimM (.ite .nondet tss ess md) σ).2).1 ++
+              ndTail tail)))
+  /-- Preheader of a nondeterministic loop: the source's first enter/exit choice
+  will drive the guard's initial value. -/
+  | seqLoop {tail : Option (P.Ident × MetaData P)} {σ : StringGenState}
+      {m : Option P.Expr} {inv : List (String × P.Expr)} {body : List (Stmt P (Cmd P))}
+      {md : MetaData P} {rest : List (Stmt P (Cmd P))} {ρs ρt : Env P} :
+      StringGenState.WF σ → NdLeaf σ ρs ρt →
+      SrcNoGenWrites (P := P) NondetElim.isGeneratedName [.loop .nondet m inv body md] →
+      Block.exprsShapeFree (P := P) NondetElim.isGeneratedName
+        [.loop .nondet m inv body md] →
+      SrcNoGenWrites (P := P) NondetElim.isGeneratedName rest →
+      Block.exprsShapeFree (P := P) NondetElim.isGeneratedName rest →
+      NdTailDef tail ρt.store →
+      NdSim tail (Block.nondetElimM rest (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2).2
+        (.seq (.stmt (.loop .nondet m inv body md) ρs) rest)
+        (.seq (.stmt (.cmd (HasInit.init (ndLoopGuard (P := P) σ) HasBool.boolTy .nondet md)) ρt)
+          (ndLoopTgt m inv body md σ ::
+            ((Block.nondetElimM rest (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2).1 ++
+              ndTail tail)))
+  /-- One running iteration of a nondeterministic loop: the body runs under the
+  latch-havoc tail. -/
+  | iter {σ σb : StringGenState} {m : Option P.Expr} {inv : List (String × P.Expr)}
+      {body : List (Stmt P (Cmd P))} {md : MetaData P} {σps σpt : SemanticStore P}
+      {cs ct : Config P (Cmd P)} :
+      StringGenState.WF (StringGenState.gen NondetElim.prefixLoop σ).2 →
+      SrcNoGenWrites (P := P) NondetElim.isGeneratedName body →
+      Block.exprsShapeFree (P := P) NondetElim.isGeneratedName body →
+      StoreExtendsWith (NdExtra (P := P)) σps σpt →
+      SemanticStore.isReserved (P := P) NondetElim.isGeneratedName
+        (StringGenState.gen NondetElim.prefixLoop σ).2 σpt →
+      (σpt (ndLoopGuard (P := P) σ)).isSome = true →
+      NdSim (some (ndLoopGuard (P := P) σ, md)) σb cs ct →
+      NdSim none (Block.nondetElimM body (StringGenState.gen NondetElim.prefixLoop σ).2).2
+        (.seq (.block none σps cs) [.loop .nondet m inv body md])
+        (.seq (.block none σpt ct) [ndLoopTgt m inv body md σ])
+  /-- Loop head, source left the iteration scope. -/
+  | headTerm {σ σb : StringGenState} {m : Option P.Expr} {inv : List (String × P.Expr)}
+      {body : List (Stmt P (Cmd P))} {md : MetaData P} {σps σpt : SemanticStore P}
+      {ρsb ρtb : Env P} :
+      NdHeadInv σ σb body σps σpt ρsb ρtb →
+      NdSim none (Block.nondetElimM body (StringGenState.gen NondetElim.prefixLoop σ).2).2
+        (.seq (.terminal { ρsb with store := projectStore σps ρsb.store })
+          [.loop .nondet m inv body md])
+        (.seq (.block none σpt (.stmts [.cmd (HasHavoc.havoc (ndLoopGuard (P := P) σ) md)] ρtb))
+          [ndLoopTgt m inv body md σ])
+  /-- Loop head, source resumed its loop continuation. -/
+  | headStmts {σ σb : StringGenState} {m : Option P.Expr} {inv : List (String × P.Expr)}
+      {body : List (Stmt P (Cmd P))} {md : MetaData P} {σps σpt : SemanticStore P}
+      {ρsb ρtb : Env P} :
+      NdHeadInv σ σb body σps σpt ρsb ρtb →
+      NdSim none (Block.nondetElimM body (StringGenState.gen NondetElim.prefixLoop σ).2).2
+        (.stmts [.loop .nondet m inv body md] { ρsb with store := projectStore σps ρsb.store })
+        (.seq (.block none σpt (.stmts [.cmd (HasHavoc.havoc (ndLoopGuard (P := P) σ) md)] ρtb))
+          [ndLoopTgt m inv body md σ])
+  /-- Loop head, source about to choose enter/exit. -/
+  | headStmt {σ σb : StringGenState} {m : Option P.Expr} {inv : List (String × P.Expr)}
+      {body : List (Stmt P (Cmd P))} {md : MetaData P} {σps σpt : SemanticStore P}
+      {ρsb ρtb : Env P} :
+      NdHeadInv σ σb body σps σpt ρsb ρtb →
+      NdSim none (Block.nondetElimM body (StringGenState.gen NondetElim.prefixLoop σ).2).2
+        (.seq (.stmt (.loop .nondet m inv body md)
+          { ρsb with store := projectStore σps ρsb.store }) [])
+        (.seq (.block none σpt (.stmts [.cmd (HasHavoc.havoc (ndLoopGuard (P := P) σ) md)] ρtb))
+          [ndLoopTgt m inv body md σ])
+  /-- An exit escaping a loop iteration scope, before the sequence propagates it. -/
+  | seqExit {σe : StringGenState} {l : String} {ρs ρt : Env P}
+      {ss ss' : List (Stmt P (Cmd P))} :
+      NdLeaf σe ρs ρt → NdSim none σe (.seq (.exiting l ρs) ss) (.seq (.exiting l ρt) ss')
+
+
+/-! ### Source write-set decomposition -/
+
+/-- The empty source block has an empty write set, so it vacuously writes no
+name of kind `Q`. -/
+private theorem noGen_nil {P : PureExpr} [HasFvars P] [HasIdent P] {Q : String → Prop} :
+    SrcNoGenWrites (P := P) Q [] := by
+  intro s _ hmem
+  simp [Block.definedVars, Block.modifiedVars] at hmem
+
+/-- If a cons block writes no name of kind `Q`, neither does its head statement
+taken on its own. -/
+private theorem noGen_head {P : PureExpr} [HasFvars P] [HasIdent P] {Q : String → Prop}
+    {s : Stmt P (Cmd P)} {ss : List (Stmt P (Cmd P))}
+    (h : SrcNoGenWrites (P := P) Q (s :: ss)) : SrcNoGenWrites (P := P) Q [s] := by
+  intro name hq hmem
+  apply h name hq
+  simp only [Block.definedVars, Block.modifiedVars, List.append_nil, List.mem_append] at hmem ⊢
+  rcases hmem with h | h
+  · exact .inl (.inl h)
+  · exact .inr (.inl h)
+
+/-- If a cons block writes no name of kind `Q`, neither does its tail. -/
+private theorem noGen_tail {P : PureExpr} [HasFvars P] [HasIdent P] {Q : String → Prop}
+    {s : Stmt P (Cmd P)} {ss : List (Stmt P (Cmd P))}
+    (h : SrcNoGenWrites (P := P) Q (s :: ss)) : SrcNoGenWrites (P := P) Q ss := by
+  intro name hq hmem
+  apply h name hq
+  simp only [Block.definedVars, Block.modifiedVars, List.mem_append] at hmem ⊢
+  rcases hmem with h | h
+  · exact .inl (.inr h)
+  · exact .inr (.inr h)
+
+/-- If a singleton `.block` statement writes no name of kind `Q`, neither does
+its inner body. -/
+private theorem noGen_block {P : PureExpr} [HasFvars P] [HasIdent P] {Q : String → Prop}
+    {l : String} {bss : List (Stmt P (Cmd P))} {md : MetaData P}
+    (h : SrcNoGenWrites (P := P) Q [.block l bss md]) : SrcNoGenWrites (P := P) Q bss := by
+  intro name hq hmem
+  apply h name hq
+  simp only [Block.definedVars, Block.modifiedVars, Stmt.definedVars, Stmt.modifiedVars,
+    Bool.false_eq_true, ite_false, List.append_nil, List.mem_append] at hmem ⊢
+  exact hmem
+
+/-- If a singleton `.ite` statement writes no name of kind `Q`, neither does its
+then branch. -/
+private theorem noGen_ite_then {P : PureExpr} [HasFvars P] [HasIdent P] {Q : String → Prop}
+    {c : ExprOrNondet P} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P}
+    (h : SrcNoGenWrites (P := P) Q [.ite c tss ess md]) : SrcNoGenWrites (P := P) Q tss := by
+  intro name hq hmem
+  apply h name hq
+  simp only [Block.definedVars, Block.modifiedVars, Stmt.definedVars, Stmt.modifiedVars,
+    Bool.false_eq_true, ite_false, List.append_nil, List.mem_append] at hmem ⊢
+  rcases hmem with h | h
+  · exact .inl (.inl h)
+  · exact .inr (.inl h)
+
+/-- If a singleton `.ite` statement writes no name of kind `Q`, neither does its
+else branch. -/
+private theorem noGen_ite_else {P : PureExpr} [HasFvars P] [HasIdent P] {Q : String → Prop}
+    {c : ExprOrNondet P} {tss ess : List (Stmt P (Cmd P))} {md : MetaData P}
+    (h : SrcNoGenWrites (P := P) Q [.ite c tss ess md]) : SrcNoGenWrites (P := P) Q ess := by
+  intro name hq hmem
+  apply h name hq
+  simp only [Block.definedVars, Block.modifiedVars, Stmt.definedVars, Stmt.modifiedVars,
+    Bool.false_eq_true, ite_false, List.append_nil, List.mem_append] at hmem ⊢
+  rcases hmem with h | h
+  · exact .inl (.inr h)
+  · exact .inr (.inr h)
+
+/-- If a singleton `.loop` statement writes no name of kind `Q`, neither does its
+body. -/
+private theorem noGen_loop {P : PureExpr} [HasFvars P] [HasIdent P] {Q : String → Prop}
+    {g : ExprOrNondet P} {m : Option P.Expr} {inv : List (String × P.Expr)}
+    {body : List (Stmt P (Cmd P))} {md : MetaData P}
+    (h : SrcNoGenWrites (P := P) Q [.loop g m inv body md]) : SrcNoGenWrites (P := P) Q body := by
+  intro name hq hmem
+  apply h name hq
+  simp only [Block.definedVars, Block.modifiedVars, Stmt.definedVars, Stmt.modifiedVars,
+    Bool.false_eq_true, ite_false, List.append_nil, List.mem_append] at hmem ⊢
+  exact hmem
+
+/-- If a singleton command writes no name of kind `Q`, then no identifier of kind
+`Q` lies among the command's defined or modified variables. -/
+private theorem noGen_cmd {P : PureExpr} [HasFvars P] [HasIdent P]
+    {Q : String → Prop} {c : Cmd P}
+    (h : SrcNoGenWrites (P := P) Q [.cmd c]) {x : P.Ident}
+    (hx : IdentOfStringKind (P := P) Q x) :
+    x ∉ Cmd.definedVars c ∧ x ∉ Cmd.modifiedVars c := by
+  obtain ⟨name, hq, rfl⟩ := hx
+  have h' := h name hq
+  simp only [Block.definedVars, Block.modifiedVars, Stmt.definedVars, Stmt.modifiedVars,
+    HasVarsImp.definedVars, HasVarsImp.modifiedVars, List.append_nil, List.mem_append,
+    not_or] at h'
+  exact h'
+
+/-- Canonical events emitted by replaying a read-fresh command carry the
+NondetElim argument relation. -/
+private theorem cmd_emitted_neTraceRel {P : PureExpr} [HasFvar P] [HasFvars P]
+    [HasBool P] [HasVal P] [HasIdent P]
+    {c : Cmd P} {fs ft : P.Factory} {σs σt : SemanticStore P}
+    (hread : ∀ name, NondetElim.isGeneratedName name →
+      HasIdent.ident (P := P) name ∉ Cmd.getVars c)
+    (hfactory : fs = ft)
+    (hext : StoreExtendsWith (NdExtra (P := P)) σs σt)
+    (hsourceWF : WellFormedStore σs fs) (htargetWF : WellFormedStore σt ft)
+    (hcongr : WellFormedSemanticEvalExprCongr fs) :
+    NETraceRel (P := P) (Cmd.emittedEvents P c fs σs) (Cmd.emittedEvents P c ft σt) := by
+  have hfv : ∀ x ∈ Cmd.getVars c, σs x = σt x := by
+    intro x hx
+    apply hext.lookup_eq_of_not_extra
+    rintro ⟨name, hname, rfl⟩
+    exact hread name hname hx
+  cases c with
+  | init | set => exact .nil
+  | assert label expr metadata =>
+      exact .cons
+        ⟨⟨hfactory, hext, rfl, rfl, rfl⟩,
+          (fun x hx => hfv x (by simpa [Cmd.getVars] using hx)),
+          hsourceWF, htargetWF, hcongr⟩ .nil
+  | assume label expr metadata =>
+      exact .cons
+        ⟨⟨hfactory, hext, rfl, rfl, rfl⟩,
+          (fun x hx => hfv x (by simpa [Cmd.getVars] using hx)),
+          hsourceWF, htargetWF, hcongr⟩ .nil
+  | cover label expr metadata =>
+      exact .cons
+        ⟨⟨hfactory, hext, rfl, rfl, rfl⟩,
+          (fun x hx => hfv x (by simpa [Cmd.getVars] using hx)),
+          hsourceWF, htargetWF, hcongr⟩ .nil
+
+
+/-! ### Event command frame facts -/
+
+/-- A command leaves a register's value unchanged when the register is neither
+defined nor modified by the command. -/
+private theorem evalCmdE_eq_of_not_written {P : PureExpr} [HasFvar P] [HasBool P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P} {y : P.Ident}
+    (h : EvalCmdE P f σ c σ' emitted)
+    (hd : y ∉ Cmd.definedVars c) (hm : y ∉ Cmd.modifiedVars c) : σ' y = σ y := by
+  cases h with
+  | eval_init _ hinit _ _ =>
+    cases hinit with
+    | init _ _ h_other =>
+      exact h_other y (by intro heq; subst heq; exact hd (by simp [Cmd.definedVars]))
+  | eval_init_unconstrained hinit _ _ =>
+    cases hinit with
+    | init _ _ h_other =>
+      exact h_other y (by intro heq; subst heq; exact hd (by simp [Cmd.definedVars]))
+  | eval_set _ hupd _ _ =>
+    cases hupd with
+    | update _ _ h_other =>
+      exact h_other y (by intro heq; subst heq; exact hm (by simp [Cmd.modifiedVars]))
+  | eval_set_nondet hupd _ _ =>
+    cases hupd with
+    | update _ _ h_other =>
+      exact h_other y (by intro heq; subst heq; exact hm (by simp [Cmd.modifiedVars]))
+  | eval_assert => rfl
+  | eval_assume => rfl
+  | eval_cover => rfl
+
+/-- A register that the command defines (via `init`) must have been undefined in
+the pre-state. -/
+private theorem evalCmdE_defined_none {P : PureExpr} [HasFvar P] [HasBool P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P} {x : P.Ident}
+    (h : EvalCmdE P f σ c σ' emitted) (hx : x ∈ Cmd.definedVars c) : σ x = none := by
+  cases h with
+  | eval_init _ hinit _ _ =>
+    simp only [Cmd.definedVars, List.mem_singleton] at hx
+    subst hx
+    cases hinit with
+    | init hnone _ _ => exact hnone
+  | eval_init_unconstrained hinit _ _ =>
+    simp only [Cmd.definedVars, List.mem_singleton] at hx
+    subst hx
+    cases hinit with
+    | init hnone _ _ => exact hnone
+  | eval_set => simp [Cmd.definedVars] at hx
+  | eval_set_nondet => simp [Cmd.definedVars] at hx
+  | eval_assert => simp [Cmd.definedVars] at hx
+  | eval_assume => simp [Cmd.definedVars] at hx
+  | eval_cover => simp [Cmd.definedVars] at hx
+
+/-! ### Leaf-invariant transport -/
+
+/-- The leaf invariant is preserved when the generator state advances by one
+generation step; only the freshness component weakens. -/
+private theorem NdLeaf.mono {P : PureExpr} [HasBool P] [HasIdent P]
+    {σ σ' : StringGenState} {ρs ρt : Env P}
+    (hstep : StringGenState.GenStep σ σ') (h : NdLeaf σ ρs ρt) : NdLeaf σ' ρs ρt :=
+  { h with fresh := SemanticStore.isReserved.mono hstep h.fresh }
+
+/-- Replaying a user command keeps the leaf invariant and relates the emitted
+snapshots. -/
+private theorem NdLeaf.cmd_step {P : PureExpr} [HasFvar P] [HasFvars P]
+    [HasBoolOps P] [HasVal P] [HasIdent P] [DecidableEq P.Ident]
+    {σ : StringGenState} {ρs ρt : Env P} {c : Cmd P} {σs' : SemanticStore P}
+    {e : Trace P}
+    (hl : NdLeaf σ ρs ρt)
+    (hng : SrcNoGenWrites (P := P) NondetElim.isGeneratedName [.cmd c])
+    (hread : Block.exprsShapeFree (P := P) NondetElim.isGeneratedName [.cmd c])
+    (hsourceWF : WellFormedStore ρs.store ρs.factory)
+    (htargetWF : WellFormedStore ρt.store ρt.factory)
+    (hcongr : WellFormedSemanticEvalExprCongr ρs.factory)
+    (hmono : WellFormedSemanticEvalMono ρs.factory)
+    (heval : EvalCmdE P ρs.factory ρs.store c σs' e) :
+    ∃ σt', EvalCmdE P ρt.factory ρt.store c σt'
+        (Cmd.emittedEvents P c ρt.factory ρt.store) ∧
+      NETraceRel (P := P) e (Cmd.emittedEvents P c ρt.factory ρt.store) ∧
+      NdLeaf σ { ρs with store := σs' } { ρt with store := σt' } := by
+  obtain ⟨hfac, hfail, hstore⟩ := hl.ext
+  have htrace : NETraceRel (P := P) e
+      (Cmd.emittedEvents P c ρt.factory ρt.store) := by
+    rw [heval.emitted_eq]
+    exact cmd_emitted_neTraceRel
+      (Stmt.exprsShapeFree_cmd.mp (Block.exprsShapeFree_singleton.mp hread))
+      hfac hstore hsourceWF htargetWF hcongr
+  have hinit : ∀ x ∈ Cmd.definedVars c, ρt.store x = none := by
+    intro x hx
+    have hsrc : ρs.store x = none := evalCmdE_defined_none heval hx
+    cases hxt : ρt.store x with
+    | none => rfl
+    | some w =>
+      exfalso
+      rcases hstore.2 x (by simp [hxt]) with hs | hextra
+      · simp [hsrc] at hs
+      · exact (noGen_cmd hng hextra).1 hx
+  obtain ⟨σt', hevt, hext', _⟩ :=
+    evalCmdE_replay_extends (NdExtra (P := P)) ρs.factory ρs.store ρt.store σs' c e
+      hstore heval hmono hinit
+  rw [hfac] at hevt
+  refine ⟨σt', hevt, htrace, ⟨⟨hfac, hfail, hext'⟩, ?_, ?_, ?_⟩⟩
+  · intro x hx
+    show σs' x = none
+    rw [evalCmdE_eq_of_not_written heval (noGen_cmd hng hx).1 (noGen_cmd hng hx).2]
+    exact hl.srcFresh x hx
+  · intro s hs hnin
+    have hx : NdExtra (P := P) (HasIdent.ident s) := ⟨s, hs, rfl⟩
+    show σt' (HasIdent.ident s) = none
+    rw [evalCmdE_eq_of_not_written hevt (noGen_cmd hng hx).1 (noGen_cmd hng hx).2]
+    exact hl.fresh s hs hnin
+  · intro x v hx hv
+    have hv' : ρt.store x = some v := by
+      rw [← evalCmdE_eq_of_not_written hevt (noGen_cmd hng hx).1 (noGen_cmd hng hx).2]
+      exact hv
+    exact hl.typed x v hx hv'
+
+/-- Leaving a block scope projects both sides through related parent stores. -/
+private theorem ndLeaf_project {P : PureExpr} [HasBool P] [HasIdent P]
+    {σe : StringGenState} {ρs ρt : Env P} {σps σpt : SemanticStore P}
+    (hext : Env.ExtendsWith (NdExtra (P := P)) ρs ρt)
+    (hsrc : ∀ x, NdExtra (P := P) x → ρs.store x = none)
+    (htyped : ∀ x v, NdExtra (P := P) x → ρt.store x = some v →
+      HasVal.valueOfTy ρt.factory v HasBool.boolTy)
+    (hp : StoreExtendsWith (NdExtra (P := P)) σps σpt)
+    (hf : SemanticStore.isReserved (P := P) NondetElim.isGeneratedName σe σpt) :
+    NdLeaf σe { ρs with store := projectStore σps ρs.store }
+      { ρt with store := projectStore σpt ρt.store } := by
+  refine ⟨⟨hext.1, hext.2.1, StoreExtendsWith.projectStore hp hext.2.2⟩, ?_, ?_, ?_⟩
+  · intro x hx
+    show projectStore σps ρs.store x = none
+    simp only [projectStore, hsrc x hx]
+    split <;> rfl
+  · intro s hs hnin
+    show projectStore σpt ρt.store (HasIdent.ident s) = none
+    simp only [projectStore, hf s hs hnin]
+    simp
+  · intro x v hx hv
+    change projectStore σpt ρt.store x = some v at hv
+    simp only [projectStore] at hv
+    split at hv
+    · exact htyped x v hx hv
+    · simp at hv
+
+/-- Leaving a block scope preserves the leaf invariant: it projects the source
+and target stores through related parent stores, with the exit generator state
+fresh for the projected target store. -/
+private theorem NdLeaf.project {P : PureExpr} [HasBool P] [HasIdent P]
+    {σi σe : StringGenState} {ρs ρt : Env P} {σps σpt : SemanticStore P}
+    (hl : NdLeaf σi ρs ρt) (hp : StoreExtendsWith (NdExtra (P := P)) σps σpt)
+    (hf : SemanticStore.isReserved (P := P) NondetElim.isGeneratedName σe σpt) :
+    NdLeaf σe { ρs with store := projectStore σps ρs.store }
+      { ρt with store := projectStore σpt ρt.store } :=
+  ndLeaf_project hl.ext hl.srcFresh hl.typed hp hf
+
+/-- Initializing a freshly generated guard with a Boolean value. -/
+private theorem NdLeaf.init_guard {P : PureExpr} [HasBool P] [HasIdent P] [DecidableEq P.Ident]
+    [LawfulHasIdent P]
+    {σ : StringGenState} {ρs ρt : Env P} {pf : String}
+    (hwf : StringGenState.WF σ) (hQ : NondetElim.isGeneratedName (StringGenState.gen pf σ).1)
+    (hl : NdLeaf σ ρs ρt) {v : P.Expr} (hv : HasVal.valueOfTy ρt.factory v HasBool.boolTy) :
+    ρt.store (HasIdent.ident (StringGenState.gen pf σ).1) = none ∧
+    NdLeaf (StringGenState.gen pf σ).2 ρs
+      { ρt with
+        store := SemanticStore.update ρt.store
+          (HasIdent.ident (StringGenState.gen pf σ).1) v } := by
+  have hg : NdExtra (P := P) (HasIdent.ident (StringGenState.gen pf σ).1) := ⟨_, hQ, rfl⟩
+  have hnone := SemanticStore.isReserved.gen_slot_none pf hl.fresh hwf hQ
+  refine ⟨hnone, ⟨⟨hl.ext.1, hl.ext.2.1,
+    StoreExtendsWith.update_target hl.ext.2.2 (hl.srcFresh _ hg) hg⟩,
+    hl.srcFresh, SemanticStore.isReserved.storeWith_gen pf v hl.fresh, ?_⟩⟩
+  intro x w hx hw
+  change SemanticStore.update ρt.store _ v x = some w at hw
+  by_cases hxg : x = HasIdent.ident (StringGenState.gen pf σ).1
+  · subst hxg
+    simp [SemanticStore.update] at hw
+    subst hw
+    exact hv
+  · simp only [SemanticStore.update, ite_eq_right hxg] at hw
+    exact hl.typed x w hx hw
+
+/-- Re-havocking a defined guard at the latch and leaving the iteration scope. -/
+private theorem NdLeaf.latch {P : PureExpr} [HasBool P] [HasIdent P] [DecidableEq P.Ident]
+    {σb σe : StringGenState} {ρsb ρtb : Env P} {σps σpt : SemanticStore P}
+    {g : P.Ident} {v : P.Expr}
+    (hl : NdLeaf σb ρsb ρtb) (hg : NdExtra (P := P) g)
+    (hv : HasVal.valueOfTy ρtb.factory v HasBool.boolTy)
+    (hp : StoreExtendsWith (NdExtra (P := P)) σps σpt)
+    (hf : SemanticStore.isReserved (P := P) NondetElim.isGeneratedName σe σpt) :
+    NdLeaf σe { ρsb with store := projectStore σps ρsb.store }
+      { ρtb with store := projectStore σpt (SemanticStore.update ρtb.store g v) } := by
+  have htyped : ∀ x w, NdExtra (P := P) x → SemanticStore.update ρtb.store g v x = some w →
+      HasVal.valueOfTy ρtb.factory w HasBool.boolTy := by
+    intro x w hx hw
+    by_cases hxg : x = g
+    · subst hxg
+      simp [SemanticStore.update] at hw
+      subst hw
+      exact hv
+    · simp only [SemanticStore.update, ite_eq_right hxg] at hw
+      exact hl.typed x w hx hw
+  exact ndLeaf_project (ρt := { ρtb with store := SemanticStore.update ρtb.store g v })
+    ⟨hl.ext.1, hl.ext.2.1, StoreExtendsWith.update_target hl.ext.2.2 (hl.srcFresh g hg) hg⟩
+    hl.srcFresh htyped hp hf
+
+/-! ### Guard evaluation -/
+
+/-- Reading a guard register immediately after writing it returns the written
+boolean value. -/
+private theorem eval_guard_update {P : PureExpr} [HasBool P] [HasFvar P]
+    [HasFvars P] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasVal P]
+    {f : P.Factory} {σ : SemanticStore P} {g : P.Ident} {v : P.Expr}
+    (hv : HasVal.valueOfTy f v HasBool.boolTy)
+    (hvar : WellFormedSemanticEvalVar f) (hmono : WellFormedSemanticEvalMono f) :
+    P.eval f (SemanticStore.update σ g v) (HasFvar.mkTypedFvar g HasBool.boolTy) = some v :=
+  eval_mkTypedFvar_storeWith f σ g v (LawfulHasVal.valueOfTy_isVal _ _ _ hv) hvar hmono
+
+/-- Reading a guard register after a latch havoc and a block-store projection
+returns the written boolean value, provided the parent store keeps the guard
+defined. -/
+private theorem eval_guard_latch {P : PureExpr} [HasBool P] [HasFvar P] [DecidableEq P.Ident]
+    [LawfulHasFvar P] [LawfulHasVal P]
+    {f : P.Factory} {σpt σ : SemanticStore P} {g : P.Ident} {v : P.Expr}
+    (hpg : (σpt g).isSome = true)
+    (hv : HasVal.valueOfTy f v HasBool.boolTy)
+    (hvar : WellFormedSemanticEvalVar f) (hmono : WellFormedSemanticEvalMono f) :
+    P.eval f (projectStore σpt (SemanticStore.update σ g v))
+      (HasFvar.mkTypedFvar g HasBool.boolTy) = some v :=
+  eval_mkTypedFvar_of_value f _ g v (LawfulHasVal.valueOfTy_isVal _ _ _ hv)
+    (by simp [projectStore, hpg, SemanticStore.update]) hvar hmono
+
+/-! ### Target run builders -/
+
+/-- Prepend a silent (empty-trace) event step to a target run, leaving the run's
+trace unchanged. -/
+private theorem starE_cons_nil {P : PureExpr} [HasFvar P] [HasBoolOps P]
+    {c c' c'' : Config P (Cmd P)} {tr : Trace P}
+    (h : StepStmtE P (EvalCmdE P) c [] c') (hr : StepStmtStarE P (EvalCmdE P) c' tr c'') :
+    StepStmtStarE P (EvalCmdE P) c tr c'' :=
+  .step _ [] _ tr _ h hr
+
+/-- Initialize a guard and enter the statement it guards. -/
+private theorem tgt_init_then {P : PureExpr} [HasFvar P] [HasBoolOps P] [DecidableEq P.Ident]
+    {g : P.Ident} {md : MetaData P} {X : Stmt P (Cmd P)} {R : List (Stmt P (Cmd P))}
+    {ρt : Env P} {v : P.Expr}
+    (hnone : ρt.store g = none) (hv : HasVal.valueOfTy ρt.factory v HasBool.boolTy)
+    (hvar : WellFormedSemanticEvalVar ρt.factory) :
+    StepStmtStarE P (EvalCmdE P)
+      (.seq (.stmt (.cmd (HasInit.init g HasBool.boolTy .nondet md)) ρt) (X :: R)) []
+      (.seq (.stmt X { ρt with store := SemanticStore.update ρt.store g v }) R) := by
+  have hinit : InitState P ρt.store g v (SemanticStore.update ρt.store g v) :=
+    InitState.init hnone (by simp [SemanticStore.update])
+      (by intro y hy; simp [SemanticStore.update, Ne.symm hy])
+  have hcmd : EvalCmdE P ρt.factory ρt.store (HasInit.init g HasBool.boolTy .nondet md)
+      (SemanticStore.update ρt.store g v) [] :=
+    EvalCmdE.eval_init_unconstrained hinit hv hvar
+  refine starE_cons_nil (.step_seq_inner (.step_cmd hcmd)) ?_
+  refine starE_cons_nil (.step_admin .step_seq_done) ?_
+  exact starE_cons_nil (.step_admin .step_stmts_cons) (.refl _)
+
+/-- Run the pending latch havoc, leave the iteration scope, and resume the loop. -/
+private theorem tgt_latch {P : PureExpr} [HasFvar P] [HasBoolOps P] [DecidableEq P.Ident]
+    {g : P.Ident} {md : MetaData P} {σpt : SemanticStore P} {ρtb : Env P}
+    {L' : Stmt P (Cmd P)} {prev v : P.Expr}
+    (hprev : ρtb.store g = some prev)
+    (hprevTy : HasVal.valueOfTy ρtb.factory prev HasBool.boolTy)
+    (hv : HasVal.valueOfTy ρtb.factory v HasBool.boolTy)
+    (hvar : WellFormedSemanticEvalVar ρtb.factory) :
+    StepStmtStarE P (EvalCmdE P)
+      (.seq (.block none σpt (.stmts [.cmd (HasHavoc.havoc g md)] ρtb)) [L']) []
+      (.seq (.stmt L'
+        { ρtb with store := projectStore σpt (SemanticStore.update ρtb.store g v) }) []) := by
+  have hupd : UpdateState P ρtb.store g v (SemanticStore.update ρtb.store g v) :=
+    UpdateState.update hprev (by simp [SemanticStore.update])
+      (by intro y hy; simp [SemanticStore.update, Ne.symm hy])
+  have hcmd : EvalCmdE P ρtb.factory ρtb.store (HasHavoc.havoc g md)
+      (SemanticStore.update ρtb.store g v) [] :=
+    EvalCmdE.eval_set_nondet hupd ⟨prev, HasBool.boolTy, hprev, hprevTy, hv⟩ hvar
+  refine starE_cons_nil (.step_admin (.step_seq_inner (.step_block_body .step_stmts_cons))) ?_
+  refine starE_cons_nil
+    (.step_seq_inner (.step_block_body (.step_seq_inner (.step_cmd hcmd)))) ?_
+  refine starE_cons_nil (.step_admin (.step_seq_inner (.step_block_body .step_seq_done))) ?_
+  refine starE_cons_nil (.step_admin (.step_seq_inner (.step_block_body .step_stmts_nil))) ?_
+  refine starE_cons_nil (.step_admin (.step_seq_inner .step_block_done)) ?_
+  refine starE_cons_nil (.step_admin .step_seq_done) ?_
+  exact starE_cons_nil (.step_admin .step_stmts_cons) (.refl _)
+
+
+/-! ### Source step inversion -/
+
+/-- Case analysis on one event step of a `.seq` configuration: either the inner
+configuration steps, or it was terminal (and the sequence advances to its
+continuation), or it was exiting (and the exit propagates). -/
+private theorem stepE_seq_cases {P : PureExpr} [HasFvar P] [HasBoolOps P]
+    {inner : Config P (Cmd P)} {ss : List (Stmt P (Cmd P))} {e : Trace P}
+    {c' : Config P (Cmd P)}
+    (h : StepStmtE P (EvalCmdE P) (.seq inner ss) e c') :
+    (∃ inner', StepStmtE P (EvalCmdE P) inner e inner' ∧ c' = .seq inner' ss) ∨
+    (∃ ρ, inner = .terminal ρ ∧ e = [] ∧ c' = .stmts ss ρ) ∨
+    (∃ l ρ, inner = .exiting l ρ ∧ e = [] ∧ c' = .exiting l ρ) := by
+  cases h with
+  | step_seq_inner h => exact .inl ⟨_, h, rfl⟩
+  | step_admin h =>
+    cases h with
+    | step_seq_inner h => exact .inl ⟨_, .step_admin h, rfl⟩
+    | step_seq_done => exact .inr (.inl ⟨_, rfl, rfl, rfl⟩)
+    | step_seq_exit => exact .inr (.inr ⟨_, _, rfl, rfl, rfl⟩)
+
+/-- A `.stmts` configuration steps silently (empty trace), either to a terminal
+when the list is empty or to a `.seq` of its head statement with the remaining
+list. -/
+private theorem stepE_stmts_cases {P : PureExpr} [HasFvar P] [HasBoolOps P]
+    {ss : List (Stmt P (Cmd P))} {ρ : Env P} {e : Trace P} {c' : Config P (Cmd P)}
+    (h : StepStmtE P (EvalCmdE P) (.stmts ss ρ) e c') :
+    e = [] ∧ ((ss = [] ∧ c' = .terminal ρ) ∨
+      (∃ s rest, ss = s :: rest ∧ c' = .seq (.stmt s ρ) rest)) := by
+  cases h with
+  | step_admin h =>
+    cases h with
+    | step_stmts_nil => exact ⟨rfl, .inl ⟨rfl, rfl⟩⟩
+    | step_stmts_cons => exact ⟨rfl, .inr ⟨_, _, rfl, rfl⟩⟩
+
+/-- A terminal configuration takes no event step. -/
+private theorem stepE_terminal_false {P : PureExpr} [HasFvar P] [HasBoolOps P]
+    {ρ : Env P} {e : Trace P} {c' : Config P (Cmd P)}
+    (h : StepStmtE P (EvalCmdE P) (.terminal ρ) e c') : False := by
+  cases h with
+  | step_admin h => cases h
+
+/-- A non-command statement configuration steps silently by a command-free
+(administrative) control-flow step. -/
+private theorem stepE_stmt_admin {P : PureExpr} [HasFvar P] [HasBoolOps P]
+    {s : Stmt P (Cmd P)} {ρ : Env P} {e : Trace P} {c' : Config P (Cmd P)}
+    (hs : ∀ c, s ≠ .cmd c)
+    (h : StepStmtE P (EvalCmdE P) (.stmt s ρ) e c') :
+    e = [] ∧ StepStmt P (noCommandEvalE P (Cmd P)) (.stmt s ρ) c' := by
+  cases h with
+  | step_cmd _ => exact absurd rfl (hs _)
+  | step_admin h => exact ⟨rfl, h⟩
+
+/-! ### Rewrite shapes -/
+
+/-- Normal form: the pass maps the empty block to the empty block and leaves the
+generator state unchanged. -/
+private theorem nondetElimM_nil {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
+    (σ : StringGenState) :
+    Block.nondetElimM (P := P) (CmdT := Cmd P) [] σ = ([], σ) := by
+  simp [Block.nondetElimM]
+
+/-- Normal form: a singleton block rewrites to the same output statements as its
+single statement. -/
+private theorem nondetElimM_singleton_out {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
+    (s : Stmt P (Cmd P)) (σ : StringGenState) :
+    (Block.nondetElimM [s] σ).1 = (Stmt.nondetElimM s σ).1 := by
+  rw [Block.nondetElimM_cons_out, nondetElimM_nil, List.append_nil]
+
+/-- Normal form: a singleton block advances the generator state exactly as its
+single statement does. -/
+private theorem nondetElimM_singleton_state {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P]
+    [HasBool P] (s : Stmt P (Cmd P)) (σ : StringGenState) :
+    (Block.nondetElimM [s] σ).2 = (Stmt.nondetElimM s σ).2 := by
+  rw [Block.nondetElimM_cons_state, nondetElimM_nil]
+
+/-- Normal form: the pass leaves a command statement and the generator state
+unchanged. -/
+private theorem nondetElimM_cmd {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
+    (c : Cmd P) (σ : StringGenState) :
+    Stmt.nondetElimM (P := P) (.cmd c) σ = ([.cmd c], σ) := by
+  simp [Stmt.nondetElimM]
+
+/-- Normal form: the pass leaves an `.exit` statement and the generator state
+unchanged. -/
+private theorem nondetElimM_exit {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
+    (l : String) (md : MetaData P) (σ : StringGenState) :
+    Stmt.nondetElimM (P := P) (CmdT := Cmd P) (.exit l md) σ = ([.exit l md], σ) := by
+  simp [Stmt.nondetElimM]
+
+/-- Normal form: the pass leaves a `.typeDecl` statement and the generator state
+unchanged. -/
+private theorem nondetElimM_typeDecl {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
+    (t : TypeConstructor) (md : MetaData P) (σ : StringGenState) :
+    Stmt.nondetElimM (P := P) (CmdT := Cmd P) (.typeDecl t md) σ = ([.typeDecl t md], σ) := by
+  simp [Stmt.nondetElimM]
+
+/-- Every statement rewrites to a single statement, except nondeterministic
+conditionals and loops, which gain a guard preheader. -/
+private theorem stmt_nondetElimM_shape {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
+    (s : Stmt P (Cmd P)) (σ : StringGenState) :
+    (∃ s', (Stmt.nondetElimM s σ).1 = [s']) ∨
+    (∃ tss ess md, s = .ite .nondet tss ess md) ∨
+    (∃ m inv body md, s = .loop .nondet m inv body md) := by
+  cases s with
+  | cmd c => exact .inl ⟨.cmd c, by rw [nondetElimM_cmd]⟩
+  | block l bss md => exact .inl ⟨_, Stmt.nondetElimM_block_out l bss md σ⟩
+  | ite c tss ess md =>
+    cases c with
+    | det e => exact .inl ⟨_, Stmt.nondetElimM_ite_det_out e tss ess md σ⟩
+    | nondet => exact .inr (.inl ⟨tss, ess, md, rfl⟩)
+  | loop g m inv body md =>
+    cases g with
+    | det e => exact .inl ⟨_, Stmt.nondetElimM_loop_det_out e m inv body md σ⟩
+    | nondet => exact .inr (.inr ⟨m, inv, body, md, rfl⟩)
+  | exit l md => exact .inl ⟨.exit l md, by rw [nondetElimM_exit]⟩
+  | typeDecl t md => exact .inl ⟨.typeDecl t md, by rw [nondetElimM_typeDecl]⟩
+
+/-! ### Tail-guard definedness transport -/
+
+/-- The pending-latch tail-definedness condition on a configuration is preserved
+by any target run: a generated guard register, once defined, stays defined. -/
+private theorem NdTailCfg.run {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
+    [DecidableEq P.Ident]
+    {tail : Option (P.Ident × MetaData P)} {c c' : Config P (Cmd P)} {tr : Trace P}
+    (h : NdTailCfg tail c) (hrun : StepStmtStarE P (EvalCmdE P) c tr c') :
+    NdTailCfg tail c' :=
+  fun g md ht =>
+    Config.varsDefined_star_ofE (fun he hs => evalCmdE_preserves_isSome he hs) hrun (h g md ht)
+
+/-- A statement configuration satisfies the tail-definedness condition whenever
+its store does. -/
+private theorem NdTailCfg.of_def {P : PureExpr} {tail : Option (P.Ident × MetaData P)}
+    {ρ : Env P} (s : Stmt P (Cmd P)) (h : NdTailDef tail ρ.store) :
+    NdTailCfg tail (.stmt s ρ) :=
+  fun g md ht _ hy => hy ▸ h g md ht
+
+/-- The tail-definedness condition transfers from a configuration to the `.seq`
+built on it; both read the same environment. -/
+private theorem NdTailCfg.seq_of {P : PureExpr} {tail : Option (P.Ident × MetaData P)}
+    {c : Config P (Cmd P)} {R : List (Stmt P (Cmd P))} (h : NdTailCfg tail c) :
+    NdTailCfg tail (.seq c R) := h
+
+/-- The tail-definedness condition transfers from a `.seq` configuration to its
+inner configuration. -/
+private theorem NdTailCfg.seq_inner {P : PureExpr} {tail : Option (P.Ident × MetaData P)}
+    {c : Config P (Cmd P)} {R : List (Stmt P (Cmd P))} (h : NdTailCfg tail (.seq c R)) :
+    NdTailCfg tail c := h
+
+/-- Extract the tail-definedness condition on a terminal configuration's store. -/
+private theorem NdTailDef.of_terminal {P : PureExpr} {tail : Option (P.Ident × MetaData P)}
+    {ρ : Env P} (h : NdTailCfg tail (.terminal ρ)) : NdTailDef tail ρ.store :=
+  fun g md ht => h g md ht g rfl
+
+/-- With no pending latch guard, the tail-definedness condition holds of every
+store vacuously. -/
+private theorem NdTailDef.none' {P : PureExpr} (σ : SemanticStore P) :
+    NdTailDef (none : Option (P.Ident × MetaData P)) σ :=
+  fun _ _ h => by cases h
+
+/-- With no pending latch guard, the tail-definedness condition holds of every
+configuration vacuously. -/
+private theorem NdTailCfg.none' {P : PureExpr} (c : Config P (Cmd P)) :
+    NdTailCfg (none : Option (P.Ident × MetaData P)) c :=
+  fun _ _ h => by cases h
+
+/-! ### Derived constructors -/
+
+/-- Derived `NdSim.stmts` constructor with no pending latch guard: from a leaf
+state, a rewritten statement list simulates its source list. -/
+private theorem NdSim.stmts_none {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
+    {σ : StringGenState} {ss : List (Stmt P (Cmd P))} {ρs ρt : Env P}
+    (hwf : StringGenState.WF σ) (hl : NdLeaf σ ρs ρt)
+    (hng : SrcNoGenWrites (P := P) NondetElim.isGeneratedName ss)
+    (hread : Block.exprsShapeFree (P := P) NondetElim.isGeneratedName ss) :
+    NdSim none (Block.nondetElimM ss σ).2 (.stmts ss ρs)
+      (.stmts (Block.nondetElimM ss σ).1 ρt) := by
+  have h := NdSim.stmts (tail := none) hwf hl hng hread (NdTailDef.none' _)
+  simpa [ndTail] using h
+
+/-- Derived constructor: a simulation of inner configurations lifts to a
+simulation of the two `.seq`s that have an empty continuation. -/
+private theorem NdSim.seq_nil {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
+    {σe : StringGenState} {inner inner' : Config P (Cmd P)}
+    (h : NdSim none σe inner inner') (hwf : StringGenState.WF σe) :
+    NdSim none σe (.seq inner []) (.seq inner' []) := by
+  have h' := NdSim.seq (tail := none) (rest := []) h hwf noGen_nil
+    Block.exprsShapeFree_nil (NdTailCfg.none' _)
+  rw [nondetElimM_nil] at h'
+  simpa [ndTail] using h'
+
+
+/-! ### One-step simulation of leaf configurations -/
+
+/-- A single-statement rewrite simulates one source statement step. -/
+private theorem step_stmt {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
+    [DecidableEq P.Ident]
+    {σ : StringGenState} {s s' : Stmt P (Cmd P)} {ρs ρt : Env P} {e : Trace P}
+    {cs' : Config P (Cmd P)}
+    (hwf : StringGenState.WF σ) (hl : NdLeaf σ ρs ρt)
+    (hng : SrcNoGenWrites (P := P) NondetElim.isGeneratedName [s])
+    (hread : Block.exprsShapeFree (P := P) NondetElim.isGeneratedName [s])
+    (hout : (Stmt.nondetElimM s σ).1 = [s'])
+    (hsourceWF : WellFormedStore ρs.store ρs.factory)
+    (htargetWF : WellFormedStore ρt.store ρt.factory)
+    (hcongr : WellFormedSemanticEvalExprCongr ρs.factory)
+    (hmono : WellFormedSemanticEvalMono ρs.factory)
+    (hstep : StepStmtE P (EvalCmdE P) (.stmt s ρs) e cs') :
+    ∃ ct' e', StepStmtStarE P (EvalCmdE P) (.stmt s' ρt) e' ct' ∧
+      NETraceRel (P := P) e e' ∧
+      NdSim none (Stmt.nondetElimM s σ).2 cs' ct' := by
+  have hfac : ρs.factory = ρt.factory := hl.ext.1
+  have hguard : ∀ {c b : P.Expr}, P.eval ρs.factory ρs.store c = some b →
+      P.eval ρt.factory ρt.store c = some b := by
+    intro c b hc
+    rw [← hfac]
+    exact hmono c b ρs.store ρt.store
+      (storeAgreement_supplies_mono_premise _ _ hl.ext.2.2.1) hc
+  have hreadStmt : Stmt.exprsShapeFree (P := P)
+      NondetElim.isGeneratedName s :=
+    Block.exprsShapeFree_singleton.mp hread
+  cases s with
+  | cmd c =>
+    simp only [nondetElimM_cmd] at hout ⊢
+    obtain rfl := (List.singleton_inj.mp hout).symm
+    obtain ⟨σs', heval, rfl⟩ := StepStmtE.cmd_cases hstep
+    obtain ⟨σt', hevt, htr, hl'⟩ :=
+      hl.cmd_step hng hread hsourceWF htargetWF hcongr hmono heval
+    exact ⟨_, _, StepStmtStarE.single (.step_cmd hevt), htr, .terminal hl'⟩
+  | block l bss md =>
+    rw [Stmt.nondetElimM_block_out] at hout
+    obtain rfl := (List.singleton_inj.mp hout).symm
+    obtain ⟨rfl, hadmin⟩ := stepE_stmt_admin (fun _ h => by cases h) hstep
+    cases hadmin
+    rw [Stmt.nondetElimM_block_state]
+    exact ⟨_, [], StepStmtStarE.single (.step_admin .step_block), .nil,
+      .block (NdSim.stmts_none hwf hl (noGen_block hng)
+          (Stmt.exprsShapeFree_block.mp hreadStmt)) hl.ext.2.2
+        (SemanticStore.isReserved.mono (Block.nondetElimM_genStep bss σ) hl.fresh)⟩
+  | ite c tss ess md =>
+    cases c with
+    | det c =>
+      rw [Stmt.nondetElimM_ite_det_out] at hout
+      obtain rfl := (List.singleton_inj.mp hout).symm
+      obtain ⟨rfl, hadmin⟩ := stepE_stmt_admin (fun _ h => by cases h) hstep
+      rw [Stmt.nondetElimM_ite_det_state]
+      have hstepT : StringGenState.GenStep σ
+          (Block.nondetElimM ess (Block.nondetElimM tss σ).2).2 :=
+        (Block.nondetElimM_genStep tss σ).trans (Block.nondetElimM_genStep ess _)
+      have hfresh := SemanticStore.isReserved.mono hstepT hl.fresh
+      cases hadmin with
+      | step_ite_true hc =>
+        exact ⟨_, [], StepStmtStarE.single (.step_admin (.step_ite_true (hguard hc))), .nil,
+          .block (NdSim.stmts_none hwf hl (noGen_ite_then hng)
+            (Stmt.exprsShapeFree_ite.mp hreadStmt).2.1) hl.ext.2.2 hfresh⟩
+      | step_ite_false hc =>
+        have hstep₁ := Block.nondetElimM_genStep tss σ
+        exact ⟨_, [], StepStmtStarE.single (.step_admin (.step_ite_false (hguard hc))), .nil,
+          .block (NdSim.stmts_none (hstep₁.wf_mono hwf) (hl.mono hstep₁)
+            (noGen_ite_else hng) (Stmt.exprsShapeFree_ite.mp hreadStmt).2.2) hl.ext.2.2 hfresh⟩
+    | nondet =>
+      rw [Stmt.nondetElimM_ite_nondet_out] at hout
+      simp at hout
+  | loop g m inv body md =>
+    cases g with
+    | det c =>
+      rw [Stmt.nondetElimM_loop_det_out] at hout
+      obtain rfl := (List.singleton_inj.mp hout).symm
+      obtain ⟨rfl, hadmin⟩ := stepE_stmt_admin (fun _ h => by cases h) hstep
+      cases hadmin with
+      | step_loop_enter hc =>
+        refine ⟨_, [], StepStmtStarE.single (.step_admin (.step_loop_enter (hguard hc))), .nil, ?_⟩
+        have hinner : NdSim none σ (.block none ρs.store (.stmts body ρs))
+            (.block none ρt.store (.stmts (Block.nondetElimM body σ).1 ρt)) :=
+          .block (NdSim.stmts_none hwf hl (noGen_loop hng)
+            (Stmt.exprsShapeFree_loop.mp hreadStmt).2.2.2) hl.ext.2.2 hl.fresh
+        have h := NdSim.seq (tail := none) (rest := [.loop (.det c) m inv body md])
+          hinner hwf hng hread (NdTailCfg.none' _)
+        rw [nondetElimM_singleton_state, nondetElimM_singleton_out,
+          Stmt.nondetElimM_loop_det_out] at h
+        simpa [ndTail] using h
+      | step_loop_exit hc =>
+        exact ⟨_, [], StepStmtStarE.single (.step_admin (.step_loop_exit (hguard hc))), .nil,
+          .terminal (hl.mono (Stmt.nondetElimM_genStep _ σ))⟩
+    | nondet =>
+      rw [Stmt.nondetElimM_loop_nondet_out] at hout
+      simp at hout
+  | exit l md =>
+    simp only [nondetElimM_exit] at hout ⊢
+    obtain rfl := (List.singleton_inj.mp hout).symm
+    obtain ⟨rfl, hadmin⟩ := stepE_stmt_admin (fun _ h => by cases h) hstep
+    cases hadmin
+    exact ⟨_, [], StepStmtStarE.single (.step_admin .step_exit), .nil, .exiting hl⟩
+  | typeDecl t md =>
+    simp only [nondetElimM_typeDecl] at hout ⊢
+    obtain rfl := (List.singleton_inj.mp hout).symm
+    obtain ⟨rfl, hadmin⟩ := stepE_stmt_admin (fun _ h => by cases h) hstep
+    cases hadmin
+    exact ⟨_, [], StepStmtStarE.single (.step_admin .step_typeDecl), .nil, .terminal hl⟩
+
+/-- A statement-list leaf simulates one source step; a nondeterministic head
+statement moves to its preheader state without consuming a target command. -/
+private theorem step_stmts {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
+    {tail : Option (P.Ident × MetaData P)} {σ : StringGenState}
+    {ss : List (Stmt P (Cmd P))} {ρs ρt : Env P} {e : Trace P} {cs' : Config P (Cmd P)}
+    (hwf : StringGenState.WF σ) (hl : NdLeaf σ ρs ρt)
+    (hng : SrcNoGenWrites (P := P) NondetElim.isGeneratedName ss)
+    (hread : Block.exprsShapeFree (P := P) NondetElim.isGeneratedName ss)
+    (htail : NdTailDef tail ρt.store)
+    (hstep : StepStmtE P (EvalCmdE P) (.stmts ss ρs) e cs') :
+    ∃ ct' e', StepStmtStarE P (EvalCmdE P)
+        (.stmts ((Block.nondetElimM ss σ).1 ++ ndTail tail) ρt) e' ct' ∧
+      NETraceRel (P := P) e e' ∧
+      NdSim tail (Block.nondetElimM ss σ).2 cs' ct' := by
+  obtain ⟨rfl, hcases⟩ := stepE_stmts_cases hstep
+  rcases hcases with ⟨rfl, rfl⟩ | ⟨s, rest, rfl, rfl⟩
+  · simp only [nondetElimM_nil, List.nil_append]
+    cases tail with
+    | none => exact ⟨_, [], StepStmtStarE.single (.step_admin .step_stmts_nil), .nil, .terminal hl⟩
+    | some gm =>
+      obtain ⟨g, md⟩ := gm
+      exact ⟨_, [], .refl _, .nil, .pendingHavoc hl (htail g md rfl)⟩
+  · have hng₁ := noGen_head hng
+    have hngr := noGen_tail hng
+    have ⟨hread₁, hreadr⟩ := Block.exprsShapeFree_cons_iff.mp hread
+    have hreadHead : Block.exprsShapeFree (P := P)
+        NondetElim.isGeneratedName [s] :=
+      Block.exprsShapeFree_singleton.mpr hread₁
+    have hwf₁ : StringGenState.WF (Stmt.nondetElimM s σ).2 :=
+      (Stmt.nondetElimM_genStep s σ).wf_mono hwf
+    rw [Block.nondetElimM_cons_out, Block.nondetElimM_cons_state]
+    rcases stmt_nondetElimM_shape s σ with
+      ⟨s', hs'⟩ | ⟨tss, ess, md, rfl⟩ | ⟨m, inv, body, md, rfl⟩
+    · rw [hs', List.singleton_append, List.cons_append]
+      exact ⟨_, [], StepStmtStarE.single (.step_admin .step_stmts_cons), .nil,
+        .seq (.stmt hwf hl hng₁ hreadHead hs') hwf₁ hngr hreadr
+          (NdTailCfg.of_def _ htail)⟩
+    · rw [Stmt.nondetElimM_ite_nondet_out]
+      dsimp only
+      simp only [List.cons_append, List.nil_append]
+      exact ⟨_, [], StepStmtStarE.single (.step_admin .step_stmts_cons), .nil,
+        .seqIte hwf hl hng₁ hreadHead hngr hreadr htail⟩
+    · rw [Stmt.nondetElimM_loop_nondet_out]
+      dsimp only
+      simp only [List.cons_append, List.nil_append]
+      exact ⟨_, [], StepStmtStarE.single (.step_admin .step_stmts_cons), .nil,
+        .seqLoop hwf hl hng₁ hreadHead hngr hreadr htail⟩
+
+
+/-- Preheader of a nondeterministic `ite`: the source branch choice drives the
+target guard initialization, and the target then enters the matching branch
+of the rewritten deterministic `ite`, emitting no events. -/
+private theorem step_seqIte {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
+    [DecidableEq P.Ident] [LawfulHasIdent P] [LawfulHasFvar P] [LawfulHasVal P]
+    {tail : Option (P.Ident × MetaData P)} {σ : StringGenState}
+    {tss ess : List (Stmt P (Cmd P))} {md : MetaData P} {rest : List (Stmt P (Cmd P))}
+    {ρs ρt : Env P} {e : Trace P} {cs' : Config P (Cmd P)}
+    (hwf : StringGenState.WF σ) (hl : NdLeaf σ ρs ρt)
+    (hng : SrcNoGenWrites (P := P) NondetElim.isGeneratedName [.ite .nondet tss ess md])
+    (hread : Block.exprsShapeFree (P := P) NondetElim.isGeneratedName
+      [.ite .nondet tss ess md])
+    (hngr : SrcNoGenWrites (P := P) NondetElim.isGeneratedName rest)
+    (hreadr : Block.exprsShapeFree (P := P) NondetElim.isGeneratedName rest)
+    (htail : NdTailDef tail ρt.store)
+    (hvar : WellFormedSemanticEvalVar ρs.factory) (hmono : WellFormedSemanticEvalMono ρs.factory)
+    (hstep : StepStmtE P (EvalCmdE P) (.seq (.stmt (.ite .nondet tss ess md) ρs) rest) e cs') :
+    ∃ ct' e', StepStmtStarE P (EvalCmdE P)
+        (.seq (.stmt (.cmd (HasInit.init (ndIteGuard (P := P) σ) HasBool.boolTy .nondet md)) ρt)
+          (ndIteTgt tss ess md σ ::
+            ((Block.nondetElimM rest (Stmt.nondetElimM (.ite .nondet tss ess md) σ).2).1 ++
+              ndTail tail))) e' ct' ∧
+      NETraceRel (P := P) e e' ∧
+      NdSim tail (Block.nondetElimM rest (Stmt.nondetElimM (.ite .nondet tss ess md) σ).2).2
+        cs' ct' := by
+  have hfac : ρs.factory = ρt.factory := hl.ext.1
+  have hvarT : WellFormedSemanticEvalVar ρt.factory := hfac ▸ hvar
+  have hmonoT : WellFormedSemanticEvalMono ρt.factory := hfac ▸ hmono
+  have hstep₁ := StringGenState.GenStep.of_gen NondetElim.prefixIte σ
+  have hwf₁ := hstep₁.wf_mono hwf
+  have hstepR : StringGenState.GenStep (StringGenState.gen NondetElim.prefixIte σ).2
+      (Stmt.nondetElimM (.ite .nondet tss ess md) σ).2 := by
+    rw [Stmt.nondetElimM_ite_nondet_state]
+    exact (Block.nondetElimM_genStep tss _).trans (Block.nondetElimM_genStep ess _)
+  have hwfR : StringGenState.WF (Stmt.nondetElimM (.ite .nondet tss ess md) σ).2 :=
+    (Stmt.nondetElimM_genStep _ σ).wf_mono hwf
+  have htc : NdTailCfg tail
+      (.seq (.stmt (.cmd (HasInit.init (ndIteGuard (P := P) σ) HasBool.boolTy .nondet md)) ρt)
+        (ndIteTgt tss ess md σ ::
+          ((Block.nondetElimM rest (Stmt.nondetElimM (.ite .nondet tss ess md) σ).2).1 ++
+            ndTail tail))) :=
+    NdTailCfg.seq_of (NdTailCfg.of_def _ htail)
+  have hreadIte := Stmt.exprsShapeFree_ite.mp
+    (Block.exprsShapeFree_singleton.mp hread)
+  rcases stepE_seq_cases hstep with ⟨inner', hinner, rfl⟩ | ⟨_, h, _, _⟩ | ⟨_, _, h, _, _⟩
+  · obtain ⟨rfl, hadmin⟩ := stepE_stmt_admin (fun _ h => by cases h) hinner
+    cases hadmin with
+    | step_ite_nondet_true =>
+      have hv := (HasBool.boolIsValOfTy ρt.factory).1
+      obtain ⟨hnone, hl₁⟩ := hl.init_guard hwf (NondetElim.isGeneratedName_gen.1 σ) hv
+      have hg := eval_guard_update (σ := ρt.store) (g := ndIteGuard (P := P) σ) hv hvarT hmonoT
+      have hrun := ReflTransTrace.trans _ (tgt_init_then (md := md) (X := ndIteTgt tss ess md σ)
+          (R := (Block.nondetElimM rest (Stmt.nondetElimM (.ite .nondet tss ess md) σ).2).1 ++
+            ndTail tail) hnone hv hvarT)
+        (StepStmtStarE.single (.step_seq_inner (.step_admin (.step_ite_true hg))))
+      exact ⟨_, _, hrun, .nil,
+        .seq (.block (NdSim.stmts_none hwf₁ hl₁ (noGen_ite_then hng) hreadIte.2.1)
+          hl₁.ext.2.2
+          (SemanticStore.isReserved.mono hstepR hl₁.fresh)) hwfR hngr hreadr
+          (htc.run hrun).seq_inner⟩
+    | step_ite_nondet_false =>
+      have hv := (HasBool.boolIsValOfTy ρt.factory).2
+      obtain ⟨hnone, hl₁⟩ := hl.init_guard hwf (NondetElim.isGeneratedName_gen.1 σ) hv
+      have hg := eval_guard_update (σ := ρt.store) (g := ndIteGuard (P := P) σ) hv hvarT hmonoT
+      have hrun := ReflTransTrace.trans _ (tgt_init_then (md := md) (X := ndIteTgt tss ess md σ)
+          (R := (Block.nondetElimM rest (Stmt.nondetElimM (.ite .nondet tss ess md) σ).2).1 ++
+            ndTail tail) hnone hv hvarT)
+        (StepStmtStarE.single (.step_seq_inner (.step_admin (.step_ite_false hg))))
+      have hstep₂ := Block.nondetElimM_genStep tss (StringGenState.gen NondetElim.prefixIte σ).2
+      exact ⟨_, _, hrun, .nil,
+        .seq (.block (NdSim.stmts_none (hstep₂.wf_mono hwf₁) (hl₁.mono hstep₂)
+            (noGen_ite_else hng) hreadIte.2.2) hl₁.ext.2.2
+          (SemanticStore.isReserved.mono hstepR hl₁.fresh)) hwfR hngr hreadr
+          (htc.run hrun).seq_inner⟩
+  · cases h
+  · cases h
+
+/-- Preheader of a nondeterministic loop: the source's first enter/exit choice
+drives the target guard initialization, after which the rewritten
+deterministic loop takes the same decision, emitting no events. -/
+private theorem step_seqLoop {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
+    [DecidableEq P.Ident] [LawfulHasIdent P] [LawfulHasFvar P] [LawfulHasVal P]
+    {tail : Option (P.Ident × MetaData P)} {σ : StringGenState}
+    {m : Option P.Expr} {inv : List (String × P.Expr)} {body : List (Stmt P (Cmd P))}
+    {md : MetaData P} {rest : List (Stmt P (Cmd P))}
+    {ρs ρt : Env P} {e : Trace P} {cs' : Config P (Cmd P)}
+    (hwf : StringGenState.WF σ) (hl : NdLeaf σ ρs ρt)
+    (hng : SrcNoGenWrites (P := P) NondetElim.isGeneratedName [.loop .nondet m inv body md])
+    (hread : Block.exprsShapeFree (P := P) NondetElim.isGeneratedName
+      [.loop .nondet m inv body md])
+    (hngr : SrcNoGenWrites (P := P) NondetElim.isGeneratedName rest)
+    (hreadr : Block.exprsShapeFree (P := P) NondetElim.isGeneratedName rest)
+    (htail : NdTailDef tail ρt.store)
+    (hvar : WellFormedSemanticEvalVar ρs.factory) (hmono : WellFormedSemanticEvalMono ρs.factory)
+    (hstep : StepStmtE P (EvalCmdE P)
+      (.seq (.stmt (.loop .nondet m inv body md) ρs) rest) e cs') :
+    ∃ ct' e', StepStmtStarE P (EvalCmdE P)
+        (.seq (.stmt (.cmd (HasInit.init (ndLoopGuard (P := P) σ) HasBool.boolTy .nondet md)) ρt)
+          (ndLoopTgt m inv body md σ ::
+            ((Block.nondetElimM rest (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2).1 ++
+              ndTail tail))) e' ct' ∧
+      NETraceRel (P := P) e e' ∧
+      NdSim tail (Block.nondetElimM rest (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2).2
+        cs' ct' := by
+  have hfac : ρs.factory = ρt.factory := hl.ext.1
+  have hvarT : WellFormedSemanticEvalVar ρt.factory := hfac ▸ hvar
+  have hmonoT : WellFormedSemanticEvalMono ρt.factory := hfac ▸ hmono
+  have hstep₁ := StringGenState.GenStep.of_gen NondetElim.prefixLoop σ
+  have hwf₁ := hstep₁.wf_mono hwf
+  have hσr : (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2 =
+      (Block.nondetElimM body (StringGenState.gen NondetElim.prefixLoop σ).2).2 :=
+    Stmt.nondetElimM_loop_nondet_state m inv body md σ
+  have hstepR : StringGenState.GenStep (StringGenState.gen NondetElim.prefixLoop σ).2
+      (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2 := by
+    rw [hσr]
+    exact Block.nondetElimM_genStep body _
+  have hwfR : StringGenState.WF (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2 :=
+    (Stmt.nondetElimM_genStep _ σ).wf_mono hwf
+  have htc : NdTailCfg tail
+      (.seq (.stmt (.cmd (HasInit.init (ndLoopGuard (P := P) σ) HasBool.boolTy .nondet md)) ρt)
+        (ndLoopTgt m inv body md σ ::
+          ((Block.nondetElimM rest (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2).1 ++
+            ndTail tail))) :=
+    NdTailCfg.seq_of (NdTailCfg.of_def _ htail)
+  have hreadLoop := Stmt.exprsShapeFree_loop.mp
+    (Block.exprsShapeFree_singleton.mp hread)
+  rcases stepE_seq_cases hstep with ⟨inner', hinner, rfl⟩ | ⟨_, h, _, _⟩ | ⟨_, _, h, _, _⟩
+  · obtain ⟨rfl, hadmin⟩ := stepE_stmt_admin (fun _ h => by cases h) hinner
+    cases hadmin with
+    | step_loop_nondet_enter =>
+      have hv := (HasBool.boolIsValOfTy ρt.factory).1
+      obtain ⟨hnone, hl₁⟩ := hl.init_guard hwf (NondetElim.isGeneratedName_gen.2 σ) hv
+      have hg := eval_guard_update (σ := ρt.store) (g := ndLoopGuard (P := P) σ) hv hvarT hmonoT
+      have hrun := ReflTransTrace.trans _
+        (tgt_init_then (md := md) (X := ndLoopTgt m inv body md σ)
+          (R := (Block.nondetElimM rest (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2).1 ++
+            ndTail tail) hnone hv hvarT)
+        (StepStmtStarE.single (.step_seq_inner (.step_admin (.step_loop_enter hg))))
+      have hgdef : (SemanticStore.update ρt.store (ndLoopGuard (P := P) σ) HasBool.tt
+          (ndLoopGuard (P := P) σ)).isSome = true := by
+        simp [SemanticStore.update]
+      have hbody := NdSim.stmts (tail := some (ndLoopGuard (P := P) σ, md)) hwf₁ hl₁
+        (noGen_loop hng) hreadLoop.2.2.2 (fun g' md' h => by cases h; exact hgdef)
+      have hiter := NdSim.iter (m := m) (inv := inv) hwf₁ (noGen_loop hng)
+        hreadLoop.2.2.2 hl₁.ext.2.2 hl₁.fresh hgdef hbody
+      rw [← hσr] at hiter
+      exact ⟨_, _, hrun, .nil,
+        .seq hiter hwfR hngr hreadr (htc.run hrun).seq_inner⟩
+    | step_loop_nondet_exit =>
+      have hv := (HasBool.boolIsValOfTy ρt.factory).2
+      obtain ⟨hnone, hl₁⟩ := hl.init_guard hwf (NondetElim.isGeneratedName_gen.2 σ) hv
+      have hg := eval_guard_update (σ := ρt.store) (g := ndLoopGuard (P := P) σ) hv hvarT hmonoT
+      have hrun := ReflTransTrace.trans _
+        (tgt_init_then (md := md) (X := ndLoopTgt m inv body md σ)
+          (R := (Block.nondetElimM rest (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2).1 ++
+            ndTail tail) hnone hv hvarT)
+        (StepStmtStarE.single (.step_seq_inner (.step_admin (.step_loop_exit hg))))
+      exact ⟨_, _, hrun, .nil,
+        .seq (.terminal (hl₁.mono hstepR)) hwfR hngr hreadr
+          (htc.run hrun).seq_inner⟩
+  · cases h
+  · cases h
+
+/-- Loop latch: the source's enter/exit choice at the loop head drives the
+pending target latch havoc; the target leaves the iteration scope and its
+rewritten loop takes the same decision, realigning silently. -/
+private theorem step_headStmt {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
+    [DecidableEq P.Ident] [LawfulHasFvar P] [LawfulHasVal P]
+    {σ σb : StringGenState} {m : Option P.Expr} {inv : List (String × P.Expr)}
+    {body : List (Stmt P (Cmd P))} {md : MetaData P} {σps σpt : SemanticStore P}
+    {ρsb ρtb : Env P} {e : Trace P} {cs' : Config P (Cmd P)}
+    (hinv : NdHeadInv σ σb body σps σpt ρsb ρtb)
+    (hvar : WellFormedSemanticEvalVar ρsb.factory) (hmono : WellFormedSemanticEvalMono ρsb.factory)
+    (hstep : StepStmtE P (EvalCmdE P)
+      (.seq (.stmt (.loop .nondet m inv body md)
+        { ρsb with store := projectStore σps ρsb.store }) []) e cs') :
+    ∃ ct' e', StepStmtStarE P (EvalCmdE P)
+        (.seq (.block none σpt (.stmts [.cmd (HasHavoc.havoc (ndLoopGuard (P := P) σ) md)] ρtb))
+          [ndLoopTgt m inv body md σ]) e' ct' ∧
+      NETraceRel (P := P) e e' ∧
+      NdSim none
+        (Block.nondetElimM body
+          (StringGenState.gen NondetElim.prefixLoop σ).2).2 cs' ct' := by
+  have hfac : ρsb.factory = ρtb.factory := hinv.leaf.ext.1
+  have hvarT : WellFormedSemanticEvalVar ρtb.factory := hfac ▸ hvar
+  have hmonoT : WellFormedSemanticEvalMono ρtb.factory := hfac ▸ hmono
+  have hgx : NdExtra (P := P) (ndLoopGuard (P := P) σ) :=
+    ⟨_, NondetElim.isGeneratedName_gen.2 σ, rfl⟩
+  obtain ⟨prev, hprev⟩ := Option.isSome_iff_exists.mp hinv.guard
+  have hprevTy := hinv.leaf.typed _ prev hgx hprev
+  have hwfE : StringGenState.WF
+      (Block.nondetElimM body (StringGenState.gen NondetElim.prefixLoop σ).2).2 :=
+    (Block.nondetElimM_genStep body _).wf_mono hinv.wf
+  rcases stepE_seq_cases hstep with ⟨inner', hinner, rfl⟩ | ⟨_, h, _, _⟩ | ⟨_, _, h, _, _⟩
+  · obtain ⟨rfl, hadmin⟩ := stepE_stmt_admin (fun _ h => by cases h) hinner
+    cases hadmin with
+    | step_loop_nondet_enter =>
+      have hv := (HasBool.boolIsValOfTy ρtb.factory).1
+      have hl' := hinv.leaf.latch hgx hv hinv.parent hinv.parentFresh
+      have hg := eval_guard_latch (σ := ρtb.store) hinv.parentGuard hv hvarT hmonoT
+      have hrun := ReflTransTrace.trans _
+        (tgt_latch (md := md) (σpt := σpt) (L' := ndLoopTgt m inv body md σ) hprev hprevTy hv hvarT)
+        (StepStmtStarE.single (.step_seq_inner (.step_admin (.step_loop_enter hg))))
+      have hgdef : (projectStore σpt (SemanticStore.update ρtb.store (ndLoopGuard (P := P) σ)
+          HasBool.tt) (ndLoopGuard (P := P) σ)).isSome = true := by
+        simp [projectStore, hinv.parentGuard, SemanticStore.update]
+      have hbody := NdSim.stmts (tail := some (ndLoopGuard (P := P) σ, md)) hinv.wf hl'
+        hinv.noGen hinv.noRead (fun g' md' h => by cases h; exact hgdef)
+      have hiter := NdSim.iter (m := m) (inv := inv) hinv.wf hinv.noGen hinv.noRead
+        hl'.ext.2.2 hl'.fresh hgdef hbody
+      exact ⟨_, _, hrun, .nil, NdSim.seq_nil hiter hwfE⟩
+    | step_loop_nondet_exit =>
+      have hv := (HasBool.boolIsValOfTy ρtb.factory).2
+      have hl' := hinv.leaf.latch hgx hv hinv.parent hinv.parentFresh
+      have hg := eval_guard_latch (σ := ρtb.store) hinv.parentGuard hv hvarT hmonoT
+      have hrun := ReflTransTrace.trans _
+        (tgt_latch (md := md) (σpt := σpt) (L' := ndLoopTgt m inv body md σ) hprev hprevTy hv hvarT)
+        (StepStmtStarE.single (.step_seq_inner (.step_admin (.step_loop_exit hg))))
+      exact ⟨_, _, hrun, .nil,
+        NdSim.seq_nil (.terminal (hl'.mono (Block.nondetElimM_genStep body _))) hwfE⟩
+  · cases h
+  · cases h
+
+
+/-! ### Forward simulation -/
+
+/-- One source event step is matched by a finite target run under
+`NETraceRel`; user commands replay in lockstep and all generated guard steps are
+silent. -/
+private theorem NdSim.step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
+    [DecidableEq P.Ident] [LawfulHasIdent P] [LawfulHasFvar P] [LawfulHasVal P]
+    {tail : Option (P.Ident × MetaData P)} {σe : StringGenState}
+    {cs ct : Config P (Cmd P)} (h : NdSim tail σe cs ct) :
+    ∀ {e : Trace P} {cs' : Config P (Cmd P)},
+      Config.storeWellDefined cs →
+      Config.storeWellDefined ct →
+      WellFormedSemanticEvalExprCongr cs.getEnv.factory →
+      WellFormedSemanticEvalVar cs.getEnv.factory →
+      WellFormedSemanticEvalMono cs.getEnv.factory →
+      StepStmtE P (EvalCmdE P) cs e cs' →
+      ∃ ct' e', StepStmtStarE P (EvalCmdE P) ct e' ct' ∧
+        NETraceRel (P := P) e e' ∧ NdSim tail σe cs' ct' := by
+  induction h with
+  | stmts hwf hl hng hread htail =>
+    intro e cs' _ _ _ _ _ hstep
+    exact step_stmts hwf hl hng hread htail hstep
+  | stmt hwf hl hng hread hout =>
+    intro e cs' hsourceWF htargetWF hcongr _ hmono hstep
+    exact step_stmt hwf hl hng hread hout hsourceWF htargetWF hcongr hmono hstep
+  | terminal _ =>
+    intro e cs' _ _ _ _ _ hstep
+    exact (stepE_terminal_false hstep).elim
+  | pendingHavoc _ _ =>
+    intro e cs' _ _ _ _ _ hstep
+    exact (stepE_terminal_false hstep).elim
+  | exiting _ =>
+    intro e cs' _ _ _ _ _ hstep
+    exact (StepStmtE.exiting_false hstep).elim
+  | seq hinner hwf hng hread htail ih =>
+    intro e cs' hsourceWF htargetWF hcongr hvar hmono hstep
+    rcases stepE_seq_cases hstep with
+      ⟨inner'', hinnerStep, rfl⟩ | ⟨ρ, rfl, rfl, rfl⟩ | ⟨l, ρ, rfl, rfl, rfl⟩
+    · obtain ⟨ct', e', hrun, htr, hsim⟩ :=
+        ih hsourceWF htargetWF hcongr hvar hmono hinnerStep
+      exact ⟨_, e', seq_inner_starE _ hrun, htr,
+        .seq hsim hwf hng hread (htail.run hrun)⟩
+    · cases hinner with
+      | terminal hl =>
+        exact ⟨_, [], StepStmtStarE.single (.step_admin .step_seq_done), .nil,
+          .stmts hwf hl hng hread (NdTailDef.of_terminal htail)⟩
+    · cases hinner with
+      | exiting hl =>
+        exact ⟨_, [], StepStmtStarE.single (.step_admin .step_seq_exit), .nil,
+          .exiting (hl.mono (Block.nondetElimM_genStep _ _))⟩
+  | block hinner hp hf ih =>
+    intro e cs' hsourceWF htargetWF hcongr hvar hmono hstep
+    rcases StepStmtE.block_cases hstep with
+      ⟨inner'', hinnerStep, rfl⟩ | ⟨ρ, rfl, rfl, rfl⟩ | ⟨l', ρ, rfl, rfl, hlbl, rfl⟩ |
+        ⟨l', ρ, rfl, rfl, hlbl, rfl⟩
+    · obtain ⟨ct', e', hrun, htr, hsim⟩ :=
+        ih hsourceWF.2 htargetWF.2 hcongr hvar hmono hinnerStep
+      exact ⟨_, e', block_inner_starE hrun, htr, .block hsim hp hf⟩
+    · cases hinner with
+      | terminal hl =>
+        exact ⟨_, [], StepStmtStarE.single (.step_admin .step_block_done), .nil,
+          .terminal (hl.project hp hf)⟩
+    · cases hinner with
+      | exiting hl =>
+        exact ⟨_, [], StepStmtStarE.single (.step_admin (.step_block_exit_match hlbl)), .nil,
+          .terminal (hl.project hp hf)⟩
+    · cases hinner with
+      | exiting hl =>
+        exact ⟨_, [], StepStmtStarE.single (.step_admin (.step_block_exit_mismatch hlbl)), .nil,
+          .exiting (hl.project hp hf)⟩
+  | seqIte hwf hl hng hread hngr hreadr htail =>
+    intro e cs' _ _ _ hvar hmono hstep
+    exact step_seqIte hwf hl hng hread hngr hreadr htail hvar hmono hstep
+  | seqLoop hwf hl hng hread hngr hreadr htail =>
+    intro e cs' _ _ _ hvar hmono hstep
+    exact step_seqLoop hwf hl hng hread hngr hreadr htail hvar hmono hstep
+  | iter hwf hng hread hp hf hg hbody ih =>
+    intro e cs' hsourceWF htargetWF hcongr hvar hmono hstep
+    rcases stepE_seq_cases hstep with ⟨inner'', hinnerStep, rfl⟩ | ⟨_, h, _, _⟩ | ⟨_, _, h, _, _⟩
+    · rcases StepStmtE.block_cases hinnerStep with
+        ⟨cs'', hbodyStep, rfl⟩ | ⟨ρ, rfl, rfl, rfl⟩ | ⟨l', ρ, rfl, rfl, hlbl, rfl⟩ |
+          ⟨l', ρ, rfl, rfl, hlbl, rfl⟩
+      · obtain ⟨ct', e', hrun, htr, hsim⟩ :=
+          ih hsourceWF.2 htargetWF.2 hcongr hvar hmono hbodyStep
+        exact ⟨_, e', seq_inner_starE _ (block_inner_starE hrun), htr,
+          .iter hwf hng hread hp hf hg hsim⟩
+      · cases hbody with
+        | pendingHavoc hl hgdef =>
+          exact ⟨_, [], .refl _, .nil, .headTerm ⟨hwf, hng, hread, hp, hf, hg, hl, hgdef⟩⟩
+      · cases hlbl
+      · cases hbody with
+        | exiting hl =>
+          exact ⟨_, [], StepStmtStarE.single (.step_admin (.step_seq_inner
+              (.step_block_exit_mismatch hlbl))), .nil,
+            .seqExit
+              (hl.project hp
+                (SemanticStore.isReserved.mono
+                  (Block.nondetElimM_genStep _ _) hf))⟩
+    · cases h
+    · cases h
+  | headTerm hinv =>
+    intro e cs' _ _ _ _ _ hstep
+    rcases stepE_seq_cases hstep with ⟨_, hinnerStep, rfl⟩ | ⟨_, h, rfl, rfl⟩ | ⟨_, _, h, _, _⟩
+    · exact (stepE_terminal_false hinnerStep).elim
+    · cases h
+      exact ⟨_, [], .refl _, .nil, .headStmts hinv⟩
+    · cases h
+  | headStmts hinv =>
+    intro e cs' _ _ _ _ _ hstep
+    obtain ⟨rfl, hcases⟩ := stepE_stmts_cases hstep
+    rcases hcases with ⟨h, _⟩ | ⟨_, _, h, rfl⟩
+    · cases h
+    · cases h
+      exact ⟨_, [], .refl _, .nil, .headStmt hinv⟩
+  | headStmt hinv =>
+    intro e cs' _ _ _ hvar hmono hstep
+    exact step_headStmt hinv hvar hmono hstep
+  | seqExit hl =>
+    intro e cs' _ _ _ _ _ hstep
+    rcases stepE_seq_cases hstep with ⟨_, hinnerStep, rfl⟩ | ⟨_, h, _, _⟩ | ⟨_, _, h, rfl, rfl⟩
+    · exact (StepStmtE.exiting_false hinnerStep).elim
+    · cases h
+    · cases h
+      exact ⟨_, [], StepStmtStarE.single (.step_admin .step_seq_exit), .nil, .exiting hl⟩
+
+/-- Every finite source trace prefix is matched by a target trace prefix
+reaching a related configuration. -/
+private theorem NdSim.trace {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
+    [DecidableEq P.Ident] [LawfulHasIdent P] [LawfulHasFvar P] [LawfulHasVal P]
+    {tail : Option (P.Ident × MetaData P)} {σe : StringGenState}
+    {cs ct cs' : Config P (Cmd P)} {tr : Trace P}
+    (h : NdSim tail σe cs ct)
+    (hcongr : WellFormedSemanticEvalExprCongr cs.getEnv.factory)
+    (hsourceWF : Config.storeWellDefined cs)
+    (htargetWF : Config.storeWellDefined ct)
+    (hsourceVal : WellFormedSemanticEvalVal (P := P) cs.getEnv.factory)
+    (htargetVal : WellFormedSemanticEvalVal (P := P) ct.getEnv.factory)
+    (hvar : WellFormedSemanticEvalVar cs.getEnv.factory)
+    (hmono : WellFormedSemanticEvalMono cs.getEnv.factory)
+    (hrun : StepStmtStarE P (EvalCmdE P) cs tr cs') :
+    ∃ ct' tr', StepStmtStarE P (EvalCmdE P) ct tr' ct' ∧
+      NETraceRel (P := P) tr tr' ∧ NdSim tail σe cs' ct' := by
+  induction hrun generalizing ct with
+  | refl => exact ⟨ct, [], .refl _, .nil, h⟩
+  | step c e c₁ rest c₂ hstep _ ih =>
+    obtain ⟨ct₁, e', hrun₁, htr₁, h₁⟩ :=
+      h.step hsourceWF htargetWF hcongr hvar hmono hstep
+    have hsourceWF₁ : Config.storeWellDefined c₁ :=
+      Config.storeWellDefined_step_evalCmdE hsourceVal hstep hsourceWF
+    have htargetWF₁ : Config.storeWellDefined ct₁ :=
+      Config.storeWellDefined_star_evalCmdE htargetVal hrun₁ htargetWF
+    have hfac : c.getEnv.factory = c₁.getEnv.factory := stepE_preserves_factory hstep
+    have htargetFac : ct.getEnv.factory = ct₁.getEnv.factory :=
+      starE_preserves_factory hrun₁
+    obtain ⟨ct₂, tr', hrun₂, htr₂, h₂⟩ :=
+      ih h₁ (hfac ▸ hcongr) hsourceWF₁ htargetWF₁
+        (hfac ▸ hsourceVal) (htargetFac ▸ htargetVal)
+        (hfac ▸ hvar) (hfac ▸ hmono)
+    exact ⟨ct₂, e' ++ tr', ReflTransTrace.trans _ hrun₁ hrun₂,
+      htr₁.append htr₂, h₂⟩
+
+end NondetElimTrace
+
+open NondetElimTrace in
+/-- `Block.nondetElim` overapproximates its source on event traces. For a
+block that never writes or reads an `NondetElim.isGeneratedName` name, every
+finite source trace prefix is matched by a target prefix under `NETraceRel`.
+generated guard commands are event-silent and the source commands replay
+one-for-one, so no event is inserted or dropped on either side.
+Terminating and exiting runs preserve their outcome shape and end in an
+environment extended only by generated guard registers. -/
+theorem NondetElim.Internal.overapproximates_upto_base {P : PureExpr} [HasFvar P] [HasFvars P]
+    [HasBoolOps P] [LawfulHasVal P] [HasIdent P] [HasInt P] [HasIntOps P] [DecidableEq P.Ident]
     [LawfulHasFvar P] [LawfulHasIdent P] [HasSubstFvar P] :
+    Specification.Transform.OverapproximatesTracesUptoWhen
+      (NondetElimTrace.NETraceRel (P := P))
+      (fun x y => x = y)
+      (Env.ExtendsWith (IdentOfStringKind NondetElim.isGeneratedName))
+      (EventLang.imperativeBlockE P (Cmd P) (EvalCmdE P) ⟨String → Prop, BlockInitEnvWF⟩)
+      (EventLang.imperativeBlockE P (Cmd P) (EvalCmdE P) ⟨String → Prop, BlockInitEnvWF⟩)
+      (fun ss => some (Block.nondetElim ss))
+      (fun ss => SrcNoGenWrites NondetElim.isGeneratedName ss
+        ∧ Block.exprsShapeFree NondetElim.isGeneratedName ss)
+      NondetElim.isGeneratedName NondetElim.isGeneratedName := by
+  intro ss ss' ht hpre ρ₀ ρ₀' hEq hwf
+  subst hEq
+  simp only [Option.some.injEq] at ht
+  subst ht
+  obtain ⟨hng, hread⟩ := hpre
+  change BlockInitEnvWF NondetElim.isGeneratedName ss ρ₀ at hwf
+  have hsrc : ∀ x, NdExtra (P := P) x → ρ₀.store x = none :=
+    fun x hx => hwf.definedVarsNotReserved x hx
+  have hleaf : NdLeaf StringGenState.emp ρ₀ ρ₀ :=
+    ⟨Env.ExtendsWith.refl _ _, hsrc, fun s hs _ => hsrc _ ⟨s, hs, rfl⟩,
+      fun x v hx hv => by rw [hsrc x hx] at hv; cases hv⟩
+  obtain ⟨σe, hsim₀⟩ : ∃ σe, NdSim none σe (.stmts ss ρ₀) (.stmts (Block.nondetElim ss) ρ₀) :=
+    ⟨_, NdSim.stmts_none StringGenState.wf_emp hleaf hng hread⟩
+  have hvar : WellFormedSemanticEvalVar (Config.stmts ss ρ₀).getEnv.factory := hwf.var
+  have hmono : WellFormedSemanticEvalMono (Config.stmts ss ρ₀).getEnv.factory := hwf.mono
+  have hcongr : WellFormedSemanticEvalExprCongr (Config.stmts ss ρ₀).getEnv.factory :=
+    hwf.exprCongr
+  have hstoreWF : Config.storeWellDefined (Config.stmts ss ρ₀) := hwf.storeWellDefined
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro cfg trace hrun
+    obtain ⟨ct', tr', hrun', htr, _⟩ := hsim₀.trace hcongr hstoreWF
+      hstoreWF hwf.val hwf.val hvar hmono hrun
+    exact ⟨ct', tr', hrun', htr⟩
+  · intro ρ' trace hrun
+    obtain ⟨ct', tr', hrun', htr, hsim⟩ := hsim₀.trace hcongr hstoreWF
+      hstoreWF hwf.val hwf.val hvar hmono hrun
+    cases hsim with
+    | terminal hl => exact ⟨_, tr', hrun', hl.ext, htr⟩
+  · intro lbl ρ' trace hrun
+    obtain ⟨ct', tr', hrun', htr, hsim⟩ := hsim₀.trace hcongr hstoreWF
+      hstoreWF hwf.val hwf.val hvar hmono hrun
+    cases hsim with
+    | exiting hl => exact ⟨_, tr', hrun', hl.ext, htr⟩
+  · change BlockInitEnvWF NondetElim.isGeneratedName (Block.nondetElim ss) ρ₀
+    have hinits := Block.nondetElim_initsUndefinedAndInhabited ss ρ₀
+      hwf.defsUndefined hwf.definedVarsNotReserved hwf.initTypesInhabited
+    exact ⟨hwf.toWellFormedSemanticEval, hwf.storeWellDefined, hinits.1,
+      hwf.definedVarsNotReserved, hinits.2⟩
+
+/-- Failure-flag overapproximation used by the
+`StructuredToUnstructuredPipelineCorrect` composition. -/
+theorem nondetElim_overapproximates_upto_local {P : PureExpr} [HasFvar P]
+    [HasFvars P] [HasBoolOps P] [LawfulHasVal P] [HasIdent P] [HasInt P]
+    [HasIntOps P] [DecidableEq P.Ident] [LawfulHasFvar P] [LawfulHasIdent P]
+    [HasSubstFvar P] :
     Specification.Transform.OverapproximatesUptoWhen
       (· = ·)
       (Specification.Transform.EnvStoreAgree (P := P))
       (Lang.imperativeBlock (EvalCmd P) (isAtAssert P))
       (Lang.imperativeBlock (EvalCmd P) (isAtAssert P))
       (fun ss => some (Block.nondetElim ss))
-      (fun ss =>
-        Block.uniqueInits ss
-        ∧ SrcNoGenWrites (P := P) ndelimKind ss)
-      ndelimKind ndelimKind := by
+      (fun ss => Block.uniqueInits ss ∧ SrcNoGenWrites (P := P) NondetElim.isGeneratedName ss)
+      NondetElim.isGeneratedName NondetElim.isGeneratedName := by
   intro ss ss' ht hpre ρ₀ ρ₀' hEq hwf
   subst hEq
   simp only [Option.some.injEq] at ht
   subst ht
   obtain ⟨h_unique, h_writes⟩ := hpre
-  obtain ⟨hwf_full, h_inits, h_gens, h_src_inhab⟩ := hwf
+  obtain ⟨hwf_full, hstoreWF, h_inits, h_gens, h_src_inhab⟩ := hwf
   refine ⟨fun ρ' => ⟨fun hstar => ?_, fun lbl hstar => ?_⟩, ?_, ?_⟩
-  · -- ===== TERMINAL ARM =====
-    have h_term : StepStmtStar P (EvalCmd P) (.stmts ss ρ₀) (.terminal ρ') := by
+  · have h_term : StepStmtStar P (EvalCmd P) (.stmts ss ρ₀) (.terminal ρ') := by
       simpa [Lang.imperativeBlock] using hstar
     obtain ⟨ρ_out, h_run, h_off, h_fl⟩ :=
       nondetElim_sound_kind_compositional ss ρ₀ ρ' ρ₀
-        rfl rfl (StoreAgreement.refl _)
-        hwf_full
-        h_gens h_gens h_inits h_writes h_unique h_term
-    refine ⟨ρ_out, ⟨h_off, h_fl.symm⟩, ?_⟩
-    · simpa [Lang.imperativeBlock] using h_run
-  · -- ===== EXITING ARM =====
-    have h_exit : StepStmtStar P (EvalCmd P) (.stmts ss ρ₀) (.exiting lbl ρ') := by
+        rfl rfl (StoreAgreement.refl _) hwf_full h_gens h_gens h_inits
+        h_writes h_unique h_term
+    exact ⟨ρ_out, ⟨h_off, h_fl.symm⟩, by
+      simpa [Lang.imperativeBlock] using h_run⟩
+  · have h_exit : StepStmtStar P (EvalCmd P) (.stmts ss ρ₀) (.exiting lbl ρ') := by
       simpa [Lang.imperativeBlock] using hstar
     obtain ⟨ρ_out, h_run, h_off, h_fl⟩ :=
       nondetElim_sound_kind_exit_compositional ss ρ₀ ρ' ρ₀
-        rfl rfl (StoreAgreement.refl _)
-        hwf_full
-        h_gens h_gens h_inits h_writes h_unique lbl h_exit
-    refine ⟨ρ_out, ⟨h_off, h_fl.symm⟩, ?_⟩
-    · simpa [Lang.imperativeBlock] using h_run
-  · -- ===== CanFail ARM =====
-    intro h_src
+        rfl rfl (StoreAgreement.refl _) hwf_full h_gens h_gens h_inits
+        h_writes h_unique lbl h_exit
+    exact ⟨ρ_out, ⟨h_off, h_fl.symm⟩, by
+      simpa [Lang.imperativeBlock] using h_run⟩
+  · intro h_src
     by_cases h_ρ₀_fail : ρ₀.hasFailure = true
     · refine ⟨(Config.stmts (Block.nondetElim ss) ρ₀ : Config P (Cmd P)), ?_, ?_⟩
       · simpa [Lang.imperativeBlock, Config.getEnv] using h_ρ₀_fail
@@ -4855,25 +5967,16 @@ theorem nondetElim_overapproximates_upto_local {P : PureExpr} [HasFvar P] [HasFv
         simpa [Lang.imperativeBlock] using h_cfg_fail
       obtain ⟨d, hd_run, hd_fail⟩ :=
         nondetElim_to_fail_compositional ss ρ₀ ρ₀ cfg_s
-          rfl rfl (StoreAgreement.refl _)
-          hwf_full
-          h_gens h_gens h_inits h_writes h_unique h_reach h_fail
+          rfl rfl (StoreAgreement.refl _) hwf_full h_gens h_gens h_inits
+          h_writes h_unique h_reach h_fail
       exact ⟨d, by simpa [Lang.imperativeBlock] using hd_fail,
         by simpa [Lang.imperativeBlock] using hd_run⟩
-  · -- ===== target initEnvWF conjunct (ndelim-only) =====
-    refine ⟨hwf_full, ?_, h_gens, ?_⟩
-    · intro x hx
-      rcases Block.nondetElimM_initVars_classified_Q ndelimKind_gen ss StringGenState.emp x hx with
-        h_src | ⟨str, h_eq, h_nd⟩
-      · exact h_inits x h_src
-      · rw [h_eq]; exact Env.varsUndefined_apply h_gens str h_nd
-    · intro ty hty
-      rcases Block.nondetElimM_initTypes_classified ss StringGenState.emp ty hty with
-        h_src | h_bool
-      · exact h_src_inhab ty h_src
-      · subst h_bool
-        exact ⟨HasBool.tt, (HasBool.boolIsValOfTy ρ₀.factory).1⟩
+  · have hinits := Block.nondetElim_initsUndefinedAndInhabited ss ρ₀
+      h_inits h_gens h_src_inhab
+    exact ⟨hwf_full, hstoreWF, hinits.1, h_gens, hinits.2⟩
 
 end NondetElimOverapprox
 
 end Imperative
+
+end -- public section

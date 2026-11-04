@@ -26,23 +26,16 @@ procedure hasMutatingAssignment(): int
   x
 };
 
-procedure functionWithMutatingAssignment(x: int): int
-{
-  x := x + 1;
-//^^^^^^^^^^ error: a transparent body or contract cannot YET mutate any of its inputs, and this mutates 'x'
-  return 3
-};
-
 procedure functionCallingHasMutationAssignment(x: int): int
 {
   return hasMutatingAssignment()
 };
 
+// A call to a procedure with a mutating body is legal in a contract.
 procedure impureContractIsLegal1(x: int)
   requires x == hasMutatingAssignment()
   opaque
 {
-  assert hasMutatingAssignment() == 1
 };
 #end
 

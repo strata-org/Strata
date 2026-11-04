@@ -17,7 +17,7 @@ Miscellaneous list lemmas: `Forall`/`Rel₂`, `Disj`, `Subset`,
 
 ## Key theorems
 
-* `List.Forall_mem_iff`, `List.Forall_append`, `List.Forall_flatMap`
+* `List.Forall_mem_iff`, `List.Forall_append`, `List.Forall_flatMap`, `List.all_mono`
 * `List.Disjoint_app`, `List.Disjoint_Nodup_iff`
 * `List.nodup_uniq`, `List.length_dedup_of_subset_le`
 * `List.length_eq_of_nodup_of_mem_iff`, `List.inj_implies_nodup`, `List.sum_size_le`
@@ -25,6 +25,14 @@ Miscellaneous list lemmas: `Forall`/`Rel₂`, `Disj`, `Subset`,
 
 public section
 open List
+
+/-- `List.all` is monotone under pointwise implication between Boolean predicates. -/
+theorem List.all_mono {α : Type} {source target : α → Bool} {xs : List α}
+    (hmono : ∀ x, source x = true → target x = true)
+    (h : xs.all source = true) : xs.all target = true := by
+  rw [List.all_eq_true] at h ⊢
+  intro x hx
+  exact hmono x (h x hx)
 
 @[simp, grind =]
 theorem List.Forall_nil {α} (p : α → Prop) : Forall p [] ↔ True := by

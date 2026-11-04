@@ -272,6 +272,8 @@ structure BlockInitEnvWF {P : PureExpr} [HasBool P] [HasBoolOps P]
     {CmdT : Type} [HasVarsImp P CmdT] [HasInitTypesImp P CmdT]
     (Q : String → Prop) (ss : List (Stmt P CmdT)) (ρ : Env P) : Prop
     extends WellFormedSemanticEval (P := P) ρ.factory where
+  /-- Every binding in the initial store is a semantic value. -/
+  storeWellDefined : WellFormedStore ρ.store ρ.factory
   /-- Every variable the block defines starts undefined in `ρ`. -/
   defsUndefined : ∀ x ∈ Block.definedVars ss false, ρ.store x = none
   /-- No name satisfying `Q` is defined in the initial store. -/

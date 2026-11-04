@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 /-! # Rendering a lifeline table
 
 One row per step of a pipeline in run order, one column per tracked fact, each

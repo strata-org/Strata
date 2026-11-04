@@ -16,9 +16,6 @@ namespace Imperative
 
 public section
 
-/-- A semantic store with no bindings. -/
-@[expose] def emptyStore {P : PureExpr} : SemanticStore P := fun _ => none
-
 section
 
 variable (P : PureExpr)
@@ -150,6 +147,19 @@ structure WellFormedSemanticEvalInt {P : PureExpr}
       SubstVarsDefined (P := P) σ' sm →
       P.eval f σ' (HasSubstFvar.substFvars e sm) = P.eval f (substStoreExpr σ' sm) e
 
+/-- The evaluator commutes with a by-name free-variable rename.  Evaluating
+    `renameFvars e subst` in a well-formed store `σ'` whose rename targets are all
+    defined equals evaluating `e` in the store pulled back along the first-match
+    rename `renameLookup subst`.  Stated directly for `renameFvars` (rather than
+    the `substFvars`/`substMapOf` substitution view) so a rename pass discharges
+    it once from the factory's well-formedness, not per expression. -/
+@[expose] def WellFormedSemanticEvalRenameFvars {P : PureExpr} [HasVal P] [HasFvar P] [HasSubstFvar P]
+    (f : P.Factory) : Prop :=
+    ∀ e σ' subst, WellFormedStore σ' f →
+      SubstVarsDefined (P := P) σ' (substMapOf subst) →
+      P.eval f σ' (HasSubstFvar.renameFvars e subst)
+        = P.eval f (fun x => σ' (renameLookup subst x)) e
+
 /-- Bundle of well-formedness conditions on `P.eval` against a factory `f`. -/
 structure WellFormedSemanticEval {P : PureExpr} [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
@@ -171,68 +181,14 @@ structure WellFormedSemanticEval {P : PureExpr} [HasBool P] [HasBoolOps P]
   rename : WellFormedSemanticEvalRename f
 
 
-/-! ### Predicates on `SemanticStore`s
-
-`SemanticStore` and `isDefined` are owned upstream by
-`Strata.DL.Imperative.StoreRelations` (reached here via `CmdTrace`); the
-remaining store predicates and operations live here. -/
-
-/-- Every variable in `vs` is undefined in `σ`. -/
-def isNotDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
-  ∀ v, v ∈ vs → σ v = none
-
-/-- Every `Q`-kind slot is undefined in `σ`.  Predicate-keyed generalisation of
-`isNotDefined`: `isNotDefined σ vs` is the `(· ∈ vs)` specialisation of this. -/
-@[expose] def SemanticStore.varsUndefined {P : PureExpr}
-    (Q : P.Ident → Prop) (σ : SemanticStore P) : Prop :=
-  ∀ y, Q y → σ y = none
-
-/-- Every `Q`-kind slot is defined in `σ`.  Predicate-keyed generalisation of
-`isDefined`: `isDefined σ vs` is the `(· ∈ vs)` specialisation of this. -/
-@[expose] def SemanticStore.varsDefined {P : PureExpr}
-    (Q : P.Ident → Prop) (σ : SemanticStore P) : Prop :=
-  ∀ y, Q y → (σ y).isSome = true
-
-/-- Point update: define `ident := b`, leaving every other variable untouched. -/
-@[expose] def SemanticStore.update {P : PureExpr} [DecidableEq P.Ident]
-    (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr) : SemanticStore P :=
-  fun y => if y = ident then some b else σ y
-
--- Can make this more generic by supplying a predicate function
--- (SemanticStore P) → P.Ident → Bool
--- determining whether each variable in the store is valid
--- This could express things like,
--- all variables in the store are values, all values are positive, etc.
-def isDefinedOver {P : PureExpr}
-  (getVars : α → List P.Ident) (σ : SemanticStore P) (s : α) : Prop :=
-  isDefined σ (getVars s)
-
-
-/-! ### Store Substitution -/
-
-/-- Substitution relation between stores.  -/
-def substStores {P : PureExpr} (σ₁ σ₂ : SemanticStore P) (substs : List (P.Ident × P.Ident))
-  : Prop :=
-  ∀ k1 k2, (k1, k2) ∈ substs → σ₁ k1 = σ₂ k2
-
-def substDefined {P : PureExpr} (σ₁ σ₂ : SemanticStore P) (substs : List (P.Ident × P.Ident))
-  : Prop :=
-  ∀ k1 k2, (k1, k2) ∈ substs → (σ₁ k1).isSome = true ∧ (σ₂ k2).isSome = true
-
-def substNodup {P : PureExpr} (substs : List (P.Ident × P.Ident))
-  : Prop := (substs.unzip.1 ++ substs.unzip.2).Nodup
-
-/-- a specialization of substitution, where the keys are the same -/
-def invStores {P : PureExpr} (σ₁ σ₂ : SemanticStore P) (vs : List P.Ident)
-  : Prop :=
-  substStores σ₁ σ₂ $ vs.zip vs
-
-def invStoresExcept {P : PureExpr} (σ₁ σ₂ : SemanticStore P) (vs : List P.Ident)
-  : Prop := ∀ (vs' : List P.Ident), vs'.Disj vs → invStores σ₁ σ₂ vs'
-
-def substSwap {P : PureExpr} (substs : List (P.Ident × P.Ident))
-  : List (P.Ident × P.Ident) := substs.map Prod.swap
-
+/-- Store agreement modulo a rename: wherever `σ_src` is defined, `σ_tgt` assigns
+the same value at the *renamed* variable `renameLookup subst x`. This is exactly
+`StoreAgreement` between `σ_src` and the target store read through the rename, so
+it inherits `StoreAgreement`'s theory (defined in
+`Strata.DL.Imperative.StoreRelations`). -/
+@[expose] def SubstStoreAgreement {P : PureExpr}
+    (subst : List (P.Ident × P.Ident)) (σ_src σ_tgt : SemanticStore P) : Prop :=
+  StoreAgreement σ_src (fun x => σ_tgt (renameLookup subst x))
 
 /-! ### Formal Semantics of Command. -/
 

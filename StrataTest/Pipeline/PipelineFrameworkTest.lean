@@ -581,7 +581,7 @@ phase                           CF  Lo  LM  BR  NG  PC  Po
  9 typeCheck                    | | | | | : : | :   : | : V
 10 monomorphizeFunctions        | | | | | : : | :   : + V |
 11 simplify                     + + | | | :   + : : : | | |
-12 nondetElim                   + | | | |   : | V   : | | |
+12 nondetElim                   + + | | |   : | V   : | | |
 13 symbolicEval                 + V + | | V   | - V V | | |
 14 betaReduce                   | | | | | | V | : | | | | |
 15 commonSubexprElim            + | | | | + | | : | | | | |

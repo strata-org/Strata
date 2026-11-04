@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.DL.Imperative.Cmd
+public import Strata.DL.Imperative.Store
 
 ---------------------------------------------------------------------
 
@@ -14,16 +14,14 @@ namespace Imperative
 /-! # Store relations
 
 Store-to-store comparison relations for the Imperative dialect's
-`SemanticStore`. This module owns `SemanticStore`, `isDefined`, and its
-store-comparison relations; event and trace relations build on them through
-`CmdTrace` without introducing a dependency on command or statement semantics.
+`SemanticStore`. Core store definitions and predicates live in `Store`; event
+and trace relations build on the comparisons here through `CmdTrace` without
+introducing a dependency on command or statement semantics.
 
-- `SemanticStore`: a variable store, modelled as a total map from identifiers to
-  optional values.
-- `isDefined`: every variable in a list has a binding in the store.
 - `StoreAgreement`: asymmetric agreement — wherever the source store is defined,
   the target store assigns the same value.
 - `StoreProjected`: a store obtained by dropping bindings from a source store.
+- `StoreAgreesOnFvars`: two stores agree on every free variable of an expression.
 - `StoreExtendsWith`: a classified store extension — every source binding is
   preserved and every target-only binding satisfies an extra-register class.
 
@@ -32,24 +30,6 @@ the statement-level scope-projection laws live in `StmtSemanticsProps`.
 -/
 
 public section
-
-section
-
-variable (P : PureExpr)
-
-/-
-These are intended to be as generic as possible, not using any specific
-data structure. They'll probably usually be instantiated with map
-lookups.
--/
-abbrev SemanticStore := P.Ident → Option P.Expr
-
-end
-
-/-! ### Predicates on `SemanticStore`s -/
-
-@[expose] def isDefined {P : PureExpr} (σ : SemanticStore P) (vs : List P.Ident) : Prop :=
-  ∀ v, v ∈ vs → (σ v).isSome = true
 
 /-! ### Store comparison relations -/
 
@@ -64,6 +44,11 @@ every binding retained by `projected` has the same value in `source`. -/
 @[expose] def StoreProjected {P : PureExpr}
     (source projected : SemanticStore P) : Prop :=
   StoreAgreement projected source
+
+/-- Two stores agree at every free variable of `expr`. -/
+@[expose] def StoreAgreesOnFvars {P : PureExpr} [HasFvars P]
+    (source target : SemanticStore P) (expr : P.Expr) : Prop :=
+  ∀ ident ∈ HasFvars.getFvars expr, source ident = target ident
 
 /-- A target store extends a source store with bindings classified by `Extra`.
 Every source binding is preserved, and every target binding absent from the

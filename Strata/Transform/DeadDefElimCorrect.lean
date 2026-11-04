@@ -11,6 +11,7 @@ public import Strata.DL.Imperative.StmtProps
 public import Strata.DL.Imperative.CmdSemanticsProps
 public import Strata.Util.ListUtilsProps
 public import Strata.DL.Imperative.Logic.TraceInterp
+import Strata.DL.Imperative.Logic.TraceInterpProps
 import all Strata.DL.Imperative.Cmd
 
 /-! # Erasing unread definitions over-approximates
@@ -27,8 +28,9 @@ mentions, so every condition evaluates alike.
 The trace of the output's run corresponds to the input's event by event (`DDEventRel`, lists
 related position by position by `List.Rel₂`), and its outcome to the input's
 (`DDOutcomeRel`), for runs (`deadDefElim_run_rel`) and for reaches (`deadDefElim_reach_rel`).
-The correspondence reflects assertion validity for store-local interpretations of conditions
-(`dd_assertValid_reflect`), evaluation to `true` among them (`evalInterp_storeLocal`).
+The correspondence reflects assertion validity when the condition interpretation
+is stable under `DDArgRel` (`dd_assertValid_reflect`); evaluation to `true`
+satisfies this requirement (`evalInterp_stableUnder`).
 
 The transformation-level statement over the shared trace specification
 (`OverapproximatesTracesUptoWhen` of `Strata.Transform.Specification`) needs an event language,
@@ -40,11 +42,10 @@ The executable pass `deadDefElimH` has the same properties (`deadDefElimH_fails`
 of `deadDefElim` through `deadDefElimH_eq`.
 
 Key theorems: `deadDefElim_fails`, `deadDefElim_failsE`, `deadDefElim_run_rel`,
-`deadDefElim_reach_rel`, `dd_assertValid_reflect`, `evalInterp_storeLocal`, and their
+`deadDefElim_reach_rel`, `dd_assertValid_reflect`, `evalInterp_stableUnder`, and their
 `deadDefElimH` forms.
 
-Key definitions: `StoreProjected`, `DDArgRel`, `DDEventRel`, `DDOutcomeRel`,
-`StoreLocal`. -/
+Key definitions: `StoreProjected`, `DDArgRel`, `Event.Matches`, `DDOutcomeRel`. -/
 
 namespace Imperative
 namespace DeadDefElim
@@ -615,17 +616,12 @@ structure DDArgRel (a a' : EventArg P) : Prop where
   expr_eq : a'.expr = a.expr
   metadata_eq : a'.metadata = a.metadata
   store_projected : StoreProjected a.store a'.store
-  store_fv : ∀ x ∈ HasFvars.getFvars a.expr, a'.store x = a.store x
+  store_fv : StoreAgreesOnFvars a'.store a.store a.expr
   storeWF : WellFormedStore a.store a.factory
   exprCongr : WellFormedSemanticEvalExprCongr a.factory
 
-/-- The event `e'` of the output corresponds to the source event `e`: same kind, with
-    corresponding arguments (`DDArgRel`). -/
-@[expose] def DDEventRel : Event P → Event P → Prop
-  | .assert a, .assert a' => DDArgRel a a'
-  | .assume a, .assume a' => DDArgRel a a'
-  | .cover a, .cover a' => DDArgRel a a'
-  | _, _ => False
+/-- Same-kind event matching induced by `DDArgRel`. -/
+abbrev DDEventRel : Event P → Event P → Prop := Event.Matches DDArgRel
 
 end
 
@@ -667,7 +663,7 @@ private theorem EvReplay.dd (hcong : WellFormedSemanticEvalExprCongr F) {e e' : 
 theorem deadDefElim_reach_rel (hcong : WellFormedSemanticEvalExprCongr F) (live : List P.Ident)
     {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)} (h : BReach F ss σ evs)
     (hne : evs ≠ []) (hC : WellFormedStore σ F) :
-    ∃ evs', BReach F (deadDefElim live ss) σ evs' ∧ List.Rel₂ DDEventRel evs evs' := by
+    ∃ evs', BReach F (deadDefElim live ss) σ evs' ∧ List.Rel₂ (DDEventRel) evs evs' := by
   have hE := evCongr_of_congr hcong
   obtain ⟨evs', h', hm⟩ := dd_reach hE h hne hC ⟨fun _ _ => rfl, StoreProjected.refl _⟩
   exact ⟨evs', h', hm.imp fun _ _ hr => hr.dd hcong⟩
@@ -679,7 +675,7 @@ theorem deadDefElim_reach_rel (hcong : WellFormedSemanticEvalExprCongr F) (live 
 theorem deadDefElim_run_rel (hcong : WellFormedSemanticEvalExprCongr F) (live : List P.Ident)
     {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)} {o : Outcome P}
     (h : BRun F ss σ evs o) (hC : WellFormedStore σ F) :
-    ∃ evs' o', BRun F (deadDefElim live ss) σ evs' o' ∧ List.Rel₂ DDEventRel evs evs' ∧
+    ∃ evs' o', BRun F (deadDefElim live ss) σ evs' o' ∧ List.Rel₂ (DDEventRel) evs evs' ∧
       DDOutcomeRel o o' := by
   have hE := evCongr_of_congr hcong
   obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE h hC ⟨fun _ _ => rfl, StoreProjected.refl _⟩
@@ -691,18 +687,13 @@ end
 
 section
 
-/-- An interpretation of conditions is *store-local* when corresponding event arguments
-    (`DDArgRel`) hold in the same worlds. -/
-@[expose] def StoreLocal (I : ConditionInterp P) : Prop :=
-  ∀ w a a', DDArgRel a a' → (I.holds w a ↔ I.holds w a')
-
 omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P]
     [LawfulHasVal P] in
-/-- The interpretation of a condition as its evaluation to `true` under the event's factory
-    and store (`evalInterp`) is store-local: it gives the same answer on an event argument of
-    the source and on the corresponding argument of the output (`DDArgRel`), whose store
-    lacks some bindings but agrees on the free variables of the condition. -/
-theorem evalInterp_storeLocal : StoreLocal (P := P) evalInterp := by
+/-- Evaluation to `true` is stable under `DDArgRel`: corresponding event
+arguments evaluate alike because the projected store agrees on the condition's
+free variables. -/
+theorem evalInterp_stableUnder :
+    ConditionInterp.StableUnder (P := P) evalInterp DDArgRel := by
   intro _ a a' h
   have hwf' : WellFormedStore a'.store a.factory := fun x v hv =>
     h.storeWF x v (h.store_projected.supplies_mono_premise x v hv)
@@ -711,60 +702,15 @@ theorem evalInterp_storeLocal : StoreLocal (P := P) evalInterp := by
 
 omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P]
     [LawfulHasVal P] in
-/-- Assumptions holding along a trace hold along the trace corresponding to it event by event,
-    for a store-local interpretation. -/
-private theorem assumptionsHold_dd {I : ConditionInterp P} (hI : StoreLocal I)
-    {w : I.World} : ∀ {t t' : Trace P}, List.Rel₂ DDEventRel t t' →
-    Trace.AssumptionsHold P I w t → Trace.AssumptionsHold P I w t'
-  | _, _, .nil, _ => nofun
-  | .assume a :: _, .assume a' :: _, .cons hr hs, h => fun c hc => by
-    rcases List.mem_cons.1 hc with hc | hc
-    · cases hc
-      exact (hI w a a' hr).1 (h _ List.mem_cons_self)
-    · exact assumptionsHold_dd hI hs (fun c' hc' => h c' (.tail _ hc')) c hc
-  | .assert _ :: _, .assert _ :: _, .cons _ hs, h | .cover _ :: _, .cover _ :: _, .cons _ hs, h =>
-    fun c hc => by
-      rcases List.mem_cons.1 hc with hc | hc
-      · cases hc
-      · exact assumptionsHold_dd hI hs (fun c' hc' => h c' (.tail _ hc')) c hc
-  | .assert _ :: _, .assume _ :: _, .cons hr _, _ | .assert _ :: _, .cover _ :: _, .cons hr _, _
-  | .assume _ :: _, .assert _ :: _, .cons hr _, _ | .assume _ :: _, .cover _ :: _, .cons hr _, _
-  | .cover _ :: _, .assert _ :: _, .cons hr _, _ | .cover _ :: _, .assume _ :: _, .cons hr _, _ =>
-    hr.elim
-
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P]
-    [LawfulHasVal P] in
-/-- Validity of the assertions matching `aid`, from accumulated assumptions, is reflected by
-    the event correspondence of the assumptions and of the rest of the trace. -/
-private theorem assertionValidFrom_reflect {I : ConditionInterp P} (hI : StoreLocal I)
-    (aid : AssertId P) : ∀ {asm asm' t t' : Trace P}, List.Rel₂ DDEventRel asm asm' →
-    List.Rel₂ DDEventRel t t' → Trace.AssertionValidFrom P I aid asm' t' →
-    Trace.AssertionValidFrom P I aid asm t
-  | _, _, _, _, _, .nil, _ => trivial
-  | _, _, .assume _ :: _, .assume _ :: _, ha, .cons hr hs, h =>
-    (assertionValidFrom_reflect hI aid (ha.append (.cons hr .nil)) hs h :)
-  | _, _, .assert a :: _, .assert a' :: _, ha, .cons hr hs, h =>
-    ⟨fun hk w hw => (hI w a a' hr).2 (h.1 ⟨hr.label_eq.trans hk.1, hr.expr_eq.trans hk.2⟩ w
-      (assumptionsHold_dd hI ha hw)), (assertionValidFrom_reflect hI aid ha hs h.2 :)⟩
-  | _, _, .cover _ :: _, .cover _ :: _, ha, .cons _ hs, h =>
-    (assertionValidFrom_reflect hI aid ha hs h :)
-  | _, _, .assert _ :: _, .assume _ :: _, _, .cons hr _, _
-  | _, _, .assert _ :: _, .cover _ :: _, _, .cons hr _, _
-  | _, _, .assume _ :: _, .assert _ :: _, _, .cons hr _, _
-  | _, _, .assume _ :: _, .cover _ :: _, _, .cons hr _, _
-  | _, _, .cover _ :: _, .assert _ :: _, _, .cons hr _, _
-  | _, _, .cover _ :: _, .assume _ :: _, _, .cons hr _, _ => hr.elim
-
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P]
-    [LawfulHasVal P] in
-/-- **The event correspondence reflects assertion validity.**  For a store-local
-    interpretation `I`, if every occurrence of the assertion `aid` in a trace `trace'` holds
-    under the assumptions before it, so does every occurrence in a trace `trace` that
-    `trace'` corresponds to event by event (`DDEventRel`). -/
-theorem dd_assertValid_reflect {I : ConditionInterp P} (hI : StoreLocal I) :
-    ∀ trace trace', List.Rel₂ DDEventRel trace trace' → ∀ aid,
+/-- **The event correspondence reflects assertion validity.** If `I` is
+    stable under `DDArgRel`, validity of every occurrence of `aid` in `trace'`
+    reflects to an event-by-event corresponding `trace`. -/
+theorem dd_assertValid_reflect {I : ConditionInterp P} (hI : I.StableUnder DDArgRel) :
+    ∀ trace trace', List.Rel₂ (DDEventRel) trace trace' → ∀ aid,
       Trace.AssertionValid P I aid trace' → Trace.AssertionValid P I aid trace :=
-  fun _ _ h aid => assertionValidFrom_reflect hI aid .nil h
+  fun _ _ h aid =>
+    Trace.AssertionValidFrom_matches_reflect hI
+      (fun h => ⟨h.label_eq.symm, h.expr_eq.symm⟩) aid .nil h
 
 end
 
@@ -805,7 +751,7 @@ theorem deadDefElimH_failsE [HasBoolOps P] (hcong : WellFormedSemanticEvalExprCo
 theorem deadDefElimH_reach_rel (hcong : WellFormedSemanticEvalExprCongr F) (live : List P.Ident)
     {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)} (h : BReach F ss σ evs)
     (hne : evs ≠ []) (hC : WellFormedStore σ F) :
-    ∃ evs', BReach F (deadDefElimH live ss) σ evs' ∧ List.Rel₂ DDEventRel evs evs' :=
+    ∃ evs', BReach F (deadDefElimH live ss) σ evs' ∧ List.Rel₂ (DDEventRel) evs evs' :=
   deadDefElimH_eq live ss ▸ deadDefElim_reach_rel hcong live h hne hC
 
 /-- **A run of a list, and of the executable pass's output**: a run of `ss` from the
@@ -816,7 +762,7 @@ theorem deadDefElimH_reach_rel (hcong : WellFormedSemanticEvalExprCongr F) (live
 theorem deadDefElimH_run_rel (hcong : WellFormedSemanticEvalExprCongr F) (live : List P.Ident)
     {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)} {o : Outcome P}
     (h : BRun F ss σ evs o) (hC : WellFormedStore σ F) :
-    ∃ evs' o', BRun F (deadDefElimH live ss) σ evs' o' ∧ List.Rel₂ DDEventRel evs evs' ∧
+    ∃ evs' o', BRun F (deadDefElimH live ss) σ evs' o' ∧ List.Rel₂ (DDEventRel) evs evs' ∧
       DDOutcomeRel o o' :=
   deadDefElimH_eq live ss ▸ deadDefElim_run_rel hcong live h hC
 

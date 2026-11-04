@@ -21,8 +21,7 @@ open Strata
     emits, `forall (o: T) { o#f } => T$constraint(o#f)`, as an `invokeOn` trigger plus
     `ensures` on a generated `$fieldConstraint_T_f`. Being a proposition it holds in
     every position the value-block cannot reach -- a loop invariant here, and across a
-    call, which is what lets a transparent procedure's output constraint be checked at
-    all.
+    call, where a caller of a transparent procedure sees the body as an expression.
 
     The negative twin is what makes this non-vacuous: the axiom supplies the field's
     declared range and nothing beyond it, so a strictly stronger claim must still

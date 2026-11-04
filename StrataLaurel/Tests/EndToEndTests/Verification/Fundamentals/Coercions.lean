@@ -82,20 +82,22 @@ procedure p() returns (r: int)
 
 Truthiness is a boolean-context coercion, not subtyping (`int` is not `<: bool`), so it is NOT a
 `coerce` verdict: it fires through the separate `toBool` hook at bool-context slots
-(`if`/`assert`/`assume`/bool-ops). Native Laurel leaves `toBool = none`, so without a hook an `int`
-in a bool slot is a strict type error — this is the ONLY path that exercises the option, by
-installing a hook exactly as a frontend does.
+(`if`/`assert`/`assume`/bool-ops, an argument checked against a `bool` parameter). Native Laurel
+leaves `toBool = none`, so without a hook an `int` in a bool slot is a strict type error — this is
+the ONLY path that exercises the option, by installing a hook exactly as a frontend does.
 
 The hook below models Python-style integer truthiness (`n` is truthy iff `n != 0`): it maps an
 `int` operand `e` to `e != 0`. It is installed via `translateOptions.toBool` on `testLaurelVerification`'s
 options, threaded onto the `TypeLattice` and fired at the bool-context slot inside `resolveStmtExpr`
 (the subsumption fallback). Because the realized `!= 0` term carries the operand's real value into
-the verification condition, the two blocks below prove the hook is not an opaque bool coercion:
+the verification condition, the blocks below prove the hook is not an opaque bool coercion:
 
   * §3a — `assert 1` (a truthy int) verifies: the hook rewrites it to `1 != 0`, which the solver
            proves. Without the hook this is `expected 'bool', got 'int'`.
   * §3b — `assert 0` (a falsy int) FAILS: the hook rewrites it to `0 != 0`, which is false, so the
-           assertion is correctly reported — the operand value survives into the VC. -/
+           assertion is correctly reported — the operand value survives into the VC.
+  * §3c — both again, at a `bool` parameter of a generic procedure and of a generic composite's
+           method. -/
 
 /-- A self-contained `toBool` hook modelling integer truthiness: `int` operand `e` ↦ `e != 0`;
     any other type passes through unchanged. Mirrors how the Python frontend installs
@@ -136,6 +138,43 @@ procedure p()
 {
   assert 0
 //^^^^^^^^ error: assertion does not hold
+};
+#end
+
+/-! ### 3c. Both again, for an argument to a `bool` parameter of a generic procedure and of a
+generic composite's method, whether the argument is a literal or a call. -/
+
+#eval testLaurelVerification (options := toBoolOptions) <|
+#strata
+program Laurel;
+composite Box<T> {
+  var v: T
+  procedure need(self: Box<T>, c: bool)
+    requires c
+    opaque
+    ensures true;
+}
+procedure needWith<T>(x: T, c: bool)
+  requires c
+  opaque
+  ensures true;
+procedure one()
+  returns (r: int)
+  opaque
+  ensures r == 1;
+procedure p()
+  opaque
+{
+  needWith(5, 1);
+  needWith(5, one());
+  needWith(5, 0);
+//^^^^^^^^^^^^^^ error: precondition does not hold
+  var b: Box<int> := new Box<int>;
+  b#need(1);
+  b#need(one());
+  b#need(0);
+//^^^^^^^^^ error: precondition does not hold
+  assert 1 == 1
 };
 #end
 

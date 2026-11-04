@@ -46,6 +46,10 @@ structure PureExpr : Type 1 where
 abbrev PureExpr.TypedIdent (P : PureExpr) := P.Ident × P.Ty
 abbrev PureExpr.TypedExpr (P : PureExpr)  := P.Expr × P.Ty
 
+/-- `[DecidableEq P.Ident]` resolves to the bundled `PureExpr.EqIdent` field,
+keeping the term on a single instance across a proof. -/
+instance (P : PureExpr) : DecidableEq P.Ident := P.EqIdent
+
 /-! ## Type Classes for Expressions -/
 
 class HasIdent (P : PureExpr) where
@@ -162,6 +166,13 @@ class HasSubstFvar (P : PureExpr) where
       Replaces all variables in a single pass, avoiding capture between
       substitutions. -/
   substFvars : P.Expr → List (P.Ident × P.Expr) → P.Expr
+  /-- Simultaneously rename free variables by NAME, in a single pass with
+      first-match semantics (`a ↦ b` for the first `(a, b)` in the list, else
+      unchanged). Unlike `substFvars`, this rewrites a free variable's name in
+      place and preserves everything else about the occurrence — in particular
+      any type annotation it carries — so renaming never drops type information
+      the way substituting a freshly-built bare free variable would. -/
+  renameFvars : P.Expr → List (P.Ident × P.Ident) → P.Expr
 
 /--
 A function declaration for use with `PureExpr` - instantiation of `Func` for

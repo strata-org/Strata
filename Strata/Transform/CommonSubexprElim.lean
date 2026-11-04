@@ -45,6 +45,11 @@ open Lambda Imperative
 /-- Prefix used for CSE-generated variable names. -/
 def cseVarPrefix : String := "$__cse."
 
+/-- Whether `name` is a variable this pass invented rather than one the program declares.
+    Counterexamples leave such names out. -/
+def isCSEGeneratedName (name : String) : Bool :=
+  name.startsWith cseVarPrefix
+
 open Strata.PtrCache
 
 abbrev hx : Expression.Expr → UInt64 := LExpr.hashExpr

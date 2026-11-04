@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Core.SMTEncoder
 public import Strata.DL.SMT.Solver
 public import Strata.DL.SMT.Encoder
+import Strata.Transform.CommonSubexprElim
 
 /-! # Env-scoped SMT-LIB emission
 
@@ -105,18 +106,27 @@ def writeContextDeclarations (ctx : SMT.Context)
   modify fun estate => managedUfs.foldl (init := estate) Encoder.seedManagedName
   let _ ← ctx.ifs.toArray.mapM Encoder.encodeFunctionDef
 
+/-- Whether a counterexample reports the variable `name`. It reports the variables whose
+    values are free: the ones the passive program declares (`var x`, `havoc x`) and the ones
+    it never introduces, such as a procedure's inputs. It leaves out the `definedNames`, whose
+    values follow from the reported ones, and the names common-subexpression elimination
+    invented. -/
+def isReportedName (definedNames : Std.HashSet String) (name : String) : Bool :=
+  !definedNames.contains name && !CSE.isCSEGeneratedName name
+
 /-- Emit a verification condition's closing block: the `get-value` ids, the
     `check-sat`(-assuming) commands for whichever checks are requested, and the
     final-message info string. Assumes `obligationId` is the encoded goal and
-    that every symbol it mentions is already declared. -/
+    that every symbol it mentions is already declared. The `get-value` ids are
+    the constants a counterexample reports (`isReportedName`). -/
 def writeCheckSatBlock (obligationId obligationTerm : Term)
     (md : Imperative.MetaData Expression)
     (satisfiabilityCheck validityCheck : Bool)
-    (label : String) (managedNames : Std.HashSet String) :
+    (label : String) (definedNames : Std.HashSet String) :
     EncoderM (List String) := do
   let estate ← get
   let ids := estate.functions.toList.filterMap fun (uf, id) =>
-    if uf.args.isEmpty && !managedNames.contains uf.id then some id else none
+    if uf.args.isEmpty && isReportedName definedNames uf.id then some id else none
 
   let bothChecks := satisfiabilityCheck && validityCheck
 
@@ -625,7 +635,7 @@ def emitPrerendered (pieces : List String) : SolverM Unit := do
 def EmitterState.emitObligation
     (es : EmitterState) (ctx : SMT.Context) (goalTerm : Term)
     (md : Imperative.MetaData Core.Expression) (label : String)
-    (managedNames : Std.HashSet String)
+    (managedNames definedNames : Std.HashSet String)
     (satisfiabilityCheck validityCheck : Bool) : EmitterEncodingM CapturedFile := do
   let declPieces := es.declPieces
   let assertPieces := es.assertPieces
@@ -641,7 +651,7 @@ def EmitterState.emitObligation
     -- The goal, then the shared check-sat block.
     let goalEnc ← Encoder.encodeTerm goalTerm
     writeCheckSatBlock goalEnc goalTerm md
-      satisfiabilityCheck validityCheck label managedNames
+      satisfiabilityCheck validityCheck label definedNames
   -- The fork: never written back to `es`.
   let ((ids, forkEstate), tailText, _) ←
     recordEncodingToString (tailAct.run es.estate) es.sstate
@@ -660,12 +670,12 @@ def EmitterState.syncAndEmit (es : EmitterState)
     (currentCtx : SMT.Context) (pruned : Bool)
     (ctx : SMT.Context) (goalTerm : Term)
     (md : Imperative.MetaData Core.Expression) (label : String)
-    (managedNames : Std.HashSet String)
+    (managedNames definedNames : Std.HashSet String)
     (satisfiabilityCheck validityCheck : Bool) :
     IO (EmitterState × Option CapturedFile) := do
   let es ← es.sync factory foldFrames currentCtx
   if !pruned && es.usableFor ctx then
-    match ← (es.emitObligation ctx goalTerm md label managedNames
+    match ← (es.emitObligation ctx goalTerm md label managedNames definedNames
         satisfiabilityCheck validityCheck).run with
     | .ok cf => return (es, some cf)
     | .error _ =>

@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 public section
 /-! ## Counter Generator
   This file contains a counter generator `genCounter`, as well as its underlying

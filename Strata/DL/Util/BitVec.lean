@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 @[expose, inline] public def BitVec.width {n : Nat} (_ : BitVec n) : Nat := n
 
 @[expose] public def BitVec.signedMin (n : Nat) : Int := - 2 ^ (n-1)

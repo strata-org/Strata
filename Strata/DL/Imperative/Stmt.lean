@@ -687,8 +687,9 @@ flat namespace has no projection.
 variable. The flat-namespace CFG can simulate the structured semantics only
 when this holds — without uniqueness, structured `step_block_done` can
 project a name away that the structured semantics later reinitializes, a
-pattern the CFG cannot replicate. -/
-@[expose] def Block.uniqueInits [HasFvars P] (ss : List (Stmt P (Cmd P))) : Prop :=
+pattern the CFG cannot replicate. This analysis is command-generic: it uses
+only the command type's `HasVarsImp` instance. -/
+@[expose] def Block.uniqueInits [HasVarsImp P C] (ss : List (Stmt P C)) : Prop :=
   (Block.initVars ss).Nodup
 
 ---------------------------------------------------------------------

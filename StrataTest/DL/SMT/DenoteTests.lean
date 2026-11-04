@@ -106,8 +106,6 @@ example :
   .some (∀ (x : BitVec 32) (y : BitVec 16), x ++ y = y ++ x) := by
   denoteQuery_rfl
 
-set_option maxHeartbeats 40000000 in
-set_option maxRecDepth 4096 in
 example :
   let α := { name := "α", arity := 0 }
   let a := { id := "a", args := [],  out := .constr α.name [] }
@@ -115,8 +113,6 @@ example :
   .some (∀ (α : Type) [Nonempty α] (x : α), x = x) := by
   denoteQuery_sorts_rfl
 
-set_option maxHeartbeats 40000000 in
-set_option maxRecDepth 4096 in
 example :
   let α := { name := "α", arity := 1 }
   let a := { id := "a", args := [],  out := .constr α.name [.prim .int] }
@@ -124,8 +120,6 @@ example :
   .some (∀ (α : Type → Type) [∀ x, Nonempty (α x)] (x : α Int), x = x) := by
   denoteQuery_sorts_rfl
 
-set_option maxHeartbeats 80000000 in
-set_option maxRecDepth 4096 in
 example :
   let α := { name := "α", arity := 2 }
   let β := { name := "β", arity := 0 }
@@ -134,8 +128,6 @@ example :
   .some (∀ (α : Type → Type → Type) [∀ x y, Nonempty (α x y)] (β : Type) [Nonempty β] (x : α β Prop), x = x) := by
   denoteQuery_sorts_rfl
 
-set_option maxHeartbeats 80000000 in
-set_option maxRecDepth 4096 in
 example :
   let α := { name := "α", arity := 2 }
   let β := { name := "β", arity := 0 }

@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Core.Identifiers
 public import Strata.Languages.Core.CoreOp
 public import Strata.DL.Imperative.HasVars
+public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Lambda.LExprTypeEnv
 public import Strata.DL.Lambda.LState
 import all Strata.DL.Lambda.Factory
@@ -81,9 +82,44 @@ instance : HasFvar Core.Expression where
   | .fvar _ v _ => some v
   | _ => none
 
+/-- Structural free-variable name rewrite for `Core.Expression`: rewrites each
+`.fvar m name ty` to `.fvar m (g name) ty`, reconstructing every other node
+unchanged.  Metadata `m`, binder names and type annotations `ty` are carried
+through on every constructor, so this maps only free-variable *names*.  It is the
+annotation-preserving counterpart of `Lambda.LExpr.substFvars`, which would
+instead replace a whole node with a freshly built bare free variable and so drop
+`ty`. -/
+@[expose] def Expression.mapFvarNames (g : CoreIdent → CoreIdent) :
+    Lambda.LExpr ⟨⟨ExpressionMetadata, Unit⟩, Lambda.LMonoTy⟩ →
+    Lambda.LExpr ⟨⟨ExpressionMetadata, Unit⟩, Lambda.LMonoTy⟩
+  | .const m c => .const m c
+  | .bvar m i => .bvar m i
+  | .op m o ty => .op m o ty
+  | .fvar m name ty => .fvar m (g name) ty
+  | .abs m name ty e' => .abs m name ty (Expression.mapFvarNames g e')
+  | .quant m qk name ty tr' e' =>
+      .quant m qk name ty (Expression.mapFvarNames g tr') (Expression.mapFvarNames g e')
+  | .app m fn e' => .app m (Expression.mapFvarNames g fn) (Expression.mapFvarNames g e')
+  | .ite m c t e' =>
+      .ite m (Expression.mapFvarNames g c) (Expression.mapFvarNames g t)
+        (Expression.mapFvarNames g e')
+  | .eq m e1 e2 => .eq m (Expression.mapFvarNames g e1) (Expression.mapFvarNames g e2)
+
+/-- Rename the free variables of a `Core.Expression` by name, defined as a
+`mapFvarNames` through the first-match rename of each name (unchanged off the
+sources).  Expressed in terms of `mapFvarNames`, so it preserves each node's
+metadata, binder names and type annotations by construction — in particular it
+never drops a `.fvar`'s type annotation `ty`. -/
+@[expose] def Expression.renameFvars
+    (e : Lambda.LExpr ⟨⟨ExpressionMetadata, Unit⟩, Lambda.LMonoTy⟩)
+    (subst : List (CoreIdent × CoreIdent)) :
+    Lambda.LExpr ⟨⟨ExpressionMetadata, Unit⟩, Lambda.LMonoTy⟩ :=
+  Expression.mapFvarNames (Imperative.renameLookup (P := Core.Expression) subst) e
+
 instance : HasSubstFvar Core.Expression where
   substFvar := Lambda.LExpr.substFvar
   substFvars := Lambda.LExpr.substFvars
+  renameFvars := Expression.renameFvars
 
 instance : HasIdent Core.Expression where
   ident s := ⟨s, ()⟩

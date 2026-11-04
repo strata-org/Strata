@@ -11371,7 +11371,8 @@ fixed; the last is parameterised by the user block label being exited. -/
 
 /-- Each of the thirteen prefixes `stmtsToCFG` generates under lands inside
 `s2uKind`: this is exactly the thirteen-conjunct generate witness at
-`Q := s2uKind`, the analogue of `ndelimKind_gen` for the S2U construct prefixes.
+`Q := s2uKind`, analogous to `Imperative.NondetElim.isGeneratedName_gen`
+for the S2U construct prefixes.
 The final conjunct is parametric in the user block label `l`. -/
 theorem s2uKind_gen : S2UGenWitness s2uKind := by
   refine ⟨fun sg => ?_, fun sg => ?_, fun sg => ?_, fun sg => ?_, fun sg => ?_,

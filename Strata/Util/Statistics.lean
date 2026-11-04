@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Init
 public meta import Lean.Elab.Command
 public import Std.Data.HashMap.Basic
 public meta import Std.Do.Triple.SpecLemmas

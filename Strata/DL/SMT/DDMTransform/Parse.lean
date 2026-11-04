@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Init
 import StrataDDM.BuiltinDialects.BuiltinM
 public import StrataDDM.Integration.Lean.OfAstM
 import StrataDDM.Integration.Lean --shake: keep

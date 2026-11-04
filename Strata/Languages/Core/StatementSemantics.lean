@@ -214,8 +214,8 @@ inductive CoreStepStar
 
     For structured bodies, the body is wrapped in `Stmt.block "" ss #[]` so that
     variable scoping introduced by the body does not leak past the procedure
-    boundary.  This wrapping mirrors
-    `Specification.AssertValidInProcedure` and the `procToVerifyStmt` pipeline. -/
+    boundary. This wrapping matches `Specification.AssertSpecInProcedure` and
+    the `procToVerifyStmt` pipeline. -/
 inductive CoreBodyExec
     (π : String → Option Procedure) :
     Procedure.Body → Env Expression → CoreStore → Bool → Prop where

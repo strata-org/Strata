@@ -12,6 +12,7 @@ public import Strata.DL.Imperative.Logic.ProgramEntries
 public import Strata.Languages.Core.CallGraph
 public import Strata.Transform.FilterProcedures
 public import Strata.Languages.Core.Logic.TraceInterpUsingDenote
+public import Strata.Languages.Core.IncrementalSolve
 
 /-! # Deductive verification of Core programs
 
@@ -201,7 +202,9 @@ def CoreVerifierInput.reachableProcedures (input : CoreVerifierInput) : List Str
     obligation skipped by `obligationsToVerify` would make it miss a failing
     one; this resets that option. With a given pipeline, `proceduresToVerify`
     is not read, and `ValidConfig` requires the pipeline to filter no
-    procedure, so every procedure is verified. -/
+    procedure, so every procedure is verified. With `options.incremental` set,
+    `Core.verify` discharges the obligations by walking the obligation tree
+    (`IncrementalSolve`) instead of running `verifyPipeline`. -/
 def VerifyConfig.verify (cfg : VerifyConfig) (input : CoreVerifierInput) :=
   Core.verify input.prog cfg.tempDir
     { cfg.options with
@@ -213,7 +216,10 @@ def VerifyConfig.verify (cfg : VerifyConfig) (input : CoreVerifierInput) :=
     covers.** For every valid configuration, one whose pipeline phases each
     preserve deductive verification and filter no procedure, every `VCResults`
     that `Core.verify` returns is deductive verification of the program the
-    user wrote, in every model of Core's factory. This is the statement, not yet a theorem: proving it needs the
+    user wrote, in every model of Core's factory. It covers both back ends
+    `Core.verify` chooses between: `verifyPipeline`, and, with
+    `options.incremental` set, the obligation-tree walk of `IncrementalSolve`.
+    This is the statement, not yet a theorem: proving it needs the
     correctness of the back end, symbolic evaluation and obligation extraction,
     and the soundness of the solver. -/
 @[expose] def CoreVerifyIsDeductive : Prop :=

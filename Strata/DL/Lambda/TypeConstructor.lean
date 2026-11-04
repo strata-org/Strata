@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Init
 public import Strata.DL.Lambda.LTy
 
 open Std (ToFormat Format format)

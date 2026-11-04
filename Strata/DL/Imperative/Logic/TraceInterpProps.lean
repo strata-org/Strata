@@ -20,6 +20,11 @@ together with basic assumption-prefix algebra.
 
 ## Key results
 
+- `Trace.AssumptionsHold_matches_transfer` and
+  `Trace.AssertionValidFrom_matches_reflect` provide the generic transport over
+  `Event.Matches`; `Trace.AssumptionsHold_transfer` and
+  `Trace.AssertionValidFrom_reflect` specialize it to pointwise environment
+  extension.
 - `Trace.AssertionsValidFromP.mono_assumptions` — transports filtered
   assertion validity when accumulated assumptions are strengthened;
   `AssertionsValidFrom` and `AssertionValidFrom` are its two specializations.
@@ -454,6 +459,151 @@ theorem Trace.AssertionsValid.append_of_reachable_left
     Trace.AssertionsValid P I (left ++ right) := by
   refine Trace.AssertionsValidFrom.append_cond I hleft (fun hex => hright ?_)
   simpa using hex
+
+/-! ## Validity under pointwise event matching -/
+
+/-- Assumptions remain satisfied across same-kind event matching when the
+condition interpretation is stable under the argument relation. -/
+theorem Trace.AssumptionsHold_matches_transfer {P : PureExpr}
+    {I : ConditionInterp P} {ArgRel : EventArg P → EventArg P → Prop}
+    (hstable : I.StableUnder ArgRel) {world : I.World} :
+    ∀ {source target : Trace P},
+      List.Rel₂ (Event.Matches ArgRel) source target →
+      Trace.AssumptionsHold P I world source →
+      Trace.AssumptionsHold P I world target
+  | _, _, .nil, h => h
+  | .assume source :: _, .assume target :: _, .cons harg hrest, h =>
+      fun condition hmem => by
+        rcases List.mem_cons.mp hmem with heq | hmem
+        · have : condition = target := Event.assume.inj heq
+          subst condition
+          exact (hstable world source target harg).mp
+            (h source List.mem_cons_self)
+        · exact Trace.AssumptionsHold_matches_transfer hstable hrest
+            (fun c hc => h c (List.mem_cons_of_mem _ hc)) condition hmem
+  | .assert _ :: _, .assert _ :: _, .cons _ hrest, h
+  | .cover _ :: _, .cover _ :: _, .cons _ hrest, h =>
+      fun condition hmem => by
+        rcases List.mem_cons.mp hmem with heq | hmem
+        · cases heq
+        · exact Trace.AssumptionsHold_matches_transfer hstable hrest
+            (fun c hc => h c (List.mem_cons_of_mem _ hc)) condition hmem
+  | .assert _ :: _, .assume _ :: _, .cons harg _, _
+  | .assert _ :: _, .cover _ :: _, .cons harg _, _
+  | .assume _ :: _, .assert _ :: _, .cons harg _, _
+  | .assume _ :: _, .cover _ :: _, .cons harg _, _
+  | .cover _ :: _, .assert _ :: _, .cons harg _, _
+  | .cover _ :: _, .assume _ :: _, .cons harg _, _ => by
+      simp [Event.Matches] at harg
+
+/-- Pointwise same-kind event matching reflects assertion validity when related
+arguments preserve assertion identity and interpreted truth. -/
+theorem Trace.AssertionValidFrom_matches_reflect {P : PureExpr}
+    {I : ConditionInterp P} {ArgRel : EventArg P → EventArg P → Prop}
+    (hstable : I.StableUnder ArgRel)
+    (hsame : ∀ {source target}, ArgRel source target →
+      source.label = target.label ∧ source.expr = target.expr)
+    (aid : AssertId P) :
+    ∀ {assumptions assumptions' source target : Trace P},
+      List.Rel₂ (Event.Matches ArgRel) assumptions assumptions' →
+      List.Rel₂ (Event.Matches ArgRel) source target →
+      Trace.AssertionValidFrom P I aid assumptions' target →
+      Trace.AssertionValidFrom P I aid assumptions source
+  | _, _, _, _, _, .nil, _ => trivial
+  | _, _, .assume _ :: _, .assume _ :: _, hassumptions,
+      .cons harg hrest, h =>
+      (Trace.AssertionValidFrom_matches_reflect hstable hsame aid
+        (hassumptions.append (.cons harg .nil)) hrest h :)
+  | _, _, .assert source :: _, .assert target :: _, hassumptions,
+      .cons harg hrest, h =>
+      have hfields := hsame harg
+      ⟨fun hkeep world hholds =>
+          (hstable world source target harg).mpr
+            (h.1 ⟨hfields.1.symm.trans hkeep.1,
+                    hfields.2.symm.trans hkeep.2⟩ world
+              (Trace.AssumptionsHold_matches_transfer hstable hassumptions hholds)),
+        (Trace.AssertionValidFrom_matches_reflect hstable hsame aid
+          hassumptions hrest h.2 :)
+      ⟩
+  | _, _, .cover _ :: _, .cover _ :: _, hassumptions, .cons _ hrest, h =>
+      (Trace.AssertionValidFrom_matches_reflect hstable hsame aid
+        hassumptions hrest h :)
+  | _, _, .assert _ :: _, .assume _ :: _, _, .cons harg _, _
+  | _, _, .assert _ :: _, .cover _ :: _, _, .cons harg _, _
+  | _, _, .assume _ :: _, .assert _ :: _, _, .cons harg _, _
+  | _, _, .assume _ :: _, .cover _ :: _, _, .cons harg _, _
+  | _, _, .cover _ :: _, .assert _ :: _, _, .cons harg _, _
+  | _, _, .cover _ :: _, .assume _ :: _, _, .cons harg _, _ => by
+      simp [Event.Matches] at harg
+
+/-! ## Validity under trace-environment extension -/
+
+/-- Assumptions remain satisfied when each captured event argument is extended
+and the interpretation is stable under that extension. -/
+theorem Trace.AssumptionsHold_transfer {P : PureExpr}
+    {I : ConditionInterp P} {Extra : P.Ident → Prop}
+    (hstable : I.StableUnderExtendsEnv Extra) {world : I.World} :
+    ∀ {source target : Trace P},
+      List.Rel₂ (Event.ExtendsEnv Extra) source target →
+      Trace.AssumptionsHold P I world source →
+      Trace.AssumptionsHold P I world target
+  | _, _, .nil, h => h
+  | .assume source :: _, .assume target :: _, .cons harg hrest, h =>
+      fun condition hmem => by
+        rcases List.mem_cons.mp hmem with heq | hmem
+        · have : condition = target := Event.assume.inj heq
+          subst condition
+          exact (hstable world source target harg).mp
+            (h source List.mem_cons_self)
+        · exact Trace.AssumptionsHold_transfer hstable hrest
+            (fun c hc => h c (List.mem_cons_of_mem _ hc)) condition hmem
+  | .assert _ :: _, .assert _ :: _, .cons _ hrest, h
+  | .cover _ :: _, .cover _ :: _, .cons _ hrest, h =>
+      fun condition hmem => by
+        rcases List.mem_cons.mp hmem with heq | hmem
+        · cases heq
+        · exact Trace.AssumptionsHold_transfer hstable hrest
+            (fun c hc => h c (List.mem_cons_of_mem _ hc)) condition hmem
+  | .assert _ :: _, .assume _ :: _, .cons harg _, _
+  | .assert _ :: _, .cover _ :: _, .cons harg _, _
+  | .assume _ :: _, .assert _ :: _, .cons harg _, _
+  | .assume _ :: _, .cover _ :: _, .cons harg _, _
+  | .cover _ :: _, .assert _ :: _, .cons harg _, _
+  | .cover _ :: _, .assume _ :: _, .cons harg _, _ => by
+      simp [Event.ExtendsEnv, Event.Matches] at harg
+
+/-- Pointwise event-argument extension reflects per-identifier assertion
+validity from a target trace to its source trace. -/
+theorem Trace.AssertionValidFrom_reflect {P : PureExpr}
+    {I : ConditionInterp P} {Extra : P.Ident → Prop}
+    (hstable : I.StableUnderExtendsEnv Extra) (aid : AssertId P) :
+    ∀ {assumptions assumptions' source target : Trace P},
+      List.Rel₂ (Event.ExtendsEnv Extra) assumptions assumptions' →
+      List.Rel₂ (Event.ExtendsEnv Extra) source target →
+      Trace.AssertionValidFrom P I aid assumptions' target →
+      Trace.AssertionValidFrom P I aid assumptions source
+  | _, _, _, _, _, .nil, _ => trivial
+  | _, _, .assume _ :: _, .assume _ :: _, hassumptions,
+      .cons harg hrest, h =>
+      (Trace.AssertionValidFrom_reflect hstable aid
+        (hassumptions.append (.cons harg .nil)) hrest h :)
+  | _, _, .assert source :: _, .assert target :: _, hassumptions,
+      .cons harg hrest, h =>
+      ⟨fun hkeep world hholds =>
+          (hstable world source target harg).mpr
+            (h.1 ⟨harg.2.2.1.symm.trans hkeep.1,
+                    harg.2.2.2.1.symm.trans hkeep.2⟩ world
+              (Trace.AssumptionsHold_transfer hstable hassumptions hholds)),
+        (Trace.AssertionValidFrom_reflect hstable aid hassumptions hrest h.2 :)⟩
+  | _, _, .cover _ :: _, .cover _ :: _, hassumptions, .cons _ hrest, h =>
+      (Trace.AssertionValidFrom_reflect hstable aid hassumptions hrest h :)
+  | _, _, .assert _ :: _, .assume _ :: _, _, .cons harg _, _
+  | _, _, .assert _ :: _, .cover _ :: _, _, .cons harg _, _
+  | _, _, .assume _ :: _, .assert _ :: _, _, .cons harg _, _
+  | _, _, .assume _ :: _, .cover _ :: _, _, .cons harg _, _
+  | _, _, .cover _ :: _, .assert _ :: _, _, .cons harg _, _
+  | _, _, .cover _ :: _, .assume _ :: _, _, .cons harg _, _ => by
+      simp [Event.ExtendsEnv, Event.Matches] at harg
 
 end -- public section
 end Imperative

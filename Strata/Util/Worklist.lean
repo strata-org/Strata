@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Init
 public import Std.Data.HashSet.Basic
 
 /-! # Generic worklist algorithm

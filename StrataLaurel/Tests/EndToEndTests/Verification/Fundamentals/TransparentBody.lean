@@ -523,10 +523,7 @@ procedure testBlockValueOuterLocal()
 };
 #end
 
--- Assigning to an input parameter is a destructive assignment that must still be
--- rejected: rewriting it into a shadowing declaration would silently accept the
--- program. `FunctionalRewrite` therefore reports it rather than rewriting it.
--- Kept in its own program because the error aborts verification of the rest.
+-- A transparent body may assign to its input parameter, as it may to a local.
 #guard_msgs (drop info) in
 #eval testLaurelVerification <|
 #strata
@@ -534,8 +531,13 @@ program Laurel;
 procedure updateInputParameter(a: int) returns (r: int)
 {
   a := a + 1;
-//^^^^^^^^^^ error: a transparent body or contract cannot YET mutate any of its inputs, and this mutates 'a'
   return a
+};
+
+procedure testUpdateInputParameter()
+  opaque
+{
+  assert updateInputParameter(1) == 2
 };
 #end
 

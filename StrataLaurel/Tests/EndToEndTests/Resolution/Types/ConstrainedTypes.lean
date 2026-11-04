@@ -18,10 +18,9 @@ constrained nat = x: int where x >= 0 witness 0
 procedure goodFunc(): nat { return 3 };
 
 // A transparent procedure keeps its body and its constrained return type is still
-// checked — by the generated `$constraintLemma_badFunc` rather than by an `ensures`,
-// so the failure is an assertion, reported on the return type.
+// checked — by an assertion at the return rather than by an `ensures`.
 procedure badFunc(): nat { return -1 };
-//                   ^^^ error: assertion does not hold
+//                         ^^^^^^^^^ error: assertion does not hold
 
 // Caller of constrained function — body is inlined, caller sees actual value
 procedure callerGood()

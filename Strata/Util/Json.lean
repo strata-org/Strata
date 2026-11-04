@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Init
 public import Lean.Data.Json.Basic
 import Lean.Data.Json.Printer
 

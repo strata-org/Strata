@@ -84,12 +84,11 @@ procedure readCountRecoversConstraint(c: Counter)
   assert x >= 0
 };
 
-// The same recovery on the OUTPUT path, which is the case the pass exists for: a
-// constrained output's range obligation is an `ensures` (added by `elimProc`), not the
-// local `assert` above, so the read's assume has to be visible to the postcondition
-// check rather than only to a statement in the body. Non-vacuous independently of
-// `readCountRecoversConstraint`: this procedure fails if the read assume is removed from
-// `elimNode`, so the ensures obligation is emitted and is discharged by the assume.
+// The same recovery on the OUTPUT path, which is the case the pass exists for: the
+// `return` is an assignment to the constrained output `r`, so its range obligation is
+// asserted at the return, and again by the generated `ensures`. Non-vacuous independently of `readCountRecoversConstraint`:
+// this procedure fails if the read assume is removed from `elimNode`, so the obligation
+// is emitted and is discharged by the assume.
 procedure readAndReturn(c: Counter) returns (r: nat)
   opaque
 {
@@ -101,16 +100,16 @@ procedure readAndReturn(c: Counter) returns (r: nat)
 // "no obligation was emitted" -- a change that dropped the constrained-output `ensures`
 // entirely would leave it green. Here the returned value is out of range for `nat` on a
 // path the assume cannot rescue, so the obligation must exist and must fail. Together
-// the two procedures pin both directions of the ensures path.
+// the two procedures pin both directions of the output check.
 //
-// The caret sits on the OUTPUT TYPE, not on the `return`: `elimProc` generates the range
-// check as an `ensures` whose source is the constrained output's type, so that is where
-// the failure is reported (measured: 58-61 on the signature line).
+// Both checks fail: the `return` reaches `elimProc` as an assignment to `r`, checked
+// there, and the generated `ensures` is checked on the output type.
 procedure readAndReturnOutOfRange(c: Counter) returns (r: nat)
 //                                                        ^^^ error: postcondition could not be proved
   opaque
 {
   return c#count - 1
+//^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
 };
 #end
 

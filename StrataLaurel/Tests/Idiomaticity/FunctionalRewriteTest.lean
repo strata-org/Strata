@@ -748,9 +748,13 @@ procedure hasAssume(b: bool) returns (r: int) {
 
 /-! ### An assignment to an input parameter
 
-This is a destructive assignment the Core translator must keep rejecting.
-Turning it into a shadowing declaration would silently accept the program, so
-input names are checked before the binding rule applies. -/
+In the full pipeline this construct is accepted: `CopyMutatedInputs` redirects
+the write to a fresh local before `FunctionalRewrite` runs, so the input-uid
+check there only ever sees *inout* writes (`$heap`, promoted globals). This
+harness drives `functionalRewritePass` directly, without that pass, so a
+plain-input write still reaches the check — turning it into a shadowing
+declaration here would silently change its meaning, hence input names are
+checked before the binding rule applies, and this pins the diagnostic. -/
 
 /--
 info: FunctionalRewritePass diagnostic[userError]: a transparent body or contract cannot YET mutate any of its inputs, and this mutates 'a'

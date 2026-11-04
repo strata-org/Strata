@@ -471,6 +471,19 @@ theorem StringGenState.gen_hasGenPrefix (pf : String) (σ : StringGenState) :
   refine ⟨(toString σ.cs.counter).toList, ?_⟩
   simp [String.toList_append, List.append_assoc]
 
+/-- From a generator-prefix witness `HasGenPrefix pf s` (which carries
+`(pf ++ "_")` as a prefix of `s`) to the bare prefix `pf.toList.isPrefixOf
+s.toList`, by dropping the trailing `"_"`. This is the generic consequence of
+`HasGenPrefix` reused by every pass that must show its generated names lie under
+a reserved bare prefix. -/
+theorem String.HasGenPrefix.bare_isPrefixOf {pf s : String}
+    (h : String.HasGenPrefix pf s) : pf.toList.isPrefixOf s.toList = true := by
+  rw [String.HasGenPrefix, List.isPrefixOf_iff_prefix] at h
+  rw [List.isPrefixOf_iff_prefix]
+  refine List.IsPrefix.trans ?_ h
+  rw [String.toList_append]
+  exact List.prefix_append _ _
+
 /-! ## Membership tracking: `AllMem`
 
 A prefix-only contract is too weak to certify a *foreign-label* obligation

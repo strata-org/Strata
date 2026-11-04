@@ -45,6 +45,12 @@ procedure second()
 
 /--
 info:
+
+Obligation bad: failed!
+
+Result obtained during evaluation.
+---
+info:
 Obligation: bad
 Property: assert
 Result: ❌ fail

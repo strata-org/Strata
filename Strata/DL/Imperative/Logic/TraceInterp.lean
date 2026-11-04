@@ -39,6 +39,14 @@ These predicates state when an abstract condition interpretation respects
 `EventArg.ExtendsEnv` and operationally true event stuttering under a selected
 class of factories. -/
 
+/-- A condition interpretation is stable under an event-argument relation
+when related conditions have the same interpreted truth in every world. -/
+@[expose] def ConditionInterp.StableUnder
+    {P : PureExpr} (I : ConditionInterp P)
+    (R : EventArg P → EventArg P → Prop) : Prop :=
+  ∀ (world : I.World) (source target : EventArg P),
+    R source target → (I.holds world source ↔ I.holds world target)
+
 /-- A condition interpretation is *stable* under `allowedVarName`-classified environment
 extension when it assigns the same truth value to any two event conditions
 related by `EventArg.ExtendsEnv allowedVarName`. This is the compatibility premise that
@@ -47,8 +55,7 @@ precisely when a captured condition reads a target-only register classified by
 `allowedVarName`. -/
 @[expose] def ConditionInterp.StableUnderExtendsEnv
     {P : PureExpr} (I : ConditionInterp P) (allowedVarName : P.Ident → Prop) : Prop :=
-  ∀ (world : I.World) (source target : EventArg P),
-    source.ExtendsEnv allowedVarName target → (I.holds world source ↔ I.holds world target)
+  I.StableUnder (EventArg.ExtendsEnv allowedVarName)
 
 /-- A condition interpretation *accepts true stutter* for an allowed class
 of factories when every condition captured under an allowed factory that the

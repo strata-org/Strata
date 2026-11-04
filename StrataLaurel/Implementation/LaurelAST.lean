@@ -1973,7 +1973,7 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
     `isGradual` local inside `isConsistent` so `coerce`'s DECISION classifies
     identically — that local sees only unfolded values, so this unfolds too, and `type G = Any`
     answers the way `Any` does. -/
-private def TypeLattice.isGradualTop (ctx : TypeLattice) (t : HighTypeMd) : Bool :=
+def TypeLattice.isGradualTop (ctx : TypeLattice) (t : HighTypeMd) : Bool :=
   match (ctx.unfold t).val with
   | .Unknown => true
   | .UserDefined id => ctx.gradualTypes.contains id.text
@@ -2340,9 +2340,9 @@ def callSiteDeterminedTypeParams (ctx : TypeLattice)
   -- rejects it with a diagnostic naming both instantiations and the upcast that disambiguates,
   -- which is strictly more useful than "cannot infer T". Reporting it from here would also arrive
   -- too late to be a clean user error — an inherited call is an `.InstanceCall` at first
-  -- resolution (which does not infer type arguments at all), so the diagnostic would only appear
-  -- on the post-`LiftInstanceProcedures` re-resolution, where the pipeline wraps any newly
-  -- introduced diagnostic as an internal error.
+  -- resolution, which does not ask whether its composite's type arguments are determined, so the
+  -- diagnostic would only appear on the post-`LiftInstanceProcedures` re-resolution, where the
+  -- pipeline wraps any newly introduced diagnostic as an internal error.
   let lift (declared actual : HighType) : List HighType :=
     match ancestorLiftCandidates ctx declared actual with
     | [] => [actual]

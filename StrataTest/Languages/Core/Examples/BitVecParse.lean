@@ -41,6 +41,11 @@ Property: assert
 Obligation:
 false
 
+
+
+Obligation bitvec64_test: failed!
+
+Result obtained during evaluation.
 ---
 info:
 Obligation: bitvec32_test

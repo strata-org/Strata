@@ -368,6 +368,9 @@ structure CoreVerifierInput where
       terminating run satisfies the postconditions);
     * `.bugFindingAssumingCompleteSpec`: not yet specified. Every result
       passes and claims `False`, so no analyzer implements this mode yet.
+    * `.deductiveAssumingSatisfiablePaths`: as `.deductive`. The mode's premise
+      only adds failures, never passes, so a pass claims the same as in
+      `.deductive`; failures reported under the premise are not specified.
 
     A result that does not pass claims nothing. An analyzer `analyze` implements
     the mode when `MatchesAnalysis (analyze mode) (CoreVerifierModel mode params)`.
@@ -382,7 +385,7 @@ def CoreVerifierModel
   Imperative.Analysis.Sound
     (fun input =>
       match mode with
-      | .deductive =>
+      | .deductive | .deductiveAssumingSatisfiablePaths =>
         ∀ procName ∈ input.entryPoints,
           ProcedureAssertsValidOnTraces.denote params procName input.prog
       | .bugFinding =>
@@ -394,7 +397,8 @@ def CoreVerifierModel
         False)
     (fun results =>
       match mode with
-      | .deductive => ∀ r ∈ results, VCResult.isSuccess r = Bool.true
+      | .deductive | .deductiveAssumingSatisfiablePaths =>
+        ∀ r ∈ results, VCResult.isSuccess r = Bool.true
       | .bugFinding => ∀ r ∈ results, VCResult.isBugFindingSuccess r = Bool.true
       | .bugFindingAssumingCompleteSpec => True)
 

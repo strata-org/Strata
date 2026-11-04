@@ -702,6 +702,27 @@ def boundNamesOfNode (e : StmtExprMd) : List Identifier :=
   | .Try _ catches _ => catches.map (·.binding)
   | _ => []
 
+/-- UniqueIds of the `.Local` variables `expr` assigns to, by plain assignment,
+    `x++`/`x--` or compound assignment. A `.Field` target mutates the heap, not a
+    local binding, and a `.Declare` target introduces a new local; neither can
+    name a parameter. Targets without a `uniqueId` are skipped rather than
+    guessed at by name. Shared by resolution's no-op-`old` analysis and
+    `CopyMutatedInputs`, so both see the same set of assigned inputs. -/
+def assignedLocalIds (expr : StmtExprMd) : Std.HashSet Nat :=
+  foldStmtExpr (fun n acc =>
+    let targets := match n.val with
+      | .Assign targets _ => targets
+      | .IncrDecr _ _ t => [t]
+      | .CompoundAssign _ t _ => [t]
+      | _ => []
+    targets.foldl (fun acc t =>
+      match t.val with
+      | .Local name =>
+        match name.uniqueId with
+        | some uid => acc.insert uid
+        | none => acc
+      | _ => acc) acc) {} expr
+
 /-- Every variable name bound anywhere in `expr`, regardless of scope -- the answer to "is this
     name in scope here?".
 

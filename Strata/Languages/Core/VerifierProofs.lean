@@ -7,7 +7,7 @@ module
 import all Strata.Languages.Core.Verifier
 
 /-!
-# Proofs about `SMT.Result.merge`
+# Proofs about `SMT.Result.merge` and `evaluatorResults`
 
 `SMT.Result.merge` computes the join (least upper bound) in the lattice:
 
@@ -40,6 +40,10 @@ what `ResultKind.merge` predicts, even though the payloads may differ.
 - `ResultKind.le_merge_left` / `le_merge_right` — merge is an upper bound
 - `ResultKind.merge_le` — merge is the *least* upper bound
 - `merge_kind` — `(a.merge b).toKind = a.toKind.merge b.toKind`
+- `Core.evaluatorResults_valid_sat` — when `evaluatorResults` reports a failure
+- `Core.evaluatorResults_valid_sat_deductive` — the same, in `deductive` mode
+- `Core.evaluatorResults_valid_sat_not_dead` — never on a known-dead path
+- `Core.evaluatorResults_valid_unsat` — it reports a pass only for a goal that is literally `true`
 -/
 
 open Strata
@@ -136,3 +140,60 @@ theorem merge_kind (a b : Core.SMT.Result) :
   -- since the new model-preserving branches pattern-match on Some/None.
   cases a <;> cases b <;> simp [Core.SMT.Result.merge, Core.SMT.Result.toKind, ResultKind.merge] <;>
     (try (rename_i m₁ m₂; cases m₁ <;> cases m₂ <;> rfl))
+
+/-! ## When the evaluator reports an assertion failing
+
+`evaluatorResults` decides validity without a solver, reporting it `sat` with an empty
+model, only when the goal is literally `false` and the path condition is known to be
+satisfiable. The theorems below pin which path conditions those are, so a change to the
+shape check cannot quietly widen when the evaluator reports a failure. -/
+
+namespace Core
+
+/-- The evaluator reports validity as `sat` only for a requested validity check of a goal
+that is literally `false`, under a path condition that only declares or defines variables or
+that the premise of `deductiveAssumingSatisfiablePaths` takes to be satisfiable. -/
+theorem evaluatorResults_valid_sat {obligation : Imperative.ProofObligation Expression}
+    {checkMode : VerificationMode} {satisfiabilityCheck validityCheck : Bool}
+    {m : Imperative.SMT.Model Expression.Ident}
+    (h : (evaluatorResults obligation checkMode satisfiabilityCheck validityCheck).2 =
+      some (.sat m)) :
+    validityCheck = true ∧ obligation.obligation.isFalse = true ∧
+      (pathConditionShape obligation = .onlyDefinitions ∨
+        usesSatisfiablePathsPremise obligation checkMode (pathConditionShape obligation)) := by
+  grind [evaluatorResults]
+
+/-- The evaluator reports a validity check proved (`unsat`) only for a goal that is literally
+`true`, in every check mode. So no mode's shortcut ever adds a pass. -/
+theorem evaluatorResults_valid_unsat {obligation : Imperative.ProofObligation Expression}
+    {checkMode : VerificationMode} {satisfiabilityCheck validityCheck : Bool}
+    (h : (evaluatorResults obligation checkMode satisfiabilityCheck validityCheck).2 =
+      some .unsat) :
+    validityCheck = true ∧ obligation.obligation.isTrue = true := by
+  grind [evaluatorResults]
+
+/-- In `deductive` mode, the evaluator reports an assertion failing only when its path
+condition only declares or defines variables. -/
+theorem evaluatorResults_valid_sat_deductive {obligation : Imperative.ProofObligation Expression}
+    {satisfiabilityCheck validityCheck : Bool} {m : Imperative.SMT.Model Expression.Ident}
+    (h : (evaluatorResults obligation .deductive satisfiabilityCheck validityCheck).2 =
+      some (.sat m)) :
+    pathConditionShape obligation = .onlyDefinitions := by
+  obtain ⟨-, -, h | h⟩ := evaluatorResults_valid_sat h
+  · exact h
+  · simp [usesSatisfiablePathsPremise] at h
+
+/-- In any mode, the evaluator never reports an assertion failing on a path it knows is dead:
+one with a literally `false` assumption. -/
+theorem evaluatorResults_valid_sat_not_dead {obligation : Imperative.ProofObligation Expression}
+    {checkMode : VerificationMode} {satisfiabilityCheck validityCheck : Bool}
+    {m : Imperative.SMT.Model Expression.Ident}
+    (h : (evaluatorResults obligation checkMode satisfiabilityCheck validityCheck).2 =
+      some (.sat m)) :
+    pathConditionShape obligation ≠ .hasFalseAssumption := by
+  obtain ⟨-, -, h | h⟩ := evaluatorResults_valid_sat h
+  · simp [h]
+  · simp [usesSatisfiablePathsPremise] at h
+    exact h.2
+
+end Core

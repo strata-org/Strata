@@ -468,8 +468,8 @@ theorem keep_meets_contract :
 /-! ## A `free ensures` is not the body's obligation
 
 `requires x == 1`, `ensures x == 1`, and `free ensures x == 99`.  The `free` clause is
-*assumed* at call sites rather than proved by the body — exactly as
-`Core.Specification.ProcedureAssertsValid` treats it — so `postAsPredicate` filters on
+*assumed* at call sites rather than proved by the body, matching
+`Core.Specification.ProcedureAssertsValidOnTraces`, so `postAsPredicate` filters on
 `check.attr = Default` and the contract holds of the empty body even though the
 `free` clause is false. -/
 
@@ -838,7 +838,7 @@ private theorem contractTriple_set_const (p : Core.Program)
     (Imperative.Logic.Hoare.postWF_of_definedVars_nil _
       (by simp [Imperative.Block.definedVars,
         Imperative.Stmt.definedVars, Imperative.HasVarsImp.definedVars,
-        Core.Command.definedVars, Imperative.Cmd.definedVars]))) model
+        Imperative.CmdExt.definedVars, Imperative.Cmd.definedVars]))) model
 
 
 /-! ## A body with one command
@@ -1919,7 +1919,7 @@ example (x : Core.Expression.Ident) (ty : Core.Expression.Ty)
       hasFailure := false } (by simp)
   simp [Imperative.dropVars, Imperative.Block.definedVars,
     Imperative.Stmt.definedVars, Imperative.HasVarsImp.definedVars,
-    Core.Command.definedVars, Imperative.Cmd.definedVars] at hbad
+    Imperative.CmdExt.definedVars, Imperative.Cmd.definedVars] at hbad
 
 
 end Strata

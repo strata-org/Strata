@@ -114,7 +114,7 @@ theorem mono {P : PureExpr} {Extra Extra' : P.Ident → Prop}
     {source target : Event P} (h : source.ExtendsEnv Extra target) :
     source.ExtendsEnv Extra' target := by
   cases source <;> cases target <;>
-    simp_all only [Event.ExtendsEnv]
+    simp_all only [Event.ExtendsEnv, Event.Matches]
   all_goals exact EventArg.ExtendsEnv.mono hsub h
 
 /-- Event extension composes while unioning extra-register classes. -/
@@ -124,7 +124,7 @@ theorem trans_union {P : PureExpr} {Extra₁ Extra₂ : P.Ident → Prop}
     (h₂ : second.ExtendsEnv Extra₂ third) :
     first.ExtendsEnv (fun ident => Extra₁ ident ∨ Extra₂ ident) third := by
   cases first <;> cases second <;> cases third <;>
-    simp_all only [Event.ExtendsEnv]
+    simp_all only [Event.ExtendsEnv, Event.Matches]
   all_goals exact EventArg.ExtendsEnv.trans_union h₁ h₂
 
 end Event.ExtendsEnv
@@ -217,10 +217,10 @@ theorem TraceStuttersEnv.assumptionsHold_transfer
       refine ⟨?_, htail⟩
       cases se with
       | assume sc =>
-        simp only [Event.ExtendsEnv] at hevent
+        simp only [Event.ExtendsEnv, Event.Matches] at hevent
         exact (hstable world sc tc hevent).mp (hsrc sc (by simp))
-      | assert sc => simp [Event.ExtendsEnv] at hevent
-      | cover sc => simp [Event.ExtendsEnv] at hevent
+      | assert sc => simp [Event.ExtendsEnv, Event.Matches] at hevent
+      | cover sc => simp [Event.ExtendsEnv, Event.Matches] at hevent
   | @stutter_left s t se hadmissible he hrest ih =>
     intro world hsrc
     exact ih world (fun c hc => hsrc c (List.mem_cons_of_mem _ hc))
@@ -271,26 +271,26 @@ private theorem TraceStuttersEnv.assertionsValidFrom_reflect
     | assert sc =>
       cases te with
       | assert tc =>
-        simp only [Event.ExtendsEnv] at hevent
+        simp only [Event.ExtendsEnv, Event.Matches] at hevent
         obtain ⟨hv1, hv2⟩ := hvalid
         refine ⟨fun _ world hhold => ?_, ih accS accT hacc hv2⟩
         exact (hstable world sc tc hevent).mpr (hv1 trivial world (hacc world hhold))
-      | assume tc => simp [Event.ExtendsEnv] at hevent
-      | cover tc => simp [Event.ExtendsEnv] at hevent
+      | assume tc => simp [Event.ExtendsEnv, Event.Matches] at hevent
+      | cover tc => simp [Event.ExtendsEnv, Event.Matches] at hevent
     | assume sc =>
       cases te with
-      | assert tc => simp [Event.ExtendsEnv] at hevent
+      | assert tc => simp [Event.ExtendsEnv, Event.Matches] at hevent
       | assume tc =>
-        simp only [Event.ExtendsEnv] at hevent
+        simp only [Event.ExtendsEnv, Event.Matches] at hevent
         refine ih (accS ++ [Event.assume sc]) (accT ++ [Event.assume tc]) ?_ hvalid
         intro world hhold
         rw [Trace.AssumptionsHold_append_assume] at hhold ⊢
         exact ⟨hacc world hhold.1, (hstable world sc tc hevent).mp hhold.2⟩
-      | cover tc => simp [Event.ExtendsEnv] at hevent
+      | cover tc => simp [Event.ExtendsEnv, Event.Matches] at hevent
     | cover sc =>
       cases te with
-      | assert tc => simp [Event.ExtendsEnv] at hevent
-      | assume tc => simp [Event.ExtendsEnv] at hevent
+      | assert tc => simp [Event.ExtendsEnv, Event.Matches] at hevent
+      | assume tc => simp [Event.ExtendsEnv, Event.Matches] at hevent
       | cover tc => exact ih accS accT hacc hvalid
   | @stutter_left s t se hadmissible he hrest ih =>
     intro accS accT hacc hvalid

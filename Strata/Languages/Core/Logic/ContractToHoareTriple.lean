@@ -20,8 +20,7 @@ Read as a Hoare triple, the preconditions are the precondition and the
 its contract" becomes a single `Strata.Logic.Hoare` judgement.
 
 The postcondition drops `free` `ensures` checks: those are assumed at the call sites rather
-than proved by the body, exactly as `Core.Specification.ProcedureAssertsValid`
-treats them.
+than proved by the body, matching `Core.Specification.ProcedureAssertsValidOnTraces`.
 The `free` `requires` checks are still included in the precondition of the Hoare triple,
 because the caller will guarantee them 'for free' (caller will not have to actually prove the `free` `requires` conditions).
 

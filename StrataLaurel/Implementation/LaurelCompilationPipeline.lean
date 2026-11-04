@@ -17,6 +17,7 @@ import StrataLaurel.Implementation.EliminateDoWhileProps
 import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssignProps
 import StrataLaurel.Implementation.ResolutionProps
 import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssign
+import StrataLaurel.Implementation.CopyMutatedInputs
 import StrataLaurel.Implementation.EliminateValueInReturns
 import StrataLaurel.Implementation.ModifiesClauses
 import StrataLaurel.Implementation.HeapParameterization
@@ -142,16 +143,18 @@ def laurelPipeline : Array LaurelPass := #[
   monomorphizeCompositesPass,
   eliminateDoWhilePass,
   eliminateIncrDecrAndCompoundAssignPass,
-  constrainedTypeElimPass,
+  -- Placement rationale in the pass's module header.
+  copyMutatedInputsPass,
   -- `liftInstanceProceduresPass` runs before monomorphization; that also places it before
   -- `eliminateValueInReturnsPass`, as value-returning instance methods require, so no entry
   -- is needed here.
+  eliminateValueInReturnsPass,
+  constrainedTypeElimPass,
   -- Note: the exception contract checks (the declared `throws` upper bound, plus the
   -- "not yet lowerable" source-shape guards) are *not* a pipeline pass. They are
   -- properties of the authored program, so `resolve` runs them on the initial
   -- resolution only — see `validateExceptionEscapes` /
   -- `validateExceptionLowerability` in `Resolution.lean`.
-  eliminateValueInReturnsPass,
   eliminateExceptionsPass,
   -- The heap trio: `HeapParameterization` declares `$heap` as a file-scope global
   -- and rewrites field access against it; `TypeHierarchy` lowers `New` (which also
@@ -642,10 +645,15 @@ def translate (options : LaurelTranslateOptions) (program : LaurelProgram) : IO 
   return (core, diags)
 
 /-- The effective `Core.VerifyOptions` that `runVerify` actually runs with
-    (the caller's options plus Laurel's fixed adjustments). -/
-private def effectiveCoreVerifyOptions (options : LaurelVerifyOptions) : Core.VerifyOptions :=
+    (the caller's options plus Laurel's fixed adjustments).
+
+    Laurel asks that each goal see only the axioms its `Precise` pruning keeps, so under
+    `--incremental` it prunes exactly: a solver that holds an axiom a goal drops starts again,
+    and Laurel verdicts do not depend on `--incremental`. -/
+def effectiveCoreVerifyOptions (options : LaurelVerifyOptions) : Core.VerifyOptions :=
   { options.verifyOptions with
     removeIrrelevantAxioms := .Precise
+    exactPruning := true
     keepAllFilesPrefix := options.translateOptions.keepAllFilesPrefix }
 
 /-- Run `Core.verify` on a translated Core program, returning the verify-phase

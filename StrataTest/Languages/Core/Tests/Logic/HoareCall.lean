@@ -562,17 +562,19 @@ private theorem setBlockWF (setE : Core.Expression.Expr)
       simp [Block.InitTypesInhabited, Block.initTypes, Stmt.initTypes,
         HasInitTypesImp.initTypes, CmdExt.initTypes, Cmd.initTypes])
   · simp [Imperative.Block.definedVars, Imperative.Stmt.definedVars,
-      Imperative.HasVarsImp.definedVars, Core.Command.definedVars, Imperative.Cmd.definedVars] at hn
+      Imperative.HasVarsImp.definedVars, Imperative.CmdExt.definedVars,
+      Imperative.Cmd.definedVars] at hn
   · simp [Imperative.Block.definedVars, Imperative.Stmt.definedVars,
-      Imperative.HasVarsImp.definedVars, Core.Command.definedVars, Imperative.Cmd.definedVars] at hn
+      Imperative.HasVarsImp.definedVars, Imperative.CmdExt.definedVars,
+      Imperative.Cmd.definedVars] at hn
   · simp [testParams] at hp
   · simp only [Imperative.Block.defUseWellFormed, Imperative.Stmt.defUseWellFormed,
-      Imperative.HasVarsImp.definedVars, Core.Command.definedVars, Imperative.Cmd.definedVars,
+      Imperative.HasVarsImp.definedVars, Imperative.CmdExt.definedVars, Imperative.Cmd.definedVars,
       List.all_nil, Bool.and_true, testParams, Bool.and_eq_true, List.all_eq_true]
     refine ⟨⟨?_, ?_⟩, ?_⟩
     · intro n hn; exact hreads n hn
     · intro n hn
-      simp only [Imperative.HasVarsImp.modifiedVars, Core.Command.modifiedVars,
+      simp only [Imperative.HasVarsImp.modifiedVars, Imperative.CmdExt.modifiedVars,
         Imperative.Cmd.modifiedVars, List.mem_singleton] at hn
       subst hn; exact hres
     · intro n _; trivial
@@ -922,7 +924,7 @@ private theorem bv16_set_contract
   refine (Core.Logic.Hoare.block mmAST.findProcByString? testParams ?_
     (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by
       simp [Imperative.Block.definedVars, Imperative.Stmt.definedVars,
-        Imperative.HasVarsImp.definedVars, Core.Command.definedVars,
+        Imperative.HasVarsImp.definedVars, Imperative.CmdExt.definedVars,
         Imperative.Cmd.definedVars]))) model
   refine Core.Logic.Hoare.cmd mmAST.findProcByString? testParams
     (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det bodyE) md))

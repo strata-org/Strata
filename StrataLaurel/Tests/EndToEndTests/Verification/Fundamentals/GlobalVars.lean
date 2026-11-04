@@ -462,6 +462,32 @@ procedure checkInstanceConstraint(c: ConstrainedCounter) opaque {
   assert observed >= 0
 };
 #end
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+var g: nat := 0
+procedure readG() returns (r: nat) { r := g };
+procedure wrapperInput(g: int) returns (r: nat) { r := readG() };
+procedure callerInput() opaque { var r: nat := wrapperInput(0 - 1) };
+#end
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+var g: nat := 0
+//     ^^^ error: postcondition does not hold
+procedure readG() returns (r: nat) { r := g };
+procedure wrapperInput(g: int) returns (r: nat) { r := readG() };
+procedure breakG() opaque {
+  g := 0 - 1
+//^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
 /-! ## Lifted instance methods thread file-scope global reads and writes. -/
 
 #guard_msgs (drop info) in

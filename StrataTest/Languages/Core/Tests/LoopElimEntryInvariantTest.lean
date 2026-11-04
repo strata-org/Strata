@@ -54,6 +54,11 @@ Property: assert
 Obligation:
 false
 
+
+
+Obligation insertLoopInvAssert_entry_invariant_loop_0_0: failed!
+
+Result obtained during evaluation.
 ---
 info:
 Obligation: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0

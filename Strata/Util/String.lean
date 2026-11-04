@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Init
 import all Init.Data.Repr
 
 public section
@@ -93,5 +94,13 @@ def hexValue (ds : List Char) : Nat :=
 /-- `n` followed by `singular` or `plural` to agree with it. -/
 def countOf (n : Nat) (singular plural : String) : String :=
   s!"{n} {if n == 1 then singular else plural}"
+
+/-! ### String prefix sets -/
+
+/-- No string satisfying `classified` begins with a member of `prefixes`. -/
+@[expose] def prefixesDisjoint
+    (prefixes : List String) (classified : String → Prop) : Prop :=
+  ∀ pfx ∈ prefixes, ∀ value, classified value →
+    ¬pfx.toList.isPrefixOf value.toList
 
 end

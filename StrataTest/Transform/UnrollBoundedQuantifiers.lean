@@ -1932,6 +1932,12 @@ Result: ❌ fail
 
 /--
 info:
+
+Obligation r: failed!
+
+Result obtained during evaluation.
+---
+info:
 Obligation: r
 Property: assert
 Result: ❌ fail

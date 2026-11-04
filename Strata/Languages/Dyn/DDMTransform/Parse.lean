@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.Init
 public import StrataDDM.HNF
 public import StrataDDM.Integration.Lean.OfAstM
 import StrataDDM.Integration.Lean

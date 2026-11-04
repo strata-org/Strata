@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 public section
 /-!
 Based on Cedar's Term language.

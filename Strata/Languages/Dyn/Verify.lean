@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 -- TODO: Verification integration for Dyn language
 
 

@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 /-!
 # `frac{num, den}` literal encoding for non-terminating reals
 

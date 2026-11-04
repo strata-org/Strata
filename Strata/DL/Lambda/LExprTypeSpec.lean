@@ -3967,7 +3967,6 @@ private theorem typeBoundVar_xty_freeVars_fresh
           have := genTyVar_tyGen Env_g xtyid Env_ty h_tg; omega) k hk
 
 omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
-set_option maxHeartbeats 800000 in
 private theorem resolveAux_properties_aux :
     ∀ (n : Nat) (e : LExpr T.mono), e.sizeOf = n →
       ∀ (et : LExprT T.mono) (C : LContext T) (Env Env' : TEnv T.IDMeta),

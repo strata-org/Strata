@@ -1232,7 +1232,6 @@ theorem StepStar_getLFuncCall_args
 ---------------------------------------------------------------------
 -- getLFuncCall.go is eraseMetadata-invariant: if e₁.eM = e₂.eM and acc₁.map eM = acc₂.map eM,
 -- then getLFuncCall.go e₁ acc₁ and getLFuncCall.go e₂ acc₂ produce results with the same eM.
-set_option maxHeartbeats 800000 in
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
 private theorem getLFuncCall_go_eraseMetadata_congr
     (e₁ e₂ : LExpr Tbase.mono) (acc₁ acc₂ : List (LExpr Tbase.mono))

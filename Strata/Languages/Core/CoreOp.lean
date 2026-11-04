@@ -5,6 +5,8 @@
 -/
 module
 
+public import Strata.Init
+
 /-! ## Structured Operator Types for Strata Core
 
 Replaces string-based operator identity with structured types, enabling

@@ -231,6 +231,11 @@ callElimAssume_idp_ensures_0_7: bb@1 == true
 Obligation:
 true
 
+
+
+Obligation assert_0: failed!
+
+Result obtained during evaluation.
 ---
 info:
 Obligation: assert_0
