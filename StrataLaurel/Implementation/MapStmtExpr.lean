@@ -87,11 +87,13 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
   | .IfThenElse cond th el =>
     pure ⟨.IfThenElse (← mapStmtExprUsedM f true cond) (← mapStmtExprUsedM f resultUsed th)
       (← el.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f resultUsed e), source⟩
-  | .Block stmts label =>
+  | .Block stmts label invs dec =>
+    let invs' ← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e
+    let dec' ← dec.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e
     -- Only the last statement is in value position (and only if the block is).
     let stmts' ← stmts.attach.mapIdxM fun i ⟨e, _⟩ =>
       mapStmtExprUsedM f (resultUsed && i + 1 == stmts.length) e
-    pure ⟨.Block stmts' label, source⟩
+    pure ⟨.Block stmts' label invs' dec', source⟩
   | .While cond invs dec body postTest =>
     pure ⟨.While (← mapStmtExprUsedM f true cond)
       (← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e)
@@ -172,7 +174,7 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
   -- ⚠ If a new StmtExpr constructor with StmtExprMd children is added,
   -- it must get its own arm above; otherwise all passes will silently
   -- skip recursion into those children.
-  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
+  | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole ..
   | .Snapshot _ => pure expr
   f resultUsed rebuilt
@@ -197,15 +199,6 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
 /-- Pure bottom-up traversal of `StmtExprMd`. -/
 def mapStmtExpr (f : StmtExprMd → StmtExprMd) (expr : StmtExprMd) : StmtExprMd :=
   (mapStmtExprM (m := Id) f expr)
-
-/-- Prepend `stmts` to `body`, flattening an outer `Block` so the prepended
-    statements become siblings of the body statements rather than a nested block.
-    A no-op when `stmts` is empty. -/
-def prependStmts (stmts : List StmtExprMd) (body : StmtExprMd) : StmtExprMd :=
-  if stmts.isEmpty then body else
-  match body.val with
-  | .Block bodyStmts label => { body with val := .Block (stmts ++ bodyStmts) label }
-  | _ => { body with val := .Block (stmts ++ [body]) none }
 
 /-- Which coroutine-specific two-state form a plain `old` should become when
     retagged: the last-suspension heap (rely, `H1`) or the start-of-step /
@@ -361,7 +354,7 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
   let collapse (results : List StmtExprMd) (src : FileRange) : StmtExprMd :=
     match results with
     | [single] => single
-    | many => ⟨.Block many none, src⟩
+    | many => ⟨.Block many none [] none, src⟩
   -- `go` returns the (post-expanded) statement list for `e`. Value-position
   -- children collapse that list into a single node (a value-block when it has
   -- multiple statements); `Block` children keep their lists and splice them.
@@ -374,9 +367,11 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
     | .IfThenElse cond th el =>
       pure ⟨.IfThenElse (collapse (← go true cond) cond.source) (collapse (← go used th) th.source)
         (← el.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go used x) x.source)), source⟩
-    | .Block stmts label =>
+    | .Block stmts label invs dec =>
+      let invs' ← invs.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)
+      let dec' ← dec.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)
       let nested ← stmts.attach.mapIdxM fun i ⟨x, _⟩ => go (used && i + 1 == stmts.length) x
-      pure ⟨.Block nested.flatten label, source⟩
+      pure ⟨.Block nested.flatten label invs' dec', source⟩
     | .While cond invs dec body postTest =>
       pure ⟨.While (collapse (← go true cond) cond.source)
         (← invs.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source))
@@ -444,7 +439,7 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
     | .ProveBy value proof =>
       pure ⟨.ProveBy (collapse (← go true value) value.source) (collapse (← go false proof) proof.source), source⟩
     | .ContractOf ty func => pure ⟨.ContractOf ty (collapse (← go true func) func.source), source⟩
-    | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
+    | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
     | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole ..
     | .Snapshot _ => pure e
     post used rebuilt
@@ -472,8 +467,11 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
   | .IfThenElse cond th el =>
     pure ⟨.IfThenElse (← mapStmtExprPrePostM pre post cond) (← mapStmtExprPrePostM pre post th)
       (← el.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
-  | .Block stmts label =>
-    pure ⟨.Block (← stmts.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) label, source⟩
+  | .Block stmts label invs dec =>
+    let invs' ← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e
+    let dec' ← dec.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e
+    pure ⟨.Block (← stmts.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) label invs' dec',
+      source⟩
   | .While cond invs dec body postTest =>
     pure ⟨.While (← mapStmtExprPrePostM pre post cond)
       (← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e)
@@ -554,7 +552,7 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
   -- ⚠ If a new StmtExpr constructor with StmtExprMd children is added,
   -- it must get its own arm above; otherwise all passes will silently
   -- skip recursion into those children.
-  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
+  | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole ..
   | .Snapshot _ => pure expr
   post rebuilt
@@ -587,7 +585,9 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
   | .IfThenElse cond th el =>
     foldStmtExprM f cond; foldStmtExprM f th
     el.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
-  | .Block stmts _ =>
+  | .Block stmts _ invs dec =>
+    invs.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
+    dec.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
     stmts.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
   | .While cond invs dec body _ =>
     foldStmtExprM f cond
@@ -662,10 +662,31 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
   -- Leaves: no StmtExprMd children.
   | .Yield
   | .Snapshot _
-  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
+  | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole .. => pure ()
 termination_by sizeOf expr
 decreasing_by map_stmt_expr_decreasing expr
+
+/-- Whether `e` contains a `Goto` back to the start of the block labelled `label`. -/
+def jumpsBackTo (label : String) (e : StmtExprMd) : Bool :=
+  let visit (n : StmtExprMd) : StateM Bool Unit :=
+    match n.val with
+    | .Goto l .blockStart => if l == label then set true else pure ()
+    | _ => pure ()
+  ((foldStmtExprM visit e).run false).2
+
+/-- Prepend `stmts` to `body`, flattening an outer `Block` so the prepended
+    statements become siblings of the body statements rather than a nested block.
+    A block that is the target of a backward `Goto` is wrapped instead, since
+    flattening would re-run `stmts` on every jump back to its start. A no-op
+    when `stmts` is empty. -/
+def prependStmts (stmts : List StmtExprMd) (body : StmtExprMd) : StmtExprMd :=
+  if stmts.isEmpty then body else
+  match body.val with
+  | .Block bodyStmts label [] none =>
+    if label.any (jumpsBackTo · body) then { body with val := .Block (stmts ++ [body]) none [] none }
+    else { body with val := .Block (stmts ++ bodyStmts) label [] none }
+  | _ => { body with val := .Block (stmts ++ [body]) none [] none }
 
 /-- Pure accumulation over every node (pre-order, parent before children). -/
 def foldStmtExpr {β : Type} (f : StmtExprMd → β → β) (init : β) (expr : StmtExprMd) : β :=
@@ -1108,7 +1129,7 @@ private def covCtorKey : StmtExpr → Nat
   | .IfThenElse ..    => 0
   | .Block ..         => 1
   | .While ..         => 2
-  | .Exit ..          => 3
+  | .Goto ..          => 3
   | .Return ..        => 4
   | .LiteralInt ..    => 5
   | .LiteralBool ..   => 6
@@ -1154,10 +1175,10 @@ private def covCtorCount : Nat := 41
     places in `StmtExprMd` child positions. -/
 private def covProbes : List (StmtExprMd × Nat) := [
   (covMd (.IfThenElse covS covS (some covS)), 3),
-  (covMd (.Block [covS, covS] none), 2),
+  (covMd (.Block [covS, covS] (some "blk") [covS] (some covS)), 4),
   (covMd (.While covS [covS] (some covS) covS false), 4),
-  (covMd (.Exit "blk"), 0),
   (covMd (.Return [covS, covS]), 2),
+  (covMd (.Goto "blk" .blockStart), 0),
   (covMd (.LiteralInt 0), 0),
   (covMd (.LiteralBool true), 0),
   (covMd (.LiteralString "x"), 0),

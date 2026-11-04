@@ -157,7 +157,7 @@ private def mkWFBlock (invariants : List StmtExprMd) (body : StmtExprMd)
     (⟨.Assume inv, inv.source⟩ : StmtExprMd)
   let sever : StmtExprMd := ⟨.Assume ⟨.LiteralBool false, source⟩, source⟩
   let blockBody : StmtExprMd :=
-    ⟨.Block (havocs ++ chained ++ [sever]) (some s!"$loop_invariant_wf_{idx}"), source⟩
+    ⟨.Block (havocs ++ chained ++ [sever]) (some s!"$loop_invariant_wf_{idx}") [] none, source⟩
   -- A nondeterministic `if` with no else: the then-branch is severed, so this
   -- adds a proof context without adding a feasible path.
   return some ⟨.IfThenElse ⟨.Hole (deterministic := false) none, source⟩ blockBody none, source⟩
@@ -193,6 +193,16 @@ public def loopInvariantWellFormednessPass : LaurelPass where
       NodeKind.StmtExpr.Assume
     ]
   removes := [NodeKind.Pseudo.needsLoopInvariantChecks]
+  -- This pass only matches `While`, so a loop still in goto form — a block that
+  -- a backward `goto` targets, carrying its invariants and measure — would slip
+  -- through and its well-formedness obligation would be discharged vacuously.
+  -- Declaring the goto-form shapes unsupported makes `RestructureGotos`, which
+  -- removes them, a checked predecessor rather than a convention.
+  unsupported := [
+      NodeKind.StmtExpr.Goto.destination.blockStart,
+      NodeKind.StmtExpr.Block.invariants.cons,
+      NodeKind.StmtExpr.Block.decreases.some
+    ]
   needsResolves := true
   documentation := "Emits `if * { havoc(loop targets); assume each invariant in order; assume false }` before each loop carrying invariants, so invariant well-formedness is checked at the loop head (where the invariant is assumed) rather than in the loop's pre-state (where more is known and the obligation can be vacuously discharged). Assuming each invariant in turn lets a later invariant's well-formedness rely on the earlier ones."
   run := fun _ p _m => (loopInvariantWellFormedness p, [], {})

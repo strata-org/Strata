@@ -67,7 +67,7 @@ private def authoredAssume : LaurelProgram :=
             postconditions := [{ condition := call "p", mode := .Assume }]
             modifies := [] }
         ]
-        body := .Transparent ⟨.Block [] none, .unknown⟩ }
+        body := .Transparent ⟨.Block [] none [] none, .unknown⟩ }
     ]
     staticFields := []
     types := [] }
@@ -106,7 +106,7 @@ private def procWithCaseFrame (mods : List StmtExprMd) : LaurelProgram :=
         throwsType := some (mkTy (.UserDefined (mkId "Err")))
         throwsBinding := some (mkId "e")
         throwsOn := [{ guard := call "g", postconditions := [], modifies := mods }]
-        body := .Transparent ⟨.Block [] none, .unknown⟩ }
+        body := .Transparent ⟨.Block [] none [] none, .unknown⟩ }
     ]
     staticFields := []
     types := [] }
@@ -154,7 +154,7 @@ private def twoValueOutputs : LaurelProgram :=
         throwsType := some (mkTy (.UserDefined (mkId "Err")))
         throwsBinding := some (mkId "e")
         throwsOn := []
-        body := .Transparent ⟨.Block [] none, .unknown⟩ }
+        body := .Transparent ⟨.Block [] none [] none, .unknown⟩ }
     ]
     staticFields := []
     types := [] }

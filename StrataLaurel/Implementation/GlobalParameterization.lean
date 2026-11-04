@@ -352,7 +352,7 @@ private def globalTransformProcedure (model : SemanticModel) (proc : Procedure)
     let prologue := prologue.filterMap id
     let wrap (body : StmtExprMd) : StmtExprMd :=
       if prologue.isEmpty then body
-      else ⟨.Block (prologue ++ [body]) none, body.source⟩
+      else ⟨.Block (prologue ++ [body]) none [] none, body.source⟩
     let body ← match proc.body with
       | .Transparent expression =>
           pure (.Transparent (wrap (← globalTransformExpr model expression false)))

@@ -269,7 +269,7 @@ def lowerComposite (model : SemanticModel) (program : LaurelProgram) : Except St
              outputs := [{ name := "r", type := cty }],
              preconditions := [{ condition := lowerIsType pRef cty syntheticSource }],
              decreases := none,
-             body := .Transparent (mkMd (.Block [assignOutput] none) syntheticSource) }
+             body := .Transparent (mkMd (.Block [assignOutput] none [] none) syntheticSource) }
     | _ => none
   let allocateProc : List Procedure :=
     if compositeNames.isEmpty then []

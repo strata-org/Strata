@@ -297,7 +297,7 @@ skimming once, because they are the most common source of a first parse error.
    * `<??>`
  *
    * Label and jump
-   * `{ ... } label`, `exit label`
+   * `{ ... } label`, `{ ... } label invariant e`, `exit label`, `goto label`
 :::
 
 Note that `^` is concatenation — not exponentiation, and not exclusive or. Fields use the `#`
@@ -611,8 +611,9 @@ expression          = literal
                     | "return" [ expression ]
                     | "yield"
                     | block
-                    | block identifier
+                    | block identifier { "invariant" expression }
                     | "exit" identifier
+                    | "goto" identifier
                     | try-expression
                     | while-loop
                     | for-loop
@@ -1012,16 +1013,19 @@ effect position, factored out into
 
 {docstring Strata.Laurel.Resolution.Check.statement}
 
-$$`\frac{l \in \Gamma_{\mathrm{lbl}}}{\Gamma \vdash \mathsf{Exit}\;l \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] Exit)}`
+$$`\frac{l \in \Gamma_{\mathrm{lbl}}}{\Gamma \vdash \mathsf{Goto}\;l\;d \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] Goto)}`
 
-`exit` is an unconditional jump out of the enclosing labeled block.
+`exit` is an unconditional jump out of the enclosing labeled block, and
+`goto` an unconditional jump back to its start; both are a
+$`\mathsf{Goto}`, differing in the destination $`d`.
 It synthesizes $`\mathsf{TVoid}` unconditionally. Labels live in their
 own namespace $`\Gamma_{\mathrm{lbl}}`, populated by the surrounding
-`Block` rule when its $`\mathit{label}` is `some l`. An
-$`\mathsf{Exit}\;l` targeting a label not in $`\Gamma_{\mathrm{lbl}}`
-is rejected.
+`Block` rule when its $`\mathit{label}` is `some l`. A
+$`\mathsf{Goto}\;l\;d` targeting a label not in $`\Gamma_{\mathrm{lbl}}`
+is rejected. A block's invariants resolve as `bool` in the scope enclosing
+the block, and only a labelled block may carry them.
 
-{docstring Strata.Laurel.Resolution.Check.exit}
+{docstring Strata.Laurel.Resolution.Check.goto}
 
 In the Return rules below, $`\overline{T_o}` denotes the declared
 output-parameter type list of the enclosing procedure (an implicit
@@ -2028,8 +2032,32 @@ procedure labelledExit(done: bool) returns (x: int)
 
 Laurel has no `break` or `continue` keyword: a labelled block plus `exit` is how a front end
 builds them — `break` exits a block wrapped around the loop, `continue` exits a block wrapped
-around the loop *body*. Code following an unconditional `return` or `exit` in the same block is
-reported as dead.
+around the loop *body*. Code following an unconditional `return`, `exit` or `goto` in the same
+block is reported as dead.
+
+`goto` jumps back to the *start* of the enclosing block with that label, which makes the block a
+loop. Such a block may carry invariants, written after its label like a `while` loop's; they are
+checked on entry and on every `goto` back to the start. A block that no `goto` targets checks
+them once, on entry.
+
+```laurel
+procedure countUp() returns (i: int)
+  opaque
+  ensures i == 3
+{
+  i := 0;
+  {
+    i := i + 1;
+    if i < 3 then { goto again }
+  } again
+    invariant 0 <= i && i <= 2
+};
+```
+
+Because a `goto` can only target an enclosing block, the control flow stays reducible: the
+`RestructureGotos` pass lowers each block that some `goto` targets to a `while (true)` loop
+before translation to Core, so a front end that emits unstructured jumps — a bytecode front end,
+say — does not need to recover loops itself.
 
 ## Procedures, outputs, and calls
 

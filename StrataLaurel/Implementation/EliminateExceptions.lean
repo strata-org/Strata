@@ -101,11 +101,25 @@ private def exnExcVar : String := "$exc"
 /-- Synthesized local: `true` once a `return` is unwinding through
     enclosing `try` blocks so their `finally` arms run. -/
 private def exnReturningVar : String := "$returning"
-/-- Synthesized local: `true` once an `exit <label>` is unwinding through
-    enclosing `try` blocks so their `finally` arms run. One flag per target label
-    (an `exit` carries no value, so a bool per label is all the unwind needs);
-    cleared when the jump is finally delivered to its label. -/
-private def exitPendingVar (label : String) : String := s!"$exiting_{label}"
+/-- A `goto` that is unwinding through enclosing `try` blocks so their `finally`
+    arms run: the target label and which end of it the jump lands on. -/
+private structure PendingJump where
+  label : String
+  destination : GotoDestination
+  deriving BEq
+
+/-- The name stem of a pending jump's flag: `exiting_<l>` for an `exit l`,
+    `restarting_<l>` for a `goto l`. -/
+private def PendingJump.stem (j : PendingJump) : String :=
+  match j.destination with
+  | .blockEnd => s!"exiting_{j.label}"
+  | .blockStart => s!"restarting_{j.label}"
+
+/-- Synthesized local: `true` once an `exit <label>` (or `goto <label>`) is
+    unwinding through enclosing `try` blocks so their `finally` arms run. One flag
+    per pending jump (a jump carries no value, so a bool each is all the unwind
+    needs); cleared when the jump is finally delivered to its label. -/
+private def exitPendingVar (j : PendingJump) : String := "$" ++ j.stem
 /-- Preferred spelling for a throwing procedure's synthesized output — the
     `Result<Val, T>` carrying its outcome. `resultOutputName` because after the
     lowering the carrier *is* the procedure's result (its only output), and a
@@ -189,9 +203,9 @@ private def callStatic (name : String) (args : List StmtExprMd) : StmtExprMd :=
   nn (.StaticCall (mkId name) args [])
 /-- `Ctor(arg)` / `Datatype..fn(arg)` — a single-argument datatype op. -/
 private def resultApp (fn : String) (arg : StmtExprMd) : StmtExprMd := callStatic fn [arg]
-private def exitTo (label : String) : StmtExprMd := nn (.Exit label)
+private def exitTo (label : String) : StmtExprMd := nn (.Goto label .blockEnd)
 private def blockOf (stmts : List StmtExprMd) (label : Option String := none) : StmtExprMd :=
-  nn (.Block stmts label)
+  nn (.Block stmts label [] none)
 private def iteOf (c t : StmtExprMd) (e : Option StmtExprMd) : StmtExprMd :=
   nn (.IfThenElse c t e)
 -- Operators are calls to their built-in wrappers (see `Operation.procName`); neither
@@ -359,13 +373,13 @@ private structure EState where
       procedure being lowered. Accumulated (never cleared until the next
       procedure) so the procedure preamble can declare one `$exiting_<l>` flag
       per label. -/
-  exitFlagLabels : List String := []
+  exitFlagLabels : List PendingJump := []
   /-- The labels whose `exit` unwound within the *region currently being lowered*
       — a scoped accumulator that `lowerTry` saves, clears and restores around
       its body and handlers, so it can emit re-dispatch arms for exactly the
       unwinding jumps raised inside itself (and hand the still-unfinished ones
       back to the enclosing region). -/
-  raisedExits : List String := []
+  raisedExits : List PendingJump := []
   /-- The throw sites recorded inside the outermost `try` currently being lowered
       (see `Ctx.siteVar`): each site's number, source range and escape-assertion
       summary. `lowerTry` saves, clears and restores it around an outermost `try`,
@@ -400,14 +414,14 @@ private def recordThrowSite (siteVar : Option String) (src : FileRange) (summary
 private def markUsedExc : EM Unit := modify (fun s => { s with usedExc := true })
 private def emitDiag (d : Message) : EM Unit := modify (fun s => { s with diags := s.diags ++ [d] })
 
-/-- Append `l` to a label list unless it is already there (order-preserving, so
+/-- Append `l` to a jump list unless it is already there (order-preserving, so
     the emitted flag declarations and re-dispatch arms are deterministic). -/
-private def addLabel (labels : List String) (l : String) : List String :=
+private def addLabel (labels : List PendingJump) (l : PendingJump) : List PendingJump :=
   if labels.contains l then labels else labels ++ [l]
 
-/-- Record that an `exit l` is unwinding through a `finally`: the procedure needs
-    a `$exiting_l` flag, and the enclosing `try` needs a re-dispatch arm for it. -/
-private def recordPendingExit (l : String) : EM Unit :=
+/-- Record that a jump is unwinding through a `finally`: the procedure needs a
+    flag for it, and the enclosing `try` needs a re-dispatch arm for it. -/
+private def recordPendingExit (l : PendingJump) : EM Unit :=
   modify (fun s => { s with
     exitFlagLabels := addLabel s.exitFlagLabels l,
     raisedExits := addLabel s.raisedExits l })
@@ -659,7 +673,7 @@ private def lowerStmts (ctx : Ctx) (stmts : List StmtExprMd) : EM (List StmtExpr
       match s.val with
       -- Unconditional terminator: everything after it is unreachable, so stop
       -- (rather than emitting dead code after the synthesized `exit`).
-      | .Throw _ | .Return _ | .Exit _ => pure s'
+      | .Throw _ | .Return _ | .Goto _ _ => pure s'
       | _ => pure (s' ++ (← lowerStmts ctx rest))
   termination_by sizeOf stmts
   decreasing_by
@@ -674,14 +688,14 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
   -- proof can relate each child's size back to `stmt` (used only there, hence
   -- the `_` prefix).
   match _h : stmt.val with
-  | .Block stmts label =>
-      -- A labeled block enters a new `exit` target scope: an `exit` to this label
-      -- from inside stays within any enclosing `try`, so record it (see `Frame`).
+  | .Block stmts label invs dec =>
+      -- A labeled block enters a new jump target scope: an `exit`/`goto` to this
+      -- label from inside stays within any enclosing `try`, so record it (see `Frame`).
       let inner := match label with
         | some l => { ctx with frames := .labeledBlock l :: ctx.frames }
         | none => ctx
       let stmts' ← lowerStmts inner stmts
-      pure [⟨.Block stmts' label, src⟩]
+      pure [⟨.Block stmts' label invs dec, src⟩]
   | .IfThenElse c t e =>
       -- These branch/body recursions do not go through `lowerStmts`, so fill each
       -- child's output with that child's own range here.
@@ -715,7 +729,7 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
       | none => pure [exitTo exnExitLabel]
       | some f =>
           pure [ setLocal exnReturningVar (litBool true), exitTo f.finallyLabel ]
-  | .Exit target =>
+  | .Goto target destination =>
       -- An `exit` that leaves an enclosing `try`/`finally` must run that arm on
       -- the way out, exactly like a `return` does: flag the pending jump, hand
       -- control to the `finally`, and let the re-dispatch after it continue the
@@ -725,8 +739,9 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
       | none => pure [stmt]
       | some finLbl => do
           markUsedExc
-          recordPendingExit target
-          pure [ setLocal (exitPendingVar target) (litBool true), exitTo finLbl ]
+          let jump : PendingJump := { label := target, destination }
+          recordPendingExit jump
+          pure [ setLocal (exitPendingVar jump) (litBool true), exitTo finLbl ]
   | .Try body catches finally? =>
       lowerTry ctx src body catches finally?
   | .Assign targets value =>
@@ -891,7 +906,7 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   -- lowered below in the enclosing context, so anything it raises accumulates
   -- there — control never comes back to this re-dispatch.)
   let raisedExits := (← get).raisedExits
-  let onwardExits := raisedExits.filter (fun l => (crossedFinallyOf saved l).isSome)
+  let onwardExits := raisedExits.filter (fun l => (crossedFinallyOf saved l.label).isSome)
   modify (fun s => { s with raisedExits := onwardExits.foldl addLabel outerRaisedExits })
   -- Finally phase: a `throw`/`return` in F targets the enclosing `try`.
   -- Abrupt completion of the `finally` arm (a `return`/`throw`/unwinding `exit`
@@ -918,10 +933,10 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
               ([declInit savExc ty (localRef v)], [setLocal v (localRef savExc)])
           | none => ([], [])
         let exitSnap := raisedExits.map (fun l =>
-          declInit s!"$fin_exiting_{l}_{finId}" boolTy (localRef (exitPendingVar l)))
+          declInit s!"$fin_{l.stem}_{finId}" boolTy (localRef (exitPendingVar l)))
         let exitClear := raisedExits.map (fun l => setLocal (exitPendingVar l) (litBool false))
         let exitRestore := raisedExits.map (fun l =>
-          setLocal (exitPendingVar l) (localRef s!"$fin_exiting_{l}_{finId}"))
+          setLocal (exitPendingVar l) (localRef s!"$fin_{l.stem}_{finId}"))
         -- A nested `try`'s `finally` runs inside the enclosing outermost `try`, so a
         -- throw it catches internally rewrites the shared `$throwSite`; snapshot it
         -- with the pending exception. (An outermost `try`'s own `finally` is lowered
@@ -991,11 +1006,12 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   -- any path (control is linear), so these arms cannot compete with each other or
   -- with the throw/return arms above.
   let exitDispatch : List StmtExprMd := raisedExits.map (fun l =>
-    match crossedFinallyOf saved l with
+    match crossedFinallyOf saved l.label with
     | some outerFin => iteOf (localRef (exitPendingVar l)) (blockOf [exitTo outerFin]) none
     | none =>
         iteOf (localRef (exitPendingVar l))
-          (blockOf [setLocal (exitPendingVar l) (litBool false), exitTo l]) none)
+          (blockOf [setLocal (exitPendingVar l) (litBool false),
+            nn (.Goto l.label l.destination)]) none)
   -- The throw sites recorded inside this outermost `try` (empty for any other);
   -- the enclosing region's accumulator is restored either way.
   let recorded := (← get).throwSites
@@ -1063,7 +1079,7 @@ private def stmtUsesExn (model : SemanticModel) (stmt : StmtExprMd) : Bool :=
   | .StaticCall callee _ _ => calleeThrows model callee
   | .InstanceCall _ callee _ => calleeThrows model callee
   | .Assign _ v => stmtUsesExn model v
-  | .Block stmts _ => stmts.attach.any (fun ⟨s, _⟩ => stmtUsesExn model s)
+  | .Block stmts _ _ _ => stmts.attach.any (fun ⟨s, _⟩ => stmtUsesExn model s)
   | .IfThenElse c t e =>
       stmtUsesExn model c || stmtUsesExn model t || (e.attach.any (fun ⟨x, _⟩ => stmtUsesExn model x))
   | .While c _ _ b _ => stmtUsesExn model c || stmtUsesExn model b
@@ -1351,7 +1367,7 @@ where
       `$exc` (only for a throwing procedure, typed at its `throws` type) and one
       `$exiting_<l>` flag per label an `exit` had to unwind to, emitted when the
       body uses the exceptional channel. -/
-  excStateDecls (procExc : Option (String × HighTypeMd)) (exitFlags : List String)
+  excStateDecls (procExc : Option (String × HighTypeMd)) (exitFlags : List PendingJump)
       (needed : Bool) : List StmtExprMd :=
     if needed then
       [ declInit exnThrownVar boolTy (litBool false) ] ++
@@ -1447,7 +1463,7 @@ public def eliminateExceptionsPass : LaurelPass := .onUnordered {
   name := "EliminateExceptions"
   creates := [
       NodeKind.StmtExpr.Block,
-      NodeKind.StmtExpr.Exit,
+      NodeKind.StmtExpr.Goto,
       NodeKind.TypeDefinition.Datatype,
       NodeKind.StmtExpr.StaticCall,
       NodeKind.StmtExpr.Assign,

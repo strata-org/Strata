@@ -119,7 +119,7 @@ private def functionalize (asFunctionNames : Std.HashSet String)
         else
           let decl : StmtExprMd :=
             ⟨.Assign [⟨.Declare ⟨mkId "$assertCondition", none⟩, e.source⟩] cond, e.source⟩
-          [⟨.Block [decl] none, e.source⟩]
+          [⟨.Block [decl] none [] none, e.source⟩]
       | .StaticCall callee args tyArgs =>
         if !resultUsed then []
         else [⟨.StaticCall (functionCopyCallee asFunctionNames callee) args tyArgs, e.source⟩]
@@ -347,7 +347,7 @@ private partial def rewriteQuantifierBodiesM (emitProofBlocks : Bool)
         -- proof block. Shares the counter, keeping every guard name distinct.
         let body ← rewriteQuantifierBodiesM emitProofBlocks nonExternalNames body
         let assumeFalse : StmtExprMd := ⟨.Assume ⟨.LiteralBool false, e.source⟩, e.source⟩
-        let sealedBody : StmtExprMd := ⟨.Block [varDecl, body, assumeFalse] none, e.source⟩
+        let sealedBody : StmtExprMd := ⟨.Block [varDecl, body, assumeFalse] none [] none, e.source⟩
         -- Nondet guard: var $proof_n: bool; if $proof_n then <sealedBody>
         let guardName : Identifier := mkId s!"$proof_{n}"
         let guardType : HighTypeMd := ⟨.TBool, e.source⟩
@@ -356,7 +356,7 @@ private partial def rewriteQuantifierBodiesM (emitProofBlocks : Bool)
         let sealedBranch : StmtExprMd :=
           ⟨.IfThenElse guardRef sealedBody none, e.source⟩
         -- Outer block: { guardDecl; sealedBranch; strippedQuantifier }
-        pure (some ⟨.Block [guardDecl, sealedBranch, strippedQuantifier] none, e.source⟩)
+        pure (some ⟨.Block [guardDecl, sealedBranch, strippedQuantifier] none [] none, e.source⟩)
       else
         -- No proof steps of its own. The quantifier is already fully handled here, so
         -- this also returns `some` — recursing would revisit a `functionalize`d tree to

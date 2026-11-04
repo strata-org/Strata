@@ -186,7 +186,7 @@ def refinementCheckers (model : SemanticModel) (childTypeName : Identifier)
          outputs := []
          preconditions := [{ condition := assume }]
          decreases := none
-         body := .Opaque [] (some ⟨ .Block assertStmts none, src ⟩) [] }]
+         body := .Opaque [] (some ⟨ .Block assertStmts none [] none, src ⟩) [] }]
   -- POST-checker (covariance), two-state-faithful (see the file header for why the companion is
   -- bodyless): emit a bodyless `$childspec` carrying the CHILD's post + modifies, have the checker
   -- CALL it, and prove the PARENT's post + frame via its own `ensures`/`modifies`. `CallElim`
@@ -245,7 +245,7 @@ def refinementCheckers (model : SemanticModel) (childTypeName : Identifier)
                       let renamed := rename c.condition
                       { c with condition := { renamed with source := anchorFor renamed },
                                summary := c.summary.orElse (fun _ => some (postMsg renamed)) }))
-                    (some ⟨ .Block [callStmt] none, src ⟩)
+                    (some ⟨ .Block [callStmt] none [] none, src ⟩)
                     ((renameModifies parentModifies).map (fun g => { g with summary := g.summary.orElse (fun _ => some frameMsg) })) }
       [companion, checker]
   preChecker ++ postCheckers

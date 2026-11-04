@@ -292,6 +292,14 @@ inductive QuantifierMode where
   | Exists
   deriving Repr, BEq, Inhabited
 
+/-- Which end of a labelled block a `Goto` transfers control to. -/
+inductive GotoDestination where
+  /-- The block's start: re-enter it, re-checking its invariants. A backward jump. -/
+  | blockStart
+  /-- Just past the block's end: leave it. A forward jump, the classic `exit`. -/
+  | blockEnd
+  deriving Repr, BEq, Inhabited
+
 /-- Whether an increment/decrement operator is in prefix or postfix form.
     Prefix form yields the new value; postfix form yields the old value. -/
 inductive IncrDecrMode where
@@ -539,8 +547,17 @@ such as conditionals and variable declarations.
 inductive StmtExpr : Type where
   /-- Conditional with a then-branch and optional else-branch. -/
   | IfThenElse (cond : AstNode StmtExpr) (thenBranch : AstNode StmtExpr) (elseBranch : Option (AstNode StmtExpr))
-  /-- A sequence of statements with an optional label for `Exit`. -/
+  /-- A sequence of statements with an optional label, the target of a `Goto`.
+
+      `invariants` and `decreases` matter when the block is the target of a
+      backward `Goto` (`destination = .blockStart`), which makes the block a loop:
+      the invariants are checked on entry and on every jump back to the start,
+      and the measure must decrease from one jump back to the next. A block that
+      no backward `Goto` targets checks its invariants once, on entry.
+      `RestructureGotos` lowers these blocks to `while` loops. -/
   | Block (statements : List (AstNode StmtExpr)) (label : Option String)
+    (invariants : List (AstNode StmtExpr))
+    (decreases : Option (AstNode StmtExpr))
   /-- A while loop with a condition, invariants, optional termination measure, and body.
       Only allowed in impure contexts.
 
@@ -556,8 +573,10 @@ inductive StmtExpr : Type where
     (decreases : Option (AstNode StmtExpr))
     (body : AstNode StmtExpr)
     (postTest : Bool)
-  /-- Exit a labelled block. Models `break` and `continue` statements. -/
-  | Exit (target : String)
+  /-- Jump to the start or past the end of an enclosing labelled block. Models
+      `break` and `continue` statements, and the reducible control flow of a
+      bytecode method. -/
+  | Goto (target : String) (destination : GotoDestination)
   /-- Return from the enclosing procedure with one value per declared output; a bare
       `return` is `[]`. The arity is checked by `Check.return`. -/
   | Return (values : List (AstNode StmtExpr))
@@ -867,7 +886,8 @@ def StmtExpr.constrName : StmtExpr → String
   | .IfThenElse ..       => "if"
   | .Block ..            => "block"
   | .While ..            => "while"
-  | .Exit ..             => "exit"
+  | .Goto _ .blockEnd    => "exit"
+  | .Goto _ .blockStart  => "goto"
   | .Return ..           => "return"
   | .LiteralInt ..       => "integer literal"
   | .LiteralBool ..      => "boolean literal"
@@ -954,10 +974,10 @@ def pythonGeneratedPrefix : String := "py$"
 
     `LaurelToCoreTranslator` lowers each procedure body to a single
     `Core.Statement.block bodyLabel …`, and lowers an early `return`
-    (or, in the Python frontend, a Python `return`) to `Exit bodyLabel`,
+    (or, in the Python frontend, a Python `return`) to `exit bodyLabel`,
     so that jumping to the end of the body falls through past the block.
     The resolution pass pre-registers this label in scope (via `withLabel`)
-    before walking a body, so those `Exit bodyLabel` jumps resolve even
+    before walking a body, so those `exit bodyLabel` jumps resolve even
     though the label has no syntactic declaration site.
 
     Shared here so the translator, the resolver, and frontends agree on the
@@ -2450,7 +2470,7 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .IfThenElse .. => "IfThenElse"
   | .Block .. => "Block"
   | .While .. => "While"
-  | .Exit .. => "Exit"
+  | .Goto .. => "Goto"
   | .Return .. => "Return"
   | .LiteralInt .. => "LiteralInt"
   | .LiteralBool .. => "LiteralBool"

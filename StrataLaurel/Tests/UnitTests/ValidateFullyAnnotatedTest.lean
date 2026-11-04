@@ -47,7 +47,7 @@ private def expectedBug (name : String) : String :=
 
 private def unannotatedVar : LaurelProgram := mkProgram [
   mkProc "p" (mk (.IfThenElse (mk (.LiteralBool true))
-    (mk (.Block [mk (.Var (.Declare { name := mkId "x", type := none }))] none))
+    (mk (.Block [mk (.Var (.Declare { name := mkId "x", type := none }))] none [] none))
     none))
 ]
 
@@ -78,7 +78,7 @@ private def unannotatedAssignTarget : LaurelProgram := mkProgram [
 -- ============================================================
 
 private def unannotatedInSpec : LaurelProgram := mkProgram [
-  mkProc "p" (mk (.Block [] none))
+  mkProc "p" (mk (.Block [] none [] none))
     (preconditions := [{ condition := mk (.Var (.Declare { name := mkId "z", type := none })) }])
 ]
 
@@ -125,7 +125,7 @@ private def annotated : LaurelProgram := mkProgram [
     mk (.Var (.Declare { name := mkId "x", type := some ⟨.TInt, default⟩ })),
     mk (.Assign [⟨.Declare { name := mkId "y", type := some ⟨.TBool, default⟩ }, default⟩]
       (mk (.LiteralBool true)))
-  ] none))
+  ] none [] none))
 ]
 
 #guard (validateFullyAnnotated annotated).isEmpty
@@ -143,7 +143,7 @@ private def inferProgram : LaurelProgram := mkProgram [
   mkProc "p" (mk (.Block [
     mk (.Assign [⟨.Declare { name := mkId "x", type := none }, default⟩]
       (mk (.LiteralInt 5)))
-  ] none))
+  ] none [] none))
 ]
 
 #guard (validateFullyAnnotated (resolve inferProgram).program).isEmpty

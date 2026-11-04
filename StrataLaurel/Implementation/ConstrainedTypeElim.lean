@@ -128,7 +128,7 @@ def mkConstraintProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
     outputs := [{ name := mkId resultOutputName, type := { val := .TBool, source := src } }]
     body := .Transparent { val := .Block [
       { val := .Assign [{ val := .Local (mkId resultOutputName), source := src }] bodyExpr, source := src },
-      { val := .Return [], source := src }] none, source := src }
+      { val := .Return [], source := src }] none [] none, source := src }
     decreases := none
     preconditions := [] }
 
@@ -265,10 +265,10 @@ private def addExitChecks (cx : CteCtx) (outputs : List Parameter)
       | .Assert .. => (acc ++ [s], justAssigned)
       | _ => (acc ++ [s], assignsOutput s)).1
   let guardBranch (b : StmtExprMd) : StmtExprMd := match b.val with
-    | .Return [] => ⟨.Block (checks (some b.source) ++ [b]) none, b.source⟩
+    | .Return [] => ⟨.Block (checks (some b.source) ++ [b]) none [] none, b.source⟩
     | _ => b
   let guard (e : StmtExprMd) : StmtExprMd := match e.val with
-    | .Block stmts label => ⟨.Block (guardReturns stmts) label, e.source⟩
+    | .Block stmts label invs dec => ⟨.Block (guardReturns stmts) label invs dec, e.source⟩
     | .IfThenElse c t el => ⟨.IfThenElse c (guardBranch t) (el.map guardBranch), e.source⟩
     | _ => e
   let body' := mapStmtExpr guard body
@@ -276,10 +276,10 @@ private def addExitChecks (cx : CteCtx) (outputs : List Parameter)
     | some ⟨.Return _, _⟩ => true
     | _ => false
   match body'.val with
-  | .Block stmts none =>
-    if endsInReturn stmts then body' else ⟨.Block (stmts ++ checks none) none, body'.source⟩
-  | .Return _ => ⟨.Block (checks (some body'.source) ++ [body']) none, body'.source⟩
-  | _ => ⟨.Block (body' :: checks none) none, body'.source⟩
+  | .Block stmts none [] none =>
+    if endsInReturn stmts then body' else ⟨.Block (stmts ++ checks none) none [] none, body'.source⟩
+  | .Return _ => ⟨.Block (checks (some body'.source) ++ [body']) none [] none, body'.source⟩
+  | _ => ⟨.Block (body' :: checks none) none [] none, body'.source⟩
 
 def elimProc (cx : CteCtx) (model : SemanticModel)
     (proc : Procedure) : Procedure :=
@@ -330,7 +330,7 @@ private def mkWitnessProc (cx : CteCtx) (ct : ConstrainedType) : Procedure :=
   { name := mkId s!"$witness_{ct.name.text}"
     inputs := []
     outputs := []
-    body := .Opaque [] (some ⟨.Block [witnessInit, assert] none, src⟩) []
+    body := .Opaque [] (some ⟨.Block [witnessInit, assert] none [] none, src⟩) []
     preconditions := []
     decreases := none }
 

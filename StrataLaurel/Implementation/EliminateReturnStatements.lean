@@ -33,14 +33,14 @@ private def eliminateReturnStmts (proc : Procedure) : Procedure :=
   | .Opaque postconds (some impl) mods =>
     let impl' := replaceReturn proc.outputs impl
     let wrapped := match impl'.val with
-      | .Block stmts none => ⟨.Block stmts (some returnLabel), impl'.source⟩
-      | _ => ⟨ .Block [impl'] (some returnLabel), proc.name.source ⟩
+      | .Block stmts none [] none => ⟨.Block stmts (some returnLabel) [] none, impl'.source⟩
+      | _ => ⟨ .Block [impl'] (some returnLabel) [] none, proc.name.source ⟩
     { proc with body := .Opaque postconds (some wrapped) mods }
   | .Transparent body =>
     let body' := replaceReturn proc.outputs body
     let wrapped := match body'.val with
-      | .Block stmts none => ⟨.Block stmts (some returnLabel), body'.source⟩
-      | _ => ⟨ .Block [body'] (some returnLabel), proc.name.source ⟩
+      | .Block stmts none [] none => ⟨.Block stmts (some returnLabel) [] none, body'.source⟩
+      | _ => ⟨ .Block [body'] (some returnLabel) [] none, proc.name.source ⟩
     { proc with body := .Transparent wrapped }
   | _ => proc
 where
@@ -55,13 +55,13 @@ where
   replaceReturn (outputs : List Parameter) (expr : StmtExprMd) : StmtExprMd :=
     mapStmtExpr (fun e =>
       match e.val with
-      | .Return [] => ⟨ .Exit returnLabel, expr.source ⟩
+      | .Return [] => ⟨ .Goto returnLabel .blockEnd, expr.source ⟩
       | .Return vals =>
-        let exit : StmtExprMd := ⟨ .Exit returnLabel, expr.source ⟩
+        let exit : StmtExprMd := ⟨ .Goto returnLabel .blockEnd, expr.source ⟩
         if vals.length == outputs.length then
           let assigns := (outputs.zip vals).map fun (out, val) =>
             (⟨ .Assign [⟨ .Local out.name, expr.source ⟩] val, expr.source ⟩ : StmtExprMd)
-          ⟨.Block (assigns ++ [exit]) none, e.source⟩
+          ⟨.Block (assigns ++ [exit]) none [] none, e.source⟩
         else exit
       | _ => e) expr
 
@@ -71,7 +71,7 @@ def eliminateReturnStatements (program : Program) : Program :=
 
 public def eliminateReturnStatementsPass : LaurelPass where
   name := "EliminateReturnStatements"
-  creates := [NodeKind.StmtExpr.Exit, NodeKind.StmtExpr.Block]
+  creates := [NodeKind.StmtExpr.Goto, NodeKind.StmtExpr.Block]
   unsupported := [NodeKind.StmtExpr.Try.finally?.some]
   removes := [
       NodeKind.StmtExpr.Return,

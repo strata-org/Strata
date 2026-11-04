@@ -749,7 +749,7 @@ private def resolvedMultiAssign : LaurelProgram :=
           (some (node (.Block [
             node (.Assign [declTarget "x" .TInt, declTarget "y" .TBool]
               (node (.StaticCall (mkId "twoOut") [] [])))
-          ] none)))
+          ] none [] none)))
           [] }
     ],
     staticFields := [], types := [] }

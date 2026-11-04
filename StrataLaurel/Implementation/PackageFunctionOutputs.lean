@@ -96,14 +96,14 @@ private def outputDeclarations (proc : Procedure) (outputs : List Parameter)
 private def prependDeclarations (decls : List StmtExprMd) (body : StmtExprMd)
     : StmtExprMd :=
   match body with
-  | ⟨.Block [single] label, src⟩ =>
+  | ⟨.Block [single] label [] none, src⟩ =>
     if label.all (· == returnLabel) then
-      ⟨.Block [prependDeclarations decls single] label, src⟩
-    else ⟨.Block (decls ++ [body]) none, src⟩
-  | ⟨.Block stmts label, src⟩ =>
-    if label.all (· == returnLabel) then ⟨.Block (decls ++ stmts) label, src⟩
-    else ⟨.Block (decls ++ [body]) none, src⟩
-  | _ => ⟨.Block (decls ++ [body]) none, body.source⟩
+      ⟨.Block [prependDeclarations decls single] label [] none, src⟩
+    else ⟨.Block (decls ++ [body]) none [] none, src⟩
+  | ⟨.Block stmts label [] none, src⟩ =>
+    if label.all (· == returnLabel) then ⟨.Block (decls ++ stmts) label [] none, src⟩
+    else ⟨.Block (decls ++ [body]) none [] none, src⟩
+  | _ => ⟨.Block (decls ++ [body]) none [] none, body.source⟩
 
 private def rewriteExprCalls (packagedFunctions : List (String × List Parameter))
     (expr : StmtExprMd) : RewriteM StmtExprMd := do

@@ -232,7 +232,9 @@ def childCollect {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd) : Lis
   match e.val with
   | .IfThenElse cond th el =>
     collectStmtExprList g cond ++ collectStmtExprList g th ++ el.elim [] (collectStmtExprList g)
-  | .Block stmts _ => stmts.flatMap (collectStmtExprList g)
+  | .Block stmts _ invs dec =>
+    invs.flatMap (collectStmtExprList g) ++ dec.elim [] (collectStmtExprList g)
+      ++ stmts.flatMap (collectStmtExprList g)
   | .While cond invs dec body _ =>
     collectStmtExprList g cond ++ invs.flatMap (collectStmtExprList g)
       ++ dec.elim [] (collectStmtExprList g) ++ collectStmtExprList g body

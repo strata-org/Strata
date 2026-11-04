@@ -245,9 +245,9 @@ public section
     this needs no `partial` or `termination_by`. -/
 private def bodyStatements (body : StmtExprMd) : List StmtExprMd :=
   match body with
-  | ⟨.Block [single] label, _⟩ =>
+  | ⟨.Block [single] label _ _, _⟩ =>
     if label.all (· == returnLabel) then bodyStatements single else [body]
-  | ⟨.Block stmts label, _⟩ =>
+  | ⟨.Block stmts label _ _, _⟩ =>
     if label.all (· == returnLabel) then stmts else [body]
   | _ => [body]
 
@@ -316,7 +316,7 @@ private abbrev HoleBinding := Nat × Identifier × HighTypeMd
 private def containsExitOrReturn (e : StmtExprMd) : Bool :=
   let check (n : StmtExprMd) : StateM Bool StmtExprMd := do
     match n.val with
-    | .Exit _ | .Return _ => set true; pure n
+    | .Goto _ _ | .Return _ => set true; pure n
     | _ => pure n
   ((mapStmtExprM check e).run false).2
 
@@ -458,7 +458,7 @@ private def holePrelude (procName : Identifier) (inputs : List Parameter)
     let call : StmtExprMd := ⟨.StaticCall (declHoleName procName uid) args [], src⟩
     let decl : StmtExprMd :=
       ⟨.Assign [⟨.Declare ⟨name, some ty⟩, src⟩] call, src⟩
-    ⟨.Block [decl, acc] none, src⟩
+    ⟨.Block [decl, acc] none [] none, src⟩
 
 /-- An expression whose evaluation has no effect. Laurel discards a body's trailing
     expression instead of assigning it to an output, so one of these in tail position is
@@ -598,8 +598,8 @@ private def Hoisted.writes {α : Type} : Hoisted α → List Identifier
 private def Hoisted.toStmts {α : Type} (mk : α → StmtExprMd) : Hoisted α → List StmtExprMd
   | .done pre v => pre ++ [mk v]
   | .branch pre c src t e =>
-    pre ++ [⟨.IfThenElse c ⟨.Block (t.toStmts mk) none, src⟩
-      (some ⟨.Block (e.toStmts mk) none, src⟩), src⟩]
+    pre ++ [⟨.IfThenElse c ⟨.Block (t.toStmts mk) none [] none, src⟩
+      (some ⟨.Block (e.toStmts mk) none [] none, src⟩), src⟩]
 
 private abbrev HoistM := StateT Nat (Except Message)
 
@@ -657,7 +657,7 @@ private def hoistPair (model : SemanticModel) (a b : Hoisted StmtExprMd)
 /-- Wrap the statements hoisting produced for one branch of an if back into one node. -/
 private def asBranch (orig : StmtExprMd) : List StmtExprMd → StmtExprMd
   | [single] => single
-  | stmts => ⟨.Block stmts none, orig.source⟩
+  | stmts => ⟨.Block stmts none [] none, orig.source⟩
 
 mutual
 /-- Move every block that assigns a local out of `e`.
@@ -673,7 +673,7 @@ private def hoistExpr (model : SemanticModel) (e : StmtExprMd)
   let isBlock := match e.val with | .Block .. => true | _ => false
   if !isBlock && !containsBlockWrite e then return .done [] e
   match e with
-  | ⟨.Block stmts _, src⟩ =>
+  | ⟨.Block stmts _ _ _, src⟩ =>
     if containsExitOrReturn e then
       throw (diagnosticFromSource src blockValueExitMsg .userError)
     hoistBlockValue model e stmts
@@ -756,8 +756,8 @@ private def hoistStmt (model : SemanticModel) (s : StmtExprMd)
       | some eb => (fun r => some (asBranch eb r)) <$> hoistStmt model eb
       | none => pure none
     return hc.toStmts fun c' => ⟨.IfThenElse c' t' el', src⟩
-  | ⟨.Block stmts label, src⟩ => return [⟨.Block (← hoistStmts model stmts) label, src⟩]
-  | ⟨.While .., _⟩ | ⟨.Var _, _⟩ | ⟨.Exit _, _⟩ => return [s]
+  | ⟨.Block stmts label invs dec, src⟩ => return [⟨.Block (← hoistStmts model stmts) label invs dec, src⟩]
+  | ⟨.While .., _⟩ | ⟨.Var _, _⟩ | ⟨.Goto _ _, _⟩ => return [s]
   | _ => return (← hoistExpr model s).toStmts id
 
 termination_by (sizeOf s, 3)
@@ -824,9 +824,12 @@ private def functionalizeStmts (model : SemanticModel) (inputUids : List Nat)
       let body ← functionalizeStmts model inputUids retExpr labelConts rest k
       let decl : StmtExprMd :=
         ⟨.Assign [⟨.Declare param, targetSource⟩] value, s.source⟩
-      .ok ⟨.Block [decl, body] none, s.source⟩
+      .ok ⟨.Block [decl, body] none [] none, s.source⟩
     match s with
-    | ⟨.Exit label, _⟩ =>
+    | ⟨.Goto _ .blockStart, _⟩ =>
+      -- `RestructureGotos` has turned every backward jump into a loop already.
+      unsupported s.source "a backward goto is not supported in a transparent body"
+    | ⟨.Goto label .blockEnd, _⟩ =>
       -- An exit discards `rest`: the statements after it are unreachable. Exiting
       -- the return block yields the output; exiting an enclosing labelled block
       -- yields that block's continuation, i.e. whatever follows it.
@@ -888,7 +891,7 @@ private def functionalizeStmts (model : SemanticModel) (inputUids : List Nat)
       -- blocks that write out of it, and any other assignment nested in an expression
       -- is destructive and must stay rejected.
       .ok ⟨.IfThenElse cond thenExpr (some elseExpr), s.source⟩
-    | ⟨.Block stmts' label, _⟩ =>
+    | ⟨.Block stmts' label _ _, _⟩ =>
       match label with
       -- An unlabelled block's statements are in statement position, and every
       -- declaration already opens its own scope, so the block's own scope can be

@@ -269,7 +269,7 @@ Three declarations describe a pass:
 : `creates`
 
   Shapes the pass *might* introduce — it does not always emit one. `EliminateDoWhile` creates
-  `StmtExpr.Exit`, because the loop it emits leaves through a labelled exit, but a program
+  `StmtExpr.Goto`, because the loop it emits leaves through a labelled exit, but a program
   with no `do … while` gets none.
 
 : `removes`

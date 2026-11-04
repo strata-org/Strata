@@ -60,16 +60,16 @@ public def freshExitLabel : ElimM String :=
     let source := node.source
     let exitLabel ← freshExitLabel
     let notCond : StmtExprMd := ⟨.StaticCall (mkId Operation.Not.procName) [cond] [], source⟩
-    let exitStmt : StmtExprMd := ⟨.Exit exitLabel, source⟩
+    let exitStmt : StmtExprMd := ⟨.Goto exitLabel .blockEnd, source⟩
     let guardCheck : StmtExprMd := ⟨.IfThenElse notCond exitStmt none, source⟩
-    let loopBody : StmtExprMd := ⟨.Block [body, guardCheck] none, source⟩
+    let loopBody : StmtExprMd := ⟨.Block [body, guardCheck] none [] none, source⟩
     let trueCond : StmtExprMd := ⟨.LiteralBool true, source⟩
     -- Thread `dec` onto the `while(true)` rather than dropping it: each desugared
     -- iteration is one pass through that loop's head, so the measure decreases
     -- across exactly those iterations. The emitted loop is pre-test
     -- (`postTest := false`), so it is not rewritten again.
     let whileStmt : StmtExprMd := ⟨.While trueCond invs dec loopBody false, source⟩
-    pure ⟨.Block [whileStmt] (some exitLabel), source⟩
+    pure ⟨.Block [whileStmt] (some exitLabel) [] none, source⟩
   | _ => pure node
 
 end EliminateDoWhile
@@ -96,7 +96,7 @@ public def eliminateDoWhilePass : LaurelPass where
   creates := [
       NodeKind.StmtExpr.While,
       NodeKind.StmtExpr.Block,
-      NodeKind.StmtExpr.Exit,
+      NodeKind.StmtExpr.Goto,
       NodeKind.StmtExpr.IfThenElse,
       NodeKind.StmtExpr.StaticCall,
       NodeKind.StmtExpr.LiteralBool

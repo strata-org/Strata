@@ -252,8 +252,12 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
         | some e => pure (some (← inferExpr e expectedType outputType))
         | none => pure none
       return ⟨.IfThenElse (← inferExpr cond ⟨ .TBool, source ⟩ outputType) (← inferExpr th expectedType outputType) el', source⟩
-  | .Block stmts label =>
-      return ⟨.Block (← inferBlockStmts stmts expectedType outputType) label, source⟩
+  | .Block stmts label invs dec =>
+      let invs' ← invs.mapM (inferExpr · ⟨ .TBool, source ⟩ outputType)
+      let dec' ← match dec with
+        | some d => pure (some (← inferExpr d ⟨ .TInt, source ⟩ outputType))
+        | none => pure none
+      return ⟨.Block (← inferBlockStmts stmts expectedType outputType) label invs' dec', source⟩
   | .Assign targets value =>
       let targetType := match targets with
         | target :: _ => match target.val with
@@ -351,7 +355,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
         | some t => pure (some (← inferExpr t ⟨ .Unknown, source ⟩ outputType))
         | none => pure none
       return ⟨.Quantifier mode p trigger' (← inferExpr b ⟨ .TBool, source ⟩ outputType), source⟩
-  | .Exit _ | .Return [] | .LiteralInt _ | .LiteralBool _ | .LiteralString _
+  | .Goto _ _ | .Return [] | .LiteralInt _ | .LiteralBool _ | .LiteralString _
   | .LiteralDecimal _ | .LiteralBv _ _ | .Var (.Local _) | .Var (.Declare _)
   | .New .. | .This | .Abstract | .All | .Yield | .Snapshot _ => return expr
   termination_by sizeOf expr

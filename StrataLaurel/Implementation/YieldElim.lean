@@ -258,7 +258,7 @@ private def yieldRewrite (ops : ResolvedOps) (relies guarantees : List Condition
       ++ havocResumes
       ++ assumeRStmt?.toList
       ++ [takeSnapshot src]
-  { val := .Block stmts none, source := src }
+  { val := .Block stmts none [] none, source := src }
 
 /-! ### Procedure rewrite
 
@@ -319,17 +319,17 @@ private def addExitGuarantees (andOp : Identifier) (guarantees : List Condition)
     match e.val with
     | .Return _ =>
       match exitGuaranteeAssert andOp guarantees with
-      | some a => { val := .Block [a, e] none, source := e.source }
+      | some a => { val := .Block [a, e] none [] none, source := e.source }
       | none => e
     | _ => e) impl
   match exitGuaranteeAssert andOp guarantees with
   | none => withReturns
   | some a =>
     match withReturns.val with
-    | .Block stmts label =>
-      { val := .Block (stmts ++ [a]) label, source := withReturns.source }
+    | .Block stmts none [] none =>
+      { val := .Block (stmts ++ [a]) none [] none, source := withReturns.source }
     | _ =>
-      { val := .Block [withReturns, a] none, source := withReturns.source }
+      { val := .Block [withReturns, a] none [] none, source := withReturns.source }
 
 /-- Transform a single coroutine into a regular procedure.
     Inside the body, every `yield` is rewritten to the inline

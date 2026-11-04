@@ -383,6 +383,9 @@ inductive Control where
   /-- `exit L` — leave the enclosing block labelled `L`. Caught by that block,
       which is how Laurel spells `break` and `continue`. -/
   | exit_ (label : String)
+  /-- `goto L` — go back to the start of the enclosing block labelled `L`.
+      Caught by that block, which re-runs itself. -/
+  | goto_ (label : String)
   /-- `throw v` — the exceptional channel. Caught by an enclosing `catch` whose
       predicate holds, and otherwise propagates through the call boundary, unlike
       `return_`. -/
@@ -765,7 +768,7 @@ private def liftSet (name : String) (value : StmtExprMd) : StmtExprMd :=
 private def liftBlock (stmts : List StmtExprMd) (src : FileRange) : StmtExprMd :=
   match stmts with
   | [s] => s
-  | _ => ⟨.Block stmts none, src⟩
+  | _ => ⟨.Block stmts none [] none, src⟩
 
 mutual
 
@@ -789,7 +792,7 @@ private partial def liftExpr (e : StmtExprMd) : LiftM (List StmtExprMd × StmtEx
         let (pb, b') ← liftExpr b
         let setB := liftBlock (pb ++ [liftSet t b']) src
         let tv := liftVar t src
-        let skip : StmtExprMd := ⟨.Block [] none, src⟩
+        let skip : StmtExprMd := ⟨.Block [] none [] none, src⟩
         let branch : StmtExprMd := match Operation.ofProcName? callee.text with
           | some .OrElse => ⟨.IfThenElse tv skip (some setB), src⟩
           | some .Implies =>
@@ -844,7 +847,7 @@ private partial def liftExpr (e : StmtExprMd) : LiftM (List StmtExprMd × StmtEx
         | none => pure none
       let decl : StmtExprMd := ⟨.Var (.Declare { name := { text := t }, type := none }), src⟩
       pure (pc ++ [decl, ⟨.IfThenElse c' thenB elseB, src⟩], liftVar t src)
-  | .Block stmts none =>
+  | .Block stmts none _ _ =>
     match stmts.reverse with
     | [] => pure ([], e)
     | last :: earlier => do
@@ -901,9 +904,9 @@ private partial def liftArgs (args : List StmtExprMd) : LiftM (List StmtExprMd �
 private partial def liftStmt (s : StmtExprMd) : LiftM (List StmtExprMd) := do
   let src := s.source
   match s.val with
-  | .Block stmts label => do
+  | .Block stmts label invs dec => do
       let stmts' ← stmts.flatMapM liftStmt
-      pure [⟨.Block stmts' label, src⟩]
+      pure [⟨.Block stmts' label invs dec, src⟩]
   | .Assign _ ⟨.Yield, _⟩ | .Yield | .Var (.Declare _) => pure [s]
   | .IfThenElse c thn els => do
       let (pc, c') ← liftExpr c
@@ -922,12 +925,12 @@ private partial def liftStmt (s : StmtExprMd) : LiftM (List StmtExprMd) := do
       -- The invariants are checked where the `while` case checks them: after the
       -- condition for a `while`, before each run of the body for a `do`/`while`.
       let invChecks := invs.map fun inv => (⟨.Assert inv none, inv.source⟩ : StmtExprMd)
-      let test := pc ++ [⟨.IfThenElse notC ⟨.Exit label, src⟩ none, src⟩]
+      let test := pc ++ [⟨.IfThenElse notC ⟨.Goto label .blockEnd, src⟩ none, src⟩]
       let loopBody := if postTest then invChecks ++ body' :: test
-        else pc ++ invChecks ++ [⟨.IfThenElse notC ⟨.Exit label, src⟩ none, src⟩, body']
+        else pc ++ invChecks ++ [⟨.IfThenElse notC ⟨.Goto label .blockEnd, src⟩ none, src⟩, body']
       let loop : StmtExprMd :=
-        ⟨.While ⟨.LiteralBool true, c.source⟩ [] none ⟨.Block loopBody none, body.source⟩ false, src⟩
-      pure [⟨.Block [loop] (some label), src⟩]
+        ⟨.While ⟨.LiteralBool true, c.source⟩ [] none ⟨.Block loopBody none [] none, body.source⟩ false, src⟩
+      pure [⟨.Block [loop] (some label) [] none, src⟩]
   | .Try body catches fin => do
       let body' ← liftStmtBlock body
       let catches' ← catches.mapM fun c => do
@@ -1222,7 +1225,7 @@ partial def withBlockScope (stmts : List StmtExprMd) (act : EvalM α) : EvalM α
     finishes, as it would be inside braces. -/
 partial def evalScopedStmt (cfg : ExternalBackend) (s : StmtExprMd) : EvalM Unit :=
   match s.val with
-  | .Block _ _ => evalStmt cfg s
+  | .Block .. => evalStmt cfg s
   | _ => withBlockScope [s] (evalStmt cfg s)
 
 /-- `evalExpr` on a node, recording a call's own source range in
@@ -1274,7 +1277,7 @@ partial def evalExpr (cfg : ExternalBackend) : StmtExpr → EvalM Value
   | .IfThenElse cond thenB elseB => do
       -- An arm is a scope of its own, as it is in statement position.
       let arm (b : StmtExprMd) : EvalM Value := match b.val with
-        | .Block _ _ => evalExprMd cfg b
+        | .Block .. => evalExprMd cfg b
         | _ => withBlockScope [b] (evalExprMd cfg b)
       let c ← evalExprMd cfg cond
       if ← liftM (isTrue cfg c) then arm thenB
@@ -1283,7 +1286,7 @@ partial def evalExpr (cfg : ExternalBackend) : StmtExpr → EvalM Value
         | none => pure default
   -- A block in expression position evaluates to its last statement's value, so a
   -- `{ lemma(x); e }` yields `e`.
-  | .Block stmts none => withBlockScope stmts (evalStmtList cfg stmts (asExpr := true))
+  | .Block stmts none _ _ => withBlockScope stmts (evalStmtList cfg stmts (asExpr := true))
   | .Var (Variable.Field target field) => do
       let tv ← evalExprMd cfg target
       readField tv field.text
@@ -1644,7 +1647,7 @@ partial def resolveMethod (target : Value) (name : String) : EvalM Procedure := 
 /-- Evaluate a Laurel statement for its side effects on the eval state. May
     throw `Control.return_` to unwind to the nearest `invokeProc`. -/
 partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → EvalM Unit
-  | ⟨.Block stmts none, _⟩ => do
+  | ⟨.Block stmts none _ _, _⟩ => do
       -- The step budget is charged per statement, which is enough to stop a
       -- divergent loop without paying for a counter on every expression node.
       -- It is also what makes a non-terminating generator come back as
@@ -1653,19 +1656,44 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
       if st.fuel == 0 then throw .outOfFuel
       modify fun s => { s with fuel := s.fuel - 1 }
       let _ ← withBlockScope stmts (evalStmtList cfg stmts (asExpr := false))
-  | ⟨.Block stmts (some label), _⟩ => do
-      -- A labelled block is `exit label`'s target: that signal unwinds to here
-      -- and no further, which is how Laurel spells `break`/`continue`.
+  | ⟨.Block stmts (some label) invariants _, _⟩ => do
+      -- A labelled block is the target of `exit label` and `goto label`: those
+      -- signals unwind to here and no further, which is how Laurel spells
+      -- `break`/`continue`. An `exit` leaves the block; a `goto` runs it again
+      -- from the start, re-checking its invariants as a loop head does. The
+      -- termination measure is a proof obligation only and is not run.
       let base := (← get).cursor
-      tryCatch (do let _ ← withBlockScope stmts (evalStmtList cfg stmts (asExpr := false))) fun
-        | .exit_ l =>
-            if l == label then
-              -- The exit skipped the walk's own position bookkeeping, so restore
-              -- this block's position before execution continues after it.
-              modify fun s => { s with cursor := base, seek := none }
-            else throw (.exit_ l)
-        | other => throw other
-  | ⟨.Exit target, _⟩ => throw (.exit_ target)
+      let rec blockLoop : Nat → EvalM Unit
+        | 0 => throw .outOfFuel
+        | n + 1 => do
+          for inv in invariants do
+            evalStmt cfg ⟨.Assert inv none, inv.source⟩
+          let again ← tryCatch (do
+              let _ ← withBlockScope stmts (evalStmtList cfg stmts (asExpr := false))
+              pure false) fun
+            | .exit_ l =>
+                if l == label then do
+                  -- The jump skipped the walk's own position bookkeeping, so
+                  -- restore this block's position before execution continues.
+                  modify fun s => { s with cursor := base, seek := none }
+                  pure false
+                else throw (.exit_ l)
+            | .goto_ l =>
+                if l == label then do
+                  modify fun s => { s with cursor := base, seek := none }
+                  pure true
+                else throw (.goto_ l)
+            | other => throw other
+          -- Only a jump back to the start is charged to the shared step budget,
+          -- so a divergent goto-loop stops on it like a `while` does, while a
+          -- block that is merely a `break`/`continue` target costs nothing extra.
+          if again then do
+            if (← get).fuel == 0 then throw .outOfFuel
+            modify fun s => { s with fuel := s.fuel - 1 }
+            blockLoop n
+      blockLoop ((← get).fuel + 1)
+  | ⟨.Goto target .blockEnd, _⟩ => throw (.exit_ target)
+  | ⟨.Goto target .blockStart, _⟩ => throw (.goto_ target)
   | ⟨.Assign targets value, _⟩ => do
       match targets with
       | [t] => do
@@ -2430,6 +2458,8 @@ def evalProgramWithOutcome (cfg : ExternalBackend) (opts : Options) (p : LaurelP
             | (.error (.refused r),    s') => pure (Outcome.refused r, s')
             | (.error (.exit_ l),      _)  =>
                 throw (IO.userError s!"`exit {l}` with no enclosing block labelled '{l}'")
+            | (.error (.goto_ l),      _)  =>
+                throw (IO.userError s!"`goto {l}` with no enclosing block labelled '{l}'")
             | (.error .suspended,      _)  =>
                 throw (IO.userError "`yield` with no coroutine to suspend")
         | none => pure (Outcome.completed, initState)

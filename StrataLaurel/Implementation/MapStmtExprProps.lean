@@ -351,6 +351,39 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
                 | simp_all [stmtExprChildren]
                 | (simp only [stmtExprChildren]; grind)) _))
             (post_option_mapM_isSome _ _)) (fun _ _ => ?_)); done))
+    -- `Block`: `StmtExpr.Block.invariants.cons` and `.decreases.some` hold of the
+    -- rebuilt node because `mapM` preserves length and `Option.mapM` presence.
+    case h_2 stmts label invs dec =>
+      refine post_bind (post_and
+        (post_attach_mapM _ _ (fun x => ih x.1 (by
+          have hx := x.2
+          simp only [stmtExprChildren, List.mem_append, Option.mem_toList]
+          exact Or.inl (Or.inl hx)) true))
+        (post_mapM_length _ _)) (fun invs' hinvs' => ?_)
+      refine post_bind (post_and
+        (post_option_attach_mapM _ _ (fun x => ih x.1 (by
+          have hx := Option.mem_def.mp x.2
+          simp [stmtExprChildren, hx]) true))
+        (post_option_mapM_isSome _ _)) (fun dec' hdec' => ?_)
+      refine post_bind (post_mapIdxM _ _ (fun i x => ih x.1 (by
+          have hx := x.2
+          simp only [stmtExprChildren, List.mem_append]
+          exact Or.inr hx) _)) (fun stmts' hstmts' => ?_)
+      refine post_bind (Q := Rebuilt s t) (post_pure ⟨?_, ?_, ?_⟩) (fun x hx => hf u x hx)
+      · have hLen : invs'.length = invs.length := by simpa using hinvs'.2
+        have hSome : dec'.isSome = dec.isSome := by
+          simpa [option_attach_isSome] using hdec'.2
+        have hEmpty : invs'.isEmpty = invs.isEmpty := by
+          cases invs <;> cases invs' <;> simp_all
+        intro k hk
+        exact head k (by simpa [NodeKind.ofStmtExpr, hEmpty, hSome] using hk)
+      · simp [stmtExprTypes]
+      · intro c hc
+        simp only [stmtExprChildren, List.mem_append, Option.mem_toList] at hc
+        rcases hc with (hc | hc) | hc
+        · exact hinvs'.1 c hc
+        · exact hdec'.1 c hc
+        · exact hstmts' c hc
     -- `Return`: `StmtExpr.Return.value.some` holds of the rebuilt node because
     -- `mapM` preserves emptiness.
     case h_4 values =>

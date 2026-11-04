@@ -104,7 +104,7 @@ Three forms of scope are maintained on `ResolveState`:
 - `StmtExpr.InstanceCall` — instance method call
 - `StmtExpr.Var (.Field ...)` — field access
 - `StmtExpr.New` — object creation (references a type)
-- `StmtExpr.Exit` — exit a labelled block
+- `StmtExpr.Goto` — jump to the start or past the end of a labelled block
 - `HighType.UserDefined` — type reference
 
 Each of these nodes carries a `uniqueId : Option Nat` field (defaulting to
@@ -156,7 +156,7 @@ structure ResolveState where
   currentScopeNames : Std.HashSet String := {}
   /-- Per-composite-type field scopes (type name → field name → scope entry). -/
   typeScopes : TypeScopes := {}
-  /-- Labels of enclosing labeled blocks, used by `Check.exit` to validate
+  /-- Labels of enclosing labeled blocks, used by `Check.goto` to validate
       that an `exit l` targets an in-scope label. Maintained as a separate
       namespace (not part of `scope`) because labels are referenced by raw
       string, not by `uniqueId`. -/
@@ -405,7 +405,7 @@ def withScope (action : ResolveM α) : ResolveM α := do
   return result
 
 /-- Run `action` with `label` (if any) added to `labelScope`, restoring the
-    previous label scope on exit. Used by `Check.block` so that `Check.exit`
+    previous label scope on exit. Used by `Check.block` so that `Check.goto`
     can validate that `exit l` targets an enclosing labeled block. -/
 def withLabel (label : Option String) (action : ResolveM α) : ResolveM α := do
   let savedLabels := (← get).labelScope
@@ -1296,7 +1296,7 @@ The judgment is bidirectional:
 
 - `Γ` — lexical scope (variables, fields). Block labels live in a
   separate namespace `Γ_lbl` (`ResolveState.labelScope`), consulted
-  only by `Check.exit`.
+  only by `Check.goto`.
 - `A` — *value type* of the term.
 
 The `Return` rules additionally depend on the enclosing procedure's
@@ -1334,7 +1334,7 @@ rules* index in `LaurelUserGuide.lean`:
 
 - Literals — `Synth.litInt`, `Synth.litBool`, `Synth.litString`, `Synth.litDecimal`
 - Variables — `Synth.varLocal`, `Synth.varField`, `Check.varDeclare`
-- Control flow — `Check.while`, `Check.exit`, `Check.return`,
+- Control flow — `Check.while`, `Check.goto`, `Check.return`,
   `Check.block`, `Check.ifThenElse`
 - Verification statements — `Check.assert`, `Check.assume`
 - Assignment — `Synth.assign`, `Check.assign`
@@ -1660,7 +1660,7 @@ private def collectThrownTypes (env : Std.HashMap String HighTypeMd) (expr : Stm
     -- common ancestor". Handler and `finally` throws still escape outward.
     let residual := bodyThrows.filter fun t => !catches.any (fun c => clauseCatches lattice c t)
     pure (residual ++ cc.flatten ++ ff)
-  | .Block stmts _ =>
+  | .Block stmts _ _ _ =>
     let (_, acc) ← stmts.attach.foldlM (init := (env, ([] : List HighTypeMd))) fun (st) ⟨s, _⟩ => do
       let (env', acc) := st
       let more ← collectThrownTypes env' s
@@ -2024,9 +2024,9 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd)
   | .All => pure (Synth.all source)
   | .IfThenElse cond thenBr elseBr =>
     Synth.ifThenElse exprMd cond thenBr elseBr source (by rw [h_node, h_expr]) expected?
-  | .Block [] label => pure (.Block [] label, Synth.emptyBlock source)
-  | .Block (head :: tail) label =>
-    Synth.block exprMd (head :: tail) label source (by rw [h_node, h_expr]) expected?
+  | .Block [] label [] none => pure (.Block [] label [] none, Synth.emptyBlock source)
+  | .Block stmts label invs dec =>
+    Synth.block exprMd stmts label invs dec source (by rw [h_node, h_expr]) expected?
   -- Holes in synth position are gradual: an annotated hole synthesizes its
   -- declared type; an unannotated one is `Unknown`. Without this carve-out,
   -- a hole appearing as the target of e.g. a field access (`<?>.f`) would
@@ -2043,8 +2043,8 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd)
   | .While cond invs dec body postTest => do
     let r ← Check.while exprMd cond invs dec body postTest source (by rw [h_node, h_expr])
     return (r, ⟨ .TVoid, source ⟩)
-  | .Exit target => do
-    let r ← Check.exit target source
+  | .Goto target destination => do
+    let r ← Check.goto target destination source
     return (r, ⟨ .TVoid, source ⟩)
   | .Return val => do
     let r ← Check.return exprMd val source (by rw [h_node, h_expr])
@@ -2098,8 +2098,8 @@ def Check.resolveStmtExpr (exprMd : StmtExprMd) (expected : HighTypeMd) : Resolv
   -- Empty block has a fixed type `TVoid` (Synth.emptyBlock); the wildcard
   -- arm below routes it through synth-then-Sub. Non-empty blocks have no
   -- synth rule and are typed structurally by Check.block.
-  | .Block (head :: tail) label =>
-    Check.block exprMd (head :: tail) label expected source (by rw [h_node, h_expr])
+  | .Block (head :: tail) label invs dec =>
+    Check.block exprMd (head :: tail) label invs dec expected source (by rw [h_node, h_expr])
   | .IfThenElse cond thenBr elseBr =>
     Check.ifThenElse exprMd cond thenBr elseBr expected source (by rw [h_node, h_expr])
   -- (Decl-Synth, check mode) sole unannotated initialized declaration —
@@ -2322,28 +2322,29 @@ def Check.while (exprMd : StmtExprMd)
       rw [h] at hsz
       term_by_mem
 
-/-- (Exit)
+/-- (Goto)
     ```
     l ∈ Γ_lbl
     ───────────────────
-    Γ ⊢ Exit l ⇒ TVoid
+    Γ ⊢ Goto l d ⇒ TVoid
     ```
-    `exit` is a control-flow terminator — an unconditional jump out of
-    the enclosing labeled block. Because it never falls through, it
-    never delivers a value, so it synthesizes `TVoid`.
+    `exit l` and `goto l` are control-flow terminators — unconditional
+    jumps past the end of, or back to the start of, the enclosing labeled
+    block. Because they never fall through, they never deliver a value,
+    so they synthesize `TVoid`.
 
     The premise `l ∈ Γ_lbl` requires the target label to name an
     enclosing labeled block; labels live in their own namespace
     (`ResolveState.labelScope`, populated by `Check.block` via
     `withLabel`). An unknown label is reported here as
     `"label '<l>' is not in scope"`. -/
-def Check.exit (target : String) (source : FileRange) :
+def Check.goto (target : String) (destination : GotoDestination) (source : FileRange) :
     ResolveM StmtExprMd := do
   unless (← get).labelScope.contains target do
     let diag := diagnosticFromSource source
       s!"label '{target}' is not in scope"
     modify fun s => { s with errors := s.errors.push diag }
-  pure { val := .Exit target, source := source }
+  pure { val := .Goto target destination, source := source }
 
 /-- (Return)
 
@@ -2486,6 +2487,29 @@ def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
   termination_by sizeOf s * 5 + 4
   decreasing_by all_goals (omega)
 
+/-- Resolve a block's invariants and measure, shared by `Check.block` and
+    `Synth.block`: each invariant is checked against `TBool`, the measure must
+    synthesize a numeric type, and a block carrying either without a label is
+    rejected. Invariants and the measure are evaluated on entry to the block,
+    before any of its statements, so they resolve in the enclosing scope. -/
+def resolveBlockInvariantsAndMeasure (invs : List StmtExprMd) (dec : Option StmtExprMd)
+    (label : Option String) (source : FileRange) :
+    ResolveM (List StmtExprMd × Option StmtExprMd) := do
+  let invs' ← invs.attach.mapM (fun a => have := a.property; do
+    Check.resolveStmtExpr a.val { val := .TBool, source := a.val.source })
+  let dec' ← dec.attach.mapM (fun a => have := a.property; do
+    let (e', decTy) ← Synth.resolveStmtExpr a.val
+    let ctx := (← get).typeLattice
+    unless isNumeric ctx decTy do
+      typeMismatch a.val.source none "expected a numeric type" decTy
+    pure e')
+  if label.isNone && (!invs.isEmpty || dec.isSome) then
+    modify fun st => { st with errors := st.errors.push (diagnosticFromSource source
+      "a block with invariants or a decreases clause needs a label") }
+  pure (invs', dec')
+  termination_by (sizeOf invs + sizeOf dec) * 5 + 4
+  decreasing_by all_goals term_by_mem
+
 /-- (Block) Check-mode typing rule for a non-empty block.
 
     A block's value is the value of its **last** statement; every
@@ -2521,8 +2545,10 @@ def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
     so nested `exit l` checks can see it. -/
 def Check.block (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
+    (invs : List StmtExprMd) (dec : Option StmtExprMd)
     (expected : HighTypeMd) (source : FileRange)
-    (h : exprMd.val = .Block stmts label) : ResolveM StmtExprMd := do
+    (h : exprMd.val = .Block stmts label invs dec) : ResolveM StmtExprMd := do
+  let (invs', dec') ← resolveBlockInvariantsAndMeasure invs dec label source
   -- A non-last statement is in effect position: admitted by `Check.statement`
   -- (`Γ ⊢ s ⋄` — synthesized and the type discarded).
   let checkNonLast (s : StmtExprMd) (_h_mem : s ∈ stmts) : ResolveM StmtExprMd :=
@@ -2544,7 +2570,7 @@ def Check.block (exprMd : StmtExprMd)
     -- Flag it once at the position of the next statement.
     let isTerminator (s : StmtExprMd) : Bool :=
       match s.val with
-      | .Exit _ | .Return _ => true
+      | .Goto _ _ | .Return _ => true
       | _ => false
     match init'.findIdx? isTerminator with
     | some i =>
@@ -2566,11 +2592,11 @@ def Check.block (exprMd : StmtExprMd)
     match _lastResult: stmts.getLast? with
     | none =>
       checkSubtype source expected (Synth.emptyBlock source)
-      pure { val := .Block init' label, source := source }
+      pure { val := .Block init' label invs' dec', source := source }
     | some last =>
       have := List.mem_of_getLast? _lastResult
       let last' ← checkLast last ‹_›
-      pure { val := .Block (init' ++ [last']) label, source := source }
+      pure { val := .Block (init' ++ [last']) label invs' dec', source := source }
   termination_by sizeOf exprMd * 5 + 0
   decreasing_by
     all_goals
@@ -2723,16 +2749,18 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
     the slot that a direct one would (`identity({ setEmpty() })`). -/
 def Synth.block (exprMd : StmtExprMd)
     (stmts : List StmtExprMd) (label : Option String)
+    (invs : List StmtExprMd) (dec : Option StmtExprMd)
     (source : FileRange)
-    (h : exprMd.val = .Block stmts label)
+    (h : exprMd.val = .Block stmts label invs dec)
     (expected? : Option HighTypeMd := none) : ResolveM (StmtExpr × HighTypeMd) := do
+  let (invs', dec') ← resolveBlockInvariantsAndMeasure invs dec label source
   withScope <| withLabel label do
     let init' ← stmts.dropLast.attach.mapM fun ⟨s, hMem⟩ => do
       have h_mem : s ∈ stmts := List.dropLast_subset stmts hMem
       Check.statement s
     let isTerminator (s : StmtExprMd) : Bool :=
       match s.val with
-      | .Exit _ | .Return _ => true
+      | .Goto _ _ | .Return _ => true
       | _ => false
     match init'.findIdx? isTerminator with
     | some i =>
@@ -2750,11 +2778,11 @@ def Synth.block (exprMd : StmtExprMd)
     | none => pure ()
     match _lastResult: stmts.getLast? with
     | none =>
-      pure (.Block init' label, Synth.emptyBlock source)
+      pure (.Block init' label invs' dec', Synth.emptyBlock source)
     | some last =>
       have := List.mem_of_getLast? _lastResult
       let (last', lastTy) ← Synth.resolveStmtExpr last expected?
-      pure (.Block (init' ++ [last']) label, lastTy)
+      pure (.Block (init' ++ [last']) label invs' dec', lastTy)
   termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals
@@ -2904,7 +2932,7 @@ def Check.tryCatch (exprMd : StmtExprMd)
         modify fun s => { s with scope := s.scope.insert c.binding.text (bid, node),
                                  idToNode := s.idToNode.insert bid node }
     let cbody' ← if dead then
-        pure { val := .Block [] none, source := c.body.source }
+        pure { val := .Block [] none [] none, source := c.body.source }
       else Check.resolveStmtExpr c.body { val := .Unknown, source := c.body.source }
     pure ({ binding := binding', predicate := predicate', body := cbody', bindingType := bindTy } : CatchClause)
   let finally'? ← finally?.attach.mapM fun ⟨fexpr, _⟩ =>
@@ -3285,7 +3313,7 @@ def Synth.genericCallArgs (exprMd : StmtExprMd) (callee : Identifier) (proc : Pr
   let concreteParam := fun (i : Nat) => (paramTys[i]?).filter (!mentionsTVar ·.val)
   let isCall := fun (a : StmtExprMd) => a.val matches .StaticCall .. | .New .. | .InstanceCall ..
   let forwardsSlot := fun (a : StmtExprMd) =>
-    a.val matches .IfThenElse .. | .Block (_ :: _) _ | .Old .. | .OldGuarantee .. | .OldRelies ..
+    a.val matches .IfThenElse .. | .Block (_ :: _) _ _ _ | .Old .. | .OldGuarantee .. | .OldRelies ..
       | .ProveBy ..
   let (deferred, immediate) :=
     args.attach.zipIdx.partition fun (⟨a, _⟩, i) =>
@@ -5694,7 +5722,7 @@ method→method `throws` still resolves because `calleeThrows` reads
 `.instanceProcedure` from the model as well as `.staticProcedure`. -/
 
 /-- Whether `stmt` *definitely* completes abruptly — every path through it ends
-    in a `return`, a `throw`, or an `exit` that leaves it — so a completion left
+    in a `return`, a `throw`, or an `exit`/`goto` that leaves it — so a completion left
     pending by a `try` body or handler cannot survive past it (Java JLS §14.20.2 /
     C#: the `finally`'s own abrupt completion supersedes it, which is what
     `EliminateExceptions` lowers).
@@ -5711,10 +5739,10 @@ private def alwaysCompletesAbruptlyIn (opened : List String) (stmt : StmtExprMd)
   -- to a label opened inside just skips ahead within it. (`EliminateExceptions`
   -- unwinds a leaving `exit` through the `finally` arms it crosses, dropping the
   -- pending completion exactly as a `return`/`throw` would.)
-  | .Exit label => !opened.contains label
+  | .Goto label _ => !opened.contains label
   -- Statements after an unconditional terminator are unreachable, so a block is
   -- abrupt as soon as any of its statements is.
-  | .Block stmts label =>
+  | .Block stmts label _ _ =>
     let inner := match label with | some l => l :: opened | none => opened
     stmts.attach.any (fun ⟨s, _⟩ => alwaysCompletesAbruptlyIn inner s)
   | .IfThenElse _ t (some e) =>
@@ -5798,7 +5826,7 @@ public def exceptionEscapesWith (model : SemanticModel) (lattice : TypeLattice)
       | none => false
     if finallyAbrupt then finallyEsc
     else uncaught ++ handlersEsc ++ finallyEsc
-  | .Block stmts _ => stmts.attach.flatMap (fun ⟨s, _⟩ => exceptionEscapesWith model lattice throwsOf s keepTVars atCallTypeArgs)
+  | .Block stmts _ _ _ => stmts.attach.flatMap (fun ⟨s, _⟩ => exceptionEscapesWith model lattice throwsOf s keepTVars atCallTypeArgs)
   | .IfThenElse c t e =>
     exceptionEscapesWith model lattice throwsOf c keepTVars atCallTypeArgs ++ exceptionEscapesWith model lattice throwsOf t keepTVars atCallTypeArgs
       ++ (match _he : e with | some eb => exceptionEscapesWith model lattice throwsOf eb keepTVars atCallTypeArgs | none => [])
@@ -5939,7 +5967,7 @@ private def checkPropagationEdges (model : SemanticModel) (lattice : TypeLattice
       ++ (match _hf : finally? with
           | some f => checkPropagationEdges model lattice parentTy f
           | none => [])
-  | .Block stmts _ =>
+  | .Block stmts _ _ _ =>
     stmts.attach.flatMap (fun ⟨s, _⟩ => checkPropagationEdges model lattice parentTy s)
   | .IfThenElse _ t e =>
     checkPropagationEdges model lattice parentTy t
@@ -6046,7 +6074,7 @@ private def checkThrowingCallPositions (model : SemanticModel) (stmt : StmtExprM
     | .StaticCall _ args _ | .InstanceCall _ _ args => args.flatMap (throwingCallSources model)
     | _ => throwingCallSources model v
   match _h : stmt.val with
-  | .Block stmts _ =>
+  | .Block stmts _ _ _ =>
     stmts.attach.flatMap (fun ⟨s, _⟩ => checkThrowingCallPositions model s)
   | .IfThenElse c t e =>
     throwingCallSources model c ++ checkThrowingCallPositions model t
@@ -6100,7 +6128,7 @@ private def checkCatchBindingShadowing (stmt : StmtExprMd)
       ++ checkCatchBindingShadowing body
       ++ catches.attach.flatMap (fun ⟨c, _⟩ => checkCatchBindingShadowing c.body)
       ++ (match _hf : finally? with | some f => checkCatchBindingShadowing f | none => [])
-  | .Block stmts _ => stmts.attach.flatMap (fun ⟨s, _⟩ => checkCatchBindingShadowing s)
+  | .Block stmts _ _ _ => stmts.attach.flatMap (fun ⟨s, _⟩ => checkCatchBindingShadowing s)
   | .IfThenElse _ t e =>
     checkCatchBindingShadowing t
       ++ (match _he : e with | some eb => checkCatchBindingShadowing eb | none => [])
@@ -6522,7 +6550,7 @@ def declaredNames (program : LaurelProgram) : List (String × String × FileRang
     | .CompoundAssign _ ⟨.Declare p, _⟩ _ => [ofId "variable" p.name]
     | .Quantifier _ param _ _ => [ofId "bound variable" param.name]
     | .Try _ catches _ => catches.map (ofId "catch binding" ·.binding)
-    | .Block _ (some label) => [("block label", label, e.source)]
+    | .Block _ (some label) _ _ => [("block label", label, e.source)]
     | _ => []
   let inExprs (e : StmtExprMd) := collectStmtExprList inExpr e
   let procExprNames (proc : Procedure) : List (String × String × FileRange) :=
@@ -6717,7 +6745,9 @@ private def foldRestrictedStmtExprM [Monad m]
   | .IfThenElse cond th el =>
     foldRestrictedStmtExprM f restricted cond; foldRestrictedStmtExprM f restricted th
     el.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f restricted e
-  | .Block stmts _ =>
+  | .Block stmts _ invs dec =>
+    invs.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f true e
+    dec.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f true e
     stmts.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f restricted e
   | .While cond invs dec body _ =>
     foldRestrictedStmtExprM f true cond
@@ -6774,7 +6804,7 @@ private def foldRestrictedStmtExprM [Monad m]
     foldRestrictedStmtExprM f restricted target
     value.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f restricted e
   | .HasNext target => foldRestrictedStmtExprM f restricted target
-  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _
+  | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _
   | .LiteralDecimal _ | .LiteralBv _ _ | .Var (.Local _)
   | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole ..
   | .Yield | .Snapshot _ => pure ()
@@ -6793,7 +6823,7 @@ decreasing_by
 private def collectResultPathStmtExprList {β : Type} (f : StmtExprMd → List β)
     (expr : StmtExprMd) : List β :=
   match _h : expr.val with
-  | .Block stmts _ =>
+  | .Block stmts _ _ _ =>
       match stmts.attach.getLast? with
       | some ⟨result, _hmem⟩ => collectResultPathStmtExprList f result
       | none => []
@@ -6844,7 +6874,7 @@ private def passesGlobalToInout (ctx : GlobalCallValidationContext)
 
 private def isVariableActual (expr : StmtExprMd) : Bool :=
   match expr.val with
-  | .Var (.Local _) | .Block [⟨.Var (.Local _), _⟩] _ => true
+  | .Var (.Local _) | .Block [⟨.Var (.Local _), _⟩] _ _ _ => true
   | _ => false
 
 private def hasInvalidInoutActual (ctx : GlobalCallValidationContext)
@@ -6883,7 +6913,7 @@ private def validateGlobalCall (ctx : GlobalCallValidationContext) (restricted :
 private def blockTupleCall (ctx : GlobalCallValidationContext)
     (expr : StmtExprMd) : Option Identifier :=
   match expr.val with
-  | .Block _ _ | .IfThenElse _ _ _ | .ProveBy _ _ | .Old _ _ | .Fresh _
+  | .Block _ _ _ _ | .IfThenElse _ _ _ | .ProveBy _ _ | .Old _ _ | .Fresh _
   | .Assigned _ | .AsType _ _ | .Assign _ _ | .CompoundAssign _ _ _ =>
       (collectResultPathStmtExprList (fun node => match node.val with
         | .StaticCall callee _ _ | .InstanceCall _ callee _ => [callee]

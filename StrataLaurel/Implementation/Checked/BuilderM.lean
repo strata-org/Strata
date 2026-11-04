@@ -57,11 +57,11 @@ def runAndReturn {ret} (act : BuilderM (Expr ret)) : AstNode StmtExpr :=
   if st.stmts.isEmpty then
     retStmt
   else
-    rawNd <| .Block (st.stmts.push retStmt).toList none
+    rawNd <| .Block (st.stmts.push retStmt).toList none [] none
 
 def runUnit (act : BuilderM Unit) : AstNode StmtExpr :=
   let ((), st) := act.monad.run {}
-  rawNd <| .Block st.stmts.toList none
+  rawNd <| .Block st.stmts.toList none [] none
 
 protected def emit (s : AstNode StmtExpr) : BuilderM Unit :=
   modify fun st => { st with stmts := st.stmts.push s }
@@ -75,7 +75,7 @@ protected def captureBlock (body : BuilderM Unit) : BuilderM (AstNode StmtExpr) 
   let outerStmts ← modifyGet fun s => (s.stmts, { s with stmts := #[] })
   body
   let innerStmts ← modifyGet fun s => (s.stmts.toList, { s with stmts := outerStmts })
-  pure (rawNd (.Block innerStmts none))
+  pure (rawNd (.Block innerStmts none [] none))
 
 
 instance : Builder BuilderM where

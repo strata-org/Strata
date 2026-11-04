@@ -205,7 +205,7 @@ private def mkVarMd (v : Variable) (source : FileRange) : VariableMd := { val :=
 
 private def wrapList (source : FileRange) : List StmtExprMd → StmtExprMd
   | [single] => single
-  | many => ⟨.Block many none, source⟩
+  | many => ⟨.Block many none [] none, source⟩
 
 /--
 Transform an expression, adding heap parameters where needed.
@@ -239,7 +239,7 @@ where
             (mkMd (.StaticCall heapNextReferenceAccessor [heapRead] []) source)) source
           let updateHeap := mkMd (.Assign [mkVarMd (.Local heapVar) source]
             (mkMd (.StaticCall incrementName [heapRead] []) source)) source
-          return [mkMd (.Block [saveRef, updateHeap, mkMd (.Var (.Local ref)) source] none) source]
+          return [mkMd (.Block [saveRef, updateHeap, mkMd (.Var (.Local ref)) source] none [] none) source]
         else
           return [exprMd]
     | .StaticCall callee args tyArgs =>
@@ -253,7 +253,8 @@ where
     | .IfThenElse c t e =>
         let e' ← match e with | some x => some <$> recurseOne x valueUsed | none => pure none
         return [⟨ .IfThenElse (← recurseOne c) (← recurseOne t valueUsed) e', source ⟩]
-    | .Block stmts label =>
+    | .Block stmts label invs d =>
+        let invs' ← invs.mapM (recurseOne ·)
         let n := stmts.length
         let rec processStmts (idx : Nat) (remaining : List StmtExprMd) : TransformM (List StmtExprMd) := do
           match remaining with
@@ -265,7 +266,7 @@ where
               pure (s' ++ rest')
           termination_by (sizeOf remaining, 0)
         let stmts' ← processStmts 0 stmts
-        return [⟨ .Block stmts' label, source ⟩]
+        return [⟨ .Block stmts' label invs' d, source ⟩]
     | .While c invs d b postTest =>
         let invs' ← invs.mapM (recurseOne ·)
         return [⟨ .While (← recurseOne c) invs' d (← recurseOne b false) postTest, source ⟩]

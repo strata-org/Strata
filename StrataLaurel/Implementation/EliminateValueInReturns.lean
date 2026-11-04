@@ -62,7 +62,7 @@ def eliminateValueReturnsInProc (proc : Procedure) : Procedure :=
                source := src } : StmtExprMd)
           let assigns := (outputs.zipIdx).map fun (out, i) =>
             assignTo out.name { val := .Var (.Local (returnTempName i)), source := src }
-          some [{ val := .Block (temps ++ assigns ++ [ret]) none, source := src }]
+          some [{ val := .Block (temps ++ assigns ++ [ret]) none [] none, source := src }]
       | _ => none
     let post (_: Bool) (stmt : StmtExprMd) : Id (List StmtExprMd) := pure [stmt]
     let rewrite := mapStmtExprFlattenM (m := Id) pre post true

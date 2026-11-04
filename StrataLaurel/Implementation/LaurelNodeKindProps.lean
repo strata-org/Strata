@@ -164,11 +164,18 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
     nothing about children. -/
 @[expose] def NodeKind.ofStmtExpr : StmtExpr → List NodeKind
   | .IfThenElse .. => [NodeKind.StmtExpr.IfThenElse]
-  | .Block .. => [NodeKind.StmtExpr.Block]
+  | .Block _ _ invariants decreases =>
+    [NodeKind.StmtExpr.Block]
+      ++ (if invariants.isEmpty then [] else [NodeKind.StmtExpr.Block.invariants.cons])
+      ++ (if decreases.isSome then [NodeKind.StmtExpr.Block.decreases.some] else [])
   | .While _ _ _ _ postTest =>
     [NodeKind.StmtExpr.While]
       ++ (if postTest then [NodeKind.StmtExpr.While.postTest.true] else [])
-  | .Exit .. => [NodeKind.StmtExpr.Exit]
+  | .Goto _ destination =>
+    [NodeKind.StmtExpr.Goto]
+      ++ (match destination with
+          | .blockStart => [NodeKind.StmtExpr.Goto.destination.blockStart]
+          | .blockEnd => [])
   | .Return values =>
     [NodeKind.StmtExpr.Return]
       ++ (if values.isEmpty then [] else [NodeKind.StmtExpr.Return.value.some])
@@ -229,7 +236,7 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
 /-- A node's immediate `StmtExprMd` children. -/
 @[expose] def stmtExprChildren : StmtExpr → List StmtExprMd
   | .IfThenElse cond th el => [cond, th] ++ el.toList
-  | .Block stmts _ => stmts
+  | .Block stmts _ invariants decreases => invariants ++ decreases.toList ++ stmts
   | .While cond invariants decreases body _ =>
     [cond] ++ invariants ++ decreases.toList ++ [body]
   | .Return values => values
@@ -259,7 +266,7 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
   | .ProveBy value proof => [value, proof]
   | .ContractOf _ function => [function]
   -- Leaves.
-  | .Exit .. | .LiteralInt .. | .LiteralBool .. | .LiteralString ..
+  | .Goto .. | .LiteralInt .. | .LiteralBool .. | .LiteralString ..
   | .LiteralDecimal .. | .LiteralBv .. | .New .. | .This | .Abstract | .All
   | .Hole .. | .Yield | .Snapshot .. => []
 
@@ -374,6 +381,8 @@ theorem ofStmtExpr_postTest_true {v : StmtExpr}
     · exact absurd h (by simp)
     · obtain ⟨op, hop⟩ := ofCallee_subset h
       rcases ofOperation_mem hop with h1 | h1 <;> exact absurd h1 (by simp)
+  case Block _ _ invs dec => cases invs <;> cases dec <;> simp [NodeKind.ofStmtExpr] at h
+  case Goto _ d => cases d <;> simp [NodeKind.ofStmtExpr] at h
   all_goals
     refine absurd h ?_
     grind [NodeKind.ofStmtExpr, NodeKind.ofVariable, NodeKind.ofCallee,
@@ -397,6 +406,8 @@ theorem ofStmtExpr_incrDecr {v : StmtExpr}
     · exact absurd h (by simp)
     · obtain ⟨op, hop⟩ := ofCallee_subset h
       rcases ofOperation_mem hop with h1 | h1 <;> exact absurd h1 (by simp)
+  case Block _ _ invs dec => cases invs <;> cases dec <;> simp [NodeKind.ofStmtExpr] at h
+  case Goto _ d => cases d <;> simp [NodeKind.ofStmtExpr] at h
   all_goals
     refine absurd h ?_
     grind [NodeKind.ofStmtExpr, NodeKind.ofVariable, NodeKind.ofCallee,
@@ -415,6 +426,8 @@ theorem ofStmtExpr_compoundAssign {v : StmtExpr}
     · exact absurd h (by simp)
     · obtain ⟨op, hop⟩ := ofCallee_subset h
       rcases ofOperation_mem hop with h1 | h1 <;> exact absurd h1 (by simp)
+  case Block _ _ invs dec => cases invs <;> cases dec <;> simp [NodeKind.ofStmtExpr] at h
+  case Goto _ d => cases d <;> simp [NodeKind.ofStmtExpr] at h
   all_goals
     refine absurd h ?_
     grind [NodeKind.ofStmtExpr, NodeKind.ofVariable, NodeKind.ofCallee,

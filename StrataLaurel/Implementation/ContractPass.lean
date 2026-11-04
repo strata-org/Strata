@@ -60,20 +60,20 @@ private def paramsToArgs (params : List Parameter) (source : FileRange) : List S
     `assumptions` are earlier clauses that `clause` may need in order to be well-formed: after
     `ensures r != 0`, the division in `ensures 10 / r > 1` is safe only given the first.
 
-    The body ends in `clause` assigned to the output and `exit $return`, which is how
+    The body ends in `clause` assigned to the output and `goto $return`, which is how
     `EliminateReturnStatements`, run before this pass, lowers `return clause`. -/
 private def mkClauseHelper (name : String) (params : List Parameter)
     (assumptions : List StmtExprMd) (clause : StmtExprMd) : Procedure :=
   let src := clause.source
   let assumes : List StmtExprMd := assumptions.map fun e => ⟨.Assume e, e.source⟩
   let assign : StmtExprMd := ⟨.Assign [⟨.Local (mkId resultOutputName), src⟩] clause, src⟩
-  let exit : StmtExprMd := ⟨.Exit returnLabel, src⟩
+  let exit : StmtExprMd := ⟨.Goto returnLabel .blockEnd, src⟩
   { name := mkId name
     inputs := params
     outputs := [⟨mkId resultOutputName, { val := .TBool, source := src }⟩]
     preconditions := []
     decreases := none
-    body := .Transparent ⟨.Block (assumes ++ [assign, exit]) (some returnLabel), src⟩ }
+    body := .Transparent ⟨.Block (assumes ++ [assign, exit]) (some returnLabel) [] none, src⟩ }
 
 /-- Suffix appended to a procedure's output-parameter names when they are lowered
     into a postcondition helper *function*.
@@ -225,11 +225,11 @@ private def transformProcBody (model : SemanticModel) (proc : Procedure) (info :
        pc.condition.source⟩
   match proc.body with
   | .Transparent body =>
-    return .Transparent ⟨.Block (snapshotDecls ++ preAssumes ++ [body] ++ postAsserts) none, body.source⟩
+    return .Transparent ⟨.Block (snapshotDecls ++ preAssumes ++ [body] ++ postAsserts) none [] none, body.source⟩
   | .Opaque _ (some impl) _ =>
     -- Postconditions are lowered to body assertions, so drop them from the
     -- body's postcondition list.
-    return .Opaque [] (some ⟨.Block (snapshotDecls ++ preAssumes ++ [impl] ++ postAsserts) none, impl.source⟩) []
+    return .Opaque [] (some ⟨.Block (snapshotDecls ++ preAssumes ++ [impl] ++ postAsserts) none [] none, impl.source⟩) []
   | .Opaque _ none mods =>
     -- Bodiless: there is no implementation to assert against, so we cannot lower
     -- the postconditions to body assertions. Callers already assume each

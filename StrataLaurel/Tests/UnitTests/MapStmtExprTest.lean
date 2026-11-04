@@ -224,7 +224,7 @@ private def highTypeOrderFixture : Procedure :=
     body := .Transparent (testMd (.Block
       [testMd (.AsType (testMd (.LiteralInt 0)) (taggedType "body")),
        testMd (.New (mkId "new") [taggedType "arg"]),
-       testMd (.New (mkId "bareNew") [])] none)) }
+       testMd (.New (mkId "bareNew") [])] none [] none)) }
 
 private def visitTagged (type : HighTypeMd) : StateM (List String) HighTypeMd := do
   let name := match type.val with

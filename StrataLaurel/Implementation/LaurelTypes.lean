@@ -132,14 +132,14 @@ def computeExprTypeWith (fieldType? : Option (Identifier → HighTypeMd → Opti
     match thenTy.val, elseBranch with
     | .Unknown, some e => computeExprTypeWith fieldType? model e
     | _, _ => thenTy
-  | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
+  | .Block stmts _ _ _ => match _blockGetLastResult: stmts.getLast? with
     | some last =>
         have := List.mem_of_getLast? _blockGetLastResult
         computeExprTypeWith fieldType? model last
     | none => ⟨ .TVoid, source ⟩
   -- Statements
   | .While _ _ _ _ _ => ⟨ .TVoid, source ⟩
-  | .Exit _ => ⟨ .TVoid, source ⟩
+  | .Goto _ _ => ⟨ .TVoid, source ⟩
   | .Return _ => ⟨ .TVoid, source ⟩
   -- Its target's type, as `Synth.assign` types it.
   | .Assign [⟨.Local id, _⟩] _ => (model.get id).getType

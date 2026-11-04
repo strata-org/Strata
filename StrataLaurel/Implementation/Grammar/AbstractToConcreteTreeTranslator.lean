@@ -160,11 +160,12 @@ where
     | .Hole true _ => laurelOp "hole"
     | .Hole false _ => laurelOp "nondetHole"
     | .Var (.Local name) => laurelOp "identifier" #[ident name.text]
-    | .Block stmts label =>
+    | .Block stmts label invs _decreases =>
       let stmtArgs := stmts.map stmtExprToArg |>.toArray
+      let invArgs := invs.map (fun i => laurelOp "invariantClause" #[stmtExprToArg i]) |>.toArray
       match label with
       | none => laurelOp "block" #[semicolonSep stmtArgs]
-      | some l => laurelOp "labelledBlock" #[semicolonSep stmtArgs, ident l]
+      | some l => laurelOp "labelledBlock" #[semicolonSep stmtArgs, ident l, seqArg invArgs]
     | .Var (.Declare param) =>
       let typeOpt := optionArg (param.type.map fun t => laurelOp "typeAnnotation" #[highTypeToArg t])
       let initOpt := optionArg none
@@ -261,7 +262,8 @@ where
       laurelOp "call" #[laurelOp "identifier" #[ident "resume"], commaSep #[stmtExprToArg target, stmtExprToArg value]]
     | .HasNext target =>
       laurelOp "call" #[laurelOp "identifier" #[ident "has_next"], commaSep #[stmtExprToArg target]]
-    | .Exit label => laurelOp "exit" #[ident label]
+    | .Goto label .blockEnd => laurelOp "exit" #[ident label]
+    | .Goto label .blockStart => laurelOp "goto" #[ident label]
     | .Assert cond summary =>
       let errOpt := optionArg (summary.map fun msg =>
         laurelOp "errorSummary" #[.strlit sr msg])

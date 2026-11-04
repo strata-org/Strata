@@ -10,6 +10,7 @@ public import StrataLaurel.Implementation.LaurelToCoreSchemaPass
 import StrataLaurel.Implementation.DesugarShortCircuit
 import StrataLaurel.Implementation.EliminateReturnStatements
 import StrataLaurel.Implementation.EliminateDoWhile
+import StrataLaurel.Implementation.RestructureGotos
 -- The passes' `NodeKind` declarations, proven against the pass bodies. Imported
 -- here so the pipeline's build checks them: `orderingRespected` below derives the
 -- pass order from declarations that these proofs tie to what the passes do.
@@ -192,6 +193,9 @@ def laurelPipeline : Array LaurelPass := #[
   uniqueOverloadNamesPass,
   desugarShortCircuitPass,
   eliminateReturnStatementsPass,
+  -- Late, so every earlier pass works on the goto form; before
+  -- `loopInvariantWellFormednessPass`, which must see the loops it creates.
+  restructureGotosPass,
   loopInvariantWellFormednessPass,
   contractPass,
   transparencyPass,

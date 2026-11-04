@@ -154,7 +154,7 @@ def Laurel.withEntryHarness (program : Laurel.LaurelProgram) (name : String)
   let keepProcedure (p : Laurel.Procedure) : Laurel.Procedure := match p.body with
     | .Transparent b =>
       { p with body :=
-          .Transparent ⟨.Block [⟨.Assume ⟨.LiteralBool true, src⟩, src⟩, b] none, src⟩ }
+          .Transparent ⟨.Block [⟨.Assume ⟨.LiteralBool true, src⟩, src⟩, b] none [] none, src⟩ }
     | _ => p
   -- A copy, so that the target's other callers still check its `requires`.
   let copy? := if !target.preconditions.any (·.mode.doesAssert) then none else

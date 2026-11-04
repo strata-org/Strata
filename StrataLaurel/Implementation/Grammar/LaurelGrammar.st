@@ -188,8 +188,6 @@ op return (value : Option StmtExpr, more : Option ReturnMore) : StmtExpr =>
 // as an expression, evaluates to the value sent in by the next resume.
 op yield: StmtExpr => @[prec(0)] "yield";
 op block (stmts : SemicolonSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{\n  " indent(2, stmts) "\n}";
-op labelledBlock (stmts : SemicolonSepBy StmtExpr, label : Ident) : StmtExpr => @[prec(1000)] "{\n  " indent(2, stmts) "\n}" label;
-op exit (label : Ident) : StmtExpr => @[prec(0)] "exit " label;
 
 // Exception handling: try / catch (with optional `when` guard) / finally.
 category CatchGuard;
@@ -208,6 +206,13 @@ op tryCatch (body: StmtExpr, catches: Seq CatchClause, finallyClause: Option Fin
 // While loops
 category InvariantClause;
 op invariantClause (cond: StmtExpr): InvariantClause => "\n  invariant " cond:0;
+
+// A labelled block is the target of `exit` (jump past its end) and `goto`
+// (jump back to its start). Invariants are checked on entry and on every `goto`.
+op labelledBlock (stmts : SemicolonSepBy StmtExpr, label : Ident, invariants : Seq InvariantClause) : StmtExpr
+  => @[prec(1000)] "{\n  " indent(2, stmts) "\n}" label invariants;
+op exit (label : Ident) : StmtExpr => @[prec(0)] "exit " label;
+op goto (label : Ident) : StmtExpr => @[prec(0)] "goto " label;
 
 op while (cond: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): StmtExpr
   => "while" "(" cond ")" invariants " " body:0;

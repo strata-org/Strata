@@ -391,14 +391,18 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       return mkStmtExprMd (.Try body catches finally?) src
     | q`Laurel.block, #[arg0] =>
       let stmts ← translateSeqCommand arg0
-      return mkStmtExprMd (.Block stmts none) src
-    | q`Laurel.labelledBlock, #[arg0, arg1] =>
+      return mkStmtExprMd (.Block stmts none [] none) src
+    | q`Laurel.labelledBlock, #[arg0, arg1, invSeqArg] =>
       let stmts ← translateSeqCommand arg0
       let label ← translateIdent arg1
-      return mkStmtExprMd (.Block stmts (some label.text)) src
+      let invariants ← translateInvariantClauses translateStmtExpr invSeqArg
+      return mkStmtExprMd (.Block stmts (some label.text) invariants none) src
     | q`Laurel.exit, #[arg0] =>
       let label ← translateIdent arg0
-      return mkStmtExprMd (.Exit label.text) src
+      return mkStmtExprMd (.Goto label.text .blockEnd) src
+    | q`Laurel.goto, #[arg0] =>
+      let label ← translateIdent arg0
+      return mkStmtExprMd (.Goto label.text .blockStart) src
     | q`Laurel.literalBool, #[arg0] => return mkStmtExprMd (.LiteralBool (← translateBool arg0)) src
     | q`Laurel.int, #[arg0] =>
       let n ← translateNat arg0
@@ -590,9 +594,9 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let step ← translateStmtExpr stepArg
       let invariants ← translateInvariantClauses translateStmtExpr invSeqArg
       let body ← translateStmtExpr bodyArg
-      let whileBody := mkStmtExprMd (.Block [body, step] none) src
+      let whileBody := mkStmtExprMd (.Block [body, step] none [] none) src
       let whileStmt := mkStmtExprMd (.While cond invariants none whileBody false) src
-      return mkStmtExprMd (.Block [init, whileStmt] none) src
+      return mkStmtExprMd (.Block [init, whileStmt] none [] none) src
     | q`Laurel.doWhile, #[bodyArg, condArg, invSeqArg] =>
       -- A `do … while` is a post-test `While`. The `EliminateDoWhile` pass
       -- lowers `postTest := true` to the pre-test form later.

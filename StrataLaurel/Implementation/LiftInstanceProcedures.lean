@@ -412,7 +412,7 @@ private def buildDispatcherBody (ownerType : Identifier) (ownerParams : List Ide
   -- (whose `$heap`-threaded call resolves to `Heap` bare but `void` as a block tail),
   -- producing a spurious "'if' branches have incompatible types 'Heap' and 'void'".
   let fallthrough : AstNode StmtExpr :=
-    ⟨ .Block [callTo (implProcName ownerType method.name) ⟨ .Var (.Local selfName), src ⟩] none, src ⟩
+    ⟨ .Block [callTo (implProcName ownerType method.name) ⟨ .Var (.Local selfName), src ⟩] none [] none, src ⟩
   -- fold the overriders into a most-derived-first `is`/`as` chain
   overriders.foldr (init := fallthrough) fun ov acc =>
     let ovTy : HighTypeMd := appliedTagType src ownerParams ov
@@ -422,7 +422,7 @@ private def buildDispatcherBody (ownerType : Identifier) (ownerParams : List Ide
       ⟨ .Assign [⟨ .Declare ⟨castName, ovTy⟩, src ⟩]
         ⟨ .AsType ⟨ .Var (.Local selfName), src ⟩ ovTy, src ⟩, src ⟩
     let branchCall := callTo (implProcName ov.name method.name) ⟨ .Var (.Local castName), src ⟩
-    let thenBlock : AstNode StmtExpr := ⟨ .Block [castDecl, branchCall] none, src ⟩
+    let thenBlock : AstNode StmtExpr := ⟨ .Block [castDecl, branchCall] none [] none, src ⟩
     ⟨ .IfThenElse isCheck thenBlock (some acc), src ⟩
 
 /-- The postconditions of `D$m`'s dispatcher, tag-conditioned so each holds on the

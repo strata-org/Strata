@@ -104,7 +104,7 @@ public section
 inductive NodeKind where
   -- StmtExpr constructors
   | StmtExpr.Block
-  | StmtExpr.Exit
+  | StmtExpr.Goto
   | StmtExpr.IfThenElse
   | StmtExpr.While
   | StmtExpr.Return
@@ -138,6 +138,12 @@ inductive NodeKind where
   -- StmtExpr refinements
   /-- A post-test loop: the `do … while` form. -/
   | StmtExpr.While.postTest.true
+  /-- A backward jump: a `goto` to the start of an enclosing block. -/
+  | StmtExpr.Goto.destination.blockStart
+  /-- A block carrying invariants, i.e. a potential loop. -/
+  | StmtExpr.Block.invariants.cons
+  /-- A block carrying a termination measure. -/
+  | StmtExpr.Block.decreases.some
   /-- `return expr` — a return carrying a value. -/
   | StmtExpr.Return.value.some
   /-- A labeled `old`, i.e. a snapshot read. -/
