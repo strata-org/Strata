@@ -159,6 +159,10 @@ abbrev LTys := List LTy
 @[expose] def mapLTyTys (f : LMonoTy → LMonoTy) : LTy → LTy
   | .forAll vs mty => .forAll vs (f mty)
 
+/-- Does the body of a type scheme satisfy `p`? -/
+def allLTyTys (p : LMonoTy → Bool) : LTy → Bool
+  | .forAll _ mty => p mty
+
 ---------------------------------------------------------------------
 
 /--

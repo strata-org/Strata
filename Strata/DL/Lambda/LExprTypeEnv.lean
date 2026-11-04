@@ -971,6 +971,12 @@ public abbrev TyVarAdmissibility : Type := TyIdentifier → Bool
 /-- The policy that permits every free type variable. -/
 public def TyVarAdmissibility.all : TyVarAdmissibility := fun _ => true
 
+/-- The policy for user-written types: it rejects names in the generator
+    (`$__ty*`) and rigid (`skolemPrefix`) namespaces. -/
+public def TyVarAdmissibility.notGeneratedOrRigid : TyVarAdmissibility :=
+  fun v => !(genTyPrefix.toList.isPrefixOf v.toList) &&
+    !(skolemPrefix.toList.isPrefixOf v.toList)
+
 mutual
 /--
 Is `ty` an instance of a known type in `ks`? We expect `ty` to be

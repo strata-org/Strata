@@ -305,6 +305,24 @@ abbrev Procedure := Imperative.Procedure Expression Command Procedure.Header
       | .structured ss => .structured (Statements.mapExprs f ss)
       | .cfg c => .cfg c }
 
+/-- Does every type annotation in a procedure body, including control-flow graph guards,
+    satisfy `p`? -/
+def Procedure.allBodyTys (p : LMonoTy → Bool) (body : Procedure.Body) : Bool :=
+  match body with
+  | .structured ss => allStmtsTys p ss
+  | .cfg c => c.blocks.all fun (_, blk) =>
+      blk.cmds.all (allCmdTys p) &&
+      (match blk.transfer with
+       | .condGoto g _ _ _ => allExprTys p g
+       | .finish _ => true)
+
+/-- Does every type annotation in a procedure's preconditions, postconditions, and body
+    satisfy `p`? -/
+def Procedure.allTys (p : LMonoTy → Bool) (proc : Procedure) : Bool :=
+  proc.spec.preconditions.values.all (fun chk => allExprTys p chk.expr) &&
+  proc.spec.postconditions.values.all (fun chk => allExprTys p chk.expr) &&
+  Procedure.allBodyTys p proc.body
+
 ---------------------------------------------------------------------
 
 open Imperative

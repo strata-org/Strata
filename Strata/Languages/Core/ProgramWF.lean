@@ -430,6 +430,7 @@ private theorem Program.typeCheckFunctionDisjoint :
     | func f =>
       split_contra_case Hty; rename_i Hty
       split at Hty <;> try contradiction
+      split at Hty <;> try contradiction
       split_contra_case Hty; rename_i Hty
       specialize (IH tcok)
       match hx with
@@ -447,6 +448,7 @@ private theorem Program.typeCheckFunctionDisjoint :
       split_contra_case Hty; rename_i Hty
       split at Hty <;> try contradiction
       simp only[pure, Except.pure] at Hty
+      split at Hty <;> try contradiction
       split at Hty <;> try contradiction
       split at Hty <;> try contradiction
       cases Hty; simp only at tcok
@@ -538,6 +540,7 @@ private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decl
     | func f =>
       split_contra_case Hty; rename_i Hty
       split at Hty <;> try contradiction
+      split at Hty <;> try contradiction
       split_contra_case Hty; rename_i Hty
       specialize (IH tcok)
       apply List.nodup_append.mpr; (repeat (constructor <;> try grind)); apply IH
@@ -552,6 +555,7 @@ private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decl
       split_contra_case Hty; rename_i Hty
       split at Hty <;> try contradiction
       simp only[pure, Except.pure] at Hty
+      split at Hty <;> try contradiction
       split at Hty <;> try contradiction
       split at Hty <;> try contradiction
       cases Hty; simp only at tcok

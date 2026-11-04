@@ -675,5 +675,28 @@ def mapExprTys {T : LExprParams} (f : LMonoTy → LMonoTy)
     (e : LExpr T.mono) : LExpr T.mono :=
   LExpr.replaceUserProvidedType e f
 
+/-- The type annotations on operators, free variables and binders in `e`. -/
+def exprAnnotTys {T : LExprParams} (e : LExpr T.mono) : List LMonoTy :=
+  match e with
+  | .const _ _ | .bvar _ _ => []
+  | .op _ _ uty | .fvar _ _ uty => uty.toList
+  | .app _ e1 e2 | .eq _ e1 e2 => exprAnnotTys e1 ++ exprAnnotTys e2
+  | .abs _ _ uty body => uty.toList ++ exprAnnotTys body
+  | .quant _ _ _ argTy tr body => argTy.toList ++ exprAnnotTys tr ++ exprAnnotTys body
+  | .ite _ c t f => exprAnnotTys c ++ exprAnnotTys t ++ exprAnnotTys f
+
+/-- Free type variables of every user-provided type annotation in `e`. -/
+def annotTyVars {T : LExprParams} (e : LExpr T.mono) : List String :=
+  (exprAnnotTys e).flatMap LMonoTy.freeVars
+
+/-- Does every user-provided type annotation in `e` satisfy `p`? -/
+abbrev allExprTys {T : LExprParams} (p : LMonoTy → Bool) (e : LExpr T.mono) : Bool :=
+  e.allUserProvidedTypes p
+
+/-- Does every user-provided type annotation in each of `es` satisfy `p`? -/
+abbrev allExprsTys {T : LExprParams} (p : LMonoTy → Bool) (es : List (LExpr T.mono)) :
+    Bool :=
+  es.all (allExprTys p)
+
 end -- public section
 end Lambda

@@ -259,9 +259,7 @@ def Command.mapExpr (f : Expression.Expr → Expression.Expr) : Command → Comm
   | .cmd (.cover l e md) => .cmd (.cover l (f e) md)
   | .cmd (.init n ty (.det e) md) => .cmd (.init n ty (.det (f e)) md)
   | .cmd (.set n (.det e) md) => .cmd (.set n (.det (f e)) md)
-  | .call pname args md => .call pname (args.map fun
-      | .inArg e => .inArg (f e)
-      | a => a) md
+  | .call pname args md => .call pname (args.map (CallArg.mapInput f)) md
   | c => c
 
 /-- Apply a function to all user-facing expressions in a statement. -/
@@ -293,6 +291,75 @@ def Statement.mapExprsM {M : Type → Type} [Monad M] (f : Expression.Expr → M
 def Statements.mapExprsM {M : Type → Type} [Monad M] (f : Expression.Expr → M Expression.Expr)
     (ss : Statements) : M Statements :=
   ss.mapM (Statement.mapExprsM f)
+
+section TypeAnnotations
+
+open Lambda
+
+/-- Apply `f` to every type annotation in a command. -/
+def mapCmdTys (f : LMonoTy → LMonoTy) (c : Command) : Command :=
+  match c with
+  | .cmd cc =>
+    match cc with
+    | .init x ty e md => .cmd (.init x (mapLTyTys f ty) (e.map (mapExprTys f ·)) md)
+    | .set x e md => .cmd (.set x (e.map (mapExprTys f ·)) md)
+    | .assert l b md => .cmd (.assert l (mapExprTys f b) md)
+    | .assume l b md => .cmd (.assume l (mapExprTys f b) md)
+    | .cover l b md => .cmd (.cover l (mapExprTys f b) md)
+  | .call pname args md => .call pname (args.map (CallArg.mapInput (mapExprTys f))) md
+
+/-- Apply `f` to every type annotation in a statement. -/
+def mapStmtTys (f : LMonoTy → LMonoTy) (s : Statement) : Statement :=
+  Stmt.mapExpr (mapExprTys f) (mapCmdTys f) s
+
+/-- Apply `f` to every type annotation in a list of statements. -/
+def mapStmtsTys (f : LMonoTy → LMonoTy) (ss : List Statement) : List Statement :=
+  Block.mapExpr (mapExprTys f) (mapCmdTys f) ss
+
+/-- Does every type annotation in an expression-or-nondeterministic-value
+    satisfy `p`? -/
+def allExprOrNondetTys (p : LMonoTy → Bool) (e : ExprOrNondet Expression) : Bool :=
+  match e with
+  | .det e => allExprTys p e
+  | .nondet => true
+
+/-- Does every type annotation in a command satisfy `p`? -/
+def allCmdTys (p : LMonoTy → Bool) (c : Command) : Bool :=
+  match c with
+  | .cmd cc =>
+    match cc with
+    | .init _ ty e _ => allLTyTys p ty && allExprOrNondetTys p e
+    | .set _ e _ => allExprOrNondetTys p e
+    | .assert _ b _ => allExprTys p b
+    | .assume _ b _ => allExprTys p b
+    | .cover _ b _ => allExprTys p b
+  | .call _ args _ =>
+    args.all fun
+      | .inArg e => allExprTys p e
+      | .inoutArg _ => true
+      | .outArg _ => true
+
+mutual
+/-- Does every type annotation in a statement satisfy `p`? -/
+def allStmtTys (p : LMonoTy → Bool) (s : Statement) : Bool :=
+  match s with
+  | .cmd c => allCmdTys p c
+  | .block _ bss _ => allStmtsTys p bss
+  | .ite cond tss ess _ =>
+    allExprOrNondetTys p cond && allStmtsTys p tss && allStmtsTys p ess
+  | .loop g m i bss _ =>
+    allExprOrNondetTys p g && m.all (allExprTys p)
+      && i.all (fun (_, e) => allExprTys p e) && allStmtsTys p bss
+  | .exit _ _ => true
+  | .typeDecl _ _ => true
+/-- Does every type annotation in a list of statements satisfy `p`? -/
+def allStmtsTys (p : LMonoTy → Bool) (ss : List Statement) : Bool :=
+  match ss with
+  | [] => true
+  | s :: rest => allStmtTys p s && allStmtsTys p rest
+end
+
+end TypeAnnotations
 
 /-- Collect all user-facing expressions from a statement. -/
 def Statement.collectExprs :

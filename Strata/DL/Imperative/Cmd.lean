@@ -268,6 +268,12 @@ instance [DecidableEq P.Expr] [DecidableEq P.Ident] : LawfulBEq (CallArg P) wher
 
 namespace CallArg
 
+/-- A call argument with `f` applied to its input expression. -/
+@[expose] def mapInput (f : P.Expr → P.Expr) : CallArg P → CallArg P
+  | .inArg e => .inArg (f e)
+  | .inoutArg id => .inoutArg id
+  | .outArg id => .outArg id
+
 def getInArgs (args : List (CallArg P)) : List P.Expr :=
   args.filterMap fun | .inArg e => some e | _ => none
 

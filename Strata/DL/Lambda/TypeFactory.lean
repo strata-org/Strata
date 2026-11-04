@@ -679,6 +679,14 @@ def getTypeRefs (ty: LMonoTy) : List String :=
   | .tcons n args => n :: args.flatMap getTypeRefs
   | _ => []
 
+/-- Does every type-constructor name in `mty` satisfy `p`? -/
+@[expose] def mtyAllTyConsNames (p : String → Bool) (mty : LMonoTy) : Bool :=
+  (getTypeRefs mty).all p
+
+/-- Does every type-constructor name in `mtys` satisfy `p`? -/
+def mtysAllTyConsNames (p : String → Bool) (mtys : LMonoTys) : Bool :=
+  mtys.all (mtyAllTyConsNames p)
+
 /-- The type constructor names in the types of `d`'s constructor fields. -/
 def LDatatype.fieldTypeRefs (d : LDatatype IDMeta) : List String :=
   d.constrs.flatMap fun c => c.args.flatMap fun (_, ty) => getTypeRefs ty

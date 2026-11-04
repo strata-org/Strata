@@ -1116,6 +1116,19 @@ theorem getOps_substFvarsBy {look : T.Identifier → Option (LExpr T.mono)}
 
 end LExpr
 
+/-- Every user-provided annotation of `e` satisfies `p` exactly when every type
+    `exprAnnotTys e` lists does: both visit the same operator, free-variable and
+    binder annotations. -/
+theorem allExprTys_eq_all_exprAnnotTys {T : LExprParams} (p : LMonoTy → Bool)
+    (e : LExpr T.mono) : allExprTys p e = (exprAnnotTys e).all p := by
+  have hopt : ∀ o : Option LMonoTy, o.all p = o.toList.all p := by
+    intro o
+    cases o <;> simp only [Option.all_none, Option.all_some, Option.toList_none,
+      Option.toList_some, List.all_nil, List.all_cons, Bool.and_true]
+  simp only [allExprTys]
+  induction e <;> simp_all only [LExpr.allUserProvidedTypes, exprAnnotTys,
+    List.all_append, List.all_nil]
+
 end
 
 

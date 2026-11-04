@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.CmdTypeSpec
 public import Strata.Languages.Core.Function
+public import Strata.Languages.Core.Typing.Spec.TypeSpecShared
 
 /-! ## Declarative Typing Specification for Functions
 
@@ -35,7 +36,7 @@ public section
     For top-level functions the ambient type scope `Γ.types` is empty, leaving
     just the formals scope. -/
 def funcContext (Γ : TContext Unit) (func : Function) : TContext Unit :=
-  { Γ with types := Γ.types.push (Strata.Util.HMap.ofList (func.inputs.map (fun (id, mty) => (id, .forAll [] mty)))) }
+  { Γ with types := funcScopes Γ.types func }
 
 /--
 Declarative typing for functions, parameterized over `ExprTypingSpec`.

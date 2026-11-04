@@ -225,6 +225,54 @@ info: error: Decl.func does not allow recursive functions. Use recFuncBlock inst
 
 ---------------------------------------------------------------------
 
+/-- A function may not reuse the name of a built-in function. -/
+def builtinNameFuncProg : Program := { decls := [
+  .func { name := "Int.Add", inputs := [("x", .int)], output := .int } .empty
+]}
+
+/--
+info: error: Error in function Int.Add: a function of this name already exists.
+-/
+#guard_msgs in
+#eval do let (ans, _) ← typeCheckAndEval .default builtinNameFuncProg
+         return (format ans)
+
+/-- `MyUnit`, whose constructor `MkU` generates the tester `isMkU`. -/
+def unitDatatype : Lambda.LDatatype Unit :=
+  { name := "MyUnit", typeArgs := [],
+    constrs := [{ name := "MkU", args := [] }], constrs_ne := rfl }
+
+/-- A function may not reuse the name of a datatype's generated tester. -/
+def testerNameFuncProg : Program := { decls := [
+  .type (.data [unitDatatype]) .empty,
+  .func { name := "isMkU", inputs := [("x", .int)], output := .bool } .empty
+]}
+
+/--
+info: error: Error in function isMkU: a function of this name already exists.
+-/
+#guard_msgs in
+#eval do let (ans, _) ← typeCheckAndEval .default testerNameFuncProg
+         return (format ans)
+
+/-- No function of a recursive block may reuse a factory function's name. -/
+def builtinNameRecBlockProg : Program := { decls := [
+  .recFuncBlock [
+    { name := "f", isRecursive := true, inputs := [("x", .int)],
+      output := .int },
+    { name := "Int.Add", isRecursive := true, inputs := [("x", .int)],
+      output := .int }] .empty
+]}
+
+/--
+info: error: Error in function Int.Add: a function of this name already exists.
+-/
+#guard_msgs in
+#eval do let (ans, _) ← typeCheckAndEval .default builtinNameRecBlockProg
+         return (format ans)
+
+---------------------------------------------------------------------
+
 end Tests
 end Core
 

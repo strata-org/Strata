@@ -147,6 +147,9 @@ C are already well-typed.
         if func.isRecursive then
           .error (Message.withRange fileRange <|
             f!"Decl.func does not allow recursive functions. Use recFuncBlock instead: '{func.name}'")
+        if func.name.name ∈ C.functions then
+          .error (Message.withRange fileRange <|
+            f!"Error in function {func.name}: a function of this name already exists.")
         let Env := Env.pushEmptySubstScope
         let (func', Env) ← Function.typeCheck C Env func |>.mapError (fun e => Message.withRange fileRange e)
         let C := C.addFactoryFunction func'.toLFunc
@@ -166,6 +169,12 @@ C are already well-typed.
           if func.attr.any (· == .inline) then
             .error (Message.withRange fileRange <|
               f!"recursive function '{func.name}' cannot be marked inline")
+          else pure ()) ()
+        -- Validate: no function reuses a name already in the factory
+        let _ ← funcs.foldlM (fun _ func => do
+          if func.name.name ∈ C.functions then
+            .error (Message.withRange fileRange <|
+              f!"Error in function {func.name}: a function of this name already exists.")
           else pure ()) ()
         -- Phase 1: Add ALL function signatures as stubs so mutual calls resolve.
         -- Note: duplicate function names have already been checked by addListWithError above.

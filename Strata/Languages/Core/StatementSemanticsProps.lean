@@ -1988,7 +1988,7 @@ private theorem Command.mapExpr_id (c : Command) : Command.mapExpr id c = c := b
     | init n ty e md => cases e <;> simp [Command.mapExpr]
     | set n e md => cases e <;> simp [Command.mapExpr]
   | call pname args md =>
-    simp only [mapExpr, id_eq, CmdExt.call.injEq, and_true, true_and]
+    simp only [mapExpr, CmdExt.call.injEq, and_true, true_and]
     induction args with
     | nil => rfl
     | cons h t ih => simp [ih]; cases h <;> rfl
