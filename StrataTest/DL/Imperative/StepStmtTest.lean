@@ -69,6 +69,7 @@ instance : HasVal MiniPureExpr where
 
 instance : HasFvars MiniPureExpr where
   getFvars _ := []
+  getTypedFvars _ := []
 
 instance : LawfulHasVal MiniPureExpr where
   valueOfTy_isVal := fun _ _ _ h => h
@@ -329,6 +330,7 @@ def Expr2.getVars : Expr2 → List String
 
 instance : HasFvars MiniPureExpr2 where
   getFvars := Expr2.getVars
+  getTypedFvars _ := []
 
 /-- Values are the variable-free expressions. -/
 instance : HasVal MiniPureExpr2 where

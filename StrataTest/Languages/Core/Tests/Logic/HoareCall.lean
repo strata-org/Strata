@@ -446,7 +446,7 @@ private theorem bv16_callexit_facts
     (h : Core.CallExit fac σ proc callArgs σEnd σ') :
     ∃ vr, σEnd resultId = some vr ∧ HasVal.value fac vr ∧
       σ' outVar = some vr ∧ (∀ k, k ≠ outVar → σ' k = σ k) := by
-  obtain ⟨_, outputVals, hRV, hUpd⟩ := h
+  obtain ⟨_, outputVals, hRV, hUpd, -⟩ := h
   rw [show Imperative.ProcedureHeader.outputParams (P := Core.Expression) proc.header = _
     from hOutKeys] at hRV
   rw [hLhs] at hUpd
@@ -515,7 +515,9 @@ private theorem bv16_result_value
 
 /-- **Callee body block well-formedness for a `set result := setE` body.**  The body
     declares nothing, its reads are covered by `hreads`, its one write `result` by `hres`;
-    every operator is declared because `testParams` declares all names. -/
+    every operator is declared because `testParams` declares all names.  `hty` gives a
+    typing of the store under which every type annotation on a free variable of `setE`
+    is the type of the value the store holds there. -/
 private theorem setBlockWF (setE : Core.Expression.Expr)
     (md : Imperative.MetaData Core.Expression) (ρ : Imperative.Env Core.Expression)
     (hf : ρ.factory.factory = Core.Factory)
@@ -523,7 +525,10 @@ private theorem setBlockWF (setE : Core.Expression.Expr)
     (hreads : ∀ n ∈ Imperative.HasVarsImp.readVars (P := Core.Expression)
         (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det setE) md)),
         (ρ.store n).isSome = true)
-    (hres : (ρ.store resultId).isSome = true) :
+    (hres : (ρ.store resultId).isSome = true)
+    (hty : ∃ Γ, StoreHasTyping ρ.factory ρ.store Γ ∧
+      Γ.annotates (Imperative.HasTypedVarsImp.typedReadVars (P := Core.Expression)
+        (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det setE) md)))) :
     Core.Logic.BlockInitEnvWF testParams
       [Imperative.Stmt.block "" [Imperative.Stmt.cmd (Imperative.CmdExt.cmd
         (Imperative.Cmd.set resultId (.det setE) md))] #[]] ρ := by
@@ -533,6 +538,7 @@ private theorem setBlockWF (setE : Core.Expression.Expr)
     (by
       simp [Block.InitTypesInhabited, Block.initTypes, Stmt.initTypes,
         HasInitTypesImp.initTypes, CmdExt.initTypes, Cmd.initTypes])
+    (by obtain ⟨Γ, hσ, ha⟩ := hty; exact ⟨Γ, hσ, ⟨ha, trivial⟩, trivial⟩)
   · simp [Imperative.Block.definedVars, Imperative.Stmt.definedVars,
       Imperative.HasVarsImp.definedVars, Imperative.CmdExt.definedVars,
       Imperative.Cmd.definedVars] at hn
@@ -587,6 +593,9 @@ private theorem bv16_call_triple
     (hReadsSub : ∀ n ∈ Imperative.HasVarsImp.readVars (P := Core.Expression)
         (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det bodyE) bmd)),
         n = xId ∨ n = yId)
+    (hTypedSub : ∀ p ∈ Imperative.HasTypedVarsImp.typedReadVars (P := Core.Expression)
+        (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det bodyE) bmd)),
+        (p.1 = xId ∨ p.1 = yId) ∧ p.2 = Lambda.LTy.forAll [] (.bitvec 16))
     (hResultVal : ∀ (F : Core.Expression.Factory) (ρ' : Imperative.Env Core.Expression)
         (va vb : BitVec 16),
         F.factory = Core.Factory → ρ'.factory = F →
@@ -636,6 +645,16 @@ private theorem bv16_call_triple
         (fun n hn => (hReadsSub n hn).elim (fun h => by subst h; simp [hAOx])
           (fun h => by subst h; simp [hAOy]))
         (by simp [hAOr])
+        ⟨fun n => if n = xId ∨ n = yId then some (Lambda.LTy.forAll [] (.bitvec 16)) else none,
+          fun n ty hn => by
+            have hn' : (n = xId ∨ n = yId) ∧ Lambda.LTy.forAll [] (.bitvec 16) = ty := by
+              by_cases h : n = xId ∨ n = yId <;> simp_all
+            obtain ⟨hxy | hxy, rfl⟩ := hn'
+            · subst hxy; exact ⟨_, hAOx, by rw [hvx]; exact ⟨rfl, rfl⟩⟩
+            · subst hxy; exact ⟨_, hAOy, by rw [hvy]; exact ⟨rfl, rfl⟩⟩,
+          fun x ty hm => by
+            obtain ⟨hxy, rfl⟩ := hTypedSub (x, ty) hm
+            simp [hxy]⟩
   · -- hexit
     intro ρ₀ proc' ρ' σ' σAO hpre hwf hlk hpost hout hρ'fac hce hframeRel hcallexit
     have hpe : proc' = proc := Option.some.inj (hlk.symm.trans hproc)
@@ -903,6 +922,17 @@ private theorem min_readsSub : ∀ n ∈ Imperative.HasVarsImp.readVars (P := Co
     (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det minSetExpr) minSetMd)), n = xId ∨ n = yId := by
   native_decide
 
+/-- The Max16 assignment annotates only `x` and `y`, both as 16-bit vectors. -/
+private theorem max_typedSub : ∀ p ∈ Imperative.HasTypedVarsImp.typedReadVars (P := Core.Expression)
+    (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det maxSetExpr) maxSetMd)),
+    (p.1 = xId ∨ p.1 = yId) ∧ p.2 = Lambda.LTy.forAll [] (.bitvec 16) := by
+  native_decide
+/-- The Min16 assignment annotates only `x` and `y`, both as 16-bit vectors. -/
+private theorem min_typedSub : ∀ p ∈ Imperative.HasTypedVarsImp.typedReadVars (P := Core.Expression)
+    (Imperative.CmdExt.cmd (Imperative.Cmd.set resultId (.det minSetExpr) minSetMd)),
+    (p.1 = xId ∨ p.1 = yId) ∧ p.2 = Lambda.LTy.forAll [] (.bitvec 16) := by
+  native_decide
+
 /-- Max16 has the expected non-free functional postcondition. -/
 private theorem max_hens1 : ∃ lbl chk, (lbl, chk) ∈ maxProc.spec.postconditions.toList ∧
     chk.attr = Core.Procedure.CheckAttr.Default ∧
@@ -1158,7 +1188,7 @@ private theorem call1_triple :
     (.fvar () aId bv16Ty) (.fvar () bId bv16Ty) maxABId vMax PA0 PA1
     max16_meets_contract (max_body_frame) (max_body_outputs) (by native_decide) max_body_eq
     cArgs1_in cArgs1_out cArgs1_lhs max_inKeys max_inList max_outOnly max_inout max_outKeys max_noPre
-    max_readsSub max_result_val ?_ (fun ρ hpre => hpre.1) max_factory
+    max_readsSub max_typedSub max_result_val ?_ (fun ρ hpre => hpre.1) max_factory
   · intro ρ₀ hpre hwf hfac
     obtain ⟨_hfac, _hold, htyped⟩ := hpre
     obtain ⟨va, hva, hta⟩ := htyped aId (.bitvec 16) (by native_decide)
@@ -1182,7 +1212,7 @@ private theorem call2_triple :
     (.fvar () maxABId bv16Ty) (.fvar () aId bv16Ty) minMaxAId vMin PA1 PA2
     min16_meets_contract (min_body_frame) (min_body_outputs) (by native_decide) min_body_eq
     cArgs2_in cArgs2_out cArgs2_lhs min_inKeys min_inList min_outOnly min_inout min_outKeys min_noPre
-    min_readsSub min_result_val ?_ (fun ρ hpre => hpre.1) min_factory
+    min_readsSub min_typedSub min_result_val ?_ (fun ρ hpre => hpre.1) min_factory
   · intro ρ₀ hpre _hwf _hfac
     obtain ⟨hfac, va, vb, ha, hb, hmaxAB⟩ := hpre
     refine ⟨vMax va vb, va, bv_fvar_eval hmaxAB, bv_fvar_eval ha, ?_⟩
@@ -1197,7 +1227,7 @@ private theorem call3_triple :
     (.fvar () aId bv16Ty) (.fvar () bId bv16Ty) minABId vMin PA2 PA3
     min16_meets_contract (min_body_frame) (min_body_outputs) (by native_decide) min_body_eq
     cArgs3_in cArgs3_out cArgs3_lhs min_inKeys min_inList min_outOnly min_inout min_outKeys min_noPre
-    min_readsSub min_result_val ?_ (fun ρ hpre => hpre.1) min_factory
+    min_readsSub min_typedSub min_result_val ?_ (fun ρ hpre => hpre.1) min_factory
   · intro ρ₀ hpre _hwf _hfac
     obtain ⟨hfac, va, vb, ha, hb, hmm⟩ := hpre
     refine ⟨va, vb, bv_fvar_eval ha, bv_fvar_eval hb, ?_⟩
@@ -1213,7 +1243,7 @@ private theorem call4_triple :
     (.fvar () minABId bv16Ty) (.fvar () aId bv16Ty) maxMinAId vMax PA3 PA4
     max16_meets_contract (max_body_frame) (max_body_outputs) (by native_decide) max_body_eq
     cArgs4_in cArgs4_out cArgs4_lhs max_inKeys max_inList max_outOnly max_inout max_outKeys max_noPre
-    max_readsSub max_result_val ?_ (fun ρ hpre => hpre.1) max_factory
+    max_readsSub max_typedSub max_result_val ?_ (fun ρ hpre => hpre.1) max_factory
   · intro ρ₀ hpre _hwf _hfac
     obtain ⟨hfac, va, vb, ha, hmm, hminAB⟩ := hpre
     refine ⟨vMin va vb, va, bv_fvar_eval hminAB, bv_fvar_eval ha, ?_⟩

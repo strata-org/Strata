@@ -9,6 +9,7 @@ public import Strata.Transform.DeadDefElim
 public import Strata.DL.Imperative.BigStep.Sem
 public import Strata.DL.Imperative.StmtProps
 public import Strata.Languages.Core.Logic.LangDef
+import Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.Cmd
 import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Lambda.LExprWFProps
@@ -459,6 +460,93 @@ private theorem dd_defUse (fs : Expression.Ident → Bool) : ∀ (live : List Ex
       Bool.true_and] at hnc
     exact dd_defUse fs live rest D D' hss hnc h h1 h2
 
+/-- Every variable a command reads is one of the identifiers of the command. -/
+private theorem cmd_getVars_idents (c : Cmd Expression) {x : Expression.Ident}
+    (h : x ∈ Cmd.getVars c) : x ∈ Stmt.idents (P := Expression) (.cmd (.cmd c)) := by
+  rcases c with ⟨_, _, _ | _, _⟩ | ⟨_, _ | _, _⟩ | _ | _ | _ <;>
+    simp only [Cmd.getVars, ExprOrNondet.getVars, Stmt.idents] at h ⊢ <;>
+    first
+    | (simp at h; done)
+    | exact List.mem_cons_of_mem _ h
+    | exact h
+
+/-- Erasure keeps the annotation check of a list without loops and calls, also for another
+    typing that agrees with the first on every name the output mentions. -/
+private theorem dd_fvarTypes : ∀ (live : List Expression.Ident) (ss : Statements)
+    (Γ Γ' : VarTyping Expression), Block.noLoops ss = true →
+    Statements.noCalls ss = true → Block.fvarTypesWellAnnotated Γ ss →
+    (∀ n ∈ Block.idents (deadDefElim live ss), Γ' n = Γ n) →
+    Block.fvarTypesWellAnnotated Γ' (deadDefElim live ss)
+  | _, [], _, _, _, _, _, _ => by simp [deadDefElim, Block.fvarTypesWellAnnotated]
+  | live, .ite c t e md :: rest, Γ, Γ', hss, hnc, h, hag => by
+    simp only [Block.noLoops_cons, Stmt.noLoops_ite, Bool.and_eq_true] at hss
+    simp only [Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts, Statement.isNotCall,
+      Bool.true_and, Bool.and_eq_true] at hnc
+    simp only [deadDefElim, erasable, Bool.false_eq_true, ↓reduceIte, deadDefElimS] at hag ⊢
+    simp only [Block.fvarTypesWellAnnotated, Stmt.fvarTypesWellAnnotated,
+      Stmt.typedDefinedVars] at h ⊢
+    obtain ⟨⟨hc, ht, he⟩, hr⟩ := h
+    refine ⟨⟨VarTyping.annotates_congr hc fun x _ hm => hag x ?_,
+      dd_fvarTypes _ t Γ Γ' hss.1.1 hnc.1.1 ht fun n hn => hag n ?_,
+      dd_fvarTypes _ e Γ Γ' hss.1.2 hnc.1.2 he fun n hn => hag n ?_⟩,
+      dd_fvarTypes live rest Γ Γ' hss.2 hnc.2 hr fun n hn => hag n ?_⟩
+    · simp [Block.idents, Stmt.idents, ExprOrNondet.mem_getVars_of_typed c hm]
+    · simp [Block.idents, Stmt.idents, hn]
+    · simp [Block.idents, Stmt.idents, hn]
+    · simp [Block.idents, hn]
+  | live, .block l bs md :: rest, Γ, Γ', hss, hnc, h, hag => by
+    simp only [Block.noLoops_cons, Stmt.noLoops_block, Bool.and_eq_true] at hss
+    simp only [Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts, Statement.isNotCall,
+      Bool.true_and, Bool.and_eq_true] at hnc
+    simp only [deadDefElim, erasable, Bool.false_eq_true, ↓reduceIte, deadDefElimS] at hag ⊢
+    simp only [Block.fvarTypesWellAnnotated, Stmt.fvarTypesWellAnnotated,
+      Stmt.typedDefinedVars] at h ⊢
+    exact ⟨dd_fvarTypes _ bs Γ Γ' hss.1 hnc.1 h.1 fun n hn => hag n
+      (by simp [Block.idents, Stmt.idents, hn]), dd_fvarTypes live rest Γ Γ' hss.2 hnc.2 h.2
+      fun n hn => hag n (by simp [Block.idents, hn])⟩
+  | _, .cmd (.call ..) :: _, _, _, _, hnc, _, _ => by
+    simp [Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts, Statement.isNotCall] at hnc
+  | live, .cmd (.cmd c) :: rest, Γ, Γ', hss, hnc, h, hag => by
+    simp only [Block.noLoops_cons, Stmt.noLoops_cmd, Bool.true_and] at hss
+    simp only [Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts, Statement.isNotCall,
+      Bool.true_and] at hnc
+    simp only [Block.fvarTypesWellAnnotated] at h
+    obtain ⟨hc, hr⟩ := h
+    simp only [deadDefElim, deadDefElimS] at hag ⊢
+    split
+    · next he =>
+      rw [ite_eq_left he] at hag
+      refine dd_fvarTypes live rest _ Γ' hss hnc hr fun n hn => ?_
+      rw [hag n hn]
+      rcases c with ⟨x, ty, e, md⟩ | _ | _ | _ | _
+      · have hx : x ∉ Block.idents (deadDefElim live rest) := by simp_all [erasable]
+        have hne : n ≠ x := fun hnx => hx (hnx ▸ hn)
+        simp only [Stmt.typedDefinedVars, HasTypedVarsImp.typedDefinedVars, CmdExt.typedDefinedVars,
+          Cmd.typedDefinedVars]
+        rw [VarTyping.extend_singleton]
+        simp [hne]
+      all_goals simp [erasable] at he
+    · next he =>
+      rw [ite_eq_right he] at hag
+      simp only [Block.fvarTypesWellAnnotated, Stmt.fvarTypesWellAnnotated] at hc ⊢
+      refine ⟨VarTyping.annotates_congr hc fun x _ hm => hag x ?_,
+        dd_fvarTypes live rest _ _ hss hnc hr fun n hn =>
+          VarTyping.extend_congr _ (hag n (by simp [Block.idents, hn]))⟩
+      simp only [Block.idents, List.mem_append]
+      exact .inl (cmd_getVars_idents c (Cmd.mem_getVars_of_typed c
+        (by simpa [HasTypedVarsImp.typedReadVars, CmdExt.typedReadVars] using hm)))
+  | _, .loop .. :: _, _, _, hss, _, _, _ => by
+    simp [Block.noLoops_cons, Stmt.noLoops_loop] at hss
+  | live, .exit .. :: rest, Γ, Γ', hss, hnc, h, hag
+  | live, .typeDecl .. :: rest, Γ, Γ', hss, hnc, h, hag => by
+    simp only [Block.noLoops_cons, Stmt.noLoops_exit, Stmt.noLoops_typeDecl, Bool.true_and] at hss
+    simp only [Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts, Statement.isNotCall,
+      Bool.true_and] at hnc
+    simp only [deadDefElim, erasable, Bool.false_eq_true, ↓reduceIte, deadDefElimS] at hag ⊢
+    simp only [Block.fvarTypesWellAnnotated, Stmt.fvarTypesWellAnnotated,
+      Stmt.typedDefinedVars, true_and] at h ⊢
+    exact dd_fvarTypes live rest Γ Γ' hss hnc h fun n hn => hag n (by simp [Block.idents, hn])
+
 /-- The output of `deadDefElim` is well formed from every environment the input is: the
     gate `BlockInitEnvWF` of the input gives that of the output. -/
 theorem blockInitEnvWF_dd {params : InitEnvWFParams} {ss : Statements}
@@ -473,7 +561,10 @@ theorem blockInitEnvWF_dd {params : InitEnvWFParams} {ss : Statements}
     defsUndefined := fun n hn => h.defsUndefined n (hdv n hn)
     definedVarsNotReserved := fun n hn => h.definedVarsNotReserved n (hdv n hn)
     defUseOk := hdu
-    initTypesInhabited := fun ty hty => h.initTypesInhabited ty (dd_initTypes [] ss ty hty) }
+    initTypesInhabited := fun ty hty => h.initTypesInhabited ty (dd_initTypes [] ss ty hty)
+    fvarTypesOk := by
+      obtain ⟨Γ, hσ, hw⟩ := h.fvarTypesOk
+      exact ⟨Γ, hσ, dd_fvarTypes [] ss Γ Γ hss hnc hw fun _ _ => rfl⟩ }
 
 end -- public section
 

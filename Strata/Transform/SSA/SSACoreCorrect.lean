@@ -16,6 +16,7 @@ import Strata.Languages.Core.ProcedureProps
 import all Strata.Languages.Core.Verifier
 import all Strata.Languages.Core.PipelinePhase
 import all Strata.Transform.CoreTransform
+import Strata.Languages.Core.InstExprTyping
 
 /-! # The SSA phase over-approximates the traces of a guarded statement list
 
@@ -25,7 +26,8 @@ Over Core's event language for statement lists (`EventLang.coreBlock`), the SSA 
 
 * the initial environments are related by the entry renaming of `ss₀` (`SSAEntryRel`): the
   target store holds, under the entry name of each free variable of `ss₀`, the source value of
-  that variable, and binds nothing else;
+  that variable, and binds nothing else; and the type annotations of the output agree with a
+  typing of the target store;
 * a source trace and its target trace correspond event by event under evaluation to `true`
   (`Trace.WeakensAssumes evalInterp`): each assertion and cover keeps its label and metadata and
   holds exactly when the source's does; each assumption is kept, with its label and metadata and
@@ -94,6 +96,71 @@ structure SSAEntryRel (G : IdSet Expression) (tys : Tys Expression) (xs : List E
   dom : ∀ y, (ρ'.store y).isSome →
     ∃ x ∈ Block.freeVars ss₀, y = (ssaEntryRenOf G tys xs al ss₀).get x
 
+/-- The typing of the entry names: an entry name has the type `tys` records for a free variable
+    of `ss` the entry renaming `ren` renames to it. -/
+private def entryTyping (ren : Ren Expression) (tys : Tys Expression) (ss : Statements) :
+    VarTyping Expression := fun y =>
+  ((Block.freeVars ss).find? fun x => ren.get x == y && (tys.get? x).isSome).bind tys.get?
+
+/-- **The SSA output agrees with a typing of the target store.**  Let the source and target
+    environments be related by the entry renaming of `ssaEntry` (`hrel`: the target store holds
+    the source values of the free variables of `ss₀` under their entry names, with the types
+    `tys` records), let every alias rename to a parameter (`hal`), and let every free variable
+    of `ss₀` be a parameter or an alias (`hfv`).  If `ssaEntry` succeeds, there is a typing that
+    the target store conforms to and that the annotations of its output agree with: the typing
+    giving each entry name the type `tys` records for the free variable renamed to it. -/
+private theorem ssa_outAnnotated {G : IdSet Expression} {tys : Tys Expression}
+    {xs : List Expression.Ident} {al : List (Expression.Ident × Expression.Ident)}
+    {ss₀ : Statements} {ρ ρ' : Imperative.Env Expression}
+    (hrel : SSAEntryRel G tys xs al ss₀ ρ ρ') (hal : ∀ q ∈ al, q.2 ∈ xs)
+    (hfv : ∀ x ∈ Block.freeVars ss₀, x ∈ xs ∨ x ∈ al.map (·.1)) {ρ0 : Ren Expression}
+    {so : SOut Expression} (hss : ssaEntry G tys xs al ss₀ = .ok (ρ0, so)) :
+    ∃ Γ, StoreHasTyping ρ'.factory ρ'.store Γ ∧ Block.fvarTypesWellAnnotated Γ so.out := by
+  obtain ⟨rfl, -⟩ := ssaEntry_ok hss
+  have hfind : ∀ y T, entryTyping (ssaEntryRenOf G tys xs al ss₀) tys ss₀ y = some T →
+      ∃ x ∈ Block.freeVars ss₀, (ssaEntryRenOf G tys xs al ss₀).get x = y ∧
+        tys.get? x = some T := by
+    intro y T h
+    cases hf : (Block.freeVars ss₀).find?
+        (fun x => (ssaEntryRenOf G tys xs al ss₀).get x == y && (tys.get? x).isSome) with
+    | none => simp [entryTyping, hf] at h
+    | some x =>
+      simp only [entryTyping, hf, Option.bind_some] at h
+      have hx := List.find?_some hf
+      simp only [Bool.and_eq_true, beq_iff_eq] at hx
+      exact ⟨x, List.mem_of_find?_eq_some hf, hx.1, h⟩
+  -- The value at an entry name has the type `tys` records for each free variable renamed to it.
+  have hval : ∀ x ∈ Block.freeVars ss₀, ∀ T, tys.get? x = some T →
+      ∃ v, ρ'.store ((ssaEntryRenOf G tys xs al ss₀).get x) = some v ∧
+        HasVal.valueOfTy ρ'.factory v T := fun x hx T hT => by
+    obtain ⟨he, hs⟩ := hrel.entry x hx
+    obtain ⟨v, hv⟩ := Option.isSome_iff_exists.1 hs
+    exact ⟨v, he ▸ hv, hrel.factory ▸ hrel.tyOK x hx hx T hT v hv⟩
+  refine ⟨entryTyping (ssaEntryRenOf G tys xs al ss₀) tys ss₀, fun y T hy => ?_,
+    ssaEntry_fvarTypesWellAnnotated hss hal hfv (fun x hx T hT => ?_) fun y hy => ?_⟩
+  · obtain ⟨x, hx, rfl, hT⟩ := hfind y T hy
+    exact hval x hx T hT
+  · have hsome : ((Block.freeVars ss₀).find? fun z =>
+        (ssaEntryRenOf G tys xs al ss₀).get z == (ssaEntryRenOf G tys xs al ss₀).get x &&
+          (tys.get? z).isSome).isSome :=
+      List.find?_isSome.2 ⟨x, hx, by simp [hT]⟩
+    obtain ⟨z, hz⟩ := Option.isSome_iff_exists.1 hsome
+    have hzp := List.find?_some hz
+    simp only [Bool.and_eq_true, beq_iff_eq] at hzp
+    obtain ⟨U, hU⟩ := Option.isSome_iff_exists.1 hzp.2
+    obtain ⟨v, hv, hvT⟩ := hval x hx T hT
+    obtain ⟨w, hw, hwU⟩ := hval z (List.mem_of_find?_eq_some hz) U hU
+    rw [hzp.1, hv] at hw
+    cases hw
+    change ((Block.freeVars ss₀).find? fun z =>
+        (ssaEntryRenOf G tys xs al ss₀).get z == (ssaEntryRenOf G tys xs al ss₀).get x &&
+          (tys.get? z).isSome).bind tys.get? = some T
+    rw [hz, Option.bind_some, hU]
+    exact congrArg some (Core.valueOfTy_unique hwU hvT)
+  · obtain ⟨T, hT⟩ := Option.isSome_iff_exists.1 hy
+    obtain ⟨x, hx, rfl, -⟩ := hfind y T hT
+    exact ⟨x, hx, rfl⟩
+
 /-! ## The trace over-approximation -/
 
 /-- **The SSA phase over-approximates the traces of a guarded statement list.**  For a Core
@@ -127,7 +194,7 @@ theorem ssa_overapproximatesTraces (π : String → Option Procedure) (params : 
       cases hT
       exact ⟨r, rfl, rfl⟩
   have hgate := ssaEntry_blockInitEnvWF hp hal hss htf hfv hrel.factory hrel.entry hrel.params
-    hrel.tyOK hrel.dom hwf
+    hrel.tyOK hrel.dom hwf (ssa_outAnnotated hrel hal hfv hss)
   obtain ⟨rfl, -⟩ := ssaEntry_ok hss
   obtain ⟨σ₀, F⟩ := ρ₀
   obtain ⟨σ₀', F'⟩ := ρ₀'

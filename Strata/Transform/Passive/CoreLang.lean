@@ -65,6 +65,7 @@ instance : Imperative.WP.WPOps Expression where
   iteView?_size := iteView?_size
   boolLit? := LExpr.denoteBool
   substFn := LExpr.substFvarsBy
+  tyBEq a b := decide (a = b)
 
 /-- The laws of the operations of the WP and SSA phases on Core expressions. -/
 instance : Imperative.WP.WPLang Expression where
@@ -97,6 +98,22 @@ instance : Imperative.WP.WPLang Expression where
     change Lambda.LExpr.substFvars e [] = e
     unfold Lambda.LExpr.substFvars
     rfl
+  tyBEq_eq h := of_decide_eq_true h
+  getTypedFvars_ite c t e p h := by
+    change p ∈ Expression.typedFvars (LExpr.ite () c t e) at h
+    simpa [HasFvars.getTypedFvars, Expression.typedFvars, LExpr.freeVars, List.filterMap_append,
+      or_assoc] using h
+  getTypedFvars_substFn e g p h := by
+    change p ∈ Expression.typedFvars (LExpr.substFvarsBy e g) at h
+    simp only [HasFvars.getTypedFvars, Expression.typedFvars, List.mem_filterMap,
+      Option.map_eq_some_iff] at h ⊢
+    obtain ⟨⟨x, τ?⟩, hx, τ, rfl, rfl⟩ := h
+    rcases LExpr.mem_freeVars_substFvarsBy hx with ⟨hx, hg⟩ | ⟨y, tyy, r, hy, hg, hr⟩
+    · exact .inl ⟨⟨_, hx, τ, rfl, rfl⟩, hg⟩
+    · refine .inr ⟨y, r, ?_, hg, ⟨_, hr, τ, rfl, rfl⟩⟩
+      change y ∈ LExpr.LExpr.getVars e
+      rw [getVars_eq_freeVars_idents]
+      exact List.mem_map.2 ⟨_, hy, rfl⟩
 
 end -- public section
 

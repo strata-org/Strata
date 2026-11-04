@@ -1432,7 +1432,7 @@ theorem copy_call_triple :
         (Lambda.LSort.toMonoTy_injective (t := .int) hvt)
         (hpost plabel pcheck hmem hattr)
     rw [hvr] at hrStore
-    obtain ⟨_, outputVals, hRV, hUpd⟩ := hcallexit
+    obtain ⟨_, outputVals, hRV, hUpd, -⟩ := hcallexit
     rw [show Imperative.ProcedureHeader.outputParams (P := Core.Expression) copyProc.header
       = [resultId] from by native_decide] at hRV
     rw [show Imperative.CallArg.getLhs copyCall = [zIdC] from rfl] at hUpd

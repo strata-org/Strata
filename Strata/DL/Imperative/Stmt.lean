@@ -582,6 +582,54 @@ mutual
 end
 
 
+/-- Every annotated free-variable occurrence `(x, ty)` in `occs` carries the type `Γ`
+    gives `x`. -/
+@[expose] def VarTyping.annotates (Γ : VarTyping P)
+    (occs : List (P.Ident × P.Ty)) : Prop :=
+  ∀ x ty, (x, ty) ∈ occs → Γ x = some ty
+
+/-- The variables the statement `s` defines in the enclosing scope, with their declared
+    types: those of a command; a nested block's, branch's or loop body's definitions are
+    scoped to it (as in `Stmt.definedVars s true`). -/
+@[expose] def Stmt.typedDefinedVars [HasTypedVarsImp P C] : Stmt P C → List (P.Ident × P.Ty)
+  | .cmd c => HasTypedVarsImp.typedDefinedVars (P := P) c
+  | _ => []
+
+mutual
+/-- **Annotation check.**  Every type annotation on a free-variable occurrence in `s` agrees
+    with the type of that variable: `Γ` types the variables in scope before `s`, and each
+    definition adds its declared type for the statements after it in its scope.  It is a
+    proposition about the syntax for a given `Γ`, with no decision procedure here (unlike the
+    `Bool` checker `Stmt.defUseWellFormed`); with a typing of the entry store
+    (`StoreHasTyping`) it says the annotations agree with the types of the stored values. -/
+@[expose] def Stmt.fvarTypesWellAnnotated [HasTypedVarsImp P C] [HasFvars P]
+    (Γ : VarTyping P) (s : Stmt P C) : Prop :=
+  match s with
+  | .cmd c => Γ.annotates (HasTypedVarsImp.typedReadVars (P := P) c)
+  | .block _ bss _ => Block.fvarTypesWellAnnotated Γ bss
+  | .ite cond tbss ebss _ =>
+    Γ.annotates cond.getTypedVars ∧
+    Block.fvarTypesWellAnnotated Γ tbss ∧
+    Block.fvarTypesWellAnnotated Γ ebss
+  | .loop guard measure invariants body _ =>
+    Γ.annotates guard.getTypedVars ∧
+    Γ.annotates ((measure.map HasFvars.getTypedFvars).getD []) ∧
+    Γ.annotates (invariants.flatMap fun lp => HasFvars.getTypedFvars lp.2) ∧
+    Block.fvarTypesWellAnnotated Γ body
+  | .exit _ _ => True
+  | .typeDecl _ _ => True
+
+/-- `Stmt.fvarTypesWellAnnotated` over a list of statements, each checked with the
+    definitions of the statements before it added to `Γ`. -/
+@[expose] def Block.fvarTypesWellAnnotated [HasTypedVarsImp P C] [HasFvars P]
+    (Γ : VarTyping P) (bss : Block P C) : Prop :=
+  match bss with
+  | [] => True
+  | s :: rest =>
+    Stmt.fvarTypesWellAnnotated Γ s ∧
+      Block.fvarTypesWellAnnotated (Γ.extend (Stmt.typedDefinedVars s)) rest
+end
+
 instance (P : PureExpr) [HasFvars P] [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
   definedVars := Stmt.definedVars
   modifiedVars := Stmt.modifiedVars

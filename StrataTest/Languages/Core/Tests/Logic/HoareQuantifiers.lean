@@ -505,6 +505,13 @@ private theorem xFalseEnv_blockrun (model : Lambda.Interp Core.Factory)
   refine .step _ [] _ _ _ .step_seq_done ?_
   exact .step _ [] _ _ _ .step_stmts_nil (.refl _)
 
+/-- The typing that gives every variable the Boolean type annotates every list of Boolean
+    occurrences. -/
+private theorem annotates_boolTy {occs : List (Core.Expression.Ident × Core.Expression.Ty)}
+    (h : ∀ p ∈ occs, p.2 = HasBool.boolTy (P := Core.Expression)) :
+    VarTyping.annotates (fun _ => some (HasBool.boolTy (P := Core.Expression))) occs :=
+  fun _ _ hm => congrArg some (h _ hm).symm
+
 /-- Block-level well-formedness for the procedure-block-wrapped assumeless body on
     `(xFalseEnv model)`, via `of_defUseOk` (which re-derives `readWritesDefined`).  The block
     scopes every variable, reserved-prefix fields are vacuous for `testParams`, and
@@ -533,6 +540,13 @@ private theorem xFalseEnv_blockWF (model : Lambda.Interp Core.Factory) :
       rw [show Block.initTypes (P := Core.Expression) (C := Core.Command)
         [Stmt.block "" pNoAssumeBody #[]] = [] from by native_decide] at hty
       simp at hty)
+    ⟨fun _ => some (HasBool.boolTy (P := Core.Expression)), fun _ ty hty => by
+        obtain rfl := Option.some.inj hty
+        exact ⟨_, rfl, (HasBool.boolIsValOfTy _).2⟩, by
+      rw [pNoAssumeBody_eq]
+      simp only [Block.fvarTypesWellAnnotated, Stmt.fvarTypesWellAnnotated, and_true]
+      exact ⟨annotates_boolTy (by decide +kernel), annotates_boolTy (by decide +kernel),
+        annotates_boolTy (by decide +kernel)⟩⟩
 
 /-- **`pNoAssume` cannot meet its contract.** With no guard on the conditional, a
     well-typed `false`-valued entry runs the `assert false` with no discharging

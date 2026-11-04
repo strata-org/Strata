@@ -438,10 +438,36 @@ def Cmds.modifiedVars (cs : Cmds P) : List P.Ident :=
   | c :: crest => Cmd.modifiedVars c ++ Cmds.modifiedVars crest
   termination_by (sizeOf cs)
 
+/-- The annotated free-variable reads of an `ExprOrNondet`. -/
+@[expose] def ExprOrNondet.getTypedVars [HasFvars P] (e : ExprOrNondet P) :
+    List (P.Ident × P.Ty) :=
+  match e with
+  | .det e => HasFvars.getTypedFvars e
+  | .nondet => []
+
+/-- The annotated free-variable reads of the command `c`. -/
+@[expose] def Cmd.getTypedVars [HasFvars P] (c : Cmd P) : List (P.Ident × P.Ty) :=
+  match c with
+  | .init _ _ e _ => e.getTypedVars
+  | .set _ e _ => e.getTypedVars
+  | .assert _ e _ => HasFvars.getTypedFvars e
+  | .assume _ e _ => HasFvars.getTypedFvars e
+  | .cover _ e _ => HasFvars.getTypedFvars e
+
+/-- The variable the command `c` defines, with its declared type. -/
+@[expose] def Cmd.typedDefinedVars (c : Cmd P) : List (P.Ident × P.Ty) :=
+  match c with
+  | .init name ty _ _ => [(name, ty)]
+  | _ => []
+
 instance (P : PureExpr) [HasFvars P] : HasVarsImp P (Cmd P) where
   definedVars c _ := Cmd.definedVars c
   modifiedVars := Cmd.modifiedVars
   readVars := Cmd.getVars
+
+instance (P : PureExpr) [HasFvars P] : HasTypedVarsImp P (Cmd P) where
+  typedReadVars := Cmd.getTypedVars
+  typedDefinedVars := Cmd.typedDefinedVars
 
 mutual
 /-- Get all operator/function names referenced by `c`. -/

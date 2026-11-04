@@ -59,6 +59,10 @@ Equational theory for the boolean shape walkers defined in
 - Well-scopedness: a list that passes the Boolean check `Block.wellScopedB` is well scoped
   (`Block.wellScoped_of_wellScopedB`), and the one-pass hash-set check `Block.wellScopedH`
   computes `Block.wellScopedB` (`Block.wellScopedH_eq`).
+- The free-variable annotation check: `Stmt`/`Block.fvarTypesWellAnnotated_mono` (a typing
+  that types every variable another types, at the same type, passes every check the other
+  passes), `Block.fvarTypesWellAnnotated_of_append_left`, and the `VarTyping` helpers
+  `annotates_mono`/`extend_mono`, `annotates_congr`/`extend_congr` and `extend_of_not_mem`.
 -/
 
 /-! ### Decomposition lemmas for the structural shape predicates
@@ -749,6 +753,88 @@ theorem Block.defUseWellFormed_of_append_left [HasVarsImp P C] [HasFvars P] [Has
   | cons x rest ih =>
     simp only [List.cons_append, Block.defUseWellFormed, Bool.and_eq_true] at h ⊢
     exact ⟨h.1, ih h.2⟩
+
+/-- `Block.fvarTypesWellAnnotated` holds of a prefix whenever it holds of the whole
+    concatenation. -/
+theorem Block.fvarTypesWellAnnotated_of_append_left [HasTypedVarsImp P C] [HasFvars P]
+    {Γ : VarTyping P} {xs ys : List (Stmt P C)}
+    (h : Block.fvarTypesWellAnnotated Γ (xs ++ ys)) :
+    Block.fvarTypesWellAnnotated Γ xs := by
+  induction xs generalizing Γ with
+  | nil => trivial
+  | cons x rest ih =>
+    simp only [List.cons_append, Block.fvarTypesWellAnnotated] at h ⊢
+    exact ⟨h.1, ih h.2⟩
+
+/-- A typing that types every variable `Γ` types, at the same type, annotates every list
+    of occurrences `Γ` annotates. -/
+theorem VarTyping.annotates_mono {Γ Γ' : VarTyping P}
+    (hle : ∀ x ty, Γ x = some ty → Γ' x = some ty) {occs : List (P.Ident × P.Ty)}
+    (h : Γ.annotates occs) : Γ'.annotates occs :=
+  fun x ty hm => hle x ty (h x ty hm)
+
+/-- Extending two typings with the same definitions keeps one typing every variable the
+    other types. -/
+theorem VarTyping.extend_mono {Γ Γ' : VarTyping P}
+    (hle : ∀ x ty, Γ x = some ty → Γ' x = some ty) (d : List (P.Ident × P.Ty)) :
+    ∀ x ty, Γ.extend d x = some ty → Γ'.extend d x = some ty := by
+  intro x ty h
+  simp only [VarTyping.extend] at h ⊢
+  cases hf : d.find? (fun e => e.1 == x) with
+  | some e => rw [hf] at h; exact h
+  | none => rw [hf] at h; exact hle x ty h
+
+/-- Typings that agree on the variables of the occurrences `occs` agree on annotating
+    `occs`. -/
+theorem VarTyping.annotates_congr {Γ Γ' : VarTyping P} {occs : List (P.Ident × P.Ty)}
+    (h : Γ.annotates occs) (hag : ∀ x ty, (x, ty) ∈ occs → Γ' x = Γ x) :
+    Γ'.annotates occs :=
+  fun x ty hm => (hag x ty hm).trans (h x ty hm)
+
+/-- Extending typings that agree at `y` with the same definitions keeps them agreeing
+    at `y`. -/
+theorem VarTyping.extend_congr {Γ Γ' : VarTyping P} (d : List (P.Ident × P.Ty)) {y : P.Ident}
+    (h : Γ' y = Γ y) : Γ'.extend d y = Γ.extend d y := by
+  simp only [VarTyping.extend]
+  split
+  · rfl
+  · exact h
+
+/-- Extending a typing leaves the variables the definitions do not name unchanged. -/
+theorem VarTyping.extend_of_not_mem {Γ : VarTyping P} {d : List (P.Ident × P.Ty)} {x : P.Ident}
+    (hx : x ∉ d.map Prod.fst) : Γ.extend d x = Γ x := by
+  cases hf : d.find? (fun e => e.1 == x) with
+  | some e =>
+    have he : e.1 = x := by simpa using List.find?_some hf
+    exact absurd (List.mem_map.2 ⟨e, List.mem_of_find?_eq_some hf, he⟩) hx
+  | none => simp only [VarTyping.extend, hf]
+
+mutual
+/-- The annotation check is monotone in the typing. -/
+theorem Stmt.fvarTypesWellAnnotated_mono [HasTypedVarsImp P C] [HasFvars P] :
+    ∀ (s : Stmt P C) (Γ Γ' : VarTyping P), (∀ x ty, Γ x = some ty → Γ' x = some ty) →
+      Stmt.fvarTypesWellAnnotated Γ s → Stmt.fvarTypesWellAnnotated Γ' s
+  | .cmd _, _, _, hle, h => VarTyping.annotates_mono hle h
+  | .block _ bss _, _, _, hle, h => Block.fvarTypesWellAnnotated_mono bss _ _ hle h
+  | .ite _ tss ess _, _, _, hle, h =>
+    ⟨VarTyping.annotates_mono hle h.1, Block.fvarTypesWellAnnotated_mono tss _ _ hle h.2.1,
+      Block.fvarTypesWellAnnotated_mono ess _ _ hle h.2.2⟩
+  | .loop _ _ _ body _, _, _, hle, h =>
+    ⟨VarTyping.annotates_mono hle h.1, VarTyping.annotates_mono hle h.2.1,
+      VarTyping.annotates_mono hle h.2.2.1,
+      Block.fvarTypesWellAnnotated_mono body _ _ hle h.2.2.2⟩
+  | .exit _ _, _, _, _, _ => trivial
+  | .typeDecl _ _, _, _, _, _ => trivial
+
+/-- The annotation check of a statement list is monotone in the typing. -/
+theorem Block.fvarTypesWellAnnotated_mono [HasTypedVarsImp P C] [HasFvars P] :
+    ∀ (ss : List (Stmt P C)) (Γ Γ' : VarTyping P), (∀ x ty, Γ x = some ty → Γ' x = some ty) →
+      Block.fvarTypesWellAnnotated Γ ss → Block.fvarTypesWellAnnotated Γ' ss
+  | [], _, _, _, _ => trivial
+  | s :: rest, _, _, hle, h =>
+    ⟨Stmt.fvarTypesWellAnnotated_mono s _ _ hle h.1,
+      Block.fvarTypesWellAnnotated_mono rest _ _ (VarTyping.extend_mono hle _) h.2⟩
+end
 
 /-- Def-use well-formedness of a concatenated block splits into well-formedness
 of the prefix and of the suffix, the latter checked with the prefix's defined
@@ -2371,6 +2457,52 @@ theorem mem_exprFV {e : P.Expr} {x : P.Ident} :
     form in which the free variables of the identifier lists `Block.idents` meet `exprFV`). -/
 theorem getFvars_mem_exprFV {e : P.Expr} {x : P.Ident} :
     x ∈ HasFvars.getFvars e ↔ x ∈ exprFV e := mem_exprFV.symm
+
+mutual
+/-- Every free variable of a statement is one of its identifiers. -/
+theorem Stmt.mem_idents_of_mem_freeVars :
+    ∀ (s : Stmt P (CmdExt P)) {x : P.Ident}, x ∈ Stmt.freeVars s → x ∈ Stmt.idents s
+  | .cmd (.cmd (.init _ _ (.det _) _)), _, h
+  | .cmd (.cmd (.set _ (.det _) _)), _, h
+  | .cmd (.cmd (.assume _ _ _)), _, h | .cmd (.cmd (.assert _ _ _)), _, h
+  | .cmd (.cmd (.cover _ _ _)), _, h => by
+    simp only [Stmt.freeVars, Stmt.idents, List.mem_cons, mem_exprFV] at h ⊢
+    first | exact h | exact .inr h
+  | .cmd (.cmd (.init _ _ .nondet _)), _, h | .cmd (.call _ _ _), _, h
+  | .exit _ _, _, h | .typeDecl _ _, _, h => by simp [Stmt.freeVars] at h
+  | .cmd (.cmd (.set _ .nondet _)), _, h => by simpa [Stmt.freeVars, Stmt.idents] using h
+  | .block _ ss _, _, h => Block.mem_idents_of_mem_freeVars ss h
+  | .ite c tss ess _, _, h => by
+    simp only [Stmt.freeVars, Stmt.idents, List.mem_append] at h ⊢
+    rcases h with (h | h) | h
+    · cases c <;> simp_all [mem_exprFV, ExprOrNondet.getVars]
+    · exact .inl (.inr (Block.mem_idents_of_mem_freeVars tss h))
+    · exact .inr (Block.mem_idents_of_mem_freeVars ess h)
+  | .loop _ _ _ body _, _, h => by
+    simp only [Stmt.freeVars, Stmt.idents, List.mem_append] at h ⊢
+    exact .inr (Block.mem_idents_of_mem_freeVars body h)
+
+/-- Every free variable of a statement list is one of its identifiers. -/
+theorem Block.mem_idents_of_mem_freeVars :
+    ∀ (ss : Block P (CmdExt P)) {x : P.Ident}, x ∈ Block.freeVars ss → x ∈ Block.idents ss
+  | [], _, h => by simp [Block.freeVars] at h
+  | s :: rest, x, h => by
+    match s with
+    | .cmd (.cmd (.init y _ e _)) =>
+      simp only [Block.freeVars, List.mem_append, List.mem_filter] at h
+      simp only [Block.idents, List.mem_append]
+      rcases h with h | ⟨h, -⟩
+      · cases e <;> simp_all [Stmt.idents, mem_exprFV]
+      · exact .inr (Block.mem_idents_of_mem_freeVars rest h)
+    | .cmd (.cmd (.set ..)) | .cmd (.cmd (.assume ..)) | .cmd (.cmd (.assert ..))
+    | .cmd (.cmd (.cover ..)) | .cmd (.call ..) | .block .. | .ite .. | .loop ..
+    | .exit .. | .typeDecl .. =>
+      simp only [Block.freeVars, List.mem_append] at h
+      simp only [Block.idents, List.mem_append]
+      rcases h with h | h
+      · exact .inl (Stmt.mem_idents_of_mem_freeVars _ h)
+      · exact .inr (Block.mem_idents_of_mem_freeVars rest h)
+end
 
 end FreeVars
 

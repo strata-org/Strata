@@ -688,6 +688,42 @@ omit [HasFvar P] [HasFvars P] in
       rw [ih]
       simp [embedDetBlock]
 
+/-- The typed definitions of a statement are unchanged by command embedding. -/
+theorem embedStmt_typedDefinedVars (s : Stmt P (Cmd P)) :
+    Stmt.typedDefinedVars (embedStmt s) = Stmt.typedDefinedVars s := by
+  cases s <;> rfl
+
+mutual
+/-- The annotation check is unchanged by command embedding. -/
+theorem embedStmt_fvarTypesWellAnnotated (Γ : VarTyping P) (s : Stmt P (Cmd P)) :
+    Stmt.fvarTypesWellAnnotated Γ (embedStmt s) = Stmt.fvarTypesWellAnnotated Γ s := by
+  match s with
+  | .cmd c => rfl
+  | .block label ss md =>
+      simp only [embedStmt, Stmt.fvarTypesWellAnnotated]
+      exact embedStmts_fvarTypesWellAnnotated Γ ss
+  | .ite cond tss ess md =>
+      simp only [embedStmt, Stmt.fvarTypesWellAnnotated]
+      rw [embedStmts_fvarTypesWellAnnotated Γ tss, embedStmts_fvarTypesWellAnnotated Γ ess]
+  | .loop guard measure invariant body md =>
+      simp only [embedStmt, Stmt.fvarTypesWellAnnotated]
+      rw [embedStmts_fvarTypesWellAnnotated Γ body]
+  | .exit label md => rfl
+  | .typeDecl tc md => rfl
+  termination_by sizeOf s
+
+/-- The annotation check of a statement list is unchanged by command embedding. -/
+theorem embedStmts_fvarTypesWellAnnotated (Γ : VarTyping P) (ss : List (Stmt P (Cmd P))) :
+    Block.fvarTypesWellAnnotated Γ (embedStmts ss) = Block.fvarTypesWellAnnotated Γ ss := by
+  match ss with
+  | [] => rfl
+  | s :: rest =>
+      simp only [embedStmts, Block.fvarTypesWellAnnotated]
+      rw [embedStmt_fvarTypesWellAnnotated Γ s, embedStmt_typedDefinedVars s,
+        embedStmts_fvarTypesWellAnnotated _ rest]
+  termination_by sizeOf ss
+end
+
 end AnalysisVars
 
 /-! ## Command-independent shape analyses

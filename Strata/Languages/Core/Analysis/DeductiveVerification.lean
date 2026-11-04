@@ -274,9 +274,25 @@ def VerifyConfig.verify (cfg : VerifyConfig) (input : CoreVerifierInput) :=
     Core.typeCheck options program factory = .ok program' →
     program'.noPolymorphicProcedures = Bool.true →
     ∀ d ∈ program'.decls, ∀ e ∈ Statements.allExprs d.statements,
-      ∃ ty, Core.Expression.HasType
-        (fun x => ((Lambda.LExpr.freeVars e).lookup x).bind (·.map (Lambda.LTy.forAll [] ·)))
-        e ty
+      ∃ ty, Core.Expression.HasType (Core.Expression.annotationTyping e) e ty
+
+/-- **Type inference agrees with its annotations.**  The well-formedness condition of an entry
+    (`InitEnvWF.fvarTypesOk`) asks for a typing of the entry store that the annotations of the
+    body agree with (`Block.fvarTypesWellAnnotated`).  The statement: the body of every
+    procedure of a program `Core.typeCheck` accepts passes the check under the types of the
+    procedure's parameters, so an entry store whose parameters hold values of their declared
+    types has such a typing.  This is the statement, not yet a theorem.
+
+    A related gap has no statement yet: a call writes back only values of the types of the
+    caller's variables (`Imperative.Calls.CallExit`), so a run stops at a call whose callee
+    output has another type.  Stating that type-checked programs never reach such a call needs
+    the typing at each program point, which no definition provides yet. -/
+@[expose] def TypeCheckAnnotationsAgree : Prop :=
+  ∀ (options : VerifyOptions) (program program' : Program)
+    (factory : Lambda.Factory CoreLParams),
+    Core.typeCheck options program factory = .ok program' →
+    ∀ q md, Decl.proc q md ∈ program'.decls →
+      Block.fvarTypesWellAnnotated (fun x => q.paramTys.lookup x) q.body.statements
 
 end Analysis
 

@@ -580,24 +580,6 @@ end NondetElimShapeFree
 
 /-! ## Event-level loop-init-hoist foundation -/
 
-/-- Event-producing command evaluation preserves the type recorded for an
-already-defined slot. -/
-theorem EvalCmdE_preserves_typedAt {P : PureExpr}
-    [HasFvar P] [HasBool P] [HasBoolOps P] [DecidableEq P.Ident] [HasFvars P] [LawfulHasVal P]
-    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P}
-    (h : EvalCmdE P f σ c σ' emitted)
-    {y : P.Ident} {ty : P.Ty}
-    (hy : ∃ prev, σ y = some prev ∧ HasVal.valueOfTy f prev ty) :
-    ∃ prev, σ' y = some prev ∧ HasVal.valueOfTy f prev ty := by
-  cases h with
-  | eval_init _ hinit _ _ => exact InitState_typedAt hinit hy
-  | eval_init_unconstrained hinit _ _ => exact InitState_typedAt hinit hy
-  | eval_set _ hupd hstored _ => exact UpdateState_typedAt hupd hstored hy
-  | eval_set_nondet hupd hstored _ => exact UpdateState_typedAt hupd hstored hy
-  | eval_assert => exact hy
-  | eval_assume => exact hy
-  | eval_cover => exact hy
-
 /-- Event-producing command evaluation preserves every slot in `DTyped`. -/
 theorem DTyped.evalCmdE {P : PureExpr}
     [HasFvar P] [HasBool P] [HasBoolOps P] [DecidableEq P.Ident] [HasFvars P] [LawfulHasVal P]
@@ -3455,7 +3437,12 @@ theorem LoopInitHoist.overapproximatesTraces {P : PureExpr}
         defUseOk := hdu
         initTypesInhabited :=
           LoopInitHoistProducerProps.Block.hoistP_initTypesInhabited
-            hwf.initTypesInhabited }
+            hwf.initTypesInhabited
+        fvarTypesOk := by
+          obtain ⟨Γ, hσ, hw⟩ := hwf.fvarTypesOk
+          refine ⟨Γ, hσ, LoopInitHoistWF.Block.hoistLoopPrefixInits_fvarTypesWellAnnotated
+            stmts Γ (fun y hy => hσ.eq_none_of_store_none (hwf.defsUndefined y hy))
+            hunique hw⟩ }
 
 end HoistTraceOverapprox
 

@@ -1060,8 +1060,9 @@ def oldRead : Statements := [set' "x" (add (iv "x") (int 1)),
 The SSA phase on hand-written guarded programs: conditions with literal parts fold, true
 assumptions are dropped, an arm assuming `false` is kept (its obligations are reported, as
 symbolic evaluation reports those of a branch whose condition is `false`), an empty arm is
-dropped with the other inline, and an assignment of a literal defines a name for it, which
-obligations read. -/
+dropped with the other inline, an assignment of a literal defines a name for it, which
+obligations read, and a copy from a name not annotated with the copy's declared type is
+defined by a fresh `init`. -/
 
 /-- The SSA phase on a guarded program, without free-variable types and entry renaming. -/
 def ssa (lay : Statements) : Except String Statements := do
@@ -1119,6 +1120,25 @@ def ff' : Expression.Expr := .boolConst () false
 #guard show' (ssa [ite' tt' [] []]) == "ERROR SSA: deterministic `ite` (the input is not in tree form)"
 #guard show' (ssa [block' "L" []]) == "ERROR SSA: `block` (the input is not in tree form)"
 #guard show' (ssa [.ite .nondet [] [] md, assert' "p" tt']) == "ERROR SSA: `ite *` followed by a statement (the input is not in tree form)"
+-- A copy from a name annotated with the declared type of the copy is recorded: later reads of
+-- the copy read the name.
+#guard show' (ssa [init' "y" (iv "a"), assert' "p" (gt (iv "y") (int 0))]) == lines [
+    "{",
+    "  assert [p]: int.gt(a, 0);",
+    "}"]
+-- A copy from a name without an annotation, or annotated with another type than the declared
+-- type of the copy, is not propagated: a fresh `init` defines the copy.
+#guard show' (ssa [init' "y" (.fvar () (id' "a") none), assert' "p" (gt (iv "y") (int 0))]) ==
+  lines [
+    "{",
+    "  var y@0 : int := a;",
+    "  assert [p]: int.gt(y@0, 0);",
+    "}"]
+#guard show' (ssa [init' "y" (bv "c"), assert' "p" (gt (iv "y") (int 0))]) == lines [
+    "{",
+    "  var y@0 : int := c;",
+    "  assert [p]: int.gt(y@0, 0);",
+    "}"]
 
 /-! ## The records of the two phases -/
 

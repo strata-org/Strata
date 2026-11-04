@@ -612,7 +612,7 @@ end LExpr
 
 /-! ### `getVars` and `freeVars` -/
 
-theorem getVars_eq_freeVars_idents {T : LExprParams} (e : LExpr T.mono) :
+public theorem getVars_eq_freeVars_idents {T : LExprParams} (e : LExpr T.mono) :
     LExpr.LExpr.getVars e = (LExpr.freeVars e).map Prod.fst := by
   induction e with
   | const => rfl

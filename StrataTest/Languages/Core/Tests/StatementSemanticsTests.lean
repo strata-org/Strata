@@ -452,14 +452,15 @@ example
       MetaData.setCallSiteFileRange_empty, ListMap.toList, oneInputProc] using
       EvalCommandE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 2, .read_none, initCallFrame_oneInput .int (intV fac 2)⟩
-        (emptyBodyExecE _ _ _) ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
+        (emptyBodyExecE _ _ _)
+            ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
     simpa [defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
       MetaData.setCallSiteFileRange_empty, ListMap.toList, assumeEvents,
       Calls.assumeEvents, oneInputProc] using
       EvalCommandContractE.call_sem (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 2, .read_none, initCallFrame_oneInput .int (intV fac 2)⟩
-        .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
+        .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
 
 /-! ## Example 2.
     An inout actual may have the same identifier as the callee formal. The frame
@@ -515,7 +516,9 @@ example
     .read_some inoutFrame_current (intVal_value fac 7) .read_none
   have hexit : CallExit fac (calleeFrame (intV fac 7)) oneInoutOldProc
       [.inoutArg calleeY] (inoutFrame (intV fac 7)) (calleeFrame (intV fac 7)) := by
-    refine ⟨(by simp [Imperative.CallArg.getLhs]), [intV fac 7], ?_, updateStates_id_single hcaller⟩
+    refine ⟨(by simp [Imperative.CallArg.getLhs]), [intV fac 7], ?_, updateStates_id_single hcaller,
+      .cons ⟨_, Lambda.LTy.forAll [] .int, hcaller, intVal_valueOfTy fac 7, intVal_valueOfTy fac 7⟩
+          .nil⟩
     simpa [oneInoutOldProc, oneInoutProc, ProcedureHeader.outputParams, ListMap.keys] using hread
   let σO := updatedState (inoutFrame (intV fac 7)) calleeY (intV fac 9)
   have hupd : UpdateState Expression (inoutFrame (intV fac 7)) calleeY
@@ -540,7 +543,9 @@ example
     .update_some (updatedStateUpdate hcaller) .update_none
   have hexitO : CallExit fac (calleeFrame (intV fac 7)) oneInoutOldProc
       [.inoutArg calleeY] σO (inoutResultStore fac) := by
-    refine ⟨(by simp [Imperative.CallArg.getLhs]), [intV fac 9], ?_, hcallerUpdate⟩
+    refine ⟨(by simp [Imperative.CallArg.getLhs]), [intV fac 9], ?_, hcallerUpdate,
+      .cons ⟨_, Lambda.LTy.forAll [] .int, hcaller, intVal_valueOfTy fac 7,
+        intVal_valueOfTy fac 9⟩ .nil⟩
     simpa [oneInoutOldProc, oneInoutProc, ProcedureHeader.outputParams, ListMap.keys] using hreadO
   refine ⟨?_, ?_⟩
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
@@ -611,7 +616,9 @@ example
     ⟨_, _, .eval_none, hcopied, hframe⟩
   have hexit : CallExit fac (copyCallerStore fac) (oneOutputProc calleeY .int)
       [.outArg callerResult] (calleeFrame (intV fac 7)) (copyCallerStore fac) :=
-    ⟨(by simp [Imperative.CallArg.getLhs]), _, hresult, updateStates_id_single hcaller⟩
+    ⟨(by simp [Imperative.CallArg.getLhs]), _, hresult, updateStates_id_single hcaller,
+      .cons ⟨_, Lambda.LTy.forAll [] .int, hcaller, intVal_valueOfTy fac 7, intVal_valueOfTy fac 7⟩
+          .nil⟩
   -- The frame binds `calleeY ↦ 7`; the contract abstraction havocs it to 9.
   have hframeLk : (calleeFrame (intV fac 7)) calleeY = some (intV fac 7) := by
     have hinit : InitState Expression emptyStore calleeY (intV fac 7) (calleeFrame (intV fac 7)) :=
@@ -645,7 +652,9 @@ example
       Calls.assumeEvents, oneOutputProc] using
       EvalCommandContractE.call_sem (calleeEnv_callee _)
         ⟨_, _, .eval_none, hcopied, hframe⟩
-        hhavoc ⟨(by simp [Imperative.CallArg.getLhs]), _, hcontractResult, hcontractUpdate⟩
+        hhavoc ⟨(by simp [Imperative.CallArg.getLhs]), _, hcontractResult, hcontractUpdate,
+        .cons ⟨_, Lambda.LTy.forAll [] .int, hcaller, intVal_valueOfTy fac 7,
+          intVal_valueOfTy fac 9⟩ .nil⟩
 
 /-! ## Example 4.
     A contract-bearing procedure with one body assertion is interpreted by all
@@ -699,7 +708,7 @@ example
       oneInputContractBodyProc, oneInputContractProc] using
       EvalCommandE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty) (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
-        hbodyE ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
+        hbodyE ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
     simpa [MetaData.empty, passingBodyProc, defaultAssertEvents, Calls.defaultAssertEvents,
       Calls.checksAtCall, MetaData.setCallSiteFileRange_empty,
@@ -708,7 +717,7 @@ example
       EvalCommandContractE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty)
         (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
-        .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
+        .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
 
 /-- ## Example 5.
     Executable call, FAIL path: a false (`ff`) Default postcondition is emitted as
@@ -754,7 +763,8 @@ example
       assertEvent, oneInputContractProc] using
       EvalCommandE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty) (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
-        (emptyBodyExecE _ _ _) ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
+        (emptyBodyExecE _ _ _)
+            ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
     simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
       MetaData.setCallSiteFileRange_empty, ListMap.toList,
@@ -763,7 +773,7 @@ example
       EvalCommandContractE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty)
         (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
-        .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
+        .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
 
 /-- ## Example 6.
     Executable call, FAIL path: a failing body assertion is emitted between
@@ -816,7 +826,7 @@ example
       oneInputContractBodyProc, oneInputContractProc] using
       EvalCommandE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty) (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
-        hbodyE ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
+        hbodyE ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
     simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
       MetaData.setCallSiteFileRange_empty, ListMap.toList,
@@ -825,7 +835,7 @@ example
       EvalCommandContractE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty)
         (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
-        .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
+        .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
 
 /-- ## Example 7.
     Contract call, FAIL path: a false (`ff`) Default precondition is emitted as an
@@ -871,7 +881,8 @@ example
       assertEvent, oneInputContractProc] using
       EvalCommandE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty) (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
-        (emptyBodyExecE _ _ _) ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
+        (emptyBodyExecE _ _ _)
+            ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
     simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
       MetaData.setCallSiteFileRange_empty, ListMap.toList,
@@ -880,7 +891,7 @@ example
       EvalCommandContractE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty)
         (calleeEnv_callee _)
         ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
-        .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
+        .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
 
 private def noArgProc (name : String) (body : Statements) : Procedure :=
   { header :=
@@ -942,7 +953,7 @@ example
       EvalCommandE.call_sem (π := nestedProcEnv) (by simp [nestedProcEnv, leafProc])
         ⟨_, _, .eval_none, .read_none, emptyFrame "leaf" []⟩
         (emptyBodyExecE nestedProcEnv emptyStore fac)
-        ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
+        ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
   let ρ : Env Expression := ⟨emptyStore, fac⟩
   -- Modelled on `assertBodyExecE`: middle's body is a single leaf call that emits no events, so the body emits no events.
   have hmiddleBodyE : CoreBodyExecE nestedProcEnv middleProc.body
@@ -990,7 +1001,7 @@ example
       noArgProc] using
       EvalCommandE.call_sem (by simp [nestedProcEnv, middleProc])
         ⟨_, _, .eval_none, .read_none, emptyFrame "middle" [.cmd (.call "leaf" [] .empty)]⟩
-        hmiddleBodyE ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
+        hmiddleBodyE ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
   · apply uniqueEvalCommandContractE (p := middleProc)
       (by simp [nestedProcEnv, middleProc]) (by rfl)
     simpa [defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
@@ -998,6 +1009,53 @@ example
       Calls.assumeEvents, middleProc, noArgProc] using
       EvalCommandContractE.call_sem (by simp [nestedProcEnv, middleProc])
         ⟨_, _, .eval_none, .read_none, emptyFrame "middle" [.cmd (.call "leaf" [] .empty)]⟩
-        .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
+        .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none, .nil⟩
+
+/-! ## The typing restrictions reject ill-typed entries and write-backs -/
+
+/-- The Boolean `b` as a value of the factory `fac`. -/
+private def boolV (fac : Expression.Factory) (b : Bool) : Expression.Val :=
+  ⟨fac.model.tcInterp, .bool, b⟩
+
+/-- An integer value has no Boolean type. -/
+private theorem intV_not_bool (fac : Expression.Factory) (n : Int) (b : Bool)
+    (ty : Expression.Ty) (hint : HasVal.valueOfTy fac (intV fac n) ty)
+    (hbool : HasVal.valueOfTy fac (boolV fac b) ty) :
+    False := by
+  exact absurd (hint.2.symm.trans hbool.2) (by simp only [intV, boolV, Option.some.injEq]; decide)
+
+/-- No typing meets the annotation check for a store holding an integer at `x` and a body that
+    reads `x` annotated as Boolean. -/
+example (fac : Expression.Factory) :
+    ¬ ∃ Γ, StoreHasTyping fac (updatedState emptyStore callerResult (intV fac 0)) Γ ∧
+      Block.fvarTypesWellAnnotated Γ
+        [Statement.assert "p" (.fvar () callerResult (some .bool)) #[]] := by
+  rintro ⟨Γ, hσ, hw, -⟩
+  have hx : Γ callerResult = some (.forAll [] .bool) :=
+    hw _ _ List.mem_cons_self
+  obtain ⟨v, hv, hty⟩ := hσ _ _ hx
+  simp only [updatedState, decide_true, ↓reduceIte, Option.some.injEq] at hv
+  subst hv
+  simp only [HasVal.valueOfTy, intV, Lambda.LTy.toMonoType?, Option.some.injEq, true_and] at hty
+  exact absurd hty (by decide)
+
+/-- No call exit writes a Boolean output of the callee back to a caller variable holding an
+    integer. -/
+example (fac : Expression.Factory) (σ' : CoreStore) :
+    ¬ CallExit fac (updatedState emptyStore callerResult (intV fac 0))
+      (oneOutputProc calleeY .bool) [.outArg callerResult] (calleeFrame (boolV fac true)) σ' := by
+  rintro ⟨-, outs, hread, -, hrel⟩
+  change ReadValues fac (calleeFrame (boolV fac true)) [calleeY] outs at hread
+  cases hread with
+  | read_some hy _ hrest =>
+    cases hrest
+    simp only [calleeFrame, updatedState, decide_true, ↓reduceIte, Option.some.injEq] at hy
+    subst hy
+    cases hrel with
+    | cons hst _ =>
+      obtain ⟨prev, ty, hprev, hpty, hvty⟩ := hst
+      simp only [updatedState, decide_true, ↓reduceIte, Option.some.injEq] at hprev
+      subst hprev
+      exact intV_not_bool fac 0 true ty hpty hvty
 
 end Core.StatementSemanticsTests

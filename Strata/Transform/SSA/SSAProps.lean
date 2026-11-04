@@ -21,10 +21,15 @@ back the mapping it started from (`ssaList_frame`, `undoTo_frame`).
 
 The entry renaming gives each free variable a fresh entry name (`ssaEntryRen_spec`).
 
-Key theorems: `ssaBody_shape`, `ssaEntry_wellScoped`, `ssaEntryRen_spec`, `ssaList_frame`,
-`undoTo_frame`.
+The output's free-variable annotations agree with the typing of the entry names
+(`ssaEntry_fvarTypesWellAnnotated`): every variable the output reads is annotated with the type of
+the value the traversal recorded for the name it replaces, and a copy is recorded only with the
+variable's own annotation.
 
-Key definitions: `SFrame`, `entryMap`, `SNames`. -/
+Key theorems: `ssaBody_shape`, `ssaEntry_wellScoped`, `ssaEntry_fvarTypesWellAnnotated`,
+`ssaEntryRen_spec`, `ssaList_frame`, `undoTo_frame`.
+
+Key definitions: `SFrame`, `entryMap`, `SNames`, `STyped`. -/
 
 namespace Imperative
 namespace WP
@@ -176,17 +181,30 @@ theorem curTy_ok (h : curTy x s = .ok (ty, s')) :
   exact ⟨rfl, rfl⟩
 
 /-- The three outcomes of `assignVal x ty e`: the folded value `e'` is a literal (recorded and
-    defined by a fresh Boolean `init`), a variable (recorded, no output, same state), or is
-    defined by an `init` of a fresh name. -/
+    defined by a fresh Boolean `init`), a variable `y` that `e'` annotates with `ty`
+    (recorded, no output, same state), or is defined by an `init` of a fresh name. -/
 theorem assignVal_ok (h : assignVal x ty e s = .ok ((o, v), s')) :
     (∃ b x', WPOps.boolLit? (foldE s.ρ e) = some b ∧ sFresh x s = .ok (x', s') ∧
       o = [mkInit x' HasBool.boolTy (.det (if b then tt else ff))] ∧ v = .lit b (some x')) ∨
-    (∃ y, HasFvar.getFvar (foldE s.ρ e) = some y ∧ o = [] ∧ v = .name y (some ty) ∧ s' = s) ∨
+    (∃ y, HasFvar.getFvar (foldE s.ρ e) = some y ∧
+      (HasFvars.getTypedFvars (foldE s.ρ e)).any (fun p => p.1 == y && WPOps.tyBEq p.2 ty) ∧
+      o = [] ∧ v = .name y (some ty) ∧ s' = s) ∨
     (∃ x', sFresh x s = .ok (x', s') ∧ o = [mkInit x' ty (.det (foldE s.ρ e))] ∧
       v = .name x' (some ty)) := by
   simp only [assignVal, SM.get_bind] at h
   rcases hb : WPOps.boolLit? (foldE s.ρ e) <;> rcases hy : HasFvar.getFvar (foldE s.ρ e) <;>
-    simp only [hb, hy, SM.bind_iff, SM.pure_iff] at h <;> grind
+    simp only [hb, hy, SM.bind_iff, SM.pure_iff] at h
+  case none.some y =>
+    split at h
+    · next hc =>
+      obtain ⟨h1, rfl⟩ := SM.pure_iff.1 h
+      cases h1
+      exact .inr (.inl ⟨y, rfl, hc, rfl, rfl, rfl⟩)
+    · obtain ⟨x', s1, hf, h2⟩ := SM.bind_iff.1 h
+      obtain ⟨h3, rfl⟩ := SM.pure_iff.1 h2
+      cases h3
+      exact .inr (.inr ⟨x', hf, rfl, rfl⟩)
+  all_goals grind
 
 /-- Induction along a successful run of the traversal: a property of the input list, the start
     state, the output and the end state holds of every run when it holds of the run of the empty
@@ -358,7 +376,7 @@ private theorem ssaList_shape (ss : PStmts P) : ∀ {s s' : SSt P} {out : PStmts
         Stmt.noLoops_ite, Block.noLoops_nil]
   all_goals simp only [Block.treeForm, Block.onlyChecksAfterAssert] at hg ho
   case' refine_1 | refine_3 =>
-    rcases assignVal_ok hA with ⟨_, _, -, -, rfl, -⟩ | ⟨_, -, rfl, -⟩ | ⟨_, -, rfl, -⟩
+    rcases assignVal_ok hA with ⟨_, _, -, -, rfl, -⟩ | ⟨_, -, -, rfl, -⟩ | ⟨_, -, rfl, -⟩
   case' refine_5 => split
   all_goals first | exact ih hg ho | exact shape_cons trivial (ih hg ho)
 
@@ -451,7 +469,8 @@ private theorem ssaList_wellScoped (ss : PStmts P) : ∀ {s s' : SSt P} {out : P
       hA y (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hy])
     have hold : ∀ y ∈ Block.freeVars rest, y ≠ x → SNames Dd y s.ρ[y]? := fun y hy hne =>
       hA y (by simp [Block.freeVars, Stmt.freeVars, hy, hne])
-    rcases assignVal_ok h1 with ⟨b, _, -, hf, rfl, rfl⟩ | ⟨y, hy, rfl, rfl, rfl⟩ | ⟨_, hf, rfl, rfl⟩
+    rcases assignVal_ok h1 with ⟨b, _, -, hf, rfl, rfl⟩ | ⟨y, hy, -, rfl, rfl, rfl⟩ |
+      ⟨_, hf, rfl, rfl⟩
     case inr.inl => exact ih hN (SNames.assign (List.Subset.refl _)
       (foldE_fv _ e hfe y (WPLang.getFvar_getFvars hy)) hold)
     all_goals
@@ -625,7 +644,7 @@ theorem assignVal_facts (h : assignVal x ty e s = .ok ((o, v), s')) :
     (o = [] ∨ ∃ j ty' e', s.next ≤ j ∧ (ty' = HasBool.boolTy ∨ ty' = ty) ∧
       (e' = tt ∨ e' = ff ∨ e' = foldE s.ρ e) ∧
         o = [mkInit (freshName (baseOf x) j) ty' (.det e')]) := by
-  rcases assignVal_ok h with ⟨b, _, -, hf, rfl, rfl⟩ | ⟨y, -, rfl, rfl, rfl⟩ | ⟨_, hf, rfl, rfl⟩
+  rcases assignVal_ok h with ⟨b, _, -, hf, rfl, rfl⟩ | ⟨y, -, -, rfl, rfl, rfl⟩ | ⟨_, hf, rfl, rfl⟩
   · obtain ⟨j, hj, rfl, -, rfl⟩ := sFresh_ok hf
     exact ⟨rfl, Nat.le_succ_of_le hj, .inl rfl, .inr ⟨j, _, _, hj, .inl rfl,
       by cases b <;> simp, rfl⟩⟩
@@ -693,6 +712,327 @@ theorem entryMap_ty (tys : Tys P) (ρ0 : Ren P) (x : P.Ident) (hx : x ∈ ρ0.ma
     ((List.find?_isSome (p := (·.1 == x))).2 ⟨q, hq, by simp [hqx]⟩)
   rw [entryMap_lookup, hp]
   rfl
+
+/-! ## Annotations
+
+The SSA output gives every variable it reads the type annotation of the value the traversal
+recorded for the name it replaces, so the output passes the free-variable annotation check
+against the typing of the entry names (`ssaEntry_fvarTypesWellAnnotated`). -/
+
+/-- The value `v` of the name `x` agrees with the typing `Γ`: a variable other than `x` has, under
+    `Γ`, the type it is annotated with, and a literal is defined by a name `Γ` gives the Boolean
+    type. -/
+@[expose] def STyped (Γ : VarTyping P) (x : P.Ident) : SVal P → Prop
+  | .name y ty => y ≠ x ∧ ∀ T, ty = some T → Γ y = some T
+  | .lit _ m => ∃ y, m = some y ∧ Γ y = some HasBool.boolTy
+
+include iLFvs in
+omit iDE iBE iLB iHB iSF iHI iHa iW in
+/-- An annotated occurrence in a variable reference is the variable with its annotation. -/
+private theorem typed_var {y : P.Ident} {ty : Option P.Ty} {p : P.Ident × P.Ty}
+    (h : p ∈ HasFvars.getTypedFvars (HasFvar.mkVar y ty)) : p.1 = y ∧ ty = some p.2 := by
+  cases ty with
+  | none => simp [HasFvar.mkVar, LawfulHasFvars.mkFvar_getTypedFvars] at h
+  | some t =>
+    have h' := LawfulHasFvars.mkTypedFvar_getTypedFvars (P := P) y t
+      (by simpa [HasFvar.mkVar] using h)
+    simp only [List.mem_singleton] at h'
+    subst h'
+    exact ⟨rfl, rfl⟩
+
+include iLFvs in
+omit iBE iLB iHI iHa in
+/-- A Boolean literal has no annotated free-variable occurrence. -/
+private theorem typed_lit (b : Bool) {p : P.Ident × P.Ty}
+    (h : p ∈ HasFvars.getTypedFvars (if b then (tt : P.Expr) else ff)) : False := by
+  have h' := LawfulHasFvars.mem_getFvars_of_typed _ p.1 p.2 h
+  cases b <;> simp [WPLang.getFvars_tt, WPLang.getFvars_ff] at h'
+
+include iLFvs in
+omit iLB iHI in
+/-- The annotations of `e` with every name replaced by its current value agree with `Γ`, when the
+    current value of each free variable of `e` does. -/
+private theorem renM_typed {Γ : VarTyping P} (e : P.Expr)
+    (hA : ∀ x ∈ HasFvars.getFvars e, ∃ v, ρ[x]? = some v ∧ STyped Γ x v) :
+    ∀ p ∈ HasFvars.getTypedFvars (renM ρ e), Γ p.1 = some p.2 := by
+  intro p hp
+  rcases WPLang.getTypedFvars_substFn e _ p hp with ⟨hp, hg⟩ | ⟨z, w, hz, hg, hw⟩
+  · obtain ⟨v, hv, -⟩ := hA p.1 (LawfulHasFvars.mem_getFvars_of_typed _ _ _ hp)
+    simp [hv] at hg
+  · obtain ⟨v, hv, ht⟩ := hA z hz
+    simp only [hv, Option.map_some, Option.some.injEq] at hg
+    subst hg
+    cases v with
+    | name y ty =>
+      obtain ⟨h1, h2⟩ := typed_var hw
+      exact h1 ▸ ht.2 _ h2
+    | lit b m => exact (typed_lit b hw).elim
+
+include iLFvs in
+omit iLB iHI in
+/-- The annotations of the folded `e` agree with `Γ`, when the current value of each free variable
+    of `e` does. -/
+private theorem foldE_typed {Γ : VarTyping P} (ρ : Std.HashMap P.Ident (SVal P)) (e : P.Expr) :
+    (∀ x ∈ HasFvars.getFvars e, ∃ v, ρ[x]? = some v ∧ STyped Γ x v) →
+      ∀ p ∈ HasFvars.getTypedFvars (foldE ρ e), Γ p.1 = some p.2 := by
+  have parts : ∀ {e c t f : P.Expr}, WPOps.iteView? e = some (c, t, f) →
+      (∀ x ∈ HasFvars.getFvars e, ∃ v, ρ[x]? = some v ∧ STyped Γ x v) →
+      (∀ x ∈ HasFvars.getFvars c, ∃ v, ρ[x]? = some v ∧ STyped Γ x v) ∧
+      (∀ x ∈ HasFvars.getFvars t, ∃ v, ρ[x]? = some v ∧ STyped Γ x v) ∧
+      (∀ x ∈ HasFvars.getFvars f, ∃ v, ρ[x]? = some v ∧ STyped Γ x v) := fun hv hA => by
+    obtain rfl := WPLang.iteView?_eq hv
+    exact ⟨fun x hx => hA x ((WPLang.getFvars_ite _ _ _ x).2 (.inl hx)),
+      fun x hx => hA x ((WPLang.getFvars_ite _ _ _ x).2 (.inr (.inl hx))),
+      fun x hx => hA x ((WPLang.getFvars_ite _ _ _ x).2 (.inr (.inr hx)))⟩
+  fun_induction foldE ρ e
+  case case1 e c t f hv c' hb ih2 ih1 | case2 e c t f hv c' hb ih2 ih1 =>
+    intro hA p hp
+    obtain ⟨hc, ht, hf⟩ := parts hv hA
+    first | exact ih1 ht p hp | exact ih1 hf p hp | exact ih2 ht p hp | exact ih2 hf p hp
+  case case3 e c t f hv c' hb t' f' hs ih3 ih2 ih1 =>
+    intro hA p hp
+    exact ih2 (parts hv hA).2.1 p hp
+  case case4 e c t f hv c' hb t' f' hs ih3 ih2 ih1 =>
+    intro hA p hp
+    obtain ⟨hc, ht, hf⟩ := parts hv hA
+    rcases WPLang.getTypedFvars_ite _ _ _ p hp with hp | hp | hp
+    · exact ih3 hc p hp
+    · exact ih2 ht p hp
+    · exact ih1 hf p hp
+  case case5 e hv => exact renM_typed e
+
+include iLFvs in
+omit iHI in
+/-- The annotations of an emitted obligation condition agree with `Γ`, when the current value of
+    each free variable of the condition does. -/
+private theorem renM'_typed {Γ : VarTyping P} (e : P.Expr)
+    (hA : ∀ x ∈ HasFvars.getFvars e, ∃ v, ρ[x]? = some v ∧ STyped Γ x v) :
+    ∀ p ∈ HasFvars.getTypedFvars (renM' ρ e), Γ p.1 = some p.2 := by
+  intro p hp
+  rcases WPLang.getTypedFvars_substFn e _ p hp with ⟨hp, hg⟩ | ⟨z, w, hz, hg, hw⟩
+  · obtain ⟨v, hv, ht⟩ := hA p.1 (LawfulHasFvars.mem_getFvars_of_typed _ _ _ hp)
+    cases v with
+    | name y ty => simp [oblVar, hv, ht.1] at hg
+    | lit b m =>
+      obtain ⟨y, rfl, -⟩ := ht
+      simp [oblVar, hv] at hg
+  · obtain ⟨v, hv, ht⟩ := hA z hz
+    cases v with
+    | name y ty =>
+      simp only [oblVar, hv, beq_iff_eq, ht.1, ite_false, Option.map_some,
+        Option.some.injEq] at hg
+      subst hg
+      obtain ⟨h1, h2⟩ := typed_var hw
+      exact h1 ▸ ht.2 _ h2
+    | lit b m =>
+      obtain ⟨y, rfl, hy⟩ := ht
+      simp only [oblVar, hv, Option.map_some, Option.some.injEq] at hg
+      subst hg
+      obtain ⟨h1, h2⟩ := typed_var hw
+      rw [h1, ← Option.some.inj h2]
+      exact hy
+
+omit iDE iBE iHF iSF iHI iHa iHFs iW in
+/-- `STyped` survives extending the typing at a name outside the names it types. -/
+private theorem STyped.extend {Γ : VarTyping P} {Dd : List P.Ident} {x' : P.Ident} {T : P.Ty}
+    (hΓ : ∀ y, (Γ y).isSome → y ∈ Dd) (hx' : x' ∉ Dd) :
+    ∀ {z : P.Ident} {w : SVal P}, STyped Γ z w → STyped (Γ.extend [(x', T)]) z w := by
+  have hkeep : ∀ y U, Γ y = some U → (Γ.extend [(x', T)]) y = some U := fun y U h => by
+    have hy : y ≠ x' := fun he => hx' (he ▸ hΓ y (by simp [h]))
+    rw [VarTyping.extend_of_not_mem (by simpa [eq_comm] using hy)]
+    exact h
+  intro z w h
+  cases w with
+  | name y ty => exact ⟨h.1, fun U hU => hkeep y U (h.2 U hU)⟩
+  | lit b m =>
+    obtain ⟨y, rfl, hy⟩ := h
+    exact ⟨y, rfl, hkeep y _ hy⟩
+
+omit iHF iSF iHI iHFs iW in
+/-- `STyped` on the names of `V` after binding `x`: on `x` from the new value, on the other names
+    of `V` from before. -/
+private theorem STyped.assign {Γ : VarTyping P} {V : List P.Ident} (hx : STyped Γ x v)
+    (hold : ∀ y ∈ V, y ≠ x → ∃ w, ρ[y]? = some w ∧ STyped Γ y w) :
+    ∀ y ∈ V, ∃ w, (ρ.insert x v)[y]? = some w ∧ STyped Γ y w := fun y hy => by
+  by_cases h : x = y
+  · subst h
+    exact ⟨v, by simp, hx⟩
+  · obtain ⟨w, hw, ht⟩ := hold y hy (Ne.symm h)
+    exact ⟨w, by simp [Std.HashMap.getElem?_insert, h, hw], ht⟩
+
+omit iDE iBE iLB iHB iSF iHI iHa iW in
+/-- An output `init` passes the annotation check when its value's annotations agree with `Γ` and
+    the rest passes it against `Γ` extended with the defined name. -/
+private theorem init_out {Γ : VarTyping P} {x' : P.Ident} {T : P.Ty} {e' : ExprOrNondet P}
+    {out : PStmts P} (he : ∀ p ∈ e'.getTypedVars, Γ p.1 = some p.2)
+    (hr : Block.fvarTypesWellAnnotated (Γ.extend [(x', T)]) out) :
+    Block.fvarTypesWellAnnotated Γ (mkInit x' T e' :: out) :=
+  ⟨fun z U hz => he (z, U) (by simpa [mkInit, HasTypedVarsImp.typedReadVars,
+      CmdExt.typedReadVars, Cmd.getTypedVars] using hz),
+    by simpa [Stmt.typedDefinedVars, HasTypedVarsImp.typedDefinedVars, CmdExt.typedDefinedVars,
+      Cmd.typedDefinedVars, mkInit] using hr⟩
+
+omit iLB iHF iSF iHI iHFs iW in
+/-- Extending `Γ` at a name `x'` outside `Dd` and the avoided names keeps `Γ` a typing of names of
+    `x' :: Dd`, outside the avoided names, under which the current values of names other than `x`
+    still agree. -/
+private theorem fresh_step {Γ : VarTyping P} {Dd A V : List P.Ident} {x' : P.Ident}
+    (hΓ : ∀ y, (Γ y).isSome → y ∈ Dd) (hDd : ∀ y ∈ Dd, y ∉ A) (hfr : x' ∉ Dd) (hy : x' ∉ A)
+    (hold : ∀ y ∈ V, y ≠ x → ∃ w, ρ[y]? = some w ∧ STyped Γ y w) :
+    (∀ T z, ((Γ.extend [(x', T)]) z).isSome → z ∈ x' :: Dd) ∧
+    (∀ z ∈ x' :: Dd, z ∉ A) ∧
+    (∀ T, ∀ y ∈ V, y ≠ x → ∃ w, ρ[y]? = some w ∧ STyped (Γ.extend [(x', T)]) y w) := by
+  refine ⟨fun T z hz => ?_, fun z hz => (List.mem_cons.1 hz).elim (· ▸ hy) (hDd z),
+    fun T y hy' hyx => (hold y hy' hyx).imp fun _ ⟨h1, h2⟩ => ⟨h1, STyped.extend hΓ hfr h2⟩⟩
+  by_cases hzx : z = x'
+  · exact hzx ▸ .head _
+  · rw [VarTyping.extend_of_not_mem (by simpa using hzx)] at hz
+    exact .tail _ (hΓ z hz)
+
+include iLId iLFvs in
+/-- **The traversal's output passes the annotation check** against a typing `Γ` of names of `Dd`,
+    when the names of `Dd` are not avoided, the identifiers of the list are, and the current
+    value of every free variable of the list agrees with `Γ`. -/
+private theorem ssaList_fvarTypesWellAnnotated (ss : PStmts P) :
+    ∀ {s s' : SSt P} {out : PStmts P}, ssaList ss s = .ok (out, s') →
+    ∀ {Γ : VarTyping P} {Dd : List P.Ident}, NamesOK s.avoid.toList Dd s.next →
+    (∀ y, (Γ y).isSome → y ∈ Dd) → (∀ y ∈ Dd, y ∉ s.avoid.toList) →
+    (∀ x ∈ Block.idents ss, x ∈ s.avoid.toList) →
+    (∀ x ∈ Block.freeVars ss, ∃ v, s.ρ[x]? = some v ∧ STyped Γ x v) →
+    Block.fvarTypesWellAnnotated Γ out := by
+  intro s s' out h
+  refine no_implicit_lambda% (ssaList_ind (fun _ _ _ _ _ _ _ _ => trivial)
+    ?initDet ?initNondet ?setDet ?setNondet ?_ ?_ ?_ ?_ h)
+  case' initDet => intro x ty e _ rest s _ _ _ _ _ h1 ih Γ Dd hN hΓ hDd hid hA
+  case' setDet => intro x e _ rest s ty _ _ _ _ _ _ h1 ih Γ Dd hN hΓ hDd hid hA
+  case initDet | setDet =>
+    have hfe : ∀ y ∈ HasFvars.getFvars e, ∃ v, s.ρ[y]? = some v ∧ STyped Γ y v := fun y hy =>
+      hA y (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hy])
+    have hold : ∀ y ∈ Block.freeVars rest, y ≠ x → ∃ v, s.ρ[y]? = some v ∧ STyped Γ y v :=
+      fun y hy hne => hA y (by simp [Block.freeVars, Stmt.freeVars, hy, hne])
+    have hx : x ∈ s.avoid.toList := hid x (by simp [Block.idents, Stmt.idents])
+    have hidr : ∀ z ∈ Block.idents rest, z ∈ s.avoid.toList := fun z hz =>
+      hid z (by simp [Block.idents, hz])
+    rcases assignVal_ok h1 with ⟨b, _, -, hf, rfl, rfl⟩ | ⟨y, hy, hc, rfl, rfl, rfl⟩ |
+      ⟨_, hf, rfl, rfl⟩
+    case inr.inl =>
+      obtain ⟨p, hp, hpe⟩ := List.any_eq_true.1 hc
+      simp only [Bool.and_eq_true, beq_iff_eq] at hpe
+      obtain ⟨rfl, hpt⟩ := hpe
+      have hΓy : Γ p.1 = some ty := WPLang.tyBEq_eq hpt ▸ foldE_typed _ e hfe p hp
+      have hne : p.1 ≠ x := fun he => hDd p.1 (hΓ p.1 (by simp [hΓy])) (he ▸ hx)
+      exact ih hN hΓ hDd hidr (STyped.assign ⟨hne, fun T hT => by cases hT; exact hΓy⟩ hold)
+    all_goals
+      obtain ⟨j, hj, rfl, hy, rfl⟩ := sFresh_ok hf
+      obtain ⟨hΓ', hDd', hold'⟩ := fresh_step (x := x) hΓ hDd (hN.fresh_not_mem hj hy) hy hold
+    · exact init_out
+        (fun p hp => (typed_lit b (by simpa [ExprOrNondet.getTypedVars] using hp)).elim)
+        (ih (hN.add_fresh _ hj) (hΓ' _) hDd' hidr
+          (STyped.assign ⟨_, rfl, by simp [VarTyping.extend]⟩ (hold' _)))
+    · exact init_out
+        (fun p hp => foldE_typed _ e hfe p (by simpa [ExprOrNondet.getTypedVars] using hp))
+        (ih (hN.add_fresh _ hj) (hΓ' ty) hDd' hidr
+          (STyped.assign ⟨fun he => hy (by rw [he]; exact hx),
+            fun T hT => by cases hT; simp [VarTyping.extend]⟩ (hold' ty)))
+  case' initNondet => intro x ty _ rest s _ _ _ _ h1 ih Γ Dd hN hΓ hDd hid hA
+  case' setNondet => intro x _ rest s ty _ _ _ _ _ h1 ih Γ Dd hN hΓ hDd hid hA
+  case initNondet | setNondet =>
+    have hx : x ∈ s.avoid.toList := hid x (by simp [Block.idents, Stmt.idents])
+    obtain ⟨j, hj, rfl, hy, rfl⟩ := sFresh_ok h1
+    obtain ⟨hΓ', hDd', hold'⟩ := fresh_step (x := x) (V := Block.freeVars rest) hΓ hDd
+      (hN.fresh_not_mem hj hy) hy
+      fun z hz hzx => hA z (by simp [Block.freeVars, Stmt.freeVars, hz, hzx])
+    exact init_out (fun p hp => by simp [ExprOrNondet.getTypedVars] at hp)
+      (ih (hN.add_fresh _ hj) (hΓ' ty) hDd' (fun z hz => hid z (by simp [Block.idents, hz]))
+        (STyped.assign ⟨fun he => hy (by rw [he]; exact hx),
+          fun T hT => by cases hT; simp [VarTyping.extend]⟩ (hold' ty)))
+  · intro l a md rest s out s' ih Γ Dd hN hΓ hDd hid hA
+    have hr := ih hN hΓ hDd (fun z hz => hid z (by simp [Block.idents, hz]))
+      fun y hy => hA y (by simp [Block.freeVars, Stmt.freeVars, hy])
+    have hf := foldE_typed s.ρ a fun y hy =>
+      hA y (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hy])
+    split
+    · exact hr
+    · exact ⟨fun z T hz => hf (z, T) (by simpa [HasTypedVarsImp.typedReadVars,
+        CmdExt.typedReadVars, Cmd.getTypedVars] using hz),
+        by simp only [Stmt.typedDefinedVars, HasTypedVarsImp.typedDefinedVars,
+          CmdExt.typedDefinedVars, Cmd.typedDefinedVars]; exact hr⟩
+  · intro mk l e md rest s out s' hmk _ ih Γ Dd hN hΓ hDd hid hA
+    have hr := ih hN hΓ hDd (fun z hz => hid z (by rcases hmk with rfl | rfl <;>
+        simp [Block.idents, hz]))
+      fun y hy => hA y (by rcases hmk with rfl | rfl <;> simp [Block.freeVars, Stmt.freeVars, hy])
+    have hf := renM'_typed (ρ := s.ρ) e fun y hy =>
+      hA y (by rcases hmk with rfl | rfl <;> simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hy])
+    rcases hmk with rfl | rfl <;>
+      exact ⟨fun z T hz => hf (z, T) (by simpa [HasTypedVarsImp.typedReadVars,
+        CmdExt.typedReadVars, Cmd.getTypedVars] using hz),
+        by simp only [Stmt.typedDefinedVars, HasTypedVarsImp.typedDefinedVars,
+          CmdExt.typedDefinedVars, Cmd.typedDefinedVars]; exact hr⟩
+  · intro tss ess md s t sT sU e out s' hT ihT hU _ ihE h1 h2 h3 Γ Dd hN hΓ hDd hid hA
+    obtain ⟨⟨ha, hn, -⟩, hρ⟩ := undoTo_frame (ssaList_frame _ hT) hU
+    have rT := ihT hN hΓ hDd (fun z hz => hid z (by simp [Block.idents, Stmt.idents, hz]))
+      fun y hy => hA y (by simp [Block.freeVars, Stmt.freeVars, hy])
+    have rE := ihE (fun y hy b j hj he => ha ▸ hN y hy b j (Nat.le_trans hn hj) he) hΓ
+      (fun z hz => ha ▸ hDd z hz) (fun z hz => ha ▸ hid z (by simp [Block.idents, Stmt.idents, hz]))
+      fun y hy => hρ y ▸ hA y (by simp [Block.freeVars, Stmt.freeVars, hy])
+    by_cases ht : t = [] <;> by_cases he : e = []
+    · rw [h1 ht]; exact rE
+    · rw [h1 ht]; exact rE
+    · rw [h2 ht he]; exact rT
+    · rw [h3 ht he]
+      exact ⟨⟨fun _ _ hz => by simp [ExprOrNondet.getTypedVars] at hz, rT, rE⟩, trivial⟩
+  · intro tc md rest s out s' ih Γ Dd hN hΓ hDd hid hA
+    exact ih hN hΓ hDd (fun z hz => hid z (by simp [Block.idents, hz]))
+      fun y hy => hA y (by simp [Block.freeVars, Stmt.freeVars, hy])
+
+include iLId iLFvs in
+/-- **The SSA output passes the annotation check** against a typing `Γ` that gives the entry
+    name of every free variable the type `tys` records for it and types only entry names, on a
+    guarded program whose free variables are names of `xs` or of the aliases `al`. -/
+theorem ssaEntry_fvarTypesWellAnnotated {G : IdSet P} {tys : Tys P} {xs : List P.Ident}
+    {al : List (P.Ident × P.Ident)} {lay : PStmts P} {ρ0 : Ren P} {so : SOut P}
+    (h : ssaEntry G tys xs al lay = .ok (ρ0, so)) (hal : ∀ q ∈ al, q.2 ∈ xs)
+    (hfv : ∀ x ∈ Block.freeVars lay, x ∈ xs ∨ x ∈ al.map (·.1)) {Γ : VarTyping P}
+    (hty : ∀ x ∈ Block.freeVars lay, ∀ T, tys.get? x = some T → Γ (ρ0.get x) = some T)
+    (hdom : ∀ y, (Γ y).isSome → ∃ x ∈ Block.freeVars lay, y = ρ0.get x) :
+    Block.fvarTypesWellAnnotated Γ so.out := by
+  obtain ⟨rfl, hb⟩ := ssaEntry_ok h
+  obtain ⟨s1, h1, -⟩ := ssaBody_ok hb
+  have hspec := ssaEntryRen_spec (inputAvoid G tys lay) xs al 0 hal
+  have hk := hspec.2.2
+  have hidA : ∀ x ∈ Block.idents lay, x ∈ (inputAvoid G tys lay).toList := fun x hx => by
+    simp [inputAvoid, AvoidSet.toList, IdSet.ofList, hx]
+  have hget : ∀ x ∈ Block.freeVars lay,
+      ∃ q ∈ (ssaEntryRen (inputAvoid G tys lay) xs al 0).1, q.1 = x ∧
+        (ssaEntryRen (inputAvoid G tys lay) xs al 0).1.get x = q.2 ∧
+        q.2 ∉ (inputAvoid G tys lay).toList := fun x hx => by
+    obtain ⟨q, hq, hqx⟩ := List.mem_map.1 (hk x (hfv x hx))
+    obtain ⟨p, hp⟩ := Option.isSome_iff_exists.1
+      ((List.find?_isSome (p := (·.1 == x))).2 ⟨q, hq, by simp [hqx]⟩)
+    have hpx : p.1 = x := by simpa using List.find?_some hp
+    have hpm := List.mem_of_find?_eq_some hp
+    obtain ⟨_, _, _, _, _, hn⟩ := (hspec.2.1 p hpm).1
+    exact ⟨p, hpm, hpx, by simp [Ren.get, hp], hn⟩
+  refine ssaList_fvarTypesWellAnnotated _ h1 (Dd := (Block.freeVars lay).map
+      (ssaEntryRen (inputAvoid G tys lay) xs al 0).1.get)
+    (ssaEntryRen_namesOK _ _ _ hal fun y hy => .inl ?_) (fun y hy => ?_) (fun y hy => ?_)
+    hidA fun x hx => ?_
+  · obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hy
+    obtain ⟨q, hq, -, he, -⟩ := hget x hx
+    exact he ▸ List.mem_map_of_mem hq
+  · obtain ⟨x, hx, rfl⟩ := hdom y hy
+    exact List.mem_map_of_mem hx
+  · obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hy
+    obtain ⟨q, -, -, he, hn⟩ := hget x hx
+    exact he ▸ hn
+  · obtain ⟨q, hq, hqx, he, hn⟩ := hget x hx
+    obtain ⟨p, hp⟩ := Option.isSome_iff_exists.1
+      ((List.find?_isSome (p := (·.1 == x))).2 ⟨q, hq, by simp [hqx]⟩)
+    rw [entryMap_lookup, hp]
+    have hp2 : p.2 = (ssaEntryRen (inputAvoid G tys lay) xs al 0).1.get x := by
+      simp [Ren.get, hp]
+    refine ⟨_, rfl, fun hpx => ?_, fun T hT => hp2 ▸ hty x hx T hT⟩
+    exact hn (he ▸ hp2 ▸ hpx ▸ hidA x (Block.mem_idents_of_mem_freeVars lay hx))
 
 end -- public section
 

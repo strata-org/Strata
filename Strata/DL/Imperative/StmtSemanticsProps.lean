@@ -62,6 +62,8 @@ Key results for `StepStmtE` / `StepStmtStarE`:
   `Config.storeWellDefined_step_evalCmdE` and
   `Config.storeWellDefined_star_evalCmdE` specialize this preservation to the
   evaluator value law at the run's unchanged factory.
+- `Config.typedAt_star_ofE`: a traced run keeps a slot defined in every store of the
+  starting configuration at its type, when commands do.
 - `StepStmtE.imp` and `StepStmtStarE.imp`: `StepStmtE` and `StepStmtStarE` are
   monotone in their command relation.
 - `stmts_prefix_terminal_appendE`, `stmts_prefix_exiting_appendE`, and
@@ -1317,6 +1319,52 @@ theorem Config.storeWellDefined_star_ofE
   | refl => exact h_inv
   | step _ _ _ _ _ h_step _ ih =>
     exact ih (Config.storeWellDefined_stepE_of h_cmd h_step h_inv)
+
+/-- A single traced event step keeps the operative store's slot at `y` holding a value of
+type `ty`, given that every store of the configuration defines `y` and that commands keep
+a typed slot at its type (`h_cmd`). -/
+private theorem Config.typedAt_stepE_of
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT}
+        {y : P.Ident} {ty : P.Ty},
+      EvalCmd f σ c σ' emitted →
+      (∃ v, σ y = some v ∧ HasVal.valueOfTy f v ty) →
+      ∃ v, σ' y = some v ∧ HasVal.valueOfTy f v ty)
+    {cfg cfg' : Config P CmdT} {tr : List EventT} {y : P.Ident} {ty : P.Ty}
+    (h_step : StepStmtE P EvalCmd cfg tr cfg')
+    (h_def : Config.varDefined y cfg)
+    (h_ty : ∃ v, cfg.getEnv.store y = some v ∧ HasVal.valueOfTy cfg.getEnv.factory v ty) :
+    ∃ v, cfg'.getEnv.store y = some v ∧ HasVal.valueOfTy cfg'.getEnv.factory v ty := by
+  induction h_step with
+  | step_cmd h_eval => exact h_cmd h_eval h_ty
+  | step_seq_inner _ ih => exact ih h_def h_ty
+  | step_block_body _ ih => exact ih h_def.2 h_ty
+  | step_block_done | step_block_exit_match _ | step_block_exit_mismatch _ =>
+    simpa only [Config.getEnv, projectStore, h_def.1 y rfl, ite_true] using h_ty
+  | _ => exact h_ty
+
+/-- A traced run keeps the operative store's slot at `y` holding a value of type `ty`, given
+that every store of the starting configuration defines `y`, that commands never undefine a
+slot (`h_def`), and that commands keep a typed slot at its type (`h_cmd`). -/
+theorem Config.typedAt_star_ofE
+    [HasFvar P] [HasFvars P] [DecidableEq P.Ident]
+    (h_def : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT}
+        {y : P.Ident},
+      EvalCmd f σ c σ' emitted → (σ y).isSome = true → (σ' y).isSome = true)
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT}
+        {y : P.Ident} {ty : P.Ty},
+      EvalCmd f σ c σ' emitted →
+      (∃ v, σ y = some v ∧ HasVal.valueOfTy f v ty) →
+      ∃ v, σ' y = some v ∧ HasVal.valueOfTy f v ty)
+    {cfg cfg' : Config P CmdT} {tr : List EventT} {y : P.Ident} {ty : P.Ty}
+    (h_run : StepStmtStarE P EvalCmd cfg tr cfg')
+    (h_defd : Config.varDefined y cfg)
+    (h_ty : ∃ v, cfg.getEnv.store y = some v ∧ HasVal.valueOfTy cfg.getEnv.factory v ty) :
+    ∃ v, cfg'.getEnv.store y = some v ∧ HasVal.valueOfTy cfg'.getEnv.factory v ty := by
+  induction h_run with
+  | refl => exact h_ty
+  | step _ _ _ _ _ h_step _ ih =>
+    exact ih (Config.varsDefined_stepE_of h_def h_step h_defd)
+      (Config.typedAt_stepE_of h_cmd h_step h_defd h_ty)
 
 /-- A base-command event step preserves store well-formedness using the
 value law at the step's unchanged factory. -/

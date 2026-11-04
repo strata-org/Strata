@@ -143,14 +143,20 @@ variable [HasFvar P] [HasFvars P] [HasVal P]
 
 /-- Shared epilogue of the call rule: read the callee's output formals in its final
     store and write them back positionally to the caller's `out`/`inout` variables,
-    which must be distinct. -/
+    which must be distinct.  Each value written back must have the type of the value the
+    caller variable held (`HasVal.valueOfStoredTy`), as for `set`.  This restricts the
+    semantics: a call whose output value has another type than the caller variable has no
+    exit, so its runs stop at the call.  It keeps the caller's variables at their types
+    across the call.  No theorem yet shows that type-checked programs never reach such a
+    call. -/
 @[expose] def CallExit (fac : P.Factory) (σ : SemanticStore P)
     (p : Procedure P (CmdExt P) Hdr) (callArgs : List (CallArg P))
     (σEnd σ' : SemanticStore P) : Prop :=
   (CallArg.getLhs callArgs).Nodup ∧
   ∃ outputVals,
     ReadValues fac σEnd (ProcedureHeader.outputParams (P := P) p.header) outputVals ∧
-    UpdateStates σ (CallArg.getLhs callArgs) outputVals σ'
+    UpdateStates σ (CallArg.getLhs callArgs) outputVals σ' ∧
+    List.Rel₂ (HasVal.valueOfStoredTy (P := P) fac σ) (CallArg.getLhs callArgs) outputVals
 
 end Entry
 

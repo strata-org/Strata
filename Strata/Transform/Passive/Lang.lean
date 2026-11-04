@@ -59,11 +59,14 @@ class WPOps (P : PureExpr) where
   boolLit? : P.Expr → Option Bool
   /-- Substitution of the free variables by a lookup function. -/
   substFn : P.Expr → (P.Ident → Option P.Expr) → P.Expr
+  /-- Equality of types, decided. -/
+  tyBEq : P.Ty → P.Ty → Bool
 
 /-- The laws of the operations of `WPOps` that the correctness proofs of the WP and SSA phases
     need, beyond the mainline classes: the free variables of the literals, of a conditional and of
     a substitution; the evaluation of a conditional; the views and `substFn` agreeing with the
-    operations they view; and the empty substitution. -/
+    operations they view; the empty substitution; and the annotated free variables of a
+    conditional and of a substitution, and `tyBEq` deciding type equality. -/
 class WPLang (P : PureExpr) [DecidableEq P.Ident] [HasBool P] [HasFvar P] [HasFvars P]
     [HasSubstFvar P] extends WPOps P where
   getFvars_tt : HasFvars.getFvars (HasBool.tt (P := P)) = []
@@ -96,6 +99,17 @@ class WPLang (P : PureExpr) [DecidableEq P.Ident] [HasBool P] [HasFvar P] [HasFv
       substFn e look = HasSubstFvar.substFvars e sm
   /-- Substituting by the empty map leaves the expression unchanged. -/
   substFvars_nil : ∀ e : P.Expr, HasSubstFvar.substFvars e [] = e
+  /-- `tyBEq` decides the equality of types. -/
+  tyBEq_eq : ∀ {a b : P.Ty}, tyBEq a b = true → a = b
+  /-- The annotated free-variable occurrences of a conditional are those of its parts. -/
+  getTypedFvars_ite : ∀ c t e p, p ∈ HasFvars.getTypedFvars (P := P) (ite c t e) →
+    p ∈ HasFvars.getTypedFvars c ∨ p ∈ HasFvars.getTypedFvars t ∨ p ∈ HasFvars.getTypedFvars e
+  /-- An annotated free-variable occurrence of a substitution is one of the expression's, at a
+      variable the substitution leaves alone, or one of the image of a substituted variable. -/
+  getTypedFvars_substFn : ∀ (e : P.Expr) (g : P.Ident → Option P.Expr) p,
+    p ∈ HasFvars.getTypedFvars (substFn e g) →
+      (p ∈ HasFvars.getTypedFvars e ∧ g p.1 = none) ∨
+      ∃ z v, z ∈ HasFvars.getFvars e ∧ g z = some v ∧ p ∈ HasFvars.getTypedFvars v
 
 variable {P : PureExpr} [DecidableEq P.Ident] [HasBool P] [HasFvar P] [HasFvars P]
   [HasSubstFvar P]

@@ -78,6 +78,13 @@ structure InitEnvWF (params : InitEnvWFParams)
     params.declaredFuncs ⟨s, ()⟩ = Bool.true
   /-- Every init-type the statement declares has a value witness in `ρ`'s factory. -/
   initTypesInhabited : Stmt.InitTypesInhabited (P := Expression) (C := Command) ρ.factory s
+  /-- The type annotations on the statement's free-variable occurrences agree with the types
+      of the values the entry store holds, and with the declared types of the statement's own
+      definitions.  No value has a sort with a type variable, so no typing meets this field
+      when an annotation that mentions one is on a variable no earlier `init` of the
+      statement defines, and an `init` whose declared type mentions one fails
+      `initTypesInhabited`. -/
+  fvarTypesOk : ∃ Γ, StoreHasTyping ρ.factory ρ.store Γ ∧ Stmt.fvarTypesWellAnnotated Γ s
 
 /-- Block-level analog of `InitEnvWF`: well-formedness for executing a block of
     statements `bss` from env `ρ`.  The factory is read from `ρ.factory`. -/

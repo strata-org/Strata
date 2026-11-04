@@ -223,7 +223,7 @@ structure BlockInitEnvWF {P : PureExpr} [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
     [HasIdent P] [HasOps P] [DecidableEq P.Ident]
     {CmdT : Type} [HasVarsImp P CmdT] [HasOpsImp P CmdT]
-    [HasInitTypesImp P CmdT]
+    [HasInitTypesImp P CmdT] [HasTypedVarsImp P CmdT]
     (params : InitEnvWFParams P)
     (ss : List (Stmt P CmdT)) (ρ : Env P) : Prop
     extends WellFormedSemanticEval (P := P) ρ.factory where
@@ -251,6 +251,14 @@ structure BlockInitEnvWF {P : PureExpr} [HasBool P] [HasBoolOps P]
     (fun x => (ρ.store x).isSome) params.declaredFuncs ss = true
   /-- Every init-type the block declares has a value witness in the factory. -/
   initTypesInhabited : Block.InitTypesInhabited (P := P) (C := CmdT) ρ.factory ss
+  /-- The type annotations on the block's free-variable occurrences agree with the types of
+      the values the entry store holds, and with the declared types of the block's own
+      definitions.  No value has a sort with a type variable, so no typing meets this field
+      when an annotation that mentions one is on a variable no earlier `init` of the block
+      defines, and an `init` whose declared type mentions one fails `initTypesInhabited`.
+      Either way, a procedure whose body has such an annotation has no entries, and every
+      claim over its entries holds vacuously. -/
+  fvarTypesOk : ∃ Γ, StoreHasTyping ρ.factory ρ.store Γ ∧ Block.fvarTypesWellAnnotated Γ ss
 
 /-- Initial-environment well-formedness for a deterministic CFG. Unlike the
 structured block gate, this gate has no list-ordered `defUseOk`; arbitrary CFG

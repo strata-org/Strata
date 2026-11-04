@@ -141,7 +141,9 @@ private theorem callCmd_sem (fac : Expression.Factory) :
     ⟨(by simp [Imperative.CallArg.getLhs]), [(ttV fac)],
       .read_some (by simp [projectStore, frame, σ2, bind, yId])
         (HasBool.boolIsVal fac).1 .read_none,
-      .update_some (updateState_bind (v' := (ffV fac)) (by simp [σ0, bind])) .update_none⟩
+      .update_some (updateState_bind (v' := (ffV fac)) (by simp [σ0, bind])) .update_none,
+      .cons ⟨(ffV fac), HasBool.boolTy, (by simp [σ0, bind]), (HasBool.boolIsValOfTy fac).2,
+        (HasBool.boolIsValOfTy fac).1⟩ .nil⟩
   simpa [Calls.defaultAssertEvents, Calls.checksAtCall, callee, callCmd] using h
 
 /-- The call's callee body ends with the body-local `t` dropped and `y ↦ true`. -/

@@ -53,6 +53,11 @@ Key results:
     `Block.hoistP_loopBodyNoInits`).
   * Def-use preservation — `LoopInitHoistWF.Block.liftInitsInLoopBody_defUseWellFormed`
     and `LoopInitHoistWF.Block.hoistLoopPrefixInits_defUseWellFormed`.
+  * Annotation-check preservation —
+    `LoopInitHoistWF.Block.hoistLoopPrefixInits_fvarTypesWellAnnotated`: when the
+    source's init names are distinct, the hoisted program passes the free-variable
+    annotation check against every typing that the source passes it against and that
+    types none of those names.
   * Core bridge — `Core.hoistLoopPrefixInits_eq_some` and
     `Core.LoopInitHoist.blockInitEnvWF`, which transports `BlockInitEnvWF` to
     the Core wrapper's output. -/
@@ -1870,6 +1875,294 @@ theorem Block.hoistLoopPrefixInits_defUseWellFormed {P : PureExpr}
   Block.hoistLoopPrefixInits_defUseWellFormed_rel ss defined defined declared
     ⟨(fun _ h => h), fun _ _ => rfl⟩ hdu huniq
 
+/-! ## The annotation check of the hoisted program
+
+The hoisted program is checked against a typing `Γt` that types every variable the source's
+typing `Γs` types: a prelude `init y : T := *` adds `y : T` to `Γt` before the loop, where the
+source adds it at the body `init` the pass rewrites to `set y`.  `uniqueInits` keeps the
+prelude names distinct and away from the variables `Γs` types. -/
+
+section Annotations
+
+variable {P : PureExpr} [HasFvars P]
+
+omit [HasFvars P] in
+/-- Extending `Γa` with definitions whose types `Γ` gives keeps `Γ` typing every variable
+    `Γa` types. -/
+private theorem extend_le_of_typed {Γa Γ : VarTyping P}
+    (hle : ∀ x ty, Γa x = some ty → Γ x = some ty) (d : List (P.Ident × P.Ty))
+    (hd : ∀ p ∈ d, Γ p.1 = some p.2) :
+    ∀ x ty, Γa.extend d x = some ty → Γ x = some ty := by
+  intro x ty h
+  cases hf : d.find? (fun e => e.1 == x) with
+  | some e =>
+    simp only [VarTyping.extend, hf, Option.some.injEq] at h
+    have hx : e.1 = x := by simpa using List.find?_some hf
+    rw [← hx, ← h]
+    exact hd e (List.mem_of_find?_eq_some hf)
+  | none =>
+    simp only [VarTyping.extend, hf] at h
+    exact hle x ty h
+
+omit [HasFvars P] in
+/-- Extending a typing one definition at a time leaves the variables the definitions do not
+    name unchanged. -/
+private theorem foldl_extend_of_not_mem (L : List (P.Ident × P.Ty)) (Γ : VarTyping P)
+    {x : P.Ident} (hx : x ∉ L.map Prod.fst) :
+    L.foldl (fun Γ p => Γ.extend [p]) Γ x = Γ x := by
+  induction L generalizing Γ with
+  | nil => rfl
+  | cons q L ih =>
+    simp only [List.map_cons, List.mem_cons, not_or] at hx
+    simp only [List.foldl_cons]
+    rw [ih _ hx.2]
+    exact VarTyping.extend_of_not_mem (by simpa using hx.1)
+
+omit [HasFvars P] in
+/-- Extending a typing one definition at a time, with distinct names, gives each name its
+    declared type. -/
+private theorem foldl_extend_of_mem (L : List (P.Ident × P.Ty)) (Γ : VarTyping P)
+    (hnd : (L.map Prod.fst).Nodup) {p : P.Ident × P.Ty} (hp : p ∈ L) :
+    L.foldl (fun Γ p => Γ.extend [p]) Γ p.1 = some p.2 := by
+  induction L generalizing Γ with
+  | nil => cases hp
+  | cons q L ih =>
+    simp only [List.map_cons, List.nodup_cons] at hnd
+    simp only [List.foldl_cons]
+    rcases List.mem_cons.1 hp with rfl | hp
+    · rw [foldl_extend_of_not_mem L _ hnd.1]
+      simp [VarTyping.extend]
+    · exact ih _ hnd.2 hp
+
+omit [HasFvars P] in
+/-- The names of the typed inits of a command list are its defined variables. -/
+private theorem cmds_typedInitVars_fst (cs : List (Cmd P)) :
+    (LoopInitHoistProducerProps.Cmds.typedInitVars cs).map Prod.fst = Cmds.definedVars cs := by
+  induction cs with
+  | nil => simp [LoopInitHoistProducerProps.Cmds.typedInitVars, Cmds.definedVars]
+  | cons c cs ih =>
+    cases c <;> simp [LoopInitHoistProducerProps.Cmds.typedInitVars, Cmds.definedVars,
+      Cmd.definedVars, ih]
+
+/-- A prelude of commands that read no annotated variable passes the annotation check, followed
+    by `zs`, when `zs` passes it against the typing extended with the prelude's typed inits. -/
+private theorem prelude_fvarTypes (cs : List (Cmd P)) (hcs : ∀ c ∈ cs, Cmd.getTypedVars c = [])
+    (Γ : VarTyping P) (zs : List (Stmt P (Cmd P)))
+    (h : Block.fvarTypesWellAnnotated
+      ((LoopInitHoistProducerProps.Cmds.typedInitVars cs).foldl (fun Γ p => Γ.extend [p]) Γ)
+      zs) :
+    Block.fvarTypesWellAnnotated Γ (cs.map Stmt.cmd ++ zs) := by
+  induction cs generalizing Γ with
+  | nil => exact h
+  | cons c cs ih =>
+    have hc := hcs c List.mem_cons_self
+    have ih' := ih (fun c' hc' => hcs c' (List.mem_cons_of_mem _ hc'))
+    refine ⟨fun x ty hm => by
+      simp [HasTypedVarsImp.typedReadVars, hc] at hm, ?_⟩
+    cases c with
+    | init y ty e md => exact ih' _ h
+    | set | assert | assume | cover => exact ih' _ h
+
+/-- The typed definitions of a statement are among its init names. -/
+private theorem typedDefinedVars_mem_initVars (s : Stmt P (Cmd P)) :
+    ∀ p ∈ Stmt.typedDefinedVars s, p.1 ∈ Stmt.initVars s := by
+  intro p hp
+  match s with
+  | .cmd (.init y ty e md) =>
+    simp only [Stmt.typedDefinedVars, HasTypedVarsImp.typedDefinedVars, Cmd.typedDefinedVars,
+      List.mem_singleton] at hp
+    subst hp
+    simp [Stmt.initVars, Stmt.definedVars, HasVarsImp.definedVars, Cmd.definedVars]
+  | .cmd (.set ..) | .cmd (.assert ..) | .cmd (.assume ..) | .cmd (.cover ..) | .block ..
+  | .ite .. | .loop .. | .exit .. | .typeDecl .. =>
+    simp [Stmt.typedDefinedVars, HasTypedVarsImp.typedDefinedVars, Cmd.typedDefinedVars] at hp
+
+mutual
+/-- The lift of a loop body passes the annotation check against a typing `Γ` that types
+    every variable `Γa` types and gives every lifted init its declared type, when the body
+    passes it against `Γa`. -/
+private theorem Stmt.lift_fvarTypes (s : Stmt P (Cmd P)) (Γa Γ : VarTyping P)
+    (hle : ∀ x ty, Γa x = some ty → Γ x = some ty)
+    (hty : ∀ p ∈ LoopInitHoistProducerProps.Stmt.typedInitVars s, Γ p.1 = some p.2)
+    (h : Stmt.fvarTypesWellAnnotated Γa s) :
+    (∀ x ty, Γa.extend (Stmt.typedDefinedVars s) x = some ty → Γ x = some ty) ∧
+    ∀ ys, Block.fvarTypesWellAnnotated Γ ys →
+      Block.fvarTypesWellAnnotated Γ ((Stmt.liftInitsInLoopBody s).2 ++ ys) := by
+  match s with
+  | .cmd (.init y ty rhs md) =>
+    simp only [Stmt.liftInitsInLoopBody, List.singleton_append, Block.fvarTypesWellAnnotated,
+      Stmt.fvarTypesWellAnnotated] at h ⊢
+    exact ⟨extend_le_of_typed hle _ hty, fun ys hys => ⟨VarTyping.annotates_mono hle h, hys⟩⟩
+  | .cmd (.set ..) | .cmd (.assert ..) | .cmd (.assume ..) | .cmd (.cover ..) =>
+    simp only [Stmt.liftInitsInLoopBody, List.singleton_append, Block.fvarTypesWellAnnotated,
+      Stmt.fvarTypesWellAnnotated] at h ⊢
+    exact ⟨hle, fun ys hys => ⟨VarTyping.annotates_mono hle h, hys⟩⟩
+  | .block l bss md =>
+    have hb := Block.lift_fvarTypes bss Γa Γ hle hty h [] trivial
+    rw [List.append_nil] at hb
+    refine ⟨hle, fun ys hys => ?_⟩
+    rw [liftP_block_residual]
+    exact ⟨hb, hys⟩
+  | .ite g tss ess md =>
+    simp only [Stmt.fvarTypesWellAnnotated] at h
+    have ht := Block.lift_fvarTypes tss Γa Γ hle (fun p hp => hty p (List.mem_append_left _ hp))
+      h.2.1 [] trivial
+    have he := Block.lift_fvarTypes ess Γa Γ hle (fun p hp => hty p (List.mem_append_right _ hp))
+      h.2.2 [] trivial
+    rw [List.append_nil] at ht he
+    refine ⟨hle, fun ys hys => ?_⟩
+    rw [liftP_ite_residual]
+    exact ⟨⟨VarTyping.annotates_mono hle h.1, ht, he⟩, hys⟩
+  | .loop g m inv body md =>
+    simp only [Stmt.liftInitsInLoopBody, List.singleton_append, Block.fvarTypesWellAnnotated]
+    exact ⟨hle, fun ys hys => ⟨Stmt.fvarTypesWellAnnotated_mono _ _ _ hle h, hys⟩⟩
+  | .exit l md | .typeDecl t md =>
+    simp only [Stmt.liftInitsInLoopBody, List.singleton_append, Block.fvarTypesWellAnnotated]
+    exact ⟨hle, fun ys hys => ⟨trivial, hys⟩⟩
+  termination_by sizeOf s
+
+/-- The lift of a loop-body statement list, followed by `ys`, passes the annotation check
+    against a typing `Γ` that types every variable `Γa` types and gives every lifted init
+    its declared type, when the list passes it against `Γa` and `ys` passes it against
+    `Γ`. -/
+private theorem Block.lift_fvarTypes (ss : List (Stmt P (Cmd P))) (Γa Γ : VarTyping P)
+    (hle : ∀ x ty, Γa x = some ty → Γ x = some ty)
+    (hty : ∀ p ∈ LoopInitHoistProducerProps.Block.typedInitVars ss, Γ p.1 = some p.2)
+    (h : Block.fvarTypesWellAnnotated Γa ss) :
+    ∀ ys, Block.fvarTypesWellAnnotated Γ ys →
+      Block.fvarTypesWellAnnotated Γ ((Block.liftInitsInLoopBody ss).2 ++ ys) := by
+  match ss with
+  | [] =>
+    intro ys hys
+    simpa [Block.liftInitsInLoopBody] using hys
+  | s :: rest =>
+    intro ys hys
+    rw [liftP_cons_residual, List.append_assoc]
+    have hs := Stmt.lift_fvarTypes s Γa Γ hle (fun p hp => hty p (List.mem_append_left _ hp)) h.1
+    exact hs.2 _ (Block.lift_fvarTypes rest _ Γ hs.1
+      (fun p hp => hty p (List.mem_append_right _ hp)) h.2 ys hys)
+  termination_by sizeOf ss
+end
+
+mutual
+/-- The hoisted statement, followed by `ys`, passes the annotation check against a typing
+    `Γt` that types every variable the source's typing `Γs` types, when the statement passes
+    it against `Γs`, `Γs` types none of its init names, which are distinct, and `ys` passes it
+    against every typing that types every variable `Γs` extended with the statement's
+    definitions types. -/
+private theorem Stmt.hoist_fvarTypes (s : Stmt P (Cmd P)) (Γs Γt : VarTyping P)
+    (hle : ∀ x ty, Γs x = some ty → Γt x = some ty)
+    (hfresh : ∀ y ∈ Stmt.initVars s, Γs y = none) (hnd : (Stmt.initVars s).Nodup)
+    (h : Stmt.fvarTypesWellAnnotated Γs s) (ys : List (Stmt P (Cmd P)))
+    (hys : ∀ Γt' : VarTyping P,
+      (∀ x ty, Γs.extend (Stmt.typedDefinedVars s) x = some ty → Γt' x = some ty) →
+      Block.fvarTypesWellAnnotated Γt' ys) :
+    Block.fvarTypesWellAnnotated Γt (Stmt.hoistLoopPrefixInits s ++ ys) := by
+  match s with
+  | .cmd c =>
+    simp only [Stmt.hoistLoopPrefixInits, List.singleton_append, Block.fvarTypesWellAnnotated,
+      Stmt.fvarTypesWellAnnotated] at h ⊢
+    exact ⟨VarTyping.annotates_mono hle h, hys _ (VarTyping.extend_mono hle _)⟩
+  | .block l bss md =>
+    simp only [Stmt.hoistLoopPrefixInits, List.singleton_append, Block.fvarTypesWellAnnotated,
+      Stmt.fvarTypesWellAnnotated] at h ⊢
+    simp only [Stmt.initVars_block] at hfresh hnd
+    exact ⟨Block.hoist_fvarTypes bss Γs Γt hle hfresh hnd h, hys Γt hle⟩
+  | .ite g tss ess md =>
+    simp only [Stmt.hoistLoopPrefixInits, List.singleton_append, Block.fvarTypesWellAnnotated,
+      Stmt.fvarTypesWellAnnotated] at h ⊢
+    simp only [Stmt.initVars_ite, List.mem_append, List.nodup_append] at hfresh hnd
+    exact ⟨⟨VarTyping.annotates_mono hle h.1,
+      Block.hoist_fvarTypes tss Γs Γt hle (fun y hy => hfresh y (.inl hy)) hnd.1 h.2.1,
+      Block.hoist_fvarTypes ess Γs Γt hle (fun y hy => hfresh y (.inr hy)) hnd.2.1 h.2.2⟩,
+      hys Γt hle⟩
+  | .loop g m inv body md =>
+    simp only [Stmt.fvarTypesWellAnnotated] at h
+    obtain ⟨hg, hm, hi, hb⟩ := h
+    simp only [Stmt.initVars_loop] at hfresh hnd
+    rcases hL : Block.liftInitsInLoopBody (Block.hoistLoopPrefixInits body) with ⟨havocs, body₂⟩
+    have hperm₂ := Block.liftP_initVars_perm (Block.hoistLoopPrefixInits body)
+    rw [hL] at hperm₂
+    have hperm := hperm₂.trans (Block.hoistP_initVars_perm body)
+    have hndH : (Cmds.definedVars havocs).Nodup :=
+      (List.nodup_append.1 (hperm.nodup_iff.2 hnd)).1
+    have hmemH : ∀ y ∈ Cmds.definedVars havocs, y ∈ Block.initVars body :=
+      fun y hy => hperm.subset (List.mem_append_left _ hy)
+    have hkeys := cmds_typedInitVars_fst havocs
+    have hle₁ : ∀ x ty, Γs x = some ty →
+        (LoopInitHoistProducerProps.Cmds.typedInitVars havocs).foldl
+          (fun Γ p => Γ.extend [p]) Γt x = some ty := by
+      intro x ty hx
+      have hxn : x ∉ (LoopInitHoistProducerProps.Cmds.typedInitVars havocs).map Prod.fst := by
+        rw [hkeys]
+        intro hmem
+        rw [hfresh x (hmemH x hmem)] at hx
+        cases hx
+      rw [foldl_extend_of_not_mem _ _ hxn]
+      exact hle x ty hx
+    have hres := LoopInitHoistProducerProps.Block.liftP_typedInitVars_res
+      (Block.hoistLoopPrefixInits body)
+    rw [hL] at hres
+    have htyped : ∀ p ∈ LoopInitHoistProducerProps.Block.typedInitVars
+        (Block.hoistLoopPrefixInits body),
+        (LoopInitHoistProducerProps.Cmds.typedInitVars havocs).foldl
+          (fun Γ p => Γ.extend [p]) Γt p.1 = some p.2 := by
+      intro p hp
+      rw [← hres] at hp
+      exact foldl_extend_of_mem _ _ (hkeys ▸ hndH) hp
+    have hb₁ := Block.hoist_fvarTypes body Γs _ hle₁ hfresh hnd hb
+    have hb₂ := Block.lift_fvarTypes (Block.hoistLoopPrefixInits body) _ _ (fun _ _ h => h)
+      htyped hb₁ [] trivial
+    rw [hL, List.append_nil] at hb₂
+    simp only [Stmt.hoistLoopPrefixInits, hL, List.append_assoc]
+    refine prelude_fvarTypes havocs (fun c hc => ?_) Γt _ ?_
+    · obtain ⟨y, ty, md, rfl⟩ := LoopInitHoistProducerProps.Block.liftP_havocs_nondet _ c
+        (by rw [hL]; exact hc)
+      rfl
+    · simp only [List.singleton_append, Block.fvarTypesWellAnnotated,
+        Stmt.fvarTypesWellAnnotated]
+      exact ⟨⟨VarTyping.annotates_mono hle₁ hg, VarTyping.annotates_mono hle₁ hm,
+        VarTyping.annotates_mono hle₁ hi, hb₂⟩, hys _ hle₁⟩
+  | .exit l md | .typeDecl t md =>
+    simp only [Stmt.hoistLoopPrefixInits, List.singleton_append, Block.fvarTypesWellAnnotated]
+    exact ⟨trivial, hys Γt hle⟩
+  termination_by sizeOf s
+
+/-- The hoisted statement list passes the annotation check against a typing `Γt` that
+    types every variable the source's typing `Γs` types, when the list passes it against
+    `Γs` and `Γs` types none of its init names, which are distinct. -/
+private theorem Block.hoist_fvarTypes (ss : List (Stmt P (Cmd P))) (Γs Γt : VarTyping P)
+    (hle : ∀ x ty, Γs x = some ty → Γt x = some ty)
+    (hfresh : ∀ y ∈ Block.initVars ss, Γs y = none) (hnd : (Block.initVars ss).Nodup)
+    (h : Block.fvarTypesWellAnnotated Γs ss) :
+    Block.fvarTypesWellAnnotated Γt (Block.hoistLoopPrefixInits ss) := by
+  match ss with
+  | [] => simp [Block.hoistLoopPrefixInits, Block.fvarTypesWellAnnotated]
+  | s :: rest =>
+    rw [Block.hoistLoopPrefixInits]
+    simp only [Block.initVars_cons, List.mem_append, List.nodup_append] at hfresh hnd
+    refine Stmt.hoist_fvarTypes s Γs Γt hle (fun y hy => hfresh y (.inl hy)) hnd.1 h.1 _
+      fun Γt' hle' => Block.hoist_fvarTypes rest _ Γt' hle' (fun y hy => ?_) hnd.2.1 h.2
+    have hy' : y ∉ (Stmt.typedDefinedVars s).map Prod.fst := by
+      intro hmem
+      obtain ⟨p, hp, rfl⟩ := List.mem_map.1 hmem
+      exact hnd.2.2 _ (typedDefinedVars_mem_initVars s p hp) _ hy rfl
+    rw [VarTyping.extend_of_not_mem hy']
+    exact hfresh y (.inr hy)
+  termination_by sizeOf ss
+end
+
+/-- The loop-init hoist keeps the annotation check: the hoisted program passes it against
+    every typing the source passes it against that types none of the source's init names,
+    when those names are distinct. -/
+theorem Block.hoistLoopPrefixInits_fvarTypesWellAnnotated (ss : List (Stmt P (Cmd P)))
+    (Γ : VarTyping P) (hfresh : ∀ y ∈ Block.initVars ss, Γ y = none)
+    (huniq : Block.uniqueInits ss) (h : Block.fvarTypesWellAnnotated Γ ss) :
+    Block.fvarTypesWellAnnotated Γ (Block.hoistLoopPrefixInits ss) :=
+  Block.hoist_fvarTypes ss Γ Γ (fun _ _ h => h) hfresh huniq h
+
+end Annotations
+
 end LoopInitHoistWF
 end Imperative
 
@@ -1932,18 +2225,21 @@ theorem blockInitEnvWF {params : InitEnvWFParams}
   have hemb : embedStmts bs = ss := embedStmts_projectStmts hp
   have huniqBase : Block.uniqueInits (C := Cmd Expression) bs :=
     (Imperative.embedStmts_uniqueInits bs).mp (by rwa [hemb])
-  obtain ⟨hwf, hsv, hdefs, hdnr, hres, hdu, hfd, hinit⟩ := blockInitEnvWF_projectBase h hp
+  obtain ⟨hwf, hsv, hdefs, hdnr, hres, hdu, hfd, hinit, hty⟩ := blockInitEnvWF_projectBase h hp
   have hdu' : Block.defUseWellFormed (C := Cmd Expression)
       (fun n => (ρ.store n).isSome) params.declaredFuncs
       (Imperative.Block.hoistLoopPrefixInits bs) = Bool.true :=
     Imperative.LoopInitHoistWF.Block.hoistLoopPrefixInits_defUseWellFormed
       bs (fun n => (ρ.store n).isSome) params.declaredFuncs hdu huniqBase
-  refine Core.Logic.BlockInitEnvWF.ofBaseEmbed hwf hsv ?_ ?_ hres hdu' hfd ?_
+  refine Core.Logic.BlockInitEnvWF.ofBaseEmbed hwf hsv ?_ ?_ hres hdu' hfd ?_ ?_
   · intro n hn
     exact hdefs n ((Imperative.LoopInitHoistProducerProps.Block.hoistP_initVars_perm bs).mem_iff.mp hn)
   · intro n hn
     exact hdnr n ((Imperative.LoopInitHoistProducerProps.Block.hoistP_initVars_perm bs).mem_iff.mp hn)
   · exact Imperative.LoopInitHoistProducerProps.Block.hoistP_initTypesInhabited hinit
+  · obtain ⟨Γ, hσ, hw⟩ := hty
+    refine ⟨Γ, hσ, Imperative.LoopInitHoistWF.Block.hoistLoopPrefixInits_fvarTypesWellAnnotated
+      bs Γ (fun y hy => hσ.eq_none_of_store_none (hdefs y hy)) huniqBase hw⟩
 
 end Core.LoopInitHoist
 

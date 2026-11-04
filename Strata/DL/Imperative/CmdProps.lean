@@ -325,6 +325,21 @@ theorem ExprOrNondet.getVars_det (e : P.Expr) :
 /-- A nondeterministic guard or right-hand side has no free variables. -/
 theorem ExprOrNondet.getVars_nondet : (ExprOrNondet.nondet : ExprOrNondet P).getVars = [] := (rfl)
 
+/-- An annotated read of a guard or right-hand side is one of its free variables. -/
+theorem ExprOrNondet.mem_getVars_of_typed [HasFvar P] [LawfulHasFvars P] (e : ExprOrNondet P)
+    {x : P.Ident} {ty : P.Ty} (h : (x, ty) ∈ e.getTypedVars) : x ∈ e.getVars := by
+  cases e with
+  | det e => exact LawfulHasFvars.mem_getFvars_of_typed _ _ _ h
+  | nondet => simp [ExprOrNondet.getTypedVars] at h
+
+/-- An annotated read of a command is one of the variables the command reads. -/
+theorem Cmd.mem_getVars_of_typed [HasFvar P] [LawfulHasFvars P] (c : Cmd P) {x : P.Ident}
+    {ty : P.Ty} (h : (x, ty) ∈ Cmd.getTypedVars c) : x ∈ Cmd.getVars c := by
+  cases c with
+  | init _ _ e _ | set _ e _ => exact ExprOrNondet.mem_getVars_of_typed e h
+  | assert _ e _ | assume _ e _ | cover _ e _ =>
+    exact LawfulHasFvars.mem_getFvars_of_typed _ _ _ h
+
 end
 
 end -- public section

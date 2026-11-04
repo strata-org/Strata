@@ -2000,6 +2000,192 @@ private theorem NdSim.trace {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps 
 
 end NondetElimTrace
 
+section NondetElimAnnotations
+
+variable {P : PureExpr} [HasIdent P] [HasFvar P] [HasFvars P] [HasBoolOps P]
+
+omit [HasIdent P] in
+/-- The annotation of the guard `g : bool` that `nondetElim` reads holds once `g` is
+    defined with type `bool`. -/
+private theorem annotates_generatedGuard [LawfulHasFvars P] (Γ : VarTyping P) (g : P.Ident) :
+    (Γ.extend [(g, HasBool.boolTy)]).annotates
+      (ExprOrNondet.getTypedVars (.det (HasFvar.mkTypedFvar (P := P) g HasBool.boolTy))) := by
+  intro x ty hm
+  have hm' := LawfulHasFvars.mkTypedFvar_getTypedFvars (P := P) g HasBool.boolTy hm
+  simp only [List.mem_singleton, Prod.mk.injEq] at hm'
+  obtain ⟨rfl, rfl⟩ := hm'
+  simp [VarTyping.extend]
+
+omit [HasFvar P] [HasFvars P] in
+/-- Extending a typing at a generated name keeps it agreeing with another typing on every
+    name that is not generated. -/
+private theorem extend_generated {Γs Γt : VarTyping P} {g : P.Ident}
+    (hg : IdentOfStringKind NondetElim.isGeneratedName g)
+    (hN : ∀ y, ¬ IdentOfStringKind NondetElim.isGeneratedName y → Γt y = Γs y) :
+    ∀ y, ¬ IdentOfStringKind NondetElim.isGeneratedName y →
+      Γt.extend [(g, HasBool.boolTy)] y = Γs y := by
+  intro y hy
+  have hgy : g ≠ y := fun h => hy (h ▸ hg)
+  simp [VarTyping.extend, hgy, hN y hy]
+
+mutual
+/-- The output of `Stmt.nondetElimM s`, followed by `ys`, passes the annotation check against
+    a typing `Γt` that agrees with the source's typing `Γs` on every name that is not
+    generated, given that `s` reads no generated name and that `ys` passes it against every
+    such typing extended with the definitions of `s`. -/
+private theorem Stmt.nondetElimM_fvarTypes [LawfulHasFvars P] (s : Stmt P (Cmd P))
+    (σ : StringGenState)
+    (Γs Γt : VarTyping P)
+    (hN : ∀ y, ¬ IdentOfStringKind NondetElim.isGeneratedName y → Γt y = Γs y)
+    (hreads : ∀ y ∈ Stmt.getVars s, ¬ IdentOfStringKind NondetElim.isGeneratedName y)
+    (hs : Stmt.fvarTypesWellAnnotated Γs s) (ys : List (Stmt P (Cmd P)))
+    (hys : ∀ Γt' : VarTyping P,
+      (∀ y, ¬ IdentOfStringKind NondetElim.isGeneratedName y →
+        Γt' y = Γs.extend (Stmt.typedDefinedVars s) y) →
+      Block.fvarTypesWellAnnotated Γt' ys) :
+    Block.fvarTypesWellAnnotated Γt ((Stmt.nondetElimM s σ).1 ++ ys) := by
+  match s with
+  | .cmd c =>
+    simp only [Stmt.nondetElimM, List.singleton_append, Block.fvarTypesWellAnnotated,
+      Stmt.fvarTypesWellAnnotated] at hs ⊢
+    simp only [Stmt.getVars, HasVarsImp.readVars] at hreads
+    refine ⟨VarTyping.annotates_congr hs fun x ty hm =>
+        hN x (hreads x (Cmd.mem_getVars_of_typed c (ty := ty) ?_)),
+      hys _ fun y hy => VarTyping.extend_congr _ (hN y hy)⟩
+    simpa [HasTypedVarsImp.typedReadVars] using hm
+  | .block l bss md =>
+    rcases hB : Block.nondetElimM bss σ with ⟨bss', σ'⟩
+    simp only [Stmt.nondetElimM, hB, List.singleton_append, Block.fvarTypesWellAnnotated,
+      Stmt.fvarTypesWellAnnotated] at hs ⊢
+    simp only [Stmt.getVars] at hreads
+    have hb := Block.nondetElimM_fvarTypes bss σ Γs Γt hN hreads hs [] fun _ => trivial
+    rw [hB, List.append_nil] at hb
+    exact ⟨hb, hys Γt hN⟩
+  | .ite (.det e) tss ess md =>
+    rcases hT : Block.nondetElimM tss σ with ⟨tss', σ₁⟩
+    rcases hE : Block.nondetElimM ess σ₁ with ⟨ess', σ₂⟩
+    simp only [Stmt.nondetElimM, hT, hE, List.singleton_append, Block.fvarTypesWellAnnotated,
+      Stmt.fvarTypesWellAnnotated] at hs ⊢
+    simp only [Stmt.getVars, List.mem_append] at hreads
+    obtain ⟨hc, ht, he⟩ := hs
+    have ht' := Block.nondetElimM_fvarTypes tss σ Γs Γt hN
+      (fun y hy => hreads y (.inl (.inr hy))) ht [] fun _ => trivial
+    have he' := Block.nondetElimM_fvarTypes ess σ₁ Γs Γt hN
+      (fun y hy => hreads y (.inr hy)) he [] fun _ => trivial
+    rw [hT, List.append_nil] at ht'
+    rw [hE, List.append_nil] at he'
+    exact ⟨⟨VarTyping.annotates_congr hc fun x _ hm =>
+      hN x (hreads x (.inl (.inl (ExprOrNondet.mem_getVars_of_typed _ hm)))), ht', he'⟩, hys Γt hN⟩
+  | .ite .nondet tss ess md =>
+    rcases hT : Block.nondetElimM tss (StringGenState.gen NondetElim.prefixIte σ).2
+      with ⟨tss', σ₂⟩
+    rcases hE : Block.nondetElimM ess σ₂ with ⟨ess', σ₃⟩
+    simp only [Stmt.nondetElimM, hT, hE, List.cons_append, Block.fvarTypesWellAnnotated,
+      Stmt.fvarTypesWellAnnotated] at hs ⊢
+    simp only [Stmt.getVars, List.mem_append] at hreads
+    obtain ⟨-, ht, he⟩ := hs
+    have hg : IdentOfStringKind NondetElim.isGeneratedName
+        (HasIdent.ident (P := P) (StringGenState.gen NondetElim.prefixIte σ).1) :=
+      ⟨_, NondetElim.isGeneratedName_gen.1 σ, rfl⟩
+    have hN₁ := extend_generated (Γt := Γt) hg hN
+    have ht' := Block.nondetElimM_fvarTypes tss (StringGenState.gen NondetElim.prefixIte σ).2
+      Γs _ hN₁ (fun y hy => hreads y (.inl (.inr hy))) ht [] fun _ => trivial
+    have he' := Block.nondetElimM_fvarTypes ess σ₂ Γs _ hN₁
+      (fun y hy => hreads y (.inr hy)) he [] fun _ => trivial
+    rw [hT, List.append_nil] at ht'
+    rw [hE, List.append_nil] at he'
+    refine ⟨?_, ⟨annotates_generatedGuard Γt _, ht', he'⟩, hys _ hN₁⟩
+    intro x ty hm
+    simp [HasTypedVarsImp.typedReadVars, HasInit.init, Cmd.getTypedVars,
+      ExprOrNondet.getTypedVars] at hm
+  | .loop (.det e) m inv body md =>
+    rcases hB : Block.nondetElimM body σ with ⟨body', σ'⟩
+    simp only [Stmt.nondetElimM, hB, List.singleton_append, Block.fvarTypesWellAnnotated,
+      Stmt.fvarTypesWellAnnotated] at hs ⊢
+    simp only [Stmt.getVars, List.mem_append] at hreads
+    obtain ⟨hc, hm, hi, hb⟩ := hs
+    have hb' := Block.nondetElimM_fvarTypes body σ Γs Γt hN
+      (fun y hy => hreads y (.inr hy)) hb [] fun _ => trivial
+    rw [hB, List.append_nil] at hb'
+    refine ⟨⟨VarTyping.annotates_congr hc fun x _ hx =>
+        hN x (hreads x (.inl (.inl (.inl (ExprOrNondet.mem_getVars_of_typed _ hx))))),
+      VarTyping.annotates_congr hm fun x ty hx => hN x (hreads x (.inl (.inl (.inr ?_)))),
+      VarTyping.annotates_congr hi fun x ty hx => hN x (hreads x (.inl (.inr ?_))), hb'⟩, hys Γt hN⟩
+    · cases m with
+      | none => simp at hx
+      | some m => exact LawfulHasFvars.mem_getFvars_of_typed _ _ _ hx
+    · obtain ⟨lp, hlp, hx⟩ := List.mem_flatMap.1 hx
+      exact List.mem_flatMap.2 ⟨lp, hlp, LawfulHasFvars.mem_getFvars_of_typed _ _ _ hx⟩
+  | .loop .nondet m inv body md =>
+    rcases hB : Block.nondetElimM body (StringGenState.gen NondetElim.prefixLoop σ).2
+      with ⟨body', σ'⟩
+    simp only [Stmt.nondetElimM, hB, List.cons_append, Block.fvarTypesWellAnnotated,
+      Stmt.fvarTypesWellAnnotated] at hs ⊢
+    simp only [Stmt.getVars, List.mem_append] at hreads
+    obtain ⟨-, hm, hi, hb⟩ := hs
+    have hg : IdentOfStringKind NondetElim.isGeneratedName
+        (HasIdent.ident (P := P) (StringGenState.gen NondetElim.prefixLoop σ).1) :=
+      ⟨_, NondetElim.isGeneratedName_gen.2 σ, rfl⟩
+    have hN₁ := extend_generated (Γt := Γt) hg hN
+    have hb' := Block.nondetElimM_fvarTypes body (StringGenState.gen NondetElim.prefixLoop σ).2
+      Γs _ hN₁ (fun y hy => hreads y (.inr hy)) hb
+      [.cmd (HasHavoc.havoc (HasIdent.ident (P := P)
+        (StringGenState.gen NondetElim.prefixLoop σ).1) md)]
+      fun _ => ⟨fun x ty hx => by
+        simp [HasTypedVarsImp.typedReadVars, HasHavoc.havoc, Cmd.getTypedVars,
+          ExprOrNondet.getTypedVars] at hx, trivial⟩
+    rw [hB] at hb'
+    refine ⟨?_, ⟨annotates_generatedGuard Γt _,
+      VarTyping.annotates_congr hm fun x ty hx => hN₁ x (hreads x (.inl (.inl (.inr ?_)))),
+      VarTyping.annotates_congr hi fun x ty hx => hN₁ x (hreads x (.inl (.inr ?_))), hb'⟩,
+      hys _ hN₁⟩
+    · intro x ty hx
+      simp [HasTypedVarsImp.typedReadVars, HasInit.init, Cmd.getTypedVars,
+        ExprOrNondet.getTypedVars] at hx
+    · cases m with
+      | none => simp at hx
+      | some m => exact LawfulHasFvars.mem_getFvars_of_typed _ _ _ hx
+    · obtain ⟨lp, hlp, hx⟩ := List.mem_flatMap.1 hx
+      exact List.mem_flatMap.2 ⟨lp, hlp, LawfulHasFvars.mem_getFvars_of_typed _ _ _ hx⟩
+  | .exit l md | .typeDecl t md =>
+    simp only [Stmt.nondetElimM, List.singleton_append, Block.fvarTypesWellAnnotated,
+      Stmt.fvarTypesWellAnnotated, true_and]
+    exact hys Γt hN
+  termination_by sizeOf s
+
+/-- The output of `Block.nondetElimM ss σ`, followed by `ys`, passes the annotation check
+    against a typing `Γt` that agrees with `Γs` on every name `nondetElim` does not generate,
+    when `ss` passes it against `Γs`, reads no generated name, and `ys` passes it against
+    every typing. -/
+private theorem Block.nondetElimM_fvarTypes [LawfulHasFvars P] (ss : List (Stmt P (Cmd P)))
+    (σ : StringGenState)
+    (Γs Γt : VarTyping P)
+    (hN : ∀ y, ¬ IdentOfStringKind NondetElim.isGeneratedName y → Γt y = Γs y)
+    (hreads : ∀ y ∈ Block.getVars ss, ¬ IdentOfStringKind NondetElim.isGeneratedName y)
+    (hss : Block.fvarTypesWellAnnotated Γs ss) (ys : List (Stmt P (Cmd P)))
+    (hys : ∀ Γ : VarTyping P, Block.fvarTypesWellAnnotated Γ ys) :
+    Block.fvarTypesWellAnnotated Γt ((Block.nondetElimM ss σ).1 ++ ys) := by
+  match ss with
+  | [] =>
+    simp only [Block.nondetElimM, List.nil_append]
+    exact hys Γt
+  | s :: rest =>
+    rcases hS : Stmt.nondetElimM s σ with ⟨out, σ₁⟩
+    rcases hR : Block.nondetElimM rest σ₁ with ⟨out', σ₂⟩
+    simp only [Block.nondetElimM, hS, hR, List.append_assoc]
+    simp only [Block.getVars, List.mem_append] at hreads
+    simp only [Block.fvarTypesWellAnnotated] at hss
+    have h := Stmt.nondetElimM_fvarTypes s σ Γs Γt hN (fun y hy => hreads y (.inl hy)) hss.1
+      (out' ++ ys) fun Γt' hN' => by
+        have hr := Block.nondetElimM_fvarTypes rest σ₁ _ Γt' hN'
+          (fun y hy => hreads y (.inr hy)) hss.2 ys hys
+        rwa [hR] at hr
+    rwa [hS] at h
+  termination_by sizeOf ss
+end
+
+end NondetElimAnnotations
+
 open NondetElimTrace in
 /-- `Block.nondetElim` overapproximates its source on event traces. For a
 block that never writes or reads an `NondetElim.isGeneratedName` name, every
@@ -2111,7 +2297,14 @@ theorem NondetElim.Internal.overapproximates_upto_base {P : PureExpr}
           exact hwf.reservedFresh ident hdefined name heq pfx
             (by simp [InitEnvWFParams.extend, hpfx])
         defUseOk := hdu
-        initTypesInhabited := hinits.2 }
+        initTypesInhabited := hinits.2
+        fvarTypesOk := by
+          obtain ⟨Γ, hσ, hw⟩ := hwf.fvarTypesOk
+          have hout := Block.nondetElimM_fvarTypes ss StringGenState.emp Γ Γ
+            (fun _ _ => rfl) (fun y hy ⟨name, hname, heq⟩ => hread name hname (heq ▸ hy))
+            hw [] fun _ => trivial
+          rw [List.append_nil] at hout
+          exact ⟨Γ, hσ, hout⟩ }
 
 end NondetElimOverapprox
 

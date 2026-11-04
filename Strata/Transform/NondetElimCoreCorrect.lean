@@ -179,7 +179,7 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
             (StringGenState.gen Imperative.NondetElim.prefixLoop state).1.toList
           exact String.HasGenPrefix.bare_isPrefixOf
             (StringGenState.gen_hasGenPrefix Imperative.NondetElim.prefixLoop state))
-  obtain ⟨h_prefix, h_term, h_exit, _⟩ :=
+  obtain ⟨h_prefix, h_term, h_exit, hbaseOut⟩ :=
     Imperative.NondetElim.Internal.overapproximates_upto_base
       (P := Expression) base hprefixes bs
       (Imperative.Block.nondetElim bs) rfl ⟨hnogen, hread⟩
@@ -223,7 +223,7 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
       rw [htgt]
       exact Imperative.embedConfig_stepStarE π hrunb, hout, htr⟩
   · obtain ⟨hsem, hstore, hdefs, hdefinedReserved, hfresh, hdu, hfactory,
-        htypes⟩ :=
+        htypes, -⟩ :=
       blockInitEnvWF_projectBase hwf hproj
     have hkindNone : ∀ name, Imperative.NondetElim.isGeneratedName name →
         (ρ₀.store (HasIdent.ident (P := Expression) name)).isNone := by
@@ -259,6 +259,7 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
         subst ident
         exact Option.isNone_iff_eq_none.mp (hkindNone name hname)) htypes
     refine Core.Logic.BlockInitEnvWF.ofBaseEmbed hsem hstore ?_ ?_ ?_ ?_ ?_ hinits.2
+      hbaseOut.fvarTypesOk
     · intro ident hident
       exact Option.isNone_iff_eq_none.mpr (hinits.1 ident hident)
     · intro ident hident pfx hp

@@ -150,7 +150,7 @@ variable (π : String → Option Procedure)
     The statement-independent fields (evaluator well-formedness, store
     well-definedness, reserved-prefix freshness, factory-declaredness) are passed
     through verbatim; the block-shaped fields (`defsUndefined`,
-    `definedVarsNotReserved`, `defUseOk`, `initTypesInhabited`, and the
+    `definedVarsNotReserved`, `defUseOk`, `initTypesInhabited`, `fvarTypesOk`, and the
     `readWritesDefined` it subsumes) are discharged by rewriting each Core
     analysis on `embedStmts bs` to the corresponding base analysis on `bs`. -/
 theorem BlockInitEnvWF.ofBaseEmbed {params : InitEnvWFParams}
@@ -166,13 +166,17 @@ theorem BlockInitEnvWF.ofBaseEmbed {params : InitEnvWFParams}
     (hdu : Block.defUseWellFormed (C := Cmd Expression)
       (fun n => (ρ.store n).isSome) params.declaredFuncs bs = Bool.true)
     (hfd : ∀ nm, Core.isNameInFactory nm = Bool.true → params.declaredFuncs ⟨nm, ()⟩ = Bool.true)
-    (hinit : Block.InitTypesInhabited (P := Expression) (C := Cmd Expression) ρ.factory bs) :
+    (hinit : Block.InitTypesInhabited (P := Expression) (C := Cmd Expression) ρ.factory bs)
+    (hty : ∃ Γ, StoreHasTyping ρ.factory ρ.store Γ ∧
+      Block.fvarTypesWellAnnotated (C := Cmd Expression) Γ bs) :
     BlockInitEnvWF params (embedStmts bs) ρ := by
-  refine BlockInitEnvWF.of_defUseOk hwf hsv ?_ ?_ hres ?_ hfd ?_
+  refine BlockInitEnvWF.of_defUseOk hwf hsv ?_ ?_ hres ?_ hfd ?_ ?_
   · intro n hn; exact hdefs n (by rwa [Imperative.embedStmts_definedVars] at hn)
   · intro n hn; exact hdnr n (by rwa [Imperative.embedStmts_definedVars] at hn)
   · rw [Imperative.embedStmts_defUseWellFormed (P := Expression)]; exact hdu
   · exact (Imperative.embedStmts_InitTypesInhabited ρ.factory bs).mpr hinit
+  · obtain ⟨Γ, hσ, hw⟩ := hty
+    exact ⟨Γ, hσ, by rw [Imperative.embedStmts_fvarTypesWellAnnotated]; exact hw⟩
 
 /-- **Input transport (to the generic gate).**  A Core `BlockInitEnvWF` on `ss`
     weakens to the generic `Imperative.Logic.BlockInitEnvWF` on the base block
@@ -201,7 +205,8 @@ theorem BlockInitEnvWF.toImperativeProject {params : InitEnvWFParams}
       definedVarsNotReserved := ?_
       reservedFresh := h.reservedFresh
       defUseOk := ?_
-      initTypesInhabited := ?_ }
+      initTypesInhabited := ?_
+      fvarTypesOk := ?_ }
   · intro ident htouchedBase hnotDefinedBase
     exact h.readWritesDefined ident (by rwa [htouched]) (by rwa [hdefs])
   · intro ident hdefinedBase
@@ -215,6 +220,9 @@ theorem BlockInitEnvWF.toImperativeProject {params : InitEnvWFParams}
   · have hinitTypes := h.initTypesInhabited
     rw [← hemb] at hinitTypes
     exact (Imperative.embedStmts_InitTypesInhabited ρ.factory bs).mp hinitTypes
+  · obtain ⟨Γ, hσ, hw⟩ := h.fvarTypesOk
+    rw [← hemb, Imperative.embedStmts_fvarTypesWellAnnotated] at hw
+    exact ⟨Γ, hσ, hw⟩
 
 /-- Extract every Core initial-environment condition for the projected base
 block `bs`. -/
@@ -231,10 +239,12 @@ theorem blockInitEnvWF_projectBase {params : InitEnvWFParams} {ss : Statements}
     ∧ Block.defUseWellFormed (C := Cmd Expression)
         (fun n => (ρ.store n).isSome) params.declaredFuncs bs = Bool.true
     ∧ (∀ nm, Core.isNameInFactory nm = Bool.true → params.declaredFuncs ⟨nm, ()⟩ = Bool.true)
-    ∧ Block.InitTypesInhabited (P := Expression) (C := Cmd Expression) ρ.factory bs := by
+    ∧ Block.InitTypesInhabited (P := Expression) (C := Cmd Expression) ρ.factory bs
+    ∧ (∃ Γ, StoreHasTyping ρ.factory ρ.store Γ ∧
+        Block.fvarTypesWellAnnotated (C := Cmd Expression) Γ bs) := by
   have hemb : embedStmts bs = ss := embedStmts_projectStmts hp
   refine ⟨h.toWellFormedSemanticEval, h.storeWellDefined, ?_, ?_, h.reservedFreshCore, ?_,
-    h.factoryDeclared, ?_⟩
+    h.factoryDeclared, ?_, ?_⟩
   · intro n hn
     exact h.defsUndefined n (by rw [← hemb, Imperative.embedStmts_definedVars]; exact hn)
   · intro n hn
@@ -246,6 +256,9 @@ theorem blockInitEnvWF_projectBase {params : InitEnvWFParams} {ss : Statements}
   · have hinitTypes := h.initTypesInhabited
     rw [← hemb] at hinitTypes
     exact (Imperative.embedStmts_InitTypesInhabited ρ.factory bs).mp hinitTypes
+  · obtain ⟨Γ, hσ, hw⟩ := h.fvarTypesOk
+    rw [← hemb, Imperative.embedStmts_fvarTypesWellAnnotated] at hw
+    exact ⟨Γ, hσ, hw⟩
 
 /-- Projecting a call-free Core block to base statements and re-embedding it
 preserves `BlockInitEnvWF`. -/
@@ -253,8 +266,8 @@ theorem blockInitEnvWF_project_embed {params : InitEnvWFParams} {ss : Statements
     {bs : List (Imperative.Stmt Expression (Cmd Expression))} {ρ : Imperative.Env Expression}
     (h : BlockInitEnvWF params ss ρ) (hp : projectStmts ss = some bs) :
     BlockInitEnvWF params (embedStmts bs) ρ := by
-  obtain ⟨hwf, hsv, hdefs, hdnr, hres, hdu, hfd, hinit⟩ := blockInitEnvWF_projectBase h hp
-  exact BlockInitEnvWF.ofBaseEmbed hwf hsv hdefs hdnr hres hdu hfd hinit
+  obtain ⟨hwf, hsv, hdefs, hdnr, hres, hdu, hfd, hinit, hty⟩ := blockInitEnvWF_projectBase h hp
+  exact BlockInitEnvWF.ofBaseEmbed hwf hsv hdefs hdnr hres hdu hfd hinit hty
 
 end Core.Logic
 

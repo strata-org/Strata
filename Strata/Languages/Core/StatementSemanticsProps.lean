@@ -57,6 +57,12 @@ constructing well-formed call frames, beyond the remaining
   `core_stmt_run_terminal_preserves_none_of_not_definedVars_trueE`, and
   `core_stmt_run_terminal_store_isSome_eqE` provide the corresponding
   guarantees for `EvalCommandE` / `StepStmtStarE` runs.
+- Event-trace typed-slot results: `evalCommandE_preserves_typedAt` (a `call`
+  writes back values of the types the caller variables held),
+  `core_stmt_preserves_typedAtE` / `core_stmts_preserves_typedAtE` (a run keeps a
+  slot at its type), and `core_stmt_run_storeHasTyping_extendE` (after a statement
+  runs, the store conforms to the entry typing extended with the statement's typed
+  definitions).
 - `stmt_run_to_singleton_runE` / `singleton_run_to_stmt_runE`: a run of a
   statement and a run of the one-element list holding it emit the same traces.
 -/
@@ -442,7 +448,7 @@ caller result store. -/
 theorem CallExitUniqueResult {fac : Expression.Factory} {σ : CoreStore}
     {p : Procedure} {callArgs : List (CallArg Expression)} {σEnd σ₁ σ₂ : CoreStore} :
     CallExit fac σ p callArgs σEnd σ₁ → CallExit fac σ p callArgs σEnd σ₂ → σ₁ = σ₂ := by
-  rintro ⟨_, outputs₁, hRead₁, hUpdate₁⟩ ⟨_, outputs₂, hRead₂, hUpdate₂⟩
+  rintro ⟨_, outputs₁, hRead₁, hUpdate₁, -⟩ ⟨_, outputs₂, hRead₂, hUpdate₂, -⟩
   have hOutputs : outputs₁ = outputs₂ := ReadValuesInjective hRead₁ hRead₂
   subst outputs₂
   exact (UpdateStatesUpdated hUpdate₁).trans (UpdateStatesUpdated hUpdate₂).symm
@@ -452,7 +458,7 @@ theorem CallExit.store_eq_of_getLhs_nil {fac : Expression.Factory} {σ : CoreSto
     {p : Procedure} {callArgs : List (CallArg Expression)} {σEnd σ' : CoreStore}
     (hLhs : CallArg.getLhs callArgs = [])
     (h : CallExit fac σ p callArgs σEnd σ') : σ' = σ := by
-  obtain ⟨_, outputs, _, hUpdate⟩ := h
+  obtain ⟨_, outputs, _, hUpdate, -⟩ := h
   rw [hLhs] at hUpdate
   cases hUpdate
   rfl
@@ -1793,7 +1799,7 @@ theorem evalCommandE_preserves_none_of_not_def
       (by simpa [HasVarsImp.definedVars, Command.definedVars, CmdExt.definedVars] using h_not_def)
   | call_sem _ _ _ hexit =>
     unfold Calls.CallExit at hexit
-    obtain ⟨_, _, _, hupd⟩ := hexit
+    obtain ⟨_, _, _, hupd, -⟩ := hexit
     exact updateStates_preserves_none hupd y h_none
 
 /-! ### Event-trace store-domain characterization
@@ -1815,7 +1821,7 @@ theorem evalCommandE_preserves_isSome
   | cmd_sem h => exact Imperative.evalCmdE_preserves_isSome h h_some
   | call_sem _ _ _ hexit =>
     unfold Calls.CallExit at hexit
-    obtain ⟨_, _, _, hupd⟩ := hexit
+    obtain ⟨_, _, _, hupd, -⟩ := hexit
     exact updateStates_preserves_isSome hupd y h_some
 
 /-- An `EvalCommandE` step preserves the property that every store binding is
@@ -1832,9 +1838,84 @@ theorem evalCommandE_storeWellDefined
       (coreEvaluator_WellFormedSemanticEvalVal fac) hcmd hsv
   | call_sem _ _ _ hexit =>
     unfold Calls.CallExit at hexit
-    obtain ⟨_, _, hread, hupd⟩ := hexit
+    obtain ⟨_, _, hread, hupd, -⟩ := hexit
     exact updateStates_preserves_wellFormedStore hupd
       (ReadValues.all_values hread) hsv
+
+/-- An `EvalCommandE` step keeps a typed slot at its type; a `call` writes back to each
+caller variable a value of the type the variable held. -/
+theorem evalCommandE_preserves_typedAt
+    {f : Expression.Factory} {σ σ' : SemanticStore Expression} {c : Command}
+    {emitted : Imperative.Trace Expression} {y : Expression.Ident} {ty : Expression.Ty}
+    (h_eval : EvalCommandE π f σ c σ' emitted)
+    (hy : ∃ v, σ y = some v ∧ HasVal.valueOfTy f v ty) :
+    ∃ v, σ' y = some v ∧ HasVal.valueOfTy f v ty := by
+  cases h_eval with
+  | cmd_sem h => exact Imperative.EvalCmdE_preserves_typedAt h hy
+  | call_sem _ _ _ hexit =>
+    obtain ⟨_, _, _, hupd, hrel⟩ := hexit
+    exact Imperative.UpdateStates_typedAt hupd hrel hy hy
+
+/-- A slot that holds a value of type `ty` at the start of a terminating event-native
+`.stmt` run holds a value of type `ty` at the end. -/
+theorem core_stmt_preserves_typedAtE
+    {s : Statement} {ρ ρ' : Env Expression} {tr : Imperative.Trace Expression}
+    (h_run : CoreStepStarE π (.stmt s ρ) tr (.terminal ρ'))
+    {y : Expression.Ident} {ty : Expression.Ty}
+    (hy : ∃ v, ρ.store y = some v ∧ HasVal.valueOfTy ρ.factory v ty) :
+    ∃ v, ρ'.store y = some v ∧ HasVal.valueOfTy ρ'.factory v ty := by
+  have hv : (ρ.store y).isSome = true := by obtain ⟨v, hv, _⟩ := hy; simp [hv]
+  exact Config.typedAt_star_ofE
+    (fun he hs => evalCommandE_preserves_isSome π he hs)
+    (fun he hs => evalCommandE_preserves_typedAt π he hs) h_run
+    (show Config.varDefined y (.stmt s ρ) from fun _ hz => hz ▸ hv) hy
+
+/-- A slot that holds a value of type `ty` at the start of a terminating event-native
+`.stmts` run holds a value of type `ty` at the end. -/
+theorem core_stmts_preserves_typedAtE
+    {ss : Statements} {ρ ρ' : Env Expression} {tr : Imperative.Trace Expression}
+    (h_run : CoreStepStarE π (.stmts ss ρ) tr (.terminal ρ'))
+    {y : Expression.Ident} {ty : Expression.Ty}
+    (hy : ∃ v, ρ.store y = some v ∧ HasVal.valueOfTy ρ.factory v ty) :
+    ∃ v, ρ'.store y = some v ∧ HasVal.valueOfTy ρ'.factory v ty := by
+  have hv : (ρ.store y).isSome = true := by obtain ⟨v, hv, _⟩ := hy; simp [hv]
+  exact Config.typedAt_star_ofE
+    (fun he hs => evalCommandE_preserves_isSome π he hs)
+    (fun he hs => evalCommandE_preserves_typedAt π he hs) h_run
+    (show Config.varDefined y (.stmts ss ρ) from fun _ hz => hz ▸ hv) hy
+
+/-- A terminating event-native `.stmt s` run keeps the store conforming to a typing of its
+start store, extended with the typed definitions of `s`. -/
+theorem core_stmt_run_storeHasTyping_extendE
+    {s : Statement} {ρ ρ' : Env Expression} {tr : Imperative.Trace Expression}
+    {Γ : VarTyping Expression}
+    (h_run : CoreStepStarE π (.stmt s ρ) tr (.terminal ρ'))
+    (hσ : StoreHasTyping ρ.factory ρ.store Γ) :
+    StoreHasTyping ρ'.factory ρ'.store (Γ.extend (Stmt.typedDefinedVars s)) := by
+  by_cases hinit : ∃ x ty e md, s = .cmd (.cmd (.init x ty e md))
+  · obtain ⟨x, ty, e, md, rfl⟩ := hinit
+    cases h_run with
+    | step _ _ _ _ _ hstep hrest =>
+      cases hstep with
+      | step_cmd h_eval =>
+        obtain ⟨hcfg, _⟩ := Imperative.stepStmtStarE_from_terminal hrest
+        injection hcfg with hρ
+        subst hρ
+        cases h_eval with
+        | cmd_sem h =>
+          simp only [Stmt.typedDefinedVars, HasTypedVarsImp.typedDefinedVars,
+            CmdExt.typedDefinedVars, Cmd.typedDefinedVars]
+          rw [VarTyping.extend_singleton]
+          exact Imperative.EvalCmdE.init_storeHasTyping h hσ
+  · have hnil : Stmt.typedDefinedVars s = [] := by
+      match s with
+      | .cmd (.cmd (.init x ty e md)) => exact absurd ⟨x, ty, e, md, rfl⟩ hinit
+      | .cmd (.cmd (.set ..)) | .cmd (.cmd (.assert ..)) | .cmd (.cmd (.assume ..))
+      | .cmd (.cmd (.cover ..)) | .cmd (.call ..) | .block .. | .ite .. | .loop ..
+      | .exit .. | .typeDecl .. => rfl
+    rw [hnil, VarTyping.extend_nil]
+    intro y ty hy
+    exact core_stmt_preserves_typedAtE π h_run (hσ y ty hy)
 
 /-- An event-semantics command defines every slot it declares. A `call`
 declares nothing, so that case is vacuous. -/

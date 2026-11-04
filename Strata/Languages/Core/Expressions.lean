@@ -18,6 +18,7 @@ public import Strata.DL.Lambda.IntBoolFactory
 import Strata.DL.Lambda.OperationalSemanticsProps
 public import Strata.DL.Lambda.LExprDenoteEval
 public import Strata.DL.Lambda.LExprDenoteEvalProps
+import Strata.DL.Lambda.LExprWFProps
 
 namespace Core
 open Std (ToFormat Format format)
@@ -47,8 +48,20 @@ abbrev Expression : PureExpr :=
      Val := Lambda.SemValue,
      eval := fun F σ e => Lambda.LExpr.denoteEval F σ e }
 
+/-- The annotated free-variable occurrences of a Core expression, each annotation read as a
+    monomorphic type scheme. -/
+@[expose] def Expression.typedFvars (e : Expression.Expr) : List (CoreIdent × Expression.Ty) :=
+  e.freeVars.filterMap fun (x, τ?) => τ?.map fun τ => (x, .forAll [] τ)
+
+/-- The typing the annotations of a Core expression give: a free variable has the annotation of
+    its first occurrence, read as a monomorphic type scheme, and no type when that occurrence is
+    unannotated. -/
+@[expose] def Expression.annotationTyping (e : Expression.Expr) : VarTyping Expression :=
+  fun x => ((Lambda.LExpr.freeVars e).lookup x).bind (·.map (Lambda.LTy.forAll [] ·))
+
 instance : HasFvars Expression where
   getFvars := Lambda.LExpr.LExpr.getVars
+  getTypedFvars := Expression.typedFvars
 
 instance : HasOps Expression where
   getOps := Lambda.LExpr.getOps
@@ -137,6 +150,20 @@ instance : LawfulHasFvars Core.Expression where
     simp [HasFvars.getFvars, HasFvar.mkFvar, Lambda.LExpr.LExpr.getVars]
   mkTypedFvar_getFvars := fun _ _ => by
     simp [HasFvars.getFvars, HasFvar.mkTypedFvar, Lambda.LExpr.LExpr.getVars]
+  mem_getFvars_of_typed := fun e x ty h => by
+    simp only [HasFvars.getTypedFvars, Expression.typedFvars, List.mem_filterMap,
+      Option.map_eq_some_iff, Prod.mk.injEq] at h
+    obtain ⟨⟨y, τ?⟩, hmem, τ, -, rfl, -⟩ := h
+    show y ∈ Lambda.LExpr.LExpr.getVars e
+    rw [Lambda.getVars_eq_freeVars_idents]
+    exact List.mem_map.mpr ⟨_, hmem, rfl⟩
+  mkTypedFvar_getTypedFvars := fun x ty => by
+    intro p hp
+    simp only [HasFvars.getTypedFvars, Expression.typedFvars, HasFvar.mkTypedFvar,
+      Lambda.LExpr.freeVars, List.filterMap_cons, List.filterMap_nil] at hp
+    cases ty with
+    | forAll vs τ =>
+      cases vs <;> simp_all [Lambda.LTy.toMonoType?]
 
 instance : LawfulHasIdent Core.Expression where
   ident_inj := by

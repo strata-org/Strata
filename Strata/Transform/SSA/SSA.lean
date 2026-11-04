@@ -19,9 +19,10 @@ the obligation program or a Boolean literal.
 
 * `init x := e` / `set x := e`: the condition parts of `e` are folded (`foldE`: an `ite` whose
   condition folds to a literal is its branch, an `ite` whose branches fold to the same variable
-  or literal is that branch); a variable is recorded without output (a copy); a literal is
-  recorded, for folding, and defined by a fresh `init`, the name obligations read; any other
-  value is defined by a fresh `init`.
+  or literal is that branch); a variable annotated with the declared type of `x` is recorded
+  without output (a copy); a literal is recorded, for folding, and defined by a fresh `init`,
+  the name obligations read; any other value, a variable without that annotation included, is
+  defined by a fresh `init`.
 * `assume a`: dropped when `a` folds to `true`.
 * `assert`/`cover`: the obligation on the current names, unfolded (its condition is the guarded
   condition under a substitution of variables for variables, `oblSubS`).  The output has an
@@ -181,7 +182,12 @@ abbrev SM (P : PureExpr) [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
 
 /-- The value of an assignment `x := e` (declared type `ty`): a variable is recorded (no
     output), a literal is recorded and defined by a fresh Boolean `init` (the name obligations
-    read), any other value is defined by a fresh `init`; the output statements. -/
+    read), any other value is defined by a fresh `init`; the output statements.
+
+    A variable `y` is recorded only when `e` folds to `y` annotated with `ty`; otherwise `x` is
+    defined by a fresh `init`, as any other value is.  Every later read of a recorded `x` reads
+    `y : ty`, so recording an ill-typed copy (`y` annotated with another type, or unannotated)
+    would give `y` an annotation its value does not have. -/
 @[expose] def assignVal (x : P.Ident) (ty : P.Ty) (e : P.Expr) : SM P (PStmts P × SVal P) := do
   let st ← get
   let e' := foldE st.ρ e
@@ -191,7 +197,12 @@ abbrev SM (P : PureExpr) [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
     pure ([mkInit x' HasBool.boolTy (.det (if b then tt else ff))], .lit b (some x'))
   | none =>
     match HasFvar.getFvar e' with
-    | some y => pure ([], .name y (some ty))
+    | some y =>
+      if (HasFvars.getTypedFvars e').any (fun p => p.1 == y && WPOps.tyBEq p.2 ty) then
+        pure ([], .name y (some ty))
+      else
+        let x' ← sFresh x
+        pure ([mkInit x' ty (.det e')], .name x' (some ty))
     | none =>
       let x' ← sFresh x
       pure ([mkInit x' ty (.det e')], .name x' (some ty))

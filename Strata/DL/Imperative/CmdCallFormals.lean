@@ -89,10 +89,28 @@ command, or the output/inout targets of a `call`. -/
 @[expose] def CmdExt.modifiedOrDefinedVars (c : CmdExt P) : List P.Ident :=
   CmdExt.definedVars c ++ CmdExt.modifiedVars c
 
+/-- Annotated free-variable reads of an extended command: those of the wrapped base command,
+    or of a call's input arguments. -/
+@[expose] def CmdExt.typedReadVars [HasFvar P] [HasFvars P] (c : CmdExt P) :
+    List (P.Ident × P.Ty) :=
+  match c with
+  | .cmd c => Cmd.getTypedVars c
+  | .call _ args _ => (Calls.getInputExprs args).flatMap HasFvars.getTypedFvars
+
+/-- Variables an extended command defines, with their declared types. -/
+@[expose] def CmdExt.typedDefinedVars (c : CmdExt P) : List (P.Ident × P.Ty) :=
+  match c with
+  | .cmd c => Cmd.typedDefinedVars c
+  | _ => []
+
 instance (P : PureExpr) [HasFvar P] [HasFvars P] : HasVarsImp P (CmdExt P) where
   definedVars c _ := CmdExt.definedVars c
   modifiedVars := CmdExt.modifiedVars
   readVars := CmdExt.readVars
+
+instance (P : PureExpr) [HasFvar P] [HasFvars P] : HasTypedVarsImp P (CmdExt P) where
+  typedReadVars := CmdExt.typedReadVars
+  typedDefinedVars := CmdExt.typedDefinedVars
 
 instance (P : PureExpr) [HasFvar P] [HasOps P] : HasOpsImp P (CmdExt P) where
   getOps := CmdExt.getOps

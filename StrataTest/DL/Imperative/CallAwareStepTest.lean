@@ -83,7 +83,7 @@ private theorem callCmd_sem (fac : Expression.Factory)
     (π := calleeEnv) (fac := fac) (σ := σ) (σ' := σ) (σAO := emptyStore)
     (by simp [calleeEnv])
     ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
-    hbody ⟨(by simp [Imperative.CallArg.getLhs]), [], .read_none, .update_none⟩
+    hbody ⟨(by simp [Imperative.CallArg.getLhs]), [], .read_none, .update_none, .nil⟩
   simpa [Calls.defaultAssertEvents, Calls.checksAtCall, MetaData.setCallSiteFileRange_empty,
     ListMap.toList, callee, callCmd, callTrace, trueEvent,
     MetaData.empty]
@@ -101,7 +101,7 @@ private theorem callCmd_semCore
     (π := calleeEnv) (fac := fac) (σ := σ) (σ' := σ) (σAO := emptyStore)
     (by simp [calleeEnv])
     ⟨[], [], .eval_none, .read_none, ⟨emptyStore, emptyStore, .init_none, .init_none, rfl⟩⟩
-    hbody ⟨(by simp [Imperative.CallArg.getLhs]), [], .read_none, .update_none⟩
+    hbody ⟨(by simp [Imperative.CallArg.getLhs]), [], .read_none, .update_none, .nil⟩
   simpa [Core.defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
     MetaData.setCallSiteFileRange_empty, ListMap.toList, callee, callCmd,
     callTrace, trueEvent, MetaData.empty]

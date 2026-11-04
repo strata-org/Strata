@@ -62,6 +62,7 @@ instance : Imperative.HasVal LExprTP where
 
 instance : Imperative.HasFvars LExprTP where
   getFvars _ := []
+  getTypedFvars _ := []
 
 instance : Imperative.LawfulHasVal LExprTP where
   valueOfTy_isVal := fun _ _ _ h => h

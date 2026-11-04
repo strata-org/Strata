@@ -98,6 +98,10 @@ class LawfulHasFvar (P : PureExpr) [HasFvar P] [HasOps P] where
     compounds. -/
 class HasFvars (P : PureExpr) where
   getFvars : P.Expr → List P.Ident
+  /-- The free-variable occurrences of an expression that carry a type annotation, with
+      their annotations.  There is no default: a language whose expressions carry no
+      annotations says so with `fun _ => []`. -/
+  getTypedFvars : P.Expr → List (P.Ident × P.Ty)
 
 /-- Lawfulness of `HasFvars` against `HasFvar`: the free-variable list of an
     `mkFvar x` expression, as computed by the `HasFvars.getFvars` extractor, is a
@@ -108,6 +112,18 @@ class LawfulHasFvars (P : PureExpr) [HasFvar P] [HasFvars P] where
   /-- The annotation contributes no free variables of its own. -/
   mkTypedFvar_getFvars : ∀ (x : P.Ident) (ty : P.Ty),
     HasFvars.getFvars (HasFvar.mkTypedFvar (P := P) x ty) ⊆ [x]
+  /-- An annotated occurrence is a free variable. -/
+  mem_getFvars_of_typed : ∀ (e : P.Expr) (x : P.Ident) (ty : P.Ty),
+    (x, ty) ∈ HasFvars.getTypedFvars e → x ∈ HasFvars.getFvars e := by
+    intros; simp_all
+  /-- A bare variable carries no annotation. -/
+  mkFvar_getTypedFvars : ∀ x : P.Ident,
+    HasFvars.getTypedFvars (HasFvar.mkFvar (P := P) x) = [] := by
+    intros; rfl
+  /-- A typed variable carries only its own annotation. -/
+  mkTypedFvar_getTypedFvars : ∀ (x : P.Ident) (ty : P.Ty),
+    HasFvars.getTypedFvars (HasFvar.mkTypedFvar (P := P) x ty) ⊆ [(x, ty)] := by
+    intros; simp
 
 /-- Predicates on runtime values (`P.Val`): which values belong to a factory
     (and so may be held by its stores), and which values inhabit a type. -/
@@ -199,6 +215,14 @@ class HasTyping (P : PureExpr) where
 @[expose] def StoreHasTyping {P : PureExpr} [HasVal P]
     (f : P.Factory) (σ : P.Ident → Option P.Val) (Γ : VarTyping P) : Prop :=
   ∀ x ty, Γ x = some ty → ∃ v, σ x = some v ∧ HasVal.valueOfTy f v ty
+
+/-- Extend the typing `Γ` with the typed definitions `defs`; the first definition of a
+    name wins. -/
+@[expose] def VarTyping.extend {P : PureExpr} (Γ : VarTyping P)
+    (defs : List (P.Ident × P.Ty)) : VarTyping P :=
+  fun y => match defs.find? (fun d => d.1 == y) with
+    | some d => some d.2
+    | none => Γ y
 
 /-- Type soundness of the evaluator against the typing judgment. -/
 class LawfulHasTyping (P : PureExpr) [HasBool P] [HasTyping P] where

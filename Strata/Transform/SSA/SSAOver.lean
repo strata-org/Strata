@@ -137,7 +137,8 @@ private theorem ssaAssign_sim (hF : SSALaws F) (hCL : WellFormedStore σL F)
       SDom A D n0 σS1 s1.next ∧ SHolds F σS1 x v0 (some v) ∧ s1 = { s with next := s1.next } := by
   have hev := evalsTo_foldE hF hCL hCS s.ρ e hA he
   have hval := hev.value hF.val hCS
-  rcases assignVal_ok h with ⟨b, x', hb, hf, rfl, rfl⟩ | ⟨y, hy, rfl, rfl, rfl⟩ | ⟨x', hf, rfl, rfl⟩
+  rcases assignVal_ok h with ⟨b, x', hb, hf, rfl, rfl⟩ | ⟨y, hy, -, rfl, rfl, rfl⟩ |
+    ⟨x', hf, rfl, rfl⟩
   · obtain rfl := evalsTo_boolLit hF hb hev
     obtain ⟨h0, hD1, hm, hC1, hs⟩ := hD.fresh hav hn hf hCS hval
     refine ⟨_, run_init hF h0 (bool_valueOfTy ?_) fun _ h => ExprOrNondet.det.inj h ▸

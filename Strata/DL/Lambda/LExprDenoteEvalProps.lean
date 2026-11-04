@@ -22,8 +22,8 @@ Properties of `LExpr.denoteEval` (`Strata.DL.Lambda.LExprDenoteEval`) and of the
 definitions it uses.
 
 - `LSort.toMonoTy_injective` — a sort is determined by its monomorphic type
-- `LExpr.annotateFvars_congr`, `LExpr.mem_freeVars_annotateFvars` — annotating free
-  variables
+- `LExpr.annotateFvars_congr`, `LExpr.annotateFvars_eq_self`,
+  `LExpr.mem_freeVars_annotateFvars` — annotating free variables
 - `LExpr.denoteEval_eq_some_iff` — characterization
 - `LExpr.denoteEval_congr`, `LExpr.denoteEval_mono` — dependence on the store
 - `LExpr.denoteEval_fvar`, `LExpr.denoteEval_fvar_none`, `LExpr.denoteEval_boolConst` —
@@ -126,6 +126,36 @@ theorem LExpr.annotateFvars_congr [DecidableEq T.IDMeta]
     e.annotateFvars ann₁ = e.annotateFvars ann₂ := by
   induction e with
   | fvar m x ty => simp [annotateFvars, h x ty (by simp [LExpr.freeVars])]
+  | const | op | bvar => rfl
+  | abs m n ty e ih => simp only [annotateFvars]; rw [ih (by simpa [LExpr.freeVars] using h)]
+  | quant m k n ty tr e ihtr ihe =>
+    simp only [LExpr.freeVars, List.mem_append] at h
+    simp only [annotateFvars]
+    rw [ihtr (fun x ty hx => h x ty (.inl hx)), ihe (fun x ty hx => h x ty (.inr hx))]
+  | app m f a ihf iha =>
+    simp only [LExpr.freeVars, List.mem_append] at h
+    simp only [annotateFvars]
+    rw [ihf (fun x ty hx => h x ty (.inl hx)), iha (fun x ty hx => h x ty (.inr hx))]
+  | ite m c t e ihc iht ihe =>
+    simp only [LExpr.freeVars, List.mem_append] at h
+    simp only [annotateFvars]
+    rw [ihc (fun x ty hx => h x ty (.inl (.inl hx))), iht (fun x ty hx => h x ty (.inl (.inr hx))),
+      ihe (fun x ty hx => h x ty (.inr hx))]
+  | eq m a b iha ihb =>
+    simp only [LExpr.freeVars, List.mem_append] at h
+    simp only [annotateFvars]
+    rw [iha (fun x ty hx => h x ty (.inl hx)), ihb (fun x ty hx => h x ty (.inr hx))]
+
+/-- Annotating with annotations that every free-variable occurrence of `e` already carries
+    leaves `e` unchanged. -/
+theorem LExpr.annotateFvars_eq_self [DecidableEq T.IDMeta]
+    {ann : Identifier T.IDMeta → Option LMonoTy} (e : LExpr T.mono)
+    (h : ∀ x ty, (x, ty) ∈ e.freeVars → ∃ τ, ty = some τ ∧ ann x = some τ) :
+    e.annotateFvars ann = e := by
+  induction e with
+  | fvar m x ty =>
+    obtain ⟨τ, rfl, hx⟩ := h x ty (by simp [LExpr.freeVars])
+    simp [annotateFvars, hx]
   | const | op | bvar => rfl
   | abs m n ty e ih => simp only [annotateFvars]; rw [ih (by simpa [LExpr.freeVars] using h)]
   | quant m k n ty tr e ihtr ihe =>

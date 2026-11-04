@@ -350,7 +350,8 @@ private theorem fresh_notReserved {p b : String} {x : Expression.Ident} (j : Nat
     `xs`: when the environment `ρ` of `ss₀` satisfies `BlockInitEnvWF params ss₀`, and `ρ'` has the
     factory of `ρ`, holds under the entry name of each free variable of `ss₀` its (defined) value
     in `ρ`, typed by `tys`, and binds nothing else, while every parameter is defined in `ρ`, then
-    `ρ'` satisfies `BlockInitEnvWF params so.out`. -/
+    `ρ'` satisfies `BlockInitEnvWF params so.out`, provided the type annotations of `so.out` agree
+    with a typing of `ρ'` (`hty`). -/
 theorem ssaEntry_blockInitEnvWF {params : InitEnvWFParams}
     (hp : ∀ p ∈ params.prefixIdents, '@' ∉ p.toList) {G : IdSet Expression}
     {tys : Tys Expression} {xs : List Expression.Ident}
@@ -365,7 +366,9 @@ theorem ssaEntry_blockInitEnvWF {params : InitEnvWFParams}
     (htyOK : TyOK ρ.factory tys (Block.freeVars ss₀) (Block.freeVars ss₀) ρ.store)
     (hdomS : ∀ y, (ρ'.store y).isSome →
       ∃ x ∈ Block.freeVars ss₀, y = (ssaEntryRen (inputAvoid G tys ss₀) xs al 0).1.get x)
-    (hwf : BlockInitEnvWF params ss₀ ρ) : BlockInitEnvWF params so.out ρ' := by
+    (hwf : BlockInitEnvWF params ss₀ ρ)
+    (hty : ∃ Γ, StoreHasTyping ρ'.factory ρ'.store Γ ∧ Block.fvarTypesWellAnnotated Γ so.out) :
+    BlockInitEnvWF params so.out ρ' := by
   have hrd := ssaEntry_wellScopedFV h hal hfv
   obtain ⟨rfl, hb⟩ := ssaEntry_ok h
   obtain ⟨s1, h1, -⟩ := ssaBody_ok hb
@@ -397,7 +400,8 @@ theorem ssaEntry_blockInitEnvWF {params : InitEnvWFParams}
            reservedFresh := ?_
            defUseOk := d1
            factoryDeclared := hwf.factoryDeclared
-           initTypesInhabited := o4 }
+           initTypesInhabited := o4
+           fvarTypesOk := hty }
   · intro y v hy
     obtain ⟨x, hx, rfl⟩ := hdomS y (by simp [hy])
     exact hF ▸ hwf.storeWellDefined x v ((hval x hx).1.trans hy)

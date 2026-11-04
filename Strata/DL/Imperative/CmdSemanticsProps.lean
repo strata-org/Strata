@@ -38,8 +38,10 @@ evaluation relation `EvalCmdE`. Key results:
 
 - Command-state definedness and uniqueness plumbing for `InitState` and
   `UpdateState`.
-- Typed-slot preservation: `InitState_typedAt` and `UpdateState_typedAt`
-  preserve a slot's recorded value type across initialization and update.
+- Typed-slot preservation: `InitState_typedAt`, `UpdateState_typedAt` and
+  `EvalCmdE_preserves_typedAt` preserve a slot's recorded value type across
+  initialization, update, and command evaluation; `UpdateStates_typedAt` does so
+  for a positional write-back whose values have the types the targets held.
 - None-preservation: `InitState_preserves_none` and `UpdateState_preserves_none`
   preserve undefined slots.
 - Store domain and values: `evalCmdE_preserves_none_of_not_def`,
@@ -64,8 +66,9 @@ evaluation relation `EvalCmdE`. Key results:
 - Typing (`HasTyping`, `LawfulHasTyping` in `PureExpr`): `eval_bool_of_hasType`
   (a well-typed condition evaluates to `true` or `false`),
   `EvalCmdE.init_progress` and `EvalCmdE.set_progress` (a well-typed
-  deterministic `init` or `set` can step), and `StoreHasTyping.update`,
-  `EvalCmdE.init_storeHasTyping`, `EvalCmdE.preserves_storeHasTyping` (commands
+  deterministic `init` or `set` can step), `StoreHasTyping.update`,
+  `StoreHasTyping.eq_none_of_store_none` (a typing a store conforms to types only defined
+  variables), `EvalCmdE.init_storeHasTyping`, `EvalCmdE.preserves_storeHasTyping` (commands
   keep a store conforming to its typing).
 - Evaluation: `EvalsTo.det` (evaluation is deterministic); under `WellFormedSemanticEvalVal`
   results in a well-formed store are values (`EvalsTo.value`); under
@@ -348,6 +351,53 @@ theorem UpdateState_typedAt {P : PureExpr} [HasVal P] [HasFvars P] [LawfulHasVal
       subst hp_prev
       exact ⟨v, h_xv, LawfulHasVal.valueOfTy_congr f p v ty t hprev_ty hp_t hv_t⟩
     · rw [h_other y hxy]; exact ⟨prev, hprev, hprev_ty⟩
+
+/-- Event-producing command evaluation preserves the type recorded for an
+already-defined slot. -/
+theorem EvalCmdE_preserves_typedAt {P : PureExpr}
+    [HasFvar P] [HasBool P] [HasBoolOps P] [DecidableEq P.Ident] [HasFvars P] [LawfulHasVal P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P}
+    (h : EvalCmdE P f σ c σ' emitted)
+    {y : P.Ident} {ty : P.Ty}
+    (hy : ∃ prev, σ y = some prev ∧ HasVal.valueOfTy f prev ty) :
+    ∃ prev, σ' y = some prev ∧ HasVal.valueOfTy f prev ty := by
+  cases h with
+  | eval_init _ hinit _ _ => exact InitState_typedAt hinit hy
+  | eval_init_unconstrained hinit _ _ => exact InitState_typedAt hinit hy
+  | eval_set _ hupd hstored _ => exact UpdateState_typedAt hupd hstored hy
+  | eval_set_nondet hupd hstored _ => exact UpdateState_typedAt hupd hstored hy
+  | eval_assert => exact hy
+  | eval_assume => exact hy
+  | eval_cover => exact hy
+
+/-- A positional write-back `UpdateStates σ xs vs σ'` whose every value has the type of the
+value the target held in a reference store `σ₀` keeps each slot typed in `σ₀` at its type,
+provided the slot is so typed in `σ`. -/
+theorem UpdateStates_typedAt {P : PureExpr} [HasVal P] [HasFvars P] [LawfulHasVal P]
+    [DecidableEq P.Ident]
+    {f : P.Factory} {σ₀ σ σ' : SemanticStore P} {xs : List P.Ident} {vs : List P.Val}
+    (h : UpdateStates σ xs vs σ')
+    (hrel : List.Rel₂ (HasVal.valueOfStoredTy (P := P) f σ₀) xs vs)
+    {y : P.Ident} {ty : P.Ty}
+    (h₀ : ∃ prev, σ₀ y = some prev ∧ HasVal.valueOfTy f prev ty)
+    (hy : ∃ prev, σ y = some prev ∧ HasVal.valueOfTy f prev ty) :
+    ∃ prev, σ' y = some prev ∧ HasVal.valueOfTy f prev ty := by
+  induction h with
+  | update_none => exact hy
+  | @update_some _ x v _ _ _ _ hupd _ ih =>
+    cases hrel with
+    | cons hxv hrest =>
+      refine ih hrest ?_
+      cases hupd with
+      | update _ h_xv h_other =>
+        by_cases hxy : x = y
+        · subst hxy
+          obtain ⟨prev₀, hprev₀, hprev₀_ty⟩ := h₀
+          obtain ⟨p, t, hp, hp_t, hv_t⟩ := hxv
+          have hp_eq : p = prev₀ := Option.some.inj (hp.symm.trans hprev₀)
+          subst hp_eq
+          exact ⟨v, h_xv, LawfulHasVal.valueOfTy_congr f p v ty t hprev₀_ty hp_t hv_t⟩
+        · rw [h_other y hxy]; exact hy
 
 /-- `InitState` leaves every slot other than its target unchanged. -/
 theorem InitState_preserves_none {P : PureExpr} {σ σ' : SemanticStore P}
@@ -1413,6 +1463,19 @@ theorem eval_bool_of_hasType [HasTyping P] [LawfulHasTyping P] {f : P.Factory} {
 
 variable [DecidableEq P.Ident]
 
+omit [HasBool P] [DecidableEq P.Ident] in
+/-- Extending a typing with no definitions leaves it unchanged. -/
+@[simp] theorem VarTyping.extend_nil (Γ : VarTyping P) : Γ.extend [] = Γ := rfl
+
+omit [HasBool P] in
+/-- Extending a typing with one definition overrides the typing at that name. -/
+theorem VarTyping.extend_singleton (Γ : VarTyping P) (x : P.Ident) (ty : P.Ty) :
+    Γ.extend [(x, ty)] = fun y => if y = x then some ty else Γ y := by
+  funext y
+  by_cases hyx : y = x
+  · subst hyx; simp [VarTyping.extend]
+  · simp [VarTyping.extend, hyx, Ne.symm hyx]
+
 /-- Extending a typing and a store at a fresh variable `x` with a value of the
     new type keeps the store conforming. -/
 theorem StoreHasTyping.update {f : P.Factory} {σ : SemanticStore P} {Γ : VarTyping P}
@@ -1427,6 +1490,18 @@ theorem StoreHasTyping.update {f : P.Factory} {σ : SemanticStore P} {Γ : VarTy
     exact ⟨v, by simp [SemanticStore.update], hv⟩
   · simp only [hyx, ↓reduceIte] at hy
     simpa [SemanticStore.update, hyx] using hσ y tyy hy
+
+omit [DecidableEq P.Ident] in
+/-- A typing that a store conforms to types no variable the store leaves undefined. -/
+theorem StoreHasTyping.eq_none_of_store_none {f : P.Factory} {σ : SemanticStore P}
+    {Γ : VarTyping P} (hσ : StoreHasTyping f σ Γ) {y : P.Ident} (h : (σ y).isNone = true) :
+    Γ y = none := by
+  cases hΓ : Γ y with
+  | none => rfl
+  | some ty =>
+    obtain ⟨v, hv, -⟩ := hσ y ty hΓ
+    rw [hv] at h
+    cases h
 
 variable [HasFvar P]
 

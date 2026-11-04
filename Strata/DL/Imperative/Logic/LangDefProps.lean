@@ -25,7 +25,7 @@ theorem BlockInitEnvWF.generatedNamesFresh {P : PureExpr} [HasBool P] [HasBoolOp
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
     [HasIdent P] [HasOps P] [DecidableEq P.Ident]
     {CmdT : Type} [HasVarsImp P CmdT] [HasOpsImp P CmdT]
-    [HasInitTypesImp P CmdT]
+    [HasInitTypesImp P CmdT] [HasTypedVarsImp P CmdT]
     {params : InitEnvWFParams P} {ss : List (Stmt P CmdT)} {ρ : Env P}
     (h : BlockInitEnvWF params ss ρ) :
     Env.varsUndefined (P := P)

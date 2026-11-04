@@ -137,7 +137,8 @@ theorem InitEnvWF.of_defUseOk {params : InitEnvWFParams} {s : Statement}
       ¬ p.toList.isPrefixOf n.name.toList)
     (hdu : Stmt.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs s = Bool.true)
     (hfd : ∀ nm, Core.isNameInFactory nm = Bool.true → params.declaredFuncs ⟨nm, ()⟩ = Bool.true)
-    (hinit : Stmt.InitTypesInhabited (P := Expression) (C := Command) ρ.factory s) :
+    (hinit : Stmt.InitTypesInhabited (P := Expression) (C := Command) ρ.factory s)
+    (hty : ∃ Γ, StoreHasTyping ρ.factory ρ.store Γ ∧ Stmt.fvarTypesWellAnnotated Γ s) :
     InitEnvWF params s ρ where
   toWellFormedSemanticEval := hwf
   storeWellDefined := hsv
@@ -149,6 +150,7 @@ theorem InitEnvWF.of_defUseOk {params : InitEnvWFParams} {s : Statement}
   defUseOk := hdu
   factoryDeclared := hfd
   initTypesInhabited := hinit
+  fvarTypesOk := hty
 
 /-- Every variable read by a well-formed block avoids every reserved prefix. -/
 theorem BlockInitEnvWF.getVarsNotReserved {params : InitEnvWFParams}
@@ -174,7 +176,8 @@ theorem BlockInitEnvWF.of_defUseOk {params : InitEnvWFParams} {bss : Statements}
       ¬ p.toList.isPrefixOf n.name.toList)
     (hdu : Block.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs bss = Bool.true)
     (hfd : ∀ nm, Core.isNameInFactory nm = Bool.true → params.declaredFuncs ⟨nm, ()⟩ = Bool.true)
-    (hinit : Block.InitTypesInhabited (P := Expression) (C := Command) ρ.factory bss) :
+    (hinit : Block.InitTypesInhabited (P := Expression) (C := Command) ρ.factory bss)
+    (hty : ∃ Γ, StoreHasTyping ρ.factory ρ.store Γ ∧ Block.fvarTypesWellAnnotated Γ bss) :
     BlockInitEnvWF params bss ρ where
   toWellFormedSemanticEval := hwf
   storeWellDefined := hsv
@@ -195,6 +198,7 @@ theorem BlockInitEnvWF.of_defUseOk {params : InitEnvWFParams} {bss : Statements}
     exact hres ident hdefined pfx hpfx
   factoryDeclared := hfd
   initTypesInhabited := hinit
+  fvarTypesOk := hty
 
 /-! ## Lowering: enclosing condition → sub-derivation condition
 
@@ -218,6 +222,10 @@ theorem blockInitEnvWF_cons_head {params : InitEnvWFParams} {s : Statement} {ss 
     h.reservedFreshCore hdu.1 h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty
       (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inl hty)))
+    (by
+      obtain ⟨Γ, hσ, hw⟩ := h.fvarTypesOk
+      simp only [Block.fvarTypesWellAnnotated] at hw
+      exact ⟨Γ, hσ, hw.1⟩)
 
 /-- Singleton statement list: the block condition on `[s]` lowers to the statement
     condition on `s`. -/
@@ -255,6 +263,9 @@ theorem blockInitEnvWF_append_head {params : InitEnvWFParams} {ss₁ ss₂ : Sta
     h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty
       (by rw [Block.initTypes_append]; exact List.mem_append.mpr (Or.inl hty)))
+    (by
+      obtain ⟨Γ, hσ, hw⟩ := h.fvarTypesOk
+      exact ⟨Γ, hσ, Imperative.Block.fvarTypesWellAnnotated_of_append_left hw⟩)
 
 /-- Block statement: the statement condition on `.block l ss md` lowers to the
     block condition on the body `ss`. -/
@@ -270,6 +281,10 @@ theorem blockInitEnvWF_of_block {params : InitEnvWFParams} {ss : Statements}
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined hdefs hdnr
     h.reservedFresh hdu h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty (by simp only [Stmt.initTypes]; exact hty))
+    (by
+      obtain ⟨Γ, hσ, hw⟩ := h.fvarTypesOk
+      simp only [Stmt.fvarTypesWellAnnotated] at hw
+      exact ⟨Γ, hσ, hw⟩)
 
 /-- `ite`: the statement condition lowers to the block condition on the *then*
     branch. -/
@@ -288,6 +303,10 @@ theorem blockInitEnvWF_of_ite_then {params : InitEnvWFParams} {c : Expression.Ex
     h.reservedFresh hdu.1.2 h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty
       (by simp only [Stmt.initTypes]; exact List.mem_append.mpr (Or.inl hty)))
+    (by
+      obtain ⟨Γ, hσ, hw⟩ := h.fvarTypesOk
+      simp only [Stmt.fvarTypesWellAnnotated] at hw
+      exact ⟨Γ, hσ, hw.2.1⟩)
 
 /-- `ite`: the statement condition lowers to the block condition on the *else*
     branch. -/
@@ -306,6 +325,10 @@ theorem blockInitEnvWF_of_ite_else {params : InitEnvWFParams} {c : Expression.Ex
     h.reservedFresh hdu.2 h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty
       (by simp only [Stmt.initTypes]; exact List.mem_append.mpr (Or.inr hty)))
+    (by
+      obtain ⟨Γ, hσ, hw⟩ := h.fvarTypesOk
+      simp only [Stmt.fvarTypesWellAnnotated] at hw
+      exact ⟨Γ, hσ, hw.2.2⟩)
 
 /-- `loop`: the statement condition lowers to the block condition on the body. -/
 theorem blockInitEnvWF_of_loop_body {params : InitEnvWFParams} {g : Expression.Expr}
@@ -321,6 +344,10 @@ theorem blockInitEnvWF_of_loop_body {params : InitEnvWFParams} {g : Expression.E
   exact BlockInitEnvWF.of_defUseOk h.toWellFormedSemanticEval h.storeWellDefined hdefs hdnr
     h.reservedFresh hdu.2 h.factoryDeclared
     (fun ty hty => h.initTypesInhabited ty (by simp only [Stmt.initTypes]; exact hty))
+    (by
+      obtain ⟨Γ, hσ, hw⟩ := h.fvarTypesOk
+      simp only [Stmt.fvarTypesWellAnnotated] at hw
+      exact ⟨Γ, hσ, hw.2.2.2⟩)
 
 /-! ## Preservation: re-establishing a condition after a sub-derivation runs
 
@@ -376,6 +403,7 @@ theorem blockInitEnvWF_cons_tailE {params : InitEnvWFParams} {s : Statement} {ss
     (fun n hn => ?_) ?_ h.factoryDeclared
     (fun ty hty => hfac ▸ h.initTypesInhabited ty
       (by rw [Block.initTypes]; exact List.mem_append.mpr (Or.inr hty)))
+    ?_
   · obtain ⟨hnone, hnotdef⟩ := hfresh n hn
     rw [core_stmt_run_terminal_preserves_none_of_not_definedVars_trueE π hnotdef hnone hrun]
     rfl
@@ -391,6 +419,9 @@ theorem blockInitEnvWF_cons_tailE {params : InitEnvWFParams} {s : Statement} {ss
         (Imperative.Stmt.definedVars_true_subset_false cmdDefinedVarsFlagIrrelevant
           (by simpa using hnew)))
   · rw [hstore]; exact hdu.2
+  · obtain ⟨Γ, hσ, hw⟩ := h.fvarTypesOk
+    simp only [Block.fvarTypesWellAnnotated] at hw
+    exact ⟨_, core_stmt_run_storeHasTyping_extendE π hrun hσ, hw.2⟩
 
 /-- After the prefix `ss₁` runs to
     `ρ'` along the event semantics, the block condition holds on `ss₂` at `ρ'`.
@@ -471,7 +502,7 @@ theorem initEnvWF_loop_iterateE {params : InitEnvWFParams} {g : Expression.Expr}
     · exact absurd hx (by simp)
   refine InitEnvWF.of_defUseOk (hfac ▸ h.toWellFormedSemanticEval) hproj (fun n hn => ?_)
     h.definedVarsNotReserved (fun n hn => ?_) ?_ h.factoryDeclared
-    (hfac ▸ h.initTypesInhabited)
+    (hfac ▸ h.initTypesInhabited) ?_
   · have hdef := h.defsUndefined n hn
     show (projectStore ρ.store ρ_inner.store n).isNone
     rw [Option.isNone_iff_eq_none] at hdef ⊢
@@ -480,6 +511,13 @@ theorem initEnvWF_loop_iterateE {params : InitEnvWFParams} {g : Expression.Expr}
   · show Stmt.defUseWellFormed
       (fun n => ((projectStore ρ.store ρ_inner.store) n).isSome) params.declaredFuncs _ = Bool.true
     rw [hfun]; exact h.defUseOk
+  · obtain ⟨Γ, hσ, hw⟩ := h.fvarTypesOk
+    refine ⟨Γ, fun y ty hy => ?_, hw⟩
+    have hsome : (ρ.store y).isSome = Bool.true := by
+      obtain ⟨w, hw', _⟩ := hσ y ty hy
+      simp [hw']
+    obtain ⟨v, hv, hvt⟩ := core_stmts_preserves_typedAtE π hrun (hσ y ty hy)
+    exact ⟨v, by simp [projectStore, hsome, hv], hvt⟩
 
 
 /-! ## A trivially-satisfiable condition
@@ -502,6 +540,7 @@ theorem blockInitEnvWF_nil {params : InitEnvWFParams} {ρ : Imperative.Env Expre
     BlockInitEnvWF params [] ρ := by
   refine BlockInitEnvWF.of_defUseOk hwf hsv (fun n hn => ?_) (fun n hn => ?_)
     (fun n _ p hp => ?_) rfl hfd (by intro ty hty; simp [Block.initTypes] at hty)
+    ⟨fun _ => none, fun _ _ h => by simp at h, trivial⟩
   · simp [Block.definedVars] at hn
   · simp [Block.definedVars] at hn
   · rw [hpref] at hp; simp at hp
@@ -518,6 +557,8 @@ theorem blockInitEnvWF_procBlock_nil {params : InitEnvWFParams} {ρ : Imperative
     BlockInitEnvWF params [Imperative.Stmt.block l [] md] ρ := by
   refine BlockInitEnvWF.of_defUseOk hwf hsv (fun n hn => ?_) (fun n hn => ?_)
     (fun n _ p hp => ?_) ?_ hfd (by intro ty hty; simp [Block.initTypes, Stmt.initTypes] at hty)
+    ⟨fun _ => none, fun _ _ h => by simp at h,
+      by simp [Block.fvarTypesWellAnnotated, Stmt.fvarTypesWellAnnotated]⟩
   · simp [Block.definedVars, Stmt.definedVars] at hn
   · simp [Block.definedVars, Stmt.definedVars] at hn
   · rw [hpref] at hp; simp at hp
