@@ -16,8 +16,8 @@ public import Strata.Languages.Core.Typing.Spec.TypeSpecShared
 Specifies when a whole `Program` is well-typed, parameterized over the
 `ExprTypingSpec` typeclass (so it instantiates to both the polymorphic `HasType`
 and the annotated `HasTypeA`), reusing the per-declaration specs
-(`FuncHasType'`, `ProcHasType'`) for functions and procedures, and `MutualADTWF`
-(`DatatypeTypeSpec.lean`) for datatype blocks.
+(`FuncHasType'`, `ProcHasType'`) for functions and procedures. A datatype block
+is typed by registering it with `LContext.addMutualBlock`.
 
 The specification is layered:
 
@@ -74,10 +74,11 @@ inductive DeclHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
       DeclHasType' τ P C Γ (.type (.syn ts) md) C
         { Γ with aliases := { typeArgs := ts.typeArgs, name := ts.name, type := storedTy } :: Γ.aliases }
 
-  /-- A (mutual) datatype declaration: the block is well-formed (`MutualADTWF`);
-      the datatypes and their generated functions extend `C`. `Γ` is unchanged. -/
+  /-- A (mutual) datatype declaration: `LContext.addMutualBlock` accepts the
+      block and extends `C` with its datatypes and their generated functions.
+      The block then satisfies `MutualADTWF` (`Datatype.addMutualBlock_sound`).
+      `Γ` is unchanged. -/
   | type_data : ∀ C C' Γ block md,
-      MutualADTWF C block →
       C.addMutualBlock block = .ok C' →
       DeclHasType' τ P C Γ (.type (.data block) md) C' Γ
 

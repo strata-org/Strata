@@ -772,6 +772,15 @@ structurally recursive over the type arguments. Thus, we use the lexicographic
 measure `(adts.size - seen.length, t.size)`.
 -/
 
+/--
+A constructor is inhabited if `inhab` accepts all of its argument types.
+-/
+def constr_inhab (inhab : LMonoTy → StateM inhabMap Bool)
+  (c : LConstr IDMeta) : StateM inhabMap Bool :=
+  c.args.foldlM (fun accA ty1 => do
+    let b1 ← inhab ty1.2
+    pure (accA && b1)) true
+
 mutual
 
 /--
@@ -794,24 +803,19 @@ def typesym_inhab (adts: @TypeFactory IDMeta) (seen: List String)
       match ha: adts.getType ts with
       | none => pure true -- Assume all non-datatypes are inhabited
       | some l =>
+        have hn: List.Nodup (l.name :: seen) := by
+          rw[List.nodup_cons]; constructor
+          . have := List.find?_some ha; grind
+          . assumption
+        have hsub' : (l.name :: seen) ⊆ (List.map (fun x => x.name) adts.allDatatypes) := by
+          apply List.cons_subset.mpr
+          constructor <;> try assumption
+          rw[List.mem_map]; exists l; constructor <;> try grind
+          have := List.mem_of_find?_eq_some ha; grind
         -- A datatype is inhabited if it has an inhabited constructor
         let res ← (l.constrs.foldlM (fun accC c => do
-          -- A constructor is inhabited if all of its arguments are inhabited
-          let constrInhab ← (c.args.foldlM
-            (fun accA ty1 =>
-                do
-                  have hn: List.Nodup (l.name :: seen) := by
-                    rw[List.nodup_cons]; constructor
-                    . have := List.find?_some ha; grind
-                    . assumption
-                  have hsub' : (l.name :: seen) ⊆ (List.map (fun x => x.name) adts.allDatatypes) := by
-                    apply List.cons_subset.mpr
-                    constructor <;> try assumption
-                    rw[List.mem_map]; exists l; constructor <;> try grind
-                    have := List.mem_of_find?_eq_some ha; grind
-                  let b1 ← ty_inhab adts (l.name :: seen) hn hsub' ty1.2
-                  pure (accA && b1)
-              ) true)
+          let constrInhab ←
+            constr_inhab (ty_inhab adts (l.name :: seen) hn hsub') c
           pure (accC || constrInhab)
           ) false)
         /-

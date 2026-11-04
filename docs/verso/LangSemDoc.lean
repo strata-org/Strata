@@ -341,7 +341,9 @@ Core's commands are the imperative commands plus a procedure `call`, typed by
 
 ### Datatypes
 
-A mutual datatype block must satisfy {name Core.TypeSpec.MutualADTWF}`MutualADTWF`.
+A mutual datatype declaration is well-typed when registering its block with
+`LContext.addMutualBlock` succeeds
+({name Core.TypeSpec.DeclHasType'.type_data}`DeclHasType'.type_data`).
 
 {docstring Core.TypeSpec.MutualADTWF}
 

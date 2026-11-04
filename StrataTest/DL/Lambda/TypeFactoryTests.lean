@@ -1041,6 +1041,84 @@ def wrapperTy' : LDatatype Unit := {name := "Wrapper", typeArgs := [], constrs :
   typeCheckAndPartialEval #[[wrapperTy'], [listTy]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 ---------------------------------------------------------------------
+-- Type constructor applied at the wrong arity should be rejected
+---------------------------------------------------------------------
+
+-- `List` takes one type argument, but `MkPairs` applies it to two.
+def pairsConstr : LConstr Unit :=
+  {name := "MkPairs", args := [("xs", .tcons "List" [.int, .int])], testerName := "isMkPairs"}
+def pairsTy : LDatatype Unit :=
+  {name := "Pairs", typeArgs := [], constrs := [pairsConstr], constrs_ne := rfl}
+
+/--
+info: Error in datatype Pairs, constructor MkPairs: Type constructor 'List' expects 1 type argument(s) but was given 2
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[[listTy], [pairsTy]] (IntBoolFactory : @Factory TestParams)
+    (intConst () 0)
+
+---------------------------------------------------------------------
+-- A datatype named after a known type should be rejected
+---------------------------------------------------------------------
+
+def intClashTy : LDatatype Unit :=
+  {name := "int", typeArgs := [],
+   constrs := [{name := "MkInt", args := [], testerName := "isMkInt"}], constrs_ne := rfl}
+
+/--
+info: Cannot name datatype same as known type!
+type:
+int
+Type Arguments:
+[]
+Constructors:
+[Name: MkInt Args: [] Tester: isMkInt ]
+
+KnownTypes' names:
+[arrow, string, int, bool]
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[[intClashTy]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+
+---------------------------------------------------------------------
+-- Inhabitance that needs a second evaluation
+---------------------------------------------------------------------
+
+/-
+type RoundA = A1 RoundB | A2
+type RoundB = MkB RoundA
+
+Checking `RoundA` first visits `RoundB` while `RoundA` is still being expanded, so `RoundB`
+looks uninhabited then. That answer is not kept, and `RoundB` is found inhabited when it is
+checked on its own, once `RoundA` is known to be inhabited.
+-/
+
+def roundATy : LDatatype Unit :=
+  {name := "RoundA", typeArgs := [],
+   constrs := [{name := "A1", args := [("b", .tcons "RoundB" [])], testerName := "isA1"},
+               {name := "A2", args := [], testerName := "isA2"}],
+   constrs_ne := rfl}
+
+def roundBTy : LDatatype Unit :=
+  {name := "RoundB", typeArgs := [],
+   constrs := [{name := "MkB", args := [("a", .tcons "RoundA" [])], testerName := "isMkB"}],
+   constrs_ne := rfl}
+
+/--
+info: Annotated expression:
+#0
+
+---
+info: #0
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[[roundATy, roundBTy]] (IntBoolFactory : @Factory TestParams)
+    (intConst () 0)
+
+---------------------------------------------------------------------
 ---------------------------------------------------------------------
 -- 3-way mutually recursive datatypes (A -> B -> C -> A)
 ---------------------------------------------------------------------

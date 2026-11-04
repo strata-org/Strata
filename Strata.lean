@@ -185,6 +185,7 @@ import Strata.DL.Lambda.DatatypeWF
 import Strata.Languages.Core.ProcedureTypeSpec
 import Strata.Languages.Core.ProcedureTypeProps
 import Strata.Languages.Core.DatatypeTypeSpec
+import Strata.Languages.Core.DatatypeTypeSpecProps
 import Strata.Languages.Core.ProgramTypeSpec
 import Strata.Languages.Core.Typing.Spec.TypeSpecShared
 import Strata.Languages.Core.Typing.Spec.TypingSpec
