@@ -423,23 +423,23 @@ private theorem step_preserves {π : String → Option Core.Procedure} {nv : Int
     RunInv nv after ∧ emitted = [] := by
   cases hinv with
   | atEntry ρ hf h =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | fetch hlookup =>
       have hb := Option.some.inj (hlookup.symm.trans entry_lookup)
       rw [hb]
       exact ⟨RunInv.entryPreInitI ρ hf h, rfl⟩
   | entryPreInitI ρ hf h =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | step_cmd hcmd =>
       obtain ⟨hother, rfl⟩ := init_inv hcmd
       exact ⟨RunInv.entryPreInitS _ hf ((hother nId i_ne_n).trans h), rfl⟩
   | entryPreInitS ρ hf h =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | step_cmd hcmd =>
       obtain ⟨hother, rfl⟩ := init_inv hcmd
       exact ⟨RunInv.entryPreSetI0 _ hf ((hother nId s_ne_n).trans h), rfl⟩
   | entryPreSetI0 ρ hf h =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | step_cmd hcmd =>
       obtain ⟨v, heval, hres, hother, rfl⟩ := set_inv hcmd
       rw [hf] at heval
@@ -449,7 +449,7 @@ private theorem step_preserves {π : String → Option Core.Procedure} {nv : Int
       subst hv
       exact ⟨RunInv.entryPreSetS0 _ hf ⟨(hother nId i_ne_n).trans h, hres⟩, rfl⟩
   | entryPreSetS0 ρ hf h =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | step_cmd hcmd =>
       obtain ⟨v, heval, hres, hother, rfl⟩ := set_inv hcmd
       rw [hf] at heval
@@ -461,18 +461,18 @@ private theorem step_preserves {π : String → Option Core.Procedure} {nv : Int
       exact ⟨RunInv.entryAtGoto _ hf ⟨0, 0, (hother nId s_ne_n).trans hn,
         (hother iId s_ne_i).trans hi, hres, by decide, hnv⟩, rfl⟩
   | entryAtGoto ρ hf h =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | goto_true _ => exact ⟨RunInv.atLoop ρ hf h, rfl⟩
     | goto_false _ => exact ⟨RunInv.atLoop ρ hf h, rfl⟩
   | atLoop ρ hf h =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | fetch hlookup =>
       have hb := Option.some.inj (hlookup.symm.trans loop_lookup)
       rw [hb]
       exact ⟨RunInv.loopAtBranch ρ hf h, rfl⟩
   | loopAtBranch ρ hf h =>
     obtain ⟨iv, sv, hn, hi, hs, hsum, hle⟩ := h
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | goto_true hguard =>
       rw [hf] at hguard
       have heq := Option.some.inj (hguard.symm.trans (eval_lt ρ.store iv nv hi hn))
@@ -491,14 +491,14 @@ private theorem step_preserves {π : String → Option Core.Procedure} {nv : Int
         exact absurd heq (by decide)
       exact ⟨RunInv.atDone ρ hf ⟨iv, sv, hn, hi, hs, hsum, by omega⟩, rfl⟩
   | atBody ρ hf h =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | fetch hlookup =>
       have hb := Option.some.inj (hlookup.symm.trans body_lookup)
       rw [hb]
       exact ⟨RunInv.bodyPreInc ρ hf h, rfl⟩
   | bodyPreInc ρ hf h =>
     obtain ⟨iv, sv, hn, hi, hs, hsum, hlt⟩ := h
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | step_cmd hcmd =>
       obtain ⟨v, heval, hres, hother, rfl⟩ := set_inv hcmd
       rw [hf] at heval
@@ -509,7 +509,7 @@ private theorem step_preserves {π : String → Option Core.Procedure} {nv : Int
         (hother sId i_ne_s).trans hs, by grind, by omega⟩, rfl⟩
   | bodyPreAdd ρ hf h =>
     obtain ⟨iv, sv, hn, hi, hs, hsum, hle⟩ := h
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | step_cmd hcmd =>
       obtain ⟨v, heval, hres, hother, rfl⟩ := set_inv hcmd
       rw [hf] at heval
@@ -519,18 +519,18 @@ private theorem step_preserves {π : String → Option Core.Procedure} {nv : Int
       exact ⟨RunInv.bodyAtGoto _ hf ⟨iv, sv + iv, (hother nId s_ne_n).trans hn,
         (hother iId s_ne_i).trans hi, hres, by grind, hle⟩, rfl⟩
   | bodyAtGoto ρ hf h =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | goto_true _ => exact ⟨RunInv.atLoop ρ hf h, rfl⟩
     | goto_false _ => exact ⟨RunInv.atLoop ρ hf h, rfl⟩
   | atDone ρ hf h =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | fetch hlookup =>
       have hb := Option.some.inj (hlookup.symm.trans done_lookup)
       rw [hb]
       exact ⟨RunInv.donePreSet ρ hf h, rfl⟩
   | donePreSet ρ hf h =>
     obtain ⟨iv, sv, hn, hi, hs, hsum, hiv⟩ := h
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | step_cmd hcmd =>
       obtain ⟨v, heval, hres, hother, rfl⟩ := set_inv hcmd
       rw [hf] at heval
@@ -540,10 +540,10 @@ private theorem step_preserves {π : String → Option Core.Procedure} {nv : Int
       subst hiv
       exact ⟨RunInv.doneAtFinish _ hf ⟨sv, (hother nId result_ne_n).trans hn, hres, hsum⟩, rfl⟩
   | doneAtFinish ρ hf h =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | finish => exact ⟨RunInv.terminal ρ hf h, rfl⟩
   | terminal ρ hf h =>
-    cases hstep using StepCFGE.casesRules
+    cases hstep
 
 /-- Every run from an invariant state stays in the invariant and emits no events. -/
 private theorem run_preserves {π : String → Option Core.Procedure} {nv : Int} (hnv : 0 ≤ nv)
@@ -838,7 +838,7 @@ private theorem falseEns_entry_lookup :
 
 /-- The entry environment for the `false_ens` run: the empty store at `Core.Factory`. -/
 private def ρ0N : Imperative.Env Core.Expression :=
-  { store := Imperative.emptyStore, factory := Core.Factory, hasFailure := false }
+  { store := Imperative.emptyStore, factory := Core.Factory }
 
 /-- The store after the body-local `var t : int := *` chooses `0`. -/
 private def σ2N : Core.CoreStore :=
@@ -882,11 +882,11 @@ private theorem false_ens_initEnvWF :
 private theorem falseEns_run :
     ReflTransTrace (StepCFGE Core.Expression (Core.EvalCommandE falseEnsPgm.findProcByString?))
       (.atBlock falseEnsCFG falseEnsCFG.entry ρ0N) [] (.terminal { ρ0N with store := σ2N }) :=
-  .step _ [] _ _ _ (StepCFGE.step_admin (Imperative.StepCFG.fetch falseEns_entry_lookup)) <|
+  .step _ [] _ _ _ ((StepCFGE.fetch falseEns_entry_lookup)) <|
   .step _ [] _ _ _ (StepCFGE.step_cmd (EvalCmdExtE.cmd_sem
     (Imperative.EvalCmdE.eval_init_unconstrained hinitN int0_valueOfTy
       (Core.coreEvaluator_WellFormedSemanticEvalVar Core.Factory)))) <|
-  .step _ [] _ [] _ (StepCFGE.step_admin Imperative.StepCFG.finish) (.refl _)
+  .step _ [] _ [] _ (StepCFGE.finish) (.refl _)
 
 /-- The captured `false` literal never holds denotationally at `Core.Factory`:
     its closed captured form denotes `false` in every world. -/
@@ -1042,13 +1042,13 @@ private theorem step_preserves_copy {π : String → Option Core.Procedure} {a :
     CopyInv a after ∧ emitted = [] := by
   cases hinv with
   | atEntry ρ hf hx =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | fetch hlookup =>
       have hb := Option.some.inj (hlookup.symm.trans copy_entry_lookup)
       rw [hb]
       exact ⟨CopyInv.preSet ρ hf hx, rfl⟩
   | preSet ρ hf hx =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | step_cmd hcmd =>
       obtain ⟨v, heval, hres, hother, rfl⟩ := set_inv hcmd
       rw [hf] at heval
@@ -1057,10 +1057,10 @@ private theorem step_preserves_copy {π : String → Option Core.Procedure} {a :
       subst hv
       exact ⟨CopyInv.atFinish _ hf ((hother xIdC (ident_ne (by decide))).trans hx) hres, rfl⟩
   | atFinish ρ hf hx hr =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | finish => exact ⟨CopyInv.terminal ρ hf hx hr, rfl⟩
   | terminal ρ hf hx hr =>
-    cases hstep using StepCFGE.casesRules
+    cases hstep
 
 /-- A whole run preserves `CopyInv` and emits no events. -/
 private theorem run_preserves_copy {π : String → Option Core.Procedure} {a : Int}
@@ -1190,23 +1190,23 @@ private theorem step_preserves_frame {π : String → Option Core.Procedure} {σ
     CopyFrame σ_entry after ∧ emitted = [] := by
   cases hinv with
   | atEntry ρ hs =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | fetch hlookup =>
       have hb := Option.some.inj (hlookup.symm.trans copy_entry_lookup)
       rw [hb]
       exact ⟨CopyFrame.preSet ρ hs, rfl⟩
   | preSet ρ hs =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | step_cmd hcmd =>
       obtain ⟨v, _heval, _hres, hother, rfl⟩ := set_inv hcmd
       refine ⟨CopyFrame.atFinish _ ?_, rfl⟩
       rw [← hs]
       exact frame_of_update hother
   | atFinish ρ hfr =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | finish => exact ⟨CopyFrame.terminal ρ hfr, rfl⟩
   | terminal ρ hfr =>
-    cases hstep using StepCFGE.casesRules
+    cases hstep
 
 /-- Every traced CFG run preserves the `copy` body-frame invariant. -/
 private theorem run_preserves_frame {π : String → Option Core.Procedure} {σ_entry : Core.CoreStore}
@@ -1234,7 +1234,7 @@ theorem copy_body_frame :
       (ListMap.keys copyProc.header.outputs)
     rw [show ListMap.keys copyProc.header.outputs = [resultId] from by native_decide]
     rw [copy_entry] at hrun
-    have hfinal := run_preserves_frame (CopyFrame.atEntry ⟨σ_entry, fac, false⟩ rfl) hrun
+    have hfinal := run_preserves_frame (CopyFrame.atEntry ⟨σ_entry, fac⟩ rfl) hrun
     cases hfinal with
     | terminal _ hfr => exact frame_project hfr
 
@@ -1275,13 +1275,13 @@ private theorem step_preserves_typed {π : String → Option Core.Procedure}
     CopyTypedOut fac σe a after ∧ emitted = [] := by
   cases hinv with
   | atEntry ρ hf hs hx =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | fetch hlookup =>
       have hb := Option.some.inj (hlookup.symm.trans copy_entry_lookup)
       rw [hb]
       exact ⟨CopyTypedOut.preSet ρ hf hs hx, rfl⟩
   | preSet ρ hf hs hx =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | step_cmd hcmd =>
       have hre : (ρ.store resultId).isSome = true := set_pre hcmd
       obtain ⟨v, heval, hres, hother, rfl⟩ := set_inv hcmd
@@ -1292,10 +1292,10 @@ private theorem step_preserves_typed {π : String → Option Core.Procedure}
       subst hv
       exact ⟨CopyTypedOut.atFinish _ hf hre hres, rfl⟩
   | atFinish ρ hf hre hr =>
-    cases hstep using StepCFGE.casesRules with
+    cases hstep with
     | finish => exact ⟨CopyTypedOut.terminal ρ hf hre hr, rfl⟩
   | terminal ρ hf hre hr =>
-    cases hstep using StepCFGE.casesRules
+    cases hstep
 
 /-- A whole run preserves `CopyTypedOut` and emits no events. -/
 private theorem run_preserves_typed {π : String → Option Core.Procedure}
@@ -1329,7 +1329,7 @@ private theorem copy_body_outputs_typed :
     rename_i ρ'
     rw [copy_entry] at hrun
     obtain ⟨hfinal, _⟩ :=
-      run_preserves_typed (CopyTypedOut.atEntry ⟨σ_entry, fac, false⟩ rfl rfl hvx) hrun
+      run_preserves_typed (CopyTypedOut.atEntry ⟨σ_entry, fac⟩ rfl rfl hvx) hrun
     cases hfinal with
     | terminal _ _hf hre hr =>
       intro id ty hmem

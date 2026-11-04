@@ -81,13 +81,6 @@ private theorem wrap_star {c c' : Core.CoreConfig} {trace : Trace Core.Expressio
   | zero => exact h
   | succ n ih => exact ih (Imperative.seq_inner_starE _ h)
 
-/-- An administrative step as an event step. -/
-private theorem admin {c c' : Core.CoreConfig}
-    (h : StepStmt Core.Expression (noCommandEvalE Core.Expression Core.Command)
-      c c') :
-    Core.CoreStepE π c [] c' :=
-  .step_admin h
-
 /-- A loop `guard` with an empty body, whose guard lets it enter from every state
     satisfying `Good`, diverges from such states, provided `Good` survives an
     iteration. -/
@@ -95,8 +88,8 @@ private theorem emptyLoop_diverges (guard : ExprOrNondet Core.Expression)
     (m : Option Core.Expression.Expr) (inv : List (String × Core.Expression.Expr))
     (md : MetaData Core.Expression) (Good : Env Core.Expression → Prop)
     (henter : ∀ ρ, Good ρ →
-      StepStmt Core.Expression (noCommandEvalE Core.Expression Core.Command)
-        (.stmt (.loop guard m inv [] md) ρ)
+      Core.CoreStepE π
+        (.stmt (.loop guard m inv [] md) ρ) []
         (.seq (.block .none ρ.store (.stmts [] ρ)) [.loop guard m inv [] md]))
     (hgood : ∀ ρ, Good ρ →
       Good { ρ with store := projectStore ρ.store ρ.store })
@@ -112,14 +105,14 @@ private theorem emptyLoop_diverges (guard : ExprOrNondet Core.Expression)
         (.seq (.block .none ρ.store (.stmts [] ρ)) [L]) []
         (.seq (.stmt L { ρ with store := projectStore ρ.store ρ.store })
           []) :=
-      .step _ [] _ [] _ (admin π (.step_seq_inner (.step_block_body .step_stmts_nil))) <|
-      .step _ [] _ [] _ (admin π (.step_seq_inner .step_block_done)) <|
-      .step _ [] _ [] _ (admin π .step_seq_done) <|
-      .step _ [] _ [] _ (admin π .step_stmts_cons) (.refl _)
-    exact ⟨[], _, [], _, wrap_step π (admin π (henter ρ hρ)) (n + 1),
+      .step _ [] _ [] _ (.step_seq_inner (.step_block_body .step_stmts_nil)) <|
+      .step _ [] _ [] _ (.step_seq_inner .step_block_done) <|
+      .step _ [] _ [] _ .step_seq_done <|
+      .step _ [] _ [] _ .step_stmts_cons (.refl _)
+    exact ⟨[], _, [], _, wrap_step π (henter ρ hρ) (n + 1),
       wrap_star π hrun (n + 1), ⟨n + 1, _, hgood ρ hρ, rfl⟩⟩
   exact EventLang.CanDiverge.step (EL := Core.Logic.EventLang.coreBlock π)
-    (admin π .step_stmts_cons) hcycle
+    .step_stmts_cons hcycle
 
 end EmptyLoop
 
@@ -227,10 +220,10 @@ theorem star_mayTerminate (π : String → Option Core.Procedure)
     (ρ : Env Core.Expression) :
     ∃ trace ρ', (Core.Logic.EventLang.coreBlock π).TerminatesAt [starLoop] ρ trace ρ' :=
   ⟨_, ρ, .inl <|
-    .step _ [] _ _ _ (.step_admin .step_stmts_cons) <|
-    .step _ [] _ _ _ (.step_admin (.step_seq_inner .step_loop_nondet_exit)) <|
-    .step _ [] _ _ _ (.step_admin .step_seq_done) <|
-    .step _ [] _ _ _ (.step_admin .step_stmts_nil) (.refl _)⟩
+    .step _ [] _ _ _ .step_stmts_cons <|
+    .step _ [] _ _ _ (.step_seq_inner .step_loop_nondet_exit) <|
+    .step _ [] _ _ _ .step_seq_done <|
+    .step _ [] _ _ _ .step_stmts_nil (.refl _)⟩
 
 /-! ## A finite loop with a deterministic step terminates
 
@@ -276,21 +269,17 @@ private theorem no_step_exiting {l : String} {ρ : Env Core.Expression}
 /-- The empty statement list finishes at once. -/
 private theorem fin_nil {Q : Env Core.Expression → Prop} {ρ : Env Core.Expression}
     (hq : Q ρ) : Finishes π Q (.stmts [] ρ) :=
-  .step ⟨[], _, .step_admin .step_stmts_nil⟩ fun e c' hs => by
+  .step ⟨[], _, .step_stmts_nil⟩ fun e c' hs => by
     cases hs with
-    | step_admin ha =>
-      cases ha with
-      | step_stmts_nil => exact .done hq
+    | step_stmts_nil => exact .done hq
 
 /-- A statement list finishes when its head, followed by its tail, does. -/
 private theorem fin_cons {Q : Env Core.Expression → Prop} {s : Core.Statement}
     {ss : Core.Statements} {ρ : Env Core.Expression}
     (h : Finishes π Q (.seq (.stmt s ρ) ss)) : Finishes π Q (.stmts (s :: ss) ρ) :=
-  .step ⟨[], _, .step_admin .step_stmts_cons⟩ fun e c' hs => by
+  .step ⟨[], _, .step_stmts_cons⟩ fun e c' hs => by
     cases hs with
-    | step_admin ha =>
-      cases ha with
-      | step_stmts_cons => exact h
+    | step_stmts_cons => exact h
 
 /-- A sequence finishes when its head finishes at `Q` and the rest finishes from
     every environment satisfying `Q`. -/
@@ -299,23 +288,17 @@ private theorem fin_seq {Q R : Env Core.Expression → Prop} {inner : Core.CoreC
     (hk : ∀ ρ, Q ρ → Finishes π R (.stmts ss ρ)) : Finishes π R (.seq inner ss) := by
   induction h with
   | done hq =>
-    refine .step ⟨[], _, .step_admin .step_seq_done⟩ fun e c' hs => ?_
+    refine .step ⟨[], _, .step_seq_done⟩ fun e c' hs => ?_
     cases hs with
-    | step_admin ha =>
-      cases ha with
-      | step_seq_done => exact hk _ hq
-      | step_seq_inner ha' => cases ha'
+    | step_seq_done => exact hk _ hq
     | step_seq_inner hs' => exact absurd hs' (no_step_terminal π)
   | step prog _ ih =>
     obtain ⟨e₀, c₀, hs₀⟩ := prog
     refine .step ⟨e₀, _, .step_seq_inner hs₀⟩ fun e c' hs => ?_
     cases hs with
     | step_seq_inner hs' => exact ih _ _ hs'
-    | step_admin ha =>
-      cases ha with
-      | step_seq_inner ha' => exact ih _ _ (.step_admin ha')
-      | step_seq_done => exact absurd hs₀ (no_step_terminal π)
-      | step_seq_exit => exact absurd hs₀ (no_step_exiting π)
+    | step_seq_done => exact absurd hs₀ (no_step_terminal π)
+    | step_seq_exit => exact absurd hs₀ (no_step_exiting π)
 
 /-- A block finishes when its body does, at the body's environment with the
     block's scope restored. -/
@@ -326,24 +309,18 @@ private theorem fin_block {Q : Env Core.Expression → Prop} {inner : Core.CoreC
       (.block label σ inner) := by
   induction h with
   | done hq =>
-    refine .step ⟨[], _, .step_admin .step_block_done⟩ fun e c' hs => ?_
+    refine .step ⟨[], _, .step_block_done⟩ fun e c' hs => ?_
     cases hs with
-    | step_admin ha =>
-      cases ha with
-      | step_block_done => exact .done ⟨_, hq, rfl⟩
-      | step_block_body ha' => cases ha'
+    | step_block_done => exact .done ⟨_, hq, rfl⟩
     | step_block_body hs' => exact absurd hs' (no_step_terminal π)
   | step prog _ ih =>
     obtain ⟨e₀, c₀, hs₀⟩ := prog
     refine .step ⟨e₀, _, .step_block_body hs₀⟩ fun e c' hs => ?_
     cases hs with
     | step_block_body hs' => exact ih _ _ hs'
-    | step_admin ha =>
-      cases ha with
-      | step_block_body ha' => exact ih _ _ (.step_admin ha')
-      | step_block_done => exact absurd hs₀ (no_step_terminal π)
-      | step_block_exit_match _ => exact absurd hs₀ (no_step_exiting π)
-      | step_block_exit_mismatch _ => exact absurd hs₀ (no_step_exiting π)
+    | step_block_done => exact absurd hs₀ (no_step_terminal π)
+    | step_block_exit_match _ => exact absurd hs₀ (no_step_exiting π)
+    | step_block_exit_mismatch _ => exact absurd hs₀ (no_step_exiting π)
 
 /-- A command finishes when it can execute, at every store it can produce. -/
 private theorem fin_cmd {Q : Env Core.Expression → Prop} {cmd : Core.Command}
@@ -356,9 +333,6 @@ private theorem fin_cmd {Q : Env Core.Expression → Prop} {cmd : Core.Command}
   refine .step ⟨em, _, .step_cmd hc⟩ fun e c' hs => ?_
   cases hs with
   | step_cmd hc' => exact .done (hall _ _ hc')
-  | step_admin ha =>
-    cases ha with
-    | step_cmd hfalse => exact hfalse.elim
 
 /-- A loop whose guard is false exits. -/
 private theorem fin_loop_exit {Q : Env Core.Expression → Prop} {g : Core.Expression.Expr}
@@ -366,13 +340,11 @@ private theorem fin_loop_exit {Q : Env Core.Expression → Prop} {g : Core.Expre
     {body : Core.Statements} {md : MetaData Core.Expression} {ρ : Env Core.Expression}
     (hg : Core.Expression.eval ρ.factory ρ.store g = some HasBool.ff) (hq : Q ρ) :
     Finishes π Q (.stmt (.loop (.det g) m inv body md) ρ) := by
-  refine .step ⟨[], _, .step_admin (.step_loop_exit hg)⟩ fun e c' hs => ?_
+  refine .step ⟨[], _, (.step_loop_exit hg)⟩ fun e c' hs => ?_
   cases hs with
-  | step_admin ha =>
-    cases ha with
-    | step_loop_exit _ => exact .done hq
-    | step_loop_enter hg' =>
-      exact absurd (Option.some.inj (hg'.symm.trans hg)) HasBool.tt_is_not_ff
+  | step_loop_exit _ => exact .done hq
+  | step_loop_enter hg' =>
+    exact absurd (Option.some.inj (hg'.symm.trans hg)) HasBool.tt_is_not_ff
 
 /-- A loop whose guard is true runs its body, then the loop again. -/
 private theorem fin_loop_enter {Q : Env Core.Expression → Prop} {g : Core.Expression.Expr}
@@ -382,13 +354,11 @@ private theorem fin_loop_enter {Q : Env Core.Expression → Prop} {g : Core.Expr
     (h : Finishes π Q
       (.seq (.block .none ρ.store (.stmts body ρ)) [.loop (.det g) m inv body md])) :
     Finishes π Q (.stmt (.loop (.det g) m inv body md) ρ) := by
-  refine .step ⟨[], _, .step_admin (.step_loop_enter hg)⟩ fun e c' hs => ?_
+  refine .step ⟨[], _, (.step_loop_enter hg)⟩ fun e c' hs => ?_
   cases hs with
-  | step_admin ha =>
-    cases ha with
-    | step_loop_enter _ => exact h
-    | step_loop_exit hg' =>
-      exact absurd (Option.some.inj (hg.symm.trans hg')) HasBool.tt_is_not_ff
+  | step_loop_enter _ => exact h
+  | step_loop_exit hg' =>
+    exact absurd (Option.some.inj (hg.symm.trans hg')) HasBool.tt_is_not_ff
 
 end Finishes
 
@@ -642,7 +612,7 @@ theorem fail_failed (model : Lambda.Interp Core.Factory) (π : String → Option
       ((Core.Logic.EventLang.coreBlock π).stmtCfg [failAssert] ρ)
       [.assert ⟨ρ.factory, ρ.store, "a", failParts.fst, failParts.snd⟩]
       (.seq (.terminal ρ) []) :=
-    .inr ⟨[], _, _, .step_admin .step_stmts_cons,
+    .inr ⟨[], _, _, .step_stmts_cons,
       .inr ⟨_, _, [], .step_seq_inner (.step_cmd (.cmd_sem .eval_assert)), ⟨rfl, rfl⟩,
         rfl⟩, rfl⟩
   refine ⟨hρ, 2, _, ⟨_, hrun⟩, fun hvalid => ?_⟩
@@ -703,29 +673,12 @@ private def OkShape (ρ : Env Core.Expression) (c : Core.CoreConfig) : Prop :=
 private def OkEvents (ρ : Env Core.Expression) (trace : Trace Core.Expression) : Prop :=
   ∀ ev ∈ trace, ev = .assert ⟨ρ.factory, ρ.store, "b", okParts.1, okParts.2⟩
 
-/-- An administrative step keeps the shape. -/
-private theorem ok_admin_step {ρ : Env Core.Expression} {c c' : Core.CoreConfig}
-    (hc : OkShape ρ c)
-    (hs : StepStmt Core.Expression (noCommandEvalE Core.Expression Core.Command) c c') :
-    OkShape ρ c' := by
-  rcases hc with rfl | rfl | rfl | rfl | rfl
-  · cases hs; exact .inr (.inl rfl)
-  · cases hs with
-    | step_seq_inner h => cases h with
-      | step_cmd h => exact absurd h (by simp [noCommandEvalE])
-  · cases hs with
-    | step_seq_inner h => cases h
-    | step_seq_done => exact .inr (.inr (.inr (.inl rfl)))
-  · cases hs; exact .inr (.inr (.inr (.inr rfl)))
-  · cases hs
-
 /-- A step keeps the shape, and emits only the assertion `b`. -/
 private theorem ok_step (π : String → Option Core.Procedure) {ρ : Env Core.Expression}
     {c c' : Core.CoreConfig} {emitted : Trace Core.Expression} (hc : OkShape ρ c)
     (hs : Core.CoreStepE π c emitted c') :
     OkShape ρ c' ∧ OkEvents ρ emitted := by
   cases hs with
-  | step_admin h => exact ⟨ok_admin_step hc h, by simp [OkEvents]⟩
   | step_cmd h =>
     rcases hc with h' | h' | h' | h' | h' <;> cases h'
   | step_block_body h =>
@@ -739,11 +692,10 @@ private theorem ok_step (π : String → Option Core.Procedure) {ρ : Env Core.E
           cases hc'
           exact ⟨.inr (.inr (.inl rfl)), by
             intro ev hev; simpa using hev⟩
-      | step_admin h =>
-        cases h with
-        | step_cmd h => exact absurd h (by simp [noCommandEvalE])
-    · cases h with
-      | step_admin h => cases h
+    · cases h
+  | _ =>
+    refine ⟨?_, by simp [OkEvents]⟩
+    rcases hc with h' | h' | h' | h' | h' <;> cases h' <;> simp [OkShape]
 
 /-- Bounded paths from a shaped configuration stay shaped and emit only the
     assertion `b`. -/
@@ -840,10 +792,10 @@ theorem afterExit_reachable_not_final (π : String → Option Core.Procedure)
         ((Core.Logic.EventLang.coreBlock π).stmtCfg [exitBlock, exitParts.2.2] ρ) []
         (afterExit ρ) ∧
       ¬ (Core.Logic.EventLang.coreBlock π).Final (afterExit ρ) := by
-  refine ⟨.inr ⟨[], _, [], .step_admin .step_stmts_cons,
-    .inr ⟨[], _, [], .step_admin (.step_seq_inner .step_block),
-    .inr ⟨[], _, [], .step_admin (.step_seq_inner (.step_block_body .step_stmts_cons)),
-    .inr ⟨[], _, [], .step_admin (.step_seq_inner (.step_block_body (.step_seq_inner .step_exit))),
+  refine ⟨.inr ⟨[], _, [], .step_stmts_cons,
+    .inr ⟨[], _, [], (.step_seq_inner .step_block),
+    .inr ⟨[], _, [], (.step_seq_inner (.step_block_body .step_stmts_cons)),
+    .inr ⟨[], _, [], (.step_seq_inner (.step_block_body (.step_seq_inner .step_exit))),
       ⟨rfl, rfl⟩, rfl⟩, rfl⟩, rfl⟩, rfl⟩, ?_⟩
   rintro (⟨_, h⟩ | ⟨_, _, h⟩) <;> cases h
 
@@ -853,10 +805,10 @@ theorem afterExit_reachable_not_final (π : String → Option Core.Procedure)
 theorem afterExit_reaches_after (π : String → Option Core.Procedure) (ρ : Env Core.Expression) :
     (Core.Logic.EventLang.coreBlock π).ReachesWithin 4 (afterExit ρ) []
       (.seq (.stmt exitParts.2.2 { ρ with store := projectStore ρ.store ρ.store }) []) :=
-  .inr ⟨[], _, [], .step_admin (.step_seq_inner (.step_block_body .step_seq_exit)),
-    .inr ⟨[], _, [], .step_admin (.step_seq_inner (.step_block_exit_match rfl)),
-    .inr ⟨[], _, [], .step_admin .step_seq_done,
-    .inr ⟨[], _, [], .step_admin .step_stmts_cons, ⟨rfl, rfl⟩, rfl⟩, rfl⟩, rfl⟩, rfl⟩
+  .inr ⟨[], _, [], (.step_seq_inner (.step_block_body .step_seq_exit)),
+    .inr ⟨[], _, [], (.step_seq_inner (.step_block_exit_match rfl)),
+    .inr ⟨[], _, [], .step_seq_done,
+    .inr ⟨[], _, [], .step_stmts_cons, ⟨rfl, rfl⟩, rfl⟩, rfl⟩, rfl⟩, rfl⟩
 
 end TerminationTests
 

@@ -24,7 +24,7 @@ procedure's contract decidable. The definitions being established live in
   `Procedure.contractTriple_nil_of_ensuresAmongRequires` — an empty body meets a
   contract whose non-`free` `ensures` clauses are all among its `requires`.
 - `Procedure.contractTriple_singleton_cmd` — a one-command body, reduced to a single
-  obligation about that command's `EvalCommand` step.
+  obligation about that command's `EvalCommandE` step.
 - `Procedure.checkAsPredicate_of_exprEq` — transfers a model's semantic reading of a
   captured check to another clause with the same expression.
 - `Procedure.contractPost_cast` — transports a semantic postcondition across equality

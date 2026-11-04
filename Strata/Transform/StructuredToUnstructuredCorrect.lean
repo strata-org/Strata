@@ -57,10 +57,6 @@ open Imperative.StructuredToUnstructured (isGeneratedName)
 
 `Stmt.modifiedVars`/`Block.modifiedVars` are `@[expose]` at their library
 definitions, so their match cases unfold directly inside this file's recursive proofs; the proof uses the library versions directly.
-
-The agreement-preserving `EvalCmd`/`EvalCmds` replay lemmas this proof consumes
-(`EvalCmd_under_agreement`, `EvalCmds_under_agreement`,
-`agreement_helper_unchanged_at_x`) live in `Strata.DL.Imperative.CFGSemanticsProps`.
 -/
 
 /-! ### Invariant about `stmtsToBlocks` and `flushCmds`
@@ -2633,18 +2629,14 @@ private theorem CommandSourceInv.step {P : PureExpr}
     cases remaining with
     | nil =>
         cases hstep with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_stmts_nil =>
-                exact ⟨done, [], store, hcommands, by simpa using heval,
-                  Or.inr (Or.inr (Or.inr ⟨rfl, rfl⟩))⟩
+        | step_stmts_nil =>
+            exact ⟨done, [], store, hcommands, by simpa using heval,
+              Or.inr (Or.inr (Or.inr ⟨rfl, rfl⟩))⟩
     | cons command tail =>
         cases hstep with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_stmts_cons =>
-                exact ⟨done, command :: tail, store, hcommands, by simpa using heval,
-                  Or.inr (Or.inl ⟨command, tail, rfl, rfl⟩)⟩
+        | step_stmts_cons =>
+            exact ⟨done, command :: tail, store, hcommands, by simpa using heval,
+              Or.inr (Or.inl ⟨command, tail, rfl, rfl⟩)⟩
   · subst hshape
     cases hstep with
     | step_seq_inner hinner =>
@@ -2654,24 +2646,15 @@ private theorem CommandSourceInv.step {P : PureExpr}
             · rw [hremaining] at hcommands
               simpa [List.append_assoc] using hcommands
             · exact EvalCmdsE.snoc heval hcommand
-        | step_admin hadmin => cases hadmin with | step_cmd hfalse => exact hfalse.elim
-    | step_admin hadmin =>
-        cases hadmin with
-        | step_seq_inner hinner => cases hinner with | step_cmd hfalse => exact hfalse.elim
   · subst hshape
     cases hstep with
     | step_seq_inner hinner =>
-        cases hinner with
-        | step_admin hadmin => cases hadmin
-    | step_admin hadmin =>
-        cases hadmin with
-        | step_seq_inner hinner => cases hinner
-        | step_seq_done =>
-            exact ⟨done, remaining, store, hcommands, by simpa using heval, Or.inl rfl⟩
+        cases hinner
+    | step_seq_done =>
+        exact ⟨done, remaining, store, hcommands, by simpa using heval, Or.inl rfl⟩
   · obtain ⟨rfl, hshape⟩ := hshape
     subst hshape
-    cases hstep with
-    | step_admin hadmin => cases hadmin
+    cases hstep
 
 private theorem CommandSourceInv.starFrom {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
@@ -2702,7 +2685,6 @@ private structure EnvRel {P : PureExpr} [HasFvars P] [HasVal P]
     (keep : List P.Ident) (source target : Env P) : Prop where
   factory : target.factory = source.factory
   store : StoreAgreement source.store target.store
-  failure : source.hasFailure = target.hasFailure
   fresh : ∀ x ∈ keep, target.store x = none
   mono : WellFormedSemanticEvalMono source.factory
   val : WellFormedSemanticEvalVal source.factory
@@ -2806,14 +2788,14 @@ private theorem EvalCmdsE.toCFGPrefixStore {P : PureExpr}
     {factory : P.Factory} {start final : SemanticStore P}
     {commands suffix : List (Cmd P)} {trace : Trace P}
     {cfg : CFG String (DetBlock String (Cmd P) P)} {label : String}
-    {transfer : DetTransferCmd String P} {failure : Bool}
+    {transfer : DetTransferCmd String P}
     (h : EvalCmdsE factory start commands final trace) :
     StepCFGStarE P (Imperative.EvalCmdE P)
       (.inBlock cfg label (commands ++ suffix) transfer
-        { store := start, factory := factory, hasFailure := failure })
+        { store := start, factory := factory })
       trace
       (.inBlock cfg label suffix transfer
-        { store := final, factory := factory, hasFailure := failure }) := by
+        { store := final, factory := factory }) := by
   induction h with
   | nil => exact .refl _
   | cons hcommand _ ih => exact .step _ _ _ _ _ (.step_cmd hcommand) ih
@@ -2830,9 +2812,9 @@ private theorem EvalCmdsE.toCFGPrefix {P : PureExpr}
       trace
       (.inBlock cfg label suffix transfer { initial with store := final }) := by
   cases initial with
-  | mk store factory failure =>
+  | mk store factory =>
       simpa using (EvalCmdsE.toCFGPrefixStore (cfg := cfg) (label := label)
-        (transfer := transfer) (failure := failure) (suffix := suffix) h)
+        (transfer := transfer) (suffix := suffix) h)
 
 private theorem CommandSourceInv.terminal {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
@@ -2939,7 +2921,7 @@ private theorem commandBlockSim {P : PureExpr}
       simpa using ReflTransTrace.step _ _ _ _ _ hfetch hprefix'
     subst sourceEnv
     refine ⟨{ target with store := targetStore }, targetTrace, hrunTarget, ?_, htrace⟩
-    exact ⟨hrel.factory, hagree, hrel.failure, hfresh, hrel.mono, hrel.val⟩
+    exact ⟨hrel.factory, hagree, hfresh, hrel.mono, hrel.val⟩
   · intro label' sourceEnv sourceTrace hrun
     exact (CommandSourceInv.notExiting hrun).elim
 
@@ -2967,7 +2949,7 @@ private theorem stmtsAppendPrefixCases {P : PureExpr}
   induction left generalizing initial trace final with
   | nil =>
       exact .inr ⟨initial, [], trace, by simp,
-        .step _ [] _ [] _ (.step_admin .step_stmts_nil) (.refl _), by simpa using hrun⟩
+        .step _ [] _ [] _ .step_stmts_nil (.refl _), by simpa using hrun⟩
   | cons statement rest ih =>
       have hrun' : StepStmtStarE P (Imperative.EvalCmdE P)
           (.stmts (statement :: (rest ++ right)) initial) trace final := by
@@ -2983,7 +2965,7 @@ private theorem stmtsAppendPrefixCases {P : PureExpr}
           ⟨label, exitEnv, hfinal, hhead⟩
         · subst final
           refine .inl ⟨.seq innerFinal rest, ?_⟩
-          exact .step _ [] _ trace _ (.step_admin .step_stmts_cons)
+          exact .step _ [] _ trace _ .step_stmts_cons
             (seq_inner_starE (Imperative.EvalCmdE P) hhead)
         · rcases ih middle htail with
             ⟨restFinal, hrest⟩ |
@@ -3004,10 +2986,10 @@ private theorem stmtsAppendPrefixCases {P : PureExpr}
           have hfirst : StepStmtStarE P (Imperative.EvalCmdE P)
               (.stmts (statement :: rest) initial) trace
               (.seq (.exiting label exitEnv) rest) :=
-            .step _ [] _ trace _ (.step_admin .step_stmts_cons)
+            .step _ [] _ trace _ .step_stmts_cons
               (seq_inner_starE (Imperative.EvalCmdE P) hhead)
           simpa using ReflTransTrace.trans _ hfirst
-            (.step _ [] _ [] _ (.step_admin .step_seq_exit) (.refl _))
+            (.step _ [] _ [] _ .step_seq_exit (.refl _))
 
 private theorem stmtsAppendTerminalCases {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
@@ -3024,7 +3006,7 @@ private theorem stmtsAppendTerminalCases {P : PureExpr}
   induction left generalizing initial trace with
   | nil =>
       exact ⟨initial, [], trace, by simp,
-        .step _ [] _ [] _ (.step_admin .step_stmts_nil) (.refl _), by simpa using hrun⟩
+        .step _ [] _ [] _ .step_stmts_nil (.refl _), by simpa using hrun⟩
   | cons statement rest ih =>
       have hrun' : StepStmtStarE P (Imperative.EvalCmdE P)
           (.stmts (statement :: (rest ++ right)) initial) trace (.terminal final) := by
@@ -3059,7 +3041,7 @@ private theorem stmtsAppendExitingCases {P : PureExpr}
   induction left generalizing initial trace with
   | nil =>
       exact .inr ⟨initial, [], trace, by simp,
-        .step _ [] _ [] _ (.step_admin .step_stmts_nil) (.refl _), by simpa using hrun⟩
+        .step _ [] _ [] _ .step_stmts_nil (.refl _), by simpa using hrun⟩
   | cons statement rest ih =>
       have hrun' : StepStmtStarE P (Imperative.EvalCmdE P)
           (.stmts (statement :: (rest ++ right)) initial) trace (.exiting label final) := by
@@ -3070,11 +3052,11 @@ private theorem stmtsAppendExitingCases {P : PureExpr}
         · have hfirst : StepStmtStarE P (Imperative.EvalCmdE P)
               (.stmts (statement :: rest) initial) trace
               (.seq (.exiting label final) rest) :=
-            .step _ [] _ trace _ (.step_admin .step_stmts_cons)
+            .step _ [] _ trace _ .step_stmts_cons
               (seq_inner_starE (Imperative.EvalCmdE P) hhead)
           exact .inl (by
             simpa using ReflTransTrace.trans _ hfirst
-              (.step _ [] _ [] _ (.step_admin .step_seq_exit) (.refl _)))
+              (.step _ [] _ [] _ .step_seq_exit (.refl _)))
         · obtain ⟨middle, headTrace, tailTrace, htrace, hhead, htailRun⟩ := htail
           rcases ih middle htailRun with hrestExit |
             ⟨afterLeft, restTrace, rightTrace, htailTrace, hrest, hright⟩
@@ -3293,7 +3275,7 @@ private theorem EnvRel.projectLeft {P : PureExpr} [HasFvars P] [HasVal P]
     (h : EnvRel keep source target) :
     EnvRel keep { source with store := projectStore parent source.store } target :=
   ⟨h.factory, StoreAgreement.trans (StoreAgreement.of_projectStore parent source.store) h.store,
-    h.failure, h.fresh, h.mono, h.val⟩
+    h.fresh, h.mono, h.val⟩
 
 private theorem EnvRel.eval {P : PureExpr} [HasFvars P] [HasVal P]
     {keep : List P.Ident} {source target : Env P} (h : EnvRel keep source target)
@@ -3455,34 +3437,28 @@ private theorem exitStmtSim {P : PureExpr}
     | refl => exact ⟨_, [], .refl _, .nil⟩
     | step _ _ _ restTrace _ hfirst hrest =>
         cases hfirst with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_exit =>
-                obtain ⟨_, htrace⟩ := stepStmtStarE_from_exiting hrest
-                subst htrace
-                exact ⟨_, [], .refl _, .nil⟩
+        | step_exit =>
+            obtain ⟨_, htrace⟩ := stepStmtStarE_from_exiting hrest
+            subst htrace
+            exact ⟨_, [], .refl _, .nil⟩
   · intro sourceEnv sourceTrace hrun
     cases hrun with
     | step _ _ _ _ _ hfirst hrest =>
         cases hfirst with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_exit =>
-                obtain ⟨hfinal, _⟩ := stepStmtStarE_from_exiting hrest
-                simp at hfinal
+        | step_exit =>
+            obtain ⟨hfinal, _⟩ := stepStmtStarE_from_exiting hrest
+            simp at hfinal
   · intro exitLabel sourceEnv sourceTrace hrun
     cases hrun with
     | step _ _ _ restTrace _ hfirst hrest =>
         cases hfirst with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_exit =>
-                obtain ⟨hfinal, htrace⟩ := stepStmtStarE_from_exiting hrest
-                injection hfinal with hlabel henv
-                subst hlabel
-                subst henv
-                subst htrace
-                exact ⟨target, [], .refl _, hrel, .nil⟩
+        | step_exit =>
+            obtain ⟨hfinal, htrace⟩ := stepStmtStarE_from_exiting hrest
+            injection hfinal with hlabel henv
+            subst hlabel
+            subst henv
+            subst htrace
+            exact ⟨target, [], .refl _, hrel, .nil⟩
 
 private theorem anonymousBlockSim {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
@@ -3586,86 +3562,80 @@ private theorem labeledBlockSim {P : PureExpr}
     | refl => exact ⟨_, [], .refl _, .nil⟩
     | step _ _ _ restTrace _ hfirst hrest =>
         cases hfirst with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_block =>
-              rcases blockRunDecompose hrest with
-                ⟨inner, hfinal, hinner⟩ |
-                ⟨sourceInner, hinner, hfinal⟩ |
-                ⟨label, sourceInner, hmatch, hinner, hfinal⟩ |
-                ⟨label, sourceInner, hmismatch, hinner, hfinal⟩
-              · exact hbody.simulate hinner
-              · obtain ⟨targetInner, targetTrace, htarget, hrel, htrace⟩ :=
-                  hbody.terminal hinner
-                exact ⟨_, targetTrace, htarget, htrace⟩
-              · obtain ⟨targetInner, targetTrace, htarget, hrel, htrace⟩ :=
-                  hbody.exiting hinner
-                have hlabel : label = blockLabel := by simpa using Option.some.inj hmatch.symm
-                subst label
-                exact ⟨_, targetTrace, htarget, htrace⟩
-              · obtain ⟨targetInner, targetTrace, htarget, hrel, htrace⟩ :=
-                  hbody.exiting hinner
-                have hlabel : label ≠ blockLabel := by
-                  intro heq
-                  subst label
-                  exact hmismatch rfl
-                exact ⟨_, targetTrace, htarget, htrace⟩
+        | step_block =>
+          rcases blockRunDecompose hrest with
+            ⟨inner, hfinal, hinner⟩ |
+            ⟨sourceInner, hinner, hfinal⟩ |
+            ⟨label, sourceInner, hmatch, hinner, hfinal⟩ |
+            ⟨label, sourceInner, hmismatch, hinner, hfinal⟩
+          · exact hbody.simulate hinner
+          · obtain ⟨targetInner, targetTrace, htarget, hrel, htrace⟩ :=
+              hbody.terminal hinner
+            exact ⟨_, targetTrace, htarget, htrace⟩
+          · obtain ⟨targetInner, targetTrace, htarget, hrel, htrace⟩ :=
+              hbody.exiting hinner
+            have hlabel : label = blockLabel := by simpa using Option.some.inj hmatch.symm
+            subst label
+            exact ⟨_, targetTrace, htarget, htrace⟩
+          · obtain ⟨targetInner, targetTrace, htarget, hrel, htrace⟩ :=
+              hbody.exiting hinner
+            have hlabel : label ≠ blockLabel := by
+              intro heq
+              subst label
+              exact hmismatch rfl
+            exact ⟨_, targetTrace, htarget, htrace⟩
   · intro sourceEnv sourceTrace hrun
     cases hrun with
     | step _ _ _ restTrace _ hfirst hrest =>
         cases hfirst with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_block =>
-              rcases blockRunDecompose hrest with
-                ⟨inner, hfinal, hinner⟩ |
-                ⟨sourceInner, hinner, hfinal⟩ |
-                ⟨label, sourceInner, hmatch, hinner, hfinal⟩ |
-                ⟨label, sourceInner, hmismatch, hinner, hfinal⟩
-              · simp at hfinal
-              · injection hfinal with henv
-                subst sourceEnv
-                obtain ⟨targetInner, targetTrace, htarget, hrel, htrace⟩ :=
-                  hbody.terminal hinner
-                exact ⟨targetInner, targetTrace, htarget,
-                  projectOut sourceInner targetInner hrel, htrace⟩
-              · injection hfinal with henv
-                subst sourceEnv
-                obtain ⟨targetInner, targetTrace, htarget, hrel, htrace⟩ :=
-                  hbody.exiting hinner
-                have hlabel : label = blockLabel := by simpa using Option.some.inj hmatch.symm
-                subst label
-                rw [exitDest_cons_same] at htarget
-                exact ⟨targetInner, targetTrace, htarget,
-                  projectOut sourceInner targetInner hrel, htrace⟩
-              · simp at hfinal
+        | step_block =>
+          rcases blockRunDecompose hrest with
+            ⟨inner, hfinal, hinner⟩ |
+            ⟨sourceInner, hinner, hfinal⟩ |
+            ⟨label, sourceInner, hmatch, hinner, hfinal⟩ |
+            ⟨label, sourceInner, hmismatch, hinner, hfinal⟩
+          · simp at hfinal
+          · injection hfinal with henv
+            subst sourceEnv
+            obtain ⟨targetInner, targetTrace, htarget, hrel, htrace⟩ :=
+              hbody.terminal hinner
+            exact ⟨targetInner, targetTrace, htarget,
+              projectOut sourceInner targetInner hrel, htrace⟩
+          · injection hfinal with henv
+            subst sourceEnv
+            obtain ⟨targetInner, targetTrace, htarget, hrel, htrace⟩ :=
+              hbody.exiting hinner
+            have hlabel : label = blockLabel := by simpa using Option.some.inj hmatch.symm
+            subst label
+            rw [exitDest_cons_same] at htarget
+            exact ⟨targetInner, targetTrace, htarget,
+              projectOut sourceInner targetInner hrel, htrace⟩
+          · simp at hfinal
   · intro label sourceEnv sourceTrace hrun
     cases hrun with
     | step _ _ _ restTrace _ hfirst hrest =>
         cases hfirst with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_block =>
-              rcases blockRunDecompose hrest with
-                ⟨inner, hfinal, hinner⟩ |
-                ⟨sourceInner, hinner, hfinal⟩ |
-                ⟨innerLabel, sourceInner, hmatch, hinner, hfinal⟩ |
-                ⟨innerLabel, sourceInner, hmismatch, hinner, hfinal⟩
-              · simp at hfinal
-              · simp at hfinal
-              · simp at hfinal
-              · have hne : innerLabel ≠ blockLabel := by
-                  intro heq
-                  subst innerLabel
-                  exact hmismatch rfl
-                injection hfinal with hlabel henv
-                subst hlabel
-                subst sourceEnv
-                obtain ⟨targetInner, targetTrace, htarget, hrel, htrace⟩ :=
-                  hbody.exiting hinner
-                rw [exitDest_cons_other _ _ _ _ _ hne] at htarget
-                exact ⟨targetInner, targetTrace, htarget,
-                  projectOut sourceInner targetInner hrel, htrace⟩
+        | step_block =>
+          rcases blockRunDecompose hrest with
+            ⟨inner, hfinal, hinner⟩ |
+            ⟨sourceInner, hinner, hfinal⟩ |
+            ⟨innerLabel, sourceInner, hmatch, hinner, hfinal⟩ |
+            ⟨innerLabel, sourceInner, hmismatch, hinner, hfinal⟩
+          · simp at hfinal
+          · simp at hfinal
+          · simp at hfinal
+          · have hne : innerLabel ≠ blockLabel := by
+              intro heq
+              subst innerLabel
+              exact hmismatch rfl
+            injection hfinal with hlabel henv
+            subst hlabel
+            subst sourceEnv
+            obtain ⟨targetInner, targetTrace, htarget, hrel, htrace⟩ :=
+              hbody.exiting hinner
+            rw [exitDest_cons_other _ _ _ _ _ hne] at htarget
+            exact ⟨targetInner, targetTrace, htarget,
+              projectOut sourceInner targetInner hrel, htrace⟩
 
 private theorem deterministicIteSim {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
@@ -3703,26 +3673,20 @@ private theorem deterministicIteSim {P : PureExpr}
     | refl => exact ⟨_, [], .refl _, .nil⟩
     | step _ _ _ restTrace _ hfirst hrest =>
         cases hfirst with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_ite_true hguard => exact (thenBlock hguard).simulate hrest
-            | step_ite_false hguard => exact (elseBlock hguard).simulate hrest
+        | step_ite_true hguard => exact (thenBlock hguard).simulate hrest
+        | step_ite_false hguard => exact (elseBlock hguard).simulate hrest
   · intro sourceEnv sourceTrace hrun
     cases hrun with
     | step _ _ _ restTrace _ hfirst hrest =>
         cases hfirst with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_ite_true hguard => exact (thenBlock hguard).terminal hrest
-            | step_ite_false hguard => exact (elseBlock hguard).terminal hrest
+        | step_ite_true hguard => exact (thenBlock hguard).terminal hrest
+        | step_ite_false hguard => exact (elseBlock hguard).terminal hrest
   · intro label sourceEnv sourceTrace hrun
     cases hrun with
     | step _ _ _ restTrace _ hfirst hrest =>
         cases hfirst with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_ite_true hguard => exact (thenBlock hguard).exiting hrest
-            | step_ite_false hguard => exact (elseBlock hguard).exiting hrest
+        | step_ite_true hguard => exact (thenBlock hguard).exiting hrest
+        | step_ite_false hguard => exact (elseBlock hguard).exiting hrest
 
 end S2UTrace
 end StructuredToUnstructuredCorrect
@@ -3768,25 +3732,11 @@ private theorem seqTRunDecompose {P : PureExpr}
       · exact .inr (.inr ⟨exitLabel, exitEnv, hfinal,
           .step _ _ _ _ _ hstep hexit,
           by simp only [ReflTransTraceT.len]; omega⟩)
-  | .step _ _ _ restTrace _ (.step_admin (.step_seq_inner hstep)) htail =>
-      rcases seqTRunDecompose htail with
-        ⟨inner', hfinal, hinner, hlen⟩ |
-        ⟨middleEnv, headTrace, tailTrace, htrace, hhead, hrest, hlen⟩ |
-        ⟨exitLabel, exitEnv, hfinal, hexit, hlen⟩
-      · exact .inl ⟨inner', hfinal, .step _ _ _ _ _ (.step_admin hstep) hinner,
-          by simp only [ReflTransTraceT.len]; omega⟩
-      · exact .inr (.inl ⟨middleEnv, headTrace, tailTrace, by simpa using htrace,
-          .step _ _ _ _ _ (.step_admin hstep) hhead, hrest,
-          ⟨by simp only [ReflTransTraceT.len]; omega,
-           by simp only [ReflTransTraceT.len]; omega⟩⟩)
-      · exact .inr (.inr ⟨exitLabel, exitEnv, hfinal,
-          .step _ _ _ _ _ (.step_admin hstep) hexit,
-          by simp only [ReflTransTraceT.len]; omega⟩)
-  | .step _ _ _ restTrace _ (.step_admin .step_seq_done) htail =>
+  | .step _ _ _ restTrace _ .step_seq_done htail =>
       exact .inr (.inl ⟨_, [], restTrace, by simp, .refl _, htail,
         ⟨by simpa [ReflTransTraceT.len, Nat.add_comm] using Nat.zero_lt_succ htail.len,
          by simp [ReflTransTraceT.len]⟩⟩)
-  | .step _ _ _ _ _ (.step_admin .step_seq_exit) htail =>
+  | .step _ _ _ _ _ .step_seq_exit htail =>
       match htail with
       | .refl _ => exact .inr (.inr ⟨_, _, rfl, .refl _, by simp [ReflTransTraceT.len]⟩)
       | .step _ _ _ _ _ hstep _ => exact (Imperative.StepStmtE.exiting_false hstep).elim
@@ -3819,20 +3769,11 @@ private theorem seqTExiting {P : PureExpr}
           .step _ _ _ _ _ hstep hhead, hrest,
           ⟨by simp only [ReflTransTraceT.len]; omega,
            by simp only [ReflTransTraceT.len]; omega⟩⟩
-  | .step _ _ _ restTrace _ (.step_admin (.step_seq_inner hstep)) htail =>
-      rcases seqTExiting htail with ⟨hinner, hlen⟩ |
-        ⟨middleEnv, headTrace, tailTrace, htrace, hhead, hrest, hlen⟩
-      · exact .inl ⟨.step _ _ _ _ _ (.step_admin hstep) hinner,
-          by simp only [ReflTransTraceT.len]; omega⟩
-      · exact .inr ⟨middleEnv, headTrace, tailTrace, by simpa using htrace,
-          .step _ _ _ _ _ (.step_admin hstep) hhead, hrest,
-          ⟨by simp only [ReflTransTraceT.len]; omega,
-           by simp only [ReflTransTraceT.len]; omega⟩⟩
-  | .step _ _ _ restTrace _ (.step_admin .step_seq_done) htail =>
+  | .step _ _ _ restTrace _ .step_seq_done htail =>
       exact .inr ⟨_, [], restTrace, by simp, .refl _, htail,
         ⟨by simpa [ReflTransTraceT.len, Nat.add_comm] using Nat.zero_lt_succ htail.len,
          by simp [ReflTransTraceT.len]⟩⟩
-  | .step _ _ _ _ _ (.step_admin .step_seq_exit) htail =>
+  | .step _ _ _ _ _ .step_seq_exit htail =>
       match htail with
       | .refl _ => exact .inl ⟨.refl _, by simp [ReflTransTraceT.len]⟩
       | .step _ _ _ _ _ hstep _ => exact (Imperative.StepStmtE.exiting_false hstep).elim
@@ -3856,7 +3797,7 @@ private theorem stmtsTConsExiting {P : PureExpr}
           (.stmts rest middle) tailTrace (.exiting label final),
       hhead.len < hrun.len ∧ htail.len < hrun.len) := by
   match hrun with
-  | .step _ _ _ restTrace _ (.step_admin .step_stmts_cons) htail =>
+  | .step _ _ _ restTrace _ .step_stmts_cons htail =>
       rcases seqTExiting htail with ⟨hhead, hlen⟩ |
         ⟨middle, headTrace, tailTrace, htrace, hhead, hrest, hlen⟩
       · exact .inl ⟨hhead,
@@ -3917,7 +3858,7 @@ private theorem loopTerminalFuel {P : PureExpr}
   | succ n ih =>
       intro source target final sourceTrace hrel hmono hrun hlen
       match hrun with
-      | .step _ _ _ restTrace _ (.step_admin (.step_loop_exit hfalse)) hrest =>
+      | .step _ _ _ restTrace _ (.step_loop_exit hfalse) hrest =>
           obtain ⟨hfinal, htrace⟩ := stepStmtStarE_from_terminal
             (reflTransTraceT_to_prop hrest)
           subst htrace
@@ -3927,7 +3868,7 @@ private theorem loopTerminalFuel {P : PureExpr}
             cfgLoopStep cfg entry bodyEntry continuation condition hlookup source target
               hrel hmono false (by simpa using hfalse),
             hrel, .nil⟩
-      | .step _ _ _ restTrace _ (.step_admin (.step_loop_enter htrue)) hrest =>
+      | .step _ _ _ restTrace _ (.step_loop_enter htrue) hrest =>
           obtain ⟨projectedSource, bodyTrace, loopTrace, htrace, hblock, hloopList,
               hlenSeq⟩ := seqT_reaches_terminalE hrest
           rcases blockRunDecompose (reflTransTraceT_to_prop hblock) with
@@ -4050,80 +3991,78 @@ private theorem loopExitingFuel {P : PureExpr}
       match hrun with
       | .step _ _ _ _ _ hfirst hrest =>
           cases hfirst with
-          | step_admin hadmin =>
-              cases hadmin with
-              | step_loop_exit hfalse =>
-                  obtain ⟨hfinal, _⟩ := stepStmtStarE_from_terminal
-                    (reflTransTraceT_to_prop hrest)
-                  simp at hfinal
-              | step_loop_enter htrue =>
-                  rcases seqTExiting hrest with ⟨hblock, hlenBlock⟩ |
-                    ⟨projectedSource, bodyTrace, loopTrace, htrace, hblock,
-                      hloopList, hlenSeq⟩
-                  · rcases blockRunDecompose (reflTransTraceT_to_prop hblock) with
-                      ⟨inner, hbad, hsourceBody⟩ |
-                      ⟨sourceInner, hsourceBody, hbad⟩ |
-                      ⟨innerLabel, sourceInner, hnone, hsourceBody, hbad⟩ |
-                      ⟨innerLabel, sourceInner, hne, hsourceBody, hfinal⟩
-                    · simp at hbad
-                    · simp at hbad
-                    · simp at hnone
-                    · injection hfinal with hlabel henv
-                      subst hlabel
-                      subst final
-                      obtain ⟨targetInner, targetBodyTrace, htargetBody, hrelInner,
-                          htraceBody⟩ := (bodySim source target hrel).exiting hsourceBody
-                      have henter := cfgLoopStep cfg entry bodyEntry continuation condition
-                        hlookup source target hrel hmono true (by simpa using htrue)
-                      have htarget : StepCFGStarE P (Imperative.EvalCmdE P)
-                          (.atBlock cfg entry target) targetBodyTrace
-                          (exitTarget label targetInner) := by
-                        simpa using cfgTraceTrans henter htargetBody
-                      exact ⟨targetInner, targetBodyTrace, htarget,
-                        EnvRel.projectLeft hrelInner, by simpa using htraceBody⟩
-                  · rcases blockRunDecompose (reflTransTraceT_to_prop hblock) with
-                      ⟨inner, hbad, hsourceBody⟩ |
-                      ⟨sourceInner, hsourceBody, hprojected⟩ |
-                      ⟨innerLabel, sourceInner, hnone, hsourceBody, hbad⟩ |
-                      ⟨innerLabel, sourceInner, hne, hsourceBody, hbad⟩
-                    · simp at hbad
-                    · injection hprojected with hprojectedEnv
-                      subst projectedSource
-                      obtain ⟨targetInner, targetBodyTrace, htargetBody, hrelInner,
-                          htraceBody⟩ := (bodySim source target hrel).terminal hsourceBody
-                      let sourceNext : Env P :=
-                        { sourceInner with store := projectStore source.store sourceInner.store }
-                      have hrelNext : EnvRel keep sourceNext targetInner :=
-                        EnvRel.projectLeft hrelInner
-                      have hfacBody := starE_preserves_factory hsourceBody
-                      have hfacNext : sourceNext.factory = source.factory := by
-                        change sourceInner.factory = source.factory
-                        simpa [Config.getEnv] using hfacBody.symm
-                      have hmonoNext : WellFormedSemanticEvalMono sourceNext.factory := by
-                        rw [hfacNext]
-                        exact hmono
-                      rcases stmtsTConsExiting hloopList with ⟨hsourceLoop, hlenLoop⟩ |
-                        ⟨middle, headTrace, nilTrace, htailTrace, hsourceLoop, hnil,
-                          hlenLoop⟩
-                      · obtain ⟨targetFinal, targetLoopTrace, htargetLoop, hrelFinal,
-                            htraceLoop⟩ :=
-                          ih sourceNext targetInner final label loopTrace hrelNext hmonoNext
-                            hsourceLoop
-                            (by simp only [ReflTransTraceT.len] at hlen; omega)
-                        have henter := cfgLoopStep cfg entry bodyEntry continuation condition
-                          hlookup source target hrel hmono true (by simpa using htrue)
-                        have hiteration : StepCFGStarE P (Imperative.EvalCmdE P)
-                            (.atBlock cfg entry target) targetBodyTrace
-                            (.atBlock cfg entry targetInner) := by
-                          simpa using cfgTraceTrans henter htargetBody
-                        refine ⟨targetFinal, targetBodyTrace ++ targetLoopTrace,
-                          cfgTraceTrans hiteration htargetLoop, hrelFinal, ?_⟩
-                        simpa [htrace] using TraceExtendsEnv.append htraceBody htraceLoop
-                      · obtain ⟨_, hnilCfg⟩ := stmts_nil_runE (Imperative.EvalCmdE P)
-                          (reflTransTraceT_to_prop hnil)
-                        rcases hnilCfg with hbad | hbad <;> simp at hbad
-                    · simp at hnone
-                    · simp at hbad
+          | step_loop_exit hfalse =>
+              obtain ⟨hfinal, _⟩ := stepStmtStarE_from_terminal
+                (reflTransTraceT_to_prop hrest)
+              simp at hfinal
+          | step_loop_enter htrue =>
+              rcases seqTExiting hrest with ⟨hblock, hlenBlock⟩ |
+                ⟨projectedSource, bodyTrace, loopTrace, htrace, hblock,
+                  hloopList, hlenSeq⟩
+              · rcases blockRunDecompose (reflTransTraceT_to_prop hblock) with
+                  ⟨inner, hbad, hsourceBody⟩ |
+                  ⟨sourceInner, hsourceBody, hbad⟩ |
+                  ⟨innerLabel, sourceInner, hnone, hsourceBody, hbad⟩ |
+                  ⟨innerLabel, sourceInner, hne, hsourceBody, hfinal⟩
+                · simp at hbad
+                · simp at hbad
+                · simp at hnone
+                · injection hfinal with hlabel henv
+                  subst hlabel
+                  subst final
+                  obtain ⟨targetInner, targetBodyTrace, htargetBody, hrelInner,
+                      htraceBody⟩ := (bodySim source target hrel).exiting hsourceBody
+                  have henter := cfgLoopStep cfg entry bodyEntry continuation condition
+                    hlookup source target hrel hmono true (by simpa using htrue)
+                  have htarget : StepCFGStarE P (Imperative.EvalCmdE P)
+                      (.atBlock cfg entry target) targetBodyTrace
+                      (exitTarget label targetInner) := by
+                    simpa using cfgTraceTrans henter htargetBody
+                  exact ⟨targetInner, targetBodyTrace, htarget,
+                    EnvRel.projectLeft hrelInner, by simpa using htraceBody⟩
+              · rcases blockRunDecompose (reflTransTraceT_to_prop hblock) with
+                  ⟨inner, hbad, hsourceBody⟩ |
+                  ⟨sourceInner, hsourceBody, hprojected⟩ |
+                  ⟨innerLabel, sourceInner, hnone, hsourceBody, hbad⟩ |
+                  ⟨innerLabel, sourceInner, hne, hsourceBody, hbad⟩
+                · simp at hbad
+                · injection hprojected with hprojectedEnv
+                  subst projectedSource
+                  obtain ⟨targetInner, targetBodyTrace, htargetBody, hrelInner,
+                      htraceBody⟩ := (bodySim source target hrel).terminal hsourceBody
+                  let sourceNext : Env P :=
+                    { sourceInner with store := projectStore source.store sourceInner.store }
+                  have hrelNext : EnvRel keep sourceNext targetInner :=
+                    EnvRel.projectLeft hrelInner
+                  have hfacBody := starE_preserves_factory hsourceBody
+                  have hfacNext : sourceNext.factory = source.factory := by
+                    change sourceInner.factory = source.factory
+                    simpa [Config.getEnv] using hfacBody.symm
+                  have hmonoNext : WellFormedSemanticEvalMono sourceNext.factory := by
+                    rw [hfacNext]
+                    exact hmono
+                  rcases stmtsTConsExiting hloopList with ⟨hsourceLoop, hlenLoop⟩ |
+                    ⟨middle, headTrace, nilTrace, htailTrace, hsourceLoop, hnil,
+                      hlenLoop⟩
+                  · obtain ⟨targetFinal, targetLoopTrace, htargetLoop, hrelFinal,
+                        htraceLoop⟩ :=
+                      ih sourceNext targetInner final label loopTrace hrelNext hmonoNext
+                        hsourceLoop
+                        (by simp only [ReflTransTraceT.len] at hlen; omega)
+                    have henter := cfgLoopStep cfg entry bodyEntry continuation condition
+                      hlookup source target hrel hmono true (by simpa using htrue)
+                    have hiteration : StepCFGStarE P (Imperative.EvalCmdE P)
+                        (.atBlock cfg entry target) targetBodyTrace
+                        (.atBlock cfg entry targetInner) := by
+                      simpa using cfgTraceTrans henter htargetBody
+                    refine ⟨targetFinal, targetBodyTrace ++ targetLoopTrace,
+                      cfgTraceTrans hiteration htargetLoop, hrelFinal, ?_⟩
+                    simpa [htrace] using TraceExtendsEnv.append htraceBody htraceLoop
+                  · obtain ⟨_, hnilCfg⟩ := stmts_nil_runE (Imperative.EvalCmdE P)
+                      (reflTransTraceT_to_prop hnil)
+                    rcases hnilCfg with hbad | hbad <;> simp at hbad
+                · simp at hnone
+                · simp at hbad
 
 private theorem loopExiting {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
@@ -4201,141 +4140,137 @@ private theorem loopPrefixFuel {P : PureExpr}
       | .refl _ => exact ⟨_, [], .refl _, .nil⟩
       | .step _ _ _ restTrace _ hfirst hrest =>
           cases hfirst with
-          | step_admin hadmin =>
-              cases hadmin with
-              | step_loop_exit hfalse =>
-                  obtain ⟨hfinal, htrace⟩ := stepStmtStarE_from_terminal
-                    (reflTransTraceT_to_prop hrest)
-                  subst htrace
-                  subst hfinal
-                  exact ⟨_, [], cfgLoopStep cfg entry bodyEntry continuation condition
-                    hlookup source target hrel hmono false (by simpa using hfalse), .nil⟩
-              | step_loop_enter htrue =>
-                  rcases seqTRunDecompose hrest with
-                    ⟨blockFinal, hfinal, hblock, hlenBlock⟩ |
-                    ⟨projectedSource, bodyTrace, loopTrace, htrace, hblock,
-                      hloopList, hlenSeq⟩ |
-                    ⟨exitLabel, exitEnv, hfinal, hblock, hlenBlock⟩
-                  · subst hfinal
-                    rcases blockRunDecompose (reflTransTraceT_to_prop hblock) with
-                      ⟨sourceInner, rfl, hsourceBody⟩ |
-                      ⟨sourceInner, hsourceBody, rfl⟩ |
-                      ⟨exitLabel, sourceInner, hnone, hsourceBody, hsourceFinal⟩ |
-                      ⟨exitLabel, sourceInner, hne, hsourceBody, rfl⟩
-                    · obtain ⟨targetInner, targetBodyTrace, htargetBody, htraceBody⟩ :=
-                        (bodySim source target hrel).simulate hsourceBody
-                      have henter := cfgLoopStep cfg entry bodyEntry continuation condition
-                        hlookup source target hrel hmono true (by simpa using htrue)
-                      exact ⟨targetInner, targetBodyTrace, by
-                        simpa using cfgTraceTrans henter htargetBody, by simpa using htraceBody⟩
-                    · obtain ⟨targetInner, targetBodyTrace, htargetBody, hrelInner,
-                          htraceBody⟩ := (bodySim source target hrel).terminal hsourceBody
-                      have henter := cfgLoopStep cfg entry bodyEntry continuation condition
-                        hlookup source target hrel hmono true (by simpa using htrue)
-                      exact ⟨_, targetBodyTrace, by
-                        simpa using cfgTraceTrans henter htargetBody, by simpa using htraceBody⟩
-                    · simp at hnone
-                    · obtain ⟨targetInner, targetBodyTrace, htargetBody, hrelInner,
-                          htraceBody⟩ := (bodySim source target hrel).exiting hsourceBody
-                      have henter := cfgLoopStep cfg entry bodyEntry continuation condition
-                        hlookup source target hrel hmono true (by simpa using htrue)
-                      exact ⟨_, targetBodyTrace, by
-                        simpa using cfgTraceTrans henter htargetBody, by simpa using htraceBody⟩
-                  · rcases blockRunDecompose (reflTransTraceT_to_prop hblock) with
-                      ⟨sourceInner, hbad, hsourceBody⟩ |
-                      ⟨sourceInner, hsourceBody, hprojected⟩ |
-                      ⟨exitLabel, sourceInner, hnone, hsourceBody, hbad⟩ |
-                      ⟨exitLabel, sourceInner, hne, hsourceBody, hbad⟩
-                    · simp at hbad
-                    · injection hprojected with hprojectedEnv
-                      subst projectedSource
-                      obtain ⟨targetInner, targetBodyTrace, htargetBody, hrelInner,
-                          htraceBody⟩ := (bodySim source target hrel).terminal hsourceBody
-                      let sourceNext : Env P :=
-                        { sourceInner with store := projectStore source.store sourceInner.store }
-                      have hrelNext : EnvRel keep sourceNext targetInner :=
-                        EnvRel.projectLeft hrelInner
-                      have hfacBody := starE_preserves_factory hsourceBody
-                      have hfacNext : sourceNext.factory = source.factory := by
-                        change sourceInner.factory = source.factory
-                        simpa [Config.getEnv] using hfacBody.symm
-                      have hmonoNext : WellFormedSemanticEvalMono sourceNext.factory := by
-                        rw [hfacNext]
-                        exact hmono
-                      have henter := cfgLoopStep cfg entry bodyEntry continuation condition
-                        hlookup source target hrel hmono true (by simpa using htrue)
-                      have hiteration : StepCFGStarE P (Imperative.EvalCmdE P)
-                          (.atBlock cfg entry target) targetBodyTrace
-                          (.atBlock cfg entry targetInner) := by
-                        simpa using cfgTraceTrans henter htargetBody
-                      match hloopList with
-                      | .refl _ =>
-                          exact ⟨_, targetBodyTrace, hiteration,
-                            by simpa [htrace] using htraceBody⟩
-                      | .step _ _ _ tailTrace _ hlistFirst hlistRest =>
-                          cases hlistFirst with
-                          | step_admin hlistAdmin =>
-                              cases hlistAdmin with
-                              | step_stmts_cons =>
-                                  rcases seqTRunDecompose hlistRest with
-                                    ⟨loopFinal, rfl, hsourceLoop, hlenLoop⟩ |
-                                    ⟨middle, headTrace, nilTrace, htailTrace,
-                                      hsourceLoop, hnil, hlenLoop⟩ |
-                                    ⟨loopExitLabel, loopExitEnv, rfl, hsourceLoop,
-                                      hlenLoop⟩
-                                  · obtain ⟨targetLoopFinal, targetLoopTrace,
-                                        htargetLoop, htraceLoop⟩ :=
-                                      ih sourceNext targetInner loopFinal tailTrace hrelNext
-                                        hmonoNext hsourceLoop
-                                        (by
-                                          have hsourceLoopLe : hsourceLoop.len ≤ hlistRest.len :=
-                                            hlenLoop
-                                          simp only [ReflTransTraceT.len] at hlen hlenSeq
-                                          omega)
-                                    refine ⟨targetLoopFinal,
-                                      targetBodyTrace ++ targetLoopTrace,
-                                      cfgTraceTrans hiteration htargetLoop, ?_⟩
-                                    simpa [htrace] using TraceExtendsEnv.append htraceBody htraceLoop
-                                  · obtain ⟨nilTraceEq, _⟩ := stmts_nil_runE
-                                      (Imperative.EvalCmdE P) (reflTransTraceT_to_prop hnil)
-                                    subst nilTrace
-                                    obtain ⟨targetLoopEnv, targetLoopTrace, htargetLoop,
-                                        hrelLoop, htraceLoop⟩ :=
-                                      loopTerminal cfg entry bodyEntry continuation condition body
-                                        metadata keep exitTarget hlookup bodySim hrelNext hmonoNext
-                                        (reflTransTraceT_to_prop hsourceLoop)
-                                    refine ⟨_, targetBodyTrace ++ targetLoopTrace,
-                                      cfgTraceTrans hiteration htargetLoop, ?_⟩
-                                    simpa [htrace, htailTrace] using
-                                      TraceExtendsEnv.append htraceBody htraceLoop
-                                  · obtain ⟨targetLoopEnv, targetLoopTrace, htargetLoop,
-                                        hrelLoop, htraceLoop⟩ :=
-                                      loopExiting cfg entry bodyEntry continuation condition body
-                                        metadata keep exitTarget hlookup bodySim hrelNext hmonoNext
-                                        (reflTransTraceT_to_prop hsourceLoop)
-                                    refine ⟨_, targetBodyTrace ++ targetLoopTrace,
-                                      cfgTraceTrans hiteration htargetLoop, ?_⟩
-                                    simpa [htrace] using TraceExtendsEnv.append htraceBody htraceLoop
-                    · simp at hnone
-                    · simp at hbad
-                  · subst hfinal
-                    rcases blockRunDecompose (reflTransTraceT_to_prop hblock) with
-                      ⟨sourceInner, hbad, hsourceBody⟩ |
-                      ⟨sourceInner, hsourceBody, hbad⟩ |
-                      ⟨innerLabel, sourceInner, hnone, hsourceBody, hbad⟩ |
-                      ⟨innerLabel, sourceInner, hne, hsourceBody, hsourceFinal⟩
-                    · simp at hbad
-                    · simp at hbad
-                    · simp at hnone
-                    · injection hsourceFinal with hlabel henv
-                      subst hlabel
-                      subst exitEnv
-                      obtain ⟨targetInner, targetBodyTrace, htargetBody, hrelInner,
-                          htraceBody⟩ := (bodySim source target hrel).exiting hsourceBody
-                      have henter := cfgLoopStep cfg entry bodyEntry continuation condition
-                        hlookup source target hrel hmono true (by simpa using htrue)
-                      exact ⟨_, targetBodyTrace, by
-                        simpa using cfgTraceTrans henter htargetBody, by simpa using htraceBody⟩
+          | step_loop_exit hfalse =>
+              obtain ⟨hfinal, htrace⟩ := stepStmtStarE_from_terminal
+                (reflTransTraceT_to_prop hrest)
+              subst htrace
+              subst hfinal
+              exact ⟨_, [], cfgLoopStep cfg entry bodyEntry continuation condition
+                hlookup source target hrel hmono false (by simpa using hfalse), .nil⟩
+          | step_loop_enter htrue =>
+              rcases seqTRunDecompose hrest with
+                ⟨blockFinal, hfinal, hblock, hlenBlock⟩ |
+                ⟨projectedSource, bodyTrace, loopTrace, htrace, hblock,
+                  hloopList, hlenSeq⟩ |
+                ⟨exitLabel, exitEnv, hfinal, hblock, hlenBlock⟩
+              · subst hfinal
+                rcases blockRunDecompose (reflTransTraceT_to_prop hblock) with
+                  ⟨sourceInner, rfl, hsourceBody⟩ |
+                  ⟨sourceInner, hsourceBody, rfl⟩ |
+                  ⟨exitLabel, sourceInner, hnone, hsourceBody, hsourceFinal⟩ |
+                  ⟨exitLabel, sourceInner, hne, hsourceBody, rfl⟩
+                · obtain ⟨targetInner, targetBodyTrace, htargetBody, htraceBody⟩ :=
+                    (bodySim source target hrel).simulate hsourceBody
+                  have henter := cfgLoopStep cfg entry bodyEntry continuation condition
+                    hlookup source target hrel hmono true (by simpa using htrue)
+                  exact ⟨targetInner, targetBodyTrace, by
+                    simpa using cfgTraceTrans henter htargetBody, by simpa using htraceBody⟩
+                · obtain ⟨targetInner, targetBodyTrace, htargetBody, hrelInner,
+                      htraceBody⟩ := (bodySim source target hrel).terminal hsourceBody
+                  have henter := cfgLoopStep cfg entry bodyEntry continuation condition
+                    hlookup source target hrel hmono true (by simpa using htrue)
+                  exact ⟨_, targetBodyTrace, by
+                    simpa using cfgTraceTrans henter htargetBody, by simpa using htraceBody⟩
+                · simp at hnone
+                · obtain ⟨targetInner, targetBodyTrace, htargetBody, hrelInner,
+                      htraceBody⟩ := (bodySim source target hrel).exiting hsourceBody
+                  have henter := cfgLoopStep cfg entry bodyEntry continuation condition
+                    hlookup source target hrel hmono true (by simpa using htrue)
+                  exact ⟨_, targetBodyTrace, by
+                    simpa using cfgTraceTrans henter htargetBody, by simpa using htraceBody⟩
+              · rcases blockRunDecompose (reflTransTraceT_to_prop hblock) with
+                  ⟨sourceInner, hbad, hsourceBody⟩ |
+                  ⟨sourceInner, hsourceBody, hprojected⟩ |
+                  ⟨exitLabel, sourceInner, hnone, hsourceBody, hbad⟩ |
+                  ⟨exitLabel, sourceInner, hne, hsourceBody, hbad⟩
+                · simp at hbad
+                · injection hprojected with hprojectedEnv
+                  subst projectedSource
+                  obtain ⟨targetInner, targetBodyTrace, htargetBody, hrelInner,
+                      htraceBody⟩ := (bodySim source target hrel).terminal hsourceBody
+                  let sourceNext : Env P :=
+                    { sourceInner with store := projectStore source.store sourceInner.store }
+                  have hrelNext : EnvRel keep sourceNext targetInner :=
+                    EnvRel.projectLeft hrelInner
+                  have hfacBody := starE_preserves_factory hsourceBody
+                  have hfacNext : sourceNext.factory = source.factory := by
+                    change sourceInner.factory = source.factory
+                    simpa [Config.getEnv] using hfacBody.symm
+                  have hmonoNext : WellFormedSemanticEvalMono sourceNext.factory := by
+                    rw [hfacNext]
+                    exact hmono
+                  have henter := cfgLoopStep cfg entry bodyEntry continuation condition
+                    hlookup source target hrel hmono true (by simpa using htrue)
+                  have hiteration : StepCFGStarE P (Imperative.EvalCmdE P)
+                      (.atBlock cfg entry target) targetBodyTrace
+                      (.atBlock cfg entry targetInner) := by
+                    simpa using cfgTraceTrans henter htargetBody
+                  match hloopList with
+                  | .refl _ =>
+                      exact ⟨_, targetBodyTrace, hiteration,
+                        by simpa [htrace] using htraceBody⟩
+                  | .step _ _ _ tailTrace _ hlistFirst hlistRest =>
+                      cases hlistFirst with
+                      | step_stmts_cons =>
+                          rcases seqTRunDecompose hlistRest with
+                            ⟨loopFinal, rfl, hsourceLoop, hlenLoop⟩ |
+                            ⟨middle, headTrace, nilTrace, htailTrace,
+                              hsourceLoop, hnil, hlenLoop⟩ |
+                            ⟨loopExitLabel, loopExitEnv, rfl, hsourceLoop,
+                              hlenLoop⟩
+                          · obtain ⟨targetLoopFinal, targetLoopTrace,
+                                htargetLoop, htraceLoop⟩ :=
+                              ih sourceNext targetInner loopFinal tailTrace hrelNext
+                                hmonoNext hsourceLoop
+                                (by
+                                  have hsourceLoopLe : hsourceLoop.len ≤ hlistRest.len :=
+                                    hlenLoop
+                                  simp only [ReflTransTraceT.len] at hlen hlenSeq
+                                  omega)
+                            refine ⟨targetLoopFinal,
+                              targetBodyTrace ++ targetLoopTrace,
+                              cfgTraceTrans hiteration htargetLoop, ?_⟩
+                            simpa [htrace] using TraceExtendsEnv.append htraceBody htraceLoop
+                          · obtain ⟨nilTraceEq, _⟩ := stmts_nil_runE
+                              (Imperative.EvalCmdE P) (reflTransTraceT_to_prop hnil)
+                            subst nilTrace
+                            obtain ⟨targetLoopEnv, targetLoopTrace, htargetLoop,
+                                hrelLoop, htraceLoop⟩ :=
+                              loopTerminal cfg entry bodyEntry continuation condition body
+                                metadata keep exitTarget hlookup bodySim hrelNext hmonoNext
+                                (reflTransTraceT_to_prop hsourceLoop)
+                            refine ⟨_, targetBodyTrace ++ targetLoopTrace,
+                              cfgTraceTrans hiteration htargetLoop, ?_⟩
+                            simpa [htrace, htailTrace] using
+                              TraceExtendsEnv.append htraceBody htraceLoop
+                          · obtain ⟨targetLoopEnv, targetLoopTrace, htargetLoop,
+                                hrelLoop, htraceLoop⟩ :=
+                              loopExiting cfg entry bodyEntry continuation condition body
+                                metadata keep exitTarget hlookup bodySim hrelNext hmonoNext
+                                (reflTransTraceT_to_prop hsourceLoop)
+                            refine ⟨_, targetBodyTrace ++ targetLoopTrace,
+                              cfgTraceTrans hiteration htargetLoop, ?_⟩
+                            simpa [htrace] using TraceExtendsEnv.append htraceBody htraceLoop
+                · simp at hnone
+                · simp at hbad
+              · subst hfinal
+                rcases blockRunDecompose (reflTransTraceT_to_prop hblock) with
+                  ⟨sourceInner, hbad, hsourceBody⟩ |
+                  ⟨sourceInner, hsourceBody, hbad⟩ |
+                  ⟨innerLabel, sourceInner, hnone, hsourceBody, hbad⟩ |
+                  ⟨innerLabel, sourceInner, hne, hsourceBody, hsourceFinal⟩
+                · simp at hbad
+                · simp at hbad
+                · simp at hnone
+                · injection hsourceFinal with hlabel henv
+                  subst hlabel
+                  subst exitEnv
+                  obtain ⟨targetInner, targetBodyTrace, htargetBody, hrelInner,
+                      htraceBody⟩ := (bodySim source target hrel).exiting hsourceBody
+                  have henter := cfgLoopStep cfg entry bodyEntry continuation condition
+                    hlookup source target hrel hmono true (by simpa using htrue)
+                  exact ⟨_, targetBodyTrace, by
+                    simpa using cfgTraceTrans henter htargetBody, by simpa using htraceBody⟩
 
 private theorem loopPrefix {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
@@ -4426,7 +4361,7 @@ private theorem stmtsPrefixAppend {P : PureExpr}
           ⟨label, exitEnv, hfinal, hhead⟩
         · subst final
           exact ⟨.seq inner (rest ++ right),
-            .step _ [] _ trace _ (.step_admin .step_stmts_cons)
+            .step _ [] _ trace _ .step_stmts_cons
               (seq_inner_starE (Imperative.EvalCmdE P) hhead)⟩
         · obtain ⟨target, htarget⟩ := ih middle htail
           subst trace
@@ -4437,11 +4372,11 @@ private theorem stmtsPrefixAppend {P : PureExpr}
           have hfirst : StepStmtStarE P (Imperative.EvalCmdE P)
               (.stmts (statement :: (rest ++ right)) initial) trace
               (.seq (.exiting label exitEnv) (rest ++ right)) :=
-            .step _ [] _ trace _ (.step_admin .step_stmts_cons)
+            .step _ [] _ trace _ .step_stmts_cons
               (seq_inner_starE (Imperative.EvalCmdE P) hhead)
           exact ⟨.exiting label exitEnv, by
             simpa using ReflTransTrace.trans _ hfirst
-              (.step _ [] _ [] _ (.step_admin .step_seq_exit) (.refl _))⟩
+              (.step _ [] _ [] _ .step_seq_exit (.refl _))⟩
 
 private theorem stmtsPrefixTerminalAppend {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
@@ -4483,12 +4418,10 @@ private theorem typeDeclStmtRun {P : PureExpr}
   | refl => exact ⟨rfl, .inl rfl⟩
   | step _ _ _ restTrace _ hfirst hrest =>
       cases hfirst with
-      | step_admin hadmin =>
-          cases hadmin with
-          | step_typeDecl =>
-              obtain ⟨hfinal, htrace⟩ := stepStmtStarE_from_terminal hrest
-              subst htrace
-              exact ⟨by simp, .inr hfinal⟩
+      | step_typeDecl =>
+          obtain ⟨hfinal, htrace⟩ := stepStmtStarE_from_terminal hrest
+          subst htrace
+          exact ⟨by simp, .inr hfinal⟩
 
 private theorem typeDeclLeadingPrefix {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
@@ -4654,11 +4587,9 @@ private theorem exitStmtNotTerminal {P : PureExpr}
   cases hrun with
   | step _ _ _ _ _ hfirst hrest =>
       cases hfirst with
-      | step_admin hadmin =>
-          cases hadmin with
-          | step_exit =>
-              obtain ⟨hfinal, _⟩ := stepStmtStarE_from_exiting hrest
-              simp at hfinal
+      | step_exit =>
+          obtain ⟨hfinal, _⟩ := stepStmtStarE_from_exiting hrest
+          simp at hfinal
 
 private theorem exitStmtExitingEq {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
@@ -4670,12 +4601,10 @@ private theorem exitStmtExitingEq {P : PureExpr}
   cases hrun with
   | step _ _ _ restTrace _ hfirst hrest =>
       cases hfirst with
-      | step_admin hadmin =>
-          cases hadmin with
-          | step_exit =>
-              obtain ⟨hfinal, htrace⟩ := stepStmtStarE_from_exiting hrest
-              injection hfinal with hlabel henv
-              exact ⟨hlabel, henv, by subst htrace; simp⟩
+      | step_exit =>
+          obtain ⟨hfinal, htrace⟩ := stepStmtStarE_from_exiting hrest
+          injection hfinal with hlabel henv
+          exact ⟨hlabel, henv, by subst htrace; simp⟩
 
 private theorem exitListSim {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
@@ -4884,22 +4813,8 @@ private theorem stepEPreservesExitCoverage {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
     {source target : Config P (Cmd P)} {trace : Trace P}
     (hstep : StepStmtE P (Imperative.EvalCmdE P) source trace target) :
-    ∀ labels, source.exitsCoveredByBlocks labels → target.exitsCoveredByBlocks labels := by
-  induction hstep with
-  | step_cmd _ => intro _ _; trivial
-  | step_admin hadmin =>
-      intro labels hcovered
-      exact step_preserves_exitsCoveredByBlocks P (noCommandEvalE P (Cmd P))
-        labels _ _ hadmin hcovered
-  | step_seq_inner _ ih =>
-      intro labels hcovered
-      exact ⟨ih labels hcovered.1, hcovered.2⟩
-  | step_block_body _ ih =>
-      intro labels hcovered
-      rename_i inner emitted inner' label parent _
-      cases label with
-      | none => exact ih labels hcovered
-      | some blockLabel => exact ih (blockLabel :: labels) hcovered
+    ∀ labels, source.exitsCoveredByBlocks labels → target.exitsCoveredByBlocks labels :=
+  stepStmtE_preserves_exitsCoveredByBlocks (Imperative.EvalCmdE P) hstep
 
 private theorem exitingLabelMem {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P]
@@ -5847,7 +5762,7 @@ private theorem stmtsToCFGTraceSimWithNodup {P : PureExpr}
   let cfg := stmtsToCFG statements
   have hready : EnvRel (pendingInits ([] : List (Cmd P)) statements ++ [])
       initial initial := by
-    refine ⟨rfl, StoreAgreement.refl _, rfl, ?_, hmono, hval⟩
+    refine ⟨rfl, StoreAgreement.refl _, ?_, hmono, hval⟩
     intro x hx
     exact hfresh x (by simpa [pendingInits, Cmds.definedVars] using hx)
   have hinitNodup : (pendingInits ([] : List (Cmd P)) statements ++ []).Nodup := by
@@ -6764,11 +6679,11 @@ theorem overapproximatesTraces {P : PureExpr}
     exact ⟨targetFinal, targetTrace, htarget, hstrong hrun htarget htrace⟩
   · intro sourceEnv sourceTrace hrun
     obtain ⟨targetEnv, targetTrace, htarget, hrel, htrace⟩ := hsim.terminal hrun
-    exact ⟨targetEnv, targetTrace, htarget, ⟨hrel.store, hrel.failure⟩,
+    exact ⟨targetEnv, targetTrace, htarget, hrel.store,
       hstrong hrun htarget htrace⟩
   · intro label sourceEnv sourceTrace hrun
     obtain ⟨targetEnv, targetTrace, htarget, hrel, htrace⟩ := hsim.exiting hrun
-    exact ⟨targetEnv, targetTrace, htarget, ⟨hrel.store, hrel.failure⟩,
+    exact ⟨targetEnv, targetTrace, htarget, hrel.store,
       hstrong hrun htarget htrace⟩
 
 end Imperative.StructuredToUnstructured

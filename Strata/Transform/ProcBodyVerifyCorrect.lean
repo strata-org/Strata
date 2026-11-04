@@ -126,13 +126,13 @@ private def PrefixStepsOK
         ∀ a, Event.assume a ∈ emitted →
           Expression.eval a.factory a.store a.expr = some HasBool.tt
 
-/-- An administrative event step as a one-step run. -/
+/-- A silent event step as a one-step run. -/
 private theorem adminRunE
     {π : String → Option Procedure}
     {c c' : CoreConfig}
-    (h : StepStmt Expression (noCommandEvalE Expression Command) c c') :
+    (h : CoreStepE π c [] c') :
     CoreStepStarE π c [] c' := by
-  simpa using ReflTransTrace.step _ _ _ _ _ (StepStmtE.step_admin h) (ReflTransTrace.refl _)
+  simpa using ReflTransTrace.step _ _ _ _ _ h (ReflTransTrace.refl _)
 
 /-- If `PrefixStepsOK` holds, the prefix runs in the event semantics from
     `prefixInitEnv stmts ρ` to `.terminal ρ`, and every assumption on the way is
@@ -766,8 +766,7 @@ theorem procBodyVerify_procedureCorrectOnTraces
     | refl => exact .inl rfl
     | step _ _ _ _ _ hstep hrest =>
       cases hstep with
-      | step_admin hadmin =>
-        cases hadmin
+      | step_block =>
         simp only [List.nil_append]
         rcases Imperative.block_run_to_finalE hrest with
           ⟨_, _, hi⟩ | ⟨_, hi, _⟩ | ⟨_, _, _, hi, _⟩ | ⟨_, _, _, hi, _⟩

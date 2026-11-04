@@ -110,12 +110,10 @@ abbrev EventLang.imperativeE (P : PureExpr) [HasBool P] [HasBoolOps P]
   exitingCfg := .exiting
   terminal_no_step := by
     intro ρ emitted cfg hstep
-    cases hstep with
-    | step_admin hadmin => cases hadmin
+    cases hstep
   exiting_no_step := by
     intro label ρ emitted cfg hstep
-    cases hstep with
-    | step_admin hadmin => cases hadmin
+    cases hstep
   getEnv := Config.getEnv
   InitEnvWFParamsTy := ParamsTy
   initEnvWF := initEnvWF
@@ -137,12 +135,10 @@ abbrev EventLang.imperativeBlockE (P : PureExpr) [HasBool P] [HasBoolOps P]
   exitingCfg := .exiting
   terminal_no_step := by
     intro ρ emitted cfg hstep
-    cases hstep with
-    | step_admin hadmin => cases hadmin
+    cases hstep
   exiting_no_step := by
     intro label ρ emitted cfg hstep
-    cases hstep with
-    | step_admin hadmin => cases hadmin
+    cases hstep
   getEnv := Config.getEnv
   InitEnvWFParamsTy := wfPkg.1
   initEnvWF := wfPkg.2
@@ -163,12 +159,10 @@ abbrev EventLang.cfgE (P : PureExpr) [HasBool P] [HasBoolOps P] [HasVal P]
   exitingCfg := fun _ => .terminal
   terminal_no_step := by
     intro ρ emitted cfg hstep
-    cases hstep with
-    | step_admin hadmin => cases hadmin
+    cases hstep
   exiting_no_step := by
     intro _ ρ emitted cfg hstep
-    cases hstep with
-    | step_admin hadmin => cases hadmin
+    cases hstep
   getEnv := CFGConfig.getEnv
   InitEnvWFParamsTy := ParamsTy
   initEnvWF := initEnvWF

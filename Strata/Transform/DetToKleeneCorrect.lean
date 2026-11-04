@@ -226,70 +226,67 @@ private theorem detToKleene_stmt_step
         .step _ _ _ _ _ (StepKleeneE.step_cmd hcmd) (.refl _),
         .terminal, by simpa using
           TraceStuttersEnv.refl (P := P) (fun _ : P.Ident => False) (fun _ => True) emitted⟩
-  | step_admin hadmin =>
-    cases hadmin with
-    | step_block =>
-        obtain ⟨bodyTarget, hbody, rfl⟩ := block_stmt_transform_some _ _ _ _ ht
-        exact ⟨.block ρ.store (.stmt bodyTarget ρ), [],
-          .step _ _ _ _ _ StepKleeneE.step_block (.refl _),
-          .block (.stmts hbody), .nil⟩
-    | step_ite_true hcond =>
-        obtain ⟨thenTarget, elseTarget, hthen, _helse, rfl⟩ :=
-          ite_transform_some_det _ _ _ _ _ ht
-        exact ⟨_, _,
-          kleene_choice_left_traceE
-            (.step _ _ _ _ _ StepKleeneE.step_block
-              (stepKleeneStarE_block_inner
-                (kleene_seq_traceE (kleene_assume_traceE ρ "true_cond" _ _) (.refl _)))),
-          .block (.stmts hthen),
-          .stutter_right trivial (guard_assume_event_true hcond) .nil⟩
-    | step_ite_false hcond =>
-        obtain ⟨_thenTarget, elseTarget, _hthen, helse, rfl⟩ :=
-          ite_transform_some_det _ _ _ _ _ ht
-        exact ⟨_, _,
-          kleene_choice_right_traceE
-            (.step _ _ _ _ _ StepKleeneE.step_block
-              (stepKleeneStarE_block_inner
-                (kleene_seq_traceE (kleene_assume_traceE ρ "false_cond" _ _) (.refl _)))),
-          .block (.stmts helse),
-          .stutter_right trivial (guard_assume_event_true ((hwfb ρ.store _).2.mp hcond)) .nil⟩
-    | step_ite_nondet_true =>
-        obtain ⟨thenTarget, elseTarget, hthen, _helse, rfl⟩ :=
-          ite_transform_some_nondet _ _ _ _ ht
-        exact ⟨.block ρ.store (.stmt thenTarget ρ), [],
-          kleene_choice_left_traceE
-            (.step _ _ _ _ _ StepKleeneE.step_block (.refl _)),
-          .block (.stmts hthen), .nil⟩
-    | step_ite_nondet_false =>
-        obtain ⟨_thenTarget, elseTarget, _hthen, helse, rfl⟩ :=
-          ite_transform_some_nondet _ _ _ _ ht
-        exact ⟨.block ρ.store (.stmt elseTarget ρ), [],
-          kleene_choice_right_traceE
-            (.step _ _ _ _ _ StepKleeneE.step_block (.refl _)),
-          .block (.stmts helse), .nil⟩
-    | step_loop_enter hcond =>
-        obtain ⟨rfl, bodyTarget, hbody, rfl⟩ := loop_transform_some_det _ _ _ _ _ _ ht
-        exact ⟨_, _,
-          .step _ _ _ _ _ StepKleeneE.step_loop_step
-            (stepKleeneStarE_seq_inner
-              (stepKleeneStarE_block_inner
-                (kleene_seq_traceE (kleene_assume_traceE ρ "guard" _ _) (.refl _)))),
-          .seq (.block (.stmts hbody)) (.singleton ht),
-          .stutter_right trivial (guard_assume_event_true hcond) .nil⟩
-    | step_loop_exit _ =>
-        obtain ⟨rfl, _, _, rfl⟩ := loop_transform_some_det _ _ _ _ _ _ ht
-        exact ⟨.terminal ρ, [], kleene_loop_zero_traceE _ _, .terminal, .nil⟩
-    | step_loop_nondet_enter =>
-        obtain ⟨rfl, bodyTarget, hbody, rfl⟩ := loop_transform_some_nondet _ _ _ _ _ ht
-        exact ⟨_, [],
-          .step _ _ _ _ _ StepKleeneE.step_loop_step (.refl _),
-          .seq (.block (.stmts hbody)) (.singleton ht), .nil⟩
-    | step_loop_nondet_exit =>
-        obtain ⟨rfl, _, _, rfl⟩ := loop_transform_some_nondet _ _ _ _ _ ht
-        exact ⟨.terminal ρ, [], kleene_loop_zero_traceE _ _, .terminal, .nil⟩
-    | step_cmd hfalse => simp [noCommandEvalE] at hfalse
-    | step_exit => simp [StmtToKleeneStmt.eq_6] at ht
-    | step_typeDecl => simp [StmtToKleeneStmt.eq_5] at ht
+  | step_block =>
+      obtain ⟨bodyTarget, hbody, rfl⟩ := block_stmt_transform_some _ _ _ _ ht
+      exact ⟨.block ρ.store (.stmt bodyTarget ρ), [],
+        .step _ _ _ _ _ StepKleeneE.step_block (.refl _),
+        .block (.stmts hbody), .nil⟩
+  | step_ite_true hcond =>
+      obtain ⟨thenTarget, elseTarget, hthen, _helse, rfl⟩ :=
+        ite_transform_some_det _ _ _ _ _ ht
+      exact ⟨_, _,
+        kleene_choice_left_traceE
+          (.step _ _ _ _ _ StepKleeneE.step_block
+            (stepKleeneStarE_block_inner
+              (kleene_seq_traceE (kleene_assume_traceE ρ "true_cond" _ _) (.refl _)))),
+        .block (.stmts hthen),
+        .stutter_right trivial (guard_assume_event_true hcond) .nil⟩
+  | step_ite_false hcond =>
+      obtain ⟨_thenTarget, elseTarget, _hthen, helse, rfl⟩ :=
+        ite_transform_some_det _ _ _ _ _ ht
+      exact ⟨_, _,
+        kleene_choice_right_traceE
+          (.step _ _ _ _ _ StepKleeneE.step_block
+            (stepKleeneStarE_block_inner
+              (kleene_seq_traceE (kleene_assume_traceE ρ "false_cond" _ _) (.refl _)))),
+        .block (.stmts helse),
+        .stutter_right trivial (guard_assume_event_true ((hwfb ρ.store _).2.mp hcond)) .nil⟩
+  | step_ite_nondet_true =>
+      obtain ⟨thenTarget, elseTarget, hthen, _helse, rfl⟩ :=
+        ite_transform_some_nondet _ _ _ _ ht
+      exact ⟨.block ρ.store (.stmt thenTarget ρ), [],
+        kleene_choice_left_traceE
+          (.step _ _ _ _ _ StepKleeneE.step_block (.refl _)),
+        .block (.stmts hthen), .nil⟩
+  | step_ite_nondet_false =>
+      obtain ⟨_thenTarget, elseTarget, _hthen, helse, rfl⟩ :=
+        ite_transform_some_nondet _ _ _ _ ht
+      exact ⟨.block ρ.store (.stmt elseTarget ρ), [],
+        kleene_choice_right_traceE
+          (.step _ _ _ _ _ StepKleeneE.step_block (.refl _)),
+        .block (.stmts helse), .nil⟩
+  | step_loop_enter hcond =>
+      obtain ⟨rfl, bodyTarget, hbody, rfl⟩ := loop_transform_some_det _ _ _ _ _ _ ht
+      exact ⟨_, _,
+        .step _ _ _ _ _ StepKleeneE.step_loop_step
+          (stepKleeneStarE_seq_inner
+            (stepKleeneStarE_block_inner
+              (kleene_seq_traceE (kleene_assume_traceE ρ "guard" _ _) (.refl _)))),
+        .seq (.block (.stmts hbody)) (.singleton ht),
+        .stutter_right trivial (guard_assume_event_true hcond) .nil⟩
+  | step_loop_exit _ =>
+      obtain ⟨rfl, _, _, rfl⟩ := loop_transform_some_det _ _ _ _ _ _ ht
+      exact ⟨.terminal ρ, [], kleene_loop_zero_traceE _ _, .terminal, .nil⟩
+  | step_loop_nondet_enter =>
+      obtain ⟨rfl, bodyTarget, hbody, rfl⟩ := loop_transform_some_nondet _ _ _ _ _ ht
+      exact ⟨_, [],
+        .step _ _ _ _ _ StepKleeneE.step_loop_step (.refl _),
+        .seq (.block (.stmts hbody)) (.singleton ht), .nil⟩
+  | step_loop_nondet_exit =>
+      obtain ⟨rfl, _, _, rfl⟩ := loop_transform_some_nondet _ _ _ _ _ ht
+      exact ⟨.terminal ρ, [], kleene_loop_zero_traceE _ _, .terminal, .nil⟩
+  | step_exit => simp [StmtToKleeneStmt.eq_6] at ht
+  | step_typeDecl => simp [StmtToKleeneStmt.eq_5] at ht
 
 omit [HasOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P] in
 /-- The structural configuration invariant is a forward simulation: one source
@@ -315,38 +312,33 @@ private theorem detToKleene_config_step [LawfulHasVal P]
       rename_i sourceStmts targetStmt ρ
       intro emitted source' _hwfb hwfv hstep
       cases hstep with
-      | step_admin hadmin => cases hadmin with
-        | step_stmts_nil =>
-          simp only [BlockToKleeneStmt.eq_1, Option.some.injEq] at ht
-          subst targetStmt
-          exact ⟨.terminal _,
-            [Event.assert (EventArg.mk ρ.factory ρ.store "$__skip" HasBool.tt .empty)],
-            .step _ _ _ _ _ (StepKleeneE.step_cmd EvalCmdE.eval_assert) (.refl _),
-            .terminal, .stutter_right trivial (skip_assert_event_true hwfv) .nil⟩
-        | step_stmts_cons =>
-          obtain ⟨headTarget, restTarget, hhead, hrest, rfl⟩ :=
-            block_transform_some _ _ _ ht
-          exact ⟨_, [],
-            .step _ _ _ _ _ StepKleeneE.step_seq (.refl _),
-            .seq (.stmt hhead) (.block hrest), .nil⟩
+      | step_stmts_nil =>
+        simp only [BlockToKleeneStmt.eq_1, Option.some.injEq] at ht
+        subst targetStmt
+        exact ⟨.terminal _,
+          [Event.assert (EventArg.mk ρ.factory ρ.store "$__skip" HasBool.tt .empty)],
+          .step _ _ _ _ _ (StepKleeneE.step_cmd EvalCmdE.eval_assert) (.refl _),
+          .terminal, .stutter_right trivial (skip_assert_event_true hwfv) .nil⟩
+      | step_stmts_cons =>
+        obtain ⟨headTarget, restTarget, hhead, hrest, rfl⟩ :=
+          block_transform_some _ _ _ ht
+        exact ⟨_, [],
+          .step _ _ _ _ _ StepKleeneE.step_seq (.refl _),
+          .seq (.stmt hhead) (.block hrest), .nil⟩
 
   | stmtsSingleton ht =>
       intro emitted source' _hwfb _hwfv hstep
       cases hstep with
-      | step_admin hadmin => cases hadmin with
-        | step_stmts_cons => exact ⟨_, [], .refl _, .seqNil (.stmt ht), .nil⟩
+      | step_stmts_cons => exact ⟨_, [], .refl _, .seqNil (.stmt ht), .nil⟩
 
   | stmtsNil =>
       intro emitted source' _hwfb _hwfv hstep
       cases hstep with
-      | step_admin hadmin => cases hadmin with
-        | step_stmts_nil => exact ⟨_, [], .refl _, .terminal, .nil⟩
+      | step_stmts_nil => exact ⟨_, [], .refl _, .terminal, .nil⟩
 
   | terminal =>
       intro emitted source' _hwfb _hwfv hstep
-      cases hstep with
-      | step_admin hadmin => cases hadmin
-
+      cases hstep
   | seq hinner hcont ih =>
       intro emitted source' hwfb hwfv hstep
       cases hstep with
@@ -354,22 +346,16 @@ private theorem detToKleene_config_step [LawfulHasVal P]
         obtain ⟨targetInner', targetTrace, htarget, hsim', hrel⟩ := ih hwfb hwfv hinnerStep
         exact ⟨_, targetTrace, stepKleeneStarE_seq_inner htarget,
           .seq hsim' hcont, hrel⟩
-      | step_admin hadmin => cases hadmin with
-        | step_seq_inner hinnerStep =>
-          obtain ⟨targetInner', targetTrace, htarget, hsim', hrel⟩ :=
-            ih hwfb hwfv (StepStmtE.step_admin hinnerStep)
-          exact ⟨_, targetTrace, stepKleeneStarE_seq_inner htarget,
-            .seq hsim' hcont, hrel⟩
-        | step_seq_done =>
-          cases hinner
-          cases hcont with
-          | block hrest =>
-              exact ⟨_, [], .step _ _ _ _ _ StepKleeneE.step_seq_done (.refl _),
-                .stmts hrest, .nil⟩
-          | singleton hrest =>
-              exact ⟨_, [], .step _ _ _ _ _ StepKleeneE.step_seq_done (.refl _),
-                .stmtsSingleton hrest, .nil⟩
-        | step_seq_exit => cases hinner
+      | step_seq_done =>
+        cases hinner
+        cases hcont with
+        | block hrest =>
+            exact ⟨_, [], .step _ _ _ _ _ StepKleeneE.step_seq_done (.refl _),
+              .stmts hrest, .nil⟩
+        | singleton hrest =>
+            exact ⟨_, [], .step _ _ _ _ _ StepKleeneE.step_seq_done (.refl _),
+              .stmtsSingleton hrest, .nil⟩
+      | step_seq_exit => cases hinner
 
   | seqNil hinner ih =>
       intro emitted source' hwfb hwfv hstep
@@ -377,15 +363,10 @@ private theorem detToKleene_config_step [LawfulHasVal P]
       | step_seq_inner hinnerStep =>
         obtain ⟨target', targetTrace, htarget, hsim', hrel⟩ := ih hwfb hwfv hinnerStep
         exact ⟨target', targetTrace, htarget, .seqNil hsim', hrel⟩
-      | step_admin hadmin => cases hadmin with
-        | step_seq_inner hinnerStep =>
-          obtain ⟨target', targetTrace, htarget, hsim', hrel⟩ :=
-            ih hwfb hwfv (StepStmtE.step_admin hinnerStep)
-          exact ⟨target', targetTrace, htarget, .seqNil hsim', hrel⟩
-        | step_seq_done =>
-          cases hinner
-          exact ⟨_, [], .refl _, .stmtsNil, .nil⟩
-        | step_seq_exit => cases hinner
+      | step_seq_done =>
+        cases hinner
+        exact ⟨_, [], .refl _, .stmtsNil, .nil⟩
+      | step_seq_exit => cases hinner
 
   | block hinner ih =>
       intro emitted source' hwfb hwfv hstep
@@ -394,19 +375,13 @@ private theorem detToKleene_config_step [LawfulHasVal P]
         obtain ⟨targetInner', targetTrace, htarget, hsim', hrel⟩ := ih hwfb hwfv hinnerStep
         exact ⟨_, targetTrace, stepKleeneStarE_block_inner htarget,
           .block hsim', hrel⟩
-      | step_admin hadmin => cases hadmin with
-        | step_block_body hinnerStep =>
-          obtain ⟨targetInner', targetTrace, htarget, hsim', hrel⟩ :=
-            ih hwfb hwfv (StepStmtE.step_admin hinnerStep)
-          exact ⟨_, targetTrace, stepKleeneStarE_block_inner htarget,
-            .block hsim', hrel⟩
-        | step_block_done =>
-          cases hinner
-          exact ⟨_, [],
-            .step _ _ _ _ _ StepKleeneE.step_block_done (.refl _),
-            .terminal, .nil⟩
-        | step_block_exit_match _ => cases hinner
-        | step_block_exit_mismatch _ => cases hinner
+      | step_block_done =>
+        cases hinner
+        exact ⟨_, [],
+          .step _ _ _ _ _ StepKleeneE.step_block_done (.refl _),
+          .terminal, .nil⟩
+      | step_block_exit_match _ => cases hinner
+      | step_block_exit_mismatch _ => cases hinner
 
 omit [HasOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P] in
 /-- Every finite source trace prefix has a related target trace prefix. -/

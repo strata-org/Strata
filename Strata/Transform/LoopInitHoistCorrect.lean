@@ -799,14 +799,13 @@ theorem LoopInitHoistProducerProps.prelude_runnerE {P : PureExpr}
         targetTrace (.terminal ρt') ∧
       StoreAgreement ρs.store ρt'.store ∧
       ρt'.factory = ρt.factory ∧
-      ρt'.hasFailure = ρt.hasFailure ∧
       DTyped Dτ (acc ++ LoopInitHoistProducerProps.preludeNames hs) ρt' ∧
       TraceStuttersEnv (fun _ : P.Ident => True) (fun _ : P.Factory => True) [] targetTrace ∧
       TraceExtendsEnv (fun _ : P.Ident => True) [] targetTrace := by
   induction hs generalizing ρt acc with
   | nil =>
-      refine ⟨ρt, [], .step _ [] _ [] _ (.step_admin .step_stmts_nil) (.refl _),
-        hagree, rfl, rfl, ?_, ⟨.nil, .nil⟩⟩
+      refine ⟨ρt, [], .step _ [] _ [] _ .step_stmts_nil (.refl _),
+        hagree, rfl, ?_, ⟨.nil, .nil⟩⟩
       simpa [LoopInitHoistProducerProps.preludeNames] using hacc
   | cons t rest ih =>
       obtain ⟨y, ty, md⟩ := t
@@ -863,14 +862,13 @@ theorem LoopInitHoistProducerProps.prelude_runnerE {P : PureExpr}
       have hinRest : ∀ t ∈ rest, ∃ v, HasVal.valueOfTy ρmid.factory v t.2.1 := by
         intro t ht
         exact hinhab t (List.mem_cons_of_mem _ ht)
-      obtain ⟨ρt', targetTrace, hrest, hagree', hfac', hfail', htyped', htrace⟩ :=
+      obtain ⟨ρt', targetTrace, hrest, hagree', hfac', htyped', htrace⟩ :=
         ih (acc := acc ++ [y]) (ρt := ρmid) htypedMid hagreeMid hsrcRest htgtRest
           hnodupRest htyRest hinRest hwfVar
-      refine ⟨ρt', targetTrace, ?_, hagree', ?_, ?_, ?_, htrace⟩
+      refine ⟨ρt', targetTrace, ?_, hagree', ?_, ?_, htrace⟩
       · simpa [LoopInitHoistProducerProps.preludeHavocs] using
           ReflTransTrace.trans _ hhead hrest
       · exact hfac'.trans rfl
-      · exact hfail'.trans rfl
       · simpa [LoopInitHoistProducerProps.preludeNames, List.append_assoc] using htyped'
 
 structure LiftEnvRel {P : PureExpr} [HasVal P]
@@ -879,7 +877,6 @@ structure LiftEnvRel {P : PureExpr} [HasVal P]
   agreement : StoreAgreement source.store target.store
   sourceFactory : source.factory = factory
   targetFactory : target.factory = factory
-  failure : target.hasFailure = source.hasFailure
   typed : DTyped Dτ D target
 
 structure LiftStoreRel {P : PureExpr} [HasVal P]
@@ -1007,7 +1004,7 @@ private theorem LiftEnvRel.project {P : PureExpr} [HasFvars P] [HasVal P]
       { sourceInner with store := projectStore sourceParent sourceInner.store }
       { targetInner with store := projectStore targetParent targetInner.store } := by
   refine ⟨StoreAgreement.of_projectStore_parents hparent.agreement hinner.agreement,
-    hinner.sourceFactory, hinner.targetFactory, hinner.failure, ?_⟩
+    hinner.sourceFactory, hinner.targetFactory, ?_⟩
   have hp : DTyped Dτ D { targetInner with store := targetParent } := by
     intro y hy
     obtain ⟨value, hvalue, hty⟩ := hparent.typed y hy
@@ -1079,169 +1076,6 @@ private theorem LiftStmtRel.loopBody {P : PureExpr} [HasFvars P]
   rw [LoopInitHoistProducerProps.Block.typedInitVars_eq_nil_of_noInitsAnywhere body hnone] at hp
   exact absurd hp List.not_mem_nil
 
-private theorem liftConfigRel_adminStep {P : PureExpr}
-    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P]
-    [DecidableEq P.Ident] [LawfulHasVal P]
-    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {factory : P.Factory}
-    (hmono : WellFormedSemanticEvalMono factory)
-    {source source' target : Config P (Cmd P)}
-    (hrel : LiftConfigRel Dτ D factory source target)
-    (hstep : StepStmt P (noCommandEvalE P (Cmd P)) source source') :
-    ∃ target' targetTrace,
-      StepStmtStarE P (EvalCmdE P) target targetTrace target' ∧
-      LiftConfigRel Dτ D factory source' target' ∧
-      TraceStuttersEnv (fun _ : P.Ident => True) (fun _ : P.Factory => True) [] targetTrace ∧
-      TraceExtendsEnv (fun _ : P.Ident => True) [] targetTrace := by
-  induction hstep generalizing target with
-  | step_cmd heval => simp [noCommandEvalE] at heval
-  | step_block =>
-      cases hrel with
-      | stmt henv hstmt =>
-          obtain ⟨rfl, hbody⟩ := hstmt.blockBody
-          refine ⟨_, [], Imperative.StepStmtStarE.single (.step_admin .step_block),
-            .block henv.storeRel (.stmts henv hbody), ⟨.nil, .nil⟩⟩
-  | step_ite_true heval =>
-      cases hrel with
-      | stmt henv hstmt =>
-          obtain ⟨rfl, hthen, _⟩ := hstmt.iteBranches
-          have heval' := henv.eval hmono heval
-          refine ⟨_, [], Imperative.StepStmtStarE.single
-            (.step_admin (.step_ite_true heval')),
-            .block henv.storeRel (.stmts henv hthen), ⟨.nil, .nil⟩⟩
-  | step_ite_false heval =>
-      cases hrel with
-      | stmt henv hstmt =>
-          obtain ⟨rfl, _, helse⟩ := hstmt.iteBranches
-          have heval' := henv.eval hmono heval
-          refine ⟨_, [], Imperative.StepStmtStarE.single
-            (.step_admin (.step_ite_false heval')),
-            .block henv.storeRel (.stmts henv helse), ⟨.nil, .nil⟩⟩
-  | step_ite_nondet_true =>
-      cases hrel with
-      | stmt henv hstmt =>
-          obtain ⟨rfl, hthen, _⟩ := hstmt.iteBranches
-          refine ⟨_, [], Imperative.StepStmtStarE.single
-            (.step_admin .step_ite_nondet_true),
-            .block henv.storeRel (.stmts henv hthen), ⟨.nil, .nil⟩⟩
-  | step_ite_nondet_false =>
-      cases hrel with
-      | stmt henv hstmt =>
-          obtain ⟨rfl, _, helse⟩ := hstmt.iteBranches
-          refine ⟨_, [], Imperative.StepStmtStarE.single
-            (.step_admin .step_ite_nondet_false),
-            .block henv.storeRel (.stmts henv helse), ⟨.nil, .nil⟩⟩
-  | step_loop_enter heval =>
-      cases hrel with
-      | stmt henv hstmt =>
-          obtain ⟨rfl, hbody⟩ := hstmt.loopBody
-          have heval' := henv.eval hmono heval
-          have htail := hstmt.singleton
-          refine ⟨_, [], Imperative.StepStmtStarE.single
-            (.step_admin (.step_loop_enter heval')),
-            .seq (.block henv.storeRel (.stmts henv hbody)) htail, ⟨.nil, .nil⟩⟩
-  | step_loop_exit heval =>
-      cases hrel with
-      | stmt henv hstmt =>
-          obtain ⟨rfl, _⟩ := hstmt.loopBody
-          have heval' := henv.eval hmono heval
-          exact ⟨_, [], Imperative.StepStmtStarE.single
-            (.step_admin (.step_loop_exit heval')),
-            .terminal henv, ⟨.nil, .nil⟩⟩
-  | step_loop_nondet_enter =>
-      cases hrel with
-      | stmt henv hstmt =>
-          obtain ⟨rfl, hbody⟩ := hstmt.loopBody
-          have htail := hstmt.singleton
-          refine ⟨_, [], Imperative.StepStmtStarE.single
-            (.step_admin .step_loop_nondet_enter),
-            .seq (.block henv.storeRel (.stmts henv hbody)) htail, ⟨.nil, .nil⟩⟩
-  | step_loop_nondet_exit =>
-      cases hrel with
-      | stmt henv hstmt =>
-          obtain ⟨rfl, _⟩ := hstmt.loopBody
-          exact ⟨_, [], Imperative.StepStmtStarE.single
-            (.step_admin .step_loop_nondet_exit),
-            .terminal henv, ⟨.nil, .nil⟩⟩
-  | step_exit =>
-      cases hrel with
-      | stmt henv hstmt =>
-          have ht := hstmt.residual
-          simp only [Stmt.liftInitsInLoopBody, List.cons.injEq, and_true] at ht
-          subst_vars
-          exact ⟨_, [], Imperative.StepStmtStarE.single (.step_admin .step_exit),
-            .exiting henv, ⟨.nil, .nil⟩⟩
-  | step_typeDecl =>
-      cases hrel with
-      | stmt henv hstmt =>
-          have ht := hstmt.residual
-          simp only [Stmt.liftInitsInLoopBody, List.cons.injEq, and_true] at ht
-          subst_vars
-          exact ⟨_, [], Imperative.StepStmtStarE.single (.step_admin .step_typeDecl),
-            .terminal henv, ⟨.nil, .nil⟩⟩
-  | step_stmts_nil =>
-      cases hrel with
-      | stmts henv hblock =>
-          have ht := hblock.residual
-          simp only [Block.liftInitsInLoopBody, List.nil_eq] at ht
-          subst_vars
-          exact ⟨_, [], Imperative.StepStmtStarE.single (.step_admin .step_stmts_nil),
-            .terminal henv, ⟨.nil, .nil⟩⟩
-  | step_stmts_cons =>
-      cases hrel with
-      | stmts henv hblock =>
-          obtain ⟨s', rest', rfl, hs, hr⟩ := hblock.cons
-          exact ⟨_, [], Imperative.StepStmtStarE.single (.step_admin .step_stmts_cons),
-            .seq (.stmt henv hs) hr, ⟨.nil, .nil⟩⟩
-  | step_seq_inner hinner ih =>
-      cases hrel with
-      | seq hinnerRel hrest =>
-          obtain ⟨targetInner', targetTrace, hrun, hrel', htrace⟩ := ih hinnerRel
-          exact ⟨_, targetTrace, seq_inner_starE (EvalCmdE P) hrun,
-            .seq hrel' hrest, htrace⟩
-  | step_seq_done =>
-      cases hrel with
-      | seq hinner hrest =>
-          cases hinner with
-          | terminal henv =>
-              exact ⟨_, [], Imperative.StepStmtStarE.single (.step_admin .step_seq_done),
-                .stmts henv hrest, ⟨.nil, .nil⟩⟩
-  | step_seq_exit =>
-      cases hrel with
-      | seq hinner _ =>
-          cases hinner with
-          | exiting henv =>
-              exact ⟨_, [], Imperative.StepStmtStarE.single (.step_admin .step_seq_exit),
-                .exiting henv, ⟨.nil, .nil⟩⟩
-  | step_block_body hinner ih =>
-      cases hrel with
-      | block hparent hinnerRel =>
-          obtain ⟨targetInner', targetTrace, hrun, hrel', htrace⟩ := ih hinnerRel
-          exact ⟨_, targetTrace, block_inner_starE hrun,
-            .block hparent hrel', htrace⟩
-  | step_block_done =>
-      cases hrel with
-      | block hparent hinner =>
-          cases hinner with
-          | terminal henv =>
-              exact ⟨_, [], Imperative.StepStmtStarE.single (.step_admin .step_block_done),
-                .terminal (LiftEnvRel.project hparent henv), ⟨.nil, .nil⟩⟩
-  | step_block_exit_match heq =>
-      cases hrel with
-      | block hparent hinner =>
-          cases hinner with
-          | exiting henv =>
-              exact ⟨_, [], Imperative.StepStmtStarE.single
-                (.step_admin (.step_block_exit_match heq)),
-                .terminal (LiftEnvRel.project hparent henv), ⟨.nil, .nil⟩⟩
-  | step_block_exit_mismatch hne =>
-      cases hrel with
-      | block hparent hinner =>
-          cases hinner with
-          | exiting henv =>
-              exact ⟨_, [], Imperative.StepStmtStarE.single
-                (.step_admin (.step_block_exit_mismatch hne)),
-                .exiting (LiftEnvRel.project hparent henv), ⟨.nil, .nil⟩⟩
-
 /-- Every source event step from related lift configurations is matched by a
 finite target execution that restores the relation. -/
 theorem liftConfigRel_stepE {P : PureExpr}
@@ -1277,7 +1111,7 @@ theorem liftConfigRel_stepE {P : PureExpr}
                   (.eval_init he hstate hty hwf)
               exact ⟨_, targetTrace, Imperative.StepStmtStarE.single (.step_cmd heval'),
                 .terminal ⟨hagree, henv.sourceFactory, henv.targetFactory,
-                  henv.failure, htyped⟩, ⟨hlock.toTraceStuttersEnv, hlock⟩⟩
+                  htyped⟩, ⟨hlock.toTraceStuttersEnv, hlock⟩⟩
           | eval_init_unconstrained hstate hty hwf =>
               rename_i y v ty md
               have ht := hstmt.residual
@@ -1293,7 +1127,7 @@ theorem liftConfigRel_stepE {P : PureExpr}
                   (.eval_init_unconstrained hstate hty hwf)
               exact ⟨_, targetTrace, Imperative.StepStmtStarE.single (.step_cmd heval'),
                 .terminal ⟨hagree, henv.sourceFactory, henv.targetFactory,
-                  henv.failure, htyped⟩, ⟨hlock.toTraceStuttersEnv, hlock⟩⟩
+                  htyped⟩, ⟨hlock.toTraceStuttersEnv, hlock⟩⟩
           | eval_set he hstate hty hwf =>
               rename_i e v y md
               have ht := hstmt.residual
@@ -1306,7 +1140,7 @@ theorem liftConfigRel_stepE {P : PureExpr}
                   (by simpa [henv.sourceFactory] using hmono) (by simp [Cmd.definedVars])
               exact ⟨_, targetTrace, Imperative.StepStmtStarE.single (.step_cmd heval'),
                 .terminal ⟨hagree, henv.sourceFactory, henv.targetFactory,
-                  henv.failure, htyped⟩, ⟨hlock.toTraceStuttersEnv, hlock⟩⟩
+                  htyped⟩, ⟨hlock.toTraceStuttersEnv, hlock⟩⟩
           | eval_set_nondet hstate hty hwf =>
               rename_i y v md
               have ht := hstmt.residual
@@ -1319,7 +1153,7 @@ theorem liftConfigRel_stepE {P : PureExpr}
                   (by simpa [henv.sourceFactory] using hmono) (by simp [Cmd.definedVars])
               exact ⟨_, targetTrace, Imperative.StepStmtStarE.single (.step_cmd heval'),
                 .terminal ⟨hagree, henv.sourceFactory, henv.targetFactory,
-                  henv.failure, htyped⟩, ⟨hlock.toTraceStuttersEnv, hlock⟩⟩
+                  htyped⟩, ⟨hlock.toTraceStuttersEnv, hlock⟩⟩
           | eval_assert =>
               rename_i label e md
               have ht := hstmt.residual
@@ -1332,7 +1166,7 @@ theorem liftConfigRel_stepE {P : PureExpr}
                   (by simpa [henv.sourceFactory] using hmono) (by simp [Cmd.definedVars])
               exact ⟨_, targetTrace, Imperative.StepStmtStarE.single (.step_cmd heval'),
                 .terminal ⟨hagree, henv.sourceFactory, henv.targetFactory,
-                  henv.failure, htyped⟩, ⟨hlock.toTraceStuttersEnv, hlock⟩⟩
+                  htyped⟩, ⟨hlock.toTraceStuttersEnv, hlock⟩⟩
           | eval_assume =>
               rename_i label e md
               have ht := hstmt.residual
@@ -1345,7 +1179,7 @@ theorem liftConfigRel_stepE {P : PureExpr}
                   (by simpa [henv.sourceFactory] using hmono) (by simp [Cmd.definedVars])
               exact ⟨_, targetTrace, Imperative.StepStmtStarE.single (.step_cmd heval'),
                 .terminal ⟨hagree, henv.sourceFactory, henv.targetFactory,
-                  henv.failure, htyped⟩, ⟨hlock.toTraceStuttersEnv, hlock⟩⟩
+                  htyped⟩, ⟨hlock.toTraceStuttersEnv, hlock⟩⟩
           | eval_cover =>
               rename_i label e md
               have ht := hstmt.residual
@@ -1358,8 +1192,142 @@ theorem liftConfigRel_stepE {P : PureExpr}
                   (by simpa [henv.sourceFactory] using hmono) (by simp [Cmd.definedVars])
               exact ⟨_, targetTrace, Imperative.StepStmtStarE.single (.step_cmd heval'),
                 .terminal ⟨hagree, henv.sourceFactory, henv.targetFactory,
-                  henv.failure, htyped⟩, ⟨hlock.toTraceStuttersEnv, hlock⟩⟩
-  | step_admin hadmin => exact liftConfigRel_adminStep hmono hrel hadmin
+                  htyped⟩, ⟨hlock.toTraceStuttersEnv, hlock⟩⟩
+  | step_block =>
+      cases hrel with
+      | stmt henv hstmt =>
+          obtain ⟨rfl, hbody⟩ := hstmt.blockBody
+          refine ⟨_, [], Imperative.StepStmtStarE.single .step_block,
+            .block henv.storeRel (.stmts henv hbody), ⟨.nil, .nil⟩⟩
+  | step_ite_true heval =>
+      cases hrel with
+      | stmt henv hstmt =>
+          obtain ⟨rfl, hthen, _⟩ := hstmt.iteBranches
+          have heval' := henv.eval hmono heval
+          refine ⟨_, [], Imperative.StepStmtStarE.single
+            (.step_ite_true heval'),
+            .block henv.storeRel (.stmts henv hthen), ⟨.nil, .nil⟩⟩
+  | step_ite_false heval =>
+      cases hrel with
+      | stmt henv hstmt =>
+          obtain ⟨rfl, _, helse⟩ := hstmt.iteBranches
+          have heval' := henv.eval hmono heval
+          refine ⟨_, [], Imperative.StepStmtStarE.single
+            (.step_ite_false heval'),
+            .block henv.storeRel (.stmts henv helse), ⟨.nil, .nil⟩⟩
+  | step_ite_nondet_true =>
+      cases hrel with
+      | stmt henv hstmt =>
+          obtain ⟨rfl, hthen, _⟩ := hstmt.iteBranches
+          refine ⟨_, [], Imperative.StepStmtStarE.single
+            .step_ite_nondet_true,
+            .block henv.storeRel (.stmts henv hthen), ⟨.nil, .nil⟩⟩
+  | step_ite_nondet_false =>
+      cases hrel with
+      | stmt henv hstmt =>
+          obtain ⟨rfl, _, helse⟩ := hstmt.iteBranches
+          refine ⟨_, [], Imperative.StepStmtStarE.single
+            .step_ite_nondet_false,
+            .block henv.storeRel (.stmts henv helse), ⟨.nil, .nil⟩⟩
+  | step_loop_enter heval =>
+      cases hrel with
+      | stmt henv hstmt =>
+          obtain ⟨rfl, hbody⟩ := hstmt.loopBody
+          have heval' := henv.eval hmono heval
+          have htail := hstmt.singleton
+          refine ⟨_, [], Imperative.StepStmtStarE.single
+            (.step_loop_enter heval'),
+            .seq (.block henv.storeRel (.stmts henv hbody)) htail, ⟨.nil, .nil⟩⟩
+  | step_loop_exit heval =>
+      cases hrel with
+      | stmt henv hstmt =>
+          obtain ⟨rfl, _⟩ := hstmt.loopBody
+          have heval' := henv.eval hmono heval
+          exact ⟨_, [], Imperative.StepStmtStarE.single
+            (.step_loop_exit heval'),
+            .terminal henv, ⟨.nil, .nil⟩⟩
+  | step_loop_nondet_enter =>
+      cases hrel with
+      | stmt henv hstmt =>
+          obtain ⟨rfl, hbody⟩ := hstmt.loopBody
+          have htail := hstmt.singleton
+          refine ⟨_, [], Imperative.StepStmtStarE.single
+            .step_loop_nondet_enter,
+            .seq (.block henv.storeRel (.stmts henv hbody)) htail, ⟨.nil, .nil⟩⟩
+  | step_loop_nondet_exit =>
+      cases hrel with
+      | stmt henv hstmt =>
+          obtain ⟨rfl, _⟩ := hstmt.loopBody
+          exact ⟨_, [], Imperative.StepStmtStarE.single
+            .step_loop_nondet_exit,
+            .terminal henv, ⟨.nil, .nil⟩⟩
+  | step_exit =>
+      cases hrel with
+      | stmt henv hstmt =>
+          have ht := hstmt.residual
+          simp only [Stmt.liftInitsInLoopBody, List.cons.injEq, and_true] at ht
+          subst_vars
+          exact ⟨_, [], Imperative.StepStmtStarE.single .step_exit,
+            .exiting henv, ⟨.nil, .nil⟩⟩
+  | step_typeDecl =>
+      cases hrel with
+      | stmt henv hstmt =>
+          have ht := hstmt.residual
+          simp only [Stmt.liftInitsInLoopBody, List.cons.injEq, and_true] at ht
+          subst_vars
+          exact ⟨_, [], Imperative.StepStmtStarE.single .step_typeDecl,
+            .terminal henv, ⟨.nil, .nil⟩⟩
+  | step_stmts_nil =>
+      cases hrel with
+      | stmts henv hblock =>
+          have ht := hblock.residual
+          simp only [Block.liftInitsInLoopBody, List.nil_eq] at ht
+          subst_vars
+          exact ⟨_, [], Imperative.StepStmtStarE.single .step_stmts_nil,
+            .terminal henv, ⟨.nil, .nil⟩⟩
+  | step_stmts_cons =>
+      cases hrel with
+      | stmts henv hblock =>
+          obtain ⟨s', rest', rfl, hs, hr⟩ := hblock.cons
+          exact ⟨_, [], Imperative.StepStmtStarE.single .step_stmts_cons,
+            .seq (.stmt henv hs) hr, ⟨.nil, .nil⟩⟩
+  | step_seq_done =>
+      cases hrel with
+      | seq hinner hrest =>
+          cases hinner with
+          | terminal henv =>
+              exact ⟨_, [], Imperative.StepStmtStarE.single .step_seq_done,
+                .stmts henv hrest, ⟨.nil, .nil⟩⟩
+  | step_seq_exit =>
+      cases hrel with
+      | seq hinner _ =>
+          cases hinner with
+          | exiting henv =>
+              exact ⟨_, [], Imperative.StepStmtStarE.single .step_seq_exit,
+                .exiting henv, ⟨.nil, .nil⟩⟩
+  | step_block_done =>
+      cases hrel with
+      | block hparent hinner =>
+          cases hinner with
+          | terminal henv =>
+              exact ⟨_, [], Imperative.StepStmtStarE.single .step_block_done,
+                .terminal (LiftEnvRel.project hparent henv), ⟨.nil, .nil⟩⟩
+  | step_block_exit_match heq =>
+      cases hrel with
+      | block hparent hinner =>
+          cases hinner with
+          | exiting henv =>
+              exact ⟨_, [], Imperative.StepStmtStarE.single
+                (.step_block_exit_match heq),
+                .terminal (LiftEnvRel.project hparent henv), ⟨.nil, .nil⟩⟩
+  | step_block_exit_mismatch hne =>
+      cases hrel with
+      | block hparent hinner =>
+          cases hinner with
+          | exiting henv =>
+              exact ⟨_, [], Imperative.StepStmtStarE.single
+                (.step_block_exit_mismatch hne),
+                .exiting (LiftEnvRel.project hparent henv), ⟨.nil, .nil⟩⟩
   | step_seq_inner hinner ih =>
       cases hrel with
       | seq hinnerRel hrest =>
@@ -1406,7 +1374,6 @@ structure HoistEnvRel {P : PureExpr}
   agreement : StoreAgreement source.store target.store
   sourceFactory : source.factory = factory
   targetFactory : target.factory = factory
-  failure : target.hasFailure = source.hasFailure
 
 structure HoistStoreRel {P : PureExpr}
     (source target : SemanticStore P) : Prop where
@@ -1426,7 +1393,7 @@ private theorem HoistEnvRel.project {P : PureExpr}
       { sourceInner with store := projectStore sourceParent sourceInner.store }
       { targetInner with store := projectStore targetParent targetInner.store } :=
   ⟨StoreAgreement.of_projectStore_parents hp.agreement hi.agreement,
-    hi.sourceFactory, hi.targetFactory, hi.failure⟩
+    hi.sourceFactory, hi.targetFactory⟩
 
 private theorem HoistEnvRel.eval {P : PureExpr} [HasFvars P]
     {factory : P.Factory} {source target : Env P} {e v : P.Expr}
@@ -1439,35 +1406,17 @@ private theorem HoistEnvRel.eval {P : PureExpr} [HasFvars P]
   exact hmono e v source.store target.store
     (storeAgreement_supplies_mono_premise _ _ h.agreement) he
 
-private theorem Config.varsUndefinedThroughout_stepE {P : PureExpr}
-    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasInt P]
-    [DecidableEq P.Ident]
-    {Q : P.Ident → Prop} {source target : Config P (Cmd P)} {trace : Trace P}
-    (hstep : StepStmtE P (EvalCmdE P) source trace target)
-    (hinv : Config.varsUndefined false Q source) :
-    Config.varsUndefined false Q target := by
-  induction hstep with
-  | step_cmd heval =>
-      intro y hy
-      exact evalCmdE_preserves_none_of_not_def heval (hinv y hy).1
-        (by simpa [Stmt.definedVars, HasVarsImp.definedVars] using (hinv y hy).2)
-  | step_admin hadmin =>
-      exact Config.varsUndefinedThroughout_step_of
-        (fun he => by simp [noCommandEvalE] at he) hadmin hinv
-  | step_seq_inner _ ih => exact ⟨ih hinv.1, hinv.2⟩
-  | step_block_body _ ih => exact ⟨hinv.1, ih hinv.2⟩
-
 private theorem Config.varsUndefinedThroughout_starE {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasInt P]
     [DecidableEq P.Ident]
     {Q : P.Ident → Prop} {source target : Config P (Cmd P)} {trace : Trace P}
     (hrun : StepStmtStarE P (EvalCmdE P) source trace target)
     (hinv : Config.varsUndefined false Q source) :
-    Config.varsUndefined false Q target := by
-  induction hrun with
-  | refl => exact hinv
-  | step _ _ _ _ _ hstep _ ih =>
-      exact ih (Config.varsUndefinedThroughout_stepE hstep hinv)
+    Config.varsUndefined false Q target :=
+  Config.varsUndefinedThroughout_star_ofE
+    (fun heval hnone hndef => evalCmdE_preserves_none_of_not_def heval hnone
+      (by simpa [HasVarsImp.definedVars] using hndef))
+    hrun hinv
 
 structure ConfigTraceSim {P : PureExpr} [HasFvar P] [HasBoolOps P]
     (Rel : Env P → Env P → Prop)
@@ -1530,14 +1479,14 @@ private theorem HoistEnvRel.trans {P : PureExpr}
     (h₂ : HoistEnvRel factory middle last) :
     HoistEnvRel factory first last :=
   ⟨StoreAgreement.trans h₁.agreement h₂.agreement,
-    h₁.sourceFactory, h₂.targetFactory, h₂.failure.trans h₁.failure⟩
+    h₁.sourceFactory, h₂.targetFactory⟩
 
 private theorem liftEnvRel_to_hoist {P : PureExpr} [HasVal P]
     {Dτ : P.Ident → P.Ty} {D : List P.Ident} {factory : P.Factory}
     {source target : Env P}
     (h : LiftEnvRel Dτ D factory source target) :
     HoistEnvRel factory source target :=
-  ⟨h.agreement, h.sourceFactory, h.targetFactory, h.failure⟩
+  ⟨h.agreement, h.sourceFactory, h.targetFactory⟩
 
 private theorem ConfigTraceSim.trans {P : PureExpr} [HasFvar P] [HasBoolOps P]
     {R₁ R₂ R₃ : Env P → Env P → Prop}
@@ -1572,7 +1521,7 @@ private theorem ConfigTraceSim.targetSingleton {P : PureExpr}
   · intro source' sourceTrace hrun
     obtain ⟨target', targetTrace, htarget, htrace⟩ := h.simulate hrun
     refine ⟨.seq target' [], targetTrace, ?_, htrace⟩
-    exact ReflTransTrace.step _ _ _ _ _ (.step_admin .step_stmts_cons)
+    exact ReflTransTrace.step _ _ _ _ _ .step_stmts_cons
       (seq_inner_starE (EvalCmdE P) htarget)
   · intro sourceEnv sourceTrace hrun
     obtain ⟨targetEnv', targetTrace, htarget, hrel, htrace⟩ := h.terminal hrun
@@ -1581,10 +1530,10 @@ private theorem ConfigTraceSim.targetSingleton {P : PureExpr}
   · intro label sourceEnv sourceTrace hrun
     obtain ⟨targetEnv', targetTrace, htarget, hrel, htrace⟩ := h.exiting hrun
     have hfull := ReflTransTrace.trans _
-      (ReflTransTrace.step _ _ _ _ _ (.step_admin .step_stmts_cons)
+      (ReflTransTrace.step _ _ _ _ _ .step_stmts_cons
         (seq_inner_starE (EvalCmdE P) htarget))
       (Imperative.StepStmtStarE.single
-        (c := .seq (.exiting label targetEnv') []) (.step_admin .step_seq_exit))
+        (c := .seq (.exiting label targetEnv') []) .step_seq_exit)
     exact ⟨targetEnv', targetTrace, by simpa using hfull, hrel, htrace⟩
 
 private theorem liftConfigRel_traceSim {P : PureExpr}
@@ -1640,8 +1589,8 @@ private theorem loopEnterStepE {P : PureExpr} [HasFvar P] [HasBoolOps P]
       (.stmt (.loop g m inv body md) ρ) []
       (.seq (.block .none ρ.store (.stmts body ρ)) [.loop g m inv body md]) := by
   cases g with
-  | det guard => exact .step_admin (.step_loop_enter h)
-  | nondet => exact .step_admin .step_loop_nondet_enter
+  | det guard => exact (.step_loop_enter h)
+  | nondet => exact .step_loop_nondet_enter
 
 /-- Build the single loop *exit* step for an arbitrary guard, measure, and
 invariant list. -/
@@ -1652,8 +1601,8 @@ private theorem loopExitStepE {P : PureExpr} [HasFvar P] [HasBoolOps P]
     StepStmtE P (EvalCmdE P)
       (.stmt (.loop g m inv body md) ρ) [] (.terminal ρ) := by
   cases g with
-  | det guard => exact .step_admin (.step_loop_exit h)
-  | nondet => exact .step_admin .step_loop_nondet_exit
+  | det guard => exact (.step_loop_exit h)
+  | nondet => exact .step_loop_nondet_exit
 
 /-- Invert the first step of a loop: it is either an enter (into the body block
 sequenced with the recursive loop) or an exit (to the current terminal store),
@@ -1672,16 +1621,12 @@ private theorem loop_stepE_inv {P : PureExpr} [HasFvar P] [HasBoolOps P]
   cases g with
   | det guard =>
       cases hstep with
-      | step_admin hadmin =>
-          cases hadmin with
-          | step_loop_enter htrue => exact .inl ⟨rfl, rfl, htrue⟩
-          | step_loop_exit hfalse => exact .inr ⟨rfl, rfl, hfalse⟩
+      | step_loop_enter htrue => exact .inl ⟨rfl, rfl, htrue⟩
+      | step_loop_exit hfalse => exact .inr ⟨rfl, rfl, hfalse⟩
   | nondet =>
       cases hstep with
-      | step_admin hadmin =>
-          cases hadmin with
-          | step_loop_nondet_enter => exact .inl ⟨rfl, rfl, trivial⟩
-          | step_loop_nondet_exit => exact .inr ⟨rfl, rfl, trivial⟩
+      | step_loop_nondet_enter => exact .inl ⟨rfl, rfl, trivial⟩
+      | step_loop_nondet_exit => exact .inr ⟨rfl, rfl, trivial⟩
 
 /-- Build the single `ite` *then* step for an arbitrary guard. -/
 private theorem iteThenStepE {P : PureExpr} [HasFvar P] [HasBoolOps P]
@@ -1691,8 +1636,8 @@ private theorem iteThenStepE {P : PureExpr} [HasFvar P] [HasBoolOps P]
       (.stmt (.ite g tss ess md) ρ) []
       (.block .none ρ.store (.stmts tss ρ)) := by
   cases g with
-  | det guard => exact .step_admin (.step_ite_true h)
-  | nondet => exact .step_admin .step_ite_nondet_true
+  | det guard => exact (.step_ite_true h)
+  | nondet => exact .step_ite_nondet_true
 
 /-- Build the single `ite` *else* step for an arbitrary guard. -/
 private theorem iteElseStepE {P : PureExpr} [HasFvar P] [HasBoolOps P]
@@ -1702,8 +1647,8 @@ private theorem iteElseStepE {P : PureExpr} [HasFvar P] [HasBoolOps P]
       (.stmt (.ite g tss ess md) ρ) []
       (.block .none ρ.store (.stmts ess ρ)) := by
   cases g with
-  | det guard => exact .step_admin (.step_ite_false h)
-  | nondet => exact .step_admin .step_ite_nondet_false
+  | det guard => exact (.step_ite_false h)
+  | nondet => exact .step_ite_nondet_false
 
 /-- Invert the first step of an `ite`: it enters the then-branch or the
 else-branch, each gated by the corresponding guard predicate. -/
@@ -1716,16 +1661,12 @@ private theorem ite_stepE_inv {P : PureExpr} [HasFvar P] [HasBoolOps P]
   cases g with
   | det guard =>
       cases hstep with
-      | step_admin hadmin =>
-          cases hadmin with
-          | step_ite_true htrue => exact .inl ⟨rfl, rfl, htrue⟩
-          | step_ite_false hfalse => exact .inr ⟨rfl, rfl, hfalse⟩
+      | step_ite_true htrue => exact .inl ⟨rfl, rfl, htrue⟩
+      | step_ite_false hfalse => exact .inr ⟨rfl, rfl, hfalse⟩
   | nondet =>
       cases hstep with
-      | step_admin hadmin =>
-          cases hadmin with
-          | step_ite_nondet_true => exact .inl ⟨rfl, rfl, trivial⟩
-          | step_ite_nondet_false => exact .inr ⟨rfl, rfl, trivial⟩
+      | step_ite_nondet_true => exact .inl ⟨rfl, rfl, trivial⟩
+      | step_ite_nondet_false => exact .inr ⟨rfl, rfl, trivial⟩
 
 private theorem buildLoopIterationPrefixE {P : PureExpr}
     [HasFvar P] [HasBoolOps P]
@@ -1756,8 +1697,8 @@ private theorem buildLoopIterationTerminalE {P : PureExpr}
   have hrun := buildLoopIterationPrefixE (g := g) (m := m) (inv := inv) (md := md) hguard hbody
   have hfull := ReflTransTrace.trans _ hrun
     (ReflTransTrace.step _ _ _ _ _
-      (.step_admin (.step_seq_inner .step_block_done))
-      (Imperative.StepStmtStarE.single (.step_admin .step_seq_done)))
+      (.step_seq_inner .step_block_done)
+      (Imperative.StepStmtStarE.single .step_seq_done))
   simpa using hfull
 
 private theorem buildLoopIterationExitE {P : PureExpr}
@@ -1774,8 +1715,8 @@ private theorem buildLoopIterationExitE {P : PureExpr}
   have hrun := buildLoopIterationPrefixE (g := g) (m := m) (inv := inv) (md := md) hguard hbody
   have hfull := ReflTransTrace.trans _ hrun
     (ReflTransTrace.step _ _ _ _ _
-      (.step_admin (.step_seq_inner (.step_block_exit_mismatch (by simp))))
-      (Imperative.StepStmtStarE.single (.step_admin .step_seq_exit)))
+      (.step_seq_inner (.step_block_exit_mismatch (by simp)))
+      (Imperative.StepStmtStarE.single .step_seq_exit))
   simpa using hfull
 
 private theorem block_run_decomposeE {P : PureExpr}
@@ -1868,20 +1809,11 @@ private theorem seqT_reaches_exitingE {P : PureExpr}
           .step _ _ _ _ _ hstep hhead, hrest,
           ⟨by simp only [ReflTransTraceT.len]; omega,
            by simp only [ReflTransTraceT.len]; omega⟩⟩
-  | .step _ _ _ restTrace _ (.step_admin (.step_seq_inner hstep)) htail =>
-      rcases seqT_reaches_exitingE htail with ⟨hinner, hlen⟩ |
-        ⟨middleEnv, headTrace, tailTrace, htrace, hhead, hrest, hlen⟩
-      · exact .inl ⟨.step _ _ _ _ _ (.step_admin hstep) hinner,
-          by simp only [ReflTransTraceT.len]; omega⟩
-      · exact .inr ⟨middleEnv, headTrace, tailTrace, by simpa using htrace,
-          .step _ _ _ _ _ (.step_admin hstep) hhead, hrest,
-          ⟨by simp only [ReflTransTraceT.len]; omega,
-           by simp only [ReflTransTraceT.len]; omega⟩⟩
-  | .step _ _ _ restTrace _ (.step_admin .step_seq_done) htail =>
+  | .step _ _ _ restTrace _ .step_seq_done htail =>
       exact .inr ⟨_, [], restTrace, by simp, .refl _, htail,
         ⟨by simpa [ReflTransTraceT.len, Nat.add_comm] using Nat.zero_lt_succ htail.len,
          by simp [ReflTransTraceT.len]⟩⟩
-  | .step _ _ _ _ _ (.step_admin .step_seq_exit) htail =>
+  | .step _ _ _ _ _ .step_seq_exit htail =>
       match htail with
       | .refl _ => exact .inl ⟨.refl _, by simp [ReflTransTraceT.len]⟩
       | .step _ _ _ _ _ hstep _ => exact (Imperative.StepStmtE.exiting_false hstep).elim
@@ -1905,7 +1837,7 @@ private theorem stmtsT_cons_exitingE {P : PureExpr}
           (.stmts rest middleEnv) tailTrace (.exiting label finalEnv),
       hhead.len < hrun.len ∧ htail.len < hrun.len) := by
   match hrun with
-  | .step _ _ _ restTrace _ (.step_admin .step_stmts_cons) htail =>
+  | .step _ _ _ restTrace _ .step_stmts_cons htail =>
       rcases seqT_reaches_exitingE htail with ⟨hhead, hlen⟩ |
         ⟨middleEnv, headTrace, tailTrace, htrace, hhead, hrest, hlen⟩
       · exact .inl ⟨hhead,
@@ -2117,10 +2049,10 @@ private theorem loopTraceSim_exiting_fuel {P : PureExpr}
                             (.stmts [.loop g m inv targetBody targetMd] targetNext)
                             targetLoopTrace (.exiting label targetEnv) := by
                           have hfull := ReflTransTrace.trans _
-                            (ReflTransTrace.step _ _ _ _ _ (.step_admin .step_stmts_cons)
+                            (ReflTransTrace.step _ _ _ _ _ .step_stmts_cons
                               (seq_inner_starE (EvalCmdE P) htargetLoop))
                             (Imperative.StepStmtStarE.single
-                              (c := .seq (.exiting label targetEnv) []) (.step_admin .step_seq_exit))
+                              (c := .seq (.exiting label targetEnv) []) .step_seq_exit)
                           simpa using hfull
                   refine ⟨targetEnv, targetBodyTrace ++ targetLoopTrace,
                           ReflTransTrace.trans _ hfirst htargetTail, hrelFinal, ?_⟩
@@ -2201,25 +2133,11 @@ private theorem seqT_run_decomposeE {P : PureExpr}
       · exact .inr (.inr ⟨exitLabel, exitEnv, hfinal,
           .step _ _ _ _ _ hstep hexit,
           by simp only [ReflTransTraceT.len]; omega⟩)
-  | .step _ _ _ restTrace _ (.step_admin (.step_seq_inner hstep)) htail =>
-      rcases seqT_run_decomposeE htail with
-        ⟨inner', hfinal, hinner, hlen⟩ |
-        ⟨middleEnv, headTrace, tailTrace, htrace, hhead, hrest, hlen⟩ |
-        ⟨exitLabel, exitEnv, hfinal, hexit, hlen⟩
-      · exact .inl ⟨inner', hfinal, .step _ _ _ _ _ (.step_admin hstep) hinner,
-          by simp only [ReflTransTraceT.len]; omega⟩
-      · exact .inr (.inl ⟨middleEnv, headTrace, tailTrace, by simpa using htrace,
-          .step _ _ _ _ _ (.step_admin hstep) hhead, hrest,
-          ⟨by simp only [ReflTransTraceT.len]; omega,
-           by simp only [ReflTransTraceT.len]; omega⟩⟩)
-      · exact .inr (.inr ⟨exitLabel, exitEnv, hfinal,
-          .step _ _ _ _ _ (.step_admin hstep) hexit,
-          by simp only [ReflTransTraceT.len]; omega⟩)
-  | .step _ _ _ restTrace _ (.step_admin .step_seq_done) htail =>
+  | .step _ _ _ restTrace _ .step_seq_done htail =>
       exact .inr (.inl ⟨_, [], restTrace, by simp, .refl _, htail,
         ⟨by simpa [ReflTransTraceT.len, Nat.add_comm] using Nat.zero_lt_succ htail.len,
          by simp [ReflTransTraceT.len]⟩⟩)
-  | .step _ _ _ _ _ (.step_admin .step_seq_exit) htail =>
+  | .step _ _ _ _ _ .step_seq_exit htail =>
       match htail with
       | .refl _ => exact .inr (.inr ⟨_, _, rfl, .refl _, by simp [ReflTransTraceT.len]⟩)
       | .step _ _ _ _ _ hstep _ => exact (Imperative.StepStmtE.exiting_false hstep).elim
@@ -2321,67 +2239,65 @@ private theorem loopTraceSim_prefix_fuel {P : PureExpr}
                     simpa [htrace] using htraceBody
                 | .step _ _ _ tailTrace _ hlistFirst hlistRest =>
                     cases hlistFirst with
-                    | step_admin hlistAdmin =>
-                        cases hlistAdmin with
-                        | step_stmts_cons =>
-                            rcases seqT_run_decomposeE hlistRest with
-                              ⟨loopFinal, rfl, hsourceLoop, hlenLoop⟩ |
-                              ⟨middleEnv, headTrace, nilTrace, htailTrace,
-                                hsourceLoop, hnil, hlenLoop⟩ |
-                              ⟨loopExitLabel, loopExitEnv, rfl, hsourceLoop,
-                                hlenLoop⟩
-                            · obtain ⟨targetLoopFinal, targetLoopTrace,
-                                  htargetLoop, htraceLoop⟩ :=
-                                ih sourceNext targetNext loopFinal tailTrace hrelNext
-                                  hsourceLoop
-                                  (by
-                                    have hsourceLoopLe : hsourceLoop.len ≤ hlistRest.len := hlenLoop
-                                    simp only [ReflTransTraceT.len] at hlen hlenSeq
-                                    omega)
-                              have htargetTail : StepStmtStarE P (EvalCmdE P)
-                                  (.stmts [.loop g m inv targetBody targetMd]
-                                    targetNext)
-                                  targetLoopTrace (.seq targetLoopFinal []) :=
-                                ReflTransTrace.step _ _ _ _ _
-                                  (.step_admin .step_stmts_cons)
-                                  (seq_inner_starE (EvalCmdE P) htargetLoop)
-                              refine ⟨_, targetBodyTrace ++ targetLoopTrace,
-                                ReflTransTrace.trans _ hfirstTarget htargetTail, ?_⟩
-                              simpa [htrace] using
-                                TraceExtendsEnv.append htraceBody htraceLoop
-                            · obtain ⟨nilTraceEq, _⟩ := stmts_nil_runE (EvalCmdE P)
-                                (reflTransTraceT_to_prop hnil)
-                              subst nilTraceEq
-                              obtain ⟨targetLoopEnv, targetLoopTrace, htargetLoop,
-                                  _, htraceLoop⟩ :=
-                                loopTraceSim_terminal henterTarget hexitTarget hproject hbody hrelNext
-                                  (reflTransTraceT_to_prop hsourceLoop)
-                              have htargetTail := stmtRun_to_singletonE (EvalCmdE P)
-                                htargetLoop
-                              refine ⟨_, targetBodyTrace ++ targetLoopTrace,
-                                ReflTransTrace.trans _ hfirstTarget htargetTail, ?_⟩
-                              simpa [htrace, htailTrace] using
-                                TraceExtendsEnv.append htraceBody htraceLoop
-                            · obtain ⟨targetLoopEnv, targetLoopTrace, htargetLoop,
-                                  _, htraceLoop⟩ :=
-                                loopTraceSim_exiting henterTarget hproject hbody hrelNext
-                                  (reflTransTraceT_to_prop hsourceLoop)
-                              have htargetTail : StepStmtStarE P (EvalCmdE P)
-                                  (.stmts [.loop g m inv targetBody targetMd]
-                                    targetNext)
-                                  targetLoopTrace (.exiting loopExitLabel targetLoopEnv) := by
-                                have hfull := ReflTransTrace.trans _
-                                  (ReflTransTrace.step _ _ _ _ _
-                                    (.step_admin .step_stmts_cons)
-                                    (seq_inner_starE (EvalCmdE P) htargetLoop))
-                                  (Imperative.StepStmtStarE.single
-                                    (c := .seq (.exiting loopExitLabel targetLoopEnv) [])
-                                    (.step_admin .step_seq_exit))
-                                simpa using hfull
-                              refine ⟨_, targetBodyTrace ++ targetLoopTrace,
-                                ReflTransTrace.trans _ hfirstTarget htargetTail, ?_⟩
-                              simpa [htrace] using
-                                TraceExtendsEnv.append htraceBody htraceLoop
+                    | step_stmts_cons =>
+                        rcases seqT_run_decomposeE hlistRest with
+                          ⟨loopFinal, rfl, hsourceLoop, hlenLoop⟩ |
+                          ⟨middleEnv, headTrace, nilTrace, htailTrace,
+                            hsourceLoop, hnil, hlenLoop⟩ |
+                          ⟨loopExitLabel, loopExitEnv, rfl, hsourceLoop,
+                            hlenLoop⟩
+                        · obtain ⟨targetLoopFinal, targetLoopTrace,
+                              htargetLoop, htraceLoop⟩ :=
+                            ih sourceNext targetNext loopFinal tailTrace hrelNext
+                              hsourceLoop
+                              (by
+                                have hsourceLoopLe : hsourceLoop.len ≤ hlistRest.len := hlenLoop
+                                simp only [ReflTransTraceT.len] at hlen hlenSeq
+                                omega)
+                          have htargetTail : StepStmtStarE P (EvalCmdE P)
+                              (.stmts [.loop g m inv targetBody targetMd]
+                                targetNext)
+                              targetLoopTrace (.seq targetLoopFinal []) :=
+                            ReflTransTrace.step _ _ _ _ _
+                              .step_stmts_cons
+                              (seq_inner_starE (EvalCmdE P) htargetLoop)
+                          refine ⟨_, targetBodyTrace ++ targetLoopTrace,
+                            ReflTransTrace.trans _ hfirstTarget htargetTail, ?_⟩
+                          simpa [htrace] using
+                            TraceExtendsEnv.append htraceBody htraceLoop
+                        · obtain ⟨nilTraceEq, _⟩ := stmts_nil_runE (EvalCmdE P)
+                            (reflTransTraceT_to_prop hnil)
+                          subst nilTraceEq
+                          obtain ⟨targetLoopEnv, targetLoopTrace, htargetLoop,
+                              _, htraceLoop⟩ :=
+                            loopTraceSim_terminal henterTarget hexitTarget hproject hbody hrelNext
+                              (reflTransTraceT_to_prop hsourceLoop)
+                          have htargetTail := stmtRun_to_singletonE (EvalCmdE P)
+                            htargetLoop
+                          refine ⟨_, targetBodyTrace ++ targetLoopTrace,
+                            ReflTransTrace.trans _ hfirstTarget htargetTail, ?_⟩
+                          simpa [htrace, htailTrace] using
+                            TraceExtendsEnv.append htraceBody htraceLoop
+                        · obtain ⟨targetLoopEnv, targetLoopTrace, htargetLoop,
+                              _, htraceLoop⟩ :=
+                            loopTraceSim_exiting henterTarget hproject hbody hrelNext
+                              (reflTransTraceT_to_prop hsourceLoop)
+                          have htargetTail : StepStmtStarE P (EvalCmdE P)
+                              (.stmts [.loop g m inv targetBody targetMd]
+                                targetNext)
+                              targetLoopTrace (.exiting loopExitLabel targetLoopEnv) := by
+                            have hfull := ReflTransTrace.trans _
+                              (ReflTransTrace.step _ _ _ _ _
+                                .step_stmts_cons
+                                (seq_inner_starE (EvalCmdE P) htargetLoop))
+                              (Imperative.StepStmtStarE.single
+                                (c := .seq (.exiting loopExitLabel targetLoopEnv) [])
+                                .step_seq_exit)
+                            simpa using hfull
+                          refine ⟨_, targetBodyTrace ++ targetLoopTrace,
+                            ReflTransTrace.trans _ hfirstTarget htargetTail, ?_⟩
+                          simpa [htrace] using
+                            TraceExtendsEnv.append htraceBody htraceLoop
               · exact absurd hnone (by simp)
               · simp at hbad
             · subst hfinal
@@ -2523,7 +2439,7 @@ private theorem cmdHoistTraceSim {P : PureExpr}
             cases command <;> simp_all [Stmt.initVars, Cmd.definedVars,
               HasVarsImp.definedVars]))
     exact ⟨targetStore, targetTrace, htarget,
-      ⟨hagree, henv.sourceFactory, henv.targetFactory, henv.failure⟩, htrace⟩
+      ⟨hagree, henv.sourceFactory, henv.targetFactory⟩, htrace⟩
   refine ⟨?_, ?_, ?_⟩
   · intro source' sourceTrace hrun
     match hrun with
@@ -2571,57 +2487,51 @@ private theorem exitHoistTraceSim {P : PureExpr}
     | .refl _ => exact ⟨_, [], .refl _, .nil⟩
     | .step _ _ _ restTrace _ hstep hrest =>
         cases hstep with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_exit =>
-                obtain ⟨hcfg, htrace⟩ := stepStmtStarE_from_exiting hrest
-                subst htrace
-                subst hcfg
-                exact ⟨_, [], ReflTransTrace.step _ _ _ _ _
-                  (.step_admin .step_stmts_cons)
-                  (ReflTransTrace.step _ _ _ _ _
-                    (.step_seq_inner (.step_admin .step_exit))
-                    (Imperative.StepStmtStarE.single (.step_admin .step_seq_exit))), .nil⟩
+        | step_exit =>
+            obtain ⟨hcfg, htrace⟩ := stepStmtStarE_from_exiting hrest
+            subst htrace
+            subst hcfg
+            exact ⟨_, [], ReflTransTrace.step _ _ _ _ _
+              .step_stmts_cons
+              (ReflTransTrace.step _ _ _ _ _
+                (.step_seq_inner .step_exit)
+                (Imperative.StepStmtStarE.single .step_seq_exit)), .nil⟩
   · intro sourceOut sourceTrace hrun
     match hrun with
     | .step _ _ _ _ _ hstep hrest =>
         cases hstep with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_exit =>
-                have hcontra : False := by
-                  obtain ⟨hcfg, _⟩ := stepStmtStarE_from_exiting hrest
-                  simp at hcfg
-                exact hcontra.elim
+        | step_exit =>
+            have hcontra : False := by
+              obtain ⟨hcfg, _⟩ := stepStmtStarE_from_exiting hrest
+              simp at hcfg
+            exact hcontra.elim
   · intro exitLabel sourceOut sourceTrace hrun
     match hrun with
     | .step _ _ _ restTrace _ hstep hrest =>
         cases hstep with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_exit =>
-                obtain ⟨hcfg, htrace⟩ := stepStmtStarE_from_exiting hrest
-                subst htrace
-                injection hcfg with hlabel henvOut
-                subst hlabel
-                subst henvOut
-                have hstmt : StepStmtStarE P (EvalCmdE P)
-                    (.stmt (.exit exitLabel md) targetEnv) []
-                    (.exiting exitLabel targetEnv) :=
-                  Imperative.StepStmtStarE.single
-                    (c := .stmt (.exit exitLabel md) targetEnv) (.step_admin .step_exit)
-                have hseq : StepStmtStarE P (EvalCmdE P)
-                    (.stmts [.exit exitLabel md] targetEnv) []
-                    (.seq (.exiting exitLabel targetEnv) []) :=
-                  ReflTransTrace.step _ _ _ _ _ (.step_admin .step_stmts_cons)
-                    (seq_inner_starE (EvalCmdE P) hstmt)
-                have htarget : StepStmtStarE P (EvalCmdE P)
-                    (.stmts [.exit exitLabel md] targetEnv) [] (.exiting exitLabel targetEnv) := by
-                  have hfull := ReflTransTrace.trans _ hseq
-                    (Imperative.StepStmtStarE.single
-                      (c := .seq (.exiting exitLabel targetEnv) []) (.step_admin .step_seq_exit))
-                  simpa using hfull
-                exact ⟨targetEnv, [], htarget, henv, .nil⟩
+        | step_exit =>
+            obtain ⟨hcfg, htrace⟩ := stepStmtStarE_from_exiting hrest
+            subst htrace
+            injection hcfg with hlabel henvOut
+            subst hlabel
+            subst henvOut
+            have hstmt : StepStmtStarE P (EvalCmdE P)
+                (.stmt (.exit exitLabel md) targetEnv) []
+                (.exiting exitLabel targetEnv) :=
+              Imperative.StepStmtStarE.single
+                (c := .stmt (.exit exitLabel md) targetEnv) .step_exit
+            have hseq : StepStmtStarE P (EvalCmdE P)
+                (.stmts [.exit exitLabel md] targetEnv) []
+                (.seq (.exiting exitLabel targetEnv) []) :=
+              ReflTransTrace.step _ _ _ _ _ .step_stmts_cons
+                (seq_inner_starE (EvalCmdE P) hstmt)
+            have htarget : StepStmtStarE P (EvalCmdE P)
+                (.stmts [.exit exitLabel md] targetEnv) [] (.exiting exitLabel targetEnv) := by
+              have hfull := ReflTransTrace.trans _ hseq
+                (Imperative.StepStmtStarE.single
+                  (c := .seq (.exiting exitLabel targetEnv) []) .step_seq_exit)
+              simpa using hfull
+            exact ⟨targetEnv, [], htarget, henv, .nil⟩
 
 private theorem typeDeclHoistTraceSim {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasInt P]
@@ -2635,43 +2545,37 @@ private theorem typeDeclHoistTraceSim {P : PureExpr}
     stmtRun_to_singletonE (EvalCmdE P)
       (Imperative.StepStmtStarE.single
         (c := .stmt (.typeDecl typeCtor md) targetEnv)
-        (.step_admin .step_typeDecl))
+        .step_typeDecl)
   refine ⟨?_, ?_, ?_⟩
   · intro source' sourceTrace hrun
     match hrun with
     | .refl _ => exact ⟨_, [], .refl _, .nil⟩
     | .step _ _ _ restTrace _ hstep hrest =>
         cases hstep with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_typeDecl =>
-                obtain ⟨hcfg, htrace⟩ := stepStmtStarE_from_terminal hrest
-                subst htrace
-                subst hcfg
-                exact ⟨_, [], htarget, .nil⟩
+        | step_typeDecl =>
+            obtain ⟨hcfg, htrace⟩ := stepStmtStarE_from_terminal hrest
+            subst htrace
+            subst hcfg
+            exact ⟨_, [], htarget, .nil⟩
   · intro sourceOut sourceTrace hrun
     match hrun with
     | .step _ _ _ restTrace _ hstep hrest =>
         cases hstep with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_typeDecl =>
-                obtain ⟨hcfg, htrace⟩ := stepStmtStarE_from_terminal hrest
-                subst htrace
-                injection hcfg with henvOut
-                subst henvOut
-                exact ⟨targetEnv, [], htarget, henv, .nil⟩
+        | step_typeDecl =>
+            obtain ⟨hcfg, htrace⟩ := stepStmtStarE_from_terminal hrest
+            subst htrace
+            injection hcfg with henvOut
+            subst henvOut
+            exact ⟨targetEnv, [], htarget, henv, .nil⟩
   · intro label sourceOut sourceTrace hrun
     match hrun with
     | .step _ _ _ _ _ hstep hrest =>
         cases hstep with
-        | step_admin hadmin =>
-            cases hadmin with
-            | step_typeDecl =>
-                have hcontra : False := by
-                  obtain ⟨hcfg, _⟩ := stepStmtStarE_from_terminal hrest
-                  simp at hcfg
-                exact hcontra.elim
+        | step_typeDecl =>
+            have hcontra : False := by
+              obtain ⟨hcfg, _⟩ := stepStmtStarE_from_terminal hrest
+              simp at hcfg
+            exact hcontra.elim
 
 private theorem blockHoistTraceSim {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasInt P]
@@ -2692,98 +2596,92 @@ private theorem blockHoistTraceSim {P : PureExpr}
       | .refl _ => exact ⟨_, [], .refl _, .nil⟩
       | .step _ _ _ restTrace _ hfirst hrest =>
           cases hfirst with
-          | step_admin hadmin =>
-              cases hadmin with
-              | step_block =>
-                  rcases block_run_decomposeE hrest with
-                    ⟨sourceInner, rfl, hsourceBody⟩ |
-                    ⟨sourceInner, hsourceBody, rfl⟩ |
-                    ⟨exitLabel, sourceInner, heq, hsourceBody, rfl⟩ |
-                    ⟨exitLabel, sourceInner, hne, hsourceBody, rfl⟩
-                  · obtain ⟨targetInner, targetTrace, htargetBody, htrace⟩ :=
-                      hbodySim.simulate hsourceBody
-                    exact ⟨_, targetTrace,
-                      ReflTransTrace.step _ _ _ _ _ (.step_admin (c := .stmt (.block label targetBody md) targetEnv) .step_block)
-                        (block_inner_starE (label := some label) (σ_parent := targetEnv.store) htargetBody), by simpa using htrace⟩
-                  · obtain ⟨targetInner, targetTrace, htargetBody, _, htrace⟩ :=
-                      hbodySim.terminal hsourceBody
-                    have htarget := ReflTransTrace.step _ _ _ _ _ (.step_admin (c := .stmt (.block label targetBody md) targetEnv) .step_block)
-                      (ReflTransTrace.trans _ (block_inner_starE (label := some label) (σ_parent := targetEnv.store) htargetBody)
-                        (Imperative.StepStmtStarE.single (.step_admin .step_block_done)))
-                    exact ⟨_, targetTrace, by simpa using htarget, by simpa using htrace⟩
-                  · obtain ⟨targetInner, targetTrace, htargetBody, _, htrace⟩ :=
-                      hbodySim.exiting hsourceBody
-                    have htarget := ReflTransTrace.step _ _ _ _ _ (.step_admin (c := .stmt (.block label targetBody md) targetEnv) .step_block)
-                      (ReflTransTrace.trans _ (block_inner_starE (label := some label) (σ_parent := targetEnv.store) htargetBody)
-                        (Imperative.StepStmtStarE.single
-                          (.step_admin (.step_block_exit_match heq))))
-                    exact ⟨_, targetTrace, by simpa using htarget, by simpa using htrace⟩
-                  · obtain ⟨targetInner, targetTrace, htargetBody, _, htrace⟩ :=
-                      hbodySim.exiting hsourceBody
-                    have htarget := ReflTransTrace.step _ _ _ _ _ (.step_admin (c := .stmt (.block label targetBody md) targetEnv) .step_block)
-                      (ReflTransTrace.trans _ (block_inner_starE (label := some label) (σ_parent := targetEnv.store) htargetBody)
-                        (Imperative.StepStmtStarE.single
-                          (.step_admin (.step_block_exit_mismatch hne))))
-                    exact ⟨_, targetTrace, by simpa using htarget, by simpa using htrace⟩
+          | step_block =>
+              rcases block_run_decomposeE hrest with
+                ⟨sourceInner, rfl, hsourceBody⟩ |
+                ⟨sourceInner, hsourceBody, rfl⟩ |
+                ⟨exitLabel, sourceInner, heq, hsourceBody, rfl⟩ |
+                ⟨exitLabel, sourceInner, hne, hsourceBody, rfl⟩
+              · obtain ⟨targetInner, targetTrace, htargetBody, htrace⟩ :=
+                  hbodySim.simulate hsourceBody
+                exact ⟨_, targetTrace,
+                  ReflTransTrace.step (.stmt (.block label targetBody md) targetEnv) _ _ _ _ .step_block
+                    (block_inner_starE (label := some label) (σ_parent := targetEnv.store) htargetBody), by simpa using htrace⟩
+              · obtain ⟨targetInner, targetTrace, htargetBody, _, htrace⟩ :=
+                  hbodySim.terminal hsourceBody
+                have htarget := ReflTransTrace.step (.stmt (.block label targetBody md) targetEnv) _ _ _ _ .step_block
+                  (ReflTransTrace.trans _ (block_inner_starE (label := some label) (σ_parent := targetEnv.store) htargetBody)
+                    (Imperative.StepStmtStarE.single .step_block_done))
+                exact ⟨_, targetTrace, by simpa using htarget, by simpa using htrace⟩
+              · obtain ⟨targetInner, targetTrace, htargetBody, _, htrace⟩ :=
+                  hbodySim.exiting hsourceBody
+                have htarget := ReflTransTrace.step (.stmt (.block label targetBody md) targetEnv) _ _ _ _ .step_block
+                  (ReflTransTrace.trans _ (block_inner_starE (label := some label) (σ_parent := targetEnv.store) htargetBody)
+                    (Imperative.StepStmtStarE.single
+                      (.step_block_exit_match heq)))
+                exact ⟨_, targetTrace, by simpa using htarget, by simpa using htrace⟩
+              · obtain ⟨targetInner, targetTrace, htargetBody, _, htrace⟩ :=
+                  hbodySim.exiting hsourceBody
+                have htarget := ReflTransTrace.step (.stmt (.block label targetBody md) targetEnv) _ _ _ _ .step_block
+                  (ReflTransTrace.trans _ (block_inner_starE (label := some label) (σ_parent := targetEnv.store) htargetBody)
+                    (Imperative.StepStmtStarE.single
+                      (.step_block_exit_mismatch hne)))
+                exact ⟨_, targetTrace, by simpa using htarget, by simpa using htrace⟩
     · intro sourceOut sourceTrace hrun
       match hrun with
       | .step _ _ _ restTrace _ hfirst hrest =>
           cases hfirst with
-          | step_admin hadmin =>
-              cases hadmin with
-              | step_block =>
-                  rcases block_run_decomposeE hrest with
-                    ⟨sourceInner, hbad, _⟩ |
-                    ⟨sourceInner, hsourceBody, hfinal⟩ |
-                    ⟨exitLabel, sourceInner, heq, hsourceBody, hfinal⟩ |
-                    ⟨exitLabel, sourceInner, hne, _, hbad⟩
-                  · simp at hbad
-                  · injection hfinal with hsourceOut
-                    subst hsourceOut
-                    obtain ⟨targetInner, targetTrace, htargetBody, hrel, htrace⟩ :=
-                      hbodySim.terminal hsourceBody
-                    have htarget := ReflTransTrace.step _ _ _ _ _ (.step_admin (c := .stmt (.block label targetBody md) targetEnv) .step_block)
-                      (ReflTransTrace.trans _ (block_inner_starE (label := some label) (σ_parent := targetEnv.store) htargetBody)
-                        (Imperative.StepStmtStarE.single (.step_admin .step_block_done)))
-                    exact ⟨_, targetTrace, by simpa using htarget,
-                      HoistEnvRel.project henv.storeRel hrel, by simpa using htrace⟩
-                  · injection hfinal with hsourceOut
-                    subst hsourceOut
-                    obtain ⟨targetInner, targetTrace, htargetBody, hrel, htrace⟩ :=
-                      hbodySim.exiting hsourceBody
-                    have htarget := ReflTransTrace.step _ _ _ _ _ (.step_admin (c := .stmt (.block label targetBody md) targetEnv) .step_block)
-                      (ReflTransTrace.trans _ (block_inner_starE (label := some label) (σ_parent := targetEnv.store) htargetBody)
-                        (Imperative.StepStmtStarE.single
-                          (.step_admin (.step_block_exit_match heq))))
-                    exact ⟨_, targetTrace, by simpa using htarget,
-                      HoistEnvRel.project henv.storeRel hrel, by simpa using htrace⟩
-                  · simp at hbad
+          | step_block =>
+              rcases block_run_decomposeE hrest with
+                ⟨sourceInner, hbad, _⟩ |
+                ⟨sourceInner, hsourceBody, hfinal⟩ |
+                ⟨exitLabel, sourceInner, heq, hsourceBody, hfinal⟩ |
+                ⟨exitLabel, sourceInner, hne, _, hbad⟩
+              · simp at hbad
+              · injection hfinal with hsourceOut
+                subst hsourceOut
+                obtain ⟨targetInner, targetTrace, htargetBody, hrel, htrace⟩ :=
+                  hbodySim.terminal hsourceBody
+                have htarget := ReflTransTrace.step (.stmt (.block label targetBody md) targetEnv) _ _ _ _ .step_block
+                  (ReflTransTrace.trans _ (block_inner_starE (label := some label) (σ_parent := targetEnv.store) htargetBody)
+                    (Imperative.StepStmtStarE.single .step_block_done))
+                exact ⟨_, targetTrace, by simpa using htarget,
+                  HoistEnvRel.project henv.storeRel hrel, by simpa using htrace⟩
+              · injection hfinal with hsourceOut
+                subst hsourceOut
+                obtain ⟨targetInner, targetTrace, htargetBody, hrel, htrace⟩ :=
+                  hbodySim.exiting hsourceBody
+                have htarget := ReflTransTrace.step (.stmt (.block label targetBody md) targetEnv) _ _ _ _ .step_block
+                  (ReflTransTrace.trans _ (block_inner_starE (label := some label) (σ_parent := targetEnv.store) htargetBody)
+                    (Imperative.StepStmtStarE.single
+                      (.step_block_exit_match heq)))
+                exact ⟨_, targetTrace, by simpa using htarget,
+                  HoistEnvRel.project henv.storeRel hrel, by simpa using htrace⟩
+              · simp at hbad
     · intro exitLabel sourceOut sourceTrace hrun
       match hrun with
       | .step _ _ _ restTrace _ hfirst hrest =>
           cases hfirst with
-          | step_admin hadmin =>
-              cases hadmin with
-              | step_block =>
-                  rcases block_run_decomposeE hrest with
-                    ⟨sourceInner, hbad, _⟩ |
-                    ⟨sourceInner, _, hbad⟩ |
-                    ⟨innerLabel, sourceInner, heq, _, hbad⟩ |
-                    ⟨innerLabel, sourceInner, hne, hsourceBody, hfinal⟩
-                  · simp at hbad
-                  · simp at hbad
-                  · simp at hbad
-                  · injection hfinal with hlabel hsourceOut
-                    subst hlabel
-                    subst hsourceOut
-                    obtain ⟨targetInner, targetTrace, htargetBody, hrel, htrace⟩ :=
-                      hbodySim.exiting hsourceBody
-                    have htarget := ReflTransTrace.step _ _ _ _ _ (.step_admin (c := .stmt (.block label targetBody md) targetEnv) .step_block)
-                      (ReflTransTrace.trans _ (block_inner_starE (label := some label) (σ_parent := targetEnv.store) htargetBody)
-                        (Imperative.StepStmtStarE.single
-                          (.step_admin (.step_block_exit_mismatch hne))))
-                    exact ⟨_, targetTrace, by simpa using htarget,
-                      HoistEnvRel.project henv.storeRel hrel, by simpa using htrace⟩
+          | step_block =>
+              rcases block_run_decomposeE hrest with
+                ⟨sourceInner, hbad, _⟩ |
+                ⟨sourceInner, _, hbad⟩ |
+                ⟨innerLabel, sourceInner, heq, _, hbad⟩ |
+                ⟨innerLabel, sourceInner, hne, hsourceBody, hfinal⟩
+              · simp at hbad
+              · simp at hbad
+              · simp at hbad
+              · injection hfinal with hlabel hsourceOut
+                subst hlabel
+                subst hsourceOut
+                obtain ⟨targetInner, targetTrace, htargetBody, hrel, htrace⟩ :=
+                  hbodySim.exiting hsourceBody
+                have htarget := ReflTransTrace.step (.stmt (.block label targetBody md) targetEnv) _ _ _ _ .step_block
+                  (ReflTransTrace.trans _ (block_inner_starE (label := some label) (σ_parent := targetEnv.store) htargetBody)
+                    (Imperative.StepStmtStarE.single
+                      (.step_block_exit_mismatch hne)))
+                exact ⟨_, targetTrace, by simpa using htarget,
+                  HoistEnvRel.project henv.storeRel hrel, by simpa using htrace⟩
   exact hstmt.targetSingleton
 
 private theorem blockFrameTraceSim {P : PureExpr}
@@ -2809,16 +2707,16 @@ private theorem blockFrameTraceSim {P : PureExpr}
     · obtain ⟨targetEnv, targetTrace, htargetInner, _, htrace⟩ :=
         hinner.terminal hsourceInner
       exact ⟨_, targetTrace, by simpa using (ReflTransTrace.trans _ (block_inner_starE (label := label) (σ_parent := targetParent) htargetInner)
-        (Imperative.StepStmtStarE.single (.step_admin .step_block_done))), by simpa using htrace⟩
+        (Imperative.StepStmtStarE.single .step_block_done)), by simpa using htrace⟩
     · obtain ⟨targetEnv, targetTrace, htargetInner, _, htrace⟩ :=
         hinner.exiting hsourceInner
       exact ⟨_, targetTrace, by simpa using (ReflTransTrace.trans _ (block_inner_starE (label := label) (σ_parent := targetParent) htargetInner)
-        (Imperative.StepStmtStarE.single (.step_admin (.step_block_exit_match heq)))),
+        (Imperative.StepStmtStarE.single (.step_block_exit_match heq))),
         by simpa using htrace⟩
     · obtain ⟨targetEnv, targetTrace, htargetInner, _, htrace⟩ :=
         hinner.exiting hsourceInner
       exact ⟨_, targetTrace, by simpa using (ReflTransTrace.trans _ (block_inner_starE (label := label) (σ_parent := targetParent) htargetInner)
-        (Imperative.StepStmtStarE.single (.step_admin (.step_block_exit_mismatch hne)))),
+        (Imperative.StepStmtStarE.single (.step_block_exit_mismatch hne))),
         by simpa using htrace⟩
   · intro sourceEnv sourceTrace hrun
     rcases block_run_decomposeE hrun with
@@ -2832,14 +2730,14 @@ private theorem blockFrameTraceSim {P : PureExpr}
       obtain ⟨targetEnv, targetTrace, htargetInner, hrel, htrace⟩ :=
         hinner.terminal hsourceInner
       exact ⟨_, targetTrace, by simpa using (ReflTransTrace.trans _ (block_inner_starE (label := label) (σ_parent := targetParent) htargetInner)
-        (Imperative.StepStmtStarE.single (.step_admin .step_block_done))),
+        (Imperative.StepStmtStarE.single .step_block_done)),
         HoistEnvRel.project hparent hrel, htrace⟩
     · injection hfinal with hsourceEnv
       subst hsourceEnv
       obtain ⟨targetEnv, targetTrace, htargetInner, hrel, htrace⟩ :=
         hinner.exiting hsourceInner
       exact ⟨_, targetTrace, by simpa using (ReflTransTrace.trans _ (block_inner_starE (label := label) (σ_parent := targetParent) htargetInner)
-        (Imperative.StepStmtStarE.single (.step_admin (.step_block_exit_match heq)))),
+        (Imperative.StepStmtStarE.single (.step_block_exit_match heq))),
         HoistEnvRel.project hparent hrel, htrace⟩
     · simp at hbad
   · intro exitLabel sourceEnv sourceTrace hrun
@@ -2857,7 +2755,7 @@ private theorem blockFrameTraceSim {P : PureExpr}
       obtain ⟨targetEnv, targetTrace, htargetInner, hrel, htrace⟩ :=
         hinner.exiting hsourceInner
       exact ⟨_, targetTrace, by simpa using (ReflTransTrace.trans _ (block_inner_starE (label := label) (σ_parent := targetParent) htargetInner)
-        (Imperative.StepStmtStarE.single (.step_admin (.step_block_exit_mismatch hne)))),
+        (Imperative.StepStmtStarE.single (.step_block_exit_mismatch hne))),
         HoistEnvRel.project hparent hrel, htrace⟩
 
 private theorem iteHoistTraceSim {P : PureExpr}
@@ -2969,7 +2867,7 @@ private theorem nilBlockHoistTraceSim {P : PureExpr}
     · injection hfinal with hsourceOut
       subst hsourceOut
       exact ⟨targetEnv, [], Imperative.StepStmtStarE.single
-        (c := .stmts [] targetEnv) (.step_admin .step_stmts_nil), henv, .nil⟩
+        (c := .stmts [] targetEnv) .step_stmts_nil, henv, .nil⟩
   · intro label sourceOut sourceTrace hrun
     obtain ⟨_, hcfg⟩ := stmts_nil_runE (EvalCmdE P) hrun
     rcases hcfg with hbad | hbad <;> simp at hbad
@@ -3307,7 +3205,7 @@ private theorem loopHoistTraceSim {P : PureExpr}
       HasVal.valueOfTy targetEnv.factory value t.2.1 := by
     intro t ht
     exact hinhab₁ t.2.1 (htypeSub t ht)
-  obtain ⟨preEnv, preludeTrace, hprelude, hagreePre, hfactoryPre, hfailurePre,
+  obtain ⟨preEnv, preludeTrace, hprelude, hagreePre, hfactoryPre,
       htypedPre, hpreludeRelations⟩ :=
     LoopInitHoistProducerProps.prelude_runnerE hs [] targetEnv targetEnv
       (by intro y hy; exact absurd hy List.not_mem_nil)
@@ -3315,7 +3213,7 @@ private theorem loopHoistTraceSim {P : PureExpr}
       (by rw [henv.targetFactory, ← henv.sourceFactory]; exact hwfvar)
   have hliftEnv : LiftEnvRel Dτ (LoopInitHoistProducerProps.preludeNames hs)
       targetEnv.factory targetEnv preEnv :=
-    ⟨hagreePre, rfl, hfactoryPre, hfailurePre, by simpa using htypedPre⟩
+    ⟨hagreePre, rfl, hfactoryPre, by simpa using htypedPre⟩
   have hmonoTarget : WellFormedSemanticEvalMono targetEnv.factory := by
     rw [henv.targetFactory, ← henv.sourceFactory]
     exact hmono
@@ -3479,7 +3377,7 @@ theorem LoopInitHoist.overapproximatesTraces {P : PureExpr}
   have hsim := Block.hoistP_trace_sim stmts hunique
     sourceEnv sourceEnv
     (show HoistEnvRel sourceEnv.factory sourceEnv sourceEnv from
-      ⟨StoreAgreement.refl _, rfl, rfl, rfl⟩)
+      ⟨StoreAgreement.refl _, rfl, rfl⟩)
     hwf.bool hwf.val hwf.mono hwf.exprCongr hwf.var
     (fun ident hident =>
       Option.isNone_iff_eq_none.mp (hwf.defsUndefined ident hident))
@@ -3504,11 +3402,11 @@ theorem LoopInitHoist.overapproximatesTraces {P : PureExpr}
     exact ⟨targetFinal, targetTrace, htarget, hstrong hrun htarget htrace⟩
   · intro sourceFinal sourceTrace hrun
     obtain ⟨targetFinal, targetTrace, htarget, hrel, htrace⟩ := hsim.terminal hrun
-    exact ⟨targetFinal, targetTrace, htarget, ⟨hrel.agreement, hrel.failure.symm⟩,
+    exact ⟨targetFinal, targetTrace, htarget, hrel.agreement,
       hstrong hrun htarget htrace⟩
   · intro label sourceFinal sourceTrace hrun
     obtain ⟨targetFinal, targetTrace, htarget, hrel, htrace⟩ := hsim.exiting hrun
-    exact ⟨targetFinal, targetTrace, htarget, ⟨hrel.agreement, hrel.failure.symm⟩,
+    exact ⟨targetFinal, targetTrace, htarget, hrel.agreement,
       hstrong hrun htarget htrace⟩
   · change BlockInitEnvWF params
       (Block.hoistLoopPrefixInits stmts) sourceEnv

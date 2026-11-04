@@ -44,7 +44,7 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   a non-deterministic number of times. Each invariant carries a label string
   (expected to be distinct, like assert labels do).
   TODO: invariants and measure will be moved to metadata md, since they don't
-  contribute to the small-step semantics (StepStmt).
+  contribute to the small-step semantics (StepStmtE).
   -/
   | loop     (guard : ExprOrNondet P) (measure : Option P.Expr)
              (invariants : List (String × P.Expr))

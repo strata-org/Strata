@@ -280,31 +280,29 @@ private theorem ite_run_inv
   · cases hterm with
     | step _ emitted _ restTr _ hstep hrest =>
       cases hstep with
-      | step_admin hadmin => cases hadmin with
-        | step_ite_true hc =>
-          obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inl hrest)
-          have ⟨htr, _⟩ := assert_run_inv π (l := "t") (e := forallExpr) (md := mdT) (ρ := ρ)
-            (ρ' := ρi) (singleton_run_inv π hin)
-          exact .inl ⟨hc, by simpa using htr⟩
-        | step_ite_false hc =>
-          obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inl hrest)
-          have ⟨htr, _⟩ := assert_run_inv π (l := "f") (e := ff0) (md := mdF) (ρ := ρ)
-            (ρ' := ρi) (singleton_run_inv π hin)
-          exact .inr ⟨hc, by simpa using htr⟩
+      | step_ite_true hc =>
+        obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inl hrest)
+        have ⟨htr, _⟩ := assert_run_inv π (l := "t") (e := forallExpr) (md := mdT) (ρ := ρ)
+          (ρ' := ρi) (singleton_run_inv π hin)
+        exact .inl ⟨hc, by simpa using htr⟩
+      | step_ite_false hc =>
+        obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inl hrest)
+        have ⟨htr, _⟩ := assert_run_inv π (l := "f") (e := ff0) (md := mdF) (ρ := ρ)
+          (ρ' := ρi) (singleton_run_inv π hin)
+        exact .inr ⟨hc, by simpa using htr⟩
   · cases hexit with
     | step _ emitted _ restTr _ hstep hrest =>
       cases hstep with
-      | step_admin hadmin => cases hadmin with
-        | step_ite_true hc =>
-          obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inr ⟨lbl, hrest⟩)
-          have ⟨htr, _⟩ := assert_run_inv π (l := "t") (e := forallExpr) (md := mdT) (ρ := ρ)
-            (ρ' := ρi) (singleton_run_inv π hin)
-          exact .inl ⟨hc, by simpa using htr⟩
-        | step_ite_false hc =>
-          obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inr ⟨lbl, hrest⟩)
-          have ⟨htr, _⟩ := assert_run_inv π (l := "f") (e := ff0) (md := mdF) (ρ := ρ)
-            (ρ' := ρi) (singleton_run_inv π hin)
-          exact .inr ⟨hc, by simpa using htr⟩
+      | step_ite_true hc =>
+        obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inr ⟨lbl, hrest⟩)
+        have ⟨htr, _⟩ := assert_run_inv π (l := "t") (e := forallExpr) (md := mdT) (ρ := ρ)
+          (ρ' := ρi) (singleton_run_inv π hin)
+        exact .inl ⟨hc, by simpa using htr⟩
+      | step_ite_false hc =>
+        obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inr ⟨lbl, hrest⟩)
+        have ⟨htr, _⟩ := assert_run_inv π (l := "f") (e := ff0) (md := mdF) (ρ := ρ)
+          (ρ' := ρi) (singleton_run_inv π hin)
+        exact .inr ⟨hc, by simpa using htr⟩
 
 end
 
@@ -424,7 +422,7 @@ theorem pAssume_meets_contract :
 
 /-- A total `false`-valued environment over `Core.Factory`. -/
 private def xFalseEnv : Imperative.Env Core.Expression :=
-  { store := fun _ => some ff0, factory := Core.Factory, hasFailure := false }
+  { store := fun _ => some ff0, factory := Core.Factory }
 
 /-- `xFalseEnv` holds only values (every binding is the `false` literal). -/
 private theorem xFalseEnv_storeWellDefined :
@@ -459,12 +457,12 @@ private theorem xFalseEnv_blockrun (π : String → Option Core.Procedure) :
         (.stmts [Core.Statement.assert "f" ff0 (elseMdOf pNoAssumeBody)] xFalseEnv)
         [Event.assert ⟨Core.Factory, xFalseEnv.store, "f", ff0, elseMdOf pNoAssumeBody⟩]
         (.terminal xFalseEnv) := by
-      refine .step _ [] _ _ _ (.step_admin .step_stmts_cons) ?_
+      refine .step _ [] _ _ _ .step_stmts_cons ?_
       refine .step _ _ _ _ _
         (StepStmtE.step_seq_inner (.step_cmd (Core.EvalCommandE.cmd_sem
           Imperative.EvalCmdE.eval_assert))) ?_
-      refine .step _ [] _ _ _ (.step_admin .step_seq_done) ?_
-      exact .step _ [] _ _ _ (.step_admin .step_stmts_nil) (.refl _)
+      refine .step _ [] _ _ _ .step_seq_done ?_
+      exact .step _ [] _ _ _ .step_stmts_nil (.refl _)
     have hblock : StepStmtStarE Core.Expression (Core.EvalCommandE π)
         (.block .none xFalseEnv.store
           (.stmts [Core.Statement.assert "f" ff0 (elseMdOf pNoAssumeBody)] xFalseEnv))
@@ -482,14 +480,14 @@ private theorem xFalseEnv_blockrun (π : String → Option Core.Procedure) :
         (.terminal xFalseEnv) := by
       refine ReflTransTrace.trans _ hblock ?_
       rw [← heq]
-      exact .step _ [] _ _ _ (.step_admin .step_block_done) (.refl _)
-    refine .step _ [] _ _ _ (.step_admin .step_stmts_cons) ?_
+      exact .step _ [] _ _ _ .step_block_done (.refl _)
+    refine .step _ [] _ _ _ .step_stmts_cons ?_
     refine .step _ [] _ _ _
-      (.step_admin (.step_seq_inner (.step_ite_false xFalseEnv_eval_x))) ?_
+      (.step_seq_inner (.step_ite_false xFalseEnv_eval_x)) ?_
     refine ReflTransTrace.trans _ (seq_inner_starE (Core.EvalCommandE π)
       (ss := []) hblock_done) ?_
-    refine .step _ [] _ _ _ (.step_admin .step_seq_done) ?_
-    exact .step _ [] _ _ _ (.step_admin .step_stmts_nil) (.refl _)
+    refine .step _ [] _ _ _ .step_seq_done ?_
+    exact .step _ [] _ _ _ .step_stmts_nil (.refl _)
   have hblock : StepStmtStarE Core.Expression (Core.EvalCommandE π)
       (.block (.some "") xFalseEnv.store (.stmts pNoAssumeBody xFalseEnv))
       [Event.assert ⟨Core.Factory, xFalseEnv.store, "f", ff0, elseMdOf pNoAssumeBody⟩]
@@ -505,13 +503,13 @@ private theorem xFalseEnv_blockrun (π : String → Option Core.Procedure) :
       (.terminal xFalseEnv) := by
     refine ReflTransTrace.trans _ hblock ?_
     rw [← heq]
-    exact .step _ [] _ _ _ (.step_admin .step_block_done) (.refl _)
-  refine .step _ [] _ _ _ (.step_admin .step_stmts_cons) ?_
-  refine .step _ [] _ _ _ (.step_admin (.step_seq_inner .step_block)) ?_
+    exact .step _ [] _ _ _ .step_block_done (.refl _)
+  refine .step _ [] _ _ _ .step_stmts_cons ?_
+  refine .step _ [] _ _ _ (.step_seq_inner .step_block) ?_
   refine ReflTransTrace.trans _ (seq_inner_starE (Core.EvalCommandE π)
     (ss := []) hblock_done) ?_
-  refine .step _ [] _ _ _ (.step_admin .step_seq_done) ?_
-  exact .step _ [] _ _ _ (.step_admin .step_stmts_nil) (.refl _)
+  refine .step _ [] _ _ _ .step_seq_done ?_
+  exact .step _ [] _ _ _ .step_stmts_nil (.refl _)
 
 /-- Block-level well-formedness for the procedure-block-wrapped assumeless body on
     `xFalseEnv`, via `of_defUseOk` (which re-derives `readWritesDefined`).  The block

@@ -585,7 +585,7 @@ theorem TraceExtendsEnv.toMatches {P : PureExpr} [HasVal P] [HasFvars P]
         refine hmk hhead ?_ hsourceHead htargetHead
         intro ident hident
         exact hhead.2.1.1 ident (by
-          simpa [isDefined] using hreadHead ident hident)
+          simpa [SemanticStore.varsDefined] using hreadHead ident hident)
 
 /-- Same-kind event matching composes through a middle event. -/
 theorem Event.Matches.comp {P : PureExpr}

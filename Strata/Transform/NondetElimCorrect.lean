@@ -1065,7 +1065,7 @@ private theorem NdLeaf.cmd_step {P : PureExpr} [HasFvar P] [HasFvars P]
       Trace.WithWF (P := P) (EventArg.ExtendsEnv NdExtra) e
         (Cmd.emittedEvents P c ρt.factory ρt.store) ∧
       NdLeaf σ { ρs with store := σs' } { ρt with store := σt' } := by
-  obtain ⟨hfac, hfail, hstore⟩ := hl.ext
+  obtain ⟨hfac, hstore⟩ := hl.ext
   have htrace : Trace.WithWF (P := P) (EventArg.ExtendsEnv NdExtra) e
       (Cmd.emittedEvents P c ρt.factory ρt.store) := by
     rw [heval.emitted_eq]
@@ -1086,7 +1086,7 @@ private theorem NdLeaf.cmd_step {P : PureExpr} [HasFvar P] [HasFvars P]
     evalCmdE_replay_extends (NdExtra (P := P)) ρs.factory ρs.store ρt.store σs' c e
       hstore heval hmono hinit
   rw [hfac] at hevt
-  refine ⟨σt', hevt, htrace, ⟨⟨hfac, hfail, hext'⟩, ?_, ?_, ?_⟩⟩
+  refine ⟨σt', hevt, htrace, ⟨⟨hfac, hext'⟩, ?_, ?_, ?_⟩⟩
   · intro x hx
     show σs' x = none
     rw [evalCmdE_eq_of_not_written heval (noGen_cmd hng hx).1 (noGen_cmd hng hx).2]
@@ -1113,7 +1113,7 @@ private theorem ndLeaf_project {P : PureExpr} [HasBool P] [HasIdent P]
     (hf : SemanticStore.isReserved (P := P) NondetElim.isGeneratedName σe σpt) :
     NdLeaf σe { ρs with store := projectStore σps ρs.store }
       { ρt with store := projectStore σpt ρt.store } := by
-  refine ⟨⟨hext.1, hext.2.1, StoreExtendsWith.projectStore hp hext.2.2⟩, ?_, ?_, ?_⟩
+  refine ⟨⟨hext.1, StoreExtendsWith.projectStore hp hext.2⟩, ?_, ?_, ?_⟩
   · intro x hx
     show projectStore σps ρs.store x = none
     simp only [projectStore, hsrc x hx]
@@ -1153,8 +1153,8 @@ private theorem NdLeaf.init_guard {P : PureExpr} [HasBool P] [HasIdent P] [Decid
           (HasIdent.ident (StringGenState.gen pf σ).1) v } := by
   have hg : NdExtra (P := P) (HasIdent.ident (StringGenState.gen pf σ).1) := ⟨_, hQ, rfl⟩
   have hnone := SemanticStore.isReserved.gen_slot_none pf hl.fresh hwf hQ
-  refine ⟨hnone, ⟨⟨hl.ext.1, hl.ext.2.1,
-    StoreExtendsWith.update_target hl.ext.2.2 (hl.srcFresh _ hg) hg⟩,
+  refine ⟨hnone, ⟨⟨hl.ext.1,
+    StoreExtendsWith.update_target hl.ext.2 (hl.srcFresh _ hg) hg⟩,
     hl.srcFresh, SemanticStore.isReserved.storeWith_gen pf v hl.fresh, ?_⟩⟩
   intro x w hx hw
   change SemanticStore.update ρt.store _ v x = some w at hw
@@ -1187,7 +1187,7 @@ private theorem NdLeaf.latch {P : PureExpr} [HasBool P] [HasIdent P] [DecidableE
     · simp only [SemanticStore.update, ite_eq_right hxg] at hw
       exact hl.typed x w hx hw
   exact ndLeaf_project (ρt := { ρtb with store := SemanticStore.update ρtb.store g v })
-    ⟨hl.ext.1, hl.ext.2.1, StoreExtendsWith.update_target hl.ext.2.2 (hl.srcFresh g hg) hg⟩
+    ⟨hl.ext.1, StoreExtendsWith.update_target hl.ext.2 (hl.srcFresh g hg) hg⟩
     hl.srcFresh htyped hp hf
 
 /-! ### Guard evaluation -/
@@ -1243,8 +1243,8 @@ private theorem tgt_init_then {P : PureExpr} [HasFvar P] [HasBoolOps P] [Decidab
       (SemanticStore.update ρt.store g v) [] :=
     EvalCmdE.eval_init_unconstrained hinit hv hvar
   refine starE_cons_nil (.step_seq_inner (.step_cmd hcmd)) ?_
-  refine starE_cons_nil (.step_admin .step_seq_done) ?_
-  exact starE_cons_nil (.step_admin .step_stmts_cons) (.refl _)
+  refine starE_cons_nil .step_seq_done ?_
+  exact starE_cons_nil .step_stmts_cons (.refl _)
 
 /-- Run the pending latch havoc, leave the iteration scope, and resume the loop. -/
 private theorem tgt_latch {P : PureExpr} [HasFvar P] [HasBoolOps P] [DecidableEq P.Ident]
@@ -1264,14 +1264,14 @@ private theorem tgt_latch {P : PureExpr} [HasFvar P] [HasBoolOps P] [DecidableEq
   have hcmd : EvalCmdE P ρtb.factory ρtb.store (HasHavoc.havoc g md)
       (SemanticStore.update ρtb.store g v) [] :=
     EvalCmdE.eval_set_nondet hupd ⟨prev, HasBool.boolTy, hprev, hprevTy, hv⟩ hvar
-  refine starE_cons_nil (.step_admin (.step_seq_inner (.step_block_body .step_stmts_cons))) ?_
+  refine starE_cons_nil (.step_seq_inner (.step_block_body .step_stmts_cons)) ?_
   refine starE_cons_nil
     (.step_seq_inner (.step_block_body (.step_seq_inner (.step_cmd hcmd)))) ?_
-  refine starE_cons_nil (.step_admin (.step_seq_inner (.step_block_body .step_seq_done))) ?_
-  refine starE_cons_nil (.step_admin (.step_seq_inner (.step_block_body .step_stmts_nil))) ?_
-  refine starE_cons_nil (.step_admin (.step_seq_inner .step_block_done)) ?_
-  refine starE_cons_nil (.step_admin .step_seq_done) ?_
-  exact starE_cons_nil (.step_admin .step_stmts_cons) (.refl _)
+  refine starE_cons_nil (.step_seq_inner (.step_block_body .step_seq_done)) ?_
+  refine starE_cons_nil (.step_seq_inner (.step_block_body .step_stmts_nil)) ?_
+  refine starE_cons_nil (.step_seq_inner .step_block_done) ?_
+  refine starE_cons_nil .step_seq_done ?_
+  exact starE_cons_nil .step_stmts_cons (.refl _)
 
 /-! ### Source step inversion -/
 
@@ -1287,11 +1287,8 @@ private theorem stepE_seq_cases {P : PureExpr} [HasFvar P] [HasBoolOps P]
     (∃ l ρ, inner = .exiting l ρ ∧ e = [] ∧ c' = .exiting l ρ) := by
   cases h with
   | step_seq_inner h => exact .inl ⟨_, h, rfl⟩
-  | step_admin h =>
-    cases h with
-    | step_seq_inner h => exact .inl ⟨_, .step_admin h, rfl⟩
-    | step_seq_done => exact .inr (.inl ⟨_, rfl, rfl, rfl⟩)
-    | step_seq_exit => exact .inr (.inr ⟨_, _, rfl, rfl, rfl⟩)
+  | step_seq_done => exact .inr (.inl ⟨_, rfl, rfl, rfl⟩)
+  | step_seq_exit => exact .inr (.inr ⟨_, _, rfl, rfl, rfl⟩)
 
 /-- A `.stmts` configuration steps silently (empty trace), either to a terminal
 when the list is empty or to a `.seq` of its head statement with the remaining
@@ -1302,28 +1299,26 @@ private theorem stepE_stmts_cases {P : PureExpr} [HasFvar P] [HasBoolOps P]
     e = [] ∧ ((ss = [] ∧ c' = .terminal ρ) ∨
       (∃ s rest, ss = s :: rest ∧ c' = .seq (.stmt s ρ) rest)) := by
   cases h with
-  | step_admin h =>
-    cases h with
-    | step_stmts_nil => exact ⟨rfl, .inl ⟨rfl, rfl⟩⟩
-    | step_stmts_cons => exact ⟨rfl, .inr ⟨_, _, rfl, rfl⟩⟩
+  | step_stmts_nil => exact ⟨rfl, .inl ⟨rfl, rfl⟩⟩
+  | step_stmts_cons => exact ⟨rfl, .inr ⟨_, _, rfl, rfl⟩⟩
 
 /-- A terminal configuration takes no event step. -/
 private theorem stepE_terminal_false {P : PureExpr} [HasFvar P] [HasBoolOps P]
     {ρ : Env P} {e : Trace P} {c' : Config P (Cmd P)}
     (h : StepStmtE P (EvalCmdE P) (.terminal ρ) e c') : False := by
-  cases h with
-  | step_admin h => cases h
+  cases h
 
-/-- A non-command statement configuration steps silently by a command-free
-(administrative) control-flow step. -/
+/-- A non-command statement configuration steps silently by an administrative
+control-flow step. -/
 private theorem stepE_stmt_admin {P : PureExpr} [HasFvar P] [HasBoolOps P]
     {s : Stmt P (Cmd P)} {ρ : Env P} {e : Trace P} {c' : Config P (Cmd P)}
     (hs : ∀ c, s ≠ .cmd c)
     (h : StepStmtE P (EvalCmdE P) (.stmt s ρ) e c') :
-    e = [] ∧ StepStmt P (noCommandEvalE P (Cmd P)) (.stmt s ρ) c' := by
+    e = [] ∧ StepStmtE P (EvalCmdE P) (.stmt s ρ) [] c' := by
+  have h' := h
   cases h with
   | step_cmd _ => exact absurd rfl (hs _)
-  | step_admin h => exact ⟨rfl, h⟩
+  | _ => exact ⟨rfl, h'⟩
 
 /-! ### Rewrite shapes -/
 
@@ -1488,7 +1483,7 @@ private theorem step_stmt {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     intro c b hc
     rw [← hfac]
     exact hmono c b ρs.store ρt.store
-      (storeAgreement_supplies_mono_premise _ _ hl.ext.2.2.1) hc
+      (storeAgreement_supplies_mono_premise _ _ hl.ext.2.1) hc
   have hreadStmt : Stmt.exprsShapeFree (P := P)
       NondetElim.isGeneratedName s :=
     Block.exprsShapeFree_singleton.mp hread
@@ -1506,9 +1501,9 @@ private theorem step_stmt {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     obtain ⟨rfl, hadmin⟩ := stepE_stmt_admin (fun _ h => by cases h) hstep
     cases hadmin
     rw [Stmt.nondetElimM_block_state]
-    exact ⟨_, [], StepStmtStarE.single (.step_admin .step_block), .nil,
+    exact ⟨_, [], StepStmtStarE.single .step_block, .nil,
       .block (NdSim.stmts_none hwf hl (noGen_block hng)
-          (Stmt.exprsShapeFree_block.mp hreadStmt)) hl.ext.2.2
+          (Stmt.exprsShapeFree_block.mp hreadStmt)) hl.ext.2
         (SemanticStore.isReserved.mono (Block.nondetElimM_genStep bss σ) hl.fresh)⟩
   | ite c tss ess md =>
     cases c with
@@ -1523,14 +1518,14 @@ private theorem step_stmt {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
       have hfresh := SemanticStore.isReserved.mono hstepT hl.fresh
       cases hadmin with
       | step_ite_true hc =>
-        exact ⟨_, [], StepStmtStarE.single (.step_admin (.step_ite_true (hguard hc))), .nil,
+        exact ⟨_, [], StepStmtStarE.single (.step_ite_true (hguard hc)), .nil,
           .block (NdSim.stmts_none hwf hl (noGen_ite_then hng)
-            (Stmt.exprsShapeFree_ite.mp hreadStmt).2.1) hl.ext.2.2 hfresh⟩
+            (Stmt.exprsShapeFree_ite.mp hreadStmt).2.1) hl.ext.2 hfresh⟩
       | step_ite_false hc =>
         have hstep₁ := Block.nondetElimM_genStep tss σ
-        exact ⟨_, [], StepStmtStarE.single (.step_admin (.step_ite_false (hguard hc))), .nil,
+        exact ⟨_, [], StepStmtStarE.single (.step_ite_false (hguard hc)), .nil,
           .block (NdSim.stmts_none (hstep₁.wf_mono hwf) (hl.mono hstep₁)
-            (noGen_ite_else hng) (Stmt.exprsShapeFree_ite.mp hreadStmt).2.2) hl.ext.2.2 hfresh⟩
+            (noGen_ite_else hng) (Stmt.exprsShapeFree_ite.mp hreadStmt).2.2) hl.ext.2 hfresh⟩
     | nondet =>
       rw [Stmt.nondetElimM_ite_nondet_out] at hout
       simp at hout
@@ -1542,18 +1537,18 @@ private theorem step_stmt {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
       obtain ⟨rfl, hadmin⟩ := stepE_stmt_admin (fun _ h => by cases h) hstep
       cases hadmin with
       | step_loop_enter hc =>
-        refine ⟨_, [], StepStmtStarE.single (.step_admin (.step_loop_enter (hguard hc))), .nil, ?_⟩
+        refine ⟨_, [], StepStmtStarE.single (.step_loop_enter (hguard hc)), .nil, ?_⟩
         have hinner : NdSim none σ (.block none ρs.store (.stmts body ρs))
             (.block none ρt.store (.stmts (Block.nondetElimM body σ).1 ρt)) :=
           .block (NdSim.stmts_none hwf hl (noGen_loop hng)
-            (Stmt.exprsShapeFree_loop.mp hreadStmt).2.2.2) hl.ext.2.2 hl.fresh
+            (Stmt.exprsShapeFree_loop.mp hreadStmt).2.2.2) hl.ext.2 hl.fresh
         have h := NdSim.seq (tail := none) (rest := [.loop (.det c) m inv body md])
           hinner hwf hng hread (NdTailCfg.none' _)
         rw [nondetElimM_singleton_state, nondetElimM_singleton_out,
           Stmt.nondetElimM_loop_det_out] at h
         simpa [ndTail] using h
       | step_loop_exit hc =>
-        exact ⟨_, [], StepStmtStarE.single (.step_admin (.step_loop_exit (hguard hc))), .nil,
+        exact ⟨_, [], StepStmtStarE.single (.step_loop_exit (hguard hc)), .nil,
           .terminal (hl.mono (Stmt.nondetElimM_genStep _ σ))⟩
     | nondet =>
       rw [Stmt.nondetElimM_loop_nondet_out] at hout
@@ -1563,13 +1558,13 @@ private theorem step_stmt {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
     obtain rfl := (List.singleton_inj.mp hout).symm
     obtain ⟨rfl, hadmin⟩ := stepE_stmt_admin (fun _ h => by cases h) hstep
     cases hadmin
-    exact ⟨_, [], StepStmtStarE.single (.step_admin .step_exit), .nil, .exiting hl⟩
+    exact ⟨_, [], StepStmtStarE.single .step_exit, .nil, .exiting hl⟩
   | typeDecl t md =>
     simp only [nondetElimM_typeDecl] at hout ⊢
     obtain rfl := (List.singleton_inj.mp hout).symm
     obtain ⟨rfl, hadmin⟩ := stepE_stmt_admin (fun _ h => by cases h) hstep
     cases hadmin
-    exact ⟨_, [], StepStmtStarE.single (.step_admin .step_typeDecl), .nil, .terminal hl⟩
+    exact ⟨_, [], StepStmtStarE.single .step_typeDecl, .nil, .terminal hl⟩
 
 /-- A statement-list leaf simulates one source step; a nondeterministic head
 statement moves to its preheader state without consuming a target command. -/
@@ -1589,7 +1584,7 @@ private theorem step_stmts {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P
   rcases hcases with ⟨rfl, rfl⟩ | ⟨s, rest, rfl, rfl⟩
   · simp only [nondetElimM_nil, List.nil_append]
     cases tail with
-    | none => exact ⟨_, [], StepStmtStarE.single (.step_admin .step_stmts_nil), .nil, .terminal hl⟩
+    | none => exact ⟨_, [], StepStmtStarE.single .step_stmts_nil, .nil, .terminal hl⟩
     | some gm =>
       obtain ⟨g, md⟩ := gm
       exact ⟨_, [], .refl _, .nil, .pendingHavoc hl (htail g md rfl)⟩
@@ -1605,18 +1600,18 @@ private theorem step_stmts {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P
     rcases stmt_nondetElimM_shape s σ with
       ⟨s', hs'⟩ | ⟨tss, ess, md, rfl⟩ | ⟨m, inv, body, md, rfl⟩
     · rw [hs', List.singleton_append, List.cons_append]
-      exact ⟨_, [], StepStmtStarE.single (.step_admin .step_stmts_cons), .nil,
+      exact ⟨_, [], StepStmtStarE.single .step_stmts_cons, .nil,
         .seq (.stmt hwf hl hng₁ hreadHead hs') hwf₁ hngr hreadr
           (NdTailCfg.of_def _ htail)⟩
     · rw [Stmt.nondetElimM_ite_nondet_out]
       dsimp only
       simp only [List.cons_append, List.nil_append]
-      exact ⟨_, [], StepStmtStarE.single (.step_admin .step_stmts_cons), .nil,
+      exact ⟨_, [], StepStmtStarE.single .step_stmts_cons, .nil,
         .seqIte hwf hl hng₁ hreadHead hngr hreadr htail⟩
     · rw [Stmt.nondetElimM_loop_nondet_out]
       dsimp only
       simp only [List.cons_append, List.nil_append]
-      exact ⟨_, [], StepStmtStarE.single (.step_admin .step_stmts_cons), .nil,
+      exact ⟨_, [], StepStmtStarE.single .step_stmts_cons, .nil,
         .seqLoop hwf hl hng₁ hreadHead hngr hreadr htail⟩
 
 /-- Preheader of a nondeterministic `ite`: the source branch choice drives the
@@ -1673,10 +1668,10 @@ private theorem step_seqIte {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps 
       have hrun := ReflTransTrace.trans _ (tgt_init_then (md := md) (X := ndIteTgt tss ess md σ)
           (R := (Block.nondetElimM rest (Stmt.nondetElimM (.ite .nondet tss ess md) σ).2).1 ++
             ndTail tail) hnone hv hvarT)
-        (StepStmtStarE.single (.step_seq_inner (.step_admin (.step_ite_true hg))))
+        (StepStmtStarE.single (.step_seq_inner (.step_ite_true hg)))
       exact ⟨_, _, hrun, .nil,
         .seq (.block (NdSim.stmts_none hwf₁ hl₁ (noGen_ite_then hng) hreadIte.2.1)
-          hl₁.ext.2.2
+          hl₁.ext.2
           (SemanticStore.isReserved.mono hstepR hl₁.fresh)) hwfR hngr hreadr
           (htc.run hrun).seq_inner⟩
     | step_ite_nondet_false =>
@@ -1686,11 +1681,11 @@ private theorem step_seqIte {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps 
       have hrun := ReflTransTrace.trans _ (tgt_init_then (md := md) (X := ndIteTgt tss ess md σ)
           (R := (Block.nondetElimM rest (Stmt.nondetElimM (.ite .nondet tss ess md) σ).2).1 ++
             ndTail tail) hnone hv hvarT)
-        (StepStmtStarE.single (.step_seq_inner (.step_admin (.step_ite_false hg))))
+        (StepStmtStarE.single (.step_seq_inner (.step_ite_false hg)))
       have hstep₂ := Block.nondetElimM_genStep tss (StringGenState.gen NondetElim.prefixIte σ).2
       exact ⟨_, _, hrun, .nil,
         .seq (.block (NdSim.stmts_none (hstep₂.wf_mono hwf₁) (hl₁.mono hstep₂)
-            (noGen_ite_else hng) hreadIte.2.2) hl₁.ext.2.2
+            (noGen_ite_else hng) hreadIte.2.2) hl₁.ext.2
           (SemanticStore.isReserved.mono hstepR hl₁.fresh)) hwfR hngr hreadr
           (htc.run hrun).seq_inner⟩
   · cases h
@@ -1756,14 +1751,14 @@ private theorem step_seqLoop {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps
         (tgt_init_then (md := md) (X := ndLoopTgt m inv body md σ)
           (R := (Block.nondetElimM rest (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2).1 ++
             ndTail tail) hnone hv hvarT)
-        (StepStmtStarE.single (.step_seq_inner (.step_admin (.step_loop_enter hg))))
+        (StepStmtStarE.single (.step_seq_inner (.step_loop_enter hg)))
       have hgdef : (SemanticStore.update ρt.store (ndLoopGuard (P := P) σ) HasBool.tt
           (ndLoopGuard (P := P) σ)).isSome = true := by
         simp [SemanticStore.update]
       have hbody := NdSim.stmts (tail := some (ndLoopGuard (P := P) σ, md)) hwf₁ hl₁
         (noGen_loop hng) hreadLoop.2.2.2 (fun g' md' h => by cases h; exact hgdef)
       have hiter := NdSim.iter (m := m) (inv := inv) hwf₁ (noGen_loop hng)
-        hreadLoop.2.2.2 hl₁.ext.2.2 hl₁.fresh hgdef hbody
+        hreadLoop.2.2.2 hl₁.ext.2 hl₁.fresh hgdef hbody
       rw [← hσr] at hiter
       exact ⟨_, _, hrun, .nil,
         .seq hiter hwfR hngr hreadr (htc.run hrun).seq_inner⟩
@@ -1775,7 +1770,7 @@ private theorem step_seqLoop {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps
         (tgt_init_then (md := md) (X := ndLoopTgt m inv body md σ)
           (R := (Block.nondetElimM rest (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2).1 ++
             ndTail tail) hnone hv hvarT)
-        (StepStmtStarE.single (.step_seq_inner (.step_admin (.step_loop_exit hg))))
+        (StepStmtStarE.single (.step_seq_inner (.step_loop_exit hg)))
       exact ⟨_, _, hrun, .nil,
         .seq (.terminal (hl₁.mono hstepR)) hwfR hngr hreadr
           (htc.run hrun).seq_inner⟩
@@ -1821,14 +1816,14 @@ private theorem step_headStmt {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
       have hg := eval_guard_latch (σ := ρtb.store) hinv.parentGuard hv hvarT hmonoT
       have hrun := ReflTransTrace.trans _
         (tgt_latch (md := md) (σpt := σpt) (L' := ndLoopTgt m inv body md σ) hprev hprevTy hv hvarT)
-        (StepStmtStarE.single (.step_seq_inner (.step_admin (.step_loop_enter hg))))
+        (StepStmtStarE.single (.step_seq_inner (.step_loop_enter hg)))
       have hgdef : (projectStore σpt (SemanticStore.update ρtb.store (ndLoopGuard (P := P) σ)
           HasBool.tt) (ndLoopGuard (P := P) σ)).isSome = true := by
         simp [projectStore, hinv.parentGuard, SemanticStore.update]
       have hbody := NdSim.stmts (tail := some (ndLoopGuard (P := P) σ, md)) hinv.wf hl'
         hinv.noGen hinv.noRead (fun g' md' h => by cases h; exact hgdef)
       have hiter := NdSim.iter (m := m) (inv := inv) hinv.wf hinv.noGen hinv.noRead
-        hl'.ext.2.2 hl'.fresh hgdef hbody
+        hl'.ext.2 hl'.fresh hgdef hbody
       exact ⟨_, _, hrun, .nil, NdSim.seq_nil hiter hwfE⟩
     | step_loop_nondet_exit =>
       have hv := (HasBool.boolIsValOfTy ρtb.factory).2
@@ -1836,7 +1831,7 @@ private theorem step_headStmt {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
       have hg := eval_guard_latch (σ := ρtb.store) hinv.parentGuard hv hvarT hmonoT
       have hrun := ReflTransTrace.trans _
         (tgt_latch (md := md) (σpt := σpt) (L' := ndLoopTgt m inv body md σ) hprev hprevTy hv hvarT)
-        (StepStmtStarE.single (.step_seq_inner (.step_admin (.step_loop_exit hg))))
+        (StepStmtStarE.single (.step_seq_inner (.step_loop_exit hg)))
       exact ⟨_, _, hrun, .nil,
         NdSim.seq_nil (.terminal (hl'.mono (Block.nondetElimM_genStep body _))) hwfE⟩
   · cases h
@@ -1886,11 +1881,11 @@ private theorem NdSim.step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P
         .seq hsim hwf hng hread (htail.run hrun)⟩
     · cases hinner with
       | terminal hl =>
-        exact ⟨_, [], StepStmtStarE.single (.step_admin .step_seq_done), .nil,
+        exact ⟨_, [], StepStmtStarE.single .step_seq_done, .nil,
           .stmts hwf hl hng hread (NdTailDef.of_terminal htail)⟩
     · cases hinner with
       | exiting hl =>
-        exact ⟨_, [], StepStmtStarE.single (.step_admin .step_seq_exit), .nil,
+        exact ⟨_, [], StepStmtStarE.single .step_seq_exit, .nil,
           .exiting (hl.mono (Block.nondetElimM_genStep _ _))⟩
   | block hinner hp hf ih =>
     intro e cs' hsourceWF htargetWF hcongr hvar hmono hstep
@@ -1902,15 +1897,15 @@ private theorem NdSim.step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P
       exact ⟨_, e', block_inner_starE hrun, htr, .block hsim hp hf⟩
     · cases hinner with
       | terminal hl =>
-        exact ⟨_, [], StepStmtStarE.single (.step_admin .step_block_done), .nil,
+        exact ⟨_, [], StepStmtStarE.single .step_block_done, .nil,
           .terminal (hl.project hp hf)⟩
     · cases hinner with
       | exiting hl =>
-        exact ⟨_, [], StepStmtStarE.single (.step_admin (.step_block_exit_match hlbl)), .nil,
+        exact ⟨_, [], StepStmtStarE.single (.step_block_exit_match hlbl), .nil,
           .terminal (hl.project hp hf)⟩
     · cases hinner with
       | exiting hl =>
-        exact ⟨_, [], StepStmtStarE.single (.step_admin (.step_block_exit_mismatch hlbl)), .nil,
+        exact ⟨_, [], StepStmtStarE.single (.step_block_exit_mismatch hlbl), .nil,
           .exiting (hl.project hp hf)⟩
   | seqIte hwf hl hng hread hngr hreadr htail =>
     intro e cs' _ _ _ hvar hmono hstep
@@ -1934,8 +1929,8 @@ private theorem NdSim.step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P
       · cases hlbl
       · cases hbody with
         | exiting hl =>
-          exact ⟨_, [], StepStmtStarE.single (.step_admin (.step_seq_inner
-              (.step_block_exit_mismatch hlbl))), .nil,
+          exact ⟨_, [], StepStmtStarE.single (.step_seq_inner
+              (.step_block_exit_mismatch hlbl)), .nil,
             .seqExit
               (hl.project hp
                 (SemanticStore.isReserved.mono
@@ -1965,7 +1960,7 @@ private theorem NdSim.step {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P
     · exact (StepStmtE.exiting_false hinnerStep).elim
     · cases h
     · cases h
-      exact ⟨_, [], StepStmtStarE.single (.step_admin .step_seq_exit), .nil, .exiting hl⟩
+      exact ⟨_, [], StepStmtStarE.single .step_seq_exit, .nil, .exiting hl⟩
 
 /-- Every finite source trace prefix is matched by a target trace prefix
 reaching a related configuration. -/

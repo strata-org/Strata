@@ -356,21 +356,21 @@ theorem OverapproximatesTracesUptoWhen.mono_trace
     obtain ⟨ρ'', trace', hrun', hout, hrel⟩ := hexit lbl ρ' trace hrun
     exact ⟨ρ'', trace', hrun', hout, hsub _ _ hrel⟩
 
-/-- `EnvStoreAgree` is transitive: store agreement and failure-flag equality
-each compose across a middle environment. -/
+/-- `EnvStoreAgree` is transitive: store agreement composes across a middle
+environment. -/
 theorem EnvStoreAgree_trans {P : PureExpr} {ρ₁ ρ₂ ρ₃ : Env P}
     (h₁ : EnvStoreAgree ρ₁ ρ₂) (h₂ : EnvStoreAgree ρ₂ ρ₃) :
     EnvStoreAgree ρ₁ ρ₃ :=
-  ⟨StoreAgreement.trans h₁.1 h₂.1, h₁.2.trans h₂.2⟩
+  StoreAgreement.trans h₁ h₂
 
 /-- `Env.ExtendsWith` weakens to `EnvStoreAgree`: a classified environment
-extension preserves store agreement on source-defined names and the failure
-flag, forgetting the target-only register classification and factory equality.
+extension preserves store agreement on source-defined names, forgetting the
+target-only register classification and factory equality.
 This output-relation weakening allows composition across stages that use
 different environment relations. -/
 theorem envStoreAgree_of_extendsWith {P : PureExpr} {Extra : P.Ident → Prop}
     {ρ ρ' : Env P} (h : Env.ExtendsWith Extra ρ ρ') : EnvStoreAgree ρ ρ' :=
-  ⟨h.2.2.toStoreAgreement, h.2.1⟩
+  h.2.toStoreAgreement
 
 
 /-! ## Event-trace statement-list overapproximation
@@ -382,10 +382,7 @@ terminal and exiting runs.
 
 The lift is stated against explicit, minimal laws on the trace relation
 `Rtrace`: it must relate empty traces (`hnil`) and be compatible with
-chronological concatenation (`happend`). Both hold for equality `(· = ·)`. The
-administrative overlap in `StepStmtE` (a `.seq` step derivable natively or
-through `step_admin`) is handled soundly by the traced `seq`/`stmts`
-inversions, which unify both derivations to the same emitted trace. -/
+chronological concatenation (`happend`). Both hold for equality `(· = ·)`. -/
 
 section TracedStructuredStmts
 
@@ -441,7 +438,7 @@ private theorem overapproximatesTraces_stmts_aux
         injection h with hρ; subst hρ
         refine ⟨[], ?_, hnil⟩
         exact ReflTransTrace.step (r := StepStmtE P evalCmdE) _ _ _ _ _
-          (.step_admin .step_stmts_nil) (.refl _)
+          .step_stmts_nil (.refl _)
     · intro lbl hstar
       obtain ⟨_, hcfg⟩ := stmts_nil_runE evalCmdE hstar
       cases hcfg with
@@ -478,9 +475,9 @@ private theorem overapproximatesTraces_stmts_aux
             StepStmtStarE P evalCmdE (.stmts (s' :: rest') ρ₀)
               (([] ++ trh) ++ ([] ++ [])) (.exiting lbl ρ') :=
             ReflTransTrace.trans _
-              (ReflTransTrace.step _ _ _ _ _ (.step_admin .step_stmts_cons)
+              (ReflTransTrace.step _ _ _ _ _ .step_stmts_cons
                 (seq_inner_starE evalCmdE hrun_s'))
-              (ReflTransTrace.step (r := StepStmtE P evalCmdE) _ _ _ _ _ (.step_admin .step_seq_exit) (.refl _))
+              (ReflTransTrace.step (r := StepStmtE P evalCmdE) _ _ _ _ _ .step_seq_exit (.refl _))
           simpa using hchain
         · obtain ⟨ρ₁', trh, hrun_s', heqρ, hrelh⟩ := hsem_s.2.1 ρ₁ tr₁ hterm_s
           subst heqρ
@@ -539,7 +536,7 @@ private theorem overapproximatesTraces_stmts_prefix
       · obtain ⟨c', trh, hrun_s', hrelh⟩ := hsem_s.1 inner' tr hrun_head
         refine ⟨.seq c' rest', trh, ?_, hrelh⟩
         exact ReflTransTrace.step (r := StepStmtE P evalCmdE) _ _ _ _ _
-          (.step_admin .step_stmts_cons)
+          .step_stmts_cons
           (seq_inner_starE evalCmdE hrun_s')
       · obtain ⟨ρ₁', trh, hrun_s', heqρ, hrelh⟩ := hsem_s.2.1 ρ₁ tr₁ hterm_s
         subst heqρ
@@ -556,9 +553,9 @@ private theorem overapproximatesTraces_stmts_prefix
           StepStmtStarE P evalCmdE (.stmts (s' :: rest') ρ₀)
             (([] ++ trh) ++ ([] ++ [])) (.exiting lbl ρ₁) :=
           ReflTransTrace.trans _
-            (ReflTransTrace.step _ _ _ _ _ (.step_admin .step_stmts_cons)
+            (ReflTransTrace.step _ _ _ _ _ .step_stmts_cons
               (seq_inner_starE evalCmdE hrun_s'))
-            (ReflTransTrace.step (r := StepStmtE P evalCmdE) _ _ _ _ _ (.step_admin .step_seq_exit) (.refl _))
+            (ReflTransTrace.step (r := StepStmtE P evalCmdE) _ _ _ _ _ .step_seq_exit (.refl _))
         simpa using hchain
 
 omit [HasOps P] in

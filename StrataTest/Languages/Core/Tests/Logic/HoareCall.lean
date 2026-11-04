@@ -668,7 +668,7 @@ private theorem bv16_call_triple
         · show σAO yId = some (bvc vb)
           rw [hAOy, hvy]
         · exact ⟨vb, rfl⟩
-    · exact setBlockWF bodyE bmd { store := σAO, factory := ρ₀.factory, hasFailure := false } hfac hwfAO
+    · exact setBlockWF bodyE bmd { store := σAO, factory := ρ₀.factory } hfac hwfAO
         (fun n hn => (hReadsSub n hn).elim (fun h => by subst h; simp [hAOx])
           (fun h => by subst h; simp [hAOy]))
         (by simp [hAOr])

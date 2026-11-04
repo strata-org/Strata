@@ -22,19 +22,8 @@ variable (P : PureExpr)
 
 abbrev SemanticEval := P.Factory → SemanticStore P → P.Expr → Option P.Expr
 abbrev SemanticEvalBool := P.Factory → SemanticStore P → P.Expr → Option Bool
-/--
-Evaluation relation of an Imperative command `Cmd`.
-Commands do not modify the evaluator.
-
-The Bool flag reports whether the command observed
-a failure (e.g., an assertion whose guard is false).  The `Bool` is `true`
-when the command signals a failure.
--/
-abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
-  P.Factory → SemanticStore P → Cmd → SemanticStore P → Bool → Prop
-
-/-- Command evaluation relation that reports an ordered event trace instead of
-an assertion-failure flag.  The event payload type `EventT` is a parameter so
+/-- Command evaluation relation that reports an ordered event trace.  Commands
+do not modify the evaluator.  The event payload type `EventT` is a parameter so
 that generic operational metatheory can be stated over an arbitrary payload; the
 base command semantics `EvalCmdE` instantiates it at `Trace P`. -/
 abbrev EvalCmdParamE (P : PureExpr) (Cmd : Type) (EventT : Type) :=
@@ -248,7 +237,7 @@ inductive EvalExpressions {P : PureExpr} [HasFvars P] :
     P.Factory → SemanticStore P → List P.Expr → List P.Expr → Prop where
   | eval_none : EvalExpressions f σ [] []
   | eval_some :
-    isDefined σ (HasFvars.getFvars e) →
+    SemanticStore.varsDefined (· ∈ (HasFvars.getFvars e)) σ →
     P.eval f σ e = .some v →
     EvalExpressions f σ es vs →
     EvalExpressions f σ (e :: es) (v :: vs)
@@ -290,97 +279,6 @@ inductive InitStates {P : PureExpr} :
     HasVal.valueOfTy f previous ty ∧
     HasVal.valueOfTy f v ty
 
-/--
-An inductively-defined operational semantics for `Cmd` that depends on variable
-lookup (`σ`) and expression evaluation (`P.eval`) functions.
-Commands do not modify the evaluator.
-
-The `Bool` output parameter is a *failure flag*: `true` when the command
-signals an assertion failure, `false` otherwise.  Only `eval_assert_fail`
-sets it to `true`; all other constructors report `false`.
-
-The failure flag is accumulated in `Env.hasFailure` by the statement
-semantics (`EvalStmt`).
-
-This relation covers the monomorphic runtime semantics: every type carried by
-an `.init`, and every type witnessed for a `.set`, is assumed to have already
-been monomorphized by type checking. Polymorphic instantiation is outside
-`EvalCmd`.
--/
-inductive EvalCmd [HasFvar P] [HasBool P] [HasBoolOps P] :
-  P.Factory → SemanticStore P → Cmd P → SemanticStore P → Bool → Prop where
-  /-- If `e` evaluates to a value `v`, initialize `x` according to `InitState`.
-      The explicit type premise is redundant after type checking, but keeps this
-      rule symmetric with nondeterministic init for refinement proofs. -/
-  | eval_init :
-    P.eval f σ e = .some v →
-    InitState P σ x v σ' →
-    HasVal.valueOfTy f v ty →
-    WellFormedSemanticEvalVar (P := P) f →
-    ---
-    EvalCmd f σ (.init x ty (.det e) md) σ' false
-
-  /-- Initialize `x` with an unconstrained value (havoc semantics).  The
-  havoc'd value `v` is still required to be a value, so a nondet write
-  preserves store well-formedness. -/
-  | eval_init_unconstrained :
-    InitState P σ x v σ' →
-    HasVal.valueOfTy f v ty →
-    WellFormedSemanticEvalVar (P := P) f →
-    ---
-    EvalCmd f σ (.init x ty .nondet md) σ' false
-
-  /-- If `e` evaluates to `v`, assign `x` according to `UpdateState`.
-      Requiring the old and new values to share a type is redundant for checked
-      programs, but aligns deterministic and nondeterministic assignment rules. -/
-  | eval_set :
-    P.eval f σ e = .some v →
-    UpdateState P σ x v σ' →
-    HasVal.valueOfStoredTy (P := P) f σ x v →
-    WellFormedSemanticEvalVar (P := P) f →
-    ----
-    EvalCmd f σ (.set x (.det e) md) σ' false
-
-  /-- Assign `x` an arbitrary value `v` according to `UpdateState`.  The
-  havoc'd value `v` is still required to be a value, so a nondet write
-  preserves store well-formedness. -/
-  | eval_set_nondet :
-    UpdateState P σ x v σ' →
-    HasVal.valueOfStoredTy (P := P) f σ x v →
-    WellFormedSemanticEvalVar (P := P) f →
-    ----
-    EvalCmd f σ (.set x .nondet md) σ' false
-
-  /-- Assert passes: `e` evaluates to true, no failure. The store is unchanged. -/
-  | eval_assert_pass :
-    P.eval f σ e = .some HasBool.tt →
-    WellFormedSemanticEvalBool (P := P) f →
-    ----
-    EvalCmd f σ (.assert _ e _) σ false
-
-  /-- Assert fails: `e` does not evaluate to true, failure flag is set.
-      The store is unchanged — the command is an unconditional skip on the
-      store, but the failure flag records the violation. -/
-  | eval_assert_fail :
-    P.eval f σ e = .some HasBool.ff →
-    WellFormedSemanticEvalBool (P := P) f →
-    ----
-    EvalCmd f σ (.assert _ e _) σ true
-
-  /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. -/
-  | eval_assume :
-    P.eval f σ e = .some HasBool.tt →
-    WellFormedSemanticEvalBool (P := P) f →
-    ----
-    EvalCmd f σ (.assume _ e _) σ false
-
-  /-- A cover, when encountered, is essentially a skip. -/
-  | eval_cover :
-    WellFormedSemanticEvalBool (P := P) f →
-    ----
-    EvalCmd f σ (.cover _ e _) σ false
-
-
 /-- The event trace emitted by a base command at its input snapshot. Assertions,
 assumptions, and covers emit their captured condition; all other commands are
 silent. -/
@@ -398,7 +296,12 @@ silent. -/
 
 Assertions, assumptions, and covers are unconditional skips on the store that
 emit their unevaluated condition at the input snapshot. They do not ask the
-partial evaluator to reduce the condition to a Boolean. -/
+partial evaluator to reduce the condition to a Boolean.
+
+This relation covers the monomorphic runtime semantics: every type carried by
+an `.init`, and every type witnessed for a `.set`, is assumed to have already
+been monomorphized by type checking. Polymorphic instantiation is outside
+`EvalCmdE`. -/
 inductive EvalCmdE [HasFvar P] [HasBool P] :
     P.Factory → SemanticStore P → Cmd P → SemanticStore P → Trace P → Prop where
   /-- Evaluate a deterministic initializer, update the store, and emit no

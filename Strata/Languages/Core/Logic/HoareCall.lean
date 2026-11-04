@@ -50,7 +50,7 @@ specified by its signature. -/
     (π : String → Option Procedure)
     (proc : Procedure) : Prop :=
   ∀ σ_entry fac σ_exit emitted,
-    CoreBodyExecE π proc.body ⟨σ_entry, fac, false⟩ σ_exit emitted →
+    CoreBodyExecE π proc.body ⟨σ_entry, fac⟩ σ_exit emitted →
     Procedure.storeFrame proc σ_entry σ_exit
 
 /-- Every event-producing execution of `proc`'s body binds its declared outputs
@@ -61,10 +61,10 @@ specified by its signature. -/
   ∀ σ_entry fac σ_exit emitted,
     fac = factory →
     Procedure.inputAsPredicate proc
-        { store := σ_entry, factory := fac, hasFailure := false } →
-    CoreBodyExecE π proc.body ⟨σ_entry, fac, false⟩ σ_exit emitted →
+        { store := σ_entry, factory := fac } →
+    CoreBodyExecE π proc.body ⟨σ_entry, fac⟩ σ_exit emitted →
     Procedure.outputAsPredicate proc
-      { store := σ_exit, factory := fac, hasFailure := false }
+      { store := σ_exit, factory := fac }
 
 /-- **A procedure call meets a Hoare triple built from its callee's contract.**
 
@@ -95,14 +95,14 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
       p.findProcByString? procName = some proc →
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
       Procedure.contractPre model proc
-          { store := σAO, factory := ρ₀.factory, hasFailure := false } ∧
+          { store := σAO, factory := ρ₀.factory } ∧
         match proc.body with
         | .structured bss =>
             BlockInitEnvWF params [Imperative.Stmt.block "" bss #[]]
-              { store := σAO, factory := ρ₀.factory, hasFailure := false }
+              { store := σAO, factory := ρ₀.factory }
         | .cfg cfg =>
             CFGInitEnvWF params cfg
-              { store := σAO, factory := ρ₀.factory, hasFailure := false })
+              { store := σAO, factory := ρ₀.factory })
     (hexit : ∀ (model : Lambda.Interp (p.factoryBeforeProcedure procName))
         (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (ρ' : Imperative.Env Expression) (σ' σAO : CoreStore),
@@ -192,7 +192,7 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
         have hrun' := Imperative.stmtRun_to_singletonE
           (EvalCommandE p.findProcByString?) hrun
         have htb := htriple model
-          { store := σAO, factory := ρ₀.factory, hasFailure := false }
+          { store := σAO, factory := ρ₀.factory }
           ρ' _ hcontractPre hbodyWF (Or.inl hrun')
         exact finish ρ' _ hρ'fac houtputsRel hframeRel hcallexit htb
     | cfg cfg =>
@@ -203,8 +203,8 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
         have hρ'fac : ρ'.factory = ρ₀.factory :=
           (StepCFGStarE.preserves_factory hrun).symm
         have htb := htriple model
-          { store := σAO, factory := ρ₀.factory, hasFailure := false }
-          { store := σAO, factory := ρ₀.factory, hasFailure := false }
+          { store := σAO, factory := ρ₀.factory }
+          { store := σAO, factory := ρ₀.factory }
           ρ' _ ⟨hcontractPre, rfl⟩ hbodyWF (Or.inl hrun)
         exact finish { ρ' with store := Imperative.projectStore σAO ρ'.store } _
           hρ'fac houtputsRel hframeRel hcallexit htb

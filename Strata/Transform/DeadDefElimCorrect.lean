@@ -328,17 +328,16 @@ theorem deadDefElim_fails (hcong : WellFormedSemanticEvalExprCongr F)
 
 /-- **Erasing unread definitions keeps failures (reference event semantics).**  If the
     statement list `ss` without loops (`Block.noLoops`) fails the target `t` with the condition
-    `e` from the value-valued store `σ` under the reference event semantics (`FailsE`, with
-    failure flag `hf`), then `deadDefElim live ss` fails `t` with the condition `e` from `σ` under
-    it (with any failure flag `hf'`), for any factory evaluating alike on well-formed stores
-    agreeing on the free variables (`WellFormedSemanticEvalExprCongr`) and evaluating Boolean
-    guards to Booleans. -/
+    `e` from the value-valued store `σ` under the reference event semantics (`FailsE`), then
+    `deadDefElim live ss` fails `t` with the condition `e` from `σ` under it, for any factory
+    evaluating alike on well-formed stores agreeing on the free variables
+    (`WellFormedSemanticEvalExprCongr`) and evaluating Boolean guards to Booleans. -/
 theorem deadDefElim_failsE [HasBoolOps P] (hcong : WellFormedSemanticEvalExprCongr F)
     (hWB : WellFormedSemanticEvalBool (P := P) F)
     (live : List P.Ident) {ss : PStmts P} (hss : Block.noLoops ss = true) {σ : SemanticStore P}
-    {t : AssertId P} {e : P.Expr} (hC : WellFormedStore σ F) {hf : Bool}
-    (h : FailsE F hf ss σ t e) (hf' : Bool) : FailsE F hf' (deadDefElim live ss) σ t e :=
-  fails_failsE hWB hf' (deadDefElim_fails hcong live hC (failsE_fails_noLoops hss h))
+    {t : AssertId P} {e : P.Expr} (hC : WellFormedStore σ F) (h : FailsE F ss σ t e) :
+    FailsE F (deadDefElim live ss) σ t e :=
+  fails_failsE hWB (deadDefElim_fails hcong live hC (failsE_fails_noLoops hss h))
 
 /-! ## Traces of the output related event by event
 
@@ -484,9 +483,9 @@ theorem deadDefElimH_fails (hcong : WellFormedSemanticEvalExprCongr F)
 theorem deadDefElimH_failsE [HasBoolOps P] (hcong : WellFormedSemanticEvalExprCongr F)
     (hWB : WellFormedSemanticEvalBool (P := P) F)
     (live : List P.Ident) {ss : PStmts P} (hss : Block.noLoops ss = true) {σ : SemanticStore P}
-    {t : AssertId P} {e : P.Expr} (hC : WellFormedStore σ F) {hf : Bool}
-    (h : FailsE F hf ss σ t e) (hf' : Bool) : FailsE F hf' (deadDefElimH live ss) σ t e :=
-  deadDefElimH_eq live ss ▸ deadDefElim_failsE hcong hWB live hss hC h hf'
+    {t : AssertId P} {e : P.Expr} (hC : WellFormedStore σ F) (h : FailsE F ss σ t e) :
+    FailsE F (deadDefElimH live ss) σ t e :=
+  deadDefElimH_eq live ss ▸ deadDefElim_failsE hcong hWB live hss hC h
 
 /-- **A reach of a list, and of the executable pass's output**: a reach of `ss` from the
     value-valued `σ` emitting a nonempty trace gives a reach of `deadDefElimH live ss` from `σ`

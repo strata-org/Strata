@@ -259,11 +259,10 @@ public section
 /-! ## Final environments of the output -/
 
 /-- The environment `ρ'` at the end of a run of the output of `deadDefElim` corresponds to the
-    environment `ρ` at the end of the source run: same factory and failure flag, and the store
-    of `ρ'` is the store of `ρ` with some bindings removed. -/
+    environment `ρ` at the end of the source run: same factory, and the store of `ρ'` is the
+    store of `ρ` with some bindings removed. -/
 @[expose] def DDOut (ρ ρ' : Env Expression) : Prop :=
-  ρ'.factory = ρ.factory ∧ ρ'.hasFailure = ρ.hasFailure ∧
-    StoreAgreement ρ'.store ρ.store
+  ρ'.factory = ρ.factory ∧ StoreAgreement ρ'.store ρ.store
 
 /-! ## Call-free Core runs are runs over `EvalE` -/
 
@@ -287,18 +286,15 @@ private theorem step_evalE {π : String → Option Procedure} {c c' : Config Exp
     | cmd_sem h => exact ⟨.step_cmd h, trivial⟩
     | call_sem => simp [CallFree, Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts,
         Statement.isNotCall] at hI
-  | step_admin h =>
-    refine ⟨.step_admin h, ?_⟩
-    induction h with
-    | step_seq_inner _ ih => exact ⟨ih hI.1, hI.2⟩
-    | step_block_body _ ih => exact ih hI
-    | _ => simp_all [CallFree, Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts]
   | step_seq_inner _ ih =>
     obtain ⟨h1, h2⟩ := ih hI.1
     exact ⟨.step_seq_inner h1, h2, hI.2⟩
   | step_block_body _ ih =>
     obtain ⟨h1, h2⟩ := ih hI
     exact ⟨.step_block_body h1, h2⟩
+  | _ =>
+    refine ⟨by constructor <;> assumption, ?_⟩
+    simp_all [CallFree, Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts]
 
 /-- A Core run of a call-free configuration is a run over `EvalE`. -/
 theorem star_evalE {π : String → Option Procedure} {c c' : Config Expression Command}
@@ -321,9 +317,9 @@ theorem star_core (π : String → Option Procedure) {c c' : Config Expression C
     cases cmd with
     | cmd => exact .step_cmd (EvalCmdExtE.cmd_sem h)
     | call => exact h.elim
-  | step_admin h => exact .step_admin h
   | step_seq_inner _ ih => exact .step_seq_inner ih
   | step_block_body _ ih => exact .step_block_body ih
+  | _ => constructor <;> assumption
 
 /-! ## Initial-environment well-formedness of the output -/
 

@@ -235,7 +235,6 @@ theorem assume_run_inv {l : String} {e : Core.Expression.Expr}
           injection hcfg with hρ
           subst hρ
           exact ⟨by simp, rfl⟩
-      | step_admin hadmin => cases hadmin with | step_cmd hf => exact hf.elim
   · cases hexit with
     | step _ emitted _ restTr _ hstep hrest =>
       cases hstep with
@@ -246,7 +245,6 @@ theorem assume_run_inv {l : String} {e : Core.Expression.Expr}
           | eval_assume =>
           obtain ⟨hcfg, _⟩ := stepStmtStarE_from_terminal hrest
           simp at hcfg
-      | step_admin hadmin => cases hadmin with | step_cmd hf => exact hf.elim
 
 /-- An `assert` statement emits its captured condition and preserves its environment. -/
 theorem assert_run_inv {l : String} {e : Core.Expression.Expr}
@@ -271,7 +269,6 @@ theorem assert_run_inv {l : String} {e : Core.Expression.Expr}
           injection hcfg with hρ
           subst hρ
           exact ⟨by simp, rfl⟩
-      | step_admin hadmin => cases hadmin with | step_cmd hf => exact hf.elim
   · cases hexit with
     | step _ emitted _ restTr _ hstep hrest =>
       cases hstep with
@@ -282,7 +279,6 @@ theorem assert_run_inv {l : String} {e : Core.Expression.Expr}
           | eval_assert =>
           obtain ⟨hcfg, _⟩ := stepStmtStarE_from_terminal hrest
           simp at hcfg
-      | step_admin hadmin => cases hadmin with | step_cmd hf => exact hf.elim
 
 end CoreHoareTestSupport
 

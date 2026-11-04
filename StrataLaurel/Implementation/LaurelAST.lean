@@ -2803,7 +2803,11 @@ structure Constant where
   type : HighTypeMd
   initializer : Option StmtExprMd := none
 
+/-- A field of a lowered composite type, declared at program level. -/
 structure HeapField extends Field where
+  /-- The field's storage location, `Owner.field`. `Owner` is the declaring
+      composite, or the generic family it instantiates, so all instantiations of a
+      generic composite share one location per field. -/
   location : Identifier
 
 /--
@@ -2821,6 +2825,9 @@ structure LaurelProgram where
   types : List TypeDefinition
   /-- Named constants. -/
   constants : List Constant := []
+  /-- Fields of composite types, named `Composite.field`. Empty in a front end's
+      program; `LowerComposite` fills it in place of the composites' own fields,
+      and `HeapParameterization` clears it again. -/
   heapFields : List HeapField := []
   deriving Inhabited
 

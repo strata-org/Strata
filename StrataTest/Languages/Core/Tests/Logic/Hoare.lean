@@ -265,8 +265,7 @@ via a *stuck* clause needs a proof, not a computation. -/
 
 private def xIs1Env : Imperative.Env Core.Expression :=
   { store := fun n => if n.name = "x" then some eb[#1] else none
-    factory := Core.Factory
-    hasFailure := false }
+    factory := Core.Factory }
 
 /-- `xIs1Env` holds only values: its single binding is the literal `1`, which is a
     value in every factory.  The well-formedness conditions require this of any
@@ -317,13 +316,13 @@ private theorem run_procBlock_nil (π : String → Option Core.Procedure)
   have heq : ({ ρ with store := Imperative.projectStore ρ.store ρ.store }
       : Imperative.Env Core.Expression) = ρ := by
     simp [Imperative.projectStore_self]
-  refine .step _ [] _ [] _ (.step_admin .step_stmts_cons) ?_
-  refine .step _ [] _ [] _ (.step_admin (.step_seq_inner .step_block)) ?_
-  refine .step _ [] _ [] _ (.step_admin (.step_seq_inner (.step_block_body .step_stmts_nil))) ?_
-  refine .step _ [] _ [] _ (.step_admin (.step_seq_inner .step_block_done)) ?_
-  refine .step _ [] _ [] _ (.step_admin .step_seq_done) ?_
+  refine .step _ [] _ [] _ .step_stmts_cons ?_
+  refine .step _ [] _ [] _ (.step_seq_inner .step_block) ?_
+  refine .step _ [] _ [] _ (.step_seq_inner (.step_block_body .step_stmts_nil)) ?_
+  refine .step _ [] _ [] _ (.step_seq_inner .step_block_done) ?_
+  refine .step _ [] _ [] _ .step_seq_done ?_
   rw [heq]
-  exact .step _ [] _ [] _ (.step_admin .step_stmts_nil) (.refl _)
+  exact .step _ [] _ [] _ .step_stmts_nil (.refl _)
 
 /-- The empty trace is reachable. -/
 private theorem reachable_nil (model : Lambda.Interp Core.Factory) :
@@ -1934,8 +1933,7 @@ example (x : Core.Expression.Ident) (ty : Core.Expression.Ty)
         (fun ρ => ρ.store x = some (Lambda.LExpr.const () (.intConst 1))) := by
   intro h
   have hbad := h
-    { store := fun y => if y = x then some (Lambda.LExpr.const () (.intConst 1)) else none, factory := Core.Factory,
-      hasFailure := false } (by simp)
+    { store := fun y => if y = x then some (Lambda.LExpr.const () (.intConst 1)) else none, factory := Core.Factory } (by simp)
   simp [Imperative.dropVars, Imperative.Block.definedVars,
     Imperative.Stmt.definedVars, Imperative.HasVarsImp.definedVars,
     Imperative.CmdExt.definedVars, Imperative.Cmd.definedVars] at hbad

@@ -132,8 +132,8 @@ theorem ssa_overapproximatesTraces (π : String → Option Procedure) (params : 
   have hgate := ssaEntry_blockInitEnvWF hp hal hss htf hfv hrel.factory hrel.entry hrel.params
     hrel.tyOK hrel.dom hwf
   obtain ⟨rfl, -⟩ := ssaEntry_ok hss
-  obtain ⟨σ₀, F, hf⟩ := ρ₀
-  obtain ⟨σ₀', F', hf'⟩ := ρ₀'
+  obtain ⟨σ₀, F⟩ := ρ₀
+  obtain ⟨σ₀', F'⟩ := ρ₀'
   obtain rfl : F = F' := hrel.factory.symm
   have hC : WellFormedStore σ₀ F := hwf.storeWellDefined
   have hWB := hwf.bool
@@ -160,11 +160,11 @@ theorem ssa_overapproximatesTraces (π : String → Option Procedure) (params : 
       exact ⟨_, [], .refl _, .nil⟩
     obtain ⟨tr', hw, rfl | hb⟩ := hsim.1 (star_breach_noLoops hnl h' htr)
     · exact ⟨_, [], .refl _, hw⟩
-    obtain ⟨cfg', hc⟩ := breach_star hWB hb hf'
+    obtain ⟨cfg', hc⟩ := breach_star hWB hb
     exact ⟨cfg', tr', star_core π hc, hw⟩
   · have h' := star_evalE h hnc
     obtain ⟨σL', -, tr', σS', hb, hw⟩ := hsim.2 harm ((star_brun_noLoops hnl).1 h')
-    exact ⟨_, tr', star_core π (brun_star hWB hb hf'), (star_getEnv h').1.symm, hw⟩
+    exact ⟨_, tr', star_core π (brun_star hWB hb), starE_preserves_factory h', hw⟩
   · obtain ⟨σL', ho, -⟩ := hsim.2 harm ((star_brun_noLoops hnl).2 (star_evalE h hnc))
     cases ho
 

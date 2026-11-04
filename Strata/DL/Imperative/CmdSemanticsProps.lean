@@ -31,37 +31,23 @@ Key results:
 
 namespace Imperative
 
-/-! # Metatheory of command evaluation (`EvalCmd`)
+/-! # Metatheory of command evaluation (`EvalCmdE`)
 
 Store-agreement, definedness, and none-preservation results for the single-command
-evaluation relation `EvalCmd`. Key results:
+evaluation relation `EvalCmdE`. Key results:
 
 - Command-state definedness and uniqueness plumbing for `InitState` and
   `UpdateState`.
-- `EvalCmd_preserves_isSome`: a command never undefines an already-defined slot.
-- Typed-slot preservation: `InitState_typedAt`, `UpdateState_typedAt`, and
-  `EvalCmd_preserves_typedAt` preserve a slot's recorded value type across
-  initialization, update, and command evaluation.
-- Exact-value framing: `evalCmd_preserves_eq_of_not_written` preserves the value
-  of a slot the command neither defines nor modifies.
-- None-preservation: `InitState_preserves_none`, `UpdateState_preserves_none`,
-  `evalCmd_preserves_none`, `evalCmd_preserves_none_of_not_def`, and
-  `evalCmd_preserves_src_fresh` preserve undefined slots and classified
-  families of undefined slots.
-- `evalCmd_definedVars_isSome`: the converse — a command defines every slot it
-  declares.  Together with the previous item this pins the store domain exactly.
-- `evalCmd_storeWellDefined`: a command leaves a store that holds only values,
-  given that it started from one.
-- Event-trace store preservation: `evalCmdE_preserves_none_of_not_def`,
-  `evalCmdE_preserves_isSome`, `evalCmdE_definedVars_isSome`, and
-  `evalCmdE_storeWellDefined` provide the corresponding domain and value
-  guarantees for `EvalCmdE`.
+- Typed-slot preservation: `InitState_typedAt` and `UpdateState_typedAt`
+  preserve a slot's recorded value type across initialization and update.
+- None-preservation: `InitState_preserves_none` and `UpdateState_preserves_none`
+  preserve undefined slots.
+- Store domain and values: `evalCmdE_preserves_none_of_not_def`,
+  `evalCmdE_preserves_isSome`, `evalCmdE_definedVars_isSome` (a command defines
+  every slot it declares), and `evalCmdE_storeWellDefined` (a command leaves a
+  store that holds only values, given that it started from one).
 - `EvalCmdE.emitted_eq`: event-producing command evaluation emits exactly the
   trace determined by the command and input snapshot.
-- `EvalCmd.toEvalCmdE`: every failure-flag command execution has an
-  event-producing execution with the same resulting store and the exact trace
-  selected by `Cmd.emittedEvents`; the converse is intentionally unavailable
-  for unconditional event assertions and assumptions.
 - List-level store relations (`EvalExpressions`, `ReadValues`, `UpdateStates`,
   `InitStates`): lengths (`ReadValuesLength`, `InitStatesLength`,
   `UpdateStatesLength`), uniqueness (`ReadValuesInjective`, `InitStatesInjective`),
@@ -81,12 +67,12 @@ public section
 
 /-- Unfolding of `SubstStoreAgreement` to its pointwise form: wherever `σ_src` is
 defined, its value equals `σ_tgt` at the renamed key. Lets callers reason about
-the relation directly without going through `StoreAgreement`/`isDefined`. -/
+the relation directly without going through `StoreAgreement`/`SemanticStore.varsDefined`. -/
 @[simp] theorem substStoreAgreement_iff {P : PureExpr}
     (subst : List (P.Ident × P.Ident)) (σ_src σ_tgt : SemanticStore P) :
     SubstStoreAgreement subst σ_src σ_tgt ↔
     ∀ x, (σ_src x).isSome → σ_src x = σ_tgt (renameLookup subst x) := by
-  unfold SubstStoreAgreement StoreAgreement isDefined
+  unfold SubstStoreAgreement StoreAgreement SemanticStore.varsDefined
   constructor
   · intro h x hx
     exact h x (fun v hv => by rw [List.mem_singleton.mp hv]; exact hx)
@@ -141,13 +127,13 @@ theorem eval_rename_seam {P : PureExpr} [HasVal P] [HasFvar P] [HasOps P] [Lawfu
 theorem InitStateDefCons
   {P : PureExpr} {σ σ' : SemanticStore P}
   {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isDefined σ vs →
+  SemanticStore.varsDefined (· ∈ vs) σ →
   InitState P σ v e σ' →
-  isDefined σ' (v::vs) := by
+  SemanticStore.varsDefined (· ∈ (v::vs)) σ' := by
   intros Hdef Heval
   cases Heval with
   | init Hold HH Hsome =>
-  simp only [isDefined, ne_eq, HH, List.mem_cons, forall_eq_or_imp, Option.isSome_some, true_and] at *
+  simp only [SemanticStore.varsDefined, ne_eq, HH, List.mem_cons, forall_eq_or_imp, Option.isSome_some, true_and] at *
   intros v' Hv'
   have Heq: ¬ v = v' :=by
     false_or_by_contra; rename_i Heq
@@ -160,9 +146,9 @@ theorem InitStateDefCons
 theorem InitStateDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
   {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isDefined σ vs →
+  SemanticStore.varsDefined (· ∈ vs) σ →
   InitState P σ v e σ' →
-  isDefined σ' vs := by
+  SemanticStore.varsDefined (· ∈ vs) σ' := by
   intros Hdef Heval
   exact (isDefinedCons' (InitStateDefCons Hdef Heval)).right
 
@@ -170,22 +156,22 @@ theorem UpdateStateDef
   {P : PureExpr} {σ σ' : SemanticStore P}
   {e : P.Expr} {v : P.Ident} :
   UpdateState P σ v e σ' →
-  isDefined σ [v] ∧ isDefined σ' [v] := by
+  SemanticStore.varsDefined (· ∈ [v]) σ ∧ SemanticStore.varsDefined (· ∈ [v]) σ' := by
   intro Heval
   cases Heval with
   | update Hold HH Hsome =>
-  simp_all [isDefined]
+  simp_all [SemanticStore.varsDefined]
 
 theorem UpdateStateDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
   {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isDefined σ vs →
+  SemanticStore.varsDefined (· ∈ vs) σ →
   UpdateState P σ v e σ' →
-  isDefined σ' vs := by
+  SemanticStore.varsDefined (· ∈ vs) σ' := by
   intros Hdef Heval
   cases Heval with
   | update Hold HH Hsome =>
-  simp only [isDefined, ne_eq] at *
+  simp only [SemanticStore.varsDefined, ne_eq] at *
   intros v' Hv'
   by_cases Heq: (v = v')
   case pos =>
@@ -233,13 +219,6 @@ theorem InitStateUniqueResult
   simp_all
 
 /-! ### Assert / set commutation -/
-
-theorem eval_assert_store_cst
-  [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P]:
-  EvalCmd P fac σ (.assert l e md) σ' f → σ = σ' := by
-  intros Heval; cases Heval with
-  | eval_assert_pass _ => rfl
-  | eval_assert_fail _ => rfl
 
 theorem UpdateStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ1 σ2: SemanticStore P} {v1 v2: P.Expr}
   [DecidableEq P.Ident]:
@@ -293,69 +272,6 @@ theorem UpdateState_InitStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ
   specialize Hfa4 i Heq1
   simp_all
 
-theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
-  [HasVarsImp P (Cmd P)] [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]:
-  WellFormedSemanticEvalExprCongr (P := P) fac →
-  WellFormedStore σ fac →
-  WellFormedStore σ' fac →
-  ¬ v ∈ HasFvars.getFvars e →
-  EvalCmd P fac σ (Cmd.set v (.det e') md) σ' f →
-  P.eval fac σ e = P.eval fac σ' e := by
-  intro Hwf Hwfs Hwfs' Hnin Heval
-  unfold WellFormedSemanticEvalExprCongr at Hwf
-  specialize Hwf e σ σ' Hwfs Hwfs'
-  have: ∀ (v : P.Ident), v ∈ HasFvars.getFvars e → σ v = σ' v := by
-    cases Heval
-    rename_i Hu
-    cases Hu
-    rename_i Hfa _
-    intro v' Hv'
-    ext e'
-    by_cases Hc: ¬ v = v'
-    specialize Hfa v' Hc
-    simp_all
-    simp_all
-  exact Hwf this
-
-theorem eval_cmd_set_comm'
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
-  [HasFvar P] [HasBool P] [HasBoolOps P] [HasOps P] [DecidableEq P.Ident] :
-  ¬ x1 = x2 →
-  P.eval fac σ v1 = P.eval fac σ2 v1 →
-  P.eval fac σ v2 = P.eval fac σ1 v2 →
-  EvalCmd P fac σ (Cmd.set x1 (.det v1) md1) σ1 f1 →
-  EvalCmd P fac σ1 (Cmd.set x2 (.det v2) md2) σ' f2 →
-  EvalCmd P fac σ (Cmd.set x2 (.det v2) md2') σ2 f3 →
-  EvalCmd P fac σ2 (Cmd.set x1 (.det v1) md1') σ'' f4 →
-  σ' = σ'' := by
-  intro Hneq Heq1 Heq2 Hs1 Hs2 Hs3 Hs4
-  cases Hs1 with | eval_set _ Hu1 _ =>
-  cases Hs2 with | eval_set _ Hu2 _ =>
-  cases Hs3 with | eval_set _ Hu3 _ =>
-  cases Hs4 with | eval_set _ Hu4 _ =>
-  simp_all only [Option.some.injEq]
-  exact UpdateStateComm Hneq Hu1 Hu2 Hu3 Hu4
-
-theorem eval_cmd_set_comm
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
-  [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P] [DecidableEq P.Ident]:
-  WellFormedSemanticEvalExprCongr (P := P) fac →
-  WellFormedStore σ fac →
-  WellFormedStore σ1 fac →
-  WellFormedStore σ2 fac →
-  ¬ x1 = x2 →
-  ¬ x1 ∈ HasFvars.getFvars v2 →
-  ¬ x2 ∈ HasFvars.getFvars v1 →
-  EvalCmd P fac σ (Cmd.set x1 (.det v1) md1) σ1 f1 →
-  EvalCmd P fac σ1 (Cmd.set x2 (.det v2) md2) σ' f2 →
-  EvalCmd P fac σ (Cmd.set x2 (.det v2) md2') σ2 f3 →
-  EvalCmd P fac σ2 (Cmd.set x1 (.det v1) md1') σ'' f4 →
-  σ' = σ'' := by
-  intro Hwf Hwfs Hwfs1 Hwfs2 Hneq Hnin1 Hnin2 Hs1 Hs2 Hs3 Hs4
-  have Heval2 := semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hwfs Hwfs1 Hnin1 Hs1
-  have Heval1 := semantic_eval_eq_of_eval_cmd_set_unrelated_var Hwf Hwfs Hwfs2 Hnin2 Hs3
-  exact eval_cmd_set_comm' Hneq Heval1 Heval2 Hs1 Hs2 Hs3 Hs4
-
 /-- `InitState` never undefines a slot: its target becomes `some`, others are
 unchanged. -/
 theorem InitState_preserves_isSome {P : PureExpr} {σ σ' : SemanticStore P}
@@ -379,35 +295,13 @@ theorem UpdateState_preserves_isSome {P : PureExpr} {σ σ' : SemanticStore P}
     · subst hxy; rw [h_xv]; rfl
     · rw [h_other y hxy]; exact h_some
 
-/-- A single `EvalCmd` never undefines a slot: any `y` that was `isSome` stays
-`isSome` (`init`/`set` only assign `some`; `assert`/`assume`/`cover` keep the
-store). -/
-theorem EvalCmd_preserves_isSome {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident]
-    {δ : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
-    (h : EvalCmd P δ σ c σ' haf)
-    {y : P.Ident} (h_some : (σ y).isSome = true) :
-    (σ' y).isSome = true := by
-  cases h with
-  | eval_init _ hinit _ _ =>
-    exact InitState_preserves_isSome hinit h_some
-  | eval_init_unconstrained hinit _ _ =>
-    exact InitState_preserves_isSome hinit h_some
-  | eval_set _ hupd _ _ =>
-    exact UpdateState_preserves_isSome hupd h_some
-  | eval_set_nondet hupd _ _ =>
-    exact UpdateState_preserves_isSome hupd h_some
-  | eval_assert_pass _ _ => exact h_some
-  | eval_assert_fail _ _ => exact h_some
-  | eval_assume _ _ => exact h_some
-  | eval_cover _ => exact h_some
-
-/-! ## Typed-slot preservation through a single command
+/-! ## Typed-slot preservation through a state update
 
 The typed (`valueOfTy`) strengthening of the `isSome` family above.  The written
 `set` premise (`valueOfStoredTy`) forces the new value to SHARE a type with the
 old one; `valueOfTy_congr` (from `LawfulHasVal`) then transfers the old slot's
 declared type to the new value, so a slot keeps its recorded type across any
-command that writes it. -/
+update that writes it. -/
 
 /-- `InitState` preserves a typed slot: the init target starts `none`, so it cannot
 be the (already-defined) slot `y`, whose value is left untouched. -/
@@ -445,24 +339,6 @@ theorem UpdateState_typedAt {P : PureExpr} [HasVal P] [HasFvars P] [LawfulHasVal
       exact ⟨v, h_xv, LawfulHasVal.valueOfTy_congr f p v ty t hprev_ty hp_t hv_t⟩
     · rw [h_other y hxy]; exact ⟨prev, hprev, hprev_ty⟩
 
-/-- A single `EvalCmd` preserves a typed slot at any fixed type. -/
-theorem EvalCmd_preserves_typedAt {P : PureExpr}
-    [HasFvar P] [HasBool P] [HasBoolOps P] [DecidableEq P.Ident] [HasFvars P] [LawfulHasVal P]
-    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
-    (h : EvalCmd P f σ c σ' haf)
-    {y : P.Ident} {ty : P.Ty}
-    (hy : ∃ prev, σ y = some prev ∧ HasVal.valueOfTy f prev ty) :
-    ∃ prev, σ' y = some prev ∧ HasVal.valueOfTy f prev ty := by
-  cases h with
-  | eval_init _ hinit _ _ => exact InitState_typedAt hinit hy
-  | eval_init_unconstrained hinit _ _ => exact InitState_typedAt hinit hy
-  | eval_set _ hupd hstored _ => exact UpdateState_typedAt hupd hstored hy
-  | eval_set_nondet hupd hstored _ => exact UpdateState_typedAt hupd hstored hy
-  | eval_assert_pass _ _ => exact hy
-  | eval_assert_fail _ _ => exact hy
-  | eval_assume _ _ => exact hy
-  | eval_cover _ => exact hy
-
 /-- `InitState` leaves every slot other than its target unchanged. -/
 theorem InitState_preserves_none {P : PureExpr} {σ σ' : SemanticStore P}
     {x : P.Ident} {v : P.Expr} {y : P.Ident}
@@ -483,98 +359,6 @@ theorem UpdateState_preserves_none {P : PureExpr} {σ σ' : SemanticStore P}
     · subst hxy; rw [h_none] at h_was; exact absurd h_was (by simp)
     · rw [h_other y hxy]; exact h_none
 
-/-- A single `EvalCmd` whose command neither defines nor modifies `y` preserves
-a `none` slot at `y`. -/
-theorem evalCmd_preserves_none {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
-    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
-    (h : EvalCmd P f σ c σ' haf)
-    {y : P.Ident}
-    (h_none : σ y = none)
-    (h_not_def : y ∉ Cmd.definedVars c)
-    (h_not_mod : y ∉ Cmd.modifiedVars c) :
-    σ' y = none := by
-  cases h with
-  | eval_init _ hinit _ _ =>
-    cases hinit with
-    | init _ _ h_other =>
-      rw [h_other y (by
-        intro h
-        subst h
-        exact h_not_def (by simp [Cmd.definedVars]))]
-      exact h_none
-  | eval_init_unconstrained hinit _ _ =>
-    cases hinit with
-    | init _ _ h_other =>
-      rw [h_other y (by
-        intro h
-        subst h
-        exact h_not_def (by simp [Cmd.definedVars]))]
-      exact h_none
-  | eval_set _ hupd _ _ =>
-    exact UpdateState_preserves_none hupd h_none
-  | eval_set_nondet hupd _ _ =>
-    exact UpdateState_preserves_none hupd h_none
-  | eval_assert_pass _ _ => exact h_none
-  | eval_assert_fail _ _ => exact h_none
-  | eval_assume _ _ => exact h_none
-  | eval_cover _ => exact h_none
-
-/-- A single `EvalCmd` whose command writes no `Q`-classified variable
-preserves undefinedness of all `Q`-classified slots. -/
-theorem evalCmd_preserves_src_fresh {P : PureExpr} [HasFvar P] [HasFvars P]
-    [HasBoolOps P] [HasIdent P]
-    {Q : String → Prop}
-    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
-    (h : EvalCmd P f σ c σ' haf)
-    (h_src_fresh : ∀ name, Q name →
-      σ (HasIdent.ident (P := P) name) = none)
-    (h_no_writes : ∀ name : String, Q name →
-      HasIdent.ident (P := P) name ∉
-        (Cmd.definedVars c ++ Cmd.modifiedVars c)) :
-    ∀ name, Q name →
-      σ' (HasIdent.ident (P := P) name) = none := by
-  intro name hQ
-  have h_none : σ (HasIdent.ident (P := P) name) = none :=
-    h_src_fresh name hQ
-  refine evalCmd_preserves_none (P := P) h h_none ?_ ?_
-  · intro h_mem
-    exact h_no_writes name hQ (List.mem_append_left _ h_mem)
-  · intro h_mem
-    exact h_no_writes name hQ (List.mem_append_right _ h_mem)
-
-/-- **Exact-value frame.**  A single `EvalCmd` whose command neither defines nor
-modifies `y` preserves the *exact* value at `y`: `σ' y = σ y`.  This is the
-value-level companion of `evalCmd_preserves_none`/`EvalCmd_preserves_isSome`. -/
-theorem evalCmd_preserves_eq_of_not_written {P : PureExpr}
-    [HasFvar P] [HasFvars P] [HasBoolOps P]
-    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {haf : Bool}
-    (h : EvalCmd P f σ c σ' haf)
-    {y : P.Ident}
-    (h_not_def : y ∉ Cmd.definedVars c)
-    (h_not_mod : y ∉ Cmd.modifiedVars c) :
-    σ' y = σ y := by
-  cases h with
-  | eval_init _ hinit _ _ =>
-    cases hinit with
-    | init _ _ h_other =>
-      exact h_other y (by intro heq; subst heq; exact h_not_def (by simp [Cmd.definedVars]))
-  | eval_init_unconstrained hinit _ _ =>
-    cases hinit with
-    | init _ _ h_other =>
-      exact h_other y (by intro heq; subst heq; exact h_not_def (by simp [Cmd.definedVars]))
-  | eval_set _ hupd _ _ =>
-    cases hupd with
-    | update _ _ h_other =>
-      exact h_other y (by intro heq; subst heq; exact h_not_mod (by simp [Cmd.modifiedVars]))
-  | eval_set_nondet hupd _ _ =>
-    cases hupd with
-    | update _ _ h_other =>
-      exact h_other y (by intro heq; subst heq; exact h_not_mod (by simp [Cmd.modifiedVars]))
-  | eval_assert_pass _ _ => rfl
-  | eval_assert_fail _ _ => rfl
-  | eval_assume _ _ => rfl
-  | eval_cover _ => rfl
-
 /-- `InitState` writes `some v`, so the slot cannot come back `none`. -/
 private theorem initState_isSome {P : PureExpr}
     {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Expr}
@@ -582,53 +366,7 @@ private theorem initState_isSome {P : PureExpr}
   cases h with
   | init _ h_some _ => rw [h_some]; simp
 
-/-- **Declarations take effect.**  A command that declares `y` leaves `y` defined in the
-    resulting store.  Only `init` declares variables. -/
-theorem evalCmd_definedVars_isSome {P : PureExpr}
-    [HasFvar P] [HasBool P] [HasBoolOps P]
-    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {hf : Bool} {y : P.Ident}
-    (h_eval : EvalCmd P f σ c σ' hf)
-    (h_def : y ∈ Cmd.definedVars c) :
-    (σ' y).isSome = true := by
-  cases h_eval with
-  | eval_init _ h_init _ =>
-    simp only [Cmd.definedVars, List.mem_singleton] at h_def
-    subst h_def; exact initState_isSome h_init
-  | eval_init_unconstrained h_init _ _ =>
-    simp only [Cmd.definedVars, List.mem_singleton] at h_def
-    subst h_def; exact initState_isSome h_init
-  | eval_set _ _ _ => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
-  | eval_set_nondet _ _ _ => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
-  | eval_assert_pass _ _ => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
-  | eval_assert_fail _ _ => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
-  | eval_assume _ _ => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
-  | eval_cover _ => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
-
-/-- A single command preserves a `none` slot `y` that the command does not
-`init`/`set` as its target. -/
-theorem evalCmd_preserves_none_of_not_def {P : PureExpr}
-    [HasFvar P] [HasFvars P] [HasBoolOps P] [DecidableEq P.Ident]
-    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {hf : Bool} {y : P.Ident}
-    (h_eval : EvalCmd P f σ c σ' hf)
-    (h_none : σ y = none)
-    (h_not_def : y ∉ Cmd.definedVars c) :
-    σ' y = none := by
-  simp only [Cmd.definedVars] at h_not_def
-  cases h_eval with
-  | eval_init _ h_is _ =>
-    rw [InitState_preserves_none h_is (fun h => h_not_def (h ▸ List.mem_singleton.mpr rfl))]
-    exact h_none
-  | eval_init_unconstrained h_is _ _ =>
-    rw [InitState_preserves_none h_is (fun h => h_not_def (h ▸ List.mem_singleton.mpr rfl))]
-    exact h_none
-  | eval_set _ h_us _ => exact UpdateState_preserves_none h_us h_none
-  | eval_set_nondet h_us _ _ => exact UpdateState_preserves_none h_us h_none
-  | eval_assert_pass _ _ => exact h_none
-  | eval_assert_fail _ _ => exact h_none
-  | eval_assume _ _ => exact h_none
-  | eval_cover _ => exact h_none
-
-/-- Event-trace analogue of `evalCmd_preserves_none_of_not_def`: an `EvalCmdE`
+/-- An `EvalCmdE`
 step preserves a `none` slot `y` it does not `init`/`set`.  `assert`/`assume`/
 `cover` leave the store unchanged; `init`/`set` change only their target. -/
 theorem evalCmdE_preserves_none_of_not_def {P : PureExpr}
@@ -652,7 +390,7 @@ theorem evalCmdE_preserves_none_of_not_def {P : PureExpr}
   | eval_assume => exact h_none
   | eval_cover => exact h_none
 
-/-- Event-trace analogue of `EvalCmd_preserves_isSome`: an `EvalCmdE` step never
+/-- An `EvalCmdE` step never
 undefines a slot.  `init`/`set` only assign `some`; `assert`/`assume`/`cover`
 keep the store. -/
 theorem evalCmdE_preserves_isSome {P : PureExpr} [HasFvar P] [HasBool P]
@@ -671,7 +409,7 @@ theorem evalCmdE_preserves_isSome {P : PureExpr} [HasFvar P] [HasBool P]
   | eval_assume => exact h_some
   | eval_cover => exact h_some
 
-/-- Event-trace analogue of `evalCmd_definedVars_isSome`: a command that declares
+/-- **Declarations take effect.**  A command that declares
 `y` leaves it defined.  Only `init` declares variables. -/
 theorem evalCmdE_definedVars_isSome {P : PureExpr} [HasFvar P] [HasBool P]
     {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P} {y : P.Ident}
@@ -691,44 +429,7 @@ theorem evalCmdE_definedVars_isSome {P : PureExpr} [HasFvar P] [HasBool P]
   | eval_assume => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
   | eval_cover => simp only [Cmd.definedVars, List.not_mem_nil] at h_def
 
-/-- **A command leaves the store holding only values.**  Every writing rule supplies
-    value-hood for what it writes, and the rest do not touch the store. -/
-theorem evalCmd_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
-    [HasFvars P] [LawfulHasVal P]
-    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {fl : Bool}
-    (hval : WellFormedSemanticEvalVal (P := P) f)
-    (h : EvalCmd P f σ c σ' fl) (hsv : WellFormedStore σ f) :
-    WellFormedStore σ' f := by
-  -- `InitState` and `UpdateState` differ only in what they require of the old
-  -- store, so one helper covers all four writing rules.
-  have hwrite : ∀ (x : P.Ident) (v : P.Expr), HasVal.value f v →
-      σ' x = some v → (∀ y, x ≠ y → σ' y = σ y) → WellFormedStore σ' f := by
-    intro x v hv hx hoth z w hz
-    by_cases hzx : x = z
-    · subst hzx; rw [hx] at hz; cases hz; exact hv
-    · rw [hoth z hzx] at hz; exact hsv z w hz
-  cases h with
-  | eval_init heval hinit _ =>
-    cases hinit with
-    | init _ hx hoth => exact hwrite _ _ (hval.outputsAreValues _ _ σ hsv heval) hx hoth
-  | eval_init_unconstrained hinit hv _ =>
-    cases hinit with
-    | init _ hx hoth =>
-      exact hwrite _ _ (LawfulHasVal.valueOfTy_isVal _ _ _ hv) hx hoth
-  | eval_set heval hup _ =>
-    cases hup with
-    | update _ hx hoth => exact hwrite _ _ (hval.outputsAreValues _ _ σ hsv heval) hx hoth
-  | eval_set_nondet hup htyped _ =>
-    obtain ⟨_, _, _, _, hv⟩ := htyped
-    cases hup with
-    | update _ hx hoth =>
-      exact hwrite _ _ (LawfulHasVal.valueOfTy_isVal _ _ _ hv) hx hoth
-  | eval_assert_pass _ _ => exact hsv
-  | eval_assert_fail _ _ => exact hsv
-  | eval_assume _ _ => exact hsv
-  | eval_cover _ => exact hsv
-
-/-- Event-trace analogue of `evalCmd_storeWellDefined`: an `EvalCmdE` step leaves
+/-- An `EvalCmdE` step leaves
 a store that holds only values.  `assert`/`assume`/`cover` keep the store;
 `init`/`set` write a value. -/
 theorem evalCmdE_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasFvars P]
@@ -769,28 +470,6 @@ theorem EvalCmdE.emitted_eq {P : PureExpr} [HasFvar P] [HasBool P]
     (h : EvalCmdE P f σ c σ' emitted) :
     emitted = Cmd.emittedEvents P c f σ := by
   cases h <;> rfl
-
-/-- Forgetting the failure result of an existing command execution yields an
-event-producing execution with the same resulting store and exactly the trace
-selected by `Cmd.emittedEvents` from the command and its input snapshot.
-
-The converse does not hold in general because `EvalCmdE` treats assertions and
-assumptions as unconditional observations, while `EvalCmd` requires the partial
-evaluator to reduce them to a Boolean. -/
-theorem EvalCmd.toEvalCmdE {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
-    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {failed : Bool}
-    (h : EvalCmd P f σ c σ' failed) :
-    EvalCmdE P f σ c σ' (Cmd.emittedEvents P c f σ) := by
-  cases h with
-  | eval_init heval hinit htyped hvar => exact .eval_init heval hinit htyped hvar
-  | eval_init_unconstrained hinit hval hvar =>
-      exact .eval_init_unconstrained hinit hval hvar
-  | eval_set heval hupdate htyped hvar => exact .eval_set heval hupdate htyped hvar
-  | eval_set_nondet hupdate hval hvar => exact .eval_set_nondet hupdate hval hvar
-  | eval_assert_pass _ _ => exact .eval_assert
-  | eval_assert_fail _ _ => exact .eval_assert
-  | eval_assume _ _ => exact .eval_assume
-  | eval_cover _ => exact .eval_cover
 
 /-! ## List-level store relations
 
@@ -836,13 +515,13 @@ theorem UpdateStatesEmpty :
 theorem UpdateStateNotDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
   {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isNotDefined σ vs →
+  SemanticStore.varsUndefined (· ∈ vs) σ →
   UpdateState P σ v e σ' →
-  isNotDefined σ' vs := by
+  SemanticStore.varsUndefined (· ∈ vs) σ' := by
   intros Hdef Heval
   cases Heval with
   | update Hold HH Hsome =>
-  simp only [isNotDefined, ne_eq] at *
+  simp only [SemanticStore.varsUndefined, ne_eq] at *
   intros v' Hv'
   by_cases Heq: (v = v')
   case pos =>
@@ -857,9 +536,9 @@ theorem UpdateStateNotDefMonotone
 theorem UpdateStatesNotDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
   {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
-  isNotDefined σ vs →
+  SemanticStore.varsUndefined (· ∈ vs) σ →
   UpdateStates σ vs' es' σ' →
-  isNotDefined σ' vs := by
+  SemanticStore.varsUndefined (· ∈ vs) σ' := by
   intros Hdef Heval
   induction Heval with
   | update_none => assumption
@@ -873,13 +552,13 @@ theorem UpdateStatesNotDefMonotone
 theorem UpdateStateNotDefMonotone'
   {P : PureExpr} {σ σ' : SemanticStore P}
   {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isNotDefined σ' vs →
+  SemanticStore.varsUndefined (· ∈ vs) σ' →
   UpdateState P σ v e σ' →
-  isNotDefined σ vs := by
+  SemanticStore.varsUndefined (· ∈ vs) σ := by
   intros Hdef Heval
   cases Heval with
   | update Hold HH Hsome =>
-  simp only [isNotDefined, ne_eq] at *
+  simp only [SemanticStore.varsUndefined, ne_eq] at *
   intros v' Hv'
   by_cases Heq: (v = v')
   case pos =>
@@ -894,9 +573,9 @@ theorem UpdateStateNotDefMonotone'
 theorem UpdateStatesNotDefMonotone'
   {P : PureExpr} {σ σ' : SemanticStore P}
   {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
-  isNotDefined σ' vs →
+  SemanticStore.varsUndefined (· ∈ vs) σ' →
   UpdateStates σ vs' es' σ' →
-  isNotDefined σ vs := by
+  SemanticStore.varsUndefined (· ∈ vs) σ := by
   intros Hdef Heval
   induction Heval with
   | update_none => assumption
@@ -909,30 +588,30 @@ theorem UpdateStatesNotDefMonotone'
 theorem UpdateStateDefined
   {P : PureExpr} {σ σ' : SemanticStore P} {e : P.Expr} {v : P.Ident} :
   @UpdateState P σ v e σ' →
-  isDefined σ' [v] := by
+  SemanticStore.varsDefined (· ∈ [v]) σ' := by
   intros Hup
   cases Hup with
   | update Hold Hsome Hall =>
-  simp [isDefined, Option.isSome, Hsome]
+  simp [SemanticStore.varsDefined, Option.isSome, Hsome]
 
 /-- The updated slot is defined before the update. -/
 theorem UpdateStateDefined'
   {P : PureExpr} {σ σ' : SemanticStore P} {e : P.Expr} {v : P.Ident} :
   @UpdateState P σ v e σ' →
-  isDefined σ [v] := by
+  SemanticStore.varsDefined (· ∈ [v]) σ := by
   intros Hup
   cases Hup with
   | update Hold Hsome Hall =>
-  simp only [isDefined, List.mem_cons, List.not_mem_nil, or_false, Option.isSome, forall_eq]
+  simp only [SemanticStore.varsDefined, List.mem_cons, List.not_mem_nil, or_false, Option.isSome, forall_eq]
   split <;> simp_all
 
 /-- Updating a list of slots keeps every defined key defined. -/
 theorem UpdateStatesDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
   {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
-  isDefined σ vs →
+  SemanticStore.varsDefined (· ∈ vs) σ →
   UpdateStates σ vs' es' σ' →
-  isDefined σ' vs := by
+  SemanticStore.varsDefined (· ∈ vs) σ' := by
   intros Hdef Heval
   induction Heval with
   | update_none => assumption
@@ -946,13 +625,13 @@ theorem UpdateStatesDefMonotone
 theorem UpdateStateDefMonotone'
   {P : PureExpr} {σ σ' : SemanticStore P}
   {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
-  isDefined σ' vs →
+  SemanticStore.varsDefined (· ∈ vs) σ' →
   UpdateState P σ v e σ' →
-  isDefined σ vs := by
+  SemanticStore.varsDefined (· ∈ vs) σ := by
   intros Hdef Heval
   cases Heval with
   | update Hold HH Hsome =>
-  simp only [isDefined, ne_eq] at *
+  simp only [SemanticStore.varsDefined, ne_eq] at *
   intros v' Hv'
   by_cases Heq: (v = v')
   case pos =>
@@ -969,9 +648,9 @@ theorem UpdateStateDefMonotone'
 theorem UpdateStatesDefMonotone'
   {P : PureExpr} {σ σ' : SemanticStore P}
   {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
-  isDefined σ' vs →
+  SemanticStore.varsDefined (· ∈ vs) σ' →
   UpdateStates σ vs' es' σ' →
-  isDefined σ vs := by
+  SemanticStore.varsDefined (· ∈ vs) σ := by
   intros Hdef Heval
   induction Heval with
   | update_none => assumption
@@ -983,10 +662,10 @@ theorem UpdateStatesDefMonotone'
 /-- Every updated slot is defined after the updates. -/
 theorem UpdateStatesDefined :
   UpdateStates σ vs es σ' →
-  isDefined σ' vs := by
+  SemanticStore.varsDefined (· ∈ vs) σ' := by
   intros Hhavoc
   induction vs generalizing es σ σ'
-  case nil => simp [isDefined]
+  case nil => simp [SemanticStore.varsDefined]
   case cons h t ih =>
     cases Hhavoc with
     | @update_some _ _ v σ₁ _ _ Hup Hhav =>
@@ -998,10 +677,10 @@ theorem UpdateStatesDefined :
 /-- Every updated slot is defined before the updates. -/
 theorem UpdateStatesDefined' :
   UpdateStates σ vs es σ' →
-  isDefined σ vs := by
+  SemanticStore.varsDefined (· ∈ vs) σ := by
   intros Hhavoc
   induction vs generalizing es σ σ'
-  case nil => simp [isDefined]
+  case nil => simp [SemanticStore.varsDefined]
   case cons h t ih =>
     cases Hhavoc with
     | update_some Hup Hups =>
@@ -1013,12 +692,12 @@ theorem UpdateStatesDefined' :
 
 /-- Every initialized slot is undefined before the initialization. -/
 theorem InitStatesNotDefined :
-  InitStates σ hs vs σ' → isNotDefined σ hs := by
+  InitStates σ hs vs σ' → SemanticStore.varsUndefined (· ∈ hs) σ := by
   intros Hinit
-  induction Hinit <;> simp only [isNotDefined, List.not_mem_nil, false_implies, implies_true,
+  induction Hinit <;> simp only [SemanticStore.varsUndefined, List.not_mem_nil, false_implies, implies_true,
     List.mem_cons, forall_eq_or_imp]
   case init_some x v σ' xs vs σ'' Hinit Hinits ih =>
-    simp only [isNotDefined] at *
+    simp only [SemanticStore.varsUndefined] at *
     cases Hinit with
     | init Hnone Hsome Heq =>
     refine ⟨Hnone, ?_⟩
@@ -1402,7 +1081,7 @@ theorem InitStatesSomeMonotone'
 theorem isDefinedReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
   {σ : SemanticStore P} {ks : List P.Ident} :
   WellFormedStore σ f →
-  isDefined σ ks →
+  SemanticStore.varsDefined (· ∈ ks) σ →
   ∃ vs, ReadValues f σ ks vs := by
   intro hwf hdef
   induction ks with
@@ -1419,9 +1098,9 @@ the store. -/
 theorem ReadValuesIsDefined {P : PureExpr} [HasVal P] {f : P.Factory}
   {σ : SemanticStore P} {ks : List P.Ident} {vs : List P.Expr} :
   ReadValues f σ ks vs →
-  isDefined σ ks := by
+  SemanticStore.varsDefined (· ∈ ks) σ := by
   intros Hrd
-  induction Hrd <;> simp only [isDefined, List.not_mem_nil, Option.isSome, false_implies,
+  induction Hrd <;> simp only [SemanticStore.varsDefined, List.not_mem_nil, Option.isSome, false_implies,
     implies_true, List.mem_cons, forall_eq_or_imp]
   apply And.intro
   · split <;> simp_all
@@ -1583,10 +1262,11 @@ theorem ReadValuesSubstStores {P : PureExpr} [HasVal P] {f : P.Factory}
     · exact ih Ht Ht'
 
 /-- Initializing a list of slots keeps every defined key defined. -/
-theorem InitStatesDefMonotone :
-  isDefined σ vs →
+theorem InitStatesDefMonotone {P : PureExpr} {σ σ' : SemanticStore P}
+  {vs vs' : List P.Ident} {es' : List P.Expr} :
+  SemanticStore.varsDefined (· ∈ vs) σ →
   InitStates σ vs' es' σ' →
-  isDefined σ' vs := by
+  SemanticStore.varsDefined (· ∈ vs) σ' := by
   intros Hdef Hhavoc
   induction Hhavoc with
   | init_some Hup Hhav ih =>
@@ -1600,13 +1280,13 @@ theorem InitStateDefMonotone'
   {P : PureExpr} {σ σ' : SemanticStore P}
   {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
   ¬ v ∈ vs →
-  isDefined σ' vs →
+  SemanticStore.varsDefined (· ∈ vs) σ' →
   InitState P σ v e σ' →
-  isDefined σ vs := by
+  SemanticStore.varsDefined (· ∈ vs) σ := by
   intros Hnin Hdef Heval
   cases Heval with
   | init Hold HH Hsome =>
-  simp only [isDefined, ne_eq] at *
+  simp only [SemanticStore.varsDefined, ne_eq] at *
   intros v' Hv'
   by_cases Heq: (v = v')
   case pos =>
@@ -1621,11 +1301,12 @@ theorem InitStateDefMonotone'
 
 /-- Keys disjoint from the initialized slots that are defined after the initialization were
 defined before. -/
-theorem InitStatesDefMonotone' :
+theorem InitStatesDefMonotone' {P : PureExpr} {σ σ' : SemanticStore P}
+  {vs vs' : List P.Ident} {es' : List P.Expr} :
   vs.Disj vs' →
-  isDefined σ' vs →
+  SemanticStore.varsDefined (· ∈ vs) σ' →
   InitStates σ vs' es' σ' →
-  isDefined σ vs := by
+  SemanticStore.varsDefined (· ∈ vs) σ := by
   intros Hdisj Hdef Hhavoc
   induction Hhavoc with
   | init_none => assumption
@@ -1642,20 +1323,20 @@ theorem InitStatesDefMonotone' :
 
 /-- Every initialized slot is defined after the initialization. -/
 theorem InitStatesDefined :
-  InitStates σ hs vs σ' → isDefined σ' hs := by
+  InitStates σ hs vs σ' → SemanticStore.varsDefined (· ∈ hs) σ' := by
   intros Hinit
-  induction Hinit <;> simp only [isDefined, List.not_mem_nil, false_implies, implies_true,
+  induction Hinit <;> simp only [SemanticStore.varsDefined, List.not_mem_nil, false_implies, implies_true,
     List.mem_cons, forall_eq_or_imp]
   case init_some x v σ' xs vs σ'' Hinit Hinits ih =>
-    simp only [isDefined] at *
+    simp only [SemanticStore.varsDefined] at *
     cases Hinit with
     | init Hnone Hsome Heq =>
     refine ⟨?_, by simp_all⟩
-    have Hdef : isDefined σ'' [x] := by
+    have Hdef : SemanticStore.varsDefined (· ∈ [x]) σ'' := by
       apply InitStatesDefMonotone ?_ Hinits
-      simp only [isDefined, List.mem_cons, List.not_mem_nil, or_false, Option.isSome, forall_eq]
+      simp only [SemanticStore.varsDefined, List.mem_cons, List.not_mem_nil, or_false, Option.isSome, forall_eq]
       split <;> simp_all
-    simp only [isDefined, List.mem_cons, List.not_mem_nil, or_false, forall_eq] at Hdef
+    simp only [SemanticStore.varsDefined, List.mem_cons, List.not_mem_nil, or_false, forall_eq] at Hdef
     assumption
 
 /-- If two stores agree outside `ks`, updating slots `ks'` of the first keeps them agreeing

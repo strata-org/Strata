@@ -18,20 +18,12 @@ public section
 
 /-! ## Execution Environment
 
-An `Env` bundles the store, expression evaluator, and a cumulative failure
-flag into a single record.  The `hasFailure` flag is OR-ed with the
-per-command failure flag returned by `EvalCmdParam` at each `cmd_sem`,
-so it monotonically accumulates assertion failures along an execution path.
-
-The `hasFailure` flag is legacy: it belongs to the failure-flag semantics
-(`StepStmt`/`EvalCmd`) that the event-trace semantics (`StepStmtE`/`EvalCmdE`,
-which records assertion failures as trace events instead) is migrating away
-from.  It is planned for removal once the event-trace small-step semantics is
-adopted as the primary semantics.
+An `Env` bundles the store and the expression factory into a single record.
+Assertion outcomes are not part of the environment: the statement semantics
+`StepStmtE` records each assertion as a trace event instead.
 -/
 
-/-- Execution environment: store, expression factory, and cumulative failure
-flag. -/
+/-- Execution environment: store and expression factory. -/
 structure Env (P : PureExpr) where
   /-- The current variable store. -/
   store : SemanticStore P
@@ -40,8 +32,6 @@ structure Env (P : PureExpr) where
       every statement step preserves it, and leaving a block projects only the
       store. -/
   factory : P.Factory
-  /-- Cumulative failure flag — `true` once any command has signalled failure. -/
-  hasFailure : Bool := false
 
 /-- Lift a predicate on generated strings to the identifiers representing those
 strings. -/
@@ -61,11 +51,10 @@ abbrev Env.varsUndefined {P : PureExpr} [HasIdent P]
   ρ.store.varsUndefined (IdentOfStringKind Q)
 
 /-- A target environment extends a source environment with classified register
-bindings while preserving the factory and failure flag. -/
+bindings while preserving the factory. -/
 @[expose] def Env.ExtendsWith {P : PureExpr} (Extra : P.Ident → Prop)
     (source target : Env P) : Prop :=
   source.factory = target.factory ∧
-  source.hasFailure = target.hasFailure ∧
   StoreExtendsWith Extra source.store target.store
 
 /-! ## Small-Step Operational Semantics for Statements
@@ -89,7 +78,7 @@ Key design decisions:
 Configuration for small-step semantics, representing the current execution
 state. A configuration consists of:
 - The current statement (or list of statements) being executed
-- An execution environment (`Env`) bundling store, evaluator, and failure flag
+- An execution environment (`Env`) bundling store and evaluator
 -/
 inductive Config (P : PureExpr) (CmdT : Type) : Type where
   /-- A single statement to execute next. -/
@@ -129,17 +118,6 @@ variable {P : PureExpr} {CmdT : Type}
 @[expose] def Config.getStore (cfg: Config P CmdT): SemanticStore P
   := cfg.getEnv.store
 
-/-- Replace the active environment's cumulative failure flag, preserving the
-configuration's control shape and stores. -/
-@[expose] def Config.withFailure (hasFailure : Bool) : Config P CmdT → Config P CmdT
-  | .stmt statement ρ => .stmt statement { ρ with hasFailure := hasFailure }
-  | .stmts statements ρ => .stmts statements { ρ with hasFailure := hasFailure }
-  | .terminal ρ => .terminal { ρ with hasFailure := hasFailure }
-  | .exiting label ρ => .exiting label { ρ with hasFailure := hasFailure }
-  | .block label parentStore inner =>
-      .block label parentStore (inner.withFailure hasFailure)
-  | .seq inner statements => .seq (inner.withFailure hasFailure) statements
-
 /-- Events emitted by the active base command in the next statement step.
 Administrative configurations and non-command statements are silent. -/
 @[expose] def Config.emittedEvents : Config P (Cmd P) → Trace P
@@ -172,17 +150,6 @@ Administrative configurations and non-command statements are silent. -/
   | labels, .block (some l) _ inner => Config.exitsCoveredByBlocks (l :: labels) inner
   | labels, .seq inner ss =>
     Config.exitsCoveredByBlocks labels inner ∧ Block.exitsCoveredByBlocks labels ss
-
-/-- Project an inner store through a parent store: keep the inner value only
-    for variables that were already defined in the parent. Variables that were
-    not defined in the parent (i.e., init'd inside the block) become `none`. -/
-@[expose] def projectStore (σ_parent σ_inner : SemanticStore P) : SemanticStore P :=
-  fun x => if (σ_parent x).isSome then σ_inner x else none
-
-/-- Drop a set of names from a store, sending each to `none`. -/
-@[expose] def dropVars [DecidableEq P.Ident] (D : List P.Ident) (σ : SemanticStore P) :
-    SemanticStore P :=
-  fun x => if x ∈ D then none else σ x
 
 /-! ## Config-level definedness / undefinedness invariants
 
@@ -253,216 +220,16 @@ section
 
 variable {CmdT : Type} (P : PureExpr) [HasBool P] [HasBoolOps P]
 
-/--
-`StepStmt` defines a single execution step from one configuration to another.
-The expression evaluator is `P.eval` (part of the `PureExpr` bundle).  The
-cumulative failure flag in `Env.hasFailure` is OR-ed with the per-command
-failure flag at each `step_cmd`.
--/
-inductive StepStmt
-  (EvalCmd : EvalCmdParam P CmdT) :
-  Config P CmdT → Config P CmdT → Prop where
-
-  /-- A command steps to terminal configuration if it evaluates successfully.
-      The per-command failure flag `hasAssertFailure` is OR-ed into
-      `ρ.hasFailure` to produce the new environment's flag. -/
-  | step_cmd :
-    EvalCmd ρ.factory ρ.store c σ' hasAssertFailure →
-    ----
-    StepStmt EvalCmd
-      (.stmt (.cmd c) ρ)
-      (.terminal { ρ with store := σ', hasFailure := ρ.hasFailure || hasAssertFailure })
-
-  /-- A labeled block steps to a block context that wraps its body as `.stmts`.
-      The AST label `label : String` is lifted into `.some label` for the
-      `Config.block` wrapper (whose label is `Option String`).
-      The parent store `ρ.store` is saved so that block-local variables can be
-      popped on exit. -/
-  | step_block :
-    StepStmt EvalCmd
-      (.stmt (.block label ss _) ρ)
-      (.block (.some label) ρ.store (.stmts ss ρ))
-
-  /-- If the condition of an `ite` statement evaluates to true, step to the
-      then branch.  The branch is wrapped in a block so that variables
-      `init`'d inside are projected away on exit (matching `definedVars`
-      with `excludeScoped = true`). -/
-  | step_ite_true :
-    P.eval ρ.factory ρ.store c = .some HasBool.tt →
-    ----
-    StepStmt EvalCmd
-      (.stmt (.ite (.det c) tss ess _) ρ)
-      (.block .none ρ.store (.stmts tss ρ))
-
-  /-- If the condition of an `ite` statement evaluates to false, step to the
-      else branch (scoped via block wrapper). -/
-  | step_ite_false :
-    P.eval ρ.factory ρ.store c = .some HasBool.ff →
-    ----
-    StepStmt EvalCmd
-      (.stmt (.ite (.det c) tss ess _) ρ)
-      (.block .none ρ.store (.stmts ess ρ))
-
-  /-- Non-deterministic ite: step to the then branch (scoped). -/
-  | step_ite_nondet_true :
-    StepStmt EvalCmd
-      (.stmt (.ite .nondet tss ess _) ρ)
-      (.block .none ρ.store (.stmts tss ρ))
-
-  /-- Non-deterministic ite: step to the else branch (scoped). -/
-  | step_ite_nondet_false :
-    StepStmt EvalCmd
-      (.stmt (.ite .nondet tss ess _) ρ)
-      (.block .none ρ.store (.stmts ess ρ))
-
-  /-- If a loop guard is true, execute the body (followed by the loop again).
-      Loop invariants are not evaluated during execution: they are treated
-      purely as verification-condition annotations elsewhere, not as runtime
-      assertions.  The invariants are labeled pairs `(String × P.Expr)`.
-
-      The body alone is wrapped in an unnamed `.block`, sequenced with the
-      recursive loop.  This means each iteration runs the body in its own
-      block scope: variables `init`'d inside body are projected away at the
-      end of each iteration, allowing the next iteration's body to re-`init`
-      the same names. -/
-  | step_loop_enter :
-    P.eval ρ.factory ρ.store g = .some HasBool.tt →
-    ----
-    StepStmt EvalCmd
-      (.stmt (.loop (.det g) m inv body md) ρ)
-      (.seq
-        (.block .none ρ.store (.stmts body ρ))
-        [.loop (.det g) m inv body md])
-
-  /-- If a loop guard is false, terminate the loop.  As with `step_loop_enter`,
-      loop invariants are not evaluated during execution. -/
-  | step_loop_exit :
-    P.eval ρ.factory ρ.store g = .some HasBool.ff →
-    ----
-    StepStmt EvalCmd
-      (.stmt (.loop (.det g) m inv body _) ρ)
-      (.terminal ρ)
-
-  /-- Non-deterministic loop: enter the body.  As with the det variant,
-      loop invariants are not evaluated during execution; the body alone is
-      wrapped in an unnamed `.block` and sequenced with the recursive loop,
-      giving each iteration its own block scope. -/
-  | step_loop_nondet_enter :
-    StepStmt EvalCmd
-      (.stmt (.loop .nondet m inv body md) ρ)
-      (.seq
-        (.block .none ρ.store (.stmts body ρ))
-        [.loop .nondet m inv body md])
-
-  /-- Non-deterministic loop: exit the loop. -/
-  | step_loop_nondet_exit :
-    StepStmt EvalCmd
-      (.stmt (.loop .nondet m inv body _) ρ)
-      (.terminal ρ)
-
-  /-- An exit statement produces an exiting configuration. -/
-  | step_exit :
-    StepStmt EvalCmd
-      (.stmt (.exit label _) ρ)
-      (.exiting label ρ)
-
-  /-- A type declaration is a no-op at runtime. -/
-  | step_typeDecl :
-    StepStmt EvalCmd
-      (.stmt (.typeDecl _tc _md) ρ)
-      (.terminal ρ)
-
-  /-- An empty list of statements steps to `.terminal` with no state changes. -/
-  | step_stmts_nil :
-    StepStmt EvalCmd
-      (.stmts [] ρ)
-      (.terminal ρ)
-
-  /-- To evaluate a non-empty sequence, enter a seq context that processes
-      the first statement while remembering the remaining statements. -/
-  | step_stmts_cons :
-    StepStmt EvalCmd
-      (.stmts (s :: ss) ρ)
-      (.seq (.stmt s ρ) ss)
-
-  /-- A seq context steps its inner config forward. -/
-  | step_seq_inner :
-    StepStmt EvalCmd inner inner' →
-    ----
-    StepStmt EvalCmd
-      (.seq inner ss)
-      (.seq inner' ss)
-
-  /-- When the inner config of a seq reaches terminal, continue with the
-      remaining statements. -/
-  | step_seq_done :
-    StepStmt EvalCmd
-      (.seq (.terminal ρ') ss)
-      (.stmts ss ρ')
-
-  /-- When the inner config of a seq exits, propagate the exit
-      (skip remaining statements). -/
-  | step_seq_exit :
-    StepStmt EvalCmd
-      (.seq (.exiting label ρ') ss)
-      (.exiting label ρ')
-
-  /-- A block context steps its inner body one step forward.
-      The inner body can be any config (stmts, seq, etc.). -/
-  | step_block_body :
-    StepStmt EvalCmd inner inner' →
-    ----
-    StepStmt EvalCmd
-      (.block label σ_parent inner)
-      (.block label σ_parent inner')
-
-  /-- When a block's inner body reaches terminal, the block terminates.
-      The resulting store is projected through the parent store: only variables
-      that existed before the block keep their (possibly updated) values;
-      variables initialized inside the block are discarded.  The failure flag and
-      factory are preserved. -/
-  | step_block_done :
-    StepStmt EvalCmd
-      (.block label σ_parent (.terminal ρ'))
-      (.terminal { ρ' with store := projectStore σ_parent ρ'.store })
-
-  /-- When a block's inner body exits with a matching label, the block consumes it.
-      The store is projected; the failure flag and factory are preserved. -/
-  | step_block_exit_match :
-    label = .some l →
-    ----
-    StepStmt EvalCmd
-      (.block label σ_parent (.exiting l ρ'))
-      (.terminal { ρ' with store := projectStore σ_parent ρ'.store })
-
-  /-- When a block's inner body exits with a non-matching label, the exit propagates.
-      Includes the case where the block's own label is `.none` (anonymous loop/ite
-      wrapper, which never matches a labeled exit) as well as any other mismatched
-      `.some` label.  The store is projected since we're leaving this block. -/
-  | step_block_exit_mismatch :
-    label ≠ .some l →
-    ----
-    StepStmt EvalCmd
-      (.block label σ_parent (.exiting l ρ'))
-      (.exiting l { ρ' with store := projectStore σ_parent ρ'.store })
-
-
-/-- Command relation with no possible command step, used to reuse the existing
-administrative control-flow rules without inheriting failure-flag command
-behavior. -/
-@[expose] def noCommandEvalE (P : PureExpr) (CmdT : Type) : EvalCmdParam P CmdT :=
-  fun _ _ _ _ _ => False
-
-/-- Event-labeled statement step. Command steps use `EvalCmdParamE`; existing
-administrative control-flow steps are reused through `noCommandEvalE`.
+/-- Event-labeled single statement step.  The expression evaluator is `P.eval`
+(part of the `PureExpr` bundle); command steps use the command relation
+`EvalCmd : EvalCmdParamE`.
 
 A `StepStmtE` derivation describes one operational step and carries one event
-list; it never concatenates traces. Sequence and block rules propagate the
-inner step's events unchanged. Administrative wrapper steps can have duplicate
-derivations—either lifted as a whole by `step_admin` or through
-`step_seq_inner`/`step_block_body`—but those derivations have the same empty
-trace and target, so they add no observable nondeterminism. Intended choices,
-such as nondeterministic conditionals and loops, remain nondeterministic. -/
+list; it never concatenates traces.  A command step exposes exactly the events
+its command semantics produces.  Every other rule is administrative and emits
+no events; the sequence and block context rules propagate the inner step's
+events unchanged.  Intended choices, such as nondeterministic conditionals and
+loops, remain nondeterministic. -/
 inductive StepStmtE
     {EventT : Type}
     (EvalCmd : EvalCmdParamE P CmdT EventT) :
@@ -475,25 +242,178 @@ inductive StepStmtE
         (.stmt (.cmd cmd) ρ) emitted
         (.terminal { ρ with store := σ' })
 
-  /-- Reuse a command-free administrative `StepStmt`; administrative steps
-  emit no events. This may overlap with the explicit wrapper constructors, but
-  only as an alternative derivation of the same transition. -/
-  | step_admin :
-      StepStmt P (noCommandEvalE P CmdT) c c' →
-      StepStmtE EvalCmd c [] c'
+  /-- A labeled block steps to a block context that wraps its body as `.stmts`.
+      The AST label `label : String` is lifted into `.some label` for the
+      `Config.block` wrapper (whose label is `Option String`).
+      The parent store `ρ.store` is saved so that block-local variables can be
+      popped on exit. -/
+  | step_block :
+      StepStmtE EvalCmd
+        (.stmt (.block label ss _) ρ) []
+        (.block (.some label) ρ.store (.stmts ss ρ))
 
-  /-- Lift one inner sequence step. -/
+  /-- If the condition of an `ite` statement evaluates to true, step to the
+      then branch.  The branch is wrapped in a block so that variables
+      `init`'d inside are projected away on exit (matching `definedVars`
+      with `excludeScoped = true`). -/
+  | step_ite_true :
+      P.eval ρ.factory ρ.store c = .some HasBool.tt →
+      ----
+      StepStmtE EvalCmd
+        (.stmt (.ite (.det c) tss ess _) ρ) []
+        (.block .none ρ.store (.stmts tss ρ))
+
+  /-- If the condition of an `ite` statement evaluates to false, step to the
+      else branch (scoped via block wrapper). -/
+  | step_ite_false :
+      P.eval ρ.factory ρ.store c = .some HasBool.ff →
+      ----
+      StepStmtE EvalCmd
+        (.stmt (.ite (.det c) tss ess _) ρ) []
+        (.block .none ρ.store (.stmts ess ρ))
+
+  /-- Non-deterministic ite: step to the then branch (scoped). -/
+  | step_ite_nondet_true :
+      StepStmtE EvalCmd
+        (.stmt (.ite .nondet tss ess _) ρ) []
+        (.block .none ρ.store (.stmts tss ρ))
+
+  /-- Non-deterministic ite: step to the else branch (scoped). -/
+  | step_ite_nondet_false :
+      StepStmtE EvalCmd
+        (.stmt (.ite .nondet tss ess _) ρ) []
+        (.block .none ρ.store (.stmts ess ρ))
+
+  /-- If a loop guard is true, execute the body (followed by the loop again).
+      Loop invariants are not evaluated during execution: they are treated
+      purely as verification-condition annotations elsewhere, not as runtime
+      assertions.  The invariants are labeled pairs `(String × P.Expr)`.
+
+      The body alone is wrapped in an unnamed `.block`, sequenced with the
+      recursive loop.  This means each iteration runs the body in its own
+      block scope: variables `init`'d inside body are projected away at the
+      end of each iteration, allowing the next iteration's body to re-`init`
+      the same names. -/
+  | step_loop_enter :
+      P.eval ρ.factory ρ.store g = .some HasBool.tt →
+      ----
+      StepStmtE EvalCmd
+        (.stmt (.loop (.det g) m inv body md) ρ) []
+        (.seq
+          (.block .none ρ.store (.stmts body ρ))
+          [.loop (.det g) m inv body md])
+
+  /-- If a loop guard is false, terminate the loop.  As with `step_loop_enter`,
+      loop invariants are not evaluated during execution. -/
+  | step_loop_exit :
+      P.eval ρ.factory ρ.store g = .some HasBool.ff →
+      ----
+      StepStmtE EvalCmd
+        (.stmt (.loop (.det g) m inv body _) ρ) []
+        (.terminal ρ)
+
+  /-- Non-deterministic loop: enter the body.  As with the det variant,
+      loop invariants are not evaluated during execution; the body alone is
+      wrapped in an unnamed `.block` and sequenced with the recursive loop,
+      giving each iteration its own block scope. -/
+  | step_loop_nondet_enter :
+      StepStmtE EvalCmd
+        (.stmt (.loop .nondet m inv body md) ρ) []
+        (.seq
+          (.block .none ρ.store (.stmts body ρ))
+          [.loop .nondet m inv body md])
+
+  /-- Non-deterministic loop: exit the loop. -/
+  | step_loop_nondet_exit :
+      StepStmtE EvalCmd
+        (.stmt (.loop .nondet m inv body _) ρ) []
+        (.terminal ρ)
+
+  /-- An exit statement produces an exiting configuration. -/
+  | step_exit :
+      StepStmtE EvalCmd
+        (.stmt (.exit label _) ρ) []
+        (.exiting label ρ)
+
+  /-- A type declaration is a no-op at runtime. -/
+  | step_typeDecl :
+      StepStmtE EvalCmd
+        (.stmt (.typeDecl _tc _md) ρ) []
+        (.terminal ρ)
+
+  /-- An empty list of statements steps to `.terminal` with no state changes. -/
+  | step_stmts_nil :
+      StepStmtE EvalCmd
+        (.stmts [] ρ) []
+        (.terminal ρ)
+
+  /-- To evaluate a non-empty sequence, enter a seq context that processes
+      the first statement while remembering the remaining statements. -/
+  | step_stmts_cons :
+      StepStmtE EvalCmd
+        (.stmts (s :: ss) ρ) []
+        (.seq (.stmt s ρ) ss)
+
+  /-- A seq context steps its inner config forward, propagating its events. -/
   | step_seq_inner :
       StepStmtE EvalCmd inner emitted inner' →
+      ----
       StepStmtE EvalCmd
-        (.seq inner ss) emitted (.seq inner' ss)
+        (.seq inner ss) emitted
+        (.seq inner' ss)
 
-  /-- Lift one inner block step. -/
+  /-- When the inner config of a seq reaches terminal, continue with the
+      remaining statements. -/
+  | step_seq_done :
+      StepStmtE EvalCmd
+        (.seq (.terminal ρ') ss) []
+        (.stmts ss ρ')
+
+  /-- When the inner config of a seq exits, propagate the exit
+      (skip remaining statements). -/
+  | step_seq_exit :
+      StepStmtE EvalCmd
+        (.seq (.exiting label ρ') ss) []
+        (.exiting label ρ')
+
+  /-- A block context steps its inner body one step forward, propagating its
+      events.  The inner body can be any config (stmts, seq, etc.). -/
   | step_block_body :
       StepStmtE EvalCmd inner emitted inner' →
+      ----
       StepStmtE EvalCmd
         (.block label σ_parent inner) emitted
         (.block label σ_parent inner')
+
+  /-- When a block's inner body reaches terminal, the block terminates.
+      The resulting store is projected through the parent store: only variables
+      that existed before the block keep their (possibly updated) values;
+      variables initialized inside the block are discarded.  The factory is
+      preserved. -/
+  | step_block_done :
+      StepStmtE EvalCmd
+        (.block label σ_parent (.terminal ρ')) []
+        (.terminal { ρ' with store := projectStore σ_parent ρ'.store })
+
+  /-- When a block's inner body exits with a matching label, the block consumes it.
+      The store is projected; the factory is preserved. -/
+  | step_block_exit_match :
+      label = .some l →
+      ----
+      StepStmtE EvalCmd
+        (.block label σ_parent (.exiting l ρ')) []
+        (.terminal { ρ' with store := projectStore σ_parent ρ'.store })
+
+  /-- When a block's inner body exits with a non-matching label, the exit propagates.
+      Includes the case where the block's own label is `.none` (anonymous loop/ite
+      wrapper, which never matches a labeled exit) as well as any other mismatched
+      `.some` label.  The store is projected since we're leaving this block. -/
+  | step_block_exit_mismatch :
+      label ≠ .some l →
+      ----
+      StepStmtE EvalCmd
+        (.block label σ_parent (.exiting l ρ')) []
+        (.exiting l { ρ' with store := projectStore σ_parent ρ'.store })
 
 /-- Structured multi-step execution with a chronological event trace.
 `ReflTransTrace` concatenates the event list from each successive step as
@@ -507,40 +427,12 @@ abbrev StepStmtStarE
 
 end
 
-/-! ## Multi-step execution: reflexive transitive closure of single steps. -/
-
 section
 
 variable
   {CmdT : Type}
   (P : PureExpr)
   [HasBool P] [HasBoolOps P] [HasFvars P] [HasOps P]
-  (EvalCmd : EvalCmdParam P CmdT)
-
-/-- A multi-step execution of Imperative. -/
-abbrev StepStmtStar :
-    Config P CmdT → Config P CmdT → Prop :=
-  ReflTrans (StepStmt P EvalCmd)
-
-/-- A statement evaluates successfully if it steps to a terminal configuration. -/
-abbrev EvalStmtSmall
-    (ρ : Env P) (s : Stmt P CmdT)
-    (ρ' : Env P) : Prop :=
-  StepStmtStar P EvalCmd (.stmt s ρ) (.terminal ρ')
-
-/-- A list of statements evaluates successfully if it steps to a terminal
-    configuration. -/
-abbrev EvalStmtsSmall
-    (ρ : Env P) (ss : List (Stmt P CmdT))
-    (ρ' : Env P) : Prop :=
-  StepStmtStar P EvalCmd (.stmts ss ρ) (.terminal ρ')
-
----------------------------------------------------------------------
-
-/-- Configuration is terminal if no further steps are possible. -/
-def IsTerminal
-    (c : Config P CmdT) : Prop :=
-  ∀ c', ¬ StepStmt P EvalCmd c c'
 
 /-! ## Config-level WF predicates -/
 

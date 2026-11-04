@@ -218,7 +218,7 @@ inductive EvalCmdExtE
   | call_sem {σ n p callArgs σ' σ_final bodyEvents md fac σAO} :
       π n = .some p →
       Calls.CallEntry fac σ p callArgs σAO →
-      BigStepE π p.body ⟨σAO, fac, false⟩ σ_final bodyEvents →
+      BigStepE π p.body ⟨σAO, fac⟩ σ_final bodyEvents →
       Calls.CallExit fac σ p callArgs σ_final σ' →
       ----
       EvalCmdExtE π fac σ (.call n callArgs md) σ'

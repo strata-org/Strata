@@ -9,14 +9,14 @@ import Strata.DL.Imperative.StmtCFGCallSemanticsProps
 import Strata.DL.Imperative.StmtSemanticsProps
 import Strata.DL.Imperative.CFGSemanticsProps
 
-/-! # Tests for `EvalCmdExtE.induct` and `StepCFGE.casesRules`
+/-! # Tests for `EvalCmdExtE.induct` and `StepCFGE` case analysis
 
 `EvalCmdExtE.induct` proves, by `induction … using`, that `EvalCmdExtE` is
 monotone in the procedure table: a derivation under `π` is a derivation under any
 `π'` that resolves every name `π` resolves to the same procedure.  The call case
 uses the induction hypothesis for every command step of the callee body,
-structured or CFG, at any call depth.  `StepCFGE.casesRules` proves, by
-`cases … using`, that a CFG step from `.atBlock` emits no events. -/
+structured or CFG, at any call depth.  Case analysis on a `StepCFGE` step
+shows that a CFG step from `.atBlock` emits no events. -/
 
 namespace EvalCmdExtEInductTest
 
@@ -47,6 +47,6 @@ example {l CmdT EventT : Type} [BEq l] [HasVal P]
     {tr : List EventT} {c' : CFGConfig l CmdT P}
     (h : StepCFGE P EvalCmd (.atBlock cfg t ρ) tr c') : tr = [] := by
   generalize hc : CFGConfig.atBlock cfg t ρ = c at h
-  cases h using StepCFGE.casesRules <;> first | rfl | cases hc
+  cases h <;> first | rfl | cases hc
 
 end EvalCmdExtEInductTest

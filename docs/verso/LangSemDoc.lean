@@ -216,17 +216,11 @@ change.
 
 {docstring Imperative.UpdateState}
 
-Given these state relations, the semantics of each command is specified in
-a standard way.
-
-{docstring Imperative.EvalCmd}
-
-### Event-Producing Command Semantics
-
-The legacy command relation reports one cumulative failure bit. The alternative
-{name Imperative.EvalCmdE}`EvalCmdE` relation instead emits a chronological list
-of observations. Each assertion, assumption, or cover captures its condition and
-the semantic snapshot where the command was encountered.
+Given these state relations, the semantics of each command is specified by the
+{name Imperative.EvalCmdE}`EvalCmdE` relation, which updates the store and emits
+a chronological list of observations. Each assertion, assumption, or cover
+captures its condition and the semantic snapshot where the command was
+encountered.
 
 {docstring Imperative.EventArg}
 
@@ -247,13 +241,9 @@ command, factory, and input store.
 
 {docstring Imperative.EvalCmdE}
 
-The event-producing relation agrees with that deterministic trace, and every
-legacy command execution has a corresponding event execution with the same
-resulting store.
+The relation agrees with that deterministic trace.
 
 {docstring Imperative.EvalCmdE.emitted_eq}
-
-{docstring Imperative.EvalCmd.toEvalCmdE}
 
 ## Structured Statement Semantics
 
@@ -262,30 +252,14 @@ The semantics of the {name Stmt}`Stmt` type is defined in terms of
 
 {docstring Imperative.Config}
 
-The {name StepStmt}`StepStmt` relation describes how each type of statement
-transforms configurations. It is parameterized by a command evaluator (because
-statements are parameteric to the list of defined commands). The expression
-factory is immutable during execution: it is carried in the environment to
-evaluate expressions, and a `.block` snapshots and restores it for scoping, but
-no statement step mutates it.
-
-{docstring Imperative.StepStmt}
-
-The {name StepStmtStar}`Imperative.StepStmtStar` relation describes
-the reflexive, transitive closure of the {name StepStmt}`Imperative.StepStmt`
-relation.
-
-{docstring Imperative.StepStmtStar}
-
-### Event-Producing Statement Semantics
-
-{name Imperative.StepStmtE}`StepStmtE` labels each statement transition with the
-events emitted by its active command. Administrative control-flow transitions
-are reused from `StepStmt` with a command evaluator that cannot step; they emit
-the empty event list. Sequence and block frames propagate the active inner
-step's events unchanged.
-
-{docstring Imperative.noCommandEvalE}
+The {name Imperative.StepStmtE}`StepStmtE` relation describes how each type of
+statement transforms configurations, labeling each transition with the events
+emitted by its active command. It is parameterized by a command evaluator
+(because statements are parameteric to the list of defined commands).
+Administrative control-flow transitions emit the empty event list, and sequence
+and block frames propagate the active inner step's events unchanged. The
+expression factory is immutable during execution: it is carried in the
+environment to evaluate expressions, and no statement step mutates it.
 
 {docstring Imperative.StepStmtE}
 
@@ -297,15 +271,9 @@ execution order.
 {docstring Imperative.StepStmtStarE}
 
 For base Imperative commands, the active configuration also determines its next
-event list. The compatibility theorem normalizes only the legacy target's
-cumulative failure flag because event semantics records assertion observations
-in the trace instead of updating that bit.
+event list.
 
 {docstring Imperative.Config.emittedEvents}
-
-{docstring Imperative.Config.withFailure}
-
-{docstring Imperative.StepStmt.toStepStmtE}
 
 ## Control-Flow Graph Semantics
 
@@ -315,12 +283,12 @@ state is tracked by a {name Imperative.CFGConfig}`CFGConfig`.
 
 {docstring Imperative.CFGConfig}
 
-The {name Imperative.StepCFG}`StepCFG` relation takes one execution step over a
-deterministic CFG.
+The {name Imperative.StepCFGE}`StepCFGE` relation takes one execution step over a
+deterministic CFG, emitting the events of the command it runs.
 
-{docstring Imperative.StepCFG}
+{docstring Imperative.StepCFGE}
 
-{docstring Imperative.StepCFGStar}
+{docstring Imperative.StepCFGStarE}
 
 ## Well-Formedness of the `PureExpr` Evaluator
 
@@ -410,7 +378,7 @@ each declaration is checked against those before it), and the whole program
 
 Core extends the `Imperative` commands with a procedure `call`. A call is
 executed by descending into the callee's body
-({name EvalCommand.call_sem}`EvalCommand.call_sem`).
+({name Imperative.EvalCmdExtE.call_sem}`EvalCmdExtE.call_sem`).
 
 1. Evaluate the input and inout argument expressions, and read the current values
    of caller-side `out` actuals.
@@ -426,7 +394,7 @@ executed by descending into the callee's body
 Concrete execution of the body of procedure is necessary to make the procedure
 inlining transform exactly semantics-preserving.
 A contract version of call semantics is also defined at
-{name EvalCommandContract.call_sem}`EvalCommandContract.call_sem`. It does not
+{name Imperative.EvalCmdExtContractE.call_sem}`EvalCmdExtContractE.call_sem`. It does not
 execute the body: after checking preconditions, it havocs all initialized callee
 output formals, including inouts, and assumes the postconditions. In this semantics, procedure
 inlining becomes an underapproximating transform because it replaces the values

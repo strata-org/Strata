@@ -44,14 +44,14 @@ theorem EvalCmdExtE.induct
     (call_sem : ∀ {σ n p callArgs σ' σFinal bodyEvents md fac σAO}
       (hπ : π n = .some p)
       (hentry : Calls.CallEntry fac σ p callArgs σAO)
-      (hbody : BigStepE π p.body ⟨σAO, fac, false⟩ σFinal bodyEvents)
+      (hbody : BigStepE π p.body ⟨σAO, fac⟩ σFinal bodyEvents)
       (hexit : Calls.CallExit fac σ p callArgs σFinal σ'),
       ((∃ ss ρ', p.body = .structured ss ∧ ρ'.store = σFinal ∧
         StepStmtStarE P (fun fac σ c σ' evs => ∃ h, motive fac σ c σ' evs h)
-          (.stmt (Stmt.block "" ss #[]) ⟨σAO, fac, false⟩) bodyEvents (.terminal ρ')) ∨
+          (.stmt (Stmt.block "" ss #[]) ⟨σAO, fac⟩) bodyEvents (.terminal ρ')) ∨
        (∃ g ρ', p.body = .cfg g ∧ projectStore σAO ρ'.store = σFinal ∧
         StepCFGStarE P (fun fac σ c σ' evs => ∃ h, motive fac σ c σ' evs h)
-          (.atBlock g g.entry ⟨σAO, fac, false⟩) bodyEvents (.terminal ρ'))) →
+          (.atBlock g g.entry ⟨σAO, fac⟩) bodyEvents (.terminal ρ'))) →
       motive fac σ (.call n callArgs md) σ'
         (Calls.defaultAssertEvents fac σAO (Calls.checksAtCall md p.spec.preconditions) ++
           bodyEvents ++
@@ -82,11 +82,31 @@ theorem EvalCmdExtE.induct
     (fun _ => .refl _)
     (fun _ _ _ _ _ _ _ ihStep ihRest => .step _ _ _ _ _ ihStep ihRest)
     (fun h ih => .step_cmd ⟨h, ih⟩)
-    .step_admin
+    .step_block
+    (fun h => .step_ite_true h)
+    (fun h => .step_ite_false h)
+    .step_ite_nondet_true
+    .step_ite_nondet_false
+    (fun h => .step_loop_enter h)
+    (fun h => .step_loop_exit h)
+    .step_loop_nondet_enter
+    .step_loop_nondet_exit
+    .step_exit
+    .step_typeDecl
+    .step_stmts_nil
+    .step_stmts_cons
     (fun _ ih => .step_seq_inner ih)
+    .step_seq_done
+    .step_seq_exit
     (fun _ ih => .step_block_body ih)
+    .step_block_done
+    (fun h => .step_block_exit_match h)
+    (fun h => .step_block_exit_mismatch h)
+    (fun h => .fetch h)
     (fun h ih => .step_cmd ⟨h, ih⟩)
-    .step_admin
+    (fun h => .goto_true h)
+    (fun h => .goto_false h)
+    .finish
     h
 
 /-- `EvalCmdExtE π` on an embedded base command is exactly `EvalCmdE`: a call's

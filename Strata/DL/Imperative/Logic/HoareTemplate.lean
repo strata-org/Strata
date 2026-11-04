@@ -226,14 +226,14 @@ private theorem while_genE
     | .step _ _ _ _ _ _ _, hlen => simp only [ReflTransTraceT.len] at hlen; omega
   | succ n ih =>
     match hrunT, hlen with
-    | .step _ _ _ restTr _ (.step_admin (.step_loop_exit hg)) hrest, hlen =>
+    | .step _ _ _ restTr _ (.step_loop_exit hg) hrest, hlen =>
       -- guard false: the loop terminates immediately, emitting nothing.
       obtain ⟨hc, hnil⟩ := Imperative.stepStmtStarE_from_terminal (reflTransTraceT_to_prop hrest)
       subst hnil
       injection hc with hρ
       subst hρ
       exact ⟨True.intro, fun _ => ⟨hInv, hg⟩⟩
-    | .step _ _ _ restTr _ (.step_admin (.step_loop_enter hg)) hrest, hlen =>
+    | .step _ _ _ restTr _ (.step_loop_enter hg) hrest, hlen =>
       -- one iteration: the body's block, then the loop again.
       simp only [List.nil_append]
       obtain ⟨ρ_mid, tr₁, tr₂, htr, h_block_term, h_loop_rest, hlen_seq⟩ :=
@@ -317,18 +317,12 @@ theorem cmd (params : ParamsTy) (c : CmdT)
         subst hρ
         subst hrest
         simpa using h ρ₀ _ emitted hpre hinit hcmd
-      | step_admin hadmin =>
-        cases hadmin with
-        | step_cmd hfalse => exact hfalse.elim
   · cases hexit with
     | step _ emitted _ rest _ hstep htail =>
       cases hstep with
       | step_cmd _ =>
         obtain ⟨hcfg, _⟩ := Imperative.stepStmtStarE_from_terminal htail
         cases hcfg
-      | step_admin hadmin =>
-        cases hadmin with
-        | step_cmd hfalse => exact hfalse.elim
 
 /-- Sequencing: two triples over statement lists compose into one about their
     concatenation, provided the prefix does not escape.  This is the only rule that
@@ -390,10 +384,9 @@ theorem exit_cons {lbl : String} {md : MetaData P} {ss : List (Stmt P CmdT)}
       cases hhead with
       | step _ _ _ _ _ hstep hrest =>
         cases hstep with
-        | step_admin hadmin => cases hadmin with
-          | step_exit =>
-            obtain ⟨hc, _⟩ := stepStmtStarE_from_exiting hrest
-            simp at hc
+        | step_exit =>
+          obtain ⟨hc, _⟩ := stepStmtStarE_from_exiting hrest
+          simp at hc
   · rcases stmts_cons_headE evalCmd hexit with hinitial | hseq
     · simp at hinitial
     · rcases seq_reaches_exitingE evalCmd hseq with
@@ -402,21 +395,19 @@ theorem exit_cons {lbl : String} {md : MetaData P} {ss : List (Stmt P CmdT)}
         cases hhead with
         | step _ _ _ _ _ hstep hrest =>
           cases hstep with
-          | step_admin hadmin => cases hadmin with
-            | step_exit =>
-              obtain ⟨hc, htr0⟩ := stepStmtStarE_from_exiting hrest
-              subst htr0
-              injection hc with _ hρ
-              subst hρ
-              exact ⟨True.intro, fun _ => hpre⟩
+          | step_exit =>
+            obtain ⟨hc, htr0⟩ := stepStmtStarE_from_exiting hrest
+            subst htr0
+            injection hc with _ hρ
+            subst hρ
+            exact ⟨True.intro, fun _ => hpre⟩
       · -- the head cannot terminate before exiting
         cases hterm_head with
         | step _ _ _ _ _ hstep hrest =>
           cases hstep with
-          | step_admin hadmin => cases hadmin with
-            | step_exit =>
-              obtain ⟨hc, _⟩ := stepStmtStarE_from_exiting hrest
-              simp at hc
+          | step_exit =>
+            obtain ⟨hc, _⟩ := stepStmtStarE_from_exiting hrest
+            simp at hc
 
 section StructuredRules
 
@@ -563,23 +554,21 @@ theorem ite (params : ParamsTy)
   · cases hterm with
     | step _ _ _ _ _ hstep hrest =>
       cases hstep with
-      | step_admin hadmin => cases hadmin with
-        | step_ite_true hc =>
-          exact hbranch tss _ _ ⟨hpre, hc⟩ (hthenWF ρ₀ hinit)
-            (hthenDefs ρ₀ hinit) hthen_proj ht (.inl (by simpa using hrest))
-        | step_ite_false hc =>
-          exact hbranch ess _ _ ⟨hpre, hc⟩ (helseWF ρ₀ hinit)
-            (helseDefs ρ₀ hinit) helse_proj he (.inl (by simpa using hrest))
+      | step_ite_true hc =>
+        exact hbranch tss _ _ ⟨hpre, hc⟩ (hthenWF ρ₀ hinit)
+          (hthenDefs ρ₀ hinit) hthen_proj ht (.inl (by simpa using hrest))
+      | step_ite_false hc =>
+        exact hbranch ess _ _ ⟨hpre, hc⟩ (helseWF ρ₀ hinit)
+          (helseDefs ρ₀ hinit) helse_proj he (.inl (by simpa using hrest))
   · cases hexit with
     | step _ _ _ _ _ hstep hrest =>
       cases hstep with
-      | step_admin hadmin => cases hadmin with
-        | step_ite_true hc =>
-          exact hbranch tss _ _ ⟨hpre, hc⟩ (hthenWF ρ₀ hinit)
-            (hthenDefs ρ₀ hinit) hthen_proj ht (.inr ⟨lbl, by simpa using hrest⟩)
-        | step_ite_false hc =>
-          exact hbranch ess _ _ ⟨hpre, hc⟩ (helseWF ρ₀ hinit)
-            (helseDefs ρ₀ hinit) helse_proj he (.inr ⟨lbl, by simpa using hrest⟩)
+      | step_ite_true hc =>
+        exact hbranch tss _ _ ⟨hpre, hc⟩ (hthenWF ρ₀ hinit)
+          (hthenDefs ρ₀ hinit) hthen_proj ht (.inr ⟨lbl, by simpa using hrest⟩)
+      | step_ite_false hc =>
+        exact hbranch ess _ _ ⟨hpre, hc⟩ (helseWF ρ₀ hinit)
+          (helseDefs ρ₀ hinit) helse_proj he (.inr ⟨lbl, by simpa using hrest⟩)
 
 /-- **While rule.**  An invariant that the body re-establishes on every iteration
     holds when the loop finishes, however many iterations it took.

@@ -69,10 +69,10 @@ theorem deadDefElimProgram_over {prog out : Program} {s s' : Transform.CoreTrans
       ∀ {F : Expression.Factory}, WellFormedSemanticEvalExprCongr (P := Expression) F →
         WellFormedSemanticEvalBool (P := Expression) F → Block.noLoops ss = true →
         ∀ {σ : SemanticStore Expression}, WellFormedStore σ F →
-        ∀ {t : AssertId Expression} {e : Expression.Expr} {hf : Bool},
-        FailsE F hf ss σ t e → ∀ hf' : Bool, FailsE F hf' (deadDefElimH [] ss) σ t e := by
+        ∀ {t : AssertId Expression} {e : Expression.Expr},
+        FailsE F ss σ t e → FailsE F (deadDefElimH [] ss) σ t e := by
   cases h
-  refine ⟨?_, fun hF hWB hss _ hC _ _ _ h hf' => deadDefElimH_failsE hF hWB _ hss hC h hf'⟩
+  refine ⟨?_, fun hF hWB hss _ hC _ _ h => deadDefElimH_failsE hF hWB _ hss hC h⟩
   simp only [List.map_map, List.mem_map]
   exact ⟨_, hq, by simp [deadDefElimDecl, hb]⟩
 
@@ -97,8 +97,8 @@ theorem deadDefElimPipelinePhase_over {program out : Program}
       ∀ {F : Expression.Factory}, WellFormedSemanticEvalExprCongr (P := Expression) F →
         WellFormedSemanticEvalBool (P := Expression) F → Block.noLoops ss = true →
         ∀ {σ : SemanticStore Expression}, WellFormedStore σ F →
-        ∀ {t : AssertId Expression} {e : Expression.Expr} {hf : Bool},
-        FailsE F hf ss σ t e → ∀ hf' : Bool, FailsE F hf' (deadDefElimH [] ss) σ t e :=
+        ∀ {t : AssertId Expression} {e : Expression.Expr},
+        FailsE F ss σ t e → FailsE F (deadDefElimH [] ss) σ t e :=
   deadDefElimProgram_over (deadDefElimPipelinePhase_ok program s ▸ h) hq hb
 
 /-! ## The trace over-approximation -/
@@ -119,7 +119,7 @@ theorem deadDefElim_overapproximatesTraces (π : String → Option Procedure)
       (fun ss => Block.noLoops ss = true ∧ Statements.noCalls ss = true) params params := by
   intro ss st' hT ⟨hss, hnc⟩ ρ₀ _ rfl hwf
   cases hT
-  obtain ⟨σ₀, F, hf⟩ := ρ₀
+  obtain ⟨σ₀, F⟩ := ρ₀
   have hC : WellFormedStore σ₀ F := hwf.storeWellDefined
   have hcong := hwf.exprCongr
   have hWB := hwf.bool
@@ -131,21 +131,21 @@ theorem deadDefElim_overapproximatesTraces (π : String → Option Procedure)
       exact ⟨_, [], .refl _, .nil⟩
     obtain ⟨evs', hb, hm⟩ := deadDefElim_reach_rel hcong []
       (star_breach_noLoops hss h' htr) htr hC
-    obtain ⟨cfg', hc⟩ := breach_star hWB hb hf
+    obtain ⟨cfg', hc⟩ := breach_star hWB hb
     exact ⟨cfg', evs', star_core π hc, hm⟩
   · have h' := star_evalE h hnc
-    have hE := star_getEnv h'
+    have hE := starE_preserves_factory h'
     obtain ⟨evs', o', hb, hm, hO⟩ :=
       deadDefElim_run_rel hcong [] ((star_brun_noLoops hss).1 h') hC
     rcases o' with σ' | _ <;> simp only [DDOutcomeRel] at hO
-    exact ⟨_, evs', star_core π (brun_star hWB hb hf), ⟨hE.1.symm, hE.2.symm, hO⟩, hm⟩
+    exact ⟨_, evs', star_core π (brun_star hWB hb), ⟨hE, hO⟩, hm⟩
   · have h' := star_evalE h hnc
-    have hE := star_getEnv h'
+    have hE := starE_preserves_factory h'
     obtain ⟨evs', o', hb, hm, hO⟩ :=
       deadDefElim_run_rel hcong [] ((star_brun_noLoops hss).2 h') hC
     rcases o' with _ | ⟨l', σ'⟩ <;> simp only [DDOutcomeRel] at hO
     obtain ⟨rfl, hO⟩ := hO
-    exact ⟨_, evs', star_core π (brun_star hWB hb hf), ⟨hE.1.symm, hE.2.symm, hO⟩, hm⟩
+    exact ⟨_, evs', star_core π (brun_star hWB hb), ⟨hE, hO⟩, hm⟩
 
 /-- **Assertion validity transported back through erasure.** For an
     interpretation `I` stable under `DDArgRel` (such as evaluation to `true`, by

@@ -50,7 +50,7 @@ the same trace and final environment as the source run.
 ## Key shared definitions
 
 - `EnvStoreAgree` — an environment relation: store agreement on source-defined
-  names and matching failure flags.
+  names.
 -/
 
 public section
@@ -144,12 +144,11 @@ share one condition interpretation. -/
 
 /-- The output relation shared by the structured-pass overapproximation
 instances: the target environment's store agrees with the source's on every
-source-defined name, and the failure flags match. `nondetElim`,
+source-defined name. `nondetElim`,
 `hoistLoopPrefixInits`/`stmtsToCFG`, and the whole pipeline all overapproximate
 up to this same relation. -/
 @[expose] def EnvStoreAgree {P : PureExpr} (ρ₀ ρ₀' : Env P) : Prop :=
   StoreAgreement ρ₀.store ρ₀'.store
-  ∧ ρ₀.hasFailure = ρ₀'.hasFailure
 
 end Transform
 
