@@ -1,6 +1,6 @@
 name = "Strata"
 version = "0.1.0"
-defaultTargets = ["Strata", "StrataToCBMC", "StrataCoreToGoto", "laurelJavaGen"]
+defaultTargets = ["Strata", "StrataToCBMC", "StrataCoreToGoto", "laurelJavaGen", "laurelGoGen"]
 testDriver = "StrataTestMain"
 lintDriver = "CheckImports"
 
@@ -55,7 +55,7 @@ root = "Scripts.StrataTestMain"
 # modules from the `Strata` library that are not in `StrataTest`'s transitive
 # closure (e.g., `Strata.Java.Gen`), so without this the oleans would be
 # missing when running `lake test` from a clean `.lake`.
-needs = ["Strata", "StrataLaurel", "StrataTest", "StrataLaurelTest", "laurelJavaGen"]
+needs = ["Strata", "StrataLaurel", "StrataTest", "StrataLaurelTest", "laurelJavaGen", "laurelGoGen"]
 
 [[lean_exe]]
 name = "StrataToCBMC"
@@ -78,3 +78,7 @@ root = "Scripts.GenerateEmbedded"
 [[lean_exe]]
 name = "laurelJavaGen"
 root = "StrataLaurel.Scripts.LaurelJavaGen"
+
+[[lean_exe]]
+name = "laurelGoGen"
+root = "StrataLaurel.Scripts.LaurelGoGen"
