@@ -151,9 +151,9 @@ variable {π : String → Option Procedure}
     `T` overapproximates the traces of the source body block, as a one-element
     statement list, by those of the target body block, from entry environments
     the source contract admits. The two procedures have the same header and
-    specification, and the axioms visible to the source are visible to the
-    target (`h_axioms`). If the target procedure is correct on traces, so is
-    the source.
+    specification, the axioms visible to the source are visible to the
+    target (`h_axioms`), and both see the same factory (`h_factory`). If the
+    target procedure is correct on traces, so is the source.
 
     `ProcEnvWF` makes the source body well formed from its entry environments,
     which is what the overapproximation needs; the overapproximation in turn
@@ -167,6 +167,7 @@ theorem procedureAssertsValidOnTraces_of_overapproximates
     (h_header : proc'.header = proc.header) (h_spec : proc'.spec = proc.spec)
     (h_axioms : ∀ ρ₀, AxiomsBeforeProcedureDecl name p ρ₀ →
       AxiomsBeforeProcedureDecl name p' ρ₀)
+    (h_factory : p'.factoryBeforeProcedure name = p.factoryBeforeProcedure name)
     (T : Statements → Option Statements) (pre : Statements → Prop)
     (h_over : Imperative.Specification.Transform.OverapproximatesTracesWhen (· = ·)
       (Core.Logic.EventLang.coreBlock p.findProcByString?)
@@ -180,7 +181,8 @@ theorem procedureAssertsValidOnTraces_of_overapproximates
   have h_entry : ∀ ρ₀, ProcEntryEnv params name p proc ρ₀ →
       ProcEntryEnv params name p' proc' ρ₀ := by
     intro ρ₀ hent
-    refine ⟨hent.1.of_sameSignature h_header h_spec ?_ ?_, h_axioms ρ₀ hent.2⟩
+    refine ⟨hent.1.of_sameSignature h_header h_spec ?_ ?_, h_axioms ρ₀ hent.2.1,
+      hent.2.2.trans h_factory.symm⟩
     · intro ss'' hb
       rw [h_body'] at hb
       cases hb

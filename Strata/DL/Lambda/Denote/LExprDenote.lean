@@ -143,6 +143,20 @@ where
   | [] => []
   | x :: xs => substTyVars ρ x :: map xs
 
+/-- The monomorphic type (without type variables) naming a sort. -/
+@[expose] public def LSort.toMonoTy : LSort → LMonoTy
+  | .tcons name args => .tcons name (map args)
+  | .bitvec n => .bitvec n
+where
+  map : List LSort → List LMonoTy
+  | [] => []
+  | s :: ss => toMonoTy s :: map ss
+
+/-- Whether a sort is the integer sort. -/
+@[expose] public def LSort.isInt : LSort → Bool
+  | .tcons "int" [] => true
+  | _ => false
+
 /-- Interpretation of type constructors: maps a constructor name and its
 sort arguments to a Lean `Type`.
 
@@ -1076,7 +1090,7 @@ public def LFunc.InterpConsistentBody [DecidableEq T.IDMeta]
       vt .nil body f.output h_body
 
 /-- Denote a list of well-typed expressions into an `HList` of semantic values. -/
-noncomputable def denoteArgs
+public noncomputable def denoteArgs
     (fvarVal : FreeVarVal T tcInterp) (vt : TyVarVal)
     {Δ : List LMonoTy} (bvarVal : BVarVal tcInterp vt Δ) :
     (argExprs : List (LExpr T.mono)) → (tys : List LMonoTy)  →

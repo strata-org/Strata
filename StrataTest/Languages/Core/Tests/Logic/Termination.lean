@@ -7,6 +7,7 @@
 import Strata.Languages.Core
 import Strata.Languages.Core.Logic.LangDef
 import Strata.Languages.Core.InstWellFormedSemanticsEval
+import Strata.Languages.Core.IntEvalProps
 import Strata.DL.Imperative.Logic.TerminationProps
 import Strata.DL.Imperative.Analysis.Verdict
 import Strata.DL.Imperative.Logic.ProgramEntries
@@ -29,7 +30,7 @@ proves a fact about the procedure body under the event semantics
   divergence given by a sequence `ℕ → CfgT` each of whose configurations steps
   to the next.
 - `fail_failed`, `ok_valid`: a `failed` and a `valid` verdict, with conditions
-  read by denotation in any model of `Core.Factory`.
+  read by evaluation in any model of `Core.Factory`.
 - `afterExit_reachable_not_final`, `afterExit_reaches_after`: an exit caught by
   its block does not finish the run.
 
@@ -161,7 +162,7 @@ theorem spin_diverges (π : String → Option Core.Procedure) (ρ : Env Core.Exp
   emptyLoop_diverges π _ _ _ _ (fun _ => True)
     (fun ρ _ => .step_loop_enter (by
       rw [spinGuard_eq]
-      exact Lambda.evalFully_const ρ.factory ρ.store () (Lambda.LConst.boolConst true)))
+      exact Core.eval_boolConst ρ.factory ρ.store true))
     (fun _ _ => trivial) ρ trivial
 
 /-- `while (true) { }` does not terminate. -/
@@ -338,19 +339,19 @@ private theorem fin_cmd {Q : Env Core.Expression → Prop} {cmd : Core.Command}
 private theorem fin_loop_exit {Q : Env Core.Expression → Prop} {g : Core.Expression.Expr}
     {m : Option Core.Expression.Expr} {inv : List (String × Core.Expression.Expr)}
     {body : Core.Statements} {md : MetaData Core.Expression} {ρ : Env Core.Expression}
-    (hg : Core.Expression.eval ρ.factory ρ.store g = some HasBool.ff) (hq : Q ρ) :
+    (hg : Core.Expression.eval ρ.factory ρ.store g = some (HasBool.ffVal ρ.factory)) (hq : Q ρ) :
     Finishes π Q (.stmt (.loop (.det g) m inv body md) ρ) := by
   refine .step ⟨[], _, (.step_loop_exit hg)⟩ fun e c' hs => ?_
   cases hs with
   | step_loop_exit _ => exact .done hq
   | step_loop_enter hg' =>
-    exact absurd (Option.some.inj (hg'.symm.trans hg)) HasBool.tt_is_not_ff
+    exact absurd (Option.some.inj (hg'.symm.trans hg)) (HasBool.ttVal_ne_ffVal _)
 
 /-- A loop whose guard is true runs its body, then the loop again. -/
 private theorem fin_loop_enter {Q : Env Core.Expression → Prop} {g : Core.Expression.Expr}
     {m : Option Core.Expression.Expr} {inv : List (String × Core.Expression.Expr)}
     {body : Core.Statements} {md : MetaData Core.Expression} {ρ : Env Core.Expression}
-    (hg : Core.Expression.eval ρ.factory ρ.store g = some HasBool.tt)
+    (hg : Core.Expression.eval ρ.factory ρ.store g = some (HasBool.ttVal ρ.factory))
     (h : Finishes π Q
       (.seq (.block .none ρ.store (.stmts body ρ)) [.loop (.det g) m inv body md])) :
     Finishes π Q (.stmt (.loop (.det g) m inv body md) ρ) := by
@@ -358,7 +359,7 @@ private theorem fin_loop_enter {Q : Env Core.Expression → Prop} {g : Core.Expr
   cases hs with
   | step_loop_enter _ => exact h
   | step_loop_exit hg' =>
-    exact absurd (Option.some.inj (hg.symm.trans hg')) HasBool.tt_is_not_ff
+    exact absurd (Option.some.inj (hg.symm.trans hg')) (HasBool.ttVal_ne_ffVal _)
 
 end Finishes
 
@@ -429,68 +430,70 @@ private theorem countRhs_shape :
         (Lambda.LExpr.const () (Lambda.LConst.intConst 1)) := by
   native_decide
 
-/-- An integer literal is a value of type `int`. -/
+/-- An integer is a value of type `int`. -/
 private theorem intConst_valueOfTy (f : Core.Expression.Factory) (n : Int) :
-    HasVal.valueOfTy (P := Core.Expression) f (Lambda.LExpr.intConst () n) countParts.1.1 :=
-  ⟨_, Lambda.isValue_const_true _ _ _, countTy_mono,
-    by simp [Lambda.LExpr.typeCheck, Lambda.LConst.ty, Lambda.LMonoTy.int]⟩
-
-/-- With `y ↦ n`, the guard evaluates to `n ≤ 9`. -/
-private theorem countGuard_eval (σ : Core.CoreStore) (n : Int)
-    (hy : σ countY = some (Lambda.LExpr.intConst () n)) :
-    Core.Expression.eval Core.Factory σ countParts.2.1.1
-      = some (Lambda.LExpr.boolConst () (decide (n ≤ 9))) := by
-  rw [countGuard_shape]
-  exact Core.coreEval_intLe_numeral σ _ n
-    (Lambda.evalFully_fvar_of_value Core.Factory σ () countY _ _ hy
-      (Lambda.isValue_const_true _ _ _))
-
-/-- With `y ↦ n`, the increment evaluates to `n + 1`. -/
-private theorem countRhs_eval (σ : Core.CoreStore) (n : Int)
-    (hy : σ countY = some (Lambda.LExpr.intConst () n)) :
-    Core.Expression.eval Core.Factory σ countParts.2.2.1
-      = some (Lambda.LExpr.intConst () (n + 1)) := by
-  rw [countRhs_shape]
-  exact Core.coreEval_intAdd_numeral σ _ n
-    (Lambda.evalFully_fvar_of_value Core.Factory σ () countY _ _ hy
-      (Lambda.isValue_const_true _ _ _))
+    HasVal.valueOfTy (P := Core.Expression) f (Lambda.SemValue.ofInt f.model.tcInterp n)
+      countParts.1.1 :=
+  ⟨rfl, by rw [countTy_mono]; rfl⟩
 
 section Count
 
 variable (π : String → Option Core.Procedure)
+variable (F : Core.Expression.Factory) (hF : F.factory = Core.Factory)
+include hF
+
+/-- With `y ↦ n`, the guard evaluates to `n ≤ 9`. -/
+private theorem countGuard_eval (σ : Core.CoreStore) (n : Int)
+    (hy : σ countY = some (Lambda.SemValue.ofInt F.model.tcInterp n)) :
+    Core.Expression.eval F σ countParts.2.1.1
+      = some (Lambda.SemValue.ofBool F.model.tcInterp (decide (n ≤ 9))) := by
+  rw [countGuard_shape]
+  exact Core.eval_intLe (hF ▸ Core.coreFactory_intLe) (Core.eval_fvar_int F hy)
+    (Core.eval_intConst F σ 9)
+
+/-- With `y ↦ n`, the increment evaluates to `n + 1`. -/
+private theorem countRhs_eval (σ : Core.CoreStore) (n : Int)
+    (hy : σ countY = some (Lambda.SemValue.ofInt F.model.tcInterp n)) :
+    Core.Expression.eval F σ countParts.2.2.1
+      = some (Lambda.SemValue.ofInt F.model.tcInterp (n + 1)) := by
+  rw [countRhs_shape]
+  exact Core.eval_intAdd (hF ▸ Core.coreFactory_intAdd) (Core.eval_fvar_int F hy)
+    (Core.eval_intConst F σ 1)
 
 /-- From `y ↦ n` with `n ≤ 10`, the loop finishes: by induction on the
     iterations left, `10 - n`. -/
 private theorem count_loop_finishes :
     ∀ (k : Nat) (n : Int) (ρ : Env Core.Expression), (10 - n).toNat = k →
-      ρ.factory = Core.Factory → ρ.store countY = some (Lambda.LExpr.intConst () n) → n ≤ 10 →
-      Finishes π (fun _ => True) (.stmt countLoop ρ) := by
+      ρ.factory = F → ρ.store countY = some (Lambda.SemValue.ofInt F.model.tcInterp n) →
+      n ≤ 10 → Finishes π (fun _ => True) (.stmt countLoop ρ) := by
   intro k
   induction k with
   | zero =>
     intro n ρ hk hf hy _
     refine fin_loop_exit π ?_ trivial
-    rw [hf, countGuard_eval ρ.store n hy, decide_eq_false (by omega)]
+    rw [hf, countGuard_eval F hF ρ.store n hy, decide_eq_false (by omega)]
     rfl
   | succ k ih =>
     intro n ρ hk hf hy hn
     have hle : n ≤ 9 := by omega
-    have hg : Core.Expression.eval ρ.factory ρ.store countParts.2.1.1 = some HasBool.tt := by
-      rw [hf, countGuard_eval ρ.store n hy, decide_eq_true hle]
+    have hg : Core.Expression.eval ρ.factory ρ.store countParts.2.1.1 =
+        some (HasBool.ttVal ρ.factory) := by
+      rw [hf, countGuard_eval F hF ρ.store n hy, decide_eq_true hle]
       rfl
     have hev : Core.Expression.eval ρ.factory ρ.store countParts.2.2.1
-        = some (Lambda.LExpr.intConst () (n + 1)) := by
-      rw [hf]; exact countRhs_eval ρ.store n hy
-    let σ' : Core.CoreStore := fun z => if z = countY then some (Lambda.LExpr.intConst () (n + 1))
-      else ρ.store z
+        = some (Lambda.SemValue.ofInt F.model.tcInterp (n + 1)) := by
+      rw [hf]; exact countRhs_eval F hF ρ.store n hy
+    let σ' : Core.CoreStore := fun z =>
+      if z = countY then some (Lambda.SemValue.ofInt F.model.tcInterp (n + 1)) else ρ.store z
     have hset : Finishes π
-        (fun ρ₁ => ρ₁.factory = Core.Factory ∧
-          ρ₁.store countY = some (Lambda.LExpr.intConst () (n + 1)))
+        (fun ρ₁ => ρ₁.factory = F ∧
+          ρ₁.store countY = some (Lambda.SemValue.ofInt F.model.tcInterp (n + 1)))
         (.stmt countSet ρ) := by
       refine fin_cmd π ⟨σ', [], .cmd_sem (.eval_set hev
           (.update hy (ite_eq_left rfl) (fun z hz => ite_eq_right (Ne.symm hz)))
-          ⟨_, _, hy, intConst_valueOfTy _ n, intConst_valueOfTy _ (n + 1)⟩
-          (hf ▸ Core.coreFactory_WellFormedSemanticEval.var))⟩ ?_
+          ⟨_, _, hy, by rw [hf]; exact intConst_valueOfTy F n,
+            by rw [hf]; exact intConst_valueOfTy F (n + 1)⟩
+          (Core.coreEvaluator_WellFormedSemanticEvalVar _))⟩ ?_
       intro σ'' em hc
       cases hc with
       | cmd_sem hc' =>
@@ -506,22 +509,23 @@ private theorem count_loop_finishes :
       (fun _ _ => fin_nil π trivial))
     simp [projectStore, hy, hy₁]
 
-/-- From a state where `y` is undeclared and the factory is `Core.Factory`,
-    the whole body finishes. -/
-private theorem count_finishes (ρ : Env Core.Expression) (hf : ρ.factory = Core.Factory)
+/-- From a state over `F` where `y` is undeclared, the whole body finishes. -/
+private theorem count_finishes (ρ : Env Core.Expression) (hf : ρ.factory = F)
     (hy : ρ.store countY = none) :
     Finishes π (fun _ => True) (.stmts [countInit, countLoop] ρ) := by
   have hev : Core.Expression.eval ρ.factory ρ.store (Lambda.LExpr.intConst () 0)
-      = some (Lambda.LExpr.intConst () 0) :=
-    Lambda.evalFully_const ρ.factory ρ.store () (Lambda.LConst.intConst 0)
-  let σ' : Core.CoreStore := fun z => if z = countY then some (Lambda.LExpr.intConst () 0)
-    else ρ.store z
+      = some (Lambda.SemValue.ofInt F.model.tcInterp 0) := by
+    rw [hf]; exact Core.eval_intConst F ρ.store 0
+  let σ' : Core.CoreStore := fun z =>
+    if z = countY then some (Lambda.SemValue.ofInt F.model.tcInterp 0) else ρ.store z
   have hinit : Finishes π
-      (fun ρ₁ => ρ₁.factory = Core.Factory ∧ ρ₁.store countY = some (Lambda.LExpr.intConst () 0))
+      (fun ρ₁ => ρ₁.factory = F ∧
+        ρ₁.store countY = some (Lambda.SemValue.ofInt F.model.tcInterp 0))
       (.stmt countInit ρ) := by
     refine fin_cmd π ⟨σ', [], .cmd_sem (.eval_init hev
         (.init hy (ite_eq_left rfl) (fun z hz => ite_eq_right (Ne.symm hz)))
-        (intConst_valueOfTy _ 0) (hf ▸ Core.coreFactory_WellFormedSemanticEval.var))⟩ ?_
+        (by rw [hf]; exact intConst_valueOfTy F 0)
+        (Core.coreEvaluator_WellFormedSemanticEvalVar _))⟩ ?_
     intro σ'' em hc
     cases hc with
     | cmd_sem hc' =>
@@ -532,23 +536,25 @@ private theorem count_finishes (ρ : Env Core.Expression) (hf : ρ.factory = Cor
         | init _ hnew _ => exact ⟨hf, hv ▸ hnew⟩
   refine fin_cons π (fin_seq π hinit ?_)
   rintro ρ₁ ⟨hf₁, hy₁⟩
-  exact fin_cons π (fin_seq π (count_loop_finishes π 10 0 ρ₁ (by decide) hf₁ hy₁
+  exact fin_cons π (fin_seq π (count_loop_finishes π F hF 10 0 ρ₁ (by decide) hf₁ hy₁
     (by decide)) (fun _ _ => fin_nil π trivial))
 
 end Count
 
 /-- **`var y : int := 0; while (int.le(y, 9)) { y := int.add(y, 1); }`
     terminates** from every state where `y` is undeclared and the factory is
-    `Core.Factory`: every execution finishes after ten iterations. -/
+    over `Core.Factory`: every execution finishes after ten iterations. -/
 theorem count_terminates (π : String → Option Core.Procedure)
-    (ρ : Env Core.Expression) (hf : ρ.factory = Core.Factory) (hy : ρ.store countY = none) :
+    (ρ : Env Core.Expression) (hf : ρ.factory.factory = Core.Factory)
+    (hy : ρ.store countY = none) :
     (Core.Logic.EventLang.coreBlock π).Terminates [countInit, countLoop] ρ :=
-  (count_finishes π ρ hf hy).mustTerminate π
+  (count_finishes π ρ.factory hf ρ rfl hy).mustTerminate π
 
 /-- The counting loop has no infinite run from any state where `y` is
-    undeclared and the factory is `Core.Factory`. -/
+    undeclared and the factory is over `Core.Factory`. -/
 theorem count_not_canDiverge (π : String → Option Core.Procedure)
-    (ρ : Env Core.Expression) (hf : ρ.factory = Core.Factory) (hy : ρ.store countY = none) :
+    (ρ : Env Core.Expression) (hf : ρ.factory.factory = Core.Factory)
+    (hy : ρ.store countY = none) :
     ¬ (Core.Logic.EventLang.coreBlock π).CanDiverge
       ((Core.Logic.EventLang.coreBlock π).stmtCfg [countInit, countLoop] ρ) :=
   (EventLang.mustTerminate_iff.mp (count_terminates π ρ hf hy)).1
@@ -559,13 +565,13 @@ theorem count_not_canDiverge (π : String → Option Core.Procedure)
 assertion command emits the assertion, whose condition denotes `false` in every
 world. The verdict's witness is the entry state. -/
 
-/-- The entries of a statement list: every state over `Core.Factory`, each
-    running `ss` from it. -/
+/-- The entries of a statement list: every state over a runtime factory over
+    `Core.Factory`, each running `ss` from it. -/
 private def blockEntries (π : String → Option Core.Procedure) (ss : List Core.Statement) :
     ProgramEntries (fun _ : Unit => Core.Logic.EventLang.coreBlock π) where
   Program := Unit
   Entry := Env Core.Expression
-  entries _ ρ := ρ.factory = Core.Factory
+  entries _ ρ := ρ.factory.factory = Core.Factory
   start _ ρ := ⟨(), (Core.Logic.EventLang.coreBlock π).stmtCfg ss ρ⟩
 
 private def failPgm : Program :=
@@ -602,11 +608,11 @@ private theorem failExpr_eq :
 /-- The assertion's identifier. -/
 private def failId : AssertId Core.Expression := ⟨"a", failParts.2⟩
 
-/-- **`assert [a]: false;` has a correct `failed` verdict** in every model,
+/-- **`assert [a]: false;` has a correct `failed` verdict**,
     witnessed by any entry state `ρ`. -/
-theorem fail_failed (model : Lambda.Interp Core.Factory) (π : String → Option Core.Procedure)
-    (ρ : Env Core.Expression) (hρ : ρ.factory = Core.Factory) :
-    Strata.Analysis.VerdictCorrect (Core.Logic.DenoteBasedInterp model)
+theorem fail_failed (π : String → Option Core.Procedure)
+    (ρ : Env Core.Expression) (hρ : ρ.factory.factory = Core.Factory) :
+    Strata.Analysis.VerdictCorrect (Core.Logic.DenoteBasedInterp Core.Factory)
       (blockEntries π [failAssert]) () failId (.failed ρ) := by
   have hrun : (Core.Logic.EventLang.coreBlock π).ReachesWithin 2
       ((Core.Logic.EventLang.coreBlock π).stmtCfg [failAssert] ρ)
@@ -616,13 +622,14 @@ theorem fail_failed (model : Lambda.Interp Core.Factory) (π : String → Option
       .inr ⟨_, _, [], .step_seq_inner (.step_cmd (.cmd_sem .eval_assert)), ⟨rfl, rfl⟩,
         rfl⟩, rfl⟩
   refine ⟨hρ, 2, _, ⟨_, hrun⟩, fun hvalid => ?_⟩
-  have hholds := hvalid.1 ⟨rfl, rfl⟩ (CoreHoareTestSupport.someValuation model)
+  have hholds := hvalid.1 ⟨rfl, rfl⟩ (CoreHoareTestSupport.someValuation _)
     (fun _ h => by simp at h)
-  rcases hholds with ⟨_, _, hd⟩ | ⟨hne, _⟩
-  · revert hd
-    simp only [Core.Logic.capturedExpr, failExpr_eq]
-    simp [Lambda.LExpr.substFvarsFromEnv, Lambda.LMonoTy.bool, Lambda.denote_boolConst]
-  · exact hne hρ
+  rcases hholds with ⟨_, he⟩ | ⟨_, hoff⟩
+  · have hff : Core.Expression.eval ρ.factory ρ.store failParts.1 =
+        some (HasBool.ffVal ρ.factory) := by
+      rw [failExpr_eq]; exact Core.eval_boolConst ρ.factory ρ.store false
+    exact HasBool.ttVal_ne_ffVal ρ.factory (Option.some.inj (he.symm.trans hff))
+  · exact hoff
 
 /-! ## A `valid` verdict
 
@@ -714,32 +721,29 @@ private theorem ok_reaches (π : String → Option Core.Procedure) (ρ : Env Cor
       · exact he ev hev
       · exact ih hc₁ hr ev hev
 
-/-- On a trace of assertions `b` only, captured over `Core.Factory`, every
-    occurrence of `b` holds in every world. -/
-private theorem ok_valid_from (model : Lambda.Interp Core.Factory) (ρ : Env Core.Expression)
-    (hρ : ρ.factory = Core.Factory) :
+/-- On a trace of assertions `b` only, captured over a runtime factory over
+    `Core.Factory`, every occurrence of `b` holds in every world. -/
+private theorem ok_valid_from (ρ : Env Core.Expression)
+    (hρ : ρ.factory.factory = Core.Factory) :
     ∀ (trace assumptions : Trace Core.Expression), OkEvents ρ trace →
-      Trace.AssertionValidFrom Core.Expression (Core.Logic.DenoteBasedInterp model) okId
+      Trace.AssertionValidFrom Core.Expression (Core.Logic.DenoteBasedInterp Core.Factory) okId
         assumptions trace
   | [], _, _ => trivial
   | ev :: rest, assumptions, h => by
     obtain rfl := h ev (List.mem_cons_self ..)
-    refine ⟨fun _ _ _ => .inl ⟨hρ, ?_⟩, ok_valid_from model ρ hρ rest assumptions fun ev hev =>
+    refine ⟨fun _ _ _ => .inl ⟨hρ, ?_⟩, ok_valid_from ρ hρ rest assumptions fun ev hev =>
       h ev (List.mem_cons_of_mem _ hev)⟩
-    have hcap : Core.Logic.capturedExpr ⟨ρ.factory, ρ.store, "b", okParts.1, okParts.2⟩
-        = Lambda.LExpr.const () (Lambda.LConst.boolConst true) := by
-      simp [Core.Logic.capturedExpr, okExpr_eq, Lambda.LExpr.substFvarsFromEnv]
-    rw [hcap]
-    exact ⟨Lambda.LExpr.typeCheck_to_HasTypeA (by rfl),
-      Lambda.denote_boolConst _ _ _ _ _ _⟩
+    show Core.Expression.eval ρ.factory ρ.store okParts.1 = some (HasBool.ttVal ρ.factory)
+    rw [okExpr_eq]
+    exact Core.eval_boolConst ρ.factory ρ.store true
 
-/-- **`assert [b]: true;` has a correct `valid` verdict** in every model: it
-    holds from every entry state. -/
-theorem ok_valid (model : Lambda.Interp Core.Factory) (π : String → Option Core.Procedure) :
-    Strata.Analysis.VerdictCorrect (Core.Logic.DenoteBasedInterp model)
+/-- **`assert [b]: true;` has a correct `valid` verdict**: it holds from every
+    entry state, whatever model its runtime factory carries. -/
+theorem ok_valid (π : String → Option Core.Procedure) :
+    Strata.Analysis.VerdictCorrect (Core.Logic.DenoteBasedInterp Core.Factory)
       (blockEntries π [okAssert]) () okId .valid := by
   intro ρ hρ n trace ⟨_, hrun⟩
-  exact ok_valid_from model ρ hρ _ [] (ok_reaches π ρ n (.inl rfl) hrun)
+  exact ok_valid_from ρ hρ _ [] (ok_reaches π ρ n (.inl rfl) hrun)
 
 /-! ## An exit caught by its block does not finish the run
 

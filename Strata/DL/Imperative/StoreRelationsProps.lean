@@ -68,7 +68,7 @@ theorem StoreAgreement.trans {P : PureExpr} {σ₁ σ₂ σ₃ : SemanticStore P
 `StoreAgreement` with the source: the only changed slot is `ident`, which the
 source store does not define (one-directionality of `StoreAgreement`). -/
 theorem storeAgreement_storeWith {P : PureExpr} [DecidableEq P.Ident]
-    (σ_src σ_tgt : SemanticStore P) (ident : P.Ident) (b : P.Expr)
+    (σ_src σ_tgt : SemanticStore P) (ident : P.Ident) (b : P.Val)
     (h_agree : StoreAgreement σ_src σ_tgt)
     (h_src_none : σ_src ident = none) :
     StoreAgreement σ_src (SemanticStore.update σ_tgt ident b) := by
@@ -196,7 +196,7 @@ theorem trans {P : PureExpr} {Extra : P.Ident → Prop}
 store extension. -/
 theorem update_target {P : PureExpr} [DecidableEq P.Ident]
     {Extra : P.Ident → Prop} {source target : SemanticStore P}
-    {ident : P.Ident} {value : P.Expr}
+    {ident : P.Ident} {value : P.Val}
     (h : StoreExtendsWith Extra source target)
     (hsource : source ident = none) (hextra : Extra ident) :
     StoreExtendsWith Extra source (SemanticStore.update target ident value) := by
@@ -213,7 +213,7 @@ theorem update_target {P : PureExpr} [DecidableEq P.Ident]
 classified extension. -/
 theorem update_both {P : PureExpr} [DecidableEq P.Ident]
     {Extra : P.Ident → Prop} {source target : SemanticStore P}
-    {ident : P.Ident} {value : P.Expr}
+    {ident : P.Ident} {value : P.Val}
     (h : StoreExtendsWith Extra source target) :
     StoreExtendsWith Extra
       (SemanticStore.update source ident value)

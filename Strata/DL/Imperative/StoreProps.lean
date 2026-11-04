@@ -217,7 +217,7 @@ theorem SemanticStore.isReserved.storeWith_gen {P : PureExpr} [HasIdent P]
     [DecidableEq P.Ident] [LawfulHasIdent P]
     {Q : String → Prop}
     {state : StringGenState} {store : SemanticStore P}
-    (pfx : String) (value : P.Expr)
+    (pfx : String) (value : P.Val)
     (hreserved : SemanticStore.isReserved Q state store) :
     SemanticStore.isReserved Q (StringGenState.gen pfx state).2
       (SemanticStore.update store

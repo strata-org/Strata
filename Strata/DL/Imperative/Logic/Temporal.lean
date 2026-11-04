@@ -39,7 +39,7 @@ namespace Strata.Logic
 
 open Imperative
 
-variable {P : PureExpr} {EventT : Type}
+variable {P : PureExpr} {EventT : Type _}
 
 /-- `cfg'` is reachable from `cfg` in zero or more steps. -/
 @[expose] def EventLang.Reaches (EL : EventLang P EventT) (cfg cfg' : EL.CfgT) : Prop :=

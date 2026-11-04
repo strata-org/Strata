@@ -986,10 +986,9 @@ def test_vt_constr_value_arg := TestCase.new
 #eval checkResultValueTrue test_vt_constr_value_arg
 
 -- Test: a constructor applied to a REDUCIBLE argument: `Box (Int.Add #1 #1)`
--- rebuilds to `Box #2`, which is certified `.value true`.
--- Regression for the bug where the no-`concreteEval` branch flagged the
--- rebuilt value `.nonvalue`, making `evalFully` diverge on any
--- constructor with reducible arguments.
+-- rebuilds to `Box #2`, which is certified `.value true`: a constructor
+-- without a concrete evaluator still reports a value once its arguments
+-- reduce.
 def test_vt_constr_reducible_arg := TestCase.new
   constrState
   esM[(~Box ((~Int.Add #1) #1))]

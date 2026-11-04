@@ -32,6 +32,8 @@ model-check a Strata-generated GOTO binary.
 
 abbrev CoreParams : Lambda.LExprParams := ⟨Unit, Unit⟩
 
+/-- Core expressions over string identifiers, as read by the GOTO translation.
+    The translation never evaluates expressions, so the evaluator is a stub. -/
 abbrev Core.ExprStr : Imperative.PureExpr :=
    { Ident := CoreParams.Identifier,
      Expr := Lambda.LExpr CoreParams.mono,
@@ -41,7 +43,8 @@ abbrev Core.ExprStr : Imperative.PureExpr :=
      TyContext := @Lambda.LContext CoreParams,
      EqIdent := inferInstanceAs (DecidableEq CoreParams.Identifier),
      Factory := Lambda.Factory CoreParams,
-     eval := Lambda.LExpr.evalFully }
+     Val := Lambda.LExpr CoreParams.mono,
+     eval := fun _ _ _ => none }
 
 namespace CoreToGOTO
 

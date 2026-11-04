@@ -39,6 +39,8 @@ constructors for the Imperative dialect live in `Imperative.Logic`:
 
 public section
 
+universe u v
+
 /-! ## Language bundle -/
 
 namespace Strata.Logic
@@ -50,11 +52,11 @@ transitions so clients can reason about progress and must-termination;
 `EventLang.traceStar` derives chronological traced reachability. Terminal and
 exiting configurations have no outgoing steps. Assertion observations are
 carried by `EventT` rather than detected from configurations. -/
-structure EventLang (P : PureExpr) (EventT : Type) where
+structure EventLang (P : PureExpr.{u}) (EventT : Type v) where
   /-- Statement type. -/
   StmtT : Type
   /-- Configuration type. -/
-  CfgT : Type
+  CfgT : Type u
   /-- One operational step and the events it emits. -/
   step : CfgT → List EventT → CfgT → Prop
   /-- Embed a statement and initial environment into a configuration. -/
@@ -78,7 +80,7 @@ structure EventLang (P : PureExpr) (EventT : Type) where
 
 /-- Reflexive-transitive execution with emitted events in chronological order. -/
 abbrev EventLang.traceStar
-    {P : PureExpr} {EventT : Type} (EL : EventLang P EventT) :
+    {P : PureExpr} {EventT : Type _} (EL : EventLang P EventT) :
     EL.CfgT → List EventT → EL.CfgT → Prop :=
   ReflTransTrace EL.step
 
@@ -98,7 +100,7 @@ command event evaluator. The resulting bundle exposes `StepStmtE` as its
 one-step relation. -/
 abbrev EventLang.imperativeE (P : PureExpr) [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
-    (CmdT : Type) {EventT : Type} (evalCmd : EvalCmdParamE P CmdT EventT)
+    (CmdT : Type) {EventT : Type _} (evalCmd : EvalCmdParamE P CmdT EventT)
     (ParamsTy : Type)
     (initEnvWF : ParamsTy → Stmt P CmdT → Env P → Prop) :
     EventLang P EventT where
@@ -124,7 +126,7 @@ carries the initial-environment well-formedness parameters and predicate, for
 example `⟨InitEnvWFParams P, BlockInitEnvWF⟩`. -/
 abbrev EventLang.imperativeBlockE (P : PureExpr) [HasBool P] [HasBoolOps P]
     [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasSubstFvar P]
-    (CmdT : Type) {EventT : Type} (evalCmd : EvalCmdParamE P CmdT EventT)
+    (CmdT : Type) {EventT : Type _} (evalCmd : EvalCmdParamE P CmdT EventT)
     (wfPkg : (ParamsTy : Type) × (ParamsTy → List (Stmt P CmdT) → Env P → Prop)) :
     EventLang P EventT where
   StmtT := List (Stmt P CmdT)
@@ -147,7 +149,7 @@ abbrev EventLang.imperativeBlockE (P : PureExpr) [HasBool P] [HasBoolOps P]
 CFG and every configuration carries its environment, so the one-step relation is
 `StepCFGE P evalCmd` without additional captured parameters. -/
 abbrev EventLang.cfgE (P : PureExpr) [HasBool P] [HasBoolOps P] [HasVal P]
-    [HasFvars P] (CmdT : Type) {EventT : Type}
+    [HasFvars P] (CmdT : Type) {EventT : Type _}
     (evalCmd : EvalCmdParamE P CmdT EventT) (ParamsTy : Type)
     (initEnvWF : ParamsTy → CFG String (DetBlock String CmdT P) → Env P → Prop) :
     EventLang P EventT where

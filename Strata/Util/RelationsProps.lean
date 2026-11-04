@@ -35,7 +35,7 @@ namespace Relations
 end Relations
 
 /-- `RComp R₁ R₂` reduces to `R` when `R` is transitive and `R₁, R₂ ⊆ R`. -/
-theorem RComp.collapse {A : Type} {R₁ R₂ R : Relation A} {a c : A}
+theorem RComp.collapse {A : Type _} {R₁ R₂ R : Relation A} {a c : A}
     (htrans : IsTransitive R)
     (h₁ : ∀ x y, R₁ x y → R x y) (h₂ : ∀ x y, R₂ x y → R x y)
     (h : RComp R₁ R₂ a c) : R a c := by
@@ -44,7 +44,7 @@ theorem RComp.collapse {A : Type} {R₁ R₂ R : Relation A} {a c : A}
 
 
 /-- `RComp` is monotone in both arguments. -/
-theorem RComp.mono {A : Type} {R₁ R₁' R₂ R₂' : Relation A}
+theorem RComp.mono {A : Type _} {R₁ R₁' R₂ R₂' : Relation A}
     (h₁ : ∀ x y, R₁ x y → R₁' x y) (h₂ : ∀ x y, R₂ x y → R₂' x y)
     {a c : A} (h : RComp R₁ R₂ a c) : RComp R₁' R₂' a c := by
   obtain ⟨b, hr₁, hr₂⟩ := h
@@ -55,15 +55,15 @@ theorem RComp.mono {A : Type} {R₁ R₁' R₂ R₂' : Relation A}
 /-- Any reflexive relation is dense: split `r a c` at the endpoint `a` using
     `r a a`.  In particular equality is dense, which is why the shared-start
     (`· = ·`) composition combinators need no separate density hypothesis. -/
-theorem IsReflexive.dense {A : Type} {r : Relation A} (h : IsReflexive r) : IsDense r :=
+theorem IsReflexive.dense {A : Type _} {r : Relation A} (h : IsReflexive r) : IsDense r :=
   fun a _c hac => ⟨a, h a, hac⟩
 
 
-theorem ReflTrans_Reflexive {A: Type} (r: Relation A):
+theorem ReflTrans_Reflexive {A : Type _} (r: Relation A):
   IsReflexive (ReflTrans r) := by apply ReflTrans.refl
 
 
-theorem ReflTrans_Transitive {A: Type} (r: Relation A):
+theorem ReflTrans_Transitive {A : Type _} (r: Relation A):
   IsTransitive (ReflTrans r) := by
   unfold IsTransitive; intros x y z rxy
   induction rxy generalizing z
@@ -73,7 +73,7 @@ theorem ReflTrans_Transitive {A: Type} (r: Relation A):
     apply (ReflTrans.step _ y1 _ rxy1 (IH _ rzz1))
 
 
-theorem reflTransT_to_prop {A : Type} {r : A → A → Prop} {a b : A} :
+theorem reflTransT_to_prop {A : Type _} {r : A → A → Prop} {a b : A} :
     ReflTransT r a b → ReflTrans r a b := by
   intro h; induction h with
   | refl => exact .refl _
@@ -81,7 +81,7 @@ theorem reflTransT_to_prop {A : Type} {r : A → A → Prop} {a b : A} :
 
 
 /-- Traced executions compose by concatenating their chronological traces. -/
-theorem ReflTransTrace.trans {A E : Type} (r : A → List E → A → Prop)
+theorem ReflTransTrace.trans {A : Type _} {E : Type _} (r : A → List E → A → Prop)
     {a b c : A} {trace₁ trace₂ : List E}
     (h₁ : ReflTransTrace r a trace₁ b)
     (h₂ : ReflTransTrace r b trace₂ c) :
@@ -94,7 +94,7 @@ theorem ReflTransTrace.trans {A E : Type} (r : A → List E → A → Prop)
 
 /-- Forgetting labels from every step of a traced execution yields an ordinary
 reflexive-transitive execution. -/
-theorem ReflTransTrace.toReflTrans {A E : Type}
+theorem ReflTransTrace.toReflTrans {A : Type _} {E : Type _}
     {r : A → List E → A → Prop} {u : A → A → Prop}
     (hforget : ∀ a emitted b, r a emitted b → u a b)
     {a b : A} {trace : List E}
@@ -106,7 +106,7 @@ theorem ReflTransTrace.toReflTrans {A E : Type}
 
 /-- The `Type`-valued traced closure implies the `Prop`-valued one: forget the
 step-count structure. -/
-theorem reflTransTraceT_to_prop {A E : Type} {r : A → List E → A → Prop}
+theorem reflTransTraceT_to_prop {A : Type _} {E : Type _} {r : A → List E → A → Prop}
     {a b : A} {trace : List E} :
     ReflTransTraceT r a trace b → ReflTransTrace r a trace b := by
   intro h; induction h with
@@ -115,7 +115,7 @@ theorem reflTransTraceT_to_prop {A E : Type} {r : A → List E → A → Prop}
 
 /-- Every `Prop`-valued traced derivation has a `Type`-valued witness with the
 same endpoints and trace (its step count is not observable through `Prop`). -/
-theorem reflTransTrace_nonempty_T {A E : Type} {r : A → List E → A → Prop}
+theorem reflTransTrace_nonempty_T {A : Type _} {E : Type _} {r : A → List E → A → Prop}
     {a b : A} {trace : List E} :
     ReflTransTrace r a trace b → Nonempty (ReflTransTraceT r a trace b) := by
   intro h; induction h with
@@ -124,19 +124,19 @@ theorem reflTransTrace_nonempty_T {A E : Type} {r : A → List E → A → Prop}
 
 /-- Recover a `Type`-valued traced derivation from a `Prop`-valued one via choice.
 `noncomputable`; harmless when the enclosing result is again a `Prop`. -/
-noncomputable def reflTransTrace_to_T {A E : Type} {r : A → List E → A → Prop}
+noncomputable def reflTransTrace_to_T {A : Type _} {E : Type _} {r : A → List E → A → Prop}
     {a b : A} {trace : List E} :
     ReflTransTrace r a trace b → ReflTransTraceT r a trace b :=
   fun h => Classical.choice (reflTransTrace_nonempty_T h)
 
 /-- A traced closure is monotone in its step relation. -/
-theorem ReflTransTrace.imp {A E : Type} {r r' : A → List E → A → Prop}
+theorem ReflTransTrace.imp {A : Type _} {E : Type _} {r r' : A → List E → A → Prop}
     (h : ∀ x evs y, r x evs y → r' x evs y) :
     ∀ {x evs y}, ReflTransTrace r x evs y → ReflTransTrace r' x evs y :=
   (by induction · <;> solve_by_elim)
 
 /-- A larger bound allows every execution a smaller one does. -/
-theorem ReflTransTraceN.mono {A E : Type} {r : A → List E → A → Prop} {n m : Nat}
+theorem ReflTransTraceN.mono {A : Type _} {E : Type _} {r : A → List E → A → Prop} {n m : Nat}
     (hnm : n ≤ m) :
     ∀ {x t z}, ReflTransTraceN r n x t z → ReflTransTraceN r m x t z := by
   induction n generalizing m with
@@ -153,7 +153,7 @@ theorem ReflTransTraceN.mono {A E : Type} {r : A → List E → A → Prop} {n m
     · exact .inr ⟨emitted, y, rest, hstep, ih (by omega) hrest, ht⟩
 
 /-- A finite traced execution is one within some bound. -/
-theorem reflTransTrace_iff_reflTransTraceN {A E : Type} {r : A → List E → A → Prop}
+theorem reflTransTrace_iff_reflTransTraceN {A : Type _} {E : Type _} {r : A → List E → A → Prop}
     {x z : A} {t : List E} :
     ReflTransTrace r x t z ↔ ∃ n, ReflTransTraceN r n x t z := by
   constructor

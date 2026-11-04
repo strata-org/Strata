@@ -44,7 +44,7 @@ variable {P : PureExpr} [iDE : DecidableEq P.Ident] [iBE : BEq P.Ident] [iLB : L
   [iOp : HasOps P] [iLFv : LawfulHasFvar P] [iLFvs : LawfulHasFvars P] [iLV : LawfulHasVal P]
 omit iOp iLFv iLFvs
 variable {F : P.Factory} {σS σL σ σS' σS1 : SemanticStore P} {x y : P.Ident} {D : List P.Ident}
-  {t : AssertId P} {A : AvoidSet P} {n0 n : Nat} {w : P.Expr} {ρ : Std.HashMap P.Ident (SVal P)}
+  {t : AssertId P} {A : AvoidSet P} {n0 n : Nat} {w : P.Val} {ρ : Std.HashMap P.Ident (SVal P)}
   {out o : PStmts P} {tr evs : List (Event P)} {s s1 : SSt P} {cond : P.Expr}
 
 
@@ -63,7 +63,7 @@ private theorem SHolds.mono (hm : StoreAgreement σS σS')
 
 omit iDE iBE iHF iSF iHI iHa iHFs iLV in
 /-- The value a current value holds has the type the current value gives `x`. -/
-private theorem SHolds.ty {F : P.Factory} {σS : SemanticStore P} {x : P.Ident} {w : P.Expr}
+private theorem SHolds.ty {F : P.Factory} {σS : SemanticStore P} {x : P.Ident} {w : P.Val}
     {ty : P.Ty} : ∀ {o : Option (SVal P)}, SHolds F σS x w o →
       (o.getD (.name x none)).ty? = some ty → HasVal.valueOfTy F w ty
   | o, h, hty => by rcases o with _ | (_ | _) <;> grind [SHolds, SVal.ty?, bool_valueOfTy]
@@ -106,7 +106,7 @@ omit iLV in
 /-- A fresh name of the traversal is unbound in the obligation store, and binding it to a value
     keeps `SDom` at the advanced counter, grows the store and keeps it value-valued. -/
 private theorem SDom.fresh (h : SDom A D n0 σS s.next) (hA : s.avoid = A) (hn : n0 ≤ s.next)
-    (hf : sFresh x s = .ok (y, s1)) (hC : WellFormedStore σS F) {v : P.Expr}
+    (hf : sFresh x s = .ok (y, s1)) (hC : WellFormedStore σS F) {v : P.Val}
     (hv : HasVal.value F v) :
     σS y = none ∧ SDom A D n0 (SemanticStore.update σS y v) s1.next ∧
       StoreAgreement σS (SemanticStore.update σS y v) ∧
@@ -123,11 +123,12 @@ private theorem SDom.fresh (h : SDom A D n0 σS s.next) (hA : s.avoid = A) (hn :
 
 /-! ## Assignments -/
 
+omit iLV in
 /-- **An assignment of the obligation program.**  When the guarded value of `x := e` is `v0`
     (of type `ty`) under agreement on the free variables of `e`, the output of `assignVal` runs
     from the obligation store to a larger one in which the recorded value of `x` holds `v0`. -/
 private theorem ssaAssign_sim (hF : SSALaws F) (hCL : WellFormedStore σL F)
-    (hCS : WellFormedStore σS F) {ty : P.Ty} {e : P.Expr} {v : SVal P} {v0 : P.Expr}
+    (hCS : WellFormedStore σS F) {ty : P.Ty} {e : P.Expr} {v : SVal P} {v0 : P.Val}
     (h : assignVal x ty e s = .ok ((o, v), s1))
     (hA : ∀ y ∈ HasFvars.getFvars e, SAgree F s.ρ σL σS y) (he : EvalsTo F σL e v0)
     (hty : HasVal.valueOfTy F v0 ty) (hD : SDom A D n0 σS s.next) (hav : s.avoid = A)

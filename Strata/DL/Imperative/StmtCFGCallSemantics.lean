@@ -90,7 +90,7 @@ variable [DecidableEq P.Ident] [HasOldIdent P]
     output-only formals to `outOnlyVals`, and every inout formal is snapshotted
     under its `old` name. -/
 @[expose] def InitCallFrame
-    (p : Procedure P (CmdExt P) Hdr) (inputVals outOnlyVals : List P.Expr)
+    (p : Procedure P (CmdExt P) Hdr) (inputVals : List P.Val) (outOnlyVals : List P.Val)
     (σAO : SemanticStore P) : Prop :=
   ∃ σA σIO,
     InitStates emptyStore (ProcedureHeader.inputParams (P := P) p.header) inputVals σA ∧

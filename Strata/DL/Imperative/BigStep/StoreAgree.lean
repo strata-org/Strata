@@ -49,7 +49,7 @@ theorem feasible_obs {evs evs' : List (Event P)}
   | assume a' =>
     simp only [Event.obs, Prod.mk.injEq] at heq
     show P.eval _ _ _ = _
-    rw [← heq.2.2.2.2]
+    rw [← heq.2.2.2.2.2, ← heq.2.2.2.2.1]
     exact h a' he
   | assert | cover => simp [Event.obs] at heq
 
@@ -170,10 +170,10 @@ omit [LawfulHasVal P] [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [H
 theorem EvReplay.obs (hE : EvCongr F) {e e' : Event P} (h : EvReplay F e e') :
     Event.obs e' = Event.obs e := by
   have key : ∀ {a a' : EventArg P}, ArgReplay F a a' →
-      (a'.label, a'.expr, a'.metadata, P.eval a'.factory a'.store a'.expr) =
-        (a.label, a.expr, a.metadata, P.eval a.factory a.store a.expr) := by
+      (a'.label, a'.expr, a'.metadata, a'.factory, P.eval a'.factory a'.store a'.expr) =
+        (a.label, a.expr, a.metadata, a.factory, P.eval a.factory a.store a.expr) := by
     rintro ⟨f, s, l, x, m⟩ ⟨f', s', l', x', m'⟩ ⟨rfl, rfl, rfl, rfl, rfl, hA, hC⟩
-    exact congrArg _ (congrArg _ (congrArg _ (ev_agree hE hC hA fun _ hy => hy)))
+    exact congrArg _ (congrArg _ (congrArg _ (congrArg _ (ev_agree hE hC hA fun _ hy => hy))))
   rcases e with a | a | a <;> rcases e' with a' | a' | a' <;> simp only [EvReplay] at h <;>
     simp only [Event.obs, key h]
 
@@ -187,7 +187,7 @@ theorem _root_.List.Rel₂.map_obs (hE : EvCongr F) {evs evs' : List (Event P)} 
 omit [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P] [LawfulHasVal P] [HasFvars P] in
 /-- Defining `x` as the value `v` in both stores keeps agreement and value-validity. -/
 theorem agree_def {N : List P.Ident} {σ σ1 σ' : SemanticStore P}
-    {x : P.Ident} {v : P.Expr} (hA : Agree (x :: N) σ σ') (hC : WellFormedStore σ F)
+    {x : P.Ident} {v : P.Val} (hA : Agree (x :: N) σ σ') (hC : WellFormedStore σ F)
     (hv : HasVal.value F v) (h1 : σ1 x = some v) (hfr : ∀ y, x ≠ y → σ1 y = σ y) :
     Agree N σ1 (SemanticStore.update σ' x v) ∧ WellFormedStore σ1 F := by
   grind [Agree, SemanticStore.update, WellFormedStore, storeAgreement_iff]

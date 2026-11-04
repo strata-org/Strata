@@ -217,9 +217,10 @@ with nothing reading it. -/
 /-- `e` is a value of the factory `F` (`LExpr.isValue`) of type `ty`: a constant, a
     closed abstraction or quantifier, or a constructor of `F` applied to values, a nullary
     one included (`None()`). A function of `F` applied to fewer arguments than it takes is
-    a value too. This is `HasVal.valueOfTy F e ty` for `Core.Expression`, computed: that
-    one is a proposition, and the phase needs to decide it. -/
-def isValueOfTy (F : Expression.Factory) (ty : Expression.Ty) (e : Expression.Expr) : Bool :=
+    a value too. This is a syntactic check, not `HasVal.valueOfTy` (a predicate on semantic
+    values). -/
+def isValueOfTy (F : Lambda.Factory CoreLParams) (ty : Expression.Ty) (e : Expression.Expr) :
+    Bool :=
   Lambda.LExpr.isValue F e &&
   (match ty.toMonoType? with
    | some t => Lambda.LExpr.typeCheck [] e == some t
@@ -265,7 +266,7 @@ def isDefinedCopy (D : Defined) (ty : Expression.Ty) : Expression.Expr → Bool
     a tester, a destructor or a call may get stuck, and so may a variable defined only
     in one arm of a branch. The check is one pass over `e` with one factory lookup per
     application, or one map lookup. -/
-def surelyEvaluates (F : Expression.Factory) (D : Defined) (ty : Expression.Ty)
+def surelyEvaluates (F : Lambda.Factory CoreLParams) (D : Defined) (ty : Expression.Ty)
     (e : Expression.Expr) : Bool :=
   isValueOfTy F ty e || isDefinedCopy D ty e
 
@@ -274,7 +275,7 @@ def surelyEvaluates (F : Expression.Factory) (D : Defined) (ty : Expression.Ty)
 
     A nondeterministic `init` is kept even when nothing reads it. A `set` is not a
     definition: dropping it would change the value of a variable that outlives it. -/
-def definedBy (F : Expression.Factory) (D : Defined) : Statement → Option CoreIdent
+def definedBy (F : Lambda.Factory CoreLParams) (D : Defined) : Statement → Option CoreIdent
   | .cmd (.cmd (.init x ty (.det e) _)) => if surelyEvaluates F D ty e then some x else none
   | _ => none
 
@@ -325,7 +326,7 @@ mutual
     compound statement adds only the variables of its guard, measure and invariants to
     what its nested lists return, instead of walking them again. The arms of a branch
     are swept by `dropDeadDefsArms`, the one with fewer statements first. -/
-def dropDeadDefsStmt (F : Expression.Factory) (D : Defined) (live : Std.HashSet String)
+def dropDeadDefsStmt (F : Lambda.Factory CoreLParams) (D : Defined) (live : Std.HashSet String)
     (added : List String) (stmt : Statement) :
     Statement × Std.HashSet String × List String :=
   match stmt with
@@ -362,7 +363,7 @@ def dropDeadDefsStmt (F : Expression.Factory) (D : Defined) (live : Std.HashSet 
     makes each statement part of an erased arm at most log₂ n times, for n statements
     in all, whichever arms the branches are nested in: each time, the branch around it
     holds at least twice as many statements as the erased arm. -/
-def dropDeadDefsArms (F : Expression.Factory) (D : Defined) (live : Std.HashSet String)
+def dropDeadDefsArms (F : Lambda.Factory CoreLParams) (D : Defined) (live : Std.HashSet String)
     (added : List String) (first second : List Statement) :
     List Statement × List Statement × Std.HashSet String × List String :=
   if first.isEmpty then
@@ -379,7 +380,7 @@ def dropDeadDefsArms (F : Expression.Factory) (D : Defined) (live : Std.HashSet 
 
 /-- `dropDeadDefs`, also returning the names live before the swept list, and `added`
     with each name this inserted into `liveOnExit` consed on. -/
-def dropDeadDefsAux (F : Expression.Factory) (D : Defined) (liveOnExit : Std.HashSet String)
+def dropDeadDefsAux (F : Lambda.Factory CoreLParams) (D : Defined) (liveOnExit : Std.HashSet String)
     (added : List String) (ss : List Statement) :
     List Statement × Std.HashSet String × List String :=
   match ss with
@@ -414,7 +415,7 @@ end
     is re-executed each iteration, so no later iteration can read the previous one's,
     and a guard or invariant cannot read it either, being outside the body's scope.
     Reads within one iteration are covered by the backward pass over the body. -/
-def dropDeadDefs (F : Expression.Factory) (D : Defined) (liveOnExit : Std.HashSet String)
+def dropDeadDefs (F : Lambda.Factory CoreLParams) (D : Defined) (liveOnExit : Std.HashSet String)
     (ss : List Statement) : List Statement :=
   (dropDeadDefsAux F D liveOnExit [] ss).1
 
@@ -436,7 +437,7 @@ def dropDeadDefs (F : Expression.Factory) (D : Defined) (liveOnExit : Std.HashSe
     functions carry the `inlineIfConstr`/`evalIfConstr` attributes that `fold`
     keeps. Without them the call would find no definition and be left as is.
     Datatype functions are registered the same way `buildEnv` registers them. -/
-def programFactory (p : Program) : Transform.CoreTransformM Expression.Factory := do
+def programFactory (p : Program) : Transform.CoreTransformM (Lambda.Factory CoreLParams) := do
   -- Datatypes first, so a function declared over them resolves.
   let mut F ← Transform.getFactory
   for decl in p.decls do

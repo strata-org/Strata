@@ -221,7 +221,8 @@ selector/tester/`=`/`ite` reduction. It is opaque on quantifiers: it stops at th
 first binder it meets, so it is run per instance and handed the largest
 quantifier-free subterms rather than the whole term. -/
 
-/-- Fuel for one `eval` call. `evalFully` diverges on a non-value. -/
+/-- Fuel for one `eval` call. Searching for a fuel that reaches a value would
+    diverge on an expression that never reduces to one. -/
 def evalFuel : Nat := 200
 
 def emptyEnv : Lambda.Env CoreLParams := Lambda.Env.mk (fun _ => none)

@@ -46,7 +46,8 @@ variable {F : P.Factory} {Lc S : List P.Ident} {ss B : PStmts P} {r : Outcome P}
 
 omit iDE iFv in
 /-- The Boolean constants have the Boolean type. -/
-theorem bool_valueOfTy (hb : v = tt ∨ v = ff) : HasVal.valueOfTy F v HasBool.boolTy :=
+theorem bool_valueOfTy {v : P.Val} (hb : v = HasBool.ttVal F ∨ v = HasBool.ffVal F) :
+    HasVal.valueOfTy F v HasBool.boolTy :=
   hb.elim (· ▸ (HasBool.boolIsValOfTy F).1) (· ▸ (HasBool.boolIsValOfTy F).2)
 
 end -- public section

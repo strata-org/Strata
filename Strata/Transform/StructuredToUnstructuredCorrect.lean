@@ -2681,7 +2681,7 @@ private theorem CommandSourceInv.ofRun {P : PureExpr}
     CommandSourceInv initial commands target trace := by
   simpa using CommandSourceInv.starFrom hrun (CommandSourceInv.start initial commands)
 
-private structure EnvRel {P : PureExpr} [HasFvars P] [HasVal P]
+private structure EnvRel {P : PureExpr} [HasFvars P] [HasBool P]
     (keep : List P.Ident) (source target : Env P) : Prop where
   factory : target.factory = source.factory
   store : StoreAgreement source.store target.store
@@ -2689,7 +2689,7 @@ private structure EnvRel {P : PureExpr} [HasFvars P] [HasVal P]
   mono : WellFormedSemanticEvalMono source.factory
   val : WellFormedSemanticEvalVal source.factory
 
-private theorem EnvRel.weaken {P : PureExpr} [HasFvars P] [HasVal P]
+private theorem EnvRel.weaken {P : PureExpr} [HasFvars P] [HasBool P]
     {small large : List P.Ident}
     {source target : Env P}
     (hsub : ∀ x ∈ small, x ∈ large)
@@ -3270,17 +3270,17 @@ namespace StructuredToUnstructuredCorrect
 open Imperative Specification
 namespace S2UTrace
 
-private theorem EnvRel.projectLeft {P : PureExpr} [HasFvars P] [HasVal P]
+private theorem EnvRel.projectLeft {P : PureExpr} [HasFvars P] [HasBool P]
     {keep : List P.Ident} {parent : SemanticStore P} {source target : Env P}
     (h : EnvRel keep source target) :
     EnvRel keep { source with store := projectStore parent source.store } target :=
   ⟨h.factory, StoreAgreement.trans (StoreAgreement.of_projectStore parent source.store) h.store,
     h.fresh, h.mono, h.val⟩
 
-private theorem EnvRel.eval {P : PureExpr} [HasFvars P] [HasVal P]
+private theorem EnvRel.eval {P : PureExpr} [HasFvars P] [HasBool P]
     {keep : List P.Ident} {source target : Env P} (h : EnvRel keep source target)
     (hmono : WellFormedSemanticEvalMono source.factory)
-    {expression value : P.Expr}
+    {expression : P.Expr} {value : P.Val}
     (heval : P.eval source.factory source.store expression = some value) :
     P.eval target.factory target.store expression = some value := by
   rw [h.factory]
@@ -3360,11 +3360,12 @@ private theorem cfgCondStep {P : PureExpr}
     (hmono : WellFormedSemanticEvalMono source.factory)
     (branch : Bool)
     (heval : P.eval source.factory source.store condition =
-      some (if branch then HasBool.tt else HasBool.ff)) :
+      some (if branch then HasBool.ttVal source.factory else HasBool.ffVal source.factory)) :
     StepCFGStarE P (Imperative.EvalCmdE P)
       (.inBlock cfg current [] (.condGoto condition thenLabel elseLabel .empty) target) []
       (.atBlock cfg (if branch then thenLabel else elseLabel) target) := by
   have htarget := hrel.eval hmono heval
+  rw [← hrel.factory] at htarget
   cases branch with
   | false => exact .step _ [] _ [] _ (StepCFGE.goto_false htarget) (.refl _)
   | true => exact .step _ [] _ [] _ (StepCFGE.goto_true htarget) (.refl _)
@@ -3381,7 +3382,7 @@ private theorem cfgLoopStep {P : PureExpr}
     (hmono : WellFormedSemanticEvalMono source.factory)
     (branch : Bool)
     (heval : P.eval source.factory source.store condition =
-      some (if branch then HasBool.tt else HasBool.ff)) :
+      some (if branch then HasBool.ttVal source.factory else HasBool.ffVal source.factory)) :
     StepCFGStarE P (Imperative.EvalCmdE P)
       (.atBlock cfg entry target) []
       (.atBlock cfg (if branch then body else continuation) target) := by
@@ -3659,11 +3660,13 @@ private theorem deterministicIteSim {P : PureExpr}
     TraceSim OutRel terminalTarget exitingTarget
       (.stmt (.ite (.det condition) thenBranch elseBranch metadata) source)
       (.inBlock cfg current [] (.condGoto condition thenLabel elseLabel .empty) target) := by
-  have thenBlock (hguard : P.eval source.factory source.store condition = some HasBool.tt) :=
+  have thenBlock (hguard : P.eval source.factory source.store condition = some
+      (HasBool.ttVal source.factory)) :=
     anonymousBlockSim
       (cfgCondStep cfg current thenLabel elseLabel condition source target conditionRel
         hmono true (by simpa using hguard)) thenSim thenProject
-  have elseBlock (hguard : P.eval source.factory source.store condition = some HasBool.ff) :=
+  have elseBlock (hguard : P.eval source.factory source.store condition = some
+      (HasBool.ffVal source.factory)) :=
     anonymousBlockSim
       (cfgCondStep cfg current thenLabel elseLabel condition source target conditionRel
         hmono false (by simpa using hguard)) elseSim elseProject
@@ -5934,9 +5937,9 @@ theorem Block.mem_initTypes_of_cfgLive {P : PureExpr} {C : Type} [HasInitTypesIm
   decreasing_by all_goals (simp_wf; try omega)
 /-- The Boolean literal used for unconditional CFG jumps reads no variables. -/
 @[simp] private theorem true_getFvars {P : PureExpr} [HasBool P] [HasFvars P]
-    [LawfulHasVal P] [Nonempty P.Factory] :
+    [LawfulHasBool P] :
     HasFvars.getFvars (P := P) HasBool.tt = [] :=
-  Nonempty.elim ‹_› fun f => LawfulHasVal.value_getFvars f _ (HasBool.boolIsVal f).1
+  LawfulHasBool.tt_getFvars
 
 @[simp] theorem command_definedVars_eq {P : PureExpr} [HasFvars P]
     (c : Cmd P) (flag : Bool) :
@@ -6075,7 +6078,8 @@ private structure AnalysesMemEq {P : PureExpr} [HasFvars P]
   simp [Cmds.initTypes]
 
 private theorem flushCmds_analyses {P : PureExpr}
-    [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] [Nonempty P.Factory] [HasOps P] [LawfulHasFvar P]
+    [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] [LawfulHasBool P] [HasOps P]
+        [LawfulHasFvar P]
     (pfx : String) (accum : List (Cmd P))
     (transfer? : Option (DetTransferCmd String P)) (k : String)
     (gen gen' : StringGenState) (entry : String)
@@ -6118,7 +6122,8 @@ private theorem flushCmds_analyses {P : PureExpr}
         Cmds.initTypes]
 
 private theorem stmtsToBlocks_analyses {P : PureExpr}
-    [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] [Nonempty P.Factory] [HasOps P] [LawfulHasFvar P] [HasIdent P] [HasInt P]
+    [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] [LawfulHasBool P] [HasOps P]
+        [LawfulHasFvar P] [HasIdent P] [HasInt P]
     [HasIntOps P] [HasBoolOps P]
     (k : String) (ss : List (Stmt P (Cmd P)))
     (exitConts : List (Option String × String)) (accum : List (Cmd P))
@@ -6441,7 +6446,8 @@ private theorem stmtsToBlocks_analyses {P : PureExpr}
   decreasing_by all_goals (simp_wf; try omega)
 
 private theorem stmtsToCFG_analyses {P : PureExpr}
-    [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] [Nonempty P.Factory] [HasOps P] [LawfulHasFvar P] [HasIdent P] [HasInt P]
+    [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] [LawfulHasBool P] [HasOps P]
+        [LawfulHasFvar P] [HasIdent P] [HasInt P]
     [HasIntOps P] [HasBoolOps P]
     (ss : List (Stmt P (Cmd P)))
     (hng : Block.noNondetGuards ss = true)
@@ -6492,7 +6498,8 @@ private theorem stmtsToCFG_analyses {P : PureExpr}
     simpa [DetCFG.initTypes, Blocks.initTypes, Cmds.initTypes, terminal, endBlock] using ha.initTypes ty
 
  theorem stmtsToCFG_definedVars_iff {P : PureExpr}
-    [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] [Nonempty P.Factory] [HasOps P] [LawfulHasFvar P] [HasIdent P] [HasInt P]
+    [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] [LawfulHasBool P] [HasOps P]
+        [LawfulHasFvar P] [HasIdent P] [HasInt P]
     [HasIntOps P] [HasBoolOps P]
     (ss : List (Stmt P (Cmd P)))
     (hng : Block.noNondetGuards ss = true)
@@ -6503,7 +6510,8 @@ private theorem stmtsToCFG_analyses {P : PureExpr}
   (stmtsToCFG_analyses ss hng hni hnm).1 n
 
  theorem stmtsToCFG_modifiedVars_iff {P : PureExpr}
-    [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] [Nonempty P.Factory] [HasOps P] [LawfulHasFvar P] [HasIdent P] [HasInt P]
+    [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] [LawfulHasBool P] [HasOps P]
+        [LawfulHasFvar P] [HasIdent P] [HasInt P]
     [HasIntOps P] [HasBoolOps P]
     (ss : List (Stmt P (Cmd P)))
     (hng : Block.noNondetGuards ss = true)
@@ -6514,7 +6522,8 @@ private theorem stmtsToCFG_analyses {P : PureExpr}
   (stmtsToCFG_analyses ss hng hni hnm).2.1 n
 
  theorem stmtsToCFG_readVars_iff {P : PureExpr}
-    [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] [Nonempty P.Factory] [HasOps P] [LawfulHasFvar P] [HasIdent P] [HasInt P]
+    [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] [LawfulHasBool P] [HasOps P]
+        [LawfulHasFvar P] [HasIdent P] [HasInt P]
     [HasIntOps P] [HasBoolOps P]
     (ss : List (Stmt P (Cmd P)))
     (hng : Block.noNondetGuards ss = true)
@@ -6525,7 +6534,8 @@ private theorem stmtsToCFG_analyses {P : PureExpr}
   (stmtsToCFG_analyses ss hng hni hnm).2.2.1 n
 
  theorem stmtsToCFG_initTypes_iff {P : PureExpr}
-    [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] [Nonempty P.Factory] [HasOps P] [LawfulHasFvar P] [HasIdent P] [HasInt P]
+    [HasBool P] [HasFvar P] [HasFvars P] [LawfulHasVal P] [LawfulHasBool P] [HasOps P]
+        [LawfulHasFvar P] [HasIdent P] [HasInt P]
     [HasIntOps P] [HasBoolOps P]
     (ss : List (Stmt P (Cmd P)))
     (hng : Block.noNondetGuards ss = true)
@@ -6551,7 +6561,7 @@ open StructuredToUnstructuredWF
 The source reserves this pass's generated prefixes; the target retains the
 caller's inherited prefixes. -/
 theorem cfgInitEnvWF {P : PureExpr}
-    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [LawfulHasVal P]
+    [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [LawfulHasVal P] [LawfulHasBool P]
     [HasInt P] [HasIntOps P] [DecidableEq P.Ident] [HasOps P]
     [LawfulHasFvar P] [LawfulHasIdent P] [HasSubstFvar P]
     (base : InitEnvWFParams P)
@@ -6570,7 +6580,6 @@ theorem cfgInitEnvWF {P : PureExpr}
     (hwf : BlockInitEnvWF (base.extend prefixesReserved) statements ρ) :
     CFGInitEnvWF base (stmtsToCFG statements) ρ := by
   obtain ⟨hng, _, _, hni, hnm, _, _, _⟩ := hpre
-  haveI : Nonempty P.Factory := ⟨ρ.factory⟩
   have hduLive := Block.cfgLive_defUseWellFormed
     (fun ident => (ρ.store ident).isSome)
     (base.extend prefixesReserved).declaredFuncs statements hwf.defUseOk
@@ -6624,7 +6633,7 @@ theorem cfgInitEnvWF {P : PureExpr}
 theorem overapproximatesTraces {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [LawfulHasVal P]
     [HasInt P] [HasIntOps P] [DecidableEq P.Ident] [HasOps P]
-    [LawfulHasFvar P] [LawfulHasIdent P] [HasSubstFvar P]
+    [LawfulHasFvar P] [LawfulHasIdent P] [HasSubstFvar P] [LawfulHasBool P]
     (base : InitEnvWFParams P) :
     Specification.Transform.OverapproximatesTracesUptoWhen
       (Trace.WithWF (P := P) (EventArg.ExtendsEnv (fun _ => True)))

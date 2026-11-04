@@ -19,7 +19,9 @@ induction hypothesis re-states the callee run over the command relation
 `evalCmdExtE_cmd_iff` characterizes evaluation of an embedded base command as
 exactly `EvalCmdE`, with no call event behavior. `Calls.mem_checksAtCall`: a clause checked
 at a call site (`Calls.checksAtCall`) is a clause of the callee's specification with the same
-label, expression and attribute. -/
+label, expression and attribute. `Calls.defaultAssertEvents_label_metadata`: the assertion
+events emitted for a list of clauses carry the labels and metadata of its non-free clauses,
+whatever the factory and store. -/
 
 namespace Imperative
 
@@ -140,6 +142,23 @@ theorem mem_checksAtCall {callMd : MetaData P}
   obtain ⟨⟨l, c⟩, hmem, he⟩ := List.mem_map.mp h
   cases he
   exact ⟨c, hmem, rfl, rfl⟩
+
+omit [DecidableEq P.Ident] in
+/-- The assertion events `defaultAssertEvents fac σ checks` emits carry, in order, the labels
+    and metadata of the non-free clauses of `checks`, whatever the factory and store. -/
+theorem defaultAssertEvents_label_metadata (fac : P.Factory) (σ : SemanticStore P)
+    (checks : ListMap String (Check P)) :
+    (defaultAssertEvents fac σ checks).filterMap (fun
+      | .assert a => some (a.label, a.metadata)
+      | _ => none) =
+      checks.toList.filterMap (fun (label, check) =>
+        if check.attr = .Default then some (label, check.md) else none) := by
+  unfold defaultAssertEvents
+  induction checks.toList with
+  | nil => rfl
+  | cons hd tl ih =>
+    obtain ⟨l, c⟩ := hd
+    by_cases h : c.attr = .Default <;> simp [h, ih]
 
 end
 

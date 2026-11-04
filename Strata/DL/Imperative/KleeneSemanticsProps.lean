@@ -38,7 +38,7 @@ variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
 step for `EvalCmd'`.  The control-flow rules are command-agnostic; only
 `step_cmd` uses the hypothesis. -/
 theorem StepKleeneE.imp
-    {CmdT EventT : Type} {P : PureExpr} [HasBool P] [HasBoolOps P]
+    {CmdT : Type} {EventT : Type _} {P : PureExpr} [HasBool P] [HasBoolOps P]
     {EvalCmd EvalCmd' : EvalCmdParamE P CmdT EventT}
     (h_imp : ∀ fac σ c σ' emitted, EvalCmd fac σ c σ' emitted → EvalCmd' fac σ c σ' emitted)
     {c tr c'}
@@ -51,7 +51,7 @@ theorem StepKleeneE.imp
 context. -/
 theorem stepKleeneStarE_seq_inner
     {P : PureExpr} [HasBool P] [HasBoolOps P]
-    {CmdT EventT : Type} {evalCmd : EvalCmdParamE P CmdT EventT}
+    {CmdT : Type} {EventT : Type _} {evalCmd : EvalCmdParamE P CmdT EventT}
     {inner inner' : KleeneConfig P CmdT} {right : KleeneStmt P CmdT}
     {trace : List EventT}
     (h : StepKleeneStarE P evalCmd inner trace inner') :
@@ -65,7 +65,7 @@ theorem stepKleeneStarE_seq_inner
 context. -/
 theorem stepKleeneStarE_block_inner
     {P : PureExpr} [HasBool P] [HasBoolOps P]
-    {CmdT EventT : Type} {evalCmd : EvalCmdParamE P CmdT EventT}
+    {CmdT : Type} {EventT : Type _} {evalCmd : EvalCmdParamE P CmdT EventT}
     {inner inner' : KleeneConfig P CmdT} {parent : SemanticStore P}
     {trace : List EventT}
     (h : StepKleeneStarE P evalCmd inner trace inner') :
@@ -90,7 +90,7 @@ theorem kleene_assume_traceE
 of its right branch. -/
 theorem kleene_seq_traceE
     {P : PureExpr} [HasBool P] [HasBoolOps P]
-    {CmdT EventT : Type} {evalCmd : EvalCmdParamE P CmdT EventT}
+    {CmdT : Type} {EventT : Type _} {evalCmd : EvalCmdParamE P CmdT EventT}
     {left right : KleeneStmt P CmdT} {ρ ρ₁ : Env P}
     {trace₁ trace₂ : List EventT} {cfg₂ : KleeneConfig P CmdT}
     (hleft : StepKleeneStarE P evalCmd (.stmt left ρ) trace₁ (.terminal ρ₁))
@@ -111,7 +111,7 @@ theorem kleene_seq_traceE
 /-- Prefix a traced run of a choice's left branch with the left-choice step. -/
 theorem kleene_choice_left_traceE
     {P : PureExpr} [HasBool P] [HasBoolOps P]
-    {CmdT EventT : Type} {evalCmd : EvalCmdParamE P CmdT EventT}
+    {CmdT : Type} {EventT : Type _} {evalCmd : EvalCmdParamE P CmdT EventT}
     {left right : KleeneStmt P CmdT} {ρ : Env P}
     {trace : List EventT} {cfg : KleeneConfig P CmdT}
     (h : StepKleeneStarE P evalCmd (.stmt left ρ) trace cfg) :
@@ -121,7 +121,7 @@ theorem kleene_choice_left_traceE
 /-- Prefix a traced run of a choice's right branch with the right-choice step. -/
 theorem kleene_choice_right_traceE
     {P : PureExpr} [HasBool P] [HasBoolOps P]
-    {CmdT EventT : Type} {evalCmd : EvalCmdParamE P CmdT EventT}
+    {CmdT : Type} {EventT : Type _} {evalCmd : EvalCmdParamE P CmdT EventT}
     {left right : KleeneStmt P CmdT} {ρ : Env P}
     {trace : List EventT} {cfg : KleeneConfig P CmdT}
     (h : StepKleeneStarE P evalCmd (.stmt right ρ) trace cfg) :
@@ -131,7 +131,7 @@ theorem kleene_choice_right_traceE
 /-- A Kleene loop may exit immediately, emitting no events. -/
 theorem kleene_loop_zero_traceE
     {P : PureExpr} [HasBool P] [HasBoolOps P]
-    {CmdT EventT : Type} {evalCmd : EvalCmdParamE P CmdT EventT}
+    {CmdT : Type} {EventT : Type _} {evalCmd : EvalCmdParamE P CmdT EventT}
     (body : KleeneStmt P CmdT) (ρ : Env P) :
     StepKleeneStarE P evalCmd (.stmt (.loop body) ρ) [] (.terminal ρ) :=
   .step _ _ _ _ _ StepKleeneE.step_loop_zero (.refl _)

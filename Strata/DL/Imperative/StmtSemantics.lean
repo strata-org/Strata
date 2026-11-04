@@ -16,6 +16,8 @@ namespace Imperative
 
 public section
 
+universe u
+
 /-! ## Execution Environment
 
 An `Env` bundles the store and the expression factory into a single record.
@@ -80,7 +82,7 @@ state. A configuration consists of:
 - The current statement (or list of statements) being executed
 - An execution environment (`Env`) bundling store and evaluator
 -/
-inductive Config (P : PureExpr) (CmdT : Type) : Type where
+inductive Config (P : PureExpr.{u}) (CmdT : Type) : Type u where
   /-- A single statement to execute next. -/
   | stmt : Stmt P CmdT → Env P → Config P CmdT
   /-- A list of statements to execute next, in order. -/
@@ -231,7 +233,7 @@ no events; the sequence and block context rules propagate the inner step's
 events unchanged.  Intended choices, such as nondeterministic conditionals and
 loops, remain nondeterministic. -/
 inductive StepStmtE
-    {EventT : Type}
+    {EventT : Type _}
     (EvalCmd : EvalCmdParamE P CmdT EventT) :
     Config P CmdT → List EventT → Config P CmdT → Prop where
   /-- Execute one command and expose exactly the event list produced by its
@@ -257,7 +259,7 @@ inductive StepStmtE
       `init`'d inside are projected away on exit (matching `definedVars`
       with `excludeScoped = true`). -/
   | step_ite_true :
-      P.eval ρ.factory ρ.store c = .some HasBool.tt →
+      P.eval ρ.factory ρ.store c = .some (HasBool.ttVal ρ.factory) →
       ----
       StepStmtE EvalCmd
         (.stmt (.ite (.det c) tss ess _) ρ) []
@@ -266,7 +268,7 @@ inductive StepStmtE
   /-- If the condition of an `ite` statement evaluates to false, step to the
       else branch (scoped via block wrapper). -/
   | step_ite_false :
-      P.eval ρ.factory ρ.store c = .some HasBool.ff →
+      P.eval ρ.factory ρ.store c = .some (HasBool.ffVal ρ.factory) →
       ----
       StepStmtE EvalCmd
         (.stmt (.ite (.det c) tss ess _) ρ) []
@@ -295,7 +297,7 @@ inductive StepStmtE
       end of each iteration, allowing the next iteration's body to re-`init`
       the same names. -/
   | step_loop_enter :
-      P.eval ρ.factory ρ.store g = .some HasBool.tt →
+      P.eval ρ.factory ρ.store g = .some (HasBool.ttVal ρ.factory) →
       ----
       StepStmtE EvalCmd
         (.stmt (.loop (.det g) m inv body md) ρ) []
@@ -306,7 +308,7 @@ inductive StepStmtE
   /-- If a loop guard is false, terminate the loop.  As with `step_loop_enter`,
       loop invariants are not evaluated during execution. -/
   | step_loop_exit :
-      P.eval ρ.factory ρ.store g = .some HasBool.ff →
+      P.eval ρ.factory ρ.store g = .some (HasBool.ffVal ρ.factory) →
       ----
       StepStmtE EvalCmd
         (.stmt (.loop (.det g) m inv body _) ρ) []
@@ -420,7 +422,7 @@ inductive StepStmtE
 `emitted ++ rest`; this closure, not `StepStmtE`, performs trace
 concatenation. -/
 abbrev StepStmtStarE
-    {EventT : Type}
+    {EventT : Type _}
     (EvalCmd : EvalCmdParamE P CmdT EventT) :
     Config P CmdT → List EventT → Config P CmdT → Prop :=
   ReflTransTrace (StepStmtE P EvalCmd)

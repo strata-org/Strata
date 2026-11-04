@@ -37,7 +37,7 @@ Key theorems:
     determinism the `StepCFGE` docstring relies on, guarding against a later
     constructor addition silently reintroducing nondeterminism. -/
 theorem StepCFGE.deterministic
-    {l CmdT EventT : Type} [BEq l] {P : PureExpr} {EvalCmd : EvalCmdParamE P CmdT EventT}
+    {l CmdT : Type} {EventT : Type _} [BEq l] {P : PureExpr} {EvalCmd : EvalCmdParamE P CmdT EventT}
     [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P]
     {s t₁ t₂ : CFGConfig l CmdT P} {tr₁ tr₂ : List EventT}
     (hcmd : ∀ σ c σ₁ e₁ σ₂ e₂,
@@ -58,12 +58,12 @@ theorem StepCFGE.deterministic
   case goto_true.goto_false =>
     -- The shared source config pins the condition, so `tt = ff` — impossible.
     exact absurd
-      ((‹P.eval _ _ _ = some HasBool.tt›).symm.trans ‹P.eval _ _ _ = some HasBool.ff›)
-      (by simp [HasBool.tt_is_not_ff])
+      ((‹P.eval _ _ _ = some (HasBool.ttVal _)›).symm.trans ‹P.eval _ _ _ = some (HasBool.ffVal _)›)
+      (by simp [HasBool.ttVal_ne_ffVal])
   case goto_false.goto_true =>
     exact absurd
-      ((‹P.eval _ _ _ = some HasBool.tt›).symm.trans ‹P.eval _ _ _ = some HasBool.ff›)
-      (by simp [HasBool.tt_is_not_ff])
+      ((‹P.eval _ _ _ = some (HasBool.ttVal _)›).symm.trans ‹P.eval _ _ _ = some (HasBool.ffVal _)›)
+      (by simp [HasBool.ttVal_ne_ffVal])
 
 /-- Store-agreement transport through a `.block`-step projection, tolerant of
 factory restoration: the outer env's factory field may be restored to any parent
@@ -86,7 +86,7 @@ theorem storeAgreement_through_projectStore' {P : PureExpr}
 
 section StepCFGE
 
-variable {l CmdT EventT : Type} [BEq l] {P : PureExpr}
+variable {l CmdT : Type} {EventT : Type _} [BEq l] {P : PureExpr}
   {EvalCmd : EvalCmdParamE P CmdT EventT}
   [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P]
   {cfg : CFG l (DetBlock l CmdT P)}

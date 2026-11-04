@@ -538,11 +538,16 @@ well-formedness side conditions as additional assumptions.
 The Hoare rules of Strata Core ([`Core/Logic/Hoare.lean`](https://github.com/strata-org/Strata/blob/main/Strata/Languages/Core/Logic/Hoare.lean))
 instantiate the Imperative template over its block language `EventLang.coreBlock`
 with its own wellformedness conditions `Core.Logic.BlockInitEnvWF` and discharge
-the side conditions. Core interprets assertion and assumption conditions through
-Lambda's denotational semantics: `Core.Logic.DenoteBasedInterp` captures the
-store in each `Lambda.LExpr`, checks its type, and interprets it with
-`Lambda.LExpr.denote` in a model of `Core.Factory`. The default Core triple
-quantifies over every such model. In this current denotation, Core `real` has
+the side conditions. Core's expression evaluator is denotational:
+`Core.Expression.eval` is `Lambda.LExpr.denoteEval`, which annotates each free
+variable with the sort of its stored value, type checks the expression, and
+interprets it with `Lambda.LExpr.denote` in the model that the runtime factory
+carries (`Lambda.ModeledFactory`). Stores hold semantic values
+(`Lambda.SemValue`), so a condition captured by an event is interpreted without
+substitution: `Core.Logic.DenoteBasedInterp F` reads a condition captured under a
+runtime factory over `F` as true when it evaluates to `true`. A Core triple
+quantifies over its entry environments, and so over every model of `F`. In this
+current denotation, Core `real` has
 Lean domain `Rat`; these correctness statements are therefore about rational
 semantics and do not claim adequacy with mathematical or SMT `Real`. Also, a
 Core procedure can be translated into a Hoare triple.

@@ -83,7 +83,7 @@ structure ProcEnvWF (params : InitEnvWFParams) (proc : Procedure)
   -- Precondition holds in the body.
   preconditionsHold : ∀ (label : CoreLabel) (check : Procedure.Check),
     (label, check) ∈ proc.spec.preconditions.toList →
-    Expression.eval ρ.factory ρ.store check.expr = some HasBool.tt
+    Expression.eval ρ.factory ρ.store check.expr = some (HasBool.ttVal ρ.factory)
   /-- A structured body, as the block the procedure's specifications wrap it
       in, is well formed to run from `ρ`. -/
   structuredBodyWF : ∀ ss, proc.body = .structured ss →
@@ -109,7 +109,7 @@ program. -/
     (fun d acc =>
       match d with
       | .ax a _ =>
-          Expression.eval ρ₀.factory ρ₀.store a.e = some HasBool.tt ∧ acc
+          Expression.eval ρ₀.factory ρ₀.store a.e = some (HasBool.ttVal ρ₀.factory) ∧ acc
       | .distinct _ es _ =>
           List.Pairwise (fun e₁ e₂ =>
             Expression.eval ρ₀.factory ρ₀.store e₁ ≠ Expression.eval ρ₀.factory ρ₀.store e₂) es ∧ acc

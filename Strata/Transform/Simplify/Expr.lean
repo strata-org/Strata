@@ -89,7 +89,8 @@ def stripInlineFunc (carriers : List String) (fn : Core.Function) : Core.Functio
 def stripInline (carriers : List String) (fn : LFunc CoreLParams) : LFunc CoreLParams :=
   { fn with toFunc := stripInlineFunc carriers fn.toFunc }
 
-def withoutInline (carriers : List String) (F : Expression.Factory) : Expression.Factory :=
+def withoutInline (carriers : List String) (F : Lambda.Factory CoreLParams) :
+    Lambda.Factory CoreLParams :=
   Factory.ofArray (F.toArray.map (stripInline carriers))
 
 /-! ## The evaluation environments the phase folds in -/
@@ -121,7 +122,7 @@ def oneValue (x : CoreIdent) (v : Expression.Expr) : Lambda.Env CoreLParams :=
 
     Any other value has to earn its place at each use, which costs a pass per variable,
     so it is left alone here. -/
-def smallValues (F : Expression.Factory) (vs : Map CoreIdent Expression.Expr) :
+def smallValues (F : Lambda.Factory CoreLParams) (vs : Map CoreIdent Expression.Expr) :
     Lambda.Env CoreLParams :=
   Lambda.Env.mk (fun y =>
     match Map.find? vs y with
@@ -132,10 +133,12 @@ end Env
 
 /-- Simplify `e` by folding without expanding `inline` calls or substituting variable
     values. -/
-def fold (stripped : Expression.Factory) (fuel : Nat) (e : Expression.Expr) : Expression.Expr :=
+def fold (stripped : Lambda.Factory CoreLParams) (fuel : Nat) (e : Expression.Expr) :
+    Expression.Expr :=
   (LExpr.eval fuel stripped Env.noValues e).fst
 
-def foldWith (stripped : Expression.Factory) (fuel : Nat) (x : CoreIdent) (v : Expression.Expr)
+def foldWith (stripped : Lambda.Factory CoreLParams) (fuel : Nat) (x : CoreIdent)
+    (v : Expression.Expr)
     (e : Expression.Expr) : Expression.Expr :=
   (LExpr.eval fuel stripped (Env.oneValue x v) e).fst
 
@@ -148,12 +151,12 @@ def foldWith (stripped : Expression.Factory) (fuel : Nat) (x : CoreIdent) (v : E
     there. -/
 structure Ctx where
   /-- Functions in scope, consulted to decide whether a call can be expanded. -/
-  factory : Expression.Factory
+  factory : Lambda.Factory CoreLParams
   /-- `factory` with the unconditional `inline` attribute stripped, which is what
       folding runs against. Carried rather than derived, because
       deriving it rebuilds every function in the factory and folding happens at
       every node of every expression. -/
-  foldFactory : Expression.Factory
+  foldFactory : Lambda.Factory CoreLParams
   /-- Bound on `LExpr.eval`'s own recursion while folding. Exhausting it leaves a term
       partly folded, which is sound but larger, so it is set well above what any
       expression in a translated program needs. -/
@@ -173,7 +176,7 @@ structure Ctx where
       any expression is simplified. -/
   carriers : List String := []
 
-def Ctx.ofFactory (F : Expression.Factory) (carriers : List String := []) : Ctx :=
+def Ctx.ofFactory (F : Lambda.Factory CoreLParams) (carriers : List String := []) : Ctx :=
   { factory := F, foldFactory := withoutInline carriers F, carriers }
 
 def Ctx.spend (ctx : Ctx) : Ctx := { ctx with expandFuel := ctx.expandFuel - 1 }
@@ -252,7 +255,7 @@ def occursCount (x : CoreIdent) (e : Expression.Expr) : Nat :=
     applied to canonical arguments is what folding reduces. Any other argument larger
     than a node is what doubles per level of nesting, so that is where expansion is
     declined. -/
-def worthExpanding (F : Expression.Factory) (fn : LFunc CoreLParams)
+def worthExpanding (F : Lambda.Factory CoreLParams) (fn : LFunc CoreLParams)
     (args : List Expression.Expr) : Bool :=
   match fn.body with
   | none => false

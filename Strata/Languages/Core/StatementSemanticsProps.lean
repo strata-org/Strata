@@ -96,7 +96,7 @@ theorem HavocVars.update_none {P : PureExpr} [HasVal P] {f : P.Factory}
 
 /-- Havoc the first slot `x` to a value `v` of its stored type, then the rest. -/
 theorem HavocVars.update_some {P : PureExpr} [HasVal P] {f : P.Factory}
-    {σ σ' σ'' : SemanticStore P} {x : P.Ident} {v : P.Expr} {xs : List P.Ident}
+    {σ σ' σ'' : SemanticStore P} {x : P.Ident} {v : P.Val} {xs : List P.Ident}
     (hup : UpdateState P σ x v σ') (hty : HasVal.valueOfStoredTy (P := P) f σ x v)
     (hrest : HavocVars f σ' xs σ'') : HavocVars f σ (x :: xs) σ'' :=
   Calls.HavocVars.update_some hup hty hrest
@@ -181,7 +181,7 @@ theorem TouchVarsEmpty :
   intros H; cases H <;> simp
 
 theorem InitStateDefined
-  {P : PureExpr} {σ σ' : SemanticStore P} {e : P.Expr} {v : P.Ident} :
+  {P : PureExpr} {σ σ' : SemanticStore P} {e : P.Val} {v : P.Ident} :
   @InitState P σ v e σ' →
   SemanticStore.varsDefined (· ∈ [v]) σ' := by
   intros Hup
@@ -190,7 +190,7 @@ theorem InitStateDefined
   simp [SemanticStore.varsDefined, Option.isSome, Hsome]
 
 theorem updatedStateUpdate {P : PureExpr}
-  {σ : SemanticStore P} {h : P.Ident} {v v' : P.Expr} :
+  {σ : SemanticStore P} {h : P.Ident} {v v' : P.Val} :
   σ h = some v' →
   UpdateState P σ h v (@updatedState P σ h v) := by
   intros Hsome
@@ -200,7 +200,7 @@ theorem updatedStateUpdate {P : PureExpr}
   · intro y Hneq; simp [updatedState, Ne.symm Hneq]
 
 theorem updatedStateId {P : PureExpr}
-  {σ : SemanticStore P} {h : P.Ident} {v : P.Expr} :
+  {σ : SemanticStore P} {h : P.Ident} {v : P.Val} :
   σ h = some v →
   @updatedState P σ h v = σ := by
   intros Hsome
@@ -226,7 +226,7 @@ theorem updatedStateDefMonotone {vs : List _} :
 
 theorem updatedStatesDefMonotone
   {P : PureExpr} {σ : SemanticStore P}
-  {vs : List P.Ident} {ves : List (P.Ident × P.Expr)} :
+  {vs : List P.Ident} {ves : List (P.Ident × P.Val)} :
   SemanticStore.varsDefined (· ∈ vs) σ →
   SemanticStore.varsDefined (· ∈ vs) (updatedStates' σ ves) := by
   intros Hdef
@@ -259,7 +259,7 @@ theorem updatedStatesDefMonotone
       apply ih <;> assumption
 
 theorem updatedStatesUpdate {P : PureExpr}
-  {σ : SemanticStore P} {hs : List P.Ident} {vs : List P.Expr} :
+  {σ : SemanticStore P} {hs : List P.Ident} {vs : List P.Val} :
   hs.length = vs.length →
   SemanticStore.varsDefined (· ∈ hs) σ →
   UpdateStates σ hs vs (updatedStates σ hs vs) := by
@@ -283,7 +283,7 @@ theorem updatedStatesUpdate {P : PureExpr}
     exact ih rfl (updatedStateDefMonotone Hdef)
 
 theorem updatedStateInit {P : PureExpr}
-  {σ : SemanticStore P} {h : P.Ident} {v : P.Expr} :
+  {σ : SemanticStore P} {h : P.Ident} {v : P.Val} :
   σ h = none →
   InitState P σ h v (@updatedState P σ h v) := by
   intros Hsome
@@ -293,7 +293,7 @@ theorem updatedStateInit {P : PureExpr}
   · intro y Hneq; simp [updatedState, Ne.symm Hneq]
 
 theorem updatedStatesInit {P : PureExpr}
-  {σ : SemanticStore P} {hs : List P.Ident} {vs : List P.Expr} :
+  {σ : SemanticStore P} {hs : List P.Ident} {vs : List P.Val} :
   hs.length = vs.length →
   SemanticStore.varsUndefined (· ∈ hs) σ →
   hs.Nodup →
@@ -347,7 +347,7 @@ theorem InitStatesInits :
 /-- Evaluating the same expression list in the same factory and store yields the
 same value list. -/
 theorem EvalExpressionsInjective {f : Expression.Factory} {σ : CoreStore}
-    {es vs vs' : List Expression.Expr} :
+    {es : List Expression.Expr} {vs vs' : List Expression.Val} :
     EvalExpressions f σ es vs → EvalExpressions f σ es vs' → vs = vs' := by
   intro h₁ h₂
   induction h₁ generalizing vs' with
@@ -411,7 +411,7 @@ theorem UpdateStatesUpdated :
 
 /-- Building a call frame from the same procedure and argument values yields the
 same callee store. -/
-theorem InitCallFrameUniqueResult {p : Procedure} {inputVals outOnlyVals : List Expression.Expr}
+theorem InitCallFrameUniqueResult {p : Procedure} {inputVals outOnlyVals : List Expression.Val}
     {σ₁ σ₂ : CoreStore} :
     InitCallFrame p inputVals outOnlyVals σ₁ →
     InitCallFrame p inputVals outOnlyVals σ₂ →
@@ -841,7 +841,7 @@ theorem InitVarsInitStates : InitVars σ vars σ' →
 /-- Values read from a store remain readable after `InitVars` extends it. -/
 theorem InitVarsReadValuesMonotone
   {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' : SemanticStore P}
-  {ks vs' : List P.Ident} {vs : List P.Expr} :
+  {ks vs' : List P.Ident} {vs : List P.Val} :
   ReadValues f σ ks vs →
   InitVars σ vs' σ' →
   ReadValues f σ' ks vs := by
@@ -853,7 +853,7 @@ theorem InitVarsReadValuesMonotone
 
 theorem updatedStateComm
   {P : PureExpr} {σ : SemanticStore P}
-  {k k' : P.Ident} {v v' : P.Expr} :
+  {k k' : P.Ident} {v v' : P.Val} :
   k ≠ k' →
   updatedState (updatedState σ k v) k' v' =
   updatedState (updatedState σ k' v') k v := by
@@ -866,8 +866,8 @@ theorem updatedStateComm
 
 theorem updatedStateComm'
   {P : PureExpr} {σ : SemanticStore P}
-  {k : P.Ident} {v : P.Expr}
-  {kvs : List (P.Ident × P.Expr)} :
+  {k : P.Ident} {v : P.Val}
+  {kvs : List (P.Ident × P.Val)} :
   ¬ k ∈ kvs.unzip.1 →
   (updatedState (updatedStates' σ kvs) k v) =
   (updatedStates' (updatedState σ k v) kvs) := by
@@ -881,7 +881,7 @@ theorem updatedStateComm'
 
 theorem updatedStatesComm
   {P : PureExpr} {σ : SemanticStore P}
-  {kvs kvs' : List (P.Ident × P.Expr)} :
+  {kvs : List (P.Ident × P.Val)} {kvs' : List (P.Ident × P.Val)} :
   kvs.unzip.1.Disj kvs'.unzip.1 →
   updatedStates' (updatedStates' σ kvs) kvs' =
   updatedStates' (updatedStates' σ kvs') kvs := by
@@ -906,7 +906,7 @@ theorem updatedStatesComm
 
 theorem InitsUpdatesComm
   {P : PureExpr} {σ σ' σ'' : SemanticStore P}
-  {ks ks' : List P.Ident} {vs vs' : List P.Expr} :
+  {ks ks' : List P.Ident} {vs vs' : List P.Val} :
   UpdateStates σ ks vs σ' →
   InitStates σ' ks' vs' σ'' →
   ∃ σ₁,
@@ -962,7 +962,7 @@ theorem InitsUpdatesComm
 
 theorem InitUpdateComm
   {P : PureExpr} {σ σ' σ'' : SemanticStore P}
-  {k k' : P.Ident} {v v' : P.Expr}
+  {k k' : P.Ident} {v v' : P.Val}
   :
   UpdateState P σ k v σ' →
   InitState P σ' k' v' σ'' →
@@ -1622,7 +1622,7 @@ private theorem invStoresExcept_singleton_of_agree_off
 /-- An `UpdateState` that writes only `k` gives `invStoresExcept` (to the
 projected store) with exception `[k]`. -/
 private theorem invStoresExcept_projectStore_of_update
-    {σ σ' : CoreStore} {k : Expression.Ident} {v : Expression.Expr}
+    {σ σ' : CoreStore} {k : Expression.Ident} {v : Expression.Val}
     (hupd : Imperative.UpdateState Expression σ k v σ') :
     Imperative.invStoresExcept σ (Imperative.projectStore σ σ') [k] := by
   cases hupd with
@@ -1712,7 +1712,7 @@ event-trace store-domain results below. -/
 /-- `UpdateState` cannot define a slot that was undefined: it requires its
     target to already hold a value, and leaves every other slot unchanged. -/
 private theorem updateState_preserves_none
-    {σ σ' : SemanticStore Expression} {x : Expression.Ident} {v : Expression.Expr}
+    {σ σ' : SemanticStore Expression} {x : Expression.Ident} {v : Expression.Val}
     (h : UpdateState Expression σ x v σ') :
     ∀ y, σ y = none → σ' y = none := by
   cases h with
@@ -1725,7 +1725,7 @@ private theorem updateState_preserves_none
 /-- `UpdateState` cannot undefine a slot: the target keeps a value and every
     other slot is unchanged. -/
 private theorem updateState_preserves_isSome
-    {σ σ' : SemanticStore Expression} {x : Expression.Ident} {v : Expression.Expr}
+    {σ σ' : SemanticStore Expression} {x : Expression.Ident} {v : Expression.Val}
     (h : UpdateState Expression σ x v σ') :
     ∀ y, (σ y).isSome = true → (σ' y).isSome = true := by
   cases h with
@@ -1738,7 +1738,7 @@ private theorem updateState_preserves_isSome
 /-- Pointwise lift of `updateState_preserves_none` along a whole write-back. -/
 private theorem updateStates_preserves_none
     {σ σ' : SemanticStore Expression} {xs : List Expression.Ident}
-    {vs : List Expression.Expr}
+    {vs : List Expression.Val}
     (h : UpdateStates σ xs vs σ') :
     ∀ y, σ y = none → σ' y = none := by
   induction h with
@@ -1749,7 +1749,7 @@ private theorem updateStates_preserves_none
 /-- Pointwise lift of `updateState_preserves_isSome` along a whole write-back. -/
 private theorem updateStates_preserves_isSome
     {σ σ' : SemanticStore Expression} {xs : List Expression.Ident}
-    {vs : List Expression.Expr}
+    {vs : List Expression.Val}
     (h : UpdateStates σ xs vs σ') :
     ∀ y, (σ y).isSome = true → (σ' y).isSome = true := by
   induction h with
@@ -1761,7 +1761,7 @@ private theorem updateStates_preserves_isSome
     that holds only values. -/
 private theorem updateStates_preserves_wellFormedStore {f : Expression.Factory}
     {σ σ' : SemanticStore Expression} {xs : List Expression.Ident}
-    {vs : List Expression.Expr}
+    {vs : List Expression.Val}
     (h : UpdateStates σ xs vs σ') (hvs : ∀ v ∈ vs, HasVal.value f v)
     (hsv : Imperative.WellFormedStore σ f) :
     Imperative.WellFormedStore σ' f := by
@@ -1936,10 +1936,9 @@ theorem core_stmt_run_terminal_store_isSome_eqE
     ensures all free variables of `e` are bound in the projected store. -/
 theorem eval_projectStore_to_full
     {f : Expression.Factory} {σ₀ σ : SemanticStore Expression}
-    {e : Expression.Expr} {v : Expression.Expr}
+    {e : Expression.Expr} {v : Expression.Val}
     (h_eval : Expression.eval f (projectStore σ₀ σ) e = some v)
     (h_wfStore : WellFormedStore σ f)
-    (hWF : Lambda.FactoryWF f)
     (hdom : ∀ x ∈ HasFvars.getFvars e, (projectStore σ₀ σ) x ≠ none) :
     Expression.eval f σ e = some v := by
   have h_wfStoreProj : WellFormedStore (projectStore σ₀ σ) f := by
@@ -1955,7 +1954,7 @@ theorem eval_projectStore_to_full
     split
     · rfl
     · simp [*] at h_ne
-  rw [← coreEvaluator_WellFormedSemanticEvalExprCongr f hWF e _ _ h_wfStoreProj h_wfStore h_agree]
+  rw [← coreEvaluator_WellFormedSemanticEvalExprCongr f e _ _ h_wfStoreProj h_wfStore h_agree]
   exact h_eval
 
 /-! ## Assert-only blocks preserve store -/

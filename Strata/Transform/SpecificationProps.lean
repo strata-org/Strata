@@ -156,7 +156,7 @@ omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
 /-- Identity transformation trace-overapproximates itself for any reflexive
 trace relation. -/
 theorem OverapproximatesTraces.id
-    {EventT : Type}
+    {EventT : Type _}
     (Rtrace : Relation (List EventT)) (hrefl : IsReflexive Rtrace)
     (L : EventLang P EventT) (params : L.InitEnvWFParamsTy) :
     OverapproximatesTraces Rtrace L L some params params := by
@@ -177,7 +177,7 @@ omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
 /-- Explicit trace-relation overapproximations compose by relational
 composition of their trace relations. -/
 theorem OverapproximatesTraces.rel_comp
-    {EventT : Type}
+    {EventT : Type _}
     (R₁ R₂ : Relation (List EventT))
     (L₁ L₂ L₃ : EventLang P EventT)
     (T₁ : L₁.StmtT → Option L₂.StmtT)
@@ -287,7 +287,7 @@ omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
 /-- Shared-start composition for trace overapproximations with potentially
 different trace relations and a transitive outcome relation. -/
 theorem OverapproximatesTracesUptoWhen.comp_trans_eq
-    {EventT : Type}
+    {EventT : Type _}
     (Rtrace₁ Rtrace₂ : Relation (List EventT)) (Rout : Relation (Env P))
     (houtTrans : IsTransitive Rout)
     (L₁ L₂ L₃ : EventLang P EventT)
@@ -335,7 +335,7 @@ omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
 trace), so replacing it by any coarser relation `Rtrace'` (with `Rtrace ⊆
 Rtrace'`) preserves the overapproximation. -/
 theorem OverapproximatesTracesUptoWhen.mono_trace
-    {EventT : Type}
+    {EventT : Type _}
     {Rtrace Rtrace' : Relation (List EventT)} {Rin Rout : Relation (Env P)}
     {L₁ L₂ : EventLang P EventT} {T : L₁.StmtT → Option L₂.StmtT}
     {pre : L₁.StmtT → Prop}
@@ -386,7 +386,7 @@ chronological concatenation (`happend`). Both hold for equality `(· = ·)`. -/
 
 section TracedStructuredStmts
 
-variable {CmdT : Type} {EventT : Type}
+variable {CmdT : Type} {EventT : Type _}
     (evalCmdE : EvalCmdParamE P CmdT EventT)
 
 
@@ -613,7 +613,7 @@ omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
     trace relation. Bounded paths are finite executions, so each source path has
     a related target path. -/
 theorem OverapproximatesTracesUptoWhen.runsOverapproximate
-    {EventT : Type} {Rtrace : Relation (List EventT)} {Rin Rout : Relation (Env P)}
+    {EventT : Type _} {Rtrace : Relation (List EventT)} {Rin Rout : Relation (Env P)}
     {L₁ L₂ : Strata.Logic.EventLang P EventT} {T : L₁.StmtT → Option L₂.StmtT}
     {pre : L₁.StmtT → Prop} {params₁ : L₁.InitEnvWFParamsTy} {params₂ : L₂.InitEnvWFParamsTy}
     (hover : OverapproximatesTracesUptoWhen Rtrace Rin Rout L₁ L₂ T pre params₁ params₂)
@@ -633,7 +633,7 @@ omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
     way, with a related final environment and trace. So a target with no
     finishing run has a source with none. -/
 theorem OverapproximatesTracesUptoWhen.terminatesAt
-    {EventT : Type} {Rtrace : Relation (List EventT)} {Rin Rout : Relation (Env P)}
+    {EventT : Type _} {Rtrace : Relation (List EventT)} {Rin Rout : Relation (Env P)}
     {L₁ L₂ : Strata.Logic.EventLang P EventT} {T : L₁.StmtT → Option L₂.StmtT}
     {pre : L₁.StmtT → Prop} {params₁ : L₁.InitEnvWFParamsTy} {params₂ : L₂.InitEnvWFParamsTy}
     (hover : OverapproximatesTracesUptoWhen Rtrace Rin Rout L₁ L₂ T pre params₁ params₂)
@@ -735,7 +735,7 @@ omit [HasFvar P] [HasFvars P] [HasOps P] [HasBool P] [HasBoolOps P]
   [HasSubstFvar P] [HasInt P] [HasIntOps P] in
 /-- Verifying after a list of transformations is verifying after the first, of
     verifying after the rest. -/
-private theorem thenVerify_runTransforms_cons {EventT : Type} {L : EventLang P EventT}
+private theorem thenVerify_runTransforms_cons {EventT : Type _} {L : EventLang P EventT}
     (T : L.StmtT → Option L.StmtT)
     (rest : List (L.StmtT → Option L.StmtT)) (analyze : L.StmtT → Bool) :
     thenVerify (runTransforms (T :: rest)) analyze =

@@ -10,8 +10,10 @@ public import Strata.Init
 public section
 section Relation
 
+universe u v
 
-@[expose] def Relation (A: Type) := A → A → Prop
+
+@[expose] def Relation (A : Type u) := A → A → Prop
 
 @[expose] def IsReflexive (r: Relation A) : Prop := ∀ x, r x x
 abbrev IsTransitive (r: Relation A) : Prop := ∀ x y z, r x y → r y z → r x z
@@ -21,7 +23,7 @@ abbrev IsTransitive (r: Relation A) : Prop := ∀ x y z, r x y → r y z → r x
     `b` has `R₁ a b` and `R₂ b c`.  Read left-to-right: "first `R₁`, then `R₂`".
 
     The scoped notation `R₁ ∘ R₂` is available via `open scoped Relations`. -/
-@[expose] def RComp {A : Type} (R₁ R₂ : Relation A) : Relation A :=
+@[expose] def RComp {A : Type u} (R₁ R₂ : Relation A) : Relation A :=
   fun a c => ∃ b, R₁ a b ∧ R₂ b c
 
 
@@ -40,7 +42,7 @@ end Relations
     relation consumes. -/
 
 
-inductive ReflTrans {A: Type} (r: Relation A) : Relation A where
+inductive ReflTrans {A : Type u} (r: Relation A) : Relation A where
   | refl : ∀ x, ReflTrans r x x
   | step: ∀ x y z, r x y → ReflTrans r y z → ReflTrans r x z
 
@@ -63,19 +65,19 @@ and `reflTransT_to_prop` (Type → Prop).  The Prop-to-Type direction requires
 `Classical.choice` (`reflTrans_to_T`), so definitions that use it are
 `noncomputable`; this is harmless when the final result is again a `Prop`. -/
 
-inductive ReflTransT {A : Type} (r : A → A → Prop) : A → A → Type where
+inductive ReflTransT {A : Type u} (r : A → A → Prop) : A → A → Type u where
   | refl : ∀ x, ReflTransT r x x
   | step : ∀ x y z, r x y → ReflTransT r y z → ReflTransT r x z
 
 
-theorem reflTrans_nonempty_T {A : Type} {r : A → A → Prop} {a b : A} :
+theorem reflTrans_nonempty_T {A : Type u} {r : A → A → Prop} {a b : A} :
     ReflTrans r a b → Nonempty (ReflTransT r a b) := by
   intro h; induction h with
   | refl => exact ⟨.refl _⟩
   | step _ _ _ hstep _ ih => exact ih.elim fun rest => ⟨.step _ _ _ hstep rest⟩
 
 
-noncomputable def reflTrans_to_T {A : Type} {r : A → A → Prop} {a b : A} :
+noncomputable def reflTrans_to_T {A : Type u} {r : A → A → Prop} {a b : A} :
     ReflTrans r a b → ReflTransT r a b :=
   fun h => Classical.choice (reflTrans_nonempty_T h)
 
@@ -90,7 +92,7 @@ noncomputable def reflTrans_to_T {A : Type} {r : A → A → Prop} {a b : A} :
 /-- IsReflexive-transitive closure of a relation whose steps emit a list of
 observations. The accumulated trace is chronological: a step's output precedes
 the trace emitted by the remaining execution. -/
-inductive ReflTransTrace {A E : Type} (r : A → List E → A → Prop) :
+inductive ReflTransTrace {A : Type u} {E : Type v} (r : A → List E → A → Prop) :
     A → List E → A → Prop where
   /-- IsReflexive execution emits the empty trace. -/
   | refl : ∀ x, ReflTransTrace r x [] x
@@ -105,7 +107,7 @@ inductive ReflTransTrace {A E : Type} (r : A → List E → A → Prop) :
 /-- `ReflTransTrace` bounded by a number of steps: `x` reaches `z` in at most `n`
 steps of `r`, emitting `t`. A property quantified over every bound covers every
 finite execution, with no induction on the execution itself. -/
-@[expose] def ReflTransTraceN {A E : Type} (r : A → List E → A → Prop) :
+@[expose] def ReflTransTraceN {A : Type u} {E : Type v} (r : A → List E → A → Prop) :
     Nat → A → List E → A → Prop
   | 0, x, t, z => x = z ∧ t = []
   | n + 1, x, t, z =>
@@ -122,15 +124,15 @@ derivation to produce data — in particular a step count via
 the strictly shrinking length of the remaining execution while still tracking
 the chronological trace it emits. -/
 
-inductive ReflTransTraceT {A E : Type} (r : A → List E → A → Prop) :
-    A → List E → A → Type where
+inductive ReflTransTraceT {A : Type u} {E : Type v} (r : A → List E → A → Prop) :
+    A → List E → A → Type (max u v) where
   | refl : ∀ x, ReflTransTraceT r x [] x
   | step : ∀ x emitted y rest z,
       r x emitted y →
       ReflTransTraceT r y rest z →
       ReflTransTraceT r x (emitted ++ rest) z
 
-@[expose, simp] def ReflTransTraceT.len {A E : Type} {r : A → List E → A → Prop} :
+@[expose, simp] def ReflTransTraceT.len {A : Type u} {E : Type v} {r : A → List E → A → Prop} :
     ∀ {a tr b}, ReflTransTraceT r a tr b → Nat
   | _, _, _, .refl _ => 0
   | _, _, _, .step _ _ _ _ _ _ rest => 1 + rest.len

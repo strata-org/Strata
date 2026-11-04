@@ -124,7 +124,7 @@ private def PrefixStepsOK
           (prefixInitEnv (s :: rest) ρ).store c σ' emitted ∧
         σ' = (prefixInitEnv rest ρ).store ∧
         ∀ a, Event.assume a ∈ emitted →
-          Expression.eval a.factory a.store a.expr = some HasBool.tt
+          Expression.eval a.factory a.store a.expr = some (HasBool.ttVal a.factory)
 
 /-- A silent event step as a one-step run. -/
 private theorem adminRunE
@@ -143,7 +143,7 @@ private theorem prefixInitEnv_stepsE
     (h_ok : PrefixStepsOK π stmts ρ) :
     ∃ tP, CoreStepStarE π (.stmts stmts (prefixInitEnv stmts ρ)) tP (.terminal ρ) ∧
       ∀ a, Event.assume a ∈ tP →
-        Expression.eval a.factory a.store a.expr = some HasBool.tt := by
+        Expression.eval a.factory a.store a.expr = some (HasBool.ttVal a.factory) := by
   induction stmts with
   | nil => exact ⟨[], adminRunE .step_stmts_nil, by simp⟩
   | cons s rest ih =>
@@ -240,11 +240,12 @@ private theorem PrefixStepsOK_assumes
     (ρ : Imperative.Env Expression)
     (h_preconds : ∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ preconds.toList →
-      Expression.eval ρ.factory ρ.store check.expr = some HasBool.tt) :
+      Expression.eval ρ.factory ρ.store check.expr = some (HasBool.ttVal ρ.factory)) :
     PrefixStepsOK π (requiresToAssumes preconds) ρ := by
   suffices h : ∀ (items : List (CoreLabel × Procedure.Check)),
       (∀ (label : CoreLabel) (check : Procedure.Check),
-        (label, check) ∈ items → Expression.eval ρ.factory ρ.store check.expr = some HasBool.tt) →
+        (label, check) ∈ items → Expression.eval ρ.factory ρ.store check.expr = some
+            (HasBool.ttVal ρ.factory)) →
       PrefixStepsOK π (items.map fun (label, check) => Statement.assume label check.expr check.md) ρ from
     h _ h_preconds
   intro items h_items
@@ -510,7 +511,7 @@ theorem procToVerifyStmt_structure
         ∃ ρ_init tP,
           CoreStepStarE π (.stmts prefixStmts ρ_init) tP (.terminal ρ₀) ∧
           ∀ a, Event.assume a ∈ tP →
-            Expression.eval a.factory a.store a.expr = some HasBool.tt) := by
+            Expression.eval a.factory a.store a.expr = some (HasBool.ttVal a.factory)) := by
   obtain ⟨ss, h_body_eq⟩ := procToVerifyStmt_is_structured h
   unfold procToVerifyStmt at h
   rw [h_body_eq] at h
@@ -716,7 +717,8 @@ private theorem ensuresToAsserts_runE
 theorem procBodyVerify_procedureCorrectOnTraces
     (I : ConditionInterp Expression)
     (h_assume : ∀ c : EventArg Expression,
-      Expression.eval c.factory c.store c.expr = some HasBool.tt → ∀ world, I.holds world c)
+      Expression.eval c.factory c.store c.expr = some (HasBool.ttVal c.factory) → ∀ world,
+          I.holds world c)
     (procName : String) (proc : Procedure) (p : Program)
     (st : CoreTransformState) (verifyStmt : Statement) (st' : CoreTransformState)
     (h_lookup : p.findProcByString? procName = some proc)

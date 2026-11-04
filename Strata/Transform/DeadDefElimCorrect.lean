@@ -62,7 +62,7 @@ variable {P : PureExpr} [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
 
 variable {F : P.Factory}
 
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] in
+omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvars P] in
 /-- An `init` step defines its undefined variable as a value, keeps the other variables and
     emits no event. -/
 private theorem evalE_init_inv {σ σ1 : SemanticStore P} {x : P.Ident} {ty : P.Ty}
@@ -83,7 +83,7 @@ private theorem erasable_inv {live : List P.Ident} {s : PStmt P}
     ∃ x ty e md, s = .cmd (.cmd (.init x ty e md)) ∧ x ∉ live := by
   rcases s with ((x | _ | _ | _ | _) | _) | _ | _ | _ | _ | _ <;> simp_all [erasable]
 
-omit [BEq P.Ident] [LawfulBEq P.Ident] in
+omit [BEq P.Ident] [LawfulBEq P.Ident] [HasFvars P] in
 /-- Erasing an `init` of a variable outside `N` from a run: the store after the `init`
     still agrees with the replaying store on `N`. -/
 private theorem erase_init {s : PStmt P} {x : P.Ident} {ty : P.Ty} {e : ExprOrNondet P}

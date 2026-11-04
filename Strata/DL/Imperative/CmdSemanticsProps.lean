@@ -61,11 +61,15 @@ evaluation relation `EvalCmdE`. Key results:
   keys (`InvStoresExceptUpdateStates`, `InvStoresExceptInitStates`), and
   `initStates_preserves_wf`: initializing slots with values preserves store
   well-formedness, as does updating a name to a value (`wfStore_update`).
+- Typing (`HasTyping`, `LawfulHasTyping` in `PureExpr`): `eval_bool_of_hasType`
+  (a well-typed condition evaluates to `true` or `false`),
+  `EvalCmdE.init_progress` and `EvalCmdE.set_progress` (a well-typed
+  deterministic `init` or `set` can step), and `StoreHasTyping.update`,
+  `EvalCmdE.init_storeHasTyping`, `EvalCmdE.preserves_storeHasTyping` (commands
+  keep a store conforming to its typing).
 - Evaluation: `EvalsTo.det` (evaluation is deterministic); under `WellFormedSemanticEvalVal`
-  the Boolean literals evaluate to themselves (`WellFormedSemanticEvalVal.eval_tt`,
-  `WellFormedSemanticEvalVal.eval_ff`) and results in a well-formed store are values
-  (`EvalsTo.value`); under `WellFormedSemanticEvalVar` a variable evaluates to its value in the
-  store (`EvalsTo.var`).
+  results in a well-formed store are values (`EvalsTo.value`); under
+  `WellFormedSemanticEvalVar` a variable evaluates to its value in the store (`EvalsTo.var`).
 -/
 
 public section
@@ -107,7 +111,7 @@ expression in `σ_tgt` reproduces the source value. -/
 theorem eval_rename_seam {P : PureExpr} [HasVal P] [HasFvar P] [HasOps P] [LawfulHasFvar P] [HasSubstFvar P]
     (f : P.Factory)
     (subst : List (P.Ident × P.Ident))
-    {σ_src σ_tgt : SemanticStore P} {e v : P.Expr}
+    {σ_src σ_tgt : SemanticStore P} {e : P.Expr} {v : P.Val}
     (h_wf_store : WellFormedStore σ_tgt f)
     (h_svd : SubstVarsDefined σ_tgt (substMapOf subst))
     (h_rename : WellFormedSemanticEvalRenameFvars f)
@@ -131,7 +135,7 @@ theorem eval_rename_seam {P : PureExpr} [HasVal P] [HasFvar P] [HasOps P] [Lawfu
 
 theorem InitStateDefCons
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
+  {vs : List P.Ident} {e : P.Val} {v : P.Ident} :
   SemanticStore.varsDefined (· ∈ vs) σ →
   InitState P σ v e σ' →
   SemanticStore.varsDefined (· ∈ (v::vs)) σ' := by
@@ -150,7 +154,7 @@ theorem InitStateDefCons
 
 theorem InitStateDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
+  {vs : List P.Ident} {e : P.Val} {v : P.Ident} :
   SemanticStore.varsDefined (· ∈ vs) σ →
   InitState P σ v e σ' →
   SemanticStore.varsDefined (· ∈ vs) σ' := by
@@ -159,7 +163,7 @@ theorem InitStateDefMonotone
 
 theorem UpdateStateDef
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {e : P.Expr} {v : P.Ident} :
+  {e : P.Val} {v : P.Ident} :
   UpdateState P σ v e σ' →
   SemanticStore.varsDefined (· ∈ [v]) σ ∧ SemanticStore.varsDefined (· ∈ [v]) σ' := by
   intro Heval
@@ -169,7 +173,7 @@ theorem UpdateStateDef
 
 theorem UpdateStateDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
+  {vs : List P.Ident} {e : P.Val} {v : P.Ident} :
   SemanticStore.varsDefined (· ∈ vs) σ →
   UpdateState P σ v e σ' →
   SemanticStore.varsDefined (· ∈ vs) σ' := by
@@ -191,7 +195,7 @@ theorem UpdateStateDefMonotone
 
 theorem UpdateStateUniqueResult
   {P : PureExpr} {σ σ' σ'': SemanticStore P}
-  {e : P.Expr} {v : P.Ident} :
+  {e : P.Val} {v : P.Ident} :
   UpdateState P σ v e σ' →
   UpdateState P σ v e σ'' →
   σ' = σ'' := by
@@ -208,7 +212,7 @@ theorem UpdateStateUniqueResult
 
 theorem InitStateUniqueResult
   {P : PureExpr} {σ σ' σ'': SemanticStore P}
-  {e : P.Expr} {v : P.Ident} :
+  {e : P.Val} {v : P.Ident} :
   InitState P σ v e σ' →
   InitState P σ v e σ'' →
   σ' = σ'' := by
@@ -225,8 +229,8 @@ theorem InitStateUniqueResult
 
 /-! ### Assert / set commutation -/
 
-theorem UpdateStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ1 σ2: SemanticStore P} {v1 v2: P.Expr}
-  [DecidableEq P.Ident]:
+theorem UpdateStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ1 σ2: SemanticStore P}
+  {v1 v2: P.Val} [DecidableEq P.Ident]:
   ¬ x1 = x2 →
   UpdateState P σ x1 v1 σ1 →
   UpdateState P σ1 x2 v2 σ' →
@@ -251,7 +255,8 @@ theorem UpdateStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ1 σ2: Sem
   specialize Hfa4 i Heq1
   simp_all
 
-theorem UpdateState_InitStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ1 σ2: SemanticStore P} {v1 v2: P.Expr}
+theorem UpdateState_InitStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ1 σ2: SemanticStore P}
+    {v1 v2 : P.Val}
   [DecidableEq P.Ident]:
   ¬ x1 = x2 →
   UpdateState P σ x1 v1 σ1 →
@@ -280,7 +285,7 @@ theorem UpdateState_InitStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ
 /-- `InitState` never undefines a slot: its target becomes `some`, others are
 unchanged. -/
 theorem InitState_preserves_isSome {P : PureExpr} {σ σ' : SemanticStore P}
-    {x : P.Ident} {v : P.Expr} {y : P.Ident}
+    {x : P.Ident} {v : P.Val} {y : P.Ident}
     (h : InitState P σ x v σ') (h_some : (σ y).isSome = true) :
     (σ' y).isSome = true := by
   cases h with
@@ -291,7 +296,7 @@ theorem InitState_preserves_isSome {P : PureExpr} {σ σ' : SemanticStore P}
 
 /-- `UpdateState` never undefines a slot. -/
 theorem UpdateState_preserves_isSome {P : PureExpr} {σ σ' : SemanticStore P}
-    {x : P.Ident} {v : P.Expr} {y : P.Ident}
+    {x : P.Ident} {v : P.Val} {y : P.Ident}
     (h : UpdateState P σ x v σ') (h_some : (σ y).isSome = true) :
     (σ' y).isSome = true := by
   cases h with
@@ -311,7 +316,7 @@ update that writes it. -/
 /-- `InitState` preserves a typed slot: the init target starts `none`, so it cannot
 be the (already-defined) slot `y`, whose value is left untouched. -/
 theorem InitState_typedAt {P : PureExpr} [HasVal P] [DecidableEq P.Ident]
-    {f : P.Factory} {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Expr} {y : P.Ident} {ty : P.Ty}
+    {f : P.Factory} {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Val} {y : P.Ident} {ty : P.Ty}
     (h : InitState P σ x v σ')
     (hy : ∃ prev, σ y = some prev ∧ HasVal.valueOfTy f prev ty) :
     ∃ prev, σ' y = some prev ∧ HasVal.valueOfTy f prev ty := by
@@ -328,7 +333,7 @@ value that shares the old value's type, and `valueOfTy_congr` carries the record
 type across. -/
 theorem UpdateState_typedAt {P : PureExpr} [HasVal P] [HasFvars P] [LawfulHasVal P]
     [DecidableEq P.Ident]
-    {f : P.Factory} {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Expr} {y : P.Ident} {ty : P.Ty}
+    {f : P.Factory} {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Val} {y : P.Ident} {ty : P.Ty}
     (h : UpdateState P σ x v σ')
     (hstored : HasVal.valueOfStoredTy (P := P) f σ x v)
     (hy : ∃ prev, σ y = some prev ∧ HasVal.valueOfTy f prev ty) :
@@ -346,7 +351,7 @@ theorem UpdateState_typedAt {P : PureExpr} [HasVal P] [HasFvars P] [LawfulHasVal
 
 /-- `InitState` leaves every slot other than its target unchanged. -/
 theorem InitState_preserves_none {P : PureExpr} {σ σ' : SemanticStore P}
-    {x : P.Ident} {v : P.Expr} {y : P.Ident}
+    {x : P.Ident} {v : P.Val} {y : P.Ident}
     (h_is : InitState P σ x v σ') (h_ne : x ≠ y) :
     σ' y = σ y := by
   cases h_is with
@@ -355,7 +360,7 @@ theorem InitState_preserves_none {P : PureExpr} {σ σ' : SemanticStore P}
 /-- `UpdateState` cannot newly-define a `none` slot: `set`/`havoc` requires the
 target already defined, so a `none` slot is left `none`. -/
 theorem UpdateState_preserves_none {P : PureExpr} {σ σ' : SemanticStore P}
-    {x : P.Ident} {v : P.Expr} {y : P.Ident}
+    {x : P.Ident} {v : P.Val} {y : P.Ident}
     (h_us : UpdateState P σ x v σ') (h_none : σ y = none) :
     σ' y = none := by
   cases h_us with
@@ -366,7 +371,7 @@ theorem UpdateState_preserves_none {P : PureExpr} {σ σ' : SemanticStore P}
 
 /-- `InitState` writes `some v`, so the slot cannot come back `none`. -/
 private theorem initState_isSome {P : PureExpr}
-    {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Expr}
+    {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Val}
     (h : InitState P σ x v σ') : (σ' x).isSome = true := by
   cases h with
   | init _ h_some _ => rw [h_some]; simp
@@ -443,7 +448,7 @@ theorem evalCmdE_storeWellDefined {P : PureExpr} [HasFvar P] [HasBool P] [HasFva
     (hval : WellFormedSemanticEvalVal (P := P) f)
     (h : EvalCmdE P f σ c σ' emitted) (hsv : WellFormedStore σ f) :
     WellFormedStore σ' f := by
-  have hwrite : ∀ (x : P.Ident) (v : P.Expr), HasVal.value f v →
+  have hwrite : ∀ (x : P.Ident) (v : P.Val), HasVal.value f v →
       σ' x = some v → (∀ y, x ≠ y → σ' y = σ y) → WellFormedStore σ' f := by
     intro x v hv hx hoth z w hz
     by_cases hzx : x = z
@@ -484,7 +489,7 @@ with the single-slot `UpdateState` / `InitState` facts they rest on.
 
 /-- Initializing distinct store slots with values preserves store well-formedness. -/
 theorem initStates_preserves_wf {P : PureExpr} [HasVal P] {fac : P.Factory} :
-    ∀ {ids : List P.Ident} {vals : List P.Expr} {σ σ' : SemanticStore P},
+    ∀ {ids : List P.Ident} {vals : List P.Val} {σ σ' : SemanticStore P},
       InitStates σ ids vals σ' →
       WellFormedStore σ fac →
       (∀ v ∈ vals, HasVal.value fac v) →
@@ -519,7 +524,7 @@ theorem UpdateStatesEmpty :
 /-- Updating one slot keeps every undefined key undefined. -/
 theorem UpdateStateNotDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
+  {vs : List P.Ident} {e : P.Val} {v : P.Ident} :
   SemanticStore.varsUndefined (· ∈ vs) σ →
   UpdateState P σ v e σ' →
   SemanticStore.varsUndefined (· ∈ vs) σ' := by
@@ -540,7 +545,7 @@ theorem UpdateStateNotDefMonotone
 /-- Updating a list of slots keeps every undefined key undefined. -/
 theorem UpdateStatesNotDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
+  {vs : List P.Ident} {es' : List P.Val} {vs' : List P.Ident} :
   SemanticStore.varsUndefined (· ∈ vs) σ →
   UpdateStates σ vs' es' σ' →
   SemanticStore.varsUndefined (· ∈ vs) σ' := by
@@ -556,7 +561,7 @@ theorem UpdateStatesNotDefMonotone
 /-- A key undefined after updating one slot was undefined before. -/
 theorem UpdateStateNotDefMonotone'
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
+  {vs : List P.Ident} {e : P.Val} {v : P.Ident} :
   SemanticStore.varsUndefined (· ∈ vs) σ' →
   UpdateState P σ v e σ' →
   SemanticStore.varsUndefined (· ∈ vs) σ := by
@@ -577,7 +582,7 @@ theorem UpdateStateNotDefMonotone'
 /-- A key undefined after updating a list of slots was undefined before. -/
 theorem UpdateStatesNotDefMonotone'
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
+  {vs : List P.Ident} {es' : List P.Val} {vs' : List P.Ident} :
   SemanticStore.varsUndefined (· ∈ vs) σ' →
   UpdateStates σ vs' es' σ' →
   SemanticStore.varsUndefined (· ∈ vs) σ := by
@@ -591,7 +596,7 @@ theorem UpdateStatesNotDefMonotone'
 
 /-- The updated slot is defined after the update. -/
 theorem UpdateStateDefined
-  {P : PureExpr} {σ σ' : SemanticStore P} {e : P.Expr} {v : P.Ident} :
+  {P : PureExpr} {σ σ' : SemanticStore P} {e : P.Val} {v : P.Ident} :
   @UpdateState P σ v e σ' →
   SemanticStore.varsDefined (· ∈ [v]) σ' := by
   intros Hup
@@ -601,7 +606,7 @@ theorem UpdateStateDefined
 
 /-- The updated slot is defined before the update. -/
 theorem UpdateStateDefined'
-  {P : PureExpr} {σ σ' : SemanticStore P} {e : P.Expr} {v : P.Ident} :
+  {P : PureExpr} {σ σ' : SemanticStore P} {e : P.Val} {v : P.Ident} :
   @UpdateState P σ v e σ' →
   SemanticStore.varsDefined (· ∈ [v]) σ := by
   intros Hup
@@ -613,7 +618,7 @@ theorem UpdateStateDefined'
 /-- Updating a list of slots keeps every defined key defined. -/
 theorem UpdateStatesDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
+  {vs : List P.Ident} {es' : List P.Val} {vs' : List P.Ident} :
   SemanticStore.varsDefined (· ∈ vs) σ →
   UpdateStates σ vs' es' σ' →
   SemanticStore.varsDefined (· ∈ vs) σ' := by
@@ -629,7 +634,7 @@ theorem UpdateStatesDefMonotone
 /-- A key defined after updating one slot was defined before. -/
 theorem UpdateStateDefMonotone'
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
+  {vs : List P.Ident} {e : P.Val} {v : P.Ident} :
   SemanticStore.varsDefined (· ∈ vs) σ' →
   UpdateState P σ v e σ' →
   SemanticStore.varsDefined (· ∈ vs) σ := by
@@ -652,7 +657,7 @@ theorem UpdateStateDefMonotone'
 /-- A key defined after updating a list of slots was defined before. -/
 theorem UpdateStatesDefMonotone'
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {es' : List P.Expr} {vs' : List P.Ident} :
+  {vs : List P.Ident} {es' : List P.Val} {vs' : List P.Ident} :
   SemanticStore.varsDefined (· ∈ vs) σ' →
   UpdateStates σ vs' es' σ' →
   SemanticStore.varsDefined (· ∈ vs) σ := by
@@ -761,7 +766,7 @@ theorem InitStatesInjective :
 /-- Every expression returned by `ReadValues` is a value in its factory. -/
 theorem ReadValues.all_values
     {P : PureExpr} [HasVal P] {f : P.Factory} {σ : SemanticStore P}
-    {ks : List P.Ident} {vs : List P.Expr} (h : ReadValues f σ ks vs) :
+    {ks : List P.Ident} {vs : List P.Val} (h : ReadValues f σ ks vs) :
     ∀ v ∈ vs, HasVal.value f v := by
   induction h with
   | read_none => simp
@@ -773,7 +778,7 @@ theorem ReadValues.all_values
 
 /-- Reading the same keys from the same store yields the same value list. -/
 theorem ReadValuesInjective {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ : SemanticStore P} {ks : List P.Ident} {vs vs' : List P.Expr} :
+  {σ : SemanticStore P} {ks : List P.Ident} {vs vs' : List P.Val} :
   ReadValues f σ ks vs →
   ReadValues f σ ks vs' →
   vs = vs' := by
@@ -792,7 +797,7 @@ theorem ReadValuesInjective {P : PureExpr} [HasVal P] {f : P.Factory}
 
 /-- Concatenating two reads from one store reads the concatenated keys and values. -/
 theorem ReadValuesApp {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ : SemanticStore P} {k1 k2 : List P.Ident} {v1 v2 : List P.Expr} :
+  {σ : SemanticStore P} {k1 k2 : List P.Ident} {v1 v2 : List P.Val} :
   ReadValues f σ k1 v1 →
   ReadValues f σ k2 v2 →
   ReadValues f σ (k1 ++ k2) (v1 ++ v2) := by
@@ -803,7 +808,7 @@ theorem ReadValuesApp {P : PureExpr} [HasVal P] {f : P.Factory}
 
 /-- A read over appended key lists splits into corresponding value lists and reads. -/
 theorem ReadValuesAppKeys' {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ : SemanticStore P} {k1 k2 : List P.Ident} {vs : List P.Expr} :
+  {σ : SemanticStore P} {k1 k2 : List P.Ident} {vs : List P.Val} :
   ReadValues f σ (k1 ++ k2) vs →
   exists v1 v2,
   v1 ++ v2 = vs ∧
@@ -837,7 +842,7 @@ theorem ReadValuesAppKeys' {P : PureExpr} [HasVal P] {f : P.Factory}
 
 /-- A read returns exactly one value for each requested key. -/
 theorem ReadValuesLength {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ : SemanticStore P} {ks : List P.Ident} {vs : List P.Expr} :
+  {σ : SemanticStore P} {ks : List P.Ident} {vs : List P.Val} :
   ReadValues f σ ks vs →
   ks.length = vs.length := by
   intros Hrd
@@ -854,7 +859,7 @@ theorem InitStatesLength :
 theorem UpdateStatesLength {P : PureExpr}
   {σ σ' : Imperative.SemanticStore P}
   {ks : List P.Ident}
-  {vs : List P.Expr}
+  {vs : List P.Val}
   :
   UpdateStates (P:=P) σ ks vs σ' →
   List.length ks = List.length vs := by
@@ -864,7 +869,7 @@ theorem UpdateStatesLength {P : PureExpr}
 /-- Initializing a fresh slot preserves every existing `ReadValues` derivation. -/
 theorem InitStateReadValuesMonotone {P : PureExpr} [HasVal P] {f : P.Factory}
   {σ σ' : SemanticStore P}
-  {ks : List P.Ident} {vs : List P.Expr} {e : P.Expr} {v : P.Ident} :
+  {ks : List P.Ident} {vs : List P.Val} {e : P.Val} {v : P.Ident} :
   ReadValues f σ ks vs →
   InitState P σ v e σ' →
   ReadValues f σ' ks vs := by
@@ -883,8 +888,8 @@ theorem InitStateReadValuesMonotone {P : PureExpr} [HasVal P] {f : P.Factory}
 /-- Initializing several fresh slots preserves every existing `ReadValues` derivation. -/
 theorem InitStatesReadValuesMonotone
   {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' : SemanticStore P}
-  {ks : List P.Ident} {vs : List P.Expr}
-  {es' : List P.Expr} {vs' : List P.Ident} :
+  {ks : List P.Ident} {vs : List P.Val}
+  {es' : List P.Val} {vs' : List P.Ident} :
   ReadValues f σ ks vs →
   InitStates σ vs' es' σ' →
   ReadValues f σ' ks vs := by
@@ -898,7 +903,7 @@ theorem InitStatesReadValuesMonotone
 /-- Updating a slot outside the requested keys preserves a `ReadValues` derivation. -/
 theorem UpdateStateReadValuesMonotone {P : PureExpr} [HasVal P] {f : P.Factory}
   {σ σ' : SemanticStore P}
-  {ks : List P.Ident} {vs : List P.Expr} {e : P.Expr} {v : P.Ident} :
+  {ks : List P.Ident} {vs : List P.Val} {e : P.Val} {v : P.Ident} :
   ¬ v ∈ ks →
   ReadValues f σ ks vs →
   UpdateState P σ v e σ' →
@@ -915,8 +920,8 @@ theorem UpdateStateReadValuesMonotone {P : PureExpr} [HasVal P] {f : P.Factory}
 derivation. -/
 theorem UpdateStatesReadValuesMonotone
   {P : PureExpr} [HasVal P] {f : P.Factory} {σ σ' : SemanticStore P}
-  {ks : List P.Ident} {vs : List P.Expr}
-  {es' : List P.Expr} {vs' : List P.Ident} :
+  {ks : List P.Ident} {vs : List P.Val}
+  {es' : List P.Val} {vs' : List P.Ident} :
   (ks ++ vs').Nodup →
   ReadValues f σ ks vs →
   UpdateStates σ vs' es' σ' →
@@ -934,7 +939,7 @@ theorem UpdateStatesReadValuesMonotone
 /-- Initializing one slot with a value makes that value readable
     from the slot in the resulting store. -/
 theorem InitStateReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ σ' : SemanticStore P} {v : P.Ident} {e : P.Expr} :
+  {σ σ' : SemanticStore P} {v : P.Ident} {e : P.Val} :
   HasVal.value f e →
   InitState P σ v e σ' →
   ReadValues f σ' [v] [e] := by
@@ -945,7 +950,7 @@ theorem InitStateReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
 /-- Updating one slot with a value makes that value readable
     from the slot in the resulting store. -/
 theorem UpdateStateReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ σ' : SemanticStore P} {v : P.Ident} {e : P.Expr} :
+  {σ σ' : SemanticStore P} {v : P.Ident} {e : P.Val} :
   HasVal.value f e →
   UpdateState P σ v e σ' →
   ReadValues f σ' [v] [e] := by
@@ -956,7 +961,7 @@ theorem UpdateStateReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
 /-- Initializing slots from values makes those values readable
     at the corresponding slots in the resulting store. -/
 theorem InitStatesReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ σ' : SemanticStore P} {vs : List P.Ident} {es : List P.Expr} :
+  {σ σ' : SemanticStore P} {vs : List P.Ident} {es : List P.Val} :
   (∀ v ∈ es, HasVal.value f v) →
   InitStates σ vs es σ' →
   ReadValues f σ' vs es := by
@@ -977,7 +982,7 @@ theorem InitStatesReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
 /-- Updating distinct slots from values makes those values
     readable at the corresponding slots in the resulting store. -/
 theorem UpdateStatesReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ σ' : SemanticStore P} {vs : List P.Ident} {es : List P.Expr} :
+  {σ σ' : SemanticStore P} {vs : List P.Ident} {es : List P.Val} :
   vs.Nodup →
   (∀ v ∈ es, HasVal.value f v) →
   UpdateStates σ vs es σ' →
@@ -999,7 +1004,7 @@ theorem UpdateStatesReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
 /-- Updating a different slot preserves the value stored at a key. -/
 theorem UpdateStateSomeMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr} {e : P.Expr} {v : P.Ident} :
+  {k' : P.Ident} {v' e : P.Val} {v : P.Ident} :
   v ≠ k' →
   σ k' = some v' →
   UpdateState P σ v e σ' →
@@ -1011,8 +1016,8 @@ theorem UpdateStateSomeMonotone
 /-- Updating a list of slots not containing a key preserves the value stored at that key. -/
 theorem UpdateStatesSomeMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr}
-  {ks': List P.Ident} {vs': List P.Expr} :
+  {k' : P.Ident} {v' : P.Val}
+  {ks': List P.Ident} {vs' : List P.Val} :
   ¬ k' ∈ ks' →
   σ k' = some v' →
   UpdateStates σ ks' vs' σ' →
@@ -1028,7 +1033,7 @@ theorem UpdateStatesSomeMonotone
 /-- Initializing a slot preserves the value stored at an already defined key. -/
 theorem InitStateSomeMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr} {e : P.Expr} {v : P.Ident} :
+  {k' : P.Ident} {v' e : P.Val} {v : P.Ident} :
   σ k' = some v' →
   InitState P σ v e σ' →
   σ' k' = some v' := by
@@ -1042,7 +1047,7 @@ theorem InitStateSomeMonotone
 /-- A key other than the initialized slot stores the same value before the initialization. -/
 theorem InitStateSomeMonotone'
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr} {e : P.Expr} {v : P.Ident} :
+  {k' : P.Ident} {v' e : P.Val} {v : P.Ident} :
   k' ≠ v →
   σ' k' = some v' →
   InitState P σ v e σ' →
@@ -1054,8 +1059,8 @@ theorem InitStateSomeMonotone'
 /-- Initializing a list of slots preserves the value stored at an already defined key. -/
 theorem InitStatesSomeMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr}
-  {ks': List P.Ident} {vs': List P.Expr} :
+  {k' : P.Ident} {v' : P.Val}
+  {ks': List P.Ident} {vs' : List P.Val} :
   σ k' = some v' →
   InitStates σ ks' vs' σ' →
   σ' k' = some v' := by
@@ -1068,8 +1073,8 @@ theorem InitStatesSomeMonotone
 /-- A key outside the initialized slots stores the same value before the initialization. -/
 theorem InitStatesSomeMonotone'
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {k' : P.Ident} {v' : P.Expr}
-  {ks': List P.Ident} {vs': List P.Expr} :
+  {k' : P.Ident} {v' : P.Val}
+  {ks': List P.Ident} {vs' : List P.Val} :
   ¬ k' ∈ ks' →
   σ' k' = some v' →
   InitStates σ ks' vs' σ' →
@@ -1101,7 +1106,7 @@ theorem isDefinedReadValues {P : PureExpr} [HasVal P] {f : P.Factory}
 /-- Successfully reading a key list implies that every requested key is defined in
 the store. -/
 theorem ReadValuesIsDefined {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ : SemanticStore P} {ks : List P.Ident} {vs : List P.Expr} :
+  {σ : SemanticStore P} {ks : List P.Ident} {vs : List P.Val} :
   ReadValues f σ ks vs →
   SemanticStore.varsDefined (· ∈ ks) σ := by
   intros Hrd
@@ -1239,7 +1244,7 @@ theorem substStoresCons :
 /-- If two stores read the same values at respective key lists, the stores agree
 under the substitution that zips those keys. -/
 theorem ReadValuesSubstStores {P : PureExpr} [HasVal P] {f : P.Factory}
-  {σ σ' : SemanticStore P} {ks ks' : List P.Ident} {vs : List P.Expr} :
+  {σ σ' : SemanticStore P} {ks ks' : List P.Ident} {vs : List P.Val} :
   ReadValues f σ ks vs →
   ReadValues f σ' ks' vs →
   Imperative.substStores σ σ' (List.zip ks ks') := by
@@ -1268,7 +1273,7 @@ theorem ReadValuesSubstStores {P : PureExpr} [HasVal P] {f : P.Factory}
 
 /-- Initializing a list of slots keeps every defined key defined. -/
 theorem InitStatesDefMonotone {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs vs' : List P.Ident} {es' : List P.Expr} :
+  {vs vs' : List P.Ident} {es' : List P.Val} :
   SemanticStore.varsDefined (· ∈ vs) σ →
   InitStates σ vs' es' σ' →
   SemanticStore.varsDefined (· ∈ vs) σ' := by
@@ -1283,7 +1288,7 @@ theorem InitStatesDefMonotone {P : PureExpr} {σ σ' : SemanticStore P}
 defined before. -/
 theorem InitStateDefMonotone'
   {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
+  {vs : List P.Ident} {e : P.Val} {v : P.Ident} :
   ¬ v ∈ vs →
   SemanticStore.varsDefined (· ∈ vs) σ' →
   InitState P σ v e σ' →
@@ -1307,7 +1312,7 @@ theorem InitStateDefMonotone'
 /-- Keys disjoint from the initialized slots that are defined after the initialization were
 defined before. -/
 theorem InitStatesDefMonotone' {P : PureExpr} {σ σ' : SemanticStore P}
-  {vs vs' : List P.Ident} {es' : List P.Expr} :
+  {vs vs' : List P.Ident} {es' : List P.Val} :
   vs.Disj vs' →
   SemanticStore.varsDefined (· ∈ vs) σ' →
   InitStates σ vs' es' σ' →
@@ -1385,41 +1390,136 @@ theorem InvStoresExceptInitStates :
 /-- Updating a name of a value-valued store (`WellFormedStore`) to a value keeps it
     value-valued. -/
 theorem wfStore_update {P : PureExpr} [DecidableEq P.Ident] [HasBool P] {F : P.Factory}
-    {σ : SemanticStore P} (hC : WellFormedStore σ F) (x : P.Ident) {v : P.Expr}
+    {σ : SemanticStore P} (hC : WellFormedStore σ F) (x : P.Ident) {v : P.Val}
     (hv : HasVal.value F v) : WellFormedStore (SemanticStore.update σ x v) F :=
   fun y w hy => by grind [SemanticStore.update, WellFormedStore]
+
+/-! ## Typing: evaluation, progress and store typing -/
+
+section
+
+variable {P : PureExpr} [HasBool P]
+
+/-- A well-typed Boolean expression evaluates to `true` or to `false`. -/
+theorem eval_bool_of_hasType [HasTyping P] [LawfulHasTyping P] {f : P.Factory} {Γ : VarTyping P}
+    {σ : SemanticStore P}
+    {e : P.Expr} (he : HasTyping.HasType f Γ e HasBool.boolTy)
+    (hσ : StoreHasTyping f σ Γ) :
+    P.eval f σ e = some (HasBool.ttVal f) ∨ P.eval f σ e = some (HasBool.ffVal f) := by
+  obtain ⟨v, hv, hty⟩ := LawfulHasTyping.eval_of_hasType f Γ σ e _ he hσ
+  rcases LawfulHasTyping.valueOfTy_bool f v hty with rfl | rfl
+  · exact .inl hv
+  · exact .inr hv
+
+variable [DecidableEq P.Ident]
+
+/-- Extending a typing and a store at a fresh variable `x` with a value of the
+    new type keeps the store conforming. -/
+theorem StoreHasTyping.update {f : P.Factory} {σ : SemanticStore P} {Γ : VarTyping P}
+    (hσ : StoreHasTyping f σ Γ) (x : P.Ident) (ty : P.Ty) (v : P.Val)
+    (hv : HasVal.valueOfTy f v ty) :
+    StoreHasTyping f (σ.update x v) (fun y => if y = x then some ty else Γ y) := by
+  intro y tyy hy
+  by_cases hyx : y = x
+  · subst hyx
+    simp only [↓reduceIte, Option.some.injEq] at hy
+    subst hy
+    exact ⟨v, by simp [SemanticStore.update], hv⟩
+  · simp only [hyx, ↓reduceIte] at hy
+    simpa [SemanticStore.update, hyx] using hσ y tyy hy
+
+variable [HasFvar P]
+
+/-- **Progress for `init`.**  A deterministic `init` of a fresh variable whose
+    initializer has the declared type can step. -/
+theorem EvalCmdE.init_progress [HasTyping P] [LawfulHasTyping P] {f : P.Factory} {Γ : VarTyping P}
+    {σ : SemanticStore P}
+    {x : P.Ident} {ty : P.Ty} {e : P.Expr} {md : MetaData P}
+    (he : HasTyping.HasType f Γ e ty) (hσ : StoreHasTyping f σ Γ)
+    (hfresh : σ x = none) (hvar : WellFormedSemanticEvalVar (P := P) f) :
+    ∃ v, P.eval f σ e = some v ∧ HasVal.valueOfTy f v ty ∧
+      EvalCmdE P f σ (.init x ty (.det e) md) (σ.update x v) [] := by
+  obtain ⟨v, hv, hty⟩ := LawfulHasTyping.eval_of_hasType f Γ σ e ty he hσ
+  refine ⟨v, hv, hty, .eval_init hv ?_ hty hvar⟩
+  exact .init hfresh (by simp [SemanticStore.update])
+    (fun y hxy => by simp [SemanticStore.update, Ne.symm hxy])
+
+/-- **Progress for `set`.**  A deterministic `set` of a typed variable to an
+    expression of the variable's type can step. -/
+theorem EvalCmdE.set_progress [HasTyping P] [LawfulHasTyping P] {f : P.Factory} {Γ : VarTyping P}
+    {σ : SemanticStore P}
+    {x : P.Ident} {ty : P.Ty} {e : P.Expr} {md : MetaData P}
+    (hx : Γ x = some ty) (he : HasTyping.HasType f Γ e ty) (hσ : StoreHasTyping f σ Γ)
+    (hvar : WellFormedSemanticEvalVar (P := P) f) :
+    ∃ v, P.eval f σ e = some v ∧ HasVal.valueOfTy f v ty ∧
+      EvalCmdE P f σ (.set x (.det e) md) (σ.update x v) [] := by
+  obtain ⟨v, hv, hty⟩ := LawfulHasTyping.eval_of_hasType f Γ σ e ty he hσ
+  obtain ⟨prev, hprev, hprev_ty⟩ := hσ x ty hx
+  refine ⟨v, hv, hty, .eval_set hv ?_ ⟨prev, ty, hprev, hprev_ty, hty⟩ hvar⟩
+  exact .update hprev (by simp [SemanticStore.update])
+    (fun y hxy => by simp [SemanticStore.update, Ne.symm hxy])
+
+/-- An `init` makes its store conform to the typing extended at the new
+    variable. -/
+theorem EvalCmdE.init_storeHasTyping {f : P.Factory} {Γ : VarTyping P}
+    {σ σ' : SemanticStore P} {x : P.Ident} {ty : P.Ty} {e : ExprOrNondet P}
+    {md : MetaData P} {tr : Trace P}
+    (h : EvalCmdE P f σ (.init x ty e md) σ' tr) (hσ : StoreHasTyping f σ Γ) :
+    StoreHasTyping f σ' (fun y => if y = x then some ty else Γ y) := by
+  have key : ∀ v, InitState P σ x v σ' → HasVal.valueOfTy f v ty →
+      StoreHasTyping f σ' (fun y => if y = x then some ty else Γ y) := by
+    intro v hinit hty y tyy hy
+    cases hinit with
+    | init _ hxv hother =>
+      by_cases hyx : y = x
+      · subst hyx
+        simp only [↓reduceIte, Option.some.injEq] at hy
+        subst hy
+        exact ⟨v, hxv, hty⟩
+      · simp only [hyx, ↓reduceIte] at hy
+        rw [hother y (Ne.symm hyx)]
+        exact hσ y tyy hy
+  cases h with
+  | eval_init _ hinit hty _ => exact key _ hinit hty
+  | eval_init_unconstrained hinit hty _ => exact key _ hinit hty
+
+/-- A command other than `init` keeps its store conforming to the same typing. -/
+theorem EvalCmdE.preserves_storeHasTyping [HasFvars P] [LawfulHasVal P]
+    {f : P.Factory} {Γ : VarTyping P} {σ σ' : SemanticStore P} {c : Cmd P}
+    {tr : Trace P} (h : EvalCmdE P f σ c σ' tr)
+    (hinit : ∀ x ty e md, c ≠ .init x ty e md) (hσ : StoreHasTyping f σ Γ) :
+    StoreHasTyping f σ' Γ := by
+  intro y ty hy
+  have hslot := hσ y ty hy
+  cases h with
+  | eval_init => exact absurd rfl (hinit _ _ _ _)
+  | eval_init_unconstrained => exact absurd rfl (hinit _ _ _ _)
+  | eval_set _ hupd hstored _ => exact UpdateState_typedAt hupd hstored hslot
+  | eval_set_nondet hupd hstored _ => exact UpdateState_typedAt hupd hstored hslot
+  | eval_assert => exact hslot
+  | eval_assume => exact hslot
+  | eval_cover => exact hslot
+
+end
 
 /-! ## Evaluation as a relation -/
 
 /-- **Evaluation is deterministic.** -/
-theorem EvalsTo.det {P : PureExpr} {F : P.Factory} {σ : SemanticStore P} {e v v' : P.Expr}
+theorem EvalsTo.det {P : PureExpr} {F : P.Factory} {σ : SemanticStore P} {e : P.Expr}
+    {v v' : P.Val}
     (h : EvalsTo F σ e v) (h' : EvalsTo F σ e v') : v = v' :=
   Option.some.inj (h.symm.trans h')
 
-/-- `true` evaluates to `true`. -/
-theorem WellFormedSemanticEvalVal.eval_tt {P : PureExpr} [HasBool P] [HasFvars P]
-    [LawfulHasVal P] {F : P.Factory}
-    (hVal : WellFormedSemanticEvalVal (P := P) F) (σ : SemanticStore P) :
-    P.eval F σ HasBool.tt = some HasBool.tt :=
-  hVal.identityOnValues _ σ (HasBool.boolIsVal F).1
-
-/-- `false` evaluates to `false`. -/
-theorem WellFormedSemanticEvalVal.eval_ff {P : PureExpr} [HasBool P] [HasFvars P]
-    [LawfulHasVal P] {F : P.Factory}
-    (hVal : WellFormedSemanticEvalVal (P := P) F) (σ : SemanticStore P) :
-    P.eval F σ HasBool.ff = some HasBool.ff :=
-  hVal.identityOnValues _ σ (HasBool.boolIsVal F).2
-
 /-- The result of an evaluation in a well-formed store is a value. -/
 theorem EvalsTo.value {P : PureExpr} [HasBool P] {F : P.Factory}
-    (hVal : WellFormedSemanticEvalVal (P := P) F) {σ : SemanticStore P} {e v : P.Expr}
-    (hC : WellFormedStore σ F) (h : EvalsTo F σ e v) : HasVal.value F v :=
+    (hVal : WellFormedSemanticEvalVal (P := P) F) {σ : SemanticStore P} {e : P.Expr}
+    {v : P.Val} (hC : WellFormedStore σ F) (h : EvalsTo F σ e v) : HasVal.value F v :=
   hVal.outputsAreValues e v σ hC h
 
 /-- A variable evaluates, in a well-formed store, to the value the store gives it. -/
 theorem EvalsTo.var {P : PureExpr} [HasVal P] [HasFvar P] {F : P.Factory}
-    (hVar : WellFormedSemanticEvalVar (P := P) F) {σ : SemanticStore P} {e v : P.Expr}
-    {y : P.Ident} (hC : WellFormedStore σ F) (hy : HasFvar.getFvar e = some y)
+    (hVar : WellFormedSemanticEvalVar (P := P) F) {σ : SemanticStore P} {e : P.Expr}
+    {v : P.Val} {y : P.Ident} (hC : WellFormedStore σ F) (hy : HasFvar.getFvar e = some y)
     (h : EvalsTo F σ e v) : σ y = some v :=
   (hVar e y σ hC hy).symm.trans h
 

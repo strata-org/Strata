@@ -11,17 +11,16 @@ public import Strata.Languages.Core.StatementSemantics
 public import Strata.Languages.Core.Logic.TraceInterpUsingDenote
 public import Strata.DL.Imperative.StmtSemanticsProps
 import all Strata.DL.Lambda.FactoryProps
-import all Strata.DL.Lambda.LExprEvalProps
 import all Strata.DL.Lambda.Denote.LExprDenote
 import all Strata.DL.Lambda.Denote.LExprDenoteSubst
 
 /-! # Core Hoare test run inversion support
 
 Key results:
-- `someValuation` supplies a valuation for any Core model;
-- `factory_push_get?`, `factory_call_mkApp`, and the finite-fuel evaluator
-  helpers support tests over program-extended factories;
-- `isValue_binary_call_false` discharges the evaluator's fully-applied-call gate;
+- `boolFactory` builds a runtime factory from a model;
+- `someValuation` supplies a world over any Core factory;
+- `factory_push_get?`, `factory_mem_of_get?`, and `factory_get_of_get?`
+  support tests over program-extended factories;
 - `singleton_run_inv` extracts a statement run from a singleton statement-list run;
 - `assume_run_inv` characterizes an `assume` run;
 - `assert_run_inv` characterizes an `assert` run.
@@ -33,13 +32,15 @@ namespace CoreHoareTestSupport
 
 open Imperative
 
-/-- An arbitrary valuation for a model over any Core expression factory. -/
-def someValuation {factory : Core.Expression.Factory}
-    (model : Lambda.Interp factory) :
-    Core.Logic.DenoteValuation model where
-  tyVarVal := fun _ => .tcons "bool" []
-  freeVarVal := fun _ s =>
-    @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s)
+/-- The runtime factory of the model `model`, reading every residual type variable at
+`bool`. -/
+abbrev boolFactory {F : Lambda.Factory Core.CoreLParams} (model : Lambda.Interp F) :
+    Core.Expression.Factory :=
+  { factory := F, model := model, tyVarVal := fun _ => .bool }
+
+/-- A world over any Core expression factory: off-factory conditions never hold. -/
+def someValuation (factory : Lambda.Factory Core.CoreLParams) :
+    Core.Logic.DenoteValuation factory where
   offFactoryHolds := fun _ => False
 
 /-- Override `fv` with two integer arguments. -/
@@ -100,84 +101,6 @@ theorem factory_get_of_get?
     (hget : factory[name]? = some fn) :
     factory[name]'(factory_mem_of_get? hget) = fn :=
   Lambda.Factory.getElem?_some_getElem hget
-
-/-- A fully applied function operator resolves to its factory entry. -/
-theorem factory_call_mkApp
-    {T : Lambda.LExprParams} [Inhabited T.Metadata]
-    (factory : Lambda.Factory T) (fn : Lambda.LFunc T)
-    (args : List (Lambda.LExpr T.mono))
-    (hget : factory[fn.name.name]? = some fn)
-    (hlen : args.length = fn.inputs.length)
-    (allowPartial : Bool := false) :
-    Lambda.Factory.callOfLFunc factory
-      (Lambda.LExpr.mkApp default fn.opExpr args) allowPartial =
-      some (fn.opExpr, args, fn) := by
-  simp only [Lambda.Factory.callOfLFunc, Lambda.LFunc.opExpr,
-    Lambda.LFuncDefined.opExpr, Lambda.getLFuncCall_mkApp_op, hget]
-  cases allowPartial with
-  | false => simp [hlen]
-  | true =>
-      have hble : ∀ n : Nat, n.ble n = true := by
-        intro n
-        induction n with
-        | zero => rfl
-        | succ n ih => exact ih
-      simp only [↓reduceIte]
-      rw [hlen, hble]
-
-/-- A free variable bound to a value evaluates to that value at positive fuel. -/
-theorem eval_fvar_of_value
-    {T : Lambda.LExprParams} [DecidableEq T.IDMeta] [Inhabited T.IDMeta]
-    [Lambda.Traceable Lambda.LExpr.EvalProvenance T.Metadata]
-    (fuel : Nat) (factory : Lambda.Factory T) (env : Lambda.Env T)
-    (md : T.Metadata) (x : T.Identifier) (ty : Option Lambda.LMonoTy)
-    (v : Lambda.LExpr T.mono) (hget : env x = some v)
-    (hvalue : Lambda.LExpr.isValue factory v = true) :
-    Lambda.LExpr.eval (fuel + 1) factory env (.fvar md x ty) =
-      (v, Lambda.LExpr.EvalResult.value true) := by
-  have hnot : Lambda.LExpr.isValue factory
-      (.fvar md x ty : Lambda.LExpr T.mono) = false := by
-    rw [Lambda.LExpr.isValue.eq_def]
-    simp only [Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
-      Lambda.getLFuncCall.go]
-  rw [Lambda.LExpr.eval.eq_def (TBase := T)]
-  simp [hnot, Lambda.callOfLFunc_fvar_none, Lambda.LExpr.evalCore, hget, hvalue]
-
-/-- Test-visible wrapper for the module-private evaluator fact that a value
-    evaluates to itself at every fuel. -/
-theorem eval_value_identity
-    {T : Lambda.LExprParams} [DecidableEq T.IDMeta] [Inhabited T.IDMeta]
-    [Lambda.Traceable Lambda.LExpr.EvalProvenance T.Metadata]
-    (fuel : Nat) (factory : Lambda.Factory T) (env : Lambda.Env T)
-    (e : Lambda.LExpr T.mono) (hvalue : Lambda.LExpr.isValue factory e = true) :
-    Lambda.LExpr.eval fuel factory env e =
-      (e, Lambda.LExpr.EvalResult.value true) :=
-  Lambda.eval_value_identity fuel factory env e hvalue
-
-/-- Test-visible wrapper for closing a finite-fuel value result into an
-    `evalFully` result. -/
-theorem evalFully_of_value_true
-    {T : Lambda.LExprParams} [DecidableEq T.IDMeta] [Inhabited T.IDMeta]
-    [Lambda.Traceable Lambda.LExpr.EvalProvenance T.Metadata]
-    (factory : Lambda.Factory T) (env : Lambda.Env T) (e : Lambda.LExpr T.mono)
-    (fuel : Nat) (v : Lambda.LExpr T.mono)
-    (h : Lambda.LExpr.eval fuel factory env e = (v, .value true)) :
-    Lambda.LExpr.evalFully factory env e = some v :=
-  Lambda.evalFully_of_value_true factory env e fuel v h
-
-/-- A fully applied binary function call is not itself a value when the
-    function is not a constructor. -/
-theorem isValue_binary_call_false
-    {T : Lambda.LExprParams} [DecidableEq T.IDMeta]
-    (factory : Lambda.Factory T) (fn : Lambda.LFunc T)
-    (m : T.Metadata) (op a b : Lambda.LExpr T.mono)
-    (hcall : Lambda.Factory.callOfLFunc factory
-      (.app m (.app m op a) b) true = some (op, [a, b], fn))
-    (hconstr : fn.isConstr = false) (harity : fn.inputs.length = 2) :
-    Lambda.LExpr.isValue factory (.app m (.app m op a) b) = false := by
-  rw [Lambda.LExpr.isValue.eq_def]
-  split <;> simp_all
-  all_goals split <;> simp_all
 
 variable (π : String → Option Core.Procedure)
 

@@ -24,8 +24,8 @@ public section
   postconditions as assertions appended to each finished run's trace.
 - **`ProcedureAssertsValidOnTraces.denote`**,
   **`ProcedureAssertsSatisfiableOnTraces.denote`** — the same properties with
-  conditions read by Lambda's denotational semantics: validity in every model
-  of the factory visible before the entry procedure, satisfiability in some model.
+  conditions read by Lambda's denotational semantics over the factory visible
+  before the entry procedure.
 - **`CoreVerifierModel`** — the desirable property of Core's verifier under each
   verification mode.
 -/
@@ -37,18 +37,26 @@ open Core Core.Logic Imperative Strata.Logic Imperative.Logic
 /-! ## Procedure correctness -/
 
 
+/-- The initial environments a procedure body is verified from: `ProcEnvWF`, the
+    axioms and distincts visible to `entryProcName`, and a runtime factory over the
+    factory visible before the procedure (`Program.factoryBeforeProcedure`), as in
+    `Procedure.contractTriple`. Steps keep the factory, so every condition a run from
+    such an environment captures is over that factory. -/
+@[expose] def ProcEntryEnv (params : InitEnvWFParams) (entryProcName : String)
+    (p : Program) (proc : Procedure) (ρ₀ : Imperative.Env Expression) : Prop :=
+  ProcEnvWF params proc ρ₀ ∧ AxiomsBeforeProcedureDecl entryProcName p ρ₀ ∧
+    ρ₀.factory.factory = p.factoryBeforeProcedure entryProcName
+
 /-- Common shape of Core-level assertion specifications on a procedure named
-    `entryProcName` in program `p`. -/
+    `entryProcName` in program `p`: `Spec` is asked of the body from the entry
+    environments `ProcEntryEnv` admits. -/
 @[expose] def AssertSpecInProcedure (params : InitEnvWFParams)
     (Spec : (Imperative.Env Expression → Prop) → Statements → Statement → Prop)
     (entryProcName : String) (p : Program) : Prop :=
   ∃ proc ss,
     p.findProcByString? entryProcName = some proc ∧
     proc.body = .structured ss ∧
-    Spec
-      (fun ρ₀ => ProcEnvWF params proc ρ₀ ∧ AxiomsBeforeProcedureDecl entryProcName p ρ₀)
-      ss
-      (Stmt.block "" ss #[])
+    Spec (ProcEntryEnv params entryProcName p proc) ss (Stmt.block "" ss #[])
 
 /-! ## Procedure correctness on event traces
 
@@ -76,12 +84,6 @@ entry procedure: its own body's runs reach it. So the guarantee covers what a
 nonterminating callee does only through that callee's own correctness. -/
 
 variable (I : ConditionInterp Expression)
-
-/-- The initial environments a procedure body is verified from: `ProcEnvWF` and
-    the axioms and distincts visible to `entryProcName`. -/
-@[expose] def ProcEntryEnv (params : InitEnvWFParams) (entryProcName : String)
-    (p : Program) (proc : Procedure) (ρ₀ : Imperative.Env Expression) : Prop :=
-  ProcEnvWF params proc ρ₀ ∧ AxiomsBeforeProcedureDecl entryProcName p ρ₀
 
 /-- The events the body's caller observes after the body terminates in `ρ'`:
     the procedure's non-free postconditions, as the call rule emits them. -/
@@ -167,26 +169,29 @@ structure ProcedureAssertsSatisfiableOnTraces (params : InitEnvWFParams)
 /-! ## Procedure correctness read by denotation
 
 Core reads conditions by Lambda's denotational semantics (`DenoteBasedInterp`)
-in a model of the factory visible before the entry procedure, matching
-`Procedure.contractTriple`. These instances fix that reading: validity must hold
-in every model, satisfiability in some model. -/
+over the factory visible before the entry procedure, matching
+`Procedure.contractTriple`. `ProcEntryEnv` fixes the entry's runtime factory to be
+over that factory, so every condition a run captures holds when it evaluates to
+`true` in the runtime factory's model, and the entry environments these instances
+quantify over range over every model. -/
 
 /-- **Deductive correctness of a procedure on event traces, read by
-    denotation**: `ProcedureAssertsValidOnTraces` in every model of the factory
-    visible before the procedure. -/
+    denotation**: `ProcedureAssertsValidOnTraces` over the factory visible before the
+    procedure. -/
 @[expose] def ProcedureAssertsValidOnTraces.denote (params : InitEnvWFParams)
     (entryProcName : String) (p : Program) : Prop :=
-  ∀ model : Lambda.Interp (p.factoryBeforeProcedure entryProcName),
-    ProcedureAssertsValidOnTraces (Core.Logic.DenoteBasedInterp model) params entryProcName p
+  ProcedureAssertsValidOnTraces
+      (Core.Logic.DenoteBasedInterp (p.factoryBeforeProcedure entryProcName))
+    params entryProcName p
 
 /-- **Satisfiability of a procedure on event traces, read by denotation**:
-    `ProcedureAssertsSatisfiableOnTraces` in some model of the factory visible
-    before the procedure. -/
+    `ProcedureAssertsSatisfiableOnTraces` over the factory visible before the
+    procedure. -/
 @[expose] def ProcedureAssertsSatisfiableOnTraces.denote (params : InitEnvWFParams)
     (entryProcName : String) (p : Program) : Prop :=
-  ∃ model : Lambda.Interp (p.factoryBeforeProcedure entryProcName),
-    ProcedureAssertsSatisfiableOnTraces (Core.Logic.DenoteBasedInterp model)
-      params entryProcName p
+  ProcedureAssertsSatisfiableOnTraces
+    (Core.Logic.DenoteBasedInterp (p.factoryBeforeProcedure entryProcName))
+    params entryProcName p
 
 /-! ## Analysis -/
 
@@ -201,12 +206,12 @@ structure CoreVerifierInput where
 /-- The definition of Core verification under each `VerificationMode`. A
     `VCResults` array passing under the mode claims:
 
-    * `.deductive`: `ProcedureAssertsValidOnTraces.denote` (universal: in
-      every model, every assertion a run reaches is valid and every
-      terminating run satisfies the postconditions);
+    * `.deductive`: `ProcedureAssertsValidOnTraces.denote` (universal: from
+      every entry environment, so in every model, every assertion a run reaches
+      is valid and every terminating run satisfies the postconditions);
     * `.bugFinding`: `ProcedureAssertsSatisfiableOnTraces.denote`
-      (existential dual: in some model, some run reaches each assert and some
-      terminating run satisfies the postconditions);
+      (existential dual: from some entry environment, some run reaches each
+      assert and some terminating run satisfies the postconditions);
     * `.bugFindingAssumingCompleteSpec`: not yet specified. Every result
       passes and claims `False`, so no analyzer implements this mode yet.
     * `.deductiveAssumingSatisfiablePaths`: as `.deductive`. The mode's premise

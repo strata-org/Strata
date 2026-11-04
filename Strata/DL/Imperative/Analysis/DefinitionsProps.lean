@@ -28,7 +28,7 @@ namespace Strata.Logic
 
 open Imperative
 
-variable {P : PureExpr} {EventT : Type} {EL : EventLang P EventT}
+variable {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT}
 
 /-- Overapproximation of runs is reflexive for a reflexive relation. -/
 theorem EventLang.RunsOverapproximate.refl {R : Relation (List EventT)} (hR : IsReflexive R)
@@ -47,7 +47,7 @@ theorem EventLang.RunsOverapproximate.trans {R₁ R₂ : Relation (List EventT)}
   exact ⟨k, trace'', c'', h'', trace', hr, hr'⟩
 
 /-- Overapproximation of runs is monotone in the relation. -/
-theorem EventLang.RunsOverapproximate.mono {EventT₁ EventT₂ : Type}
+theorem EventLang.RunsOverapproximate.mono {EventT₁ : Type _} {EventT₂ : Type _}
     {R R' : List EventT₁ → List EventT₂ → Prop}
     {EL₁ : EventLang P EventT₁} {EL₂ : EventLang P EventT₂} {c₁ : EL₁.CfgT} {c₂ : EL₂.CfgT}
     (h : EL₁.RunsOverapproximate R EL₂ c₁ c₂) (hRR' : ∀ t t', R t t' → R' t t') :
@@ -59,7 +59,7 @@ theorem EventLang.RunsOverapproximate.mono {EventT₁ EventT₂ : Type}
 /-- **Overapproximation preserves reachability**: every configuration the
     source reaches has a configuration the target reaches, along a related
     trace. -/
-theorem EventLang.RunsOverapproximate.reaches {EventT₁ EventT₂ : Type}
+theorem EventLang.RunsOverapproximate.reaches {EventT₁ : Type _} {EventT₂ : Type _}
     {R : List EventT₁ → List EventT₂ → Prop}
     {EL₁ : EventLang P EventT₁} {EL₂ : EventLang P EventT₂} {c₁ : EL₁.CfgT} {c₂ : EL₂.CfgT}
     (h : EL₁.RunsOverapproximate R EL₂ c₁ c₂) {c : EL₁.CfgT} (hr : EL₁.Reaches c₁ c) :
@@ -75,7 +75,7 @@ theorem EventLang.RunsOverapproximate.reaches {EventT₁ EventT₂ : Type}
     target satisfies `φ`, and the relation reflects `φ`, every trace of the
     source satisfies it. Deductive verification is the case where `φ` is
     validity of an assertion. -/
-theorem EventLang.RunsOverapproximate.tracesSatisfy {EventT₁ EventT₂ : Type}
+theorem EventLang.RunsOverapproximate.tracesSatisfy {EventT₁ : Type _} {EventT₂ : Type _}
     {R : List EventT₁ → List EventT₂ → Prop}
     {EL₁ : EventLang P EventT₁} {EL₂ : EventLang P EventT₂} {c₁ : EL₁.CfgT} {c₂ : EL₂.CfgT}
     {φ₁ : List EventT₁ → Prop} {φ₂ : List EventT₂ → Prop}

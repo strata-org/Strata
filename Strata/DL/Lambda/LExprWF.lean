@@ -657,6 +657,33 @@ Replace all user-provided type annotations in an `LExpr` using `f`.
   | .ite _ c t f_expr => fvarAnnotations c ++ fvarAnnotations t ++ fvarAnnotations f_expr
   | .eq _ e1 e2 => fvarAnnotations e1 ++ fvarAnnotations e2
 
+/-- Overwrite the annotation of every free variable `x` with `ann x`, when it is
+defined. -/
+@[expose] def annotateFvars (ann : Identifier T.IDMeta → Option LMonoTy) :
+    LExpr T.mono → LExpr T.mono
+  | .const m c => .const m c
+  | .op m o ty => .op m o ty
+  | .bvar m i => .bvar m i
+  | .fvar m x ty => .fvar m x (match ann x with | some t => some t | none => ty)
+  | .abs m n ty e => .abs m n ty (annotateFvars ann e)
+  | .quant m k n ty tr e => .quant m k n ty (annotateFvars ann tr) (annotateFvars ann e)
+  | .app m f a => .app m (annotateFvars ann f) (annotateFvars ann a)
+  | .ite m c t e => .ite m (annotateFvars ann c) (annotateFvars ann t) (annotateFvars ann e)
+  | .eq m a b => .eq m (annotateFvars ann a) (annotateFvars ann b)
+
+/-- Rename every free variable `x` to `g x`, keeping metadata and annotations. -/
+@[expose] def mapFvarNames (g : Identifier T.IDMeta → Identifier T.IDMeta) :
+    LExpr T.mono → LExpr T.mono
+  | .const m c => .const m c
+  | .op m o ty => .op m o ty
+  | .bvar m i => .bvar m i
+  | .fvar m x ty => .fvar m (g x) ty
+  | .abs m n ty e => .abs m n ty (mapFvarNames g e)
+  | .quant m k n ty tr e => .quant m k n ty (mapFvarNames g tr) (mapFvarNames g e)
+  | .app m f a => .app m (mapFvarNames g f) (mapFvarNames g a)
+  | .ite m c t e => .ite m (mapFvarNames g c) (mapFvarNames g t) (mapFvarNames g e)
+  | .eq m a b => .eq m (mapFvarNames g a) (mapFvarNames g b)
+
 /-- The annotated operator nodes `.op o (some ty)` of an `LExpr`, as pairs `(o, ty)` in syntax
     order. -/
 @[expose] def opAnnots {T : LExprParamsT} : LExpr T → List (Identifier T.base.IDMeta × T.TypeType)

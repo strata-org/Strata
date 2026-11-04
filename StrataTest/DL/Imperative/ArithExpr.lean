@@ -101,6 +101,7 @@ abbrev PureExpr : PureExpr :=
      TyEnv := TEnv,
      TyContext := Unit,
      Factory := Unit,
+     Val := Expr,
      EqIdent := instDecidableEqString,
      eval := fun _f _σ e => some e }
 

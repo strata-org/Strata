@@ -260,7 +260,7 @@ well-formed store and extends to an arbitrary one via `WellFormedSemanticEvalVar
 and `WellFormedSemanticEvalMono`.  Stated over any `e` that `getFvar` reads as
 `ident`, so it serves an annotated variable as well as a bare one. -/
 theorem eval_fvarExpr_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [HasOps P] [LawfulHasFvar P]
-    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (e b : P.Expr)
+    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (e : P.Expr) (b : P.Val)
     (hfv : HasFvar.getFvar e = some ident)
     (hval : HasVal.value δ b)
     (h_def : σ ident = some b)
@@ -291,7 +291,7 @@ theorem eval_fvarExpr_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableE
 /-- Reading a bare free-variable expression `mkFvar ident` from a store that maps
 `ident` to a value yields that value. -/
 theorem eval_mkFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [HasOps P] [LawfulHasFvar P]
-    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
+    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Val)
     (hval : HasVal.value δ b)
     (h_def : σ ident = some b)
     (hwf_var : WellFormedSemanticEvalVar δ)
@@ -303,7 +303,7 @@ theorem eval_mkFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq 
 /-- Evaluating a type-annotated free variable in a store that holds a value for it
 yields that value: the annotation does not affect the lookup. -/
 theorem eval_mkTypedFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [DecidableEq P.Ident] [HasOps P] [LawfulHasFvar P]
-    {ty : P.Ty} (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
+    {ty : P.Ty} (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Val)
     (hval : HasVal.value δ b)
     (h_def : σ ident = some b)
     (hwf_var : WellFormedSemanticEvalVar δ)
@@ -316,7 +316,7 @@ theorem eval_mkTypedFvar_of_value {P : PureExpr} [HasVal P] [HasFvar P] [Decidab
 that expression denotes yields the value written there, given a well-formed
 evaluator. -/
 theorem eval_fvarExpr_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [HasOps P] [LawfulHasFvar P]
-    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (e b : P.Expr)
+    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (e : P.Expr) (b : P.Val)
     (hfv : HasFvar.getFvar e = some ident)
     (hval : HasVal.value δ b)
     (hwf_var : WellFormedSemanticEvalVar δ)
@@ -328,7 +328,7 @@ theorem eval_fvarExpr_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars 
 /-- Evaluating a bare free variable in a store just updated at that variable
 yields the value written there. -/
 theorem eval_mkFvar_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [HasOps P] [LawfulHasFvar P]
-    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
+    (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Val)
     (hval : HasVal.value δ b)
     (hwf_var : WellFormedSemanticEvalVar δ)
     (hwf_mono : WellFormedSemanticEvalMono δ) :
@@ -340,7 +340,7 @@ theorem eval_mkFvar_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P]
 variable yields the value written there: the annotation does not affect the
 lookup. -/
 theorem eval_mkTypedFvar_storeWith {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P] [DecidableEq P.Ident] [HasOps P] [LawfulHasFvar P]
-    {ty : P.Ty} (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Expr)
+    {ty : P.Ty} (δ : P.Factory) (σ : SemanticStore P) (ident : P.Ident) (b : P.Val)
     (hval : HasVal.value δ b)
     (hwf_var : WellFormedSemanticEvalVar δ)
     (hwf_mono : WellFormedSemanticEvalMono δ) :
@@ -355,7 +355,7 @@ per-statement event-trace overapproximation to statement lists. -/
 
 section EventTraceStructural
 
-variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBool P]
+variable {P : PureExpr} {CmdT : Type} {EventT : Type _} [HasBool P]
   (EvalCmd : EvalCmdParamE P CmdT EventT)
 
 
@@ -687,7 +687,7 @@ apply to any `EvalCmdParamE`. -/
 
 section EventBlockScope
 
-variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBool P]
+variable {P : PureExpr} {CmdT : Type} {EventT : Type _} [HasBool P]
   {EvalCmd : EvalCmdParamE P CmdT EventT}
 
 /-- A single event step is a one-step run carrying the same trace. -/
@@ -1071,7 +1071,7 @@ composing each iteration's trace chronologically. -/
 
 section EventTraceReflTransTHelpers
 
-variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBool P]
+variable {P : PureExpr} {CmdT : Type} {EventT : Type _} [HasBool P]
   {EvalCmd : EvalCmdParamE P CmdT EventT}
 
 
@@ -1216,7 +1216,7 @@ HasBool → HasVal` hierarchy, matching the instances their callers use. -/
 
 section EventInvariantEngines
 
-variable {P : PureExpr} {CmdT : Type} {EventT : Type} [HasBoolOps P]
+variable {P : PureExpr} {CmdT : Type} {EventT : Type _} [HasBoolOps P]
   {EvalCmd : EvalCmdParamE P CmdT EventT}
 
 
@@ -1688,7 +1688,7 @@ end EventSnapshots
 
 section EventCmdMonotonicity
 
-variable {P : PureExpr} {CmdT EventT : Type} [HasBool P]
+variable {P : PureExpr} {CmdT : Type} {EventT : Type _} [HasBool P]
 
 /-- `StepStmtE` is monotone in its command relation. -/
 theorem StepStmtE.imp {E E' : EvalCmdParamE P CmdT EventT}

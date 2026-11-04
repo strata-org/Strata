@@ -19,7 +19,7 @@ namespace Core
 open Std (ToFormat Format format)
 
 namespace Program
-open Core.Lambda LExpr
+open Lambda LExpr
 open Lambda.LTy Statement Program
 open Strata (Message MessageKind FileRange)
 

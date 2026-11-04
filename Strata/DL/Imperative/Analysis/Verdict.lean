@@ -34,7 +34,7 @@ open Imperative Strata.Logic
 /-- What deductive verification reports about one assertion. `failed` carries
     the entry it is about. `unknown` may carry one too, such as the entry of a
     model the solver returned, and claims nothing about it. -/
-inductive Verdict (Entry : Type) where
+inductive Verdict (Entry : Type _) where
   | valid
   | failed (entry : Entry)
   | unknown (entry : Option Entry)
@@ -55,7 +55,7 @@ variable {P : PureExpr} {Idx : Type} {EL : Idx → EventLang P (Event P)}
     a report about a transformed program is read back on the original: `failed`
     claims a run of the transformed program, which need not exist in the
     original. -/
-@[expose] def Verdict.keepValid {Entry Entry' : Type} : Verdict Entry → Verdict Entry'
+@[expose] def Verdict.keepValid {Entry : Type _} {Entry' : Type _} : Verdict Entry → Verdict Entry'
   | .valid => .valid
   | _ => .unknown none
 

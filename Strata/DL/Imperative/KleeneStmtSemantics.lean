@@ -14,6 +14,8 @@ namespace Imperative
 
 public section
 
+universe u
+
 /-! # Small-step semantics for non-deterministic statements
 
 A configuration is either executing a `KleeneStmt`, sequencing two parts
@@ -21,7 +23,7 @@ A configuration is either executing a `KleeneStmt`, sequencing two parts
 -/
 
 /-- Configurations for small-step execution of `KleeneStmt`. -/
-inductive KleeneConfig (P : PureExpr) (CmdT : Type) : Type where
+inductive KleeneConfig (P : PureExpr.{u}) (CmdT : Type) : Type u where
   /-- Executing a single nondeterministic statement. -/
   | stmt : KleeneStmt P CmdT → Env P → KleeneConfig P CmdT
   /-- Sequencing: execute the left config, then continue with the right stmt. -/
@@ -50,7 +52,7 @@ inductive KleeneConfig (P : PureExpr) (CmdT : Type) : Type where
 
 section
 
-variable {CmdT EventT : Type} (P : PureExpr) [HasBool P] [HasBoolOps P]
+variable {CmdT : Type} {EventT : Type _} (P : PureExpr) [HasBool P] [HasBoolOps P]
 
 /-- A single event-trace execution step for non-deterministic (Kleene) statements. -/
 inductive StepKleeneE

@@ -41,7 +41,7 @@ example {π π' : String → Option (Procedure P (CmdExt P) Hdr)}
       exact .call_sem (hπ _ _ hn) hentry
         (hg ▸ .cfg hrun') hexit
 
-example {l CmdT EventT : Type} [BEq l] [HasVal P]
+example {l CmdT : Type} {EventT : Type _} [BEq l] [HasVal P]
     {EvalCmd : EvalCmdParamE P CmdT EventT}
     {cfg : CFG l (DetBlock l CmdT P)} {t : l} {ρ : Env P}
     {tr : List EventT} {c' : CFGConfig l CmdT P}

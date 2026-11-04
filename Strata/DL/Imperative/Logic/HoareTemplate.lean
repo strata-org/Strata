@@ -207,7 +207,7 @@ private theorem while_genE
         { ρ_inner with store := projectStore ρ.store ρ_inner.store })
     (hbody : Triple (EventLang.imperativeBlockE P CmdT evalCmd
       ⟨BParamsTy, blockInitEnvWF⟩) bparams
-      (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some HasBool.tt) body Inv)
+      (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some (HasBool.ttVal ρ.factory)) body Inv)
     (hcov : Block.exitsCoveredByBlocks (P := P) (CmdT := CmdT) [] body)
     (hInv_proj : PostWF body Inv)
     (ρ₀ ρ' : Env P) (trace : Trace P) (n : Nat)
@@ -218,7 +218,7 @@ private theorem while_genE
     (hlen : hrunT.len ≤ n) :
     Trace.AssertionsValid P I trace ∧
       (Trace.Reachable P I trace →
-        Inv ρ' ∧ P.eval ρ'.factory ρ'.store guard = some HasBool.ff) := by
+        Inv ρ' ∧ P.eval ρ'.factory ρ'.store guard = some (HasBool.ffVal ρ'.factory)) := by
   induction n generalizing ρ₀ ρ' trace with
   | zero =>
     -- A run from a loop statement to a terminal takes at least one step.
@@ -275,7 +275,7 @@ private theorem while_genE
       have hIH : Trace.Reachable P I tr₁ →
           Trace.AssertionsValid P I tr_l ∧
             (Trace.Reachable P I tr_l →
-              Inv ρ' ∧ P.eval ρ'.factory ρ'.store guard = some HasBool.ff) := by
+              Inv ρ' ∧ P.eval ρ'.factory ρ'.store guard = some (HasBool.ffVal ρ'.factory)) := by
         intro hs
         have hInv_mid : Inv ρ_mid := by
           rw [heq_ρ_mid, hrec]; exact hInv_proj ρ_inner (hbodyTriple.2 hs)
@@ -517,10 +517,10 @@ theorem ite (params : ParamsTy)
       ∀ x ∈ Block.definedVars (P := P) (C := CmdT) ess true, ρ.store x = none)
     (ht : Triple (EventLang.imperativeBlockE P CmdT evalCmd
       ⟨BParamsTy, blockInitEnvWF⟩) bparams
-      (fun ρ => Pre ρ ∧ P.eval ρ.factory ρ.store cond = some HasBool.tt) tss Post)
+      (fun ρ => Pre ρ ∧ P.eval ρ.factory ρ.store cond = some (HasBool.ttVal ρ.factory)) tss Post)
     (he : Triple (EventLang.imperativeBlockE P CmdT evalCmd
       ⟨BParamsTy, blockInitEnvWF⟩) bparams
-      (fun ρ => Pre ρ ∧ P.eval ρ.factory ρ.store cond = some HasBool.ff) ess Post)
+      (fun ρ => Pre ρ ∧ P.eval ρ.factory ρ.store cond = some (HasBool.ffVal ρ.factory)) ess Post)
     (hthen_proj : PostWF tss Post) (helse_proj : PostWF ess Post) :
     Triple (EventLang.imperativeE P CmdT evalCmd
       ParamsTy initEnvWF) params Pre (.ite (.det cond) tss ess md) Post := by
@@ -600,12 +600,12 @@ theorem while_rule (params : ParamsTy)
         { ρ_inner with store := projectStore ρ.store ρ_inner.store })
     (hbody : Triple (EventLang.imperativeBlockE P CmdT evalCmd
       ⟨BParamsTy, blockInitEnvWF⟩) bparams
-      (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some HasBool.tt) body Inv)
+      (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some (HasBool.ttVal ρ.factory)) body Inv)
     (hcov : Block.exitsCoveredByBlocks (P := P) (CmdT := CmdT) [] body)
     (hInv_proj : PostWF body Inv) :
     Triple (EventLang.imperativeE P CmdT evalCmd
       ParamsTy initEnvWF) params Inv (.loop (.det guard) measure inv body md)
-      (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some HasBool.ff) := by
+      (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some (HasBool.ffVal ρ.factory)) := by
   intro ρ₀ ρ' trace hInv hinit hrun
   rcases hrun with hterm | ⟨lbl, hexit⟩
   · exact while_genE evalCmd initEnvWF blockInitEnvWF bparams params

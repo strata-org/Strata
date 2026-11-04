@@ -19,10 +19,10 @@ uses it in the procedure body, and checks that a later function is not visible.
 ## Key results
 
 - `compute_meets_contract` — `Compute` satisfies its arithmetic contract in the
-  factory containing the preceding inline definition of `f`.
+  factory containing the preceding definition of `f`.
 - `checkProduct_meets_contract` — a bodyless procedure satisfies an analogous
   contract using the non-inline `fSpec` only in its specification.
-- `bodyExpr_eval` — an inline call to `f` evaluates to `(x + y) * (x - y)`.
+- `bodyExpr_eval` — a call to `f` evaluates to `(x + y) * (x - y)`.
 -/
 
 open StrataDDM (Program)
@@ -36,7 +36,7 @@ private def userFuncPgm : Program :=
 #strata
 program Core;
 
-inline function f(x : int, y : int) : int {
+function f(x : int, y : int) : int {
   int.mul(int.add(x, y), int.sub(x, y))
 }
 
@@ -60,7 +60,7 @@ private abbrev computeProc : Core.Procedure :=
   (userFuncAST.findProcByString? "Compute").get!
 private abbrev fDef : Core.Function :=
   (Core.Program.Function.find? userFuncAST ⟨"f", ()⟩).get!
-private abbrev visibleFactory : Core.Expression.Factory :=
+private abbrev visibleFactory : Lambda.Factory Core.CoreLParams :=
   userFuncAST.factoryBeforeProcedure "Compute"
 
 private abbrev xId : Core.Expression.Ident := ⟨"x", ()⟩
@@ -73,14 +73,13 @@ private def fBody : Core.Expression.Expr :=
     Lambda.LExpr.mkApp () Core.intAddOp [.fvar () xId intTy, .fvar () yId intTy],
     Lambda.LExpr.mkApp () Core.intSubOp [.fvar () xId intTy, .fvar () yId intTy]]
 
-/-- The translated declaration of `f` has two integer parameters, the
-    arithmetic body, and the inline attribute. -/
+/-- The translated declaration of `f` has two integer parameters and the
+    arithmetic body. -/
 private theorem fDef_shape : fDef = {
     name := ⟨"f", ()⟩
     inputs := [(xId, .int), (yId, .int)]
     output := .int
-    body := some fBody
-    attr := #[.inline] } := by
+    body := some fBody } := by
   native_decide
 
 private def bodyExpr : Core.Expression.Expr :=
@@ -169,93 +168,105 @@ private theorem visibleFactory_intGt :
     visibleFactory["Int.Gt"]? = some (Lambda.intGtFunc (T := Core.CoreLParams)).func :=
   visibleFactory_get?_of_ne_f (by decide) Core.coreFactory_intGt
 
-set_option maxRecDepth 8000 in
+/-- The integer `k` as a value of the runtime factory `F`. -/
+private abbrev intV (F : Core.Expression.Factory) (k : Int) : Core.Expression.Val :=
+  Lambda.SemValue.ofInt F.model.tcInterp k
+
+/-- `f`'s operator expression is the `f` operator at `int → int → int`. -/
+private theorem fDef_opExpr :
+    fDef.opExpr = .op () ⟨"f", ()⟩ (some (.arrow .int (.arrow .int .int))) := by
+  native_decide
+
+/-- The arithmetic body `(x + y) * (x - y)` denotes that expression when `x = a` and
+    `y = b`, in a model where the Core integer operators retain their entries. -/
+private theorem denote_fBody {factory : Lambda.Factory Core.CoreLParams}
+    (model : Lambda.Interp factory)
+    (haddLookup : factory["Int.Add"]? =
+      some (Lambda.intAddFunc (T := Core.CoreLParams)).func)
+    (hsubLookup : factory["Int.Sub"]? =
+      some (Lambda.intSubFunc (T := Core.CoreLParams)).func)
+    (hmulLookup : factory["Int.Mul"]? =
+      some (Lambda.intMulFunc (T := Core.CoreLParams)).func)
+    (fv : Lambda.FreeVarVal Core.CoreLParams model.tcInterp)
+    (vt : Lambda.TyVarVal) (a b : Int)
+    (hfx : fv xId (Lambda.LMonoTy.int.substTyVars vt) = a)
+    (hfy : fv yId (Lambda.LMonoTy.int.substTyVars vt) = b)
+    (h : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] fBody .int) :
+    Lambda.LExpr.denote model.tcInterp model.opInterp fv vt .nil fBody .int h =
+      (a + b) * (a - b) := by
+  let xe : Core.Expression.Expr := .fvar () xId intTy
+  let ye : Core.Expression.Expr := .fvar () yId intTy
+  let ae : Core.Expression.Expr := .app () (.app () Core.intAddOp xe) ye
+  let se : Core.Expression.Expr := .app () (.app () Core.intSubOp xe) ye
+  have hxTy : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] xe .int := .fvar
+  have hyTy : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] ye .int := .fvar
+  have hdx : Lambda.LExpr.denote model.tcInterp model.opInterp fv vt .nil xe .int hxTy = a := by
+    change fv xId (Lambda.LMonoTy.int.substTyVars vt) = a
+    exact hfx
+  have hdy : Lambda.LExpr.denote model.tcInterp model.opInterp fv vt .nil ye .int hyTy = b := by
+    change fv yId (Lambda.LMonoTy.int.substTyVars vt) = b
+    exact hfy
+  have hadd : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] ae .int :=
+    .app (.app .op hxTy) hyTy
+  have hsub : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] se .int :=
+    .app (.app .op hxTy) hyTy
+  exact Core.denote_intMul_of_lookup model hmulLookup fv vt .nil h hadd hsub
+    (Core.denote_intAdd_of_lookup model haddLookup fv vt .nil hadd hxTy hyTy hdx hdy)
+    (Core.denote_intSub_of_lookup model hsubLookup fv vt .nil hsub hxTy hyTy hdx hdy)
+
+/-- In every model of `visibleFactory`, the interpretation of `f` applied to `a` and `b`
+    is `(a + b) * (a - b)`: a consistent model interprets a function with a body as its
+    body. -/
+private theorem f_opInterp (model : Lambda.Interp visibleFactory) (a b : Int) :
+    (model.opInterp "f" (Lambda.LSort.mkArrow .int [.int, .int]) a b : Int) =
+      (a + b) * (a - b) := by
+  have hmem : "f" ∈ visibleFactory :=
+    CoreHoareTestSupport.factory_mem_of_get? visibleFactory_f
+  have hget : visibleFactory["f"]'hmem = fDef.toLFunc :=
+    CoreHoareTestSupport.factory_get_of_get? visibleFactory_f
+  have hbody : (visibleFactory["f"]'hmem).body = some fBody := by
+    rw [hget, fDef_shape]
+    rfl
+  have hconsistent := model.interpConsistent.1 "f" hmem fBody hbody
+  have hconsistent' : Lambda.LFunc.InterpConsistentBody
+      model.tcInterp model.opInterp fDef.toLFunc fBody := by
+    rw [← hget]
+    exact hconsistent
+  rw [fDef_shape] at hconsistent'
+  simp only [Lambda.LFuncDefined.toLFunc] at hconsistent'
+  have hbodyTy : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] fBody .int :=
+    Lambda.LExpr.typeCheck_to_HasTypeA (by native_decide)
+  have fv : Lambda.FreeVarVal Core.CoreLParams model.tcInterp := fun _ s =>
+    @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s)
+  let vt : Lambda.TyVarVal := fun _ => .int
+  let argVal := CoreHoareTestSupport.withTwoIntArgs fv xId yId a b
+  have heq := hconsistent' vt fv hbodyTy (.cons a (.cons b .nil))
+  change (model.opInterp "f" (Lambda.LSort.mkArrow .int [.int, .int]) a b : Int) =
+    Lambda.LExpr.denote model.tcInterp model.opInterp argVal vt .nil fBody .int hbodyTy at heq
+  have hfx : argVal xId Lambda.LSort.int = a :=
+    CoreHoareTestSupport.withTwoIntArgs_left fv xId yId a b
+  have hfy : argVal yId Lambda.LSort.int = b :=
+    CoreHoareTestSupport.withTwoIntArgs_right fv xId yId a b (by decide)
+  exact heq.trans (denote_fBody model visibleFactory_intAdd visibleFactory_intSub
+    visibleFactory_intMul argVal vt a b hfx hfy hbodyTy)
+
 /-- If `x` and `y` contain `a` and `b`, evaluating `f(x, y)` yields
-    `(a + b) * (a - b)`. -/
-private theorem bodyExpr_eval (σ : Core.CoreStore) (a b : Int)
-    (hx : σ xId = some (Lambda.LExpr.intConst () a))
-    (hy : σ yId = some (Lambda.LExpr.intConst () b)) :
-    Core.Expression.eval visibleFactory σ bodyExpr =
-      some (Lambda.LExpr.intConst () ((a + b) * (a - b))) := by
-  rw [bodyExpr_shape]
-  let ca : Core.Expression.Expr := Lambda.LExpr.intConst () a
-  let cb : Core.Expression.Expr := Lambda.LExpr.intConst () b
-  let addAB : Core.Expression.Expr :=
-    .app () (.app () (Lambda.intAddFunc (T := Core.CoreLParams)).opExpr ca) cb
-  let subAB : Core.Expression.Expr :=
-    .app () (.app () (Lambda.intSubFunc (T := Core.CoreLParams)).opExpr ca) cb
-  have hca (n : Nat) : Lambda.LExpr.eval n visibleFactory σ ca = (ca, .value true) :=
-    CoreHoareTestSupport.eval_value_identity n visibleFactory σ ca
-      (Lambda.isValue_const_true visibleFactory () (.intConst a))
-  have hcb (n : Nat) : Lambda.LExpr.eval n visibleFactory σ cb = (cb, .value true) :=
-    CoreHoareTestSupport.eval_value_identity n visibleFactory σ cb
-      (Lambda.isValue_const_true visibleFactory () (.intConst b))
-  have hadd : Lambda.LExpr.eval 18 visibleFactory σ addAB =
-      (Lambda.LExpr.intConst () (a + b), .value true) :=
-    Core.eval_intAdd_value_of_numerals visibleFactory σ ca cb
-      17 a b visibleFactory_intAdd (hca 17) (hcb 17)
-  have hsub : Lambda.LExpr.eval 18 visibleFactory σ subAB =
-      (Lambda.LExpr.intConst () (a - b), .value true) :=
-    Core.eval_intSub_value_of_numerals visibleFactory σ ca cb
-      17 a b visibleFactory_intSub (hca 17) (hcb 17)
-  have hmul : Lambda.LExpr.eval 19 visibleFactory σ
-      (.app () (.app () (Lambda.intMulFunc (T := Core.CoreLParams)).opExpr addAB) subAB) =
-      (Lambda.LExpr.intConst () ((a + b) * (a - b)), .value true) :=
-    Core.eval_intMul_value_of_numerals visibleFactory σ addAB subAB
-      18 (a + b) (a - b) visibleFactory_intMul hadd hsub
-  have hargx : Lambda.LExpr.eval 19 visibleFactory σ (.fvar () xId intTy) =
-      (ca, .value true) :=
-    CoreHoareTestSupport.eval_fvar_of_value 18 visibleFactory σ () xId intTy ca hx
-      (Lambda.isValue_const_true visibleFactory () (.intConst a))
-  have hargy : Lambda.LExpr.eval 19 visibleFactory σ (.fvar () yId intTy) =
-      (cb, .value true) :=
-    CoreHoareTestSupport.eval_fvar_of_value 18 visibleFactory σ () yId intTy cb hy
-      (Lambda.isValue_const_true visibleFactory () (.intConst b))
-  have hflookup : visibleFactory[fDef.toLFunc.name.name]? = some fDef.toLFunc := by
-    rw [show fDef.toLFunc.name.name = "f" by native_decide]
-    exact visibleFactory_f
-  have hcall : Lambda.Factory.callOfLFunc visibleFactory
-      (Lambda.LExpr.mkApp () fDef.opExpr [.fvar () xId intTy, .fvar () yId intTy]) =
-      some (fDef.opExpr, [.fvar () xId intTy, .fvar () yId intTy], fDef.toLFunc) :=
-    CoreHoareTestSupport.factory_call_mkApp visibleFactory fDef.toLFunc _ hflookup
-      (by rw [fDef_shape]; rfl)
-  have hcallPartial : Lambda.Factory.callOfLFunc visibleFactory
-      (.app () (.app () fDef.opExpr (.fvar () xId intTy)) (.fvar () yId intTy)) true =
-      some (fDef.opExpr, [.fvar () xId intTy, .fvar () yId intTy], fDef.toLFunc) :=
-    CoreHoareTestSupport.factory_call_mkApp visibleFactory fDef.toLFunc
-      [.fvar () xId intTy, .fvar () yId intTy] hflookup
-      (by rw [fDef_shape]; rfl) true
-  have hnotvalue : Lambda.LExpr.isValue visibleFactory
-      (Lambda.LExpr.mkApp () fDef.opExpr [.fvar () xId intTy, .fvar () yId intTy]) = false := by
-    change Lambda.LExpr.isValue visibleFactory
-      (.app () (.app () fDef.opExpr (.fvar () xId intTy)) (.fvar () yId intTy)) = false
-    apply CoreHoareTestSupport.isValue_binary_call_false visibleFactory fDef.toLFunc
-      () fDef.opExpr (.fvar () xId intTy) (.fvar () yId intTy) hcallPartial
-    · rw [fDef_shape]; rfl
-    · rw [fDef_shape]; rfl
-  have hshort : Lambda.LExpr.shortCircuitCall? fDef.toLFunc
-      [.fvar () xId intTy, .fvar () yId intTy] = none := by rw [fDef_shape]; rfl
-  have hbodySome : fDef.toLFunc.body.isSome = true := by rw [fDef_shape]; rfl
-  have hbodyGet (h : fDef.toLFunc.body.isSome = true) :
-      fDef.toLFunc.body.get h = fBody := by
-    have hb : fDef.toLFunc.body = some fBody := by rw [fDef_shape]; rfl
-    exact Option.get_of_eq_some h hb
-  have hkeys : fDef.toLFunc.inputs.keys = [xId, yId] := by rw [fDef_shape]; rfl
-  have hzip : [xId, yId].zip [ca, cb] = [(xId, ca), (yId, cb)] := rfl
-  have hattrInline : fDef.toLFunc.attr.contains .inline = true := by native_decide
-  have htypes : fDef.toLFunc.computeTypeSubst fDef.opExpr [ca, cb] =
-      some Lambda.Subst.empty := by rw [fDef_shape]; rfl
-  have hsubst : (fBody.applyTypeSubst Lambda.Subst.empty).substFvarsLifting
-      [(xId, ca), (yId, cb)] =
-      (.app () (.app () (Lambda.intMulFunc (T := Core.CoreLParams)).opExpr addAB) subAB) := rfl
-  apply CoreHoareTestSupport.evalFully_of_value_true visibleFactory σ _ 20
-  rw [Lambda.LExpr.eval.eq_def (TBase := Core.CoreLParams)]
-  simp only [hnotvalue, Bool.false_eq_true, ↓reduceIte, hcall, hshort,
-    hargx, hargy, List.map_cons, List.map_nil,
-    Lambda.LExpr.EvalResult.isValueTrue, List.all_cons, List.all_nil, Bool.and_true]
-  simp only [hbodySome, hbodyGet, hkeys, hzip, hattrInline, Bool.true_or,
-    Bool.and_true, ↓reduceDIte, htypes, hsubst, hmul,
-    Lambda.LExpr.combineEvalResValueFlag, Lambda.LExpr.EvalResult.combineValueFlag]
+    `(a + b) * (a - b)` on every runtime factory over `visibleFactory`. -/
+private theorem bodyExpr_eval (F : Core.Expression.Factory) (hF : F.factory = visibleFactory)
+    (σ : Core.CoreStore) (a b : Int)
+    (hx : σ xId = some (intV F a)) (hy : σ yId = some (intV F b)) :
+    Core.Expression.eval F σ bodyExpr = some (intV F ((a + b) * (a - b))) := by
+  obtain ⟨Fl, model, tv⟩ := F
+  obtain rfl : Fl = visibleFactory := hF
+  rw [bodyExpr_shape, fDef_opExpr]
+  have h := Lambda.LExpr.denoteEval_app2_op_int (T := Core.CoreLParams)
+    (M := ⟨visibleFactory, model, tv⟩) (m := ()) (m' := ()) (m'' := ()) (o := ⟨"f", ()⟩)
+    (c := .int) rfl (Core.eval_fvar_int (m := ()) (ty := intTy) _ hx)
+    (Core.eval_fvar_int (m := ()) (ty := intTy) _ hy)
+  refine h.trans (congrArg some ?_)
+  unfold intV Lambda.SemValue.ofInt
+  congr 1
+  exact f_opInterp model a b
 
 
 /-- The function visible to the procedure retains its arithmetic body in the
@@ -337,118 +348,110 @@ private theorem ensures_shape : ∀ label check,
   subst check
   native_decide
 
+/-- A precondition `int.gt(x, y)` that holds evaluates, so the values of `x` and `y`
+    belong to the runtime factory. -/
+private theorem tc_of_reqXY (factory : Lambda.Factory Core.CoreLParams)
+    (ρ : Imperative.Env Core.Expression) (label : Core.CoreLabel)
+    (check : Core.Procedure.Check) {vx vy : Core.Expression.Val}
+    (hfac : ρ.factory.factory = factory)
+    (hx : ρ.store xId = some vx) (hy : ρ.store yId = some vy)
+    (hexpr : check.expr = reqXY)
+    (hcheck : Core.Logic.Hoare.Procedure.checkAsPredicate factory ρ label check) :
+    vx.tc = ρ.factory.model.tcInterp ∧ vy.tc = ρ.factory.model.tcInterp := by
+  rcases hcheck (CoreHoareTestSupport.someValuation _) with ⟨_, hex⟩ | ⟨hne, _⟩
+  · change Core.Expression.eval ρ.factory ρ.store check.expr =
+      some (Imperative.HasBool.ttVal ρ.factory) at hex
+    rw [hexpr] at hex
+    have hd := Lambda.LExpr.denoteEval_defines hex
+    obtain ⟨wx, hwx, htx⟩ := hd xId
+      (by simp [reqXY, xExpr, yExpr, gtOp, Lambda.LExpr.LExpr.getVars,
+        Core.intGtOp, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr])
+    obtain ⟨wy, hwy, hty⟩ := hd yId
+      (by simp [reqXY, xExpr, yExpr, gtOp, Lambda.LExpr.LExpr.getVars,
+        Core.intGtOp, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr])
+    rw [hx] at hwx
+    rw [hy] at hwy
+    cases hwx
+    cases hwy
+    exact ⟨htx, hty⟩
+  · exact absurd hfac hne
+
 /-- If `Compute`'s `x > y` precondition holds with `x = a` and `y = b`,
     then `a > b`. -/
-private theorem check_reqXY_implies {factory : Core.Expression.Factory}
-    (model : Lambda.Interp factory)
+private theorem check_reqXY_implies (factory : Lambda.Factory Core.CoreLParams)
     (hgtLookup : factory["Int.Gt"]? =
       some (Lambda.intGtFunc (T := Core.CoreLParams)).func)
     (ρ : Imperative.Env Core.Expression) (label : Core.CoreLabel)
     (check : Core.Procedure.Check) (a b : Int)
-    (hfac : ρ.factory = factory)
-    (hx : ρ.store xId = some (Lambda.LExpr.intConst () a))
-    (hy : ρ.store yId = some (Lambda.LExpr.intConst () b))
+    (hfac : ρ.factory.factory = factory)
+    (hx : ρ.store xId = some (intV ρ.factory a))
+    (hy : ρ.store yId = some (intV ρ.factory b))
     (hexpr : check.expr = reqXY)
-    (hcheck : Core.Logic.Hoare.Procedure.checkAsPredicate model ρ label check) : a > b := by
-  let world := CoreHoareTestSupport.someValuation model
-  rcases hcheck world with ⟨_, hden⟩ | ⟨hne, _⟩
-  · have hgtClosed : Lambda.LExpr.substFvarsFromEnv ρ.store gtOp = gtOp := by
-      apply Lambda.LExpr.substFvarsFromEnv_closed_identity
-      rfl
-    have hcap : Core.Logic.capturedExpr
-        { factory := ρ.factory, store := ρ.store, label := label,
-          expr := check.expr, metadata := check.md } =
-        (.app () (.app () gtOp (.const () (.intConst a))) (.const () (.intConst b))) := by
-      rw [hexpr]
-      simp [Core.Logic.capturedExpr, reqXY, xExpr, yExpr,
-        Lambda.LExpr.substFvarsFromEnv, Lambda.Env.mk, hgtClosed, intConst_eq, hx, hy]
-    rw [hcap] at hden
-    obtain ⟨hty, hval⟩ := hden
-    rw [Core.denote_intGt_of_lookup model hgtLookup world.freeVarVal world.tyVarVal .nil hty
-      .const .const (Lambda.denote_intConst _ _ _ _ _ _)
-      (Lambda.denote_intConst _ _ _ _ _ _)] at hval
-    exact of_decide_eq_true hval
+    (hcheck : Core.Logic.Hoare.Procedure.checkAsPredicate factory ρ label check) : a > b := by
+  rcases hcheck (CoreHoareTestSupport.someValuation _) with ⟨_, hex⟩ | ⟨hne, _⟩
+  · change Core.Expression.eval ρ.factory ρ.store check.expr =
+      some (Imperative.HasBool.ttVal ρ.factory) at hex
+    rw [hexpr] at hex
+    have hgt : Core.Expression.eval ρ.factory ρ.store reqXY =
+        some (Lambda.SemValue.ofBool ρ.factory.model.tcInterp (decide (a > b))) :=
+      Core.eval_intGt (by rw [hfac]; exact hgtLookup) (Core.eval_fvar_int (ty := intTy) _ hx)
+        (Core.eval_fvar_int (ty := intTy) _ hy)
+    exact of_decide_eq_true
+      (Lambda.SemValue.ofBool_injective (Option.some.inj (hgt.symm.trans hex)))
   · exact absurd hfac hne
 
 /-- If `Compute`'s `x + y > 0` precondition holds with `x = a` and
     `y = b`, then `a + b > 0`. -/
-private theorem check_reqSum_implies {factory : Core.Expression.Factory}
-    (model : Lambda.Interp factory)
+private theorem check_reqSum_implies (factory : Lambda.Factory Core.CoreLParams)
     (haddLookup : factory["Int.Add"]? =
       some (Lambda.intAddFunc (T := Core.CoreLParams)).func)
     (hgtLookup : factory["Int.Gt"]? =
       some (Lambda.intGtFunc (T := Core.CoreLParams)).func)
     (ρ : Imperative.Env Core.Expression) (label : Core.CoreLabel)
     (check : Core.Procedure.Check) (a b : Int)
-    (hfac : ρ.factory = factory)
-    (hx : ρ.store xId = some (Lambda.LExpr.intConst () a))
-    (hy : ρ.store yId = some (Lambda.LExpr.intConst () b))
+    (hfac : ρ.factory.factory = factory)
+    (hx : ρ.store xId = some (intV ρ.factory a))
+    (hy : ρ.store yId = some (intV ρ.factory b))
     (hexpr : check.expr = reqSum)
-    (hcheck : Core.Logic.Hoare.Procedure.checkAsPredicate model ρ label check) : a + b > 0 := by
-  let world := CoreHoareTestSupport.someValuation model
-  rcases hcheck world with ⟨_, hden⟩ | ⟨hne, _⟩
-  · have hgtClosed : Lambda.LExpr.substFvarsFromEnv ρ.store gtOp = gtOp := by
-      apply Lambda.LExpr.substFvarsFromEnv_closed_identity
-      rfl
-    have haddClosed : Lambda.LExpr.substFvarsFromEnv ρ.store addOp = addOp := by
-      apply Lambda.LExpr.substFvarsFromEnv_closed_identity
-      rfl
-    have hcap : Core.Logic.capturedExpr
-        { factory := ρ.factory, store := ρ.store, label := label,
-          expr := check.expr, metadata := check.md } =
-        (.app () (.app () gtOp
-          (.app () (.app () addOp (.const () (.intConst a))) (.const () (.intConst b))))
-          (.const () (.intConst 0))) := by
-      rw [hexpr]
-      simp [Core.Logic.capturedExpr, reqSum, addXY, xExpr, yExpr, zeroExpr,
-        Lambda.LExpr.substFvarsFromEnv, Lambda.Env.mk, hgtClosed, haddClosed,
-        intConst_eq, hx, hy]
-    rw [hcap] at hden
-    obtain ⟨hty, hval⟩ := hden
-    have haddTy : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
-        (.app () (.app () addOp (.const () (.intConst a))) (.const () (.intConst b))) .int :=
-      .app (.app .op .const) .const
-    rw [Core.denote_intGt_of_lookup model hgtLookup world.freeVarVal world.tyVarVal .nil hty
-      haddTy .const
-      (Core.denote_intAdd_of_lookup model haddLookup world.freeVarVal world.tyVarVal .nil
-        haddTy .const .const (Lambda.denote_intConst _ _ _ _ _ _)
-        (Lambda.denote_intConst _ _ _ _ _ _))
-      (Lambda.denote_intConst _ _ _ _ _ _)] at hval
-    exact of_decide_eq_true hval
+    (hcheck : Core.Logic.Hoare.Procedure.checkAsPredicate factory ρ label check) :
+    a + b > 0 := by
+  rcases hcheck (CoreHoareTestSupport.someValuation _) with ⟨_, hex⟩ | ⟨hne, _⟩
+  · change Core.Expression.eval ρ.factory ρ.store check.expr =
+      some (Imperative.HasBool.ttVal ρ.factory) at hex
+    rw [hexpr] at hex
+    have hgt : Core.Expression.eval ρ.factory ρ.store reqSum =
+        some (Lambda.SemValue.ofBool ρ.factory.model.tcInterp (decide (a + b > 0))) :=
+      Core.eval_intGt (by rw [hfac]; exact hgtLookup)
+        (Core.eval_intAdd (by rw [hfac]; exact haddLookup)
+          (Core.eval_fvar_int (m := ()) (ty := intTy) _ hx)
+    (Core.eval_fvar_int (m := ()) (ty := intTy) _ hy))
+        (Core.eval_const _ _ (.intConst 0))
+    exact of_decide_eq_true
+      (Lambda.SemValue.ofBool_injective (Option.some.inj (hgt.symm.trans hex)))
   · exact absurd hfac hne
 
 /-- If `z` contains a positive integer, `Compute`'s semantic postcondition
-    holds in every world of `model`. -/
-private theorem post_holds {factory : Core.Expression.Factory}
-    (model : Lambda.Interp factory)
+    holds in every world. -/
+private theorem post_holds (factory : Lambda.Factory Core.CoreLParams)
     (hgtLookup : factory["Int.Gt"]? =
       some (Lambda.intGtFunc (T := Core.CoreLParams)).func)
     (ρ : Imperative.Env Core.Expression) (r : Int)
-    (hfac : ρ.factory = factory)
-    (hz : ρ.store zId = some (Lambda.LExpr.intConst () r))
+    (hfac : ρ.factory.factory = factory)
+    (hz : ρ.store zId = some (intV ρ.factory r))
     (hr : r > 0) :
-    Core.Logic.Hoare.Procedure.contractPost model computeProc ρ := by
+    Core.Logic.Hoare.Procedure.contractPost factory computeProc ρ := by
   intro label check hmem hattr world
   have hexpr := ensures_shape label check hmem hattr
   refine .inl ⟨hfac, ?_⟩
-  have hgtClosed : Lambda.LExpr.substFvarsFromEnv ρ.store gtOp = gtOp := by
-    apply Lambda.LExpr.substFvarsFromEnv_closed_identity
-    rfl
-  have hcap : Core.Logic.capturedExpr
-      { factory := ρ.factory, store := ρ.store, label := label,
-        expr := check.expr, metadata := check.md } =
-      (.app () (.app () gtOp (.const () (.intConst r))) (.const () (.intConst 0))) := by
-    rw [hexpr]
-    simp [Core.Logic.capturedExpr, ensZ, zExpr, zeroExpr,
-      Lambda.LExpr.substFvarsFromEnv, Lambda.Env.mk, hgtClosed, intConst_eq, hz]
-  rw [hcap]
-  have hty : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
-      (.app () (.app () gtOp (.const () (.intConst r))) (.const () (.intConst 0))) .bool :=
-    .app (.app (.op) (.const)) (.const)
-  refine ⟨hty, ?_⟩
-  rw [Core.denote_intGt_of_lookup model hgtLookup world.freeVarVal world.tyVarVal .nil hty
-    .const .const (Lambda.denote_intConst _ _ _ _ _ _) (Lambda.denote_intConst _ _ _ _ _ _)]
-  exact decide_eq_true hr
+  show Core.Expression.eval ρ.factory ρ.store check.expr =
+    some (Imperative.HasBool.ttVal ρ.factory)
+  rw [hexpr]
+  have hgt : Core.Expression.eval ρ.factory ρ.store ensZ =
+      some (Lambda.SemValue.ofBool ρ.factory.model.tcInterp (decide (r > 0))) :=
+    Core.eval_intGt (by rw [hfac]; exact hgtLookup) (Core.eval_fvar_int (ty := intTy) _ hz)
+      (Core.eval_const _ _ (.intConst 0))
+  rw [hgt, decide_eq_true hr]
+  rfl
 
 /-- If `x > y` and `x + y > 0`, then `(x + y) * (x - y) > 0`. -/
 private theorem result_positive (x y : Int)
@@ -467,39 +470,38 @@ theorem compute_meets_contract :
     userFuncAST testParams "Compute" computeProc (by native_decide) command ?_ (by native_decide)
       ?_ ?_
   · simpa [command] using compute_body_shape
-  · intro model ρ₀ σ' emitted hpre _hwf hstep
+  · intro ρ₀ σ' emitted hpre _hwf hstep
     obtain ⟨hchecks, hfac, _hold, htyped⟩ := hpre
     obtain ⟨vx, hx, hvx⟩ := htyped xId .int (by native_decide)
     obtain ⟨vy, hy, hvy⟩ := htyped yId .int (by native_decide)
-    change ∃ a : Int, vx = Lambda.LExpr.intConst () a at hvx
-    change ∃ b : Int, vy = Lambda.LExpr.intConst () b at hvy
-    obtain ⟨a, rfl⟩ := hvx
-    obtain ⟨b, rfl⟩ := hvy
+    obtain ⟨a, hva⟩ := Lambda.SemValue.exists_ofInt hvx
+    obtain ⟨b, hvb⟩ := Lambda.SemValue.exists_ofInt hvy
     obtain ⟨labelXY, checkXY, hmemXY, hexprXY⟩ := reqXY_mem
     obtain ⟨labelSum, checkSum, hmemSum, hexprSum⟩ := reqSum_mem
-    have hxy : a > b := check_reqXY_implies model visibleFactory_intGt ρ₀ labelXY checkXY a b
+    obtain ⟨htx, hty⟩ := tc_of_reqXY _ ρ₀ labelXY checkXY hfac hx hy hexprXY
+      (hchecks labelXY checkXY hmemXY)
+    rw [hva, htx] at hx
+    rw [hvb, hty] at hy
+    have hxy : a > b := check_reqXY_implies _ visibleFactory_intGt ρ₀ labelXY checkXY a b
       hfac hx hy hexprXY (hchecks labelXY checkXY hmemXY)
-    have hsum : a + b > 0 := check_reqSum_implies model visibleFactory_intAdd visibleFactory_intGt ρ₀ labelSum checkSum a b
-      hfac hx hy hexprSum (hchecks labelSum checkSum hmemSum)
+    have hsum : a + b > 0 := check_reqSum_implies _ visibleFactory_intAdd visibleFactory_intGt
+      ρ₀ labelSum checkSum a b hfac hx hy hexprSum (hchecks labelSum checkSum hmemSum)
     have hpos := result_positive a b hxy hsum
     dsimp [command] at hstep
     cases hstep with
     | cmd_sem hcmd =>
       cases hcmd with
       | eval_set heval hupdate _ _ =>
-        have hbody := bodyExpr_eval ρ₀.store a b hx hy
-        have heval' := heval
-        rw [hfac] at heval'
-        have hv : _ = (Lambda.LExpr.intConst () ((a + b) * (a - b)) : Core.Expression.Expr) :=
-          Option.some.inj (heval'.symm.trans hbody)
+        have hbody := bodyExpr_eval ρ₀.factory hfac ρ₀.store a b hx hy
+        have hv : _ = intV ρ₀.factory ((a + b) * (a - b)) :=
+          Option.some.inj (heval.symm.trans hbody)
         cases hupdate with
         | update _ hnew _ =>
           rw [hv] at hnew
           exact ⟨True.intro, fun _ =>
-            post_holds model visibleFactory_intGt { ρ₀ with store := σ' } ((a + b) * (a - b))
+            post_holds _ visibleFactory_intGt { ρ₀ with store := σ' } ((a + b) * (a - b))
               hfac hnew hpos⟩
-  · intro model
-    exact Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by
+  · exact Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by
       simp [command, Imperative.Block.definedVars, Imperative.Stmt.definedVars,
         Imperative.HasVarsImp.definedVars, Imperative.CmdExt.definedVars,
         Imperative.Cmd.definedVars])
@@ -545,11 +547,10 @@ private abbrev checkProductProc : Core.Procedure :=
   (specOnlyAST.findProcByString? "CheckProduct").get!
 private abbrev fSpecDef : Core.Function :=
   (Core.Program.Function.find? specOnlyAST ⟨"fSpec", ()⟩).get!
-private abbrev specFactory : Core.Expression.Factory :=
+private abbrev specFactory : Lambda.Factory Core.CoreLParams :=
   specOnlyAST.factoryBeforeProcedure "CheckProduct"
 
-/-- The specification-only function has the same arithmetic body as `f` but
-    does not carry the inline attribute. -/
+/-- The specification-only function has the same arithmetic body as `f`. -/
 private theorem fSpecDef_shape : fSpecDef = {
     name := ⟨"fSpec", ()⟩
     inputs := [(xId, .int), (yId, .int)]
@@ -664,45 +665,6 @@ private theorem specEnsures_shape : ∀ label check,
   subst check
   native_decide
 
-/-- In a model where the Core integer operators retain their entries, the body
-    `(x + y) * (x - y)` denotes that arithmetic expression when `x = a` and
-    `y = b`. -/
-private theorem denote_fBody {factory : Core.Expression.Factory}
-    (model : Lambda.Interp factory)
-    (haddLookup : factory["Int.Add"]? =
-      some (Lambda.intAddFunc (T := Core.CoreLParams)).func)
-    (hsubLookup : factory["Int.Sub"]? =
-      some (Lambda.intSubFunc (T := Core.CoreLParams)).func)
-    (hmulLookup : factory["Int.Mul"]? =
-      some (Lambda.intMulFunc (T := Core.CoreLParams)).func)
-    (fv : Lambda.FreeVarVal Core.CoreLParams model.tcInterp)
-    (vt : Lambda.TyVarVal) (a b : Int)
-    (hfx : fv xId (Lambda.LMonoTy.int.substTyVars vt) = a)
-    (hfy : fv yId (Lambda.LMonoTy.int.substTyVars vt) = b)
-    (h : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] fBody .int) :
-    Lambda.LExpr.denote model.tcInterp model.opInterp fv vt .nil fBody .int h =
-      (a + b) * (a - b) := by
-  let xe : Core.Expression.Expr := .fvar () xId intTy
-  let ye : Core.Expression.Expr := .fvar () yId intTy
-  let ae : Core.Expression.Expr := .app () (.app () Core.intAddOp xe) ye
-  let se : Core.Expression.Expr := .app () (.app () Core.intSubOp xe) ye
-  have hxTy : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] xe .int := .fvar
-  have hyTy : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] ye .int := .fvar
-  have hdx : Lambda.LExpr.denote model.tcInterp model.opInterp fv vt .nil xe .int hxTy = a := by
-    change fv xId (Lambda.LMonoTy.int.substTyVars vt) = a
-    exact hfx
-  have hdy : Lambda.LExpr.denote model.tcInterp model.opInterp fv vt .nil ye .int hyTy = b := by
-    change fv yId (Lambda.LMonoTy.int.substTyVars vt) = b
-    exact hfy
-  have hadd : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] ae .int :=
-    .app (.app .op hxTy) hyTy
-  have hsub : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] se .int :=
-    .app (.app .op hxTy) hyTy
-  exact Core.denote_intMul_of_lookup model hmulLookup fv vt .nil h hadd hsub
-    (Core.denote_intAdd_of_lookup model haddLookup fv vt .nil hadd hxTy hyTy hdx hdy)
-    (Core.denote_intSub_of_lookup model hsubLookup fv vt .nil hsub hxTy hyTy hdx hdy)
-
-
 /-- In every model of `specFactory`, the interpretation of `fSpec`
     applied to `a` and `b` is `(a + b) * (a - b)`. -/
 private theorem fSpec_opInterp (model : Lambda.Interp specFactory)
@@ -738,146 +700,77 @@ private theorem fSpec_opInterp (model : Lambda.Interp specFactory)
     specFactory_intMul argVal vt a b hfx hfy hbodyTy
   exact heq.trans hbodyDenote
 
-/-- Applying `fSpec` to integer literals denotes `(a + b) * (a - b)` without
-    requiring the function to be inline. -/
-private theorem denote_fSpecCall (model : Lambda.Interp specFactory)
-    (fv : Lambda.FreeVarVal Core.CoreLParams model.tcInterp)
-    (vt : Lambda.TyVarVal) (a b : Int)
-    (h : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
-      (Lambda.LExpr.app ()
-        (Lambda.LExpr.app () fSpecOp (.const () (.intConst a)))
-        (.const () (.intConst b))) .int) :
-    Lambda.LExpr.denote model.tcInterp model.opInterp fv vt .nil
-      (Lambda.LExpr.app ()
-        (Lambda.LExpr.app () fSpecOp (.const () (.intConst a)))
-        (.const () (.intConst b))) .int h =
-      (a + b) * (a - b) := by
-  have hop : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] fSpecOp
-      (.arrow .int (.arrow .int .int)) := .op
-  have ha : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
-      (.const () (.intConst a)) .int := .const
-  have hb : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
-      (.const () (.intConst b)) .int := .const
-  have happ : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
-      (.app () fSpecOp (.const () (.intConst a))) (.arrow .int .int) :=
-    .app hop ha
-  change Lambda.LExpr.denote model.tcInterp model.opInterp fv vt .nil
-      (.app () (.app () fSpecOp (.const () (.intConst a)))
-        (.const () (.intConst b))) .int h = _
-  rw [Lambda.denote_app .nil happ hb h, Lambda.denote_app .nil hop ha happ]
-  have hic : ∀ (i : Int) (hh : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
-      (.const () (.intConst i)) .int),
-      Lambda.LExpr.denote model.tcInterp model.opInterp fv vt .nil
-        (.const () (.intConst i)) .int hh = i :=
-    fun i hh => Lambda.denote_intConst _ _ _ _ _ hh
-  simp only [hic]
-  simp only [fSpecOp] at hop ⊢
-  rw [Lambda.denote_op]
-  exact fSpec_opInterp model fv vt a b
-
-/-- In every model of `specFactory`, `fSpec(a, b) > 0` denotes the
-    positivity of `(a + b) * (a - b)`. -/
-private theorem denote_fSpec_gt_zero (model : Lambda.Interp specFactory)
-    (fv : Lambda.FreeVarVal Core.CoreLParams model.tcInterp)
-    (vt : Lambda.TyVarVal) (a b : Int)
-    (h : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
-      (.app () (.app () gtOp
-        (Lambda.LExpr.app ()
-          (Lambda.LExpr.app () fSpecOp (.const () (.intConst a)))
-          (.const () (.intConst b))))
-        (.const () (.intConst 0))) .bool) :
-    (Lambda.LExpr.denote model.tcInterp model.opInterp fv vt .nil
-      (.app () (.app () gtOp
-        (Lambda.LExpr.app ()
-          (Lambda.LExpr.app () fSpecOp (.const () (.intConst a)))
-          (.const () (.intConst b))))
-        (.const () (.intConst 0))) .bool h : Bool) =
-      decide ((a + b) * (a - b) > 0) := by
-  have hfTy : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
-      (Lambda.LExpr.app ()
-        (Lambda.LExpr.app () fSpecOp (.const () (.intConst a)))
-        (.const () (.intConst b))) .int :=
-    .app (.app (.op) (.const)) (.const)
-  exact Core.denote_intGt_of_lookup model specFactory_intGt fv vt .nil h hfTy .const
-    (denote_fSpecCall model fv vt a b hfTy) (Lambda.denote_intConst _ _ _ _ _ _)
+/-- Applying `fSpec` to integers evaluates to `(a + b) * (a - b)` without requiring the
+    function to be inline: every model interprets it as its body. -/
+private theorem fSpecCall_eval (F : Core.Expression.Factory) (hF : F.factory = specFactory)
+    (σ : Core.CoreStore) (a b : Int)
+    (hx : σ xId = some (intV F a)) (hy : σ yId = some (intV F b)) :
+    Core.Expression.eval F σ fSpecCall = some (intV F ((a + b) * (a - b))) := by
+  obtain ⟨Fl, model, tv⟩ := F
+  obtain rfl : Fl = specFactory := hF
+  have h := Lambda.LExpr.denoteEval_app2_op_int (T := Core.CoreLParams)
+    (M := ⟨specFactory, model, tv⟩) (m := ()) (m' := ()) (m'' := ()) (o := ⟨"fSpec", ()⟩)
+    (c := .int) rfl (Core.eval_fvar_int (m := ()) (ty := intTy) _ hx)
+    (Core.eval_fvar_int (m := ()) (ty := intTy) _ hy)
+  refine h.trans (congrArg some ?_)
+  unfold intV Lambda.SemValue.ofInt
+  congr 1
+  exact fSpec_opInterp model
+    (fun _ s => @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s))
+    (fun _ => .int) a b
 
 /-- If `x = a`, `y = b`, and their product expression is positive, then
-    `CheckProduct`'s semantic postcondition holds without evaluating `fSpec`. -/
-private theorem specPost_holds (model : Lambda.Interp specFactory)
-    (ρ : Imperative.Env Core.Expression) (a b : Int)
-    (hfac : ρ.factory = specFactory)
-    (hx : ρ.store xId = some (Lambda.LExpr.intConst () a))
-    (hy : ρ.store yId = some (Lambda.LExpr.intConst () b))
+    `CheckProduct`'s semantic postcondition holds. -/
+private theorem specPost_holds (ρ : Imperative.Env Core.Expression) (a b : Int)
+    (hfac : ρ.factory.factory = specFactory)
+    (hx : ρ.store xId = some (intV ρ.factory a))
+    (hy : ρ.store yId = some (intV ρ.factory b))
     (hpos : (a + b) * (a - b) > 0) :
-    Core.Logic.Hoare.Procedure.contractPost model checkProductProc ρ := by
+    Core.Logic.Hoare.Procedure.contractPost specFactory checkProductProc ρ := by
   intro label check hmem hattr world
   have hexpr := specEnsures_shape label check hmem hattr
   refine .inl ⟨hfac, ?_⟩
-  have hgtClosed : Lambda.LExpr.substFvarsFromEnv ρ.store gtOp = gtOp := by
-    apply Lambda.LExpr.substFvarsFromEnv_closed_identity
-    rfl
-  have hfClosed : Lambda.LExpr.substFvarsFromEnv ρ.store fSpecOp = fSpecOp := by
-    apply Lambda.LExpr.substFvarsFromEnv_closed_identity
-    rfl
-  have hfCall : Lambda.LExpr.substFvarsFromEnv ρ.store fSpecCall =
-      Lambda.LExpr.app ()
-        (Lambda.LExpr.app () fSpecOp (.const () (.intConst a)))
-        (.const () (.intConst b)) := by
-    simp [fSpecCall, xExpr, yExpr, Lambda.LExpr.substFvarsFromEnv,
-      hfClosed, intConst_eq, hx, hy]
-  have hcap : Core.Logic.capturedExpr
-      { factory := ρ.factory, store := ρ.store, label := label,
-        expr := check.expr, metadata := check.md } =
-      (.app () (.app () gtOp
-        (Lambda.LExpr.app ()
-          (Lambda.LExpr.app () fSpecOp (.const () (.intConst a)))
-          (.const () (.intConst b))))
-        (.const () (.intConst 0))) := by
-    rw [hexpr]
-    simp [Core.Logic.capturedExpr, specEns, zeroExpr,
-      Lambda.LExpr.substFvarsFromEnv, Lambda.Env.mk, hgtClosed, hfCall]
-  rw [hcap]
-  have hty : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
-      (.app () (.app () gtOp
-        (Lambda.LExpr.app ()
-          (Lambda.LExpr.app () fSpecOp (.const () (.intConst a)))
-          (.const () (.intConst b))))
-        (.const () (.intConst 0))) .bool :=
-    .app (.app (.op) (.app (.app (.op) (.const)) (.const))) (.const)
-  refine ⟨hty, ?_⟩
-  rw [denote_fSpec_gt_zero model world.freeVarVal world.tyVarVal a b hty]
-  exact decide_eq_true hpos
+  show Core.Expression.eval ρ.factory ρ.store check.expr =
+    some (Imperative.HasBool.ttVal ρ.factory)
+  rw [hexpr]
+  have hgt : Core.Expression.eval ρ.factory ρ.store specEns =
+      some (Lambda.SemValue.ofBool ρ.factory.model.tcInterp (decide ((a + b) * (a - b) > 0))) :=
+    Core.eval_intGt (by rw [hfac]; exact specFactory_intGt)
+      (fSpecCall_eval ρ.factory hfac ρ.store a b hx hy) (Core.eval_const _ _ (.intConst 0))
+  rw [hgt, decide_eq_true hpos]
+  rfl
 
-/-- `CheckProduct` meets its contract although `fSpec` is not inline,
-    because contract clauses use denotational interpretation rather than the
-    executable expression evaluator. -/
+/-- `CheckProduct` meets its contract although `fSpec` is not inline, because
+    Core's evaluator is denotational: every model interprets `fSpec` as its body. -/
 theorem checkProduct_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple specOnlyAST testParams "CheckProduct" := by
   refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed
     specOnlyAST testParams "CheckProduct" checkProductProc []
-      (by native_decide) checkProduct_body (by native_decide) (fun model => ?_)
+      (by native_decide) checkProduct_body (by native_decide) ?_
   refine Strata.Logic.Hoare.consequence
     (Core.Logic.EventLang.coreBlock specOnlyAST.findProcByString?) testParams
     (Core.Logic.Hoare.skip (factory := specFactory) specOnlyAST.findProcByString?
       testParams "" #[]
-      (Core.Logic.Hoare.Procedure.contractPre model checkProductProc) model)
+      (Core.Logic.Hoare.Procedure.contractPre specFactory checkProductProc))
     (fun _ hpre => hpre) (fun ρ hpre => ?_)
   obtain ⟨hchecks, hfac, _hold, htyped⟩ := hpre
   obtain ⟨vx, hx, hvx⟩ := htyped xId .int (by native_decide)
   obtain ⟨vy, hy, hvy⟩ := htyped yId .int (by native_decide)
-  change ∃ a : Int, vx = Lambda.LExpr.intConst () a at hvx
-  change ∃ b : Int, vy = Lambda.LExpr.intConst () b at hvy
-  obtain ⟨a, rfl⟩ := hvx
-  obtain ⟨b, rfl⟩ := hvy
+  obtain ⟨a, hva⟩ := Lambda.SemValue.exists_ofInt hvx
+  obtain ⟨b, hvb⟩ := Lambda.SemValue.exists_ofInt hvy
   obtain ⟨labelXY, checkXY, hmemXY, hexprXY⟩ := specReqXY_mem
   obtain ⟨labelSum, checkSum, hmemSum, hexprSum⟩ := specReqSum_mem
-  have hxy : a > b := check_reqXY_implies model specFactory_intGt
+  obtain ⟨htx, hty⟩ := tc_of_reqXY _ ρ labelXY checkXY hfac hx hy hexprXY
+    (hchecks labelXY checkXY hmemXY)
+  rw [hva, htx] at hx
+  rw [hvb, hty] at hy
+  have hxy : a > b := check_reqXY_implies _ specFactory_intGt
     ρ labelXY checkXY a b hfac hx hy hexprXY
     (hchecks labelXY checkXY hmemXY)
-  have hsum : a + b > 0 := check_reqSum_implies model specFactory_intAdd
+  have hsum : a + b > 0 := check_reqSum_implies _ specFactory_intAdd
     specFactory_intGt ρ labelSum checkSum a b hfac hx hy hexprSum
     (hchecks labelSum checkSum hmemSum)
-  exact specPost_holds model ρ a b hfac hx hy (result_positive a b hxy hsum)
+  exact specPost_holds ρ a b hfac hx hy (result_positive a b hxy hsum)
 
 /-- `fSpec` is deliberately not inline. -/
 example : fSpecDef.toLFunc.attr.contains .inline = false := by

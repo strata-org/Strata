@@ -74,7 +74,7 @@ inductive Inits : SemanticStore P → SemanticStore P → Prop where
 def updatedState
   (σ : SemanticStore P)
   (ident : P.Ident)
-  (val : P.Expr)
+  (val : P.Val)
   : SemanticStore P :=
   λ k ↦ if (@Decidable.decide (k = ident) (P.EqIdent k ident))
     then some val
@@ -82,7 +82,7 @@ def updatedState
 
 def updatedStates'
   (σ : SemanticStore P)
-  (idvals : List (P.Ident × P.Expr))
+  (idvals : List (P.Ident × P.Val))
   : SemanticStore P :=
   match idvals with
   | [] => σ
@@ -91,7 +91,7 @@ def updatedStates'
 def updatedStates
   (σ : SemanticStore P)
   (idents : List P.Ident)
-  (vals : List P.Expr)
+  (vals : List P.Val)
   : SemanticStore P :=
   updatedStates' σ $ idents.zip vals
 
@@ -114,7 +114,7 @@ actuals. The frame also snapshots each inout formal as `old`, so postconditions
 mentioning `old g` are evaluable in the callee.  The generic
 `Calls.InitCallFrame` at `Expression`. -/
 abbrev InitCallFrame
-    (p : Procedure) (inputVals outOnlyVals : List Expression.Expr)
+    (p : Procedure) (inputVals outOnlyVals : List Expression.Val)
     (σAO : CoreStore) : Prop :=
   Calls.InitCallFrame p inputVals outOnlyVals σAO
 

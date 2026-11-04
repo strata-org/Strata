@@ -150,15 +150,14 @@ private def callMdsOf (p : Core.Program) (name : String) :
     | _ => none
 
 /-- The label and metadata of the precondition events a call to `g` with call
-    metadata `md` emits. -/
+    metadata `md` emits: by `Calls.defaultAssertEvents_label_metadata`, those of the
+    non-free clauses of `Calls.checksAtCall md`, whatever the runtime factory and store. -/
 private def preIdsAt (md : Imperative.MetaData Core.Expression) :
     List (String × Imperative.MetaData Core.Expression) :=
   match twoCalls.findProcByString? "g" with
   | some g =>
-    (Imperative.Calls.defaultAssertEvents Core.Factory (fun _ => none)
-      (Imperative.Calls.checksAtCall md g.spec.preconditions)).filterMap fun
-      | .assert a => some (a.label, a.metadata)
-      | _ => none
+    (Imperative.Calls.checksAtCall md g.spec.preconditions).toList.filterMap fun
+      | (label, check) => if check.attr = .Default then some (label, check.md) else none
   | none => []
 
 #guard (callMdsOf twoCalls "f").length == 2

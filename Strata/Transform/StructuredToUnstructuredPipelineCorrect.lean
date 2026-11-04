@@ -327,6 +327,7 @@ private theorem hoist_overapproximates_upto_when [HasSubstFvar P]
 events exactly once with semantic event evidence, so the per-pass relations
 compose into a single `Trace.WithWF` matching. -/
 private theorem pipeline_overapproximates_upto_composed [HasSubstFvar P] [LawfulHasVal P]
+    [LawfulHasBool P]
     (base : InitEnvWFParams P)
     (hbase : prefixesDisjoint base.prefixIdents NondetElim.isGeneratedName) :
     Specification.Transform.OverapproximatesTracesUptoWhen
@@ -421,7 +422,7 @@ private theorem pipeline_transform_eq (ss : List (Stmt P (Cmd P))) :
 pipeline overapproximates the source statement-list event language by the
 unstructured CFG event language, up to `Trace.WithWF` matching on traces and
 `EnvStoreAgree` on final environments. -/
-theorem overapproximatesTraces [HasSubstFvar P] [LawfulHasVal P]
+theorem overapproximatesTraces [HasSubstFvar P] [LawfulHasVal P] [LawfulHasBool P]
     (base : InitEnvWFParams P)
     (hbase : prefixesDisjoint base.prefixIdents NondetElim.isGeneratedName) :
     Specification.Transform.OverapproximatesTracesUptoWhen

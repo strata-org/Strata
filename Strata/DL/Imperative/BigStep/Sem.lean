@@ -71,9 +71,9 @@ inductive BRun (F : P.Factory) : (PStmts P) → SemanticStore P →
 inductive BRunS (F : P.Factory) : (PStmt P) → SemanticStore P →
     List (Event P) → (Outcome P) → Prop where
   | cmd : EvalE F σ c σ' evs → BRunS F (.cmd c) σ evs (.normal σ')
-  | ite_true : P.eval F σ c = some HasBool.tt → BRun F tss σ evs o →
+  | ite_true : P.eval F σ c = some (HasBool.ttVal F) → BRun F tss σ evs o →
       BRunS F (.ite (.det c) tss ess md) σ evs (o.proj σ)
-  | ite_false : P.eval F σ c = some HasBool.ff → BRun F ess σ evs o →
+  | ite_false : P.eval F σ c = some (HasBool.ffVal F) → BRun F ess σ evs o →
       BRunS F (.ite (.det c) tss ess md) σ evs (o.proj σ)
   | ite_nondet_true : BRun F tss σ evs o → BRunS F (.ite .nondet tss ess md) σ evs (o.proj σ)
   | ite_nondet_false : BRun F ess σ evs o → BRunS F (.ite .nondet tss ess md) σ evs (o.proj σ)
@@ -94,9 +94,9 @@ inductive BReach (F : P.Factory) : (PStmts P) → SemanticStore P →
 inductive BReachS (F : P.Factory) : (PStmt P) → SemanticStore P →
     List (Event P) → Prop where
   | cmd : EvalE F σ c σ' evs → BReachS F (.cmd c) σ evs
-  | ite_true : P.eval F σ c = some HasBool.tt → BReach F tss σ evs →
+  | ite_true : P.eval F σ c = some (HasBool.ttVal F) → BReach F tss σ evs →
       BReachS F (.ite (.det c) tss ess md) σ evs
-  | ite_false : P.eval F σ c = some HasBool.ff → BReach F ess σ evs →
+  | ite_false : P.eval F σ c = some (HasBool.ffVal F) → BReach F ess σ evs →
       BReachS F (.ite (.det c) tss ess md) σ evs
   | ite_nondet_true : BReach F tss σ evs → BReachS F (.ite .nondet tss ess md) σ evs
   | ite_nondet_false : BReach F ess σ evs → BReachS F (.ite .nondet tss ess md) σ evs
@@ -106,16 +106,16 @@ end
 /-- The interpretation of a condition as its evaluation to `true` under the event's factory
     and store, in a single world. -/
 @[expose] def evalInterp : ConditionInterp P :=
-  ⟨Unit, fun _ c => P.eval c.factory c.store c.expr = some HasBool.tt⟩
+  ⟨Unit, fun _ c => P.eval c.factory c.store c.expr = some (HasBool.ttVal c.factory)⟩
 
 /-- The event is a failing occurrence of the target `t` with the condition `e`: an assertion
     with the label and metadata of `t` and the condition `e`, evaluating to false, or a cover
     with the label and metadata of `t` and the condition `e`, evaluating to true. -/
 @[expose] def FailsAt (t : AssertId P) (e : P.Expr) : Event P → Prop
   | .assert arg => arg.label = t.label ∧ arg.metadata = t.md ∧ arg.expr = e ∧
-      P.eval arg.factory arg.store arg.expr = some HasBool.ff
+      P.eval arg.factory arg.store arg.expr = some (HasBool.ffVal arg.factory)
   | .cover arg => arg.label = t.label ∧ arg.metadata = t.md ∧ arg.expr = e ∧
-      P.eval arg.factory arg.store arg.expr = some HasBool.tt
+      P.eval arg.factory arg.store arg.expr = some (HasBool.ttVal arg.factory)
   | .assume _ => False
 
 /-- The events `tr` claim a failure of the target `t` with the condition `e`: they end with a

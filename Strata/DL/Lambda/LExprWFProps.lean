@@ -38,9 +38,7 @@ closed (`substFvars_eq_substFvarsLifting_of_lcAt`).
 ### `substFvars` and `eraseMetadata`
 `freeVars` and `substFvars` commute with `eraseMetadata` (`freeVars_eraseMetadata`,
 `substFvars_eraseMetadata_congr`, `substFvars_eraseMetadata_values_congr`), and
-`substFvars` depends only on `Map.find?` (`substFvars_congr_find`). Also
-included: the `.fvar` lookup lemmas `substFvars_fvar_find` /
-`substFvars_fvar_none`.
+`substFvars` depends only on `Map.find?` (`substFvars_congr_find`).
 
 ### `liftBVars` / `substK` and `eraseMetadata`
 `liftBVars`, `substK`, and `varOpen` each preserve `eraseMetadata` equality.
@@ -463,33 +461,6 @@ theorem substFvars_eraseMetadata_values_congr
     | ite m c t f ihc iht ihf =>
       simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
       exact congr (congr (congrArg _ ihc) iht) ihf
-
-/-- If `Map.find? sm e = some e`, then `substFvars (.fvar m x ty) sm = e`. -/
-theorem substFvars_fvar_find
-    (m_meta : T.Metadata) (x : Identifier T.IDMeta) (ty : Option LMonoTy)
-    (sm : Map (Identifier T.IDMeta) (LExpr T.mono))
-    (v : LExpr T.mono)
-    (h_find : Map.find? sm x = some v) :
-    LExpr.substFvars (.fvar m_meta x ty) sm = v := by
-  simp only [LExpr.substFvars]
-  split
-  · -- sm.isEmpty = true, so sm = []
-    cases sm
-    · simp [Map.find?] at h_find
-    · simp [Map.isEmpty] at *
-  · -- sm.isEmpty = false, use substFvarsAux
-    simp [LExpr.substFvars.substFvarsAux, h_find]
-
-/-- If `Map.find?` returns `none`, substFvars on a `.fvar` is the identity. -/
-theorem substFvars_fvar_none
-    (m_meta : T.Metadata) (x : Identifier T.IDMeta) (ty : Option LMonoTy)
-    (sm : Map (Identifier T.IDMeta) (LExpr T.mono))
-    (h_find : Map.find? sm x = none) :
-    LExpr.substFvars (.fvar m_meta x ty) sm = .fvar m_meta x ty := by
-  simp only [LExpr.substFvars]
-  split
-  · rfl
-  · simp [LExpr.substFvars.substFvarsAux, h_find]
 
 /-- `substFvars` depends only on `Map.find?`, so maps with the same `find?` give the same result. -/
 theorem substFvars_congr_find
@@ -1137,6 +1108,5 @@ theorem allExprTys_eq_all_exprAnnotTys {T : LExprParams} (p : LMonoTy → Bool)
     List.all_append, List.all_nil]
 
 end
-
 
 end Lambda

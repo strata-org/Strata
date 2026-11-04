@@ -16,6 +16,8 @@ import all Strata.DL.Lambda.LTy
 public import Strata.DL.Lambda.LExprEval
 public import Strata.DL.Lambda.IntBoolFactory
 import Strata.DL.Lambda.OperationalSemanticsProps
+public import Strata.DL.Lambda.LExprDenoteEval
+public import Strata.DL.Lambda.LExprDenoteEvalProps
 
 namespace Core
 open Std (ToFormat Format format)
@@ -27,6 +29,12 @@ open Imperative
 
 abbrev ExpressionMetadata := Unit
 
+/-- Core's expression language.  Its runtime factory is a Lambda factory bundled with a
+consistent interpretation (`Lambda.ModeledFactory`); runtime values are semantic values
+(`Lambda.SemValue`) of that interpretation, and expressions evaluate by
+`Lambda.LExpr.denoteEval`, i.e. by their denotation.  The evaluator is not computable:
+its compiled stand-in (`Lambda.LExpr.denoteEvalCode`) never returns, so executable code
+must not call `Expression.eval`; it evaluates with the fuel-based `Lambda.LExpr.eval`. -/
 abbrev Expression : PureExpr :=
    { Ident := CoreIdent,
      EqIdent := inferInstanceAs (DecidableEq (Lambda.Identifier Unit))
@@ -35,8 +43,9 @@ abbrev Expression : PureExpr :=
      ExprMetadata := ExpressionMetadata,
      TyEnv := @Lambda.TEnv Unit inferInstance inferInstance,
      TyContext := @Lambda.LContext ⟨ExpressionMetadata, Unit⟩,
-     Factory := Lambda.Factory CoreLParams,
-     eval := Lambda.LExpr.evalFully }
+     Factory := Lambda.ModeledFactory CoreLParams,
+     Val := Lambda.SemValue,
+     eval := fun F σ e => Lambda.LExpr.denoteEval F σ e }
 
 instance : HasFvars Expression where
   getFvars := Lambda.LExpr.LExpr.getVars
@@ -51,29 +60,18 @@ instance : Inhabited Expression.Expr where
 def coreOpExpr (op : CoreOp) (ty : Option Lambda.LMonoTy := none) : Expression.Expr :=
   .op () op.toString ty
 
+/-- A runtime value belongs to a factory when it was produced under the factory's
+interpretation of type constructors; it is a value of `ty` when moreover `ty` is the
+(monomorphic) type of its sort. -/
 instance : HasVal Core.Expression where
-  value := fun f e => Lambda.LExpr.isValue f e = true
-  valueOfTy := fun f e ty =>
-    ∃ mty,
-      Lambda.LExpr.isValue f e = true ∧
-      ty.toMonoType? = some mty ∧
-      Lambda.LExpr.typeCheck [] e = some mty
+  value := fun f v => v.tc = f.model.tcInterp
+  valueOfTy := fun f v ty => v.tc = f.model.tcInterp ∧ ty.toMonoType? = some v.sort.toMonoTy
 
 instance : LawfulHasVal Core.Expression where
-  valueOfTy_isVal := by
-    rintro _ _ _ ⟨_, hval, _, _⟩
-    exact hval
+  valueOfTy_isVal := fun _ _ _ h => h.1
   valueOfTy_congr := by
-    rintro f a b ty₁ ty₂
-      ⟨mty₁, _, hty₁, ha₁⟩
-      ⟨mty₂, _, hty₂, ha₂⟩
-      ⟨mty₃, hb, hty₃, hb₃⟩
-    have hmty₁₂ : mty₁ = mty₂ := Option.some.inj (ha₁.symm.trans ha₂)
-    have hmty₂₃ : mty₂ = mty₃ := Option.some.inj (hty₂.symm.trans hty₃)
-    subst mty₂
-    subst mty₃
-    exact ⟨mty₁, hb, hty₁, hb₃⟩
-  value_getFvars := fun f e hval => Lambda.isValue_getVars_nil f e hval
+    rintro f a b ty₁ ty₂ ⟨-, ha₁⟩ ⟨-, ha₂⟩ ⟨hb, hb₂⟩
+    exact ⟨hb, ha₁.trans (ha₂.symm.trans hb₂)⟩
 
 instance : HasFvar Core.Expression where
   mkFvar := (.fvar () · none)
@@ -156,30 +154,26 @@ def Core.false : Core.Expression.Expr := .boolConst () Bool.false
   | .const _ (.intConst _) => Bool.true
   | _ => Bool.false
 
+/-- Core's Boolean type is the monomorphic type `bool`. -/
+theorem boolTy_toMonoType :
+    (Lambda.LTy.forAll [] (.tcons "bool" [])).toMonoType? = some Lambda.LMonoTy.bool := by
+  simp [Lambda.LTy.toMonoType?]; rfl
+
 instance : HasBool Core.Expression where
   tt := Core.true
   ff := Core.false
   tt_is_not_ff := by unfold Core.true Core.false; unfold Lambda.LExpr.boolConst; simp
   boolTy := .forAll [] (.tcons "bool" [])
-  boolIsValOfTy := fun f => by
-    constructor
-    · refine ⟨Lambda.LMonoTy.bool, ?_, rfl, rfl⟩
-      simp [Core.true, Lambda.LExpr.boolConst, Lambda.LExpr.isValue]
-    · refine ⟨Lambda.LMonoTy.bool, ?_, rfl, rfl⟩
-      simp [Core.false, Lambda.LExpr.boolConst, Lambda.LExpr.isValue]
+  ttVal f := Lambda.SemValue.ofBool f.model.tcInterp Bool.true
+  ffVal f := Lambda.SemValue.ofBool f.model.tcInterp Bool.false
+  ttVal_ne_ffVal _ h := by cases Lambda.SemValue.ofBool_injective h
+  boolIsValOfTy := fun _ => ⟨⟨rfl, boolTy_toMonoType⟩, ⟨rfl, boolTy_toMonoType⟩⟩
 
 instance : HasInt Core.Expression where
   zero        := .intConst () 0
   intTy       := .forAll [] (.tcons "int" [])
   isNumeral   := Core.isNumeral
-  numeralIsValue f n hn := by
-    simp only [HasVal.value]
-    cases n with
-    | const m c =>
-      cases c with
-      | intConst _ => simp [Lambda.LExpr.isValue]
-      | _ => simp [Core.isNumeral] at hn
-    | _ => simp [Core.isNumeral] at hn
+  isNumeralVal v := v.sort.isInt
   zeroIsNumeral := by
     show Core.isNumeral (.intConst () 0) = Bool.true
     rfl
@@ -187,6 +181,10 @@ instance : HasInt Core.Expression where
     cases n with
     | const _ c => cases c <;> first | rfl | simp [Core.isNumeral] at hn
     | _ => simp [Core.isNumeral] at hn
+
+instance : LawfulHasBool Core.Expression where
+  tt_getFvars := rfl
+  ff_getFvars := rfl
 
 instance : HasIntOps Core.Expression where
   eq    e1 e2 := .eq () e1 e2

@@ -83,7 +83,7 @@ It simulates every finite prefix (for safety properties) and terminal/exiting
 runs (for partial-correctness postconditions). The definition is independent of
 any particular trace property or condition interpretation. -/
 @[expose] def OverapproximatesTracesUptoWhen
-    {EventT : Type}
+    {EventT : Type _}
     (Rtrace : Relation (List EventT))
     (Rin Rout : Relation (Env P))
     (L₁ L₂ : EventLang P EventT) (T : L₁.StmtT → Option L₂.StmtT)
@@ -115,7 +115,7 @@ any particular trace property or condition interpretation. -/
 
 /-- Equality-state trace overapproximation under a statement precondition. -/
 @[expose] def OverapproximatesTracesWhen
-    {EventT : Type}
+    {EventT : Type _}
     (Rtrace : Relation (List EventT))
     (L₁ L₂ : EventLang P EventT) (T : L₁.StmtT → Option L₂.StmtT)
     (pre : L₁.StmtT → Prop)
@@ -125,7 +125,7 @@ any particular trace property or condition interpretation. -/
 
 /-- Trace overapproximation with equality states and no statement restriction. -/
 @[expose] def OverapproximatesTraces
-    {EventT : Type}
+    {EventT : Type _}
     (Rtrace : Relation (List EventT))
     (L₁ L₂ : EventLang P EventT) (T : L₁.StmtT → Option L₂.StmtT)
     (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=

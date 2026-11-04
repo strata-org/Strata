@@ -7,7 +7,8 @@ module
 
 public import Strata.Transform.Passive.Lang
 public import Strata.Languages.Core.Statement
-public import Strata.DL.Lambda.LExprEvalProps
+public import Strata.DL.Lambda.LExprDenoteEval
+public import Strata.DL.Lambda.LExprDenoteEvalProps
 public import Strata.DL.Lambda.LExprWFProps
 import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.LExprWFProps
@@ -77,9 +78,15 @@ instance : Imperative.WP.WPLang Expression where
     exact LExpr.freeVars_substFvars sm e y h
   getFvar_getFvars {e} {y} h := by
     cases e <;> simp_all [HasFvar.getFvar, HasFvars.getFvars, LExpr.LExpr.getVars]
-  ev_ite_true := evalFully_ite_true
-  ev_ite_false := evalFully_ite_false
-  ev_ite_inv h := (evalFully_ite_inv h).imp (fun ⟨_, h⟩ => h) fun ⟨_, h⟩ => h
+  ev_ite_congr {F σ σ' c t e c' t' e' v} h hc ht he := by
+    obtain ⟨b, vt, ve, h1, h2, h3, hs, rfl⟩ := (LExpr.denoteEval_ite_iff (T := CoreLParams)).mp h
+    exact (LExpr.denoteEval_ite_iff (T := CoreLParams)).mpr
+        ⟨b, vt, ve, hc _ h1, ht _ h2, he _ h3, hs, rfl⟩
+  ev_ite_inv {F σ c t e v} h := by
+    obtain ⟨b, vt, ve, h1, h2, h3, -, rfl⟩ := (LExpr.denoteEval_ite_iff (T := CoreLParams)).mp h
+    cases b
+    · exact .inr ⟨h1, h3⟩
+    · exact .inl ⟨h1, h2⟩
   iteView?_eq h := by exact iteView?_eq_ite h
   boolLit?_eq h := by exact denoteBool_eq_lit h
   substFn_eq e look sm h := by

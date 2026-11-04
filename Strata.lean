@@ -26,7 +26,8 @@ import Strata.Util.Worklist
 /- Strata Languages -/
 import Strata.Languages.Core.BitVecEvalProps
 import Strata.Languages.Core.IntEvalProps
-import Strata.Languages.Core.ExpressionsProps
+import Strata.Languages.Core.InstWellFormedSemanticsEval
+import Strata.Languages.Core.InstExprTyping
 import Strata.Languages.Core.FactoryWF
 import Strata.Languages.Core.SeqModel
 import Strata.Languages.Core.SMTEncoderProps
@@ -163,6 +164,8 @@ import Strata.DL.Lambda.Denote.LExprDenote
 import Strata.DL.Lambda.Denote.LExprDenoteCompute
 import Strata.DL.Lambda.Denote.LExprDenoteConstrs
 import Strata.DL.Lambda.Denote.LExprDenoteEq
+import Strata.DL.Lambda.LExprDenoteEval
+import Strata.DL.Lambda.LExprDenoteEvalProps
 import Strata.DL.Lambda.Denote.LExprDenoteProps
 import Strata.DL.Lambda.Denote.LExprDenoteSubst
 import Strata.DL.Lambda.Denote.LExprDenoteTySubst

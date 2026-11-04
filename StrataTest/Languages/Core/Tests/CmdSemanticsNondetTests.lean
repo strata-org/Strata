@@ -12,10 +12,9 @@ import all Strata.Languages.Core.Expressions
 
 /-! # Typed nondeterministic Core command semantics
 
-Core Boolean values include symbolic canonical Boolean expressions, not only the
-literal expressions `true` and `false`. These tests therefore characterize
-nondeterministic Boolean writes by `HasVal.valueOfTy` and explicitly rule out an
-integer literal. They also show that both Boolean literals are admissible.
+Core stores hold semantic values, each recording its sort. These tests
+characterize nondeterministic Boolean writes by `HasVal.valueOfTy` and explicitly
+rule out the integer `7`. They also show that both Boolean values are admissible.
 -/
 
 namespace Core.CmdSemanticsNondetTests
@@ -23,14 +22,16 @@ namespace Core.CmdSemanticsNondetTests
 open Imperative
 
 private def x : Expression.Ident := ⟨"x", ()⟩
-private def intValue : Expression.Expr := .intConst () 7
+/-- The integer `7` in the model of the factory `f`. -/
+private def intValue (f : Expression.Factory) : Expression.Val :=
+  ⟨f.model.tcInterp, .int, (7 : Int)⟩
 
-/-- The integer literal `7` is not a value of the Boolean type. -/
+/-- The integer `7` is not a value of the Boolean type. -/
 private theorem intValue_not_bool
     (f : Expression.Factory) :
-    ¬ HasVal.valueOfTy f intValue HasBool.boolTy := by
-  simp [HasVal.valueOfTy, HasBool.boolTy, intValue, Lambda.LExpr.typeCheck,
-    Lambda.LTy.toMonoType?, Lambda.LConst.ty, Lambda.LMonoTy.int]
+    ¬ HasVal.valueOfTy f (intValue f) HasBool.boolTy := by
+  simp [HasVal.valueOfTy, HasBool.boolTy, intValue, Lambda.LTy.toMonoType?,
+    Lambda.LSort.toMonoTy]
 
 /-- Event semantics imposes the same Boolean type restriction on init. -/
 theorem evalCmdE_init_nondet_bool_typed
@@ -44,45 +45,45 @@ theorem evalCmdE_init_nondet_bool_typed
 /-- Event semantics likewise rejects an integer choice for Boolean init. -/
 theorem evalCmdE_init_nondet_bool_not_int
     (h : EvalCmdE Expression f σ (.init x HasBool.boolTy .nondet md) σ' []) :
-    σ' x ≠ some intValue := by
+    σ' x ≠ some (intValue f) := by
   obtain ⟨v, hx, hv⟩ := evalCmdE_init_nondet_bool_typed h
   intro hint
-  have : v = intValue := Option.some.inj (hx.symm.trans hint)
+  have : v = intValue f := Option.some.inj (hx.symm.trans hint)
   subst this
   exact intValue_not_bool f hv
 
 /-- Event semantics preserves the same stored Boolean type on nondeterministic
 assignment. -/
 theorem evalCmdE_set_nondet_bool_typed
-    (htrue : σ x = some Core.true)
+    (htrue : σ x = some (HasBool.ttVal f))
     (h : EvalCmdE Expression f σ (.set x .nondet md) σ' []) :
     ∃ v, σ' x = some v ∧ HasVal.valueOfTy f v HasBool.boolTy := by
   cases h with
   | eval_set_nondet hupdate hstored _ =>
     obtain ⟨previous, ty, hprevious, hpTy, hvTy⟩ := hstored
-    have hprev : previous = Core.true := Option.some.inj (hprevious.symm.trans htrue)
+    have hprev : previous = HasBool.ttVal f := Option.some.inj (hprevious.symm.trans htrue)
     subst hprev
-    have hvBool := LawfulHasVal.valueOfTy_congr f Core.true _ HasBool.boolTy ty
+    have hvBool := LawfulHasVal.valueOfTy_congr f (HasBool.ttVal f) _ HasBool.boolTy ty
       (HasBool.boolIsValOfTy f).1 hpTy hvTy
     cases hupdate with
     | update _ hx _ => exact ⟨_, hx, hvBool⟩
 
 /-- Event semantics also rejects an integer choice for a Boolean slot. -/
 theorem evalCmdE_set_nondet_bool_not_int
-    (htrue : σ x = some Core.true)
+    (htrue : σ x = some (HasBool.ttVal f))
     (h : EvalCmdE Expression f σ (.set x .nondet md) σ' []) :
-    σ' x ≠ some intValue := by
+    σ' x ≠ some (intValue f) := by
   obtain ⟨v, hx, hv⟩ := evalCmdE_set_nondet_bool_typed htrue h
   intro hint
-  have : v = intValue := Option.some.inj (hx.symm.trans hint)
+  have : v = intValue f := Option.some.inj (hx.symm.trans hint)
   subst this
   exact intValue_not_bool f hv
 
-/-- Both Boolean literals satisfy the type premise used by nondeterministic
+/-- Both Boolean values satisfy the type premise used by nondeterministic
 Boolean initialization and assignment. -/
 theorem true_and_false_are_bool_values (f : Expression.Factory) :
-    HasVal.valueOfTy f Core.true HasBool.boolTy ∧
-    HasVal.valueOfTy f Core.false HasBool.boolTy :=
+    HasVal.valueOfTy f (HasBool.ttVal f) HasBool.boolTy ∧
+    HasVal.valueOfTy f (HasBool.ffVal f) HasBool.boolTy :=
   HasBool.boolIsValOfTy f
 
 end Core.CmdSemanticsNondetTests

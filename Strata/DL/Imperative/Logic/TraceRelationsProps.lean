@@ -454,7 +454,7 @@ theorem TraceStuttersEnv.Cmd.emittedEvents_stuttersEnv
 /-- `SemanticStore.update` is the canonical result of initializing an
 undefined slot. -/
 private theorem initState_update {P : PureExpr} [DecidableEq P.Ident]
-    {σ : SemanticStore P} {ident : P.Ident} {value : P.Expr}
+    {σ : SemanticStore P} {ident : P.Ident} {value : P.Val}
     (hnone : σ ident = none) :
     InitState P σ ident value (SemanticStore.update σ ident value) :=
   .init hnone (by simp [SemanticStore.update])
@@ -462,7 +462,7 @@ private theorem initState_update {P : PureExpr} [DecidableEq P.Ident]
 
 /-- `SemanticStore.update` is the canonical result of updating a defined slot. -/
 private theorem updateState_update {P : PureExpr} [DecidableEq P.Ident]
-    {σ : SemanticStore P} {ident : P.Ident} {value old : P.Expr}
+    {σ : SemanticStore P} {ident : P.Ident} {value old : P.Val}
     (hold : σ ident = some old) :
     UpdateState P σ ident value (SemanticStore.update σ ident value) :=
   .update hold (by simp [SemanticStore.update])

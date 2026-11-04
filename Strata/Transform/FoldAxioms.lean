@@ -29,7 +29,8 @@ open Lambda Imperative
 
 /-- `e` folded with `F`, or `e` itself when the fold leaves a beta redex, so that the
     phase preserves `noBetaRedexes`. -/
-def foldAxiom (F : Expression.Factory) (fuel : Nat) (e : Expression.Expr) : Expression.Expr :=
+def foldAxiom (F : Lambda.Factory CoreLParams) (fuel : Nat) (e : Expression.Expr) :
+    Expression.Expr :=
   let e' := Simplify.fold F fuel e
   if e'.noBetaRedex then e' else e
 

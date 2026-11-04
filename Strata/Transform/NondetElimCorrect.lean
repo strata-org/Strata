@@ -445,7 +445,7 @@ theorem Block.nondetElim_initsUndefinedAndInhabited
     rcases Block.nondetElimM_initTypes_classified ss StringGenState.emp ty hty with
       hsource | rfl
     · exact hinhab ty hsource
-    · exact ⟨HasBool.tt, (HasBool.boolIsValOfTy ρ.factory).1⟩
+    · exact ⟨HasBool.ttVal ρ.factory, (HasBool.boolIsValOfTy ρ.factory).1⟩
 
 section NondetElimCoverage
 
@@ -1145,7 +1145,7 @@ private theorem NdLeaf.init_guard {P : PureExpr} [HasBool P] [HasIdent P] [Decid
     [LawfulHasIdent P]
     {σ : StringGenState} {ρs ρt : Env P} {pf : String}
     (hwf : StringGenState.WF σ) (hQ : NondetElim.isGeneratedName (StringGenState.gen pf σ).1)
-    (hl : NdLeaf σ ρs ρt) {v : P.Expr} (hv : HasVal.valueOfTy ρt.factory v HasBool.boolTy) :
+    (hl : NdLeaf σ ρs ρt) {v : P.Val} (hv : HasVal.valueOfTy ρt.factory v HasBool.boolTy) :
     ρt.store (HasIdent.ident (StringGenState.gen pf σ).1) = none ∧
     NdLeaf (StringGenState.gen pf σ).2 ρs
       { ρt with
@@ -1169,7 +1169,7 @@ private theorem NdLeaf.init_guard {P : PureExpr} [HasBool P] [HasIdent P] [Decid
 /-- Re-havocking a defined guard at the latch and leaving the iteration scope. -/
 private theorem NdLeaf.latch {P : PureExpr} [HasBool P] [HasIdent P] [DecidableEq P.Ident]
     {σb σe : StringGenState} {ρsb ρtb : Env P} {σps σpt : SemanticStore P}
-    {g : P.Ident} {v : P.Expr}
+    {g : P.Ident} {v : P.Val}
     (hl : NdLeaf σb ρsb ρtb) (hg : NdExtra (P := P) g)
     (hv : HasVal.valueOfTy ρtb.factory v HasBool.boolTy)
     (hp : StoreExtendsWith (NdExtra (P := P)) σps σpt)
@@ -1197,7 +1197,7 @@ boolean value. -/
 private theorem eval_guard_update {P : PureExpr} [HasBool P] [HasFvar P]
     [HasFvars P] [DecidableEq P.Ident]
     [HasOps P] [LawfulHasFvar P] [LawfulHasVal P]
-    {f : P.Factory} {σ : SemanticStore P} {g : P.Ident} {v : P.Expr}
+    {f : P.Factory} {σ : SemanticStore P} {g : P.Ident} {v : P.Val}
     (hv : HasVal.valueOfTy f v HasBool.boolTy)
     (hvar : WellFormedSemanticEvalVar f) (hmono : WellFormedSemanticEvalMono f) :
     P.eval f (SemanticStore.update σ g v) (HasFvar.mkTypedFvar g HasBool.boolTy) = some v :=
@@ -1208,7 +1208,7 @@ returns the written boolean value, provided the parent store keeps the guard
 defined. -/
 private theorem eval_guard_latch {P : PureExpr} [HasBool P] [HasFvar P] [DecidableEq P.Ident]
     [HasOps P] [LawfulHasFvar P] [HasFvars P] [LawfulHasVal P]
-    {f : P.Factory} {σpt σ : SemanticStore P} {g : P.Ident} {v : P.Expr}
+    {f : P.Factory} {σpt σ : SemanticStore P} {g : P.Ident} {v : P.Val}
     (hpg : (σpt g).isSome = true)
     (hv : HasVal.valueOfTy f v HasBool.boolTy)
     (hvar : WellFormedSemanticEvalVar f) (hmono : WellFormedSemanticEvalMono f) :
@@ -1230,7 +1230,7 @@ private theorem starE_cons_nil {P : PureExpr} [HasFvar P] [HasBoolOps P]
 /-- Initialize a guard and enter the statement it guards. -/
 private theorem tgt_init_then {P : PureExpr} [HasFvar P] [HasBoolOps P] [DecidableEq P.Ident]
     {g : P.Ident} {md : MetaData P} {X : Stmt P (Cmd P)} {R : List (Stmt P (Cmd P))}
-    {ρt : Env P} {v : P.Expr}
+    {ρt : Env P} {v : P.Val}
     (hnone : ρt.store g = none) (hv : HasVal.valueOfTy ρt.factory v HasBool.boolTy)
     (hvar : WellFormedSemanticEvalVar ρt.factory) :
     StepStmtStarE P (EvalCmdE P)
@@ -1249,7 +1249,7 @@ private theorem tgt_init_then {P : PureExpr} [HasFvar P] [HasBoolOps P] [Decidab
 /-- Run the pending latch havoc, leave the iteration scope, and resume the loop. -/
 private theorem tgt_latch {P : PureExpr} [HasFvar P] [HasBoolOps P] [DecidableEq P.Ident]
     {g : P.Ident} {md : MetaData P} {σpt : SemanticStore P} {ρtb : Env P}
-    {L' : Stmt P (Cmd P)} {prev v : P.Expr}
+    {L' : Stmt P (Cmd P)} {prev v : P.Val}
     (hprev : ρtb.store g = some prev)
     (hprevTy : HasVal.valueOfTy ρtb.factory prev HasBool.boolTy)
     (hv : HasVal.valueOfTy ρtb.factory v HasBool.boolTy)
@@ -1478,7 +1478,7 @@ private theorem step_stmt {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
       Trace.WithWF (P := P) (EventArg.ExtendsEnv NdExtra) e e' ∧
       NdSim none (Stmt.nondetElimM s σ).2 cs' ct' := by
   have hfac : ρs.factory = ρt.factory := hl.ext.1
-  have hguard : ∀ {c b : P.Expr}, P.eval ρs.factory ρs.store c = some b →
+  have hguard : ∀ {c : P.Expr} {b : P.Val}, P.eval ρs.factory ρs.store c = some b →
       P.eval ρt.factory ρt.store c = some b := by
     intro c b hc
     rw [← hfac]
@@ -1518,12 +1518,12 @@ private theorem step_stmt {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
       have hfresh := SemanticStore.isReserved.mono hstepT hl.fresh
       cases hadmin with
       | step_ite_true hc =>
-        exact ⟨_, [], StepStmtStarE.single (.step_ite_true (hguard hc)), .nil,
+        exact ⟨_, [], StepStmtStarE.single (.step_ite_true (hfac ▸ hguard hc)), .nil,
           .block (NdSim.stmts_none hwf hl (noGen_ite_then hng)
             (Stmt.exprsShapeFree_ite.mp hreadStmt).2.1) hl.ext.2 hfresh⟩
       | step_ite_false hc =>
         have hstep₁ := Block.nondetElimM_genStep tss σ
-        exact ⟨_, [], StepStmtStarE.single (.step_ite_false (hguard hc)), .nil,
+        exact ⟨_, [], StepStmtStarE.single (.step_ite_false (hfac ▸ hguard hc)), .nil,
           .block (NdSim.stmts_none (hstep₁.wf_mono hwf) (hl.mono hstep₁)
             (noGen_ite_else hng) (Stmt.exprsShapeFree_ite.mp hreadStmt).2.2) hl.ext.2 hfresh⟩
     | nondet =>
@@ -1537,7 +1537,7 @@ private theorem step_stmt {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
       obtain ⟨rfl, hadmin⟩ := stepE_stmt_admin (fun _ h => by cases h) hstep
       cases hadmin with
       | step_loop_enter hc =>
-        refine ⟨_, [], StepStmtStarE.single (.step_loop_enter (hguard hc)), .nil, ?_⟩
+        refine ⟨_, [], StepStmtStarE.single (.step_loop_enter (hfac ▸ hguard hc)), .nil, ?_⟩
         have hinner : NdSim none σ (.block none ρs.store (.stmts body ρs))
             (.block none ρt.store (.stmts (Block.nondetElimM body σ).1 ρt)) :=
           .block (NdSim.stmts_none hwf hl (noGen_loop hng)
@@ -1548,7 +1548,7 @@ private theorem step_stmt {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps P]
           Stmt.nondetElimM_loop_det_out] at h
         simpa [ndTail] using h
       | step_loop_exit hc =>
-        exact ⟨_, [], StepStmtStarE.single (.step_loop_exit (hguard hc)), .nil,
+        exact ⟨_, [], StepStmtStarE.single (.step_loop_exit (hfac ▸ hguard hc)), .nil,
           .terminal (hl.mono (Stmt.nondetElimM_genStep _ σ))⟩
     | nondet =>
       rw [Stmt.nondetElimM_loop_nondet_out] at hout
@@ -1752,8 +1752,8 @@ private theorem step_seqLoop {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOps
           (R := (Block.nondetElimM rest (Stmt.nondetElimM (.loop .nondet m inv body md) σ).2).1 ++
             ndTail tail) hnone hv hvarT)
         (StepStmtStarE.single (.step_seq_inner (.step_loop_enter hg)))
-      have hgdef : (SemanticStore.update ρt.store (ndLoopGuard (P := P) σ) HasBool.tt
-          (ndLoopGuard (P := P) σ)).isSome = true := by
+      have hgdef : (SemanticStore.update ρt.store (ndLoopGuard (P := P) σ)
+          (HasBool.ttVal ρt.factory) (ndLoopGuard (P := P) σ)).isSome = true := by
         simp [SemanticStore.update]
       have hbody := NdSim.stmts (tail := some (ndLoopGuard (P := P) σ, md)) hwf₁ hl₁
         (noGen_loop hng) hreadLoop.2.2.2 (fun g' md' h => by cases h; exact hgdef)
@@ -1818,7 +1818,7 @@ private theorem step_headStmt {P : PureExpr} [HasFvar P] [HasFvars P] [HasBoolOp
         (tgt_latch (md := md) (σpt := σpt) (L' := ndLoopTgt m inv body md σ) hprev hprevTy hv hvarT)
         (StepStmtStarE.single (.step_seq_inner (.step_loop_enter hg)))
       have hgdef : (projectStore σpt (SemanticStore.update ρtb.store (ndLoopGuard (P := P) σ)
-          HasBool.tt) (ndLoopGuard (P := P) σ)).isSome = true := by
+          (HasBool.ttVal ρtb.factory)) (ndLoopGuard (P := P) σ)).isSome = true := by
         simp [projectStore, hinv.parentGuard, SemanticStore.update]
       have hbody := NdSim.stmts (tail := some (ndLoopGuard (P := P) σ, md)) hinv.wf hl'
         hinv.noGen hinv.noRead (fun g' md' h => by cases h; exact hgdef)

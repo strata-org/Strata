@@ -36,6 +36,9 @@ namespace Core.StatementSemanticsTests
 open Imperative
 
 private def intVal (n : Int) : Expression.Expr := .intConst () n
+/-- The integer `n` as a value of the factory `fac`. -/
+private def intV (fac : Expression.Factory) (n : Int) : Expression.Val :=
+  ⟨fac.model.tcInterp, .int, (n : Int)⟩
 private def calleeY : Expression.Ident := ⟨"y", ()⟩
 private def callerResult : Expression.Ident := ⟨"result", ()⟩
 
@@ -126,16 +129,16 @@ private theorem calleeEnv_callee (p : Procedure) :
 
 /-- The callee-local frame store for a one-parameter callee whose sole formal
     `calleeY` is bound to `v`: `emptyStore` extended with `calleeY ↦ v`. -/
-private def calleeFrame (v : Expression.Expr) : CoreStore :=
+private def calleeFrame (v : Expression.Val) : CoreStore :=
   updatedState emptyStore calleeY v
 
 /-- The callee frame after snapshotting the incoming value of its inout formal. -/
-private def inoutFrame (v : Expression.Expr) : CoreStore :=
+private def inoutFrame (v : Expression.Val) : CoreStore :=
   withOldSnapshots [calleeY] (calleeFrame v)
 
 /-- The collision-free frame of a one-inout callee binds both the current formal
     and its `old` snapshot to the incoming value. -/
-private theorem initCallFrame_oneInout (v : Expression.Expr) :
+private theorem initCallFrame_oneInout (v : Expression.Val) :
     InitCallFrame (oneInoutProc calleeY .int) [v] [] (inoutFrame v) := by
   unfold InitCallFrame
   refine ⟨calleeFrame v, calleeFrame v, ?_, ?_, ?_⟩
@@ -149,25 +152,24 @@ private theorem initCallFrame_oneInout (v : Expression.Expr) :
 
 /-- Reading the inout actual from the caller evaluates to its stored value. -/
 private theorem evalExpressions_inout
-    (fac : Expression.Factory) (v : Expression.Expr) (hv : HasVal.value fac v) :
+    (fac : Expression.Factory) (v : Expression.Val) (hv : HasVal.value fac v) :
     EvalExpressions fac (calleeFrame v)
       [Lambda.LExpr.fvar () calleeY none] [v] := by
   apply EvalExpressions.eval_some
   · simp [SemanticStore.varsDefined, HasFvars.getFvars, Lambda.LExpr.LExpr.getVars,
       calleeFrame, updatedState]
-  · exact Lambda.evalFully_fvar_of_value fac (calleeFrame v) () calleeY none v
+  · exact Lambda.LExpr.denoteEval_fvar (T := CoreLParams)
       (by simp [calleeFrame, updatedState]) hv
   · exact .eval_none
 
-/-- An integer literal has no free variables and evaluates to itself, so a
-    singleton argument list of one literal evaluates to itself in any factory and
-    store. -/
+/-- An integer literal has no free variables and evaluates to its value, in any
+    factory and store. -/
 private theorem evalExpressions_intVal
     (fac : Expression.Factory) (σ : CoreStore) (n : Int) :
-    EvalExpressions fac σ [intVal n] [intVal n] := by
+    EvalExpressions fac σ [intVal n] [intV fac n] := by
   apply EvalExpressions.eval_some
   · simp [SemanticStore.varsDefined, intVal, HasFvars.getFvars, Lambda.LExpr.LExpr.getVars]
-  · exact Lambda.evalFully_const fac σ () (.intConst n)
+  · exact Lambda.LExpr.denoteEval_intConst (T := CoreLParams)
   · exact EvalExpressions.eval_none
 
 /-- Snapshotting an empty list leaves the store unchanged. -/
@@ -175,7 +177,7 @@ private theorem withOldSnapshots_nil (σ : CoreStore) : withOldSnapshots [] σ =
 
 /-- The collision-free frame of a one-input callee binds its input formal
     `calleeY` to the evaluated argument, leaving `calleeFrame v`. -/
-private theorem initCallFrame_oneInput (ty : Lambda.LMonoTy) (v : Expression.Expr) :
+private theorem initCallFrame_oneInput (ty : Lambda.LMonoTy) (v : Expression.Val) :
     InitCallFrame (oneInputProc calleeY ty) [v] [] (calleeFrame v) := by
   refine ⟨calleeFrame v, calleeFrame v, ?_, ?_, ?_⟩
   · show InitStates emptyStore [calleeY] [v] (calleeFrame v)
@@ -187,7 +189,7 @@ private theorem initCallFrame_oneInput (ty : Lambda.LMonoTy) (v : Expression.Exp
 
 /-- The collision-free frame of a one-output-only callee copies the caller value
     `v` into the output formal `calleeY`, leaving `calleeFrame v`. -/
-private theorem initCallFrame_oneOutput (ty : Lambda.LMonoTy) (v : Expression.Expr) :
+private theorem initCallFrame_oneOutput (ty : Lambda.LMonoTy) (v : Expression.Val) :
     InitCallFrame (oneOutputProc calleeY ty) [] [v] (calleeFrame v) := by
   refine ⟨emptyStore, calleeFrame v, ?_, ?_, ?_⟩
   · show InitStates emptyStore [] [] emptyStore
@@ -219,9 +221,9 @@ private theorem emptyBodyExecE
   simpa [projectStore_self] using h
 
 /-- Reading the slot just written by `calleeFrame` returns the written value,
-    provided that expression is a value in the factory. -/
+    provided that it is a value of the factory. -/
 private theorem readValues_calleeFrame
-    (fac : Expression.Factory) (v : Expression.Expr) (hv : HasVal.value fac v) :
+    (fac : Expression.Factory) (v : Expression.Val) (hv : HasVal.value fac v) :
     ReadValues fac (calleeFrame v) [calleeY] [v] := by
   have hlk : (calleeFrame v) calleeY = some v := by
     have hinit : InitState Expression emptyStore calleeY v (calleeFrame v) :=
@@ -232,7 +234,7 @@ private theorem readValues_calleeFrame
 
 /-- Writing a slot's current value back to itself leaves the store unchanged. -/
 private theorem updateStates_id_single
-    {σ : CoreStore} {y : Expression.Ident} {v : Expression.Expr}
+    {σ : CoreStore} {y : Expression.Ident} {v : Expression.Val}
     (h : σ y = some v) : UpdateStates σ [y] [v] σ :=
   .update_some (.update h h (fun _ _ => rfl)) .update_none
 
@@ -240,85 +242,79 @@ private theorem updateStates_id_single
 
 These examples specialize clause and body expressions to the Boolean literals
 `true` and `false`, then construct their evaluations with the helpers below.
-Only an executed body assertion needs `WellFormedSemanticEvalBool`, which is why
-those examples use `Core.Factory`.
+The helpers hold in every runtime factory, so the examples quantify over one.
 
 -/
 
-/-- A Boolean literal evaluates to itself in any factory and store: a constant is
-    its own value, so no well-formedness assumption is required. -/
+/-- A Boolean literal evaluates to its value in any factory and store. -/
 private theorem eval_boolConst (fac : Expression.Factory) (σ : CoreStore) (b : Bool) :
     Expression.eval fac σ (Lambda.LExpr.boolConst () b)
-      = some (Lambda.LExpr.boolConst () b) :=
-  Lambda.evalFully_const fac σ () (Lambda.LConst.boolConst b)
+      = some (Lambda.SemValue.ofBool fac.model.tcInterp b) :=
+  Lambda.LExpr.denoteEval_boolConst
 
 /-- An integer literal is a value in every factory. -/
 private theorem intVal_value (fac : Expression.Factory) (n : Int) :
-    HasVal.value fac (intVal n) :=
-  show Lambda.LExpr.isValue fac (intVal n) = true from
-    Lambda.isValue_const_true fac () (Lambda.LConst.intConst n)
+    HasVal.value fac (intV fac n) :=
+  rfl
 
-/-- An integer literal has Core's monomorphic integer type. -/
+/-- An integer has Core's monomorphic integer type. -/
 private theorem intVal_valueOfTy (fac : Expression.Factory) (n : Int) :
-    HasVal.valueOfTy fac (intVal n) (Lambda.LTy.forAll [] .int) :=
-  ⟨.int, intVal_value fac n, rfl, rfl⟩
+    HasVal.valueOfTy fac (intV fac n) (Lambda.LTy.forAll [] .int) :=
+  ⟨rfl, rfl⟩
 
 /-- Boolean `true` is not a Core integer value. -/
 private theorem true_not_int (fac : Expression.Factory) :
-    ¬ HasVal.valueOfTy fac Core.true (Lambda.LTy.forAll [] .int) := by
-  simp [HasVal.valueOfTy, Core.true, Lambda.LExpr.boolConst,
-    Lambda.LExpr.isValue, Lambda.LExpr.typeCheck, Lambda.LTy.toMonoType?,
-    Lambda.LConst.ty, Lambda.LMonoTy.bool, Lambda.LMonoTy.int]
+    ¬ HasVal.valueOfTy fac (HasBool.ttVal fac) (Lambda.LTy.forAll [] .int) := by
+  simp [HasVal.valueOfTy, HasBool.ttVal, Lambda.SemValue.ofBool, Lambda.LTy.toMonoType?,
+    Lambda.LSort.toMonoTy, Lambda.LMonoTy.int]
 
 /-- The current inout formal keeps its incoming value in the snapshotted frame. -/
-private theorem inoutFrame_current :
-    inoutFrame (intVal 7) calleeY = some (intVal 7) := by
+private theorem inoutFrame_current {fac : Expression.Factory} :
+    inoutFrame (intV fac 7) calleeY = some (intV fac 7) := by
   simp [inoutFrame, Calls.withOldSnapshots, calleeFrame, updatedState,
     calleeY, HasOldIdent.mkOld, CoreIdent.mkOld, CoreIdent.oldStr]
 
 /-- Havocing the integer inout slot preserves its integer type. -/
 private theorem havocVars_inout_int_typed (fac : Expression.Factory) {σ' : CoreStore}
-    (h : HavocVars fac (inoutFrame (intVal 7)) [calleeY] σ') :
+    (h : HavocVars fac (inoutFrame (intV fac 7)) [calleeY] σ') :
     ∃ v, σ' calleeY = some v ∧
       HasVal.valueOfTy fac v (Lambda.LTy.forAll [] .int) := by
   cases h with
   | update_some hup hstored htail =>
     cases htail
     obtain ⟨previous, ty, hprevious, hpTy, hvTy⟩ := hstored
-    have hprev : previous = intVal 7 :=
+    have hprev : previous = intV fac 7 :=
       Option.some.inj (hprevious.symm.trans inoutFrame_current)
     subst previous
-    have hvInt := LawfulHasVal.valueOfTy_congr fac (intVal 7) _
+    have hvInt := LawfulHasVal.valueOfTy_congr fac (intV fac 7) _
       (Lambda.LTy.forAll [] .int) ty (intVal_valueOfTy fac 7) hpTy hvTy
     cases hup with
     | update _ hx _ => exact ⟨_, hx, hvInt⟩
 
 /-- Havocing an integer slot cannot replace it with Boolean `true`. -/
 private theorem havocVars_inout_not_true (fac : Expression.Factory) :
-    ¬ HavocVars fac (inoutFrame (intVal 7)) [calleeY]
-      (updatedState (inoutFrame (intVal 7)) calleeY Core.true) := by
+    ¬ HavocVars fac (inoutFrame (intV fac 7)) [calleeY]
+      (updatedState (inoutFrame (intV fac 7)) calleeY (HasBool.ttVal fac)) := by
   intro h
   obtain ⟨v, hv, hvTy⟩ := havocVars_inout_int_typed fac h
-  have htrue : updatedState (inoutFrame (intVal 7)) calleeY Core.true calleeY =
-      some Core.true := by simp [updatedState]
-  have : v = Core.true := Option.some.inj (hv.symm.trans htrue)
+  have htrue : updatedState (inoutFrame (intV fac 7)) calleeY (HasBool.ttVal fac) calleeY =
+      some (HasBool.ttVal fac) := by simp [updatedState]
+  have : v = (HasBool.ttVal fac) := Option.some.inj (hv.symm.trans htrue)
   subst v
   exact true_not_int fac hvTy
 
 /-- The old identifier reads the inout formal's incoming value. -/
-private theorem inoutFrame_old :
-    inoutFrame (intVal 7) oldCalleeY = some (intVal 7) := by
+private theorem inoutFrame_old {fac : Expression.Factory} :
+    inoutFrame (intV fac 7) oldCalleeY = some (intV fac 7) := by
   simp [inoutFrame, Calls.withOldSnapshots, oldCalleeY, calleeY, calleeFrame,
     updatedState, HasOldIdent.mkOld, CoreIdent.mkOld, CoreIdent.oldStr]
 
 /-- The old-value postcondition holds whenever the old slot contains seven. -/
 private theorem oldYIs7_eval (fac : Expression.Factory) (σ : CoreStore)
-    (hold : σ oldCalleeY = some (intVal 7)) :
-    Expression.eval fac σ oldYIs7 = some HasBool.tt := by
-  exact Lambda.evalFully_eq_self fac σ () _ _ (intVal 7)
-    (Lambda.evalFully_fvar_of_value fac σ () oldCalleeY
-      (some .int) _ hold (intVal_value fac 7))
-    (Lambda.evalFully_const fac σ () (.intConst 7))
+    (hold : σ oldCalleeY = some (intV fac 7)) :
+    Expression.eval fac σ oldYIs7 = some (HasBool.ttVal fac) := by
+  exact Lambda.LExpr.denoteEval_eq_true (T := CoreLParams)
+    (Lambda.LExpr.denoteEval_fvar hold rfl) Lambda.LExpr.denoteEval_intConst
 
 /-- A one-assert body `{ assert [label]: e }`
     leaves its store and factory unchanged and emits exactly the single captured
@@ -374,7 +370,7 @@ private theorem assertBodyExecEUnique
 
 /-- `R` produces the expected observation at `expected`, and every derivation of
 `R` produces that same output store and observation. -/
-private def UniqueResult {α : Type} (R : CoreStore → α → Prop)
+private def UniqueResult {α : Type _} (R : CoreStore → α → Prop)
     (expected : CoreStore) (observation : α) : Prop :=
   R expected observation ∧
     ∀ σ' result, R σ' result → σ' = expected ∧ result = observation
@@ -455,14 +451,14 @@ example
     simpa [defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
       MetaData.setCallSiteFileRange_empty, ListMap.toList, oneInputProc] using
       EvalCommandE.call_sem (calleeEnv_callee _)
-        ⟨_, _, evalExpressions_intVal fac σ 2, .read_none, initCallFrame_oneInput .int (intVal 2)⟩
+        ⟨_, _, evalExpressions_intVal fac σ 2, .read_none, initCallFrame_oneInput .int (intV fac 2)⟩
         (emptyBodyExecE _ _ _) ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
     simpa [defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
       MetaData.setCallSiteFileRange_empty, ListMap.toList, assumeEvents,
       Calls.assumeEvents, oneInputProc] using
       EvalCommandContractE.call_sem (calleeEnv_callee _)
-        ⟨_, _, evalExpressions_intVal fac σ 2, .read_none, initCallFrame_oneInput .int (intVal 2)⟩
+        ⟨_, _, evalExpressions_intVal fac σ 2, .read_none, initCallFrame_oneInput .int (intV fac 2)⟩
         .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
 
 /-! ## Example 2.
@@ -483,8 +479,8 @@ procedure Caller() {
 ```
 -/
 
-private def inoutResultStore : CoreStore :=
-  updatedState (calleeFrame (intVal 7)) calleeY (intVal 9)
+private def inoutResultStore (fac : Expression.Factory) : CoreStore :=
+  updatedState (calleeFrame (intV fac 7)) calleeY (intV fac 9)
 
 example
 
@@ -493,58 +489,58 @@ example
     -- trace. Contract semantics is intentionally
     -- nondeterministic and exhibits the allowed `y = 9` choice below.
     UniqueResult
-      (EvalCommandE (calleeEnv oneInoutOldProc) fac (calleeFrame (intVal 7))
+      (EvalCommandE (calleeEnv oneInoutOldProc) fac (calleeFrame (intV fac 7))
         (.call "callee" [.inoutArg calleeY] .empty))
-      (calleeFrame (intVal 7))
-      [assertEvent fac (inoutFrame (intVal 7)) "old" oldYIs7] ∧
+      (calleeFrame (intV fac 7))
+      [assertEvent fac (inoutFrame (intV fac 7)) "old" oldYIs7] ∧
     EvalCommandContractE (calleeEnv oneInoutOldProc) fac
-      (calleeFrame (intVal 7))
+      (calleeFrame (intV fac 7))
       (.call "callee" [.inoutArg calleeY] .empty)
-      inoutResultStore
+      (inoutResultStore fac)
       [assumeEvent fac
-        (updatedState (inoutFrame (intVal 7)) calleeY (intVal 9))
+        (updatedState (inoutFrame (intV fac 7)) calleeY (intV fac 9))
         "old" oldYIs7] := by
-  have hframe : InitCallFrame oneInoutOldProc [intVal 7] []
-      (inoutFrame (intVal 7)) := by
-    simpa [oneInoutOldProc, Calls.InitCallFrame] using initCallFrame_oneInout (intVal 7)
-  have hentry : CallEntry fac (calleeFrame (intVal 7)) oneInoutOldProc
-      [.inoutArg calleeY] (inoutFrame (intVal 7)) := by
+  have hframe : InitCallFrame oneInoutOldProc [intV fac 7] []
+      (inoutFrame (intV fac 7)) := by
+    simpa [oneInoutOldProc, Calls.InitCallFrame] using initCallFrame_oneInout (intV fac 7)
+  have hentry : CallEntry fac (calleeFrame (intV fac 7)) oneInoutOldProc
+      [.inoutArg calleeY] (inoutFrame (intV fac 7)) := by
     unfold CallEntry
-    refine ⟨[intVal 7], [], ?_, .read_none, hframe⟩
+    refine ⟨[intV fac 7], [], ?_, .read_none, hframe⟩
     simpa [Calls.getInputExprs, HasFvar.mkFvar] using
-      evalExpressions_inout fac (intVal 7) (intVal_value fac 7)
-  have hcaller : calleeFrame (intVal 7) calleeY = some (intVal 7) := by
+      evalExpressions_inout fac (intV fac 7) (intVal_value fac 7)
+  have hcaller : calleeFrame (intV fac 7) calleeY = some (intV fac 7) := by
     simp [calleeFrame, updatedState]
-  have hread : ReadValues fac (inoutFrame (intVal 7)) [calleeY] [intVal 7] :=
+  have hread : ReadValues fac (inoutFrame (intV fac 7)) [calleeY] [intV fac 7] :=
     .read_some inoutFrame_current (intVal_value fac 7) .read_none
-  have hexit : CallExit fac (calleeFrame (intVal 7)) oneInoutOldProc
-      [.inoutArg calleeY] (inoutFrame (intVal 7)) (calleeFrame (intVal 7)) := by
-    refine ⟨(by simp [Imperative.CallArg.getLhs]), [intVal 7], ?_, updateStates_id_single hcaller⟩
+  have hexit : CallExit fac (calleeFrame (intV fac 7)) oneInoutOldProc
+      [.inoutArg calleeY] (inoutFrame (intV fac 7)) (calleeFrame (intV fac 7)) := by
+    refine ⟨(by simp [Imperative.CallArg.getLhs]), [intV fac 7], ?_, updateStates_id_single hcaller⟩
     simpa [oneInoutOldProc, oneInoutProc, ProcedureHeader.outputParams, ListMap.keys] using hread
-  let σO := updatedState (inoutFrame (intVal 7)) calleeY (intVal 9)
-  have hupd : UpdateState Expression (inoutFrame (intVal 7)) calleeY
-      (intVal 9) σO := updatedStateUpdate inoutFrame_current
-  have hhavoc : HavocVars fac (inoutFrame (intVal 7)) [calleeY] σO :=
+  let σO := updatedState (inoutFrame (intV fac 7)) calleeY (intV fac 9)
+  have hupd : UpdateState Expression (inoutFrame (intV fac 7)) calleeY
+      (intV fac 9) σO := updatedStateUpdate inoutFrame_current
+  have hhavoc : HavocVars fac (inoutFrame (intV fac 7)) [calleeY] σO :=
     .update_some hupd
-      ⟨intVal 7, Lambda.LTy.forAll [] .int, inoutFrame_current,
+      ⟨intV fac 7, Lambda.LTy.forAll [] .int, inoutFrame_current,
         intVal_valueOfTy fac 7, intVal_valueOfTy fac 9⟩
       .update_none
-  have hcurrentO : σO calleeY = some (intVal 9) := by
+  have hcurrentO : σO calleeY = some (intV fac 9) := by
     cases hupd with | update _ h _ => exact h
-  have holdO : σO oldCalleeY = some (intVal 7) := by
+  have holdO : σO oldCalleeY = some (intV fac 7) := by
     cases hupd with
     | update _ _ hother =>
       rw [hother oldCalleeY]
       · exact inoutFrame_old
       · simpa [oldCalleeY] using CoreIdent.ne_mkOld calleeY
-  have hreadO : ReadValues fac σO [calleeY] [intVal 9] :=
+  have hreadO : ReadValues fac σO [calleeY] [intV fac 9] :=
     .read_some hcurrentO (intVal_value fac 9) .read_none
-  have hcallerUpdate : UpdateStates (calleeFrame (intVal 7)) [calleeY]
-      [intVal 9] inoutResultStore :=
+  have hcallerUpdate : UpdateStates (calleeFrame (intV fac 7)) [calleeY]
+      [intV fac 9] (inoutResultStore fac) :=
     .update_some (updatedStateUpdate hcaller) .update_none
-  have hexitO : CallExit fac (calleeFrame (intVal 7)) oneInoutOldProc
-      [.inoutArg calleeY] σO inoutResultStore := by
-    refine ⟨(by simp [Imperative.CallArg.getLhs]), [intVal 9], ?_, hcallerUpdate⟩
+  have hexitO : CallExit fac (calleeFrame (intV fac 7)) oneInoutOldProc
+      [.inoutArg calleeY] σO (inoutResultStore fac) := by
+    refine ⟨(by simp [Imperative.CallArg.getLhs]), [intV fac 9], ?_, hcallerUpdate⟩
     simpa [oneInoutOldProc, oneInoutProc, ProcedureHeader.outputParams, ListMap.keys] using hreadO
   refine ⟨?_, ?_⟩
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
@@ -580,58 +576,63 @@ procedure Caller() {
 -/
 
 /-- Caller store binding `result ↦ 7` immediately before the output-copy call. -/
-private def copyCallerStore : CoreStore := updatedState emptyStore callerResult (intVal 7)
+private def copyCallerStore (fac : Expression.Factory) : CoreStore := updatedState emptyStore
+    callerResult (intV fac 7)
 
 /-- Caller store after the contract abstraction writes its (different) abstract
     result `9` back into `result`. -/
-private def copyResultStore : CoreStore := updatedState copyCallerStore callerResult (intVal 9)
+private def copyResultStore (fac : Expression.Factory) : CoreStore := updatedState
+    (copyCallerStore fac) callerResult (intV fac 9)
 
 example
 
     (fac : Expression.Factory) :
-    -- Concrete semantics uniquely determines `copyCallerStore` together with
+    -- Concrete semantics uniquely determines `(copyCallerStore fac)` together with
     -- success/no events. Contract semantics is intentionally nondeterministic
-    -- and demonstrates the allowed `copyResultStore` choice.
+    -- and demonstrates the allowed `(copyResultStore fac)` choice.
     UniqueResult
-      (EvalCommandE (calleeEnv (oneOutputProc calleeY .int)) fac copyCallerStore
-        (.call "callee" [.outArg callerResult] .empty)) copyCallerStore [] ∧
+      (EvalCommandE (calleeEnv (oneOutputProc calleeY .int)) fac (copyCallerStore fac)
+        (.call "callee" [.outArg callerResult] .empty)) (copyCallerStore fac) [] ∧
     EvalCommandContractE (calleeEnv (oneOutputProc calleeY .int)) fac
-        copyCallerStore
+        (copyCallerStore fac)
         (.call "callee" [.outArg callerResult] .empty)
-        copyResultStore [] := by
+        (copyResultStore fac) [] := by
 
-  have hcaller : copyCallerStore callerResult = some (intVal 7) := by
-    have hinit : InitState Expression emptyStore callerResult (intVal 7) copyCallerStore :=
+  have hcaller : (copyCallerStore fac) callerResult = some (intV fac 7) := by
+    have hinit : InitState Expression emptyStore callerResult (intV fac 7) (copyCallerStore fac) :=
       updatedStateInit rfl
     cases hinit with | init _ hsome _ => exact hsome
-  have hcopied : ReadValues fac copyCallerStore [callerResult] [intVal 7] :=
+  have hcopied : ReadValues fac (copyCallerStore fac) [callerResult] [intV fac 7] :=
     .read_some hcaller (intVal_value fac 7) .read_none
-  have hframe := initCallFrame_oneOutput .int (intVal 7)
-  have hresult := readValues_calleeFrame fac (intVal 7) (intVal_value fac 7)
-  have hentry : CallEntry fac copyCallerStore (oneOutputProc calleeY .int)
-      [.outArg callerResult] (calleeFrame (intVal 7)) :=
+  have hframe := initCallFrame_oneOutput .int (intV fac 7)
+  have hresult := readValues_calleeFrame fac (intV fac 7) (intVal_value fac 7)
+  have hentry : CallEntry fac (copyCallerStore fac) (oneOutputProc calleeY .int)
+      [.outArg callerResult] (calleeFrame (intV fac 7)) :=
     ⟨_, _, .eval_none, hcopied, hframe⟩
-  have hexit : CallExit fac copyCallerStore (oneOutputProc calleeY .int)
-      [.outArg callerResult] (calleeFrame (intVal 7)) copyCallerStore :=
+  have hexit : CallExit fac (copyCallerStore fac) (oneOutputProc calleeY .int)
+      [.outArg callerResult] (calleeFrame (intV fac 7)) (copyCallerStore fac) :=
     ⟨(by simp [Imperative.CallArg.getLhs]), _, hresult, updateStates_id_single hcaller⟩
   -- The frame binds `calleeY ↦ 7`; the contract abstraction havocs it to 9.
-  have hframeLk : (calleeFrame (intVal 7)) calleeY = some (intVal 7) := by
-    have hinit : InitState Expression emptyStore calleeY (intVal 7) (calleeFrame (intVal 7)) :=
+  have hframeLk : (calleeFrame (intV fac 7)) calleeY = some (intV fac 7) := by
+    have hinit : InitState Expression emptyStore calleeY (intV fac 7) (calleeFrame (intV fac 7)) :=
       updatedStateInit rfl
     cases hinit with | init _ hsome _ => exact hsome
-  have hupd : UpdateState Expression (calleeFrame (intVal 7)) calleeY (intVal 9)
-      (updatedState (calleeFrame (intVal 7)) calleeY (intVal 9)) := updatedStateUpdate hframeLk
-  have hhavoc : HavocVars fac (calleeFrame (intVal 7)) [calleeY]
-      (updatedState (calleeFrame (intVal 7)) calleeY (intVal 9)) :=
+  have hupd : UpdateState Expression (calleeFrame (intV fac 7)) calleeY (intV fac 9)
+      (updatedState (calleeFrame (intV fac 7)) calleeY (intV fac 9)) := updatedStateUpdate hframeLk
+  have hhavoc : HavocVars fac (calleeFrame (intV fac 7)) [calleeY]
+      (updatedState (calleeFrame (intV fac 7)) calleeY (intV fac 9)) :=
     .update_some hupd
-      ⟨intVal 7, Lambda.LTy.forAll [] .int, hframeLk,
+      ⟨intV fac 7, Lambda.LTy.forAll [] .int, hframeLk,
         intVal_valueOfTy fac 7, intVal_valueOfTy fac 9⟩
       .update_none
-  have hσO : (updatedState (calleeFrame (intVal 7)) calleeY (intVal 9)) calleeY = some (intVal 9) := by
+  have hσO : (updatedState (calleeFrame (intV fac 7)) calleeY (intV fac 9)) calleeY = some
+      (intV fac 9) := by
     cases hupd with | update _ hsome _ => exact hsome
-  have hcontractResult : ReadValues fac (updatedState (calleeFrame (intVal 7)) calleeY (intVal 9))
-      [calleeY] [intVal 9] := .read_some hσO (intVal_value fac 9) .read_none
-  have hcontractUpdate : UpdateStates copyCallerStore [callerResult] [intVal 9] copyResultStore :=
+  have hcontractResult : ReadValues fac
+      (updatedState (calleeFrame (intV fac 7)) calleeY (intV fac 9))
+      [calleeY] [intV fac 9] := .read_some hσO (intVal_value fac 9) .read_none
+  have hcontractUpdate : UpdateStates (copyCallerStore fac) [callerResult] [intV fac 9]
+      (copyResultStore fac) :=
     .update_some (updatedStateUpdate hcaller) .update_none
   refine ⟨?_, ?_⟩
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
@@ -648,7 +649,7 @@ example
 
 /-! ## Example 4.
     A contract-bearing procedure with one body assertion is interpreted by all
-    two event call relations. Specialized to `Core.Factory` and the exact literals
+    two event call relations. Specialized to the exact literals
     `pre = post = bodyCheck = true` of the pseudocode, so every premise — the
     literal argument's evaluation, both contract clauses, and the executing
     `assert true` body — is discharged internally with no hypotheses.
@@ -669,25 +670,25 @@ procedure Caller() {
 -/
 example
 
-    (σ : CoreStore) :
+    (fac : Expression.Factory) (σ : CoreStore) :
     -- Both no-output calls have the displayed store-observation pair as
     -- their unique complete result; traces distinguish checks from abstraction.
     UniqueResult
-      (EvalCommandE (calleeEnv passingBodyProc) Core.Factory σ
+      (EvalCommandE (calleeEnv passingBodyProc) fac σ
         (.call "callee" [.inArg (intVal 0)] .empty)) σ
-      [assertEvent Core.Factory (calleeFrame (intVal 0)) "pre" HasBool.tt,
-       assertEvent Core.Factory (calleeFrame (intVal 0)) "body" HasBool.tt,
-       assertEvent Core.Factory (calleeFrame (intVal 0)) "post" HasBool.tt] ∧
+      [assertEvent fac (calleeFrame (intV fac 0)) "pre" HasBool.tt,
+       assertEvent fac (calleeFrame (intV fac 0)) "body" HasBool.tt,
+       assertEvent fac (calleeFrame (intV fac 0)) "post" HasBool.tt] ∧
     UniqueResult
-      (EvalCommandContractE (calleeEnv passingBodyProc) Core.Factory σ
+      (EvalCommandContractE (calleeEnv passingBodyProc) fac σ
         (.call "callee" [.inArg (intVal 0)] .empty)) σ
-      [assertEvent Core.Factory (calleeFrame (intVal 0)) "pre" HasBool.tt,
-       assumeEvent Core.Factory (calleeFrame (intVal 0)) "post" HasBool.tt] := by
+      [assertEvent fac (calleeFrame (intV fac 0)) "pre" HasBool.tt,
+       assumeEvent fac (calleeFrame (intV fac 0)) "post" HasBool.tt] := by
 
   have hframe : InitCallFrame (passingBodyProc)
-      [intVal 0] [] (calleeFrame (intVal 0)) := initCallFrame_oneInput (ty := .int) (intVal 0)
+      [intV fac 0] [] (calleeFrame (intV fac 0)) := initCallFrame_oneInput (ty := .int) (intV fac 0)
   have hbodyE := assertBodyExecE (calleeEnv (passingBodyProc))
-    Core.Factory (calleeFrame (intVal 0)) "body" HasBool.tt
+    fac (calleeFrame (intV fac 0)) "body" HasBool.tt
   refine ⟨?_, ?_⟩
   · apply uniqueEvalCommandE (calleeEnv_callee _) (fun h₁ h₂ => by
       simpa [passingBodyProc, oneInputContractBodyProc] using
@@ -697,7 +698,7 @@ example
       ListMap.toList, assertEvent,
       oneInputContractBodyProc, oneInputContractProc] using
       EvalCommandE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty) (calleeEnv_callee _)
-        ⟨_, _, evalExpressions_intVal Core.Factory σ 0, .read_none, hframe⟩
+        ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
         hbodyE ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
     simpa [MetaData.empty, passingBodyProc, defaultAssertEvents, Calls.defaultAssertEvents,
@@ -706,7 +707,7 @@ example
       assertEvent, assumeEvent, oneInputContractBodyProc, oneInputContractProc] using
       EvalCommandContractE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty)
         (calleeEnv_callee _)
-        ⟨_, _, evalExpressions_intVal Core.Factory σ 0, .read_none, hframe⟩
+        ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
         .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
 
 /-- ## Example 5.
@@ -735,17 +736,17 @@ example
       (EvalCommandE
         (calleeEnv (oneInputContractProc calleeY .int HasBool.tt HasBool.ff))
         fac σ (.call "callee" [.inArg (intVal 0)] .empty)) σ
-      [assertEvent fac (calleeFrame (intVal 0)) "pre" HasBool.tt,
-       assertEvent fac (calleeFrame (intVal 0)) "post" HasBool.ff] ∧
+      [assertEvent fac (calleeFrame (intV fac 0)) "pre" HasBool.tt,
+       assertEvent fac (calleeFrame (intV fac 0)) "post" HasBool.ff] ∧
     UniqueResult
       (EvalCommandContractE
         (calleeEnv (oneInputContractProc calleeY .int HasBool.tt HasBool.ff))
         fac σ (.call "callee" [.inArg (intVal 0)] .empty)) σ
-      [assertEvent fac (calleeFrame (intVal 0)) "pre" HasBool.tt,
-       assumeEvent fac (calleeFrame (intVal 0)) "post" HasBool.ff] := by
+      [assertEvent fac (calleeFrame (intV fac 0)) "pre" HasBool.tt,
+       assumeEvent fac (calleeFrame (intV fac 0)) "post" HasBool.ff] := by
 
   have hframe : InitCallFrame (oneInputContractProc calleeY .int HasBool.tt HasBool.ff)
-      [intVal 0] [] (calleeFrame (intVal 0)) := initCallFrame_oneInput (ty := .int) (intVal 0)
+      [intV fac 0] [] (calleeFrame (intV fac 0)) := initCallFrame_oneInput (ty := .int) (intV fac 0)
   refine ⟨?_, ?_⟩
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
     simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
@@ -767,7 +768,7 @@ example
 /-- ## Example 6.
     Executable call, FAIL path: a failing body assertion is emitted between
     passing pre- and postconditions. The body is the genuine one-assert body
-    `assert false`, executed on `Core.Factory` via `assertBodyExecE`. The contract
+    `assert false`, executed via `assertBodyExecE`. The contract
     relation never executes that body, so its trace has no body event.
 
 Core-style pseudocode:
@@ -786,25 +787,25 @@ procedure Caller() {
 -/
 example
 
-    (σ : CoreStore) :
+    (fac : Expression.Factory) (σ : CoreStore) :
     -- Both displayed store-observation pairs are unique; the concrete trace
     -- has the body assertion, while contract semantics abstracts it away.
     UniqueResult
-      (EvalCommandE (calleeEnv failingBodyProc) Core.Factory σ
+      (EvalCommandE (calleeEnv failingBodyProc) fac σ
         (.call "callee" [.inArg (intVal 0)] .empty)) σ
-      [assertEvent Core.Factory (calleeFrame (intVal 0)) "pre" HasBool.tt,
-       assertEvent Core.Factory (calleeFrame (intVal 0)) "body" HasBool.ff,
-       assertEvent Core.Factory (calleeFrame (intVal 0)) "post" HasBool.tt] ∧
+      [assertEvent fac (calleeFrame (intV fac 0)) "pre" HasBool.tt,
+       assertEvent fac (calleeFrame (intV fac 0)) "body" HasBool.ff,
+       assertEvent fac (calleeFrame (intV fac 0)) "post" HasBool.tt] ∧
     UniqueResult
-      (EvalCommandContractE (calleeEnv failingBodyProc) Core.Factory σ
+      (EvalCommandContractE (calleeEnv failingBodyProc) fac σ
         (.call "callee" [.inArg (intVal 0)] .empty)) σ
-      [assertEvent Core.Factory (calleeFrame (intVal 0)) "pre" HasBool.tt,
-       assumeEvent Core.Factory (calleeFrame (intVal 0)) "post" HasBool.tt] := by
+      [assertEvent fac (calleeFrame (intV fac 0)) "pre" HasBool.tt,
+       assumeEvent fac (calleeFrame (intV fac 0)) "post" HasBool.tt] := by
 
   have hframe : InitCallFrame (failingBodyProc)
-      [intVal 0] [] (calleeFrame (intVal 0)) := initCallFrame_oneInput (ty := .int) (intVal 0)
+      [intV fac 0] [] (calleeFrame (intV fac 0)) := initCallFrame_oneInput (ty := .int) (intV fac 0)
   have hbodyE := assertBodyExecE (calleeEnv (failingBodyProc))
-    Core.Factory (calleeFrame (intVal 0)) "body" HasBool.ff
+    fac (calleeFrame (intV fac 0)) "body" HasBool.ff
   refine ⟨?_, ?_⟩
   · apply uniqueEvalCommandE (calleeEnv_callee _) (fun h₁ h₂ => by
       simpa [failingBodyProc, oneInputContractBodyProc] using
@@ -814,7 +815,7 @@ example
       assertEvent, failingBodyProc,
       oneInputContractBodyProc, oneInputContractProc] using
       EvalCommandE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty) (calleeEnv_callee _)
-        ⟨_, _, evalExpressions_intVal Core.Factory σ 0, .read_none, hframe⟩
+        ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
         hbodyE ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
   · apply uniqueEvalCommandContractE (calleeEnv_callee _) (by rfl)
     simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,
@@ -823,7 +824,7 @@ example
       failingBodyProc, oneInputContractBodyProc, oneInputContractProc] using
       EvalCommandContractE.call_sem (callArgs := [.inArg (intVal 0)]) (md := .empty)
         (calleeEnv_callee _)
-        ⟨_, _, evalExpressions_intVal Core.Factory σ 0, .read_none, hframe⟩
+        ⟨_, _, evalExpressions_intVal fac σ 0, .read_none, hframe⟩
         .update_none ⟨(by simp [Imperative.CallArg.getLhs]), _, .read_none, .update_none⟩
 
 /-- ## Example 7.
@@ -852,17 +853,17 @@ example
       (EvalCommandE
         (calleeEnv (oneInputContractProc calleeY .int HasBool.ff HasBool.tt))
         fac σ (.call "callee" [.inArg (intVal 0)] .empty)) σ
-      [assertEvent fac (calleeFrame (intVal 0)) "pre" HasBool.ff,
-       assertEvent fac (calleeFrame (intVal 0)) "post" HasBool.tt] ∧
+      [assertEvent fac (calleeFrame (intV fac 0)) "pre" HasBool.ff,
+       assertEvent fac (calleeFrame (intV fac 0)) "post" HasBool.tt] ∧
     UniqueResult
       (EvalCommandContractE
         (calleeEnv (oneInputContractProc calleeY .int HasBool.ff HasBool.tt))
         fac σ (.call "callee" [.inArg (intVal 0)] .empty)) σ
-      [assertEvent fac (calleeFrame (intVal 0)) "pre" HasBool.ff,
-       assumeEvent fac (calleeFrame (intVal 0)) "post" HasBool.tt] := by
+      [assertEvent fac (calleeFrame (intV fac 0)) "pre" HasBool.ff,
+       assumeEvent fac (calleeFrame (intV fac 0)) "post" HasBool.tt] := by
 
   have hframe : InitCallFrame (oneInputContractProc calleeY .int HasBool.ff HasBool.tt)
-      [intVal 0] [] (calleeFrame (intVal 0)) := initCallFrame_oneInput (ty := .int) (intVal 0)
+      [intV fac 0] [] (calleeFrame (intV fac 0)) := initCallFrame_oneInput (ty := .int) (intV fac 0)
   refine ⟨?_, ?_⟩
   · apply uniqueEvalCommandE (calleeEnv_callee _) emptyBodyExecEUnique
     simpa [MetaData.empty, defaultAssertEvents, Calls.defaultAssertEvents, Calls.checksAtCall,

@@ -18,10 +18,9 @@ These characterize what a successful call decomposition tells you: `callOfLFunc`
 yields an `.op` callee that resolves to a factory function of matching arity
 (`callOfLFunc_eq_some`, `callOfLFunc_arity`, `callOfLFunc_getElem?`), whose
 callee/args coincide with `getLFuncCall`'s decomposition (`callOfLFunc_getLFuncCall`)
-and whose function is a member of the factory (`callOfLFunc_func_mem`). It fails on
-free variables (`callOfLFunc_fvar_none`). A set of size lemmas (`getLFuncCall.go_size`,
-`getLFuncCall_smaller`, `callOfLFunc_smaller`) shows extracted arguments are
-structurally smaller than the original expression, which is used for termination.
+and whose function is a member of the factory (`callOfLFunc_func_mem`). A set of size lemmas
+(`getLFuncCall.go_size`, `getLFuncCall_smaller`, `callOfLFunc_smaller`) shows extracted
+arguments are structurally smaller than the original expression, which is used for termination.
 
 ### Factory membership / lookup (`namespace Factory`)
 These relate the three views of a factory — its name set, its backing array, and
@@ -177,23 +176,6 @@ theorem LFuncDefined.toLFunc_toFunc {T : LExprParams} (f : LFuncDefined T)
     `concreteEval`) recovers the original. -/
 theorem LFunc.toFunc_toLFunc {T : LExprParams} (l : LFunc T) :
     LFuncDefined.toLFunc l.toFunc l.concreteEval = l := rfl
-
-/-- `callOfLFunc` returns `none` for free-variable expressions. -/
-theorem callOfLFunc_fvar_none {Tbase : LExprParams} {GenericTy} (F : @Factory Tbase)
-    (m : Tbase.Metadata) (v : Tbase.Identifier) (ty : Option GenericTy) :
-    Factory.callOfLFunc F (.fvar m v ty : LExpr ⟨Tbase, GenericTy⟩) = none := by
-  cases h : Factory.callOfLFunc F (.fvar m v ty : LExpr ⟨Tbase, GenericTy⟩) with
-  | none => rfl
-  | some val =>
-    obtain ⟨callee, args, fn⟩ := val
-    have hgl := callOfLFunc_getLFuncCall h
-    have hfvar : getLFuncCall (.fvar m v ty : LExpr ⟨Tbase, GenericTy⟩) = (.fvar m v ty, []) := by
-      unfold getLFuncCall getLFuncCall.go; rfl
-    rw [hfvar] at hgl
-    have ⟨_, _, _, hop, _, _⟩ := callOfLFunc_eq_some h
-    rw [← (Prod.mk.inj hgl).1] at hop
-    exact absurd hop (by simp)
-
 
 namespace Factory
 

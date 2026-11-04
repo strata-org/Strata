@@ -38,6 +38,7 @@ abbrev ToyPureExpr : PureExpr :=
     TyEnv := Unit,
     TyContext := Unit,
     Factory := Unit,
+    Val := Unit,
     eval := fun _ _ e => some e }
 
 /-- An `.assumption` entry with the given label; the expression is trivial

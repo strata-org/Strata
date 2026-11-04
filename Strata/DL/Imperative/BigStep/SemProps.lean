@@ -78,8 +78,7 @@ theorem evalE_init_det_inv {F : P.Factory} {σ σ1 : SemanticStore P}
       evs = [] :=
   (evalE_init_det_inv_typed h).imp fun _ ⟨hev, h0, h1, hfr, he, _⟩ => ⟨hev, h0, h1, hfr, he⟩
 
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
-    in
+omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvars P] in
 /-- A nondeterministic `init x` step defines the undefined `x` as some value `v`,
     leaves the other variables unchanged and emits no event. -/
 theorem evalE_init_nondet_inv {F : P.Factory} {σ σ1 : SemanticStore P}
@@ -142,7 +141,7 @@ theorem evalE_cover_inv {F : P.Factory} {σ σ1 : SemanticStore P}
 omit [BEq P.Ident] [LawfulBEq P.Ident] [HasBool P] [HasFvar P]
     [HasFvars P] [LawfulHasVal P] in
 /-- Updating `x` to `v` maps `x` to `v` and leaves the other variables unchanged. -/
-theorem update_facts (σ : SemanticStore P) (x : P.Ident) (v : P.Expr) :
+theorem update_facts (σ : SemanticStore P) (x : P.Ident) (v : P.Val) :
     Imperative.SemanticStore.update σ x v x = some v ∧
       (∀ y, x ≠ y → Imperative.SemanticStore.update σ x v y = σ y) :=
   ⟨by simp [SemanticStore.update], fun y hy => by simp [SemanticStore.update, Ne.symm hy]⟩
@@ -161,8 +160,8 @@ theorem evalInterp_stableUnder {Extra : P.Ident → Prop} [HasFvars P] :
   have htargetWF : WellFormedStore target.store source.factory := by
     rw [hfac]
     exact h.targetStoreWF
-  change P.eval source.factory source.store source.expr = some HasBool.tt ↔
-    P.eval target.factory target.store target.expr = some HasBool.tt
+  change P.eval source.factory source.store source.expr = some (HasBool.ttVal source.factory) ↔
+    P.eval target.factory target.store target.expr = some (HasBool.ttVal target.factory)
   rw [← hfac, ← hexpr]
   rw [h.exprCongr source.expr source.store target.store
     h.sourceStoreWF htargetWF h.store_fv]
@@ -274,7 +273,7 @@ theorem reach_cmd_claim {σ : SemanticStore P} {t : AssertId P} {tr : List (Even
 omit [HasFvar P] in
 /-- A condition holds under evaluation to `true` exactly when it evaluates to `true`. -/
 theorem evalInterp_holds_iff {w : (evalInterp (P := P)).World} {a : EventArg P} :
-    evalInterp.holds w a ↔ EvalsTo a.factory a.store a.expr HasBool.tt := .rfl
+    evalInterp.holds w a ↔ EvalsTo a.factory a.store a.expr (HasBool.ttVal a.factory) := .rfl
 
 omit [HasFvar P] in
 /-- An assertion (a cover) in the store `σS` with the label and metadata of a failing
@@ -371,7 +370,8 @@ variable {P : PureExpr} [HasBool P] {F : P.Factory} {σS σL : SemanticStore P} 
 
 /-- An assumption in the store `σS` whose condition evaluates to `true` whenever the
     assumption's in the store `σL` does is its counterpart under evaluation to `true`. -/
-theorem assume {a a' : P.Expr} (h : EvalsTo F σL a HasBool.tt → EvalsTo F σS a' HasBool.tt) :
+theorem assume {a a' : P.Expr}
+    (h : EvalsTo F σL a (HasBool.ttVal F) → EvalsTo F σS a' (HasBool.ttVal F)) :
     Event.WeakensAssume BigStep.evalInterp
       (.assume { factory := F, store := σL, label := l, expr := a, metadata := md })
       (.assume { factory := F, store := σS, label := l, expr := a', metadata := md }) :=

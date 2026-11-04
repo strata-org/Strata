@@ -984,7 +984,7 @@ private theorem LiftStmtRel.singleton {P : PureExpr} [HasFvars P]
 
 private theorem LiftEnvRel.eval {P : PureExpr} [HasFvars P] [HasVal P]
     {Dτ : P.Ident → P.Ty} {D : List P.Ident} {factory : P.Factory}
-    {source target : Env P} {e value : P.Expr}
+    {source target : Env P} {e : P.Expr} {value : P.Val}
     (h : LiftEnvRel Dτ D factory source target)
     (hmono : WellFormedSemanticEvalMono factory)
     (heval : P.eval source.factory source.store e = some value) :
@@ -993,6 +993,18 @@ private theorem LiftEnvRel.eval {P : PureExpr} [HasFvars P] [HasVal P]
   rw [h.targetFactory]
   exact hmono e value source.store target.store
     (storeAgreement_supplies_mono_premise _ _ h.agreement) heval
+
+/-- `LiftEnvRel.eval` at the factory's Boolean values: the value read in the target is
+    the target factory's Boolean (the related environments share their factory). -/
+private theorem LiftEnvRel.evalBool {P : PureExpr} [HasFvars P] [HasBool P]
+    {Dτ : P.Ident → P.Ty} {D : List P.Ident} {factory : P.Factory}
+    {source target : Env P} {e : P.Expr} (b : P.Factory → P.Val)
+    (h : LiftEnvRel Dτ D factory source target)
+    (hmono : WellFormedSemanticEvalMono factory)
+    (heval : P.eval source.factory source.store e = some (b source.factory)) :
+    P.eval target.factory target.store e = some (b target.factory) := by
+  have := h.eval hmono heval
+  rwa [h.sourceFactory, ← h.targetFactory] at this
 
 private theorem LiftEnvRel.project {P : PureExpr} [HasFvars P] [HasVal P]
     {Dτ : P.Ident → P.Ty} {D : List P.Ident} {factory : P.Factory}
@@ -1203,7 +1215,7 @@ theorem liftConfigRel_stepE {P : PureExpr}
       cases hrel with
       | stmt henv hstmt =>
           obtain ⟨rfl, hthen, _⟩ := hstmt.iteBranches
-          have heval' := henv.eval hmono heval
+          have heval' := henv.evalBool HasBool.ttVal hmono heval
           refine ⟨_, [], Imperative.StepStmtStarE.single
             (.step_ite_true heval'),
             .block henv.storeRel (.stmts henv hthen), ⟨.nil, .nil⟩⟩
@@ -1211,7 +1223,7 @@ theorem liftConfigRel_stepE {P : PureExpr}
       cases hrel with
       | stmt henv hstmt =>
           obtain ⟨rfl, _, helse⟩ := hstmt.iteBranches
-          have heval' := henv.eval hmono heval
+          have heval' := henv.evalBool HasBool.ffVal hmono heval
           refine ⟨_, [], Imperative.StepStmtStarE.single
             (.step_ite_false heval'),
             .block henv.storeRel (.stmts henv helse), ⟨.nil, .nil⟩⟩
@@ -1233,7 +1245,7 @@ theorem liftConfigRel_stepE {P : PureExpr}
       cases hrel with
       | stmt henv hstmt =>
           obtain ⟨rfl, hbody⟩ := hstmt.loopBody
-          have heval' := henv.eval hmono heval
+          have heval' := henv.evalBool HasBool.ttVal hmono heval
           have htail := hstmt.singleton
           refine ⟨_, [], Imperative.StepStmtStarE.single
             (.step_loop_enter heval'),
@@ -1242,7 +1254,7 @@ theorem liftConfigRel_stepE {P : PureExpr}
       cases hrel with
       | stmt henv hstmt =>
           obtain ⟨rfl, _⟩ := hstmt.loopBody
-          have heval' := henv.eval hmono heval
+          have heval' := henv.evalBool HasBool.ffVal hmono heval
           exact ⟨_, [], Imperative.StepStmtStarE.single
             (.step_loop_exit heval'),
             .terminal henv, ⟨.nil, .nil⟩⟩
@@ -1396,7 +1408,7 @@ private theorem HoistEnvRel.project {P : PureExpr}
     hi.sourceFactory, hi.targetFactory⟩
 
 private theorem HoistEnvRel.eval {P : PureExpr} [HasFvars P]
-    {factory : P.Factory} {source target : Env P} {e v : P.Expr}
+    {factory : P.Factory} {source target : Env P} {e : P.Expr} {v : P.Val}
     (h : HoistEnvRel factory source target)
     (hmono : WellFormedSemanticEvalMono factory)
     (he : P.eval source.factory source.store e = some v) :
@@ -1405,6 +1417,17 @@ private theorem HoistEnvRel.eval {P : PureExpr} [HasFvars P]
   rw [h.targetFactory]
   exact hmono e v source.store target.store
     (storeAgreement_supplies_mono_premise _ _ h.agreement) he
+
+/-- `HoistEnvRel.eval` at the factory's Boolean values: the value read in the target is
+    the target factory's Boolean (the related environments share their factory). -/
+private theorem HoistEnvRel.evalBool {P : PureExpr} [HasFvars P] [HasBool P]
+    {factory : P.Factory} {source target : Env P} {e : P.Expr} (b : P.Factory → P.Val)
+    (h : HoistEnvRel factory source target)
+    (hmono : WellFormedSemanticEvalMono factory)
+    (he : P.eval source.factory source.store e = some (b source.factory)) :
+    P.eval target.factory target.store e = some (b target.factory) := by
+  have := h.eval hmono he
+  rwa [h.sourceFactory, ← h.targetFactory] at this
 
 private theorem Config.varsUndefinedThroughout_starE {P : PureExpr}
     [HasFvar P] [HasFvars P] [HasBoolOps P] [HasIdent P] [HasInt P]
@@ -1568,7 +1591,7 @@ operationally inert: only this predicate gates the structured control-flow step.
 def LoopGuardEnter {P : PureExpr} [HasFvar P] [HasBoolOps P]
     (g : ExprOrNondet P) (ρ : Env P) : Prop :=
   match g with
-  | .det guard => P.eval ρ.factory ρ.store guard = some HasBool.tt
+  | .det guard => P.eval ρ.factory ρ.store guard = some (HasBool.ttVal ρ.factory)
   | .nondet => True
 
 /-- `LoopGuardExit g ρ` holds when the guard `g` admits *exiting* a loop (or taking
@@ -1576,7 +1599,7 @@ the *else*-branch of an `ite`) from `ρ`.  Dual to `LoopGuardEnter`. -/
 def LoopGuardExit {P : PureExpr} [HasFvar P] [HasBoolOps P]
     (g : ExprOrNondet P) (ρ : Env P) : Prop :=
   match g with
-  | .det guard => P.eval ρ.factory ρ.store guard = some HasBool.ff
+  | .det guard => P.eval ρ.factory ρ.store guard = some (HasBool.ffVal ρ.factory)
   | .nondet => True
 
 /-- Build the single loop *enter* step for an arbitrary guard, measure, and
@@ -2789,11 +2812,11 @@ private theorem iteHoistTraceSim {P : PureExpr}
     exact hinhab ty (by simpa [Stmt.initTypes] using List.mem_append_right _ hty)
   have hEnterT : LoopGuardEnter g sourceEnv → LoopGuardEnter g targetEnv := by
     cases g with
-    | det guard => intro h; exact henv.eval hmono h
+    | det guard => intro h; exact henv.evalBool HasBool.ttVal hmono h
     | nondet => intro _; exact trivial
   have hExitT : LoopGuardExit g sourceEnv → LoopGuardExit g targetEnv := by
     cases g with
-    | det guard => intro h; exact henv.eval hmono h
+    | det guard => intro h; exact henv.evalBool HasBool.ffVal hmono h
     | nondet => intro _; exact trivial
   have hthenSim := blockFrameTraceSim (label := none) henv.storeRel
     (hthen sourceEnv targetEnv henv hwfb hwfv hmono hwfc hwfvar
@@ -3165,14 +3188,14 @@ private theorem loopHoistTraceSim {P : PureExpr}
       LoopGuardEnter g source → LoopGuardEnter g target := by
     intro source target hrel h
     cases g with
-    | det guard => exact hrel.1.eval hrel.2.2.2.1 h
+    | det guard => exact hrel.1.evalBool HasBool.ttVal hrel.2.2.2.1 h
     | nondet => exact trivial
   have hexitTargetA : ∀ source target,
       RecursiveLoopRel sourceEnv.factory body source target →
       LoopGuardExit g source → LoopGuardExit g target := by
     intro source target hrel h
     cases g with
-    | det guard => exact hrel.1.eval hrel.2.2.2.1 h
+    | det guard => exact hrel.1.evalBool HasBool.ffVal hrel.2.2.2.1 h
     | nondet => exact trivial
   have hlegA : ConfigTraceSim (RecursiveLoopRel sourceEnv.factory body)
       (.stmt (.loop g m inv body md) sourceEnv)
@@ -3222,14 +3245,14 @@ private theorem loopHoistTraceSim {P : PureExpr}
       LoopGuardEnter g source → LoopGuardEnter g target := by
     intro source target hrel h
     cases g with
-    | det guard => exact hrel.eval hmonoTarget h
+    | det guard => exact hrel.evalBool HasBool.ttVal hmonoTarget h
     | nondet => exact trivial
   have hexitTargetB : ∀ source target,
       LiftEnvRel Dτ (LoopInitHoistProducerProps.preludeNames hs) targetEnv.factory source target →
       LoopGuardExit g source → LoopGuardExit g target := by
     intro source target hrel h
     cases g with
-    | det guard => exact hrel.eval hmonoTarget h
+    | det guard => exact hrel.evalBool HasBool.ffVal hmonoTarget h
     | nondet => exact trivial
   have hlegBLoop : ConfigTraceSim
       (LiftEnvRel Dτ (LoopInitHoistProducerProps.preludeNames hs) targetEnv.factory)

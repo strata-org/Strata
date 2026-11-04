@@ -226,7 +226,7 @@ instance : Inhabited Program where
     adds itself, a recursive block adds all of its functions, and every other
     declaration leaves the factory unchanged. -/
 @[expose] def Decl.addFunctionsToFactory
-    (factory : Expression.Factory) (decl : Decl) : Expression.Factory :=
+    (factory : Lambda.Factory CoreLParams) (decl : Decl) : Lambda.Factory CoreLParams :=
   match decl with
   | .func f _ => factory.pushIfNew f.toLFunc
   | .recFuncBlock fs _ =>
@@ -239,7 +239,7 @@ instance : Inhabited Program where
     `pushIfNew` makes this total on malformed programs; program type checking
     rejects the name collisions that it would otherwise ignore. -/
 @[expose] def Program.factoryBeforeProcedure
-    (p : Program) (procName : String) : Expression.Factory :=
+    (p : Program) (procName : String) : Lambda.Factory CoreLParams :=
   (p.declsBeforeProcedure procName).foldl Decl.addFunctionsToFactory Core.Factory
 
 def Program.eraseTypes (p : Program) : Program :=

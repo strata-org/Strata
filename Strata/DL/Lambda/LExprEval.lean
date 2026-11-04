@@ -107,7 +107,6 @@ def eql (F : @Factory T.base) (e1 e2 : LExpr T) : Option Bool :=
     . rw[varOpen_sizeOf]; simp_all
     . have := Factory.callOfLFunc_smaller _h1; subst_vars; exact this a1 (by assumption)
 
-
 /--
 Values of `LExpr`s.
 
@@ -177,7 +176,6 @@ def mergeMetadataForSubst (metaAbs metaE2 metaReplacementVar: TBase.Metadata) :=
     (EvalProvenance.ReplacementVar, metaReplacementVar),
     (EvalProvenance.Abstraction,    metaAbs)]
 
-
 /--
 Classification of partial evaluation outcome.
 - `outOfFuel`: ran out of fuel before reaching a normal form.
@@ -241,7 +239,6 @@ def EvalResult.combineValueFlag (r : EvalResult) (b : Bool) : EvalResult :=
     | a :: rest, some ceval => some (a, rest, ceval)
     | _, _ => none
   else none
-
 
 mutual
 /--
@@ -478,34 +475,6 @@ def run (σ : LState TBase) (e : (LExpr TBase.mono)) : Except String (LExpr TBas
     match findStuckRedex σ.config.factory result.fst with
     | some _ => .error "expression contains stuck redex"
     | none => .ok result.fst
-
-/-- Fully evaluate an expression `e` using `eval` with a given starting `fuel`,
-    incrementally increasing the fuel until the result becomes a
-    fully-reduced `.value true`.
-
-    Thanks to `partial_fixpoint`, this function is `.none` when no amount of fuel
-    ever yields a `.value true`.
-
-    TODO: Remove `expose` once `Strata` gets bumped to `Lean-4.36.0` is cut.
-    `expose` is used to prevent a panic in the `partial_fixpoint` code that always
-    assumes the visibility of the body, that eventually got fixed,
-    but the release was not cut yet. -/
-@[expose] def evalFullyAux (F : @Factory TBase) (env : Env TBase) (e : LExpr TBase.mono)
-    (fuel : Nat) : Option (LExpr TBase.mono) :=
-  let (e', res) := eval fuel F env e
-  match res with
-  | .value true => some e'
-  | .value false => evalFullyAux F env e (fuel + 1)
-  | .nonvalue => evalFullyAux F env e (fuel + 1)
-  | .outOfFuel => evalFullyAux F env e (fuel + 1)
-partial_fixpoint
-
-/-- Fully evaluate an expression by incrementally increasing the fuel given to
-    `eval` (starting from `0`) until the result is a `.value`.  See
-    `evalFullyAux` for details. -/
-def evalFully (F : @Factory TBase) (env : Env TBase) (e : LExpr TBase.mono)
-    : Option (LExpr TBase.mono) :=
-  evalFullyAux F env e 0
 
 end LExpr
 end -- public section

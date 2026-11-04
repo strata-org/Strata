@@ -77,13 +77,17 @@ class WPLang (P : PureExpr) [DecidableEq P.Ident] [HasBool P] [HasFvar P] [HasFv
   /-- If `getFvar e` is `y`, then `y` is a free variable of `e`. -/
   getFvar_getFvars : ∀ {e : P.Expr} {y : P.Ident}, HasFvar.getFvar e = some y →
     y ∈ HasFvars.getFvars e
-  ev_ite_true : ∀ {F σ c t e v}, P.eval F σ c = some HasBool.tt → P.eval F σ t = some v →
-    P.eval F σ (ite c t e) = some v
-  ev_ite_false : ∀ {F σ c t e v}, P.eval F σ c = some HasBool.ff → P.eval F σ e = some v →
-    P.eval F σ (ite c t e) = some v
+  /-- A conditional whose parts are replaced by expressions with the same values (in another
+      store) keeps its value.  The law does not assume that a conditional evaluates when only
+      the selected branch does: in a denotational language every part must have a value. -/
+  ev_ite_congr : ∀ {F σ σ' c t e c' t' e' v}, P.eval F σ (ite c t e) = some v →
+    (∀ w, P.eval F σ c = some w → P.eval F σ' c' = some w) →
+    (∀ w, P.eval F σ t = some w → P.eval F σ' t' = some w) →
+    (∀ w, P.eval F σ e = some w → P.eval F σ' e' = some w) →
+    P.eval F σ' (ite c' t' e') = some v
   ev_ite_inv : ∀ {F σ c t e v}, P.eval F σ (ite c t e) = some v →
-    (P.eval F σ c = some HasBool.tt ∧ P.eval F σ t = some v) ∨
-    (P.eval F σ c = some HasBool.ff ∧ P.eval F σ e = some v)
+    (P.eval F σ c = some (HasBool.ttVal F) ∧ P.eval F σ t = some v) ∨
+    (P.eval F σ c = some (HasBool.ffVal F) ∧ P.eval F σ e = some v)
   iteView?_eq : ∀ {e c t f}, iteView? e = some (c, t, f) → e = ite c t f
   boolLit?_eq : ∀ {e b}, boolLit? e = some b →
     e = if b then HasBool.tt (P := P) else HasBool.ff (P := P)
@@ -115,9 +119,9 @@ abbrev ff : P.Expr := HasBool.ff (P := P)
 
 /-- `¬ e` as an `ite`. -/
 @[expose] def notE (e : P.Expr) : P.Expr := WPOps.ite e ff tt
-/-- `a ∧ b` as a lazy `ite`: `b` is not evaluated when `a` is false. -/
+/-- `a ∧ b` as an `ite`. -/
 @[expose] def andE (a b : P.Expr) : P.Expr := WPOps.ite a b ff
-/-- `a ∨ b` as a lazy `ite`. -/
+/-- `a ∨ b` as an `ite`. -/
 @[expose] def orE (a b : P.Expr) : P.Expr := WPOps.ite a tt b
 
 end -- public section

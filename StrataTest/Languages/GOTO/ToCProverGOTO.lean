@@ -31,6 +31,7 @@ private abbrev LExprTP : Imperative.PureExpr :=
      TyContext := @Lambda.LContext TestParams,
      EqIdent := inferInstanceAs (DecidableEq TestParams.Identifier)
      Factory := Unit,
+     Val := Lambda.LExprT TestParams.mono,
      eval := fun _f _σ e => some e }
 
 /--

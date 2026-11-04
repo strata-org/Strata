@@ -6,7 +6,7 @@
 module
 
 meta import Strata.Languages.Core.Expressions
-meta import Strata.Languages.Core.ExpressionsProps
+meta import Strata.Languages.Core.InstWellFormedSemanticsEval
 meta import Strata.DL.Imperative.Cmd
 
 meta section

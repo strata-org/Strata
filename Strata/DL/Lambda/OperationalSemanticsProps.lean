@@ -163,7 +163,6 @@ private theorem EMEquiv.of_eraseMetadata_eq
     exact .eq (ihl l₂ (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption))
               (ihr r₂ (by delta LExpr.eraseMetadata LExpr.replaceMetadata; assumption))
 
-
 ---------------------------------------------------------------------
 
 -- Public theorem: more general version of substK_eraseMetadata_congr with different
@@ -269,53 +268,6 @@ original expression, modulo metadata.
 More precisely: e.eraseMetadata = mkApp () op.eraseMetadata (args_from_e.map eraseMetadata)
 where args = args_from_e ++ acc.
 -/
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
-theorem getLFuncCall_go_eraseMetadata
-    (e : LExpr Tbase.mono) (acc : List (LExpr Tbase.mono))
-    (op : LExpr Tbase.mono) (args : List (LExpr Tbase.mono))
-    (h : getLFuncCall.go e acc = (op, args)) :
-    LExpr.mkApp () e.eraseMetadata (acc.map LExpr.eraseMetadata) =
-      LExpr.mkApp () op.eraseMetadata (args.map LExpr.eraseMetadata) := by
-  -- Induction following getLFuncCall.go's recursion structure
-  -- go matches: app _ (app _ e' arg1) arg2 | app _ (op m fn ty) arg1 | _
-  match e with
-  | .app m1 (.app m2 e' arg1) arg2 =>
-    -- go recurses: go e' ([arg1, arg2] ++ acc)
-    simp only [getLFuncCall.go] at h
-    -- The recursive call gives us the same conclusion with e' and extended acc
-    have ih := getLFuncCall_go_eraseMetadata e' ([arg1, arg2] ++ acc) op args h
-    -- Now relate: mkApp () (app () (app () e'.eM arg1.eM) arg2.eM) (acc.map eM)
-    --           = mkApp () e'.eM (([arg1,arg2]++acc).map eM)
-    -- Both sides unfold to mkApp () e'.eM [arg1.eM, arg2.eM, ...acc.map eM]
-    simp only [LExpr.eraseMetadata, LExpr.replaceMetadata] at ih ⊢
-    exact ih
-  | .app m1 (.op m2 fn ty) arg1 =>
-    simp only [getLFuncCall.go] at h
-    cases h; rfl
-  | .app m1 (.const m2 c) arg2 =>
-    simp only [getLFuncCall.go] at h; cases h; rfl
-  | .app m1 (.bvar m2 i) arg2 =>
-    simp only [getLFuncCall.go] at h; cases h; rfl
-  | .app m1 (.fvar m2 x ty) arg2 =>
-    simp only [getLFuncCall.go] at h; cases h; rfl
-  | .app m1 (.abs m2 n ty body) arg2 =>
-    simp only [getLFuncCall.go] at h; cases h; rfl
-  | .app m1 (.quant m2 k n ty tr body) arg2 =>
-    simp only [getLFuncCall.go] at h; cases h; rfl
-  | .app m1 (.ite m2 c t f) arg2 =>
-    simp only [getLFuncCall.go] at h; cases h; rfl
-  | .app m1 (.eq m2 e1 e2) arg2 =>
-    simp only [getLFuncCall.go] at h; cases h; rfl
-  | .const _ _ => simp only [getLFuncCall.go] at h; cases h; rfl
-  | .op _ _ _ => simp only [getLFuncCall.go] at h; cases h; rfl
-  | .bvar _ _ => simp only [getLFuncCall.go] at h; cases h; rfl
-  | .fvar _ _ _ => simp only [getLFuncCall.go] at h; cases h; rfl
-  | .abs _ _ _ _ => simp only [getLFuncCall.go] at h; cases h; rfl
-  | .quant _ _ _ _ _ _ => simp only [getLFuncCall.go] at h; cases h; rfl
-  | .ite _ _ _ _ => simp only [getLFuncCall.go] at h; cases h; rfl
-  | .eq _ _ _ => simp only [getLFuncCall.go] at h; cases h; rfl
-  termination_by e.sizeOf
-
 
 ---------------------------------------------------------------------
 
@@ -447,63 +399,9 @@ private theorem substFvars_getLFuncCall_go_eraseMetadata
   | .eq _ _ _ => simp only [getLFuncCall.go] at h; cases h; rfl
   termination_by e.sizeOf
 
-
 ---------------------------------------------------------------------
 -- Structural lemma: getLFuncCall.go commutes with substFvars when the head is .op
 -- (which is the case whenever callOfLFunc succeeds)
-
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [Inhabited Tbase.IDMeta] in
-theorem getLFuncCall_go_substFvars
-    (e : LExpr Tbase.mono) (acc : List (LExpr Tbase.mono))
-    (sm : Map Tbase.Identifier (LExpr Tbase.mono))
-    (m_op : Tbase.Metadata) (name_op : Identifier Tbase.IDMeta)
-    (ty_op : Option LMonoTy)
-    (args : List (LExpr Tbase.mono))
-    (h : getLFuncCall.go e acc = (LExpr.op m_op name_op ty_op, args)) :
-    getLFuncCall.go (LExpr.substFvars e sm) (acc.map (LExpr.substFvars · sm)) =
-      (LExpr.op m_op name_op ty_op, args.map (LExpr.substFvars · sm)) := by
-  match e with
-  | .app m1 (.app m2 e' arg1) arg2 =>
-    simp only [getLFuncCall.go] at h
-    have ih := getLFuncCall_go_substFvars e' ([arg1, arg2] ++ acc) sm m_op name_op ty_op args h
-    simp only [LExpr.substFvars_app, getLFuncCall.go, List.map_append, List.map_cons, List.map_nil] at ih ⊢
-    exact ih
-  | .app m1 (.op m2 fn ty) arg1 =>
-    simp only [getLFuncCall.go, Prod.mk.injEq] at h
-    obtain ⟨h_op, rfl⟩ := h
-    simp only [LExpr.op.injEq] at h_op
-    obtain ⟨rfl, rfl, rfl⟩ := h_op
-    simp only [LExpr.substFvars_app, LExpr.substFvars_op', getLFuncCall.go, List.map_append, List.map]
-  | .app m1 (.const m2 c) arg2 =>
-    simp only [getLFuncCall.go, Prod.mk.injEq] at h; obtain ⟨h, _⟩ := h; cases h
-  | .app m1 (.bvar m2 i) arg2 =>
-    simp only [getLFuncCall.go, Prod.mk.injEq] at h; obtain ⟨h, _⟩ := h; cases h
-  | .app m1 (.fvar m2 x ty) arg2 =>
-    simp only [getLFuncCall.go, Prod.mk.injEq] at h; obtain ⟨h, _⟩ := h; cases h
-  | .app m1 (.abs m2 n ty body) arg2 =>
-    simp only [getLFuncCall.go, Prod.mk.injEq] at h; obtain ⟨h, _⟩ := h; cases h
-  | .app m1 (.quant m2 k n ty tr body) arg2 =>
-    simp only [getLFuncCall.go, Prod.mk.injEq] at h; obtain ⟨h, _⟩ := h; cases h
-  | .app m1 (.ite m2 c t f) arg2 =>
-    simp only [getLFuncCall.go, Prod.mk.injEq] at h; obtain ⟨h, _⟩ := h; cases h
-  | .app m1 (.eq m2 e1 e2) arg2 =>
-    simp only [getLFuncCall.go, Prod.mk.injEq] at h; obtain ⟨h, _⟩ := h; cases h
-  | .const _ _ =>
-    simp only [getLFuncCall.go, Prod.mk.injEq] at h; obtain ⟨h, _⟩ := h; cases h
-  | .op m n t =>
-    simp only [getLFuncCall.go, Prod.mk.injEq] at h
-    obtain ⟨h_op, rfl⟩ := h
-    simp only [LExpr.op.injEq] at h_op
-    obtain ⟨rfl, rfl, rfl⟩ := h_op
-    simp [LExpr.substFvars_op', getLFuncCall.go]
-  | .bvar _ _ => simp only [getLFuncCall.go, Prod.mk.injEq] at h; obtain ⟨h, _⟩ := h; cases h
-  | .fvar _ _ _ => simp only [getLFuncCall.go, Prod.mk.injEq] at h; obtain ⟨h, _⟩ := h; cases h
-  | .abs _ _ _ _ => simp only [getLFuncCall.go, Prod.mk.injEq] at h; obtain ⟨h, _⟩ := h; cases h
-  | .quant _ _ _ _ _ _ => simp only [getLFuncCall.go, Prod.mk.injEq] at h; obtain ⟨h, _⟩ := h; cases h
-  | .ite _ _ _ _ => simp only [getLFuncCall.go, Prod.mk.injEq] at h; obtain ⟨h, _⟩ := h; cases h
-  | .eq _ _ _ => simp only [getLFuncCall.go, Prod.mk.injEq] at h; obtain ⟨h, _⟩ := h; cases h
-  termination_by e.sizeOf
-
 
 ---------------------------------------------------------------------
 -- Helper: callOfLFunc decomposes via getLFuncCall with an .op head.
@@ -585,7 +483,6 @@ private theorem getLFuncCall_go_acc_change
   | .ite _ _ _ _ => simp only [getLFuncCall.go] at h; obtain ⟨rfl, rfl⟩ := h; exact ⟨[], rfl, rfl⟩
   | .eq _ _ _ => simp only [getLFuncCall.go] at h; obtain ⟨rfl, rfl⟩ := h; exact ⟨[], rfl, rfl⟩
   termination_by e.sizeOf
-
 
 ---------------------------------------------------------------------
 -- Helpers for value_not_step
@@ -911,7 +808,6 @@ private theorem isValue_args_all
     LExpr.isValue F x = true := by
   rw [List.all_eq_true] at h_all
   exact h_all x hx
-
 
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta] in
 /-- Values have no free variables. -/
@@ -1697,8 +1593,6 @@ private theorem substFvars_closed_identity
         List.append_eq_nil_iff.mp h_app1.1
       exact ⟨ih1 h_c_t.1, ih2 h_c_t.2, ih3 h_app1.2⟩
 
-
-
 theorem StepStar_to_substFvarsFromEnv_abs
     {Tbase : LExprParams}
     [DecidableEq Tbase.Metadata] [DecidableEq Tbase.IDMeta]
@@ -2168,7 +2062,6 @@ theorem evalCore_eraseMetadata_congr
     simp only [LExpr.evalCore]
     exact evalIte_eraseMetadata_congr n' F env _ _ _ _ _ _ _ _
       hv_c.eraseMetadata_eq hv_t.eraseMetadata_eq hv_e.eraseMetadata_eq ih
-
 
 ---------------------------------------------------------------------
 

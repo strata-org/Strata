@@ -60,6 +60,7 @@ abbrev MiniPureExpr : PureExpr :=
     TyEnv := Unit,
     TyContext := Unit,
     Factory := Unit,
+    Val := Expr,
     eval := fun _f _σ e => some e.normBool }
 
 instance : HasVal MiniPureExpr where
@@ -72,13 +73,15 @@ instance : HasFvars MiniPureExpr where
 instance : LawfulHasVal MiniPureExpr where
   valueOfTy_isVal := fun _ _ _ h => h
   valueOfTy_congr := fun _ _ _ _ _ _ _ _ => trivial
-  value_getFvars := fun _ _ _ => rfl
 
 instance : HasBool MiniPureExpr where
   tt := .tt
   ff := .ff
   tt_is_not_ff := by intro h; cases h
   boolTy := .Bool
+  ttVal _ := .tt
+  ffVal _ := .ff
+  ttVal_ne_ffVal _ := by intro h; cases h
   boolIsValOfTy := fun _ => ⟨trivial, trivial⟩
 
 instance : HasBoolOps MiniPureExpr where
@@ -90,7 +93,7 @@ instance : HasInt MiniPureExpr where
   zero := .ff
   intTy := .Bool
   isNumeral := fun _ => true
-  numeralIsValue := fun _ _ _ => trivial
+  isNumeralVal := fun _ => true
   zeroIsNumeral := rfl
   numeralHasNoFvars := fun _ _ => rfl
 
@@ -151,7 +154,7 @@ def prog : Stmt MiniPureExpr CmdT :=
 theorem progReachesTerminal :
     StepStmtStarE MiniPureExpr noCmd
       (.stmt prog ρ₀) [] (.terminal ρ₀) := by
-  have htt : MiniPureExpr.eval () ρ₀.store HasBool.tt = some HasBool.tt := rfl
+  have htt : MiniPureExpr.eval () ρ₀.store HasBool.tt = some (HasBool.ttVal ()) := rfl
   -- Step 1: step_block — enter the outer labeled block.
   refine .step _ [] _ [] _ StepStmtE.step_block ?_
   -- Step 2: step_block_body step_stmts_cons.
@@ -219,7 +222,7 @@ def progIteThen : Stmt MiniPureExpr CmdT :=
 theorem progIteThenReachesTerminal :
     StepStmtStarE MiniPureExpr noCmd
       (.stmt progIteThen ρ₀) [] (.terminal ρ₀) := by
-  have htt : MiniPureExpr.eval () ρ₀.store HasBool.tt = some HasBool.tt := rfl
+  have htt : MiniPureExpr.eval () ρ₀.store HasBool.tt = some (HasBool.ttVal ()) := rfl
   refine .step _ [] _ [] _ StepStmtE.step_block ?_
   refine .step _ [] _ [] _ (StepStmtE.step_block_body StepStmtE.step_stmts_cons) ?_
   refine .step _ [] _ [] _
@@ -263,7 +266,7 @@ def progIteElse : Stmt MiniPureExpr CmdT :=
 theorem progIteElseReachesTerminal :
     StepStmtStarE MiniPureExpr noCmd
       (.stmt progIteElse ρ₀) [] (.terminal ρ₀) := by
-  have hff : MiniPureExpr.eval () ρ₀.store HasBool.ff = some HasBool.ff := rfl
+  have hff : MiniPureExpr.eval () ρ₀.store HasBool.ff = some (HasBool.ffVal ()) := rfl
   refine .step _ [] _ [] _ StepStmtE.step_block ?rest1
   refine .step _ [] _ [] _ (StepStmtE.step_block_body StepStmtE.step_stmts_cons) ?rest2
   -- step_ite_false — take the else branch.
@@ -313,6 +316,7 @@ abbrev MiniPureExpr2 : PureExpr :=
     TyEnv := Unit,
     TyContext := Unit,
     Factory := Unit,
+    Val := Expr2,
     eval := fun _f σ e => match e with
       | .var x => σ x
       | _ => some e }
@@ -334,13 +338,15 @@ instance : HasVal MiniPureExpr2 where
 instance : LawfulHasVal MiniPureExpr2 where
   valueOfTy_isVal := fun _ _ _ h => h
   valueOfTy_congr := fun _ _ _ _ _ _ _ h => h
-  value_getFvars := fun _ _ h => h
 
 instance : HasBool MiniPureExpr2 where
   tt := .tt
   ff := .ff
   tt_is_not_ff := by intro h; cases h
   boolTy := .Bool
+  ttVal _ := .tt
+  ffVal _ := .ff
+  ttVal_ne_ffVal _ := by intro h; cases h
   boolIsValOfTy := fun _ => ⟨rfl, rfl⟩
 
 instance : HasBoolOps MiniPureExpr2 where

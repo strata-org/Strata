@@ -25,8 +25,8 @@ section
 
 variable (P : PureExpr)
 
-/-- A semantic store maps every identifier to an optional expression. -/
-abbrev SemanticStore := P.Ident → Option P.Expr
+/-- A semantic store maps every identifier to an optional runtime value. -/
+abbrev SemanticStore := P.Ident → Option P.Val
 
 /-- A semantic store with no bindings. -/
 @[expose] def emptyStore {P : PureExpr} : SemanticStore P := fun _ => none
@@ -60,7 +60,7 @@ variables, use `Q := (· ∈ vs)`. -/
 
 /-- Define `ident := value`, leaving every other variable untouched. -/
 @[expose] def SemanticStore.update {P : PureExpr} [DecidableEq P.Ident]
-    (store : SemanticStore P) (ident : P.Ident) (value : P.Expr) : SemanticStore P :=
+    (store : SemanticStore P) (ident : P.Ident) (value : P.Val) : SemanticStore P :=
   fun other => if other = ident then some value else store other
 
 /-- Every variable selected from `value` by `getVars` is defined in `store`. -/

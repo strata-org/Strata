@@ -20,18 +20,18 @@ section
 
 variable (P : PureExpr)
 
-abbrev SemanticEval := P.Factory → SemanticStore P → P.Expr → Option P.Expr
+abbrev SemanticEval := P.Factory → SemanticStore P → P.Expr → Option P.Val
 abbrev SemanticEvalBool := P.Factory → SemanticStore P → P.Expr → Option Bool
 /-- Command evaluation relation that reports an ordered event trace.  Commands
 do not modify the evaluator.  The event payload type `EventT` is a parameter so
 that generic operational metatheory can be stated over an arbitrary payload; the
 base command semantics `EvalCmdE` instantiates it at `Trace P`. -/
-abbrev EvalCmdParamE (P : PureExpr) (Cmd : Type) (EventT : Type) :=
+abbrev EvalCmdParamE (P : PureExpr) (Cmd : Type) (EventT : Type _) :=
   P.Factory → SemanticStore P → Cmd → SemanticStore P → List EventT → Prop
 
 /-! ### Well-Formedness of `SemanticStore` -/
 
-/-- A store is well-formed when every binding it holds is a value.  The
+/-- A store is well-formed when every binding it holds is a value of `f`.  The
     predicates below only constrain such stores, so the value rule and the var
     rule stay jointly satisfiable (an arbitrary store could bind a variable to a
     non-value). -/
@@ -42,29 +42,33 @@ abbrev EvalCmdParamE (P : PureExpr) (Cmd : Type) (EventT : Type) :=
 
 /-- The expression `e` evaluates to `v` under the factory `F` in the store `σ`.  An expression
     with no value (a stuck evaluation) is one with `¬ ∃ v, EvalsTo F σ e v`. -/
-@[expose] def EvalsTo {P : PureExpr} (F : P.Factory) (σ : SemanticStore P) (e v : P.Expr) :
-    Prop :=
+@[expose] def EvalsTo {P : PureExpr} (F : P.Factory) (σ : SemanticStore P) (e : P.Expr)
+    (v : P.Val) : Prop :=
   P.eval F σ e = some v
 
 /-! ### Well-Formedness of `SemanticEval` -/
 
 /-- The evaluator respects Boolean negation: for any store `σ` and expression
-    `e`, `P.eval f σ e = some tt` iff `P.eval f σ (not e) = some ff`, and
-    dually. -/
+    `e`, `P.eval f σ e = some (ttVal f)` iff `P.eval f σ (not e) = some (ffVal f)`,
+    and dually. -/
 @[expose] def WellFormedSemanticEvalBool {P : PureExpr} [HasBool P] [HasBoolOps P]
     (f : P.Factory) : Prop :=
     ∀ σ e,
-      (P.eval f σ e = some Imperative.HasBool.tt ↔ P.eval f σ (Imperative.HasBoolOps.not e) = (some HasBool.ff)) ∧
-      (P.eval f σ e = some Imperative.HasBool.ff ↔ P.eval f σ (Imperative.HasBoolOps.not e) = (some HasBool.tt))
+      (P.eval f σ e = some (Imperative.HasBool.ttVal f) ↔
+        P.eval f σ (Imperative.HasBoolOps.not e) = some (HasBool.ffVal f)) ∧
+      (P.eval f σ e = some (Imperative.HasBool.ffVal f) ↔
+        P.eval f σ (Imperative.HasBoolOps.not e) = some (HasBool.ttVal f))
 
 /-- Well-formedness of a `SemanticEval`'s value behavior, split into named
     clauses. -/
-structure WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
+structure WellFormedSemanticEvalVal {P : PureExpr} [HasBool P]
     (f : P.Factory) : Prop where
-  /-- The evaluator produces only values (on well-formed stores). -/
-  outputsAreValues : ∀ v v' σ, WellFormedStore σ f → P.eval f σ v = some v' → HasVal.value f v'
-  /-- The evaluator is the identity on values. -/
-  identityOnValues : ∀ v' σ, HasVal.value f v' → P.eval f σ v' = some v'
+  /-- The evaluator produces only values of `f` (on well-formed stores). -/
+  outputsAreValues : ∀ e v σ, WellFormedStore σ f → P.eval f σ e = some v → HasVal.value f v
+  /-- The Boolean constant `tt` evaluates to the value `ttVal f`. -/
+  eval_tt : ∀ σ, P.eval f σ HasBool.tt = some (HasBool.ttVal f)
+  /-- The Boolean constant `ff` evaluates to the value `ffVal f`. -/
+  eval_ff : ∀ σ, P.eval f σ HasBool.ff = some (HasBool.ffVal f)
 
 /-- The evaluator resolves free variables via the store: on a well-formed
     store, evaluating a free-variable expression yields its store binding. -/
@@ -87,10 +91,10 @@ structure WellFormedSemanticEvalInt {P : PureExpr}
       value: the result is either `tt` or `ff`, never a stuck or non-Boolean
       expression. -/
   ltReduces : ∀ σ x y nx ny,
-    P.eval f σ x = some nx → HasInt.isNumeral nx = Bool.true →
-    P.eval f σ y = some ny → HasInt.isNumeral ny = Bool.true →
-    P.eval f σ (HasIntOps.lt x y) = some HasBool.tt ∨
-    P.eval f σ (HasIntOps.lt x y) = some HasBool.ff
+    P.eval f σ x = some nx → HasInt.isNumeralVal nx = Bool.true →
+    P.eval f σ y = some ny → HasInt.isNumeralVal ny = Bool.true →
+    P.eval f σ (HasIntOps.lt x y) = some (HasBool.ttVal f) ∨
+    P.eval f σ (HasIntOps.lt x y) = some (HasBool.ffVal f)
 
 /-- The evaluator is monotone under store extension: if `σ'` retains every
     binding of `σ`, a successful evaluation at `σ` succeeds identically at `σ'`.
@@ -167,17 +171,18 @@ structure WellFormedSemanticEvalInt {P : PureExpr}
     (∀ k v, Map.find? sm k = some v →
       (∃ y, (v = HasFvar.mkFvar y ∨ ∃ ty, v = HasFvar.mkTypedFvar y ty) ∧ σ' y = σ k ∧
         (σ k).isSome) ∨
-      (v = HasBool.tt ∧ σ k = some HasBool.tt) ∨ (v = HasBool.ff ∧ σ k = some HasBool.ff)) →
+      (v = HasBool.tt ∧ σ k = some (HasBool.ttVal f)) ∨
+        (v = HasBool.ff ∧ σ k = some (HasBool.ffVal f))) →
     (∀ x ∈ HasFvars.getFvars e, Map.find? sm x = none → σ' x = σ x) →
     P.eval f σ' (HasSubstFvar.substFvars e sm) = P.eval f σ e
 
 /-- The well-formedness conditions on `P.eval` against a factory `f` that do not involve the
     Boolean or integer operations: variables, values, agreement on free variables, renaming. -/
-structure WellFormedSemanticEvalBase {P : PureExpr} [HasVal P] [HasFvar P] [HasFvars P]
+structure WellFormedSemanticEvalBase {P : PureExpr} [HasBool P] [HasFvar P] [HasFvars P]
     [HasSubstFvar P] (f : P.Factory) : Prop where
   /-- The evaluator resolves free variables via the store. -/
   var : WellFormedSemanticEvalVar f
-  /-- The evaluator only outputs values and is the identity on values. -/
+  /-- The evaluator only outputs values and evaluates the Boolean constants. -/
   val : WellFormedSemanticEvalVal f
   /-- The evaluator agrees on stores that agree on free variables. -/
   exprCongr : WellFormedSemanticEvalExprCongr f
@@ -213,7 +218,7 @@ Abstract variable update.
 
 This does not specify how `σ` is represented, only what it maps each variable to.
 -/
-inductive UpdateState : SemanticStore P → P.Ident → P.Expr → SemanticStore P → Prop where
+inductive UpdateState : SemanticStore P → P.Ident → P.Val → SemanticStore P → Prop where
   /-- The state `σ'` is be equivalent to `σ` except at `x`, where it maps to
   `v`. Requires that `x` mapped to something beforehand. -/
   | update :
@@ -228,7 +233,7 @@ Abtract variable initialization.
 
 This does not specify how `σ` is represented, only what it maps each variable to.
 -/
-inductive InitState : SemanticStore P → P.Ident → P.Expr → SemanticStore P → Prop where
+inductive InitState : SemanticStore P → P.Ident → P.Val → SemanticStore P → Prop where
   /-- The state `σ'` is be equivalent to `σ` except at `x`, where it maps to
   `v`. Requires that `x` mapped to nothing beforehand. -/
   | init :
@@ -241,7 +246,7 @@ inductive InitState : SemanticStore P → P.Ident → P.Expr → SemanticStore P
 /-- Evaluate a list of expressions with the language evaluator `P.eval`; every
     free variable of each expression must be bound. -/
 inductive EvalExpressions {P : PureExpr} [HasFvars P] :
-    P.Factory → SemanticStore P → List P.Expr → List P.Expr → Prop where
+    P.Factory → SemanticStore P → List P.Expr → List P.Val → Prop where
   | eval_none : EvalExpressions f σ [] []
   | eval_some :
     SemanticStore.varsDefined (· ∈ (HasFvars.getFvars e)) σ →
@@ -249,9 +254,9 @@ inductive EvalExpressions {P : PureExpr} [HasFvars P] :
     EvalExpressions f σ es vs →
     EvalExpressions f σ (e :: es) (v :: vs)
 
-/-- Read values from store slots.  Every returned expression is a value in `f`. -/
+/-- Read values from store slots.  Every returned value is a value of `f`. -/
 inductive ReadValues {P : PureExpr} [HasVal P] (f : P.Factory) :
-    SemanticStore P → List P.Ident → List P.Expr → Prop where
+    SemanticStore P → List P.Ident → List P.Val → Prop where
   | read_none : ReadValues f σ [] []
   | read_some :
       σ x = .some v →
@@ -261,7 +266,7 @@ inductive ReadValues {P : PureExpr} [HasVal P] (f : P.Factory) :
 
 /-- A positional fold of `UpdateState`: each target must already be bound. -/
 inductive UpdateStates {P : PureExpr} :
-    SemanticStore P → List P.Ident → List P.Expr → SemanticStore P → Prop where
+    SemanticStore P → List P.Ident → List P.Val → SemanticStore P → Prop where
   | update_none : UpdateStates σ [] [] σ
   | update_some :
     UpdateState P σ x v σ' →
@@ -270,7 +275,7 @@ inductive UpdateStates {P : PureExpr} :
 
 /-- A positional fold of `InitState`: each target must be unbound beforehand. -/
 inductive InitStates {P : PureExpr} :
-    SemanticStore P → List P.Ident → List P.Expr → SemanticStore P → Prop where
+    SemanticStore P → List P.Ident → List P.Val → SemanticStore P → Prop where
   | init_none : InitStates σ [] [] σ
   | init_some :
     InitState P σ x v σ' →
@@ -280,7 +285,7 @@ inductive InitStates {P : PureExpr} :
 /-- `v` has the same type as the value currently stored at `x`. -/
 @[expose] def HasVal.valueOfStoredTy [HasVal P]
     (f : P.Factory) (σ : SemanticStore P) (x : P.Ident)
-    (v : P.Expr) : Prop :=
+    (v : P.Val) : Prop :=
   ∃ previous ty,
     σ x = some previous ∧
     HasVal.valueOfTy f previous ty ∧

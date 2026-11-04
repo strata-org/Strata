@@ -10,6 +10,8 @@ public import Strata.DL.Imperative.StmtSemantics
 
 public section
 
+universe u
+
 ---------------------------------------------------------------------
 
 namespace Imperative
@@ -35,7 +37,7 @@ Terminal configurations cannot step, so retaining a program there would be
 unobservable and would prevent the generic `EventLang.terminalCfg` operation from
 constructing exact outcomes.
 -/
-inductive CFGConfig (l CmdT : Type) (P : PureExpr) : Type where
+inductive CFGConfig (l CmdT : Type) (P : PureExpr.{u}) : Type u where
   /-- Configuration immediately before the block at the given label is fetched. -/
   | atBlock : CFG l (DetBlock l CmdT P) → l → Env P → CFGConfig l CmdT P
   /-- Configuration within a block, retaining its label, residual commands, and transfer. -/
@@ -68,7 +70,7 @@ definitional special case `.condGoto HasBool.tt k k _` and is handled by
 `goto_true`.
 -/
 inductive StepCFGE
-    {l CmdT EventT : Type} [BEq l] (P : PureExpr)
+    {l CmdT : Type} {EventT : Type _} [BEq l] (P : PureExpr)
     (EvalCmd : EvalCmdParamE P CmdT EventT)
     [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P] :
     CFGConfig l CmdT P → List EventT → CFGConfig l CmdT P → Prop where
@@ -86,13 +88,13 @@ inductive StepCFGE
         (.inBlock cfg t cs tr { ρ with store := σ' })
   /-- Empty residual + true branch: jump to the true label. -/
   | goto_true :
-      P.eval ρ.factory ρ.store c = .some HasBool.tt →
+      P.eval ρ.factory ρ.store c = .some (HasBool.ttVal ρ.factory) →
       StepCFGE P EvalCmd
         (.inBlock cfg t [] (.condGoto c tlbl elbl md) ρ) []
         (.atBlock cfg tlbl ρ)
   /-- Empty residual + false branch: jump to the false label. -/
   | goto_false :
-      P.eval ρ.factory ρ.store c = .some HasBool.ff →
+      P.eval ρ.factory ρ.store c = .some (HasBool.ffVal ρ.factory) →
       StepCFGE P EvalCmd
         (.inBlock cfg t [] (.condGoto c tlbl elbl md) ρ) []
         (.atBlock cfg elbl ρ)
@@ -104,7 +106,7 @@ inductive StepCFGE
 
 /-- Reflexive-transitive event-trace execution of `StepCFGE`. -/
 @[expose] def StepCFGStarE
-    {l CmdT EventT : Type} [BEq l]
+    {l CmdT : Type} {EventT : Type _} [BEq l]
     (P : PureExpr) (EvalCmd : EvalCmdParamE P CmdT EventT)
     [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P] :
     CFGConfig l CmdT P → List EventT → CFGConfig l CmdT P → Prop :=

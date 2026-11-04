@@ -82,10 +82,6 @@ structure SSAEntryRel (G : IdSet Expression) (tys : Tys Expression) (xs : List E
     (ρ ρ' : Imperative.Env Expression) : Prop where
   /-- The two environments have the same factory. -/
   factory : ρ'.factory = ρ.factory
-  /-- The factory is well formed, so that evaluation is preserved by the substitutions the SSA
-      phase makes: a variable replaced by another holding its value, or by the Boolean literal
-      equal to its value. -/
-  factoryWF : Lambda.FactoryWF ρ.factory
   /-- Every free variable `x` of `ss₀` is defined in the source store, with the value the
       target store gives the entry name `ρ0.get x`. -/
   entry : ∀ x ∈ Block.freeVars ss₀,
@@ -143,7 +139,7 @@ theorem ssa_overapproximatesTraces (π : String → Option Procedure) (params : 
   have hnc : Statements.noCalls ss = true :=
     Block.treeForm_allSubstmts (fun _ => rfl) (fun _ _ _ => rfl) htf
   have hsim := ssaEntry_sim hwf.var hwf.val
-    (coreEvaluator_WellFormedSemanticEvalSubstLits hrel.factoryWF)
+    (coreEvaluator_WellFormedSemanticEvalSubstLits F)
     hss hal (σL := σ₀) (σS := σ₀') hrel.entry hrel.tyOK hC
     (fun y v hy => by
       obtain ⟨x, hx, rfl⟩ := hrel.dom y (by simp [hy])
