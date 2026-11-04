@@ -129,7 +129,7 @@ procedure callsUnknown() returns (r: int)
   opaque
 {
   r := mayThrow()
-//     ^^^^^^^^^^ error: call does not throw an uncaught 'Exception' could not be proved
+//     ^^^^^^^^^^ error: call does not throw an uncaught 'Exception' does not hold
 };
 #end
 
@@ -190,7 +190,7 @@ procedure notMatched(x: int) returns (r: int)
     if x < 0 then {
       var b: Exception := new Boom;
       throw b
-//    ^^^^^^^ error: uncaught exception 'Exception' is not thrown could not be proved
+//    ^^^^^^^ error: uncaught exception 'Exception' is not thrown does not hold
     }
   } catch c when c is Other {
     r := -1
@@ -235,7 +235,7 @@ procedure rethrows() returns (r: int)
     throw b
   } catch c when c is Boom {
     throw c
-//  ^^^^^^^ error: uncaught exception 'Boom' is not thrown could not be proved
+//  ^^^^^^^ error: uncaught exception 'Boom' is not thrown does not hold
   }
 };
 #end
@@ -318,7 +318,7 @@ procedure throughInner() returns (r: int)
     try {
       var a: Exception := new A;
       throw a
-//    ^^^^^^^ error: uncaught exception 'Exception' is not thrown could not be proved
+//    ^^^^^^^ error: uncaught exception 'Exception' is not thrown does not hold
     } catch c when c is B {
       r := 1
     }
@@ -447,7 +447,7 @@ procedure escapesThroughSharedDescendantFalse(pick: bool)
   opaque
   throwsOn pick {
     ensures !(e is C)
-//          ^^^^^^^^^ error: postcondition could not be proved
+//          ^^^^^^^^^ error: postcondition does not hold
   }
 {
   var c: C := new C;
@@ -485,7 +485,7 @@ procedure untypedEscape(h: H, k: int)
   var a2: A2 := new A2;
   try {
     try {
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: the exception escaping this try fits the 'A' it propagates into could not be proved
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: the exception escaping this try fits the 'A' it propagates into does not hold
       if k == 0 then { throw c } else { throw b4 }
     } catch e when e is B4 { throw h#b };
     if k == 5 then { throw a2 }
@@ -503,7 +503,7 @@ procedure nestedInHandler(k: int)
     if k == 0 then { throw a2 } else { throw c }
   } catch x {
     try {
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: the exception escaping this try fits the 'A' it propagates into could not be proved
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: the exception escaping this try fits the 'A' it propagates into does not hold
       if k == 1 then { throw b4 } else { throw b3 }
     } catch e when e is B4 { }
   }
@@ -702,7 +702,7 @@ procedure rethrowMultiCatch(k: int) returns (r: int)
 procedure rethrowMultiCatchWrong(k: int) returns (r: int)
   opaque
   ensures k > 0 ==> r == 2
-//        ^^^^^^^^^^^^^^^^ error: postcondition could not be proved
+//        ^^^^^^^^^^^^^^^^ error: postcondition does not hold
 {
   r := 0;
   try {

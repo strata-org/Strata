@@ -458,7 +458,7 @@ procedure wrongThrownType()
   ensures r > 0
   throwsOn true {
     ensures e is Other
-//          ^^^^^^^^^^ error: postcondition could not be proved
+//          ^^^^^^^^^^ error: postcondition does not hold
   }
 {
   var x: Err := new Err;
@@ -560,7 +560,7 @@ procedure valueBad(a: IntArray, elems: TotalMap int int, i: int, alen: int)
   ensures r == select(elems, i)
   throwsOn (i < 0) || (i >= alen) {
     ensures e is IndexError ==> (i >= 0) && (i < alen)
-//          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition could not be proved
+//          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition does not hold
   }
 {
   if (i < 0) || (i >= a#length) then {
@@ -645,7 +645,7 @@ procedure valueBadContract(a: TotalMap int int, alen: int, i: int)
   ensures r == select(a, i)
   throwsOn (i < 0) || (i >= alen) {
     ensures e is IndexError ==> ((e as IndexError)#badIndex >= 0) && ((e as IndexError)#badIndex < alen)
-//          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition could not be proved
+//          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition does not hold
   }
 {
   if (i < 0) || (i >= alen) then {
@@ -1058,7 +1058,7 @@ procedure doWorkUnguarded(c: Cell, logCell: Cell, fail: bool)
   r := 0
 };
 procedure handlerNotDead(c: Cell, l: Cell)
-//        ^^^^^^^^^^^^^^ error: modifies clause could not be proved
+//        ^^^^^^^^^^^^^^ error: modifies clause does not hold
   returns (out: int)
   opaque
   modifies c
@@ -1068,7 +1068,7 @@ procedure handlerNotDead(c: Cell, l: Cell)
     out := doWorkUnguarded(c, l, false)
   } catch e {
     assert false
-//  ^^^^^^^^^^^^ error: assertion could not be proved
+//  ^^^^^^^^^^^^ error: assertion does not hold
   }
 };
 #end
@@ -1335,7 +1335,7 @@ procedure summarisedCase(b: int)
   opaque
   throwsOn b == 0 {
     ensures e is ParseError summary "the zero case throws a ParseError"
-//          ^^^^^^^^^^^^^^^ error: the zero case throws a ParseError could not be proved
+//          ^^^^^^^^^^^^^^^ error: the zero case throws a ParseError does not hold
   }
 {
   if b == 0 then {

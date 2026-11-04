@@ -44,8 +44,8 @@ phase                                   O   I   Ic  T   Co  Is  tC  Tr  Ts  Tf  
  9 CopyMutatedInputs                  | | | + + | : | | : : : : : : : : : : : : : : : : : : | : : | : : | | : : | | | : | : V | : :
 10 EliminateValueInReturns            | | | | | + V | | : : : : : : : : : : : : : :   : : : | : : | : : | | : : | | | : | : | | : :
 11 EliminateExceptions                + + | | | | + | | : : : : : V V : V : V : : : : : : : | : : | : : | | : : | | | : | : | | : :
-12 LowerComposite                     + + | | | + | + | V V V V : | | : | : | : : : : : : : | : : | : : | | : : | | | : | : | | : :
-13 ConstrainedTypeElim                + + | | | | + | | | | | | V | | : | : | : : : : : : : | : : | : : | | : : | | | : | : | | : :
+12 LowerComposite                     + + | | | + | + | V V : :   | | : | : | : : : : : : : | : : | : : | | : : | | | : | : | | : :
+13 ConstrainedTypeElim                + + | | | | + | | | | V V V | | : | : | : : : : : : : | : : | : : | | : : | | | : | : | | : :
 14 YieldElim                          + + | | | | | | + | | | | | | | : | : | : : : : :   : | : : ' : V | | : : | | | : | : | | V V
 15 HeapParameterization               + + | | | | + | | + + + + + + + V | : | : : : :   : : | V V V   | | | :   | | | : | : | | | |
 16 ModifiesClausesTransform           + + | | | | | | | | | | | | | | + | : | : : : : :   : | | | |   | | | : : | | | : | : | | | |

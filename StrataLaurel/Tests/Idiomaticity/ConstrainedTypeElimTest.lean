@@ -203,15 +203,19 @@ procedure f() opaque {
 /--
 info: datatype TypeTag { Ctr_TypeTag }
 datatype Composite { MkComposite(ref: int, typeTag: TypeTag) }
-const ancestorsForCtr: TotalMap TypeTag bool := update(mapConst(false), Ctr_TypeTag(), true)
-const ancestorsPerType: TotalMap TypeTag (TotalMap TypeTag bool) := update(mapConst(mapConst(false)), Ctr_TypeTag(), ancestorsForCtr())
 $heapfield var Ctr.n: int
 procedure nat$constraint(x: int): bool
 {
   $result := x >= 0;
   return
 };
+procedure Ctr$constraint($c: Composite): bool
+{
+  $result := Composite..typeTag!($c) == Ctr_TypeTag();
+  return
+};
 procedure getN(c: Composite): int
+  free requires Ctr$constraint(c)
 {
   $result := {
     assume nat$constraint(Composite..ref!(c)#Ctr.n);
@@ -219,12 +223,6 @@ procedure getN(c: Composite): int
   };
   assert nat$constraint($result);
   return
-};
-procedure downcast$Ctr(p: Composite)
-  returns (r: Composite)
-  requires select(select(ancestorsPerType(), Composite..typeTag!(p)), Ctr_TypeTag())
-{
-  r := p
 };
 procedure $allocate()
   returns (r: int)external;
@@ -234,10 +232,22 @@ procedure $witness_nat()
   var $witness: int := 0;
   assert nat$constraint($witness)
 };
+procedure $witness_Ctr()
+  opaque
+{
+  var $witness: Composite := MkComposite(0, Ctr_TypeTag());
+  assert Ctr$constraint($witness)
+};
 procedure $fieldConstraint_Ctr$n($r: int)
   invokeOn $r#Ctr.n
   opaque
   ensures nat$constraint($r#Ctr.n);
+procedure downcast$Ctr(p: Composite)
+  returns (r: Composite)
+  requires Ctr$constraint(p)
+{
+  r := p
+};
 -/
 #guard_msgs in
 #eval runAfterLowerComposite <|
@@ -318,9 +328,6 @@ procedure partial(b: bool) returns (r: nat) { if b then { r := 1 } };
 /--
 info: datatype TypeTag { Box$a1$int8_TypeTag, Box$a1$nat_TypeTag }
 datatype Composite { MkComposite(ref: int, typeTag: TypeTag) }
-const ancestorsForBox$a1$int8: TotalMap TypeTag bool := update(mapConst(false), Box$a1$int8_TypeTag(), true)
-const ancestorsForBox$a1$nat: TotalMap TypeTag bool := update(mapConst(false), Box$a1$nat_TypeTag(), true)
-const ancestorsPerType: TotalMap TypeTag (TotalMap TypeTag bool) := update(update(mapConst(mapConst(false)), Box$a1$int8_TypeTag(), ancestorsForBox$a1$int8()), Box$a1$nat_TypeTag(), ancestorsForBox$a1$nat())
 $heapfield var Box$a1$int8.v: int as Box.v
 $heapfield var Box$a1$int8.n: int as Box.n
 $heapfield var Box$a1$nat.v: int as Box.v
@@ -335,6 +342,16 @@ procedure nat$constraint(x: int): bool
   $result := x >= 0;
   return
 };
+procedure Box$a1$int8$constraint($c: Composite): bool
+{
+  $result := Composite..typeTag!($c) == Box$a1$int8_TypeTag();
+  return
+};
+procedure Box$a1$nat$constraint($c: Composite): bool
+{
+  $result := Composite..typeTag!($c) == Box$a1$nat_TypeTag();
+  return
+};
 procedure user(m: (TotalMap int int), k: (TotalMap int int))
   opaque
 {
@@ -344,26 +361,16 @@ procedure user(m: (TotalMap int int), k: (TotalMap int int))
 procedure toBox$a1$int8(m: (TotalMap int int))
   returns (r: Composite)
   opaque
+  free ensures Box$a1$int8$constraint(r)
 {
   r := MkComposite($allocate(), Box$a1$int8_TypeTag())
 };
 procedure toBox$a1$nat(m: (TotalMap int int))
   returns (r: Composite)
   opaque
+  free ensures Box$a1$nat$constraint(r)
 {
   r := MkComposite($allocate(), Box$a1$nat_TypeTag())
-};
-procedure downcast$Box$a1$int8(p: Composite)
-  returns (r: Composite)
-  requires select(select(ancestorsPerType(), Composite..typeTag!(p)), Box$a1$int8_TypeTag())
-{
-  r := p
-};
-procedure downcast$Box$a1$nat(p: Composite)
-  returns (r: Composite)
-  requires select(select(ancestorsPerType(), Composite..typeTag!(p)), Box$a1$nat_TypeTag())
-{
-  r := p
 };
 procedure $allocate()
   returns (r: int)external;
@@ -379,10 +386,34 @@ procedure $witness_nat()
   var $witness: int := 0;
   assert nat$constraint($witness)
 };
+procedure $witness_Box$a1$int8()
+  opaque
+{
+  var $witness: Composite := MkComposite(0, Box$a1$int8_TypeTag());
+  assert Box$a1$int8$constraint($witness)
+};
+procedure $witness_Box$a1$nat()
+  opaque
+{
+  var $witness: Composite := MkComposite(0, Box$a1$nat_TypeTag());
+  assert Box$a1$nat$constraint($witness)
+};
 procedure $fieldConstraint_Box$a1$int8$n($r: int)
   invokeOn $r#Box$a1$int8.n
   opaque
   ensures int8$constraint($r#Box$a1$int8.n);
+procedure downcast$Box$a1$int8(p: Composite)
+  returns (r: Composite)
+  requires Box$a1$int8$constraint(p)
+{
+  r := p
+};
+procedure downcast$Box$a1$nat(p: Composite)
+  returns (r: Composite)
+  requires Box$a1$nat$constraint(p)
+{
+  r := p
+};
 -/
 #guard_msgs in
 #eval (runAfterLowerComposite (monomorphize := true)) <|

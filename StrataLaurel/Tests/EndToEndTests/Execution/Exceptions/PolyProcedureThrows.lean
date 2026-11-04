@@ -172,7 +172,7 @@ procedure doesNotCatchCloneThrows() returns (out: int)
   var bx: Box<int> := new Box<int>;
   bx#val := 7;
   out := mayThrow(bx)
-//       ^^^^^^^^^^^^ error: call does not throw an uncaught 'Err$a1$int' could not be proved
+//       ^^^^^^^^^^^^ error: call does not throw an uncaught 'Err$a1$int' does not hold
 };
 #end
 

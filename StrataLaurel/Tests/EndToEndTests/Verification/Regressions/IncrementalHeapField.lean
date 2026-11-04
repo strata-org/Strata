@@ -62,7 +62,7 @@ private def bothWays (p : StrataDDM.Program) : IO Unit := do
     else IO.println s!"differ:\n  per-obligation: {plain}\n  incremental: {walked}"
 
 /--
-info: agree on 8:
+info: agree on 9:
   set_$result_calls_Int.SafeDiv_0 ✅ pass
   set_$result_calls_Int.SafeMod_0 ✅ pass
   set_$result_calls_Int.SafeDivT_0 ✅ pass
@@ -71,6 +71,7 @@ info: agree on 8:
   assert(1007) ✅ pass
   assert(1039) ❌ fail
   assert(877) ✅ pass
+  assert(759) ✅ pass
 -/
 #guard_msgs in
 #eval bothWays heapProgram

@@ -25,71 +25,6 @@ private def mkMd (e : StmtExpr) (source : FileRange) : StmtExprMd := ⟨e, sourc
 private def syntheticSource : FileRange :=
   { file := .file "StrataLaurel/Implementation/LowerComposite.lean", range := SourceRange.none }
 
-/--
-Generate Laurel constant definitions for the type hierarchy:
-- A `ancestorsFor<Type>` constant per composite type.
-It enables checking for `<Type>` whether it is assignable to another type using a TotalMap lookup.
-- A `ancestorsPerType` constant combining the per-type constants.
-It enables checking for any type whether it is assignable to any other type using two TotalMap lookups.
-We use this to translate `<value> is <Type>`.
-The runtime type of `<value>` is used for the outer TotalMap lookup while `<Type>` for the inner one.
-
--/
-def generateTypeHierarchyDecls (model : SemanticModel) (program: LaurelProgram) : Except String (List Constant) := do
-  let composites := program.types.filterMap fun td => match td with
-    | .Composite ct => some ct
-    | _ => none
-  if composites.isEmpty then return [] else
-  let typeTagTy : HighTypeMd := ⟨.UserDefined "TypeTag", syntheticSource⟩
-  let boolTy : HighTypeMd := ⟨.TBool, syntheticSource⟩
-  let innerMapTy : HighTypeMd := ⟨.TMap typeTagTy boolTy, syntheticSource⟩
-  let outerMapTy : HighTypeMd := ⟨.TMap typeTagTy innerMapTy, syntheticSource⟩
-  -- Helper: build an inner map (TotalMap TypeTag bool) for a given composite type
-  -- Start with mapConst(false), then update each composite type's entry
-  let mkInnerMap (ct : CompositeType) : Except String StmtExprMd := do
-    let ancestors ← computeAncestors model ct.name
-    let falseConst := mkMd (.LiteralBool false) syntheticSource
-    let emptyInner := mkMd (.StaticCall "mapConst" [falseConst] []) syntheticSource
-    composites.foldlM (init := emptyInner) fun acc otherCt => do
-      let isAncestor ← ancestors.anyM (fun anc => otherCt.name.sameId anc.name)
-      if isAncestor then
-        let otherConst := mkMd (.StaticCall (mkId $ otherCt.name.text ++ "_TypeTag") [] []) syntheticSource
-        let boolVal := mkMd (.LiteralBool true) syntheticSource
-        pure (mkMd (.StaticCall "update" [acc, otherConst, boolVal] []) syntheticSource)
-      else pure acc
-  -- Generate a separate constant `ancestorsFor<Type>` for each composite type
-  let ancestorsForDecls : List Constant ← composites.mapM fun ct => do
-    let innerMap ← mkInnerMap ct
-    pure { name := s!"ancestorsFor{ct.name.text}", type := innerMapTy, initializer := some innerMap }
-  -- Build ancestorsPerType by referencing the individual ancestorsFor<Type> constants
-  let falseConst := mkMd (.LiteralBool false) syntheticSource
-  let emptyInner := mkMd (.StaticCall "mapConst" [falseConst] []) syntheticSource
-  let emptyOuter := mkMd (.StaticCall "mapConst" [emptyInner] []) syntheticSource
-  let outerMapExpr := composites.foldl (fun acc ct =>
-    let typeConst := mkMd (.StaticCall (mkId $ ct.name.text ++ "_TypeTag") [] []) syntheticSource
-    let innerMapRef := mkMd (.StaticCall s!"ancestorsFor{ct.name.text}" [] []) syntheticSource
-    mkMd (.StaticCall "update" [acc, typeConst, innerMapRef] []) syntheticSource
-  ) emptyOuter
-  let ancestorsDecl : Constant :=
-    { name := "ancestorsPerType"
-      type := outerMapTy
-      initializer := some outerMapExpr }
-  pure (ancestorsForDecls ++ [ancestorsDecl])
-
-/--
-Lower `IsType target ty` to Laurel-level map lookups:
-  `select(select(ancestorsPerType(), Composite..typeTag!(target)), TypeName_TypeTag())`
--/
-def lowerIsType (target : StmtExprMd) (ty : HighTypeMd) (source : FileRange) : StmtExprMd :=
-  match ty.val with
-    | .UserDefined name => let typeName := name.text
-        let typeTag := mkMd (.StaticCall "Composite..typeTag!" [target] []) source
-        let ancestorsPerType := mkMd (.StaticCall "ancestorsPerType" [] []) source
-        let innerMap := mkMd (.StaticCall "select" [ancestorsPerType, typeTag] []) source
-        let typeConst := mkMd (.StaticCall (mkId $ typeName ++ "_TypeTag") [] []) source
-        ⟨.StaticCall "select" [innerMap, typeConst] [], source⟩
-    | _ => { val := .Hole, source := source }
-
 abbrev LCM := Except String
 
 private def isComposite (model : SemanticModel) (name : Identifier) : Bool :=
@@ -180,7 +115,6 @@ private def lowerCompositeNode (model : SemanticModel) (e : StmtExprMd) : LCM St
   -- Type args are already stripped by MonomorphizeComposites (`new C<τ>` → `new C$…`),
   -- so lowering keys off the concrete name and the residual `_` is safely ignored.
   | .New name _ => return lowerNew name source
-  | .IsType target ty => return lowerIsType target ty source
   | .Quantifier mode param trigger body =>
     let isComposite' : HighType → Bool := fun ty => match ty with
       | .UserDefined name => isComposite model name
@@ -188,10 +122,6 @@ private def lowerCompositeNode (model : SemanticModel) (e : StmtExprMd) : LCM St
     match quantifyOverReference isComposite' param trigger body with
     | some (param', trigger', body') => return ⟨.Quantifier mode param' trigger' body', source⟩
     | none => return e
-  | .AsType target ty =>
-    match highBaseName? ty.val with
-    | some tn => return ⟨.StaticCall (downcastProcName tn) [target] [], source⟩
-    | none => throw s!"cast to '{repr ty.val}', which is not a composite type, reached LowerComposite"
   | _ => return e
 
 /--
@@ -210,6 +140,44 @@ def compositeRefToComposite (composites : Std.HashSet String) (ty : HighTypeMd) 
       | .UserDefined name =>
         if composites.contains name.text then .UserDefined compositeTypeName else t
       | _ => t }
+
+partial def compositeRefToConstrained (composites : Std.HashSet String)
+    (datatypes : Std.HashSet String) (ty : HighTypeMd) : HighTypeMd :=
+  match ty.val with
+  | .UserDefined _ => ty
+  | .Applied base args =>
+    match base.val with
+    | .UserDefined n =>
+      if datatypes.contains n.text then
+        { ty with val := .Applied base (args.map (compositeRefToConstrained composites datatypes)) }
+      else compositeRefToComposite composites ty
+    | _ => compositeRefToComposite composites ty
+  | _ => compositeRefToComposite composites ty
+
+private def flattenCallTypeArgs (composites : Std.HashSet String) (e : StmtExprMd) : StmtExprMd :=
+  match e.val with
+  | .StaticCall callee args tyArgs@(_ :: _) =>
+    ⟨.StaticCall callee args (tyArgs.map (compositeRefToComposite composites)), e.source⟩
+  | _ => e
+
+def compositeConstrainedType (model : SemanticModel) (composites : List CompositeType)
+    (gradualTypes : Std.HashSet String) (ct : CompositeType) : Except String ConstrainedType := do
+  let valueName : Identifier := mkId "$c"
+  let src := ct.name.source
+  let descendants ← composites.filterM fun d => do
+    (← computeAncestors model d.name).anyM fun anc => anc.name.sameId ct.name
+  let tag := mkMd (.StaticCall "Composite..typeTag!" [mkMd (.Var (.Local valueName)) src] []) src
+  let tagIs (d : CompositeType) : StmtExprMd :=
+    mkMd (.StaticCall (mkId Operation.Eq.procName)
+      [tag, mkMd (.StaticCall (mkId $ d.name.text ++ "_TypeTag") [] []) src] []) src
+  let constraint := if gradualTypes.contains ct.name.text then mkMd (.LiteralBool true) src else
+    match descendants.map tagIs with
+    | [] => mkMd (.LiteralBool false) src
+    | c :: cs => cs.foldl (fun acc x => mkMd (.StaticCall (mkId Operation.Or.procName) [acc, x] []) src) c
+  let witness := mkMd (.StaticCall compositeCtorName
+    [mkMd (.LiteralInt 0) src, mkMd (.StaticCall (ct.name.text ++ "_TypeTag") [] []) src] []) src
+  return { name := ct.name, base := ⟨.UserDefined compositeTypeName, src⟩, valueName,
+           constraint, witness, free := true }
 
 def generatedNameCollisionHint : String :=
   "this name collides with one introduced by an internal lowering \
@@ -235,7 +203,8 @@ def heapFieldLocationOwner (ct : CompositeType) : String :=
   | some family => (family.text.drop genericFamilyPrefix.length).toString
   | none => ct.name.text
 
-def lowerComposite (model : SemanticModel) (program : LaurelProgram) : Except String LaurelProgram := do
+def lowerComposite (model : SemanticModel) (program : LaurelProgram)
+    (gradualTypes : Std.HashSet String := {}) : Except String LaurelProgram := do
   let program := { program with types := program.types.filter fun td =>
     match td with
     | .Composite ct => !isGenericFamilyName ct.name.text
@@ -252,25 +221,6 @@ def lowerComposite (model : SemanticModel) (program : LaurelProgram) : Except St
       { name := mkId compositeCtorName,
         args := [{ name := "ref", type := ⟨.TInt, syntheticSource⟩ },
                  { name := "typeTag", type := typeTagTy }] }] }
-  let typeHierarchyConstants ← generateTypeHierarchyDecls model program
-  -- One downcast helper per composite — `procedure downcast$C(p: C) returns (r: C) requires (p is C) { r := p }`
-  -- — called by the cast lowering below so an `x as C` cast works in a
-  -- contract formula (the `is C` guard is a pure term; PrecondElim discharges it as a
-  -- well-definedness obligation). `C` flattens to `Composite` below, so `r := p` type-checks.
-  let downcastHelpers : List Procedure := program.types.filterMap fun td =>
-    match td with
-    | .Composite ct =>
-      let cty : HighTypeMd := ⟨.UserDefined ct.name, syntheticSource⟩
-      let pRef : StmtExprMd := mkMd (.Var (.Local "p")) syntheticSource
-      let assignOutput : StmtExprMd :=
-        mkMd (.Assign [⟨.Local "r", syntheticSource⟩] pRef) syntheticSource
-      some { name := downcastProcName ct.name, typeArgs := [],
-             inputs := [{ name := "p", type := cty }],
-             outputs := [{ name := "r", type := cty }],
-             preconditions := [{ condition := lowerIsType pRef cty syntheticSource }],
-             decreases := none,
-             body := .Transparent (mkMd (.Block [assignOutput] none [] none) syntheticSource) }
-    | _ => none
   let allocateProc : List Procedure :=
     if compositeNames.isEmpty then []
     else [{ name := mkId allocateProcName, typeArgs := [], inputs := [],
@@ -279,7 +229,7 @@ def lowerComposite (model : SemanticModel) (program : LaurelProgram) : Except St
   -- Program-wide, because the composite-flattening sweep at the end of this pass is too: a
   -- position this missed would keep its `.IsType` node while losing the annotation that node
   -- needs, which the re-resolution after the pass reports as a `strata-bug`.
-  let withHelpers := { program with staticProcedures := program.staticProcedures ++ downcastHelpers ++ allocateProc }
+  let withHelpers := { program with staticProcedures := program.staticProcedures ++ allocateProc }
   let withRefEq := mapLaurelProgramStmtExpr (rewriteReferenceEquality model) withHelpers
   let lowered ← mapLaurelProgramStmtExprM (lowerCompositeNode model) withRefEq
   let heapFields := lowered.types.flatMap fun td =>
@@ -288,14 +238,17 @@ def lowerComposite (model : SemanticModel) (program : LaurelProgram) : Except St
         { toField := { f with name := { text := ct.name.text ++ "." ++ f.name.text, source := f.name.source } }
           location := { text := heapFieldLocationOwner ct ++ "." ++ f.name.text, source := f.name.source } }
     | _ => []
-  let remainingTypes := lowered.types.filter fun td =>
+  let composites := lowered.types.filterMap fun td =>
     match td with
-    | .Composite _ => false
-    | _ => true
+    | .Composite ct => some ct
+    | _ => none
+  let remainingTypes ← lowered.types.mapM fun td =>
+    match td with
+    | .Composite ct => return .Constrained (← compositeConstrainedType model composites gradualTypes ct)
+    | _ => return td
   let transformed : LaurelProgram :=
     { lowered with
       types := [typeTagDatatype, compositeDatatype] ++ remainingTypes,
-      constants := lowered.constants ++ typeHierarchyConstants,
       heapFields := lowered.heapFields ++ heapFields }
   -- Now that `New`/`IsType` have been lowered (they needed the original
   -- composite names), flatten every remaining composite reference type to the
@@ -304,7 +257,31 @@ def lowerComposite (model : SemanticModel) (program : LaurelProgram) : Except St
   -- type position is covered uniformly.
   let compositeSet : Std.HashSet String :=
     compositeNames.foldl (init := {}) (·.insert ·)
-  pure (mapLaurelProgramHighTypes (compositeRefToComposite compositeSet) transformed)
+  let datatypeLookup (n : String) : Option DatatypeDefinition :=
+    lowered.types.findSome? fun td => match td with
+      | .Datatype dt => if dt.name.text == n then some dt else none
+      | _ => none
+  let datatypeSet : Std.HashSet String := lowered.types.foldl (init := {}) fun acc td =>
+    match td with
+    | .Datatype dt => if dt.constrainedArgsSupported datatypeLookup then acc.insert dt.name.text else acc
+    | _ => acc
+  let flat := compositeRefToComposite compositeSet
+  let keep := compositeRefToConstrained compositeSet datatypeSet
+  let keepProc (p : Procedure) : Procedure :=
+    mapProcedureM (m := Id) (mapStmtExpr (flattenCallTypeArgs compositeSet))
+      (mapProcedureHighTypesM (m := Id) keep p)
+  pure { transformed with
+    staticProcedures := transformed.staticProcedures.map keepProc
+    staticFunctions := transformed.staticFunctions.map keepProc
+    staticFields := transformed.staticFields.map (mapFieldHighTypesM (m := Id) keep)
+    heapFields := transformed.heapFields.map fun hf => { hf with toField := mapFieldHighTypesM (m := Id) keep hf.toField }
+    types := transformed.types.map fun td => match td with
+      | .Constrained ct =>
+        match mapTypeDefinitionHighTypesM (m := Id) flat td with
+        | .Constrained ct' => .Constrained { ct' with base := keep ct.base }
+        | td' => td'
+      | td => mapTypeDefinitionHighTypesM (m := Id) flat td
+    constants := transformed.constants.map (mapConstantHighTypesM (m := Id) flat) }
 
 public def lowerCompositePass : LaurelPass := .onUnordered {
   name := "LowerComposite"
@@ -314,7 +291,8 @@ public def lowerCompositePass : LaurelPass := .onUnordered {
       NodeKind.Procedure.inputs.cons,
       NodeKind.Procedure.preconditions.cons,
       NodeKind.Pseudo.typeTag,
-      NodeKind.LaurelProgram.heapFields.cons
+      NodeKind.LaurelProgram.heapFields.cons,
+      NodeKind.TypeDefinition.Constrained
     ]
   unsupported := [
       NodeKind.CompositeType.typeArgs.cons,
@@ -322,17 +300,15 @@ public def lowerCompositePass : LaurelPass := .onUnordered {
       NodeKind.LaurelProgram.staticFunctions.cons
     ]
   removes := [
-      NodeKind.StmtExpr.IsType,
       NodeKind.StmtExpr.New,
-      NodeKind.StmtExpr.AsType,
       NodeKind.TypeDefinition.Composite
     ]
-  documentation := "Lowers composite types to the flat `Composite` datatype: every composite field becomes a heap field with a qualified name, accessed on the `int` reference of a `Composite`; allocation becomes `MkComposite($allocate(), C_TypeTag())`; type tests and casts become lookups in the ancestor tables; and reference equality compares the references."
+  documentation := "Lowers composite types to the flat `Composite` datatype: every composite field becomes a heap field with a qualified name, accessed on the `int` reference of a `Composite`; allocation becomes `MkComposite($allocate(), C_TypeTag())`; each composite type becomes a free constrained type over `Composite` whose constraint is its tag being one of its descendants'; and reference equality compares the references."
   }
-  fun _ p m =>
+  fun opts p m =>
     match reservedCompositeNameCollisions p with
     | [] =>
-      match lowerComposite m p with
+      match lowerComposite m p opts.gradualTypes with
       | .ok p' => (p', [], {})
       | .error e => (p, [Message.fromString e .strataBug], {})
     | collisions => (p, collisions, {})

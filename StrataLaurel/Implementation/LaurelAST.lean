@@ -2675,6 +2675,7 @@ structure ConstrainedType where
   constraint : StmtExprMd
   /-- A witness value proving the type is inhabited. -/
   witness : StmtExprMd
+  free : Bool := false
 
 /-- A constructor of a Laurel datatype, with a name and typed arguments. -/
 structure DatatypeConstructor where
@@ -2730,6 +2731,27 @@ partial def DatatypeDefinition.isRecursive (lookup : String → Option DatatypeD
         | some d => go (visited.insert n) (fieldNames d ++ rest)
         | none => go (visited.insert n) rest
   go {} (fieldNames dt)
+
+partial def DatatypeDefinition.constrainedArgsSupported
+    (lookup : String → Option DatatypeDefinition) (dt : DatatypeDefinition) : Bool :=
+  let rec supported (visited : List String) (d : DatatypeDefinition) : Bool :=
+    !visited.contains d.name.text && !d.isRecursive lookup &&
+    let params := d.typeArgs.map (·.text)
+    let rec shapeOk (ty : HighType) : Bool :=
+      match ty with
+      | .UserDefined _ | .TVar _ => true
+      | .Applied base args =>
+        match base.val with
+        | .UserDefined n =>
+          match lookup n.text with
+          | some inner => supported (d.name.text :: visited) inner &&
+              args.all fun a => !(a.val.mentionedNames.any params.contains) || shapeOk a.val
+          | none => false
+        | _ => false
+      | _ => false
+    d.constructors.all fun c => c.args.all fun p =>
+      !(p.type.val.mentionedNames.any params.contains) || shapeOk p.type.val
+  supported [] dt
 
 /-- A type alias, mapping a name to an existing type. Eliminated by the
     `TypeAliasElim` pass after the first resolution. -/

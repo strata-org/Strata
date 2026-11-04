@@ -52,7 +52,7 @@ procedure typeCheckingAndCasting()
   var c: Base := b;
   var d: Extender := c as Extender;
   var e: Extender := a as Extender
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
 };
 
 composite Top {
@@ -99,7 +99,7 @@ procedure crossCast()
   var m: Left := new Left;
   assert !(m is Right);
   var s: Right := m as Right
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
 };
 
 // Currently does not pass. Implementation needs b type invariant mechanism that we have yet to add.

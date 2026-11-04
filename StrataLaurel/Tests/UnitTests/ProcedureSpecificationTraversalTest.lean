@@ -302,7 +302,9 @@ private def isExpectedHeapRead (expr : StmtExprMd) : Bool :=
 
 private def lowerThenHeapParameterize (resolved : ResolutionResult) : Except String LaurelProgram := do
   let lowered ← lowerComposite resolved.model resolved.program
-  heapParameterization (resolve lowered (some resolved.model)).program
+  let loweredResolved := resolve lowered (some resolved.model)
+  let (eliminated, _) := constrainedTypeElim loweredResolved.model loweredResolved.program
+  heapParameterization (resolve eliminated (some loweredResolved.model)).program
 
 private def heapSpecificationsHasExpectedValues (proc : Procedure) : Bool :=
   let decreasesIsExpected := match proc.decreases with
@@ -576,9 +578,15 @@ private def isHeapWfPrecond (c : Condition) : Bool :=
        | _ => false)
   | _ => false
 
+private def isTypeConstraintPrecond (c : Condition) : Bool :=
+  match c.condition.val with
+  | .StaticCall callee _ _ => callee.text.endsWith "$constraint"
+  | _ => false
+
 private def addsOnlyHeapWfPreconds (proc : Procedure) (expected : Nat) : Bool :=
-  proc.preconditions.length == expected &&
-    proc.preconditions.all isHeapWfPrecond &&
+  let preconditions := proc.preconditions.filter (!isTypeConstraintPrecond ·)
+  preconditions.length == expected &&
+    preconditions.all isHeapWfPrecond &&
     proc.decreases.isNone && proc.invokeOn.isNone && proc.axioms.isEmpty
 
 private def findAnyProcedure (program : LaurelProgram) (name : String) : Option Procedure :=

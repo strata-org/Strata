@@ -84,7 +84,7 @@ procedure caller(x: int) returns (r: int)
   opaque
 {
   r := div(10, x)
-//     ^^^^^^^^^^ error: call does not throw an uncaught 'ArithError' could not be proved
+//     ^^^^^^^^^^ error: call does not throw an uncaught 'ArithError' does not hold
 };
 #end
 
@@ -459,7 +459,7 @@ composite Sub extends Base {
     if x == 0 then {
       var a: ArithError := new ArithError;
       throw a
-//    ^^^^^^^ error: uncaught exception 'ArithError' is not thrown could not be proved
+//    ^^^^^^^ error: uncaught exception 'ArithError' is not thrown does not hold
     };
     r := 1
   };
@@ -515,10 +515,10 @@ composite Sub extends Base {
     if x < 0 then {
       var p: ParseError := new ParseError;
       throw p
-//    ^^^^^^^ error: uncaught exception 'ParseError' is not thrown could not be proved
+//    ^^^^^^^ error: uncaught exception 'ParseError' is not thrown does not hold
     };
     r := risky(x)
-//       ^^^^^^^^ error: call does not throw an uncaught 'Exc' could not be proved
+//       ^^^^^^^^ error: call does not throw an uncaught 'Exc' does not hold
   };
 }
 #end
@@ -547,7 +547,7 @@ composite Sub extends Base {
       try {
         var p: ParseError := new ParseError;
         throw p
-//      ^^^^^^^ error: uncaught exception 'ParseError' is not thrown could not be proved
+//      ^^^^^^^ error: uncaught exception 'ParseError' is not thrown does not hold
       } finally {
         r := 9
       }
@@ -555,7 +555,7 @@ composite Sub extends Base {
     if x == 0 then {
       try {
         try {
-//      ^ error: an exception escaping this `try` is a 'ArithError' could not be proved
+//      ^ error: an exception escaping this `try` is a 'ArithError' does not hold
           var q: ParseError := new ParseError;
           throw q
         } catch c when c is ArithError {

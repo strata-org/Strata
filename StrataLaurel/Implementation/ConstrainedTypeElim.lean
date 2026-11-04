@@ -59,23 +59,25 @@ structure CteCtx where
   ptMap : ConstrainedTypeMap
   dtMap : DatatypeMap := {}
   mixed : Std.HashSet String := {}
+  aliased : Std.HashSet String := {}
 
 private def conjoin (src : FileRange) : List StmtExprMd → Option StmtExprMd
   | [] => none
   | e :: es => some (es.foldl (fun acc x => ⟨.StaticCall (mkId Operation.And.procName) [acc, x] [], src⟩) e)
 
 partial def constraintAtoms (cx : CteCtx) (ty : HighType) (ref : StmtExprMd)
-    (src : FileRange) : List StmtExprMd :=
+    (src : FileRange) : List (Bool × StmtExprMd) :=
   match ty with
   | .UserDefined name =>
-    if cx.ptMap.contains name.text then [⟨.StaticCall (mkId s!"{name.text}$constraint") [ref] [], src⟩]
-    else []
+    match cx.ptMap.get? name.text with
+    | some ct => [(ct.free, ⟨.StaticCall (mkId s!"{name.text}$constraint") [ref] [], src⟩)]
+    | none => []
   | .Applied base args =>
     match base.val with
     | .UserDefined dtName =>
       match cx.dtMap.get? dtName.text with
       | some dt =>
-        if dt.isRecursive cx.dtMap.get? || dt.typeArgs.length != args.length then [] else
+        if !dt.constrainedArgsSupported cx.dtMap.get? || dt.typeArgs.length != args.length then [] else
         let subst : Std.HashMap String HighTypeMd :=
           (dt.typeArgs.zip args).foldl (fun m (p, a) => m.insert p.text a) {}
         dt.constructors.flatMap fun ctor =>
@@ -85,23 +87,26 @@ partial def constraintAtoms (cx : CteCtx) (ty : HighType) (ref : StmtExprMd)
           let inner := generic.flatMap fun p =>
             let read : StmtExprMd := ⟨.StaticCall (mkId (dt.unsafeDestructorName p)) [ref] [], src⟩
             constraintAtoms cx (substTypeVars subst p.type).val read src
-          (conjoin src inner).toList.map fun body =>
-            ⟨.StaticCall (mkId Operation.Implies.procName) [tester, body] [], src⟩
+          [false, true].filterMap fun free =>
+            (conjoin src ((inner.filter (·.1 == free)).map (·.2))).map fun body =>
+              (free, ⟨.StaticCall (mkId Operation.Implies.procName) [tester, body] [], src⟩)
       | none => []
     | _ => []
   | _ => []
 
 def constraintCallForExpr (cx : CteCtx) (ty : HighType)
-    (ref : StmtExprMd) (src : FileRange) : Option StmtExprMd :=
-  conjoin src (constraintAtoms cx ty ref src)
+    (ref : StmtExprMd) (src : FileRange) (only : Option Bool := none) : Option StmtExprMd :=
+  conjoin src ((constraintAtoms cx ty ref src).filter (fun a => only.all (· == a.1)) |>.map (·.2))
 
 def constraintCallFor (cx : CteCtx) (ty : HighType)
-    (varName : Identifier) (src : FileRange) : Option StmtExprMd :=
-  constraintCallForExpr cx ty ⟨.Var (.Local varName), src⟩ src
+    (varName : Identifier) (src : FileRange) (only : Option Bool := none) : Option StmtExprMd :=
+  constraintCallForExpr cx ty ⟨.Var (.Local varName), src⟩ src only
 
 def conditionsForExpr (cx : CteCtx) (ty : HighType) (ref : StmtExprMd)
     (src : FileRange) : List Condition :=
-  (constraintCallForExpr cx ty ref src).toList.map (fun c => { condition := c })
+  (constraintCallForExpr cx ty ref src (only := some false)).toList.map (fun c => { condition := c }) ++
+  (constraintCallForExpr cx ty ref src (only := some true)).toList.map
+    (fun c => { condition := c, mode := .Assume })
 
 def conditionsFor (cx : CteCtx) (ty : HighType) (varName : Identifier)
     (src : FileRange) : List Condition :=
@@ -158,8 +163,16 @@ def resolveExprNode (cx : CteCtx) (expr : StmtExprMd) : StmtExprMd :=
       | some c => ⟨.StaticCall (mkId combiner.procName) [c, body] [], source⟩
       | none => body
     ⟨.Quantifier mode param' trigger injected, source⟩
-  | .AsType t ty => ⟨.AsType t (resolveType cx.ptMap ty), source⟩
-  | .IsType t ty => ⟨.IsType t (resolveType cx.ptMap ty), source⟩
+  | .AsType t ty =>
+    match ty.val with
+    | .UserDefined name =>
+      if cx.ptMap.contains name.text then ⟨.StaticCall (downcastProcName name) [t] [], source⟩
+      else ⟨.AsType t (resolveType cx.ptMap ty), source⟩
+    | _ => ⟨.AsType t (resolveType cx.ptMap ty), source⟩
+  | .IsType t ty =>
+    match constraintCallForExpr cx ty.val t source with
+    | some c => c
+    | none => ⟨.IsType t (resolveType cx.ptMap ty), source⟩
   -- `Resolution.Check.holeNone` records the expected type on an untyped hole in check
   -- position. Resolve that annotation together with the surrounding declaration so no
   -- constrained type remains after this pass. This applies to both hole kinds.
@@ -187,13 +200,13 @@ def elimNode (cx : CteCtx) (model : SemanticModel)
   let source := node.source
   match node.val with
   | .Var (.Declare ⟨name, some ty⟩) =>
-    let check := (constraintCallFor cx ty.val name (src := source)).toList.map
+    let check := (constraintCallFor cx ty.val name (src := source) (only := some false)).toList.map
       fun c => ⟨.Assume c, source⟩
     return [node] ++ check
   | .Assign targets _value =>
     let asserts: List StmtExprMd := targets.filterMap (fun target =>
       let ref : StmtExprMd := VariableMd.toReadbackExpr target
-      (constraintCallForExpr cx (computeExprType model ref).val ref (src := source)).map
+      (constraintCallForExpr cx (computeExprType model ref).val ref (src := source) (only := some false)).map
         (⟨.Assert · none, source⟩))
     let suffix := match targets with
       | [single] => if resultUsed then [VariableMd.toReadbackExpr single] else []
@@ -223,17 +236,24 @@ def elimNode (cx : CteCtx) (model : SemanticModel)
     --
     -- Field reads only: a datatype destructor read (`MkCell(v).val`) has no checked
     -- write, so the `Datatype` branch over-approximates.
-    if cx.mixed.contains fieldName.text then return [node] else
+    if cx.mixed.contains fieldName.text then
+      if !cx.aliased.contains fieldName.text then return [node] else
+      match constraintCallForExpr cx (computeExprType model node).val node (src := source) (only := some true) with
+      | some c =>
+        let summary := "the value read from a field that another generic instantiation shares has its declared type"
+        return [⟨.Assert c (some summary), source⟩, node]
+      | none => return [node]
+    else
     match constraintCallForExpr cx (computeExprType model node).val node (src := source) with
     | some c => return [⟨.Assume c, source⟩, node]
     | none => return [node]
   | .Hole _ (some ty) =>
-    if !resultUsed || (constraintCallFor cx ty.val (mkId "") (src := source)).isNone then
+    if !resultUsed || (constraintCallFor cx ty.val (mkId "") (src := source) (only := some false)).isNone then
       return [node]
     let n ← modifyGet fun n => (n, n + 1)
     let h := mkId s!"$constrainedHole{n}"
     let decl : StmtExprMd := ⟨.Assign [⟨.Declare ⟨h, some ty⟩, source⟩] node, source⟩
-    let assume := (constraintCallFor cx ty.val h (src := source)).toList.map
+    let assume := (constraintCallFor cx ty.val h (src := source) (only := some false)).toList.map
       fun c => ⟨.Assume c, source⟩
     return [decl] ++ assume ++ [⟨.Var (.Local h), source⟩]
   | _ => return [node]
@@ -252,7 +272,7 @@ private def addExitChecks (cx : CteCtx) (outputs : List Parameter)
     (body : StmtExprMd) : StmtExprMd :=
   let checks (at? : Option FileRange) : List StmtExprMd := outputs.filterMap fun p =>
     let src := at?.getD p.type.source
-    (constraintCallFor cx p.type.val p.name (src := src)).map (⟨.Assert · none, src⟩)
+    (constraintCallFor cx p.type.val p.name (src := src) (only := some false)).map (⟨.Assert · none, src⟩)
   let assignsOutput (s : StmtExprMd) : Bool := match s.val with
     | .Assign [⟨.Local n, _⟩] _ =>
       outputs.any fun p => p.name.text == n.text && p.name.uniqueId == n.uniqueId
@@ -294,7 +314,7 @@ def elimProc (cx : CteCtx) (model : SemanticModel)
   -- type constraints are asserted where the body exits instead.
   | .Transparent bodyExpr =>
     let constrained := proc.outputs.filter fun p =>
-      (constraintCallFor cx p.type.val p.name (src := p.type.source)).isSome
+      (constraintCallFor cx p.type.val p.name (src := p.type.source) (only := some false)).isSome
     if constrained.isEmpty then .Transparent (elimStmts cx model bodyExpr) else
     let body := elimStmts cx model bodyExpr
     .Transparent (addExitChecks cx constrained body)
@@ -325,12 +345,15 @@ private def mkWitnessProc (cx : CteCtx) (ct : ConstrainedType) : Procedure :=
   let witnessId : Identifier := mkId "$witness"
   let witnessInit : StmtExprMd :=
     ⟨.Assign [⟨.Declare ⟨witnessId, some (resolveType cx.ptMap ct.base)⟩, src⟩] ct.witness, src⟩
+  let assumeBase : List StmtExprMd :=
+    (constraintCallFor cx ct.base.val witnessId (src := src) (only := some true)).toList.map
+      (⟨.Assume ·, src⟩)
   let assert : StmtExprMd :=
     ⟨.Assert (constraintCallFor cx (.UserDefined ct.name) witnessId (src := src)).get! none, src⟩
   { name := mkId s!"$witness_{ct.name.text}"
     inputs := []
     outputs := []
-    body := .Opaque [] (some ⟨.Block [witnessInit, assert] none [] none, src⟩) []
+    body := .Opaque [] (some ⟨.Block ([witnessInit] ++ assumeBase ++ [assert]) none [] none, src⟩) []
     preconditions := []
     decreases := none }
 
@@ -340,6 +363,41 @@ private def mkWitnessProc (cx : CteCtx) (ct : ConstrainedType) : Procedure :=
     `S := int8`, a `Box<int>` view sets a `Box<int8>`'s `v` to 1000. A type stored in another
     box, as `bool` is, is no exception: the `int` read off a `bool` box is one value, so two
     bounds assumed of it may contradict. -/
+private def descendantTags (ptMap : ConstrainedTypeMap) (owner : String) : List String :=
+  match ptMap.get? owner with
+  | some ct =>
+    if !ct.free then [] else
+    foldStmtExpr (fun e acc => match e.val with
+      | .StaticCall callee [] _ => if callee.text.endsWith "_TypeTag" then callee.text :: acc else acc
+      | _ => acc) [] ct.constraint
+  | none => []
+
+private def aliasedHeapFields (ptMap : ConstrainedTypeMap) (heapFields : List HeapField) :
+    Std.HashSet String :=
+  let owner (f : HeapField) : String :=
+    ptMap.fold (init := "") fun best name ct =>
+      if ct.free && f.name.text.startsWith (name ++ ".") && name.length > best.length then name else best
+  heapFields.foldl (init := {}) fun s f =>
+    if heapFields.any fun g => g.location.text == f.location.text && !highEq g.type f.type &&
+        (descendantTags ptMap (owner f)).any (descendantTags ptMap (owner g)).contains
+    then s.insert f.name.text else s
+
+private def mkDowncastProc (cx : CteCtx) (ct : ConstrainedType) : Option Procedure :=
+  match resolveType cx.ptMap ct.base |>.val with
+  | .UserDefined b =>
+    if b.text != compositeTypeName.text then none else
+    let src := ct.name.source
+    let compositeTy : HighTypeMd := ⟨.UserDefined compositeTypeName, src⟩
+    let pRef : StmtExprMd := ⟨.Var (.Local "p"), src⟩
+    (constraintCallForExpr cx (.UserDefined ct.name) pRef src).map fun condition =>
+      { name := downcastProcName ct.name, typeArgs := [],
+        inputs := [{ name := "p", type := compositeTy }],
+        outputs := [{ name := "r", type := compositeTy }],
+        preconditions := [{ condition }],
+        decreases := none,
+        body := .Transparent ⟨.Block [⟨.Assign [⟨.Local "r", src⟩] pRef, src⟩] none [] none, src⟩ }
+  | _ => none
+
 private def mixedHeapFields (heapFields : List HeapField) : Std.HashSet String :=
   heapFields.foldl (init := {}) fun s f =>
     if heapFields.any fun g => g.location.text == f.location.text && !highEq g.type f.type
@@ -379,7 +437,7 @@ private def mkHeapFieldConstraintProc (cx : CteCtx) (f : HeapField) : Option Pro
   let src := f.name.source
   let refName : Identifier := mkId "$r"
   let fieldRead : StmtExprMd := ⟨.Var (.Field ⟨.Var (.Local refName), src⟩ f.name), src⟩
-  (constraintCallForExpr cx f.type.val fieldRead (src := src)).map fun constraint =>
+  (constraintCallForExpr cx f.type.val fieldRead (src := src) (only := some false)).map fun constraint =>
     { name := mkId s!"$fieldConstraint_{f.name.text.replace "." "$"}"
       inputs := [{ name := refName, type := ⟨.TInt, src⟩ }]
       outputs := []
@@ -428,8 +486,11 @@ private def addConstrainedGlobalConditions (cx : CteCtx)
       let ensures := if procedureHasEffect writers proc then
         ensures ++ condition else ensures
       (requires, ensures)
+  let checkedEnsures := ensures.filter (·.mode != .Assume)
   let body := if ensures.isEmpty then proc.body else match proc.body with
-    | .Transparent implementation => .Opaque ensures (some implementation) []
+    | .Transparent implementation =>
+      if checkedEnsures.isEmpty then proc.body
+      else .Opaque ensures (some implementation) []
     | .Opaque posts implementation modifies =>
         .Opaque (posts ++ ensures) implementation modifies
     | .Abstract posts => .Abstract (posts ++ ensures)
@@ -441,11 +502,14 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
   let ptMap := buildConstrainedTypeMap program.types
   if ptMap.isEmpty then (program, []) else
   let cx : CteCtx :=
-    { ptMap, dtMap := buildDatatypeMap program.types, mixed := mixedHeapFields program.heapFields }
+    { ptMap, dtMap := buildDatatypeMap program.types, mixed := mixedHeapFields program.heapFields,
+      aliased := aliasedHeapFields ptMap program.heapFields }
   let constraintProcs := program.types.filterMap fun
     | .Constrained ct => some (mkConstraintProc ptMap ct) | _ => none
   let witnessProcedures := program.types.filterMap fun
     | .Constrained ct => some (mkWitnessProc cx ct) | _ => none
+  let downcastProcedures := program.types.filterMap fun
+    | .Constrained ct => mkDowncastProc cx ct | _ => none
   let firstAtLocation := (program.heapFields.foldl (init := (([] : List HeapField), ({} : Std.HashSet String)))
     fun (acc, seen) f =>
       if seen.contains f.location.text then (acc, seen) else (acc ++ [f], seen.insert f.location.text)).1
@@ -458,10 +522,10 @@ public def constrainedTypeElim (model : SemanticModel) (program : LaurelProgram)
   let addGlobalConditions :=
     addConstrainedGlobalConditions cx effects program.staticFields
   let prepared := program.staticProcedures.map addGlobalConditions
-  ({ program with
+  (mapLaurelProgramHighTypes (resolveType ptMap) { program with
     staticProcedures := constraintProcs ++
       prepared.map (elimProc cx model)
-                        ++ witnessProcedures ++ fieldAxiomProcedures
+                        ++ witnessProcedures ++ fieldAxiomProcedures ++ downcastProcedures
     staticFields := program.staticFields.map fun field =>
       { field with
         type := resolveType ptMap field.type
@@ -496,8 +560,8 @@ public def constrainedTypeElimPass : LaurelPass := .onUnordered {
       NodeKind.StmtExpr.Return.value.some
     ]
   creates := [NodeKind.LaurelProgram.staticProcedures.cons, NodeKind.StmtExpr.StaticCall]
-  removes := [NodeKind.TypeDefinition.Constrained]
-  documentation := "Eliminates constrained types by replacing them with their base types and generating constraint-checking procedures and witness procedures. Type tests against constrained types are rewritten to call the generated constraint procedure."
+  removes := [NodeKind.TypeDefinition.Constrained, NodeKind.StmtExpr.IsType, NodeKind.StmtExpr.AsType]
+  documentation := "Eliminates constrained types by replacing them with their base types and generating constraint-checking procedures and witness procedures. A free constraint is assumed wherever a value of its type enters and never asserted. Type tests against constrained types are rewritten to call the generated constraint procedure, and casts to a `downcast$T` helper that requires it."
   needsResolves := true }
   fun _ p m =>
     let (p', diags) := constrainedTypeElim m p

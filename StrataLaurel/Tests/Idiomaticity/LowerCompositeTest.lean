@@ -8,6 +8,7 @@ module
 meta import StrataLaurel.Tests.Util.TestLaurel
 meta import StrataLaurel.Implementation.Interpreter
 import StrataLaurel.Implementation.LowerComposite
+import StrataLaurel.Implementation.ConstrainedTypeElim
 import StrataLaurel.Implementation.MonomorphizeComposites
 
 open Strata
@@ -42,39 +43,26 @@ procedure main()
 /--
 info: datatype TypeTag { Animal_TypeTag, Cat_TypeTag }
 datatype Composite { MkComposite(ref: int, typeTag: TypeTag) }
-const ancestorsForAnimal: TotalMap TypeTag bool := update(mapConst(false), Animal_TypeTag(), true)
-const ancestorsForCat: TotalMap TypeTag bool := update(update(mapConst(false), Animal_TypeTag(), true), Cat_TypeTag(), true)
-const ancestorsPerType: TotalMap TypeTag (TotalMap TypeTag bool) := update(update(mapConst(mapConst(false)), Animal_TypeTag(), ancestorsForAnimal()), Cat_TypeTag(), ancestorsForCat())
+constrained Animal = $c: Composite where Composite..typeTag!($c) == Animal_TypeTag() | Composite..typeTag!($c) == Cat_TypeTag() witness MkComposite(0, Animal_TypeTag())
+constrained Cat = $c: Composite where Composite..typeTag!($c) == Cat_TypeTag() witness MkComposite(0, Cat_TypeTag())
 $heapfield var Animal.legs: int
 $heapfield var Cat.lives: int
 procedure main()
   opaque
   modifies *
 {
-  var c: Composite := MkComposite($allocate(), Cat_TypeTag());
+  var c: Cat := MkComposite($allocate(), Cat_TypeTag());
   Composite..ref!(c)#Animal.legs := 4;
   Composite..ref!(c)#Cat.lives := 9;
-  var a: Composite := c;
-  assert select(select(ancestorsPerType(), Composite..typeTag!(a)), Cat_TypeTag());
+  var a: Animal := c;
+  assert a is Cat;
   assert Composite..ref!(a)#Animal.legs == 4;
-  var back: Composite := downcast$Cat(a);
+  var back: Cat := a as Cat;
   assert Composite..ref!(back)#Cat.lives == 9;
   assert Composite..ref!(back) == Composite..ref!(c);
-  var d: Composite := MkComposite($allocate(), Cat_TypeTag());
+  var d: Cat := MkComposite($allocate(), Cat_TypeTag());
   assert Composite..ref!(d) != Composite..ref!(c);
   assert Composite..ref!(d)#Cat.lives == 1
-};
-procedure downcast$Animal(p: Composite)
-  returns (r: Composite)
-  requires select(select(ancestorsPerType(), Composite..typeTag!(p)), Animal_TypeTag())
-{
-  r := p
-};
-procedure downcast$Cat(p: Composite)
-  returns (r: Composite)
-  requires select(select(ancestorsPerType(), Composite..typeTag!(p)), Cat_TypeTag())
-{
-  r := p
 };
 procedure $allocate()
   returns (r: int)external;
@@ -91,8 +79,10 @@ private meta def interpretBeforeAndAfter (program : StrataDDM.Program) (monomorp
     else resolved
   let (out, messages, _) :=
     lowerCompositePass.run {} (.Unordered resolved.program) resolved.model
-  let reresolved := resolve out.laurelProgram! (some resolved.model)
-  IO.println s!"diagnostics: {messages.length + reresolved.errors.size}"
+  let lowered := resolve out.laurelProgram! (some resolved.model)
+  let (eliminated, cteMessages) := constrainedTypeElim lowered.model lowered.program
+  let reresolved := resolve eliminated (some lowered.model)
+  IO.println s!"diagnostics: {messages.length + cteMessages.length + lowered.errors.size + reresolved.errors.size}"
   for (label, p) in [("source", resolved.program), ("lowered", reresolved.program)] do
     let (_, failures) ← Interpreter.evalProgram {}
       { entryProcedure := "main", dumpState := false, printAsserts := false } p

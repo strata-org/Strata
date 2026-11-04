@@ -52,7 +52,7 @@ procedure useOverride() opaque {
   var o: int := s#area();
   assert o == 5;
   assert o == 6
-//^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 

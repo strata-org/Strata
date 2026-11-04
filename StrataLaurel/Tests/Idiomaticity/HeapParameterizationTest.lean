@@ -7,6 +7,7 @@ module
 
 meta import StrataLaurel.Tests.Util.TestLaurel
 import StrataLaurel.Implementation.LowerComposite
+import StrataLaurel.Implementation.ConstrainedTypeElim
 import StrataLaurel.Implementation.HeapParameterization
 
 open Strata
@@ -16,7 +17,10 @@ namespace Strata.Laurel
 
 private meta def lowered (program : LaurelProgram) (model : SemanticModel) : LaurelProgram :=
   match lowerComposite model program with
-  | .ok p => (resolve p (some model)).program
+  | .ok p =>
+    let r := resolve p (some model)
+    let (c, _) := constrainedTypeElim r.model r.program
+    (resolve c (some r.model)).program
   | .error _ => program
 
 /--
@@ -26,8 +30,6 @@ datatype NotSupportedYet {  }
 datatype Heap { MkHeap(data: (TotalMap int (TotalMap Field $Box)), nextReference: int) }
 datatype TypeTag { Node_TypeTag }
 datatype Composite { MkComposite(ref: int, typeTag: TypeTag) }
-const ancestorsForNode: TotalMap TypeTag bool := update(mapConst(false), Node_TypeTag(), true)
-const ancestorsPerType: TotalMap TypeTag (TotalMap TypeTag bool) := update(mapConst(mapConst(false)), Node_TypeTag(), ancestorsForNode())
  var $heap: Heap
 procedure readField(heap: Heap, obj: int, field: Field): $Box
 return select(select(Heap..data!(heap), obj), field);
@@ -35,9 +37,15 @@ procedure updateField(heap: Heap, obj: int, field: Field, val: $Box): Heap
 return MkHeap(update(Heap..data!(heap), obj, update(select(Heap..data!(heap), obj), field, val)), Heap..nextReference!(heap));
 procedure increment(heap: Heap): Heap
 return MkHeap(Heap..data!(heap), Heap..nextReference!(heap) + 1);
+procedure Node$constraint($c: Composite): bool
+{
+  $result := Composite..typeTag!($c) == Node_TypeTag();
+  return
+};
 procedure read(n: Composite)
   returns (r: int)
   free requires Composite..ref!(n) < Heap..nextReference!($heap) summary "input is allocated on the heap"
+  free requires Node$constraint(n)
   opaque
 {
   r := $Box..intVal!(readField($heap, Composite..ref!(n), Node.value()));
@@ -46,6 +54,8 @@ procedure read(n: Composite)
 procedure link(n: Composite, m: Composite)
   free requires Composite..ref!(n) < Heap..nextReference!($heap) summary "input is allocated on the heap"
   free requires Composite..ref!(m) < Heap..nextReference!($heap) summary "input is allocated on the heap"
+  free requires Node$constraint(n)
+  free requires Node$constraint(m)
   opaque
   free ensures old(Heap..nextReference!($heap)) <= Heap..nextReference!($heap) summary "monotonic heap pointer"
   modifies n
@@ -61,6 +71,7 @@ procedure fresh()
   opaque
   free ensures old(Heap..nextReference!($heap)) <= Heap..nextReference!($heap) summary "monotonic heap pointer"
   free ensures Composite..ref!(r) < Heap..nextReference!($heap) summary "output is allocated on the heap"
+  free ensures Node$constraint(r)
   modifies *
   writes $heap
 {
@@ -77,9 +88,15 @@ procedure pure(x: int)
 {
   r := x
 };
+procedure $witness_Node()
+  opaque
+{
+  var $witness: Composite := MkComposite(0, Node_TypeTag());
+  assert Node$constraint($witness)
+};
 procedure downcast$Node(p: Composite)
   returns (r: Composite)
-  requires select(select(ancestorsPerType(), Composite..typeTag!(p)), Node_TypeTag())
+  requires Node$constraint(p)
 {
   r := p
 };

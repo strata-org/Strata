@@ -66,7 +66,7 @@ procedure callsThrower()
   opaque
 {
   r := thrower()
-//     ^^^^^^^^^ error: call does not throw an uncaught 'Exception' could not be proved
+//     ^^^^^^^^^ error: call does not throw an uncaught 'Exception' does not hold
 };
 #end
 

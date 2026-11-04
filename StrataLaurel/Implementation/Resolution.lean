@@ -481,7 +481,7 @@ private partial def checkCtorFieldTypeArgsNotConstrained (ty : HighTypeMd) : Res
     let permitted ← match base.val with
       | .UserDefined name =>
         match (← get).scope.get? name.text with
-        | some (_, .datatypeDefinition dt) => pure !(dt.isRecursive (← datatypeLookup))
+        | some (_, .datatypeDefinition dt) => pure (dt.constrainedArgsSupported (← datatypeLookup))
         | _ => pure false
       | _ => pure false
     if permitted then args.forM checkTypeArgNotConstrained
@@ -712,7 +712,7 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
     let constrainedArgsAllowed ← match base.val with
       | .UserDefined name =>
         match (← get).scope.get? name.text with
-        | some (_, .datatypeDefinition dt) => pure !(dt.isRecursive (← datatypeLookup))
+        | some (_, .datatypeDefinition dt) => pure (dt.constrainedArgsSupported (← datatypeLookup))
         | _ => pure false
       | _ => pure false
     if constrainedArgsAllowed then
@@ -4070,7 +4070,8 @@ def castTargetRejection? (op : String) (ctx : TypeLattice) (ty : HighTypeMd) : O
     some s!"{rule}; '{formatType ty}' resolves to a type parameter, which has no declared bound \
             and so may be instantiated at a non-composite type"
   | u =>
-    if (highBaseName? u).any (fun name => ctx.parentExprMap.contains name.text) then none
+    let loweredComposite := (highBaseName? u).any (·.text == compositeTypeName.text) && !highEq ⟨u, ty.source⟩ ty
+    if loweredComposite || (highBaseName? u).any (fun name => ctx.parentExprMap.contains name.text) then none
     else some s!"{rule}; '{formatType ty}' is not a composite type"
 
 /-- (AsType)

@@ -242,7 +242,7 @@ procedure go()
   var b: B6b := new B6b;
   var x: int := b#m();
   assert x == 50
-//^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 
@@ -362,7 +362,7 @@ composite B9 {
 }
 composite C9 extends B9 {
   procedure m(self: C9) returns (r: int)
-//          ^ error: override postcondition no weaker than 'r >= 0' from 'B9.m' could not be proved
+//          ^ error: override postcondition no weaker than 'r >= 0' from 'B9.m' does not hold
     opaque
     ensures r == -5
   {

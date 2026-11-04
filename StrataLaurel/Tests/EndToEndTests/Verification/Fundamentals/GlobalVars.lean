@@ -998,7 +998,7 @@ procedure e2()
   opaque
 {
   assert parentIsChild
-//^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 

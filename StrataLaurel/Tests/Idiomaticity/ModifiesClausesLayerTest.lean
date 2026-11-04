@@ -261,6 +261,7 @@ quantified frame. -/
 info: -- before ModifiesClauses:
 procedure p(b: Composite)
   free requires Composite..ref!(b) < Heap..nextReference!($heap) summary "input is allocated on the heap"
+  free requires C$constraint(b)
   opaque
   free ensures old(Heap..nextReference!($heap)) <= Heap..nextReference!($heap) summary "monotonic heap pointer"
   modifies b
@@ -272,6 +273,7 @@ procedure p(b: Composite)
 -- after ModifiesClauses:
 procedure p(b: Composite)
   free requires Composite..ref!(b) < Heap..nextReference!($heap) summary "input is allocated on the heap"
+  free requires C$constraint(b)
   opaque
   free ensures old(Heap..nextReference!($heap)) <= Heap..nextReference!($heap) summary "monotonic heap pointer"
   ensures forall($modifies_obj: int) => forall($modifies_fld: Field){readField($heap, $modifies_obj, $modifies_fld)} => $modifies_obj < Heap..nextReference!(old($heap)) & $modifies_obj != Composite..ref!(b) ==> readField(old($heap), $modifies_obj, $modifies_fld) == readField($heap, $modifies_obj, $modifies_fld) summary "modifies clause"
