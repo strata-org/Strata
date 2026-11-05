@@ -27,13 +27,13 @@ only the index and keeping the guard:
 A bound's value is read off the bound itself when it is a literal or evaluates to
 one, and otherwise from an equation in scope pinning it. Instances are reduced
 afterwards, which discharges the lower bound, resolves nested bounds and drops
-branches that cannot hold; the rest of the body stays symbolic. The rewrite
-preserves models, and a quantifier whose bound has no known value is left in
-place.
+branches that cannot hold; the rest of the body stays symbolic. A quantifier
+whose bound has no known value is left in place.
 
-The two selectors are related only through the model, so substituting an element
-is beyond what the solver could derive from the encoding — and beyond what it can
-check. -/
+The rewrite preserves models in every model of Core's factory. An element fact
+resolves only the selector term it states, operator included: `Sequence.select` and
+`Sequence.select!` are separate functions of the factory, whose axioms do not relate
+them, so a fact about one says nothing of the other. -/
 
 namespace Core.UnrollBoundedQuantifiers
 
@@ -49,8 +49,10 @@ def gtName : String := (intGtFunc (T := CoreLParams)).name.name
 def negName : String := (intNegFunc (T := CoreLParams)).name.name
 
 /-- Demangled base name of an op identifier. Monomorphization mangles
-    `Sequence.select!` to `$__mono#Sequence.select!#…`, so op names are compared
-    through this. -/
+    `Sequence.select!` to `$__mono#Sequence.select!#…`, so the selectors are recognized
+    through this. The connectives are recognized by `FoldConnectives.boolOpOf?`. The
+    integer comparisons and negation are monomorphic and never mangled, so they are
+    recognized by their exact names. -/
 abbrev baseName : String → String := Core.NameMangling.demangledBaseName
 
 /-! ## Caps
@@ -109,14 +111,6 @@ def collectAssumeIntFactsBlock (ss : List Statement) : IntFactEnv :=
   termination_by structural ss
 end
 
-/-- The value facts that hold everywhere in the program: the ones a top-level
-    `Decl.ax` carries. -/
-def seedIntFactEnv (prog : Program) : IntFactEnv :=
-  prog.decls.foldl (fun acc decl =>
-    match decl with
-    | .ax a _ => (intFactOf? a.e).elim acc (fun p => p :: acc)
-    | _ => acc) []
-
 /-- The value facts the factory's axioms state, such as the `length(empty()) == 0`
     that `Sequence.empty` carries. Monomorphization has already instantiated these
     axioms at their concrete types, so their subjects are the terms a program's own
@@ -137,29 +131,24 @@ element in is what lets an instance of the fold reduce, and what reaches a lengt
 stated of a nested sequence: `length(select!(s,k))` names no value until
 `select!(s,k)` is replaced by the element it is pinned to. -/
 
-abbrev SelectEnv := List (LExpr CoreLParams.mono × Nat × LExpr CoreLParams.mono)
+/-- Element facts: a selector term at a literal index and the element it equals. -/
+abbrev SelectEnv := List (LExpr CoreLParams.mono × LExpr CoreLParams.mono)
 
-/-- `(s, k)` if `e` is `select[!](s, literal k)`. Both names match, so a fact stated
-    with one resolves an occurrence of the other: `SeqModel` maps them to the same
-    element, `select!` being `select` without its bounds precondition. -/
-def selectArgs? : LExpr CoreLParams.mono →
-    Option (LExpr CoreLParams.mono × Nat)
-  | .app _ (.app _ (.op _ o _) s) (.const _ (.intConst k)) =>
+/-- Is `e` `select(s, literal k)` or `select!(s, literal k)` with `k ≥ 0`? -/
+def isLiteralSelect : LExpr CoreLParams.mono → Bool
+  | .app _ (.app _ (.op _ o _) _) (.const _ (.intConst k)) =>
     let bn := baseName o.name
-    if (bn == selectName || bn == selectBangName) && k ≥ 0 then some (s, k.toNat)
-    else none
-  | _ => none
+    (bn == selectName || bn == selectBangName) && k ≥ 0
+  | _ => false
 
-/-- `(s, k, elem)` if `e` states that the element at literal index `k` of `s` is
-    `elem`, with either side of the equation carrying the selector. -/
+/-- `(t, elem)` if `e` states that the selector term `t` equals `elem`, with either
+    side of the equation carrying the selector. -/
 def selectFactOf? : LExpr CoreLParams.mono →
-    Option (LExpr CoreLParams.mono × Nat × LExpr CoreLParams.mono)
+    Option (LExpr CoreLParams.mono × LExpr CoreLParams.mono)
   | .eq _ lhs rhs =>
-    match selectArgs? lhs with
-    | some (s, k) => some (s, k, rhs)
-    | none => match selectArgs? rhs with
-              | some (s, k) => some (s, k, lhs)
-              | none => none
+    if isLiteralSelect lhs then some (lhs, rhs)
+    else if isLiteralSelect rhs then some (rhs, lhs)
+    else none
   | _ => none
 
 mutual
@@ -182,32 +171,26 @@ def collectAssumeSelectFactsBlock (ss : List Statement) : SelectEnv :=
   termination_by structural ss
 end
 
-/-- The element facts that hold everywhere in the program: those a `Decl.ax` carries. -/
-def seedSelectEnv (prog : Program) : SelectEnv :=
-  prog.decls.foldl (fun acc decl =>
-    match decl with
-    | .ax a _ => (selectFactOf? a.e).elim acc (fun p => p :: acc)
-    | _ => acc) []
-
-/-- The element an assumption in scope pins at index `k` of `s`, if one does. -/
-def resolveSelect (env : SelectEnv) (s : LExpr CoreLParams.mono) (k : Nat) :
+/-- The element an assumption in scope pins for the selector term `t`, if one does.
+    Terms are compared as written, operator and annotation included, so a fact about
+    `select` does not resolve `select!`, nor the reverse. -/
+def resolveSelect (env : SelectEnv) (t : LExpr CoreLParams.mono) :
     Option (LExpr CoreLParams.mono) :=
-  (env.find? (fun (s', k', _) => k' == k && s' == s)).map (fun (_, _, e) => e)
+  (env.find? (fun (t', _) => t' == t)).map Prod.snd
 
 /-- Replace pinned `select[!](s, literal k)` by its element, top-down. The element
     substituted in is not rescanned, so a fact stating an element in terms of a
     selector on the same sequence cannot substitute without end. -/
 def normalizeSelects (env : SelectEnv) (e : LExpr CoreLParams.mono) :
     LExpr CoreLParams.mono :=
-  match selectArgs? e with
-  | some (s, k) =>
-    match resolveSelect env s k with
+  if isLiteralSelect e then
+    match resolveSelect env e with
     | some elem => elem
     | none =>
       match e with
       | .app m f a => .app m (normalizeSelects env f) (normalizeSelects env a)
       | _ => e
-  | none =>
+  else
     match e with
     | .app m f a => .app m (normalizeSelects env f) (normalizeSelects env a)
     | .abs m n t b => .abs m n t (normalizeSelects env b)
@@ -240,13 +223,6 @@ structure UEnv where
   ints : IntFactEnv
   sel : SelectEnv
   F : @Lambda.Factory CoreLParams
-
-/-- The scope a procedure body's traversal starts in: the values the factory's
-    axioms fix and what the program states of every execution. The factory's facts
-    go first, so a builtin axiom outranks a program axiom naming the same term —
-    such a program axiom contradicts the builtins and makes every goal vacuous. -/
-def seedUEnv (prog : Program) (F : @Lambda.Factory CoreLParams) : UEnv :=
-  ⟨factoryIntFactEnv F ++ seedIntFactEnv prog, seedSelectEnv prog, F⟩
 
 /-- The scope in force after `s`, given the scope before it. What `s` states goes
     first, so between sibling statements the later fact wins the lookup, and within
@@ -360,15 +336,19 @@ def unzipCounts {α : Type} (rs : List (α × Counts)) : List α × Counts :=
   (rs.map Prod.fst, rs.foldl (fun acc r => acc + r.snd) {})
 
 /-- The integer value of `t`: the literal it is, else the value a fact in `env`
-    states of it, each tried on `t` as written and on its normal form. -/
+    states of it, each tried on `t` as written and on its normal form. A term that
+    mentions a bound variable has none: the facts are closed, and `eval` contracts a
+    redex with `subst`, which does not lift bound variables. -/
 def resolveIntValue (env : UEnv) (t : LExpr CoreLParams.mono) : Option Int :=
   let valueOf : LExpr CoreLParams.mono → Option Int := fun u =>
     match u with
     | .const _ (.intConst n) => some n
     | _ => (resolveIntFact env.ints u).map Int.ofNat
-  match valueOf t with
-  | some n => some n
-  | none => valueOf (normTerm env normIterCap t)
+  if t.lcAt 0 then
+    match valueOf t with
+    | some n => some n
+    | none => valueOf (normTerm env normIterCap t)
+  else none
 
 /-! ## Eligibility: which quantifiers range over `[0, n)`
 
@@ -376,11 +356,11 @@ Replacing `∀ i. body` by `⋀_{k<n} body[i ↦ k]` keeps the same models only 
 every index outside `[0, n)` already makes the body true, and dually false for
 `∃`. A guard conjunct `0 ≤ i` beside a conjunct `i < ub` establishes that. -/
 
-/-- Operands of `e` when it applies a binary op whose demangled name is `name`. -/
+/-- Operands of `e` when it applies the binary op named `name`. -/
 def binOpArgs? (name : String) : LExpr CoreLParams.mono →
     Option (LExpr CoreLParams.mono × LExpr CoreLParams.mono)
   | .app _ (.app _ (.op _ o _) x) y =>
-    if baseName o.name == name then some (x, y) else none
+    if o.name == name then some (x, y) else none
   | _ => none
 
 /-- Conjuncts of the antecedents along `e`'s implication chain, empty if `e` is
@@ -419,7 +399,7 @@ def upperBound? (e : LExpr CoreLParams.mono) :
 def intLiteral? : LExpr CoreLParams.mono → Option Int
   | .const _ (.intConst c) => some c
   | .app _ (.op _ o _) (.const _ (.intConst c)) =>
-    if baseName o.name == negName then some (-c) else none
+    if o.name == negName then some (-c) else none
   | _ => none
 
 /-- Does `e` bound the binder below by a literal, admitting no negative index? The
@@ -645,33 +625,71 @@ def unrollBlock (env : UEnv) (ss : List Statement) : List Statement × Counts :=
   termination_by Imperative.Block.sizeOf ss
 end
 
-/-- Unroll the bounded index quantifiers in every procedure's goals, each in the
-    scope of the assumptions reaching it, and in every lemma, in the scope of the
-    declarations before it, which are the axioms it is checked under. Sums the
-    counters over the program. -/
+/-- `F` with the functions `Lambda.genBlockFactory` generates for the datatype block
+    `b`, which the per-instance reduction needs to reduce a selector or a tester. Neither
+    call fails on a program that reaches this phase: type checking makes the same two
+    calls and rejects a block whose generated names collide. -/
+def addBlockFactory (F : @Lambda.Factory CoreLParams) (b : List (LDatatype Unit)) :
+    @Lambda.Factory CoreLParams :=
+  match Lambda.genBlockFactory (T := CoreLParams) b with
+  | .ok bf => (F.addFactory bf).toOption.getD F
+  | .error _ => F
+
+/-- What the declarations walked so far give the goals after them: the value and element
+    facts of their axioms, newest first, and the factory with their datatype functions
+    added. `factoryInts` holds the value facts of the base factory's axioms; the functions
+    `genBlockFactory` generates carry no axioms, so adding a datatype block leaves it
+    unchanged. -/
+structure Scope where
+  axiomInts : IntFactEnv
+  sel : SelectEnv
+  F : @Lambda.Factory CoreLParams
+  factoryInts : IntFactEnv
+
+/-- The scope of the first declaration, over the factory `F`. -/
+def Scope.init (F : @Lambda.Factory CoreLParams) : Scope :=
+  ⟨[], [], F, factoryIntFactEnv F⟩
+
+/-- The facts a goal in scope `sc` is rewritten with. The factory's facts go first, so a
+    builtin axiom outranks a program axiom naming the same term — such a program axiom
+    contradicts the builtins and makes every goal vacuous. -/
+def Scope.env (sc : Scope) : UEnv :=
+  ⟨sc.factoryInts ++ sc.axiomInts, sc.sel, sc.F⟩
+
+/-- The scope after `decl`, given the scope before it. -/
+def Scope.extend (sc : Scope) (decl : Decl) : Scope :=
+  match decl with
+  | .ax a _ =>
+    { sc with axiomInts := (intFactOf? a.e).elim sc.axiomInts (· :: sc.axiomInts),
+              sel := (selectFactOf? a.e).elim sc.sel (· :: sc.sel) }
+  | .type (.data b) _ =>
+    { sc with F := addBlockFactory sc.F b }
+  | _ => sc
+
+/-- `decl` with its goals unrolled in scope `sc`: a lemma's formula, and the `assert`
+    and `cover` conditions of a procedure's structured body, each in the scope of the
+    assumptions reaching it. Every other declaration is returned as it stands. -/
+def unrollDecl (sc : Scope) (decl : Decl) : Decl × Counts :=
+  match decl with
+  | .lemma l md =>
+    let (e', c) := processExpr sc.env l.e
+    (.lemma { l with e := e' } md, c)
+  | .proc proc md =>
+    match proc.body with
+    | .structured ss =>
+      let (ss', css) := unrollBlock sc.env ss
+      (.proc { proc with body := .structured ss' } md, css)
+    | .cfg _ => (decl, {})
+  | d => (d, {})
+
+/-- Unroll the bounded index quantifiers of every declaration, over the factory `F`, in
+    the scope of the declarations before it: those are the axioms a lemma is checked
+    under and an entry of a procedure assumes, and the datatypes its goals may mention.
+    Sums the counters over the program. -/
 def unrollBoundedQuantifiersProgram (F : @Lambda.Factory CoreLParams) (p : Program) :
     Program × Counts :=
-  let env := seedUEnv p F
-  let factoryInts := factoryIntFactEnv F
-  -- `ints` and `sel` hold the facts of the axioms walked so far, as `seedUEnv`
-  -- orders them, so a lemma sees exactly the axioms before it.
-  let (_, _, rs) := p.decls.foldl (init := (([] : IntFactEnv), ([] : SelectEnv), []))
-    fun (ints, sel, acc) decl =>
-      match decl with
-      | .ax a _ =>
-        ((intFactOf? a.e).elim ints (· :: ints), (selectFactOf? a.e).elim sel (· :: sel),
-         (decl, {}) :: acc)
-      | .lemma l md =>
-        let (e', c) := processExpr ⟨factoryInts ++ ints, sel, F⟩ l.e
-        (ints, sel, (.lemma { l with e := e' } md, c) :: acc)
-      | .proc proc md =>
-        let (body, cbody) := match proc.body with
-          | .structured ss =>
-            let (ss', css) := unrollBlock env ss
-            (.structured ss', css)
-          | .cfg g => (.cfg g, {})
-        (ints, sel, (.proc { proc with body := body } md, cbody) :: acc)
-      | d => (ints, sel, (d, {}) :: acc)
+  let (_, rs) := p.decls.foldl (init := (Scope.init F, ([] : List (Decl × Counts))))
+    fun (sc, acc) decl => (sc.extend decl, unrollDecl sc decl :: acc)
   let (decls, counts) := unzipCounts rs.reverse
   ({ decls := decls }, counts)
 
@@ -682,9 +700,9 @@ public section
 /-- Unroll every bounded index quantifier whose count resolves into `⋀/⋁_{k<n}` by
     pure index substitution. Runs after symbolic evaluation; model-preserving.
 
-    The pass runs in a local copy of the factory with the program's datatype
-    functions added, which the per-instance reduction needs to reduce a selector or
-    a tester; the transform state's factory is left as it was.
+    The pass runs in a local copy of the factory with the datatype functions declared
+    before each goal added, which the per-instance reduction needs to reduce a selector
+    or a tester; the transform state's factory is left as it was.
 
     `staticSingleAssignment` is what keeps a count true where it is used: were its
     subject reassigned between the `assume` stating it and the goal, the fold would
@@ -706,15 +724,7 @@ def Core.unrollBoundedQuantifiersPipelinePhase : Core.PipelinePhase :=
                          .noPolymorphicProcedures,
                          .noPolymorphicFunctions, .typeAnnotated, .noInits])
     fun prog => do
-      let baseF ← Core.Transform.getFactory
-      let blocks := prog.decls.filterMap fun d =>
-        match d with | .type (.data b) _ => some b | _ => none
-      -- Neither can fail on a program that reaches this phase: type checking makes
-      -- the same two calls and rejects a block whose generated names collide.
-      let F := blocks.foldl (fun F b =>
-        match Lambda.genBlockFactory (T := Core.CoreLParams) b with
-        | .ok bf => (F.addFactory bf).toOption.getD F
-        | .error _ => F) baseF
+      let F ← Core.Transform.getFactory
       let (prog', counts) := Core.UnrollBoundedQuantifiers.unrollBoundedQuantifiersProgram F prog
       for s in Core.UnrollBoundedQuantifiers.Stats.all do
         Core.Transform.incrementStat s!"{s}" (counts.get s)

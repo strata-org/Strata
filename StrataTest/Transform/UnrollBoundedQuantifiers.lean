@@ -2457,10 +2457,11 @@ Result: ❓ unknown
 #guard_msgs in
 #eval Core.verify selectNoBangPgm (options := noUnrolling) (pipeline := unrollingPipeline)
 
-/-! ### A bound that names its value only after normalization
+/-! ### A bound pinned only by a fact about the other selector
 
-The fact uses the checked selector and the bound the unchecked one, so no fact names
-the bound as written and its value is reached by substituting the element into it. -/
+The fact uses the checked selector and the bound the unchecked one. They are different
+functions of Core's factory, so the fact does not resolve the bound and the quantifier
+stays. -/
 
 def normalizedBoundPgm :=
 #strata
@@ -2478,7 +2479,7 @@ procedure P()
 #end
 
 /--
-info: [statistics] UnrollBoundedQuantifiers.unrolled: 1
+info: [statistics] UnrollBoundedQuantifiers.unresolved: 1
 program Core;
 
 function s () : Sequence int;
@@ -2491,7 +2492,7 @@ procedure P ()
   } else {
     assume [li]: Sequence.length(idx) == 1;
     assume [i0]: Sequence.select(idx, 0) == 2;
-    assert [a]: int.le(0, Sequence.select!(s, 0)) && int.le(0, Sequence.select!(s, 1));
+    assert [a]: forall i : int :: int.le(0, i) && int.lt(i, Sequence.select!(idx, 0)) ==> int.le(0, Sequence.select!(s, i));
   }
 };
 -/
