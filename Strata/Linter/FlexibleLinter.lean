@@ -11,7 +11,7 @@ module
 
 public meta import Lean.Elab.Command
 public meta import Lean.Linter.Basic
-public meta import Lean.Server.InfoUtils
+public meta import Lean.Elab.InfoTree.Util
 public meta import Lean.Elab.Tactic.Simp
 public meta import Lean.Elab.Tactic.SimpTrace
 public meta import Lean.Meta.Tactic.TryThis

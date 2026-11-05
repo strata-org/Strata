@@ -151,7 +151,9 @@ macro "grows_tac" : tactic => `(tactic| repeat' (first
 /-- `TraceRel K` is reflexive when `K.ER` is. -/
 theorem TraceRel.refl_eq {K : RelCtx} (hK : ∀ ev, K.ER ev ev) :
     ∀ l : List (IEvent Expression), TraceRel K l l := fun l => by
-  induction l <;> constructor <;> simp_all
+  induction l with
+  | nil => exact .nil
+  | cons a l ih => exact .cons (hK a) ih
 
 /-- `FiredU` is preserved by trace growth. -/
 theorem FiredU.mono {K : RelCtx} {s s2 : ReplayState Expression} (h : FiredU K s)

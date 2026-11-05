@@ -41,8 +41,16 @@ info: Lean.Expr.forallE
             (Lean.Expr.app
               (Lean.Expr.app (Lean.Expr.const `BEq.beq [Lean.Level.zero]) (Lean.Expr.const `Int []))
               (Lean.Expr.app
-                (Lean.Expr.app (Lean.Expr.const `instBEqOfDecidableEq [Lean.Level.zero]) (Lean.Expr.const `Int []))
-                (Lean.Expr.const `Int.instDecidableEq [])))
+                (Lean.Expr.app (Lean.Expr.const `Std.PreorderPackage.toBEq [Lean.Level.zero]) (Lean.Expr.const `Int []))
+                (Lean.Expr.app
+                  (Lean.Expr.app
+                    (Lean.Expr.const `Std.LinearPreorderPackage.toPreorderPackage [Lean.Level.zero])
+                    (Lean.Expr.const `Int []))
+                  (Lean.Expr.app
+                    (Lean.Expr.app
+                      (Lean.Expr.const `Std.LinearOrderPackage.toLinearPreorderPackage [Lean.Level.zero])
+                      (Lean.Expr.const `Int []))
+                    (Lean.Expr.const `Int.instLinearOrderPackage [])))))
             (Lean.Expr.bvar 1))
           (Lean.Expr.bvar 0)))
       (Lean.Expr.const `Bool.true []))
@@ -51,6 +59,13 @@ info: Lean.Expr.forallE
 -/
 #guard_msgs in
 #eval test1
+
+/-- The `BEq Int` instance that reflected `==` uses (pinned above) is lawful, so the reflected
+equality means `x = y`. -/
+example : @LawfulBEq Int (@Std.PreorderPackage.toBEq Int
+    (@Std.LinearPreorderPackage.toPreorderPackage Int
+      (@Std.LinearOrderPackage.toLinearPreorderPackage Int Int.instLinearOrderPackage))) :=
+  inferInstance
 
 end Lambda
 

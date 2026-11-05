@@ -729,9 +729,9 @@ def getTypeConsArities (ty : LMonoTy) : List (String × Nat) :=
   | .ftvar _ | .bitvec _ => []
 
 /-- Says that `what` `name` (e.g. type constructor `Map`) expects `expected` type arguments but
-    was given `given`. -/
-def arityMismatchMsg (what name : String) (expected given : Nat) : Format :=
-  f!"{what} '{name}' expects {expected} type argument(s) but was given {given}"
+    was given `actual`. -/
+def arityMismatchMsg (what name : String) (expected actual : Nat) : Format :=
+  f!"{what} '{name}' expects {expected} type argument(s) but was given {actual}"
 
 /--
 Ensures every type referenced in a constructor is a known type, a previously

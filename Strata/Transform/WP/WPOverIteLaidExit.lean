@@ -1928,7 +1928,7 @@ private theorem LaidEnvAx.runThen
     have h := hMG
     cases hTa : Tr.ax
     · rwa [laidMergesAx_eq, e.ax.resolve_left (by simp [hTa]), ite_eq_left rfl] at h
-    · exact hcase.elim (fun ⟨h', _⟩ => by simp [hTa] at h') fun ⟨_, _, _, h3⟩ => by rwa [h3] at h ⊢
+    · exact hcase.elim (fun ⟨h', _⟩ => by simp [hTa] at h') fun ⟨_, _, _, h3⟩ => by rw [h3] at h ⊢ <;> assumption
   obtain ⟨trE, σEr, σEo, σC2, σR2, σM2, hET⟩ := e.elseTail ht hs hns hnsE hlm hlnd hE hCPE hRSE
       hMG' (shL_of_shB hsh) hon.fresh (.inl ⟨rfl, hon.reach⟩) hon.reach.bools hσRκ
       (fun q hq => ⟨hq1 q hq, hq1κ q hq⟩) hCEb (fun n hn => by

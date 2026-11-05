@@ -496,8 +496,6 @@ private theorem denoteTyped_select' {ctx : TypedContext} (I : UFInterp σ 𝒜) 
             (Term.denoteTyped I env dz mz i (Term.typeCheck_select_inv htc).1
               (Term.typeCheck_select_inv htc).2.2.2.1)) := by
   simp only [Term.denoteTyped]
-  obtain ⟨k, v, ha, hi, hrty, hτ⟩ := Term.typeCheck_select_inv htc
-  rfl
 
 /-- The value of a well-typed array write `store a i e`, for any array theory `𝒜` (entailment
 quantifies over all of them): `𝒜.store` applied to the values of `a` at its sort `Array k v`, of
@@ -518,8 +516,6 @@ private theorem denoteTyped_store' {ctx : TypedContext} (I : UFInterp σ 𝒜) (
             (Term.denoteTyped I env dz mz e (Term.typeCheck_store_inv htc).2.1
               (Term.typeCheck_store_inv htc).2.2.2.2.1)) := by
   simp only [Term.denoteTyped]
-  obtain ⟨k, v, ha, hi, he, hrty, hτ⟩ := Term.typeCheck_store_inv htc
-  rfl
 
 /-- The value of `t` at sort `ty`, or `default` when `t` is not typed at `ty`. -/
 noncomputable def valueAt [SortInterp.AllInhabited σ] (I : UFInterp σ 𝒜) (env : VarEnv σ 𝒜)
@@ -759,10 +755,6 @@ private theorem denote_normalizeTerm {σ : SortInterp} {𝒜 : ArrayTheory} [Sor
   | .var v =>
     rw [normalizeTerm_var] at ht'; subst ht'
     simp only [Term.denoteTyped]
-    rcases Term.typeCheck_var_inv h with ⟨-, e⟩
-    rcases Term.typeCheck_var_inv h' with ⟨-, e'⟩
-    subst e
-    simp only [cast_eq]
   | .none ty =>
     rw [normalizeTerm_none] at ht'; subst ht'
     simp only [Term.denoteTyped]
