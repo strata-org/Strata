@@ -11,7 +11,7 @@ open Strata
 
 /-! ## Integer arithmetic (`+ - * / %`) and unary negation (`-x`) -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 procedure testArithmetic()
@@ -71,7 +71,7 @@ procedure testUnaryNegative()
 
 /-! ## Inequality (`!=`) on `bool` and `string` -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 procedure testInequality()
@@ -93,7 +93,7 @@ procedure testInequalityNegative()
 
 /-! ## Logical operators -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 procedure testLogical()
@@ -114,7 +114,7 @@ procedure testLogical()
 
 /-! `==>` (implies) -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 procedure testImplies()
@@ -130,7 +130,7 @@ procedure testImplies()
 
 /-! `/t` and `%t` (truncating division / remainder) -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 procedure testTruncatingDiv()

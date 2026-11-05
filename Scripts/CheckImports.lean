@@ -42,7 +42,7 @@ def parseNoimportComments (path : FilePath) : IO (Array Name) := do
 def initModule : Name := `Strata.Init
 
 /-- Source directories whose modules must load `initModule`. -/
-def initCheckedDirs : Array FilePath := #["Strata", "StrataLaurel"]
+def initCheckedDirs : Array FilePath := #["Strata", "StrataLaurel", "StrataCortex"]
 
 /-- The source file of module `m`, relative to the workspace root. -/
 def modulePath (m : Name) : FilePath :=

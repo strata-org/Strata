@@ -15,6 +15,7 @@ public import StrataLaurel.Implementation.EliminateValueInReturns
 public import StrataLaurel.Implementation.GlobalParameterization
 public import StrataLaurel.Implementation.CoreDefinitionsForLaurel
 public import StrataLaurel.Implementation.LaurelCompilationPipeline
+public import StrataCortex.Implementation.Interpret
 public import StrataLaurel.Implementation.InferThrows
 public import StrataLaurel.Implementation
 public import Strata.Languages.Core.ProgramEval
@@ -410,6 +411,30 @@ private def runLaurelInterpretRaw (program : StrataDDM.Program) (fuel : Nat := 1
     | .error e => throw (IO.userError s!"interpret: Core type checking failed: {e.message}")
   return some (← runLaurelInterpretCore core fuel)
 
+private def runCortexInterpretRaw (program : StrataDDM.Program) (fuel : Nat := 10000) :
+    IO (Option (Array Strata.Message)) := do
+  let uri := Strata.Uri.file "<#strata>"
+  let laurelProgram ← match Laurel.TransM.run uri (Laurel.parseProgram program) with
+    | .error _ => return none
+    | .ok p => pure p
+  unless laurelProgram.staticProcedures.any (·.isInterpretEntry) do
+    return none
+  match ← Cortex.interpretLaurel laurelProgram fuel with
+  | .ok dms => return some dms
+  | .error msg => throw (IO.userError s!"cortex-interpret: {msg}")
+
+private def runCortexCoreInterpretRaw (program : StrataDDM.Program) (fuel : Nat := 10000) :
+    IO (Option (Array Strata.Message)) := do
+  let uri := Strata.Uri.file "<#strata>"
+  let laurelProgram ← match Laurel.TransM.run uri (Laurel.parseProgram program) with
+    | .error _ => return none
+    | .ok p => pure p
+  unless laurelProgram.staticProcedures.any (·.isInterpretEntry) do
+    return none
+  match Cortex.toInterpretableCore {} laurelProgram with
+  | .ok core => return some (← runLaurelInterpretCore core fuel)
+  | .error msg => throw (IO.userError s!"cortex-core-interpret: {msg}")
+
 /-- Run the **standalone Laurel interpreter** (`Evaluator.evalProgram`) on a
     `#strata`-parsed program and return its runtime assertion failures as
     `Message`s (mapped back to source), so they flow through the same
@@ -740,6 +765,13 @@ private def runAndCheck (block : SourcedProgram)
   checkAgainstAnnotations block label annotations actual
     (showLocations := showLocations) (showSnippet := showSnippet)
 
+private def runCortexPipelineRaw (program : StrataDDM.Program)
+    (options : LaurelVerifyOptions) : IO (Array Strata.Message) := do
+  let uri := Strata.Uri.file "<#strata>"
+  match Laurel.TransM.run uri (Laurel.parseProgram program) with
+  | .error e => return #[Strata.Message.fromString s!"Translation error: {e}"]
+  | .ok laurelProgram => Cortex.verifyToMessages laurelProgram options
+
 /-- Shared verification pass used by both `testLaurelVerification` and `testLaurelExecution`:
     run the full Laurel pipeline (translate + resolve + verify) and check the
     diagnostics against the block's inline `// ^^^` annotations. Inlined here
@@ -747,8 +779,9 @@ private def runAndCheck (block : SourcedProgram)
     `debug` before they're matched. -/
 private def runVerifyPath (block : SourcedProgram) (options : LaurelVerifyOptions)
     (annotations : Array DiagnosticAnnotation)
-    (showLocations showSnippet debug : Bool) : IO Unit := do
-  let verifyDms ← runLaurelPipelineRaw block.program options
+    (showLocations showSnippet debug : Bool) (cortex : Bool := false) : IO Unit := do
+  let verifyDms ← if cortex then runCortexPipelineRaw block.program options
+    else runLaurelPipelineRaw block.program options
   let verifyActual := renderSnippetLocal block.basePos block.source verifyDms
   if debug then
     IO.println s!"[debug verify] {verifyActual.size} diagnostic(s):"
@@ -782,6 +815,8 @@ public structure MultiplePathTestOptions where
   skipVerification : Bool := false
   skipCoreInterpreter : Bool := false
   skipLaurelInterpreter : Bool := false
+  skipCortexInterpreter : Bool := true
+  skipCortexCoreInterpreter : Bool := true
   deriving Inhabited
 
 /-- Run the full Laurel pipeline (translate + resolve + verify) on a
@@ -804,6 +839,13 @@ public def testLaurelVerification (block : SourcedProgram)
     (debug : Bool := false) : IO Unit := do
   let annotations := parseAnnotations block.source
   runVerifyPath block options annotations showLocations showSnippet debug
+
+public def testCortexVerification (block : SourcedProgram)
+    (options : LaurelVerifyOptions := defaultLaurelTestOptions)
+    (showLocations : Bool := false) (showSnippet : Bool := false)
+    (debug : Bool := false) : IO Unit := do
+  let annotations := parseAnnotations block.source
+  runVerifyPath block options annotations showLocations showSnippet debug (cortex := true)
 
 /-- Run a `#strata`-parsed program through the execution paths selected by
     `paths`, checking each enabled path against the block's inline
@@ -868,11 +910,12 @@ public def testLaurelExecution (paths : MultiplePathTestOptions := {}) (block : 
     (showLocations : Bool := false) (showSnippet : Bool := false)
     (debug : Bool := false) : IO Unit := do
   let annotations := parseAnnotations block.source
-  if paths.skipVerification && paths.skipCoreInterpreter && paths.skipLaurelInterpreter then
+  if paths.skipVerification && paths.skipCoreInterpreter && paths.skipLaurelInterpreter &&
+      paths.skipCortexInterpreter && paths.skipCortexCoreInterpreter then
     throw <| IO.userError
       "testLaurelExecution: all paths are skipped (skipVerification, \
-       skipCoreInterpreter, and skipLaurelInterpreter are all true), so nothing \
-       would run."
+       skipCoreInterpreter, skipLaurelInterpreter, skipCortexInterpreter, and \
+       skipCortexCoreInterpreter are all true), so nothing would run."
   if !paths.skipVerification then
     runVerifyPath block options annotations showLocations showSnippet debug
   if !paths.skipCoreInterpreter then
@@ -895,6 +938,34 @@ public def testLaurelExecution (paths : MultiplePathTestOptions := {}) (block : 
         "testLaurelExecution: no `entry` procedure is marked, so the interpreter has \
          nothing to run. Mark a parameterless procedure `entry`, or say \
          `skipCoreInterpreter := true` if this block cannot be interpreted."
+  if !paths.skipCortexInterpreter then
+    match ← runCortexInterpretRaw block.program with
+    | some dms =>
+      let actual := renderSnippetLocal block.basePos block.source dms
+      if debug then
+        IO.println s!"[debug cortex-interpret] {actual.size} diagnostic(s):"
+        for d in actual do
+          IO.println s!"  {formatDiagnostic block d (showSnippet := true)}"
+      checkAgainstAnnotations block "cortex-interpret" annotations actual
+        (showLocations := showLocations) (showSnippet := showSnippet)
+    | none =>
+      throw <| IO.userError
+        "testLaurelExecution: skipCortexInterpreter is false but no `entry` procedure \
+         is marked, so the Cortex interpreter has nothing to run."
+  if !paths.skipCortexCoreInterpreter then
+    match ← runCortexCoreInterpretRaw block.program with
+    | some dms =>
+      let actual := renderSnippetLocal block.basePos block.source dms
+      if debug then
+        IO.println s!"[debug cortex-core-interpret] {actual.size} diagnostic(s):"
+        for d in actual do
+          IO.println s!"  {formatDiagnostic block d (showSnippet := true)}"
+      checkAgainstAnnotations block "cortex-core-interpret" annotations actual
+        (showLocations := showLocations) (showSnippet := showSnippet)
+    | none =>
+      throw <| IO.userError
+        "testLaurelExecution: skipCortexCoreInterpreter is false but no `entry` procedure \
+         is marked, so the Cortex Core interpreter has nothing to run."
   if !paths.skipLaurelInterpreter then
     -- Standalone Laurel interpreter path, checked against the same annotations.
     -- Like the Core path above, `none` means nothing is marked `entry`; with

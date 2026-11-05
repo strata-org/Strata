@@ -10,7 +10,7 @@ meta import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 procedure testStringKO()
@@ -91,7 +91,7 @@ operators.
 These blocks run on the verifier and on both interpreters; the standalone Laurel
 interpreter compares strings by code point too. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 procedure testStringOrderingOK()
@@ -162,7 +162,7 @@ CODE-POINT order the evaluator implements. `é` is U+00E9, which is above `e`
 orders agree here; what the block excludes is a *case-* or *locale-folding*
 comparison, under which the pair would compare on `hello`/`hllo` and flip. -/
 
-#eval testLaurelExecution { skipVerification := true } <|
+#eval testLaurelExecution { skipVerification := true, skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 procedure testStringOrderingNonAsciiInterpretOnly()

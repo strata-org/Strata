@@ -8,7 +8,7 @@ import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 // Bitvector types in procedure signatures and variable declarations.
@@ -66,7 +66,7 @@ procedure runBitvectorLocals()
 
 /-! The ordering comparisons on bitvectors are signed: `255 bv 8` is -1. -/
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 procedure bvOrdering()
