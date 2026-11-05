@@ -18,7 +18,7 @@ of a program keeps its obligation through the declaration phase. -/
 namespace Core
 namespace WP
 
-open Imperative Imperative.BigStep Imperative.WP
+open Imperative Imperative.WP
 
 public section
 

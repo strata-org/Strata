@@ -1269,8 +1269,7 @@ end
 Syntactic analyses of statement lists over `CmdExt P` commands: free variables respecting the
 scope of `init` (`exprFV`, `Block.freeVars`), assigned variables (`Block.assignedVars`), whether
 an `exit` or a check occurs (`Block.hasExit`, `Block.hasCheck`), and whether every arm of every
-`ite` contains a check (`Block.armsHaveChecks`); straight-line statements
-(`Stmt.IsLetOrAssume`).
+`ite` contains a check (`Block.armsHaveChecks`).
 
 `Block.freeVars` and `Block.assignedVars` are specified by recursions that copy or filter lists;
 `Block.freeVarsH` and `Block.assignedVarsH` compute them linearly, with an accumulator and, for
@@ -1452,12 +1451,119 @@ end
 @[expose] def ScopeCountRep (b : ScopeCount P) (T : List P.Ident) : Prop :=
   ∀ x, b[x]? = if T.count x = 0 then none else some (T.count x)
 
-/-- A straight-line statement of the flat translation: an `init` or an `assume`. -/
-@[expose] def Stmt.IsLetOrAssume : Stmt P (CmdExt P) → Prop
-  | .cmd (.cmd (.init _ _ _ _)) | .cmd (.cmd (.assume _ _ _)) => True
-  | _ => False
-
 end FreeVars
+
+/-! ## Well-scopedness of loop-free statement lists
+
+Well-scopedness of a loop-free statement list over `CmdExt P` commands from a scope
+(`Block.WellScoped`, `Stmt.WellScoped`): reads are in scope, an `init` declares a local not in
+scope, a `set` assigns a variable in scope, and there are no loops, calls or nondeterministic
+guards; its Boolean check (`Block.wellScopedB`, `Stmt.wellScopedB`) and its one-pass version
+with the scope in a hash map (`Block.wellScopedH`, proved equal in `StmtProps`). -/
+
+section WellScoped
+
+variable {P : PureExpr} [BEq P.Ident] [LawfulBEq P.Ident] [Hashable P.Ident] [HasFvars P]
+
+/-- The locals a statement puts in scope for the rest of its list. -/
+@[expose] def Stmt.topInits : Stmt P (CmdExt P) → List P.Ident
+  | .cmd (.cmd (.init x _ _ _)) => [x]
+  | _ => []
+
+mutual
+/-- Well-scopedness of a loop-free statement list from scope `S` with local names `Lc`: reads
+    are in scope, an `init` declares a local not in scope, a `set` assigns a variable in scope;
+    no loops, calls or nondeterministic guards. -/
+@[expose] def Block.WellScoped (Lc : List P.Ident) : List P.Ident → Block P (CmdExt P) → Prop
+  | _, [] => True
+  | S, s :: rest => Stmt.WellScoped Lc S s ∧ Block.WellScoped Lc (Stmt.topInits s ++ S) rest
+@[expose] def Stmt.WellScoped (Lc : List P.Ident) (S : List P.Ident) : Stmt P (CmdExt P) → Prop
+  | .cmd (.cmd (.init x _ (.det e) _)) => x ∉ S ∧ x ∈ Lc ∧ ∀ y ∈ exprFV e, y ∈ S
+  | .cmd (.cmd (.init x _ .nondet _)) => x ∉ S ∧ x ∈ Lc
+  | .cmd (.cmd (.set x (.det e) _)) => x ∈ S ∧ ∀ y ∈ exprFV e, y ∈ S
+  | .cmd (.cmd (.set x .nondet _)) => x ∈ S
+  | .cmd (.cmd (.assume _ e _)) | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) =>
+    ∀ y ∈ exprFV e, y ∈ S
+  | .ite (.det c) tss ess _ =>
+    (∀ y ∈ exprFV c, y ∈ S) ∧ Block.WellScoped Lc S tss ∧ Block.WellScoped Lc S ess
+  | .block _ ss _ => Block.WellScoped Lc S ss
+  | .exit _ _ | .typeDecl _ _ => True
+  | _ => False
+end
+
+mutual
+/-- The Boolean check of well-scopedness (`Block.WellScoped`) of a loop-free statement list
+    from scope `S` with local names `Lc`. -/
+@[expose] def Block.wellScopedB (Lc : List P.Ident) : List P.Ident → Block P (CmdExt P) → Bool
+  | _, [] => true
+  | S, s :: rest => Stmt.wellScopedB Lc S s && Block.wellScopedB Lc (Stmt.topInits s ++ S) rest
+/-- The Boolean check of well-scopedness (`Stmt.WellScoped`) of a loop-free statement from
+    scope `S` with local names `Lc`. -/
+@[expose] def Stmt.wellScopedB (Lc : List P.Ident) (S : List P.Ident) : Stmt P (CmdExt P) → Bool
+  | .cmd (.cmd (.init x _ (.det e) _)) =>
+    !S.contains x && Lc.contains x && (exprFV e).all S.contains
+  | .cmd (.cmd (.init x _ .nondet _)) => !S.contains x && Lc.contains x
+  | .cmd (.cmd (.set x (.det e) _)) => S.contains x && (exprFV e).all S.contains
+  | .cmd (.cmd (.set x .nondet _)) => S.contains x
+  | .cmd (.cmd (.assume _ e _)) | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) =>
+    (exprFV e).all S.contains
+  | .ite (.det c) tss ess _ =>
+    (exprFV c).all S.contains && Block.wellScopedB Lc S tss && Block.wellScopedB Lc S ess
+  | .block _ ss _ => Block.wellScopedB Lc S ss
+  | .exit _ _ | .typeDecl _ _ => true
+  | _ => false
+end
+
+mutual
+/-- `Block.wellScopedB` with the scope in a hash map with multiplicities (`ScopeCount`) and the
+    locals in a hash set: the scope additions of a list leave scope at its end; `none` at the
+    first failure. -/
+@[expose] def Block.wellScopedHWalk (lc : Std.HashSet P.Ident) (b : ScopeCount P)
+    (ss : Block P (CmdExt P)) : Option (ScopeCount P) :=
+  match Block.wellScopedHGo lc b [] ss with
+  | some (b, added) => some (added.foldl ScopeCount.dec b)
+  | none => none
+  termination_by (sizeOf ss, 1)
+/-- `Block.wellScopedHWalk` before the scope additions of the list leave scope; `added`
+    collects them. -/
+@[expose] def Block.wellScopedHGo (lc : Std.HashSet P.Ident) (b : ScopeCount P)
+    (added : List P.Ident) : Block P (CmdExt P) → Option (ScopeCount P × List P.Ident)
+  | [] => some (b, added)
+  | .cmd (.cmd (.init x _ e _)) :: rest =>
+    let ok := !b.contains x && lc.contains x &&
+      (match e with | .det e => (exprFV e).all b.contains | .nondet => true)
+    if ok then Block.wellScopedHGo lc (b.inc x) (x :: added) rest else none
+  | s :: rest =>
+    match Stmt.wellScopedHWalk lc b s with
+    | some b => Block.wellScopedHGo lc b added rest
+    | none => none
+  termination_by ss => (sizeOf ss, 0)
+/-- `Stmt.wellScopedB` of a statement that is not an `init` (see `Block.wellScopedHWalk`). -/
+@[expose] def Stmt.wellScopedHWalk (lc : Std.HashSet P.Ident) (b : ScopeCount P) :
+    Stmt P (CmdExt P) → Option (ScopeCount P)
+  | .cmd (.cmd (.set x (.det e) _)) =>
+    if b.contains x && (exprFV e).all b.contains then some b else none
+  | .cmd (.cmd (.set x .nondet _)) => if b.contains x then some b else none
+  | .cmd (.cmd (.assume _ e _)) | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) =>
+    if (exprFV e).all b.contains then some b else none
+  | .ite (.det c) tss ess _ =>
+    if (exprFV c).all b.contains then
+      match Block.wellScopedHWalk lc b tss with
+      | some b => Block.wellScopedHWalk lc b ess
+      | none => none
+    else none
+  | .block _ ss _ => Block.wellScopedHWalk lc b ss
+  | .exit _ _ | .typeDecl _ _ => some b
+  | _ => none
+  termination_by s => (sizeOf s, 1)
+end
+
+/-- `Block.wellScopedB` in one pass with hash sets. -/
+@[expose] def Block.wellScopedH (Lc : List P.Ident) (S : List P.Ident)
+    (ss : Block P (CmdExt P)) : Bool :=
+  (Block.wellScopedHWalk (Std.HashSet.ofList Lc) (S.foldl ScopeCount.inc {}) ss).isSome
+
+end WellScoped
 
 end -- public section
 end Imperative

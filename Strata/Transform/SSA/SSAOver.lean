@@ -6,7 +6,9 @@
 module
 
 public import Strata.Transform.SSA.SSAEval
+public import Strata.DL.Imperative.Logic.TraceRelations
 import Strata.DL.Imperative.CmdSemanticsProps
+import Strata.DL.Imperative.BigStep.SemProps
 
 
 /-! # The SSA phase preserves failures and replays traces
@@ -85,7 +87,7 @@ counter at least the current one is never in (`SDom`). -/
     at least `n0` outside `A`, and no fresh name with a counter at least `n` outside `A`. -/
 @[expose] def SDom (A : AvoidSet P) (D : List P.Ident) (n0 : Nat) (σS : SemanticStore P)
     (n : Nat) : Prop :=
-  ∃ Dc, NamesOK A.toList Dc n ∧ DomIn σS Dc ∧
+  ∃ Dc, NamesOK A.toList Dc n ∧ SemanticStore.DomIn σS Dc ∧
     ∀ z ∈ Dc, z ∈ D ∨ ∃ b j, n0 ≤ j ∧ z = freshName b j ∧ z ∉ A.toList
 
 omit iLI iWL iLV in
@@ -117,7 +119,7 @@ private theorem SDom.fresh (h : SDom A D n0 σS s.next) (hA : s.avoid = A) (hn :
     Option.not_isSome_iff_eq_none.mp fun hs => hN.fresh_not_mem hj hy (hD _ hs)
   refine ⟨h0, ⟨_ :: Dc, hN.add_fresh (baseOf x) hj, ?_, ?_⟩,
     storeAgreement_storeWith _ _ _ _ (StoreAgreement.refl _) h0, wfStore_update hC _ hv, rfl⟩
-  all_goals grind [SemanticStore.update, DomIn]
+  all_goals grind [SemanticStore.update, SemanticStore.DomIn]
 
 /-! ## Assignments -/
 
@@ -133,14 +135,14 @@ private theorem ssaAssign_sim (hF : SSALaws F) (hCL : WellFormedStore σL F)
     ∃ σS1, BRun F o σS [] (.normal σS1) ∧ StoreAgreement σS σS1 ∧ WellFormedStore σS1 F ∧
       SDom A D n0 σS1 s1.next ∧ SHolds F σS1 x v0 (some v) ∧ s1 = { s with next := s1.next } := by
   have hev := evalsTo_foldE hF hCL hCS s.ρ e hA he
-  have hval := hev.value hF hCS
+  have hval := hev.value hF.val hCS
   rcases assignVal_ok h with ⟨b, x', hb, hf, rfl, rfl⟩ | ⟨y, hy, rfl, rfl, rfl⟩ | ⟨x', hf, rfl, rfl⟩
-  · obtain rfl := hev.boolLit hF hb
+  · obtain rfl := evalsTo_boolLit hF hb hev
     obtain ⟨h0, hD1, hm, hC1, hs⟩ := hD.fresh hav hn hf hCS hval
     refine ⟨_, run_init hF h0 (bool_valueOfTy ?_) fun _ h => ExprOrNondet.det.inj h ▸
       evalsTo_lit F hF _ b, hm, hC1, hD1, ?_, hs⟩
     all_goals cases b <;> simp [SHolds, SemanticStore.update]
-  · exact ⟨σS, .nil, StoreAgreement.refl _, hCS, hD, ⟨hev.var hF hCS hy,
+  · exact ⟨σS, .nil, StoreAgreement.refl _, hCS, hD, ⟨hev.var hF.var hCS hy,
       fun T h => Option.some.inj h ▸ hty⟩, rfl⟩
   · obtain ⟨h0, hD1, hm, hC1, hs⟩ := hD.fresh hav hn hf hCS hval
     exact ⟨_, run_init hF h0 hty fun _ h => ExprOrNondet.det.inj h ▸ hev, hm, hC1, hD1,
@@ -160,7 +162,8 @@ private theorem obl_claim (hD : SDom A D n0 σS n) {e : P.Expr}
         ∃ b j, n0 ≤ j ∧ y = freshName b j ∧ y ∉ A.toList := by
   refine ⟨?_, fun q hq => ?_, fun y hy => ?_⟩
   · refine WPLang.substFn_eq _ _ _ fun x hx => ?_
-    refine (Map.find?_filterMap_self (fun z => (oblVar ρ z).map fun (y, ty) => var y ty) _ x
+    refine (Map.find?_filterMap_self
+      (fun z => (oblVar ρ z).map fun (y, ty) => HasFvar.mkVar y ty) _ x
       (mem_exprFV.2 hx)).symm.trans ?_
     simp only [oblSubS, List.map_filterMap, Option.map_map]
     rfl
@@ -195,47 +198,6 @@ private theorem SClaim.mono {out' : PStmts P} {obls obls' : List (Option (LogEnt
   let ⟨_, hb', hf⟩ := hr hb
   ⟨_, _, ho.elim fun l hl => hl ▸ List.mem_append_right l hm, hb', claim_prepend hf hc, hk⟩
 
-section
-omit iDE iBE iSF iHI iHa iHFs iLV
-/-- A reach of a list from a store some statements lead to without events is a reach of the
-    statements followed by the list. -/
-private theorem reach_after_run (hrun : BRun F o σS [] (.normal σS1)) (h : BReach F out σS1 tr) :
-    ∃ tr0, BReach F (o ++ out) σS (tr0 ++ tr) ∧ Trace.AssumptionsHold P evalInterp () tr0 :=
-  ⟨[], breach_append_run hrun h, nofun⟩
-
-/-- A reach of a list after a statement that runs, with feasible events, is a reach of the
-    statement followed by the list. -/
-private theorem reach_after_stmt {c : PStmt P} (hc : BRunS F c σS evs (.normal σS1))
-    (hf : Trace.AssumptionsHold P evalInterp () evs) (h : BReach F out σS1 tr) :
-    ∃ tr0, BReach F (c :: out) σS (tr0 ++ tr) ∧ Trace.AssumptionsHold P evalInterp () tr0 :=
-  ⟨evs, .later hc h, hf⟩
-
-omit iHF in
-/-- A single event claiming a failure at an occurrence of condition `cond` is a failing
-    occurrence of the target with the condition `cond`. -/
-private theorem claim_single {e : Event P} (h : Claim t cond [e]) : FailsAt t cond e := by
-  obtain ⟨evs, e', he, -, hf⟩ := h
-  cases evs <;> simp_all
-
-omit iHF in
-/-- No trace claims a failure without events. -/
-private theorem claim_nil' : ¬ Claim t cond [] := fun ⟨_, _, h, _⟩ => by simp at h
-
-/-- A reach of a list headed by a command, claiming a failure at an occurrence of condition `cond`,
-    runs the command, whose events claim it, or are feasible and followed by a reach of the rest
-    claiming it. -/
-private theorem reach_cmd_claim {c : Cmd P} {rest : PStmts P}
-    (h : BReach F (.cmd (.cmd c) :: rest) σ tr)
-    (hC : Claim t cond tr) : ∃ σ1 evs, EvalE F σ (.cmd c) σ1 evs ∧ (Claim t cond evs ∨
-      ∃ tr', BReach F rest σ1 tr' ∧ Trace.AssumptionsHold P evalInterp () evs ∧
-        Claim t cond tr') := by
-  rcases h with ⟨⟨hE⟩⟩ | @⟨_, _, _, _, _, tr', ⟨hE⟩, hR⟩
-  · exact ⟨_, _, hE, .inl hC⟩
-  · by_cases hb : tr' = []
-    · exact ⟨_, _, hE, .inl (by simpa [hb] using hC)⟩
-    · exact ⟨_, _, hE, .inr ⟨_, hR, claim_split hb hC⟩⟩
-end
-
 omit iHF iSF iHI iHFs iLV in
 /-- Agreement after an assignment of `x`: on `x`, from the value the new current value holds;
     on the other names of `V`, from the agreement before. -/
@@ -267,11 +229,11 @@ private theorem ssaList_over (hF : SSALaws F) (t : AssertId P) (cond : P.Expr) (
   case initDet | setDet | initNondet | setNondet =>
     obtain ⟨σL1, _, hE, hC1⟩ := reach_cmd_claim hR hC
     first
-    | obtain ⟨v0, he, -, hx1, hfr, rfl, hty⟩ := evalE_init_det_evalsTo hE
+    | obtain ⟨v0, he, -, hx1, hfr, rfl, hty⟩ := evalE_init_det_inv_typed hE
     | obtain ⟨v0, hty, -, hx1, hfr, rfl⟩ := evalE_init_nondet_inv_typed hE
-    | obtain ⟨v0, he, ⟨prev, T, hp, hpT, hvT⟩, hx1, hfr, rfl⟩ := evalE_set_det_evalsTo hE
+    | obtain ⟨v0, he, ⟨prev, T, hp, hpT, hvT⟩, hx1, hfr, rfl⟩ := evalE_set_det_inv hE
     | obtain ⟨v0, ⟨prev, T, hp, hpT, hvT⟩, hx1, hfr, rfl⟩ := evalE_set_nondet_inv hE
-    obtain ⟨tr', hR', -, hC'⟩ := hC1.resolve_left claim_nil'
+    obtain ⟨tr', hR', -, hC'⟩ := hC1.resolve_left Claim.not_nil
     try
       obtain ⟨w, hw, hh⟩ := hA x (by simp [Block.freeVars, Stmt.freeVars])
       have hty := LawfulHasVal.valueOfTy_congr F w v0 ty T (hh.ty (curTy_ok hc).2)
@@ -281,7 +243,7 @@ private theorem ssaList_over (hF : SSALaws F) (t : AssertId P) (cond : P.Expr) (
         (fun y hy => hA y (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hy])) he hty hD
         hav hn
       have hf := assignVal_frame h1
-      have hv0 := he.value hF hCL
+      have hv0 := EvalsTo.value hF.val hCL he
     | have hv0 := LawfulHasVal.valueOfTy_isVal _ _ _ hty
       obtain ⟨h0, hD1, hm, hC1, hs1⟩ := hD.fresh hav hn h1 hCS hv0
       have hf := sFresh_frame h1
@@ -291,7 +253,7 @@ private theorem ssaList_over (hF : SSALaws F) (t : AssertId P) (cond : P.Expr) (
     exact (ih (by simp [SSt.defd, SSt.bound, hf.1, hav]) (Nat.le_trans hn hf.2.1)
       (SAgree.assign hx hx1 hfr hm fun y hy hne => hs1 ▸ hA y
         (by simp [Block.freeVars, Stmt.freeVars, hy, hne]))
-      (evalE_wellFormed hF hE hCL) hC1 hD1 hR' hC').mono ⟨[], rfl⟩
+      (evalCmdE_storeWellDefined hF.val hE hCL) hC1 hD1 hR' hC').mono ⟨[], rfl⟩
       (reach_after_run hrun)
   case assume =>
     intro l a md rest s out' s' ih σL σS tr hav hn hA hCL hCS hD hR hC
@@ -402,9 +364,9 @@ private theorem ssaList_sim (hF : SSALaws F) (A : AvoidSet P) (D : List P.Ident)
     case' refine_2 => rcases hR with _ | ⟨⟨hE⟩, hR'⟩ | ⟨⟨⟩⟩
     all_goals
       first
-      | obtain ⟨v0, he, -, hx1, hfr, rfl, hty⟩ := evalE_init_det_evalsTo hE
+      | obtain ⟨v0, he, -, hx1, hfr, rfl, hty⟩ := evalE_init_det_inv_typed hE
       | obtain ⟨v0, hty, -, hx1, hfr, rfl⟩ := evalE_init_nondet_inv_typed hE
-      | obtain ⟨v0, he, ⟨prev, T, hp, hpT, hvT⟩, hx1, hfr, rfl⟩ := evalE_set_det_evalsTo hE
+      | obtain ⟨v0, he, ⟨prev, T, hp, hpT, hvT⟩, hx1, hfr, rfl⟩ := evalE_set_det_inv hE
       | obtain ⟨v0, ⟨prev, T, hp, hpT, hvT⟩, hx1, hfr, rfl⟩ := evalE_set_nondet_inv hE
     all_goals try exact ⟨[], .nil, .inl rfl⟩
     all_goals
@@ -426,7 +388,7 @@ private theorem ssaList_sim (hF : SSALaws F) (A : AvoidSet P) (D : List P.Ident)
       have hI := ih (by simp [SSt.defd, SSt.bound, hf.1, hav]) (Nat.le_trans hn hf.2.1)
         (SAgree.assign hx hx1 hfr hm fun y hy hne =>
           hs1 ▸ hA y (by simp [Block.freeVars, Stmt.freeVars, hy, hne]))
-        (evalE_wellFormed hF hE hCL) hC1 hD1
+        (evalCmdE_storeWellDefined hF.val hE hCL) hC1 hD1
       first
       | obtain ⟨tr', hw, h'⟩ := hI.1 hR'
         exact ⟨tr', hw, h'.imp_right (breach_append_run hrun)⟩
@@ -436,7 +398,7 @@ private theorem ssaList_sim (hF : SSALaws F) (A : AvoidSet P) (D : List P.Ident)
   case assume =>
     intro l a md rest s out' s' ih σL σS hav hn hA hCL hCS hD
     have hI := ih hav hn (fun x hx => hA x (by simp [Block.freeVars, Stmt.freeVars, hx])) hCL hCS hD
-    have hw := weakensAssume_assume (l := l) (md := md) (evalsTo_foldE hF hCL hCS s.ρ a
+    have hw := Event.WeakensAssume.assume (l := l) (md := md) (evalsTo_foldE hF hCL hCS s.ρ a
       (fun x hx => hA x (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hx])))
     refine ⟨fun {tr} hR => ?_, fun harm {tr o} hR => ?_⟩
     · rcases hR with ⟨⟨⟨⟩⟩⟩ | ⟨⟨⟨⟩⟩, hR'⟩
@@ -464,16 +426,16 @@ private theorem ssaList_sim (hF : SSALaws F) (A : AvoidSet P) (D : List P.Ident)
         (fun x hx => hA x (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hx]))
       refine ⟨fun {tr} hR => ?_, fun harm {tr o} hR => ?_⟩
       · rcases hR with ⟨⟨⟨⟩⟩⟩ | ⟨⟨⟨⟩⟩, hR'⟩
-        · exact ⟨_, .cons (weakensAssume_check (by simp) hev) .nil,
+        · exact ⟨_, .cons (Event.WeakensAssume.check (by simp) hev) .nil,
             .inr (.here (.cmd (by constructor)))⟩
         · obtain ⟨tr', h1, h2⟩ := hI.1 hR'
-          exact ⟨_, .cons (weakensAssume_check (by simp) hev) h1,
+          exact ⟨_, .cons (Event.WeakensAssume.check (by simp) hev) h1,
             .inr (breach_cmd_cons (evs := [_]) (by constructor) h2)⟩
       · rcases hR with _ | ⟨⟨⟨⟩⟩, hR'⟩ | ⟨⟨⟩⟩
         obtain ⟨σL', rfl, tr', σS', h1, h2⟩ :=
           hI.2 (by simpa [Block.armsHaveChecks, Stmt.armsHaveChecks] using harm) hR'
         exact ⟨σL', rfl, _, σS', .cons_normal (evs1 := [_]) (.cmd (by constructor)) h1,
-          .cons (weakensAssume_check (by simp) hev) h2⟩
+          .cons (Event.WeakensAssume.check (by simp) hev) h2⟩
   case ite =>
     intro tss ess md s t' sT sU e' out' s' hT ihT hU hE ihE ho1 ho2 ho3 σL σS hav hn hA hCL hCS
       hD
@@ -552,7 +514,8 @@ private theorem ssaBody_over (hF : SSALaws F) {st : FreshSt P} {ρ0 : Ren P} {la
     {so : SOut P} (h : ssaBody st ρ0 lay = .ok so) (hN : NamesOK st.avoid.toList D st.next)
     (hρ : ∀ x ∈ Block.freeVars lay, σL x = σS (ρ0.get x) ∧ (σL x).isSome)
     (hty : TyOK F st.tys (Block.freeVars lay) (Block.freeVars lay) σL) (hCL : WellFormedStore σL F)
-    (hCS : WellFormedStore σS F) (hdom : DomIn σS D) {e : P.Expr} (hfail : Fails F lay σL t e) :
+    (hCS : WellFormedStore σS F) (hdom : SemanticStore.DomIn σS D) {e : P.Expr}
+    (hfail : Fails F lay σL t e) :
     ∃ ssub, some (.obl t.label ssub) ∈ so.obls ∧ Fails F so.out σS t (substObl ssub e) ∧
       (∀ q ∈ ssub, q.1 ∈ exprFV e) ∧
       ∀ y ∈ exprFV e, (∃ z ty, (y, z, ty) ∈ ssub) ∨ y ∈ D ∨
@@ -582,7 +545,7 @@ theorem ssaEntry_over {F : P.Factory} (hVar : WellFormedSemanticEvalVar (P := P)
     {so : SOut P} (h : ssaEntry G tys xs al lay = .ok (ρ0, so)) (hal : ∀ q ∈ al, q.2 ∈ xs)
     {σL σS : SemanticStore P} (hρ : ∀ x ∈ Block.freeVars lay, σL x = σS (ρ0.get x) ∧ (σL x).isSome)
     (hty : TyOK F tys (Block.freeVars lay) (Block.freeVars lay) σL) (hCL : WellFormedStore σL F)
-    (hCS : WellFormedStore σS F) {D : List P.Ident} (hdom : DomIn σS D)
+    (hCS : WellFormedStore σS F) {D : List P.Ident} (hdom : SemanticStore.DomIn σS D)
     (hD : ∀ y ∈ D, y ∈ ρ0.map (·.2) ∨ ∀ b j, y ≠ freshName b j) {t : AssertId P} {e : P.Expr}
     (hfail : Fails F lay σL t e) :
     ∃ ssub, some (.obl t.label ssub) ∈ so.obls ∧ Fails F so.out σS t (substObl ssub e) ∧
@@ -611,7 +574,7 @@ theorem ssaEntry_sim {F : P.Factory} (hVar : WellFormedSemanticEvalVar (P := P) 
     {so : SOut P} (h : ssaEntry G tys xs al lay = .ok (ρ0, so)) (hal : ∀ q ∈ al, q.2 ∈ xs)
     {σL σS : SemanticStore P} (hρ : ∀ x ∈ Block.freeVars lay, σL x = σS (ρ0.get x) ∧ (σL x).isSome)
     (hty : TyOK F tys (Block.freeVars lay) (Block.freeVars lay) σL) (hCL : WellFormedStore σL F)
-    (hCS : WellFormedStore σS F) {D : List P.Ident} (hdom : DomIn σS D)
+    (hCS : WellFormedStore σS F) {D : List P.Ident} (hdom : SemanticStore.DomIn σS D)
     (hD : ∀ y ∈ D, y ∈ ρ0.map (·.2) ∨ ∀ b j, y ≠ freshName b j) :
     (∀ {tr}, BReach F lay σL tr → ∃ tr', Trace.WeakensAssumes evalInterp tr tr' ∧
       (tr' = [] ∨ BReach F so.out σS tr')) ∧

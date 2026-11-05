@@ -202,7 +202,7 @@ private theorem skip_assert_event_true [LawfulHasVal P]
     (hwfv : WellFormedSemanticEvalVal (P := P) ρ.factory) :
     Event.isTrueAssumeOrAssert
       (Event.assert (EventArg.mk ρ.factory ρ.store "$__skip" HasBool.tt .empty)) :=
-  eval_tt_is_tt ρ.store ρ.factory hwfv
+  hwfv.eval_tt ρ.store
 
 omit [HasFvars P] [HasOps P] [HasInt P] [HasIntOps P] [HasSubstFvar P] in
 /-- One deterministic statement step is simulated by a finite Kleene prefix

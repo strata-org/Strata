@@ -6,10 +6,9 @@
 module
 
 public import Strata.Transform.WP.WP
-public import Strata.Transform.Passive.Simulation
 import Strata.Util.ExceptProps
 import Strata.Transform.Passive.ProgramProps
-import Strata.Transform.Passive.SimulationProps
+import Strata.DL.Imperative.StmtProps
 import Strata.Util.RopeProps
 public meta import Lean.Elab.Tactic.Basic
 public meta import Lean.Elab.Tactic.ElabTerm
@@ -64,11 +63,6 @@ private def itemG : Item P → Bool
   | .branch t e => itemsG t && itemsG e
 end
 
-omit iDE iB iLB iBo iFv iSu iId iLI iHa iFs iW in
-/-- A list of obligations is a guarded program. -/
-private theorem treeForm_checks {cs : PStmts P} (h : cs.all Stmt.isCheck = true) :
-    Block.treeForm cs = true := by fun_induction Block.treeForm cs <;> grind [Stmt.isCheck]
-
 omit iB iLB iId iLI iHa in
 /-- The nesting of items built from `init`, `set` and `assume` commands and runs of
     obligations is a guarded program with only obligations after each `assert`. -/
@@ -84,7 +78,7 @@ private theorem nest_shape : ∀ (l : List (Item P)), itemsG l = true →
     have hcs : cs.all Stmt.isCheck = true := by simp_all [itemsG, itemG]
     rcases r with _ | (_ | _ | _ | _) <;> grind [nest, nestCons, reachPre, Block.treeForm,
       Block.onlyChecksAfterAssert, Block.onlyChecksAfterAssert_of_all_isCheck hcs,
-      treeForm_checks hcs]
+      Block.treeForm_of_all_isCheck hcs]
   | .branch t e :: rest, h => by
     have ht := nest_shape t (by simp_all [itemsG, itemG])
     have he := nest_shape e (by simp_all [itemsG, itemG])
@@ -117,20 +111,6 @@ public section
 variable {P : PureExpr} [iDE : DecidableEq P.Ident] [iBE : BEq P.Ident] [iLB : LawfulBEq P.Ident]
   [iHB : HasBool P] [iHF : HasFvar P] [iHS : HasSubstFvar P] [iHI : HasIdent P]
   [iHa : Hashable P.Ident] [iHV : HasFvars P] [iW : WPOps P]
-
-/-! ## Statement lists -/
-
-omit iDE iBE iLB iHB iHF iHS iHI iHa iHV iW in
-/-- An obligation of a concatenation is one of its parts. -/
-private theorem Block.hasCheck_append (a b : PStmts P) :
-    Block.hasCheck (a ++ b) = (Block.hasCheck a || Block.hasCheck b) := by
-  induction a <;> simp_all [Block.hasCheck, Bool.or_assoc]
-
-omit iDE iBE iLB iHB iHF iHS iHI iHa iHV iW in
-/-- The arms of the `ite`s of a concatenation are those of its parts. -/
-private theorem Block.armsHaveChecks_append (a b : PStmts P) :
-    Block.armsHaveChecks (a ++ b) = (Block.armsHaveChecks a && Block.armsHaveChecks b) := by
-  induction a <;> simp_all [Block.armsHaveChecks, Bool.and_assoc]
 
 /-! ## Flat items -/
 

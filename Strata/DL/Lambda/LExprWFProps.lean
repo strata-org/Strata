@@ -16,7 +16,7 @@ import Strata.Util.StringProps
 
 Theorems about the well-formedness predicates, substitution operations, and
 beta reduction defined in `Strata.DL.Lambda.LExprWF` (`freeVars`, `varOpen`,
-`varClose`, `lcAt`, `WF`, `liftBVars`, `substFvar(s)`, `substK`,
+`varClose`, `lcAt`, `WF`, `liftBVars`, `substFvar(s)`, `substFvarsBy`, `substK`,
 `betaReduce(K)`, `betaReduceRedexesFuel` and its wrappers).
 
 ### Local closedness (`varOpen` / `varClose` / `lcAt`)
@@ -60,6 +60,13 @@ analogous statement for the erasing walker is provably false, because a
 constant-lambda redex erases its argument's operators
 (`getOps_betaReduce_of_not_bvarUsed`; alias redexes preserve them,
 `getOps_body_subset_betaReduce` / `getOps_arg_subset_betaReduce`).
+
+### Substitution by a lookup function (`substFvarsBy`)
+`substFvars` is `substFvarsBy` at the map's lookup (`substFvars_eq_substFvarsBy`).
+`substFvarsBy` depends only on the lookup at the free variables (`substFvarsBy_congr`),
+two substitutions compose into one (`substFvarsBy_comp`), and substituting expressions
+without operators adds no operator (`getOps_substFvarsBy`). `freeVars_substFvars` says where
+each free variable of a substitution's result comes from.
 -/
 
 namespace Lambda

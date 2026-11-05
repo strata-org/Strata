@@ -31,22 +31,18 @@ open Imperative Imperative.BigStep Imperative.WP Lambda
 
 public section
 
-/-- The variables in scope at the entry of a loop-free statement list of the procedure `p`:
-    its parameters and `old x` for its in-out parameters `x`. -/
-@[expose] def entryScope (p : Procedure) : List Expression.Ident := (paramTys p).map (·.1)
-
 /-- The syntactic conditions on a loop-free statement list `ss` of the procedure `p` under
     which the WP phase over-approximates it, checked: `ss` reads only variables of
-    `entryScope p`, `ss` is well scoped from `entryScope p` with its assigned variables
-    as locals (`wflB`: no loops, calls or nondeterministic guards, each `init` declares a
-    name not in scope, each `set` and each read is of a name in scope), and every `exit` of
-    `ss` targets an enclosing block (`Block.checkExitsCoveredByBlocks`). -/
+    `p.entryScope`, `ss` is well scoped from `p.entryScope` with its assigned variables
+    as locals (`Block.wellScopedB`: no loops, calls or nondeterministic guards, each `init`
+    declares a name not in scope, each `set` and each read is of a name in scope), and every
+    `exit` of `ss` targets an enclosing block (`Block.checkExitsCoveredByBlocks`). -/
 @[expose] def checkLoopFree (p : Procedure) (ss : Statements) : Except String Unit :=
   let pre := s!"WP: procedure '{p.header.name.name}':"
-  match (Block.freeVarsH ss).find? (!(entryScope p).contains ·) with
+  match (Block.freeVarsH ss).find? (!p.entryScope.contains ·) with
   | some x => throw s!"{pre} '{x.name}' is read but is neither a parameter nor a local in scope"
   | none =>
-    if !wflBH (Block.assignedVarsH ss) (entryScope p) ss then
+    if !Block.wellScopedH (Block.assignedVarsH ss) p.entryScope ss then
       throw s!"{pre} not well scoped (a local declared twice in a scope or named as a \
         parameter, or a variable read or assigned outside the scope of its declaration)"
     else if !Block.checkExitsCoveredByBlocks [] ss then
@@ -61,7 +57,7 @@ public section
 @[expose] def wpLoopFree (G : IdSet Expression) (p : Procedure) (ss : Statements) :
     Except String (WOut Expression) := do
   checkLoopFree p ss
-  wpEntry G (paramTys p) ss
+  wpEntry G p.paramTys ss
 
 /-- The WP phase of one procedure: the same header, an empty contract, the guarded program of
     its loop-free statement list as body, the same metadata. -/

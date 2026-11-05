@@ -880,10 +880,7 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
       | .assumption label e =>
         some (Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata)))
       | _ => none
-    let assertStmt := Imperative.Stmt.cmd (CmdExt.cmd (
-      if ob.property == .cover
-      then Imperative.Cmd.cover ob.label ob.obligation ob.metadata
-      else Imperative.Cmd.assert ob.label ob.obligation ob.metadata))
+    let assertStmt := Imperative.Stmt.cmd (CmdExt.cmd ob.toCheckCmd)
     assumes ++ [assertStmt]
   let body := match blocks with
     | [] => []
@@ -891,11 +888,7 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
     | b :: rest => rest.foldl (fun acc block =>
         [Imperative.Stmt.ite .nondet acc block .empty]) b
   let oblProcs := match procName with
-    | some name => [Decl.proc {
-        header := { name := name, typeArgs := [], inputs := [], outputs := [] },
-        spec := { preconditions := [], postconditions := [] },
-        body := .structured body
-      } .empty]
+    | some name => [Decl.obligationProc name body]
     | none => []
   let oblProgram : Program := { decls := decls ++ oblProcs }
 

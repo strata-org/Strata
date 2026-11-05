@@ -12,6 +12,7 @@ public import Strata.Languages.Core.Verifier
 public import Strata.Transform.DeadDefElimCoreCorrect
 import all Strata.Transform.SSA.SSACoreProgramProps
 import Strata.DL.Imperative.BigStep.Adequacy
+import Strata.Languages.Core.ProcedureProps
 import all Strata.Languages.Core.Verifier
 import all Strata.Languages.Core.PipelinePhase
 import all Strata.Transform.CoreTransform
@@ -174,14 +175,14 @@ theorem ssaLoopFree_overapproximatesTraces (π : String → Option Procedure)
     (params : InitEnvWFParams) (hp : ∀ p ∈ params.prefixIdents, '@' ∉ p.toList)
     (G : IdSet Expression) (q : Procedure) (ss₀ : Statements) :
     OverapproximatesTracesUptoWhen (Trace.WeakensAssumes evalInterp)
-      (SSAEntryRel G (paramTys q) (entryParams q) (entryAliases q) ss₀)
+      (SSAEntryRel G q.paramTys q.entryParams q.oldAliases ss₀)
       (fun ρ ρ' => ρ'.factory = ρ.factory)
       (EventLang.coreBlock π) (EventLang.coreBlock π)
       (fun ss => (ssaLoopFree G q ss).toOption.map (·.2.out))
       (fun ss => ss = ss₀ ∧ Block.treeForm ss = true ∧ Block.armsHaveChecks ss = true ∧
-        ∀ x ∈ Block.freeVars ss, x ∈ entryParams q ∨ x ∈ (entryAliases q).map (·.1))
+        ∀ x ∈ Block.freeVars ss, x ∈ q.entryParams ∨ x ∈ q.oldAliases.map (·.1))
       params params :=
-  ssa_overapproximatesTraces π params hp G _ _ _ (entryAliases_mem q) ss₀
+  ssa_overapproximatesTraces π params hp G _ _ _ (Procedure.oldAliases_mem q) ss₀
 
 /-! ## The pipeline phase -/
 

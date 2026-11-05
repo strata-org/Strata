@@ -684,9 +684,9 @@ end
   | .user e [] => pure e
   | .user e ren => do
     let h : Std.HashMap P.Ident P.Expr ← ren.foldlM (init := {}) fun h (y, y') => do
-      pure (h.insert y (var y' (some (← tyOfName tys tyOf y'))))
+      pure (h.insert y (HasFvar.mkVar y' (some (← tyOfName tys tyOf y'))))
     pure (WPOps.substFn e (fun y => h[y]?))
-  | .var x => do pure (var x (some (← tyOfName tys tyOf x)))
+  | .var x => do pure (HasFvar.mkVar x (some (← tyOfName tys tyOf x)))
   | .lit b => pure (if b then tt else ff)
   | .ite c t e => do
     pure (WPOps.ite (← resolveE tys tyOf c) (← resolveE tys tyOf t) (← resolveE tys tyOf e))

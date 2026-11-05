@@ -70,9 +70,9 @@ public def contains (s : OrderedKeyedSet key) (a : α) : Bool := s.setIdx.contai
 
 /-- Append `a` unless an element with the same key is already present (O(1) uniq). -/
 public def insert (s : OrderedKeyedSet key) (a : α) : OrderedKeyedSet key :=
-  let (contained, setIdx) := s.setIdx.containsThenInsert (key a)
-  if contained then s
-  else { s with setIdx, values := s.values.push a }
+  if s.setIdx.contains (key a) then s
+  else match s with
+    | { setIdx, values } => { setIdx := setIdx.insert (key a), values := values.push a }
 
 /-- Elements in insertion order. -/
 public def toArray (s : OrderedKeyedSet key) : Array α := s.values

@@ -63,7 +63,7 @@ def tr (params : List String) (ss : Statements) : Except String Statements := do
 /-- `tr` with the WP phase run without `checkLoopFree` (`wpEntry` alone), for the lists with an
     `exit` that targets no enclosing block, which the check rejects. -/
 def trW (params : List String) (ss : Statements) : Except String Statements := do
-  let w ← wpEntry (P := Expression) (IdSet.ofList []) (paramTys (proc params ss)) ss
+  let w ← wpEntry (P := Expression) (IdSet.ofList []) (proc params ss).paramTys ss
   let (_, so) ← ssaLoopFree (IdSet.ofList []) (proc params ss) w.lay
   pure (deadDefElim [] so.out)
 
@@ -456,8 +456,8 @@ def ex14 : Statements := [block' "l" [ite' (gt (iv "c") (int 0)) [exit' "l"] [],
 /-! ## Rejected loop-free lists
 
 The translation fails on a list that does not pass `checkLoopFree`: one that reads a variable
-that is neither a parameter nor a local in scope, that is not well scoped (`wflB`), or that has
-an `exit` targeting no enclosing block (`Block.checkExitsCoveredByBlocks`). -/
+that is neither a parameter nor a local in scope, that is not well scoped (`Block.wellScopedB`),
+or that has an `exit` targeting no enclosing block (`Block.checkExitsCoveredByBlocks`). -/
 
 /-- The error of the translation of `ss` with integer parameters `params`, if it fails. -/
 def err (params : List String) (ss : Statements) : String :=
@@ -561,7 +561,7 @@ def procAxProc : Program :=
               .proc (namedProc "Q" [assert' "q1" (gt (iv "x") (int 1))]) .empty] }
 
 #guard match wpSSAProgramWith [] { decls := [] } [] procAxProc with
-  | .ok p => (axiomScopes p).map (fun (n, axs) => (n, axs.length)) == [("P", 0), ("Q", 1)]
+  | .ok p => (Program.axiomScopes p).map (fun (n, axs) => (n, axs.length)) == [("P", 0), ("Q", 1)]
       && axiomScopesAgree procAxProc p
   | .error _ => false
 
@@ -1231,7 +1231,7 @@ end
 mutual
 def specWflB (Lc : List CoreIdent) : List CoreIdent → Statements → Bool
   | _, [] => true
-  | S, s :: rest => specWfs1B Lc S s && specWflB Lc (topInit s ++ S) rest
+  | S, s :: rest => specWfs1B Lc S s && specWflB Lc (Stmt.topInits s ++ S) rest
 def specWfs1B (Lc : List CoreIdent) (S : List CoreIdent) : Statement → Bool
   | .cmd (.cmd (.init x _ (.det e) _)) =>
     !S.contains x && Lc.contains x && (specExprFV e).all S.contains
@@ -1289,9 +1289,9 @@ def corpusLists : List Statements :=
 #guard corpusLists.all fun ss => (stmtsExprs ss).all fun e => exprFV e == specExprFV e
 #guard corpusLists.all fun ss => deadDefElim [] ss == specDDE [] ss
 #guard corpus.all fun (ps, e) =>
-  let S := (paramTys (proc ps e)).map (·.1)
-  wflB (Block.assignedVars e) S e == specWflB (Block.assignedVars e) S e
-#guard !wflB [] [] [assert' "a" (gt (iv "y") (int 0))] &&
+  let S := (proc ps e).paramTys.map (·.1)
+  Block.wellScopedB (Block.assignedVars e) S e == specWflB (Block.assignedVars e) S e
+#guard !Block.wellScopedB [] [] [assert' "a" (gt (iv "y") (int 0))] &&
   !specWflB [] [] [assert' "a" (gt (iv "y") (int 0))]
 #guard [twoProcs, procAxProc, globalProg].all fun p =>
   match wpProgramWith [] { decls := [] } [] p with

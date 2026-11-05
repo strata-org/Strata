@@ -505,6 +505,43 @@ def Decl.callSites : Decl → List CallSite
 def Program.callSites (p : Program) : List CallSite :=
   p.decls.flatMap Decl.callSites
 
+/-! ## Axiom scopes -/
+
+/-- The axioms declared before each procedure and each lemma of a program, by procedure or
+    lemma name, in declaration order.  Symbolic evaluation and obligation extraction both
+    scope axioms this way: the obligations of a procedure or a lemma assume exactly the axioms
+    declared before it (`Program.eval`, and `ObligationExtraction.extractObligations` through
+    `extractDecl`). -/
+@[expose] def Program.axiomScopes (p : Program) : List (String × List Decl) :=
+  (p.decls.foldl (init := (([] : List Decl), ([] : List (String × List Decl))))
+    fun (axs, acc) d => match d with
+      | .ax _ _ => (axs ++ [d], acc)
+      | .proc q _ => (axs, acc ++ [(q.header.name.name, axs)])
+      | .lemma l _ => (axs, acc ++ [(l.name, axs)])
+      | _ => (axs, acc)).2
+
+/-- The axioms and the procedure or lemma names of a program in declaration order, without the
+    axioms after the last procedure or lemma: an axiom is `(some d, "")`, a procedure or lemma
+    `(none, name)`. -/
+@[expose] def Program.scopeEvents (p : Program) : List (Option Decl × String) :=
+  let ev := p.decls.foldl (init := ([] : List (Option Decl × String))) fun acc d =>
+    match d with
+    | .ax _ _ => (some d, "") :: acc
+    | .proc q _ => (none, q.header.name.name) :: acc
+    | .lemma l _ => (none, l.name) :: acc
+    | _ => acc
+  (ev.dropWhile (·.1.isSome)).reverse
+
+/-! ## Obligation procedures -/
+
+/-- An obligation procedure: a procedure named `name` without type arguments, parameters or
+    contract, with the structured body `body`. -/
+@[expose] def Decl.obligationProc (name : CoreIdent) (body : Statements) : Decl :=
+  Decl.proc {
+      header := { name := name, typeArgs := [], inputs := [], outputs := [] },
+      spec := { preconditions := [], postconditions := [] },
+      body := .structured body } .empty
+
 end Core
 
 ---------------------------------------------------------------------

@@ -38,6 +38,13 @@ abbrev EvalCmdParamE (P : PureExpr) (Cmd : Type) (EventT : Type) :=
 @[expose] def WellFormedStore {P : PureExpr} [HasVal P] (σ : SemanticStore P) (f : P.Factory) : Prop :=
     ∀ x v, σ x = some v → HasVal.value f v
 
+/-! ### Evaluation as a relation -/
+
+/-- The expression `e` evaluates to `v` under the factory `F` in the store `σ`.  An expression
+    with no value (a stuck evaluation) is one with `¬ ∃ v, EvalsTo F σ e v`. -/
+@[expose] def EvalsTo {P : PureExpr} (F : P.Factory) (σ : SemanticStore P) (e v : P.Expr) :
+    Prop :=
+  P.eval F σ e = some v
 
 /-! ### Well-Formedness of `SemanticEval` -/
 

@@ -143,6 +143,16 @@ set_option linter.defProp false in
     LawfulHasVal.valueOfTy_isVal f HasBool.ff HasBool.boolTy
       (HasBool.boolIsValOfTy f).2⟩
 
+/-- A variable reference, annotated with `ty` when given. -/
+@[expose] def HasFvar.mkVar {P : PureExpr} [HasFvar P] (x : P.Ident) (ty : Option P.Ty) : P.Expr :=
+  match ty with
+  | some t => HasFvar.mkTypedFvar x t
+  | none => HasFvar.mkFvar x
+
+/-- A Boolean variable reference. -/
+@[expose] def HasFvar.mkBoolVar {P : PureExpr} [HasBool P] [HasFvar P] (x : P.Ident) : P.Expr :=
+  HasFvar.mkVar x (some HasBool.boolTy)
+
 /-- Boolean operations: not, and, imp. -/
 class HasBoolOps (P : PureExpr) extends HasBool P where
   not : P.Expr → P.Expr

@@ -54,6 +54,10 @@ variables, use `Q := (· ∈ vs)`. -/
     (Q : P.Ident → Prop) (store : SemanticStore P) : Prop :=
   ∀ ident, Q ident → (store ident).isSome = true
 
+/-- The store `σ'` binds only names of `D`. -/
+@[expose] def SemanticStore.DomIn {P : PureExpr} (σ' : SemanticStore P) (D : List P.Ident) : Prop :=
+  ∀ x, (σ' x).isSome → x ∈ D
+
 /-- Define `ident := value`, leaving every other variable untouched. -/
 @[expose] def SemanticStore.update {P : PureExpr} [DecidableEq P.Ident]
     (store : SemanticStore P) (ident : P.Ident) (value : P.Expr) : SemanticStore P :=

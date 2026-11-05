@@ -41,8 +41,9 @@ def procInputContext (Γ : TContext Unit) (proc : Procedure) : TContext Unit :=
     extended with the outputs and, for each in-out parameter `g`, an `old g`
     binding at `g`'s type.
 
-    Scopes are concatenated `old ++ output ++ input`; `HMap.ofList` keeps the last
-    occurrence of a key, giving `input`-then-`output`-then-`old` priority. -/
+    The bindings are those of `Procedure.paramTys`. Scopes are concatenated
+    `old ++ output ++ input`; `HMap.ofList` keeps the last occurrence of a key, giving
+    `input`-then-`output`-then-`old` priority. -/
 def procBodyContext (Γ : TContext Unit) (proc : Procedure) : TContext Unit :=
   { Γ with types := procBodyScopes Γ.types proc }
 

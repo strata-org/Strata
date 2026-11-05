@@ -13,6 +13,7 @@ import all Strata.Transform.Passive.CoreProgramProps
 import all Strata.Transform.WP.WPCoreProgramProps
 import all Strata.Transform.SSA.SSACoreProgramProps
 import Strata.Util.ExceptProps
+import Strata.Languages.Core.ProcedureProps
 import all Strata.Util.ListMap
 
 /-! # Properties of the WP and SSA phases in sequence on Core procedures and programs
@@ -117,40 +118,41 @@ theorem wpSSALoopFree_hal {Gw Gs : IdSet Expression} {p : Procedure}
     {ss : Statements} {w : WOut Expression} {ρ0 : Ren Expression} {so : SOut Expression}
     (h : wpSSALoopFree Gw Gs p ss = .ok (w, ρ0, so))
     {S V : List Expression.Ident}
-    (hSI : ∀ x ∈ S, ∀ b n, x = freshName b n → x ∈ (paramTys p).map (·.1))
+    (hSI : ∀ x ∈ S, ∀ b n, x = freshName b n → x ∈ p.paramTys.map (·.1))
     {σ : SemanticStore Expression}
     (hold : ∀ x ∈ p.header.getInoutParams.map (·.1), σ (CoreIdent.mkOld x.name) = σ x) :
     ∀ x ∈ S, x ∈ V → ∀ y ∈ S, y ∈ V → ρ0.get x = ρ0.get y → σ x = σ y := by
   obtain ⟨rfl, -⟩ := ssaEntry_ok (wpSSALoopFree_ok h).2.2
-  have hD : ∀ x ∈ S, ((inputAvoid Gs (paramTys p) w.lay).contains x = true ∨
+  have hD : ∀ x ∈ S, ((inputAvoid Gs p.paramTys w.lay).contains x = true ∨
       ∀ b n, x ≠ freshName b n) := fun x hx => by
     grind [inputAvoid, AvoidSet.contains, IdSet.ofList, hSI x hx]
   intro x hx _ y hy _ he
-  obtain ⟨hinj, hdom⟩ := freshFold_inj (fun x => (inputAvoid Gs (paramTys p) w.lay).contains x)
+  obtain ⟨hinj, hdom⟩ := freshFold_inj (fun x => (inputAvoid Gs p.paramTys w.lay).contains x)
     id (fun _ => True) (fun (r : Ren Expression × Nat) (x : Expression.Ident) =>
-      let f := freshIn (inputAvoid Gs (paramTys p) w.lay) (WPOps.name x) r.2
+      let f := freshIn (inputAvoid Gs p.paramTys w.lay) (WPOps.name x) r.2
       (Ren.set r.1 x f.1, f.2))
     (fun ρ n x _ => (freshIn_spec (P := Expression) _ _ n).imp fun _ ⟨he, hk, hA⟩ => ⟨hk,
       congrArg (Ren.set ρ x ·.1) he, congrArg (·.2) he, trivial, Bool.eq_false_iff.1 hA⟩) _ [] 0
     trivial nofun fun x y _ _ h => by simpa [Ren.get] using h
-  exact aliasFold_val _ (entryAliases p) (fun q hq => ⟨.inr (hdom q.2 (.inl
-      (entryAliases_mem p q hq))), by grind [entryAliases]⟩) _
+  exact aliasFold_val _ p.oldAliases (fun q hq => ⟨.inr (hdom q.2 (.inl
+      (Procedure.oldAliases_mem p q hq))), by grind [Procedure.oldAliases]⟩) _
     (fun x y hx hy he => congrArg σ (hinj x y hx hy he)) x y (.inl (hD x hx)) (.inl (hD y hy)) he
 
 /-! ## Syntactic hypotheses from a successful run
 
 Both phases succeed only on loop-free lists that pass `checkLoopFree`, so with the variables of
-`entryScope p` (the parameters and `old x` of the in-out parameters) in scope and the assigned
-variables of the list as locals, the list is well scoped (`WFL`) and reads only variables in
-scope. -/
+`p.entryScope` (the parameters and `old x` of the in-out parameters) in scope and the assigned
+variables of the list as locals, the list is well scoped (`Block.WellScoped`) and reads only
+variables in scope. -/
 
 /-- **What a successful run guarantees of its input.**  When `wpSSALoopFree Gw Gs p ss`
-    succeeds, `ss` is well scoped from `entryScope p` with its assigned variables as locals
-    (`WFL`) and reads only variables of `entryScope p`. -/
+    succeeds, `ss` is well scoped from `p.entryScope` with its assigned variables as locals
+    (`Block.WellScoped`) and reads only variables of `p.entryScope`. -/
 theorem wpSSALoopFree_checks {Gw Gs : IdSet Expression} {p : Procedure}
     {ss : Statements} {w : WOut Expression} {ρ0 : Ren Expression} {so : SOut Expression}
     (h : wpSSALoopFree Gw Gs p ss = .ok (w, ρ0, so)) :
-    WFL (Block.assignedVars ss) (entryScope p) ss ∧ ∀ x ∈ Block.freeVars ss, x ∈ entryScope p :=
+    Block.WellScoped (Block.assignedVars ss) p.entryScope ss ∧
+      ∀ x ∈ Block.freeVars ss, x ∈ p.entryScope :=
   let ⟨hfv, hwfl, _⟩ := checkLoopFree_ok (wpSSALoopFree_ok h).2.1
   ⟨hwfl, hfv⟩
 
@@ -175,7 +177,8 @@ theorem wpSSAProgramWith_contractFree {reserved : List Expression.Ident}
     cases d' <;> simp_all [ListMap.isEmpty]
   rintro q md rfl
   obtain ⟨d, -, hd⟩ := mapM_except_mem_right _ _ _ hm _ hd'
-  split at hd <;> grind [ssaProc, Except.bind_is_ok, Except.pure_is_ok, Except.throw_is_ok]
+  split at hd <;> grind [ssaProc, Decl.obligationProc, Except.bind_is_ok, Except.pure_is_ok,
+    Except.throw_is_ok]
 
 /-! ## Lemmas
 
@@ -194,7 +197,8 @@ theorem wpSSAProgramWith_lemma {reserved : List Expression.Ident}
   obtain ⟨mid, hm, hs⟩ := (Except.bind_is_ok _ _ _).1 h
   obtain ⟨dp, hd, hw⟩ := (Except.bind_is_ok _ _ _).1 hm
   obtain ⟨ob, hob, hlb, hu⟩ := declObligationsProgramWith_lemma hd l md hl
-  have hu' := wpProcsProgram_unit hw _ _ hu (by split <;> simp [isObligationUnit])
+  have hu' := wpProcsProgram_unit hw _ _ hu
+    (by unfold ProofObligation.toCheckCmd; split <;> simp [isObligationUnit])
   obtain ⟨d, hd, hdo⟩ := ssaProgram_mem hs _ _ hu'
   exact ⟨ob, hob, hlb, Except.ok.inj ((ssaProc_lemmaUnit _ _ _ rfl).symm.trans hd) ▸ hdo⟩
 

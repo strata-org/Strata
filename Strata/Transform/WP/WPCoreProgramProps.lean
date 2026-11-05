@@ -7,7 +7,7 @@ module
 
 public import Strata.Transform.WP.WPCoreProgram
 public import Strata.Transform.Passive.ProgramProps
-public import Strata.Transform.Passive.SimulationProps
+import Strata.DL.Imperative.StmtProps
 import Strata.Util.ExceptProps
 
 /-! # Properties of the WP phase on Core procedures and programs
@@ -33,22 +33,24 @@ theorem contractWrapped_emptySpec (p : Procedure) (body : Statements)
   simp [Imperative.Procedure.contractWrapped, hpre, hpost]
 
 /-- **What `checkLoopFree` checks.**  A loop-free list `ss` that passes `checkLoopFree p` reads
-    only variables of `entryScope p`, is well scoped from `entryScope p` with its assigned
-    variables as locals (`WFL`), and every `exit` of `ss` targets an enclosing block. -/
+    only variables of `p.entryScope`, is well scoped from `p.entryScope` with its assigned
+    variables as locals (`Block.WellScoped`), and every `exit` of `ss` targets an enclosing
+    block. -/
 theorem checkLoopFree_ok {p : Procedure} {ss : Statements}
     (h : checkLoopFree p ss = .ok ()) :
-    (∀ x ∈ Block.freeVars ss, x ∈ entryScope p) ∧ WFL (Block.assignedVars ss) (entryScope p) ss ∧
+    (∀ x ∈ Block.freeVars ss, x ∈ p.entryScope) ∧
+      Block.WellScoped (Block.assignedVars ss) p.entryScope ss ∧
       Block.exitsCoveredByBlocks [] ss := by
-  simp only [checkLoopFree, wflBH_eq, Block.assignedVarsH_eq, Block.freeVarsH_eq] at h
+  simp only [checkLoopFree, Block.wellScopedH_eq, Block.assignedVarsH_eq, Block.freeVarsH_eq] at h
   split at h <;> (try split at h) <;> (try split at h) <;> try cases h
   rename_i hw hc
-  exact ⟨by grind [List.find?_eq_none], wflB_wfl (by simpa using hw),
+  exact ⟨by grind [List.find?_eq_none], Block.wellScoped_of_wellScopedB (by simpa using hw),
     Block.exitsCoveredByBlocks_of_check (by simpa using hc)⟩
 
 /-- The WP phase of a loop-free list runs `wpEntry` with the parameter types. -/
 theorem wpLoopFree_body {G : IdSet Expression} {p : Procedure} {ss : Statements}
     {w : WOut Expression} (h : wpLoopFree G p ss = .ok w) :
-    wpEntry G (paramTys p) ss = .ok w := (Except.bind_is_ok _ _ _).1 h |>.elim fun _ h => h.2
+    wpEntry G p.paramTys ss = .ok w := (Except.bind_is_ok _ _ _).1 h |>.elim fun _ h => h.2
 
 /-- A successful run of `wpProcsProgram` keeps every obligation unit of its input. -/
 private theorem wpProcsProgram_unit {reserved : List Expression.Ident} {mid out : Program}

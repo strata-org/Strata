@@ -33,15 +33,6 @@ public section
 
 variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P]
 
-/-! ## Evaluator helpers -/
-
-omit [HasFvar P] [HasBoolOps P] in
-theorem eval_tt_is_tt [HasFvars P] [LawfulHasVal P]
-    (σ : SemanticStore P) (f : P.Factory)
-    (hwfv : WellFormedSemanticEvalVal (P := P) f) :
-    P.eval f σ HasBool.tt = some HasBool.tt :=
-  hwfv.identityOnValues HasBool.tt σ (HasBool.boolIsVal f).1
-
 /-- Monotonicity of `StepKleeneE` in the command relation: if `EvalCmd` implies
 `EvalCmd'` pointwise, every `StepKleeneE` step for `EvalCmd` is a `StepKleeneE`
 step for `EvalCmd'`.  The control-flow rules are command-agnostic; only

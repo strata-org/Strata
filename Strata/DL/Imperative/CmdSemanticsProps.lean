@@ -61,6 +61,11 @@ evaluation relation `EvalCmdE`. Key results:
   keys (`InvStoresExceptUpdateStates`, `InvStoresExceptInitStates`), and
   `initStates_preserves_wf`: initializing slots with values preserves store
   well-formedness, as does updating a name to a value (`wfStore_update`).
+- Evaluation: `EvalsTo.det` (evaluation is deterministic); under `WellFormedSemanticEvalVal`
+  the Boolean literals evaluate to themselves (`WellFormedSemanticEvalVal.eval_tt`,
+  `WellFormedSemanticEvalVal.eval_ff`) and results in a well-formed store are values
+  (`EvalsTo.value`); under `WellFormedSemanticEvalVar` a variable evaluates to its value in the
+  store (`EvalsTo.var`).
 -/
 
 public section
@@ -1383,5 +1388,39 @@ theorem wfStore_update {P : PureExpr} [DecidableEq P.Ident] [HasBool P] {F : P.F
     {σ : SemanticStore P} (hC : WellFormedStore σ F) (x : P.Ident) {v : P.Expr}
     (hv : HasVal.value F v) : WellFormedStore (SemanticStore.update σ x v) F :=
   fun y w hy => by grind [SemanticStore.update, WellFormedStore]
+
+/-! ## Evaluation as a relation -/
+
+/-- **Evaluation is deterministic.** -/
+theorem EvalsTo.det {P : PureExpr} {F : P.Factory} {σ : SemanticStore P} {e v v' : P.Expr}
+    (h : EvalsTo F σ e v) (h' : EvalsTo F σ e v') : v = v' :=
+  Option.some.inj (h.symm.trans h')
+
+/-- `true` evaluates to `true`. -/
+theorem WellFormedSemanticEvalVal.eval_tt {P : PureExpr} [HasBool P] [HasFvars P]
+    [LawfulHasVal P] {F : P.Factory}
+    (hVal : WellFormedSemanticEvalVal (P := P) F) (σ : SemanticStore P) :
+    P.eval F σ HasBool.tt = some HasBool.tt :=
+  hVal.identityOnValues _ σ (HasBool.boolIsVal F).1
+
+/-- `false` evaluates to `false`. -/
+theorem WellFormedSemanticEvalVal.eval_ff {P : PureExpr} [HasBool P] [HasFvars P]
+    [LawfulHasVal P] {F : P.Factory}
+    (hVal : WellFormedSemanticEvalVal (P := P) F) (σ : SemanticStore P) :
+    P.eval F σ HasBool.ff = some HasBool.ff :=
+  hVal.identityOnValues _ σ (HasBool.boolIsVal F).2
+
+/-- The result of an evaluation in a well-formed store is a value. -/
+theorem EvalsTo.value {P : PureExpr} [HasBool P] {F : P.Factory}
+    (hVal : WellFormedSemanticEvalVal (P := P) F) {σ : SemanticStore P} {e v : P.Expr}
+    (hC : WellFormedStore σ F) (h : EvalsTo F σ e v) : HasVal.value F v :=
+  hVal.outputsAreValues e v σ hC h
+
+/-- A variable evaluates, in a well-formed store, to the value the store gives it. -/
+theorem EvalsTo.var {P : PureExpr} [HasVal P] [HasFvar P] {F : P.Factory}
+    (hVar : WellFormedSemanticEvalVar (P := P) F) {σ : SemanticStore P} {e v : P.Expr}
+    {y : P.Ident} (hC : WellFormedStore σ F) (hy : HasFvar.getFvar e = some y)
+    (h : EvalsTo F σ e v) : σ y = some v :=
+  (hVar e y σ hC hy).symm.trans h
 
 end -- public section

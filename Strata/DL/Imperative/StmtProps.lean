@@ -53,6 +53,12 @@ Equational theory for the boolean shape walkers defined in
   `Stmt.noLoops_cmd`/`_ite`/`_block`/`_loop`/`_exit`/`_typeDecl`): the empty list has no
   loops, a non-empty list has no loops exactly when its head and its rest have none; a loop
   is not loop-free, and any other statement has no loops exactly when its sub-lists have none.
+- Checks: a list of checks is in tree form (`Block.treeForm_of_all_isCheck`), and the checks
+  and the arms of the `ite`s of a concatenation are those of its parts
+  (`Block.hasCheck_append`, `Block.armsHaveChecks_append`).
+- Well-scopedness: a list that passes the Boolean check `Block.wellScopedB` is well scoped
+  (`Block.wellScoped_of_wellScopedB`), and the one-pass hash-set check `Block.wellScopedH`
+  computes `Block.wellScopedB` (`Block.wellScopedH_eq`).
 -/
 
 /-! ### Decomposition lemmas for the structural shape predicates
@@ -2153,6 +2159,23 @@ theorem Block.onlyChecksAfterAssert_of_all_isCheck {cs : Block P (CmdExt P)}
     (h : cs.all Stmt.isCheck = true) : Block.onlyChecksAfterAssert cs = true := by
   fun_induction Block.onlyChecksAfterAssert cs <;> grind [Stmt.isCheck]
 
+/-- A list of checks is in tree form. -/
+theorem Block.treeForm_of_all_isCheck {cs : Block P (CmdExt P)}
+    (h : cs.all Stmt.isCheck = true) : Block.treeForm cs = true := by
+  fun_induction Block.treeForm cs <;> grind [Stmt.isCheck]
+
+/-! ## Checks of a concatenation -/
+
+/-- An obligation of a concatenation is one of its parts. -/
+theorem Block.hasCheck_append (a b : Block P (CmdExt P)) :
+    Block.hasCheck (a ++ b) = (Block.hasCheck a || Block.hasCheck b) := by
+  induction a <;> simp_all [Block.hasCheck, Bool.or_assoc]
+
+/-- The arms of the `ite`s of a concatenation are those of its parts. -/
+theorem Block.armsHaveChecks_append (a b : Block P (CmdExt P)) :
+    Block.armsHaveChecks (a ++ b) = (Block.armsHaveChecks a && Block.armsHaveChecks b) := by
+  induction a <;> simp_all [Block.armsHaveChecks, Bool.and_assoc]
+
 /-! ## Def-use well-formedness of passive lists in tree form -/
 
 section DefUseCmdExt
@@ -2350,6 +2373,70 @@ theorem getFvars_mem_exprFV {e : P.Expr} {x : P.Ident} :
     x ∈ HasFvars.getFvars e ↔ x ∈ exprFV e := mem_exprFV.symm
 
 end FreeVars
+
+/-! ## Well-scopedness of loop-free statement lists
+
+A list that passes the Boolean check `Block.wellScopedB` is well scoped
+(`Block.wellScoped_of_wellScopedB`), and the one-pass hash-set check `Block.wellScopedH`
+computes `Block.wellScopedB` (`Block.wellScopedH_eq`). -/
+
+section WellScoped
+
+/-- A statement list that passes the well-scopedness check `Block.wellScopedB` is well scoped
+    (`Block.WellScoped`). -/
+theorem Block.wellScoped_of_wellScopedB [BEq P.Ident] [HasFvars P] [LawfulBEq P.Ident]
+    [Hashable P.Ident] {Lc : List P.Ident} :
+    ∀ {S : List P.Ident} {ss : Block P (CmdExt P)},
+      Block.wellScopedB Lc S ss = true → Block.WellScoped Lc S ss := by
+  intro S ss h
+  induction S, ss using Block.wellScopedB.induct
+    (motive_2 := fun S s => Stmt.wellScopedB Lc S s = true → Stmt.WellScoped Lc S s) <;>
+    grind [Block.wellScopedB, Stmt.wellScopedB, Block.WellScoped, Stmt.WellScoped]
+
+variable [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [Hashable P.Ident]
+
+omit [DecidableEq P.Ident] in
+/-- Declaring the names of `S` in order represents `S`. -/
+private theorem ScopeCountRep.ofList (S : List P.Ident) :
+    ScopeCountRep (S.foldl ScopeCount.inc {}) S := by
+  suffices h : ∀ T (b : ScopeCount P), ScopeCountRep b T →
+      ScopeCountRep (S.foldl ScopeCount.inc b) (S.reverse ++ T) by
+    simpa [ScopeCountRep] using h [] {} fun x => by simp
+  induction S <;> grind [ScopeCountRep.inc]
+
+variable [HasFvars P]
+
+/-- The hash-set walks agree with the Boolean checks on a scope hash map representing the scope
+    list `T`: `Block.wellScopedHWalk`, `Block.wellScopedHGo`, `Stmt.wellScopedHWalk` succeed
+    exactly when `Block.wellScopedB`, `Block.wellScopedB`, `Stmt.wellScopedB` hold, and their
+    results represent the scope list after the walk. -/
+private theorem Block.wellScopedHWalk_spec (Lc : List P.Ident) (lc : Std.HashSet P.Ident)
+    (hlc : ∀ x, lc.contains x = Lc.contains x) :
+    (∀ b ss, ∀ T, ScopeCountRep b T →
+      (Block.wellScopedHWalk lc b ss).isSome = Block.wellScopedB Lc T ss ∧
+      ∀ b', Block.wellScopedHWalk lc b ss = some b' → ScopeCountRep b' T) ∧
+    (∀ b a ss, ∀ T, ScopeCountRep b T →
+      (Block.wellScopedHGo lc b a ss).isSome = Block.wellScopedB Lc T ss ∧
+      ∀ b' a', Block.wellScopedHGo lc b a ss = some (b', a') →
+        ∃ d, a' = d ++ a ∧ ScopeCountRep b' (d ++ T)) ∧
+    (∀ b s, ∀ T, ScopeCountRep b T → (∀ x ty e md, s = .cmd (.cmd (.init x ty e md)) → False) →
+      (Stmt.wellScopedHWalk lc b s).isSome = Stmt.wellScopedB Lc T s ∧
+        ∀ b', Stmt.wellScopedHWalk lc b s = some b' → ScopeCountRep b' T) := by
+  apply Block.wellScopedHWalk.mutual_induct lc <;> intros
+  all_goals try grind [‹ScopeCountRep _ _›.contains_eq, Block.wellScopedHWalk,
+    Block.wellScopedHGo, Stmt.wellScopedHWalk, Block.wellScopedB, Stmt.wellScopedB,
+    Stmt.topInits, ScopeCountRep.decs, ScopeCountRep.inc]
+  all_goals simp_all [Block.wellScopedHGo, Stmt.wellScopedHWalk, Block.wellScopedB,
+    Stmt.wellScopedB]
+
+/-- `Block.wellScopedH` computes `Block.wellScopedB`, linearly where `Block.wellScopedB` looks
+    names up in the scope and locals lists. -/
+theorem Block.wellScopedH_eq (Lc S : List P.Ident) (ss : Block P (CmdExt P)) :
+    Block.wellScopedH Lc S ss = Block.wellScopedB Lc S ss :=
+  ((Block.wellScopedHWalk_spec Lc _ fun _ => Std.HashSet.contains_ofList).1 _ ss S
+    (ScopeCountRep.ofList S)).1
+
+end WellScoped
 
 end -- public section
 

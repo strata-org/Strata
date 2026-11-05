@@ -33,9 +33,7 @@ The laws that depend on the factory are the mainline predicates `WellFormedSeman
 substituting variables or Boolean literals holding the values of the substituted variables
 preserves evaluation (bundled with the first two for the proofs of the SSA phase as `SSALaws`).
 
-Key definitions: `WPOps`, `WPLang`, `SSALaws`,
-`var`,
-`bvar`, `notE`, `andE`, `orE`. -/
+Key definitions: `WPOps`, `WPLang`, `SSALaws`, `notE`, `andE`, `orE`. -/
 
 namespace Imperative
 namespace WP
@@ -109,15 +107,6 @@ structure SSALaws (f : P.Factory) : Prop where
   lits : WellFormedSemanticEvalSubstLits (P := P) f
 
 variable [WPOps P]
-
-/-- A variable reference, annotated with `ty` when given. -/
-@[expose] def var (x : P.Ident) (ty : Option P.Ty) : P.Expr :=
-  match ty with
-  | some t => HasFvar.mkTypedFvar x t
-  | none => HasFvar.mkFvar x
-
-/-- A Boolean variable reference. -/
-@[expose] def bvar (x : P.Ident) : P.Expr := var x (some HasBool.boolTy)
 
 /-- The Boolean literal true. -/
 abbrev tt : P.Expr := HasBool.tt (P := P)

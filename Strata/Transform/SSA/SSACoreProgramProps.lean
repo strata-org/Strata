@@ -16,11 +16,9 @@ import Strata.Transform.DeadDefElimProps
 /-! # Properties of the SSA phase on Core procedures and programs
 
 The facts that relate the SSA phase of a program to the procedures of its input, used to lift
-the per-procedure results of the phase to whole programs: every alias `(old x, x)` of a procedure
-has `x` among the parameters with their own entry name (`entryAliases_mem`); a successful run of
-the SSA phase of a program has the obligation procedure of every procedure of its input
-(`ssaProgram_mem`); and the SSA phase keeps the obligation unit of a lemma
-(`ssaProc_lemmaUnit`).
+the per-procedure results of the phase to whole programs: a successful run of the SSA phase of
+a program has the obligation procedure of every procedure of its input (`ssaProgram_mem`); and
+the SSA phase keeps the obligation unit of a lemma (`ssaProc_lemmaUnit`).
 
 The SSA phase keeps the initial-environment gate `BlockInitEnvWF` of a statement list in tree
 form (`ssaEntry_blockInitEnvWF`): its output is passive and in tree form, defines only fresh
@@ -34,17 +32,6 @@ namespace WP
 open Imperative Imperative.BigStep Imperative.WP Core.Logic Strata.Logic Core.DeadDefElim
 
 public section
-
-/-- Every in-out parameter of `p` is a parameter of `p`. -/
-private theorem inout_mem_params (p : Procedure) :
-    ∀ x ∈ p.header.getInoutParams.map (·.1),
-      x ∈ (p.header.inputs ++ p.header.outputs).map fun (x, _) => (x : CoreIdent) := fun _ hx =>
-  let ⟨⟨y, ty⟩, hy, he⟩ := List.mem_map.1 hx
-  List.mem_map.2 ⟨(y, ty), List.mem_append_left _ (List.mem_filter.1 hy).1, he⟩
-
-/-- Every alias `(old x, x)` of `p` has `x` among the parameters with their own entry name. -/
-private theorem entryAliases_mem (p : Procedure) : ∀ q ∈ entryAliases p, q.2 ∈ entryParams p := by
-  grind [entryAliases, entryParams, Strata.Util.OrderedSet.mem_eraseDups, inout_mem_params]
 
 /-- A successful run of `ssaProgram`: every procedure of the input has its obligation procedure
     in the output. -/
@@ -66,8 +53,10 @@ private theorem ssaProc_lemmaUnit (G : IdSet Expression) (name : String)
     {md : Imperative.MetaData Expression} (h : lemmaUnit name ob = Decl.proc P md) :
     ssaProc G P = .ok (lemmaUnit name ob) := by
   cases h
+  unfold ProofObligation.toCheckCmd
   split <;> simp [ssaProc, ssaLoopFree, ssaEntry, ssaBody, ssaList, pushObl, oblVar, renM',
-    ssaEntryRen, entryParams, entryAliases, Strata.Util.OrderedSet.eraseDups_nil, substFn_none, lemmaUnit, getInoutParams,
+    ssaEntryRen, Procedure.entryParams, Procedure.oldAliases, Strata.Util.OrderedSet.eraseDups_nil,
+    substFn_none, lemmaUnit, ProofObligation.toCheckCmd, getInoutParams,
     Procedure.Header.getInoutParams, HAppend.hAppend, List.append, Except.pure_is_ok, *]
 
 /-! ## The initial-environment gate -/
@@ -80,7 +69,7 @@ private theorem substFn_ops {look : Expression.Ident → Option Expression.Expr}
 
 /-- A variable reference has no operator. -/
 private theorem var_ops (y : Expression.Ident) (ty : Option Expression.Ty) :
-    HasOps.getOps (var y ty) = [] := by
+    HasOps.getOps (HasFvar.mkVar y ty) = [] := by
   cases ty <;> rfl
 
 /-- Folding adds no operator. -/

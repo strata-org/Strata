@@ -374,10 +374,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
   checkInitsNotReachable proc.header.name declBlocks reachable succs sourceLoc
   -- Header names a CFG `init` must not shadow: formals, outputs, and the `old`
   -- bindings synthesized for in-out parameters.
-  let oldNames := proc.header.getInoutParams.toList.map (fun (id, _) =>
-    CoreIdent.mkOld id.name)
-  let headerNames := proc.header.inputs.keys ++ proc.header.outputs.keys ++ oldNames
-  checkInitsNotHeader proc.header.name headerNames cfg sourceLoc
+  checkInitsNotHeader proc.header.name proc.entryScope cfg sourceLoc
   let initDeclTypes := cfgInitDeclTypes cfg
   -- Resolve each declarer's `init` type once, the same way the declaring `init`
   -- stores it: `Cmd.typeCheck` runs `preprocess`/`postprocess` on the type

@@ -241,6 +241,13 @@ instance [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat P.Expr] : ToFormat (ProofO
 
 abbrev ProofObligations (P : PureExpr) := Array (ProofObligation P)
 
+/-- The check command of a proof obligation: a `cover` of the obligation when its property is
+    a cover, an `assert` of it otherwise, with the obligation's label and metadata. -/
+@[expose] def ProofObligation.toCheckCmd {P : PureExpr} (ob : ProofObligation P) : Cmd P :=
+  if ob.property == PropertyType.cover
+  then Cmd.cover ob.label ob.obligation ob.metadata
+  else Cmd.assert ob.label ob.obligation ob.metadata
+
 ---------------------------------------------------------------------
 
 class EvalContext (P : PureExpr) (State : Type) where

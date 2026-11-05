@@ -101,18 +101,18 @@ instance : DecidableEq (RE P) := fun a b =>
 /-- The Boolean expression of a reachability condition. -/
 @[expose] def RE.expr : (RE P) → P.Expr
   | .top => tt
-  | .name r => bvar r
-  | .neg g => notE (bvar g)
-  | .andNeg q g => andE (bvar q) (notE (bvar g))
+  | .name r => HasFvar.mkBoolVar r
+  | .neg g => notE (HasFvar.mkBoolVar g)
+  | .andNeg q g => andE (HasFvar.mkBoolVar q) (notE (HasFvar.mkBoolVar g))
 
 /-- `ite(r, t, e)` with the condition folded: `t` for `top`, `ite(g, e, t)` for `¬g`,
     `ite(q, ite(g, e, t), e)` for `q ∧ ¬g`. -/
 @[expose] def RE.ite (r : RE P) (t e : P.Expr) : P.Expr :=
   match r with
   | .top => t
-  | .name r => WPOps.ite (bvar r) t e
-  | .neg g => WPOps.ite (bvar g) e t
-  | .andNeg q g => WPOps.ite (bvar q) (WPOps.ite (bvar g) e t) e
+  | .name r => WPOps.ite (HasFvar.mkBoolVar r) t e
+  | .neg g => WPOps.ite (HasFvar.mkBoolVar g) e t
+  | .andNeg q g => WPOps.ite (HasFvar.mkBoolVar q) (WPOps.ite (HasFvar.mkBoolVar g) e t) e
 
 /-- The label of generated reachability assumptions. -/
 @[expose] def reachLabel : String := "wp$reach"
@@ -225,7 +225,7 @@ inductive LogEntry (P : PureExpr) where
     and the substitution `sub` of its choice-record entry: each `x` with `(x, y, ty)` in `sub`
     replaced by the variable `y` annotated `ty`. -/
 @[expose] def substObl (sub : List (P.Ident × P.Ident × Option P.Ty)) (e : P.Expr) : P.Expr :=
-  HasSubstFvar.substFvars e (sub.map fun (x, y, ty) => (x, var y ty))
+  HasSubstFvar.substFvars e (sub.map fun (x, y, ty) => (x, HasFvar.mkVar y ty))
 
 /-! ## Fresh names -/
 

@@ -3217,7 +3217,7 @@ private theorem flushGotoSim {P : PureExpr}
     have hgoto : StepCFGE P (Imperative.EvalCmdE P)
         (.inBlock cfg (StringGenState.gen genPrefix gen).1 [] (.goto continuation) targetEnv) []
         (.atBlock cfg continuation targetEnv) :=
-      StepCFGE.goto_true (eval_tt_is_tt targetEnv.store targetEnv.factory hvalTarget)
+      StepCFGE.goto_true (hvalTarget.eval_tt targetEnv.store)
     exact ⟨targetEnv, targetTrace, by
       change ReflTransTrace (StepCFGE P (Imperative.EvalCmdE P)) _ targetTrace _
       simpa using ReflTransTrace.trans _ htarget

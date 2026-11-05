@@ -41,19 +41,11 @@ theorem containsKey_empty (k : κ) :
     (empty : OrderedKeyedSet key).containsKey k = false := by
   simp only [containsKey, empty, Std.HashSet.contains_empty]
 
-/-- The `containsThenInsert` call inside `insert` splits into the pre-insert
-    membership flag and the extended index. Every `insert` characterization below
-    unfolds through this. -/
-private theorem containsThenInsert_eq (s : OrderedKeyedSet key) (a : α) :
-    s.setIdx.containsThenInsert (key a)
-      = (s.setIdx.contains (key a), s.setIdx.insert (key a)) :=
-  Prod.ext Std.HashSet.containsThenInsert_fst Std.HashSet.containsThenInsert_snd
-
 /-- `insert` extends the index by exactly the inserted element's key. -/
 theorem containsKey_insert [EquivBEq κ] [LawfulHashable κ]
     (s : OrderedKeyedSet key) (a : α) (k : κ) :
     (s.insert a).containsKey k = (s.containsKey k || (key a == k)) := by
-  simp only [insert, containsKey, containsThenInsert_eq]
+  simp only [insert, containsKey]
   split <;> rename_i h
   · -- Already present: `insert` is a no-op, so the index is unchanged.
     by_cases hk : (key a == k) = true
@@ -97,7 +89,7 @@ theorem contains_eq_containsKey (s : OrderedKeyedSet key) (a : α) :
 theorem insert_of_contains (s : OrderedKeyedSet key) (a : α)
     (h : s.contains a = true) : s.insert a = s := by
   have h' : s.setIdx.contains (key a) = true := h
-  simp only [insert, containsThenInsert_eq]
+  simp only [insert]
   split
   · rfl
   · rename_i hcon; exact absurd h' hcon
@@ -147,7 +139,7 @@ theorem containsKey_ofArrayUnchecked [LawfulBEq κ] [LawfulHashable κ]
 /-- `insert` appends the element unless its key is already present. -/
 theorem toArray_insert (s : OrderedKeyedSet key) (a : α) :
     (s.insert a).toArray = if s.contains a then s.toArray else s.toArray.push a := by
-  simp only [insert, toArray, contains, containsThenInsert_eq]
+  simp only [insert, toArray, contains]
   split <;> grind
 
 /-- When the key is fresh, `insert` pushes the element onto the array. -/

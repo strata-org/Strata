@@ -6,10 +6,9 @@
 module
 
 public import Strata.Languages.Core.Program
+public import Strata.DL.Imperative.EvalContext
 public import Strata.Languages.Core.Statement
 public import Strata.Transform.Passive.CoreLang
-public import Strata.Transform.Passive.Simulation
-public import Strata.DL.Imperative.EvalContext
 
 /-! # The declaration phase and the Core vocabulary of the WP and SSA phases
 
@@ -17,34 +16,25 @@ The phases themselves (`Imperative.WP.wpEntry`, `Imperative.WP.ssaEntry`) are la
 on Core procedures and programs (the instances `WPOps Expression`, `WPLang Expression`) the WP
 phase (`WP/WPCoreProgram.lean`) and the SSA phase (`SSA/SSACoreProgram.lean`) share:
 
-* the types of the parameters of a procedure (`paramTys`), and of `old x` for its in-out
-  parameters `x`;
 * the global names fresh names avoid: those of the program of the form of a fresh name
   (`freshForm`, `avoidOf`, `declNames`), built once per program into a hash set (`IdSet`);
 * the declaration phase of a program (`declObligationsProgramWith`: the program-level
   declarations, then the axioms and procedures in place and one obligation unit per lemma,
-  `lemmaUnit`, `axiomScopesAgree` checked).
+  `lemmaUnit`, `axiomScopesAgree` checked: every obligation procedure is in the scope of the
+  axioms of its source, `Program.axiomScopes`).
 
 Their composition is in `CoreWPSSA.lean`; the properties of the declaration phase are in
 `CoreProgramProps.lean`.
 
-Key definitions: `paramTys`, `avoidOf`, `declNames`, `declObligationsProgramWith`, `lemmaUnit`,
-`axiomScopes`. -/
+Key definitions: `avoidOf`, `declNames`, `declObligationsProgramWith`, `lemmaUnit`,
+`axiomScopesAgree`. -/
 
 namespace Core
 namespace WP
 
-open Imperative Imperative.BigStep Imperative.WP Lambda
+open Imperative Imperative.WP Lambda
 
 public section
-
-/-- Types of a procedure's parameters (and of `old x` for its in-out parameters). -/
-@[expose] def paramTys (p : Procedure) : Tys Expression :=
-  let params := (p.header.inputs ++ p.header.outputs).map fun (x, ty) =>
-    ((x : CoreIdent), (.forAll [] ty : Expression.Ty))
-  let olds := p.header.getInoutParams.map fun (x, ty) =>
-    (CoreIdent.mkOld x.name, (.forAll [] ty : Expression.Ty))
-  params ++ olds
 
 /-- Can `x` be a name the phases introduce?  Every introduced name `b@n` contains `@`. -/
 @[expose] def freshForm (x : Expression.Ident) : Bool := x.name.toList.contains '@'
@@ -60,47 +50,17 @@ public section
     the lemma (`Program.eval`: the lemma's expression over fresh free variables, labelled with
     the lemma's name). -/
 @[expose] def lemmaUnit (name : String) (ob : Imperative.ProofObligation Expression) : Decl :=
-  let cmd := if ob.property == Imperative.PropertyType.cover
-    then Imperative.Cmd.cover ob.label ob.obligation ob.metadata
-    else Imperative.Cmd.assert ob.label ob.obligation ob.metadata
-  Decl.proc {
-      header := { name := ⟨name, ()⟩, typeArgs := [], inputs := [], outputs := [] },
-      spec := { preconditions := [], postconditions := [] },
-      body := .structured [Imperative.Stmt.cmd (CmdExt.cmd cmd)] } .empty
-
-/-- The axioms declared before each procedure and each lemma of a program, by procedure or
-    lemma name, in declaration order.  Symbolic evaluation and obligation extraction both
-    scope axioms this way: the obligations of a procedure or a lemma assume exactly the axioms
-    declared before it (`Program.eval`, `ObligationExtraction.extractLinkedObligations`). -/
-@[expose] def axiomScopes (p : Program) : List (String × List Decl) :=
-  (p.decls.foldl (init := (([] : List Decl), ([] : List (String × List Decl))))
-    fun (axs, acc) d => match d with
-      | .ax _ _ => (axs ++ [d], acc)
-      | .proc q _ => (axs, acc ++ [(q.header.name.name, axs)])
-      | .lemma l _ => (axs, acc ++ [(l.name, axs)])
-      | _ => (axs, acc)).2
+  Decl.obligationProc ⟨name, ()⟩ [Imperative.Stmt.cmd (CmdExt.cmd ob.toCheckCmd)]
 
 /-- Each obligation procedure of `output` is preceded by exactly the axioms its source
     procedure or lemma is preceded by in `input`. -/
 @[expose] def axiomScopesAgree (input output : Program) : Bool :=
-  axiomScopes output == axiomScopes input
-
-/-- The axioms and the procedure or lemma names of a program in declaration order, without the
-    axioms after the last procedure or lemma: an axiom is `(some d, "")`, a procedure or lemma
-    `(none, name)`. -/
-@[expose] def scopeEvents (p : Program) : List (Option Decl × String) :=
-  let ev := p.decls.foldl (init := ([] : List (Option Decl × String))) fun acc d =>
-    match d with
-    | .ax _ _ => (some d, "") :: acc
-    | .proc q _ => (none, q.header.name.name) :: acc
-    | .lemma l _ => (none, l.name) :: acc
-    | _ => acc
-  (ev.dropWhile (·.1.isSome)).reverse
+  Program.axiomScopes output == Program.axiomScopes input
 
 /-- `axiomScopesAgree` in one walk of each program: the scopes agree exactly when the axioms and
     names in declaration order agree, up to the axioms after the last procedure or lemma. -/
 @[expose] def axiomScopesAgreeH (input output : Program) : Bool :=
-  scopeEvents output == scopeEvents input
+  Program.scopeEvents output == Program.scopeEvents input
 
 /-- The scope event of a declaration: an axiom `(some d, "")`, a procedure or lemma
     `(none, name)`, any other declaration none. -/
@@ -129,18 +89,19 @@ private def eventsOf : List Decl → List (String × List Decl) → List (Option
   | prev, (n, l) :: r => (l.drop prev.length).map (fun d => (some d, "")) ++
       (none, n) :: eventsOf l r
 
-/-- `axiomScopes` is the scopes of the scope events of the declarations. -/
+/-- `Program.axiomScopes` is the scopes of the scope events of the declarations. -/
 private theorem axiomScopes_eq (p : Program) :
-    axiomScopes p = scopesOf [] (p.decls.filterMap scopeEv) := by
-  unfold axiomScopes
+    Program.axiomScopes p = scopesOf [] (p.decls.filterMap scopeEv) := by
+  unfold Program.axiomScopes
   suffices h : ∀ axs acc, (p.decls.foldl _ (axs, acc)).2 = acc ++ scopesOf axs _ from h [] []
   induction p.decls <;> intro axs acc <;> (try cases ‹Decl›) <;>
     simp [scopeEv, scopesOf, List.filterMap_cons, *]
 
-/-- `scopeEvents` is the trimmed scope events of the declarations. -/
+/-- `Program.scopeEvents` is the trimmed scope events of the declarations. -/
 private theorem scopeEvents_eq (p : Program) :
-    scopeEvents p = ((p.decls.filterMap scopeEv).reverse.dropWhile (·.1.isSome)).reverse := by
-  simp only [scopeEvents]
+    Program.scopeEvents p =
+      ((p.decls.filterMap scopeEv).reverse.dropWhile (·.1.isSome)).reverse := by
+  simp only [Program.scopeEvents]
   congr 2
   suffices h : ∀ acc, p.decls.foldl _ acc = (p.decls.filterMap scopeEv).reverse ++ acc from
     (h []).trans (List.append_nil _)
@@ -169,7 +130,7 @@ private theorem eventsOf_scopesOf (E : List (Option Decl × String))
     hE _ List.mem_cons_self]
 
 /-- The compiled code of `axiomScopesAgree` is `axiomScopesAgreeH`, linear in the programs where
-    `axiomScopes` lists, for each procedure, every axiom before it. -/
+    `Program.axiomScopes` lists, for each procedure, every axiom before it. -/
 @[csimp] theorem axiomScopesAgree_eq_axiomScopesAgreeH :
     @axiomScopesAgree = @axiomScopesAgreeH := by
   funext input output

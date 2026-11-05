@@ -93,7 +93,7 @@ abbrev SM (P : PureExpr) [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
 
 /-- The expression of a value. -/
 @[expose] def SVal.expr : SVal P → P.Expr
-  | .name y ty => var y ty
+  | .name y ty => HasFvar.mkVar y ty
   | .lit b _ => if b then tt else ff
 
 /-- The type of a value, when known. -/
@@ -116,7 +116,7 @@ abbrev SM (P : PureExpr) [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
 
 /-- `e` with every renamed name replaced by its current variable (`oblVar`). -/
 @[expose] def renM' (ρ : Std.HashMap P.Ident (SVal P)) (e : P.Expr) : P.Expr :=
-  WPOps.substFn e fun x => (oblVar ρ x).map fun (y, ty) => var y ty
+  WPOps.substFn e fun x => (oblVar ρ x).map fun (y, ty) => HasFvar.mkVar y ty
 
 /-- The substitution of an obligation's choice-record entry: each renamed free variable with
     its current variable and type annotation. -/

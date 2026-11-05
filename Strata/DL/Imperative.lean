@@ -6,6 +6,7 @@
 module -- shake: keep-all
 
 public import Strata.DL.Imperative.PureExpr
+public import Strata.DL.Imperative.PureExprProps
 public import Strata.DL.Imperative.HasVars
 public import Strata.DL.Imperative.MetaData
 

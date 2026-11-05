@@ -7,7 +7,7 @@ module
 
 public import Strata.Transform.SSA.SSA
 public import Strata.Transform.Passive.ProgramProps
-import Strata.Transform.Passive.LangProps
+import Strata.DL.Imperative.PureExprProps
 import Strata.Util.ExceptProps
 
 
@@ -308,6 +308,11 @@ private theorem ssaList_obls (ss : PStmts P) : ∀ {s s' : SSt P} {out : PStmts 
   refine ssaList_ind (fun _ _ => rfl) ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h <;> intros <;>
     (try rcases ‹_ ∨ _› with rfl | rfl) <;> grind [Stmt.isCheck]
 
+/-- A straight-line statement of the flat translation: an `init` or an `assume`. -/
+private def Stmt.IsLetOrAssume : Stmt P (CmdExt P) → Prop
+  | .cmd (.cmd (.init _ _ _ _)) | .cmd (.cmd (.assume _ _ _)) => True
+  | _ => False
+
 omit iDE iBE iHB iHF iSF iHI iHa iHFs in
 /-- An `init` or an `assume` in front of a list in tree form, with only `assert`s and `cover`s
     after every `assert`, only `init`, `assume`, `assert`, `cover` and `ite *`, and no loop, keeps
@@ -394,7 +399,8 @@ private theorem renM_fv (e : P.Expr) (hA : ∀ x ∈ HasFvars.getFvars e, SNames
     ∀ y ∈ HasFvars.getFvars (renM ρ e), y ∈ Dd := substFn_fv fun x hx y hy => by
   have h := hA x hx
   rcases hρ : ρ[x]? with _ | ⟨z, ty⟩ | ⟨_ | _, m⟩ <;>
-    grind [SNames, SVal.expr, fv_var, WPLang.getFvars_tt, WPLang.getFvars_ff]
+    grind [SNames, SVal.expr, HasFvar.eq_of_mem_getFvars_mkVar, WPLang.getFvars_tt,
+      WPLang.getFvars_ff]
 
 include iLFvs in
 omit iLB iHI in
@@ -419,7 +425,8 @@ omit iHI in
 private theorem renM'_fv (e : P.Expr) (hA : ∀ x ∈ HasFvars.getFvars e, SNames Dd x ρ[x]?) :
     ∀ y ∈ HasFvars.getFvars (renM' ρ e), y ∈ Dd := substFn_fv fun x hx y hy => by
   have h := hA x hx
-  rcases hρ : ρ[x]? with _ | ⟨z, ty⟩ | ⟨b, _ | m⟩ <;> grind [SNames, oblVar, fv_var]
+  rcases hρ : ρ[x]? with _ | ⟨z, ty⟩ | ⟨b, _ | m⟩ <;>
+    grind [SNames, oblVar, HasFvar.eq_of_mem_getFvars_mkVar]
 
 omit iHB iHF iSF iHI iHFs in
 /-- `SNames` after binding `x`: on `x` from the new value, on the other names of `V` from

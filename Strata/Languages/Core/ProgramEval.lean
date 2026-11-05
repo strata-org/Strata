@@ -51,9 +51,7 @@ private def programNames (E : Env) (p : Program) : Std.HashSet String :=
   let declNames := p.decls.flatMap fun d =>
     let own := match d with
       | .proc q _ =>
-        q.header.name.name :: (q.header.inputs.keys ++ q.header.outputs.keys).map (·.name) ++
-        -- The procedure scope binds `old x` for every in-out parameter `x`.
-        q.header.getInoutParams.keys.map (fun x => (CoreIdent.mkOld x.name).name) ++
+        q.header.name.name :: q.entryScope.map (·.name) ++
         (Imperative.Block.definedVars (P := Expression) (C := Command)
           d.statements false).map (·.name)
       | _ => d.names.map (·.name)
