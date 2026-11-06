@@ -325,7 +325,7 @@ spec {
 };
 procedure Caller<a> (z : a)
 {
-  var w : (a);
+  var w : a;
   var tmp_arg_0 : a := z;
   var tmp_w_1 : a := w;
   havoc w;
@@ -347,7 +347,7 @@ spec {
 };
 procedure Caller<a, b> (x : a, y : b)
 {
-  var w : (b);
+  var w : b;
   var tmp_arg_0 : b := y;
   var tmp_arg_1 : a := x;
   var tmp_w_2 : b := w;
@@ -365,7 +365,7 @@ info: program Core;
 type $__cety_0;
 procedure q<a> ()
 spec {
-  requires [q_requires_0]: forall y : (a) :: y == y;
+  requires [q_requires_0]: forall y : a :: y == y;
   } {
   
 };
@@ -385,7 +385,7 @@ type $__cety_0;
 procedure r<a, b> (x : a)
 spec {
   requires [r_requires_0]: x == x;
-  requires [r_requires_1]: forall y : (b) :: y == y;
+  requires [r_requires_1]: forall y : b :: y == y;
   } {
   
 };
@@ -408,7 +408,7 @@ type $__cety_1;
 procedure r<a, b> (x : a)
 spec {
   requires [r_requires_0]: x == x;
-  requires [r_requires_1]: forall y : (b) :: y == y;
+  requires [r_requires_1]: forall y : b :: y == y;
   } {
   
 };
@@ -468,7 +468,7 @@ type $__cety_0;
 axiom [one]: forall x : $__cety_0 :: forall y : $__cety_0 :: x == y;
 procedure Q<a> ()
 spec {
-  requires [Q_requires_0]: forall x : (a) :: forall y : (a) :: x == y;
+  requires [Q_requires_0]: forall x : a :: forall y : a :: x == y;
   } {
   
 };

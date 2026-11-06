@@ -1414,7 +1414,7 @@ info: REJECTED: type variable `b` is not in scope
 -- A rigid type variable is in scope, and the binder denotes it.
 /--
 info: {
-  assume [h]: forall x : (b) :: x == x;
+  assume [h]: forall x : b :: x == x;
 }
 -/
 #guard_msgs in
@@ -1433,8 +1433,8 @@ in-scope variable. -/
 -- Comparing `y` with the binder solves `y`'s `b` to a generated variable; both store `b`.
 /--
 info: {
-  var y : (b);
-  assert [a]: forall q : (b) :: y == q;
+  var y : b;
+  assert [a]: forall q : b :: y == q;
 }
 -/
 #guard_msgs in
@@ -1447,8 +1447,8 @@ info: {
 -- The binder has no annotation; its generated type is unified with `y`'s `b`.
 /--
 info: {
-  var y : (b);
-  assert [a]: forall q : (b) :: y == q;
+  var y : b;
+  assert [a]: forall q : b :: y == q;
 }
 -/
 #guard_msgs in
@@ -1460,9 +1460,9 @@ info: {
 -- `f`'s type is solved through a lambda over `b` and a comparison with an unannotated lambda.
 /--
 info: {
-  var y : (b);
-  var f : b -> b := fun z : (b) => z;
-  assert [a]: f == (fun z : (b) => z);
+  var y : b;
+  var f : b -> b := fun z : b => z;
+  assert [a]: f == (fun z : b => z);
 }
 -/
 #guard_msgs in
@@ -1478,10 +1478,10 @@ info: {
 info: {
   blk :
   {
-    var y : (b);
+    var y : b;
   }
-  var y2 : (b_1);
-  assert [a]: forall q : (b_1) :: y2 == q;
+  var y2 : b_1;
+  assert [a]: forall q : b_1 :: y2 == q;
 }
 -/
 #guard_msgs in

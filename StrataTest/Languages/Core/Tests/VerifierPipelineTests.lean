@@ -137,7 +137,7 @@ type $__cety_0;
 type $__cety_2;
 procedure q<a> ()
 spec {
-  requires [q_requires_0]: forall y : (a) :: y == y;
+  requires [q_requires_0]: forall y : a :: y == y;
   } {
   
 };

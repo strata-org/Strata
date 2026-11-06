@@ -1139,7 +1139,7 @@ datatype Option {
   Some(val : int)
 };
 function c () : int;
-function hint (a : bv W32) : bool;
+function hint (a : |bv| W32) : bool;
 axiom [cOne]: c == 1;
 lemma [unusedVariables]: true;
 lemma [opaqueType]: true;
@@ -1388,7 +1388,7 @@ procedure Q(a1 : bv W1, a8 : bv W8, a16 : bv W16, a64 : bv W64,
 /--
 info: program Core;
 
-procedure P (a : bv W32, b : bv W32)
+procedure P (a : |bv| W32, b : |bv| W32)
 {
   assert [maskZero]: true;
   assert [zeroFirst]: true;
@@ -1399,7 +1399,7 @@ procedure P (a : bv W32, b : bv W32)
   assert [orZero]: bv32.or(a, bv{32}(0)) == bv{32}(0);
   assert [xorAllOnes]: bv32.xor(a, bv{32}(4294967295)) == a;
 };
-procedure Q (a1 : bv W1, a8 : bv W8, a16 : bv W16, a64 : bv W64, z : bv W128)
+procedure Q (a1 : |bv| W1, a8 : |bv| W8, a16 : |bv| W16, a64 : |bv| W64, z : |bv| W128)
 {
   assert [width1]: true;
   assert [width8]: true;
@@ -1432,9 +1432,9 @@ procedure P(a : bv W32)
 info: program Core;
 
 datatype CIDR {
-  CIDR_Cons(network : bv W32, mask : bv W32)
+  CIDR_Cons(network : |bv| W32, mask : |bv| W32)
 };
-procedure P (a : bv W32)
+procedure P (a : |bv| W32)
 {
   assert [outsideAll]: false;
 };
@@ -1472,18 +1472,18 @@ procedure P(a : bv W32)
 /--
 info: program Core;
 
-function c () : bv W32;
-function g (x : bv W32) : bool;
+function c () : |bv| W32;
+function g (x : |bv| W32) : bool;
 lemma [inLemma]: true;
-procedure P (a : bv W32)
+procedure P (a : |bv| W32)
 {
   assert [inCondition]: true;
   assert [underExists]: true;
   assert [boundAllOnes]: true;
-  assert [inTrigger]: forall x : (bv W32) ::  { bv32.and(x, bv{32}(0)) }
+  assert [inTrigger]: forall x : (|bv| W32) ::  { bv32.and(x, bv{32}(0)) }
     g(bv{32}(0)) ==> g(x);
   cover [inCover]: false;
-  var m : bv W32 := bv32.and(a, bv{32}(0));
+  var m : |bv| W32 := bv32.and(a, bv{32}(0));
   assert [viaDefinition]: true;
   assume [assume_0]: !(bv32.and(a, bv{32}(0)) == bv{32}(0));
   assert [afterDead]: bv32.and(a, bv{32}(0)) == bv{32}(0);
@@ -2458,14 +2458,14 @@ lemma [noTrigger]: exists a : bv W32 :: bv32.and(a, bv{32}(1)) == a;
 /--
 info: program Core;
 
-function hint (a : bv W32) : bool;
+function hint (a : |bv| W32) : bool;
 axiom [hintZero]: hint(bv{32}(0));
 lemma [outside]: true;
-lemma [noSolution]: exists a : (bv W32) ::  { hint(a) }
+lemma [noSolution]: exists a : (|bv| W32) ::  { hint(a) }
   bv32.and(a, bv{32}(4294967040)) == bv{32}(1);
-lemma [inside]: exists a : (bv W32) ::  { hint(a) }
+lemma [inside]: exists a : (|bv| W32) ::  { hint(a) }
   bv32.and(a, bv{32}(4294967040)) == bv{32}(167772416);
-lemma [noTrigger]: exists a : (bv W32) :: bv32.and(a, bv{32}(1)) == a;
+lemma [noTrigger]: exists a : (|bv| W32) :: bv32.and(a, bv{32}(1)) == a;
 -/
 #guard_msgs in
 #eval rewriteAndPrint hintPgm (typeCheck := true)
@@ -2586,7 +2586,7 @@ axiom [hintByte]: hint(bv{8}(0));
 lemma [wrongType]: exists b : bool ::  { hint(b) }
   !(b == true) && !(b == false);
 lemma [rightType]: true;
-lemma [wrongWidth]: exists a : (bv W32) ::  { hint(a) }
+lemma [wrongWidth]: exists a : (|bv| W32) ::  { hint(a) }
   a == bv{32}(0);
 -/
 #guard_msgs in
@@ -2605,7 +2605,7 @@ lemma [wrongType]: exists b : bool ::  { hint(b) }
   !(b == true) && !(b == false);
 lemma [rightType]: exists b : int ::  { hint(b) }
   b == 0;
-lemma [wrongWidth]: exists a : (bv W32) ::  { hint(a) }
+lemma [wrongWidth]: exists a : (|bv| W32) ::  { hint(a) }
   a == bv{32}(0);
 -/
 #guard_msgs in

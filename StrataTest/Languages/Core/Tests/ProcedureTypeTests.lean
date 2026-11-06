@@ -76,7 +76,7 @@ info: ok: program Core;
 
 procedure ConstAll<a> (x : a, out r : a)
 spec {
-  ensures [ConstAll_ensures_0]: forall y : (a) :: y == x;
+  ensures [ConstAll_ensures_0]: forall y : a :: y == x;
 } {
   r := x;
 };
@@ -360,7 +360,7 @@ info: ok: program Core;
 
 procedure PostOnly<a> ()
 spec {
-  ensures [PostOnly_ensures_0]: forall q : (a) :: true;
+  ensures [PostOnly_ensures_0]: forall q : a :: true;
 } {
 };
 -/
@@ -765,7 +765,7 @@ info: ok: program Core;
  
 procedure NestedCaptureConsistent<a> (x : a, out z : a)
 {
-  var g : a -> a := fun y : (a) => y;
+  var g : a -> a := fun y : a => y;
   z := g(x);
 };
 -/
@@ -1297,7 +1297,7 @@ info: program Core;
 
 procedure pp<b> ()
 spec {
-  requires [c0]: forall x : (b) :: x == x;
+  requires [c0]: forall x : b :: x == x;
   } {
   
 };
@@ -1373,7 +1373,7 @@ info: ok: program Core;
  
 procedure Outer<a> (p : a)
 {
-  var loc : int -> int := fun y : int => (if forall z : (a) :: z == z then y else y);
+  var loc : int -> int := fun y : int => (if forall z : a :: z == z then y else y);
 };
 -/
 #guard_msgs (whitespace := lax) in

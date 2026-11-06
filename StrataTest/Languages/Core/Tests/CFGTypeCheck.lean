@@ -1279,14 +1279,14 @@ cfg entry {
   entry: {
     var x : int;
     y := x;
-    goto exit;
+    goto |exit|;
   }
   dead: {
     var w : bool;
     z := w;
     return;
   }
-  exit: {
+  |exit|: {
     return;
   }
 };

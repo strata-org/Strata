@@ -802,7 +802,7 @@ function k<c> (z : c) : bool;
 function f<a> (x : int) : a;
 procedure P<a> ()
 {
-  assert [init_calls_f_0]: forall y : (a) :: k(y);
+  assert [init_calls_f_0]: forall y : a :: k(y);
   var t : a := f(0);
 };
 -/
@@ -821,7 +821,7 @@ function k<c> (z : c) : bool;
 function f<a> (x : int) : a;
 procedure P<c> ()
 {
-  assert [init_calls_f_0]: forall y : (c) :: k(y);
+  assert [init_calls_f_0]: forall y : c :: k(y);
   var t : c := f(0);
 };
 -/
