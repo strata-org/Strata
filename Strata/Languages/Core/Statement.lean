@@ -427,6 +427,10 @@ directly; what is left here is what genuinely mentions a Core command. -/
   | .cmd (.call ..) => false
   | _ => true
 
+/-- Does `s` make no procedure call, at any nesting depth? -/
+@[expose] def Statement.noCalls (s : Statement) : Bool :=
+  Imperative.Stmt.allSubstmts Statement.isNotCall s
+
 /-- Does `ss` make no procedure call, at any nesting depth? -/
 @[expose] def Statements.noCalls (ss : Statements) : Bool :=
   Imperative.Block.allSubstmts Statement.isNotCall ss
