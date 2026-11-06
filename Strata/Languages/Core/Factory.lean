@@ -739,10 +739,33 @@ private def mkSeqBoundsPrecond
    default⟩
 
 /- A `Sequence` selection function with type `∀a. Sequence a → int → a`.
-   Partial: requires `0 <= i && i < Sequence.length(s)`. -/
+   Partial: requires `0 <= i && i < Sequence.length(s)`.
+
+   Its one axiom states that, wherever its precondition holds,
+   `Sequence.select!` equals it. The axiom belongs to `Sequence.select`, so the
+   encoder sends it only for a query that uses `Sequence.select`: a program
+   written with `Sequence.select!` alone pays nothing for it. It mentions
+   `Sequence.select!`, which carries no axioms of its own, so it pulls in nothing
+   else. It is triggered on the unchecked call, so a query using only
+   `Sequence.select` never instantiates it. -/
 def seqSelectFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.select" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
+    (axioms := [
+      -- 0 <= i < length(s) ==> select!(s, i) == select(s, i)
+      esM[∀ (Sequence %a): -- %1 s
+          (∀ (int): -- %0 i
+            {(((~Sequence.select! : (Sequence %a) → int → %a) %1) %0)}
+            if (((~Bool.And : bool → bool → bool)
+                  (((~Int.Le : int → int → bool) #0) %0))
+                  (((~Int.Lt : int → int → bool) %0)
+                    ((~Sequence.length : (Sequence %a) → int) %1)))
+            then
+              (((~Sequence.select! : (Sequence %a) → int → %a) %1) %0)
+              ==
+              (((~Sequence.select : (Sequence %a) → int → %a) %1) %0)
+            else #true)]
+    ])
     (preconditions := [mkSeqBoundsPrecond "i" .Lt])
 
 /- An *unsafe* total variant of `Sequence.select`: no bounds precondition, so

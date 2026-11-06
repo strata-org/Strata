@@ -31,9 +31,11 @@ branches that cannot hold; the rest of the body stays symbolic. A quantifier
 whose bound has no known value is left in place.
 
 The rewrite preserves models in every model of Core's factory. An element fact
-resolves only the selector term it states, operator included: `Sequence.select` and
-`Sequence.select!` are separate functions of the factory, whose axioms do not relate
-them, so a fact about one says nothing of the other. -/
+resolves only the selector term it states, operator included: a fact about
+`Sequence.select` does not resolve `Sequence.select!`, nor the reverse. The factory
+equates the two only in range, through the agreement axiom `Sequence.select`
+carries, so a goal that needs the other selector in range is left to the solver,
+which can derive it, and out of range nothing relates them. -/
 
 namespace Core.UnrollBoundedQuantifiers
 

@@ -363,10 +363,11 @@ private def lcAtProbe : String :=
 /-! ## A fact resolves only the selector it states
 
 `Sequence.select` and `Sequence.select!` are separate functions of Core's factory,
-whose axioms do not relate them. A fact about `select` therefore leaves an occurrence
-of `select!` in place, in range and out of range, and these goals are unknown. A
-factory axiom relating the two selectors would make them provable; these tests then
-change with it. -/
+which equates them only in range, through the agreement axiom `Sequence.select`
+carries. A fact about `select` therefore leaves an occurrence of `select!` in place,
+in range and out of range. In range the solver derives the goal from the factory
+axiom, so it is provable; out of range nothing relates the two selectors, so the goal
+is unknown. -/
 
 def crossSelectorInRangePgm :=
 #strata
@@ -389,7 +390,7 @@ procedure P()
 info:
 Obligation: a
 Property: assert
-Result: ❓ unknown
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify crossSelectorInRangePgm (options := opts) (pipeline := lemmaPipeline true)
@@ -455,5 +456,39 @@ Result: ❓ unknown
 -/
 #guard_msgs in
 #eval Core.verify crossSelectorBangOutOfRangePgm (options := opts) (pipeline := lemmaPipeline true)
+
+/-! The reverse direction in range: a fact about `select!` at index 0 leaves the
+unrolled lemma's `select(s, 0)` in place, and the solver proves it from the factory
+agreement axiom `Sequence.select` carries, triggered by the fact's `select!(s, 0)`. -/
+
+def crossSelectorBangInRangePgm :=
+#strata
+program Core;
+
+const s : Sequence int;
+axiom [len]: Sequence.length(s) == 1;
+axiom [e0]: Sequence.select!(s, 0) == 1;
+lemma [l]: forall i : int :: (int.le(0, i) && int.lt(i, Sequence.length(s))) ==> Sequence.select(s, i) == 1;
+#end
+
+/--
+info: l_calls_Sequence.select_0: int.lt(0, Sequence.length(s)) ==> int.lt(0, Sequence.length(s))
+l: int.lt(0, Sequence.length(s)) ==> Sequence.select(s, 0) == 1
+-/
+#guard_msgs in
+#eval unrolledLemmas crossSelectorBangInRangePgm
+
+/--
+info:
+Obligation: l_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: l
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify crossSelectorBangInRangePgm (options := opts) (pipeline := lemmaPipeline true)
 
 end Strata
