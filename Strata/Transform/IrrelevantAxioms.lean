@@ -249,23 +249,47 @@ def Cache.build (prog : Program) (directed : Bool := false) : Cache :=
   if directed then .directed (DirectedIndex.build prog)
   else .callGraph prog.toFunctionCG prog.functionImmediateAxiomMap
 
-/-- Labels of the axioms of `prog` irrelevant to `functions`, using a `cache`
-  built from `prog`. A call-graph cache uses the transitive fixed-point
-  algorithm (`computeRelevantAxioms`), and a directed cache uses
-  `DirectedIndex.irrelevantAxioms`. -/
-def getIrrelevantAxioms (prog : Program) (cache : Cache) (functions : List String)
-    : List String :=
+/-- The axioms a call-graph cache finds relevant to the one function `f`: those the
+    transitive fixed-point algorithm (`computeRelevantAxioms`) reaches from `f` and the
+    closures of its callees and callers. -/
+def relevantAxiomsOf (prog : Program) (funcCG : FunctionCG) (axiomMap : FuncAxMap)
+    (allAxiomNames : List String) (f : String) : List String :=
+  let initialFns :=
+    (f :: funcCG.getCalleesClosure f ++ funcCG.getCallersClosure f).uniq
+  computeRelevantAxioms prog funcCG axiomMap allAxiomNames initialFns []
+
+/-- Each function's relevant axioms, memoized by `getIrrelevantAxiomsMemo`. -/
+abbrev RelevanceMemo := Std.HashMap String (List String)
+
+/-- Labels of the axioms of `prog` irrelevant to `functions`, using a `cache` built from
+    `prog`, in the order `prog` declares them. A call-graph cache keeps the axioms relevant
+    to any of `functions` (`relevantAxiomsOf`), looking each function up in `memo` and
+    computing it only on a miss, so a caller asking about many obligations of one program
+    computes each function's relevant axioms once. A directed cache uses
+    `DirectedIndex.irrelevantAxioms`. `memo` must only ever have been filled for this
+    `prog` and `cache`. -/
+def getIrrelevantAxiomsMemo (prog : Program) (cache : Cache) (functions : List String)
+    (memo : RelevanceMemo) : List String × RelevanceMemo :=
   match cache with
-  | .directed idx => (idx.irrelevantAxioms functions).toList
+  | .directed idx => ((idx.irrelevantAxioms functions).toList, memo)
   | .callGraph funcCG axiomMap =>
     let allAxiomNames := prog.decls.filterMap (fun decl =>
       match decl with | .ax a _ => some a.name | _ => none)
-    let relevantAxioms := functions.flatMap (fun f =>
-      let initialFns :=
-        (f :: funcCG.getCalleesClosure f ++ funcCG.getCallersClosure f).uniq
-      computeRelevantAxioms prog funcCG axiomMap allAxiomNames initialFns [])
-      |>.uniq
-    allAxiomNames.filter (fun a => a ∉ relevantAxioms)
+    let (relevant, memo) := functions.foldl (fun (acc : Std.HashSet String × RelevanceMemo) f =>
+      let (relevant, memo) := acc
+      let (axs, memo) := match memo[f]? with
+        | some axs => (axs, memo)
+        | none =>
+          let axs := relevantAxiomsOf prog funcCG axiomMap allAxiomNames f
+          (axs, memo.insert f axs)
+      (axs.foldl (fun s a => s.insert a) relevant, memo)) ({}, memo)
+    (allAxiomNames.filter (fun a => !relevant.contains a), memo)
+
+/-- Labels of the axioms of `prog` irrelevant to `functions`, using a `cache` built from
+    `prog`: `getIrrelevantAxiomsMemo` with an empty memo. -/
+def getIrrelevantAxioms (prog : Program) (cache : Cache) (functions : List String) :
+    List String :=
+  (getIrrelevantAxiomsMemo prog cache functions {}).1
 
 open Transform in
 /-- Remove irrelevant axiom declarations from `prog` given a list of relevant

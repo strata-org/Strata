@@ -157,6 +157,17 @@ in a hash set, so the check is linear in the length of `l`. -/
 def nodupB {α : Type} [BEq α] [Hashable α] (l : List α) : Bool :=
   nodupB.go l {}
 
+/-- One step of a back-to-front fold that keeps each element's last occurrence: `a` goes
+to the front of the kept list unless it was met already (that is, later in the input). -/
+def keepLastStep {α : Type} [BEq α] [Hashable α] (acc : Std.HashSet α × List α) (a : α) :
+    Std.HashSet α × List α :=
+  if acc.1.contains a then acc else (acc.1.insert a, a :: acc.2)
+
+/-- `l.uniq` in linear time: each element's last occurrence, in order. `uniq` tests
+membership in the rest of the list for every element, quadratic in the length of `l`. -/
+def uniqKeepLast {α : Type} [BEq α] [Hashable α] (l : List α) : List α :=
+  (l.reverse.foldl keepLastStep ({}, [])).2
+
 /-- The values paired with each key in `l`, keeping only the values for which
 `keep` holds. A key's values are listed in the reverse of their order in `l`. -/
 def groupValuesByKey {K V : Type} [BEq K] [Hashable K] (keep : V → Bool) (l : List (K × V)) :

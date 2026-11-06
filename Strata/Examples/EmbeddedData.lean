@@ -12,6 +12,7 @@ public import Strata.Init
 
 /-- Embedded example files for use by downstream test suites. -/
 public def embeddedExampleFiles : Array (String × String) := #[
+  ("AxiomRelevancePaths.core.st", include_str "../../Examples/AxiomRelevancePaths.core.st"),
   ("CFGNondet.core.st", include_str "../../Examples/CFGNondet.core.st"),
   ("CFGSimple.core.st", include_str "../../Examples/CFGSimple.core.st"),
   ("CSEPathSplits.core.st", include_str "../../Examples/CSEPathSplits.core.st"),
@@ -28,6 +29,7 @@ public def embeddedExampleFiles : Array (String × String) := #[
   ("TypeError.core.st", include_str "../../Examples/TypeError.core.st"),
   ("dialects/Arith.dialect.st", include_str "../../Examples/dialects/Arith.dialect.st"),
   ("dialects/Bool.dialect.st", include_str "../../Examples/dialects/Bool.dialect.st"),
+  ("expected/AxiomRelevancePaths.core.expected", include_str "../../Examples/expected/AxiomRelevancePaths.core.expected"),
   ("expected/CSEPathSplits.core.expected", include_str "../../Examples/expected/CSEPathSplits.core.expected"),
   ("expected/DoubleTwice.callElim.core.expected", include_str "../../Examples/expected/DoubleTwice.callElim.core.expected"),
   ("expected/DoubleTwice.callElim.core.st", include_str "../../Examples/expected/DoubleTwice.callElim.core.st"),

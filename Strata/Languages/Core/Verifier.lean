@@ -1621,6 +1621,86 @@ def axiomCacheFor (mode : IrrelevantAxiomsMode) (prog : Program) :
   else some (IrrelevantAxioms.Cache.build prog
     (directed := mode == .Directed))
 
+/-- The name under which the axiom-relevance query knows the function `op`: its base name,
+    with any monomorphization mangling removed. An obligation is post-`MonomorphizeFunctions`,
+    so its function references carry mangled names (`$__mono#f#int`), whereas the axiom
+    program, cache and call graph the query runs against are the pre-pipeline program, which
+    names the base `f`. Without demangling, a specialized function's axiom would be deemed
+    irrelevant and pruned, turning a valid goal into a false alarm. An unmangled name is
+    returned unchanged. Every seed name, the goal's and the path's, goes through this
+    function. -/
+def seedName (op : CoreIdent) : String :=
+  Core.NameMangling.demangledBaseName op.toPretty
+
+/-- What the per-obligation steps read off one expression of a path condition. Consecutive
+    obligations share most of their path, by pointer, so these are computed once per
+    expression (`ExprFactsCache`) instead of once per expression per obligation.
+    - `ops`: its function names, as the axiom-relevance seeds name them (`seedName`);
+    - `opsLast`: `List.uniqKeepLast ops`. `uniqKeepLast` of a concatenation is unchanged
+      when each part is first replaced by its own `uniqKeepLast`: a name's last occurrence
+      in the whole is its last occurrence in the last part that has it;
+    - `vars`: its free variables, each one's first occurrence only. Symmetrically,
+      `eraseDups` of a concatenation is unchanged when each part is deduplicated first. -/
+structure ExprFacts where
+  ops : Thunk (List String)
+  opsLast : Thunk (List String)
+  vars : Thunk (List (Lambda.IdentT Lambda.LMonoTy Unit))
+
+def exprFacts (e : Expression.Expr) : ExprFacts :=
+  let ops := Thunk.mk fun _ => (Lambda.LExpr.getOps e).map seedName
+  { ops, opsLast := Thunk.mk fun _ => ops.get.uniqKeepLast,
+    vars := Thunk.mk fun _ => Strata.Util.OrderedSet.eraseDups (Lambda.LExpr.freeVars e) }
+
+/-- `exprFacts`, memoized by the expression's address (see `Strata.PtrCache`). -/
+abbrev ExprFactsCache := Strata.PtrCache.PtrCache exprFacts
+
+def ExprFactsCache.empty : ExprFactsCache := Strata.PtrCache.PtrCache.empty
+
+def ExprFactsCache.facts (e : Expression.Expr) : StateM ExprFactsCache ExprFacts := do
+  -- The miss continuation is an explicit lambda, so `exprFacts e` is built only on a miss.
+  let k : Strata.PtrCache.PtrCacheM exprFacts e := fun c => (⟨exprFacts e, rfl⟩, c)
+  return (← Strata.PtrCache.evalPtrCache e k).output
+
+/-- Run `m` against the cache in `ref`. The cache is taken out of the reference while `m`
+    runs, so its table stays unshared and is updated in place. -/
+def ExprFactsCache.runIn {α : Type} (ref : IO.Ref ExprFactsCache) (m : StateM ExprFactsCache α) :
+    BaseIO α :=
+  ref.modifyGet fun c => m.run c
+
+/-- The expressions of `assumptions` whose function names seed the relevance query, in order:
+    every expression of every entry, except those of the assumptions labelled in `axiomSet`. -/
+def seedExprs (assumptions : Imperative.PathConditions Expression)
+    (axiomSet : Std.HashSet String) : Array Expression.Expr := Id.run do
+  let mut acc : Array Expression.Expr := #[]
+  for pc in assumptions do
+    for entry in pc do
+      match entry with
+      | .assumption label e => if !axiomSet.contains label then acc := acc.push e
+      | .varDecl _ _ (.det e) => acc := acc.push e
+      | .varDecl _ _ .nondet => pure ()
+      | .distinct _ exprs => for e in exprs do acc := acc.push e
+  return acc
+
+/-- The function names of `seedExprs`, demangled, concatenated in order. -/
+def antecedentOpsCached (assumptions : Imperative.PathConditions Expression)
+    (axiomSet : Std.HashSet String) : StateM ExprFactsCache (List String) := do
+  let mut acc : Array (List String) := #[]
+  for e in seedExprs assumptions axiomSet do
+    acc := acc.push (← ExprFactsCache.facts e).ops.get
+  return acc.toList.flatten
+
+/-- `List.uniqKeepLast (consequentFns ++ ops)`, where `ops` is `antecedentOpsCached`, built
+    from the back without concatenating: the `opsLast` of `seedExprs` from the last
+    expression to the first, then `consequentFns`, each name kept the first time it is met
+    (`List.keepLastStep`), which is its last occurrence in the whole (`ExprFacts`). -/
+def seedsKeepLastCached (consequentFns : List String)
+    (assumptions : Imperative.PathConditions Expression) (axiomSet : Std.HashSet String) :
+    StateM ExprFactsCache (List String) := do
+  let mut acc : Std.HashSet String × List String := ({}, [])
+  for e in (seedExprs assumptions axiomSet).reverse do
+    acc := (← ExprFactsCache.facts e).opsLast.get.reverse.foldl List.keepLastStep acc
+  return (consequentFns.reverse.foldl List.keepLastStep acc).2
+
 /--
 Preprocess a proof obligation using symbolic simulation.
 Returns the symbolic results for satisfiability and validity independently
@@ -1639,6 +1719,13 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     -- The program the non-directed relevance query runs against; defaults
     -- to `p`.
     (axiomProgram : Option Program := .none)
+    -- Per-expression function names, shared across a caller's obligations; a fresh cache
+    -- for this obligation when absent. The seeds are the same either way.
+    (exprCache : Option (IO.Ref ExprFactsCache) := .none)
+    -- Each function's relevant axioms, shared across a caller's obligations, which must all
+    -- be asked against the same `axiomCache` and axiom program; a fresh memo when absent.
+    -- Same result.
+    (relevanceMemo : Option (IO.Ref IrrelevantAxioms.RelevanceMemo) := .none)
     : EIO Message (ProofObligation Expression × Option SMT.Result × Option SMT.Result × List String) := do
   let (peSatResult, peValResult) :=
     evaluatorResults obligation options.checkMode satisfiabilityCheck validityCheck
@@ -1658,36 +1745,29 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     | mode, .some cache, _ => -- All property types except `.cover`.
       if peSatResult.isSome && peValResult.isSome then pure (obligation, [])
       else do
-        -- The obligation is post-`MonomorphizeFunctions`, so its function
-        -- references carry mangled names (`$__mono#f#int`), whereas the axiom
-        -- program / cache / call-graph the relevance query runs against is the
-        -- pre-pipeline program naming the base `f`.  Demangle the seed names so
-        -- both sides agree; otherwise a specialized function's axiom is wrongly
-        -- deemed irrelevant and pruned, turning a valid goal into a false alarm.
-        -- (Unmangled names are returned unchanged, so non-monomorphized programs
-        -- are unaffected.)
-        let opName := fun (op : CoreIdent) => Core.NameMangling.demangledBaseName op.toPretty
-        let consequentFns := obligation.obligation.getOps.map opName
+        -- Named as the path's seeds are (`seedName`), so that a monomorphized
+        -- function's axioms are not pruned.
+        let consequentFns := obligation.obligation.getOps.map seedName
         -- Seeding from axioms would keep every axiom.
         let axiomSet := Std.HashSet.ofList axiomNames
-        let antecedentFns := fun () =>
-          obligation.assumptions.flatten.flatMap
-            (fun entry =>
-              match entry with
-              | .assumption label e =>
-                if axiomSet.contains label then []
-                else (Lambda.LExpr.getOps e).map opName
-              | .varDecl _ _ (.det e) => (Lambda.LExpr.getOps e).map opName
-              | .varDecl _ _ .nondet => []
-              | .distinct _ exprs =>
-                exprs.flatMap (fun e => (Lambda.LExpr.getOps e).map opName))
-        let seeds := match cache with
-          | .directed _ => consequentFns ++ antecedentFns ()
+        let exprCache ← match exprCache with
+          | some ref => pure ref
+          | none => (IO.mkRef ExprFactsCache.empty : BaseIO _)
+        let relevanceMemo ← match relevanceMemo with
+          | some ref => pure ref
+          | none => (IO.mkRef ({} : IrrelevantAxioms.RelevanceMemo) : BaseIO _)
+        let seeds ← match cache with
+          | .directed _ =>
+            (consequentFns ++ ·) <$>
+              ExprFactsCache.runIn exprCache (antecedentOpsCached obligation.assumptions axiomSet)
           | .callGraph .. =>
-            if mode == .Precise then (consequentFns ++ antecedentFns ()).uniq
-            else consequentFns
-        let irrelevantAxioms :=
-          IrrelevantAxioms.getIrrelevantAxioms (axiomProgram.getD p) cache seeds
+            if mode == .Precise then
+              ExprFactsCache.runIn exprCache
+                (seedsKeepLastCached consequentFns obligation.assumptions axiomSet)
+            else pure consequentFns
+        let irrelevantAxioms ← (relevanceMemo.modifyGet fun memo =>
+          IrrelevantAxioms.getIrrelevantAxiomsMemo (axiomProgram.getD p) cache seeds memo :
+          BaseIO _)
         let newAssumptions :=
           Imperative.PathConditions.removeByNames obligation.assumptions irrelevantAxioms
         pure ({ obligation with assumptions := newAssumptions }, irrelevantAxioms)
@@ -2276,26 +2356,21 @@ def addCSEReferences (refs : Std.HashSet String) (e : Expression.Expr) :
   (Lambda.LExpr.freeVars e).foldl (fun refs (id, _) =>
     if isCSEGeneratedName id.name then refs.insert id.name else refs) refs
 
-private
-def addFreeVarNames (refs : Std.HashSet String) (e : Expression.Expr) :
-    Std.HashSet String :=
-  (Lambda.LExpr.freeVars e).foldl (fun refs (id, _) => refs.insert id.name) refs
-
 /-- The names `roots` reach through `definitions`: the least set that contains `roots` and, for
     every definition whose name it contains, the names `refs` returns for that definition's body.
     A worklist expands each defined name once, so the cost is linear in the size of the
     definitions, whatever their order and however long their chains. -/
 private
-def defClosure (refs : Expression.Expr → List String)
-    (definitions : List (String × Expression.Expr)) (roots : Std.HashSet String) :
+def defClosure {β : Type} (refs : β → List String)
+    (definitions : List (String × β)) (roots : Std.HashSet String) :
     Std.HashSet String :=
-  let bodies : Std.HashMap String (List Expression.Expr) :=
+  let bodies : Std.HashMap String (List β) :=
     definitions.foldl (fun m (n, e) => m.insert n (e :: m.getD n [])) {}
   -- A name enters the worklist once, when it is first reached, and only if it is defined, so
   -- the fuel `definitions.length` never runs out.
   go bodies definitions.length (roots.toList.filter bodies.contains) roots
 where
-  go (bodies : Std.HashMap String (List Expression.Expr)) :
+  go (bodies : Std.HashMap String (List β)) :
       Nat → List String → Std.HashSet String → Std.HashSet String
     | 0, _, reached | _, [], reached => reached
     | fuel + 1, n :: pending, reached =>
@@ -2312,33 +2387,63 @@ where
     reported; one it defines (`init x := e`) is not, since its value follows from the others.
     A variable of a function type, such as one standing for a function in a generated lemma,
     is not reported: SMT-LIB's `get-value` takes only terms of a value sort, and a request
-    naming it would lose the whole counterexample. -/
+    naming it would lose the whole counterexample.
+
+    Each expression's free variables are read from `ExprFactsCache`, so the expressions a
+    caller's obligations share are walked once. The variables come in the order of
+    `ProofObligation.getVars` (each one's first occurrence: the goal's, then each
+    expression's in order); its `eraseDups` of the concatenation is unchanged when each
+    expression's variables come deduplicated (`ExprFacts`). -/
+def collectModelVarsCached
+    (obligation : Imperative.ProofObligation Expression)
+    (varDefinitions : List VarDefinition)
+    (varDeclarations : List VarDeclaration) :
+    StateM ExprFactsCache (List (Lambda.IdentT Lambda.LMonoTy Unit)) := do
+  let managedNames := managedNameSet varDefinitions varDeclarations
+  let insertNames := fun (refs : Std.HashSet String)
+      (vs : List (Lambda.IdentT Lambda.LMonoTy Unit)) =>
+    vs.foldl (fun refs (id, _) => refs.insert id.name) refs
+  -- `ProofObligation.getVars`, built as the walk goes: each variable's first occurrence, the
+  -- goal's first, then each expression's in order.
+  let addVars := fun (acc : Std.HashSet (Lambda.IdentT Lambda.LMonoTy Unit) ×
+        Array (Lambda.IdentT Lambda.LMonoTy Unit))
+      (vs : List (Lambda.IdentT Lambda.LMonoTy Unit)) =>
+    vs.foldl (fun (seen, out) v => if seen.contains v then (seen, out)
+      else (seen.insert v, out.push v)) acc
+  let goalVars := Lambda.LExpr.freeVars obligation.obligation
+  let mut rootRefs : Std.HashSet String := insertNames {} goalVars
+  let mut definitions : Array (String × List String) := #[]
+  let mut vars := addVars ({}, #[]) goalVars
+  for pc in obligation.assumptions do
+    for entry in pc do
+      match entry with
+      | .assumption _ e =>
+        let vs := (← ExprFactsCache.facts e).vars.get
+        rootRefs := insertNames rootRefs vs; vars := addVars vars vs
+      | .distinct _ es =>
+        for e in es do
+          let vs := (← ExprFactsCache.facts e).vars.get
+          rootRefs := insertNames rootRefs vs; vars := addVars vars vs
+      | .varDecl name _ (.det rhs) =>
+        let vs := (← ExprFactsCache.facts rhs).vars.get
+        vars := addVars vars vs
+        if managedNames.contains name.name then
+          definitions := definitions.push (name.name, vs.map (·.1.name))
+        else rootRefs := insertNames rootRefs vs
+      | .varDecl _ _ .nondet => pure ()
+  let relevantNames := defClosure id definitions.toList rootRefs
+  let definedNames := definedNameSet varDefinitions
+  return vars.2.toList.filter fun (v, ty) =>
+    relevantNames.contains v.name && Core.SMT.isReportedName definedNames v.name &&
+      (ty.bind LMonoTy.isArrow).isNone
+
+/-- `collectModelVarsCached` with a cache of its own, for a caller with one obligation. -/
 def collectModelVars
     (obligation : Imperative.ProofObligation Expression)
     (varDefinitions : List VarDefinition)
     (varDeclarations : List VarDeclaration) :
     List (Lambda.IdentT Lambda.LMonoTy Unit) :=
-  let managedNames := managedNameSet varDefinitions varDeclarations
-  let definitions := obligation.assumptions.flatMap fun pathCondition =>
-    pathCondition.filterMap fun
-      | .varDecl name _ (.det rhs) =>
-        if managedNames.contains name.name then some (name.name, rhs) else none
-      | _ => none
-  let rootRefs := obligation.assumptions.foldl (fun refs pathCondition =>
-    pathCondition.foldl (fun refs entry =>
-      match entry with
-      | .assumption _ e => addFreeVarNames refs e
-      | .distinct _ es => es.foldl addFreeVarNames refs
-      | .varDecl name _ (.det rhs) =>
-        if managedNames.contains name.name then refs else addFreeVarNames refs rhs
-      | .varDecl _ _ .nondet => refs) refs)
-    (addFreeVarNames {} obligation.obligation)
-  let relevantNames :=
-    defClosure (fun e => (Lambda.LExpr.freeVars e).map (·.1.name)) definitions rootRefs
-  let definedNames := definedNameSet varDefinitions
-  (ProofObligation.getVars obligation).filter fun (v, ty) =>
-    relevantNames.contains v.name && Core.SMT.isReportedName definedNames v.name &&
-      (ty.bind LMonoTy.isArrow).isNone
+  (collectModelVarsCached obligation varDefinitions varDeclarations).run' ExprFactsCache.empty
 
 /-- The CSE-generated definitions on the path of `obligation`, in order. -/
 def cseDefinitions (obligation : Imperative.ProofObligation Expression) :
@@ -2430,6 +2535,13 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
   -- often share many assumption terms. Sequential path only; parallel passes `none`.
   let termCache ← IO.toEIO (fun e => Message.fromFormat f!"{e}")
     (IO.mkRef (∅ : Std.HashMap Term String))
+  -- Per-expression function names and free variables, shared across this env's obligations,
+  -- whose paths share most of their expressions (`ExprFacts`). Read on the sequential pass
+  -- below on both paths, so never from two threads.
+  let exprCache ← (IO.mkRef ExprFactsCache.empty : BaseIO _)
+  -- Each function's relevant axioms, for this env's obligations, which all ask
+  -- `axiomCache` about `axiomProgram`.
+  let relevanceMemo ← (IO.mkRef ({} : IrrelevantAxioms.RelevanceMemo) : BaseIO _)
   -- The encoder, threaded across this env's obligations: shared
   -- path-condition history is encoded once and reused; each obligation's
   -- result is forked from the current position.
@@ -2470,6 +2582,7 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     let origObligation := obligation
     let (obligation, peSatResult?, peValResult?, prunedAxiomLabels) ← pctx.withRepeatedPhase "evalDischarge" do
       preprocessObligation obligation p options satisfiabilityCheck validityCheck axiomCache axiomNames axiomProgram
+        (exprCache := some exprCache) (relevanceMemo := some relevanceMemo)
     -- If evaluator resolved both checks, we're done, unless we always want to generate SMT queries
     if not options.alwaysGenerateSMT then
       if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
@@ -2532,8 +2645,8 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
         -- obligations. Follow only the definitions reachable from this
         -- obligation before deciding which user variables to request in a
         -- counterexample.
-        let varsInObligation ← pctx.withRepeatedPhasePure "collectVars" fun _ =>
-          collectModelVars obligation varDefs varDecls
+        let varsInObligation ← pctx.withRepeatedPhase (m := BaseIO) "collectVars" <|
+          ExprFactsCache.runIn exprCache (collectModelVarsCached obligation varDefs varDecls)
         let typedVarsInObligation ← varsInObligation.mapM
           (fun (v,ty) => do
             match ty with
