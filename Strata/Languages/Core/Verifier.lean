@@ -25,6 +25,7 @@ public import Strata.Transform.CtorFold
 public import Strata.Transform.WPRewriteLoop
 import Strata.Transform.UnrollBoundedQuantifiers
 import Strata.Transform.BetaReduce
+import Strata.Transform.LambdaLift
 import Strata.Transform.CallElim
 import Strata.Transform.CFGLoopElim
 import Strata.Transform.PassiveVCGenCoreProgram
@@ -334,7 +335,7 @@ private def datatypeConstrsM [Monad m] [MonadExceptOf IO.Error m] (solver : Abst
 def emitDatatypesAbstract [Monad m] [MonadExceptOf IO.Error m]
     (solver : AbstractSolver τ σ m) (ctx : Core.SMT.Context) : m Unit := do
   -- Validate that no datatype has arrow-typed fields (same check as batch path)
-  match Core.validateDatatypesForSMT ctx.datatypes.factory ctx.seenDatatypes with
+  match Core.validateDatatypesForSMT ctx.datatypes.factory ctx.seenDatatypes ctx.useArrayTheory with
   | .error msg => throw (IO.userError (toString msg))
   | .ok () => pure ()
   for block in ctx.datatypes.factory.toList do
@@ -2359,7 +2360,7 @@ def passiveVCGenPhases (options : VerifyOptions := VerifyOptions.default)
      declObligationsPipelinePhase options moreFns]
   before ++
     [passiveVCPipelinePhase options.vcgen (before.flatMap (·.phase.validationPrefixes)),
-     betaReducePipelinePhase]
+     betaReducePipelinePhase, lambdaLiftPipelinePhase]
 
 /-- The phases that run between `transformPipelinePhases` and `symbolicEvalPipelinePhase`:
     replace procedure and lemma type parameters by opaque types, monomorphize functions,
@@ -2403,14 +2404,17 @@ def corePipelinePhases
               -- declares those names, which CSE's `noInits` excludes.
               if options.symExecMode == .never then
                 [symExecPipelinePhase options moreFns, betaReducePipelinePhase,
-                  commonSubexprElimPhase (minTreeSize := some symExecPerPathCSETreeSize)]
-              else [symExecPipelinePhase options moreFns, betaReducePipelinePhase]
+                  commonSubexprElimPhase (minTreeSize := some symExecPerPathCSETreeSize),
+                  lambdaLiftPipelinePhase]
+              else [symExecPipelinePhase options moreFns, betaReducePipelinePhase,
+                  lambdaLiftPipelinePhase]
             else [symbolicEvalPipelinePhase options moreFns, betaReducePipelinePhase,
-                  commonSubexprElimPhase]
+                  commonSubexprElimPhase, lambdaLiftPipelinePhase]
           -- CSE requires `noInits`, which the SSA phase does not establish. The rewrite loop
           -- beta-reduces procedure bodies; `betaReducePipelinePhase` reduces the other
           -- declarations (function bodies, axioms).
-          | .wp => wpVCGenPhases options moreFns ++ [betaReducePipelinePhase]
+          | .wp => wpVCGenPhases options moreFns ++ [betaReducePipelinePhase,
+                                                     lambdaLiftPipelinePhase]
           | .usp | .uwp => [])
 
 /-- What the back end needs of the program the pipeline hands it, as opposed to
@@ -2425,10 +2429,19 @@ def corePipelinePhases
     `hasObligationForm` states what it does require.
 
     `noLoopInvariants` and `noLoopMeasures` are absent because `noLoops` covers
-    them; they are required by `LoopElim`, which is where they matter. -/
+    them; they are required by `LoopElim`, which is where they matter.
+
+    `noLambdas` is required because the SMT encoder has no term for an
+    abstraction: a function type is an array sort, and every lambda must have
+    been lifted to a first-order function first. No required fact covers the
+    spurious-model marker: a pipeline that meets `noLambdas` by asserting it, without
+    `lambdaLift` or `lambdaLiftIfNeeded`, leaves an obligation that quantifies over a
+    function type unmarked, and a possibly spurious model of it is reported as a
+    counterexample. -/
 def backEndRequiredFacts : ProgramFactSet :=
   factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
-           .noBetaRedexes, .noPrecondsFromFuncs, .hasObligationForm, .noProcedureContracts,
+           .noBetaRedexes, .noLambdas, .noPrecondsFromFuncs, .hasObligationForm,
+           .noProcedureContracts,
            .noPolymorphicProcedures, .noPolymorphicFunctions,
            .typeAnnotated]
 

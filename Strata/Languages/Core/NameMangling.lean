@@ -82,6 +82,16 @@ a leading `?n`. Every other name is written as is. -/
 /-- Undo `escName`: the name the user wrote. -/
 @[expose] def decName (s : String) : String := String.ofList (decNameL s.toList)
 
+/-- Prefix of the functions `lambdaLift` declares for lifted lambdas. Names starting
+    with `$__` are meant for internal use. The parser does not refuse them, so a
+    program can declare `$__lam_0` itself; a lifted function of the same name is then
+    refused as a redefinition, which fails closed. -/
+@[expose] def liftedLambdaPrefix : String := "$__lam"
+
+/-- Reserved prefix of the constant array the SMT encoder gives a function
+    used as a value, `$__fn#f`. -/
+@[expose] def fnValuePrefix : String := "$__fn"
+
 /-! ### Type mangling -/
 
 mutual

@@ -26,6 +26,7 @@ import Strata.Transform.GenOpaqueTypeParams
 import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
 import Strata.Transform.BetaReduce
+import Strata.Transform.LambdaLift
 import Strata.Transform.CommonSubexprElim
 import Strata.Transform.DeadDefElim
 import Strata.Transform.Simplify
@@ -266,6 +267,15 @@ def Core.passNondetElim : Core.PipelinePhase :=
 def Core.passBetaReduce : Core.PipelinePhase :=
   Core.betaReducePipelinePhase
 
+/-- Replace every abstraction by a function applied to what it captures. -/
+def Core.passLambdaLift : Core.PipelinePhase :=
+  Core.lambdaLiftPipelinePhase
+
+/-- `passLambdaLift`, run only on a program it has work to do on; every other program is
+    returned unchanged. -/
+def Core.passLambdaLiftIfNeeded : Core.PipelinePhase :=
+  Core.lambdaLiftIfNeededPipelinePhase
+
 /-- Type check the program, annotating expressions with their types. -/
 def Core.passTypeCheck (options : Core.VerifyOptions := Core.VerifyOptions.default) :
     Core.PipelinePhase :=
@@ -397,7 +407,8 @@ def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.defa
     -- which knows the validation prefixes of the phases before it.
     ((Core.passiveVCGenPhases
         { options with vcgen := if options.vcgen == .uwp then .uwp else .usp }).filter
-      fun p => p.phase.name == "passiveVC")
+      fun p => p.phase.name == "passiveVC") ++
+    [Core.passLambdaLiftIfNeeded]
   defaults ++ others.filter fun p => !defaults.any (·.phase.name == p.phase.name)
 
 /-! ### Standard Core verification pipeline phases

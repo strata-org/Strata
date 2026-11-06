@@ -10,6 +10,8 @@ public import Strata.Languages.Core.Function
 public import Strata.Languages.Core.Factory
 public import Strata.Languages.Core.TypeDecl
 public import Strata.Languages.Core.Axiom
+import Strata.Languages.Core.NameMangling
+public import Strata.DL.Lambda.LExprTraversal
 public import Strata.Languages.Core.DDMTransform.FormatCore
 
 ---------------------------------------------------------------------
@@ -520,6 +522,104 @@ statement. -/
 @[expose] def Program.allExprs (P : Expression.Expr → Bool) (p : Program) : Bool :=
   p.decls.all fun d =>
     (Statements.allExprs d.statements).all P && d.ownExprs.all P
+
+/-- A set of names, joined by union: an accumulator for a fold over subterms. -/
+structure NameUnion where
+  names : Std.HashSet String := {}
+
+instance : Append NameUnion :=
+  ⟨fun a b => ⟨b.names.fold (init := a.names) fun s n => s.insert n⟩⟩
+
+/-- A flag, joined by `||`: an accumulator for a fold over subterms. -/
+structure AnyFlag where
+  flag : Bool := false
+
+instance : Append AnyFlag := ⟨fun a b => ⟨a.flag || b.flag⟩⟩
+
+/-- The names of the operators `e` applies, visiting each physically distinct subterm once,
+    so a term whose subterms are shared, as after symbolic evaluation, costs one walk of
+    its graph rather than of its tree. -/
+@[expose] def Expression.opNames (e : Expression.Expr) : Std.HashSet String :=
+  (Lambda.LExpr.Traversal.visitDFSPtrCached .preorder
+    (fun (e : Expression.Expr) => match e with
+      | .op _ o _ => (⟨({} : Std.HashSet String).insert o.name⟩ : NameUnion)
+      | _ => {})
+    e).names
+
+/-- Whether `e` contains an abstraction, visiting each physically distinct subterm once. -/
+@[expose] def Expression.hasAbsShared (e : Expression.Expr) : Bool :=
+  (Lambda.LExpr.Traversal.visitDFSPtrCached .preorder
+    (fun (e : Expression.Expr) => match e with
+      | .abs .. => (⟨true⟩ : AnyFlag)
+      | _ => ⟨false⟩)
+    e).flag
+
+/-- The expressions of `p` the SMT back end can read: every expression of a procedure,
+    an axiom, a lemma and a `distinct` declaration, which make the obligations and
+    their path conditions, and the body and axioms of every function they reach, by
+    name, through other reached functions' bodies and axioms. The back end emits a
+    function's definition only when an emitted term applies it, so the bodies,
+    axioms, preconditions and measures of the other functions never reach it. A
+    function's preconditions and measure are not among the expressions read: the
+    back end emits neither.
+
+    The encoder chooses what to emit per query, by its own walk, so this whole-program
+    set over-approximates each query's. A fact read over it, such as `noLambdas`, is
+    accurate only while every function the encoder emits is one this set reaches. That
+    is relied on but not proved; an encoder change that emits more must keep it. -/
+@[expose] def Program.liveExprs (p : Program) : List Expression.Expr :=
+  let funcs : List Function := p.decls.flatMap fun
+    | .func f _ => [f]
+    | .recFuncBlock fs _ => fs
+    | _ => []
+  let roots : List Expression.Expr := p.decls.flatMap fun d => match d with
+    | .func .. | .recFuncBlock .. | .type .. => []
+    | d => Statements.allExprs d.statements ++ d.ownExprs
+  let read (f : Function) : List Expression.Expr := f.body.toList ++ f.axioms
+  let union (es : List Expression.Expr) : Std.HashSet String :=
+    es.foldl (fun acc e => (Expression.opNames e).fold (init := acc) fun s n => s.insert n) {}
+  -- The operators each function's body and axioms apply, computed once per function.
+  let funcOps : Std.HashMap String (Std.HashSet String) :=
+    funcs.foldl (fun m f => m.insert f.name.name (union (read f))) {}
+  let live : Std.HashSet String := Id.run do
+    let mut found := union roots
+    let mut frontier := found.toList
+    -- Each round adds at least one function or stops, so `funcs.length + 1` rounds suffice.
+    for _ in [0:funcs.length + 1] do
+      let mut next : List String := []
+      for n in frontier do
+        for m in (funcOps.getD n {}).toList do
+          if !found.contains m then
+            found := found.insert m
+            next := m :: next
+      if next.isEmpty then break
+      frontier := next
+    return found
+  roots ++ (funcs.filter (live.contains ·.name.name)).flatMap read
+
+/-- The number of arguments each function `p` declares takes, by name: the
+    declared inputs of a function, one per field for a datatype constructor, and
+    one for a tester or a field selector. A monomorphized copy, whose name is
+    mangled, is looked up under the name of the function it copies
+    (`Program.arityIn`). -/
+def Program.declArities (p : Program) : Std.HashMap String Nat :=
+  p.decls.foldl (init := {}) fun m d =>
+    match d with
+    | .func f _ => m.insert f.name.name f.inputs.length
+    | .recFuncBlock fs _ => fs.foldl (fun m f => m.insert f.name.name f.inputs.length) m
+    | .type (.data block) _ => block.foldl (init := m) fun m dt =>
+      let (cs, ts, ss, us) := dt.genFunctionMaps (T := CoreLParams)
+      let m := cs.foldl (fun m (n, _, c) => m.insert n c.args.length) m
+      [ts, ss, us].foldl (fun m fs => fs.foldl (fun m (n, _) => m.insert n 1) m) m
+    | _ => m
+
+/-- The number of arguments each function of `p` or `F` takes, by name, read from
+    `arities`, the table `Program.declArities p` builds. Taking the table rather than
+    the program lets a caller build it once for many lookups. -/
+def Program.arityIn (arities : Std.HashMap String Nat) (F : @Lambda.Factory CoreLParams)
+    (name : String) : Option Nat :=
+  let lookup (n : String) := arities[n]? <|> (F[n]?).map (·.inputs.length)
+  lookup name <|> lookup (Core.NameMangling.demangledBaseNameAnyPrefix name)
 
 /-- Does no function `p` declares carry a precondition, whether declared at
     top level or inside a procedure body? -/

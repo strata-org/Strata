@@ -2404,7 +2404,7 @@ private def withoutSymbolicEval : Option (Core.ValidatedPipeline Core.ProgramFac
   (Core.validatePipeline
     (entry ++ [Core.passTypeCheck .quiet, Core.passTermCheck, Core.passPrecondElim,
       Core.passGenOpaqueTypeParams, Core.passMonomorphizeFunctions, Core.passSimplify,
-      ho, pc, Core.passFunctionInlining, Core.passBetaReduce])).toOption
+      ho, pc, Core.passFunctionInlining, Core.passBetaReduce, Core.passLambdaLift])).toOption
 
 /--
 info: error: ❌ Type checking error.

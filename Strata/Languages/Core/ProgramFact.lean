@@ -113,6 +113,22 @@ inductive ProgramFact where
       first-order programs are unaffected, and partial-evaluation inlining
       rules it out for symbolic evaluation. -/
   | noBetaRedexes
+  /-- No expression the back end reads contains an abstraction: none of
+      `Program.liveExprs`, the expressions of procedures, axioms, lemmas and
+      `distinct` declarations, and the bodies and axioms of the functions they reach.
+      Established by `LambdaLift`, which replaces each abstraction by a function
+      applied to what it captures. The SMT encoder needs it: it encodes a function
+      type as an array sort and has no term for an abstraction. A lambda in a
+      function no obligation reaches, such as an inline function's body once every
+      use is inlined, is never encoded, so it does not count. A program with no
+      abstraction anywhere satisfies it at once, so the fact is stated as that or the
+      live set's condition: the check then needs the live set only for a program with a
+      lambda somewhere. A pipeline that does
+      not run `lambdaLift` should end with `lambdaLiftIfNeeded` and then
+      `assertPhase .noLambdas`: asserting the fact alone accepts the program but marks
+      nothing, so a possibly spurious model of an obligation that quantifies over a
+      function type is reported as a counterexample. -/
+  | noLambdas
   /-- No function carries a precondition, at top level or declared inside a
       procedure body. Established by `PrecondElim`, which turns each into an
       `assert` at the call sites and a well-formedness check on the contracts.
@@ -332,6 +348,7 @@ def ProgramFact.name : ProgramFact → String
   | .loopBodyNoInits => "loopBodyNoInits"
   | .staticSingleAssignment => "staticSingleAssignment"
   | .noBetaRedexes => "noBetaRedexes"
+  | .noLambdas => "noLambdas"
   | .noPrecondsFromFuncs => "noPrecondsFromFuncs"
   | .noNondetGuards => "noNondetGuards"
   | .hasObligationForm => "hasObligationForm"
@@ -355,7 +372,7 @@ def ProgramFact.name : ProgramFact → String
 @[expose] def ProgramFact.all : List ProgramFact :=
   [.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
    .noLoopMeasures, .uniqueInits, .loopBodyNoInits, .staticSingleAssignment,
-   .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
+   .noBetaRedexes, .noLambdas, .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
    .noProcedureContracts, .noPolymorphicProcedures, .noPolymorphicFunctions,
    .typeAnnotated, .noInits, .treeForm, .exitsCovered, .armsHaveObligations,
    .noCFGCycles]
@@ -386,6 +403,42 @@ since there is nothing to run. Where a check does exist, the fact's `Prop` shoul
 proof about it will want to read, with the check proved equal to it, rather
 than the `Prop` being bent into the shape of a `Bool`. -/
 
+/-- The first abstraction in `e`, outermost and leftmost first. It descends only into a
+    subterm that has one (`Expression.hasAbsShared`, which visits each shared subterm once),
+    so a shared term costs one walk of its graph per level, not a walk of its tree. -/
+def firstAbs? (e : Expression.Expr) : Option Expression.Expr :=
+  if !Expression.hasAbsShared e then none else
+  match e with
+  | .abs .. => some e
+  | .app _ f a => firstAbs? f <|> firstAbs? a
+  | .quant _ _ _ _ tr b => firstAbs? tr <|> firstAbs? b
+  | .ite _ c t f => firstAbs? c <|> firstAbs? t <|> firstAbs? f
+  | .eq _ a b => firstAbs? a <|> firstAbs? b
+  | _ => none
+
+/-- The first lambda the back end would read in `p`, if any: the reason `noLambdas` fails. -/
+def Program.firstLiveLambda? (p : Program) : Option Expression.Expr :=
+  p.liveExprs.findSome? firstAbs?
+
+/-- A lambda, named by its binder, or `_` for an unnamed one: its body may mention
+    variables bound outside it, which print only in context. -/
+def Program.showLambda (e : Expression.Expr) : Std.Format :=
+  let name (n : String) := if n.isEmpty then "_" else n
+  match e with
+  | .abs _ n (some ty) _ => f!"fun {name n} : {ty} => …"
+  | .abs _ n none _ => f!"fun {name n} => …"
+  | _ => f!"{e}"
+
+/-- Why `p` does not satisfy `noLambdas`, or `none` when it does: the first lambda the
+    back end would read, by its binder, and its source range when it has one. -/
+def ProgramFact.noLambdasOffender (p : Program) : Option String :=
+  p.firstLiveLambda?.map fun e =>
+    let m := Lambda.LExpr.metadata e
+    let at_ := match m.uri with
+      | some uri => s!" at {Std.format uri}:{m.range.start.byteIdx}-{m.range.stop.byteIdx}"
+      | none => ""
+    s!"the lambda `{Program.showLambda e}`{at_}"
+
 /-- Executable check for a fact, for the facts that have one. `none` means
     the fact is still perfectly usable in a contract — it just cannot be
     asserted, since there is nothing to run. -/
@@ -406,6 +459,9 @@ than the `Prop` being bent into the shape of a `Bool`. -/
   | .staticSingleAssignment =>
     some (Program.allStatements Statements.staticSingleAssignment)
   | .noBetaRedexes    => some (Program.allExprs Lambda.LExpr.noBetaRedex)
+  | .noLambdas        => some fun p =>
+    p.allExprs (fun e => !Expression.hasAbsShared e) ||
+      p.liveExprs.all fun e => !Expression.hasAbsShared e
   | .noPrecondsFromFuncs => some Program.noFuncPreconditions
   | .noNondetGuards => some (Program.allStatements Imperative.Block.noNondetGuards)
   | .hasObligationForm => some (Program.allStatements Statements.hasObligationForm)
@@ -439,6 +495,9 @@ than the `Prop` being bent into the shape of a `Bool`. -/
   | .staticSingleAssignment =>
     fun p => Program.allStatements Statements.staticSingleAssignment p = true
   | .noBetaRedexes    => fun p => Program.allExprs Lambda.LExpr.noBetaRedex p = true
+  | .noLambdas        => fun p =>
+    (p.allExprs (fun e => !Expression.hasAbsShared e) ||
+      p.liveExprs.all fun e => !Expression.hasAbsShared e) = true
   | .noPrecondsFromFuncs => fun p => Program.noFuncPreconditions p = true
   | .noNondetGuards =>
     fun p => Program.allStatements Imperative.Block.noNondetGuards p = true

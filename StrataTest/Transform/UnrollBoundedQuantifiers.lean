@@ -24,7 +24,8 @@ private def noUnrolling : Core.VerifyOptions :=
 private def unrollingPhases : List Core.PipelinePhase :=
   ((Core.corePipelinePhases (options := noUnrolling)).filter
       fun p => p.phase.name != "commonSubexprElim")
-    ++ [Core.passFunctionInlining, Core.passBetaReduce, Core.passUnrollBoundedQuantifiers]
+    ++ [Core.passFunctionInlining, Core.passBetaReduce, Core.passUnrollBoundedQuantifiers,
+        Core.passLambdaLift]
 
 /-- Those phases validated, for the runs below. `none` would silently verify with the
     default order, so a failure to compose has to surface as one. -/

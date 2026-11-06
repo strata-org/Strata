@@ -68,6 +68,7 @@ import Strata.Transform.CoreTransformProps
 import Strata.Transform.DetToKleeneCorrect
 import Strata.Transform.FunctionInlining
 import Strata.Transform.FunctionInliningProps
+import Strata.Transform.LambdaLiftCorrect
 import Strata.Transform.UnrollBoundedQuantifiersProps
 import Strata.Transform.LoopInitHoist
 import Strata.Transform.LoopInitHoistProps

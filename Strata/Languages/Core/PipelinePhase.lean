@@ -121,6 +121,35 @@ def markerValidation (obligation : ProofObligation Expression) (pfxs : List Stri
   if guards.isEmpty then .modelPreserving else .markersOnPath guards
 
 
+/-- The label of the assumption a phase places on the path of an obligation whose
+    models may be spurious: a phase whose output over-approximates what the
+    solver's models can represent, so that a model of the output's query need not
+    be one of the input. Like every name starting with `$__`, it cannot be written
+    in a user's program. The SMT back end reports a satisfiable query for a marked
+    obligation as unknown, not as a counterexample. -/
+def spuriousModelsLabel : String := "$__spuriousModels"
+
+/-- The metadata field that marks a lemma, an obligation of its own with no statement to
+    place a marker before: a lemma's obligation carries the lemma's metadata, so the field
+    marks that obligation alone. -/
+@[match_pattern]
+abbrev spuriousModelsField : Imperative.MetaDataElem.Field Expression := .label spuriousModelsLabel
+
+/-- The assumption `assume [spuriousModelsLabel]: true` that marks an obligation
+    whose models may be spurious; `e` is its `true`, carrying the marking phase's
+    location. -/
+def spuriousModelsMarker (e : Expression.Expr) : Statement :=
+  Statement.assume spuriousModelsLabel e .empty
+
+/-- The model validation of a phase that marks obligations with
+    `spuriousModelsMarker`: a model of a marked obligation is reported as unknown,
+    never as a counterexample; any other obligation is unaffected. -/
+def spuriousModelsValidation (obligation : ProofObligation Expression) : ModelValidation :=
+  let marked := obligationHasLabelPrefix obligation spuriousModelsLabel ||
+    (obligation.metadata.findElem spuriousModelsField).isSome
+  if marked then .modelToValidate (fun _ _ => none)
+  else .modelPreserving
+
 /-! ## Proof obligations, deferred
 
 A phase's `establishes` and `preserves` are claims about the program its
@@ -258,7 +287,8 @@ def ProgramFact.assertPhaseName (f : ProgramFact) : String :=
 /-- What the `assert` phase for `f` reports about a program `f`'s check rejects. For
     `wellFormedCalls`, the first ill-formed call, located at the call; there is one,
     since that check is `(illFormedCalls p).isEmpty`. For `noCFGBodies`, the first
-    procedure with a CFG body, located at its declaration. For the other facts, a
+    procedure with a CFG body, located at its declaration. For `noLambdas`, the first
+    lambda, located where it was written, with the remedy. For the other facts, a
     message naming what is expected. -/
 private def assertFailure (f : ProgramFact) (p : Program) : Strata.Message :=
   let generic :=
@@ -273,6 +303,16 @@ private def assertFailure (f : ProgramFact) (p : Program) : Strata.Message :=
     | some (name, md) => md.toDiagnostic s!"❌ Expected every procedure body to be \
         structured, but found procedure {name} with a CFG body. To verify it, pass \
         --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp)."
+    | none => generic
+  | .noLambdas =>
+    match p.firstLiveLambda? with
+    | some e =>
+      let msg := f!"❌ Expected no lambda, since the verification back end has no term for \
+        one, but found the lambda `{Program.showLambda e}`. Run `lambdaLift` before the back end."
+      match (Lambda.LExpr.metadata e).uri with
+      | some uri =>
+        Strata.Message.withRange { file := uri, range := (Lambda.LExpr.metadata e).range } msg
+      | none => Strata.Message.fromFormat msg
     | none => generic
   | _ => generic
 

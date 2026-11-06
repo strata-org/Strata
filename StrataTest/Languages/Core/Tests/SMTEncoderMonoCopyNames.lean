@@ -237,7 +237,8 @@ private def unrollingWithoutMono : Option (Core.ValidatedPipeline Core.ProgramFa
   (Core.ValidatedPipeline.ofList
     (replaceMono ((Core.corePipelinePhases Core.VerifyOptions.quiet).filter
         fun p => p.phase.name != "commonSubexprElim") assertNoPoly
-      ++ [Core.passFunctionInlining, Core.passBetaReduce, Core.passUnrollBoundedQuantifiers])
+      ++ [Core.passFunctionInlining, Core.passBetaReduce, Core.passUnrollBoundedQuantifiers,
+          Core.passLambdaLift])
     ).toOption
 
 #guard unrollingWithoutMono.isSome

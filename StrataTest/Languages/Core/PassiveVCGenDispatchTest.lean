@@ -65,17 +65,23 @@ def phasesOf (mode : Core.VCGenMode) : List String :=
 
 -- Each mode runs exactly the phases its pipeline lists: symbolic evaluation under
 -- `--vcgen symbolic`, CFG loop elimination and the passive VC phase under `uwp` and `usp`.
-/-- info: true: [typeCheck, assertNoCFGBodies, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, symbolicEval, betaReduce, commonSubexprElim] -/
+/--
+info: true: [typeCheck, assertNoCFGBodies, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, nondetElim, symbolicEval, betaReduce, commonSubexprElim, lambdaLift]
+-/
 #guard_msgs in #eval do
   let (ran, _) ← runUnder .symbolic
   IO.println s!"{ran == phasesOf .symbolic}: {ran}"
 
-/-- info: true: [hoistNondetChoices, typeCheck, cfgLoopElim, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, declObligations, passiveVC, betaReduce] -/
+/--
+info: true: [hoistNondetChoices, typeCheck, cfgLoopElim, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, declObligations, passiveVC, betaReduce, lambdaLift]
+-/
 #guard_msgs in #eval do
   let (ran, _) ← runUnder .uwp
   IO.println s!"{ran == phasesOf .uwp}: {ran}"
 
-/-- info: true: [hoistNondetChoices, typeCheck, cfgLoopElim, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, declObligations, passiveVC, betaReduce] -/
+/--
+info: true: [hoistNondetChoices, typeCheck, cfgLoopElim, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, declObligations, passiveVC, betaReduce, lambdaLift]
+-/
 #guard_msgs in #eval do
   let (ran, _) ← runUnder .usp
   IO.println s!"{ran == phasesOf .usp}: {ran}"

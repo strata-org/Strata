@@ -230,7 +230,7 @@ private def validation (names : List String) : Except String String := do
   | .error e => pure e
 
 /--
-info: Except.ok "phase #17 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`"
+info: Except.ok "phase #18 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`"
 -/
 #guard_msgs in
 #eval validation wpThenCSE
@@ -239,7 +239,7 @@ info: Except.ok "phase #17 `commonSubexprElim` requires `noInits` but preceding 
 nameable under `--vcgen wp`, the same list is rejected with the same diagnostic. -/
 
 /--
-info: Except.ok "phase #17 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`"
+info: Except.ok "phase #18 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noLambdas, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`"
 -/
 #guard_msgs in
 #eval show Except String String from do
@@ -255,7 +255,7 @@ info: Except.ok "phase #17 `commonSubexprElim` requires `noInits` but preceding 
 
 /-! The rewrite loop reduces the redexes of procedure bodies only, so it does not establish
 `noBetaRedexes`, which the back end requires: the default order of `--vcgen wp`, which ends with
-`betaReduce`, is accepted, and the same order without its final `betaReduce` is rejected. -/
+`betaReduce` and `lambdaLift`, is accepted, and the same order without those two is rejected. -/
 
 /-- The phase names of the `--vcgen wp` order. -/
 private def wpOrder : List String :=
@@ -266,9 +266,9 @@ private def wpOrder : List String :=
 #eval validation wpOrder
 
 /--
-info: Except.ok "phase #16 `the verification back end` requires `noBetaRedexes` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`"
+info: Except.ok "phase #16 `the verification back end` requires:\n  • `noBetaRedexes`: preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`\n  • `noLambdas`: preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`"
 -/
 #guard_msgs in
-#eval validation (wpOrder.dropLast)
+#eval validation (wpOrder.dropLast.dropLast)
 
 end Strata.WPGlobalNameTest

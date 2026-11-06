@@ -34,7 +34,7 @@ private def lemmaPhases (unroll : Bool) : List Core.PipelinePhase :=
    Core.passSimplify, Core.passRecursiveAxioms opts, Core.assertPhase .hasObligationForm,
    Core.assertPhase .noProcedureContracts, Core.passFunctionInlining, Core.passBetaReduce]
   ++ (if unroll then [Core.passUnrollBoundedQuantifiers] else [])
-  ++ [Core.passFoldAxioms, Core.passEqualitySimplification]
+  ++ [Core.passFoldAxioms, Core.passEqualitySimplification, Core.passLambdaLift]
 
 private def lemmaPipeline (unroll : Bool) :
     Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) :=
@@ -310,7 +310,7 @@ private def wpOpts : Core.VerifyOptions := { opts with vcgen := .wp }
 private def wpPipeline (unroll : Bool) :
     Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) :=
   (Core.validatePipeline (Core.corePipelinePhases wpOpts
-    ++ (if unroll then [Core.passUnrollBoundedQuantifiers] else []))).toOption
+    ++ (if unroll then [Core.passUnrollBoundedQuantifiers, Core.passLambdaLift] else []))).toOption
 
 #guard (wpPipeline true).isSome && (wpPipeline false).isSome
 
