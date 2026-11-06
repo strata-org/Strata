@@ -361,38 +361,55 @@ end
 
 end TypeAnnotations
 
+/-- Push `e`'s expression onto `acc`, if it has one. -/
+private def pushExprOrNondet (acc : Array Expression.Expr) (e : ExprOrNondet Expression) :
+    Array Expression.Expr :=
+  match e with
+  | .det e => acc.push e
+  | .nondet => acc
+
+mutual
+/-- Push the user-facing expressions of `s` onto `acc`, in program order: a
+    guard before its branches or body, a loop's measure and invariants before
+    its body. An accumulator rather than concatenation, because nested blocks
+    concatenated with `++` at every level cost time quadratic in the nesting
+    depth, and symbolic evaluation nests a block per path split. -/
+def Statement.collectExprsInto (acc : Array Expression.Expr) (s : Statement) :
+    Array Expression.Expr :=
+  match s with
+  | .cmd (.cmd (.assert _ e _)) => acc.push e
+  | .cmd (.cmd (.assume _ e _)) => acc.push e
+  | .cmd (.cmd (.cover _ e _)) => acc.push e
+  | .cmd (.cmd (.init _ _ e _)) => pushExprOrNondet acc e
+  | .cmd (.cmd (.set _ e _)) => pushExprOrNondet acc e
+  | .cmd (.call _ args _) => args.foldl (fun acc a => match a with
+      | .inArg e => acc.push e
+      | _ => acc) acc
+  | .block _ ss _ => Statements.collectExprsInto acc ss
+  | .ite c tss ess _ =>
+    Statements.collectExprsInto (Statements.collectExprsInto (pushExprOrNondet acc c) tss) ess
+  | .loop g measure inv body _ =>
+    let acc := pushExprOrNondet acc g
+    let acc := match measure with | some m => acc.push m | none => acc
+    Statements.collectExprsInto (inv.foldl (fun acc p => acc.push p.2) acc) body
+  | .exit _ _ => acc
+  | .typeDecl _ _ => acc
+
+/-- `Statement.collectExprsInto` over a list of statements, in order. -/
+def Statements.collectExprsInto (acc : Array Expression.Expr) (ss : List Statement) :
+    Array Expression.Expr :=
+  match ss with
+  | [] => acc
+  | s :: rest => Statements.collectExprsInto (Statement.collectExprsInto acc s) rest
+end
+
 /-- Collect all user-facing expressions from a statement. -/
-def Statement.collectExprs :
-    Statement → List Expression.Expr
-  | .cmd (.cmd (.assert _ e _)) => [e]
-  | .cmd (.cmd (.assume _ e _)) => [e]
-  | .cmd (.cmd (.cover _ e _)) => [e]
-  | .cmd (.cmd (.init _ _ (.det e) _)) => [e]
-  | .cmd (.cmd (.set _ (.det e) _)) => [e]
-  | .cmd (.call _ args _) => args.filterMap fun
-      | .inArg e => some e
-      | _ => none
-  | .block _ ss _ => ss.flatMap Statement.collectExprs
-  | .ite (.det c) tss ess _ =>
-    [c] ++ tss.flatMap Statement.collectExprs ++
-    ess.flatMap Statement.collectExprs
-  | .ite .nondet tss ess _ =>
-    tss.flatMap Statement.collectExprs ++
-    ess.flatMap Statement.collectExprs
-  | .loop (.det g) measure inv body _ =>
-    [g] ++ measure.toList ++
-    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
-  | .loop .nondet measure inv body _ =>
-    measure.toList ++
-    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
-  | .cmd (.cmd (.init _ _ .nondet _)) => []
-  | .cmd (.cmd (.set _ .nondet _)) => []
-  | .exit _ _ => []
-  | .typeDecl _ _ => []
+def Statement.collectExprs (s : Statement) : List Expression.Expr :=
+  (Statement.collectExprsInto #[] s).toList
 
 /-- Collect all user-facing expressions from a list of statements. -/
 def Statements.collectExprs (ss : Statements) : List Expression.Expr :=
-  ss.flatMap Statement.collectExprs
+  (Statements.collectExprsInto #[] ss).toList
 
 ---------------------------------------------------------------------
 

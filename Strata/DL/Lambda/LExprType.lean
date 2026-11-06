@@ -64,6 +64,66 @@ def LExpr.typeCheck {T : LExprParams} (ctx : List LMonoTy) : LExpr T.mono → Op
     guard (ty1 == ty2)
     some .bool
 
+/-! ### `LExpr.typeCheck`'s rules for one node
+
+The `app`, `ite` and `eq` rules of `LExpr.typeCheck`, as functions of the
+children's types, for callers that compute those types another way (such as the
+memoized check of common subexpression elimination). `LExpr.typeCheck` keeps
+its rules inline, because the proofs about it unfold its body; the
+`typeCheck_app`, `typeCheck_ite` and `typeCheck_eq` lemmas below state that
+each of its cases is the corresponding rule, so the two cannot drift apart. -/
+
+/-- The type of an application whose function has type `fty` and whose argument
+has type `aty`: the codomain of `fty`, if `fty` is an arrow from `aty`. -/
+@[expose]
+def LMonoTy.appTy? (fty aty : LMonoTy) : Option LMonoTy := do
+  let (dom, cod) ← fty.isArrow
+  guard (dom == aty)
+  some cod
+
+/-- The type of `if c then t else e` with `c : cty`, `t : tty` and `e : ety`:
+`tty`, if `cty` is `bool` and the branches agree. -/
+@[expose]
+def LMonoTy.iteTy? (cty tty ety : LMonoTy) : Option LMonoTy := do
+  guard (cty == .bool)
+  guard (tty == ety)
+  some tty
+
+/-- The type of `e1 == e2` with `e1 : ty1` and `e2 : ty2`: `bool`, if the sides
+agree. -/
+@[expose]
+def LMonoTy.eqTy? (ty1 ty2 : LMonoTy) : Option LMonoTy := do
+  guard (ty1 == ty2)
+  some .bool
+
+/-- `LExpr.typeCheck` types an application by typing its function and its
+argument, then applying `LMonoTy.appTy?` to the two types. -/
+theorem LExpr.typeCheck_app {T : LExprParams} (ctx : List LMonoTy) (m : T.mono.base.Metadata)
+    (fn arg : LExpr T.mono) :
+    LExpr.typeCheck ctx (.app m fn arg) = (do
+      let fty ← LExpr.typeCheck ctx fn
+      let aty ← LExpr.typeCheck ctx arg
+      LMonoTy.appTy? fty aty) := rfl
+
+/-- `LExpr.typeCheck` types `if c then t else e` by typing the condition and
+both branches, then applying `LMonoTy.iteTy?` to the three types. -/
+theorem LExpr.typeCheck_ite {T : LExprParams} (ctx : List LMonoTy) (m : T.mono.base.Metadata)
+    (c t e : LExpr T.mono) :
+    LExpr.typeCheck ctx (.ite m c t e) = (do
+      let cty ← LExpr.typeCheck ctx c
+      let tty ← LExpr.typeCheck ctx t
+      let ety ← LExpr.typeCheck ctx e
+      LMonoTy.iteTy? cty tty ety) := rfl
+
+/-- `LExpr.typeCheck` types `e1 == e2` by typing both sides, then applying
+`LMonoTy.eqTy?` to the two types. -/
+theorem LExpr.typeCheck_eq {T : LExprParams} (ctx : List LMonoTy) (m : T.mono.base.Metadata)
+    (e1 e2 : LExpr T.mono) :
+    LExpr.typeCheck ctx (.eq m e1 e2) = (do
+      let ty1 ← LExpr.typeCheck ctx e1
+      let ty2 ← LExpr.typeCheck ctx e2
+      LMonoTy.eqTy? ty1 ty2) := rfl
+
 /--
 Derive a type substitution from the `.op` type annotation alone, by unifying it
 against the function's generic type. On annotated terms (i.e., terms that have

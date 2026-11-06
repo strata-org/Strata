@@ -1,0 +1,13 @@
+Successfully parsed.
+CSEPathSplits.core.st(28, 65) [b0]: ✅ pass
+CSEPathSplits.core.st(19, 2) [r_is_y]: ✅ pass
+CSEPathSplits.core.st(29, 65) [b1]: ✅ pass
+CSEPathSplits.core.st(30, 65) [b2]: ✅ pass
+CSEPathSplits.core.st(31, 65) [b3]: ✅ pass
+CSEPathSplits.core.st(32, 65) [b4]: ✅ pass
+CSEPathSplits.core.st(33, 65) [b5]: ✅ pass
+CSEPathSplits.core.st(34, 65) [b6]: ✅ pass
+CSEPathSplits.core.st(35, 65) [b7]: ✅ pass
+CSEPathSplits.core.st(36, 65) [b8]: ✅ pass
+CSEPathSplits.core.st(37, 65) [b9]: ✅ pass
+All 11 goals passed.
