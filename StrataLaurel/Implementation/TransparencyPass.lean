@@ -362,17 +362,32 @@ private partial def rewriteQuantifierBodiesM (emitProofBlocks : Bool)
         -- this also returns `some` — recursing would revisit a `functionalize`d tree to
         -- no effect.
         pure (some (functionalize nonExternalNames e))
-    | _ => pure none)
-    (post := fun e =>
-    match e.val with
-    | .While cond invs dec body postTest =>
-      let rewriteSpec := functionalize nonExternalNames
+    | .While cond invs dec body postTest => do
       -- Only the invariants and `decreases` are spec positions; `cond` and `body`
-      -- are ordinary imperative code and must keep their procedure calls. Runs in
-      -- `post`, so `cond`/`body` still get the generic recursion (a quantifier in
-      -- either is rewritten as usual) and only the spec positions are stripped.
-      pure ⟨.While cond (invs.map rewriteSpec) (dec.map rewriteSpec) body postTest, e.source⟩
-    | _ => pure e) expr
+      -- are ordinary imperative code and must keep their procedure calls, so they
+      -- get the explicit recursion here. The spec positions must stay pure
+      -- expressions: the proof-block scaffolding the `.Quantifier` case emits is
+      -- a block expression with uninitialized `$proof_N`/`$havoc_N` declarations,
+      -- which nothing lowers in an invariant (`LiftImperativeExpressions`
+      -- deliberately leaves invariants alone, and `InlineLocalVariables` cannot
+      -- fold a declaration without an initializer), so the schema pass would
+      -- reject it ("local variables must have initializers in transparent bodies
+      -- or contracts"). That is why this case runs in `pre` — the generic
+      -- recursion would hand each invariant's quantifier to the `.Quantifier`
+      -- case above first. No invariant obligation is lost by only
+      -- `functionalize`-stripping the spec positions: `LoopInvariantWellFormedness`
+      -- already planted a copy of every invariant in statement position before
+      -- the loop, and the proof steps the contract pass injects are checked
+      -- there, where the scaffolding is lowerable. `decreases` gets no such
+      -- copy, so proof steps stripped from a measure are not checked anywhere --
+      -- which is the behavior this position already had from the old post-hook
+      -- stripping, not something this case introduces.
+      let cond ← rewriteQuantifierBodiesM emitProofBlocks nonExternalNames cond
+      let body ← rewriteQuantifierBodiesM emitProofBlocks nonExternalNames body
+      let rewriteSpec := functionalize nonExternalNames
+      pure (some ⟨.While cond (invs.map rewriteSpec) (dec.map rewriteSpec) body postTest, e.source⟩)
+    | _ => pure none)
+    (post := fun e => pure e) expr
 
 /-- Entry point for `rewriteQuantifierBodiesM`, starting the guard counter at 0. -/
 private def rewriteQuantifierBodies (emitProofBlocks : Bool) (nonExternalNames : Std.HashSet String)

@@ -199,4 +199,44 @@ procedure nested()
 };
 #end
 
+/-! ## A loop invariant gets no proof block, even in Verify mode
+
+    An invariant is a spec position that must stay a pure expression: the
+    scaffolding is a block expression whose `$proof_N`/`$havoc_N` declarations
+    have no initializers, and nothing lowers it there (`LiftImperativeExpressions`
+    deliberately leaves invariants alone), so the Core schema pass would reject
+    it. The body's proof steps are stripped instead; their obligations are
+    discharged by the statement-position copy of the invariant that
+    `LoopInvariantWellFormedness` plants before the loop. -/
+
+/--
+info: procedure loopInvariant$asFunction()
+  opaque;
+procedure loopInvariant()
+  opaque
+{
+  var b: bool := true;
+  while(b)
+    invariant forall(x: bool) => {
+    x
+  } {
+    b := false
+  }
+};
+-/
+#guard_msgs in
+#eval printTransparency .Verify <|
+#strata
+program Laurel;
+procedure loopInvariant()
+  opaque
+{
+  var b: bool := true;
+  while (b)
+    invariant forall(x: bool) => { assume x; x } {
+    b := false
+  }
+};
+#end
+
 end Laurel

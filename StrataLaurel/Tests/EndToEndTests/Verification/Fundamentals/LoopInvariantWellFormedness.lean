@@ -132,3 +132,65 @@ procedure preStateIsNotEnough() entry opaque {
   }
 };
 #end
+
+/-! ## A quantifier in an invariant keeps its call's obligation
+
+The contract pass injects `pureDiv`'s precondition assert inside the
+quantifier's body, and the transparency pass must strip it from the invariant
+— a proof block is a block expression with uninitialized declarations, which
+nothing lowers in a spec position. The obligation is not lost: the
+well-formedness block planted before the loop carries the same assert in
+statement position, so unguarded it fails at the loop head, and guarded by a
+preceding invariant it is discharged and the loop verifies. The quantifier's
+goal is reflexive on purpose -- the invariant itself is trivially provable, so
+the precondition obligation is the only thing each case can fail on. Before the
+transparency pass learned to keep loop spec positions pure, both of these
+programs were refused with "local variables must have initializers in
+transparent bodies or contracts". -/
+
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+
+procedure pureDiv(x: int, y: int): int
+  requires y != 0
+{
+  return x / y
+};
+
+procedure quantifiedCallInInvariantUnchecked() entry opaque {
+  var d: int := 1;
+  var i: int := 0;
+  while (i < 10)
+    invariant forall(k: int) => 0 <= k ==> pureDiv(k, d) == pureDiv(k, d)
+//                                         ^^^^^^^^^^^^^ error: precondition does not hold
+//                                                          ^^^^^^^^^^^^^ error: precondition does not hold
+  {
+    d := d - 1;
+    i := i + 1
+  }
+};
+#end
+
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+
+procedure pureDiv(x: int, y: int): int
+  requires y != 0
+{
+  return x / y
+};
+
+procedure quantifiedCallInInvariantChecked() entry opaque {
+  var d: int := 1;
+  var i: int := 0;
+  while (i < 10)
+    invariant d > 0
+    invariant forall(k: int) => 0 <= k ==> pureDiv(k, d) == pureDiv(k, d)
+  {
+    d := d + 1;
+    i := i + 1
+  }
+};
+#end
