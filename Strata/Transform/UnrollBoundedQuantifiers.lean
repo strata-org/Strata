@@ -9,6 +9,7 @@ public import Strata.Languages.Core.PipelinePhase
 public import Strata.Languages.Core.NameMangling
 public import Strata.Languages.Core.Function
 public import Strata.Languages.Core.Factory
+import Strata.Transform.FoldConnectives
 import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Lambda.LExprEval
 import all Strata.DL.Lambda.IntBoolFactory
@@ -37,6 +38,7 @@ check. -/
 namespace Core.UnrollBoundedQuantifiers
 
 open Lambda Imperative
+open FoldConnectives (boolOpOf? foldConnectives)
 
 def selectName : String := seqSelectFunc.name.name
 def selectBangName : String := seqSelectUnsafeFunc.name.name
@@ -227,60 +229,6 @@ def evalFuel : Nat := 200
 
 def emptyEnv : Lambda.Env CoreLParams := Lambda.Env.mk (fun _ => none)
 
-/-! The connectives are named by the factory functions the fold is built from, so
-the ops this recognizes cannot drift from the ops it emits. -/
-
-def andName : String := (boolAndFunc (T := CoreLParams)).name.name
-def orName : String := (boolOrFunc (T := CoreLParams)).name.name
-def impliesName : String := (boolImpliesFunc (T := CoreLParams)).name.name
-
-def boolConst? : LExpr CoreLParams.mono → Option Bool
-  | .const _ (.boolConst b) => some b
-  | _ => none
-
-/-- `(op base name, args)` of an application spine, if the head is an op. -/
-def opSpine? : LExpr CoreLParams.mono →
-    Option (String × List (LExpr CoreLParams.mono))
-  | .op _ o _ => some (baseName o.name, [])
-  | .app _ f a => (opSpine? f).map (fun (h, as) => (h, as ++ [a]))
-  | _ => none
-
-/-- `and`/`or`/`==>` with one constant argument; `binaryOp` needs both. -/
-def foldConnective (e : LExpr CoreLParams.mono) : LExpr CoreLParams.mono :=
-  match opSpine? e with
-  | some (h, [x, y]) =>
-    let bc : Bool → LExpr CoreLParams.mono := fun b => .const () (.boolConst b)
-    if h == andName then
-      match boolConst? x, boolConst? y with
-      | some false, _ | _, some false => bc false
-      | some true, _ => y
-      | _, some true => x
-      | _, _ => e
-    else if h == orName then
-      match boolConst? x, boolConst? y with
-      | some true, _ | _, some true => bc true
-      | some false, _ => y
-      | _, some false => x
-      | _, _ => e
-    else if h == impliesName then
-      match boolConst? x, boolConst? y with
-      | some false, _ | _, some true => bc true
-      | some true, _ => y
-      | _, _ => e
-    else e
-  | _ => e
-
-/-- Bottom-up `foldConnective`. -/
-def foldConnectives (e : LExpr CoreLParams.mono) : LExpr CoreLParams.mono :=
-  foldConnective <|
-    match e with
-    | .app m f a => .app m (foldConnectives f) (foldConnectives a)
-    | .abs m n t b => .abs m n t (foldConnectives b)
-    | .quant m k n t tr b => .quant m k n t tr (foldConnectives b)
-    | .ite m c t f => .ite m (foldConnectives c) (foldConnectives t) (foldConnectives f)
-    | .eq m a b => .eq m (foldConnectives a) (foldConnectives b)
-    | other => other
-
 /-- Definitional reduction of `e`. Equivalence-preserving, so running out of fuel
     leaves a partly reduced term equal to `e` rather than a wrong one. -/
 def evalTerm (F : @Lambda.Factory CoreLParams) (e : LExpr CoreLParams.mono) :
@@ -440,7 +388,7 @@ def binOpArgs? (name : String) : LExpr CoreLParams.mono →
     one need not hold of every index. -/
 def conjuncts : LExpr CoreLParams.mono → List (LExpr CoreLParams.mono)
   | e@(.app _ (.app _ (.op _ o _) x) y) =>
-    if baseName o.name == andName then conjuncts x ++ conjuncts y else [e]
+    if boolOpOf? o.name == some .And then conjuncts x ++ conjuncts y else [e]
   | e => [e]
 
 /-- Conjuncts of the antecedents along `e`'s implication chain, empty if `e` is
@@ -448,7 +396,8 @@ def conjuncts : LExpr CoreLParams.mono → List (LExpr CoreLParams.mono)
     `G₁ ∧ G₂ → R` does. -/
 def antecedentConjuncts : LExpr CoreLParams.mono → List (LExpr CoreLParams.mono)
   | .app _ (.app _ (.op _ o _) g) r =>
-    if baseName o.name == impliesName then conjuncts g ++ antecedentConjuncts r
+    if boolOpOf? o.name == some .Implies then
+      conjuncts g ++ antecedentConjuncts r
     else []
   | _ => []
 

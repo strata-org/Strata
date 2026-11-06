@@ -495,20 +495,15 @@ def simplifyProcedure (base : Ctx) (proc : Procedure) : Procedure :=
     simplified as an assertion's condition would be, and the variable is bound again. The
     trigger is kept as written. -/
 def simplifyLemma (base : Ctx) (e : Expression.Expr) : Expression.Expr :=
-  go (numForalls e) 0 e
+  go (numForalls e) e
 where
   numForalls : Expression.Expr → Nat
     | .quant _ .all _ _ _ body => numForalls body + 1
     | _ => 0
-  go : Nat → Nat → Expression.Expr → Expression.Expr
-    | n + 1, i, .quant m .all name ty tr body =>
-      let x : CoreIdent := ⟨s!"$__lemma{i}_{name}", ()⟩
-      -- Bind `x` again: `substFvarsLifting` lifts the bound variable under each binder it
-      -- passes, and matches `x` by name, whatever type annotation simplification gave it.
-      .quant m .all name ty tr
-        (Lambda.LExpr.substFvarsLifting (go n (i + 1) (Lambda.LExpr.varOpen 0 (x, ty) body))
-          [(x, .bvar m 0)])
-    | _, _, e => simplifyExpr base e
+  go : Nat → Expression.Expr → Expression.Expr
+    | n + 1, .quant m .all name ty tr body =>
+      .quant m .all name ty tr (underBinder ty body fun b => go n b.val).fst
+    | _, e => simplifyExpr base e
 
 /-- Simplify every procedure and lemma in a program. The context, and with it the folding factory,
     is built once and shared by every procedure, specification clause and lemma. The flag

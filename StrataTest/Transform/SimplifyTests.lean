@@ -1869,7 +1869,8 @@ procedure p (x : int)
 
 `simplifyExpr` does not descend under a binder, so the phase opens a lemma's outer
 `forall`s, simplifies the body, and binds the variables again. Here `dup(3)` folds to `6`
-and `dup` on the bound `x` expands, its argument being a single node. -/
+and `dup` on the bound `x` expands, its argument being a single node. Nested
+`forall`s are each bound again to their own variable. -/
 
 private def lemmaBody :=
 #strata
@@ -1878,6 +1879,7 @@ program Core;
 inline function dup (v : int) : int { int.add(v, v) }
 
 lemma [six]: forall x : int :: dup(3) == int.add(dup(x), int.sub(6, dup(x)));
+lemma [two]: forall x : int :: forall y : int :: dup(x) == dup(y);
 #end
 
 /-- info: program Core;
@@ -1885,7 +1887,8 @@ lemma [six]: forall x : int :: dup(3) == int.add(dup(x), int.sub(6, dup(x)));
 inline function dup (v : int) : int {
   int.add(v, v)
 }
-lemma [six] (x : int): 6 == int.add(int.add(x, x), int.sub(6, int.add(x, x))); -/
+lemma [six] (x : int): 6 == int.add(int.add(x, x), int.sub(6, int.add(x, x)));
+lemma [two] (x : int, y : int): int.add(x, x) == int.add(y, y); -/
 #guard_msgs in
 #eval simplifyAndPrint lemmaBody
 

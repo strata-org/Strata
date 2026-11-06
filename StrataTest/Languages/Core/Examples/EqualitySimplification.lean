@@ -20,8 +20,9 @@ terms, and folds the result. A goal that becomes `true` is proved, and a
 
 Most tests verify a program with the phase added after `simplify` in the
 default order, under a discharge that proves every query it receives and counts
-them: a goal the phase decides never reaches it. The lemma tests print the
-program after the phase alone. -/
+them: a goal the phase decides never reaches it. Most tests from the lemma
+section on print the program after the phase alone, and an agreement block at
+the end of each section verifies them with the solver. -/
 
 namespace Strata.EqualitySimplificationTest
 
@@ -621,13 +622,112 @@ discharge calls: 2
 #eval countedDischarge contradictionPgm
   (options := { Core.VerifyOptions.quiet with checkMode := .deductiveAssumingSatisfiablePaths })
 
+/-! A contradiction in an assumption that gives no fact is missed: the goal
+folds to `false` and, under `deductiveAssumingSatisfiablePaths`, fails without
+a solver call. -/
+
+private def unseenContradictionPgm :=
+#strata
+program Core;
+procedure P()
+{
+  assume forall x : int :: int.lt(x, x);
+  assert [unseenContradiction]: str.in.re("b", re.*(str.to.re("a")));
+};
+#end
+
+/--
+info:
+
+Obligation unseenContradiction: failed!
+
+Result obtained during evaluation.
+unseenContradiction: fail
+discharge calls: 0
+-/
+#guard_msgs in
+#eval countedDischarge unseenContradictionPgm
+  (options := { Core.VerifyOptions.quiet with
+    checkMode := .deductiveAssumingSatisfiablePaths })
+
+/-! A contradiction the facts do not expose is not detected, so under
+`deductiveAssumingSatisfiablePaths` a goal folded to `false` fails. -/
+
+private def undetectedBvPgm :=
+#strata
+program Core;
+procedure P(x : int, a : bv W32)
+{
+  assume int.gt(x, 5);
+  assume x == 1;
+  assert [undetected]: !(bv32.and(a, bv{32}(0)) == bv{32}(0));
+};
+#end
+
+/--
+info: undetected: pass
+discharge calls: 1
+
+
+Obligation undetected: failed!
+
+Result obtained during evaluation.
+undetected: fail
+discharge calls: 0
+-/
+#guard_msgs in
+#eval do
+  countedDischarge undetectedBvPgm
+  countedDischarge undetectedBvPgm (options :=
+    { Core.VerifyOptions.quiet with
+      checkMode := .deductiveAssumingSatisfiablePaths })
+
+/-! Quantified assumptions add no facts, so their contradiction is not
+detected and under `deductiveAssumingSatisfiablePaths` the goal fails. -/
+
+private def undetectedQuantPgm :=
+#strata
+program Core;
+function g (y : int) : bool;
+procedure U()
+{
+  assume forall y : int :: g(y);
+  assume exists y : int :: !g(y);
+  assert [undetectedQuant]: exists y : int :: int.lt(1, 0) && g(y);
+};
+#end
+
+/--
+info: undetectedQuant: pass
+discharge calls: 1
+
+
+Obligation undetectedQuant: failed!
+
+Result obtained during evaluation.
+undetectedQuant: fail
+discharge calls: 0
+-/
+#guard_msgs in
+#eval do
+  countedDischarge undetectedQuantPgm
+  countedDischarge undetectedQuantPgm (options :=
+    { Core.VerifyOptions.quiet with
+      checkMode := .deductiveAssumingSatisfiablePaths })
+
 /-! ## Agreement with the solver
 
-Every program above, verified with the solver three times: without the phases,
-with `equalitySimplification`, and with `foldAxioms` before it. Each obligation
-gets the same verdict in the three runs, both in deductive mode and in
-`deductiveAssumingSatisfiablePaths`, the mode in which a goal folded to `false` is
-reported failing without a solver. -/
+Each program in `allAgreeWithSolver`'s list, verified with the solver three
+times: without the phases, with `equalitySimplification`, and with `foldAxioms`
+before it. Each obligation gets the same verdict in the three runs, both in
+deductive mode and in `deductiveAssumingSatisfiablePaths`, the mode in which a
+goal folded to `false` is reported failing without a solver.
+
+The list leaves out `unseenContradictionPgm`, `undetectedBvPgm` and
+`undetectedQuantPgm`. Each has a goal on a contradictory path that the phase
+does not detect and folds to `false`, so in
+`deductiveAssumingSatisfiablePaths` the phase's run fails where the solver
+proves the goal. The end of the file checks them in deductive mode. -/
 
 /-- Verify `p` with the solver under `checkMode`, without the phases, with
     `equalitySimplification`, and with `foldAxioms` before it, and print each
@@ -651,7 +751,8 @@ private def agreesWithSolver (checkMode : Core.VerificationMode) (p : StrataDDM.
       else IO.println s!"DISAGREE {verdict a} / {verdict b} / {verdict c}"
   | .error e, _, _ | _, .error e, _ | _, _, .error e => IO.println s!"error: {e}"
 
-/-- Every program above, verified by `agreesWithSolver` under `checkMode`. -/
+/-- Each program in the list, verified by `agreesWithSolver` under
+    `checkMode`. -/
 private def allAgreeWithSolver (checkMode : Core.VerificationMode) : IO Unit := do
   for p in [literalPgm, constructorPgm, applicationPgm, booleanPgm, coverPgm, residualPgm,
       unusedPgm, foldAxiomsPgm, axiomPgm, conjunctionPgm, definitionPgm, shadowPgm,
@@ -659,6 +760,14 @@ private def allAgreeWithSolver (checkMode : Core.VerificationMode) : IO Unit := 
     agreesWithSolver checkMode p
   agreesWithSolver checkMode foldFirstPgm (after := "typeCheck")
   agreesWithSolver checkMode depthPgm (after := "typeCheck")
+
+/-- Every program in `ps`, verified by `agreesWithSolver` in both modes. -/
+private def agreeInBothModes (ps : List StrataDDM.Program) : IO Unit := do
+  let modes : List Core.VerificationMode :=
+    [.deductive, .deductiveAssumingSatisfiablePaths]
+  for mode in modes do
+    for p in ps do
+      agreesWithSolver mode p
 
 /--
 info: intFolds: pass
@@ -747,12 +856,18 @@ beyondDepth: pass
 /-! ## Lemmas
 
 A lemma is rewritten under the ground axioms declared before it, as an `assert`
-is. Each test prints the program after the phase alone; the agreement section
-at the end verifies them. -/
+is. -/
 
-/-- Run the phase alone on `p` and print the result. -/
-private def rewriteAndPrint (p : StrataDDM.Program) : IO Unit :=
-  match Core.Transform.run (parse p)
+/-- Run the phase alone on `p`, type checked first when `typeCheck` is set, and
+    print the result. -/
+private def rewriteAndPrint (p : StrataDDM.Program)
+    (typeCheck : Bool := false) : IO Unit := do
+  let program ← if typeCheck then
+      match Core.typeCheck .quiet (parse p) with
+      | .ok typed => pure typed
+      | .error e => throw (IO.userError s!"{e}")
+    else pure (parse p)
+  match Core.Transform.run program
       Core.EqualitySimplification.runEqualitySimplification
       { Core.Transform.CoreTransformState.emp with
         factory := Core.Factory } with
@@ -930,14 +1045,1829 @@ quantLemma: pass
 quantAssert: pass
 -/
 #guard_msgs in
+#eval agreeInBothModes
+  [lemmaPgm, lemmaOrderPgm, lemmaContradictionPgm, lemmaQuantPgm]
+
+/-! ## Folding under quantifiers
+
+Quantifier bodies are folded, and a quantifier whose body does not use its
+variable is replaced by its body. -/
+
+/-! Over builtin types, an uninterpreted type and a datatype. -/
+
+private def vacuousQuantPgm :=
+#strata
+program Core;
+type Opaque;
+datatype Option () { None(), Some(val: int) };
+const c : int;
+function hint (a : bv W32) : bool;
+axiom [cOne]: c == 1;
+lemma [unusedVariables]: (exists a : bv W32 :: { hint(a) } true) &&
+  (forall b : int :: c == 1);
+lemma [opaqueType]: forall t : Opaque :: c == 1;
+lemma [overOption]: exists o : Option :: c == 1;
+#end
+
+/--
+info: program Core;
+
+type Opaque;
+datatype Option {
+  None(),
+  Some(val : int)
+};
+function c () : int;
+function hint (a : bv W32) : bool;
+axiom [cOne]: c == 1;
+lemma [unusedVariables]: true;
+lemma [opaqueType]: true;
+lemma [overOption]: true;
+-/
+#guard_msgs in
+#eval rewriteAndPrint vacuousQuantPgm
+
+/-! The goals of a program with no facts are folded too. -/
+
+private def noFactsQuantPgm :=
+#strata
+program Core;
+lemma [noFacts]: (exists a : int :: true) && (exists b : int :: true);
+#end
+
+/--
+info: program Core;
+
+lemma [noFacts]: true;
+-/
+#guard_msgs in
+#eval rewriteAndPrint noFactsQuantPgm
+
+/-! Bodies fold under their quantifier; one whose folded body uses its
+variable keeps the quantifier and its trigger. -/
+
+private def mixedQuantPgm :=
+#strata
+program Core;
+const c : int;
+function g (x : int) : bool;
+function h (x : int, y : int) : bool;
+axiom [cOne]: c == 1;
+lemma [closedConjunct]: exists x : int :: int.lt(1, 0) && g(x);
+lemma [keptQuantifier]: forall y : int :: int.add(c, 1) == 3 || g(y);
+lemma [withTrigger]: forall x : int :: { g(x) } int.lt(1, 0) || g(x);
+lemma [lifted]: forall x : int :: exists y : int :: int.lt(1, 0) || h(x, y);
+#end
+
+/--
+info: program Core;
+
+function c () : int;
+function g (x : int) : bool;
+function h (x : int, y : int) : bool;
+axiom [cOne]: c == 1;
+lemma [closedConjunct]: false;
+lemma [keptQuantifier] (y : int): g(y);
+lemma [withTrigger] (x : int) { g(x) }
+  : g(x);
+lemma [lifted] (x : int): exists y : int :: h(x, y);
+-/
+#guard_msgs in
+#eval rewriteAndPrint mixedQuantPgm
+
+/-! Nested and shadowing quantifiers; a quantifier inside an abstraction is
+folded too. -/
+
+private def nestedQuantPgm :=
+#strata
+program Core;
+function g (x : int) : bool;
+function h (x : int, y : int) : bool;
+function holds (k : int -> bool) : bool;
+lemma [nested]: forall x : int :: exists y : int :: g(x);
+lemma [shadowed]: forall x : int :: exists x : int :: g(x);
+lemma [mentionsX]: exists x : int :: g(x);
+lemma [mentionsBoth]: forall x : int :: exists y : int :: h(x, y);
+lemma [inLambda]:
+  holds(fun x : int => exists y : int :: int.lt(1, 0) && g(y));
+#end
+
+/--
+info: program Core;
+
+function g (x : int) : bool;
+function h (x : int, y : int) : bool;
+function holds (k : int -> bool) : bool;
+lemma [nested] (x : int): g(x);
+lemma [shadowed]: exists x : int :: g(x);
+lemma [mentionsX]: exists x : int :: g(x);
+lemma [mentionsBoth] (x : int): exists y : int :: h(x, y);
+lemma [inLambda]: holds(fun x : int => false);
+-/
+#guard_msgs in
+#eval rewriteAndPrint nestedQuantPgm
+
+/-! Quantifiers in other positions and in a definition body. An assumption
+that folds to `false` leaves the goals after it alone. -/
+
+private def positionsQuantPgm :=
+#strata
+program Core;
+const c : int;
+function g (x : int) : bool;
+axiom [cOne]: c == 1;
+lemma [inCondition]:
+  if (exists x : int :: int.lt(1, 0) && g(x)) then g(1) else g(2);
+lemma [inEquality]: (forall x : int :: int.lt(0, 1) || g(x)) == g(0);
+procedure P()
+{
+  assert [vacuous]: exists x : int :: c == 1;
+  cover [vacuousCover]: forall x : int :: int.lt(1, 0) && g(x);
+  assume exists x : int :: int.lt(1, 0) && g(x);
+  assert [afterDead]: exists x : int :: c == 1;
+};
+procedure D()
+{
+  var b : bool := exists x : int :: int.lt(1, 0) && g(x);
+  assert [fromDef]: b;
+};
+#end
+
+/--
+info: program Core;
+
+function c () : int;
+function g (x : int) : bool;
+axiom [cOne]: c == 1;
+lemma [inCondition]: g(2);
+lemma [inEquality]: true == g(0);
+procedure P ()
+{
+  assert [vacuous]: true;
+  cover [vacuousCover]: false;
+  assume [assume_0]: exists x : int :: int.lt(1, 0) && g(x);
+  assert [afterDead]: exists x : int :: c == 1;
+};
+procedure D ()
+{
+  var b : bool := exists x : int :: int.lt(1, 0) && g(x);
+  assert [fromDef]: false;
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint positionsQuantPgm
+
+/-! ### Agreement with the solver
+
+Each program of this section, verified by `agreesWithSolver` in both modes. -/
+
+/--
+info: unusedVariables: pass
+opaqueType: pass
+overOption: pass
+noFacts: pass
+closedConjunct: fail
+keptQuantifier: fail
+withTrigger: fail
+lifted: other
+nested: fail
+shadowed: other
+mentionsX: other
+mentionsBoth: other
+inLambda: other
+inCondition: fail
+inEquality: fail
+vacuous: pass
+vacuousCover: fail
+afterDead: pass
+fromDef: fail
+unusedVariables: pass
+opaqueType: pass
+overOption: pass
+noFacts: pass
+
+
+Obligation closedConjunct: failed!
+
+Result obtained during evaluation.
+
+
+Obligation closedConjunct: failed!
+
+Result obtained during evaluation.
+closedConjunct: fail
+keptQuantifier: fail
+withTrigger: fail
+lifted: other
+nested: fail
+shadowed: other
+mentionsX: other
+mentionsBoth: other
+inLambda: other
+
+
+Obligation fromDef: failed!
+
+Result obtained during evaluation.
+
+
+Obligation fromDef: failed!
+
+Result obtained during evaluation.
+inCondition: fail
+inEquality: fail
+vacuous: pass
+vacuousCover: fail
+afterDead: pass
+fromDef: fail
+-/
+#guard_msgs in
+#eval agreeInBothModes
+  [vacuousQuantPgm, noFactsQuantPgm, mixedQuantPgm, nestedQuantPgm,
+    positionsQuantPgm]
+
+/-! ## A bitvector `and` with `0` or all ones
+
+The builtin bitvector `and` with `0` is `0`, and with all ones is its other
+argument.
+
+Absorption at each width the factory defines, on either side, nested, and
+once evaluation exposes the constant; `or`, `xor` and a mask that is not all
+ones are left alone. -/
+
+private def absorbPgm :=
+#strata
+program Core;
+procedure P(a : bv W32, b : bv W32)
+{
+  assert [maskZero]: bv32.and(a, bv{32}(0)) == bv{32}(0);
+  assert [zeroFirst]: bv32.and(bv{32}(0), a) == bv{32}(0);
+  assert [allOnes]: bv32.and(a, bv{32}(4294967295)) == a;
+  assert [allOnesFirst]: bv32.and(bv{32}(4294967295), a) == a;
+  assert [nested]: bv32.and(bv32.and(a, bv{32}(0)), b) == bv{32}(0);
+  assert [exposed]: bv32.and(a,
+    if bv32.and(b, bv{32}(0)) == bv{32}(0) then bv{32}(0) else bv{32}(1))
+    == bv{32}(0);
+  assert [orZero]: bv32.or(a, bv{32}(0)) == bv{32}(0);
+  assert [xorAllOnes]: bv32.xor(a, bv{32}(4294967295)) == a;
+};
+procedure Q(a1 : bv W1, a8 : bv W8, a16 : bv W16, a64 : bv W64,
+    z : bv W128)
+{
+  assert [width1]: bv1.and(a1, bv{1}(1)) == a1;
+  assert [width8]: bv8.and(a8, bv{8}(255)) == a8;
+  assert [width16]: bv16.and(a16, bv{16}(65535)) == a16;
+  assert [width64]: bv64.and(a64, bv{64}(18446744073709551615)) == a64;
+  assert [width128]: bv128.and(z,
+    bv{128}(340282366920938463463374607431768211455)) == z;
+  assert [notAllOnes]: bv16.and(a16, bv{16}(255)) == a16;
+};
+#end
+
+/--
+info: program Core;
+
+procedure P (a : bv W32, b : bv W32)
+{
+  assert [maskZero]: true;
+  assert [zeroFirst]: true;
+  assert [allOnes]: true;
+  assert [allOnesFirst]: true;
+  assert [nested]: true;
+  assert [exposed]: true;
+  assert [orZero]: bv32.or(a, bv{32}(0)) == bv{32}(0);
+  assert [xorAllOnes]: bv32.xor(a, bv{32}(4294967295)) == a;
+};
+procedure Q (a1 : bv W1, a8 : bv W8, a16 : bv W16, a64 : bv W64, z : bv W128)
+{
+  assert [width1]: true;
+  assert [width8]: true;
+  assert [width16]: true;
+  assert [width64]: true;
+  assert [width128]: true;
+  assert [notAllOnes]: bv16.and(a16, bv{16}(255)) == a16;
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint absorbPgm
+
+/-! No address is outside the CIDR block `0.0.0.0/0`, so that goal folds to
+`false`. -/
+
+private def anyAddressPgm :=
+#strata
+program Core;
+datatype CIDR () { CIDR_Cons(network: bv W32, mask: bv W32) };
+procedure P(a : bv W32)
+{
+  assert [outsideAll]:
+    !(bv32.and(a, CIDR..mask(CIDR_Cons(bv{32}(0), bv{32}(0))))
+      == bv32.and(CIDR..network(CIDR_Cons(bv{32}(0), bv{32}(0))),
+                  CIDR..mask(CIDR_Cons(bv{32}(0), bv{32}(0)))));
+};
+#end
+
+/--
+info: program Core;
+
+datatype CIDR {
+  CIDR_Cons(network : bv W32, mask : bv W32)
+};
+procedure P (a : bv W32)
+{
+  assert [outsideAll]: false;
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint anyAddressPgm
+
+/-! Absorption in other positions, under quantifiers too, whose bodies are
+then folded; a trigger is left as written. -/
+
+private def positionsBvPgm :=
+#strata
+program Core;
+const c : bv W32;
+function g (x : bv W32) : bool;
+lemma [inLemma]: bv32.and(c, bv{32}(0)) == bv{32}(0);
+procedure P(a : bv W32)
+{
+  assert [inCondition]:
+    if bv32.and(a, bv{32}(0)) == bv{32}(0) then true else g(a);
+  assert [underExists]:
+    exists x : bv W32 :: bv32.and(x, bv{32}(0)) == bv{32}(0);
+  assert [boundAllOnes]:
+    forall x : bv W32 :: bv32.and(x, bv{32}(4294967295)) == x;
+  assert [inTrigger]: forall x : bv W32 :: { bv32.and(x, bv{32}(0)) }
+    g(bv32.and(x, bv{32}(0))) ==> g(x);
+  cover [inCover]: !(bv32.and(a, bv{32}(0)) == bv{32}(0));
+  var m : bv W32 := bv32.and(a, bv{32}(0));
+  assert [viaDefinition]: m == bv{32}(0);
+  assume !(bv32.and(a, bv{32}(0)) == bv{32}(0));
+  assert [afterDead]: bv32.and(a, bv{32}(0)) == bv{32}(0);
+};
+#end
+
+/--
+info: program Core;
+
+function c () : bv W32;
+function g (x : bv W32) : bool;
+lemma [inLemma]: true;
+procedure P (a : bv W32)
+{
+  assert [inCondition]: true;
+  assert [underExists]: true;
+  assert [boundAllOnes]: true;
+  assert [inTrigger]: forall x : (bv W32) ::  { bv32.and(x, bv{32}(0)) }
+    g(bv{32}(0)) ==> g(x);
+  cover [inCover]: false;
+  var m : bv W32 := bv32.and(a, bv{32}(0));
+  assert [viaDefinition]: true;
+  assume [assume_0]: !(bv32.and(a, bv{32}(0)) == bv{32}(0));
+  assert [afterDead]: bv32.and(a, bv{32}(0)) == bv{32}(0);
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint positionsBvPgm
+
+/-! The guard on `concreteEval`: a program function that replaces the
+builtin `and` has none, so it is not absorbed. Surface syntax cannot declare
+one, so the factory is built here. -/
+
+private def varA : Core.Expression.Expr := .fvar () ⟨"a", ()⟩ none
+
+/-- The builtin `and` at width `n` applied to `a` and `b`. -/
+private def bvAndAt (n : Nat) (a b : Core.Expression.Expr) :
+    Core.Expression.Expr :=
+  let op := toString (Core.CoreOp.bv ⟨n, .And⟩)
+  .app () (.app () (.op () ⟨op, ()⟩ none) a) b
+
+private def andZero : Core.Expression.Expr :=
+  bvAndAt 32 varA (.const () (.bitvecConst 32 0))
+
+private def shadowedAnd : Lambda.Factory Core.CoreLParams :=
+  Lambda.Factory.ofArray (Core.Factory.toArray.map fun fn =>
+    if fn.name.name == toString (Core.CoreOp.bv ⟨32, .And⟩) then
+      { fn with concreteEval := none }
+    else fn)
+
+#guard Core.EqualitySimplification.bvAndRule Core.Factory andZero ==
+  some (.const () (.bitvecConst 32 0))
+#guard (Core.EqualitySimplification.bvAndRule shadowedAnd andZero).isNone
+
+/-! Absorption at every width the factory defines an `and` for. -/
+
+private def andWidths : List Nat :=
+  Core.Factory.toArray.toList.filterMap fun fn =>
+    match Core.CoreOp.ofString fn.name.name with
+    | .bv ⟨n, .And⟩ => some n
+    | _ => none
+
+#guard !andWidths.isEmpty && andWidths.all fun n =>
+  let zero : Core.Expression.Expr := .const () (.bitvecConst n 0)
+  let ones : Core.Expression.Expr :=
+    .const () (.bitvecConst n (BitVec.allOnes n))
+  Core.EqualitySimplification.bvAndRule Core.Factory (bvAndAt n varA zero)
+      == some zero &&
+    Core.EqualitySimplification.bvAndRule Core.Factory (bvAndAt n varA ones)
+      == some varA
+
+/-! A constant whose width differs from the op's is left alone. Surface syntax
+rejects one as ill-typed, so the term is built here. -/
+
+#guard (Core.EqualitySimplification.bvAndRule Core.Factory
+  (bvAndAt 16 varA (.const () (.bitvecConst 8 255)))).isNone
+
+/-! ### Agreement with the solver
+
+Each program of this section, verified by `agreesWithSolver` in both modes. -/
+
+/--
+info: maskZero: pass
+zeroFirst: pass
+allOnes: pass
+allOnesFirst: pass
+nested: pass
+exposed: pass
+orZero: fail
+xorAllOnes: fail
+width1: pass
+width8: pass
+width16: pass
+width64: pass
+width128: pass
+notAllOnes: fail
+
+
+Obligation outsideAll: failed!
+
+Result obtained during evaluation.
+
+
+Obligation outsideAll: failed!
+
+Result obtained during evaluation.
+outsideAll: fail
+inLemma: pass
+inCondition: pass
+underExists: pass
+boundAllOnes: pass
+inTrigger: fail
+inCover: fail
+viaDefinition: pass
+afterDead: pass
+maskZero: pass
+zeroFirst: pass
+allOnes: pass
+allOnesFirst: pass
+nested: pass
+exposed: pass
+orZero: fail
+xorAllOnes: fail
+width1: pass
+width8: pass
+width16: pass
+width64: pass
+width128: pass
+notAllOnes: fail
+
+
+Obligation outsideAll: failed!
+
+Result obtained during evaluation.
+
+
+Obligation outsideAll: failed!
+
+Result obtained during evaluation.
+outsideAll: fail
+inLemma: pass
+inCondition: pass
+underExists: pass
+boundAllOnes: pass
+inTrigger: fail
+inCover: fail
+viaDefinition: pass
+afterDead: pass
+-/
+#guard_msgs in
+#eval agreeInBothModes [absorbPgm, anyAddressPgm, positionsBvPgm]
+
+/-! ## `str.in_re` on a literal string
+
+`str.in_re(s, r)` with a literal `s` and a regex `r` built from literals is
+decided with SMT-LIB's meaning.
+
+Each operator and its SMT-LIB edge cases, under a quantifier and a `fun`, in an
+`if` and an `==`, in a `cover`, and in a lemma, and a selector goal with no
+regex. Goals have no facts on their path; the `assume` folds to `false`, so
+`afterDead` is left for the solver. -/
+
+private def literalRePgm :=
+#strata
+program Core;
+datatype Option () { None(), Some(val: int) };
+lemma [inLemma]: str.in.re("ab", re.+(str.to.re("ab")));
+procedure P(p : bool)
+{
+  assert [rate]: str.in.re("rate(30 days)",
+    re.concat(str.to.re("rate("),
+      re.concat(
+        re.concat(
+          re.union(re.range("1", "9"),
+            re.concat(re.range("1", "9"), re.range("0", "9"))),
+          re.union(str.to.re(" day"), str.to.re(" days"))),
+        str.to.re(")"))));
+  assert [noMatch]: !str.in.re("ab", re.loop(str.to.re("a"), 1, 3));
+  assert [reversedRange]: !str.in.re("m", re.range("z", "a"));
+  assert [multiCharRange]: !str.in.re("b", re.range("ab", "z"));
+  assert [emptyRangeBound]: !str.in.re("a", re.range("", "z"));
+  assert [loopReversed]: !str.in.re("aa", re.loop(str.to.re("a"), 2, 1));
+  assert [loopReversedEmpty]: !str.in.re("", re.loop(str.to.re(""), 2, 1));
+  assert [loopNullableBody]:
+    str.in.re("", re.loop(re.*(str.to.re("a")), 2, 3));
+  assert [loopZero]: str.in.re("", re.loop(str.to.re("a"), 0, 0));
+  assert [compInter]: !str.in.re("x",
+    re.inter(re.*(re.allchar()), re.comp(str.to.re("x"))));
+  assert [allcharNonAscii]: str.in.re("é", re.allchar());
+  assert [emptyString]: str.in.re("", re.*(str.to.re("a")));
+  assert [plus]: str.in.re("abab", re.+(str.to.re("ab")));
+  assert [reNone]: !str.in.re("", re.none());
+  assert [reAll]: str.in.re("abc", re.all());
+  assert [decidedFalse]: str.in.re("b", re.*(str.to.re("a")));
+  assert [underQuant]:
+    forall x : int :: str.in.re("a", re.all()) || int.gt(x, 0);
+  assert [boundString]: forall x : string :: str.in.re(x, re.all());
+  assert [inCondition]: if str.in.re("a", re.all()) then p else !p;
+  assert [inEquality]: str.in.re("a", re.all()) == p;
+  assert [inLambda]: (fun y : int => str.in.re("a", re.all())) ==
+    (fun y : int => p);
+  assert [selector]: Option..isSome(Some(1));
+  cover [covered]: str.in.re("a", re.*(str.to.re("a")));
+  cover [notCovered]: str.in.re("b", re.*(str.to.re("a")));
+  assume str.in.re("b", re.*(str.to.re("a")));
+  assert [afterDead]: str.in.re("a", re.*(str.to.re("a")));
+};
+#end
+
+/--
+info: program Core;
+
+datatype Option {
+  None(),
+  Some(val : int)
+};
+lemma [inLemma]: true;
+procedure P (p : bool)
+{
+  assert [rate]: true;
+  assert [noMatch]: true;
+  assert [reversedRange]: true;
+  assert [multiCharRange]: true;
+  assert [emptyRangeBound]: true;
+  assert [loopReversed]: true;
+  assert [loopReversedEmpty]: true;
+  assert [loopNullableBody]: true;
+  assert [loopZero]: true;
+  assert [compInter]: true;
+  assert [allcharNonAscii]: true;
+  assert [emptyString]: true;
+  assert [plus]: true;
+  assert [reNone]: true;
+  assert [reAll]: true;
+  assert [decidedFalse]: false;
+  assert [underQuant]: true;
+  assert [boundString]: forall x : string :: str.in.re(x, re.all());
+  assert [inCondition]: p;
+  assert [inEquality]: true == p;
+  assert [inLambda]: (fun y : int => true) == (fun y : int => p);
+  assert [selector]: true;
+  cover [covered]: true;
+  cover [notCovered]: false;
+  assume [assume_0]: str.in.re("b", re.*(str.to.re("a")));
+  assert [afterDead]: str.in.re("a", re.*(str.to.re("a")));
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint literalRePgm
+
+/-! A string made literal by an axiom or a definition is decided; a regex
+variable, a non-literal string and a non-literal loop bound are not. A regex
+returned by a 0-ary function is read only when the function is `inline`, since
+only then is the call expanded. A definition's body is folded even when no
+fact changes it. -/
+
+private def factsRePgm :=
+#strata
+program Core;
+const name : string;
+axiom [rotation]: name == "rate(30 days)";
+function bodilessRe () : regex;
+function bodyRe () : regex { re.*(str.to.re("a")) }
+inline function inlineRe () : regex { re.*(str.to.re("a")) }
+procedure P(t : string, n : int)
+{
+  assert [bodiless]: str.in.re("a", bodilessRe());
+  assert [withBody]: str.in.re("a", bodyRe());
+  assert [inlineBody]: str.in.re("a", inlineRe());
+  assert [fromAxiom]: str.in.re(name, re.concat(str.to.re("rate("),
+    re.concat(re.+(re.range("0", "9")), str.to.re(" days)"))));
+  var s : string := "rate(2 hours)";
+  assert [fromDefinition]: !str.in.re(s, re.concat(str.to.re("rate("),
+    re.concat(re.+(re.range("0", "9")), str.to.re(" days)"))));
+  var r : regex := re.*(str.to.re("a"));
+  assert [regexVariable]: str.in.re("a", r);
+  assert [variable]: str.in.re(t, re.*(str.to.re("a")));
+  assert [boundIsVariable]: str.in.re("a", re.loop(str.to.re("a"), n, 2));
+  var b : bool := str.in.re("a", re.*(str.to.re("a")));
+  assert [definedTest]: b;
+  var y : int := int.add(1, 2);
+  assert [definedSum]: y == 3;
+};
+#end
+
+/--
+info: program Core;
+
+function name () : string;
+axiom [rotation]: name == "rate(30 days)";
+function bodilessRe () : regex;
+function bodyRe () : regex {
+  re.*(str.to.re("a"))
+}
+inline function inlineRe () : regex {
+  re.*(str.to.re("a"))
+}
+procedure P (t : string, n : int)
+{
+  assert [bodiless]: str.in.re("a", bodilessRe);
+  assert [withBody]: str.in.re("a", bodyRe);
+  assert [inlineBody]: true;
+  assert [fromAxiom]: true;
+  var s : string := "rate(2 hours)";
+  assert [fromDefinition]: true;
+  var r : regex := re.*(str.to.re("a"));
+  assert [regexVariable]: str.in.re("a", r);
+  assert [variable]: str.in.re(t, re.*(str.to.re("a")));
+  assert [boundIsVariable]: str.in.re("a", re.loop(str.to.re("a"), n, 2));
+  var b : bool := str.in.re("a", re.*(str.to.re("a")));
+  assert [definedTest]: true;
+  var y : int := int.add(1, 2);
+  assert [definedSum]: true;
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint factsRePgm
+
+/-! The encoder rejects a loop with a variable bound, so `rejectedLoop` fails
+without the phase; with it, the other disjunct folds to `true` and the goal
+passes without a solver call. -/
+
+private def encoderRejectedPgm :=
+#strata
+program Core;
+procedure E(n : int)
+{
+  assert [rejectedLoop]: str.in.re("a", re.all()) ||
+    str.in.re("a", re.loop(str.to.re("a"), n, 2));
+};
+#end
+
+/--
+info: rejectedLoop: pass
+discharge calls: 0
+rejectedLoop: fail
+discharge calls: 0
+-/
+#guard_msgs in
 #eval do
-  let modes : List Core.VerificationMode :=
-    [.deductive, .deductiveAssumingSatisfiablePaths]
-  for mode in modes do
-    let ps : List StrataDDM.Program :=
-      [lemmaPgm, lemmaOrderPgm, lemmaContradictionPgm, lemmaQuantPgm]
-    for p in ps do
-      agreesWithSolver mode p
+  countedDischarge encoderRejectedPgm
+  countedDischarge encoderRejectedPgm (phase := false)
+
+/-! `.*a.*` decided on strings of 5,000 characters, which the definitions
+build from a 50-character literal: neither goal reaches the discharge. -/
+
+private def longRePgm :=
+#strata
+program Core;
+procedure L()
+{
+  var a50 : string := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  var b50 : string := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  var a500 : string := str.concat(a50, str.concat(a50, str.concat(a50,
+    str.concat(a50, str.concat(a50, str.concat(a50, str.concat(a50,
+    str.concat(a50, str.concat(a50, a50)))))))));
+  var b500 : string := str.concat(b50, str.concat(b50, str.concat(b50,
+    str.concat(b50, str.concat(b50, str.concat(b50, str.concat(b50,
+    str.concat(b50, str.concat(b50, b50)))))))));
+  var a5000 : string := str.concat(a500, str.concat(a500, str.concat(a500,
+    str.concat(a500, str.concat(a500, str.concat(a500, str.concat(a500,
+    str.concat(a500, str.concat(a500, a500)))))))));
+  var b5000 : string := str.concat(b500, str.concat(b500, str.concat(b500,
+    str.concat(b500, str.concat(b500, str.concat(b500, str.concat(b500,
+    str.concat(b500, str.concat(b500, b500)))))))));
+  assert [longMatch]: str.in.re(a5000,
+    re.concat(re.all(), re.concat(str.to.re("a"), re.all())));
+  assert [longNoMatch]: !str.in.re(b5000,
+    re.concat(re.all(), re.concat(str.to.re("a"), re.all())));
+};
+#end
+
+/--
+info: longMatch: pass
+longNoMatch: pass
+discharge calls: 0
+-/
+#guard_msgs in
+#eval countedDischarge longRePgm
+
+/-! A code point above `0x2FFFF`, which no source literal can hold, leaves
+`str.in_re` undecided. -/
+
+private def outsideAlphabet : String := String.singleton (Char.ofNat 0x30000)
+
+private def inRe (s : String) (r : Core.Expression.Expr) :
+    Core.Expression.Expr :=
+  .app () (.app () (.op () ⟨toString (Core.CoreOp.str .InRegEx), ()⟩ none)
+    (.const () (.strConst s))) r
+
+private def toRe (s : String) : Core.Expression.Expr :=
+  .app () (.op () ⟨toString (Core.CoreOp.str .ToRegEx), ()⟩ none)
+    (.const () (.strConst s))
+
+private def reAll : Core.Expression.Expr :=
+  .op () ⟨toString (Core.CoreOp.re .All), ()⟩ none
+
+#guard (Core.EqualitySimplification.inRegexRule
+  (inRe outsideAlphabet reAll)).isNone
+#guard (Core.EqualitySimplification.inRegexRule
+  (inRe "a" (toRe outsideAlphabet))).isNone
+#guard Core.EqualitySimplification.inRegexRule (inRe "a" (toRe "a")) ==
+  some (.const () (.boolConst true))
+
+/-! A loop with a negative literal bound, or a range with a bound outside the
+alphabet, is not read as a regex. -/
+
+private def reLoop (a : Core.Expression.Expr) (lo hi : Int) :
+    Core.Expression.Expr :=
+  .app () (.app () (.app () (.op () ⟨toString (Core.CoreOp.re .Loop), ()⟩ none)
+    a) (.const () (.intConst lo))) (.const () (.intConst hi))
+
+private def reRange (lo hi : String) : Core.Expression.Expr :=
+  .app () (.app () (.op () ⟨toString (Core.CoreOp.re .Range), ()⟩ none)
+    (.const () (.strConst lo))) (.const () (.strConst hi))
+
+#guard (Core.EqualitySimplification.regexOf? (reLoop (toRe "a") (-1) 2)).isNone
+#guard (Core.EqualitySimplification.regexOf? (reLoop (toRe "a") 0 (-1))).isNone
+#guard Core.EqualitySimplification.regexOf? (reLoop (toRe "a") 0 2) ==
+  some (.loop (.str ['a']) 0 2)
+#guard (Core.EqualitySimplification.regexOf?
+  (reRange "a" outsideAlphabet)).isNone
+#guard (Core.EqualitySimplification.regexOf?
+  (reRange outsideAlphabet "a")).isNone
+#guard Core.EqualitySimplification.regexOf? (reRange "a" "z") ==
+  some (.range 'a' 'z')
+
+/-! ### Agreement with the solver
+
+Each program of this section except `encoderRejectedPgm`, verified by
+`agreesWithSolver` in both modes. -/
+
+/--
+info:
+
+Obligation decidedFalse: failed!
+
+Result obtained during evaluation.
+
+
+Obligation decidedFalse: failed!
+
+Result obtained during evaluation.
+inLemma: pass
+rate: pass
+noMatch: pass
+reversedRange: pass
+multiCharRange: pass
+emptyRangeBound: pass
+loopReversed: pass
+loopReversedEmpty: pass
+loopNullableBody: pass
+loopZero: pass
+compInter: pass
+allcharNonAscii: pass
+emptyString: pass
+plus: pass
+reNone: pass
+reAll: pass
+decidedFalse: fail
+underQuant: pass
+boundString: pass
+inCondition: fail
+inEquality: fail
+inLambda: other
+selector: pass
+covered: other
+notCovered: fail
+afterDead: pass
+
+
+Obligation bodiless: SMT Solver Crash! stderr:
+solver stdout: (error "Regular expression variables are not supported.")
+
+
+
+
+Obligation bodiless: SMT Solver Crash! stderr:
+solver stdout: (error "Regular expression variables are not supported.")
+
+
+
+
+Obligation bodiless: SMT Solver Crash! stderr:
+solver stdout: (error "Regular expression variables are not supported.")
+
+
+bodiless: other
+withBody: pass
+inlineBody: pass
+fromAxiom: pass
+fromDefinition: pass
+regexVariable: pass
+variable: fail
+boundIsVariable: other
+definedTest: pass
+definedSum: pass
+longMatch: pass
+longNoMatch: pass
+
+
+Obligation decidedFalse: failed!
+
+Result obtained during evaluation.
+
+
+Obligation decidedFalse: failed!
+
+Result obtained during evaluation.
+inLemma: pass
+rate: pass
+noMatch: pass
+reversedRange: pass
+multiCharRange: pass
+emptyRangeBound: pass
+loopReversed: pass
+loopReversedEmpty: pass
+loopNullableBody: pass
+loopZero: pass
+compInter: pass
+allcharNonAscii: pass
+emptyString: pass
+plus: pass
+reNone: pass
+reAll: pass
+decidedFalse: fail
+underQuant: pass
+boundString: pass
+inCondition: fail
+inEquality: fail
+inLambda: other
+selector: pass
+covered: other
+notCovered: fail
+afterDead: pass
+
+
+Obligation bodiless: SMT Solver Crash! stderr:
+solver stdout: (error "Regular expression variables are not supported.")
+
+
+
+
+Obligation bodiless: SMT Solver Crash! stderr:
+solver stdout: (error "Regular expression variables are not supported.")
+
+
+
+
+Obligation bodiless: SMT Solver Crash! stderr:
+solver stdout: (error "Regular expression variables are not supported.")
+
+
+bodiless: other
+withBody: pass
+inlineBody: pass
+fromAxiom: pass
+fromDefinition: pass
+regexVariable: pass
+variable: fail
+boundIsVariable: other
+definedTest: pass
+definedSum: pass
+longMatch: pass
+longNoMatch: pass
+-/
+#guard_msgs in
+#eval agreeInBothModes
+  [literalRePgm, factsRePgm, longRePgm]
+
+/-! ## Connectives with a literal argument
+
+`and`, `or` and `==>` with a literal on either side are folded.
+
+The tests cover each rule with the literal on either side, nested, through
+`==`, under `forall` with and without a trigger, and in a definition.
+`p ==> false` is kept, since its value `!p` is neither a literal nor an
+operand. -/
+
+private def connectivesPgm :=
+#strata
+program Core;
+function f (n : int) : bool;
+procedure Holds(p : bool, q : bool, r : bool, s : bool)
+{
+  var y : bool := p || q;
+  assume [qHolds]: q;
+  assert [orTrue]: p || q;
+  assert [nested]: (p || q) || r;
+  assert [impliesTrue]: p ==> q;
+  assert [andTrue]: p && q;
+  assert [andTrueLeft]: q && p;
+  assert [impliesTrueLeft]: q ==> p;
+  assert [impliesFalseLeft]: !q ==> p;
+  assert [orFalseLeft]: !q || p;
+  assert [impliesFalse]: p ==> !q;
+  assert [repeated]: p || (if r || q then true else s);
+  assert [throughEquality]: p || ((r || q) == true);
+  assert [underForall]: forall n : int :: f(n) || q;
+  assert [withTrigger]: forall n : int :: { f(n) } f(n) || q;
+  assert [viaDefinition]: y;
+};
+procedure Fails(p : bool, q : bool, r : bool)
+{
+  assume [qFails]: !q;
+  assert [andFalse]: p && q;
+  assert [orFalse]: p || q;
+  assert [unrelated]: p || r;
+};
+#end
+
+/--
+info: program Core;
+
+function f (n : int) : bool;
+procedure Holds (p : bool, q : bool, r : bool, s : bool)
+{
+  var y : bool := p || q;
+  assume [qHolds]: q;
+  assert [orTrue]: true;
+  assert [nested]: true;
+  assert [impliesTrue]: true;
+  assert [andTrue]: p;
+  assert [andTrueLeft]: p;
+  assert [impliesTrueLeft]: p;
+  assert [impliesFalseLeft]: true;
+  assert [orFalseLeft]: p;
+  assert [impliesFalse]: p ==> false;
+  assert [repeated]: true;
+  assert [throughEquality]: true;
+  assert [underForall]: true;
+  assert [withTrigger]: true;
+  assert [viaDefinition]: true;
+};
+procedure Fails (p : bool, q : bool, r : bool)
+{
+  assume [qFails]: !q;
+  assert [andFalse]: false;
+  assert [orFalse]: p;
+  assert [unrelated]: p || r;
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint connectivesPgm
+
+-- With the phase, the goals that fold to `true` do not reach the discharge.
+/--
+info: orTrue: pass
+nested: pass
+impliesTrue: pass
+andTrue: pass
+andTrueLeft: pass
+impliesTrueLeft: pass
+impliesFalseLeft: pass
+orFalseLeft: pass
+impliesFalse: pass
+repeated: pass
+throughEquality: pass
+underForall: pass
+withTrigger: pass
+viaDefinition: pass
+andFalse: pass
+orFalse: pass
+unrelated: pass
+discharge calls: 8
+orTrue: pass
+nested: pass
+impliesTrue: pass
+andTrue: pass
+andTrueLeft: pass
+impliesTrueLeft: pass
+impliesFalseLeft: pass
+orFalseLeft: pass
+impliesFalse: pass
+repeated: pass
+throughEquality: pass
+underForall: pass
+withTrigger: pass
+viaDefinition: pass
+andFalse: pass
+orFalse: pass
+unrelated: pass
+discharge calls: 17
+-/
+#guard_msgs in
+#eval do
+  countedDischarge connectivesPgm
+  countedDischarge connectivesPgm (phase := false)
+
+/-! A procedure with no facts, and an assumption that folds to `false`, which
+leaves the goals after it alone. -/
+
+private def connectivesDeadPgm :=
+#strata
+program Core;
+procedure NoFacts(p : bool)
+{
+  assert [noFacts]: p || true;
+};
+procedure Dead(p : bool, q : bool)
+{
+  assume q;
+  assume p && !q;
+  assert [afterDead]: p || q;
+};
+#end
+
+/--
+info: program Core;
+
+procedure NoFacts (p : bool)
+{
+  assert [noFacts]: true;
+};
+procedure Dead (p : bool, q : bool)
+{
+  assume [assume_0]: q;
+  assume [assume_1]: p && !q;
+  assert [afterDead]: p || q;
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint connectivesDeadPgm
+
+/-! A lemma with no facts, a lemma that an axiom decides, and a `cover` that
+an assumption makes unreachable. -/
+
+private def connectivesPositionsPgm :=
+#strata
+program Core;
+const p : bool;
+const q : bool;
+lemma [noFactsLemma]: p || true;
+axiom [qAxiom]: q;
+lemma [fromAxiom]: p || q;
+procedure C(a : bool, b : bool)
+{
+  assume !b;
+  cover [unreachable]: a && b;
+};
+#end
+
+/--
+info: program Core;
+
+function p () : bool;
+function q () : bool;
+lemma [noFactsLemma]: true;
+axiom [qAxiom]: q;
+lemma [fromAxiom]: true;
+procedure C (a : bool, b : bool)
+{
+  assume [assume_0]: !b;
+  cover [unreachable]: false;
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint connectivesPositionsPgm
+
+/-! A goal that needs more rounds of folding than `foldRounds` allows is left
+partly folded, which keeps its value. -/
+
+private def connectivesRoundsPgm :=
+#strata
+program Core;
+procedure Rounds(p : bool, s : bool)
+{
+  assert [roundsRunOut]:
+    p || (if p || (if p || (if p || (if p || (if p || (if p || (if p ||
+      (if p || true then true else s) then true else s) then true else s)
+      then true else s) then true else s) then true else s)
+      then true else s) then true else s);
+};
+#end
+
+/--
+info: program Core;
+
+procedure Rounds (p : bool, s : bool)
+{
+  assert [roundsRunOut]: p || (if true then true else s);
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint connectivesRoundsPgm
+
+private def connectivesLimitPgm :=
+#strata
+program Core;
+procedure L(x : int, p : bool)
+{
+  assume int.gt(x, 5);
+  assume x == 1;
+  assert [limit]: p && int.gt(x, 4);
+};
+#end
+
+-- The phase's limitation: a goal on a contradictory path folds to `false`
+-- and is reported failing without a solver call.
+/--
+info:
+
+Obligation limit: failed!
+
+Result obtained during evaluation.
+limit: fail
+discharge calls: 0
+limit: pass
+discharge calls: 1
+-/
+#guard_msgs in
+#eval do
+  let options := { Core.VerifyOptions.quiet with
+    checkMode := .deductiveAssumingSatisfiablePaths }
+  countedDischarge connectivesLimitPgm (options := options)
+  countedDischarge connectivesLimitPgm (phase := false) (options := options)
+
+private def connectivesGuardPgm :=
+#strata
+program Core;
+procedure G(x : int, p : bool, q : bool)
+{
+  if (int.gt(x, 5) && int.lt(x, 3)) {
+    assume !q;
+    assert [guardLimit]: p && q;
+  }
+};
+#end
+
+-- The phase does not use an `if` guard as a fact, so a goal under a
+-- contradictory guard also folds to `false`.
+/--
+info:
+
+Obligation guardLimit: failed!
+
+Result obtained during evaluation.
+guardLimit: fail
+discharge calls: 0
+guardLimit: pass
+discharge calls: 1
+-/
+#guard_msgs in
+#eval do
+  let options := { Core.VerifyOptions.quiet with
+    checkMode := .deductiveAssumingSatisfiablePaths }
+  countedDischarge connectivesGuardPgm (options := options)
+  countedDischarge connectivesGuardPgm (phase := false) (options := options)
+
+/-! ### Agreement with the solver
+
+Each program of this section except `connectivesLimitPgm` and
+`connectivesGuardPgm`, verified by `agreesWithSolver` in both modes. Those two
+fold a goal on a contradictory path to `false`, so the end of the file checks
+them in deductive mode only. -/
+
+/--
+info: orTrue: pass
+nested: pass
+impliesTrue: pass
+andTrue: fail
+andTrueLeft: fail
+impliesTrueLeft: fail
+impliesFalseLeft: pass
+orFalseLeft: fail
+impliesFalse: fail
+repeated: pass
+throughEquality: pass
+underForall: pass
+withTrigger: pass
+viaDefinition: pass
+andFalse: fail
+orFalse: fail
+unrelated: fail
+noFacts: pass
+afterDead: pass
+noFactsLemma: pass
+fromAxiom: pass
+unreachable: fail
+roundsRunOut: pass
+
+
+Obligation andFalse: failed!
+
+Result obtained during evaluation.
+
+
+Obligation andFalse: failed!
+
+Result obtained during evaluation.
+orTrue: pass
+nested: pass
+impliesTrue: pass
+andTrue: fail
+andTrueLeft: fail
+impliesTrueLeft: fail
+impliesFalseLeft: pass
+orFalseLeft: fail
+impliesFalse: fail
+repeated: pass
+throughEquality: pass
+underForall: pass
+withTrigger: pass
+viaDefinition: pass
+andFalse: fail
+orFalse: fail
+unrelated: fail
+noFacts: pass
+afterDead: pass
+noFactsLemma: pass
+fromAxiom: pass
+unreachable: fail
+roundsRunOut: pass
+-/
+#guard_msgs in
+#eval agreeInBothModes [connectivesPgm, connectivesDeadPgm,
+  connectivesPositionsPgm, connectivesRoundsPgm]
+
+/-! ## Folding without facts
+
+A goal is folded even when no fact is on its path, an assumption that folds to
+`false` marks its path dead, and a definition's body is folded before it is
+substituted, even when no fact changes it. -/
+
+private def noFactsPgm :=
+#strata
+program Core;
+datatype Option () { None(), Some(val: int) };
+procedure NoFacts()
+{
+  assert [noFacts]: Option..isSome(Some(1));
+};
+procedure Dead(x : int)
+{
+  assume int.lt(1, 0);
+  assert [afterDead]: Option..isSome(Some(x));
+};
+procedure FoldedDef()
+{
+  var y : bool := Option..isSome(Some(1));
+  assert [foldedDef]: y;
+};
+#end
+
+/--
+info: program Core;
+
+datatype Option {
+  None(),
+  Some(val : int)
+};
+procedure NoFacts ()
+{
+  assert [noFacts]: true;
+};
+procedure Dead (x : int)
+{
+  assume [assume_0]: int.lt(1, 0);
+  assert [afterDead]: Option..isSome(Some(x));
+};
+procedure FoldedDef ()
+{
+  var y : bool := Option..isSome(Some(1));
+  assert [foldedDef]: true;
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint noFactsPgm
+
+/-! ## Existentials witnessed by a fact
+
+An existential `exists x :: { f(x) } P(x)` becomes `true` when `P(v)` folds to
+`true` for a fact `f(v)`. Most tests type check first, since a call of a
+polymorphic function carries its instantiated type only after type checking.
+
+The hint proves `outside`; the other existentials are left alone, never
+decided `false`. -/
+
+private def hintPgm :=
+#strata
+program Core;
+function hint (a : bv W32) : bool;
+axiom [hintZero]: hint(bv{32}(0));
+lemma [outside]: exists a : bv W32 :: { hint(a) }
+  !(bv32.and(a, bv{32}(4294967040)) == bv{32}(167772416));
+lemma [noSolution]: exists a : bv W32 :: { hint(a) }
+  bv32.and(a, bv{32}(4294967040)) == bv{32}(1);
+lemma [inside]: exists a : bv W32 :: { hint(a) }
+  bv32.and(a, bv{32}(4294967040)) == bv{32}(167772416);
+lemma [noTrigger]: exists a : bv W32 :: bv32.and(a, bv{32}(1)) == a;
+#end
+
+/--
+info: program Core;
+
+function hint (a : bv W32) : bool;
+axiom [hintZero]: hint(bv{32}(0));
+lemma [outside]: true;
+lemma [noSolution]: exists a : (bv W32) ::  { hint(a) }
+  bv32.and(a, bv{32}(4294967040)) == bv{32}(1);
+lemma [inside]: exists a : (bv W32) ::  { hint(a) }
+  bv32.and(a, bv{32}(4294967040)) == bv{32}(167772416);
+lemma [noTrigger]: exists a : (bv W32) :: bv32.and(a, bv{32}(1)) == a;
+-/
+#guard_msgs in
+#eval rewriteAndPrint hintPgm (typeCheck := true)
+
+/-! Witnessed existentials in other positions, with two candidates, and with
+the hint in any term or group of the trigger. One before its hint is left
+alone; a closed one under a binder is witnessed, since folding reaches
+quantifier bodies. In `twoVariables` the trigger is on the inner variable, so
+the inner quantifier is witnessed, and the outer one, whose variable is then
+unused, is dropped. -/
+
+private def positionsPgm :=
+#strata
+program Core;
+function hint (a : int) : bool;
+function other (a : int) : bool;
+function g () : bool;
+lemma [beforeHint]: exists a : int :: { hint(a) } a == 1;
+axiom [hintOne]: hint(1);
+axiom [hintTwo]: hint(2);
+lemma [negated]: !(exists a : int :: { hint(a) } a == 1);
+lemma [inEquality]: (exists a : int :: { hint(a) } a == 1) == g();
+lemma [inCondition]:
+  if (exists a : int :: { hint(a) } a == 1) then g() else !g();
+lemma [inThen]:
+  if g() then (exists a : int :: { hint(a) } a == 1) else g();
+lemma [implies]: (exists a : int :: { hint(a) } a == 1) ==> g();
+lemma [witnessOne]: exists a : int :: { hint(a) } a == 1;
+lemma [witnessTwo]: exists a : int :: { hint(a) } a == 2;
+lemma [underForall]: forall b : int :: exists a : int :: { hint(a) } a == 1;
+lemma [twoVariables]: exists a : int, b : int :: { hint(b) } b == 1;
+lemma [firstTerm]: exists a : int :: { hint(a), other(a) } a == 1;
+lemma [secondTerm]: exists a : int :: { other(a), hint(a) } a == 1;
+lemma [firstGroup]: exists a : int :: { hint(a) } { other(a) } a == 1;
+lemma [secondGroup]: exists a : int :: { other(a) } { hint(a) } a == 1;
+#end
+
+/--
+info: program Core;
+
+function hint (a : int) : bool;
+function other (a : int) : bool;
+function g () : bool;
+lemma [beforeHint]: exists a : int ::  { hint(a) }
+  a == 1;
+axiom [hintOne]: hint(1);
+axiom [hintTwo]: hint(2);
+lemma [negated]: false;
+lemma [inEquality]: true == g;
+lemma [inCondition]: g;
+lemma [inThen]: if g then true else g;
+lemma [implies]: g;
+lemma [witnessOne]: true;
+lemma [witnessTwo]: true;
+lemma [underForall]: true;
+lemma [twoVariables]: true;
+lemma [firstTerm]: true;
+lemma [secondTerm]: true;
+lemma [firstGroup]: true;
+lemma [secondGroup]: true;
+-/
+#guard_msgs in
+#eval rewriteAndPrint positionsPgm (typeCheck := true)
+
+/-! Existentials the fact `hint(1)` does not witness, though both hold. A
+trigger on the outer variable of a two-variable existential sits on the inner
+quantifier, where it is not applied to that quantifier's own variable, so
+`outerTrigger` is left alone. A candidate's body is folded without the facts,
+so in `ownTrigger` the body `hint(1)` stays and the existential is left
+alone. -/
+
+private def hintScopePgm :=
+#strata
+program Core;
+function hint (a : int) : bool;
+axiom [hintOne]: hint(1);
+lemma [outerTrigger]: exists a : int, b : int :: { hint(a) }
+  a == b && a == 1;
+lemma [ownTrigger]: exists a : int :: { hint(a) } hint(a);
+#end
+
+/--
+info: program Core;
+
+function hint (a : int) : bool;
+axiom [hintOne]: hint(1);
+lemma [outerTrigger]: exists a : int :: exists b : int ::  { hint(a) }
+  a == b && a == 1;
+lemma [ownTrigger]: exists a : int ::  { hint(a) }
+  hint(a);
+-/
+#guard_msgs in
+#eval rewriteAndPrint hintScopePgm (typeCheck := true)
+
+/-! The fact `hint(0)` of a polymorphic `hint` is about an `int`, so it does
+not witness the false `bool` existential `wrongType`, and witnesses the `int`
+existential `rightType`. The fact `hint(bv{8}(0))` does not witness the 32-bit
+existential `wrongWidth`. -/
+
+private def polyHintPgm :=
+#strata
+program Core;
+function hint<T> (a : T) : bool;
+axiom [hintZero]: hint(0);
+axiom [hintByte]: hint(bv{8}(0));
+lemma [wrongType]: exists b : bool :: { hint(b) }
+  !(b == true) && !(b == false);
+lemma [rightType]: exists b : int :: { hint(b) } b == 0;
+lemma [wrongWidth]: exists a : bv W32 :: { hint(a) } a == bv{32}(0);
+#end
+
+/--
+info: program Core;
+
+function hint<T> (a : T) : bool;
+axiom [hintZero]: hint(0);
+axiom [hintByte]: hint(bv{8}(0));
+lemma [wrongType]: exists b : bool ::  { hint(b) }
+  !(b == true) && !(b == false);
+lemma [rightType]: true;
+lemma [wrongWidth]: exists a : (bv W32) ::  { hint(a) }
+  a == bv{32}(0);
+-/
+#guard_msgs in
+#eval rewriteAndPrint polyHintPgm (typeCheck := true)
+
+/-! Without type checking, a call of the polymorphic `hint` carries its generic
+type `T → bool`, so `rightType` is left alone. -/
+
+/--
+info: program Core;
+
+function hint<T> (a : T) : bool;
+axiom [hintZero]: hint(0);
+axiom [hintByte]: hint(bv{8}(0));
+lemma [wrongType]: exists b : bool ::  { hint(b) }
+  !(b == true) && !(b == false);
+lemma [rightType]: exists b : int ::  { hint(b) }
+  b == 0;
+lemma [wrongWidth]: exists a : (bv W32) ::  { hint(a) }
+  a == bv{32}(0);
+-/
+#guard_msgs in
+#eval rewriteAndPrint polyHintPgm
+
+/-! Hints in a procedure: a hint that is not a value, a hint forgotten after
+its branch, and a contradictory path. -/
+
+private def hintProcPgm :=
+#strata
+program Core;
+function hint (a : int) : bool;
+procedure P(x : int)
+{
+  assume hint(x);
+  assert [nonValue]: exists a : int :: { hint(a) } a == x;
+  assume hint(3);
+  assert [assumed]: exists a : int :: { hint(a) } int.gt(a, 2);
+  cover [covered]: exists a : int :: { hint(a) } a == 3;
+  if (x == 0) {
+    assume hint(4);
+    assert [inBranch]: exists a : int :: { hint(a) } a == 4;
+  }
+  assert [afterBranch]: exists a : int :: { hint(a) } a == 4;
+  assume int.lt(1, 0);
+  assert [dead]: exists a : int :: { hint(a) } a == 3;
+};
+#end
+
+/--
+info: program Core;
+
+function hint (a : int) : bool;
+procedure P (x : int)
+{
+  assume [assume_0]: hint(x);
+  assert [nonValue]: exists a : int ::  { hint(a) }
+    a == x;
+  assume [assume_1]: hint(3);
+  assert [assumed]: true;
+  cover [covered]: true;
+  if (x == 0) {
+    assume [assume_2]: hint(4);
+    assert [inBranch]: true;
+  }
+  assert [afterBranch]: exists a : int ::  { hint(a) }
+    a == 4;
+  assume [assume_3]: int.lt(1, 0);
+  assert [dead]: exists a : int ::  { hint(a) }
+    a == 3;
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint hintProcPgm (typeCheck := true)
+
+-- Through the pipeline, the goals left alone above and the cover reach the
+-- discharge. It answers every query unsat, so the cover fails.
+/--
+info: nonValue: pass
+assumed: pass
+covered: fail
+inBranch: pass
+afterBranch: pass
+dead: pass
+discharge calls: 4
+-/
+#guard_msgs in
+#eval countedDischarge hintProcPgm
+
+private def undetectedPgm :=
+#strata
+program Core;
+function hint (a : int) : bool;
+procedure Undetected(x : int)
+{
+  assume hint(0);
+  assume int.gt(x, 5);
+  assume x == 1;
+  assert [undetected]: !(exists a : int :: { hint(a) } a == 0);
+};
+#end
+
+-- The phase misses this contradiction, so the goal folds to `false` and fails.
+/--
+info:
+
+Obligation undetected: failed!
+
+Result obtained during evaluation.
+undetected: fail
+discharge calls: 0
+-/
+#guard_msgs in
+#eval countedDischarge undetectedPgm
+  (options := { Core.VerifyOptions.quiet with
+    checkMode := .deductiveAssumingSatisfiablePaths })
+
+/-! An existential in a definition body or an assumption is witnessed too: `y`
+reads as `true`, and the assumption folds to `false` and marks its path dead.
+A write to `z` keeps the hints. -/
+
+private def hintFlowPgm :=
+#strata
+program Core;
+function hint (a : int) : bool;
+procedure Flow()
+{
+  var z : int;
+  assume hint(3);
+  var y : bool := exists a : int :: { hint(a) } a == 3;
+  z := 1;
+  assert [afterWrite]: exists a : int :: { hint(a) } a == 3;
+  assert [fromDef]: y;
+};
+procedure DeadByExists()
+{
+  assume hint(1);
+  assume !(exists a : int :: { hint(a) } a == 1);
+  assert [deadByExists]: exists a : int :: { hint(a) } a == 1;
+};
+#end
+
+/--
+info: program Core;
+
+function hint (a : int) : bool;
+procedure Flow ()
+{
+  var z : int;
+  assume [assume_0]: hint(3);
+  var y : bool := exists a : int ::  { hint(a) }
+    a == 3;
+  z := 1;
+  assert [afterWrite]: true;
+  assert [fromDef]: true;
+};
+procedure DeadByExists ()
+{
+  assume [assume_1]: hint(1);
+  assume [assume_2]: !(exists a : int ::  { hint(a) }
+    a == 1);
+  assert [deadByExists]: exists a : int ::  { hint(a) }
+    a == 1;
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint hintFlowPgm (typeCheck := true)
+
+/-! Only the 16 most recent candidates are tried: `hint(2)` witnesses
+`lastTried`, and `hint(1)`, the seventeenth, does not witness `notTried`. -/
+
+private def hintLimitPgm :=
+#strata
+program Core;
+function hint (a : int) : bool;
+axiom [h1]: hint(1);
+axiom [h2]: hint(2);
+axiom [h3]: hint(3);
+axiom [h4]: hint(4);
+axiom [h5]: hint(5);
+axiom [h6]: hint(6);
+axiom [h7]: hint(7);
+axiom [h8]: hint(8);
+axiom [h9]: hint(9);
+axiom [h10]: hint(10);
+axiom [h11]: hint(11);
+axiom [h12]: hint(12);
+axiom [h13]: hint(13);
+axiom [h14]: hint(14);
+axiom [h15]: hint(15);
+axiom [h16]: hint(16);
+axiom [h17]: hint(17);
+lemma [notTried]: exists a : int :: { hint(a) } a == 1;
+lemma [lastTried]: exists a : int :: { hint(a) } a == 2;
+#end
+
+/--
+info: program Core;
+
+function hint (a : int) : bool;
+axiom [h1]: hint(1);
+axiom [h2]: hint(2);
+axiom [h3]: hint(3);
+axiom [h4]: hint(4);
+axiom [h5]: hint(5);
+axiom [h6]: hint(6);
+axiom [h7]: hint(7);
+axiom [h8]: hint(8);
+axiom [h9]: hint(9);
+axiom [h10]: hint(10);
+axiom [h11]: hint(11);
+axiom [h12]: hint(12);
+axiom [h13]: hint(13);
+axiom [h14]: hint(14);
+axiom [h15]: hint(15);
+axiom [h16]: hint(16);
+axiom [h17]: hint(17);
+lemma [notTried]: exists a : int ::  { hint(a) }
+  a == 1;
+lemma [lastTried]: true;
+-/
+#guard_msgs in
+#eval rewriteAndPrint hintLimitPgm (typeCheck := true)
+
+/-! ### Agreement with the solver
+
+Each program of this section and the one before it except `undetectedPgm`,
+verified by `agreesWithSolver` in both modes. `undetectedPgm` folds a goal on
+a contradictory path to `false`, so the end of the file checks it in deductive
+mode only. -/
+
+/--
+info: noFacts: pass
+afterDead: pass
+foldedDef: pass
+outside: pass
+noSolution: other
+inside: other
+noTrigger: pass
+beforeHint: pass
+negated: fail
+inEquality: fail
+inCondition: fail
+inThen: fail
+implies: fail
+witnessOne: pass
+witnessTwo: pass
+underForall: pass
+twoVariables: pass
+firstTerm: pass
+secondTerm: pass
+firstGroup: pass
+secondGroup: pass
+outerTrigger: pass
+ownTrigger: pass
+wrongType: fail
+rightType: pass
+wrongWidth: pass
+nonValue: pass
+assumed: pass
+covered: other
+inBranch: pass
+afterBranch: pass
+dead: pass
+afterWrite: pass
+fromDef: pass
+deadByExists: pass
+notTried: pass
+lastTried: pass
+noFacts: pass
+afterDead: pass
+foldedDef: pass
+outside: pass
+noSolution: other
+inside: other
+noTrigger: pass
+
+
+Obligation negated: failed!
+
+Result obtained during evaluation.
+
+
+Obligation negated: failed!
+
+Result obtained during evaluation.
+beforeHint: pass
+negated: fail
+inEquality: fail
+inCondition: fail
+inThen: fail
+implies: fail
+witnessOne: pass
+witnessTwo: pass
+underForall: pass
+twoVariables: pass
+firstTerm: pass
+secondTerm: pass
+firstGroup: pass
+secondGroup: pass
+outerTrigger: pass
+ownTrigger: pass
+wrongType: fail
+rightType: pass
+wrongWidth: pass
+nonValue: pass
+assumed: pass
+covered: other
+inBranch: pass
+afterBranch: pass
+dead: pass
+afterWrite: pass
+fromDef: pass
+deadByExists: pass
+notTried: pass
+lastTried: pass
+-/
+#guard_msgs in
+#eval agreeInBothModes
+  [noFactsPgm, hintPgm, positionsPgm, hintScopePgm, polyHintPgm, hintProcPgm,
+    hintFlowPgm, hintLimitPgm]
+
+/-! ## Contradictory paths in deductive mode
+
+The programs whose goal on a contradictory path folds to `false`, verified by
+`agreesWithSolver` in deductive mode, where the solver proves such a goal.
+`deductiveAssumingSatisfiablePaths` is left out: there the phase's run reports
+the folded goal failing without a solver, as the tests above show. -/
+
+/--
+info: unseenContradiction: pass
+undetected: pass
+undetectedQuant: pass
+limit: pass
+guardLimit: pass
+undetected: pass
+-/
+#guard_msgs in
+#eval do
+  let ps : List StrataDDM.Program := [unseenContradictionPgm, undetectedBvPgm,
+    undetectedQuantPgm, connectivesLimitPgm, connectivesGuardPgm, undetectedPgm]
+  for p in ps do
+    agreesWithSolver .deductive p
 
 end Strata.EqualitySimplificationTest
 

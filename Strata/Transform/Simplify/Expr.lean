@@ -9,15 +9,18 @@ public import Strata.Languages.Core.Function
 public import Strata.Languages.Core.Factory
 public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Lambda.LExprEval
+import all Strata.DL.Lambda.LExprWFProps
 
 /-! # Simplify: expressions, the value context, and base commands
 
-The part of `simplify` that does not depend on how statements are nested: folding,
-the two copying rewrites and the conditions that keep them from compounding,
-`simplifyExpr`, the context of known values with its record, invalidate and join
-operations, and the simplification of one base command (`simpCmd`). The structured
-traversal in `Simplify` is built from these, and a traversal of control-flow-graph
-bodies can be built from the same ones.
+The part of `simplify` that does not depend on how statements are nested:
+folding, opening a binder onto a fresh variable, rewriting bottom up with
+node rules, the two copying rewrites and
+the conditions that keep them from compounding, `simplifyExpr`, the context of
+known values with its record, invalidate and join operations, and the
+simplification of one base command (`simpCmd`). The structured traversal in
+`Simplify` is built from these, and a traversal of control-flow-graph bodies
+can be built from the same ones.
 -/
 
 public section
@@ -141,6 +144,98 @@ def foldWith (stripped : Lambda.Factory CoreLParams) (fuel : Nat) (x : CoreIdent
     (v : Expression.Expr)
     (e : Expression.Expr) : Expression.Expr :=
   (LExpr.eval fuel stripped (Env.oneValue x v) e).fst
+
+/-! ## Opening a binder -/
+
+/-- The prefix of the free variables a bound variable is opened onto. -/
+def quantVarPrefix : String := "$__q"
+
+/-- A variable `$__q<n>` that `e` does not mention. Trying `k + 1` names
+    suffices when `e` mentions `k` variables. -/
+def freshFor (e : Expression.Expr) : CoreIdent :=
+  let used := HasFvars.getFvars (P := Expression) e
+  go used used.length 0
+where
+  go (used : List CoreIdent) : Nat → Nat → CoreIdent
+    | 0, n => ⟨s!"{quantVarPrefix}{n}", ()⟩
+    | k + 1, n =>
+      let x : CoreIdent := ⟨s!"{quantVarPrefix}{n}", ()⟩
+      if used.contains x then go used k (n + 1) else x
+
+/-- Applies `f` to `body` with its bound variable opened onto a fresh free
+    variable, then binds the variable again; also returns whether `f` changed
+    the body. The size equality lets a recursive `f` terminate. -/
+def underBinder (ty : Option LMonoTy) (body : Expression.Expr)
+    (f : { b : Expression.Expr // b.sizeOf = body.sizeOf } → Expression.Expr) :
+    Expression.Expr × Bool :=
+  let x := freshFor body
+  let opened := LExpr.varOpen 0 (x, ty) body
+  let transformed := f ⟨opened, LExpr.varOpen_sizeOf (x, ty) body 0⟩
+  if LExpr.eqModuloMeta transformed opened then (body, false)
+  -- `substFvarsLifting` matches `x` by name, ignoring any type `f` gave it.
+  else (LExpr.substFvarsLifting transformed [(x, .bvar () 0)], true)
+
+/-! ## Rewriting bottom up -/
+
+/-- A rewrite of one node whose children are already rewritten. -/
+abbrev NodeRule := Expression.Expr → Option Expression.Expr
+
+/-- Rewrites each node of `e` with the first of `rules` that applies, bottom
+    up, under binders but not in triggers. With `body`, each binder body is
+    opened onto a fresh variable, rewritten, and passed through `body`;
+    without it, a binder body is rewritten in place, which suits rules that do
+    not need closed terms and avoids opening. Also returns whether anything
+    changed. -/
+def rewriteUp (rules : List NodeRule)
+    (body : Option (Expression.Expr → Expression.Expr)) (e : Expression.Expr) :
+    Expression.Expr × Bool :=
+  let (e', changed) : Expression.Expr × Bool := match e with
+    | .quant m k name ty tr b =>
+      let (b', c) := match body with
+        | some f => underBinder ty b fun opened =>
+            f (rewriteUp rules body opened.val).fst
+        | none => rewriteUp rules body b
+      if c then (.quant m k name ty tr b', true) else (e, false)
+    | .abs m name ty b =>
+      let (b', c) := match body with
+        | some f => underBinder ty b fun opened =>
+            f (rewriteUp rules body opened.val).fst
+        | none => rewriteUp rules body b
+      if c then (.abs m name ty b', true) else (e, false)
+    | .app m fn arg =>
+      let (fn', c1) := rewriteUp rules body fn
+      let (arg', c2) := rewriteUp rules body arg
+      if c1 || c2 then (.app m fn' arg', true) else (e, false)
+    | .ite m c t f =>
+      let (c', c1) := rewriteUp rules body c
+      let (t', c2) := rewriteUp rules body t
+      let (f', c3) := rewriteUp rules body f
+      if c1 || c2 || c3 then (.ite m c' t' f', true) else (e, false)
+    | .eq m e1 e2 =>
+      let (e1', c1) := rewriteUp rules body e1
+      let (e2', c2) := rewriteUp rules body e2
+      if c1 || c2 then (.eq m e1' e2', true) else (e, false)
+    | .const .. | .op .. | .bvar .. | .fvar .. => (e, false)
+  match rules.findSome? (· e') with
+  | some v => (v, true)
+  | none => (e', changed)
+  termination_by e.sizeOf
+  decreasing_by
+    all_goals simp only [LExpr.sizeOf]
+    all_goals first
+      | omega
+      | (rw [opened.property]; omega)
+
+/-- Applies `eval`, then `rewriteUp rules (some eval)`, up to `rounds` times,
+    stopping once the rewrite changes nothing: evaluation can expose another
+    node a rule applies to, as in `p || (if r || true then true else s)`. -/
+def evalAndRewrite (eval : Expression.Expr → Expression.Expr)
+    (rules : List NodeRule) : Nat → Expression.Expr → Expression.Expr
+  | 0, e => e
+  | rounds + 1, e =>
+    match rewriteUp rules (some eval) (eval e) with
+    | (e', true) => evalAndRewrite eval rules rounds e'
+    | (e', false) => e'
 
 /-! ## Context -/
 
