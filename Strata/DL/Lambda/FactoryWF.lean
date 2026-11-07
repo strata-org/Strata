@@ -86,6 +86,17 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
       | (simp [LFunc.concreteEval] at hc; done)
       | (exfalso; revert h; decide)
 
+/-- Well-formedness of a function's type signature: distinct type arguments,
+    none with the reserved prefix `$__ty`, covering the input and output type
+    variables. -/
+structure LFuncSigWF {T : LExprParams} (f : LFunc T) : Prop where
+  typeArgs_nodup : List.Nodup f.typeArgs
+  typeArgs_no_gen_prefix :
+    ∀ ta, ta ∈ f.typeArgs → ¬ (genTyPrefix.toList.isPrefixOf ta.toList = true)
+  inputs_typevars_in_typeArgs :
+    ∀ ty, ty ∈ f.inputs.values → ty.freeVars ⊆ f.typeArgs
+  output_typevars_in_typeArgs : f.output.freeVars ⊆ f.typeArgs
+
 /-- An LFunc bundled with its well-formedness proof. -/
 structure WFLFunc (T : LExprParams) where
   func : LFunc T
@@ -129,6 +140,10 @@ Well-formedness properties of a factory.
 -/
 structure FactoryWF {T} (fac : Factory T) where
   lfuncs_wf : ∀ (lf:LFunc T), lf ∈ fac.toArray → LFuncWF lf
+
+/-- Every function of the factory has a well-formed type signature. -/
+structure FactorySigWF {T} (fac : Factory T) : Prop where
+  lfuncs_wf : ∀ (lf : LFunc T), lf ∈ fac.toArray → LFuncSigWF lf
 
 @[simp]
 theorem WFLFactory.toFactory_wf {T} (wf : WFLFactory T) : FactoryWF wf.toFactory :=

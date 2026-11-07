@@ -778,6 +778,47 @@ theorem LMonoTy_instantiateWithCheck_subst_knownInstance
   · rw [← h1]
     simpa [isInstanceOfKnownType] using h_known
 
+/-- Resolving the aliases of a type scheme keeps the substitution. -/
+private theorem LTy_resolveAliases_subst_eq
+    (ty : LTy) (Env : TEnv T.IDMeta) (mty : LMonoTy) (Env' : TEnv T.IDMeta)
+    (h : LTy.resolveAliases ty Env = .ok (mty, Env')) :
+    Env'.stateSubstInfo = Env.stateSubstInfo := by
+  simp only [LTy.resolveAliases, Bind.bind, Except.bind] at h
+  elim_err h with v1 h_inst
+  obtain ⟨mty0, genEnv1⟩ := v1
+  dsimp only at h
+  rw [LMonoTy.resolveAliases_env_eq mty0 _ mty Env' h]
+
+/-- A successful type-scheme `instantiateWithCheck` keeps the substitution and
+    returns a type whose constructors are all registered at their arities. -/
+theorem LTy_instantiateWithCheck_subst_knownInstance
+    (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta) (mty : LMonoTy)
+    (Env' : TEnv T.IDMeta)
+    (h : LTy.instantiateWithCheck ty C Env = .ok (mty, Env')) :
+    Env'.stateSubstInfo = Env.stateSubstInfo ∧
+      LMonoTy.knownInstance mty C.knownTypes = true := by
+  simp only [LTy.instantiateWithCheck, Bind.bind, Except.bind] at h
+  elim_err h with v1 h_res
+  obtain ⟨mty0, Env1⟩ := v1
+  dsimp only [Bool.not_eq_eq_eq_not, Bool.not_true, pure, Except.pure] at h
+  elim_err h
+  elim_err h with h_known
+  simp only [Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨h1, h2⟩ := h
+  refine ⟨?_, ?_⟩
+  · rw [← h2]
+    exact LTy_resolveAliases_subst_eq ty Env mty0 Env1 h_res
+  · rw [← h1]
+    simpa [isInstanceOfKnownType] using h_known
+
+/-- A successful checked scheme instantiation is a registered instance. -/
+theorem LTy_instantiateWithCheck_knownInstance
+    (ty : LTy) (C : LContext T) (Env : TEnv T.IDMeta) (r : LMonoTy)
+    (Env' : TEnv T.IDMeta)
+    (h : LTy.instantiateWithCheck ty C Env = .ok (r, Env')) :
+    LMonoTy.knownInstance r C.knownTypes = true :=
+  (LTy_instantiateWithCheck_subst_knownInstance ty C Env r Env' h).2
+
 /-- Instantiating a monotype returns a type whose constructors are all registered at their
     arities. -/
 theorem LMonoTy_instantiateWithCheck_knownInstance

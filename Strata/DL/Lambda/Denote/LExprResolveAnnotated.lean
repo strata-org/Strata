@@ -9,6 +9,7 @@ import Strata.DL.Lambda.LExprAliasFree
 import all Strata.DL.Lambda.LExprAliasFree
 import Strata.DL.Lambda.Denote.LExprAnnotated
 import all Strata.DL.Lambda.Denote.LExprAnnotated
+import Strata.DL.Lambda.LExprTProps
 
 /-! ## `resolve` produces well-annotated expressions (`HasTypeA`)
 
@@ -19,11 +20,11 @@ internally consistent.
 ### Comparison with `resolve_HasType`
 
 `resolve_HasType` (in `LExprTypeSpec`) proves full polymorphic typing
-(`HasType`) but requires `WellScoped`, `allKeysFresh`, and
-`checkContextTypesClosed` assumptions. `resolve_HasTypeA` here proves
-annotation-consistency (`HasTypeA`) under different assumptions: `TEnvWF`,
-`FactoryWF`, and `AliasesResolved`. It drops the scoping/freshness/closure
-conditions but adds `AliasesResolved`, which `resolve_HasType` does not need.
+(`HasType`) but requires `WellScoped` and `checkContextTypesClosed`.
+`resolve_HasTypeA` here proves annotation-consistency (`HasTypeA`) under
+different assumptions: `TEnvWF`, `FactorySigWF`, and `AliasesResolved`. It
+drops the scoping and closure conditions but adds `AliasesResolved`, which
+`resolve_HasType` does not need.
 
 ### Proof structure
 
@@ -63,34 +64,6 @@ section
 variable {T : LExprParams} [Std.ToFormat T.IDMeta]
 
 /-! ### Layer 2: `allFvarAnnot`, `varCloseT`, and structural helpers -/
-omit [Std.ToFormat T.IDMeta] in
-/-- Type substitution commutes with variable closing: substituting metadata types
-    and then closing a free variable is the same as closing first then substituting. -/
-theorem applySubstT_varCloseT_comm [DecidableEq T.IDMeta] (k : Nat) (xv : T.Identifier) (et : LExprT T.mono) (S : Subst) :
-    applySubstT (LExpr.varCloseT k xv et) S = LExpr.varCloseT k xv (applySubstT et S) := by
-  induction et generalizing k with
-  | const m c => simp [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-  | op m o ty => simp [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-  | bvar m i => simp [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-  | fvar m y yty =>
-    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-    split <;> simp_all [LExpr.replaceMetadata]
-  | app m e1 e2 ih1 ih2 =>
-    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-    congr 1; exact ih1 k; exact ih2 k
-  | abs m name ty e_body ih =>
-    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-    congr 1; exact ih (k + 1)
-  | quant m qk name ty tr e_body ih_tr ih_e =>
-    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-    congr 1; exact ih_tr (k + 1); exact ih_e (k + 1)
-  | ite m c t f_expr ih_c ih_t ih_f =>
-    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-    congr 1; exact ih_c k; congr 1; exact ih_t k; exact ih_f k
-  | eq m e1 e2 ih1 ih2 =>
-    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
-    congr 1; exact ih1 k; exact ih2 k
-
 
 /-- Every free occurrence of `xv` in `et` carries type `t` in its metadata. -/
 def LExprT.allFvarAnnot (xv : T.Identifier) (t : LMonoTy) : LExprT T.mono → Prop
@@ -217,7 +190,7 @@ private theorem ResolveAuxWF.mk_from_resolveAux
     (Env Env' : TEnv T.IDMeta)
     (h_res : resolveAux C Env e = Except.ok (et, Env'))
     (h_wf : ResolveAuxWF Env)
-    (h_fwf : FactoryWF C.functions) :
+    (h_fwf : FactorySigWF C.functions) :
     ResolveAuxWF Env' ∧ Env'.context.Equiv Env.context := by
   have h_props := resolveAux_properties e et C Env Env' h_res h_wf.ne
     h_wf.envwf.aliasesWF h_fwf h_wf.envwf.substFreshForGen h_wf.envwf.ctxFreshForGen h_wf.envwf.boundVarsFresh
@@ -251,7 +224,7 @@ private theorem resolveAux_allFvarAnnot_aux
     (h_ctx : Env.context.types.find? xv = some (.forAll [] xty))
     (h_envwf : TEnvWF Env)
     (h_ne : Env.context.types ≠ [])
-    (h_fwf : FactoryWF C.functions)
+    (h_fwf : FactorySigWF C.functions)
     (h_af : LMonoTy.aliasFree Env.context.aliases xty) :
     LExprT.allFvarAnnot xv xty et := by
   revert h_af h_ctx xty xv
@@ -367,7 +340,7 @@ theorem resolveAux_allFvarAnnot [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasG
     (h_ctx : Env.context.types.find? xv = some (.forAll [] xty))
     (h_envwf : TEnvWF Env)
     (h_ne : Env.context.types ≠ [])
-    (h_fwf : FactoryWF C.functions)
+    (h_fwf : FactorySigWF C.functions)
     (h_af : LMonoTy.aliasFree Env.context.aliases xty) :
     LExprT.allFvarAnnot xv xty et :=
   resolveAux_allFvarAnnot_aux C Env Env' e et xv xty
@@ -459,16 +432,6 @@ private theorem varCloseT_unresolved_HasTypeA_gen [DecidableEq T.IDMeta] (k : Na
       exact HasTypeA.eq (ih1 _ _ hk _ h1 h_annot.1) (ih2 _ _ hk _ h2 h_annot.2)
 
 omit [Std.ToFormat T.IDMeta] in
-/-- `varCloseT` preserves `toLMonoTy`: closing a free variable only changes fvars
-    to bvars without affecting the root metadata (representation-independent). -/
-theorem varCloseT_toLMonoTy [DecidableEq T.IDMeta] (k : Nat) (x : T.Identifier) (et : LExprT T.mono) :
-    (LExpr.varCloseT k x et).toLMonoTy = et.toLMonoTy := by
-  match et with
-  | .const _ _ | .op _ _ _ | .bvar _ _ | .abs _ _ _ _ | .app _ _ _
-  | .ite _ _ _ _ | .eq _ _ _ | .quant _ _ _ _ _ _ => rfl
-  | .fvar _ y _ => simp only [LExpr.varCloseT]; split <;> rfl
-
-omit [Std.ToFormat T.IDMeta] in
 /-- Closing `xv` at depth `k` preserves typing with `toLMonoTy` as the result type,
     extending the bound-variable context by `[t]`. -/
 theorem varCloseT_unresolved_HasTypeA [DecidableEq T.IDMeta] (k : Nat) (Δ : List LMonoTy) (hk : Δ.length = k)
@@ -530,7 +493,7 @@ theorem resolveAux_TEnvWF [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.I
     (h_res : resolveAux C Env e = .ok (et, Env'))
     (h_envwf : TEnvWF Env)
     (h_ne : Env.context.types ≠ [])
-    (h_fwf : FactoryWF C.functions) :
+    (h_fwf : FactorySigWF C.functions) :
     TEnvWF Env' :=
   let props := resolveAux_properties e et C Env Env' h_res h_ne
     h_envwf.aliasesWF h_fwf h_envwf.substFreshForGen h_envwf.ctxFreshForGen h_envwf.boundVarsFresh
@@ -544,7 +507,7 @@ theorem resolve_TEnvWF [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMe
     (Env Env' : TEnv T.IDMeta)
     (h : e.resolve C Env = .ok (e_typed, Env'))
     (h_envwf : TEnvWF Env)
-    (h_fwf : FactoryWF C.functions) :
+    (h_fwf : FactorySigWF C.functions) :
     TEnvWF Env' := by
   unfold LExpr.resolve at h
   simp only [Bind.bind, Except.bind] at h
@@ -577,7 +540,7 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [Hashable T.IDMet
     (h_res : resolveAux C Env e = Except.ok (et, Env'))
     (h_envwf : TEnvWF Env)
     (h_ne : Env.context.types ≠ [])
-    (h_fwf : FactoryWF C.functions)
+    (h_fwf : FactorySigWF C.functions)
     (h_resolved : TContext.AliasesResolved Env.context)
     (S : Subst) (h_absorbs : Subst.absorbs S Env'.stateSubstInfo.subst) :
     HasTypeA [] (applySubstT et S).unresolved ((applySubstT et S).toLMonoTy) := by
@@ -879,7 +842,7 @@ theorem resolveAux_HasTypeA [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T
     (h : resolveAux C Env e = Except.ok (et, Env'))
     (h_envwf : TEnvWF Env)
     (h_ne : Env.context.types ≠ [])
-    (h_fwf : FactoryWF C.functions)
+    (h_fwf : FactorySigWF C.functions)
     (h_resolved : TContext.AliasesResolved Env.context) :
     HasTypeA [] (applySubstT et Env'.stateSubstInfo.subst).unresolved
                ((applySubstT et Env'.stateSubstInfo.subst).toLMonoTy) := by
@@ -889,8 +852,8 @@ theorem resolveAux_HasTypeA [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T
 
 /-- Main soundness theorem: `LExpr.resolve` produces a well-typed and
     well-annotated `LExprT` according to `HasTypeA`. Unlike `resolve_HasType`,
-    this does not require `WellScoped`, `allKeysFresh`, or `checkContextTypesClosed`
-    — only `AliasesResolved`. The trade-off is that it proves annotation-consistency
+    this does not require `WellScoped` or `checkContextTypesClosed`, only
+    `AliasesResolved`. The trade-off is that it proves annotation-consistency
     (`HasTypeA`) rather than full polymorphic typing (`HasType`). -/
 theorem resolve_HasTypeA [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMeta]
     [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
@@ -898,7 +861,7 @@ theorem resolve_HasTypeA [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.ID
     (Env : TEnv T.IDMeta) (Env' : TEnv T.IDMeta)
     (h : e.resolve C Env = Except.ok (e_typed, Env'))
     (h_envwf : TEnvWF Env)
-    (h_fwf : FactoryWF C.functions)
+    (h_fwf : FactorySigWF C.functions)
     (h_resolved : TContext.AliasesResolved Env.context) :
     LExpr.HasTypeA [] e_typed.unresolved (e_typed.toLMonoTy) := by
   unfold LExpr.resolve at h
