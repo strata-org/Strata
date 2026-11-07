@@ -553,5 +553,99 @@ procedure P0 ()
 #guard_msgs in
 #eval (Std.format (transformProgram nestedFuncCallsPartialPgm))
 
+/-! ### Nested calls to a recursive block
+
+Both calls use the same variable `nest_fn` for `nest`, so the well-formedness
+lemma states the division's precondition for the nested call as written. -/
+
+def nestedRecCallPgm :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function nest (@[cases] xs : IntList, acc : int) : int
+{
+  if IntList..isNil(xs) then acc
+  else int.safeDiv(1, nest(IntList..tl(xs), nest(IntList..tl(xs), acc)))
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+datatype IntList {
+  Nil(),
+  Cons(hd : int, tl : IntList)
+};
+lemma [nest_body_calls_IntList..tl_0] (xs : IntList, acc : int): !(IntList..isNil(xs)) ==> IntList..isCons(xs);
+lemma [nest_body_calls_IntList..tl_1] (xs : IntList, acc : int): !(IntList..isNil(xs)) ==> IntList..isCons(xs);
+lemma [nest_body_calls_Int.SafeDiv_2] (xs : IntList, acc : int, nest_fn : (IntList -> int -> int)): !(IntList..isNil(xs)) ==> !(nest_fn(IntList..tl(xs), nest_fn(IntList..tl(xs), acc)) == 0);
+rec function nest (@[cases] xs : IntList, acc : int) : int
+{
+  if IntList..isNil(xs) then acc else int.safeDiv(1, nest(IntList..tl(xs), nest(IntList..tl(xs), acc)))
+};
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram nestedRecCallPgm))
+
+/-! ### Identical polymorphic calls at different instantiations
+
+The two calls `g(Nil())` stand at `MyList int` and `MyList bool`. Each gets its
+own variable for `g`, with its own type parameter, so the lemmas type check.
+In `g`'s own lemma, the element type of `ys`, which stands for `g`'s type
+parameter `b`, is still a type variable after type checking, since this test
+runs no pass that replaces it. Like every type variable a lemma still has, it
+becomes a fresh opaque type declared just before the lemma, and the lemma no
+longer has type parameters. -/
+
+def polymorphicCallsAtTwoTypesPgm :=
+#strata
+program Core;
+
+datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
+
+rec function f (@[cases] xs : MyList int) : int
+{
+  if MyList..isNil(xs) then 0
+  else if g(Nil()) == Cons(1, Nil()) then (if g(Nil()) == Cons(true, Nil()) then f(MyList..tl(xs)) else 1)
+  else 2
+}
+function g<b> (@[cases] ys : MyList b) : MyList b
+{
+  if MyList..isNil(ys) then ys else if int.lt(f(Nil()), 0) then ys else g(MyList..tl(ys))
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: program Core;
+
+datatype MyList (a : Type) {
+  Nil(),
+  Cons(hd : a, tl : MyList a)
+};
+lemma [f_body_calls_MyList..tl_0] (xs : (MyList int), g_fn : (MyList bool -> MyList bool), g_fn_1 : (MyList int -> MyList int)): g_fn(Nil) == Cons(true, Nil) ==> g_fn_1(Nil) == Cons(1, Nil) ==> !(MyList..isNil(xs)) ==> MyList..isCons(xs);
+type $__free_g_body_calls_MyList..tl_0_0;
+lemma [g_body_calls_MyList..tl_0] (ys : (MyList $__free_g_body_calls_MyList..tl_0_0), f_fn : (MyList int -> int)): !(int.lt(f_fn(Nil), 0)) ==> !(MyList..isNil(ys)) ==> MyList..isCons(ys);
+rec function f (@[cases] xs : MyList int) : int
+{
+  if MyList..isNil(xs) then 0 else if g(Nil) == Cons(1, Nil) then if g(Nil) == Cons(true, Nil) then f(MyList..tl(xs)) else 1 else 2
+}
+function g<b> (@[cases] ys : MyList b) : MyList b
+{
+  if MyList..isNil(ys) then ys else if int.lt(f(Nil), 0) then ys else g(MyList..tl(ys))
+};
+-/
+#guard_msgs in
+#eval (Std.format (transformProgram polymorphicCallsAtTwoTypesPgm))
+
 end PrecondElimTests
 end

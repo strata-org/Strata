@@ -343,6 +343,11 @@ def findRecTy (block : MutualDatatype IDMeta) (ty : LMonoTy) : Option (LDatatype
 def isRecTy (block : MutualDatatype IDMeta) (ty : LMonoTy) : Bool :=
   (findRecTy block ty).isSome
 
+/-- The datatype of `block` that `ty` is. Unlike `findRecTy`, a function type
+    whose result is a datatype of `block` is not one. -/
+def findDirectRecTy (block : MutualDatatype IDMeta) (ty : LMonoTy) : Option (LDatatype IDMeta) :=
+  block.find? (dataDefault · == ty)
+
 
 
 /--
@@ -666,6 +671,11 @@ def TypeFactory.allDatatypes (t : @TypeFactory IDMeta) : List (LDatatype IDMeta)
 /-- Find a datatype by name in the TypeFactory. -/
 def TypeFactory.getType (F : @TypeFactory IDMeta) (name : String) : Option (LDatatype IDMeta) :=
   F.allDatatypes.find? (fun d => d.name == name)
+
+/-- The mutual block that declares the datatype `name` in the TypeFactory. -/
+def TypeFactory.getBlock? (F : @TypeFactory IDMeta) (name : String) :
+    Option (MutualDatatype IDMeta) :=
+  F.toList.find? (·.any (·.name == name))
 
 /-- Get all datatype names in the TypeFactory. -/
 def TypeFactory.allTypeNames (t : @TypeFactory IDMeta) : List String :=

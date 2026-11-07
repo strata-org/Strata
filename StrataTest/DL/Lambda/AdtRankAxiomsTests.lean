@@ -122,6 +122,19 @@ info: (∀ (bvar:int) (∀ (bvar:IntList) ((~Int.Lt : (arrow int (arrow int bool
 #eval format (mkAdtRankNonNegAxiom (T := TP) intListDt ())
 
 ---------------------------------------------------------------------
+-- Test 3c: Positivity axiom for IntList
+-- ∀ x : IntList. !isNil(x) ==> IntList..adtRank(x) >= 1
+---------------------------------------------------------------------
+
+/--
+info: [(∀ (bvar:IntList) ((~Bool.Implies : (arrow bool (arrow bool bool)))
+   ((~Bool.Not : (arrow bool bool)) ((~isNil : (arrow IntList bool)) %0))
+   ((~Int.Ge : (arrow int (arrow int bool))) ((~IntList..adtRank : (arrow IntList int)) %0) #1)))]
+-/
+#guard_msgs in
+#eval format (mkAdtRankPosAxiom (T := TP) intListDt intListBlock ())
+
+---------------------------------------------------------------------
 -- Test 3: Per-constructor axioms for MyNat
 -- Zero has no recursive fields → no axioms
 -- Succ has one recursive field (pred) → one axiom
@@ -152,14 +165,19 @@ private def noRecBlock : MutualDatatype Unit := [noRecDt]
 #guard_msgs in
 #eval (mkAdtRankPerConstrAxioms (T := TP) noRecDt noRecBlock ()).length
 
+/-- info: 0 -/
+#guard_msgs in
+#eval (mkAdtRankPosAxiom (T := TP) noRecDt noRecBlock ()).length
+
 ---------------------------------------------------------------------
 -- Test 6: Mutual datatypes — RoseTree (via mkAdtRankAxioms)
--- Non-neg axiom + 1 per-constructor (Node's children field) = 2
+-- Non-neg axiom + 1 per-constructor (Node's children field) + positivity
+-- (a RoseTree that is not a Leaf has a rank of at least 1) = 3
 ---------------------------------------------------------------------
 
 private def roseBlock : MutualDatatype Unit := [roseTreeDt, roseListDt]
 
-/-- info: 2 -/
+/-- info: 3 -/
 #guard_msgs in
 #eval (mkAdtRankAxioms (T := TP) roseTreeDt roseBlock ()).length
 
@@ -179,10 +197,10 @@ info: (∀ (bvar:RoseList) ((~Int.Lt : (arrow int (arrow int bool)))
 
 ---------------------------------------------------------------------
 -- Test 7: Mutual datatypes — RoseList (via mkAdtRankAxioms)
--- Non-neg axiom + 2 per-constructor (RCons hd and tl) = 3
+-- Non-neg axiom + 2 per-constructor (RCons hd and tl) + positivity = 4
 ---------------------------------------------------------------------
 
-/-- info: 3 -/
+/-- info: 4 -/
 #guard_msgs in
 #eval (mkAdtRankAxioms (T := TP) roseListDt roseBlock ()).length
 
@@ -217,7 +235,7 @@ info: (∀ (bvar:RoseTree) (∀ (bvar:RoseList) ((~Int.Lt : (arrow int (arrow in
 #guard_msgs in
 #eval (mkAdtRankDeclsForBlock (T := TP) roseBlock ()).1.length
 
-/-- info: 5 -/
+/-- info: 7 -/
 #guard_msgs in
 #eval (mkAdtRankDeclsForBlock (T := TP) roseBlock ()).2.length
 

@@ -42,12 +42,21 @@ def exprPrefix : String := "$__tvar"
 /-- Prefix of the type variables Core procedure inlining uses to instantiate a callee. -/
 @[expose] def inlineTyPrefix : String := "$__inlinety"
 
+/-- Prefix of the type variables that instantiate a polymorphic function's type parameters
+    where a generated lemma abstracts a call to it. -/
+@[expose] def abstractTyPrefix : String := "$__abs_"
+
+/-- Prefix of the opaque types that replace a type-checked lemma's remaining type
+    variables. -/
+@[expose] def freeTyPrefix : String := "$__free_"
+
 /-- Name prefixes reserved for generated identifiers. The passes that use them choose names
     without checking all of the program's names, so a written name with one of these prefixes
     could be captured. -/
 @[expose]
 def reservedNamePrefixes : List String :=
-  [genTyPrefix, skolemPrefix, elimTyPrefix, callElimTyPrefix, inlineTyPrefix]
+  [genTyPrefix, skolemPrefix, elimTyPrefix, callElimTyPrefix, inlineTyPrefix,
+    abstractTyPrefix, freeTyPrefix]
 
 /-- A name is allowed when it starts with no reserved prefix. -/
 @[expose]

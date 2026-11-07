@@ -38,7 +38,7 @@ check. -/
 namespace Core.UnrollBoundedQuantifiers
 
 open Lambda Imperative
-open FoldConnectives (boolOpOf? foldConnectives)
+open FoldConnectives (boolOpOf? conjuncts foldConnectives)
 
 def selectName : String := seqSelectFunc.name.name
 def selectBangName : String := seqSelectUnsafeFunc.name.name
@@ -382,14 +382,6 @@ def binOpArgs? (name : String) : LExpr CoreLParams.mono →
   | .app _ (.app _ (.op _ o _) x) y =>
     if baseName o.name == name then some (x, y) else none
   | _ => none
-
-/-- Top-level conjuncts of `e`, splitting `Bool.And` and nothing else. A
-    disjunction, a negation or a binder comes back whole, since a comparison inside
-    one need not hold of every index. -/
-def conjuncts : LExpr CoreLParams.mono → List (LExpr CoreLParams.mono)
-  | e@(.app _ (.app _ (.op _ o _) x) y) =>
-    if boolOpOf? o.name == some .And then conjuncts x ++ conjuncts y else [e]
-  | e => [e]
 
 /-- Conjuncts of the antecedents along `e`'s implication chain, empty if `e` is
     not an implication. `G₁ → G₂ → R` restricts an index exactly as

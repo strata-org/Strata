@@ -15,6 +15,12 @@ For each ADT used as a decreasing measure, we generate:
 1. An uninterpreted function `D..adtRank : D → Int`
 2. Per-constructor axioms: for each constructor field of datatype type,
    `adtRank(field) < adtRank(C(fields...))`, with trigger `adtRank(C(fields...))`.
+3. `adtRank(x) >= 0`, and `adtRank(x) >= 1` when `x` is not built by a
+   constructor without a field of datatype type.
+
+A value's height, counting only fields of the block's datatypes, satisfies
+these axioms, and is `0` for a constructor without such fields: termination
+checking uses `0` for the rank of such a value.
 -/
 
 namespace Lambda
@@ -57,7 +63,7 @@ def mkAdtRankPerConstrAxioms {T : LExprParams} [Inhabited T.Metadata] [Inhabited
       .app m (.op m (adtRankFuncName dt.name) (.some adtRankTy)) constrApp
     let fields := (c.args.map (fun (id, ty) => (id.name, ty))).reverse
     (c.args.foldlIdxVal (init := []) fun acc i (_, fieldTy) =>
-      match block.find? (fun d => fieldTy == dataDefault d) with
+      match findDirectRecTy block fieldTy with
       | none => acc
       | some fieldDt =>
         let fieldBvar := .bvar m (numFields - 1 - i)
@@ -87,11 +93,43 @@ def mkAdtRankNonNegAxiom {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.I
   let geExpr := .mkApp m (@intGeFunc T).opExpr [rankX, .intConst m 0]
   .quant m .all "x" (.some dtTy) rankX geExpr
 
+/-- Whether the constructor `c` has a field whose type is a datatype of `block`
+    (`findDirectRecTy`), which is a field that gets a per-constructor axiom.
+    The rank-`1` axiom and termination checking's rank `0` (see the module
+    documentation) must both use this test, or the rank `0` is unsound.
+
+    TODO: prove that these axioms are sound, by the model where a value's rank
+    is its height, counting only fields of `block`'s datatypes: height satisfies
+    every adtRank axiom, and is `0` exactly on the values built by constructors
+    for which this test is false. -/
+def LConstr.hasBlockField (block : MutualDatatype IDMeta) (c : LConstr IDMeta) : Bool :=
+  c.args.any fun (_, ty) => (findDirectRecTy block ty).isSome
+
+/-- Generate `∀ x. !(isC₁(x) || … || isCₙ(x)) ==> adtRank(x) >= 1`, where the
+    `Cᵢ` are the constructors of `dt` without a field of a datatype of `block`,
+    or nothing when every constructor is one of them. Trigger: `adtRank(x)`. -/
+def mkAdtRankPosAxiom {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.IDMeta]
+    [DecidableEq T.IDMeta]
+    (dt : LDatatype T.IDMeta) (block : MutualDatatype T.IDMeta) (m : T.Metadata) :
+    List (LExpr T.mono) :=
+  let dtTy := dataDefault dt
+  if dt.constrs.all (!·.hasBlockField block) then [] else
+  let testers : List (LExpr T.mono) := (dt.constrs.filter (!·.hasBlockField block)).map fun c =>
+    .app m (.op m c.testerName (.some (.arrow dtTy .bool))) (.bvar m 0)
+  let rankX := .app m (.op m (adtRankFuncName dt.name) (.some (.arrow dtTy .int))) (.bvar m 0)
+  let geOne := .mkApp m (@intGeFunc T).opExpr [rankX, .intConst m 1]
+  let body := match testers with
+    | [] => geOne
+    | t :: ts =>
+      let isBase := ts.foldl (fun acc t => .mkApp m (@boolOrFunc T).opExpr [acc, t]) t
+      .mkApp m (@boolImpliesFunc T).opExpr [.app m (@boolNotFunc T).opExpr isBase, geOne]
+  [.quant m .all "x" (.some dtTy) rankX body]
+
 /-- Generate all adtRank axioms for a single datatype within a mutual block. -/
 def mkAdtRankAxioms {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.IDMeta] [DecidableEq T.IDMeta]
     (dt : LDatatype T.IDMeta) (block : MutualDatatype T.IDMeta)
     (m : T.Metadata) : List (LExpr T.mono) :=
-  mkAdtRankNonNegAxiom dt m :: mkAdtRankPerConstrAxioms dt block m
+  mkAdtRankNonNegAxiom dt m :: mkAdtRankPerConstrAxioms dt block m ++ mkAdtRankPosAxiom dt block m
 
 /-- Generate adtRank functions and axioms for all datatypes in a mutual block. -/
 def mkAdtRankDeclsForBlock {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.IDMeta]

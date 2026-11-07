@@ -380,15 +380,14 @@ Result: ✅ pass
 
 ---------------------------------------------------------------------
 
-/-! ### Encodable CSE definitions stay in the shared prefix
+/-! ### Each obligation gets only the CSE definitions it uses
 
-Per-obligation pruning is needed only to isolate definitions that cannot be
-serialized. Applying it to ordinary definitions gives each obligation a
-different oldest frame and defeats both the encoding fold's prefix reuse and
-the captured-emitter mirror. Each procedure below contributes one CSE
-definition; the inspection backend must therefore see both definitions on
-both obligations. -/
-private def encodableCSEDefinitionsStayShared : Program :=
+A CSE definition hoisted above every obligation is dropped from those that do
+not use it, encodable or not: it could mention a function the obligation does
+not, and so bring that function's axioms into its context. Each procedure below
+contributes one CSE definition, and the inspection backend must see only that
+one on each obligation. -/
+private def encodableCSEDefinitionsArePruned : Program :=
 #strata
 program Core;
 function f (s : string) : int;
@@ -415,8 +414,8 @@ private def reportCSEDefinitionCount : Core.MkDischargeFn :=
       return .ok (.unknown, .unknown, .init)
 
 /--
-info: first: 2 shared CSE definitions
-second: 2 shared CSE definitions
+info: first: 1 shared CSE definitions
+second: 1 shared CSE definitions
 ---
 info:
 Obligation: first
@@ -428,7 +427,7 @@ Property: assert
 Result: ❓ unknown
 -/
 #guard_msgs in
-#eval Core.verify encodableCSEDefinitionsStayShared
+#eval Core.verify encodableCSEDefinitionsArePruned
   (options := Core.VerifyOptions.quiet)
   (mkDischarge := reportCSEDefinitionCount)
 

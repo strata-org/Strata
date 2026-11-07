@@ -8,7 +8,6 @@ module
 public import Strata.Languages.Core.Verifier
 public import Std.Sync.Mutex
 import Strata.Languages.Core.ObligationExtraction
-import Strata.Transform.CommonSubexprElim
 
 /-! # Walking a verification tree with long-lived solver sessions
 
@@ -267,9 +266,9 @@ structure WorkItem where
       `held &&& keptAxioms == held` says the goal keeps every axiom in `held`, in one step however
       many axioms the program has. -/
   keptAxioms : Nat := 0
-  /-- CSE definitions on the path that this goal does not use and that the solver must not be
-      sent, because their text cannot be written for it. Empty except on the path the
-      per-obligation discharge also isolates, see `pruneUnusedCSEDefinitions`. -/
+  /-- CSE definitions on the path that this goal does not use, which the solver is not sent
+      for this goal. The per-obligation discharge drops the same ones, see
+      `pruneUnusedCSEDefinitions`. -/
   skippedDefs : Std.HashSet String := {}
 
 /-- The tree laid out for the walk. Nodes, and so goals, are numbered in pre-order, which is
@@ -1128,19 +1127,11 @@ def run {τ σ : Type} (factory : @Lambda.Factory CoreLParams)
           | some i => if dropped.contains label then acc else acc ||| (1 <<< i)
           | none => acc
         | _ => acc
-    -- The per-obligation discharge drops a goal's unused CSE definitions only when one of them
-    -- holds a string literal SMT-LIB cannot spell; doing the same here keeps such a literal from
-    -- failing every goal below the node it was hoisted to.
     let ob := obligationOf t
     let skippedDefs : Std.HashSet String :=
-      if !hasUnsupportedStringCSEDefinition ob then {} else
-        let defsOf (o : Imperative.ProofObligation Expression) : List String :=
-          o.assumptions.flatMap fun pc => pc.filterMap fun
-            | .varDecl name _ (.det _) =>
-              if CSE.isCSEGeneratedName name.name then some name.name else none
-            | _ => none
-        let keptDefs := Std.HashSet.ofList (defsOf (pruneUnusedCSEDefinitions ob))
-        Std.HashSet.ofList ((defsOf ob).filter (!keptDefs.contains ·))
+      let defs := cseDefinitions ob
+      let needed := neededCSEDefinitions ob defs
+      Std.HashSet.ofList (defs.filterMap fun (n, _) => if needed.contains n then none else some n)
     pure { t with pruned, keptAxioms := keptMask, skippedDefs }
   let l := { l0 with tasks }
   let sessions := planSessions l (options.minSessions.getD n) options.splitByNode
@@ -1518,11 +1509,7 @@ def coreSMTSolver (sessions : Nat := 1) (options : VerifyOptions := VerifyOption
         (axiomProgram := axProg) (mkDischarge := mkDischarge) (pctx := pctx) : CoreSMTSolver)
         factory oblProgram)
     -- A goal sent alone is discharged against the environment of the whole program, as the
-    -- per-obligation path discharges it, and with that path's dropping of unused CSE definitions,
-    -- which it applies to every obligation once one needs it.
-    let anyUnsupportedCSE := match ObligationExtraction.extractObligations oblProgram with
-      | .ok obs => obs.any hasUnsupportedStringCSEDefinition
-      | .error _ => false
+    -- per-obligation path discharges it, and with that path's dropping of unused CSE definitions.
     -- Built on the first goal sent alone, and once, however many workers send at once.
     let env : Thunk (Except Strata.Pipeline.Message Env) := Thunk.mk fun _ =>
       (Core.buildEnv options oblProgram factory (registerCustomFunctions := true)).map (·.1)
@@ -1531,7 +1518,7 @@ def coreSMTSolver (sessions : Nat := 1) (options : VerifyOptions := VerifyOption
         | .ok E => pure E
         | .error m => throw (ofMsg m)
       let ob := obligationOf item
-      let ob := if anyUnsupportedCSE then pruneUnusedCSEDefinitions ob else ob
+      let ob := pruneUnusedCSEDefinitions ob
       -- A goal sent alone is a single obligation, so it is discharged with one worker whatever
       -- the caller's worker count. That count describes this call only: several of the walk's
       -- workers may send goals at once, so a back end that shares one connection between

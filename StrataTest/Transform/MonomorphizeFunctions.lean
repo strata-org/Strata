@@ -855,11 +855,11 @@ spec {
 -- discharged.
 /--
 info:
-Obligation: len_body_calls_MyList..tl_0
+Obligation: len_terminates_0
 Property: assert
 Result: ✅ pass
 
-Obligation: len_terminates_0
+Obligation: len_body_calls_MyList..tl_0
 Property: assert
 Result: ✅ pass
 

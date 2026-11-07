@@ -33,6 +33,14 @@ def boolOpOf? (name : String) : Option BoolOpKind :=
   | .bool k => some k
   | _ => none
 
+/-- Top-level conjuncts of `e`, splitting `Bool.And` and nothing else. A
+    disjunction, a negation or a binder comes back whole, since a comparison inside
+    one need not hold of every index. -/
+def conjuncts : LExpr CoreLParams.mono → List (LExpr CoreLParams.mono)
+  | e@(.app _ (.app _ (.op _ o _) x) y) =>
+    if boolOpOf? o.name == some .And then conjuncts x ++ conjuncts y else [e]
+  | e => [e]
+
 /-- The value of `e` when it is an `and`, `or` or `==>` with a literal
     argument. `a ==> false` is left as is: its value `!a` is neither a literal
     nor an operand. -/

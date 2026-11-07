@@ -717,6 +717,7 @@ def typeCheck (options : VerifyOptions) (program : Program)
     throw (Message.fromFormat k)
   | .ok T =>
     let (program, _T) ← Program.typeCheck C T program
+    let program := GenOpaqueTypeParams.closeLemmaTypeVars program
     -- dbg_trace f!"[Strata.Core] Annotated program:\n{program}"
     if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
     return program
@@ -2308,7 +2309,10 @@ where
 /-- The variables a counterexample for `obligation` should report: those its goal and
     assumptions reach, through the managed definitions they use, that
     `Core.SMT.isReportedName` names. A variable the passive program declares (`var x`) is
-    reported; one it defines (`init x := e`) is not, since its value follows from the others. -/
+    reported; one it defines (`init x := e`) is not, since its value follows from the others.
+    A variable of a function type, such as one standing for a function in a generated lemma,
+    is not reported: SMT-LIB's `get-value` takes only terms of a value sort, and a request
+    naming it would lose the whole counterexample. -/
 def collectModelVars
     (obligation : Imperative.ProofObligation Expression)
     (varDefinitions : List VarDefinition)
@@ -2332,76 +2336,64 @@ def collectModelVars
   let relevantNames :=
     defClosure (fun e => (Lambda.LExpr.freeVars e).map (·.1.name)) definitions rootRefs
   let definedNames := definedNameSet varDefinitions
-  (ProofObligation.getVars obligation).filter fun (v, _) =>
-    relevantNames.contains v.name && Core.SMT.isReportedName definedNames v.name
+  (ProofObligation.getVars obligation).filter fun (v, ty) =>
+    relevantNames.contains v.name && Core.SMT.isReportedName definedNames v.name &&
+      (ty.bind LMonoTy.isArrow).isNone
 
-private
-def containsUnsupportedSMTString : Expression.Expr → Bool
-  | .const _ (.strConst s) =>
-    match SMT.StringLit.validate s with
-    | .ok () => false
-    | .error _ => true
-  | .const _ _ | .op .. | .bvar .. | .fvar .. => false
-  | .abs _ _ _ body => containsUnsupportedSMTString body
-  | .quant _ _ _ _ trigger body =>
-    containsUnsupportedSMTString trigger || containsUnsupportedSMTString body
-  | .app _ fn arg =>
-    containsUnsupportedSMTString fn || containsUnsupportedSMTString arg
-  | .ite _ c t e =>
-    containsUnsupportedSMTString c ||
-      containsUnsupportedSMTString t ||
-      containsUnsupportedSMTString e
-  | .eq _ lhs rhs =>
-    containsUnsupportedSMTString lhs || containsUnsupportedSMTString rhs
-
-def hasUnsupportedStringCSEDefinition
-    (obligation : Imperative.ProofObligation Expression) : Bool :=
-  obligation.assumptions.any fun pathCondition =>
-    pathCondition.any fun
+/-- The CSE-generated definitions on the path of `obligation`, in order. -/
+def cseDefinitions (obligation : Imperative.ProofObligation Expression) :
+    List (String × Expression.Expr) :=
+  obligation.assumptions.flatMap fun pathCondition =>
+    pathCondition.filterMap fun
       | .varDecl name _ (.det rhs) =>
-        isCSEGeneratedName name.name && containsUnsupportedSMTString rhs
-      | _ => false
+        if isCSEGeneratedName name.name then some (name.name, rhs) else none
+      | _ => none
+
+/-- The names of the definitions of `definitions`, the CSE-generated
+    definitions of `obligation`, that `obligation` uses: those its goal and its
+    other path-condition entries reference, closed over the definitions' bodies
+    (see `pruneUnusedCSEDefinitions`). -/
+def neededCSEDefinitions (obligation : Imperative.ProofObligation Expression)
+    (definitions : List (String × Expression.Expr)) : Std.HashSet String :=
+  let rootRefs := obligation.assumptions.foldl (fun refs pathCondition =>
+    pathCondition.foldl (fun refs entry =>
+      match entry with
+      | .assumption _ e => addCSEReferences refs e
+      | .distinct _ es => es.foldl addCSEReferences refs
+      | .varDecl name _ (.det rhs) =>
+        if isCSEGeneratedName name.name then refs
+        else addCSEReferences refs rhs
+      | .varDecl _ _ .nondet => refs) refs)
+    (addCSEReferences {} obligation.obligation)
+  defClosure (fun e => (Lambda.LExpr.freeVars e).filterMap fun (id, _) =>
+    if isCSEGeneratedName id.name then some id.name else none) definitions rootRefs
 
 /-- Remove CSE-generated definitions that cannot affect this obligation.
 
 Symbolic evaluation combines every deferred obligation into one synthetic
 procedure before CSE runs. CSE may therefore hoist a repeated expression above
 all obligation branches, making its `init $__cse.*` entry appear in every
-obligation even when only one branch references it. Besides producing needless
-SMT, an unencodable literal in such a definition would then prevent unrelated
-obligations from reaching the solver.
+obligation even when only one branch references it. Such a definition must not
+reach an obligation that does not use it: it can mention a function the
+obligation does not, and so bring that function's axioms into its context. A
+recursive function's termination and well-formedness lemmas are stated
+without the function, and must be checked without its axioms, which may be
+contradictory when the function does not terminate. An unencodable literal in
+such a definition would also prevent unrelated obligations from reaching the
+solver.
 
-This pruning is applied only when the extracted obligation set contains an
-SMT-unrepresentable string inside a CSE definition. Ordinary CSE definitions
-remain shared across obligations, preserving the fold and emitter's
-shared-prefix reuse. On the exceptional path, start from CSE variables
-referenced by the obligation and by non-CSE path-condition entries, close
-transitively over CSE definition bodies, and retain only those definitions.
-The original entry ordering is preserved, so every retained dependency is
-still emitted before its users. -/
+Start from CSE variables referenced by the obligation and by non-CSE
+path-condition entries, close transitively over CSE definition bodies, and
+retain only those definitions. The original entry ordering is preserved, so
+every retained dependency is still emitted before its users. -/
 def pruneUnusedCSEDefinitions
     (obligation : Imperative.ProofObligation Expression) :
     Imperative.ProofObligation Expression :=
-  let definitions := obligation.assumptions.flatMap fun pathCondition =>
-    pathCondition.filterMap fun
-      | .varDecl name _ (.det rhs) =>
-        if isCSEGeneratedName name.name then some (name.name, rhs) else none
-      | _ => none
+  let definitions := cseDefinitions obligation
   if definitions.isEmpty then
     obligation
   else
-    let rootRefs := obligation.assumptions.foldl (fun refs pathCondition =>
-      pathCondition.foldl (fun refs entry =>
-        match entry with
-        | .assumption _ e => addCSEReferences refs e
-        | .distinct _ es => es.foldl addCSEReferences refs
-        | .varDecl name _ (.det rhs) =>
-          if isCSEGeneratedName name.name then refs
-          else addCSEReferences refs rhs
-        | .varDecl _ _ .nondet => refs) refs)
-      (addCSEReferences {} obligation.obligation)
-    let needed := defClosure (fun e => (Lambda.LExpr.freeVars e).filterMap fun (id, _) =>
-      if isCSEGeneratedName id.name then some id.name else none) definitions rootRefs
+    let needed := neededCSEDefinitions obligation definitions
     let assumptions := obligation.assumptions.map fun pathCondition =>
       pathCondition.filter fun
         | .varDecl name _ (.det _) =>
@@ -2622,18 +2614,12 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     if let some diag := firstError then throw diag
   return (results, stats)
 
-/-- The obligations `extractObligations` reads from a program, with the unused CSE definitions
-    dropped from every one of them when one holds a string literal SMT-LIB cannot spell. -/
+/-- The obligations `extractObligations` reads from a program, each without the CSE
+    definitions it does not use (see `pruneUnusedCSEDefinitions`). -/
 def obligationsOf (oblProgram : Program) :
     Except Message (ProofObligations Expression) :=
   match Core.ObligationExtraction.extractObligations oblProgram with
-  | .ok obs =>
-    -- Per-obligation pruning changes the shared oldest frame and defeats
-    -- prefix reuse. Pay that cost only when it isolates a CSE definition
-    -- whose string literal cannot be serialized for SMT-LIB.
-    if obs.any hasUnsupportedStringCSEDefinition
-    then .ok (obs.map pruneUnusedCSEDefinitions)
-    else .ok obs
+  | .ok obs => .ok (obs.map pruneUnusedCSEDefinitions)
   | .error e => .error (Message.fromFormat f!"ObligationExtraction error: {e}")
 
 private

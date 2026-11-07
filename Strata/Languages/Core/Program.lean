@@ -116,6 +116,13 @@ def Decl.metadata (d : Decl) : MetaData Expression :=
             [⟨n, ()⟩, ⟨n ++ Lambda.unsafeDestructorSuffix, ()⟩]
   | _ => []
 
+/-- The names of the lemmas a declaration lists: a procedure's, and those of its functions. -/
+@[expose] def Decl.lemmaNames : Decl → List String
+  | .proc p _ => p.header.lemmas
+  | .func f _ => f.lemmas
+  | .recFuncBlock fs _ => fs.flatMap (·.lemmas)
+  | _ => []
+
 def Decl.getTypeDecl? (d : Decl) : Option TypeDecl :=
   match d with
   | .type t _ => some t

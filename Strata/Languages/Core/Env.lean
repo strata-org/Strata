@@ -235,7 +235,7 @@ def validateCasesTypes (funcs : List Function) (tf : @Lambda.TypeFactory Unit) :
         (.error (.fromFormat f!"'{func.name}': @[cases] index {recIdx} out of bounds")) .ok
       match recTy with
       | .tcons n _ =>
-        if (tf.toList.find? (·.any (·.name == n))).isNone then
+        if (tf.getBlock? n).isNone then
           .error (.fromFormat f!"'{func.name}': @[cases] type '{n}' is not a known datatype")
       | _ => .error (.fromFormat f!"'{func.name}': @[cases] type is not a datatype")
 

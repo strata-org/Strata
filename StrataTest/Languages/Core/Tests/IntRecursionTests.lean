@@ -41,15 +41,15 @@ rec function bad (@[cases] xs : IntList, n : int) : int
 
 /--
 info:
-Obligation: bad_body_calls_IntList..tl_0
-Property: assert
-Result: ✅ pass
-
 Obligation: bad_terminates_0
 Property: assert
 Result: ❌ fail
 
 Obligation: bad_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: bad_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 -/
@@ -133,15 +133,15 @@ rec function factorial (n : int) : int
 
 /--
 info:
-Obligation: factorial_body_calls_factorial_0
-Property: assert
-Result: ✅ pass
-
 Obligation: factorial_terminates_0
 Property: assert
 Result: ✅ pass
 
 Obligation: factorial_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: factorial_body_calls_factorial_0
 Property: assert
 Result: ✅ pass
 -/
@@ -166,10 +166,6 @@ rec function bad (n : int) : int
 
 /--
 info:
-Obligation: bad_body_calls_bad_0
-Property: assert
-Result: ✅ pass
-
 Obligation: bad_terminates_0
 Property: assert
 Result: ✅ pass
@@ -177,6 +173,10 @@ Result: ✅ pass
 Obligation: bad_terminates_1
 Property: assert
 Result: ❌ fail
+
+Obligation: bad_body_calls_bad_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify nonTermIntPgm (options := .quiet)
@@ -239,11 +239,27 @@ rec function merge (l1 : IntList, l2 : IntList) : IntList
 
 /--
 info:
+Obligation: listLen_terminates_0
+Property: assert
+Result: ✅ pass
+
 Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
-Obligation: listLen_terminates_0
+Obligation: merge_terminates_0
+Property: assert
+Result: ❓ unknown
+
+Obligation: merge_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: merge_terminates_2
+Property: assert
+Result: ❓ unknown
+
+Obligation: merge_terminates_3
 Property: assert
 Result: ✅ pass
 
@@ -286,22 +302,6 @@ Result: ✅ pass
 Obligation: merge_body_calls_merge_9
 Property: assert
 Result: ❓ unknown
-
-Obligation: merge_terminates_0
-Property: assert
-Result: ❓ unknown
-
-Obligation: merge_terminates_1
-Property: assert
-Result: ✅ pass
-
-Obligation: merge_terminates_2
-Property: assert
-Result: ❓ unknown
-
-Obligation: merge_terminates_3
-Property: assert
-Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify compoundMeasurePgm (options := .quiet)
@@ -327,22 +327,6 @@ rec function diagonal (m : int, n : int) : int
 
 /--
 info:
-Obligation: diagonal_body_calls_diagonal_0
-Property: assert
-Result: ✅ pass
-
-Obligation: diagonal_body_calls_diagonal_1
-Property: assert
-Result: ✅ pass
-
-Obligation: diagonal_body_calls_diagonal_2
-Property: assert
-Result: ✅ pass
-
-Obligation: diagonal_body_calls_diagonal_3
-Property: assert
-Result: ✅ pass
-
 Obligation: diagonal_terminates_0
 Property: assert
 Result: ✅ pass
@@ -356,6 +340,22 @@ Property: assert
 Result: ✅ pass
 
 Obligation: diagonal_terminates_3
+Property: assert
+Result: ✅ pass
+
+Obligation: diagonal_body_calls_diagonal_0
+Property: assert
+Result: ✅ pass
+
+Obligation: diagonal_body_calls_diagonal_1
+Property: assert
+Result: ✅ pass
+
+Obligation: diagonal_body_calls_diagonal_2
+Property: assert
+Result: ✅ pass
+
+Obligation: diagonal_body_calls_diagonal_3
 Property: assert
 Result: ✅ pass
 -/
@@ -386,14 +386,6 @@ function isOdd (n : int) : bool
 
 /--
 info:
-Obligation: isEven_body_calls_isOdd_0
-Property: assert
-Result: ✅ pass
-
-Obligation: isOdd_body_calls_isEven_0
-Property: assert
-Result: ✅ pass
-
 Obligation: isEven_terminates_0
 Property: assert
 Result: ✅ pass
@@ -407,6 +399,14 @@ Property: assert
 Result: ✅ pass
 
 Obligation: isOdd_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: isEven_body_calls_isOdd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isOdd_body_calls_isEven_0
 Property: assert
 Result: ✅ pass
 -/
@@ -447,14 +447,6 @@ procedure TestMutualConcrete() spec {
 
 /--
 info:
-Obligation: isEven_body_calls_isOdd_0
-Property: assert
-Result: ✅ pass
-
-Obligation: isOdd_body_calls_isEven_0
-Property: assert
-Result: ✅ pass
-
 Obligation: isEven_terminates_0
 Property: assert
 Result: ✅ pass
@@ -468,6 +460,14 @@ Property: assert
 Result: ✅ pass
 
 Obligation: isOdd_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: isEven_body_calls_isOdd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isOdd_body_calls_isEven_0
 Property: assert
 Result: ✅ pass
 
@@ -537,14 +537,6 @@ procedure TestFibUF(n : int) spec {
 
 /--
 info:
-Obligation: fib_body_calls_fib_0
-Property: assert
-Result: ✅ pass
-
-Obligation: fib_body_calls_fib_1
-Property: assert
-Result: ✅ pass
-
 Obligation: fib_terminates_0
 Property: assert
 Result: ✅ pass
@@ -558,6 +550,14 @@ Property: assert
 Result: ✅ pass
 
 Obligation: fib_terminates_3
+Property: assert
+Result: ✅ pass
+
+Obligation: fib_body_calls_fib_0
+Property: assert
+Result: ✅ pass
+
+Obligation: fib_body_calls_fib_1
 Property: assert
 Result: ✅ pass
 
@@ -611,15 +611,15 @@ procedure TestFactConcrete() spec {
 
 /--
 info:
-Obligation: factorial_body_calls_factorial_0
-Property: assert
-Result: ✅ pass
-
 Obligation: factorial_terminates_0
 Property: assert
 Result: ✅ pass
 
 Obligation: factorial_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: factorial_body_calls_factorial_0
 Property: assert
 Result: ✅ pass
 
@@ -685,6 +685,14 @@ procedure TestSumFirstCons(h : int, t : IntList, n : int) spec {
 
 /--
 info:
+Obligation: sumFirst_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: sumFirst_terminates_1
+Property: assert
+Result: ✅ pass
+
 Obligation: sumFirst_body_calls_IntList..hd_0
 Property: assert
 Result: ✅ pass
@@ -694,14 +702,6 @@ Property: assert
 Result: ✅ pass
 
 Obligation: sumFirst_body_calls_sumFirst_2
-Property: assert
-Result: ✅ pass
-
-Obligation: sumFirst_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: sumFirst_terminates_1
 Property: assert
 Result: ✅ pass
 

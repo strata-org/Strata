@@ -45,7 +45,7 @@ procedure localWriteInvalid() opaque {
   var o: Option<nat> := Some(-1);
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
   assert false
-//^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^ error: assertion does not hold
 };
 
 procedure localWriteValid() opaque {

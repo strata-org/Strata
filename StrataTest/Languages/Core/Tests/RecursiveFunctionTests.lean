@@ -58,17 +58,18 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: listLen_body_calls_IntList..tl_0
-Property: assert
-Obligation:
-!(IntList..isNil(xs@1)) ==> IntList..isCons(xs@1)
-
 Label: listLen_terminates_0
 Property: assert
 Obligation:
 (forall x : IntList ::  { IntList..adtRank(x) }
   int.ge(IntList..adtRank(x), 0)) ==> (forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))) ==> !(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))) ==> (forall x : IntList ::  { IntList..adtRank(x) }
+  !(IntList..isNil(x)) ==> int.ge(IntList..adtRank(x), 1)) ==> !(IntList..isNil(xs@1)) ==> int.lt(IntList..adtRank(IntList..tl(xs@1)), IntList..adtRank(xs@1))
+
+Label: listLen_body_calls_IntList..tl_0
+Property: assert
+Obligation:
+!(IntList..isNil(xs@2)) ==> IntList..isCons(xs@2)
 
 Label: nilLen
 Property: assert
@@ -92,11 +93,11 @@ true
 
 ---
 info:
-Obligation: listLen_body_calls_IntList..tl_0
+Obligation: listLen_terminates_0
 Property: assert
 Result: ✅ pass
 
-Obligation: listLen_terminates_0
+Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
@@ -162,17 +163,18 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: listLen_body_calls_IntList..tl_0
-Property: assert
-Obligation:
-!(IntList..isNil(xs@1)) ==> IntList..isCons(xs@1)
-
 Label: listLen_terminates_0
 Property: assert
 Obligation:
 (forall x : IntList ::  { IntList..adtRank(x) }
   int.ge(IntList..adtRank(x), 0)) ==> (forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))) ==> !(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))) ==> (forall x : IntList ::  { IntList..adtRank(x) }
+  !(IntList..isNil(x)) ==> int.ge(IntList..adtRank(x), 1)) ==> !(IntList..isNil(xs@1)) ==> int.lt(IntList..adtRank(IntList..tl(xs@1)), IntList..adtRank(xs@1))
+
+Label: listLen_body_calls_IntList..tl_0
+Property: assert
+Obligation:
+!(IntList..isNil(xs@2)) ==> IntList..isCons(xs@2)
 
 Label: nilCase
 Property: assert
@@ -211,11 +213,11 @@ true
 
 ---
 info:
-Obligation: listLen_body_calls_IntList..tl_0
+Obligation: listLen_terminates_0
 Property: assert
 Result: ✅ pass
 
-Obligation: listLen_terminates_0
+Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
@@ -276,15 +278,15 @@ spec {
 
 /--
 info:
+Obligation: contains_terminates_0
+Property: assert
+Result: ✅ pass
+
 Obligation: contains_body_calls_IntList..hd_0
 Property: assert
 Result: ✅ pass
 
 Obligation: contains_body_calls_IntList..tl_1
-Property: assert
-Result: ✅ pass
-
-Obligation: contains_terminates_0
 Property: assert
 Result: ✅ pass
 
@@ -351,17 +353,18 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: listLen_body_calls_IntList..tl_0
-Property: assert
-Obligation:
-!(IntList..isNil(xs@1)) ==> IntList..isCons(xs@1)
-
 Label: listLen_terminates_0
 Property: assert
 Obligation:
 (forall x : IntList ::  { IntList..adtRank(x) }
   int.ge(IntList..adtRank(x), 0)) ==> (forall hd : int :: forall tl : IntList ::  { IntList..adtRank(Cons(hd, tl)) }
-  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))) ==> !(IntList..isNil(xs@2)) ==> int.lt(IntList..adtRank(IntList..tl(xs@2)), IntList..adtRank(xs@2))
+  int.lt(IntList..adtRank(tl), IntList..adtRank(Cons(hd, tl)))) ==> (forall x : IntList ::  { IntList..adtRank(x) }
+  !(IntList..isNil(x)) ==> int.ge(IntList..adtRank(x), 1)) ==> !(IntList..isNil(xs@1)) ==> int.lt(IntList..adtRank(IntList..tl(xs@1)), IntList..adtRank(xs@1))
+
+Label: listLen_body_calls_IntList..tl_0
+Property: assert
+Obligation:
+!(IntList..isNil(xs@2)) ==> IntList..isCons(xs@2)
 
 Label: insertLoopInvAssert_entry_invariant_loop_0_0
 Property: assert
@@ -424,11 +427,11 @@ Obligation:
 
 ---
 info:
-Obligation: listLen_body_calls_IntList..tl_0
+Obligation: listLen_terminates_0
 Property: assert
 Result: ✅ pass
 
-Obligation: listLen_terminates_0
+Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
@@ -500,11 +503,15 @@ spec {
 
 /--
 info:
+Obligation: listLen_terminates_0
+Property: assert
+Result: ✅ pass
+
 Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
-Obligation: listLen_terminates_0
+Obligation: nth_terminates_0
 Property: assert
 Result: ✅ pass
 
@@ -525,10 +532,6 @@ Property: assert
 Result: ✅ pass
 
 Obligation: nth_body_calls_nth_4
-Property: assert
-Result: ✅ pass
-
-Obligation: nth_terminates_0
 Property: assert
 Result: ✅ pass
 
@@ -600,11 +603,11 @@ rec function len<a>(@[cases] xs : MyList a) : int
 
 /--
 info:
-Obligation: len_body_calls_MyList..tl_0
+Obligation: len_terminates_0
 Property: assert
 Result: ✅ pass
 
-Obligation: len_terminates_0
+Obligation: len_body_calls_MyList..tl_0
 Property: assert
 Result: ✅ pass
 -/

@@ -433,11 +433,11 @@ spec {
 
 /--
 info:
-Obligation: applyN_body_calls_MyNat..pred_0
+Obligation: applyN_terminates_0
 Property: assert
 Result: ✅ pass
 
-Obligation: applyN_terminates_0
+Obligation: applyN_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
 
@@ -673,11 +673,11 @@ spec {
 
 /--
 info:
-Obligation: intListLen_body_calls_MyList..tl_0
+Obligation: intListLen_terminates_0
 Property: assert
 Result: ✅ pass
 
-Obligation: intListLen_terminates_0
+Obligation: intListLen_body_calls_MyList..tl_0
 Property: assert
 Result: ✅ pass
 
