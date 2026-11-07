@@ -7,6 +7,7 @@ module
 
 meta import Strata.Languages.Core
 meta import Strata.Transform.EqualitySimplification
+meta import StrataTest.Transform.EqualitySimplificationGoalsDefined
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -73,6 +74,21 @@ procedure P(n : int, s : string)
   assert [stringFolds]: str.len(str.concat(s, "c")) == 3;
 };
 #end
+
+/-- The body of `literalPgm`, as type checking leaves it, is the one
+    `Core.EqualitySimplification.GoalsDefinedTest.literal_goalsDefined` proves has goals with
+    values. -/
+private def literalBodyExprs : Option (List Core.Expression.Expr) := do
+  let p ← (Core.typeCheck .quiet (parse literalPgm)).toOption
+  let q ← p.decls.findSome? fun | .proc q _ => some q | _ => none
+  let .structured ss := q.body | none
+  ss.mapM fun
+    | .cmd (.cmd (.assume _ e _)) | .cmd (.cmd (.assert _ e _)) => some e
+    | _ => none
+
+open Core.EqualitySimplification.GoalsDefinedTest in
+#guard literalBodyExprs ==
+  some [.eq () n (.intConst () 3), .eq () s (.strConst () "ab"), intGoal, strGoal]
 
 /--
 info: intFolds: pass
@@ -2900,6 +2916,407 @@ undetected: pass
     undetectedQuantPgm, connectivesLimitPgm, connectivesGuardPgm, undetectedPgm]
   for p in ps do
     agreesWithSolver .deductive p
+
+/-! ## The fixtures' goals are typed, before the phase and after it
+
+The theorems of `Strata.Transform.EqualitySimplificationCorrect` take as premise that the
+goals of a body have values in the stores it reaches (`GoalsDefined`), and a goal has one
+there when it is well typed. This check counts the goals, lemmas and axioms of the fixtures
+that type check (all but `shadowDefPgm`, which the type checker rejects by design) and those
+that `LExpr.typeCheck` types at `bool`, as type checking leaves them and after the phase. It
+is evidence that the premises can hold, not that the folding conditions do. -/
+
+private partial def stmtGoals : Core.Statement → List Core.Expression.Expr
+  | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) => [e]
+  | .block _ ss _ | .loop _ _ _ ss _ => ss.flatMap stmtGoals
+  | .ite _ ts es _ => ts.flatMap stmtGoals ++ es.flatMap stmtGoals
+  | _ => []
+
+/-- The goals, lemmas and axioms of a program. -/
+private def programGoals (p : Core.Program) : List Core.Expression.Expr :=
+  p.decls.flatMap fun
+    | .proc q _ => match q.body with
+      | .structured ss => ss.flatMap stmtGoals
+      | _ => []
+    | .ax a _ => [a.e]
+    | .lemma l _ => [l.e]
+    | _ => []
+
+/-- How many of the goals, lemmas and axioms of `p` there are, and how many type at `bool`. -/
+private def typedCount (p : Core.Program) : Nat × Nat :=
+  let gs := programGoals p
+  (gs.length, (gs.filter fun e => Lambda.LExpr.typeCheck [] e == some .bool).length)
+
+/-- For the fixture `p`, `typedCount` as type checking leaves it and after the phase. -/
+private def typedBeforeAfter (p : StrataDDM.Program) :
+    Except String ((Nat × Nat) × (Nat × Nat)) := do
+  let prog ← (Core.typeCheck .quiet (parse p)).mapError (fun e => toString e.message)
+  let (_, out) ← (Core.Transform.run prog Core.EqualitySimplification.runEqualitySimplification
+    { Core.Transform.CoreTransformState.emp with factory := Core.Factory }).mapError toString
+  return (typedCount prog, typedCount out)
+
+/-- The fixtures that type check. -/
+private def fixtures : List (String × StrataDDM.Program) :=
+  [("literalPgm", literalPgm),
+   ("constructorPgm", constructorPgm),
+   ("applicationPgm", applicationPgm),
+   ("booleanPgm", booleanPgm),
+   ("coverPgm", coverPgm),
+   ("residualPgm", residualPgm),
+   ("unusedPgm", unusedPgm),
+   ("foldFirstPgm", foldFirstPgm),
+   ("foldAxiomsPgm", foldAxiomsPgm),
+   ("axiomPgm", axiomPgm),
+   ("conjunctionPgm", conjunctionPgm),
+   ("definitionPgm", definitionPgm),
+   ("opaqueEqPgm", opaqueEqPgm),
+   ("depthPgm", depthPgm),
+   ("shadowPgm", shadowPgm),
+   ("axiomAfterPgm", axiomAfterPgm),
+   ("contradictionPgm", contradictionPgm),
+   ("lemmaPgm", lemmaPgm),
+   ("lemmaOrderPgm", lemmaOrderPgm),
+   ("lemmaContradictionPgm", lemmaContradictionPgm),
+   ("lemmaQuantPgm", lemmaQuantPgm)]
+
+/--
+info: before: 49 of 49 typed at bool; after: 49 of 49
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  let ps := fixtures
+  let mut before : Nat × Nat := (0, 0)
+  let mut after : Nat × Nat := (0, 0)
+  for (name, p) in ps do
+    match typedBeforeAfter p with
+    | .ok (b, a) =>
+      before := (before.1 + b.1, before.2 + b.2)
+      after := (after.1 + a.1, after.2 + a.2)
+    | .error msg => IO.println s!"{name}: {msg}"
+  IO.println s!"before: {before.2} of {before.1} typed at bool; after: {after.2} of {after.1}"
+
+/-! ## The fixtures' operators are consistent with the folding factories
+
+The theorems of `Strata.Transform.EqualitySimplificationCorrect` take as premise that the
+operators of a body's commands (`CmdOps`) and of the ground axioms (`GroundAxiomsOps`) are
+annotated at instances of their signatures in the folding factory the phase uses. This
+check decides it, with `opsConsistentB`, which is sound for `Lambda.OpsConsistentR`
+(`opsConsistentR_of_opsConsistentB`), on every fixture that type checks: against the
+folding factory of `runCtx program F0` for the program as type checking leaves it, and of
+`runCtx mid F0'` for the program `mid` that axiom folding gives, then on the output of the
+phase. It counts the expressions checked (the goals, assumptions and definition values of
+the bodies, and the ground axioms), those that pass, the operator nodes, and those the
+folding factory knows. -/
+
+private partial def stmtCmdExprs : Core.Statement → List Core.Expression.Expr
+  | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) | .cmd (.cmd (.assume _ e _))
+  | .cmd (.cmd (.init _ _ (.det e) _)) => [e]
+  | .block _ ss _ | .loop _ _ _ ss _ => ss.flatMap stmtCmdExprs
+  | .ite _ ts es _ => ts.flatMap stmtCmdExprs ++ es.flatMap stmtCmdExprs
+  | _ => []
+
+/-- The expressions of the bodies' commands and the ground axioms of `p`. -/
+private def premiseExprs (p : Core.Program) : List Core.Expression.Expr :=
+  p.decls.flatMap fun
+    | .proc q _ => match q.body with
+      | .structured ss => ss.flatMap stmtCmdExprs
+      | _ => []
+    | .ax a _ => if a.e.hasBVar then [] else [a.e]
+    | _ => []
+
+private partial def opNames : Core.Expression.Expr → List String
+  | .op _ n _ => [n.name]
+  | .app _ f a | .eq _ f a => opNames f ++ opNames a
+  | .abs _ _ _ b => opNames b
+  | .ite _ c t f => opNames c ++ opNames t ++ opNames f
+  | .quant _ _ _ _ tr b => opNames tr ++ opNames b
+  | _ => []
+
+/-- For `p` and its folding factory: expressions, passing ones, operators, known ones. -/
+private def opsCount (p : Core.Program) : Except String (Nat × Nat × Nat × Nat) := do
+  let F0 ← (Core.Transform.run p Core.Simplify.programFactory
+    { Core.Transform.CoreTransformState.emp with factory := Core.Factory }).mapError toString
+  let F := (Core.FoldAxioms.runCtx p F0).foldFactory
+  let es := premiseExprs p
+  let ops := es.flatMap opNames
+  return (es.length,
+    (es.filter (Core.EqualitySimplification.GoalsDefinedTest.opsConsistentB F)).length,
+    ops.length, (ops.filter fun n => F[n]?.isSome).length)
+
+private def addCounts (a b : Nat × Nat × Nat × Nat) : Nat × Nat × Nat × Nat :=
+  (a.1 + b.1, a.2.1 + b.2.1, a.2.2.1 + b.2.2.1, a.2.2.2 + b.2.2.2)
+
+private def showCounts (label : String) (c : Nat × Nat × Nat × Nat) : String :=
+  s!"{label}: {c.2.1} of {c.1} consistent, {c.2.2.2} of {c.2.2.1} operators known"
+
+/--
+info: program: 87 of 87 consistent, 116 of 116 operators known
+after axiom folding: 87 of 87 consistent, 114 of 114 operators known
+after the phase: 87 of 87 consistent, 80 of 80 operators known
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  let mut c₁ : Nat × Nat × Nat × Nat := (0, 0, 0, 0)
+  let mut c₂ : Nat × Nat × Nat × Nat := (0, 0, 0, 0)
+  let mut c₃ : Nat × Nat × Nat × Nat := (0, 0, 0, 0)
+  for (name, p) in fixtures do
+    let r : Except String _ := do
+      let prog ← (Core.typeCheck .quiet (parse p)).mapError (fun e => toString e.message)
+      let st := { Core.Transform.CoreTransformState.emp with factory := Core.Factory }
+      let (_, mid) ← (Core.Transform.run prog Core.FoldAxioms.runFoldAxioms st).mapError toString
+      let (_, out) ← (Core.Transform.run mid
+        Core.EqualitySimplification.runEqualitySimplification st).mapError toString
+      return (← opsCount prog, ← opsCount mid, ← opsCount out)
+    match r with
+    | .ok (a, b, c) => c₁ := addCounts c₁ a; c₂ := addCounts c₂ b; c₃ := addCounts c₃ c
+    | .error msg => IO.println s!"{name}: {msg}"
+  IO.println (showCounts "program" c₁)
+  IO.println (showCounts "after axiom folding" c₂)
+  IO.println (showCounts "after the phase" c₃)
+
+/-! ## Near misses of the operator premise
+
+`Core.EqualitySimplification.GoalsDefinedTest.wrongArg` and `wrongBeta` satisfy the operator
+premise and have no value in any runtime factory (`wrongArg_no_value`, `wrongBeta_no_value`),
+so the one-way folding conditions say nothing about them, though `wrongBeta` folds to the
+integer `3`. `mistypedSum` fails the premise. -/
+
+open Core.EqualitySimplification.GoalsDefinedTest in
+#guard opsConsistentB Core.Factory wrongArg && opsConsistentB Core.Factory wrongBeta &&
+  Core.Simplify.fold Core.Factory 100 wrongBeta == .intConst () 3 &&
+  !opsConsistentB Core.Factory Core.FoldAxioms.mistypedSum
+
+/-! Equality simplification folds goals with `foldTerm`, which `FoldSound` is about: it
+also folds the counterexample and the beta near miss to the integer `3`. -/
+
+open Core.EqualitySimplification.GoalsDefinedTest in
+#guard Core.EqualitySimplification.foldTerm Core.Factory {} 100 Core.FoldAxioms.mistypedSum ==
+    .intConst () 3 &&
+  Core.EqualitySimplification.foldTerm Core.Factory {} 100 wrongBeta == .intConst () 3 &&
+  Core.EqualitySimplification.foldTerm Core.Factory {} 100 wrongArg == wrongArg
+
+/-! ## Witness candidates must have the quantifier's type
+
+`foldTerm` proves `exists x : ty :: { f(x) } P(x)` when `P(v)` folds to `true` for a witness
+candidate `v` the facts record for `f`. A candidate of another type can satisfy a body that no
+value of `ty` does: `∃ x : bool. ¬(x == true) ∧ ¬(x == false)` is well typed and false, and
+folds to `true` given the integer candidate `3`, since `3 == true` and `3 == false` fold to
+`false`. So the facts the equality simplification theorems carry record candidates of the
+quantifier's type (`Facts.Ops`); with the candidate `true`, the existential is not folded. -/
+
+open Core.EqualitySimplification.GoalsDefinedTest in
+private def tgTy : Lambda.LMonoTy := .tcons "TriggerGroup" []
+
+open Core.EqualitySimplification.GoalsDefinedTest in
+/-- `∃ x : bool :: { f(x) } ¬(x == true) ∧ ¬(x == false)`, with `f : bool → bool`. -/
+private def noBool : Core.Expression.Expr :=
+  let x : Core.Expression.Expr := .bvar () 0
+  let notE (a : Core.Expression.Expr) : Core.Expression.Expr :=
+    .app () (.op () ⟨"Bool.Not", ()⟩ (some (arr boolTy boolTy))) a
+  let trig : Core.Expression.Expr :=
+    .app () (.app () (.op () ⟨"TriggerGroup.addTrigger", ()⟩ (some (arr boolTy (arr tgTy tgTy))))
+      (.app () (.op () ⟨"f", ()⟩ (some (arr boolTy boolTy))) x))
+      (.op () ⟨"TriggerGroup.empty", ()⟩ (some tgTy))
+  .quant () .exist "x" (some boolTy) trig
+    (.app () (.app () (.op () ⟨"Bool.And", ()⟩ (some (arr boolTy (arr boolTy boolTy))))
+      (notE (.eq () x (.boolConst () true)))) (notE (.eq () x (.boolConst () false))))
+
+open Core.EqualitySimplification.GoalsDefinedTest in
+/-- Facts recording the witness candidate `v` for `f : bool → bool`. -/
+private def candidate (v : Core.Expression.Expr) : Core.EqualitySimplification.Facts :=
+  { hints := ({} : Std.HashMap _ _).insert ("f", arr boolTy boolTy) [v] }
+
+#guard Lambda.LExpr.typeCheck [] noBool == some .bool
+#guard Core.EqualitySimplification.foldTerm Core.Factory (candidate (.intConst () 3)) 100 noBool ==
+  .boolConst () true
+#guard Core.EqualitySimplification.foldTerm Core.Factory (candidate (.boolConst () true)) 100
+  noBool == Core.EqualitySimplification.foldTerm Core.Factory {} 100 noBool
+#guard !(Core.EqualitySimplification.foldTerm Core.Factory {} 100 noBool).isTrue
+
+/-! The same search over `int`, `∃ x : int :: { g(x) } x == 3 ∧ x == 4` given the Boolean
+candidate `true`, does not fire: `true == 3` and `true == 4` fold to `false`, so the body
+folds to `false` too. -/
+
+open Core.EqualitySimplification.GoalsDefinedTest in
+/-- `∃ x : int :: { g(x) } x == 3 ∧ x == 4`, with `g : int → bool`. -/
+private def threeAndFour : Core.Expression.Expr :=
+  let x : Core.Expression.Expr := .bvar () 0
+  let trig : Core.Expression.Expr :=
+    .app () (.app () (.op () ⟨"TriggerGroup.addTrigger", ()⟩ (some (arr boolTy (arr tgTy tgTy))))
+      (.app () (.op () ⟨"g", ()⟩ (some (arr intTy boolTy))) x))
+      (.op () ⟨"TriggerGroup.empty", ()⟩ (some tgTy))
+  .quant () .exist "x" (some intTy) trig
+    (.app () (.app () (.op () ⟨"Bool.And", ()⟩ (some (arr boolTy (arr boolTy boolTy))))
+      (.eq () x (.intConst () 3))) (.eq () x (.intConst () 4)))
+
+open Core.EqualitySimplification.GoalsDefinedTest in
+private def trueCandidate : Core.EqualitySimplification.Facts :=
+  { hints := ({} : Std.HashMap _ _).insert ("g", arr intTy boolTy) [.boolConst () true] }
+open Core.EqualitySimplification.GoalsDefinedTest in
+#guard Lambda.LExpr.typeCheck [] threeAndFour == some .bool &&
+  !(Core.EqualitySimplification.foldTerm Core.Factory
+    trueCandidate 100 threeAndFour).isTrue
+
+/-! ## Recorded witness candidates are typed
+
+The facts the theorems carry record each witness candidate for `f : ty → bool` at type `ty`
+(`Facts.Ops`). Candidates come from assumptions and ground axioms `f(v)`, where `v` is often
+a term over the program's variables. A variable keeps the type annotation type checking
+gives it, so `LExpr.typeCheck []` types such a candidate. This check learns every assumption
+and ground axiom of each program of this file that type checks, from no facts, and counts the
+candidates recorded and those of their key's type. -/
+
+private partial def stmtAssumes : Core.Statement → List Core.Expression.Expr
+  | .cmd (.cmd (.assume _ e _)) => [e]
+  | .block _ ss _ | .loop _ _ _ ss _ => ss.flatMap stmtAssumes
+  | .ite _ ts es _ => ts.flatMap stmtAssumes ++ es.flatMap stmtAssumes
+  | _ => []
+
+/-- The assumptions of `p`'s bodies and its ground axioms. -/
+private def learnedExprs (p : Core.Program) : List Core.Expression.Expr :=
+  p.decls.flatMap fun
+    | .proc q _ => match q.body with
+      | .structured ss => ss.flatMap stmtAssumes
+      | _ => []
+    | .ax a _ => if a.e.hasBVar then [] else [a.e]
+    | _ => []
+
+/-- Every program of this file that type checks (all but `shadowDefPgm`). -/
+private def allPrograms : List (String × StrataDDM.Program) :=
+  [("literalPgm", (literalPgm : StrataDDM.Program)),
+   ("constructorPgm", (constructorPgm : StrataDDM.Program)),
+   ("applicationPgm", (applicationPgm : StrataDDM.Program)),
+   ("booleanPgm", (booleanPgm : StrataDDM.Program)),
+   ("coverPgm", (coverPgm : StrataDDM.Program)),
+   ("residualPgm", (residualPgm : StrataDDM.Program)),
+   ("unusedPgm", (unusedPgm : StrataDDM.Program)),
+   ("foldFirstPgm", (foldFirstPgm : StrataDDM.Program)),
+   ("foldAxiomsPgm", (foldAxiomsPgm : StrataDDM.Program)),
+   ("axiomPgm", (axiomPgm : StrataDDM.Program)),
+   ("conjunctionPgm", (conjunctionPgm : StrataDDM.Program)),
+   ("definitionPgm", (definitionPgm : StrataDDM.Program)),
+   ("opaqueEqPgm", (opaqueEqPgm : StrataDDM.Program)),
+   ("depthPgm", (depthPgm : StrataDDM.Program)),
+   ("shadowPgm", (shadowPgm : StrataDDM.Program)),
+   ("axiomAfterPgm", (axiomAfterPgm : StrataDDM.Program)),
+   ("contradictionPgm", (contradictionPgm : StrataDDM.Program)),
+   ("unseenContradictionPgm", (unseenContradictionPgm : StrataDDM.Program)),
+   ("undetectedBvPgm", (undetectedBvPgm : StrataDDM.Program)),
+   ("undetectedQuantPgm", (undetectedQuantPgm : StrataDDM.Program)),
+   ("lemmaPgm", (lemmaPgm : StrataDDM.Program)),
+   ("lemmaOrderPgm", (lemmaOrderPgm : StrataDDM.Program)),
+   ("lemmaContradictionPgm", (lemmaContradictionPgm : StrataDDM.Program)),
+   ("lemmaQuantPgm", (lemmaQuantPgm : StrataDDM.Program)),
+   ("vacuousQuantPgm", (vacuousQuantPgm : StrataDDM.Program)),
+   ("noFactsQuantPgm", (noFactsQuantPgm : StrataDDM.Program)),
+   ("mixedQuantPgm", (mixedQuantPgm : StrataDDM.Program)),
+   ("nestedQuantPgm", (nestedQuantPgm : StrataDDM.Program)),
+   ("positionsQuantPgm", (positionsQuantPgm : StrataDDM.Program)),
+   ("absorbPgm", (absorbPgm : StrataDDM.Program)),
+   ("anyAddressPgm", (anyAddressPgm : StrataDDM.Program)),
+   ("positionsBvPgm", (positionsBvPgm : StrataDDM.Program)),
+   ("literalRePgm", (literalRePgm : StrataDDM.Program)),
+   ("factsRePgm", (factsRePgm : StrataDDM.Program)),
+   ("encoderRejectedPgm", (encoderRejectedPgm : StrataDDM.Program)),
+   ("longRePgm", (longRePgm : StrataDDM.Program)),
+   ("connectivesPgm", (connectivesPgm : StrataDDM.Program)),
+   ("connectivesDeadPgm", (connectivesDeadPgm : StrataDDM.Program)),
+   ("connectivesPositionsPgm", (connectivesPositionsPgm : StrataDDM.Program)),
+   ("connectivesRoundsPgm", (connectivesRoundsPgm : StrataDDM.Program)),
+   ("connectivesLimitPgm", (connectivesLimitPgm : StrataDDM.Program)),
+   ("connectivesGuardPgm", (connectivesGuardPgm : StrataDDM.Program)),
+   ("noFactsPgm", (noFactsPgm : StrataDDM.Program)),
+   ("hintPgm", (hintPgm : StrataDDM.Program)),
+   ("positionsPgm", (positionsPgm : StrataDDM.Program)),
+   ("hintScopePgm", (hintScopePgm : StrataDDM.Program)),
+   ("polyHintPgm", (polyHintPgm : StrataDDM.Program)),
+   ("hintProcPgm", (hintProcPgm : StrataDDM.Program)),
+   ("undetectedPgm", (undetectedPgm : StrataDDM.Program)),
+   ("hintFlowPgm", (hintFlowPgm : StrataDDM.Program)),
+   ("hintLimitPgm", (hintLimitPgm : StrataDDM.Program))]
+
+/-- Candidates recorded from `p`'s assumptions and ground axioms, and those of their key's
+    type. -/
+private def hintCount (p : Core.Program) : Except String (Nat × Nat) := do
+  let F0 ← (Core.Transform.run p Core.Simplify.programFactory
+    { Core.Transform.CoreTransformState.emp with factory := Core.Factory }).mapError toString
+  let F := (Core.FoldAxioms.runCtx p F0).foldFactory
+  let hs := (learnedExprs p).flatMap fun e =>
+    (Core.EqualitySimplification.addAssumption F {} Core.EqualitySimplification.defDepth e).hints.toList
+  let cands := hs.flatMap fun ((_, fty), vs) => vs.map (fty, ·)
+  return (cands.length, (cands.filter fun (fty, v) => match fty with
+    | .tcons "arrow" [ty, .tcons "bool" []] => Lambda.LExpr.typeCheck [] v == some ty
+    | _ => false).length)
+
+/--
+info: candidates: 29 of 29 typed
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  let mut c : Nat × Nat := (0, 0)
+  for (name, p) in allPrograms do
+    match (Core.typeCheck .quiet (parse p)).mapError (fun e => toString e.message) >>= hintCount with
+    | .ok (a, b) => c := (c.1 + a, c.2 + b)
+    | .error msg => IO.println s!"{name}: {msg}"
+  IO.println s!"candidates: {c.2} of {c.1} typed"
+
+open Core.EqualitySimplification.GoalsDefinedTest in
+/-- Learning `assume f(x)`, with `x : bool` and `f : bool → bool`, records the candidate `x`,
+    which `LExpr.typeCheck []` types at `bool` by its annotation. -/
+private def varCandidate : Option (List Core.Expression.Expr) :=
+  let x : Core.Expression.Expr := .fvar () ⟨"x", ()⟩ (some boolTy)
+  let fs := Core.EqualitySimplification.addAssumption Core.Factory {}
+    Core.EqualitySimplification.defDepth (.app () (.op () ⟨"f", ()⟩ (some (arr boolTy boolTy))) x)
+  fs.hints.get? ("f", arr boolTy boolTy)
+
+open Core.EqualitySimplification.GoalsDefinedTest in
+#guard varCandidate == some [.fvar () ⟨"x", ()⟩ (some boolTy)] &&
+  Lambda.LExpr.typeCheck [] (.fvar () ⟨"x", ()⟩ (some boolTy) : Core.Expression.Expr) == some boolTy
+
+/-! ## Assumptions and ground axioms are typed by their own annotations
+
+The theorems take as premise that the condition of each `assume`, and each ground axiom of
+the program equality simplification runs on, is typed at `bool` by its own annotations
+(`CmdOps`, `GroundAxiomsTyped`), so that the witness candidates learned from them are typed.
+This counts them on every program of this file that type checks, as type checking leaves it
+and after axiom folding. -/
+
+/--
+info: typed: 90 of 90, after axiom folding: 90 of 90
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  let typed (p : Core.Program) : Nat × Nat :=
+    let es := learnedExprs p
+    (es.length, (es.filter fun e => Lambda.LExpr.typeCheck [] e == some .bool).length)
+  let mut c₁ : Nat × Nat := (0, 0)
+  let mut c₂ : Nat × Nat := (0, 0)
+  for (name, p) in allPrograms do
+    let r : Except String _ := do
+      let prog ← (Core.typeCheck .quiet (parse p)).mapError (fun e => toString e.message)
+      let st := { Core.Transform.CoreTransformState.emp with factory := Core.Factory }
+      let (_, mid) ← (Core.Transform.run prog Core.FoldAxioms.runFoldAxioms st).mapError toString
+      return (typed prog, typed mid)
+    match r with
+    | .ok (a, b) => c₁ := (c₁.1 + a.1, c₁.2 + a.2); c₂ := (c₂.1 + b.1, c₂.2 + b.2)
+    | .error msg => IO.println s!"{name}: {msg}"
+  IO.println s!"typed: {c₁.2} of {c₁.1}, after axiom folding: {c₂.2} of {c₂.1}"
+
+open Core.EqualitySimplification.GoalsDefinedTest in
+/-- `Bool.Not(x) == true` with `x` annotated `int`: it records the candidate `x` for
+    `Bool.Not : bool → bool`, which is not typed at `bool`, and the typing premise excludes
+    it, since the assumption itself is not typed by its own annotations. Evaluation reads
+    `x`'s sort from the store, so where `x` holds the Boolean `false` the assumption is
+    `true`. -/
+private def mistypedAssume : Core.Expression.Expr :=
+  .eq () (.app () (.op () ⟨"Bool.Not", ()⟩ (some (arr boolTy boolTy)))
+    (.fvar () ⟨"x", ()⟩ (some intTy))) (.boolConst () true)
+
+open Core.EqualitySimplification.GoalsDefinedTest in
+#guard (Core.EqualitySimplification.addAssumption Core.Factory {}
+    Core.EqualitySimplification.defDepth mistypedAssume).hints.get? ("Bool.Not", arr boolTy boolTy)
+    == some [.fvar () ⟨"x", ()⟩ (some intTy)] &&
+  Lambda.LExpr.typeCheck [] mistypedAssume == none
 
 end Strata.EqualitySimplificationTest
 

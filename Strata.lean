@@ -157,6 +157,9 @@ import Strata.Transform.SSA.SSACoreProgram
 import Strata.Transform.SSA.SSACoreProgramProps
 import Strata.Transform.SSA.SSACoreCorrect
 
+-- Equality simplification: failures are kept, given its expression-level steps are sound.
+import Strata.Transform.EqualitySimplificationCorrect
+
  -- deletion candidates: nothing imports these modules:
 
 -- noimport:
