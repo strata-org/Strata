@@ -99,7 +99,7 @@ private def intLiteral (value : Int) : Laurel.StmtExprMd :=
 private def reportWrongOperatorArity
     (callee : String) (args : List Laurel.StmtExprMd) : IO Unit := do
   let call : Laurel.StmtExprMd :=
-    ⟨.StaticCall (Laurel.mkId callee) args [], default⟩
+    ⟨.Call none (Laurel.mkId callee) args [], default⟩
   let model : Laurel.SemanticModel :=
     { nextId := 0, compositeCount := 0, refToDef := {} }
   let (_, state) :=

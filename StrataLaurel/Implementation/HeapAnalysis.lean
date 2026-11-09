@@ -45,22 +45,21 @@ structure AnalysisResult where
     `foldStmtExprM`; the visitor only flags the constructors that directly read
     (`x#f`), write (field assignment, `new`), or call.
 
-    Both `StaticCall` and `InstanceCall` callees are recorded: this analysis runs
+    Both static `Call` and instance `Call` callees are recorded: this analysis runs
     at initial resolution, *before* `LiftInstanceProcedures` rewrites
-    `obj#method(...)` (an `InstanceCall`) into a static call. Dropping
-    `InstanceCall` callees would misclassify a procedure whose only heap effect is
+    `obj#method(...)` (an instance `Call`) into a static call. Dropping
+    instance `Call` callees would misclassify a procedure whose only heap effect is
     through an instance call as non-heap-writing. Callee identifiers compare by
     name, and the lifted procedure keeps the same method name, so the pre-lift
     callee still matches the procedure in the call graph. -/
 private def collectExprNode (expr : StmtExprMd) : StateM AnalysisResult Unit := do
   match expr.val with
     | .Var (.Field _ _) => modify fun s => { s with readsHeapDirectly := true }
-    | .StaticCall callee _ _ =>
+    | .Call _ callee _ _ =>
         if callee.text == allocateProcName then
           modify fun s => { s with writesHeapDirectly := true, allocatesDirectly := true }
         else
           modify fun s => { s with callees := callee :: s.callees }
-    | .InstanceCall _ callee _ _ => modify fun s => { s with callees := callee :: s.callees }
     | .New .. => modify fun s => { s with writesHeapDirectly := true, allocatesDirectly := true }
     | .Assign assignTargets _ =>
         for ⟨assignTarget, _⟩ in assignTargets.attach do

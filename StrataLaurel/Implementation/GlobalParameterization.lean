@@ -195,7 +195,7 @@ private def threadedStaticCall (model : SemanticModel) (callee : Identifier)
   -- `typeArgs` is carried onto the rebuilt call. Threading globals prepends arguments but does
   -- not change the callee's instantiation, and dropping it here would erase a recorded
   -- instantiation before `LaurelToCoreSchemaPass` can read it.
-  let call := ⟨.StaticCall callee ((← globalArgs inputs callee) ++ boundArgs) typeArgs, source⟩
+  let call := ⟨.Call none callee ((← globalArgs inputs callee) ++ boundArgs) typeArgs, source⟩
   return (bindings, call, outputs)
 
 private def emitStaticCall (model : SemanticModel) (original : StmtExprMd)
@@ -244,7 +244,7 @@ private def renameTarget (model : SemanticModel) (target : VariableMd)
 private def transformNode (model : SemanticModel) (valueUsed : Bool) (expr : StmtExprMd)
     : GlobalTransformM (List StmtExprMd) := do
   match expr.val with
-  | .StaticCall callee args tyArgs => emitStaticCall model expr callee args tyArgs valueUsed
+  | .Call none callee args tyArgs => emitStaticCall model expr callee args tyArgs valueUsed
   | .Var (.Local name) =>
       return [{ expr with val := .Var (.Local (← renameGlobalRef model name)) }]
   | .Assign targets rhs =>
@@ -270,7 +270,7 @@ private def transformAssignWithCall (model : SemanticModel)
   match expr.val with
   | .Assign targets rhs =>
     match rhs.val with
-    | .StaticCall callee args tyArgs =>
+    | .Call none callee args tyArgs =>
       if targets.length <= 1 then return none
       let hiddenOutputs ← writeGlobalsOf callee
       if hiddenOutputs.isEmpty && (← inputGlobalsOf callee).isEmpty then

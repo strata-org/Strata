@@ -84,7 +84,7 @@ structure TranslateState where
       why the program was deemed invalid so that if no other diagnostics explain
       the suppression, these can be surfaced to the user. -/
   coreDiagnostics : List Message := []
-  /-- Names of the program's (non-functional) procedures. A `StaticCall` whose
+  /-- Names of the program's (non-functional) procedures. A static `Call` whose
       callee is in this set is a procedure call; anything else (Core functions,
       the `$asFunction` twins produced by TransparencyPass, constants, etc.) is a
       pure function application. This is name-based on purpose: TransparencyPass
@@ -263,7 +263,7 @@ def lookupType (name : Identifier) : TranslateM LMonoTy := do
     `TotalMap TypeTag (value type of the inner call)`. -/
 private partial def mapConstValTy (model : SemanticModel) (arg : StmtExprMd) : TranslateM LMonoTy := do
   match arg.val with
-  | .StaticCall callee [inner] [] =>
+  | .Call none callee [inner] [] =>
       if callee.text == "mapConst" then
         return Core.mapTy (.tcons "TypeTag" []) (← mapConstValTy model inner)
       else translateType (computeExprType model arg)
@@ -408,7 +408,7 @@ private def isCoreNativeTypeName (name : String) : Bool :=
 private def bvOperatorWidths : List Nat := [1, 8, 16, 32, 64, 128]
 
 /-- Signed bitvector comparisons, as `(externalProcSuffix, Core op)` pairs
-    parameterized by width. Signed to match the pre-`StaticCall` lowering, which
+    parameterized by width. Signed to match the pre-static `Call` lowering, which
     sent bitvector comparisons through the *integer* operators. -/
 private def bvComparisonOp (width : Nat) (suffix : String) : Option Core.Expression.Expr :=
   match width, suffix with
@@ -672,7 +672,7 @@ def translateExpr (expr : StmtExprMd)
               cases expr; simp_all; omega
             translateExpr e boundVars isPureContext
       return .ite () bcond bthen belse
-  | .StaticCall callee args callTypeArgs =>
+  | .Call none callee args callTypeArgs =>
       if isOperatorProcName callee.text then
         -- Match on the bare name: every prelude procedure carries the reserved `$`
         -- prefix, and `$eq`/`$neq` additionally reach here under their wrapper
@@ -968,7 +968,7 @@ def translateExpr (expr : StmtExprMd)
   | .ContractOf _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "contractOf expression translation" MessageKind.notYetImplemented
   | .Abstract => emitExprDiagnostic $ diagnosticFromSource expr.source "abstract expression translation" MessageKind.notYetImplemented
   | .All => emitExprDiagnostic $ diagnosticFromSource expr.source "all expression translation" MessageKind.notYetImplemented
-  | .InstanceCall .. => emitExprDiagnostic (unliftedInstanceCall expr.source)
+  | .Call (some _) .. => emitExprDiagnostic (unliftedInstanceCall expr.source)
   | .PureFieldUpdate _ _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "pure field update expression translation" MessageKind.notYetImplemented
   | .This => emitExprDiagnostic $ diagnosticFromSource expr.source "this expression translation" MessageKind.notYetImplemented
   -- The exceptional channel is lowered to ordinary Laurel by the
@@ -1199,7 +1199,7 @@ def translateStmt (stmt : StmtExprMd)
         return inits ++ tempInits ++ [Core.Statement.call calleeId.text (callArgs ++ outArgs) md] ++ copyBacks
       -- Match on the value to decide how to translate
       match _hv : value.val with
-      | .StaticCall callee args _ =>
+      | .Call none callee args _ =>
         if (← containsProcedure callee) then
           translateCallTargets callee args
         else
@@ -1225,7 +1225,7 @@ def translateStmt (stmt : StmtExprMd)
             return result
           | _ =>
             throwStmtDiagnostic $ md.toDiagnostic "function call without a single target" MessageKind.strataBug
-      | .InstanceCall .. => throwStmtDiagnostic (unliftedInstanceCall value.source)
+      | .Call (some _) .. => throwStmtDiagnostic (unliftedInstanceCall value.source)
       | .Hole _ _ =>
           -- Hole RHS: havoc all targets (unmodeled call side-effect).
           dispatchTargets
@@ -1247,7 +1247,7 @@ def translateStmt (stmt : StmtExprMd)
                   | some e => translateStmt e
                   | none => pure []
       return [Imperative.Stmt.ite (.det bcond) bthen belse md]
-  | .StaticCall callee args _ =>
+  | .Call none callee args _ =>
       -- Check if this is a function or procedure
       if !(← containsProcedure callee) then
         -- Function call in statement position: preserve as unused init
@@ -1266,7 +1266,7 @@ def translateStmt (stmt : StmtExprMd)
           inits := inits ++ [Core.Statement.init ident coreType .nondet md]
           outArgs := outArgs ++ [.outArg ident]
         return inits ++ [Core.Statement.call callee.text (callArgs ++ outArgs) md]
-  | .InstanceCall .. => throwStmtDiagnostic (unliftedInstanceCall stmt.source)
+  | .Call (some _) .. => throwStmtDiagnostic (unliftedInstanceCall stmt.source)
   | .Return _ =>
       let d := md.toDiagnostic "Return statement should have been eliminated by EliminateReturnStatements pass" MessageKind.strataBug
       emitCoreDiagnostic d
@@ -1607,7 +1607,7 @@ public def laurelToCoreSchemaPass : LaurelPass where
       NodeKind.CompositeType.typeArgs.cons,
       NodeKind.Pseudo.statementExpression,
       NodeKind.Pseudo.letExpr,
-      NodeKind.StmtExpr.InstanceCall,
+      NodeKind.StmtExpr.Call.receiver?.some,
       NodeKind.CompositeType.instanceProcedures.cons,
       NodeKind.StmtExpr.This,
       NodeKind.Pseudo.imperativeFunction,

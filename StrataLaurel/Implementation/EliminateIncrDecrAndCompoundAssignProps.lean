@@ -22,7 +22,7 @@ Contains s p → Contains ((s \ pass.removes) ∪ pass.creates) (pass.run opts p
 ```
 
 so no `StmtExpr.IncrDecr` and no `StmtExpr.CompoundAssign` survives, and the
-lowering introduces only `Assign`, `StaticCall`, `Var` and `Var.var.Field`.
+lowering introduces only `Assign`, static `Call`, `Var` and `Var.var.Field`.
 
 The key result is `eliminateIncrDecr_spec`. It reuses `mapStmtExprUsedM_contains`
 and `ProgramLift.lift_program` unchanged; this pass is pure, so everything is
@@ -81,7 +81,7 @@ private theorem containerKinds_ne :
 The pass is pure, so these are plain facts about `rewriteNode`; `post_id` lifts
 them into the `Id` postcondition the traversal lemma asks for. -/
 
-/-- `rewriteNode` returns its input, an `Assign`, or a `StaticCall`, so it never
+/-- `rewriteNode` returns its input, an `Assign`, or a static `Call`, so it never
     turns something else into a bare local read. The `Var` it builds is nested
     inside, which `ShapeStable` does not constrain. -/
 private theorem rewriteNode_isVarLocal (e : StmtExprMd) :
@@ -146,7 +146,7 @@ private theorem lowerOpAssign_contains {s : KindSet} {primOp : Operation}
     (hrhs : Contains (outSet s) rhs) :
     Contains (outSet s) (lowerOpAssign primOp target rhs src) := by
   have hcall : Contains (outSet s)
-      (⟨.StaticCall (mkId primOp.procName) [targetAsRead target, rhs] [], src⟩ : StmtExprMd) := by
+      (⟨.Call none (mkId primOp.procName) [targetAsRead target, rhs] [], src⟩ : StmtExprMd) := by
     refine .node _ (fun k hk => ?_) (by simp [stmtExprTypes]) ?_
     · simp only [NodeKind.ofStmtExpr, NodeKind.ofCallee, mkId, List.mem_cons,
         ofProcName?_procName] at hk
@@ -155,7 +155,7 @@ private theorem lowerOpAssign_contains {s : KindSet} {primOp : Operation}
       · rcases ofOperation_mem h1 with h2 | h2 <;>
           exact mem_outSet_of_mem (hop _ h1) (by simp [h2]) (by simp [h2])
     · intro c hc
-      simp only [stmtExprChildren, List.mem_cons, List.not_mem_nil, or_false] at hc
+      simp only [stmtExprChildren, Option.toList_none, List.nil_append, List.mem_cons, List.not_mem_nil, or_false] at hc
       rcases hc with hc | hc
       · exact hc ▸ targetAsRead_contains hkids
       · exact hc ▸ hrhs
@@ -201,7 +201,7 @@ private theorem rewriteNode_contains' {s : KindSet} {e : StmtExprMd}
         · exact mem_outSet_of_creates (by simp [h1, eliminateIncrDecrAndCompoundAssignPass])
         · cases op <;> simp [NodeKind.ofOperation] at h1
       · intro c hc
-        simp only [stmtExprChildren, List.mem_cons, List.not_mem_nil, or_false] at hc
+        simp only [stmtExprChildren, Option.toList_none, List.nil_append, List.mem_cons, List.not_mem_nil, or_false] at hc
         rcases hc with hc | hc
         · refine hc ▸ ?_
           cases op <;> exact hassign _ (by simp [NodeKind.ofOperation])

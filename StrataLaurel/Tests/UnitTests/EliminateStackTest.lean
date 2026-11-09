@@ -28,12 +28,12 @@ private def toStack (program : LaurelProgram) : LaurelProgram :=
     | .Var (.Local name) => match stackOf name e.source with
       | some v => ⟨.Var v, e.source⟩
       | none => e
-    | .StaticCall callee args typeArgs =>
+    | .Call none callee args typeArgs =>
       if callee.text == "preconditionOf" then match args with
         | [call] => ⟨.ContractOf .Precondition call, e.source⟩
         | _ => e
       else if callee.text.startsWith "permute_" || callee.text == "cmp3" then
-        ⟨.StaticCall (mkId s!"${callee.text}") args typeArgs, e.source⟩
+        ⟨.Call none (mkId s!"${callee.text}") args typeArgs, e.source⟩
       else e
     | .Assign targets value =>
       ⟨.Assign (targets.map fun t => match t.val with

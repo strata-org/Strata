@@ -26,8 +26,8 @@ that resolved to such an instance procedure to use the lifted name.
 After this pass:
 - `CompositeType.instanceProcedures` is empty for every composite.
 - `program.staticProcedures` contains the lifted procedures.
-- Every `InstanceCall` (from `obj#method(args)` surface syntax) points
-  at the lifted name. For `InstanceCall`, the receiver is prepended to
+- Every instance `Call` (from `obj#method(args)` surface syntax) points
+  at the lifted name. For an instance `Call`, the receiver is prepended to
   the argument list to match the lifted procedure's `self : <CompositeName>`
   parameter.
 -/
@@ -46,20 +46,20 @@ Then, rewrite caller-side of `obj#proc` to call the lifted procedure
     is replaced by its lifted name. -/
 private def rewriteCallNode (model : SemanticModel) (expr : StmtExprMd) : StmtExprMd :=
   match expr.val with
-  | .StaticCall callee args tyArgs =>
+  | .Call none callee args tyArgs =>
     match model.get? callee with
     | some (.instanceProcedure typeName _) =>
       let lifted := liftedProcName typeName callee
-      { expr with val := .StaticCall lifted args tyArgs }
+      { expr with val := .Call none lifted args tyArgs }
     | _ => expr
-  | .InstanceCall target callee args _ =>
-    -- `obj#method(args)` surface syntax parses to InstanceCall. Flatten it to
+  | .Call (some target) callee args _ =>
+    -- `obj#method(args)` surface syntax parses to an instance call. Flatten it to
     -- a static call against the lifted name, prepending the receiver as the
     -- first argument to match the lifted procedure's `self` parameter.
     match model.get? callee with
     | some (.instanceProcedure typeName _) =>
       let lifted := liftedProcName typeName callee
-      { expr with val := .StaticCall lifted (target :: args) [] }
+      { expr with val := .Call none lifted (target :: args) [] }
     | _ => expr
   | _ => expr
 
@@ -564,14 +564,14 @@ end -- public section
     and rewrite call sites to use the lifted names. -/
 public def liftInstanceProceduresPass : LaurelPass := .onUnordered {
   name := "LiftInstanceProcedures"
-  creates := [NodeKind.LaurelProgram.staticProcedures.cons, NodeKind.StmtExpr.StaticCall]
+  creates := [NodeKind.LaurelProgram.staticProcedures.cons, NodeKind.StmtExpr.Call]
   unsupported := [
       NodeKind.Pseudo.needsOverrideRules,
       NodeKind.LaurelProgram.staticFunctions.cons
     ]
   removes := [
       NodeKind.CompositeType.instanceProcedures.cons,
-      NodeKind.StmtExpr.InstanceCall,
+      NodeKind.StmtExpr.Call.receiver?.some,
       NodeKind.StmtExpr.This,
       NodeKind.Pseudo.coroutineOverride
     ]

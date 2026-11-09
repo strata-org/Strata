@@ -112,8 +112,7 @@ inductive NodeKind where
   | StmtExpr.Var
   | StmtExpr.IncrDecr
   | StmtExpr.CompoundAssign
-  | StmtExpr.StaticCall
-  | StmtExpr.InstanceCall
+  | StmtExpr.Call
   | StmtExpr.This
   | StmtExpr.New
   | StmtExpr.PureFieldUpdate
@@ -146,6 +145,8 @@ inductive NodeKind where
   | StmtExpr.Block.decreases.some
   /-- `return expr` — a return carrying a value. -/
   | StmtExpr.Return.value.some
+  /-- An instance call `target#callee(args)`. `LiftInstanceProcedures` removes it. -/
+  | StmtExpr.Call.receiver?.some
   /-- A labeled `old`, i.e. a snapshot read. -/
   | StmtExpr.Old.label?.some
   /-- An `old` already wrapping a bare variable reference. -/

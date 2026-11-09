@@ -141,7 +141,7 @@ private def substTaggedOlds (e : StmtExprMd) : StmtExprMd :=
 -- `retagOldAs .OldGuarantee` / `retagOldAs .OldRelies`.
 
 /-- Resolved preamble identifiers this pass reuses when synthesizing calls. With
-    resolution disabled after this pass, emitted `StaticCall`s must carry an
+    resolution disabled after this pass, emitted static `Call`s must carry an
     already-resolved callee (uniqueId included) so heap-param's heap-effect lookup
     does not fail on an unresolved name. -/
 private structure ResolvedOps where
@@ -159,7 +159,7 @@ private def conjoin (andOp : Identifier) (conds : List Condition) (src : FileRan
   | c :: rest =>
     rest.foldl
       (fun acc nxt =>
-        { val := .StaticCall andOp [acc, nxt.condition] [], source := src })
+        { val := .Call none andOp [acc, nxt.condition] [], source := src })
       c.condition
 
 private def mkAssert (cond : StmtExprMd) (summary : Option String) (src : FileRange) : StmtExprMd :=
@@ -176,7 +176,7 @@ private def takeSnapshot (src : FileRange) : StmtExprMd :=
     identifier (uniqueId included) so heap-param recognizes it as a heap writer
     without a re-resolution — resolution is disabled after this pass. -/
 private def havocCall (havocHeap : Identifier) (src : FileRange) : StmtExprMd :=
-  { val := .StaticCall havocHeap [] [], source := src }
+  { val := .Call none havocHeap [] [], source := src }
 
 /-! ### Value-channel bindings
 
@@ -547,12 +547,12 @@ private def resumeReceiver (args : List StmtExprMd) : Option Identifier :=
 /-- The receiver of a resume call `f(co, …)`, if `e` is precisely such a call to a
     resume in `h1Resumes`. Pairs the parse with the receiver lookup so the
     diagnostics below and `threadCallerNode` agree on what counts as a resume
-    site. A statement-position resume is a bare `StaticCall` (heap-param has not
+    site. A statement-position resume is a bare static `Call` (heap-param has not
     yet wrapped it in a `$heap := …` assignment). -/
 private def resumeCallReceiver (h1Resumes : Std.HashSet String)
     (e : StmtExprMd) : Option (Option Identifier) :=
   match e.val with
-  | .StaticCall callee args _ =>
+  | .Call none callee args _ =>
     if h1Resumes.contains callee.text then some (resumeReceiver args) else none
   | _ => none
 
@@ -589,7 +589,7 @@ private def procResumeBodies (proc : Procedure) : List StmtExprMd :=
   | _ => []
 
 /-- Rewrite one node while threading H1. Runs before heap parameterization, so a
-    resume is a bare `StaticCall f(co, …)` and a spawn is `var co := <coro>(…)`.
+    resume is a bare static `Call` `f(co, …)` and a spawn is `var co := <coro>(…)`.
 
     * A resume call `f(co, …)` gets the caller's `$h1_co` appended as the final
       argument (H1), followed by `Snapshot $h1_co` to record H3 for the next
@@ -614,12 +614,12 @@ private def threadCallerNode (h1Resumes : Std.HashSet String)
   -- splices in statement position. Expression-position `z := resume(co)` under
   -- `verifyCoroutine` is not supported (no test exercises it); left untouched, it
   -- surfaces as an arity mismatch against the H1-taking resume.
-  | .StaticCall callee args tyArgs =>
+  | .Call none callee args tyArgs =>
     if !used && h1Resumes.contains callee.text then
       match resumeReceiver args with
       | some co =>
         let h1Read : StmtExprMd := ⟨.Var (.Local (instH1Name co)), .unknown⟩
-        let threaded : StmtExprMd := { e with val := .StaticCall callee (args ++ [h1Read]) tyArgs }
+        let threaded : StmtExprMd := { e with val := .Call none callee (args ++ [h1Read]) tyArgs }
         [threaded, snapshotH1 co]
       | none => [e]
     else [e]
@@ -688,7 +688,7 @@ public def yieldElimPass : LaurelPass := .onUnordered {
       NodeKind.StmtExpr.Assume,
       NodeKind.StmtExpr.Snapshot,
       NodeKind.StmtExpr.Old.label?.some,
-      NodeKind.StmtExpr.StaticCall,
+      NodeKind.StmtExpr.Call,
       NodeKind.StmtExpr.Block,
       -- Laurel's operators are calls to overloaded wrapper procedures
       -- (`Operation.Eq.procName` is `$eq`, `And` is `$and`, …), so emitting one
@@ -699,7 +699,7 @@ public def yieldElimPass : LaurelPass := .onUnordered {
     ]
   removes := [NodeKind.StmtExpr.Yield, NodeKind.StmtExpr.OldGuarantee, NodeKind.StmtExpr.OldRelies]
   unsupported := [
-      NodeKind.StmtExpr.InstanceCall,
+      NodeKind.StmtExpr.Call.receiver?.some,
       NodeKind.LaurelProgram.staticFunctions.cons
     ]
   documentation := "Lowers coroutine old-semantics. Body path (verifyCoroutine only): replaces every `yield` with an inline `assert ⋀guarantees; Snapshot $old_heap; havocHeap(); assume ⋀relies; Snapshot $old_heap` block. Caller path (always): threads the per-instance $h_rely_old (H1) snapshot heap through resume procedures and callers. Both lower `oldGuarantee`/`oldRelies` to labeled `Old` / `Snapshot` for HeapParameterization to consume (declaring the snapshot locals and threading $heap); resolution is disabled after this pass."

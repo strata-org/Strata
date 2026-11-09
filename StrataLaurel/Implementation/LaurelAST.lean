@@ -149,7 +149,7 @@ instance : ToString Operation where
 /--
 Name of the built-in wrapper procedure implementing an `Operation`.
 
-Operators are not a distinct kind of expression: `x + y` is a `StaticCall` to
+Operators are not a distinct kind of expression: `x + y` is a static `Call` to
 the overloaded procedure `$add`, declared in `CoreDefinitionsForLaurel` and
 prepended to every program. The `$` prefix puts these in Laurel's reserved
 namespace so they cannot collide with a user-defined `add`.
@@ -614,18 +614,25 @@ inductive StmtExpr : Type where
   | CompoundAssign (op : Operation) (target : AstNode Variable) (rhs : AstNode StmtExpr)
   /-- Update a field on a pure (value) type, producing a new value. -/
   | PureFieldUpdate (target : AstNode StmtExpr) (fieldName : Identifier) (newValue : AstNode StmtExpr)
-  /-- Call a static procedure by name with the given arguments.
-      Primitive operators are calls too: `x + y` is a `StaticCall` to the
+  /-- Call a procedure by name with the given arguments.
+
+      `receiver?` is `none` for a static call and `some target` for an instance
+      call `target#callee(args)`, whose callee is resolved in the target's
+      composite type. `LiftInstanceProcedures` rewrites every instance call into
+      a static one that passes the receiver as the first argument.
+
+      Primitive operators are calls too: `x + y` is a static call to the
       built-in wrapper `$add`. See `Operation.procName`.
 
       `typeArgs` carries the call's INFERRED type arguments, in the callee's
       declaration order, for a generic callee — `Resolution` stamps them once it
       has determined every one (and reports the call when it cannot); a generic
-      destructor carries its receiver's, in its datatype's order. Empty for a
+      destructor carries its receiver's, in its datatype's order; an instance call
+      carries those inferred for the method's own type parameters. Empty for a
       monomorphic callee, and empty on a freshly parsed tree: there is no surface
       syntax for type arguments at a call, so this is a resolution output, not
       something the user writes. Deliberately NOT defaulted: a defaulted field is
-      matched against its default in a PATTERN, so `.StaticCall f args` would
+      matched against its default in a PATTERN, so `.Call none f args` would
       silently narrow to "no recorded instantiation" and any call carrying one
       would fall through a non-exhaustive match with no compile error. Recorded rather than re-derived because a
       downstream pass cannot recover it — `computeExprType` reports the callee's
@@ -633,8 +640,8 @@ inductive StmtExpr : Type where
       instantiation of an external generic primitive (`mapConst`, `setEmpty`)
       would otherwise be lost between resolution and Core translation. Mirrors
       `New`'s `typeArgs` in purpose. -/
-  | StaticCall (callee : Identifier) (arguments : List (AstNode StmtExpr))
-      (typeArgs : List (AstNode HighType))
+  | Call (receiver? : Option (AstNode StmtExpr)) (callee : Identifier)
+      (arguments : List (AstNode StmtExpr)) (typeArgs : List (AstNode HighType))
   /-- Create new object (`new`). `typeArgs` carries explicit instantiation
       arguments for a generic composite, e.g. `new Box<int>` → `ref = Box`,
       `typeArgs = [int]`. Empty for a non-generic `new C` (the common case and the
@@ -650,11 +657,6 @@ inductive StmtExpr : Type where
   | AsType (target : AstNode StmtExpr) (targetType : AstNode HighType)
   /-- Type test: check whether the target is an instance of the given type. -/
   | IsType (target : AstNode StmtExpr) (type : AstNode HighType)
-  /-- Call an instance method on a target object. `typeArgs` carries the type arguments inferred
-      for the method's own type parameters, as `StaticCall`'s does. Not defaulted: a pattern
-      `.InstanceCall t c args` would then match only a call that carries none. -/
-  | InstanceCall (target : AstNode StmtExpr) (callee : Identifier) (arguments : List (AstNode StmtExpr))
-      (typeArgs : List (AstNode HighType))
   /-- Quantification (universal or existential) over a typed parameter with an optional trigger. -/
   | Quantifier (mode : QuantifierMode) (param : Parameter) (trigger : Option (AstNode StmtExpr)) (body : AstNode StmtExpr)
   /-- Check whether a variable has been assigned. -/
@@ -904,13 +906,13 @@ def StmtExpr.constrName : StmtExpr → String
   | .IncrDecr _ .Decr .. => "--"
   | .CompoundAssign ..   => "compound assignment"
   | .PureFieldUpdate ..  => "field update"
-  | .StaticCall ..       => "call"
+  | .Call none ..        => "call"
+  | .Call (some _) ..    => "method call"
   | .New ..              => "new"
   | .This                => "this"
   | .ReferenceEquals ..  => "reference equality"
   | .AsType ..           => "as"
   | .IsType ..           => "is"
-  | .InstanceCall ..     => "method call"
   | .Quantifier ..       => "quantifier"
   | .Assigned ..         => "assigned"
   | .Old ..              => "old"
@@ -2434,7 +2436,7 @@ def callSiteDeterminedTypeParams (ctx : TypeLattice)
   -- deliberately not this function's call to make: `MonomorphizeComposites.settleCallNode` already
   -- rejects it with a diagnostic naming both instantiations and the upcast that disambiguates,
   -- which is strictly more useful than "cannot infer T". Reporting it from here would also arrive
-  -- too late to be a clean user error — an inherited call is an `.InstanceCall` at first
+  -- too late to be a clean user error — an inherited call is an instance `.Call` at first
   -- resolution, which does not ask whether its composite's type arguments are determined, so the
   -- diagnostic would only appear on the post-`LiftInstanceProcedures` re-resolution, where the
   -- pipeline wraps any newly introduced diagnostic as an internal error.
@@ -2487,13 +2489,12 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .Var .. => "Var"
   | .Assign .. => "Assign"
   | .PureFieldUpdate .. => "PureFieldUpdate"
-  | .StaticCall .. => "StaticCall"
+  | .Call .. => "Call"
   | .New .. => "New"
   | .This => "This"
   | .ReferenceEquals .. => "ReferenceEquals"
   | .AsType .. => "AsType"
   | .IsType .. => "IsType"
-  | .InstanceCall .. => "InstanceCall"
   | .Quantifier .. => "Quantifier"
   | .Assigned .. => "Assigned"
   | .Old .. => "Old"

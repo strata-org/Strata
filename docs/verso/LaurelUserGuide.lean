@@ -1168,15 +1168,15 @@ component-wise from the synthesized RHS tuple inside
 tag := "rules-calls"
 %%%
 
-$$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text{ and output } [T'] \text{ (single output)} \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise)}}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{args} \Rightarrow T'} \quad \text{([⇒] Static-Call)}`
+$$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text{ and output } [T'] \text{ (single output)} \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise)}}{\Gamma \vdash \mathsf{Call}\;\mathsf{none}\;\mathit{callee}\;\mathit{args} \Rightarrow T'} \quad \text{([⇒] Static-Call)}`
 
-$$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text{ and outputs } [T_1; \ldots; T_n],\; n \ge 2 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise)}}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Static-Call-Multi)}`
+$$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text{ and outputs } [T_1; \ldots; T_n],\; n \ge 2 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise)}}{\Gamma \vdash \mathsf{Call}\;\mathsf{none}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Static-Call-Multi)}`
 
 {docstring Strata.Laurel.Resolution.Synth.staticCall}
 
-$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow C \quad \Gamma(\mathit{Owner}\$\mathit{callee}) = \text{instance-procedure with inputs } [\mathit{self}; Ts] \text{ and output } [T'] \text{ (single output)} \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow T'} \quad \text{([⇒] Instance-Call)}`
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow C \quad \Gamma(\mathit{Owner}\$\mathit{callee}) = \text{instance-procedure with inputs } [\mathit{self}; Ts] \text{ and output } [T'] \text{ (single output)} \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{Call}\;(\mathsf{some}\;\mathit{target})\;\mathit{callee}\;\mathit{args} \Rightarrow T'} \quad \text{([⇒] Instance-Call)}`
 
-$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow C \quad \Gamma(\mathit{Owner}\$\mathit{callee}) = \text{instance-procedure with inputs } [\mathit{self}; Ts] \text{ and outputs } [T_1; \ldots; T_n],\; n \ge 2 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Instance-Call-Multi)}`
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow C \quad \Gamma(\mathit{Owner}\$\mathit{callee}) = \text{instance-procedure with inputs } [\mathit{self}; Ts] \text{ and outputs } [T_1; \ldots; T_n],\; n \ge 2 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{Call}\;(\mathsf{some}\;\mathit{target})\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Instance-Call-Multi)}`
 
 The receiver synthesizes a composite $`C`, and $`\mathit{Owner}` is the most
 specific of $`C` and its ancestors that declares the callee. Output arity is
@@ -1199,7 +1199,7 @@ tag := "rules-primitive-operations"
 
 Operators are *not* a distinct kind of expression, and there are no
 operator-specific typing rules. `x + y` parses as
-$`\mathsf{StaticCall}\;\$\mathsf{add}\;[x; y]`, a call to an overloaded
+$`\mathsf{Call}\;\mathsf{none}\;\$\mathsf{add}\;[x; y]`, a call to an overloaded
 built-in wrapper procedure declared in `CoreDefinitionsForLaurel` and
 prepended to every program, so operators are typed entirely by
 \[⇒\] Static-Call above. What used to be an operator's admissible
@@ -1263,7 +1263,7 @@ only that the operands be consistent ($`T_l \sim T_r`), and
 `LaurelToCoreSchemaPass` lowers them straight to Core's polymorphic
 equality.
 
-$$`\frac{\Gamma \vdash \mathit{lhs} \Rightarrow T_l \quad \Gamma \vdash \mathit{rhs} \Rightarrow T_r \quad T_l \sim T_r \quad T_l \neq \mathsf{TVoid} \quad T_r \neq \mathsf{TVoid} \quad \mathit{callee} \in \{\$\mathsf{eq}, \$\mathsf{neq}\}}{\Gamma \vdash \mathsf{StaticCall}\;\mathit{callee}\;[\mathit{lhs}; \mathit{rhs}] \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Eq)}`
+$$`\frac{\Gamma \vdash \mathit{lhs} \Rightarrow T_l \quad \Gamma \vdash \mathit{rhs} \Rightarrow T_r \quad T_l \sim T_r \quad T_l \neq \mathsf{TVoid} \quad T_r \neq \mathsf{TVoid} \quad \mathit{callee} \in \{\$\mathsf{eq}, \$\mathsf{neq}\}}{\Gamma \vdash \mathsf{Call}\;\mathsf{none}\;\mathit{callee}\;[\mathit{lhs}; \mathit{rhs}] \Rightarrow \mathsf{TBool}} \quad \text{([⇒] Op-Eq)}`
 
 The $`\neq \mathsf{TVoid}` premises reject void operands even though
 $`\mathsf{TVoid} \sim \mathsf{TVoid}` holds: a void expression carries no

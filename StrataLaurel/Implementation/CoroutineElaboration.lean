@@ -254,7 +254,7 @@ private def lowerBareReturns (expr : StmtExprMd) : StmtExprMd :=
 
 /-- `lhs == rhs` over integers. -/
 private def eqInt (lhs rhs : StmtExprMd) : StmtExprMd :=
-  { val := .StaticCall (mkId Operation.Eq.procName) [lhs, rhs] [], source := .unknown }
+  { val := .Call none (mkId Operation.Eq.procName) [lhs, rhs] [], source := .unknown }
 
 /-- Wrap a list of statements as a `Block` with no label. -/
 private def block (stmts : List StmtExprMd) : StmtExprMd :=
@@ -681,7 +681,7 @@ private def linearizeBody (naming : FieldNaming) (resumeParam : Option Identifie
 private def guardWithEnd (c : Condition) : Condition :=
   let guard := eqInt pcRead (intLit (Int.ofNat endState))
   let guarded : StmtExprMd :=
-    { val := .StaticCall (mkId Operation.Implies.procName) [guard, c.condition] [], source := c.condition.source }
+    { val := .Call none (mkId Operation.Implies.procName) [guard, c.condition] [], source := c.condition.source }
   { c with condition := guarded }
 
 /-- Add the `resume` instance procedure to a coroutine's state composite.
@@ -735,7 +735,7 @@ private def populateCoroutineComposite (model : SemanticModel) (lattice : TypeLa
     -- with no work). It is a precondition of every `resume` call.
     let notDone : Condition :=
       { condition :=
-          { val := .StaticCall (mkId Operation.Neq.procName) [pcRead, intLit (Int.ofNat endState)] [], source := .unknown },
+          { val := .Call none (mkId Operation.Neq.procName) [pcRead, intLit (Int.ofNat endState)] [], source := .unknown },
         summary := none }
     -- Halt `ensures` lives in the `Opaque` body's postconditions; guard
     -- each with `$pc == END` so it only fires at completion. (Resolution
@@ -810,7 +810,7 @@ private def populateCoroutineComposite (model : SemanticModel) (lattice : TypeLa
       { val := .Var (.Field selfRead { text := "$pc", uniqueId := none, source := .unknown }),
         source := .unknown }
     let pcNeqEnd : StmtExprMd :=
-      { val := .StaticCall (mkId Operation.Neq.procName) [pcReadSelf, intLit (Int.ofNat endState)] [], source := .unknown }
+      { val := .Call none (mkId Operation.Neq.procName) [pcReadSelf, intLit (Int.ofNat endState)] [], source := .unknown }
     let hasNextProc : Procedure :=
       { name := { proc.name with text := "has_next", uniqueId := none }
         inputs := [selfParam]
@@ -914,7 +914,7 @@ private def coroutineConstructor (naming : FieldNaming) (proc : Procedure)
 
 For each elaborated coroutine `c`, retarget every caller:
   * type annotations `co: c` → `co: <c>State`
-  * `resume(co[, v])` → `InstanceCall co #"resume" [v?]`
+  * `resume(co[, v])` → `Call (some co) #"resume" [v?]`
   (`co#resume([v])` in concrete syntax)
 
 The pipeline re-resolves after this pass, so generated identifiers
@@ -952,10 +952,10 @@ private def rewriteCallerNode (coros : CoroutineSet) (e : StmtExprMd) : StmtExpr
   match e.val with
   | .Resume target value =>
     let resumeName : Identifier := { text := "resume", uniqueId := none, source := e.source }
-    { e with val := .InstanceCall target resumeName value.toList [] }
+    { e with val := .Call (some target) resumeName value.toList [] }
   | .HasNext target =>
     let methodName : Identifier := { text := "has_next", uniqueId := none, source := e.source }
-    { e with val := .InstanceCall target methodName [] [] }
+    { e with val := .Call (some target) methodName [] [] }
   | .New ref =>
     if coros.contains ref.text then { e with val := .New (stateTypeName ref) } else e
   | .AsType target ty =>
@@ -1036,7 +1036,7 @@ private def spawnSnapshots (coros : CoroutineSet)
     (coroByName : Std.HashMap String Procedure) (e : StmtExprMd)
     : Option (Identifier × List (Parameter × StmtExprMd)) :=
   match e.val with
-  | .Assign targets (.mk (.StaticCall callee args _) _) =>
+  | .Assign targets (.mk (.Call none callee args _) _) =>
     match coroByName[callee.text]? with
     | none => none
     | some cp =>
@@ -1083,7 +1083,7 @@ private def collectSpawnArgs (coros : CoroutineSet)
   foldStmtExpr (fun e (acc : SpawnArgs × List Message) =>
     let (spawns, diags) := acc
     match e.val with
-    | .Assign targets (.mk (.StaticCall callee _ _) _) =>
+    | .Assign targets (.mk (.Call none callee _ _) _) =>
       if coros.contains callee.text then
         let spawnedName : Option Identifier := match targets[0]? with
           | some t => match t.val with
@@ -1116,10 +1116,10 @@ private def rewriteCallerNodeForVerification (coros : CoroutineSet)
     let spawnArgs := match target.val with
       | .Var (.Local name) => (spawns.getD name.text [])
       | _ => []
-    { e with val := .InstanceCall target resumeName (spawnArgs ++ value.toList) [] }
+    { e with val := .Call (some target) resumeName (spawnArgs ++ value.toList) [] }
   | .HasNext target =>
     let methodName : Identifier := { text := "has_next", uniqueId := none, source := e.source }
-    { e with val := .InstanceCall target methodName [] [] }
+    { e with val := .Call (some target) methodName [] [] }
   | _ => rewriteCallerNode coros e
 
 /-- Rewrite a spawn statement into its snapshot bindings followed by the spawn
@@ -1130,10 +1130,10 @@ private def spawnWithSnapshots (coros : CoroutineSet)
     (coroByName : Std.HashMap String Procedure)
     (nodeRewrite : StmtExprMd → StmtExprMd) (e : StmtExprMd) : Option (List StmtExprMd) :=
   match spawnSnapshots coros coroByName e, e.val with
-  | some (_, snaps), .Assign targets (.mk (.StaticCall callee _ tyArgs) callSrc) =>
+  | some (_, snaps), .Assign targets (.mk (.Call none callee _ tyArgs) callSrc) =>
     let reads : List StmtExprMd := snaps.map fun (p, arg) =>
       { val := .Var (.Local p.name), source := arg.source }
-    let spawnCall : StmtExprMd := { val := .StaticCall callee reads tyArgs, source := callSrc }
+    let spawnCall : StmtExprMd := { val := .Call none callee reads tyArgs, source := callSrc }
     let spawn : StmtExprMd := { e with val := .Assign targets spawnCall }
     some ((snaps.map fun (p, arg) => spawnSnapshotDecl p arg) ++ [nodeRewrite spawn])
   | _, _ => none
@@ -1306,7 +1306,7 @@ public def coroutineElaborationPass : LaurelPass := .onUnordered {
   creates := [
       NodeKind.TypeDefinition.Composite,
       NodeKind.CompositeType.instanceProcedures.cons,
-      NodeKind.StmtExpr.InstanceCall,
+      NodeKind.StmtExpr.Call.receiver?.some,
       NodeKind.Pseudo.coroutineOverride,
       NodeKind.StmtExpr.OldGuarantee,
       NodeKind.StmtExpr.OldRelies

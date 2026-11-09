@@ -101,8 +101,7 @@ Three forms of scope are maintained on `ResolveState`:
 
 ### Reference nodes (use a name)
 - `StmtExpr.Var (.Local ...)` — variable reference
-- `StmtExpr.StaticCall` — static procedure call
-- `StmtExpr.InstanceCall` — instance method call
+- `StmtExpr.Call` — procedure call: static with no receiver, an instance method call with one
 - `StmtExpr.Var (.Field ...)` — field access
 - `StmtExpr.New` — object creation (references a type)
 - `StmtExpr.Goto` — jump to the start or past the end of a labelled block
@@ -328,7 +327,7 @@ private def targetTypeName (target : StmtExprMd) : ResolveM (Option String) := d
     | _ => pure none
   | .Var (.Field inner fieldName) => do
     let innerIsRef := match inner.val with
-      | .StaticCall callee [_] _ => callee.text == compositeRefAccessor
+      | .Call none callee [_] _ => callee.text == compositeRefAccessor
       | _ => false
     if innerIsRef then
       if let some (_, .field owner fld) := s.scope.get? fieldName.text then
@@ -842,7 +841,7 @@ private def checkSubtype (source : FileRange) (expected : HighTypeMd) (actual : 
     `coerce` judgment, so they cannot disagree. On failure, emits the same diagnostic
     as `checkSubtype` and returns `e` unchanged. Void-like compatibility (statement
     position) inserts no coercion. -/
--- Stamp `uniqueId`s onto the `StaticCall` callees of a realizer-synthesized coercion
+-- Stamp `uniqueId`s onto the static `Call` callees of a realizer-synthesized coercion
 -- term, using ids already registered in `scope`. Only fills a callee whose `uniqueId`
 -- is `none` and whose scope entry is a callable target (static procedure or datatype
 -- constructor/destructor) — the kinds the realizer's bridge calls resolve to. A scope
@@ -853,7 +852,7 @@ private def checkSubtype (source : FileRange) (expected : HighTypeMd) (actual : 
 -- (does not touch resolver state or push errors).
 private partial def stampSynthesizedCallIds (scope : Scope) (e : StmtExprMd) : StmtExprMd :=
   match e.val with
-  | .StaticCall callee args tyArgs =>
+  | .Call none callee args tyArgs =>
     let callee' :=
       match callee.uniqueId with
       | some _ => callee
@@ -864,7 +863,7 @@ private partial def stampSynthesizedCallIds (scope : Scope) (e : StmtExprMd) : S
           else callee
         | none => callee
     let args' := args.map (stampSynthesizedCallIds scope)
-    { e with val := .StaticCall callee' args' tyArgs }
+    { e with val := .Call none callee' args' tyArgs }
   | _ => e
 
 private def coerceTo (source : FileRange) (expected : HighTypeMd) (actual : HighTypeMd)
@@ -1301,14 +1300,14 @@ private def Synth.stackRead (source : FileRange) : ResolveM (StmtExpr × HighTyp
 private def Synth.stackPermute (targets : List VariableMd) (value : StmtExprMd) (order : List Nat)
     (source : FileRange) : ResolveM (StmtExpr × HighTypeMd) := do
   let (callee, args) := match value.val with
-    | .StaticCall callee args _ => (callee, args)
+    | .Call none callee args _ => (callee, args)
     | _ => (mkId "$permute", [])
   let tys ← args.mapM fun a => popStackType a.source
   let tyAt (i : Nat) : HighTypeMd := tys.getD i { val := .Unknown, source := source }
   for i in order do pushStackType (tyAt i)
   let args' := (args.zip tys).map fun (a, ty) => (⟨.Var (.Stack (some ty)), a.source⟩ : StmtExprMd)
   pure (.Assign ((targets.zip order).map fun (t, i) => ⟨.Stack (some (tyAt i)), t.source⟩)
-      ⟨.StaticCall callee args' [], value.source⟩,
+      ⟨.Call none callee args' [], value.source⟩,
     { val := .TVoid, source := source })
 
 private def mergeStackArms (thenStack elseStack : List HighTypeMd) (thenAbrupt elseAbrupt : Bool := false) :
@@ -1569,7 +1568,7 @@ private def catchGuardCatches (lattice : TypeLattice) (binding : Identifier)
   -- count: `|` is `$or` and `||` is the short-circuiting `$orElse` (see
   -- `Operation.procName`). Neither wrapper is overloaded, and this runs during
   -- resolution — before `UniqueOverloadNames` — so matching on the callee text is safe.
-  | .StaticCall callee [p1, p2] _ =>
+  | .Call none callee [p1, p2] _ =>
     match Operation.ofProcName? callee.text with
     | some .Or | some .OrElse =>
       catchGuardCatches lattice binding p1 ty || catchGuardCatches lattice binding p2 ty
@@ -1595,7 +1594,7 @@ private def catchGuardTestedTypes? (binding : Identifier) (pred : StmtExprMd) :
     | .Var (.Local id) =>
       if id.uniqueId.isSome && id.uniqueId == binding.uniqueId then some [ty] else none
     | _ => none
-  | .StaticCall callee [p1, p2] _ =>
+  | .Call none callee [p1, p2] _ =>
     match Operation.ofProcName? callee.text with
     | some .Or | some .OrElse =>
       (catchGuardTestedTypes? binding p1).bind fun t1 =>
@@ -1728,10 +1727,10 @@ private def thrownTypesWith (model : SemanticModel) (lattice : TypeLattice)
     -- Also recurse into the operand: a throwing call inside it (e.g. `throw f()`
     -- where `f` throws) escapes too.
     (exprTypeAt model lattice e, expr.source) :: thrownTypesWith model lattice throwsOf e
-  | .StaticCall callee args tyArgs =>
+  | .Call none callee args tyArgs =>
     calleeThrows callee (typeAtCall model callee tyArgs) expr.source
       ++ args.attach.flatMap (fun ⟨a, _⟩ => thrownTypesWith model lattice throwsOf a)
-  | .InstanceCall target callee args tyArgs =>
+  | .Call (some target) callee args tyArgs =>
     calleeThrows callee (atMethodCall target callee tyArgs) expr.source
       ++ thrownTypesWith model lattice throwsOf target
       ++ args.attach.flatMap (fun ⟨a, _⟩ => thrownTypesWith model lattice throwsOf a)
@@ -1775,8 +1774,8 @@ private def thrownTypesWith (model : SemanticModel) (lattice : TypeLattice)
     thrownTypesWith model lattice throwsOf v ++ thrownTypesWith model lattice throwsOf pf
   | _ =>
     collectStmtExprList (fun n => match n.val with
-      | .StaticCall callee _ tyArgs => calleeThrows callee (typeAtCall model callee tyArgs) n.source
-      | .InstanceCall target callee _ tyArgs =>
+      | .Call none callee _ tyArgs => calleeThrows callee (typeAtCall model callee tyArgs) n.source
+      | .Call (some target) callee _ tyArgs =>
         calleeThrows callee (atMethodCall target callee tyArgs) n.source
       | .Throw e => [(exprTypeAt model lattice e, n.source)]
       | _ => []) expr
@@ -1868,11 +1867,11 @@ private def methodDeclarer (tyName : String) (callee : Identifier) : ResolveM Me
 private def declaredCallResult? (e : StmtExprMd) : ResolveM (Option HighTypeMd) := do
   let s ← get
   let key? ← match e.val with
-    | .InstanceCall target callee _ _ => do
+    | .Call (some target) callee _ _ => do
       let some tyName ← targetTypeName target | pure none
       let .resolved owner ← methodDeclarer tyName callee | pure none
       pure (some (callee, containerScopedName (mkId owner) callee))
-    | .StaticCall callee _ _ =>
+    | .Call none callee _ _ =>
       pure (if (s.overloads.getD callee.text []).length > 1 then none else some (callee, callee))
     | _ => pure none
   let some (callee, key) := key? | pure none
@@ -2035,7 +2034,7 @@ private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
                                             | some t => !mentionsUnknown t.val
                                             | none => false)
       then bound.filterMap id else []
-  return (.StaticCall callee' args' inferredTypeArgs,
+  return (.Call none callee' args' inferredTypeArgs,
           substTypeVars subst (procReturnType callee proc))
 -- The `h : exprMd.val = .Foo args ...` parameters on the recursive helpers
 -- look unused to the linter, but each one is referenced by that helper's
@@ -2097,7 +2096,7 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd)
     else stackPushType targets source <$> Synth.assign exprMd targets value source (by rw [h_node, h_expr])
   | .PureFieldUpdate target fieldName newVal =>
     Synth.pureFieldUpdate exprMd target fieldName newVal (by rw [h_node, h_expr])
-  | .StaticCall callee args tyArgs =>
+  | .Call none callee args tyArgs =>
     Synth.staticCall exprMd callee args tyArgs source (by rw [h_node, h_expr]) expected?
   | .New ref typeArgs => Synth.new ref typeArgs source expected?
   | .This => Synth.this source
@@ -2107,7 +2106,7 @@ def Synth.resolveStmtExpr (exprMd : StmtExprMd)
     Synth.asType exprMd target ty (by rw [h_node, h_expr])
   | .IsType target ty =>
     Synth.isType exprMd target ty source (by rw [h_node, h_expr])
-  | .InstanceCall target callee args tyArgs =>
+  | .Call (some target) callee args tyArgs =>
     Synth.instanceCall exprMd target callee args tyArgs source (by rw [h_node, h_expr]) expected?
   | .Quantifier mode param trigger body =>
     Synth.quantifier exprMd mode param trigger body source (by rw [h_node, h_expr])
@@ -3506,7 +3505,7 @@ def Synth.genericCallArgs (exprMd : StmtExprMd) (callee : Identifier) (proc : Pr
   -- `choose<T>(setEmpty(), known)` determines `T` from `known` alone, and only then is there a
   -- slot to hand `setEmpty()`. So the arguments that cannot consume a slot go first and their
   -- bindings extend the working substitution; those that can follow, each seeing everything
-  -- resolved before it. They are the calls, `.InstanceCall` included, which
+  -- resolved before it. They are the calls, instance calls included, which
   -- `LiftInstanceProcedures` makes a static call, and the wrappers that forward the slot to the
   -- value they produce, such as an `.IfThenElse` or a `.Block`; the wrappers go first, since
   -- their type may give a call its slot.
@@ -3516,7 +3515,7 @@ def Synth.genericCallArgs (exprMd : StmtExprMd) (callee : Identifier) (proc : Pr
   -- push and the coercion a frontend realizes into the parameter. It needs no slot either, so it
   -- goes in the first group.
   let concreteParam := fun (i : Nat) => (paramTys[i]?).filter (!mentionsTVar ·.val)
-  let isCall := fun (a : StmtExprMd) => a.val matches .StaticCall .. | .New .. | .InstanceCall ..
+  let isCall := fun (a : StmtExprMd) => a.val matches .Call .. | .New ..
   let forwardsSlot := fun (a : StmtExprMd) =>
     a.val matches .IfThenElse .. | .Block (_ :: _) _ _ _ | .Old .. | .OldGuarantee .. | .OldRelies ..
       | .ProveBy ..
@@ -3568,13 +3567,13 @@ def Synth.genericCallArgs (exprMd : StmtExprMd) (callee : Identifier) (proc : Pr
       and output [T'] (single output)
     Γ ⊢ args_i ⇐ Ts_i (pairwise)
     ──────────────────────────────────────────────────────
-    Γ ⊢ StaticCall callee args ⇒ T'
+    Γ ⊢ Call none callee args ⇒ T'
 
     Γ(callee) = static-procedure with inputs Ts                  (Static-Call-Multi)
       and outputs [T_1; …; T_n] (n ≥ 2)
     Γ ⊢ args_i ⇐ Ts_i (pairwise)
     ──────────────────────────────────────────────────────
-    Γ ⊢ StaticCall callee args ⇒ MultiValuedExpr [T_1; …; T_n]
+    Γ ⊢ Call none callee args ⇒ MultiValuedExpr [T_1; …; T_n]
     ```
     A callee with *zero* outputs synthesizes `TVoid` (the n = 0 case).
     The two rules differ only in *output* arity — argument checking is
@@ -3608,7 +3607,7 @@ def Synth.genericCallArgs (exprMd : StmtExprMd) (callee : Identifier) (proc : Pr
 def Synth.staticCall (exprMd : StmtExprMd)
     (callee : Identifier) (args : List StmtExprMd) (priorTypeArgs : List HighTypeMd)
     (source : FileRange)
-    (h : exprMd.val = .StaticCall callee args priorTypeArgs)
+    (h : exprMd.val = .Call none callee args priorTypeArgs)
     (expected? : Option HighTypeMd := none) :
     ResolveM (StmtExpr × HighTypeMd) := do
 
@@ -3619,7 +3618,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
     let args' ← args.attach.mapM (fun ⟨a, hMem⟩ => do
       have := hMem
       Prod.fst <$> Synth.resolveStmtExpr a)
-    return (.StaticCall { callee with uniqueId := none } args' [],
+    return (.Call none { callee with uniqueId := none } args' [],
             { val := .Unknown, source := callee.source })
 
   -- Overloaded static procedure: more than one procedure is registered under
@@ -3686,7 +3685,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
       -- lookup that path starts from cannot serve an overloaded name, hence the selected procedure
       -- is handed over directly. A monomorphic overload reports its declared result as is.
       if proc.typeArgs.isEmpty then
-        return (.StaticCall callee' args' [], procReturnType callee proc)
+        return (.Call none callee' args' [], procReturnType callee proc)
       let retSubst := returnPositionSubst ctx callee proc expected?
       return (← genericCallResult callee callee' proc args' argTys expected? retSubst source)
     | [] =>
@@ -3694,7 +3693,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
         let diag := diagnosticFromSource source
           s!"no overload of '{callee}' matches the argument types"
         modify fun s => { s with errors := s.errors.push diag }
-      return (.StaticCall { callee with uniqueId := none } args' [],
+      return (.Call none { callee with uniqueId := none } args' [],
               { val := .Unknown, source := callee.source })
     | _ =>
       -- Genuinely ambiguous. When an `Unknown` argument is the reason several
@@ -3705,7 +3704,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
         let diag := diagnosticFromSource source
           s!"ambiguous call to '{callee}': the argument types match more than one overload"
         modify fun s => { s with errors := s.errors.push diag }
-      return (.StaticCall { callee with uniqueId := none } args' [],
+      return (.Call none { callee with uniqueId := none } args' [],
               { val := .Unknown, source := callee.source })
 
   -- GENERIC callee: infer the call's type arguments from the actual argument types
@@ -3748,7 +3747,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
           modify fun s => { s with errors := s.errors.push diag }
           hasMulti := true
       if hasMulti then
-        return (.StaticCall callee' args' [], { val := .TBool, source := source })
+        return (.Call none callee' args' [], { val := .TBool, source := source })
       -- A void operand is reported with the SAME pairwise wording as a type disagreement, so the
       -- two read alike at a call site. Emitted once for the pair, not once per operand.
       match argTys with
@@ -3757,7 +3756,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
           let diag := diagnosticFromSource source
             s!"cannot compare '{formatType lhsTy}' with '{formatType rhsTy}' using '{eqOp}'"
           modify fun s => { s with errors := s.errors.push diag }
-          return (.StaticCall callee' args' [], { val := .TBool, source := source })
+          return (.Call none callee' args' [], { val := .TBool, source := source })
       | _ => pure ()
     return (← genericCallResult callee callee' gproc args' argTys expected? retSubst source)
 
@@ -3808,7 +3807,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
       -- Recorded like a procedure call's instantiation, and on the same condition.
       let recorded := if recvArgs.length == dtParams.length
           && !recvArgs.any (fun t => mentionsUnknown t.val) then recvArgs else []
-      return (.StaticCall callee' args' recorded, retTy)
+      return (.Call none callee' args' recorded, retTy)
 
   let callee' ← resolveRef callee source
     (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant, .coroutineType])
@@ -3948,7 +3947,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
     let ctorTypeArgs : List HighTypeMd :=
       if typeParams.isEmpty || !ctorUnbound.isEmpty then []
       else (typeParams.mapM (fun p => ctorSubst[p]?)).getD []
-    return (.StaticCall callee' args' ctorTypeArgs, ctorRetTy)
+    return (.Call none callee' args' ctorTypeArgs, ctorRetTy)
   -- Surplus arguments (an arity error, reported below) have no declared
   -- parameter type. Pad with `.Unknown` carrying each surplus argument's own
   -- source, so diagnostics point at the offending argument.
@@ -3971,7 +3970,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
       let diag := diagnosticFromSource source
         s!"call to '{callee}' expects {arity} argument(s) but {args.length} were provided"
       modify fun s => { s with errors := s.errors.push diag }
-  pure (.StaticCall callee' args' [], retTy)
+  pure (.Call none callee' args' [], retTy)
   termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals first
@@ -3987,14 +3986,14 @@ def Synth.staticCall (exprMd : StmtExprMd)
       with inputs [self; Ts] and output [T'] (single output)
     Γ ⊢ args_i ⇐ Ts_i (pairwise; self dropped)
     ─────────────────────────────────────────
-    Γ ⊢ InstanceCall target callee args ⇒ T'
+    Γ ⊢ Call (some target) callee args ⇒ T'
 
     Γ ⊢ target ⇒ C                                            (Instance-Call-Multi)
     Γ(Owner$callee) = instance-procedure
       with inputs [self; Ts] and outputs [T_1; …; T_n] (n ≥ 2)
     Γ ⊢ args_i ⇐ Ts_i (pairwise; self dropped)
     ─────────────────────────────────────────
-    Γ ⊢ InstanceCall target callee args ⇒ MultiValuedExpr [T_1; …; T_n]
+    Γ ⊢ Call (some target) callee args ⇒ MultiValuedExpr [T_1; …; T_n]
     ```
     A callee with *zero* outputs synthesizes `TVoid` (the n = 0 case).
     The two rules differ only in *output* arity. Target synthesizes a composite
@@ -4030,7 +4029,7 @@ def Synth.staticCall (exprMd : StmtExprMd)
 def Synth.instanceCall (exprMd : StmtExprMd)
     (target : StmtExprMd) (callee : Identifier) (args : List StmtExprMd)
     (priorTypeArgs : List HighTypeMd) (source : FileRange)
-    (h : exprMd.val = .InstanceCall target callee args priorTypeArgs)
+    (h : exprMd.val = .Call (some target) callee args priorTypeArgs)
     (expected? : Option HighTypeMd := none) :
     ResolveM (StmtExpr × HighTypeMd) := do
   let errorsBefore := (← get).errors.size
@@ -4039,7 +4038,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     let args' ← args.attach.mapM (fun ⟨a, hMem⟩ => do
       have := hMem
       Check.resolveStmtExpr a { val := .Unknown, source := a.source })
-    return (.InstanceCall target' callee args' [], { val := .Unknown, source := callee.source })
+    return (.Call (some target') callee args' [], { val := .Unknown, source := callee.source })
   -- An instance procedure is registered under the container-scoped key
   -- `TypeName$method` (see `preRegisterTopLevel` / `resolveInstanceProcedure`),
   -- matching the lifted top-level static procedure that `LiftInstanceProcedures`
@@ -4116,8 +4115,8 @@ def Synth.instanceCall (exprMd : StmtExprMd)
         receiver?
       let (call, ty) ← genericCallResult callee callee' proc args' argTys expected? retSubst
         source receiver?
-      let tyArgs := match call with | .StaticCall _ _ tyArgs => tyArgs | _ => []
-      return (.InstanceCall target' callee' args' tyArgs, ty)
+      let tyArgs := match call with | .Call none _ _ tyArgs => tyArgs | _ => []
+      return (.Call (some target') callee' args' tyArgs, ty)
   let retTy := procReturnType lookupKey proc
   -- The first parameter is the implicit `self` receiver, which is not supplied
   -- positionally here, so it is dropped before pairing parameter types with `args`.
@@ -4137,7 +4136,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     let diag := diagnosticFromSource source
       s!"call to '{callee}' expects {callParamTypes.length} argument(s) but {args.length} were provided"
     modify fun s => { s with errors := s.errors.push diag }
-  pure (.InstanceCall target' callee' args' [], retTy)
+  pure (.Call (some target') callee' args' [], retTy)
   termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals first
@@ -4926,7 +4925,7 @@ def Synth.contractOf (exprMd : StmtExprMd)
         node.kind == .instanceProcedure ||
         node.kind == .unresolved
       | none => true  -- unresolved name already reported
-    | .StaticCall .. | .InstanceCall .. => match ty with | .Precondition => true | _ => false
+    | .Call none .. | .Call (some _) .. => match ty with | .Precondition => true | _ => false
     | _ => false
   unless fnIsProcRef do
     let diag := diagnosticFromSource fn.source
@@ -6071,7 +6070,7 @@ private def procDeclaresThrows (model : SemanticModel) (callee : Identifier) : B
 private def throwingCallSources (model : SemanticModel) (e : StmtExprMd) : List FileRange :=
   collectStmtExprList (fun n =>
     match n.val with
-    | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
+    | .Call _ callee _ _ =>
       if procDeclaresThrows model callee then [n.source] else []
     | _ => []) e
 
@@ -6085,7 +6084,7 @@ private def checkThrowingCallPositions (model : SemanticModel) (stmt : StmtExprM
   -- its head is fine, but its arguments are nested value expressions.
   let checkValue (v : StmtExprMd) : List FileRange :=
     match v.val with
-    | .StaticCall _ args _ | .InstanceCall _ _ args _ => args.flatMap (throwingCallSources model)
+    | .Call _ _ args _ => args.flatMap (throwingCallSources model)
     | _ => throwingCallSources model v
   match _h : stmt.val with
   | .Block stmts _ _ _ =>
@@ -6111,7 +6110,7 @@ private def checkThrowingCallPositions (model : SemanticModel) (stmt : StmtExprM
       ++ checkValue value
   | .Return vs => vs.flatMap checkValue
   | .Throw op => throwingCallSources model op
-  | .StaticCall _ args _ | .InstanceCall _ _ args _ => args.flatMap (throwingCallSources model)
+  | .Call _ _ args _ => args.flatMap (throwingCallSources model)
   | _ => throwingCallSources model stmt
   termination_by sizeOf stmt
   decreasing_by
@@ -6708,7 +6707,7 @@ private def isGlobalUse (model : SemanticModel) (dependentIds : Std.HashSet Nat)
   | .Var _ => isGlobalRef model expr
   | .Assign targets _ => targets.any (isGlobalTarget model)
   | .IncrDecr _ _ target | .CompoundAssign _ target _ => isGlobalTarget model target
-  | .StaticCall callee _ _ | .InstanceCall _ callee _ _ => containsProcId dependentIds callee
+  | .Call _ callee _ _ => containsProcId dependentIds callee
   | _ => false
 
 private def firstGlobalUseSource (model : SemanticModel) (dependentIds : Std.HashSet Nat)
@@ -6781,14 +6780,12 @@ private def foldRestrictedStmtExprM [Monad m]
     | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure ()
     foldRestrictedStmtExprM f restricted rhs
   | .PureFieldUpdate target _ value => foldRestrictedStmtExprM f restricted target; foldRestrictedStmtExprM f restricted value
-  | .StaticCall _ args _ =>
+  | .Call receiver? _ args _ =>
+    receiver?.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f restricted e
     args.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f restricted e
   | .ReferenceEquals lhs rhs => foldRestrictedStmtExprM f restricted lhs; foldRestrictedStmtExprM f restricted rhs
   | .AsType target _ => foldRestrictedStmtExprM f restricted target
   | .IsType target _ => foldRestrictedStmtExprM f restricted target
-  | .InstanceCall target _ args _ =>
-    foldRestrictedStmtExprM f restricted target
-    args.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f restricted e
   | .Quantifier _ _ trigger body =>
     trigger.attach.forM fun ⟨e, _⟩ => foldRestrictedStmtExprM f true e
     foldRestrictedStmtExprM f true body
@@ -6873,7 +6870,7 @@ private def containsArgumentMutation (ctx : GlobalCallValidationContext)
     (expr : StmtExprMd) : Bool :=
   anyStmtExpr (fun node => match node.val with
     | .Assign _ _ | .IncrDecr _ _ _ | .CompoundAssign _ _ _ => true
-    | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
+    | .Call _ callee _ _ =>
         containsProcId ctx.writerIds callee || hasExplicitInout ctx.model callee
     | _ => false) expr
 
@@ -6927,7 +6924,7 @@ private def blockTupleCall (ctx : GlobalCallValidationContext)
   | .Block _ _ _ _ | .IfThenElse _ _ _ | .ProveBy _ _ | .Old _ _ | .Fresh _
   | .Assigned _ | .AsType _ _ | .Assign _ _ | .CompoundAssign _ _ _ =>
       (collectResultPathStmtExprList (fun node => match node.val with
-        | .StaticCall callee _ _ | .InstanceCall _ callee _ _ => [callee]
+        | .Call _ callee _ _ => [callee]
         | _ => []) expr).find? fun callee =>
           containsProcId ctx.dependentIds callee &&
             ordinaryOutputCount ctx.model callee > 1
@@ -6936,8 +6933,7 @@ private def blockTupleCall (ctx : GlobalCallValidationContext)
 private def effectfulTupleCall (ctx : GlobalCallValidationContext)
     (expr : StmtExprMd) : Option Identifier :=
   let candidate := match expr.val with
-    | .StaticCall callee args _ => some (callee, args)
-    | .InstanceCall target callee args _ => some (callee, target :: args)
+    | .Call receiver? callee args _ => some (callee, receiver?.toList ++ args)
     | _ => none
   candidate.bind fun (callee, args) =>
     if containsProcId ctx.dependentIds callee &&
@@ -6958,9 +6954,8 @@ private def globalCallErrors (ctx : GlobalCallValidationContext)
   (foldRestrictedStmtExprM (m := GlobalValidationM)
     (fun restricted node => do
       match node.val with
-      | .StaticCall callee args _ => validateGlobalCall ctx restricted callee args
-      | .InstanceCall target callee args _ =>
-          validateGlobalCall ctx restricted callee (target :: args)
+      | .Call receiver? callee args _ =>
+          validateGlobalCall ctx restricted callee (receiver?.toList ++ args)
       | .Assign targets rhs => do
           if targets.length > 1 then
             if let some callee := tupleCallNeedingBlock ctx rhs then
@@ -6978,14 +6973,14 @@ private def resultUseGlobalCallErrors (ctx : GlobalCallValidationContext)
     | .Assign targets rhs =>
         if targets.length > 1 then
           match rhs.val with
-          | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
+          | .Call _ callee _ _ =>
               if containsProcId ctx.writerIds callee then [callee.source] else []
           | _ => []
         else []
     | _ => []) expr
   (mapStmtExprUsedM (m := GlobalValidationM) (fun resultUsed node => do
     match node.val with
-    | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
+    | .Call _ callee _ _ =>
         if resultUsed then
           if containsProcId ctx.writerIds callee &&
               ordinaryOutputCount ctx.model callee > 1 &&
@@ -7036,7 +7031,7 @@ private def oldGlobalErrorsInExpr (model : SemanticModel)
       if !allowDirectReads && isGlobalRef model node then
         some "file-scope globals inside `old(...)` are only supported in postconditions and guards"
       else none
-    | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
+    | .Call _ callee _ _ =>
       if containsProcId dependentIds callee then some effectMessage else none
     | .Assign targets _ =>
       if targets.any (isGlobalTarget model) then some effectMessage else none
@@ -7093,7 +7088,7 @@ private def validateBodilessGlobalPostconditions (model : SemanticModel)
   let usesGlobal (expr : StmtExprMd) : Bool :=
     anyStmtExpr (fun node => match node.val with
       | .Var _ => isGlobalRef model node
-      | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
+      | .Call _ callee _ _ =>
           containsProcId dependentIds callee
       | _ => false) expr
   let isOutputRef (proc : Procedure) (expr : StmtExprMd) : Bool :=
@@ -7104,7 +7099,7 @@ private def validateBodilessGlobalPostconditions (model : SemanticModel)
     anyStmtExpr (fun node => isOutputRef proc node) expr
   let definesOutputFromGlobal (proc : Procedure) (expr : StmtExprMd) : Bool :=
     match expr.val with
-    | .StaticCall callee [lhs, rhs] _ =>
+    | .Call none callee [lhs, rhs] _ =>
         callee.text == Operation.Eq.procName &&
           ((isOutputRef proc lhs && usesGlobal rhs && !containsOutputRef proc rhs) ||
            (isOutputRef proc rhs && usesGlobal lhs && !containsOutputRef proc lhs))
@@ -7113,7 +7108,7 @@ private def validateBodilessGlobalPostconditions (model : SemanticModel)
     ids.union (globalEffectIdsFor analysis.globals.writers field)
   let hasWriterCall (expr : StmtExprMd) : Bool :=
     anyStmtExpr (fun node => match node.val with
-      | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
+      | .Call _ callee _ _ =>
           containsProcId writerIds callee
       | _ => false) expr
   analysis.allProcs.filterMap fun proc =>
@@ -7172,7 +7167,7 @@ private def firstInitializerEffectSource (model : SemanticModel)
     -- as `var c: C := <??>`. `..`, not `_`: `typeArgs` is a defaulted field, so `.New _` means
     -- `.New _ []` and would match `new C` alone, letting `new Box<int>` through.
     | .New .. => true
-    | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
+    | .Call _ callee _ _ =>
         containsProcId model.heapReaders callee || containsProcId model.heapWriters callee
     -- A field read is a heap read; every constructor `HeapAnalysis` flags as a heap effect needs an
     -- arm here.
@@ -7306,7 +7301,7 @@ private def validateCallsToGlobalEntryProcedures (program : LaurelProgram)
   if globalEntryIds.isEmpty then [] else
   let errorsIn (expr : StmtExprMd) : List Message :=
     collectStmtExprList (fun node => match node.val with
-      | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
+      | .Call _ callee _ _ =>
         if containsProcId globalEntryIds callee then
           [diagnosticFromSource node.source
             s!"entry procedure '{callee.text}' cannot be called here: it uses file-scope globals, which it initializes as locals rather than accepting as the hidden parameters this call would pass"
@@ -7417,16 +7412,15 @@ private def effectiveOutputCount (proc : Procedure) : Except String Nat := do
   let _ ← Identifier.getUniqueId proc.name
   pure proc.outputs.length
 
-/-- Every callee referenced by a `StaticCall`/`InstanceCall` anywhere in `e`,
+/-- Every callee referenced by a static `Call`/instance `Call` anywhere in `e`,
     in pre-order, paired with the source range of the whole call node (so a
     diagnostic points at the call site). Both call forms carry the callee's
-    resolved `uniqueId` (an `InstanceCall`'s is stamped from the container-scoped
+    resolved `uniqueId` (an instance `Call`'s is stamped from the container-scoped
     lookup — see `Synth.instanceCall`), which `validateMultiOutputCallContexts`
     uses to resolve the callee to its correctly-scoped procedure. -/
 private def calleesOf (e : StmtExprMd) : List (Identifier × FileRange) :=
   collectStmtExprList (fun n => match n.val with
-    | .StaticCall callee _ _ => [(callee, n.source)]
-    | .InstanceCall _ callee _ _ => [(callee, n.source)]
+    | .Call _ callee _ _ => [(callee, n.source)]
     | _ => []) e
 
 /-- A procedure's transparent body, whose whole implementation is transparent — the
@@ -7457,8 +7451,7 @@ private def destructuredCallSources (outputCount : Identifier → Option Nat)
   Std.HashSet.ofList (collectStmtExprList (fun n => match n.val with
     | .Assign targets value =>
       let callee? := match value.val with
-        | .StaticCall callee _ _ => some callee
-        | .InstanceCall _ callee _ _ => some callee
+        | .Call _ callee _ _ => some callee
         | _ => none
       match callee? with
       | some callee =>
@@ -7648,7 +7641,7 @@ private def validateInvokeOnGlobalWrites (program : LaurelProgram)
   let writerIds := globalWriterIds program analysis
   let invokeOnCallsWriter (proc : Procedure) : Bool := proc.invokeOn.any fun trigger =>
     anyStmtExpr (fun node => match node.val with
-      | .StaticCall callee _ _ | .InstanceCall _ callee _ _ => containsProcId writerIds callee
+      | .Call _ callee _ _ => containsProcId writerIds callee
       | _ => false) trigger
   analysis.allProcs.filterMap fun proc =>
     if proc.invokeOn.isNone || !proc.outputs.isEmpty || invokeOnCallsWriter proc then none

@@ -126,8 +126,8 @@ def computeExprTypeWith (lattice? : Option TypeLattice)
   -- Calls — the callee's return type at this call site, so a generic callee reports its
   -- instantiation rather than its declared `T`. `ContractPass` types a polymorphic callee's
   -- argument temp from the argument itself and needs that instantiation.
-  | .StaticCall callee _ tyArgs => getCallType source model callee tyArgs
-  | .InstanceCall target callee args tyArgs =>
+  | .Call none callee _ tyArgs => getCallType source model callee tyArgs
+  | .Call (some target) callee args tyArgs =>
     match lattice?, model.get callee with
     | some lattice, .instanceProcedure owner proc =>
       let receiverTy := computeExprTypeWith lattice? model target

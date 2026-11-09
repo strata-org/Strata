@@ -110,14 +110,14 @@ private theorem rewriteNode_contains (s : KindSet) (e : StmtExprMd) (h : Rebuilt
     have hbody : Contains (outSet s) body := hkids body (by simp [stmtExprChildren])
     -- `!COND`
     have hnot : Contains (outSet s)
-        (⟨.StaticCall (mkId Operation.Not.procName) [cond] [], e.source⟩ : StmtExprMd) := by
+        (⟨.Call none (mkId Operation.Not.procName) [cond] [], e.source⟩ : StmtExprMd) := by
       refine .node _ (fun k hk => mem_outSet_of_creates ?_) (by simp [stmtExprTypes]) ?_
-      · have hk' : k = NodeKind.StmtExpr.StaticCall := by
+      · have hk' : k = NodeKind.StmtExpr.Call := by
           simpa [NodeKind.ofStmtExpr, NodeKind.ofCallee, NodeKind.ofOperation,
             Operation.procName, Operation.ofProcName?, mkId] using hk
         simp [hk', eliminateDoWhilePass]
       · intro c hc
-        simp only [stmtExprChildren, List.mem_singleton] at hc
+        simp only [stmtExprChildren, Option.toList_none, List.nil_append, List.mem_singleton] at hc
         exact hc ▸ hcond
     -- `exit L`
     have hexit : Contains (outSet s) (⟨.Goto exitLabel .blockEnd, e.source⟩ : StmtExprMd) := by
@@ -127,7 +127,7 @@ private theorem rewriteNode_contains (s : KindSet) (e : StmtExprMd) (h : Rebuilt
       · intro c hc; simp [stmtExprChildren] at hc
     -- `if (!COND) exit L`
     have hguard : Contains (outSet s)
-        (⟨.IfThenElse ⟨.StaticCall (mkId Operation.Not.procName) [cond] [], e.source⟩
+        (⟨.IfThenElse ⟨.Call none (mkId Operation.Not.procName) [cond] [], e.source⟩
           ⟨.Goto exitLabel .blockEnd, e.source⟩ none, e.source⟩ : StmtExprMd) := by
       refine .node _ (fun k hk => mem_outSet_of_creates ?_) (by simp [stmtExprTypes]) ?_
       · have hk' : k = NodeKind.StmtExpr.IfThenElse := by simpa [NodeKind.ofStmtExpr] using hk
@@ -140,7 +140,7 @@ private theorem rewriteNode_contains (s : KindSet) (e : StmtExprMd) (h : Rebuilt
         · exact hc ▸ hexit
     -- `{ BODY; if (!COND) exit L }`
     have hloopBody : Contains (outSet s)
-        (⟨.Block [body, ⟨.IfThenElse ⟨.StaticCall (mkId Operation.Not.procName) [cond] [], e.source⟩
+        (⟨.Block [body, ⟨.IfThenElse ⟨.Call none (mkId Operation.Not.procName) [cond] [], e.source⟩
           ⟨.Goto exitLabel .blockEnd, e.source⟩ none, e.source⟩] none [] none, e.source⟩ : StmtExprMd) := by
       refine .node _ (fun k hk => mem_outSet_of_creates ?_) (by simp [stmtExprTypes]) ?_
       · have hk' : k = NodeKind.StmtExpr.Block := by simpa [NodeKind.ofStmtExpr] using hk
@@ -153,7 +153,7 @@ private theorem rewriteNode_contains (s : KindSet) (e : StmtExprMd) (h : Rebuilt
     -- `while(true) invariant I { … }`, pre-test
     have hwhile : Contains (outSet s)
         (⟨.While ⟨.LiteralBool true, e.source⟩ invs dec
-          ⟨.Block [body, ⟨.IfThenElse ⟨.StaticCall (mkId Operation.Not.procName) [cond] [], e.source⟩
+          ⟨.Block [body, ⟨.IfThenElse ⟨.Call none (mkId Operation.Not.procName) [cond] [], e.source⟩
             ⟨.Goto exitLabel .blockEnd, e.source⟩ none, e.source⟩] none [] none, e.source⟩ false,
           e.source⟩ : StmtExprMd) := by
       refine .node _ (fun k hk => ?_) (by simp [stmtExprTypes]) ?_

@@ -164,7 +164,7 @@ def Laurel.withEntryHarness (program : Laurel.LaurelProgram) (name : String)
     { name := fresh s!"{name}?entry"
       inputs := [], outputs := [], preconditions := [], decreases := none
       isInterpretEntry := true
-      body := .Opaque [] (some ⟨.StaticCall (copy?.getD target).name [] [], src⟩)
+      body := .Opaque [] (some ⟨.Call none (copy?.getD target).name [] [], src⟩)
         (Laurel.ModifiesGroup.wildcard src) }
   let program := Laurel.mapLaurelProgramProcedures ({ · with isInterpretEntry := false }) program
   let procs := if copy?.isSome then program.staticProcedures else

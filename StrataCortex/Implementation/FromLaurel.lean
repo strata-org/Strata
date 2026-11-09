@@ -201,9 +201,9 @@ def preludePre? (model : SemanticModel) (prelude : Std.HashSet String) (callee :
 def headImpure (model : SemanticModel) (procNames : Std.HashSet String) (prelude : Std.HashSet String)
     (e : StmtExprMd) : Bool :=
   match e.val with
-  | .StaticCall c _ _ => isProcCallee model procNames c || (preludePre? model prelude c).isSome
+  | .Call none c _ _ => isProcCallee model procNames c || (preludePre? model prelude c).isSome
   | .New .. | .Var (.Field ..) | .Var (.Declare ..) | .IsType .. | .AsType .. | .Assign .. | .IncrDecr ..
-  | .CompoundAssign .. | .Block .. | .Hole .. | .InstanceCall .. | .Throw .. | .Return ..
+  | .CompoundAssign .. | .Block .. | .Hole .. | .Call (some _) .. | .Throw .. | .Return ..
   | .Goto .. | .While .. | .Try .. | .Assert .. | .Assume .. => true
   | _ => false
 
@@ -246,7 +246,7 @@ partial def inlineWrappers (model : SemanticModel) (prelude : Std.HashSet String
     (e : StmtExprMd) (fuel : Nat := 16) : StmtExprMd :=
   if fuel == 0 then e else
   mapStmtExpr (fun n => match n.val with
-    | .StaticCall callee args _ =>
+    | .Call none callee args _ =>
       match model.get? callee with
       | some (.staticProcedure p) =>
         if !prelude.contains p.name.text then n else
@@ -324,7 +324,7 @@ partial def purify (e : StmtExprMd) : CM StmtExprMd := do
   let md := astNodeToCoreMd e
   let src := e.source
   match e.val with
-  | .StaticCall callee args tyArgs =>
+  | .Call none callee args tyArgs =>
     let model := (← getThe TranslateState).model
     if isProcCallee model (← get).procNames callee then
       let args' ← purifyArgs args
@@ -375,7 +375,7 @@ partial def purify (e : StmtExprMd) : CM StmtExprMd := do
           emit (.cmd (.assert s!"pre_{(← get).fresh}" cond md'))
           modify fun s => { s with fresh := s.fresh + 1 }
           conds := conds.push cond
-        let node : StmtExprMd := { e with val := .StaticCall callee args' tyArgs }
+        let node : StmtExprMd := { e with val := .Call none callee args' tyArgs }
         let tmp ← freshTemp (← typeOf e) src
         let rhs ← uncheckedExpr node
         if (← get).uncheck || conds.isEmpty then
@@ -392,7 +392,7 @@ partial def purify (e : StmtExprMd) : CM StmtExprMd := do
           emit (.cmd (.set ⟨tmp.text, ()⟩ .nondet md))
           fallInto join
         return varNode tmp src
-      return { e with val := .StaticCall callee args' tyArgs }
+      return { e with val := .Call none callee args' tyArgs }
   | .ReferenceEquals a b =>
     match ← purifyArgs [a, b] with
     | [a', b'] => return { e with val := .ReferenceEquals a' b' }
@@ -482,7 +482,7 @@ partial def purify (e : StmtExprMd) : CM StmtExprMd := do
     let rhs' ← purify rhs
     let tv : Identifier := curT
     let callee ← resolveOperator op.procName (← typeOf e) src
-    let node : StmtExprMd := { e with val := .StaticCall callee [varNode tv src, rhs'] [] }
+    let node : StmtExprMd := { e with val := .Call none callee [varNode tv src, rhs'] [] }
     let newV ← expr node
     let n ← freshTemp (← typeOf e) src
     emit (.cmd (.set ⟨n.text, ()⟩ (.det newV) md))
@@ -493,7 +493,7 @@ partial def purify (e : StmtExprMd) : CM StmtExprMd := do
     let r ← freshTemp ty' src
     emit (.cmd (.set ⟨r.text, ()⟩ .nondet md))
     return varNode r src
-  | .InstanceCall target callee args _ =>
+  | .Call (some target) callee args _ =>
     match ← virtualCallOf target callee args md src (some e) with
     | [t] => return varNode t src
     | _ =>
@@ -665,11 +665,11 @@ partial def stmt (e : StmtExprMd) : CM Unit := do
     jumpTo (← get).retLabel
   | .Assign targets value =>
     match value.val with
-    | .StaticCall callee args _ =>
+    | .Call none callee args _ =>
       if isProcCallee (← getThe TranslateState).model (← get).procNames callee then
         assignCall targets md src fun lhs => callStmt callee args (some lhs) md src
       else assignValue targets value md src
-    | .InstanceCall target callee args _ =>
+    | .Call (some target) callee args _ =>
       let temps ← virtualCallOf target callee args md src none
       for (t, tv) in targets.zip temps do
         writeVar t (mkFvar tv.text) md
@@ -677,12 +677,12 @@ partial def stmt (e : StmtExprMd) : CM Unit := do
   | .Var (.Declare p) =>
     declLocal p.name.text (← lty (p.type.getD ⟨.Unknown, src⟩))
     emit (.cmd (.set ⟨p.name.text, ()⟩ .nondet md))
-  | .StaticCall callee args _ =>
+  | .Call none callee args _ =>
     if isProcCallee (← getThe TranslateState).model (← get).procNames callee then
       callStmt callee args none md src
     else
       let _ ← purify e
-  | .InstanceCall target callee args _ =>
+  | .Call (some target) callee args _ =>
     let _ ← virtualCallOf target callee args md src none
   | .Throw v =>
     let ty ← typeOf v
@@ -925,10 +925,10 @@ def writesUnframed (model : SemanticModel) (cs : List CompositeType) (e : StmtEx
   | .Assign ts _ => ts.any fun t => (t.val matches .Field ..)
   | .IncrDecr _ _ t => (t.val matches .Field ..)
   | .CompoundAssign _ t _ => (t.val matches .Field ..)
-  | .StaticCall c _ _ => match model.get? c with
+  | .Call none c _ _ => match model.get? c with
     | some (.staticProcedure p) => frameUnbounded model p
     | _ => false
-  | .InstanceCall _ c _ _ => match model.get? c with
+  | .Call (some _) c _ _ => match model.get? c with
     | some (.instanceProcedure _ p) => cs.any fun comp =>
       comp.instanceProcedures.any fun q => q.name.text == p.name.text && frameUnbounded model q
     | _ => true
