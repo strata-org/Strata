@@ -43,15 +43,54 @@ def cortexStopMessage : StopReason → String
   | .calleeDidNotTerminate n => s!"callee {n} did not terminate"
   | .invalidDatatypes msg => s!"invalid datatypes: {msg}"
 
+def interpretableCore (core : _root_.Core.Program) : Except String _root_.Core.Program := do
+  let core ← match _root_.Core.typeCheck _root_.Core.VerifyOptions.quiet core with
+    | .ok prog => pure prog
+    | .error e => throw s!"Core type checking failed: {e.message}"
+  return _root_.Core.Program.inlineBodiedFunctions core
+
 def toInterpretableCore (options : LaurelTranslateOptions) (program : LaurelProgram) :
     Except String _root_.Core.Program := do
   let core ← match translate options program with
     | (some core, _) => pure core
     | (none, diags) => throw s!"Laurel to Core translation failed: {diags.map (·.message)}"
-  let core ← match _root_.Core.typeCheck _root_.Core.VerifyOptions.quiet core with
-    | .ok prog => pure prog
-    | .error e => throw s!"Core type checking failed: {e.message}"
-  return _root_.Core.Program.inlineBodiedFunctions core
+  interpretableCore core
+
+/-- Run every entry procedure of `m` on the Cortex interpreter, after LowerCTE.
+Returns the failed checks as diagnostics, and the runs that stopped or left an
+assertion unevaluated as errors. -/
+def interpretProgram (m : Cortex.UnorderedProgram) (fuel : Nat) : Except String (Array Message × Array String) := do
+  let m ← match Cortex.LowerCTE.runWith true m with
+    | .ok m => pure m
+    | .error e => throw s!"LowerCTE: {e}"
+  let mut out : Array Message := #[]
+  let mut seen : Std.HashSet Message := {}
+  let mut errors : Array String := #[]
+  for p in m.procedures do
+    unless isEntry p do continue
+    match runEntry m fuel p with
+    | .error e => errors := errors.push s!"'{p.name}': {cortexStopMessage e}"
+    | .ok (final, trace) =>
+      if unevaluated trace > 0 then
+        errors := errors.push s!"'{p.name}': an assertion could not be evaluated"
+      let fs := failures trace
+      let msgs := fs.filterMap fun (md, summary) =>
+        (Imperative.getFileRange md).map fun fr => Message.withRange fr s!"{summary} does not hold"
+      let msgs := match final with
+        | .raised ρ v md =>
+          let fallback := match dynType ρ.heap v with
+            | some ty => s!"uncaught exception '{ty}' is not thrown"
+            | none => "uncaught exception is not thrown"
+          let summary := ((md : Cortex.MD).getPropertySummary).getD fallback
+          match Imperative.getFileRange (md : Cortex.MD) with
+          | some fr => msgs ++ [Message.withRange fr s!"{summary} does not hold"]
+          | none => msgs ++ [Message.fromString s!"'{p.name}': {summary} does not hold"]
+        | _ => msgs
+      for dm in msgs do
+        unless seen.contains dm do
+          out := out.push dm
+          seen := seen.insert dm
+  return (out, errors)
 
 def interpretLaurel (program : LaurelProgram) (fuel : Nat := 10000) :
     IO (Except String (Array Message)) := do
@@ -62,35 +101,17 @@ def interpretLaurel (program : LaurelProgram) (fuel : Nat := 10000) :
   match mod? with
   | none => return .error s!"Laurel to Cortex translation failed: {diags.map (·.message)}"
   | some m =>
-    let m ← match Cortex.LowerCTE.runWith true m with
-      | .ok m => pure m
-      | .error e => return .error s!"LowerCTE: {e}"
-    let mut out : Array Message := #[]
-    let mut seen : Std.HashSet Message := {}
-    let mut errors : Array String := #[]
-    for p in m.procedures do
-      unless isEntry p do continue
-      match runEntry m fuel p with
-      | .error e => errors := errors.push s!"'{p.name}': {cortexStopMessage e}"
-      | .ok (final, trace) =>
-        if unevaluated trace > 0 then
-          errors := errors.push s!"'{p.name}': an assertion could not be evaluated"
-        let fs := failures trace
-        let msgs := fs.filterMap fun (md, summary) =>
-          (Imperative.getFileRange md).map fun fr => Message.withRange fr s!"{summary} does not hold"
-        let msgs := match final with
-          | .raised _ _ md =>
-            let summary := ((md : Cortex.MD).getPropertySummary).getD "uncaught exception is not thrown"
-            match Imperative.getFileRange (md : Cortex.MD) with
-            | some fr => msgs ++ [Message.withRange fr s!"{summary} does not hold"]
-            | none => msgs ++ [Message.fromString s!"'{p.name}': {summary} does not hold"]
-          | _ => msgs
-        for dm in msgs do
-          unless seen.contains dm do
-            out := out.push dm
-            seen := seen.insert dm
-    if errors.isEmpty then return .ok out
-    return .error s!"{String.intercalate "; " errors.toList} (diagnostics: {out.toList.map (·.message)})"
+    match interpretProgram m fuel with
+    | .error e => return .error e
+    | .ok (out, errors) =>
+      if errors.isEmpty then return .ok out
+      return .error s!"{String.intercalate "; " errors.toList} (diagnostics: {out.toList.map (·.message)})"
+
+/-- Run a wire program's entry procedures on the Cortex interpreter. -/
+def interpretWire (program : Wire.Program) (fuel : Nat) : Except String (Array Message × Array String) := do
+  match program.withPreludes >>= Wire.Program.toCortex with
+  | .error e => throw s!"invalid Cortex program: {e}"
+  | .ok m => interpretProgram m fuel
 
 end
 

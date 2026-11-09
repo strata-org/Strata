@@ -314,8 +314,15 @@ variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
   | .terminal ρ => pure (.terminal ρ)
   | .raised ρ v md => pure (.raised ρ v md)
 
+/-- The check of precondition `pre` at a call at `callMd`: located at the call,
+with the precondition's property summary. -/
+@[expose] def preconditionMd (callMd : MD) (pre : Precondition) : MD :=
+  match pre.md.getPropertySummary with
+  | some s => callMd.pushElem Imperative.MetaData.propertySummary (.msg s)
+  | none => callMd
+
 @[expose] def callProc (prog : UnorderedProgram) (runBody : IConfig → m (IConfig)) (ρ : IEnv)
-    (lhs : List Core.Expression.Ident) (n : ProcName) (args : List Expr) : m CmdResult := do
+    (lhs : List Core.Expression.Ident) (n : ProcName) (args : List Expr) (callMd : MD) : m CmdResult := do
   match prog.findProcedure? n with
   | none => throw (.unknownProcedure n)
   | some p =>
@@ -323,6 +330,8 @@ variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
     | none => throw (.procedureWithoutBody n)
     | some body =>
       let σ₀ ← callFrame prog ρ.factory ρ.store p args
+      for pre in p.requires do
+        Effects.emit (emittedEvents (.assert s!"requires_{p.name}" pre.cond (preconditionMd callMd pre)) ρ.factory σ₀)
       let final ← runBody (.atBlock body body.cfg.entry
         { store := σ₀, heap := ρ.heap, factory := ρ.factory, next := ρ.next, tys := paramTys p })
       match final with
@@ -379,13 +388,13 @@ mutual
     let v ← evalExpr ρ.factory ρ.store e
     pure ⟨ρ.store, ρ.heap, ρ.next, .exn v⟩
   | 0, _, .call _ _ _ _ | 0, _, .virtualCall _ _ _ _ _ => throw .fuelExhausted
-  | fuel + 1, ρ, .call lhs n args _ => callProc prog (run prog fuel) ρ lhs n args
-  | fuel + 1, ρ, .virtualCall lhs owner meth args _ => do
+  | fuel + 1, ρ, .call lhs n args md => callProc prog (run prog fuel) ρ lhs n args md
+  | fuel + 1, ρ, .virtualCall lhs owner meth args md => do
     let recv ← match args with
       | r :: _ => evalExpr ρ.factory ρ.store r
       | [] => throw .arityMismatch
     let (_, o) ← deref ρ.heap recv
-    callProc prog (run prog fuel) ρ lhs (prog.dispatch owner meth o.type) args
+    callProc prog (run prog fuel) ρ lhs (prog.dispatch owner meth o.type) args md
 
 @[expose] def run (prog : UnorderedProgram) : Nat → IConfig → m (IConfig)
   | _, .terminal ρ => pure (.terminal ρ)

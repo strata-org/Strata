@@ -70,6 +70,13 @@ structure Body where
   cfg : DetCFG Core.Expression IRCmd
   handlers : ExnTable
 
+/-- A precondition over a procedure's inputs: checked at each call, with the
+call's location and this precondition's property summary, and assumed by the
+body. -/
+structure Precondition where
+  cond : Expr
+  md : MD := .empty
+
 structure Procedure where
   name : ProcName
   inputs : List (Core.Expression.Ident × Core.Expression.Ty)
@@ -77,6 +84,7 @@ structure Procedure where
   throws : Option TypeName
   body : Option Body
   md : MD := .empty
+  requires : List Precondition := []
 
 structure UnorderedProgram where
   composites : List CompositeDecl

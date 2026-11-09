@@ -250,12 +250,18 @@ def procedureHeader (p : Procedure) : Except String Core.Procedure.Header := do
   let outputs ← p.outputs.mapM fun (x, t) => do return (x, ← toMono t)
   return { name := ⟨p.name, ()⟩, typeArgs := [], inputs, outputs }
 
+/-- A procedure's preconditions as Core's, labelled `requires_<i>`. -/
+def procedureSpec (p : Procedure) : Core.Procedure.Spec :=
+  let preconditions := (p.requires.zipIdx).map fun (pre, i) =>
+    ((s!"requires_{i}" : Core.CoreLabel), ({ expr := pre.cond, md := pre.md } : Core.Procedure.Check))
+  { preconditions, postconditions := [] }
+
 def procedureToCore (sigs : Std.HashMap String Sig) (p : Procedure) : Except String Core.Procedure := do
   let header ← procedureHeader p
   let body ← match p.body with
     | some b => structureBody sigs b
     | none => pure [Core.Statement.assume "assume_true" (.true ()) .empty]
-  return { header, spec := { preconditions := [], postconditions := [] }, body := .structured body }
+  return { header, spec := procedureSpec p, body := .structured body }
 
 /-- An ordered Cortex program as a Core program, translating each procedure with
 `procToCore`. -/

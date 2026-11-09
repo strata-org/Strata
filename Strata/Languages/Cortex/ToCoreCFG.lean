@@ -51,7 +51,7 @@ def procedureToCoreCFG (sigs : Std.HashMap String Sig) (p : Procedure) :
     b.refuseHandlers "Core"
     let header ← procedureHeader p
     let cfg ← cfgToCore sigs b.cfg
-    return { header, spec := { preconditions := [], postconditions := [] }, body := .cfg cfg }
+    return { header, spec := procedureSpec p, body := .cfg cfg }
 
 /-- An ordered Cortex program as a Core program whose procedure bodies are CFGs. -/
 def programToCoreCFG : Program → Except String Core.Program :=

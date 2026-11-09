@@ -13,7 +13,8 @@ public import Strata.Languages.Cortex.Module
 A Core procedure body may assign only its outputs and its locals. This pass
 gives every Cortex procedure body that shape: an input `x` that the body
 assigns and that is not an output is renamed `x$in`, and the body starts with
-`init x := x$in`, which makes `x` a local.
+`init x := x$in`, which makes `x` a local. The procedure's preconditions,
+which are over its inputs, name `x$in` instead of `x`.
 
 The copies are prepended to the entry block when no block transfers to the
 entry, so that they run once. Otherwise they run in a new entry block,
@@ -61,16 +62,19 @@ private def copyInputs (p : Procedure) : Except String Procedure := do
   let mut used := p.inputs.map (·.1.name) ++ outNames ++ assigned
   let mut inputs := #[]
   let mut copies : Array IRCmd := #[]
+  let mut renames : Map Core.Expression.Ident Cortex.Expr := []
   for (x, t) in p.inputs do
     if assigned.contains x.name && !outNames.contains x.name then
       let renamed : Core.Expression.Ident := ⟨fresh used s!"{x.name}$in", ()⟩
       used := renamed.name :: used
       inputs := inputs.push (renamed, t)
+      renames := renames.insert x (.fvar () renamed none)
       copies := copies.push (.cmd (.init x t (.det (.fvar () renamed none)) .empty))
     else
       inputs := inputs.push (x, t)
   if copies.isEmpty then return p
-  return { p with inputs := inputs.toList, body := some (withCopies b copies.toList) }
+  let requires := p.requires.map fun pre => { pre with cond := pre.cond.substFvars renames }
+  return { p with inputs := inputs.toList, requires, body := some (withCopies b copies.toList) }
 
 def run : Program → Except String Program
   | .unordered prog => do

@@ -1076,53 +1076,56 @@ def bvConcatFunc (size : Nat) : WFLFunc CoreLParams :=
   binaryFuncUneval s!"Bv{size}.Concat"
     (.bitvec size) (.bitvec size) (.bitvec (size * 2)) rfl rfl rfl
 
-def bvExtractFunc (size hi lo : Nat) : WFLFunc CoreLParams :=
-  unaryFuncUneval s!"Bv{size}.Extract_{hi}_{lo}"
-    (.bitvec size) (.bitvec (hi + 1 - lo)) rfl rfl
+@[reducible] def bvExtractFunc (size hi lo : Nat) : WFLFunc CoreLParams :=
+  unaryOp (inTy := .bitvec size) (outTy := .bitvec (hi + 1 - lo)) s!"Bv{size}.Extract_{hi}_{lo}"
+    (fun (b : BitVec size) => b.extractLsb' lo (hi + 1 - lo)) (hInTy := rfl) (hOutTy := rfl)
 
-def bvToUIntFunc (size : Nat) : WFLFunc CoreLParams :=
-  unaryFuncUneval s!"Bv{size}.ToUInt" (.bitvec size) .int rfl rfl
+@[reducible] def bvToUIntFunc (size : Nat) : WFLFunc CoreLParams :=
+  unaryOp (inTy := .bitvec size) (outTy := .int) s!"Bv{size}.ToUInt"
+    (fun (b : BitVec size) => (b.toNat : Int)) (hInTy := rfl) (hOutTy := rfl)
 
-def bvToIntFunc (size : Nat) : WFLFunc CoreLParams :=
-  unaryFuncUneval s!"Bv{size}.ToInt" (.bitvec size) .int rfl rfl
+@[reducible] def bvToIntFunc (size : Nat) : WFLFunc CoreLParams :=
+  unaryOp (inTy := .bitvec size) (outTy := .int) s!"Bv{size}.ToInt"
+    (fun (b : BitVec size) => b.toInt) (hInTy := rfl) (hOutTy := rfl)
 
-def intToBvFunc (size : Nat) : WFLFunc CoreLParams :=
-  unaryFuncUneval s!"Int.ToBv{size}" .int (.bitvec size) rfl rfl
+@[reducible] def intToBvFunc (size : Nat) : WFLFunc CoreLParams :=
+  unaryOp (inTy := .int) (outTy := .bitvec size) s!"Int.ToBv{size}"
+    (fun (i : Int) => BitVec.ofInt size i) (hInTy := rfl) (hOutTy := rfl)
 
 def bv8ConcatFunc  := bvConcatFunc 8
 def bv16ConcatFunc := bvConcatFunc 16
 def bv32ConcatFunc := bvConcatFunc 32
 
-def bv1ToUIntFunc   := bvToUIntFunc 1
-def bv8ToUIntFunc   := bvToUIntFunc 8
-def bv16ToUIntFunc  := bvToUIntFunc 16
-def bv32ToUIntFunc  := bvToUIntFunc 32
-def bv64ToUIntFunc  := bvToUIntFunc 64
-def bv128ToUIntFunc := bvToUIntFunc 128
+@[reducible] def bv1ToUIntFunc   := bvToUIntFunc 1
+@[reducible] def bv8ToUIntFunc   := bvToUIntFunc 8
+@[reducible] def bv16ToUIntFunc  := bvToUIntFunc 16
+@[reducible] def bv32ToUIntFunc  := bvToUIntFunc 32
+@[reducible] def bv64ToUIntFunc  := bvToUIntFunc 64
+@[reducible] def bv128ToUIntFunc := bvToUIntFunc 128
 
-def bv1ToIntFunc   := bvToIntFunc 1
-def bv8ToIntFunc   := bvToIntFunc 8
-def bv16ToIntFunc  := bvToIntFunc 16
-def bv32ToIntFunc  := bvToIntFunc 32
-def bv64ToIntFunc  := bvToIntFunc 64
-def bv128ToIntFunc := bvToIntFunc 128
+@[reducible] def bv1ToIntFunc   := bvToIntFunc 1
+@[reducible] def bv8ToIntFunc   := bvToIntFunc 8
+@[reducible] def bv16ToIntFunc  := bvToIntFunc 16
+@[reducible] def bv32ToIntFunc  := bvToIntFunc 32
+@[reducible] def bv64ToIntFunc  := bvToIntFunc 64
+@[reducible] def bv128ToIntFunc := bvToIntFunc 128
 
-def int1ToBvFunc   := intToBvFunc 1
-def int8ToBvFunc   := intToBvFunc 8
-def int16ToBvFunc  := intToBvFunc 16
-def int32ToBvFunc  := intToBvFunc 32
-def int64ToBvFunc  := intToBvFunc 64
-def int128ToBvFunc := intToBvFunc 128
+@[reducible] def int1ToBvFunc   := intToBvFunc 1
+@[reducible] def int8ToBvFunc   := intToBvFunc 8
+@[reducible] def int16ToBvFunc  := intToBvFunc 16
+@[reducible] def int32ToBvFunc  := intToBvFunc 32
+@[reducible] def int64ToBvFunc  := intToBvFunc 64
+@[reducible] def int128ToBvFunc := intToBvFunc 128
 
-def bv8Extract_7_7_Func    := bvExtractFunc  8  7  7
-def bv16Extract_15_15_Func := bvExtractFunc 16 15 15
-def bv16Extract_7_0_Func   := bvExtractFunc 16  7  0
-def bv32Extract_31_31_Func := bvExtractFunc 32 31 31
-def bv32Extract_15_0_Func  := bvExtractFunc 32 15  0
-def bv32Extract_7_0_Func   := bvExtractFunc 32  7  0
-def bv64Extract_31_0_Func  := bvExtractFunc 64 31  0
-def bv64Extract_15_0_Func  := bvExtractFunc 64 15  0
-def bv64Extract_7_0_Func   := bvExtractFunc 64  7  0
+@[reducible] def bv8Extract_7_7_Func    := bvExtractFunc  8  7  7
+@[reducible] def bv16Extract_15_15_Func := bvExtractFunc 16 15 15
+@[reducible] def bv16Extract_7_0_Func   := bvExtractFunc 16  7  0
+@[reducible] def bv32Extract_31_31_Func := bvExtractFunc 32 31 31
+@[reducible] def bv32Extract_15_0_Func  := bvExtractFunc 32 15  0
+@[reducible] def bv32Extract_7_0_Func   := bvExtractFunc 32  7  0
+@[reducible] def bv64Extract_31_0_Func  := bvExtractFunc 64 31  0
+@[reducible] def bv64Extract_15_0_Func  := bvExtractFunc 64 15  0
+@[reducible] def bv64Extract_7_0_Func   := bvExtractFunc 64  7  0
 
 @[expose]
 def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[

@@ -9,6 +9,8 @@ public import StrataLaurel.Implementation.LaurelCompilationPipeline
 public import StrataLaurel.Implementation.InferThrows
 public import StrataCortex.Implementation.FromLaurel
 public import Strata.Languages.Cortex.Pipeline
+public import Strata.Languages.Cortex.Wire
+public import Strata.Languages.Cortex.JavaPrelude
 
 namespace Cortex
 
@@ -70,17 +72,33 @@ def verifyToVcResults (program : LaurelProgram) (options : LaurelVerifyOptions :
     | .ok results => return (some results, diags)
     | .error dm => return (none, diags ++ [dm])
 
+def verifyCoreToMessages (core : Core.Program) (diags : List Message) (options : LaurelVerifyOptions) :
+    IO (Array Message) := do
+  match ← runCoreVerify core options with
+  | .error dm => return (diags ++ [dm]).toArray
+  | .ok results =>
+    let phases := _root_.Core.coreAbstractedPhases (options := effectiveCoreVerifyOptions options)
+    return (diags ++ results.mergeByAssertion.toList.filterMap (Strata.toMessage · phases)).toArray
+
 def verifyToMessages (program : LaurelProgram) (options : LaurelVerifyOptions := default) :
     IO (Array Message) := do
   let (core?, diags) := translate options.translateOptions program
   match core? with
   | none => return diags.toArray
-  | some core =>
-    match ← runCoreVerify core options with
-    | .error dm => return (diags ++ [dm]).toArray
-    | .ok results =>
-      let phases := _root_.Core.coreAbstractedPhases (options := effectiveCoreVerifyOptions options)
-      return (diags ++ results.mergeByAssertion.toList.filterMap (Strata.toMessage · phases)).toArray
+  | some core => verifyCoreToMessages core diags options
+
+def wireToCore (program : Wire.Program) : Except Message Core.Program :=
+  match program.withPreludes >>= Wire.Program.toCortex with
+  | .error e => .error (Message.fromString s!"invalid Cortex program: {e}" MessageKind.userError)
+  | .ok m => match toCoreProgram m with
+    | .ok core => .ok core
+    | .error e => .error (Message.fromString s!"Cortex lowering failed: {e}" MessageKind.strataBug)
+
+def verifyWireToMessages (program : Wire.Program) (options : LaurelVerifyOptions := default) :
+    IO (Array Message) := do
+  match wireToCore program with
+  | .error dm => return #[dm]
+  | .ok core => verifyCoreToMessages core [] options
 
 end
 

@@ -36,12 +36,19 @@ def interpretFlags : List Flag :=
    { name := "interpreter", help := "Only `core` is supported: the Core interpreter runs the lowered program.",
      takesArg := .arg "core" }]
 
+def wireInterpretFlags : List Flag :=
+  [{ name := "fuel", help := "Maximum execution steps per entry procedure.", takesArg := .arg "n" },
+   { name := "entry", help := "Run this parameterless procedure instead of the marked entries.",
+     takesArg := .arg "proc" },
+   { name := "interpreter", help := "Only `cortex` is supported: the Cortex interpreter runs the program.",
+     takesArg := .arg "cortex" }]
+
 def printDiagnostics (diagnostics : Array Message) : IO Unit := do
   IO.println s!"==== DIAGNOSTICS ===="
   for diag in diagnostics do
     IO.println s!"{Std.format diag.fileRange.file}:{diag.fileRange.range.start}-{diag.fileRange.range.stop}: {diag.message}"
 
-def runInterpret (ionBytes : ByteArray) (pflags : ParsedFlags) : IO Unit := do
+def parseInterpretFlags (pflags : ParsedFlags) : IO (Laurel.LaurelVerifyOptions × Nat) := do
   match pflags.getString "interpreter" with
   | none | some "core" => pure ()
   | some other => exitFailure s!"Invalid interpreter: '{other}' (Cortex supports only 'core')"
@@ -52,18 +59,9 @@ def runInterpret (ionBytes : ByteArray) (pflags : ParsedFlags) : IO Unit := do
       | .some n => pure n
       | .none => exitFailure s!"Invalid fuel: '{s}'"
     | none => pure 10000
-  let combinedProgram ← Strata.readLaurelIonProgram ionBytes
-  let (combinedProgram, targetName?) ← match pflags.getString "entry" with
-    | none => pure (combinedProgram, none)
-    | some name =>
-      match resolveEntryByName combinedProgram name with
-      | .error msg => exitFailure msg
-      | .ok target => match Laurel.withEntryHarness combinedProgram target.name.text with
-        | .ok program => pure (program, some target.name.text)
-        | .error msg => exitFailure msg
-  let core ← match Cortex.toInterpretableCore options.translateOptions combinedProgram with
-    | .ok core => pure core
-    | .error msg => exitFailure msg
+  return (options, fuel)
+
+def runCoreEntries (core : _root_.Core.Program) (fuel : Nat) (targetName? : Option String) : IO Unit := do
   let entries ← match _root_.Core.Program.entryProcedures core with
     | [] => exitFailure "no entry point found: mark a procedure with `entry` in the Laurel source, or pass --entry <proc>"
     | ps => pure ps
@@ -76,6 +74,63 @@ def runInterpret (ionBytes : ByteArray) (pflags : ParsedFlags) : IO Unit := do
   for (procName, e) in outcome.errors do
     IO.eprintln s!"'{targetName?.getD procName}': {Imperative.EvalError.toFormat (P := _root_.Core.Expression) e}"
   unless outcome.errors.isEmpty do
+    IO.Process.exit ExitCode.failuresFound
+
+def runInterpret (ionBytes : ByteArray) (pflags : ParsedFlags) : IO Unit := do
+  let (options, fuel) ← parseInterpretFlags pflags
+  let combinedProgram ← Strata.readLaurelIonProgram ionBytes
+  let (combinedProgram, targetName?) ← match pflags.getString "entry" with
+    | none => pure (combinedProgram, none)
+    | some name =>
+      match resolveEntryByName combinedProgram name with
+      | .error msg => exitFailure msg
+      | .ok target => match Laurel.withEntryHarness combinedProgram target.name.text with
+        | .ok program => pure (program, some target.name.text)
+        | .error msg => exitFailure msg
+  let core ← match Cortex.toInterpretableCore options.translateOptions combinedProgram with
+    | .ok core => pure core
+    | .error msg => exitFailure msg
+  runCoreEntries core fuel targetName?
+
+def readWireProgram (bytes : ByteArray) : IO Wire.Program :=
+  match Wire.readProgram bytes with
+  | .ok p => pure p
+  | .error e => exitFailure e
+
+def selectWireEntry (program : Wire.Program) (entry : String) : Except String Wire.Program :=
+  match program.procedures.filter (·.name == entry) with
+  | [p] =>
+    if !p.inputs.isEmpty then .error s!"entry procedure '{entry}' takes arguments"
+    else if p.body.isNone then .error s!"entry procedure '{entry}' has no body"
+    else .ok { program with procedures := program.procedures.map fun q => { q with entry := q.name == entry } }
+  | [] => .error s!"entry procedure '{entry}' not found"
+  | _ => .error s!"entry procedure '{entry}' is ambiguous"
+
+def runWireInterpret (ionBytes : ByteArray) (pflags : ParsedFlags) : IO Unit := do
+  match pflags.getString "interpreter" with
+  | none | some "cortex" => pure ()
+  | some other => exitFailure s!"Invalid interpreter: '{other}' (a Cortex program runs only on 'cortex')"
+  let fuel ← match pflags.getString "fuel" with
+    | some s => match s.toNat? with
+      | .some 0 => exitFailure s!"Invalid fuel: '0' (must be > 0)"
+      | .some n => pure n
+      | .none => exitFailure s!"Invalid fuel: '{s}'"
+    | none => pure 10000
+  let program ← readWireProgram ionBytes
+  let program ← match pflags.getString "entry" with
+    | none => pure program
+    | some name => match selectWireEntry program name with
+      | .ok p => pure p
+      | .error msg => exitFailure msg
+  unless program.procedures.any (·.entry) do
+    exitFailure "no entry point found: mark a procedure as an entry, or pass --entry <proc>"
+  let (diagnostics, errors) ← match Cortex.interpretWire program fuel with
+    | .ok r => pure r
+    | .error msg => exitFailure msg
+  printDiagnostics diagnostics
+  for e in errors do
+    IO.eprintln e
+  unless errors.isEmpty do
     IO.Process.exit ExitCode.failuresFound
 
 def cortexAnalyzeCommand : Command where
@@ -141,12 +196,31 @@ def cortexToCoreCommand : Command where
         | .ok _ => IO.println "Core type checking succeeded."
         | .error e => exitFailure s!"Core type checking failed: {e}"
 
+def cortexWireAnalyzeBinaryCommand : Command where
+  name := "cortexWireAnalyzeBinary"
+  args := []
+  flags := verifyOptionsFlags
+  help := "Verify a Cortex program in the Cortex wire format, read as Ion from stdin, and print diagnostics."
+  callback := fun _ pflags => do
+    let options ← parseLaurelVerifyOptions pflags
+    let program ← readWireProgram (← (← IO.getStdin).readBinToEnd)
+    printDiagnostics (← Cortex.verifyWireToMessages program options)
+
+def cortexWireInterpretBinaryCommand : Command where
+  name := "cortexWireInterpretBinary"
+  args := []
+  flags := wireInterpretFlags
+  help := "Concretely interpret a Cortex program in the Cortex wire format, read as Ion from stdin, \
+           on the Cortex interpreter, and print diagnostics."
+  callback := fun _ pflags => do
+    runWireInterpret (← (← IO.getStdin).readBinToEnd) pflags
+
 def cortexFrontend : CliFrontend where
   dialects := []
   group := fun _ =>
     { name := "Cortex"
       commands := [cortexAnalyzeCommand, cortexAnalyzeBinaryCommand, cortexInterpretBinaryCommand,
-                   cortexToCoreCommand] }
+                   cortexToCoreCommand, cortexWireAnalyzeBinaryCommand, cortexWireInterpretBinaryCommand] }
 
 end
 
