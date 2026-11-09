@@ -608,7 +608,8 @@ theorem evalCmdE_replay_agreement_typed {P : PureExpr}
       EvalCmdE P ρt.factory ρt.store c σt' targetTrace ∧
       StoreAgreement σs' σt' ∧
       DTyped Dτ D { ρt with store := σt' } ∧
-      TraceStuttersEnv (fun _ : P.Ident => True) (fun _ : P.Factory => True) sourceTrace targetTrace := by
+      Trace.StuttersEnv (fun _ : P.Ident => True) (fun _ : P.Factory => True)
+        sourceTrace targetTrace := by
   have hext : StoreExtendsWith (fun _ : P.Ident => True) ρs.store ρt.store :=
     ⟨hagree, fun _ _ => Or.inr trivial⟩
   obtain ⟨σt', heval', hext', htrace⟩ :=
@@ -638,7 +639,8 @@ theorem initToSetEvalCmdE {P : PureExpr}
       EvalCmdE P ρt.factory ρt.store (.set y rhs md) σt' targetTrace ∧
       StoreAgreement σs' σt' ∧
       DTyped Dτ D { ρt with store := σt' } ∧
-      TraceStuttersEnv (fun _ : P.Ident => True) (fun _ : P.Factory => True) sourceTrace targetTrace := by
+      Trace.StuttersEnv (fun _ : P.Ident => True) (fun _ : P.Factory => True)
+        sourceTrace targetTrace := by
   obtain ⟨prev, hprev, hprevTy⟩ := htyped y hy
   have hprevTy' : HasVal.valueOfTy ρt.factory prev ty := by
     rw [← hDτ]
@@ -782,7 +784,7 @@ theorem LoopInitHoistProducerProps.prelude_runnerE {P : PureExpr}
       StoreAgreement ρs.store ρt'.store ∧
       ρt'.factory = ρt.factory ∧
       DTyped Dτ (acc ++ LoopInitHoistProducerProps.preludeNames hs) ρt' ∧
-      TraceStuttersEnv (fun _ : P.Ident => True) (fun _ : P.Factory => True) [] targetTrace ∧
+      Trace.StuttersEnv (fun _ : P.Ident => True) (fun _ : P.Factory => True) [] targetTrace ∧
       TraceExtendsEnv (fun _ : P.Ident => True) [] targetTrace := by
   induction hs generalizing ρt acc with
   | nil =>
@@ -1083,7 +1085,8 @@ theorem liftConfigRel_stepE {P : PureExpr}
     ∃ target' targetTrace,
       StepStmtStarE P (EvalCmdE P) target targetTrace target' ∧
       LiftConfigRel Dτ D factory source' target' ∧
-      TraceStuttersEnv (fun _ : P.Ident => True) (fun _ : P.Factory => True) sourceTrace targetTrace ∧
+      Trace.StuttersEnv (fun _ : P.Ident => True) (fun _ : P.Factory => True)
+        sourceTrace targetTrace ∧
       TraceExtendsEnv (fun _ : P.Ident => True) sourceTrace targetTrace := by
   induction hstep generalizing target with
   | step_cmd heval =>
@@ -1350,7 +1353,8 @@ theorem liftConfigRel_reflTransTrace {P : PureExpr}
     ∃ target' targetTrace,
       StepStmtStarE P (EvalCmdE P) target targetTrace target' ∧
       LiftConfigRel Dτ D factory source' target' ∧
-      TraceStuttersEnv (fun _ : P.Ident => True) (fun _ : P.Factory => True) sourceTrace targetTrace ∧
+      Trace.StuttersEnv (fun _ : P.Ident => True) (fun _ : P.Factory => True)
+        sourceTrace targetTrace ∧
       TraceExtendsEnv (fun _ : P.Ident => True) sourceTrace targetTrace := by
   induction hrun generalizing target with
   | refl => exact ⟨target, [], .refl _, hrel, ⟨.nil, .nil⟩⟩
@@ -1360,7 +1364,7 @@ theorem liftConfigRel_reflTransTrace {P : PureExpr}
       obtain ⟨target', targetTail, htail, hfinal, htraceTail⟩ := ih hmiddle
       exact ⟨target', targetHead ++ targetTail,
         ReflTransTrace.trans _ hhead htail, hfinal,
-        ⟨TraceStuttersEnv.append htraceHead.1 htraceTail.1,
+        ⟨Trace.StuttersEnv.append htraceHead.1 htraceTail.1,
           TraceExtendsEnv.append htraceHead.2 htraceTail.2⟩⟩
 
 structure HoistEnvRel {P : PureExpr}
@@ -3434,6 +3438,8 @@ theorem LoopInitHoist.overapproximatesTraces {P : PureExpr}
             (LoopInitHoistProducerProps.Block.hoistP_initVars_sub
               stmts ident hident)
         reservedFresh := hwf.reservedFresh
+        exitsNotReserved := fun l hl => hwf.exitsNotReserved l
+          (by rwa [LoopInitHoistProducerProps.Block.hoistP_labels] at hl)
         defUseOk := hdu
         initTypesInhabited :=
           LoopInitHoistProducerProps.Block.hoistP_initTypesInhabited

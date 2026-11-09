@@ -251,7 +251,7 @@ private theorem procOf_eq {p : Core.Program} {nm : String} {proc : Core.Procedur
 
 /-- Gate parameters: no reserved fresh-prefixes, and every name counts as
     declared (so `factoryDeclared` is immediate). -/
-private def testParams : Core.Logic.InitEnvWFParams := ⟨[], fun _ => true⟩
+private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
 
 /-- The value of the literal `κ` in the runtime factory of `ρ`. -/
 private abbrev cval (ρ : Imperative.Env Core.Expression) (κ : Lambda.LConst) :

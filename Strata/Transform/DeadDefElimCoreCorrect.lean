@@ -35,7 +35,7 @@ the traces of the output, under a store-local interpretation such as evaluation 
 validity on the traces of the input (`deadDefElim_assertValid`).
 
 The proof runs a Core trace of the call-free list as a trace over `EvalE` (`star_evalE`), turns
-it into a big-step reach or run (`star_breach_noLoops`, `star_brun_noLoops`), replays it on the
+it into a big-step reach or run (`star_breach`, `star_brun`), replays it on the
 output (`deadDefElim_reach_rel`, `deadDefElim_run_rel`) and turns the replay back into a Core
 trace (`breach_star`, `brun_star`, `star_core`).
 
@@ -130,19 +130,19 @@ theorem deadDefElim_overapproximatesTraces (π : String → Option Procedure)
     · subst htr
       exact ⟨_, [], .refl _, .nil⟩
     obtain ⟨evs', hb, hm⟩ := deadDefElim_reach_rel hcong []
-      (star_breach_noLoops hss h' htr) htr hC
+      (star_breach h' htr) hss hC
     obtain ⟨cfg', hc⟩ := breach_star hWB hb
     exact ⟨cfg', evs', star_core π hc, hm⟩
   · have h' := star_evalE h hnc
     have hE := starE_preserves_factory h'
     obtain ⟨evs', o', hb, hm, hO⟩ :=
-      deadDefElim_run_rel hcong [] ((star_brun_noLoops hss).1 h') hC
+      deadDefElim_run_rel hcong [] (star_brun.1 h') hss hC
     rcases o' with σ' | _ <;> simp only [DDOutcomeRel] at hO
     exact ⟨_, evs', star_core π (brun_star hWB hb), ⟨hE, hO⟩, hm⟩
   · have h' := star_evalE h hnc
     have hE := starE_preserves_factory h'
     obtain ⟨evs', o', hb, hm, hO⟩ :=
-      deadDefElim_run_rel hcong [] ((star_brun_noLoops hss).2 h') hC
+      deadDefElim_run_rel hcong [] (star_brun.2 h') hss hC
     rcases o' with _ | ⟨l', σ'⟩ <;> simp only [DDOutcomeRel] at hO
     obtain ⟨rfl, hO⟩ := hO
     exact ⟨_, evs', star_core π (brun_star hWB hb), ⟨hE, hO⟩, hm⟩

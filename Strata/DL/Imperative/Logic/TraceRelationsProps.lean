@@ -17,7 +17,7 @@ public import Strata.Util.ListUtils
 /-! # Properties of the Imperative trace relations
 
 Companion to `Strata.DL.Imperative.Logic.TraceRelations`, which carries the
-compact definitions of the trace relations `TraceStuttersEnv` /
+compact definitions of the trace relations `Trace.StuttersEnv` /
 `TraceExtendsEnv`; the event-level relations they build on,
 `EventArg.ExtendsEnv` / `Event.ExtendsEnv`, are defined in
 `Strata.DL.Imperative.CmdTrace`.  This module collects the property proofs for
@@ -37,11 +37,11 @@ Key theorem families:
   `Event.ExtendsEnv.trans_union` / `TraceExtendsEnv.trans_union` chain two
   stages while unioning their extra-register classes.
 * **Semantic transport laws** transfer assumption satisfaction and reachability
-  forward across `TraceStuttersEnv`, and reflect assertion validity backward,
+  forward across `Trace.StuttersEnv`, and reflect assertion validity backward,
   under `ConditionInterp.StableUnderExtendsEnv` and
   `ConditionInterp.TrueStutterHolds`.
 * **Reflexivity / monotonicity / append laws** for each relation, the
-  `TraceStuttersEnv.Cmd.emittedEvents_stuttersEnv` command-snapshot law, and the
+  `Trace.StuttersEnv.Cmd.emittedEvents_stuttersEnv` command-snapshot law, and the
   `TraceExtendsEnv.toTraceStuttersEnv` refinement.
 * **Semantic matching** `TraceExtendsEnv.toMatches` upgrades lockstep extension
   to a pointwise match under any semantic argument relation, given defined
@@ -55,6 +55,13 @@ Key theorem families:
 * **`Trace.WeakensAssumes`** is reflexive and transitive
   (`Trace.WeakensAssumes.refl`, `Trace.WeakensAssumes.trans`), as is its event-level
   counterpart relation `Event.WeakensAssume`.
+* **`Trace.InsertsTrueAssumes`** is reflexive and closed under concatenation (`refl`,
+  `append`) and carries assumption satisfaction forward under
+  `ConditionInterp.TrueStutterHolds` (`assumptionsHold`).  So is its composition with
+  `Trace.MayDropEvents`, a `List.Sublist` (`Trace.mayDropEvents_insertsTrueAssumes_*`;
+  `drop_left` drops a prefix of the source).  `Trace.PreservesLastEvent` composes on the
+  left (`append_left`), and a relation preserving the last event followed by extra events
+  reflects last assertions (`Trace.PreservesLastEvent.reflectsLastAssertion`).
 -/
 
 namespace Imperative
@@ -142,13 +149,13 @@ theorem trans_union {P : PureExpr} {Extra₁ Extra₂ : P.Ident → Prop}
 
 end Event.ExtendsEnv
 
-namespace TraceStuttersEnv
+namespace Trace.StuttersEnv
 
 /-- Every trace extends itself. -/
 theorem refl {P : PureExpr} [HasBool P]
     (allowedVarName : P.Ident → Prop) (allowedFactory : P.Factory → Prop)
     (trace : Trace P) :
-    TraceStuttersEnv allowedVarName allowedFactory trace trace := by
+    Trace.StuttersEnv allowedVarName allowedFactory trace trace := by
   induction trace with
   | nil => exact .nil
   | cons event rest ih => exact .lockstep (Event.ExtendsEnv.refl allowedVarName event) ih
@@ -160,8 +167,8 @@ theorem mono {P : PureExpr} [HasBool P]
     {allowedFactory : P.Factory → Prop}
     (hsub : ∀ ident, allowedVarName ident → allowedVarName' ident)
     {source target : Trace P}
-    (h : TraceStuttersEnv allowedVarName allowedFactory source target) :
-    TraceStuttersEnv allowedVarName' allowedFactory source target := by
+    (h : Trace.StuttersEnv allowedVarName allowedFactory source target) :
+    Trace.StuttersEnv allowedVarName' allowedFactory source target := by
   induction h with
   | nil => exact .nil
   | lockstep hevent _ ih => exact .lockstep (hevent.mono hsub) ih
@@ -173,9 +180,9 @@ append. -/
 theorem append {P : PureExpr} [HasBool P]
     {allowedVarName : P.Ident → Prop} {allowedFactory : P.Factory → Prop}
     {source₁ target₁ source₂ target₂ : Trace P}
-    (h₁ : TraceStuttersEnv allowedVarName allowedFactory source₁ target₁)
-    (h₂ : TraceStuttersEnv allowedVarName allowedFactory source₂ target₂) :
-    TraceStuttersEnv allowedVarName allowedFactory
+    (h₁ : Trace.StuttersEnv allowedVarName allowedFactory source₁ target₁)
+    (h₂ : Trace.StuttersEnv allowedVarName allowedFactory source₂ target₂) :
+    Trace.StuttersEnv allowedVarName allowedFactory
       (source₁ ++ source₂) (target₁ ++ target₂) := by
   induction h₁ with
   | nil => simpa using h₂
@@ -188,31 +195,31 @@ correspondence. -/
 theorem prepend {P : PureExpr} [HasBool P]
     (allowedVarName : P.Ident → Prop) (allowedFactory : P.Factory → Prop)
     (common : Trace P) {source target : Trace P}
-    (h : TraceStuttersEnv allowedVarName allowedFactory source target) :
-    TraceStuttersEnv allowedVarName allowedFactory
+    (h : Trace.StuttersEnv allowedVarName allowedFactory source target) :
+    Trace.StuttersEnv allowedVarName allowedFactory
       (common ++ source) (common ++ target) :=
   (refl allowedVarName allowedFactory common).append h
 
-end TraceStuttersEnv
+end Trace.StuttersEnv
 
-/-! ## Semantic transport across `TraceStuttersEnv` -/
+/-! ## Semantic transport across `Trace.StuttersEnv` -/
 
 section StuttersEnvInterpretation
 
 variable {P : PureExpr} [HasBool P]
 
-/-- `TraceStuttersEnv` transfers assumption satisfaction from source to target:
+/-- `Trace.StuttersEnv` transfers assumption satisfaction from source to target:
 any world satisfying the source trace's assumptions satisfies the target's.
 Dropped-left stutter weakens the source assumptions; inserted-right stutter adds
 an assumption the evaluator deemed true (`htrue`); and paired assumptions agree
 by stability (`hstable`). -/
-theorem TraceStuttersEnv.assumptionsHold_transfer
+theorem Trace.StuttersEnv.assumptionsHold_transfer
     {I : ConditionInterp P} {allowedVarName : P.Ident → Prop}
     {allowedFactory : P.Factory → Prop}
     (hstable : I.StableUnderExtendsEnv allowedVarName)
     (htrue : I.TrueStutterHolds allowedFactory)
     {source target : Trace P}
-    (h : TraceStuttersEnv allowedVarName allowedFactory source target) :
+    (h : Trace.StuttersEnv allowedVarName allowedFactory source target) :
     ∀ (world : I.World),
       Trace.AssumptionsHold P I world source →
       Trace.AssumptionsHold P I world target := by
@@ -248,29 +255,29 @@ theorem TraceStuttersEnv.assumptionsHold_transfer
       simp only [Event.isTrueAssumeOrAssert] at he
       exact ⟨htrue tc hadmissible he world, htail⟩
 
-/-- `TraceStuttersEnv` transfers reachability forward: a reachable source trace
+/-- `Trace.StuttersEnv` transfers reachability forward: a reachable source trace
 has a reachable target trace (same world witness). -/
-theorem TraceStuttersEnv.reachable_transfer
+theorem Trace.StuttersEnv.reachable_transfer
     {I : ConditionInterp P} {allowedVarName : P.Ident → Prop}
     {allowedFactory : P.Factory → Prop}
     (hstable : I.StableUnderExtendsEnv allowedVarName)
     (htrue : I.TrueStutterHolds allowedFactory)
     {source target : Trace P}
-    (h : TraceStuttersEnv allowedVarName allowedFactory source target)
+    (h : Trace.StuttersEnv allowedVarName allowedFactory source target)
     (hreach : Trace.Reachable P I source) : Trace.Reachable P I target := by
   obtain ⟨world, hworld⟩ := hreach
-  exact ⟨world, TraceStuttersEnv.assumptionsHold_transfer hstable htrue h world hworld⟩
+  exact ⟨world, Trace.StuttersEnv.assumptionsHold_transfer hstable htrue h world hworld⟩
 
 /-- Accumulator-generalized validity reflection: if assumption satisfaction
 transfers between related accumulators, target-trace assertion validity reflects
 to the source trace. Proved by induction on the trace correspondence. -/
-private theorem TraceStuttersEnv.assertionsValidFrom_reflect
+private theorem Trace.StuttersEnv.assertionsValidFrom_reflect
     {I : ConditionInterp P} {allowedVarName : P.Ident → Prop}
     {allowedFactory : P.Factory → Prop}
     (hstable : I.StableUnderExtendsEnv allowedVarName)
     (htrue : I.TrueStutterHolds allowedFactory)
     {source target : Trace P}
-    (h : TraceStuttersEnv allowedVarName allowedFactory source target) :
+    (h : Trace.StuttersEnv allowedVarName allowedFactory source target) :
     ∀ (accS accT : Trace P),
       (∀ world, Trace.AssumptionsHold P I world accS →
         Trace.AssumptionsHold P I world accT) →
@@ -332,19 +339,19 @@ private theorem TraceStuttersEnv.assertionsValidFrom_reflect
       exact ⟨hacc world hhold, htrue tc hadmissible he world⟩
     | cover tc => simp [Event.isTrueAssumeOrAssert] at he
 
-/-- Whole-trace validity reflection across `TraceStuttersEnv`: target validity
+/-- Whole-trace validity reflection across `Trace.StuttersEnv`: target validity
 reflects to source validity under semantic stability.  The empty-accumulator
 instance of `assertionsValidFrom_reflect`. -/
-theorem TraceStuttersEnv.assertionsValid_reflect
+theorem Trace.StuttersEnv.assertionsValid_reflect
     {I : ConditionInterp P} {allowedVarName : P.Ident → Prop}
     {allowedFactory : P.Factory → Prop}
     (hstable : I.StableUnderExtendsEnv allowedVarName)
     (htrue : I.TrueStutterHolds allowedFactory)
     {source target : Trace P}
-    (h : TraceStuttersEnv allowedVarName allowedFactory source target)
+    (h : Trace.StuttersEnv allowedVarName allowedFactory source target)
     (hvalid : Trace.AssertionsValid P I target) :
     Trace.AssertionsValid P I source :=
-  TraceStuttersEnv.assertionsValidFrom_reflect hstable htrue h [] [] (fun _ h => h) hvalid
+  Trace.StuttersEnv.assertionsValidFrom_reflect hstable htrue h [] [] (fun _ h => h) hvalid
 
 end StuttersEnvInterpretation
 
@@ -397,7 +404,7 @@ theorem Cmd.emittedEvents_extendsEnv {P : PureExpr} [HasBool P]
 
 /-- Consecutive lockstep correspondences compose, unioning the accepted
 target-only register classes.  This is the sound transitivity principle
-`TraceStuttersEnv` lacks: two-sided true-event stuttering would let a middle
+`Trace.StuttersEnv` lacks: two-sided true-event stuttering would let a middle
 event be extended to one reading a newly added binding, but a lockstep middle
 event is matched exactly, so the classes compose. -/
 theorem trans_union {P : PureExpr}
@@ -424,13 +431,13 @@ theorem trans {P : PureExpr} {allowedVarName : P.Ident → Prop}
   (trans_union h₁ h₂).mono (fun _ h => h.elim id id)
 
 /-- Pointwise trace correspondence refines the stuttering correspondence: every
-pointwise (lockstep) step is in particular a non-stuttering `TraceStuttersEnv`
+pointwise (lockstep) step is in particular a non-stuttering `Trace.StuttersEnv`
 step. -/
 theorem toTraceStuttersEnv {P : PureExpr} [HasBool P]
     {allowedVarName : P.Ident → Prop} {allowedFactory : P.Factory → Prop}
     {source target : Trace P}
     (h : TraceExtendsEnv allowedVarName source target) :
-    TraceStuttersEnv allowedVarName allowedFactory source target := by
+    Trace.StuttersEnv allowedVarName allowedFactory source target := by
   induction h with
   | nil => exact .nil
   | cons hevent _ ih => exact .lockstep hevent ih
@@ -439,13 +446,13 @@ end TraceExtendsEnv
 
 /-- The same command observed in classified extending stores emits
 stutter-related traces, as a corollary of its pointwise event correspondence. -/
-theorem TraceStuttersEnv.Cmd.emittedEvents_stuttersEnv
+theorem Trace.StuttersEnv.Cmd.emittedEvents_stuttersEnv
     {P : PureExpr} [HasBool P]
     (allowedVarName : P.Ident → Prop) (allowedFactory : P.Factory → Prop)
     (command : Cmd P) (factory : P.Factory)
     {sourceStore targetStore : SemanticStore P}
     (hstore : StoreExtendsWith allowedVarName sourceStore targetStore) :
-    TraceStuttersEnv allowedVarName allowedFactory
+    Trace.StuttersEnv allowedVarName allowedFactory
       (Cmd.emittedEvents P command factory sourceStore)
       (Cmd.emittedEvents P command factory targetStore) :=
   (TraceExtendsEnv.Cmd.emittedEvents_extendsEnv
@@ -734,7 +741,7 @@ theorem toTraceStuttersEnv {P : PureExpr} [HasBool P] [HasFvars P]
     {Extra : P.Ident → Prop} {allowedFactory : P.Factory → Prop}
     {source target : Trace P}
     (h : Trace.WithWF (EventArg.ExtendsEnv Extra) source target) :
-    TraceStuttersEnv Extra allowedFactory source target :=
+    Trace.StuttersEnv Extra allowedFactory source target :=
   h.toExtendsEnv.toTraceStuttersEnv
 
 /-- `Trace.WithWF (ExtendsEnv _)` reflects assertion validity for any condition
@@ -793,6 +800,130 @@ theorem Trace.WeakensAssumes.trans {I : ConditionInterp P} {t₁ t₂ t₃ : Tra
   | dropAssume _ ih => exact .dropAssume (ih h₂)
 
 end WeakensAssumes
+
+section DropsAndInserts
+
+variable {P : PureExpr}
+
+section InsertsTrueAssumes
+
+variable [HasBool P] {allowed : P.Factory → Prop}
+
+/-- Every trace is itself with no assumption inserted. -/
+theorem Trace.InsertsTrueAssumes.refl : ∀ t : Trace P, Trace.InsertsTrueAssumes allowed t t
+  | [] => .nil
+  | _ :: t => .keep (Trace.InsertsTrueAssumes.refl t)
+
+/-- `Trace.InsertsTrueAssumes` is closed under concatenation. -/
+theorem Trace.InsertsTrueAssumes.append {a a' b b' : Trace P}
+    (ha : Trace.InsertsTrueAssumes allowed a a') (hb : Trace.InsertsTrueAssumes allowed b b') :
+    Trace.InsertsTrueAssumes allowed (a ++ b) (a' ++ b') := by
+  induction ha with
+  | nil => exact hb
+  | keep _ ih => exact .keep ih
+  | assume hf he _ ih => exact .assume hf he ih
+
+/-- The assumptions of `t` with true assumptions inserted hold in every world where those of `t`
+    hold, when every operationally true condition under an allowed factory holds in every
+    world. -/
+theorem Trace.InsertsTrueAssumes.assumptionsHold {I : ConditionInterp P}
+    (htrue : I.TrueStutterHolds allowed) {t t' : Trace P}
+    (h : Trace.InsertsTrueAssumes allowed t t') {w : I.World}
+    (hA : Trace.AssumptionsHold P I w t) : Trace.AssumptionsHold P I w t' := by
+  induction h with
+  | nil => exact hA
+  | keep _ ih =>
+    intro c hc
+    rcases List.mem_cons.1 hc with hc | hc
+    · exact hA c (hc ▸ List.mem_cons_self ..)
+    · exact ih (fun c' hc' => hA c' (List.mem_cons_of_mem _ hc')) c hc
+  | @assume a _ _ hf he _ ih =>
+    intro c hc
+    rcases List.mem_cons.1 hc with hc | hc
+    · cases hc
+      exact htrue a hf he w
+    · exact ih hA c hc
+
+/-- Inserting true assumptions under some allowed factories inserts them under any larger set of
+    allowed factories. -/
+private theorem Trace.InsertsTrueAssumes.mono {allowed' : P.Factory → Prop}
+    (hmono : ∀ F, allowed F → allowed' F) {t t' : Trace P}
+    (h : Trace.InsertsTrueAssumes allowed t t') : Trace.InsertsTrueAssumes allowed' t t' := by
+  induction h with
+  | nil => exact .nil
+  | keep _ ih => exact .keep ih
+  | assume hf he _ ih => exact .assume (hmono _ hf) he ih
+
+/-- Dropping events, then inserting true assumptions, is reflexive. -/
+theorem Trace.mayDropEvents_insertsTrueAssumes_refl (t : Trace P) :
+    RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) t t :=
+  ⟨t, .refl t, .refl t⟩
+
+/-- Dropping events, then inserting true assumptions, is closed under concatenation. -/
+theorem Trace.mayDropEvents_insertsTrueAssumes_append {a a' b b' : Trace P}
+    (ha : RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) a a')
+    (hb : RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) b b') :
+    RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) (a ++ b) (a' ++ b') :=
+  have ⟨_, ha₁, ha₂⟩ := ha
+  have ⟨_, hb₁, hb₂⟩ := hb
+  ⟨_, ha₁.append hb₁, ha₂.append hb₂⟩
+
+/-- Dropping a whole prefix of the source keeps dropping events, then inserting true
+    assumptions. -/
+theorem Trace.mayDropEvents_insertsTrueAssumes_drop_left (a : Trace P) {b b' : Trace P}
+    (h : RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) b b') :
+    RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) (a ++ b) b' :=
+  have ⟨_, h₁, h₂⟩ := h
+  ⟨_, List.sublist_append_of_sublist_right h₁, h₂⟩
+
+/-- Dropping events, then inserting true assumptions under some allowed factories, relates the
+    same traces under any larger set of allowed factories. -/
+theorem Trace.mayDropEvents_insertsTrueAssumes_mono {allowed' : P.Factory → Prop}
+    (hmono : ∀ F, allowed F → allowed' F) {t t' : Trace P}
+    (h : RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) t t') :
+    RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed') t t' :=
+  have ⟨_, h₁, h₂⟩ := h
+  ⟨_, h₁, h₂.mono hmono⟩
+
+/-- The assumptions of a trace related to `t` by dropping events, then inserting true
+    assumptions, hold in every world where those of `t` hold, when every operationally true
+    condition under an allowed factory holds in every world. -/
+theorem Trace.mayDropEvents_insertsTrueAssumes_assumptionsHold {I : ConditionInterp P}
+    (htrue : I.TrueStutterHolds allowed) {t t' : Trace P}
+    (h : RComp Trace.MayDropEvents (Trace.InsertsTrueAssumes allowed) t t') {w : I.World}
+    (hA : Trace.AssumptionsHold P I w t) : Trace.AssumptionsHold P I w t' :=
+  have ⟨_, h₁, h₂⟩ := h
+  h₂.assumptionsHold htrue fun c hc => hA c (h₁.subset hc)
+
+end InsertsTrueAssumes
+
+/-- A relation closed under concatenation, relating `a` to `a'`, followed by a nonempty target
+    preserving the last event of `b`, preserves the last event of `a ++ b`. -/
+theorem Trace.PreservesLastEvent.append_left {R : Trace P → Trace P → Prop}
+    (happ : ∀ {a a' b b' : Trace P}, R a a' → R b b' → R (a ++ b) (a' ++ b'))
+    {a a' b b' : Trace P} (ha : R a a') (hb : Trace.PreservesLastEvent R b b')
+    (hne : b' ≠ []) : Trace.PreservesLastEvent R (a ++ b) (a' ++ b') := by
+  rcases hb with ⟨-, rfl⟩ | ⟨pre, pre', e, rfl, rfl, h⟩
+  · exact absurd rfl hne
+  · exact .inr ⟨a ++ pre, a' ++ pre', e, by simp, by simp, happ ha h⟩
+
+/-- A relation `R` carrying assumption satisfaction from source to target: a target preserving
+    the last event of the source, after events related by `R`, followed by any extra events,
+    reflects last assertions. -/
+theorem Trace.PreservesLastEvent.reflectsLastAssertion {I : ConditionInterp P}
+    {R : Trace P → Trace P → Prop} {Extra : Trace P → Prop}
+    (hR : ∀ {t t' : Trace P} {w : I.World}, R t t' → Trace.AssumptionsHold P I w t →
+      Trace.AssumptionsHold P I w t') :
+    Trace.ReflectsLastAssertion I
+      (Trace.HasExtraEvents (Trace.PreservesLastEvent R) Extra) := by
+  intro pre c target ⟨target₁, extra, htgt, hlast, _⟩
+  rcases hlast with ⟨h, -⟩ | ⟨pre₁, pre', e, he, rfl, h⟩
+  · simp at h
+  · obtain ⟨rfl, he'⟩ := List.append_inj' he rfl
+    obtain rfl := List.singleton_inj.1 he'
+    exact ⟨pre', extra, by simp [htgt], fun _ hw => hR h hw⟩
+
+end DropsAndInserts
 
 end -- public section
 end Imperative

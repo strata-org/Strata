@@ -285,7 +285,8 @@ private theorem ssaList_over (hF : SSALaws F) (t : AssertId P) (cond : P.Expr) (
         obtain ⟨h1, h3, h4⟩ := obl_claim hD hA'
         obtain ⟨hl, hmd, -, hv⟩ :=
           failsAt_transfer (by simp) (fun _ => evalsTo_renM' hF hCL hCS hA') hfa
-        refine ⟨_, _, hl ▸ hmem, .here (.cmd (by constructor)), ⟨[], _, rfl, nofun, ?_⟩, h3, h4⟩
+        refine ⟨_, _, hl ▸ hmem, .here (.cmd (by constructor) (by simp)), ⟨[], _, rfl, nofun, ?_⟩,
+          h3, h4⟩
         exact ⟨hl, hmd, h1, hv⟩
     · rcases hmk with rfl | rfl <;> cases hE <;>
         exact (ih hav hn (fun x hx => hA x (by simp [Block.freeVars, Stmt.freeVars, hx]))
@@ -403,14 +404,15 @@ private theorem ssaList_sim (hF : SSALaws F) (A : AvoidSet P) (D : List P.Ident)
     have hw := Event.WeakensAssume.assume (l := l) (md := md) (evalsTo_foldE hF hCL hCS s.ρ a
       (fun x hx => hA x (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hx])))
     refine ⟨fun {tr} hR => ?_, fun harm {tr o} hR => ?_⟩
-    · rcases hR with ⟨⟨⟨⟩⟩⟩ | ⟨⟨⟨⟩⟩, hR'⟩
+    · rcases hR with ⟨⟨⟨⟩, -⟩⟩ | ⟨⟨⟨⟩⟩, hR'⟩
       · split
         · exact ⟨[], .dropAssume .nil, .inl rfl⟩
-        · exact ⟨_, .cons hw .nil, .inr (.here (.cmd (by exact .eval_assume)))⟩
+        · exact ⟨_, .cons hw .nil, .inr (.here (.cmd (by exact .eval_assume) (by simp)))⟩
       · obtain ⟨tr', h1, h2⟩ := hI.1 hR'
         split
         · exact ⟨tr', .dropAssume h1, h2⟩
-        · exact ⟨_, .cons hw h1, .inr (breach_cmd_cons (evs := [_]) (by exact .eval_assume) h2)⟩
+        · exact ⟨_, .cons hw h1,
+            .inr (breach_cmd_cons (evs := [_]) (by exact .eval_assume) (by simp) h2)⟩
     · rcases hR with _ | ⟨⟨⟨⟩⟩, hR'⟩ | ⟨⟨⟩⟩
       obtain ⟨σL', rfl, tr', σS', h1, h2⟩ :=
         hI.2 (by simpa [Block.armsHaveChecks, Stmt.armsHaveChecks] using harm) hR'
@@ -427,12 +429,12 @@ private theorem ssaList_sim (hF : SSALaws F) (A : AvoidSet P) (D : List P.Ident)
       have hev := fun v => evalsTo_renM' hF hCL hCS (ρ := s.ρ) (e := e) (v := v)
         (fun x hx => hA x (by simp [Block.freeVars, Stmt.freeVars, mem_exprFV, hx]))
       refine ⟨fun {tr} hR => ?_, fun harm {tr o} hR => ?_⟩
-      · rcases hR with ⟨⟨⟨⟩⟩⟩ | ⟨⟨⟨⟩⟩, hR'⟩
+      · rcases hR with ⟨⟨⟨⟩, -⟩⟩ | ⟨⟨⟨⟩⟩, hR'⟩
         · exact ⟨_, .cons (Event.WeakensAssume.check (by simp) hev) .nil,
-            .inr (.here (.cmd (by constructor)))⟩
+            .inr (.here (.cmd (by constructor) (by simp)))⟩
         · obtain ⟨tr', h1, h2⟩ := hI.1 hR'
           exact ⟨_, .cons (Event.WeakensAssume.check (by simp) hev) h1,
-            .inr (breach_cmd_cons (evs := [_]) (by constructor) h2)⟩
+            .inr (breach_cmd_cons (evs := [_]) (by constructor) (by simp) h2)⟩
       · rcases hR with _ | ⟨⟨⟨⟩⟩, hR'⟩ | ⟨⟨⟩⟩
         obtain ⟨σL', rfl, tr', σS', h1, h2⟩ :=
           hI.2 (by simpa [Block.armsHaveChecks, Stmt.armsHaveChecks] using harm) hR'

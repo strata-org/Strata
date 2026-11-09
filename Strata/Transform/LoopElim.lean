@@ -16,10 +16,14 @@ open Imperative
 
 public section
 
+/-- Prefix reserved for the labels loop elimination generates. The pass rejects a loop body
+    with an `exit` whose target starts with this prefix, which a generated block would
+    otherwise capture. -/
+def loopElimPrefix : String := "$__loopElim"
 /-- Label prefix for loop-elimination assumptions. -/
-def loopElimAssumePrefix : String := "loopElimAssume_"
+def loopElimAssumePrefix : String := "$__loopElimAssume_"
 /-- Label prefix of blocks created by LoopElim. -/
-def loopElimBlockPrefix : String := "loopElim_"
+def loopElimBlockPrefix : String := "$__loopElim_"
 
 namespace LoopElim
 
@@ -40,19 +44,6 @@ def genLoopNum : Transform.CoreTransformM String := do
   let genLoopIdent : CoreGenM CoreIdent := CoreGenState.gen ("loop" : CoreIdent)
   let id ← genLoopIdent
   return id.name
-
-/-- The block labels that loop elimination mints for a given `loop_num`.
-    Used to detect collisions with labels already present in a loop body. -/
-def loopElimGeneratedBlockLabels (loop_num : String) : List String :=
-  [ s!"{loopElimBlockPrefix}havoc_{loop_num}",
-    s!"{loopElimBlockPrefix}arbitrary_iter_facts_{loop_num}" ]
-
-/-- Whether any exit target in `bss` collides with a block label that loop
-    elimination would mint for `loop_num`.  Such a collision would silently
-    redirect an in-body `exit` to one of the freshly created blocks. -/
-def hasLabelConflict {P : PureExpr} {C : Type} (loop_num : String) (bss : List (Stmt P C)) : Bool :=
-  let bodyLabels := Block.labels bss
-  (loopElimGeneratedBlockLabels loop_num).any bodyLabels.contains
 
 /-! ## Loop elimination
 
@@ -103,11 +94,12 @@ def removeLoop (s : Statement)
         f!"LoopElim invoked on a loop that still carries invariants/measure; \
 run InsertLoopInvariantAsserts first (or use the built-in verify pipeline)")
     let loop_num ← genLoopNum
-    -- Reject loop bodies whose block/exit labels collide with the blocks we are
-    -- about to mint, which would otherwise silently redirect control flow.
-    if hasLabelConflict loop_num bss then
+    -- Reject loop bodies with an exit to a label of the reserved prefix, which the blocks we
+    -- are about to mint would otherwise capture, silently redirecting control flow.
+    if (Block.labels bss).any (·.startsWith loopElimPrefix) then
       throw (Strata.Message.fromFormat
-        f!"Generated loop block label conflicts with exit target in loop body (loop {loop_num})")
+        f!"Exit target in loop body uses the reserved label prefix {loopElimPrefix} \
+          (loop {loop_num})")
     -- Havoc only loop-carried variables. Variables declared inside the loop
     -- body are block-local and should not be treated as pre-existing state by
     -- the passive loop encoding.
@@ -135,13 +127,24 @@ run InsertLoopInvariantAsserts first (or use the built-in verify pipeline)")
     return some [loop_passive]
   | _ => return none
 
+/-- The number of loops in the structured procedure bodies of `p`; it bounds the loop
+    nesting depth. -/
+def numLoops (p : Program) : Nat :=
+  p.decls.foldl (fun n d => match d with
+    | .proc proc _ => match proc.body with
+      | .structured ss => n + Block.numLoops ss
+      | .cfg _ => n
+    | _ => n) 0
+
 /-- Loop-elimination pass suitable for the pipeline: replace every loop in the
     program with its acyclic passive encoding, iterating to a fixed point so
-    that loops nested inside loop bodies are also eliminated. Returns whether
-    any loop was eliminated and the transformed program. Throws if a loop body
-    contains a label that collides with a block minted by loop elimination. -/
+    that loops nested inside loop bodies are also eliminated. The iterations are
+    bounded by `numLoops p + 1`: at least the loop nesting depth, and at least one,
+    so a CFG procedure body is rejected even when `p` has no loops. Returns whether
+    any loop was eliminated and the transformed program. Throws if an `exit` in a loop body
+    targets a label starting with `loopElimPrefix`, which generated blocks use. -/
 def loopElim (p : Program) : Transform.CoreTransformM (Bool × Program) :=
-  Transform.runProgramUntil removeLoop p
+  Transform.runProgramUntil removeLoop p (maxIters := some (numLoops p + 1))
 
 /-- Loop-elimination pipeline phase: replaces each loop with an acyclic
     encoding. -/

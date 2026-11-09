@@ -624,8 +624,11 @@ program transformations.
 
 The `OverapproximatesTraces` family relates the chronological event lists
 produced by source and target executions. The most general member carries
-separate input/output environment relations and simulates all finite prefixes as
-well as terminal and exiting runs.
+separate input/output environment relations, and may relate finite prefixes and
+terminal or exiting runs by different trace relations; the others relate both by
+one trace relation.
+
+{docstring Imperative.Specification.Transform.OverapproximatesTraces2UptoWhen}
 
 {docstring Imperative.Specification.Transform.OverapproximatesTracesUptoWhen}
 
@@ -633,34 +636,99 @@ well as terminal and exiting runs.
 
 {docstring Imperative.Specification.Transform.OverapproximatesTraces}
 
+Every law about the family is proved for the two-relation member and then
+instantiated for the others, which relate prefixes and runs by one trace relation.
+Weakening a relation preserves an overapproximation: the trace relations may be
+coarsened
+({name Imperative.Specification.Transform.OverapproximatesTraces2UptoWhen.mono_trace}`OverapproximatesTraces2UptoWhen.mono_trace`,
+with its instance
+{name Imperative.Specification.Transform.OverapproximatesTracesUptoWhen.mono_trace}`OverapproximatesTracesUptoWhen.mono_trace`), and so may the output
+environment relation while the input environment relation is refined
+({name Imperative.Specification.Transform.OverapproximatesTraces2UptoWhen.mono_env}`OverapproximatesTraces2UptoWhen.mono_env`).
+
+{docstring Imperative.Specification.Transform.OverapproximatesTraces2UptoWhen.mono_trace}
+
+{docstring Imperative.Specification.Transform.OverapproximatesTraces2UptoWhen.mono_env}
+
+Validity of an assertion transports back from the target to the source through the
+prefix trace relation, when it reflects that validity:
+{name Imperative.Specification.Transform.overapproximatesTraces2UptoWhen_assertValid}`overapproximatesTraces2UptoWhen_assertValid`
+for one assertion
+identifier and
+{name Imperative.Specification.Transform.overapproximatesTraces2UptoWhen_allAsserts}`overapproximatesTraces2UptoWhen_allAsserts`
+for all
+assertions, with the one-relation instances
+{name Imperative.Specification.Transform.overapproximatesTracesUptoWhen_assertValid}`overapproximatesTracesUptoWhen_assertValid`,
+{name Imperative.Specification.Transform.overapproximatesTraces_assertValid}`overapproximatesTraces_assertValid`
+and
+{name Imperative.Specification.Transform.overapproximatesTraces_allAsserts}`overapproximatesTraces_allAsserts`.
+A transformation whose
+target traces drop source events, such as loop elimination, cannot keep every assertion of a
+source trace in one target trace; its prefix relation can still keep the last assertion of a
+prefix
+(`Trace.ReflectsLastAssertion`), which suffices through
+{name Imperative.Specification.Transform.overapproximatesTraces2UptoWhen_assertValid_of_reflectsLastAssertion}`overapproximatesTraces2UptoWhen_assertValid_of_reflectsLastAssertion`,
+and, for a verifier run after the transformation, through
+{name Imperative.Specification.Analysis.ValidOnTracesVerifier.of_overapproximatesTraces2UptoWhen_of_reflectsLastAssertion}`ValidOnTracesVerifier.of_overapproximatesTraces2UptoWhen_of_reflectsLastAssertion`.
+
+{docstring Imperative.Specification.Transform.overapproximatesTraces2UptoWhen_assertValid}
+
+{docstring Imperative.Specification.Transform.overapproximatesTraces2UptoWhen_assertValid_of_reflectsLastAssertion}
+
+{docstring Imperative.Specification.Analysis.ValidOnTracesVerifier.of_overapproximatesTraces2UptoWhen_of_reflectsLastAssertion}
+
 Trace overapproximation connects back to the event logic through
 {name Imperative.Specification.Transform.overapproximatesTraces_triple}`overapproximatesTraces_triple`
 (in `SpecHoareConnection.lean`): with equality as the trace relation, if a Hoare
 triple holds on the target `T(st)`, the same triple holds on the source `st`.
 The terminal or exiting simulation supplies the identical event trace and final
-environment required by the target triple.
+environment required by the target triple. It is an instance of
+{name Imperative.Specification.Transform.overapproximatesTraces2UptoWhen_triple_general}`overapproximatesTraces2UptoWhen_triple_general`,
+which reads only
+the run clauses: the run trace relation must reflect the validity of every assertion of a
+run and carry its reachability forward, and the output environment relation must carry the
+postcondition back. Its one-relation instance is
+{name Imperative.Specification.Transform.overapproximatesTracesUptoWhen_triple_general}`overapproximatesTracesUptoWhen_triple_general`.
+
+{docstring Imperative.Specification.Transform.overapproximatesTraces2UptoWhen_triple_general}
 
 Strata proves that sequentially chaining multiple transformations is correct
 (vertical composition). Trace overapproximations compose their trace relations
 explicitly.
+{name Imperative.Specification.Transform.OverapproximatesTraces2UptoWhen.rel_comp}`OverapproximatesTraces2UptoWhen.rel_comp`
+produces the relational composition of every relation of the stages: the prefix and run
+trace relations and the input and output environment relations. Its instance
 {name Imperative.Specification.Transform.OverapproximatesTraces.rel_comp}`OverapproximatesTraces.rel_comp`
-produces the relational composition of the stages' trace relations, while
+composes the trace relations of stages relating equal environments, while
+{name Imperative.Specification.Transform.OverapproximatesTraces2UptoWhen.comp_trans_eq}`OverapproximatesTraces2UptoWhen.comp_trans_eq`
+and its instance
 {name Imperative.Specification.Transform.OverapproximatesTracesUptoWhen.comp_trans_eq}`OverapproximatesTracesUptoWhen.comp_trans_eq`
-handles a shared start, accepting stage-specific trace relations and a
+handle a shared start, accepting stage-specific trace relations and a
 transitive output state relation.
 
+{docstring Imperative.Specification.Transform.OverapproximatesTraces2UptoWhen.rel_comp}
+
 {docstring Imperative.Specification.Transform.OverapproximatesTraces.rel_comp}
+
+{docstring Imperative.Specification.Transform.OverapproximatesTraces2UptoWhen.comp_trans_eq}
 
 {docstring Imperative.Specification.Transform.OverapproximatesTracesUptoWhen.comp_trans_eq}
 
 Composition across a statement list (horizontal composition):
-{name Imperative.Specification.Transform.overapproximatesTraces_stmts}`overapproximatesTraces_stmts`
+{name Imperative.Specification.Transform.overapproximatesTraces2UptoWhen_stmts}`overapproximatesTraces2UptoWhen_stmts`
 lifts a per-statement trace overapproximation to the whole block
-(`fun ss => ss.mapM T`). It requires the trace relation to relate empty traces
-and respect chronological append. Like the Hoare rules above, it carries
+(`fun ss => ss.mapM T`). It requires the trace relations to relate empty traces
+and respect chronological append; since a prefix of a list is a completed run of its first
+statements followed by a prefix of the next one, the prefix relation must extend on the left
+by traces related by the run relation. Its instance
+{name Imperative.Specification.Transform.overapproximatesTraces_stmts}`overapproximatesTraces_stmts`
+needs one trace relation relating empty traces and respecting append. Like the Hoare rules
+above, it carries
 well-formedness side conditions: the lift needs an environment invariant that
 holds at block entry, is preserved as each statement runs, and implies the
 per-statement source well-formedness. When no such statement-independent
 invariant exists, the block-level result has to be proved directly instead.
+
+{docstring Imperative.Specification.Transform.overapproximatesTraces2UptoWhen_stmts}
 
 {docstring Imperative.Specification.Transform.overapproximatesTraces_stmts}

@@ -1855,4 +1855,19 @@ theorem List.forall₂_filterMap {α β α' β' : Type} (R : α → β → Prop)
     · rw [List.filterMap_cons_some hf, List.filterMap_cons_some hg]
       exact List.Rel₂.cons hS ih
 
+
+/-- A position in a concatenation lies in its left part or in its right part. -/
+theorem List.append_eq_append_cons {α : Type _} {a b pre post : List α} {e : α}
+    (h : a ++ b = pre ++ e :: post) :
+    (∃ post₁, a = pre ++ e :: post₁ ∧ post = post₁ ++ b) ∨
+      (∃ pre₂, pre = a ++ pre₂ ∧ b = pre₂ ++ e :: post) := by
+  rcases List.append_eq_append_iff.1 h with ⟨a', h1, h2⟩ | ⟨c', h1, h2⟩
+  · exact .inr ⟨a', h1, h2⟩
+  · cases c' with
+    | nil => exact .inr ⟨[], by simpa using h1.symm, by simpa using h2.symm⟩
+    | cons x c'' =>
+      simp only [List.cons_append, List.cons.injEq] at h2
+      obtain ⟨rfl, rfl⟩ := h2
+      exact .inl ⟨c'', h1, rfl⟩
+
 end

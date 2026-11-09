@@ -451,6 +451,22 @@ private theorem brunS_frame {F : Expression.Factory} : ∀ {s : Statement} {σ :
     rcases hx with hx | hx <;> simp [hx]
   | _, _, _, _, .exit, hσ => ⟨hσ, fun _ _ => rfl⟩
   | _, _, _, _, .typeDecl, hσ => ⟨hσ, fun _ _ => rfl⟩
+  | _, _, _, _, .loop_exit _, hσ => ⟨hσ, fun _ _ => rfl⟩
+  | _, _, _, _, .loop_iter _ h1 h2, hσ => by
+    obtain ⟨w1, f1⟩ := brun_frame h1 hσ
+    have hp := proj_frame w1 f1
+    obtain ⟨w2, f2⟩ := brunS_frame h2 hp.1
+    refine ⟨w2, fun x hx => ?_⟩
+    rw [f2 x hx]
+    refine hp.2 x ?_
+    simpa only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars,
+      Block.modifiedOrDefinedVars, List.mem_append, Bool.false_eq_true, ite_false] using hx
+  | _, _, _, _, .loop_break _ h1, hσ => by
+    obtain ⟨w1, f1⟩ := brun_frame h1 hσ
+    have hp := proj_frame w1 f1
+    refine ⟨hp.1, fun x hx => hp.2 x ?_⟩
+    simpa only [Stmt.modifiedOrDefinedVars, Stmt.modifiedVars, Stmt.definedVars,
+      Block.modifiedOrDefinedVars, List.mem_append, Bool.false_eq_true, ite_false] using hx
 
 end
 
@@ -721,10 +737,10 @@ variable {F : Lambda.Factory CoreLParams} {Fs : Expression.Factory} {fuel : Nat}
 private theorem stepStmts_fails (hrw : RewriteSound F Fs fuel)
     (has : AssumeSound F Fs) {fs : Facts} {σ : SemanticStore Expression}
     (hγ : FactsInv F Fs fs σ) {ss : Statements} (hok : CmdsOk (CmdOps F) ss)
-    {t : AssertId Expression} {e : Expression.Expr}
+    (hss : Block.noLoops ss = true) {t : AssertId Expression} {e : Expression.Expr}
     (h : Fails Fs ss σ t e) : ∃ e', Fails Fs (stepStmts F fs fuel ss).1 σ t e' := by
   rw [stepStmts_eq]
-  exact Pass.fails_of_fails (pass_sound hrw has) hγ hok h
+  exact Pass.fails_of_fails (pass_sound hrw has) hγ hok hss h
 
 /-- **The walk adds no failures where the goals have values.** If the facts `fs` hold at
     `σ` with values whose operators are consistent with `F`, so are those of every command of
@@ -733,11 +749,11 @@ private theorem stepStmts_fails (hrw : RewriteSound F Fs fuel)
 private theorem stepStmts_fails_out (hrw : RewriteSound F Fs fuel)
     (has : AssumeSound F Fs) {fs : Facts} {σ : SemanticStore Expression}
     (hγ : FactsInv F Fs fs σ) {ss : Statements} (hok : CmdsOk (CmdOps F) ss)
-    (hdef : GoalsDefined Fs ss σ)
+    (hss : Block.noLoops ss = true) (hdef : GoalsDefined Fs ss σ)
     {t : AssertId Expression} {e' : Expression.Expr}
     (h : Fails Fs (stepStmts F fs fuel ss).1 σ t e') : ∃ e, Fails Fs ss σ t e := by
   rw [stepStmts_eq] at h
-  exact Pass.fails_of_fails_out (pass_sound hrw has) hγ hok hdef h
+  exact Pass.fails_of_fails_out (pass_sound hrw has) hγ hok hss hdef h
 
 /-- **`ss'` keeps the failures of `ss` from `σ`** under the reference event semantics:
     each assertion or cover `t` (a label and metadata) that `ss` fails, `ss'` fails, and,
@@ -757,12 +773,10 @@ theorem stepStmts_failsE
     (hγ : FactsInv F Fs fs σ) {ss : Statements} (hok : CmdsOk (CmdOps F) ss)
     (hss : Block.noLoops ss = true) :
     FailuresKept Fs ss (stepStmts F fs fuel ss).1 σ := by
-  have hss' : Block.noLoops (stepStmts F fs fuel ss).1 = true := by
-    rw [stepStmts_eq]; exact (pass F fuel).stmts_noLoops ss fs hss
   refine fun t => ⟨fun ⟨e, h⟩ => ?_, fun hdef ⟨e', h⟩ => ?_⟩
-  · obtain ⟨e', h'⟩ := stepStmts_fails hrw has hγ hok (failsE_fails_noLoops hss h)
+  · obtain ⟨e', h'⟩ := stepStmts_fails hrw has hγ hok hss (failsE_fails h)
     exact ⟨e', fails_failsE hWB h'⟩
-  · obtain ⟨e, h'⟩ := stepStmts_fails_out hrw has hγ hok hdef (failsE_fails_noLoops hss' h)
+  · obtain ⟨e, h'⟩ := stepStmts_fails_out hrw has hγ hok hss hdef (failsE_fails h)
     exact ⟨e, fails_failsE hWB h'⟩
 
 /-- The facts an axiom adds: those of `assumeFact` for an axiom without bound variables,

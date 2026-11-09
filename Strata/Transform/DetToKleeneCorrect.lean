@@ -28,7 +28,7 @@ import Strata.DL.Imperative.KleeneSemanticsProps
 
 The top-level theorem is `detToKleene_overapproximates`.  It is a canonical
 real-event trace simulation: every finite deterministic event trace is matched,
-up to `Imperative.TraceStuttersEnv`, by a Kleene event trace reaching a
+up to `Imperative.Trace.StuttersEnv`, by a Kleene event trace reaching a
 structurally related configuration.
 -/
 
@@ -218,7 +218,8 @@ private theorem detToKleene_stmt_step
     ∃ target' targetTrace,
       StepKleeneStarE P (EvalCmdE P) (.stmt target ρ) targetTrace target' ∧
       DetToKleeneConfigSim source' target' ∧
-      TraceStuttersEnv (P := P) (fun _ : P.Ident => False) (fun _ => True) emitted targetTrace := by
+      Trace.StuttersEnv (P := P) (fun _ : P.Ident => False) (fun _ => True)
+        emitted targetTrace := by
   cases hstep with
   | step_cmd hcmd =>
       simp only [StmtToKleeneStmt.eq_1, Option.some.injEq] at ht
@@ -226,7 +227,7 @@ private theorem detToKleene_stmt_step
       exact ⟨.terminal { ρ with store := _ }, _,
         .step _ _ _ _ _ (StepKleeneE.step_cmd hcmd) (.refl _),
         .terminal, by simpa using
-          TraceStuttersEnv.refl (P := P) (fun _ : P.Ident => False) (fun _ => True) emitted⟩
+          Trace.StuttersEnv.refl (P := P) (fun _ : P.Ident => False) (fun _ => True) emitted⟩
   | step_block =>
       obtain ⟨bodyTarget, hbody, rfl⟩ := block_stmt_transform_some _ _ _ _ ht
       exact ⟨.block ρ.store (.stmt bodyTarget ρ), [],
@@ -303,7 +304,8 @@ private theorem detToKleene_config_step [LawfulHasVal P]
       ∃ target' targetTrace,
         StepKleeneStarE P (EvalCmdE P) target targetTrace target' ∧
         DetToKleeneConfigSim source' target' ∧
-        TraceStuttersEnv (P := P) (fun _ : P.Ident => False) (fun _ => True) emitted targetTrace := by
+        Trace.StuttersEnv (P := P) (fun _ : P.Ident => False) (fun _ => True)
+          emitted targetTrace := by
   induction hsim with
   | stmt ht =>
       intro emitted source' hwfb _hwfv hstep
@@ -396,11 +398,12 @@ private theorem detToKleene_config_trace [LawfulHasVal P]
     ∃ target' targetTrace,
       StepKleeneStarE P (EvalCmdE P) target targetTrace target' ∧
       DetToKleeneConfigSim source' target' ∧
-      TraceStuttersEnv (P := P) (fun _ : P.Ident => False) (fun _ => True) sourceTrace targetTrace := by
+      Trace.StuttersEnv (P := P) (fun _ : P.Ident => False) (fun _ => True)
+        sourceTrace targetTrace := by
   induction htrace generalizing target with
   | refl =>
       exact ⟨target, [], .refl _, hsim,
-        TraceStuttersEnv.refl (P := P) (fun _ : P.Ident => False) (fun _ => True) []⟩
+        Trace.StuttersEnv.refl (P := P) (fun _ : P.Ident => False) (fun _ => True) []⟩
   | step source emitted mid rest source' hstep _hrest ih =>
       obtain ⟨targetMid, targetHead, htargetHead, hsimMid, hrelHead⟩ :=
         detToKleene_config_step hsim hwfb hwfv hstep
@@ -423,7 +426,7 @@ private theorem detToKleene_config_trace [LawfulHasVal P]
 omit [HasOps P] in
 /-- `StmtToKleeneStmt` matches every canonical deterministic trace prefix by a
 Kleene trace prefix, and every terminating deterministic run by a Kleene run
-reaching the same environment. Events correspond under `TraceStuttersEnv`:
+reaching the same environment. Events correspond under `Trace.StuttersEnv`:
 translated commands match item-by-item, while the selected guard assumptions
 and trailing skip assertion are semantically true target-only instrumentation.
 The exiting case is ruled out because the transform returns `none` for `.exit`
@@ -431,7 +434,7 @@ sub-statements. The unrestricted factory predicate keeps this top-level theorem
 a generic illustration of `OverapproximatesTraces` and the `EventLang` packages. -/
 theorem detToKleene_overapproximates [LawfulHasVal P] :
     Transform.OverapproximatesTraces
-      (TraceStuttersEnv (P := P) (fun _ : P.Ident => False) (fun _ => True))
+      (Trace.StuttersEnv (P := P) (fun _ : P.Ident => False) (fun _ => True))
       (EventLang.imperativeE P (Cmd P) (EvalCmdE P) Unit
         (fun _ _ ρ => WellFormedSemanticEval (P := P) ρ.factory))
       (EventLang.kleeneE P Unit

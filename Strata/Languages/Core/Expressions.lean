@@ -82,6 +82,7 @@ instance : HasVal Core.Expression where
 
 instance : LawfulHasVal Core.Expression where
   valueOfTy_isVal := fun _ _ _ h => h.1
+  value_typed := fun _ v h => ⟨.forAll [] v.sort.toMonoTy, h, rfl⟩
   valueOfTy_congr := by
     rintro f a b ty₁ ty₂ ⟨-, ha₁⟩ ⟨-, ha₂⟩ ⟨hb, hb₂⟩
     exact ⟨hb, ha₁.trans (ha₂.symm.trans hb₂)⟩

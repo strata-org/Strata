@@ -620,6 +620,50 @@ theorem Block.nondetElim_getBlockLabels {P : PureExpr} [HasIdent P] [HasFvar P] 
     Block.getBlockLabels (Block.nondetElim ss) = Block.getBlockLabels ss := by
   rw [Block.nondetElim, Block.nondetElimM_getBlockLabels]
 
+mutual
+/-- `Stmt.nondetElimM` keeps the `exit` targets at any threaded state. -/
+theorem Stmt.nondetElimM_labels {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
+    (s : Stmt P (Cmd P)) (σ : StringGenState) :
+    Block.labels (Stmt.nondetElimM s σ).1 = Stmt.labels s := by
+  match s with
+  | .cmd c => simp [Stmt.nondetElimM, Block.labels, Stmt.labels]
+  | .block lbl bss md =>
+      simp [Stmt.nondetElimM_block_out, Block.labels, Stmt.labels,
+        Block.nondetElimM_labels bss σ]
+  | .ite (.det e) tss ess md =>
+      simp [Stmt.nondetElimM_ite_det_out, Block.labels, Stmt.labels,
+        Block.nondetElimM_labels tss, Block.nondetElimM_labels ess]
+  | .ite .nondet tss ess md =>
+      simp [Stmt.nondetElimM_ite_nondet_out, Block.labels, Stmt.labels,
+        Block.nondetElimM_labels tss, Block.nondetElimM_labels ess]
+  | .loop (.det e) m inv body md =>
+      simp [Stmt.nondetElimM_loop_det_out, Block.labels, Stmt.labels,
+        Block.nondetElimM_labels body σ]
+  | .loop .nondet m inv body md =>
+      simp [Stmt.nondetElimM_loop_nondet_out, Block.labels, Stmt.labels, Block.labels_append,
+        Block.nondetElimM_labels body]
+  | .exit lbl md => simp [Stmt.nondetElimM, Block.labels, Stmt.labels]
+  | .typeDecl t md => simp [Stmt.nondetElimM, Block.labels, Stmt.labels]
+  termination_by sizeOf s
+
+/-- `Block.nondetElimM` keeps the `exit` targets at any threaded state. -/
+theorem Block.nondetElimM_labels {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
+    Block.labels (Block.nondetElimM ss σ).1 = Block.labels ss := by
+  match ss with
+  | [] => simp [Block.nondetElimM, Block.labels]
+  | s :: rest =>
+      rw [Block.nondetElimM_cons_out, Block.labels_append, Block.labels,
+        Stmt.nondetElimM_labels s σ, Block.nondetElimM_labels rest _]
+  termination_by sizeOf ss
+end
+
+/-- Pure-wrapper corollary: `Block.nondetElim` keeps the `exit` targets. -/
+theorem Block.nondetElim_labels {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
+    (ss : List (Stmt P (Cmd P))) :
+    Block.labels (Block.nondetElim ss) = Block.labels ss := by
+  rw [Block.nondetElim, Block.nondetElimM_labels]
+
 /-! ## `nondetElim` per-pass event-trace overapproximation instance
 
 The pass's `OverapproximatesTracesUptoWhen` instance uses the event-trace block
@@ -2296,6 +2340,8 @@ theorem NondetElim.Internal.overapproximates_upto_base {P : PureExpr}
           intro ident hdefined name heq pfx hpfx
           exact hwf.reservedFresh ident hdefined name heq pfx
             (by simp [InitEnvWFParams.extend, hpfx])
+        exitsNotReserved := fun l hl =>
+          hwf.exitsNotReserved l (by rwa [Block.nondetElim_labels] at hl)
         defUseOk := hdu
         initTypesInhabited := hinits.2
         fvarTypesOk := by

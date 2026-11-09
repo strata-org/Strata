@@ -890,6 +890,36 @@ theorem embedStmts_getBlockLabels (ss : List (Stmt P (Cmd P))) :
   termination_by sizeOf ss
 end
 
+mutual
+/-- `exit` targets are unchanged by command embedding. -/
+theorem embedStmt_labels (s : Stmt P (Cmd P)) :
+    Stmt.labels (embedStmt s) = Stmt.labels s := by
+  match s with
+  | .cmd c => simp [embedStmt, Stmt.labels]
+  | .block label ss md =>
+      simp only [embedStmt, Stmt.labels]
+      rw [embedStmts_labels ss]
+  | .ite cond tss ess md =>
+      simp only [embedStmt, Stmt.labels]
+      rw [embedStmts_labels tss, embedStmts_labels ess]
+  | .loop guard measure invariant body md =>
+      simp only [embedStmt, Stmt.labels]
+      rw [embedStmts_labels body]
+  | .exit label md => simp [embedStmt, Stmt.labels]
+  | .typeDecl tc md => simp [embedStmt, Stmt.labels]
+  termination_by sizeOf s
+
+/-- `exit` targets of a statement list are unchanged by command embedding. -/
+theorem embedStmts_labels (ss : List (Stmt P (Cmd P))) :
+    Block.labels (embedStmts ss) = Block.labels ss := by
+  match ss with
+  | [] => simp [embedStmts, Block.labels]
+  | s :: rest =>
+      simp only [embedStmts, Block.labels]
+      rw [embedStmt_labels s, embedStmts_labels rest]
+  termination_by sizeOf ss
+end
+
 /-- User-label shape and uniqueness are unchanged by command embedding. -/
 theorem embedStmts_userLabelsShapeNodup (ss : List (Stmt P (Cmd P))) :
     Block.userLabelsShapeNodup (C := CmdExt P) (embedStmts ss) ↔

@@ -66,6 +66,7 @@ instance : Imperative.HasFvars LExprTP where
 
 instance : Imperative.LawfulHasVal LExprTP where
   valueOfTy_isVal := fun _ _ _ h => h
+  value_typed := fun _ _ _ => ⟨.tcons "bool" [], trivial⟩
   valueOfTy_congr := fun _ _ _ _ _ _ _ _ => trivial
 
 instance : Imperative.HasBool LExprTP where

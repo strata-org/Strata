@@ -26,10 +26,10 @@ concepts and live with the events they belong to: `Event.isTrueAssumeOrAssert`,
 
 Index of relations defined here:
 
-* `TraceStuttersEnv` — trace correspondence permitting true assume/assert
+* `Trace.StuttersEnv` — trace correspondence permitting true assume/assert
   stuttering under allowed factories and classified target-only bindings.
 * `TraceExtendsEnv` — the stutter-free, genuinely transitive refinement of
-  `TraceStuttersEnv`: equal-length traces related event-by-event by
+  `Trace.StuttersEnv`: equal-length traces related event-by-event by
   `Event.ExtendsEnv`.
 * `EventArg.WithWF R` — an event-argument relation `R` strengthened with
   free-variable store agreement and evaluator evidence on both snapshots, with
@@ -39,6 +39,18 @@ Index of relations defined here:
 * `Trace.WeakensAssumes` — the target trace is the source trace with each event replaced by
   a counterpart under a condition interpretation (`Event.WeakensAssume`: the same assertion
   or cover, or a weaker assumption), and any assumption possibly dropped.
+* `Trace.MayDropEvents` — the target trace is a sublist of the source trace: it keeps some
+  source events in order and drops the others; `Trace.InsertsTrueAssumes` — the target trace
+  is the source trace with operationally true assumptions inserted.
+* `Trace.PreservesLastEvent R` — the target trace ends with the last source event, after
+  events related by `R` to those before it; `Trace.HasExtraEvents R Extra` — the target trace
+  is one related by `R` followed by extra events satisfying `Extra`.
+* `Trace.ReflectsLastAssertion` — a condition on a trace relation: a source trace ending with
+  an assertion is related only to target traces containing it after assumptions implied by
+  those before it in the source.
+* `Trace.ImpliesAssertValidity` — the validity of every assertion of the target trace implies
+  that of every assertion of the source trace; `Trace.ImpliesReachability` — the reachability
+  of the source trace implies that of the target trace.
 -/
 
 namespace Imperative
@@ -56,29 +68,29 @@ validity through this relation under an abstract `ConditionInterp` therefore
 requires two additional compatibility conditions: related event arguments must
 have the same interpreted truth value, and every operationally true stuttered
 condition captured under an allowed factory must hold in that interpretation. -/
-inductive TraceStuttersEnv {P : PureExpr} [HasBool P]
+inductive Trace.StuttersEnv {P : PureExpr} [HasBool P]
     (allowedVarName : P.Ident → Prop) (allowedFactory : P.Factory → Prop) :
     Trace P → Trace P → Prop where
-  | nil : TraceStuttersEnv allowedVarName allowedFactory [] []
+  | nil : Trace.StuttersEnv allowedVarName allowedFactory [] []
   | lockstep :
       sourceEvent.ExtendsEnv allowedVarName targetEvent →
-      TraceStuttersEnv allowedVarName allowedFactory source target →
-      TraceStuttersEnv allowedVarName allowedFactory
+      Trace.StuttersEnv allowedVarName allowedFactory source target →
+      Trace.StuttersEnv allowedVarName allowedFactory
         (sourceEvent :: source) (targetEvent :: target)
   | stutter_left :
       allowedFactory sourceEvent.condition.factory →
       sourceEvent.isTrueAssumeOrAssert →
-      TraceStuttersEnv allowedVarName allowedFactory source target →
-      TraceStuttersEnv allowedVarName allowedFactory (sourceEvent :: source) target
+      Trace.StuttersEnv allowedVarName allowedFactory source target →
+      Trace.StuttersEnv allowedVarName allowedFactory (sourceEvent :: source) target
   | stutter_right :
       allowedFactory targetEvent.condition.factory →
       targetEvent.isTrueAssumeOrAssert →
-      TraceStuttersEnv allowedVarName allowedFactory source target →
-      TraceStuttersEnv allowedVarName allowedFactory source (targetEvent :: target)
+      Trace.StuttersEnv allowedVarName allowedFactory source target →
+      Trace.StuttersEnv allowedVarName allowedFactory source (targetEvent :: target)
 
 /-- Pointwise (equal-length) trace correspondence: the two traces have equal
 length and corresponding events are related by `Event.ExtendsEnv allowedVarName`.
-This is the stutter-free refinement of `TraceStuttersEnv`: no assertion or
+This is the stutter-free refinement of `Trace.StuttersEnv`: no assertion or
 assumption may be inserted or dropped on either side. Because every step is
 matched one-to-one, this relation is genuinely transitive, so composing
 pointwise passes yields a single `TraceExtendsEnv` rather than a nested `RComp`.
@@ -140,6 +152,79 @@ inductive Trace.WeakensAssumes (I : ConditionInterp P) : Trace P → Trace P →
       Trace.WeakensAssumes I t t' → Trace.WeakensAssumes I (.assume a :: t) t'
 
 end WeakensAssumes
+
+section DropsAndInserts
+
+variable {P : PureExpr}
+
+/-- `target` keeps some events of `source`, unchanged and in order, and drops the others, of any
+    kind: `target` is a sublist of `source` (`List.Sublist`).  Every assumption of `target` is
+    one of `source`.  Loop elimination relates its traces this way, up to inserted true
+    assumptions (`Trace.InsertsTrueAssumes`): the target replays one iteration of each loop,
+    dropping the events, assertions included, of the others. -/
+abbrev Trace.MayDropEvents (source target : Trace P) : Prop :=
+  target.Sublist source
+
+/-- `target` is `source` with assumptions inserted whose conditions evaluate to `true` under a
+    factory satisfying `allowedFactory`.  Loop elimination inserts the assumption of a loop
+    guard where it holds. -/
+inductive Trace.InsertsTrueAssumes [HasBool P] (allowedFactory : P.Factory → Prop) :
+    Trace P → Trace P → Prop where
+  | nil : Trace.InsertsTrueAssumes allowedFactory [] []
+  | keep {e : Event P} {t t' : Trace P} :
+      Trace.InsertsTrueAssumes allowedFactory t t' →
+      Trace.InsertsTrueAssumes allowedFactory (e :: t) (e :: t')
+  | assume {a : EventArg P} {t t' : Trace P} :
+      allowedFactory a.factory →
+      P.eval a.factory a.store a.expr = some (HasBool.ttVal a.factory) →
+      Trace.InsertsTrueAssumes allowedFactory t t' →
+      Trace.InsertsTrueAssumes allowedFactory t (.assume a :: t')
+
+/-- `target` ends with the last event of `source`, after events related by `R` to those before
+    it in `source`; the empty trace is related only to itself.  So an assertion ending `source`
+    ends `target`. -/
+@[expose] def Trace.PreservesLastEvent (R : Trace P → Trace P → Prop)
+    (source target : Trace P) : Prop :=
+  source = [] ∧ target = [] ∨
+  ∃ pre pre' e, source = pre ++ [e] ∧ target = pre' ++ [e] ∧ R pre pre'
+
+/-- `target` is a trace related to `source` by `R` followed by extra events satisfying
+    `Extra`. -/
+@[expose] def Trace.HasExtraEvents (R : Trace P → Trace P → Prop) (Extra : Trace P → Prop)
+    (source target : Trace P) : Prop :=
+  ∃ target₁ extra, target = target₁ ++ extra ∧ R source target₁ ∧ Extra extra
+
+end DropsAndInserts
+
+section TraceInterpRelations
+
+variable {P : PureExpr}
+
+/-- A trace relation `R` *reflects last assertions* under `I` when a source trace ending with
+    an assertion is related only to target traces that contain that assertion after assumptions
+    holding in every world where those before it in the source hold.  Such a relation carries
+    the validity of an assertion occurrence back from the target to the source; see
+    `Transform.overapproximatesTraces2UptoWhen_assertValid_of_reflectsLastAssertion`. -/
+@[expose] def Trace.ReflectsLastAssertion (I : ConditionInterp P)
+    (R : Trace P → Trace P → Prop) : Prop :=
+  ∀ pre c target, R (pre ++ [.assert c]) target →
+    ∃ pre' post, target = pre' ++ .assert c :: post ∧
+      ∀ world, Trace.AssumptionsHold P I world pre → Trace.AssumptionsHold P I world pre'
+
+/-- Under `I`, the validity of every assertion of `target` implies that of every assertion of
+    `source`: a target trace whose assertions are all valid is related only to source traces
+    whose assertions are all valid. -/
+@[expose] def Trace.ImpliesAssertValidity (I : ConditionInterp P) (source target : Trace P) :
+    Prop :=
+  Trace.AssertionsValid P I target → Trace.AssertionsValid P I source
+
+/-- Under `I`, the reachability of `source` implies that of `target`: some world satisfies
+    every assumption of `target` when some world satisfies every assumption of `source`. -/
+@[expose] def Trace.ImpliesReachability (I : ConditionInterp P) (source target : Trace P) :
+    Prop :=
+  Trace.Reachable P I source → Trace.Reachable P I target
+
+end TraceInterpRelations
 
 end -- public section
 end Imperative

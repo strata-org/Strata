@@ -141,6 +141,8 @@ import Strata.Cli.VerifyOptions
 
 -- Dead-definition elimination: its over-approximation proofs.
 import Strata.Transform.DeadDefElimCoreCorrect
+-- Loop elimination: its over-approximation and assertion-validity proofs.
+import Strata.Transform.LoopElimCoreCorrect
 -- The WP and SSA phases: their properties, the failure preservation of the SSA phase, and
 -- the properties of their Core instance.
 import Strata.Transform.SSA.SSAEval

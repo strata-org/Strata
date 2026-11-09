@@ -62,17 +62,17 @@ procedure bareLoop (n : int)
   var i : int;
   i := 0;
   if (int.lt(i, n)) {
-    loopElim_arbitrary_iter_facts_loop_0: {
-      loopElim_havoc_loop_0: {
+    $__loopElim_arbitrary_iter_facts_loop_0: {
+      $__loopElim_havoc_loop_0: {
         havoc i;
       }
-      assume [loopElimAssume_guard_loop_0]: int.lt(i, n);
+      assume [$__loopElimAssume_guard_loop_0]: int.lt(i, n);
       i := int.add(i, 1);
     }
-    loopElim_havoc_loop_0: {
+    $__loopElim_havoc_loop_0: {
       havoc i;
     }
-    assume [loopElimAssume_not_guard_loop_0]: !(int.lt(i, n));
+    assume [$__loopElimAssume_not_guard_loop_0]: !(int.lt(i, n));
   }
 };
 -/
@@ -104,13 +104,13 @@ procedure bareNondetLoop (n : int)
   var i : int;
   i := 0;
   if * {
-    loopElim_arbitrary_iter_facts_loop_0: {
-      loopElim_havoc_loop_0: {
+    $__loopElim_arbitrary_iter_facts_loop_0: {
+      $__loopElim_havoc_loop_0: {
         havoc i;
       }
       i := int.add(i, 1);
     }
-    loopElim_havoc_loop_0: {
+    $__loopElim_havoc_loop_0: {
       havoc i;
     }
   }
@@ -160,9 +160,9 @@ procedure measureLoop(n : int)
 #guard_msgs in
 #eval IO.println (runLoopElim (translate measureLoopPgm))
 
-/-- A loop body whose `exit` target collides with a block label that LoopElim
-    would mint (`loopElim_havoc_loop_0`) is rejected, since the generated block
-    would otherwise silently capture that exit. -/
+/-- A loop body whose `exit` targets a label with the prefix reserved for the blocks LoopElim
+    mints (`$__loopElim`) is rejected, since a generated block would otherwise capture that
+    exit. -/
 def labelConflictPgm :=
 #strata
 program Core;
@@ -172,14 +172,26 @@ procedure conflict(n : int)
   i := 0;
   while (int.lt(i, n))
   {
-    exit loopElim_havoc_loop_0;
+    exit $__loopElim_havoc_loop_0;
   }
 };
 #end
 
-/-- info: error: Generated loop block label conflicts with exit target in loop body (loop loop_0) -/
+/-- info: error: Exit target in loop body uses the reserved label prefix $__loopElim (loop loop_0) -/
 #guard_msgs in
 #eval IO.println (runLoopElim (translate labelConflictPgm))
+
+/-- A program with a CFG procedure body and no loops is still rejected. -/
+def cfgOnlyPgm : Core.Program :=
+  { decls := [.proc
+      { (default : Procedure) with
+          header := { (default : Procedure.Header) with name := ⟨"cfgProc", ()⟩ }
+          body := .cfg { entry := "entry", blocks := [] } }
+      default] }
+
+/-- info: error: runProgram: cannot apply statement-level transform to CFG body (procedure 'cfgProc') -/
+#guard_msgs in
+#eval IO.println (runLoopElim cfgOnlyPgm)
 
 end LoopElimExamples
 
@@ -194,7 +206,7 @@ private def unknownResult : Result := .unknown (some [])
 /-- Obligation with loop-elimination labels in path conditions. -/
 private def loopElimObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_loopElim", property := .assert,
-    assumptions := [[.assumption "loopElimAssume_invariant_loop_0_0" (.true ()), .assumption "loopElimAssume_guard_loop_0" (.true ())]],
+    assumptions := [[.assumption "$__loopElimAssume_invariant_loop_0_0" (.true ()), .assumption "$__loopElimAssume_guard_loop_0" (.true ())]],
     obligation := .true (), metadata := {} }
 
 /-- Obligation with no abstraction labels — models are sound. -/

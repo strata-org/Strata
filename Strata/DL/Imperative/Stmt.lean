@@ -767,6 +767,22 @@ in `StmtProps` proves it sound. -/
     Stmt.checkExitsCoveredByBlocks labels s && Block.checkExitsCoveredByBlocks labels ss
 
 end
+
+mutual
+/-- Every loop in `s`, at any nesting depth, has a body whose `exit`s are caught by blocks of
+    the body (`Block.exitsCoveredByBlocks []`): no iteration leaves its loop by an `exit`. -/
+@[expose] def Stmt.loopExitsLocal : Stmt P CmdT → Prop
+  | .loop _ _ _ body _ => Block.exitsCoveredByBlocks [] body ∧ Block.loopExitsLocal body
+  | .block _ ss _ => Block.loopExitsLocal ss
+  | .ite _ tss ess _ => Block.loopExitsLocal tss ∧ Block.loopExitsLocal ess
+  | .cmd _ | .exit _ _ | .typeDecl _ _ => True
+
+/-- Every loop in `ss`, at any nesting depth, has a body whose `exit`s are caught by blocks of
+    the body (`Stmt.loopExitsLocal`). -/
+@[expose] def Block.loopExitsLocal : List (Stmt P CmdT) → Prop
+  | [] => True
+  | s :: ss => Stmt.loopExitsLocal s ∧ Block.loopExitsLocal ss
+end
 ---------------------------------------------------------------------
 
 
@@ -950,6 +966,20 @@ elimination removes.
 /-- Does `ss` contain no loop, at any nesting depth? -/
 @[expose] def Block.noLoops (ss : List (Stmt P C)) : Bool :=
   Block.allSubstmts Stmt.isNotLoop ss
+
+mutual
+/-- The number of loops in `s`, at any nesting depth. -/
+@[expose] def Stmt.numLoops : Stmt P C → Nat
+  | .loop _ _ _ body _ => 1 + Block.numLoops body
+  | .block _ bss _ => Block.numLoops bss
+  | .ite _ tss ess _ => Block.numLoops tss + Block.numLoops ess
+  | .cmd _ | .exit _ _ | .typeDecl _ _ => 0
+
+/-- The number of loops in `ss`, at any nesting depth. -/
+@[expose] def Block.numLoops : List (Stmt P C) → Nat
+  | [] => 0
+  | s :: rest => Stmt.numLoops s + Block.numLoops rest
+end
 
 ---------------------------------------------------------------------
 

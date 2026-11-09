@@ -555,7 +555,7 @@ private theorem run_preserves {π : String → Option Core.Procedure} {F : Core.
 
 /-! ## Reading off the contract -/
 
-private def testParams : Core.Logic.InitEnvWFParams := ⟨[], fun _ => true⟩
+private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
 
 /-- The translated `sum_to_n` has a CFG body, namely `sumToNCFG`. -/
 private theorem sumToN_body : sumToNProc.body = .cfg sumToNCFG := by native_decide

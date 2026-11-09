@@ -149,7 +149,7 @@ theorem overapproximatesTraces (base : InitEnvWFParams) :
   · show Core.Logic.CFGInitEnvWF base out ρ₀
     subst hout_eq
     haveI : Nonempty Expression.Factory := ⟨ρ₀.factory⟩
-    obtain ⟨hsem, hstore, hdefs, hdnr, hfresh, hdu, hfactory, htypes, -⟩ :=
+    obtain ⟨hsem, hstore, hdefs, hdnr, hfresh, -, hdu, hfactory, htypes, -⟩ :=
       blockInitEnvWF_projectBase hwf hproj
     have hduLive :=
       Imperative.StructuredToUnstructuredWF.Block.cfgLive_defUseWellFormed

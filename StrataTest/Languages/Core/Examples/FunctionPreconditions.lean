@@ -482,7 +482,7 @@ Label: loop_guard_end_calls_Int.SafeDiv_0
 Property: division by zero check
 Assumptions:
 <label_ite_cond_true: int.lt(int.safeDiv(0, n), 10)>: int.lt(int.safeDiv(0, n@1), 10)
-loopElimAssume_guard_loop_1: int.lt(int.safeDiv(i@1, n@1), 10)
+$__loopElimAssume_guard_loop_1: int.lt(int.safeDiv(i@1, n@1), 10)
 insertLoopInvAssume_invariant_loop_0_0: int.ge(i@1, 0)
 test_requires_0: !(n@1 == 0)
 Obligation:
@@ -492,7 +492,7 @@ Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: int.lt(int.safeDiv(0, n), 10)>: int.lt(int.safeDiv(0, n@1), 10)
-loopElimAssume_guard_loop_1: int.lt(int.safeDiv(i@1, n@1), 10)
+$__loopElimAssume_guard_loop_1: int.lt(int.safeDiv(i@1, n@1), 10)
 insertLoopInvAssume_invariant_loop_0_0: int.ge(i@1, 0)
 test_requires_0: !(n@1 == 0)
 Obligation:

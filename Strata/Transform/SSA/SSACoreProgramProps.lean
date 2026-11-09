@@ -398,6 +398,7 @@ theorem ssaEntry_blockInitEnvWF {params : InitEnvWFParams}
            defsUndefined := ?_
            definedVarsNotReserved := ?_
            reservedFresh := ?_
+           exitsNotReserved := by simp [Imperative.Block.labels_of_treeForm o1]
            defUseOk := d1
            factoryDeclared := hwf.factoryDeclared
            initTypesInhabited := o4

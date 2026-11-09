@@ -46,6 +46,9 @@ together with basic assumption-prefix algebra.
   prefix's assumptions hold in every world.
 - `Trace.CoverSatisfiableFrom.mono_assumptions` — preserves per-ID cover
   satisfiability when accumulated assumptions are weakened.
+- `Trace.AssertionsValidFromP_iff_occurrences`, `Trace.AssertionValid_iff_occurrences` and
+  `Trace.AssertionsValid_iff_occurrences` — validity holds exactly when every kept
+  assertion occurrence holds in every world satisfying the assumptions before it.
 -/
 
 namespace Imperative
@@ -570,6 +573,90 @@ theorem Trace.AssertionValidFrom_reflect {P : PureExpr}
       Trace.AssertionValidFrom P I aid assumptions source :=
   Trace.AssertionValidFrom_matches_reflect hstable
     (fun ⟨_, _, hlabel, _, hmd⟩ => ⟨hlabel, hmd⟩) aid
+
+/-! ## Validity occurrence by occurrence -/
+
+/-- Filtered assertion validity holds exactly when every kept assertion occurrence holds in
+every world satisfying the accumulated assumptions and the assumptions before it. -/
+theorem Trace.AssertionsValidFromP_iff_occurrences {P : PureExpr} (I : ConditionInterp P)
+    (keep : EventArg P → Prop) {acc trace : Trace P} :
+    Trace.AssertionsValidFromP P I keep acc trace ↔
+      ∀ pre c post, trace = pre ++ Event.assert c :: post → keep c →
+        ∀ world, Trace.AssumptionsHold P I world (acc ++ pre) → I.holds world c := by
+  induction trace generalizing acc with
+  | nil => simp [Trace.AssertionsValidFromP]
+  | cons ev rest ih =>
+    cases ev with
+    | assume a =>
+      simp only [Trace.AssertionsValidFromP, ih]
+      constructor
+      · intro h pre c post hpre hk w hw
+        cases pre with
+        | nil => simp at hpre
+        | cons p pre =>
+          obtain ⟨rfl, rfl⟩ := List.cons.inj hpre
+          exact h pre c post rfl hk w (by simpa using hw)
+      · intro h pre c post hpre hk w hw
+        exact h (.assume a :: pre) c post (by simp [hpre]) hk w (by simpa using hw)
+    | assert a =>
+      simp only [Trace.AssertionsValidFromP, ih]
+      constructor
+      · rintro ⟨h1, h2⟩ pre c post hpre hk w hw
+        cases pre with
+        | nil =>
+          obtain ⟨rfl, rfl⟩ := by simpa using hpre
+          exact h1 hk w (by simpa using hw)
+        | cons p pre =>
+          obtain ⟨rfl, rfl⟩ := List.cons.inj hpre
+          refine h2 pre c post rfl hk w ?_
+          rw [Trace.AssumptionsHold_append] at hw ⊢
+          exact ⟨hw.1, (Trace.assumptionsHold_cons_assert I w a pre).1 hw.2⟩
+      · intro h
+        refine ⟨fun hk w hw => h [] a rest rfl hk w (by simpa using hw), ?_⟩
+        intro pre c post hpre hk w hw
+        refine h (.assert a :: pre) c post (by simp [hpre]) hk w ?_
+        rw [Trace.AssumptionsHold_append] at hw ⊢
+        exact ⟨hw.1, (Trace.assumptionsHold_cons_assert I w a pre).2 hw.2⟩
+    | cover a =>
+      simp only [Trace.AssertionsValidFromP, ih]
+      constructor
+      · intro h pre c post hpre hk w hw
+        cases pre with
+        | nil => simp at hpre
+        | cons p pre =>
+          obtain ⟨rfl, rfl⟩ := List.cons.inj hpre
+          refine h pre c post rfl hk w ?_
+          rw [Trace.AssumptionsHold_append] at hw ⊢
+          exact ⟨hw.1, (Trace.assumptionsHold_cons_cover I w a pre).1 hw.2⟩
+      · intro h pre c post hpre hk w hw
+        refine h (.cover a :: pre) c post (by simp [hpre]) hk w ?_
+        rw [Trace.AssumptionsHold_append] at hw ⊢
+        exact ⟨hw.1, (Trace.assumptionsHold_cons_cover I w a pre).2 hw.2⟩
+
+/-- An assertion identifier is valid in a trace exactly when every occurrence holds in every
+world satisfying the assumptions before it. -/
+theorem Trace.AssertionValid_iff_occurrences {P : PureExpr} (I : ConditionInterp P)
+    (aid : AssertId P) {trace : Trace P} :
+    Trace.AssertionValid P I aid trace ↔
+      ∀ pre c post, trace = pre ++ Event.assert c :: post →
+        c.label = aid.label → c.metadata = aid.md →
+        ∀ world, Trace.AssumptionsHold P I world pre → I.holds world c := by
+  unfold Trace.AssertionValid Trace.AssertionValidFrom
+  rw [Trace.AssertionsValidFromP_iff_occurrences]
+  exact ⟨fun h pre c post hp hl hm w hw => h pre c post hp ⟨hl, hm⟩ w (by simpa using hw),
+    fun h pre c post hp hk w hw => h pre c post hp hk.1 hk.2 w (by simpa using hw)⟩
+
+/-- Every assertion of a trace is valid exactly when every occurrence holds in every world
+satisfying the assumptions before it. -/
+theorem Trace.AssertionsValid_iff_occurrences {P : PureExpr} (I : ConditionInterp P)
+    {trace : Trace P} :
+    Trace.AssertionsValid P I trace ↔
+      ∀ pre c post, trace = pre ++ Event.assert c :: post →
+        ∀ world, Trace.AssumptionsHold P I world pre → I.holds world c := by
+  unfold Trace.AssertionsValid Trace.AssertionsValidFrom
+  rw [Trace.AssertionsValidFromP_iff_occurrences]
+  exact ⟨fun h pre c post hp w hw => h pre c post hp trivial w (by simpa using hw),
+    fun h pre c post hp _ w hw => h pre c post hp w (by simpa using hw)⟩
 
 end -- public section
 end Imperative

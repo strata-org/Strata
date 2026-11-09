@@ -6,12 +6,13 @@
 module
 
 public import Strata.DL.Imperative.BigStep.GoalRewrite
+import Strata.DL.Imperative.StmtProps
 import all Strata.DL.Imperative.BigStep.GoalRewrite
 
 /-! # Rewriting goals under facts preserves failures: the proofs
 
-A sound pass (`GoalRewrite.Sound`) keeps the runs and reaches of a list whose commands it
-is sound on (`CmdsOk`) in both directions,
+A sound pass (`GoalRewrite.Sound`) keeps the runs and reaches of a loop-free list
+(`Block.noLoops`) whose commands it is sound on (`CmdsOk`) in both directions,
 with corresponding events from the source to the rewrite (`Pass.run_fwd`, `Pass.run_bwd`,
 `Pass.reach_fwd`, `Pass.reach_bwd`), so a failure of the source is a failure of the rewrite
 of the same target (`Pass.fails_of_fails`), and conversely where the source's goals have
@@ -177,71 +178,75 @@ variable {F : P.Factory} {π : Pass P D} {γ : D → SemanticStore P → Prop}
 
 mutual
 
-/-- **A run of a list is a run of its rewrite**, with corresponding events and the same
-    outcome; the facts after the list hold at its normal end. -/
+/-- **A run of a loop-free list is a run of its rewrite**, with corresponding events and the
+    same outcome; the facts after the list hold at its normal end. -/
 theorem Pass.run_fwd (hS : Sound F π γ ok) : ∀ (ss : PStmts P) {d : D} {σ : SemanticStore P}
     {evs : List (Event P)} {o : Outcome P}, γ d σ → BRun F ss σ evs o → AssumeOk evs →
-    CmdsOk ok ss →
+    CmdsOk ok ss → Block.noLoops ss = true →
     ∃ evs', BRun F (π.stmts d ss).1 σ evs' o ∧ List.Rel₂ EvRel evs evs' ∧
       ∀ σ1, o = .normal σ1 → γ (π.stmts d ss).2 σ1
-  | [], _, _, _, _, hγ, h, _, hok => by
+  | [], _, _, _, _, hγ, h, _, hok, hss => by
     cases h
     exact ⟨[], .nil, .nil, fun _ h => by cases h; exact hγ⟩
-  | s :: rest, _, _, _, _, hγ, h, hA, hok => by
+  | s :: rest, _, _, _, _, hγ, h, hA, hok, hss => by
+    rw [Block.noLoops_cons, Bool.and_eq_true] at hss
     simp only [Pass.stmts]
     cases h with
     | cons_normal h1 h2 =>
       obtain ⟨hA1, hA2⟩ := assumeOk_append hA
-      obtain ⟨e1, r1, m1, p1⟩ := Pass.runS_fwd hS s hγ h1 hA1 hok.1
-      obtain ⟨e2, r2, m2, p2⟩ := Pass.run_fwd hS rest (p1 _ rfl) h2 hA2 hok.2
+      obtain ⟨e1, r1, m1, p1⟩ := Pass.runS_fwd hS s hγ h1 hA1 hok.1 hss.1
+      obtain ⟨e2, r2, m2, p2⟩ := Pass.run_fwd hS rest (p1 _ rfl) h2 hA2 hok.2 hss.2
       exact ⟨e1 ++ e2, .cons_normal r1 r2, rel₂_append m1 m2, p2⟩
     | cons_exit h1 =>
-      obtain ⟨e1, r1, m1, _⟩ := Pass.runS_fwd hS s hγ h1 hA hok.1
+      obtain ⟨e1, r1, m1, _⟩ := Pass.runS_fwd hS s hγ h1 hA hok.1 hss.1
       exact ⟨e1, .cons_exit r1, m1, fun _ h => by cases h⟩
 
-/-- **A run of a statement is a run of its rewrite**: `Pass.run_fwd` for one statement. -/
+/-- **A run of a loop-free statement is a run of its rewrite**: `Pass.run_fwd` for one
+    statement. -/
 private theorem Pass.runS_fwd (hS : Sound F π γ ok) : ∀ (s : PStmt P) {d : D} {σ : SemanticStore P}
     {evs : List (Event P)} {o : Outcome P}, γ d σ → BRunS F s σ evs o → AssumeOk evs →
-    StmtCmdsOk ok s →
+    StmtCmdsOk ok s → Stmt.noLoops s = true →
     ∃ evs', BRunS F (π.stmt d s).1 σ evs' o ∧ List.Rel₂ EvRel evs evs' ∧
       ∀ σ1, o = .normal σ1 → γ (π.stmt d s).2 σ1
-  | .cmd (.cmd c), d, σ, evs, _, hγ, h, hA, hok => by
+  | .cmd (.cmd c), d, σ, evs, _, hγ, h, hA, hok, hss => by
     simp only [Pass.stmt]
     cases h with
     | cmd h =>
       obtain ⟨evs', h', hr⟩ := cmd_fwd (fun _ _ he => he σ hγ) (hS.cmd_rel d c hok) h
       exact ⟨evs', .cmd h', hr, fun _ he => by cases he; exact hS.cmd_post d c σ _ evs hok hγ h hA⟩
-  | .cmd (.call ..), _, _, _, _, _, h, _, hok => by
+  | .cmd (.call ..), _, _, _, _, _, h, _, hok, hss => by
     cases h with
     | cmd h => exact h.elim
-  | .block l ss md, d, σ, evs, _, hγ, h, hA, hok => by
+  | .block l ss md, d, σ, evs, _, hγ, h, hA, hok, hss => by
+    rw [Stmt.noLoops_block] at hss
     have h0 := h
     simp only [Pass.stmt]
     cases h with
     | block h =>
-      obtain ⟨e', r, m, _⟩ := Pass.run_fwd hS ss hγ h hA hok
+      obtain ⟨e', r, m, _⟩ := Pass.run_fwd hS ss hγ h hA hok hss
       exact ⟨e', .block r, m, fun σ1 he => hS.forget_post d _ σ evs σ1 hγ (he ▸ h0)⟩
-  | .ite c ts es md, d, σ, evs, _, hγ, h, hA, hok => by
+  | .ite c ts es md, d, σ, evs, _, hγ, h, hA, hok, hss => by
+    rw [Stmt.noLoops_ite, Bool.and_eq_true] at hss
     have h0 := h
     simp only [Pass.stmt]
     cases h with
     | ite_true hc h =>
-      obtain ⟨e', r, m, _⟩ := Pass.run_fwd hS ts hγ h hA hok.1
+      obtain ⟨e', r, m, _⟩ := Pass.run_fwd hS ts hγ h hA hok.1 hss.1
       exact ⟨e', .ite_true hc r, m, fun σ1 he => hS.forget_post d _ σ evs σ1 hγ (he ▸ h0)⟩
     | ite_false hc h =>
-      obtain ⟨e', r, m, _⟩ := Pass.run_fwd hS es hγ h hA hok.2
+      obtain ⟨e', r, m, _⟩ := Pass.run_fwd hS es hγ h hA hok.2 hss.2
       exact ⟨e', .ite_false hc r, m, fun σ1 he => hS.forget_post d _ σ evs σ1 hγ (he ▸ h0)⟩
     | ite_nondet_true h =>
-      obtain ⟨e', r, m, _⟩ := Pass.run_fwd hS ts hγ h hA hok.1
+      obtain ⟨e', r, m, _⟩ := Pass.run_fwd hS ts hγ h hA hok.1 hss.1
       exact ⟨e', .ite_nondet_true r, m, fun σ1 he => hS.forget_post d _ σ evs σ1 hγ (he ▸ h0)⟩
     | ite_nondet_false h =>
-      obtain ⟨e', r, m, _⟩ := Pass.run_fwd hS es hγ h hA hok.2
+      obtain ⟨e', r, m, _⟩ := Pass.run_fwd hS es hγ h hA hok.2 hss.2
       exact ⟨e', .ite_nondet_false r, m, fun σ1 he => hS.forget_post d _ σ evs σ1 hγ (he ▸ h0)⟩
-  | .loop .., _, _, _, _, _, h, _, hok => by cases h
-  | .exit .., _, _, _, _, _, h, _, hok => by
+  | .loop .., _, _, _, _, _, _, _, _, hss => by simp [Stmt.noLoops_loop] at hss
+  | .exit .., _, _, _, _, _, h, _, hok, hss => by
     cases h
     exact ⟨[], .exit, .nil, fun _ h => by cases h⟩
-  | .typeDecl .., _, _, _, _, hγ, h, _, hok => by
+  | .typeDecl .., _, _, _, _, hγ, h, _, hok, hss => by
     cases h
     exact ⟨[], .typeDecl, .nil, fun _ h => by cases h; exact hγ⟩
 
@@ -249,82 +254,83 @@ end
 
 mutual
 
-/-- **A run of the rewrite of a list is a run of the list**, with corresponding events and
-    the same outcome; the facts after the list hold at its normal end. -/
+/-- **A run of the rewrite of a loop-free list is a run of the list**, with corresponding
+    events and the same outcome; the facts after the list hold at its normal end. -/
 theorem Pass.run_bwd (hS : Sound F π γ ok) : ∀ (ss : PStmts P) {d : D} {σ : SemanticStore P}
     {evs' : List (Event P)} {o : Outcome P}, γ d σ → BRun F (π.stmts d ss).1 σ evs' o →
     AssumeOk evs' →
-    CmdsOk ok ss →
+    CmdsOk ok ss → Block.noLoops ss = true →
     ∃ evs, BRun F ss σ evs o ∧ List.Rel₂ EvRel evs evs' ∧
       ∀ σ1, o = .normal σ1 → γ (π.stmts d ss).2 σ1
-  | [], _, _, _, _, hγ, h, _, hok => by
+  | [], _, _, _, _, hγ, h, _, hok, hss => by
     simp only [Pass.stmts] at h ⊢
     cases h
     exact ⟨[], .nil, .nil, fun _ h => by cases h; exact hγ⟩
-  | s :: rest, _, _, _, _, hγ, h, hA, hok => by
+  | s :: rest, _, _, _, _, hγ, h, hA, hok, hss => by
+    rw [Block.noLoops_cons, Bool.and_eq_true] at hss
     simp only [Pass.stmts] at h ⊢
     cases h with
     | cons_normal h1 h2 =>
       obtain ⟨hA1, hA2⟩ := assumeOk_append hA
-      obtain ⟨e1, r1, m1, p1⟩ := Pass.runS_bwd hS s hγ h1 hA1 hok.1
-      obtain ⟨e2, r2, m2, p2⟩ := Pass.run_bwd hS rest (p1 _ rfl) h2 hA2 hok.2
+      obtain ⟨e1, r1, m1, p1⟩ := Pass.runS_bwd hS s hγ h1 hA1 hok.1 hss.1
+      obtain ⟨e2, r2, m2, p2⟩ := Pass.run_bwd hS rest (p1 _ rfl) h2 hA2 hok.2 hss.2
       exact ⟨e1 ++ e2, .cons_normal r1 r2, rel₂_append m1 m2, p2⟩
     | cons_exit h1 =>
-      obtain ⟨e1, r1, m1, _⟩ := Pass.runS_bwd hS s hγ h1 hA hok.1
+      obtain ⟨e1, r1, m1, _⟩ := Pass.runS_bwd hS s hγ h1 hA hok.1 hss.1
       exact ⟨e1, .cons_exit r1, m1, fun _ h => by cases h⟩
 
-/-- **A run of the rewrite of a statement is a run of it**: `Pass.run_bwd` for one
+/-- **A run of the rewrite of a loop-free statement is a run of it**: `Pass.run_bwd` for one
     statement. -/
 private theorem Pass.runS_bwd (hS : Sound F π γ ok) : ∀ (s : PStmt P) {d : D} {σ : SemanticStore P}
     {evs' : List (Event P)} {o : Outcome P}, γ d σ → BRunS F (π.stmt d s).1 σ evs' o →
     AssumeOk evs' →
-    StmtCmdsOk ok s →
+    StmtCmdsOk ok s → Stmt.noLoops s = true →
     ∃ evs, BRunS F s σ evs o ∧ List.Rel₂ EvRel evs evs' ∧
       ∀ σ1, o = .normal σ1 → γ (π.stmt d s).2 σ1
-  | .cmd (.cmd c), d, σ, evs', _, hγ, h, hA, hok => by
+  | .cmd (.cmd c), d, σ, evs', _, hγ, h, hA, hok, hss => by
     simp only [Pass.stmt] at h ⊢
     cases h with
     | cmd h =>
       obtain ⟨evs, h', hr⟩ := cmd_bwd (fun _ _ he => he σ hγ) (hS.cmd_rel d c hok) h
       exact ⟨evs, .cmd h', hr, fun _ he => by
         cases he; exact hS.cmd_post d c σ _ evs hok hγ h' (assumeOk_of_rel₂_rev hr hA)⟩
-  | .cmd (.call ..), _, _, _, _, _, h, _, hok => by
+  | .cmd (.call ..), _, _, _, _, _, h, _, hok, hss => by
     simp only [Pass.stmt] at h
     cases h with
     | cmd h => exact h.elim
-  | .block l ss md, d, σ, _, _, hγ, h, hA, hok => by
+  | .block l ss md, d, σ, _, _, hγ, h, hA, hok, hss => by
+    rw [Stmt.noLoops_block] at hss
     simp only [Pass.stmt] at h ⊢
     cases h with
     | block h =>
-      obtain ⟨e, r, m, _⟩ := Pass.run_bwd hS ss hγ h hA hok
+      obtain ⟨e, r, m, _⟩ := Pass.run_bwd hS ss hγ h hA hok hss
       exact ⟨e, .block r, m, fun σ1 he => hS.forget_post d _ σ e σ1 hγ (he ▸ .block r)⟩
-  | .ite c ts es md, d, σ, _, _, hγ, h, hA, hok => by
+  | .ite c ts es md, d, σ, _, _, hγ, h, hA, hok, hss => by
+    rw [Stmt.noLoops_ite, Bool.and_eq_true] at hss
     simp only [Pass.stmt] at h ⊢
     cases h with
     | ite_true hc h =>
-      obtain ⟨e, r, m, _⟩ := Pass.run_bwd hS ts hγ h hA hok.1
+      obtain ⟨e, r, m, _⟩ := Pass.run_bwd hS ts hγ h hA hok.1 hss.1
       exact ⟨e, .ite_true hc r, m, fun σ1 he =>
         hS.forget_post d _ σ e σ1 hγ (he ▸ .ite_true hc r)⟩
     | ite_false hc h =>
-      obtain ⟨e, r, m, _⟩ := Pass.run_bwd hS es hγ h hA hok.2
+      obtain ⟨e, r, m, _⟩ := Pass.run_bwd hS es hγ h hA hok.2 hss.2
       exact ⟨e, .ite_false hc r, m, fun σ1 he =>
         hS.forget_post d _ σ e σ1 hγ (he ▸ .ite_false hc r)⟩
     | ite_nondet_true h =>
-      obtain ⟨e, r, m, _⟩ := Pass.run_bwd hS ts hγ h hA hok.1
+      obtain ⟨e, r, m, _⟩ := Pass.run_bwd hS ts hγ h hA hok.1 hss.1
       exact ⟨e, .ite_nondet_true r, m, fun σ1 he =>
         hS.forget_post d _ σ e σ1 hγ (he ▸ .ite_nondet_true r)⟩
     | ite_nondet_false h =>
-      obtain ⟨e, r, m, _⟩ := Pass.run_bwd hS es hγ h hA hok.2
+      obtain ⟨e, r, m, _⟩ := Pass.run_bwd hS es hγ h hA hok.2 hss.2
       exact ⟨e, .ite_nondet_false r, m, fun σ1 he =>
         hS.forget_post d _ σ e σ1 hγ (he ▸ .ite_nondet_false r)⟩
-  | .loop .., _, _, _, _, _, h, _, hok => by
-    simp only [Pass.stmt] at h
-    cases h
-  | .exit .., _, _, _, _, _, h, _, hok => by
+  | .loop .., _, _, _, _, _, _, _, _, hss => by simp [Stmt.noLoops_loop] at hss
+  | .exit .., _, _, _, _, _, h, _, hok, hss => by
     simp only [Pass.stmt] at h ⊢
     cases h
     exact ⟨[], .exit, .nil, fun _ h => by cases h⟩
-  | .typeDecl .., _, _, _, _, hγ, h, _, hok => by
+  | .typeDecl .., _, _, _, _, hγ, h, _, hok, hss => by
     simp only [Pass.stmt] at h ⊢
     cases h
     exact ⟨[], .typeDecl, .nil, fun _ h => by cases h; exact hγ⟩
@@ -334,133 +340,137 @@ end
 
 mutual
 
-/-- **A reach of a list is a reach of its rewrite**, with corresponding events. -/
+/-- **A reach of a loop-free list is a reach of its rewrite**, with corresponding events. -/
 theorem Pass.reach_fwd (hS : Sound F π γ ok) : ∀ (ss : PStmts P) {d : D} {σ : SemanticStore P}
     {evs : List (Event P)}, γ d σ → BReach F ss σ evs → AssumeOk evs →
-    CmdsOk ok ss →
+    CmdsOk ok ss → Block.noLoops ss = true →
     ∃ evs', BReach F (π.stmts d ss).1 σ evs' ∧ List.Rel₂ EvRel evs evs'
-  | [], _, _, _, _, h, _, hok => by cases h
-  | s :: rest, _, _, _, hγ, h, hA, hok => by
+  | [], _, _, _, _, h, _, hok, hss => by cases h
+  | s :: rest, _, _, _, hγ, h, hA, hok, hss => by
+    rw [Block.noLoops_cons, Bool.and_eq_true] at hss
     simp only [Pass.stmts]
     cases h with
     | here h =>
-      obtain ⟨e, r, m⟩ := Pass.reachS_fwd hS s hγ h hA hok.1
+      obtain ⟨e, r, m⟩ := Pass.reachS_fwd hS s hγ h hA hok.1 hss.1
       exact ⟨e, .here r, m⟩
     | later h1 h2 =>
       obtain ⟨hA1, hA2⟩ := assumeOk_append hA
-      obtain ⟨e1, r1, m1, p1⟩ := Pass.runS_fwd hS s hγ h1 hA1 hok.1
-      obtain ⟨e2, r2, m2⟩ := Pass.reach_fwd hS rest (p1 _ rfl) h2 hA2 hok.2
+      obtain ⟨e1, r1, m1, p1⟩ := Pass.runS_fwd hS s hγ h1 hA1 hok.1 hss.1
+      obtain ⟨e2, r2, m2⟩ := Pass.reach_fwd hS rest (p1 _ rfl) h2 hA2 hok.2 hss.2
       exact ⟨e1 ++ e2, .later r1 r2, rel₂_append m1 m2⟩
 
-/-- **A reach of a statement is a reach of its rewrite**: `Pass.reach_fwd` for one
+/-- **A reach of a loop-free statement is a reach of its rewrite**: `Pass.reach_fwd` for one
     statement. -/
 private theorem Pass.reachS_fwd (hS : Sound F π γ ok) : ∀ (s : PStmt P) {d : D} {σ : SemanticStore P}
     {evs : List (Event P)}, γ d σ → BReachS F s σ evs → AssumeOk evs →
-    StmtCmdsOk ok s →
+    StmtCmdsOk ok s → Stmt.noLoops s = true →
     ∃ evs', BReachS F (π.stmt d s).1 σ evs' ∧ List.Rel₂ EvRel evs evs'
-  | .cmd (.cmd c), d, σ, _, hγ, h, _, hok => by
+  | .cmd (.cmd c), d, σ, _, hγ, h, _, hok, hss => by
     simp only [Pass.stmt]
     cases h with
-    | cmd h =>
+    | cmd h hne =>
       obtain ⟨evs', h', hr⟩ := cmd_fwd (fun _ _ he => he σ hγ) (hS.cmd_rel d c hok) h
-      exact ⟨evs', .cmd h', hr⟩
-  | .cmd (.call ..), _, _, _, _, h, _, hok => by
+      exact ⟨evs', .cmd h' (hr.ne_nil hne), hr⟩
+  | .cmd (.call ..), _, _, _, _, h, _, hok, hss => by
     cases h with
     | cmd h => exact h.elim
-  | .block _ ss _, _, _, _, hγ, h, hA, hok => by
+  | .block _ ss _, _, _, _, hγ, h, hA, hok, hss => by
+    rw [Stmt.noLoops_block] at hss
     simp only [Pass.stmt]
     cases h with
     | block h =>
-      obtain ⟨e, r, m⟩ := Pass.reach_fwd hS ss hγ h hA hok
+      obtain ⟨e, r, m⟩ := Pass.reach_fwd hS ss hγ h hA hok hss
       exact ⟨e, .block r, m⟩
-  | .ite _ ts es _, _, _, _, hγ, h, hA, hok => by
+  | .ite _ ts es _, _, _, _, hγ, h, hA, hok, hss => by
+    rw [Stmt.noLoops_ite, Bool.and_eq_true] at hss
     simp only [Pass.stmt]
     cases h with
     | ite_true hc h =>
-      obtain ⟨e, r, m⟩ := Pass.reach_fwd hS ts hγ h hA hok.1
+      obtain ⟨e, r, m⟩ := Pass.reach_fwd hS ts hγ h hA hok.1 hss.1
       exact ⟨e, .ite_true hc r, m⟩
     | ite_false hc h =>
-      obtain ⟨e, r, m⟩ := Pass.reach_fwd hS es hγ h hA hok.2
+      obtain ⟨e, r, m⟩ := Pass.reach_fwd hS es hγ h hA hok.2 hss.2
       exact ⟨e, .ite_false hc r, m⟩
     | ite_nondet_true h =>
-      obtain ⟨e, r, m⟩ := Pass.reach_fwd hS ts hγ h hA hok.1
+      obtain ⟨e, r, m⟩ := Pass.reach_fwd hS ts hγ h hA hok.1 hss.1
       exact ⟨e, .ite_nondet_true r, m⟩
     | ite_nondet_false h =>
-      obtain ⟨e, r, m⟩ := Pass.reach_fwd hS es hγ h hA hok.2
+      obtain ⟨e, r, m⟩ := Pass.reach_fwd hS es hγ h hA hok.2 hss.2
       exact ⟨e, .ite_nondet_false r, m⟩
-  | .loop .., _, _, _, _, h, _, hok => by cases h
-  | .exit .., _, _, _, _, h, _, hok => by cases h
-  | .typeDecl .., _, _, _, _, h, _, hok => by cases h
+  | .loop .., _, _, _, _, _, _, _, hss => by simp [Stmt.noLoops_loop] at hss
+  | .exit .., _, _, _, _, h, _, hok, hss => by cases h
+  | .typeDecl .., _, _, _, _, h, _, hok, hss => by cases h
 
 end
 
 mutual
 
-/-- **A reach of the rewrite of a list is a reach of the list**, with corresponding
+/-- **A reach of the rewrite of a loop-free list is a reach of the list**, with corresponding
     events. -/
 theorem Pass.reach_bwd (hS : Sound F π γ ok) : ∀ (ss : PStmts P) {d : D} {σ : SemanticStore P}
     {evs' : List (Event P)}, γ d σ → BReach F (π.stmts d ss).1 σ evs' → AssumeOk evs' →
-    CmdsOk ok ss →
+    CmdsOk ok ss → Block.noLoops ss = true →
     ∃ evs, BReach F ss σ evs ∧ List.Rel₂ EvRel evs evs'
-  | [], _, _, _, _, h, _, hok => by
+  | [], _, _, _, _, h, _, hok, hss => by
     simp only [Pass.stmts] at h
     cases h
-  | s :: rest, _, _, _, hγ, h, hA, hok => by
+  | s :: rest, _, _, _, hγ, h, hA, hok, hss => by
+    rw [Block.noLoops_cons, Bool.and_eq_true] at hss
     simp only [Pass.stmts] at h
     cases h with
     | here h =>
-      obtain ⟨e, r, m⟩ := Pass.reachS_bwd hS s hγ h hA hok.1
+      obtain ⟨e, r, m⟩ := Pass.reachS_bwd hS s hγ h hA hok.1 hss.1
       exact ⟨e, .here r, m⟩
     | later h1 h2 =>
       obtain ⟨hA1, hA2⟩ := assumeOk_append hA
-      obtain ⟨e1, r1, m1, p1⟩ := Pass.runS_bwd hS s hγ h1 hA1 hok.1
-      obtain ⟨e2, r2, m2⟩ := Pass.reach_bwd hS rest (p1 _ rfl) h2 hA2 hok.2
+      obtain ⟨e1, r1, m1, p1⟩ := Pass.runS_bwd hS s hγ h1 hA1 hok.1 hss.1
+      obtain ⟨e2, r2, m2⟩ := Pass.reach_bwd hS rest (p1 _ rfl) h2 hA2 hok.2 hss.2
       exact ⟨e1 ++ e2, .later r1 r2, rel₂_append m1 m2⟩
 
-/-- **A reach of the rewrite of a statement is a reach of it**: `Pass.reach_bwd` for one
-    statement. -/
+/-- **A reach of the rewrite of a loop-free statement is a reach of it**: `Pass.reach_bwd` for
+    one statement. -/
 private theorem Pass.reachS_bwd (hS : Sound F π γ ok) : ∀ (s : PStmt P) {d : D} {σ : SemanticStore P}
     {evs' : List (Event P)}, γ d σ → BReachS F (π.stmt d s).1 σ evs' → AssumeOk evs' →
-    StmtCmdsOk ok s →
+    StmtCmdsOk ok s → Stmt.noLoops s = true →
     ∃ evs, BReachS F s σ evs ∧ List.Rel₂ EvRel evs evs'
-  | .cmd (.cmd c), d, σ, _, hγ, h, _, hok => by
+  | .cmd (.cmd c), d, σ, _, hγ, h, _, hok, hss => by
     simp only [Pass.stmt] at h
     cases h with
-    | cmd h =>
+    | cmd h hne =>
       obtain ⟨evs, h', hr⟩ := cmd_bwd (fun _ _ he => he σ hγ) (hS.cmd_rel d c hok) h
-      exact ⟨evs, .cmd h', hr⟩
-  | .cmd (.call ..), _, _, _, _, h, _, hok => by
+      exact ⟨evs, .cmd h' fun h0 => by subst h0; cases hr; exact hne rfl, hr⟩
+  | .cmd (.call ..), _, _, _, _, h, _, hok, hss => by
     simp only [Pass.stmt] at h
     cases h with
     | cmd h => exact h.elim
-  | .block _ ss _, _, _, _, hγ, h, hA, hok => by
+  | .block _ ss _, _, _, _, hγ, h, hA, hok, hss => by
+    rw [Stmt.noLoops_block] at hss
     simp only [Pass.stmt] at h
     cases h with
     | block h =>
-      obtain ⟨e, r, m⟩ := Pass.reach_bwd hS ss hγ h hA hok
+      obtain ⟨e, r, m⟩ := Pass.reach_bwd hS ss hγ h hA hok hss
       exact ⟨e, .block r, m⟩
-  | .ite _ ts es _, _, _, _, hγ, h, hA, hok => by
+  | .ite _ ts es _, _, _, _, hγ, h, hA, hok, hss => by
+    rw [Stmt.noLoops_ite, Bool.and_eq_true] at hss
     simp only [Pass.stmt] at h
     cases h with
     | ite_true hc h =>
-      obtain ⟨e, r, m⟩ := Pass.reach_bwd hS ts hγ h hA hok.1
+      obtain ⟨e, r, m⟩ := Pass.reach_bwd hS ts hγ h hA hok.1 hss.1
       exact ⟨e, .ite_true hc r, m⟩
     | ite_false hc h =>
-      obtain ⟨e, r, m⟩ := Pass.reach_bwd hS es hγ h hA hok.2
+      obtain ⟨e, r, m⟩ := Pass.reach_bwd hS es hγ h hA hok.2 hss.2
       exact ⟨e, .ite_false hc r, m⟩
     | ite_nondet_true h =>
-      obtain ⟨e, r, m⟩ := Pass.reach_bwd hS ts hγ h hA hok.1
+      obtain ⟨e, r, m⟩ := Pass.reach_bwd hS ts hγ h hA hok.1 hss.1
       exact ⟨e, .ite_nondet_true r, m⟩
     | ite_nondet_false h =>
-      obtain ⟨e, r, m⟩ := Pass.reach_bwd hS es hγ h hA hok.2
+      obtain ⟨e, r, m⟩ := Pass.reach_bwd hS es hγ h hA hok.2 hss.2
       exact ⟨e, .ite_nondet_false r, m⟩
-  | .loop .., _, _, _, _, h, _, hok => by
+  | .loop .., _, _, _, _, _, _, _, hss => by simp [Stmt.noLoops_loop] at hss
+  | .exit .., _, _, _, _, h, _, hok, hss => by
     simp only [Pass.stmt] at h
     cases h
-  | .exit .., _, _, _, _, h, _, hok => by
-    simp only [Pass.stmt] at h
-    cases h
-  | .typeDecl .., _, _, _, _, h, _, hok => by
+  | .typeDecl .., _, _, _, _, h, _, hok, hss => by
     simp only [Pass.stmt] at h
     cases h
 
@@ -504,14 +514,15 @@ private theorem fails_rel {evs : List (Event P)} {ev : Event P} {t : AssertId P}
     cases hn
     exact ⟨evs', _, rfl, assumeOk_of_rel₂ hr1 hA, failsAt_rel he he'⟩
 
-/-- **Rewriting keeps failures.** If the facts `d` hold at `σ`, every command of `ss`
-    satisfies `ok`, and `ss` fails `t` from `σ`, its rewrite fails `t` from `σ`, with the
-    rewritten condition. -/
+/-- **Rewriting keeps failures.** If `ss` has no loops, the facts `d` hold at `σ`, every
+    command of `ss` satisfies `ok`, and `ss` fails `t` from `σ`, its rewrite fails `t` from
+    `σ`, with the rewritten condition. -/
 theorem Pass.fails_of_fails (hS : Sound F π γ ok) {ss : PStmts P} {d : D} {σ : SemanticStore P}
-    (hγ : γ d σ) (hok : CmdsOk ok ss) {t : AssertId P} {e : P.Expr} (h : Fails F ss σ t e) :
+    (hγ : γ d σ) (hok : CmdsOk ok ss) (hss : Block.noLoops ss = true) {t : AssertId P}
+    {e : P.Expr} (h : Fails F ss σ t e) :
     ∃ e', Fails F (π.stmts d ss).1 σ t e' := by
   obtain ⟨evs, ev, hb, hA, he⟩ := h
-  obtain ⟨c, hb', hr⟩ := Pass.reach_fwd hS ss hγ hb (assumeOk_snoc hA he) hok
+  obtain ⟨c, hb', hr⟩ := Pass.reach_fwd hS ss hγ hb (assumeOk_snoc hA he) hok hss
   obtain ⟨evs', ev', rfl, hA', he'⟩ := fails_rel hr hA he
   exact ⟨_, evs', ev', hb', hA', he'⟩
 
@@ -535,16 +546,17 @@ private theorem failsAt_rel_rev {ev ev' : Event P} {t : AssertId P} {e' : P.Expr
        cases hw'
        exact ⟨h3.symm ▸ hl, h4.symm ▸ hm, trivial, h1 ▸ hw⟩)
 
-/-- **Rewriting adds no failures where the goals have values.** If the facts `d` hold at
-    `σ`, every command of `ss` satisfies `ok`, the goals of `ss` have values
-    (`GoalsDefined`), and the rewrite of `ss` fails `t`
-    from `σ`, then `ss` fails `t` from `σ`, with the original condition. -/
+/-- **Rewriting adds no failures where the goals have values.** If `ss` has no loops, the
+    facts `d` hold at `σ`, every command of `ss` satisfies `ok`, the goals of `ss` have values
+    (`GoalsDefined`), and the rewrite of `ss` fails `t` from `σ`, then `ss` fails `t` from
+    `σ`, with the original condition. -/
 theorem Pass.fails_of_fails_out (hS : Sound F π γ ok) {ss : PStmts P} {d : D}
-    {σ : SemanticStore P} (hγ : γ d σ) (hok : CmdsOk ok ss) (hdef : GoalsDefined F ss σ)
+    {σ : SemanticStore P} (hγ : γ d σ) (hok : CmdsOk ok ss) (hss : Block.noLoops ss = true)
+    (hdef : GoalsDefined F ss σ)
     {t : AssertId P}
     {e' : P.Expr} (h : Fails F (π.stmts d ss).1 σ t e') : ∃ e, Fails F ss σ t e := by
   obtain ⟨evs', ev', hb, hA, he⟩ := h
-  obtain ⟨c, hb', hr⟩ := Pass.reach_bwd hS ss hγ hb (assumeOk_snoc hA he) hok
+  obtain ⟨c, hb', hr⟩ := Pass.reach_bwd hS ss hγ hb (assumeOk_snoc hA he) hok hss
   obtain ⟨evs, l, rfl, hr1, hr2⟩ := rel₂_append_inv' hr
   cases hr2 with
   | cons hev hn =>

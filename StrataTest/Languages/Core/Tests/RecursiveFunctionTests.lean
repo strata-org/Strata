@@ -380,7 +380,7 @@ Label: set_cur_calls_IntList..tl_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: !(IntList..isNil(xs))>: !(IntList..isNil(xs@3))
-loopElimAssume_guard_loop_1: !(IntList..isNil(cur@2))
+$__loopElimAssume_guard_loop_1: !(IntList..isNil(cur@2))
 insertLoopInvAssume_invariant_loop_0_0: int.add(acc@2, listLen(cur@2)) == listLen(xs@3)
 insertLoopInvAssume_invariant_loop_0_1: int.ge(acc@2, 0)
 insertLoopInvAssume_entry_invariant_loop_0_0: int.add(0, listLen(xs@3)) == listLen(xs@3)
@@ -391,7 +391,7 @@ Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0
 Property: assert
 Assumptions:
 <label_ite_cond_true: !(IntList..isNil(xs))>: !(IntList..isNil(xs@3))
-loopElimAssume_guard_loop_1: !(IntList..isNil(cur@2))
+$__loopElimAssume_guard_loop_1: !(IntList..isNil(cur@2))
 insertLoopInvAssume_invariant_loop_0_0: int.add(acc@2, listLen(cur@2)) == listLen(xs@3)
 insertLoopInvAssume_invariant_loop_0_1: int.ge(acc@2, 0)
 insertLoopInvAssume_entry_invariant_loop_0_0: int.add(0, listLen(xs@3)) == listLen(xs@3)
@@ -402,7 +402,7 @@ Label: insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_1
 Property: assert
 Assumptions:
 <label_ite_cond_true: !(IntList..isNil(xs))>: !(IntList..isNil(xs@3))
-loopElimAssume_guard_loop_1: !(IntList..isNil(cur@2))
+$__loopElimAssume_guard_loop_1: !(IntList..isNil(cur@2))
 insertLoopInvAssume_invariant_loop_0_0: int.add(acc@2, listLen(cur@2)) == listLen(xs@3)
 insertLoopInvAssume_invariant_loop_0_1: int.ge(acc@2, 0)
 insertLoopInvAssume_entry_invariant_loop_0_0: int.add(0, listLen(xs@3)) == listLen(xs@3)
@@ -414,10 +414,10 @@ Property: assert
 Assumptions:
 insertLoopInvAssume_entry_invariant_loop_0_0: int.add(0, listLen(xs@3)) == listLen(xs@3)
 <label_ite_cond_true: !(IntList..isNil(xs))>: if !(IntList..isNil(xs@3)) then !(IntList..isNil(xs@3)) else true
-loopElimAssume_guard_loop_1: if !(IntList..isNil(xs@3)) then !(IntList..isNil(cur@2)) else true
+$__loopElimAssume_guard_loop_1: if !(IntList..isNil(xs@3)) then !(IntList..isNil(cur@2)) else true
 insertLoopInvAssume_invariant_loop_0_0: if !(IntList..isNil(xs@3)) then int.add(acc@2, listLen(cur@2)) == listLen(xs@3) else true
 insertLoopInvAssume_invariant_loop_0_1: if !(IntList..isNil(xs@3)) then int.ge(acc@2, 0) else true
-loopElimAssume_not_guard_loop_1: if !(IntList..isNil(xs@3)) then !(!(IntList..isNil(cur@3))) else true
+$__loopElimAssume_not_guard_loop_1: if !(IntList..isNil(xs@3)) then !(!(IntList..isNil(cur@3))) else true
 <label_ite_cond_false: !(!(IntList..isNil(xs)))>: if if !(IntList..isNil(xs@3)) then false else true then if !(IntList..isNil(xs@3)) then false else true else true
 insertLoopInvAssume_exit_invariant_loop_0_0: int.add(if !(IntList..isNil(xs@3)) then acc@3 else 0, listLen(if !(IntList..isNil(xs@3)) then cur@3 else xs@3)) == listLen(xs@3)
 insertLoopInvAssume_exit_invariant_loop_0_1: int.ge(if !(IntList..isNil(xs@3)) then acc@3 else 0, 0)

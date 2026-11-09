@@ -250,7 +250,7 @@ private theorem forallExpr_ty : Lambda.LExpr.HasTypeA [] forallExpr .bool :=
   Lambda.LExpr.typeCheck_to_HasTypeA (by rfl)
 
 /-- Gate parameters: no reserved prefixes, every operator counts as declared. -/
-private def testParams : Core.Logic.InitEnvWFParams := ⟨[], fun _ => true⟩
+private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
 
 /-! ## Operational run inversions over the event semantics -/
 
@@ -527,6 +527,7 @@ private theorem xFalseEnv_blockWF (model : Lambda.Interp Core.Factory) :
         simp at hn)
     (by intro n hn p hp; simp [testParams] at hp)
     (by intro n hn p hp; simp [testParams] at hp)
+    (by intro l hl p hp; simp [testParams] at hp)
     (by
       have hdef : (fun n => ((xFalseEnv model).store n).isSome) =
           (fun _ : Core.Expression.Ident => true) := by funext n; simp [xFalseEnv]

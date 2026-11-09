@@ -49,7 +49,7 @@ private theorem procOf_eq {p : Core.Program} {nm : String} {proc : Core.Procedur
   rfl
 
 /-- Test gate with no reserved prefixes and every function name declared. -/
-private def testParams : Core.Logic.InitEnvWFParams := ⟨[], fun _ => true⟩
+private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
 
 /-! ## Pure bitvector absorption (the fact in Run's postcondition) -/
 
@@ -533,7 +533,8 @@ private theorem setBlockWF (setE : Core.Expression.Expr)
       [Imperative.Stmt.block "" [Imperative.Stmt.cmd (Imperative.CmdExt.cmd
         (Imperative.Cmd.set resultId (.det setE) md))] #[]] ρ := by
   refine Core.Logic.BlockInitEnvWF.of_defUseOk (Core.coreFactory_WellFormedSemanticEval _ hf)
-    hsv (fun n hn => ?_) (fun n hn => ?_) (fun n _ p hp => ?_) ?_
+    hsv (fun n hn => ?_) (fun n hn => ?_) (fun n _ p hp => ?_)
+    (fun _ _ p hp => by simp [testParams] at hp) ?_
     (fun _ _ => rfl)
     (by
       simp [Block.InitTypesInhabited, Block.initTypes, Stmt.initTypes,

@@ -25,7 +25,7 @@ feasibility (`feasible_obs`) and the same failing occurrences (`failsAt_obs`).
 Key definitions: `Agree`, `OAgree`, `EvCongr`, `ArgReplay`, `EvReplay`.
 
 Key theorems: `cmd_sim`, `ev_agree`, `agree_def`, `List.Rel₂.map_obs`, `feasible_obs`,
-`failsAt_obs`, `WellFormedStore.proj`. -/
+`failsAt_obs`. -/
 
 namespace Imperative
 
@@ -89,12 +89,6 @@ theorem Agree.proj {N : List P.Ident} {σp σp' σ σ' : SemanticStore P}
 section
 omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvar P]
   [LawfulHasVal P]
-
-omit [HasFvars P] in
-/-- Leaving a scope keeps the store value-valued. -/
-theorem WellFormedStore.proj {F : P.Factory} {σp σ : SemanticStore P}
-    (h : WellFormedStore σ F) : WellFormedStore (projectStore σp σ) F :=
-  fun x v hx => h x v (by grind [projectStore])
 
 omit [HasFvars P] in
 /-- Leaving an `ite` branch keeps outcome agreement. -/

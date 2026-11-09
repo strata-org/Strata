@@ -73,6 +73,7 @@ instance : HasFvars MiniPureExpr where
 
 instance : LawfulHasVal MiniPureExpr where
   valueOfTy_isVal := fun _ _ _ h => h
+  value_typed := fun _ _ _ => ⟨.Bool, trivial⟩
   valueOfTy_congr := fun _ _ _ _ _ _ _ _ => trivial
 
 instance : HasBool MiniPureExpr where
@@ -339,6 +340,7 @@ instance : HasVal MiniPureExpr2 where
 
 instance : LawfulHasVal MiniPureExpr2 where
   valueOfTy_isVal := fun _ _ _ h => h
+  value_typed := fun _ _ h => ⟨.Bool, h⟩
   valueOfTy_congr := fun _ _ _ _ _ _ _ h => h
 
 instance : HasBool MiniPureExpr2 where

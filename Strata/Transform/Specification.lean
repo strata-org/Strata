@@ -40,7 +40,8 @@ There are two complementary ways to describe correctness of a transformation:
 
 2. **Operational overapproximation** simulates source behavior in the target.
    `OverapproximatesTraces` relates every finite trace prefix and every
-   terminal/exiting run.
+   terminal/exiting run; `OverapproximatesTraces2UptoWhen` may relate them by two
+   different trace relations.
 
 Both styles are bilingual and can relate different source and target languages.
 Trace overapproximation with equality traces also preserves `Hoare.TripleWith`
@@ -78,13 +79,18 @@ namespace Transform
 
 /-! ## Trace-based transformation overapproximation -/
 
-/-- Trace-based overapproximation up to explicit trace and state relations.
-It simulates every finite prefix (for safety properties) and terminal/exiting
-runs (for partial-correctness postconditions). The definition is independent of
-any particular trace property or condition interpretation. -/
-@[expose] def OverapproximatesTracesUptoWhen
+/-- Trace-based overapproximation up to explicit trace and state relations, with one trace
+relation for finite prefixes and another for completed runs. Every finite source prefix has a
+target prefix related by `Rtrace`; every terminal or exiting source run has a target run ending
+the same way, in an `Rout`-related environment, with its trace related by `Rtrace_full`. The
+prefix clause carries safety properties such as assertion validity; the run clauses carry what
+completed runs establish, such as postconditions and the context of the statements that follow.
+A transformation covering one source run by several target runs, each faithful to a part of it,
+can promise more about prefixes than about runs, and so relate them by different relations. The
+definition is independent of any particular trace property or condition interpretation. -/
+@[expose] def OverapproximatesTraces2UptoWhen
     {EventT : Type _}
-    (Rtrace : Relation (List EventT))
+    (Rtrace Rtrace_full : Relation (List EventT))
     (Rin Rout : Relation (Env P))
     (L₁ L₂ : EventLang P EventT) (T : L₁.StmtT → Option L₂.StmtT)
     (pre : L₁.StmtT → Prop)
@@ -104,14 +110,28 @@ any particular trace property or condition interpretation. -/
         L₁.traceStar (L₁.stmtCfg st ρ₀) trace (L₁.terminalCfg ρ') →
         ∃ ρ'' trace',
           L₂.traceStar (L₂.stmtCfg st' ρ₀') trace' (L₂.terminalCfg ρ'') ∧
-          Rout ρ' ρ'' ∧ Rtrace trace trace') ∧
+          Rout ρ' ρ'' ∧ Rtrace_full trace trace') ∧
       -- Exiting traces preserve the exit label and outcome shape.
       (∀ lbl ρ' trace,
         L₁.traceStar (L₁.stmtCfg st ρ₀) trace (L₁.exitingCfg lbl ρ') →
         ∃ ρ'' trace',
           L₂.traceStar (L₂.stmtCfg st' ρ₀') trace' (L₂.exitingCfg lbl ρ'') ∧
-          Rout ρ' ρ'' ∧ Rtrace trace trace') ∧
+          Rout ρ' ρ'' ∧ Rtrace_full trace trace') ∧
       L₂.initEnvWF params₂ st' ρ₀'
+
+/-- Trace-based overapproximation up to explicit trace and state relations: finite prefixes
+and completed runs are related by the same trace relation `Rtrace`
+(`OverapproximatesTraces2UptoWhen` with `Rtrace_full := Rtrace`). It simulates every finite
+prefix (for safety properties) and terminal/exiting runs (for partial-correctness
+postconditions). -/
+@[expose] def OverapproximatesTracesUptoWhen
+    {EventT : Type _}
+    (Rtrace : Relation (List EventT))
+    (Rin Rout : Relation (Env P))
+    (L₁ L₂ : EventLang P EventT) (T : L₁.StmtT → Option L₂.StmtT)
+    (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy) : Prop :=
+  OverapproximatesTraces2UptoWhen Rtrace Rtrace Rin Rout L₁ L₂ T pre params₁ params₂
 
 /-- Equality-state trace overapproximation under a statement precondition. -/
 @[expose] def OverapproximatesTracesWhen

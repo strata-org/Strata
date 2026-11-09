@@ -39,7 +39,15 @@ end Imperative
 /-! # Core Transform — Theorems
 
 Properties of the per-call-site type-variable freshening in
-`Strata.Transform.CoreTransform`. Key results:
+`Strata.Transform.CoreTransform`, and of the successful runs of the generic runners
+(`Post m Q`: every successful run of `m` returns a value satisfying `Q`). Key results:
+
+- `runProgram_post` — `runProgram f p` replaces each structured procedure body by the result
+  of a run of `runStmtsRec f` on it when that run reports a change (`DeclStep`), and reports a
+  change exactly when one of these runs does.
+- `runProgramUntil_post` — `runProgramUntil f p (some n)` keeps any invariant that each pass
+  keeps, and returns a program of measure zero when the measure of `p` is below `n` and each
+  pass lowers the measure when it reports a change and returns measure zero otherwise.
 
 - `freshenTypeArgsSubst_fresh` — mechanism freshness: every type in the
   substitution's range is a fresh `<prefix>_<n>` variable, present in the output
@@ -118,6 +126,174 @@ theorem ok_pair_inj {ε α σT : Type} {a b : α} {s t : σT}
     (h : ((@Except.ok ε α a), s) = (Except.ok b, t)) : a = b ∧ s = t := by
   simp only [Prod.mk.injEq, Except.ok.injEq] at h
   exact h
+
+/-! ## Successful runs
+
+`Post m Q` says that every successful run of `m`, from any state, returns a value satisfying
+`Q`.  It ignores the state, so a property of the values a statement-level transformation
+returns carries through `runStmtsRec`, `runProgram` and `runProgramUntil` (`runProgram_post`,
+`runProgramUntil_post`). -/
+
+/-- Every successful run of `m`, from any state, returns a value satisfying `Q`. -/
+@[expose] def Post {α : Type} (m : CoreTransformM α) (Q : α → Prop) : Prop :=
+  ∀ σ a σ', m σ = (Except.ok a, σ') → Q a
+
+/-- A run of `pure a` returns `a`. -/
+theorem Post.pure {α : Type} {a : α} {Q : α → Prop} (h : Q a) :
+    Post (Pure.pure a : CoreTransformM α) Q :=
+  fun _ _ _ hr => (ok_pair_inj hr).1 ▸ h
+
+/-- A failing computation has no successful run. -/
+theorem Post.throw {α : Type} {e : Err} {Q : α → Prop} :
+    Post (MonadExcept.throw e : CoreTransformM α) Q :=
+  fun σ _ _ hr => by rw [throw_apply] at hr; cases hr
+
+/-- Every successful run returns a value satisfying `True`. -/
+theorem Post.true {α : Type} (m : CoreTransformM α) : Post m fun _ => True :=
+  fun _ _ _ _ => trivial
+
+/-- A run of `x >>= f` returns a value with `Q` when `x` returns values with `Q₁` and `f` maps
+    each such value to a computation returning values with `Q`. -/
+theorem Post.bind {α β : Type} {x : CoreTransformM α} {f : α → CoreTransformM β}
+    {Q₁ : α → Prop} {Q : β → Prop} (hx : Post x Q₁) (hf : ∀ a, Q₁ a → Post (f a) Q) :
+    Post (x >>= f) Q := fun _ _ _ h =>
+  have ⟨a, _, ha, hk⟩ := bind_ok_inv x f h
+  hf a (hx _ _ _ ha) _ _ _ hk
+
+/-- A computation returning values with `Q` returns values with any weaker property. -/
+theorem Post.mono {α : Type} {m : CoreTransformM α} {Q Q' : α → Prop} (h : Post m Q)
+    (himp : ∀ a, Q a → Q' a) : Post m Q' :=
+  fun _ _ _ hr => himp _ (h _ _ _ hr)
+
+/-- A `for` loop over `l` returns a value with `Q` when its state satisfies `I rest` before the
+    elements `rest` remain, each step from such a state yields one satisfying `I` on the
+    remaining elements or stops with one satisfying `Q`, and `I []` implies `Q`. -/
+theorem Post.forIn {α β : Type} {I : List α → β → Prop} {Q : β → Prop}
+    {f : α → β → CoreTransformM (ForInStep β)} (hend : ∀ b, I [] b → Q b)
+    (hstep : ∀ x rest b, I (x :: rest) b → Post (f x b) fun
+      | .yield b' => I rest b'
+      | .done b' => Q b') :
+    ∀ (l : List α) (b : β), I l b → Post (forIn l b f) Q
+  | [], _, hb => (List.forIn_nil (m := CoreTransformM)).symm ▸ Post.pure (hend _ hb)
+  | x :: l, b, hb => (List.forIn_cons f x l b).symm ▸ Post.bind (hstep x l b hb) fun
+    | .done _, hc => Post.pure hc
+    | .yield c, hc => Post.forIn hend hstep l c hc
+
+/-- `r` is what `runProgram` makes of the declaration `d`, with its change flag, when every
+    successful run of `runStmtsRec` on a list `ss` returning `(c, ss')` satisfies
+    `Q ss (c, ss')`: a procedure with a structured body `ss` gets the body `ss'` when `c` is set
+    and is kept otherwise; any other declaration is kept, with no change. -/
+@[expose] def DeclStep (Q : Statements → Bool × Statements → Prop) (d : Decl)
+    (r : Bool × Decl) : Prop :=
+  match d with
+  | .proc proc md => ∃ ss ss', proc.body = .structured ss ∧ Q ss (r.1, ss') ∧
+      r.2 = if r.1 then .proc { proc with body := .structured ss' } md else .proc proc md
+  | _ => r = (false, d)
+
+/-- **What `runProgram` does to each declaration.**  When every successful run of
+    `runStmtsRec f` on a list `ss` returns a value satisfying `Q ss`, a successful run of
+    `runProgram f p` (over every procedure) returns the program of the declarations `rs` makes of
+    those of `p` (`DeclStep Q`), and reports a change exactly when one of them does. -/
+theorem runProgram_post {f : Statement → CoreTransformM (Option (List Statement))}
+    {Q : Statements → Bool × Statements → Prop} (hf : ∀ ss, Post (runStmtsRec f ss) (Q ss))
+    (p : Program) :
+    Post (runProgram f p) fun r => ∃ rs : List (Bool × Decl),
+      List.Rel₂ (DeclStep Q) p.decls rs ∧ r.2.decls = rs.map (·.2) ∧ r.1 = rs.any (·.1) := by
+  unfold runProgram
+  refine Post.bind (Post.true _) fun _ _ => ?_
+  refine Post.bind (Q₁ := fun s => ∃ rs : List (Bool × Decl),
+      List.Rel₂ (DeclStep Q) p.decls rs ∧ s.2 = rs.map (·.2) ∧ s.1 = rs.any (·.1))
+    ?_ fun s hs => Post.bind (Post.true _) fun _ _ => Post.pure hs
+  refine Post.forIn (I := fun rest s => ∃ k rs, rest = p.decls.zipIdx.drop k ∧ rs.length = k ∧
+      List.Rel₂ (DeclStep Q) (p.decls.take k) rs ∧ s.2 = rs.map (·.2) ++ p.decls.drop k ∧
+      s.1 = rs.any (·.1)) ?_ ?_ _ _ ⟨0, [], by simp, rfl, .nil, by simp, rfl⟩
+  · rintro s ⟨k, rs, hrest, -, hrel, h2, h1⟩
+    have hk : p.decls.length ≤ k := by
+      have := congrArg List.length hrest
+      simp only [List.length_nil, List.length_drop, List.length_zipIdx] at this
+      omega
+    exact ⟨rs, by rwa [List.take_of_length_le hk] at hrel,
+      by rw [h2, List.drop_of_length_le hk, List.append_nil], h1⟩
+  · rintro x rest s ⟨k, rs, hrest, hlen, hrel, h2, h1⟩
+    have hk : k < p.decls.length := by
+      have := congrArg List.length hrest
+      simp only [List.length_cons, List.length_drop, List.length_zipIdx] at this
+      omega
+    rw [List.drop_eq_getElem_cons (by simpa using hk)] at hrest
+    obtain ⟨rfl, rfl⟩ := List.cons.inj hrest
+    simp only [List.getElem_zipIdx, Nat.zero_add]
+    -- The declarations after this step.
+    have hdrop : p.decls.drop k = p.decls[k] :: p.decls.drop (k + 1) :=
+      List.drop_eq_getElem_cons hk
+    have htake : p.decls.take (k + 1) = p.decls.take k ++ [p.decls[k]] := by
+      rw [List.take_add_one, List.getElem?_eq_getElem hk]; rfl
+    have hnext : ∀ r : Bool × Decl, DeclStep Q p.decls[k] r →
+        ∃ k' rs', p.decls.zipIdx.drop (k + 1) = p.decls.zipIdx.drop k' ∧ rs'.length = k' ∧
+          List.Rel₂ (DeclStep Q) (p.decls.take k') rs' ∧
+          rs.map (·.2) ++ r.2 :: p.decls.drop (k + 1) = rs'.map (·.2) ++ p.decls.drop k' ∧
+          (s.1 || r.1) = rs'.any (·.1) := fun r hr =>
+      ⟨k + 1, rs ++ [r], rfl, by simp [hlen], htake ▸ hrel.append (.cons hr .nil),
+        by simp, by simp [h1]⟩
+    generalize hd : p.decls[k] = d at hnext hdrop
+    cases d
+    case proc proc md =>
+      simp only [↓reduceIte]
+      refine Post.bind (Post.true _) fun _ _ => ?_
+      split
+      · rename_i ss hbody
+        refine Post.bind (Post.pure (a := ss) rfl) fun _ hss => ?_
+        subst hss
+        refine Post.bind (hf ss) fun r hr => ?_
+        obtain ⟨c, ss'⟩ := r
+        cases c
+        · refine Post.pure ?_
+          obtain ⟨k', rs', h₁, h₂, h₃, h₄, h₅⟩ := hnext (false, .proc proc md)
+            ⟨ss, ss', hbody, hr, by simp⟩
+          exact ⟨k', rs', h₁, h₂, h₃, by rw [h2, hdrop]; exact h₄, by simpa using h₅⟩
+        · refine Post.bind (Post.true _) fun _ _ => Post.pure ?_
+          have hset : s.2.set k (.proc { proc with body := .structured ss' } md) =
+              rs.map (·.2) ++ .proc { proc with body := .structured ss' } md ::
+                p.decls.drop (k + 1) := by
+            rw [h2, hdrop, List.set_append_right _ _ (by simp [hlen])]
+            simp [hlen]
+          obtain ⟨k', rs', h₁, h₂, h₃, h₄, h₅⟩ :=
+            hnext (true, .proc { proc with body := .structured ss' } md)
+              ⟨ss, ss', hbody, hr, by simp⟩
+          exact ⟨k', rs', h₁, h₂, h₃, hset.trans h₄, by simpa using h₅⟩
+      · exact Post.bind (Q₁ := fun _ => False) Post.throw fun _ h => h.elim
+    all_goals
+      refine Post.pure ?_
+      obtain ⟨k', rs', h₁, h₂, h₃, h₄, h₅⟩ := hnext (false, _) rfl
+      exact ⟨k', rs', h₁, h₂, h₃, by rw [h2, hdrop]; exact h₄, by simpa using h₅⟩
+
+/-- **Bounded iteration of a statement-level transformation reaches measure zero.**  Let every
+    successful run of `runProgram f` from a program satisfying `Inv` return a program satisfying
+    `Inv`, of smaller measure `μ` when it reports a change and of measure zero when it reports
+    none.  Then every successful run of `runProgramUntil f p (some n)`, from `p` satisfying `Inv`
+    with `μ p < n`, returns a program satisfying `Inv` of measure zero. -/
+theorem runProgramUntil_post {f : Statement → CoreTransformM (Option (List Statement))}
+    {Inv : Program → Prop} {μ : Program → Nat}
+    (hstep : ∀ q, Inv q → Post (runProgram f q) fun r =>
+      Inv r.2 ∧ (r.1 = true → μ r.2 < μ q) ∧ (r.1 = false → μ r.2 = 0))
+    {p : Program} {n : Nat} (hp : Inv p) (hn : μ p < n) :
+    Post (runProgramUntil f p (some n)) fun r => Inv r.2 ∧ μ r.2 = 0 := by
+  simp only [runProgramUntil]
+  refine Post.bind (Q₁ := fun s => Inv s.1 ∧ μ s.1 = 0) ?_ fun s hs => Post.pure hs
+  refine Post.forIn (I := fun rest s => Inv s.1 ∧ μ s.1 + (n - rest.length) ≤ μ p) ?_ ?_ _ _
+    ⟨hp, by simp⟩
+  · rintro s ⟨hi, hμ⟩
+    exact ⟨hi, by simp only [List.length_nil, Nat.sub_zero] at hμ; omega⟩
+  · rintro x rest s ⟨hi, hμ⟩
+    refine Post.bind (hstep _ hi) fun r ⟨hi', hlt, hz⟩ => ?_
+    obtain ⟨c, q'⟩ := r
+    cases c <;>
+      simp only [Bool.not_false, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+    · exact Post.pure ⟨hi', hz rfl⟩
+    · refine Post.pure ⟨hi', ?_⟩
+      have := hlt rfl
+      simp only [List.length_cons] at hμ
+      dsimp only at this ⊢
+      omega
 
 variable (prefixStr : String)
 

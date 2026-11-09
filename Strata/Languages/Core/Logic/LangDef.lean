@@ -73,6 +73,10 @@ structure InitEnvWF (params : InitEnvWFParams)
     ¬ p.toList.isPrefixOf n.name.toList
   reservedFresh : ∀ n, (ρ.store n).isSome →
     ∀ p ∈ params.prefixIdents, ¬ p.toList.isPrefixOf n.name.toList
+  /-- No `exit` of the statement targets a label starting with a reserved block-label
+      prefix, as in `Imperative.BlockInitEnvWF.exitsNotReserved`. -/
+  exitsNotReserved : ∀ l ∈ Stmt.labels s, ∀ p ∈ params.prefixBlockLabels,
+    ¬ p.toList.isPrefixOf l.toList
   defUseOk : Stmt.defUseWellFormed (fun n => (ρ.store n).isSome) params.declaredFuncs s = Bool.true
   factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
     params.declaredFuncs ⟨s, ()⟩ = Bool.true

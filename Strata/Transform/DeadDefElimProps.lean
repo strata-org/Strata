@@ -366,6 +366,27 @@ private theorem dd_initTypes : ∀ (live : List Expression.Ident) (ss : Statemen
     have ih := dd_initTypes live rest
     simp_all [deadDefElim, erasable, deadDefElimS, Block.initTypes, Stmt.initTypes] <;> grind
 
+/-- Erasure keeps the `exit` targets among those of the input. -/
+private theorem dd_labels : ∀ (live : List Expression.Ident) (ss : Statements),
+    ∀ l ∈ Block.labels (deadDefElim live ss), l ∈ Block.labels ss
+  | _, [] => by simp [deadDefElim, Block.labels]
+  | live, .ite c t e md :: rest => by
+    have iht := fun l => dd_labels l t
+    have ihe := fun l => dd_labels l e
+    have ih := dd_labels live rest
+    simp_all [deadDefElim, erasable, deadDefElimS, Block.labels, Stmt.labels] <;> grind
+  | live, .block l bs md :: rest => by
+    have ihb := fun l => dd_labels l bs
+    have ih := dd_labels live rest
+    simp_all [deadDefElim, erasable, deadDefElimS, Block.labels, Stmt.labels] <;> grind
+  | live, .cmd c :: rest => by
+    have ih := dd_labels live rest
+    simp only [deadDefElim]
+    split <;> simp_all [deadDefElimS, Block.labels, Stmt.labels] <;> grind
+  | live, .loop .. :: rest | live, .exit .. :: rest | live, .typeDecl .. :: rest => by
+    have ih := dd_labels live rest
+    simp_all [deadDefElim, erasable, deadDefElimS, Block.labels, Stmt.labels] <;> grind
+
 /-- Erasure keeps def-use well-formedness of a list without loops and calls, also from fewer
     defined names: the output is well formed from any `D'` of names of `D` containing every
     name of `D` the output mentions, when the input is well formed from `D`. -/
@@ -560,6 +581,7 @@ theorem blockInitEnvWF_dd {params : InitEnvWFParams} {ss : Statements}
       Block.defined_of_mem_touchedVars (fun _ _ h => h) hdu hn hnd
     defsUndefined := fun n hn => h.defsUndefined n (hdv n hn)
     definedVarsNotReserved := fun n hn => h.definedVarsNotReserved n (hdv n hn)
+    exitsNotReserved := fun l hl => h.exitsNotReserved l (dd_labels [] ss l hl)
     defUseOk := hdu
     initTypesInhabited := fun ty hty => h.initTypesInhabited ty (dd_initTypes [] ss ty hty)
     fvarTypesOk := by

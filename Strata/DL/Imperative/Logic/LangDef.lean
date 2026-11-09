@@ -200,16 +200,26 @@ abbrev EventLang.kleeneE (P : PureExpr) [HasBool P] [HasBoolOps P]
   initEnvWF := initEnvWF
 
 /-- Initial-environment parameters shared by imperative language instances.
-Reserved prefixes identify names that must be fresh, while `declaredFuncs`
-records evaluator operators available at entry. -/
+Reserved prefixes identify names that must be fresh, reserved block-label prefixes
+identify the labels of generated blocks, which no `exit` may target, and
+`declaredFuncs` records evaluator operators available at entry. -/
 structure InitEnvWFParams (P : PureExpr) where
   prefixIdents : List String
+  prefixBlockLabels : List String := []
   declaredFuncs : P.Ident → Bool
 
 /-- Add reserved prefixes while preserving the declared-function predicate. -/
 @[expose] def InitEnvWFParams.extend
     (base : InitEnvWFParams P) (prefixes : List String) : InitEnvWFParams P where
   prefixIdents := prefixes ++ base.prefixIdents
+  prefixBlockLabels := base.prefixBlockLabels
+  declaredFuncs := base.declaredFuncs
+
+/-- Add reserved block-label prefixes while preserving the other parameters. -/
+@[expose] def InitEnvWFParams.extendBlockLabels
+    (base : InitEnvWFParams P) (prefixes : List String) : InitEnvWFParams P where
+  prefixIdents := base.prefixIdents
+  prefixBlockLabels := prefixes ++ base.prefixBlockLabels
   declaredFuncs := base.declaredFuncs
 
 /-- Default generic parameters reserve no prefixes and admit every operator. -/
@@ -245,6 +255,12 @@ structure BlockInitEnvWF {P : PureExpr} [HasBool P] [HasBoolOps P]
   reservedFresh : ∀ x, (ρ.store x).isSome →
     ∀ name, x = HasIdent.ident (P := P) name →
     ∀ p ∈ params.prefixIdents, ¬ p.toList.isPrefixOf name.toList
+  /-- No `exit` of the block targets a label starting with a reserved block-label prefix.  A
+  pass whose generated blocks would capture such an `exit` reserves their prefix with
+  `InitEnvWFParams.extendBlockLabels`, as passes reserve name prefixes in `prefixIdents`; with
+  both reservations in the gate, a pipeline threads them through its passes the same way. -/
+  exitsNotReserved : ∀ l ∈ Block.labels ss, ∀ p ∈ params.prefixBlockLabels,
+    ¬ p.toList.isPrefixOf l.toList
   /-- Reads and updates occur only after definition, and referenced operators
   are included in `declaredFuncs`. -/
   defUseOk : Block.defUseWellFormed

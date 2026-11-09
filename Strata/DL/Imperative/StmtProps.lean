@@ -2243,6 +2243,20 @@ theorem Stmt.allSubstmts_loop (f : Stmt P C → Bool) (g : ExprOrNondet P)
 
 /-! ## `noLoops` by constructor -/
 
+/-- The `exit` targets of a concatenation are those of its parts. -/
+theorem Block.labels_append (a b : List (Stmt P C)) :
+    Block.labels (a ++ b) = Block.labels a ++ Block.labels b := by
+  induction a with
+  | nil => rfl
+  | cons s rest ih => simp only [List.cons_append, Block.labels, ih, List.append_assoc]
+
+/-- A list of command statements has no `exit` target. -/
+theorem Block.labels_map_cmd {α : Type} (f : α → C) (cs : List α) :
+    Block.labels (cs.map fun a => Stmt.cmd (P := P) (f a)) = [] := by
+  induction cs with
+  | nil => rfl
+  | cons _ _ ih => simp only [List.map_cons, Block.labels, Stmt.labels, ih, List.append_nil]
+
 /-- The empty list has no loops. -/
 theorem Block.noLoops_nil : Block.noLoops ([] : List (Stmt P C)) = true := by
   simp [Block.noLoops, Block.allSubstmts]
@@ -2292,6 +2306,13 @@ theorem Block.treeForm_allSubstmts {f : Stmt P (CmdExt P) → Bool}
   intro ss h
   induction ss using Block.treeForm.induct <;>
     simp_all [Block.treeForm, Block.allSubstmts, Stmt.allSubstmts]
+
+/-- A list in tree form has no `exit`. -/
+theorem Block.labels_of_treeForm :
+    ∀ {ss : Block P (CmdExt P)}, Block.treeForm ss = true → Block.labels ss = [] := by
+  intro ss h
+  induction ss using Block.treeForm.induct <;>
+    simp_all [Block.treeForm, Block.labels, Stmt.labels]
 
 /-! ## Checks after assertions -/
 

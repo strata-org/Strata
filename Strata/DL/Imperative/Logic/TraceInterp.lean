@@ -52,7 +52,7 @@ when related conditions have the same interpreted truth in every world. -/
 /-- A condition interpretation is *stable* under `allowedVarName`-classified environment
 extension when it assigns the same truth value to any two event conditions
 related by `EventArg.ExtendsEnv allowedVarName`. This is the compatibility premise that
-`TraceStuttersEnv allowedVarName allowedFactory` does not supply on its own: it fails
+`Trace.StuttersEnv allowedVarName allowedFactory` does not supply on its own: it fails
 precisely when a captured condition reads a target-only register classified by
 `allowedVarName`. -/
 @[expose] def ConditionInterp.StableUnderExtendsEnv

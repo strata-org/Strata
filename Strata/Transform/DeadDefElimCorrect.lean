@@ -17,10 +17,10 @@ import all Strata.DL.Imperative.Cmd
 
 /-! # Erasing unread definitions over-approximates
 
-Erasing unread `init`s (`deadDefElim`) keeps every failure: if a statement list fails a
-target from a value-valued store, so does the list without its unread `init`s, from
+Erasing unread `init`s (`deadDefElim`) keeps every failure: if a statement list without loops
+fails a target from a value-valued store, so does the list without its unread `init`s, from
 the same store, at the same target (`deadDefElim_fails` in the big-step semantics
-and `deadDefElim_failsE` in the reference event semantics for lists without loops), for a
+and `deadDefElim_failsE` in the reference event semantics), for a
 factory evaluating alike on well-formed stores agreeing on the free variables
 (`WellFormedSemanticEvalExprCongr`).  The run of the output follows the run of the input;
 its store is the input's store without the erased variables, which no later statement
@@ -116,29 +116,32 @@ mutual
     the input's on `live`. -/
 private theorem dd_run [LawfulBEq P.Ident] (hE : EvCongr F) :
     ∀ {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)}
-    {o : Outcome P}, BRun F ss σ evs o → ∀ {live : List P.Ident} {σ' : SemanticStore P},
+    {o : Outcome P}, BRun F ss σ evs o → Block.noLoops ss = true →
+    ∀ {live : List P.Ident} {σ' : SemanticStore P},
     WellFormedStore σ F → Agree (Block.idents (deadDefElim live ss) ++ live) σ σ' →
     ∃ evs' o', BRun F (deadDefElim live ss) σ' evs' o' ∧
       List.Rel₂ (EvReplay F) evs evs' ∧ OAgree F live o o'
-  | _, _, _, _, .nil, _, _, hC, hA =>
+  | _, _, _, _, .nil, _, _, _, hC, hA =>
     ⟨[], _, .nil, .nil, by simpa [deadDefElim, Block.idents] using hA, hC⟩
-  | _, _, _, _, .cons_normal (s := s) (rest := rest) h1 h2, live, σ', hC, hA => by
+  | _, _, _, _, .cons_normal (s := s) (rest := rest) h1 h2, hss, live, σ', hC, hA => by
+    rw [Block.noLoops_cons, Bool.and_eq_true] at hss
     simp only [deadDefElim] at hA ⊢
     split at hA
     next he =>
       obtain ⟨x, ty, e, md, hs, hx⟩ := erasable_inv he
       obtain ⟨rfl, hA1, hC1⟩ := erase_init hs hx h1 hC hA
       rw [ite_eq_left he]
-      exact dd_run hE h2 hC1 hA1
+      exact dd_run hE h2 hss.2 hC1 hA1
     next he =>
       rw [ite_eq_right he]
       obtain ⟨evs1', o1', h1', hm1, hO1⟩ :=
-        dd_runS hE (live := Block.idents (deadDefElim live rest) ++ live) h1 hC
+        dd_runS hE (live := Block.idents (deadDefElim live rest) ++ live) h1 hss.1 hC
           (hA.mono fun y hy => by simpa [Block.idents] using hy)
       rcases o1' with σ1' | _ <;> simp only [OAgree] at hO1
-      obtain ⟨evs2', o', h2', hm2, hO⟩ := dd_run hE h2 hO1.2 hO1.1
+      obtain ⟨evs2', o', h2', hm2, hO⟩ := dd_run hE h2 hss.2 hO1.2 hO1.1
       exact ⟨evs1' ++ evs2', o', .cons_normal h1' h2', hm1.append hm2, hO⟩
-  | _, _, _, _, .cons_exit (s := s) (rest := rest) h1, live, σ', hC, hA => by
+  | _, _, _, _, .cons_exit (s := s) (rest := rest) h1, hss, live, σ', hC, hA => by
+    rw [Block.noLoops_cons, Bool.and_eq_true] at hss
     simp only [deadDefElim] at hA ⊢
     split at hA
     next he =>
@@ -147,7 +150,7 @@ private theorem dd_run [LawfulBEq P.Ident] (hE : EvCongr F) :
     next he =>
       rw [ite_eq_right he]
       obtain ⟨evs1', o1', h1', hm1, hO1⟩ :=
-        dd_runS hE (live := Block.idents (deadDefElim live rest) ++ live) h1 hC
+        dd_runS hE (live := Block.idents (deadDefElim live rest) ++ live) h1 hss.1 hC
           (hA.mono fun y hy => by simpa [Block.idents] using hy)
       rcases o1' with _ | ⟨l', σ1'⟩ <;> simp only [OAgree] at hO1
       obtain ⟨rfl, hA1, hC1⟩ := hO1
@@ -157,75 +160,56 @@ private theorem dd_run [LawfulBEq P.Ident] (hE : EvCongr F) :
     `dd_run` for one statement. -/
 private theorem dd_runS [LawfulBEq P.Ident] (hE : EvCongr F) :
     ∀ {s : PStmt P} {σ : SemanticStore P} {evs : List (Event P)}
-    {o : Outcome P}, BRunS F s σ evs o → ∀ {live : List P.Ident} {σ' : SemanticStore P},
+    {o : Outcome P}, BRunS F s σ evs o → Stmt.noLoops s = true →
+    ∀ {live : List P.Ident} {σ' : SemanticStore P},
     WellFormedStore σ F → Agree (Stmt.idents (deadDefElimS live s) ++ live) σ σ' →
     ∃ evs' o', BRunS F (deadDefElimS live s) σ' evs' o' ∧
       List.Rel₂ (EvReplay F) evs evs' ∧ OAgree F live o o'
-  | _, _, _, _, .cmd (c := .cmd c) h, _, _, hC, hA => by
+  | _, _, _, _, .cmd (c := .cmd c) h, _, _, _, hC, hA => by
     obtain ⟨σ1', evs', h', hm, hA1, hC1⟩ := cmd_sim hE h hC hA
     exact ⟨evs', _, .cmd h', hm, hA1, hC1⟩
-  | _, _, _, _, .cmd (c := .call _ _ _) h, _, _, _, _ => h.elim
-  | _, _, _, _, .ite_true (ess := ess) hc h, live, σ', hC, hA => by
+  | _, _, _, _, .cmd (c := .call _ _ _) h, _, _, _, _, _ => h.elim
+  | _, _, _, _, .ite_true (ess := ess) hc h, hs, live, σ', hC, hA => by
+    rw [Stmt.noLoops_ite, Bool.and_eq_true] at hs
     simp only [deadDefElimS, Stmt.idents, List.append_assoc] at hA ⊢
     obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE (live := Block.idents (deadDefElim live ess) ++ live)
-      h hC (hA.mono fun y hy => by simp only [List.mem_append] at hy ⊢; grind)
+      h hs.1 hC (hA.mono fun y hy => by simp only [List.mem_append] at hy ⊢; grind)
     exact ⟨evs', _, .ite_true ((ev_agree hE hC hA fun _ => List.mem_append_left _).trans hc) h',
       hm, (hO.mono fun y hy => List.mem_append_right _ hy).proj (hA.mono fun y hy => by simp [hy])⟩
-  | _, _, _, _, .ite_false hc h, live, σ', hC, hA => by
+  | _, _, _, _, .ite_false hc h, hs, live, σ', hC, hA => by
+    rw [Stmt.noLoops_ite, Bool.and_eq_true] at hs
     simp only [deadDefElimS, Stmt.idents, List.append_assoc] at hA ⊢
-    obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE (live := live) h hC
+    obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE (live := live) h hs.2 hC
       (hA.mono fun y hy => by rcases List.mem_append.1 hy with hb | hb <;> simp [hb])
     exact ⟨evs', _, .ite_false ((ev_agree hE hC hA fun _ => List.mem_append_left _).trans hc) h',
       hm, hO.proj (hA.mono fun y hy => by simp [hy])⟩
-  | _, _, _, _, .ite_nondet_true (ess := ess) h, live, σ', hC, hA => by
+  | _, _, _, _, .ite_nondet_true (ess := ess) h, hs, live, σ', hC, hA => by
+    rw [Stmt.noLoops_ite, Bool.and_eq_true] at hs
     simp only [deadDefElimS, Stmt.idents, List.append_assoc] at hA ⊢
     obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE (live := Block.idents (deadDefElim live ess) ++ live)
-      h hC (hA.mono fun y hy => by simp only [List.mem_append] at hy ⊢; grind)
+      h hs.1 hC (hA.mono fun y hy => by simp only [List.mem_append] at hy ⊢; grind)
     exact ⟨evs', _, .ite_nondet_true h', hm,
       (hO.mono fun y hy => List.mem_append_right _ hy).proj (hA.mono fun y hy => by simp [hy])⟩
-  | _, _, _, _, .ite_nondet_false h, live, σ', hC, hA => by
+  | _, _, _, _, .ite_nondet_false h, hs, live, σ', hC, hA => by
+    rw [Stmt.noLoops_ite, Bool.and_eq_true] at hs
     simp only [deadDefElimS, Stmt.idents, List.append_assoc] at hA ⊢
-    obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE (live := live) h hC
+    obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE (live := live) h hs.2 hC
       (hA.mono fun y hy => by rcases List.mem_append.1 hy with hb | hb <;> simp [hb])
     exact ⟨evs', _, .ite_nondet_false h', hm, hO.proj (hA.mono fun y hy => by simp [hy])⟩
-  | _, _, _, _, .block (l := l) h, live, σ', hC, hA => by
+  | _, _, _, _, .block (l := l) h, hs, live, σ', hC, hA => by
+    rw [Stmt.noLoops_block] at hs
     simp only [deadDefElimS, Stmt.idents] at hA ⊢
-    obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE h hC hA
+    obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE h hs hC hA
     exact ⟨evs', _, .block h', hm, hO.block l (hA.mono fun y hy => by simp [hy])⟩
-  | _, _, _, _, .exit, live, σ', hC, hA =>
+  | _, _, _, _, .exit, _, live, σ', hC, hA =>
     ⟨[], _, .exit, .nil, rfl, hA.mono fun y hy => List.mem_append_right _ hy, hC⟩
-  | _, _, _, _, .typeDecl, live, σ', hC, hA =>
+  | _, _, _, _, .typeDecl, _, live, σ', hC, hA =>
     ⟨[], _, .typeDecl, .nil, hA.mono fun y hy => List.mem_append_right _ hy, hC⟩
+  | _, _, _, _, .loop_exit _, hs, _, _, _, _
+  | _, _, _, _, .loop_iter _ _ _, hs, _, _, _, _
+  | _, _, _, _, .loop_break _ _, hs, _, _, _, _ => by simp [Stmt.noLoops_loop] at hs
 end
 
-section
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvars P] [LawfulHasVal P]
-
-mutual
-/-- A run of a list emitting a nonempty trace reaches the end of that trace. -/
-private theorem brun_breach : ∀ {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)}
-    {o : Outcome P}, BRun F ss σ evs o → evs ≠ [] → BReach F ss σ evs
-  | _, _, _, _, .nil, h => absurd rfl h
-  | _, _, _, _, .cons_normal (evs1 := evs1) (evs2 := evs2) h1 h2, h => by
-    by_cases h2e : evs2 = []
-    · subst h2e
-      rw [List.append_nil] at h ⊢
-      exact .here (brun_breachS h1 h)
-    · exact .later h1 (brun_breach h2 h2e)
-  | _, _, _, _, .cons_exit h1, h => .here (brun_breachS h1 h)
-/-- A run of a statement emitting a nonempty trace reaches the end of that trace. -/
-private theorem brun_breachS : ∀ {s : PStmt P} {σ : SemanticStore P} {evs : List (Event P)}
-    {o : Outcome P}, BRunS F s σ evs o → evs ≠ [] → BReachS F s σ evs
-  | _, _, _, _, .cmd h, _ => .cmd h
-  | _, _, _, _, .ite_true hc h, he => .ite_true hc (brun_breach h he)
-  | _, _, _, _, .ite_false hc h, he => .ite_false hc (brun_breach h he)
-  | _, _, _, _, .ite_nondet_true h, he => .ite_nondet_true (brun_breach h he)
-  | _, _, _, _, .ite_nondet_false h, he => .ite_nondet_false (brun_breach h he)
-  | _, _, _, _, .block h, he => .block (brun_breach h he)
-  | _, _, _, _, .exit, he => absurd rfl he
-  | _, _, _, _, .typeDecl, he => absurd rfl he
-end
-end
 
 omit [LawfulBEq P.Ident] in
 mutual
@@ -235,94 +219,100 @@ mutual
     alike. -/
 private theorem dd_reach [LawfulBEq P.Ident] (hE : EvCongr F) :
     ∀ {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)}, BReach F ss σ evs →
-    evs ≠ [] → ∀ {live : List P.Ident} {σ' : SemanticStore P}, WellFormedStore σ F →
+    Block.noLoops ss = true → ∀ {live : List P.Ident} {σ' : SemanticStore P}, WellFormedStore σ F →
     Agree (Block.idents (deadDefElim live ss) ++ live) σ σ' →
     ∃ evs', BReach F (deadDefElim live ss) σ' evs' ∧ List.Rel₂ (EvReplay F) evs evs'
-  | _, _, _, .here (s := s) (rest := rest) h, hne, live, σ', hC, hA => by
+  | _, _, _, .here (s := s) (rest := rest) h, hss, live, σ', hC, hA => by
+    rw [Block.noLoops_cons, Bool.and_eq_true] at hss
     simp only [deadDefElim] at hA ⊢
     split at hA
     next he =>
       obtain ⟨x, ty, e, md, rfl, hx⟩ := erasable_inv he
       cases h with
-      | cmd h => exact absurd (evalE_init_inv h).choose_spec.2.2.2.2 hne
+      | cmd h hne => exact absurd (evalE_init_inv h).choose_spec.2.2.2.2 hne
     next he =>
       rw [ite_eq_right he]
       obtain ⟨evs', h', hm⟩ :=
-        dd_reachS hE (live := Block.idents (deadDefElim live rest) ++ live) h hne hC
+        dd_reachS hE (live := Block.idents (deadDefElim live rest) ++ live) h hss.1 hC
           (hA.mono fun y hy => by simpa [Block.idents] using hy)
       exact ⟨evs', .here h', hm⟩
-  | _, _, _, .later (s := s) (rest := rest) (evs1 := evs1) (evs2 := evs2) h1 h2, hne, live, σ',
+  | _, _, _, .later (s := s) (rest := rest) (evs1 := evs1) (evs2 := evs2) h1 h2, hss, live, σ',
       hC, hA => by
+    rw [Block.noLoops_cons, Bool.and_eq_true] at hss
     simp only [deadDefElim] at hA ⊢
     split at hA
     next he =>
       obtain ⟨x, ty, e, md, hs, hx⟩ := erasable_inv he
       obtain ⟨rfl, hA1, hC1⟩ := erase_init hs hx h1 hC hA
       rw [ite_eq_left he]
-      exact dd_reach hE h2 (by simpa using hne) hC1 hA1
+      exact dd_reach hE h2 hss.2 hC1 hA1
     next he =>
       rw [ite_eq_right he]
       obtain ⟨evs1', o1', h1', hm1, hO1⟩ :=
-        dd_runS hE (live := Block.idents (deadDefElim live rest) ++ live) h1 hC
+        dd_runS hE (live := Block.idents (deadDefElim live rest) ++ live) h1 hss.1 hC
           (hA.mono fun y hy => by simpa [Block.idents] using hy)
       rcases o1' with σ1' | _ <;> simp only [OAgree] at hO1
-      by_cases h2e : evs2 = []
-      · subst h2e
-        have hne1 : evs1' ≠ [] := hm1.ne_nil (by simpa using hne)
-        exact ⟨evs1', .here (brun_breachS h1' hne1), by simpa using hm1⟩
-      · obtain ⟨evs2', h2', hm2⟩ := dd_reach hE h2 h2e hO1.2 hO1.1
-        exact ⟨evs1' ++ evs2', .later h1' h2', hm1.append hm2⟩
+      obtain ⟨evs2', h2', hm2⟩ := dd_reach hE h2 hss.2 hO1.2 hO1.1
+      exact ⟨evs1' ++ evs2', .later h1' h2', hm1.append hm2⟩
 /-- **A reach of a statement, replayed without the unread `init`s** of its branches or body:
     `dd_reach` for one statement. -/
 private theorem dd_reachS [LawfulBEq P.Ident] (hE : EvCongr F) :
     ∀ {s : PStmt P} {σ : SemanticStore P} {evs : List (Event P)}, BReachS F s σ evs →
-    evs ≠ [] → ∀ {live : List P.Ident} {σ' : SemanticStore P}, WellFormedStore σ F →
+    Stmt.noLoops s = true → ∀ {live : List P.Ident} {σ' : SemanticStore P}, WellFormedStore σ F →
     Agree (Stmt.idents (deadDefElimS live s) ++ live) σ σ' →
     ∃ evs', BReachS F (deadDefElimS live s) σ' evs' ∧ List.Rel₂ (EvReplay F) evs evs'
-  | _, _, _, .cmd (c := .cmd c) h, _, _, _, hC, hA => by
+  | _, _, _, .cmd (c := .cmd c) h hne, _, _, _, hC, hA => by
     obtain ⟨σ1', evs', h', hm, -⟩ := cmd_sim hE h hC hA
-    exact ⟨evs', .cmd h', hm⟩
-  | _, _, _, .cmd (c := .call _ _ _) h, _, _, _, _, _ => h.elim
-  | _, _, _, .ite_true (ess := ess) hc h, hne, live, σ', hC, hA => by
+    exact ⟨evs', .cmd h' (hm.ne_nil hne), hm⟩
+  | _, _, _, .cmd (c := .call _ _ _) h _, _, _, _, _, _ => h.elim
+  | _, _, _, .ite_true (ess := ess) hc h, hs, live, σ', hC, hA => by
+    rw [Stmt.noLoops_ite, Bool.and_eq_true] at hs
     simp only [deadDefElimS, Stmt.idents, List.append_assoc] at hA ⊢
     obtain ⟨evs', h', hm⟩ := dd_reach hE (live := Block.idents (deadDefElim live ess) ++ live) h
-      hne hC (hA.mono fun y hy => by simp only [List.mem_append] at hy ⊢; grind)
+      hs.1 hC (hA.mono fun y hy => by simp only [List.mem_append] at hy ⊢; grind)
     exact ⟨evs', .ite_true ((ev_agree hE hC hA fun _ => List.mem_append_left _).trans hc) h', hm⟩
-  | _, _, _, .ite_false hc h, hne, live, σ', hC, hA => by
+  | _, _, _, .ite_false hc h, hs, live, σ', hC, hA => by
+    rw [Stmt.noLoops_ite, Bool.and_eq_true] at hs
     simp only [deadDefElimS, Stmt.idents, List.append_assoc] at hA ⊢
-    obtain ⟨evs', h', hm⟩ := dd_reach hE (live := live) h hne hC
+    obtain ⟨evs', h', hm⟩ := dd_reach hE (live := live) h hs.2 hC
       (hA.mono fun y hy => by rcases List.mem_append.1 hy with hb | hb <;> simp [hb])
     exact ⟨evs', .ite_false ((ev_agree hE hC hA fun _ => List.mem_append_left _).trans hc) h', hm⟩
-  | _, _, _, .ite_nondet_true (ess := ess) h, hne, live, σ', hC, hA => by
+  | _, _, _, .ite_nondet_true (ess := ess) h, hs, live, σ', hC, hA => by
+    rw [Stmt.noLoops_ite, Bool.and_eq_true] at hs
     simp only [deadDefElimS, Stmt.idents, List.append_assoc] at hA ⊢
     obtain ⟨evs', h', hm⟩ := dd_reach hE (live := Block.idents (deadDefElim live ess) ++ live) h
-      hne hC (hA.mono fun y hy => by simp only [List.mem_append] at hy ⊢; grind)
+      hs.1 hC (hA.mono fun y hy => by simp only [List.mem_append] at hy ⊢; grind)
     exact ⟨evs', .ite_nondet_true h', hm⟩
-  | _, _, _, .ite_nondet_false h, hne, live, σ', hC, hA => by
+  | _, _, _, .ite_nondet_false h, hs, live, σ', hC, hA => by
+    rw [Stmt.noLoops_ite, Bool.and_eq_true] at hs
     simp only [deadDefElimS, Stmt.idents, List.append_assoc] at hA ⊢
-    obtain ⟨evs', h', hm⟩ := dd_reach hE (live := live) h hne hC
+    obtain ⟨evs', h', hm⟩ := dd_reach hE (live := live) h hs.2 hC
       (hA.mono fun y hy => by rcases List.mem_append.1 hy with hb | hb <;> simp [hb])
     exact ⟨evs', .ite_nondet_false h', hm⟩
-  | _, _, _, .block h, hne, live, σ', hC, hA => by
+  | _, _, _, .block h, hs, live, σ', hC, hA => by
+    rw [Stmt.noLoops_block] at hs
     simp only [deadDefElimS, Stmt.idents] at hA ⊢
-    obtain ⟨evs', h', hm⟩ := dd_reach hE h hne hC hA
+    obtain ⟨evs', h', hm⟩ := dd_reach hE h hs hC hA
     exact ⟨evs', .block h', hm⟩
+  | _, _, _, .loop_here _ _, hs, _, _, _, _
+  | _, _, _, .loop_later _ _ _, hs, _, _, _, _ => by simp [Stmt.noLoops_loop] at hs
 end
 
-/-- **Erasing unread definitions keeps failures (big-step).**  If the statement list `ss`
-    fails the target `t` with the condition `e` from the value-valued store `σ` (`Fails`: a run
-    reaches a failing occurrence of `t` with the condition `e`, every earlier assumption
-    holding), then `deadDefElim live ss` (the list without the `init`s that no later statement,
-    nor `live`, mentions) fails `t` with the condition `e` from `σ`, for any factory evaluating
-    alike on well-formed stores agreeing on the free variables
+/-- **Erasing unread definitions keeps failures (big-step).** If the statement list `ss` without
+    loops (`Block.noLoops`) fails the target `t` with the condition `e` from the value-valued store
+    `σ` (`Fails`: a run reaches a failing occurrence of `t` with the condition `e`, every earlier
+    assumption holding), then `deadDefElim live ss` (the list without the `init`s that no later
+    statement, nor `live`, mentions) fails `t` with the condition `e` from `σ`, for any factory
+    evaluating alike on well-formed stores agreeing on the free variables
     (`WellFormedSemanticEvalExprCongr`). -/
 theorem deadDefElim_fails (hcong : WellFormedSemanticEvalExprCongr F)
-    (live : List P.Ident) {ss : PStmts P} {σ : SemanticStore P} {t : AssertId P} {e : P.Expr}
+    (live : List P.Ident) {ss : PStmts P} (hss : Block.noLoops ss = true) {σ : SemanticStore P}
+    {t : AssertId P} {e : P.Expr}
     (hC : WellFormedStore σ F) (h : Fails F ss σ t e) : Fails F (deadDefElim live ss) σ t e := by
   obtain ⟨evs, ev, hb, hfeas, hfe⟩ := h
   have hE := evCongr_of_congr hcong
   obtain ⟨evs', hb', hm⟩ :=
-    dd_reach hE hb (by simp) hC ⟨fun _ _ => rfl, StoreProjected.refl _⟩
+    dd_reach hE hb hss hC ⟨fun _ _ => rfl, StoreProjected.refl _⟩
   obtain ⟨a, ev', rfl, ha, he⟩ := hm.append_singleton
   exact ⟨a, ev', hb', feasible_obs (ha.map_obs hE) hfeas, failsAt_obs (he.obs hE) hfe⟩
 
@@ -337,7 +327,7 @@ theorem deadDefElim_failsE [HasBoolOps P] (hcong : WellFormedSemanticEvalExprCon
     (live : List P.Ident) {ss : PStmts P} (hss : Block.noLoops ss = true) {σ : SemanticStore P}
     {t : AssertId P} {e : P.Expr} (hC : WellFormedStore σ F) (h : FailsE F ss σ t e) :
     FailsE F (deadDefElim live ss) σ t e :=
-  fails_failsE hWB (deadDefElim_fails hcong live hC (failsE_fails_noLoops hss h))
+  fails_failsE hWB (deadDefElim_fails hcong live hss hC (failsE_fails h))
 
 /-! ## Traces of the output related event by event
 
@@ -399,29 +389,29 @@ private theorem EvReplay.dd (hcong : WellFormedSemanticEvalExprCongr F) {e e' : 
   rcases e with a | a | a <;> rcases e' with a' | a' | a' <;> simp only [EvReplay] at h <;>
     exact key h
 
-/-- **A reach of a list, and of its output.**  A reach of `ss` from the value-valued `σ`
-    emitting a nonempty trace gives a reach of `deadDefElim live ss` from `σ` whose trace
+/-- **A reach of a list, and of its output.**  A reach of `ss`, a list without loops, from the
+    value-valued `σ` gives a reach of `deadDefElim live ss` from `σ` whose trace
     corresponds to it event by event (`DDEventRel`), for a factory evaluating alike on
     well-formed stores agreeing on the free variables. -/
 theorem deadDefElim_reach_rel (hcong : WellFormedSemanticEvalExprCongr F) (live : List P.Ident)
     {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)} (h : BReach F ss σ evs)
-    (hne : evs ≠ []) (hC : WellFormedStore σ F) :
+    (hss : Block.noLoops ss = true) (hC : WellFormedStore σ F) :
     ∃ evs', BReach F (deadDefElim live ss) σ evs' ∧ List.Rel₂ DDEventRel evs evs' := by
   have hE := evCongr_of_congr hcong
-  obtain ⟨evs', h', hm⟩ := dd_reach hE h hne hC ⟨fun _ _ => rfl, StoreAgreement.refl _⟩
+  obtain ⟨evs', h', hm⟩ := dd_reach hE h hss hC ⟨fun _ _ => rfl, StoreAgreement.refl _⟩
   exact ⟨evs', h', hm.imp fun _ _ hr => EvReplay.dd hcong hr⟩
 
-/-- **A run of a list, and of its output.**  A run of `ss` from the value-valued `σ` gives a
-    run of `deadDefElim live ss` from `σ` whose trace corresponds to it event by event
-    (`DDEventRel`) and whose outcome corresponds to its outcome (`DDOutcomeRel`), for a
-    factory evaluating alike on well-formed stores agreeing on the free variables. -/
+/-- **A run of a list, and of its output.** A run of `ss`, a list without loops, from the
+    value-valued `σ` gives a run of `deadDefElim live ss` from `σ` whose trace corresponds to it
+    event by event (`DDEventRel`) and whose outcome corresponds to its outcome (`DDOutcomeRel`), for
+    a factory evaluating alike on well-formed stores agreeing on the free variables. -/
 theorem deadDefElim_run_rel (hcong : WellFormedSemanticEvalExprCongr F) (live : List P.Ident)
     {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)} {o : Outcome P}
-    (h : BRun F ss σ evs o) (hC : WellFormedStore σ F) :
+    (h : BRun F ss σ evs o) (hss : Block.noLoops ss = true) (hC : WellFormedStore σ F) :
     ∃ evs' o', BRun F (deadDefElim live ss) σ evs' o' ∧ List.Rel₂ DDEventRel evs evs' ∧
       DDOutcomeRel o o' := by
   have hE := evCongr_of_congr hcong
-  obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE h hC ⟨fun _ _ => rfl, StoreAgreement.refl _⟩
+  obtain ⟨evs', o', h', hm, hO⟩ := dd_run hE h hss hC ⟨fun _ _ => rfl, StoreAgreement.refl _⟩
   exact ⟨evs', o', h', hm.imp fun _ _ hr => EvReplay.dd hcong hr, OAgree.dd hO⟩
 
 end
@@ -465,15 +455,15 @@ every property of `deadDefElim`. -/
 section
 variable [Hashable P.Ident]
 
-/-- **The executable pass keeps failures (big-step)**: if the statement list `ss` fails the
-    target `t` with the condition `e` from the value-valued store `σ` (`Fails`), so does
+/-- **The executable pass keeps failures (big-step)**: if the statement list `ss` without loops
+    fails the target `t` with the condition `e` from the value-valued store `σ` (`Fails`), so does
     `deadDefElimH live ss`, for any factory evaluating alike on well-formed stores agreeing on the
-    free variables (`WellFormedSemanticEvalExprCongr`) (`deadDefElim_fails` for
-    `deadDefElimH`). -/
+    free variables (`WellFormedSemanticEvalExprCongr`) (`deadDefElim_fails` for `deadDefElimH`). -/
 theorem deadDefElimH_fails (hcong : WellFormedSemanticEvalExprCongr F)
-    (live : List P.Ident) {ss : PStmts P} {σ : SemanticStore P} {t : AssertId P} {e : P.Expr}
+    (live : List P.Ident) {ss : PStmts P} (hss : Block.noLoops ss = true) {σ : SemanticStore P}
+    {t : AssertId P} {e : P.Expr}
     (hC : WellFormedStore σ F) (h : Fails F ss σ t e) : Fails F (deadDefElimH live ss) σ t e :=
-  deadDefElimH_eq live ss ▸ deadDefElim_fails hcong live hC h
+  deadDefElimH_eq live ss ▸ deadDefElim_fails hcong live hss hC h
 
 /-- **The executable pass keeps failures (reference event semantics)**: if the statement list
     `ss` without loops fails the target `t` with the condition `e` from the value-valued store `σ`
@@ -487,28 +477,28 @@ theorem deadDefElimH_failsE [HasBoolOps P] (hcong : WellFormedSemanticEvalExprCo
     FailsE F (deadDefElimH live ss) σ t e :=
   deadDefElimH_eq live ss ▸ deadDefElim_failsE hcong hWB live hss hC h
 
-/-- **A reach of a list, and of the executable pass's output**: a reach of `ss` from the
-    value-valued `σ` emitting a nonempty trace gives a reach of `deadDefElimH live ss` from `σ`
+/-- **A reach of a list, and of the executable pass's output**: a reach of `ss`, a list without
+    loops, from the value-valued `σ` gives a reach of `deadDefElimH live ss` from `σ`
     whose trace corresponds to it event by event (`DDEventRel`), for a factory evaluating alike
     on well-formed stores agreeing on the free variables (`deadDefElim_reach_rel` for
     `deadDefElimH`). -/
 theorem deadDefElimH_reach_rel (hcong : WellFormedSemanticEvalExprCongr F) (live : List P.Ident)
     {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)} (h : BReach F ss σ evs)
-    (hne : evs ≠ []) (hC : WellFormedStore σ F) :
+    (hss : Block.noLoops ss = true) (hC : WellFormedStore σ F) :
     ∃ evs', BReach F (deadDefElimH live ss) σ evs' ∧ List.Rel₂ DDEventRel evs evs' :=
-  deadDefElimH_eq live ss ▸ deadDefElim_reach_rel hcong live h hne hC
+  deadDefElimH_eq live ss ▸ deadDefElim_reach_rel hcong live h hss hC
 
-/-- **A run of a list, and of the executable pass's output**: a run of `ss` from the
-    value-valued `σ` gives a run of `deadDefElimH live ss` from `σ` whose trace corresponds to
-    it event by event (`DDEventRel`) and whose outcome corresponds to its outcome
+/-- **A run of a list, and of the executable pass's output**: a run of `ss`, a list without loops,
+    from the value-valued `σ` gives a run of `deadDefElimH live ss` from `σ` whose trace corresponds
+    to it event by event (`DDEventRel`) and whose outcome corresponds to its outcome
     (`DDOutcomeRel`), for a factory evaluating alike on well-formed stores agreeing on the free
     variables (`deadDefElim_run_rel` for `deadDefElimH`). -/
 theorem deadDefElimH_run_rel (hcong : WellFormedSemanticEvalExprCongr F) (live : List P.Ident)
     {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)} {o : Outcome P}
-    (h : BRun F ss σ evs o) (hC : WellFormedStore σ F) :
+    (h : BRun F ss σ evs o) (hss : Block.noLoops ss = true) (hC : WellFormedStore σ F) :
     ∃ evs' o', BRun F (deadDefElimH live ss) σ evs' o' ∧ List.Rel₂ DDEventRel evs evs' ∧
       DDOutcomeRel o o' :=
-  deadDefElimH_eq live ss ▸ deadDefElim_run_rel hcong live h hC
+  deadDefElimH_eq live ss ▸ deadDefElim_run_rel hcong live h hss hC
 
 
 end

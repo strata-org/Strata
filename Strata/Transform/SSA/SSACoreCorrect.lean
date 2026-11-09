@@ -201,8 +201,6 @@ theorem ssa_overapproximatesTraces (π : String → Option Procedure) (params : 
   obtain rfl : F = F' := hrel.factory.symm
   have hC : WellFormedStore σ₀ F := hwf.storeWellDefined
   have hWB := hwf.bool
-  have hnl : Block.noLoops ss = true :=
-    Block.treeForm_allSubstmts (fun _ => rfl) (fun _ _ _ => rfl) htf
   have hnc : Statements.noCalls ss = true :=
     Block.treeForm_allSubstmts (fun _ => rfl) (fun _ _ _ => rfl) htf
   have hsim := ssaEntry_sim hwf.var hwf.val
@@ -222,14 +220,14 @@ theorem ssa_overapproximatesTraces (π : String → Option Procedure) (params : 
     by_cases htr : trace = []
     · subst htr
       exact ⟨_, [], .refl _, .nil⟩
-    obtain ⟨tr', hw, rfl | hb⟩ := hsim.1 (star_breach_noLoops hnl h' htr)
+    obtain ⟨tr', hw, rfl | hb⟩ := hsim.1 (star_breach h' htr)
     · exact ⟨_, [], .refl _, hw⟩
     obtain ⟨cfg', hc⟩ := breach_star hWB hb
     exact ⟨cfg', tr', star_core π hc, hw⟩
   · have h' := star_evalE h hnc
-    obtain ⟨σL', -, tr', σS', hb, hw⟩ := hsim.2 harm ((star_brun_noLoops hnl).1 h')
+    obtain ⟨σL', -, tr', σS', hb, hw⟩ := hsim.2 harm (star_brun.1 h')
     exact ⟨_, tr', star_core π (brun_star hWB hb), starE_preserves_factory h', hw⟩
-  · obtain ⟨σL', ho, -⟩ := hsim.2 harm ((star_brun_noLoops hnl).2 (star_evalE h hnc))
+  · obtain ⟨σL', ho, -⟩ := hsim.2 harm (star_brun.2 (star_evalE h hnc))
     cases ho
 
 /-- **The executable pass over-approximates traces**: `ssa_overapproximatesTraces` for

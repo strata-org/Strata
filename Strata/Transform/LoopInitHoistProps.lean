@@ -736,6 +736,65 @@ theorem Block.hoistP_initVars_perm {P : PureExpr} [HasFvars P] (ss : List (Stmt 
   termination_by sizeOf ss
 end
 
+mutual
+/-- Lifting a statement keeps its `exit` targets. -/
+theorem Stmt.liftP_labels {P : PureExpr} (s : Stmt P (Cmd P)) :
+    Block.labels (Stmt.liftInitsInLoopBody s).2 = Stmt.labels s := by
+  match s with
+  | .cmd c => cases c <;> simp [Stmt.liftInitsInLoopBody, Block.labels, Stmt.labels]
+  | .block lbl bss md =>
+      simp [Stmt.liftInitsInLoopBody, Block.labels, Stmt.labels, Block.liftP_labels bss]
+  | .ite g tss ess md =>
+      simp [Stmt.liftInitsInLoopBody, Block.labels, Stmt.labels, Block.liftP_labels tss,
+        Block.liftP_labels ess]
+  | .loop g m inv body md => simp [Stmt.liftInitsInLoopBody, Block.labels]
+  | .exit lbl md => simp [Stmt.liftInitsInLoopBody, Block.labels]
+  | .typeDecl t md => simp [Stmt.liftInitsInLoopBody, Block.labels]
+  termination_by sizeOf s
+
+/-- Lifting a block keeps its `exit` targets. -/
+theorem Block.liftP_labels {P : PureExpr} (ss : List (Stmt P (Cmd P))) :
+    Block.labels (Block.liftInitsInLoopBody ss).2 = Block.labels ss := by
+  match ss with
+  | [] => simp [Block.liftInitsInLoopBody, Block.labels]
+  | s :: rest =>
+      simp only [Block.liftInitsInLoopBody, Block.labels_append, Block.labels]
+      rw [Stmt.liftP_labels s, Block.liftP_labels rest]
+  termination_by sizeOf ss
+end
+
+mutual
+/-- Hoisting a statement keeps its `exit` targets. -/
+theorem Stmt.hoistP_labels {P : PureExpr} (s : Stmt P (Cmd P)) :
+    Block.labels (Stmt.hoistLoopPrefixInits s) = Stmt.labels s := by
+  match s with
+  | .cmd c => simp [Stmt.hoistLoopPrefixInits, Block.labels]
+  | .block lbl bss md =>
+      simp [Stmt.hoistLoopPrefixInits, Block.labels, Stmt.labels, Block.hoistP_labels bss]
+  | .ite g tss ess md =>
+      simp [Stmt.hoistLoopPrefixInits, Block.labels, Stmt.labels, Block.hoistP_labels tss,
+        Block.hoistP_labels ess]
+  | .loop g m inv body md =>
+      simp only [Stmt.hoistLoopPrefixInits, Block.labels_append, Block.labels, Stmt.labels,
+        List.append_nil]
+      rw [Block.liftP_labels, Block.hoistP_labels body,
+        show Block.labels (List.map (Stmt.cmd (P := P)) _) = [] from Block.labels_map_cmd id _,
+        List.nil_append]
+  | .exit lbl md => simp [Stmt.hoistLoopPrefixInits, Block.labels]
+  | .typeDecl t md => simp [Stmt.hoistLoopPrefixInits, Block.labels]
+  termination_by sizeOf s
+
+/-- Hoisting a block keeps its `exit` targets. -/
+theorem Block.hoistP_labels {P : PureExpr} (ss : List (Stmt P (Cmd P))) :
+    Block.labels (Block.hoistLoopPrefixInits ss) = Block.labels ss := by
+  match ss with
+  | [] => simp [Block.hoistLoopPrefixInits, Block.labels]
+  | s :: rest =>
+      simp only [Block.hoistLoopPrefixInits, Block.labels_append, Block.labels]
+      rw [Stmt.hoistP_labels s, Block.hoistP_labels rest]
+  termination_by sizeOf ss
+end
+
 /-! ## initTypes multiset preserved by lift and hoist (types analogue).
 
 The type-level counterparts of the `initVars` perm lemmas: hoisting and lifting
@@ -2225,13 +2284,16 @@ theorem blockInitEnvWF {params : InitEnvWFParams}
   have hemb : embedStmts bs = ss := embedStmts_projectStmts hp
   have huniqBase : Block.uniqueInits (C := Cmd Expression) bs :=
     (Imperative.embedStmts_uniqueInits bs).mp (by rwa [hemb])
-  obtain ⟨hwf, hsv, hdefs, hdnr, hres, hdu, hfd, hinit, hty⟩ := blockInitEnvWF_projectBase h hp
+  obtain ⟨hwf, hsv, hdefs, hdnr, hres, hlab, hdu, hfd, hinit, hty⟩ :=
+    blockInitEnvWF_projectBase h hp
   have hdu' : Block.defUseWellFormed (C := Cmd Expression)
       (fun n => (ρ.store n).isSome) params.declaredFuncs
       (Imperative.Block.hoistLoopPrefixInits bs) = Bool.true :=
     Imperative.LoopInitHoistWF.Block.hoistLoopPrefixInits_defUseWellFormed
       bs (fun n => (ρ.store n).isSome) params.declaredFuncs hdu huniqBase
-  refine Core.Logic.BlockInitEnvWF.ofBaseEmbed hwf hsv ?_ ?_ hres hdu' hfd ?_ ?_
+  refine Core.Logic.BlockInitEnvWF.ofBaseEmbed hwf hsv ?_ ?_ hres
+    (by rw [Imperative.LoopInitHoistProducerProps.Block.hoistP_labels]; exact hlab)
+    hdu' hfd ?_ ?_
   · intro n hn
     exact hdefs n ((Imperative.LoopInitHoistProducerProps.Block.hoistP_initVars_perm bs).mem_iff.mp hn)
   · intro n hn

@@ -138,6 +138,9 @@ class LawfulHasVal (P : PureExpr) [HasVal P] where
   /-- Every typed value is a value. -/
   valueOfTy_isVal : ∀ f v ty,
     HasVal.valueOfTy (P := P) f v ty → HasVal.value (P := P) f v
+  /-- Every value has a type. -/
+  value_typed : ∀ f v,
+    HasVal.value (P := P) f v → ∃ ty, HasVal.valueOfTy (P := P) f v ty
   /-- Typed-value membership is congruent across the shared type of a witness:
       if some value `a` has both types `ty₁` and `ty₂`, then any value of type
       `ty₂` is also a value of type `ty₁`. -/
@@ -215,6 +218,7 @@ class HasTyping (P : PureExpr) where
 @[expose] def StoreHasTyping {P : PureExpr} [HasVal P]
     (f : P.Factory) (σ : P.Ident → Option P.Val) (Γ : VarTyping P) : Prop :=
   ∀ x ty, Γ x = some ty → ∃ v, σ x = some v ∧ HasVal.valueOfTy f v ty
+
 
 /-- Extend the typing `Γ` with the typed definitions `defs`; the first definition of a
     name wins. -/
