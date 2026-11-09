@@ -15,6 +15,8 @@ match the procedure's signature with distinct result variables.
 `callError?_eq_none_iff`: `callError?` accepts exactly the calls that satisfy
 `WF.WFcallProp`. `illFormedCalls_eq_nil_iff`: `illFormedCalls` finds nothing exactly
 when every call of the program is well-formed (`Program.callsWellFormed`).
+`WF.WFcallProp.of_argsMatch`: a call to a declared procedure is well-formed
+when its arguments match the signature and its result variables are distinct.
 -/
 
 namespace Core
@@ -94,6 +96,19 @@ theorem callArgsError?_eq_none_iff (procName : String) (proc : Procedure)
   · simp only [h1, ne_eq, not_false_eq_true, ↓reduceIte, reduceCtorEq, false_iff]
     exact fun h => h1 h.1.inputCount
 
+/-- A call to a declared procedure is well-formed when its arguments match the
+    procedure's signature and its result variables are distinct. -/
+theorem WF.WFcallProp.of_argsMatch {p : Program} {procName : String}
+    {proc : Procedure} {args : List (CallArg Expression)}
+    (hfind : Program.Procedure.find? p procName = some proc)
+    (hmatch : WF.ArgsMatchSignature proc args)
+    (hnodup : (CallArg.getLhs args).Nodup) :
+    WF.WFcallProp p procName args := {
+  defined := by simp [hfind]
+  argsMatch := fun h => by rw [hfind] at h; cases h; exact hmatch
+  lhsWF := hnodup
+  wfargs := List.Forall_mem_iff.mpr fun _ _ => ⟨⟩ }
+
 /-- `callError?` accepts exactly the well-formed calls. -/
 theorem callError?_eq_none_iff (p : Program) (procName : String)
     (args : List (CallArg Expression)) :
@@ -108,11 +123,7 @@ theorem callError?_eq_none_iff (p : Program) (procName : String)
     rw [callArgsError?_eq_none_iff]
     constructor
     · intro ⟨hm, hnodup⟩
-      exact {
-        defined := by simp [hfind]
-        argsMatch := fun h => by rw [hfind] at h; cases h; exact hm
-        lhsWF := hnodup
-        wfargs := List.Forall_mem_iff.mpr fun _ _ => ⟨⟩ }
+      exact WF.WFcallProp.of_argsMatch hfind hm hnodup
     · intro h
       exact ⟨h.argsMatch hfind, h.lhsWF⟩
 

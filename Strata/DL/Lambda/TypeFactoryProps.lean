@@ -12,6 +12,8 @@ public import Strata.DL.Lambda.FactoryWF
 import all Strata.DL.Lambda.TypeFactory
 import all Strata.DL.Lambda.LExprTypeEnv
 import all Strata.DL.Lambda.DatatypeWF
+import Strata.DL.Lambda.LTyProps
+import Strata.Util.StringProps
 import Strata.Util.ExceptProps
 import Strata.Util.ListMapProps
 import Strata.Util.ListUtilsProps
@@ -19,7 +21,7 @@ import Strata.Util.StateMProps
 import all Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.FactoryProps
 
-/-! ## Properties of mutual-datatype validation
+/-! ## Properties of mutual-datatype validation and generated functions
 
 Key theorems: `TypeFactory.addMutualBlock_ok_inv` and `LContext.addMutualBlock_ok_inv` (adding
 a block means every check it runs passed), `validateMutualBlock_sound` (a validated block's names
@@ -28,6 +30,10 @@ are distinct and its datatypes share their type parameters),
 datatype parameters and registered arities), `checkConstructorArgsWF_sound` (the constructor-field
 check establishes `ConstrArgWF` for every field), and `checkMutualBlockInhab_sound` (the
 inhabitance check establishes `TySymInhab` for every datatype).
+
+`LContext.addMutualBlock_ok_eq` gives the context that adding a block
+produces. The remaining facts are about the names, argument lists and types of
+the functions a block generates.
 
 ## Properties of the factories generated from datatype declarations
 
@@ -43,6 +49,7 @@ Key theorems: `genBlockFactory_constrsNotBool`, `Factory.ConstrsNotBool.addFacto
 namespace Lambda
 
 open Std (ToFormat Format format)
+open Strata.DL.Util (TyIdentifier)
 
 public section
 
@@ -219,6 +226,17 @@ theorem TypeFactory.addMutualBlock_ok_inv {IDMeta : Type}
   elim_err hdOk
   assumption
 
+/-- Successfully adding a mutual block to the datatype store extends the store
+    by that block. -/
+theorem TypeFactory.addMutualBlock_ok_eq {IDMeta : Type}
+    (t t' : @TypeFactory IDMeta) (block : MutualDatatype IDMeta)
+    (ar : Std.HashMap String Nat)
+    (h : TypeFactory.addMutualBlock t block ar = .ok t') :
+    t' = t.push block := by
+  simp only [TypeFactory.addMutualBlock, bind, Except.bind] at h
+  elim_errs h
+  exact (Except.ok.inj h).symm
+
 /-! ### The type references a constructor field mentions -/
 
 /-- A type mentions exactly the names that its arity list pairs with some argument count. -/
@@ -275,6 +293,35 @@ theorem validateTypeReferences_arities {IDMeta : Type} (t : @TypeFactory IDMeta)
 
 /-! ### Registering a mutual block in a context -/
 
+/-- Successfully adding a mutual block to a context means no datatype of the
+    block is named like a known type, and the new context is the old one with
+    the block added to the datatype store, its generated functions added to the
+    factory, and its datatypes registered as known types. -/
+theorem LContext.addMutualBlock_ok_eq {T : LExprParams} [DecidableEq T.IDMeta]
+    [Inhabited T.IDMeta] [Inhabited T.Metadata] [ToFormat T.IDMeta]
+    (C C' : LContext T) (block : MutualDatatype T.IDMeta)
+    (h : C.addMutualBlock block = .ok C') :
+    (∀ d ∈ block, ¬ C.knownTypes.containsName d.name) ∧
+    ∃ ds fgen fs ks,
+      TypeFactory.addMutualBlock C.datatypes block C.knownTypes = .ok ds ∧
+      genBlockFactory block = .ok fgen ∧ C.functions.addFactory fgen = .ok fs ∧
+      block.foldlM (fun ks (d : LDatatype T.IDMeta) => ks.add d.toKnownType)
+        C.knownTypes = .ok ks ∧
+      C' = { C with datatypes := ds, functions := fs, knownTypes := ks } := by
+  simp only [LContext.addMutualBlock, bind, Except.bind] at h
+  elim_err h with vloop hloop
+  elim_err h with ds hds
+  elim_err h with fgen hfgen
+  elim_err h with fs hfs
+  elim_err h with ks hks
+  simp only [Except.ok.injEq] at h
+  refine ⟨?_, ds, fgen, fs, ks, hds, hfgen, hfs, hks, h.symm⟩
+  intro d hd
+  have hdOk := List.forIn_yield_ok_mem block _ _
+    (fun _ _ => by loop_body_yields) hloop d hd
+  elim_err hdOk
+  assumption
+
 /-- Successfully adding a mutual block to a context means no datatype of the block is named
     like a known type, and the block was added to the context's datatype store. -/
 theorem LContext.addMutualBlock_ok_inv {T : LExprParams} [DecidableEq T.IDMeta]
@@ -283,20 +330,9 @@ theorem LContext.addMutualBlock_ok_inv {T : LExprParams} [DecidableEq T.IDMeta]
     (h : C.addMutualBlock block = .ok C') :
     (∀ d ∈ block, ¬ C.knownTypes.containsName d.name) ∧
     TypeFactory.addMutualBlock C.datatypes block C.knownTypes = .ok C'.datatypes := by
-  simp only [LContext.addMutualBlock, bind, Except.bind] at h
-  elim_err h with vloop hloop
-  elim_err h with ds hds
-  elim_err h with fgen hfgen
-  elim_err h with fs hfs
-  elim_err h with ks hks
-  simp only [Except.ok.injEq] at h
-  subst h
-  refine ⟨?_, hds⟩
-  intro d hd
-  have hdOk := List.forIn_yield_ok_mem block _ _
-    (fun _ _ => by loop_body_yields) hloop d hd
-  elim_err hdOk
-  assumption
+  obtain ⟨hfresh, ds, -, -, -, hds, -, -, -, rfl⟩ :=
+    LContext.addMutualBlock_ok_eq C C' block h
+  exact ⟨hfresh, hds⟩
 
 /-! ### Positivity, uniformity and non-nesting of constructor field types
 
@@ -676,6 +712,203 @@ theorem checkMutualBlockInhab_sound (adts : @TypeFactory Unit) (block : MutualDa
   refine Eq.trans (congrArg Prod.fst (hcongr _ _ ?_)) hnone
   intro x e
   cases x <;> rfl
+
+/-! ### The generated names and argument lists -/
+
+/-- `freshTypeArgs` returns distinct names. -/
+theorem freshTypeArgs_nodup (n : Nat) (l : List TyIdentifier) :
+    (freshTypeArgs n l).Nodup := by
+  simp only [freshTypeArgs]
+  exact List.Nodup.sublist (List.take_sublist _ _)
+    (List.Nodup.sublist List.filter_sublist
+      (String.nodup_map_append_toString elimTyPrefix _))
+
+/-- `freshTypeArgs n l` avoids every name in `l`. -/
+theorem freshTypeArgs_not_mem (n : Nat) (l : List TyIdentifier) :
+    ∀ v ∈ freshTypeArgs n l, v ∉ l := by
+  intro v hv
+  simp only [freshTypeArgs] at hv
+  have hfilter := List.mem_of_mem_take hv
+  rw [List.mem_filter] at hfilter
+  simpa using hfilter.2
+
+/-- Every name `freshTypeArgs` returns is `elimTyPrefix` followed by an
+    index. -/
+theorem freshTypeArgs_mem_elimTyPrefix (n : Nat) (l : List TyIdentifier) :
+    ∀ v ∈ freshTypeArgs n l, ∃ i : Nat, v = elimTyPrefix ++ toString i := by
+  intro v hv
+  simp only [freshTypeArgs] at hv
+  have hfilter := List.mem_of_mem_take hv
+  rw [List.mem_filter] at hfilter
+  obtain ⟨i, _, hiv⟩ := List.mem_map.mp hfilter.1
+  exact ⟨i, hiv.symm⟩
+
+/-- `freshTypeArgs n l` returns `n` names. -/
+theorem freshTypeArgs_length (n : Nat) (l : List TyIdentifier) :
+    (freshTypeArgs n l).length = n := by
+  have hbound : ∀ xs : List TyIdentifier, xs.Nodup → xs.length = l.length + n →
+      (List.take n (xs.filter (fun t => decide ¬(t ∈ l)))).length = n := by
+    intro xs hnd hlen
+    have hb := List.length_filter_ge_of_nodup xs l hnd
+      (fun t => decide ¬(t ∈ l)) (by simp)
+    rw [List.length_take]
+    omega
+  simp only [freshTypeArgs]
+  exact hbound _ (String.nodup_map_append_toString elimTyPrefix _) (by simp)
+
+/-- Generated argument names are distinct. -/
+private theorem genArgNames_names_nodup {IDMeta : Type} [Inhabited IDMeta]
+    (n : Nat) :
+    List.Nodup ((genArgNames (IDMeta := IDMeta) n).map (·.name)) := by
+  simp only [genArgNames, List.map_map]
+  exact String.nodup_map_append_toString exprPrefix n
+
+/-- `genArgNames n` returns `n` names. -/
+private theorem genArgNames_length {IDMeta : Type} [Inhabited IDMeta]
+    (n : Nat) : (genArgNames (IDMeta := IDMeta) n).length = n := by
+  simp only [genArgNames, List.length_map, List.length_range]
+
+/-- Pairing each block constructor with its datatype's index gives
+    `blockConstrCount block` pairs. -/
+theorem length_blockConstrs {IDMeta : Type} (block : MutualDatatype IDMeta) :
+    ((block.mapIdx (fun dtIdx d =>
+        d.constrs.map (fun c => (dtIdx, c)))).flatten).length
+      = blockConstrCount block := by
+  suffices hgen : ∀ (f : Nat → LDatatype IDMeta → List (Nat × LConstr IDMeta)),
+      (∀ i d, (f i d).length = d.constrs.length) →
+      (block.mapIdx f).flatten.length
+        = List.foldl (fun acc (d : LDatatype IDMeta) => acc + d.constrs.length)
+            0 block by
+    exact hgen _ (by intro i d; simp)
+  induction block with
+  | nil => intro _ _; simp
+  | cons d rest ih =>
+    intro f hf
+    rw [List.mapIdx_cons, List.flatten_cons, List.length_append,
+      ih (fun i => f (i + 1)) (fun i e => hf (i + 1) e), hf 0 d,
+      List.foldl_cons, List.foldl_add_start _ rest (0 + d.constrs.length)]
+    omega
+
+/-! ### Projection names -/
+
+/-- Each projection of a constructor is named after its field, under the
+    datatype's name. -/
+theorem destructorFuncs_names {T : LExprParams} [BEq T.Identifier]
+    [Inhabited T.IDMeta] [Inhabited T.Metadata] (d : LDatatype T.IDMeta)
+    (c : LConstr T.IDMeta) :
+    ((destructorFuncs (T := T) d c).map (fun f => f.name.name))
+      = (c.args.map (fun p => p.1.name)).map
+          (fun s => d.name ++ destructorSeparator ++ s) := by
+  rw [List.map_map]
+  simp only [destructorFuncs]
+  have hidx : ∀ i j (p : Identifier T.IDMeta × LMonoTy),
+      (mkDestructorFunc (T := T) d c i p.1 p.2 true).name.name =
+        (mkDestructorFunc (T := T) d c j p.1 p.2 true).name.name := by
+    intro i j p
+    rfl
+  rw [List.map_mapIdx_ignore_index c.args (fun f : LFunc T => f.name.name) _
+    hidx]
+  refine List.map_congr_left ?_
+  intro p _
+  rfl
+
+/-! ### The datatype's own type -/
+
+/-- A datatype applied to its own type parameters has exactly those parameters
+    free. -/
+theorem freeVars_dataDefault {IDMeta : Type} (d : LDatatype IDMeta) :
+    LMonoTy.freeVars (dataDefault d) = d.typeArgs := by
+  simp only [dataDefault, data, LMonoTy.freeVars]
+  exact freeVars_map_ftvar _
+
+/-! ### Type variables of the eliminator's type -/
+
+/-- Replacing recursive occurrences by return-type variables adds only
+    return-type variables to the type's variables. -/
+private theorem freeVars_genRecTy {IDMeta : Type}
+    (block : MutualDatatype IDMeta) (retTyVars : List TyIdentifier)
+    (ty r : LMonoTy)
+    (hgen : genRecTy block retTyVars ty = some r) :
+    ∀ v ∈ LMonoTy.freeVars r, v ∈ retTyVars ∨ v ∈ LMonoTy.freeVars ty := by
+  fun_induction genRecTy block retTyVars ty generalizing r
+  case case1 =>
+    simp only [Option.map_eq_some_iff] at hgen
+    obtain ⟨w, hw, hrw⟩ := hgen
+    rw [← hrw]
+    intro v hv
+    simp only [LMonoTy.freeVars, List.mem_singleton] at hv
+    subst hv
+    exact Or.inl (List.mem_of_getElem? hw)
+  case case2 =>
+    rename_i t1 t2 hfind ih1
+    simp only [Option.map_eq_some_iff] at hgen
+    obtain ⟨r2, hr2, hrEq⟩ := hgen
+    subst hrEq
+    rw [← LMonoTy.arrow]
+    intro v hv
+    simp only [freeVars_arrow, List.mem_append] at hv
+    rcases hv with hv1 | hv2
+    · refine Or.inr ?_
+      simp only [freeVars_arrow, List.mem_append]
+      exact Or.inl hv1
+    · rcases ih1 r2 hr2 v hv2 with h1 | h2
+      · exact Or.inl h1
+      · refine Or.inr ?_
+        simp only [freeVars_arrow, List.mem_append]
+        exact Or.inr h2
+  case case3 => exact absurd hgen (by simp)
+
+/-- Each (index, constructor) pair in the block's constructor listing has an
+    in-range index whose datatype has that constructor. -/
+theorem mem_blockConstrs {IDMeta : Type} (block : MutualDatatype IDMeta)
+    (dtIdx : Nat) (c : LConstr IDMeta)
+    (h : (dtIdx, c) ∈
+      (block.mapIdx (fun i d => d.constrs.map (fun c => (i, c)))).flatten) :
+    ∃ hlt : dtIdx < block.length, c ∈ (block[dtIdx]'hlt).constrs := by
+  simp only [List.mem_flatten, List.mem_mapIdx] at h
+  obtain ⟨_, ⟨i, hi, rfl⟩, hp⟩ := h
+  obtain ⟨c', hc', ⟨⟩⟩ := List.mem_map.mp hp
+  exact ⟨hi, hc'⟩
+
+/-- When the datatype index has a return-type variable, the type variables of
+    an eliminator case argument's type lie in any set containing the
+    return-type variables and the constructor's field-type variables. -/
+theorem freeVars_elimTy_subset {IDMeta : Type} (block : MutualDatatype IDMeta)
+    (retTyVars : List TyIdentifier) (dtIdx : Nat) (c : LConstr IDMeta)
+    (S : List TyIdentifier)
+    (hret : ∀ v ∈ retTyVars, v ∈ S) (hlt : dtIdx < retTyVars.length)
+    (hargs : ∀ arg ∈ c.args, ∀ v ∈ LMonoTy.freeVars arg.2, v ∈ S) :
+    ∀ v ∈ LMonoTy.freeVars (elimTy block retTyVars dtIdx c), v ∈ S := by
+  have hout : ∀ v ∈ LMonoTy.freeVars
+      ((retTyVars[dtIdx]?.map LMonoTy.ftvar).getD (.ftvar "")), v ∈ S := by
+    rw [List.getElem?_eq_getElem hlt]
+    intro v hv
+    simp only [Option.map_some, Option.getD_some, LMonoTy.freeVars,
+      List.mem_singleton] at hv
+    subst hv
+    exact hret _ (List.getElem_mem hlt)
+  simp only [elimTy]
+  split
+  · exact hout
+  · refine freeVars_mkArrow'_subset _ _ S hout ?_
+    intro t ht
+    rcases List.mem_append.mp ht with hfield | hrec
+    · obtain ⟨arg, harg, hargEq⟩ := List.mem_map.mp hfield
+      rw [← hargEq]
+      exact hargs arg harg
+    · obtain ⟨arg, harg, hgen⟩ := List.mem_filterMap.mp hrec
+      intro v hv
+      rcases freeVars_genRecTy block retTyVars arg.2 t hgen v hv with h1 | h2
+      · exact hret v h1
+      · exact hargs arg harg v h2
+
+/-- A name made of `elimTyPrefix` followed by a number never starts with
+    `genTyPrefix`, the prefix of the type checker's fresh type variables. -/
+theorem genTyPrefix_not_prefix_elimTyName (i : Nat) :
+    genTyPrefix.toList.isPrefixOf (elimTyPrefix ++ toString i).toList
+      = false := by
+  rw [String.toList_append]
+  simp [genTyPrefix, elimTyPrefix, List.isPrefixOf]
 
 end
 

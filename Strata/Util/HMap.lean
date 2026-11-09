@@ -252,6 +252,19 @@ public theorem find?_mem_values [LawfulBEq α] [LawfulHashable α]
     (m : HMap α β) (h : m.find? k = some v) : v ∈ m.values :=
   (mem_values_iff_find? m v).mpr ⟨k, h⟩
 
+/-- Looking up in an `ofList` map agrees with scanning the reversed source
+    list. -/
+public theorem find?_ofList_findSome? [LawfulBEq α] [LawfulHashable α]
+    (l : List (α × β)) (k : α) :
+    HMap.find? (HMap.ofList l) k =
+      List.findSome? (fun p => if p.1 == k then some p.2 else none)
+        l.reverse := by
+  simp only [find?, ofList, Std.HashMap.get?_eq_getElem?,
+    Std.HashMap.ofList_eq_insertMany_empty,
+    Std.HashMap.getElem?_insertMany_list,
+    Std.HashMap.getElem?_empty, Option.or_none]
+  rw [List.findSomeRev?_eq_findSome?_reverse]
+
 /-- Value-mapping the source list commutes with `find?` on `ofList`: building the
     map from a list whose values have been transformed by `f` is the same as
     transforming the found value through `f`. -/
@@ -259,20 +272,39 @@ public theorem find?_ofList_map_snd [LawfulBEq α] [LawfulHashable α]
     (l : List (α × β)) (f : β → γ) (k : α) :
     HMap.find? (HMap.ofList (l.map (fun p => (p.1, f p.2)))) k =
       (HMap.find? (HMap.ofList l) k).map f := by
-  simp only [find?, ofList, Std.HashMap.get?_eq_getElem?,
-    Std.HashMap.ofList_eq_insertMany_empty, Std.HashMap.getElem?_insertMany_list,
-    Std.HashMap.getElem?_empty, Option.or_none]
-  rw [List.findSomeRev?_eq_findSome?_reverse, List.findSomeRev?_eq_findSome?_reverse,
-    ← List.map_reverse]
-  generalize l.reverse = l'
-  induction l' with
-  | nil => simp
-  | cons p rest ih =>
-    obtain ⟨a, b⟩ := p
-    simp only [List.map_cons, List.findSome?_cons]
-    by_cases hk : (a == k) = true
-    · simp only [hk, ite_true, Option.map_some]
-    · simp only [hk, Bool.false_eq_true, ite_false, ih]
+  simp [find?_ofList_findSome?, ← List.map_reverse, List.findSome?_map,
+    Function.comp_def, List.map_findSome?, apply_ite]
+
+/-- If `p k v` holds for every entry `(k, v)` the map stores, then `all p`
+    holds. -/
+public theorem all_of_forall_find? [LawfulBEq α] [LawfulHashable α]
+    {m : HMap α β} {p : α → β → Bool}
+    (h : ∀ k v, m.find? k = some v → p k v = true) : m.all p = true := by
+  simp only [all, Std.HashMap.all_eq_true_iff_forall_mem_getElem]
+  intro k hk
+  refine h k _ ?_
+  simp only [find?, Std.HashMap.get?_eq_getElem?]
+  exact Std.HashMap.getElem?_eq_some_getElem hk
+
+/-- A predicate that holds for every stored value holds for the whole map. -/
+public theorem all_of_values [LawfulBEq α] [LawfulHashable α]
+    {m : HMap α β} {p : β → Bool} (h : ∀ v ∈ m.values, p v = true) :
+    m.all (fun _ v => p v) = true := by
+  refine all_of_forall_find? fun k v hkv => h v ?_
+  simp only [find?, Std.HashMap.get?_eq_getElem?] at hkv
+  simp only [values, toList, List.mem_map]
+  exact ⟨(k, v), Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hkv, rfl⟩
+
+/-- A map built from a one-element list is the single-entry map. -/
+public theorem ofList_singleton (a : α) (b : β) :
+    HMap.ofList [(a, b)] = HMap.single a b := by
+  simp only [ofList, single, insert, empty, Std.HashMap.ofList_singleton]
+  rfl
+
+/-- Unioning with `empty` on the right is the identity. -/
+public theorem union_empty (m : HMap α β) :
+    m.union HMap.empty = m := by
+  simp only [union, empty, Std.HashMap.isEmpty_emptyWithCapacity, ite_true]
 
 /-- Every value of `HMap.ofList l` comes from a value in `l`. -/
 public theorem mem_values_ofList [LawfulBEq α] [LawfulHashable α]
