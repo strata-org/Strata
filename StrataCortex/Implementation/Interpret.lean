@@ -68,7 +68,7 @@ def interpretLaurel (program : LaurelProgram) (fuel : Nat := 10000) :
     let mut out : Array Message := #[]
     let mut seen : Std.HashSet Message := {}
     let mut errors : Array String := #[]
-    for p in m.program.procedures do
+    for p in m.procedures do
       unless isEntry p do continue
       match runEntry m fuel p with
       | .error e => errors := errors.push s!"'{p.name}': {cortexStopMessage e}"

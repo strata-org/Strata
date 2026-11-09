@@ -7,6 +7,8 @@ module
 
 public import Strata.DL.Imperative.Procedure
 public import Strata.Languages.Core.Expressions
+public import Strata.DL.Lambda.TypeConstructor
+public import Strata.DL.Lambda.TypeFactory
 
 namespace Cortex
 
@@ -76,26 +78,40 @@ structure Procedure where
   body : Option Body
   md : MD := .empty
 
-structure Program where
+structure UnorderedProgram where
   composites : List CompositeDecl
   constrained : List ConstrainedDecl := []
   globals : List (Core.Expression.Ident × Core.Expression.Ty) := []
   globalInit : List (Cmd Core.Expression) := []
+  datatypes : List (Lambda.LDatatype Unit) := []
+  opaqueTypes : List TypeConstructor := []
   procedures : List Procedure
 
-@[expose] def Program.findComposite? (p : Program) (n : TypeName) : Option CompositeDecl :=
+inductive OrderedDecl where
+  | datatypes (ds : List (Lambda.LDatatype Unit))
+  | opaqueType (tc : TypeConstructor)
+  | procedure (p : Procedure)
+
+structure OrderedProgram where
+  decls : List OrderedDecl
+
+inductive Program where
+  | unordered (p : UnorderedProgram)
+  | ordered (p : OrderedProgram)
+
+@[expose] def UnorderedProgram.findComposite? (p : UnorderedProgram) (n : TypeName) : Option CompositeDecl :=
   p.composites.find? (·.name == n)
 
-@[expose] def Program.findProcedure? (p : Program) (n : ProcName) : Option Procedure :=
+@[expose] def UnorderedProgram.findProcedure? (p : UnorderedProgram) (n : ProcName) : Option Procedure :=
   p.procedures.find? (·.name == n)
 
-@[expose] def Program.findField? (p : Program) (f : FieldRef) : Option FieldDecl :=
+@[expose] def UnorderedProgram.findField? (p : UnorderedProgram) (f : FieldRef) : Option FieldDecl :=
   (p.findComposite? f.owner).bind fun c => c.fields.find? (·.name == f.field)
 
-@[expose] def Program.parents (p : Program) (n : TypeName) : List TypeName :=
+@[expose] def UnorderedProgram.parents (p : UnorderedProgram) (n : TypeName) : List TypeName :=
   ((p.findComposite? n).map (·.extending)).getD []
 
-@[expose] def Program.isSubtype (p : Program) (sub sup : TypeName) : Bool :=
+@[expose] def UnorderedProgram.isSubtype (p : UnorderedProgram) (sub sup : TypeName) : Bool :=
   go (p.composites.length + 1) [sub]
 where
   go : Nat → List TypeName → Bool
@@ -105,7 +121,7 @@ where
 
 @[expose] def implName (c : TypeName) (method : String) : ProcName := s!"{c}${method}"
 
-@[expose] def Program.ancestors (p : Program) (n : TypeName) : List TypeName :=
+@[expose] def UnorderedProgram.ancestors (p : UnorderedProgram) (n : TypeName) : List TypeName :=
   go (p.composites.length + 1) (p.parents n).eraseDups []
 where
   go : Nat → List TypeName → List TypeName → List TypeName
@@ -115,23 +131,23 @@ where
       let seen := seen ++ frontier.filter (!seen.contains ·)
       go fuel ((frontier.flatMap p.parents).eraseDups.filter (!seen.contains ·)) seen
 
-@[expose] def Program.overriders (p : Program) (owner : TypeName) (method : String) : List TypeName :=
+@[expose] def UnorderedProgram.overriders (p : UnorderedProgram) (owner : TypeName) (method : String) : List TypeName :=
   let ds := p.composites.filter fun c =>
     c.name != owner && (p.ancestors c.name).contains owner &&
       (p.findProcedure? (implName c.name method)).isSome
   (ds.map (·.name)).mergeSort fun a b => (p.ancestors a).length ≥ (p.ancestors b).length
 
-@[expose] def Program.dispatch (p : Program) (owner : TypeName) (method : String) (dyn : TypeName) :
+@[expose] def UnorderedProgram.dispatch (p : UnorderedProgram) (owner : TypeName) (method : String) (dyn : TypeName) :
     ProcName :=
   match (p.overriders owner method).find? (p.isSubtype dyn ·) with
   | some d => implName d method
   | none => implName owner method
 
-@[expose] def Program.virtualTargets (p : Program) (owner : TypeName) (method : String) :
+@[expose] def UnorderedProgram.virtualTargets (p : UnorderedProgram) (owner : TypeName) (method : String) :
     List ProcName :=
   implName owner method :: (p.overriders owner method).map (implName · method)
 
-@[expose] def IRCmd.callees (p : Program) : IRCmd → List ProcName
+@[expose] def IRCmd.callees (p : UnorderedProgram) : IRCmd → List ProcName
   | .call _ q _ _ => [q]
   | .virtualCall _ o m _ _ => p.virtualTargets o m
   | _ => []
@@ -140,21 +156,21 @@ where
   | .virtualCall .. => true
   | _ => false
 
-@[expose] def Program.hasVirtualCall (p : Program) : Bool :=
+@[expose] def UnorderedProgram.hasVirtualCall (p : UnorderedProgram) : Bool :=
   p.procedures.any fun pr => match pr.body with
     | some b => b.cfg.blocks.any fun (_, blk) => blk.cmds.any IRCmd.isVirtualCall
     | none => false
 
-@[expose] def Handler.catches (p : Program) (h : Handler) (ty : TypeName) : Bool :=
+@[expose] def Handler.catches (p : UnorderedProgram) (h : Handler) (ty : TypeName) : Bool :=
   match h.catchType with
   | none => true
   | some c => p.isSubtype ty c
 
-@[expose] def Body.handlerFor? (p : Program) (b : Body) (l : Label) (ty : TypeName) :
+@[expose] def Body.handlerFor? (p : UnorderedProgram) (b : Body) (l : Label) (ty : TypeName) :
     Option Handler :=
   b.handlers.find? fun h => h.covered.contains l && h.catches p ty
 
-@[expose] def Body.checkHandlers (p : Program) (b : Body) : Except String Unit := do
+@[expose] def Body.checkHandlers (p : UnorderedProgram) (b : Body) : Except String Unit := do
   let labels := b.cfg.labels
   for h in b.handlers do
     unless labels.contains h.target do
@@ -166,7 +182,7 @@ where
       unless (p.findComposite? t).isSome do
         throw s!"exception handler catches unknown type '{t}'"
 
-@[expose] def Program.checkHandlers (p : Program) : Except String Unit :=
+@[expose] def UnorderedProgram.checkHandlers (p : UnorderedProgram) : Except String Unit :=
   p.procedures.forM fun proc => match proc.body with
     | some b => b.checkHandlers p
     | none => pure ()

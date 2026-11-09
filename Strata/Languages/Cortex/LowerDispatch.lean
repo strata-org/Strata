@@ -48,7 +48,7 @@ def chain (origin : Label) (lhs : List Core.Expression.Ident) (owner : TypeName)
                     transfer := .condGoto (mkFvar testVar) yes next md }
     return test
 
-partial def splitBlock (prog : Program) (origin label : Label) (pre : Array IRCmd) :
+partial def splitBlock (prog : UnorderedProgram) (origin label : Label) (pre : Array IRCmd) :
     List IRCmd → DetTransferCmd Label Core.Expression → M Unit
   | [], tr => addBlock label { cmds := pre.toList, transfer := tr }
   | c :: cs, tr =>
@@ -63,7 +63,7 @@ partial def splitBlock (prog : Program) (origin label : Label) (pre : Array IRCm
         splitBlock prog origin join #[] cs tr
     | _ => splitBlock prog origin label (pre.push c) cs tr
 
-def lowerBody (prog : Program) (b : Body) : Body :=
+def lowerBody (prog : UnorderedProgram) (b : Body) : Body :=
   let act : M Unit := do
     for (l, blk) in b.cfg.blocks do
       splitBlock prog l l #[] blk.cmds blk.transfer
@@ -76,11 +76,10 @@ def lowerBody (prog : Program) (b : Body) : Body :=
     { h with covered := h.covered ++ (st.added.toList.filter fun (o, _) => h.covered.contains o).map (·.2) }
   { cfg := { entry, blocks := (entry, init) :: st.blocks.toList }, handlers }
 
-def run (m : Module) : Except String Module :=
-  let prog := m.program
-  .ok (m.mapProcedures fun p => { p with body := p.body.map (lowerBody prog) })
+def run (prog : UnorderedProgram) : Except String UnorderedProgram :=
+  .ok (prog.mapProcedures fun p => { p with body := p.body.map (lowerBody prog) })
 
-def pass : Pass := { name := "LowerDispatch", run }
+def pass : Pass := Pass.onUnordered "LowerDispatch" run
 
 end
 

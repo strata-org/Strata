@@ -196,6 +196,28 @@ procedure wildcardFrame(n: Node)
 #eval testCortexVerification <|
 #strata
 program Laurel;
+composite Err {}
+procedure mk(e0: Err) throws (e: Err) opaque
+//        ^^ not-yet-implemented: Cortex does not support the contract of procedure 'mk'
+  throwsOn false { }
+{ throw e0 };
+#end
+
+#eval testCortexVerification <|
+#strata
+program Laurel;
+composite Err {}
+procedure mk(e0: Err) throws (e: Err) opaque
+//        ^^ not-yet-implemented: Cortex does not support the contract of procedure 'mk'
+  throwsOn true { ensures e == e0 }
+{ throw e0 };
+procedure caller(x: Err) opaque
+{ try { mk(x) } catch err { assert err == x } };
+#end
+
+#eval testCortexVerification <|
+#strata
+program Laurel;
 composite Node { var v: int }
 
 procedure wildcardFrame(n: Node)

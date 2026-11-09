@@ -123,13 +123,13 @@ def lowerProcedure (throwing : Std.HashMap String String) (p : Procedure) : Proc
     else p.outputs
   { p with outputs, throws := none, body := p.body.map (lowerBody throwing procThrows) }
 
-def run (m : Module) : Except String Module := do
-  m.refuseVirtualCalls "LowerExceptions"
-  let throwing : Std.HashMap String String := m.program.procedures.foldl
+def run (prog : UnorderedProgram) : Except String UnorderedProgram := do
+  prog.refuseVirtualCalls "LowerExceptions"
+  let throwing : Std.HashMap String String := prog.procedures.foldl
     (fun s p => match p.throws with | some t => s.insert p.name t | none => s) {}
-  .ok (m.mapProcedures (lowerProcedure throwing))
+  .ok (prog.mapProcedures (lowerProcedure throwing))
 
-def pass : Pass := { name := "LowerExceptions", run }
+def pass : Pass := Pass.onUnordered "LowerExceptions" run
 
 end
 

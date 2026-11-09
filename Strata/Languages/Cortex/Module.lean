@@ -17,13 +17,15 @@ open Imperative Lambda
 abbrev LBlock := DetBlock Label IRCmd Core.Expression
 abbrev LCFG := DetCFG Core.Expression IRCmd
 
-structure Module where
-  program : Program
-  decls : List Core.Decl := []
-
 structure Pass where
   name : String
-  run : Module → Except String Module
+  run : Program → Except String Program
+
+def Pass.onUnordered (name : String) (run : UnorderedProgram → Except String UnorderedProgram) : Pass where
+  name
+  run
+    | .unordered p => .unordered <$> run p
+    | .ordered _ => .error s!"Internal error: pass '{name}' cannot run on an ordered Cortex program"
 
 def mkFvar (n : String) : Expr := .fvar () ⟨n, ()⟩ none
 def mkOp (n : String) : Expr := .op () ⟨n, ()⟩ none
@@ -101,7 +103,7 @@ def mapBlock (h : IRCmd → List IRCmd) (g : Expr → Expr) (b : LBlock) : LBloc
 def mapBody (h : IRCmd → List IRCmd) (g : Expr → Expr) (b : Body) : Body :=
   { b with cfg := { b.cfg with blocks := b.cfg.blocks.map fun (l, blk) => (l, mapBlock h g blk) } }
 
-def mapProgramTys (f : String → Option LMonoTy) (p : Program) : Program :=
+def mapProgramTys (f : String → Option LMonoTy) (p : UnorderedProgram) : UnorderedProgram :=
   let t := mapLTy f
   let g := mapExprTys f
   let params := fun (ps : List (Core.Expression.Ident × LTy)) => ps.map fun (x, ty) => (x, t ty)
@@ -125,24 +127,14 @@ def mapDatatypeTys (f : String → Option LMonoTy) (dt : LDatatype Unit) : LData
   constrs := dt.constrs.map (mapConstrTys f)
   constrs_ne := by have := dt.constrs_ne; simpa using this
 
-def mapDeclTys (f : String → Option LMonoTy) : Core.Decl → Core.Decl
-  | .type (.data dts) md =>
-    .type (.data (dts.map (mapDatatypeTys f))) md
-  | .func fn md =>
-    .func { fn with
-      inputs := fn.inputs.map fun (n, ty) => (n, mapMonoTy f ty)
-      output := mapMonoTy f fn.output
-      body := fn.body.map (mapExprTys f) } md
-  | d => d
+def UnorderedProgram.mapTys (f : String → Option LMonoTy) (p : UnorderedProgram) : UnorderedProgram :=
+  { mapProgramTys f p with datatypes := p.datatypes.map (mapDatatypeTys f) }
 
-def Module.mapTys (f : String → Option LMonoTy) (m : Module) : Module :=
-  { program := mapProgramTys f m.program, decls := m.decls.map (mapDeclTys f) }
+def UnorderedProgram.mapProcedures (f : Procedure → Procedure) (p : UnorderedProgram) : UnorderedProgram :=
+  { p with procedures := p.procedures.map f }
 
-def Module.mapProcedures (f : Procedure → Procedure) (m : Module) : Module :=
-  { m with program := { m.program with procedures := m.program.procedures.map f } }
-
-def Module.refuseVirtualCalls (m : Module) (pass : String) : Except String Unit :=
-  if m.program.hasVirtualCall then .error s!"Cortex `virtualCall` must be lowered by LowerDispatch before {pass}"
+def UnorderedProgram.refuseVirtualCalls (p : UnorderedProgram) (pass : String) : Except String Unit :=
+  if p.hasVirtualCall then .error s!"Cortex `virtualCall` must be lowered by LowerDispatch before {pass}"
   else .ok ()
 
 def Body.maxFresh (b : Body) : Nat := b.cfg.blocks.length

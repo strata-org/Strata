@@ -60,12 +60,12 @@ def directEff (gs : List String) (p : Procedure) : Eff :=
     let writes := gs.filter fun g => cmds.any fun c => (cmdWrites c).contains g
     { reads, writes }
 
-def calleesOf (prog : Program) (p : Procedure) : List String :=
+def calleesOf (prog : UnorderedProgram) (p : Procedure) : List String :=
   match p.body with
   | none => []
   | some b => b.cfg.blocks.flatMap fun (_, blk) => blk.cmds.flatMap (IRCmd.callees prog)
 
-def effects (prog : Program) : Std.HashMap String Eff := Id.run do
+def effects (prog : UnorderedProgram) : Std.HashMap String Eff := Id.run do
   let gs := prog.globals.map (·.1.name)
   let mut eff : Std.HashMap String Eff := prog.procedures.foldl (fun m p => m.insert p.name (directEff gs p)) {}
   let mut changed := true
@@ -93,10 +93,9 @@ def isEntry (p : Procedure) : Bool :=
   | some { value := .switch true, .. } => true
   | _ => false
 
-def run (m : Module) : Except String Module :=
-  let prog := m.program
-  if prog.globals.isEmpty then .ok m else do
-  m.refuseVirtualCalls "LowerGlobals"
+def run (prog : UnorderedProgram) : Except String UnorderedProgram :=
+  if prog.globals.isEmpty then .ok prog else do
+  prog.refuseVirtualCalls "LowerGlobals"
   let eff := effects prog
   let gty := fun (g : String) => ((prog.globals.find? (·.1.name == g)).map (·.2)).getD (mono .int)
   let order := prog.globals.map (·.1.name)
@@ -117,9 +116,9 @@ def run (m : Module) : Except String Module :=
       inputs := p.inputs ++ (insOf p.name).map fun g => (ident g, gty g)
       outputs := p.outputs ++ (outsOf p.name).map fun g => (ident g, gty g)
       body := p.body.map (mapBody lowerCmd id) }
-  .ok { m with program := { prog with procedures := procs, globals := [], globalInit := [] } }
+  .ok { prog with procedures := procs, globals := [], globalInit := [] }
 
-def pass : Pass := { name := "LowerGlobals", run }
+def pass : Pass := Pass.onUnordered "LowerGlobals" run
 
 end
 

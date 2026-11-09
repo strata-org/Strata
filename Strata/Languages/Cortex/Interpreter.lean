@@ -91,7 +91,7 @@ class Effects (m : Type → Type) where
   | .const _ (.intConst _) => true
   | _ => false
 
-@[expose] def isRefTy (prog : Program) (ty : Core.Expression.Ty) : Bool :=
+@[expose] def isRefTy (prog : UnorderedProgram) (ty : Core.Expression.Ty) : Bool :=
   match (ty : LTy) with
   | .forAll [] (.tcons n []) => n.startsWith "$Any" || (prog.findComposite? n).isSome
   | _ => false
@@ -102,7 +102,7 @@ class Effects (m : Type → Type) where
     | some a, some b => a == b
     | _, _ => false
 
-@[expose] def hasType (prog : Program) (f : LFactory) (v : Expr) (ty : Core.Expression.Ty) : Bool :=
+@[expose] def hasType (prog : UnorderedProgram) (f : LFactory) (v : Expr) (ty : Core.Expression.Ty) : Bool :=
   coreHasType f v ty || (isRefTy prog ty && isRefExpr v && isValue f v) ||
     (isValue f v &&
       match _h : Factory.callOfLFunc f v true, (ty : LTy) with
@@ -160,11 +160,11 @@ variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
 @[expose] def setVar (σ : Store) (x : Core.Expression.Ident) (v : Expr) : m (Store) :=
   if (σ x).isSome then pure (σ.update x v) else throw .variableNotDefined
 
-@[expose] def chooseTyped (prog : Program) (f : LFactory) (ty : Core.Expression.Ty) : m Expr := do
+@[expose] def chooseTyped (prog : UnorderedProgram) (f : LFactory) (ty : Core.Expression.Ty) : m Expr := do
   let v ← Effects.choose f ty
   if hasType prog f v ty then pure v else throw .illTypedValue
 
-@[expose] def storedTyOk (prog : Program) (f : LFactory) (σ : Store) (x : Core.Expression.Ident) (v : Expr) : Bool :=
+@[expose] def storedTyOk (prog : UnorderedProgram) (f : LFactory) (σ : Store) (x : Core.Expression.Ident) (v : Expr) : Bool :=
   match σ x with
   | some prev =>
     match typeOf? f prev with
@@ -172,7 +172,7 @@ variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
     | none => false
   | none => false
 
-@[expose] def evalBaseCmd (prog : Program) (f : LFactory) (σ : Store) (tys : Core.Expression.Ident → Option Core.Expression.Ty) :
+@[expose] def evalBaseCmd (prog : UnorderedProgram) (f : LFactory) (σ : Store) (tys : Core.Expression.Ident → Option Core.Expression.Ty) :
     Cmd Core.Expression → m (Store)
   | .init x ty (.det e) _ => do
     let v ← evalExpr f σ e
@@ -201,11 +201,11 @@ variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
     | some o => pure (a, o)
     | none => throw .danglingReference
 
-@[expose] def objectFieldRefs (prog : Program) (ty : TypeName) : List FieldRef :=
+@[expose] def objectFieldRefs (prog : UnorderedProgram) (ty : TypeName) : List FieldRef :=
   prog.composites.flatMap fun c =>
     if prog.isSubtype ty c.name then c.fields.map fun fd => ⟨c.name, fd.name⟩ else []
 
-@[expose] def chooseFields (prog : Program) (f : LFactory) :
+@[expose] def chooseFields (prog : UnorderedProgram) (f : LFactory) :
     List FieldRef → m (List (FieldRef × Expr))
   | [] => pure []
   | r :: rs => do
@@ -216,7 +216,7 @@ variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
       pure ((r, v) :: vs)
     | none => throw (.unknownField r)
 
-@[expose] def freshObject (prog : Program) (f : LFactory) (ty : TypeName) : m (Obj) := do
+@[expose] def freshObject (prog : UnorderedProgram) (f : LFactory) (ty : TypeName) : m (Obj) := do
   let vals ← chooseFields prog f (objectFieldRefs prog ty)
   pure { type := ty
          fields := fun r =>
@@ -256,14 +256,14 @@ variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
     updateStates σ' xs vs
   | _, _ => throw .arityMismatch
 
-@[expose] def chooseValues (prog : Program) (f : LFactory) : List Core.Expression.Ty → m (List Expr)
+@[expose] def chooseValues (prog : UnorderedProgram) (f : LFactory) : List Core.Expression.Ty → m (List Expr)
   | [] => pure []
   | ty :: tys => do
     let v ← chooseTyped prog f ty
     let vs ← chooseValues prog f tys
     pure (v :: vs)
 
-@[expose] def callFrame (prog : Program) (f : LFactory) (σ : Store) (p : Procedure)
+@[expose] def callFrame (prog : UnorderedProgram) (f : LFactory) (σ : Store) (p : Procedure)
     (args : List Expr) : m (Store) := do
   let gnames := prog.globals.map Prod.fst
   let gvals ← readValues f σ gnames
@@ -273,7 +273,7 @@ variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
   let outs ← chooseValues prog f (p.outputs.map Prod.snd)
   initStates σI (p.outputs.map Prod.fst) outs
 
-@[expose] def globalsBack (prog : Program) (f : LFactory) (σ σEnd : Store) :
+@[expose] def globalsBack (prog : UnorderedProgram) (f : LFactory) (σ σEnd : Store) :
     m (Store) := do
   let gnames := prog.globals.map Prod.fst
   let gvals ← readValues f σEnd gnames
@@ -282,7 +282,7 @@ variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
 @[expose] def paramTys (p : Procedure) (x : Core.Expression.Ident) : Option Core.Expression.Ty :=
   (p.inputs ++ p.outputs).lookup x
 
-@[expose] def stepWith (prog : Program) (evalCmd : IEnv → IRCmd → m CmdResult) :
+@[expose] def stepWith (prog : UnorderedProgram) (evalCmd : IEnv → IRCmd → m CmdResult) :
     IConfig → m (IConfig)
   | .atBlock b t ρ =>
     match List.lookup t b.cfg.blocks with
@@ -314,7 +314,7 @@ variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
   | .terminal ρ => pure (.terminal ρ)
   | .raised ρ v md => pure (.raised ρ v md)
 
-@[expose] def callProc (prog : Program) (runBody : IConfig → m (IConfig)) (ρ : IEnv)
+@[expose] def callProc (prog : UnorderedProgram) (runBody : IConfig → m (IConfig)) (ρ : IEnv)
     (lhs : List Core.Expression.Ident) (n : ProcName) (args : List Expr) : m CmdResult := do
   match prog.findProcedure? n with
   | none => throw (.unknownProcedure n)
@@ -340,7 +340,7 @@ variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
 
 mutual
 
-@[expose] def evalCmd (prog : Program) : Nat → IEnv → IRCmd → m CmdResult
+@[expose] def evalCmd (prog : UnorderedProgram) : Nat → IEnv → IRCmd → m CmdResult
   | _, ρ, .cmd c => do
     let σ' ← evalBaseCmd prog ρ.factory ρ.store ρ.tys c
     pure ⟨σ', ρ.heap, ρ.next, .normal⟩
@@ -387,7 +387,7 @@ mutual
     let (_, o) ← deref ρ.heap recv
     callProc prog (run prog fuel) ρ lhs (prog.dispatch owner meth o.type) args
 
-@[expose] def run (prog : Program) : Nat → IConfig → m (IConfig)
+@[expose] def run (prog : UnorderedProgram) : Nat → IConfig → m (IConfig)
   | _, .terminal ρ => pure (.terminal ρ)
   | _, .raised ρ v md => pure (.raised ρ v md)
   | 0, _ => throw .fuelExhausted
@@ -410,32 +410,24 @@ instance : Effects HostM where
     | some v => pure v
     | none => throw .noChoice
 
-@[expose] def runHost (prog : Program) (fuel : Nat) (oracle : LFactory → Core.Expression.Ty → Nat → Option Expr)
+@[expose] def runHost (prog : UnorderedProgram) (fuel : Nat) (oracle : LFactory → Core.Expression.Ty → Nat → Option Expr)
     (c : IConfig) : Except StopReason (IConfig × Trace) :=
   match ((run prog fuel c : HostM IConfig).run oracle).run ([], 0) with
   | .ok (c', (t, _)) => .ok (c', t)
   | .error e => .error e
 
-def moduleDatatypes (m : Module) : List (LDatatype Unit) :=
-  m.decls.flatMap fun
-    | .type (.data ds) _ => ds
-    | _ => []
+def programFactory (prog : UnorderedProgram) : Except Strata.Message LFactory :=
+  prog.datatypes.foldlM (init := Core.Factory) fun F d => do
+    let bf ← Lambda.genBlockFactory (T := Core.CoreLParams) [d]
+    Lambda.Factory.addFactory F bf
 
-def moduleFactory (m : Module) : Except Strata.Message LFactory :=
-  m.decls.foldlM (init := Core.Factory) fun F d =>
-    match d with
-    | .type (.data ds) _ => do
-      let bf ← Lambda.genBlockFactory (T := Core.CoreLParams) ds
-      Lambda.Factory.addFactory F bf
-    | _ => pure F
-
-def datatypeDefault (m : Module) (n : String) : Option Expr :=
-  (moduleDatatypes m).find? (·.name == n) >>= fun d =>
+def datatypeDefault (prog : UnorderedProgram) (n : String) : Option Expr :=
+  prog.datatypes.find? (·.name == n) >>= fun d =>
     if d.typeArgs.isEmpty then
       (d.constrs.find? (·.args.isEmpty)).map fun c => (constrFunc (T := Core.CoreLParams) c d).opExpr
     else none
 
-def defaultValue (m : Module) (_f : LFactory) (ty : Core.Expression.Ty) (_n : Nat) : Option Expr :=
+def defaultValue (prog : UnorderedProgram) (_f : LFactory) (ty : Core.Expression.Ty) (_n : Nat) : Option Expr :=
   match (ty : LTy) with
   | .forAll [] (.tcons "int" []) => some (.const () (.intConst 0) : Core.Expression.Expr)
   | .forAll [] (.tcons "bool" []) => some (.const () (.boolConst false) : Core.Expression.Expr)
@@ -443,8 +435,8 @@ def defaultValue (m : Module) (_f : LFactory) (ty : Core.Expression.Ty) (_n : Na
   | .forAll [] (.tcons "real" []) => some (.const () (.rationalConst 0) : Core.Expression.Expr)
   | .forAll [] (.bitvec n) => some (.const () (.bitvecConst n 0) : Core.Expression.Expr)
   | t@(.forAll [] (.tcons n [])) =>
-    if isRefTy m.program t then some (.const () (.intConst (-1)) : Core.Expression.Expr)
-    else datatypeDefault m n
+    if isRefTy prog t then some (.const () (.intConst (-1)) : Core.Expression.Expr)
+    else datatypeDefault prog n
   | _ => none
 
 def isEntry (p : Procedure) : Bool :=
@@ -452,7 +444,7 @@ def isEntry (p : Procedure) : Bool :=
   | some { value := .switch true, .. } => true
   | _ => false
 
-def startProc (prog : Program) (f : LFactory) (fuel : Nat) (p : Procedure) : HostM IConfig := do
+def startProc (prog : UnorderedProgram) (f : LFactory) (fuel : Nat) (p : Procedure) : HostM IConfig := do
   match p.body with
   | none => throw (.procedureWithoutBody p.name)
   | some body =>
@@ -460,12 +452,12 @@ def startProc (prog : Program) (f : LFactory) (fuel : Nat) (p : Procedure) : Hos
     run prog fuel (.atBlock body body.cfg.entry
       { store := σ₀, heap := fun _ => none, factory := f, next := 0, tys := paramTys p })
 
-def runEntry (m : Module) (fuel : Nat) (p : Procedure) :
+def runEntry (prog : UnorderedProgram) (fuel : Nat) (p : Procedure) :
     Except StopReason (IConfig × Trace) :=
-  match moduleFactory m with
+  match programFactory prog with
   | .error e => .error (.invalidDatatypes e.message)
   | .ok f =>
-    match ((startProc m.program f fuel p).run (defaultValue m)).run ([], 0) with
+    match ((startProc prog f fuel p).run (defaultValue prog)).run ([], 0) with
     | .ok (c, (t, _)) => .ok (c, t)
     | .error e => .error e
 

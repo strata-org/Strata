@@ -883,6 +883,7 @@ def translateParams (ps : List Parameter) : CM (List (Core.Expression.Ident × L
   ps.mapM fun p => do return (⟨p.name.text, ()⟩, ← lty p.type)
 
 def hasContract (proc : Strata.Laurel.Procedure) : Bool :=
+  !proc.throwsOn.isEmpty ||
   proc.preconditions.any (·.mode != .Assume) ||
   match proc.body with
   | .Opaque posts _ _ | .Abstract posts => posts.any (·.mode != .Assume)
@@ -953,7 +954,7 @@ def translateConstrained (c : ConstrainedType) : CM Cortex.ConstrainedDecl := do
   let witness ← if ← isImpure c.witness then pure none else some <$> pureExpr c.witness
   return { name := c.name.text, base := ← lty c.base, binder := ⟨c.valueName.text, ()⟩, constraint, witness }
 
-def translateProgram (prelude : Std.HashSet String) (program : LaurelProgram) : CM Cortex.Module := do
+def translateProgram (prelude : Std.HashSet String) (program : LaurelProgram) : CM Cortex.UnorderedProgram := do
   unless program.staticFields.isEmpty do unsupported .unknown "static fields"
   unless program.staticFunctions.isEmpty do unsupported .unknown "static functions"
   unless program.constants.isEmpty do unsupported .unknown "constants"
@@ -962,7 +963,8 @@ def translateProgram (prelude : Std.HashSet String) (program : LaurelProgram) : 
   let procNames : Std.HashSet String := userProcs.foldl (fun s p => s.insert p.name.text) {}
   let preludeProcs := program.staticProcedures.filter fun p => prelude.contains p.name.text
   modify fun s => { s with composites, procNames, prelude, preludeProcs }
-  let mut decls : Array Core.Decl := #[]
+  let mut datatypes : Array (LDatatype Unit) := #[]
+  let mut opaqueTypes : Array TypeConstructor := #[]
   let mut cdecls := #[]
   let mut constrained := #[]
   for t in program.types do
@@ -971,10 +973,10 @@ def translateProgram (prelude : Std.HashSet String) (program : LaurelProgram) : 
     | .Constrained c => constrained := constrained.push (← translateConstrained c)
     | .Datatype dt =>
       let ldt ← translateDatatypeDefinition dt
-      decls := decls.push (.type (.data [ldt]) .empty)
+      datatypes := datatypes.push ldt
     | .Opaque ot =>
       if Core.KnownTypes.keywords.contains ot.name.text then continue
-      decls := decls.push (.type (.con { name := ot.name.text, params := ot.typeArgs.map (·.text) }) .empty)
+      opaqueTypes := opaqueTypes.push { name := ot.name.text, params := ot.typeArgs.map (·.text) }
     | .Alias _ => pure ()
   let mut procs := #[]
   for p in userProcs do
@@ -982,12 +984,12 @@ def translateProgram (prelude : Std.HashSet String) (program : LaurelProgram) : 
   for c in composites do
     for p in c.instanceProcedures do
       procs := procs.push (← translateProcedure s!"{c.name.text}${p.name.text}" p)
-  return { program := { composites := cdecls.toList, constrained := constrained.toList,
-                        procedures := procs.toList },
-           decls := decls.toList }
+  return { composites := cdecls.toList, constrained := constrained.toList,
+           datatypes := datatypes.toList, opaqueTypes := opaqueTypes.toList,
+           procedures := procs.toList }
 
 def run (model : SemanticModel) (program : LaurelProgram) (overflowChecks : Core.OverflowChecks := {})
-    (uncheck : Bool := true) : Option Cortex.Module × List Message :=
+    (uncheck : Bool := true) : Option Cortex.UnorderedProgram × List Message :=
   let prelude : Std.HashSet String :=
     coreDefinitionsForLaurel.staticProcedures.foldl (fun s p => s.insert p.name.text) {}
   let initState : TranslateState := { model, overflowChecks }

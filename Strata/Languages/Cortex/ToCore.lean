@@ -262,15 +262,17 @@ def procedureToCore (sigs : Std.HashMap String Sig) (p : Procedure) : Except Str
     { name := ⟨p.name, ()⟩, typeArgs := [], inputs, outputs }
   return { header, spec := { preconditions := [], postconditions := [] }, body := .structured body }
 
-def moduleToCore (m : Module) : Except String Core.Program := do
-  unless m.program.globals.isEmpty do throw "globals must be lowered before Core"
-  unless m.program.composites.isEmpty do throw "composites must be lowered before Core"
-  let sigs : Std.HashMap String Sig := m.program.procedures.foldl (fun s p =>
-    s.insert p.name { inputs := p.inputs.map (·.1.name), outputs := p.outputs.map (·.1.name) }) {}
-  let procs ← m.program.procedures.mapM fun p => do
-    let cp ← procedureToCore sigs p
-    return Core.Decl.proc cp p.md
-  return { decls := m.decls ++ procs }
+def programToCore : Program → Except String Core.Program
+  | .unordered _ => .error "Internal error: Cortex must be ordered by the Ordering pass before Core"
+  | .ordered prog => do
+    let sigs : Std.HashMap String Sig := prog.decls.foldl (fun s d => match d with
+      | .procedure p => s.insert p.name { inputs := p.inputs.map (·.1.name), outputs := p.outputs.map (·.1.name) }
+      | _ => s) {}
+    let decls ← prog.decls.mapM fun
+      | .datatypes ds => pure (Core.Decl.type (.data ds) .empty)
+      | .opaqueType tc => pure (Core.Decl.type (.con tc) .empty)
+      | .procedure p => do return Core.Decl.proc (← procedureToCore sigs p) p.md
+    return { decls }
 
 end
 

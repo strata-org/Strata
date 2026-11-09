@@ -38,7 +38,7 @@ def body : Body :=
       [ { covered := ["try"], catchType := some "Exn", binder := "e",
           target := "handler", md := .empty } ] }
 
-def prog : Program :=
+def prog : UnorderedProgram :=
   { composites,
     procedures := [{ name := "main", inputs := [], outputs := [], throws := none, body := some body }] }
 
@@ -58,7 +58,7 @@ def badBody : Body :=
                              target := "handler", md := .empty }] }
 
 #guard ({ prog with procedures := [{ name := "main", inputs := [], outputs := [],
-                                     throws := none, body := some badBody }] } : Program).checkHandlers
+                                     throws := none, body := some badBody }] } : UnorderedProgram).checkHandlers
   matches .error "exception handler covers unknown block 'nope'"
 
 def cid (n : String) : Core.Expression.Ident := ⟨n, ()⟩
@@ -84,14 +84,14 @@ def interpBody : Body :=
       [ { covered := ["try"], catchType := some "Exn", binder := cid "e",
           target := "handler", md := .empty } ] }
 
-def interpModule : Module :=
-  { program := { composites, procedures :=
-      [{ name := "main", inputs := [], outputs := [], throws := none, body := some interpBody }] } }
+def interpProgram : UnorderedProgram :=
+  { composites, procedures :=
+      [{ name := "main", inputs := [], outputs := [], throws := none, body := some interpBody }] }
 
 def interpResult : Option Core.Expression.Expr :=
-  match interpModule.program.procedures with
+  match interpProgram.procedures with
   | p :: _ =>
-    match Interp.runEntry interpModule 100 p with
+    match Interp.runEntry interpProgram 100 p with
     | .ok (.terminal ρ, _) => ρ.store (cid "c")
     | _ => none
   | [] => none
@@ -124,41 +124,40 @@ def vcallBody (ty : String) : Body :=
                 transfer := .finish .empty }) ] },
     handlers := [] }
 
-def vcallModule (ty : String) : Module :=
-  { program :=
-      { composites := [ { name := "Base", extending := [], fields := [] },
-                        { name := "Sub", extending := ["Base"], fields := [] } ],
-        procedures :=
-          [ { name := "main", inputs := [], outputs := [], throws := none, body := some (vcallBody ty) },
-            getProc "Base" 1, getProc "Sub" 2 ] } }
+def vcallProgram (ty : String) : UnorderedProgram :=
+  { composites := [ { name := "Base", extending := [], fields := [] },
+                    { name := "Sub", extending := ["Base"], fields := [] } ],
+    procedures :=
+      [ { name := "main", inputs := [], outputs := [], throws := none, body := some (vcallBody ty) },
+        getProc "Base" 1, getProc "Sub" 2 ] }
 
-def runMain (m : Module) : Option Core.Expression.Expr :=
-  match m.program.procedures with
+def runMain (m : UnorderedProgram) : Option Core.Expression.Expr :=
+  match m.procedures with
   | p :: _ =>
     match Interp.runEntry m 100 p with
     | .ok (.terminal ρ, _) => ρ.store (cid "r")
     | _ => none
   | [] => none
 
-#guard (vcallModule "Sub").program.overriders "Base" "get" == ["Sub"]
-#guard (vcallModule "Sub").program.dispatch "Base" "get" "Sub" == "Sub$get"
-#guard (vcallModule "Sub").program.dispatch "Base" "get" "Base" == "Base$get"
-#guard runMain (vcallModule "Sub") == some (intC 2)
-#guard runMain (vcallModule "Base") == some (intC 1)
+#guard (vcallProgram "Sub").overriders "Base" "get" == ["Sub"]
+#guard (vcallProgram "Sub").dispatch "Base" "get" "Sub" == "Sub$get"
+#guard (vcallProgram "Sub").dispatch "Base" "get" "Base" == "Base$get"
+#guard runMain (vcallProgram "Sub") == some (intC 2)
+#guard runMain (vcallProgram "Base") == some (intC 1)
 
-def lowered (ty : String) : Option Module :=
-  match LowerDispatch.run (vcallModule ty) with
+def lowered (ty : String) : Option UnorderedProgram :=
+  match LowerDispatch.run (vcallProgram ty) with
   | .ok m => some m
   | .error _ => none
 
-def loweredCalls (m : Module) : List IRCmd :=
-  m.program.procedures.flatMap fun p => match p.body with
+def loweredCalls (m : UnorderedProgram) : List IRCmd :=
+  m.procedures.flatMap fun p => match p.body with
     | some b => b.cfg.blocks.flatMap fun (_, blk) => blk.cmds.filter fun
       | .call .. | .virtualCall .. => true
       | _ => false
     | none => []
 
-#guard (lowered "Sub").any fun m => !m.program.hasVirtualCall
+#guard (lowered "Sub").any fun m => !m.hasVirtualCall
 #guard (lowered "Sub").any fun m =>
   let qs := (loweredCalls m).map fun
     | .call _ q _ _ => q
@@ -167,7 +166,7 @@ def loweredCalls (m : Module) : List IRCmd :=
 #guard ((lowered "Sub").bind runMain) == some (intC 2)
 #guard ((lowered "Base").bind runMain) == some (intC 1)
 
-def diamonds (n : Nat) : Program :=
+def diamonds (n : Nat) : UnorderedProgram :=
   { composites := { name := "C0", extending := [], fields := [] } ::
       (List.range n).flatMap fun i =>
         [ { name := s!"A{i+1}", extending := [s!"C{i}"], fields := [] },

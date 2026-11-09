@@ -157,22 +157,21 @@ def lowerProcedure (witnessHavoc : Bool) (cs : List ConstrainedDecl)
     { b with cfg := { entry, blocks := numberLabels blocks } }
   { p with body }
 
-def runWith (witnessHavoc : Bool) (m : Module) : Except String Module :=
-  let p := m.program
+def runWith (witnessHavoc : Bool) (p : UnorderedProgram) : Except String UnorderedProgram :=
   let cs := p.constrained
-  if cs.isEmpty then .ok m else
+  if cs.isEmpty then .ok p else
   let isCon := fun (t : LTy) => (conTyName? t).filter fun n => cs.any (·.name == n)
   let procs : Std.HashMap String (List (Option String) × List (Option String)) :=
     p.procedures.foldl (fun s pr => s.insert pr.name (pr.inputs.map (isCon ·.2), pr.outputs.map (isCon ·.2))) {}
   let fieldTy := fun (f : FieldRef) => (p.findField? f) >>= fun fd => isCon fd.ty
-  let m := m.mapProcedures (lowerProcedure witnessHavoc cs procs fieldTy)
+  let q := p.mapProcedures (lowerProcedure witnessHavoc cs procs fieldTy)
   let names : Std.HashSet String := cs.foldl (fun s c => s.insert c.name) {}
-  let m := m.mapTys fun n => if names.contains n then baseOf cs n else none
-  .ok { m with program := { m.program with constrained := [] } }
+  let q := q.mapTys fun n => if names.contains n then baseOf cs n else none
+  .ok { q with constrained := [] }
 
-def run (m : Module) : Except String Module := runWith false m
+def run (p : UnorderedProgram) : Except String UnorderedProgram := runWith false p
 
-def pass : Pass := { name := "LowerCTE", run }
+def pass : Pass := Pass.onUnordered "LowerCTE" run
 
 end
 

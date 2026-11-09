@@ -22,13 +22,13 @@ def passes : List Pass :=
   [LowerDispatch.pass, LowerExceptions.pass, LowerComposites.pass, LowerCTE.pass, LowerHeap.pass,
    LowerGlobals.pass, Ordering.pass]
 
-def runPasses (ps : List Pass) (m : Module) : Except String Module :=
-  ps.foldlM (fun m p => match p.run m with
-    | .ok m' => .ok m'
-    | .error e => .error s!"{p.name}: {e}") m
+def runPasses (ps : List Pass) (prog : Program) : Except String Program :=
+  ps.foldlM (fun prog p => match p.run prog with
+    | .ok prog' => .ok prog'
+    | .error e => .error s!"{p.name}: {e}") prog
 
-def toCoreProgram (m : Module) : Except String Core.Program := do
-  ToCore.moduleToCore (← runPasses passes m)
+def toCoreProgram (prog : UnorderedProgram) : Except String Core.Program := do
+  ToCore.programToCore (← runPasses passes (.unordered prog))
 
 end
 

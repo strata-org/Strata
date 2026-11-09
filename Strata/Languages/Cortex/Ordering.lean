@@ -64,33 +64,25 @@ def sccOrder (names : List String) (deps : String → List String) : List (List 
     remaining := notReady.filter fun comp => !comp.all done.contains
   return out
 
-def callees (prog : Program) (p : Procedure) : List String :=
-  match p.body with
-  | none => []
-  | some b => b.cfg.blocks.flatMap fun (_, blk) => blk.cmds.flatMap (IRCmd.callees prog)
-
-def run (m : Module) : Except String Module :=
-  let dts : List (LDatatype Unit) := m.decls.flatMap fun
-    | .type (.data ds) _ => ds
-    | _ => []
-  let dtNames := dts.map (·.name)
+def datatypeGroups (dts : List (LDatatype Unit)) : List (List (LDatatype Unit)) :=
   let dtMap : Std.HashMap String (LDatatype Unit) := dts.foldl (fun s d => s.insert d.name d) {}
-  let groups := sccOrder dtNames fun n => ((dtMap.get? n).map dtDeps).getD []
-  let dataDecls : List Core.Decl := groups.filterMap fun g =>
+  let groups := sccOrder (dts.map (·.name)) fun n => ((dtMap.get? n).map dtDeps).getD []
+  groups.filterMap fun g =>
     match g.filterMap dtMap.get? with
     | [] => none
-    | ds => some (.type (.data ds) .empty)
-  let typeDecls := m.decls.filter fun
-    | .type (.con _) _ | .type (.syn _) _ => true
-    | _ => false
-  let rest := m.decls.filter fun
-    | .type _ _ => false
-    | _ => true
-  let procs := m.program.procedures
-  let pmap : Std.HashMap String Procedure := procs.foldl (fun s p => s.insert p.name p) {}
-  let pgroups := sccOrder (procs.map (·.name)) fun n => ((pmap.get? n).map (callees m.program)).getD []
-  let ordered := pgroups.flatten.filterMap pmap.get?
-  .ok { program := { m.program with procedures := ordered }, decls := typeDecls ++ dataDecls ++ rest }
+    | ds => some ds
+
+def order (prog : UnorderedProgram) : Except String OrderedProgram := do
+  unless prog.composites.isEmpty do throw "composites must be lowered before Ordering"
+  unless prog.constrained.isEmpty do throw "constrained types must be lowered before Ordering"
+  unless prog.globals.isEmpty do throw "globals must be lowered before Ordering"
+  unless prog.globalInit.isEmpty do throw "global initialization must be lowered before Ordering"
+  return { decls := prog.opaqueTypes.map .opaqueType ++ (datatypeGroups prog.datatypes).map .datatypes ++
+    prog.procedures.map .procedure }
+
+def run : Program → Except String Program
+  | .unordered p => .ordered <$> order p
+  | .ordered _ => .error "Internal error: pass 'Ordering' cannot run on an ordered Cortex program"
 
 def pass : Pass := { name := "Ordering", run }
 
