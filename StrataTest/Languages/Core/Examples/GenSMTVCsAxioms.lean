@@ -17,9 +17,7 @@ open StrataDDM (Program)
 are built by `translateQuery`, and for each VC the tactic also proves that the
 subgoal is the denotation of the VC, so `translateQuery` is not trusted.
 Beyond the standard axioms, the proof only depends on `Lean.ofReduceBool` and
-`Lean.trustCompiler`, used to evaluate VC generation, and on
-`Core.WFFactory._native.native_decide.ax_1`, which comes from Strata's factory
-rather than from this tactic.
+`Lean.trustCompiler`, used to evaluate VC generation.
 
 If the proof cannot be produced for some VC, the tactic fails, naming the VC.
 -/
@@ -44,12 +42,7 @@ theorem minCorrect : smtVCsCorrect minPgm := by
   grind
 
 /--
-info: 'Strata.minCorrect' depends on axioms: [propext,
- Classical.choice,
- Lean.ofReduceBool,
- Lean.trustCompiler,
- Quot.sound,
- Core.WFFactory._native.native_decide.ax_1✝]
+info: 'Strata.minCorrect' depends on axioms: [propext, Classical.choice, Lean.ofReduceBool, Lean.trustCompiler, Quot.sound]
 -/
 #guard_msgs in
 #print axioms minCorrect
@@ -76,12 +69,7 @@ theorem sortCorrect : smtVCsCorrect sortPgm := by
   all_goals grind
 
 /--
-info: 'Strata.sortCorrect' depends on axioms: [propext,
- Classical.choice,
- Lean.ofReduceBool,
- Lean.trustCompiler,
- Quot.sound,
- Core.WFFactory._native.native_decide.ax_1✝]
+info: 'Strata.sortCorrect' depends on axioms: [propext, Classical.choice, Lean.ofReduceBool, Lean.trustCompiler, Quot.sound]
 -/
 #guard_msgs in
 #print axioms sortCorrect
@@ -105,12 +93,7 @@ theorem bvCorrect : smtVCsCorrect bvPgm := by
   all_goals bv_decide
 
 /--
-info: 'Strata.bvCorrect' depends on axioms: [propext,
- Classical.choice,
- Lean.ofReduceBool,
- Lean.trustCompiler,
- Quot.sound,
- Core.WFFactory._native.native_decide.ax_1✝]
+info: 'Strata.bvCorrect' depends on axioms: [propext, Classical.choice, Lean.ofReduceBool, Lean.trustCompiler, Quot.sound]
 -/
 #guard_msgs in
 #print axioms bvCorrect
