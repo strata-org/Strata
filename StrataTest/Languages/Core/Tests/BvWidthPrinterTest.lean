@@ -4,10 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 import Strata.Languages.Core.DDMTransform.ASTtoCST
-import Strata.Languages.Core.DDMTransform.Translate
 import Strata.Languages.Core.Factory
-import StrataDDM.Elab
-import StrataDDM.BuiltinDialects.Init
+import StrataTest.Languages.Core.Tests.ReparseTestUtils
 
 /-! # Printer coverage for bitvector widths
 
@@ -18,7 +16,6 @@ emits output that does not re-parse. (`RoundtripTest` covers that the supported 
 -/
 
 open Lambda Core Strata Strata.CoreDDM
-open StrataDDM (initDialect)
 
 namespace Strata.Test.BvWidthPrinter
 
@@ -51,17 +48,8 @@ private def errorDescs (p : Core.Program) : List String :=
 /-- Parse+translate the program text the printer claims to produce (before the appended error
     block); `true` iff it is a valid Core program with no errors. -/
 private def reparses (p : Core.Program) : IO Bool := do
-  let full := (Core.formatProgram p).pretty
-  let input := (full.splitOn "\n\n-- Errors encountered during conversion:").headD full
-  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Core]
-  let body := if input.startsWith "program Core;\n\n" then
-    (input.drop "program Core;\n\n".length).toString else input
-  let inputCtx := StrataDDM.Parser.stringInputContext ⟨"bvwidth-test"⟩ body
-  try
-    let sp ← StrataDDM.Elab.parseStrataProgramFromDialect dialects "Core" inputCtx
-    let (_, errs) := TransM.run Inhabited.default (translateProgram sp)
-    pure errs.isEmpty
-  catch _ => pure false
+  let input := CoreReparse.withoutErrorBlock (Core.formatProgram p).pretty
+  pure (← CoreReparse.parseAndTranslate input).isOk
 
 /-! ## An unsupported width records a conversion error and does not re-parse
 

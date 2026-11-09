@@ -172,7 +172,6 @@ private theorem String.mk_eq_ofList (cs : List Char) : String.mk cs = String.ofL
 
 /-! ### Main roundtrip theorem -/
 
-set_option linter.unusedSimpArgs false
 
 /-- Breaking a disambiguated name recovers the base name and incremented suffix,
     provided the base name does not contain `@`. -/
@@ -192,9 +191,7 @@ theorem breakDisambiguated_disambiguate (baseName : String) (n : Nat)
     List.isEmpty, List.dropWhile, List.takeWhile,
     show Char.isDigit '@' = false from by native_decide,
     ite_true, List.nil_append, List.reverse_reverse,
-    show (false = true) = False from by simp,
-    show (0 = 0 + 1) = False from by simp,
-    ite_false, List.append_nil, List.cons_append]
+    List.append_nil, List.cons_append]
   -- digitSuffix = n.repr.toList (non-empty), rest.reverse = '@' :: baseName.toList.reverse
   -- Match on ('@' :: _, _ :: _) succeeds since n.repr.toList is non-empty
   have hne : n.repr.toList ≠ [] := repr_toList_ne_nil n
@@ -204,12 +201,12 @@ theorem breakDisambiguated_disambiguate (baseName : String) (n : Nat)
     simp only []
     -- Strata.Name.digitsToNat (c :: cs) = Strata.Name.digitsToNat n.repr.toList = n
     -- via digitLoopFuel bridge
-    simp only [Strata.Name.digitsToNat,
+    simp only [
       Nat.repr, String.toList_ofList, Nat.toDigits,
       ← digitLoopFuel_eq_toDigitsCore] at h
     rw [← h, readBack_digitLoopFuel]
     simp only [List.reverse_cons, List.reverse_reverse, List.dropLast_concat,
-      String.mk_eq_ofList, String.ofList_toList]
+      String.ofList_toList]
 
 end Strata.SMT.Encoder
 

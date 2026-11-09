@@ -39,7 +39,7 @@ def CoreIdent.mkOld (name : String) : CoreIdent := ⟨CoreIdent.oldStr ++ name, 
 theorem CoreIdent.ne_mkOld (g : CoreIdent) : g ≠ CoreIdent.mkOld g.name := by
   intro h
   have h_name := congrArg Lambda.Identifier.name h
-  simp [CoreIdent.mkOld, CoreIdent.oldStr] at h_name
+  simp only [mkOld, oldStr] at h_name
   have h1 : g.name.length < ("old " ++ g.name).length := by
     rw [String.length_append]
     have : (0 : Nat) < "old ".length := by decide
@@ -50,7 +50,7 @@ theorem CoreIdent.ne_mkOld (g : CoreIdent) : g ≠ CoreIdent.mkOld g.name := by
 theorem CoreIdent.mkOld_injective {a b : String} (h : CoreIdent.mkOld a = CoreIdent.mkOld b) :
     a = b := by
   have h_name := congrArg Lambda.Identifier.name h
-  simp [CoreIdent.mkOld, CoreIdent.oldStr] at h_name
+  simp only [mkOld, oldStr, String.append_right_inj] at h_name
   exact h_name
 
 /-- Check whether an identifier is already an `old`-prefixed global name. -/
@@ -82,19 +82,6 @@ instance : Repr CoreIdent where
 instance : Inhabited CoreIdent where
   default := ⟨"_", ()⟩
 
-/-- Reserved prefix of the nullary type constants standing for rigid type parameters. -/
-@[expose] def skolemPrefix : String := "$__rigid_"
-
-/-- Name prefixes reserved for identifiers the type checker generates. -/
-@[expose]
-def reservedNamePrefixes : List String :=
-  [Lambda.genTyPrefix, skolemPrefix, Lambda.elimTyPrefix]
-
-/-- A name is allowed when it starts with no reserved prefix. -/
-@[expose]
-def isAllowedName (n : String) : Bool :=
-  !(reservedNamePrefixes.any (fun p => n.startsWith p))
-
 /-- Reject repeated type parameters; the error message starts with `pfx`. -/
 def checkTypeArgsNodup (pfx : String) (ta : List String) : Except Format Unit :=
   if !(decide ta.Nodup) then
@@ -104,7 +91,7 @@ def checkTypeArgsNodup (pfx : String) (ta : List String) : Except Format Unit :=
 
 /-- Reject a type parameter that is not an allowed name; the error message starts with `pfx`. -/
 def checkTypeArgsAllowed (pfx : String) (ta : List String) : Except Format Unit :=
-  match ta.find? (fun a => !isAllowedName a) with
+  match ta.find? (fun a => !Lambda.isAllowedName a) with
   | some a => throw f!"{pfx}: type parameter '{a}' is a reserved name"
   | none => pure ()
 

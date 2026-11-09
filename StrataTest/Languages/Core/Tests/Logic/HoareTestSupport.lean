@@ -10,11 +10,17 @@ public import Strata.Languages.Core
 public import Strata.Languages.Core.StatementSemantics
 public import Strata.Languages.Core.Logic.TraceInterpUsingDenote
 public import Strata.DL.Imperative.StmtSemanticsProps
+import all Strata.DL.Lambda.FactoryProps
+import all Strata.DL.Lambda.Denote.LExprDenote
+import all Strata.DL.Lambda.Denote.LExprDenoteSubst
 
 /-! # Core Hoare test run inversion support
 
 Key results:
-- `someValuation` supplies a valuation for any Core model;
+- `boolFactory` builds a runtime factory from a model;
+- `someValuation` supplies a world over any Core factory;
+- `factory_push_get?`, `factory_mem_of_get?`, and `factory_get_of_get?`
+  support tests over program-extended factories;
 - `singleton_run_inv` extracts a statement run from a singleton statement-list run;
 - `assume_run_inv` characterizes an `assume` run;
 - `assert_run_inv` characterizes an `assert` run.
@@ -26,13 +32,75 @@ namespace CoreHoareTestSupport
 
 open Imperative
 
-/-- An arbitrary valuation for a model over `Core.Factory`. -/
-def someValuation (model : Lambda.Interp Core.Factory) :
-    Core.Logic.DenoteValuation model where
-  tyVarVal := fun _ => .tcons "bool" []
-  freeVarVal := fun _ s =>
-    @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s)
+/-- The runtime factory of the model `model`, reading every residual type variable at
+`bool`. -/
+abbrev boolFactory {F : Lambda.Factory Core.CoreLParams} (model : Lambda.Interp F) :
+    Core.Expression.Factory :=
+  { factory := F, model := model, tyVarVal := fun _ => .bool }
+
+/-- A world over any Core expression factory: off-factory conditions never hold. -/
+def someValuation (factory : Lambda.Factory Core.CoreLParams) :
+    Core.Logic.DenoteValuation factory where
   offFactoryHolds := fun _ => False
+
+/-- Override `fv` with two integer arguments. -/
+def withTwoIntArgs
+    {T : Lambda.LExprParams} [DecidableEq T.IDMeta]
+    {tcInterp : Lambda.TyConstrInterp}
+    (fv : Lambda.FreeVarVal T tcInterp) (x y : T.Identifier) (a b : Int) :
+    Lambda.FreeVarVal T tcInterp :=
+  Lambda.IdentInterp.withArgs fv [(x, .int), (y, .int)] (.cons a (.cons b .nil))
+
+/-- The first identifier in `withTwoIntArgs` maps to its supplied value. -/
+theorem withTwoIntArgs_left
+    {T : Lambda.LExprParams} [DecidableEq T.IDMeta]
+    {tcInterp : Lambda.TyConstrInterp}
+    (fv : Lambda.FreeVarVal T tcInterp) (x y : T.Identifier) (a b : Int) :
+    withTwoIntArgs fv x y a b x .int = a := by
+  exact Lambda.IdentInterp.withArgs_get tcInterp fv
+    [(x, Lambda.LSort.int), (y, Lambda.LSort.int)]
+    (.cons a (.cons b .nil)) x Lambda.LSort.int 0 (by rfl) (by rfl) (by intro j hj; omega)
+
+/-- If the identifiers differ, the second identifier in `withTwoIntArgs` maps
+    to its supplied value. -/
+theorem withTwoIntArgs_right
+    {T : Lambda.LExprParams} [DecidableEq T.IDMeta]
+    {tcInterp : Lambda.TyConstrInterp}
+    (fv : Lambda.FreeVarVal T tcInterp) (x y : T.Identifier) (a b : Int)
+    (hne : y ≠ x) : withTwoIntArgs fv x y a b y .int = b := by
+  exact Lambda.IdentInterp.withArgs_get tcInterp fv
+    [(x, Lambda.LSort.int), (y, Lambda.LSort.int)]
+    (.cons a (.cons b .nil)) y Lambda.LSort.int 1 (by rfl) (by rfl) (by
+      intro j hj
+      have : j = 0 := by omega
+      subst j
+      simpa using (fun hxy : x = y => hne hxy.symm))
+
+/-- Test-visible wrapper for the module-private `Factory.push_mem_match`:
+    looking up `name` after pushing `fn` returns `fn` when the names match;
+    otherwise it returns the original factory lookup. -/
+theorem factory_push_get?
+    {T : Lambda.LExprParams} (factory : Lambda.Factory T) (fn : Lambda.LFunc T)
+    (hnew : fn.name.name ∉ factory) (name : String) :
+    (factory.push fn hnew)[name]? =
+      if name = fn.name.name then some fn else factory[name]? :=
+  Lambda.Factory.push_mem_match factory fn hnew name
+
+/-- Test-visible wrapper deriving factory membership from a successful lookup. -/
+theorem factory_mem_of_get?
+    {T : Lambda.LExprParams} {factory : Lambda.Factory T}
+    {name : String} {fn : Lambda.LFunc T}
+    (hget : factory[name]? = some fn) : name ∈ factory :=
+  Lambda.Factory.getElem?_some_implies_mem hget
+
+/-- Test-visible wrapper identifying membership-indexed lookup after a
+    successful optional lookup. -/
+theorem factory_get_of_get?
+    {T : Lambda.LExprParams} {factory : Lambda.Factory T}
+    {name : String} {fn : Lambda.LFunc T}
+    (hget : factory[name]? = some fn) :
+    factory[name]'(factory_mem_of_get? hget) = fn :=
+  Lambda.Factory.getElem?_some_getElem hget
 
 variable (π : String → Option Core.Procedure)
 
@@ -90,7 +158,6 @@ theorem assume_run_inv {l : String} {e : Core.Expression.Expr}
           injection hcfg with hρ
           subst hρ
           exact ⟨by simp, rfl⟩
-      | step_admin hadmin => cases hadmin with | step_cmd hf => exact hf.elim
   · cases hexit with
     | step _ emitted _ restTr _ hstep hrest =>
       cases hstep with
@@ -101,7 +168,6 @@ theorem assume_run_inv {l : String} {e : Core.Expression.Expr}
           | eval_assume =>
           obtain ⟨hcfg, _⟩ := stepStmtStarE_from_terminal hrest
           simp at hcfg
-      | step_admin hadmin => cases hadmin with | step_cmd hf => exact hf.elim
 
 /-- An `assert` statement emits its captured condition and preserves its environment. -/
 theorem assert_run_inv {l : String} {e : Core.Expression.Expr}
@@ -126,7 +192,6 @@ theorem assert_run_inv {l : String} {e : Core.Expression.Expr}
           injection hcfg with hρ
           subst hρ
           exact ⟨by simp, rfl⟩
-      | step_admin hadmin => cases hadmin with | step_cmd hf => exact hf.elim
   · cases hexit with
     | step _ emitted _ restTr _ hstep hrest =>
       cases hstep with
@@ -137,7 +202,6 @@ theorem assert_run_inv {l : String} {e : Core.Expression.Expr}
           | eval_assert =>
           obtain ⟨hcfg, _⟩ := stepStmtStarE_from_terminal hrest
           simp at hcfg
-      | step_admin hadmin => cases hadmin with | step_cmd hf => exact hf.elim
 
 end CoreHoareTestSupport
 

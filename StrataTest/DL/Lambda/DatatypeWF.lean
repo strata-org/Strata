@@ -205,7 +205,7 @@ example : ¬ TySymInhab loopAdts "Loop" := by
     exact ih3 hmem
   case mk =>
     intro c _ ih1 hcmem
-    simp [loopTy] at hcmem
+    simp only [loopTy, String.reduceAppend, List.mem_cons, List.not_mem_nil, or_false] at hcmem
     subst hcmem
     exact ih1 (⟨"x", ()⟩, .tcons "Loop" []) (by simp) rfl
 

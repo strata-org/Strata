@@ -280,13 +280,12 @@ def renamesBaseTypeParams (baseTypeArgs overriderTypeArgs : List Identifier) : B
     later pass and hard-fails as an internal `.strataBug`). Four shapes, each a real
     program the dispatcher/Liskov machinery cannot yet handle:
 
-    * ASYMMETRIC-THROWS — a family whose declarers disagree on whether the method
-      `throws` (some declare `throws (e:E)`, some don't). `EliminateExceptions` (which
-      runs AFTER dispatch generation) rewrites a throwing method into a `$heap`-threaded
-      `Result` return but leaves a non-throwing sibling plain, so the dispatcher's
-      synthetic `if self is O then O$m$impl(..) else T$m$impl(..)` fails to type-join
-      ("incompatible types '(Heap,τ)' and 'τ'"). Until a throws-status unification across
-      the family exists, reject it up front.
+    * WIDENING-THROWS — an override that declares `throws` when the method it overrides
+      does not. A call through the base cannot expect an exception, and the
+      dispatcher, which takes the base's signature, has no exceptional exit to pass
+      it on. (The other way round is fine: an override may throw less than its base,
+      as in Java, or nothing at all; its branch call simply never takes the `Bad`
+      path.)
     * RENAMED-TYPE-PARAMS — an overrider whose declared `typeArgs` are not the SAME
       names (in order) as the base declarer's. The `is`/`as` tag-test is built in the
       dispatcher's scope, which carries the base's params, so a renamed overrider names a
@@ -332,10 +331,10 @@ private def validateDispatchFamilies (model : SemanticModel) (families : List Di
             -- warning would not halt the pipeline before the synthetic if-chain hard-fails).
             let guardErr (cond : Bool) (msg : String) : List Message :=
               if cond then [diagnosticFromSource src msg] else []
-            -- ASYMMETRIC-THROWS: throws-status must agree across the family.
+            -- WIDENING-THROWS: an override may not throw when its base does not.
             let d2 : List Message :=
-              guardErr (baseM.throwsType.isSome != ovM.throwsType.isSome)
-                  s!"dynamic dispatch does not yet support a family with mismatched `throws` clauses: '{ct.name.text}.{baseM.name.text}' {if baseM.throwsType.isSome then "declares" else "does not declare"} `throws` but its override on '{ov.name.text}' {if ovM.throwsType.isSome then "does" else "does not"}. Make the throws clauses uniform across the overriding family."
+              guardErr (baseM.throwsType.isNone && ovM.throwsType.isSome)
+                  s!"an override cannot throw when the method it overrides does not: '{ov.name.text}.{baseM.name.text}' declares `throws` but '{ct.name.text}.{baseM.name.text}' does not. Declare a `throws` type on '{ct.name.text}.{baseM.name.text}' that covers it."
             -- RENAMED-TYPE-PARAMS: a generic base's overrider must repeat its type params verbatim
             -- (see the docstring); a renamed/concrete overrider is rejected. Non-generic base exempt.
             let d3 : List Message :=
@@ -413,7 +412,7 @@ private def buildDispatcherBody (ownerType : Identifier) (ownerParams : List Ide
   -- (whose `$heap`-threaded call resolves to `Heap` bare but `void` as a block tail),
   -- producing a spurious "'if' branches have incompatible types 'Heap' and 'void'".
   let fallthrough : AstNode StmtExpr :=
-    ⟨ .Block [callTo (implProcName ownerType method.name) ⟨ .Var (.Local selfName), src ⟩] none, src ⟩
+    ⟨ .Block [callTo (implProcName ownerType method.name) ⟨ .Var (.Local selfName), src ⟩] none [] none, src ⟩
   -- fold the overriders into a most-derived-first `is`/`as` chain
   overriders.foldr (init := fallthrough) fun ov acc =>
     let ovTy : HighTypeMd := appliedTagType src ownerParams ov
@@ -423,7 +422,7 @@ private def buildDispatcherBody (ownerType : Identifier) (ownerParams : List Ide
       ⟨ .Assign [⟨ .Declare ⟨castName, ovTy⟩, src ⟩]
         ⟨ .AsType ⟨ .Var (.Local selfName), src ⟩ ovTy, src ⟩, src ⟩
     let branchCall := callTo (implProcName ov.name method.name) ⟨ .Var (.Local castName), src ⟩
-    let thenBlock : AstNode StmtExpr := ⟨ .Block [castDecl, branchCall] none, src ⟩
+    let thenBlock : AstNode StmtExpr := ⟨ .Block [castDecl, branchCall] none [] none, src ⟩
     ⟨ .IfThenElse isCheck thenBlock (some acc), src ⟩
 
 /-- The postconditions of `D$m`'s dispatcher, tag-conditioned so each holds on the
@@ -488,7 +487,7 @@ def liftInstanceProcedures (model : SemanticModel) (program : LaurelProgram) : L
   -- consumes the same list, so the gate-parity invariant is structural and the per-family
   -- `descendantOverriders` call happens exactly once (previously 4× per virtual method).
   let families := virtualDispatchFamilies model program
-  -- Step 0: reject dispatch families the generator cannot lower (asymmetric throws,
+  -- Step 0: reject dispatch families the generator cannot lower (widening throws,
   -- renamed type params, arity mismatch) with a CLEAN diagnostic — the pipeline halts
   -- here rather than letting the synthetic if-chain hard-fail downstream as a StrataBug.
   let familyDiags := validateDispatchFamilies model families

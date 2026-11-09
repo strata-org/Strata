@@ -120,15 +120,15 @@ private theorem rewriteNode_contains (s : KindSet) (e : StmtExprMd) (h : Rebuilt
         simp only [stmtExprChildren, List.mem_singleton] at hc
         exact hc ▸ hcond
     -- `exit L`
-    have hexit : Contains (outSet s) (⟨.Exit exitLabel, e.source⟩ : StmtExprMd) := by
+    have hexit : Contains (outSet s) (⟨.Goto exitLabel .blockEnd, e.source⟩ : StmtExprMd) := by
       refine .node _ (fun k hk => mem_outSet_of_creates ?_) (by simp [stmtExprTypes]) ?_
-      · have hk' : k = NodeKind.StmtExpr.Exit := by simpa [NodeKind.ofStmtExpr] using hk
+      · have hk' : k = NodeKind.StmtExpr.Goto := by simpa [NodeKind.ofStmtExpr] using hk
         simp [hk', eliminateDoWhilePass]
       · intro c hc; simp [stmtExprChildren] at hc
     -- `if (!COND) exit L`
     have hguard : Contains (outSet s)
         (⟨.IfThenElse ⟨.StaticCall (mkId Operation.Not.procName) [cond] [], e.source⟩
-          ⟨.Exit exitLabel, e.source⟩ none, e.source⟩ : StmtExprMd) := by
+          ⟨.Goto exitLabel .blockEnd, e.source⟩ none, e.source⟩ : StmtExprMd) := by
       refine .node _ (fun k hk => mem_outSet_of_creates ?_) (by simp [stmtExprTypes]) ?_
       · have hk' : k = NodeKind.StmtExpr.IfThenElse := by simpa [NodeKind.ofStmtExpr] using hk
         simp [hk', eliminateDoWhilePass]
@@ -141,12 +141,12 @@ private theorem rewriteNode_contains (s : KindSet) (e : StmtExprMd) (h : Rebuilt
     -- `{ BODY; if (!COND) exit L }`
     have hloopBody : Contains (outSet s)
         (⟨.Block [body, ⟨.IfThenElse ⟨.StaticCall (mkId Operation.Not.procName) [cond] [], e.source⟩
-          ⟨.Exit exitLabel, e.source⟩ none, e.source⟩] none, e.source⟩ : StmtExprMd) := by
+          ⟨.Goto exitLabel .blockEnd, e.source⟩ none, e.source⟩] none [] none, e.source⟩ : StmtExprMd) := by
       refine .node _ (fun k hk => mem_outSet_of_creates ?_) (by simp [stmtExprTypes]) ?_
       · have hk' : k = NodeKind.StmtExpr.Block := by simpa [NodeKind.ofStmtExpr] using hk
         simp [hk', eliminateDoWhilePass]
       · intro c hc
-        simp only [stmtExprChildren, List.mem_cons, List.not_mem_nil, or_false] at hc
+        simp only [stmtExprChildren, Option.toList, List.nil_append, List.mem_cons, List.not_mem_nil, or_false] at hc
         rcases hc with hc | hc
         · exact hc ▸ hbody
         · exact hc ▸ hguard
@@ -154,7 +154,7 @@ private theorem rewriteNode_contains (s : KindSet) (e : StmtExprMd) (h : Rebuilt
     have hwhile : Contains (outSet s)
         (⟨.While ⟨.LiteralBool true, e.source⟩ invs dec
           ⟨.Block [body, ⟨.IfThenElse ⟨.StaticCall (mkId Operation.Not.procName) [cond] [], e.source⟩
-            ⟨.Exit exitLabel, e.source⟩ none, e.source⟩] none, e.source⟩ false,
+            ⟨.Goto exitLabel .blockEnd, e.source⟩ none, e.source⟩] none [] none, e.source⟩ false,
           e.source⟩ : StmtExprMd) := by
       refine .node _ (fun k hk => ?_) (by simp [stmtExprTypes]) ?_
       · -- the emitted loop is pre-test, so its only kind is `StmtExpr.While`
@@ -178,7 +178,7 @@ private theorem rewriteNode_contains (s : KindSet) (e : StmtExprMd) (h : Rebuilt
     · have hk' : k = NodeKind.StmtExpr.Block := by simpa [NodeKind.ofStmtExpr] using hk
       exact mem_outSet_of_creates (by simp [hk', eliminateDoWhilePass])
     · intro c hc
-      simp only [stmtExprChildren, List.mem_cons, List.not_mem_nil, or_false] at hc
+      simp only [stmtExprChildren, Option.toList, List.nil_append, List.mem_cons, List.not_mem_nil, or_false] at hc
       exact hc ▸ hwhile
   case h_2 hne =>
     refine post_pure (.node e (fun k hk => ?_) (fun ty hty => ContainsType.toOut (htypes ty hty)) hkids)
@@ -243,7 +243,7 @@ says the loop is gone. -/
 
 /-- A `do … while` loop, as a closed term. -/
 def sampleDoWhile : StmtExprMd :=
-  ⟨.While ⟨.LiteralBool true, .unknown⟩ [] none ⟨.Block [] none, .unknown⟩ true, .unknown⟩
+  ⟨.While ⟨.LiteralBool true, .unknown⟩ [] none ⟨.Block [] none [] none, .unknown⟩ true, .unknown⟩
 
 /-- A file-scope global whose initializer is that loop. -/
 def sampleField : Field where
@@ -266,7 +266,7 @@ private theorem sampleProgram_contains : LaurelProgram.Contains (fun _ => True) 
     .node _ (fun _ _ => trivial) (by simp [ht]) (by simp [hc])
   have hlit : Contains (fun _ => True) (⟨.LiteralBool true, .unknown⟩ : StmtExprMd) :=
     hleaf _ (by simp [stmtExprChildren]) (by simp [stmtExprTypes])
-  have hblock : Contains (fun _ => True) (⟨.Block [] none, .unknown⟩ : StmtExprMd) :=
+  have hblock : Contains (fun _ => True) (⟨.Block [] none [] none, .unknown⟩ : StmtExprMd) :=
     hleaf _ (by simp [stmtExprChildren]) (by simp [stmtExprTypes])
   have hdw : Contains (fun _ => True) sampleDoWhile := by
     refine .node _ (fun _ _ => trivial) (by simp [sampleDoWhile, stmtExprTypes]) ?_
@@ -277,7 +277,7 @@ private theorem sampleProgram_contains : LaurelProgram.Contains (fun _ => True) 
     · exact hc ▸ hlit
     · exact hc ▸ hblock
   refine ⟨⟨by simp [sampleProgram], by simp [sampleProgram], by simp [sampleProgram]⟩,
-    ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro hne; trivial
   · intro hne; trivial
   · intro fld hfld
@@ -290,6 +290,8 @@ private theorem sampleProgram_contains : LaurelProgram.Contains (fun _ => True) 
   · intro hne; trivial
   · intro td htd; simp [sampleProgram] at htd
   · intro c hc; simp [sampleProgram] at hc
+  · intro f hf; simp [sampleProgram] at hf
+  · intro hne; trivial
 
 /-- The loop in the global's initializer is eliminated: the output's kinds avoid
     `StmtExpr.While.postTest.true`, because `outSet` removes it and `creates` does

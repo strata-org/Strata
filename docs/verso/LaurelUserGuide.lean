@@ -297,7 +297,7 @@ skimming once, because they are the most common source of a first parse error.
    * `<??>`
  *
    * Label and jump
-   * `{ ... } label`, `exit label`
+   * `{ ... } label`, `{ ... } label invariant e`, `exit label`, `goto label`
 :::
 
 Note that `^` is concatenation — not exponentiation, and not exclusive or. Fields use the `#`
@@ -541,7 +541,7 @@ procedure-declaration
                       "(" [ parameter , ... ] ")"
                       [ ":" type ]
                       [ "returns" "(" [ parameter , ... ] ")" ]
-                      [ "throws" "(" identifier ":" type ")" ]
+                      [ "throws" "(" identifier ":" ( type | [ type ] "inferred" ) ")" ]
                       { requires-clause }
                       [ "invokeOn" expression ]
                       [ "entry" ]
@@ -611,8 +611,9 @@ expression          = literal
                     | "return" [ expression ]
                     | "yield"
                     | block
-                    | block identifier
+                    | block identifier { "invariant" expression }
                     | "exit" identifier
+                    | "goto" identifier
                     | try-expression
                     | while-loop
                     | for-loop
@@ -1012,16 +1013,19 @@ effect position, factored out into
 
 {docstring Strata.Laurel.Resolution.Check.statement}
 
-$$`\frac{l \in \Gamma_{\mathrm{lbl}}}{\Gamma \vdash \mathsf{Exit}\;l \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] Exit)}`
+$$`\frac{l \in \Gamma_{\mathrm{lbl}}}{\Gamma \vdash \mathsf{Goto}\;l\;d \Rightarrow \mathsf{TVoid}} \quad \text{([⇒] Goto)}`
 
-`exit` is an unconditional jump out of the enclosing labeled block.
+`exit` is an unconditional jump out of the enclosing labeled block, and
+`goto` an unconditional jump back to its start; both are a
+$`\mathsf{Goto}`, differing in the destination $`d`.
 It synthesizes $`\mathsf{TVoid}` unconditionally. Labels live in their
 own namespace $`\Gamma_{\mathrm{lbl}}`, populated by the surrounding
-`Block` rule when its $`\mathit{label}` is `some l`. An
-$`\mathsf{Exit}\;l` targeting a label not in $`\Gamma_{\mathrm{lbl}}`
-is rejected.
+`Block` rule when its $`\mathit{label}` is `some l`. A
+$`\mathsf{Goto}\;l\;d` targeting a label not in $`\Gamma_{\mathrm{lbl}}`
+is rejected. A block's invariants resolve as `bool` in the scope enclosing
+the block, and only a labelled block may carry them.
 
-{docstring Strata.Laurel.Resolution.Check.exit}
+{docstring Strata.Laurel.Resolution.Check.goto}
 
 In the Return rules below, $`\overline{T_o}` denotes the declared
 output-parameter type list of the enclosing procedure (an implicit
@@ -1162,14 +1166,13 @@ $$`\frac{\Gamma(\mathit{callee}) = \text{static-procedure with inputs } Ts \text
 
 {docstring Strata.Laurel.Resolution.Synth.staticCall}
 
-$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; Ts] \text{ and output } [T'] \text{ (single output)} \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow T'} \quad \text{([⇒] Instance-Call)}`
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow C \quad \Gamma(\mathit{Owner}\$\mathit{callee}) = \text{instance-procedure with inputs } [\mathit{self}; Ts] \text{ and output } [T'] \text{ (single output)} \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow T'} \quad \text{([⇒] Instance-Call)}`
 
-$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow \_ \quad \Gamma(\mathit{callee}) = \text{instance- or static-procedure with inputs } [\mathit{self}; Ts] \text{ and outputs } [T_1; \ldots; T_n],\; n \ge 2 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Instance-Call-Multi)}`
+$$`\frac{\Gamma \vdash \mathit{target} \Rightarrow C \quad \Gamma(\mathit{Owner}\$\mathit{callee}) = \text{instance-procedure with inputs } [\mathit{self}; Ts] \text{ and outputs } [T_1; \ldots; T_n],\; n \ge 2 \quad \Gamma \vdash \mathit{args}_i \Leftarrow Ts_i \text{ (pairwise; self dropped)}}{\Gamma \vdash \mathsf{InstanceCall}\;\mathit{target}\;\mathit{callee}\;\mathit{args} \Rightarrow \mathsf{MultiValuedExpr}\;[T_1; \ldots; T_n]} \quad \text{([⇒] Instance-Call-Multi)}`
 
-The callee is resolved against either an instance procedure or a
-static procedure (the latter handles uniformly-dispatched call syntax
-where the receiver is forwarded as `self`). Output arity is forwarded
-identically to
+The receiver synthesizes a composite $`C`, and $`\mathit{Owner}` is the most
+specific of $`C` and its ancestors that declares the callee. Output arity is
+forwarded identically to
 {name Strata.Laurel.Resolution.Synth.staticCall}`Synth.staticCall`'s
 single-vs-multi split. In both call families the single- and multi-output
 rules differ only in the *output* arity; argument checking is the same, and
@@ -2029,8 +2032,32 @@ procedure labelledExit(done: bool) returns (x: int)
 
 Laurel has no `break` or `continue` keyword: a labelled block plus `exit` is how a front end
 builds them — `break` exits a block wrapped around the loop, `continue` exits a block wrapped
-around the loop *body*. Code following an unconditional `return` or `exit` in the same block is
-reported as dead.
+around the loop *body*. Code following an unconditional `return`, `exit` or `goto` in the same
+block is reported as dead.
+
+`goto` jumps back to the *start* of the enclosing block with that label, which makes the block a
+loop. Such a block may carry invariants, written after its label like a `while` loop's; they are
+checked on entry and on every `goto` back to the start. A block that no `goto` targets checks
+them once, on entry.
+
+```laurel
+procedure countUp() returns (i: int)
+  opaque
+  ensures i == 3
+{
+  i := 0;
+  {
+    i := i + 1;
+    if i < 3 then { goto again }
+  } again
+    invariant 0 <= i && i <= 2
+};
+```
+
+Because a `goto` can only target an enclosing block, the control flow stays reducible: the
+`RestructureGotos` pass lowers each block that some `goto` targets to a `while (true)` loop
+before translation to Core, so a front end that emits unstructured jumps — a bytecode front end,
+say — does not need to recover loops itself.
 
 ## Procedures, outputs, and calls
 
@@ -2188,6 +2215,10 @@ procedure classify(s: Shape): bool
 
 `x as T` behaves like a checked narrowing — it asserts `x is T` and then has static type `T`, so
 a cast that cannot be justified is a verification failure rather than a runtime one.
+
+The two types must be related: one a subtype of the other, or both extended by some non-generic
+composite. A `Shape` may be a `Circle`, which is a `Colored`, so `s is Colored` and `s as Colored`
+are allowed; a test or cast between unrelated types is rejected.
 
 Fields are inherited through the declared parent graph. If the same field name reaches a child
 along two different paths, accessing it is rejected as ambiguous unless the child declares its
@@ -2380,6 +2411,42 @@ Whether the *source* language requires declaring exceptions is a separate questi
 procedures coming from Python or JavaScript can carry a `throws` clause too, even
 though neither language has that surface construct.
 
+### Inferred throws
+
+`throws (e: inferred)` lets Laurel compute the thrown type: it becomes the common
+supertype of every exception that may escape the body uncaught, including those
+propagated from callees (whose own inferred types are computed together with it).
+`throws (e: T inferred)` keeps a declared `T` and joins the inferred types with it.
+When nothing escapes, the procedure declares no `throws`; when the escaping types have
+no common supertype, it is an error.
+
+```laurel
+composite ArithError {}
+
+procedure div(a: int, b: int) returns (r: int)
+  throws (e: inferred)   // inferred: throws (e: ArithError)
+  opaque
+{
+  if b == 0 then {
+    var x: ArithError := new ArithError;
+    throw x
+  };
+  r := a / b
+};
+```
+
+This is how a frontend lets unchecked exceptions propagate without declaring them:
+the obligation moves from the thrower to its callers, as for a declared `throws`.
+
+Each procedure is inferred from its own body. An override is capped at the type of
+the method it overrides, so a call through the base never sees more than the base's
+type: what the override lets escape within that type stays in its `throws`, and the
+rest is asserted not to happen, as in a procedure without `throws`. An override may
+throw less than its base, or nothing. A procedure without a body cannot have an
+inferred clause; its type must be declared. A procedure with `throwsOn` cases must
+not have its declared type widened by inference, because the cases' binding would
+widen with it; that is an error.
+
 ### Handling: try, catch, finally
 
 `catch` dispatches on a *predicate* rather than on a type, written
@@ -2459,6 +2526,10 @@ procedure logFailure(which: int) returns (out: string)
 };
 ```
 
+In a guarded clause the binding has the type its guard tests, or for a multi-catch guard
+`e is A || e is B` their least common ancestor, when that is narrower: under
+`catch e when e is NotFound`, `e` is a `NotFound`.
+
 If the types reaching a `catch` share no common ancestor, Laurel reports an error
 rather than leaving the binding untyped. If the body throws nothing determinable,
 no exception can reach the clauses, and they are dropped as unreachable.
@@ -2467,10 +2538,8 @@ A guard may test the binding against a type unrelated to the binding's type, as 
 Java multi-catch arm for an unchecked exception the body never throws does:
 `catch e when e is StateError || e is NotFound`. Such a test can never be true, so
 it is accepted and treated as `false`, and the other tests in the guard still
-catch. A type that shares a descendant with the binding's type (with
-`composite D extends A, B`, an `A` may be a `D`, which is a `B`) is not unrelated,
-and testing against it is still an error. A clause whose guard is only such tests,
-or a disjunction of them, can never catch: its body is not checked.
+catch. A clause whose guard is only such tests, or a disjunction of them, can never
+catch: its body is not checked.
 
 A frontend that needs to catch values with no useful common ancestor — unrelated
 types, or JavaScript's arbitrary thrown values — can *box* them: wrap the value in a
@@ -4057,6 +4126,12 @@ These parse and resolve, so nothing warns you early, and they fail or misbehave 
 - `new` should be used only with composites, even though the resolver also accepts datatypes.
 - A composite field whose type is a generic datatype instantiation is rejected, because the heap
   representation cannot distinguish instantiations.
+- A generic composite's field is one field for all its instantiations, and references at two
+  instantiations are not assumed to be different objects: for parameters `x: Box<int>` and
+  `y: Box<bool>`, writing `y#item` may change `x#item`, even where no composite extends both.
+- A constraint is not assumed for a field two instantiations declare at different types: `item`
+  of a `new Box<int8>` is not known to be an `int8` once `Box` is used at another type anywhere,
+  even by an uncalled generic procedure.
 - A transparent procedure's body is turned into a function only for supported control and effect
   shapes; `opaque` is the robust choice for imperative code.
 - Passing too *few* arguments to a procedure is not currently diagnosed, while passing too many

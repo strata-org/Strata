@@ -19,7 +19,7 @@ namespace Core
 open Std (ToFormat Format format)
 
 namespace Program
-open Core.Lambda LExpr
+open Lambda LExpr
 open Lambda.LTy Statement Program
 open Strata (Message MessageKind FileRange)
 
@@ -38,19 +38,34 @@ where
     | _ => 0
   go : Nat → Env → Expression.Expr → Expression.Expr × Env
     | n + 1, E, .quant _ .all name ty _ body =>
-      -- Mark the binder's name as used so that the fresh variable gets a
-      -- suffix and cannot coincide with a global constant or function of the
-      -- same name, which the solver would treat as the same symbol.
-      let config := E.exprEnv.config
-      let E := { E with exprEnv := { E.exprEnv with
-        config := { config with usedNames := config.usedNames.insert name } } }
       let (x, E) := E.genFVar (⟨name, ()⟩, ty)
       go n E (Lambda.LExpr.subst (fun _ => x) body)
     | _, E, e => (e, E)
 
+/-- Every name the program uses: its declarations, the functions a datatype generates, the
+    parameters, `old` names of in-out parameters and local variables of its procedures, and
+    every variable and operator its expressions mention, together with the factory's
+    functions. -/
+private def programNames (E : Env) (p : Program) : Std.HashSet String :=
+  let factoryNames := E.exprEnv.config.factory.toArray.toList.map (·.name.name)
+  let declNames := p.decls.flatMap fun d =>
+    let own := match d with
+      | .proc q _ =>
+        q.header.name.name :: q.entryScope.map (·.name) ++
+        (Imperative.Block.definedVars (P := Expression) (C := Command)
+          d.statements false).map (·.name)
+      | _ => d.names.map (·.name)
+    let exprs := Statements.allExprs d.statements ++ d.ownExprs
+    own ++ exprs.flatMap fun e =>
+      e.freeVars.map (·.1.name) ++ (Lambda.LExpr.getOps e).map (·.name)
+  Std.HashSet.ofList (factoryNames ++ p.funcNames ++ declNames)
+
 def eval (E : Env) : Except Strata.Message (List Env × Statistics) :=
   -- Push a path condition scope to store axioms
   let E := { E with pathConditions := E.pathConditions.push [] }
+  -- Generated names avoid every name the program uses.
+  let E := { E with exprEnv.config.names.usedNames :=
+    E.exprEnv.config.names.usedNames.union (programNames E E.program) }
   go E.program.decls E ({} : Statistics)
   where go (decls : Decls) (declsE : Env) (stats : Statistics)
       : Except Strata.Message (List Env × Statistics) :=
@@ -93,7 +108,10 @@ def eval (E : Env) : Except Strata.Message (List Env × Statistics) :=
       go rest declsE stats
 
     | .proc proc _md =>
-      let (E, procStats) := Procedure.eval declsE proc
+      -- `declsE` stays alive without the name supply, so the supply has one reference
+      -- during the procedure's evaluation.
+      let (names, declsE) := declsE.takeNames
+      let (E, procStats) := Procedure.eval (declsE.withNames names) proc
       if E.error.isSome && declsE.error.isNone then
         -- Resetting the error and carrying on would no-op the remaining
         -- procedures and drop their obligations, reporting success on a program
@@ -185,7 +203,8 @@ def runEntry (E : Env) (proc : Procedure) (fuel : Nat) : Env :=
     also protects against runaway unfolding.)
 
     `inline` rather than `inlineIfAllValues`, because the latter unfolds a body
-    only once *every* argument is a value and a `Map` argument never is:
+    only once *every* argument satisfies `isInlineArg` (a value in which
+    closed quantifiers may also appear), and a `Map` argument does not:
     a map value is a stack of `update`s over a `mapConst`, a saturated call of an
     uninterpreted function rather than a constructor application, which
     `isValue` rejects. That gate blocks every call taking a map, such as

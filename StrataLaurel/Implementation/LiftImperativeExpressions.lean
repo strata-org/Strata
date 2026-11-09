@@ -161,10 +161,10 @@ private def onlyKeepSideEffectStmtsAndLast (stmts : List StmtExprMd) : LiftM (Li
           pure [s]
 
       /-
-      Any other impure StmtExpr, like .Assign, .Exit or .Return,
+      Any other impure StmtExpr, like .Assign, .Goto or .Return,
       should already have been processed by translateExpr,
       so we can assume this StmtExpr is pure and can be dropped.
-      TODO: currently .Exit and .Return are not processed by translateExpr, this is a bug
+      TODO: currently .Goto and .Return are not processed by translateExpr, this is a bug
       -/
       | _ => pure []
     )
@@ -335,12 +335,12 @@ def transformExpr (expr : StmtExprMd) (discard : Bool := false) : LiftM StmtExpr
         let (condPrepends, seqCond) ← inFreshScope (transformExpr cond)
         let (thenPrepends, seqThen) ← inFreshScope (transformExpr thenBranch)
         let assignStmts := if needsCondVar then [⟨.Assign [⟨ .Local condVar, source⟩] seqThen, source⟩] else [seqThen]
-        let thenBlock := ⟨.Block (thenPrepends ++ assignStmts) none, source ⟩
+        let thenBlock := ⟨.Block (thenPrepends ++ assignStmts) none [] none, source ⟩
         let seqElse ← match elseBranch with
           | some e => do
               let (elsePrepends, se) ← inFreshScope (transformExpr e)
               let assignStmts: List StmtExprMd := if needsCondVar then [⟨.Assign [⟨ .Local condVar, source⟩] se, source⟩] else [se];
-              pure (some (⟨.Block (elsePrepends ++ assignStmts) none, source ⟩))
+              pure (some (⟨.Block (elsePrepends ++ assignStmts) none [] none, source ⟩))
           | none => pure none
         -- IfThenElse added first (cons puts it deeper), then declaration (cons puts it on top)
         -- Output order: declaration, then if-then-else
@@ -367,12 +367,12 @@ def transformExpr (expr : StmtExprMd) (discard : Bool := false) : LiftM StmtExpr
         let seqCond ← transformExpr cond
         return ⟨.IfThenElse seqCond seqThen seqElse, source⟩
 
-  | .Block stmts labelOption =>
+  | .Block stmts labelOption invs dec =>
       -- Only the last element's value is the block's.
       let newStmts := (← stmts.attach.reverse.mapIdxM fun i ⟨s, _⟩ =>
         transformExpr s (discard := discard || i != 0)).reverse
       let filtered ← onlyKeepSideEffectStmtsAndLast newStmts
-      return ⟨ .Block filtered labelOption, source⟩
+      return ⟨ .Block filtered labelOption invs dec, source⟩
 
   | .Var (.Declare param) =>
       -- Lift the declaration if a lifted statement reads or assigns the variable, so
@@ -398,9 +398,9 @@ def transformExpr (expr : StmtExprMd) (discard : Bool := false) : LiftM StmtExpr
       prependList argPrepends
       pure default
 
-  | .Return (some retExpr) =>
-      let seqRet ← transformExpr retExpr
-      return ⟨.Return (some seqRet), source⟩
+  | .Return retExprs =>
+      let seqRets ← retExprs.attach.mapM fun ⟨e, _⟩ => transformExpr e
+      return ⟨.Return seqRets, source⟩
 
   | .While .. =>
       -- A loop only occurs as a statement of a block; lift it whole, as a statement.
@@ -541,9 +541,9 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
       -- else
       --   return [stmt]
 
-  | .Block stmts metadata =>
+  | .Block stmts metadata invs dec =>
       let seqStmts ← stmts.mapM transformStmt
-      return [⟨.Block seqStmts.flatten metadata, source⟩]
+      return [⟨.Block seqStmts.flatten metadata invs dec, source⟩]
 
   | .Var (.Declare _) =>
       return [stmt]
@@ -572,11 +572,11 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
       let condPrepends ← takePrepends
       let seqThen ← do
         let stmts ← transformStmt thenBranch
-        pure ⟨ .Block stmts none, source ⟩
+        pure ⟨ .Block stmts none [] none, source ⟩
       let seqElse ← match elseBranch with
         | some e => do
             let se ← transformStmt e
-            pure (some (⟨.Block se none, source ⟩))
+            pure (some (⟨.Block se none [] none, source ⟩))
         | none => pure none
       return condPrepends ++ [⟨.IfThenElse seqCond seqThen seqElse, source⟩]
 
@@ -606,7 +606,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
       -- condition took, because no substitution is applied to it at all.
       let seqBody ← do
         let stmts ← transformStmt body
-        pure ⟨.Block stmts none, source⟩
+        pure ⟨.Block stmts none [] none, source⟩
       return condPrepends ++
         [⟨.While seqCond invs dec seqBody postTest, source⟩]
 
@@ -625,10 +625,10 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
       modify fun s => { s with subst := {} }
       return prepends ++ [⟨.StaticCall name seqArgs.reverse tyArgs, source⟩]
 
-  | .Return (some retExpr) =>
-      let seqRet ← transformExpr retExpr
+  | .Return retExprs =>
+      let seqRets ← retExprs.attach.mapM fun ⟨e, _⟩ => transformExpr e
       let prepends ← takePrepends
-      return prepends ++ [⟨.Return (some seqRet), source⟩]
+      return prepends ++ [⟨.Return seqRets, source⟩]
 
   -- No `.Throw` / `.Try` arms: `EliminateExceptions` runs earlier in the
   -- pipeline, so by the time expression-lifting runs the exceptional channel has
@@ -641,7 +641,10 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
     all_goals try (apply Prod.Lex.right; omega)
     all_goals (try have := CatchClause.sizeOf_body_lt ‹_›)
     all_goals (try have := CatchClause.sizeOf_predicate_lt ‹_›)
-    all_goals (try simp_all; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
+    all_goals (try simp_all only [AstNode.mk.sizeOf_spec, StmtExpr.Assert.sizeOf_spec, StmtExpr.Assume.sizeOf_spec,
+    StmtExpr.Block.sizeOf_spec, List.contains_eq_mem, decide_eq_true_eq, StmtExpr.Assign.sizeOf_spec,
+    StmtExpr.StaticCall.sizeOf_spec, StmtExpr.IfThenElse.sizeOf_spec, Option.some.sizeOf_spec,
+    StmtExpr.While.sizeOf_spec, Bool.sizeOf_eq_one, StmtExpr.Return.sizeOf_spec]; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
     all_goals (try (apply Prod.Lex.left); try term_by_mem; try omega)
 end
 
@@ -649,7 +652,7 @@ def transformProcedureBody (source: FileRange) (body : StmtExprMd) : LiftM StmtE
   let stmts ← transformStmt body
   match stmts with
   | [single] => pure single
-  | multiple => pure ⟨.Block multiple none, source ⟩
+  | multiple => pure ⟨.Block multiple none [] none, source ⟩
 
 def transformProcedure (proc : Procedure) : LiftM Procedure := do
   modify fun s => { s with subst := {}, dirty := {}, prependedStmts := [], varCounters := [], liftedVarRefs := {} }

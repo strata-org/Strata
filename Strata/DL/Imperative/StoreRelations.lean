@@ -34,10 +34,10 @@ public section
 /-! ### Store comparison relations -/
 
 /-- Asymmetric agreement between two stores: wherever `σ_struct` is defined (per
-`isDefined`), `σ_cfg` assigns the same value at that variable. -/
+`SemanticStore.varsDefined`), `σ_cfg` assigns the same value at that variable. -/
 @[expose] def StoreAgreement {P : PureExpr}
     (σ_struct σ_cfg : SemanticStore P) : Prop :=
-  ∀ x, isDefined σ_struct [x] → σ_struct x = σ_cfg x
+  ∀ x, SemanticStore.varsDefined (· ∈ [x]) σ_struct → σ_struct x = σ_cfg x
 
 /-- `projected` is obtained from `source` by dropping zero or more bindings:
 every binding retained by `projected` has the same value in `source`. -/

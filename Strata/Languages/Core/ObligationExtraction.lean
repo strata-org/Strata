@@ -108,22 +108,6 @@ def renameShadowingParams (taken : List String) (proc : Procedure) (ss : Stateme
       (Block.renameLhs (Block.substFvar ss x (.fvar () x' (some ty))) x x', name :: used)
     else (ss, used)).1
 
-/-- The names a procedure's parameters are kept apart from: the program's functions and
-    constants, which are 0-ary functions, and the constructors, testers and destructors a
-    datatype declaration generates, a nullary constructor being a constant too. -/
-def programFuncNames (p : Program) : List String :=
-  p.decls.flatMap fun
-    | .func f _ => [f.name.name]
-    | .recFuncBlock fs _ => fs.map (·.name.name)
-    | .type (.data d) _ =>
-      match Lambda.genBlockFactory (T := CoreLParams) d with
-      | .ok F => F.toArray.toList.map (·.name.name)
-      | .error _ => d.flatMap fun dt => dt.constrs.flatMap fun c =>
-          c.name.name :: c.testerName ::
-            c.args.flatMap fun (f, _) => let n := Lambda.destructorFuncName dt f
-              [n, n ++ Lambda.unsafeDestructorSuffix]
-    | _ => []
-
 /-- The statements a procedure's obligations are read from: its structured body, with the
     parameters named like a function in `funcNames` renamed apart. A procedure that still
     carries a contract is refused, since only the body is read: an `ensures` would be left
@@ -143,13 +127,12 @@ def procedureStatements (funcNames : List String) (proc : Procedure) :
       "' has a CFG body; obligations can only be extracted from " ++
       "structured bodies")
 
-/-- Extract proof obligations from a program. Axioms become global assumptions
-    and `distinct` declarations become distinctness facts. -/
-def extractObligations (p : Program) : Except String (ProofObligations Expression) := do
-  let funcNames := programFuncNames p
-  -- Accumulate global path-condition facts (axioms and distinct groups) and
-  -- obligations as we walk declarations in order.
-  let (_, allObs) ← p.decls.foldlM (init := (([] : PathCondition Expression), (#[] : Array (ProofObligation Expression)))) fun (globalPc, allObs) decl =>
+/-- One step of `extractObligations`: read the declaration `decl`, given the global
+    path-condition facts declared before it (newest first) and the obligations found so far. -/
+private def extractDecl (funcNames : List String) :
+    PathCondition Expression × Array (ProofObligation Expression) → Decl →
+    Except String (PathCondition Expression × Array (ProofObligation Expression))
+  | (globalPc, allObs), decl =>
     match decl with
     | .ax a _ =>
       .ok (.assumption a.name a.e :: globalPc, allObs)
@@ -187,6 +170,14 @@ def extractObligations (p : Program) : Except String (ProofObligations Expressio
         (RevPathConditions.consume (P := Expression) ⟨[globalPc]⟩) l.e md
       .ok (globalPc, allObs.push ob)
     | _ => .ok (globalPc, allObs)
+
+/-- Extract proof obligations from a program. Axioms become global assumptions
+    and `distinct` declarations become distinctness facts. -/
+def extractObligations (p : Program) : Except String (ProofObligations Expression) := do
+  -- Accumulate global path-condition facts (axioms and distinct groups) and
+  -- obligations as we walk declarations in order.
+  let (_, allObs) ← p.decls.foldlM (extractDecl p.funcNames)
+    (([] : PathCondition Expression), (#[] : Array (ProofObligation Expression)))
   return allObs
 
 @[simp] theorem extractFromStatements_eq (pc : RevPathConditions Expression) (ss : Statements) :
@@ -223,7 +214,7 @@ private theorem extractGo_ok (pc : RevPathConditions Expression) (ss : Statement
       | ok v1 =>
         cases extractGo pc elseSs #[] with
         | error => intro _ h; simp [Except.isOk, Except.toBool] at h
-        | ok v2 => intro _ _; simp; exact extractGo_ok _ _ _ hrest
+        | ok v2 => intro _ _; simp only [Array.append_assoc]; exact extractGo_ok _ _ _ hrest
     · exact extractGo_ok _ _ _ hrest
     · -- `isObligationForm` rejects every statement that reaches this case.
       unfold Statement.isObligationForm at hs; simp at hs

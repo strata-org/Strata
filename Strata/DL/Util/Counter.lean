@@ -7,6 +7,8 @@ module
 
 public import Strata.Init
 
+set_option linter.strata.flexible true
+
 public section
 /-! ## Counter Generator
   This file contains a counter generator `genCounter`, as well as its underlying
@@ -48,7 +50,7 @@ def genCounter (σ : CounterState)
 theorem genCounterSubset : genCounter σ = (n, σ') → σ ⊆ σ' := by
   intros Hgen
   simp [genCounter] at Hgen
-  simp [← Hgen, HasSubset.Subset]
+  simp only [Subset, ← Hgen]
   intros a Hin
   simp_all
 
@@ -64,7 +66,7 @@ theorem genCounterValue :
   genCounter σ = (n, σ') →
   σ.counter = n := by
   intros Hwf Hgen
-  simp [genCounter] at Hgen
+  simp only [genCounter, Prod.mk.injEq] at Hgen
   exact Hgen.1
 
 theorem emptyCounterWF :
@@ -75,11 +77,11 @@ theorem genCounterWFMono :
   genCounter σ = (n, σ') →
   WF σ' := by
   intros Hwf Hgen
-  simp [genCounter] at Hgen
+  simp only [genCounter, Prod.mk.injEq] at Hgen
   cases Hgen with
   | intro Hl Hr =>
-  simp [← Hr]
-  simp [Hl, WF] at *
+  simp only [← Hr]
+  simp only [WF, Hl, List.mem_cons, forall_eq_or_imp, Nat.lt_add_one, true_and, List.nodup_cons] at *
   cases Hwf with
   | intro HH Hdup =>
   apply And.intro

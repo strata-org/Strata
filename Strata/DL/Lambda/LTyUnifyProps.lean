@@ -6,8 +6,11 @@
 module
 
 public import Strata.DL.Lambda.LTyUnify
+public import Strata.DL.Lambda.LExprTypeEnv
 public import Strata.Util.ExceptProps
+public import Strata.Util.HMapsProps
 import all Strata.DL.Lambda.LTyUnify
+import all Strata.DL.Lambda.LExprTypeEnv
 import all Strata.Util.ListUtils
 import all Strata.Util.ListUtilsProps
 import all Strata.Util.HMaps
@@ -19,7 +22,16 @@ import Std.Tactic.BVDecide.Normalize.BitVec
 
 Properties of substitution, and the soundness, most-general-unifier, and matching
 completeness of `Constraints.unify`. Key theorems: `Constraints.unify_sound`,
-`Constraints.unify_mgu`, and `Constraints_unify_matching_complete`.
+`Constraints.unify_mgu`, and `Constraints_unify_matching_complete`. One-way matching
+(`LMonoTy.matchSubst`) is sound: `LMonoTy.matchSubst_sound`.
+
+Also: unification preserves any substitution property that each variable binding preserves
+(`Constraint.unify_preserves`), and the ambient renaming of generated type variables keeps a
+well-formed substitution well formed (`ambientSubst_WF`).
+
+Further sections cover `Subst.ofZip` (the simultaneous substitution for a quantifier prefix),
+`LMonoTy.openVars` and `LMonoTys.instantiateEnv` (defined in `LExprTypeEnv.lean`), and the
+ambient renaming of generated type variables.
 -/
 
 ---------------------------------------------------------------------
@@ -384,7 +396,7 @@ theorem Constraint.unifyOne_sound (c : Constraint) (S : SubstInfo)
               · right; right; exact Subst.freeVars_of_find_subset S.subst h_some h_sty
               · rcases List.mem_append.mp (LMonoTy.freeVars_of_subst_subset S.subst orig_lty h_lty) with
                   h_orig | h_vals
-                · right; left; simp [Constraint.freeVars]; right; exact h_orig
+                · right; left; simp only [freeVars, List.mem_append]; right; exact h_orig
                 · right; right; exact h_vals
             · right; right; exact h3
           exact ⟨h_sound, h_abs, h_keys⟩
@@ -462,7 +474,7 @@ theorem Constraint.unifyOne_sound (c : Constraint) (S : SubstInfo)
               · right; right; exact Subst.freeVars_of_find_subset S.subst h_some h_sty
               · rcases List.mem_append.mp (LMonoTy.freeVars_of_subst_subset S.subst orig_lty h_lty) with
                   h_orig | h_vals
-                · right; left; simp [Constraint.freeVars]; left; exact h_orig
+                · right; left; simp only [freeVars, List.mem_append]; left; exact h_orig
                 · right; right; exact h_vals
             · right; right; exact h3
           exact ⟨h_sound, h_abs, h_keys⟩
@@ -524,7 +536,7 @@ theorem Constraint.unifyOne_sound (c : Constraint) (S : SubstInfo)
               cases l2 with
               | nil => simp at h_len
               | cons b rest2 =>
-                simp at h_len
+                simp only [List.length_cons, Nat.add_right_cancel_iff] at h_len
                 simp only [List.map_cons]
                 have h_ab : LMonoTy.subst relS'.newS.subst a = LMonoTy.subst relS'.newS.subst b :=
                   h_pw (a, b) List.mem_cons_self
@@ -591,13 +603,22 @@ theorem Constraint.unifyOne_sound (c : Constraint) (S : SubstInfo)
           rcases ih_rest.keys_incl k hk with hk1 | hk2 | hk3
           · rcases ih_one.keys_incl k hk1 with h1a | h1b | h1c
             · left; exact h1a
-            · right; left; simp [Constraints.freeVars]; left; exact h1b
+            · right; left; simp only [Constraints.freeVars, List.mem_append]; left; exact h1b
             · right; right; exact h1c
-          · right; left; simp [Constraints.freeVars]; right; exact hk2
+          · right; left; simp only [Constraints.freeVars, List.mem_append]; right; exact hk2
           · rcases List.mem_append.mp (relS_one.goodSubset hk3) with h_c | h_s
-            · right; left; simp [Constraints.freeVars]; left
-              simp [Constraints.freeVars] at h_c; exact h_c
+            · right; left; simp only [Constraints.freeVars, List.mem_append]; left
+              simp only [Constraints.freeVars, List.append_nil] at h_c; exact h_c
             · right; right; exact h_s
+
+/-- Constraint free variables distribute over concatenation. -/
+theorem Constraints.freeVars_append (cs1 cs2 : Constraints) :
+    Constraints.freeVars (cs1 ++ cs2) =
+      Constraints.freeVars cs1 ++ Constraints.freeVars cs2 := by
+  induction cs1 with
+  | nil => rfl
+  | cons c rest ih =>
+    simp only [List.cons_append, Constraints.freeVars, List.append_assoc, ih]
 
 /-- Combined soundness, absorption, and key-inclusion for `unifyCore`.
     Proved by simple list induction, delegating to `Constraint.unifyOne_sound`
@@ -648,12 +669,12 @@ theorem Constraints.unifyCore_sound (cs : Constraints) (S : SubstInfo)
           rcases ih_rest.keys_incl k hk with hk1 | hk2 | hk3
           · rcases ih_one.keys_incl k hk1 with h1a | h1b | h1c
             · left; exact h1a
-            · right; left; simp [Constraints.freeVars]; left; exact h1b
+            · right; left; simp only [freeVars, List.mem_append]; left; exact h1b
             · right; right; exact h1c
-          · right; left; simp [Constraints.freeVars]; right; exact hk2
+          · right; left; simp only [freeVars, List.mem_append]; right; exact hk2
           · rcases List.mem_append.mp (relS_one.goodSubset hk3) with h_c | h_s
-            · right; left; simp [Constraints.freeVars]; left
-              simp [Constraints.freeVars] at h_c; exact h_c
+            · right; left; simp only [freeVars, List.mem_append]; left
+              simp only [freeVars, List.append_nil] at h_c; exact h_c
             · right; right; exact h_s
 
 /-- Unification produces a substitution that absorbs the input substitution. -/
@@ -1367,5 +1388,1249 @@ theorem Constraints_unify_matching_complete
         (fun x hx h_key => hdisj x (h_keys x h_key) hx)
     rw [h_sound, h_fix]
 
+/-- Soundness of one-way matching: a substitution returned by `LMonoTy.matchSubst pat ty` turns
+`pat` into `ty`. -/
+theorem LMonoTy.matchSubst_sound {pat ty : LMonoTy} {S : Subst}
+    (h : pat.matchSubst ty = some S) : pat.subst S = ty := by
+  unfold LMonoTy.matchSubst at h
+  split at h
+  · cases h
+  · simp only [Option.ite_none_right_eq_some, Option.some.injEq] at h
+    exact h.2 ▸ h.1
+
+/-! ### Substitution -/
+
+/-- Substituting a bound type variable gives its value. -/
+theorem LMonoTy.subst_ftvar_of_some {S : Subst} {x : TyIdentifier} {v : LMonoTy}
+    (h : HMaps.find? S x = some v) : LMonoTy.subst S (.ftvar x) = v := by
+  rw [LMonoTy.subst_unfold]; simp only [h]
+
+/-- Substituting an unbound type variable leaves it alone. -/
+theorem LMonoTy.subst_ftvar_of_none {S : Subst} {x : TyIdentifier}
+    (h : HMaps.find? S x = none) : LMonoTy.subst S (.ftvar x) = .ftvar x := by
+  rw [LMonoTy.subst_unfold]; simp only [h]
+
+/-- Substitutions binding a type variable alike act alike on it. -/
+theorem LMonoTy.subst_ftvar_congr {S1 S2 : Subst} (x : TyIdentifier)
+    (h : HMaps.find? S1 x = HMaps.find? S2 x) :
+    LMonoTy.subst S1 (.ftvar x) = LMonoTy.subst S2 (.ftvar x) := by
+  cases hf : HMaps.find? S1 x with
+  | none => rw [LMonoTy.subst_ftvar_of_none hf, LMonoTy.subst_ftvar_of_none (h ▸ hf)]
+  | some w => rw [LMonoTy.subst_ftvar_of_some hf, LMonoTy.subst_ftvar_of_some (h ▸ hf)]
+
+/-- Substitution maps over constructor arguments. -/
+theorem LMonoTy.subst_tcons_map (S : Subst) (nm : String) (args : LMonoTys) :
+    LMonoTy.subst S (.tcons nm args) = .tcons nm (args.map (LMonoTy.subst S)) := by
+  rw [LMonoTy.subst_tcons, LMonoTys.subst_eq_map]
+
+/-- If `S1` then `S2` agrees with `S3` on a monotype's free variables, it agrees on the monotype. -/
+theorem LMonoTy.subst_subst_of_pointwise (S1 S2 S3 : Subst) (m : LMonoTy)
+    (h : ∀ x ∈ LMonoTy.freeVars m,
+          LMonoTy.subst S2 (LMonoTy.subst S1 (.ftvar x)) = LMonoTy.subst S3 (.ftvar x)) :
+    LMonoTy.subst S2 (LMonoTy.subst S1 m) = LMonoTy.subst S3 m := by
+  induction m with
+  | ftvar x => exact h x (by simp [LMonoTy.freeVars])
+  | bitvec n => rw [LMonoTy.subst_bitvec, LMonoTy.subst_bitvec, LMonoTy.subst_bitvec]
+  | tcons nm args ih =>
+    rw [LMonoTy.subst_tcons_map, LMonoTy.subst_tcons_map, LMonoTy.subst_tcons_map,
+      List.map_map]
+    congr 1
+    refine List.map_congr_left ?_
+    intro a ha
+    refine ih a ha ?_
+    intro v hv
+    have hv_tcons : v ∈ (LMonoTy.tcons nm args).freeVars := by
+      simp only [LMonoTy.freeVars]
+      exact LMonoTys.freeVars_mem_subset ha hv
+    exact h v hv_tcons
+
+/-- A well-formed substitution fixes every type variable of a type it has been applied to. -/
+theorem subst_ftvar_of_mem_freeVars_subst {S : Subst} (hwf : SubstWF S) {t : LMonoTy}
+    {v : TyIdentifier} (hv : v ∈ LMonoTy.freeVars (LMonoTy.subst S t)) :
+    LMonoTy.subst S (.ftvar v) = .ftvar v := by
+  have hkeys := LMonoTy.subst_keys_not_in_substituted_type hwf t
+  simp only [List.all_eq_true, decide_eq_true_eq] at hkeys
+  exact LMonoTy.subst_ftvar_of_none
+    (Strata.Util.HMaps.not_mem_keys_find?_none S v (fun hk => hkeys v hk hv))
+
+/-- The empty substitution is the identity. -/
+theorem LMonoTy.subst_nil (m : LMonoTy) : LMonoTy.subst [] m = m :=
+  LMonoTy.subst_of_hasEmptyScopes (by simp [Subst.hasEmptyScopes]) m
+
+/-- A ground monotype is fixed by every substitution. -/
+theorem LMonoTy.subst_ground (S : Subst) (m : LMonoTy) (h : LMonoTy.freeVars m = []) :
+    LMonoTy.subst S m = m :=
+  LMonoTy.subst_no_relevant_keys S m (fun x hx => absurd (h ▸ hx) (by simp))
+
+/-- A single-variable substitution fixes every other type variable. -/
+private theorem Subst.find?_singleton_ne (a x : TyIdentifier) (v : LMonoTy) (h : x ≠ a) :
+    HMaps.find? (Subst.singleton a v) x = none := by
+  simp only [Subst.singleton, HMaps.find?, HMap.find?_single_ne a x v (by simp [bne, h])]
+
+/-- Substituting `t` for `x` and then `S` is `S` with `x ↦ subst S t` pushed in front. -/
+theorem LMonoTy.subst_push_single (x : TyIdentifier) (t : LMonoTy) (S : Subst) (m : LMonoTy) :
+    LMonoTy.subst (HMap.single x (LMonoTy.subst S t) :: S) m
+      = LMonoTy.subst S (LMonoTy.subst (Subst.singleton x t) m) := by
+  induction m with
+  | ftvar y =>
+    by_cases hy : y = x
+    · subst hy
+      rw [LMonoTy.subst_ftvar_of_some
+          (HMaps.find?_cons_single_self y (LMonoTy.subst S t) S),
+        LMonoTy.subst_ftvar_of_some (Subst.find?_singleton_self y t)]
+    · have hne : y != x := by simp [bne, hy]
+      rw [LMonoTy.subst_ftvar_of_none (Subst.find?_singleton_ne x y t hy)]
+      exact LMonoTy.subst_ftvar_congr y
+        (HMaps.find?_cons_single_ne x y (LMonoTy.subst S t) S hne)
+  | bitvec n =>
+    rw [LMonoTy.subst_bitvec, LMonoTy.subst_bitvec, LMonoTy.subst_bitvec]
+  | tcons nm args ih =>
+    rw [LMonoTy.subst_tcons_map, LMonoTy.subst_tcons_map, LMonoTy.subst_tcons_map,
+      List.map_map]
+    congr 1
+    exact List.map_congr_left ih
+
+/-- Inserting `a ↦ (ρ ++ S)(a)` between `ρ` and `S` changes no type variable's image. -/
+theorem LMonoTy.subst_ftvar_cons_of_value (ρ S : Subst) (a kk : TyIdentifier) :
+    LMonoTy.subst (ρ ++ (HMap.single a (LMonoTy.subst (ρ ++ S) (.ftvar a)) :: S)) (.ftvar kk)
+      = LMonoTy.subst (ρ ++ S) (.ftvar kk) := by
+  cases hfr : HMaps.find? ρ kk with
+  | some w =>
+    rw [LMonoTy.subst_ftvar_of_some (HMaps.find?_append_of_some hfr
+        (HMap.single a (LMonoTy.subst (ρ ++ S) (.ftvar a)) :: S)),
+      LMonoTy.subst_ftvar_of_some (HMaps.find?_append_of_some hfr S)]
+  | none =>
+    rw [LMonoTy.subst_ftvar_congr kk (HMaps.find?_append_of_none hfr
+        (HMap.single a (LMonoTy.subst (ρ ++ S) (.ftvar a)) :: S))]
+    by_cases hka : kk = a
+    · subst hka
+      rw [LMonoTy.subst_ftvar_of_some (HMaps.find?_cons_single_self kk
+        (LMonoTy.subst (ρ ++ S) (.ftvar kk)) S)]
+    · rw [LMonoTy.subst_ftvar_congr kk (HMaps.find?_cons_single_ne a kk
+        (LMonoTy.subst (ρ ++ S) (.ftvar a)) S (by simp [bne, hka]))]
+      exact (LMonoTy.subst_ftvar_congr kk (HMaps.find?_append_of_none hfr S)).symm
+
+/-- Applying `ρ` and then `S` to a monotype is applying a single substitution to it. -/
+theorem LMonoTy.exists_subst_subst (S ρ : Subst) (m : LMonoTy) :
+    ∃ τ : Subst, LMonoTy.subst S (LMonoTy.subst ρ m) = LMonoTy.subst τ m := by
+  refine ⟨Strata.Util.HMaps.ofScopes [(LMonoTy.freeVars m).map
+    (fun v => (v, LMonoTy.subst S (LMonoTy.subst ρ (.ftvar v))))], ?_⟩
+  refine LMonoTy.subst_subst_of_pointwise ρ S _ m ?_
+  intro v hv
+  symm
+  apply LMonoTy.subst_ftvar_of_some
+  simp only [Strata.Util.HMaps.ofScopes, List.map_cons, List.map_nil, HMaps.find?_single_scope]
+  exact HMap.find?_ofList_self_map _ _ v hv
+
+/-- A substitution that fixes every free type variable of a monotype fixes the monotype. -/
+theorem subst_eq_self_of_fix (σ : Subst) (m : LMonoTy)
+    (h : ∀ v ∈ LMonoTy.freeVars m, LMonoTy.subst σ (.ftvar v) = .ftvar v) :
+    LMonoTy.subst σ m = m := by
+  have hagree : ∀ v ∈ LMonoTy.freeVars m,
+      LMonoTy.subst [] (LMonoTy.subst [] (.ftvar v)) = LMonoTy.subst σ (.ftvar v) := by
+    intro v hv
+    rw [h v hv, LMonoTy.subst_nil, LMonoTy.subst_nil]
+  have hag := LMonoTy.subst_subst_of_pointwise [] [] σ m hagree
+  rw [LMonoTy.subst_nil, LMonoTy.subst_nil] at hag
+  exact hag.symm
+
+/-! ### Simultaneous substitution for a quantifier prefix: `Subst.ofZip` -/
+
+/-- `LTy.openFull` substitutes a scheme's binders simultaneously. -/
+theorem LTy.openFull_eq_subst_ofZip (vars : List TyIdentifier) (mty : LMonoTy)
+    (vals : List LMonoTy) :
+    LTy.openFull (.forAll vars mty) vals = LMonoTy.subst (Subst.ofZip vars vals) mty := by
+  simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe, Subst.ofZip]
+
+/-- A lookup in `Subst.ofZip` is a lookup in the zipped list. -/
+private theorem Subst.find?_ofZip (vars : List TyIdentifier) (vals : List LMonoTy)
+    (x : TyIdentifier) :
+    HMaps.find? (Subst.ofZip vars vals) x
+      = HMap.find? (HMap.ofList (List.zip vars vals)) x := by
+  simp only [Subst.ofZip, HMaps.ofScopes, List.map_cons, List.map_nil, HMaps.find?_single_scope]
+
+/-- `Subst.ofZip` binds only names in `vars`. -/
+theorem Subst.mem_keys_ofZip {vars : List TyIdentifier} {vals : List LMonoTy}
+    {x : TyIdentifier} (h : x ∈ HMaps.keys (Subst.ofZip vars vals)) : x ∈ vars := by
+  simp only [Subst.ofZip, HMaps.ofScopes, List.map_cons, List.map_nil, HMaps.keys,
+    List.append_nil] at h
+  have hzip := HMap.mem_keys_ofList (List.zip vars vals) x h
+  obtain ⟨p, hp, hpx⟩ := List.mem_map.mp hzip
+  exact hpx ▸ (List.of_mem_zip hp).1
+
+/-- `Subst.ofZip` produces only values in `vals`. -/
+theorem Subst.mem_values_ofZip {vars : List TyIdentifier} {vals : List LMonoTy} {w : LMonoTy}
+    (h : w ∈ HMaps.values (Subst.ofZip vars vals)) : w ∈ vals := by
+  simp only [Subst.ofZip, HMaps.ofScopes, List.map_cons, List.map_nil, HMaps.values,
+    List.append_nil] at h
+  have hzip := HMap.mem_values_ofList (List.zip vars vals) w h
+  obtain ⟨p, hp, hpw⟩ := List.mem_map.mp hzip
+  exact hpw ▸ (List.of_mem_zip hp).2
+
+/-- `Subst.ofZip` leaves alone every name that is not one of `vars`. -/
+theorem Subst.find?_ofZip_of_not_mem {vars : List TyIdentifier} {vals : List LMonoTy}
+    {x : TyIdentifier} (h : x ∉ vars) :
+    HMaps.find? (Subst.ofZip vars vals) x = none := by
+  cases hf : HMaps.find? (Subst.ofZip vars vals) x with
+  | none => rfl
+  | some v => exact absurd (Subst.mem_keys_ofZip (HMaps.find?_mem_keys _ hf)) h
+
+/-- `Subst.ofZip vars vals` fixes any monotype with no free name in `vars`. -/
+theorem LMonoTy.subst_ofZip_eq_self {vars : List TyIdentifier} {vals : List LMonoTy}
+    (m : LMonoTy) (h : ∀ x ∈ LMonoTy.freeVars m, x ∉ vars) :
+    LMonoTy.subst (Subst.ofZip vars vals) m = m :=
+  LMonoTy.subst_no_relevant_keys _ m (fun x hx hk => h x hx (Subst.mem_keys_ofZip hk))
+
+/-- `Subst.ofZip` binds every name of `vars` that has a paired value. -/
+theorem Subst.find?_ofZip_isSome_of_mem {vars : List TyIdentifier} {vals : List LMonoTy}
+    (hlen : vars.length ≤ vals.length) {x : TyIdentifier} (hx : x ∈ vars) :
+    (HMaps.find? (Subst.ofZip vars vals) x).isSome := by
+  have hkeys : x ∈ (List.zip vars vals).map Prod.fst := by
+    rw [List.map_fst_zip hlen]
+    exact hx
+  obtain ⟨w, hw⟩ := HMap.find?_ofList_of_mem_keys _ x hkeys
+  rw [Subst.find?_ofZip, hw]
+  rfl
+
+/-- `Subst.ofZip` sends a head name that does not recur in the tail to the head value. -/
+private theorem Subst.find?_ofZip_cons_self {a : TyIdentifier} {rest : List TyIdentifier}
+    (v : LMonoTy) (vals : List LMonoTy) (h_a : a ∉ rest) :
+    HMaps.find? (Subst.ofZip (a :: rest) (v :: vals)) a = some v := by
+  have h_keys : a ∉ (List.zip rest vals).map Prod.fst := fun hmem =>
+    h_a ((List.map_fst_zip_sublist rest vals).subset hmem)
+  rw [Subst.find?_ofZip,
+    show List.zip (a :: rest) (v :: vals) = (a, v) :: List.zip rest vals from rfl,
+    HMap.find?_ofList_cons_eq_find?_insert a v (List.zip rest vals) h_keys]
+  exact HMap.find?_insert_self _ a v
+
+/-- If the head name does not recur, `Subst.ofZip` agrees with the tails' on every other name. -/
+private theorem Subst.find?_ofZip_cons_ne {a : TyIdentifier} {rest : List TyIdentifier}
+    (v : LMonoTy) (vals : List LMonoTy) {x : TyIdentifier} (h_a : a ∉ rest) (hxa : x ≠ a) :
+    HMaps.find? (Subst.ofZip (a :: rest) (v :: vals)) x
+      = HMaps.find? (Subst.ofZip rest vals) x := by
+  have h_keys : a ∉ (List.zip rest vals).map Prod.fst := fun hmem =>
+    h_a ((List.map_fst_zip_sublist rest vals).subset hmem)
+  rw [Subst.find?_ofZip,
+    show List.zip (a :: rest) (v :: vals) = (a, v) :: List.zip rest vals from rfl,
+    HMap.find?_ofList_cons_eq_find?_insert a v (List.zip rest vals) h_keys,
+    HMap.find?_insert_ne _ a x v (by simp [bne, hxa]), ← Subst.find?_ofZip rest vals x]
+
+/-- When the names are distinct, `Subst.ofZip` sends a name to the value paired with it. -/
+theorem Subst.find?_ofZip_of_mem_zip {vars : List TyIdentifier} {vals : List LMonoTy}
+    (h_nd : vars.Nodup) {x : TyIdentifier} {w : LMonoTy} (h : (x, w) ∈ List.zip vars vals) :
+    HMaps.find? (Subst.ofZip vars vals) x = some w := by
+  induction vars generalizing vals with
+  | nil => simp only [List.zip_nil_left, List.not_mem_nil] at h
+  | cons a rest ih =>
+    cases vals with
+    | nil => simp only [List.zip_nil_right, List.not_mem_nil] at h
+    | cons v vs =>
+      have h_a_rest : a ∉ rest := (List.nodup_cons.mp h_nd).1
+      rcases List.mem_cons.mp h with heq | htl
+      · have hxa : x = a := congrArg Prod.fst heq
+        have hwv : w = v := congrArg Prod.snd heq
+        subst hxa; subst hwv
+        exact Subst.find?_ofZip_cons_self w vs h_a_rest
+      · have hx_rest : x ∈ rest := (List.of_mem_zip htl).1
+        have hxa : x ≠ a := fun hc => h_a_rest (hc ▸ hx_rest)
+        rw [Subst.find?_ofZip_cons_ne v vs h_a_rest hxa]
+        exact ih (List.nodup_cons.mp h_nd).2 htl
+
+/-- If the head name does not recur and its value avoids the other names, `Subst.ofZip`
+    substitutes the head first and the rest after. -/
+theorem LMonoTy.subst_ofZip_cons {a : TyIdentifier} {rest : List TyIdentifier} {v : LMonoTy}
+    {vals : List LMonoTy} (m : LMonoTy) (h_a : a ∉ rest)
+    (h_v : ∀ x ∈ LMonoTy.freeVars v, x ∉ rest) :
+    LMonoTy.subst (Subst.ofZip (a :: rest) (v :: vals)) m
+      = LMonoTy.subst (Subst.ofZip rest vals) (LMonoTy.subst (Subst.singleton a v) m) := by
+  refine (LMonoTy.subst_subst_of_pointwise (Subst.singleton a v) (Subst.ofZip rest vals)
+    (Subst.ofZip (a :: rest) (v :: vals)) m ?_).symm
+  intro x _
+  by_cases hxa : x = a
+  · subst hxa
+    rw [LMonoTy.subst_ftvar_of_some (Subst.find?_singleton_self x v),
+      LMonoTy.subst_ftvar_of_some (Subst.find?_ofZip_cons_self v vals h_a)]
+    exact LMonoTy.subst_ofZip_eq_self v h_v
+  · rw [LMonoTy.subst_ftvar_of_none (Subst.find?_singleton_ne a x v hxa)]
+    exact LMonoTy.subst_ftvar_congr x (Subst.find?_ofZip_cons_ne v vals h_a hxa).symm
+
+/-- Applying `Subst.ofZip fs vals` to each name of distinct `fs` gives back `vals`. -/
+private theorem map_subst_ofZip_ftvar (fs : List TyIdentifier) (vals : List LMonoTy)
+    (hlen : vals.length = fs.length) (hnd : fs.Nodup) :
+    (fs.map fun f => LMonoTy.subst (Subst.ofZip fs vals) (.ftvar f)) = vals := by
+  induction fs generalizing vals with
+  | nil =>
+    cases vals with
+    | nil => rfl
+    | cons v vs => simp at hlen
+  | cons f rest ih =>
+    cases vals with
+    | nil => simp only [List.length_nil, List.length_cons] at hlen; omega
+    | cons v vs =>
+      have hf : f ∉ rest := (List.nodup_cons.mp hnd).1
+      have hr : rest.Nodup := (List.nodup_cons.mp hnd).2
+      have hlen' : vs.length = rest.length := by
+        simp only [List.length_cons] at hlen
+        omega
+      have hhead : LMonoTy.subst (Subst.ofZip (f :: rest) (v :: vs)) (.ftvar f) = v :=
+        LMonoTy.subst_ftvar_of_some (Subst.find?_ofZip_cons_self v vs hf)
+      have htail : rest.map (fun g =>
+          LMonoTy.subst (Subst.ofZip (f :: rest) (v :: vs)) (.ftvar g)) = vs := by
+        calc
+          _ = rest.map (fun g => LMonoTy.subst (Subst.ofZip rest vs) (.ftvar g)) := by
+            apply List.map_congr_left
+            intro g hg
+            have hgf : g ≠ f := fun h => hf (h ▸ hg)
+            exact LMonoTy.subst_ftvar_congr g
+              (Subst.find?_ofZip_cons_ne v vs hf hgf)
+          _ = vs := ih vs hlen' hr
+      rw [List.map_cons, hhead]
+      exact congrArg (fun tail => v :: tail) htail
+
+/-- Renaming a prefix, possibly with repeats, to distinct fresh names and substituting `vals` for
+    them equals substituting `vals` for the prefix. -/
+theorem LMonoTy.subst_ofZip_launder {vars fs : List TyIdentifier} {vals : List LMonoTy}
+    (m : LMonoTy) (hfs : fs.length = vars.length) (hvals : vals.length = vars.length)
+    (hnd : fs.Nodup) (hfresh : ∀ f ∈ fs, f ∉ LMonoTy.freeVars m) :
+    LMonoTy.subst (Subst.ofZip fs vals)
+        (LMonoTy.subst (Subst.ofZip vars (fs.map LMonoTy.ftvar)) m) =
+      LMonoTy.subst (Subst.ofZip vars vals) m := by
+  have hvalsfs : vals.length = fs.length := hvals.trans hfs.symm
+  have hmap := map_subst_ofZip_ftvar fs vals hvalsfs hnd
+  have hzip : List.zip vars vals =
+      (List.zip vars (fs.map LMonoTy.ftvar)).map
+        (fun p => (p.1, LMonoTy.subst (Subst.ofZip fs vals) p.2)) := by
+    calc
+      _ = List.zip vars ((fs.map LMonoTy.ftvar).map
+          (LMonoTy.subst (Subst.ofZip fs vals))) := by
+            apply congrArg (List.zip vars)
+            rw [List.map_map]
+            exact hmap.symm
+      _ = _ := by rw [List.zip_map_right]; rfl
+  refine LMonoTy.subst_subst_of_pointwise _ _ _ m ?_
+  intro x hx
+  have hfind : HMaps.find? (Subst.ofZip vars vals) x =
+      (HMaps.find? (Subst.ofZip vars (fs.map LMonoTy.ftvar)) x).map
+        (LMonoTy.subst (Subst.ofZip fs vals)) := by
+    simp only [Subst.find?_ofZip]
+    rw [hzip, HMap.find?_ofList_map_snd]
+  cases hr : HMaps.find? (Subst.ofZip vars (fs.map LMonoTy.ftvar)) x with
+  | some w =>
+      have hz : HMaps.find? (Subst.ofZip vars vals) x =
+          some (LMonoTy.subst (Subst.ofZip fs vals) w) := by
+        rw [hfind, hr]
+        rfl
+      rw [LMonoTy.subst_ftvar_of_some hr, LMonoTy.subst_ftvar_of_some hz]
+  | none =>
+      have hxvars : x ∉ vars := by
+        intro hmem
+        have hlen : vars.length ≤ (fs.map LMonoTy.ftvar).length := by
+          simp only [List.length_map]
+          omega
+        have hsome := Subst.find?_ofZip_isSome_of_mem hlen hmem
+        rw [hr] at hsome
+        contradiction
+      have hxfs : x ∉ fs := fun hmem => hfresh x hmem hx
+      have hq : HMaps.find? (Subst.ofZip fs vals) x = none :=
+        Subst.find?_ofZip_of_not_mem hxfs
+      have hz : HMaps.find? (Subst.ofZip vars vals) x = none := by
+        rw [hfind, hr]
+        rfl
+      rw [LMonoTy.subst_ftvar_of_none hr, LMonoTy.subst_ftvar_of_none hq,
+        LMonoTy.subst_ftvar_of_none hz]
+
+/-- Opening a scheme whose head binder does not recur drops it and substitutes it in the body. -/
+theorem LTy.open_cons_of_not_mem {a : TyIdentifier} {rest : List TyIdentifier} (t : LMonoTy)
+    (mty : LMonoTy) (h_a : a ∉ rest) :
+    LTy.open a t (.forAll (a :: rest) mty)
+      = .forAll rest (LMonoTy.subst (Subst.singleton a t) mty) := by
+  have h_keep : ∀ x ∈ rest, (!List.elem x [a]) = true := by
+    intro x hx
+    have hxa : x ≠ a := fun hc => h_a (hc ▸ hx)
+    simp [hxa]
+  have h_filter : (a :: rest).removeAll [a] = rest := by
+    simp only [List.removeAll, List.filter_cons, List.elem_cons, List.elem_nil,
+      beq_self_eq_true, Bool.not_true, Bool.false_eq_true, ite_false]
+    exact List.filter_eq_self.mpr h_keep
+  simp only [LTy.open, List.mem_cons, true_or, ite_true, h_filter]
+
+/-! ### Instantiating a scheme that quantifies nothing -/
+
+/-- Lookup in a stack with one empty scope misses. -/
+private theorem find?_ofScopes_nilScope (x : TyIdentifier) :
+    HMaps.find? (Strata.Util.HMaps.ofScopes ([[]] : List (List (TyIdentifier × LMonoTy)))) x =
+      none := by
+  simp only [Strata.Util.HMaps.ofScopes, List.map_cons, List.map_nil, HMaps.find?_single_scope]
+  cases h : HMap.find? (HMap.ofList ([] : List (TyIdentifier × LMonoTy))) x with
+  | none => rfl
+  | some v => exact absurd (HMap.mem_keys_ofList _ x (HMap.find?_mem_keys _ h)) (by simp)
+
+/-- Substituting over a stack with one empty scope is the identity. -/
+theorem subst_ofScopes_nilScope (mty : LMonoTy) :
+    LMonoTy.subst (Strata.Util.HMaps.ofScopes ([[]] : List (List (TyIdentifier × LMonoTy)))) mty =
+      mty := by
+  induction mty with
+  | ftvar x => rw [LMonoTy.subst_unfold]; simp only [find?_ofScopes_nilScope]
+  | bitvec n => rw [LMonoTy.subst_bitvec]
+  | tcons name args ih =>
+    rw [LMonoTy.subst_tcons, LMonoTys.subst_eq_map]
+    congr 1
+    rw [List.map_congr_left ih]; exact List.map_id_fun' ▸ rfl
+
+/-- Instantiating a scheme that quantifies nothing returns its body. -/
+theorem openFull_of_boundVars_nil (ty : LTy) (h : LTy.boundVars ty = [])
+    (tys : List LMonoTy) : LTy.openFull ty tys = LTy.toMonoTypeUnsafe ty := by
+  simp only [LTy.openFull, h, List.zip_nil_left]
+  exact subst_ofScopes_nilScope _
+
+/-- Opening an unquantified type scheme returns its body. -/
+theorem openFull_forAll_nil (t : LMonoTy) (tys : LMonoTys) :
+    LTy.openFull (.forAll [] t) tys = t :=
+  openFull_of_boundVars_nil (.forAll [] t) rfl tys
+
+/-! ### Substitution and `openVars` -/
+
+namespace LExpr
+
+/-- Looking `x` up in `zip vars vals`, defaulting to `x`, is `openVars vars vals` on `x`. -/
+private theorem find?_ofList_zip_eq_openVars_ftvar
+    (vars : List TyIdentifier) (vals : LMonoTys) (x : TyIdentifier)
+    (h_len : vars.length = vals.length) (h_nodup : vars.Nodup) :
+    (match HMap.find? (HMap.ofList (List.zip vars vals)) x with
+      | some sty => sty | none => .ftvar x) = LMonoTy.openVars vars vals (.ftvar x) := by
+  simp only [LMonoTy.openVars]
+  have h_keys : (List.zip vars vals).map Prod.fst = vars := List.map_fst_zip (by omega)
+  have h_pw : (List.zip vars vals).Pairwise (fun a b => (a.1 == b.1) = false) := by
+    have h_vars_nd : ((List.zip vars vals).map Prod.fst).Nodup := by rw [h_keys]; exact h_nodup
+    have h_nd_fst : (List.zip vars vals).Pairwise (fun a b => a.1 ≠ b.1) :=
+      (List.pairwise_map).mp ((List.nodup_iff_pairwise_ne).mp h_vars_nd)
+    exact h_nd_fst.imp (by intro a b h; simpa using h)
+  cases h_find : (List.zip vars vals).find? (fun p => p.1 == x) with
+  | some p =>
+    obtain ⟨k, v⟩ := p
+    have h_mem : (⟨k, v⟩ : TyIdentifier × LMonoTy) ∈ List.zip vars vals :=
+      List.mem_of_find?_eq_some h_find
+    have h_kx : (k == x) = true := by
+      have h_find_eq := List.find?_some h_find; simpa using h_find_eq
+    have h_get : HMap.find? (HMap.ofList (List.zip vars vals)) x = some v := by
+      simp only [HMap.find?, HMap.ofList]
+      exact Std.HashMap.getElem?_ofList_of_mem h_kx h_pw h_mem
+    rw [h_get]
+  | none =>
+    have h_notin : List.contains ((List.zip vars vals).map Prod.fst) x = false := by
+      simp only [List.contains_eq_mem, decide_eq_false_iff_not]
+      intro hx_mem
+      obtain ⟨p, hp_mem, hp_eq⟩ := List.mem_map.mp hx_mem
+      have h_pred : (fun p : TyIdentifier × LMonoTy => p.1 == x) p = true := by
+        simp [hp_eq]
+      exact absurd (List.find?_eq_none.mp h_find p hp_mem) (by simp [h_pred])
+    have h_none : HMap.find? (HMap.ofList (List.zip vars vals)) x = none := by
+      simp only [HMap.find?, HMap.ofList]
+      exact Std.HashMap.getElem?_ofList_of_contains_eq_false h_notin
+    rw [h_none]
+
+mutual
+/-- For distinct `vars` of the same length as `vals`, substituting the scope
+    `zip vars vals` into a type is opening it with `vals`. -/
+theorem subst_ofScopes_zip_eq_openVars
+    (vars : List TyIdentifier) (vals : LMonoTys) (body : LMonoTy)
+    (h_len : vars.length = vals.length) (h_nodup : vars.Nodup) :
+    LMonoTy.subst (Strata.Util.HMaps.ofScopes [List.zip vars vals]) body =
+    LMonoTy.openVars vars vals body := by
+  match body with
+  | .ftvar x =>
+    rw [LMonoTy.subst_unfold]
+    simp only [Strata.Util.HMaps.ofScopes, List.map_cons, List.map_nil,
+               HMaps.find?_single_scope]
+    exact find?_ofList_zip_eq_openVars_ftvar vars vals x h_len h_nodup
+  | .bitvec n => rw [LMonoTy.subst_bitvec]; simp only [LMonoTy.openVars]
+  | .tcons name args =>
+    rw [LMonoTy.subst_tcons]
+    simp only [LMonoTy.openVars]
+    congr 1
+    exact subst_ofScopes_zip_eq_openVarsList vars vals args h_len h_nodup
+
+/-- For distinct `vars` of the same length as `vals`, substituting the scope
+    `zip vars vals` into a list of types is opening them with `vals`. -/
+private theorem subst_ofScopes_zip_eq_openVarsList
+    (vars : List TyIdentifier) (vals : LMonoTys) (bodies : LMonoTys)
+    (h_len : vars.length = vals.length) (h_nodup : vars.Nodup) :
+    LMonoTys.subst (Strata.Util.HMaps.ofScopes [List.zip vars vals]) bodies =
+    LMonoTys.openVars vars vals bodies := by
+  match bodies with
+  | [] => rw [LMonoTys.subst_nil, LMonoTys.openVars]
+  | hd :: tl =>
+    rw [LMonoTys.subst_eq_map, List.map_cons, LMonoTys.openVars]
+    congr 1
+    · exact subst_ofScopes_zip_eq_openVars vars vals hd h_len h_nodup
+    · rw [← LMonoTys.subst_eq_map]
+      exact subst_ofScopes_zip_eq_openVarsList vars vals tl h_len h_nodup
+end
+
+end LExpr
+
+
 end -- public section
+
+namespace LExpr
+
+mutual
+/-- If `x` is free in `body` and first paired with `v`, `openVars` keeps `v`'s free variables. -/
+private theorem freeVars_openVars_of_find? (vars : List TyIdentifier) (vals : LMonoTys)
+    (x : TyIdentifier) (v : LMonoTy)
+    (hfind : (List.zip vars vals).find? (fun q => q.1 == x) = some (x, v))
+    (body : LMonoTy) (hx : x ∈ LMonoTy.freeVars body) :
+    ∀ tv, tv ∈ LMonoTy.freeVars v →
+      tv ∈ LMonoTy.freeVars (LMonoTy.openVars vars vals body) := by
+  match body with
+  | .ftvar y =>
+    have hxy : x = y := by simpa [LMonoTy.freeVars] using hx
+    subst hxy
+    intro tv htv
+    simp only [LMonoTy.openVars, hfind]
+    exact htv
+  | .bitvec _ => simp [LMonoTy.freeVars] at hx
+  | .tcons nm args =>
+    intro tv htv
+    simp only [LMonoTy.openVars, LMonoTy.freeVars]
+    exact freeVarsList_openVars_of_find? vars vals x v hfind args
+      (by simpa [LMonoTy.freeVars] using hx) tv htv
+
+/-- If `x` is free in `bodies` and first paired with `v`, `openVars` keeps `v`'s free variables. -/
+private theorem freeVarsList_openVars_of_find? (vars : List TyIdentifier) (vals : LMonoTys)
+    (x : TyIdentifier) (v : LMonoTy)
+    (hfind : (List.zip vars vals).find? (fun q => q.1 == x) = some (x, v))
+    (bodies : LMonoTys) (hx : x ∈ LMonoTys.freeVars bodies) :
+    ∀ tv, tv ∈ LMonoTy.freeVars v →
+      tv ∈ LMonoTys.freeVars (LMonoTys.openVars vars vals bodies) := by
+  match bodies with
+  | [] => simp [LMonoTys.freeVars] at hx
+  | hd :: tl =>
+    intro tv htv
+    rw [LMonoTys.freeVars_of_cons, List.mem_append] at hx
+    show tv ∈ LMonoTys.freeVars
+      (LMonoTy.openVars vars vals hd :: LMonoTys.openVars vars vals tl)
+    rw [LMonoTys.freeVars_of_cons, List.mem_append]
+    rcases hx with hx | hx
+    · exact Or.inl (freeVars_openVars_of_find? vars vals x v hfind hd hx tv htv)
+    · exact Or.inr (freeVarsList_openVars_of_find? vars vals x v hfind tl hx tv htv)
+end
+
+/-- Opening a body containing every name of `vars` keeps the free variables of `vals` free. -/
+theorem openVars_freeVars_superset (vars : List TyIdentifier) (vals : LMonoTys)
+    (body : LMonoTy) (hnd : vars.Nodup) (hlen : vars.length = vals.length)
+    (hused : ∀ tv ∈ vars, tv ∈ LMonoTy.freeVars body) :
+    ∀ tv, tv ∈ LMonoTys.freeVars vals →
+      tv ∈ LMonoTy.freeVars (LMonoTy.openVars vars vals body) := by
+  intro tv htv
+  obtain ⟨v, hv, htvv⟩ := LMonoTys.freeVars_exists htv
+  obtain ⟨x, hxz⟩ := List.mem_zip_2 hlen hv
+  exact freeVars_openVars_of_find? vars vals x v (find?_zip_of_mem vars vals x v hxz hnd)
+    body (hused x (List.of_mem_zip hxz).1) tv htvv
+
+mutual
+/-- For a body over `vars`, substitution commutes with opening by `vals`. -/
+theorem subst_openVars_comm (S : Subst)
+    (vars : List TyIdentifier) (vals : LMonoTys) (body : LMonoTy)
+    (h_wf : ∀ tv, tv ∈ LMonoTy.freeVars body → tv ∈ vars)
+    (h_len : vars.length = vals.length) :
+    LMonoTy.subst S (LMonoTy.openVars vars vals body) =
+    LMonoTy.openVars vars (vals.map (LMonoTy.subst S)) body := by
+  match body with
+  | .ftvar x =>
+    have h_x_in : x ∈ vars := h_wf x (by simp [LMonoTy.freeVars])
+    clear h_wf
+    induction vars generalizing vals with
+    | nil => simp at h_x_in
+    | cons v vs ih =>
+      cases vals with
+      | nil => simp at h_len
+      | cons vl vls =>
+        by_cases h_eq : v = x
+        · subst h_eq
+          simp only [LMonoTy.openVars, List.map_cons, List.zip_cons_cons,
+            List.find?_cons, beq_self_eq_true]
+        · have h_x_vs : x ∈ vs := by
+            cases h_x_in with
+            | head => exact absurd rfl h_eq
+            | tail _ h => exact h
+          have hbeq : (v == x) = false := by simp [h_eq]
+          simp only [LMonoTy.openVars, List.map_cons, List.zip_cons_cons,
+            List.find?_cons, hbeq]
+          have h_ih := ih vls (by simpa using h_len) h_x_vs
+          simpa only [LMonoTy.openVars] using h_ih
+  | .bitvec n =>
+    simp only [LMonoTy.openVars, LMonoTy.subst_bitvec]
+  | .tcons name args =>
+    simp only [LMonoTy.openVars, LMonoTy.subst_tcons]
+    congr 1
+    exact subst_openVarsList_comm S vars vals args
+      (fun tv htv => h_wf tv (by simp only [LMonoTy.freeVars]; exact htv)) h_len
+
+/-- For bodies over `vars`, substitution commutes with opening by `vals`. -/
+private theorem subst_openVarsList_comm (S : Subst)
+    (vars : List TyIdentifier) (vals : LMonoTys) (bodies : LMonoTys)
+    (h_wf : ∀ tv, tv ∈ LMonoTys.freeVars bodies → tv ∈ vars)
+    (h_len : vars.length = vals.length) :
+    LMonoTys.subst S (LMonoTys.openVars vars vals bodies) =
+    LMonoTys.openVars vars (vals.map (LMonoTy.subst S)) bodies := by
+  match bodies with
+  | [] =>
+    rw [LMonoTys.openVars, LMonoTys.subst_nil, LMonoTys.openVars]
+  | hd :: tl =>
+    rw [LMonoTys.openVars, LMonoTys.subst_eq_map, List.map_cons, LMonoTys.openVars]
+    congr 1
+    · have h_mem_hd : ∀ tv, tv ∈ hd.freeVars → tv ∈ LMonoTys.freeVars (hd :: tl) := by
+        intro tv htv
+        simp only [LMonoTys.freeVars]; exact List.mem_append_left _ htv
+      exact subst_openVars_comm S vars vals hd
+        (fun tv htv => h_wf tv (h_mem_hd tv htv)) h_len
+    · rw [← LMonoTys.subst_eq_map]
+      have h_mem_tl : ∀ tv, tv ∈ LMonoTys.freeVars tl → tv ∈ LMonoTys.freeVars (hd :: tl) := by
+        intro tv htv
+        simp only [LMonoTys.freeVars]; exact List.mem_append_right _ htv
+      exact subst_openVarsList_comm S vars vals tl
+        (fun tv htv => h_wf tv (h_mem_tl tv htv)) h_len
+end
+
+/-! ### `LTy.subst.go` and `buildSubstFromFunction` -/
+
+/-- Every key left by `LTy.subst.go` was in the original substitution. -/
+private theorem subst_go_key_in_original (S : Subst) (xs : List TyIdentifier)
+    (a : TyIdentifier) (h : a ∈ HMaps.keys (LTy.subst.go xs S)) :
+    a ∈ HMaps.keys S := by
+  induction xs generalizing S with
+  | nil => simpa [LTy.subst.go] using h
+  | cons x rest ih =>
+    simp only [LTy.subst.go] at h
+    exact HMaps.keys_remove_subset S x a (ih (S.remove x) h)
+
+/-- A key left by `LTy.subst.go xs S` is not one of the removed names `xs`. -/
+theorem subst_go_key_not_in_removed (S : Subst) (xs : List TyIdentifier)
+    (a : TyIdentifier) (h : a ∈ HMaps.keys (LTy.subst.go xs S)) :
+    a ∉ xs := by
+  induction xs generalizing S with
+  | nil => simp
+  | cons x rest ih =>
+    simp only [LTy.subst.go] at h
+    intro h_mem
+    rcases List.mem_cons.mp h_mem with rfl | h_rest
+    · -- a = x: a would be a key of S.remove a
+      have h_a_key := subst_go_key_in_original (S.remove a) rest a h
+      obtain ⟨v, hv⟩ := HMaps.find?_of_mem_keys (S.remove a) a h_a_key
+      rw [HMaps.find?_remove_self S a] at hv
+      exact absurd hv (by simp)
+    · exact ih (S.remove x) h h_rest
+
+/-- `buildSubstFromFunction l g` sends each member `v` of `l` to `g v`. -/
+public theorem find?_buildSubstFromFunction (l : List TyIdentifier) (g : TyIdentifier → LMonoTy)
+    (v : TyIdentifier) (hv : v ∈ l) :
+    HMap.find? (buildSubstFromFunction l g) v = some (g v) := by
+  induction l with
+  | nil => simp at hv
+  | cons w ws ih =>
+    simp only [buildSubstFromFunction, List.foldr_cons]
+    by_cases h_eq : v = w
+    · subst h_eq; rw [HMap.find?_insert_self]
+    · have h_bne : v != w := bne_iff_ne.mpr h_eq
+      rw [HMap.find?_insert_ne _ w v (g w) h_bne]
+      exact ih (by cases hv with | head => exact absurd rfl h_eq | tail _ h => exact h)
+
+/-- `buildSubstFromFunction l g` binds no name outside `l`. -/
+public theorem find?_buildSubstFromFunction_of_not_mem (l : List TyIdentifier)
+    (g : TyIdentifier → LMonoTy)
+    (v : TyIdentifier) (hv : v ∉ l) :
+    HMap.find? (buildSubstFromFunction l g) v = none := by
+  induction l with
+  | nil => exact HMap.find?_empty v
+  | cons w ws ih =>
+    have h_eq : v ≠ w := fun hc => hv (by rw [hc]; exact List.mem_cons_self)
+    simp only [buildSubstFromFunction, List.foldr_cons]
+    rw [HMap.find?_insert_ne _ w v (g w) (bne_iff_ne.mpr h_eq)]
+    exact ih (fun hm => hv (List.mem_cons_of_mem w hm))
+
+/-- `LTy.subst.go xs S` fixes a type in which no key of `S` outside `xs` occurs. -/
+theorem subst_go_eq_self_of_irrelevant_keys (S : Subst)
+    (xs : List TyIdentifier) (body : LMonoTy)
+    (h : ∀ k, k ∈ HMaps.keys S → k ∉ xs → k ∉ LMonoTy.freeVars body) :
+    LMonoTy.subst (LTy.subst.go xs S) body = body := by
+  apply LMonoTy.subst_no_relevant_keys
+  intro k hk_fv hk_key
+  have hk_S := subst_go_key_in_original S xs k hk_key
+  have hk_not_xs := subst_go_key_not_in_removed S xs k hk_key
+  exact h k hk_S hk_not_xs hk_fv
+
+end LExpr
+
+/-! ### Opening with closed values, and instantiation as renaming -/
+
+mutual
+/-- Opening bodies over `vars` with closed values gives closed types. -/
+theorem LMonoTys.freeVars_openVars_eq_nil (vars : List TyIdentifier) (vals : LMonoTys)
+    (hlen : vars.length = vals.length)
+    (hvals : ∀ t ∈ vals, LMonoTy.freeVars t = [])
+    (mtys : LMonoTys) (h : ∀ v ∈ LMonoTys.freeVars mtys, v ∈ vars) :
+    LMonoTys.freeVars (LMonoTys.openVars vars vals mtys) = [] := by
+  match mtys with
+  | [] => simp only [LMonoTys.openVars, LMonoTys.freeVars]
+  | hd :: tl =>
+    have h1 : ∀ v ∈ LMonoTy.freeVars hd, v ∈ vars := fun v hv =>
+      h v (by rw [LMonoTys.freeVars_of_cons, List.mem_append]; exact Or.inl hv)
+    have h2 : ∀ v ∈ LMonoTys.freeVars tl, v ∈ vars := fun v hv =>
+      h v (by rw [LMonoTys.freeVars_of_cons, List.mem_append]; exact Or.inr hv)
+    show LMonoTys.freeVars (LMonoTy.openVars vars vals hd :: LMonoTys.openVars vars vals tl) = []
+    rw [LMonoTys.freeVars_of_cons,
+      LMonoTy.freeVars_openVars_eq_nil vars vals hlen hvals hd h1,
+      LMonoTys.freeVars_openVars_eq_nil vars vals hlen hvals tl h2]
+    rfl
+
+/-- Opening every free variable of a type with closed values gives a closed type. -/
+theorem LMonoTy.freeVars_openVars_eq_nil (vars : List TyIdentifier) (vals : LMonoTys)
+    (hlen : vars.length = vals.length)
+    (hvals : ∀ t ∈ vals, LMonoTy.freeVars t = [])
+    (mty : LMonoTy) (h : ∀ v ∈ LMonoTy.freeVars mty, v ∈ vars) :
+    LMonoTy.freeVars (LMonoTy.openVars vars vals mty) = [] := by
+  match mty with
+  | .ftvar x =>
+    have hx : x ∈ vars := h x (by simp [LMonoTy.freeVars])
+    simp only [LMonoTy.openVars]
+    split
+    · rename_i fst_val v hfind
+      exact hvals v (zip_find_mem_snd vars vals x (fst_val, v) hfind)
+    · rename_i hfind
+      exfalso
+      have hxm : x ∈ (List.zip vars vals).map Prod.fst := by
+        rw [List.map_fst_zip (by omega)]; exact hx
+      obtain ⟨q, hq, hqe⟩ := List.mem_map.mp hxm
+      have hnp := List.find?_eq_none.mp hfind q hq
+      simp only [hqe, beq_self_eq_true] at hnp
+      exact hnp trivial
+  | .bitvec _ => simp only [LMonoTy.openVars, LMonoTy.freeVars]
+  | .tcons name args =>
+    show LMonoTys.freeVars (LMonoTys.openVars vars vals args) = []
+    exact LMonoTys.freeVars_openVars_eq_nil vars vals hlen hvals args
+      (by simpa only [LMonoTy.freeVars] using h)
+end
+
+/-- A substitution whose values are type variables sends every type variable to one. -/
+private theorem subst_ftvar_of_values_ftvar (S : Subst)
+    (hvals : ∀ x t, HMaps.find? S x = some t → ∃ y, t = LMonoTy.ftvar y)
+    (x : TyIdentifier) :
+    ∃ y, LMonoTy.subst S (.ftvar x) = .ftvar y := by
+  rw [LMonoTy.subst_unfold]
+  rcases hfind : HMaps.find? S x with _ | t
+  · exact ⟨x, by simp only [hfind]⟩
+  · obtain ⟨y, hy⟩ := hvals x t hfind
+    exact ⟨y, by simp only [hfind, hy]⟩
+
+/-- Instantiating type parameters renames them to type variables and keeps the context. -/
+theorem LMonoTys.instantiateEnv_subst {IDMeta : Type}
+    [DecidableEq IDMeta] [Hashable IDMeta] [ToFormat IDMeta]
+    (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TEnv IDMeta)
+    (mtys' : LMonoTys) (Env' : TEnv IDMeta)
+    (h : LMonoTys.instantiateEnv ids mtys Env = .ok (mtys', Env')) :
+    ∃ S : Subst, (∀ x : TyIdentifier, ∃ y, LMonoTy.subst S (.ftvar x) = .ftvar y) ∧
+      mtys' = mtys.map (LMonoTy.subst S) ∧ Env'.context = Env.context := by
+  unfold LMonoTys.instantiateEnv at h
+  cases hinst : LMonoTys.instantiate ids mtys Env.genEnv with
+  | error e => rw [hinst] at h; exact absurd h (by simp)
+  | ok v =>
+    obtain ⟨mtysI, genEnvI⟩ := v
+    rw [hinst] at h
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨hmtys, hEnv⟩ := h
+    simp only [LMonoTys.instantiate, bind, Except.bind] at hinst
+    elim_err hinst with vgen hgen
+    obtain ⟨freshtvs, genEnv1⟩ := vgen
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hinst
+    obtain ⟨hmtysI, hgenEnv⟩ := hinst
+    have hctx : Env'.context = Env.context := by
+      rw [← hEnv]
+      show genEnvI.context = Env.genEnv.context
+      rw [← hgenEnv]
+      exact TGenEnv.genTyVars_context ids.length Env.genEnv freshtvs genEnv1 hgen
+    have hlen : freshtvs.length = ids.length := TGenEnv.genTyVars_length _ _ _ _ hgen
+    refine ⟨Strata.Util.HMaps.ofScopes [List.zip ids (List.map LMonoTy.ftvar freshtvs)],
+      ?_, ?_, hctx⟩
+    · refine subst_ftvar_of_values_ftvar _ ?_
+      intro x t hfind
+      have hsingle : HMaps.find? (Strata.Util.HMaps.ofScopes
+            [List.zip ids (List.map LMonoTy.ftvar freshtvs)]) x
+          = HMap.find? (HMap.ofList (List.zip ids (List.map LMonoTy.ftvar freshtvs))) x := by
+        simp only [Strata.Util.HMaps.ofScopes, List.map_cons, List.map_nil, HMaps.find?]
+        cases HMap.find? (HMap.ofList (List.zip ids (List.map LMonoTy.ftvar freshtvs))) x <;> rfl
+      rw [hsingle] at hfind
+      have hval := HMap.find?_mem_values _ hfind
+      have hin := HMap.mem_values_ofList _ t hval
+      rw [List.map_snd_zip (by simp [hlen])] at hin
+      obtain ⟨y, -, hy⟩ := List.mem_map.mp hin
+      exact ⟨y, hy.symm⟩
+    · rw [← hmtys, ← hmtysI, LMonoTys.subst_eq_map]
+
+/-- `openVars` looks a type variable up in `vars` zipped against `vals`. -/
+theorem LMonoTy.openVars_ftvar (vars : List TyIdentifier) (vals : LMonoTys) (x : TyIdentifier) :
+    LMonoTy.openVars vars vals (.ftvar x)
+      = match (List.zip vars vals).find? (fun p => p.1 == x) with
+        | some (_, v) => v
+        | none => .ftvar x := by
+  unfold LMonoTy.openVars
+  rfl
+
+/-- If `vals` entries have `P` when their `vals'` counterparts do, so does opening a variable. -/
+theorem LMonoTy.openVars_ftvar_of_zip (P : LMonoTy → Prop) (x : TyIdentifier) :
+    ∀ (vars : List TyIdentifier) {vals vals' : LMonoTys}, vals.length = vals'.length →
+      (∀ p ∈ List.zip vals vals', P p.2 → P p.1) →
+      P (LMonoTy.openVars vars vals' (.ftvar x)) → P (LMonoTy.openVars vars vals (.ftvar x))
+  | [], _, _, _, _, h => by
+    simp only [LMonoTy.openVars_ftvar, List.zip_nil_left, List.find?_nil] at h ⊢
+    exact h
+  | _ :: _, [], [], _, _, h => by
+    simp only [LMonoTy.openVars_ftvar, List.zip_nil_right, List.find?_nil] at h ⊢
+    exact h
+  | _ :: _, [], _ :: _, hlen, _, _ => absurd hlen (by simp)
+  | _ :: _, _ :: _, [], hlen, _, _ => absurd hlen (by simp)
+  | v :: vs, a :: as, b :: bs, hlen, hab, h => by
+    rw [LMonoTy.openVars_ftvar] at h ⊢
+    simp only [List.zip_cons_cons, List.find?_cons] at h ⊢
+    by_cases hvx : (v == x) = true
+    · simp only [hvx] at h ⊢
+      exact hab (a, b) List.mem_cons_self h
+    · simp only [hvx] at h ⊢
+      rw [← LMonoTy.openVars_ftvar] at h ⊢
+      exact LMonoTy.openVars_ftvar_of_zip P x vs
+        (by simpa only [List.length_cons, Nat.add_right_cancel_iff] using hlen)
+        (fun p hp => hab p (List.mem_cons_of_mem _ hp)) h
+
+/-- `openVars` fixes a bitvector type. -/
+theorem LMonoTy.openVars_bitvec (vars : List TyIdentifier) (vals : LMonoTys) (n : Nat) :
+    LMonoTy.openVars vars vals (.bitvec n) = .bitvec n := by
+  unfold LMonoTy.openVars
+  rfl
+
+/-- `openVars` keeps a type-constructor head and descends into the arguments. -/
+theorem LMonoTy.openVars_tcons (vars : List TyIdentifier) (vals : LMonoTys) (nm : String)
+    (args : LMonoTys) :
+    LMonoTy.openVars vars vals (.tcons nm args)
+      = .tcons nm (LMonoTys.openVars vars vals args) := by
+  unfold LMonoTy.openVars
+  rfl
+
+public section
+
+/-! ### Properties preserved by unification -/
+
+/-- `unifyOne` and `unifyCore` preserve `P` on `Q`-constraints when `P []` holds, binding a variable
+    from a `Q` constraint preserves `P`, and `Q` passes to the subproblems unification creates. -/
+theorem Constraint.unify_preserves (P : Subst → Prop) (Q : Constraint → Prop)
+    (hempty : P [])
+    (hbind : ∀ (S : Subst) (id : TyIdentifier) (orig_lty : LMonoTy), P S →
+      Q (.ftvar id, orig_lty) ∨ Q (orig_lty, .ftvar id) →
+      P (HMaps.insert (Subst.apply (HMap.single id (LMonoTy.subst S orig_lty)) S) id
+        (LMonoTy.subst S orig_lty)))
+    (hbound : ∀ (S : Subst) (id : TyIdentifier) (orig_lty sty : LMonoTy), P S →
+      Q (.ftvar id, orig_lty) ∨ Q (orig_lty, .ftvar id) → HMaps.find? S id = some sty →
+      Q (sty, LMonoTy.subst S orig_lty))
+    (hargs : ∀ (name1 name2 : String) (args1 args2 : LMonoTys),
+      Q (.tcons name1 args1, .tcons name2 args2) → ∀ p ∈ List.zip args1 args2, Q p) :
+    (∀ (c : Constraint) (S : SubstInfo) (relS : ValidSubstRelation [c] S),
+      Constraint.unifyOne c S = .ok relS → P S.subst → Q c → P relS.newS.subst) ∧
+    (∀ (cs : Constraints) (S : SubstInfo) (relS : ValidSubstRelation cs S),
+      Constraints.unifyCore cs S = .ok relS → P S.subst → (∀ c ∈ cs, Q c) →
+      P relS.newS.subst) := by
+  apply Constraint.unifyOne.mutual_induct
+    (motive1 := fun c S => ∀ relS, Constraint.unifyOne c S = .ok relS →
+      P S.subst → Q c → P relS.newS.subst)
+    (motive2 := fun cs S => ∀ relS, Constraints.unifyCore cs S = .ok relS →
+      P S.subst → (∀ c ∈ cs, Q c) → P relS.newS.subst)
+  -- t1 == t2
+  · intro S t1 t2 h_eq _ relS h hS _
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · simp only [Except.ok.injEq] at h; subst h; exact hS
+    · exact absurd h_eq ‹_›
+  -- ftvar id, orig_lty; ftvar id == lty
+  · intro S id orig_lty h_neq _ _ _ _ relS h hS _
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp only [Except.ok.injEq] at h; subst h; exact hS
+  -- ftvar id, orig_lty; occurs check
+  · intro S id orig_lty h_neq _ _ _ _ _ relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h <;> grind
+  -- ftvar id, orig_lty; bound to sty
+  · intro S id orig_lty h_neq _ _ _ _ _ sty h_some ih_rec relS h hS hc
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty' h_some'
+        rw [h_some] at h_some'; simp only [Option.some.injEq] at h_some'; subst h_some'
+        simp only [bind, Except.bind] at h
+        elim_err h with relS' h_call
+        simp only [Except.ok.injEq] at h; rw [← h]
+        exact ih_rec relS' h_call hS (hbound S.subst id orig_lty sty hS (.inl hc) h_some)
+      · rename_i h_none; rw [h_some] at h_none; simp at h_none
+  -- ftvar id, orig_lty; unbound
+  · intro S id orig_lty h_neq _ _ _ _ _ h_none _ _ _ _ _ _ _ relS h hS hc
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty h_some; rw [h_none] at h_some; simp at h_some
+      · simp only [Except.ok.injEq] at h; subst h
+        exact hbind S.subst id orig_lty hS (.inl hc)
+  -- orig_lty, ftvar id; ftvar id == lty
+  · intro S orig_lty id h_neq _ _ _ _ _ relS h hS _
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp only [Except.ok.injEq] at h; subst h; exact hS
+  -- orig_lty, ftvar id; occurs check
+  · intro S orig_lty id h_neq _ _ _ _ _ _ relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp at h
+  -- orig_lty, ftvar id; bound to sty
+  · intro S orig_lty id h_neq _ _ _ _ _ _ sty h_some ih_rec relS h hS hc
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty' h_some'
+        rw [h_some] at h_some'; simp only [Option.some.injEq] at h_some'; subst h_some'
+        simp only [bind, Except.bind] at h
+        elim_err h with relS' h_call
+        simp only [Except.ok.injEq] at h; rw [← h]
+        exact ih_rec relS' h_call hS (hbound S.subst id orig_lty sty hS (.inr hc) h_some)
+      · rename_i h_none; rw [h_some] at h_none; simp at h_none
+  -- orig_lty, ftvar id; unbound
+  · intro S orig_lty id h_neq _ _ _ _ _ _ h_none _ _ _ _ _ _ _ relS h hS hc
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · split at h
+      · rename_i sty h_some; rw [h_none] at h_some; simp at h_some
+      · simp only [Except.ok.injEq] at h; subst h
+        exact hbind S.subst id orig_lty hS (.inr hc)
+  -- bitvec n1 == n2
+  · intro S n1 n2 h_neq h_eq_n relS h _ _
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp only [Except.ok.injEq] at h; subst h
+      exact hempty
+  -- bitvec n1 ≠ n2
+  · intro S n1 n2 h_neq h_neq_n relS h
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h <;> grind
+  -- tcons match
+  · intro S name1 args1 name2 args2 h_neq h_match _ ih_core relS h hS hc
+    rw [Constraint.unifyOne.eq_def] at h; simp only at h; split at h
+    · exact absurd ‹_› h_neq
+    · simp only [bind, Except.bind] at h
+      elim_err h with relS' h_call
+      simp only [Except.ok.injEq] at h; rw [← h]
+      exact ih_core relS' h_call hS (hargs name1 name2 args1 args2 hc)
+  -- tcons mismatch
+  · intro S name1 args1 name2 args2 h_neq h_mismatch relS h
+    rw [Constraint.unifyOne.eq_def] at h; grind
+  -- bitvec, tcons
+  · intro S size name args h_neq relS h
+    rw [Constraint.unifyOne.eq_def] at h; grind
+  -- tcons, bitvec
+  · intro S name args size h_neq relS h
+    rw [Constraint.unifyOne.eq_def] at h; grind
+  -- unifyCore []
+  · intro S relS h hS _
+    rw [Constraints.unifyCore.eq_def] at h; simp only at h
+    simp only [Except.ok.injEq] at h; subst h; exact hS
+  -- unifyCore (c :: rest)
+  · intro S c c_rest ih1 ih2 relS h hS hcs
+    rw [Constraints.unifyCore.eq_def] at h; simp only at h
+    simp only [Bind.bind, Except.bind, Except.mapError] at h
+    elim_err h with relS_one h_one_raw
+    have h_one := Except.mapError_ok_h' h_one_raw
+    elim_err h with relS_rest h_rest
+    simp only [Except.ok.injEq] at h; subst h
+    exact ih2 relS_one relS_rest h_rest (ih1 relS_one h_one hS (hcs c List.mem_cons_self))
+      (fun p hp => hcs p (List.mem_cons_of_mem c hp))
+
+/-! ### `renameAfter` and `removeKeys` -/
+
+/-- `renameAfter S ρ` maps a key of `S` to its value renamed by `ρ`, and other variables by `ρ`. -/
+private theorem Subst.find?_renameAfter (S ρ : Subst) (x : TyIdentifier) :
+    HMaps.find? (Subst.renameAfter S ρ) x =
+      match HMaps.find? S x with
+      | some t => some (LMonoTy.subst ρ t)
+      | none => HMaps.find? ρ x := by
+  rw [Subst.renameAfter, HMaps.find?_append, HMaps.find?_mapValues]
+  cases HMaps.find? S x with
+  | none => simp only [Option.map_none]
+  | some t => simp only [Option.map_some]
+
+/-- A free variable of `subst ρ t` is in a value of `ρ`, or free in `t` and unmapped by `ρ`. -/
+theorem LMonoTy.mem_freeVars_subst (ρ : Subst) (t : LMonoTy) (x : TyIdentifier)
+    (hx : x ∈ LMonoTy.freeVars (LMonoTy.subst ρ t)) :
+    x ∈ Subst.freeVars ρ ∨ (x ∈ LMonoTy.freeVars t ∧ HMaps.find? ρ x = none) := by
+  induction t with
+  | ftvar y =>
+    rw [LMonoTy.subst_unfold] at hx
+    cases hfind : HMaps.find? ρ y with
+    | some sty =>
+      simp only [hfind] at hx
+      exact Or.inl (Subst.freeVars_of_find_subset ρ hfind hx)
+    | none =>
+      simp only [hfind, LMonoTy.freeVars, List.mem_singleton] at hx
+      subst hx
+      have hmem : x ∈ LMonoTy.freeVars (.ftvar x) := by
+        simp only [LMonoTy.freeVars, List.mem_singleton]
+      exact Or.inr ⟨hmem, hfind⟩
+  | bitvec n =>
+    simp only [LMonoTy.subst_bitvec, LMonoTy.freeVars, List.not_mem_nil] at hx
+  | tcons name args ih =>
+    rw [LMonoTy.subst_tcons, LMonoTys.subst_eq_map, LMonoTy.freeVars] at hx
+    obtain ⟨u, hu, hxu⟩ := LMonoTys.freeVars_exists hx
+    obtain ⟨a, ha, hau⟩ := List.mem_map.mp hu
+    subst hau
+    rcases ih a ha hxu with hρ | ⟨hfa, hnone⟩
+    · exact Or.inl hρ
+    · exact Or.inr ⟨LMonoTys.freeVars_mem_subset ha hfa, hnone⟩
+
+/-- After removing keys, a removed key is unbound and other lookups are unchanged. -/
+private theorem Subst.find?_removeKeys (X : Subst) (R : List TyIdentifier) (x : TyIdentifier) :
+    HMaps.find? (Subst.removeKeys X R) x = if x ∈ R then none else HMaps.find? X x := by
+  induction R generalizing X with
+  | nil => simp only [Subst.removeKeys, List.not_mem_nil, ite_false]
+  | cons r rs ih =>
+    rw [Subst.removeKeys, ih]
+    by_cases hxs : x ∈ rs
+    · simp only [hxs, ite_true, List.mem_cons, or_true]
+    · by_cases hxr : x = r
+      · subst hxr
+        simp only [hxs, ite_false, List.mem_cons, true_or, ite_true, HMaps.find?_remove_self]
+      · have hne : (x != r) = true := by simpa only [bne_iff_ne, ne_eq] using hxr
+        simp only [hxs, ite_false, List.mem_cons, hxr, false_or, HMaps.find?_remove_ne X r x hne]
+
+/-- Every key left after removing keys was a key before and was not removed. -/
+theorem Subst.keys_removeKeys_subset (X : Subst) (R : List TyIdentifier) (k : TyIdentifier)
+    (hk : k ∈ HMaps.keys (Subst.removeKeys X R)) : k ∈ HMaps.keys X ∧ k ∉ R := by
+  constructor
+  · induction R generalizing X with
+    | nil => exact hk
+    | cons r rs ih => exact HMaps.keys_remove_subset X r k (ih (X.remove r) hk)
+  · intro hkR
+    obtain ⟨v, hv⟩ := HMaps.find?_of_mem_keys _ k hk
+    rw [Subst.find?_removeKeys, ite_eq_left hkR] at hv
+    cases hv
+
+/-- Every value left after removing keys was a value before. -/
+theorem Subst.values_removeKeys_subset (X : Subst) (R : List TyIdentifier) (v : LMonoTy)
+    (hv : v ∈ HMaps.values (Subst.removeKeys X R)) : v ∈ HMaps.values X := by
+  induction R generalizing X with
+  | nil => exact hv
+  | cons r rs ih => exact HMaps.values_remove_subset X r v (ih (X.remove r) hv)
+
+/-! ### Renamings that undo bindings -/
+
+/-- If `S` binds each `r ∈ R` to a variable that `ρ` sends back to `r`, then removing `R` from
+    `renameAfter S ρ` gives a substitution that acts as `S` followed by `ρ`. -/
+private theorem LMonoTy.subst_ambientRenaming (S ρ : Subst) (R : List TyIdentifier)
+    (hR : AmbientRenaming S ρ R) (t : LMonoTy) :
+    LMonoTy.subst (Subst.removeKeys (Subst.renameAfter S ρ) R) t
+      = LMonoTy.subst ρ (LMonoTy.subst S t) := by
+  symm
+  apply LMonoTy.subst_subst_of_pointwise
+  intro x _
+  by_cases hxR : x ∈ R
+  · obtain ⟨g, hSx, hρg⟩ := hR x hxR
+    rw [LMonoTy.subst_ftvar_of_some hSx, LMonoTy.subst_ftvar_of_some hρg]
+    have hnone : HMaps.find? (Subst.removeKeys (Subst.renameAfter S ρ) R) x = none := by
+      rw [Subst.find?_removeKeys, ite_eq_left hxR]
+    rw [LMonoTy.subst_ftvar_of_none hnone]
+  · have hfind : HMaps.find? (Subst.removeKeys (Subst.renameAfter S ρ) R) x
+        = HMaps.find? (Subst.renameAfter S ρ) x := by
+      rw [Subst.find?_removeKeys, ite_eq_right hxR]
+    rw [LMonoTy.subst_ftvar_congr x hfind]
+    cases hSx : HMaps.find? S x with
+    | some t =>
+      have hre : HMaps.find? (Subst.renameAfter S ρ) x = some (LMonoTy.subst ρ t) := by
+        rw [Subst.find?_renameAfter, hSx]
+      rw [LMonoTy.subst_ftvar_of_some hSx, LMonoTy.subst_ftvar_of_some hre]
+    | none =>
+      have hre : HMaps.find? (Subst.renameAfter S ρ) x = HMaps.find? ρ x := by
+        rw [Subst.find?_renameAfter, hSx]
+      rw [LMonoTy.subst_ftvar_of_none hSx]
+      exact LMonoTy.subst_ftvar_congr x hre.symm
+
+/-- If `S'` acts as `S` then `ρ`, then `S'` absorbs every `X` that `S` absorbs. -/
+private theorem Subst.absorbs_of_subst_comp (S S' ρ X : Subst)
+    (hcomp : ∀ t, LMonoTy.subst S' t = LMonoTy.subst ρ (LMonoTy.subst S t))
+    (h : Subst.absorbs S X) : Subst.absorbs S' X := by
+  intro a t hfind
+  rw [hcomp, hcomp, h a t hfind]
+
+/-- Removing `R` from `renameAfter S ρ` gives a well-formed substitution when `S` and `ρ` are and
+    every key of `S` in a value of `ρ` is in `R`. -/
+private theorem Subst.renameAfter_removeKeys_WF (S ρ : Subst) (R : List TyIdentifier)
+    (hS : SubstWF S) (hρ : SubstWF ρ)
+    (hdisj : ∀ x, x ∈ Subst.freeVars ρ → x ∈ HMaps.keys S → x ∈ R) :
+    SubstWF (Subst.removeKeys (Subst.renameAfter S ρ) R) := by
+  simp only [SubstWF, List.all_eq_true, decide_eq_true_eq] at hS hρ ⊢
+  intro k hk hkfv
+  obtain ⟨hk, hkR⟩ := Subst.keys_removeKeys_subset _ R k hk
+  have hkfv : k ∈ Subst.freeVars (Subst.renameAfter S ρ) := by
+    simp only [Subst.freeVars, List.mem_flatMap] at hkfv ⊢
+    obtain ⟨v, hv, hkv⟩ := hkfv
+    exact ⟨v, Subst.values_removeKeys_subset _ R v hv, hkv⟩
+  rw [Subst.renameAfter, HMaps.keys_append] at hk
+  rw [Subst.freeVars, Subst.renameAfter, HMaps.values_append, List.flatMap_append,
+    List.mem_append] at hkfv
+  have hk' : k ∈ HMaps.keys S ∨ k ∈ HMaps.keys ρ := by
+    rcases List.mem_append.mp hk with h | h
+    · exact Or.inl ((HMaps.mem_keys_mapValues_iff _ S k).mp h)
+    · exact Or.inr h
+  have hfromρ : k ∈ Subst.freeVars ρ → False := fun hkρ =>
+    hk'.elim (fun hkS => hkR (hdisj k hkρ hkS)) (fun hkR' => hρ k hkR' hkρ)
+  rcases hkfv with hval | hval
+  · obtain ⟨w, hw, hkw⟩ := List.mem_flatMap.mp hval
+    obtain ⟨v, hv, rfl⟩ := (HMaps.mem_values_mapValues _ S w).mp hw
+    rcases LMonoTy.mem_freeVars_subst ρ v k hkw with hkρ | ⟨hkv, hnone⟩
+    · exact hfromρ hkρ
+    · rcases hk' with hkS | hkR'
+      · exact hS k hkS (List.mem_flatMap.mpr ⟨v, hv, hkv⟩)
+      · obtain ⟨u, hu⟩ := HMaps.find?_of_mem_keys ρ k hkR'
+        rw [hnone] at hu
+        cases hu
+  · exact hfromρ hval
+
+/-! ### The ambient renaming (`gen` marks generated type variables) -/
+
+/-- An ambient key is a non-generated key of `S` that `S` binds to a generated variable. -/
+theorem mem_ambientKeys {gen : TyIdentifier → Bool} {S : Subst} {k : TyIdentifier}
+    (hk : k ∈ ambientKeys gen S) :
+    k ∈ HMaps.keys S ∧ gen k = false ∧ ∃ g, ambientTarget S k = some g ∧ gen g = true := by
+  obtain ⟨hkS, hp⟩ := List.mem_filter.mp hk
+  simp only [Bool.and_eq_true, Bool.not_eq_true'] at hp
+  obtain ⟨hng, hany⟩ := hp
+  cases ht : ambientTarget S k with
+  | none => simp only [ht, Option.any_none, Bool.false_eq_true] at hany
+  | some g =>
+    simp only [ht, Option.any_some] at hany
+    exact ⟨hkS, hng, g, rfl, hany⟩
+
+/-- If `ambientTarget S k = some g`, then `S` binds `k` to `g`. -/
+private theorem find?_of_ambientTarget {S : Subst} {k g : TyIdentifier}
+    (h : ambientTarget S k = some g) : HMaps.find? S k = some (.ftvar g) := by
+  unfold ambientTarget at h
+  split at h
+  · rename_i g' hf
+    cases h
+    exact hf
+  · cases h
+
+/-- A target's representative is an ambient key that `S` binds to the target. -/
+theorem ambientRep_spec {gen : TyIdentifier → Bool} {S : Subst} {g : TyIdentifier}
+    (hg : g ∈ ambientTargets gen S) :
+    ambientRep S (ambientKeys gen S) g ∈ ambientKeys gen S ∧
+      ambientTarget S (ambientRep S (ambientKeys gen S) g) = some g := by
+  have hg' := List.mem_eraseDups.mp hg
+  obtain ⟨k, hk, hkg⟩ := List.mem_filterMap.mp hg'
+  cases hfind : (ambientKeys gen S).find? (fun k => ambientTarget S k == some g) with
+  | none =>
+    have hnot := (List.find?_eq_none.mp hfind) k hk
+    simp only [hkg, beq_self_eq_true, not_true_eq_false] at hnot
+  | some k0 =>
+    have hmem := List.mem_of_find?_eq_some hfind
+    have hp := List.find?_some hfind
+    simp only [beq_iff_eq] at hp
+    simp only [ambientRep, hfind, Option.getD_some]
+    exact ⟨hmem, hp⟩
+
+/-- Every target of the ambient renaming is a generated variable. -/
+theorem ambientTargets_generated {gen : TyIdentifier → Bool} {S : Subst} {g : TyIdentifier}
+    (hg : g ∈ ambientTargets gen S) : gen g = true := by
+  obtain ⟨k, hk, hkg⟩ := List.mem_filterMap.mp (List.mem_eraseDups.mp hg)
+  obtain ⟨-, -, g', hg', hgen⟩ := mem_ambientKeys hk
+  rw [hkg] at hg'
+  cases hg'
+  exact hgen
+
+/-- Every key of `Subst.ofRenaming ρ` is a renamed variable of `ρ`. -/
+theorem Subst.mem_keys_ofRenaming {ρ : List (TyIdentifier × TyIdentifier)} {x : TyIdentifier}
+    (hx : x ∈ HMaps.keys (Subst.ofRenaming ρ)) : x ∈ ρ.map Prod.fst := by
+  simp only [Subst.ofRenaming, HMaps.keys, List.append_nil] at hx
+  have hmem := HMap.mem_keys_ofList _ x hx
+  simpa only [List.map_map, Function.comp_def] using hmem
+
+/-- Every free variable in a value of `Subst.ofRenaming ρ` is a target of `ρ`. -/
+theorem Subst.mem_freeVars_ofRenaming {ρ : List (TyIdentifier × TyIdentifier)} {x : TyIdentifier}
+    (hx : x ∈ Subst.freeVars (Subst.ofRenaming ρ)) : x ∈ ρ.map Prod.snd := by
+  simp only [Subst.freeVars, Subst.ofRenaming, HMaps.values, List.append_nil,
+    List.mem_flatMap] at hx
+  obtain ⟨v, hv, hxv⟩ := hx
+  have hv' := HMap.mem_values_ofList _ v hv
+  simp only [List.map_map, Function.comp_def, List.mem_map] at hv'
+  obtain ⟨q, hq, rfl⟩ := hv'
+  simp only [LMonoTy.freeVars, List.mem_singleton] at hxv
+  subst hxv
+  exact List.mem_map.mpr ⟨q, hq, rfl⟩
+
+/-- `Subst.ofRenaming ρ` is well formed when no target name of `ρ` is also a renamed variable. -/
+private theorem Subst.ofRenaming_WF (ρ : List (TyIdentifier × TyIdentifier))
+    (h : ∀ p ∈ ρ, p.2 ∉ ρ.map Prod.fst) : SubstWF (Subst.ofRenaming ρ) := by
+  simp only [SubstWF, List.all_eq_true, decide_eq_true_eq]
+  intro k hk hkfv
+  obtain ⟨q, hq, rfl⟩ := List.mem_map.mp (Subst.mem_freeVars_ofRenaming hkfv)
+  exact h q hq (Subst.mem_keys_ofRenaming hk)
+
+/-- The ambient renaming sends each target to its representative. -/
+private theorem find?_ambientRenaming {gen : TyIdentifier → Bool} {S : Subst} {g : TyIdentifier}
+    (hg : g ∈ ambientTargets gen S) :
+    HMaps.find? (ambientRenaming gen S) g
+      = some (.ftvar (ambientRep S (ambientKeys gen S) g)) := by
+  simp only [ambientRenaming, Subst.ofRenaming, List.map_map, Function.comp_def]
+  rw [HMaps.find?_single_scope]
+  exact HMap.find?_ofList_self_map _
+    (fun g => LMonoTy.ftvar (ambientRep S (ambientKeys gen S) g)) g hg
+
+/-- Every variable in a value of the ambient renaming is a representative. -/
+private theorem mem_freeVars_ambientRenaming {gen : TyIdentifier → Bool} {S : Subst}
+    {x : TyIdentifier} (hx : x ∈ Subst.freeVars (ambientRenaming gen S)) :
+    x ∈ ambientReps gen S := by
+  simpa only [ambientReps, List.map_map, Function.comp_def] using Subst.mem_freeVars_ofRenaming hx
+
+/-- Each representative is bound by `S` to a target the ambient renaming sends back to it. -/
+private theorem ambientRenaming_spec (gen : TyIdentifier → Bool) (S : Subst) :
+    AmbientRenaming S (ambientRenaming gen S) (ambientReps gen S) := by
+  intro r hr
+  obtain ⟨g, hg, rfl⟩ := List.mem_map.mp hr
+  exact ⟨g, find?_of_ambientTarget (ambientRep_spec hg).2, find?_ambientRenaming hg⟩
+
+/-- The ambient renaming is well formed. -/
+private theorem ambientRenaming_WF (gen : TyIdentifier → Bool) (S : Subst) :
+    SubstWF (ambientRenaming gen S) := by
+  refine Subst.ofRenaming_WF _ fun p hp hmem => ?_
+  obtain ⟨g, hg, rfl⟩ := List.mem_map.mp hp
+  simp only [List.map_map, Function.comp_def, List.map_id'] at hmem
+  have hng := (mem_ambientKeys (ambientRep_spec hg).1).2.1
+  rw [ambientTargets_generated hmem] at hng
+  cases hng
+
+/-- The ambient substitution is `S` followed by a renaming. -/
+private theorem ambientSubst_comp (gen : TyIdentifier → Bool) (S : Subst) :
+    ∃ ρ, ∀ t, LMonoTy.subst (ambientSubst gen S) t = LMonoTy.subst ρ (LMonoTy.subst S t) := by
+  unfold ambientSubst
+  split
+  · exact ⟨[], fun t => (LMonoTy.subst_nil _).symm⟩
+  · exact ⟨ambientRenaming gen S,
+      LMonoTy.subst_ambientRenaming S _ _ (ambientRenaming_spec gen S)⟩
+
+/-- The ambient substitution absorbs every `X` that `S` absorbs. -/
+theorem ambientSubst_absorbs (gen : TyIdentifier → Bool) (S X : Subst)
+    (h : Subst.absorbs S X) : Subst.absorbs (ambientSubst gen S) X := by
+  obtain ⟨ρ, hρ⟩ := ambientSubst_comp gen S
+  exact Subst.absorbs_of_subst_comp S _ ρ X hρ h
+
+/-- The ambient substitution of a well-formed substitution is well formed. -/
+theorem ambientSubst_WF (gen : TyIdentifier → Bool) (S : Subst) (hS : SubstWF S) :
+    SubstWF (ambientSubst gen S) := by
+  unfold ambientSubst
+  split
+  · exact hS
+  · exact Subst.renameAfter_removeKeys_WF S _ _ hS (ambientRenaming_WF gen S)
+      (fun x hx _ => mem_freeVars_ambientRenaming hx)
+
+end -- public section
+
 end Lambda

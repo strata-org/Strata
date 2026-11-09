@@ -48,7 +48,7 @@ theorem eqModuloMeta_true_implies_denote_eq
     unfold LExpr.eqModuloMeta at heql
     have heq: (e₁.eraseMetadata = e₂.eraseMetadata) := by
       unfold BEq.beq instBEqLExprOfIdentifier at heql
-      simp at heql
+      simp only at heql
       rw[LExpr.beq_eq] at heql
       exact heql
     rw[denote_replaceMetadata _ _ _ _ bvarVal (fun _ => ()) h₁]
@@ -255,7 +255,7 @@ theorem eql_true_implies_denote_eq
     | case3 => contradiction -- abs vs abs, ty1 ≠ ty2: some false ≠ some true
     | case4 m1 pn1 ty1 body1 m2 pn2 ty2 body2 htyeq hclosed hnotmod ih =>
       -- abs vs abs, same type, both closed, varOpen recurse
-      have hty : ty1 = ty2 := by simp [bne_iff_ne] at htyeq; exact htyeq
+      have hty : ty1 = ty2 := by simp only [bne_iff_ne, ne_eq, Decidable.not_not] at htyeq; exact htyeq
       subst hty
       -- Invert h₁ to get aty, rty, and body typing
       -- ty1 must be some aty for HasTypeA to hold
@@ -332,7 +332,7 @@ theorem eql_true_implies_denote_eq
       have hname1 := Factory.getElem?_name hget1  -- f1.name.name = name1.name
       have hname2 := Factory.getElem?_name hget2  -- f2.name.name = name2.name
       have hsamename' : f1.name.name = f2.name.name := by
-        simp [bne_iff_ne] at hsamename; exact hsamename
+        simp only [bne_iff_ne, ne_eq, Decidable.not_not] at hsamename; exact hsamename
       have hnames_eq : name1.name = name2.name := by rw [← hname1, ← hname2, hsamename']
       -- Step 3: f1 = f2 (same key in the factory)
       have hf_eq : f1 = f2 := by
@@ -351,7 +351,8 @@ theorem eql_true_implies_denote_eq
       · rename_i _ args1' f1' _ args2' f2' heq1' heq2'
         rw [hcall1] at heq1'; cases heq1'
         rw [hcall2] at heq2'; cases heq2'
-        simp at heql
+        simp only [Bool.or_self, Bool.not_eq_eq_eq_not, Bool.not_true, bne_self_eq_false, Bool.false_eq_true,
+    ↓reduceIte, Option.ite_none_left_eq_some, Bool.not_eq_false] at heql
         obtain ⟨hconstr, heql_fold⟩ := heql
         -- Extract OpsConsistent for arguments from the top-level OpsConsistent
         have hoc_args1 := OpsConsistent_callOfLFunc_args hoc₁ hcall1
@@ -455,13 +456,13 @@ theorem eql_false_implies_denote_ne
     exact hneq (denoteConst_injective tcInterp vt c1 c2 htyeq hdenote_eq)
   | case3 m1 pn1 ty1 body1 m2 pn2 ty2 body2 htyneq hnotmod => -- abs/abs, ty1 ≠ ty2
     -- Vacuous: HasTypeA forces ty1 = ty2
-    have htyneq' : ty1 ≠ ty2 := by simp [bne_iff_ne] at htyneq; exact htyneq
+    have htyneq' : ty1 ≠ ty2 := by simp only [bne_iff_ne, ne_eq] at htyneq; exact htyneq
     exfalso
     apply htyneq'
     cases h₁ with | abs hbody1 => cases h₂ with | abs hbody2 => rfl
   | case4 m1 pn1 ty1 body1 m2 pn2 ty2 body2 htyeq hclosed hnotmod ih =>
     -- abs/abs, same type, both closed, recurse returns some false
-    have hty : ty1 = ty2 := by simp [bne_iff_ne] at htyeq; exact htyeq
+    have hty : ty1 = ty2 := by simp only [bne_iff_ne, ne_eq, Decidable.not_not] at htyeq; exact htyeq
     subst hty
     cases ty1 with
     | none => exact absurd (LExpr.HasTypeA_to_typeCheck h₁) (by simp [LExpr.typeCheck])
@@ -507,16 +508,16 @@ theorem eql_false_implies_denote_ne
     rw [hcall1, hcall2] at heql; simp [hnotconstr] at heql
   | case9 e1 e2 hnotmod callee1 args1 f1 callee2 args2 f2 hcall1 hcall2 hisconstr hdiffname =>
     -- Different constructors
-    have hconstr1 : f1.isConstr = true := by simp at hisconstr; exact hisconstr.1
-    have hconstr2 : f2.isConstr = true := by simp at hisconstr; exact hisconstr.2
-    have hdiff : f1.name.name ≠ f2.name.name := by simp [bne_iff_ne] at hdiffname; exact hdiffname
+    have hconstr1 : f1.isConstr = true := by simp only [Bool.or_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, not_or, Bool.not_eq_false] at hisconstr; exact hisconstr.1
+    have hconstr2 : f2.isConstr = true := by simp only [Bool.or_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, not_or, Bool.not_eq_false] at hisconstr; exact hisconstr.2
+    have hdiff : f1.name.name ≠ f2.name.name := by simp only [bne_iff_ne, ne_eq] at hdiffname; exact hdiffname
     exact callOfLFunc_constr_disjoint_denote tcInterp opInterp fvarVal vt
       h₁ h₂ hcall1 hcall2 hconstr1 hconstr2 hdiff hoc₁ hoc₂ hfwf hcwf htfwf hConstrIC
   | case10 e1 e2 hnotmod callee1 args1 f1 callee2 args2 f2 hcall1 hcall2 hisconstr hsamename _ _ _ _ ih_args =>
     -- Same constructor, fold returns some false
-    have hconstr1 : f1.isConstr = true := by simp at hisconstr; exact hisconstr.1
-    have hconstr2 : f2.isConstr = true := by simp at hisconstr; exact hisconstr.2
-    have hsamename' : f1.name.name = f2.name.name := by simp [bne_iff_ne] at hsamename; exact hsamename
+    have hconstr1 : f1.isConstr = true := by simp only [Bool.or_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, not_or, Bool.not_eq_false] at hisconstr; exact hisconstr.1
+    have hconstr2 : f2.isConstr = true := by simp only [Bool.or_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, not_or, Bool.not_eq_false] at hisconstr; exact hisconstr.2
+    have hsamename' : f1.name.name = f2.name.name := by simp only [bne_iff_ne, ne_eq, Decidable.not_not] at hsamename; exact hsamename
     -- Establish f1 = f2
     obtain ⟨_, name1, _, hcallee1, hget1⟩ := Factory.callOfLFunc_getElem? hcall1
     obtain ⟨_, name2, _, hcallee2, hget2⟩ := Factory.callOfLFunc_getElem? hcall2
@@ -532,7 +533,8 @@ theorem eql_false_implies_denote_ne
       h₁ h₂ hcall1 hcall2 hconstr1 hoc₁ hoc₂ hfwf hcwf hConstrIC heq_denote
     -- Extract an arg pair with eql = some false
     rw [hcall1, hcall2] at heql
-    simp at heql
+    simp only [Bool.or_self, Bool.not_eq_eq_eq_not, Bool.not_true, bne_self_eq_false, Bool.false_eq_true,
+    ↓reduceIte, Option.ite_none_left_eq_some, Bool.not_eq_false] at heql
     obtain ⟨_, heql_fold⟩ := heql
     obtain ⟨i, a1, a2, ha1, ha2, hmem1, heql_i⟩ :=
       eqlCombine_attach_zip_some_false heql_fold

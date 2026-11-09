@@ -23,8 +23,6 @@ open Procedure Statement Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 
 /-- info: Error:
 none
-Subst Map:
-
 Expression Env:
 State:
 

@@ -32,8 +32,8 @@ open Imperative
 
 -- ---------------------------------------------------------------------------
 -- From this point on, we define the inductive relations that specify Core
--- statement/expression semantics: check evaluation, variable initialization
--- and havoc, and command/body execution.  Expression-list evaluation and
+-- statement/expression semantics: variable initialization and havoc, and
+-- command/body execution.  Expression-list evaluation and
 -- reading/updating/initializing stores are Imperative's `EvalExpressions`,
 -- `ReadValues`, `UpdateStates` and `InitStates`.  Core's call semantics is the
 -- generic one at `Expression`: `HavocVars`, `withOldSnapshots`, `InitCallFrame`,
@@ -41,34 +41,6 @@ open Imperative
 -- relations `EvalCommandE`, `CoreBodyExecE`, `EvalCommandContractE` are
 -- abbreviations of their `Imperative` counterparts.
 -- ---------------------------------------------------------------------------
-
-/-- Evaluate assertion-style checks for failure-flag call semantics, reporting
-whether any check evaluates to false. The explicit `isDefined` premises cover
-all syntactic free variables, including variables in branches that evaluation
-does not take. Event semantics records the checks with `defaultAssertEvents`
-instead. -/
-inductive EvalChecks (fac : Expression.Factory) (σ : CoreStore) :
-    List Expression.Expr → Bool → Prop where
-  | eval_none : EvalChecks fac σ [] false
-  | eval_pass :
-      isDefined σ (HasFvars.getFvars e) →
-      Expression.eval fac σ e = some HasBool.tt →
-      EvalChecks fac σ es failed →
-      EvalChecks fac σ (e :: es) failed
-  | eval_fail :
-      isDefined σ (HasFvars.getFvars e) →
-      Expression.eval fac σ e = some HasBool.ff →
-      EvalChecks fac σ es failed →
-      EvalChecks fac σ (e :: es) true
-
-/-- Every assumption in a failure-flag contract call is syntactically defined
-and evaluates to true. A false assumption admits no execution. Event semantics
-records the assumptions with `assumeEvents` instead. -/
-abbrev AssumeExprs (fac : Expression.Factory) (σ : CoreStore)
-    (es : List Expression.Expr) : Prop :=
-  Forall (fun e =>
-    isDefined σ (HasFvars.getFvars e) ∧
-    Expression.eval fac σ e = some HasBool.tt) es
 
 inductive InitVars : SemanticStore P → List P.Ident → SemanticStore P → Prop where
   | init_none :
@@ -102,7 +74,7 @@ inductive Inits : SemanticStore P → SemanticStore P → Prop where
 def updatedState
   (σ : SemanticStore P)
   (ident : P.Ident)
-  (val : P.Expr)
+  (val : P.Val)
   : SemanticStore P :=
   λ k ↦ if (@Decidable.decide (k = ident) (P.EqIdent k ident))
     then some val
@@ -110,7 +82,7 @@ def updatedState
 
 def updatedStates'
   (σ : SemanticStore P)
-  (idvals : List (P.Ident × P.Expr))
+  (idvals : List (P.Ident × P.Val))
   : SemanticStore P :=
   match idvals with
   | [] => σ
@@ -119,7 +91,7 @@ def updatedStates'
 def updatedStates
   (σ : SemanticStore P)
   (idents : List P.Ident)
-  (vals : List P.Expr)
+  (vals : List P.Val)
   : SemanticStore P :=
   updatedStates' σ $ idents.zip vals
 
@@ -142,7 +114,7 @@ actuals. The frame also snapshots each inout formal as `old`, so postconditions
 mentioning `old g` are evaluable in the callee.  The generic
 `Calls.InitCallFrame` at `Expression`. -/
 abbrev InitCallFrame
-    (p : Procedure) (inputVals outOnlyVals : List Expression.Expr)
+    (p : Procedure) (inputVals outOnlyVals : List Expression.Val)
     (σAO : CoreStore) : Prop :=
   Calls.InitCallFrame p inputVals outOnlyVals σAO
 
@@ -180,84 +152,7 @@ abbrev CallExit (fac : Expression.Factory) (σ : CoreStore) (p : Procedure)
   Calls.CallExit fac σ p callArgs σEnd σ'
 
 /-!
-### Mutual inductive: `EvalCommand` and `CoreStepStar`
-
-`CoreStepStar` is the reflexive-transitive closure of `StepStmt` specialized
-to the Core language with `EvalCommand` as the command semantics.  It is
-defined mutually with `EvalCommand` so that `call_sem` can reference it
-without violating Lean's strict positivity requirement.
-
-The generic `ReflTrans (StepStmt ...)` cannot be used here because it would
-place `EvalCommand` in a non-strictly-positive position.
--/
-
-mutual
-
-/-- Reflexive-transitive closure of `StepStmt` for the Core language,
-    defined mutually with `EvalCommand` to satisfy strict positivity. -/
-inductive CoreStepStar
-    (π : String → Option Procedure) :
-    CoreConfig → CoreConfig → Prop where
-  | refl : CoreStepStar π c c
-  | step :
-    Imperative.StepStmt Expression (EvalCommand π) c₁ c₂ →
-    CoreStepStar π c₂ c₃ →
-    ----
-    CoreStepStar π c₁ c₃
-
-/-- Execution of a procedure body. Only structured bodies have an executable
-    semantics; the `.cfg` arm of `Procedure.Body` has no inhabitant of
-    `CoreBodyExec`.
-
-    The initial execution environment `ρ` carries the store, active factory,
-    and entry failure flag.
-
-    For structured bodies, the body is wrapped in `Stmt.block "" ss #[]` so that
-    variable scoping introduced by the body does not leak past the procedure
-    boundary. This wrapping matches `Specification.AssertSpecInProcedure` and
-    the `procToVerifyStmt` pipeline. -/
-inductive CoreBodyExec
-    (π : String → Option Procedure) :
-    Procedure.Body → Env Expression → CoreStore → Bool → Prop where
-  | structured {ss ρ ρ'} :
-    CoreStepStar π
-      (.stmt (Stmt.block "" ss #[]) ρ)
-      (.terminal ρ') →
-    CoreBodyExec π (.structured ss) ρ ρ'.store ρ'.hasFailure
-
-/-- Core command semantics. The first relation index `fac` is the active
-    expression factory. -/
-inductive EvalCommand (π : String → Option Procedure) :
-  Expression.Factory → CoreStore → Command → CoreStore → Bool → Prop where
-  | cmd_sem {fac σ c σ' f} :
-    Imperative.EvalCmd (P := Expression) fac σ c σ' f →
-    ----
-    EvalCommand π fac σ (CmdExt.cmd c) σ' f
-
-  /-- Arguments are matched positionally in three alignments: `inArgs`
-      (`getInputExprs`) ↔ `p.header.inputs`; `lhs` (`getLhs`) ↔
-      `p.header.outputs`; and `getOutArgs callArgs` ↔
-      `ListMap.keys p.header.getOutputOnlyParams`. The third alignment follows
-      from the second because every inout formal is passed as `.inoutArg`. -/
-  -- TODO: Instantiate procedure type variables for polymorphic calls.
-  | call_sem {fac σ n p callArgs σ' σ_final
-      bodyFailed preFailed postFailed md σAO} :
-    π n = .some p →
-    CallEntry fac σ p callArgs σAO →
-    EvalChecks fac σAO
-      (Procedure.Spec.getDefaultCheckExprs p.spec.preconditions) preFailed →
-    CoreBodyExec π p.body ⟨σAO, fac, false⟩ σ_final bodyFailed →
-    EvalChecks fac σ_final
-      (Procedure.Spec.getDefaultCheckExprs p.spec.postconditions) postFailed →
-    CallExit fac σ p callArgs σ_final σ' →
-    ----
-    EvalCommand π fac σ (CmdExt.call n callArgs md) σ'
-      ((preFailed || bodyFailed) || postFailed)
-
-end
-
-/-!
-### Mutual event semantics: `EvalCommandE` and `CoreBodyExecE`
+### Event semantics: `EvalCommandE` and `CoreBodyExecE`
 -/
 
 /-- Event-producing execution of a Core procedure body, structured or CFG: the
@@ -286,68 +181,15 @@ abbrev CoreStepE
     (π : String → Option Procedure) :=
   StepStmtExtE π
 
-/-- Core-level single-step relation. -/
-abbrev CoreStep
-    (π : String → Option Procedure) :=
-  Imperative.StepStmt Expression (EvalCommand π)
-
-abbrev EvalStatement (π : String → Option Procedure) :
-    Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmtSmall Expression (EvalCommand π)
-
-abbrev EvalStatements (π : String → Option Procedure) :
-    Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmtsSmall Expression (EvalCommand π)
-
 /-! ## Old-variable environment augmentation -/
 
 /-- Augment an environment with old-variable bindings for a set of variables
     whose pre-state values are snapshotted (the inout parameters / referenced
     globals of a procedure). This is the environment-level counterpart of
-    `withOldSnapshots`; `hasFailure` is preserved. -/
+    `withOldSnapshots`; the factory is preserved. -/
 def withOldBindings
     (modifies : List Expression.Ident) (ρ : Env Expression) : Env Expression :=
   { ρ with store := withOldSnapshots modifies ρ.store }
-
-/-! ## Assert detection -/
-
-/-- Assert detection for Core configurations.
-
-    Core commands have type `Command = CmdExt Expression`, so an assert
-    command appears as `.cmd (CmdExt.cmd (Cmd.assert l e md))`.
-    Call commands (`.cmd (CmdExt.call ...)`) never trigger assert detection. -/
-@[expose] def coreIsAtAssert : CoreConfig → Imperative.AssertId Expression → Prop
-  | .stmt (.cmd (.cmd (.assert label expr _))) _, aid =>
-    aid.label = label ∧ aid.expr = expr
-  | .stmts ((.cmd (.cmd (.assert label expr _))) :: _) _, aid =>
-    aid.label = label ∧ aid.expr = expr
-  | .block _ _ inner, aid => coreIsAtAssert inner aid
-  | .seq inner _, aid => coreIsAtAssert inner aid
-  | _, _ => False
-
----------------------------------------------------------------------
-
-inductive EvalCommandContract : (String → Option Procedure)  →
-  Expression.Factory → CoreStore → Command → CoreStore → Bool → Prop where
-  | cmd_sem {π fac σ c σ' f} :
-    Imperative.EvalCmd (P := Expression) fac σ c σ' f →
-    ----
-    EvalCommandContract π fac σ (CmdExt.cmd c) σ' f
-
-  /-- Contract-based semantics: like `EvalCommand.call_sem` but replaces
-      body execution with havoc + postcondition assumptions.
-      Same positional matching as `EvalCommand.call_sem`. -/
-  -- TODO: Instantiate procedure type variables for polymorphic calls.
-  | call_sem {π σ σO n p callArgs σ' preFailed md fac σAO} :
-    π n = .some p →
-    CallEntry fac σ p callArgs σAO →
-    EvalChecks fac σAO
-      (Procedure.Spec.getDefaultCheckExprs p.spec.preconditions) preFailed →
-    HavocVars fac σAO (ListMap.keys p.header.outputs) σO →
-    AssumeExprs fac σO (Procedure.Spec.getCheckExprs p.spec.postconditions) →
-    CallExit fac σ p callArgs σO σ' →
-    ----
-    EvalCommandContract π fac σ (.call n callArgs md) σ' preFailed
 
 /-- Event-producing contract abstraction for Core commands: the generic
 `EvalCmdExtContractE` at `Expression`.
@@ -359,14 +201,6 @@ snapshot. No procedure body is executed. -/
 abbrev EvalCommandContractE (π : String → Option Procedure) :
     Expression.Factory → CoreStore → Command → CoreStore → Trace Expression → Prop :=
   EvalCmdExtContractE π
-
-abbrev EvalStatementContract (π : String → Option Procedure) :
-    Imperative.Env Expression → Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmtSmall Expression (EvalCommandContract π)
-
-abbrev EvalStatementsContract (π : String → Option Procedure) :
-    Imperative.Env Expression → List Statement → Imperative.Env Expression → Prop :=
-  Imperative.EvalStmtsSmall Expression (EvalCommandContract π)
 
 end Core
 

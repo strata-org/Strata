@@ -60,19 +60,19 @@ instance [DecidableEq P.Expr] : LawfulBEq (ExprOrNondet P) where
 
 /-! ## Assertion and cover identity -/
 
-/-- An assertion identifier: the label + expression attached to an
-    `assert` command. -/
+/-- An assertion identifier: the label and metadata attached to an `assert`
+    command. Metadata carries the source location, so assertions at different
+    source positions have different identifiers even when labels are reused. The
+    identifier does not depend on the asserted expression, so a phase that
+    rewrites the expression but keeps the metadata keeps the identifier. Cover
+    identifiers (`CoverId`) are the same type. -/
 structure AssertId (P : PureExpr) where
   label : String
-  expr  : P.Expr
+  md    : MetaData P
 
-/-- A cover identifier: the source label and metadata attached to a `cover`
-command. Metadata distinguishes occurrences even when labels are reused.
-
-TODO: Update AssertId to have the identical definition, because labels can
-overlap, and expr may easily change after transformations.
--/
-abbrev CoverId (P : PureExpr) := String × MetaData P
+/-- A cover identifier: the label and metadata attached to a `cover` command,
+    the same type as `AssertId`, with the same meaning for covers. -/
+abbrev CoverId (P : PureExpr) := AssertId P
 
 /-! ## Commands
 
@@ -268,6 +268,12 @@ instance [DecidableEq P.Expr] [DecidableEq P.Ident] : LawfulBEq (CallArg P) wher
 
 namespace CallArg
 
+/-- A call argument with `f` applied to its input expression. -/
+@[expose] def mapInput (f : P.Expr → P.Expr) : CallArg P → CallArg P
+  | .inArg e => .inArg (f e)
+  | .inoutArg id => .inoutArg id
+  | .outArg id => .outArg id
+
 def getInArgs (args : List (CallArg P)) : List P.Expr :=
   args.filterMap fun | .inArg e => some e | _ => none
 
@@ -304,7 +310,7 @@ where
 
 theorem replaceInArgs_length (args : List (CallArg P)) (newExprs : List P.Expr) :
     (replaceInArgs args newExprs).length = args.length := by
-  simp [replaceInArgs]
+  simp only [replaceInArgs]
   suffices h : ∀ es, (replaceInArgs.go args es).length = args.length from h newExprs
   induction args with
   | nil => simp [replaceInArgs.go]
@@ -432,10 +438,36 @@ def Cmds.modifiedVars (cs : Cmds P) : List P.Ident :=
   | c :: crest => Cmd.modifiedVars c ++ Cmds.modifiedVars crest
   termination_by (sizeOf cs)
 
+/-- The annotated free-variable reads of an `ExprOrNondet`. -/
+@[expose] def ExprOrNondet.getTypedVars [HasFvars P] (e : ExprOrNondet P) :
+    List (P.Ident × P.Ty) :=
+  match e with
+  | .det e => HasFvars.getTypedFvars e
+  | .nondet => []
+
+/-- The annotated free-variable reads of the command `c`. -/
+@[expose] def Cmd.getTypedVars [HasFvars P] (c : Cmd P) : List (P.Ident × P.Ty) :=
+  match c with
+  | .init _ _ e _ => e.getTypedVars
+  | .set _ e _ => e.getTypedVars
+  | .assert _ e _ => HasFvars.getTypedFvars e
+  | .assume _ e _ => HasFvars.getTypedFvars e
+  | .cover _ e _ => HasFvars.getTypedFvars e
+
+/-- The variable the command `c` defines, with its declared type. -/
+@[expose] def Cmd.typedDefinedVars (c : Cmd P) : List (P.Ident × P.Ty) :=
+  match c with
+  | .init name ty _ _ => [(name, ty)]
+  | _ => []
+
 instance (P : PureExpr) [HasFvars P] : HasVarsImp P (Cmd P) where
   definedVars c _ := Cmd.definedVars c
   modifiedVars := Cmd.modifiedVars
   readVars := Cmd.getVars
+
+instance (P : PureExpr) [HasFvars P] : HasTypedVarsImp P (Cmd P) where
+  typedReadVars := Cmd.getTypedVars
+  typedDefinedVars := Cmd.typedDefinedVars
 
 mutual
 /-- Get all operator/function names referenced by `c`. -/

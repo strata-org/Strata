@@ -349,7 +349,7 @@ procedure callsWithBadInput()
   opaque
 {
   out := needsNonNeg2(-1)
-//       ^^^^^^^^^^^^^^^^ error: the input is non-negative could not be proved
+//       ^^^^^^^^^^^^^^^^ error: the input is non-negative does not hold
 };
 #end
 

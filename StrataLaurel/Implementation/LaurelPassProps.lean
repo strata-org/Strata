@@ -190,10 +190,11 @@ private theorem lift_bodies [LawfulMonad m] (L : Lift f s t) {p : Procedure} (h 
     rw [heq]
     simp [Body.Contains]
 
-/-- `mapProcedureSpecificationsWithM`: the specification fields are rewritten,
-    the signature fields (and the coroutine clauses) are copied. -/
+/-- `mapProcedureSpecificationsWithM`: the specification fields, the coroutine clauses
+    included, are rewritten; the signature fields are copied. -/
 private theorem lift_specs [LawfulMonad m] (L : Lift f s t) {p : Procedure}
     (hpre : ∀ c ∈ p.preconditions, Condition.Contains s c)
+    (hcoro : CoroutineContracts.Contains s p.contracts)
     (hdec : ∀ e ∈ p.decreases, Contains s e)
     (hinvoke : ∀ e ∈ p.invokeOn, Contains s e)
     (hax : ∀ e ∈ p.axioms, Contains s e)
@@ -207,51 +208,47 @@ private theorem lift_specs [LawfulMonad m] (L : Lift f s t) {p : Procedure}
         ∧ (∀ e ∈ p'.axioms, Contains t e)
         ∧ (∀ b ∈ p'.throwsOn, ThrowsOnBlock.Contains t b)
         ∧ p'.throwsOn.length = p.throwsOn.length
-        ∧ p'.inputs = p.inputs ∧ p'.outputs = p.outputs ∧ p'.contracts = p.contracts
+        ∧ p'.inputs = p.inputs ∧ p'.outputs = p.outputs
+        ∧ CoroutineContracts.Contains t p'.contracts
         ∧ p'.body = p.body ∧ p'.throwsType = p.throwsType) := by
+  obtain ⟨hrel, hguar, hyields, hresumes, hkind⟩ := hcoro
   rw [mapProcedureSpecificationsWithM]
   refine post_bind (post_and (lift_conditions L hpre) (post_mapM_length _ _))
     (fun pre' hpre' => ?_)
+  refine post_bind (lift_conditions L hrel) (fun rel' hrel' => ?_)
+  refine post_bind (lift_conditions L hguar) (fun guar' hguar' => ?_)
   refine post_bind (lift_optExpr L hdec) (fun dec' hdec' => ?_)
   refine post_bind (lift_optExpr L hinvoke) (fun inv' hinv' => ?_)
   refine post_bind (lift_exprs L hax) (fun ax' hax' => ?_)
   refine post_bind (post_and (lift_throwsOn L hthrowsOn) (post_mapM_length _ _))
     (fun th' hth' => ?_)
-  exact post_pure ⟨hpre'.1, hpre'.2, hdec', hinv', hax', hth'.1, hth'.2,
-    rfl, rfl, rfl, rfl, rfl⟩
+  refine post_pure ⟨hpre'.1, hpre'.2, hdec', hinv', hax', hth'.1, hth'.2, rfl, rfl,
+    ⟨?_, ?_, ?_, ?_, ?_⟩, rfl, rfl⟩
+  · exact fun c hc => hrel' c (mem_relies_withClauses _ _ _ _ _ hc)
+  · exact fun c hc => hguar' c (mem_guarantees_withClauses _ _ _ _ _ hc)
+  · exact fun q hq => Parameter.mono L (hyields q (mem_yields_withClauses _ _ _ _ _ hq))
+  · exact fun q hq => Parameter.mono L (hresumes q (mem_resumes_withClauses _ _ _ _ _ hq))
+  · exact fun hk => mem_keep L (hkind (kind_coroutine_withClauses _ _ _ _ _ hk))
+      (by simp [containerKinds])
 
-/-- The whole procedure walk: body, specification fields, and — since
-    `mapProcedureM` uses `mapProcedureSpecificationsWithCoroutineM'` — a
-    coroutine's `relies`/`guarantees` clauses. Every expression a procedure holds
-    is rewritten, so no hypothesis about untouched positions is needed. -/
+/-- The whole procedure walk: body and specification fields, a coroutine's
+    `relies`/`guarantees` among them. Every expression a procedure holds is
+    rewritten, so no hypothesis about untouched positions is needed. -/
 private theorem lift_procedure [LawfulMonad m] (L : Lift f s t) {p : Procedure} (h : Procedure.Contains s p) :
     PostM (mapProcedureM (mapStmtExprM f) p)
       (Procedure.Contains t) := by
   obtain ⟨hin, hinCons, hout, hpre, hpreCons, hcoro, hdec, hbody, hinvoke, hax, hthrowsTy,
     hthrowsTySome, hthrowsOn, hthrowsOnCons⟩ := h
-  obtain ⟨hrel, hguar, hyields, hresumes, hkind⟩ := hcoro
   rw [mapProcedureM]
   refine post_bind (lift_bodies L hbody) (fun p' hp' => ?_)
   obtain ⟨hbody', hin', hout', hpre', hcoro', hdec', hinvoke', hax', hthrowsTy', hthrowsOn'⟩ := hp'
-  rw [mapProcedureSpecificationsWithCoroutineM', mapProcedureSpecificationsWithCoroutineM]
-  refine post_bind (lift_specs L (by rw [hpre']; exact hpre) (by rw [hdec']; exact hdec)
+  refine MonadPost.postMono (lift_specs L (by rw [hpre']; exact hpre) (by rw [hcoro']; exact hcoro)
+    (by rw [hdec']; exact hdec)
     (by rw [hinvoke']; exact hinvoke) (by rw [hax']; exact hax)
     (by rw [hthrowsOn']; exact hthrowsOn)) (fun p'' hp'' => ?_)
   obtain ⟨hpre'', hpreLen, hdec'', hinv'', hax'', hth'', hthLen, hin'', hout'', hcoro'',
     hbody'', hthrowsTy''⟩ := hp''
-  -- The two coroutine clause lists, walked after the specification record.
-  refine post_bind (lift_conditions L (s := s) ?_) (fun rel'' hrel'' => ?_)
-  · intro c hc
-    exact hrel c (by
-      simp only [Procedure.relies, hcoro'', hcoro'] at hc
-      simpa [Procedure.relies] using hc)
-  refine post_bind (lift_conditions L (s := s) ?_) (fun guar'' hguar'' => ?_)
-  · intro c hc
-    exact hguar c (by
-      simp only [Procedure.guarantees, hcoro'', hcoro'] at hc
-      simpa [Procedure.guarantees] using hc)
-  refine post_pure ?_
-  refine ⟨?_, ?_, ?_, hpre'', ?_, ?_, hdec'', ?_, hinv'', hax'', ?_, ?_, hth'', ?_⟩
+  refine ⟨?_, ?_, ?_, hpre'', ?_, hcoro'', hdec'', ?_, hinv'', hax'', ?_, ?_, hth'', ?_⟩
   · intro i hi
     refine Parameter.mono L (hin i ?_)
     rw [← hin', ← hin'']
@@ -269,27 +266,6 @@ private theorem lift_procedure [LawfulMonad m] (L : Lift f s t) {p : Procedure} 
     have hlen : p''.preconditions.length = p.preconditions.length := by
       rw [hpreLen, hpre']
     exact ne_nil_of_length hlen (by simpa using hne)
-  · refine ⟨?_, ?_, ?_, ?_, ?_⟩
-    · intro c hc
-      exact hrel'' c (mem_relies_withClauses _ _ _ _ _ (by simpa [Procedure.relies] using hc))
-    · intro c hc
-      exact hguar'' c
-        (mem_guarantees_withClauses _ _ _ _ _ (by simpa [Procedure.guarantees] using hc))
-    · intro q hq
-      refine Parameter.mono L (hyields q ?_)
-      have h2 := mem_yields_withClauses _ _ _ _ _ (by simpa [Procedure.yields] using hq)
-      rw [hcoro'', hcoro'] at h2
-      simpa [Procedure.yields] using h2
-    · intro q hq
-      refine Parameter.mono L (hresumes q ?_)
-      have h2 := mem_resumes_withClauses _ _ _ _ _ (by simpa [Procedure.resumes] using hq)
-      rw [hcoro'', hcoro'] at h2
-      simpa [Procedure.resumes] using h2
-    · intro hk
-      refine mem_keep L (hkind ?_) (by simp [containerKinds])
-      have h2 := kind_coroutine_withClauses _ _ _ _ _ (by simpa [Procedure.kind] using hk)
-      rw [hcoro'', hcoro'] at h2
-      simpa [Procedure.kind] using h2
   · simpa [hbody''] using hbody'
   · intro ty hty
     refine L.type (hthrowsTy ty ?_)
@@ -306,10 +282,11 @@ private theorem lift_procedure [LawfulMonad m] (L : Lift f s t) {p : Procedure} 
 
 /-! ## The program
 
-`mapLaurelProgramStmtExprM` runs in four phases: every procedure (via
+`mapLaurelProgramStmtExprM` runs in five phases: every procedure (via
 `mapLaurelProgramProceduresM ∘ mapProcedureM`), then the type definitions' own
 expressions (a constrained type's constraint and witness, a composite's field
-initializers), then the constants, then the file-scope globals. Between them,
+initializers), then the constants, then the file-scope globals, then the heap
+fields. Between them,
 positions not yet visited still live in the *input* set `s`, which is why the
 phase postconditions mention both sets. -/
 
@@ -327,6 +304,7 @@ def AfterProcedures (s t : KindSet) (p prog : LaurelProgram) : Prop :=
     ∧ prog.types.length = p.types.length
     ∧ prog.staticFields = p.staticFields
     ∧ prog.constants = p.constants
+    ∧ prog.heapFields = p.heapFields
 
 /-- **The generic program-level lift.** Rewriting every expression position of a
     program with `f` maps a `Contains s` program to a `Contains t` one. The pass
@@ -335,7 +313,8 @@ def AfterProcedures (s t : KindSet) (p prog : LaurelProgram) : Prop :=
     once. -/
 theorem lift_laurelProgram [LawfulMonad m] (L : Lift f s t) {p : LaurelProgram} (h : LaurelProgram.Contains s p) :
     PostM (mapLaurelProgramStmtExprM f p) (LaurelProgram.Contains t) := by
-  obtain ⟨⟨hstatic, hfuns, htypeProcs⟩, hstaticCons, hfunsCons, hfields, hfieldsCons, htypes, hconsts⟩ := h
+  obtain ⟨⟨hstatic, hfuns, htypeProcs⟩, hstaticCons, hfunsCons, hfields, hfieldsCons, htypes, hconsts,
+    hheap, hheapCons⟩ := h
   rw [mapLaurelProgramStmtExprM, mapLaurelProgramProceduresM]
   -- Phase 1: every procedure (static, and every composite's methods).
   refine post_bind (Q := AfterProcedures s t p) ?_ (fun prog1 hprog1 => ?_)
@@ -375,8 +354,9 @@ theorem lift_laurelProgram [LawfulMonad m] (L : Lift f s t) {p : LaurelProgram} 
       | Alias ta => exact post_pure ⟨htypes _ htd, by simp⟩
     refine post_pure ⟨hprocs1.1, by simpa using hprocs1.2, hfuns1.1, by simpa using hfuns1.2,
       fun td htd => (htypes1.1 td htd).1, fun td htd => (htypes1.1 td htd).2,
-      by simpa using htypes1.2, rfl, rfl⟩
-  obtain ⟨hprocs, hprocsLen, hfunsAfter, hfunsLen, hOut, hInnerProcs, _, hfieldsEq, hconstsEq⟩ := hprog1
+      by simpa using htypes1.2, rfl, rfl, rfl⟩
+  obtain ⟨hprocs, hprocsLen, hfunsAfter, hfunsLen, hOut, hInnerProcs, _, hfieldsEq, hconstsEq,
+    hheapEq⟩ := hprog1
   -- Phase 2: the type definitions' own expressions.
   refine post_bind (post_and (post_mapM prog1.types _
       (P := fun td' => TypeDefinition.ContainsOutsideProcedures t td'
@@ -444,8 +424,15 @@ theorem lift_laurelProgram [LawfulMonad m] (L : Lift f s t) {p : LaurelProgram} 
           post_pure ⟨L.type (hfields fld (by rw [← hfieldsEq]; exact hfld)).1,
             hinit'⟩)))
     (post_mapM_length _ _)) (fun fields2 hfields2 => ?_)
+  refine post_bind (post_and (post_mapM prog1.heapFields _
+      (P := fun hf => Field.Contains t hf.toField) (fun fld hfld =>
+      post_bind (lift_optExpr L (hheap fld (by rw [← hheapEq]; exact hfld)).2)
+        (fun init' hinit' =>
+          post_pure ⟨L.type (hheap fld (by rw [← hheapEq]; exact hfld)).1,
+            hinit'⟩)))
+    (post_mapM_length _ _)) (fun heap2 hheap2 => ?_)
   refine post_pure ⟨⟨hprocs, hfunsAfter, ?_⟩, ?_, ?_, hfields2.1, ?_,
-    fun td htd => (htypes2.1 td htd).1, hconsts2⟩
+    fun td htd => (htypes2.1 td htd).1, hconsts2, hheap2.1, ?_⟩
   · intro td htd c hc
     exact (htypes2.1 td htd).2 c hc
   · exact fun hne => mem_keep L (hstaticCons (ne_nil_of_length hprocsLen hne)) (by simp [containerKinds])
@@ -453,6 +440,10 @@ theorem lift_laurelProgram [LawfulMonad m] (L : Lift f s t) {p : LaurelProgram} 
   · refine fun hne => mem_keep L (hfieldsCons ?_) (by simp [containerKinds])
     have hlen : fields2.length = p.staticFields.length := by
       rw [hfields2.2, hfieldsEq]
+    exact ne_nil_of_length hlen hne
+  · refine fun hne => mem_keep L (hheapCons ?_) (by simp [containerKinds])
+    have hlen : heap2.length = p.heapFields.length := by
+      rw [hheap2.2, hheapEq]
     exact ne_nil_of_length hlen hne
 
 private theorem lift_constant [LawfulMonad m] (L : Lift f s t) {c : Constant}

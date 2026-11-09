@@ -51,11 +51,19 @@ structure TypeAlias where
   type : LMonoTy
   deriving DecidableEq, Repr, Inhabited
 
-/-- A type alias is well-formed when every free variable in its body appears
-    in its list of type arguments, and the type arguments are distinct. -/
+/-- A type alias is well formed when its type arguments are distinct and are exactly the free
+    variables of its body. -/
 structure TypeAlias.WF (a : TypeAlias) : Prop where
-  fvs_closed : ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs
+  fvs_eq : ∀ tv, tv ∈ LMonoTy.freeVars a.type ↔ tv ∈ a.typeArgs
   typeArgs_nodup : a.typeArgs.Nodup
+
+/-- In a well-formed type alias, every free variable of the body is a type argument. -/
+theorem TypeAlias.WF.fvs_closed {a : TypeAlias} (h : a.WF) :
+    ∀ tv, tv ∈ LMonoTy.freeVars a.type → tv ∈ a.typeArgs := fun tv => (h.fvs_eq tv).mp
+
+/-- In a well-formed type alias, every type argument occurs free in the body. -/
+theorem TypeAlias.WF.typeArgs_used {a : TypeAlias} (h : a.WF) :
+    ∀ tv ∈ a.typeArgs, tv ∈ LMonoTy.freeVars a.type := fun tv => (h.fvs_eq tv).mpr
 
 mutual
 /-- Replace free type variables in `mty` according to a positional mapping
@@ -94,6 +102,10 @@ def TypeAlias.expandsTo (aliases : List TypeAlias) (name : String) (args : LMono
     alias.name = name ∧
     alias.typeArgs.length = args.length ∧
     mty = alias.expand args
+
+/-- `sup` is `sub` with entries of names new to `sub` prepended. -/
+def TypeAlias.FreshExtension (sub sup : List TypeAlias) : Prop :=
+  ∃ new, sup = new ++ sub ∧ ∀ a ∈ new, ∀ b ∈ sub, a.name ≠ b.name
 
 mutual
 /-- Two monotypes are alias-equivalent if one can be obtained from the other
@@ -179,10 +191,7 @@ def LMonoTys.aliasFree (aliases : List TypeAlias) (mtys : LMonoTys) : Prop :=
   | mty :: rest => LMonoTy.aliasFree aliases mty ∧ LMonoTys.aliasFree aliases rest
 end
 
-/-- All alias bodies in the context are fully resolved: they do not reference
-    other alias names. This is established by `TEnv.addTypeAlias` which calls
-    `instantiateWithCheck` (and therefore `resolveAliases`) on the alias body
-    before storing it. -/
+/-- All alias bodies in the context are fully resolved: they do not reference other alias names. -/
 def TContext.AliasesResolved (Γ : TContext IDMeta) : Prop :=
   ∀ a, a ∈ Γ.aliases → LMonoTy.aliasFree Γ.aliases a.type
 
@@ -256,12 +265,6 @@ theorem LTy_subst_boundVars (S : Subst) (ty : LTy) :
   cases ty with | forAll xs body => simp [LTy.subst, LTy.boundVars]
 
 ---------------------------------------------------------------------
-
-/-- Fixed prefix for generated type variable names. -/
-def TState.tyPrefix : String := "$__ty"
-
-/-- Fixed prefix for generated expression variable names. -/
-def TState.exprPrefix : String := "$__var"
 
 /--
 The state of a generator used by typing.
@@ -381,6 +384,10 @@ structure LContext (T: LExprParams) where
   /-- Type variables that are rigid (skolemized) in the current scope. -/
   rigidTypeVars : List TyIdentifier := []
 deriving Inhabited
+
+/-- Every name registered in the known-types table satisfies `p`. -/
+def LContext.KnownTypesAll {T : LExprParams} (p : String → Prop) (C : LContext T) : Prop :=
+  ∀ n : String, n ∈ C.knownTypes → p n
 
 def LContext.empty {T : LExprParams} : LContext T :=
   { functions := .default
@@ -539,21 +546,22 @@ def TEnv.eraseFromContext (Env : TEnv T.IDMeta) (x : T.Identifier) : TEnv T.IDMe
   let ctx' := { ctx with types := ctx.types.remove x }
   Env.updateContext ctx'
 
-def TEnv.freeVarCheck [DecidableEq T.IDMeta] (Env : TEnv T.IDMeta) (e : LExpr T.mono) (msg : Format) :
-    Except Format Unit :=
+/-- Reject `e` if it has a free variable `Env` does not bind; `msg` is the error-message prefix,
+    built only on failure. -/
+def TEnv.freeVarCheck [DecidableEq T.IDMeta] (Env : TEnv T.IDMeta) (e : LExpr T.mono)
+    (msg : Unit → Format) : Except Format Unit :=
   let efv := (@LExpr.freeVars T LMonoTy e).map Prod.fst
-  let knownVars := Env.context.knownVars
-  let freeVars := List.filter (fun v => v ∉ knownVars) efv
+  let freeVars := efv.filter (fun v => (Env.context.types.find? v).isNone)
   match freeVars with
   | [] => .ok ()
   | _ =>
-    .error f!"{msg} No free variables are allowed here!\
+    .error f!"{msg ()} No free variables are allowed here!\
               {Format.line}\
               Free Variables: {freeVars}"
 
 def TEnv.freeVarChecks [DecidableEq T.IDMeta] (Env : TEnv T.IDMeta) (es : List (LExpr T.mono)) :
     Except Format Unit :=
-  es.forM (fun e => Env.freeVarCheck e f!"[{e}]")
+  es.forM (fun e => Env.freeVarCheck e (fun _ => f!"[{e}]"))
 
 /-- Variable Generator -/
 class HasGen (IDMeta : Type) [DecidableEq IDMeta] [Hashable IDMeta] where
@@ -584,8 +592,7 @@ Together, these restrictions ensure that variables created using
 def TEnv.genExprVar (Env : TGenEnv Unit) : Except Format (Identifier Unit × TGenEnv Unit) :=
   let (new_var, state) := Env.genState.genExprSym
   let Env := { Env with genState := state }
-  let known_vars := Env.context.knownVars
-  if ⟨new_var, ()⟩ ∈ known_vars then
+  if (Env.context.types.find? ⟨new_var, ()⟩).isSome then
     .error f!"[TEnv.genExprVar] Generated variable {new_var} is not fresh!\n\
               Context: {format Env.context}"
   else
@@ -595,25 +602,31 @@ instance : HasGen Unit where
   genVar := TEnv.genExprVar
   genVar_tyGen_mono := by
     intro Env xv Env' h
-    simp [TEnv.genExprVar] at h
+    simp only [TEnv.genExprVar] at h
     split at h
     · simp at h
-    · simp at h
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨_, h_env⟩ := h
       rw [← h_env]
       simp [TState.genExprSym, TState.incExprGen]
   genVar_context := by
     intro Env xv Env' h
-    simp [TEnv.genExprVar] at h
+    simp only [TEnv.genExprVar] at h
     split at h
     · simp at h
-    · simp at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h_env⟩ := h; rw [← h_env]
   genVar_fresh := by
     intro Env xv Env' h
-    simp [TEnv.genExprVar] at h
+    simp only [TEnv.genExprVar] at h
     split at h
     · simp at h
-    · rename_i h_not_in; simp at h; obtain ⟨h_xv, _⟩ := h; rw [← h_xv]; exact h_not_in
+    · rename_i h_not_found
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨h_xv, _⟩ := h
+      rw [← h_xv]
+      have h_none : Env.context.types.find? ⟨Env.genState.genExprSym.1, ()⟩ = none :=
+        Option.not_isSome_iff_eq_none.mp h_not_found
+      exact Strata.Util.HMaps.find?_of_not_mem_values _ h_none
 
 /-- `liftGenEnv` preserves the context. -/
 theorem liftGenEnv_context [HasGen IDMeta] [ToFormat IDMeta]
@@ -625,7 +638,7 @@ theorem liftGenEnv_context [HasGen IDMeta] [ToFormat IDMeta]
   match res with
   | .error _ => simp at h
   | .ok (xv_inner, Env_g) =>
-    simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp [TEnv.context]
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp only [TEnv.context]
     exact HasGen.genVar_context Env.genEnv xv_inner Env_g h_gen
 
 /-- `liftGenEnv HasGen.genVar` produces a fresh variable. -/
@@ -638,7 +651,7 @@ theorem liftGenEnv_genVar_fresh [HasGen IDMeta] [ToFormat IDMeta]
   match res with
   | .error _ => simp at h
   | .ok (xv_inner, Env_g) =>
-    simp at h; obtain ⟨h_xv, _⟩ := h; rw [← h_xv]
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨h_xv, _⟩ := h; rw [← h_xv]
     exact HasGen.genVar_fresh Env.genEnv xv_inner Env_g h_gen
 
 /--
@@ -694,10 +707,10 @@ theorem LMonoTys.instantiate_length [ToFormat IDMeta]
     (mtys' : LMonoTys) (Env' : TGenEnv IDMeta)
     (h : LMonoTys.instantiate ids mty Env = .ok (mtys', Env')) :
     mtys'.length = mty.length := by
-  simp [instantiate, Bind.bind, Except.bind] at h
+  simp only [instantiate, bind, Except.bind] at h
   split at h
   · simp at h
-  · simp at h
+  · simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h1, _⟩ := h
     rw [← h1, LMonoTys.subst_eq_map]
     exact List.length_map _
@@ -712,7 +725,7 @@ theorem LMonoTys.instantiateEnv_length [ToFormat IDMeta]
   match result, h_inst with
   | .error _, _ => simp at h
   | .ok (a, gE), h_inst =>
-    simp at h; obtain ⟨h1, _⟩ := h
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨h1, _⟩ := h
     rw [← h1]
     exact LMonoTys.instantiate_length ids mty Env.genEnv a gE h_inst
 
@@ -745,13 +758,13 @@ theorem LTy_subst_instantiate [ToFormat IDMeta]
   | forAll xs body =>
     cases xs with
     | nil =>
-      simp [LTy.instantiate] at h
+      simp only [LTy.instantiate, Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨h_eq, h_env⟩ := h; subst h_eq; subst h_env
       exact ⟨LMonoTy.subst S body, by simp [LTy.subst, LTy.subst.go, LTy.instantiate]⟩
     | cons x rest =>
       simp only [LTy.instantiate, Bind.bind, Except.bind] at h
       split at h; · simp at h
-      rename_i v1 h_gen; obtain ⟨freshtvs, genEnv1⟩ := v1; simp at h
+      rename_i v1 h_gen; obtain ⟨freshtvs, genEnv1⟩ := v1; simp only [Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨h_mty, h_env⟩ := h; subst h_mty; subst h_env
       refine ⟨LMonoTy.subst (Strata.Util.HMaps.ofScopes [List.zip (x :: rest) (List.map LMonoTy.ftvar freshtvs)])
         (LMonoTy.subst (LTy.subst.go (x :: rest) S) body), ?_⟩
@@ -912,6 +925,58 @@ def LTy.resolveAliases [ToFormat IDMeta] (ty : LTy) (Env : TEnv IDMeta) :
   let Env := { Env with genEnv := genEnv' }
   LMonoTy.resolveAliases mty Env
 
+/-- The alias resolution of `mty` against the aliases of `Γ`. -/
+def TContext.resolveTy {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMeta]
+    [ToFormat IDMeta] (Γ : TContext IDMeta) (mty : LMonoTy) : LMonoTy :=
+  match LMonoTy.resolveAliases mty
+      ({ genEnv := { context := Γ, genState := TState.init } } : TEnv IDMeta) with
+  | .ok (r, _) => r
+  | .error _ => mty
+
+/-- A type scheme with its body alias-resolved against the aliases of `Γ`. -/
+def TContext.resolveScheme {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMeta]
+    [ToFormat IDMeta] (Γ : TContext IDMeta) : LTy → LTy :=
+  mapLTyTys Γ.resolveTy
+
+/-- `Γ` with every type scheme alias-resolved. -/
+def TContext.resolveTypes {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMeta]
+    [ToFormat IDMeta] (Γ : TContext IDMeta) : TContext IDMeta :=
+  { Γ with types := Γ.types.mapValues Γ.resolveScheme }
+
+/-- `Γ` with every type scheme alias-resolved and no aliases. -/
+@[expose] def TContext.dealias {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMeta]
+    [ToFormat IDMeta] (Γ : TContext IDMeta) : TContext IDMeta :=
+  { Γ.resolveTypes with aliases := [] }
+
+/-- `sig` with every type alias-resolved against `Γ`. -/
+def TContext.resolveSig {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMeta]
+    [ToFormat IDMeta] {α : Type} (Γ : TContext IDMeta) (sig : ListMap α LMonoTy) :
+    ListMap α LMonoTy :=
+  sig.keys.zip (sig.values.map Γ.resolveTy)
+
+/-- `f` with its input and output types alias-resolved against `Γ`. -/
+def LFunc.resolveSig {T : LExprParams} [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+    [ToFormat T.IDMeta] (Γ : TContext T.IDMeta) (f : LFunc T) : LFunc T :=
+  { f with inputs := Γ.resolveSig f.inputs, output := Γ.resolveTy f.output }
+
+/-- `C` with every function signature alias-resolved against `aliases`. -/
+def LContext.resolveTable {T : LExprParams} [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+    [ToFormat T.IDMeta] (aliases : List TypeAlias) (C : LContext T) : LContext T :=
+  let Γ : TContext T.IDMeta := { aliases := aliases }
+  { C with functions := C.functions.map (LFunc.resolveSig Γ) (fun _ => rfl) }
+
+/-- A policy deciding which free type-variable names are permitted in a type position. -/
+public abbrev TyVarAdmissibility : Type := TyIdentifier → Bool
+
+/-- The policy that permits every free type variable. -/
+public def TyVarAdmissibility.all : TyVarAdmissibility := fun _ => true
+
+/-- The policy for user-written types: it rejects names in the generator
+    (`$__ty*`) and rigid (`skolemPrefix`) namespaces. -/
+public def TyVarAdmissibility.notGeneratedOrRigid : TyVarAdmissibility :=
+  fun v => !(genTyPrefix.toList.isPrefixOf v.toList) &&
+    !(skolemPrefix.toList.isPrefixOf v.toList)
+
 mutual
 /--
 Is `ty` an instance of a known type in `ks`? We expect `ty` to be
@@ -937,6 +1002,43 @@ end
 
 def isInstanceOfKnownType {T : LExprParams} (ty : LMonoTy) (C : LContext T) : Bool :=
   LMonoTy.knownInstance ty C.knownTypes
+
+mutual
+/-- Describes an application in `ty` of an alias or registered type to the wrong number of
+    arguments, if there is one. -/
+def LMonoTy.arityMismatch? (ty : LMonoTy) (aliases : List TypeAlias) (ks : KnownTypes) :
+    Option Format :=
+  match ty with
+  | .ftvar _ | .bitvec _ => none
+  | .tcons name args =>
+    match aliases.find? (·.name == name), ks.get? name with
+    | some alias, _ =>
+      if alias.typeArgs.length != args.length then
+        some (arityMismatchMsg "Type alias" name alias.typeArgs.length args.length)
+      else LMonoTys.arityMismatch? args aliases ks
+    | none, some arity =>
+      if arity != args.length then
+        some (arityMismatchMsg "Type constructor" name arity args.length)
+      else LMonoTys.arityMismatch? args aliases ks
+    | none, none => LMonoTys.arityMismatch? args aliases ks
+
+/-- The first arity mismatch among `tys`. -/
+def LMonoTys.arityMismatch? (tys : LMonoTys) (aliases : List TypeAlias) (ks : KnownTypes) :
+    Option Format :=
+  match tys with
+  | [] => none
+  | ty :: rest =>
+    (LMonoTy.arityMismatch? ty aliases ks).or (LMonoTys.arityMismatch? rest aliases ks)
+end
+
+/-- The error for a written type `shown`, with monotype `ty`, that is not an instance of a
+    registered type; it reports any arity mismatch. -/
+def unregisteredTypeError (shown : Format) (ty : LMonoTy) (aliases : List TypeAlias)
+    (ks : KnownTypes) : Format :=
+  match LMonoTy.arityMismatch? ty aliases ks with
+  | some reason => f!"Type {shown} is not an instance of a previously registered type: {reason}"
+  | none => f!"Type {shown} is not an instance of a previously registered type!\n\
+                 Known Types: {ks}"
 
 /--
 Well-kindedness of `ty` under an arity assignment: every type-constructor
@@ -987,8 +1089,7 @@ def LMonoTy.instantiateWithCheck (mty : LMonoTy) (C: LContext T) (Env : TEnv T.I
               generator namespace ({TState.tyPrefix}*). This is not allowed."
   else if isInstanceOfKnownType mtyi C
   then return (mtyi, Env)
-  else .error f!"Type {mty} is not an instance of a previously registered type!\n\
-                 Known Types: {C.knownTypes}"
+  else .error (unregisteredTypeError (format mty) mty Env.context.aliases C.knownTypes)
 
 omit [ToFormat T.Metadata] in
 /-- Decompose `LMonoTy.instantiateWithCheck` into its two main steps:
@@ -1009,7 +1110,7 @@ theorem LMonoTy.instantiateWithCheck_decompose
   · -- instantiateEnv succeeded
     rename_i instTypes Env_ie h_ie
     have h_len : instTypes.length = 1 := by
-      have := LMonoTys.instantiateEnv_length _ _ _ _ _ h_ie; simp at this; exact this
+      have := LMonoTys.instantiateEnv_length _ _ _ _ _ h_ie; simp only [List.length_cons, List.length_nil, Nat.zero_add] at this ; exact this
     obtain ⟨mty_ie, rfl⟩ : ∃ m, instTypes = [m] := by
       match instTypes, h_len with | [x], _ => exact ⟨x, rfl⟩
     -- Second split: on the resolveAliases result
@@ -1021,7 +1122,7 @@ theorem LMonoTy.instantiateWithCheck_decompose
       · simp at h
       · -- Fourth split: isInstanceOfKnownType
         split at h
-        · simp [Pure.pure, Except.pure] at h
+        · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
           obtain ⟨h1, _⟩ := h
           subst h1
           exact ⟨mty_ie, _, _, h_ie, h_ra⟩
@@ -1039,8 +1140,8 @@ def LTy.instantiateWithCheck [ToFormat T.IDMeta] (ty : LTy) (C: LContext T) (Env
               generator namespace ({TState.tyPrefix}*). This is not allowed."
   else if isInstanceOfKnownType mty C
   then return (mty, Env)
-  else .error f!"Type {ty} is not an instance of a previously registered type!\n\
-                 Known Types: {C.knownTypes}"
+  else .error (unregisteredTypeError (format ty) ty.toMonoTypeUnsafe Env.context.aliases
+    C.knownTypes)
 
 /--
 Instantiate the scheme `ty` and apply the global substitution `Env.state.subst` to
@@ -1107,42 +1208,6 @@ def LMonoTySignature.toTrivialLTy (s : @LMonoTySignature IDMeta) : @LTySignature
   s.map (fun (x, ty) => (x, .forAll [] ty))
 
 
-/--
-Add a well-formed `alias` to the context, where the type definition is first
-de-aliased.
--/
-def TEnv.addTypeAlias [ToFormat T.IDMeta] (alias : TypeAlias) (C : LContext T) (Env : TEnv T.IDMeta) :
-    Except Format (TEnv T.IDMeta) := do
-  let alias_lty := alias.toAliasLTy
-  if !alias.typeArgs.Nodup then
-    .error f!"[TEnv.addTypeAlias] Duplicates found in the type arguments!\n\
-               Name: {alias.name}\n\
-               Type Arguments: {alias.typeArgs}\n\
-               Type Definition: {alias.type}"
-  else if !((alias.type.freeVars ⊆ alias.typeArgs) &&
-            (alias_lty.freeVars ⊆ alias.typeArgs)) then
-    .error f!"[TEnv.addTypeAlias] Type definition contains free type arguments!\n\
-              Name: {alias.name}\n\
-              Type Arguments: {alias.typeArgs}\n\
-              Type Definition: {alias.type}"
-  else if C.knownTypes.containsName alias.name then
-    .error f!"This type declaration's name is reserved!\n\
-              {alias}\n\
-              KnownTypes' names:\n\
-              {C.knownTypes.keywords}"
-  else
-    -- De-alias the RHS so that chained aliases are fully resolved.
-    -- This maintains the invariant that stored alias types are never
-    -- themselves aliases.
-    let (rhsResolved, Env) ← LMonoTy.resolveAliases alias.type Env
-    -- Validate that the de-aliased type is a known, legal type.
-    let (_, _) ← (LTy.forAll [] rhsResolved).instantiateWithCheck C Env
-    let new_aliases := { typeArgs := alias.typeArgs,
-                         name := alias.name,
-                         type := rhsResolved } :: Env.context.aliases
-    let context := { Env.context with aliases := new_aliases }
-    .ok (Env.updateContext context)
-
 ---------------------------------------------------------------------
 
 /-! ### Context preservation and freshness lemmas -/
@@ -1154,10 +1219,10 @@ theorem TGenEnv.genTyVar_context {IDMeta : Type} [DecidableEq IDMeta] [Hashable 
     (Env : TGenEnv IDMeta) (tv : TyIdentifier) (Env' : TGenEnv IDMeta)
     (h : TGenEnv.genTyVar Env = .ok (tv, Env')) :
     Env'.context = Env.context := by
-  simp [TGenEnv.genTyVar] at h
+  simp only [genTyVar] at h
   split at h
   · simp at h
-  · simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+  · simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
 
 /-- `genTyVars` preserves the context. -/
 theorem TGenEnv.genTyVars_context {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMeta] [ToFormat IDMeta]
@@ -1167,18 +1232,18 @@ theorem TGenEnv.genTyVars_context {IDMeta : Type} [DecidableEq IDMeta] [Hashable
     Env'.context = Env.context := by
   induction n generalizing Env tvs Env' with
   | zero =>
-    simp [TGenEnv.genTyVars] at h
+    simp only [genTyVars, Except.ok.injEq, Prod.mk.injEq, List.nil_eq] at h
     obtain ⟨_, h2⟩ := h; rw [← h2]
   | succ n ih =>
-    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    simp only [genTyVars, bind, Except.bind] at h
     split at h
     · simp at h
     · rename_i v1 h_gen
-      obtain ⟨tv, Env1⟩ := v1; simp at h h_gen
+      obtain ⟨tv, Env1⟩ := v1; simp only at h h_gen
       split at h
       · simp at h
       · rename_i v2 h_rest
-        obtain ⟨tvs', Env2⟩ := v2; simp at h
+        obtain ⟨tvs', Env2⟩ := v2; simp only [Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨_, h2⟩ := h; rw [← h2]
         rw [ih Env1 tvs' Env2 h_rest, TGenEnv.genTyVar_context Env tv Env1 h_gen]
 
@@ -1222,17 +1287,17 @@ theorem TEnv.genTyVar_subst {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMet
   simp only [TEnv.genTyVar] at h
   split at h
   · simp at h
-  · simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]
+  · simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h2⟩ := h; rw [← h2]
 
 /-- `genTyVar` produces a variable not in `knownTypeVars`. -/
 theorem TGenEnv.genTyVar_not_mem_knownTypeVars [ToFormat IDMeta]
     (Env : TGenEnv IDMeta) (tv : TyIdentifier) (Env' : TGenEnv IDMeta)
     (h : TGenEnv.genTyVar Env = .ok (tv, Env')) :
     tv ∉ TContext.knownTypeVars Env.context := by
-  simp [TGenEnv.genTyVar] at h
+  simp only [genTyVar] at h
   split at h
   · simp at h
-  · rename_i h_not_in; simp at h; obtain ⟨h_tv, _⟩ := h; subst h_tv; exact h_not_in
+  · rename_i h_not_in; simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨h_tv, _⟩ := h; subst h_tv; exact h_not_in
 
 /-- `genTyVars` produces variables each not in `knownTypeVars` of the initial environment. -/
 theorem TGenEnv.genTyVars_not_mem_knownTypeVars [ToFormat IDMeta]
@@ -1242,19 +1307,19 @@ theorem TGenEnv.genTyVars_not_mem_knownTypeVars [ToFormat IDMeta]
     ∀ tv, tv ∈ tvs → tv ∉ TContext.knownTypeVars Env.context := by
   induction n generalizing Env tvs Env' with
   | zero =>
-    simp [TGenEnv.genTyVars] at h
+    simp only [genTyVars, Except.ok.injEq, Prod.mk.injEq, List.nil_eq] at h
     obtain ⟨h1, _⟩ := h; subst h1
     intro tv hm; exact absurd hm List.not_mem_nil
   | succ n ih =>
-    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    simp only [genTyVars, bind, Except.bind] at h
     split at h
     · simp at h
     · rename_i v1 h_gen1
-      obtain ⟨hd, Env1⟩ := v1; simp at h h_gen1
+      obtain ⟨hd, Env1⟩ := v1; simp only at h h_gen1
       split at h
       · simp at h
       · rename_i v2 h_rest
-        obtain ⟨tl, Env2⟩ := v2; simp at h
+        obtain ⟨tl, Env2⟩ := v2; simp only [Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨h_tvs, _⟩ := h; subst h_tvs
         have h_ctx := TGenEnv.genTyVar_context Env hd Env1 h_gen1
         have h_hd_not := TGenEnv.genTyVar_not_mem_knownTypeVars Env hd Env1 h_gen1
@@ -1273,18 +1338,18 @@ theorem TGenEnv.genTyVars_length {IDMeta : Type} [ToFormat IDMeta] [DecidableEq 
     tvs.length = n := by
   induction n generalizing Env tvs Env' with
   | zero =>
-    simp [TGenEnv.genTyVars] at h
+    simp only [genTyVars, Except.ok.injEq, Prod.mk.injEq, List.nil_eq] at h
     obtain ⟨h1, _⟩ := h; subst h1; simp
   | succ n ih =>
-    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    simp only [genTyVars, bind, Except.bind] at h
     split at h
     · simp at h
     · rename_i v1 h_gen
-      obtain ⟨tv, Env1⟩ := v1; simp at h h_gen
+      obtain ⟨tv, Env1⟩ := v1; simp only at h h_gen
       split at h
       · simp at h
       · rename_i v2 h_rest
-        obtain ⟨tvs', Env2⟩ := v2; simp at h
+        obtain ⟨tvs', Env2⟩ := v2; simp only [Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨h1, _⟩ := h; subst h1
         simp [ih Env1 tvs' Env2 h_rest]
 
@@ -1319,12 +1384,12 @@ theorem genTyVar_name_eq (Env : TEnv T.IDMeta) (tv : TyIdentifier) (Env' : TEnv 
   · simp at h
   · rename_i v h_gen_env
     obtain ⟨a, genEnv'⟩ := v
-    simp at h; rw [← h.1]
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h ; rw [← h.1]
     -- Step 2: Decompose TGenEnv.genTyVar: it returns genTySym's name
     simp only [TGenEnv.genTyVar] at h_gen_env
     split at h_gen_env
     · simp at h_gen_env
-    · simp at h_gen_env; rw [← h_gen_env.1]
+    · simp only [Except.ok.injEq, Prod.mk.injEq, TGenEnv.mk.injEq] at h_gen_env; rw [← h_gen_env.1]
       -- Step 3: genTySym.1 = tyPrefix ++ toString tyGen
       simp [TState.genTySym, TState.incTyGen]
 
@@ -1339,12 +1404,12 @@ theorem genTyVar_tyGen (Env : TEnv T.IDMeta) (tv : TyIdentifier) (Env' : TEnv T.
   · simp at h
   · rename_i v h_gen_env
     obtain ⟨a, genEnv'⟩ := v
-    simp at h; rw [← h.2]
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h ; rw [← h.2]
     -- Step 2: Decompose TGenEnv.genTyVar
     simp only [TGenEnv.genTyVar] at h_gen_env
     split at h_gen_env
     · simp at h_gen_env
-    · simp at h_gen_env; rw [← h_gen_env.2.2]
+    · simp only [Except.ok.injEq, Prod.mk.injEq, TGenEnv.mk.injEq] at h_gen_env; rw [← h_gen_env.2.2]
       -- Step 3: genTySym increments tyGen by 1
       simp [TState.genTySym, TState.incTyGen]
 
@@ -1356,25 +1421,25 @@ theorem genTyVars_tyGen_mono {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMe
     Env'.genState.tyGen ≥ Env.genState.tyGen := by
   induction n generalizing Env tvs Env' with
   | zero =>
-    simp [TGenEnv.genTyVars] at h
+    simp only [TGenEnv.genTyVars, Except.ok.injEq, Prod.mk.injEq, List.nil_eq] at h
     obtain ⟨_, h2⟩ := h; subst h2; omega
   | succ n ih =>
-    simp [TGenEnv.genTyVars, Bind.bind, Except.bind] at h
+    simp only [TGenEnv.genTyVars, bind, Except.bind] at h
     split at h
     · simp at h
     · rename_i v1 h_gen
-      obtain ⟨tv, Env1⟩ := v1; simp at h h_gen
+      obtain ⟨tv, Env1⟩ := v1; simp only at h h_gen
       split at h
       · simp at h
       · rename_i v2 h_rest
-        obtain ⟨tvs', Env2⟩ := v2; simp at h
+        obtain ⟨tvs', Env2⟩ := v2; simp only [Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨_, h2⟩ := h; rw [← h2]
         -- Env.genState.tyGen ≤ Env1.genState.tyGen ≤ Env2.genState.tyGen
         have h1 : Env1.genState.tyGen ≥ Env.genState.tyGen := by
           simp only [TGenEnv.genTyVar] at h_gen
           split at h_gen
           · simp at h_gen
-          · simp at h_gen; rw [← h_gen.2]
+          · simp only [Except.ok.injEq, Prod.mk.injEq] at h_gen; rw [← h_gen.2]
             simp [TState.genTySym, TState.incTyGen]
         exact Nat.le_trans h1 (ih Env1 tvs' Env2 h_rest)
 
@@ -1384,11 +1449,11 @@ theorem LMonoTys.instantiate_tyGen_mono {IDMeta : Type} [DecidableEq IDMeta] [Ha
     (result : LMonoTys) (Env' : TGenEnv IDMeta)
     (h : LMonoTys.instantiate ids mtys Env = .ok (result, Env')) :
     Env'.genState.tyGen ≥ Env.genState.tyGen := by
-  simp [LMonoTys.instantiate, Bind.bind, Except.bind] at h
+  simp only [instantiate, bind, Except.bind] at h
   split at h
   · simp at h
   · rename_i v1 h_gen
-    obtain ⟨freshtvs, Env1⟩ := v1; simp at h
+    obtain ⟨freshtvs, Env1⟩ := v1; simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨_, h2⟩ := h; rw [← h2]
     exact genTyVars_tyGen_mono ids.length Env freshtvs Env1 h_gen
 
@@ -1403,7 +1468,7 @@ theorem LMonoTys.instantiateEnv_tyGen_mono {IDMeta : Type} [DecidableEq IDMeta] 
   match r, h_inst with
   | .error _, _ => simp at h
   | .ok (a, gE), h_inst =>
-    simp at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h2⟩ := h; rw [← h2]; simp only [ge_iff_le]
     exact LMonoTys.instantiate_tyGen_mono ids mtys Env.genEnv a gE h_inst
 
 /-- `LTy.instantiate` never decreases `tyGen`. -/
@@ -1416,14 +1481,14 @@ theorem LTy.instantiate_tyGen_mono {IDMeta : Type} [DecidableEq IDMeta] [Hashabl
   | forAll vars body =>
     cases vars with
     | nil =>
-      simp [LTy.instantiate] at h
+      simp only [instantiate, Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨_, h2⟩ := h; subst h2; omega
     | cons v vs =>
-      simp [LTy.instantiate, Bind.bind, Except.bind] at h
+      simp only [instantiate, bind, Except.bind, List.length_cons] at h
       split at h
       · simp at h
       · rename_i v1 h_gen
-        obtain ⟨freshtvs, Env1⟩ := v1; simp at h
+        obtain ⟨freshtvs, Env1⟩ := v1; simp only [Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨_, h2⟩ := h; rw [← h2]
         exact genTyVars_tyGen_mono (v :: vs).length Env freshtvs Env1 h_gen
 
@@ -1441,7 +1506,7 @@ theorem tconsAlias_tyGen_mono
   split at h
   case h_1 =>
     -- No matching alias: Env' = Env
-    simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h ; obtain ⟨_, h2⟩ := h; subst h2; omega
   case h_2 alias_val =>
     -- Matching alias found: calls instantiateEnv then unify + updateSubst
     split at h
@@ -1450,8 +1515,8 @@ theorem tconsAlias_tyGen_mono
       -- unify + updateSubst only change stateSubstInfo, not genEnv
       split at h
       · simp at h
-      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2
-        simp [TEnv.updateSubst]
+      · simp only [pure, Except.pure, List.getD_eq_getElem?_getD, Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h2⟩ := h; subst h2
+        simp only [TEnv.updateSubst, ge_iff_le]
         exact LMonoTys.instantiateEnv_tyGen_mono _ _ Env instTypes Env1 h_inst
 
 omit [ToString T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
@@ -1464,9 +1529,9 @@ theorem aliasDef_tyGen_mono
   simp only [LMonoTy.aliasDef?] at h
   split at h
   · -- tconsAliasSimple doesn't change Env
-    simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
-  · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
-  · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h ; obtain ⟨_, h2⟩ := h; subst h2; omega
+  · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h ; obtain ⟨_, h2⟩ := h; subst h2; omega
+  · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h2⟩ := h; subst h2; omega
 
 omit [ToString T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 mutual
@@ -1478,20 +1543,20 @@ theorem LMonoTy_resolveAliases_tyGen_mono
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
   match mty with
   | .ftvar _ =>
-    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    simp only [LMonoTy.resolveAliases, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨_, h2⟩ := h; subst h2; omega
   | .bitvec _ =>
-    simp [LMonoTy.resolveAliases, Pure.pure, Except.pure] at h
+    simp only [LMonoTy.resolveAliases, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨_, h2⟩ := h; subst h2; omega
   | .tcons name args =>
     simp only [LMonoTy.resolveAliases, Bind.bind, Except.bind] at h
     split at h
     · simp at h
     · rename_i v1 h_args
-      obtain ⟨args', Env1⟩ := v1; simp at h h_args
+      obtain ⟨args', Env1⟩ := v1; simp only at h h_args
       -- tconsAliasSimple doesn't change Env, so Env' = Env1
       simp only [LMonoTy.tconsAliasSimple, Pure.pure, Except.pure] at h
-      split at h <;> simp at h <;> obtain ⟨_, h_env⟩ := h <;> subst h_env
+      split at h <;> simp only [Except.ok.injEq, Prod.mk.injEq] at h <;> obtain ⟨_, h_env⟩ := h <;> subst h_env
       all_goals exact LMonoTys_resolveAliases_tyGen_mono args Env args' Env1 h_args
 
 theorem LMonoTys_resolveAliases_tyGen_mono
@@ -1501,19 +1566,19 @@ theorem LMonoTys_resolveAliases_tyGen_mono
     Env'.genEnv.genState.tyGen ≥ Env.genEnv.genState.tyGen := by
   match mtys with
   | [] =>
-    simp [LMonoTys.resolveAliases, Pure.pure, Except.pure] at h
+    simp only [LMonoTys.resolveAliases, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq, List.nil_eq] at h
     obtain ⟨_, h2⟩ := h; subst h2; omega
   | mty :: mrest =>
     simp only [LMonoTys.resolveAliases, Bind.bind, Except.bind] at h
     split at h
     · simp at h
     · rename_i v1 h_one
-      obtain ⟨mty'', Env1⟩ := v1; simp at h h_one
+      obtain ⟨mty'', Env1⟩ := v1; simp only at h h_one
       split at h
       · simp at h
       · rename_i v2 h_rest
-        obtain ⟨mrest', Env2⟩ := v2; simp at h
-        simp [Pure.pure, Except.pure] at h
+        obtain ⟨mrest', Env2⟩ := v2; simp only at h h_rest
+        simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨_, h_env⟩ := h; subst h_env
         exact Nat.le_trans
           (LMonoTy_resolveAliases_tyGen_mono mty Env mty'' Env1 h_one)
@@ -1532,14 +1597,14 @@ theorem LTy_resolveAliases_tyGen_mono
   split at h
   · simp at h
   · rename_i v1 h_inst
-    obtain ⟨mty_mid, genEnv1⟩ := v1; simp at h h_inst
+    obtain ⟨mty_mid, genEnv1⟩ := v1; simp only at h h_inst
     -- h : mty_mid.resolveAliases {genEnv := genEnv1, stateSubstInfo := Env.stateSubstInfo} = .ok (mty, Env')
     have h1 : genEnv1.genState.tyGen ≥ Env.genEnv.genState.tyGen :=
       LTy.instantiate_tyGen_mono ty Env.genEnv mty_mid genEnv1 h_inst
     have h2 : Env'.genEnv.genState.tyGen ≥ genEnv1.genState.tyGen := by
       have := LMonoTy_resolveAliases_tyGen_mono mty_mid
         { Env with genEnv := genEnv1 } mty Env' h
-      simp at this; exact this
+      simp only [ge_iff_le] at this; exact this
     exact Nat.le_trans h1 h2
 
 omit [ToString T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
@@ -1552,11 +1617,11 @@ theorem LTy_instantiateWithCheck_tyGen_mono
   split at h
   · simp at h
   · rename_i v1 h_resolve
-    obtain ⟨mty_res, Env1⟩ := v1; simp at h h_resolve
+    obtain ⟨mty_res, Env1⟩ := v1; simp only [Bool.not_eq_eq_eq_not, Bool.not_true] at h h_resolve
     split at h  -- checkNoFutureGenVars
     · simp at h
     · split at h  -- isInstanceOfKnownType
-      · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h_env⟩ := h; subst h_env
+      · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h_env⟩ := h; subst h_env
         exact LTy_resolveAliases_tyGen_mono ty Env mty_res Env1 h_resolve
       · simp at h
 
@@ -1574,11 +1639,11 @@ theorem LMonoTy_instantiateWithCheck_tyGen_mono
     split at h
     · simp at h
     · rename_i v2 h_resolve
-      obtain ⟨mty_res, Env2⟩ := v2; simp at h h_resolve
+      obtain ⟨mty_res, Env2⟩ := v2; simp only [Bool.not_eq_eq_eq_not, Bool.not_true] at h h_resolve
       split at h  -- checkNoFutureGenVars
       · simp at h
       · split at h  -- isInstanceOfKnownType
-        · simp [Pure.pure, Except.pure] at h; obtain ⟨_, h_env⟩ := h; subst h_env
+        · simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h; obtain ⟨_, h_env⟩ := h; subst h_env
           exact Nat.le_trans
             (LMonoTys.instantiateEnv_tyGen_mono _ _ Env instTypes Env1 h_inst)
             (LMonoTy_resolveAliases_tyGen_mono _ Env1 mty_res Env2 h_resolve)

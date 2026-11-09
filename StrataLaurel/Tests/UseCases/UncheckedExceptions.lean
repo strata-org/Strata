@@ -88,7 +88,7 @@ procedure getFBad(xIsNull: bool, x: Obj)
   ensures r == x#f
   throwsOn xIsNull {
     ensures e is NullPointerException ==> !xIsNull
-//          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition could not be proved
+//          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition does not hold
   }
 {
   if xIsNull then {

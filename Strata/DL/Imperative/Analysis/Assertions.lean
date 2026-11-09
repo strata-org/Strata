@@ -18,16 +18,9 @@ relevant occurrence, and satisfiable when it holds at some occurrence. A
 `...When` predicate restricts the initial environments considered through a
 precondition `Pre`; its unqualified counterpart uses `fun _ => True`.
 
-This module provides three related formulations:
+This module provides two related formulations:
 
-1. **Configuration-head predicates.** `AssertValidWhen` checks every reachable
-   configuration identified by `isAtAssert`, while `AssertSatisfiableWhen`
-   existentially selects one such configuration where `P.eval` returns true.
-   `AssertValid` and `AssertSatisfiable` remove the initial-state restriction;
-   `AllAssertsValidWhen` / `AllAssertsValid` quantify validity over assertion
-   identifiers.
-
-2. **Event-trace predicates.** `AssertValidOnTracesWhen` requires every matching
+1. **Event-trace predicates.** `AssertValidOnTracesWhen` requires every matching
    assertion occurrence in every reachable finite trace to hold under its
    preceding assumptions. `AssertSatisfiableOnTracesWhen` existentially selects
    a reachable trace and a matching occurrence whose condition and preceding
@@ -36,7 +29,7 @@ This module provides three related formulations:
    initial-state restriction; `AllAssertsValidOnTracesWhen` /
    `AllAssertsValidOnTraces` cover whole-trace validity.
 
-3. **`Hoare.TripleWith`.** A partial-correctness triple `{Pre} s {Post}` requires
+2. **`Hoare.TripleWith`.** A partial-correctness triple `{Pre} s {Post}` requires
    every terminating or exiting `EventLang` run to emit an assertion-valid
    trace, and requires `Post` whenever that trace is `Trace.Reachable`.
    Conditions are interpreted by a supplied `ConditionInterp P`.
@@ -47,13 +40,8 @@ The Hoare-triple definitions and structural rules live in
 notions are intentionally distinct without an additional progress or extension
 hypothesis.
 
-On the failure-flag semantics, `Transform.CanFail` says a run of a statement
-reaches a configuration whose failure flag is raised.
-
-It also defines the pass/fail analyses whose passing outputs claim validity or
-satisfiability of one assertion, `Analysis.AssertValidity` and
-`Analysis.AssertSatisfiability`, and `Analysis.NoFailureVerifier`, a verifier
-that passes only statements that cannot fail.
+It also defines `Analysis.ValidOnTracesVerifier`, a verifier that passes only
+statements whose traces have every assertion valid.
 -/
 
 public section
@@ -65,52 +53,11 @@ namespace Specification
 open Strata.Logic Imperative.Logic
 
 variable {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasVal P]
-variable (L : Lang P)
 
-
-/-! ## Style A — Reachability-based assertion validity and satisfiability -/
-
-/-- Assert `a` is *valid* in statement `s` when `Pre` holds on the initial
-    environment. -/
-@[expose] def AssertValidWhen (Pre : Env P → Prop) (s : L.StmtT) (a : AssertId P) : Prop :=
-  ∀ (ρ₀ : Env P) (cfg : L.CfgT),
-    Pre ρ₀ →
-    L.star (L.stmtCfg s ρ₀) cfg →
-    L.isAtAssert cfg a →
-    P.eval (L.getEnv cfg).factory (L.getEnv cfg).store a.expr = some HasBool.tt
-
-/-- All asserts are valid in statement `s` when `Pre` holds. -/
-def AllAssertsValidWhen (Pre : Env P → Prop) (s : L.StmtT) : Prop :=
-  ∀ (a : AssertId P), AssertValidWhen L Pre s a
-
-/-- Assert `a` is *valid* in statement `s` (for all initial environments). -/
-@[expose] def AssertValid (s : L.StmtT) (a : AssertId P) : Prop :=
-  AssertValidWhen L (fun _ => True) s a
-
-/-- All asserts are valid in statement `s`. -/
-@[expose] def AllAssertsValid (s : L.StmtT) : Prop :=
-  ∀ (a : AssertId P), AssertValid L s a
-
-/-- Assert `a` is *satisfiable* in statement `s` under `Pre`: there exists some
-    initial environment satisfying `Pre` and some reachable configuration where
-    the assert is about to execute and evaluates to `true`. -/
-@[expose] def AssertSatisfiableWhen (Pre : Env P → Prop) (s : L.StmtT) (a : AssertId P) : Prop :=
-  ∃ (ρ₀ : Env P) (cfg : L.CfgT),
-    Pre ρ₀ ∧
-    L.star (L.stmtCfg s ρ₀) cfg ∧
-    L.isAtAssert cfg a ∧
-    P.eval (L.getEnv cfg).factory (L.getEnv cfg).store a.expr = some HasBool.tt
-
-/-- Assert `a` is *satisfiable* in statement `s` (for some initial environment). -/
-@[expose] def AssertSatisfiable (s : L.StmtT) (a : AssertId P) : Prop :=
-  AssertSatisfiableWhen L (fun _ => True) s a
-
-
-/-! ### Event-trace assertion validity
+/-! ## Event-trace assertion validity
 
 These trace-native definitions inspect every finite event trace produced by
-`EventLang.traceStar`. They coexist with the configuration-head formulation so
-existing users of `Lang` and failure-flag semantics remain unchanged.
+`EventLang.traceStar`.
 -/
 
 /-- Every occurrence of assertion `a` in every reachable finite event trace is
@@ -164,55 +111,16 @@ occurrence satisfiable with its preceding assumptions. -/
     (I : ConditionInterp P) (s : EL.StmtT) (a : AssertId P) : Prop :=
   AssertSatisfiableOnTracesWhen EL I (fun _ => True) s a
 
-
-
-/-! ## Assertion failure on the failure-flag semantics -/
-
-namespace Transform
-
-/-- After steps from `s`, some reachable configuration has `hasFailure = true`.
-    The configuration doesn't have to be terminal or exiting. -/
-@[expose] public def CanFail (L : Lang P) (s : L.StmtT) (ρ₀ : Env P) : Prop :=
-  ∃ cfg, (L.getEnv cfg).hasFailure = true ∧ L.star (L.stmtCfg s ρ₀) cfg
-
-/-- `CanFail` specialized to a list of imperative statements (a block body).
-    There exists a reachable config from `(.stmts ss ρ₀)` whose env has
-    `hasFailure = true`. -/
-@[expose] public def CanFailBlock
-    {CmdT : Type} (evalCmd : EvalCmdParam P CmdT)
-    (ss : List (Stmt P CmdT)) (ρ₀ : Env P) : Prop :=
-  ∃ cfg : Config P CmdT, cfg.getEnv.hasFailure = true ∧
-    StepStmtStar P evalCmd (.stmts ss ρ₀) cfg
-
-end Transform
-
-/-! ## Pass/fail analyses for one assertion -/
+/-! ## Verifiers on event traces -/
 
 namespace Analysis
 
-variable {D : Type}
-
-/-- The definition whose passing outputs claim `AssertValid L s a` for a fixed
-    language `L` and assertion `a`. -/
-def AssertValidity
-    {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasVal P]
-    (L : Lang P) (a : AssertId P) (pass : D → Prop) : L.StmtT → D → Prop :=
-  Imperative.Analysis.Sound (fun s => AssertValid L s a) pass
-
-/-- The definition whose passing outputs claim `AssertSatisfiable L s a`: some
-    execution reaches the assert with a passing expression, the natural target
-    for bug-finding analyses. -/
-def AssertSatisfiability
-    {P : PureExpr} [HasFvar P] [HasBool P] [HasBoolOps P] [HasFvars P] [HasVal P]
-    (L : Lang P) (a : AssertId P) (pass : D → Prop) : L.StmtT → D → Prop :=
-  Imperative.Analysis.Sound (fun s => AssertSatisfiable L s a) pass
-
-/-- `analyze` is a sound verifier for `L` on the failure-flag semantics, from
-    the entry environments `wf` admits: a statement it passes cannot fail from
-    any of them. -/
-@[expose] def NoFailureVerifier {P : PureExpr} (L : Lang P) (wf : L.StmtT → Env P → Prop)
-    (analyze : L.StmtT → Bool) : Prop :=
-  ∀ s, analyze s = true → ∀ ρ₀, wf s ρ₀ → ¬ Transform.CanFail L s ρ₀
+/-- `analyze` is a sound verifier for `EL` on event traces, from the entry
+    environments `wf` admits: in every finite trace of a statement it passes,
+    every assertion is valid under `I`. -/
+@[expose] def ValidOnTracesVerifier (EL : EventLang P (Event P)) (I : ConditionInterp P)
+    (wf : EL.StmtT → Env P → Prop) (analyze : EL.StmtT → Bool) : Prop :=
+  ∀ s, analyze s = true → AllAssertsValidOnTracesWhen EL I (wf s) s
 
 end Analysis
 

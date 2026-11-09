@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Core.Procedure
 import all Strata.Languages.Core.Procedure
 import all Strata.Languages.Core.StatementSemanticsProps
+import Strata.Util.OrderedSetProps
 
 /-! # Properties of Core procedures
 
@@ -18,6 +19,7 @@ Key results:
 - `Procedure.Header.keys_getInoutParams`, `Procedure.Header.keys_getOutputOnlyParams` —
   the keys of Core's inout and output-only formals are the generic
   `Calls.inoutParams` / `Calls.outputOnlyParams`.
+- `Procedure.oldAliases_mem` — every alias `(old x, x)` has `x` among the parameters.
 -/
 
 public section
@@ -76,6 +78,17 @@ theorem Procedure.mapExprs_id (p : Procedure) : Procedure.mapExprs id p = p := b
 @[simp] theorem Procedure.calledProcedureNames_eq_body (p : Procedure) :
     Procedure.calledProcedureNames p = Procedure.Body.calledProcedureNames p.body := by
   rw [Procedure.calledProcedureNames]
+
+/-- Every alias `(old x, x)` of `p` has `x` among the parameters of `p`
+    (`Procedure.entryParams`). -/
+theorem Procedure.oldAliases_mem (p : Procedure) :
+    ∀ q ∈ Procedure.oldAliases p, q.2 ∈ Procedure.entryParams p := fun _ hq => by
+  obtain ⟨⟨x, _⟩, hx, rfl⟩ := List.mem_map.1 hq
+  have hk := ((p.header.mem_keys_getInoutParams x).1
+    (ListMap.keys_eq_map_fst _ ▸ List.mem_map_of_mem (f := Prod.fst) hx)).1
+  obtain ⟨⟨y, ty⟩, hy, rfl⟩ := List.mem_map.1 (ListMap.keys_eq_map_fst _ ▸ hk)
+  exact Strata.Util.OrderedSet.mem_eraseDups.2
+    (List.mem_map.2 ⟨(y, ty), List.mem_append_left _ hy, rfl⟩)
 
 end Core
 

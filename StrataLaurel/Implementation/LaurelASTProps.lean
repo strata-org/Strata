@@ -113,7 +113,7 @@ public theorem mem_relies_withClauses (c : CoroutineContracts)
     (relies guarantees : List Condition) (yields resumes : List Parameter)
     {x : Condition} (hx : x ∈ (c.withClauses relies guarantees yields resumes).relies) :
     x ∈ relies := by
-  cases c <;> simp [CoroutineContracts.withClauses, CoroutineContracts.relies] at hx <;> exact hx
+  cases c <;> simp only [CoroutineContracts.relies, CoroutineContracts.withClauses, List.not_mem_nil] at hx <;> exact hx
 
 /-- `withClauses` installs the `guarantees` list it is given on a coroutine and
     drops it on a regular procedure, so a `guarantees` of the result is one it was
@@ -122,8 +122,7 @@ public theorem mem_guarantees_withClauses (c : CoroutineContracts)
     (relies guarantees : List Condition) (yields resumes : List Parameter)
     {x : Condition} (hx : x ∈ (c.withClauses relies guarantees yields resumes).guarantees) :
     x ∈ guarantees := by
-  cases c <;> simp [CoroutineContracts.withClauses, CoroutineContracts.guarantees] at hx
-  exact hx
+  cases c <;> simp only [CoroutineContracts.guarantees, CoroutineContracts.withClauses, List.not_mem_nil] at hx <;> exact hx
 
 /-- `withClauses` leaves the channel bindings alone: a binding of the result is a
     binding it was given. -/
@@ -131,8 +130,7 @@ public theorem mem_yields_withClauses (c : CoroutineContracts)
     (relies guarantees : List Condition) (yields resumes : List Parameter)
     {x : Parameter} (hx : x ∈ (c.withClauses relies guarantees yields resumes).yields) :
     x ∈ yields := by
-  cases c <;> simp [CoroutineContracts.withClauses, CoroutineContracts.yields] at hx
-  exact hx
+  cases c <;> simp only [CoroutineContracts.yields, CoroutineContracts.withClauses, List.not_mem_nil] at hx <;> exact hx
 
 /-- `withClauses` leaves the channel bindings alone, so a `resumes` binding of the
     result is one it was given. -/
@@ -140,8 +138,7 @@ public theorem mem_resumes_withClauses (c : CoroutineContracts)
     (relies guarantees : List Condition) (yields resumes : List Parameter)
     {x : Parameter} (hx : x ∈ (c.withClauses relies guarantees yields resumes).resumes) :
     x ∈ resumes := by
-  cases c <;> simp [CoroutineContracts.withClauses, CoroutineContracts.resumes] at hx
-  exact hx
+  cases c <;> simp only [CoroutineContracts.resumes, CoroutineContracts.withClauses, List.not_mem_nil] at hx <;> exact hx
 
 /-- `withClauses` keeps the regular/coroutine distinction. -/
 public theorem kind_coroutine_withClauses (c : CoroutineContracts)

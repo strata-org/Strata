@@ -93,234 +93,234 @@ true
 Label: s1_s2_len_sum_eq_s3_len
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
-int.add(str.len(s1), str.len(s2)) == str.len(s3)
+int.add(str.len(s1@1), str.len(s2@1)) == str.len(s3@1)
 
 Label: substr_of_concat
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
-str.substr(str.concat(s1, s2), 0, str.len(s1)) == s1
+str.substr(str.concat(s1@1, s2@1), 0, str.len(s1@1)) == s1@1
 
 Label: substr_of_concat_concrete_test
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 str.substr("testing123", 2, 0) == ""
 
 Label: prefixof_concrete_true
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 true
 
 Label: prefixof_concrete_false
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 true
 
 Label: suffixof_concrete_true
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 true
 
 Label: suffixof_concrete_false
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 true
 
 Label: contains_concrete_true
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 str.contains("abcdef", "cd")
 
 Label: contains_concrete_false
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 !(str.contains("abcdef", "xy"))
 
 Label: indexof_concrete
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 str.indexof("abcdef", "cd", 0) == 2
 
 Label: at_concrete
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 str.at("abc", 0) == "a"
 
 Label: replace_concrete
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 str.replace("abcabc", "a", "x") == "xbcabc"
 
 Label: lt_concrete_true
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 true
 
 Label: le_concrete_true
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 true
 
 Label: lt_symbolic_irrefl
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
-!(str.lt(s1, s1))
+!(str.lt(s1@1, s1@1))
 
 Label: le_symbolic_refl
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
-str.le(s1, s1)
+str.le(s1@1, s1@1)
 
 Label: indexof_neg_offset
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 str.indexof("abcdef", "cd", int.neg(1)) == int.neg(1)
 
 Label: indexof_absent
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 str.indexof("abcdef", "xy", 0) == int.neg(1)
 
 Label: at_oob
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 str.at("abc", 5) == ""
 
 Label: at_neg
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 str.at("abc", int.neg(1)) == ""
 
 Label: replace_absent
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 str.replace("abcabc", "xy", "z") == "abcabc"
 
 Label: replace_empty_pat
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 str.replace("abc", "", "z") == "zabc"
 
 Label: lt_irrefl
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 true
 
 Label: contains_empty
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 str.contains("abc", "")
 
 Label: indexof_empty_inrange
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 str.indexof("abc", "", 0) == 0
 
 Label: indexof_empty_beyond_len
 Property: assert
 Assumptions:
-s1_len: str.len(s1) == 3
-s2_len: str.len(s2) == 3
-s1_s2_concat_eq_s3: str.concat(s1, s2) == s3
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 str.indexof("abc", "", 5) == int.neg(1)
 

@@ -118,7 +118,7 @@ procedure castOnceNeutralFalse(cc: Parent)
   if (cc is Child) then {
     var d: Child := { x := x - 1; cc } as Child;
     assert x == 0
-//  ^^^^^^^^^^^^^ error: assertion could not be proved
+//  ^^^^^^^^^^^^^ error: assertion does not hold
   }
 };
 #end

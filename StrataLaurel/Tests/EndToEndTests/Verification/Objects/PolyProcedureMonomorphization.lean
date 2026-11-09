@@ -28,10 +28,10 @@ trigger is not just the signature — a procedure with a value-`T` signature tha
 `Box<T>` in its BODY has to be captured too, which is what the body-scan case below pins.
 
 Cloning brings its own obligations, each with a case here: the clone's fields must be
-re-resolved independently (or two instantiations cross-link and one's write is visible through
-the other), the clone's contract must be substituted and still checked, and the discovery has
-to be a FIXPOINT — cloning `outer$int` reveals a now-concrete `inner(b: Box<int>)` call that
-needs cloning in turn.
+re-resolved independently (or the bodies of two instantiations cross-link), the clone's
+contract must be substituted and still checked, and the discovery has to be a FIXPOINT —
+cloning `outer$int` reveals a now-concrete `inner(b: Box<int>)` call that needs cloning
+in turn.
 
 Verification-only throughout: every case is heap-allocating.
 -/
@@ -408,6 +408,78 @@ procedure get2<T>(b: Box<T>, y: int) returns (r: T) opaque { r := b#v };
 procedure tooFewArguments(b: Box<int>) opaque {
   var k: int := get2(b)
 //^^^^^^^^^^^^^^^^^^^^^ error: Ill-formed call
+};
+#end
+
+-- `x: S` fixes nothing, so `get(x)` is recorded at the expected `Animal`; the clone of `getAnimal`
+-- at `S := Box<Dog>` calls `get` at `Dog`, which its argument fits.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Animal { }
+composite Dog extends Animal { }
+composite Box<T> { var v: T }
+procedure get<T>(b: Box<T>) returns (r: T) opaque ensures r == b#v { r := b#v };
+procedure getAnimal<S>(x: S) returns (r: Animal) opaque { var b: Box<S>; r := get(x) };
+
+procedure recordUnfitInClone(c: Box<Dog>) opaque { var k: Animal := getAnimal(c) };
+#end
+
+-- An argument at `S` fixes nothing in the generic bodies, so `both(d, s)` and `put(x, d)` are
+-- recorded at `d`'s `Dog`, and `get(id(x))` at the expected `Animal`. Each clone calls them at what
+-- its arguments bind, also through the nested `id(x)`.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Animal { }
+composite Dog extends Animal { }
+composite Box<T> { var v: T }
+procedure both<T>(x: T, y: T) returns (r: T) opaque ensures r == y { var bx: Box<T>; r := y };
+procedure put<T>(b: Box<T>, y: T) returns (r: T) opaque ensures r == y;
+procedure get<T>(b: Box<T>) returns (r: T) opaque ensures r == b#v { r := b#v };
+procedure id<T>(x: T) returns (r: T) opaque ensures r == x { var bx: Box<T>; r := x };
+procedure outer<S>(s: S, d: Dog) returns (r: Animal) opaque ensures r == s {
+  var bs: Box<S>;
+  r := both(d, s)
+};
+procedure putOuter<S>(x: S, d: Dog) returns (r: Animal) opaque { var bs: Box<S>; r := put(x, d) };
+procedure nestedOuter<S>(x: S) returns (r: Animal) opaque { var bs: Box<S>; r := get(id(x)) };
+
+procedure argumentAtCloneVariable(a: Animal, d: Dog, ba: Box<Animal>, bd: Box<Dog>) opaque {
+  var r: Animal := outer(a, d);
+  assert r == a;
+  var p: Animal := putOuter(ba, d);
+  var n: Animal := nestedOuter(bd)
+};
+#end
+
+-- A catch binding may be typed at its thrower's own `S`, as `unrecordedThrower`'s always is, which
+-- the clones at `Box<int>` must not substitute although their own `S` is spelled the same, nor bind
+-- a type argument to: `get(e)` keeps the `bool` and `mk(e)` the `int` they are recorded at, and only
+-- the hole is reported.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Box<T> { var v: T }
+procedure get<T>(b: Box<T>) returns (r: T) opaque ensures r == b#v;
+procedure mk<T>(x: T) returns (r: Box<T>) opaque ensures r#v == x;
+procedure thrS<S>(x: S) throws (e: S) opaque throwsOn true { ensures e == x };
+
+procedure recordedThrower<S>(y: S, bb: Box<bool>) opaque modifies * {
+  var k: Box<S>;
+  try { thrS(bb) } catch e { var r: bool := get(e); assert r == bb#v };
+  try { thrS(3) } catch e { var b: Box<int> := mk(e); assert b#v == 3 }
+};
+
+procedure unrecordedThrower<S>(y: S) opaque modifies * {
+  var k: Box<S>;
+  try { thrS(<?>) } catch e { var r: bool := get(e) }
+//           ^^^ error: could not infer type
+};
+
+procedure callsThem(c: Box<int>, bb: Box<bool>) opaque modifies * {
+  recordedThrower(c, bb);
+  unrecordedThrower(c)
 };
 #end
 

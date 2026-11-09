@@ -9,6 +9,7 @@ import StrataLaurel.Implementation.HeapAnalysis
 import StrataLaurel.Implementation.HeapParameterization
 import StrataLaurel.Implementation.LaurelCompilationPipeline
 import StrataLaurel.Implementation.LiftInstanceProcedures
+import StrataLaurel.Implementation.LowerComposite
 
 import StrataLaurel.Implementation.CoreDefinitionsForLaurel
 import StrataLaurel.Implementation.InferHoleTypes
@@ -290,13 +291,20 @@ private def isExpectedHeapRead (expr : StmtExprMd) : Bool :=
               | .Var (.Local name) => name.text == "$heap"
               | _ => false) &&
               (match receiver.val with
-              | .Var (.Local name) => name.text == "cell"
+              | .StaticCall ref [⟨.Var (.Local name), _⟩] _ =>
+                  ref.text == "Composite..ref!" && name.text == "cell"
               | _ => false) &&
               (match field.val with
               | .StaticCall name [] _ => name.text == "Cell.value"
               | _ => false)
         | _ => false
   | _ => false
+
+private def lowerThenHeapParameterize (resolved : ResolutionResult) : Except String LaurelProgram := do
+  let lowered ← lowerComposite resolved.model resolved.program
+  let loweredResolved := resolve lowered (some resolved.model)
+  let (eliminated, _) := constrainedTypeElim loweredResolved.model loweredResolved.program
+  heapParameterization (resolve eliminated (some loweredResolved.model)).program
 
 private def heapSpecificationsHasExpectedValues (proc : Procedure) : Bool :=
   let decreasesIsExpected := match proc.decreases with
@@ -328,7 +336,7 @@ private def checkHeapSpecifications : IO Unit := do
   let everySpecificationsFieldRead :=
     [preconditionAnalysis, decreasesAnalysis, invokeOnAnalysis, axiomAnalysis].all fun result =>
       result.readsHeapDirectly && !result.writesHeapDirectly
-  let lowered ← IO.ofExcept (heapParameterization resolved.model resolved.program)
+  let lowered ← IO.ofExcept (lowerThenHeapParameterize resolved)
   let readerAfter := (findProcedure lowered "reader").get!
   let writerAfter := (findProcedure lowered "writer").get!
   -- The heap is a file-scope global, threaded into signatures by
@@ -365,10 +373,11 @@ writer specifications lowered: true
 
 /-! ## Calls in heap-aware specifications
 
-Heap-reading calls remain ordinary calls with an added heap argument. Calls to
-heap-writing procedures must also remain calls in specifications: executable
-lowering would synthesize an assignment block and obscure the source-level
-"procedure call in a contract" diagnostic.
+Heap-reading calls remain ordinary calls with an added heap argument, and so do calls to
+heap-writing procedures: `HeapParameterization` does not lower a specification's calls
+into assignment blocks. A heap writer is a global writer, so resolution rejects calling one
+from a specification, and reports the source call rather than an assignment synthesized
+later.
 -/
 
 private def specificationCallProgram : LaurelProgram :=
@@ -434,7 +443,7 @@ private def impureSpecificationCallProgram : LaurelProgram :=
 
 private def checkSpecificationCalls : IO Unit := do
   let resolved := resolve specificationCallProgram
-  let lowered ← IO.ofExcept (heapParameterization resolved.model resolved.program)
+  let lowered ← IO.ofExcept (lowerThenHeapParameterize resolved)
   let caller := (findProcedure lowered "specificationCaller").get!
   let callsRemainPure := match caller.decreases, caller.invokeOn, caller.axioms with
     | some writerMeasure, some readerTrigger, [writerAxiom, readerAxiom] =>
@@ -448,7 +457,7 @@ private def checkSpecificationCalls : IO Unit := do
   let (_, diagnostics, _, _) ← translateWithLaurel {} impureSpecificationCallProgram
   let messages := diagnostics.map fun diagnostic => (Std.format diagnostic.message).pretty
   let reportsSourceCall := messages.any
-    (·.contains "calling multi-output procedure 'mutator'")
+    (·.contains "calls to global-writing procedure 'mutator'")
   let reportsSyntheticAssignment := messages.any
     (·.contains "destructive assignments are not supported in transparent bodies or contracts")
   IO.println s!"writer call diagnostics: {resolved.errors.size == 2}"
@@ -569,9 +578,15 @@ private def isHeapWfPrecond (c : Condition) : Bool :=
        | _ => false)
   | _ => false
 
+private def isTypeConstraintPrecond (c : Condition) : Bool :=
+  match c.condition.val with
+  | .StaticCall callee _ _ => callee.text.endsWith "$constraint"
+  | _ => false
+
 private def addsOnlyHeapWfPreconds (proc : Procedure) (expected : Nat) : Bool :=
-  proc.preconditions.length == expected &&
-    proc.preconditions.all isHeapWfPrecond &&
+  let preconditions := proc.preconditions.filter (!isTypeConstraintPrecond ·)
+  preconditions.length == expected &&
+    preconditions.all isHeapWfPrecond &&
     proc.decreases.isNone && proc.invokeOn.isNone && proc.axioms.isEmpty
 
 private def findAnyProcedure (program : LaurelProgram) (name : String) : Option Procedure :=
@@ -604,7 +619,7 @@ private def checkEmptySpecifications : IO Unit := do
     (findAnyProcedure lifted "Cell$instanceEmptySpecifications").get!
   let liftedResolved := resolve lifted
   let heapLowered ← IO.ofExcept
-    (heapParameterization liftedResolved.model liftedResolved.program)
+    (lowerThenHeapParameterize liftedResolved)
   let staticAfterHeap :=
     (findAnyProcedure heapLowered "staticEmptySpecifications").get!
   let instanceAfterHeap :=

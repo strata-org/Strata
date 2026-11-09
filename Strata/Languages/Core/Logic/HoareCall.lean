@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 import Strata.DL.Imperative.CFGSemanticsProps
+import Strata.DL.Imperative.StmtCFGCallSemanticsProps
 import all Strata.Languages.Core.Logic.ContractToHoareTripleProps
 
 /-! # Hoare rule for Core procedure calls
@@ -49,20 +50,21 @@ specified by its signature. -/
     (π : String → Option Procedure)
     (proc : Procedure) : Prop :=
   ∀ σ_entry fac σ_exit emitted,
-    CoreBodyExecE π proc.body ⟨σ_entry, fac, false⟩ σ_exit emitted →
+    CoreBodyExecE π proc.body ⟨σ_entry, fac⟩ σ_exit emitted →
     Procedure.storeFrame proc σ_entry σ_exit
 
 /-- Every event-producing execution of `proc`'s body binds its declared outputs
     to values matching their types, provided its inputs do so at entry. -/
 @[expose] def Procedure.bodyOutputsTyped
+    (factory : Lambda.Factory CoreLParams)
     (π : String → Option Procedure) (proc : Procedure) : Prop :=
   ∀ σ_entry fac σ_exit emitted,
-    fac = Core.Factory →
+    fac.factory = factory →
     Procedure.inputAsPredicate proc
-        { store := σ_entry, factory := fac, hasFailure := false } →
-    CoreBodyExecE π proc.body ⟨σ_entry, fac, false⟩ σ_exit emitted →
+        { store := σ_entry, factory := fac } →
+    CoreBodyExecE π proc.body ⟨σ_entry, fac⟩ σ_exit emitted →
     Procedure.outputAsPredicate proc
-      { store := σ_exit, factory := fac, hasFailure := false }
+      { store := σ_exit, factory := fac }
 
 /-- **A procedure call meets a Hoare triple built from its callee's contract.**
 
@@ -84,28 +86,27 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
     (hframe : ∀ proc, p.findProcByString? procName = some proc →
       Procedure.bodyFrame p.findProcByString? proc)
     (houtputs : ∀ proc, p.findProcByString? procName = some proc →
-      Procedure.bodyOutputsTyped p.findProcByString? proc)
-    (hentry : ∀ (model : Lambda.Interp Core.Factory)
-        (ρ₀ : Imperative.Env Expression) (proc : Procedure)
+      Procedure.bodyOutputsTyped (p.factoryBeforeProcedure procName)
+        p.findProcByString? proc)
+    (hentry : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName callArgs md) ρ₀ →
       p.findProcByString? procName = some proc →
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
-      Procedure.contractPre model proc
-          { store := σAO, factory := ρ₀.factory, hasFailure := false } ∧
+      Procedure.contractPre (p.factoryBeforeProcedure procName) proc
+          { store := σAO, factory := ρ₀.factory } ∧
         match proc.body with
         | .structured bss =>
             BlockInitEnvWF params [Imperative.Stmt.block "" bss #[]]
-              { store := σAO, factory := ρ₀.factory, hasFailure := false }
+              { store := σAO, factory := ρ₀.factory }
         | .cfg cfg =>
             CFGInitEnvWF params cfg
-              { store := σAO, factory := ρ₀.factory, hasFailure := false })
-    (hexit : ∀ (model : Lambda.Interp Core.Factory)
-        (ρ₀ : Imperative.Env Expression) (proc : Procedure)
+              { store := σAO, factory := ρ₀.factory })
+    (hexit : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (ρ' : Imperative.Env Expression) (σ' σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName callArgs md) ρ₀ →
       p.findProcByString? procName = some proc →
-      Procedure.contractPost model proc ρ' →
+      Procedure.contractPost (p.factoryBeforeProcedure procName) proc ρ' →
       Procedure.outputAsPredicate proc ρ' →
       ρ'.factory = ρ₀.factory →
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
@@ -113,25 +114,31 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
       CallExit ρ₀.factory ρ₀.store proc callArgs ρ'.store σ' →
       Post { ρ₀ with store := σ' }) :
     Triple p.findProcByString? params Pre
-      [Statement.call procName callArgs md] Post := by
+      [Statement.call procName callArgs md] Post
+      (factory := p.factoryBeforeProcedure procName) := by
   obtain ⟨cproc, hcproc, _hctyped, htriple⟩ := hcontract
-  refine cmd p.findProcByString? params (Imperative.CmdExt.call procName callArgs md)
-    Pre Post (fun model ρ₀ σ' emitted hpre hwf hstep => ?_)
-  let I := DenoteBasedInterp model
+  refine cmd (factory := p.factoryBeforeProcedure procName)
+    p.findProcByString? params
+    (Imperative.CmdExt.call procName callArgs md)
+    Pre Post (fun ρ₀ σ' emitted hpre hwf hstep => ?_)
+  let I := DenoteBasedInterp (p.factoryBeforeProcedure procName)
   cases hstep with
   | @call_sem _ _ _ _ _ _ _ _ _ σAO hlookup hcallentry hbodyE hcallexit =>
     obtain rfl : cproc = _ := Option.some.inj (hcproc.symm.trans hlookup)
     have hframeRel := hframe cproc hcproc _ _ _ _ hbodyE
     obtain ⟨hcontractPre, hbodyWF⟩ :=
-      hentry model ρ₀ cproc _ hpre hwf hcproc hcallentry
+      hentry ρ₀ cproc _ hpre hwf hcproc hcallentry
     have houtputsRel := houtputs cproc hcproc _ _ _ _ hcontractPre.2.1
       hcontractPre.2.2.2 hbodyE
     -- The precondition assertions are valid once, independent of the body kind.
     have hvalidA :
         Trace.AssertionsValid Expression I
-          (defaultAssertEvents ρ₀.factory σAO cproc.spec.preconditions) :=
-      assertionsValid_defaultAssertEvents I ρ₀.factory σAO cproc.spec.preconditions
-        (fun label check hmem _ => hcontractPre.1 label check hmem)
+          (defaultAssertEvents ρ₀.factory σAO (Calls.checksAtCall md cproc.spec.preconditions)) :=
+      assertionsValid_defaultAssertEvents I ρ₀.factory σAO _
+        (fun label check hmem _ => by
+          obtain ⟨c₀, hmem₀, hexpr, -⟩ := Calls.mem_checksAtCall hmem
+          exact Procedure.checkAsPredicate_of_exprEq label check hcontractPre.2.1 hexpr.symm
+            (hcontractPre.1 label c₀ hmem₀))
     -- Shared proof tail: given the body triple's conclusion about a post-env
     -- `ρpost` whose store is the callee's final store, discharge the call's
     -- obligation.  Both body kinds instantiate it, differing only in `ρpost`.
@@ -142,16 +149,19 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
         CallExit ρ₀.factory ρ₀.store cproc callArgs ρpost.store σ' →
         (Trace.AssertionsValid Expression I bodyEvents ∧
           (Trace.Reachable Expression I bodyEvents →
-            Procedure.contractPost model cproc ρpost)) →
+            Procedure.contractPost (p.factoryBeforeProcedure procName) cproc ρpost)) →
         Trace.AssertionsValid Expression I
-            (defaultAssertEvents ρ₀.factory σAO cproc.spec.preconditions ++ bodyEvents ++
+            (defaultAssertEvents ρ₀.factory σAO (Calls.checksAtCall md cproc.spec.preconditions) ++
+              bodyEvents ++
               defaultAssertEvents ρ₀.factory ρpost.store cproc.spec.postconditions) ∧
           (Trace.Reachable Expression I
-              (defaultAssertEvents ρ₀.factory σAO cproc.spec.preconditions ++ bodyEvents ++
+              (defaultAssertEvents ρ₀.factory σAO
+                  (Calls.checksAtCall md cproc.spec.preconditions) ++
+                bodyEvents ++
                 defaultAssertEvents ρ₀.factory ρpost.store cproc.spec.postconditions) →
             Post { ρ₀ with store := σ' }) := by
       intro ρpost bodyEvents hρpostfac houtputsρ hframeρ hcallexitρ htb
-      have hvalidB : Procedure.postAsPredicate model cproc ρpost →
+      have hvalidB : Procedure.postAsPredicate (p.factoryBeforeProcedure procName) cproc ρpost →
           Trace.AssertionsValid Expression I
             (defaultAssertEvents ρ₀.factory ρpost.store cproc.spec.postconditions) := by
         intro hpostC
@@ -165,7 +175,7 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
           (Trace.AssertionsValid.append_of_reachable_left I hvalidA (fun _ => htb.1)) ?_
         exact fun hreachAB => hvalidB (htb.2 (Trace.Reachable.right_of_append I hreachAB))
       · intro hreach
-        exact hexit model ρ₀ cproc ρpost σ' _ hpre hwf hcproc
+        exact hexit ρ₀ cproc ρpost σ' _ hpre hwf hcproc
           (htb.2 (Trace.Reachable.right_of_append I
             (Trace.Reachable.left_of_append I hreach)))
           houtputsρ hρpostfac hcallentry hframeρ hcallexitρ
@@ -179,8 +189,8 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
           (Imperative.starE_preserves_factory hrun).symm
         have hrun' := Imperative.stmtRun_to_singletonE
           (EvalCommandE p.findProcByString?) hrun
-        have htb := htriple model
-          { store := σAO, factory := ρ₀.factory, hasFailure := false }
+        have htb := htriple
+          { store := σAO, factory := ρ₀.factory }
           ρ' _ hcontractPre hbodyWF (Or.inl hrun')
         exact finish ρ' _ hρ'fac houtputsRel hframeRel hcallexit htb
     | cfg cfg =>
@@ -190,9 +200,9 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
         rename_i ρ'
         have hρ'fac : ρ'.factory = ρ₀.factory :=
           (StepCFGStarE.preserves_factory hrun).symm
-        have htb := htriple model
-          { store := σAO, factory := ρ₀.factory, hasFailure := false }
-          { store := σAO, factory := ρ₀.factory, hasFailure := false }
+        have htb := htriple
+          { store := σAO, factory := ρ₀.factory }
+          { store := σAO, factory := ρ₀.factory }
           ρ' _ ⟨hcontractPre, rfl⟩ hbodyWF (Or.inl hrun)
         exact finish { ρ' with store := Imperative.projectStore σAO ρ'.store } _
           hρ'fac houtputsRel hframeRel hcallexit htb

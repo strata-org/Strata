@@ -42,7 +42,7 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
   /-- Type arguments must not start with the reserved generated-variable
       prefix `$__ty` used by the type-checker. -/
   typeArgs_no_gen_prefix :
-    ∀ ta, ta ∈ f.typeArgs → ¬ ("$__ty".toList.isPrefixOf ta.toList = true) := by decide
+    ∀ ta, ta ∈ f.typeArgs → ¬ (genTyPrefix.toList.isPrefixOf ta.toList = true) := by decide
   /-- `concreteEval` does not succeed if the length of args is incorrect. -/
   concreteEval_argmatch :
     ∀ fn md args res, f.concreteEval = .some fn
@@ -86,6 +86,17 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
       | (simp [LFunc.concreteEval] at hc; done)
       | (exfalso; revert h; decide)
 
+/-- Well-formedness of a function's type signature: distinct type arguments,
+    none with the reserved prefix `$__ty`, covering the input and output type
+    variables. -/
+structure LFuncSigWF {T : LExprParams} (f : LFunc T) : Prop where
+  typeArgs_nodup : List.Nodup f.typeArgs
+  typeArgs_no_gen_prefix :
+    ∀ ta, ta ∈ f.typeArgs → ¬ (genTyPrefix.toList.isPrefixOf ta.toList = true)
+  inputs_typevars_in_typeArgs :
+    ∀ ty, ty ∈ f.inputs.values → ty.freeVars ⊆ f.typeArgs
+  output_typevars_in_typeArgs : f.output.freeVars ⊆ f.typeArgs
+
 /-- An LFunc bundled with its well-formedness proof. -/
 structure WFLFunc (T : LExprParams) where
   func : LFunc T
@@ -116,10 +127,10 @@ structure WFLFactory (T : LExprParams) where
     wf := by
       intro func mem
       have q : List.Nodup (a.toList |>.map (fun fn => fn.name.name)) := by
-        simp [a]
+        simp only [Array.toList_map, List.map_map, a]
         exact name_nodup
       have mem_a := Factory.ofArray_mem mem
-      simp [a] at mem_a
+      simp only [Array.mem_map, a] at mem_a
       have ⟨⟨func2, func2WF⟩, wfMem⟩ := mem_a
       grind
   }
@@ -130,9 +141,21 @@ Well-formedness properties of a factory.
 structure FactoryWF {T} (fac : Factory T) where
   lfuncs_wf : ∀ (lf:LFunc T), lf ∈ fac.toArray → LFuncWF lf
 
+/-- Every function of the factory has a well-formed type signature. -/
+structure FactorySigWF {T} (fac : Factory T) : Prop where
+  lfuncs_wf : ∀ (lf : LFunc T), lf ∈ fac.toArray → LFuncSigWF lf
+
 @[simp]
 theorem WFLFactory.toFactory_wf {T} (wf : WFLFactory T) : FactoryWF wf.toFactory :=
   { lfuncs_wf := wf.wf }
+
+/--
+No constructor of `fac` produces a Boolean: the output type of every function
+marked `isConstr` differs from `bool` under every type substitution. Then the
+only values of type `bool` are the two Boolean constants.
+-/
+@[expose] def Factory.ConstrsNotBool {T} (fac : Factory T) : Prop :=
+  ∀ fn ∈ fac.toArray, fn.isConstr = true → ∀ S, LMonoTy.subst S fn.output ≠ .bool
 
 end -- public section
 end Lambda

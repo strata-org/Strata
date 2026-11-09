@@ -145,15 +145,9 @@ def ProofObligations.createAssertions
       | some o' => #[o']
     o' ++ orest'
 
-/--
-A substitution map from variable identifiers to expressions.
--/
-abbrev SubstMap := Map Expression.Ident Expression.Expr
-
 structure Env where
   error : Option (Imperative.EvalError Expression)
   program : Program
-  substMap : SubstMap
   exprEnv : Lambda.LState ⟨ExpressionMetadata, Unit⟩
   datatypes : @Lambda.TypeFactory Unit
   distinct : List (List Expression.Expr)
@@ -180,7 +174,6 @@ def Env.init (empty_factory:=false): Env :=
   let σ := if empty_factory then σ else σ.setFactory Core.Factory
   { error := none,
     program := Program.init,
-    substMap := [],
     exprEnv := σ,
     datatypes := #[],
     distinct := [],
@@ -200,27 +193,15 @@ instance : Inhabited Env where
 
 instance : ToFormat Env where
   format s :=
-    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred, pathCap := _, collectAllAssertFailures := _, assertFailures := _, ignoreAssumes := _ }  := s
+    let { error, program := _, exprEnv, datatypes, distinct := _, pathConditions, warnings,
+          deferred, pathCap := _, collectAllAssertFailures := _, assertFailures := _,
+          ignoreAssumes := _ } := s
     format f!"Error:{Format.line}{error}{Format.line}\
-              Subst Map:{Format.line}{substMap}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\
               Datatypes:{Format.line}{datatypes}{Format.line}\
               Path Conditions:{Format.line}{PathConditions.format pathConditions.consume}{Format.line}{Format.line}\
               Warnings:{Format.line}{warnings}{Format.line}\
               Deferred Proof Obligations:{Format.line}{deferred}{Format.line}"
-
-/--
-Create a substitution map from all variables to their values.
--/
-def oldLocalVarSubst (E : Env) : SubstMap :=
-  let m := (E.exprEnv.state.dropOldest).toSingleMap
-  m.map (fun (i, _, e) => (i, e))
-
-/--
-Append `subst` map to a substitution map.
--/
-def oldVarSubst (subst :  SubstMap) (E : Env) : SubstMap :=
-  subst ++ oldLocalVarSubst E
 
 def Env.exprEval (E : Env) (e : Expression.Expr) : Expression.Expr :=
   (Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv e).fst
@@ -254,7 +235,7 @@ def validateCasesTypes (funcs : List Function) (tf : @Lambda.TypeFactory Unit) :
         (.error (.fromFormat f!"'{func.name}': @[cases] index {recIdx} out of bounds")) .ok
       match recTy with
       | .tcons n _ =>
-        if (tf.toList.find? (·.any (·.name == n))).isNone then
+        if (tf.getBlock? n).isNone then
           .error (.fromFormat f!"'{func.name}': @[cases] type '{n}' is not a known datatype")
       | _ => .error (.fromFormat f!"'{func.name}': @[cases] type is not a datatype")
 
@@ -288,14 +269,11 @@ def Env.genSym (x : String) (c : Lambda.EvalConfig CoreLParams) : CoreIdent × L
   let (new_var, c) := c.genSym x
   (⟨new_var, ()⟩, c)
 
+/-- A fresh name for an unknown value of variable `x`: never `x` itself, nor any name already
+    used. -/
 def Env.genVar' (x : String) (σ : (Lambda.LState CoreLParams)) :
     (CoreIdent × (Lambda.LState CoreLParams)) :=
-  -- If `x` is already bound in the state, mark it used so that findUnique
-  -- skips the bare name and avoids self-referential substitutions
-  -- (e.g. havoc x generating fvar "x" when x is in scope).
-  let config := if σ.state.find? (⟨x, ()⟩ : CoreIdent) |>.isSome
-    then { σ.config with usedNames := σ.config.usedNames.insert x }
-    else σ.config
+  let config := { σ.config with names.usedNames := σ.config.names.usedNames.insert x }
   let (new_var, config) := Env.genSym x config
   let σ : Lambda.LState CoreLParams := { σ with config := config }
   (new_var, σ)
@@ -342,15 +320,22 @@ def Env.genFVars (E : Env) (xs : List (Lambda.IdentT Lambda.LMonoTy Unit)) :
   go [] E xs
 
 /--
-Insert `(xi, .fvar xi)`, for each `xi` in `xs`, in the _oldest_ scope in `ss`,
-only if `xi` is the identifier of a free variable, i.e., it is not in `ss`.
+Bind each free variable `xi` in `xs` that the store does not bind, in the _oldest_ scope,
+to a fresh unknown (see `genFVar`).
 -/
 def Env.insertFreeVarsInOldestScope
   (xs : List (Lambda.IdentT Lambda.LMonoTy Unit)) (E : Env) : Env :=
-  let (xis, xtyei) := xs.foldl
-    (fun (acc_ids, acc_pairs) x =>
-      (x.fst :: acc_ids, (x.snd, .fvar () x.fst x.snd) :: acc_pairs))
-    ([], [])
+  -- Each unbound name once, whatever annotations its occurrences carry.
+  let (_, unbound) := (xs.filter fun x => (E.exprEnv.state.find? x.fst).isNone).foldl
+    (fun (seen, acc) x =>
+      if seen.contains x.fst.name then (seen, acc) else (seen.insert x.fst.name, x :: acc))
+    ((∅ : Std.HashSet String), [])
+  let unbound := unbound.reverse
+  let (xis, xtyei, E) := unbound.foldl
+    (fun (acc_ids, acc_pairs, E) x =>
+      let (xe, E) := E.genFVar x
+      (x.fst :: acc_ids, (x.snd, xe) :: acc_pairs, E))
+    ([], [], E)
   let state' := Maps.addInOldest E.exprEnv.state xis xtyei
   { E with exprEnv := { E.exprEnv with state := state' }}
 
@@ -379,6 +364,14 @@ def Env.performMerge (cond : Expression.Expr) (E1 E2 : Env)
   let pcs := pcs.addInNewest pc_merged
   let deferred := E1.deferred.append E2.deferred
   { E1 with exprEnv := exprEnv, pathConditions := pcs, deferred := deferred }
+
+/-- `E` with `names` as its name supply. -/
+def Env.withNames (E : Env) (names : Lambda.NameSupply) : Env :=
+  { E with exprEnv.config.names := names }
+
+/-- `E`'s name supply, and `E` with an empty one. -/
+def Env.takeNames (E : Env) : Lambda.NameSupply × Env :=
+  (E.exprEnv.config.names, E.withNames {})
 
 def Env.merge (cond : Expression.Expr) (E1 E2 : Env) : Env :=
   if h1: E1.error.isSome then

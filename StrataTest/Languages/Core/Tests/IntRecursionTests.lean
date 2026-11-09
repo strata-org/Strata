@@ -41,15 +41,15 @@ rec function bad (@[cases] xs : IntList, n : int) : int
 
 /--
 info:
-Obligation: bad_body_calls_IntList..tl_0
-Property: assert
-Result: ✅ pass
-
 Obligation: bad_terminates_0
 Property: assert
 Result: ❌ fail
 
 Obligation: bad_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: bad_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 -/
@@ -133,15 +133,15 @@ rec function factorial (n : int) : int
 
 /--
 info:
-Obligation: factorial_body_calls_factorial_0
-Property: assert
-Result: ✅ pass
-
 Obligation: factorial_terminates_0
 Property: assert
 Result: ✅ pass
 
 Obligation: factorial_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: factorial_body_calls_factorial_0
 Property: assert
 Result: ✅ pass
 -/
@@ -166,10 +166,6 @@ rec function bad (n : int) : int
 
 /--
 info:
-Obligation: bad_body_calls_bad_0
-Property: assert
-Result: ✅ pass
-
 Obligation: bad_terminates_0
 Property: assert
 Result: ✅ pass
@@ -177,6 +173,10 @@ Result: ✅ pass
 Obligation: bad_terminates_1
 Property: assert
 Result: ❌ fail
+
+Obligation: bad_body_calls_bad_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify nonTermIntPgm (options := .quiet)
@@ -239,11 +239,27 @@ rec function merge (l1 : IntList, l2 : IntList) : IntList
 
 /--
 info:
+Obligation: listLen_terminates_0
+Property: assert
+Result: ✅ pass
+
 Obligation: listLen_body_calls_IntList..tl_0
 Property: assert
 Result: ✅ pass
 
-Obligation: listLen_terminates_0
+Obligation: merge_terminates_0
+Property: assert
+Result: ❓ unknown
+
+Obligation: merge_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: merge_terminates_2
+Property: assert
+Result: ❓ unknown
+
+Obligation: merge_terminates_3
 Property: assert
 Result: ✅ pass
 
@@ -286,22 +302,6 @@ Result: ✅ pass
 Obligation: merge_body_calls_merge_9
 Property: assert
 Result: ❓ unknown
-
-Obligation: merge_terminates_0
-Property: assert
-Result: ❓ unknown
-
-Obligation: merge_terminates_1
-Property: assert
-Result: ✅ pass
-
-Obligation: merge_terminates_2
-Property: assert
-Result: ❓ unknown
-
-Obligation: merge_terminates_3
-Property: assert
-Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify compoundMeasurePgm (options := .quiet)
@@ -327,22 +327,6 @@ rec function diagonal (m : int, n : int) : int
 
 /--
 info:
-Obligation: diagonal_body_calls_diagonal_0
-Property: assert
-Result: ✅ pass
-
-Obligation: diagonal_body_calls_diagonal_1
-Property: assert
-Result: ✅ pass
-
-Obligation: diagonal_body_calls_diagonal_2
-Property: assert
-Result: ✅ pass
-
-Obligation: diagonal_body_calls_diagonal_3
-Property: assert
-Result: ✅ pass
-
 Obligation: diagonal_terminates_0
 Property: assert
 Result: ✅ pass
@@ -356,6 +340,22 @@ Property: assert
 Result: ✅ pass
 
 Obligation: diagonal_terminates_3
+Property: assert
+Result: ✅ pass
+
+Obligation: diagonal_body_calls_diagonal_0
+Property: assert
+Result: ✅ pass
+
+Obligation: diagonal_body_calls_diagonal_1
+Property: assert
+Result: ✅ pass
+
+Obligation: diagonal_body_calls_diagonal_2
+Property: assert
+Result: ✅ pass
+
+Obligation: diagonal_body_calls_diagonal_3
 Property: assert
 Result: ✅ pass
 -/
@@ -386,14 +386,6 @@ function isOdd (n : int) : bool
 
 /--
 info:
-Obligation: isEven_body_calls_isOdd_0
-Property: assert
-Result: ✅ pass
-
-Obligation: isOdd_body_calls_isEven_0
-Property: assert
-Result: ✅ pass
-
 Obligation: isEven_terminates_0
 Property: assert
 Result: ✅ pass
@@ -407,6 +399,14 @@ Property: assert
 Result: ✅ pass
 
 Obligation: isOdd_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: isEven_body_calls_isOdd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isOdd_body_calls_isEven_0
 Property: assert
 Result: ✅ pass
 -/
@@ -447,14 +447,6 @@ procedure TestMutualConcrete() spec {
 
 /--
 info:
-Obligation: isEven_body_calls_isOdd_0
-Property: assert
-Result: ✅ pass
-
-Obligation: isOdd_body_calls_isEven_0
-Property: assert
-Result: ✅ pass
-
 Obligation: isEven_terminates_0
 Property: assert
 Result: ✅ pass
@@ -468,6 +460,14 @@ Property: assert
 Result: ✅ pass
 
 Obligation: isOdd_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: isEven_body_calls_isOdd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isOdd_body_calls_isEven_0
 Property: assert
 Result: ✅ pass
 
@@ -537,14 +537,6 @@ procedure TestFibUF(n : int) spec {
 
 /--
 info:
-Obligation: fib_body_calls_fib_0
-Property: assert
-Result: ✅ pass
-
-Obligation: fib_body_calls_fib_1
-Property: assert
-Result: ✅ pass
-
 Obligation: fib_terminates_0
 Property: assert
 Result: ✅ pass
@@ -558,6 +550,14 @@ Property: assert
 Result: ✅ pass
 
 Obligation: fib_terminates_3
+Property: assert
+Result: ✅ pass
+
+Obligation: fib_body_calls_fib_0
+Property: assert
+Result: ✅ pass
+
+Obligation: fib_body_calls_fib_1
 Property: assert
 Result: ✅ pass
 
@@ -611,15 +611,15 @@ procedure TestFactConcrete() spec {
 
 /--
 info:
-Obligation: factorial_body_calls_factorial_0
-Property: assert
-Result: ✅ pass
-
 Obligation: factorial_terminates_0
 Property: assert
 Result: ✅ pass
 
 Obligation: factorial_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: factorial_body_calls_factorial_0
 Property: assert
 Result: ✅ pass
 
@@ -685,6 +685,14 @@ procedure TestSumFirstCons(h : int, t : IntList, n : int) spec {
 
 /--
 info:
+Obligation: sumFirst_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: sumFirst_terminates_1
+Property: assert
+Result: ✅ pass
+
 Obligation: sumFirst_body_calls_IntList..hd_0
 Property: assert
 Result: ✅ pass
@@ -694,14 +702,6 @@ Property: assert
 Result: ✅ pass
 
 Obligation: sumFirst_body_calls_sumFirst_2
-Property: assert
-Result: ✅ pass
-
-Obligation: sumFirst_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: sumFirst_terminates_1
 Property: assert
 Result: ✅ pass
 
@@ -749,6 +749,105 @@ Property: assert
 Result: ❌ fail -/
 #guard_msgs in
 #eval Core.verify constantMeasureFailPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 13: a closed quantifier argument unfolds a recursive call
+-- The call `idb(forall x : int :: x == x, 2)` unfolds like `idb(true, 2)`:
+-- both assertions pass.
+---------------------------------------------------------------------
+
+def quantArgUnfoldPgm : Program :=
+#strata
+program Core;
+
+rec function idb (b : bool, n : int) : bool
+  decreases n
+{
+  if int.le(n, 0) then b else idb(b, int.sub(n, 1))
+};
+
+procedure TestQuantArg() spec {
+  ensures true;
+}
+{
+  assert [rec_q]: idb(forall x : int :: x == x, 2);
+  assert [rec_true]: idb(true, 2);
+};
+#end
+
+/-- info:
+Obligation: idb_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: idb_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: rec_q
+Property: assert
+Result: ✅ pass
+
+Obligation: rec_true
+Property: assert
+Result: ✅ pass
+
+Obligation: TestQuantArg_ensures_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval Core.verify quantArgUnfoldPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 14: a closed quantifier inside a constructor argument unfolds a
+-- recursive call
+-- The call `boxid(MkBox(forall x : int :: x == x), 2)` unfolds like
+-- `boxid(MkBox(true), 2)`: both assertions pass.
+---------------------------------------------------------------------
+
+def quantInConstrArgUnfoldPgm : Program :=
+#strata
+program Core;
+
+datatype Box { MkBox(v: bool) };
+
+rec function boxid (b : Box, n : int) : bool
+  decreases n
+{
+  if int.le(n, 0) then Box..v(b) else boxid(b, int.sub(n, 1))
+};
+
+procedure TestQuantInConstrArg() spec {
+  ensures true;
+}
+{
+  assert [box_quant]: boxid(MkBox(forall x : int :: x == x), 2);
+  assert [box_true]: boxid(MkBox(true), 2);
+};
+#end
+
+/-- info:
+Obligation: boxid_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: boxid_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: box_quant
+Property: assert
+Result: ✅ pass
+
+Obligation: box_true
+Property: assert
+Result: ✅ pass
+
+Obligation: TestQuantInConstrArg_ensures_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval Core.verify quantInConstrArgUnfoldPgm (options := .quiet)
 
 end Strata.IntRecursionTermCheckTest
 

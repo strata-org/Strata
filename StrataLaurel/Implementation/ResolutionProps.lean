@@ -232,11 +232,13 @@ def childCollect {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd) : Lis
   match e.val with
   | .IfThenElse cond th el =>
     collectStmtExprList g cond ++ collectStmtExprList g th ++ el.elim [] (collectStmtExprList g)
-  | .Block stmts _ => stmts.flatMap (collectStmtExprList g)
+  | .Block stmts _ invs dec =>
+    invs.flatMap (collectStmtExprList g) ++ dec.elim [] (collectStmtExprList g)
+      ++ stmts.flatMap (collectStmtExprList g)
   | .While cond invs dec body _ =>
     collectStmtExprList g cond ++ invs.flatMap (collectStmtExprList g)
       ++ dec.elim [] (collectStmtExprList g) ++ collectStmtExprList g body
-  | .Return v => v.elim [] (collectStmtExprList g)
+  | .Return v => v.flatMap (collectStmtExprList g)
   | .Assign targets value =>
     targets.flatMap (fun v => match v with
       | ⟨.Field target _, _⟩ => collectStmtExprList g target
@@ -535,15 +537,15 @@ theorem resolveModifiesEntry_clean (e : StmtExprMd) :
   · -- .Var (.Field target f) arm
     refine postM_bind (masterSynth _) fun (tp : StmtExprMd × HighTypeMd) htp => ?_
     refine postM_bind_any fun fieldName' => ?_
-    by_cases hheap : isHeapRelevantModifiesTarget ctx.scope (ctx.typeLattice.unfold tp.snd).val
-    · simp only [hheap, ite_true]
-      exact postM_pure (by
-        intro x hx
-        simp only [Option.mem_def, Option.some.injEq] at hx
-        subst hx
-        exact clean_var_field _ _ _ htp)
-    · simp only [hheap]
-      exact postM_bind_any fun _ => postM_pure (by simp)
+    dsimp only
+    split <;> split
+    all_goals first
+      | exact postM_pure (by
+          intro x hx
+          simp only [Option.mem_def, Option.some.injEq] at hx
+          subst hx
+          exact clean_var_field _ _ _ htp)
+      | exact postM_bind_any fun _ => postM_pure (by simp)
   · -- wildcard arm
     refine postM_bind (masterSynth _) fun (tp : StmtExprMd × HighTypeMd) htp => ?_
     obtain ⟨e', ty⟩ := tp
@@ -842,20 +844,6 @@ theorem bodiesM_spec_fields (proc : Procedure) :
       | exact postS_pure ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
       | (apply postS_bind_any; intro _)
 
-/-- `mapProcedureSpecificationsWithM` does not touch the coroutine clauses;
-    `mapProcedureM` walks them in a phase of its own afterwards. -/
-theorem specsM_contracts (proc : Procedure) :
-    PostS (δ := Message)
-      (mapProcedureSpecificationsWithM (m := StateM (List Message))
-        (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e)
-        (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e)
-        proc)
-      (fun p2 => p2.contracts = proc.contracts) := by
-  unfold mapProcedureSpecificationsWithM
-  repeat' first
-    | exact postS_pure rfl
-    | (apply postS_bind_any; intro _)
-
 open CollectEmits in
 /-- The validator's visitor keeps the state exactly when the tree is Clean. -/
 theorem keeps_visitor (e : StmtExprMd) (h : Clean e) :
@@ -875,8 +863,7 @@ theorem procWalk_nil_of_clean (proc : Procedure) (h : CleanProcFields proc) :
       (mapProcedureM (m := StateM (List Message))
         (fun e => do modify (· ++ collectStmtExprList unannotatedDeclares e); pure e) proc) := by
     unfold mapProcedureM mapProcedureBodiesM
-    -- Body first (mapProcedureBodiesM), then the five spec fields, then the
-    -- coroutine clauses.
+    -- Body first (mapProcedureBodiesM), then every specification field.
     apply keeps_bind_post (Q := fun p1 => p1.preconditions = proc.preconditions ∧
         p1.decreases = proc.decreases ∧
         p1.invokeOn = proc.invokeOn ∧
@@ -911,12 +898,19 @@ theorem procWalk_nil_of_clean (proc : Procedure) (h : CleanProcFields proc) :
       · exact keeps_pure _
     · intro proc1 hfields
       obtain ⟨hf1, hf2, hf3, hf4, hf5, hf6⟩ := hfields
-      unfold mapProcedureSpecificationsWithCoroutineM' mapProcedureSpecificationsWithCoroutineM
-      apply keeps_bind_post (Q := fun p2 => p2.contracts = proc1.contracts)
-        (hq := specsM_contracts proc1)
+      unfold mapProcedureSpecificationsM mapProcedureSpecificationsWithM
       apply keeps_bind (keeps_mapM _ _ (fun c hc =>
         keeps_condition_mapM c _ (keeps_visitor _ (hpre c (hf1 ▸ hc)))))
       intro pres'
+      -- The coroutine clauses; `hf6` carries their membership across the body walk.
+      apply keeps_bind (keeps_mapM _ _ (fun c hc =>
+        keeps_condition_mapM c _ (keeps_visitor _ (hrel c (by
+          simpa [Procedure.relies, hf6] using hc)))))
+      intro relies'
+      apply keeps_bind (keeps_mapM _ _ (fun c hc =>
+        keeps_condition_mapM c _ (keeps_visitor _ (hguar c (by
+          simpa [Procedure.guarantees, hf6] using hc)))))
+      intro guarantees'
       apply keeps_bind (keeps_option_mapM _ _ (fun e he =>
         keeps_visitor _ (hdec e (hf2 ▸ he))))
       intro dec'
@@ -939,20 +933,6 @@ theorem procWalk_nil_of_clean (proc : Procedure) (h : CleanProcFields proc) :
       intro posts'
       apply keeps_bind (keeps_mapM _ _ (fun e he => keeps_visitor _ (hm e he)))
       intro mods'
-      exact keeps_pure _
-      -- Second goal of the inner `keeps_bind_post`: the coroutine clauses, which
-      -- `mapProcedureM` walks after the plain specification fields.
-      intro proc2 hcon
-      apply keeps_bind (keeps_mapM _ _ (fun c hc =>
-        keeps_condition_mapM c _ (keeps_visitor _ (hrel c (by
-          simp only [Procedure.relies, hcon, hf6] at hc
-          simpa [Procedure.relies] using hc)))))
-      intro relies'
-      apply keeps_bind (keeps_mapM _ _ (fun c hc =>
-        keeps_condition_mapM c _ (keeps_visitor _ (hguar c (by
-          simp only [Procedure.guarantees, hcon, hf6] at hc
-          simpa [Procedure.guarantees] using hc)))))
-      intro guarantees'
       exact keeps_pure _
   have := hwalk []
   unfold procWalk
@@ -1028,7 +1008,7 @@ theorem resolveTypeDefinition_clean (td : TypeDefinition) :
     -- cleanliness we need is that each resolved instance procedure has clean fields, which
     -- the `resolveInstanceProcedure_clean` fold inside the scope establishes. The `repeat'`
     -- absorbs the intervening plumbing binds (`scopeTypeParams`, `extending'`, the parent
-    -- field-scope loops, `fields'`, `get`, `modify`).
+    -- kind checks, `fields'`).
     refine postM_bind_any fun ctName' => ?_
     refine postM_bind (postM_withScope
         (P := fun (r : List HighTypeMd × List Field × List Procedure) =>
@@ -1158,10 +1138,12 @@ theorem phase1_clean (program : LaurelProgram) :
       let types' ← program.types.mapM resolveTypeDefinition
       let constants' ← program.constants.mapM resolveConstant
       let staticFields' ← program.staticFields.mapM (resolveField "$static")
+      let heapFields' ← program.heapFields.mapM resolveHeapField
       let staticFunctions' ← program.staticFunctions.mapM resolveProcedure
       let staticProcs' ← program.staticProcedures.mapM resolveProcedure
       return { staticProcedures := staticProcs', staticFunctions := staticFunctions',
-               staticFields := staticFields', types := types', constants := constants' : LaurelProgram })
+               staticFields := staticFields', heapFields := heapFields', types := types',
+               constants := constants' : LaurelProgram })
       CleanProgram := by
   refine postM_bind_any fun _ => ?_
   refine postM_bind (postM_mapM _ _ (fun td _ =>
@@ -1170,6 +1152,7 @@ theorem phase1_clean (program : LaurelProgram) :
       resolveConstant_clean masterCheck c)) fun constants' hconsts => ?_
   refine postM_bind (postM_mapM _ _ (fun f _ =>
       resolveField_clean masterCheck "$static" f)) fun staticFields' hfields => ?_
+  refine postM_bind_any fun _ => ?_
   refine postM_bind (postM_mapM _ _ (fun p _ =>
       resolveProcedure_clean masterSynth masterCheck p)) fun staticFunctions' hfuncs => ?_
   refine postM_bind (postM_mapM _ _ (fun p _ =>

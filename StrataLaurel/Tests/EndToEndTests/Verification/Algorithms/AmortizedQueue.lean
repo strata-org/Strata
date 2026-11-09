@@ -20,9 +20,9 @@ composite Queue {
 
 procedure elementAt(front: Sequence<int>, back: Sequence<int>, k: int): int
 {
-  if k < seqLength(front) then seqSelect(front, seqLength(front) - 1 - k) else seqSelect(back, k - seqLength(front))
-//                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
-//                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+  return if k < seqLength(front) then seqSelect(front, seqLength(front) - 1 - k) else seqSelect(back, k - seqLength(front))
+//                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
 };
 
@@ -75,9 +75,9 @@ composite Queue {
 
 procedure elementAt(front: Sequence<int>, back: Sequence<int>, k: int): int
 {
-  if k < seqLength(front) then seqSelect(front, seqLength(front) - 1 - k) else seqSelect(back, k - seqLength(front))
-//                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
-//                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+  return if k < seqLength(front) then seqSelect(front, seqLength(front) - 1 - k) else seqSelect(back, k - seqLength(front))
+//                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 };
 
 procedure enqueue(q: Queue, v: int)

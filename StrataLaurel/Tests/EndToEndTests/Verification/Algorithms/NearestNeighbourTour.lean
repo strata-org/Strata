@@ -16,36 +16,36 @@ program Laurel;
 procedure at(m: Sequence<Sequence<int>>, r: int, c: int): int
   requires 0 <= r && r < seqLength(m) && 0 <= c && c < seqLength(seqSelect(m, r))
 {
-  seqSelect(seqSelect(m, r), c)
+  return seqSelect(seqSelect(m, r), c)
 };
 
 procedure square(d: Sequence<Sequence<int>>, n: int): bool
 {
-  seqLength(d) == n && (forall(r: int) => 0 <= r ==> r < n ==> seqLength(seqSelect(d, r)) == n)
+  return seqLength(d) == n && (forall(r: int) => 0 <= r ==> r < n ==> seqLength(seqSelect(d, r)) == n)
 };
 
 procedure distinctValidBelow(tour: Sequence<int>, n: int, hi: int): bool
 {
-  (forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(tour) ==> 0 <= seqSelect(tour, k) && seqSelect(tour, k) < n)
+  return (forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(tour) ==> 0 <= seqSelect(tour, k) && seqSelect(tour, k) < n)
   && (forall(k: int) => forall(m: int) => 0 <= k ==> k < m ==> m < hi ==> m < seqLength(tour) ==>
         seqSelect(tour, k) != seqSelect(tour, m))
 };
 
 procedure visitedMatches(visited: Sequence<bool>, tour: Sequence<int>, hi: int): bool
 {
-  forall(c: int) => 0 <= c ==> c < seqLength(visited) ==>
+  return forall(c: int) => 0 <= c ==> c < seqLength(visited) ==>
     (seqSelect(visited, c) ==> (exists(k: int) => 0 <= k && k < hi && k < seqLength(tour) && seqSelect(tour, k) == c))
     && ((exists(k: int) => 0 <= k && k < hi && k < seqLength(tour) && seqSelect(tour, k) == c) ==> seqSelect(visited, c))
 };
 
 procedure noneVisitedBelow(visited: Sequence<bool>, hi: int): bool
 {
-  forall(c: int) => 0 <= c ==> c < hi ==> c < seqLength(visited) ==> !seqSelect(visited, c)
+  return forall(c: int) => 0 <= c ==> c < hi ==> c < seqLength(visited) ==> !seqSelect(visited, c)
 };
 
 procedure allVisitedBelow(visited: Sequence<bool>, hi: int): bool
 {
-  forall(c: int) => 0 <= c ==> c < hi ==> c < seqLength(visited) ==> seqSelect(visited, c)
+  return forall(c: int) => 0 <= c ==> c < hi ==> c < seqLength(visited) ==> seqSelect(visited, c)
 };
 
 procedure tour(d: Sequence<Sequence<int>>, n: int) returns (res: Sequence<int>)
@@ -115,36 +115,36 @@ program Laurel;
 procedure at(m: Sequence<Sequence<int>>, r: int, c: int): int
   requires 0 <= r && r < seqLength(m) && 0 <= c && c < seqLength(seqSelect(m, r))
 {
-  seqSelect(seqSelect(m, r), c)
+  return seqSelect(seqSelect(m, r), c)
 };
 
 procedure square(d: Sequence<Sequence<int>>, n: int): bool
 {
-  seqLength(d) == n && (forall(r: int) => 0 <= r ==> r < n ==> seqLength(seqSelect(d, r)) == n)
+  return seqLength(d) == n && (forall(r: int) => 0 <= r ==> r < n ==> seqLength(seqSelect(d, r)) == n)
 };
 
 procedure distinctValidBelow(tour: Sequence<int>, n: int, hi: int): bool
 {
-  (forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(tour) ==> 0 <= seqSelect(tour, k) && seqSelect(tour, k) < n)
+  return (forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(tour) ==> 0 <= seqSelect(tour, k) && seqSelect(tour, k) < n)
   && (forall(k: int) => forall(m: int) => 0 <= k ==> k < m ==> m < hi ==> m < seqLength(tour) ==>
         seqSelect(tour, k) != seqSelect(tour, m))
 };
 
 procedure visitedMatches(visited: Sequence<bool>, tour: Sequence<int>, hi: int): bool
 {
-  forall(c: int) => 0 <= c ==> c < seqLength(visited) ==>
+  return forall(c: int) => 0 <= c ==> c < seqLength(visited) ==>
     (seqSelect(visited, c) ==> (exists(k: int) => 0 <= k && k < hi && k < seqLength(tour) && seqSelect(tour, k) == c))
     && ((exists(k: int) => 0 <= k && k < hi && k < seqLength(tour) && seqSelect(tour, k) == c) ==> seqSelect(visited, c))
 };
 
 procedure noneVisitedBelow(visited: Sequence<bool>, hi: int): bool
 {
-  forall(c: int) => 0 <= c ==> c < hi ==> c < seqLength(visited) ==> !seqSelect(visited, c)
+  return forall(c: int) => 0 <= c ==> c < hi ==> c < seqLength(visited) ==> !seqSelect(visited, c)
 };
 
 procedure allVisitedBelow(visited: Sequence<bool>, hi: int): bool
 {
-  forall(c: int) => 0 <= c ==> c < hi ==> c < seqLength(visited) ==> seqSelect(visited, c)
+  return forall(c: int) => 0 <= c ==> c < hi ==> c < seqLength(visited) ==> seqSelect(visited, c)
 };
 
 procedure tour(d: Sequence<Sequence<int>>, n: int) returns (res: Sequence<int>)

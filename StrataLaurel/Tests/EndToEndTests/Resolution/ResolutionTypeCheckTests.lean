@@ -363,14 +363,15 @@ procedure bareNameLosesToInstantiation() opaque {
 };
 #end
 
-/-! A self-referential alias is accepted, so inference has to cope with one. That a diagnostic comes
-out at all is the assertion here; its wording is incidental. -/
+/-! A self-referential alias is rejected, but inference still has to cope with one. That the call
+gets a diagnostic at all is the assertion here; its wording is incidental. -/
 
 #eval testLaurelResolution <|
 #strata
 program Laurel;
 composite Box<T> { var v: T }
 type A = Box<A>
+//   ^ error: type 'A' is defined in terms of itself
 procedure pick<T>(a: T, b: T) returns (r: T) opaque;
 procedure selfReferentialAlias(a: A, b: A) opaque {
   var w: bool := pick(a, b)
@@ -485,23 +486,6 @@ procedure compareRelated() opaque {
   var an: Animal := new Animal;
   var d: Dog := new Dog;
   assert an == d
-};
-#end
-
-/-! ### Holes are not typed from a generic signature
-
-A `<?>` in an argument slot of a generic callee cannot take its type from the declared
-parameter, whose type variables are not instantiated at that point: doing so carries free
-variables into the `$hole_N$asFunction` procedure `EliminateDeterministicHoles` emits, which
-Core rejects. `calleeParamTypes` leaves such slots to sibling-based inference instead. -/
-
-#eval testLaurelResolution <|
-#strata
-program Laurel;
-procedure holeInMapKey() opaque {
-  var m: TotalMap int bool := mapConst(false);
-  var b: bool := select(m, <?>);
-  assert b == b
 };
 #end
 
@@ -894,39 +878,38 @@ procedure switchStmtNonExhaustive(i: int) opaque {
 /-! ## Multi-output procedure calls in transparent bodies and contracts
 
 A Core *function* has exactly one output, so a multi-output procedure — one
-declaring ≥ 2 outputs, or a heap-writing procedure, which gains an implicit
-`$heap` output during heap parameterization — cannot be lowered to the pure
-`$asFunction` twin that transparent bodies and contracts are translated
-against. Until that is supported, such a call is rejected at resolution. -/
+declaring ≥ 2 outputs — is lowered to an `$asFunction` twin
+yielding a datatype that packages all of its outputs. A call that binds one target
+per output is rewritten to project them back out, so it is supported; any *other*
+multi-output call is rejected at resolution. -/
 
--- A procedure declaring two outputs, called from a transparent procedure body.
+-- A procedure declaring two outputs, called from a transparent procedure body while
+-- binding one target per output: the supported shape.
 #eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure multi() returns (a: int, b: int) opaque;
 procedure callsMultiFromTransparent(): int {
   assign var x: int, var y: int := multi();
-//                                 ^^^^^^^ error: calling multi-output procedure 'multi' is not (yet) supported from a transparent procedure or contract
   x
 };
 #end
 
--- Same procedure called from a `requires` contract expression.
+-- The same call in a `requires` contract expression: accepted, on the same terms.
 #eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure multi() returns (a: int, b: int) opaque;
 procedure callsMultiFromContract()
   requires { assign var x: int, var y: int := multi(); x == y }
-//                                            ^^^^^^^ error: calling multi-output procedure 'multi' is not (yet) supported from a transparent procedure or contract
   opaque
 {
 };
 #end
 
 -- Same procedure called from an `ensures` (postcondition) contract expression.
--- Postconditions are a distinct branch of `restrictedContextExprs` (collected
--- from the opaque body's `posts`), separate from the precondition path above.
+-- Postconditions are a distinct branch of `contractExprs` (collected from the opaque
+-- body's `posts`), separate from the precondition path above.
 #eval testLaurelResolution <|
 #strata
 program Laurel;
@@ -934,14 +917,12 @@ procedure multi() returns (a: int, b: int) opaque;
 procedure callsMultiFromPostcondition()
   opaque
   ensures { assign var x: int, var y: int := multi(); x == y }
-//                                           ^^^^^^^ error: calling multi-output procedure 'multi' is not (yet) supported from a transparent procedure or contract
 {
 };
 #end
 
--- A heap-writing procedure with a single declared output has *two* effective
--- outputs after heap parameterization ($heap plus its result), so calling it
--- from a contract is rejected too.
+-- A heap writer is a global writer, since the heap is a global, so calling one from a
+-- contract is rejected like any other global writer.
 #eval testLaurelResolution <|
 #strata
 program Laurel;
@@ -957,7 +938,7 @@ procedure bumpAndGet(c: C) returns (r: int)
 };
 procedure callsHeapWriterFromContract(c: C)
   requires { var r: int := bumpAndGet(c); r > 0 }
-//                         ^^^^^^^^^^^^^ error: calling multi-output procedure 'bumpAndGet' is not (yet) supported from a transparent procedure or contract
+//                         ^^^^^^^^^^ error: calls to global-writing procedure 'bumpAndGet' are not yet supported in contracts, loop conditions, loop annotations, quantifiers, or old expressions
   opaque
 {
 };
@@ -986,9 +967,8 @@ procedure callsMultiFromOpaque() opaque {
 };
 #end
 
--- Negative: a void heap-writing procedure has exactly one effective output
--- ($heap only), so it lowers to a single-output function and may be called
--- from a contract.
+-- A *void* heap writer is a global writer too, so it is rejected from a contract like
+-- one with an output.
 #eval testLaurelResolution <|
 #strata
 program Laurel;
@@ -1003,23 +983,51 @@ procedure bump(c: C)
 };
 procedure callsVoidHeapWriterFromContract(c: C)
   requires { bump(c); true }
+//           ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions, loop annotations, quantifiers, or old expressions
   opaque
 {
 };
 #end
 
+-- The same rule covers every position where a global writer is rejected, a loop
+-- condition among them.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite C {
+  var value: int
+}
+procedure bump(c: C) returns (r: int)
+  opaque
+  modifies c
+{
+  c#value := c#value + 1;
+  r := c#value
+};
+procedure heapWriterInLoopCondition(c: C)
+  opaque
+  modifies c
+{
+  while (bump(c) < 5) invariant true { }
+//       ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions, loop annotations, quantifiers, or old expressions
+};
+#end
+
 -- A multi-output *instance* method called via `self#...` from a transparent
--- instance body. This exercises the `.InstanceCall` arm of `calleesOf` and the
--- container-scoped `refToDef` lookup — a static-call test can't reach either.
+-- instance body, binding one target per output: supported, and exercising the
+-- `.InstanceCall` arm of `destructuredCallSources` and the container-scoped
+-- `refToDef` lookup — a static-call test can't reach either.
 #eval testLaurelResolution <|
 #strata
 program Laurel;
 composite D {
   var value: int
-  procedure pair(self: D) returns (a: int, b: int) opaque;
+  procedure pair(self: D) returns (a: int, b: int) {
+    a := 1;
+    b := 2
+  };
   procedure callsPair(self: D): int {
     assign var x: int, var y: int := self#pair();
-//                                   ^^^^^^^^^^^ error: calling multi-output procedure 'pair' is not (yet) supported from a transparent procedure or contract
     x
   };
 }
@@ -1052,7 +1060,8 @@ composite B {
 -- the roles swapped: `A.foo` is multi-output and is genuinely called from A's
 -- own transparent body, so the diagnostic MUST fire. `B.foo` (single-output,
 -- declared after) must not mask it. A name-text keying with B winning the race
--- would silently accept this call.
+-- would silently accept this call. The call binds a single target, which is the
+-- shape that stays rejected (see `callsPair` for the rewritten one).
 #eval testLaurelResolution <|
 #strata
 program Laurel;
@@ -1060,8 +1069,9 @@ composite A {
   var w: int
   procedure foo(self: A) returns (a: int, b: int) opaque;
   procedure callerA(self: A): int {
-    assign var x: int, var y: int := self#foo();
-//                                   ^^^^^^^^^^ error: calling multi-output procedure 'foo' is not (yet) supported from a transparent procedure or contract
+    var x: int := self#foo();
+//                ^^^^^^^^^^ error: expected 'int', got '(int, int)'
+//                ^^^^^^^^^^ error: calling multi-output procedure 'foo' is not supported from a transparent procedure or contract: such a call must assign one target per output
     x
   };
 }
@@ -1071,9 +1081,8 @@ composite B {
 }
 #end
 
--- Cross-composite collision on the *heap-writer* set. `A.foo` is a heap writer
--- (one declared output + implicit `$heap` = two effective outputs); `B.foo` is
--- pure with one output. The transparent call `self#foo()` in `B` resolves to
+-- Cross-composite collision on the *heap-writer* set. `A.foo` is a heap writer;
+-- `B.foo` is pure with one output. The transparent call `self#foo()` in `B` resolves to
 -- B's pure `foo` and must not be flagged: keying the heap-writer set by
 -- `uniqueId` keeps A's write effect from contaminating B's same-named method.
 #eval testLaurelResolution <|
@@ -2100,7 +2109,7 @@ procedure exactHeadActual() opaque {
 /-! Two parents reaching the ancestor at the SAME instantiation is one candidate, not an ambiguity:
 distinctness is `highEq`, so the lift still applies and the mismatch is still reported. A diamond
 whose parents fix the argument DIFFERENTLY binds nothing instead of picking a witness, and
-`MonomorphizeComposites.checkDiamond` rejects it later naming both instantiations — see
+`MonomorphizeComposites.settleCallNode` rejects it later naming both instantiations — see
 `DynamicDispatchTest`'s `inherited_generic_diamond_*` cases. -/
 
 #eval testLaurelResolution <|

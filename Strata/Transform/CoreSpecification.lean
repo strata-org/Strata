@@ -25,9 +25,9 @@ The entry conditions of a Core procedure: `ProcEnvWF`, the well-formed program
 state at its entry, and `AxiomsBeforeProcedureDecl`, the axioms and distincts
 visible to it. What it means for a procedure to be correct, and for Core's
 verifier to be correct, is in `Strata.Languages.Core.Analysis.ProcedureCorrectness`.
-The `Lang` bundles themselves (`Lang.core`, `Lang.coreBlock`) and their gates
-(`InitEnvWFParams`, `InitEnvWF`, `BlockInitEnvWF`) live in
-`Strata.Languages.Core.Logic.LangDef`.
+The `EventLang` bundles themselves (`EventLang.core`, `EventLang.coreBlock`,
+`EventLang.coreCFG`) and their gates (`InitEnvWFParams`, `InitEnvWF`,
+`BlockInitEnvWF`, `CFGInitEnvWF`) live in `Strata.Languages.Core.Logic.LangDef`.
 -/
 
 namespace Core.Specification
@@ -80,17 +80,16 @@ structure ProcEnvWF (params : InitEnvWFParams) (proc : Procedure)
   -- for in-out parameters.
   oldInoutMatchesInout : ∀ id ∈ ListMap.keys proc.header.getInoutParams,
     ρ.store id = ρ.store (CoreIdent.mkOld id.name)
-  -- Precondition holds in the body, and input state had no failure.
+  -- Precondition holds in the body.
   preconditionsHold : ∀ (label : CoreLabel) (check : Procedure.Check),
     (label, check) ∈ proc.spec.preconditions.toList →
-    Expression.eval ρ.factory ρ.store check.expr = some HasBool.tt
-  noFailure : ρ.hasFailure = Bool.false
+    Expression.eval ρ.factory ρ.store check.expr = some (HasBool.ttVal ρ.factory)
   /-- A structured body, as the block the procedure's specifications wrap it
       in, is well formed to run from `ρ`. -/
   structuredBodyWF : ∀ ss, proc.body = .structured ss →
-    BlockInitEnvWF params [Stmt.block "" ss #[]] ρ
+    Core.Logic.BlockInitEnvWF params [Stmt.block "" ss #[]] ρ
   /-- A CFG body is well formed to run from `ρ`. -/
-  cfgBodyWF : ∀ cfg, proc.body = .cfg cfg → CFGInitEnvWF params cfg ρ
+  cfgBodyWF : ∀ cfg, proc.body = .cfg cfg → Core.Logic.CFGInitEnvWF params cfg ρ
 
 /-! ## Axioms and distincts visible to a procedure
 
@@ -100,25 +99,17 @@ For verification, the initial environment of a procedure must satisfy the
 axioms and distincts that have been declared *before* the procedure in the
 program. -/
 
-/-- Declarations in `p` that appear strictly before the procedure named
-    `entryProcName`. -/
-@[expose] def declsBefore (entryProcName : String) (p : Program) : List Decl :=
-  p.decls.takeWhile fun d =>
-    match d with
-    | .proc proc _ => proc.header.name.name != entryProcName
-    | _ => true
-
 /-- The initial environment `ρ₀` satisfies all axioms and `distinct`
     declarations that appear in `p.decls` before the procedure named
     `entryProcName`. -/
 @[expose] def AxiomsBeforeProcedureDecl
     (entryProcName : String) (p : Program)
     (ρ₀ : Imperative.Env Expression) : Prop :=
-  (declsBefore entryProcName p).foldr
+  (p.declsBeforeProcedure entryProcName).foldr
     (fun d acc =>
       match d with
       | .ax a _ =>
-          Expression.eval ρ₀.factory ρ₀.store a.e = some HasBool.tt ∧ acc
+          Expression.eval ρ₀.factory ρ₀.store a.e = some (HasBool.ttVal ρ₀.factory) ∧ acc
       | .distinct _ es _ =>
           List.Pairwise (fun e₁ e₂ =>
             Expression.eval ρ₀.factory ρ₀.store e₁ ≠ Expression.eval ρ₀.factory ρ₀.store e₂) es ∧ acc

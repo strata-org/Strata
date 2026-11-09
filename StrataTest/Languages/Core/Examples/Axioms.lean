@@ -157,6 +157,49 @@ Result: ✅ pass
 #guard_msgs in
 #eval Core.verify axiomPgm2
 
+---------------------------------------------------------------------
+
+-- `g_ax` is relevant to `f`, which reaches `g` through `h`. `f` and `h` also call the
+-- constructor `MkBox` and the selector `Box..v`, which are not declared with `function`.
+-- `k_ax` mentions only `k`, which `f` does not reach, so it is irrelevant to `f`.
+def axiomPgm3 :=
+#strata
+program Core;
+
+datatype Box { MkBox(v: int) };
+
+function g(x : int) : int;
+function h(x : int) : int { g(Box..v(MkBox(x))) }
+function f(x : int) : int { Box..v(MkBox(h(x))) }
+function k(x : int) : int;
+
+axiom [g_ax]: (forall x : int :: { g(x) } g(x) == int.mul(x, 2));
+axiom [k_ax]: (forall x : int :: { k(x) } k(x) == x);
+
+procedure main (x : int) {
+
+assert [axiomPgm3_main_assert]: f(x) == int.mul(x, 2);
+};
+#end
+
+/--
+info: [k_ax]
+-/
+#guard_msgs in
+#eval let (program, _) := Core.getProgram axiomPgm3
+      let cache := Core.IrrelevantAxioms.Cache.build program
+      Std.format (Core.IrrelevantAxioms.getIrrelevantAxioms program cache ["f"])
+
+/--
+info:
+Obligation: axiomPgm3_main_assert
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify axiomPgm3
+        (options := {Core.VerifyOptions.default with verbose := .quiet, removeIrrelevantAxioms := .Precise})
+
 end Strata
 end
 ---------------------------------------------------------------------

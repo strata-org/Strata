@@ -314,6 +314,34 @@ theorem Stmt.initVars_cmd_substIdentMany_cover [HasSubstFvar P] [HasFvars P]
     Stmt.initVars (P := P) (Stmt.cmd (Cmd.substIdentMany scope (Cmd.cover label b md))) = [] :=
   Stmt.initVars_cmd_substIdentMany_of_definedVars_nil scope _ rfl
 
+section
+variable [HasFvars P]
+
+/-- The free variables of a deterministic guard or right-hand side are those of its
+    expression. -/
+theorem ExprOrNondet.getVars_det (e : P.Expr) :
+    (ExprOrNondet.det e).getVars = HasFvars.getFvars e := (rfl)
+
+/-- A nondeterministic guard or right-hand side has no free variables. -/
+theorem ExprOrNondet.getVars_nondet : (ExprOrNondet.nondet : ExprOrNondet P).getVars = [] := (rfl)
+
+/-- An annotated read of a guard or right-hand side is one of its free variables. -/
+theorem ExprOrNondet.mem_getVars_of_typed [HasFvar P] [LawfulHasFvars P] (e : ExprOrNondet P)
+    {x : P.Ident} {ty : P.Ty} (h : (x, ty) ∈ e.getTypedVars) : x ∈ e.getVars := by
+  cases e with
+  | det e => exact LawfulHasFvars.mem_getFvars_of_typed _ _ _ h
+  | nondet => simp [ExprOrNondet.getTypedVars] at h
+
+/-- An annotated read of a command is one of the variables the command reads. -/
+theorem Cmd.mem_getVars_of_typed [HasFvar P] [LawfulHasFvars P] (c : Cmd P) {x : P.Ident}
+    {ty : P.Ty} (h : (x, ty) ∈ Cmd.getTypedVars c) : x ∈ Cmd.getVars c := by
+  cases c with
+  | init _ _ e _ | set _ e _ => exact ExprOrNondet.mem_getVars_of_typed e h
+  | assert _ e _ | assume _ e _ | cover _ e _ =>
+    exact LawfulHasFvars.mem_getFvars_of_typed _ _ _ h
+
+end
+
 end -- public section
 
 end Imperative

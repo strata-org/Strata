@@ -48,6 +48,25 @@ instance : Coe String Identifier where
 
 @[expose] def mkId (name: String): Identifier := { text := name }
 
+/-- `base` if unused in `taken`, else `base_1`, `base_2`, … -/
+def freshNameAvoiding (base : String) (taken : Std.HashSet String) : String :=
+  if !taken.contains base then base
+  else
+    let rec go (i : Nat) (fuel : Nat) : String :=
+      match fuel with
+      -- Unreachable: the `taken.size + 1` distinct candidates cannot all be in `taken`. The fuel
+      -- only makes termination structural.
+      | 0 => s!"{base}_{i}"
+      | fuel + 1 =>
+        let cand := s!"{base}_{i}"
+        if taken.contains cand then go (i + 1) fuel else cand
+    go 1 (taken.size + 1)
+
+#guard freshNameAvoiding "$result" {} == "$result"
+#guard freshNameAvoiding "$result" (Std.HashSet.ofList ["$result"]) == "$result_1"
+#guard freshNameAvoiding "$result" (Std.HashSet.ofList ["$result", "$result_1"]) == "$result_2"
+#guard freshNameAvoiding "$result" (Std.HashSet.ofList ["$result_1"]) == "$result"
+
 /-- Extract the unique ID, or fail with a descriptive message when unresolved. -/
 def Identifier.getUniqueId (id : Identifier) : Except String Nat :=
   match id.uniqueId with
@@ -273,6 +292,14 @@ inductive QuantifierMode where
   | Exists
   deriving Repr, BEq, Inhabited
 
+/-- Which end of a labelled block a `Goto` transfers control to. -/
+inductive GotoDestination where
+  /-- The block's start: re-enter it, re-checking its invariants. A backward jump. -/
+  | blockStart
+  /-- Just past the block's end: leave it. A forward jump, the classic `exit`. -/
+  | blockEnd
+  deriving Repr, BEq, Inhabited
+
 /-- Whether an increment/decrement operator is in prefix or postfix form.
     Prefix form yields the new value; postfix form yields the old value. -/
 inductive IncrDecrMode where
@@ -369,8 +396,9 @@ structure Condition where
 
 /--
 A `catch` clause: a mandatory binding bound to the caught value (typed at
-the least common ancestor of the exception types thrown in the `try` body), an
-optional predicate guard, and a handler body. A `Try` holds an ordered list of
+the least common ancestor of the exception types thrown in the `try` body, and in
+the body at what a guard admits, see `catchClauseBindingType`), an optional
+predicate guard, and a handler body. A `Try` holds an ordered list of
 these; clauses are tried in order, first-match-wins, and an absent predicate is
 a catch-all. Type dispatch is written as a guard, e.g. `catch e when e is T`.
 See the Exceptions section of the Laurel User Guide.
@@ -519,8 +547,17 @@ such as conditionals and variable declarations.
 inductive StmtExpr : Type where
   /-- Conditional with a then-branch and optional else-branch. -/
   | IfThenElse (cond : AstNode StmtExpr) (thenBranch : AstNode StmtExpr) (elseBranch : Option (AstNode StmtExpr))
-  /-- A sequence of statements with an optional label for `Exit`. -/
+  /-- A sequence of statements with an optional label, the target of a `Goto`.
+
+      `invariants` and `decreases` matter when the block is the target of a
+      backward `Goto` (`destination = .blockStart`), which makes the block a loop:
+      the invariants are checked on entry and on every jump back to the start,
+      and the measure must decrease from one jump back to the next. A block that
+      no backward `Goto` targets checks its invariants once, on entry.
+      `RestructureGotos` lowers these blocks to `while` loops. -/
   | Block (statements : List (AstNode StmtExpr)) (label : Option String)
+    (invariants : List (AstNode StmtExpr))
+    (decreases : Option (AstNode StmtExpr))
   /-- A while loop with a condition, invariants, optional termination measure, and body.
       Only allowed in impure contexts.
 
@@ -536,10 +573,13 @@ inductive StmtExpr : Type where
     (decreases : Option (AstNode StmtExpr))
     (body : AstNode StmtExpr)
     (postTest : Bool)
-  /-- Exit a labelled block. Models `break` and `continue` statements. -/
-  | Exit (target : String)
-  /-- Return from the enclosing procedure with an optional value. -/
-  | Return (value : Option (AstNode StmtExpr))
+  /-- Jump to the start or past the end of an enclosing labelled block. Models
+      `break` and `continue` statements, and the reducible control flow of a
+      bytecode method. -/
+  | Goto (target : String) (destination : GotoDestination)
+  /-- Return from the enclosing procedure with one value per declared output; a bare
+      `return` is `[]`. The arity is checked by `Check.return`. -/
+  | Return (values : List (AstNode StmtExpr))
   /-- An integer literal. -/
   | LiteralInt (value : Int)
   /-- A boolean literal. -/
@@ -818,6 +858,15 @@ structure Procedure : Type where
       both, so a parsed procedure has either both fields or neither. Code that only
       needs to know whether a procedure throws should therefore test `throwsType`. -/
   throwsBinding : Option Identifier := none
+  /-- When `true`, the `throws` clause is *inferred*: `inferThrows` replaces
+      `throwsType` with the join of the declared type (if any) and every exception
+      type that may escape the body uncaught, then clears this flag. Written
+      `throws (e: inferred)`, or `throws (e: T inferred)` to keep a declared part.
+
+      Before inference an inferred procedure may carry a `throwsBinding` with no
+      `throwsType`; inference restores the pairing invariant. Every pass after
+      `inferThrows` sees this flag `false`. -/
+  throwsInferred : Bool := false
   /-- Exceptional behavior cases (`throwsOn C { ensures … modifies … }`), one per
       case. See `ThrowsOnBlock`. Empty means the procedure states nothing about
       its throwing paths beyond the declared `throwsType`. -/
@@ -837,7 +886,8 @@ def StmtExpr.constrName : StmtExpr → String
   | .IfThenElse ..       => "if"
   | .Block ..            => "block"
   | .While ..            => "while"
-  | .Exit ..             => "exit"
+  | .Goto _ .blockEnd    => "exit"
+  | .Goto _ .blockStart  => "goto"
   | .Return ..           => "return"
   | .LiteralInt ..       => "integer literal"
   | .LiteralBool ..      => "boolean literal"
@@ -924,10 +974,10 @@ def pythonGeneratedPrefix : String := "py$"
 
     `LaurelToCoreTranslator` lowers each procedure body to a single
     `Core.Statement.block bodyLabel …`, and lowers an early `return`
-    (or, in the Python frontend, a Python `return`) to `Exit bodyLabel`,
+    (or, in the Python frontend, a Python `return`) to `exit bodyLabel`,
     so that jumping to the end of the body falls through past the block.
     The resolution pass pre-registers this label in scope (via `withLabel`)
-    before walking a body, so those `Exit bodyLabel` jumps resolve even
+    before walking a body, so those `exit bodyLabel` jumps resolve even
     though the label has no syntactic declaration site.
 
     Shared here so the translator, the resolver, and frontends agree on the
@@ -992,6 +1042,19 @@ def exnResultValue : String := exnResultMember exnResultValueField
 
 /-- Destructor reading the thrown exception: `Result..err`. -/
 def exnResultErr : String := exnResultMember exnResultErrField
+
+def multiOutputDatatypeName (fnName : String) : String := s!"$outputs_{fnName}"
+
+def multiOutputCtorName (fnName : String) : String := s!"$mkOutputs_{fnName}"
+
+/-- Must match the name `Resolution.resolveTypeDefinition` generates for a datatype
+    field, i.e. `DatatypeDefinition.destructorName`. -/
+def multiOutputDestructorName (fnName outName : String) : String :=
+  s!"{multiOutputDatatypeName fnName}..{outName}"
+
+def multiOutputPackedName : String := "$packedOutputs"
+
+def multiOutputCallTempName (site : Nat) : String := s!"$callOutputs_{site}"
 
 /-- The base composite NAME of a type reference, for consumers that need the parent
     name rather than its instantiation: `.UserDefined Base` and `.Applied (UserDefined
@@ -1112,6 +1175,13 @@ def applyAliasArgs (params : List Identifier) (args : List HighTypeMd) (target :
       (params.zip args).foldl (fun m (p, a) => m.insert p.text a) {}
     some (substTypeVars subst target)
   else none
+
+/-- The type `new ref<typeArgs…>` allocates: `ref`, or the application `ref<typeArgs…>`, which
+    lets monomorphization see the instantiation. -/
+def allocatedType (ref : Identifier) (typeArgs : List HighTypeMd) (source : FileRange) :
+    HighTypeMd :=
+  if typeArgs.isEmpty then ⟨.UserDefined ref, source⟩
+  else ⟨.Applied ⟨.UserDefined ref, source⟩ typeArgs, source⟩
 
 theorem Condition.sizeOf_condition_lt (c : Condition) : sizeOf c.condition < 1 + sizeOf c := by
   cases c; grind
@@ -1459,11 +1529,10 @@ partial def TypeLattice.ancestors (ctx : TypeLattice) (name : String) : Std.Hash
     `ancestors` is reflexive (`go {} [name]` seeds with `name`), so an element
     dominates itself with no special case. On an acyclic `extending` graph at most one
     element can dominate -- two dominators would be mutually reachable, which needs a
-    cycle -- so `find?` is equivalent to demanding a singleton. Nothing rejects a cycle
-    (`A extends B`, `B extends A` type-checks today), and in one `find?` returns whichever
-    mutually-reachable name it reaches first; that pick is order-dependent, unlike every
-    acyclic case. Out of scope here: a cycle needs rejecting where types are defined, not
-    working around at each use.
+    cycle -- so `find?` is equivalent to demanding a singleton. Resolution rejects a cycle
+    (`A extends B`, `B extends A`) but still checks calls through it, and in one `find?`
+    returns whichever mutually-reachable name it reaches first; that pick is
+    order-dependent, unlike every acyclic case.
 
     Each ancestor set is computed ONCE, outside the inner `all`: that lambda runs per
     pair, so computing it inside would cost a graph walk per pair.
@@ -1489,14 +1558,15 @@ private def TypeLattice.mostSpecific (ctx : TypeLattice) (names : List String) :
     ancestor, so an unguarded test would find each element dominated by itself and
     return nothing.
 
-    Dominance is STRICT (`!nAnc.contains other`), which matters only because nothing
-    rejects an `extending` cycle: two mutually-extending names each contain the other,
-    so a non-strict test calls each dominated by the other and drops BOTH. For
-    `Ac <-> Bc` both declaring `m` with unrelated `Cc`, and `Tc extends Bc, Cc`, a
-    non-strict test yields "the unrelated types Cc" -- one name, for an ambiguity, and a
-    set that no longer contains the branch the user has to choose between. Strictness
-    keeps a cyclic pair in the list, where the message is at least honest about what
-    competes. `InheritedCallDominance` D7 pins this.
+    Dominance is STRICT (`!nAnc.contains other`), which matters only for an `extending`
+    cycle (resolution rejects one but still checks calls through it): two
+    mutually-extending names each contain the other, so a non-strict test calls each
+    dominated by the other and drops BOTH. For `Ac <-> Bc` both declaring `m` with
+    unrelated `Cc`, and `Tc extends Bc, Cc`, a non-strict test yields "the unrelated
+    types Cc" -- one name, for an ambiguity, and a set that no longer contains the
+    branch the user has to choose between. Strictness keeps a cyclic pair in the list,
+    where the message is at least honest about what competes. `InheritedCallDominance`
+    D7 pins this.
 
     Filtering never changes WHETHER a call is ambiguous, only which names are reported:
     `mostSpecific` returns `some` exactly when this antichain is a singleton. (Acyclic
@@ -1815,8 +1885,8 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
     `mostSpecific`'s `find?`, the winner is required to be UNIQUE rather than merely
     first: with the candidates deduplicated by `highEq` (the same equality
     `substitutedAncestors` dedups by), a second dominator means two structurally distinct
-    types are mutually subtypes, which needs an `extending` cycle — nothing rejects one
-    today — and picking whichever came first would be silently order-dependent.
+    types are mutually subtypes, which needs an `extending` cycle (rejected by resolution),
+    and picking whichever came first would be silently order-dependent.
 
     A singleton list joins to itself (a type is its own most-specific ancestor). -/
 def TypeLattice.commonAncestorType (ctx : TypeLattice) (tys : List HighTypeMd)
@@ -1827,7 +1897,7 @@ def TypeLattice.commonAncestorType (ctx : TypeLattice) (tys : List HighTypeMd)
     -- Only a composite -- bare (`Box`) or applied (`Box<int>`) -- has an ancestry to
     -- walk; `highBaseName?` peels the head off either spelling.
     let ancestry : List HighTypeMd :=
-      match first.val with
+      match (ctx.unfold first).val with
       | .UserDefined r => ctx.substitutedAncestors r.text []
       | .Applied base args =>
         match highBaseName? base.val with
@@ -2150,10 +2220,28 @@ def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
 def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
   (coerce ctx sub sup).isSome
 
+/-- Whether some non-generic composite is a subtype of both `a` and `b`, neither of which
+    mentions a type variable. Monomorphization drops a generic composite that is never
+    instantiated and may instantiate a `Box<T>` at a `T` the descendant does not extend,
+    and re-resolution would then reject what this accepted. -/
+def TypeLattice.shareDescendant (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
+  !mentionsTVar a.val && !mentionsTVar b.val &&
+    ctx.parentExprMap.toList.any fun (name, (params, _)) =>
+      let d : HighTypeMd := { val := .UserDefined name, source := .unknown }
+      params.isEmpty && isSubtype ctx d a && isSubtype ctx d b
+
+/-- Whether a value of type `a` may also be a `b`: one is a (consistent) subtype of the
+    other, or they `shareDescendant`. A gradual (`Unknown`) type is related to
+    everything. -/
+def TypeLattice.mayBeBoth (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
+  isConsistentSubtype ctx a b || isConsistentSubtype ctx b a || ctx.shareDescendant a b
+
 /-- Whether `ty` is unrelated to a `catch` binding's type `bindTy`: neither is a
     (consistent) subtype of the other and no composite descends from both, so the
     caught exception can never be a `ty`. A gradual (`Unknown`) binding type is
-    related to everything. -/
+    related to everything. Unlike `mayBeBoth`, it also counts generic descendants and
+    ignores type arguments: it over-approximates, so a test that may hold is never folded
+    to `false`. -/
 def TypeLattice.unrelatedToCatchBinding (ctx : TypeLattice) (bindTy ty : HighTypeMd) : Bool :=
   !isConsistentSubtype ctx bindTy ty && !isConsistentSubtype ctx ty bindTy
     && !ctx.haveCommonDescendant bindTy ty
@@ -2188,7 +2276,7 @@ def ancestorLiftCandidates (ctx : TypeLattice) (declared actual : HighType) : Li
     `none` also for an ambiguous diamond — two distinct instantiations of the declared head, as
     when `D` extends both `Base<int>` and `Base<bool>`. Binding off an arbitrary witness would
     make the call report a type argument the program never fixed, so nothing is bound and the case
-    is left to `MonomorphizeComposites.checkDiamond`, which rejects it with a diagnostic naming
+    is left to `MonomorphizeComposites.settleCallNode`, which rejects it with a diagnostic naming
     both instantiations and the disambiguating upcast. `callSiteDeterminedTypeParams` deliberately
     differs here: see its own note.
 
@@ -2336,7 +2424,7 @@ def callSiteDeterminedTypeParams (ctx : TypeLattice)
   -- An ambiguous diamond (two parents fixing the ancestor's argument differently) counts as
   -- DETERMINED here, on ANY witness — which is why this reads the raw candidates rather than
   -- `callSiteAncestorLift?`, whose whole job is to refuse an arbitrary witness. That is
-  -- deliberately not this function's call to make: `MonomorphizeComposites.checkDiamond` already
+  -- deliberately not this function's call to make: `MonomorphizeComposites.settleCallNode` already
   -- rejects it with a diagnostic naming both instantiations and the upcast that disambiguates,
   -- which is strictly more useful than "cannot infer T". Reporting it from here would also arrive
   -- too late to be a clean user error — an inherited call is an `.InstanceCall` at first
@@ -2382,7 +2470,7 @@ def StmtExpr.constructorName (e : StmtExpr) : String :=
   | .IfThenElse .. => "IfThenElse"
   | .Block .. => "Block"
   | .While .. => "While"
-  | .Exit .. => "Exit"
+  | .Goto .. => "Goto"
   | .Return .. => "Return"
   | .LiteralInt .. => "LiteralInt"
   | .LiteralBool .. => "LiteralBool"
@@ -2587,6 +2675,7 @@ structure ConstrainedType where
   constraint : StmtExprMd
   /-- A witness value proving the type is inhabited. -/
   witness : StmtExprMd
+  free : Bool := false
 
 /-- A constructor of a Laurel datatype, with a name and typed arguments. -/
 structure DatatypeConstructor where
@@ -2620,6 +2709,49 @@ def DatatypeDefinition.destructorName (dt : DatatypeDefinition) (field : Paramet
 /-- Canonical resolution name for the unsafe (bang) destructor of field `field`. -/
 def DatatypeDefinition.unsafeDestructorName (dt : DatatypeDefinition) (field : Parameter) : String :=
   s!"{dt.name.text}..{field.name.text}!"
+
+partial def HighType.mentionedNames : HighType → List String
+  | .UserDefined n | .TVar n => [n.text]
+  | .TSet et => et.val.mentionedNames
+  | .TMap kt vt => kt.val.mentionedNames ++ vt.val.mentionedNames
+  | .Applied base args => base.val.mentionedNames ++ args.flatMap (·.val.mentionedNames)
+  | .Intersection tys => tys.flatMap (·.val.mentionedNames)
+  | _ => []
+
+partial def DatatypeDefinition.isRecursive (lookup : String → Option DatatypeDefinition)
+    (dt : DatatypeDefinition) : Bool :=
+  let fieldNames (d : DatatypeDefinition) : List String :=
+    d.constructors.flatMap fun c => c.args.flatMap fun p => p.type.val.mentionedNames
+  let rec go (visited : Std.HashSet String) : List String → Bool
+    | [] => false
+    | n :: rest =>
+      if n == dt.name.text then true
+      else if visited.contains n then go visited rest
+      else match lookup n with
+        | some d => go (visited.insert n) (fieldNames d ++ rest)
+        | none => go (visited.insert n) rest
+  go {} (fieldNames dt)
+
+partial def DatatypeDefinition.constrainedArgsSupported
+    (lookup : String → Option DatatypeDefinition) (dt : DatatypeDefinition) : Bool :=
+  let rec supported (visited : List String) (d : DatatypeDefinition) : Bool :=
+    !visited.contains d.name.text && !d.isRecursive lookup &&
+    let params := d.typeArgs.map (·.text)
+    let rec shapeOk (ty : HighType) : Bool :=
+      match ty with
+      | .UserDefined _ | .TVar _ => true
+      | .Applied base args =>
+        match base.val with
+        | .UserDefined n =>
+          match lookup n.text with
+          | some inner => supported (d.name.text :: visited) inner &&
+              args.all fun a => !(a.val.mentionedNames.any params.contains) || shapeOk a.val
+          | none => false
+        | _ => false
+      | _ => false
+    d.constructors.all fun c => c.args.all fun p =>
+      !(p.type.val.mentionedNames.any params.contains) || shapeOk p.type.val
+  supported [] dt
 
 /-- A type alias, mapping a name to an existing type. Eliminated by the
     `TypeAliasElim` pass after the first resolution. -/
@@ -2688,25 +2820,46 @@ def TypeDefinition.name : TypeDefinition → Identifier
   | .Opaque ty => ty.name
   | .Alias ty => ty.name
 
+/-- Reserved prefix of the field-free parent that `MonomorphizeComposites` gives
+    every instantiation of one generic composite; the rest of the name is the
+    generic composite's own. `HeapParameterization` stores a field an instantiation
+    declares under its family, so one object seen at two instantiations (a
+    `D extends Box<int>, Box<bool>` is both) has one heap location for each field. -/
+def genericFamilyPrefix : String := "$Family$"
+
+def isGenericFamilyName (name : String) : Bool := name.startsWith genericFamilyPrefix
+
+/-- Whether `parent`, one of a composite's `extending`, is its family parent. -/
+def isGenericFamilyParent (parent : HighTypeMd) : Bool :=
+  (highBaseName? parent.val).any (isGenericFamilyName ·.text)
+
 /-- Build a `TypeLattice` from a list of `TypeDefinition`s.
     Aliases populate `unfoldMap` with their target; constrained types populate
     it with their base; composites populate `parentExprMap` with their direct
-    parent expressions. Datatypes and opaque types contribute nothing — they're nominal
-    and irreducible. -/
+    parent expressions, less a family parent (`genericFamilyPrefix`): beside a real
+    common parent, two instantiations would have no single least common ancestor.
+    Datatypes and opaque types contribute nothing — they're nominal and irreducible. -/
 def TypeLattice.ofTypes (types : List TypeDefinition) : TypeLattice :=
   types.foldl (init := {}) fun ctx td =>
     match td with
     | .Alias ta => { ctx with unfoldMap := ctx.unfoldMap.insert ta.name.text (ta.typeArgs, ta.target) }
     | .Constrained ct => { ctx with unfoldMap := ctx.unfoldMap.insert ct.name.text ([], ct.base) }
     | .Composite c =>
-      { ctx with
-        parentExprMap := ctx.parentExprMap.insert c.name.text (c.typeArgs, c.extending) }
+      let parents := c.extending.filter (!isGenericFamilyParent ·)
+      { ctx with parentExprMap := ctx.parentExprMap.insert c.name.text (c.typeArgs, parents) }
     | .Datatype _ | .Opaque _ => ctx
 
 structure Constant where
   name : Identifier
   type : HighTypeMd
   initializer : Option StmtExprMd := none
+
+/-- A field of a lowered composite type, declared at program level. -/
+structure HeapField extends Field where
+  /-- The field's storage location, `Owner.field`. `Owner` is the declaring
+      composite, or the generic family it instantiates, so all instantiations of a
+      generic composite share one location per field. -/
+  location : Identifier
 
 /--
 A Laurel program consisting of static procedures, static fields, type
@@ -2723,6 +2876,10 @@ structure LaurelProgram where
   types : List TypeDefinition
   /-- Named constants. -/
   constants : List Constant := []
+  /-- Fields of composite types, named `Composite.field`. Empty in a front end's
+      program; `LowerComposite` fills it in place of the composites' own fields,
+      and `HeapParameterization` clears it again. -/
+  heapFields : List HeapField := []
   deriving Inhabited
 
 /-- Reserved internal name of a function's anonymous (short `: T`) return
@@ -2737,6 +2894,15 @@ structure LaurelProgram where
     output — it is rejected by `validateNoDollarNames` like any other name
     starting with `$`. -/
 def resultOutputName : String := "$result"
+
+def heapFieldOwner : String := "$heap"
+
+/-- The datatype every composite (object) reference is flattened to by `LowerComposite`. -/
+def compositeTypeName : Identifier := "Composite"
+
+def compositeRefAccessor : String := "Composite..ref!"
+
+def allocateProcName : String := "$allocate"
 
 /-- Reserved prefix stamped onto a call site whose overload resolution failed
     (no overload matched, or the call was ambiguous). The `UniqueOverloadNames`

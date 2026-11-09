@@ -37,7 +37,7 @@ private def call (name : String) : StmtExprMd :=
 private def preludeProc (name : String) : Procedure :=
   { name := mkId name, inputs := [], outputs := [{ name := mkId "r", type := mkTy .TInt }],
     preconditions := [], decreases := none,
-    body := .Transparent ⟨.Block [] none, .unknown⟩ }
+    body := .Transparent ⟨.Block [] none [] none, .unknown⟩ }
 
 /-- Four candidates; the user program below reaches the first three, each from a
     different part of a `throwsOn` case, and never mentions `unreachedByAnyClause`. -/
@@ -67,7 +67,7 @@ private def user : LaurelProgram :=
             postconditions := [{ condition := call "reachedFromEnsures" }]
             modifies := [call "reachedFromModifies"] }
         ]
-        body := .Transparent ⟨.Block [] none, .unknown⟩ }
+        body := .Transparent ⟨.Block [] none [] none, .unknown⟩ }
     ]
     staticFields := []
     types := [] }

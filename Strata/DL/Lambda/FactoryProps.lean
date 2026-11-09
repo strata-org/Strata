@@ -18,10 +18,9 @@ These characterize what a successful call decomposition tells you: `callOfLFunc`
 yields an `.op` callee that resolves to a factory function of matching arity
 (`callOfLFunc_eq_some`, `callOfLFunc_arity`, `callOfLFunc_getElem?`), whose
 callee/args coincide with `getLFuncCall`'s decomposition (`callOfLFunc_getLFuncCall`)
-and whose function is a member of the factory (`callOfLFunc_func_mem`). It fails on
-free variables (`callOfLFunc_fvar_none`). A set of size lemmas (`getLFuncCall.go_size`,
-`getLFuncCall_smaller`, `callOfLFunc_smaller`) shows extracted arguments are
-structurally smaller than the original expression, which is used for termination.
+and whose function is a member of the factory (`callOfLFunc_func_mem`). A set of size lemmas
+(`getLFuncCall.go_size`, `getLFuncCall_smaller`, `callOfLFunc_smaller`) shows extracted
+arguments are structurally smaller than the original expression, which is used for termination.
 
 ### Factory membership / lookup (`namespace Factory`)
 These relate the three views of a factory — its name set, its backing array, and
@@ -48,8 +47,8 @@ theorem callOfLFunc_eq_some {GenericTy} {F : Factory T}
     (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
     : ∃ m name ty, callee = .op m name ty ∧
       F[name.name]? = some fn ∧ args.length = fn.inputs.length := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
+  simp only [Factory.callOfLFunc, Bool.false_eq_true, ↓reduceIte] at hcall
+  split at hcall <;> simp_all only [exists_and_right, reduceCtorEq]
   split at hcall <;> try contradiction
   split at hcall <;> try contradiction
   cases hcall
@@ -60,10 +59,10 @@ theorem callOfLFunc_getLFuncCall {GenericTy} {F : Factory T}
     {aPA : Bool}
     (hcall : Factory.callOfLFunc F e (allowPartialApp := aPA) = some (callee, args, fn))
     : getLFuncCall e = (callee, args) := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
+  simp only [Factory.callOfLFunc] at hcall
+  split at hcall <;> simp_all only [reduceCtorEq]
   split at hcall <;> try contradiction
-  cases aPA <;> simp at hcall <;> split at hcall <;> simp at hcall
+  cases aPA <;> simp only [Bool.false_eq_true, ↓reduceIte] at hcall <;> split at hcall <;> simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at hcall
   all_goals (obtain ⟨rfl, rfl, rfl⟩ := hcall; exact Prod.ext ‹_› rfl)
 
 theorem getLFuncCall.go_size {T: LExprParamsT} {e: LExpr T} {op args acc} : getLFuncCall.go e acc = (op, args) →
@@ -72,14 +71,14 @@ op.sizeOf + List.sum (args.map LExpr.sizeOf) <= e.sizeOf + List.sum (acc.map LEx
   case case1 acc e' arg1 arg2 IH =>
     intros Hgo; specialize (IH Hgo); simp_all; omega
   case case2 acc fn fnty arg1 =>
-    simp_all; intros op_eq args_eq; subst op args; simp; omega
+    simp_all only [List.cons_append, List.nil_append, Prod.mk.injEq, LExpr.sizeOf, Nat.reduceAdd, and_imp]; intros op_eq args_eq; subst op args; simp; omega
   case case3 op' args' _ _ => intros Hop; cases Hop; omega
 
 theorem getLFuncCall_smaller {T} {e: LExpr T} {op args} : getLFuncCall e = (op, args) → (forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
   unfold getLFuncCall
   intros Hgo
   have Hsize := (getLFuncCall.go_size Hgo)
-  simp_all
+  simp_all only [List.map_nil, List.sum_nil, Nat.add_zero]
   -- `LExpr.sizeOf_pos` lives in `LExprProps`, which imports this module; inline
   -- the positivity fact here to avoid an import cycle.
   have Hop : 0 < op.sizeOf := by cases op <;> simp only [LExpr.sizeOf] <;> omega
@@ -91,14 +90,14 @@ theorem Factory.callOfLFunc_smaller {T} {F : Factory T.base} {e : LExpr T} {op a
     {allowPartialMatch}
     : Factory.callOfLFunc F e (allowPartialApp := allowPartialMatch) = some (op, args, F') →
   (forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
-  simp[Factory.callOfLFunc]; cases Hfunc: (getLFuncCall e) with | mk op args;
-  simp; cases op <;> simp
-  rename_i o ty; cases F[o.name]? <;> simp
+  simp only [callOfLFunc]; cases Hfunc: (getLFuncCall e) with | mk op args;
+  simp only; cases op <;> simp only [reduceCtorEq, false_implies]
+  rename_i o ty; cases F[o.name]? <;> simp only [reduceCtorEq, false_implies]
   rename_i F'
   cases allowPartialMatch
-  · cases (args.length == List.length F'.inputs) <;> simp; intros op_eq args_eq F_eq
+  · cases (args.length == List.length F'.inputs) <;> simp only [Bool.false_eq_true, ↓reduceIte, Option.some.injEq, Prod.mk.injEq, and_imp, reduceCtorEq, false_implies]; intros op_eq args_eq F_eq
     subst op args F'; exact (getLFuncCall_smaller Hfunc)
-  · cases (Nat.ble args.length (List.length F'.inputs)) <;> simp
+  · cases (Nat.ble args.length (List.length F'.inputs)) <;> simp only [↓reduceIte, Option.some.injEq, Prod.mk.injEq, and_imp, reduceCtorEq, false_implies]
     intros op_eq args_eq F_eq
     subst op args F'; exact (getLFuncCall_smaller Hfunc)
 
@@ -120,8 +119,8 @@ theorem Factory.callOfLFunc_arity {T} {F : Factory T} {e callee : LExpr T.mono}
     {args : List (LExpr T.mono)} {fn : LFunc T}
     (hcall : Factory.callOfLFunc F e = some (callee, args, fn))
     : args.length = fn.inputs.length := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
+  simp only [callOfLFunc, Bool.false_eq_true, ↓reduceIte] at hcall
+  split at hcall <;> simp_all only [reduceCtorEq]
   split at hcall <;> try contradiction
   split at hcall <;> try contradiction
   cases hcall
@@ -134,10 +133,10 @@ theorem Factory.callOfLFunc_getElem?
     {aPA : Bool}
     (hcall : Factory.callOfLFunc F e (allowPartialApp := aPA) = some (callee, args, fn))
     : ∃ m name ty, callee = .op m name ty ∧ F[name.name]? = some fn := by
-  simp [Factory.callOfLFunc] at hcall
-  split at hcall <;> simp_all
+  simp only [callOfLFunc] at hcall
+  split at hcall <;> simp_all only [exists_and_right, reduceCtorEq]
   split at hcall <;> try contradiction
-  cases aPA <;> simp at hcall <;> split at hcall <;> simp at hcall
+  cases aPA <;> simp only [Bool.false_eq_true, ↓reduceIte] at hcall <;> split at hcall <;> simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at hcall
   all_goals (obtain ⟨rfl, rfl, rfl⟩ := hcall; grind)
 
 theorem LExpr.applyTypeSubst_eq_replaceUserProvidedType {T : LExprParams}
@@ -178,24 +177,17 @@ theorem LFuncDefined.toLFunc_toFunc {T : LExprParams} (f : LFuncDefined T)
 theorem LFunc.toFunc_toLFunc {T : LExprParams} (l : LFunc T) :
     LFuncDefined.toLFunc l.toFunc l.concreteEval = l := rfl
 
-/-- `callOfLFunc` returns `none` for free-variable expressions. -/
-theorem callOfLFunc_fvar_none {Tbase : LExprParams} {GenericTy} (F : @Factory Tbase)
-    (m : Tbase.Metadata) (v : Tbase.Identifier) (ty : Option GenericTy) :
-    Factory.callOfLFunc F (.fvar m v ty : LExpr ⟨Tbase, GenericTy⟩) = none := by
-  cases h : Factory.callOfLFunc F (.fvar m v ty : LExpr ⟨Tbase, GenericTy⟩) with
-  | none => rfl
-  | some val =>
-    obtain ⟨callee, args, fn⟩ := val
-    have hgl := callOfLFunc_getLFuncCall h
-    have hfvar : getLFuncCall (.fvar m v ty : LExpr ⟨Tbase, GenericTy⟩) = (.fvar m v ty, []) := by
-      unfold getLFuncCall getLFuncCall.go; rfl
-    rw [hfvar] at hgl
-    have ⟨_, _, _, hop, _, _⟩ := callOfLFunc_eq_some h
-    rw [← (Prod.mk.inj hgl).1] at hop
-    exact absurd hop (by simp)
-
-
 namespace Factory
+
+/-- Mapping a factory by a function that fixes each of its functions gives the factory. -/
+theorem map_eq_self {T} (F : Factory T) (g : LFunc T → LFunc T)
+    (hg : ∀ f, (g f).name.name = f.name.name) (h : ∀ f ∈ F.toArray, g f = f) :
+    F.map g hg = F := by
+  have harr : F.toArray.map g = F.toArray :=
+    (Array.map_congr_left h).trans (Array.map_id F.toArray)
+  cases F
+  simp only [map, Factory.mk.injEq, and_true]
+  exact harr
 
 /-- The function names in a factory are unique. -/
 theorem name_nodup {T} (f : Factory T) : List.Nodup (f.toArray |>.toList |>.map (·.name.name)) := by
@@ -238,7 +230,8 @@ private theorem ofArray_mem_take {T} {f : Factory T} {as : Array (LFunc T)} {fn 
 theorem ofArray_mem {T} {a : Array (LFunc T)} {fn : LFunc T}
     (p : fn ∈ (Factory.ofArray a).toArray) : fn ∈ a := by
   have q := ofArray_mem_take p
-  simp [Factory.default] at q
+  simp only [Factory.default, List.mem_toArray, List.not_mem_nil, Array.drop_eq_extract, Array.extract_size,
+    false_or] at q
   exact q
 
 @[simp] theorem toArray_default {T} : (Factory.default (T := T)).toArray = #[] := by
@@ -261,14 +254,14 @@ theorem mem_iff_mem_names {T} (f : Factory T) (s : String) :
     have hvalid := f.nameMapValid hs
     have hcons := f.nameMapConsistent hs
     rw [Array.mem_iff_getElem]
-    exact ⟨f.nameMap[s], by simp [Array.size_map]; exact hvalid, by simp [Array.getElem_map]; exact hcons⟩
+    exact ⟨f.nameMap[s], by simp only [Array.size_map] ; exact hvalid, by simp only [Array.getElem_map] ; exact hcons⟩
   · intro hs
     rw [Array.mem_iff_getElem] at hs
     obtain ⟨i, hi, hname⟩ := hs
-    simp [Array.size_map] at hi
-    simp [Array.getElem_map] at hname
+    simp only [Array.size_map] at hi
+    simp only [Array.getElem_map] at hname
     have := f.toArrayDefined ⟨i, hi⟩
-    simp +instances [instMem, Factory.mem]
+    simp +instances only [instMem, Factory.mem]
     rw [← hname]
     grind
 
@@ -300,7 +293,7 @@ theorem getElem?_some_implies_mem {T} {f : Factory T} {name : String} {fn : LFun
 
 theorem getElem?_some_getElem {T} {f : Factory T} {name : String} {fn : LFunc T}
     (eq : f[name]? = some fn) : f[name]'(getElem?_some_implies_mem eq) = fn := by
-  simp +instances [instGetElem?, Factory.get?, Factory.get] at eq ⊢
+  simp +instances only [instGetElem?, get?, Lean.Elab.WF.paramLet, get] at eq ⊢
   split at eq
   · contradiction
   · rename_i idx h_idx; simp at eq; grind
@@ -495,13 +488,13 @@ theorem callOfLFunc_func_mem
   simp only [Factory.callOfLFunc] at h
   cases h_lfc : getLFuncCall e with | mk op' args' =>
   simp only [h_lfc] at h
-  cases op' <;> simp at h
+  cases op' <;> simp only [reduceCtorEq] at h
   rename_i m_op name_op ty_op
   cases h_gf : F[name_op.name]? with
   | none => simp [h_gf] at h
   | some func' =>
     simp only [h_gf] at h
-    cases aPA <;> simp at h <;> split at h <;> simp at h
+    cases aPA <;> simp only [Bool.false_eq_true, ↓reduceIte] at h <;> split at h <;> simp only [Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at h
     all_goals (obtain ⟨_, _, rfl⟩ := h; exact Factory.getElem?_is_some_implies_mem h_gf)
 
 /-! ### Successful appends have new, distinct names -/

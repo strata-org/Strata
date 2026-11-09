@@ -11,6 +11,7 @@ public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.StatementType
 public import Strata.DL.Lambda.LTyUnify
 public import Strata.DL.Lambda.LExprType
+public import Strata.DL.Lambda.NamePrefixes
 import all Strata.DL.Imperative.Stmt
 
 /-! # Generalize Type Parameters to Opaque Types
@@ -106,7 +107,7 @@ def substProc (S : Subst) (proc : Procedure) : CoreTransformM Procedure := do
 /-! ### The transformation -/
 
 /-- Reserved prefix for generated opaque type names.  Uses the `$__` internal
-    namespace (as `CallElim.freshTyVarPrefix := "$__cety"` does) so that a
+    namespace (as `Lambda.callElimTyPrefix := "$__cety"` does) so that a
     generated opaque type name can never collide with a user-declared type — the
     `CoreGenState` counter does not ingest existing source names, so without a
     reserved prefix a user `type P_a_opaque_type_0;` alongside `procedure P<a>`
@@ -119,18 +120,20 @@ private def opaqueTypePrefix : String := "$__opaque"
 private def genOpaqueTypeName (procName tyVar : String) : CoreGenM CoreIdent :=
   CoreGenState.gen ⟨s!"{opaqueTypePrefix}_{procName}_{tyVar}", ()⟩
 
+/-- One nullary opaque type declaration per pair `(tv, n)` of `names`, named
+    `n`, and the substitution mapping each type variable `tv` to its opaque
+    type. -/
+def opaqueTypes (names : List (TyIdentifier × String)) : List Decl × Subst :=
+  (names.map fun (_, n) => Decl.type (.con { name := n, params := [] }) .empty,
+   [HMap.ofList (names.map fun (tv, n) => (tv, LMonoTy.tcons n []))])
+
 /-- Mint one fresh opaque type per type variable of the declaration `name`.
     Returns the opaque type declarations and the substitution mapping each type
     variable to its opaque type. -/
 def mkOpaqueSubst (name : String) (tyVars : List TyIdentifier) :
     CoreTransformM (List Decl × Subst) := do
-  let mut pairs : List (TyIdentifier × LMonoTy) := []
-  let mut opaqueDecls : List Decl := []
-  for tv in tyVars do
-    let nm ← genOpaqueTypeName name tv
-    pairs := (tv, LMonoTy.tcons nm.name []) :: pairs
-    opaqueDecls := Decl.type (.con { name := nm.name, params := [] }) .empty :: opaqueDecls
-  return (opaqueDecls.reverse, [HMap.ofList pairs.reverse])
+  let names ← tyVars.mapM fun tv => return (tv, (← genOpaqueTypeName name tv).name)
+  return opaqueTypes names
 
 /-- Replace the type parameters of a single procedure by opaque types.  One fresh opaque type is minted per
     declared type parameter (`header.typeArgs`); the opaque type declarations are
@@ -189,6 +192,29 @@ def run (p : Program) : CoreTransformM Program := do
     | _ => pure (acc.push decl)
   return { decls := out.toList }
 
+/-- Replace every type variable that a type-checked lemma still has by a fresh
+    opaque type, declared just before it, and drop the lemma's type parameters.
+    This covers the type variables that type checking introduces for the
+    lemma's declared type parameters, and those that nothing in its formula
+    fixes, such as the element type of `Nil()` in `adtRank(Nil())`, which the
+    SMT encoder would otherwise reject. Unlike `genOpaqueLemma`, which runs
+    before type checking, this closes the type variables of the formula's
+    annotations, not the lemma's declared type parameters.
+
+    TODO: prove what this relies on: if the closed lemma holds, the original
+    lemma holds at every instantiation of its type variables, since nothing
+    constrains an opaque type. This is the argument by which
+    `genOpaqueTypeParams` is model-preserving. -/
+def closeLemmaTypeVars (p : Program) : Program :=
+  { p with decls := p.decls.flatMap fun
+      | .lemma l md =>
+        match (annotTyVars l.e).eraseDups with
+        | [] => [.lemma l md]
+        | tvs =>
+          let (decls, S) := opaqueTypes (tvs.mapIdx fun i tv => (tv, s!"{freeTyPrefix}{l.name}_{i}"))
+          decls ++ [.lemma { l with typeArgs := [], e := l.e.applyTypeSubst S } md]
+      | d => [d] }
+
 end GenOpaqueTypeParams
 
 open Core.Transform in
@@ -214,7 +240,7 @@ def genOpaqueTypeParamsPipelinePhase : PipelinePhase :=
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                          .noProcedureContracts,
-                         .noPolymorphicFunctions, .typeAnnotated])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits])
     fun prog =>
       genOpaqueTypeParams prog
 

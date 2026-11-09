@@ -9,7 +9,7 @@ meta import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 procedure foo(x: int)

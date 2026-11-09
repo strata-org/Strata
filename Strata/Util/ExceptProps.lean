@@ -28,7 +28,13 @@ theorem mapError_ok_h' {α β γ : Type} {f : α → β} {e : Except α γ} {v :
     (h : Except.mapError f e = .ok v) : e = .ok v := by
   cases e with
   | error a => simp [Except.mapError] at h
-  | ok val => simp [Except.mapError] at h; exact congrArg Except.ok h
+  | ok val => simp only [Except.mapError, ok.injEq] at h; exact congrArg Except.ok h
+
+/-! ### Inverting `Except` binds and guards
+
+Peeling the `Except` do-notation of a type checker / validation pass whose body
+is a sequence of guards (`let _ ← check …`) followed by a result. These invert a
+successful overall run into success of each factor. -/
 
 /-- Bind inversion: a bind succeeds exactly when it factors through a
     successful intermediate result. The `mp` direction replaces manual case
@@ -61,7 +67,54 @@ theorem ite_error_then_eq_ok {ε β : Type} {c : Prop} [Decidable c]
     (if c then Except.error e else x) = .ok b ↔ ¬ c ∧ x = .ok b := by
   split <;> simp_all
 
+/-- `pure a` succeeds with `b` exactly when `a = b`. -/
+theorem pure_is_ok {E α} {a b : α} : ((pure a : Except E α) = .ok b) ↔ a = b := by
+  simp [pure, Except.pure]
+
+/-- `throw e` never succeeds. -/
+theorem throw_is_ok {E α} {e : E} {b : α} : ((throw e : Except E α) = .ok b) ↔ False := by
+  simp [throw, throwThe, MonadExceptOf.throw]
+
+/-- An `if` whose else-branch fails succeeds exactly when its condition holds and its
+    then-branch succeeds. -/
+theorem ite_error_else_eq_ok {ε β : Type} {c : Prop} [Decidable c]
+    {x : Except ε β} {e : ε} {b : β} :
+    (if c then x else Except.error e) = .ok b ↔ c ∧ x = .ok b := by
+  split <;> simp_all
+
+/-- A guard sequenced before the rest of a `do`-block: the block succeeds exactly
+when the guard and the rest both succeed. The `Unit` case of `bind_is_ok`. -/
+theorem seq_guard_ok_iff {ε α : Type} {g : Except ε Unit} {rest : Except ε α} {res : α} :
+    (do let _ ← g; rest) = Except.ok res ↔ g = Except.ok () ∧ rest = Except.ok res := by
+  rw [bind_is_ok]
+  exact ⟨fun ⟨⟨⟩, hg, hr⟩ => ⟨hg, hr⟩, fun ⟨hg, hr⟩ => ⟨(), hg, hr⟩⟩
+
 end Except
+
+/-- If a `for` loop whose body never returns `done` succeeds, the body yields on every
+    element. -/
+theorem List.forIn_yield_ok_mem {α ε} (l : List α)
+    (b : α → Except ε (ForInStep PUnit)) (u : PUnit)
+    (hne : ∀ x ∈ l, b x ≠ Except.ok (ForInStep.done PUnit.unit))
+    (h : forIn l PUnit.unit (fun x _ => b x) = Except.ok u) :
+    ∀ x ∈ l, b x = Except.ok (ForInStep.yield PUnit.unit) := by
+  induction l with
+  | nil => intro x hx; cases hx
+  | cons a as ih =>
+    simp only [List.forIn_cons] at h
+    intro x hx
+    cases hb : b a with
+    | error _ => rw [hb] at h; simp only [bind, Except.bind] at h; contradiction
+    | ok step =>
+      cases step with
+      | done _ => exact absurd (by rw [hb]) (hne a (List.mem_cons_self ..))
+      | yield r =>
+        cases r
+        rw [hb] at h
+        simp only [bind, Except.bind] at h
+        rcases List.mem_cons.mp hx with rfl | hx'
+        · rw [hb]
+        · exact ih (fun y hy => hne y (List.mem_cons_of_mem a hy)) h x hx'
 
 /-- If `mapM f` succeeds, `f` succeeds on every input, with a result among the outputs. -/
 theorem mapM_except_mem_left {α β ε : Type _} (f : α → Except ε β) :

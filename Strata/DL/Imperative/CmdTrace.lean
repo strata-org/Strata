@@ -78,6 +78,15 @@ themselves; their property proofs live in
 @[expose] def Event.condition {P : PureExpr} : Event P → EventArg P
   | .assert condition | .assume condition | .cover condition => condition
 
+/-- What a failure check observes of an event: its kind, label, condition, metadata, factory,
+    and the value of the condition in the event's store.  The factory determines which runtime
+    values are its Booleans (`HasBool.ttVal`/`ffVal`). -/
+@[expose] def Event.obs {P : PureExpr} :
+    Event P → Nat × String × P.Expr × MetaData P × P.Factory × Option P.Val
+  | .assert a => (0, a.label, a.expr, a.metadata, a.factory, P.eval a.factory a.store a.expr)
+  | .assume a => (1, a.label, a.expr, a.metadata, a.factory, P.eval a.factory a.store a.expr)
+  | .cover a => (2, a.label, a.expr, a.metadata, a.factory, P.eval a.factory a.store a.expr)
+
 /-- Lift a relation on captured event arguments to events of the same kind. -/
 @[expose] def Event.Matches {P : PureExpr}
     (ArgRel : EventArg P → EventArg P → Prop) : Event P → Event P → Prop
@@ -92,7 +101,8 @@ is true. -/
 @[expose] def Event.isTrueAssumeOrAssert {P : PureExpr} [HasBool P] :
     Event P → Prop
   | .assume condition | .assert condition =>
-      P.eval condition.factory condition.store condition.expr = some HasBool.tt
+      P.eval condition.factory condition.store condition.expr = some
+          (HasBool.ttVal condition.factory)
   | .cover _ => False
 
 /-- A target event argument extends a source event argument when all observable

@@ -17,9 +17,9 @@ def badTypeAlias : Program :=
 #strata
 program Core;
 type Foo (a : Type, b : Type);
-type FooAlias (a : Type) := Foo bool bool;
+type FooAlias (a : Type) := Foo a a;
 
-const fooVal : FooAlias (Foo int int);
+const fooVal : FooAlias bool;
 const fooConst1 : Foo int bool;
 const fooConst2 : Foo int bool;
 
@@ -30,9 +30,7 @@ procedure P () {
 };
 #end
 
--- The mismatch (`FooAlias (Foo int int)` = `Foo bool bool` vs `Foo int bool`) is
--- now caught by Core's own type checker (`resolve`) rather than DDM. If Core ever
--- relies on DDM type checking again, this could instead be caught at DDM parse time.
+-- `FooAlias bool` = `Foo bool bool` does not unify with `Foo int bool`.
 /--
 error: ❌ Type checking error.
 Impossible to unify (Foo int bool) with (Foo bool bool).
@@ -47,12 +45,12 @@ def goodTypeAlias : Program :=
 #strata
 program Core;
 type Foo (a : Type, b : Type);
-type FooAlias (a : Type) := Foo int bool;
-type FooAlias2 (a : Type) := FooAlias (FooAlias bool);
+type FooAlias (a : Type) := Foo a bool;
+type FooAlias2 (a : Type) := FooAlias (FooAlias a);
 
-const fooVal : FooAlias2 (Foo int int);
-const fooConst1 : Foo int bool;
-const fooConst2 : Foo int bool;
+const fooVal : FooAlias2 int;
+const fooConst1 : Foo (Foo int bool) bool;
+const fooConst2 : Foo (Foo int bool) bool;
 
 procedure P () {
   assume [fooConst1_value]: (fooConst1 == fooVal);
@@ -71,11 +69,11 @@ info: #[]
 info: program Core;
 
 type Foo (a : Type, b : Type);
-type FooAlias (a : Type) := Foo int bool;
-type FooAlias2 (a : Type) := FooAlias (FooAlias bool);
-function fooVal () : FooAlias2 (Foo int int);
-function fooConst1 () : Foo int bool;
-function fooConst2 () : Foo int bool;
+type FooAlias (a : Type) := Foo a bool;
+type FooAlias2 (a : Type) := FooAlias (FooAlias a);
+function fooVal () : FooAlias2 int;
+function fooConst1 () : Foo (Foo int bool) bool;
+function fooConst2 () : Foo (Foo int bool) bool;
 procedure P ()
 {
   assume [fooConst1_value]: fooConst1 == fooVal;
@@ -137,9 +135,9 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-assume_0: v == 0
+assume_0: v@1 == 0
 Obligation:
-MapGetEq(d, k, v) == MapGetEq(d, k, 0)
+MapGetEq(d@1, k@1, v@1) == MapGetEq(d@1, k@1, 0)
 
 ---
 info:
@@ -149,6 +147,22 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify funcAndTypeAliasesPgm
+
+--------------------------------------------------------------------
+
+def unusedParamTypeAlias : Program :=
+#strata
+program Core;
+type Foo (a : Type) := int;
+#end
+
+-- `Foo a := int` is rejected: the parameter `a` does not occur in the body.
+/--
+error: ❌ Type checking error.
+Type synonym 'Foo': type argument 'a' is not used in the definition
+-/
+#guard_msgs in
+#eval Core.verify unusedParamTypeAlias (options := .quiet)
 
 end Strata
 end

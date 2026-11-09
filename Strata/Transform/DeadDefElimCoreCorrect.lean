@@ -27,7 +27,7 @@ Over Core's event language for statement lists (`EventLang.coreBlock`), erasing 
 (`Statements.noCalls`) is a trace over-approximation in the general form
 `OverapproximatesTracesUptoWhen` (`deadDefElim_overapproximatesTraces`): the initial
 environments are equal; a source trace and its target trace correspond event by event
-(`List.Rel₂ (DDEventRel)`: same kind, factory, label, condition and metadata, the target store
+(`List.Rel₂ DDEventRel`: same kind, factory, label, condition and metadata, the target store
 being the source store with some bindings removed and agreeing with it on the condition's free
 variables); final environments correspond by `DDOut`; and the output satisfies the initial-
 environment gate `BlockInitEnvWF` wherever the input does.  Consequently assertion validity on
@@ -57,10 +57,10 @@ public section
 /-- **The dead-definition transform over-approximates.**  Let a run of `deadDefElimProgram` on
     the program `prog` succeed with `out`, and let `q` be a procedure of `prog` with structured
     body `ss`.  Then `out` contains the procedure with body `deadDefElimH [] ss`, and, if `ss`
-    has no loops and fails the target `t` from the value-valued store `σ` under the reference
-    event semantics, so does that body, from `σ`, for every factory evaluating alike on
-    well-formed stores agreeing on the free variables (`WellFormedSemanticEvalExprCongr`) and
-    evaluating Boolean guards to Booleans. -/
+    has no loops and fails the target `t` with the condition `e` from the value-valued store `σ`
+    under the reference event semantics, so does that body, from `σ`, for every factory
+    evaluating alike on well-formed stores agreeing on the free variables
+    (`WellFormedSemanticEvalExprCongr`) and evaluating Boolean guards to Booleans. -/
 theorem deadDefElimProgram_over {prog out : Program} {s s' : Transform.CoreTransformState}
     {b : Bool} (h : (deadDefElimProgram prog).run s = (.ok (b, out), s')) {q : Procedure}
     {md : Imperative.MetaData Expression} {ss : Statements} (hq : Decl.proc q md ∈ prog.decls)
@@ -69,10 +69,10 @@ theorem deadDefElimProgram_over {prog out : Program} {s s' : Transform.CoreTrans
       ∀ {F : Expression.Factory}, WellFormedSemanticEvalExprCongr (P := Expression) F →
         WellFormedSemanticEvalBool (P := Expression) F → Block.noLoops ss = true →
         ∀ {σ : SemanticStore Expression}, WellFormedStore σ F →
-        ∀ {t : AssertId Expression} {hf : Bool},
-        FailsE F hf ss σ t → ∀ hf' : Bool, FailsE F hf' (deadDefElimH [] ss) σ t := by
+        ∀ {t : AssertId Expression} {e : Expression.Expr},
+        FailsE F ss σ t e → FailsE F (deadDefElimH [] ss) σ t e := by
   cases h
-  refine ⟨?_, fun hF hWB hss _ hC _ _ h hf' => deadDefElimH_failsE hF hWB _ hss hC h hf'⟩
+  refine ⟨?_, fun hF hWB hss _ hC _ _ h => deadDefElimH_failsE hF hWB _ hss hC h⟩
   simp only [List.map_map, List.mem_map]
   exact ⟨_, hq, by simp [deadDefElimDecl, hb]⟩
 
@@ -84,10 +84,10 @@ theorem deadDefElimPipelinePhase_ok (program : Program) (s : Transform.CoreTrans
 /-- **The dead-definition phase over-approximates.**  Let a run of `deadDefElimPipelinePhase`
     on `program` succeed with `out`, and let `q` be a procedure of `program` with structured
     body `ss`.  Then `out` contains the procedure with body `deadDefElimH [] ss`, and, if `ss`
-    has no loops and fails the target `t` from the value-valued store `σ` under the reference event
-    semantics, so does that body, from `σ`, for every factory evaluating alike on well-formed
-    stores agreeing on the free variables (`WellFormedSemanticEvalExprCongr`) and evaluating
-    Boolean guards to Booleans. -/
+    has no loops and fails the target `t` with the condition `e` from the value-valued store `σ`
+    under the reference event semantics, so does that body, from `σ`, for every factory
+    evaluating alike on well-formed stores agreeing on the free variables
+    (`WellFormedSemanticEvalExprCongr`) and evaluating Boolean guards to Booleans. -/
 theorem deadDefElimPipelinePhase_over {program out : Program}
     {s s' : Transform.CoreTransformState} {b : Bool}
     (h : (deadDefElimPipelinePhase.transform program).run s = (.ok (b, out), s'))
@@ -97,8 +97,8 @@ theorem deadDefElimPipelinePhase_over {program out : Program}
       ∀ {F : Expression.Factory}, WellFormedSemanticEvalExprCongr (P := Expression) F →
         WellFormedSemanticEvalBool (P := Expression) F → Block.noLoops ss = true →
         ∀ {σ : SemanticStore Expression}, WellFormedStore σ F →
-        ∀ {t : AssertId Expression} {hf : Bool},
-        FailsE F hf ss σ t → ∀ hf' : Bool, FailsE F hf' (deadDefElimH [] ss) σ t :=
+        ∀ {t : AssertId Expression} {e : Expression.Expr},
+        FailsE F ss σ t e → FailsE F (deadDefElimH [] ss) σ t e :=
   deadDefElimProgram_over (deadDefElimPipelinePhase_ok program s ▸ h) hq hb
 
 /-! ## The trace over-approximation -/
@@ -114,12 +114,12 @@ theorem deadDefElimPipelinePhase_over {program out : Program}
     * `deadDefElim [] ss` satisfies `BlockInitEnvWF params` at `ρ₀`. -/
 theorem deadDefElim_overapproximatesTraces (π : String → Option Procedure)
     (params : InitEnvWFParams) :
-    OverapproximatesTracesUptoWhen (List.Rel₂ (DDEventRel)) (· = ·) DDOut
+    OverapproximatesTracesUptoWhen (List.Rel₂ DDEventRel) (· = ·) DDOut
       (EventLang.coreBlock π) (EventLang.coreBlock π) (fun ss => some (deadDefElim [] ss))
       (fun ss => Block.noLoops ss = true ∧ Statements.noCalls ss = true) params params := by
   intro ss st' hT ⟨hss, hnc⟩ ρ₀ _ rfl hwf
   cases hT
-  obtain ⟨σ₀, F, hf⟩ := ρ₀
+  obtain ⟨σ₀, F⟩ := ρ₀
   have hC : WellFormedStore σ₀ F := hwf.storeWellDefined
   have hcong := hwf.exprCongr
   have hWB := hwf.bool
@@ -131,21 +131,21 @@ theorem deadDefElim_overapproximatesTraces (π : String → Option Procedure)
       exact ⟨_, [], .refl _, .nil⟩
     obtain ⟨evs', hb, hm⟩ := deadDefElim_reach_rel hcong []
       (star_breach_noLoops hss h' htr) htr hC
-    obtain ⟨cfg', hc⟩ := breach_star hWB hb hf
+    obtain ⟨cfg', hc⟩ := breach_star hWB hb
     exact ⟨cfg', evs', star_core π hc, hm⟩
   · have h' := star_evalE h hnc
-    have hE := star_getEnv h'
+    have hE := starE_preserves_factory h'
     obtain ⟨evs', o', hb, hm, hO⟩ :=
       deadDefElim_run_rel hcong [] ((star_brun_noLoops hss).1 h') hC
     rcases o' with σ' | _ <;> simp only [DDOutcomeRel] at hO
-    exact ⟨_, evs', star_core π (brun_star hWB hb hf), ⟨hE.1.symm, hE.2.symm, hO⟩, hm⟩
+    exact ⟨_, evs', star_core π (brun_star hWB hb), ⟨hE, hO⟩, hm⟩
   · have h' := star_evalE h hnc
-    have hE := star_getEnv h'
+    have hE := starE_preserves_factory h'
     obtain ⟨evs', o', hb, hm, hO⟩ :=
       deadDefElim_run_rel hcong [] ((star_brun_noLoops hss).2 h') hC
     rcases o' with _ | ⟨l', σ'⟩ <;> simp only [DDOutcomeRel] at hO
     obtain ⟨rfl, hO⟩ := hO
-    exact ⟨_, evs', star_core π (brun_star hWB hb hf), ⟨hE.1.symm, hE.2.symm, hO⟩, hm⟩
+    exact ⟨_, evs', star_core π (brun_star hWB hb), ⟨hE, hO⟩, hm⟩
 
 /-- **Assertion validity transported back through erasure.** For an
     interpretation `I` stable under `DDArgRel` (such as evaluation to `true`, by
@@ -169,13 +169,13 @@ theorem deadDefElim_assertValid (π : String → Option Procedure) (params : Ini
     `deadDefElimH`, the pass the phase runs. -/
 theorem deadDefElimH_overapproximatesTraces (π : String → Option Procedure)
     (params : InitEnvWFParams) :
-    OverapproximatesTracesUptoWhen (List.Rel₂ (DDEventRel)) (· = ·) DDOut
+    OverapproximatesTracesUptoWhen (List.Rel₂ DDEventRel) (· = ·) DDOut
       (EventLang.coreBlock π) (EventLang.coreBlock π) (fun ss => some (deadDefElimH [] ss))
       (fun ss => Block.noLoops ss = true ∧ Statements.noCalls ss = true) params params := by
   have key : (fun ss : Statements => some (deadDefElimH (P := Expression) [] ss))
       = fun ss => some (deadDefElim (P := Expression) [] ss) :=
     funext fun ss => congrArg some (deadDefElimH_eq [] ss)
-  exact (congrArg (fun F => OverapproximatesTracesUptoWhen (List.Rel₂ (DDEventRel)) (· = ·) DDOut
+  exact (congrArg (fun F => OverapproximatesTracesUptoWhen (List.Rel₂ DDEventRel) (· = ·) DDOut
       (EventLang.coreBlock π) (EventLang.coreBlock π) F
       (fun ss => Block.noLoops ss = true ∧ Statements.noCalls ss = true) params params) key).mpr
     (deadDefElim_overapproximatesTraces π params)

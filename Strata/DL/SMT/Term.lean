@@ -115,8 +115,8 @@ def Term.hasListDec (ts₁ ts₂ : List Term) : Decidable (ts₁ = ts₂) :=
     | isTrue h₁ =>
         match Term.hasListDec tl₁ tl₂ with
         | isTrue h₂ => isTrue (by subst h₁ h₂; rfl)
-        | isFalse _ => isFalse (by simp; intros; assumption)
-    | isFalse _ => isFalse (by simp; intros; contradiction)
+        | isFalse _ => isFalse (by simp only [List.cons.injEq, not_and]; intros; assumption)
+    | isFalse _ => isFalse (by simp only [List.cons.injEq, not_and]; intros; contradiction)
 
 def Term.hasListListDec (ts₁ ts₂ : List (List Term)) : Decidable (ts₁ = ts₂) :=
   match ts₁, ts₂ with
@@ -127,8 +127,8 @@ def Term.hasListListDec (ts₁ ts₂ : List (List Term)) : Decidable (ts₁ = ts
     | isTrue h₁ =>
         match Term.hasListListDec tl₁ tl₂ with
         | isTrue h₂ => isTrue (by subst h₁ h₂; rfl)
-        | isFalse _ => isFalse (by simp; intros; assumption)
-    | isFalse _ => isFalse (by simp; intros; contradiction)
+        | isFalse _ => isFalse (by simp only [List.cons.injEq, not_and]; intros; assumption)
+    | isFalse _ => isFalse (by simp only [List.cons.injEq, not_and]; intros; contradiction)
 end
 
 instance : DecidableEq Term := Term.hasDecEq
@@ -242,6 +242,34 @@ instance : Coe String Term where
 
 instance : Coe TermVar Term where
   coe v := .var v
+
+/-- Add the names of the constructed sorts in the type of `v`. -/
+def TermVar.addSortNames (acc : Std.HashSet String) (v : TermVar) :
+    Std.HashSet String :=
+  v.ty.addSortNames acc
+
+mutual
+/-- Add the names of the constructed sorts of every subterm of a term. -/
+def Term.addSortNames (acc : Std.HashSet String) : Term → Std.HashSet String
+  | .prim _ => acc
+  | .var v => v.addSortNames acc
+  | .none ty => ty.addSortNames acc
+  | .some t => Term.addSortNames acc t
+  | .app _ args ty => Term.addSortNamesList (ty.addSortNames acc) args
+  | .quant _ vs trs body =>
+    let acc := vs.foldl TermVar.addSortNames acc
+    Term.addSortNames (Term.addSortNamesListList acc trs) body
+
+private def Term.addSortNamesList (acc : Std.HashSet String) :
+    List Term → Std.HashSet String
+  | [] => acc
+  | t :: ts => Term.addSortNamesList (Term.addSortNames acc t) ts
+
+private def Term.addSortNamesListList (acc : Std.HashSet String) :
+    List (List Term) → Std.HashSet String
+  | [] => acc
+  | ts :: tss => Term.addSortNamesListList (Term.addSortNamesList acc ts) tss
+end
 
 structure IF where
   id : String

@@ -34,7 +34,7 @@ therefore the pass's real output, not a simplified stand-in.
 What is *not* exercised here is what the later passes do to that output — heap
 parameterization threading the inout `$heap` through a throwing call,
 `ModifiesClauses` building the `isGood`/`isBad`-guarded frames, and
-`TypeHierarchy` lowering the `is`-guards. Those are covered by the full-pipeline
+`LowerComposite` lowering the `is`-guards. Those are covered by the full-pipeline
 verifying tests (`ThrowsOnClause`, `TryCatchThrow`, `TryFinallyThrow`, …).
 The prelude is dropped from the output; the `Result` datatype the pass injects
 for a program that uses exceptions is kept, so it heads each golden.
@@ -78,8 +78,8 @@ composite NegativeInputException { }
 procedure parsePositive(input: int): (Result<int, NegativeInputException>)
   opaque
   free ensures Result..isBad($result) ==> Result..err($result) is NegativeInputException
-  free ensures input < 0 ==> Result..isBad($result)( summary "throwsOn case forces a throw")
-  free ensures Result..isBad($result) ==> input < 0( summary "throwsOn cases cover every throwing path")
+  free ensures input < 0 ==> Result..isBad($result) summary "throwsOn case forces a throw"
+  free ensures Result..isBad($result) ==> input < 0 summary "throwsOn cases cover every throwing path"
   modifies  when Result..isGood($result);
 -/
 #guard_msgs in
@@ -111,9 +111,9 @@ composite ArithmeticException { }
 procedure divide(a: int, b: int): (Result<int, ArithmeticException>)
   opaque
   free ensures Result..isBad($result) ==> Result..err($result) is ArithmeticException
-  free ensures b == 0 ==> Result..isBad($result)( summary "throwsOn case forces a throw")
+  free ensures b == 0 ==> Result..isBad($result) summary "throwsOn case forces a throw"
   free ensures b == 0 & Result..isBad($result) ==> Result..err($result) is ArithmeticException
-  free ensures Result..isBad($result) ==> b == 0( summary "throwsOn cases cover every throwing path")
+  free ensures Result..isBad($result) ==> b == 0 summary "throwsOn cases cover every throwing path"
   modifies  when Result..isGood($result);
 -/
 #guard_msgs in
@@ -926,9 +926,9 @@ composite Err { var code: int }
 procedure binderShadowsInput(e: int): (Result<bool, Err>)
   opaque
   ensures Result..isBad($result) ==> Result..err($result) is Err
-  ensures true ==> Result..isBad($result)( summary "throwsOn case forces a throw")
+  ensures true ==> Result..isBad($result) summary "throwsOn case forces a throw"
   ensures true & Result..isBad($result) ==> Result..err($result)#code == 5
-  ensures Result..isBad($result) ==> true( summary "throwsOn cases cover every throwing path")
+  ensures Result..isBad($result) ==> true summary "throwsOn cases cover every throwing path"
   modifies  when Result..isGood($result)
 {
   var $thrown: bool := false;
@@ -986,9 +986,9 @@ procedure shortFormThrows()
   opaque
   ensures Result..isGood($result_1) ==> Result..value($result_1) > 0
   ensures Result..isBad($result_1) ==> Result..err($result_1) is Err
-  ensures true ==> Result..isBad($result_1)( summary "throwsOn case forces a throw")
+  ensures true ==> Result..isBad($result_1) summary "throwsOn case forces a throw"
   ensures true & Result..isBad($result_1) ==> Result..err($result_1)#code == 5
-  ensures Result..isBad($result_1) ==> true( summary "throwsOn cases cover every throwing path")
+  ensures Result..isBad($result_1) ==> true summary "throwsOn cases cover every throwing path"
   modifies  when Result..isGood($result_1)
 {
   var $thrown: bool := false;
@@ -1031,7 +1031,8 @@ with the outer body's own `throw n` — is all that reaches the enclosing bindin
 and the handler's `d#x` would stop resolving, since `x` is declared on `Narrow`.
 The widening is still visible where it belongs: propagating out of the inner
 `try` into the narrower `$exc_0` is a downcast (`assume … is Narrow` then `as`),
-exactly as in case 11. -/
+exactly as in case 11. Inside the handler, `c` is a `Narrow` too: its snapshot is the
+downcast `$exc_1 as Narrow`, which the guard discharges. -/
 
 private def narrowedGuardedRethrow : StrataDDM.SourcedProgram :=
 #strata
@@ -1112,7 +1113,7 @@ procedure rethrowUnderNarrowingGuard(pick: bool): (Result<int, Narrow>)
               if $thrown & $exc_1 is Narrow
                 then {
                   $thrown := false;
-                  var $exc_c_2: Base := $exc_1;
+                  var $exc_c_2: Narrow := $exc_1 as Narrow;
                   {
                     $exc_1 := $exc_c_2;
                     $thrown := true;

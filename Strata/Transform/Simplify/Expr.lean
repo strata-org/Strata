@@ -9,15 +9,18 @@ public import Strata.Languages.Core.Function
 public import Strata.Languages.Core.Factory
 public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Lambda.LExprEval
+import all Strata.DL.Lambda.LExprWFProps
 
 /-! # Simplify: expressions, the value context, and base commands
 
-The part of `simplify` that does not depend on how statements are nested: folding,
-the two copying rewrites and the conditions that keep them from compounding,
-`simplifyExpr`, the context of known values with its record, invalidate and join
-operations, and the simplification of one base command (`simpCmd`). The structured
-traversal in `Simplify` is built from these, and a traversal of control-flow-graph
-bodies can be built from the same ones.
+The part of `simplify` that does not depend on how statements are nested:
+folding, opening a binder onto a fresh variable, rewriting bottom up with
+node rules, the two copying rewrites and
+the conditions that keep them from compounding, `simplifyExpr`, the context of
+known values with its record, invalidate and join operations, and the
+simplification of one base command (`simpCmd`). The structured traversal in
+`Simplify` is built from these, and a traversal of control-flow-graph bodies
+can be built from the same ones.
 -/
 
 public section
@@ -36,8 +39,8 @@ nothing.
 
 `inlineIfConstr` and `inlineIfAllValues` stay. Both already carry the condition
 that makes them worth doing — an argument that is a constructor application, or
-arguments that are all canonical — and datatype destructors, testers and regular
-expressions do not fold at all without them. -/
+arguments that are all values or closed quantifiers (`LExpr.isInlineArg`) — and datatype
+destructors, testers and regular expressions do not fold at all without them. -/
 
 /-- Whether expanding this function's calls may be what keeps the term encodable. The
     test is syntactic, on the declaration, so it can say yes where expansion would remove
@@ -74,11 +77,11 @@ where
 /-- Weaken the unconditional `inline` attribute to `inlineIfAllValues`, from a
     function whose expansion is not what erases a lambda.
 
-    What remains automatic is the case that cannot compound: every argument canonical,
-    so the arguments mention no variable and the expanded body folds against closed
-    values. Every other expansion becomes this phase's decision. The evaluator already
-    implements that condition, which is why it is expressed as an attribute rather than
-    as a check of this phase's own. -/
+    What remains automatic is the case that cannot compound: every argument a value or a
+    closed quantifier (`LExpr.isInlineArg`), so the arguments mention no variable and the
+    expanded body folds against closed terms. Every other expansion becomes this phase's
+    decision. The evaluator already implements that condition, which is why it is
+    expressed as an attribute rather than as a check of this phase's own. -/
 def stripInlineFunc (carriers : List String) (fn : Core.Function) : Core.Function :=
   if mayEliminateLambdas carriers fn || !fn.attr.contains .inline then fn
   else
@@ -89,7 +92,8 @@ def stripInlineFunc (carriers : List String) (fn : Core.Function) : Core.Functio
 def stripInline (carriers : List String) (fn : LFunc CoreLParams) : LFunc CoreLParams :=
   { fn with toFunc := stripInlineFunc carriers fn.toFunc }
 
-def withoutInline (carriers : List String) (F : Expression.Factory) : Expression.Factory :=
+def withoutInline (carriers : List String) (F : Lambda.Factory CoreLParams) :
+    Lambda.Factory CoreLParams :=
   Factory.ofArray (F.toArray.map (stripInline carriers))
 
 /-! ## The evaluation environments the phase folds in -/
@@ -104,16 +108,16 @@ def oneValue (x : CoreIdent) (v : Expression.Expr) : Lambda.Env CoreLParams :=
   Lambda.Env.mk (fun y => if y == x then some v else none)
 
 /-- The known values substituted wherever they are read, with no size check: values of
-    one node, and canonical values.
+    one node, and those that are values of the factory (`LExpr.isValue`).
 
     A value of one node (a constant, another variable, a nullary operator) cannot grow
-    an expression at all. A canonical value, such as a literal or a constructor applied
-    to canonical values, can be larger, but it mentions no variable, so a copy of it
+    an expression at all. A value of the factory, such as a literal or a constructor
+    applied to such values, can be larger, but it mentions no variable, so a copy of it
     never exposes another variable whose value would then be copied in turn within one
     expression. It is also what folding needs, since a destructor or tester reduces only
     when its argument is a constructor.
 
-    The size of a recorded canonical value is not bounded, though. A value is recorded
+    The size of a recorded value of the factory is not bounded, though. A value is recorded
     after substitution, so a chain `t1 := Node(t0, t0)`, `t2 := Node(t1, t1)`, … records a
     value that doubles at each definition, and a read of `t12` copies 4096 leaves. That is
     the size symbolic evaluation reaches on the same program, so it is no regression, but
@@ -121,7 +125,7 @@ def oneValue (x : CoreIdent) (v : Expression.Expr) : Lambda.Env CoreLParams :=
 
     Any other value has to earn its place at each use, which costs a pass per variable,
     so it is left alone here. -/
-def smallValues (F : Expression.Factory) (vs : Map CoreIdent Expression.Expr) :
+def smallValues (F : Lambda.Factory CoreLParams) (vs : Map CoreIdent Expression.Expr) :
     Lambda.Env CoreLParams :=
   Lambda.Env.mk (fun y =>
     match Map.find? vs y with
@@ -132,12 +136,106 @@ end Env
 
 /-- Simplify `e` by folding without expanding `inline` calls or substituting variable
     values. -/
-def fold (stripped : Expression.Factory) (fuel : Nat) (e : Expression.Expr) : Expression.Expr :=
+def fold (stripped : Lambda.Factory CoreLParams) (fuel : Nat) (e : Expression.Expr) :
+    Expression.Expr :=
   (LExpr.eval fuel stripped Env.noValues e).fst
 
-def foldWith (stripped : Expression.Factory) (fuel : Nat) (x : CoreIdent) (v : Expression.Expr)
+def foldWith (stripped : Lambda.Factory CoreLParams) (fuel : Nat) (x : CoreIdent)
+    (v : Expression.Expr)
     (e : Expression.Expr) : Expression.Expr :=
   (LExpr.eval fuel stripped (Env.oneValue x v) e).fst
+
+/-! ## Opening a binder -/
+
+/-- The prefix of the free variables a bound variable is opened onto. -/
+def quantVarPrefix : String := "$__q"
+
+/-- A variable `$__q<n>` that `e` does not mention. Trying `k + 1` names
+    suffices when `e` mentions `k` variables. -/
+def freshFor (e : Expression.Expr) : CoreIdent :=
+  let used := HasFvars.getFvars (P := Expression) e
+  go used used.length 0
+where
+  go (used : List CoreIdent) : Nat → Nat → CoreIdent
+    | 0, n => ⟨s!"{quantVarPrefix}{n}", ()⟩
+    | k + 1, n =>
+      let x : CoreIdent := ⟨s!"{quantVarPrefix}{n}", ()⟩
+      if used.contains x then go used k (n + 1) else x
+
+/-- Applies `f` to `body` with its bound variable opened onto a fresh free
+    variable, then binds the variable again; also returns whether `f` changed
+    the body. The size equality lets a recursive `f` terminate. -/
+def underBinder (ty : Option LMonoTy) (body : Expression.Expr)
+    (f : { b : Expression.Expr // b.sizeOf = body.sizeOf } → Expression.Expr) :
+    Expression.Expr × Bool :=
+  let x := freshFor body
+  let opened := LExpr.varOpen 0 (x, ty) body
+  let transformed := f ⟨opened, LExpr.varOpen_sizeOf (x, ty) body 0⟩
+  if LExpr.eqModuloMeta transformed opened then (body, false)
+  -- `substFvarsLifting` matches `x` by name, ignoring any type `f` gave it.
+  else (LExpr.substFvarsLifting transformed [(x, .bvar () 0)], true)
+
+/-! ## Rewriting bottom up -/
+
+/-- A rewrite of one node whose children are already rewritten. -/
+abbrev NodeRule := Expression.Expr → Option Expression.Expr
+
+/-- Rewrites each node of `e` with the first of `rules` that applies, bottom
+    up, under binders but not in triggers. With `body`, each binder body is
+    opened onto a fresh variable, rewritten, and passed through `body`;
+    without it, a binder body is rewritten in place, which suits rules that do
+    not need closed terms and avoids opening. Also returns whether anything
+    changed. -/
+def rewriteUp (rules : List NodeRule)
+    (body : Option (Expression.Expr → Expression.Expr)) (e : Expression.Expr) :
+    Expression.Expr × Bool :=
+  let (e', changed) : Expression.Expr × Bool := match e with
+    | .quant m k name ty tr b =>
+      let (b', c) := match body with
+        | some f => underBinder ty b fun opened =>
+            f (rewriteUp rules body opened.val).fst
+        | none => rewriteUp rules body b
+      if c then (.quant m k name ty tr b', true) else (e, false)
+    | .abs m name ty b =>
+      let (b', c) := match body with
+        | some f => underBinder ty b fun opened =>
+            f (rewriteUp rules body opened.val).fst
+        | none => rewriteUp rules body b
+      if c then (.abs m name ty b', true) else (e, false)
+    | .app m fn arg =>
+      let (fn', c1) := rewriteUp rules body fn
+      let (arg', c2) := rewriteUp rules body arg
+      if c1 || c2 then (.app m fn' arg', true) else (e, false)
+    | .ite m c t f =>
+      let (c', c1) := rewriteUp rules body c
+      let (t', c2) := rewriteUp rules body t
+      let (f', c3) := rewriteUp rules body f
+      if c1 || c2 || c3 then (.ite m c' t' f', true) else (e, false)
+    | .eq m e1 e2 =>
+      let (e1', c1) := rewriteUp rules body e1
+      let (e2', c2) := rewriteUp rules body e2
+      if c1 || c2 then (.eq m e1' e2', true) else (e, false)
+    | .const .. | .op .. | .bvar .. | .fvar .. => (e, false)
+  match rules.findSome? (· e') with
+  | some v => (v, true)
+  | none => (e', changed)
+  termination_by e.sizeOf
+  decreasing_by
+    all_goals simp only [LExpr.sizeOf]
+    all_goals first
+      | omega
+      | (rw [opened.property]; omega)
+
+/-- Applies `eval`, then `rewriteUp rules (some eval)`, up to `rounds` times,
+    stopping once the rewrite changes nothing: evaluation can expose another
+    node a rule applies to, as in `p || (if r || true then true else s)`. -/
+def evalAndRewrite (eval : Expression.Expr → Expression.Expr)
+    (rules : List NodeRule) : Nat → Expression.Expr → Expression.Expr
+  | 0, e => e
+  | rounds + 1, e =>
+    match rewriteUp rules (some eval) (eval e) with
+    | (e', true) => evalAndRewrite eval rules rounds e'
+    | (e', false) => e'
 
 /-! ## Context -/
 
@@ -148,12 +246,12 @@ def foldWith (stripped : Expression.Factory) (fuel : Nat) (x : CoreIdent) (v : E
     there. -/
 structure Ctx where
   /-- Functions in scope, consulted to decide whether a call can be expanded. -/
-  factory : Expression.Factory
+  factory : Lambda.Factory CoreLParams
   /-- `factory` with the unconditional `inline` attribute stripped, which is what
       folding runs against. Carried rather than derived, because
       deriving it rebuilds every function in the factory and folding happens at
       every node of every expression. -/
-  foldFactory : Expression.Factory
+  foldFactory : Lambda.Factory CoreLParams
   /-- Bound on `LExpr.eval`'s own recursion while folding. Exhausting it leaves a term
       partly folded, which is sound but larger, so it is set well above what any
       expression in a translated program needs. -/
@@ -173,24 +271,40 @@ structure Ctx where
       any expression is simplified. -/
   carriers : List String := []
 
-def Ctx.ofFactory (F : Expression.Factory) (carriers : List String := []) : Ctx :=
+def Ctx.ofFactory (F : Lambda.Factory CoreLParams) (carriers : List String := []) : Ctx :=
   { factory := F, foldFactory := withoutInline carriers F, carriers }
 
 def Ctx.spend (ctx : Ctx) : Ctx := { ctx with expandFuel := ctx.expandFuel - 1 }
 
-/-- Drop every recorded value invalidated by mutating the variables `vs`: both a
-    binding *of* a mutated variable and a binding whose value *mentions* one.
+/-- Drop every recorded value invalidated by mutating the variables whose names satisfy
+    `written`: both a binding *of* a mutated variable and a binding whose value
+    *mentions* one.
 
     The second half is the subtle one. A definition `t := output` records `output`
     as `t`'s value; if `output` is then havoc'd or reassigned, `t`'s recorded value
     is stale, and substituting it into a later use would read `output`'s new value
     instead of the one `t` captured. Erasing only `output`'s own entry is not
     enough. -/
-def Ctx.invalidate (ctx : Ctx) (vs : List CoreIdent) : Ctx :=
-  let names := vs.map (·.name)
+@[inline] private def Ctx.invalidateBy (ctx : Ctx) (written : String → Bool) : Ctx :=
   let kept := ctx.values.toList.filter fun (k, e) =>
-    !names.contains k.name && !(HasFvars.getFvars e).any (fun f => names.contains f.name)
+    !written k.name && !(HasFvars.getFvars e).any (fun f => written f.name)
   { ctx with values := Map.ofList kept }
+
+/-- Drop every recorded value invalidated by mutating the variables named in `names`
+    (see `Ctx.invalidateBy`). An empty set invalidates nothing, so the walk is skipped,
+    and a single name is compared rather than hashed, as in `Ctx.invalidateVar`. -/
+def Ctx.invalidate (ctx : Ctx) (names : Std.HashSet String) : Ctx :=
+  if names.isEmpty then ctx
+  else if names.size == 1 then
+    match names.toList with
+    | [n] => ctx.invalidateBy (· == n)
+    | _ => ctx.invalidateBy names.contains
+  else ctx.invalidateBy names.contains
+
+/-- `Ctx.invalidate` for the single variable `x`, comparing names rather than hashing
+    them, since a write to one variable is the common case. -/
+def Ctx.invalidateVar (ctx : Ctx) (x : CoreIdent) : Ctx :=
+  ctx.invalidateBy (· == x.name)
 
 /-! ## The two copying rewrites
 
@@ -231,12 +345,12 @@ def occursCount (x : CoreIdent) (e : Expression.Expr) : Nat :=
     A body that mentions a parameter twice or more copies that argument, and what the
     copy costs is the argument's size. A single node is free -- expanding a bounds
     predicate over a variable, `lo <= x && x <= hi`, adds one node and puts arithmetic
-    where a solver can use it. A canonical argument is free for the reason `Env.smallValues`
-    substitutes one: it mentions no variable, so its copies cannot compound, and a body
-    applied to canonical arguments is what folding reduces. Any other argument larger
-    than a node is what doubles per level of nesting, so that is where expansion is
-    declined. -/
-def worthExpanding (F : Expression.Factory) (fn : LFunc CoreLParams)
+    where a solver can use it. An argument that is a value (`LExpr.isValue`) is free for
+    the reason `Env.smallValues` substitutes one: it mentions no variable, so its copies
+    cannot compound, and a body applied to such arguments is what folding reduces. Any
+    other argument larger than a node is what doubles per level of nesting, so that is
+    where expansion is declined. -/
+def worthExpanding (F : Lambda.Factory CoreLParams) (fn : LFunc CoreLParams)
     (args : List Expression.Expr) : Bool :=
   match fn.body with
   | none => false
@@ -378,38 +492,50 @@ and one of control-flow graphs share it. -/
     value mentioning it are invalidated, and `v` becomes `x`'s value unless it reads
     `x` itself, which would make a later substitution loop. -/
 def Ctx.record (ctx : Ctx) (x : CoreIdent) (v : Expression.Expr) : Ctx :=
-  let ctx := ctx.invalidate [x]
+  let ctx := ctx.invalidateVar x
   if (HasFvars.getFvars (P := Core.Expression) v).any (fun f => f.name == x.name)
     then ctx
     else { ctx with values := ctx.values.insert x v }
 
-/-- The definitions a set of predecessor contexts agree on: for each variable in
-    `assigned` that is not in `scopedNames`, the value every context in `live` records for
-    it, provided they all record the same one and it mentions none of `scopedNames`. -/
-def agreedDefs (live : List Ctx) (assigned : List CoreIdent) (scopedNames : List String) :
+/-- The definitions a set of predecessor contexts agree on: for each variable named in
+    `assigned` and not in `scopedNames`, the value every context in `live` records for
+    it, provided they all record the same one and it mentions none of `scopedNames`.
+
+    Such a value is one the first context records, so the candidates are read off its
+    `values`, which bounds the work by what is known rather than by what is written. A
+    single written name is looked up in those values instead. -/
+def agreedDefs (live : List Ctx) (assigned scopedNames : Std.HashSet String) :
     List (CoreIdent × Expression.Expr) :=
-  assigned.filterMap fun x =>
-    if scopedNames.contains x.name then none else
-    match live.map (fun (c : Ctx) => Map.find? c.values x) with
-    | some (v : Expression.Expr) :: rest =>
-      if rest.all (· == some v) &&
-          !(HasFvars.getFvars (P := Core.Expression) v).any
-            (fun f => scopedNames.contains f.name)
-        then some (x, v) else none
-    | _ => none
+  match live with
+  | [] => []
+  | first :: rest =>
+    let agreed (x : CoreIdent) (v : Expression.Expr) : Bool :=
+      !scopedNames.contains x.name &&
+        rest.all (fun (c : Ctx) => Map.find? c.values x == some v) &&
+        !(HasFvars.getFvars (P := Core.Expression) v).any (fun f => scopedNames.contains f.name)
+    if assigned.size == 1 then
+      assigned.toList.filterMap fun n =>
+        let x : CoreIdent := ⟨n, ()⟩
+        match Map.find? first.values x with
+        | some v => if agreed x v then some (x, v) else none
+        | none => none
+    else
+      first.values.toList.filter fun (x, v) => assigned.contains x.name && agreed x v
 
 /-- Record a list of definitions in a context, in order. -/
 def recordAgreed (base : Ctx) (agreed : List (CoreIdent × Expression.Expr)) : Ctx :=
   agreed.foldl (fun c (x, v) => { c with values := c.values.insert x v }) base
 
-/-- **Join.** The context after control flow merges: `base` with the variables in
+/-- **Join.** The context after control flow merges: `base` with the variables named in
     `assigned` forgotten, then given back the values every live predecessor agrees on.
 
     Only agreement is recorded. A value the predecessors disagree on could be merged as
-    an `ite` over the path taken, but that would enlarge every later use of the name. -/
-def Ctx.join (base : Ctx) (live : List Ctx) (assigned : List CoreIdent)
-    (scopedNames : List String) : Ctx :=
-  recordAgreed (base.invalidate assigned) (agreedDefs live assigned scopedNames)
+    an `ite` over the path taken, but that would enlarge every later use of the name.
+    When nothing was written, nothing is forgotten and nothing can be agreed on. -/
+def Ctx.join (base : Ctx) (live : List Ctx) (assigned scopedNames : Std.HashSet String) :
+    Ctx :=
+  if assigned.isEmpty then base
+  else recordAgreed (base.invalidate assigned) (agreedDefs live assigned scopedNames)
 
 /-- **One base command.** Simplify its expressions in `ctx`, and return the context
     that follows it: a deterministic write records its simplified value, a
@@ -419,11 +545,11 @@ def simpCmd (ctx : Ctx) (c : Imperative.Cmd Expression) : Imperative.Cmd Express
   | .init x ty (.det e) md =>
     let e := simplifyExpr ctx e
     (.init x ty (.det e) md, ctx.record x e)
-  | .init x ty .nondet md => (.init x ty .nondet md, ctx.invalidate [x])
+  | .init x ty .nondet md => (.init x ty .nondet md, ctx.invalidateVar x)
   | .set x (.det e) md =>
     let e := simplifyExpr ctx e
     (.set x (.det e) md, ctx.record x e)
-  | .set x .nondet md => (.set x .nondet md, ctx.invalidate [x])
+  | .set x .nondet md => (.set x .nondet md, ctx.invalidateVar x)
   | .assert l b md => (.assert l (simplifyExpr ctx b) md, ctx)
   -- An assumption that simplifies to `true` stays: symbolic evaluation adds no path
   -- condition for it, and keeping it keeps the program's events one for one.

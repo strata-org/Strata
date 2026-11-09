@@ -538,6 +538,23 @@ where
     | .eq m e1 e2 => .eq m (substFvarsAux e1 sm) (substFvarsAux e2 sm)
 
 /--
+Simultaneous substitution of free variables by a lookup function: each free variable `x` with
+`look x = some v` is replaced by `v`, in one traversal. `substFvars e sm` is
+`substFvarsBy e sm.find?` (`substFvars_eq_substFvarsBy`), which looks every variable up in the
+list `sm`. Like `substFvars`, it does not lift de Bruijn indices under binders.
+-/
+@[expose] def substFvarsBy (e : LExpr ⟨T, GenericTy⟩)
+    (look : T.Identifier → Option (LExpr ⟨T, GenericTy⟩)) : LExpr ⟨T, GenericTy⟩ :=
+  match e with
+  | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
+  | .fvar _ name _ => match look name with | some to => to | none => e
+  | .abs m name ty e' => .abs m name ty (substFvarsBy e' look)
+  | .quant m qk name ty tr' e' => .quant m qk name ty (substFvarsBy tr' look) (substFvarsBy e' look)
+  | .app m fn e' => .app m (substFvarsBy fn look) (substFvarsBy e' look)
+  | .ite m c t e' => .ite m (substFvarsBy c look) (substFvarsBy t look) (substFvarsBy e' look)
+  | .eq m e1 e2 => .eq m (substFvarsBy e1 look) (substFvarsBy e2 look)
+
+/--
 Simultaneous substitution of operator references (`.op`).  Replaces every
 `.op name ty` whose `name` is a key of `sm` with `(sm name) ty` — i.e. the
 mapped *builder* is applied to that occurrence's own type annotation `ty`, so
@@ -640,6 +657,33 @@ Replace all user-provided type annotations in an `LExpr` using `f`.
   | .ite _ c t f_expr => fvarAnnotations c ++ fvarAnnotations t ++ fvarAnnotations f_expr
   | .eq _ e1 e2 => fvarAnnotations e1 ++ fvarAnnotations e2
 
+/-- Overwrite the annotation of every free variable `x` with `ann x`, when it is
+defined. -/
+@[expose] def annotateFvars (ann : Identifier T.IDMeta → Option LMonoTy) :
+    LExpr T.mono → LExpr T.mono
+  | .const m c => .const m c
+  | .op m o ty => .op m o ty
+  | .bvar m i => .bvar m i
+  | .fvar m x ty => .fvar m x (match ann x with | some t => some t | none => ty)
+  | .abs m n ty e => .abs m n ty (annotateFvars ann e)
+  | .quant m k n ty tr e => .quant m k n ty (annotateFvars ann tr) (annotateFvars ann e)
+  | .app m f a => .app m (annotateFvars ann f) (annotateFvars ann a)
+  | .ite m c t e => .ite m (annotateFvars ann c) (annotateFvars ann t) (annotateFvars ann e)
+  | .eq m a b => .eq m (annotateFvars ann a) (annotateFvars ann b)
+
+/-- Rename every free variable `x` to `g x`, keeping metadata and annotations. -/
+@[expose] def mapFvarNames (g : Identifier T.IDMeta → Identifier T.IDMeta) :
+    LExpr T.mono → LExpr T.mono
+  | .const m c => .const m c
+  | .op m o ty => .op m o ty
+  | .bvar m i => .bvar m i
+  | .fvar m x ty => .fvar m (g x) ty
+  | .abs m n ty e => .abs m n ty (mapFvarNames g e)
+  | .quant m k n ty tr e => .quant m k n ty (mapFvarNames g tr) (mapFvarNames g e)
+  | .app m f a => .app m (mapFvarNames g f) (mapFvarNames g a)
+  | .ite m c t e => .ite m (mapFvarNames g c) (mapFvarNames g t) (mapFvarNames g e)
+  | .eq m a b => .eq m (mapFvarNames g a) (mapFvarNames g b)
+
 /-- The annotated operator nodes `.op o (some ty)` of an `LExpr`, as pairs `(o, ty)` in syntax
     order. -/
 @[expose] def opAnnots {T : LExprParamsT} : LExpr T → List (Identifier T.base.IDMeta × T.TypeType)
@@ -657,6 +701,29 @@ end LExpr
 def mapExprTys {T : LExprParams} (f : LMonoTy → LMonoTy)
     (e : LExpr T.mono) : LExpr T.mono :=
   LExpr.replaceUserProvidedType e f
+
+/-- The type annotations on operators, free variables and binders in `e`. -/
+def exprAnnotTys {T : LExprParams} (e : LExpr T.mono) : List LMonoTy :=
+  match e with
+  | .const _ _ | .bvar _ _ => []
+  | .op _ _ uty | .fvar _ _ uty => uty.toList
+  | .app _ e1 e2 | .eq _ e1 e2 => exprAnnotTys e1 ++ exprAnnotTys e2
+  | .abs _ _ uty body => uty.toList ++ exprAnnotTys body
+  | .quant _ _ _ argTy tr body => argTy.toList ++ exprAnnotTys tr ++ exprAnnotTys body
+  | .ite _ c t f => exprAnnotTys c ++ exprAnnotTys t ++ exprAnnotTys f
+
+/-- Free type variables of every user-provided type annotation in `e`. -/
+def annotTyVars {T : LExprParams} (e : LExpr T.mono) : List String :=
+  (exprAnnotTys e).flatMap LMonoTy.freeVars
+
+/-- Does every user-provided type annotation in `e` satisfy `p`? -/
+abbrev allExprTys {T : LExprParams} (p : LMonoTy → Bool) (e : LExpr T.mono) : Bool :=
+  e.allUserProvidedTypes p
+
+/-- Does every user-provided type annotation in each of `es` satisfy `p`? -/
+abbrev allExprsTys {T : LExprParams} (p : LMonoTy → Bool) (es : List (LExpr T.mono)) :
+    Bool :=
+  es.all (allExprTys p)
 
 end -- public section
 end Lambda

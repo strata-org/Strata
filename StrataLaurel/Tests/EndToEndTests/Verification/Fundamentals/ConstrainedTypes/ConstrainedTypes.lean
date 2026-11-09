@@ -135,6 +135,18 @@ procedure holeInTransparentBody()
 //^^^^^^^^^^^^^ error: assertion does not hold
 };
 
+// A hole at a type parameter that a binding nested in another type binds to a constrained type is
+// a value of the base: no argument there is checked against the constraint, so `pickV(-1, m)` is
+// accepted too
+procedure pickV<V>(x: V, m: TotalMap int V) returns (r: V) opaque ensures r == x;
+procedure holeAtNestedConstrainedBinding(m: TotalMap int nat)
+  opaque
+{
+  var y: int := pickV(<?>, m);
+  assert y >= 0
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+
 // Argument to constrained-typed parameter — valid
 procedure takesNat(n: nat) returns (r: int)
   opaque
@@ -424,6 +436,8 @@ procedure getNestedBad(o: Outer) : nat
 
 procedure throwsNat(x: nat) : nat throws (e: Exception) { return x };
 procedure throwsNatBad(x: nat) : nat throws (e: Exception)
+//        ^^^^^^^^^^^^ error: assertion could not be proved
+//                               ^^^ error: postcondition could not be proved
 {
   return x - 1
 //^^^^^^^^^^^^ error: assertion could not be proved
@@ -449,19 +463,14 @@ procedure unassignedOnOnePath(b: bool) returns (r: nat)
   if b then { r := 1 }
 };
 
-procedure tailValue(): nat { 3 };
-procedure tailValueIf(b: bool): nat { if b then 1 else 2 };
-procedure usesTailValues() opaque { assert tailValue() == 3; assert tailValueIf(true) == 1 };
+procedure returnValue(): nat { return 3 };
+procedure returnValueIf(b: bool): nat { return if b then 1 else 2 };
+procedure usesReturnValues() opaque { assert returnValue() == 3; assert returnValueIf(true) == 1 };
 
-procedure badTailValue(): nat { -1 };
-//                        ^^^ error: assertion does not hold
-//                              ^^ error: assertion does not hold
-procedure badTailValueIf(b: bool): nat { if b then 1 else -1 };
-//                                 ^^^ error: assertion does not hold
-//                                                        ^^ error: assertion does not hold
-procedure badTailValueBeforeAssert(): nat { -1; assert true };
-//                                    ^^^ error: assertion does not hold
-//                                          ^^ error: assertion does not hold
+procedure badReturnValue(): nat { return -1 };
+//                                ^^^^^^^^^ error: assertion does not hold
+procedure badReturnValueIf(b: bool): nat { return if b then 1 else -1 };
+//                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 
 procedure knowsPositive(x: int) opaque ensures x > 0;
 procedure tailLemma(x: nat) returns (r: nat) { r := x * x; knowsPositive(x) };
@@ -480,5 +489,4 @@ procedure earlyBadReturn(x: int): nat { if x < 0 then { return x }; return 0 };
 program Laurel;
 constrained nat = x: int where x >= 0 witness 0
 procedure q0() returns (r: nat) { r := 1; true };
-//        ^^ error: ❌ Type checking error.
 #end

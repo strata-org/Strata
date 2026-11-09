@@ -226,6 +226,12 @@ theorem post_mapM_length [LawfulMonad m] (l : List α) (f : α → m β) :
     exact post_bind_any (fun r =>
       post_bind ih (fun rs hrs => post_pure (by simp [hrs])))
 
+/-- `mapM` preserves emptiness. Needed by the kinds that hold when a list is
+    non-empty. -/
+private theorem post_mapM_isEmpty [LawfulMonad m] (l : List α) (f : α → m β) :
+    PostM (l.mapM f) (fun rs => rs.isEmpty = l.isEmpty) :=
+  post_mono (post_mapM_length l f) (fun rs h => by cases l <;> cases rs <;> simp_all)
+
 /-- `Option.mapM` preserves presence. Needed by the kinds that hold when an option
     is `some`. -/
 private theorem post_option_mapM_isSome [LawfulMonad m] (o : Option α) (f : α → m β) :
@@ -277,6 +283,10 @@ theorem mapStmtExprUsedM_isVarLocal {m : Type → Type} [Monad m] [LawfulMonad m
     ∧ (∀ ty ∈ stmtExprTypes e.val, ContainsType s ty)
     ∧ (∀ c ∈ stmtExprChildren e.val, Contains t c)
 
+/-- `List.attach` preserves emptiness. -/
+private theorem attach_isEmpty {α : Type} (l : List α) : l.attach.isEmpty = l.isEmpty := by
+  cases l <;> simp
+
 /-- `Option.attach` preserves presence. -/
 private theorem option_attach_isSome {α : Type} (o : Option α) : o.attach.isSome = o.isSome := by
   cases o <;> simp [Option.attach]
@@ -303,8 +313,8 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
     simp only []
     -- Most arms peel their children with `ih` and close with `hf`. Five need more,
     -- and are proved by hand below: `Return` and `Try` (a kind of theirs depends on
-    -- an option being present, so the rebuilt node needs `Option.mapM`'s
-    -- preservation of that), `Assign` and `Try` again (children sit inside a
+    -- a list being non-empty / an option being present, so the rebuilt node needs
+    -- `mapM`'s preservation of that), `Assign` and `Try` again (children sit inside a
     -- `Variable` / `CatchClause`, so the per-element postcondition is not just
     -- `Contains t`), the non-field `CompoundAssign` (its target is copied) and `Old`
     -- (shape stability). The `h_N` tags below are `split`'s arm numbers; they shift
@@ -341,22 +351,55 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
                 | simp_all [stmtExprChildren]
                 | (simp only [stmtExprChildren]; grind)) _))
             (post_option_mapM_isSome _ _)) (fun _ _ => ?_)); done))
-    -- `Return`: `StmtExpr.Return.value.some` holds of the rebuilt node because
-    -- `Option.mapM` preserves presence.
-    case h_4 value =>
+    -- `Block`: `StmtExpr.Block.invariants.cons` and `.decreases.some` hold of the
+    -- rebuilt node because `mapM` preserves length and `Option.mapM` presence.
+    case h_2 stmts label invs dec =>
+      refine post_bind (post_and
+        (post_attach_mapM _ _ (fun x => ih x.1 (by
+          have hx := x.2
+          simp only [stmtExprChildren, List.mem_append, Option.mem_toList]
+          exact Or.inl (Or.inl hx)) true))
+        (post_mapM_length _ _)) (fun invs' hinvs' => ?_)
       refine post_bind (post_and
         (post_option_attach_mapM _ _ (fun x => ih x.1 (by
-          have hx := Option.mem_def.mp x.2; simp [stmtExprChildren, hx]) true))
-        (post_option_mapM_isSome _ _)) (fun value' hvalue' => ?_)
+          have hx := Option.mem_def.mp x.2
+          simp [stmtExprChildren, hx]) true))
+        (post_option_mapM_isSome _ _)) (fun dec' hdec' => ?_)
+      refine post_bind (post_mapIdxM _ _ (fun i x => ih x.1 (by
+          have hx := x.2
+          simp only [stmtExprChildren, List.mem_append]
+          exact Or.inr hx) _)) (fun stmts' hstmts' => ?_)
       refine post_bind (Q := Rebuilt s t) (post_pure ⟨?_, ?_, ?_⟩) (fun x hx => hf u x hx)
-      · have hSome : value'.isSome = value.isSome := by
-          simpa [option_attach_isSome] using hvalue'.2
+      · have hLen : invs'.length = invs.length := by simpa using hinvs'.2
+        have hSome : dec'.isSome = dec.isSome := by
+          simpa [option_attach_isSome] using hdec'.2
+        have hEmpty : invs'.isEmpty = invs.isEmpty := by
+          cases invs <;> cases invs' <;> simp_all
         intro k hk
-        exact head k (by simpa [NodeKind.ofStmtExpr, hSome] using hk)
+        exact head k (by simpa [NodeKind.ofStmtExpr, hEmpty, hSome] using hk)
       · simp [stmtExprTypes]
       · intro c hc
-        simp only [stmtExprChildren, Option.mem_toList] at hc
-        exact hvalue'.1 c hc
+        simp only [stmtExprChildren, List.mem_append, Option.mem_toList] at hc
+        rcases hc with (hc | hc) | hc
+        · exact hinvs'.1 c hc
+        · exact hdec'.1 c hc
+        · exact hstmts' c hc
+    -- `Return`: `StmtExpr.Return.value.some` holds of the rebuilt node because
+    -- `mapM` preserves emptiness.
+    case h_4 values =>
+      refine post_bind (post_and
+        (post_attach_mapM _ _ (fun x => ih x.1 (by
+          have hx := x.2; simp [stmtExprChildren, hx]) true))
+        (post_mapM_isEmpty _ _)) (fun values' hvalues' => ?_)
+      refine post_bind (Q := Rebuilt s t) (post_pure ⟨?_, ?_, ?_⟩) (fun x hx => hf u x hx)
+      · have hEmpty : values'.isEmpty = values.isEmpty := by
+          simpa [attach_isEmpty] using hvalues'.2
+        intro k hk
+        exact head k (by simpa [NodeKind.ofStmtExpr, hEmpty] using hk)
+      · simp [stmtExprTypes]
+      · intro c hc
+        simp only [stmtExprChildren] at hc
+        exact hvalues'.1 c hc
     -- `Assign`: a target's rewritten child sits inside a `Variable`, so the
     -- per-target postcondition covers that `Variable`'s own types and children.
     case h_8 targets value =>

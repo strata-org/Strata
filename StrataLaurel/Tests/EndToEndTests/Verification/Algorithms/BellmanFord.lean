@@ -15,14 +15,14 @@ program Laurel;
 
 procedure wellFormed(n: int, eu: Sequence<int>, ev: Sequence<int>, ew: Sequence<int>): bool
 {
-  seqLength(eu) == seqLength(ev) && seqLength(ev) == seqLength(ew)
+  return seqLength(eu) == seqLength(ev) && seqLength(ev) == seqLength(ew)
   && (forall(e: int) => 0 <= e ==> e < seqLength(eu) ==>
         0 <= seqSelect(eu, e) && seqSelect(eu, e) < n && 0 <= seqSelect(ev, e) && seqSelect(ev, e) < n)
 };
 
 procedure relaxedBelow(dist: Sequence<int>, reach: Sequence<bool>, eu: Sequence<int>, ev: Sequence<int>, ew: Sequence<int>, hi: int): bool
 {
-  forall(e: int) => 0 <= e ==> e < hi ==> e < seqLength(eu) ==> e < seqLength(ev) ==> e < seqLength(ew) ==>
+  return forall(e: int) => 0 <= e ==> e < hi ==> e < seqLength(eu) ==> e < seqLength(ev) ==> e < seqLength(ew) ==>
     0 <= seqSelect(eu, e) ==> seqSelect(eu, e) < seqLength(dist) ==> seqSelect(eu, e) < seqLength(reach) ==>
     0 <= seqSelect(ev, e) ==> seqSelect(ev, e) < seqLength(dist) ==> seqSelect(ev, e) < seqLength(reach) ==>
     seqSelect(reach, seqSelect(eu, e)) ==>
@@ -105,14 +105,14 @@ program Laurel;
 
 procedure wellFormed(n: int, eu: Sequence<int>, ev: Sequence<int>, ew: Sequence<int>): bool
 {
-  seqLength(eu) == seqLength(ev) && seqLength(ev) == seqLength(ew)
+  return seqLength(eu) == seqLength(ev) && seqLength(ev) == seqLength(ew)
   && (forall(e: int) => 0 <= e ==> e < seqLength(eu) ==>
         0 <= seqSelect(eu, e) && seqSelect(eu, e) < n)
 };
 
 procedure relaxedBelow(dist: Sequence<int>, reach: Sequence<bool>, eu: Sequence<int>, ev: Sequence<int>, ew: Sequence<int>, hi: int): bool
 {
-  forall(e: int) => 0 <= e ==> e < hi ==> e < seqLength(eu) ==> e < seqLength(ev) ==> e < seqLength(ew) ==>
+  return forall(e: int) => 0 <= e ==> e < hi ==> e < seqLength(eu) ==> e < seqLength(ev) ==> e < seqLength(ew) ==>
     0 <= seqSelect(eu, e) ==> seqSelect(eu, e) < seqLength(dist) ==> seqSelect(eu, e) < seqLength(reach) ==>
     0 <= seqSelect(ev, e) ==> seqSelect(ev, e) < seqLength(dist) ==> seqSelect(ev, e) < seqLength(reach) ==>
     seqSelect(reach, seqSelect(eu, e)) ==>

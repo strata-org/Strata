@@ -15,14 +15,14 @@ program Laurel;
 
 procedure sizeOf(sz: Sequence<int>, n: int): int
 {
-  if n == -1 then 0 else seqSelect(sz, n)
-//                       ^^^^^^^^^^^^^^^^ error: precondition could not be proved
+  return if n == -1 then 0 else seqSelect(sz, n)
+//                              ^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
 };
 
 procedure consistent(parent: Sequence<int>, lf: Sequence<int>, rt: Sequence<int>, sz: Sequence<int>): bool
 {
-  seqLength(parent) == seqLength(lf) && seqLength(lf) == seqLength(rt) && seqLength(rt) == seqLength(sz)
+  return seqLength(parent) == seqLength(lf) && seqLength(lf) == seqLength(rt) && seqLength(rt) == seqLength(sz)
   && (forall(i: int) => 0 <= i ==> i < seqLength(sz) ==>
         -1 <= seqSelect(parent, i) && seqSelect(parent, i) < seqLength(sz)
         && -1 <= seqSelect(lf, i) && seqSelect(lf, i) < seqLength(sz)
@@ -69,13 +69,13 @@ program Laurel;
 
 procedure sizeOf(sz: Sequence<int>, n: int): int
 {
-  if n == -1 then 0 else seqSelect(sz, n)
-//                       ^^^^^^^^^^^^^^^^ error: precondition could not be proved
+  return if n == -1 then 0 else seqSelect(sz, n)
+//                              ^^^^^^^^^^^^^^^^ error: precondition could not be proved
 };
 
 procedure consistent(parent: Sequence<int>, lf: Sequence<int>, rt: Sequence<int>, sz: Sequence<int>): bool
 {
-  seqLength(parent) == seqLength(lf) && seqLength(lf) == seqLength(rt) && seqLength(rt) == seqLength(sz)
+  return seqLength(parent) == seqLength(lf) && seqLength(lf) == seqLength(rt) && seqLength(rt) == seqLength(sz)
   && (forall(i: int) => 0 <= i ==> i < seqLength(sz) ==>
         -1 <= seqSelect(parent, i) && seqSelect(parent, i) < seqLength(sz)
         && -1 <= seqSelect(lf, i) && seqSelect(lf, i) < seqLength(sz)

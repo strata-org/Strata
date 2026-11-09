@@ -15,22 +15,18 @@ public section
 
 /-! # Correctness of Core procedures and of Core's verifier
 
-- **`AssertValidInProcedure`**, **`AssertSatisfiableInProcedure`** — assertion
-  validity and satisfiability in a procedure's body, from its entry
-  environments (failure-flag semantics; the valid form is deprecated).
-- **`ProcedureAssertsValid`**, **`ProcedureAssertsSatisfiable`** — assert
-  validity or satisfiability plus postconditions (failure-flag semantics).
 - **`ProcedureAssertsValidOnTraces`**, **`ProcedureAssertsSatisfiableOnTraces`** —
-  the same properties on event traces, read through a `ConditionInterp`. A trace
+  assertion validity or satisfiability plus postconditions on event traces,
+  read through a `ConditionInterp`. A trace
   records the assertions of every callee call that completes, so validity covers
   those transitively; a call whose callee never finishes contributes no events.
   The valid form checks the procedure's contract by reading its non-free
   postconditions as assertions appended to each finished run's trace.
 - **`ProcedureAssertsValidOnTraces.denote`**,
   **`ProcedureAssertsSatisfiableOnTraces.denote`** — the same properties with
-  conditions read by Lambda's denotational semantics: validity in every model
-  of `Core.Factory`, satisfiability in some model.
-- **`CoreVerifierModel`** — what a passing `VCResults` claims under each
+  conditions read by Lambda's denotational semantics over the factory visible
+  before the entry procedure.
+- **`CoreVerifierModel`** — the desirable property of Core's verifier under each
   verification mode.
 -/
 
@@ -41,179 +37,30 @@ open Core Core.Logic Imperative Strata.Logic Imperative.Logic
 /-! ## Procedure correctness -/
 
 
+/-- The initial environments a procedure body is verified from: `ProcEnvWF`, the
+    axioms and distincts visible to `entryProcName`, and a runtime factory over the
+    factory visible before the procedure (`Program.factoryBeforeProcedure`), as in
+    `Procedure.contractTriple`. Steps keep the factory, so every condition a run from
+    such an environment captures is over that factory. -/
+@[expose] def ProcEntryEnv (params : InitEnvWFParams) (entryProcName : String)
+    (p : Program) (proc : Procedure) (ρ₀ : Imperative.Env Expression) : Prop :=
+  ProcEnvWF params proc ρ₀ ∧ AxiomsBeforeProcedureDecl entryProcName p ρ₀ ∧
+    ρ₀.factory.factory = p.factoryBeforeProcedure entryProcName
+
 /-- Common shape of Core-level assertion specifications on a procedure named
-    `entryProcName` in program `p`. -/
+    `entryProcName` in program `p`: `Spec` is asked of the body from the entry
+    environments `ProcEntryEnv` admits. -/
 @[expose] def AssertSpecInProcedure (params : InitEnvWFParams)
     (Spec : (Imperative.Env Expression → Prop) → Statements → Statement → Prop)
     (entryProcName : String) (p : Program) : Prop :=
   ∃ proc ss,
     p.findProcByString? entryProcName = some proc ∧
     proc.body = .structured ss ∧
-    Spec
-      (fun ρ₀ => ProcEnvWF params proc ρ₀ ∧ AxiomsBeforeProcedureDecl entryProcName p ρ₀)
-      ss
-      (Stmt.block "" ss #[])
-
-/-- A specific assertion `a` in the procedure named `entryProcName` of program
-    `p` is valid for initial program states that satisfy `ProcEnvWF` and the
-    program-level axioms and distincts visible to `entryProcName`
-    (`AxiomsBeforeProcedureDecl`). -/
-@[expose, deprecated "use `AssertValidOnTracesInProcedure`" (since := "2026-10-02")]
-def AssertValidInProcedure (params : InitEnvWFParams)
-    (entryProcName : String) (p : Program)
-    (a : Imperative.AssertId Expression) : Prop :=
-  AssertSpecInProcedure params
-    (fun Pre _ss s =>
-      Specification.AssertValidWhen (Core.Logic.Lang.core p.findProcByString?) Pre s a)
-    entryProcName p
-
-/-- A specific assertion `a` in the procedure named `entryProcName` of program
-    `p` is satisfiable: some initial program state satisfying `ProcEnvWF` and
-    `AxiomsBeforeProcedureDecl` reaches a configuration at the assert with the
-    expression evaluating to `tt`. We restrict the obligation to `a`s that
-    syntactically appear in the body (via `Statements.collectAssertIds`),
-    otherwise it is vacuously true (unless entryProcName is an invalid procedure
-    or the procedure doesn't have a structured body). -/
-@[expose] def AssertSatisfiableInProcedure (params : InitEnvWFParams)
-    (entryProcName : String) (p : Program)
-    (a : Imperative.AssertId Expression) : Prop :=
-  AssertSpecInProcedure params
-    (fun Pre ss s =>
-      a ∈ Statements.collectAssertIds ss →
-      -- `AssertSatisfiableWhen` checks the witnessing run's assert under its
-      -- own reached-configuration factory (`(L.getEnv cfg).factory`).
-      Specification.AssertSatisfiableWhen (Core.Logic.Lang.core p.findProcByString?) Pre s a)
-    entryProcName p
-
-set_option linter.deprecated false in
-/-- The procedure named `entryProcName` (looked up in `p` via
-    `Program.findProcByString?`) has every assert valid and its postconditions
-    valid on termination.
-
-    0. The procedure exists in `p` (`procedureExists`);
-
-    1. Every reachable assert in the procedure body evaluates to `true`
-       (`AssertValidInProcedure`);
-
-    2. Postcondition: When the procedure body terminates from a `ProcEnvWF`
-       initial environment, every non-free postcondition holds and
-       `hasFailure` stays `false`.
-
-    This is partial correctness: if the program has an infinite loop, the
-    postcondition is considered to be satisfied. Since total correctness is
-    a conjunction of partial correctness and termination, having partial
-    correctness-only definition here is useful.
-
-    A possibly more succinct style of ProcedureAssertsValid is using Hoare
-    triple (`Hoare.TripleWith` in `Strata.DL.Imperative.Logic.HoareTemplate`). Since
-    `Hoare.TripleWith` also
-    uses partial correctness, this seems natural. However, there is a very
-    subtle issue due to the fact that programs can also have `assert`s in the
-    middle of procedures, which leads `Hoare.TripleWith` to too weak notion to use
-    for us.
-
-    For example, let's consider this program:
-
-    ```
-    procedure P()
-    spec { ensures false; }
-    { while true {};
-    };
-    ```
-
-    Since the program iterates indefinitely, the postcondition is considered
-    met in our partial correctness definition; hence the contract is true.
-    This is OK.
-
-    However, if we slightly extend the body of P to include `assert false`:
-
-    ```
-    procedure P()
-    spec { ensures false; }
-    { assert false; // -- A
-      while true {};
-    };
-    ```
-
-    We know that the assert A does not hold. However, if we use `Hoare.TripleWith` which
-    inspects asserts and postconditions *only if the code terminates*,
-    we end up accepting this procedure P as 'correct'.
-
-    Therefore, we define ProcedureAssertsValid as a structure with three fields:
-    (0) the procedure exists in `p`,
-    (1) assert validity in the body, and
-    (2) postcondition validity on termination.
--/
-@[deprecated "use `ProcedureAssertsValidOnTraces`" (since := "2026-10-02")]
-structure ProcedureAssertsValid (params : InitEnvWFParams) (entryProcName : String)
-    (p : Program) : Prop where
-  /-- (0) The procedure name resolves in `p`. -/
-  procedureExists : ∃ proc, p.findProcByString? entryProcName = some proc
-  /-- (1) The asserts in the body of the procedure are valid. -/
-  assertsValid : ∀ a, AssertValidInProcedure params entryProcName p a
-  /-- (2) The postconditions hold on termination.
-      Uses `CoreBodyExec` to abstract over both structured and CFG bodies.
-      The factory is the initial environment's own `ρ₀.factory`. -/
-  postconditionsValid : ∀ proc, p.findProcByString? entryProcName = some proc →
-    WF.WFProcedureProp p proc →
-    ∀ (ρ₀ : Imperative.Env Expression),
-      ProcEnvWF params proc ρ₀ →
-      AxiomsBeforeProcedureDecl entryProcName p ρ₀ →
-      ∀ (σ' : CoreStore) (failed : Bool),
-        CoreBodyExec (p.findProcByString?) proc.body ρ₀ σ' failed →
-        (∀ (label : CoreLabel) (check : Procedure.Check),
-          (label, check) ∈ proc.spec.postconditions.toList →
-          check.attr = Procedure.CheckAttr.Default →
-          Expression.eval ρ₀.factory σ' check.expr = some HasBool.tt) ∧
-        failed = Bool.false
-
-/-- The existential dual of `ProcedureAssertsValid`, intended as the target
-    for bug-finding–style analyses.
-
-    0. The procedure exists in `p`;
-    1. Every assert in the body is *satisfiable*: some `ProcEnvWF` initial
-       environment reaches a configuration at the assert with the expression
-       evaluating to `tt`;
-    2. The postconditions are *satisfiable*: some terminating run from a
-       `ProcEnvWF` initial environment makes every non-free postcondition
-       evaluate to `tt` and leaves `hasFailure = false`. -/
-structure ProcedureAssertsSatisfiable (params : InitEnvWFParams) (entryProcName : String)
-    (p : Program) : Prop where
-  /-- (0) The procedure name resolves in `p`. -/
-  procedureExists : ∃ proc, p.findProcByString? entryProcName = some proc
-  /-- (1) The asserts in the body of the procedure are satisfiable.
-      `AssertSatisfiableInProcedure` is defined to be trivially true for
-      `AssertId`s that don't syntactically appear in the procedure body.
-
-      NOTE: this excludes satisfiability of the asserts that are not in the
-      body of the entryProcName but can be transitively reached. This is related
-      to the fact that call is defined as a command in Core. In Strata, commands
-      cannot change control flow according to small-step semantics, but a
-      function call jumping to the subprocedure is a change in its control flow.
-      Instead, if call is defined as a statement, not command, we can now describe
-      reachability & validity & satisfiability of the assertions in subprocedures.
-  -/
-  assertsSatisfiable : ∀ a, AssertSatisfiableInProcedure params entryProcName p a
-  /-- (2) Some terminating run satisfies all postconditions.
-      Note that postconditionsSatisfiable doesn't have to describe the satisfiability of postconditions
-      of other procedures called during execution of entryProcName because call_sem of EvalCommand
-      will have the postcondition check (for the particular input of procedure invocation)
-      already.
-  -/
-  postconditionsSatisfiable : ∀ proc, p.findProcByString? entryProcName = some proc →
-    WF.WFProcedureProp p proc →
-    ∃ (ρ₀ : Imperative.Env Expression) (σ' : CoreStore),
-      ProcEnvWF params proc ρ₀ ∧
-      AxiomsBeforeProcedureDecl entryProcName p ρ₀ ∧
-      CoreBodyExec (p.findProcByString?) proc.body ρ₀ σ' false ∧
-      (∀ (label : CoreLabel) (check : Procedure.Check),
-        (label, check) ∈ proc.spec.postconditions.toList →
-        check.attr = Procedure.CheckAttr.Default →
-        Expression.eval ρ₀.factory σ' check.expr = some HasBool.tt)
+    Spec (ProcEntryEnv params entryProcName p proc) ss (Stmt.block "" ss #[])
 
 /-! ## Procedure correctness on event traces
 
-The definitions below state the same properties over the event-trace semantics
+The definitions below state procedure correctness over the event-trace semantics
 `EventLang.core`. A run's trace records each assertion and assumption it
 executes, including those of its callees: a call emits the callee's
 non-free preconditions, the callee body's events, and its non-free
@@ -237,12 +84,6 @@ entry procedure: its own body's runs reach it. So the guarantee covers what a
 nonterminating callee does only through that callee's own correctness. -/
 
 variable (I : ConditionInterp Expression)
-
-/-- The initial environments a procedure body is verified from: `ProcEnvWF` and
-    the axioms and distincts visible to `entryProcName`. -/
-@[expose] def ProcEntryEnv (params : InitEnvWFParams) (entryProcName : String)
-    (p : Program) (proc : Procedure) (ρ₀ : Imperative.Env Expression) : Prop :=
-  ProcEnvWF params proc ρ₀ ∧ AxiomsBeforeProcedureDecl entryProcName p ρ₀
 
 /-- The events the body's caller observes after the body terminates in `ρ'`:
     the procedure's non-free postconditions, as the call rule emits them. -/
@@ -328,24 +169,29 @@ structure ProcedureAssertsSatisfiableOnTraces (params : InitEnvWFParams)
 /-! ## Procedure correctness read by denotation
 
 Core reads conditions by Lambda's denotational semantics (`DenoteBasedInterp`)
-in a model of `Core.Factory`, as Core's Hoare triples do. These instances fix
-that reading: validity must hold in every model, satisfiability in some model. -/
+over the factory visible before the entry procedure, matching
+`Procedure.contractTriple`. `ProcEntryEnv` fixes the entry's runtime factory to be
+over that factory, so every condition a run captures holds when it evaluates to
+`true` in the runtime factory's model, and the entry environments these instances
+quantify over range over every model. -/
 
 /-- **Deductive correctness of a procedure on event traces, read by
-    denotation**: `ProcedureAssertsValidOnTraces` in every model of
-    `Core.Factory`. -/
+    denotation**: `ProcedureAssertsValidOnTraces` over the factory visible before the
+    procedure. -/
 @[expose] def ProcedureAssertsValidOnTraces.denote (params : InitEnvWFParams)
     (entryProcName : String) (p : Program) : Prop :=
-  ∀ model : Lambda.Interp Core.Factory,
-    ProcedureAssertsValidOnTraces (Core.Logic.DenoteBasedInterp model) params entryProcName p
+  ProcedureAssertsValidOnTraces
+      (Core.Logic.DenoteBasedInterp (p.factoryBeforeProcedure entryProcName))
+    params entryProcName p
 
 /-- **Satisfiability of a procedure on event traces, read by denotation**:
-    `ProcedureAssertsSatisfiableOnTraces` in some model of `Core.Factory`. -/
+    `ProcedureAssertsSatisfiableOnTraces` over the factory visible before the
+    procedure. -/
 @[expose] def ProcedureAssertsSatisfiableOnTraces.denote (params : InitEnvWFParams)
     (entryProcName : String) (p : Program) : Prop :=
-  ∃ model : Lambda.Interp Core.Factory,
-    ProcedureAssertsSatisfiableOnTraces (Core.Logic.DenoteBasedInterp model)
-      params entryProcName p
+  ProcedureAssertsSatisfiableOnTraces
+    (Core.Logic.DenoteBasedInterp (p.factoryBeforeProcedure entryProcName))
+    params entryProcName p
 
 /-! ## Analysis -/
 
@@ -360,12 +206,12 @@ structure CoreVerifierInput where
 /-- The definition of Core verification under each `VerificationMode`. A
     `VCResults` array passing under the mode claims:
 
-    * `.deductive`: `ProcedureAssertsValidOnTraces.denote` (universal: in
-      every model, every assertion a run reaches is valid and every
-      terminating run satisfies the postconditions);
+    * `.deductive`: `ProcedureAssertsValidOnTraces.denote` (universal: from
+      every entry environment, so in every model, every assertion a run reaches
+      is valid and every terminating run satisfies the postconditions);
     * `.bugFinding`: `ProcedureAssertsSatisfiableOnTraces.denote`
-      (existential dual: in some model, some run reaches each assert and some
-      terminating run satisfies the postconditions);
+      (existential dual: from some entry environment, some run reaches each
+      assert and some terminating run satisfies the postconditions);
     * `.bugFindingAssumingCompleteSpec`: not yet specified. Every result
       passes and claims `False`, so no analyzer implements this mode yet.
     * `.deductiveAssumingSatisfiablePaths`: as `.deductive`. The mode's premise

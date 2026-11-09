@@ -17,7 +17,7 @@ declaration positions it covers, plus the `$result` carve-out and the fact that 
 non-leading `$` stays legal.
 
 These programs go through the *pipeline* (`testLaurelExecution`), which is where the
-check runs. `testLaurelResolution` calls `Laurel.resolve` directly and so does not
+check runs. `testLaurelResolution` calls resolution directly and so does not
 reach it — a test-harness entry point only, not a production one. The leading-`$`
 rejection for file-scope globals inside resolution is pinned in `GlobalVarTests.lean`.
 -/

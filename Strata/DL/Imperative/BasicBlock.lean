@@ -105,6 +105,15 @@ commands. -/
 @[expose] def DetBlock (Label Cmd : Type) (P : PureExpr) :=
   BasicBlock (DetTransferCmd Label P) Cmd
 
+/-- A list of labeled deterministic basic blocks. -/
+abbrev DetBlocks (Label Cmd : Type) (P : PureExpr) :=
+  List (Label × DetBlock Label Cmd P)
+
+/-- A one-command deterministic block with an unconditional successor. -/
+def detCmdBlock [HasBool P] (c : Cmd) (k : Label) :
+    DetBlock Label Cmd P :=
+  { cmds := [c], transfer := .goto k }
+
 -- `DetBlock` is a `def`, so instance search won't unfold it to the underlying
 -- `BasicBlock`; provide the `DecidableEq` instance explicitly.
 instance [DecidableEq Cmd] [DecidableEq P.Expr] [DecidableEq P.Ident] [DecidableEq Label] :
@@ -134,6 +143,20 @@ def DetBlock.stripMetaData (blk : DetBlock Label Cmd P) : DetBlock Label Cmd P :
 def CFG.stripDetMetaData (cfg : CFG Label (DetBlock Label Cmd P)) :
     CFG Label (DetBlock Label Cmd P) :=
   { cfg with blocks := cfg.blocks.map fun (lbl, blk) => (lbl, blk.stripMetaData) }
+
+/-- The labels a transfer command can jump to, without repeats (a `goto l` is
+`condGoto tt l l` and has the single target `l`). -/
+@[expose] def DetTransferCmd.targets [BEq Label] : DetTransferCmd Label P → List Label
+  | .condGoto _ lt lf _ => if lt == lf then [lt] else [lt, lf]
+  | .finish _ => []
+
+/-- Free variables of a transfer command's guard. -/
+@[expose] def DetTransferCmd.guardFvars [HasFvars P] : DetTransferCmd Label P → List P.Ident
+  | .condGoto p _ _ _ => HasFvars.getFvars p
+  | .finish _ => []
+
+/-- The block labels of a CFG, in order. -/
+@[expose] def CFG.labels (cfg : CFG Label Block) : List Label := cfg.blocks.map Prod.fst
 
 --------
 

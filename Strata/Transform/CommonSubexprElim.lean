@@ -9,7 +9,6 @@ public import Strata.Languages.Core.PipelinePhase
 import Strata.DL.Lambda.LExprType
 import Strata.Util.ListUtils
 public import Strata.Util.PtrCache
-import Lean.Util.ShareCommon
 
 /-! # Common Subexpression Elimination
 
@@ -229,33 +228,37 @@ private def collectExprsToAbbreviate (exprs : List Expression.Expr) :
 private structure Rewrite where
   original  : Expression.Expr
   rewritten : Expression.Expr
+  /-- Whether `rewritten` differs from `original` (when not, it IS `original`). -/
+  changed   : Bool
 
-/-- Traversal state for `replaceExprs`: the shared structural-hash `PtrCache`
+/-- Traversal state for `replaceSubexprs`: the shared structural-hash `PtrCache`
     plus the rewrite memo (bucketed by original-node hash). -/
 private structure RwState where
   cache : PtrCache hx := PtrCache.empty
   memo  : Std.HashMap UInt64 (List Rewrite) := {}
 
+/-- Structural hash of `e` (O(1) once cached) against the shared `PtrCache`,
+    returning the updated cache. -/
+private def hashCached (cache : PtrCache hx) (e : Expression.Expr) : UInt64 × PtrCache hx :=
+  let (r, cache) := (evalPtrCache e (LExpr.hashExprPtrCache e)).run cache
+  (r.output, cache)
+
 /-- Structural hash of `e` (O(1) once cached), threading the shared cache held
     in the `RwState`. -/
 private def RwState.hashM (e : Expression.Expr) : StateM RwState UInt64 := do
   let s ← get
-  let (r, cache) := (evalPtrCache e (LExpr.hashExprPtrCache e)).run s.cache
+  let (h, cache) := hashCached s.cache e
   set { s with cache }
-  return r.output
+  return h
 
 /-- If the original node `e` (identified by its structural hash `h`) matches a
-    replacement target, return the replacement; otherwise return `e'` (the node
-    rebuilt with its children already rewritten). -/
+    replacement target, return `some` of its replacement; otherwise `none`. -/
 private def tryReplace
     (replacements : Std.HashMap UInt64 (List (Expression.Expr × Expression.Expr)))
-    (h : UInt64) (e e' : Expression.Expr) : Expression.Expr :=
+    (h : UInt64) (e : Expression.Expr) : Option Expression.Expr :=
   match replacements[h]? with
-  | some pairs =>
-    match pairs.find? (fun (t, _) => exprEq e t) with
-    | some (_, replacement) => replacement
-    | none => e'
-  | none => e'
+  | some pairs => (pairs.find? (fun (t, _) => exprEq e t)).map (·.2)
+  | none => none
 
 /-- Bottom-up rewrite of `e` into its rewritten form. Each node's result is
     memoized in `RwState.memo`, keyed by the original node's structural hash
@@ -266,50 +269,95 @@ private def tryReplace
     duplicate `hashExpr`'s definition and risk drifting out of sync). -/
 private def replaceSubexprs
     (replacements : Std.HashMap UInt64 (List (Expression.Expr × Expression.Expr)))
-    (e : Expression.Expr) : StateM RwState Expression.Expr := do
+    (e : Expression.Expr) : StateM RwState (Expression.Expr × Bool) := do
   let ho ← RwState.hashM e
   let s ← get
   match (s.memo.getD ho []).find? (fun r => exprEq r.original e) with
-  | some r => return r.rewritten
+  | some r => return (r.rewritten, r.changed)
   | none =>
     -- Rebuild the node with its children rewritten (relevant when `e` itself is
-    -- not a target but contains targets in its subterms).
-    let e' ← match e with
-      | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => pure e
+    -- not a target but contains targets in its subterms). A node none of whose
+    -- children changed is returned as is rather than rebuilt: a rebuilt copy is
+    -- structurally equal to the original but physically distinct, so the next
+    -- round's `exprEq` against the original (still held by the declarations
+    -- this round prepends) would compare the two as whole trees.
+    let (e', ch) ← match e with
+      | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => pure (e, false)
       | .app m fn arg =>
-        let fn' ← replaceSubexprs replacements fn
-        let arg' ← replaceSubexprs replacements arg
-        pure (.app m fn' arg')
+        let (fn', c1) ← replaceSubexprs replacements fn
+        let (arg', c2) ← replaceSubexprs replacements arg
+        pure (if c1 || c2 then (.app m fn' arg', true) else (e, false))
       | .ite m c t f =>
-        let c' ← replaceSubexprs replacements c
-        let t' ← replaceSubexprs replacements t
-        let f' ← replaceSubexprs replacements f
-        pure (.ite m c' t' f')
+        let (c', c1) ← replaceSubexprs replacements c
+        let (t', c2) ← replaceSubexprs replacements t
+        let (f', c3) ← replaceSubexprs replacements f
+        pure (if c1 || c2 || c3 then (.ite m c' t' f', true) else (e, false))
       | .eq m e1 e2 =>
-        let e1' ← replaceSubexprs replacements e1
-        let e2' ← replaceSubexprs replacements e2
-        pure (.eq m e1' e2')
+        let (e1', c1) ← replaceSubexprs replacements e1
+        let (e2', c2) ← replaceSubexprs replacements e2
+        pure (if c1 || c2 then (.eq m e1' e2', true) else (e, false))
       | .abs m name ty body =>
-        let body' ← replaceSubexprs replacements body
-        pure (.abs m name ty body')
+        let (body', c1) ← replaceSubexprs replacements body
+        pure (if c1 then (.abs m name ty body', true) else (e, false))
       | .quant m k name ty tr body =>
-        let tr' ← replaceSubexprs replacements tr
-        let body' ← replaceSubexprs replacements body
-        pure (.quant m k name ty tr' body')
-    let result := tryReplace replacements ho e e'
-    modify fun s => { s with memo := s.memo.insert ho (⟨e, result⟩ :: s.memo.getD ho []) }
-    return result
+        let (tr', c1) ← replaceSubexprs replacements tr
+        let (body', c2) ← replaceSubexprs replacements body
+        pure (if c1 || c2 then (.quant m k name ty tr' body', true) else (e, false))
+    let (result, changed) := match tryReplace replacements ho e with
+      | some r => (r, true)
+      | none => (e', ch)
+    modify fun s => { s with memo := s.memo.insert ho (⟨e, result, changed⟩ :: s.memo.getD ho []) }
+    return (result, changed)
   termination_by e
-
-/-- Apply subexpression replacement to `e`. -/
-private def replaceExprs
-    (replacements : Std.HashMap UInt64 (List (Expression.Expr × Expression.Expr)))
-    (e : Expression.Expr) : Expression.Expr :=
-  (replaceSubexprs replacements e).run' {}
 
 ---------------------------------------------------------------------
 -- Program level common subexpression elimination
 ---------------------------------------------------------------------
+
+/-- Memo state for `typeCheckClosed`: the structural-hash `PtrCache` and the
+    types already computed, bucketed by structural hash and made collision-safe
+    by an `exprEq` guard. -/
+private structure TcState where
+  cache : PtrCache hx := PtrCache.empty
+  memo  : Std.HashMap UInt64 (List (Expression.Expr × Option LMonoTy)) := {}
+
+/-- The type memoized for `e` in `TcState`, computing it with `k` on a miss. -/
+private def tcMemo (e : Expression.Expr) (k : Unit → StateM TcState (Option LMonoTy)) :
+    StateM TcState (Option LMonoTy) := do
+  let s ← get
+  let (h, cache) := hashCached s.cache e
+  set { s with cache }
+  match ((← get).memo.getD h []).find? (fun p => exprEq p.1 e) with
+  | some p => return p.2
+  | none =>
+    let ty ← k ()
+    modify fun s => { s with memo := s.memo.insert h ((e, ty) :: s.memo.getD h []) }
+    return ty
+
+/-- `LExpr.typeCheck [] e`, memoized on the closed `app`/`ite`/`eq` nodes of
+    `e`. `LExpr.typeCheck` walks its argument as a tree, so on a duplicate
+    whose subterms are shared it costs the tree size, which grows exponentially
+    with the nesting of shared subterms; with the memo every distinct closed node
+    is checked once across all the targets of a round. Each node applies the same
+    rule as `LExpr.typeCheck` (`LMonoTy.appTy?`, `LMonoTy.iteTy?`,
+    `LMonoTy.eqTy?`; see `LExpr.typeCheck_app` and its siblings). Nodes under a
+    binder are checked by `LExpr.typeCheck` itself (their context is not empty). -/
+private def typeCheckClosed (e : Expression.Expr) : StateM TcState (Option LMonoTy) :=
+  match e with
+  | .app _ fn arg => tcMemo e fun _ => do
+    let fty ← typeCheckClosed fn
+    let aty ← typeCheckClosed arg
+    pure (do LMonoTy.appTy? (← fty) (← aty))
+  | .ite _ c t f => tcMemo e fun _ => do
+    let cty ← typeCheckClosed c
+    let tty ← typeCheckClosed t
+    let ety ← typeCheckClosed f
+    pure (do LMonoTy.iteTy? (← cty) (← tty) (← ety))
+  | .eq _ e1 e2 => tcMemo e fun _ => do
+    let ty1 ← typeCheckClosed e1
+    let ty2 ← typeCheckClosed e2
+    pure (do LMonoTy.eqTy? (← ty1) (← ty2))
+  | e => pure (LExpr.typeCheck [] e)
 
 /-- Fuel bounding `stmtRunCSE`'s fixpoint loop: the total number of distinct DAG
     nodes across the body's expressions. Each iteration lifts at least one
@@ -330,14 +378,15 @@ def stmtRunCSEIter (body : Statements) (startIdx : Nat) : Option (Statements × 
   -- it with an unannotated variable, which the SMT encoder cannot read. Keep
   -- each checked type with its target so declaration generation does not
   -- recursively type-check the expression again.
-  let targets := (collectExprsToAbbreviate (Statements.collectExprs body)).filterMap
-    (fun (h, dup) => (LExpr.typeCheck [] dup).map (fun ty => (h, dup, ty)))
+  let targets : List (UInt64 × Expression.Expr × LMonoTy) :=
+    ((collectExprsToAbbreviate (Statements.collectExprs body)).filterMapM (m := StateM TcState)
+      (fun (h, dup) => do return (← typeCheckClosed dup).map (fun ty => (h, dup, ty)))).run' {}
   if targets.isEmpty then
     none
   else
     -- Build all var declarations and the replacement map. The map value is a
     -- list of (target, replacement) pairs to be collision-safe under the
-    -- structural hash; see `replaceExprs` above.
+    -- structural hash; see `replaceSubexprs` above.
     let (revDecls, replacements, nextIdx) := targets.foldl
         (fun (decls, repMap, idx) (h, dup, freshTy) =>
       let freshName : CoreIdent := ⟨s!"{cseVarPrefix}{idx}", ()⟩
@@ -349,7 +398,11 @@ def stmtRunCSEIter (body : Statements) (startIdx : Nat) : Option (Statements × 
       let pairs := repMap.getD h []
       (varDecl :: decls, repMap.insert h ((dup, freshVar) :: pairs), idx + 1)
     ) ([], ({} : Std.HashMap UInt64 (List (Expression.Expr × Expression.Expr))), startIdx)
-    let body' := Statements.mapExprs (replaceExprs replacements) body
+    -- One memo for the whole body: the statements of a symbolically evaluated
+    -- body share most of their subterms, so a memo per expression would
+    -- rewrite those shared subterms once per statement.
+    let body' := (Statements.mapExprsM
+      (fun e => Prod.fst <$> replaceSubexprs replacements e) body).run' {}
     -- `reverseAux` reverses `revDecls` onto `body'` in a single pass, avoiding
     -- the intermediate list that `revDecls.reverse ++ body'` would allocate.
     some (revDecls.reverseAux body', nextIdx)
@@ -360,8 +413,10 @@ def stmtRunCSEIter (body : Statements) (startIdx : Nat) : Option (Statements × 
 def stmtRunCSE (body : Statements) (startIdx : Nat) : Statements × Nat :=
   -- For performance, maximize structural sharing of subexpressions up front, so
   -- the pointer-address hash cache hashes each distinct subterm exactly once
-  -- (and `exprEq`'s pointer fast path hits more often).
-  let body := Lean.ShareCommon.shareCommon body
+  -- (and `exprEq`'s pointer fast path hits more often). `shareCommon'` is the
+  -- runtime's direct implementation; `Lean.ShareCommon.shareCommon` goes through
+  -- a Lean-level object factory and cost more than ten times as much here.
+  let body := ShareCommon.shareCommon' body
   go (fuel (Statements.collectExprs body)) body startIdx
 where
   go (steps : Nat) (body : Statements) (startIdx : Nat) : Statements × Nat :=
@@ -407,13 +462,14 @@ def Core.commonSubexprElimPhase : Core.PipelinePhase :=
   Core.modelPreservingPipelinePhase "commonSubexprElim" Core.CSE.runCSE
     -- Abbreviating an expression is only sound if its value cannot change
     -- between the definition and the uses, which is what
-    -- `staticSingleAssignment` gives.
-    (requires := factSet![.noCFGBodies, .staticSingleAssignment])
+    -- `staticSingleAssignment` gives. The abbreviations are prepended to the
+    -- body, so the body must declare no variable they could read: `noInits`.
+    (requires := factSet![.noCFGBodies, .staticSingleAssignment, .noInits])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                          .hasObligationForm, .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated])
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered])
 
 end -- public section

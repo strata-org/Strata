@@ -181,7 +181,11 @@ def Command.inlineCallContract (E : Env)
     let outputNames := proc.header.outputs.keys
     let formal_arg_subst_filtered := formal_arg_subst.filter fun ((id, _), _) =>
       !outputNames.contains id
-    let postcond_subst := return_lhs_subst ++ formal_arg_subst_filtered
+    -- `old p`, for an in-out parameter `p`, is `p`'s argument value at the call.
+    let inoutNames := proc.header.getInoutParams.keys
+    let old_arg_subst := formal_arg_subst.filterMap fun ((id, ty), v) =>
+      if inoutNames.contains id then some ((CoreIdent.mkOld id.name, ty), v) else none
+    let postcond_subst := return_lhs_subst ++ formal_arg_subst_filtered ++ old_arg_subst
     let postconditions := callConditions proc .Ensures postconditions_typed postcond_subst
 
     -- Add postconditions to path conditions.
@@ -203,10 +207,10 @@ def Command.inlineCallContract (E : Env)
     let E := { E with error := some (.Misc f!"Procedure {pname} not found!") }
     (c', E)
 
-def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command × Env :=
+def Command.eval (E : Env) (c : Command) : Command × Env :=
   match c with
   | .cmd c =>
-    let (c, E) := Imperative.Cmd.eval { E with substMap := old_var_subst } c
+    let (c, E) := Imperative.Cmd.eval E c
     (.cmd c, E)
   | .call pname callArgs md =>
     if let some msg := callError? E.program pname callArgs then
@@ -402,7 +406,7 @@ private theorem extractMatchingSplitId_length (splitId : Nat)
     split at h
     · next sid _ _ =>
       split at h
-      · simp at h; obtain ⟨_, rfl⟩ := h
+      · simp only [Option.some.injEq, Prod.mk.injEq] at h; obtain ⟨_, rfl⟩ := h
         simp [List.length_reverse, List.length_append]; omega
       · have := ih (e_t :: acc) h; simp [List.length] at this ⊢; omega
     · have := ih (e_t :: acc) h; simp [List.length] at this ⊢; omega
@@ -504,7 +508,7 @@ private def mergeCondPairs (ewns : List EnvWithNext)
     have h_fcpl : 2 * r.paired.length + r.unmatched_t.length + r.unmatched_f.length =
         parts.1.length + parts.2.length := by
       have h := findCondPairs_length parts.1 [] parts.2 []
-      simp at h; exact h
+      simp only [List.length_nil, Nat.add_zero, Nat.mul_zero] at h; exact h
     have h_pos : r.paired.length ≥ 1 := by
       cases h : r.paired
       · simp [h, List.isEmpty] at h_nonempty
@@ -541,22 +545,38 @@ private def enforcePathCap (ewns : List EnvWithNext) (stats : Statistics) :
       else (ewns, stats)
     | .none => (ewns, stats)
 
+/-- What statement evaluation passes from each path to the next, in evaluation order: the
+    next split id, and the name supply, so that no two paths generate the same name. During
+    statement evaluation, an env holds an empty name supply except while one of its commands
+    runs. -/
+structure SharedEvalState where
+  nextSplitId : Nat := 0
+  names : Lambda.NameSupply := {}
+
 /-- Evaluate a single statement. `evalSub` and `processBranches` are
     the recursive calls from `evalAuxGo` and `processIteBranches`,
     threaded as parameters to break the mutual recursion. -/
-private def evalOneStmt (old_var_subst : SubstMap)
-    (Ewn : EnvWithNext) (s : Statement) (nextSplitId : Nat)
-    (evalSub : EnvWithNext → Statements → Nat → List EnvWithNext × Statistics × Nat)
+private def evalOneStmt
+    (Ewn : EnvWithNext) (s : Statement) (shared : SharedEvalState)
+    (evalSub : EnvWithNext → Statements → SharedEvalState →
+      List EnvWithNext × Statistics × SharedEvalState)
     (processBranches : EnvWithNext → Expression.Expr → Expression.Expr →
-      Statements → Statements → Nat → List EnvWithNext × Statistics × Nat) :
-    List EnvWithNext × Statistics × Nat :=
+      Statements → Statements → SharedEvalState → List EnvWithNext × Statistics × SharedEvalState) :
+    List EnvWithNext × Statistics × SharedEvalState :=
   match s with
   | .cmd c =>
-    let (_, E) := Command.eval Ewn.env old_var_subst c
-    ([{ Ewn with env := E, exitLabel := .none }], noStats, nextSplitId)
+    -- Commands are where names are generated: the env holds the supply while the command
+    -- runs. The supply and the env are taken out of `shared` and `Ewn` first, so each has one
+    -- reference during the command.
+    let names := shared.names
+    let shared := { shared with names := {} }
+    let splitConds := Ewn.splitConds
+    let (_, E) := Command.eval (Ewn.env.withNames names) c
+    let (names, E) := E.takeNames
+    ([{ env := E, exitLabel := .none, splitConds }], noStats, { shared with names })
   | .block label ss _ =>
     let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
-    let (Ewns, blockStats, nextSplitId) := evalSub Ewn ss nextSplitId
+    let (Ewns, blockStats, shared) := evalSub Ewn ss shared
     let Ewns := Ewns.map
                     (fun (ewn : EnvWithNext) =>
                          let exitLabel := match ewn.exitLabel with
@@ -565,7 +585,7 @@ private def evalOneStmt (old_var_subst : SubstMap)
                            | other => other
                          { ewn with env := ewn.env.popScope,
                                     exitLabel := exitLabel })
-    (Ewns, blockStats, nextSplitId)
+    (Ewns, blockStats, shared)
   | .ite cond then_ss else_ss _ =>
     match cond with
     | .nondet =>
@@ -577,7 +597,7 @@ private def evalOneStmt (old_var_subst : SubstMap)
               f!"nondeterministic `if *` reached symbolic evaluation; run the \
                  nondetElim transform to eliminate nondeterministic control first") },
             exitLabel := .none }],
-        noStats, nextSplitId)
+        noStats, shared)
     | .det c =>
       let cond' := Ewn.env.exprEval c
       match cond' with
@@ -585,70 +605,82 @@ private def evalOneStmt (old_var_subst : SubstMap)
         let (ss_live, ss_dead) :=
           if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
         let deadDeferred := collectDeadBranchDeferred ss_dead c Ewn.env.pathConditions.consume
-        let (Ewns, liveStats, nextSplitId) := evalSub Ewn ss_live nextSplitId
+        -- The dead arm's obligations are in source order: before the live arm's when the
+        -- dead arm is the then branch, after them otherwise (on the first path only).
+        let deadFirst := !cond'.isTrue
+        let Ewn := if deadFirst then { Ewn with env.deferred := Ewn.env.deferred ++ deadDeferred }
+                   else Ewn
+        -- The live arm is scoped as in `processIteBranches`: its declarations
+        -- are popped on every resulting path.
+        let (Ewns, liveStats, shared) :=
+          evalSub { Ewn with env := Ewn.env.pushEmptyScope } ss_live shared
+        let Ewns := Ewns.map fun (ewn : EnvWithNext) => { ewn with env := ewn.env.popScope }
         match Ewns with
-        | [] => ([], liveStats, nextSplitId)
+        | [] => ([], liveStats, shared)
         | first :: restEwns =>
-          ({ first with env.deferred :=
-              deadDeferred ++ first.env.deferred } :: restEwns, liveStats, nextSplitId)
-      | _ => processBranches Ewn c cond' then_ss else_ss nextSplitId
+          let first := if deadFirst then first
+                       else { first with env.deferred := first.env.deferred ++ deadDeferred }
+          (first :: restEwns, liveStats, shared)
+      | _ => processBranches Ewn c cond' then_ss else_ss shared
   | .loop _ _ _ _ _ =>
     -- Symbolic evaluation requires `noLoops`; a loop here is reported as an
     -- error rather than a panic.
     ([{ Ewn with env := { Ewn.env with error := some (.Misc
         f!"cannot evaluate a `loop` statement: eliminate loops before symbolic \
-           evaluation") } }], noStats, nextSplitId)
-  | .typeDecl _ _ => ([Ewn], noStats, nextSplitId)
-  | .exit l _ => ([{ Ewn with exitLabel := .some l}], noStats, nextSplitId)
+           evaluation") } }], noStats, shared)
+  | .typeDecl _ _ => ([Ewn], noStats, shared)
+  | .exit l _ => ([{ Ewn with exitLabel := .some l}], noStats, shared)
 
 mutual
 /-- Batch symbolic evaluator: evaluates a statement list for all input
     paths simultaneously. Between each statement, enforces the path cap
     by merging continuing (.none exit) paths. -/
-def evalAuxGo (steps : Nat) (old_var_subst : SubstMap)
-    (Ewns : List EnvWithNext) (ss : Statements) (nextSplitId : Nat) :
-    List EnvWithNext × Statistics × Nat :=
+def evalAuxGo (steps : Nat)
+    (Ewns : List EnvWithNext) (ss : Statements) (shared : SharedEvalState) :
+    List EnvWithNext × Statistics × SharedEvalState :=
   let (errors, good) := Ewns.partition (fun (ewn : EnvWithNext) => ewn.env.error.isSome)
-  if good.isEmpty then (Ewns, noStats, nextSplitId)
+  if good.isEmpty then (Ewns, noStats, shared)
   else
   match steps with
   | 0 => (good.map (fun ewn =>
       { ewn with env := { ewn.env with error := some .OutOfFuel }, exitLabel := .none })
       ++ errors,
       noStats.increment s!"{Evaluator.Stats.simulatingStmtHitOutOfFuel}" good.length,
-      nextSplitId)
+      shared)
   | steps' + 1 =>
     have _htermination_lemma : wfParam steps' < steps' + 1 := by simp [wfParam]
     match ss with
-    | [] => (Ewns, noStats, nextSplitId)
+    | [] => (Ewns, noStats, shared)
     | s :: rest =>
       let (continuing, exiting) :=
         good.partition (fun (ewn : EnvWithNext) => ewn.exitLabel.isNone)
-      let (resultsRev, stmtStats, nextSplitId) := continuing.foldl
-        (fun (acc, statsAcc, nId) (ewn : EnvWithNext) =>
-          let (res, stmtS, nId) := evalOneStmt old_var_subst ewn s nId
-            (fun e ss nId => evalAuxGo steps' old_var_subst [e] ss nId)
-            (fun e c c' t f nId => processIteBranches steps' old_var_subst e c c' t f nId)
-          (res.reverse ++ acc, statsAcc.merge stmtS, nId))
-        ([], noStats, nextSplitId)
+      -- Counted before the paths are evaluated, so each path's env has one reference.
+      let continuingCount := continuing.length
+      let (resultsRev, stmtStats, shared) := continuing.foldl
+        (fun (acc, statsAcc, shared) (ewn : EnvWithNext) =>
+          let (res, stmtS, shared) := evalOneStmt ewn s shared
+            (fun e ss shared => evalAuxGo steps' [e] ss shared)
+            (fun e c c' t f shared => processIteBranches steps' e c c' t f shared)
+          (res.reverse ++ acc, statsAcc.merge stmtS, shared))
+        ([], noStats, shared)
       let results := resultsRev.reverse
       let stmtStats := stmtStats.increment
-        s!"{Evaluator.Stats.simulatedStmts}" continuing.length
+        s!"{Evaluator.Stats.simulatedStmts}" continuingCount
       let (results, stmtStats) := enforcePathCap results stmtStats
       -- Exiting paths first to preserve source order: they were set
       -- to exit before this statement, so their obligations precede
       -- obligations generated by continuing paths.
       let allPaths := exiting ++ results ++ errors
-      let (finalResults, restStats, nextSplitId) :=
-        evalAuxGo steps' old_var_subst allPaths rest nextSplitId
-      (finalResults, stmtStats.merge restStats, nextSplitId)
+      let (finalResults, restStats, shared) :=
+        evalAuxGo steps' allPaths rest shared
+      (finalResults, stmtStats.merge restStats, shared)
   termination_by (steps, Imperative.Block.sizeOf ss)
 
-def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext)
+def processIteBranches (steps : Nat) (Ewn : EnvWithNext)
     (cond cond' : Expression.Expr) (then_ss else_ss : Statements)
-    (nextSplitId : Nat) : List EnvWithNext × Statistics × Nat :=
-  let splitId := nextSplitId
-  let nextSplitId := nextSplitId + 1
+    (shared : SharedEvalState) : List EnvWithNext × Statistics × SharedEvalState :=
+  let splitId := shared.nextSplitId
+  let shared := { shared with nextSplitId := shared.nextSplitId + 1 }
   let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
   let label_true := toString (f!"<label_ite_cond_true: {cond.eraseTypes}>")
   let label_false := toString (f!"<label_ite_cond_false: !({cond.eraseTypes})>")
@@ -665,24 +697,27 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
   have : Imperative.Block.sizeOf else_ss < Imperative.Block.sizeOf then_ss +
                                           Imperative.Block.sizeOf else_ss := by
    omega
-  let (Ewns_t, stats_t, nextSplitId) := evalAuxGo steps old_var_subst
-                  [{Ewn with env := {Ewn.env with pathConditions := path_conds_true}}]
-                  then_ss nextSplitId
-  let (Ewns_f, stats_f, nextSplitId) := evalAuxGo steps old_var_subst
-                  [{Ewn with env := {Ewn.env with pathConditions := path_conds_false,
-                                                  deferred := #[]}}]
-                  else_ss nextSplitId
+  -- Both branches' envs are built before either runs, so the then branch's env holds the
+  -- only reference to the obligations so far.
+  let pathCap := Ewn.env.pathCap
+  let Ewn_t := { Ewn with env := { Ewn.env with pathConditions := path_conds_true } }
+  let Ewn_f := { Ewn with env := { Ewn.env with pathConditions := path_conds_false,
+                                                deferred := #[] } }
+  let (Ewns_t, stats_t, shared) := evalAuxGo steps [Ewn_t] then_ss shared
+  let (Ewns_f, stats_f, shared) := evalAuxGo steps [Ewn_f] else_ss shared
   let branchStats := stats_t.merge stats_f
   match Ewns_t, Ewns_f with
   | [{ env := E_t, exitLabel := .none, ..}],
     [{ env := E_f, exitLabel := .none, ..}] =>
-    ([{ env := (Env.merge cond' E_t E_f).popScope, exitLabel := .none }],
+    -- Each branch's own scope is popped before merging, so the merge never sees a
+    -- variable declared inside a branch.
+    ([{ env := Env.merge cond' E_t.popScope E_f.popScope, exitLabel := .none }],
      branchStats.increment s!"{Evaluator.Stats.processIteBranches_merged}",
-     nextSplitId)
+     shared)
   | _, _ =>
     let popAll (ewns : List EnvWithNext) :=
       ewns.map (fun ewn => { ewn with env := ewn.env.popScope })
-    match Ewn.env.pathCap with
+    match pathCap with
     | .some _ =>
       let tagSplit (ewns : List EnvWithNext) (side : Bool) : List EnvWithNext :=
         ewns.map (fun ewn =>
@@ -690,20 +725,23 @@ def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNe
       let Ewns_tagged := tagSplit Ewns_t true ++ tagSplit Ewns_f false
       (popAll Ewns_tagged,
        branchStats.increment s!"{Evaluator.Stats.processIteBranches_diverged}",
-       nextSplitId)
+       shared)
     | .none =>
       (popAll (Ewns_t ++ Ewns_f),
        branchStats.increment s!"{Evaluator.Stats.processIteBranches_diverged}",
-       nextSplitId)
+       shared)
   termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss)
 
 end
 
-def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optExit : Option (Option String)) :
+def evalAux (E : Env) (ss : Statements) (optExit : Option (Option String)) :
   List EnvWithNext × Statistics :=
+  -- The name supply leaves `E` and is threaded through every path; each result gets the
+  -- final one.
+  let (names, E) := E.takeNames
   let ewn : EnvWithNext := { env := E, exitLabel := optExit }
-  let (result, stats, _) := evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst [ewn] ss 0
-  (result, stats)
+  let (result, stats, shared) := evalAuxGo (Imperative.Block.sizeOf ss) [ewn] ss { names }
+  (result.map fun ewn => { ewn with env := ewn.env.withNames shared.names }, stats)
 
 def exitToError : EnvWithNext → Env
   | { env, exitLabel := .none, .. } => env
@@ -712,19 +750,19 @@ def exitToError : EnvWithNext → Env
 
 /--
 A symbolic simulator for statements yielding a list of resulting environments.
-
-The argument `old_var_subst` below is a substitution map from global variables
-to their pre-state value in the enclosing procedure of `ss`.
 -/
-def eval (E : Env) (old_var_subst : SubstMap) (ss : Statements) : List Env × Statistics :=
-  let (ewns, stats) := evalAux E old_var_subst ss .none
+def eval (E : Env) (ss : Statements) : List Env × Statistics :=
+  let (ewns, stats) := evalAux E ss .none
   (ewns.map exitToError, stats)
 
 /--
 A symbolic simulator for statements yielding one environment.
 -/
-def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Env :=
-  match (eval E old_var_subst ss).fst with
+def evalOne (E : Env) (ss : Statements) : Env :=
+  -- `E` stays alive for the error case without the name supply, so the supply has one
+  -- reference during evaluation.
+  let (names, E) := E.takeNames
+  match (eval (E.withNames names) ss).fst with
   | [E'] => E'
   | _ => ({ E with error := some (.Misc "More than one result environment") })
 

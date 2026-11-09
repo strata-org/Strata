@@ -45,7 +45,7 @@ open Imperative
 
 /-- Every successor of a must-terminating configuration must terminate. -/
 theorem EventLang.MustTerminate.of_step
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT}
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT}
     {cfg cfg' : EL.CfgT} {emitted : List EventT}
     (hterm : EL.MustTerminate cfg) (hstep : EL.step cfg emitted cfg') :
     EL.MustTerminate cfg' := by
@@ -58,7 +58,7 @@ theorem EventLang.MustTerminate.of_step
 /-- Every endpoint reachable from a must-terminating configuration must
 terminate. -/
 theorem EventLang.MustTerminate.of_traceStar
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT}
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT}
     {cfg cfg' : EL.CfgT} {trace : List EventT}
     (hterm : EL.MustTerminate cfg) (hrun : EL.traceStar cfg trace cfg') :
     EL.MustTerminate cfg' := by
@@ -71,7 +71,7 @@ theorem EventLang.MustTerminate.of_traceStar
 configuration. This chooses one branch only after all branches have already been
 proved terminating by `MustTerminate`. -/
 theorem EventLang.MustTerminate.reaches_final
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT} {cfg : EL.CfgT}
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT} {cfg : EL.CfgT}
     (hterm : EL.MustTerminate cfg) :
     ∃ (trace : List EventT) (ρ' : Env P),
       EL.traceStar cfg trace (EL.terminalCfg ρ') ∨
@@ -91,7 +91,7 @@ theorem EventLang.MustTerminate.reaches_final
 
 /-- A final configuration takes no step. -/
 private theorem EventLang.Final.no_step
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT}
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT}
     {cfg cfg' : EL.CfgT} {emitted : List EventT}
     (hfinal : EL.Final cfg) : ¬ EL.step cfg emitted cfg' := by
   rcases hfinal with ⟨ρ, rfl⟩ | ⟨label, ρ, rfl⟩
@@ -100,7 +100,7 @@ private theorem EventLang.Final.no_step
 
 /-- A final configuration does not diverge. -/
 theorem EventLang.Final.not_canDiverge
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT} {cfg : EL.CfgT}
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT} {cfg : EL.CfgT}
     (hfinal : EL.Final cfg) : ¬ EL.CanDiverge cfg := by
   rintro ⟨f, rfl, hf⟩
   obtain ⟨_, hstep⟩ := hf 0
@@ -108,7 +108,7 @@ theorem EventLang.Final.not_canDiverge
 
 /-- A stuck configuration does not diverge. -/
 theorem EventLang.Stuck.not_canDiverge
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT} {cfg : EL.CfgT}
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT} {cfg : EL.CfgT}
     (hstuck : EL.Stuck cfg) : ¬ EL.CanDiverge cfg := by
   rintro ⟨f, rfl, hf⟩
   obtain ⟨_, hstep⟩ := hf 0
@@ -117,7 +117,7 @@ theorem EventLang.Stuck.not_canDiverge
 /-- **A configuration in a set whose every member has a successor in the set
     can diverge.** The sequence is built by choice. -/
 theorem EventLang.CanDiverge.of_invariant
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT} (Q : EL.CfgT → Prop)
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT} (Q : EL.CfgT → Prop)
     (next : ∀ c, Q c → ∃ c' emitted, EL.step c emitted c' ∧ Q c')
     {cfg : EL.CfgT} (h : Q cfg) : EL.CanDiverge cfg :=
   ⟨fun i => (EventLang.chooseSeq Q next ⟨cfg, h⟩ i).1, rfl, fun i =>
@@ -126,7 +126,7 @@ theorem EventLang.CanDiverge.of_invariant
 
 /-- A configuration that steps to one that can diverge can diverge. -/
 theorem EventLang.CanDiverge.step
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT}
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT}
     {cfg cfg' : EL.CfgT} {emitted : List EventT}
     (hstep : EL.step cfg emitted cfg') (h : EL.CanDiverge cfg') : EL.CanDiverge cfg := by
   obtain ⟨f, h0, hf⟩ := h
@@ -139,7 +139,7 @@ theorem EventLang.CanDiverge.step
     reaches another member in at least one step. This is how a concrete loop is
     shown to diverge: `R` is the set of states at the loop head. -/
 theorem EventLang.CanDiverge.of_cycle
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT} (R : EL.CfgT → Prop)
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT} (R : EL.CfgT → Prop)
     (hR : ∀ c, R c → ∃ emitted c₁ trace c', EL.step c emitted c₁ ∧
       EL.traceStar c₁ trace c' ∧ R c')
     {cfg : EL.CfgT} (h : R cfg) : EL.CanDiverge cfg := by
@@ -155,7 +155,7 @@ theorem EventLang.CanDiverge.of_cycle
 
 /-- A configuration that must terminate is not stuck. -/
 private theorem EventLang.MustTerminate.not_stuck
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT} {cfg : EL.CfgT}
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT} {cfg : EL.CfgT}
     (hterm : EL.MustTerminate cfg) : ¬ EL.Stuck cfg := by
   intro hstuck
   cases hterm with
@@ -167,14 +167,14 @@ private theorem EventLang.MustTerminate.not_stuck
 
 /-- No execution from a configuration that must terminate gets stuck. -/
 theorem EventLang.MustTerminate.not_mayGetStuck
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT} {cfg : EL.CfgT}
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT} {cfg : EL.CfgT}
     (hterm : EL.MustTerminate cfg) : ¬ EL.MayGetStuck cfg := by
   rintro ⟨_, _, hrun, hstuck⟩
   exact (hterm.of_traceStar hrun).not_stuck hstuck
 
 /-- A configuration that must terminate does not diverge. -/
 theorem EventLang.MustTerminate.not_canDiverge
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT} {cfg : EL.CfgT}
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT} {cfg : EL.CfgT}
     (hterm : EL.MustTerminate cfg) : ¬ EL.CanDiverge cfg := by
   induction hterm with
   | terminal ρ => exact EventLang.Final.not_canDiverge (.inl ⟨ρ, rfl⟩)
@@ -189,7 +189,7 @@ theorem EventLang.MustTerminate.not_canDiverge
     Classical: from a configuration that does not must-terminate, it picks a
     successor that does not either, and repeats that choice forever. -/
 private theorem EventLang.mustTerminate_of_not_canDiverge
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT} {cfg : EL.CfgT}
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT} {cfg : EL.CfgT}
     (hdiv : ¬ EL.CanDiverge cfg) (hstuck : ¬ EL.MayGetStuck cfg) : EL.MustTerminate cfg := by
   apply Classical.byContradiction
   intro hnt
@@ -215,7 +215,7 @@ private theorem EventLang.mustTerminate_of_not_canDiverge
 /-- A configuration must terminate exactly when it neither diverges nor may get
     stuck. -/
 theorem EventLang.mustTerminate_iff
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT} {cfg : EL.CfgT} :
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT} {cfg : EL.CfgT} :
     EL.MustTerminate cfg ↔ ¬ EL.CanDiverge cfg ∧ ¬ EL.MayGetStuck cfg :=
   ⟨fun h => ⟨h.not_canDiverge, h.not_mayGetStuck⟩,
    fun ⟨hdiv, hstuck⟩ => EventLang.mustTerminate_of_not_canDiverge hdiv hstuck⟩
@@ -223,7 +223,7 @@ theorem EventLang.mustTerminate_iff
 /-- A configuration fails to must-terminate exactly when it diverges or may get
     stuck. -/
 theorem EventLang.not_mustTerminate_iff
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT} {cfg : EL.CfgT} :
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT} {cfg : EL.CfgT} :
     ¬ EL.MustTerminate cfg ↔ EL.CanDiverge cfg ∨ EL.MayGetStuck cfg := by
   rw [EventLang.mustTerminate_iff]
   constructor
@@ -240,14 +240,14 @@ theorem EventLang.not_mustTerminate_iff
 /-- Every execution of `s` from `ρ₀` terminates exactly when none diverges and
     none gets stuck. -/
 theorem EventLang.terminates_iff
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT} {s : EL.StmtT} {ρ₀ : Env P} :
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT} {s : EL.StmtT} {ρ₀ : Env P} :
     EL.Terminates s ρ₀ ↔
       ¬ EL.CanDiverge (EL.stmtCfg s ρ₀) ∧ ¬ EL.MayGetStuck (EL.stmtCfg s ρ₀) :=
   EventLang.mustTerminate_iff
 
 /-- **A configuration that must diverge can diverge.** -/
 theorem EventLang.MustDiverge.canDiverge
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT} {cfg : EL.CfgT}
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT} {cfg : EL.CfgT}
     (h : EL.MustDiverge cfg) : EL.CanDiverge cfg := by
   refine EventLang.CanDiverge.of_invariant (EL := EL) EL.MustDiverge ?_ h
   intro c hc
@@ -257,13 +257,13 @@ theorem EventLang.MustDiverge.canDiverge
 
 /-- A configuration that must diverge does not must-terminate. -/
 theorem EventLang.MustDiverge.not_mustTerminate
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT} {cfg : EL.CfgT}
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT} {cfg : EL.CfgT}
     (h : EL.MustDiverge cfg) : ¬ EL.MustTerminate cfg :=
   fun ht => ht.not_canDiverge h.canDiverge
 
 /-- **A finite execution is one within some bound.** -/
 theorem EventLang.traceStar_iff_reachesWithin
-    {P : PureExpr} {EventT : Type} {EL : EventLang P EventT}
+    {P : PureExpr} {EventT : Type _} {EL : EventLang P EventT}
     {cfg cfg' : EL.CfgT} {trace : List EventT} :
     EL.traceStar cfg trace cfg' ↔ ∃ n, EL.ReachesWithin n cfg trace cfg' :=
   reflTransTrace_iff_reflTransTraceN

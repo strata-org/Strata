@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Languages.Core
+meta import StrataTest.Languages.Core.Examples.DatatypePruningTestUtils
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -163,6 +164,82 @@ info: true
 
 /--
 info:
+Obligation: eval_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: eval_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: eval_terminates_2
+Property: assert
+Result: ✅ pass
+
+Obligation: eval_terminates_3
+Property: assert
+Result: ✅ pass
+
+Obligation: eval_terminates_4
+Property: assert
+Result: ✅ pass
+
+Obligation: eval_terminates_5
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_2
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_3
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_4
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_5
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_6
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_7
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_8
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_9
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_10
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_11
+Property: assert
+Result: ✅ pass
+
+Obligation: holds_terminates_12
+Property: assert
+Result: ✅ pass
+
 Obligation: eval_body_calls_Term..val_0
 Property: assert
 Result: ✅ pass
@@ -240,82 +317,6 @@ Property: assert
 Result: ✅ pass
 
 Obligation: holds_body_calls_Formula..cons_12
-Property: assert
-Result: ✅ pass
-
-Obligation: eval_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: eval_terminates_1
-Property: assert
-Result: ✅ pass
-
-Obligation: eval_terminates_2
-Property: assert
-Result: ✅ pass
-
-Obligation: eval_terminates_3
-Property: assert
-Result: ✅ pass
-
-Obligation: eval_terminates_4
-Property: assert
-Result: ✅ pass
-
-Obligation: eval_terminates_5
-Property: assert
-Result: ✅ pass
-
-Obligation: holds_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: holds_terminates_1
-Property: assert
-Result: ✅ pass
-
-Obligation: holds_terminates_2
-Property: assert
-Result: ✅ pass
-
-Obligation: holds_terminates_3
-Property: assert
-Result: ✅ pass
-
-Obligation: holds_terminates_4
-Property: assert
-Result: ✅ pass
-
-Obligation: holds_terminates_5
-Property: assert
-Result: ✅ pass
-
-Obligation: holds_terminates_6
-Property: assert
-Result: ✅ pass
-
-Obligation: holds_terminates_7
-Property: assert
-Result: ✅ pass
-
-Obligation: holds_terminates_8
-Property: assert
-Result: ✅ pass
-
-Obligation: holds_terminates_9
-Property: assert
-Result: ✅ pass
-
-Obligation: holds_terminates_10
-Property: assert
-Result: ✅ pass
-
-Obligation: holds_terminates_11
-Property: assert
-Result: ✅ pass
-
-Obligation: holds_terminates_12
 Property: assert
 Result: ✅ pass
 
@@ -413,6 +414,14 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify termFormulaPgm (options := .quiet)
+
+-- The same programs verify identically with `removeIrrelevantDatatypes`.
+/--
+info: 1 of 1 the same
+-/
+#guard_msgs in
+#eval Core.RemoveIrrelevantDatatypes.TestUtils.sameWithFlag
+  [termFormulaPgm]
 
 end Strata.TermFormulaTest
 end

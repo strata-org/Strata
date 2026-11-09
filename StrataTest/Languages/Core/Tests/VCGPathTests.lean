@@ -427,8 +427,9 @@ Result: ❌ fail
 --
 -- When an ITE condition is a concrete `true` or `false`, one branch is
 -- unreachable. The evaluator must still generate obligations for any
--- `assert` or `cover` commands in the dead branch. Dead-branch
--- obligations come before any live-branch obligations.
+-- `assert` or `cover` commands in the dead branch. Obligations are in program
+-- order on the first path: a dead `then` branch's before the live `else`
+-- branch's, a dead `else` branch's after the live `then` branch's.
 ---------------------------------------------------------------------
 
 def concreteTrueDeadElse :=
@@ -445,11 +446,11 @@ procedure p() {
 
 /--
 info:
-Obligation: dead_else
+Obligation: live_then
 Property: assert
 Result: ✅ pass
 
-Obligation: live_then
+Obligation: dead_else
 Property: assert
 Result: ✅ pass
 -/
@@ -522,11 +523,11 @@ procedure p() {
 
 /--
 info:
-Obligation: dead_then
+Obligation: pre
 Property: assert
 Result: ✅ pass
 
-Obligation: pre
+Obligation: dead_then
 Property: assert
 Result: ✅ pass
 
@@ -603,15 +604,15 @@ procedure p(x : bool) {
 
 /--
 info:
-Obligation: dead_else
-Property: assert
-Result: ✅ pass
-
 Obligation: pre
 Property: assert
 Result: ✅ pass
 
 Obligation: then_path
+Property: assert
+Result: ✅ pass
+
+Obligation: dead_else
 Property: assert
 Result: ✅ pass
 
@@ -649,11 +650,11 @@ procedure q(x : bool) {
 
 /--
 info:
-Obligation: dead_then
+Obligation: pre
 Property: assert
 Result: ✅ pass
 
-Obligation: pre
+Obligation: dead_then
 Property: assert
 Result: ✅ pass
 
@@ -671,6 +672,229 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify noDupConcreteFalse (options := .quiet)
+
+---------------------------------------------------------------------
+/-! ## Test: scope of the live arm of an `if` whose guard folds to a literal
+
+When the guard of an `if` evaluates to `true` or `false`, the symbolic
+evaluator runs only the live arm. Variables declared in that arm are local to
+it, so a later declaration of the same name in the enclosing block is a fresh
+declaration, and every path that reaches a later assertion yields a VC for it.
+-/
+
+
+/-- On the path `d <= 0` the block declares `z` in the arm of `if (true)` and
+again after it; `b` fails on that path (for example `c = 0`). -/
+private def foldedArmThenRedeclare : StrataDDM.Program :=
+#strata
+program Core;
+procedure P(c : int, d : int, out x : int)
+{
+  L: {
+    if (int.gt(d, 0)) { assume [f]: false; exit L; } else { }
+    if (true) { var z : int; } else { }
+    var z : int;
+  }
+  assert [b]: int.ge(c, 2);
+};
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: b
+Property: assert
+Assumptions:
+<label_ite_cond_true: int.gt(d, 0)>: int.gt(d@1, 0)
+f: false
+Obligation:
+int.ge(c@1, 2)
+
+Label: b
+Property: assert
+Assumptions:
+<label_ite_cond_false: !(int.gt(d, 0))>: if int.gt(d@1, 0) then false else true
+Obligation:
+int.ge(c@1, 2)
+
+---
+info:
+Obligation: b
+Property: assert
+Result: ❌ fail
+Model:
+(c@1, 0) (d@1, 0)
+-/
+#guard_msgs in
+#eval Core.verify foldedArmThenRedeclare
+
+/-- An assertion after the second declaration of `z`, on the path `d <= 0`. -/
+private def foldedArmAssertAfterRedeclare : StrataDDM.Program :=
+#strata
+program Core;
+procedure P(c : int, d : int, out x : int)
+{
+  L: {
+    if (int.gt(d, 0)) { assume [f]: false; exit L; } else { }
+    if (true) { var z : int; } else { }
+    var z : int;
+    assert [a]: int.ge(c, 3);
+  }
+  assert [b]: int.ge(c, 2);
+};
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: b
+Property: assert
+Assumptions:
+<label_ite_cond_true: int.gt(d, 0)>: int.gt(d@1, 0)
+f: false
+Obligation:
+int.ge(c@1, 2)
+
+Label: a
+Property: assert
+Assumptions:
+<label_ite_cond_false: !(int.gt(d, 0))>: if int.gt(d@1, 0) then false else true
+Obligation:
+int.ge(c@1, 3)
+
+Label: b
+Property: assert
+Assumptions:
+<label_ite_cond_false: !(int.gt(d, 0))>: if int.gt(d@1, 0) then false else true
+Obligation:
+int.ge(c@1, 2)
+
+---
+info:
+Obligation: b
+Property: assert
+Result: ❌ fail
+Model:
+(d@1, 0) (c@1, 0) 
+
+Obligation: a
+Property: assert
+Result: ❌ fail
+Model:
+(c@1, 0) (d@1, 0)
+-/
+#guard_msgs in
+#eval Core.verify foldedArmAssertAfterRedeclare
+
+/-- Single path: the live arm of `if (true)` and of `if (false)` declares a
+variable that is declared again after the `if`. -/
+private def foldedArmSinglePath : StrataDDM.Program :=
+#strata
+program Core;
+procedure P(out x : int)
+{
+  if (true) { var y : int; } else { }
+  var y : int;
+  if (false) { } else { var w : int; }
+  var w : int;
+  assume [p]: int.gt(y, w);
+  assert [yw]: int.ge(y, w);
+};
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: yw
+Property: assert
+Assumptions:
+p: int.gt(y@2, w@2)
+Obligation:
+int.ge(y@2, w@2)
+
+---
+info:
+Obligation: yw
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify foldedArmSinglePath
+
+/-- Guards `1 == 1` and `c == c`. -/
+private def foldedArmEqGuards : StrataDDM.Program :=
+#strata
+program Core;
+procedure P(c : int, out x : int)
+{
+  if (1 == 1) { var y : int; } else { }
+  var y : int;
+  if (c == c) { var w : int; } else { }
+  var w : int;
+  assume [p]: int.gt(y, w);
+  assert [yw]: int.ge(y, w);
+};
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: yw
+Property: assert
+Assumptions:
+p: int.gt(y@2, w@2)
+Obligation:
+int.ge(y@2, w@2)
+
+---
+info:
+Obligation: yw
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify foldedArmEqGuards
+
+/-- The live arm of `if (true)` exits the block `L`: the arm's scope is popped
+on the exiting path too, so `L` pops its own scope and `w` is declared again
+afterwards without error. -/
+private def foldedArmExit : StrataDDM.Program :=
+#strata
+program Core;
+procedure P(out x : int)
+{
+  L: { var w : int; if (true) { exit L; } else { } }
+  var w : int;
+  assert [w0]: int.ge(w, w);
+};
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: w0
+Property: assert
+Obligation:
+int.ge(w@2, w@2)
+
+---
+info:
+Obligation: w0
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify foldedArmExit
 
 ---------------------------------------------------------------------
 

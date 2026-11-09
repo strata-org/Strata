@@ -15,7 +15,7 @@ program Laurel;
 
 procedure bytes(s: Sequence<int>): bool
 {
-  forall(k: int) => 0 <= k ==> k < seqLength(s) ==> 0 <= seqSelect(s, k) && seqSelect(s, k) <= 255
+  return forall(k: int) => 0 <= k ==> k < seqLength(s) ==> 0 <= seqSelect(s, k) && seqSelect(s, k) <= 255
 };
 
 procedure encode(value: int) returns (out: Sequence<int>)
@@ -70,7 +70,7 @@ program Laurel;
 
 procedure bytes(s: Sequence<int>): bool
 {
-  forall(k: int) => 0 <= k ==> k < seqLength(s) ==> 0 <= seqSelect(s, k) && seqSelect(s, k) <= 255
+  return forall(k: int) => 0 <= k ==> k < seqLength(s) ==> 0 <= seqSelect(s, k) && seqSelect(s, k) <= 255
 };
 
 procedure encode(value: int) returns (out: Sequence<int>)

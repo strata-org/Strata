@@ -86,6 +86,7 @@ type W64;
 type W128;
 type Map (dom : Type, range : Type);
 type Sequence (elem : Type);
+type Set (elem : Type);
 
 // ---- Type variables and binders ----
 category TypeVar;
@@ -168,29 +169,51 @@ fn map_const (K : Type, V : Type, v : V) : Map K V => "mapConst" "<" K ">" "(" v
 
 // ---- Sequences ----
 // seq_empty uses explicit type annotation syntax since there are no value
-// arguments to infer the type parameter from.
+// arguments to infer the type parameter from. Operators sharing a signature
+// share one wrapper fn over a category of operator names, which keeps the
+// generated Expr type small.
 fn seq_empty (A : Type) : Sequence A => "Sequence.empty" "<" A ">" "(" ")";
 fn seq_length (A : Type, s : Sequence A) : int => "Sequence.length" "(" s ")";
-fn seq_select (A : Type, s : Sequence A, i : int) : A => "Sequence.select" "(" s ", " i ")";
-fn seq_select_unsafe (A : Type, s : Sequence A, i : int) : A => "Sequence.select!" "(" s ", " i ")";
+category SeqSelectOp;
+op seq_select : SeqSelectOp => "Sequence.select";
+op seq_select_unsafe : SeqSelectOp => "Sequence.select!";
+fn seqSelectOp (A : Type, f : SeqSelectOp, s : Sequence A, i : int) : A =>
+  f "(" s ", " i ")";
 fn seq_append (A : Type, s1 : Sequence A, s2 : Sequence A) : Sequence A =>
   "Sequence.append" "(" s1 ", " s2 ")";
 fn seq_build (A : Type, s : Sequence A, v : A) : Sequence A =>
   "Sequence.build" "(" s ", " v ")";
-fn seq_update (A : Type, s : Sequence A, i : int, v : A) : Sequence A =>
-  "Sequence.update" "(" s ", " i ", " v ")";
-fn seq_update_unsafe (A : Type, s : Sequence A, i : int, v : A) : Sequence A =>
-  "Sequence.update!" "(" s ", " i ", " v ")";
+category SeqUpdateOp;
+op seq_update : SeqUpdateOp => "Sequence.update";
+op seq_update_unsafe : SeqUpdateOp => "Sequence.update!";
+fn seqUpdateOp (A : Type, f : SeqUpdateOp, s : Sequence A, i : int, v : A)
+  : Sequence A => f "(" s ", " i ", " v ")";
 fn seq_contains (A : Type, s : Sequence A, v : A) : bool =>
   "Sequence.contains" "(" s ", " v ")";
-fn seq_take (A : Type, s : Sequence A, n : int) : Sequence A =>
-  "Sequence.take" "(" s ", " n ")";
-fn seq_take_unsafe (A : Type, s : Sequence A, n : int) : Sequence A =>
-  "Sequence.take!" "(" s ", " n ")";
-fn seq_drop (A : Type, s : Sequence A, n : int) : Sequence A =>
-  "Sequence.drop" "(" s ", " n ")";
-fn seq_drop_unsafe (A : Type, s : Sequence A, n : int) : Sequence A =>
-  "Sequence.drop!" "(" s ", " n ")";
+category SeqSliceOp;
+op seq_take : SeqSliceOp => "Sequence.take";
+op seq_take_unsafe : SeqSliceOp => "Sequence.take!";
+op seq_drop : SeqSliceOp => "Sequence.drop";
+op seq_drop_unsafe : SeqSliceOp => "Sequence.drop!";
+fn seqSliceOp (A : Type, f : SeqSliceOp, s : Sequence A, n : int)
+  : Sequence A => f "(" s ", " n ")";
+
+// ---- Sets ----
+// set_empty takes an explicit element type, as seq_empty does.
+fn set_empty (A : Type) : Set A => "Set.empty" "<" A ">" "(" ")";
+fn set_contains (A : Type, s : Set A, x : A) : bool =>
+  "Set.contains" "(" s ", " x ")";
+category SetElemOp;
+op set_insert : SetElemOp => "Set.insert";
+op set_remove : SetElemOp => "Set.remove";
+fn setElemOp (A : Type, f : SetElemOp, s : Set A, x : A) : Set A =>
+  f "(" s ", " x ")";
+category SetBinOp;
+op set_union : SetBinOp => "Set.union";
+op set_intersect : SetBinOp => "Set.intersect";
+op set_difference : SetBinOp => "Set.difference";
+fn setBinOp (A : Type, f : SetBinOp, s : Set A, t : Set A) : Set A =>
+  f "(" s ", " t ")";
 
 // ---- Strings ----
 // FIXME: Define polymorphic length and concat functions?
@@ -986,30 +1009,40 @@ op transfer_cond_goto (c : Expr, lt : Ident, lf : Ident) : Transfer =>
 op transfer_return : Transfer =>
   "return;";
 
-// A single CFG basic block: label, commands, transfer
+// The commands of a CFG basic block. The newline after them is printed only
+// when there is at least one command, so a block with only a transfer prints
+// no blank line.
+category CFGCmds;
+op cfg_cmds_nil () : CFGCmds =>;
+@[scope(cmds)]
+op cfg_cmds (@[nonempty] cmds : NewlineSepBy Statement) : CFGCmds => cmds "\n";
+
+// A single CFG basic block: label, commands, transfer. The transfer is in scope
+// of the block's own commands, so its condition sees the locals they declare.
 category CFGBlock;
 @[scope(cmds)]
-op cfg_block (label : Ident, cmds : Seq Statement, tr : Transfer) : CFGBlock =>
-  label ":" " {\n" indent(2, cmds) "  " tr "\n}";
+op cfg_block (label : Ident, cmds : CFGCmds, @[scope(cmds)] tr : Transfer) : CFGBlock =>
+  label ":" " {" indent(2, "\n" cmds tr) "\n}";
 
 // A list of CFG blocks
 category CFGBlocks;
-op cfg_blocks_one (b : CFGBlock) : CFGBlocks => b;
+op cfg_blocks_one (b : CFGBlock) : CFGBlocks => b:0;
 // `@[scope(b)]` makes `b`'s declarations visible to every textually-later
 // block. Visibility is purely left-to-right in source order — it is not
 // goto/dominance aware, so a block cannot see declarations in a block written
 // after it, even when the control-flow graph reaches it only via that later
 // block. If a later block re-declares a propagated name it silently shadows
-// the earlier one (ordinary nested-scope shadowing). Nothing downstream acts
-// on these declarations yet (the translator stubs CFG procedures), so name
-// resolution is currently the only consumer of this contract.
+// the earlier one (ordinary nested-scope shadowing). The type checker scopes a
+// CFG-local by dominance instead, and requires every declaration of a local to
+// have the same type, so the declaration name resolution picks and the one the
+// type checker picks agree on the local's type.
 op cfg_blocks_cons (b : CFGBlock, @[scope(b)] rest : CFGBlocks) : CFGBlocks =>
-  b "\n" rest;
+  b:0 "\n" rest:0;
 
 // CFG body: entry label + blocks
 category CFGBody;
 op cfg_body (entry : Ident, blocks : CFGBlocks) : CFGBody =>
-  "cfg " entry " {\n" indent(2, blocks) "\n}";
+  "cfg " entry " {\n  " indent(2, blocks:0) "\n}";
 
 // Procedure with CFG body
 op command_cfg_procedure (annots : Option MetadataAnn,

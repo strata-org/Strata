@@ -29,12 +29,21 @@ context `C`.
 Inhabitance is required against `C.datatypes.push block`, the factory extended
 with the new block, so that mutual and forward references between the block's
 datatypes resolve.
+
+Every block that `LContext.addMutualBlock` accepts satisfies `MutualADTWF`
+(`Datatype.addMutualBlock_sound`).
 -/
 structure MutualADTWF (C : LContext CoreLParams) (block : MutualDatatype Unit) : Prop where
   /-- The block is non-empty. -/
   nonempty : block ≠ []
   /-- Datatype names in the block are distinct. -/
   namesNodup : (block.map (·.name)).Nodup
+  /-- All datatypes in the block declare the same type parameters, ignoring order. -/
+  typeArgsAgree : ∀ d ∈ block, ∀ d' ∈ block, ∀ v, v ∈ d.typeArgs ↔ v ∈ d'.typeArgs
+  /-- No datatype declares a type parameter twice. -/
+  typeArgsNodup : ∀ d ∈ block, d.typeArgs.Nodup
+  /-- No declared type parameter starts with a reserved prefix. -/
+  typeArgsNotReserved : ∀ d ∈ block, ∀ v ∈ d.typeArgs, isAllowedName v = true
   /-- The block's names do not clash with existing known types. -/
   namesFresh : ∀ d ∈ block, ¬ C.knownTypes.containsName d.name
   /-- The block's names do not redefine existing datatypes. -/
@@ -46,10 +55,6 @@ structure MutualADTWF (C : LContext CoreLParams) (block : MutualDatatype Unit) :
       ∀ v ∈ LMonoTy.freeVars arg.2, v ∈ d.typeArgs
   /-- Every constructor argument type is not-nested and strictly-positive/uniform. -/
   argsWF : ∀ d ∈ block, ∀ c ∈ d.constrs, ∀ arg ∈ c.args, ConstrArgWF block arg.2
-  /-- Every type name referenced in a constructor argument is a known type of
-      `C`, an existing datatype of `C`, or a name declared in the block. -/
-  refsKnown : ∀ d ∈ block, ∀ c ∈ d.constrs, ∀ arg ∈ c.args, ∀ ref ∈ getTypeRefs arg.2,
-      ref ∈ C.knownTypes.keywords ∨ ref ∈ C.datatypes.allTypeNames ∨ ref ∈ block.map (·.name)
   /-- Every type-constructor reference in a constructor argument is applied at the
       right arity: its argument count equals the referenced type's arity — a known
       type's registered arity, or a datatype's number of `typeArgs` (an existing

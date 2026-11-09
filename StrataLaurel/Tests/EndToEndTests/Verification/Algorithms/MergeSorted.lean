@@ -15,7 +15,7 @@ program Laurel;
 
 procedure sortedBetween(s: Sequence<int>, lo: int, hi: int): bool
 {
-  forall(i: int) => forall(j: int) =>
+  return forall(i: int) => forall(j: int) =>
     0 <= lo ==> lo <= i ==> i <= j ==> j < hi ==> hi <= seqLength(s) ==> seqSelect(s, i) <= seqSelect(s, j)
 };
 
@@ -23,7 +23,7 @@ procedure count(s: Sequence<int>, v: int, hi: int): int;
 
 procedure countAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
+  return (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
   && (forall(s: Sequence<int>) => forall(v: int) => forall(h: int) =>
         1 <= h ==> h <= seqLength(s) ==>
           count(s, v, h) == count(s, v, h - 1) + (if seqSelect(s, h - 1) == v then 1 else 0))
@@ -31,7 +31,7 @@ procedure countAxioms(): bool
 
 procedure countsMerged(c: Sequence<int>, a: Sequence<int>, b: Sequence<int>, i: int, j: int): bool
 {
-  forall(v: int) => count(c, v, i + j) == count(a, v, i) + count(b, v, j)
+  return forall(v: int) => count(c, v, i + j) == count(a, v, i) + count(b, v, j)
 };
 
 procedure merge(a: Sequence<int>, b: Sequence<int>) returns (c: Sequence<int>)
@@ -78,7 +78,7 @@ program Laurel;
 
 procedure sortedBetween(s: Sequence<int>, lo: int, hi: int): bool
 {
-  forall(i: int) => forall(j: int) =>
+  return forall(i: int) => forall(j: int) =>
     0 <= lo ==> lo <= i ==> i <= j ==> j < hi ==> hi <= seqLength(s) ==> seqSelect(s, i) <= seqSelect(s, j)
 };
 
@@ -86,7 +86,7 @@ procedure count(s: Sequence<int>, v: int, hi: int): int;
 
 procedure countAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
+  return (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
   && (forall(s: Sequence<int>) => forall(v: int) => forall(h: int) =>
         1 <= h ==> h <= seqLength(s) ==>
           count(s, v, h) == count(s, v, h - 1) + (if seqSelect(s, h - 1) == v then 1 else 0))
@@ -94,7 +94,7 @@ procedure countAxioms(): bool
 
 procedure countsMerged(c: Sequence<int>, a: Sequence<int>, b: Sequence<int>, i: int, j: int): bool
 {
-  forall(v: int) => count(c, v, i + j) == count(a, v, i) + count(b, v, j)
+  return forall(v: int) => count(c, v, i + j) == count(a, v, i) + count(b, v, j)
 };
 
 procedure merge(a: Sequence<int>, b: Sequence<int>) returns (c: Sequence<int>)

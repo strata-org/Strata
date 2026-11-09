@@ -111,6 +111,15 @@ structure PipelineResolver where
   flagNames : Core.PhaseFlagNames :=
     { select := "--phases", displayContracts := "--display-phase-contracts" }
 
+/-- The text `--display-phases` prints under `options`: the default order of `options`, then the
+    phases the resolver accepts a name for that are not in it, by name, so the text cannot
+    advertise less than `--phases` takes. -/
+def displayPhasesFor (resolver : PipelineResolver) (options : Core.VerifyOptions) : String :=
+  let dflt := Strata.Core.corePipelinePhases options
+  let extras := resolver.nameable.filter fun p =>
+    !dflt.any fun d => Strata.Core.phaseName d == Strata.Core.phaseName p
+  Strata.Core.displayPhasesText resolver.flagNames dflt (extras := extras)
+
 /-- Walk the ordered flag entries and bind each `--procedures`/`--functions`
     to the most recent `--pass`. -/
 private def buildPassConfigs (entries : Array (String × Option String))
@@ -203,6 +212,20 @@ private def withContractsHint (resolver : PipelineResolver) (pflags : ParsedFlag
     msg ++ s!"\n\nTo see where each phase's requirements are met across this order, run {flag}."
   else msg
 
+/-- What `verify --phases` with no input file reports for the flags `pflags` and the options
+    `opts` they parse to: the lines it prints when the order composes and the options apply to
+    it; otherwise the refusal a run of the same flags on an input file gives, from
+    `resolver.resolve` or from `vcgenFlagIssues`. -/
+def phasesReport (resolver : PipelineResolver) (pflags : ParsedFlags)
+    (opts : Core.VerifyOptions) : Except String (List String) := do
+  let choice ← (resolver.resolve pflags opts).mapError (withContractsHint resolver pflags)
+  let issues := vcgenFlagIssues opts (choice.pipeline.map (·.phases))
+  unless issues.isEmpty do throw (String.intercalate "\n" issues)
+  let verdict := match choice.pipeline with
+    | none => "This is the default order."
+    | some vp => s!"This order composes: {", ".intercalate (vp.phases.map Strata.Core.phaseName)}"
+  return choice.notes ++ [verdict]
+
 /-- The `verify` command. `backendOf` gives the discharge and the sessions of the solver
     backend an invocation selects, both `none` to use Core's own discharge and local solver
     processes; the discharge uses Core's own default when both are `none`. -/
@@ -229,13 +252,10 @@ def verifyCommand (dialects : LoadedDialects)
   help := "Verify a Strata program file (.core.st or .b3.st)."
   -- Both answer without a file to verify: one lists the phases, the other checks an order.
   reportFlags :=
-    [("display-phases", fun _ =>
-        -- The extras are whatever the resolver accepts beyond the default order, so the
-        -- text cannot advertise less than `--phases` takes.
-        let dflt := Strata.Core.corePipelinePhases
-        let extras := resolver.nameable.filter fun p =>
-          !dflt.any fun d => Strata.Core.phaseName d == Strata.Core.phaseName p
-        IO.println (Strata.Core.displayPhasesText resolver.flagNames dflt (extras := extras))),
+    [("display-phases", fun pflags => do
+        -- The default order of the options in effect, so the text follows `--vcgen`.
+        let options ← parseVerifyOptions pflags { VerifyOptions.default with verbose := .quiet }
+        IO.println (displayPhasesFor resolver options)),
      -- Tables the order asked for, so `#` marks a requirement that order leaves unmet; with no
      -- `--phases` it tables the default order, which is the one a caller is comparing against.
      ("display-phase-contracts", fun pflags => do
@@ -254,15 +274,9 @@ def verifyCommand (dialects : LoadedDialects)
         -- the default order for the options in effect: reporting under different ones could
         -- accept a list the run then refuses.
         let opts ← parseVerifyOptions pflags { VerifyOptions.default with verbose := .quiet }
-        match resolver.resolve pflags opts with
-        | .ok choice =>
-          choice.notes.forM IO.println
-          match choice.pipeline with
-          | none => IO.println "This is the default order."
-          | some vp =>
-            let names := ", ".intercalate (vp.phases.map Strata.Core.phaseName)
-            IO.println s!"This order composes: {names}"
-        | .error msg => exitUserError (withContractsHint resolver pflags msg))]
+        match phasesReport resolver pflags opts with
+        | .ok lines => lines.forM IO.println
+        | .error msg => exitUserError msg)]
   callback := fun v pflags => do
     let file := v[0]
     let proceduresToVerify := pflags.getString "procedures" |>.map (·.splitToList (· == ','))
@@ -282,6 +296,11 @@ def verifyCommand (dialects : LoadedDialects)
       | .ok c => pure c
       | .error msg => exitUserError (withContractsHint resolver pflags msg)
     let pipeline := choice.pipeline
+    -- Checked against the pipeline that runs, since a resolver may return one that runs
+    -- symbolic evaluation, and so reads the path cap, whatever `--vcgen` says.
+    let vcgenIssues := vcgenFlagIssues opts (pipeline.map (·.phases))
+    unless vcgenIssues.isEmpty do
+      exitUserError (String.intercalate "\n" vcgenIssues)
     -- `--procedures` narrows verification by splicing `filterProcedures`, which only the
     -- default pipeline does. A caller-supplied pipeline is run exactly as given, so the
     -- filter would be silently dropped and the run would report procedures the caller did
@@ -394,7 +413,12 @@ structure SolverBackend where
   /-- Returns one message per option this backend cannot apply in the given invocation
       (empty means every option is fine). -/
   checkOptions : Core.VerifyOptions → ParsedFlags → List String := fun _ _ => []
-  mkDischarge : ParsedFlags → Core.MkDischargeFn
+  /-- Builds the discharge factory for one invocation from its flags and the options of the
+      run. A back end that keeps state across obligations, such as a connection they share,
+      reads the run's worker count from these options. The options given to each discharge
+      call are not enough: their `parallelWorkers` only counts the workers of that call, and
+      other calls may run at the same time. -/
+  mkDischarge : ParsedFlags → Core.VerifyOptions → Core.MkDischargeFn
   /-- The solvers `--incremental` walks the obligation tree with. Without them, or when this
       answers `none` for an invocation, every obligation goes through `mkDischarge`, as
       without `--incremental`. -/
@@ -407,14 +431,16 @@ private def dispatchBackend (backends : List SolverBackend) (pflags : ParsedFlag
     Option Core.MkDischargeFn × Option Core.IncrementalSolve.SessionFactory :=
   match backends.find? (·.name == options.solver) with
   | none => (none, none)
-  | some b => (some (b.mkDischarge pflags), b.mkSession.bind (· pflags))
+  | some b => (some (b.mkDischarge pflags options), b.mkSession.bind (· pflags))
 
-/-- Build one discharge factory that picks a backend by the `--solver` value,
-    falling back to the default process solver when none matches. -/
-private def dispatchDischarge (backends : List SolverBackend) (pflags : ParsedFlags) : Core.MkDischargeFn :=
+/-- Build one discharge factory for a run with options `runOptions` that picks a backend by
+    the `--solver` value, falling back to the default process solver when none matches. -/
+private def dispatchDischarge (backends : List SolverBackend) (pflags : ParsedFlags)
+    (runOptions : Core.VerifyOptions) : Core.MkDischargeFn :=
   fun options counter tempDir vars md label termCache captured ctx =>
     match backends.find? (·.name == options.solver) with
-    | some b => b.mkDischarge pflags options counter tempDir vars md label termCache captured ctx
+    | some b =>
+      b.mkDischarge pflags runOptions options counter tempDir vars md label termCache captured ctx
     | none   => Core.mkDischargeFn options counter tempDir vars md label termCache captured ctx
 
 /-- A backend's `extraFlags` apply only when that backend is selected. Returns a
@@ -437,7 +463,9 @@ def baseDialects : LoadedDialects :=
 
 structure CliFrontend where
   dialects : List StrataDDM.Dialect
-  group : Core.MkDischargeFn → CommandGroup
+  /-- The front end's commands, given the discharge factory for a run, which a command applies
+      to the options it parsed for that run. -/
+  group : (Core.VerifyOptions → Core.MkDischargeFn) → CommandGroup
 
 /-- Build the command groups, wiring the solver-aware commands to dispatch over
     the given backends. -/
@@ -481,7 +509,8 @@ private def commandNames (backends : List SolverBackend := []) : List String :=
 -- can exercise a non-empty registry without needing an external solver to build.
 private def incrementalBackend : SolverBackend where
   name := "incremental"
-  mkDischarge := fun _pflags options counter tempDir vars md label termCache captured ctx =>
+  mkDischarge := fun _pflags _runOptions options counter tempDir vars md label termCache captured
+      ctx =>
     Core.mkDischargeFn { options with incremental := true }
       counter tempDir vars md label termCache captured ctx
 
@@ -496,12 +525,45 @@ private def incrementalBackend : SolverBackend where
 private def flagTestBackend : SolverBackend where
   name := "tb"
   extraFlags := [{ name := "tb-opt", help := "", takesArg := .arg "v" }]
-  mkDischarge := fun _ => Core.mkDischargeFn
+  mkDischarge := fun _ _ => Core.mkDischargeFn
 
 -- A backend flag set under a different `--solver` is rejected; under its own backend, allowed.
 #guard foreignBackendFlagIssues [flagTestBackend] "other" (({} : ParsedFlags).insert "tb-opt" (some "x"))
   == ["--tb-opt only applies to --solver tb"]
 #guard foreignBackendFlagIssues [flagTestBackend] "tb" (({} : ParsedFlags).insert "tb-opt" (some "x")) == []
+
+/-- A test-only backend whose discharge reports, as its failure, the worker count of the run
+    options it was built with. -/
+private def runOptionsProbe : SolverBackend where
+  name := "probe"
+  mkDischarge := fun _ runOptions _ _ _ _ _ _ _ _ _ => fun _ _ _ _ _ _ _ =>
+    pure (.error (.crash s!"{runOptions.parallelWorkers}"))
+
+/-- The worker count `discharge` reports for one obligation sent with options of its own that
+    say one worker, as a goal the `--incremental` walk sends alone is. -/
+private def reportedRunWorkers (discharge : Core.MkDischargeFn) (callOptions : VerifyOptions) :
+    IO String := do
+  let ctx ← Strata.Pipeline.PipelineContext.create
+  match ← discharge { callOptions with parallelWorkers := 1 } (← IO.mkRef 0) "." [] default ""
+      none none ctx [] (Strata.SMT.Term.bool true) default false false [] [] with
+  | .error (.crash m) => pure m
+  | _ => pure "no report"
+
+-- A backend is built with the run's options, parsed from the flags: both the `verify` command's
+-- dispatch and the factory the front-end commands apply to the options they parse hand it the
+-- `--parallel` count, not the count of the call that discharges one obligation.
+
+/-- info: verify: 4; front end: 4 -/
+#guard_msgs in
+#eval show IO Unit from do
+  let pflags : ParsedFlags :=
+    (({} : ParsedFlags).insert "parallel" (some "4")).insert "solver" (some "probe")
+  let opts ← parseVerifyOptions pflags
+  let verify ← match (dispatchBackend [runOptionsProbe] pflags opts).1 with
+    | some discharge => reportedRunWorkers discharge opts
+    | none => pure "no backend"
+  let frontEnd ← reportedRunWorkers (dispatchDischarge [runOptionsProbe] pflags opts) opts
+  IO.println s!"verify: {verify}; front end: {frontEnd}"
 
 -- A test-only resolver carrying a flag of its own, which is the shape a binary with a
 -- registry of pipelines has.

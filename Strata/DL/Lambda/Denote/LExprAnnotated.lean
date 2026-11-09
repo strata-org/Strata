@@ -71,71 +71,49 @@ theorem LExpr.typeCheck_to_HasTypeA {T : LExprParams} {Δ : List LMonoTy}
     {e : LExpr T.mono} {τ : LMonoTy}
     (h : typeCheck Δ e = some τ) : HasTypeA Δ e τ := by
   induction e generalizing Δ τ with
-  | const _ c => simp [typeCheck] at h; subst h; exact .const
+  | const _ c => simp only [typeCheck, Option.some.injEq] at h; subst h; exact .const
   | op _ _ ty =>
     cases ty with
-    | some t => simp [typeCheck] at h; subst h; exact .op
+    | some t => simp only [typeCheck, Option.some.injEq] at h; subst h; exact .op
     | none => simp [typeCheck] at h
   | fvar _ _ ty =>
     cases ty with
-    | some t => simp [typeCheck] at h; subst h; exact .fvar
+    | some t => simp only [typeCheck, Option.some.injEq] at h; subst h; exact .fvar
     | none => simp [typeCheck] at h
-  | bvar _ i => simp [typeCheck] at h; exact .bvar h
+  | bvar _ i => simp only [typeCheck] at h; exact .bvar h
   | abs _ _ ty body ih =>
     cases ty with
     | some aty =>
-      simp [typeCheck, bind, Option.bind] at h
-      split at h <;> simp_all
-      rename_i rty heq; subst h
-      show HasTypeA _ _ (.arrow aty rty)
+      simp only [typeCheck, bind, Option.bind_eq_some_iff, Option.some.injEq] at h
+      obtain ⟨rty, heq, rfl⟩ := h
       exact .abs (ih heq)
     | none => simp [typeCheck] at h
   | quant _ _ _ ty tr body ihtr ihbody =>
     cases ty with
     | some qty =>
-      simp [typeCheck, bind, Option.bind, guard] at h
-      split at h <;> simp_all
-      rename_i τ_tr htr
-      split at h <;> simp_all
-      rename_i bty hbody
-      split at h <;> simp_all
-      subst_vars
+      simp only [typeCheck, bind, guard, beq_iff_eq, Option.pure_def, Option.bind_eq_some_iff, ite_eq_left_iff,
+      reduceCtorEq, imp_false, Decidable.not_not, Option.some.injEq, exists_const,
+        exists_and_right] at h
+      obtain ⟨⟨τ_tr, htr⟩, bty, hbody, rfl, rfl⟩ := h
       exact .quant (ihtr htr) (ihbody hbody)
     | none => simp [typeCheck] at h
   | app _ fn arg ihfn iharg =>
-    simp [typeCheck, bind, Option.bind] at h
-    split at h <;> simp_all
-    rename_i fty hfn
-    split at h <;> simp_all
-    rename_i aty' harg
-    split at h <;> simp_all
-    rename_i arrow
-    have := LMonoTy.isArrow_some arrow
-    subst_vars
-    simp [guard] at h
-    split at h <;> simp_all
-    subst_vars
+    simp only [typeCheck, bind, guard, beq_iff_eq, Option.pure_def, Option.bind_eq_some_iff, ite_eq_left_iff,
+      reduceCtorEq, imp_false, Decidable.not_not, Option.some.injEq, exists_const,
+      Prod.exists, exists_eq_right_right, exists_eq_right] at h
+    obtain ⟨fty, hfn, aty', harg, harr⟩ := h
+    have := LMonoTy.isArrow_some harr
+    subst this
     exact .app (ihfn hfn) (iharg harg)
   | ite _ c t e ihc iht ihe =>
-    simp [typeCheck, bind, Option.bind, guard] at h
-    split at h <;> simp_all
-    rename_i cty hc
-    split at h <;> simp_all
-    rename_i tty ht
-    split at h <;> simp_all
-    rename_i ety he
-    split at h <;> simp_all
-    split at h <;> simp_all
-    subst_vars
+    simp only [typeCheck, bind, guard, beq_iff_eq, Option.pure_def, Option.bind_eq_some_iff, ite_eq_left_iff,
+      reduceCtorEq, imp_false, Decidable.not_not, Option.some.injEq, exists_const] at h
+    obtain ⟨cty, hc, tty, ht, ety, he, rfl, rfl, rfl⟩ := h
     exact .ite (ihc hc) (iht ht) (ihe he)
   | eq _ e1 e2 ih1 ih2 =>
-    simp [typeCheck, bind, Option.bind, guard] at h
-    split at h <;> simp_all
-    rename_i ty1 h1
-    split at h <;> simp_all
-    rename_i ty2 h2
-    split at h <;> simp_all
-    subst_vars
+    simp only [typeCheck, bind, guard, beq_iff_eq, Option.pure_def, Option.bind_eq_some_iff, ite_eq_left_iff,
+      reduceCtorEq, imp_false, Decidable.not_not, Option.some.injEq, exists_const] at h
+    obtain ⟨ty1, h1, ty2, h2, rfl, rfl⟩ := h
     exact .eq (ih1 h1) (ih2 h2)
 
 theorem LExpr.HasTypeA_iff_typeCheck {T : LExprParams} (Δ : List LMonoTy)
@@ -184,25 +162,25 @@ theorem typeCheck_of_lcAt_aux {T : LExprParams}
   | fvar m name ty => cases ty <;> rfl
   | bvar m i =>
     simp only [LExpr.typeCheck]
-    simp [LExpr.lcAt] at hlc
+    simp only [lcAt, decide_eq_true_eq] at hlc
     exact hagree i hlc
   | app m fn arg ih_fn ih_arg =>
-    simp [LExpr.lcAt] at hlc
+    simp only [lcAt, Bool.and_eq_true] at hlc
     simp only [LExpr.typeCheck]
     rw [ih_fn hlc.1 hagree, ih_arg hlc.2 hagree]
   | ite m c t e ih_c ih_t ih_e =>
-    simp [LExpr.lcAt] at hlc
+    simp only [lcAt, Bool.and_eq_true] at hlc
     simp only [LExpr.typeCheck]
     rw [ih_c hlc.1.1 hagree, ih_t hlc.1.2 hagree, ih_e hlc.2 hagree]
   | eq m e1 e2 ih1 ih2 =>
-    simp [LExpr.lcAt] at hlc
+    simp only [lcAt, Bool.and_eq_true] at hlc
     simp only [LExpr.typeCheck]
     rw [ih1 hlc.1 hagree, ih2 hlc.2 hagree]
   | abs m name ty body ih =>
     cases ty with
     | none => simp [LExpr.typeCheck]
     | some aty' =>
-      simp [LExpr.lcAt] at hlc
+      simp only [lcAt] at hlc
       simp only [LExpr.typeCheck]
       rw [@ih _ (aty' :: Δ) (aty' :: Δ') hlc]
       grind
@@ -210,12 +188,12 @@ theorem typeCheck_of_lcAt_aux {T : LExprParams}
     cases qty with
     | none => simp [LExpr.typeCheck]
     | some qty' =>
-      simp [LExpr.lcAt] at hlc
+      simp only [lcAt, Bool.and_eq_true] at hlc
       simp only [LExpr.typeCheck]
       have hagree' : ∀ i, i < k + 1 → (qty' :: Δ)[i]? = (qty' :: Δ')[i]? := fun i hi => by
         cases i with
         | zero => rfl
-        | succ j => simp [List.getElem?_cons_succ]; exact hagree j (by omega)
+        | succ j => simp only [List.getElem?_cons_succ]; exact hagree j (by omega)
       rw [ih_tr hlc.1 hagree', ih_body hlc.2 hagree']
 
 /-- typeCheck is independent of context for closed terms (lcAt 0). -/
@@ -248,7 +226,8 @@ theorem substK_typeCheck {T : LExprParams}
     simp only [LExpr.substK, LExpr.typeCheck]
     by_cases h : i == Δ₁.length
     · have hi : i = Δ₁.length := by grind
-      subst hi; simp
+      subst hi; simp only [BEq.rfl, ↓reduceIte, List.length_append, List.length_cons, List.length_nil, Nat.zero_add,
+    Nat.lt_add_one, getElem?_pos, Std.le_refl, List.getElem_append_right, Nat.sub_self, List.getElem_cons_zero]
       rw [typeCheck_of_lcAt (HasTypeA_nil_lcAt (h_s m)),
           LExpr.HasTypeA_to_typeCheck (h_s m)]
     · simp [h]
@@ -365,7 +344,8 @@ def HasTypeA.app_inv {T : LExprParams} {Δ : List LMonoTy} {m fn arg τ}
          by have h' := LExpr.HasTypeA_to_typeCheck h
             unfold tcFn tcArg at *
             have h_eq' : dom = aty := by grind
-            simp [LExpr.typeCheck, h_fn, h_arg, h_arr, h_eq', Option.bind, guard] at h'
+            simp only [typeCheck, h_fn, h_arg, guard, beq_iff_eq, Option.pure_def, Option.bind_eq_bind, Option.bind,
+    h_arr, h_eq', ↓reduceIte, Option.some.injEq] at h'
             subst h'
             have h_arrow := LMonoTy.isArrow_some h_arr; subst h_arrow
             subst_vars
@@ -391,7 +371,8 @@ theorem HasTypeA.ite_inv {T : LExprParams} {Δ : List LMonoTy} {m c t e τ}
     (h : @LExpr.HasTypeA T Δ (.ite m c t e) τ)
     : LExpr.HasTypeA Δ c .bool ∧ LExpr.HasTypeA Δ t τ ∧ LExpr.HasTypeA Δ e τ := by
   have r := LExpr.HasTypeA_to_typeCheck h
-  simp [LExpr.typeCheck, Option.bind_eq_some_iff, guard] at r
+  simp only [typeCheck, guard, beq_iff_eq, Option.pure_def, Option.bind_eq_bind, Option.bind_eq_some_iff,
+    ite_eq_left_iff, reduceCtorEq, imp_false, Decidable.not_not, Option.some.injEq, exists_const] at r
   have ⟨cty, ⟨(h_c : typeCheck Δ c = some cty), r⟩⟩ := r
   have ⟨tty, ⟨(h_t : typeCheck Δ t = some tty), r⟩⟩ := r
   have ⟨ety, ⟨(h_e : typeCheck Δ e = some ety), r⟩⟩ := r

@@ -15,7 +15,8 @@ public section
 
 namespace Core
 
-/-- Generic call graph structure -/
+/-- Generic call graph structure. Every node has an entry in both maps: each callee and
+    each caller of a key is itself a key of `callees` and of `callers`. -/
 structure CallGraph where
   -- A map from caller to a list of (callee, # of calls)
   callees : Std.HashMap String (Std.HashMap String Nat)
@@ -93,7 +94,8 @@ def CallGraph.addLeafNode (cg : CallGraph) (name : String) : CallGraph :=
     callers := cg.callers.insert name {} }
 
 /-- BFS worker for transitive closure. `getNeighbors` provides the edges.
-`allNodes` is a fixed universe of node names (all keys in the graph);
+`allNodes` is a fixed universe of node names: all keys in the graph, which include every
+neighbor `getNeighbors` returns;
 termination is proved via the lexicographic measure
 `(allNodes.length - visited.length, toVisit.length)`:
 - When `head ∈ visited`: `toVisit` shrinks (second component decreases).
@@ -187,14 +189,18 @@ def CallGraph.computeRoots (cg : CallGraph)
   let nodes := (cg.callees.toList.map Prod.fst).mergeSort (· < ·)
   cg.computeRootsAux (.ofList preferredRoots) nodes.length nodes []
 
-/-- Build call graph from name-callees pairs -/
+/-- Build call graph from name-callees pairs. Each name and each of its callees
+    has an entry in both maps. -/
 def buildCallGraph (items : List (String × List String)) : CallGraph :=
+  let nodes := items.flatMap fun (name, calls) => name :: calls
+  let emptyCalleeMap := nodes.foldl (fun acc n => acc.insert n {})
+    Std.HashMap.emptyWithCapacity
   let calleeMap := items.foldl (fun acc (name, calls) =>
     acc.insert name (Std.HashMap.ofList calls.occurrences))
-    Std.HashMap.emptyWithCapacity
+    emptyCalleeMap
 
-  let emptyCallerMap := items.foldl (fun acc (name, _) =>
-    acc.insert name ([] : List String)) Std.HashMap.emptyWithCapacity
+  let emptyCallerMap := nodes.foldl (fun acc n => acc.insert n ([] : List String))
+    Std.HashMap.emptyWithCapacity
   let callerMapNodedup :=
     items.foldl (fun acc ⟨caller,callees⟩ =>
       callees.foldl (fun acc' callee =>

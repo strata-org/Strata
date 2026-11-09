@@ -114,7 +114,7 @@ procedure dag(a: int) returns (r: int)
   return b
 };
 
-// Valueless early return (issue #1353): a bare `return` parses to `.Return none`.
+// Valueless early return (issue #1353): a bare `return` parses to `.Return []`.
 // Must verify cleanly — no value, used as an early exit.
 procedure valuelessEarlyReturn(b: bool)
   opaque
@@ -462,7 +462,7 @@ procedure testDestructiveUpdates()
 };
 #end
 
--- An `exit` inside an assigned *block value* is reported (see `containsExitOrReturn`).
+-- An `exit` inside an assigned *block value* is reported.
 #guard_msgs (drop info) in
 #eval testLaurelVerification <|
 #strata
@@ -472,7 +472,7 @@ procedure exitInBlockValue(c: bool) returns (r: int)
   r := 1;
   {
     r := { if c then { exit done }; 5 };
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: an `exit` or `return` inside an assigned block value is not YET supported in transparent bodies or contracts
+//       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: an `exit` or `return` inside an assigned block value is not YET supported in transparent bodies or contracts
     r := r + 100
   } done;
   return r
@@ -497,10 +497,9 @@ procedure testBlockValueNoExit()
 };
 #end
 
--- An assignment inside a block value to a variable declared *outside* the block is
--- visible after the assignment, as at statement level. `ConstrainedTypeElim` makes
--- `u := (t := t + 1)` such a block value, as it does any assignment used as a value on
--- a constrained type. Run as well as verified, so the two must agree.
+-- An assignment inside a value is visible after it, as at statement level: in
+-- `u := (t := t + 1)` on a constrained type, and in a block value, declared or
+-- assigned. Run as well as verified, so the paths must agree.
 #guard_msgs (drop info) in
 #eval testLaurelExecution {} <|
 #strata
@@ -513,13 +512,24 @@ procedure blockValueOuterLocal(y: nat): int
   return t + u
 };
 
+procedure declaredAndAssignedBlockValue(y: int): int
+{
+  var t: int := y;
+  var u: int := { t := t + 1; t };
+  u := { t := t + 1; t };
+  return t + u
+};
+
 procedure testBlockValueOuterLocal()
   entry
   opaque
 {
   assert blockValueOuterLocal(1) == 4;
-  assert blockValueOuterLocal(1) == 3
+  assert blockValueOuterLocal(1) == 3;
 //^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  assert declaredAndAssignedBlockValue(1) == 6;
+  assert declaredAndAssignedBlockValue(1) == 3
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 
@@ -830,25 +840,30 @@ procedure testShadowingWithHole()
 };
 #end
 
--- An uninitialized local in a *polymorphic* transparent body. The hole mirrors the
--- enclosing inputs, whose types mention the type variable, so the hole is polymorphic
--- too — and monomorphization runs long before this pass, so it could never be
--- instantiated. Reported here rather than left to surface from SMT encoding as an
--- unresolved type variable.
+-- An uninitialized local in a *polymorphic* transparent body is bound to a hole like
+-- any other, and the hole is polymorphic alongside it. Read without being assigned, it
+-- yields an arbitrary but fixed value: two calls with the same input agree, and no
+-- particular value is provable.
 #guard_msgs (drop info) in
 #eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure polyHole<T>(x: T) returns (r: T)
-//        ^^^^^^^^ error: a local without an initializer is not YET supported in a transparent body of a polymorphic procedure like 'polyHole'; give it an initializer
 {
   var y: T;
   return y
 };
+procedure callsPolyHole() opaque
+{
+  var a: int := polyHole(3);
+  var b: int := polyHole(3);
+  assert a == b;
+  assert a == 3
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
 #end
 
--- The converse: a polymorphic transparent body with every local initialized is
--- unaffected by that restriction and still verifies.
+-- A polymorphic transparent body with every local initialized verifies too.
 #guard_msgs (drop info) in
 #eval testLaurelVerification <|
 #strata

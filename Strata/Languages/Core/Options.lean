@@ -157,6 +157,14 @@ def CheckLevel.ofString? (s : String) : Option CheckLevel :=
 def CheckLevel.options : String :=
   "'minimal' (simple messages), 'minimalVerbose' (detailed messages, one check), or 'full' (both checks, all outcomes)"
 
+/-- How verification conditions are generated from the loop-free program:
+    `symbolic` (symbolic evaluation, `toCoreProofObligationProgram`) or `wp` (the WP phase, the
+    SSA phase and dead-definition elimination, `Core.WP`). -/
+inductive VCGenMode where
+  | symbolic
+  | wp
+  deriving Repr, DecidableEq, Inhabited
+
 /-- Options controlling the verification pipeline.
     When adding or removing fields, keep `verifyOptionsFlags` and
     `parseVerifyOptions` in StrataMain.lean in sync. -/
@@ -194,6 +202,9 @@ structure VerifyOptions where
   /-- How aggressively to prune irrelevant axioms from proof
       obligations. See `IrrelevantAxiomsMode` for details. -/
   removeIrrelevantAxioms : IrrelevantAxiomsMode
+  /-- Leave out of each SMT query the datatype declarations that the query
+      does not mention. -/
+  removeIrrelevantDatatypes : Bool := false
   /-- Verification mode: deductive (prove correctness) or
       bugFinding (find bugs). -/
   checkMode : VerificationMode
@@ -218,6 +229,8 @@ structure VerifyOptions where
       untouched — they skip remaining statements and accumulate at
       most linearly. -/
   pathCap : Option Nat := .none
+  /-- Verification-condition generation mode (`--vcgen`); see `VCGenMode`. -/
+  vcgen : VCGenMode := .symbolic
   -- Output
   /-- Output results in SARIF format. -/
   outputSarif : Bool

@@ -21,15 +21,17 @@ namespace Imperative
 
 public section
 
+universe u w
+
 section
 
 variable (P : PureExpr)
 
 /-- Interprets captured conditions in a semantic world shared by every
 condition in a trace. -/
-structure ConditionInterp (P : PureExpr) where
+structure ConditionInterp (P : PureExpr.{u}) : Type (max u (w + 1)) where
   /-- Shared semantic worlds in which captured conditions are interpreted. -/
-  World : Type
+  World : Type w
   /-- Whether a captured event condition holds in a semantic world. -/
   holds : World → EventArg P → Prop
 
@@ -66,7 +68,8 @@ under an unrelated factory need not have meaning in that interpretation. -/
     {P : PureExpr} [HasBool P] (I : ConditionInterp P)
     (allowedFactory : P.Factory → Prop) : Prop :=
   ∀ (condition : EventArg P), allowedFactory condition.factory →
-    P.eval condition.factory condition.store condition.expr = some HasBool.tt →
+    P.eval condition.factory condition.store condition.expr =
+      some (HasBool.ttVal condition.factory) →
     ∀ world, I.holds world condition
 
 /-- An event is semantically neutral when its condition holds in every world. -/
@@ -126,7 +129,7 @@ condition. -/
       AssertionSatisfiableFrom I aid
         (assumptions ++ [Event.assume condition]) rest
   | assumptions, Event.assert condition :: rest =>
-      ((condition.label = aid.label ∧ condition.expr = aid.expr ∧
+      ((condition.label = aid.label ∧ condition.metadata = aid.md ∧
         ∃ world, AssumptionsHold P I world assumptions ∧
           I.holds world condition) ∨
         AssertionSatisfiableFrom I aid assumptions rest)
@@ -150,7 +153,7 @@ condition. -/
   | assumptions, Event.assume condition :: rest =>
       CoverSatisfiableFrom I cid (assumptions ++ [Event.assume condition]) rest
   | assumptions, Event.cover condition :: rest =>
-      (((condition.label, condition.metadata) = cid ∧
+      ((condition.label = cid.label ∧ condition.metadata = cid.md ∧
         ∃ world, AssumptionsHold P I world assumptions ∧ I.holds world condition) ∨
         CoverSatisfiableFrom I cid assumptions rest)
   | assumptions, Event.assert _ :: rest =>
@@ -167,7 +170,7 @@ predicate is false when the identifier does not occur in the trace. -/
 abbrev AssertionValidFrom
     (I : ConditionInterp P) (aid : AssertId P) : Trace P → Trace P → Prop :=
   AssertionsValidFromP P I
-    (fun condition => condition.label = aid.label ∧ condition.expr = aid.expr)
+    (fun condition => condition.label = aid.label ∧ condition.metadata = aid.md)
 
 /-- Validity of all occurrences of one assertion identifier in a trace. -/
 @[expose] def AssertionValid (I : ConditionInterp P)

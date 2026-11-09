@@ -258,7 +258,7 @@ def lookupType (name : Identifier) : TranslateM LMonoTy := do
     was resolved at, at every depth.
 
     A `mapConst` synthesized AFTER resolution carries no recorded `typeArgs`, leaving its
-    declared `TotalMap K V` uninstantiated. `TypeHierarchy` and `HeapParameterization` build
+    declared `TotalMap K V` uninstantiated. `LowerComposite` and `HeapParameterization` build
     such calls and key their tables by `TypeTag`, so for that shape the type is rebuilt as
     `TotalMap TypeTag (value type of the inner call)`. -/
 private partial def mapConstValTy (model : SemanticModel) (arg : StmtExprMd) : TranslateM LMonoTy := do
@@ -623,7 +623,7 @@ ONLY to recover the key type of a `mapConst` call — a constant-map builtin who
 is not inferable from its single value argument. When the caller knows the binding is a
 `TotalMap K V`, `K` is threaded here so the emitted op is annotated `V → TotalMap K V` and the
 program round-trips as `mapConst<K>(v)`. When absent (internal calls, e.g. the
-`TypeHierarchy` ancestor tables), the key defaults to `TypeTag`. It is intentionally NOT
+`LowerComposite` ancestor tables), the key defaults to `TypeTag`. It is intentionally NOT
 propagated into subexpressions (every recursive call uses the `none` default).
 -/
 def translateExpr (expr : StmtExprMd)
@@ -851,7 +851,7 @@ def translateExpr (expr : StmtExprMd)
       args.attach.foldlM (fun acc ⟨arg, _⟩ => do
         let re ← translateExpr arg boundVars isPureContext
         return .app () acc re) fnOp
-  | .Block [single] _ => translateExpr single boundVars isPureContext
+  | .Block [single] _ _ _ => translateExpr single boundVars isPureContext
   | .Quantifier mode ⟨ name, ty ⟩ trigger body =>
       let coreTy ← translateType ty
       let coreBody ← translateExpr body (name :: boundVars) isPureContext
@@ -882,19 +882,19 @@ def translateExpr (expr : StmtExprMd)
         "CompoundAssign should have been eliminated by EliminateIncrDecrAndCompoundAssign pass" MessageKind.strataBug
   | .While _ _ _ _ _ =>
       disallowed expr.source "loops are not supported in transparent bodies or contracts"
-  | .Exit _ => disallowed expr.source "exit is not supported in expression position"
+  | .Goto .. => disallowed expr.source "exit and goto are not supported in expression position"
 
-  | .Block (⟨ .Assert .., innerSrc⟩ :: rest) label => do
+  | .Block (⟨ .Assert .., innerSrc⟩ :: rest) label _ _ => do
     _ ← disallowed innerSrc "asserts are not YET supported in transparent bodies or contracts"
-    translateExpr { val := StmtExpr.Block rest label, source := innerSrc } boundVars isPureContext
-  | .Block (⟨ .Assume _, innerSrc⟩ :: rest) label =>
+    translateExpr { val := StmtExpr.Block rest label [] none, source := innerSrc } boundVars isPureContext
+  | .Block (⟨ .Assume _, innerSrc⟩ :: rest) label _ _ =>
     _ ← disallowed innerSrc "assumes are not YET supported in transparent bodies or contracts"
-    translateExpr { val := StmtExpr.Block rest label, source := innerSrc } boundVars isPureContext
-  | .Block (⟨ .Assign [⟨ .Declare ⟨name, some ty⟩, _source⟩] initializer, innerSrc⟩ :: rest) label => do
+    translateExpr { val := StmtExpr.Block rest label [] none, source := innerSrc } boundVars isPureContext
+  | .Block (⟨ .Assign [⟨ .Declare ⟨name, some ty⟩, _source⟩] initializer, innerSrc⟩ :: rest) label _ _ => do
       -- These translations are not used yet (see below), but are kept for their
       -- side effect of surfacing any nested diagnostics in the initializer/body.
       let _valueExpr ← translateExpr initializer boundVars isPureContext
-      let _bodyExpr ← translateExpr { val := StmtExpr.Block rest label, source := innerSrc } (name :: boundVars) isPureContext
+      let _bodyExpr ← translateExpr { val := StmtExpr.Block rest label [] none, source := innerSrc } (name :: boundVars) isPureContext
       let _coreMonoType ← translateType ty
       -- Local variables in transparent bodies are lowered away by
       -- `InlineLocalVariablesPass` before this pass runs, so reaching here means
@@ -904,28 +904,28 @@ def translateExpr (expr : StmtExprMd)
       disallowed innerSrc "local variables in transparent bodies should have been eliminated by the InlineLocalVariablesPass"
       -- This doesn't work because of a limitation in Core.
       -- return .app () (.abs () (some _coreMonoType) _bodyExpr) _valueExpr
-  | .Block (⟨ .Var (.Declare _), innerSrc⟩ :: rest) label => do
+  | .Block (⟨ .Var (.Declare _), innerSrc⟩ :: rest) label _ _ => do
     _ ← disallowed innerSrc "local variables must have initializers in transparent bodies or contracts"
-    translateExpr { val := StmtExpr.Block rest label, source := innerSrc } boundVars isPureContext
-  | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), innerSrc⟩ :: rest) label =>
+    translateExpr { val := StmtExpr.Block rest label [] none, source := innerSrc } boundVars isPureContext
+  | .Block (⟨ .IfThenElse cond thenBranch (some elseBranch), innerSrc⟩ :: rest) label _ _ =>
     disallowed innerSrc "if-then-else only supported as the last statement in a block"
 
   | .Var (.Field target fieldId) =>
       -- Field selects should have been eliminated by heap parameterization
       -- If we see one here, it's an error in the pipeline
       emitExprDiagnostic $ diagnosticFromSource expr.source s!"FieldSelect should have been eliminated by heap parameterization: {Std.ToFormat.format target}#{fieldId.text}" MessageKind.strataBug
-  | .Block (⟨ .Assign _ _, assignSource⟩ :: tail) _ =>
+  | .Block (⟨ .Assign _ _, assignSource⟩ :: tail) _ _ _ =>
       disallowed assignSource "destructive assignments are not supported in transparent bodies or contracts"
-  | .Block (⟨ .While _ _ _ _ _, whileSource⟩ :: tail) _ =>
+  | .Block (⟨ .While _ _ _ _ _, whileSource⟩ :: tail) _ _ _ =>
       disallowed whileSource "loops are not supported in transparent bodies or contracts"
-  | .Block (head :: tail) _ =>
+  | .Block (head :: tail) _ _ _ =>
       emitExprDiagnostic $ diagnosticFromSource expr.source s!"block expression starting with {head.val.constructorName} should have been lowered in a separate pass" MessageKind.strataBug
-  | .Block [] _ =>
+  | .Block [] _ _ _ =>
       emitExprDiagnostic $ diagnosticFromSource expr.source "empty block expression should have been lowered in a separate pass" MessageKind.strataBug
   | .Return _ => emitExprDiagnostic $ diagnosticFromSource expr.source "return statement-expression should be lowered in a separate pass" MessageKind.strataBug
   | .IsType _ _ =>
       emitExprDiagnostic $ diagnosticFromSource expr.source "IsType should have been lowered" MessageKind.strataBug
-  | .New .. => emitExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by typeHierarchyTransform" MessageKind.strataBug
+  | .New .. => emitExprDiagnostic $ diagnosticFromSource expr.source s!"New should have been eliminated by lowerComposite" MessageKind.strataBug
   | .AsType target _ => emitExprDiagnostic $ diagnosticFromSource expr.source "AsType expression translation" MessageKind.notYetImplemented
   | .Assigned _ => emitExprDiagnostic $ diagnosticFromSource expr.source "assigned expression translation" MessageKind.notYetImplemented
   | .Old _ (some label) =>
@@ -1097,7 +1097,11 @@ def translateStmt (stmt : StmtExprMd)
       let coreExpr ← translateExpr cond [] (isPureContext := true)
       let label ← freshStmtLabel "assume" (getNameFromMd md)
       return [Core.Statement.assume label coreExpr md]
-  | .Block stmts label =>
+  | .Block stmts label invs dec =>
+      unless invs.isEmpty && dec.isNone do
+        emitCoreDiagnostic (diagnosticFromSource stmt.source
+          "block invariants should have been eliminated by the RestructureGotos pass"
+          MessageKind.strataBug)
       let innerStmts ← stmts.flatMapM (fun s => translateStmt s)
       -- A Laurel block is a lexical scope. Core only pushes/pops a variable
       -- scope for a `Stmt.block`, so every block must lower to one -- returning
@@ -1290,8 +1294,13 @@ def translateStmt (stmt : StmtExprMd)
       let mdWithInvs := invariants.foldl
         (fun acc i => acc.pushInvariantProvenance (fileRangeToProvenance i.source)) md
       return [Imperative.Stmt.loop (.det condExpr) decreasingExprCore invExprs bodyStmts mdWithInvs]
-  | .Exit target =>
+  | .Goto target .blockEnd =>
       return [Imperative.Stmt.exit target md]
+  | .Goto _ .blockStart =>
+      emitCoreDiagnostic (diagnosticFromSource stmt.source
+        "a backward goto should have been eliminated by the RestructureGotos pass"
+        MessageKind.strataBug)
+      return []
   | .Hole _ _ =>
       -- Hole in statement position: treat as havoc (no-op).
       -- This can occur when an unmodeled call's Block is flattened.
@@ -1432,7 +1441,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
   let inputs ← proc.inputs.mapM translateParameterToCore
   let outputTy ← match proc.outputs.head? with
     | some p => translateType p.type
-    | none => pure LMonoTy.int
+    | none => translateType ⟨.TVoid, proc.name.source⟩
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
   let preconditions ← proc.preconditions.mapM (fun precondition => do
     let checkExpr ← translateExpr precondition.condition [] true
@@ -1573,6 +1582,9 @@ public def laurelToCoreSchemaPass : LaurelPass where
     ]
   unsupported := [
       NodeKind.StmtExpr.While.postTest.true,
+      NodeKind.StmtExpr.Goto.destination.blockStart,
+      NodeKind.StmtExpr.Block.invariants.cons,
+      NodeKind.StmtExpr.Block.decreases.some,
       NodeKind.StmtExpr.IncrDecr,
       NodeKind.StmtExpr.CompoundAssign,
       NodeKind.StmtExpr.Var.var.Field,

@@ -15,20 +15,20 @@ program Laurel;
 
 procedure sameBetween(s: Sequence<int>, a: Sequence<int>, lo: int, hi: int): bool
 {
-  forall(k: int) => lo <= k ==> k <= hi ==> 0 <= k ==> k < seqLength(s) ==> k < seqLength(a) ==>
+  return forall(k: int) => lo <= k ==> k <= hi ==> 0 <= k ==> k < seqLength(s) ==> k < seqLength(a) ==>
     seqSelect(s, k) == seqSelect(a, k)
 };
 
 procedure swappedBelow(s: Sequence<int>, a: Sequence<int>, i: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < i ==> k < seqLength(a) ==> seqLength(s) == seqLength(a) ==>
+  return forall(k: int) => 0 <= k ==> k < i ==> k < seqLength(a) ==> seqLength(s) == seqLength(a) ==>
     seqSelect(s, k) == seqSelect(a, seqLength(a) - 1 - k)
     && seqSelect(s, seqLength(a) - 1 - k) == seqSelect(a, k)
 };
 
 procedure isReverse(s: Sequence<int>, a: Sequence<int>): bool
 {
-  seqLength(s) == seqLength(a)
+  return seqLength(s) == seqLength(a)
   && (forall(k: int) => 0 <= k ==> k < seqLength(a) ==> seqSelect(s, k) == seqSelect(a, seqLength(a) - 1 - k))
 };
 
@@ -64,20 +64,20 @@ program Laurel;
 
 procedure sameBetween(s: Sequence<int>, a: Sequence<int>, lo: int, hi: int): bool
 {
-  forall(k: int) => lo <= k ==> k <= hi ==> 0 <= k ==> k < seqLength(s) ==> k < seqLength(a) ==>
+  return forall(k: int) => lo <= k ==> k <= hi ==> 0 <= k ==> k < seqLength(s) ==> k < seqLength(a) ==>
     seqSelect(s, k) == seqSelect(a, k)
 };
 
 procedure swappedBelow(s: Sequence<int>, a: Sequence<int>, i: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < i ==> k < seqLength(a) ==> seqLength(s) == seqLength(a) ==>
+  return forall(k: int) => 0 <= k ==> k < i ==> k < seqLength(a) ==> seqLength(s) == seqLength(a) ==>
     seqSelect(s, k) == seqSelect(a, seqLength(a) - 1 - k)
     && seqSelect(s, seqLength(a) - 1 - k) == seqSelect(a, k)
 };
 
 procedure isReverse(s: Sequence<int>, a: Sequence<int>): bool
 {
-  seqLength(s) == seqLength(a)
+  return seqLength(s) == seqLength(a)
   && (forall(k: int) => 0 <= k ==> k < seqLength(a) ==> seqSelect(s, k) == seqSelect(a, seqLength(a) - 1 - k))
 };
 

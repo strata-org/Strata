@@ -889,7 +889,7 @@ to sequence it against -- the initializer only reaches one when the globals pass
 emits it into an entry procedure's prologue, which happens after `new` is lowered.
 
 Diagnosed rather than left alone because the failure is otherwise silent: the type
-flattening at the end of the type-hierarchy pass rewrites the field's declared type
+flattening at the end of `LowerComposite` rewrites the field's declared type
 to `Composite` while the initializer still says `new C`, and nothing objects until
 something re-resolves the program.
 
@@ -949,7 +949,7 @@ procedure e()
 
 /-! ## An `is` type test inside a global's INITIALIZER.
 
-Guards `TypeHierarchy` lowering `is` program-wide, not procedure bodies alone. Four things make it
+Guards `LowerComposite` lowering `is` program-wide, not procedure bodies alone. Four things make it
 able to fail, each easy to lose in a simplification:
 
 - the reader is `entry`, so the global carries its initializer's value and the assert pins what the
@@ -998,7 +998,7 @@ procedure e2()
   opaque
 {
   assert parentIsChild
-//^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 
@@ -1342,5 +1342,187 @@ procedure callerCannotAssume()
   clobbersG();
   assert g == before
 //^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+/-! ## A global writer may be called inside `assert` and `assume` conditions.
+    The call's result and its write to `g` are both observed afterwards. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+var g: int := 0
+procedure setG(v: int) returns (r: int)
+  opaque
+  ensures g == v && r == v
+{
+  g := v;
+  r := v
+};
+procedure assertCallsOpaque() opaque {
+  g := 0;
+  assert setG(5) == 5;
+  assert g == 5
+};
+procedure assertCallsOpaqueWrongResult() opaque {
+  g := 0;
+  assert setG(5) == 6
+//^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+procedure assertCallsOpaqueStaleGlobal() opaque {
+  g := 0;
+  assert setG(5) == 5;
+  assert g == 0
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+procedure assumeCallsOpaque() opaque {
+  g := 0;
+  assume setG(5) == 5;
+  assert g == 5
+};
+procedure assumeCallsOpaqueStaleGlobal() opaque {
+  g := 0;
+  assume setG(5) == 5;
+  assert g == 0
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+/-! The same holds for a transparent global writer. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+var g: int := 0
+procedure incG() returns (r: int) {
+  g := g + 1;
+  return g
+};
+procedure assertCallsTransparent() opaque {
+  g := 3;
+  assert incG() == 4;
+  assert g == 4
+};
+procedure assertCallsTransparentWrongResult() opaque {
+  g := 3;
+  assert incG() == 3
+//^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+procedure assertCallsTransparentStaleGlobal() opaque {
+  g := 3;
+  assert incG() == 4;
+  assert g == 3
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+procedure assumeCallsTransparent() opaque {
+  g := 3;
+  assume incG() == 4;
+  assert g == 4
+};
+procedure assumeCallsTransparentStaleGlobal() opaque {
+  g := 3;
+  assume incG() == 4;
+  assert g == 3
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+/-! A heap writer is a global writer too and follows the same rule. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite C { var f: int }
+procedure bump(c: C) returns (r: int)
+  opaque
+  ensures r == 1 && c#f == 1
+  modifies c
+{
+  c#f := 1;
+  r := 1
+};
+procedure assertCallsHeapWriter(c: C) opaque modifies c {
+  c#f := 0;
+  assert bump(c) == 1;
+  assert c#f == 1
+};
+procedure assertCallsHeapWriterWrongResult(c: C) opaque modifies c {
+  assert bump(c) == 2
+//^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+procedure assertCallsHeapWriterStaleField(c: C) opaque modifies c {
+  c#f := 0;
+  assert bump(c) == 1;
+  assert c#f == 0
+//^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+procedure assumeCallsHeapWriter(c: C) opaque modifies c {
+  c#f := 0;
+  assume bump(c) == 1;
+  assert c#f == 1
+};
+procedure assumeCallsHeapWriterStaleField(c: C) opaque modifies c {
+  c#f := 0;
+  assume bump(c) == 1;
+  assert c#f == 0
+//^^^^^^^^^^^^^^^ error: assertion could not be proved
+};
+#end
+
+/-! The write inside an `assert` or `assume` condition is kept when the condition sits in
+    a transparent body, so a caller sees it through the body's function copy. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+var g: int := 0
+procedure bumpG() returns (r: bool) { g := g + 1; r := true };
+procedure assertsBump() returns (r: int) { assert bumpG(); r := 0 };
+procedure assumesBump() returns (r: int) { assume bumpG(); r := 0 };
+procedure callerSeesAssertWrite() opaque {
+  g := 0;
+  var x: int := assertsBump();
+  assert g == 1
+};
+procedure callerSeesAssertWriteStale() opaque {
+  g := 0;
+  var x: int := assertsBump();
+  assert g == 0
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+procedure callerSeesAssumeWrite() opaque {
+  g := 0;
+  var x: int := assumesBump();
+  assert g == 1
+};
+procedure callerSeesAssumeWriteStale() opaque {
+  g := 0;
+  var x: int := assumesBump();
+  assert g == 0
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+#guard_msgs (drop info) in
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+composite Cell { var v: int }
+procedure setV(c: Cell) returns (r: bool) { c#v := 7; r := true };
+procedure assertsSet(c: Cell) returns (r: int) { assert setV(c); r := 0 };
+procedure callerSeesHeapWrite(c: Cell) opaque modifies c {
+  c#v := 0;
+  var x: int := assertsSet(c);
+  assert c#v == 7
+};
+procedure callerSeesHeapWriteStale(c: Cell) opaque modifies c {
+  c#v := 0;
+  var x: int := assertsSet(c);
+  assert c#v == 0
+//^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end

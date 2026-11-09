@@ -35,7 +35,7 @@ control falls off the end:
                                         where kr = F(rest, k)
     F({ A } L :: rest, k)             = F(A, kr) with L bound to kr
                                         where kr = F(rest, k)
-    F((x := { S; e }) :: rest, k)     = F(S ++ (x := e) :: rest, k)
+    F([e], k)                         = k     for a pure expression e
 
 ## Uninitialized variables become holes
 
@@ -80,9 +80,8 @@ where the declaration sits, a body that shadows an input with a local of the sam
 would capture the hole's argument, defeating the parameterization exactly as a nullary
 constant would.
 
-An uninitialized local in a *polymorphic* transparent body is reported rather than
-given a hole: the hole mirrors the enclosing inputs, so it is polymorphic too, and
-monomorphization runs much earlier in the pipeline than this pass.
+In a polymorphic body the holes carry the function's type parameters (`declHoleProcs`),
+so a local or output of type `T` left uninitialized is holed like any other.
 
 Because the hole is emitted as a call to an uninterpreted function rather than as a
 `.Hole` node, it needs no later elimination: this pass runs long after
@@ -143,6 +142,8 @@ fall through:
   the shape that hurts: measured at 681, 4033, and 21745 characters for n = 2, 4,
   and 6, and end-to-end compile time of roughly 6s at n = 10 versus 147s at
   n = 13.
+- An if inside an assigned **block value** counts as one at statement level, since the
+  block is flattened into the enclosing statements.
 
 So the exponential case needs about a dozen consecutive both-branch-falling-through
 ifs in a single transparent body before it becomes noticeable. That is accepted for
@@ -159,8 +160,40 @@ The rule `F((x := e) :: rest, k) = { var x : T := e; F(rest, k) }` needs a
 in *statement* position. An assignment nested inside an expression — the `x := 2`
 of `requires (x := 2) == 2`, or of `return (x := x + 1) + 0` — has no such
 continuation: it is a side effect in the middle of a value, and there is nothing
-to bind it around. Those are left untouched and stay rejected, which is why
-neither an if-condition nor a non-block assigned value is descended into.
+to bind it around. Those are left untouched and stay rejected.
+
+## Blocks that write are hoisted out of expressions first
+
+A call to a procedure that writes a global or the heap reaches this pass as a block
+value, because that is how `GlobalParameterization` lowers such a call in a value
+position:
+
+    r := { var $out := setG(g, v); g := $outputs_setG..g($out); …; <result> } + 1
+
+The assignment to `g` inside it was not written by the user, and it is in statement
+position *within the block*. Before translating, `hoistStmts` moves the statements of
+every block that writes a local out of the expression and ahead of the statement that
+evaluates it, replacing the block by its last element:
+
+    var $out := setG(g, v); g := $outputs_setG..g($out); …; r := <result> + 1
+
+so the write becomes an ordinary statement whose binding scopes over the rest of the
+body. This applies wherever an expression is evaluated: an assigned value, a returned
+value, an if-condition, an expression statement, and a block that is itself the whole
+value.
+
+Operands are evaluated left to right, so an operand to the left of such a block must
+read what it read before the block's statements ran. Each variable an earlier operand
+reads that a later operand's hoisted statements assign is bound to a snapshot first:
+`g + setG(5)` reads `g` into `$snapshot$0` before the call, while `setG(5) + g` reads
+the written `g`.
+
+A block in a branch of an if-expression is evaluated only on that branch, so it is not
+hoisted unconditionally: the enclosing statement becomes a statement-level `if` with a
+copy of the statement in each branch, and each copy hoists its own branch's block. The
+short-circuit operators are treated as the if-expressions they mean, the right operand
+being the conditional one. A block under a quantifier, an `old`, or an assignment
+nested in an expression is left in place and stays rejected.
 
 This is also why a contract is unaffected. Preconditions and postconditions are
 `Condition` expressions, not body statements, so they are outside this pass
@@ -189,22 +222,6 @@ assume (stripped from the function copy by the transparency pass), a call
 is misordered, not that the user wrote something unsupported, so the message
 names the pass responsible. Because any non-warning diagnostic from an
 unordered-core pass discards the Core program, these abort the pipeline.
-
-## Follow-up: multi-variable if-lifting with tuples
-
-Inlining duplicates an initializer at each use, so a branch that assigns a
-variable read more than once duplicates work. A `StmtExpr.Tuple` constructor
-would let a branch yield several values at once:
-
-    if (b) { x := a + 1; y := x + 10; } else { x := a; y := x; }
-
-    var x, y := if (b) then { var x := a + 1; Tuple [x, x + 10] }
-                       else { Tuple [a, x] };
-
-This requires adding `StmtExpr.Tuple (elements : List (AstNode StmtExpr))` to
-LaurelAST, updating the MapStmtExpr traversals, and teaching the Core translator
-to destructure a tuple into let-bindings. It is subsumed by giving Core a real
-`let`.
 -/
 
 namespace Strata.Laurel
@@ -228,9 +245,9 @@ public section
     this needs no `partial` or `termination_by`. -/
 private def bodyStatements (body : StmtExprMd) : List StmtExprMd :=
   match body with
-  | ⟨.Block [single] label, _⟩ =>
+  | ⟨.Block [single] label _ _, _⟩ =>
     if label.all (· == returnLabel) then bodyStatements single else [body]
-  | ⟨.Block stmts label, _⟩ =>
+  | ⟨.Block stmts label _ _, _⟩ =>
     if label.all (· == returnLabel) then stmts else [body]
   | _ => [body]
 
@@ -251,42 +268,6 @@ private theorem sizeOf_append {α : Type} [SizeOf α] (xs ys : List α) :
   induction xs with
   | nil => simp; omega
   | cons a as ih => simp only [List.cons_append, List.cons.sizeOf_spec]; omega
-
-/-- `dropLast` never grows a list. Used to bound the statements of a block value,
-    which are functionalized with the block's last element as the continuation.
-
-    Stated for any element type, as with `sizeOf_append`. -/
-private theorem sizeOf_dropLast_le {α : Type} [SizeOf α] (xs : List α) :
-    sizeOf xs.dropLast ≤ sizeOf xs := by
-  induction xs with
-  | nil => simp
-  | cons a as ih =>
-    cases as with
-    | nil => simp
-    | cons b bs =>
-      simp only [List.dropLast_cons_cons, List.cons.sizeOf_spec] at *
-      omega
-
-/-- A non-empty list's last element and the rest of it together are smaller than the
-    list. Used to bound a block value flattened into the enclosing statements, where the
-    last element is re-wrapped in the assignment it was the value of.
-
-    Stated for any element type, as with `sizeOf_append`. -/
-private theorem sizeOf_dropLast_add_getLast_lt {α : Type} [SizeOf α] (xs : List α) (h : xs ≠ []) :
-    sizeOf xs.dropLast + sizeOf (xs.getLast h) < sizeOf xs := by
-  have hsize := sizeOf_append xs.dropLast [xs.getLast h]
-  rw [List.dropLast_concat_getLast h] at hsize
-  simp only [List.cons.sizeOf_spec, List.nil.sizeOf_spec] at hsize
-  omega
-
-/-- The size of a block value flattened in front of `rest`, as `sizeOf_append` gives it.
-    Stated as an equation so `simp` can rewrite with it; stated for any element type. -/
-private theorem sizeOf_dropLast_append_cons {α : Type} [SizeOf α] (xs : List α) (y : α)
-    (rest : List α) :
-    sizeOf (xs.dropLast ++ y :: rest) = sizeOf xs.dropLast + sizeOf y + sizeOf rest := by
-  have hsize := sizeOf_append xs.dropLast (y :: rest)
-  simp only [List.cons.sizeOf_spec] at hsize
-  omega
 
 /-- The name of the uninterpreted function standing for the initial value of the
     bare declaration whose `uniqueId` is `uid`, and the name of the local the rewrite
@@ -328,20 +309,35 @@ private abbrev HoleBinding := Nat × Identifier × HighTypeMd
 
 /-- Whether `e` contains an `exit` or a `return` anywhere inside it.
 
-    Used to reject a block *value* that contains one, as in `r := { if c then { exit L }; 5 }`.
-    A returned block's statements are translated with its last element as their
-    continuation, which would turn an exit into the returned value, and flattening an
-    assigned block drops the block's own label, so an exit to it would lose its target. -/
+    Used to reject a block *value* that contains control flow, as in
+    `r := { if c then { exit L }; 5 }`, rather than translate it. `hoistExpr` moves a
+    block value's statements ahead of the statement that evaluates it and drops the
+    block's own label, so an `exit` naming that label would lose its target. -/
 private def containsExitOrReturn (e : StmtExprMd) : Bool :=
   let check (n : StmtExprMd) : StateM Bool StmtExprMd := do
     match n.val with
-    | .Exit _ | .Return _ => set true; pure n
+    | .Goto _ _ | .Return _ => set true; pure n
     | _ => pure n
   ((mapStmtExprM check e).run false).2
 
 /-- The message for a block value the rewrite will not translate. -/
 private def blockValueExitMsg : String :=
   "an `exit` or `return` inside an assigned block value is not YET supported in transparent bodies or contracts"
+
+private def declaredLocalUids (body : StmtExprMd) : List Nat :=
+  let collect (e : StmtExprMd) : StateM (List Nat) StmtExprMd := do
+    match e.val with
+    | .Var (.Declare p) | .Assign [⟨.Declare p, _⟩] _ =>
+      match p.name.uniqueId with
+      | none => pure e
+      | some uid => modify (uid :: ·); pure e
+    | _ => pure e
+  ((mapStmtExprM collect body).run []).2
+
+private def renamedLocal (declared : List Nat) (id : Identifier) : Identifier :=
+  match id.uniqueId with
+  | some uid => if declared.contains uid then { id with text := s!"$v_{uid}" } else id
+  | none => id
 
 /-- Alpha-convert every local *declared in* `body` to a name unique to that declaration.
 
@@ -372,18 +368,8 @@ private def blockValueExitMsg : String :=
     bind by name, which is only correct when names are unambiguous — which is exactly what
     this establishes. -/
 private def alphaConvertLocals (body : StmtExprMd) : StmtExprMd :=
-  let collect (e : StmtExprMd) : StateM (List Nat) StmtExprMd := do
-    match e.val with
-    | .Var (.Declare p) | .Assign [⟨.Declare p, _⟩] _ =>
-      match p.name.uniqueId with
-      | none => pure e
-      | some uid => modify (uid :: ·); pure e
-    | _ => pure e
-  let declared := ((mapStmtExprM collect body).run []).2
-  let renamed (id : Identifier) : Identifier :=
-    match id.uniqueId with
-    | some uid => if declared.contains uid then { id with text := s!"$v_{uid}" } else id
-    | none => id
+  let declared := declaredLocalUids body
+  let renamed := renamedLocal declared
   mapStmtExpr (fun n =>
     match n.val with
     | .Var (.Local id) => ⟨.Var (.Local (renamed id)), n.source⟩
@@ -420,10 +406,12 @@ private def bareDecls (body : StmtExprMd) : List HoleBinding :=
     the *same* value for every input, which lets a caller prove more than "arbitrary" —
     see the module docstring.
 
-    `typeArgs` carries the enclosing function's type parameters: in a polymorphic
-    function (`f<T>(x : T)`) the mirrored inputs and the declared type mention `T`, so
-    the generated hole must bind `T` too, or `T` is a free type variable at Core and the
-    program fails to type-check. Empty for a monomorphic function.
+    `typeArgs` carries the enclosing function's type parameters. A hole binds only the
+    ones mentioned by its mirrored inputs or its declared type. In a polymorphic function
+    (`f<T>(x : T)`) the inputs mention `T`, so the hole must bind `T`, or `T` is a free
+    type variable at Core and the program fails to type-check. A parameter neither
+    mentions, like `Q` in a contract helper for `requires forall(x: Q) => x == x`, could
+    not be inferred at the hole's call, so it is not bound.
 
     The body is `.Opaque [] none []`, which the Core schema translation turns into a
     function with no body, i.e. an uninterpreted one. That is the already-eliminated
@@ -432,9 +420,11 @@ private def bareDecls (body : StmtExprMd) : List HoleBinding :=
     eliminated. -/
 private def declHoleProcs (procName : Identifier) (typeArgs : List Identifier)
     (inputs : List Parameter) (decls : List HoleBinding) : List Procedure :=
+  let inputTVars := inputs.flatMap (tvarNames ·.type.val)
   decls.map fun (uid, _, ty) =>
+    let mentioned := inputTVars ++ tvarNames ty.val
     { name := declHoleName procName uid
-      typeArgs := typeArgs
+      typeArgs := typeArgs.filter (mentioned.contains ·.text)
       inputs := inputs
       outputs := [{ name := "$result", type := ty }]
       preconditions := []
@@ -468,7 +458,20 @@ private def holePrelude (procName : Identifier) (inputs : List Parameter)
     let call : StmtExprMd := ⟨.StaticCall (declHoleName procName uid) args [], src⟩
     let decl : StmtExprMd :=
       ⟨.Assign [⟨.Declare ⟨name, some ty⟩, src⟩] call, src⟩
-    ⟨.Block [decl, acc] none, src⟩
+    ⟨.Block [decl, acc] none [] none, src⟩
+
+/-- An expression whose evaluation has no effect. Laurel discards a body's trailing
+    expression instead of assigning it to an output, so one of these in tail position is
+    dropped. A call is included because by this point the transparency pass has rewritten
+    every call in a function copy into a function application. Every other construct in
+    tail position is reported exactly as it would be anywhere else, so a trailing loop or
+    an effect is never silently removed. -/
+private def isPureValue (s : StmtExprMd) : Bool :=
+  match s.val with
+  | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
+  | .Var (.Local _) | .Var (.Field ..) | .StaticCall .. | .ReferenceEquals .. | .AsType ..
+  | .IsType .. | .Quantifier .. | .PureFieldUpdate .. | .Old .. => true
+  | _ => false
 
 /-- The reason a statement has no functional form, and how to report it.
 
@@ -487,16 +490,8 @@ private def unsupportedStmt (s : StmtExprMd) : String × MessageKind :=
     -- Handled in `functionalizeStmts`; a bare declaration binds nothing, so it is
     -- skipped rather than reported.
     ("local variables must have initializers in transparent bodies or contracts", .userError)
-  -- An assignment to several targets comes from a multi-output call, so making it
-  -- functional needs a way for one expression to yield several values (see the
-  -- tuple note in the module docstring).
-  --
-  -- No test reaches this arm from surface Laurel, and none can while the only way to
-  -- write one is `assign a, b := f()`: the transparency pass rejects the multi-output
-  -- call first, with "calling multi-output procedure 'f' is not (yet) supported from a
-  -- transparent procedure or contract". The arm stays because this function is total
-  -- over statement shapes, and to give a precise message if a later pass ever
-  -- synthesizes the form.
+  -- Unreachable: `PackageFunctionOutputs` rewrites a multi-output call into one call
+  -- plus a projection per target before this pass runs. Kept for totality.
   | .Assign targets _ =>
     if targets.any (fun t => match t.val with | .Field .. => true | _ => false) then
       ("field assignment should have been eliminated by heap parameterization", .strataBug)
@@ -537,6 +532,255 @@ private def stripLocalUids (e : StmtExprMd) : StmtExprMd :=
       ⟨.Assign [⟨.Declare { p with name := { p.name with uniqueId := none } }, ts⟩] v, n.source⟩
     | _ => n) e
 
+/-- The locals `s` assigns anywhere inside it, as the identifiers of the assignment
+    targets. A declaration is not an assignment: it introduces a name nothing outside can
+    have read yet. -/
+private def assignedLocals (s : StmtExprMd) : List Identifier :=
+  let collect (n : StmtExprMd) : StateM (List Identifier) StmtExprMd := do
+    match n.val with
+    | .Assign targets _ =>
+      for t in targets do
+        match t.val with
+        | .Local id => modify (id :: ·)
+        | _ => pure ()
+      pure n
+    | _ => pure n
+  ((mapStmtExprM collect s).run []).2
+
+/-- Whether two references name the same variable: by `uniqueId` when both carry one,
+    so that a quantifier-bound name never matches an outer variable of the same text. -/
+private def sameVar (a b : Identifier) : Bool :=
+  match a.uniqueId, b.uniqueId with
+  | some x, some y => x == y
+  | _, _ => a.text == b.text
+
+/-- Whether `e` contains a block that assigns a local. This is the shape
+    `GlobalParameterization` gives a call to a global or heap writer in a value position,
+    `{ …; g := <new value>; …; <result> }`, and the shape `hoistExpr` moves out of an
+    expression. A block that only declares is left where it is. -/
+private def containsBlockWrite (e : StmtExprMd) : Bool :=
+  let check (n : StmtExprMd) : StateM Bool StmtExprMd := do
+    match n.val with
+    | .Block .. => if !(assignedLocals n).isEmpty then set true
+    | _ => pure ()
+    pure n
+  ((mapStmtExprM check e).run false).2
+
+/-- An expression with the statements hoisted out of it: `pre` runs first, then the
+    expression evaluates to `value`. A `branch` is an if-expression whose branches had
+    statements hoisted out of them, so it cannot become a single prefix: the enclosing
+    statement is emitted in each branch of a statement-level `if` (`toStmts`). -/
+private inductive Hoisted (α : Type) where
+  | done (pre : List StmtExprMd) (value : α)
+  | branch (pre : List StmtExprMd) (cond : StmtExprMd) (source : FileRange)
+      (thenH elseH : Hoisted α)
+
+private def Hoisted.prepend {α : Type} (stmts : List StmtExprMd) : Hoisted α → Hoisted α
+  | .done pre v => .done (stmts ++ pre) v
+  | .branch pre c src t e => .branch (stmts ++ pre) c src t e
+
+private def Hoisted.map {α β : Type} (f : α → β) : Hoisted α → Hoisted β
+  | .done pre v => .done pre (f v)
+  | .branch pre c src t e => .branch pre c src (t.map f) (e.map f)
+
+private def Hoisted.bindM {m : Type → Type} [Monad m] {α β : Type}
+    (h : Hoisted α) (f : α → m (Hoisted β)) : m (Hoisted β) :=
+  match h with
+  | .done pre v => return (← f v).prepend pre
+  | .branch pre c src t e => return .branch pre c src (← t.bindM f) (← e.bindM f)
+
+/-- The locals any statement of `h` assigns, on any path. -/
+private def Hoisted.writes {α : Type} : Hoisted α → List Identifier
+  | .done pre _ => pre.flatMap assignedLocals
+  | .branch pre _ _ t e => pre.flatMap assignedLocals ++ t.writes ++ e.writes
+
+/-- The statements that run `h` and then the statement `mk` builds from its value. -/
+private def Hoisted.toStmts {α : Type} (mk : α → StmtExprMd) : Hoisted α → List StmtExprMd
+  | .done pre v => pre ++ [mk v]
+  | .branch pre c src t e =>
+    pre ++ [⟨.IfThenElse c ⟨.Block (t.toStmts mk) none [] none, src⟩
+      (some ⟨.Block (e.toStmts mk) none [] none, src⟩), src⟩]
+
+private abbrev HoistM := StateT Nat (Except Message)
+
+/-- Bind every variable `v` reads that one of `later` assigns to a fresh snapshot, and
+    read the snapshot instead. The snapshot declarations run where `v` is evaluated, so
+    the statements hoisted out of a later operand cannot change what `v` reads. -/
+private def snapshotReads (model : SemanticModel) (later : List Identifier)
+    (v : StmtExprMd) : HoistM (List StmtExprMd × StmtExprMd) := do
+  if later.isEmpty then return ([], v)
+  let collect (n : StmtExprMd) : StateM (List Identifier) StmtExprMd := do
+    match n.val with
+    | .Var (.Local id) =>
+      if later.any (sameVar id) && !(← get).any (sameVar id) then modify (· ++ [id])
+      pure n
+    | _ => pure n
+  let reads := ((mapStmtExprM collect v).run []).2
+  let mut decls : List StmtExprMd := []
+  let mut renames : List (Identifier × Identifier) := []
+  for id in reads do
+    let n ← getModify (· + 1)
+    let snap := mkId s!"$snapshot${n}"
+    let src := v.source
+    let ty := computeExprType model ⟨.Var (.Local id), src⟩
+    decls := decls ++
+      [⟨.Assign [⟨.Declare ⟨snap, some ty⟩, src⟩] ⟨.Var (.Local id), src⟩, src⟩]
+    renames := renames ++ [(id, snap)]
+  let v' := mapStmtExpr (fun n =>
+    match n.val with
+    | .Var (.Local id) =>
+      match renames.find? (sameVar id ·.1) with
+      | some (_, snap) => ⟨.Var (.Local snap), n.source⟩
+      | none => n
+    | _ => n) v
+  return (decls, v')
+
+/-- Combine hoisted operands, evaluated left to right, into one hoisted operand list.
+    An operand's value is evaluated before the statements hoisted out of the operands
+    after it, so each variable it reads that those statements assign is snapshotted. -/
+private def hoistSequence (model : SemanticModel) :
+    List (Hoisted StmtExprMd) → HoistM (Hoisted (List StmtExprMd))
+  | [] => return .done [] []
+  | h :: hs => do
+    let rest ← hoistSequence model hs
+    let later := rest.writes
+    h.bindM fun v => do
+      let (snaps, v') ← snapshotReads model later v
+      return (rest.map (v' :: ·)).prepend snaps
+
+private def hoistPair (model : SemanticModel) (a b : Hoisted StmtExprMd)
+    (mk : StmtExprMd → StmtExprMd → StmtExprMd) (orig : StmtExprMd)
+    : HoistM (Hoisted StmtExprMd) := do
+  let h ← hoistSequence model [a, b]
+  return h.map fun | [a', b'] => mk a' b' | _ => orig
+
+/-- Wrap the statements hoisting produced for one branch of an if back into one node. -/
+private def asBranch (orig : StmtExprMd) : List StmtExprMd → StmtExprMd
+  | [single] => single
+  | stmts => ⟨.Block stmts none [] none, orig.source⟩
+
+mutual
+/-- Move every block that assigns a local out of `e`.
+
+    A block value `{ S; t }` is replaced by `t`, with `S` run first. Operands are
+    evaluated left to right (`hoistSequence`). An if-expression with such a block in a
+    branch becomes a `branch`, and so does a short-circuit operator whose right operand
+    has one, spelled as the if-expression it means. Positions that are not evaluated at
+    all where they appear — a quantifier body, an `old`, an assignment nested in an
+    expression — are left in place. -/
+private def hoistExpr (model : SemanticModel) (e : StmtExprMd)
+    : HoistM (Hoisted StmtExprMd) := do
+  let isBlock := match e.val with | .Block .. => true | _ => false
+  if !isBlock && !containsBlockWrite e then return .done [] e
+  match e with
+  | ⟨.Block stmts _ _ _, src⟩ =>
+    if containsExitOrReturn e then
+      throw (diagnosticFromSource src blockValueExitMsg .userError)
+    hoistBlockValue model e stmts
+  | ⟨.IfThenElse c t (some el), src⟩ => do
+    let hc ← hoistExpr model c
+    if containsBlockWrite t || containsBlockWrite el then
+      let ht ← hoistExpr model t
+      let he ← hoistExpr model el
+      hc.bindM fun c' => return .branch [] c' src ht he
+    else
+      return hc.map fun c' => ⟨.IfThenElse c' t (some el), src⟩
+  | ⟨.StaticCall callee args tyArgs, src⟩ => do
+    let lit (b : Bool) : Hoisted StmtExprMd := .done [] ⟨.LiteralBool b, src⟩
+    let hs ← args.attach.mapM fun ⟨a, _⟩ => hoistExpr model a
+    match Operation.ofProcName? callee.text, hs with
+    | some .AndThen, [ha, hb] => ha.bindM fun a' => return .branch [] a' src hb (lit false)
+    | some .Implies, [ha, hb] => ha.bindM fun a' => return .branch [] a' src hb (lit true)
+    | some .OrElse, [ha, hb] => ha.bindM fun a' => return .branch [] a' src (lit true) hb
+    | _, _ =>
+      return (← hoistSequence model hs).map fun args' => ⟨.StaticCall callee args' tyArgs, src⟩
+  | ⟨.InstanceCall target callee args, src⟩ => do
+    let ht ← hoistExpr model target
+    let hs ← args.attach.mapM fun ⟨a, _⟩ => hoistExpr model a
+    return (← hoistSequence model (ht :: hs)).map fun
+      | t' :: args' => ⟨.InstanceCall t' callee args', src⟩
+      | [] => e
+  | ⟨.ReferenceEquals l r, src⟩ => do
+    hoistPair model (← hoistExpr model l) (← hoistExpr model r)
+      (fun l' r' => ⟨.ReferenceEquals l' r', src⟩) e
+  | ⟨.PureFieldUpdate t f v, src⟩ => do
+    hoistPair model (← hoistExpr model t) (← hoistExpr model v)
+      (fun t' v' => ⟨.PureFieldUpdate t' f v', src⟩) e
+  | ⟨.AsType t ty, src⟩ => do
+    return (← hoistExpr model t).map fun t' => ⟨.AsType t' ty, src⟩
+  | ⟨.IsType t ty, src⟩ => do
+    return (← hoistExpr model t).map fun t' => ⟨.IsType t' ty, src⟩
+  | ⟨.Var (.Field t f), src⟩ => do
+    return (← hoistExpr model t).map fun t' => ⟨.Var (.Field t' f), src⟩
+  | _ => return .done [] e
+
+termination_by (sizeOf e, 1)
+decreasing_by
+  all_goals simp_wf
+  all_goals (try have := List.sizeOf_lt_of_mem ‹_›)
+  all_goals (try simp only [Prod.lex_def] at *)
+  all_goals omega
+
+/-- The statements of a block value hoisted ahead of its last element, which becomes
+    the value. An empty block has no value to become, and is left as it is. -/
+private def hoistBlockValue (model : SemanticModel) (orig : StmtExprMd)
+    (stmts : List StmtExprMd) : HoistM (Hoisted StmtExprMd) := do
+  match stmts with
+  | [] => return .done [] orig
+  | [tail] => hoistExpr model tail
+  | s :: t :: more =>
+    let pre ← hoistStmt model s
+    return (← hoistBlockValue model orig (t :: more)).prepend pre
+
+termination_by (sizeOf stmts, 2)
+decreasing_by
+  all_goals simp_wf
+  all_goals (try have := List.sizeOf_lt_of_mem ‹_›)
+  all_goals (try simp only [Prod.lex_def] at *)
+  all_goals omega
+
+/-- `s`, preceded by the statements hoisted out of the expressions it evaluates. -/
+private def hoistStmt (model : SemanticModel) (s : StmtExprMd)
+    : HoistM (List StmtExprMd) := do
+  match _h : s with
+  | ⟨.Assign [target] value, src⟩ =>
+    match target.val with
+    | .Field .. => return [s]
+    | _ => return (← hoistExpr model value).toStmts fun v => ⟨.Assign [target] v, src⟩
+  | ⟨.Return [value], src⟩ =>
+    return (← hoistExpr model value).toStmts fun v => ⟨.Return [v], src⟩
+  | ⟨.IfThenElse c t el, src⟩ => do
+    let hc ← hoistExpr model c
+    let t' := asBranch t (← hoistStmt model t)
+    let el' ← match el with
+      | some eb => (fun r => some (asBranch eb r)) <$> hoistStmt model eb
+      | none => pure none
+    return hc.toStmts fun c' => ⟨.IfThenElse c' t' el', src⟩
+  | ⟨.Block stmts label invs dec, src⟩ => return [⟨.Block (← hoistStmts model stmts) label invs dec, src⟩]
+  | ⟨.While .., _⟩ | ⟨.Var _, _⟩ | ⟨.Goto _ _, _⟩ => return [s]
+  | _ => return (← hoistExpr model s).toStmts id
+
+termination_by (sizeOf s, 3)
+decreasing_by
+  all_goals simp_wf
+  all_goals (try have := List.sizeOf_lt_of_mem ‹_›)
+  all_goals (try simp only [Prod.lex_def] at *)
+  all_goals (try subst_vars)
+  all_goals omega
+
+private def hoistStmts (model : SemanticModel) (stmts : List StmtExprMd)
+    : HoistM (List StmtExprMd) := do
+  match stmts with
+  | [] => return []
+  | s :: rest => return (← hoistStmt model s) ++ (← hoistStmts model rest)
+termination_by (sizeOf stmts, 2)
+decreasing_by
+  all_goals simp_wf
+  all_goals (try have := List.sizeOf_lt_of_mem ‹_›)
+  all_goals (try simp only [Prod.lex_def] at *)
+  all_goals omega
+end
+
 /-- Translate a statement sequence into a single expression, or report the first
     statement that has no functional form.
 
@@ -573,15 +817,19 @@ private def functionalizeStmts (model : SemanticModel) (inputUids : List Nat)
     -- The declaration keeps `param`'s name but its `uniqueId` is stripped later by
     -- `stripLocalUids`, so each of the nested declarations this rule produces for one
     -- variable gets its own fresh id from the re-resolve rather than sharing the
-    -- assignment target's.
+    -- assignment target's. `hoistStmts` has already moved every block that writes out
+    -- of `value`, so what is left is an expression.
     let bind (param : Parameter?) (targetSource : FileRange) (value : StmtExprMd)
         : Except Message StmtExprMd := do
       let body ← functionalizeStmts model inputUids retExpr labelConts rest k
       let decl : StmtExprMd :=
         ⟨.Assign [⟨.Declare param, targetSource⟩] value, s.source⟩
-      .ok ⟨.Block [decl, body] none, s.source⟩
+      .ok ⟨.Block [decl, body] none [] none, s.source⟩
     match s with
-    | ⟨.Exit label, _⟩ =>
+    | ⟨.Goto _ .blockStart, _⟩ =>
+      -- `RestructureGotos` has turned every backward jump into a loop already.
+      unsupported s.source "a backward goto is not supported in a transparent body"
+    | ⟨.Goto label .blockEnd, _⟩ =>
       -- An exit discards `rest`: the statements after it are unreachable. Exiting
       -- the return block yields the output; exiting an enclosing labelled block
       -- yields that block's continuation, i.e. whatever follows it.
@@ -594,45 +842,18 @@ private def functionalizeStmts (model : SemanticModel) (inputUids : List Nat)
             s!"exiting the block labelled '{label}' is not supported in a transparent body"
     -- `EliminateReturnStatements` lowers every return, but a return reaching
     -- here would mean the same thing, so it is handled rather than rejected.
-    --
-    -- A *block* value is the one exception to "an assignment's value is an
-    -- expression": the transparency pass can emit a transparent body as
-    -- `$result := { <statements>; <tail expression> }`, and `ConstrainedTypeElim`
-    -- emits `x := { <assignment>; assert …; <target> }`. Their statements are
-    -- genuinely in statement position. A returned block's are functionalized with its
-    -- final element as the continuation. An assigned block is flattened into the
-    -- enclosing statements, `S ++ (x := e) :: rest`, so that its assignments reach
-    -- `rest`; `alphaConvertLocals` has made the locals it declares unique, so their
-    -- scope can extend over `rest`. These arms are spelled out rather than funnelled
-    -- through a helper so that each recursive call is visibly bounded by `s`, which is
-    -- what lets Lean see this function terminates.
-    | ⟨.Return (some value@⟨.Block valueStmts _, _⟩), _⟩ =>
-      if containsExitOrReturn value then unsupported s.source blockValueExitMsg
-      else
-      match valueStmts.getLast? with
-      -- An empty block has no tail expression to become the value; leave it as-is,
-      -- matching what the pre-existing helper did.
-      | none => .ok value
-      | some tail =>
-        functionalizeStmts model inputUids retExpr labelConts valueStmts.dropLast tail
-    | ⟨.Return (some value), _⟩ => .ok value
-    | ⟨.Return none, _⟩ => .ok retExpr
-    | ⟨.Assign [target] value@⟨.Block valueStmts@(_ :: _) _, _⟩, src⟩ =>
-      if containsExitOrReturn value then unsupported s.source blockValueExitMsg
-      else
-        have nonempty : valueStmts ≠ [] := by simp_all
-        functionalizeStmts model inputUids retExpr labelConts
-          (valueStmts.dropLast ++ ⟨.Assign [target] (valueStmts.getLast nonempty), src⟩ :: rest) k
+    | ⟨.Return [value], _⟩ => .ok value
+    | ⟨.Return [], _⟩ => .ok retExpr
+    | ⟨.Return values, _⟩ => .ok ⟨.Return values, s.source⟩
     | ⟨.Assign [⟨.Local name, targetSource⟩] value, _⟩ =>
       -- Only an *inout* mutation can reach here: `CopyMutatedInputs` redirects a
       -- plain-input write to a fresh body local well before this pass (and leaves
       -- inouts uncopied), so a write that still targets an input targets an inout.
-      -- An opaque body may write an inout, but a function has one result and no
-      -- slot to thread the new value out, so a transparent body cannot.
       --
-      -- The author may not have written an assignment at all: a `modifies` callee or a
-      -- global write is threaded through the signature as an inout, so calling one from
-      -- a transparent body arrives here as an assignment to `$heap` or to the global.
+      -- An *inout* is also an output, so it is not in `inputUids`: an assignment to it
+      -- is an ordinary update, and the function's result carries its final value. That
+      -- is how a written global or `$heap`, which is threaded through the signature as
+      -- an inout, leaves a transparent body.
       --
       -- Compared by `uniqueId`, not by text: a local that shadows an input has the
       -- same name but a different binding, and assigning to *it* is the ordinary
@@ -641,8 +862,10 @@ private def functionalizeStmts (model : SemanticModel) (inputUids : List Nat)
         unsupported s.source
           s!"a transparent body or contract cannot YET mutate any of its inputs, \
              and this mutates '{name.text}'"
-      else bind ⟨name, some (model.get name).getType⟩ targetSource value
-    | ⟨.Assign [⟨.Declare param, targetSource⟩] value, _⟩ => bind param targetSource value
+      else
+        bind ⟨name, some (model.get name).getType⟩ targetSource value
+    | ⟨.Assign [⟨.Declare param, targetSource⟩] value, _⟩ =>
+      bind param targetSource value
     | ⟨.Var (.Declare param), _⟩ =>
       -- Bind to a hole so an uninitialized read is arbitrary-but-fixed, and cannot
       -- become a free reference that resolves to an input of the same name — see the
@@ -664,10 +887,11 @@ private def functionalizeStmts (model : SemanticModel) (inputUids : List Nat)
         | some eb =>
           functionalizeStmts model inputUids retExpr labelConts (bodyStatements eb) kr
         | none => .ok kr
-      -- The condition is deliberately not descended into: an assignment nested
-      -- in an expression is destructive and must stay rejected.
+      -- The condition is not descended into: `hoistStmts` has already moved the
+      -- blocks that write out of it, and any other assignment nested in an expression
+      -- is destructive and must stay rejected.
       .ok ⟨.IfThenElse cond thenExpr (some elseExpr), s.source⟩
-    | ⟨.Block stmts' label, _⟩ =>
+    | ⟨.Block stmts' label _ _, _⟩ =>
       match label with
       -- An unlabelled block's statements are in statement position, and every
       -- declaration already opens its own scope, so the block's own scope can be
@@ -684,17 +908,11 @@ private def functionalizeStmts (model : SemanticModel) (inputUids : List Nat)
       | some l => do
         let kr ← functionalizeStmts model inputUids retExpr labelConts rest k
         functionalizeStmts model inputUids retExpr ((l, kr) :: labelConts) stmts' kr
-    -- A body that is already a plain expression, with nothing following it: its value
-    -- *is* the expression, so there is nothing to translate. `TypeHierarchy`'s downcast
-    -- helpers are exactly this shape — `function downcast$C(p: C): C requires (p is C)
-    -- { p }` — and so is any transparent body written as a bare expression rather than a
-    -- `return`.
-    --
-    -- Only in tail position. An expression earlier in a statement list is a value
-    -- computed and discarded, which is either dead code or a side effect this pass does
-    -- not model, so it keeps falling through to the report below.
+    -- A pure expression with nothing following it is discarded, as in the procedure: the
+    -- value is the continuation, so an output the body never assigns keeps its hole.
+    -- Anything else, or an expression with statements after it, has no functional form.
     | _ =>
-      if rest.isEmpty then .ok s
+      if rest.isEmpty && isPureValue s then .ok k
       else
         let (msg, kind) := unsupportedStmt s
         unsupported s.source msg kind
@@ -704,55 +922,72 @@ decreasing_by
   -- Matching on the `AstNode` wrapper (rather than `s.val`) expands each constructor
   -- into the bound, so every recursive call is visibly on a subterm of `s`.
   all_goals simp_wf
-  -- Each goal bounds one recursive call by `sizeOf s + sizeOf rest`. Three facts
-  -- cover every other shape: `dropLast` and `bodyStatements` do not grow their
-  -- argument, and an append's size is the sum of the parts. `grind` instantiates them
-  -- at the terms each goal actually mentions.
+  -- Each goal bounds one recursive call by `sizeOf s + sizeOf rest`. Two facts
+  -- cover every shape: `bodyStatements` does not grow its argument, and an append's
+  -- size is the sum of the parts. `grind` instantiates them at the terms each goal
+  -- actually mentions.
   all_goals
     (first
       | omega
-      -- A flattened block value: the block's statements, its last element re-wrapped
-      -- in the assignment it was the value of, and `rest`.
-      | (subst_vars
-         have hbound := sizeOf_dropLast_add_getLast_lt _ ‹_ ≠ []›
-         simp [sizeOf_dropLast_append_cons] at hbound ⊢ <;> omega)
-      | grind [sizeOf_dropLast_le, bodyStatements_sizeOf_le, sizeOf_append])
+      | grind [bodyStatements_sizeOf_le, sizeOf_append])
+
+private def packagedOutputs (types : List TypeDefinition) (proc : Procedure)
+    : Option (List Parameter) :=
+  let wanted := multiOutputDatatypeName proc.name.text
+  match types.findSome? (fun t => match t with
+      | .Datatype dt => if dt.name.text == wanted then some dt else none
+      | _ => none) with
+  | some dt =>
+    match dt.constructors with
+    | [ctor] => some ctor.args
+    | _ => none
+  | none => none
 
 /-- Rewrite a single function body into a pure expression, reporting the reason
     if it has no functional form.
 
     Returns the uninterpreted hole functions the rewrite refers to alongside the
     rewritten procedure; the caller adds them to the program. -/
-private def rewriteFunctionBody (model : SemanticModel) (proc : Procedure)
+private def rewriteFunctionBody (model : SemanticModel)
+    (types : List TypeDefinition) (proc : Procedure)
     : Procedure × List Procedure × List Message :=
   match proc.body with
   | .Transparent rawBody =>
     -- Make every declared local's name unique before translating, so extending a
     -- declaration's scope over the continuation cannot capture an outer variable of the
     -- same name. See `alphaConvertLocals`.
+    let declaredUids := declaredLocalUids rawBody
     let body := alphaConvertLocals rawBody
     match proc.outputs with
-    | [output] =>
+    | [] =>
+      -- A void procedure is legal (`valuelessEarlyReturn` is a transparent body with no
+      -- outputs that must verify). Its function copy has nothing to evaluate to, so the
+      -- body becomes a placeholder; the procedure itself carries the meaning. The
+      -- placeholder must be a bool: that is the stand-in `translateType` gives a void
+      -- type, and how `computeExprType` types a call to this copy.
+      ({ proc with body := .Transparent ⟨.LiteralBool true, body.source⟩ }, [], [])
+    | outputs =>
       -- Both the value of an `exit $return` and the value of falling off the end are a
-      -- read of the output parameter: an assignment to it became a declaration scoping
+      -- read of the output parameters: an assignment to one became a declaration scoping
       -- over what follows, so the read finds the assigned value. The two cannot differ —
       -- `r := 1` with no explicit exit falls off the end and must still yield 1.
-      let retExpr : StmtExprMd := ⟨.Var (.Local output.name), proc.name.source⟩
-      let inputUids := proc.inputs.filterMap (·.name.uniqueId)
+      let packaged? := packagedOutputs types proc
+      let effectiveOutputs := packaged?.getD outputs
+      let outputRefs : List StmtExprMd :=
+        effectiveOutputs.map fun o =>
+          ⟨.Var (.Local (renamedLocal declaredUids o.name)), proc.name.source⟩
+      let retExpr : StmtExprMd := match packaged?, outputRefs with
+        | some _, refs =>
+          ⟨.StaticCall (mkId (multiOutputCtorName proc.name.text)) refs [], proc.name.source⟩
+        | none, [single] => single
+        | none, refs => ⟨.Return refs, proc.name.source⟩
+      let outputNames := effectiveOutputs.map (·.name.text)
+      let inputUids := proc.inputs.filterMap fun p =>
+        if outputNames.contains p.name.text then none else p.name.uniqueId
       -- Collected from the *original* body, whose declarations still carry the
       -- `uniqueId`s the rewrite named its hole references after (`stripLocalUids` clears
       -- them in the result, but the names are already derived).
       let localDecls := bareDecls body
-      -- A hole in a *polymorphic* function is itself polymorphic: its parameters mirror
-      -- the enclosing inputs, whose types mention the type variables. Monomorphization
-      -- runs far earlier in the pipeline than this pass, so such a hole is never
-      -- instantiated and reaches SMT with an unresolved type variable — reported there as
-      -- an analysis error about polymorphic function bodies, which points nowhere useful.
-      -- Report it here instead.
-      if !proc.typeArgs.isEmpty && !localDecls.isEmpty then
-        (proc, [], [diagnosticFromSource proc.name.source
-          s!"a local without an initializer is not YET supported in a transparent body of a polymorphic procedure like '{proc.name.text}'; give it an initializer"])
-      else
       -- The output starts out unassigned, exactly like a bare local, so it gets a hole
       -- too: bound outermost under its *own* name, so every assignment to it shadows the
       -- hole and only a path that never assigns reads it. Without this, such a path
@@ -760,17 +995,18 @@ private def rewriteFunctionBody (model : SemanticModel) (proc : Procedure)
       -- `Cannot find this fvar in the context!`, naming neither the procedure nor the
       -- output.
       --
-      -- Skipped for a polymorphic function for the reason above — the hole could not be
-      -- monomorphized. Such a body keeps the free-reference behaviour on a fall-through
-      -- path, which is the narrow case the restriction above does not already cover.
-      let outputDecl : List HoleBinding :=
-        if proc.typeArgs.isEmpty then
-          match output.name.uniqueId with
-          | some uid => [(uid, output.name, output.type)]
-          | none => []
+      -- Skipped when the outputs are packaged: `PackageFunctionOutputs` already left a
+      -- bare declaration per ex-output in the body, so `localDecls` holds them and each
+      -- is holed as an ordinary uninitialized local.
+      let outputDecls : List HoleBinding :=
+        if packaged?.isNone then
+          outputs.filterMap fun output =>
+            if proc.inputs.any (·.name.text == output.name.text) then none
+            else output.name.uniqueId.map (fun uid => (uid, output.name, output.type))
         else []
-      let decls := outputDecl ++ localDecls
-      match functionalizeStmts model inputUids retExpr [] (bodyStatements body) retExpr with
+      let decls := outputDecls ++ localDecls
+      match (hoistStmts model (bodyStatements body)).run' 0 >>= fun stmts =>
+          functionalizeStmts model inputUids retExpr [] stmts retExpr with
       | .ok body' =>
         -- The prelude is wrapped around the rewritten body *before* stripping, so its
         -- own declarations lose their ids like every other declaration this pass makes
@@ -779,25 +1015,13 @@ private def rewriteFunctionBody (model : SemanticModel) (proc : Procedure)
          ({ proc with body := .Transparent (stripLocalUids prelude) },
           declHoleProcs proc.name proc.typeArgs proc.inputs decls, []))
       | .error diag => (proc, [], [diag])
-    | [] =>
-      -- A void procedure is legal (`valuelessEarlyReturn` is a transparent body
-      -- with no outputs that must verify). There is nothing for its function copy
-      -- to evaluate to, so the copy is left untransformed; the procedure itself
-      -- carries the meaning.
-      (proc, [], [])
-    | outputs =>
-      -- A function evaluates to a single value, so there is no way for one to
-      -- yield several outputs at once. This needs `StmtExpr.Tuple` (see the
-      -- module docstring).
-      (proc, [], [diagnosticFromSource proc.name.source
-        s!"a transparent body with {outputs.length} output parameters is not supported; it must have at most one"])
   | _ => (proc, [], [])
 
 private def functionalRewrite (uc : LaurelProgram) (model : SemanticModel)
     : LaurelProgram × List Message :=
   -- Every entry of `staticFunctions` is produced by the transparency pass's
   -- `mkFunctionCopy`, so all of them are functions and need rewriting.
-  let results := uc.staticFunctions.map (rewriteFunctionBody model)
+  let results := uc.staticFunctions.map (rewriteFunctionBody model uc.types)
   -- The generated hole functions are uninterpreted, so they need no rewriting of
   -- their own and simply join the program alongside the rewritten bodies.
   let holes := results.flatMap (·.2.1)
@@ -807,7 +1031,7 @@ public def functionalRewritePass : LaurelPass := .onUnordered {
   name := "FunctionalRewritePass"
   creates := [NodeKind.Pseudo.letExpr]
   removes := [NodeKind.Pseudo.imperativeFunction]
-  documentation := "Rewrites a function body from imperative form into a single pure expression by continuation passing: an assignment becomes a shadowing declaration whose scope is the statements that follow it, an `exit $return` becomes a reference to the output parameter, an `exit L` becomes the continuation of the block labelled `L`, and an if-then-else becomes an if-expression whose branches each end in the continuation, and every variable the body leaves uninitialized — a declaration without an initializer, and the output parameter — is bound at the top of the body to a deterministic hole (a call to a generated uninterpreted function), so reading one yields an arbitrary-but-fixed value and an assignment shadows it. This removes the label mechanism and so supports early exits and exits to user labels. A body containing a construct with no functional form (a loop, an assignment to an inout parameter, an assignment to several targets) is reported as a user error; a construct an earlier pass should have eliminated (an assert, an assume, a call, a field assignment) is reported as a Strata bug."
+  documentation := "Rewrites a function body from imperative form into a single pure expression by continuation passing: an assignment becomes a shadowing declaration whose scope is the statements that follow it, an `exit $return` becomes a reference to the output parameter (or, for a function whose outputs PackageFunctionOutputs replaced with a single packaged one, a call to that datatype's constructor over the outputs it dropped), an `exit L` becomes the continuation of the block labelled `L`, and an if-then-else becomes an if-expression whose branches each end in the continuation, and every variable the body leaves uninitialized — a declaration without an initializer, and each output parameter that is not an inout — is bound at the top of the body to a deterministic hole (a call to a generated uninterpreted function), so reading one yields an arbitrary-but-fixed value and an assignment shadows it. This removes the label mechanism and so supports early exits and exits to user labels. A body containing a construct with no functional form (a loop, an assignment to several targets) is reported as a user error; a construct an earlier pass should have eliminated (an assert, an assume, a call, a field assignment) is reported as a Strata bug."
   -- The rewrite introduces declarations and strips their ids, so resolution must
   -- run afterwards to mint fresh, unique ones.
   needsResolves := true }

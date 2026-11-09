@@ -305,6 +305,24 @@ abbrev Procedure := Imperative.Procedure Expression Command Procedure.Header
       | .structured ss => .structured (Statements.mapExprs f ss)
       | .cfg c => .cfg c }
 
+/-- Does every type annotation in a procedure body, including control-flow graph guards,
+    satisfy `p`? -/
+def Procedure.allBodyTys (p : LMonoTy → Bool) (body : Procedure.Body) : Bool :=
+  match body with
+  | .structured ss => allStmtsTys p ss
+  | .cfg c => c.blocks.all fun (_, blk) =>
+      blk.cmds.all (allCmdTys p) &&
+      (match blk.transfer with
+       | .condGoto g _ _ _ => allExprTys p g
+       | .finish _ => true)
+
+/-- Does every type annotation in a procedure's preconditions, postconditions, and body
+    satisfy `p`? -/
+def Procedure.allTys (p : LMonoTy → Bool) (proc : Procedure) : Bool :=
+  proc.spec.preconditions.values.all (fun chk => allExprTys p chk.expr) &&
+  proc.spec.postconditions.values.all (fun chk => allExprTys p chk.expr) &&
+  Procedure.allBodyTys p proc.body
+
 ---------------------------------------------------------------------
 
 open Imperative
@@ -348,6 +366,34 @@ def Procedure.callSites (p : Procedure) : List CallSite :=
   match p.body with
   | .structured ss => Statements.callSites ss
   | .cfg g => g.blocks.flatMap fun (_, blk) => blk.cmds.flatMap Command.callSites
+
+/-! ## The variables of a procedure
+
+The variables of a procedure's body that its header binds: its parameters, and `old x` for each
+in-out parameter `x`, which denotes the entry value of `x`. -/
+
+/-- Types of a procedure's parameters (and of `old x` for its in-out parameters). -/
+@[expose] def Procedure.paramTys (p : Procedure) : List (Expression.Ident × Expression.Ty) :=
+  let params := (p.header.inputs ++ p.header.outputs).map fun (x, ty) =>
+    ((x : CoreIdent), (.forAll [] ty : Expression.Ty))
+  let olds := p.header.getInoutParams.map fun (x, ty) =>
+    (CoreIdent.mkOld x.name, (.forAll [] ty : Expression.Ty))
+  params ++ olds
+
+/-- The variables in scope at the entry of a statement list of the procedure `p`: its parameters
+    and `old x` for its in-out parameters `x`. -/
+@[expose] def Procedure.entryScope (p : Procedure) : List Expression.Ident :=
+  (Procedure.paramTys p).map (·.1)
+
+/-- The parameters of `p`, inputs then outputs, each once. -/
+@[expose] def Procedure.entryParams (p : Procedure) : List Expression.Ident :=
+  Strata.Util.OrderedSet.eraseDups
+    ((p.header.inputs ++ p.header.outputs).map fun (x, _) => (x : CoreIdent))
+
+/-- The variables of `p` that denote the entry value of a parameter: `old x`, with `x`, for each
+    in-out parameter `x`. -/
+@[expose] def Procedure.oldAliases (p : Procedure) : List (Expression.Ident × Expression.Ident) :=
+  p.header.getInoutParams.map fun (x, _) => (CoreIdent.mkOld x.name, x)
 
 end
 end Core

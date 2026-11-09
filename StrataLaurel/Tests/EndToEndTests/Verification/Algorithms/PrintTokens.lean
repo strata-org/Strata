@@ -15,17 +15,17 @@ program Laurel;
 
 procedure isLetter(c: int): bool
 {
-  (97 <= c && c <= 122) || (65 <= c && c <= 90) || c == 95
+  return (97 <= c && c <= 122) || (65 <= c && c <= 90) || c == 95
 };
 
 procedure isDigit(c: int): bool
 {
-  48 <= c && c <= 57
+  return 48 <= c && c <= 57
 };
 
 procedure spansOk(st: Sequence<int>, en: Sequence<int>, upTo: int): bool
 {
-  seqLength(st) == seqLength(en)
+  return seqLength(st) == seqLength(en)
   && (forall(t: int) => 0 <= t ==> t < seqLength(st) ==> seqSelect(st, t) < seqSelect(en, t) && seqSelect(en, t) <= upTo)
   && (forall(t: int) => 0 < t ==> t < seqLength(st) ==> seqSelect(en, t - 1) <= seqSelect(st, t))
   && (forall(t: int) => 0 <= t ==> t < seqLength(st) ==> 0 <= seqSelect(st, t))
@@ -79,17 +79,17 @@ program Laurel;
 
 procedure isLetter(c: int): bool
 {
-  (97 <= c && c <= 122) || (65 <= c && c <= 90) || c == 95
+  return (97 <= c && c <= 122) || (65 <= c && c <= 90) || c == 95
 };
 
 procedure isDigit(c: int): bool
 {
-  48 <= c && c <= 57
+  return 48 <= c && c <= 57
 };
 
 procedure spansOk(st: Sequence<int>, en: Sequence<int>, upTo: int): bool
 {
-  seqLength(st) == seqLength(en)
+  return seqLength(st) == seqLength(en)
   && (forall(t: int) => 0 <= t ==> t < seqLength(st) ==> seqSelect(st, t) < seqSelect(en, t) && seqSelect(en, t) <= upTo)
   && (forall(t: int) => 0 < t ==> t < seqLength(st) ==> seqSelect(en, t - 1) <= seqSelect(st, t))
   && (forall(t: int) => 0 <= t ==> t < seqLength(st) ==> 0 <= seqSelect(st, t))

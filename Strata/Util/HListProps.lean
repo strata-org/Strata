@@ -64,7 +64,7 @@ theorem HList.get_append_left {f : α → Type} {xs ys : List α} {a : α}
   | cons x xs ih =>
     cases i with
     | zero => simp [HList.append, HList.get] at *
-    | succ n => simp [HList.append, HList.get] at *; simp at h h'; exact ih n h h'
+    | succ n => simp only [List.cons_append, append, List.append_eq, get_cons_succ, get] at *; simp only [List.cons_append, List.getElem?_cons_succ] at h h'; exact ih n h h'
 
 
 /-- Get from (xs ++ cons v ys) at index |xs| returns v. -/
@@ -74,7 +74,9 @@ theorem HList.get_append_cons_self {f : α → Type} {xs : List α} {a : α} {ys
     : HList.get (HList.append hxs (.cons v hys)) xs.length h = v := by
   induction hxs with
   | nil => simp [HList.append]
-  | cons x xs' ih => simp [HList.append] at *; exact ih trivial
+  | cons x xs' ih => simp only [List.length_append, List.length_cons, Nat.lt_add_right_iff_pos, Nat.zero_lt_succ, getElem?_pos,
+    Std.le_refl, List.getElem_append_right, Nat.sub_self, List.getElem_cons_zero, List.cons_append, append,
+    List.append_eq, get_cons_succ] at *; exact ih trivial
 
 
 /-- Get from an appended HList at index ≥ |xs| returns the same as get from ys. -/
@@ -89,6 +91,6 @@ theorem HList.get_append_right {f : α → Type} {xs ys : List α} {a : α}
     cases i with
     | zero => simp at h_ge
     | succ n =>
-      simp [HList.append]
+      simp only [List.cons_append, append, List.append_eq, get_cons_succ, List.length_cons, Nat.reduceSubDiff]
       exact ih n (by simpa using h) (by simpa using h') (by grind)
 

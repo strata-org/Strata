@@ -314,6 +314,9 @@ def lmonoTyToCoreType {M} [Inhabited M] (ty : Lambda.LMonoTy) :
   | .tcons "Sequence" [e] => do
     let ety ← lmonoTyToCoreType e
     pure (.Sequence default ety)
+  | .tcons "Set" [e] => do
+    let ety ← lmonoTyToCoreType e
+    pure (.Set default ety)
   | .tcons "arrow" [a, b] => do
     let aty ← lmonoTyToCoreType a
     let bty ← lmonoTyToCoreType b
@@ -791,15 +794,28 @@ def handleBinaryOps {M} [Inhabited M] (name : String)
   -- Map operations
   | .map .Select => pure (.map_get default ty ty arg1 arg2)
   -- Sequence operations
-  | .seq .Select => pure (.seq_select default ty arg1 arg2)
-  | .seq .SelectUnsafe => pure (.seq_select_unsafe default ty arg1 arg2)
+  | .seq .Select =>
+    pure (.seqSelectOp default ty (.seq_select default) arg1 arg2)
+  | .seq .SelectUnsafe =>
+    pure (.seqSelectOp default ty (.seq_select_unsafe default) arg1 arg2)
   | .seq .Append => pure (.seq_append default ty arg1 arg2)
   | .seq .Build => pure (.seq_build default ty arg1 arg2)
   | .seq .Contains => pure (.seq_contains default ty arg1 arg2)
-  | .seq .Take => pure (.seq_take default ty arg1 arg2)
-  | .seq .TakeUnsafe => pure (.seq_take_unsafe default ty arg1 arg2)
-  | .seq .Drop => pure (.seq_drop default ty arg1 arg2)
-  | .seq .DropUnsafe => pure (.seq_drop_unsafe default ty arg1 arg2)
+  | .seq .Take => pure (.seqSliceOp default ty (.seq_take default) arg1 arg2)
+  | .seq .TakeUnsafe =>
+    pure (.seqSliceOp default ty (.seq_take_unsafe default) arg1 arg2)
+  | .seq .Drop => pure (.seqSliceOp default ty (.seq_drop default) arg1 arg2)
+  | .seq .DropUnsafe =>
+    pure (.seqSliceOp default ty (.seq_drop_unsafe default) arg1 arg2)
+  -- Set operations
+  | .set .Contains => pure (.set_contains default ty arg1 arg2)
+  | .set .Insert => pure (.setElemOp default ty (.set_insert default) arg1 arg2)
+  | .set .Remove => pure (.setElemOp default ty (.set_remove default) arg1 arg2)
+  | .set .Union => pure (.setBinOp default ty (.set_union default) arg1 arg2)
+  | .set .Intersect =>
+    pure (.setBinOp default ty (.set_intersect default) arg1 arg2)
+  | .set .Difference =>
+    pure (.setBinOp default ty (.set_difference default) arg1 arg2)
   -- String and Regex operations
   | .str .Concat => pure (.str_concat default arg1 arg2)
   | .str .InRegEx => pure (.str_inregex default arg1 arg2)
@@ -828,8 +844,10 @@ def handleTernaryOps {M} [Inhabited M] (name : String)
   -- Maps
   | .map .Update => pure (.map_set default ty ty arg1 arg2 arg3)
   -- Sequences
-  | .seq .Update => pure (.seq_update default ty arg1 arg2 arg3)
-  | .seq .UpdateUnsafe => pure (.seq_update_unsafe default ty arg1 arg2 arg3)
+  | .seq .Update =>
+    pure (.seqUpdateOp default ty (.seq_update default) arg1 arg2 arg3)
+  | .seq .UpdateUnsafe =>
+    pure (.seqUpdateOp default ty (.seq_update_unsafe default) arg1 arg2 arg3)
   -- Strings and regexes
   | .str .Substr => pure (.str_substr default arg1 arg2 arg3)
   | .str .IndexOf => pure (.str_indexof default arg1 arg2 arg3)
@@ -935,14 +953,21 @@ partial def lexprToExpr {M} [Inhabited M]
   | .ite _ c t f => liteToExpr c t f qLevel
   | .eq _ e1 e2 => leqToExpr e1 e2 qLevel
   | .op _ name ty => do
-    -- seq_empty needs the type annotation to render the explicit type parameter
-    if Core.NameMangling.demangledBaseName name.name == "Sequence.empty" then
-      let tyCST ← match ty with
-        | some (.tcons "Sequence" [ety]) => lmonoTyToCoreType ety
-        | _ => pure (CoreType.tvar default unknownTypeVar)
-      pure (.seq_empty default tyCST)
-    else
-      lopToExpr name.name []
+    -- An empty collection renders its element type, taken from the op's
+    -- type annotation, as an explicit type parameter.
+    let elemTy (coll : String) : ToCSTM M (CoreType M) :=
+      let unknown := do
+        ToCSTM.logError "lexprToExpr"
+          "empty collection without element type" s!"{coll}.empty"
+        pure (CoreType.tvar default unknownTypeVar)
+      match ty with
+      | some (.tcons c [ety]) =>
+        if c == coll then lmonoTyToCoreType ety else unknown
+      | _ => unknown
+    match CoreOp.ofString (Core.NameMangling.demangledBaseName name.name) with
+    | .seq .Empty => pure (.seq_empty default (← elemTy "Sequence"))
+    | .set .Empty => pure (.set_empty default (← elemTy "Set"))
+    | _ => lopToExpr name.name []
   | .app _ _ _ => lappToExpr e qLevel
   | .abs _ prettyName ty body => labsToExpr prettyName ty body (qLevel + 1)
   | .quant _ qkind prettyName ty trigger body =>
@@ -1333,6 +1358,61 @@ partial def measureToCST {M} [Inhabited M]
     pure ⟨default, some (.measure_mk default exprCST)⟩
 end
 
+/-- The commands of a CFG block to print, and the two targets of its `goto a, b`
+transfer if it has one. The translator stores `goto a, b` as a trailing
+`init $__nondet_N` followed by `condGoto $__nondet_N a b`; that `init` is not
+part of the source block, so it is dropped. -/
+private def splitNondetGoto (cmds : List Core.Command)
+    (tr : Imperative.DetTransferCmd String Core.Expression) :
+    List Core.Command × Option (String × String) :=
+  match tr, cmds.getLast? with
+  | .condGoto (.fvar _ x _) lt lf _, some (.cmd (.init x' _ .nondet _)) =>
+    if x == x' && x.name.startsWith "$__nondet_" then (cmds.dropLast, some (lt, lf))
+    else (cmds, none)
+  | _, _ => (cmds, none)
+
+/-- The CST form of a CFG block's transfer. `nondet` holds the targets of a
+`goto a, b` recovered by `splitNondetGoto`; otherwise `goto l` is stored as
+`condGoto true l l` and every other `condGoto` is a `branch`. -/
+private def transferToCST {M} [Inhabited M] (nondet : Option (String × String))
+    (tr : Imperative.DetTransferCmd String Core.Expression) : ToCSTM M (Transfer M) := do
+  match nondet, tr with
+  | some (a, b), _ => pure (.transfer_nondet_goto default ⟨default, a⟩ ⟨default, b⟩)
+  | none, .finish _ => pure (.transfer_return default)
+  | none, .condGoto c lt lf _ =>
+    match c with
+    | .const _ (.boolConst true) =>
+      if lt == lf then return .transfer_goto default ⟨default, lt⟩
+      pure (.transfer_cond_goto default (← lexprToExpr c 0) ⟨default, lt⟩ ⟨default, lf⟩)
+    | _ => pure (.transfer_cond_goto default (← lexprToExpr c 0) ⟨default, lt⟩ ⟨default, lf⟩)
+
+/-- Convert a CFG body to CST. Every block's declarations stay in scope for the
+blocks printed after it, matching the left-to-right scoping of
+`cfg_blocks_cons` in the grammar. -/
+private def cfgBodyToCST {M} [Inhabited M]
+    (cfg : Imperative.CFG String (Imperative.DetBlock String Core.Command Core.Expression)) :
+    ToCSTM M (CFGBody M) := do
+  modify ToCSTContext.pushScope
+  let mut blocks : Array (CFGBlock M) := #[]
+  for (lbl, blk) in cfg.blocks do
+    let (cmds, nondet) := splitNondetGoto blk.cmds blk.transfer
+    let cmdsCST ← cmds.toArray.mapM fun c => stmtToCST (Imperative.Stmt.cmd c)
+    let trCST ← transferToCST nondet blk.transfer
+    let cmdsArg : CFGCmds M :=
+      if cmdsCST.isEmpty then .cfg_cmds_nil default else .cfg_cmds default ⟨default, cmdsCST⟩
+    blocks := blocks.push (.cfg_block default ⟨default, lbl⟩ cmdsArg trCST)
+  modify ToCSTContext.popScope
+  let blocksCST ← match blocks.back? with
+    | none => do
+      ToCSTM.logError "cfgBodyToCST" "CFG body has no blocks" cfg.entry
+      pure (.cfg_blocks_one default
+        (.cfg_block default ⟨default, cfg.entry⟩ (.cfg_cmds_nil default)
+          (.transfer_return default)))
+    | some last =>
+      pure (blocks.pop.foldr (fun b acc => .cfg_blocks_cons default b acc)
+        (.cfg_blocks_one default last))
+  pure (.cfg_body default ⟨default, cfg.entry⟩ blocksCST)
+
 /-- Convert a procedure to CST
 N.B.: We don't add the procedure name to the freeVars in the context.
 -/
@@ -1400,16 +1480,18 @@ def procToCST {M} [Inhabited M] (proc : Core.Procedure)
       ⟨default, none⟩
     else
       ⟨default, some (Spec.spec_mk default specAnn)⟩
-  let bodyStmts ← match proc.body with
-    | .structured ss => pure ss
-    | .cfg _ => do
-        ToCSTM.logError "procToCST" "CFG bodies not yet supported in CST conversion" proc.header.name.toPretty
-        pure []
-  let bodyCST ← blockToCST bodyStmts
-  let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
-  modify ToCSTContext.popScope
-  let annotsAnn ← metadataToAnn md (← get).annFilter
-  pure (.command_procedure default annotsAnn name typeArgs arguments spec body)
+  match proc.body with
+  | .structured ss =>
+    let bodyCST ← blockToCST ss
+    let body : Ann (Option (CoreDDM.Block M)) M := ⟨default, some bodyCST⟩
+    modify ToCSTContext.popScope
+    let annotsAnn ← metadataToAnn md (← get).annFilter
+    pure (.command_procedure default annotsAnn name typeArgs arguments spec body)
+  | .cfg cfg =>
+    let bodyCST ← cfgBodyToCST cfg
+    modify ToCSTContext.popScope
+    let annotsAnn ← metadataToAnn md (← get).annFilter
+    pure (.command_cfg_procedure default annotsAnn name typeArgs arguments spec bodyCST)
 
 -- Recreate enough of `GlobalContext` from `ToCSTContext` obtained from
 -- `programToCST`, purely for formatting.

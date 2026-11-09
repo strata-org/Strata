@@ -53,7 +53,7 @@ procedure sumBelow(s: Sequence<int>, hi: int): int;
 
 procedure sumAxioms(): bool
 {
-  (forall(s: Sequence<int>) => sumBelow(s, 0) == 0)
+  return (forall(s: Sequence<int>) => sumBelow(s, 0) == 0)
   && (forall(s: Sequence<int>) => forall(h: int) => 1 <= h ==> h <= seqLength(s) ==>
         sumBelow(s, h) == sumBelow(s, h - 1) + seqSelect(s, h - 1))
 };
@@ -84,8 +84,6 @@ procedure total(l: IntList) returns (s: int)
 // desired: verifies
   {
     var v: int := next(it);
-//                ^^^^^^^^ error: precondition could not be proved
-// desired: verifies
     s := s + v
   }
 };
@@ -135,7 +133,7 @@ procedure sumBelow(s: Sequence<int>, hi: int): int;
 
 procedure sumAxioms(): bool
 {
-  (forall(s: Sequence<int>) => sumBelow(s, 0) == 0)
+  return (forall(s: Sequence<int>) => sumBelow(s, 0) == 0)
   && (forall(s: Sequence<int>) => forall(h: int) => 1 <= h ==> h <= seqLength(s) ==>
         sumBelow(s, h) == sumBelow(s, h - 1) + seqSelect(s, h - 1))
 };
@@ -164,7 +162,6 @@ procedure total(l: IntList) returns (s: int)
 //            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
   {
     var v: int := next(it);
-//                ^^^^^^^^ error: precondition could not be proved
     append(l, 0);
     s := s + v
   }

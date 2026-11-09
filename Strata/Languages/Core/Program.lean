@@ -6,6 +6,7 @@
 module
 
 public import Strata.Languages.Core.Function
+public import Strata.Languages.Core.Factory
 public import Strata.Languages.Core.TypeDecl
 public import Strata.Languages.Core.Axiom
 public import Strata.Languages.Core.DDMTransform.FormatCore
@@ -99,6 +100,28 @@ def Decl.metadata (d : Decl) : MetaData Expression :=
   | .type t _ => t.names
   | .recFuncBlock fs _ => fs.map (·.name)
   | _ => [d.name]
+
+/-- The function names a declaration introduces: its functions (constants are 0-ary
+    functions), and the constructors, testers and destructors a datatype declaration generates,
+    a nullary constructor being a constant too. -/
+@[expose] def Decl.funcNames : Decl → List Expression.Ident
+  | .func f _ => [f.name]
+  | .recFuncBlock fs _ => fs.map (·.name)
+  | .type (.data d) _ =>
+    match Lambda.genBlockFactory (T := CoreLParams) d with
+    | .ok F => F.toArray.toList.map (·.name)
+    | .error _ => d.flatMap fun dt => dt.constrs.flatMap fun c =>
+        c.name :: ⟨c.testerName, ()⟩ ::
+          c.args.flatMap fun (f, _) => let n := Lambda.destructorFuncName dt f
+            [⟨n, ()⟩, ⟨n ++ Lambda.unsafeDestructorSuffix, ()⟩]
+  | _ => []
+
+/-- The names of the lemmas a declaration lists: a procedure's, and those of its functions. -/
+@[expose] def Decl.lemmaNames : Decl → List String
+  | .proc p _ => p.header.lemmas
+  | .func f _ => f.lemmas
+  | .recFuncBlock fs _ => fs.flatMap (·.lemmas)
+  | _ => []
 
 def Decl.getTypeDecl? (d : Decl) : Option TypeDecl :=
   match d with
@@ -198,6 +221,34 @@ def Program.init : Program :=
 instance : Inhabited Program where
   default := .init
 
+/-- Declarations that appear strictly before the first procedure named
+    `procName`. If no such procedure exists, this is every declaration. -/
+@[expose] def Program.declsBeforeProcedure (p : Program) (procName : String) : List Decl :=
+  p.decls.takeWhile fun d =>
+    match d with
+    | .proc proc _ => proc.header.name.name != procName
+    | _ => true
+
+/-- Extend `factory` with the functions in `decl`: a function declaration
+    adds itself, a recursive block adds all of its functions, and every other
+    declaration leaves the factory unchanged. -/
+@[expose] def Decl.addFunctionsToFactory
+    (factory : Lambda.Factory CoreLParams) (decl : Decl) : Lambda.Factory CoreLParams :=
+  match decl with
+  | .func f _ => factory.pushIfNew f.toLFunc
+  | .recFuncBlock fs _ =>
+      fs.foldl (fun factory f => factory.pushIfNew f.toLFunc) factory
+  | _ => factory
+
+/-- The initial expression factory visible at entry to the procedure named
+    `procName`: Core's built-ins extended with user-defined functions declared
+    before that procedure. Later declarations are intentionally excluded.
+    `pushIfNew` makes this total on malformed programs; program type checking
+    rejects the name collisions that it would otherwise ignore. -/
+@[expose] def Program.factoryBeforeProcedure
+    (p : Program) (procName : String) : Lambda.Factory CoreLParams :=
+  (p.declsBeforeProcedure procName).foldl Decl.addFunctionsToFactory Core.Factory
+
 def Program.eraseTypes (p : Program) : Program :=
   { p with decls := p.decls.map Decl.eraseTypes }
 
@@ -222,7 +273,7 @@ def Program.find? (P : Program) (k : DeclKind) (x : Expression.Ident) : Option D
 
 theorem Program.find?_kind : ∀ {p : Program}, (p.find? k x) = some d → d.kind = k := by
   intros p Hfind
-  simp [Program.find?] at Hfind
+  simp only [find?] at Hfind
   generalize Hdecls : p.decls = decls at Hfind
   induction decls generalizing p
   case nil =>
@@ -238,6 +289,10 @@ def Program.getAxiom? (P: Program) (n : Expression.Ident) : Option Axiom := do
   let decl ← P.find? .ax n
   let ax ← decl.getAxiom?
   return ax
+
+/-- The function names the program's declarations introduce (`Decl.funcNames`). -/
+def Program.funcNames (p : Program) : List String :=
+  p.decls.flatMap fun d => d.funcNames.map (·.name)
 
 @[expose]
 def Program.getNames (P: Program) : List Expression.Ident :=
@@ -300,8 +355,8 @@ theorem Program.find_kind : ∀ (p : Program) {H: (p.find? k x).isSome = true}, 
   next d' Hsome d Hsome' Heq Heq' =>
   split at H <;> try contradiction
   next x' val heq =>
-  simp_all
-  simp [Heq] at *
+  simp_all only [Option.some.injEq, heq_eq_eq]
+  simp only [Option.isSome_some, Heq] at *
   expose_names
   apply find?_kind
   apply heq
@@ -456,6 +511,43 @@ def Decl.callSites : Decl → List CallSite
 /-- Every call in `p`, in declaration order and then in order within each body. -/
 def Program.callSites (p : Program) : List CallSite :=
   p.decls.flatMap Decl.callSites
+
+/-! ## Axiom scopes -/
+
+/-- The axioms declared before each procedure and each lemma of a program, by procedure or
+    lemma name, in declaration order.  Symbolic evaluation and obligation extraction both
+    scope axioms this way: the obligations of a procedure or a lemma assume exactly the axioms
+    declared before it (`Program.eval`, and `ObligationExtraction.extractObligations` through
+    `extractDecl`). -/
+@[expose] def Program.axiomScopes (p : Program) : List (String × List Decl) :=
+  (p.decls.foldl (init := (([] : List Decl), ([] : List (String × List Decl))))
+    fun (axs, acc) d => match d with
+      | .ax _ _ => (axs ++ [d], acc)
+      | .proc q _ => (axs, acc ++ [(q.header.name.name, axs)])
+      | .lemma l _ => (axs, acc ++ [(l.name, axs)])
+      | _ => (axs, acc)).2
+
+/-- The axioms and the procedure or lemma names of a program in declaration order, without the
+    axioms after the last procedure or lemma: an axiom is `(some d, "")`, a procedure or lemma
+    `(none, name)`. -/
+@[expose] def Program.scopeEvents (p : Program) : List (Option Decl × String) :=
+  let ev := p.decls.foldl (init := ([] : List (Option Decl × String))) fun acc d =>
+    match d with
+    | .ax _ _ => (some d, "") :: acc
+    | .proc q _ => (none, q.header.name.name) :: acc
+    | .lemma l _ => (none, l.name) :: acc
+    | _ => acc
+  (ev.dropWhile (·.1.isSome)).reverse
+
+/-! ## Obligation procedures -/
+
+/-- An obligation procedure: a procedure named `name` without type arguments, parameters or
+    contract, with the structured body `body`. -/
+@[expose] def Decl.obligationProc (name : CoreIdent) (body : Statements) : Decl :=
+  Decl.proc {
+      header := { name := name, typeArgs := [], inputs := [], outputs := [] },
+      spec := { preconditions := [], postconditions := [] },
+      body := .structured body } .empty
 
 end Core
 

@@ -688,6 +688,42 @@ omit [HasFvar P] [HasFvars P] in
       rw [ih]
       simp [embedDetBlock]
 
+/-- The typed definitions of a statement are unchanged by command embedding. -/
+theorem embedStmt_typedDefinedVars (s : Stmt P (Cmd P)) :
+    Stmt.typedDefinedVars (embedStmt s) = Stmt.typedDefinedVars s := by
+  cases s <;> rfl
+
+mutual
+/-- The annotation check is unchanged by command embedding. -/
+theorem embedStmt_fvarTypesWellAnnotated (Γ : VarTyping P) (s : Stmt P (Cmd P)) :
+    Stmt.fvarTypesWellAnnotated Γ (embedStmt s) = Stmt.fvarTypesWellAnnotated Γ s := by
+  match s with
+  | .cmd c => rfl
+  | .block label ss md =>
+      simp only [embedStmt, Stmt.fvarTypesWellAnnotated]
+      exact embedStmts_fvarTypesWellAnnotated Γ ss
+  | .ite cond tss ess md =>
+      simp only [embedStmt, Stmt.fvarTypesWellAnnotated]
+      rw [embedStmts_fvarTypesWellAnnotated Γ tss, embedStmts_fvarTypesWellAnnotated Γ ess]
+  | .loop guard measure invariant body md =>
+      simp only [embedStmt, Stmt.fvarTypesWellAnnotated]
+      rw [embedStmts_fvarTypesWellAnnotated Γ body]
+  | .exit label md => rfl
+  | .typeDecl tc md => rfl
+  termination_by sizeOf s
+
+/-- The annotation check of a statement list is unchanged by command embedding. -/
+theorem embedStmts_fvarTypesWellAnnotated (Γ : VarTyping P) (ss : List (Stmt P (Cmd P))) :
+    Block.fvarTypesWellAnnotated Γ (embedStmts ss) = Block.fvarTypesWellAnnotated Γ ss := by
+  match ss with
+  | [] => rfl
+  | s :: rest =>
+      simp only [embedStmts, Block.fvarTypesWellAnnotated]
+      rw [embedStmt_fvarTypesWellAnnotated Γ s, embedStmt_typedDefinedVars s,
+        embedStmts_fvarTypesWellAnnotated _ rest]
+  termination_by sizeOf ss
+end
+
 end AnalysisVars
 
 /-! ## Command-independent shape analyses
@@ -875,17 +911,16 @@ variable [DecidableEq P.Ident] [HasOldIdent P]
   {Hdr : Type} [DecidableEq Hdr] [Inhabited Hdr] [ProcedureHeader P Hdr]
   (π : String → Option (Procedure P (CmdExt P) Hdr))
 
-/-! ### Administrative (command-free) steps -/
+/-! ### Single event-trace steps -/
 
-omit [DecidableEq P.Ident] [HasOldIdent P] [HasBoolOps P] [HasFvar P] [HasFvars P] [HasVal P] in
-/-- Embedding carries a command-free `StepStmt` forward: every administrative
-    control-flow step on base configurations is the same step on the embedded
-    extended configurations. -/
-theorem embedConfig_stepAdmin {c c' : Config P (Cmd P)}
-    (h : StepStmt P (noCommandEvalE P (Cmd P)) c c') :
-    StepStmt P (noCommandEvalE P (CmdExt P)) (embedConfig c) (embedConfig c') := by
+omit [HasVal P] in
+/-- Embedding carries one base event-trace step forward, with the same trace. -/
+theorem embedConfig_stepE {c c' : Config P (Cmd P)}
+    {tr : Trace P} (h : StepStmtE P (EvalCmdE P) c tr c') :
+    StepStmtE P (EvalCmdExtE π) (embedConfig c) tr (embedConfig c') := by
   induction h with
-  | step_cmd hc => exact hc.elim
+  | step_cmd hcmd =>
+      exact StepStmtE.step_cmd (EvalCmdExtE.cmd_sem hcmd)
   | step_block => exact .step_block
   | step_ite_true hcond => exact .step_ite_true hcond
   | step_ite_false hcond => exact .step_ite_false hcond
@@ -907,17 +942,22 @@ theorem embedConfig_stepAdmin {c c' : Config P (Cmd P)}
   | step_block_exit_match hlabel => exact .step_block_exit_match hlabel
   | step_block_exit_mismatch hlabel => exact .step_block_exit_mismatch hlabel
 
-omit [DecidableEq P.Ident] [HasOldIdent P] [HasBoolOps P] [HasFvar P] [HasFvars P] [HasVal P] in
-/-- Embedding reflects a command-free `StepStmt`: an administrative step out
-    of an embedded configuration comes from a base step, and lands in the image
-    of the embedding. -/
-theorem embedConfig_stepAdmin_rev {c : Config P (Cmd P)} {d : Config P (CmdExt P)}
-    (h : StepStmt P (noCommandEvalE P (CmdExt P)) (embedConfig c) d) :
-    ∃ c', d = embedConfig c' ∧
-      StepStmt P (noCommandEvalE P (Cmd P)) c c' := by
+omit [HasVal P] in
+/-- Embedding reflects one call-aware event-trace step out of an embedded
+    configuration: it comes from a base step with the identical trace and a
+    target again in the image of the embedding. -/
+theorem embedConfig_stepE_rev {c : Config P (Cmd P)}
+    {d : Config P (CmdExt P)} {tr : Trace P}
+    (h : StepStmtE P (EvalCmdExtE π) (embedConfig c) tr d) :
+    ∃ c', d = embedConfig c' ∧ StepStmtE P (EvalCmdE P) c tr c' := by
   generalize he : embedConfig c = e at h
   induction h generalizing c with
-  | step_cmd hc => exact hc.elim
+  | step_cmd hcmd =>
+      obtain ⟨sb, rfl, hs⟩ := embedConfig_eq_stmt he
+      obtain ⟨b, rfl, rfl⟩ := embedStmt_eq_cmd hs
+      cases hcmd with
+      | cmd_sem hbase =>
+          exact ⟨_, by simp [embedConfig], StepStmtE.step_cmd hbase⟩
   | step_block =>
       obtain ⟨sb, rfl, hs⟩ := embedConfig_eq_stmt he
       obtain ⟨ssb, rfl, hss⟩ := embedStmt_eq_block hs
@@ -998,50 +1038,6 @@ theorem embedConfig_stepAdmin_rev {c : Config P (Cmd P)} {d : Config P (CmdExt P
       obtain ⟨cinner, rfl, hce⟩ := embedConfig_eq_block he
       obtain rfl := embedConfig_eq_exiting hce
       refine ⟨_, ?_, .step_block_exit_mismatch hlabel⟩; rfl
-
-/-! ### Single event-trace steps -/
-
-omit [HasVal P] in
-/-- Embedding carries one base event-trace step forward, with the same trace. -/
-theorem embedConfig_stepE {c c' : Config P (Cmd P)}
-    {tr : Trace P} (h : StepStmtE P (EvalCmdE P) c tr c') :
-    StepStmtE P (EvalCmdExtE π) (embedConfig c) tr (embedConfig c') := by
-  induction h with
-  | step_cmd hcmd =>
-      exact StepStmtE.step_cmd (EvalCmdExtE.cmd_sem hcmd)
-  | step_admin hadmin =>
-      exact StepStmtE.step_admin (embedConfig_stepAdmin hadmin)
-  | step_seq_inner _ ih => exact StepStmtE.step_seq_inner ih
-  | step_block_body _ ih => exact StepStmtE.step_block_body ih
-
-omit [HasVal P] in
-/-- Embedding reflects one call-aware event-trace step out of an embedded
-    configuration: it comes from a base step with the identical trace and a
-    target again in the image of the embedding. -/
-theorem embedConfig_stepE_rev {c : Config P (Cmd P)}
-    {d : Config P (CmdExt P)} {tr : Trace P}
-    (h : StepStmtE P (EvalCmdExtE π) (embedConfig c) tr d) :
-    ∃ c', d = embedConfig c' ∧ StepStmtE P (EvalCmdE P) c tr c' := by
-  generalize he : embedConfig c = e at h
-  induction h generalizing c with
-  | step_cmd hcmd =>
-      obtain ⟨sb, rfl, hs⟩ := embedConfig_eq_stmt he
-      obtain ⟨b, rfl, rfl⟩ := embedStmt_eq_cmd hs
-      cases hcmd with
-      | cmd_sem hbase =>
-          exact ⟨_, by simp [embedConfig], StepStmtE.step_cmd hbase⟩
-  | step_admin hadmin =>
-      subst he
-      obtain ⟨c', hd, hstep⟩ := embedConfig_stepAdmin_rev hadmin
-      exact ⟨c', hd, StepStmtE.step_admin hstep⟩
-  | step_seq_inner _ ih =>
-      obtain ⟨cinner, ssb, rfl, hce, hss⟩ := embedConfig_eq_seq he
-      obtain ⟨cinner', rfl, hstep⟩ := ih hce
-      exact ⟨_, by simp [embedConfig, ← hss], StepStmtE.step_seq_inner hstep⟩
-  | step_block_body _ ih =>
-      obtain ⟨cinner, rfl, hce⟩ := embedConfig_eq_block he
-      obtain ⟨cinner', rfl, hstep⟩ := ih hce
-      exact ⟨_, by simp [embedConfig], StepStmtE.step_block_body hstep⟩
 
 /-! ### Multi-step event-trace runs -/
 
@@ -1127,21 +1123,6 @@ theorem lookup_embedCFG_blocks (cfg : CFG String (DetBlock String (Cmd P) P))
       · simp [h]
       · simp [h, ih]
 
-omit [DecidableEq P.Ident] [HasOldIdent P] [HasFvar P] in
-/-- The CFG forward bridge carries a command-free `StepCFG` step forward. -/
-theorem embedCFGConfig_stepCFG {c c' : CFGConfig String (Cmd P) P}
-    (h : StepCFG P (noCommandEvalE P (Cmd P)) c c') :
-    StepCFG P (noCommandEvalE P (CmdExt P))
-      (embedCFGConfig c) (embedCFGConfig c') := by
-  induction h with
-  | fetch hlookup =>
-      refine StepCFG.fetch (b := embedDetBlock _) ?_
-      rw [lookup_embedCFG_blocks, hlookup]; rfl
-  | step_cmd hc => exact hc.elim
-  | goto_true hcond => exact StepCFG.goto_true hcond
-  | goto_false hcond => exact StepCFG.goto_false hcond
-  | finish => exact StepCFG.finish
-
 /-- The CFG forward bridge carries one base event-trace CFG step forward, with
 the same emitted trace. -/
 theorem embedCFGConfig_stepCFGE
@@ -1151,8 +1132,12 @@ theorem embedCFGConfig_stepCFGE
   cases h with
   | step_cmd hcmd =>
       exact StepCFGE.step_cmd (EvalCmdExtE.cmd_sem hcmd)
-  | step_admin hadmin =>
-      exact StepCFGE.step_admin (embedCFGConfig_stepCFG hadmin)
+  | fetch hlookup =>
+      refine StepCFGE.fetch (b := embedDetBlock _) ?_
+      rw [lookup_embedCFG_blocks, hlookup]; rfl
+  | goto_true hcond => exact StepCFGE.goto_true hcond
+  | goto_false hcond => exact StepCFGE.goto_false hcond
+  | finish => exact StepCFGE.finish
 
 /-- The CFG forward bridge carries a whole base CFG run forward, preserving its
 trace. -/

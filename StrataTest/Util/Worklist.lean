@@ -7,7 +7,7 @@ module
 
 meta import Strata.Util.Worklist
 
-/-! # `Strata.Worklist.run` unit tests -/
+/-! # `Strata.Worklist` unit tests -/
 
 meta section
 
@@ -53,6 +53,23 @@ private def runId (init : List Nat) (process : Nat → Id (List Nat)) (cap : Nat
 -- Unbounded discovery: every item discovers a fresh successor, so the queue
 -- never empties and the cap is hit with work pending — `false`.
 #guard runId [0] (fun n => pure [n + 1]) 5 == false
+
+/-- The items `Strata.Worklist.reachable` returns, sorted. -/
+private def reachableSorted (init : List Nat) (next : Nat → List Nat)
+    (cap : Nat) : Option (List Nat) :=
+  (Strata.Worklist.reachable init next cap).map (·.toList.mergeSort)
+
+-- The seeds and everything they lead to are reachable.
+#guard reachableSorted [1] (fun n => if n == 1 then [2] else []) 5
+  == some [1, 2]
+
+-- A walk that needs exactly the cap still finishes.
+#guard reachableSorted [1] (fun n => if n == 1 then [2] else []) 2
+  == some [1, 2]
+
+-- The endless chain `0 → 1 → 2 → …` runs out of the cap, so there is no
+-- result.
+#guard reachableSorted [0] (fun n => [n + 1]) 2 == none
 
 end Strata.Worklist.Test
 

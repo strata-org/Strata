@@ -65,5 +65,28 @@ info: (a : int) → (if #true then #8 else (a : int))
                 [("x", (mty[int], (.intConst () 8))),
                  ("z", (mty[int], (.intConst () 100)))]
 
+-- `m2` lists `x` twice, first: the merged entry comes first and shadows the later one.
+/--
+info: (x : int) → (if #true then #1 else #2)
+(x : int) → (if #true then (x : int) else #3)
+-/
+#guard_msgs in
+#eval format $ Scope.merge (T:=TestParams) (.boolConst () true)
+                [("x", (mty[int], (.intConst () 1)))]
+                [("x", (mty[int], (.intConst () 2))),
+                 ("x", (mty[int], (.intConst () 3)))]
+
+-- The same, with `x` not first in `m2`: the later entry for `x` is dropped.
+/--
+info: (x : int) → (if #true then #1 else #2)
+(y : int) → (if #true then (y : int) else #0)
+-/
+#guard_msgs in
+#eval format $ Scope.merge (T:=TestParams) (.boolConst () true)
+                [("x", (mty[int], (.intConst () 1)))]
+                [("y", (mty[int], (.intConst () 0))),
+                 ("x", (mty[int], (.intConst () 2))),
+                 ("x", (mty[int], (.intConst () 3)))]
+
 end Lambda
 end

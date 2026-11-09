@@ -16,7 +16,7 @@ import Strata.Util.StringProps
 
 Theorems about the well-formedness predicates, substitution operations, and
 beta reduction defined in `Strata.DL.Lambda.LExprWF` (`freeVars`, `varOpen`,
-`varClose`, `lcAt`, `WF`, `liftBVars`, `substFvar(s)`, `substK`,
+`varClose`, `lcAt`, `WF`, `liftBVars`, `substFvar(s)`, `substFvarsBy`, `substK`,
 `betaReduce(K)`, `betaReduceRedexesFuel` and its wrappers).
 
 ### Local closedness (`varOpen` / `varClose` / `lcAt`)
@@ -38,9 +38,7 @@ closed (`substFvars_eq_substFvarsLifting_of_lcAt`).
 ### `substFvars` and `eraseMetadata`
 `freeVars` and `substFvars` commute with `eraseMetadata` (`freeVars_eraseMetadata`,
 `substFvars_eraseMetadata_congr`, `substFvars_eraseMetadata_values_congr`), and
-`substFvars` depends only on `Map.find?` (`substFvars_congr_find`). Also
-included: the `.fvar` lookup lemmas `substFvars_fvar_find` /
-`substFvars_fvar_none`.
+`substFvars` depends only on `Map.find?` (`substFvars_congr_find`).
 
 ### `liftBVars` / `substK` and `eraseMetadata`
 `liftBVars`, `substK`, and `varOpen` each preserve `eraseMetadata` equality.
@@ -60,6 +58,13 @@ analogous statement for the erasing walker is provably false, because a
 constant-lambda redex erases its argument's operators
 (`getOps_betaReduce_of_not_bvarUsed`; alias redexes preserve them,
 `getOps_body_subset_betaReduce` / `getOps_arg_subset_betaReduce`).
+
+### Substitution by a lookup function (`substFvarsBy`)
+`substFvars` is `substFvarsBy` at the map's lookup (`substFvars_eq_substFvarsBy`).
+`substFvarsBy` depends only on the lookup at the free variables (`substFvarsBy_congr`),
+two substitutions compose into one (`substFvarsBy_comp`), and substituting expressions
+without operators adds no operator (`getOps_substFvarsBy`). `freeVars_substFvars` says where
+each free variable of a substitution's result comes from.
 -/
 
 namespace Lambda
@@ -115,7 +120,7 @@ theorem varClose_of_varOpen [LawfulBEq T.IDMeta] [BEq T.Metadata] [ReflBEq T.Met
   case fvar _ name ty =>
     intro h1
     have ⟨x1, x2⟩ := x
-    simp at h h1
+    simp only [Prod.mk.injEq, not_and] at h h1
     exact fun a => h h1 (id (Eq.symm a))
   done
 
@@ -165,20 +170,20 @@ theorem lcAt_varOpen_inv (hs: lcAt k (varOpen i x e)) (hik: k ≤ i) : lcAt (i +
 theorem lcAt_varOpen_abs
   (h1 : lcAt k (varOpen i x y)) (h2 : k <= i) :
   lcAt i (abs m name ty y) := by
-  simp[lcAt]; apply (@lcAt_varOpen_inv k i)<;> assumption
+  simp only [lcAt]; apply (@lcAt_varOpen_inv k i)<;> assumption
 
 theorem lcAt_varOpen_quant
   (hy : lcAt k (varOpen i x y)) (hki : k <= i)
   (htr: lcAt k (varOpen i x tr)) :
   lcAt i (quant m qk name ty tr y) := by
-  simp[lcAt]; constructor<;> apply (@lcAt_varOpen_inv k i) <;> assumption
+  simp only [lcAt, Bool.and_eq_true]; constructor<;> apply (@lcAt_varOpen_inv k i) <;> assumption
 
 theorem varOpen_of_varClose {T} {GenericTy} [BEq T.Metadata] [LawfulBEq T.Metadata] [DecidableEq T.IDMeta] [DecidableEq GenericTy] {i : Nat} {x : IdentT GenericTy T.IDMeta} {e : LExpr ⟨T, GenericTy⟩} (h : LExpr.WF e) :
   varOpen i x (varClose i x e) = e := by
-  simp_all [LExpr.WF]
+  simp_all only [WF]
   rename_i r1 r2 r3
   have c := varOpen_varClose_when_lcAt (GenericTy:=GenericTy) (k:=0) (e:=e) (i:=i) (x:=x) h
-  simp at c
+  simp only [Nat.zero_le, forall_const] at c
   exact c
 
 ---------------------------------------------------------------------
@@ -194,11 +199,11 @@ theorem liftBVars_eq_of_lcAt
   induction e generalizing cutoff with
   | const | op | fvar => rfl
   | bvar => simp [liftBVars, lcAt] at h ⊢; omega
-  | abs _ _ _ _ ih => simp [liftBVars, lcAt] at h ⊢; exact ih h
-  | quant _ _ _ _ _ _ ih_tr ih_body => simp [liftBVars, lcAt] at h ⊢; exact ⟨ih_tr h.1, ih_body h.2⟩
-  | app _ _ _ ih1 ih2 => simp [liftBVars, lcAt] at h ⊢; exact ⟨ih1 h.1, ih2 h.2⟩
-  | ite _ _ _ _ ih1 ih2 ih3 => simp [liftBVars, lcAt] at h ⊢; exact ⟨ih1 h.1.1, ih2 h.1.2, ih3 h.2⟩
-  | eq _ _ _ ih1 ih2 => simp [liftBVars, lcAt] at h ⊢; exact ⟨ih1 h.1, ih2 h.2⟩
+  | abs _ _ _ _ ih => simp only [lcAt, liftBVars, abs.injEq, true_and] at h ⊢; exact ih h
+  | quant _ _ _ _ _ _ ih_tr ih_body => simp only [lcAt, Bool.and_eq_true, liftBVars, quant.injEq, true_and] at h ⊢; exact ⟨ih_tr h.1, ih_body h.2⟩
+  | app _ _ _ ih1 ih2 => simp only [lcAt, Bool.and_eq_true, liftBVars, app.injEq, true_and] at h ⊢; exact ⟨ih1 h.1, ih2 h.2⟩
+  | ite _ _ _ _ ih1 ih2 ih3 => simp only [lcAt, Bool.and_eq_true, liftBVars, ite.injEq, true_and] at h ⊢; exact ⟨ih1 h.1.1, ih2 h.1.2, ih3 h.2⟩
+  | eq _ _ _ ih1 ih2 => simp only [lcAt, Bool.and_eq_true, liftBVars, eq.injEq, true_and] at h ⊢; exact ⟨ih1 h.1, ih2 h.2⟩
 
 private theorem substFvarsAux_eq_go_of_lcAt
     (e : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) (depth : Nat)
@@ -324,7 +329,7 @@ theorem substFvars_eraseMetadata_congr
     (h : e₁.eraseMetadata = e₂.eraseMetadata) :
     (LExpr.substFvars e₁ sm).eraseMetadata = (LExpr.substFvars e₂ sm).eraseMetadata := by
   cases sm with
-  | nil => simp [LExpr.substFvars, Map.isEmpty]; exact h
+  | nil => simp only [substFvars, Map.isEmpty, ↓reduceIte]; exact h
   | cons p rest =>
   -- sm is nonempty, so substFvars = substFvarsAux
   suffices hsuff : ∀ (e₁ e₂ : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)),
@@ -409,7 +414,7 @@ theorem substFvars_eraseMetadata_values_congr
         rw [h_keys.1]
         split
         · simp [h_vals.1]
-        · exact ih rest₂ (by simp [List.length_cons] at h_len; exact h_len) h_keys.2 h_vals.2
+        · exact ih rest₂ (by simp only [List.length_cons, Nat.add_right_cancel_iff] at h_len; exact h_len) h_keys.2 h_vals.2
   -- Main proof: structural induction on e
   cases sm₁ with
   | nil =>
@@ -440,7 +445,7 @@ theorem substFvars_eraseMetadata_values_congr
       | some v₁ =>
         cases h2 : Map.find? (p₂ :: rest₂) x with
         | none => simp [h1, h2] at hfc
-        | some v₂ => simp [h1, h2] at hfc; exact hfc
+        | some v₂ => simp only [h1, Option.map_some, h2, Option.some.injEq] at hfc; exact hfc
     | abs m n t b ih =>
       simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
       exact congrArg _ ih
@@ -456,33 +461,6 @@ theorem substFvars_eraseMetadata_values_congr
     | ite m c t f ihc iht ihf =>
       simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
       exact congr (congr (congrArg _ ihc) iht) ihf
-
-/-- If `Map.find? sm e = some e`, then `substFvars (.fvar m x ty) sm = e`. -/
-theorem substFvars_fvar_find
-    (m_meta : T.Metadata) (x : Identifier T.IDMeta) (ty : Option LMonoTy)
-    (sm : Map (Identifier T.IDMeta) (LExpr T.mono))
-    (v : LExpr T.mono)
-    (h_find : Map.find? sm x = some v) :
-    LExpr.substFvars (.fvar m_meta x ty) sm = v := by
-  simp only [LExpr.substFvars]
-  split
-  · -- sm.isEmpty = true, so sm = []
-    cases sm
-    · simp [Map.find?] at h_find
-    · simp [Map.isEmpty] at *
-  · -- sm.isEmpty = false, use substFvarsAux
-    simp [LExpr.substFvars.substFvarsAux, h_find]
-
-/-- If `Map.find?` returns `none`, substFvars on a `.fvar` is the identity. -/
-theorem substFvars_fvar_none
-    (m_meta : T.Metadata) (x : Identifier T.IDMeta) (ty : Option LMonoTy)
-    (sm : Map (Identifier T.IDMeta) (LExpr T.mono))
-    (h_find : Map.find? sm x = none) :
-    LExpr.substFvars (.fvar m_meta x ty) sm = .fvar m_meta x ty := by
-  simp only [LExpr.substFvars]
-  split
-  · rfl
-  · simp [LExpr.substFvars.substFvarsAux, h_find]
 
 /-- `substFvars` depends only on `Map.find?`, so maps with the same `find?` give the same result. -/
 theorem substFvars_congr_find
@@ -564,28 +542,28 @@ theorem substK_eraseMetadata_congr
     rename_i c'; subst_vars
     simp [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
   | op m₁ n t =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, op.injEq, true_and] at h_eM <;> try contradiction
     have ⟨hn, ht⟩ := h_eM; subst_vars
     simp [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
   | bvar m₁ i =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, bvar.injEq, true_and] at h_eM <;> try contradiction
     rename_i m₂ i'; subst i'
     simp only [LExpr.substK]
     split
-    · simp [LExpr.eraseMetadata]; exact h_s _ _
+    · simp only [eraseMetadata]; exact h_s _ _
     · simp [LExpr.eraseMetadata, LExpr.replaceMetadata]
   | fvar m₁ x ty =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, fvar.injEq, true_and] at h_eM <;> try contradiction
     have ⟨hx, hty⟩ := h_eM; subst_vars
     simp [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
   | abs m₁ n t b ih =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, abs.injEq, true_and] at h_eM <;> try contradiction
     rename_i m₂ n₂ t₂ b₂
     have ⟨hn, ht, hb⟩ := h_eM; subst_vars
     simp only [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
     congr 1; apply ih; exact hb
   | quant m₁ qk n ty tr b ihtr ihb =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, quant.injEq, true_and] at h_eM <;> try contradiction
     rename_i m₂ qk₂ n₂ ty₂ tr₂ b₂
     have ⟨hqk, hn, hty, htr, hb⟩ := h_eM; subst_vars
     simp only [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
@@ -593,7 +571,7 @@ theorem substK_eraseMetadata_congr
     · apply ihtr; exact htr
     · apply ihb; exact hb
   | app m₁ f a ihf iha =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, app.injEq, true_and] at h_eM <;> try contradiction
     rename_i m₂ f₂ a₂
     have ⟨hf, ha⟩ := h_eM
     simp only [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
@@ -601,7 +579,7 @@ theorem substK_eraseMetadata_congr
     · apply ihf; exact hf
     · apply iha; exact ha
   | ite m₁ c t f ihc iht ihf =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, ite.injEq, true_and] at h_eM <;> try contradiction
     rename_i m₂ c₂ t₂ f₂
     have ⟨hc, ht, hf⟩ := h_eM
     simp only [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
@@ -610,7 +588,7 @@ theorem substK_eraseMetadata_congr
     · apply iht; exact ht
     · apply ihf; exact hf
   | eq m₁ l r ihl ihr =>
-    cases e₂ <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at h_eM <;> try contradiction
+    cases e₂ <;> simp only [eraseMetadata, replaceMetadata, eq.injEq, true_and] at h_eM <;> try contradiction
     rename_i m₂ l₂ r₂
     have ⟨hl, hr⟩ := h_eM
     simp only [LExpr.substK, LExpr.eraseMetadata, LExpr.replaceMetadata]
@@ -634,7 +612,7 @@ end LExpr
 
 /-! ### `getVars` and `freeVars` -/
 
-theorem getVars_eq_freeVars_idents {T : LExprParams} (e : LExpr T.mono) :
+public theorem getVars_eq_freeVars_idents {T : LExprParams} (e : LExpr T.mono) :
     LExpr.LExpr.getVars e = (LExpr.freeVars e).map Prod.fst := by
   induction e with
   | const => rfl
@@ -1065,9 +1043,70 @@ theorem replaceUserProvidedType_varOpen (f : LMonoTy → LMonoTy) (k : Nat)
           (LExpr.varOpen k (x.1, x.2.map f) (LExpr.replaceUserProvidedType e2 f))
     rw [ih1 k, ih2 k]
 
+/-! ### Substitution by a lookup function -/
+
+/-- Substitution of a map is the substitution by its lookup. -/
+theorem substFvars_eq_substFvarsBy (e : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) :
+    LExpr.substFvars e sm = LExpr.substFvarsBy e (Map.find? sm) := by
+  induction e <;> rw [substFvars_unfold] <;> grind [substFvarsBy]
+
+omit [DecidableEq T.IDMeta] in
+/-- Substitutions by lookup functions that agree on the free variables are equal. -/
+theorem substFvarsBy_congr (e : LExpr T.mono) (f g : T.Identifier → Option (LExpr T.mono))
+    (h : ∀ x ∈ (LExpr.freeVars e).map (·.1), f x = g x) :
+    LExpr.substFvarsBy e f = LExpr.substFvarsBy e g := by
+  induction e <;> grind [substFvarsBy, LExpr.freeVars]
+
+omit [DecidableEq T.IDMeta] in
+/-- Substituting by `f` then by `g` is substituting by their composition. -/
+theorem substFvarsBy_comp (e : LExpr T.mono) (f g : T.Identifier → Option (LExpr T.mono)) :
+    LExpr.substFvarsBy (LExpr.substFvarsBy e f) g =
+      LExpr.substFvarsBy e fun x => match f x with
+        | some v => some (LExpr.substFvarsBy v g) | none => g x := by
+  induction e <;> grind [substFvarsBy]
+
+/-- A free variable of `e` with the map `sm` substituted is either a free variable of `e`
+    that `sm` does not map, or a free variable of the image under `sm` of a free variable
+    of `e`. -/
+theorem freeVars_substFvars (sm : Map T.Identifier (LExpr T.mono)) :
+    ∀ (e : LExpr T.mono) (y : T.Identifier),
+      y ∈ (LExpr.freeVars (LExpr.substFvars e sm)).map (·.1) →
+      (y ∈ (LExpr.freeVars e).map (·.1) ∧ Map.find? sm y = none) ∨
+      ∃ x v, x ∈ (LExpr.freeVars e).map (·.1) ∧ Map.find? sm x = some v ∧
+        y ∈ (LExpr.freeVars v).map (·.1) := fun e y => by
+  induction e <;> rw [substFvars_unfold] <;> grind [LExpr.freeVars]
+
+omit [DecidableEq T.IDMeta] in
+/-- Substituting expressions without operators for free variables adds no operator. -/
+theorem getOps_substFvarsBy {look : T.Identifier → Option (LExpr T.mono)}
+    (hl : ∀ x v, look x = some v → LExpr.getOps v = []) (e : LExpr T.mono) :
+    ∀ o ∈ LExpr.getOps (LExpr.substFvarsBy e look), o ∈ LExpr.getOps e := by
+  induction e <;> intro o ho
+  case fvar m x ty =>
+    simp only [substFvarsBy] at ho
+    split at ho
+    · rename_i v hv
+      exact absurd ho (by rw [show LExpr.getOps v = [] from hl _ _ hv]; simp)
+    · exact ho
+  case const | op | bvar => exact ho
+  all_goals simp only [substFvarsBy, LExpr.getOps, List.mem_append] at ho ⊢
+  all_goals grind
+
 end LExpr
 
-end
+/-- Every user-provided annotation of `e` satisfies `p` exactly when every type
+    `exprAnnotTys e` lists does: both visit the same operator, free-variable and
+    binder annotations. -/
+theorem allExprTys_eq_all_exprAnnotTys {T : LExprParams} (p : LMonoTy → Bool)
+    (e : LExpr T.mono) : allExprTys p e = (exprAnnotTys e).all p := by
+  have hopt : ∀ o : Option LMonoTy, o.all p = o.toList.all p := by
+    intro o
+    cases o <;> simp only [Option.all_none, Option.all_some, Option.toList_none,
+      Option.toList_some, List.all_nil, List.all_cons, Bool.and_true]
+  simp only [allExprTys]
+  induction e <;> simp_all only [LExpr.allUserProvidedTypes, exprAnnotTys,
+    List.all_append, List.all_nil]
 
+end
 
 end Lambda

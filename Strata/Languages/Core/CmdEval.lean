@@ -44,20 +44,13 @@ def lookup (E : Env) (v : Expression.Ident) : Option Expression.TypedExpr :=
   | none => none
 
 def preprocess (E : Env) (c : Cmd Expression) (e : Expression.Expr) : Expression.Expr × Env :=
-  -- Substitute "old g" variables with their pre-state values.
-  -- substMap contains only "old g" → pre-state value entries (set by ProcedureEval).
-  let e := if E.substMap.isEmpty then e else Lambda.LExpr.substFvars e E.substMap
   match c with
   | .init _ _ eOpt _ =>
-    -- The type checker only allows free variables to appear in `init`
-    -- statements, so we only need to compute them when we see an `init`
-    -- command.
-    -- See `CmdType.lean` for details.
+    -- Type checking rejects an undeclared variable in every command, `init` included
+    -- (`freeVarCheck` in Core's `CmdType.lean`), so this binds something only for statement
+    -- lists built without type checking.
     match eOpt with
-    | .det _ =>
-      let freeVars := e.freeVars
-      let E' := E.insertFreeVarsInOldestScope freeVars
-      (e, E')
+    | .det _ => (e, E.insertFreeVarsInOldestScope e.freeVars)
     | .nondet => (e, E)
   | _ => (e, E)
 

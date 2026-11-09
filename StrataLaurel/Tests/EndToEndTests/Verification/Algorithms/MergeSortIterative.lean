@@ -15,7 +15,7 @@ program Laurel;
 
 procedure sortedBetween(s: Sequence<int>, lo: int, hi: int): bool
 {
-  forall(i: int) => forall(j: int) =>
+  return forall(i: int) => forall(j: int) =>
     0 <= lo ==> lo <= i ==> i <= j ==> j < hi ==> hi <= seqLength(s) ==> seqSelect(s, i) <= seqSelect(s, j)
 };
 
@@ -23,7 +23,7 @@ procedure count(s: Sequence<int>, v: int, hi: int): int;
 
 procedure countAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
+  return (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
   && (forall(s: Sequence<int>) => forall(v: int) => forall(h: int) =>
         1 <= h ==> h <= seqLength(s) ==>
           count(s, v, h) == count(s, v, h - 1) + (if seqSelect(s, h - 1) == v then 1 else 0))
@@ -31,19 +31,19 @@ procedure countAxioms(): bool
 
 procedure permutation(s: Sequence<int>, t: Sequence<int>): bool
 {
-  seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
+  return seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
 };
 
 procedure blocksSorted(s: Sequence<int>, w: int, lo: int): bool
 {
-  forall(i: int) => forall(j: int) => 0 <= i ==> i <= j ==> j < seqLength(s) ==> w >= 1 ==>
+  return forall(i: int) => forall(j: int) => 0 <= i ==> i <= j ==> j < seqLength(s) ==> w >= 1 ==>
     ((j < lo && i / (2 * w) == j / (2 * w)) || (lo <= i && i / w == j / w)) ==>
       seqSelect(s, i) <= seqSelect(s, j)
 };
 
 procedure sameOutside(s: Sequence<int>, t: Sequence<int>, lo: int, hi: int): bool
 {
-  seqLength(s) == seqLength(t)
+  return seqLength(s) == seqLength(t)
   && (forall(k: int) => 0 <= k ==> k < seqLength(s) ==> (k < lo || hi <= k) ==> seqSelect(s, k) == seqSelect(t, k))
 };
 
@@ -130,7 +130,7 @@ program Laurel;
 
 procedure sortedBetween(s: Sequence<int>, lo: int, hi: int): bool
 {
-  forall(i: int) => forall(j: int) =>
+  return forall(i: int) => forall(j: int) =>
     0 <= lo ==> lo <= i ==> i <= j ==> j < hi ==> hi <= seqLength(s) ==> seqSelect(s, i) <= seqSelect(s, j)
 };
 
@@ -138,7 +138,7 @@ procedure count(s: Sequence<int>, v: int, hi: int): int;
 
 procedure countAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
+  return (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
   && (forall(s: Sequence<int>) => forall(v: int) => forall(h: int) =>
         1 <= h ==> h <= seqLength(s) ==>
           count(s, v, h) == count(s, v, h - 1) + (if seqSelect(s, h - 1) == v then 1 else 0))
@@ -146,19 +146,19 @@ procedure countAxioms(): bool
 
 procedure permutation(s: Sequence<int>, t: Sequence<int>): bool
 {
-  seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
+  return seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
 };
 
 procedure blocksSorted(s: Sequence<int>, w: int, lo: int): bool
 {
-  forall(i: int) => forall(j: int) => 0 <= i ==> i <= j ==> j < seqLength(s) ==> w >= 1 ==>
+  return forall(i: int) => forall(j: int) => 0 <= i ==> i <= j ==> j < seqLength(s) ==> w >= 1 ==>
     ((j < lo && i / (2 * w) == j / (2 * w)) || (lo <= i && i / w == j / w)) ==>
       seqSelect(s, i) <= seqSelect(s, j)
 };
 
 procedure sameOutside(s: Sequence<int>, t: Sequence<int>, lo: int, hi: int): bool
 {
-  seqLength(s) == seqLength(t)
+  return seqLength(s) == seqLength(t)
   && (forall(k: int) => 0 <= k ==> k < seqLength(s) ==> (k < lo || hi <= k) ==> seqSelect(s, k) == seqSelect(t, k))
 };
 

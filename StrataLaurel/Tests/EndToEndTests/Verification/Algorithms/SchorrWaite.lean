@@ -15,26 +15,26 @@ program Laurel;
 
 procedure closedWorld(lf: Sequence<int>, rt: Sequence<int>): bool
 {
-  seqLength(lf) == seqLength(rt)
+  return seqLength(lf) == seqLength(rt)
   && (forall(i: int) => 0 <= i ==> i < seqLength(lf) ==>
         -1 <= seqSelect(lf, i) && seqSelect(lf, i) < seqLength(lf) && -1 <= seqSelect(rt, i) && seqSelect(rt, i) < seqLength(lf))
 };
 
 procedure markClosed(lf: Sequence<int>, rt: Sequence<int>, mk: Sequence<bool>): bool
 {
-  forall(i: int) => 0 <= i ==> i < seqLength(mk) ==> i < seqLength(lf) ==> i < seqLength(rt) ==> seqSelect(mk, i) ==>
+  return forall(i: int) => 0 <= i ==> i < seqLength(mk) ==> i < seqLength(lf) ==> i < seqLength(rt) ==> seqSelect(mk, i) ==>
     (seqSelect(lf, i) == -1 || (0 <= seqSelect(lf, i) && seqSelect(lf, i) < seqLength(mk) && seqSelect(mk, seqSelect(lf, i))))
     && (seqSelect(rt, i) == -1 || (0 <= seqSelect(rt, i) && seqSelect(rt, i) < seqLength(mk) && seqSelect(mk, seqSelect(rt, i))))
 };
 
 procedure samePointers(a: Sequence<int>, b: Sequence<int>): bool
 {
-  seqLength(a) == seqLength(b) && (forall(i: int) => 0 <= i ==> i < seqLength(a) ==> seqSelect(a, i) == seqSelect(b, i))
+  return seqLength(a) == seqLength(b) && (forall(i: int) => 0 <= i ==> i < seqLength(a) ==> seqSelect(a, i) == seqSelect(b, i))
 };
 
 procedure noneMarked(mk: Sequence<bool>): bool
 {
-  forall(i: int) => 0 <= i ==> i < seqLength(mk) ==> !seqSelect(mk, i)
+  return forall(i: int) => 0 <= i ==> i < seqLength(mk) ==> !seqSelect(mk, i)
 };
 
 procedure mark(lf0: Sequence<int>, rt0: Sequence<int>, mk0: Sequence<bool>, root: int)
@@ -118,26 +118,26 @@ program Laurel;
 
 procedure closedWorld(lf: Sequence<int>, rt: Sequence<int>): bool
 {
-  seqLength(lf) == seqLength(rt)
+  return seqLength(lf) == seqLength(rt)
   && (forall(i: int) => 0 <= i ==> i < seqLength(lf) ==>
         -1 <= seqSelect(lf, i) && seqSelect(lf, i) < seqLength(lf) && -1 <= seqSelect(rt, i) && seqSelect(rt, i) < seqLength(lf))
 };
 
 procedure markClosed(lf: Sequence<int>, rt: Sequence<int>, mk: Sequence<bool>): bool
 {
-  forall(i: int) => 0 <= i ==> i < seqLength(mk) ==> i < seqLength(lf) ==> i < seqLength(rt) ==> seqSelect(mk, i) ==>
+  return forall(i: int) => 0 <= i ==> i < seqLength(mk) ==> i < seqLength(lf) ==> i < seqLength(rt) ==> seqSelect(mk, i) ==>
     (seqSelect(lf, i) == -1 || (0 <= seqSelect(lf, i) && seqSelect(lf, i) < seqLength(mk) && seqSelect(mk, seqSelect(lf, i))))
     && (seqSelect(rt, i) == -1 || (0 <= seqSelect(rt, i) && seqSelect(rt, i) < seqLength(mk) && seqSelect(mk, seqSelect(rt, i))))
 };
 
 procedure samePointers(a: Sequence<int>, b: Sequence<int>): bool
 {
-  seqLength(a) == seqLength(b) && (forall(i: int) => 0 <= i ==> i < seqLength(a) ==> seqSelect(a, i) == seqSelect(b, i))
+  return seqLength(a) == seqLength(b) && (forall(i: int) => 0 <= i ==> i < seqLength(a) ==> seqSelect(a, i) == seqSelect(b, i))
 };
 
 procedure noneMarked(mk: Sequence<bool>): bool
 {
-  forall(i: int) => 0 <= i ==> i < seqLength(mk) ==> !seqSelect(mk, i)
+  return forall(i: int) => 0 <= i ==> i < seqLength(mk) ==> !seqSelect(mk, i)
 };
 
 procedure mark(lf0: Sequence<int>, rt0: Sequence<int>, mk0: Sequence<bool>, root: int)

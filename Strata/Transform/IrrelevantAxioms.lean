@@ -295,7 +295,8 @@ def irrelevantAxiomsPipelinePhase (functions : List String) : PipelinePhase :=
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                          .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions])
+                         .noPolymorphicFunctions, .noInits, .treeForm, .exitsCovered,
+                         .armsHaveObligations])
     fun prog => do
       let pruned ← IrrelevantAxioms.run prog functions
       return (true, pruned)

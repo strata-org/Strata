@@ -13,14 +13,21 @@ public import Strata.Languages.Core.CallGraph
 public import Strata.Transform.FilterProcedures
 public import Strata.Languages.Core.Logic.TraceInterpUsingDenote
 public import Strata.Languages.Core.IncrementalSolve
+public import Strata.Languages.Core.InstExprTyping
+public import Strata.DL.Imperative.BigStep.Sem
 
 /-! # Deductive verification of Core programs
 
 Instantiates the language-generic deductive verification for Core:
 `coreEntries` gives the entries of a Core program, entry procedures with values
 for their variables, each starting a run of Core's statement or CFG semantics.
-Conditions are read by denotation in a model of Core's factory
-(`DenoteBasedInterp`), and deductive verification is asked of every model.
+Conditions are read under their own runtime factory
+(`Imperative.BigStep.evalInterp`): a condition holds when it evaluates to `true`
+in the model its runtime factory carries. An entry's runtime factory is over the
+factory visible before its procedure (`ProcEntryEnv`), which differs between
+entry procedures, so no single factory fits every entry; on each entry this
+reading agrees with `DenoteBasedInterp` over that entry's factory. Deductive
+verification is asked of every entry environment, so of every model.
 `DeductiveVerificationOnCore` reads the results of Core's verifier as per-assertion verdicts (`vcResultsVerdict`) and says they
 are deductive verification of the program the user wrote, for every entry
 point's body, structured or CFG.
@@ -50,7 +57,7 @@ namespace Analysis
     `VerifyConfig.verify` verifying every reachable procedure, one failing
     obligation anywhere makes every verdict `unknown`. The results carry no
     entry or model, so they never claim `failed`. -/
-@[expose] def vcResultsVerdict {Entry : Type} (results : VCResults)
+@[expose] def vcResultsVerdict {Entry : Type _} (results : VCResults)
     (a : Imperative.AssertId Expression) : Strata.Analysis.Verdict Entry :=
   if results.any (·.obligation.label == a.label) && results.all (·.isSuccess) then .valid
   else .unknown none
@@ -96,19 +103,20 @@ structure CoreEntry where
   entries input w := w.procName ∈ input.entryPoints ∧ IsCoreEntry input.prog w
   start input w := coreStart input.prog w
 
-/-- **Deductive verification of a Core program in `model`.** The report read
-    from `results` by `vcResultsVerdict` is deductive verification of `input`,
-    with conditions read by denotation in `model`: each `valid` verdict holds
-    on every bounded run from every entry. -/
-@[expose] def DeductiveVerificationOnCore (model : Lambda.Interp Core.Factory)
+/-- **Deductive verification of a Core program.** The report read from `results`
+    by `vcResultsVerdict` is deductive verification of `input`, with conditions
+    read under their own runtime factory: each `valid` verdict holds on every
+    bounded run from every entry, whose runtime factory may carry any model of the
+    factory visible before the entry procedure. -/
+@[expose] def DeductiveVerificationOnCore
     (input : CoreVerifierInput) (results : VCResults) : Prop :=
-  Strata.Analysis.DeductiveVerification (DenoteBasedInterp model) coreEntries input
+  Strata.Analysis.DeductiveVerification Imperative.BigStep.evalInterp coreEntries input
     (vcResultsVerdict results)
 
 /-- `analyze` is a deductive verifier for Core: on every input, its results are
-    deductive verification of the input program in every model. -/
+    deductive verification of the input program. -/
 @[expose] def IsDeductiveVerifier (analyze : CoreVerifierInput → VCResults) : Prop :=
-  ∀ model, Imperative.Analysis.MatchesAnalysis analyze (DeductiveVerificationOnCore model)
+  Imperative.Analysis.MatchesAnalysis analyze DeductiveVerificationOnCore
 
 /-! ### Pipelines
 
@@ -122,13 +130,13 @@ point and the final phase is a deductive verifier
 /-- **`phase` overapproximates the runs of every entry point.** Whenever it
     relates `p` to the program `p'` it produces, each entry of `p` has an entry
     of `p'` for the same procedure name whose runs overapproximate its own, for
-    assertion validity in every model. Either body may be structured or a CFG,
+    assertion validity. Either body may be structured or a CFG,
     so a phase that lowers structured bodies to CFGs is covered. -/
 @[expose] def PhaseOverapproximates (phase : Program → Program → Prop) : Prop :=
   ∀ p p', phase p p' → ∀ w, IsCoreEntry p w →
-    ∃ w', w'.procName = w.procName ∧ IsCoreEntry p' w' ∧ ∀ model : Lambda.Interp Core.Factory,
+    ∃ w', w'.procName = w.procName ∧ IsCoreEntry p' w' ∧
       (coreEventLang (coreStart p w).1).RunsOverapproximate
-        (Strata.Analysis.ValidityReflected (DenoteBasedInterp model))
+        (Strata.Analysis.ValidityReflected Imperative.BigStep.evalInterp)
         (coreEventLang (coreStart p' w').1) (coreStart p w).2 (coreStart p' w').2
 
 /-- Run the phases in order, stopping at the first that fails. -/
@@ -160,13 +168,13 @@ preserve deductive verification. -/
 
 /-- **`phase` preserves deductive verification backwards**: whenever it turns
     `p` into `p'`, results that are deductive verification of `p'` are
-    deductive verification of `p`, for the same entry points and model. A
+    deductive verification of `p`, for the same entry points. A
     phase that overapproximates the runs of every entry point has this
     property; a phase that does not can establish it some other way. -/
 @[expose] def PhasePreservesDeductiveVerification (phase : PipelinePhase) : Prop :=
-  ∀ p p', phase.Transforms p p' → ∀ model entryPoints results,
-    DeductiveVerificationOnCore model ⟨entryPoints, p'⟩ results →
-    DeductiveVerificationOnCore model ⟨entryPoints, p⟩ results
+  ∀ p p', phase.Transforms p p' → ∀ entryPoints results,
+    DeductiveVerificationOnCore ⟨entryPoints, p'⟩ results →
+    DeductiveVerificationOnCore ⟨entryPoints, p⟩ results
 
 /-- What `Core.verify` is run with besides the program, for the configurations
     the statement below covers: a given pipeline, Core's own factory, solver
@@ -203,8 +211,11 @@ def CoreVerifierInput.reachableProcedures (input : CoreVerifierInput) : List Str
     one; this resets that option. With a given pipeline, `proceduresToVerify`
     is not read, and `ValidConfig` requires the pipeline to filter no
     procedure, so every procedure is verified. With `options.incremental` set,
-    `Core.verify` discharges the obligations by walking the obligation tree
-    (`IncrementalSolve`) instead of running `verifyPipeline`. -/
+    and neither `vcDirectory` nor `alwaysGenerateSMT`, `verifyPipeline`
+    discharges the obligations by walking the obligation tree
+    (`IncrementalSolve`), except for goals alone in their session, and for
+    every goal when no solver session can be started, which go one solver
+    per obligation. -/
 def VerifyConfig.verify (cfg : VerifyConfig) (input : CoreVerifierInput) :=
   Core.verify input.prog cfg.tempDir
     { cfg.options with
@@ -216,15 +227,72 @@ def VerifyConfig.verify (cfg : VerifyConfig) (input : CoreVerifierInput) :=
     covers.** For every valid configuration, one whose pipeline phases each
     preserve deductive verification and filter no procedure, every `VCResults`
     that `Core.verify` returns is deductive verification of the program the
-    user wrote, in every model of Core's factory. It covers both back ends
-    `Core.verify` chooses between: `verifyPipeline`, and, with
-    `options.incremental` set, the obligation-tree walk of `IncrementalSolve`.
+    user wrote, for runtime factories over the factory visible before each entry procedure,
+    with any model. It covers both ways
+    `verifyPipeline` can discharge the obligations: one solver per obligation,
+    and, with `options.incremental` set and neither `vcDirectory` nor
+    `alwaysGenerateSMT`, the obligation-tree walk of `IncrementalSolve`.
     This is the statement, not yet a theorem: proving it needs the
     correctness of the back end, symbolic evaluation and obligation extraction,
-    and the soundness of the solver. -/
+    and the soundness of the solver.  On a program with an operator that carries no
+    type, the statement constrains nothing: such an expression has no value, so a run
+    stops at it and every verdict is deductive verification.  `TypeCheckAnnotates`
+    states the obligation that rules this out for the type-checked program. -/
 @[expose] def CoreVerifyIsDeductive : Prop :=
-  ∀ cfg : VerifyConfig, ValidConfig cfg → ∀ model,
-    Imperative.Analysis.MatchesAnalysisWhenOk cfg.verify (DeductiveVerificationOnCore model)
+  ∀ cfg : VerifyConfig, ValidConfig cfg →
+    Imperative.Analysis.MatchesAnalysisWhenOk cfg.verify DeductiveVerificationOnCore
+
+/-- **Type inference annotates every expression.**  `Expression.eval` gives an expression
+    a value only when it type checks once its free variables are annotated, and
+    `Lambda.LExpr.typeCheck` rejects an operator that carries no type.  The translator from
+    the Strata dialect (`strataProgramToCore`) emits the map operators `Select` and
+    `Update` and `Sequence.length` without a type, so on a translated program that uses
+    them `CoreVerifyIsDeductive` holds of every verdict (`TypeCheckAnnotatesTest` checks
+    an instance).  The statement: every expression of
+    a program `Core.typeCheck` accepts carries a type on each operator and free variable.
+    This is the statement, not yet a theorem.  It says that the annotations are present,
+    not that they are right: an annotated but ill-typed expression still has no value.
+    Deductive verification of the type-checked program constrains the verifier only with
+    `TypeCheckWellTypes` as well, which covers monomorphic programs. -/
+@[expose] def TypeCheckAnnotates : Prop :=
+  ∀ (options : VerifyOptions) (program program' : Program)
+    (factory : Lambda.Factory CoreLParams),
+    Core.typeCheck options program factory = .ok program' →
+      program'.allExprs Lambda.LExpr.fullyAnnotated = Bool.true
+
+/-- **Type inference produces expressions that evaluate.**  `Expression.HasType`
+    (`Core.InstExprTyping`) is the condition under which `Expression.eval` gives a well-typed
+    expression a value of its type in a store conforming to its typing
+    (`Core.eval_of_hasType`); nothing yet connects it to `Core.typeCheck`.  The statement:
+    every statement expression of a monomorphic program `Core.typeCheck` accepts has a type
+    under the typing its own free-variable annotations give.  This is the statement, not yet
+    a theorem; with a store whose values have the annotated types, it says a type-checked
+    program does not get stuck evaluating an expression. -/
+@[expose] def TypeCheckWellTypes : Prop :=
+  ∀ (options : VerifyOptions) (program program' : Program)
+    (factory : Lambda.Factory CoreLParams),
+    Core.typeCheck options program factory = .ok program' →
+    program'.noPolymorphicProcedures = Bool.true →
+    ∀ d ∈ program'.decls, ∀ e ∈ Statements.allExprs d.statements,
+      ∃ ty, Core.Expression.HasType (Core.Expression.annotationTyping e) e ty
+
+/-- **Type inference agrees with its annotations.**  The well-formedness condition of an entry
+    (`InitEnvWF.fvarTypesOk`) asks for a typing of the entry store that the annotations of the
+    body agree with (`Block.fvarTypesWellAnnotated`).  The statement: the body of every
+    procedure of a program `Core.typeCheck` accepts passes the check under the types of the
+    procedure's parameters, so an entry store whose parameters hold values of their declared
+    types has such a typing.  This is the statement, not yet a theorem.
+
+    A related gap has no statement yet: a call writes back only values of the types of the
+    caller's variables (`Imperative.Calls.CallExit`), so a run stops at a call whose callee
+    output has another type.  Stating that type-checked programs never reach such a call needs
+    the typing at each program point, which no definition provides yet. -/
+@[expose] def TypeCheckAnnotationsAgree : Prop :=
+  ∀ (options : VerifyOptions) (program program' : Program)
+    (factory : Lambda.Factory CoreLParams),
+    Core.typeCheck options program factory = .ok program' →
+    ∀ q md, Decl.proc q md ∈ program'.decls →
+      Block.fvarTypesWellAnnotated (fun x => q.paramTys.lookup x) q.body.statements
 
 end Analysis
 

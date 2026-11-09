@@ -7,16 +7,25 @@ module
 
 public import Strata.Languages.Core.PipelinePhase
 public import Strata.Transform.Simplify
+public import Strata.DL.SMT.RegexMatch
+import Strata.Transform.FoldConnectives
 
 /-! # Equality simplification
 
-A program often pins terms its goals mention to values: an axiom
-`f(x) == "a"`, an `assume o == Some(3)`, a definition `init y := Cons(1, Nil)`, or a
-bare boolean fact such as `b` or `!c`. This phase substitutes those values into
-the goal of each `assert` and `cover` and folds the result with `LExpr.eval`.
-Folding reduces a selector or tester applied to a constructor, so a goal often
-becomes `true` or `false`, which the obligation checks then decide without a
-solver; a goal that does not still reaches the solver smaller.
+A program often pins terms its goals mention to values: an axiom `f(x) == "a"`,
+an `assume o == Some(3)`, a definition `init y := Cons(1, Nil)`, or a bare
+boolean fact such as `b` or `!c`. This phase substitutes those values into the
+goal of each `assert`, `cover` and lemma and folds the result with
+`LExpr.eval`, also absorbing a bitvector `and` with `0` or all ones, deciding
+`str.in_re` on literal strings, folding a connective with a literal argument
+and dropping a quantifier whose body does not use its variable, inside
+quantifier bodies too. An existential `exists x :: { f(x) } P(x)` becomes
+`true` when `P(v)` folds to `true` for some fact `f(v)`. Folding reduces a
+selector or tester applied to a constructor, so a goal often becomes `true` or
+`false`, which the obligation checks then decide without a solver; a goal that
+does not still reaches the solver, often smaller. A goal is folded even when no
+fact is on its path, and a definition's body is folded the same way before it
+is substituted.
 
 The rule is: in a fact `a == b`, a side that is a concrete value (a literal, or a
 constructor applied to values) or a constructor application replaces the other
@@ -26,9 +35,12 @@ values give no rewrite.
 The facts at a statement are the ground axioms, and the `assume`s and
 definitions on the way to it. Each holds in every state that reaches the
 statement, so each replacement leaves the goal's value unchanged in those
-states, and so does evaluation: the phase is model-preserving. A write to a
-variable drops the facts that mention it, and the facts learned inside a block or
-branch are forgotten when it ends.
+states, and so do evaluation and the folding rules, given the regex operators'
+SMT-LIB meaning and that every type has a value: the phase is model-preserving.
+A write to a variable drops the facts that mention it, and the facts learned
+inside a block or branch are forgotten when it ends. The facts at a lemma are
+the ground axioms declared before it, and its statement keeps its value in
+every model of them.
 
 Facts are read as written. An axiom whose value side only appears once it is folded,
 such as `g(0) == Box..w(box())` with `box()` an inline function returning `MkBox(5)`,
@@ -40,7 +52,8 @@ Not yet proved. For every state σ that reaches a statement `s` and in which eve
 fact of `fs` holds (each recorded value equals its variable or term in σ, each
 definition equals its variable in σ, and nothing is claimed when `fs.dead`):
 
-1. a goal `g` of `s` and `rewriteGoal F fs fuel g` evaluate to the same value in σ;
+1. a goal `g` of `s` and `rewriteGoal F fs fuel g` evaluate to the same value
+   in σ, with the regex operators given their SMT-LIB meaning;
 2. every fact of the facts `stepStmt`/`stepStmts` return for `s` holds in each state
    that `s` reaches from σ.
 
@@ -74,6 +87,10 @@ structure Facts where
       `f(1) == 4` under `x == 1`, leaves `dead` unset, and a goal on that path can still
       fold to `false`. -/
   dead : Bool := false
+  /-- The arguments `v` of the facts `f(v) ↦ true`, keyed by `f`'s name and
+      type annotation: candidate witnesses for an existential with trigger
+      `f(x)`. -/
+  hints : Std.HashMap (String × LMonoTy) (List Expression.Expr) := {}
 
 namespace Facts
 
@@ -87,6 +104,14 @@ def insertUnique (m : Std.HashMap CoreIdent (Option Expression.Expr)) (x : CoreI
   | some (some v') => if v' == v then m else m.insert x none
   | some none => m
 
+/-- Record `v` as a candidate witness for `f` from the fact `f(v) ↦ true`. -/
+def addHint (fs : Facts) (lhs rhs : Expression.Expr) : Facts :=
+  match lhs, rhs with
+  | .app _ (.op _ f (some fty)) v, .const _ (.boolConst true) =>
+    let key := (f.name, fty)
+    { fs with hints := fs.hints.insert key (v :: fs.hints.getD key []) }
+  | _, _ => fs
+
 /-- Record that `lhs` equals `rhs`. A variable or term given two different values is
     dropped, as `insertUnique` does, and a term or value with a bound variable is not
     recorded. -/
@@ -96,6 +121,7 @@ def insert (fs : Facts) (lhs rhs : Expression.Expr) : Facts :=
   | .fvar _ x _ => { fs with vars := insertUnique fs.vars x rhs }
   | _ =>
     if lhs.hasBVar then fs else
+    let fs := fs.addHint lhs rhs
     let h := LExpr.hashExpr lhs
     let bucket := fs.terms.getD h []
     match bucket.find? (·.1 == lhs) with
@@ -120,13 +146,16 @@ def forget (fs : Facts) (xs : List CoreIdent) : Facts :=
     (HasFvars.getFvars (P := Expression) e).any (xs.contains ·)
   let keep (x : CoreIdent) (v : Option Expression.Expr) : Bool :=
     !xs.contains x && !(v.map mentions).getD false
+  let nonEmpty {α : Type} (l : List α) : Option (List α) :=
+    if l.isEmpty then none else some l
   { fs with
     vars := fs.vars.filter keep
     defs := fs.defs.filter fun x v => keep x (some v)
     terms := fs.terms.filterMap fun _ bucket =>
-      match bucket.filter (fun (k, v) => !mentions k && !(v.map mentions).getD false) with
-      | [] => none
-      | b => some b }
+      nonEmpty (bucket.filter fun (k, v) =>
+        !mentions k && !(v.map mentions).getD false)
+    hints := fs.hints.filterMap fun _ vs =>
+      nonEmpty (vs.filter (!mentions ·)) }
 
 /-- The definition of `x`, if the program gives it exactly one. -/
 def defOf? (fs : Facts) (x : CoreIdent) : Option Expression.Expr :=
@@ -170,12 +199,6 @@ def orient (l r : Expression.Expr) (l' r' : Expression.Expr) :
     definitions costs. -/
 def defDepth : Nat := 16
 
-/-! The connectives are named by the factory functions that build them, so the ops
-recognized here cannot drift from the ops the factory emits. -/
-
-def andName : String := (boolAndFunc (T := CoreLParams)).name.name
-def notName : String := (boolNotFunc (T := CoreLParams)).name.name
-
 /-- Add the facts the assumption `e` gives: its conjuncts, an equality oriented by
     `orient`, `t ↦ false` for a negation `¬ t`, and `t ↦ true` for any other
     boolean term `t` that is not a literal or a binder. A defined variable also
@@ -191,10 +214,11 @@ def addAssumption (fs : Facts) (n : Nat) (e : Expression.Expr) : Facts :=
       if lhs' == lhs then fs else fs.insert lhs' rhs
     | none => fs.insert e (.true ())
   | .app _ (.app _ (.op _ o _) a) b =>
-    if o.name == andName then addAssumption (addAssumption fs n a) n b
+    if FoldConnectives.boolOpOf? o.name == some .And then
+      addAssumption (addAssumption fs n a) n b
     else fs.insert e (.true ())
   | .app _ (.op _ o _) a =>
-    if o.name == notName then
+    if FoldConnectives.boolOpOf? o.name == some .Not then
       let fs := fs.insert a (.false ())
       let a' := fs.seeThrough defDepth a
       if a' == a then fs else fs.insert a' (.false ())
@@ -207,6 +231,160 @@ def addAssumption (fs : Facts) (n : Nat) (e : Expression.Expr) : Facts :=
   | .const _ _ | .abs _ _ _ _ | .quant _ _ _ _ _ _ | .bvar _ _ => fs
   | _ => fs.insert e (.true ())
   termination_by (n, sizeOf e)
+
+/-- The value of `o(c, other)` when `o` is the factory's bitvector `and`: `c`
+    if `c` is `0`, `other` if `c` is all ones (`BitVec.and_zero`,
+    `BitVec.and_allOnes`). A program function whose name also reads as a
+    bitvector `and`, such as `Bv08.And`, has no `concreteEval`, so the check
+    on it skips such a function; it does not prove the entry is `&&&`. -/
+def absorbConst? (o : CoreIdent) (c other : Expression.Expr) :
+    Option Expression.Expr :=
+  match c with
+  | .const _ (.bitvecConst n v) =>
+    if CoreOp.ofString o.name != .bv ⟨n, .And⟩ then none
+    else if !(F.get? o.name).any (·.concreteEval.isSome) then none
+    else if v == 0 then some c
+    else if v == BitVec.allOnes n then some other
+    else none
+  | _ => none
+
+/-- `absorbConst?` with either argument as the constant. -/
+def bvAndValue? (o : CoreIdent) (a b : Expression.Expr) :
+    Option Expression.Expr :=
+  absorbConst? F o a b <|> absorbConst? F o b a
+
+/-- `bvAndValue?` for a call of a binary function. -/
+def bvAndRule : Simplify.NodeRule
+  | .app _ (.app _ (.op _ o _) a) b => bvAndValue? F o a b
+  | _ => none
+
+open Strata.SMT in
+/-- The regular expression `e` denotes, when `e` is built from regex operators
+    over SMT-LIB string literals with non-negative literal loop bounds. A regex
+    variable, or a call of a 0-ary function not marked `inline`, is not
+    read. -/
+def regexOf? : Expression.Expr → Option Strata.SMT.Regex.Re
+  | .op _ o _ =>
+    match CoreOp.ofString o.name with
+    | .re .None => some .none
+    | .re .All => some .all
+    | .re .AllChar => some .allChar
+    | _ => none
+  | .app _ (.op _ o _) a =>
+    match CoreOp.ofString o.name, a with
+    | .str .ToRegEx, .const _ (.strConst s) =>
+      if StringLit.isValid s then some (.str s.toList) else none
+    | .re .Star, _ => (regexOf? a).map .star
+    | .re .Plus, _ => (regexOf? a).map .plus
+    | .re .Comp, _ => (regexOf? a).map .comp
+    | _, _ => none
+  | .app _ (.app _ (.op _ o _) a) b =>
+    match CoreOp.ofString o.name, a, b with
+    | .re .Range, .const _ (.strConst lo), .const _ (.strConst hi) =>
+      if StringLit.isValid lo && StringLit.isValid hi then
+        some (.ofRange lo hi)
+      else none
+    | .re .Concat, _, _ => do pure (.cat (← regexOf? a) (← regexOf? b))
+    | .re .Union, _, _ => do pure (.union (← regexOf? a) (← regexOf? b))
+    | .re .Inter, _, _ => do pure (.inter (← regexOf? a) (← regexOf? b))
+    | _, _, _ => none
+  | .app _ (.app _ (.app _ (.op _ o _) a) (.const _ (.intConst lo)))
+      (.const _ (.intConst hi)) =>
+    if CoreOp.ofString o.name == .re .Loop && 0 ≤ lo && 0 ≤ hi then
+      (regexOf? a).map (.loop · lo.toNat hi.toNat)
+    else none
+  | _ => none
+
+/-- Decides `str.in_re(s, r)` for a literal `s` and a regex `r` that `regexOf?`
+    reads, with SMT-LIB's meaning, the one the solver gives the encoded term;
+    no answer when `matches?` gives none. -/
+def inRegexRule : Simplify.NodeRule
+  | .app m (.app _ (.op _ o _) (.const _ (.strConst s))) r =>
+    if CoreOp.ofString o.name != .str .InRegEx then none
+    else do
+      let b ← Strata.SMT.Regex.matches? (← regexOf? r) s
+      pure (.const m (.boolConst b))
+  | _ => none
+
+/-- A quantifier whose body does not use its variable, replaced by its body.
+    This keeps its value because every type is inhabited: a datatype by
+    `TypeFactory.checkMutualBlockInhab` when declared, and any other type
+    because SMT-LIB sorts are nonempty. -/
+def unusedQuantRule : Simplify.NodeRule
+  | .quant _ _ _ _ _ body => if LExpr.lcAt 0 body then some body else none
+  | _ => none
+
+/-- The most rounds of evaluation and rewriting `foldTerm` runs. -/
+def foldRounds : Nat := 8
+
+/-- The node rules that need no facts. -/
+def factFreeRules : List Simplify.NodeRule :=
+  [FoldConnectives.connectiveValue?, bvAndRule F, inRegexRule,
+    unusedQuantRule]
+
+/-- The terms of a quantifier's trigger expression. -/
+def triggerTerms : Expression.Expr → List Expression.Expr
+  | .app _ (.app _ (.op _ o _) a) b =>
+    match CoreOp.ofString o.name with
+    | .trigger .AddTrigger => a :: triggerTerms b
+    | .trigger .AddGroup => triggerTerms a ++ triggerTerms b
+    | _ => []
+  | _ => []
+
+/-- The name and type annotation of each function `f` that a trigger of `tr`
+    applies to the quantified variable alone, as in `{ f(x) }`. -/
+def triggerFunctions (tr : Expression.Expr) : List (String × LMonoTy) :=
+  (triggerTerms tr).filterMap fun
+    | .app _ (.op _ f (some fty)) (.bvar _ 0) => some (f.name, fty)
+    | _ => none
+
+/-- How many candidate witnesses are tried for one existential. -/
+def witnessLimit : Nat := 16
+
+/-- `acc` with the values of `vs` it lacks added, until `n` are added. -/
+def addValues : Nat → List Expression.Expr → List Expression.Expr →
+    List Expression.Expr
+  | 0, _, acc | _, [], acc => acc
+  | n + 1, v :: vs, acc =>
+    if LExpr.isValue F v && !acc.contains v then addValues n vs (v :: acc)
+    else addValues (n + 1) vs acc
+
+/-- Candidate witnesses for an existential over `ty` with trigger functions
+    `fns`: the values `v` of facts `f(v) ↦ true` where the trigger's `f` and
+    the fact's `f` are both annotated with the monomorphic `ty → bool`, so `v`
+    has type `ty`; at most `witnessLimit` of them. -/
+def witnessCandidates (fs : Facts) (ty : LMonoTy)
+    (fns : List (String × LMonoTy)) : List Expression.Expr :=
+  let typed := fns.filter fun (_, fty) =>
+    fty == .arrow ty .bool && fty.freeVars.isEmpty
+  typed.foldl (init := []) fun acc key =>
+    addValues F (witnessLimit - acc.length) (fs.hints.getD key []) acc
+
+/-- `exists x :: { f(x) } P(x)` replaced by `true` when `P(v)` folds to `true`
+    for a candidate witness `v`. Only a trigger term on the quantifier's own
+    variable gives candidates, so in a multi-variable existential a trigger on
+    an outer variable is not tried. One witness proves an existential, so the
+    facts only choose which values to try. -/
+def witnessRule (fs : Facts) (fuel : Nat) : Simplify.NodeRule
+  | .quant _ .exist _ (some ty) tr body =>
+    let proves (v : Expression.Expr) : Bool :=
+      (Simplify.evalAndRewrite (Simplify.fold F fuel) (factFreeRules F)
+        foldRounds (LExpr.betaReduce v body)).isTrue
+    if (witnessCandidates F fs ty (triggerFunctions tr)).any proves then
+      some (.true ())
+    else none
+  | _ => none
+
+/-- Evaluates `e` and applies the node rules bottom up, binder bodies
+    included, repeating while a rule fires, at most `foldRounds` times. A term
+    with a loose bound variable is only evaluated. -/
+def foldTerm (fs : Facts) (fuel : Nat) (e : Expression.Expr) :
+    Expression.Expr :=
+  if !LExpr.lcAt 0 e then Simplify.fold F fuel e
+  else
+    let rules := if fs.hints.isEmpty then factFreeRules F
+      else factFreeRules F ++ [witnessRule F fs fuel]
+    Simplify.evalAndRewrite (Simplify.fold F fuel) rules foldRounds e
 
 /-- What a defined variable is replaced by, once computed, for each remaining depth:
     `none` when its definition does not reduce to a replacement within that depth. Keyed
@@ -244,8 +422,8 @@ def substAux (fs : Facts) (fuel : Nat) (depth : Nat) (e : Expression.Expr) :
       let v? ← match (← get).get? (x, d) with
         | some v? => pure v?
         | none => do
-          let (body', changed, _) ← substAux fs fuel d body
-          let body' := if changed then (LExpr.eval fuel F (fun _ => none) body').fst else body'
+          let (body', _, _) ← substAux fs fuel d body
+          let body' := foldTerm F fs fuel body'
           let v? := if isReplacement F body' then some body' else none
           modify (·.insert (x, d) v?)
           pure v?
@@ -292,7 +470,7 @@ def substAux (fs : Facts) (fuel : Nat) (depth : Nat) (e : Expression.Expr) :
     pure (if c1 || c2 then (.quant m k name ty tr' body', true, h) else (e, false, h))
   termination_by (depth, sizeOf e)
 
-/-- Substitute the facts into `goal` and evaluate the result, for up to `rounds`
+/-- Substitute the facts into `goal` and fold the result, for up to `rounds`
     rounds or until nothing changes: evaluation can expose a term with a recorded
     value, such as `f(y)` once `y` is replaced. -/
 def simplifyGoal (fs : Facts) (fuel : Nat) :
@@ -301,21 +479,23 @@ def simplifyGoal (fs : Facts) (fuel : Nat) :
   | rounds + 1, goal => do
     let (goal', changed, _) ← substAux F fs fuel defDepth goal
     if !changed then return goal
-    let goal' := (LExpr.eval fuel F (fun _ => none) goal').fst
+    let goal' := foldTerm F fs fuel goal'
     if goal'.isTrue || goal'.isFalse then return goal'
     simplifyGoal fs fuel rounds goal'
 
-/-- `goal` rewritten by the facts and folded with `F`. A rewrite that leaves a beta
-    redex, which substituting an abstraction or expanding a body can, is discarded,
-    so that the phase preserves `noBetaRedexes`. -/
+/-- `goal` unchanged on a contradictory path; otherwise folded with
+    `foldTerm` and, when there are facts, rewritten by them. A rewrite that
+    leaves a beta redex, which substituting an abstraction or expanding a
+    body can, is discarded, so that the phase preserves `noBetaRedexes`. -/
 def rewriteGoal (fs : Facts) (fuel : Nat) (goal : Expression.Expr) : Expression.Expr :=
-  if fs.dead || fs.isEmpty || goal.isTrue || goal.isFalse then goal
+  if fs.dead || goal.isTrue || goal.isFalse then goal
   else
     -- Fold first: a goal arrives with selectors applied to constructor applications
     -- still in it, such as `Egress(SecurityGroup_Cons(.., Some(t), ..))`, and only
     -- once they reduce, to `Some(t)` here, does it mention the terms the facts pin.
-    let folded := (LExpr.eval fuel F (fun _ => none) goal).fst
-    let goal' := (simplifyGoal F fs fuel 4 folded).run' {}
+    let folded := foldTerm F fs fuel goal
+    let goal' :=
+      if fs.isEmpty then folded else (simplifyGoal F fs fuel 4 folded).run' {}
     if goal'.noBetaRedex then goal' else goal
 
 /-- `fs` with the facts of the assumption `e`, marked contradictory when `e` itself
@@ -391,9 +571,11 @@ def rewriteProc (fs : Facts) (fuel : Nat) (proc : Procedure) : Procedure :=
     { proc with body := .structured (stepStmts F fs fuel ss).1 }
   | .cfg _ => proc
 
-/-- Rewrite the goal of every `assert` and `cover` in `p`'s procedure bodies. Facts are
-    collected in declaration order, as obligation extraction builds the global path
-    condition, so a procedure sees only the axioms declared before it. -/
+/-- Rewrite every lemma of `p`, and the goal of every `assert` and `cover` in
+    its procedure bodies. Facts are collected in declaration order, as
+    obligation extraction builds the global path condition, so a procedure or
+    lemma sees only the axioms declared before it. A lemma gives no fact: it is
+    never assumed when checking other declarations. -/
 def runEqualitySimplification (p : Program) : Transform.CoreTransformM (Bool × Program) := do
   let ctx := Simplify.Ctx.ofFactory (← Simplify.programFactory p) (Simplify.lambdaCarriers p)
   let F := ctx.foldFactory
@@ -401,6 +583,8 @@ def runEqualitySimplification (p : Program) : Transform.CoreTransformM (Bool × 
     match d with
     | .ax a _ => (if a.e.hasBVar then fs else assumeFact F fs ctx.evalFuel a.e, d :: acc)
     | .proc proc md => (fs, .proc (rewriteProc F fs ctx.evalFuel proc) md :: acc)
+    | .lemma l md =>
+      (fs, .lemma { l with e := rewriteGoal F fs ctx.evalFuel l.e } md :: acc)
     | other => (fs, other :: acc)
   let p' := { p with decls := declsRev.reverse }
   return (decide (p' ≠ p), p')
@@ -413,31 +597,44 @@ public section
 
 /-- Equality simplification pipeline phase.
 
-    Model-preserving: each rewrite replaces a goal by one with the same value in every
-    state that reaches it, and no statement is added, removed or reordered. It needs
-    structured bodies and no calls, since a callee may write globals the call does not
-    name, and no function preconditions, since folding can expand a function body, which is
-    only right where its precondition holds. It preserves what `simplify` preserves, for the
-    same reason: only the expressions of `assert` and `cover` change, and those are built from the
-    program's own annotated terms and constants. It also preserves `noBetaRedexes`, which
-    `simplify` cannot claim, because a rewritten goal that contains a redex is discarded.
+    Model-preserving, with the regex operators given their SMT-LIB meaning:
+    each rewrite replaces a goal by one with the same value in every state that
+    reaches it, and a lemma by one with the same value in every model of the
+    ground axioms declared before it; no declaration or statement is added,
+    removed or reordered. It needs structured bodies and no calls, since a
+    callee may write globals the call does not name, and no function
+    preconditions, since folding can expand a function body or drop an operand
+    of a connective, which is only right where the preconditions hold. It
+    preserves what `simplify` preserves, for the same reason: only the
+    expressions of `assert`, `cover` and lemmas change, and those are built
+    from the program's own annotated terms and constants. It also preserves
+    `noBetaRedexes`, which `simplify` cannot claim, because a rewritten goal
+    that contains a redex is discarded, and `armsHaveObligations`, because
+    every `assert` and `cover` stays where it is. It requires a type-checked
+    program, since the existential rule reads a witness's type from a
+    function's type annotation.
 
-    Limitation: a goal on a path whose assumptions contradict each other can fold to
-    `false`. The phase leaves such goals alone only when an assumption itself folds to
-    `false` under the earlier facts; it misses contradictions that depend on order
-    (`assume int.gt(x, 5); assume x == 1`) or that relate different terms (`f(x) == 2`
-    and `f(1) == 3` under `x == 1`). In deductive mode the solver still sees those
-    paths and finds the goal valid. Under `deductiveAssumingSatisfiablePaths`, whose
-    premise is that every path can be taken, the goal is reported failing. -/
+    Limitation: a goal on a path whose assumptions contradict each other can
+    fold to `false`. The phase leaves such goals alone only when an assumption
+    itself folds to `false` under the earlier facts; it misses contradictions
+    that depend on order (`assume int.gt(x, 5); assume x == 1`) or that relate
+    different terms (`f(x) == 2` and `f(1) == 3` under `x == 1`). It also
+    misses a contradictory `if` guard (`int.gt(x, 5) && int.lt(x, 3)`), since
+    it does not use a guard as a fact. In deductive mode the solver still sees
+    those paths and finds the goal valid. Under
+    `deductiveAssumingSatisfiablePaths`, whose premise is that every path can
+    be taken, the goal is reported failing. -/
 def Core.equalitySimplificationPhase : Core.PipelinePhase :=
   Core.modelPreservingPipelinePhase "equalitySimplification"
     Core.EqualitySimplification.runEqualitySimplification
-    (requires := factSet![.noCFGBodies, .noCalls, .noPrecondsFromFuncs])
+    (requires := factSet![.noCFGBodies, .noCalls, .noPrecondsFromFuncs,
+                        .typeAnnotated])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
                          .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
                          .noProcedureContracts,
                          .noPolymorphicProcedures, .noPolymorphicFunctions,
-                         .typeAnnotated])
+                         .typeAnnotated, .noInits, .treeForm, .exitsCovered,
+                         .armsHaveObligations])
 
 end

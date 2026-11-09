@@ -17,7 +17,7 @@ procedure sumRange(s: Sequence<int>, lo: int, hi: int): int;
 
 procedure sumAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(lo: int) => forall(hi: int) => hi <= lo ==> sumRange(s, lo, hi) == 0)
+  return (forall(s: Sequence<int>) => forall(lo: int) => forall(hi: int) => hi <= lo ==> sumRange(s, lo, hi) == 0)
   && (forall(s: Sequence<int>) => forall(lo: int) => forall(hi: int) =>
         0 <= lo ==> lo < hi ==> hi <= seqLength(s) ==>
           sumRange(s, lo, hi) == sumRange(s, lo, hi - 1) + seqSelect(s, hi - 1))
@@ -25,12 +25,12 @@ procedure sumAxioms(): bool
 
 procedure filledBelow(s: Sequence<int>, v: int, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(s) ==> seqSelect(s, k) == v
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(s) ==> seqSelect(s, k) == v
 };
 
 procedure copiedBelow(dst: Sequence<int>, src: Sequence<int>, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(dst) ==> k < seqLength(src) ==>
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(dst) ==> k < seqLength(src) ==>
     seqSelect(dst, k) == seqSelect(src, k)
 };
 
@@ -101,7 +101,7 @@ procedure sumRange(s: Sequence<int>, lo: int, hi: int): int;
 
 procedure sumAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(lo: int) => forall(hi: int) => hi <= lo ==> sumRange(s, lo, hi) == 0)
+  return (forall(s: Sequence<int>) => forall(lo: int) => forall(hi: int) => hi <= lo ==> sumRange(s, lo, hi) == 0)
   && (forall(s: Sequence<int>) => forall(lo: int) => forall(hi: int) =>
         0 <= lo ==> lo < hi ==> hi <= seqLength(s) ==>
           sumRange(s, lo, hi) == sumRange(s, lo, hi - 1) + seqSelect(s, hi - 1))
@@ -109,12 +109,12 @@ procedure sumAxioms(): bool
 
 procedure filledBelow(s: Sequence<int>, v: int, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(s) ==> seqSelect(s, k) == v
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(s) ==> seqSelect(s, k) == v
 };
 
 procedure copiedBelow(dst: Sequence<int>, src: Sequence<int>, hi: int): bool
 {
-  forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(dst) ==> k < seqLength(src) ==>
+  return forall(k: int) => 0 <= k ==> k < hi ==> k < seqLength(dst) ==> k < seqLength(src) ==>
     seqSelect(dst, k) == seqSelect(src, k)
 };
 

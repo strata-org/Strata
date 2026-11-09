@@ -71,6 +71,9 @@ def verifyOptionsFlags : List Flag := [
     help := "Prune irrelevant axioms: 'off', 'aggressive', 'precise', \
       or 'directed'.",
     takesArg := .arg "mode" },
+  { name := "remove-irrelevant-datatypes",
+    help := "Leave out of each SMT query the datatype declarations that \
+      it does not mention." },
   { name := "overflow-checks",
     help := "Comma-separated overflow checks to enable (signed,unsigned,float64,all,none).",
     takesArg := .arg "checks" },
@@ -79,6 +82,10 @@ def verifyOptionsFlags : List Flag := [
   { name := "path-cap",
     help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths when count exceeds N.",
     takesArg := .arg "N|none" },
+  { name := "vcgen",
+    help := "(experimental) Verification-condition generation: 'symbolic' (default, symbolic "
+      ++ "evaluation) or 'wp' (the WP phase, the SSA phase and dead-definition elimination).",
+    takesArg := .arg "symbolic|wp" },
   { name := "parallel",
     help := "Number of parallel solver workers (default: 1, sequential).",
     takesArg := .arg "N" },
@@ -131,6 +138,24 @@ def keepAllFilesBaseName : Option String → String
     else
       comps.headD name
 
+/-- The options that only symbolic evaluation reads, set for a pipeline that does not run it,
+    each with the reason it is refused: a path cap (`--path-cap N`) bounds the paths symbolic
+    evaluation keeps, and a pipeline without a symbolic evaluation phase (such as the default
+    order of `--vcgen wp`, whose WP and SSA phases keep no paths) never reads it.
+    `--path-cap none` sets no cap, so it is accepted. `phases` is the pipeline the run executes,
+    `none` for the default order of `opts`, which runs symbolic evaluation exactly when
+    `opts.vcgen` is `.symbolic`. -/
+def vcgenFlagIssues (opts : Core.VerifyOptions)
+    (phases : Option (List Core.PipelinePhase) := none) : List String :=
+  let runsSymbolicEval := match phases with
+    | none => opts.vcgen == .symbolic
+    | some ps => ps.any (·.phase.name == Core.symbolicEvalPipelinePhase.phase.name)
+  if opts.pathCap.isSome && !runsSymbolicEval then
+    ["--path-cap applies only to a pipeline that runs symbolic evaluation, such as the default \
+      order of --vcgen symbolic: it bounds the paths symbolic evaluation keeps, and the \
+      pipeline of this run keeps none."]
+  else []
+
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
     Fields not present in the flags keep their base values.
     Note: boolean flags can only enable a setting; a `true` in the base
@@ -174,6 +199,11 @@ def parseVerifyOptions (pflags : ParsedFlags)
       | .some n => if n == 0 then exitFailure "--path-cap must be at least 1 or 'none'."
                    else pure (.some n)
       | .none => exitFailure s!"Invalid path-cap: '{s}'. Must be a positive number or 'none'."
+  let vcgen ← match pflags.getString "vcgen" with
+    | .none => pure base.vcgen
+    | .some "symbolic" => pure .symbolic
+    | .some "wp" => pure .wp
+    | .some s => exitFailure s!"Invalid vcgen: '{s}'. Must be 'symbolic' or 'wp'."
   let parallelWorkers ← match pflags.getString "parallel" with
     | .none => pure base.parallelWorkers
     | .some s => match s.toNat? with
@@ -228,6 +258,9 @@ def parseVerifyOptions (pflags : ParsedFlags)
     stopOnFirstError := pflags.getBool "stop-on-first-error" || base.stopOnFirstError,
     useArrayTheory := pflags.getBool "use-array-theory" || base.useArrayTheory,
     removeIrrelevantAxioms,
+    removeIrrelevantDatatypes :=
+      pflags.getBool "remove-irrelevant-datatypes"
+        || base.removeIrrelevantDatatypes,
     outputSarif := pflags.getBool "sarif" || base.outputSarif,
     profile := pflags.getBool "profile" || base.profile,
     incremental := if noSolve then false else pflags.getBool "incremental" || base.incremental,
@@ -237,6 +270,7 @@ def parseVerifyOptions (pflags : ParsedFlags)
     overflowChecks,
     vcDirectory,
     pathCap,
+    vcgen,
     parallelWorkers,
     minSessions,
     splitByNode,

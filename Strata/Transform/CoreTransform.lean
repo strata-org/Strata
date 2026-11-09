@@ -97,14 +97,8 @@ def genTyVarName (prefixStr : String) : CoreGenM Lambda.TyIdentifier := do
 def genTyVarNames (prefixStr : String) (n : Nat) : CoreGenM (List Lambda.TyIdentifier) :=
   List.mapM (fun _ => genTyVarName prefixStr) (List.replicate n ())
 
-/-- Build a one-scope type substitution mapping each declared type variable of a
-    polymorphic callee to a globally-fresh type variable drawn at `prefixStr`
-    (the caller supplies its reserved prefix, e.g. `freshTyVarPrefix` in
-    `CallElim.lean`), for per-call-site contract instantiation in call
-    elimination. Returns the empty substitution (a verified identity for
-    `LMonoTy.subst`/`LExpr.applyTypeSubst`, which short-circuit on
-    `Subst.hasEmptyScopes`) when `typeArgs` is empty — so the transform is an
-    exact no-op for monomorphic procedures. -/
+/-- Freshen a polymorphic callee's type parameters `typeArgs` for one instantiation site by
+    mapping each to a new type variable with prefix `prefixStr`; empty when `typeArgs` is. -/
 def freshenTypeArgsSubst (prefixStr : String) (typeArgs : List Lambda.TyIdentifier)
   : CoreGenM Lambda.Subst := do
   if typeArgs.isEmpty then

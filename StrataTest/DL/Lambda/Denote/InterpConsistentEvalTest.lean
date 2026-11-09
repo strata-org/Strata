@@ -64,7 +64,7 @@ noncomputable example (tcInterp : TyConstrInterp) [TyConstrInterp.AllInhabited t
   cases h_args with
   | cons hx htail =>
     cases htail
-    simp [idCeval] at heval; subst heval
+    simp only [idCeval, Option.some.injEq] at heval; subst heval
     exact (idOpInterp_apply tcInterp _ _).symm
 
 end Lambda

@@ -87,7 +87,7 @@ private theorem LSort_eqb_list_eq
     cases a2 with
     | nil => simp [LSort_eqb.LSort_eqb_list] at heq
     | cons h2 t2 =>
-      simp [LSort_eqb.LSort_eqb_list] at heq
+      simp only [LSort_eqb.LSort_eqb_list, Bool.and_eq_true] at heq
       obtain ⟨hh, ht⟩ := heq
       congr 1
       · exact ih h (List.mem_cons_self ..) h2 hh
@@ -100,25 +100,25 @@ private theorem LSort_eqb_eq {s1 s2} (heq: LSort_eqb s1 s2 = true) :
     cases s2 with
     | bitvec => simp [LSort_eqb] at heq
     | tcons n2 a2 =>
-      simp [LSort_eqb] at heq
+      simp only [LSort_eqb, Bool.and_eq_true, beq_iff_eq] at heq
       obtain ⟨hn, ha⟩ := heq
       subst_vars; congr 1
       exact LSort_eqb_list_eq ih ha
   | hbitvec n1 =>
     cases s2 with
     | tcons => simp [LSort_eqb] at heq
-    | bitvec => simp [LSort_eqb] at heq; exact congrArg _ heq
+    | bitvec => simp only [LSort_eqb, beq_iff_eq] at heq; exact congrArg _ heq
 
 instance : BEq LSort := ⟨LSort_eqb⟩
 
 private theorem LSort_eqb_refl : ∀ a : LSort, LSort_eqb a a = true := by
   intro a; induction a using LSort.ind with
   | htcons n args ih =>
-    simp [LSort_eqb]
+    simp only [LSort_eqb, BEq.rfl, Bool.true_and]
     induction args with
     | nil => simp [LSort_eqb.LSort_eqb_list]
     | cons x xs ihxs =>
-      simp [LSort_eqb.LSort_eqb_list]
+      simp only [LSort_eqb.LSort_eqb_list, Bool.and_eq_true]
       exact ⟨ih x (List.mem_cons_self ..), ihxs (fun z hz => ih z (List.mem_cons_of_mem _ hz))⟩
   | hbitvec => simp [LSort_eqb]
 
@@ -142,6 +142,20 @@ where
   map : List LMonoTy → List LSort
   | [] => []
   | x :: xs => substTyVars ρ x :: map xs
+
+/-- The monomorphic type (without type variables) naming a sort. -/
+@[expose] public def LSort.toMonoTy : LSort → LMonoTy
+  | .tcons name args => .tcons name (map args)
+  | .bitvec n => .bitvec n
+where
+  map : List LSort → List LMonoTy
+  | [] => []
+  | s :: ss => toMonoTy s :: map ss
+
+/-- Whether a sort is the integer sort. -/
+@[expose] public def LSort.isInt : LSort → Bool
+  | .tcons "int" [] => true
+  | _ => false
 
 /-- Interpretation of type constructors: maps a constructor name and its
 sort arguments to a Lean `Type`.
@@ -487,7 +501,7 @@ theorem denote_Denotes
           have := LExpr.HasTypeA_to_typeCheck h_fn'
           have: aty'.arrow τ = ty1 := by simp_all
           subst_vars
-          simp at harr; cases harr; subst_vars
+          simp only [LMonoTy.isArrow_arrow, Option.some.injEq, Prod.mk.injEq] at harr; cases harr; subst_vars
           have := LExpr.HasTypeA_to_typeCheck h_arg'
           grind
       · -- Not arrow - contradicts typing
@@ -527,11 +541,11 @@ theorem denote_Denotes
     typecheck_split h_1' h_2' h_2' h_1' heq =>
       by_cases hv : LExpr.denote tcInterp opInterp fvarVal vt bvarVal e1 ty'' h_1' =
                     LExpr.denote tcInterp opInterp fvarVal vt bvarVal e2 ty'' h_2'
-      · simp [hv]
+      · simp only [hv, decide_true]
         exact .eq_true bvarVal
           (denote_Denotes tcInterp opInterp fvarVal vt bvarVal e1 _ h_1')
           (hv ▸ denote_Denotes tcInterp opInterp fvarVal vt bvarVal e2 _ h_2')
-      · simp [hv]
+      · simp only [hv, decide_false]
         exact .eq_false bvarVal
           (denote_Denotes tcInterp opInterp fvarVal vt bvarVal e1 _ h_1')
           (denote_Denotes tcInterp opInterp fvarVal vt bvarVal e2 _ h_2')
@@ -549,7 +563,7 @@ theorem denote_Denotes
       · rw [@decide_eq_true _ (Classical.propDecidable _) hv]
         exact .quant_all_true bvarVal fun x =>
           hv x ▸ denote_Denotes tcInterp opInterp fvarVal vt (.cons x bvarVal) body _ h_body'
-      · simp [hv]
+      · simp only [hv, decide_false]
         have ⟨w, hw⟩ := Classical.not_forall.mp hv
         have hwf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons w bvarVal) body .bool h_body' : Bool) = false :=
           Bool.eq_false_iff.mpr hw
@@ -565,11 +579,11 @@ theorem denote_Denotes
     typecheck_split h_body' h_body' h_body' h_tr' heq =>
       by_cases hv : ∃ x : TyDenote tcInterp vt qty,
         (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body' : Bool) = true
-      · simp [hv]
+      · simp only [hv, decide_true]
         have ⟨w, hw⟩ := hv
         exact .quant_exist_true bvarVal w
           (hw ▸ denote_Denotes tcInterp opInterp fvarVal vt (.cons w bvarVal) body _ h_body')
-      · simp [hv]
+      · simp only [hv, decide_false]
         exact .quant_exist_false bvarVal fun x =>
           let hf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body' : Bool) = false :=
             Bool.eq_false_iff.mpr (fun hp => hv ⟨x, hp⟩)
@@ -624,7 +638,7 @@ theorem Denotes_denote
         . have := LExpr.HasTypeA_to_typeCheck h_fn
           have: aty.arrow tyb = ty1 := by simp_all
           subst_vars
-          simp at harr; cases harr; subst_vars
+          simp only [LMonoTy.isArrow_arrow, Option.some.injEq, Prod.mk.injEq] at harr; cases harr; subst_vars
           have := LExpr.HasTypeA_to_typeCheck h_arg
           grind
       · -- Not arrow - contradicts typing
@@ -942,14 +956,14 @@ public theorem denote_ite
       else LExpr.denote tcInterp opInterp fvarVal vt bvarVal e τ h_e := by
   cases hb : LExpr.denote tcInterp opInterp fvarVal vt bvarVal c .bool h_c with
   | true =>
-    simp
+    simp only [cond_eq_ite, ↓reduceIte]
     have hd_c := denote_Denotes tcInterp opInterp fvarVal vt bvarVal c .bool h_c
     rw [hb] at hd_c
     have hd_t := denote_Denotes tcInterp opInterp fvarVal vt bvarVal t τ h_t
     have hd_ite := Denotes.ite_true bvarVal (h := h_ite) hd_c hd_t
     exact (Denotes_denote hd_ite).symm
   | false =>
-    simp
+    simp only [cond_eq_ite, Bool.false_eq_true, ↓reduceIte]
     have hd_c := denote_Denotes tcInterp opInterp fvarVal vt bvarVal c .bool h_c
     rw [hb] at hd_c
     have hd_e := denote_Denotes tcInterp opInterp fvarVal vt bvarVal e τ h_e
@@ -1076,7 +1090,7 @@ public def LFunc.InterpConsistentBody [DecidableEq T.IDMeta]
       vt .nil body f.output h_body
 
 /-- Denote a list of well-typed expressions into an `HList` of semantic values. -/
-noncomputable def denoteArgs
+public noncomputable def denoteArgs
     (fvarVal : FreeVarVal T tcInterp) (vt : TyVarVal)
     {Δ : List LMonoTy} (bvarVal : BVarVal tcInterp vt Δ) :
     (argExprs : List (LExpr T.mono)) → (tys : List LMonoTy)  →
@@ -1128,6 +1142,16 @@ public def Factory.InterpConsistent [DecidableEq T.IDMeta] (F : @Factory T) : Pr
     LFunc.InterpConsistentBody tcInterp opInterp (F[f]) body) ∧
   (∀ (f : String), (hf : f ∈ F) → ∀ ceval, (F[f]).concreteEval = some ceval →
     LFunc.InterpConsistentEval tcInterp opInterp (F[f]) ceval)
+
+/-- An interpretation satisfies the axioms of a factory when every well-typed
+axiom of every function denotes `true` for every type-variable valuation and
+free-variable valuation. The SMT encoder sends these axioms to the solver along
+with the definitions that use their functions, so a model of the factory must
+satisfy them. -/
+public def Factory.AxiomsSatisfied [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
+  ∀ (f : String), (hf : f ∈ F) → ∀ ax ∈ (F[f]).axioms,
+    ∀ (vt : TyVarVal) (fvarVal : FreeVarVal T tcInterp) (h : LExpr.HasTypeA [] ax .bool),
+      (LExpr.denote tcInterp opInterp fvarVal vt .nil ax .bool h : Bool) = true
 
 end FactoryInterpConsistent
 
@@ -1206,18 +1230,20 @@ end ConstrConsistent
 
 An `Interp` bundles a type-constructor interpretation and an operator
 interpretation together with proofs that the interpretation is consistent
-with a given factory: function bodies denote correctly and constructor
-axioms (disjointness, injectivity) hold. Satisfiability and validity
-are defined over consistent interpretations. -/
+with a given factory: function bodies denote correctly, the factory's axioms
+hold, and constructor axioms (disjointness, injectivity) hold. Satisfiability
+and validity are defined over consistent interpretations. -/
 
 /-- A consistent interpretation of a factory: bundles `tcInterp` and
 `opInterp` with proofs that the interpretation is inhabited, consistent
-with function definitions, and respects ADT axioms. -/
+with function definitions, satisfies the factory's axioms, and respects ADT
+axioms. -/
 public structure Interp {T : LExprParams} (F : @Factory T) [DecidableEq T.IDMeta] where
   tcInterp : TyConstrInterp
   opInterp : OpInterp tcInterp
   allInhabited : TyConstrInterp.AllInhabited tcInterp
   interpConsistent : Factory.InterpConsistent tcInterp opInterp F
+  axiomsSatisfied : Factory.AxiomsSatisfied tcInterp opInterp F
   constrConsistent : ConstrInterpConsistent tcInterp opInterp F
 
 section Satisfaction

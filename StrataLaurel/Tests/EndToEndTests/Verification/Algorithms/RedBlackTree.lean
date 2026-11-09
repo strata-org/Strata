@@ -24,12 +24,12 @@ procedure contains(t: Tree, x: int): bool;
 
 procedure isRed(t: Tree): bool
 {
-  Tree..isNode(t) && Tree..red!(t)
+  return Tree..isNode(t) && Tree..red!(t)
 };
 
 procedure treeAxioms(): bool
 {
-  (forall(lo: int) => forall(hi: int) => ordered(Leaf(), lo, hi))
+  return (forall(lo: int) => forall(hi: int) => ordered(Leaf(), lo, hi))
   && (forall(c: bool) => forall(k: int) => forall(l: Tree) => forall(r: Tree) => forall(lo: int) => forall(hi: int) =>
         ordered(Node(c, k, l, r), lo, hi) == (lo < k && k < hi && ordered(l, lo, k) && ordered(r, k, hi)))
   && (forall(b: int) => blackHeight(Leaf(), b) == (b == 0))
@@ -152,12 +152,12 @@ procedure contains(t: Tree, x: int): bool;
 
 procedure isRed(t: Tree): bool
 {
-  Tree..isNode(t) && Tree..red!(t)
+  return Tree..isNode(t) && Tree..red!(t)
 };
 
 procedure treeAxioms(): bool
 {
-  (forall(lo: int) => forall(hi: int) => ordered(Leaf(), lo, hi))
+  return (forall(lo: int) => forall(hi: int) => ordered(Leaf(), lo, hi))
   && (forall(c: bool) => forall(k: int) => forall(l: Tree) => forall(r: Tree) => forall(lo: int) => forall(hi: int) =>
         ordered(Node(c, k, l, r), lo, hi) == (lo < k && k < hi && ordered(l, lo, k) && ordered(r, k, hi)))
   && (forall(b: int) => blackHeight(Leaf(), b) == (b == 0))

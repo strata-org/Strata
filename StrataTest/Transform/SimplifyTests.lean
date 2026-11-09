@@ -5,9 +5,9 @@
 -/
 module
 
-meta import Strata.Languages.Core
+public meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
-meta import Strata.Transform.Simplify
+public meta import Strata.Transform.Simplify
 meta import Strata.Transform.PrecondElim
 import StrataDDM.Integration.Lean.HashCommands
 
@@ -1869,7 +1869,8 @@ procedure p (x : int)
 
 `simplifyExpr` does not descend under a binder, so the phase opens a lemma's outer
 `forall`s, simplifies the body, and binds the variables again. Here `dup(3)` folds to `6`
-and `dup` on the bound `x` expands, its argument being a single node. -/
+and `dup` on the bound `x` expands, its argument being a single node. Nested
+`forall`s are each bound again to their own variable. -/
 
 private def lemmaBody :=
 #strata
@@ -1878,6 +1879,7 @@ program Core;
 inline function dup (v : int) : int { int.add(v, v) }
 
 lemma [six]: forall x : int :: dup(3) == int.add(dup(x), int.sub(6, dup(x)));
+lemma [two]: forall x : int :: forall y : int :: dup(x) == dup(y);
 #end
 
 /-- info: program Core;
@@ -1885,7 +1887,8 @@ lemma [six]: forall x : int :: dup(3) == int.add(dup(x), int.sub(6, dup(x)));
 inline function dup (v : int) : int {
   int.add(v, v)
 }
-lemma [six] (x : int): 6 == int.add(int.add(x, x), int.sub(6, int.add(x, x))); -/
+lemma [six] (x : int): 6 == int.add(int.add(x, x), int.sub(6, int.add(x, x)));
+lemma [two] (x : int, y : int): int.add(x, x) == int.add(y, y); -/
 #guard_msgs in
 #eval simplifyAndPrint lemmaBody
 
@@ -1935,5 +1938,172 @@ procedure P (y : int)
 #guard_msgs in
 #eval precondElimThenSimplify precondFn
 
+
+/-! ### A deep branch chain comes back unchanged
+
+Two `if c₁ then … else if c₂ then … else …` chains: one whose every level writes `x`, and
+one whose every level declares a fresh variable `tₖ` and writes it to `x`, so that the
+set of variables written below a level grows with the depth. `simpStmts` and
+`dropDeadDefs` leave both unchanged at depth 1000. The recursion of the interpreted
+`#eval` deepens with the chain, and depth 1000 keeps it within a 2 MB thread stack.
+`StrataTestExtra/Transform/SimplifyScaling.lean` checks on the same chains that the cost
+is linear in the depth. -/
+
+/-- The chain of the given depth, branching on `c₁, c₂, …` and writing `x`. -/
+public def elseIfChain : Nat → List Statement
+  | 0 => []
+  | n + 1 =>
+    [.ite (.det (.fvar () ⟨s!"c{n + 1}", ()⟩ none))
+      [Statement.set ⟨"x", ()⟩ (.intConst () (n + 1)) .empty] (elseIfChain n) .empty]
+
+/-- The chain of the given depth, branching on `c₁, c₂, …`, whose level `k` declares
+    `tₖ` without a value and writes it to `x`. -/
+public def freshVarChain : Nat → List Statement
+  | 0 => []
+  | n + 1 =>
+    let t : CoreIdent := ⟨s!"t{n + 1}", ()⟩
+    [.ite (.det (.fvar () ⟨s!"c{n + 1}", ()⟩ none))
+      [Statement.init t (.forAll [] .int) .nondet .empty,
+       Statement.set ⟨"x", ()⟩ (.fvar () t none) .empty] (freshVarChain n) .empty]
+
+/-- Whether simplifying `ss` and sweeping its dead definitions leaves it unchanged. -/
+public def simplifiesUnchanged (ss : List Statement) : Bool :=
+  let (out, _, _) := simpStmts (Ctx.ofFactory Core.Factory) ss
+  decide (dropDeadDefs Core.Factory {} {} out = ss)
+
+/-- info: true -/
+#guard_msgs in
+#eval simplifiesUnchanged (elseIfChain 1000)
+
+/-- info: true -/
+#guard_msgs in
+#eval simplifiesUnchanged (freshVarChain 1000)
+
+/-! ### A long sequence of branches comes back unchanged
+
+`writeFreeIfs n` is `n` branches in sequence, each asserting in one arm and doing nothing
+in the other, so the names live before a branch grow along the sequence. `simpStmts` and
+`dropDeadDefs` leave it unchanged at length 4000.
+`StrataTestExtra/Transform/SimplifyScaling.lean` checks that the cost is linear in the
+length. -/
+
+/-- The branches `if cᵢ { assert pᵢ } else {}` for `i < n`, in sequence. -/
+public def writeFreeIfs (n : Nat) : List Statement :=
+  (List.range n).map fun i =>
+    .ite (.det (.fvar () ⟨s!"c{i}", ()⟩ none))
+      [Statement.assert s!"a{i}" (.fvar () ⟨s!"p{i}", ()⟩ none) .empty] [] .empty
+
+/-- info: true -/
+#guard_msgs in
+#eval simplifiesUnchanged (writeFreeIfs 4000)
+
+/-! ### Each arm of a branch is swept with the names live after the branch
+
+A variable one arm reads does not keep the other arm's dead definition of the same
+name, whichever arm is swept first. -/
+
+private def tRead : Statement := Statement.assert "a" (.fvar () ⟨"t", ()⟩ none) .empty
+private def tDef : Statement :=
+  Statement.init ⟨"t", ()⟩ (.forAll [] .int) (.det (.intConst () 1)) .empty
+private def noRead : Statement := Statement.assert "b" (.boolConst () true) .empty
+private def cGuard : Imperative.ExprOrNondet Expression := .det (.fvar () ⟨"c", ()⟩ none)
+
+#guard dropDeadDefs Core.Factory {} {} [.ite cGuard [tRead] [tDef] .empty] =
+  [.ite cGuard [tRead] [] .empty]
+
+#guard dropDeadDefs Core.Factory {} {} [.ite cGuard [tDef, noRead] [tRead] .empty] =
+  [.ite cGuard [noRead] [tRead] .empty]
+
+/-! ## An operator whose annotation is not its signature
+
+`Bool.Not` has the signature `bool → bool`, so the operator annotated `bool` has no type
+in the factory and is not a value of type `bool`. The semantics cannot run its `init`,
+so the phase keeps the dead definition. -/
+
+/-- `Bool.Not` annotated with the type `bool`. -/
+private def notAsBool : Expression.Expr := .op () ⟨"Bool.Not", ()⟩ (some .bool)
+
+/-- info: false -/
+#guard_msgs in
+#eval isValueOfTy Core.Factory (.forAll [] .bool) notAsBool
+
+/-- A procedure whose only `init` is dead. -/
+private def deadInit :=
+#strata
+program Core;
+
+procedure p () {
+  var c : bool := true;
+  assert [ok]: true;
+};
+#end
+
+/-- `deadInit` with the right-hand side of its `init` replaced by `notAsBool`. -/
+private def deadNotInit : Core.Program :=
+  let p := translateCore deadInit
+  let swap : Statement → Statement
+    | .cmd (.cmd (.init x ty (.det _) md)) => .cmd (.cmd (.init x ty (.det notAsBool) md))
+    | s => s
+  { p with decls := p.decls.map fun
+      | .proc pr md => match pr.body with
+        | .structured ss => .proc { pr with body := .structured (ss.map swap) } md
+        | _ => .proc pr md
+      | d => d }
+
+/-- info: program Core;
+
+procedure p ()
+{
+  var c : bool := Bool.Not;
+  assert [ok]: true;
+};
+
+
+-- Errors encountered during conversion:
+Unsupported construct in handleZeroaryOps: unknown operation, rendering as generic call: Bool.Not
+Context: Global scope:
+Scope 1:
+Scope 2: -/
+#guard_msgs in
+#eval match Core.Transform.run deadNotInit runSimplify
+    { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
+  | .error e => IO.println s!"error: {e}"
+  | .ok (_, q) =>
+    IO.print ((Core.formatProgram q).pretty.toList.reverse.dropWhile (· == '\n') |>.reverse |>
+      String.ofList)
+
+/-! ## A closed quantifier is not a value
+
+A closed quantifier is not a value (`LExpr.isValue`): evaluation does not decide it. So the
+phase does not substitute the quantifier an `init` gives `b` into the reads of `b`, as it
+substitutes the constant `c` has, and the dead-definition sweep keeps the `init` of `d`,
+which nothing reads. -/
+
+private def quantInit :=
+#strata
+program Core;
+
+procedure p () {
+  var b : bool := forall n : int :: n == n;
+  var c : bool := true;
+  var d : bool := forall n : int :: n == n;
+  assert [bRead]: b;
+  assert [bReadAgain]: b ==> b;
+  assert [cRead]: c;
+};
+#end
+
+/-- info: program Core;
+
+procedure p ()
+{
+  var b : bool := forall n : int :: n == n;
+  var d : bool := forall n : int :: n == n;
+  assert [bRead]: b;
+  assert [bReadAgain]: b ==> b;
+  assert [cRead]: true;
+}; -/
+#guard_msgs in
+#eval simplifyAndPrint quantInit
 
 end Core.Simplify.Tests

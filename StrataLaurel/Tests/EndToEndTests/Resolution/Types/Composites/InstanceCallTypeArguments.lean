@@ -419,8 +419,8 @@ procedure instanceCallsInAStaticCall(s: Set<int>)
 
 /-! ## An unresolved receiver is the only error
 
-With no composite to look the method up in, the call falls back to the bare name, here a generic
-procedure that nothing determines; nothing is inferred for it. -/
+With no composite to look the method up in, the call binds nothing, not the generic procedure of
+that name, so nothing is inferred for it. -/
 
 #eval testLaurelResolution <|
 #strata

@@ -9,6 +9,9 @@ public import Strata.DL.Imperative.Stmt
 public import Strata.DL.Imperative.StmtProps
 public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Util.LabelGen
+public import Strata.DL.Imperative.StmtExtendCallBridge
+public import Strata.Languages.Core.PipelinePhase
+public import Strata.Transform.CoreTransform
 
 public section
 
@@ -64,7 +67,7 @@ Returns a pair `(havocs, body')`:
   havoc rhs), and
 * `body'` is `s` with each lifted init rewritten as `Cmd.set y rhs md` (SAME
   name `y`; no rename pair, no substitution). -/
-def Stmt.liftInitsInLoopBody {P : PureExpr}
+@[expose] def Stmt.liftInitsInLoopBody {P : PureExpr}
     (s : Stmt P (Cmd P)) :
     List (Cmd P) × List (Stmt P (Cmd P)) :=
   match s with
@@ -85,7 +88,7 @@ def Stmt.liftInitsInLoopBody {P : PureExpr}
 
 /-- Apply `Stmt.liftInitsInLoopBody` to every statement in the block,
 concatenating the harvested havocs and rewritten residuals. -/
-def Block.liftInitsInLoopBody {P : PureExpr}
+@[expose] def Block.liftInitsInLoopBody {P : PureExpr}
     (ss : List (Stmt P (Cmd P))) :
     List (Cmd P) × List (Stmt P (Cmd P)) :=
   match ss with
@@ -104,7 +107,7 @@ recurse into the body first (so nested loops are hoist-processed), then call
 body inits with their SAME names. The havocs are emitted as SIBLING commands
 *before* the rewritten loop; the body is NOT renamed (same names). For `.block`
 and `.ite`, recurse structurally. Other statements are identity. -/
-def Stmt.hoistLoopPrefixInits {P : PureExpr}
+@[expose] def Stmt.hoistLoopPrefixInits {P : PureExpr}
     (s : Stmt P (Cmd P)) : List (Stmt P (Cmd P)) :=
   match s with
   | .cmd c => [.cmd c]
@@ -121,7 +124,7 @@ def Stmt.hoistLoopPrefixInits {P : PureExpr}
 
 /-- Apply `Stmt.hoistLoopPrefixInits` to each statement of the block,
 concatenating the resulting lists. -/
-def Block.hoistLoopPrefixInits {P : PureExpr}
+@[expose] def Block.hoistLoopPrefixInits {P : PureExpr}
     (ss : List (Stmt P (Cmd P))) : List (Stmt P (Cmd P)) :=
   match ss with
   | [] => []
@@ -130,3 +133,61 @@ def Block.hoistLoopPrefixInits {P : PureExpr}
 end
 
 end Imperative
+
+namespace Core
+
+public section
+
+/-- Core-facing loop-init hoist: `none` on a call, otherwise project → hoist →
+embed. -/
+def hoistLoopPrefixInits (ss : Statements) : Option Statements :=
+  match Imperative.projectStmts ss with
+  | some bs =>
+    some (Imperative.embedStmts (Imperative.Block.hoistLoopPrefixInits bs))
+  | none => none
+
+namespace LoopInitHoist
+
+/-- Rewrite one declaration by hoisting loop-body initializers. Non-procedure
+declarations pass through unchanged; CFG bodies and calls are rejected. -/
+def loopInitHoistDecl (d : Decl) : Except Strata.Message (Decl × Bool) :=
+  match d with
+  | .proc proc md =>
+    match proc.body with
+    | .structured ss =>
+      match hoistLoopPrefixInits ss with
+      | some ss' =>
+        pure (Decl.proc { proc with body := .structured ss' } md, ss' != ss)
+      | none =>
+        throw (Strata.Message.fromString
+          s!"loopInitHoist: procedure '{proc.header.name.1}' contains a call; \
+             loopInitHoist expects call-free structured bodies.")
+    | .cfg _ =>
+      throw (Strata.Message.fromString
+        s!"loopInitHoist: CFG procedure bodies are not supported \
+           (procedure '{proc.header.name.1}'); \
+           loopInitHoist expects structured bodies.")
+  | _ => pure (d, false)
+
+/-- Hoist loop-body initializers in every structured Core procedure. The
+returned flag is true exactly when at least one body changes. -/
+def loopInitHoist (p : Program) : Transform.CoreTransformM (Bool × Program) := do
+  let results ← liftExcept (p.decls.mapM loopInitHoistDecl)
+  return (results.any (·.2), { decls := results.map (·.1) })
+
+/-- Loop-initializer-hoist pipeline phase. It requires globally unique
+initializer names and establishes that loop bodies contain no initializers. -/
+def loopInitHoistPipelinePhase : PipelinePhase :=
+  modelPreservingPipelinePhase "loopInitHoist" loopInitHoist
+    (requires := factSet![.noCFGBodies, .noCalls, .uniqueInits])
+    (establishes := factSet![.loopBodyNoInits])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops,
+      .noLoopInvariants, .noLoopMeasures, .uniqueInits, .noBetaRedexes,
+      .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
+      .noPolymorphicProcedures, .noPolymorphicFunctions, .typeAnnotated])
+
+end LoopInitHoist
+
+end -- public section
+
+end Core

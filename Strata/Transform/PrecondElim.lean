@@ -12,6 +12,7 @@ public import Strata.Util.DecideProp
 import Strata.DL.Lambda.Preconditions
 import Strata.Languages.Core.Factory
 import Strata.Transform.TerminationCheck
+import Strata.Languages.Core.AbstractCalls
 import Strata.Util.Tactics
 
 /-! # Partial Function Precondition Elimination
@@ -156,6 +157,8 @@ The well-formedness lemmas for the checks `stmts`, quantified over `binders` and
 generic in `typeArgs`: one lemma per `assert q`, named and annotated like it,
 whose formula is `p₁ ==> … ==> pₙ ==> q` for the conditions `pᵢ` assumed before
 it. Earlier checks are not hypotheses, since their own lemmas check them.
+Calls to the functions `fns` are abstracted (`Lemma.forallAbstractingCalls`), so
+that the lemmas hold whatever those functions return.
 
 A name already in `taken`, such as a declaration of the program, or repeated
 among the checks, gets a `_k` suffix: checks from different conditions can
@@ -164,7 +167,7 @@ share a label, since each condition numbers its checks from 0.
 We should emit only one lemma in the future, whose formula keeps the whole tree
 of checks, and be able to verify it incrementally while reporting each check.
 -/
-def mkWFLemmas (taken : Std.HashSet String) (typeArgs : List TyIdentifier)
+def mkWFLemmas (taken : Std.HashSet String) (fns : List Function) (typeArgs : List TyIdentifier)
     (binders : List (Expression.Ident × Lambda.LMonoTy)) (stmts : List Statement) :
     List Decl :=
   let (_, _, lemmas) := stmts.foldl
@@ -175,7 +178,8 @@ def mkWFLemmas (taken : Std.HashSet String) (typeArgs : List TyIdentifier)
       | .assert label q md =>
         let e := hyps.foldl (init := q) fun body p => LExpr.mkApp () boolImpliesOp [p, body]
         let name := Lemma.freshName names label
-        (hyps, names.insert name, .lemma { name, typeArgs, e := Lemma.forallOver binders e } md :: lemmas)
+        let e := Lemma.forallAbstractingCalls fns binders e
+        (hyps, names.insert name, .lemma { name, typeArgs, e } md :: lemmas)
       | _ => (hyps, names, lemmas)
   lemmas.reverse
 
@@ -203,7 +207,7 @@ def mkContractWFLemmas (F : @Lambda.Factory CoreLParams) (taken : Std.HashSet St
     processCondition F check.expr s!"{name}_post_{label}" label check.md
   let binders := proc.header.inputs.toList ++ proc.header.getOutputOnlyParams.toList ++
     inouts.map fun (x, ty) => (CoreIdent.mkOld x.name, ty)
-  mkWFLemmas taken proc.header.typeArgs binders (precondStmts ++ postcondStmts)
+  mkWFLemmas taken [] proc.header.typeArgs binders (precondStmts ++ postcondStmts)
 
 /-! ## Function well-formedness generation -/
 
@@ -239,13 +243,15 @@ def mkFuncWFStmts (F : @Lambda.Factory CoreLParams) (funcName : String)
     none
 
 /--
-Generate the well-formedness lemmas for a top-level function declaration,
-quantified over the function's inputs.
+Generate the well-formedness lemmas for a top-level function declaration of the
+block `block`, quantified over the function's inputs. Calls to the block's
+functions are abstracted, so the lemmas do not depend on their definitions.
 -/
 def mkFuncWFLemmas (F : @Lambda.Factory CoreLParams) (taken : Std.HashSet String)
-    (func : Function) (md : Imperative.MetaData Expression) : List Decl :=
+    (block : List Function) (func : Function) (md : Imperative.MetaData Expression) :
+    List Decl :=
   match mkFuncWFStmts F func.name.name func.preconditions func.body md with
-  | some stmts => mkWFLemmas taken func.typeArgs func.inputs.toList stmts
+  | some stmts => mkWFLemmas taken block func.typeArgs func.inputs.toList stmts
   | none => []
 
 /-! ## Statement transformation -/
@@ -354,11 +360,7 @@ def precondElim (p : Program)
   try
     -- Generated lemmas are named away from every declaration of the program.
     let taken := Std.HashSet.ofList (p.decls.flatMap fun d => d.names.map (·.name))
-    let listed := Std.HashSet.ofList <| p.decls.flatMap fun
-      | .proc proc _ => proc.header.lemmas
-      | .func f _ => f.lemmas
-      | .recFuncBlock fs _ => fs.flatMap (·.lemmas)
-      | _ => []
+    let listed := Std.HashSet.ofList (p.decls.flatMap Decl.lemmaNames)
     let (changed, newDecls) ← transformDecls taken listed p.decls
     setFactory savedF
     return (changed, { decls := newDecls })
@@ -410,12 +412,12 @@ where
         let func' := { func with preconditions := [] }
         let hasPreconds := !func.preconditions.isEmpty
         if hasPreconds then incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}"
-        let wfDecls := mkFuncWFLemmas F' taken func md
+        let wfDecls := mkFuncWFLemmas F' taken [func] func md
         taken := taken.insertMany (wfDecls.map (·.name.name))
         incrementStat s!"{Stats.wfLemmasGenerated}" wfDecls.length
         changed := changed || hasPreconds || !wfDecls.isEmpty
-        -- A non-recursive function cannot mention itself in its preconditions
-        -- or body, so its lemmas never mention it and precede it.
+        -- The lemmas precede the function, which they do not mention, so that
+        -- its definition is not in scope when they are checked.
         acc := acc ++ wfDecls.toArray
         acc := acc.push (Decl.func { func' with lemmas := func'.lemmas ++ wfDecls.map (·.name.name) } md)
       | .recFuncBlock funcs md => do
@@ -431,7 +433,7 @@ where
         incrementStat s!"{Stats.numFuncsRemovedAfterPrecondStripped}" numStripped
         let (revWfDeclss, taken') := funcs.foldl (init := ([], taken))
           fun (revDeclss, taken) func =>
-            let wfDecls := mkFuncWFLemmas F' taken func md
+            let wfDecls := mkFuncWFLemmas F' taken funcs func md
             (wfDecls :: revDeclss, taken.insertMany (wfDecls.map (·.name.name)))
         let wfDeclss := revWfDeclss.reverse
         taken := taken'
@@ -441,10 +443,11 @@ where
         let wfDecls := wfDeclss.flatten
         incrementStat s!"{Stats.wfLemmasGenerated}" wfDecls.length
         changed := changed || hasPreconds || !wfDecls.isEmpty
-        -- The lemmas follow the block: a body's path conditions may call the
-        -- block's functions.
-        acc := acc.push (Decl.recFuncBlock funcs' md)
+        -- The lemmas precede the block, whose functions they do not mention,
+        -- so that the block's definitions are not in scope when they are
+        -- checked.
         acc := acc ++ wfDecls.toArray
+        acc := acc.push (Decl.recFuncBlock funcs' md)
       | .lemma l md => do
         -- A lemma's partial calls are checked like an assertion's, by
         -- well-formedness lemmas declared before it. A lemma that a
@@ -452,7 +455,7 @@ where
         -- its owner's own well-formedness lemmas already cover its calls.
         let F ← getFactory
         let wfDecls := if listed.contains l.name then [] else
-          mkWFLemmas taken l.typeArgs [] (collectPrecondAsserts F l.e l.name md)
+          mkWFLemmas taken [] l.typeArgs [] (collectPrecondAsserts F l.e l.name md)
         taken := taken.insertMany (wfDecls.map (·.name.name))
         incrementStat s!"{Stats.wfLemmasGenerated}" wfDecls.length
         changed := changed || !wfDecls.isEmpty
@@ -490,7 +493,7 @@ def precondElimPipelinePhase : PipelinePhase :=
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noNondetGuards,
                          .noProcedureContracts,
-                         .noPolymorphicFunctions, .typeAnnotated])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits])
     fun prog => do
       PrecondElim.precondElim prog
 

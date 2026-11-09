@@ -102,7 +102,7 @@ def filterProceduresPipelinePhase (procs : List String)
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                          .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions])
+                         .noPolymorphicFunctions, .noInits])
     fun prog => do
       let (changed, filtered) ← FilterProcedures.run prog procs (keepUnlistedLemmas := keepUnlistedLemmas)
       return (changed, filtered)

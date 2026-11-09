@@ -50,7 +50,7 @@ theorem storeAgreement_supplies_mono_premise {P : PureExpr}
     (σ_struct σ_cfg : SemanticStore P) (h_agree : StoreAgreement σ_struct σ_cfg) :
     ∀ x w, σ_struct x = some w → σ_cfg x = some w := by
   intro x w hw
-  have h_def : isDefined σ_struct [x] := fun v hv => by
+  have h_def : SemanticStore.varsDefined (· ∈ [x]) σ_struct := fun v hv => by
     rw [List.mem_singleton.mp hv, hw]; rfl
   rw [← h_agree x h_def]; exact hw
 
@@ -60,7 +60,7 @@ theorem StoreAgreement.trans {P : PureExpr} {σ₁ σ₂ σ₃ : SemanticStore P
     StoreAgreement σ₁ σ₃ := by
   intro x h_def₁
   have h12 : σ₁ x = σ₂ x := h₁ x h_def₁
-  have h_def₂ : isDefined σ₂ [x] := fun v hv => by
+  have h_def₂ : SemanticStore.varsDefined (· ∈ [x]) σ₂ := fun v hv => by
     rw [List.mem_singleton.mp hv, ← h12]; exact h_def₁ x (List.mem_singleton.mpr rfl)
   exact h12.trans (h₂ x h_def₂)
 
@@ -68,7 +68,7 @@ theorem StoreAgreement.trans {P : PureExpr} {σ₁ σ₂ σ₃ : SemanticStore P
 `StoreAgreement` with the source: the only changed slot is `ident`, which the
 source store does not define (one-directionality of `StoreAgreement`). -/
 theorem storeAgreement_storeWith {P : PureExpr} [DecidableEq P.Ident]
-    (σ_src σ_tgt : SemanticStore P) (ident : P.Ident) (b : P.Expr)
+    (σ_src σ_tgt : SemanticStore P) (ident : P.Ident) (b : P.Val)
     (h_agree : StoreAgreement σ_src σ_tgt)
     (h_src_none : σ_src ident = none) :
     StoreAgreement σ_src (SemanticStore.update σ_tgt ident b) := by
@@ -123,7 +123,7 @@ theorem StoreExtendsWith.eq_of_false {P : PureExpr}
   cases hsource : source ident with
   | some value =>
       rw [← hsource]
-      exact h.1 ident (by simp [isDefined, hsource])
+      exact h.1 ident (by simp [SemanticStore.varsDefined, hsource])
   | none =>
       cases htarget : target ident with
       | none => rfl
@@ -140,7 +140,7 @@ theorem lookup_eq_of_not_extra {P : PureExpr} {Extra : P.Ident → Prop}
   cases hsource : source ident with
   | some value =>
       rw [← hsource]
-      exact h.1 ident (by simp [isDefined, hsource])
+      exact h.1 ident (by simp [SemanticStore.varsDefined, hsource])
   | none =>
       cases htarget : target ident with
       | none => rfl
@@ -196,7 +196,7 @@ theorem trans {P : PureExpr} {Extra : P.Ident → Prop}
 store extension. -/
 theorem update_target {P : PureExpr} [DecidableEq P.Ident]
     {Extra : P.Ident → Prop} {source target : SemanticStore P}
-    {ident : P.Ident} {value : P.Expr}
+    {ident : P.Ident} {value : P.Val}
     (h : StoreExtendsWith Extra source target)
     (hsource : source ident = none) (hextra : Extra ident) :
     StoreExtendsWith Extra source (SemanticStore.update target ident value) := by
@@ -213,7 +213,7 @@ theorem update_target {P : PureExpr} [DecidableEq P.Ident]
 classified extension. -/
 theorem update_both {P : PureExpr} [DecidableEq P.Ident]
     {Extra : P.Ident → Prop} {source target : SemanticStore P}
-    {ident : P.Ident} {value : P.Expr}
+    {ident : P.Ident} {value : P.Val}
     (h : StoreExtendsWith Extra source target) :
     StoreExtendsWith Extra
       (SemanticStore.update source ident value)

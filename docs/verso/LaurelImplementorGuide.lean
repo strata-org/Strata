@@ -129,8 +129,8 @@ The parts of the language definition map onto the implementation files as follow
 
 - *Type* — `LaurelAST.lean` defines the Laurel AST, including the program structure (`StmtExpr`,
   declarations, procedures) and the type language (`HighType`). `LaurelTypes.lean` computes the
-  `HighType` of an expression from these annotations, and `TypeHierarchy.lean` captures the
-  subtyping relation between user-defined types.
+  `HighType` of an expression from these annotations, and `LowerComposite.lean` encodes the
+  subtyping relation between composite types as type-tag ancestor tables.
 - *Grammar* — `Grammar/LaurelGrammar.st` is the DDM dialect that defines Laurel's concrete syntax;
   it is loaded into Lean by `Grammar/LaurelGrammar.lean`.
   `Grammar/ConcreteToAbstractTreeTranslator.lean` turns the parsed concrete tree into the
@@ -211,8 +211,9 @@ If new references or definitions are created during compilation, the program mus
 get a complete model. A pass does not call `Resolution.resolve` itself; instead it sets
 `needsResolves := true` in its definition, and the pipeline driver
 (`LaurelCompilationPipeline.lean`) runs `resolve` after the pass and threads the refreshed
-`SemanticModel` into the next pass. The passes `YieldElim`,
-`HeapParameterization`, `TypeHierarchy`, and `ModifiesClauses` (in pipeline order) are
+`SemanticModel` into the next pass. `LowerComposite` runs just before them and re-resolves on its
+own: it leaves a program whose heap fields resolve against `LaurelProgram.heapFields`. The passes
+`YieldElim`, `HeapParameterization`, and `ModifiesClauses` (in pipeline order) are
 logically one step: all but the last set `needsResolves := false` to suppress the intermediate
 re-resolutions, and the last member (`ModifiesClauses`) sets `needsResolves := true`, so the group
 is re-resolved once at its end. The coroutine lowering relies on this: `YieldElim` emits transient
@@ -268,7 +269,7 @@ Three declarations describe a pass:
 : `creates`
 
   Shapes the pass *might* introduce — it does not always emit one. `EliminateDoWhile` creates
-  `StmtExpr.Exit`, because the loop it emits leaves through a labelled exit, but a program
+  `StmtExpr.Goto`, because the loop it emits leaves through a labelled exit, but a program
   with no `do … while` gets none.
 
 : `removes`
@@ -453,8 +454,8 @@ forcing claim `C ==> Result..isBad($result)` plus, for every `ensures P` it cont
 `Result..err($result)`.
 
 Splitting a case this way rather than emitting one `C ==> (isBad & P)` matters twice over. A cast in
-`P` lowers to an embedded `assert (e is T)` (see `HeapParameterization`), which is discharged from the
-enclosing antecedents — so the idiomatic `ensures e is T ==> (e as T)#f …` only verifies with `isBad`
+`P` lowers to a call to the `downcast$T` helper whose `requires (e is T)` (see `LowerComposite`) is
+discharged from the enclosing antecedents — so the idiomatic `ensures e is T ==> (e as T)#f …` only verifies with `isBad`
 and `C` on the left. And a body that never throws on a guarded path then fails as exactly one
 condition: the forcing claim fails while every postcondition is vacuous.
 
@@ -489,8 +490,8 @@ lowered into are postconditions and its heap reads are not wrapped in `old(...)`
 `c#value < 0` is evaluated against the post-state heap. Guards over parameters are unaffected, since
 those are immutable. Heap-reading guards are therefore unsupported rather than merely untested.
 
-*Why the pass runs before `HeapParameterization`.* Heap parameterization, and the type-hierarchy
-transform after it, erase every composite reference to the synthesized `Composite` type. A pass
+*Why the pass runs before `LowerComposite`.* `LowerComposite` erases every composite reference to the
+synthesized `Composite` type. A pass
 running later would therefore have nothing but `Composite` to type the in-flight exception at, and
 every handler's field access would need a downcast. Running first, the pass can read each `catch`
 binding's resolved least-common-ancestor type and use it directly.
@@ -525,10 +526,16 @@ A `catch` guard may test its binding against a type unrelated to the binding's t
 what the `try` body throws), as a Java multi-catch arm for an unchecked exception does. Resolution
 accepts it there, and the pass lowers the test to `false`. A type that shares a descendant with the
 binding's type (multiple inheritance, `composite D extends A, B`) is not unrelated, so that test is
-still rejected. A clause whose guard is such a test, or a disjunction of them, is dead, and
-resolution discards its body unresolved, so a front end that reads the binding at the arm's type
+kept. A clause whose guard is an unrelated test, or a disjunction of them, is dead, and resolution
+discards its body unresolved, so a front end that reads the binding at the arm's type
 (`c as T`) is not rejected for casting between unrelated types there. Any other guard shape — `false`,
 a conjunction — keeps its body resolved.
+
+A clause runs only when its guard holds, so its body sees the binding at what a guard testing it
+(or a disjunction of such tests) admits: the join of the tested types, where that narrows the
+binding's type, as Java types a catch parameter. A front end may read the binding uncast or at the
+arm's type (`c as T`). The pass declares the handler's copy of the binding at that type, through a
+downcast the guard discharges.
 
 *Two shapes are rejected instead of lowered.* `validateExceptionLowerability` rejects them at
 resolution with a not-yet-supported diagnostic, because the alternatives would be an internal error or

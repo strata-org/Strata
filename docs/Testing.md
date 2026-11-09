@@ -202,6 +202,23 @@ end Strata.Laurel
 The pattern: `translateLaurel : Strata.Program → IO Laurel.Program` is the
 common entry point; everything after is dialect/test-specific.
 
+Such a helper runs only the stages it names, so the pass sees the input the
+pipeline would give it only if no skipped pass rewrites the fixture, and nothing
+checks that. Where the pass's real input cannot be written as source at all
+(after `HeapParameterization`, a program that uses the heap refers to `$heap`),
+use `runPassesBefore`, which runs the passes of `laurelPipeline` before the pass and
+returns the program and semantic model the pass receives. Run the pass with that
+model rather than one rebuilt by `resolve`, which rejects the program after
+`HeapParameterization`:
+
+```lean
+let (program, model, diags) ← runPassesBefore modifiesClausesTransformPass {} laurelProgram
+if diags.any (·.kind != .warning) then throw (IO.userError s!"{diags.map (·.message)}")
+let (output, passDiags, _) := modifiesClausesTransformPass.run {} program model
+```
+
+`StrataLaurel/Tests/Idiomaticity/ModifiesClausesLayerTest.lean` uses it.
+
 ### 5. One `#strata` block per independent unit; group only on dependency
 
 The rule here is about **independence**, not about positive-vs-negative.

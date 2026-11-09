@@ -109,7 +109,7 @@ procedure jsThrowStringBad()
   } catch e when e is AnyThrown {
     var v: JsValue := (e as AnyThrown)#value;
     assert JsValue..isJsNum(v)
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   }
 };
 #end

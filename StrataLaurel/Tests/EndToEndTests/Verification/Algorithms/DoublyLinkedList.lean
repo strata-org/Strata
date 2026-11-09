@@ -18,7 +18,7 @@ procedure nodeAt(nx: Sequence<int>, s: int, i: int): int;
 
 procedure linkAxioms(): bool
 {
-  (forall(nx: Sequence<int>) => forall(pv: Sequence<int>) => forall(p: int) => forall(s: int) =>
+  return (forall(nx: Sequence<int>) => forall(pv: Sequence<int>) => forall(p: int) => forall(s: int) =>
      linked(nx, pv, p, s, 0) == (s == -1))
   && (forall(nx: Sequence<int>) => forall(pv: Sequence<int>) => forall(p: int) => forall(s: int) => forall(len: int) => len >= 1 ==>
      linked(nx, pv, p, s, len) ==
@@ -64,7 +64,7 @@ procedure nodeAt(nx: Sequence<int>, s: int, i: int): int;
 
 procedure linkAxioms(): bool
 {
-  (forall(nx: Sequence<int>) => forall(pv: Sequence<int>) => forall(p: int) => forall(s: int) =>
+  return (forall(nx: Sequence<int>) => forall(pv: Sequence<int>) => forall(p: int) => forall(s: int) =>
      linked(nx, pv, p, s, 0) == (s == -1))
   && (forall(nx: Sequence<int>) => forall(pv: Sequence<int>) => forall(p: int) => forall(s: int) => forall(len: int) => len >= 1 ==>
      linked(nx, pv, p, s, len) ==

@@ -363,7 +363,7 @@ pieces:
 The Strata Core language, described next, is a worked example of an
 `Imperative` instantiation: it picks `Lambda` expressions for `PureExpr`,
 supplies the required `Has`-typeclass instances, and discharges the
-well-formedness conditions against `LExpr.evalFully`.
+well-formedness conditions against `LExpr.denoteEval`, Lambda's denotational evaluator.
 
 # Strata Core
 

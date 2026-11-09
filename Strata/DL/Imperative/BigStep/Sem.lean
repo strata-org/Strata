@@ -23,7 +23,7 @@ with one factory:
 Blocks and `ite` branches project the store on exit (`projectStore`), as the small-step
 semantics does.
 
-Key definitions: `PStmts`, `BRun`, `BReach`, `evalInterp`, `FailsAt`, `Fails`. -/
+Key definitions: `PStmts`, `BRun`, `BReach`, `evalInterp`, `FailsAt`, `Claim`, `Fails`. -/
 
 namespace Imperative
 namespace BigStep
@@ -71,9 +71,9 @@ inductive BRun (F : P.Factory) : (PStmts P) → SemanticStore P →
 inductive BRunS (F : P.Factory) : (PStmt P) → SemanticStore P →
     List (Event P) → (Outcome P) → Prop where
   | cmd : EvalE F σ c σ' evs → BRunS F (.cmd c) σ evs (.normal σ')
-  | ite_true : P.eval F σ c = some HasBool.tt → BRun F tss σ evs o →
+  | ite_true : P.eval F σ c = some (HasBool.ttVal F) → BRun F tss σ evs o →
       BRunS F (.ite (.det c) tss ess md) σ evs (o.proj σ)
-  | ite_false : P.eval F σ c = some HasBool.ff → BRun F ess σ evs o →
+  | ite_false : P.eval F σ c = some (HasBool.ffVal F) → BRun F ess σ evs o →
       BRunS F (.ite (.det c) tss ess md) σ evs (o.proj σ)
   | ite_nondet_true : BRun F tss σ evs o → BRunS F (.ite .nondet tss ess md) σ evs (o.proj σ)
   | ite_nondet_false : BRun F ess σ evs o → BRunS F (.ite .nondet tss ess md) σ evs (o.proj σ)
@@ -94,9 +94,9 @@ inductive BReach (F : P.Factory) : (PStmts P) → SemanticStore P →
 inductive BReachS (F : P.Factory) : (PStmt P) → SemanticStore P →
     List (Event P) → Prop where
   | cmd : EvalE F σ c σ' evs → BReachS F (.cmd c) σ evs
-  | ite_true : P.eval F σ c = some HasBool.tt → BReach F tss σ evs →
+  | ite_true : P.eval F σ c = some (HasBool.ttVal F) → BReach F tss σ evs →
       BReachS F (.ite (.det c) tss ess md) σ evs
-  | ite_false : P.eval F σ c = some HasBool.ff → BReach F ess σ evs →
+  | ite_false : P.eval F σ c = some (HasBool.ffVal F) → BReach F ess σ evs →
       BReachS F (.ite (.det c) tss ess md) σ evs
   | ite_nondet_true : BReach F tss σ evs → BReachS F (.ite .nondet tss ess md) σ evs
   | ite_nondet_false : BReach F ess σ evs → BReachS F (.ite .nondet tss ess md) σ evs
@@ -106,25 +106,32 @@ end
 /-- The interpretation of a condition as its evaluation to `true` under the event's factory
     and store, in a single world. -/
 @[expose] def evalInterp : ConditionInterp P :=
-  ⟨Unit, fun _ c => P.eval c.factory c.store c.expr = some HasBool.tt⟩
+  ⟨Unit, fun _ c => P.eval c.factory c.store c.expr = some (HasBool.ttVal c.factory)⟩
 
-/-- The event is a failing occurrence of the target: an assertion with the target id whose
-    condition evaluates to false, or a cover with the target id whose condition evaluates
-    to true. -/
-@[expose] def FailsAt (t : AssertId P) : Event P → Prop
-  | .assert arg => arg.label = t.label ∧ arg.expr = t.expr ∧
-      P.eval arg.factory arg.store arg.expr = some HasBool.ff
-  | .cover arg => arg.label = t.label ∧ arg.expr = t.expr ∧
-      P.eval arg.factory arg.store arg.expr = some HasBool.tt
+/-- The event is a failing occurrence of the target `t` with the condition `e`: an assertion
+    with the label and metadata of `t` and the condition `e`, evaluating to false, or a cover
+    with the label and metadata of `t` and the condition `e`, evaluating to true. -/
+@[expose] def FailsAt (t : AssertId P) (e : P.Expr) : Event P → Prop
+  | .assert arg => arg.label = t.label ∧ arg.metadata = t.md ∧ arg.expr = e ∧
+      P.eval arg.factory arg.store arg.expr = some (HasBool.ffVal arg.factory)
+  | .cover arg => arg.label = t.label ∧ arg.metadata = t.md ∧ arg.expr = e ∧
+      P.eval arg.factory arg.store arg.expr = some (HasBool.ttVal arg.factory)
   | .assume _ => False
 
-/-- A statement list fails target `t` from store `σ`: a run reaches a failing occurrence
-    of `t`, every assumption before it evaluating to `true` (`Trace.AssumptionsHold` under
-    `evalInterp`). -/
+/-- The events `tr` claim a failure of the target `t` with the condition `e`: they end with a
+    failing occurrence of `t` with the condition `e`, every assumption before it evaluating to
+    `true`. A list fails `t` with the condition `e` exactly when a reach of it emits events that
+    claim that failure (`fails_iff_claim`). -/
+@[expose] def Claim (t : AssertId P) (e : P.Expr) (tr : List (Event P)) : Prop :=
+  ∃ evs ev, tr = evs ++ [ev] ∧ Trace.AssumptionsHold P evalInterp () evs ∧ FailsAt t e ev
+
+/-- A statement list fails target `t` with the condition `e` from store `σ`: a run reaches a
+    failing occurrence of `t` with the condition `e`, every assumption before it evaluating to
+    `true` (`Trace.AssumptionsHold` under `evalInterp`). -/
 @[expose] def Fails (F : P.Factory) (ss : (PStmts P)) (σ : SemanticStore P)
-    (t : AssertId P) : Prop :=
-  ∃ evs e, BReach F ss σ (evs ++ [e]) ∧ Trace.AssumptionsHold P evalInterp () evs ∧
-    FailsAt t e
+    (t : AssertId P) (e : P.Expr) : Prop :=
+  ∃ evs ev, BReach F ss σ (evs ++ [ev]) ∧ Trace.AssumptionsHold P evalInterp () evs ∧
+    FailsAt t e ev
 
 end -- public section
 

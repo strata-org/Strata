@@ -15,7 +15,7 @@ program Laurel;
 
 procedure valid(lf: Sequence<int>, rt: Sequence<int>): bool
 {
-  seqLength(lf) == seqLength(rt)
+  return seqLength(lf) == seqLength(rt)
   && (forall(i: int) => 0 <= i ==> i < seqLength(lf) ==>
         -1 <= seqSelect(lf, i) && seqSelect(lf, i) < seqLength(lf) && -1 <= seqSelect(rt, i) && seqSelect(rt, i) < seqLength(lf))
 };
@@ -23,12 +23,12 @@ procedure valid(lf: Sequence<int>, rt: Sequence<int>): bool
 procedure image(fwd: Sequence<int>, o: int): int
   requires o == -1 || (0 <= o && o < seqLength(fwd))
 {
-  if o == -1 then -1 else seqSelect(fwd, o)
+  return if o == -1 then -1 else seqSelect(fwd, o)
 };
 
 procedure isomorphic(lf: Sequence<int>, rt: Sequence<int>, fwd: Sequence<int>, tl: Sequence<int>, tr: Sequence<int>): bool
 {
-  forall(i: int) => 0 <= i ==> i < seqLength(fwd) ==> i < seqLength(lf) ==> i < seqLength(rt) ==> seqSelect(fwd, i) != -1 ==>
+  return forall(i: int) => 0 <= i ==> i < seqLength(fwd) ==> i < seqLength(lf) ==> i < seqLength(rt) ==> seqSelect(fwd, i) != -1 ==>
     -1 <= seqSelect(lf, i) ==> seqSelect(lf, i) < seqLength(fwd) ==> -1 <= seqSelect(rt, i) ==> seqSelect(rt, i) < seqLength(fwd) ==>
     0 <= seqSelect(fwd, i) && seqSelect(fwd, i) < seqLength(tl) && seqSelect(fwd, i) < seqLength(tr)
     && seqSelect(tl, seqSelect(fwd, i)) == image(fwd, seqSelect(lf, i))
@@ -37,7 +37,7 @@ procedure isomorphic(lf: Sequence<int>, rt: Sequence<int>, fwd: Sequence<int>, t
 
 procedure injective(fwd: Sequence<int>): bool
 {
-  forall(i: int) => forall(j: int) => 0 <= i ==> i < j ==> j < seqLength(fwd) ==> seqSelect(fwd, i) != -1 ==>
+  return forall(i: int) => forall(j: int) => 0 <= i ==> i < j ==> j < seqLength(fwd) ==> seqSelect(fwd, i) != -1 ==>
     seqSelect(fwd, i) != seqSelect(fwd, j)
 };
 
@@ -130,7 +130,7 @@ program Laurel;
 
 procedure valid(lf: Sequence<int>, rt: Sequence<int>): bool
 {
-  seqLength(lf) == seqLength(rt)
+  return seqLength(lf) == seqLength(rt)
   && (forall(i: int) => 0 <= i ==> i < seqLength(lf) ==>
         -1 <= seqSelect(lf, i) && seqSelect(lf, i) < seqLength(lf) && -1 <= seqSelect(rt, i) && seqSelect(rt, i) < seqLength(lf))
 };
@@ -138,12 +138,12 @@ procedure valid(lf: Sequence<int>, rt: Sequence<int>): bool
 procedure image(fwd: Sequence<int>, o: int): int
   requires o == -1 || (0 <= o && o < seqLength(fwd))
 {
-  if o == -1 then -1 else seqSelect(fwd, o)
+  return if o == -1 then -1 else seqSelect(fwd, o)
 };
 
 procedure isomorphic(lf: Sequence<int>, rt: Sequence<int>, fwd: Sequence<int>, tl: Sequence<int>, tr: Sequence<int>): bool
 {
-  forall(i: int) => 0 <= i ==> i < seqLength(fwd) ==> i < seqLength(lf) ==> i < seqLength(rt) ==> seqSelect(fwd, i) != -1 ==>
+  return forall(i: int) => 0 <= i ==> i < seqLength(fwd) ==> i < seqLength(lf) ==> i < seqLength(rt) ==> seqSelect(fwd, i) != -1 ==>
     -1 <= seqSelect(lf, i) ==> seqSelect(lf, i) < seqLength(fwd) ==> -1 <= seqSelect(rt, i) ==> seqSelect(rt, i) < seqLength(fwd) ==>
     0 <= seqSelect(fwd, i) && seqSelect(fwd, i) < seqLength(tl) && seqSelect(fwd, i) < seqLength(tr)
     && seqSelect(tl, seqSelect(fwd, i)) == image(fwd, seqSelect(lf, i))
@@ -152,7 +152,7 @@ procedure isomorphic(lf: Sequence<int>, rt: Sequence<int>, fwd: Sequence<int>, t
 
 procedure injective(fwd: Sequence<int>): bool
 {
-  forall(i: int) => forall(j: int) => 0 <= i ==> i < j ==> j < seqLength(fwd) ==> seqSelect(fwd, i) != -1 ==>
+  return forall(i: int) => forall(j: int) => 0 <= i ==> i < j ==> j < seqLength(fwd) ==> seqSelect(fwd, i) != -1 ==>
     seqSelect(fwd, i) != seqSelect(fwd, j)
 };
 

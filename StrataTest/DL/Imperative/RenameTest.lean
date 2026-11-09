@@ -52,6 +52,7 @@ abbrev MiniPureExpr : PureExpr :=
     TyEnv := Unit,
     TyContext := Unit,
     Factory := Unit,
+    Val := Expr,
     eval := fun _ _ e => some e }
 
 instance : HasFvar MiniPureExpr where

@@ -66,7 +66,7 @@ procedure callsThrower()
   opaque
 {
   r := thrower()
-//     ^^^^^^^^^ error: call does not throw an uncaught 'Exception' could not be proved
+//     ^^^^^^^^^ error: call does not throw an uncaught 'Exception' does not hold
 };
 #end
 
@@ -107,5 +107,18 @@ procedure handled()
     r := -1
   };
   r := 0
+};
+#end
+
+-- Allowed: an `if` whose then-branch is a hole is typed at its else-branch's declared `Err`.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Err {}
+procedure holeBranch(b: bool, x: Err)
+  throws (e: Err)
+  opaque
+{
+  throw (if b then <?> else x)
 };
 #end

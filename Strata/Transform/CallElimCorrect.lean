@@ -514,7 +514,7 @@ theorem EvalStatementContractInitVar :
     intros Heq
     simp_all
   . simp [Imperative.SemanticStore.isDefinedOver,
-          Imperative.isDefined,
+          Imperative.SemanticStore.varsDefined,
           Imperative.HasVarsImp.modifiedVars,
           Command.modifiedVars,
           Imperative.Cmd.modifiedVars]
@@ -526,7 +526,7 @@ theorem EvalStatementsContractInitVars :
   -- the generated old variable names shouldn't overlap with original variables
   List.Nodup ((trips.unzip.fst.unzip.fst) ++ (trips.unzip.snd)) →
   ReadValues f σ (trips.unzip.snd) vvs →
-  Imperative.isNotDefined σ (trips.unzip.fst.unzip.fst) →
+  Imperative.SemanticStore.varsUndefined (· ∈ (trips.unzip.fst.unzip.fst)) σ →
   EvalStatementsContract π δ σ
     (createInitVars trips)
     (updatedStates σ
@@ -557,7 +557,7 @@ theorem EvalStatementsContractInitVars :
       apply List.forall_mem_ne.mp
       intros x' ty'
       simp_all
-    . simp [Imperative.isNotDefined] at Hndef ⊢
+    . simp [Imperative.SemanticStore.varsUndefined] at Hndef ⊢
       intros v x x1 Hin
       simp [updatedState]
       split <;> simp_all
@@ -583,7 +583,7 @@ theorem EvalStatementContractInit :
     intros Heq
     simp_all
   . simp [Imperative.SemanticStore.isDefinedOver,
-          Imperative.isDefined,
+          Imperative.SemanticStore.varsDefined,
           Command.modifiedVars,
           Imperative.Cmd.modifiedVars,
           Imperative.HasVarsImp.modifiedVars]
@@ -596,7 +596,7 @@ theorem EvalStatementsContractInits :
   trips.unzip.1.unzip.1.Disj (List.flatMap (Imperative.HasFvars.getFvars (P:=Expression)) trips.unzip.2) →
   List.Nodup (trips.unzip.1.unzip.1) →
   EvalExpressions (P:=Core.Expression) δ σ (trips.unzip.2) vvs →
-  Imperative.isNotDefined σ (trips.unzip.1.unzip.1) →
+  Imperative.SemanticStore.varsUndefined (· ∈ (trips.unzip.1.unzip.1)) σ →
   EvalStatementsContract π δ σ
     (createInits trips)
     (updatedStates σ
@@ -627,7 +627,7 @@ theorem EvalStatementsContractInits :
         apply List.Disj.mono ?_ ?_ Hdisj <;> simp_all
       intros Hin
       exact Hdisj' (List.mem_singleton.mpr rfl) Hin
-    . simp [Imperative.isNotDefined] at Hndef ⊢
+    . simp [Imperative.SemanticStore.varsUndefined] at Hndef ⊢
       intros v x x1 Hin
       simp [updatedState]
       split <;> simp_all
@@ -648,7 +648,7 @@ theorem EvalStatementContractHavocUpdated :
   . constructor
     . exact updatedStateUpdate Hsome
     . assumption
-  . simp [Imperative.SemanticStore.isDefinedOver, Imperative.isDefined,
+  . simp [Imperative.SemanticStore.isDefinedOver, Imperative.SemanticStore.varsDefined,
           Imperative.HasVarsImp.modifiedVars,
           Command.modifiedVars,
           Imperative.Cmd.modifiedVars, Option.isSome]
@@ -656,7 +656,7 @@ theorem EvalStatementContractHavocUpdated :
 
 /-- A store defining every requested key admits a read of their values. -/
 theorem ReadValuesSome :
-  Imperative.isDefined σ ks →
+  Imperative.SemanticStore.varsDefined (· ∈ ks) σ →
   ∃ vs, ReadValues f σ ks vs := by
   intros H
   induction ks
@@ -673,7 +673,7 @@ theorem ReadValuesSome :
       next x val heq =>
       exists val :: t'
       constructor <;> simp_all
-    . simp [Imperative.isDefined] at *
+    . simp [Imperative.SemanticStore.varsDefined] at *
       intros v a
       simp_all
 
@@ -728,7 +728,7 @@ theorem createFvarsSubstStores :
 
 theorem EvalStatementsContractHavocVars :
   Imperative.WellFormedSemanticEvalVar δ →
-  Imperative.isDefined σ vs →
+  Imperative.SemanticStore.varsDefined (· ∈ vs) σ →
   HavocVars σ vs σ' →
   EvalStatementsContract π δ σ
     (createHavocs vs) σ' δ := by
@@ -751,11 +751,11 @@ theorem EvalStatementsContractHavocVars :
     . simp [Imperative.SemanticStore.isDefinedOver, Command.modifiedVars,
             Imperative.Cmd.modifiedVars,
             Imperative.HasVarsImp.modifiedVars]
-      simp [Imperative.isDefined] at Hdef ⊢
+      simp [Imperative.SemanticStore.varsDefined] at Hdef ⊢
       apply Hdef.1
     . apply ih <;> try assumption
       . apply UpdateStateDefMonotone (σ:=σ) (vs:=t) <;> try assumption
-        simp [Imperative.isDefined] at * <;> simp_all
+        simp [Imperative.SemanticStore.varsDefined] at * <;> simp_all
 
 theorem updatedStateInv :
 ¬k = h →
@@ -977,10 +977,10 @@ assumption
 theorem UpdatedStatesDisjNotDefMonotone :
   ks.Disj ks' →
   ks.length = vs.length →
-  Imperative.isNotDefined σ ks' →
-  Imperative.isNotDefined (updatedStates σ ks vs) ks' := by
+  Imperative.SemanticStore.varsUndefined (· ∈ ks') σ →
+  Imperative.SemanticStore.varsUndefined (· ∈ ks') (updatedStates σ ks vs) := by
 intros Hdis Hlen Hndef
-simp [Imperative.isNotDefined, updatedStates] at *
+simp [Imperative.SemanticStore.varsUndefined, updatedStates] at *
 intros v Hin
 induction ks generalizing vs σ <;> simp_all
 case nil =>
@@ -1513,7 +1513,7 @@ theorem createAssertsCorrect :
      . simp [Imperative.SemanticStore.isDefinedOver, Command.modifiedVars,
              Imperative.Cmd.modifiedVars,
              Imperative.HasVarsImp.modifiedVars,
-             Imperative.isDefined]
+             Imperative.SemanticStore.varsDefined]
      . have ih' := ih (i + 1)
        ac_nf at ih'
        apply ih'
@@ -1565,7 +1565,7 @@ theorem createAssumesCorrect :
     . simp [Imperative.SemanticStore.isDefinedOver, Command.modifiedVars,
             Imperative.Cmd.modifiedVars,
             Imperative.HasVarsImp.modifiedVars,
-            Imperative.isDefined]
+            Imperative.SemanticStore.varsDefined]
     . have ih' := ih (i + 1)
       ac_nf at ih'
       apply ih'
@@ -3063,7 +3063,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
       | mk wfstmts wfloclnd Hiodisj Hinnd Houtnd Hmodsnd Hinlc Houtlc wfspec =>
       cases wfspec with
       | mk wfpre wfpost wfmod =>
-      have HoldDef : Imperative.isDefined σ oldTrips.unzip.snd := by
+      have HoldDef : Imperative.SemanticStore.varsDefined (· ∈ oldTrips.unzip.snd) σ := by
         intros k Hin
         apply Hgv
         apply genOldExprIdentsFind ?_ Heqold Hin
@@ -3125,10 +3125,9 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
         apply List.Disjoint_Nodup_iff.mp
         refine ⟨Hinnd, Houtnd, ?_⟩
         . exact Hiodisj
-      have Hndefgen : Imperative.isNotDefined σ'
-                      (argTrips.unzip.fst.unzip.fst ++
+      have Hndefgen : Imperative.SemanticStore.varsUndefined (· ∈ (argTrips.unzip.fst.unzip.fst ++
                       outTrips.unzip.fst.unzip.fst ++
-                      oldTrips.unzip.fst.unzip.fst) := by
+                      oldTrips.unzip.fst.unzip.fst)) σ' := by
         have ⟨Hσeq, _⟩ := Imperative.EvalBlockEmpty Heval2
         simp only [← Hσeq]
         apply UpdateStatesNotDefMonotone ?_ Hupdate
@@ -3234,12 +3233,12 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
               assumption
             . -- arg vars generated are not defined
               apply UpdateStatesNotDefMonotone' (σ':=σ') ?_ Hupdate
-              simp [Imperative.isNotDefined] at *
+              simp [Imperative.SemanticStore.varsUndefined] at *
               intros v x x' Hin
               apply Hndefgen
               left; exact ⟨x, x', Hin⟩
           -- Reused assumption : lhs and modifies are defined
-          have Hdeflm : Imperative.isDefined σ (lhs ++ proc.spec.modifies) := by
+          have Hdeflm : Imperative.SemanticStore.varsDefined (· ∈ (lhs ++ proc.spec.modifies)) σ := by
                   simp [Imperative.SemanticStore.isDefinedOver,
                         Imperative.HasVarsTrans.allVarsTrans,
                         Statement.allVarsTrans,
@@ -3250,7 +3249,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                         Imperative.HasVarsTrans.modifiedVarsTrans,
                         Procedure.modifiedVarsTrans,
                         lkup] at Hwf
-                  simp [Imperative.isDefined] at *
+                  simp [Imperative.SemanticStore.varsDefined] at *
                   intros v Hin
                   apply Hwf
                   cases Hin with
@@ -3299,7 +3298,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                 exact Hnd'.2.2
               . simp [← Hargtriplen]
               . apply UpdateStatesNotDefMonotone' (σ':=σ') ?_ Hupdate
-                simp [Imperative.isNotDefined] at *
+                simp [Imperative.SemanticStore.varsUndefined] at *
                 intros v x x' Hin
                 apply Hndefgen
                 right; left; exact ⟨x, x', Hin⟩
@@ -3451,12 +3450,12 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                   apply And.intro
                   . cases Hmem.1 with
                     | inl Hmem =>
-                    have Hdef : Imperative.isDefined σAO (ListMap.keys proc.header.inputs) := by
+                    have Hdef : Imperative.SemanticStore.varsDefined (· ∈ (ListMap.keys proc.header.inputs)) σAO := by
                       apply InitStatesDefMonotone ?_ Hinitout
                       exact InitStatesDefined Hinitin
                     exact Hdef k1 Hmem
                     | inr Hmem =>
-                    have Hdef : Imperative.isDefined σAO (ListMap.keys proc.header.outputs) := by
+                    have Hdef : Imperative.SemanticStore.varsDefined (· ∈ (ListMap.keys proc.header.outputs)) σAO := by
                       exact InitStatesDefined Hinitout
                     exact Hdef k1 Hmem
                   . cases Hmem.2 with
@@ -3564,13 +3563,13 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                     . simp only [List.mem_append] at Hmem
                       cases Hmem.1 with
                       | inl Hmem =>
-                      have Hdef : Imperative.isDefined σ₁' argTrips.unzip.1.unzip.1 := by
+                      have Hdef : Imperative.SemanticStore.varsDefined (· ∈ argTrips.unzip.1.unzip.1) σ₁' := by
                         apply InitStatesDefMonotone ?_ Hinit3.2.2
                         exact InitStatesDefined Hinit3.2.1
                       simp at Hdef
                       exact Hdef k1 Hmem
                       | inr Hmem =>
-                      have Hdef : Imperative.isDefined σ₁' lhs := by
+                      have Hdef : Imperative.SemanticStore.varsDefined (· ∈ lhs) σ₁' := by
                         simp [Hinit2.1]
                         apply updatedStatesDefMonotone
                         intros k Hin
@@ -3764,7 +3763,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                   -- inputs and outputs defined in σR
                   . cases Hmem.1 with
                     | inl Hmem =>
-                    have Hdef : Imperative.isDefined σR₁ (ListMap.keys proc.header.inputs) := by
+                    have Hdef : Imperative.SemanticStore.varsDefined (· ∈ (ListMap.keys proc.header.inputs)) σR₁ := by
                       simp [← HσR₁]
                       apply updatedStatesDefMonotone
                       apply updatedStatesDefMonotone
@@ -3774,7 +3773,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                       exact InitStatesDefined Hinitin
                     exact Hdef k1 Hmem
                     | inr Hmem =>
-                    have Hdef : Imperative.isDefined σR₁ (ListMap.keys proc.header.outputs) := by
+                    have Hdef : Imperative.SemanticStore.varsDefined (· ∈ (ListMap.keys proc.header.outputs)) σR₁ := by
                       simp [← HσR₁]
                       apply updatedStatesDefMonotone
                       apply updatedStatesDefMonotone
@@ -4069,14 +4068,14 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                           intros k1 k2 Hin
                           have Hmem := List.of_mem_zip Hin
                           apply And.intro
-                          . have Hdef : Imperative.isDefined σO (oldTrips.unzip.snd) := by
+                          . have Hdef : Imperative.SemanticStore.varsDefined (· ∈ (oldTrips.unzip.snd)) σO := by
                               apply HavocVarsDefMonotone ?_ Hhav1
                               apply InitStatesDefMonotone ?_ Hinitout
                               apply InitStatesDefMonotone ?_ Hinitin
                               simp only [List.unzip_snd]
                               exact HoldDef
                             exact Hdef k1 Hmem.1
-                          . have Hdef : Imperative.isDefined σR₁ oldTrips.unzip.fst.unzip.fst := by
+                          . have Hdef : Imperative.SemanticStore.varsDefined (· ∈ oldTrips.unzip.fst.unzip.fst) σR₁ := by
                               simp [← HσR₁]
                               apply updatedStatesDefined
                               simp [Holdtriplen]

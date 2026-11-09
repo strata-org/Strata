@@ -25,37 +25,31 @@ in Laurel syntax via the `#strata program Laurel` macro and parsed into
 a `Laurel.LaurelProgram` at compile time.
 
 The heap model uses:
-- `Composite` - datatype with a reference (int); `TypeHierarchy` adds the runtime type tag
 - `Field` - abstract type for field names (zero-constructor datatype)
-- `TypeTag` - abstract type for type tags (zero-constructor datatype)
 - `Heap` - datatype with a `data` map and a `nextReference` for allocation
 - `readField` / `updateField` / `increment` - heap access functions
 
-Note: `Field`, `TypeTag` and `$Box` are referenced here but declared by the passes --
-`heapParameterization` and `typeHierarchyTransform` inject them, `$Box` with one variant per
-field type the program actually uses.
+Note: `Field` and `$Box` are referenced here but declared by `heapParameterization`, `$Box`
+with one variant per field type the program actually uses.
 -/
 
 private def laurelPreludeDDM :=
 #strata
 program Laurel;
 
-// Composite: datatype with a reference (int)
-datatype Composite { MkComposite(ref: int) }
-
 datatype NotSupportedYet {}
 
 // Heap: contains the data map and a nextReference for allocation
 datatype Heap {
-  MkHeap(data: TotalMap Composite TotalMap Field $Box, nextReference: int)
+  MkHeap(data: TotalMap int TotalMap Field $Box, nextReference: int)
 }
 
 // Read a field from the heap: readField(heap, obj, field) = Heap..data!(heap)[obj][field]
-procedure readField(heap: Heap, obj: Composite, field: Field): $Box
+procedure readField(heap: Heap, obj: int, field: Field): $Box
   return select(select(Heap..data!(heap), obj), field);
 
 // Update a field in the heap
-procedure updateField(heap: Heap, obj: Composite, field: Field, val: $Box): Heap
+procedure updateField(heap: Heap, obj: int, field: Field, val: $Box): Heap
   return MkHeap(
     update(Heap..data!(heap), obj,
       update(select(Heap..data!(heap), obj), field, val)),
@@ -77,7 +71,7 @@ def heapConstants : LaurelProgram :=
 
 /-! ### The names the prelude declares
 
-`HeapParameterization`, `ModifiesClauses` and `TypeHierarchy` spell these names to build and to
+`HeapParameterization`, `ModifiesClauses` and `LowerComposite` spell these names to build and to
 recognise the heap model. The prelude above is what declares them, so a rename is one edit here. -/
 
 /-- `readField(heap, obj, field)`, the field read. -/
@@ -99,12 +93,7 @@ def heapDataAccessor : String := "Heap..data!"
 
 def heapNextReferenceAccessor : String := "Heap..nextReference!"
 
-/-- The datatype every composite (object) reference is flattened to by `TypeHierarchy`. -/
-def compositeTypeName : Identifier := "Composite"
-
 def compositeCtorName : String := "MkComposite"
-
-def compositeRefAccessor : String := "Composite..ref!"
 
 end -- public section
 

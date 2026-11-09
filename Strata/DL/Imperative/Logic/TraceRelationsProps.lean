@@ -10,6 +10,7 @@ public import Strata.DL.Imperative.Logic.TraceInterpProps
 public import Strata.DL.Imperative.CmdSemantics
 public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.CmdSemanticsProps
+public import Strata.DL.Imperative.StmtSemanticsProps
 public import Strata.Util.Relations
 public import Strata.Util.ListUtils
 
@@ -42,6 +43,18 @@ Key theorem families:
 * **Reflexivity / monotonicity / append laws** for each relation, the
   `TraceStuttersEnv.Cmd.emittedEvents_stuttersEnv` command-snapshot law, and the
   `TraceExtendsEnv.toTraceStuttersEnv` refinement.
+* **Semantic matching** `TraceExtendsEnv.toMatches` upgrades lockstep extension
+  to a pointwise match under any semantic argument relation, given defined
+  source reads and well-formed snapshots; `Event.Matches.comp` and
+  `Trace.matches_comp` compose such matches.
+* **`WithWF` strengthenings** of `EventArg.ExtendsEnv` (`EventArg.WithWF` is
+  defined in `TraceRelations`): `EventArg.WithWF.mono` / `trans` /
+  `label_metadata`, with trace-level `Trace.WithWF.append` / `toExtendsEnv` /
+  `of_extends` / `mono` / `trans` / `toTraceStuttersEnv` /
+  `assertionValidFrom_reflect`.
+* **`Trace.WeakensAssumes`** is reflexive and transitive
+  (`Trace.WeakensAssumes.refl`, `Trace.WeakensAssumes.trans`), as is its event-level
+  counterpart relation `Event.WeakensAssume`.
 -/
 
 namespace Imperative
@@ -441,7 +454,7 @@ theorem TraceStuttersEnv.Cmd.emittedEvents_stuttersEnv
 /-- `SemanticStore.update` is the canonical result of initializing an
 undefined slot. -/
 private theorem initState_update {P : PureExpr} [DecidableEq P.Ident]
-    {σ : SemanticStore P} {ident : P.Ident} {value : P.Expr}
+    {σ : SemanticStore P} {ident : P.Ident} {value : P.Val}
     (hnone : σ ident = none) :
     InitState P σ ident value (SemanticStore.update σ ident value) :=
   .init hnone (by simp [SemanticStore.update])
@@ -449,7 +462,7 @@ private theorem initState_update {P : PureExpr} [DecidableEq P.Ident]
 
 /-- `SemanticStore.update` is the canonical result of updating a defined slot. -/
 private theorem updateState_update {P : PureExpr} [DecidableEq P.Ident]
-    {σ : SemanticStore P} {ident : P.Ident} {value old : P.Expr}
+    {σ : SemanticStore P} {ident : P.Ident} {value old : P.Val}
     (hold : σ ident = some old) :
     UpdateState P σ ident value (SemanticStore.update σ ident value) :=
   .update hold (by simp [SemanticStore.update])
@@ -537,6 +550,249 @@ theorem evalCmdE_replay_extends {P : PureExpr} [HasFvar P] [HasFvars P]
       rename_i label e md
       exact ⟨σt, .eval_cover, hext,
         TraceExtendsEnv.Cmd.emittedEvents_extendsEnv Extra (.cover label e md) f hext⟩
+
+/-- Pointwise environment extension strengthens to any semantic argument
+relation once source reads are defined and both traces carry well-formed
+snapshots. Source-defined free variables are preserved by the store extension,
+which supplies free-variable store agreement. -/
+theorem TraceExtendsEnv.toMatches {P : PureExpr} [HasVal P] [HasFvars P]
+    {Extra : P.Ident → Prop} {ArgRel : EventArg P → EventArg P → Prop}
+    (hmk : ∀ {source target : EventArg P},
+      source.ExtendsEnv Extra target →
+      StoreAgreesOnFvars source.store target.store source.expr →
+      source.SemanticWF → target.SemanticWF → ArgRel source target)
+    {source target : Trace P}
+    (hext : TraceExtendsEnv Extra source target)
+    (hreads : Trace.readsDefined source)
+    (hsourceWF : Trace.semanticWF source)
+    (htargetWF : Trace.semanticWF target) :
+    List.Rel₂ (Event.Matches ArgRel) source target := by
+  induction hext with
+  | nil => exact .nil
+  | cons hhead htail ih =>
+      rename_i sourceEvent targetEvent sourceTail targetTail
+      have hreadHead := hreads _ List.mem_cons_self
+      have hsourceHead := hsourceWF _ List.mem_cons_self
+      have htargetHead := htargetWF _ List.mem_cons_self
+      refine .cons ?_ (ih
+        (fun event hevent => hreads event (List.mem_cons_of_mem _ hevent))
+        (fun event hevent => hsourceWF event (List.mem_cons_of_mem _ hevent))
+        (fun event hevent => htargetWF event (List.mem_cons_of_mem _ hevent)))
+      cases sourceEvent <;> cases targetEvent <;>
+        simp_all only [Event.ExtendsEnv, Event.Matches,
+          Event.readsDefined, Event.semanticWF]
+      all_goals
+        refine hmk hhead ?_ hsourceHead htargetHead
+        intro ident hident
+        exact hhead.2.1.1 ident (by
+          simpa [SemanticStore.varsDefined] using hreadHead ident hident)
+
+/-- Same-kind event matching composes through a middle event. -/
+theorem Event.Matches.comp {P : PureExpr}
+    {R₁ R₂ R₃ : EventArg P → EventArg P → Prop}
+    (hcomp : ∀ {first second third : EventArg P},
+      R₁ first second → R₂ second third → R₃ first third)
+    {first second third : Event P}
+    (h₁ : Event.Matches R₁ first second) (h₂ : Event.Matches R₂ second third) :
+    Event.Matches R₃ first third := by
+  cases first <;> cases second <;> cases third
+  all_goals first
+    | exact hcomp h₁ h₂
+    | exact False.elim h₁
+    | exact False.elim h₂
+
+/-- Pointwise same-kind event matching composes through a middle trace. -/
+theorem Trace.matches_comp {P : PureExpr}
+    {R₁ R₂ R₃ : EventArg P → EventArg P → Prop}
+    (hcomp : ∀ {first second third : EventArg P},
+      R₁ first second → R₂ second third → R₃ first third)
+    {first second third : Trace P}
+    (h₁ : List.Rel₂ (Event.Matches R₁) first second)
+    (h₂ : List.Rel₂ (Event.Matches R₂) second third) :
+    List.Rel₂ (Event.Matches R₃) first third := by
+  induction h₁ generalizing third with
+  | nil => cases h₂; exact .nil
+  | cons hhead _ ih =>
+      cases h₂ with
+      | cons hhead₂ htail₂ =>
+          exact .cons (Event.Matches.comp (R₁ := R₁) (R₂ := R₂) (R₃ := R₃)
+            hcomp hhead hhead₂) (ih htail₂)
+
+/-! ## `WithWF` strengthenings of `ExtendsEnv` -/
+
+namespace EventArg.WithWF
+
+/-- Widening the accepted class of target-only bindings preserves
+`WithWF (ExtendsEnv _)`. -/
+theorem mono {P : PureExpr} [HasVal P] [HasFvars P]
+    {Extra Extra' : P.Ident → Prop} (hsub : ∀ ident, Extra ident → Extra' ident)
+    {source target : EventArg P}
+    (h : EventArg.WithWF (EventArg.ExtendsEnv Extra) source target) :
+    EventArg.WithWF (EventArg.ExtendsEnv Extra') source target :=
+  { h with rel := EventArg.ExtendsEnv.mono hsub h.rel }
+
+/-- `WithWF (ExtendsEnv _)` composes while unioning the classes of target-only
+bindings. -/
+theorem trans {P : PureExpr} [HasVal P] [HasFvars P]
+    {Extra₁ Extra₂ : P.Ident → Prop} {first second third : EventArg P}
+    (h₁ : EventArg.WithWF (EventArg.ExtendsEnv Extra₁) first second)
+    (h₂ : EventArg.WithWF (EventArg.ExtendsEnv Extra₂) second third) :
+    EventArg.WithWF
+      (EventArg.ExtendsEnv (fun ident => Extra₁ ident ∨ Extra₂ ident)) first third where
+  rel := EventArg.ExtendsEnv.trans_union h₁.rel h₂.rel
+  store_fv := by
+    intro ident hident
+    calc
+      first.store ident = second.store ident := h₁.store_fv ident hident
+      _ = third.store ident := h₂.store_fv ident (by
+        rw [← h₁.rel.2.2.2.1]
+        exact hident)
+  sourceStoreWF := h₁.sourceStoreWF
+  targetStoreWF := h₂.targetStoreWF
+  exprCongr := h₁.exprCongr
+
+/-- Arguments related by `WithWF (ExtendsEnv _)` carry the same assertion label
+and metadata. -/
+theorem label_metadata {P : PureExpr} [HasVal P] [HasFvars P]
+    {Extra : P.Ident → Prop} {source target : EventArg P}
+    (h : EventArg.WithWF (EventArg.ExtendsEnv Extra) source target) :
+    source.label = target.label ∧ source.metadata = target.metadata := by
+  obtain ⟨_, _, hlabel, _, hmd⟩ := h.rel
+  exact ⟨hlabel, hmd⟩
+
+end EventArg.WithWF
+
+/-- Forgetting the well-formedness evidence recovers ordinary event extension. -/
+theorem Event.WithWF.toExtendsEnv {P : PureExpr} [HasVal P] [HasFvars P]
+    {Extra : P.Ident → Prop} {source target : Event P}
+    (h : Event.WithWF (EventArg.ExtendsEnv Extra) source target) :
+    Event.ExtendsEnv Extra source target := by
+  cases source <;> cases target <;>
+    simp_all only [Event.WithWF, Event.Matches, Event.ExtendsEnv]
+  all_goals exact h.rel
+
+namespace Trace.WithWF
+
+/-- `Trace.WithWF R` is closed under append, for any argument relation `R`. -/
+theorem append {P : PureExpr} [HasVal P] [HasFvars P]
+    {R : EventArg P → EventArg P → Prop} {s₁ s₂ t₁ t₂ : Trace P}
+    (h₁ : Trace.WithWF R s₁ t₁) (h₂ : Trace.WithWF R s₂ t₂) :
+    Trace.WithWF R (s₁ ++ s₂) (t₁ ++ t₂) :=
+  List.Rel₂.append h₁ h₂
+
+/-- Forgetting the well-formedness evidence pointwise recovers trace extension. -/
+theorem toExtendsEnv {P : PureExpr} [HasVal P] [HasFvars P]
+    {Extra : P.Ident → Prop} {source target : Trace P}
+    (h : Trace.WithWF (EventArg.ExtendsEnv Extra) source target) :
+    TraceExtendsEnv Extra source target :=
+  h.imp fun _ _ => Event.WithWF.toExtendsEnv
+
+/-- Ordinary lockstep extension strengthens to `WithWF` matching when source
+event reads are defined and both traces carry well-formed snapshots. -/
+theorem of_extends {P : PureExpr} [HasVal P] [HasFvars P]
+    {Extra : P.Ident → Prop} {source target : Trace P}
+    (hext : TraceExtendsEnv Extra source target)
+    (hreads : Trace.readsDefined source)
+    (hsourceWF : Trace.semanticWF source)
+    (htargetWF : Trace.semanticWF target) :
+    Trace.WithWF (EventArg.ExtendsEnv Extra) source target :=
+  TraceExtendsEnv.toMatches
+    (fun hext hfv hsource htarget =>
+      ⟨hext, hfv, hsource.storeWellDefined, htarget.storeWellDefined,
+        hsource.exprCongr⟩)
+    hext hreads hsourceWF htargetWF
+
+/-- Widening the accepted class of target-only bindings preserves
+`Trace.WithWF (ExtendsEnv _)`. -/
+theorem mono {P : PureExpr} [HasVal P] [HasFvars P]
+    {Extra Extra' : P.Ident → Prop} (hsub : ∀ ident, Extra ident → Extra' ident)
+    {source target : Trace P}
+    (h : Trace.WithWF (EventArg.ExtendsEnv Extra) source target) :
+    Trace.WithWF (EventArg.ExtendsEnv Extra') source target :=
+  h.imp fun {source target} hevent => by
+    cases source <;> cases target <;>
+      simp_all only [Event.WithWF, Event.Matches]
+    all_goals exact hevent.mono hsub
+
+/-- `Trace.WithWF (ExtendsEnv _)` composes through a middle trace while unioning
+the classes of target-only bindings. -/
+theorem trans {P : PureExpr} [HasVal P] [HasFvars P]
+    {Extra₁ Extra₂ : P.Ident → Prop} {first second third : Trace P}
+    (h₁ : Trace.WithWF (EventArg.ExtendsEnv Extra₁) first second)
+    (h₂ : Trace.WithWF (EventArg.ExtendsEnv Extra₂) second third) :
+    Trace.WithWF
+      (EventArg.ExtendsEnv (fun ident => Extra₁ ident ∨ Extra₂ ident)) first third :=
+  Trace.matches_comp
+    (R₁ := EventArg.WithWF (EventArg.ExtendsEnv Extra₁))
+    (R₂ := EventArg.WithWF (EventArg.ExtendsEnv Extra₂))
+    (R₃ := EventArg.WithWF
+      (EventArg.ExtendsEnv (fun ident => Extra₁ ident ∨ Extra₂ ident)))
+    (fun h₁ h₂ => EventArg.WithWF.trans h₁ h₂) h₁ h₂
+
+/-- `Trace.WithWF (ExtendsEnv _)` is also a stuttering correspondence. -/
+theorem toTraceStuttersEnv {P : PureExpr} [HasBool P] [HasFvars P]
+    {Extra : P.Ident → Prop} {allowedFactory : P.Factory → Prop}
+    {source target : Trace P}
+    (h : Trace.WithWF (EventArg.ExtendsEnv Extra) source target) :
+    TraceStuttersEnv Extra allowedFactory source target :=
+  h.toExtendsEnv.toTraceStuttersEnv
+
+/-- `Trace.WithWF (ExtendsEnv _)` reflects assertion validity for any condition
+interpretation stable under `EventArg.WithWF (ExtendsEnv _)`. -/
+theorem assertionValidFrom_reflect {P : PureExpr} [HasVal P] [HasFvars P]
+    {Extra : P.Ident → Prop} {I : ConditionInterp P}
+    (hstable : I.StableUnder (EventArg.WithWF (EventArg.ExtendsEnv Extra)))
+    {source target : Trace P}
+    (h : Trace.WithWF (EventArg.ExtendsEnv Extra) source target)
+    (aid : AssertId P) :
+    Trace.AssertionValidFrom P I aid [] target →
+      Trace.AssertionValidFrom P I aid [] source :=
+  Trace.AssertionValidFrom_matches_reflect hstable
+    (fun h => EventArg.WithWF.label_metadata h) aid .nil h
+
+end Trace.WithWF
+
+section WeakensAssumes
+
+variable {P : PureExpr}
+
+/-- Every event is its own counterpart. -/
+theorem Event.WeakensAssume.refl (I : ConditionInterp P) : ∀ e : Event P, Event.WeakensAssume I e e
+  | .assert _ | .cover _ => ⟨rfl, rfl, fun _ => .rfl⟩
+  | .assume _ => ⟨rfl, rfl, fun _ => id⟩
+
+/-- Counterparts compose. -/
+theorem Event.WeakensAssume.trans {I : ConditionInterp P} {e₁ e₂ e₃ : Event P}
+    (h₁ : Event.WeakensAssume I e₁ e₂) (h₂ : Event.WeakensAssume I e₂ e₃) :
+    Event.WeakensAssume I e₁ e₃ := by
+  cases e₁ <;> cases e₂ <;> cases e₃ <;> simp only [Event.WeakensAssume] at h₁ h₂ ⊢ <;>
+    first
+    | exact ⟨h₁.1.trans h₂.1, h₁.2.1.trans h₂.2.1, fun w => (h₁.2.2 w).trans (h₂.2.2 w)⟩
+    | exact ⟨h₁.1.trans h₂.1, h₁.2.1.trans h₂.2.1, fun w h => h₂.2.2 w (h₁.2.2 w h)⟩
+
+/-- `Trace.WeakensAssumes I` is reflexive. -/
+theorem Trace.WeakensAssumes.refl (I : ConditionInterp P) :
+    ∀ t : Trace P, Trace.WeakensAssumes I t t
+  | [] => .nil
+  | e :: t => .cons (Event.WeakensAssume.refl I e) (Trace.WeakensAssumes.refl I t)
+
+/-- `Trace.WeakensAssumes I` is transitive: an event of the middle trace that is dropped from
+    the last one is an assumption, so its counterpart in the first trace is one too and is
+    dropped. -/
+theorem Trace.WeakensAssumes.trans {I : ConditionInterp P} {t₁ t₂ t₃ : Trace P}
+    (h₁ : Trace.WeakensAssumes I t₁ t₂) (h₂ : Trace.WeakensAssumes I t₂ t₃) :
+    Trace.WeakensAssumes I t₁ t₃ := by
+  induction h₁ generalizing t₃ with
+  | nil => exact h₂
+  | @cons e e' _ _ he _ ih =>
+    cases h₂ with
+    | cons he' h => exact .cons (he.trans he') (ih h)
+    | dropAssume h =>
+      cases e <;> simp only [Event.WeakensAssume] at he
+      exact .dropAssume (ih h)
+  | dropAssume _ ih => exact .dropAssume (ih h₂)
+
+end WeakensAssumes
 
 end -- public section
 end Imperative

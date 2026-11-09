@@ -107,7 +107,6 @@ def eql (F : @Factory T.base) (e1 e2 : LExpr T) : Option Bool :=
     . rw[varOpen_sizeOf]; simp_all
     . have := Factory.callOfLFunc_smaller _h1; subst_vars; exact this a1 (by assumption)
 
-
 /--
 Values of `LExpr`s.
 
@@ -115,16 +114,23 @@ If `e:LExpr` is `.app`, say `e1 e2 .. en`, `e` is a value if
 (1) `e1` is a constructor and `e2 .. en` are all values, or
 (2) `e1` is a named function `f` (not abstraction) and `n` is less than the
     number of arguments required to run the function `f`.
+
+A constant is a value, and so is a closed abstraction. A quantifier is never a value,
+closed or not: evaluation does not decide it, and a closed quantifier of type `bool`
+taken as a value would be a value of type `bool` that is neither `true` nor `false`
+(`LExpr.isValue_bool_eq_boolConst`: on a factory with no constructor producing a Boolean, every
+value that `typeCheckWith` types `bool` is a Boolean constant).
 -/
 @[expose] def isValue (F : @Factory T.base) (e : LExpr T) : Bool :=
   match he: e with
   | .const _ _ => true
-  | .abs _ _ _ _ | .quant _ _ _ _ _ _ =>
+  | .abs _ _ _ _ =>
     -- We're using the locally nameless representation, which guarantees that
     -- `closed (.abs e) = closed e` (see theorem `closed_abs`).
     -- So we could simplify the following to `closed e`, but leave it as is for
     -- clarity.
     LExpr.closed e
+  | .quant _ _ _ _ _ _ => false
   | e' =>
     match h: Factory.callOfLFunc F e true with
     | some (_, args, f) =>
@@ -133,6 +139,29 @@ If `e:LExpr` is `.app`, say `e1 e2 .. en`, `e` is a value if
         have : x.sizeOf < e'.sizeOf := by
           have Hsmall := Factory.callOfLFunc_smaller h; grind
         (isValue F x))) id
+    | none => false
+  termination_by e.sizeOf
+
+/--
+Arguments for which a function with the `inlineIfAllValues` attribute is
+unfolded. These are the values (`isValue`) extended with closed
+quantifiers, which are accepted at any depth: as the whole argument and as arguments
+of constructor and partial applications. A closed quantifier is not a value
+(evaluation does not decide it), but like a value it has no free variables, so
+substituting it into the function body captures nothing.
+-/
+@[expose] def isInlineArg (F : @Factory T.base) (e : LExpr T) : Bool :=
+  match he: e with
+  | .const _ _ => true
+  | .abs _ _ _ _ | .quant _ _ _ _ _ _ => LExpr.closed e
+  | e' =>
+    match h: Factory.callOfLFunc F e true with
+    | some (_, args, f) =>
+      (f.isConstr || Nat.blt args.length f.inputs.length) &&
+      List.all (args.attach.map (fun ⟨ x, _⟩ =>
+        have : x.sizeOf < e'.sizeOf := by
+          have Hsmall := Factory.callOfLFunc_smaller h; grind
+        (isInlineArg F x))) id
     | none => false
   termination_by e.sizeOf
 
@@ -176,7 +205,6 @@ def mergeMetadataForSubst (metaAbs metaE2 metaReplacementVar: TBase.Metadata) :=
   [(EvalProvenance.Original,       metaE2),
     (EvalProvenance.ReplacementVar, metaReplacementVar),
     (EvalProvenance.Abstraction,    metaAbs)]
-
 
 /--
 Classification of partial evaluation outcome.
@@ -242,7 +270,6 @@ def EvalResult.combineValueFlag (r : EvalResult) (b : Bool) : EvalResult :=
     | _, _ => none
   else none
 
-
 mutual
 /--
 (Partial) evaluator for Lambda expressions w.r.t. a module, written using a fuel
@@ -257,7 +284,10 @@ at Factory must have LMonoTy.
 def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono))
     : LExpr TBase.mono × EvalResult :=
   match n with
-  | 0 => (e, if isValue F e then .value true else .outOfFuel)
+  | 0 =>
+    -- Out of fuel, the free variables take their values from `env`, so that the
+    -- result means what `e` means under `env`.
+    if isValue F e then (e, .value true) else (LExpr.substFvarsFromEnv env e, .outOfFuel)
   | n' + 1 =>
     if isValue F e then
       (e, .value true)
@@ -278,9 +308,10 @@ def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono
             match idx with
             | some i => (args[i]? |>.map (isValue F)).getD false
             | none => false
+          let rebuilt := @mkApp TBase.mono e.metadata op_expr args
           if h: lfunc.body.isSome && (lfunc.attr.contains .inline ||
             constrArgAt (FuncAttr.findInlineIfConstr lfunc.attr) ||
-            (FuncAttr.hasInlineIfAllValues lfunc.attr && args.all (isValue F))) then
+            (FuncAttr.hasInlineIfAllValues lfunc.attr && args.all (isInlineArg F))) then
             -- Inline a function only if it has a body.
             let body := lfunc.body.get (by simp_all)
             -- Apply type substitution to instantiate polymorphic type variables.
@@ -288,11 +319,10 @@ def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono
             | some tySubst =>
               let body := body.applyTypeSubst tySubst
               let input_map := lfunc.inputs.keys.zip args
-              let new_e := substFvarsLifting body input_map
-              combineEvalResValueFlag argsAllFull (eval n' F env new_e)
-            | none => (e, .nonvalue) -- cannot happen in well-typed terms
+              let inlined := substFvarsLifting body input_map
+              combineEvalResValueFlag argsAllFull (eval n' F env inlined)
+            | none => (rebuilt, .nonvalue) -- cannot happen in well-typed terms
           else
-            let new_e := @mkApp TBase.mono e.metadata op_expr args
             if -- Case 1: All arguments in the function call are concrete.
               -- We can, provided a denotation function, evaluate this function
               -- call.
@@ -309,18 +339,18 @@ def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono
                 -- be a value: constructor applications (and partial
                 -- applications) of value arguments are values (e.g.
                 -- `Cons (1+1) nil` rebuilds to `Cons 2 nil`, which is a value).
-                -- Canonicity alone decides value-hood; `argsAllFull` tempers
+                -- `isValue` alone decides value-hood; `argsAllFull` tempers
                 -- the every-step-fully-reduced bit as everywhere else.
                 combineEvalResValueFlag argsAllFull
-                  (new_e, if isValue F new_e then .value true else .nonvalue)
+                  (rebuilt, if isValue F rebuilt then .value true else .nonvalue)
               | some ceval =>
-                match ceval new_e.metadata args with
+                match ceval rebuilt.metadata args with
                 | .some e' =>
                   combineEvalResValueFlag argsAllFull (eval n' F env e')
-                | .none => (new_e, .nonvalue)
+                | .none => (rebuilt, .nonvalue)
             else
               -- At least one argument in the function call is symbolic.
-              (new_e, .nonvalue)
+              (rebuilt, .nonvalue)
       | none =>
         -- Not a call of a factory function - go through evalCore
         evalCore n' F env e
@@ -341,8 +371,8 @@ def evalCore (n' : Nat) (F : @Factory TBase) (env : Env TBase) (e : LExpr TBase.
     let e' := LExpr.substFvarsFromEnv env e
     (e', if isValue F e' then .value true else .nonvalue)
   | .quant _ _ _ _ _ _ =>
-    let e' := LExpr.substFvarsFromEnv env e
-    (e', if isValue F e' then .value true else .nonvalue)
+    -- A quantifier is never a value (`isValue`), closed or not.
+    (LExpr.substFvarsFromEnv env e, .nonvalue)
   | .app _ e1 e2 => evalApp n' F env e e1 e2
   | .eq m e1 e2 => evalEq n' F env m e1 e2
   | .ite m c t f => evalIte n' F env m c t f
@@ -433,9 +463,11 @@ def evalWithLState (n : Nat) (σ : LState TBase) (e : LExpr TBase.mono)
   eval n σ.config.factory (Scopes.toEnv σ.state) e
 
 /-- Walk a post-eval expression looking for a stuck redex: a fully-applied
-non-constructor factory function whose arguments are all values.
-Such a call *should* have reduced during `eval` but didn't (e.g. missing `body`
-or `concreteEval`). Returns the stuck subexpression if found.
+non-constructor factory function whose arguments are all values (`isValue`), the
+arguments on which `eval` applies a function's `concreteEval`. Such a call *should*
+have reduced during `eval` but didn't (e.g. missing `body` or `concreteEval`).
+Returns the stuck subexpression if found. A call with a closed quantifier argument
+is not one: a quantifier is not a value, so `eval` does not apply `concreteEval` to it.
 
 This helps errors point more precisely to where the interpreter got stuck.
  -/
@@ -475,34 +507,6 @@ def run (σ : LState TBase) (e : (LExpr TBase.mono)) : Except String (LExpr TBas
     match findStuckRedex σ.config.factory result.fst with
     | some _ => .error "expression contains stuck redex"
     | none => .ok result.fst
-
-/-- Fully evaluate an expression `e` using `eval` with a given starting `fuel`,
-    incrementally increasing the fuel until the result becomes a
-    fully-reduced `.value true`.
-
-    Thanks to `partial_fixpoint`, this function is `.none` when no amount of fuel
-    ever yields a `.value true`.
-
-    TODO: Remove `expose` once `Strata` gets bumped to `Lean-4.36.0` is cut.
-    `expose` is used to prevent a panic in the `partial_fixpoint` code that always
-    assumes the visibility of the body, that eventually got fixed,
-    but the release was not cut yet. -/
-@[expose] def evalFullyAux (F : @Factory TBase) (env : Env TBase) (e : LExpr TBase.mono)
-    (fuel : Nat) : Option (LExpr TBase.mono) :=
-  let (e', res) := eval fuel F env e
-  match res with
-  | .value true => some e'
-  | .value false => evalFullyAux F env e (fuel + 1)
-  | .nonvalue => evalFullyAux F env e (fuel + 1)
-  | .outOfFuel => evalFullyAux F env e (fuel + 1)
-partial_fixpoint
-
-/-- Fully evaluate an expression by incrementally increasing the fuel given to
-    `eval` (starting from `0`) until the result is a `.value`.  See
-    `evalFullyAux` for details. -/
-def evalFully (F : @Factory TBase) (env : Env TBase) (e : LExpr TBase.mono)
-    : Option (LExpr TBase.mono) :=
-  evalFullyAux F env e 0
 
 end LExpr
 end -- public section

@@ -5,7 +5,8 @@ Verification tests for Laurel's `coroutine` feature: `yield`, the
 `oldGuarantee`/`oldRelies`, and the caller-side view of `resume`. Every test here
 calls `testLaurelVerification` with `CoroutineTest.lean`'s `coroutineOptions`
 (the test defaults plus `verifyCoroutine := true`), i.e. the YieldElim
-verification path.
+verification path — except `BlockInvariantInCoroutine.lean`, which deliberately
+uses the test defaults to exercise the full-elaboration (linearization) path.
 
 Coverage of the same feature outside verification:
 
@@ -31,6 +32,9 @@ the feature regressed.
 | `AllocAcrossYield.lean` | Allocation against the per-yield environment havoc (the monotone allocation counter) |
 | `CallerPath.lean` | Caller-side reasoning: `relies` → `requires` and `guarantees` → two-state `ensures` on the generated opaque `resume` |
 | `GlobalInContract.lean` | Regression: a rely/guarantee that references a file-scope global still verifies after `GlobalParameterization` |
+| `AliasInContract.lean` | Regression: a type alias in a rely/guarantee or a `yields`/`resumes` binding is expanded by `TypeAliasElim` |
+| `GenericCompositeInContract.lean` | Regression: a generic-composite instantiation in a `yields`/`resumes` binding, or in a rely/guarantee, is monomorphized by `MonomorphizeComposites` |
+| `BlockInvariantInCoroutine.lean` | Full-elaboration path (test defaults, no `coroutineOptions`): a block invariant, backward `goto`, or `exit` on a yield-containing block is rejected rather than dropped by linearization; a jump within a yield-free block still works |
 
 `CoroutineTest.lean` is the shared options value, not a test.
 

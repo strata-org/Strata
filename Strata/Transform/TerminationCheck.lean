@@ -12,6 +12,8 @@ import Strata.Languages.Core.Factory
 import Strata.DL.Lambda.LExprType
 import all Strata.DL.Lambda.FactoryProps
 import Strata.Util.Tactics
+import Strata.Languages.Core.AbstractCalls
+import Strata.Transform.FoldConnectives
 
 /-! # Termination Checking for Recursive Functions
 
@@ -138,7 +140,16 @@ where
           | .op _ opName _ =>
             if opName.name ∈ recFuncNames then do
               let obs ← mkObligations opName.name args
-              .ok (obs.map (wrapImplications (T := CoreLParams) implications ·))
+              -- A conjunct of a condition under a binder of `body` may mention
+              -- its bound variable, which the lemma's own binders would
+              -- capture, turning `y == k + 1` into `k == k + 1` and the lemma
+              -- into a vacuous one. Such conjuncts are left out, which only
+              -- weakens the hypotheses; the other conjuncts are kept. Only a
+              -- top-level `Bool.And` may be split: `!(c && p)` does not imply
+              -- `!c`, so `conjuncts` must never descend under a negation.
+              let closed := implications.flatMap fun (u, c) =>
+                (FoldConnectives.conjuncts c).filter (LExpr.lcAt 0) |>.map (u, ·)
+              .ok (obs.map (wrapImplications (T := CoreLParams) closed ·))
             else .ok []
           | _ => do
             let fnObs ← go fn implications
@@ -178,9 +189,27 @@ private def mkTySubst (tf : @TypeFactory Unit) (concreteTy : LMonoTy) : Subst :=
       | none => Subst.empty
   | _ => Subst.empty -- unreachable: termCheck Step 1 rejects non-.tcons types
 
+/-- Whether `e` is a full application of a constructor of the datatype
+    `dtName` without a field of a datatype of its block (`LConstr.hasBlockField`).
+    The rank of such a value is `0`, which the adtRank axioms allow, since they
+    give it a rank of `0` or more and every other value a rank of `1` or more.
+    Ranks are defined over the whole block of `dtName`, since a field of one of
+    its datatypes can have the type of another. -/
+private def isRankZeroConstr (tf : @TypeFactory Unit) (dtName : String) (e : Expression.Expr) :
+    Bool :=
+  match tf.getType dtName, tf.getBlock? dtName with
+  | some d, some block =>
+    match datatypeGetConstr d e with
+    | some (c, _, args) => args.length == c.args.length && !c.hasBlockField block
+    | none => false
+  | _, _ => false
+
 /-- Compute the call-site measure expression. For structural, wraps the
-    decreasing arg with adtRank. For int-valued, substitutes formals with actuals. -/
+    decreasing arg with adtRank, or is `0` when the arg is a constructor without
+    recursive fields (see `isRankZeroConstr`). For int-valued, substitutes
+    formals with actuals. -/
 private def computeCallMeasure
+    (tf : @TypeFactory Unit)
     (calleeName : String)
     (calleeKind : DecreasesKind)
     (calleeFormals : List Expression.Ident)
@@ -191,7 +220,13 @@ private def computeCallMeasure
   | .structural calleeIdx calleeDtName =>
     match callArgs[calleeIdx]?, calleeInputTys[calleeIdx]? with
     | some arg, some calleeAdtTy =>
-      .ok (LExpr.mkApp () (.op () (adtRankFuncName calleeDtName) (.some (.arrow calleeAdtTy .int))) [arg])
+      -- An argument with a bound variable keeps its rank, so that
+      -- `mkTermCheckLemmas` rejects it, even a constructor such as `Leaf(y)`
+      -- whose rank is `0` whatever `y` is. The call need not decrease, and an
+      -- unproved termination lemma does not stop the function's definition
+      -- from being assumed, which may then prove a false assertion.
+      if !arg.hasBVar && isRankZeroConstr tf calleeDtName arg then .ok (LExpr.intConst () 0)
+      else .ok (LExpr.mkApp () (.op () (adtRankFuncName calleeDtName) (.some (.arrow calleeAdtTy .int))) [arg])
     | _, _ => .error s!"termination checking '{calleeName}': decreasing parameter index {calleeIdx} is out of range at call site"
   | .intValued calleeMeasure =>
     if calleeFormals.length != callArgs.length then
@@ -219,10 +254,12 @@ private def computeCallerMeasure (func : Function) (kind : DecreasesKind)
     the function's preconditions, become hypotheses of each lemma, so they
     are not assumed by any other obligation. The preconditions'
     well-formedness is checked by the function's own well-formedness lemmas,
-    and the generated axioms do not use partial functions. -/
+    and the generated axioms do not use partial functions. Calls to the
+    functions of `block`, the recursive block of `func`, are abstracted, so
+    that the lemmas hold whatever these functions return. -/
 private def mkTermCheckLemmas
     (func : Function)
-    (recFuncNames : List String)
+    (block : List Function)
     (callerKind : DecreasesKind)
     (funcKindMap : List (String × DecreasesKind × List Expression.Ident × List LMonoTy))
     (adtRankAxioms : List (String × Expression.Expr))
@@ -230,6 +267,7 @@ private def mkTermCheckLemmas
     (md : Imperative.MetaData Expression)
     : Except String (List Decl) := do
   let some body := func.body | return []
+  let recFuncNames := block.map (·.name.name)
   let callerMeasure ← computeCallerMeasure func callerKind
   -- Safe to use caller's kind: mixed mutual blocks are rejected in `termCheck`
   let needsNonNeg := match callerKind with
@@ -239,7 +277,7 @@ private def mkTermCheckLemmas
       : Except String (List Expression.Expr) := do
     match funcKindMap.find? (fun (n, _, _, _) => n == calleeName) with
     | some (_, calleeKind, calleeFormals, calleeInputTys) =>
-      match computeCallMeasure calleeName calleeKind calleeFormals calleeInputTys callArgs with
+      match computeCallMeasure tf calleeName calleeKind calleeFormals calleeInputTys callArgs with
       | .ok callMeasure =>
         if callMeasure.hasBVar then
           .error s!"termination checking '{func.name.name}': decreasing argument contains a bound variable"
@@ -263,7 +301,7 @@ private def mkTermCheckLemmas
       match func.inputs.values[idx]? with
       | some callerAdtTy =>
         let relevantDtNames : List String :=
-          match tf.toList.find? (fun b => b.any (fun d => d.name == callerDtName)) with
+          match tf.getBlock? callerDtName with
           | some block => block.map (·.name)
           | none => [callerDtName]
         let relevantAxioms := adtRankAxioms.filter fun (name, _) =>
@@ -276,7 +314,7 @@ private def mkTermCheckLemmas
   return obligations.mapIdx fun i ob =>
     let e := hyps.foldr (init := ob) fun p body => LExpr.mkApp () boolImpliesOp [p, body]
     .lemma { name := s!"{func.name.name}_terminates_{i}", typeArgs := func.typeArgs,
-             e := Lemma.forallOver func.inputs.toList e } md
+             e := Lemma.forallAbstractingCalls block func.inputs.toList e } md
 
 /-- Result of generating adtRank declarations for a mutual datatype block. -/
 private structure AdtRankDecls where
@@ -289,7 +327,7 @@ private def mkAdtRankDecls
     (adtName : String) (tf : @TypeFactory Unit)
     (md : Imperative.MetaData Expression)
     : AdtRankDecls :=
-  match tf.toList.find? (fun b => b.any (fun d => d.name == adtName)) with
+  match tf.getBlock? adtName with
   | none => ⟨[], []⟩
   | some block =>
     { namedDecls := block.map fun dt =>
@@ -367,7 +405,6 @@ where
         incrementStat s!"{Stats.adtRankAxiomsGenerated}" allAdtRank.axioms.length
         -- Step 3: Generate one lemma per recursive call site, stating that the
         -- measure decreases there. Each function lists its lemmas.
-        let recNames := funcs.map (·.name.name)
         -- A lemma whose name is already declared, or chosen for an earlier
         -- lemma, gets a `_k` suffix; each chosen name is reserved at once.
         let mut revTermDeclss : List (List Decl) := []
@@ -376,7 +413,7 @@ where
           let decls ← match callerKind with
             | none => pure []
             | some (_, kind, _, _) =>
-              match mkTermCheckLemmas func recNames kind funcKindMap allAdtRank.axioms tf md with
+              match mkTermCheckLemmas func funcs kind funcKindMap allAdtRank.axioms tf md with
               | .error msg => do throwErr msg; pure []
               | .ok r => pure r
           let mut revNamed : List Decl := []
@@ -393,15 +430,16 @@ where
         incrementStat s!"{Stats.termCheckLemmasGenerated}" termDecls.length
         let funcs' := (funcs.zip termDeclss).map fun (func, decls) =>
           { func with lemmas := func.lemmas ++ decls.map (·.name.name) }
-        -- Step 4: Splice adtRank decls before the rec block, its lemmas after,
-        -- since their formulas call the block's functions.
+        -- Step 4: Splice the adtRank decls and then the lemmas before the rec
+        -- block. The lemmas do not mention the block's functions, so their
+        -- definitions are not in scope when the lemmas are checked.
         if newRankDecls.isEmpty && termDecls.isEmpty then
           acc := acc.push d
         else
           changed := true
           acc := acc ++ newRankDecls.toArray
-          acc := acc.push (.recFuncBlock funcs' md)
           acc := acc ++ termDecls.toArray
+          acc := acc.push (.recFuncBlock funcs' md)
       | .type (.data block) _md => do
         tf := tf.push block
         acc := acc.push d
@@ -435,7 +473,7 @@ def termCheckPipelinePhase : PipelinePhase :=
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
-                         .noPolymorphicFunctions, .typeAnnotated])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits])
     fun prog => do
       TermCheck.termCheck prog
 

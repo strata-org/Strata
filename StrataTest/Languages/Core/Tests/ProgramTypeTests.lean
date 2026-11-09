@@ -20,8 +20,8 @@ open Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 def bad_prog : Program := { decls := [
       -- type Foo a b;
       .type (.con { name := "Foo", params := ["a", "b"]}) .empty,
-      -- type FooAlias a = Foo bool bool;
-      .type (.syn { name := "FooAlias", typeArgs := ["a"], type := mty[Foo bool bool]}) .empty,
+      -- type FooAlias a = Foo a a;
+      .type (.syn { name := "FooAlias", typeArgs := ["a"], type := mty[Foo %a %a]}) .empty,
       -- const fooAliasVal : FooAlias bool;
       .func { name := "fooAliasVal", inputs := [], output := mty[FooAlias bool]} .empty,
       -- const fooVal : Foo int bool;
@@ -50,10 +50,11 @@ First mismatch: bool with int.
 def good_prog : Program := { decls := [
       -- type Foo a b;
       .type (.con { name := "Foo", params := ["a", "b"]}) .empty,
-      -- type FooAlias a = Foo int bool;
-      .type (.syn { name := "FooAlias", typeArgs := ["a"], type := mty[Foo int bool]}) .empty,
-      -- const fooAliasVal : ∀α. FooAlias α;
-      .func { name := "fooAliasVal", typeArgs := ["α"], inputs := [], output := mty[FooAlias α]} .empty,
+      -- type FooAlias a = Foo a bool;
+      .type (.syn { name := "FooAlias", typeArgs := ["a"], type := mty[Foo %a bool]}) .empty,
+      -- const fooAliasVal : ∀a. FooAlias a;
+      .func { name := "fooAliasVal", typeArgs := ["a"], inputs := [], output := mty[FooAlias %a]}
+        .empty,
       -- const fooVal : Foo int bool;
       .func { name := "fooVal", inputs := [], output := mty[Foo int bool]} .empty,
       .proc { header := {name := "P",
@@ -83,8 +84,8 @@ fooAliasVal == fooVal
 info: ok: program Core;
 
 type Foo (a : Type, b : Type);
-type FooAlias (a : Type) := Foo int bool;
-function fooAliasVal () : Foo int bool;
+type FooAlias (a : Type) := Foo a bool;
+function fooAliasVal<a> () : Foo a bool;
 function fooVal () : Foo int bool;
 procedure P ()
 {
@@ -220,6 +221,54 @@ info: error: Decl.func does not allow recursive functions. Use recFuncBlock inst
 -/
 #guard_msgs in
 #eval do let (ans, _) ← typeCheckAndEval .default recursiveFuncDeclProg
+         return (format ans)
+
+---------------------------------------------------------------------
+
+/-- A function may not reuse the name of a built-in function. -/
+def builtinNameFuncProg : Program := { decls := [
+  .func { name := "Int.Add", inputs := [("x", .int)], output := .int } .empty
+]}
+
+/--
+info: error: Error in function Int.Add: a function of this name already exists.
+-/
+#guard_msgs in
+#eval do let (ans, _) ← typeCheckAndEval .default builtinNameFuncProg
+         return (format ans)
+
+/-- `MyUnit`, whose constructor `MkU` generates the tester `isMkU`. -/
+def unitDatatype : Lambda.LDatatype Unit :=
+  { name := "MyUnit", typeArgs := [],
+    constrs := [{ name := "MkU", args := [] }], constrs_ne := rfl }
+
+/-- A function may not reuse the name of a datatype's generated tester. -/
+def testerNameFuncProg : Program := { decls := [
+  .type (.data [unitDatatype]) .empty,
+  .func { name := "isMkU", inputs := [("x", .int)], output := .bool } .empty
+]}
+
+/--
+info: error: Error in function isMkU: a function of this name already exists.
+-/
+#guard_msgs in
+#eval do let (ans, _) ← typeCheckAndEval .default testerNameFuncProg
+         return (format ans)
+
+/-- No function of a recursive block may reuse a factory function's name. -/
+def builtinNameRecBlockProg : Program := { decls := [
+  .recFuncBlock [
+    { name := "f", isRecursive := true, inputs := [("x", .int)],
+      output := .int },
+    { name := "Int.Add", isRecursive := true, inputs := [("x", .int)],
+      output := .int }] .empty
+]}
+
+/--
+info: error: Error in function Int.Add: a function of this name already exists.
+-/
+#guard_msgs in
+#eval do let (ans, _) ← typeCheckAndEval .default builtinNameRecBlockProg
          return (format ans)
 
 ---------------------------------------------------------------------

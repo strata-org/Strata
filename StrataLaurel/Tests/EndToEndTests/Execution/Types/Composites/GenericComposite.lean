@@ -18,8 +18,8 @@ Nearly every case marks an `entry`, so it runs through all three paths: the veri
 concrete Core interpreter reading and writing the same fields
 (`Core.Program.interpretMapsInFactory` reduces the heap's `select`/`update`), and the
 standalone Laurel interpreter allocating and mutating the same objects. A
-monomorphization bug that crossed two clones' field ids would then have to survive
-symbolic proof and two independent concrete executions to go unnoticed. The handful of
+monomorphization bug that let one object's write reach another's field would then have to
+survive symbolic proof and two independent concrete executions to go unnoticed. The handful of
 cases that cannot be run name their reason at the block.
 
 The false twin of a case calling a procedure whose body WRITES THE HEAP is verification-only,
@@ -28,8 +28,9 @@ because the verifier reports that failure as `could not be proved` where an inte
 
 What monomorphization has to get right, and what each case pins:
 * one instantiation — the field's declared `T` becomes the concrete type at the clone;
-* two instantiations of the SAME composite in one program — the clones must not
-  cross-link (a shared field id would make one instantiation's write visible to the other);
+* two instantiations of the SAME composite in one program — separate allocations stay
+  independent, though the clones share each field's heap location
+  (`Verification/Objects/GenericInstantiationAliasing.lean`);
 * a false twin per shape — so a clone's field read is not left unconstrained, which would
   let a false assertion pass vacuously.
 
@@ -73,9 +74,8 @@ procedure oneInstantiationFalse()
 };
 #end
 
--- TWO instantiations of one generic composite in a single program. The keystone: each
--- clone must own its own field, so writing through the `int` instance cannot be observed
--- through the `bool` one. Cross-linked clone ids would break this.
+-- TWO instantiations of one generic composite in a single program, as separate allocations,
+-- so writing through the `int` instance cannot be observed through the `bool` one.
 #eval testLaurelExecution {} <|
 #strata
 program Laurel;
@@ -891,7 +891,7 @@ procedure asGenericInstantiation()
 {
   var b: Box<int> := new Box<int>;
   var c: Box<int> := b as Box<int>;
-  assert c#val == c#val
+  assert c == b
 };
 
 // A NESTED instantiation as the target: the tag nests too (`Box$a1$Pair$a2$int$bool`).
@@ -913,7 +913,7 @@ with it. Rejecting any of the three forms below would be a regression, and each 
 with a false twin so "accepted" cannot be mistaken for "verified vacuously".
 
 A generic `composite Box<T>` is legal for a different reason and so is not repeated here:
-it is monomorphized to `Box$a1$int`, so the plain name never reaches heap lowering. The
+it is monomorphized to `Box$a1$int`, so no type named `Box` reaches heap lowering. The
 forms below are the ones that do. (Contrast `Heap`, `Field`, `TypeTag` and `Composite`,
 whose generated forms carry no `$` and so genuinely are reserved.) -/
 

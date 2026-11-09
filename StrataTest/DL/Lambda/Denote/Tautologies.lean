@@ -379,7 +379,8 @@ theorem valid_and_elim_left : Valid F and_elim_left and_elim_left_ty := by
   have h_bv1 := HasTypeA.bvar_inv h_arg1
   have h_bv3 := HasTypeA.bvar_inv h_arg3
   have h_bv4 := HasTypeA.bvar_inv h_arg4
-  simp at h_bv1 h_bv3 h_bv4; subst h_bv1 h_bv3 h_bv4
+  simp only [List.length_cons, List.length_nil, Nat.zero_add, Nat.reduceAdd, Nat.lt_add_one, getElem?_pos,
+    List.getElem_cons_succ, List.getElem_cons_zero, Option.some.injEq, Nat.zero_lt_succ] at h_bv1 h_bv3 h_bv4; subst h_bv1 h_bv3 h_bv4
   simp [boolBinTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op2 h_op4
   subst_vars
   cases p <;> cases q <;> rfl
@@ -432,7 +433,8 @@ theorem valid_or_intro_left : Valid F or_intro_left or_intro_left_ty := by
   have h_bv1 := HasTypeA.bvar_inv h_arg2
   have h_bv3 := HasTypeA.bvar_inv h_arg3  -- this is bv0 in or
   have h_bv4 := HasTypeA.bvar_inv h_arg4
-  simp at h_bv1 h_bv3 h_bv4; subst h_bv1 h_bv3 h_bv4
+  simp only [List.length_cons, List.length_nil, Nat.zero_add, Nat.reduceAdd, Nat.lt_add_one, getElem?_pos,
+    List.getElem_cons_succ, List.getElem_cons_zero, Option.some.injEq, Nat.zero_lt_succ] at h_bv1 h_bv3 h_bv4; subst h_bv1 h_bv3 h_bv4
   simp [boolBinTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op2 h_op4
   subst_vars
   cases p <;> rfl
@@ -474,7 +476,8 @@ theorem valid_excluded_middle : Valid F excluded_middle excluded_middle_ty := by
   have h_op3 := HasTypeA.op_inv h_fn3
   have h_bv2 := HasTypeA.bvar_inv h_arg2
   have h_bv3 := HasTypeA.bvar_inv h_arg3
-  simp at h_bv2 h_bv3; subst h_bv2 h_bv3
+  simp only [List.length_cons, List.length_nil, Nat.zero_add, Nat.lt_add_one, getElem?_pos,
+    List.getElem_cons_zero, Option.some.injEq] at h_bv2 h_bv3; subst h_bv2 h_bv3
   simp [boolBinTy, boolUnTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op2 h_op3
   subst_vars
   cases p <;> rfl
@@ -531,7 +534,9 @@ theorem valid_modus_ponens : Valid F modus_ponens modus_ponens_ty := by
   have h_bv_arg3 := HasTypeA.bvar_inv h_arg3
   have h_bv_arg5 := HasTypeA.bvar_inv h_arg5
   have h_bv_arg6 := HasTypeA.bvar_inv h_arg6
-  simp at h_bv_arg2 h_bv_arg3 h_bv_arg5 h_bv_arg6
+  simp only [List.length_cons, List.length_nil, Nat.zero_add, Nat.reduceAdd, Nat.lt_add_one, getElem?_pos,
+    List.getElem_cons_succ, List.getElem_cons_zero, Option.some.injEq,
+    Nat.zero_lt_succ] at h_bv_arg2 h_bv_arg3 h_bv_arg5 h_bv_arg6
   subst h_bv_arg2 h_bv_arg3 h_bv_arg5 h_bv_arg6
   have h_op2 := HasTypeA.op_inv h_fn2
   have h_op4 := HasTypeA.op_inv h_fn4
@@ -579,7 +584,8 @@ theorem valid_non_contradiction : Valid F non_contradiction non_contradiction_ty
   rw [bool_not_interp, bool_and_interp]
   have h_bv3 := HasTypeA.bvar_inv h_arg3
   have h_bv4 := HasTypeA.bvar_inv h_arg4
-  simp at h_bv3 h_bv4; subst h_bv3 h_bv4
+  simp only [List.length_cons, List.length_nil, Nat.zero_add, Nat.lt_add_one, getElem?_pos,
+    List.getElem_cons_zero, Option.some.injEq] at h_bv3 h_bv4; subst h_bv3 h_bv4
   have h_op1 := HasTypeA.op_inv h_fn1
   have h_op3 := HasTypeA.op_inv h_fn3
   have h_op4 := HasTypeA.op_inv h_fn4
@@ -629,7 +635,8 @@ theorem valid_double_negation : Valid F double_negation double_negation_ty := by
   simp only [HList.get, LMonoTy.substTyVars, LMonoTy.substTyVars.map, LMonoTy.arrow]
   rw [bool_not_interp]
   have h_bv2 := HasTypeA.bvar_inv h_arg2
-  simp at h_bv2; subst h_bv2
+  simp only [List.length_cons, List.length_nil, Nat.zero_add, Nat.lt_add_one, getElem?_pos,
+    List.getElem_cons_zero, Option.some.injEq] at h_bv2; subst h_bv2
   have h_op1 := HasTypeA.op_inv h_fn1
   have h_op2 := HasTypeA.op_inv h_fn2
   simp [boolUnTy, boolTy, LMonoTy.arrow, LMonoTy.bool] at h_op1 h_op2
@@ -684,6 +691,7 @@ private def trivialInterp : Interp emptyF where
   allInhabited := ⟨fun _ _ => by constructor; exact true⟩
   interpConsistent := ⟨fun _ hf => absurd hf (Factory.default_empty _),
                        fun _ hf => absurd hf (Factory.default_empty _)⟩
+  axiomsSatisfied := fun _ hf => absurd hf (Factory.default_empty _)
   constrConsistent := ⟨fun _ _ hf => absurd hf (by simp [emptyF]),
                        fun _ hf => absurd hf (by simp [emptyF])⟩
 

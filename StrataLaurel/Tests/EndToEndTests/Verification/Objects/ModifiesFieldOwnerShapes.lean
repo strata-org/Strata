@@ -7,41 +7,16 @@ module
 /-
 Field resolution for a `#field` access whose OWNER is not a plain variable.
 
-`resolveFieldRef` resolves the field against `holderTy?` — the owner type
-synthesized by `Synth.resolveStmtExpr` — and falls back to the string-based
-`targetTypeName` only when that is absent or names no composite.
-`targetTypeName` types exactly three owner shapes: `.Var (.Local _)`, a
-`.Var (.Field _ _)` chain of `.UserDefined` field types, and `.AsType _ _`. So a
-call site that omitted `holderTy?` silently supported only those three, and every
-other owner — most importantly a datatype DESTRUCTOR application — failed with
-`Resolution failed: 'f' is not defined`, naming the field rather than the owner.
+`resolveFieldRef` looks the field up in the owner's type as `Synth.resolveStmtExpr`
+synthesizes it, so `modifies o#f` and `o#f op= e` resolve `f` for any owner shape,
+a datatype DESTRUCTOR application included.
 
-Two call sites omitted it: `resolveModifiesEntry` (`modifies o#f`) and
-`Synth.compoundAssign` (`o#f op= e`). Both now thread it, so every
-`resolveFieldRef` call site in `Resolution.lean` does.
-
-Threading it widens what resolves without rebinding a field that already
-resolved:
-
-  * for the three shapes `targetTypeName` already handled, both paths key the
-    SAME per-type field map under the same composite name (aliases unfold on
-    both sides — `TypeLattice.unfold` on one, `resolveFieldInTypeScope`'s
-    `unfoldAlias` on the other), so the field id is unchanged; and
-  * for an owner type carrying no name at all (`int`, `bool`, a bare `.TSet`)
-    `highBaseName?` is `none`, so the `holderTy?` branch is skipped and the
-    fallback runs exactly as before.
-
-The "still resolves" sections below pin the first bullet. The second is pinned
-by the non-composite owner case at the end and by `NonCompositeModifies.lean`'s
-`fieldTargetOnValueOwner`, whose owner (`Box<int>`) is a NAMED non-composite —
-the case where `highBaseName?` does return a name, and the widened lookup must
-still find nothing and still report the owner diagnostic.
-
-There is exactly one class of program whose meaning changes, and it is not
-covered by either bullet: an owner shape `targetTypeName` cannot type, inside an
-instance procedure whose composite declares the same field name. That used to
-fall through to `resolveFieldRef`'s *instance type* fallback and bind the wrong
-field. It has its own section below.
+The "still resolves" sections below pin the owner shapes whose type is declared
+(`targetTypeName`'s three: `.Var (.Local _)`, a `.Var (.Field _ _)` chain of
+`.UserDefined` field types, and `.AsType _ _`). The non-composite owner case at the
+end, and `NonCompositeModifies.lean`'s `fieldTargetOnValueOwner`, whose owner
+(`Box<int>`) is a NAMED non-composite, pin that an owner without the field still
+reports the owner diagnostic.
 -/
 
 meta import StrataLaurel.Tests.Util.TestLaurel
@@ -90,26 +65,11 @@ procedure ptrCaller()
 };
 #end
 
-/-! ## The `instanceTypeName` fallback no longer shadows the owner
+/-! ## In a method of a composite with the same field, the frame names the owner's
 
-The one place threading `holderTy?` changes the meaning of a program that used to
-resolve. `resolveFieldRef`'s third fallback is the ENCLOSING instance type (for
-`self.field` on a gradually typed `self`). So inside an instance procedure of a
-composite that happens to declare the same field name, an owner shape
-`targetTypeName` could not type fell through to that fallback and bound the frame
-to the *host's* field — here `modifies Ptr..target!(p)#x` framed `Host`'s `x`, not
-the pointee's. The pair was `(Ptr..target!(p), Host#x)`: an object from one type
-with a field id from another, which no write can match.
-
-Now the synthesized owner type `Obj` is tried first and wins, so `writePointee`
-(which writes exactly the field it frames) verifies, and `writeSelf` is correctly
-rejected — the frame does not name `self#x`.
-
-Reaching the old behaviour required all three of: an owner shape `targetTypeName`
-cannot type, inside an instance procedure, on a composite declaring the same
-field name. Absent the last two the program did not resolve at all, so the
-affected population is programs that only resolved by accident, against the wrong
-field. No existing test exercised it. -/
+`Host` declares its own `x`, but `modifies Ptr..target!(p)#x` in its methods frames the
+pointee's `x`: `writePointee`, which writes exactly that field, verifies, and `writeSelf`,
+which writes `self#x`, is rejected. -/
 
 #eval testLaurelVerification <|
 #strata
@@ -295,7 +255,6 @@ procedure incrThroughGenericChain(w: Wrap)
 
 /-! ## Non-composite owner behind the same non-trivial shapes
 
-This is the case most at risk from threading `holderTy?`, because
 `resolveModifiesEntry` resolves the field BEFORE the heap-relevance gate runs.
 An owner reached through a destructor whose type is `int` must still reach the
 gate and report "non-composite owner type", exactly as a plain `int` variable

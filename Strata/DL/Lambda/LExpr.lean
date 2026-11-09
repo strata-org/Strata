@@ -774,15 +774,17 @@ private theorem collectAppSpine_lt {T : LExprParamsT} (e : LExpr T) (ec : LExpr 
   obtain ⟨m, fn, arg, rfl⟩ := hApp
   induction fn generalizing arg m ec with
   | app m' fn' arg' ih =>
-    simp [collectAppSpine] at hec
+    simp only [collectAppSpine, List.append_assoc, List.cons_append, List.nil_append, List.mem_append,
+    List.mem_cons, List.not_mem_nil, or_false] at hec
     cases hec with
     | inl h =>
-      have := ih ec m' arg' (by simp [collectAppSpine]; exact Or.inl h)
+      have := ih ec m' arg' (by simp only [collectAppSpine, List.mem_append, List.mem_cons, List.not_mem_nil, or_false]; exact Or.inl h)
       simp [LExpr.sizeOf] at this ⊢; omega
     | inr h =>
       rcases h with rfl | rfl <;> simp [LExpr.sizeOf] <;> omega
   | _ =>
-    simp [collectAppSpine] at hec
+    simp only [collectAppSpine, List.cons_append, List.nil_append, List.mem_cons, List.not_mem_nil,
+    or_false] at hec
     rcases hec with rfl | rfl <;> simp [LExpr.sizeOf] <;> omega
 
 private def formatLExpr (T : LExprParamsT) [ToFormat T.base.IDMeta] [ToFormat T.TypeType] (e : LExpr T) :

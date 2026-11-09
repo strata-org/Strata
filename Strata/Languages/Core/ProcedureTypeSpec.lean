@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.StatementTypeSpec
 public import Strata.Languages.Core.Procedure
+public import Strata.Languages.Core.Typing.Spec.TypeSpecShared
 
 /-! ## Declarative Typing Specification for Procedures
 
@@ -34,21 +35,17 @@ public section
     with one new scope binding each input parameter to its declared monotype.
     Return variables are intentionally absent — preconditions may not reference them. -/
 def procInputContext (Γ : TContext Unit) (proc : Procedure) : TContext Unit :=
-  let inputScope := proc.header.inputs.map (fun (id, mty) => (id, LTy.forAll [] mty))
-  { Γ with types := Γ.types.push (Strata.Util.HMap.ofList inputScope) }
+  { Γ with types := procInputScopes Γ.types proc }
 
 /-- The typing context for a procedure's postconditions and body: the input scope
     extended with the outputs and, for each in-out parameter `g`, an `old g`
     binding at `g`'s type.
 
-    Scopes are concatenated `old ++ output ++ input`; `HMap.ofList` keeps the last
-    occurrence of a key, giving `input`-then-`output`-then-`old` priority. -/
+    The bindings are those of `Procedure.paramTys`. Scopes are concatenated
+    `old ++ output ++ input`; `HMap.ofList` keeps the last occurrence of a key, giving
+    `input`-then-`output`-then-`old` priority. -/
 def procBodyContext (Γ : TContext Unit) (proc : Procedure) : TContext Unit :=
-  let inputScope := proc.header.inputs.map (fun (id, mty) => (id, LTy.forAll [] mty))
-  let outputScope := proc.header.outputs.map (fun (id, mty) => (id, LTy.forAll [] mty))
-  let oldScope := proc.header.getInoutParams.map
-    (fun (id, ty) => (CoreIdent.mkOld id.name, LTy.forAll [] ty))
-  { Γ with types := Γ.types.push (Strata.Util.HMap.ofList (oldScope ++ outputScope ++ inputScope)) }
+  { Γ with types := procBodyScopes Γ.types proc }
 
 /--
 Declarative typing for a procedure body, in ambient context `C` and body-scope

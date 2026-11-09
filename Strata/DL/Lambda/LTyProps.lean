@@ -18,7 +18,8 @@ operations). Definitions, instances, the `@[induction_eliminator]`, and
 
 ### Arrow types (`mkArrow'` / `destructArrow` / `isArrow`)
 `mkArrow'` is injective in its return type and argument list
-(`mkArrow'_injective`), `destructArrow` never returns the empty list
+(`mkArrow'_injective`), an arrow chain equal to a longer one ends in the longer one's
+tail (`mkArrow'_eq_drop`), `destructArrow` never returns the empty list
 (`destructArrow_non_empty`), and `isArrow` reflects back into the `arrow`
 constructor (`isArrow_some`).
 
@@ -45,15 +46,29 @@ theorem LMonoTy.mkArrow'_injective {ret₁ ret₂ : LMonoTy} {ins₁ ins₂ : Li
   induction ins₁ generalizing ins₂ with
   | nil =>
     cases ins₂ with
-    | nil => simp [mkArrow'] at h; exact ⟨h, rfl⟩
+    | nil => simp only [mkArrow'] at h; exact ⟨h, rfl⟩
     | cons => simp at h_len
   | cons x xs ih =>
     cases ins₂ with
     | nil => simp at h_len
     | cons y ys =>
-      simp [mkArrow', LMonoTy.arrow] at h h_len
+      simp only [mkArrow', arrow, tcons.injEq, List.cons.injEq, and_true, true_and, List.length_cons,
+    Nat.add_right_cancel_iff] at h h_len
       have ⟨h_ret, h_tl⟩ := ih h_len h.2
       exact ⟨h_ret, by rw [h.1, h_tl]⟩
+
+/-- An arrow chain `mkArrow' a xs` equal to an arrow chain `mkArrow' b ys` with at least as many
+    inputs has as result type `a` the rest of the longer chain: the arrow chain from the inputs
+    of `ys` after its first `xs.length` ones into `b`. -/
+public theorem LMonoTy.mkArrow'_eq_drop {a b : LMonoTy} :
+    ∀ {xs ys : List LMonoTy}, LMonoTy.mkArrow' a xs = LMonoTy.mkArrow' b ys →
+      xs.length ≤ ys.length → a = LMonoTy.mkArrow' b (ys.drop xs.length)
+  | [], _, h, _ => h
+  | _ :: _, [], _, hl => by simp at hl
+  | _ :: _, _ :: _, h, hl => by
+    simp only [LMonoTy.mkArrow'_cons, LMonoTy.arrow, LMonoTy.tcons.injEq, List.cons.injEq] at h
+    obtain ⟨-, -, heq, -⟩ := h
+    simpa using mkArrow'_eq_drop heq (by simpa using hl)
 
 /-- An iterated arrow has a property that arrows build when its result type and every argument
     type have it. -/
@@ -89,9 +104,7 @@ theorem destructArrow_eq_self_or_arrow (mty : LMonoTy) :
 
 theorem LMonoTy.size_gt_zero :
   0 < LMonoTy.size ty := by
-  induction ty <;>  simp_all [LMonoTy.size]
-  unfold LMonoTys.size; split
-  simp_all; omega
+  cases ty <;> simp only [LMonoTy.size] <;> omega
 
 theorem LMonoTy.size_lt_of_mem {ty: LMonoTy} {tys: LMonoTys} (h: ty ∈ tys):
   ty.size <= tys.size := by

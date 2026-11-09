@@ -9,14 +9,15 @@ public import Strata.Languages.Core.FunctionTypeSpec
 public import Strata.Languages.Core.ProcedureTypeSpec
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.DatatypeTypeSpec
+public import Strata.Languages.Core.Typing.Spec.TypeSpecShared
 
 /-! ## Declarative Typing Specification for Programs
 
 Specifies when a whole `Program` is well-typed, parameterized over the
 `ExprTypingSpec` typeclass (so it instantiates to both the polymorphic `HasType`
 and the annotated `HasTypeA`), reusing the per-declaration specs
-(`FuncHasType'`, `ProcHasType'`) for functions and procedures, and `MutualADTWF`
-(`DatatypeTypeSpec.lean`) for datatype blocks.
+(`FuncHasType'`, `ProcHasType'`) for functions and procedures. A datatype block
+is typed by registering it with `LContext.addMutualBlock`.
 
 The specification is layered:
 
@@ -36,30 +37,6 @@ open Lambda LExpr Imperative
 public section
 
 /-! ### Declaration and program typing -/
-
-/--
-`FactoryExtendedBy C C' newFuncs` says the context `C'` is `C` with exactly the
-functions `newFuncs` added: `C'` agrees with `C` on every field except
-`functions`, its factory contains everything `C`'s does plus each `f ∈ newFuncs`,
-and it introduces no other function names.
-
-Stating the extension declaratively (rather than as a literal `List.foldl` that
-adds `newFuncs` to `C`) frees the soundness proof from inducting over the fold.
--/
-structure FactoryExtendedBy
-    (C C' : LContext CoreLParams) (newFuncs : List (LFunc CoreLParams)) : Prop where
-  -- Every field except `functions` is unchanged.
-  knownTypes_eq : C'.knownTypes = C.knownTypes
-  datatypes_eq : C'.datatypes = C.datatypes
-  idents_eq : C'.idents = C.idents
-  rigidTypeVars_eq : C'.rigidTypeVars = C.rigidTypeVars
-  /-- Every function already in `C` is still present. -/
-  preserves_old : ∀ nm ∈ C.functions, nm ∈ C'.functions
-  /-- Every new function's name is present in `C'`. -/
-  contains_new : ∀ f ∈ newFuncs, f.name.name ∈ C'.functions
-  /-- No name is present in `C'` unless it was in `C` or is one of the new
-      functions (the factory grows by exactly `newFuncs`). -/
-  no_other : ∀ nm ∈ C'.functions, nm ∈ C.functions ∨ nm ∈ newFuncs.map (·.name.name)
 
 /--
 Declarative typing for a single declaration, parameterized over `ExprTypingSpec`.
@@ -97,10 +74,11 @@ inductive DeclHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
       DeclHasType' τ P C Γ (.type (.syn ts) md) C
         { Γ with aliases := { typeArgs := ts.typeArgs, name := ts.name, type := storedTy } :: Γ.aliases }
 
-  /-- A (mutual) datatype declaration: the block is well-formed (`MutualADTWF`);
-      the datatypes and their generated functions extend `C`. `Γ` is unchanged. -/
+  /-- A (mutual) datatype declaration: `LContext.addMutualBlock` accepts the
+      block and extends `C` with its datatypes and their generated functions.
+      The block then satisfies `MutualADTWF` (`Datatype.addMutualBlock_sound`).
+      `Γ` is unchanged. -/
   | type_data : ∀ C C' Γ block md,
-      MutualADTWF C block →
       C.addMutualBlock block = .ok C' →
       DeclHasType' τ P C Γ (.type (.data block) md) C' Γ
 
@@ -128,13 +106,14 @@ inductive DeclHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
       ProcHasType' τ P C Γ proc →
       DeclHasType' τ P C Γ (.proc proc md) C Γ
 
-  /-- A function declaration: non-recursive and well-typed per `FuncHasType'`;
-      the output `C'` is `C` extended with the function (via `FactoryExtendedBy`).
-      `Γ` is unchanged. -/
+  /-- A function declaration: non-recursive, not named like a function of `C`,
+      and well-typed per `FuncHasType'`; the output `C'` is `C` extended with
+      the function (via `FactoryExtendedBy`). `Γ` is unchanged. -/
   | func : ∀ C C' Γ func md,
       ¬ func.isRecursive →
+      func.name.name ∉ C.functions →
       FuncHasType' τ C Γ func →
-      FactoryExtendedBy C C' [func.toLFunc] →
+      FactoryExtendedBy (fun f g => g = f) C C' [func.toLFunc] →
       DeclHasType' τ P C Γ (.func func md) C' Γ
 
   /-- A mutually recursive function block. Two-phase:
@@ -144,15 +123,17 @@ inductive DeclHasType' (τ : Type) (P : Program) [S : ExprTypingSpec τ] :
       * every block function is well-typed against `Cstub`;
       * the output `C'` is `C` extended with each function's full `toLFunc`.
 
-      The block is non-empty and contains no `inline` functions; `Γ` is unchanged. -/
+      The block is non-empty, contains no `inline` functions, and no block
+      function is named like a function of `C`; `Γ` is unchanged. -/
   | recFuncBlock : ∀ C Cstub C' Γ funcs md stubs fullFuncs,
       funcs ≠ [] →
+      (∀ f ∈ funcs, f.name.name ∉ C.functions) →
       (∀ f ∈ funcs, ∀ a ∈ f.attr, a ≠ .inline) →
       stubs = funcs.map (fun f => { name := f.name, typeArgs := f.typeArgs,
                                     inputs := f.inputs, output := f.output }) →
       fullFuncs = funcs.map (·.toLFunc) →
-      FactoryExtendedBy C Cstub stubs →
-      FactoryExtendedBy C C' fullFuncs →
+      FactoryExtendedBy (fun f g => g = f) C Cstub stubs →
+      FactoryExtendedBy (fun f g => g = f) C C' fullFuncs →
       (∀ f ∈ funcs, FuncHasType' τ Cstub Γ f) →
       DeclHasType' τ P C Γ (.recFuncBlock funcs md) C' Γ
 

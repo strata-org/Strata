@@ -159,6 +159,10 @@ abbrev LTys := List LTy
 @[expose] def mapLTyTys (f : LMonoTy → LMonoTy) : LTy → LTy
   | .forAll vs mty => .forAll vs (f mty)
 
+/-- Does the body of a type scheme satisfy `p`? -/
+def allLTyTys (p : LMonoTy → Bool) : LTy → Bool
+  | .forAll _ mty => p mty
+
 ---------------------------------------------------------------------
 
 /--
@@ -218,57 +222,52 @@ def LMonoTy.BEq (x y : LMonoTy) : Bool :=
 
 @[simp]
 theorem LMonoTy.BEq_refl : LMonoTy.BEq ty ty := by
-  induction ty <;> simp_all [LMonoTy.BEq]
-  rename_i name args ih
-  induction args
-  case tcons.nil => simp [LMonoTy.BEq.go]
-  case tcons.cons =>
-    rename_i head tail ih'
-    simp_all [LMonoTy.BEq.go]
-  done
+  induction ty with
+  | ftvar i => simp only [LMonoTy.BEq, BEq.rfl]
+  | bitvec n => simp only [LMonoTy.BEq, BEq.rfl]
+  | tcons name args ih =>
+    simp only [LMonoTy.BEq, BEq.rfl, Bool.true_and]
+    induction args with
+    | nil => simp only [LMonoTy.BEq.go]
+    | cons head tail ih' =>
+      simp only [List.mem_cons, forall_eq_or_imp] at ih
+      simp only [LMonoTy.BEq.go, Bool.and_eq_true]
+      exact ⟨ih.1, ih' ih.2⟩
+
+/-- Soundness of the boolean equality test: if `LMonoTy.BEq x y` returns `true`,
+then the monotypes `x` and `y` are structurally equal. -/
+theorem LMonoTy.BEq_eq (x y : LMonoTy) (h : LMonoTy.BEq x y = true) : x = y := by
+  induction x generalizing y with
+  | ftvar i =>
+    cases y <;> simp only [LMonoTy.BEq, Bool.false_eq_true, beq_iff_eq] at h
+    rw [h]
+  | bitvec n =>
+    cases y <;> simp only [LMonoTy.BEq, Bool.false_eq_true, beq_iff_eq] at h
+    rw [h]
+  | tcons name args ih =>
+    cases y <;> simp only [LMonoTy.BEq, Bool.false_eq_true, Bool.and_eq_true, beq_iff_eq] at h
+    rename_i name' args'
+    obtain ⟨⟨h1, h2⟩, h3⟩ := h
+    rw [h1]
+    suffices args = args' by rw [this]
+    induction args generalizing args' with
+    | nil =>
+      cases args' with
+      | nil => rfl
+      | cons _ _ => exact absurd h2 (by simp only [List.length_nil, List.length_cons]; omega)
+    | cons x xrest ihl =>
+      cases args' with
+      | nil => exact absurd h2 (by simp only [List.length_nil, List.length_cons]; omega)
+      | cons y yrest =>
+        simp only [LMonoTy.BEq.go, Bool.and_eq_true] at h3
+        simp only [List.mem_cons, forall_eq_or_imp] at ih
+        simp only [List.length_cons, Nat.add_right_cancel_iff] at h2
+        rw [ih.1 y h3.1, ihl ih.2 yrest h3.2 h2]
 
 instance : DecidableEq LMonoTy :=
   fun x y =>
-    if h: LMonoTy.BEq x y then
-      isTrue (by
-                induction x generalizing y
-                case ftvar =>
-                  unfold LMonoTy.BEq at h ; (split at h <;> try simp_all)
-                case bitvec =>
-                  unfold LMonoTy.BEq at h <;> split at h <;> try simp_all
-                case tcons =>
-                  rename_i name args ih
-                  cases y <;> try simp_all [LMonoTy.BEq]
-                  rename_i name' args'
-                  obtain ⟨⟨h1, h2⟩, h3⟩ := h
-                  induction args generalizing args'
-                  case nil => unfold List.length at h2; split at h2 <;> simp_all
-                  case cons head' tail' ih' =>
-                    unfold LMonoTy.BEq.go at h3 ; (split at h3 <;> try simp_all)
-                    rename_i j1 j2 x xrest y yrest heq
-                    obtain ⟨h3_1, h3_2⟩ := h3
-                    obtain ⟨ih1, ih2⟩ := ih
-                    exact ⟨ih1 y h3_1, ih' ih2 yrest h3_2 rfl⟩)
-    else
-      isFalse (by induction x generalizing y
-                  case ftvar =>
-                    cases y <;> try simp_all [LMonoTy.BEq]
-                  case bitvec n =>
-                    cases y <;> try simp_all [LMonoTy.BEq]
-                  case tcons name args ih =>
-                    cases y <;> try simp_all [LMonoTy.BEq]
-                    rename_i name' args'
-                    intro hname; simp [hname] at h
-                    induction args generalizing args'
-                    case tcons.nil =>
-                      simp [LMonoTy.BEq.go] at h
-                      unfold List.length at h; split at h <;> simp_all
-                    case tcons.cons head tail ih' =>
-                      cases args' <;> try simp_all
-                      rename_i head' tail'; intro _
-                      have ih'' := @ih' tail'
-                      unfold LMonoTy.BEq.go at h
-                      simp_all)
+    if h : LMonoTy.BEq x y then isTrue (LMonoTy.BEq_eq x y h)
+    else isFalse (fun e => h (e ▸ LMonoTy.BEq_refl))
 
 instance : Inhabited LMonoTy where
   default := .tcons "bool" []

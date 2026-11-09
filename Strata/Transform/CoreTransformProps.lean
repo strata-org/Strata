@@ -12,19 +12,19 @@ import all Strata.Languages.Core.CoreGen
 
 public section
 
-/-! # Transformation-generic store/run helpers
+/-! # Transformation-generic store helpers
 
-Small, transformation-agnostic store/run inversion lemmas shared across the
-structured-to-unstructured passes (`projectStore_undef_at`,
-`stmts_cons_terminal_inv`).  They depend only on the base statement semantics, so
-they sit below every pass-specific correctness proof. -/
+Small, transformation-agnostic store lemmas shared across the
+structured-to-unstructured passes (`projectStore_undef_at`).  They depend only on
+the base statement semantics, so they sit below every pass-specific correctness
+proof. -/
 
 
 namespace Imperative
 
 variable {P : PureExpr}
 
-/-! ## Store/run inversion helpers -/
+/-! ## Store helpers -/
 
 /-- `projectStore` reverts to `none` on parent-undefined keys. -/
 theorem projectStore_undef_at {P : PureExpr}
@@ -33,17 +33,6 @@ theorem projectStore_undef_at {P : PureExpr}
     projectStore σ_parent σ_inner x = none := by
   unfold projectStore
   simp [h]
-
-/-- Split `.stmts (s :: rest) ρ ⟶* .terminal ρ'` into head and tail runs. -/
-theorem stmts_cons_terminal_inv
-    [HasFvar P] [HasBool P] [HasBoolOps P] [HasVal P] [HasFvars P]
-    {s : Stmt P (Cmd P)} {rest : List (Stmt P (Cmd P))} {ρ ρ' : Env P}
-    (h : StepStmtStar P (EvalCmd P) (.stmts (s :: rest) ρ) (.terminal ρ')) :
-    ∃ ρ_mid : Env P,
-      StepStmtStar P (EvalCmd P) (.stmt s ρ) (.terminal ρ_mid) ∧
-      StepStmtStar P (EvalCmd P) (.stmts rest ρ_mid) (.terminal ρ') := by
-  cases h with
-  | step _ _ _ h1 hr1 => cases h1; exact seq_reaches_terminal P (EvalCmd P) hr1
 
 end Imperative
 
@@ -61,8 +50,9 @@ Properties of the per-call-site type-variable freshening in
 - `freshenTypeArgsSubst_empty` — monomorphic callees (`typeArgs = []`) yield
   `Subst.empty` without touching the generator: an exact no-op.
 
-The theorems are generic in the prefix string; call elimination instantiates it
-with `freshTyVarPrefix` (`$__cety`, in `CallElim.lean`).
+The theorems are generic in the prefix string; call elimination and procedure
+inlining instantiate it with `Lambda.callElimTyPrefix` and
+`Lambda.inlineTyPrefix`.
 
 Key definitions the reader needs: `freshenTypeArgsSubst`, `genTyVarName(s)`
 (in `CoreTransform.lean`), and `CoreGenState.WF` (in `CoreGen.lean`).
@@ -73,10 +63,9 @@ independent of the `CallElimCorrect` correctness proof; the whole-program
 
 Scope note: `freshenTypeArgsSubst_fresh` proves each fresh name carries the
 reserved `<prefix>_<n>` shape, so the names are structurally in the prefix's
-namespace. What remains convention (not lemma) is that the counter does not
-ingest existing program identifiers, so a *user* who writes a literal
-`<prefix>_<n>` type variable could still collide; safety there rests on the
-`$__` reservation (see `freshTyVarPrefix` in `CallElim.lean`). Freshness and
+namespace. The counter does not ingest existing program identifiers, so a
+written `<prefix>_<n>` type variable is kept apart from the fresh names only by
+the prefix being reserved (`Lambda.isAllowedName`). Freshness and
 disjointness across call sites — the property that actually prevents
 cross-site unification — is fully proven here.
 -/
@@ -147,7 +136,7 @@ private theorem genTyVarName_generated (γ γ' : CoreGenState) (f : Lambda.TyIde
     (h : genTyVarName prefixStr γ = (f, γ')) :
     γ'.generated = (⟨f, ()⟩ : CoreIdent) :: γ.generated := by
   have hg := genTyVarName_gen prefixStr γ γ' f h
-  simp [CoreGenState.gen] at hg; rw [← hg.2, ← hg.1]
+  simp only [CoreGenState.gen, Prod.mk.injEq, Lambda.Identifier.mk.injEq, and_true] at hg; rw [← hg.2, ← hg.1]
 
 /-- One type-var draw preserves generator well-formedness. -/
 private theorem genTyVarName_wf (γ γ' : CoreGenState) (f : Lambda.TyIdentifier)

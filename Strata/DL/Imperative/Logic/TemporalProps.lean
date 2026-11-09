@@ -28,7 +28,7 @@ namespace Strata.Logic
 
 open Imperative
 
-variable {P : PureExpr} {EventT : Type}
+variable {P : PureExpr} {EventT : Type _}
 
 /-- A predicate every step preserves holds on every configuration reachable from
     one satisfying it. -/

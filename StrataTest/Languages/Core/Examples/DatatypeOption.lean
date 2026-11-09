@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Languages.Core
+meta import StrataTest.Languages.Core.Examples.DatatypePruningTestUtils
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -393,6 +394,16 @@ Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify optionDestructorPgm (options := .quiet)
+
+-- The same programs verify identically with `removeIrrelevantDatatypes`.
+/--
+info: 7 of 7 the same
+-/
+#guard_msgs in
+#eval Core.RemoveIrrelevantDatatypes.TestUtils.sameWithFlag
+  [optionTesterPgm, optionHavocPgm, optionExhaustivePgm,
+   optionMutualExclusionPgm, optionEqualityPgm, optionInequalityPgm,
+   optionDestructorPgm]
 
 end Strata.DatatypeOptionTest
 end

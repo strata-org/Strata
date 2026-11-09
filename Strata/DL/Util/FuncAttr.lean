@@ -27,7 +27,8 @@ inductive FuncAttr where
   | evalIfConstr (paramIdx : Nat)
   /-- Use concrete evaluation when argument at `paramIdx` is a value. -/
   | evalIfValue (paramIdx : Nat)
-  /-- Inline the function body when all arguments are values. -/
+  /-- Inline the function body when every argument satisfies `LExpr.isInlineArg`: a
+  value in which closed quantifiers may also appear. -/
   | inlineIfAllValues
   /-- Evaluate the first argument alone, and if it is a value, apply concrete
       evaluation to it and the other arguments as they are, before evaluating them.

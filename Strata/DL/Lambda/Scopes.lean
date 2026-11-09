@@ -56,12 +56,22 @@ instance (priority := high) : ToFormat (Scope T) where
 /--
 Merge two maps `m1` and `m2`, where `m1` is assumed to be the map if `cond`
 is `true` and `m2` when it is false.
+
+Merging two maps that list their keys in the same order takes linear time. If `m2` lists
+a key twice, its first entry is merged and the later ones are shadowed or dropped.
 -/
 def Scope.merge (cond : LExpr T.mono) (m1 m2 : Scope T) : Scope T :=
   match m1 with
   | [] => m2.map (fun (i, (ty, e)) => (i, (ty, mkIte cond (.fvar (default : T.Metadata) i ty) e)))
   | (k, (ty1, e1)) :: rest =>
-    match m2.find? k with
+    let (found, m2') := match m2 with
+      | (k2, v2) :: rest2 =>
+        if k2 = k then (some v2, rest2)
+        else match m2.find? k with
+          | none => (none, m2)
+          | some v => (some v, m2.erase k)
+      | [] => (none, [])
+    match found with
     | none =>
       (k, (ty1, mkIte cond e1 (.fvar (default : T.Metadata) k ty1))) ::
       Scope.merge cond rest m2
@@ -72,7 +82,7 @@ def Scope.merge (cond : LExpr T.mono) (m1 m2 : Scope T) : Scope T :=
                   {Std.format m1}\n{Std.format m2}"
       else
         (k, (ty1, mkIte cond e1 e2)) ::
-      Scope.merge cond rest (m2.erase k)
+      Scope.merge cond rest m2'
   where mkIte (cond tru fals : LExpr T.mono) : LExpr T.mono :=
     if tru == fals then tru
     else (LExpr.ite (default : T.Metadata) cond tru fals)

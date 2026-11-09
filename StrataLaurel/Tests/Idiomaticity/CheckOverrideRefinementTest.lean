@@ -122,7 +122,7 @@ procedure Child$m$Parent$refines$post(self: Child, a: int)
   returns (r: int)
   requires a >= 0
   opaque
-  ensures r >= 0( summary "override postcondition no weaker than 'r >= 0' from 'Parent.m'")
+  ensures r >= 0 summary "override postcondition no weaker than 'r >= 0' from 'Parent.m'"
 {
   r := Child$m$Parent$childspec(self, a)
 };
@@ -173,7 +173,7 @@ procedure Child$m$Parent$childspec(self: Child)
 procedure Child$m$Parent$refines$post(self: Child)
   returns (r: int)
   opaque
-  ensures r >= 0( summary "override postcondition no weaker than 'r >= 0' from 'Parent.m'")
+  ensures r >= 0 summary "override postcondition no weaker than 'r >= 0' from 'Parent.m'"
 {
   r := Child$m$Parent$childspec(self)
 };
@@ -301,8 +301,8 @@ procedure Child$m$Parent$childspec(self: Child)
 procedure Child$m$Parent$refines$post(self: Child)
   returns (r: int)
   opaque
-  ensures r >= 0( summary "override postcondition no weaker than 'r >= 0' from 'Parent.m'")
-  ensures r <= 100( summary "override postcondition no weaker than 'r <= 100' from 'Parent.m'")
+  ensures r >= 0 summary "override postcondition no weaker than 'r >= 0' from 'Parent.m'"
+  ensures r <= 100 summary "override postcondition no weaker than 'r <= 100' from 'Parent.m'"
 {
   r := Child$m$Parent$childspec(self)
 };

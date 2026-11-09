@@ -55,7 +55,7 @@ theorem CoreGenState.WFMono' :
   CoreGenState.WF s' := by
   intros Hwf Hgen
   simp [gen] at Hgen
-  simp [CoreGenState.WF, ← Hgen]
+  simp only [WF, ← Hgen, List.unzip_snd, List.map_map, List.nodup_cons]
   generalize h1 : (StringGenState.gen pf.name s.cs).fst = st
   generalize h2 : (StringGenState.gen pf.name s.cs).snd = stg
   have Hstrgen : StringGenState.gen pf.name s.cs = (st, stg) := by simp [← h1, ← h2]
@@ -70,7 +70,7 @@ theorem CoreGenState.WFMono' :
       have hst_in_snd : st ∈ s.cs.generated.unzip.snd := by
         simp only [List.mem_map] at hmem
         obtain ⟨s', hs', heq⟩ := hmem
-        have : s' = st := by simp [Lambda.Identifier.mk.injEq] at heq; exact heq
+        have : s' = st := by simp only [Identifier.mk.injEq, and_true] at heq; exact heq
         rw [← this]; exact hs'
       have hnodup_new := Hwf'.right.right.left
       simp [← Hstrgen.right, Hstrgen.left] at hnodup_new

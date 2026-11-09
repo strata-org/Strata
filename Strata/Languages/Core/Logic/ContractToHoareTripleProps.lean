@@ -24,9 +24,9 @@ procedure's contract decidable. The definitions being established live in
   `Procedure.contractTriple_nil_of_ensuresAmongRequires` — an empty body meets a
   contract whose non-`free` `ensures` clauses are all among its `requires`.
 - `Procedure.contractTriple_singleton_cmd` — a one-command body, reduced to a single
-  obligation about that command's `EvalCommand` step.
-- `Procedure.checkAsPredicate_of_exprEq` — transfers a model's semantic reading of a
-  captured check to another clause with the same expression.
+  obligation about that command's `EvalCommandE` step.
+- `Procedure.checkAsPredicate_of_exprEq` — transfers the reading of a captured check to
+  another clause with the same expression.
 - `assertionsValid_defaultAssertEvents` — turns non-`free` contract clauses that hold in
   every world into a valid assertion-event trace.
 -/
@@ -80,14 +80,15 @@ theorem assertionsValid_defaultAssertEvents
         exact ih acc (fun label check hmem => hl label check (List.mem_cons_of_mem _ hmem))
   exact key checks.toList [] h
 
-/-- Transfer a model's semantic reading of a captured check to another clause with the
-    same expression, given `ρ.factory = Core.Factory`. -/
-theorem Procedure.checkAsPredicate_of_exprEq {model : Lambda.Interp Core.Factory}
+/-- Transfer the reading of a captured check to another clause with the same
+    expression, given that the environment's runtime factory is over `factory`. -/
+theorem Procedure.checkAsPredicate_of_exprEq
+    {factory : Lambda.Factory CoreLParams}
     {ρ : Imperative.Env Expression} {label' : CoreLabel} {check' : Procedure.Check}
     (label : CoreLabel) (check : Procedure.Check)
-    (hfac : ρ.factory = Core.Factory) (hexpr : check'.expr = check.expr)
-    (h : Procedure.checkAsPredicate model ρ label' check') :
-    Procedure.checkAsPredicate model ρ label check := by
+    (hfac : ρ.factory.factory = factory) (hexpr : check'.expr = check.expr)
+    (h : Procedure.checkAsPredicate factory ρ label' check') :
+    Procedure.checkAsPredicate factory ρ label check := by
   intro world
   rcases h world with ⟨hf, hd⟩ | ⟨hne, _⟩
   · exact Or.inl ⟨hf, hexpr ▸ hd⟩
@@ -102,15 +103,16 @@ theorem Procedure.contractTriple_of (p : Core.Program) (params : InitEnvWFParams
     (hproc : p.findProcByString? procName = some proc)
     (hbody : proc.body = .structured bss)
     (hchecksTyped : Procedure.contractChecksTyped proc)
-    (h : ∀ model : Lambda.Interp Core.Factory,
-      TripleWithModel p.findProcByString? model params
-        (Procedure.preAsPredicate model proc)
-        [Imperative.Stmt.block "" bss #[]] (Procedure.contractPost model proc)) :
+    (h : Triple p.findProcByString? params
+        (Procedure.preAsPredicate (p.factoryBeforeProcedure procName) proc)
+        [Imperative.Stmt.block "" bss #[]]
+        (Procedure.contractPost (p.factoryBeforeProcedure procName) proc)
+        (factory := p.factoryBeforeProcedure procName)) :
     Procedure.contractTriple p params procName :=
-  ⟨proc, hproc, hchecksTyped, fun model => by
+  ⟨proc, hproc, hchecksTyped, by
     rw [hbody]
     exact Strata.Logic.Hoare.consequence (EventLang.coreBlock p.findProcByString?) params
-      (h model) (fun _ hc => hc.1) (fun _ hpost => hpost)⟩
+      h (fun _ hc => hc.1) (fun _ hpost => hpost)⟩
 
 /-- Build a `contractTriple` whose body proof may assume the concrete factory and
     old-inout relation but does not need runtime input-value typing. The separate
@@ -121,16 +123,18 @@ theorem Procedure.contractTriple_of_core (p : Core.Program) (params : InitEnvWFP
     (hproc : p.findProcByString? procName = some proc)
     (hbody : proc.body = .structured bss)
     (hchecksTyped : Procedure.contractChecksTyped proc)
-    (h : ∀ model : Lambda.Interp Core.Factory,
-      TripleWithModel p.findProcByString? model params
-        (fun ρ => Procedure.preAsPredicate model proc ρ ∧
-          ρ.factory = Core.Factory ∧ Procedure.oldInoutAsPredicate proc ρ)
-        [Imperative.Stmt.block "" bss #[]] (Procedure.contractPost model proc)) :
+    (h : Triple p.findProcByString? params
+        (fun ρ => Procedure.preAsPredicate (p.factoryBeforeProcedure procName) proc ρ ∧
+          ρ.factory.factory = p.factoryBeforeProcedure procName ∧
+          Procedure.oldInoutAsPredicate proc ρ)
+        [Imperative.Stmt.block "" bss #[]]
+        (Procedure.contractPost (p.factoryBeforeProcedure procName) proc)
+        (factory := p.factoryBeforeProcedure procName)) :
     Procedure.contractTriple p params procName :=
-  ⟨proc, hproc, hchecksTyped, fun model => by
+  ⟨proc, hproc, hchecksTyped, by
     rw [hbody]
     exact Strata.Logic.Hoare.consequence (EventLang.coreBlock p.findProcByString?) params
-      (h model) (fun _ hc => ⟨hc.1, hc.2.1, hc.2.2.1⟩) (fun _ hpost => hpost)⟩
+      h (fun _ hc => ⟨hc.1, hc.2.1, hc.2.2.1⟩) (fun _ hpost => hpost)⟩
 
 /-- Build a `contractTriple` while retaining every entry fact, including values
     matching the types of the procedure's input and inout formals. -/
@@ -140,12 +144,13 @@ theorem Procedure.contractTriple_of_core_typed (p : Core.Program)
     (hproc : p.findProcByString? procName = some proc)
     (hbody : proc.body = .structured bss)
     (hchecksTyped : Procedure.contractChecksTyped proc)
-    (h : ∀ model : Lambda.Interp Core.Factory,
-      TripleWithModel p.findProcByString? model params
-        (Procedure.contractPre model proc)
-        [Imperative.Stmt.block "" bss #[]] (Procedure.contractPost model proc)) :
+    (h : Triple p.findProcByString? params
+        (Procedure.contractPre (p.factoryBeforeProcedure procName) proc)
+        [Imperative.Stmt.block "" bss #[]]
+        (Procedure.contractPost (p.factoryBeforeProcedure procName) proc)
+        (factory := p.factoryBeforeProcedure procName)) :
     Procedure.contractTriple p params procName :=
-  ⟨proc, hproc, hchecksTyped, fun model => by rw [hbody]; exact h model⟩
+  ⟨proc, hproc, hchecksTyped, by rw [hbody]; exact h⟩
 
 /-- A contract whose every non-`free` `ensures` is literally one of the
     `requires` is met by an empty body: nothing runs, so the precondition still
@@ -162,10 +167,11 @@ theorem Procedure.contractTriple_nil (p : Core.Program) (params : InitEnvWFParam
         (label', check') ∈ proc.spec.preconditions.toList ∧ check'.expr = check.expr) :
     Procedure.contractTriple p params procName := by
   refine Procedure.contractTriple_of_core_typed p params procName proc [] hproc hbody hchecksTyped
-    (fun model => ?_)
+    ?_
   refine Strata.Logic.Hoare.consequence (EventLang.coreBlock p.findProcByString?) params
-    (Core.Logic.Hoare.skip p.findProcByString? params "" #[]
-      (Procedure.contractPre model proc) model)
+    (Core.Logic.Hoare.skip (factory := p.factoryBeforeProcedure procName)
+      p.findProcByString? params "" #[]
+      (Procedure.contractPre (p.factoryBeforeProcedure procName) proc))
     (fun _ hc => hc)
     (fun ρ hc label check hmem hattr => ?_)
   obtain ⟨label', check', hmem', hexpr⟩ := himp label check hmem hattr
@@ -191,21 +197,20 @@ theorem Procedure.contractTriple_nil_of_ensuresAmongRequires
   · exact ⟨lc'.1, lc'.2, hmem', hexpr⟩
 
 
-/-- A one-command body wrapped in its procedure block, in one fixed model.  Mirrors the
-    composition the structured `block`/`cmd` rules perform, but keeps the model fixed so
-    the postcondition may be model-indexed. -/
-private theorem tripleWithModel_block_singleton_cmd
-    (π : String → Option Procedure) (model : Lambda.Interp Core.Factory)
+/-- A one-command body wrapped in its procedure block.  Mirrors the composition the
+    structured `block`/`cmd` rules perform. -/
+private theorem triple_block_singleton_cmd
+    (π : String → Option Procedure) (factory : Lambda.Factory CoreLParams)
     (params : InitEnvWFParams) (c : Command)
     (Pre Post : Imperative.Env Expression → Prop)
     (hcmd : ∀ ρ₀ σ' emitted, Pre ρ₀ → InitEnvWF params (Stmt.cmd c) ρ₀ →
       EvalCommandE π ρ₀.factory ρ₀.store c σ' emitted →
-      Trace.AssertionsValid Expression (DenoteBasedInterp model) emitted ∧
-        (Trace.Reachable Expression (DenoteBasedInterp model) emitted →
+      Trace.AssertionsValid Expression (DenoteBasedInterp factory) emitted ∧
+        (Trace.Reachable Expression (DenoteBasedInterp factory) emitted →
           Post { ρ₀ with store := σ' }))
     (hpost_proj : Imperative.Logic.Hoare.PostWF [Imperative.Stmt.cmd c] Post) :
-    TripleWithModel π model params Pre
-      [Imperative.Stmt.block "" [Stmt.cmd c] #[]] Post :=
+    Triple π params Pre [Imperative.Stmt.block "" [Stmt.cmd c] #[]] Post
+      (factory := factory) :=
   Imperative.Logic.Hoare.singleton (EvalCommandE π)
     InitEnvWF BlockInitEnvWF params params
     (fun _ hb => blockInitEnvWF_singleton hb)
@@ -229,25 +234,24 @@ theorem Procedure.contractTriple_singleton_cmd (p : Core.Program)
     (hproc : p.findProcByString? procName = some proc) (c : Command)
     (hbody : proc.body = .structured [Stmt.cmd c])
     (hchecksTyped : Procedure.contractChecksTyped proc)
-    (hsem : ∀ (model : Lambda.Interp Core.Factory) ρ₀ σ' emitted,
-      Procedure.contractPre model proc ρ₀ →
+    (hsem : ∀ ρ₀ σ' emitted,
+      Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ₀ →
       InitEnvWF params (Stmt.cmd c) ρ₀ →
       EvalCommandE p.findProcByString? ρ₀.factory ρ₀.store c σ' emitted →
-      Trace.AssertionsValid Expression (DenoteBasedInterp model) emitted ∧
-        (Trace.Reachable Expression (DenoteBasedInterp model) emitted →
-          Procedure.contractPost model proc { ρ₀ with store := σ' }))
-    (hpost_proj : ∀ model : Lambda.Interp Core.Factory,
-      Imperative.Logic.Hoare.PostWF [Imperative.Stmt.cmd c]
-        (Procedure.contractPost model proc)) :
+      Trace.AssertionsValid Expression
+          (DenoteBasedInterp (p.factoryBeforeProcedure procName)) emitted ∧
+        (Trace.Reachable Expression
+            (DenoteBasedInterp (p.factoryBeforeProcedure procName)) emitted →
+          Procedure.contractPost (p.factoryBeforeProcedure procName) proc
+            { ρ₀ with store := σ' }))
+    (hpost_proj : Imperative.Logic.Hoare.PostWF [Imperative.Stmt.cmd c]
+        (Procedure.contractPost (p.factoryBeforeProcedure procName) proc)) :
     Procedure.contractTriple p params procName :=
   Procedure.contractTriple_of_core_typed p params procName proc _ hproc hbody hchecksTyped
-    (fun model =>
-      tripleWithModel_block_singleton_cmd p.findProcByString? model params c
-        (Procedure.contractPre model proc)
-        (Procedure.contractPost model proc)
-        (fun ρ₀ σ' emitted hpre hwf hstep =>
-          hsem model ρ₀ σ' emitted hpre hwf hstep)
-        (hpost_proj model))
+    (triple_block_singleton_cmd p.findProcByString? _ params c
+      (Procedure.contractPre (p.factoryBeforeProcedure procName) proc)
+      (Procedure.contractPost (p.factoryBeforeProcedure procName) proc)
+      hsem hpost_proj)
 
 
 end Hoare
@@ -255,4 +259,3 @@ end Hoare
 end Core.Logic
 
 end -- public section
-

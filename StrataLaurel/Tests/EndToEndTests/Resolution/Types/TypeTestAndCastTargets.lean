@@ -12,7 +12,8 @@ open Strata
 /-! # What `is` and `as` accept as a target
 
 Both lower by keying off a runtime type tag, and only composites carry one. So the target
-has to be a composite, and — when it is a generic composite — the *right* instantiation.
+has to be a composite, and one the tested value may be — for a generic composite, the
+*right* instantiation.
 Two separate rules, enforced at resolution, each pinned here with the diagnostic it emits.
 
 Getting either wrong is not a cosmetic problem. A datatype target reaches lowering and dies
@@ -97,7 +98,7 @@ procedure isTVarTarget<T>(x: T) returns (r: bool)
 };
 #end
 
-/-! ## Rule 2: for a generic composite, the INSTANTIATION must be related
+/-! ## Rule 2: the target must be RELATED to the value's type
 
 `Box<int>` and `Box<bool>` are distinct monomorphs with distinct tags, so neither is a
 subtype of the other and the test can never hold. Accepting it would produce a test that is
@@ -136,5 +137,75 @@ procedure isWrongNestedInstantiation()
   var b: Box<Pair<int, bool>> := new Box<Pair<int, bool>>;
   assert b is Box<Pair<bool, int>>
 //       ^ error: cannot test unrelated type 'Box<Pair<int, bool>>' against 'Box<Pair<bool, int>>'
+};
+#end
+
+/-! Under multiple inheritance, a type is also related to one that some non-generic composite
+extends together with it (`crossCast` in `Execution/Types/Composites/Inheritance.lean`). A
+sibling that none extends together with it is not, and neither is one that only a generic
+composite, or a composite extending another instantiation, does. Nor is an instantiation at
+a type variable, which some instantiation of the variable leaves unrelated. -/
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite Animal {}
+composite Dog extends Animal {}
+composite Cat extends Animal {}
+
+procedure siblingCast()
+  opaque
+{
+  var d: Dog := new Dog;
+  var c: Cat := d as Cat
+//              ^ error: cannot cast unrelated type 'Dog' to 'Cat'
+};
+#end
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite A {}
+composite B {}
+composite D<T> extends A, B { var v: T }
+composite Box<T> { var val: T }
+composite DBox<T> extends Box<T>, B {}
+composite IntBoxB extends Box<int>, B {}
+
+procedure onlyGenericDescendant()
+  opaque
+{
+  var a: A := new A;
+  assert !(a is B)
+//         ^ error: cannot test unrelated type 'A' against 'B'
+};
+
+// In a `catch` guard too, where `c` may be a `DBox<bool>`, so the test must not be folded to `false`.
+procedure genericDescendantInGuard()
+  opaque
+{
+  var b: Box<bool> := new Box<bool>;
+  try {
+    throw b
+  } catch c when c is B {
+//               ^ error: cannot test unrelated type 'Box<bool>' against 'B'
+    assert true
+  }
+};
+
+procedure otherInstantiationDescendant()
+  opaque
+{
+  var x: Box<bool> := new Box<bool>;
+  assert !(x is B)
+//         ^ error: cannot test unrelated type 'Box<bool>' against 'B'
+};
+
+// `x` is a `Box<bool>` when `T` is `bool`, and no non-generic composite extends that and `B`.
+procedure typeVariableInstantiationDescendant<T>(x: Box<T>) returns (r: bool)
+  opaque
+{
+  r := x is B
+//     ^ error: cannot test unrelated type 'Box<T>' against 'B'
 };
 #end

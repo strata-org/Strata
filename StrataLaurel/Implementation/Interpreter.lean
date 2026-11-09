@@ -281,6 +281,8 @@ structure ProgramIndex where
   testers : Std.HashMap String String := {}
   /-- Destructor name (`PyKey..ki`, and the `!` variant) → (constructor, index). -/
   destructors : Std.HashMap String (String × Nat × HighType) := {}
+  heapFields : Std.HashMap String (String × HighType) := {}
+  constants : Std.HashMap String StmtExprMd := {}
   deriving Inhabited
 
 structure EvalState where
@@ -374,13 +376,16 @@ def DisplayEvalState.format (s : DisplayEvalState) : String :=
     `return_` is thrown at a `return` statement and caught at the procedure-call
     boundary; the others are described on their constructors. -/
 inductive Control where
-  /-- A `return`. Carries the values of the procedure's outputs, which for a
-      multi-output procedure are read out of the frame rather than supplied by the
-      `return` itself. Caught at the call boundary. -/
-  | return_ (value : Option Value)
+  /-- A `return`, carrying the values it supplies: none for a bare `return`, whose
+      outputs are read out of the frame, one per output otherwise. Caught at the
+      call boundary. -/
+  | return_ (values : List Value)
   /-- `exit L` — leave the enclosing block labelled `L`. Caught by that block,
       which is how Laurel spells `break` and `continue`. -/
   | exit_ (label : String)
+  /-- `goto L` — go back to the start of the enclosing block labelled `L`.
+      Caught by that block, which re-runs itself. -/
+  | goto_ (label : String)
   /-- `throw v` — the exceptional channel. Caught by an enclosing `catch` whose
       predicate holds, and otherwise propagates through the call boundary, unlike
       `return_`. -/
@@ -763,7 +768,7 @@ private def liftSet (name : String) (value : StmtExprMd) : StmtExprMd :=
 private def liftBlock (stmts : List StmtExprMd) (src : FileRange) : StmtExprMd :=
   match stmts with
   | [s] => s
-  | _ => ⟨.Block stmts none, src⟩
+  | _ => ⟨.Block stmts none [] none, src⟩
 
 mutual
 
@@ -787,7 +792,7 @@ private partial def liftExpr (e : StmtExprMd) : LiftM (List StmtExprMd × StmtEx
         let (pb, b') ← liftExpr b
         let setB := liftBlock (pb ++ [liftSet t b']) src
         let tv := liftVar t src
-        let skip : StmtExprMd := ⟨.Block [] none, src⟩
+        let skip : StmtExprMd := ⟨.Block [] none [] none, src⟩
         let branch : StmtExprMd := match Operation.ofProcName? callee.text with
           | some .OrElse => ⟨.IfThenElse tv skip (some setB), src⟩
           | some .Implies =>
@@ -842,7 +847,7 @@ private partial def liftExpr (e : StmtExprMd) : LiftM (List StmtExprMd × StmtEx
         | none => pure none
       let decl : StmtExprMd := ⟨.Var (.Declare { name := { text := t }, type := none }), src⟩
       pure (pc ++ [decl, ⟨.IfThenElse c' thenB elseB, src⟩], liftVar t src)
-  | .Block stmts none =>
+  | .Block stmts none _ _ =>
     match stmts.reverse with
     | [] => pure ([], e)
     | last :: earlier => do
@@ -899,9 +904,9 @@ private partial def liftArgs (args : List StmtExprMd) : LiftM (List StmtExprMd �
 private partial def liftStmt (s : StmtExprMd) : LiftM (List StmtExprMd) := do
   let src := s.source
   match s.val with
-  | .Block stmts label => do
+  | .Block stmts label invs dec => do
       let stmts' ← stmts.flatMapM liftStmt
-      pure [⟨.Block stmts' label, src⟩]
+      pure [⟨.Block stmts' label invs dec, src⟩]
   | .Assign _ ⟨.Yield, _⟩ | .Yield | .Var (.Declare _) => pure [s]
   | .IfThenElse c thn els => do
       let (pc, c') ← liftExpr c
@@ -920,12 +925,12 @@ private partial def liftStmt (s : StmtExprMd) : LiftM (List StmtExprMd) := do
       -- The invariants are checked where the `while` case checks them: after the
       -- condition for a `while`, before each run of the body for a `do`/`while`.
       let invChecks := invs.map fun inv => (⟨.Assert inv none, inv.source⟩ : StmtExprMd)
-      let test := pc ++ [⟨.IfThenElse notC ⟨.Exit label, src⟩ none, src⟩]
+      let test := pc ++ [⟨.IfThenElse notC ⟨.Goto label .blockEnd, src⟩ none, src⟩]
       let loopBody := if postTest then invChecks ++ body' :: test
-        else pc ++ invChecks ++ [⟨.IfThenElse notC ⟨.Exit label, src⟩ none, src⟩, body']
+        else pc ++ invChecks ++ [⟨.IfThenElse notC ⟨.Goto label .blockEnd, src⟩ none, src⟩, body']
       let loop : StmtExprMd :=
-        ⟨.While ⟨.LiteralBool true, c.source⟩ [] none ⟨.Block loopBody none, body.source⟩ false, src⟩
-      pure [⟨.Block [loop] (some label), src⟩]
+        ⟨.While ⟨.LiteralBool true, c.source⟩ [] none ⟨.Block loopBody none [] none, body.source⟩ false, src⟩
+      pure [⟨.Block [loop] (some label) [] none, src⟩]
   | .Try body catches fin => do
       let body' ← liftStmtBlock body
       let catches' ← catches.mapM fun c => do
@@ -933,9 +938,9 @@ private partial def liftStmt (s : StmtExprMd) : LiftM (List StmtExprMd) := do
         pure { c with body := cb }
       let fin' ← fin.mapM liftStmtBlock
       pure [⟨.Try body' catches' fin', src⟩]
-  | .Return (some v) => do
-      let (pre, v') ← liftExpr v
-      pure (pre ++ [⟨.Return (some v'), src⟩])
+  | .Return values => do
+      let lifted ← values.mapM liftExpr
+      pure (lifted.flatMap (·.1) ++ [⟨.Return (lifted.map (·.2)), src⟩])
   | .Throw v => do
       let (pre, v') ← liftExpr v
       pure (pre ++ [⟨.Throw v', src⟩])
@@ -1027,8 +1032,14 @@ def buildIndex (p : LaurelProgram) : ProgramIndex :=
            ts.insert (dt.testerName ctor) ctor.name.text,
            ds)
       | _ => (cs, ts, ds)
+  let heapFields := p.heapFields.foldl (init := {}) fun acc f =>
+    acc.insert f.name.text (f.location.text, f.type.val)
+  let constants := p.constants.foldl (init := {}) fun acc c =>
+    match c.initializer with
+    | some init => acc.insert c.name.text init
+    | none => acc
   { procs, procsById, methods, overloaded, procsNamed, compositeFields, typeAliases, witnesses,
-    ancestors, ctors, testers, destructors }
+    ancestors, ctors, testers, destructors, heapFields, constants }
 
 /-- The value a variable of type `t` holds before it is first assigned. Laurel gives
     it an arbitrary value, and the interpreter runs one execution, so it picks a
@@ -1214,7 +1225,7 @@ partial def withBlockScope (stmts : List StmtExprMd) (act : EvalM α) : EvalM α
     finishes, as it would be inside braces. -/
 partial def evalScopedStmt (cfg : ExternalBackend) (s : StmtExprMd) : EvalM Unit :=
   match s.val with
-  | .Block _ _ => evalStmt cfg s
+  | .Block .. => evalStmt cfg s
   | _ => withBlockScope [s] (evalStmt cfg s)
 
 /-- `evalExpr` on a node, recording a call's own source range in
@@ -1266,7 +1277,7 @@ partial def evalExpr (cfg : ExternalBackend) : StmtExpr → EvalM Value
   | .IfThenElse cond thenB elseB => do
       -- An arm is a scope of its own, as it is in statement position.
       let arm (b : StmtExprMd) : EvalM Value := match b.val with
-        | .Block _ _ => evalExprMd cfg b
+        | .Block .. => evalExprMd cfg b
         | _ => withBlockScope [b] (evalExprMd cfg b)
       let c ← evalExprMd cfg cond
       if ← liftM (isTrue cfg c) then arm thenB
@@ -1275,7 +1286,7 @@ partial def evalExpr (cfg : ExternalBackend) : StmtExpr → EvalM Value
         | none => pure default
   -- A block in expression position evaluates to its last statement's value, so a
   -- `{ lemma(x); e }` yields `e`.
-  | .Block stmts none => withBlockScope stmts (evalStmtList cfg stmts (asExpr := true))
+  | .Block stmts none _ _ => withBlockScope stmts (evalStmtList cfg stmts (asExpr := true))
   | .Var (Variable.Field target field) => do
       let tv ← evalExprMd cfg target
       readField tv field.text
@@ -1410,6 +1421,8 @@ partial def evalExpr (cfg : ExternalBackend) : StmtExpr → EvalM Value
             match lookupCallee st.index callee with
             | some proc => checkPreconditions cfg st.stmtSite proc argVals
             | none => missingPrelude name argVals
+          if name == allocateProcName && argVals.isEmpty then
+            return ← allocateObject
           match callBuiltin name argVals absent with
           | some act => liftM act
           | none =>
@@ -1532,6 +1545,11 @@ partial def missingPrelude (name : String) (args : List Value) : EvalM Unit := d
   if partialOpFails name args then
     evalError s!"'{name}' applied outside its precondition, and the program has no prelude declaration to report it"
 
+partial def allocateObject : EvalM Value := do
+  let addr := (← get).heap.size
+  modify fun s => { s with heap := s.heap.push { typeName := "", fields := {} } }
+  return .int ⟨Int.ofNat addr⟩
+
 /-- Read field `name` off a composite reference. -/
 partial def readField (target : Value) (name : String) : EvalM Value := do
   match target with
@@ -1543,6 +1561,18 @@ partial def readField (target : Value) (name : String) : EvalM Value := do
     match obj.fields[name]? with
     | some v => pure v
     | none => evalError s!"no field '{name}' on {obj.typeName}"
+  | .int ⟨i⟩ => do
+    let st ← get
+    let some obj := (if i < 0 then none else st.heap[i.toNat]?)
+      | if st.inOld then evalError "`old(...)` reads an object allocated after the procedure was entered"
+        else liftM (m := IO) (throw (IO.userError s!"dangling reference #{i}"))
+    match st.index.heapFields[name]? with
+    | some (location, t) => match obj.fields[location]? with
+      | some v => pure v
+      | none => pure (defaultValue st.index t)
+    | none => match obj.fields[name]? with
+      | some v => pure v
+      | none => evalError s!"no heap field '{name}'"
   | v => evalError s!"field read '{name}' on a non-composite {reprVariant v}"
 
 /-- Write field `name` on a composite reference, in place. Every alias of the
@@ -1554,6 +1584,12 @@ partial def writeField (target : Value) (name : String) (v : Value) : EvalM Unit
     let some obj := st.heap[a]?
       | liftM (m := IO) (throw (IO.userError s!"dangling reference #{a}"))
     modify fun s => { s with heap := s.heap.set! a { obj with fields := obj.fields.insert name v } }
+  | .int ⟨i⟩ => do
+    let st ← get
+    let some obj := (if i < 0 then none else st.heap[i.toNat]?)
+      | liftM (m := IO) (throw (IO.userError s!"dangling reference #{i}"))
+    let location := (st.index.heapFields[name]?.map (·.1)).getD name
+    modify fun s => { s with heap := s.heap.set! i.toNat { obj with fields := obj.fields.insert location v } }
   | v' => liftM (m := IO) (throw (IO.userError
       s!"field write '{name}' on a non-composite {reprVariant v'}"))
 
@@ -1611,7 +1647,7 @@ partial def resolveMethod (target : Value) (name : String) : EvalM Procedure := 
 /-- Evaluate a Laurel statement for its side effects on the eval state. May
     throw `Control.return_` to unwind to the nearest `invokeProc`. -/
 partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → EvalM Unit
-  | ⟨.Block stmts none, _⟩ => do
+  | ⟨.Block stmts none _ _, _⟩ => do
       -- The step budget is charged per statement, which is enough to stop a
       -- divergent loop without paying for a counter on every expression node.
       -- It is also what makes a non-terminating generator come back as
@@ -1620,19 +1656,44 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
       if st.fuel == 0 then throw .outOfFuel
       modify fun s => { s with fuel := s.fuel - 1 }
       let _ ← withBlockScope stmts (evalStmtList cfg stmts (asExpr := false))
-  | ⟨.Block stmts (some label), _⟩ => do
-      -- A labelled block is `exit label`'s target: that signal unwinds to here
-      -- and no further, which is how Laurel spells `break`/`continue`.
+  | ⟨.Block stmts (some label) invariants _, _⟩ => do
+      -- A labelled block is the target of `exit label` and `goto label`: those
+      -- signals unwind to here and no further, which is how Laurel spells
+      -- `break`/`continue`. An `exit` leaves the block; a `goto` runs it again
+      -- from the start, re-checking its invariants as a loop head does. The
+      -- termination measure is a proof obligation only and is not run.
       let base := (← get).cursor
-      tryCatch (do let _ ← withBlockScope stmts (evalStmtList cfg stmts (asExpr := false))) fun
-        | .exit_ l =>
-            if l == label then
-              -- The exit skipped the walk's own position bookkeeping, so restore
-              -- this block's position before execution continues after it.
-              modify fun s => { s with cursor := base, seek := none }
-            else throw (.exit_ l)
-        | other => throw other
-  | ⟨.Exit target, _⟩ => throw (.exit_ target)
+      let rec blockLoop : Nat → EvalM Unit
+        | 0 => throw .outOfFuel
+        | n + 1 => do
+          for inv in invariants do
+            evalStmt cfg ⟨.Assert inv none, inv.source⟩
+          let again ← tryCatch (do
+              let _ ← withBlockScope stmts (evalStmtList cfg stmts (asExpr := false))
+              pure false) fun
+            | .exit_ l =>
+                if l == label then do
+                  -- The jump skipped the walk's own position bookkeeping, so
+                  -- restore this block's position before execution continues.
+                  modify fun s => { s with cursor := base, seek := none }
+                  pure false
+                else throw (.exit_ l)
+            | .goto_ l =>
+                if l == label then do
+                  modify fun s => { s with cursor := base, seek := none }
+                  pure true
+                else throw (.goto_ l)
+            | other => throw other
+          -- Only a jump back to the start is charged to the shared step budget,
+          -- so a divergent goto-loop stops on it like a `while` does, while a
+          -- block that is merely a `break`/`continue` target costs nothing extra.
+          if again then do
+            if (← get).fuel == 0 then throw .outOfFuel
+            modify fun s => { s with fuel := s.fuel - 1 }
+            blockLoop n
+      blockLoop ((← get).fuel + 1)
+  | ⟨.Goto target .blockEnd, _⟩ => throw (.exit_ target)
+  | ⟨.Goto target .blockStart, _⟩ => throw (.goto_ target)
   | ⟨.Assign targets value, _⟩ => do
       match targets with
       | [t] => do
@@ -1860,11 +1921,11 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
         let summaryText := summary.getD "assertion"
         let failure := Strata.Message.withRange stmtSource s!"{summaryText} does not hold"
         modify fun s => { s with assertFailures := s.assertFailures.push failure }
-  | ⟨.Return value?, _⟩ => do
-      let v? ← match value? with
-               | some e => some <$> evalExprMd cfg e
-               | none   => pure none
-      throw (.return_ v?)
+  | ⟨.Return values, _⟩ => do
+      -- Every value is evaluated before any output is written, so `return q, p` on
+      -- outputs `(p, q)` swaps them rather than reading an overwritten `p`.
+      let vs ← values.mapM (evalExprMd cfg)
+      throw (.return_ vs)
   | stmt@⟨.StaticCall .., _⟩ => do
       -- Bare `foo(args)` as a statement — discard the return value.
       let _ ← evalExprMd cfg stmt
@@ -2030,7 +2091,7 @@ partial def resumeCoroutine (cfg : ExternalBackend) (target : Value) (sent : Val
         -- client is expected to have checked `has_next(co)`.
         let finalFrame := (← get).stack
         let completed := match signal with
-          | some (.return_ (some v)) => v
+          | some (.return_ [v]) => v
           | _ => .unset
         modify fun s =>
           let done := { (s.coros[addr]?.getD co) with
@@ -2086,9 +2147,14 @@ partial def invokeCallee (cfg : ExternalBackend) (site : FileRange) (callee : Id
   let index := (← get).index
   if callee.uniqueId.isNone && index.overloaded.contains callee.text then
     evalError s!"call to overloaded '{callee.text}' was not resolved, so its overload is unknown"
+  if callee.text == allocateProcName && argVals.isEmpty then
+    return #[← allocateObject]
   match lookupCallee index callee with
   | some proc => invokeProc cfg site proc argVals
-  | none => evalError s!"unknown procedure '{callee.text}'"
+  | none =>
+    match argVals, index.constants[callee.text]? with
+    | [], some init => do let v ← evalExprMd cfg init; pure #[v]
+    | _, _ => evalError s!"unknown procedure '{callee.text}'"
 
 /-- Check `proc`'s call-site preconditions against `argVals`, recording each one
     that is false at `site` and carrying on, as a failing `assert` does. A free
@@ -2230,7 +2296,20 @@ partial def invokeProc (cfg : ExternalBackend) (site : FileRange) (proc : Proced
   let entry := if posts.isEmpty then (#[], {}) else (cur.heap, cur.globals)
   let returned : Option Value ←
     tryCatch (do evalStmt cfg body; pure none) fun
-      | .return_ v? => pure v?
+      | .return_ [] => pure none
+      | .return_ [v] => pure (some v)
+      | .return_ vs => do
+          -- A multi-value return writes each output, so the outputs are read back
+          -- out of the frame below exactly as when they are assigned by name.
+          if vs.length != proc.outputs.length then
+            restoreCaller
+            liftM (m := IO) (throw (IO.userError
+              s!"return supplies {vs.length} values but '{name}' has {proc.outputs.length} outputs"))
+          modify fun st =>
+            let stack := (proc.outputs.zip vs).foldl
+              (fun acc (o, v) => acc.insert o.name.text v) st.stack
+            { st with stack }
+          pure none
       | other => do
           -- Restore the caller's frame before the signal leaves, or an enclosing
           -- `catch` would run against the callee's locals.
@@ -2379,6 +2458,8 @@ def evalProgramWithOutcome (cfg : ExternalBackend) (opts : Options) (p : LaurelP
             | (.error (.refused r),    s') => pure (Outcome.refused r, s')
             | (.error (.exit_ l),      _)  =>
                 throw (IO.userError s!"`exit {l}` with no enclosing block labelled '{l}'")
+            | (.error (.goto_ l),      _)  =>
+                throw (IO.userError s!"`goto {l}` with no enclosing block labelled '{l}'")
             | (.error .suspended,      _)  =>
                 throw (IO.userError "`yield` with no coroutine to suspend")
         | none => pure (Outcome.completed, initState)

@@ -151,7 +151,7 @@ func sumTo(finalAssert l.AstNode[l.StmtExpr]) l.Procedure {
 				declareI,
 				loop,
 				finalAssert,
-				ex(l.StmtExprReturn{Value: l.Opt(ex(local("i")))}),
+				ex(l.StmtExprReturn{Values: []l.AstNode[l.StmtExpr]{ex(local("i"))}}),
 			},
 		}))},
 	}

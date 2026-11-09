@@ -49,9 +49,9 @@ int.gt(g@1, 10)
 Label: g_eq_15_internal
 Property: assert
 Assumptions:
-callElimAssume_g_lt_10_2: int.lt(g@5, 10)
+callElimAssume_g_lt_10_2: int.lt(g@3, 10)
 Obligation:
-g@5 == 15
+g@3 == 15
 
 ---
 info:
@@ -63,7 +63,7 @@ Obligation: g_eq_15_internal
 Property: assert
 Result: ❓ unknown
 Model:
-(g@5, 0)
+(g@3, 0)
 -/
 #guard_msgs in
 #eval Core.verify freeReqEnsPgm

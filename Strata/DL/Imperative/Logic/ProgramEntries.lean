@@ -28,13 +28,14 @@ open Imperative
 
 /-- The programs and entries of a family of event languages `EL i`: each entry
     of a program starts a run from a configuration of one of them. -/
-structure ProgramEntries {P : PureExpr} {EventT Idx : Type} (EL : Idx → EventLang P EventT) where
+structure ProgramEntries.{w} {P : PureExpr} {EventT : Type _} {Idx : Type}
+    (EL : Idx → EventLang P EventT) where
   Program : Type
-  Entry : Type
+  Entry : Type w
   entries : Program → Entry → Prop
   start : Program → Entry → (i : Idx) × (EL i).CfgT
 
-variable {P : PureExpr} {EventT Idx : Type} {EL : Idx → EventLang P EventT}
+variable {P : PureExpr} {EventT : Type _} {Idx : Type} {EL : Idx → EventLang P EventT}
 
 /-- Some run of at most `n` steps from entry `entry` of `p` raises `trace`. -/
 @[expose] def ProgramEntries.Raises (E : ProgramEntries EL) (p : E.Program) (entry : E.Entry)

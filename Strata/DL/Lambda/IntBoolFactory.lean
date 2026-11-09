@@ -142,7 +142,7 @@ def polyUneval (n : T.Identifier) (typeArgs : List String)
     (h_precond : ∀ p, p ∈ preconditions →
       (LExpr.freeVars p.expr).map (·.1.name) ⊆ inputs.map (·.1.name)
       := by first | decide | grind)
-    (h_ta_no_gen : ∀ ta, ta ∈ typeArgs → ¬ ("$__ty".toList.isPrefixOf ta.toList = true)
+    (h_ta_no_gen : ∀ ta, ta ∈ typeArgs → ¬ (genTyPrefix.toList.isPrefixOf ta.toList = true)
       := by first | decide | grind) : WFLFunc T :=
   ⟨{ name := n, typeArgs := typeArgs, inputs := inputs, output := output,
      axioms := axioms, preconditions := preconditions }, {
@@ -172,7 +172,7 @@ def unaryFuncUneval (n : T.Identifier) (inTy outTy : LMonoTy)
     (hOutTy : outTy.freeVars = [] := by decide) : WFLFunc T :=
   polyUneval n [] [("x", inTy)] outTy
     (h_inputs := by
-      intro ty hty; simp [ListMap.values] at hty
+      intro ty hty; simp only [ListMap.values, List.mem_cons, List.not_mem_nil, or_false] at hty
       subst hty; simp [hInTy])
 
 
@@ -184,7 +184,7 @@ def binaryFuncUneval (n : T.Identifier) (inTy1 inTy2 outTy : LMonoTy)
     (hOutTy : outTy.freeVars = [] := by decide) : WFLFunc T :=
   polyUneval n [] [("x", inTy1), ("y", inTy2)] outTy
     (h_inputs := by
-      intro ty hty; simp [ListMap.values] at hty
+      intro ty hty; simp only [ListMap.values, List.mem_cons, List.not_mem_nil, or_false] at hty
       rcases hty with rfl | rfl <;> simp [*])
 
 
@@ -197,7 +197,7 @@ def ternaryFuncUneval (n : T.Identifier) (inTy1 inTy2 outTy : LMonoTy)
     (hOutTy : outTy.freeVars = [] := by decide) : WFLFunc T :=
   polyUneval n [] [("x", inTy1), ("y", inTy2), ("z", inTy2)] outTy
     (h_inputs := by
-      intro ty hty; simp [ListMap.values] at hty
+      intro ty hty; simp only [ListMap.values, List.mem_cons, List.not_mem_nil, or_false, or_self] at hty
       rcases hty with rfl | rfl | rfl <;> simp [*])
 
 /-! ### Eval combinators (with concrete evaluation)
@@ -248,20 +248,20 @@ def unaryOp (n : T.Identifier)
     arg_nodup := by simp
     concreteEval_argmatch := by
       intro fn md args res hfn heval
-      simp at hfn; subst hfn
+      simp only [Option.some.injEq] at hfn; subst hfn
       match args with
       | [] | _ :: _ :: _ => simp at heval
       | [_] => rfl
     body_or_concreteEval := by simp
     typeArgs_nodup := by simp
     inputs_typevars_in_typeArgs := by
-      intro ity hity; simp [ListMap.values] at hity; subst hity; simp [hInTy]
+      intro ity hity; simp only [ListMap.values, List.mem_cons, List.not_mem_nil, or_false] at hity; subst hity; simp [hInTy]
     output_typevars_in_typeArgs := by simp [hOutTy]
     typeArgs_no_gen_prefix := by simp
     constr_no_eval := by simp
     concreteEval_freeVars := by
       intro ceval h md args res heval z hz
-      simp at h; subst h
+      simp only [Option.some.injEq] at h; subst h
       match args, heval with
       | [x], heval =>
         simp only [] at heval
@@ -272,14 +272,14 @@ def unaryOp (n : T.Identifier)
           rw [hOut.mkConst_closed] at hz; simp at hz
     concreteEval_eraseMetadata := by
       intro ceval h md1 md2 args1 args2 res1 hmap heval
-      simp at h; subst h
+      simp only [Option.some.injEq] at h; subst h
       match args1, heval with
       | [x1], heval =>
         have hlen : args2.length = 1 := by
           have := congrArg List.length hmap; simp at this; omega
         match args2, hlen with
         | [x2], _ =>
-        simp [List.map] at hmap
+        simp only [List.map, List.cons.injEq, and_true] at hmap
         have hceq := hIn.cevalTy_eraseMetadata T x1 x2 hmap
         simp only [] at heval ⊢
         match hc1 : cevalInTy x1 with
@@ -331,21 +331,21 @@ def binaryOp (n : T.Identifier)
     arg_nodup := by simp [binaryParam1Name, binaryParam2Name]
     concreteEval_argmatch := by
       intro fn md args res hfn heval
-      simp at hfn; subst hfn
+      simp only [Option.some.injEq] at hfn; subst hfn
       match args with
       | [] | [_] | _ :: _ :: _ :: _ => simp at heval
       | [_, _] => rfl
     body_or_concreteEval := by simp
     typeArgs_nodup := by simp
     inputs_typevars_in_typeArgs := by
-      intro ity hity; simp [ListMap.values] at hity
+      intro ity hity; simp only [ListMap.values, List.mem_cons, List.not_mem_nil, or_false, or_self] at hity
       rcases hity with rfl | rfl <;> simp [hInTy]
     output_typevars_in_typeArgs := by simp [hOutTy]
     typeArgs_no_gen_prefix := by simp
     constr_no_eval := by simp
     concreteEval_freeVars := by
       intro ceval h md args res heval z hz
-      simp at h; subst h
+      simp only [Option.some.injEq] at h; subst h
       match args, heval with
       | [x, y], heval =>
         simp only [] at heval
@@ -360,14 +360,14 @@ def binaryOp (n : T.Identifier)
           · simp at heval
     concreteEval_eraseMetadata := by
       intro ceval h md1 md2 args1 args2 res1 hmap heval
-      simp at h; subst h
+      simp only [Option.some.injEq] at h; subst h
       match args1, heval with
       | [x1, y1], heval =>
         have hlen : args2.length = 2 := by
           have := congrArg List.length hmap; simp at this; omega
         match args2, hlen with
         | [x2, y2], _ =>
-          simp [List.map] at hmap
+          simp only [List.map, List.cons.injEq, and_true] at hmap
           obtain ⟨hxeq, hyeq⟩ := hmap
           have hcx := hIn.cevalTy_eraseMetadata T x1 x2 hxeq
           have hcy := hIn.cevalTy_eraseMetadata T y1 y2 hyeq
@@ -457,21 +457,21 @@ def shortCircuitOp (n : T.Identifier) (absorb decided : Bool) : WFLFunc T :=
     arg_nodup := by simp [binaryParam1Name, binaryParam2Name]
     concreteEval_argmatch := by
       intro fn md args res hfn heval
-      simp at hfn; subst hfn
+      simp only [beq_iff_eq, Option.some.injEq] at hfn; subst hfn
       match args with
       | [] | [_] | _ :: _ :: _ :: _ => simp at heval
       | [_, _] => rfl
     body_or_concreteEval := by simp
     typeArgs_nodup := by simp
     inputs_typevars_in_typeArgs := by
-      intro ity hity; simp [ListMap.values] at hity
+      intro ity hity; simp only [ListMap.values, List.mem_cons, List.not_mem_nil, or_false, or_self] at hity
       rcases hity with rfl | rfl <;> simp [LMonoTy.freeVars, LMonoTys.freeVars]
     output_typevars_in_typeArgs := by simp [LMonoTy.freeVars, LMonoTys.freeVars]
     typeArgs_no_gen_prefix := by simp
     constr_no_eval := by simp
     concreteEval_freeVars := by
       intro ceval h md args res heval z hz
-      simp at h; subst h
+      simp only [beq_iff_eq, Option.some.injEq] at h; subst h
       match args, heval with
       | [x, y], heval =>
         simp only [] at heval
@@ -486,14 +486,14 @@ def shortCircuitOp (n : T.Identifier) (absorb decided : Bool) : WFLFunc T :=
             exact ⟨y, by simp, hz⟩
     concreteEval_eraseMetadata := by
       intro ceval h md1 md2 args1 args2 res1 hmap heval
-      simp at h; subst h
+      simp only [beq_iff_eq, Option.some.injEq] at h; subst h
       match args1, heval with
       | [x1, y1], heval =>
         have hlen : args2.length = 2 := by
           have := congrArg List.length hmap; simp at this; omega
         match args2, hlen with
         | [x2, y2], _ =>
-          simp [List.map] at hmap
+          simp only [List.map, List.cons.injEq, and_true] at hmap
           obtain ⟨hxeq, hyeq⟩ := hmap
           have hcx := LambdaLeanType.cevalTy_eraseMetadata (ValTy := Bool) T x1 x2 hxeq
           simp only [] at heval ⊢
@@ -516,7 +516,7 @@ def shortCircuitOp (n : T.Identifier) (absorb decided : Bool) : WFLFunc T :=
     precond_freevars := by intro p hp; simp at hp
     shortCircuit_substFvars := by
       intro _ ceval h _ md a rest sm
-      simp at h; subst h
+      simp only [beq_iff_eq, Option.some.injEq] at h; subst h
       match rest with
       | [] | _ :: _ :: _ => simp
       | [y] =>

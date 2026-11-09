@@ -192,7 +192,8 @@ def deadDefElimPipelinePhase : PipelinePhase :=
                          .noLoopInvariants, .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                          .hasObligationForm, .noProcedureContracts, .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .treeForm,
+                         .exitsCovered, .armsHaveObligations])
 
 end -- public section
 

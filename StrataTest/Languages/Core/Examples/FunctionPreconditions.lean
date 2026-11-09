@@ -94,16 +94,16 @@ VCs:
 Label: init_calls_List..head_0
 Property: assert
 Assumptions:
-assume_0: x@1 == 1
+assume_0: x@2 == 1
 Obligation:
 true
 
 Label: assert_0
 Property: assert
 Assumptions:
-assume_0: x@1 == 1
+assume_0: x@2 == 1
 Obligation:
-x@1 == 1
+x@2 == 1
 
 ---
 info:

@@ -454,12 +454,11 @@ example : ExecProg noCall testEval (fun _ => none) gotoTakenProg 0
   · exact ExecProg.end_function rfl
 
 
-/-! ### `ProgramSafe ↔ ¬ CanFail` alignment with `Specification.lean`
+/-! ### `ProgramSafe ↔ ¬ CanFail`
 
 `assertFailProg` reaches (at pc 0) a failing assertion, so it `CanFail`. Via
 `programSafe_iff_not_canFail`, that witness is exactly what refutes
-`ProgramSafe` — mirroring `Specification.lean`'s `CanFail`/overapproximation
-shape at the GOTO-IL layer. -/
+`ProgramSafe`. -/
 
 -- `assertFailProg` can fail: pc 0 is reachable (reflexively) and its ASSERT
 -- guard evaluates to `false`.

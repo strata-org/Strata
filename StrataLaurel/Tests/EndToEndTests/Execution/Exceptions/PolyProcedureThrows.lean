@@ -29,11 +29,10 @@ declares its own `throws`, the check is a subtype comparison — and it cannot b
 resolution, because at that point the callee's `throws` is still `.TVar T`. So it is deferred and
 re-checked after monomorphization. The mismatch case is the soundness guard for that deferral.
 
-Every block but the last marks an `entry`, so the lowered clone is also EXECUTED: the
+Every block but three marks an `entry`, so the lowered clone is also EXECUTED: the
 `try`/`catch` runs, the `Result` encoding is unwrapped concretely, and the normal-path
 assertion (or, for the false twin, its failure) is observed by two interpreters as well as by
-the verifier. The last block is the exception — it pins a REJECTION, so there is no program to
-run; it says so at the block.
+the verifier. Each exception says at the block why it has no program to run.
 -/
 
 /-! ## The `throws` type is CONCRETE
@@ -122,6 +121,58 @@ procedure catchesGenericCompositeThrows() returns (out: int)
   modifies *
 {
   try { out := mayThrow(3); assert out == 3 } catch c { out := 0 }
+};
+#end
+
+/-! A generic procedure's `throws (e: Err<T>)` names no instantiation: `Err<int>` appears only in
+the `int` clone's `throws` type, so the seed has to be collected from the clone. `mayThrow` does not
+throw, since constructing an `Err<T>` in its body would seed `Err<int>` from there. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+composite Box<T> { var val: T }
+composite Err<T> { var code: T }
+procedure mayThrow<T>(b: Box<T>) returns (r: T) throws (e: Err<T>) opaque ensures r == b#val { r := b#val };
+
+procedure catchesCloneThrows() returns (out: int)
+  entry
+  opaque
+  modifies *
+{
+  var bx: Box<int> := new Box<int>;
+  bx#val := 7;
+  try { out := mayThrow(bx); assert out == 7 } catch c { out := c#code }
+};
+#end
+
+-- Verification-only: nothing calls `mayThrow`, so its only clone is the one at its witness type,
+-- and there is no program to run.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Box<T> { var val: T }
+composite Err<T> { var code: T }
+procedure mayThrow<T>(b: Box<T>) returns (r: T) throws (e: Err<T>) opaque ensures r == b#val { r := b#val };
+#end
+
+-- Verification-only: an uncaught call is reported by the verifier, which must see the clone's
+-- `throws` type; a concrete run never throws, so neither interpreter could report it.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Box<T> { var val: T }
+composite Err<T> { var code: T }
+procedure mayThrow<T>(b: Box<T>) returns (r: T) throws (e: Err<T>) opaque ensures r == b#val { r := b#val };
+
+procedure doesNotCatchCloneThrows() returns (out: int)
+  opaque
+  modifies *
+{
+  var bx: Box<int> := new Box<int>;
+  bx#val := 7;
+  out := mayThrow(bx)
+//       ^^^^^^^^^^^^ error: call does not throw an uncaught 'Err$a1$int' does not hold
 };
 #end
 

@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Languages.Core
+meta import StrataTest.Languages.Core.Examples.DatatypePruningTestUtils
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -399,6 +400,15 @@ Result: ✅ pass
 #guard_msgs in
 #eval Core.verify stmtListHavocPgm Inhabited.default
   (options := .quiet)
+
+-- The same programs verify identically with `removeIrrelevantDatatypes`.
+/--
+info: 5 of 5 the same
+-/
+#guard_msgs in
+#eval Core.RemoveIrrelevantDatatypes.TestUtils.sameWithFlag
+  [roseTreeTesterPgm, roseTreeDestructorPgm, roseTreeEqualityPgm,
+   polyRoseTreeHavocPgm, stmtListHavocPgm]
 
 end Strata.MutualDatatypeTest
 end

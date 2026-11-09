@@ -137,7 +137,7 @@ theorem lookupEval (s1 s2 : State) (h : ∀ x, lookup s1 x = lookup s2 x) :
   ∀ e, eval s1 e = eval s2 e := by
   intro e; induction e <;> simp_all [eval]
   case Var v _ =>
-    simp_all [lookup]
+    simp_all only [lookup]
     have hv := @h v; clear h
     split <;> (split <;> simp_all)
   done

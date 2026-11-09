@@ -9,6 +9,8 @@ public import Strata.DL.Lambda.LState
 import all Strata.DL.Lambda.LState
 public import Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.LExprWF
+import all Strata.Util.NameProofs
+import Std.Data.HashSet.Lemmas
 
 /-!
 ## Properties of LState substitution operations
@@ -16,10 +18,27 @@ import all Strata.DL.Lambda.LExprWF
 Theorems about `substFvarsFromEnv`:
 - `eraseMetadata` congruence
 - Simplification lemmas for specific constructors
+
+Generated names:
+- `NameSupply.fresh_not_mem`: a generated name is not in use; `NameSupply.fresh_mem`: it is in
+  use afterwards.
 -/
 
 namespace Lambda
 open Strata
+
+/-- `NameSupply.fresh` returns a name not in use, given that `disambiguate` is injective in
+    its suffix. -/
+theorem NameSupply.fresh_not_mem (h_inj : Strata.Name.DisambiguateInjective)
+    (x : String) (s : NameSupply) : (s.fresh x).1 ∉ s.usedNames := by
+  simp only [NameSupply.fresh]
+  exact Strata.Name.findUnique_not_mem h_inj _ _ _
+
+/-- After `NameSupply.fresh`, the name it returns is in use. -/
+theorem NameSupply.fresh_mem (x : String) (s : NameSupply) :
+    (s.fresh x).1 ∈ (s.fresh x).2.usedNames := by
+  simp only [NameSupply.fresh]
+  exact Std.HashSet.mem_insert_self
 
 /-- `substFvarsFromEnv` preserves `eraseMetadata` equality. -/
 theorem LExpr.substFvarsFromEnv_eraseMetadata_congr
@@ -96,162 +115,28 @@ public theorem LExpr.substFvarsFromEnv_closed_identity
   | fvar m name ty => simp [LExpr.freeVars] at h
   | abs m nm ty body ih =>
     simp only [LExpr.substFvarsFromEnv]
-    congr 1; exact ih (by simp [LExpr.freeVars] at h; exact h)
+    congr 1; exact ih (by simp only [freeVars] at h; exact h)
   | quant m qk nm ty tr body ih_tr ih_body =>
     simp only [LExpr.substFvarsFromEnv]
-    simp [LExpr.freeVars] at h
+    simp only [freeVars, List.append_eq_nil_iff] at h
     congr 1
     · exact ih_tr h.1
     · exact ih_body h.2
   | app m fn arg ih_fn ih_arg =>
     simp only [LExpr.substFvarsFromEnv]
-    simp [LExpr.freeVars] at h
+    simp only [freeVars, List.append_eq_nil_iff] at h
     congr 1
     · exact ih_fn h.1
     · exact ih_arg h.2
   | eq m e1 e2 ih1 ih2 =>
     simp only [LExpr.substFvarsFromEnv]
-    simp [LExpr.freeVars] at h
+    simp only [freeVars, List.append_eq_nil_iff] at h
     congr 1
     · exact ih1 h.1
     · exact ih2 h.2
   | ite m c t f ihc iht ihf =>
     simp only [LExpr.substFvarsFromEnv]
-    simp [LExpr.freeVars] at h
+    simp only [freeVars, List.append_assoc, List.append_eq_nil_iff] at h
     exact congr (congr (congr rfl (ihc h.1)) (iht h.2.1)) (ihf h.2.2)
-
-/-- `substFvarsFromEnv` agrees on expressions when the environments agree on the
-    free variables. -/
-theorem substFvarsFromEnv_env_congr {Tbase : LExprParams}
-    (env₁ env₂ : Env Tbase) (e : LExpr Tbase.mono)
-    (hagree : ∀ x ∈ LExpr.LExpr.getVars e, env₁ x = env₂ x) :
-    LExpr.substFvarsFromEnv env₁ e = LExpr.substFvarsFromEnv env₂ e := by
-  induction e with
-  | const | op | bvar => rfl
-  | fvar m x ty =>
-    simp only [LExpr.substFvarsFromEnv]
-    rw [hagree x (by simp [LExpr.LExpr.getVars])]
-  | abs _ _ _ _ ih => simp only [LExpr.substFvarsFromEnv]; rw [ih hagree]
-  | quant _ _ _ _ _ _ iht ihb =>
-    simp only [LExpr.substFvarsFromEnv]
-    rw [iht (fun x hx => hagree x (List.mem_append_left _ hx)),
-        ihb (fun x hx => hagree x (List.mem_append_right _ hx))]
-  | app _ _ _ ih1 ih2 =>
-    simp only [LExpr.substFvarsFromEnv]
-    rw [ih1 (fun x hx => hagree x (List.mem_append_left _ hx)),
-        ih2 (fun x hx => hagree x (List.mem_append_right _ hx))]
-  | ite _ _ _ _ ih1 ih2 ih3 =>
-    simp only [LExpr.substFvarsFromEnv]
-    rw [ih1 (fun x hx => hagree x (List.mem_append_left _ (List.mem_append_left _ hx))),
-        ih2 (fun x hx => hagree x (List.mem_append_left _ (List.mem_append_right _ hx))),
-        ih3 (fun x hx => hagree x (List.mem_append_right _ hx))]
-  | eq _ _ _ ih1 ih2 =>
-    simp only [LExpr.substFvarsFromEnv]
-    rw [ih1 (fun x hx => hagree x (List.mem_append_left _ hx)),
-        ih2 (fun x hx => hagree x (List.mem_append_right _ hx))]
-
-/-- If the environment maps only to closed expressions, `substFvarsFromEnv`
-    does not introduce free variables. -/
-theorem getVars_substFvarsFromEnv_mem {Tbase : LExprParams} (env : Env Tbase)
-    (hcl : ∀ x v, env x = some v → LExpr.LExpr.getVars v = [])
-    (e : LExpr Tbase.mono) (y : Tbase.Identifier)
-    (hy : y ∈ LExpr.LExpr.getVars (LExpr.substFvarsFromEnv env e)) :
-    y ∈ LExpr.LExpr.getVars e := by
-  induction e with
-  | const | op | bvar => exact hy
-  | fvar m x ty =>
-    simp only [LExpr.substFvarsFromEnv] at hy
-    cases hv : env x with
-    | none => rw [hv] at hy; exact hy
-    | some v => rw [hv, hcl x v hv] at hy; simp at hy
-  | abs _ _ _ _ ih => exact ih hy
-  | quant _ _ _ _ _ _ iht ihb =>
-    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
-    simp only [LExpr.LExpr.getVars, List.mem_append]
-    rcases hy with h | h
-    · exact Or.inl (iht h)
-    · exact Or.inr (ihb h)
-  | app _ _ _ ih1 ih2 =>
-    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
-    simp only [LExpr.LExpr.getVars, List.mem_append]
-    rcases hy with h | h
-    · exact Or.inl (ih1 h)
-    · exact Or.inr (ih2 h)
-  | ite _ _ _ _ ih1 ih2 ih3 =>
-    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
-    simp only [LExpr.LExpr.getVars, List.mem_append]
-    rcases hy with (h | h) | h
-    · exact Or.inl (Or.inl (ih1 h))
-    · exact Or.inl (Or.inr (ih2 h))
-    · exact Or.inr (ih3 h)
-  | eq _ _ _ ih1 ih2 =>
-    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
-    simp only [LExpr.LExpr.getVars, List.mem_append]
-    rcases hy with h | h
-    · exact Or.inl (ih1 h)
-    · exact Or.inr (ih2 h)
-
-/-- `env'` extends `env`: every binding present in `env` is present, identically,
-    in `env'`. -/
-def EnvExtends {T : LExprParams} (env env' : Env T) : Prop :=
-  ∀ x w, env x = some w → env' x = some w
-
-/-- If `x` is a free variable of `e` unbound by `env`, it survives
-    `substFvarsFromEnv` (dual to `getVars_substFvarsFromEnv_mem`: an unbound
-    variable is left in place rather than removed). -/
-theorem getVars_mem_substFvarsFromEnv_of_none {Tbase : LExprParams}
-    (env : Env Tbase) (e : LExpr Tbase.mono) (x : Tbase.Identifier)
-    (hx : x ∈ LExpr.LExpr.getVars e) (hnone : env x = none) :
-    x ∈ LExpr.LExpr.getVars (LExpr.substFvarsFromEnv env e) := by
-  induction e with
-  | const | op | bvar => simp [LExpr.LExpr.getVars] at hx
-  | fvar m name ty =>
-    simp only [LExpr.LExpr.getVars, List.mem_singleton] at hx
-    subst hx
-    simp only [LExpr.substFvarsFromEnv, hnone, LExpr.LExpr.getVars, List.mem_singleton]
-  | abs _ _ _ _ ih => exact ih hx
-  | quant _ _ _ _ _ _ iht ihb =>
-    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append]
-    simp only [LExpr.LExpr.getVars, List.mem_append] at hx
-    rcases hx with h | h
-    · exact Or.inl (iht h)
-    · exact Or.inr (ihb h)
-  | app _ _ _ ih1 ih2 =>
-    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append]
-    simp only [LExpr.LExpr.getVars, List.mem_append] at hx
-    rcases hx with h | h
-    · exact Or.inl (ih1 h)
-    · exact Or.inr (ih2 h)
-  | ite _ _ _ _ ih1 ih2 ih3 =>
-    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append]
-    simp only [LExpr.LExpr.getVars, List.mem_append] at hx
-    rcases hx with (h | h) | h
-    · exact Or.inl (Or.inl (ih1 h))
-    · exact Or.inl (Or.inr (ih2 h))
-    · exact Or.inr (ih3 h)
-  | eq _ _ _ ih1 ih2 =>
-    simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append]
-    simp only [LExpr.LExpr.getVars, List.mem_append] at hx
-    rcases hx with h | h
-    · exact Or.inl (ih1 h)
-    · exact Or.inr (ih2 h)
-
-/-- If `substFvarsFromEnv env e` is closed (no free variables), then `env` and
-    any extension `env'` agree on all free variables of `e`: every such variable
-    must be bound by `env` (else it would survive per
-    `getVars_mem_substFvarsFromEnv_of_none`), and extension preserves those
-    bindings. -/
-theorem env_agree_of_subst_getVars_nil {Tbase : LExprParams}
-    (env env' : Env Tbase) (hext : EnvExtends env env') (e : LExpr Tbase.mono)
-    (hnil : LExpr.LExpr.getVars (LExpr.substFvarsFromEnv env e) = []) :
-    ∀ x ∈ LExpr.LExpr.getVars e, env x = env' x := by
-  intro x hx
-  cases hxb : env x with
-  | none =>
-    exfalso
-    have hmem := getVars_mem_substFvarsFromEnv_of_none env e x hx hxb
-    rw [hnil] at hmem
-    exact absurd hmem (by simp)
-  | some w => rw [hext x w hxb]
 
 end Lambda

@@ -56,6 +56,9 @@ def validate (s : String) : Except String Unit :=
       SMT-LIB's String sort (0x0-0x2FFFF) and has no literal spelling"
   | none => .ok ()
 
+/-- Whether `s` passes `validate`. -/
+def isValid (s : String) : Bool := (validate s).isOk
+
 /-- The body of an SMT-LIB string literal, without its surrounding quotes. -/
 def escapeBody (s : String) : Except String String := do
   validate s

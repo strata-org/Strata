@@ -26,8 +26,8 @@ inductive HList {α : Type} (f : α → Type) : List α → Type where
 maps index `i` to `a`. -/
 @[expose] def HList.get {α : Type} {f : α → Type} {as : List α} {a : α} :
     HList f as → (i : Nat) → as[i]? = some a → f a
-  | .cons x _, 0, h => by simp at h; subst h; exact x
-  | .cons _ xs, n + 1, h => by simp at h; exact xs.get n h
+  | .cons x _, 0, h => by simp only [List.length_cons, Nat.zero_lt_succ, getElem?_pos, List.getElem_cons_zero, Option.some.injEq] at h; subst h; exact x
+  | .cons _ xs, n + 1, h => by simp only [List.getElem?_cons_succ] at h; exact xs.get n h
 
 
 /-- Cast an `HList` along a proof that the index lists are equal. -/

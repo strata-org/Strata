@@ -64,6 +64,13 @@ private def adjustSafeOperatorName (name : Identifier) : Identifier :=
   | some text => { name with text }
   | none => name
 
+/-- The callee a function copy calls in place of `callee`. -/
+private def functionCopyCallee (asFunctionNames : Std.HashSet String) (callee : Identifier) :
+    Identifier :=
+  if asFunctionNames.contains callee.text then
+    { callee with text := callee.text ++ "$asFunction", uniqueId := none }
+  else adjustSafeOperatorName (adjustSelectorName callee)
+
 /-- Make an expression pure: drop its proof steps and point its calls at the
     `$asFunction` twins. A `StaticCall` to a procedure with a twin is renamed (other
     callees get their selector/checked-operator adjustment).
@@ -72,6 +79,13 @@ private def adjustSafeOperatorName (name : Identifier) : Identifier :=
     through this, and they all need both halves: an `assert` left in an expression
     position is rejected by the schema pass, so stripping is not optional at any site
     that renames calls. The two are one operation here rather than a choice per site.
+
+    A proof step whose condition writes state keeps that write. After
+    `GlobalParameterization`, a call to a procedure that writes a global or the heap sits
+    in the condition as `{ assign g, var $t := f(g); $t }`, so deleting the step would also
+    delete the write and the copy would compute a state the procedure never reaches. Such
+    a step becomes `{ var $assertCondition := <condition> }`: `FunctionalRewrite` hoists
+    the write out of the initializer, and only the check is dropped.
 
     `mapStmtExprFlattenM` is what makes dropping a proof step a *deletion*: its `post`
     returns a list, so `[]` removes the node and the enclosing `Block` flattens over the
@@ -98,17 +112,27 @@ private def functionalize (asFunctionNames : Std.HashSet String)
   mapStmtExprFlattenM (m := Id) (fun _ _ => none)
     (fun resultUsed e =>
       match e.val with
-      | .Assert .. | .Assume _ => []
+      | .Assert cond _ | .Assume cond =>
+        if (collectStmtExprList (fun n => match n.val with
+            | .Assign .. => [()]
+            | _ => []) cond).isEmpty then []
+        else
+          let decl : StmtExprMd :=
+            ⟨.Assign [⟨.Declare ⟨mkId "$assertCondition", none⟩, e.source⟩] cond, e.source⟩
+          [⟨.Block [decl] none [] none, e.source⟩]
       | .StaticCall callee args tyArgs =>
         if !resultUsed then []
-        else if asFunctionNames.contains callee.text then
-          let funcCallee := { callee with text := callee.text ++ "$asFunction", uniqueId := none }
-          [⟨.StaticCall funcCallee args tyArgs, e.source⟩]
-        else
-          let newName := adjustSafeOperatorName (adjustSelectorName callee)
-          [⟨.StaticCall newName args tyArgs, e.source⟩]
+        else [⟨.StaticCall (functionCopyCallee asFunctionNames callee) args tyArgs, e.source⟩]
       | _ => [e])
     true expr
+
+/-- Whether `functionalize` changes `expr` beyond deleting an unused call: it drops a proof step
+    or points a call elsewhere. -/
+def functionalizeChanges (asFunctionNames : Std.HashSet String) (expr : StmtExprMd) : Bool :=
+  anyStmtExpr (fun e => match e.val with
+    | .Assert .. | .Assume _ => true
+    | .StaticCall callee _ _ => (functionCopyCallee asFunctionNames callee).text != callee.text
+    | _ => false) expr
 
 /-- Narrowly redirect `StaticCall` callees whose names are in `redirectNames`
     to their `$asFunction` versions, leaving everything else (selectors,
@@ -135,8 +159,7 @@ private def redirectCallsToFunctional (redirectNames : Std.HashSet String) (expr
 
 /-- Apply `redirectCallsToFunctional` to a procedure's implementation and
     postcondition expressions. Used in `AnalysisMode.Verify` so that calls to
-    transparent, single-output procedures become pure function applications at
-    their call sites. -/
+    transparent procedures become pure function applications at their call sites. -/
 private def redirectCallsInProc (redirectNames : Std.HashSet String) (proc : Procedure) : Procedure :=
   let r := redirectCallsToFunctional redirectNames
   match proc.body with
@@ -161,6 +184,21 @@ private def redirectCallsInProc (redirectNames : Std.HashSet String) (proc : Pro
     would then reject the embedded assert. -/
 private def containsAssertOrAssume (expr : StmtExprMd) : Bool :=
   anyStmtExpr (fun e => match e.val with | .Assert .. | .Assume _ => true | _ => false) expr
+
+/-- Whether this pass emits `proc` as a Core procedure twinned with an `$asFunction` function,
+    rather than as the function alone. A transparent procedure whose body is purely functional (no
+    Assume/Assert from contract instrumentation) needs only the function. Exception: an
+    `entry`-marked procedure is a concrete-interpretation entry point, so it must survive as a Core
+    procedure even when its body has no assertions — otherwise the schema pass's `interpretEntry`
+    metadata is emitted only on the discarded proc arm and `entryProcedures` sees nothing. -/
+private def Procedure.needsProceduralTwin (proc : Procedure) : Bool :=
+  !proc.body.isExternal && (proc.isInterpretEntry || match proc.body with
+    | .Transparent b => containsAssertOrAssume b
+    | _ => true)
+
+/-- The procedures of `procs` that this pass emits with a procedural twin, by name. -/
+def twinnedNames (procs : List Procedure) : Std.HashSet String :=
+  .ofList ((procs.filter (·.needsProceduralTwin)).map (·.name.text))
 
 /-- Rewrite references to the declaration identified by `boundUid` so they name
     `newName` instead.
@@ -309,7 +347,7 @@ private partial def rewriteQuantifierBodiesM (emitProofBlocks : Bool)
         -- proof block. Shares the counter, keeping every guard name distinct.
         let body ← rewriteQuantifierBodiesM emitProofBlocks nonExternalNames body
         let assumeFalse : StmtExprMd := ⟨.Assume ⟨.LiteralBool false, e.source⟩, e.source⟩
-        let sealedBody : StmtExprMd := ⟨.Block [varDecl, body, assumeFalse] none, e.source⟩
+        let sealedBody : StmtExprMd := ⟨.Block [varDecl, body, assumeFalse] none [] none, e.source⟩
         -- Nondet guard: var $proof_n: bool; if $proof_n then <sealedBody>
         let guardName : Identifier := mkId s!"$proof_{n}"
         let guardType : HighTypeMd := ⟨.TBool, e.source⟩
@@ -318,23 +356,38 @@ private partial def rewriteQuantifierBodiesM (emitProofBlocks : Bool)
         let sealedBranch : StmtExprMd :=
           ⟨.IfThenElse guardRef sealedBody none, e.source⟩
         -- Outer block: { guardDecl; sealedBranch; strippedQuantifier }
-        pure (some ⟨.Block [guardDecl, sealedBranch, strippedQuantifier] none, e.source⟩)
+        pure (some ⟨.Block [guardDecl, sealedBranch, strippedQuantifier] none [] none, e.source⟩)
       else
         -- No proof steps of its own. The quantifier is already fully handled here, so
         -- this also returns `some` — recursing would revisit a `functionalize`d tree to
         -- no effect.
         pure (some (functionalize nonExternalNames e))
-    | _ => pure none)
-    (post := fun e =>
-    match e.val with
-    | .While cond invs dec body postTest =>
-      let rewriteSpec := functionalize nonExternalNames
+    | .While cond invs dec body postTest => do
       -- Only the invariants and `decreases` are spec positions; `cond` and `body`
-      -- are ordinary imperative code and must keep their procedure calls. Runs in
-      -- `post`, so `cond`/`body` still get the generic recursion (a quantifier in
-      -- either is rewritten as usual) and only the spec positions are stripped.
-      pure ⟨.While cond (invs.map rewriteSpec) (dec.map rewriteSpec) body postTest, e.source⟩
-    | _ => pure e) expr
+      -- are ordinary imperative code and must keep their procedure calls, so they
+      -- get the explicit recursion here. The spec positions must stay pure
+      -- expressions: the proof-block scaffolding the `.Quantifier` case emits is
+      -- a block expression with uninitialized `$proof_N`/`$havoc_N` declarations,
+      -- which nothing lowers in an invariant (`LiftImperativeExpressions`
+      -- deliberately leaves invariants alone, and `InlineLocalVariables` cannot
+      -- fold a declaration without an initializer), so the schema pass would
+      -- reject it ("local variables must have initializers in transparent bodies
+      -- or contracts"). That is why this case runs in `pre` — the generic
+      -- recursion would hand each invariant's quantifier to the `.Quantifier`
+      -- case above first. No invariant obligation is lost by only
+      -- `functionalize`-stripping the spec positions: `LoopInvariantWellFormedness`
+      -- already planted a copy of every invariant in statement position before
+      -- the loop, and the proof steps the contract pass injects are checked
+      -- there, where the scaffolding is lowerable. `decreases` gets no such
+      -- copy, so proof steps stripped from a measure are not checked anywhere --
+      -- which is the behavior this position already had from the old post-hook
+      -- stripping, not something this case introduces.
+      let cond ← rewriteQuantifierBodiesM emitProofBlocks nonExternalNames cond
+      let body ← rewriteQuantifierBodiesM emitProofBlocks nonExternalNames body
+      let rewriteSpec := functionalize nonExternalNames
+      pure (some ⟨.While cond (invs.map rewriteSpec) (dec.map rewriteSpec) body postTest, e.source⟩)
+    | _ => pure none)
+    (post := fun e => pure e) expr
 
 /-- Entry point for `rewriteQuantifierBodiesM`, starting the guard counter at 0. -/
 private def rewriteQuantifierBodies (emitProofBlocks : Bool) (nonExternalNames : Std.HashSet String)
@@ -414,19 +467,8 @@ For each procedure:
 - If the function has a body, add a free postcondition equating the procedure output to the function
 -/
 def createFunctionsForTransparentBodies (program : LaurelProgram) (options : LaurelTranslateOptions := {}) : LaurelProgram :=
-  let (toUpdate, _) := program.staticProcedures.partition (fun p => !p.body.isExternal)
-  -- A transparent procedure whose body is purely functional (no Assume/Assert
-  -- from contract instrumentation) needs only a function copy, not a procedural
-  -- twin. This matches the old `isFunctional` behavior for condition helpers.
-  -- Exception: an `entry`-marked procedure is a concrete-interpretation entry
-  -- point, so it must survive as a Core procedure even when its body has no
-  -- assertions — otherwise the schema pass's `interpretEntry` metadata is
-  -- emitted only on the discarded proc arm and `entryProcedures` sees nothing.
-  let needsProcTwin (p : Procedure) : Bool :=
-    p.isInterpretEntry || match p.body with
-    | .Transparent b => containsAssertOrAssume b
-    | _ => true
-  let (imperativeProcs, _) := toUpdate.partition needsProcTwin
+  let imperativeProcs := program.staticProcedures.filter (·.needsProceduralTwin)
+  let toUpdateNames := twinnedNames program.staticProcedures
   match options.analysisMode with
   | .Execute =>
     -- Concrete execution: keep every procedure as a real procedure (no call
@@ -443,7 +485,6 @@ def createFunctionsForTransparentBodies (program : LaurelProgram) (options : Lau
     -- application the schema pass accepts, exactly as before the merge. The
     -- imperative procedure bodies themselves are left untouched (their calls stay
     -- procedure calls), preserving execution semantics.
-    let toUpdateNames : Std.HashSet String := imperativeProcs.foldl (fun s p => s.insert p.name.text) {}
     let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)
     -- No proof blocks: the quantifier proof-procedure scaffolding is a
     -- verification-only construct. Its nondet `$proof_N` guard is an
@@ -456,14 +497,11 @@ def createFunctionsForTransparentBodies (program : LaurelProgram) (options : Lau
       rewriteQuantifierBodiesInProc (emitProofBlocks := false) toUpdateNames proc
     { program with staticFunctions := program.staticFunctions ++ functions, staticProcedures := coreProcedures }
   | .Verify | .BothSuboptimally =>
-    let toUpdateNames : Std.HashSet String := imperativeProcs.foldl (fun s p => s.insert p.name.text) {}
-    -- Names of single-output procedures whose calls can be redirected to their
-    -- `$asFunction` version: `mkFreePostcondition` only equates a single output
-    -- to the function, and a single function application can only fill one
-    -- assignment target. Multi-output procedures are excluded.
-    let singleOutputNames : Std.HashSet String :=
+    -- Names of procedures whose calls can be redirected to their `$asFunction`
+    -- version: a transparent body is what makes the twin carry the procedure's meaning.
+    let redirectNames : Std.HashSet String :=
       imperativeProcs.foldl (fun s p =>
-        if p.outputs.length == 1 && p.body.isTransparent then s.insert p.name.text else s) {}
+        if p.body.isTransparent then s.insert p.name.text else s) {}
     -- $asFunction copies for procedures that have a procedural twin;
     -- transparent-only procedures keep their original name.
     let functions := program.staticProcedures.map (mkFunctionCopy toUpdateNames)
@@ -503,7 +541,7 @@ def createFunctionsForTransparentBodies (program : LaurelProgram) (options : Lau
     let coreProcedures := rewritten.map fun proc =>
       match options.analysisMode with
       | .Verify =>
-        -- Redirect every call to a single-output twinned procedure to its
+        -- Redirect every call to a transparent twinned procedure to its
         -- `$asFunction` version so calls stay constant-foldable during symbolic
         -- evaluation (instead of producing fresh symbolic outputs via the
         -- procedural twin). Callers of a redirected procedure observe the pure
@@ -516,8 +554,8 @@ def createFunctionsForTransparentBodies (program : LaurelProgram) (options : Lau
         -- can no longer discharge a goal about `P`. Procedures whose twin no
         -- axiom mentions get no bridge, since injecting the uninterpreted twin
         -- equation only weakens the solver (turning refutable goals into unknown).
-        let proc := redirectCallsInProc singleOutputNames proc
-        if axiomTwinNames.contains proc.name.text && !singleOutputNames.contains proc.name.text then
+        let proc := redirectCallsInProc redirectNames proc
+        if axiomTwinNames.contains proc.name.text && !redirectNames.contains proc.name.text then
           addFreePostcondition proc (mkFreePostcondition proc)
         else proc
       | _ =>

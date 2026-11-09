@@ -50,7 +50,7 @@ procedure aliasWrongArity()
 /-! ## A cycle terminates instead of unfolding forever
 
 `A<T> = B<T>` and `B<U> = A<U>` have no normal form. The fuel/visited guards in
-`resolveAliasType`, `TypeLattice.unfold` and `resolveFieldInTypeScope.unfoldAlias` make the
+`resolveAliasType` and `TypeLattice.unfold` make the
 unfold stop; what is left is a type that never became concrete, so the `0` initializer does
 not match it. The test COMPLETING is the real assertion here — a missing guard hangs the
 build rather than failing it. -/
@@ -59,7 +59,9 @@ build rather than failing it. -/
 #strata
 program Laurel;
 type A<T> = B<T>
+//   ^ error: type 'A' is defined in terms of itself
 type B<U> = A<U>
+//   ^ error: type 'B' is defined in terms of itself
 
 procedure cyclicAlias()
   opaque

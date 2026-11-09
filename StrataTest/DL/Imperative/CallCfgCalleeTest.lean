@@ -51,27 +51,32 @@ private def yId : CoreIdent := ⟨"y", ()⟩
 private def tId : CoreIdent := ⟨"t", ()⟩
 
 /-- The store `σ` with `k` bound to `v`. -/
-private def bind (σ : CoreStore) (k : CoreIdent) (v : Expression.Expr) : CoreStore :=
+private def bind (σ : CoreStore) (k : CoreIdent) (v : Expression.Val) : CoreStore :=
   fun i => if i = k then some v else σ i
 
 /-- Binding an unbound slot `k` of `σ` to `v` initializes it. -/
-private theorem initState_bind {σ : CoreStore} {k : CoreIdent} {v : Expression.Expr}
+private theorem initState_bind {σ : CoreStore} {k : CoreIdent} {v : Expression.Val}
     (h : σ k = none) : InitState Expression σ k v (bind σ k v) :=
   .init h (by simp [bind]) fun _ hk => by simp [bind, Ne.symm hk]
 
 /-- Binding a bound slot `k` of `σ` to `v` updates it. -/
-private theorem updateState_bind {σ : CoreStore} {k : CoreIdent} {v v' : Expression.Expr}
+private theorem updateState_bind {σ : CoreStore} {k : CoreIdent} {v v' : Expression.Val}
     (h : σ k = some v') : UpdateState Expression σ k v (bind σ k v) :=
   .update h (by simp [bind]) fun _ hk => by simp [bind, Ne.symm hk]
 
+/-- The Boolean value `true` of the factory `fac`. -/
+private abbrev ttV (fac : Expression.Factory) : Expression.Val := HasBool.ttVal fac
+/-- The Boolean value `false` of the factory `fac`. -/
+private abbrev ffV (fac : Expression.Factory) : Expression.Val := HasBool.ffVal fac
+
 /-- The caller store before the call: `x ↦ false`. -/
-private def σ0 : CoreStore := bind emptyStore xId HasBool.ff
+private def σ0 (fac : Expression.Factory) : CoreStore := bind emptyStore xId (ffV fac)
 /-- The callee entry frame: `y ↦ false`. -/
-private def frame : CoreStore := bind emptyStore yId HasBool.ff
+private def frame (fac : Expression.Factory) : CoreStore := bind emptyStore yId (ffV fac)
 /-- The callee store after `init t`: `y ↦ false, t ↦ true`. -/
-private def σ1 : CoreStore := bind frame tId HasBool.tt
+private def σ1 (fac : Expression.Factory) : CoreStore := bind (frame fac) tId (ttV fac)
 /-- The callee store at the `assert`: `y ↦ true, t ↦ true`. -/
-private def σ2 : CoreStore := bind σ1 yId HasBool.tt
+private def σ2 (fac : Expression.Factory) : CoreStore := bind (σ1 fac) yId (ttV fac)
 
 /-- The callee's CFG body. -/
 private def calleeCFG : DetCFG Expression Command :=
@@ -98,56 +103,61 @@ private def callCmd : Command := .call "callee" [.outArg xId] .empty
 
 /-- The `body` assertion event, captured at the store `σ2` and factory `fac`. -/
 private def bodyEvent (fac : Expression.Factory) : Event Expression :=
-  .assert { factory := fac, store := σ2, label := "body", expr := HasBool.tt,
+  .assert { factory := fac, store := (σ2 fac), label := "body", expr := HasBool.tt,
             metadata := .empty }
 
 /-- The callee body runs from `frame` to `finish` at `σ2`, emitting `bodyEvent`. -/
 private theorem calleeCFG_run (fac : Expression.Factory) :
     StepCFGExtStarE calleeEnv
-      (.atBlock calleeCFG "entry" ⟨frame, fac, false⟩) [bodyEvent fac]
-      (.terminal ⟨σ2, fac, false⟩) :=
+      (.atBlock calleeCFG "entry" ⟨(frame fac), fac⟩) [bodyEvent fac]
+      (.terminal ⟨(σ2 fac), fac⟩) :=
   have hwf := coreEvaluator_WellFormedSemanticEvalVar fac
-  have hy : σ1 yId = some HasBool.ff := by simp [σ1, frame, bind, tId, yId]
+  have hy : (σ1 fac) yId = some (ffV fac) := by simp [σ1, frame, bind, tId, yId]
   .step _ [] _ _ _ (.fetch rfl) <|
   .step _ [] _ _ _ (.step_cmd (.cmd_sem (.eval_init_unconstrained
-    (initState_bind (v := HasBool.tt) (by simp [frame, bind, emptyStore, tId, yId]))
+    (initState_bind (v := (ttV fac)) (by simp [frame, bind, emptyStore, tId, yId]))
     (HasBool.boolIsValOfTy fac).1 hwf))) <|
   .step _ [] _ _ _ (.step_cmd (.cmd_sem (.eval_set_nondet
-    (updateState_bind (v := HasBool.tt) hy)
-    ⟨HasBool.ff, HasBool.boolTy, hy, (HasBool.boolIsValOfTy fac).2,
+    (updateState_bind (v := (ttV fac)) hy)
+    ⟨(ffV fac), HasBool.boolTy, hy, (HasBool.boolIsValOfTy fac).2,
       (HasBool.boolIsValOfTy fac).1⟩ hwf))) <|
   .step _ [bodyEvent fac] _ _ _ (.step_cmd (.cmd_sem .eval_assert)) <|
   .step _ [] _ [] _ .finish (.refl _)
 
 /-- `callCmd` takes `σ0` to `x ↦ true`, emitting the callee's `bodyEvent`. -/
 private theorem callCmd_sem (fac : Expression.Factory) :
-    EvalCmdExtE calleeEnv fac σ0 callCmd (bind σ0 xId HasBool.tt) [bodyEvent fac] := by
-  have hbody : BigStepE calleeEnv callee.body ⟨frame, fac, false⟩ (projectStore frame σ2)
+    EvalCmdExtE calleeEnv fac (σ0 fac) callCmd (bind (σ0 fac) xId (ttV fac)) [bodyEvent fac] := by
+  have hbody : BigStepE calleeEnv callee.body ⟨(frame fac), fac⟩
+      (projectStore (frame fac) (σ2 fac))
       [bodyEvent fac] :=
     .cfg (calleeCFG_run fac)
   have h := EvalCmdExtE.call_sem (n := "callee") (callArgs := [.outArg xId]) (md := .empty)
-    (π := calleeEnv) (fac := fac) (σ := σ0) (σAO := frame)
+    (π := calleeEnv) (fac := fac) (σ := (σ0 fac)) (σAO := (frame fac))
     (by simp [calleeEnv])
-    ⟨[], [HasBool.ff], .eval_none,
+    ⟨[], [(ffV fac)], .eval_none,
       .read_some (by simp [σ0, bind]) (HasBool.boolIsVal fac).2 .read_none,
-      ⟨emptyStore, frame, .init_none, .init_some (initState_bind rfl) .init_none, rfl⟩⟩
+      ⟨emptyStore, (frame fac), .init_none, .init_some (initState_bind rfl) .init_none, rfl⟩⟩
     hbody
-    ⟨(by simp [Imperative.CallArg.getLhs]), [HasBool.tt],
+    ⟨(by simp [Imperative.CallArg.getLhs]), [(ttV fac)],
       .read_some (by simp [projectStore, frame, σ2, bind, yId])
         (HasBool.boolIsVal fac).1 .read_none,
-      .update_some (updateState_bind (v' := HasBool.ff) (by simp [σ0, bind])) .update_none⟩
-  simpa [Calls.defaultAssertEvents, callee, callCmd] using h
+      .update_some (updateState_bind (v' := (ffV fac)) (by simp [σ0, bind])) .update_none,
+      .cons ⟨(ffV fac), HasBool.boolTy, (by simp [σ0, bind]), (HasBool.boolIsValOfTy fac).2,
+        (HasBool.boolIsValOfTy fac).1⟩ .nil⟩
+  simpa [Calls.defaultAssertEvents, Calls.checksAtCall, callee, callCmd] using h
 
 /-- The call's callee body ends with the body-local `t` dropped and `y ↦ true`. -/
-example : projectStore frame σ2 tId = none ∧ projectStore frame σ2 yId = some HasBool.tt := by
+example (fac : Expression.Factory) :
+    projectStore (frame fac) (σ2 fac) tId = none ∧
+      projectStore (frame fac) (σ2 fac) yId = some (ttV fac) := by
   simp [projectStore, frame, σ2, bind, emptyStore, tId, yId]
 
 /-- A structured caller: the statement `call callee(out x)` runs from `x ↦ false` to
     `x ↦ true`, emitting the callee's `bodyEvent`. -/
 example (fac : Expression.Factory) :
-    StepStmtExtStarE calleeEnv (.stmt (.cmd callCmd) ⟨σ0, fac, false⟩) [bodyEvent fac]
-      (.terminal ⟨bind σ0 xId HasBool.tt, fac, false⟩) := by
-  have h := StepStmtE.step_cmd (P := Expression) (ρ := ⟨σ0, fac, false⟩)
+    StepStmtExtStarE calleeEnv (.stmt (.cmd callCmd) ⟨(σ0 fac), fac⟩) [bodyEvent fac]
+      (.terminal ⟨bind (σ0 fac) xId (ttV fac), fac⟩) := by
+  have h := StepStmtE.step_cmd (P := Expression) (ρ := ⟨(σ0 fac), fac⟩)
     (callCmd_sem fac)
   simpa using ReflTransTrace.step _ _ _ [] _ h (.refl _)
 
@@ -159,8 +169,8 @@ private def callerCFG : DetCFG Expression Command :=
 /-- The caller CFG runs from `x ↦ false` to `finish` at `x ↦ true`. -/
 private theorem callerCFG_run (fac : Expression.Factory) :
     StepCFGExtStarE calleeEnv
-      (.atBlock callerCFG "entry" ⟨σ0, fac, false⟩) [bodyEvent fac]
-      (.terminal ⟨bind σ0 xId HasBool.tt, fac, false⟩) :=
+      (.atBlock callerCFG "entry" ⟨(σ0 fac), fac⟩) [bodyEvent fac]
+      (.terminal ⟨bind (σ0 fac) xId (ttV fac), fac⟩) :=
   .step _ [] _ _ _ (.fetch rfl) <|
   .step _ [bodyEvent fac] _ [] _ (.step_cmd (callCmd_sem fac)) <|
   .step _ [] _ [] _ .finish (.refl _)
@@ -168,10 +178,10 @@ private theorem callerCFG_run (fac : Expression.Factory) :
 /-- A CFG caller procedure body: `callerCFG` as a `BigStepE` body run from `x ↦ false`
     ends at `x ↦ true`. -/
 example (fac : Expression.Factory) :
-    BigStepE calleeEnv (.cfg callerCFG) ⟨σ0, fac, false⟩ (bind σ0 xId HasBool.tt)
+    BigStepE calleeEnv (.cfg callerCFG) ⟨(σ0 fac), fac⟩ (bind (σ0 fac) xId (ttV fac))
       [bodyEvent fac] := by
-  have h := BigStepE.cfg (ρ := ⟨σ0, fac, false⟩) (callerCFG_run fac)
-  have hσ : projectStore σ0 (bind σ0 xId HasBool.tt) = bind σ0 xId HasBool.tt := by
+  have h := BigStepE.cfg (ρ := ⟨(σ0 fac), fac⟩) (callerCFG_run fac)
+  have hσ : projectStore (σ0 fac) (bind (σ0 fac) xId (ttV fac)) = bind (σ0 fac) xId (ttV fac) := by
     funext i
     by_cases hi : i = xId <;> simp [projectStore, σ0, bind, emptyStore, hi]
   rwa [hσ] at h

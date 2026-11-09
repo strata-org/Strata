@@ -100,6 +100,7 @@ def Core.recursiveAxiomsPhase (options : VerifyOptions := VerifyOptions.default)
                          .noLoopMeasures, .staticSingleAssignment,
                          .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
                          .noProcedureContracts, .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .treeForm,
+                         .exitsCovered, .armsHaveObligations])
 
 end

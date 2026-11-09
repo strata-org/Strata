@@ -7,6 +7,7 @@ module
 
 public import Strata.Init
 public import Std.Data.HashMap.Basic
+public import Std.Data.HashSet.Basic
 
 /-! ## List Properties Utilities
   This file contains miscellaneous utilities for manipulating lists and
@@ -144,6 +145,24 @@ def uniqTR {α : Type} [DecidableEq α] (l : List α) : List α :=
   uniqTR.go l []
 
 
+
+/-- Tail-recursive worker for `nodupB`: `true` iff the remaining elements are
+pairwise distinct and none of them is in `seen`. -/
+def nodupB.go {α : Type} [BEq α] [Hashable α] : List α → Std.HashSet α → Bool
+  | [], _ => true
+  | a :: as, seen => if seen.contains a then false else nodupB.go as (seen.insert a)
+
+/-- `true` iff `l` has no duplicate elements. Tracks the elements seen so far
+in a hash set, so the check is linear in the length of `l`. -/
+def nodupB {α : Type} [BEq α] [Hashable α] (l : List α) : Bool :=
+  nodupB.go l {}
+
+/-- The values paired with each key in `l`, keeping only the values for which
+`keep` holds. A key's values are listed in the reverse of their order in `l`. -/
+def groupValuesByKey {K V : Type} [BEq K] [Hashable K] (keep : V → Bool) (l : List (K × V)) :
+    Std.HashMap K (List V) :=
+  l.foldl (init := {}) fun acc p =>
+    if keep p.2 then acc.insert p.1 (p.2 :: acc.getD p.1 []) else acc
 
 /-- Deduplicates l and counts the number of occurrences for each element. -/
 def occurrences {α : Type} [DecidableEq α] (l : List α) : List (α × Nat) :=

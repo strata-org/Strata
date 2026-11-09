@@ -28,6 +28,8 @@ variables (`substK`, `subst`) and free variables (`substFvarsLifting`)
 and `callOfLFunc` more generally
 - `LExprDenoteConstrs.lean` - proofs about semantics of datatype constructors
 - `LExprDenoteEq.lean` - proof of soundness of equality check `eql`
+- `LExprDenoteCompute.lean` - forms of the `Denotes` rules that compute the
+value of a concrete expression, and the `denotes` tactic that applies them
 - `LExprResolveAnnotated.lean` - proof that `LExpr.resolve` produces
 well-annotated terms (satisfying `HasTypeA`), i.e. that the type annotations
 placed by resolution are internally consistent
@@ -42,7 +44,7 @@ The TCB of the denotational semantics consists of the following:
 `SortDenote`, `TyDenote`, `LExpr.denote`, and its dependencies)
 3. The definitions of consistency in `LExprDenote.lean` (especially
 `InterpConsistentBody`, `InterpConsistentEval`, `InterpConsistent`,
-`ConstrInterpConsistent`)
+`AxiomsSatisfied`, `ConstrInterpConsistent`)
 4. The dependencies of these definitions, especially heterogenous lists in
 `HList.lean` and the definition of `substTyVars`.
 
@@ -57,8 +59,8 @@ The semantics consistency theorems additionally depend on the assumptions in
 
 The denotational semantics and its theorems rely on two kinds of assumptions:
 1. The definition of validity in the semantics itself requires consistent
-interpretations - those that agree with concrete `Factory` functions and
-declared datatypes.
+interpretations - those that agree with concrete `Factory` functions, satisfy
+the `Factory`'s axioms, and respect declared datatypes.
 2. The semantic consistency theorems require various typing and well-formedness
 assumptions on the expression in question, `Factory` functions, and the
 environment.
@@ -71,8 +73,8 @@ these assumptions are intended to hold if these axioms are consistent. If the
 assumptions do not hold (for instance, if the typing rules are too permissive),
 then validity becomes trivial. Proving that consistent interpretations exist
 is possible but very difficult with recursive functions.
-TODO: Show that consistent interpretations exist for a simple but nontrivial
-example.
+`Core.factoryInterp` (in `Strata/Languages/Core/Logic/FactoryInterp.lean`) is a
+consistent interpretation of the built-in `Core.Factory`, axioms included.
 
 Note that the semantics does not handle function preconditions at the moment.
 

@@ -140,6 +140,25 @@ procedure demo(x: int) returns (r: int) opaque {
 #guard_msgs in
 #eval report compositeLub
 
+/-- An alias thrown first joins through its target; a binding at the alias itself keeps the
+    alias's name. -/
+private def aliasLub := r"
+composite Err {}
+composite ParseErr extends Err {}
+type PE = ParseErr
+procedure demo(x: int, p: PE, e: Err) returns (r: int) opaque {
+  try { if x < 0 then { throw p } else { throw e } } catch c { r := 1 }
+};
+procedure alone(p: PE) returns (r: int) opaque {
+  try { throw p } catch c { r := 1 }
+};
+"
+
+/-- info: demo: Err
+alone: PE -/
+#guard_msgs in
+#eval report aliasLub
+
 /-! ## Generic exception types keep their type arguments
 
 The join is stated over types, not over the `extending` graph's node names, because a
@@ -347,5 +366,43 @@ procedure u() returns (r: int) opaque {
 /-- info: u: Sub, Sub, Sub -/
 #guard_msgs in
 #eval report liveGuardRethrow
+
+/-- A multi-catch clause sees its binding at its alternatives' join, so its rethrow
+    types the enclosing `catch` at `Mid`, not at the inner `try`'s join `Top`. -/
+private def multiCatchRethrow := r"
+composite Top {}
+composite Mid extends Top {}
+composite A extends Mid {}
+composite B extends Mid {}
+composite C extends Top {}
+procedure u(k: int) returns (r: int) opaque {
+  try {
+    try { if k > 0 then { throw new A } else { if k < 0 then { throw new B } else { throw new C } } }
+    catch c when c is A || c is B { throw c } catch c2 { r := 1 }
+  } catch d { r := 2 };
+  r := 0
+};
+"
+
+/-- info: u: Mid, Top, Top -/
+#guard_msgs in
+#eval report multiCatchRethrow
+
+/-- A guard wider than the binding does not widen it: the rethrow types the enclosing
+    `catch` at `A`, not `Base`. -/
+private def widerGuardRethrow := r"
+composite Base {}
+composite A extends Base {}
+procedure u() returns (r: int) opaque {
+  try {
+    try { throw new A } catch c when c is Base { throw c }
+  } catch d { r := 2 };
+  r := 0
+};
+"
+
+/-- info: u: A, A -/
+#guard_msgs in
+#eval report widerGuardRethrow
 
 end Strata.Laurel

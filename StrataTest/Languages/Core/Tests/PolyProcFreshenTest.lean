@@ -65,23 +65,23 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-callElimAssume_idp_ensures_0_3: ai@1 == 7
+callElimAssume_idp_ensures_0_3: ai@2 == 7
 Obligation:
-ai@1 == 7
+ai@2 == 7
 
 Label: assert_1
 Property: assert
 Assumptions:
-callElimAssume_idp_ensures_0_3: ai@1 == 7
-callElimAssume_idp_ensures_0_7: bb@1 == true
+callElimAssume_idp_ensures_0_3: ai@2 == 7
+callElimAssume_idp_ensures_0_7: bb@2 == true
 Obligation:
-bb@1 == true
+bb@2 == true
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-callElimAssume_idp_ensures_0_3: ai@1 == 7
-callElimAssume_idp_ensures_0_7: bb@1 == true
+callElimAssume_idp_ensures_0_3: ai@2 == 7
+callElimAssume_idp_ensures_0_7: bb@2 == true
 Obligation:
 true
 
@@ -139,23 +139,23 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-callElimAssume_idp_ensures_0_3: ai@1 == 7
+callElimAssume_idp_ensures_0_3: ai@2 == 7
 Obligation:
-ai@1 == 7
+ai@2 == 7
 
 Label: assert_1
 Property: assert
 Assumptions:
-callElimAssume_idp_ensures_0_3: ai@1 == 7
-callElimAssume_idp_ensures_0_7: bb@1 == true
+callElimAssume_idp_ensures_0_3: ai@2 == 7
+callElimAssume_idp_ensures_0_7: bb@2 == true
 Obligation:
-bb@1 == false
+bb@2 == false
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-callElimAssume_idp_ensures_0_3: ai@1 == 7
-callElimAssume_idp_ensures_0_7: bb@1 == true
+callElimAssume_idp_ensures_0_3: ai@2 == 7
+callElimAssume_idp_ensures_0_7: bb@2 == true
 Obligation:
 true
 
@@ -169,7 +169,7 @@ Obligation: assert_1
 Property: assert
 Result: ❓ unknown
 Model:
-(bb@1, true) (ai@1, 7) 
+(bb@2, true) (ai@2, 7) 
 
 Obligation: Test_ensures_0
 Property: assert
@@ -226,8 +226,8 @@ true
 Label: Poison_ensures_0
 Property: assert
 Assumptions:
-callElimAssume_idp_ensures_0_3: ai@1 == 7
-callElimAssume_idp_ensures_0_7: bb@1 == true
+callElimAssume_idp_ensures_0_3: ai@2 == 7
+callElimAssume_idp_ensures_0_7: bb@2 == true
 Obligation:
 true
 
@@ -364,46 +364,46 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-callElimAssume_swap_ensures_0_6: b@1 == true
-callElimAssume_swap_ensures_1_7: i@1 == 1
+callElimAssume_swap_ensures_0_6: b@2 == true
+callElimAssume_swap_ensures_1_7: i@2 == 1
 Obligation:
-b@1 == true
+b@2 == true
 
 Label: assert_1
 Property: assert
 Assumptions:
-callElimAssume_swap_ensures_0_6: b@1 == true
-callElimAssume_swap_ensures_1_7: i@1 == 1
+callElimAssume_swap_ensures_0_6: b@2 == true
+callElimAssume_swap_ensures_1_7: i@2 == 1
 Obligation:
-i@1 == 1
+i@2 == 1
 
 Label: assert_2
 Property: assert
 Assumptions:
-callElimAssume_swap_ensures_0_6: b@1 == true
-callElimAssume_swap_ensures_1_7: i@1 == 1
-callElimAssume_swap_ensures_0_14: i2@1 == 2
-callElimAssume_swap_ensures_1_15: b2@1 == false
+callElimAssume_swap_ensures_0_6: b@2 == true
+callElimAssume_swap_ensures_1_7: i@2 == 1
+callElimAssume_swap_ensures_0_14: i2@2 == 2
+callElimAssume_swap_ensures_1_15: b2@2 == false
 Obligation:
-i2@1 == 2
+i2@2 == 2
 
 Label: assert_3
 Property: assert
 Assumptions:
-callElimAssume_swap_ensures_0_6: b@1 == true
-callElimAssume_swap_ensures_1_7: i@1 == 1
-callElimAssume_swap_ensures_0_14: i2@1 == 2
-callElimAssume_swap_ensures_1_15: b2@1 == false
+callElimAssume_swap_ensures_0_6: b@2 == true
+callElimAssume_swap_ensures_1_7: i@2 == 1
+callElimAssume_swap_ensures_0_14: i2@2 == 2
+callElimAssume_swap_ensures_1_15: b2@2 == false
 Obligation:
-b2@1 == false
+b2@2 == false
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-callElimAssume_swap_ensures_0_6: b@1 == true
-callElimAssume_swap_ensures_1_7: i@1 == 1
-callElimAssume_swap_ensures_0_14: i2@1 == 2
-callElimAssume_swap_ensures_1_15: b2@1 == false
+callElimAssume_swap_ensures_0_6: b@2 == true
+callElimAssume_swap_ensures_1_7: i@2 == 1
+callElimAssume_swap_ensures_0_14: i2@2 == 2
+callElimAssume_swap_ensures_1_15: b2@2 == false
 Obligation:
 true
 
@@ -474,23 +474,23 @@ VCs:
 Label: assert_0
 Property: assert
 Assumptions:
-callElimAssume_pick_ensures_0_3: forall y : int :: y == 7 ==> y == ai@1
+callElimAssume_pick_ensures_0_3: forall y : int :: y == 7 ==> y == ai@2
 Obligation:
-ai@1 == 7
+ai@2 == 7
 
 Label: assert_1
 Property: assert
 Assumptions:
-callElimAssume_pick_ensures_0_3: forall y : int :: y == 7 ==> y == ai@1
-callElimAssume_pick_ensures_0_7: forall y : bool :: y == true ==> y == bb@1
+callElimAssume_pick_ensures_0_3: forall y : int :: y == 7 ==> y == ai@2
+callElimAssume_pick_ensures_0_7: forall y : bool :: y == true ==> y == bb@2
 Obligation:
-bb@1 == true
+bb@2 == true
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-callElimAssume_pick_ensures_0_3: forall y : int :: y == 7 ==> y == ai@1
-callElimAssume_pick_ensures_0_7: forall y : bool :: y == true ==> y == bb@1
+callElimAssume_pick_ensures_0_3: forall y : int :: y == 7 ==> y == ai@2
+callElimAssume_pick_ensures_0_7: forall y : bool :: y == true ==> y == bb@2
 Obligation:
 true
 
@@ -557,30 +557,30 @@ forall y : int :: y == 7 ==> y == 7
 Label: assert_0
 Property: assert
 Assumptions:
-callElimAssume_req_ensures_1_4: ai@1 == 7
+callElimAssume_req_ensures_1_4: ai@2 == 7
 Obligation:
-ai@1 == 7
+ai@2 == 7
 
 Label: callElimAssert_req_requires_0_8
 Property: assert
 Assumptions:
-callElimAssume_req_ensures_1_4: ai@1 == 7
+callElimAssume_req_ensures_1_4: ai@2 == 7
 Obligation:
 forall y : bool :: y == true ==> y == true
 
 Label: assert_1
 Property: assert
 Assumptions:
-callElimAssume_req_ensures_1_4: ai@1 == 7
-callElimAssume_req_ensures_1_9: bb@1 == true
+callElimAssume_req_ensures_1_4: ai@2 == 7
+callElimAssume_req_ensures_1_9: bb@2 == true
 Obligation:
-bb@1 == true
+bb@2 == true
 
 Label: Test_ensures_0
 Property: assert
 Assumptions:
-callElimAssume_req_ensures_1_4: ai@1 == 7
-callElimAssume_req_ensures_1_9: bb@1 == true
+callElimAssume_req_ensures_1_4: ai@2 == 7
+callElimAssume_req_ensures_1_9: bb@2 == true
 Obligation:
 true
 

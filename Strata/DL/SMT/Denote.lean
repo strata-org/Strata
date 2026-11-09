@@ -36,15 +36,15 @@ theorem List.getElem_of_findIdx?_eq_some {xs : List α} {mkTypeFunType : α → 
 
 @[expose] def mkTypeFunType (n : Nat) : Type 1 := n.repeat (Type → ·) Type
 
-def applyTypeArg {n : Nat} (tf : mkTypeFunType (n + 1)) (α : Type) : mkTypeFunType n :=
+@[expose] def applyTypeArg {n : Nat} (tf : mkTypeFunType (n + 1)) (α : Type) : mkTypeFunType n :=
   tf α
 
-def applyTypeArgs {n : Nat} (tf : mkTypeFunType n) (αs : List Type) (h : αs.length = n) : Type :=
+@[expose] def applyTypeArgs {n : Nat} (tf : mkTypeFunType n) (αs : List Type) (h : αs.length = n) : Type :=
   match n, αs with
   | 0, []          => tf
   | _ + 1, α :: αs => applyTypeArgs (applyTypeArg tf α) αs (propext Nat.add_one_inj ▸ List.length_cons ▸ h)
 
-def mkNonemptyPred {n : Nat} (us : mkTypeFunType n) : Prop :=
+@[expose] def mkNonemptyPred {n : Nat} (us : mkTypeFunType n) : Prop :=
   match n with
   | 0     => Nonempty us
   | _ + 1 => ∀ (α : Type), mkNonemptyPred (applyTypeArg us α)
@@ -90,7 +90,7 @@ abbrev SortDenoteResult (sctx : SortContext) :=
 
 mutual
 
-def substituteIS (iss : ISContext) (ty : TermType) : TermType :=
+@[expose] def substituteIS (iss : ISContext) (ty : TermType) : TermType :=
   match ty with
   | .prim _ => ty
   | .option ty => .option (substituteIS iss ty)
@@ -99,22 +99,22 @@ def substituteIS (iss : ISContext) (ty : TermType) : TermType :=
     | some ty' => ty'
     | none     => .constr id (substituteISs iss args)
 
-def substituteISs (iss : ISContext) (tys : List TermType) : List TermType :=
+@[expose] def substituteISs (iss : ISContext) (tys : List TermType) : List TermType :=
   match tys with
   | []        => []
   | ty :: tys => substituteIS iss ty :: substituteISs iss tys
 
 end
 
-def substituteTermVarIS (isctx : ISContext) (v : TermVar) : TermVar :=
+@[expose] def substituteTermVarIS (isctx : ISContext) (v : TermVar) : TermVar :=
   { v with ty := substituteIS isctx v.ty }
 
-def substituteUFIS (isctx : ISContext) (uf : UF) : UF :=
+@[expose] def substituteUFIS (isctx : ISContext) (uf : UF) : UF :=
   { uf with args := uf.args.map (substituteIS isctx), out := substituteIS isctx uf.out }
 
 mutual
 
-def substituteTermIS (isctx : ISContext) (t : Term) : Term :=
+@[expose] def substituteTermIS (isctx : ISContext) (t : Term) : Term :=
   match t with
   | .prim v =>
     .prim v
@@ -131,19 +131,19 @@ def substituteTermIS (isctx : ISContext) (t : Term) : Term :=
   | .quant q vs tr b =>
     .quant q (vs.map (substituteTermVarIS isctx)) (substituteTermISss isctx tr) (substituteTermIS isctx b)
 
-def substituteTermISs (isctx : ISContext) (ts : List Term) : List Term :=
+@[expose] def substituteTermISs (isctx : ISContext) (ts : List Term) : List Term :=
   match ts with
   | [] => []
   | t :: ts => substituteTermIS isctx t :: substituteTermISs isctx ts
 
-def substituteTermISss (isctx : ISContext) (tss : List (List Term)) : List (List Term) :=
+@[expose] def substituteTermISss (isctx : ISContext) (tss : List (List Term)) : List (List Term) :=
   match tss with
   | [] => []
   | ts :: rest => substituteTermISs isctx ts :: substituteTermISss isctx rest
 
 end
 
-def substituteIFIS (isctx : ISContext) (iF : IF) : IF :=
+@[expose] def substituteIFIS (isctx : ISContext) (iF : IF) : IF :=
   { iF with args := iF.args.map (substituteTermVarIS isctx), out := substituteIS isctx iF.out, body := substituteTermIS isctx iF.body }
 
 mutual
@@ -231,7 +231,7 @@ Returns `none` when we lack an interpretation (e.g. for reals).
       | some ty => denoteSortAux sctx ty
       | none => none
 
-def denoteSorts (sctx : SortContext) (tys : List TermType) : Option (List (SortDenoteResult sctx)) := do
+@[expose] def denoteSorts (sctx : SortContext) (tys : List TermType) : Option (List (SortDenoteResult sctx)) := do
   match tys with
   | [] => return []
   | a :: as =>
@@ -247,7 +247,7 @@ Interpret a function type described by SMT term variables and a return type.
 The result is an arrow type `a₁ → … → out` when every argument and the
 result type can be interpreted.
 -/
-@[simp]
+@[simp, expose]
 def denoteFunSort (sctx : SortContext) (as : List TermType) (out : TermType) : Option (SortDenoteResult sctx) :=
   match as with
   | []      => denoteSort sctx out
@@ -1242,6 +1242,57 @@ noncomputable def bindIF (iF : IF) (ctx : Context) (ft' :
   else
     none
 
+-- The helpers of `denoteBoolTermFromContext` are top-level definitions rather
+-- than `where` clauses, which are private in the module system, so that
+-- `Strata.SMT.DenoteProps` can state lemmas about them.
+
+/--
+Eliminate all uninterpreted sort binders by repeatedly applying `bindUS`.
+-/
+@[simp]
+noncomputable def denoteBoolTermFromContext.bindUSs (uss : USContext) (iss : ISContext)
+    (ft' : SortDenoteInput ⟨uss, iss⟩ → Prop) : Option (SortDenoteInput ⟨[], iss⟩ → Prop) :=
+  do match (dependent := true) uss with
+  | [] => return ft'
+  | _ :: uss =>
+    let ft ← bindUS uss iss ft'
+    bindUSs uss iss ft
+
+/--
+Eliminate interpreted-sort aliases. They are already substituted, so this
+step only reindexes the context shape.
+-/
+@[simp]
+noncomputable def denoteBoolTermFromContext.bindISs (uss : USContext) (iss : ISContext)
+    (ft' : SortDenoteInput ⟨uss, iss⟩ → Prop) : Option (SortDenoteInput ⟨uss, []⟩ → Prop) :=
+  return fun (tdi : SortDenoteInput ⟨uss, []⟩) => ft' ⟨tdi.sΓ, tdi.hsΓ⟩
+
+/--
+Eliminate all uninterpreted-function binders by repeatedly applying `bindUF`.
+-/
+@[simp]
+noncomputable def denoteBoolTermFromContext.bindUFs (sctx : SortContext) (vs : TermVarContext)
+    (ufs : UFContext) (ft' : TermDenoteInput ⟨sctx, ⟨vs, ufs⟩⟩ → Prop) :
+    Option (TermDenoteInput ⟨sctx, ⟨vs, []⟩⟩ → Prop) :=
+  do match (dependent := true) ufs with
+  | [] => return ft'
+  | _ :: ufs =>
+    let ft ← bindUF { sctx, tctx := { vs, ufs } } ft'
+    bindUFs sctx vs ufs ft
+
+/--
+Eliminate all interpreted-function declarations by repeatedly applying `bindIF`.
+-/
+@[simp]
+noncomputable def denoteBoolTermFromContext.bindIFs (sctx : SortContext) (vs : TermVarContext)
+    (ufs : UFContext) (ifs : List IF) (ft' : TermDenoteInput ⟨sctx, ⟨vs, ifs.map IF.toUF ++ ufs⟩⟩ → Prop) :
+    Option (TermDenoteInput ⟨sctx, ⟨vs, ufs⟩⟩ → Prop) :=
+  do match (dependent := true) ifs with
+  | [] => return ft'
+  | iF :: ifs =>
+    let ft ← bindIF iF { sctx, tctx := { vs := vs, ufs := ifs.map IF.toUF ++ ufs } } ft'
+    bindIFs sctx vs ufs ifs ft
+
 /--
 Interpret a closed boolean term under SMT declarations.
 
@@ -1259,64 +1310,27 @@ noncomputable def denoteBoolTermFromContext
   let ifs := if iss.isEmpty then ifs else ifs.map (substituteIFIS iss)
   let t := substituteTermIS iss t
   let ⟨.prim .bool, _, ft⟩ ← denoteTerm ⟨⟨uss, iss⟩, ⟨{}, ifs.map IF.toUF ++ ufs⟩⟩ t | none
-  let ft ← bindIFs ⟨uss, iss⟩ {} ufs ifs ft
-  let ft ← bindUFs ⟨uss, iss⟩ {} ufs ft
-  let ft ← bindISs uss iss fun ⟨sΓ, hsΓ⟩ =>
+  let ft ← denoteBoolTermFromContext.bindIFs ⟨uss, iss⟩ {} ufs ifs ft
+  let ft ← denoteBoolTermFromContext.bindUFs ⟨uss, iss⟩ {} ufs ft
+  let ft ← denoteBoolTermFromContext.bindISs uss iss fun ⟨sΓ, hsΓ⟩ =>
     let tΓ : TermEnvironment ⟨sΓ, hsΓ⟩ := { vs := {}, ufs := {} }
     let htΓ : tΓ.WF { vs := {}, ufs := {} } :=
       { hv := { h := rfl, ha := fun _ hi => nomatch hi },
         huf := { h := rfl, ha := fun _ hi => nomatch hi } }
     ft { sΓ, hsΓ, tΓ, htΓ }
-  let ft ← bindUSs uss [] ft
+  let ft ← denoteBoolTermFromContext.bindUSs uss [] ft
   let sΓ : SortEnvironment := {}
   let hsΓ : sΓ.WF {} := { h := rfl, ha := fun _ hi => nomatch hi }
   return PLift.up (ft { sΓ, hsΓ })
-where
-  /--
-  Eliminate all uninterpreted sort binders by repeatedly applying `bindUS`.
-  -/
-  @[simp]
-  bindUSs uss iss (ft' : SortDenoteInput ⟨uss, iss⟩ → Prop) : Option (SortDenoteInput ⟨[], iss⟩ → Prop) :=
-    do match (dependent := true) uss with
-    | [] => return ft'
-    | _ :: uss =>
-      let ft ← bindUS uss iss ft'
-      bindUSs uss iss ft
-  /--
-  Eliminate interpreted-sort aliases. They are already substituted, so this
-  step only reindexes the context shape.
-  -/
-  @[simp]
-  bindISs uss iss (ft' : SortDenoteInput ⟨uss, iss⟩ → Prop) : Option (SortDenoteInput ⟨uss, []⟩ → Prop) :=
-    return fun (tdi : SortDenoteInput ⟨uss, []⟩) => ft' ⟨tdi.sΓ, tdi.hsΓ⟩
-  /--
-  Eliminate all uninterpreted-function binders by repeatedly applying `bindUF`.
-  -/
-  @[simp]
-  bindUFs sctx vs ufs (ft' : TermDenoteInput ⟨sctx, ⟨vs, ufs⟩⟩ → Prop) : Option (TermDenoteInput ⟨sctx, ⟨vs, []⟩⟩ → Prop) :=
-    do match (dependent := true) ufs with
-    | [] => return ft'
-    | _ :: ufs =>
-      let ft ← bindUF { sctx, tctx := { vs, ufs } } ft'
-      bindUFs sctx vs ufs ft
-  /--
-  Eliminate all interpreted-function declarations by repeatedly applying `bindIF`.
-  -/
-  @[simp]
-  bindIFs sctx vs ufs (ifs : List _) (ft' : TermDenoteInput ⟨sctx, ⟨vs, ifs.map IF.toUF ++ ufs⟩⟩ → Prop) :
-      Option (TermDenoteInput ⟨sctx, ⟨vs, ufs⟩⟩ → Prop) :=
-    do match (dependent := true) ifs with
-    | [] => return ft'
-    | iF :: ifs =>
-      let ft ← bindIF iF { sctx, tctx := { vs := vs, ufs := ifs.map IF.toUF ++ ufs } } ft'
-      bindIFs sctx vs ufs ifs ft
 
-def mkISContext (iss : Map String TermType) : ISContext :=
-  go {} iss
-where
-  go (isctx : ISContext) : Map String TermType → ISContext
+/-- Resolve sort synonyms against the ones defined before them (top-level rather
+than a `where` helper so that it can be exposed). -/
+@[expose] def mkISContext.go (isctx : ISContext) : Map String TermType → ISContext
   | [] => isctx
   | (n, ty) :: iss => go ((n, substituteIS isctx ty) :: isctx) iss
+
+@[expose] def mkISContext (iss : Map String TermType) : ISContext :=
+  mkISContext.go {} iss
 
 /--
 Interpret an SMT query by universally quantifying assumptions and returning the semantic proposition.

@@ -109,8 +109,13 @@ The traversal threads `Ctx.values` through a statement list. A variable whose va
 stops being known — because it is havoc'd, or written in a branch that was not taken
 apart — is dropped from the map rather than kept stale. -/
 
+/-- `names` with the names of `vs` added. -/
+def insertNames (names : Std.HashSet String) (vs : List CoreIdent) : Std.HashSet String :=
+  vs.foldl (fun n y => n.insert y.name) names
+
 def forgetAssigned (ctx : Ctx) (ss : List Statement) : Ctx :=
-  ctx.invalidate (ss.flatMap (Stmt.modifiedOrDefinedVars · (excludeScoped := false)))
+  let names := ss.foldl (fun n s => insertNames n (Stmt.modifiedOrDefinedVars s false)) {}
+  ctx.invalidate names
 
 /-- The arms of a branch that can run, given its simplified guard, in the order
     `[then, else]` they are passed in. A guard folded to a constant rules one arm out;
@@ -121,42 +126,60 @@ def liveArms {α : Type} (cond : ExprOrNondet Expression) (arms : List α) : Lis
     if c.isTrue then [thenArm] else if c.isFalse then [elseArm] else [thenArm, elseArm]
   | _, arms => arms
 
+/-- What a statement or statement list writes: the names of the variables
+    `Stmt.modifiedOrDefinedVars _ false` lists, and the names of those
+    `Stmt.definedVars _ false` lists. -/
+structure Writes where
+  vars : Std.HashSet String := {}
+  defined : Std.HashSet String := {}
+
+/-- `w` with what `s` writes, read off the statement itself. -/
+def Writes.insertStmt (s : Statement) (w : Writes) : Writes :=
+  { vars := insertNames w.vars (Stmt.modifiedOrDefinedVars s (excludeScoped := false))
+    defined := insertNames w.defined (Stmt.definedVars s (excludeScoped := false)) }
+
+/-- What two statement lists write together. -/
+def Writes.union (a b : Writes) : Writes :=
+  { vars := a.vars ∪ b.vars, defined := a.defined ∪ b.defined }
+
 mutual
 
-/-- Simplify one statement, returning the statements it becomes and the context
-    that follows it. -/
-def simpStmt (ctx : Ctx) (s : Statement) : List Statement × Ctx :=
+/-- Simplify one statement, returning the statements it becomes, the context
+    that follows it, and the function adding what `s` writes to a write set.
+
+    The write sets are built bottom-up from the nested statements, so a branch reads
+    them in time proportional to their size rather than walking its arms again. -/
+def simpStmt (ctx : Ctx) (s : Statement) : List Statement × Ctx × (Writes → Writes) :=
   match s with
   | .cmd (.cmd c) =>
     let (c, ctx) := simpCmd ctx c
-    ([.cmd (.cmd c)], ctx)
+    ([.cmd (.cmd c)], ctx, .insertStmt s)
   | .cmd (.call pname args md) =>
     let args := args.map fun a =>
       match a with
       | .inArg e => CallArg.inArg (simplifyExpr ctx e)
       | other => other
-    ([Statement.call pname args md], forgetAssigned ctx [s])
+    ([Statement.call pname args md], forgetAssigned ctx [s], .insertStmt s)
   | .block label ss md =>
-    let (ss, inner) := simpStmts ctx ss
+    let (ss, inner, w) := simpStmts ctx ss
     -- Declarations inside the block leave scope with it; values that were known
     -- before it survive unless the block wrote them.
-    ([.block label ss md], forgetAssigned { ctx with values := inner.values } [s])
+    ([.block label ss md], { ctx with values := inner.values }.invalidate w.vars, w.union)
   | .ite cond ts es md =>
     -- A later phase reads a constant guard to decide which arm is unreachable and
     -- what its obligations become, so the branch stays even once the guard folds.
     let cond := match cond with
       | .det c => ExprOrNondet.det (simplifyExpr ctx c)
       | .nondet => .nondet
-    let (ts, thenCtx) := simpStmts ctx ts
-    let (es, elseCtx) := simpStmts ctx es
+    let (ts, thenCtx, wt) := simpStmts ctx ts
+    let (es, elseCtx, we) := simpStmts ctx es
+    let w := wt.union we
     -- What is known after the branch is what every arm that can run agrees on. An
     -- arm whose guard has folded against it cannot run, so a decided branch carries
     -- the live arm's values forward, as evaluating the program would. Neither the
     -- variable nor its value may be arm-local, since both leave scope at the join.
-    let ctx := ctx.join (liveArms cond [thenCtx, elseCtx])
-      (Stmt.modifiedOrDefinedVars s (excludeScoped := false))
-      ((Stmt.definedVars s (excludeScoped := false)).map (·.name))
-    ([.ite cond ts es md], ctx)
+    let ctx := ctx.join (liveArms cond [thenCtx, elseCtx]) w.vars w.defined
+    ([.ite cond ts es md], ctx, w.union)
   | .loop guard measure invs body md =>
     -- A body that runs an unknown number of times invalidates what it writes, so
     -- it is simplified knowing nothing about those variables.
@@ -168,19 +191,20 @@ def simpStmt (ctx : Ctx) (s : Statement) : List Statement × Ctx :=
       | .nondet => .nondet
     let measure := measure.map (simplifyExpr inner)
     let invs := invs.map fun (l, i) => (l, simplifyExpr inner i)
-    let (body, _) := simpStmts inner body
-    ([.loop guard measure invs body md], forgetAssigned ctx [s])
-  | .exit label md => ([.exit label md], ctx)
-  | .typeDecl tc md => ([Statement.typeDecl tc md], ctx)
+    let (body, _, w) := simpStmts inner body
+    ([.loop guard measure invs body md], ctx.invalidate w.vars, w.union)
+  | .exit label md => ([.exit label md], ctx, id)
+  | .typeDecl tc md => ([Statement.typeDecl tc md], ctx, id)
   termination_by sizeOf s
 
-def simpStmts (ctx : Ctx) (ss : List Statement) : List Statement × Ctx :=
+/-- `simpStmt` over a list, threading the context, and returning what the list writes. -/
+def simpStmts (ctx : Ctx) (ss : List Statement) : List Statement × Ctx × Writes :=
   match ss with
-  | [] => ([], ctx)
+  | [] => ([], ctx, {})
   | s :: rest =>
-    let (out, ctx) := simpStmt ctx s
-    let (outRest, ctx) := simpStmts ctx rest
-    (out ++ outRest, ctx)
+    let (out, ctx, addWrites) := simpStmt ctx s
+    let (outRest, ctx, wRest) := simpStmts ctx rest
+    (out ++ outRest, ctx, addWrites wRest)
   termination_by sizeOf ss
 
 end
@@ -191,14 +215,16 @@ Substituting a variable's value into its last use leaves the definition behind
 with nothing reading it. -/
 
 /-- `e` is a value of the factory `F` (`LExpr.isValue`) of type `ty`: a constant, a
-    closed abstraction or quantifier, or a constructor of `F` applied to values, a nullary
-    one included (`None()`). A function of `F` applied to fewer arguments than it takes is
-    a value too. This is `HasVal.valueOfTy F e ty` for `Core.Expression`, computed: that
-    one is a proposition, and the phase needs to decide it. -/
-def isValueOfTy (F : Expression.Factory) (ty : Expression.Ty) (e : Expression.Expr) : Bool :=
+    closed abstraction, or a constructor of `F` applied to values, a nullary one included
+    (`None()`). A function of `F` applied to fewer arguments than it takes is
+    a value too. The type is checked against `F` (`typeCheckWith`), so an operator whose
+    annotation is not an instance of its signature in `F` has no type. This is a syntactic
+    check, not `HasVal.valueOfTy` (a predicate on semantic values). -/
+def isValueOfTy (F : Lambda.Factory CoreLParams) (ty : Expression.Ty) (e : Expression.Expr) :
+    Bool :=
   Lambda.LExpr.isValue F e &&
   (match ty.toMonoType? with
-   | some t => Lambda.LExpr.typeCheck [] e == some t
+   | some t => Lambda.LExpr.typeCheckWith F [] e == some t
    | none => false)
 
 /-- The variables definitely defined at a point of a body, with their declared types:
@@ -216,8 +242,8 @@ def Defined.after (D : Defined) : Statement → Defined
 /-- The input parameters the body `ss` never writes, at their declared types: they are
     definitely defined everywhere in the body. -/
 def Defined.ofParams (inputs : @LMonoTySignature Unit) (ss : List Statement) : Defined :=
-  let written := (Block.modifiedOrDefinedVars (P := Expression) (C := Command) ss false).foldl
-    (fun (w : Std.HashSet String) y => w.insert y.name) {}
+  let written :=
+    insertNames {} (Block.modifiedOrDefinedVars (P := Expression) (C := Command) ss false)
   inputs.foldl (fun (D : Defined) (p : CoreIdent × LMonoTy) =>
     if written.contains p.1.name then D else D.insert p.1.name (.forAll [] p.2)) {}
 
@@ -241,7 +267,7 @@ def isDefinedCopy (D : Defined) (ty : Expression.Ty) : Expression.Expr → Bool
     a tester, a destructor or a call may get stuck, and so may a variable defined only
     in one arm of a branch. The check is one pass over `e` with one factory lookup per
     application, or one map lookup. -/
-def surelyEvaluates (F : Expression.Factory) (D : Defined) (ty : Expression.Ty)
+def surelyEvaluates (F : Lambda.Factory CoreLParams) (D : Defined) (ty : Expression.Ty)
     (e : Expression.Expr) : Bool :=
   isValueOfTy F ty e || isDefinedCopy D ty e
 
@@ -250,45 +276,128 @@ def surelyEvaluates (F : Expression.Factory) (D : Defined) (ty : Expression.Ty)
 
     A nondeterministic `init` is kept even when nothing reads it. A `set` is not a
     definition: dropping it would change the value of a variable that outlives it. -/
-def definedBy (F : Expression.Factory) (D : Defined) : Statement → Option CoreIdent
+def definedBy (F : Lambda.Factory CoreLParams) (D : Defined) : Statement → Option CoreIdent
   | .cmd (.cmd (.init x ty (.det e) _)) => if surelyEvaluates F D ty e then some x else none
   | _ => none
 
+/-- Insert `ys` into `live`, consing onto `added` each name that was not in `live`. -/
+def insertTracked (live : Std.HashSet String) (added ys : List String) :
+    Std.HashSet String × List String :=
+  ys.foldl (fun (l, a) y =>
+    let (had, l) := l.containsThenInsert y
+    (l, if had then a else y :: a)) (live, added)
+
+mutual
+/-- `budget` less the number of statements in `s`, nested ones included, or `0` once
+    that reaches `0`. -/
+def countDownStmt (budget : Nat) (s : Statement) : Nat :=
+  match s with
+  | .ite _ ts es _ => countDown (countDown (budget - 1) ts) es
+  | .block _ ss _ | .loop _ _ _ ss _ => countDown (budget - 1) ss
+  | _ => budget - 1
+  termination_by sizeOf s
+
+/-- `budget` less the number of statements in `ss`, nested ones included, or `0` once
+    that reaches `0`. Takes time proportional to the smaller of the two. -/
+def countDown (budget : Nat) (ss : List Statement) : Nat :=
+  match budget, ss with
+  | 0, _ | _, [] => budget
+  | _, s :: rest => countDown (countDownStmt budget s) rest
+  termination_by sizeOf ss
+end
+
+/-- Whether `a` has fewer statements than `b`, nested ones included. Both are counted
+    down from `k = 1, 2, 4, …` until one of them is exhausted, so this takes time
+    proportional to the smaller count. -/
+def fewerStmts (a b : List Statement) (k : Nat := 1) (fuel : Nat := 64) : Bool :=
+  let ra := countDown k a
+  let rb := countDown k b
+  match ra, rb, fuel with
+  | 0, 0, fuel + 1 => fewerStmts a b (2 * k) fuel
+  | _, _, _ => ra > rb
+
 mutual
 /-- Sweep the blocks nested in `stmt` with `live`, the names live after it, and `D`, the
-    names definitely defined before it. -/
-def dropDeadDefsStmt (F : Expression.Factory) (D : Defined) (live : Std.HashSet String)
-    (stmt : Statement) : Statement :=
+    names definitely defined before it. Also returns the names live before the swept
+    statement, `live` with every variable it reads or writes (`Stmt.getVars`,
+    `Stmt.modifiedOrDefinedVars`), and `added` with each name this inserted into `live`
+    consed on.
+
+    A nested list's own sweep returns `live` with what the list reads and writes, so a
+    compound statement adds only the variables of its guard, measure and invariants to
+    what its nested lists return, instead of walking them again. The arms of a branch
+    are swept by `dropDeadDefsArms`, the one with fewer statements first. -/
+def dropDeadDefsStmt (F : Lambda.Factory CoreLParams) (D : Defined) (live : Std.HashSet String)
+    (added : List String) (stmt : Statement) :
+    Statement × Std.HashSet String × List String :=
   match stmt with
   | .ite cond thenSs elseSs md =>
-    .ite cond (dropDeadDefsAux F D live thenSs).1 (dropDeadDefsAux F D live elseSs).1 md
-  | .block label inner md => .block label (dropDeadDefsAux F D live inner).1 md
+    let (thenSs, elseSs, live, added) :=
+      if fewerStmts elseSs thenSs then
+        let (elseSs, thenSs, live, added) := dropDeadDefsArms F D live added elseSs thenSs
+        (thenSs, elseSs, live, added)
+      else dropDeadDefsArms F D live added thenSs elseSs
+    let (live, added) := insertTracked live added (cond.getVars.map (·.name))
+    (.ite cond thenSs elseSs md, live, added)
+  | .block label inner md =>
+    let (inner, live, added) := dropDeadDefsAux F D live added inner
+    (.block label inner md, live, added)
   | .loop guard measure invs body md =>
-    .loop guard measure invs (dropDeadDefsAux F D live body).1 md
-  | other => other
+    let (body, live, added) := dropDeadDefsAux F D live added body
+    let heads := Stmt.getVars (.loop guard measure invs [] md : Statement)
+    let (live, added) := insertTracked live added (heads.map (·.name))
+    (.loop guard measure invs body md, live, added)
+  | other =>
+    let (live, added) := insertTracked live added ((Stmt.getVars other ++
+      Stmt.modifiedOrDefinedVars other (excludeScoped := false)).map (·.name))
+    (other, live, added)
   termination_by sizeOf stmt
 
-/-- `dropDeadDefs`, also returning the names live before the swept list. -/
-def dropDeadDefsAux (F : Expression.Factory) (D : Defined) (liveOnExit : Std.HashSet String)
-    (ss : List Statement) :
-    List Statement × Std.HashSet String :=
+/-- Sweep `first` and `second`, the two arms of a branch, both with `live`, the names
+    live after the branch. Returns them swept, `live` with what either arm reads or
+    writes, and `added` with each name this inserted into `live` consed on.
+
+    `live` is updated in place rather than copied: the names the sweep of `first`
+    inserts are erased before `second` is swept and inserted again after it, which costs
+    time proportional to their number. An empty `first` inserts nothing, so `second` is
+    then swept with `live` directly. Passing the arm with fewer statements as `first`
+    makes each statement part of an erased arm at most log₂ n times, for n statements
+    in all, whichever arms the branches are nested in: each time, the branch around it
+    holds at least twice as many statements as the erased arm. -/
+def dropDeadDefsArms (F : Lambda.Factory CoreLParams) (D : Defined) (live : Std.HashSet String)
+    (added : List String) (first second : List Statement) :
+    List Statement × List Statement × Std.HashSet String × List String :=
+  if first.isEmpty then
+    let (second, live, added) := dropDeadDefsAux F D live added second
+    (first, second, live, added)
+  else
+    let (first, live, addedFirst) := dropDeadDefsAux F D live [] first
+    let live := addedFirst.foldl (·.erase ·) live
+    let (second, live, added) := dropDeadDefsAux F D live added second
+    let (live, added) := insertTracked live added addedFirst
+    (first, second, live, added)
+  termination_by sizeOf first + sizeOf second
+  decreasing_by all_goals cases first <;> cases second <;> simp <;> omega
+
+/-- `dropDeadDefs`, also returning the names live before the swept list, and `added`
+    with each name this inserted into `liveOnExit` consed on. -/
+def dropDeadDefsAux (F : Lambda.Factory CoreLParams) (D : Defined) (liveOnExit : Std.HashSet String)
+    (added : List String) (ss : List Statement) :
+    List Statement × Std.HashSet String × List String :=
   match ss with
-  | [] => ([], liveOnExit)
+  | [] => ([], liveOnExit, added)
   | stmt :: rest =>
-    let (rest, live) := dropDeadDefsAux F (D.after stmt) liveOnExit rest
+    let (rest, live, added) := dropDeadDefsAux F (D.after stmt) liveOnExit added rest
     let dead := match definedBy F D stmt with
       | some x => !live.contains x.name
       | none => false
-    if dead then (rest, live)
+    if dead then (rest, live, added)
     else
-      let stmt := dropDeadDefsStmt F D live stmt
       -- A variable read keeps the definition that supplies its value; a
       -- variable assigned keeps the `init` that declares it, since dropping the
       -- declaration would leave a later `set` or `havoc` with nothing to assign.
-      let live := (Stmt.getVars stmt).foldl (fun l y => l.insert y.name) live
-      let live := (Stmt.modifiedOrDefinedVars stmt (excludeScoped := false)).foldl
-        (fun l y => l.insert y.name) live
-      (stmt :: rest, live)
+      let (stmt, live, added) := dropDeadDefsStmt F D live added stmt
+      (stmt :: rest, live, added)
   termination_by sizeOf ss
 end
 
@@ -307,9 +416,9 @@ end
     is re-executed each iteration, so no later iteration can read the previous one's,
     and a guard or invariant cannot read it either, being outside the body's scope.
     Reads within one iteration are covered by the backward pass over the body. -/
-def dropDeadDefs (F : Expression.Factory) (D : Defined) (liveOnExit : Std.HashSet String)
+def dropDeadDefs (F : Lambda.Factory CoreLParams) (D : Defined) (liveOnExit : Std.HashSet String)
     (ss : List Statement) : List Statement :=
-  (dropDeadDefsAux F D liveOnExit ss).1
+  (dropDeadDefsAux F D liveOnExit [] ss).1
 
 /-! ## Procedures and programs -/
 
@@ -329,7 +438,7 @@ def dropDeadDefs (F : Expression.Factory) (D : Defined) (liveOnExit : Std.HashSe
     functions carry the `inlineIfConstr`/`evalIfConstr` attributes that `fold`
     keeps. Without them the call would find no definition and be left as is.
     Datatype functions are registered the same way `buildEnv` registers them. -/
-def programFactory (p : Program) : Transform.CoreTransformM Expression.Factory := do
+def programFactory (p : Program) : Transform.CoreTransformM (Lambda.Factory CoreLParams) := do
   -- Datatypes first, so a function declared over them resolves.
   let mut F ← Transform.getFactory
   for decl in p.decls do
@@ -372,7 +481,7 @@ def simplifyProcedure (base : Ctx) (proc : Procedure) : Procedure :=
   match proc.body with
   | .cfg _ => proc
   | .structured ss =>
-    let (ss, _) := simpStmts base ss
+    let (ss, _, _) := simpStmts base ss
     let specNames := ((proc.spec.preconditions ++ proc.spec.postconditions).flatMap
       (fun (_, c) => HasFvars.getFvars c.expr)).map (·.name)
     let live := (proc.header.outputs.keys.map (·.name) ++ specNames).foldl
@@ -387,20 +496,15 @@ def simplifyProcedure (base : Ctx) (proc : Procedure) : Procedure :=
     simplified as an assertion's condition would be, and the variable is bound again. The
     trigger is kept as written. -/
 def simplifyLemma (base : Ctx) (e : Expression.Expr) : Expression.Expr :=
-  go (numForalls e) 0 e
+  go (numForalls e) e
 where
   numForalls : Expression.Expr → Nat
     | .quant _ .all _ _ _ body => numForalls body + 1
     | _ => 0
-  go : Nat → Nat → Expression.Expr → Expression.Expr
-    | n + 1, i, .quant m .all name ty tr body =>
-      let x : CoreIdent := ⟨s!"$__lemma{i}_{name}", ()⟩
-      -- Bind `x` again: `substFvarsLifting` lifts the bound variable under each binder it
-      -- passes, and matches `x` by name, whatever type annotation simplification gave it.
-      .quant m .all name ty tr
-        (Lambda.LExpr.substFvarsLifting (go n (i + 1) (Lambda.LExpr.varOpen 0 (x, ty) body))
-          [(x, .bvar m 0)])
-    | _, _, e => simplifyExpr base e
+  go : Nat → Expression.Expr → Expression.Expr
+    | n + 1, .quant m .all name ty tr body =>
+      .quant m .all name ty tr (underBinder ty body fun b => go n b.val).fst
+    | _, e => simplifyExpr base e
 
 /-- Simplify every procedure and lemma in a program. The context, and with it the folding factory,
     is built once and shared by every procedure, specification clause and lemma. The flag
@@ -458,4 +562,4 @@ def Core.simplifyPhase : Core.PipelinePhase :=
                          .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,
                          .noProcedureContracts,
                          .noPolymorphicProcedures, .noPolymorphicFunctions,
-                         .typeAnnotated])
+                         .typeAnnotated, .noInits, .treeForm, .exitsCovered])

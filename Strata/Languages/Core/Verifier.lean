@@ -9,6 +9,9 @@ public import Strata.Pipeline.Messages
 public import Strata.Languages.Core.SMTEncoder
 public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
+public import Strata.Transform.WP.WPCoreProgram
+public import Strata.Transform.SSA.SSACoreProgram
+public import Strata.Transform.DeadDefElim
 import Strata.Transform.UnrollBoundedQuantifiers
 import Strata.Transform.BetaReduce
 import Strata.Transform.CallElim
@@ -714,6 +717,7 @@ def typeCheck (options : VerifyOptions) (program : Program)
     throw (Message.fromFormat k)
   | .ok T =>
     let (program, _T) ← Program.typeCheck C T program
+    let program := GenOpaqueTypeParams.closeLemmaTypeVars program
     -- dbg_trace f!"[Strata.Core] Annotated program:\n{program}"
     if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
     return program
@@ -772,27 +776,17 @@ def buildEnv (options : VerifyOptions) (program : Program)
   let stats := stats.increment s!"{Evaluator.Stats.factoryOps}" factory.toArray.size
   return (E, stats)
 
-/-- Proof obligation program construction: Program → Program.
-    Runs symbolic execution and converts obligations to a program
-    suitable for downstream phases (CSE, SMT encoding). -/
-def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
+/-- Symbolic evaluation of a program's declarations, as obligation generation runs it: the
+    program and the factory `moreFns` extends, both without the unconditional `inline` attribute
+    except on the functions whose expansion removes a lambda (`Core.Simplify.lambdaCarriers`),
+    through `buildEnv` and `Program.eval`.  Returns the program-level declarations of the
+    obligation program (the program's type declarations, the functions evaluation added with
+    their recursive axioms, the `distinct` declarations), the obligations evaluation deferred,
+    and the statistics. -/
+def evalProgramDecls (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
-    Except Message (Program × Statistics) := do
+    Except Message (List Decl × Imperative.ProofObligations Expression × Statistics) := do
   let factory ← Core.Factory.addFactory moreFns
-  -- Precondition: nondeterministic `if *` / `while *` guards must have been
-  -- eliminated (by `nondetElim`) first. `Core.Statement.eval` rejects such a
-  -- guard per-path, but `Program.eval` isolates per-procedure `Env.error`, so
-  -- that rejection would not surface here and its path's obligations would be
-  -- dropped silently. Check the input structurally and fail loudly instead.
-  match program.decls.findSome? (fun d => match d with
-    | .proc proc _ => (match proc.body with
-        | .structured ss => if Imperative.Block.noNondetGuards ss then none else some proc.header.name.1
-        | .cfg _ => none)
-    | _ => none) with
-  | some name => throw (Message.fromString
-      s!"toCoreProofObligationProgram: procedure '{name}' contains a \
-         nondeterministic if/loop guard; run nondetElim before symbolic evaluation.")
-  | none => pure ()
   -- Symbolic evaluation gets both the factory and the program without the unconditional
   -- `inline` attribute, so expanding such a call is the Simplify phase's decision.
   --
@@ -810,48 +804,14 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
   -- kept for convenience.
   let stats := declStats.merge evalStats
   let stats := stats.increment s!"{Evaluator.Stats.verificationEnvironments}" pEs.length
-
-  -- Convert the evaluation Env's deferred obligations into a procedure body.
   -- Program.eval accumulates all procedures into a single Env, so pEs
-  -- is always a single-element list. We extract the single Env and build
-  -- one obligation procedure containing all deferred obligations.
+  -- is always a single-element list.
   -- Type/datatype declarations come from the original program.
   let typeDecls := program.decls.filter fun d =>
     match d with | .type _ _ => true | _ => false
   let postEvalEnv ← match pEs with
     | [e] => pure e
     | _ => throw (Message.fromString s!"toCoreProofObligationProgram: expected exactly 1 evaluation Env, got {pEs.length}")
-  -- The procedure name is only used for the obligation procedure header;
-  -- downstream phases (ObligationExtraction) walk the body and ignore it.
-  -- We pick the first procedure name as a representative label, or the first
-  -- lemma name when a program has lemmas but no procedure.
-  let procName := program.decls.findSome? fun
-    | .proc p _ => some p.header.name | _ => none
-  let procName := procName <|> program.decls.findSome? fun
-    | .lemma l _ => some (⟨l.name, ()⟩ : CoreIdent) | _ => none
-  let blocks := postEvalEnv.deferred.toList.map fun ob =>
-    let assumes := ob.assumptions.reverse.flatten.filterMap fun
-      | .assumption label e =>
-        some (Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata)))
-      | _ => none
-    let assertStmt := Imperative.Stmt.cmd (CmdExt.cmd (
-      if ob.property == .cover
-      then Imperative.Cmd.cover ob.label ob.obligation ob.metadata
-      else Imperative.Cmd.assert ob.label ob.obligation ob.metadata))
-    assumes ++ [assertStmt]
-  let body := match blocks with
-    | [] => []
-    | [b] => b
-    | b :: rest => rest.foldl (fun acc block =>
-        [Imperative.Stmt.ite .nondet acc block .empty]) b
-  let oblProcs := match procName with
-    | some name => [Decl.proc {
-        header := { name := name, typeArgs := [], inputs := [], outputs := [] },
-        spec := { preconditions := [], postconditions := [] },
-        body := .structured body
-      } .empty]
-    | none => []
-
   -- Include function declarations and distinct constraints from the
   -- evaluation environment so the obligations program is self-contained
   -- for downstream phases (CSE, SMT encoding).
@@ -879,13 +839,112 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
     | none => Decl.func f .empty
   let distinctDecls := postEvalEnv.distinct.mapIdx fun i es =>
     Decl.distinct s!"distinct_{i}" es .empty
-  let oblProgram : Program := { decls := typeDecls ++ funcDecls ++ distinctDecls ++ oblProcs }
+  return (typeDecls ++ funcDecls ++ distinctDecls, postEvalEnv.deferred, stats)
+
+/-- Proof obligation program construction: Program → Program.
+    Runs symbolic execution and converts obligations to a program
+    suitable for downstream phases (CSE, SMT encoding). -/
+def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except Message (Program × Statistics) := do
+  -- Preconditions: every procedure body is structured, and nondeterministic
+  -- `if *` / `while *` guards have been eliminated (by `nondetElim`).
+  -- Symbolic evaluation rejects a CFG body or such a guard only by setting
+  -- `Env.error` for that procedure or path, and `Program.eval` keeps that error
+  -- local, so the rejection would not surface here and the obligations would be
+  -- dropped silently. Check the input structurally and fail loudly instead.
+  match program.decls.findSome? (fun d => match d with
+    | .proc proc _ => (match proc.body with
+        | .structured ss =>
+          if Imperative.Block.noNondetGuards ss then none
+          else some s!"procedure '{proc.header.name.1}' contains a nondeterministic \
+            if/loop guard; run nondetElim before symbolic evaluation."
+        | .cfg _ =>
+          some s!"procedure '{proc.header.name.1}' has a CFG body; symbolic \
+            evaluation supports only structured bodies.")
+    | _ => none) with
+  | some msg => throw (Message.fromString s!"toCoreProofObligationProgram: {msg}")
+  | none => pure ()
+  let (decls, deferred, stats) ← evalProgramDecls options program moreFns
+  -- Convert the evaluation Env's deferred obligations into a procedure body:
+  -- one obligation procedure containing all deferred obligations.
+  -- The procedure name is only used for the obligation procedure header;
+  -- downstream phases (ObligationExtraction) walk the body and ignore it.
+  -- We pick the first procedure name as a representative label, or the first
+  -- lemma name when a program has lemmas but no procedure.
+  let procName := program.decls.findSome? fun
+    | .proc p _ => some p.header.name | _ => none
+  let procName := procName <|> program.decls.findSome? fun
+    | .lemma l _ => some (⟨l.name, ()⟩ : CoreIdent) | _ => none
+  let blocks := deferred.toList.map fun ob =>
+    let assumes := ob.assumptions.reverse.flatten.filterMap fun
+      | .assumption label e =>
+        some (Imperative.Stmt.cmd (CmdExt.cmd (Imperative.Cmd.assume label e ob.metadata)))
+      | _ => none
+    let assertStmt := Imperative.Stmt.cmd (CmdExt.cmd ob.toCheckCmd)
+    assumes ++ [assertStmt]
+  let body := match blocks with
+    | [] => []
+    | [b] => b
+    | b :: rest => rest.foldl (fun acc block =>
+        [Imperative.Stmt.ite .nondet acc block .empty]) b
+  let oblProcs := match procName with
+    | some name => [Decl.obligationProc name body]
+    | none => []
+  let oblProgram : Program := { decls := decls ++ oblProcs }
 
   if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
-    dbg_trace f!"{formatProofObligations postEvalEnv.deferred}"
+    dbg_trace f!"{formatProofObligations deferred}"
   return (oblProgram, stats)
 
+
+/-- **The declaration phase of a program** (`Core.WP.declObligationsProgramWith`): the
+    program-level declarations and the lemmas' obligations are those symbolic evaluation produces
+    for the program without its procedures (`evalProgramDecls`, the evaluation symbolic mode
+    runs, done once); the axioms and procedures are kept in place; each lemma becomes the
+    obligation unit of its obligation. -/
+def declObligationsProgram (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except Message (Program × Statistics) := do
+  let lemmaSource : Program :=
+    { decls := program.decls.filter fun d => match d with | .proc _ _ => false | _ => true }
+  let (decls, lemmaObls, stats) ← evalProgramDecls options lemmaSource moreFns
+  match WP.declObligationsProgramWith { decls := decls } lemmaObls.toList program with
+  | .ok p => return (p, stats)
+  | .error e => throw (Message.fromString e)
+
+/-- **The WP phase of a program** (`Core.WP.wpProcsProgram`): each procedure that is not an
+    obligation unit becomes a guarded procedure of the same name and header; every other
+    declaration is kept.  The names the procedures introduce avoid the names of the factory's
+    functions and those the program declares. -/
+def wpProgram (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) : Except Message Program := do
+  let factory ← Core.Factory.addFactory moreFns
+  let reserved := factory.toArray.toList.map (·.name)
+  match WP.wpProcsProgram reserved program with
+  | .ok p => return p
+  | .error e => throw (Message.fromString e)
+
+/-- **The SSA phase of a program** (`Core.WP.ssaProgram`): each guarded procedure becomes an
+    obligation procedure of the same name; the names it introduces avoid the names of the
+    factory's functions and those the program declares. -/
+def ssaProgramOf (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) : Except Message Program := do
+  let factory ← Core.Factory.addFactory moreFns
+  let reserved := factory.toArray.toList.map (·.name)
+  match WP.ssaProgram reserved program with
+  | .ok p => return p
+  | .error e => throw (Message.fromString e)
+
+/-- The declaration phase of a program, then its WP phase, then its SSA phase. -/
+def wpSSAProgram (options : VerifyOptions) (program : Program)
+    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
+    Except Message (Program × Statistics) := do
+  let (decl, stats) ← declObligationsProgram options program moreFns
+  let mid ← wpProgram decl moreFns
+  let out ← ssaProgramOf mid moreFns
+  return (out, stats)
 
 /-- Convenience: type check then build obligation program. -/
 def typeCheckAndBuildObligationProgram (options : VerifyOptions) (program : Program)
@@ -1495,7 +1554,11 @@ inductive PathConditionShape where
       functions). Taking the path condition to be satisfiable therefore assumes that these
       axioms are satisfiable together. If they are not, an assertion the solver would pass
       vacuously is reported failing; no assertion is ever reported passing because of this.
-      `Core.factoryInterp` models the built-ins' bodies and evaluators but not their axioms.
+      `Core.factoryInterp_axiomsSatisfied` proves that the axioms of the polymorphic built-ins
+      (`Core.Factory`) hold together in one model. Two steps are assumed rather than proved:
+      that the specialized copies `MonomorphizeFunctions` makes of these built-ins, whose axioms
+      are what the solver receives, inherit that model; and that the axioms of the program's own
+      functions are satisfiable.
       The evaluator also decides before encoding, so a definition the encoder cannot encode is
       reported as this failure rather than as an analysis error. -/
   | onlyDefinitions
@@ -1691,13 +1754,15 @@ def typeCheckPipelinePhase
   -- Type checking annotates expressions and leaves every statement where it
   -- is, so it carries all facts across. Annotation does not change which
   -- constructor an expression is, so a redex-free program stays redex-free.
+  -- It rejects a CFG body and an `exit` whose label names no enclosing block,
+  -- so every body of its output has its exits covered.
   modelPreservingPipelinePhase "typeCheck"
-    (establishes := factSet![.typeAnnotated])
+    (establishes := factSet![.typeAnnotated, .exitsCovered])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
                          .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions])
+                         .noPolymorphicFunctions, .noInits])
     fun prog => do
       match Core.typeCheck options prog factory with
       | .ok prog' => return (true, prog')
@@ -1719,17 +1784,96 @@ def symbolicEvalPipelinePhase
   modelPreservingPipelinePhase "symbolicEval"
     (requires := factSet![.noCFGBodies, .noLoops, .noNondetGuards])
     (establishes := factSet![.noCalls, .staticSingleAssignment, .hasObligationForm,
-                             .noProcedureContracts])
+                             .noProcedureContracts, .noInits])
     (preserves := factSet![.noCFGBodies, .noLoops, .noLoopInvariants, .noLoopMeasures,
                          .noPrecondsFromFuncs,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated])
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered])
     fun prog => do
       let (prog', stats) ← Transform.liftDiag (Core.toCoreProofObligationProgram options prog moreFns |>.mapError
         fun err => { err with message := s!"❌ Symbolic evaluation error.\n{err.message}" })
       modify fun σ => { σ with statistics := σ.statistics.merge stats }
       return (true, prog')
 
+/-- The declaration pipeline phase, the first phase `--vcgen wp` runs: the program-level
+    declarations symbolic evaluation produces for the program without its procedures (type
+    declarations, functions, `distinct` declarations) replace the program's, every axiom and
+    every procedure is kept unchanged, and each lemma becomes an obligation unit (a procedure
+    asserting its obligation). It evaluates no procedure, so it requires nothing of them; it
+    keeps every procedure, emits obligation units without loops, calls, contracts, type
+    parameters or nondeterministic guards, and its functions are those symbolic evaluation
+    emits. -/
+def declObligationsPipelinePhase
+    (options : VerifyOptions := VerifyOptions.default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
+  modelPreservingPipelinePhase "declObligations"
+    (requires := factSet![])
+    (establishes := factSet![])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
+                         .noPrecondsFromFuncs, .noNondetGuards,
+                         .noPolymorphicProcedures,
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered])
+    fun prog => do
+      let (prog', stats) ← Transform.liftDiag
+        (Core.declObligationsProgram options prog moreFns |>.mapError fun err =>
+          { err with message := s!"❌ Declaration error.\n{err.message}" })
+      modify fun σ => { σ with statistics := σ.statistics.merge stats }
+      return (true, prog')
+
+/-- The WP pipeline phase: each procedure that is not an obligation unit becomes a guarded
+    procedure, every other declaration is kept (`--vcgen wp` runs it after
+    `declObligationsPipelinePhase`, then `ssaPipelinePhase`). It requires a program without
+    calls, since it rejects every call, and bodies whose every `exit` targets an enclosing
+    block, which it checks of each procedure again (`WP.checkLoopFree`). It empties every
+    contract, emits only guarded-form bodies whose every `ite` arm contains an obligation
+    (`Imperative.WP.wpEntry_armsHaveObl`; each obligation unit it keeps is one `assert` or
+    `cover`), emits no loop and no `exit`, keeps headers, touches no function and builds only
+    annotated variables, literals and `ite`s. -/
+def wpPipelinePhase
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
+  modelPreservingPipelinePhase "wp"
+    (requires := factSet![.noCFGBodies, .noCalls, .noLoops, .noNondetGuards, .exitsCovered])
+    (establishes := factSet![.noProcedureContracts, .treeForm, .armsHaveObligations])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
+                         .noPrecondsFromFuncs,
+                         .noPolymorphicProcedures,
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered])
+    fun prog => do
+      let prog' ← Transform.liftDiag
+        (Core.wpProgram prog moreFns |>.mapError fun err =>
+          { err with message := s!"❌ WP error.\n{err.message}" })
+      return (true, prog')
+
+/-- The SSA pipeline phase: each guarded procedure becomes an obligation procedure. It emits
+    only `init`, `assume`, `assert`, `cover` and `ite *`, and no `set`; it drops the
+    procedures' specifications, so it requires none. The obligation program declares its
+    variables in place, so it does not establish `noInits`, and `commonSubexprElim`, which
+    requires `noInits`, cannot follow it. It requires every `ite` arm to contain an obligation:
+    it drops an arm without one and inlines the other arm, so a run through the dropped arm
+    would be replayed by running the other arm's definitions. It keeps every obligation and
+    emits an `ite *` only when both arms are nonempty, so its output keeps that fact. -/
+def ssaPipelinePhase
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
+  modelPreservingPipelinePhase "ssa"
+    (requires := factSet![.noCFGBodies, .noProcedureContracts, .treeForm, .armsHaveObligations])
+    (establishes := factSet![.staticSingleAssignment, .hasObligationForm])
+    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
+                         .noLoopMeasures, .noPrecondsFromFuncs, .noProcedureContracts,
+                         .noPolymorphicProcedures,
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered,
+                         .armsHaveObligations])
+    fun prog => do
+      let prog' ← Transform.liftDiag
+        (Core.ssaProgramOf prog moreFns |>.mapError fun err =>
+          { err with message := s!"❌ SSA error.\n{err.message}" })
+      return (true, prog')
+
+/-- The phases `--vcgen wp` runs in place of `symbolicEvalPipelinePhase`: the declaration phase,
+    the WP phase, the SSA phase, then the erasure of unread definitions. -/
+def wpVCGenPhases (options : VerifyOptions := VerifyOptions.default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
+  [declObligationsPipelinePhase options moreFns, wpPipelinePhase moreFns, ssaPipelinePhase moreFns,
+    deadDefElimPipelinePhase]
 
 /-- The phases that run between `transformPipelinePhases` and `symbolicEvalPipelinePhase`:
     replace procedure and lemma type parameters by opaque types, type-check, monomorphize functions, and eliminate
@@ -1761,8 +1905,11 @@ def corePipelinePhases
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
   transformPipelinePhases options
     ++ preSymbolicEvalPipelinePhases options moreFns
-    ++ [symbolicEvalPipelinePhase options moreFns]
-    ++ [betaReducePipelinePhase, commonSubexprElimPhase]
+    ++ (match options.vcgen with
+        | .symbolic => [symbolicEvalPipelinePhase options moreFns, betaReducePipelinePhase,
+                        commonSubexprElimPhase]
+        -- CSE requires `noInits`, which the SSA phase does not establish.
+        | .wp => wpVCGenPhases options moreFns ++ [betaReducePipelinePhase])
 
 /-- What the back end needs of the program the pipeline hands it, as opposed to
     what one phase asks of another. A phase list that does not deliver these is
@@ -2162,7 +2309,10 @@ where
 /-- The variables a counterexample for `obligation` should report: those its goal and
     assumptions reach, through the managed definitions they use, that
     `Core.SMT.isReportedName` names. A variable the passive program declares (`var x`) is
-    reported; one it defines (`init x := e`) is not, since its value follows from the others. -/
+    reported; one it defines (`init x := e`) is not, since its value follows from the others.
+    A variable of a function type, such as one standing for a function in a generated lemma,
+    is not reported: SMT-LIB's `get-value` takes only terms of a value sort, and a request
+    naming it would lose the whole counterexample. -/
 def collectModelVars
     (obligation : Imperative.ProofObligation Expression)
     (varDefinitions : List VarDefinition)
@@ -2186,76 +2336,64 @@ def collectModelVars
   let relevantNames :=
     defClosure (fun e => (Lambda.LExpr.freeVars e).map (·.1.name)) definitions rootRefs
   let definedNames := definedNameSet varDefinitions
-  (ProofObligation.getVars obligation).filter fun (v, _) =>
-    relevantNames.contains v.name && Core.SMT.isReportedName definedNames v.name
+  (ProofObligation.getVars obligation).filter fun (v, ty) =>
+    relevantNames.contains v.name && Core.SMT.isReportedName definedNames v.name &&
+      (ty.bind LMonoTy.isArrow).isNone
 
-private
-def containsUnsupportedSMTString : Expression.Expr → Bool
-  | .const _ (.strConst s) =>
-    match SMT.StringLit.validate s with
-    | .ok () => false
-    | .error _ => true
-  | .const _ _ | .op .. | .bvar .. | .fvar .. => false
-  | .abs _ _ _ body => containsUnsupportedSMTString body
-  | .quant _ _ _ _ trigger body =>
-    containsUnsupportedSMTString trigger || containsUnsupportedSMTString body
-  | .app _ fn arg =>
-    containsUnsupportedSMTString fn || containsUnsupportedSMTString arg
-  | .ite _ c t e =>
-    containsUnsupportedSMTString c ||
-      containsUnsupportedSMTString t ||
-      containsUnsupportedSMTString e
-  | .eq _ lhs rhs =>
-    containsUnsupportedSMTString lhs || containsUnsupportedSMTString rhs
-
-def hasUnsupportedStringCSEDefinition
-    (obligation : Imperative.ProofObligation Expression) : Bool :=
-  obligation.assumptions.any fun pathCondition =>
-    pathCondition.any fun
+/-- The CSE-generated definitions on the path of `obligation`, in order. -/
+def cseDefinitions (obligation : Imperative.ProofObligation Expression) :
+    List (String × Expression.Expr) :=
+  obligation.assumptions.flatMap fun pathCondition =>
+    pathCondition.filterMap fun
       | .varDecl name _ (.det rhs) =>
-        isCSEGeneratedName name.name && containsUnsupportedSMTString rhs
-      | _ => false
+        if isCSEGeneratedName name.name then some (name.name, rhs) else none
+      | _ => none
+
+/-- The names of the definitions of `definitions`, the CSE-generated
+    definitions of `obligation`, that `obligation` uses: those its goal and its
+    other path-condition entries reference, closed over the definitions' bodies
+    (see `pruneUnusedCSEDefinitions`). -/
+def neededCSEDefinitions (obligation : Imperative.ProofObligation Expression)
+    (definitions : List (String × Expression.Expr)) : Std.HashSet String :=
+  let rootRefs := obligation.assumptions.foldl (fun refs pathCondition =>
+    pathCondition.foldl (fun refs entry =>
+      match entry with
+      | .assumption _ e => addCSEReferences refs e
+      | .distinct _ es => es.foldl addCSEReferences refs
+      | .varDecl name _ (.det rhs) =>
+        if isCSEGeneratedName name.name then refs
+        else addCSEReferences refs rhs
+      | .varDecl _ _ .nondet => refs) refs)
+    (addCSEReferences {} obligation.obligation)
+  defClosure (fun e => (Lambda.LExpr.freeVars e).filterMap fun (id, _) =>
+    if isCSEGeneratedName id.name then some id.name else none) definitions rootRefs
 
 /-- Remove CSE-generated definitions that cannot affect this obligation.
 
 Symbolic evaluation combines every deferred obligation into one synthetic
 procedure before CSE runs. CSE may therefore hoist a repeated expression above
 all obligation branches, making its `init $__cse.*` entry appear in every
-obligation even when only one branch references it. Besides producing needless
-SMT, an unencodable literal in such a definition would then prevent unrelated
-obligations from reaching the solver.
+obligation even when only one branch references it. Such a definition must not
+reach an obligation that does not use it: it can mention a function the
+obligation does not, and so bring that function's axioms into its context. A
+recursive function's termination and well-formedness lemmas are stated
+without the function, and must be checked without its axioms, which may be
+contradictory when the function does not terminate. An unencodable literal in
+such a definition would also prevent unrelated obligations from reaching the
+solver.
 
-This pruning is applied only when the extracted obligation set contains an
-SMT-unrepresentable string inside a CSE definition. Ordinary CSE definitions
-remain shared across obligations, preserving the fold and emitter's
-shared-prefix reuse. On the exceptional path, start from CSE variables
-referenced by the obligation and by non-CSE path-condition entries, close
-transitively over CSE definition bodies, and retain only those definitions.
-The original entry ordering is preserved, so every retained dependency is
-still emitted before its users. -/
+Start from CSE variables referenced by the obligation and by non-CSE
+path-condition entries, close transitively over CSE definition bodies, and
+retain only those definitions. The original entry ordering is preserved, so
+every retained dependency is still emitted before its users. -/
 def pruneUnusedCSEDefinitions
     (obligation : Imperative.ProofObligation Expression) :
     Imperative.ProofObligation Expression :=
-  let definitions := obligation.assumptions.flatMap fun pathCondition =>
-    pathCondition.filterMap fun
-      | .varDecl name _ (.det rhs) =>
-        if isCSEGeneratedName name.name then some (name.name, rhs) else none
-      | _ => none
+  let definitions := cseDefinitions obligation
   if definitions.isEmpty then
     obligation
   else
-    let rootRefs := obligation.assumptions.foldl (fun refs pathCondition =>
-      pathCondition.foldl (fun refs entry =>
-        match entry with
-        | .assumption _ e => addCSEReferences refs e
-        | .distinct _ es => es.foldl addCSEReferences refs
-        | .varDecl name _ (.det rhs) =>
-          if isCSEGeneratedName name.name then refs
-          else addCSEReferences refs rhs
-        | .varDecl _ _ .nondet => refs) refs)
-      (addCSEReferences {} obligation.obligation)
-    let needed := defClosure (fun e => (Lambda.LExpr.freeVars e).filterMap fun (id, _) =>
-      if isCSEGeneratedName id.name then some id.name else none) definitions rootRefs
+    let needed := neededCSEDefinitions obligation definitions
     let assumptions := obligation.assumptions.map fun pathCondition =>
       pathCondition.filter fun
         | .varDecl name _ (.det _) =>
@@ -2386,8 +2524,10 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
         -- at its last good position (the next obligation re-detects from there).
         pure (ObligationDisposition.resolved result, (default : Statistics), encState0,
               snapCache0, emState0)
-      | .ok ({ assumptions := assumptionTerms, varDefs, varDecls,
-               goal := obligationTerm, ctx, stats := encStats }, encState', snapCache') =>
+      | .ok (encoded, encState', snapCache') =>
+        let { assumptions := assumptionTerms, varDefs, varDecls,
+              goal := obligationTerm, stats := encStats, .. } := encoded
+        let ctx := encoded.declaredCtx options.removeIrrelevantDatatypes
         -- Shared managed definitions can mention variables from unrelated
         -- obligations. Follow only the definitions reachable from this
         -- obligation before deciding which user variables to request in a
@@ -2474,18 +2614,12 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     if let some diag := firstError then throw diag
   return (results, stats)
 
-/-- The obligations `extractObligations` reads from a program, with the unused CSE definitions
-    dropped from every one of them when one holds a string literal SMT-LIB cannot spell. -/
+/-- The obligations `extractObligations` reads from a program, each without the CSE
+    definitions it does not use (see `pruneUnusedCSEDefinitions`). -/
 def obligationsOf (oblProgram : Program) :
     Except Message (ProofObligations Expression) :=
   match Core.ObligationExtraction.extractObligations oblProgram with
-  | .ok obs =>
-    -- Per-obligation pruning changes the shared oldest frame and defeats
-    -- prefix reuse. Pay that cost only when it isolates a CSE definition
-    -- whose string literal cannot be serialized for SMT-LIB.
-    if obs.any hasUnsupportedStringCSEDefinition
-    then .ok (obs.map pruneUnusedCSEDefinitions)
-    else .ok obs
+  | .ok obs => .ok (obs.map pruneUnusedCSEDefinitions)
   | .error e => .error (Message.fromFormat f!"ObligationExtraction error: {e}")
 
 private

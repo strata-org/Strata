@@ -33,14 +33,14 @@ named in the modifies clause is preserved across the call. A clause may name a
 whole object (all its fields may change) or a single field `o#f` (only that
 field of `o` may change).
 
-Generates:
-  forall $obj: Composite, $fld: Field =>
+Generates, quantifying over heap references:
+  forall $obj: int, $fld: Field =>
     $obj < old($heap).nextReference && notModified($obj, $fld) ==> readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)
 
 where notModified($obj, $fld) conjoins, per entry:
-- `$obj != e`                 single object `e`
-- `!(select(s, $obj))`        Set `s`
-- `!($obj == o && $fld == f)` field `(o, f)`
+- `$obj != ref(e)`                                single object `e`
+- `!(exists $c: Composite => select(s, $c) && ref($c) == $obj)`   Set `s`
+- `!($obj == r && $fld == f)`                     field `r#f`, `r` already a reference
 
 Under array theory, for a procedure that names only individual refs and cannot
 allocate, callers assume a quantifier-free (enumerated) frame and the body
@@ -71,38 +71,46 @@ type classification, with `model` deciding value-vs-reference for a nominal head
 -/
 def classifyModifiesType (model : SemanticModel) (expr : StmtExprMd) (ty : HighType) :
     Option ModifiesEntry :=
-  match classifyModifiesHighType (fun n => (model.get n).isValueType) ty with
+  match classifyModifiesHighType
+      (fun n => n.text != compositeTypeName.text && (model.get n).isValueType) ty with
   | some .composite    => some (.single expr)
   | some .compositeSet => some (.set expr)
   | none               => none
 
-/-- Extract modifies entries: a field target `o#f` (kept symbolic by heap
-parameterization) becomes a field-granular entry; other entries are classified
-by type. Non-heap-relevant entries are dropped during resolution. -/
+/-- Extract modifies entries: a field target `r#f` (kept symbolic by heap
+parameterization, its owner already a reference and its field a heap field)
+becomes a field-granular entry; other entries are classified by type.
+Non-heap-relevant entries are dropped during resolution. -/
 def extractModifiesEntries (model: SemanticModel)
     (modifiesExprs : List StmtExprMd) : List ModifiesEntry :=
   modifiesExprs.filterMap fun expr =>
     match expr.val with
-    -- Field target `o#f`: non-composite owners are already dropped during
-    -- resolution, so any field target reaching here owns a heap object.
-    | .Var (.Field objExpr fieldName) =>
-      (resolveQualifiedFieldName model fieldName).map fun qualifiedName =>
-        .field objExpr (mkMd (.StaticCall qualifiedName [] []) expr.source)
+    | .Var (.Field refExpr fieldName) =>
+      some (.field refExpr (mkMd (.StaticCall fieldName.text [] []) expr.source))
     | _ => classifyModifiesType model expr (computeExprType model expr).val
+
+private def refOf (e : StmtExprMd) : StmtExprMd :=
+  mkMd (.StaticCall compositeRefAccessor [e] []) e.source
 /--
 Build the "obj is not modified" condition for a single modifies entry as a Laurel StmtExpr.
-- For a single Composite `e`: `$obj != e`
-- For a Set Composite `e`: `!(select(e, $obj))` i.e. $obj is not in the set
-- For a field `(o, f)`: `!($obj == o && $fld == f)` i.e. the quantified
-  `($obj, $fld)` pair is not the modified `(object, field)` pair (field-granular)
+- For a single Composite `e`: `$obj != ref(e)`
+- For a Set Composite `e`: no member of `e` has the reference `$obj`
+- For a field `(r, f)`: `!($obj == r && $fld == f)` i.e. the quantified
+  `($obj, $fld)` pair is not the modified `(reference, field)` pair (field-granular)
 -/
 def buildNotModifiedForEntry (obj : StmtExprMd) (fld : StmtExprMd) (entry : ModifiesEntry) (source : FileRange) : StmtExprMd :=
   match entry with
   | .single expr =>
-    mkMd (.StaticCall (mkId Operation.Neq.procName) [obj, expr] []) source
+    mkMd (.StaticCall (mkId Operation.Neq.procName) [obj, refOf expr] []) source
   | .set expr =>
-    let membership := mkMd (.StaticCall "select" [expr, obj] []) source
-    mkMd (.StaticCall (mkId Operation.Not.procName) [membership] []) source
+    let memberName : Identifier := "$modifies_member"
+    let member := mkMd (.Var (.Local memberName)) source
+    let membership := mkMd (.StaticCall "select" [expr, member] []) source
+    let sameRef := mkMd (.StaticCall (mkId Operation.Eq.procName) [refOf member, obj] []) source
+    let both := mkMd (.StaticCall (mkId Operation.And.procName) [membership, sameRef] []) source
+    let someMember := mkMd (.Quantifier .Exists
+      ⟨memberName, { val := .UserDefined compositeTypeName, source }⟩ none both) source
+    mkMd (.StaticCall (mkId Operation.Not.procName) [someMember] []) source
   | .field objExpr fieldConst =>
     let objEq := mkMd (.StaticCall (mkId Operation.Eq.procName) [obj, objExpr] []) source
     let fldEq := mkMd (.StaticCall (mkId Operation.Eq.procName) [fld, fieldConst] []) source
@@ -121,7 +129,7 @@ def conjoinAll (exprs : List StmtExprMd) (source : FileRange) : StmtExprMd :=
 Quantified (pointwise) frame: every allocated object the `modifies` clause does not name keeps
 all of its field values across the call.
 
-  forall $obj: Composite, $fld: Field =>
+  forall $obj: int, $fld: Field { readField($heap, $obj, $fld) } =>
     notModified($obj, $fld) && $obj < old($heap).nextReference ==> readField(old($heap), $obj, $fld) == readField($heap, $obj, $fld)
 
 Returns `none` if there are no entries.
@@ -134,8 +142,7 @@ def buildQuantifiedFrame (proc : Procedure) (entries : List ModifiesEntry)
   let obj := mkMd (.Var (.Local objName)) src
   let fld := mkMd (.Var (.Local fldName)) src
   let heapCounter := mkMd (.StaticCall heapNextReferenceAccessor [heapIn] []) src
-  let objRef := mkMd (.StaticCall compositeRefAccessor [obj] []) src
-  let objAllocated := mkMd (.StaticCall (mkId Operation.Lt.procName) [objRef, heapCounter] []) src
+  let objAllocated := mkMd (.StaticCall (mkId Operation.Lt.procName) [obj, heapCounter] []) src
   let antecedent := if entries.isEmpty
     then objAllocated
     else
@@ -147,8 +154,8 @@ def buildQuantifiedFrame (proc : Procedure) (entries : List ModifiesEntry)
   let readOut := mkMd (.StaticCall readFieldName [heapOut, obj, fld] []) src
   let heapUnchanged := mkMd (.StaticCall (mkId Operation.Eq.procName) [readIn, readOut] []) src
   let implBody := mkMd (.StaticCall (mkId Operation.Implies.procName) [antecedent, heapUnchanged] []) src
-  let innerForall := mkMd (.Quantifier .Forall ⟨ fldName, { val := .UserDefined "Field", source := src } ⟩ none implBody) src
-  { val := .Quantifier .Forall ⟨ objName, { val := .UserDefined compositeTypeName, source := src } ⟩ none innerForall, source := src }
+  let innerForall := mkMd (.Quantifier .Forall ⟨ fldName, { val := .UserDefined "Field", source := src } ⟩ (some readOut) implBody) src
+  { val := .Quantifier .Forall ⟨ objName, { val := .TInt, source := src } ⟩ none innerForall, source := src }
 
 /-- Quantifier-free frame: output `data` equals input with only the named rows
 overwritten, and `nextReference` is monotone. -/
@@ -158,7 +165,7 @@ def buildEnumeratedFrame (proc : Procedure) (entries : List ModifiesEntry)
   let data h := mkMd (.StaticCall heapDataAccessor [h] []) src
   let nextRef h := mkMd (.StaticCall heapNextReferenceAccessor [h] []) src
   let dataOut := data heapOut
-  let modifiedRefs := entries.filterMap fun e => match e with | .single r => some r | _ => none
+  let modifiedRefs := entries.filterMap fun e => match e with | .single r => some (refOf r) | _ => none
   let framedData := modifiedRefs.foldr
     (fun ref acc => mkMd (.StaticCall "update" [acc, ref, mkMd (.StaticCall "select" [dataOut, ref] []) src] []) src)
     (data heapIn)

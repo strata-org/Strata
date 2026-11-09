@@ -15,9 +15,8 @@ open Strata
 Laurel verifies with array theory on, so a `Map` is an SMT `Array` in every term. The heap is
 a datatype whose field is a `Map`, and the datatype declared to a live solver has to give that
 field the same `Array` sort; with an uninterpreted `Map` sort there, every read of the heap is
-rejected as a `select` on a non-array. `Core.verify` walks the obligation tree on live solvers
-under `--incremental`, for Laurel as for every front end, so each goal below gets the same
-results, verdicts and models, with `incremental` off and on.
+rejected as a `select` on a non-array. Laurel programs are verified on live solvers under
+`--incremental`, so each goal below gets the same verdict with `incremental` off and on.
 -/
 
 private def heapProgram :=
@@ -63,15 +62,16 @@ private def bothWays (p : StrataDDM.Program) : IO Unit := do
     else IO.println s!"differ:\n  per-obligation: {plain}\n  incremental: {walked}"
 
 /--
-info: agree on 8:
+info: agree on 9:
   set_$result_calls_Int.SafeDiv_0 ✅ pass
   set_$result_calls_Int.SafeMod_0 ✅ pass
   set_$result_calls_Int.SafeDivT_0 ✅ pass
   set_$result_calls_Int.SafeModT_0 ✅ pass
-  assert(865) ✅ pass
-  assert(1075) ✅ pass
-  assert(1107) ❌ fail
-  assert(945) ✅ pass
+  assert(797) ✅ pass
+  assert(1007) ✅ pass
+  assert(1039) ❌ fail
+  assert(877) ✅ pass
+  assert(759) ✅ pass
 -/
 #guard_msgs in
 #eval bothWays heapProgram

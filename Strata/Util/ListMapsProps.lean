@@ -83,20 +83,23 @@ theorem Maps.find?_mem_values [DecidableEq α] (m : Maps α β)
 
 theorem Maps.find?_of_not_mem_values [DecidableEq α] (S : Maps α β)
   (h1 : Maps.find? S i = none) : i ∉ Maps.keys S := by
-  induction S; all_goals simp_all [Maps.keys]
-  rename_i _ head tail ih
-  simp [Maps.find?] at h1
-  split at h1 <;> simp_all
-  rename_i h
-  exact Map.find?_of_not_mem_values head h
+  induction S with
+  | nil => simp [Maps.keys]
+  | cons head tail ih =>
+    simp only [Maps.find?] at h1
+    split at h1
+    · rename_i h
+      simp only [Maps.keys, List.mem_append, not_or]
+      exact ⟨Map.find?_of_not_mem_values head h, ih h1⟩
+    · cases h1
   done
 
 
 private theorem Maps.insert_fresh_key_subset [DecidableEq α] (ms : Maps α β)
   (h : Maps.find? ms key = none) :
   (Maps.insert ms key val).keys ⊆ key :: Maps.keys ms := by
-  simp_all [Maps.insert, Maps.pop, Maps.push, Maps.newest, Maps.keys]
-  split <;> simp_all [Map.insert, Maps.keys, Map.keys]
+  simp_all only [Maps.insert, Maps.push, Maps.newest, Maps.pop, Maps.keys, List.append_subset]
+  split <;> simp_all only [Map.insert, Maps.keys, Map.keys, List.Subset.refl, List.subset_append_of_subset_right, List.subset_cons_of_subset, and_true]
   rename_i ms m ms_rest
   have := @Map.insert_keys _ _ key val _ m
   grind
@@ -106,51 +109,89 @@ private theorem Maps.insert_fresh_key_subset [DecidableEq α] (ms : Maps α β)
 private theorem Maps.insert_fresh_key_subset_value [DecidableEq α] (ms : Maps α β)
   (h : Maps.find? ms key = none) :
   (Maps.insert ms key val).values ⊆ val :: Maps.values ms := by
-  simp_all [Maps.insert, Maps.pop, Maps.push, Maps.newest, Maps.values]
-  split <;> simp_all [Map.insert, Maps.values, Map.values]
+  simp_all only [Maps.insert, Maps.push, Maps.newest, Maps.pop, Maps.values, List.append_subset]
+  split <;> simp_all only [Map.insert, Maps.values, Map.values, List.Subset.refl, List.subset_append_of_subset_right, List.subset_cons_of_subset, and_true]
   rename_i ms m ms_rest
   have := @Map.insert_values _ _ key val _ m
   grind
   done
 
 
+/-- Updating a key that is already present in `ms` does not introduce new keys:
+the keys of the updated map are a subset of the original keys. -/
+private theorem Maps.update_keys_subset [DecidableEq α] (ms : Maps α β) (key : α) (val : β)
+  (h : ¬ Maps.find? ms key = none) :
+  (Maps.update ms key val).keys ⊆ Maps.keys ms := by
+  induction ms with
+  | nil => exact absurd rfl h
+  | cons hd tl ih =>
+    cases hf : hd.find? key with
+    | none =>
+      have h' : ¬ Maps.find? tl key = none := by
+        simpa only [Maps.find?, hf] using h
+      simp only [Maps.update, hf, Maps.keys]
+      exact List.append_subset.2
+        ⟨List.subset_append_left _ _, List.Subset.trans (ih h') (List.subset_append_right _ _)⟩
+    | some w =>
+      have hk := Map.find?_mem_keys hd hf
+      have hi := Map.insert_keys hd (key := key) (val := val)
+      simp only [Maps.update, hf, Maps.keys]
+      refine List.append_subset.2 ⟨?_, List.subset_append_right _ _⟩
+      intro x hx
+      have := hi hx
+      simp only [List.mem_cons] at this
+      rcases this with rfl | hx'
+      · exact List.mem_append_left _ hk
+      · exact List.mem_append_left _ hx'
+
+/-- Updating a key that is already present in `ms` yields values drawn only from
+the new value `val` together with the original values. -/
+private theorem Maps.update_values_subset [DecidableEq α] (ms : Maps α β) (key : α) (val : β)
+  (h : ¬ Maps.find? ms key = none) :
+  (Maps.update ms key val).values ⊆ val :: Maps.values ms := by
+  induction ms with
+  | nil => exact absurd rfl h
+  | cons hd tl ih =>
+    cases hf : hd.find? key with
+    | none =>
+      have h' : ¬ Maps.find? tl key = none := by
+        simpa only [Maps.find?, hf] using h
+      simp only [Maps.update, hf, Maps.values]
+      refine List.append_subset.2 ⟨?_, ?_⟩
+      · exact fun x hx => List.mem_cons_of_mem _ (List.mem_append_left _ hx)
+      · intro x hx
+        have := ih h' hx
+        simp only [List.mem_cons, List.mem_append] at this ⊢
+        grind
+    | some w =>
+      have hi := Map.insert_values hd (key := key) (val := val)
+      simp only [Maps.update, hf, Maps.values]
+      refine List.append_subset.2 ⟨?_, ?_⟩
+      · intro x hx
+        have := hi hx
+        simp only [List.mem_cons, List.mem_append] at this ⊢
+        grind
+      · exact fun x hx => List.mem_cons_of_mem _ (List.mem_append_right _ hx)
+
 private theorem Maps.insert_key_update_subset [DecidableEq α] (ms : Maps α β)
   (h : ¬ Maps.find? ms key = none) :
   (Maps.insert ms key val).keys ⊆ Maps.keys ms := by
-  simp_all [Maps.insert, Maps.pop, Maps.push, Maps.newest]
-  split <;> simp_all
-  rename_i v heq
-  induction ms
-  case nil => simp_all [Maps.find?]
-  case cons hd tl ih =>
-    simp_all [Maps.update, Maps.find?]
-    split <;> simp_all [Maps.keys]
-    rename_i heq_hd_key
-    have := @Map.find?_mem_keys _ _ key v _ hd heq_hd_key
-    have := @Map.insert_keys _ _ key val _ hd
-    grind
-  done
-
+  have : Maps.insert ms key val = Maps.update ms key val := by
+    cases hf : Maps.find? ms key with
+    | none => exact absurd hf h
+    | some _ => simp only [Maps.insert, hf]
+  rw [this]
+  exact Maps.update_keys_subset ms key val h
 
 private theorem Maps.insert_key_update_subset_value [DecidableEq α] (ms : Maps α β)
   (h : ¬ Maps.find? ms key = none) :
   (Maps.insert ms key val).values ⊆ val :: Maps.values ms := by
-  simp_all [Maps.insert, Maps.pop, Maps.push, Maps.newest]
-  split <;> simp_all
-  rename_i v heq
-  induction ms
-  case nil => simp_all [Maps.find?]
-  case cons hd tl ih =>
-    simp_all [Maps.update, Maps.find?]
-    split <;> simp_all [Maps.values]
-    rename_i heq_hd_key
-    · have := @Map.find?_mem_values _ _ key val _ hd;
-      have := @Map.insert_values _ _ key val _ hd;
-      grind
-    · have := @Map.find?_mem_values _ _ key val _ hd
-      have := @Map.insert_values _ _ key val _ hd
-      grind
-  done
+  have : Maps.insert ms key val = Maps.update ms key val := by
+    cases hf : Maps.find? ms key with
+    | none => exact absurd hf h
+    | some _ => simp only [Maps.insert, hf]
+  rw [this]
+  exact Maps.update_values_subset ms key val h
 
 
 theorem Maps.insert_keys_subset [DecidableEq α] (ms : Maps α β) :
@@ -186,8 +227,8 @@ theorem Maps.not_mem_keys_find?_none' [DecidableEq α] (S : Maps α β) (i : α)
   induction S with
   | nil => simp [Maps.find?]
   | cons m rest ih =>
-    simp [Maps.keys] at h; simp [Maps.find?]
-    simp [Map.find?_none_of_not_mem_keys' m i h.1]; exact ih h.2
+    simp only [keys, List.mem_append, not_or] at h; simp only [find?]
+    simp only [Map.find?_none_of_not_mem_keys' m i h.1]; exact ih h.2
 
 
 /-- If a key is in `Maps.keys`, then `Maps.find?` returns `some`. -/
@@ -196,8 +237,8 @@ theorem Maps.find?_of_mem_keys' [DecidableEq α] (S : Maps α β) (i : α)
   induction S with
   | nil => simp [Maps.keys] at h
   | cons m rest ih =>
-    simp [Maps.keys] at h
-    simp [Maps.find?]
+    simp only [keys, List.mem_append] at h
+    simp only [find?]
     cases h_eq : Map.find? m i with
     | some v => exact ⟨v, rfl⟩
     | none =>
@@ -214,7 +255,7 @@ theorem Maps.find?_update_self [DecidableEq α]
   | cons m rest ih =>
     simp only [Maps.update]; split
     · rename_i h_none; simp only [Maps.find?, h_none]; apply ih
-      simp [Maps.find?, h_none] at h; exact h
+      simp only [find?, h_none, ne_eq] at h; exact h
     · simp [Maps.find?, Map.find?_insert_self]
 
 
@@ -368,7 +409,7 @@ theorem Maps.insert_eq_addInNewest_fresh [DecidableEq α]
     (ms : Maps α β) (x : α) (v : β) (h : Maps.find? ms x = none) :
     Maps.insert ms x v = Maps.addInNewest ms [(x, v)] := by
   unfold Maps.insert
-  simp [h]
+  simp only [h]
   rw [Map.insert_fresh_eq_append _ _ _ (Maps.find?_none_newest ms x h)]
   unfold Maps.addInNewest
   rfl

@@ -67,7 +67,7 @@ private def declareOf (name : String) : StmtExpr :=
   .Var (.Declare { name := mkId name, type := some (mkTy .TInt) })
 
 private def block (stmts : List StmtExpr) : StmtExpr :=
-  .Block (stmts.map (⟨·, .unknown⟩)) none
+  .Block (stmts.map (⟨·, .unknown⟩)) none [] none
 
 /--
 info: empty body: $result

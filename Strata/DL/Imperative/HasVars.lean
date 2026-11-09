@@ -32,6 +32,20 @@ class HasVarsImp (P : PureExpr) (α : Type) where
     the expressions it contains. -/
   readVars : α → List P.Ident
 
+/-! # Typed variable lookup over commands : HasTypedVarsImp
+
+`HasTypedVarsImp` gives the type annotations a command carries, for the free-variable
+annotation check (`Stmt.fvarTypesWellAnnotated`).  Only command types implement it, and it has
+no default, so a construct without an instance cannot be checked rather than passing
+trivially. -/
+
+class HasTypedVarsImp (P : PureExpr) (α : Type) where
+  /-- The annotated free-variable reads of the construct, with their annotations
+    (`HasFvars.getTypedFvars` of the expressions it contains). -/
+  typedReadVars : α → List (P.Ident × P.Ty)
+  /-- The variables the construct defines in its own scope, with their declared types. -/
+  typedDefinedVars : α → List (P.Ident × P.Ty)
+
 /-! # Operator/Function Name Lookup over Commands : HasOpsImp
 
 `HasOpsImp` collects the operator (function) names referenced by a command,

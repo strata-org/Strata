@@ -6,6 +6,8 @@
 module
 
 public import Strata.DL.Imperative.CmdTrace
+public import Strata.DL.Imperative.CmdTraceWF
+public import Strata.DL.Imperative.Logic.TraceInterp
 public import Strata.Util.Relations
 public import Strata.Util.ListUtils
 
@@ -29,6 +31,14 @@ Index of relations defined here:
 * `TraceExtendsEnv` — the stutter-free, genuinely transitive refinement of
   `TraceStuttersEnv`: equal-length traces related event-by-event by
   `Event.ExtendsEnv`.
+* `EventArg.WithWF R` — an event-argument relation `R` strengthened with
+  free-variable store agreement and evaluator evidence on both snapshots, with
+  its event and trace liftings `Event.WithWF` and `Trace.WithWF`. The
+  structured transforms relate their traces by
+  `Trace.WithWF (EventArg.ExtendsEnv Extra)`.
+* `Trace.WeakensAssumes` — the target trace is the source trace with each event replaced by
+  a counterpart under a condition interpretation (`Event.WeakensAssume`: the same assertion
+  or cover, or a weaker assumption), and any assumption possibly dropped.
 -/
 
 namespace Imperative
@@ -78,6 +88,58 @@ that target-only bindings do not change the interpreted truth of a condition. -/
 @[expose] def TraceExtendsEnv {P : PureExpr} (allowedVarName : P.Ident → Prop)
     (source target : Trace P) : Prop :=
   List.Rel₂ (Event.ExtendsEnv allowedVarName) source target
+
+/-- An event-argument relation `R` strengthened with the semantic evidence
+needed to transport the captured expression's value: the stores agree on the
+expression's free variables, both stores hold only values, and the source
+factory's evaluator respects free-variable store agreement. -/
+structure EventArg.WithWF {P : PureExpr} [HasVal P] [HasFvars P]
+    (R : EventArg P → EventArg P → Prop) (source target : EventArg P) : Prop where
+  rel : R source target
+  store_fv : StoreAgreesOnFvars source.store target.store source.expr
+  sourceStoreWF : WellFormedStore source.store source.factory
+  targetStoreWF : WellFormedStore target.store target.factory
+  exprCongr : WellFormedSemanticEvalExprCongr source.factory
+
+/-- Same-kind event matching induced by `EventArg.WithWF R`. -/
+abbrev Event.WithWF {P : PureExpr} [HasVal P] [HasFvars P]
+    (R : EventArg P → EventArg P → Prop) : Event P → Event P → Prop :=
+  Event.Matches (EventArg.WithWF R)
+
+/-- Pointwise `Event.WithWF R` matching for traces. -/
+abbrev Trace.WithWF {P : PureExpr} [HasVal P] [HasFvars P]
+    (R : EventArg P → EventArg P → Prop) : Trace P → Trace P → Prop :=
+  List.Rel₂ (Event.WithWF (P := P) R)
+
+section WeakensAssumes
+
+variable {P : PureExpr}
+
+/-- An event of a source trace and its counterpart in a target trace, under the interpretation
+    `I`: an assertion, or a cover, with the same label and metadata whose condition holds in
+    exactly the worlds the source's holds in; or an assumption with the same label and metadata
+    whose condition holds in every world the source's holds in. -/
+@[expose] def Event.WeakensAssume (I : ConditionInterp P) : Event P → Event P → Prop
+  | .assert a, .assert b | .cover a, .cover b =>
+    a.label = b.label ∧ a.metadata = b.metadata ∧ ∀ w, I.holds w a ↔ I.holds w b
+  | .assume a, .assume b =>
+    a.label = b.label ∧ a.metadata = b.metadata ∧ ∀ w, I.holds w a → I.holds w b
+  | _, _ => False
+
+/-- `target` is `source` with each event replaced by a counterpart (`Event.WeakensAssume I`),
+    except that any assumption of `source` may be missing from `target`.  The order is kept and
+    `target` has no other event, so every assertion of `source` that fails under `I` after
+    assumptions holding under `I` has a counterpart in `target`, with the same label, that fails
+    after assumptions holding under `I`. -/
+inductive Trace.WeakensAssumes (I : ConditionInterp P) : Trace P → Trace P → Prop where
+  | nil : Trace.WeakensAssumes I [] []
+  | cons {e e' : Event P} {t t' : Trace P} :
+      Event.WeakensAssume I e e' → Trace.WeakensAssumes I t t' →
+      Trace.WeakensAssumes I (e :: t) (e' :: t')
+  | dropAssume {a : EventArg P} {t t' : Trace P} :
+      Trace.WeakensAssumes I t t' → Trace.WeakensAssumes I (.assume a :: t) t'
+
+end WeakensAssumes
 
 end -- public section
 end Imperative

@@ -629,7 +629,7 @@ partial def dealiasTypeExpr (p : Program) (te : TypeExpr) : TypeExpr :=
   | _ => te
 
 /-- Hash map from each Core builtin function's qualified identifier to its
-    monomorphic Core operator expression; consumed by `translateFn`. Adding a
+    Core operator expression; consumed by `translateFn`. Adding a
     new builtin is a one-line entry. The mapping depends only on the
     identifier, not on the expected type. -/
 private def translateFnTable : Std.HashMap QualifiedIdent Core.Expression.Expr := .ofList [
@@ -953,6 +953,21 @@ private def translateFnTable : Std.HashMap QualifiedIdent Core.Expression.Expr :
 
 
 
+  -- grouped sequence and set operators
+  (q`Core.seq_select, Core.coreOpExpr (.seq .Select)),
+  (q`Core.seq_select_unsafe, Core.coreOpExpr (.seq .SelectUnsafe)),
+  (q`Core.seq_update, Core.coreOpExpr (.seq .Update)),
+  (q`Core.seq_update_unsafe, Core.coreOpExpr (.seq .UpdateUnsafe)),
+  (q`Core.seq_take, Core.coreOpExpr (.seq .Take)),
+  (q`Core.seq_take_unsafe, Core.coreOpExpr (.seq .TakeUnsafe)),
+  (q`Core.seq_drop, Core.coreOpExpr (.seq .Drop)),
+  (q`Core.seq_drop_unsafe, Core.coreOpExpr (.seq .DropUnsafe)),
+  (q`Core.set_insert, Core.coreOpExpr (.set .Insert)),
+  (q`Core.set_remove, Core.coreOpExpr (.set .Remove)),
+  (q`Core.set_union, Core.coreOpExpr (.set .Union)),
+  (q`Core.set_intersect, Core.coreOpExpr (.set .Intersect)),
+  (q`Core.set_difference, Core.coreOpExpr (.set .Difference)),
+
   (q`Core.str_len, Core.strLengthOp),
   (q`Core.str_concat, Core.strConcatOp),
   (q`Core.str_substr, Core.strSubstrOp),
@@ -986,11 +1001,12 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expres
 
 /-- Extract the operator name from a grouped-operator wrapper's first argument.
 
-Type-specific operators (`int.add`, `bv8.uLt`, …) are grouped in the grammar: a
-handful of wrapper `fn`s in `Expr` (`binaryArithBasic`, `unaryArith`, …) each take
-a leading category argument (`BinaryArithBasic`, `UnaryArith`, …) whose nullary op
-*is* the operator name (`Core.int_add`, `Core.bv8_uLt`, …). This reads that name so
-`translateFn` can map it to the monomorphic Core op. -/
+Type-specific and collection operators (`int.add`, `bv8.uLt`, `Set.union`, …)
+are grouped in the grammar: a handful of wrapper `fn`s in `Expr`
+(`binaryArithBasic`, `unaryArith`, …) each take a leading category argument
+(`BinaryArithBasic`, `UnaryArith`, …) whose nullary op *is* the operator name
+(`Core.int_add`, `Core.bv8_uLt`, …). This reads that name so `translateFn` can
+map it to its Core op. -/
 private def translateOpGroupName (a : Arg) : TransM QualifiedIdent := do
   let .op op := a
     | TransM.error s!"translateOpGroupName expected op {repr a}"
@@ -1198,6 +1214,13 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
        Core.coreOpExpr (.seq .Empty)
          (.some (Core.seqTy ety))
      return fn
+  -- Set.empty (1 type arg, 0 value args)
+  | .fn _ q`Core.set_empty, [atp] =>
+     let ety ← translateLMonoTy bindings atp
+     let fn : LExpr Core.CoreLParams.mono :=
+       Core.coreOpExpr (.set .Empty)
+         (.some (Core.setTy ety))
+     return fn
   -- Unary function applications
   | .fn _ fni, [xa] =>
     match fni with
@@ -1256,11 +1279,23 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.binarySafeBv, [_, fa, xa, ya]
   | .fn _ q`Core.binaryCmpBaseBv, [_, fa, xa, ya]
   | .fn _ q`Core.binaryCmpSignedBv, [_, fa, xa, ya]
-  | .fn _ q`Core.binaryOverflowBv, [_, fa, xa, ya] =>
+  | .fn _ q`Core.binaryOverflowBv, [_, fa, xa, ya]
+  -- Sequence and set wrappers likewise ignore their leading element-type
+  -- slot, which `resolve` fills from the collection operand.
+  | .fn _ q`Core.seqSelectOp, [_, fa, xa, ya]
+  | .fn _ q`Core.seqSliceOp, [_, fa, xa, ya]
+  | .fn _ q`Core.setElemOp, [_, fa, xa, ya]
+  | .fn _ q`Core.setBinOp, [_, fa, xa, ya] =>
     let fn ← translateFn .none (← translateOpGroupName fa)
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
     return .mkApp () fn [x, y]
+  | .fn _ q`Core.seqUpdateOp, [_, fa, xa, ya, za] =>
+    let fn ← translateFn .none (← translateOpGroupName fa)
+    let x ← translateExpr p bindings xa
+    let y ← translateExpr p bindings ya
+    let z ← translateExpr p bindings za
+    return .mkApp () fn [x, y, z]
   -- Strings
   | .fn _ q`Core.str_concat, [xa, ya] =>
      let x ← translateExpr p bindings xa
@@ -1314,16 +1349,6 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Length)
      let s ← translateExpr p bindings sa
      return .mkApp () fn [s]
-  | .fn _ q`Core.seq_select, [_, sa, ia] =>
-     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Select)
-     let s ← translateExpr p bindings sa
-     let i ← translateExpr p bindings ia
-     return .mkApp () fn [s, i]
-  | .fn _ q`Core.seq_select_unsafe, [_, sa, ia] =>
-     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .SelectUnsafe)
-     let s ← translateExpr p bindings sa
-     let i ← translateExpr p bindings ia
-     return .mkApp () fn [s, i]
   | .fn _ q`Core.seq_append, [_, s1a, s2a] =>
      let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Append)
      let s1 ← translateExpr p bindings s1a
@@ -1334,43 +1359,17 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let s ← translateExpr p bindings sa
      let v ← translateExpr p bindings va
      return .mkApp () fn [s, v]
-  | .fn _ q`Core.seq_update, [_, sa, ia, va] =>
-     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Update)
-     let s ← translateExpr p bindings sa
-     let i ← translateExpr p bindings ia
-     let v ← translateExpr p bindings va
-     return .mkApp () fn [s, i, v]
-  | .fn _ q`Core.seq_update_unsafe, [_, sa, ia, va] =>
-     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .UpdateUnsafe)
-     let s ← translateExpr p bindings sa
-     let i ← translateExpr p bindings ia
-     let v ← translateExpr p bindings va
-     return .mkApp () fn [s, i, v]
   | .fn _ q`Core.seq_contains, [_, sa, va] =>
      let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Contains)
      let s ← translateExpr p bindings sa
      let v ← translateExpr p bindings va
      return .mkApp () fn [s, v]
-  | .fn _ q`Core.seq_take, [_, sa, na] =>
-     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Take)
+  -- Set.contains: `resolve` recovers the element type.
+  | .fn _ q`Core.set_contains, [_, sa, xa] =>
+     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.set .Contains)
      let s ← translateExpr p bindings sa
-     let n ← translateExpr p bindings na
-     return .mkApp () fn [s, n]
-  | .fn _ q`Core.seq_take_unsafe, [_, sa, na] =>
-     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .TakeUnsafe)
-     let s ← translateExpr p bindings sa
-     let n ← translateExpr p bindings na
-     return .mkApp () fn [s, n]
-  | .fn _ q`Core.seq_drop, [_, sa, na] =>
-     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .Drop)
-     let s ← translateExpr p bindings sa
-     let n ← translateExpr p bindings na
-     return .mkApp () fn [s, n]
-  | .fn _ q`Core.seq_drop_unsafe, [_, sa, na] =>
-     let fn : LExpr Core.CoreLParams.mono := Core.coreOpExpr (.seq .DropUnsafe)
-     let s ← translateExpr p bindings sa
-     let n ← translateExpr p bindings na
-     return .mkApp () fn [s, n]
+     let x ← translateExpr p bindings xa
+     return .mkApp () fn [s, x]
   -- Lambda abstraction
   | .fn _ q`Core.lambda, [_, xsa, ba] =>
     translateLambda p bindings xsa ba
@@ -2057,10 +2056,17 @@ partial def translateCFGBlock (p : Program) (bindings : TransBindings) (arg : Ar
   let .op op := arg
     | TransM.error s!"translateCFGBlock expected op {repr arg}"
   let label ← translateIdent String op.args[0]!
-  -- Translate commands - handle both Seq and empty cases
-  let stmts : Array Arg := match op.args[1]! with
-    | .seq _ _ arr => arr
-    | other => #[other]  -- single statement or empty
+  -- `cfg_cmds_nil` has no commands; `cfg_cmds` holds a non-empty sequence.
+  let stmts : Array Arg ← match op.args[1]! with
+    | .op cmdsOp =>
+      match cmdsOp.name with
+      | q`Core.cfg_cmds_nil => pure #[]
+      | q`Core.cfg_cmds =>
+        match cmdsOp.args[0]! with
+        | .seq _ _ arr => pure arr
+        | other => TransM.error s!"translateCFGBlock: expected command sequence, got {repr other}"
+      | _ => TransM.error s!"translateCFGBlock: unknown commands op {repr cmdsOp.name}"
+    | other => TransM.error s!"translateCFGBlock: expected commands op, got {repr other}"
   let mut cmds : Array Core.Command := #[]
   let mut bindings := bindings
   for s in stmts do
@@ -2577,7 +2583,8 @@ def translateDatatypes (p : Program) (bindings : TransBindings) (op : Operation)
       else
         let lConstrs := buildLConstrs datatypeName constructors
         have constrs_ne : lConstrs.length != 0 := by
-          simp [lConstrs, buildLConstrs]
+          simp only [buildLConstrs, List.map_id_fun', id_eq, List.length_map, Array.length_toList, bne_iff_ne, ne_eq,
+    Array.size_eq_zero_iff, lConstrs]
           intro heq; subst_vars; apply h; rfl
         pure { name := datatypeName, typeArgs := typeArgs, constrs := lConstrs, constrs_ne := constrs_ne }
 

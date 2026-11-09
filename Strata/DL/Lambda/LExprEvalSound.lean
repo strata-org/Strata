@@ -79,7 +79,7 @@ private theorem eval_StepStar_factory_terminal
     apply List.ext_getElem (by simp [h_len_eq])
     intro i hi1 hi2
     simp only [List.getElem_map]
-    have hi_args : i < args.length := by simp [stepped_args] at hi1; exact hi1
+    have hi_args : i < args.length := by simp only [List.map_map, List.length_map, stepped_args] at hi1; exact hi1
     exact h_per_eM i hi_args
   rw [hA, hB]
 
@@ -258,16 +258,19 @@ theorem eval_StepStar
   unfold StepStar
   induction fuel generalizing e with
   | zero =>
-    exact ⟨e, ReflTrans.refl e, by simp [LExpr.eval]⟩
+    simp only [LExpr.eval]
+    split
+    · exact ⟨e, ReflTrans.refl e, rfl⟩
+    · exact ⟨_, StepStar_to_substFvarsFromEnv F env e, rfl⟩
   | succ fuel ih =>
     simp only [LExpr.eval, LExpr.List_map_fst_map_eval,
       LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair]
     split
-    · -- Canonical: eval returns e
+    · -- A value (`isValue`): eval returns e
       rename_i h_value
       have h_eval_n : (LExpr.eval fuel F env e).fst = e := by
         cases fuel with
-        | zero => simp [LExpr.eval]
+        | zero => simp [LExpr.eval, h_value]
         | succ fuel' => simp [LExpr.eval, h_value]
       obtain ⟨e', hstep, hve⟩ := ih e
       rw [h_eval_n] at hve
@@ -297,7 +300,7 @@ theorem eval_StepStar
             have h_per_step : ∀ i (hi : i < args.length),
                 StepStar F env
                   (args.get ⟨i, hi⟩) (stepped_args.get ⟨i, h_stepped_len ▸ hi⟩) := by
-              intro i hi; simp [stepped_args]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.1
+              intro i hi; simp only [List.get_eq_getElem, List.getElem_map, stepped_args]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.1
             obtain ⟨e_stepped, h_step_e, h_estepped_eM⟩ :=
               StepStar_getLFuncCall_args e op_expr args stepped_args h_get h_stepped_len h_per_step
             have h_ref_call : F.callOfLFunc (LExpr.mkApp e.metadata op_expr stepped_args) =
@@ -319,14 +322,14 @@ theorem eval_StepStar
             have h_per_eM : ∀ i (hi : i < args.length),
                 (stepped_args.get ⟨i, h_stepped_len ▸ hi⟩).eraseMetadata =
                   ((LExpr.eval fuel F env (args.get ⟨i, hi⟩)).fst).eraseMetadata := by
-              intro i hi; simp [stepped_args]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.2
+              intro i hi; simp only [List.get_eq_getElem, List.getElem_map, stepped_args]; exact (ih (args.get ⟨i, hi⟩)).choose_spec.2
             have h_vals_eM : stepped_args'.map LExpr.eraseMetadata =
                 (args.map (fun a => (LExpr.eval fuel F env a).fst)).map LExpr.eraseMetadata := by
               rw [← h_args_eM]
               apply List.ext_getElem (by simp [stepped_args])
               intro i hi1 hi2
               simp only [List.getElem_map]
-              have hi_args : i < args.length := by simp [stepped_args] at hi1; exact hi1
+              have hi_args : i < args.length := by simp only [List.map_map, List.length_map, stepped_args] at hi1; exact hi1
               exact h_per_eM i hi_args
             have h_tySubst_stepped :
                 LFunc.computeTypeSubst lfunc op' stepped_args' = some tySubst := by
@@ -354,8 +357,8 @@ theorem eval_StepStar
             show _ = ((LExpr.eval fuel F env _).fst).eraseMetadata
             rw [h_body_get, show (fun a => (LExpr.eval fuel F env a).fst) = (fun a => (LExpr.eval fuel F env a).fst) from rfl]
             exact h_ve_s.trans (eval_eraseMetadata_invariant F env _ _ fuel hWF h_subst_eM)
-          · -- computeTypeSubst = none: eval returns e unchanged
-            exact ⟨e, ReflTrans.refl e, rfl⟩
+          · -- computeTypeSubst = none: eval returns the call on the evaluated arguments
+            exact eval_StepStar_factory_terminal F env e fuel op_expr args lfunc h_call ih
         · -- Non-inline
           rename_i h_not_inline
           -- Case on both attribute lookups to eliminate inner matches
@@ -430,8 +433,8 @@ theorem eval_StepStar
             have h_s1_abs : ∃ m2 body_s1,
                 s1 = .abs m2 name ty body_s1 ∧ body_s1.eraseMetadata = body_e1'.eraseMetadata := by
               rw [h_eval_abs] at hv1
-              simp [LExpr.eraseMetadata, LExpr.replaceMetadata] at hv1
-              cases s1 <;> simp [LExpr.replaceMetadata] at hv1 <;> try contradiction
+              simp only [LExpr.eraseMetadata, LExpr.replaceMetadata] at hv1
+              cases s1 <;> simp only [LExpr.replaceMetadata, LExpr.abs.injEq, true_and] at hv1 <;> try contradiction
               rename_i m2 name2 ty2 body2
               have ⟨hn, hty, hb⟩ := hv1; subst hn hty
               exact ⟨_, _, rfl, hb⟩
@@ -478,7 +481,7 @@ theorem eval_StepStar
               refine ⟨e'', ReflTrans_Transitive _ _ _ _ h_step_app hstep'', ?_⟩
               have h_app_eM : (LExpr.app m s1 s2).eraseMetadata =
                   (LExpr.app (LExpr.app m e1 e2 : LExpr Tbase.mono).metadata ((LExpr.eval fuel F env e1).fst) ((LExpr.eval fuel F env e2).fst)).eraseMetadata := by
-                simp [LExpr.eraseMetadata]
+                simp only [LExpr.eraseMetadata]
                 exact eraseMetadata_app_congr hv1 hv2
               have h_eval_eM := eval_eraseMetadata_invariant F env
                 (LExpr.app m s1 s2)
@@ -516,7 +519,7 @@ theorem eval_StepStar
             exact ⟨.eq m s1 s2,
               ReflTrans_Transitive _ _ _ _ (StepStar_eq_lhs_pres _ _ e1 s1 e2 m hs1)
                 (StepStar_eq_rhs_pres _ _ s1 e2 s2 m hs2),
-              by simp [LExpr.eraseMetadata, LExpr.replaceMetadata]; exact ⟨hv1, hv2⟩⟩
+              by simp only [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.eq.injEq, true_and]; exact ⟨hv1, hv2⟩⟩
         | .ite m c t f, _, _ =>
           obtain ⟨sc, hsc, hvc⟩ := ih c
           simp only [LExpr.evalCore, LExpr.evalIte]

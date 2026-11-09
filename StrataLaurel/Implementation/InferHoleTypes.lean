@@ -59,39 +59,50 @@ private def inferComparisonArgType (model : SemanticModel) (args : List StmtExpr
   args.findSome? (fun a => match a.val with | .Hole _ _ => none | _ => some (computeExprType model a))
     |>.getD ⟨ .TInt, source ⟩ -- use Int as a default type for comparisons where both operands are holes
 
-/-- Get the expected type for each argument of a call from the callee's parameter list.
+/-- The callee's parameter types `params`, with the type arguments `tyArgs` that resolution records
+    on the call substituted for its type parameters `typeParams`: `[int, bool]` for `select(m, <?>)`
+    at `m: TotalMap int bool`.
+    - Resolution records all of them or none, in the callee's order, so they pair with `typeParams`
+      one to one.
+    - They are used only if each is a value type. None may mention `Unknown`, which a hole argument
+      leaves, or a type variable: a caller's, which the hole's procedure may not declare, or one the
+      call leaves open. None may be `void`, which Core takes for `bool`, or several outputs.
+    - A parameter that still mentions a type parameter becomes `.Unknown`, so a hole there stays
+      untyped. -/
+private def instantiatedParams (typeParams : List Identifier) (tyArgs : List HighTypeMd)
+    (params : List HighTypeMd) : List HighTypeMd :=
+  let subst : Std.HashMap String HighTypeMd :=
+    if tyArgs.all (!anyHighType (· matches .TVar _ | .Unknown | .TVoid | .MultiValuedExpr _) ·.val)
+    then (typeParams.zip tyArgs).foldl (fun m (n, t) => m.insert n.text t) {}
+    else {}
+  params.map fun p =>
+    let p := substTypeVars subst p
+    if mentionsTVar p.val then ⟨.Unknown, p.source⟩ else p
 
-    Auto-generated datatype destructors (`TypeName..fieldName[!]`) and testers
-    (`TypeName..isCtor`) are unary, taking the datatype itself as their single
-    input. Their `ResolvedNode` (`.datatypeDestructor` / `.datatypeConstructor`)
-    carries the resolved type Identifier (with its `uniqueId`), so we can
-    construct the input `HighType` directly without falling back to textual
-    decoding of the override name. -/
-private def calleeParamTypes (model : SemanticModel) (callee : Identifier) : Option (List HighTypeMd) :=
-  -- `$eq<T>(x: T, y: T)` types both operands by the SAME variable, so neither slot can type a
-  -- hole on its own — but the operands must agree, which makes the first non-hole sibling a sound
-  -- guess. Decline here so `unresolvedOperatorArgType` supplies it and `<?> == s` takes `string`.
-  -- Blanking the slots instead would leave the hole with nothing and report "could not infer
-  -- type". No such reasoning is available in general: `select<K,V>(map: TotalMap K V, key: K)` has
-  -- differently-typed slots, and its map argument says nothing about the key.
+/-- Get the expected type for each argument of a call from the callee's parameter list, at the
+    call's instantiation `tyArgs` (`instantiatedParams`).
+
+    Auto-generated datatype destructors (`TypeName..fieldName[!]`) are unary, taking the datatype
+    itself as their single input. Their `ResolvedNode` (`.datatypeDestructor`) carries the
+    resolved type Identifier (with its `uniqueId`), so we can construct the input `HighType`
+    directly without falling back to textual decoding of the override name. -/
+private def calleeParamTypes (model : SemanticModel) (callee : Identifier)
+    (tyArgs : List HighTypeMd) : Option (List HighTypeMd) :=
+  -- `$eq<T>(x: T, y: T)` types both operands by the SAME variable, and the operands must agree,
+  -- which makes the first non-hole sibling a sound guess also where the call records no usable
+  -- instantiation, as `x == <?>` at a caller's type variable. Decline here so
+  -- `unresolvedOperatorArgType` supplies it and `<?> == s` takes `string`.
   if callee.text == Operation.Eq.procName || callee.text == Operation.Neq.procName then
     none
   else
   match model.get callee with
   | .staticProcedure proc =>
-    let paramTys := proc.inputs.map (·.type)
-    -- A parameter type that mentions a type variable this call has not instantiated cannot type
-    -- a hole: it would propagate as a free variable into an emitted procedure and be rejected by
-    -- Core. Such slots become `.Unknown`; the concrete slots keep their types, so a hole in the
-    -- `int` of `f<T>(x: int, y: T)` still infers `int`. Blanking the whole list instead would
-    -- turn that hole into a "could not infer type" error.
-    --
-    -- The variable need not be at the top of the type — `TotalMap K V` nests them — hence
-    -- `mentionsTVar` rather than a `.TVar` test. A hole in one of these `.Unknown` slots is
-    -- reported as "could not infer type": the instantiation is knowable from the call's other
-    -- arguments, but this pass does not compute it.
-    some (paramTys.map fun t => if mentionsTVar t.val then ⟨.Unknown, t.source⟩ else t)
-  | .datatypeConstructor typeName _
+    some (instantiatedParams proc.typeArgs tyArgs (proc.inputs.map (·.type)))
+  | .datatypeConstructor typeName ctor =>
+    let typeParams := match model.get typeName with
+      | .datatypeDefinition dt => dt.typeArgs
+      | _ => []
+    some (instantiatedParams typeParams tyArgs (ctor.args.map (·.type)))
   | .datatypeDestructor typeName _ =>
       some [⟨.UserDefined typeName, callee.source⟩]
   | _ => none
@@ -138,6 +149,17 @@ private def unresolvedOperatorArgType (model : SemanticModel) (callee : Identifi
     if coreDefinitionsForLaurel.staticProcedures.any fits then operandType
     else ⟨ .Unknown, source ⟩
   | none => ⟨ .Unknown, source ⟩
+
+/-- Does `ty` mention a generic datatype or opaque type without its type arguments? That is not a
+    type, and a hole typed with it fails re-resolution. -/
+private partial def mentionsBareGeneric (model : SemanticModel) (ty : HighType) : Bool :=
+  match ty with
+  | .UserDefined name => ((model.get? name).bind (·.valueTypeArity?)).any (·.2 > 0)
+  | .Applied _ args => args.any (mentionsBareGeneric model ·.val)
+  | .TSet e => mentionsBareGeneric model e.val
+  | .TMap k v => mentionsBareGeneric model k.val || mentionsBareGeneric model v.val
+  | .Intersection ts | .MultiValuedExpr ts => ts.any (mentionsBareGeneric model ·.val)
+  | _ => false
 
 /-- Recover the expected receiver type for a resolved field reference. -/
 private def fieldOwnerType (model : SemanticModel) (fieldName : Identifier)
@@ -220,7 +242,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
       -- genuine "could not infer type" error, so the diagnostic fires here. The sound gradual escape
       -- for an unmodeled field-write RHS hole is handled in the `.Assign` arm (which knows the target
       -- is Unknown-typed), so such a hole never reaches this arm.
-      if expectedType.val == .Unknown then
+      if expectedType.val == .Unknown || mentionsBareGeneric model expectedType.val then
         modify fun s => { s with
           statistics := s.statistics.increment s!"{InferHoleTypesStats.holesLeftUnknown}"
           diagnostics := s.diagnostics ++ [diagnosticFromSource source "could not infer type"]
@@ -230,7 +252,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
         modify fun s => { s with statistics := s.statistics.increment s!"{InferHoleTypesStats.holesAnnotated}" }
         return ⟨.Hole det (some expectedType), source⟩
   | .StaticCall callee args tyArgs =>
-      let args' ← match calleeParamTypes model callee with
+      let args' ← match calleeParamTypes model callee tyArgs with
         | some paramTypes => inferArgsTyped args paramTypes source outputType
         | none =>
           inferArgs args (unresolvedOperatorArgType model callee args expectedType source) outputType
@@ -252,8 +274,12 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
         | some e => pure (some (← inferExpr e expectedType outputType))
         | none => pure none
       return ⟨.IfThenElse (← inferExpr cond ⟨ .TBool, source ⟩ outputType) (← inferExpr th expectedType outputType) el', source⟩
-  | .Block stmts label =>
-      return ⟨.Block (← inferBlockStmts stmts expectedType outputType) label, source⟩
+  | .Block stmts label invs dec =>
+      let invs' ← invs.mapM (inferExpr · ⟨ .TBool, source ⟩ outputType)
+      let dec' ← match dec with
+        | some d => pure (some (← inferExpr d ⟨ .TInt, source ⟩ outputType))
+        | none => pure none
+      return ⟨.Block (← inferBlockStmts stmts expectedType outputType) label invs' dec', source⟩
   | .Assign targets value =>
       let targetType := match targets with
         | target :: _ => match target.val with
@@ -324,8 +350,13 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
   -- recursion. Consequence: holes inside `try`/`catch`/`finally` arms are not
   -- type-inferred yet. Revisit if holes in those positions need inference.
   | .Try .. => return expr
-  | .Return (some retExpr) =>
-      return ⟨.Return (some (← inferExpr retExpr outputType outputType)), source⟩
+  | .Return (retExpr :: rest) =>
+      if rest.isEmpty then
+        return ⟨.Return [← inferExpr retExpr outputType outputType], source⟩
+      else
+        let vals ← (retExpr :: rest).attach.mapM fun ⟨e, _⟩ =>
+          inferExpr e ⟨ .Unknown, source ⟩ outputType
+        return ⟨.Return vals, source⟩
   | .Old v label? => return ⟨.Old (← inferExpr v expectedType outputType) label?, source⟩
   -- Coroutine two-state `old` forms wrap a value like `.Old`; on both lowering
   -- paths they are eliminated before this pass, but the match must stay total.
@@ -346,7 +377,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
         | some t => pure (some (← inferExpr t ⟨ .Unknown, source ⟩ outputType))
         | none => pure none
       return ⟨.Quantifier mode p trigger' (← inferExpr b ⟨ .TBool, source ⟩ outputType), source⟩
-  | .Exit _ | .Return none | .LiteralInt _ | .LiteralBool _ | .LiteralString _
+  | .Goto _ _ | .Return [] | .LiteralInt _ | .LiteralBool _ | .LiteralString _
   | .LiteralDecimal _ | .LiteralBv _ _ | .Var (.Local _) | .Var (.Declare _)
   | .New .. | .This | .Abstract | .All | .Yield | .Snapshot _ => return expr
   termination_by sizeOf expr

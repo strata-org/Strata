@@ -14,6 +14,7 @@ public import Strata.Init
 public def embeddedExampleFiles : Array (String × String) := #[
   ("CFGNondet.core.st", include_str "../../Examples/CFGNondet.core.st"),
   ("CFGSimple.core.st", include_str "../../Examples/CFGSimple.core.st"),
+  ("CSEPathSplits.core.st", include_str "../../Examples/CSEPathSplits.core.st"),
   ("DoubleTwice.core.st", include_str "../../Examples/DoubleTwice.core.st"),
   ("HeapReasoning.core.st", include_str "../../Examples/HeapReasoning.core.st"),
   ("IrrelevantAxioms.core.st", include_str "../../Examples/IrrelevantAxioms.core.st"),
@@ -27,6 +28,7 @@ public def embeddedExampleFiles : Array (String × String) := #[
   ("TypeError.core.st", include_str "../../Examples/TypeError.core.st"),
   ("dialects/Arith.dialect.st", include_str "../../Examples/dialects/Arith.dialect.st"),
   ("dialects/Bool.dialect.st", include_str "../../Examples/dialects/Bool.dialect.st"),
+  ("expected/CSEPathSplits.core.expected", include_str "../../Examples/expected/CSEPathSplits.core.expected"),
   ("expected/DoubleTwice.callElim.core.expected", include_str "../../Examples/expected/DoubleTwice.callElim.core.expected"),
   ("expected/DoubleTwice.callElim.core.st", include_str "../../Examples/expected/DoubleTwice.callElim.core.st"),
   ("expected/DoubleTwice.inlineProcedures.core.expected", include_str "../../Examples/expected/DoubleTwice.inlineProcedures.core.expected"),

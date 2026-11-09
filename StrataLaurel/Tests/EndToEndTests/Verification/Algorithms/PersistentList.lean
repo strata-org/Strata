@@ -24,7 +24,7 @@ procedure suffix(l: IntList, k: int): IntList;
 
 procedure listAxioms(): bool
 {
-  (forall(n: int) => len(Nil(), n) == (n == 0))
+  return (forall(n: int) => len(Nil(), n) == (n == 0))
   && (forall(h: int) => forall(t: IntList) => forall(n: int) => len(Cons(h, t), n) == (n >= 1 && len(t, n - 1)))
   && (forall(h: int) => forall(t: IntList) => valueAt(Cons(h, t), 0) == h)
   && (forall(h: int) => forall(t: IntList) => forall(k: int) => k >= 1 ==> valueAt(Cons(h, t), k) == valueAt(t, k - 1))
@@ -66,7 +66,7 @@ procedure suffix(l: IntList, k: int): IntList;
 
 procedure listAxioms(): bool
 {
-  (forall(n: int) => len(Nil(), n) == (n == 0))
+  return (forall(n: int) => len(Nil(), n) == (n == 0))
   && (forall(h: int) => forall(t: IntList) => forall(n: int) => len(Cons(h, t), n) == (n >= 1 && len(t, n - 1)))
   && (forall(h: int) => forall(t: IntList) => valueAt(Cons(h, t), 0) == h)
   && (forall(h: int) => forall(t: IntList) => forall(k: int) => k >= 1 ==> valueAt(Cons(h, t), k) == valueAt(t, k - 1))

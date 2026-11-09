@@ -368,7 +368,7 @@ composite D {
     opaque
   {
     return 1
-//  ^^^^^^^^  error: multi-output procedure cannot use 'return e'; assign to named outputs instead
+//  ^^^^^^^^  error: procedure declares 2 outputs, so 'return' takes 2 values, not 1
   };
 }
 #end

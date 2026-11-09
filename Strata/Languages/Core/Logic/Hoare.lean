@@ -44,6 +44,7 @@ open Core Imperative Strata.Logic Imperative.Logic
 namespace Hoare
 
 variable (π : String → Option Procedure)
+variable {factory : Lambda.Factory CoreLParams}
 
 /-! ## The Core triple -/
 
@@ -55,41 +56,33 @@ variable (π : String → Option Procedure)
   Strata.Logic.Hoare.TripleWith (EventLang.coreBlock π)
     conditionInterp params Pre ss Post
 
-/-- Core Hoare triple in one model. -/
-@[expose] def TripleWithModel (model : Lambda.Interp Core.Factory)
-    (params : InitEnvWFParams)
-    (Pre : Imperative.Env Expression → Prop) (ss : Statements)
-    (Post : Imperative.Env Expression → Prop) : Prop :=
-  TripleWith π (DenoteBasedInterp model) params Pre ss Post
-
-/-- **Core Hoare triple** over statement lists.
-
-TODO: Extend the model factory with every function declared in the program before
-its procedure. -/
+/-- **Core Hoare triple** over statement lists, with conditions read by evaluation in
+    runtime factories over `factory` (`DenoteBasedInterp factory`). A runtime factory
+    carries a model of `factory`, so the triple covers every model through the entry
+    environments it quantifies over. The default is `Core.Factory`; program-level
+    clients can supply the factory visible at a particular declaration. -/
 @[expose] def Triple (params : InitEnvWFParams)
     (Pre : Imperative.Env Expression → Prop) (ss : Statements)
-    (Post : Imperative.Env Expression → Prop) : Prop :=
-  ∀ model : Lambda.Interp Core.Factory,
-    TripleWithModel π model params Pre ss Post
+    (Post : Imperative.Env Expression → Prop)
+    (factory : Lambda.Factory CoreLParams := Core.Factory) : Prop :=
+  TripleWith π (DenoteBasedInterp factory) params Pre ss Post
 
 /-! ## Parametric rules -/
 
 /-- False precondition proves anything. -/
 theorem false_pre (params : InitEnvWFParams) (ss : Statements)
     (Post : Imperative.Env Expression → Prop) :
-    Triple π params (fun _ => False) ss Post := by
-  intro model
+    Triple π params (fun _ => False) ss Post (factory := factory) := by
   exact Strata.Logic.Hoare.false_pre (EventLang.coreBlock π) params ss Post
 
 /-- Consequence (weakening): strengthen the precondition, weaken the
     postcondition. -/
 theorem consequence (params : InitEnvWFParams)
     {Pre Pre' Post Post' : Imperative.Env Expression → Prop} {ss : Statements}
-    (h : Triple π params Pre ss Post)
+    (h : Triple π params Pre ss Post (factory := factory))
     (hpre : ∀ ρ, Pre' ρ → Pre ρ) (hpost : ∀ ρ, Post ρ → Post' ρ) :
-    Triple π params Pre' ss Post' := by
-  intro model
-  exact Strata.Logic.Hoare.consequence (EventLang.coreBlock π) params (h model) hpre hpost
+    Triple π params Pre' ss Post' (factory := factory) := by
+  exact Strata.Logic.Hoare.consequence (EventLang.coreBlock π) params h hpre hpost
 
 /-! ## Rules for a single command -/
 
@@ -97,19 +90,18 @@ theorem consequence (params : InitEnvWFParams)
     including the `WellFormedSemanticEval` bundle that `EvalCommandE` needs. -/
 theorem cmd (params : InitEnvWFParams) (c : Command)
     (Pre Post : Imperative.Env Expression → Prop)
-    (h : ∀ (model : Lambda.Interp Core.Factory) ρ₀ σ' emitted,
+    (h : ∀ ρ₀ σ' emitted,
       Pre ρ₀ → InitEnvWF params (.cmd c) ρ₀ →
       EvalCommandE π ρ₀.factory ρ₀.store c σ' emitted →
-      Trace.AssertionsValid Expression (DenoteBasedInterp model) emitted ∧
-        (Trace.Reachable Expression (DenoteBasedInterp model) emitted →
+      Trace.AssertionsValid Expression (DenoteBasedInterp factory) emitted ∧
+        (Trace.Reachable Expression (DenoteBasedInterp factory) emitted →
           Post { ρ₀ with store := σ' })) :
-    Triple π params Pre [.cmd c] Post := by
-  intro model
+    Triple π params Pre [.cmd c] Post (factory := factory) := by
   exact Imperative.Logic.Hoare.singleton (EvalCommandE π)
     InitEnvWF BlockInitEnvWF params params
     (fun _ hb => blockInitEnvWF_singleton hb)
     (Imperative.Logic.Hoare.cmd (EvalCommandE π)
-      InitEnvWF params c Pre Post (h model))
+      InitEnvWF params c Pre Post h)
 
 /-- Assignment.  The value written is quantified inside `hpost`, next to the evaluation
     that produced it: which value `e` takes depends on the environment, so fixing one
@@ -118,12 +110,12 @@ theorem set (params : InitEnvWFParams)
     (x : Expression.Ident) (e : Expression.Expr)
     (md : Imperative.MetaData Expression)
     (Pre Post : Imperative.Env Expression → Prop)
-    (hpost : ∀ (ρ₀ : Imperative.Env Expression) (σ' : CoreStore) (v : Expression.Expr),
+    (hpost : ∀ (ρ₀ : Imperative.Env Expression) (σ' : CoreStore) (v : Expression.Val),
       Pre ρ₀ → Expression.eval ρ₀.factory ρ₀.store e = some v →
       Imperative.UpdateState Expression ρ₀.store x v σ' →
       Post { ρ₀ with store := σ' }) :
-    Triple π params Pre [Statement.set x e md] Post := by
-  refine cmd π params _ Pre Post (fun model ρ₀ σ' emitted hpre _ hstep => ?_)
+    Triple π params Pre [Statement.set x e md] Post (factory := factory) := by
+  refine cmd (factory := factory) π params _ Pre Post (fun ρ₀ σ' emitted hpre _ hstep => ?_)
   cases hstep with
   | cmd_sem hbase =>
     cases hbase with
@@ -136,12 +128,12 @@ theorem init (params : InitEnvWFParams)
     (x : Expression.Ident) (ty : Expression.Ty) (e : Expression.Expr)
     (md : Imperative.MetaData Expression)
     (Pre Post : Imperative.Env Expression → Prop)
-    (hpost : ∀ (ρ₀ : Imperative.Env Expression) (σ' : CoreStore) (v : Expression.Expr),
+    (hpost : ∀ (ρ₀ : Imperative.Env Expression) (σ' : CoreStore) (v : Expression.Val),
       Pre ρ₀ → Expression.eval ρ₀.factory ρ₀.store e = some v →
       Imperative.InitState Expression ρ₀.store x v σ' →
       Post { ρ₀ with store := σ' }) :
-    Triple π params Pre [Statement.init x ty (.det e) md] Post := by
-  refine cmd π params _ Pre Post (fun model ρ₀ σ' emitted hpre _ hstep => ?_)
+    Triple π params Pre [Statement.init x ty (.det e) md] Post (factory := factory) := by
+  refine cmd (factory := factory) π params _ Pre Post (fun ρ₀ σ' emitted hpre _ hstep => ?_)
   cases hstep with
   | cmd_sem hbase =>
     cases hbase with
@@ -157,17 +149,16 @@ theorem init (params : InitEnvWFParams)
 theorem seq (params : InitEnvWFParams)
     {ss₁ ss₂ : Statements}
     {Pre Mid Post : Imperative.Env Expression → Prop}
-    (h₁ : Triple π params Pre ss₁ Mid)
-    (h₂ : Triple π params Mid ss₂ Post)
+    (h₁ : Triple π params Pre ss₁ Mid (factory := factory))
+    (h₂ : Triple π params Mid ss₂ Post (factory := factory))
     (hnoesc : Imperative.Block.exitsCoveredByBlocks
       (P := Expression) (CmdT := Command) [] ss₁) :
-    Triple π params Pre (ss₁ ++ ss₂) Post := by
-  intro model
+    Triple π params Pre (ss₁ ++ ss₂) Post (factory := factory) := by
   exact Imperative.Logic.Hoare.seq_append (EvalCommandE π)
     BlockInitEnvWF params
     (fun _ hb => blockInitEnvWF_append_head hb)
     (fun _ _ _ hb hr => blockInitEnvWF_append_tailE π hb hr)
-    (h₁ model) (h₂ model) hnoesc
+    h₁ h₂ hnoesc
 
 /-- An `exit` ends the statement list where it stands, leaving the
     environment untouched, so the precondition survives to the exiting configuration.
@@ -175,8 +166,7 @@ theorem seq (params : InitEnvWFParams)
 theorem exit_cons (params : InitEnvWFParams) {lbl : String}
     {md : Imperative.MetaData Expression} {ss : Statements}
     (Pre : Imperative.Env Expression → Prop) :
-    Triple π params Pre (.exit lbl md :: ss) Pre := by
-  intro model
+    Triple π params Pre (.exit lbl md :: ss) Pre (factory := factory) := by
   exact Imperative.Logic.Hoare.exit_cons (EvalCommandE π)
     BlockInitEnvWF params
 
@@ -186,10 +176,9 @@ theorem exit_cons (params : InitEnvWFParams) {lbl : String}
 theorem block (params : InitEnvWFParams)
     {ss : Statements} {l : String} {md : Imperative.MetaData Expression}
     {Pre Post : Imperative.Env Expression → Prop}
-    (h : Triple π params Pre ss Post)
+    (h : Triple π params Pre ss Post (factory := factory))
     (hpost_proj : Imperative.Logic.Hoare.PostWF ss Post) :
-    Triple π params Pre [.block l ss md] Post := by
-  intro model
+    Triple π params Pre [.block l ss md] Post (factory := factory) := by
   exact Imperative.Logic.Hoare.singleton (EvalCommandE π)
     InitEnvWF BlockInitEnvWF params params
     (fun _ hb => blockInitEnvWF_singleton hb)
@@ -198,14 +187,13 @@ theorem block (params : InitEnvWFParams)
       (fun he hn hnd => evalCommandE_preserves_none_of_not_def π he hn hnd)
       (fun _ hb => blockInitEnvWF_of_block hb)
       (fun _ hb => blockInitEnvWF_bodyDefsUndefined (blockInitEnvWF_of_block hb))
-      (h model) hpost_proj)
+      h hpost_proj)
 
 /-- Empty block is skip.  No lowering condition: the generic rule instantiates
     `skip_block` at the trivial block condition. -/
 theorem skip (params : InitEnvWFParams) (l : String) (md : Imperative.MetaData Expression)
     (Pre : Imperative.Env Expression → Prop) :
-    Triple π params Pre [.block l [] md] Pre := by
-  intro model
+    Triple π params Pre [.block l [] md] Pre (factory := factory) := by
   exact Imperative.Logic.Hoare.singleton (EvalCommandE π)
     InitEnvWF BlockInitEnvWF params params
     (fun _ hb => blockInitEnvWF_singleton hb)
@@ -218,13 +206,16 @@ theorem ite (params : InitEnvWFParams)
     {cond : Expression.Expr} {tss ess : Statements} {md : Imperative.MetaData Expression}
     {Pre Post : Imperative.Env Expression → Prop}
     (ht : Triple π params
-      (fun ρ => Pre ρ ∧ Expression.eval ρ.factory ρ.store cond = some HasBool.tt) tss Post)
+      (fun ρ => Pre ρ ∧ Expression.eval ρ.factory ρ.store cond = some (HasBool.ttVal ρ.factory))
+        tss Post
+      (factory := factory))
     (he : Triple π params
-      (fun ρ => Pre ρ ∧ Expression.eval ρ.factory ρ.store cond = some HasBool.ff) ess Post)
+      (fun ρ => Pre ρ ∧ Expression.eval ρ.factory ρ.store cond = some (HasBool.ffVal ρ.factory))
+        ess Post
+      (factory := factory))
     (hthen_proj : Imperative.Logic.Hoare.PostWF tss Post)
     (helse_proj : Imperative.Logic.Hoare.PostWF ess Post) :
-    Triple π params Pre [.ite (.det cond) tss ess md] Post := by
-  intro model
+    Triple π params Pre [.ite (.det cond) tss ess md] Post (factory := factory) := by
   exact Imperative.Logic.Hoare.singleton (EvalCommandE π)
     InitEnvWF BlockInitEnvWF params params
     (fun _ hb => blockInitEnvWF_singleton hb)
@@ -235,7 +226,7 @@ theorem ite (params : InitEnvWFParams)
       (fun _ hb => blockInitEnvWF_of_ite_else hb)
       (fun _ hb => blockInitEnvWF_bodyDefsUndefined (blockInitEnvWF_of_ite_then hb))
       (fun _ hb => blockInitEnvWF_bodyDefsUndefined (blockInitEnvWF_of_ite_else hb))
-      (ht model) (he model) hthen_proj helse_proj)
+      ht he hthen_proj helse_proj)
 
 /-- While rule.  `hcov` says the body's `exit`s are all caught inside the body,
     and `hInv_proj` that the invariant survives the body block's store
@@ -246,13 +237,15 @@ theorem while_rule (params : InitEnvWFParams)
     {body : Statements} {md : Imperative.MetaData Expression}
     {Inv : Imperative.Env Expression → Prop}
     (hbody : Triple π params
-      (fun ρ => Inv ρ ∧ Expression.eval ρ.factory ρ.store guard = some HasBool.tt) body Inv)
+      (fun ρ => Inv ρ ∧ Expression.eval ρ.factory ρ.store guard = some (HasBool.ttVal ρ.factory))
+        body Inv
+      (factory := factory))
     (hcov : Imperative.Block.exitsCoveredByBlocks
       (P := Expression) (CmdT := Command) [] body)
     (hInv_proj : Imperative.Logic.Hoare.PostWF body Inv) :
     Triple π params Inv [.loop (.det guard) measure inv body md]
-      (fun ρ => Inv ρ ∧ Expression.eval ρ.factory ρ.store guard = some HasBool.ff) := by
-  intro model
+      (fun ρ => Inv ρ ∧ Expression.eval ρ.factory ρ.store guard = some (HasBool.ffVal ρ.factory))
+      (factory := factory) := by
   exact Imperative.Logic.Hoare.singleton (EvalCommandE π)
     InitEnvWF BlockInitEnvWF params params
     (fun _ hb => blockInitEnvWF_singleton hb)
@@ -262,7 +255,7 @@ theorem while_rule (params : InitEnvWFParams)
       (fun _ hl => blockInitEnvWF_bodyDefsUndefined (blockInitEnvWF_of_loop_body hl))
       (fun _ hl => blockInitEnvWF_of_loop_body hl)
       (fun _ _ _ hl hr => initEnvWF_loop_iterateE π hl hr)
-      (hbody model) hcov hInv_proj)
+      hbody hcov hInv_proj)
 
 end Hoare
 

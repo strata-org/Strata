@@ -311,9 +311,9 @@ procedure upcastToUnrelatedType()
 /-! ## A CONCRETE composite extending a generic INSTANTIATION
 
 `IntBox extends Box<int>` is the other direction from the cases above: the child has no type
-parameters, but its parent is a monomorph that has to be emitted before it. So the topological
-sort has to order a concrete composite after a generated one — and transitively, through a
-`Super extends IntBox extends Box<int>` chain where the monomorph is two levels up.
+parameters, but its parent is a monomorph, so a concrete composite inherits from a generated one —
+and transitively, through a `Super extends IntBox extends Box<int>` chain where the monomorph is
+two levels up.
 
 Subtyping compares the SUBSTITUTED ancestor with invariant arguments, so `IntBox`'s only
 `Box` supertype is `Box<int>`; `Box<bool>` and a swapped `Pair<bool, int>` are both rejected.
@@ -382,9 +382,10 @@ procedure diamondFieldOnGenericReceiver()
 `DG<int>` reaches `GBaseG` at both `GBaseG<bool>` and `GBaseG<int>`, so `innerG` has no single
 type argument at it, however the receiver is typed: through a constrained type, a generic field or
 a generic call's result (also one with a hole argument), and under an `if`, a block, an assignment
-or an `old`. The error is at the receiver, and once for a generic body cloned twice. A parameter
-that mentions no type variable takes the diamond by an upcast. An unused `var h: H<…>` makes its
-procedure monomorphized, without which neither of the last two cases would be checked. -/
+or an `old`, unless the assignment is to an upcast variable, field or declaration. The error is at
+the receiver, and once for a generic body cloned twice. A parameter that mentions no type variable takes the diamond by an
+upcast. An unused `var h: H<…>` makes its procedure monomorphized, without which neither of the
+last two cases would be checked. -/
 
 #eval testLaurelVerification <|
 #strata
@@ -396,6 +397,7 @@ composite DG<X> extends MidG, LG<X> { }
 constrained CD = d: DG<int> where true witness <??>
 composite H<X> { var d: DG<X> }
 composite K<X> { var h: H<X> }
+composite HG<X> { var u: GBaseG<X> }
 procedure mkDG<X>(x: X) returns (r: DG<X>) opaque;
 procedure mkDGh<X>(x: X, y: X) returns (r: DG<X>) opaque;
 procedure innerG<T>(p: GBaseG<T>) returns (r: T) opaque { r := p#v };
@@ -407,45 +409,59 @@ procedure constrainedReceiver(c: CD) opaque {
 
 procedure fieldReceiver(k: K<int>) opaque {
   var g: int := innerG(k#h#d)
-//                         ^ error: 'DG<int>' reaches 'GBaseG' at both
+//                         ^ error: 'DG<int>' reaches 'GBaseG' at both 'GBaseG<bool>' and 'GBaseG<int>'
 };
 
 procedure callResultReceiver() opaque {
   var g: int := innerG(mkDG(1))
-//                     ^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both
+//                     ^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both 'GBaseG<bool>' and 'GBaseG<int>'
 };
 
 procedure holeBuiltReceiver() opaque {
   var g: int := innerG(mkDGh(1, <?>))
-//                     ^^^^^^^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both
+//                     ^^^^^^^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both 'GBaseG<bool>' and 'GBaseG<int>'
 };
 
 procedure ifCallReceiver(b: bool) opaque {
-  var g: int := innerG(if b then mkDG(1) else mkDG(1))
-//                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both
+  var g: int := innerG(
+    if b then mkDG(1) else mkDG(1))
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both 'GBaseG<bool>' and 'GBaseG<int>'
+};
+
+procedure holeBranchReceiver(b: bool, d: DG<int>) opaque {
+  var g: int := innerG(
+    if b then <?> else d)
+//  ^^^^^^^^^^^^^^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both 'GBaseG<bool>' and 'GBaseG<int>'
 };
 
 procedure blockFieldReceiver(h: H<int>) opaque {
   var g: int := innerG({ h#d })
-//                     ^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both
+//                     ^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both 'GBaseG<bool>' and 'GBaseG<int>'
 };
 
 procedure assignCallReceiver() opaque {
   var e: DG<int>;
   var g: int := innerG(e := mkDG(1))
-//                     ^^^^^^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both
+//                     ^^^^^^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both 'GBaseG<bool>' and 'GBaseG<int>'
+};
+
+procedure assignUpcastReceiver(h: HG<int>) opaque modifies h {
+  var e: GBaseG<int>;
+  var g: int := innerG(e := mkDG(1));
+  var u: int := innerG(h#u := mkDG(1));
+  var w: int := innerG(var f: GBaseG<int> := mkDG(1))
 };
 
 procedure oldFieldReceiver(h: H<int>) opaque modifies h {
   h#d := mkDG(2);
   var g: int := innerG(old(h#d))
-//                     ^^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both
+//                     ^^^^^^^^ error: 'DG<int>' reaches 'GBaseG' at both 'GBaseG<bool>' and 'GBaseG<int>'
 };
 
 procedure inGenericBody<S>(x: S, d: DG<int>) returns (r: S) opaque {
   var h: H<S>;
   var g: int := innerG(d);
-//                     ^ error: 'DG<int>' reaches 'GBaseG' at both
+//                     ^ error: 'DG<int>' reaches 'GBaseG' at both 'GBaseG<bool>' and 'GBaseG<int>'
   r := x
 };
 
@@ -461,4 +477,15 @@ procedure noTypeArgumentAtStake(d: DG<int>) opaque {
   var r: int := upcastOnly(d, 1);
   assert r == 1
 };
+#end
+
+-- An `extends` cycle is rejected at the parent that closes it, a self cycle included.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+composite A extends B { var x: int }
+composite B extends A { var y: int }
+//                  ^ error: a composite type can not inherit from itself
+composite C extends C { var z: int }
+//                  ^ error: a composite type can not inherit from itself
 #end

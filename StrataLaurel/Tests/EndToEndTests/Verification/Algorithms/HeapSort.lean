@@ -15,7 +15,7 @@ program Laurel;
 
 procedure sortedBetween(s: Sequence<int>, lo: int, hi: int): bool
 {
-  forall(i: int) => forall(j: int) =>
+  return forall(i: int) => forall(j: int) =>
     0 <= lo ==> lo <= i ==> i <= j ==> j < hi ==> hi <= seqLength(s) ==> seqSelect(s, i) <= seqSelect(s, j)
 };
 
@@ -23,7 +23,7 @@ procedure count(s: Sequence<int>, v: int, hi: int): int;
 
 procedure countAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
+  return (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
   && (forall(s: Sequence<int>) => forall(v: int) => forall(h: int) =>
         1 <= h ==> h <= seqLength(s) ==>
           count(s, v, h) == count(s, v, h - 1) + (if seqSelect(s, h - 1) == v then 1 else 0))
@@ -31,19 +31,19 @@ procedure countAxioms(): bool
 
 procedure permutation(s: Sequence<int>, t: Sequence<int>): bool
 {
-  seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
+  return seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
 };
 
 procedure heapBetween(s: Sequence<int>, lo: int, hi: int): bool
 {
-  forall(k: int) => lo <= k ==> k < hi ==> 0 <= k ==> hi <= seqLength(s) ==>
+  return forall(k: int) => lo <= k ==> k < hi ==> 0 <= k ==> hi <= seqLength(s) ==>
     (2 * k + 1 >= hi || seqSelect(s, k) >= seqSelect(s, 2 * k + 1))
     && (2 * k + 2 >= hi || seqSelect(s, k) >= seqSelect(s, 2 * k + 2))
 };
 
 procedure heapExceptAt(s: Sequence<int>, lo: int, hi: int, root: int): bool
 {
-  (forall(k: int) => lo <= k ==> k < hi ==> k != root ==> 0 <= k ==> hi <= seqLength(s) ==>
+  return (forall(k: int) => lo <= k ==> k < hi ==> k != root ==> 0 <= k ==> hi <= seqLength(s) ==>
      (2 * k + 1 >= hi || seqSelect(s, k) >= seqSelect(s, 2 * k + 1))
      && (2 * k + 2 >= hi || seqSelect(s, k) >= seqSelect(s, 2 * k + 2)))
   && (root > lo ==> 0 <= root ==> root < hi ==> hi <= seqLength(s) ==>
@@ -57,13 +57,13 @@ procedure heapExceptAt(s: Sequence<int>, lo: int, hi: int, root: int): bool
 
 procedure prefixBelowSuffix(s: Sequence<int>, e: int): bool
 {
-  forall(k: int) => forall(m: int) => 0 <= k ==> k < e ==> e <= m ==> m < seqLength(s) ==>
+  return forall(k: int) => forall(m: int) => 0 <= k ==> k < e ==> e <= m ==> m < seqLength(s) ==>
     seqSelect(s, k) <= seqSelect(s, m)
 };
 
 procedure sameOutside(s: Sequence<int>, t: Sequence<int>, lo: int, hi: int): bool
 {
-  seqLength(s) == seqLength(t)
+  return seqLength(s) == seqLength(t)
   && (forall(k: int) => 0 <= k ==> k < seqLength(s) ==> (k < lo || hi <= k) ==> seqSelect(s, k) == seqSelect(t, k))
 };
 
@@ -157,7 +157,7 @@ program Laurel;
 
 procedure sortedBetween(s: Sequence<int>, lo: int, hi: int): bool
 {
-  forall(i: int) => forall(j: int) =>
+  return forall(i: int) => forall(j: int) =>
     0 <= lo ==> lo <= i ==> i <= j ==> j < hi ==> hi <= seqLength(s) ==> seqSelect(s, i) <= seqSelect(s, j)
 };
 
@@ -165,7 +165,7 @@ procedure count(s: Sequence<int>, v: int, hi: int): int;
 
 procedure countAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
+  return (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
   && (forall(s: Sequence<int>) => forall(v: int) => forall(h: int) =>
         1 <= h ==> h <= seqLength(s) ==>
           count(s, v, h) == count(s, v, h - 1) + (if seqSelect(s, h - 1) == v then 1 else 0))
@@ -173,19 +173,19 @@ procedure countAxioms(): bool
 
 procedure permutation(s: Sequence<int>, t: Sequence<int>): bool
 {
-  seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
+  return seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
 };
 
 procedure heapBetween(s: Sequence<int>, lo: int, hi: int): bool
 {
-  forall(k: int) => lo <= k ==> k < hi ==> 0 <= k ==> hi <= seqLength(s) ==>
+  return forall(k: int) => lo <= k ==> k < hi ==> 0 <= k ==> hi <= seqLength(s) ==>
     (2 * k + 1 >= hi || seqSelect(s, k) >= seqSelect(s, 2 * k + 1))
     && (2 * k + 2 >= hi || seqSelect(s, k) >= seqSelect(s, 2 * k + 2))
 };
 
 procedure heapExceptAt(s: Sequence<int>, lo: int, hi: int, root: int): bool
 {
-  (forall(k: int) => lo <= k ==> k < hi ==> k != root ==> 0 <= k ==> hi <= seqLength(s) ==>
+  return (forall(k: int) => lo <= k ==> k < hi ==> k != root ==> 0 <= k ==> hi <= seqLength(s) ==>
      (2 * k + 1 >= hi || seqSelect(s, k) >= seqSelect(s, 2 * k + 1))
      && (2 * k + 2 >= hi || seqSelect(s, k) >= seqSelect(s, 2 * k + 2)))
   && (root > lo ==> 0 <= root ==> root < hi ==> hi <= seqLength(s) ==>
@@ -197,13 +197,13 @@ procedure heapExceptAt(s: Sequence<int>, lo: int, hi: int, root: int): bool
 
 procedure prefixBelowSuffix(s: Sequence<int>, e: int): bool
 {
-  forall(k: int) => forall(m: int) => 0 <= k ==> k < e ==> e <= m ==> m < seqLength(s) ==>
+  return forall(k: int) => forall(m: int) => 0 <= k ==> k < e ==> e <= m ==> m < seqLength(s) ==>
     seqSelect(s, k) <= seqSelect(s, m)
 };
 
 procedure sameOutside(s: Sequence<int>, t: Sequence<int>, lo: int, hi: int): bool
 {
-  seqLength(s) == seqLength(t)
+  return seqLength(s) == seqLength(t)
   && (forall(k: int) => 0 <= k ==> k < seqLength(s) ==> (k < lo || hi <= k) ==> seqSelect(s, k) == seqSelect(t, k))
 };
 

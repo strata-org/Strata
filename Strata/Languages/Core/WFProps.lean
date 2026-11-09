@@ -105,7 +105,7 @@ theorem env_no_pred_precond_no_pred
     (h_env_no : ∀ v ∈ Lambda.TContext.knownVars Env.context, ¬ P v)
     (h : Lambda.LExpr.resolve C Env e = .ok (et, Env'))
     (h_envwf : Lambda.LExpr.TEnvWF (T := Core.CoreLParams) Env) (h_ne : Env.context.types ≠ [])
-    (h_fwf : Lambda.FactoryWF C.functions) :
+    (h_fwf : Lambda.FactorySigWF C.functions) :
     ∀ id ∈ HasFvars.getFvars (P := Core.Expression) et.unresolved, ¬ P id := by
   intro id hid
   simp only [HasFvars.getFvars] at hid
@@ -127,7 +127,7 @@ theorem env_no_pred_preserved_by_resolve
     (h_env_no : ∀ v ∈ Lambda.TContext.knownVars Env.context, ¬ P v)
     (h : Lambda.LExpr.resolve C Env e = .ok (et, Env'))
     (h_envwf : Lambda.LExpr.TEnvWF (T := Core.CoreLParams) Env) (h_ne : Env.context.types ≠ [])
-    (h_fwf : Lambda.FactoryWF C.functions) :
+    (h_fwf : Lambda.FactorySigWF C.functions) :
     ∀ v ∈ Lambda.TContext.knownVars Env'.context, ¬ P v := by
   intro v hv
   exact h_env_no v (resolve_knownVars_subset C Env Env' e et h h_envwf h_ne h_fwf v hv)
@@ -163,7 +163,7 @@ theorem noOldFvars_of_resolve_in_inputEnv
     (h_resolve : Lambda.LExpr.resolve C envWithInputs precond = .ok (et, Env'))
     (h_envwf : Lambda.LExpr.TEnvWF (T := Core.CoreLParams) envWithInputs)
     (h_ne : envWithInputs.context.types ≠ [])
-    (h_fwf : Lambda.FactoryWF C.functions)
+    (h_fwf : Lambda.FactorySigWF C.functions)
     (inputNames outer : List CoreIdent)
     (h_split : ∀ v ∈ Lambda.TContext.knownVars envWithInputs.context,
                  v ∈ inputNames ∨ v ∈ outer)
@@ -218,7 +218,7 @@ theorem noOldFvars_of_resolvesInOrder
     (h_env_no_old : ∀ v ∈ Lambda.TContext.knownVars Env₀.context, ¬ CoreIdent.isOldIdent v)
     (h_envwf : Lambda.LExpr.TEnvWF (T := Core.CoreLParams) Env₀)
     (h_ne : Env₀.context.types ≠ [])
-    (h_fwf : Lambda.FactoryWF C.functions) :
+    (h_fwf : Lambda.FactorySigWF C.functions) :
     ∀ et ∈ ets, ∀ id ∈ HasFvars.getFvars (P := Core.Expression) et.unresolved,
       ¬ CoreIdent.isOldIdent id := by
   induction h_fold with

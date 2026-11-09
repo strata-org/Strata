@@ -67,13 +67,6 @@ private def prefixInitEnv : List Statement → Imperative.Env Expression → Imp
       | some x => { ρ' with store := fun y => if x = y then none else ρ'.store y }
       | none => ρ'
 
-
-@[simp] private theorem prefixInitEnv_hasFailure (stmts : List Statement) (ρ : Imperative.Env Expression) :
-    (prefixInitEnv stmts ρ).hasFailure = ρ.hasFailure := by
-  induction stmts with
-  | nil => rfl
-  | cons s rest ih => simp [prefixInitEnv]; cases stmtInitVar s <;> simp [ih]
-
 @[simp] private theorem prefixInitEnv_factory (stmts : List Statement) (ρ : Imperative.Env Expression) :
     (prefixInitEnv stmts ρ).factory = ρ.factory := by
   induction stmts with
@@ -116,8 +109,9 @@ private theorem prefixInitEnv_store_wf (stmts : List Statement)
       · exact absurd hy (by simp)
       · exact ih y w hy
 
-/-- Recursive predicate: each statement in the list can step correctly
-    from its `prefixInitEnv` state. -/
+/-- Recursive predicate: each statement in the list is a command that steps, in
+    the event semantics, from its `prefixInitEnv` state to the next one, and
+    every assumption it emits is true under the evaluator. -/
 private def PrefixStepsOK
     (π : String → Option Procedure)
     : List Statement → Imperative.Env Expression → Prop
@@ -125,47 +119,56 @@ private def PrefixStepsOK
   | s :: rest, ρ =>
     PrefixStepsOK π rest ρ ∧
     ∃ c, s = Stmt.cmd c ∧
-      ∃ σ', EvalCommand π (prefixInitEnv (s :: rest) ρ).factory (prefixInitEnv (s :: rest) ρ).store c σ' false ∧
-        σ' = (prefixInitEnv rest ρ).store
+      ∃ σ' emitted,
+        EvalCommandE π (prefixInitEnv (s :: rest) ρ).factory
+          (prefixInitEnv (s :: rest) ρ).store c σ' emitted ∧
+        σ' = (prefixInitEnv rest ρ).store ∧
+        ∀ a, Event.assume a ∈ emitted →
+          Expression.eval a.factory a.store a.expr = some (HasBool.ttVal a.factory)
 
-private theorem Env_eq {ρ₁ ρ₂ : Imperative.Env Expression}
-    (h_s : ρ₁.store = ρ₂.store)
-    (h_fac : ρ₁.factory = ρ₂.factory)
-    (h_f : ρ₁.hasFailure = ρ₂.hasFailure) :
-    ρ₁ = ρ₂ := by
-  cases ρ₁; cases ρ₂; simp_all
+/-- A silent event step as a one-step run. -/
+private theorem adminRunE
+    {π : String → Option Procedure}
+    {c c' : CoreConfig}
+    (h : CoreStepE π c [] c') :
+    CoreStepStarE π c [] c' := by
+  simpa using ReflTransTrace.step _ _ _ _ _ h (ReflTransTrace.refl _)
 
-/-- If `PrefixStepsOK` holds and `hasFailure` is false,
-    stepping from `prefixInitEnv stmts ρ` reaches `.terminal ρ`. -/
-private theorem prefixInitEnv_steps
+/-- If `PrefixStepsOK` holds, the prefix runs in the event semantics from
+    `prefixInitEnv stmts ρ` to `.terminal ρ`, and every assumption on the way is
+    true under the evaluator. -/
+private theorem prefixInitEnv_stepsE
     (stmts : List Statement) (ρ : Imperative.Env Expression)
     (π : String → Option Procedure)
-    (h_hf : ρ.hasFailure = false)
     (h_ok : PrefixStepsOK π stmts ρ) :
-    Imperative.StepStmtStar Expression (EvalCommand π)
-      (.stmts stmts (prefixInitEnv stmts ρ)) (.terminal ρ) := by
+    ∃ tP, CoreStepStarE π (.stmts stmts (prefixInitEnv stmts ρ)) tP (.terminal ρ) ∧
+      ∀ a, Event.assume a ∈ tP →
+        Expression.eval a.factory a.store a.expr = some (HasBool.ttVal a.factory) := by
   induction stmts with
-  | nil =>
-    simp [prefixInitEnv]
-    exact .step _ _ _ .step_stmts_nil (.refl _)
+  | nil => exact ⟨[], adminRunE .step_stmts_nil, by simp⟩
   | cons s rest ih =>
-    obtain ⟨h_ok_rest, c, rfl, σ', h_eval, h_σ'⟩ := h_ok
-    have ih' := ih h_ok_rest
-    have h_env_eq : { (prefixInitEnv (Stmt.cmd c :: rest) ρ) with
-        store := σ',
-        hasFailure := (prefixInitEnv (Stmt.cmd c :: rest) ρ).hasFailure || false } =
-        prefixInitEnv rest ρ :=
-      Env_eq h_σ' (by simp [prefixInitEnv_factory])
-        (by simp [prefixInitEnv_hasFailure, h_hf])
-    have h_one_step : StepStmtStar Expression (EvalCommand π)
-        (.stmt (Stmt.cmd c) (prefixInitEnv (Stmt.cmd c :: rest) ρ))
-        (.terminal (prefixInitEnv rest ρ)) :=
-      .step _ _ _ (.step_cmd h_eval) (h_env_eq ▸ .refl _)
-    exact ReflTrans_Transitive _ _ _ _
-      (stmts_cons_step Expression (EvalCommand π)
-        (Stmt.cmd c) rest (prefixInitEnv (Stmt.cmd c :: rest) ρ)
-        (prefixInitEnv rest ρ) h_one_step)
-      ih'
+    obtain ⟨h_ok_rest, c, rfl, σ', emitted, h_eval, h_σ', h_emitted⟩ := h_ok
+    obtain ⟨tR, hR, hRassume⟩ := ih h_ok_rest
+    subst h_σ'
+    -- `prefixInitEnv` changes only the store, so replacing the store of the
+    -- pre-state by the post-state's store gives the post-state.
+    have h_env : ({ prefixInitEnv (Stmt.cmd c :: rest) ρ with
+        store := (prefixInitEnv rest ρ).store } : Imperative.Env Expression) =
+        prefixInitEnv rest ρ := by
+      simp only [prefixInitEnv]
+      split <;> rfl
+    have h_one : CoreStepStarE π
+        (.stmt (Stmt.cmd c) (prefixInitEnv (Stmt.cmd c :: rest) ρ)) emitted
+        (.terminal (prefixInitEnv rest ρ)) := by
+      have := ReflTransTrace.step _ _ _ _ _ (StepStmtE.step_cmd h_eval) (ReflTransTrace.refl _)
+      rw [h_env] at this
+      simpa using this
+    refine ⟨emitted ++ tR, ReflTransTrace.trans _
+      (Imperative.stmts_cons_stepE _ (Stmt.cmd c) rest _ _ h_one) hR, ?_⟩
+    intro a ha
+    rcases List.mem_append.mp ha with ha | ha
+    · exact h_emitted a ha
+    · exact hRassume a ha
 
 private theorem prefixInitEnv_append (a b : List Statement) (ρ : Imperative.Env Expression) :
     prefixInitEnv (a ++ b) ρ = prefixInitEnv a (prefixInitEnv b ρ) := by
@@ -185,16 +188,16 @@ private theorem PrefixStepsOK_append (π : String → Option Procedure)
     simp only [List.cons_append, PrefixStepsOK]
     rw [ih]
     constructor
-    · rintro ⟨⟨hb, hrest⟩, c, hs, σ', heval, hσ'⟩
-      refine ⟨hb, ⟨hrest, c, hs, σ', ?_, ?_⟩⟩
+    · rintro ⟨⟨hb, hrest⟩, c, hs, σ', em, heval, hσ', hem⟩
+      refine ⟨hb, ⟨hrest, c, hs, σ', em, ?_, ?_, hem⟩⟩
       · have h2 : prefixInitEnv (s :: rest) (prefixInitEnv b ρ) = prefixInitEnv ((s :: rest) ++ b) ρ := by
           rw [← prefixInitEnv_append]
         rw [h2]; exact heval
       · have h2 : prefixInitEnv rest (prefixInitEnv b ρ) = prefixInitEnv (rest ++ b) ρ := by
           rw [← prefixInitEnv_append]
         rw [h2]; exact hσ'
-    · rintro ⟨hb, hrest, c, hs, σ', heval, hσ'⟩
-      refine ⟨⟨hb, hrest⟩, c, hs, σ', ?_, ?_⟩
+    · rintro ⟨hb, hrest, c, hs, σ', em, heval, hσ', hem⟩
+      refine ⟨⟨hb, hrest⟩, c, hs, σ', em, ?_, ?_, hem⟩
       · have h2 : prefixInitEnv (s :: rest) (prefixInitEnv b ρ) = prefixInitEnv ((s :: rest) ++ b) ρ := by
           rw [← prefixInitEnv_append]
         rw [h2] at heval; exact heval
@@ -211,7 +214,7 @@ private theorem prefixInitEnv_store_not_init (stmts : List Statement)
   | cons s rest ih =>
     have hs := h s List.mem_cons_self
     have hrest := ih (fun s' hs' => h s' (List.mem_cons_of_mem s hs'))
-    simp [prefixInitEnv]
+    simp only [prefixInitEnv, prefixInitEnv_factory]
     cases hv : stmtInitVar s with
     | none => exact hrest
     | some y =>
@@ -237,12 +240,12 @@ private theorem PrefixStepsOK_assumes
     (ρ : Imperative.Env Expression)
     (h_preconds : ∀ (label : CoreLabel) (check : Procedure.Check),
       (label, check) ∈ preconds.toList →
-      Expression.eval ρ.factory ρ.store check.expr = some HasBool.tt)
-    (h_wfBool : WellFormedSemanticEvalBool (P := Expression) ρ.factory) :
+      Expression.eval ρ.factory ρ.store check.expr = some (HasBool.ttVal ρ.factory)) :
     PrefixStepsOK π (requiresToAssumes preconds) ρ := by
   suffices h : ∀ (items : List (CoreLabel × Procedure.Check)),
       (∀ (label : CoreLabel) (check : Procedure.Check),
-        (label, check) ∈ items → Expression.eval ρ.factory ρ.store check.expr = some HasBool.tt) →
+        (label, check) ∈ items → Expression.eval ρ.factory ρ.store check.expr = some
+            (HasBool.ttVal ρ.factory)) →
       PrefixStepsOK π (items.map fun (label, check) => Statement.assume label check.expr check.md) ρ from
     h _ h_preconds
   intro items h_items
@@ -264,12 +267,13 @@ private theorem PrefixStepsOK_assumes
     have h_store_eq : (prefixInitEnv (Statement.assume label check.expr check.md ::
         rest.map fun x => Statement.assume x.1 x.2.expr x.2.md) ρ).store = ρ.store := by
       rw [prefixInitEnv_store_noninit _ _ _ rfl, h_env_eq]
-    exact ⟨h_rest_ok, _, rfl, _,
-      by simp only [prefixInitEnv_factory]
-         rw [h_store_eq]
-         exact EvalCommand.cmd_sem (EvalCmd.eval_assume
-           (h_items label check List.mem_cons_self) h_wfBool),
-      by show _ = (prefixInitEnv _ ρ).store; rw [h_env_eq]⟩
+    refine ⟨h_rest_ok, _, rfl, _, _, EvalCmdExtE.cmd_sem EvalCmdE.eval_assume, ?_, ?_⟩
+    · rw [h_store_eq, h_env_eq]
+    · intro a ha
+      simp only [List.mem_singleton, Event.assume.injEq] at ha
+      subst ha
+      simp only [prefixInitEnv_factory, h_store_eq]
+      exact h_items label check List.mem_cons_self
 
 /-- For a nondet init statement, if `x` is none in the pre-state and some in the target,
     and all other variables match, then PrefixStepsOK holds for the singleton. -/
@@ -284,12 +288,12 @@ private theorem PrefixStepsOK_nondet_init_cons
     PrefixStepsOK π (Statement.init x ty .nondet #[] :: rest) ρ := by
   constructor
   · exact h_rest
-  · refine ⟨_, rfl, (prefixInitEnv rest ρ).store, ?_, rfl⟩
+  · refine ⟨_, rfl, (prefixInitEnv rest ρ).store, [], ?_, rfl, by simp⟩
     simp only [prefixInitEnv_factory]
     have h_none : (prefixInitEnv (Statement.init x ty .nondet #[] :: rest) ρ).store x = none :=
       prefixInitEnv_store_init _ _ _ _ rfl
     obtain ⟨v, hv, hvty⟩ := h_ty
-    exact EvalCommand.cmd_sem (EvalCmd.eval_init_unconstrained
+    exact EvalCmdExtE.cmd_sem (EvalCmdE.eval_init_unconstrained
       (InitState.init h_none hv (fun y hne => by
         exact (prefixInitEnv_store_other _ _ _ y x rfl hne).symm))
       hvty
@@ -324,7 +328,7 @@ private theorem PrefixStepsOK_nondet_init_map
       · intro s hs
         simp only [List.mem_map] at hs
         obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := hs
-        simp [stmtInitVar]
+        simp only [stmtInitVar, ne_eq, Option.some.injEq]
         intro heq
         exact h_nodup.1 (heq ▸ List.mem_map_of_mem (f := Prod.fst) hmem)
 
@@ -345,7 +349,7 @@ private theorem PrefixStepsOK_det_init_cons
       (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ := by
   constructor
   · exact h_rest
-  · refine ⟨_, rfl, (prefixInitEnv rest ρ).store, ?_, rfl⟩
+  · refine ⟨_, rfl, (prefixInitEnv rest ρ).store, [], ?_, rfl, by simp⟩
     simp only [prefixInitEnv_factory]
     have h_none : (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ).store oldG = none :=
       prefixInitEnv_store_init _ _ _ _ rfl
@@ -360,7 +364,7 @@ private theorem PrefixStepsOK_det_init_cons
       have h_wfStore' := prefixInitEnv_store_wf
         (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ ρ.factory h_wfStore
       rw [h_wfVar _ _ _ h_wfStore' h_getFvar, h_id_val, h_id_eq_old, hv]
-    exact EvalCommand.cmd_sem (EvalCmd.eval_init h_eval
+    exact EvalCmdExtE.cmd_sem (EvalCmdE.eval_init h_eval
       (InitState.init h_none hv (fun y hne => by
         exact (prefixInitEnv_store_other _ _ _ y oldG rfl hne).symm))
       hvty
@@ -409,7 +413,7 @@ private theorem PrefixStepsOK_det_init_map
       · intro s hs
         simp only [List.mem_map] at hs
         obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := hs
-        simp [stmtInitVar]
+        simp only [stmtInitVar, ne_eq, Option.some.injEq]
         intro heq
         apply h_nodup_old.1
         rw [show CoreIdent.mkOld id.name = CoreIdent.mkOld id'.name from heq.symm]
@@ -421,7 +425,7 @@ private theorem PrefixStepsOK_det_init_map
         intro s hs
         simp only [List.mem_map] at hs
         obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := hs
-        simp [stmtInitVar]
+        simp only [stmtInitVar, ne_eq, Option.some.injEq]
         intro heq
         apply h_nodup_old.1
         rw [show CoreIdent.mkOld id.name = CoreIdent.mkOld id'.name from heq.symm]
@@ -430,7 +434,7 @@ private theorem PrefixStepsOK_det_init_map
         intro s hs
         simp only [List.mem_map] at hs
         obtain ⟨⟨id', ty'⟩, hmem, rfl⟩ := hs
-        simp [stmtInitVar]
+        simp only [stmtInitVar, ne_eq, Option.some.injEq]
         exact (h_not_old id List.mem_cons_self id'.name).symm
     · exact (CoreIdent.ne_mkOld id).symm
 
@@ -477,18 +481,20 @@ private theorem mapM_stateT_pure_eq {α β : Type} {σ : Type} {ε : Type}
 theorem procToVerifyStmt_is_structured
     (h : (procToVerifyStmt proc).run st = (Except.ok verifyStmt, st')) :
       ∃ ss, proc.body = .structured ss := by
-    simp [ExceptT.run, procToVerifyStmt] at h
+    simp only [ExceptT.run, procToVerifyStmt, Body.getStructured, List.append_assoc, List.cons_append,
+    List.nil_append, bind_pure_comp] at h
     cases hb: proc.body with
     | structured ss => simp
     | cfg blk =>
-      simp [hb, List.mapM_pure (l := proc.header.getInoutParams)] at h
+      simp only [List.mapM_pure (l := proc.header.getInoutParams), hb, pure_bind] at h
       cases h
 
 /-- Structure: the output of `procToVerifyStmt` is a block
     `prefix ++ [bodyBlock] ++ postAsserts`, and all prefix statements
     are `.cmd` (init/assume commands).
     Additionally, for any `ProcEnvWF` state `ρ₀`, there exists an initial
-    state `ρ_init` from which the prefix steps to `ρ₀`. -/
+    state `ρ_init` from which the prefix runs, in the event semantics, to `ρ₀`,
+    emitting only assumptions that the evaluator makes true. -/
 theorem procToVerifyStmt_structure
     (proc : Procedure) (p : Program) (st st' : CoreTransformState)
     (verifyStmt : Statement)
@@ -502,9 +508,10 @@ theorem procToVerifyStmt_structure
           ensuresToAsserts proc.spec.postconditions) #[] ∧
       (∀ s ∈ prefixStmts, ∃ c, s = Stmt.cmd c) ∧
       (∀ params ρ₀, Core.Specification.ProcEnvWF params proc ρ₀ →
-        ∃ ρ_init,
-          Imperative.StepStmtStar Expression (EvalCommand π)
-            (.stmts prefixStmts ρ_init) (.terminal ρ₀)) := by
+        ∃ ρ_init tP,
+          CoreStepStarE π (.stmts prefixStmts ρ_init) tP (.terminal ρ₀) ∧
+          ∀ a, Event.assume a ∈ tP →
+            Expression.eval a.factory a.store a.expr = some (HasBool.ttVal a.factory)) := by
   obtain ⟨ss, h_body_eq⟩ := procToVerifyStmt_is_structured h
   unfold procToVerifyStmt at h
   rw [h_body_eq] at h
@@ -554,7 +561,9 @@ theorem procToVerifyStmt_structure
         ∃ v, ρ₀.store (CoreIdent.mkOld id.name) = some v ∧
           HasVal.valueOfTy ρ₀.factory v (Lambda.LTy.forAll [] ty') :=
       fun id ty' hmem => h_wf.oldInoutTyped hmem
-    refine ⟨prefixInitEnv _ ρ₀, prefixInitEnv_steps _ ρ₀ π h_wf.noFailure ?_⟩
+    suffices h_ok : PrefixStepsOK π prefixStmts ρ₀ by
+      obtain ⟨tP, hrun, hassume⟩ := prefixInitEnv_stepsE _ ρ₀ π h_ok
+      exact ⟨prefixInitEnv _ ρ₀, tP, hrun, hassume⟩
     -- Split: (inputInits ++ outputOnlyInits ++ oldInoutInits) ++ assumes
     rw [show prefixStmts = (inputInits ++ outputOnlyInits ++ oldInoutInits) ++ assumes
         from by simp [prefixStmts, List.append_assoc]]
@@ -565,7 +574,7 @@ theorem procToVerifyStmt_structure
       simp only [assumes, requiresToAssumes, List.mem_map] at hs
       obtain ⟨⟨l, c⟩, _, rfl⟩ := hs; simp [stmtInitVar]
     refine ⟨PrefixStepsOK_assumes π proc.spec.preconditions ρ₀
-      h_wf.preconditionsHold h_wf.bool, ?_⟩
+      h_wf.preconditionsHold, ?_⟩
     rw [h_assumes_id]
     -- Split: (inputInits ++ outputOnlyInits) ++ oldInoutInits
     rw [show inputInits ++ outputOnlyInits ++ oldInoutInits =
@@ -646,7 +655,7 @@ theorem procToVerifyStmt_structure
               intro s hs heq_s
               simp only [outputOnlyInits, List.mem_map] at hs
               obtain ⟨⟨oid, oty⟩, hmem2, rfl⟩ := hs
-              simp [stmtInitVar] at heq_s
+              simp only [stmtInitVar, Option.some.injEq] at heq_s
               have h_oid_keys : oid ∈ ListMap.keys proc.header.getOutputOnlyParams := by
                 rw [ListMap.keys_eq_map_fst]
                 simp only [ListMap.toList] at hmem2
@@ -689,14 +698,6 @@ private theorem ensuresToAsserts_runE
       simpa [ensuresToAsserts, defaultAssertEvents, Imperative.Calls.defaultAssertEvents,
         ListMap.toList, hattr] using this
 
-/-- An administrative event step as a one-step run. -/
-private theorem adminRunE
-    {π : String → Option Procedure}
-    {c c' : CoreConfig}
-    (h : StepStmt Expression (noCommandEvalE Expression Command) c c') :
-    CoreStepStarE π c [] c' := by
-  simpa using ReflTransTrace.step _ _ _ _ _ (StepStmtE.step_admin h) (ReflTransTrace.refl _)
-
 /-- If every event trace of the verification statement produced by
     `procToVerifyStmt` is assertion-valid under `I`, then the procedure is
     correct on event traces under `I`.
@@ -716,7 +717,8 @@ private theorem adminRunE
 theorem procBodyVerify_procedureCorrectOnTraces
     (I : ConditionInterp Expression)
     (h_assume : ∀ c : EventArg Expression,
-      Expression.eval c.factory c.store c.expr = some HasBool.tt → ∀ world, I.holds world c)
+      Expression.eval c.factory c.store c.expr = some (HasBool.ttVal c.factory) → ∀ world,
+          I.holds world c)
     (procName : String) (proc : Procedure) (p : Program)
     (st : CoreTransformState) (verifyStmt : Statement) (st' : CoreTransformState)
     (h_lookup : p.findProcByString? procName = some proc)
@@ -739,30 +741,24 @@ theorem procBodyVerify_procedureCorrectOnTraces
           (.seq (.block (.some bL) ρ₀.store (.stmts ss ρ₀)) posts)) ∧
       ∀ c, Event.assume c ∈ tP → ∀ world, I.holds world c := by
     intro ρ₀ hwf
-    obtain ⟨ρ_init, h_prefix⟩ := h_prefix_trace _ ρ₀ hwf
-    have hleg : StepStmtStar Expression (EvalCommand π)
-        (.stmt verifyStmt ρ_init)
+    obtain ⟨ρ_init, tP, h_prefix, h_tt⟩ := h_prefix_trace _ ρ₀ hwf
+    refine ⟨ρ_init, tP, ?_, fun c hc => h_assume c (h_tt c hc)⟩
+    rw [h_eq]
+    -- Enter the verification block, run the prefix, then enter the body block.
+    have h_pre := Imperative.stmts_prefix_terminal_appendE (EvalCmd := EvalCmdExtE π)
+      prefixStmts ([Stmt.block bL ss #[]] ++ posts) ρ_init ρ₀ h_prefix
+    have h_body : CoreStepStarE π (.stmts (Stmt.block bL ss #[] :: posts) ρ₀) []
+        (.seq (.block (.some bL) ρ₀.store (.stmts ss ρ₀)) posts) :=
+      ReflTransTrace.trans _ (adminRunE .step_stmts_cons)
+        (Imperative.seq_inner_starE (EvalCmdExtE π) (adminRunE .step_block))
+    have h_enter : CoreStepStarE π
+        (.stmt (Stmt.block vL (prefixStmts ++ ([Stmt.block bL ss #[]] ++ posts)) #[]) ρ_init) []
         (.block (.some vL) ρ_init.store
-          (.seq (.block (.some bL) ρ₀.store (.stmts ss ρ₀)) posts)) := by
-      rw [h_eq]
-      exact ReflTrans_Transitive _ _ _ _
-        (step_block_enter Expression (EvalCommand π) vL _ #[] ρ_init)
-        (block_inner_star Expression (EvalCommand π) _ _ (.some vL)
-          ρ_init.store
-          (ReflTrans_Transitive _ _ _ _
-            (by rw [List.append_assoc]
-                exact stmts_prefix_terminal_append Expression (EvalCommand π)
-                  prefixStmts _ ρ_init ρ₀ h_prefix)
-            (ReflTrans_Transitive _ _ _ _
-              (.step _ _ _ .step_stmts_cons (.refl _))
-              (seq_inner_star Expression (EvalCommand π) _ _ posts
-                (step_block_enter Expression (EvalCommand π) bL _ #[] ρ₀)))))
-    obtain ⟨tP, hrun, hf⟩ := Core.Specification.coreStepStar_toEvent
-      (StepStmtStar_to_CoreStepStar hleg) Bool.false
-    have hρ₀ : ({ ρ₀ with hasFailure := Bool.false } : Env Expression) = ρ₀ := by
-      have := hwf.noFailure; cases ρ₀; simp_all
-    refine ⟨{ ρ_init with hasFailure := Bool.false }, tP, ?_, fun c hc => h_assume c (hf.assumes c hc)⟩
-    simpa [Config.withFailure, hρ₀] using hrun
+          (.stmts (prefixStmts ++ ([Stmt.block bL ss #[]] ++ posts)) ρ_init)) :=
+      adminRunE .step_block
+    have h_run := ReflTransTrace.trans _ h_enter
+      (Imperative.block_inner_starE (ReflTransTrace.trans _ h_pre h_body))
+    simpa [vL, posts, List.append_assoc] using h_run
   -- A run of the body wrapped in its block is a run of the body itself.
   have h_inner : ∀ (ρ₀ : Env Expression) tr cfg,
       CoreStepStarE π (.stmt (Stmt.block "" ss #[]) ρ₀) tr cfg →
@@ -772,8 +768,7 @@ theorem procBodyVerify_procedureCorrectOnTraces
     | refl => exact .inl rfl
     | step _ _ _ _ _ hstep hrest =>
       cases hstep with
-      | step_admin hadmin =>
-        cases hadmin
+      | step_block =>
         simp only [List.nil_append]
         rcases Imperative.block_run_to_finalE hrest with
           ⟨_, _, hi⟩ | ⟨_, hi, _⟩ | ⟨_, _, _, hi, _⟩ | ⟨_, _, _, hi, _⟩

@@ -160,11 +160,12 @@ where
     | .Hole true _ => laurelOp "hole"
     | .Hole false _ => laurelOp "nondetHole"
     | .Var (.Local name) => laurelOp "identifier" #[ident name.text]
-    | .Block stmts label =>
+    | .Block stmts label invs _decreases =>
       let stmtArgs := stmts.map stmtExprToArg |>.toArray
+      let invArgs := invs.map (fun i => laurelOp "invariantClause" #[stmtExprToArg i]) |>.toArray
       match label with
       | none => laurelOp "block" #[semicolonSep stmtArgs]
-      | some l => laurelOp "labelledBlock" #[semicolonSep stmtArgs, ident l]
+      | some l => laurelOp "labelledBlock" #[semicolonSep stmtArgs, ident l, seqArg invArgs]
     | .Var (.Declare param) =>
       let typeOpt := optionArg (param.type.map fun t => laurelOp "typeAnnotation" #[highTypeToArg t])
       let initOpt := optionArg none
@@ -249,8 +250,11 @@ where
         laurelOp "doWhile" #[stmtExprToArg body, stmtExprToArg cond, seqArg invArgs]
       else
         laurelOp "while" #[stmtExprToArg cond, seqArg invArgs, stmtExprToArg body]
-    | .Return (some value) => laurelOp "return" #[optionArg (some (stmtExprToArg value))]
-    | .Return none => laurelOp "return" #[optionArg none]
+    | .Return [] => laurelOp "return" #[optionArg none, optionArg none]
+    | .Return (value :: more) =>
+      let moreOpt := optionArg (if more.isEmpty then none
+        else some (laurelOp "returnMore" #[commaSep (more.map stmtExprToArg).toArray]))
+      laurelOp "return" #[optionArg (some (stmtExprToArg value)), moreOpt]
     | .Yield => laurelOp "yield" #[]
     | .Resume target none =>
       laurelOp "call" #[laurelOp "identifier" #[ident "resume"], commaSep #[stmtExprToArg target]]
@@ -258,7 +262,8 @@ where
       laurelOp "call" #[laurelOp "identifier" #[ident "resume"], commaSep #[stmtExprToArg target, stmtExprToArg value]]
     | .HasNext target =>
       laurelOp "call" #[laurelOp "identifier" #[ident "has_next"], commaSep #[stmtExprToArg target]]
-    | .Exit label => laurelOp "exit" #[ident label]
+    | .Goto label .blockEnd => laurelOp "exit" #[ident label]
+    | .Goto label .blockStart => laurelOp "goto" #[ident label]
     | .Assert cond summary =>
       let errOpt := optionArg (summary.map fun msg =>
         laurelOp "errorSummary" #[.strlit sr msg])
@@ -401,9 +406,14 @@ private def procedureToOp (proc : Procedure) : StrataDDM.Operation :=
   -- `throws` carries the binding as well as the type. The two are set together by
   -- the parser (one op), and `EliminateExceptions` clears them together, so the
   -- fallback name below is unreachable for anything this printer is given.
-  let throwsArg := optionArg (proc.throwsType.map fun t =>
-    laurelOp "throwsClause"
-      #[ident (proc.throwsBinding.map (·.text) |>.getD "e"), highTypeToArg t])
+  let throwsBindingArg := ident (proc.throwsBinding.map (·.text) |>.getD "e")
+  let throwsArg := optionArg <|
+    if proc.throwsInferred then
+      some (match proc.throwsType with
+        | some t => laurelOp "throwsDeclaredInferredClause" #[throwsBindingArg, highTypeToArg t]
+        | none => laurelOp "throwsInferredClause" #[throwsBindingArg])
+    else proc.throwsType.map fun t =>
+      laurelOp "throwsClause" #[throwsBindingArg, highTypeToArg t]
   let throwsOnArgs := proc.throwsOn.map (fun blk =>
     let ens := blk.postconditions.map (fun c =>
       laurelOp "throwsOnEnsures" #[stmtExprToArg c.condition, errorSummaryToArg c.summary])
@@ -548,6 +558,13 @@ private def globalVarCommandOp (f : Field) : StrataDDM.Operation :=
               optionArg (f.initializer.map fun value =>
                 laurelOp "initializer" #[stmtExprToArg value])] }
 
+private def heapFieldCommandOp (f : HeapField) : StrataDDM.Operation :=
+  { ann := sr
+    name := { dialect := "Laurel", name := "heapFieldCommand" }
+    args := #[fieldToArg f.toField,
+              optionArg (if f.location.text == f.name.text then none
+                else some (laurelOp "heapFieldLocation" #[ident f.location.text]))] }
+
 /-- Convert a Laurel.LaurelProgram to a StrataDDM.Program (DDM concrete syntax tree).
     The resulting program can be formatted using `StrataDDM.Program.format` to
     produce Laurel source text.
@@ -556,9 +573,10 @@ private def globalVarCommandOp (f : Field) : StrataDDM.Operation :=
     so that a program with globals round-trips through source. -/
 def programToStrata (prog : Laurel.LaurelProgram) : StrataDDM.Program :=
   let fieldOps := prog.staticFields.map globalVarCommandOp |>.toArray
+  let heapFieldOps := prog.heapFields.map heapFieldCommandOp |>.toArray
   let typeOps := prog.types.map typeDefinitionToOp |>.toArray
   let procOps := (prog.staticFunctions ++ prog.staticProcedures).map procedureCommandOp |>.toArray
-  StrataDDM.Program.create Laurel_map "Laurel" (fieldOps ++ typeOps ++ procOps)
+  StrataDDM.Program.create Laurel_map "Laurel" (fieldOps ++ heapFieldOps ++ typeOps ++ procOps)
 
 /-- Format a Laurel program by converting to DDM concrete syntax and using the grammar-based formatter.
     This avoids duplicating the grammar in a separate formatter. -/
@@ -590,6 +608,7 @@ def formatStmtExpr (s : StmtExprMd) : Format := formatArg (stmtExprToArg s)
 def formatStmtExprVal (s : StmtExpr) : Format := formatArg (stmtExprValToArg s)
 def formatParameter (p : Parameter) : Format := formatArg (parameterToArg p)
 def formatField (f : Field) : Format := formatArg (fieldToArg f)
+def formatHeapField (f : HeapField) : Format := formatOp (heapFieldCommandOp f)
 def formatDatatypeConstructor (c : DatatypeConstructor) : Format := formatArg (datatypeConstructorToArg c)
 def formatProcedure (proc : Procedure) : Format := formatOp (procedureToOp proc)
 def formatCompositeType (ct : CompositeType) : Format := formatOp (compositeToOp ct)

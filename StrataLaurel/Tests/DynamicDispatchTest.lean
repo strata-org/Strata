@@ -568,8 +568,8 @@ procedure u() opaque { assert 1 == 1 };"},
 
   -- ===== Dispatch families the generator cannot lower are rejected with a CLEAN diagnostic =====
   -- (not an internal StrataBug). See `validateDispatchFamilies`.
-  { name := "asymmetric_throws_family_rejected", outcome := .rejectedExactly .userError,
-    why := "a dispatch family where the parent method `throws` but the override does not must be REJECTED with a clean diagnostic — eliminateExceptions would otherwise heap-thread only one branch and the dispatcher's if-chain would fail to type-join (internal error)"
+  { name := "narrowing_throws_override_ok", outcome := .verifies,
+    why := "an override may throw less than the method it overrides, or nothing (as in Java): its dispatcher branch simply never takes the exceptional path, so the family lowers and verifies"
     src := r"
 composite Err {}
 composite Parent { var x: int
@@ -577,6 +577,18 @@ composite Parent { var x: int
 }
 composite Child extends Parent {
   procedure m(self: Child, b: int) returns (r: int) opaque ensures r == 2 { r := 2 };
+}
+procedure u() opaque { assert 1 == 1 };"},
+
+  { name := "widening_throws_override_rejected", outcome := .rejectedExactly .userError,
+    why := "an override that throws when the method it overrides does not must be REJECTED with a clean diagnostic: a call through the base cannot expect the exception, and the dispatcher has no exceptional exit to pass it on"
+    src := r"
+composite Err {}
+composite Parent { var x: int
+  procedure m(self: Parent, b: int) returns (r: int) opaque ensures r == 1 { r := 1 };
+}
+composite Child extends Parent {
+  procedure m(self: Child, b: int) returns (r: int) throws (e: Err) opaque { if b == 0 then { var ex: Err := new Err; throw ex }; r := 1 };
 }
 procedure u() opaque { assert 1 == 1 };"},
 
@@ -918,7 +930,7 @@ procedure u() opaque { assert 1 == 1 };"},
   -- TYPE-ARGUMENT-AMBIGUOUS DIAMOND: `D<X>` inherits the generic `GBaseD`'s method through TWO
   -- parents that fix `GBaseD`'s type argument DIFFERENTLY (`MidBD → GBaseD<bool>`, `LGD<X> →
   -- GBaseD<X>`), so a `D<int>` reaches `GBaseD` at both `GBaseD<bool>` and `GBaseD<int>`. The
-  -- inherited call's type argument is genuinely undetermined; `checkDiamond` REJECTS it with a
+  -- inherited call's type argument is genuinely undetermined; `settleCallNode` REJECTS it with a
   -- clean `userError` (naming both instantiations + the disambiguating upcast), where the record
   -- alone would clone it at the `int` the expected type supplies.
   -- The disambiguation is available today via an upcast (`var b: GBaseD<int> := d; b#get()`), which

@@ -2064,11 +2064,11 @@ discharge calls: 2
 #guard_msgs in
 #eval countedDischarge twoGoals
 
-/-! A goal sent alone goes to the per-obligation discharge with the caller's worker count. Under
-`--parallel` several workers send goals at once, and a back end that shares one connection
-between the obligations of a sequential run learns that it must not from that count. -/
+/-! A goal sent alone is one obligation, so it goes to the per-obligation discharge with one
+worker, whatever the caller's worker count: under `--parallel` it takes the same sequential
+path as without it. -/
 
-/-- info: s1: proved; worker counts the discharge saw: [3] -/
+/-- info: s1: proved; worker counts the discharge saw: [1] -/
 #guard_msgs in
 #eval show IO Unit from do
   let seen ← IO.mkRef (#[] : Array Nat)
@@ -2640,9 +2640,9 @@ procedure P()
 #end
 
 /--
-info: per-obligation big: [x], generated [$__cse.0]
-incremental big: [x], generated [$__cse.0]
-walked big: [x], generated [$__cse.0]
+info: per-obligation big: [x@1], generated [$__cse.0]
+incremental big: [x@1], generated [$__cse.0]
+walked big: [x@1], generated [$__cse.0]
 -/
 #guard_msgs in
 #eval modelNames (parse hoistedTerm)

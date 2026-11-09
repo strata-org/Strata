@@ -25,8 +25,8 @@ section
 
 variable (P : PureExpr)
 
-/-- A semantic store maps every identifier to an optional expression. -/
-abbrev SemanticStore := P.Ident → Option P.Expr
+/-- A semantic store maps every identifier to an optional runtime value. -/
+abbrev SemanticStore := P.Ident → Option P.Val
 
 /-- A semantic store with no bindings. -/
 @[expose] def emptyStore {P : PureExpr} : SemanticStore P := fun _ => none
@@ -35,20 +35,6 @@ end
 
 /-! ## Defined and reserved variables -/
 
-/-- Every variable in `vs` is defined in `store`.
-
-TODO: replace with `SemanticStore.varsDefined`. -/
-@[expose] def isDefined {P : PureExpr}
-    (store : SemanticStore P) (vs : List P.Ident) : Prop :=
-  ∀ ident, ident ∈ vs → (store ident).isSome = true
-
-/-- Every variable in `vs` is undefined in `store`.
-
-TODO: replace with `SemanticStore.varsUndefined`. -/
-@[expose] def isNotDefined {P : PureExpr}
-    (store : SemanticStore P) (vs : List P.Ident) : Prop :=
-  ∀ ident, ident ∈ vs → store ident = none
-
 /-- Every `Q`-classified name not yet allocated by `state` is undefined in
 `store`. -/
 @[expose] def SemanticStore.isReserved {P : PureExpr} [HasIdent P]
@@ -56,27 +42,45 @@ TODO: replace with `SemanticStore.varsUndefined`. -/
   ∀ name, Q name → name ∉ state.stringGens →
     store (HasIdent.ident (P := P) name) = none
 
-/-- Every `Q`-classified slot is undefined in `store`. This predicate-keyed
-form generalizes `isNotDefined`. -/
+/-- Every `Q`-classified slot is undefined in `store`. For a list `vs` of
+variables, use `Q := (· ∈ vs)`. -/
 @[expose] def SemanticStore.varsUndefined {P : PureExpr}
     (Q : P.Ident → Prop) (store : SemanticStore P) : Prop :=
   ∀ ident, Q ident → store ident = none
 
-/-- Every `Q`-classified slot is defined in `store`. This predicate-keyed form
-generalizes `isDefined`. -/
+/-- Every `Q`-classified slot is defined in `store`. For a list `vs` of
+variables, use `Q := (· ∈ vs)`. -/
 @[expose] def SemanticStore.varsDefined {P : PureExpr}
     (Q : P.Ident → Prop) (store : SemanticStore P) : Prop :=
   ∀ ident, Q ident → (store ident).isSome = true
 
+/-- The store `σ'` binds only names of `D`. -/
+@[expose] def SemanticStore.DomIn {P : PureExpr} (σ' : SemanticStore P) (D : List P.Ident) : Prop :=
+  ∀ x, (σ' x).isSome → x ∈ D
+
 /-- Define `ident := value`, leaving every other variable untouched. -/
 @[expose] def SemanticStore.update {P : PureExpr} [DecidableEq P.Ident]
-    (store : SemanticStore P) (ident : P.Ident) (value : P.Expr) : SemanticStore P :=
+    (store : SemanticStore P) (ident : P.Ident) (value : P.Val) : SemanticStore P :=
   fun other => if other = ident then some value else store other
 
 /-- Every variable selected from `value` by `getVars` is defined in `store`. -/
 @[expose] def SemanticStore.isDefinedOver {P : PureExpr}
     (getVars : α → List P.Ident) (store : SemanticStore P) (value : α) : Prop :=
-  isDefined store (getVars value)
+  SemanticStore.varsDefined (· ∈ getVars value) store
+
+/-! ## Block scoping -/
+
+/-- Project an inner store through a parent store: keep the inner value only
+    for variables that were already defined in the parent. Variables that were
+    not defined in the parent (i.e., init'd inside the block) become `none`. -/
+@[expose] def projectStore {P : PureExpr} (σ_parent σ_inner : SemanticStore P) :
+    SemanticStore P :=
+  fun x => if (σ_parent x).isSome then σ_inner x else none
+
+/-- Drop a set of names from a store, sending each to `none`. -/
+@[expose] def dropVars {P : PureExpr} [DecidableEq P.Ident] (D : List P.Ident)
+    (σ : SemanticStore P) : SemanticStore P :=
+  fun x => if x ∈ D then none else σ x
 
 /-! ## Store substitution -/
 

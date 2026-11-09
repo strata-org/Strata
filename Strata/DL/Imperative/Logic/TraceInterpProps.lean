@@ -35,7 +35,8 @@ together with basic assumption-prefix algebra.
 - `Trace.AssertionValidFrom.drop_true_assumption` — removes a universally true
   assumption from an accumulated validity prefix.
 - `Trace.AssumptionsHold_append_assume` and `Trace.AssumptionsHold_append` —
-  characterize assumption satisfaction under trace extension and concatenation.
+  characterize assumption satisfaction under trace extension and concatenation;
+  `Trace.AssumptionsHold.append` is the direction that concatenates.
 - `Trace.Reachable.left_of_append` / `right_of_append` — project reachability
   from a concatenated trace to either component.
 - `Trace.AssertionsValid.append`, `Trace.AssertionsValid.left_of_append`, and
@@ -104,7 +105,7 @@ theorem Trace.AssertionValidFrom.mono_assumptions
     (hvalid : Trace.AssertionValidFrom P I aid stronger trace) :
     Trace.AssertionValidFrom P I aid weaker trace :=
   Trace.AssertionsValidFromP.mono_assumptions I
-    (fun condition => condition.label = aid.label ∧ condition.expr = aid.expr)
+    (fun condition => condition.label = aid.label ∧ condition.metadata = aid.md)
     himp hvalid
 
 /-- A universally true inserted assumption can be removed from the accumulated
@@ -172,7 +173,7 @@ theorem Trace.AssertionsValidFrom.of_all_assertionValidFrom
     | assert condition =>
       refine ⟨?_, ih (fun aid => (hvalid aid).2)⟩
       intro _ world hassum
-      exact (hvalid ⟨condition.label, condition.expr⟩).1
+      exact (hvalid ⟨condition.label, condition.metadata⟩).1
         ⟨rfl, rfl⟩ world hassum
     | assume _ => exact ih hvalid
     | cover _ => exact ih hvalid
@@ -221,8 +222,8 @@ theorem Trace.CoverSatisfiableFrom.mono_assumptions
     | assert _ => exact ih himp hcover
     | cover condition =>
       rcases hcover with hhere | hlater
-      · obtain ⟨hmatch, world, hstrong, hcondition⟩ := hhere
-        exact .inl ⟨hmatch, world, himp world hstrong, hcondition⟩
+      · obtain ⟨hlabel, hmd, world, hstrong, hcondition⟩ := hhere
+        exact .inl ⟨hlabel, hmd, world, himp world hstrong, hcondition⟩
       · exact .inr (ih himp hlater)
     | assume condition =>
       apply ih (hcover := hcover)
@@ -281,6 +282,14 @@ theorem Trace.AssumptionsHold_append
     rcases List.mem_append.mp hc with hc | hc
     · exact hl c hc
     · exact hr c hc
+
+/-- The assumptions of a concatenated trace hold when those of both parts hold (the `mpr`
+    direction of `Trace.AssumptionsHold_append`). -/
+theorem Trace.AssumptionsHold.append {P : PureExpr} {I : ConditionInterp P} {world : I.World}
+    {left right : Trace P} (hl : Trace.AssumptionsHold P I world left)
+    (hr : Trace.AssumptionsHold P I world right) :
+    Trace.AssumptionsHold P I world (left ++ right) :=
+  (Trace.AssumptionsHold_append I world left right).2 ⟨hl, hr⟩
 
 /-- Reachability of a concatenated trace implies reachability of its prefix. -/
 theorem Trace.Reachable.left_of_append
@@ -502,7 +511,7 @@ theorem Trace.AssertionValidFrom_matches_reflect {P : PureExpr}
     {I : ConditionInterp P} {ArgRel : EventArg P → EventArg P → Prop}
     (hstable : I.StableUnder ArgRel)
     (hsame : ∀ {source target}, ArgRel source target →
-      source.label = target.label ∧ source.expr = target.expr)
+      source.label = target.label ∧ source.metadata = target.metadata)
     (aid : AssertId P) :
     ∀ {assumptions assumptions' source target : Trace P},
       List.Rel₂ (Event.Matches ArgRel) assumptions assumptions' →
@@ -546,31 +555,8 @@ theorem Trace.AssumptionsHold_transfer {P : PureExpr}
     ∀ {source target : Trace P},
       List.Rel₂ (Event.ExtendsEnv Extra) source target →
       Trace.AssumptionsHold P I world source →
-      Trace.AssumptionsHold P I world target
-  | _, _, .nil, h => h
-  | .assume source :: _, .assume target :: _, .cons harg hrest, h =>
-      fun condition hmem => by
-        rcases List.mem_cons.mp hmem with heq | hmem
-        · have : condition = target := Event.assume.inj heq
-          subst condition
-          exact (hstable world source target harg).mp
-            (h source List.mem_cons_self)
-        · exact Trace.AssumptionsHold_transfer hstable hrest
-            (fun c hc => h c (List.mem_cons_of_mem _ hc)) condition hmem
-  | .assert _ :: _, .assert _ :: _, .cons _ hrest, h
-  | .cover _ :: _, .cover _ :: _, .cons _ hrest, h =>
-      fun condition hmem => by
-        rcases List.mem_cons.mp hmem with heq | hmem
-        · cases heq
-        · exact Trace.AssumptionsHold_transfer hstable hrest
-            (fun c hc => h c (List.mem_cons_of_mem _ hc)) condition hmem
-  | .assert _ :: _, .assume _ :: _, .cons harg _, _
-  | .assert _ :: _, .cover _ :: _, .cons harg _, _
-  | .assume _ :: _, .assert _ :: _, .cons harg _, _
-  | .assume _ :: _, .cover _ :: _, .cons harg _, _
-  | .cover _ :: _, .assert _ :: _, .cons harg _, _
-  | .cover _ :: _, .assume _ :: _, .cons harg _, _ => by
-      simp [Event.ExtendsEnv, Event.Matches] at harg
+      Trace.AssumptionsHold P I world target :=
+  Trace.AssumptionsHold_matches_transfer hstable
 
 /-- Pointwise event-argument extension reflects per-identifier assertion
 validity from a target trace to its source trace. -/
@@ -581,29 +567,9 @@ theorem Trace.AssertionValidFrom_reflect {P : PureExpr}
       List.Rel₂ (Event.ExtendsEnv Extra) assumptions assumptions' →
       List.Rel₂ (Event.ExtendsEnv Extra) source target →
       Trace.AssertionValidFrom P I aid assumptions' target →
-      Trace.AssertionValidFrom P I aid assumptions source
-  | _, _, _, _, _, .nil, _ => trivial
-  | _, _, .assume _ :: _, .assume _ :: _, hassumptions,
-      .cons harg hrest, h =>
-      (Trace.AssertionValidFrom_reflect hstable aid
-        (hassumptions.append (.cons harg .nil)) hrest h :)
-  | _, _, .assert source :: _, .assert target :: _, hassumptions,
-      .cons harg hrest, h =>
-      ⟨fun hkeep world hholds =>
-          (hstable world source target harg).mpr
-            (h.1 ⟨harg.2.2.1.symm.trans hkeep.1,
-                    harg.2.2.2.1.symm.trans hkeep.2⟩ world
-              (Trace.AssumptionsHold_transfer hstable hassumptions hholds)),
-        (Trace.AssertionValidFrom_reflect hstable aid hassumptions hrest h.2 :)⟩
-  | _, _, .cover _ :: _, .cover _ :: _, hassumptions, .cons _ hrest, h =>
-      (Trace.AssertionValidFrom_reflect hstable aid hassumptions hrest h :)
-  | _, _, .assert _ :: _, .assume _ :: _, _, .cons harg _, _
-  | _, _, .assert _ :: _, .cover _ :: _, _, .cons harg _, _
-  | _, _, .assume _ :: _, .assert _ :: _, _, .cons harg _, _
-  | _, _, .assume _ :: _, .cover _ :: _, _, .cons harg _, _
-  | _, _, .cover _ :: _, .assert _ :: _, _, .cons harg _, _
-  | _, _, .cover _ :: _, .assume _ :: _, _, .cons harg _, _ => by
-      simp [Event.ExtendsEnv, Event.Matches] at harg
+      Trace.AssertionValidFrom P I aid assumptions source :=
+  Trace.AssertionValidFrom_matches_reflect hstable
+    (fun ⟨_, _, hlabel, _, hmd⟩ => ⟨hlabel, hmd⟩) aid
 
 end -- public section
 end Imperative

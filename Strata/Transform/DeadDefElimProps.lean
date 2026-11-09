@@ -9,6 +9,7 @@ public import Strata.Transform.DeadDefElim
 public import Strata.DL.Imperative.BigStep.Sem
 public import Strata.DL.Imperative.StmtProps
 public import Strata.Languages.Core.Logic.LangDef
+import Strata.DL.Imperative.CmdSemanticsProps
 import all Strata.DL.Imperative.Cmd
 import all Strata.DL.Imperative.Stmt
 import all Strata.DL.Lambda.LExprWFProps
@@ -19,6 +20,12 @@ import all Strata.DL.Lambda.LExprWFProps
 (`deadDefElimH_eq`): the hash set holds exactly the identifiers that `deadDefElim`
 recomputes.
 
+Erasure keeps every property of all nested statements that does not look into branches or
+bodies (`deadDefElim_allSubstmts`), the order conditions `Block.nondetIteLast` and
+`Block.onlyChecksAfterAssert` (`deadDefElim_nondetIteLast`,
+`deadDefElim_onlyChecksAfterAssert`) and the reads of defined names `Block.readsDefined`
+(`deadDefElim_readsDefined`).
+
 For Core statement lists, the facts the trace over-approximation (`DeadDefElimCoreCorrect`) is
 built from: the correspondence of final environments (`DDOut`); a Core run of a call-free
 configuration is a run over `EvalE` and back (`star_evalE`, `star_core`); and erasure keeps the
@@ -26,7 +33,9 @@ initial-environment gate `BlockInitEnvWF` of a list without loops and calls
 (`blockInitEnvWF_dd`), through its defined variables (`dd_definedVars`), its `init` types
 (`dd_initTypes`) and def-use well-formedness (`dd_defUse`).
 
-Key theorems: `deadDefElimH_eq`, `star_evalE`, `star_core`, `blockInitEnvWF_dd`.
+Key theorems: `deadDefElimH_eq`, `deadDefElim_allSubstmts`, `deadDefElim_nondetIteLast`,
+`deadDefElim_onlyChecksAfterAssert`, `deadDefElim_readsDefined`, `star_evalE`, `star_core`,
+`blockInitEnvWF_dd`.
 
 Key definitions: `Core.DeadDefElim.DDOut`, `Core.DeadDefElim.CallFree`. -/
 
@@ -145,6 +154,97 @@ theorem deadDefElimH_eq (live : List P.Ident) (ss : PStmts P) :
     deadDefElimH live ss = deadDefElim live ss :=
   (deadDefElimHL_spec _ ss live fun y => by simp).1
 
+/-! ## Erasure keeps the order conditions and the reads of defined names -/
+
+section
+omit [Hashable P.Ident]
+
+section
+omit [LawfulBEq P.Ident]
+
+/-- **Erasure keeps every property of all nested statements** whose value on an `ite` or a
+    `block` does not depend on its branches or body: if `f` holds of every statement of `ss`,
+    nested ones included (`Block.allSubstmts f`), it holds of every statement of
+    `deadDefElim live ss`. -/
+theorem deadDefElim_allSubstmts {f : Stmt P (CmdExt P) → Bool}
+    (hite : ∀ c t e t' e' md, f (.ite c t e md) = f (.ite c t' e' md))
+    (hblock : ∀ l b b' md, f (.block l b md) = f (.block l b' md)) :
+    ∀ (live : List P.Ident) (ss : PStmts P),
+      Block.allSubstmts f ss = true → Block.allSubstmts f (deadDefElim live ss) = true := by
+  refine (deadDefElim.mutual_induct _ (fun live s => Stmt.allSubstmts f s = true →
+    Stmt.allSubstmts f (deadDefElimS live s) = true) ?_ ?_ ?_ ?_ ?_ ?_).1
+  all_goals grind [deadDefElim, deadDefElimS, Stmt.allSubstmts, Block.allSubstmts]
+
+/-- **Erasure keeps every nondeterministic `ite` last in its list**
+    (`Block.nondetIteLast`). -/
+theorem deadDefElim_nondetIteLast : ∀ (live : List P.Ident) (ss : PStmts P),
+    Block.nondetIteLast ss = true → Block.nondetIteLast (deadDefElim live ss) = true := by
+  refine (deadDefElim.mutual_induct _ (fun live s => ∀ r r', Block.nondetIteLast (s :: r) = true →
+    Block.nondetIteLast r' = true → (r = [] → r' = []) →
+    Block.nondetIteLast (deadDefElimS live s :: r') = true) ?_ ?_ ?_ ?_ ?_ ?_).1
+  all_goals intros
+  all_goals try cases ‹Stmt P (CmdExt P)›
+  all_goals try cases ‹ExprOrNondet P›
+  all_goals grind [deadDefElim, deadDefElimS, Block.nondetIteLast]
+
+/-- Erasure leaves a list of checks unchanged. -/
+private theorem deadDefElim_checks (live : List P.Ident) : ∀ ss : PStmts P,
+    ss.all Stmt.isCheck = true → deadDefElim live ss = ss
+  | [], _ => rfl
+  | s :: rest, h => by
+    rcases s with ((_ | _ | _ | _ | _) | _) | _ | _ | _ | _ | _ <;>
+      simp_all [Stmt.isCheck, deadDefElim, erasable, deadDefElimS, deadDefElim_checks live rest]
+
+/-- **Erasure keeps only checks after every `assert`**
+    (`Block.onlyChecksAfterAssert`). -/
+theorem deadDefElim_onlyChecksAfterAssert : ∀ (live : List P.Ident) (ss : PStmts P),
+    Block.onlyChecksAfterAssert ss = true →
+      Block.onlyChecksAfterAssert (deadDefElim live ss) = true := by
+  refine (deadDefElim.mutual_induct _ (fun live s => ∀ r r',
+    Block.onlyChecksAfterAssert (s :: r) = true → Block.onlyChecksAfterAssert r' = true →
+    (r.all Stmt.isCheck = true → r'.all Stmt.isCheck = true) →
+    Block.onlyChecksAfterAssert (deadDefElimS live s :: r') = true) ?_ ?_ ?_ ?_ ?_ ?_).1
+  all_goals intros
+  all_goals try cases ‹Stmt P (CmdExt P)›
+  all_goals try cases ‹CmdExt P›
+  all_goals try cases ‹Cmd P›
+  all_goals grind [deadDefElim, deadDefElimS, Block.onlyChecksAfterAssert, erasable,
+    deadDefElim_checks]
+
+end
+
+/-- Erasure keeps the reads of defined names, also from fewer defined names: the output
+    satisfies `Block.readsDefined` from any `D'` of names of `D` containing every name of `D`
+    the output mentions, when the input satisfies it from `D`. -/
+private theorem deadDefElim_ws (live : List P.Ident) : ∀ (ss : PStmts P) (D D' : List P.Ident),
+    Block.readsDefined D ss = true → (∀ y ∈ D', y ∈ D) →
+    (∀ y ∈ D, y ∈ Block.idents (deadDefElim live ss) → y ∈ D') →
+    Block.readsDefined D' (deadDefElim live ss) = true
+  | [], _, _, _, _, _ => by simp [deadDefElim, Block.readsDefined]
+  | .ite .nondet t e md :: rest, D, D', h, h1, h2 => by
+    have iht := fun l => deadDefElim_ws l t
+    have ihe := fun l => deadDefElim_ws l e
+    grind [deadDefElim, erasable, deadDefElimS, Block.idents, Stmt.idents, Block.readsDefined]
+  | .cmd c :: rest, D, D', h, h1, h2 => by
+    have ih := deadDefElim_ws live rest
+    rcases c with (⟨_, _, _ | _, _⟩ | ⟨_, _ | _, _⟩ | _ | _ | _) | _ <;>
+      grind [deadDefElim, erasable, deadDefElimS, Block.idents, Stmt.idents, Block.readsDefined]
+  | .ite (.det _) .. :: rest, D, D', h, h1, h2 | .block .. :: rest, D, D', h, h1, h2
+  | .loop .. :: rest, D, D', h, h1, h2 | .exit .. :: rest, D, D', h, h1, h2
+  | .typeDecl .. :: rest, D, D', h, h1, h2 => by
+    have ih := deadDefElim_ws live rest
+    grind [deadDefElim, erasable, deadDefElimS, Block.idents, Stmt.idents, Block.readsDefined]
+
+/-- **Erasure keeps the reads of defined names**: if `ss` reads only names defined before each
+    statement, starting from the defined names `D` (`Block.readsDefined`), so does
+    `deadDefElim live ss`. -/
+theorem deadDefElim_readsDefined (live : List P.Ident) {D : List P.Ident} {ss : PStmts P}
+    (h : Block.readsDefined D ss = true) :
+    Block.readsDefined D (deadDefElim live ss) = true :=
+  deadDefElim_ws live ss D D h (fun _ hy => hy) fun _ hy _ => hy
+
+end
+
 end -- public section
 
 end DeadDefElim
@@ -160,11 +260,10 @@ public section
 /-! ## Final environments of the output -/
 
 /-- The environment `ρ'` at the end of a run of the output of `deadDefElim` corresponds to the
-    environment `ρ` at the end of the source run: same factory and failure flag, and the store
-    of `ρ'` is the store of `ρ` with some bindings removed. -/
+    environment `ρ` at the end of the source run: same factory, and the store of `ρ'` is the
+    store of `ρ` with some bindings removed. -/
 @[expose] def DDOut (ρ ρ' : Env Expression) : Prop :=
-  ρ'.factory = ρ.factory ∧ ρ'.hasFailure = ρ.hasFailure ∧
-    StoreAgreement ρ'.store ρ.store
+  ρ'.factory = ρ.factory ∧ StoreAgreement ρ'.store ρ.store
 
 /-! ## Call-free Core runs are runs over `EvalE` -/
 
@@ -188,18 +287,15 @@ private theorem step_evalE {π : String → Option Procedure} {c c' : Config Exp
     | cmd_sem h => exact ⟨.step_cmd h, trivial⟩
     | call_sem => simp [CallFree, Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts,
         Statement.isNotCall] at hI
-  | step_admin h =>
-    refine ⟨.step_admin h, ?_⟩
-    induction h with
-    | step_seq_inner _ ih => exact ⟨ih hI.1, hI.2⟩
-    | step_block_body _ ih => exact ih hI
-    | _ => simp_all [CallFree, Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts]
   | step_seq_inner _ ih =>
     obtain ⟨h1, h2⟩ := ih hI.1
     exact ⟨.step_seq_inner h1, h2, hI.2⟩
   | step_block_body _ ih =>
     obtain ⟨h1, h2⟩ := ih hI
     exact ⟨.step_block_body h1, h2⟩
+  | _ =>
+    refine ⟨by constructor <;> assumption, ?_⟩
+    simp_all [CallFree, Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts]
 
 /-- A Core run of a call-free configuration is a run over `EvalE`. -/
 theorem star_evalE {π : String → Option Procedure} {c c' : Config Expression Command}
@@ -222,9 +318,9 @@ theorem star_core (π : String → Option Procedure) {c c' : Config Expression C
     cases cmd with
     | cmd => exact .step_cmd (EvalCmdExtE.cmd_sem h)
     | call => exact h.elim
-  | step_admin h => exact .step_admin h
   | step_seq_inner _ ih => exact .step_seq_inner ih
   | step_block_body _ ih => exact .step_block_body ih
+  | _ => constructor <;> assumption
 
 /-! ## Initial-environment well-formedness of the output -/
 
@@ -364,6 +460,93 @@ private theorem dd_defUse (fs : Expression.Ident → Bool) : ∀ (live : List Ex
       Bool.true_and] at hnc
     exact dd_defUse fs live rest D D' hss hnc h h1 h2
 
+/-- Every variable a command reads is one of the identifiers of the command. -/
+private theorem cmd_getVars_idents (c : Cmd Expression) {x : Expression.Ident}
+    (h : x ∈ Cmd.getVars c) : x ∈ Stmt.idents (P := Expression) (.cmd (.cmd c)) := by
+  rcases c with ⟨_, _, _ | _, _⟩ | ⟨_, _ | _, _⟩ | _ | _ | _ <;>
+    simp only [Cmd.getVars, ExprOrNondet.getVars, Stmt.idents] at h ⊢ <;>
+    first
+    | (simp at h; done)
+    | exact List.mem_cons_of_mem _ h
+    | exact h
+
+/-- Erasure keeps the annotation check of a list without loops and calls, also for another
+    typing that agrees with the first on every name the output mentions. -/
+private theorem dd_fvarTypes : ∀ (live : List Expression.Ident) (ss : Statements)
+    (Γ Γ' : VarTyping Expression), Block.noLoops ss = true →
+    Statements.noCalls ss = true → Block.fvarTypesWellAnnotated Γ ss →
+    (∀ n ∈ Block.idents (deadDefElim live ss), Γ' n = Γ n) →
+    Block.fvarTypesWellAnnotated Γ' (deadDefElim live ss)
+  | _, [], _, _, _, _, _, _ => by simp [deadDefElim, Block.fvarTypesWellAnnotated]
+  | live, .ite c t e md :: rest, Γ, Γ', hss, hnc, h, hag => by
+    simp only [Block.noLoops_cons, Stmt.noLoops_ite, Bool.and_eq_true] at hss
+    simp only [Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts, Statement.isNotCall,
+      Bool.true_and, Bool.and_eq_true] at hnc
+    simp only [deadDefElim, erasable, Bool.false_eq_true, ↓reduceIte, deadDefElimS] at hag ⊢
+    simp only [Block.fvarTypesWellAnnotated, Stmt.fvarTypesWellAnnotated,
+      Stmt.typedDefinedVars] at h ⊢
+    obtain ⟨⟨hc, ht, he⟩, hr⟩ := h
+    refine ⟨⟨VarTyping.annotates_congr hc fun x _ hm => hag x ?_,
+      dd_fvarTypes _ t Γ Γ' hss.1.1 hnc.1.1 ht fun n hn => hag n ?_,
+      dd_fvarTypes _ e Γ Γ' hss.1.2 hnc.1.2 he fun n hn => hag n ?_⟩,
+      dd_fvarTypes live rest Γ Γ' hss.2 hnc.2 hr fun n hn => hag n ?_⟩
+    · simp [Block.idents, Stmt.idents, ExprOrNondet.mem_getVars_of_typed c hm]
+    · simp [Block.idents, Stmt.idents, hn]
+    · simp [Block.idents, Stmt.idents, hn]
+    · simp [Block.idents, hn]
+  | live, .block l bs md :: rest, Γ, Γ', hss, hnc, h, hag => by
+    simp only [Block.noLoops_cons, Stmt.noLoops_block, Bool.and_eq_true] at hss
+    simp only [Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts, Statement.isNotCall,
+      Bool.true_and, Bool.and_eq_true] at hnc
+    simp only [deadDefElim, erasable, Bool.false_eq_true, ↓reduceIte, deadDefElimS] at hag ⊢
+    simp only [Block.fvarTypesWellAnnotated, Stmt.fvarTypesWellAnnotated,
+      Stmt.typedDefinedVars] at h ⊢
+    exact ⟨dd_fvarTypes _ bs Γ Γ' hss.1 hnc.1 h.1 fun n hn => hag n
+      (by simp [Block.idents, Stmt.idents, hn]), dd_fvarTypes live rest Γ Γ' hss.2 hnc.2 h.2
+      fun n hn => hag n (by simp [Block.idents, hn])⟩
+  | _, .cmd (.call ..) :: _, _, _, _, hnc, _, _ => by
+    simp [Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts, Statement.isNotCall] at hnc
+  | live, .cmd (.cmd c) :: rest, Γ, Γ', hss, hnc, h, hag => by
+    simp only [Block.noLoops_cons, Stmt.noLoops_cmd, Bool.true_and] at hss
+    simp only [Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts, Statement.isNotCall,
+      Bool.true_and] at hnc
+    simp only [Block.fvarTypesWellAnnotated] at h
+    obtain ⟨hc, hr⟩ := h
+    simp only [deadDefElim, deadDefElimS] at hag ⊢
+    split
+    · next he =>
+      rw [ite_eq_left he] at hag
+      refine dd_fvarTypes live rest _ Γ' hss hnc hr fun n hn => ?_
+      rw [hag n hn]
+      rcases c with ⟨x, ty, e, md⟩ | _ | _ | _ | _
+      · have hx : x ∉ Block.idents (deadDefElim live rest) := by simp_all [erasable]
+        have hne : n ≠ x := fun hnx => hx (hnx ▸ hn)
+        simp only [Stmt.typedDefinedVars, HasTypedVarsImp.typedDefinedVars, CmdExt.typedDefinedVars,
+          Cmd.typedDefinedVars]
+        rw [VarTyping.extend_singleton]
+        simp [hne]
+      all_goals simp [erasable] at he
+    · next he =>
+      rw [ite_eq_right he] at hag
+      simp only [Block.fvarTypesWellAnnotated, Stmt.fvarTypesWellAnnotated] at hc ⊢
+      refine ⟨VarTyping.annotates_congr hc fun x _ hm => hag x ?_,
+        dd_fvarTypes live rest _ _ hss hnc hr fun n hn =>
+          VarTyping.extend_congr _ (hag n (by simp [Block.idents, hn]))⟩
+      simp only [Block.idents, List.mem_append]
+      exact .inl (cmd_getVars_idents c (Cmd.mem_getVars_of_typed c
+        (by simpa [HasTypedVarsImp.typedReadVars, CmdExt.typedReadVars] using hm)))
+  | _, .loop .. :: _, _, _, hss, _, _, _ => by
+    simp [Block.noLoops_cons, Stmt.noLoops_loop] at hss
+  | live, .exit .. :: rest, Γ, Γ', hss, hnc, h, hag
+  | live, .typeDecl .. :: rest, Γ, Γ', hss, hnc, h, hag => by
+    simp only [Block.noLoops_cons, Stmt.noLoops_exit, Stmt.noLoops_typeDecl, Bool.true_and] at hss
+    simp only [Statements.noCalls, Block.allSubstmts, Stmt.allSubstmts, Statement.isNotCall,
+      Bool.true_and] at hnc
+    simp only [deadDefElim, erasable, Bool.false_eq_true, ↓reduceIte, deadDefElimS] at hag ⊢
+    simp only [Block.fvarTypesWellAnnotated, Stmt.fvarTypesWellAnnotated,
+      Stmt.typedDefinedVars, true_and] at h ⊢
+    exact dd_fvarTypes live rest Γ Γ' hss hnc h fun n hn => hag n (by simp [Block.idents, hn])
+
 /-- The output of `deadDefElim` is well formed from every environment the input is: the
     gate `BlockInitEnvWF` of the input gives that of the output. -/
 theorem blockInitEnvWF_dd {params : InitEnvWFParams} {ss : Statements}
@@ -378,7 +561,10 @@ theorem blockInitEnvWF_dd {params : InitEnvWFParams} {ss : Statements}
     defsUndefined := fun n hn => h.defsUndefined n (hdv n hn)
     definedVarsNotReserved := fun n hn => h.definedVarsNotReserved n (hdv n hn)
     defUseOk := hdu
-    initTypesInhabited := fun ty hty => h.initTypesInhabited ty (dd_initTypes [] ss ty hty) }
+    initTypesInhabited := fun ty hty => h.initTypesInhabited ty (dd_initTypes [] ss ty hty)
+    fvarTypesOk := by
+      obtain ⟨Γ, hσ, hw⟩ := h.fvarTypesOk
+      exact ⟨Γ, hσ, dd_fvarTypes [] ss Γ Γ hss hnc hw fun _ _ => rfl⟩ }
 
 end -- public section
 

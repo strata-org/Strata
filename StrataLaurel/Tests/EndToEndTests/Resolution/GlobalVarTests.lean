@@ -100,6 +100,7 @@ program Laurel;
 var g: int := 0
 procedure keepPre()
   requires old(g) == 0
+//         ^^^^^^ error: `old(...)` is not allowed in a precondition: it is already evaluated in the pre-state
 //             ^ error: file-scope globals inside `old(...)` are only supported in postconditions and guards
   opaque
 {
@@ -300,7 +301,7 @@ procedure mayThrowBareWrite(b: int)
   opaque
   throwsOn b == 0 {
     ensures (g := 1) == 1
-//           ^^^^^^ error: global mutations are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+//           ^^^^^^ error: global mutations are not yet supported in contracts, loop conditions, loop annotations, quantifiers, or old expressions
   }
 {
   g := g
@@ -323,7 +324,7 @@ procedure mayThrowBareCall(b: int)
   throws (e: Exception)
   opaque
   throwsOn bumpR() == 0 {
-//         ^^^^^ error: calls to global-writing procedure 'bumpR' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+//         ^^^^^ error: calls to global-writing procedure 'bumpR' are not yet supported in contracts, loop conditions, loop annotations, quantifiers, or old expressions
     ensures b == b
   }
 {
@@ -700,7 +701,7 @@ procedure bump() returns (r: int) opaque {
 };
 procedure caller()
   requires bump() > 0
-//         ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+//         ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions, loop annotations, quantifiers, or old expressions
   opaque
 {
 };
@@ -719,7 +720,7 @@ procedure bump() returns (r: int) opaque {
 procedure caller() opaque {
   while (false)
     invariant bump() > 0 {
-//            ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+//            ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions, loop annotations, quantifiers, or old expressions
   }
 };
 #end
@@ -742,12 +743,53 @@ procedure caller(c: GlobalPair) opaque {
 };
 #end
 
+/-! The same destructuring shape through an *instance* call. `LiftInstanceProcedures`
+moves the procedure into the static list, so the threading is the same as for a static
+callee and both call forms behave alike. -/
+
+#guard_msgs (drop info) in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+composite InstPair {
+  procedure pair(self: InstPair) returns (x: int, y: int)
+    opaque
+    ensures g == 1
+    ensures x == 2
+    ensures y == 3
+  {
+    g := 1;
+    x := 2;
+    y := 3
+  };
+}
+procedure caller(c: InstPair) opaque {
+  var x: int;
+  var y: int;
+  assign x, y := c#pair();
+  assert x == 2;
+  assert y == 3;
+  assert g == 1;
+  assert g == 0
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
 #guard_msgs in
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
-procedure writeBoth(x: int, v: int) returns (x: int, r: int) opaque {
+// A global writer with an explicit inout: `GlobalParameterization` threads `g` as a hidden
+// receiver before the source ones. `g` and the inout `x` are both `int`, so receivers bound
+// in the wrong order would swap silently — the exact values below, and the refuted
+// `g == 6`, pin the order.
+procedure writeBoth(x: int, v: int) returns (x: int, r: int) opaque
+  ensures g == v
+  ensures x == old(x) + v
+  ensures r == x
+{
   g := v;
   x := x + v;
   r := x
@@ -755,8 +797,12 @@ procedure writeBoth(x: int, v: int) returns (x: int, r: int) opaque {
 procedure caller() opaque {
   var x: int := 1;
   var r: int;
-  assign x, r := writeBoth(x, 5)
-//               ^^^^^^^^^ error: calls to global-writing procedure 'writeBoth' with explicit inout outputs are not yet supported
+  assign x, r := writeBoth(x, 5);
+  assert x == 6;
+  assert r == 6;
+  assert g == 5;
+  assert g == 6
+//^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 
@@ -818,12 +864,21 @@ constrained MutatesGlobal = x: bool where (g := true) witness false
 #end
 
 
-#guard_msgs in
+/-! A destructuring call to a global-writing procedure with several ordinary outputs.
+`GlobalParameterization` threads `g` through the call and prepends a hidden receiver for
+it to the target list, so the caller binds the written global alongside `x` and `y`. -/
+
+#guard_msgs (drop info) in
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
-procedure pair() returns (x: int, y: int) opaque {
+procedure pair() returns (x: int, y: int)
+  opaque
+  ensures g == 1
+  ensures x == 2
+  ensures y == 3
+{
   g := 1;
   x := 2;
   y := 3
@@ -831,8 +886,12 @@ procedure pair() returns (x: int, y: int) opaque {
 procedure caller() opaque {
   var x: int;
   var y: int;
-  assign x, y := pair()
-//               ^^^^ error: calls to global-writing procedure 'pair' with more than one ordinary output are not yet supported
+  assign x, y := pair();
+  assert x == 2;
+  assert y == 3;
+  assert g == 1;
+  assert g == 0
+//^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 
@@ -861,7 +920,7 @@ procedure bump() returns (r: int) opaque {
 };
 procedure caller() opaque {
   assert forall(x: int) => bump() > x
-//                         ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+//                         ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions, loop annotations, quantifiers, or old expressions
 };
 #end
 
@@ -906,7 +965,7 @@ program Laurel;
 var g: bool := false
 procedure caller() opaque {
   assert forall(x: bool) => (g := x)
-//                           ^^^^^^ error: global mutations are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+//                           ^^^^^^ error: global mutations are not yet supported in contracts, loop conditions, loop annotations, quantifiers, or old expressions
 };
 #end
 
@@ -957,7 +1016,7 @@ program Laurel;
 var g: int := 0
 procedure caller() opaque {
   assert forall(x: int) => g++ > x
-//                         ^^^ error: global mutations are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+//                         ^^^ error: global mutations are not yet supported in contracts, loop conditions, loop annotations, quantifiers, or old expressions
 };
 #end
 
@@ -1120,7 +1179,7 @@ procedure tick() returns (r: bool) opaque {
 };
 procedure caller() opaque {
   while (tick()) {
-//       ^^^^ error: calls to global-writing procedure 'tick' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+//       ^^^^ error: calls to global-writing procedure 'tick' are not yet supported in contracts, loop conditions, loop annotations, quantifiers, or old expressions
   }
 };
 #end
@@ -1196,13 +1255,12 @@ procedure caller() opaque {
 #strata
 program Laurel;
 var g: int := 0
-procedure bump() returns (r: bool) opaque {
+procedure bump() returns (r: bool) opaque ensures r {
   g := g + 1;
   return true
 };
 procedure assertCaller() opaque {
   assert bump()
-//       ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
 };
 #end
 
@@ -1211,13 +1269,12 @@ procedure assertCaller() opaque {
 #strata
 program Laurel;
 var g: int := 0
-procedure bump() returns (r: bool) opaque {
+procedure bump() returns (r: bool) opaque ensures r {
   g := g + 1;
   return true
 };
 procedure assumeCaller() opaque {
   assume bump()
-//       ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
 };
 #end
 
@@ -1232,7 +1289,7 @@ procedure bump() returns (r: bool) opaque {
 };
 procedure trigger()
   invokeOn bump()
-//         ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions or annotations, quantifiers, or old expressions
+//         ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions, loop annotations, quantifiers, or old expressions
   opaque
 {
 };

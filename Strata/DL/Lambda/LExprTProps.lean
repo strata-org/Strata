@@ -26,14 +26,17 @@ import all Strata.Util.ListUtilsProps
 public import Strata.DL.Lambda.FactoryWF
 import all Strata.DL.Lambda.FactoryProps
 public import Strata.DL.Lambda.LExprTypeSpec
+import all Strata.DL.Lambda.LExprTypeSpec
 public meta import Init.Grind.Cases
 
-/-! ## Free-variable properties of `LExprT` operators
+/-! ## Properties of `LExprT` operators and of `resolve`
 
 Properties of the `LExprT` operators defined in `Strata.DL.Lambda.LExprT`
-concerning the free variables (`LExpr.getVars`) of their output.
+concerning the free variables (`LExpr.getVars`) and operators of their output,
+plus facts about `checkContextTypesClosed`, the type-variable generator, and
+type annotations.
 
-Two families live here:
+Two free-variable families live here:
 
 * the reshaping operators (`unresolved`, `varCloseT`) — `getVars` is invariant
   under `unresolved` and `varCloseT k xv` drops `xv` and adds nothing new; and
@@ -47,7 +50,7 @@ Two families live here:
 * `getVars_varCloseT_subset` — closing binder `xv` drops `xv` from the free vars
   and adds nothing new.
 * `resolve_getVars_mem_knownVars` — every output free var of `resolve` is a
-  known var of the input context (freshness-free, routed through the output side).
+  known var of the input context.
 * `resolve_knownVars_subset` — every known var of `resolve`'s output context was
   already a known var of the input context, so any "every known var satisfies
   `P`" invariant transports across successive `resolve` calls.  (`resolve` also
@@ -56,6 +59,16 @@ Two families live here:
 * `typeBoundVar_knownVars_reverse` — a var known after `typeBoundVar` is either
   the generated binder or was already known.
 * `inferFVar_mem_knownVars` — `inferFVar` succeeds only for known vars.
+* `getVars_replaceMetadata`, `getOps_replaceMetadata` — rewriting metadata
+  keeps the free variables and the operators.
+* The annotation lemmas — how the operators and the free-variable and binder
+  annotations of the `unresolved` form change under type substitution and
+  under closing a variable.
+* `resolve_genState_tyGen_mono` — `resolve` never decreases the type-variable
+  generator.
+* `applySubstT_absorbs`, `applySubstT_varCloseT_comm` — applying a substitution
+  to annotations makes an earlier substitution it absorbs redundant, and
+  commutes with closing a variable.
 
 The scoping results are consumed externally — e.g. to prove that no
 `old`-prefixed free variable can appear in a resolved precondition (see
@@ -79,6 +92,15 @@ variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashable 
 attribute [local simp] Pure.pure Except.pure
 
 namespace Proofs
+
+/-- `LExpr.unresolved` never yields an unannotated free variable. -/
+theorem unresolved_ne_fvar_none {Tt : LExprParamsT} (et : LExprT Tt) :
+    ∀ m x, LExpr.unresolved et ≠ .fvar m x none := by
+  intro m x
+  cases et <;>
+    simp only [LExpr.unresolved, ne_eq, reduceCtorEq, not_false_eq_true,
+      LExpr.fvar.injEq, and_false]
+  · split <;> simp
 
 omit [ToString T.IDMeta] [Hashable T.IDMeta] [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 /-- Closing the binder `xv` in `et` removes `xv` from the free variables and
@@ -222,7 +244,7 @@ theorem typeBoundVar_knownVars_reverse
     rw [show Env_mid.genEnv.context.types = Env.genEnv.context.types from congrArg TContext.types h_mid_ctx] at hv
     exact mem_keys_addInNewest_single_reverse _ _ _ v hv
   | none =>
-    simp; intro h; elim_err h
+    simp only [pure, Except.pure]; intro h; elim_err h
     rename_i v_tg h_tg; obtain ⟨xtyid, Env_mid⟩ := v_tg
     simp only [Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h_xv, _, h_env'⟩ := h; subst h_xv; subst h_env'
@@ -234,9 +256,10 @@ theorem typeBoundVar_knownVars_reverse
 omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 /-- Every output free variable of `resolveAux` is a known variable of the input
     context.  Freshness-free (see the section note). -/
-private theorem resolveAux_getVars_mem_knownVars (e) (et) (C) (Env Env' : TEnv T.IDMeta)
+theorem resolveAux_getVars_mem_knownVars (e) (et) (C) (Env Env' : TEnv T.IDMeta)
     (h : resolveAux C Env e = .ok (et, Env'))
-    (h_envwf : TEnvWF Env) (h_ne : Env.context.types ≠ []) (h_fwf : FactoryWF C.functions) :
+    (h_envwf : TEnvWF Env) (h_ne : Env.context.types ≠ [])
+    (h_fwf : FactorySigWF C.functions) :
     ∀ id ∈ LExpr.getVars et, id ∈ TContext.knownVars Env.context := by
   apply resolveAux_ind
     (P := fun _e et _C Env _Env' => ∀ id ∈ LExpr.getVars et, id ∈ TContext.knownVars Env.context)
@@ -330,8 +353,8 @@ private theorem resolveAux_getVars_mem_knownVars (e) (et) (C) (Env Env' : TEnv T
     · exact mem_knownVars_of_Equiv h_ctx2 (h_ihe id he)
 
 /-- `getVars` is invariant under `replaceMetadata` (only metadata changes). -/
-private theorem getVars_replaceMetadata {Tt : LExprParamsT} {NewMeta : Type} (e : LExpr Tt)
-    (f : Tt.base.Metadata → NewMeta) :
+theorem getVars_replaceMetadata {Tt : LExprParamsT} {NewMeta : Type}
+    (e : LExpr Tt) (f : Tt.base.Metadata → NewMeta) :
     LExpr.getVars (LExpr.replaceMetadata e f) = LExpr.getVars e := by
   induction e with
   | const | op | bvar | fvar => rfl
@@ -341,12 +364,116 @@ private theorem getVars_replaceMetadata {Tt : LExprParamsT} {NewMeta : Type} (e 
   | ite m c t f ihc iht ihf => simp only [LExpr.replaceMetadata, LExpr.getVars, ihc, iht, ihf]
   | eq m e1 e2 ih1 ih2 => simp only [LExpr.replaceMetadata, LExpr.getVars, ih1, ih2]
 
+/-- `getOps` is invariant under `replaceMetadata` (only metadata changes). -/
+theorem getOps_replaceMetadata {Tt : LExprParamsT} {NewMeta : Type}
+    (e : LExpr Tt) (f : Tt.base.Metadata → NewMeta) :
+    LExpr.getOps (LExpr.replaceMetadata e f) = LExpr.getOps e := by
+  induction e with
+  | const | op | bvar | fvar => rfl
+  | abs m name ty e ih => simp only [LExpr.replaceMetadata, LExpr.getOps, ih]
+  | quant m qk name ty tr e ih_tr ih_e =>
+    simp only [LExpr.replaceMetadata, LExpr.getOps, ih_tr, ih_e]
+  | app m e1 e2 ih1 ih2 =>
+    simp only [LExpr.replaceMetadata, LExpr.getOps, ih1, ih2]
+  | ite m c t f ihc iht ihf =>
+    simp only [LExpr.replaceMetadata, LExpr.getOps, ihc, iht, ihf]
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.replaceMetadata, LExpr.getOps, ih1, ih2]
+
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashable T.IDMeta] [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 /-- `getVars` is invariant under `applySubstT` (only type annotations change). -/
-private theorem getVars_applySubstT (et : LExprT T.mono) (S : Subst) :
+theorem getVars_applySubstT (et : LExprT T.mono) (S : Subst) :
     LExpr.getVars (LExpr.applySubstT et S) = LExpr.getVars et := by
   unfold LExpr.applySubstT
   exact getVars_replaceMetadata et _
+
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+  [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)]
+  [Std.ToFormat T.Metadata] in
+/-- `getOps` is invariant under `applySubstT` (only type annotations change). -/
+theorem getOps_applySubstT (et : LExprT T.mono) (S : Subst) :
+    LExpr.getOps (LExpr.applySubstT et S) = LExpr.getOps et := by
+  unfold LExpr.applySubstT
+  exact getOps_replaceMetadata et _
+
+omit [ToString T.IDMeta] [Hashable T.IDMeta] [Std.ToFormat T.IDMeta]
+  [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
+/-- Closing a variable into a bound variable does not change the operators. -/
+theorem getOps_varCloseT (k : Nat) (xv : T.Identifier) (et : LExprT T.mono) :
+    LExpr.getOps (LExpr.varCloseT k xv et) = LExpr.getOps et := by
+  induction et generalizing k with
+  | fvar m y yty =>
+    simp only [LExpr.varCloseT]
+    split <;> rfl
+  | _ => simp_all [LExpr.varCloseT, LExpr.getOps]
+
+/-- `LExpr.unresolved` does not change the operators. -/
+theorem getOps_unresolved {Tt : LExprParamsT} (et : LExprT Tt) :
+    LExpr.getOps (LExpr.unresolved et) = LExpr.getOps et := by
+  induction et with
+  | abs m name ty e ih =>
+    simp only [LExpr.unresolved]
+    split <;> simp [LExpr.getOps, ih]
+  | _ => simp_all [LExpr.unresolved, LExpr.getOps]
+
+/-- The `LExpr` form of a typed expression annotates every operator, free
+    variable and quantifier. -/
+theorem fullyAnnotated_unresolved {Tt : LExprParamsT} (et : LExprT Tt) :
+    LExpr.fullyAnnotated (LExpr.unresolved et) = true := by
+  induction et with
+  | abs m name ty e ih =>
+    simp only [LExpr.unresolved]
+    split <;> simp [LExpr.fullyAnnotated, ih]
+  | _ => simp_all [LExpr.unresolved, LExpr.fullyAnnotated]
+
+omit [ToString T.IDMeta] [Hashable T.IDMeta] [Std.ToFormat T.IDMeta]
+  [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
+/-- Closing a variable into a bound variable keeps the annotated operators of
+    the `LExpr` form. -/
+theorem opAnnots_unresolved_varCloseT
+    (k : Nat) (xv : T.Identifier) (et : LExprT T.mono) :
+    LExpr.opAnnots (LExpr.unresolved (LExpr.varCloseT k xv et)) =
+      LExpr.opAnnots (LExpr.unresolved et) := by
+  induction et generalizing k with
+  | fvar m y yty =>
+    simp only [LExpr.varCloseT]
+    split <;> rfl
+  | abs m name ty e ih =>
+    simp only [LExpr.varCloseT, LExpr.unresolved]
+    split <;> simp [LExpr.opAnnots, ih]
+  | _ => simp_all [LExpr.varCloseT, LExpr.unresolved, LExpr.opAnnots]
+
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+  [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)]
+  [Std.ToFormat T.Metadata] in
+/-- Substituting into the type annotations substitutes into the annotation of
+    each annotated operator of the `LExpr` form. -/
+theorem opAnnots_unresolved_applySubstT (et : LExprT T.mono) (S : Subst) :
+    LExpr.opAnnots (LExpr.unresolved (LExpr.applySubstT et S)) =
+      (LExpr.opAnnots (LExpr.unresolved et)).map
+        (fun p => (p.1, LMonoTy.subst S p.2)) := by
+  unfold LExpr.applySubstT
+  induction et with
+  | abs m name ty e ih =>
+    simp only [LExpr.replaceMetadata, LExpr.unresolved]
+    split <;> split <;> simp_all [LExpr.opAnnots]
+  | _ => simp_all [LExpr.replaceMetadata, LExpr.unresolved, LExpr.opAnnots]
+
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+  [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)]
+  [Std.ToFormat T.Metadata] in
+/-- Substituting into the type annotations substitutes into the annotation of
+    each free variable of the `LExpr` form. -/
+theorem freeVars_unresolved_applySubstT (et : LExprT T.mono) (S : Subst) :
+    LExpr.freeVars (LExpr.unresolved (LExpr.applySubstT et S)) =
+      (LExpr.freeVars (LExpr.unresolved et)).map
+        (fun p => (p.1, p.2.map (LMonoTy.subst S))) := by
+  unfold LExpr.applySubstT
+  induction et with
+  | abs m name ty e ih =>
+    simp only [LExpr.replaceMetadata, LExpr.unresolved]
+    split <;> split <;> simp_all [LExpr.freeVars]
+  | _ => simp_all [LExpr.replaceMetadata, LExpr.unresolved, LExpr.freeVars]
 
 omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 /-- `resolve`-wrapper version of `resolveAux_getVars_mem_knownVars`: whenever the
@@ -354,7 +481,8 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
     the input context. -/
 theorem resolve_getVars_mem_knownVars (C) (Env Env' : TEnv T.IDMeta) (e) (et)
     (h : LExpr.resolve C Env e = .ok (et, Env'))
-    (h_envwf : TEnvWF Env) (h_ne : Env.context.types ≠ []) (h_fwf : FactoryWF C.functions) :
+    (h_envwf : TEnvWF Env) (h_ne : Env.context.types ≠ [])
+    (h_fwf : FactorySigWF C.functions) :
     ∀ id ∈ LExpr.getVars et, id ∈ TContext.knownVars Env.context := by
   intro id hid
   have h_isEmpty : Env.context.types.isEmpty = false := by
@@ -383,7 +511,8 @@ omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
     successive procedure pre/postconditions. -/
 theorem resolve_knownVars_subset (C) (Env Env' : TEnv T.IDMeta) (e) (et)
     (h : LExpr.resolve C Env e = .ok (et, Env'))
-    (h_envwf : TEnvWF Env) (h_ne : Env.context.types ≠ []) (h_fwf : FactoryWF C.functions) :
+    (h_envwf : TEnvWF Env) (h_ne : Env.context.types ≠ [])
+    (h_fwf : FactorySigWF C.functions) :
     ∀ v ∈ TContext.knownVars Env'.context, v ∈ TContext.knownVars Env.context := by
   intro v hv
   have h_eq : Env'.context.Equiv Env.context :=
@@ -393,5 +522,228 @@ theorem resolve_knownVars_subset (C) (Env Env' : TEnv T.IDMeta) (e) (et)
 end Proofs
 
 end LExpr
+
+/-! ### Closed context types, the type-variable generator, annotations -/
+
+namespace LExpr
+
+/-- The default environment's context is closed. -/
+theorem checkContextTypesClosed_default {T : LExprParams}
+    [DecidableEq T.IDMeta] [Hashable T.IDMeta] :
+    checkContextTypesClosed (T := T) (TEnv.default (IDMeta := T.IDMeta)) := by
+  simp [checkContextTypesClosed, TEnv.default, TEnv.context]
+
+/-- `checkContextTypesClosed` depends on `Env` only through its context. -/
+theorem checkContextTypesClosed_of_context_eq {T : LExprParams}
+    [DecidableEq T.IDMeta] [Hashable T.IDMeta] (E1 E2 : TEnv T.IDMeta)
+    (h : E1.context = E2.context) :
+    LExpr.checkContextTypesClosed (T := T) E1
+      = LExpr.checkContextTypesClosed (T := T) E2 := by
+  simp only [LExpr.checkContextTypesClosed, h]
+
+end LExpr
+
+section
+open LExpr
+
+variable {T : LExprParams} [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+
+/-- Replacing the substitution preserves closedness of context types. -/
+theorem TEnv.updateSubst_checkContextTypesClosed
+    (Env : TEnv T.IDMeta) (S : SubstInfo) :
+    checkContextTypesClosed (Env.updateSubst S) =
+      checkContextTypesClosed Env := by
+  rfl
+
+end
+
+/-- Adding an empty newest scope preserves closedness of all context types. -/
+theorem pushEmptyContext_preserves_closed
+    {T : LExprParams} [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+    (Env : TEnv T.IDMeta)
+    (h_closed : LExpr.checkContextTypesClosed (T := T) Env) :
+    LExpr.checkContextTypesClosed (T := T) (Env.pushEmptyContext) := by
+  simp only [LExpr.checkContextTypesClosed, TEnv.context] at h_closed ⊢
+  simp only [TEnv.pushEmptyContext, TEnv.updateContext, TEnv.context,
+    HMaps.push, List.all_cons, h_closed, Bool.and_true]
+  simp only [HMap.all, HMap.empty, ← Std.HashMap.all_toList,
+    Std.HashMap.toList_emptyWithCapacity, List.all_nil]
+
+section
+open LExpr
+
+variable {T : LExprParams} [Std.ToFormat T.IDMeta]
+
+section ResolveTyGenMono
+
+variable [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMeta]
+  [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
+
+omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
+/-- The recursive resolver never decreases the type-variable generator. -/
+private theorem resolveAux_tyGen_mono (C : LContext T) :
+    ∀ (e : LExpr T.mono) (Env Env' : TEnv T.IDMeta) (et : LExprT T.mono),
+      resolveAux C Env e = .ok (et, Env') →
+      Env.genEnv.genState.tyGen ≤ Env'.genEnv.genState.tyGen :=
+  resolveAux_preserves C
+    (fun E E' => E.genEnv.genState.tyGen ≤ E'.genEnv.genState.tyGen)
+    (fun _ => Nat.le_refl _)
+    (fun _ _ _ h12 h23 => Nat.le_trans h12 h23)
+    (fun scheme E mty E' hinst =>
+      LTy_instantiateWithCheck_tyGen_mono scheme C E mty E' hinst)
+    (fun ann E mty E' hinst =>
+      LMonoTy_instantiateWithCheck_tyGen_mono ann C E mty E' hinst)
+    (fun E x fty mty E' hinfer => inferFVar_tyGen_mono C E x fty mty E' hinfer)
+    (fun E n E' hgen => by rw [genTyVar_tyGen E n E' hgen]; omega)
+    (fun _ _ _ _ => Nat.le_refl _)
+    (fun _ _ _ _ _ _ => Nat.le_refl _)
+    (fun E bty xv xty E1 _ hboundOk h12 =>
+      Nat.le_trans (typeBoundVar_tyGen_mono C E bty xv xty E1 hboundOk) h12)
+
+end ResolveTyGenMono
+
+/-- `resolve` never decreases the type-variable generator counter. -/
+theorem resolve_genState_tyGen_mono
+    [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMeta]
+    (e : LExpr T.mono) (e_typed : LExprT T.mono) (C : LContext T)
+    (Env Env' : TEnv T.IDMeta)
+    (h : e.resolve C Env = .ok (e_typed, Env')) :
+    Env.genEnv.genState.tyGen ≤ Env'.genEnv.genState.tyGen := by
+  unfold LExpr.resolve at h
+  simp only [bind, Except.bind] at h
+  elim_err h with r haux
+  obtain ⟨et, EnvR⟩ := r
+  simp only [Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, rfl⟩ := h
+  split at haux
+  · exact resolveAux_tyGen_mono C e
+      (Env.updateContext { Env.context with types := [.empty] }) EnvR et haux
+  · exact resolveAux_tyGen_mono C e Env EnvR et haux
+
+end
+
+namespace LExpr
+
+/-- Applying `S` after `Sin` to the annotations of `et` is the same as applying
+    `S` alone, provided `S` absorbs `Sin`. -/
+theorem applySubstT_absorbs {T : LExprParamsT}
+    (S Sin : Subst) (h : Subst.absorbs S Sin) (et : LExprT T) :
+    LExpr.applySubstT (LExpr.applySubstT et Sin) S =
+      LExpr.applySubstT et S := by
+  induction et <;>
+    simp_all [LExpr.applySubstT, LExpr.replaceMetadata,
+      LMonoTy.subst_absorbs S Sin _ h]
+
+/-- Applying a type substitution to the annotations of an expression commutes
+    with closing a free variable into a bound variable. -/
+theorem applySubstT_varCloseT_comm {T : LExprParams}
+    [DecidableEq T.IDMeta] (k : Nat) (xv : T.Identifier)
+    (et : LExprT T.mono) (S : Subst) :
+    applySubstT (LExpr.varCloseT k xv et) S =
+      LExpr.varCloseT k xv (applySubstT et S) := by
+  induction et generalizing k with
+  | const m c => simp [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+  | op m o ty => simp [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+  | bvar m i => simp [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+  | fvar m y yty =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    split <;> simp_all [LExpr.replaceMetadata]
+  | app m e1 e2 ih1 ih2 =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    congr 1; exact ih1 k; exact ih2 k
+  | abs m name ty e_body ih =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    congr 1; exact ih (k + 1)
+  | quant m qk name ty tr e_body ih_tr ih_e =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    congr 1; exact ih_tr (k + 1); exact ih_e (k + 1)
+  | ite m c t f_expr ih_c ih_t ih_f =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    congr 1; exact ih_c k; congr 1; exact ih_t k; exact ih_f k
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [applySubstT, LExpr.replaceMetadata, LExpr.varCloseT]
+    congr 1; exact ih1 k; exact ih2 k
+
+namespace Proofs
+
+variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta]
+  [Hashable T.IDMeta] [Std.ToFormat T.IDMeta] [HasGen T.IDMeta]
+  [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
+
+omit [ToString T.IDMeta] [Hashable T.IDMeta] [Std.ToFormat T.IDMeta]
+  [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
+/-- Closing a binder of a resolved expression keeps the binder annotations of
+    its `LExpr` form. -/
+theorem binderAnnotations_unresolved_varCloseT (x : T.Identifier) :
+    ∀ (k : Nat) (et : LExprT T.mono),
+      binderAnnotations (LExpr.unresolved (LExpr.varCloseT k x et)) =
+        binderAnnotations (LExpr.unresolved et) := by
+  intro k et
+  induction et generalizing k <;>
+    simp only [LExpr.varCloseT, LExpr.unresolved, binderAnnotations, *] <;>
+    split <;> simp only [LExpr.unresolved, binderAnnotations, *]
+
+omit [ToString T.IDMeta] [Hashable T.IDMeta] [Std.ToFormat T.IDMeta]
+  [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
+/-- Closing a binder of a resolved expression adds no free-variable annotation
+    to its `LExpr` form. -/
+theorem fvarAnnotations_unresolved_varCloseT_subset (x : T.Identifier) :
+    ∀ (k : Nat) (et : LExprT T.mono) (t : LMonoTy),
+      t ∈ fvarAnnotations (LExpr.unresolved (LExpr.varCloseT k x et)) →
+        t ∈ fvarAnnotations (LExpr.unresolved et) := by
+  intro k et
+  induction et generalizing k with
+  | const _ _ | op _ _ _ | bvar _ _ => exact fun _ ht => ht
+  | fvar _ y _ =>
+    intro t ht
+    simp only [LExpr.varCloseT] at ht
+    split at ht
+    · simp only [LExpr.unresolved, fvarAnnotations, List.not_mem_nil] at ht
+    · exact ht
+  | abs m name ty e ih =>
+    have hfa : ∀ e' : LExprT T.mono,
+        fvarAnnotations (LExpr.unresolved (.abs m name ty e')) =
+          fvarAnnotations (LExpr.unresolved e') := by
+      intro e'
+      simp only [LExpr.unresolved]
+      split <;> rfl
+    intro t ht
+    simp only [LExpr.varCloseT] at ht
+    rw [hfa] at ht
+    rw [hfa]
+    exact ih _ t ht
+  | quant m qk name ty tr e ihtr ih =>
+    intro t ht
+    simp only [LExpr.varCloseT, LExpr.unresolved, fvarAnnotations,
+      List.mem_append] at ht ⊢
+    rcases ht with ht | ht
+    · exact Or.inl (ihtr _ t ht)
+    · exact Or.inr (ih _ t ht)
+  | app m e1 e2 ih1 ih2 =>
+    intro t ht
+    simp only [LExpr.varCloseT, LExpr.unresolved, fvarAnnotations,
+      List.mem_append] at ht ⊢
+    rcases ht with ht | ht
+    · exact Or.inl (ih1 _ t ht)
+    · exact Or.inr (ih2 _ t ht)
+  | ite m c t f ihc iht ihf =>
+    intro u hu
+    simp only [LExpr.varCloseT, LExpr.unresolved, fvarAnnotations,
+      List.mem_append] at hu ⊢
+    rcases hu with (hu | hu) | hu
+    · exact Or.inl (Or.inl (ihc _ u hu))
+    · exact Or.inl (Or.inr (iht _ u hu))
+    · exact Or.inr (ihf _ u hu)
+  | eq m e1 e2 ih1 ih2 =>
+    intro t ht
+    simp only [LExpr.varCloseT, LExpr.unresolved, fvarAnnotations,
+      List.mem_append] at ht ⊢
+    rcases ht with ht | ht
+    · exact Or.inl (ih1 _ t ht)
+    · exact Or.inr (ih2 _ t ht)
+
+end Proofs
+end LExpr
+
 end -- public section
 end Lambda

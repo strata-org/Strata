@@ -8,6 +8,7 @@ module
 public import Strata.Util.ListUtilsProps
 import all Strata.Util.ListUtils
 import all Strata.Util.ListUtilsProps
+public import Strata.DL.Imperative.CFGDominators
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.CallWF
 
@@ -134,12 +135,87 @@ structure WFLemmaDeclarationProp (p : Program) (l : Lemma) : Prop where
 
 structure WFDistinctDeclarationProp (p : Program) (l : Expression.Ident) (es : List (Expression.Expr)) : Prop where
 
--- NOTE: For CFG procedures, the structured-body fields (`wfstmts`, `wfloclnd`,
--- `bodyExitsCovered`) are vacuously satisfied. CFG-specific well-formedness
--- (e.g., label uniqueness, reachability) is not yet captured here:
---   * verify block labels are unique
---   * all variables used are declared/initialized
---   * target labels of transfer commands exist
+/-! ## CFG-body well-formedness
+
+`WFCFGProp` characterizes a well-formed `DetCFG` procedure body. Its conjuncts
+mirror what the dominance-scoped CFG type checker (`CFG.typeCheck`) verifies:
+structural validity (unique labels, existing entry, in-range branch targets) and
+the scoping discipline on block-level `init`s (detailed per field below).
+
+Dominance, cycles and reachability are stated over the computed graph analyses
+(`computeDominators`, `cycleLabelsWith`, `reachableLabels`), not over paths of
+the CFG. Nothing yet proves that these analyses agree with the path-based
+definitions (see the `Strata.DL.Imperative.CFGDominators` module header), so
+the conjuncts below mean "with respect to these analyses".
+
+`WFCFGProp` does not by itself imply that a CFG-local is never read before it is
+initialized: `domScoped` accepts a read that comes before the declaring `init` in
+the same block, since a block dominates itself. The per-block type check rejects
+such a read (the local is not yet in scope), but that is not part of this
+structure. Nor does it rule out two `init`s of one local on a single path through
+dominance-incomparable blocks (`entry → D → E` plus `entry → E`): `CFG.typeCheck`
+rejects that with `checkInitsNotReachable`, whose result is not yet proved to
+match a reachability property and so is not a conjunct here. The header-collision
+and type-agreement checks (`checkInitsNotHeader`, `checkInitTypesAgree`) are not
+part of it either, nor is a collision with a global name (rejected by the
+per-block check). `WFCFGProp` is about scoping and shape only; it makes no
+typing claim. -/
+
+/-- The `init` targets declared by a basic block, in order. `Command.definedVars`
+yields `[x]` for `init x` and `[]` for every other command. -/
+@[expose] def blockInitVars (blk : DetBlock String Command Expression) : List Expression.Ident :=
+  blk.cmds.flatMap Command.definedVars
+
+/-- Every `init` target declared anywhere in a CFG. -/
+@[expose] def cfgInitVars (cfg : DetCFG) : List Expression.Ident :=
+  cfg.blocks.flatMap (fun lb => blockInitVars lb.2)
+
+/-- Every variable a block *reads*: the fvars of its commands (`Command.readVars`
+covers init/set right-hand sides, assert/assume/cover expressions, and call
+`inArg`/`inoutArg` reads) plus its transfer guard's fvars. -/
+@[expose] def blockReadVars (blk : DetBlock String Command Expression) : List Expression.Ident :=
+  (blk.cmds.flatMap Command.readVars) ++ blk.transfer.guardFvars
+
+/-- Every variable a block *assigns*. `Command.modifiedVars` covers `set` targets
+and call `outArg`/`inoutArg` write targets. -/
+@[expose] def blockSetTargets (blk : DetBlock String Command Expression) : List Expression.Ident :=
+  blk.cmds.flatMap Command.modifiedVars
+
+/-- Well-formedness of a `DetCFG` procedure body. -/
+structure WFCFGProp (p : Program) (d : Procedure) (cfg : DetCFG) : Prop where
+  /-- Block labels are unique. -/
+  uniqueLabels : cfg.labels.Nodup
+  /-- The entry label names an existing block. -/
+  entryExists : cfg.entry ∈ cfg.labels
+  /-- Every transfer target names an existing block. -/
+  targetsInRange : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks →
+      ∀ t ∈ blk.transfer.targets, t ∈ cfg.labels
+  /-- No block declares the same `init` target twice. -/
+  blockInitsNodup : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks → (blockInitVars blk).Nodup
+  /-- Every CFG-local a *reachable* block reads or assigns has a declarer that
+  dominates it with respect to `computeDominators`. Rules out a use of a local
+  declared on only one arm of a branch. Unreachable blocks are excluded (their
+  dominator set is `⊤`). -/
+  domScoped : ∀ Blbl Bblk, (Blbl, Bblk) ∈ cfg.blocks →
+      cfg.isReachable Blbl = true →
+      ∀ x ∈ blockReadVars Bblk ++ blockSetTargets Bblk,
+        x ∈ cfgInitVars cfg →
+          ∃ Dlbl Dblk, (Dlbl, Dblk) ∈ cfg.blocks ∧ x ∈ blockInitVars Dblk ∧
+            CFG.Dom.dominates cfg.computeDominators Dlbl Blbl = true
+  /-- Two distinct *reachable* blocks declaring the same local are
+  dominance-incomparable (so a use of that local resolves to a unique dominating
+  declarer). Unreachable dead-code declarers are excluded. -/
+  initsIncomparable : ∀ D1 D2 B1 B2, (D1, B1) ∈ cfg.blocks → (D2, B2) ∈ cfg.blocks →
+      cfg.isReachable D1 = true → cfg.isReachable D2 = true →
+      D1 ≠ D2 → ∀ x, x ∈ blockInitVars B1 → x ∈ blockInitVars B2 →
+        CFG.Dom.dominates cfg.computeDominators D1 D2 = false ∧
+        CFG.Dom.dominates cfg.computeDominators D2 D1 = false
+  /-- No *reachable* block that declares a local lies on a cycle, as computed by
+  `cycleLabelsWith`, so no `init` can run twice by looping back to it. -/
+  noLoopInits : ∀ lbl blk, (lbl, blk) ∈ cfg.blocks → cfg.isReachable lbl = true →
+      blockInitVars blk ≠ [] →
+        (CFG.cycleLabelsWith cfg.succMap cfg.labels).contains lbl = false
+
 structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   wfstmts : ∀ ss, d.body = .structured ss → WFStatementsProp p ss
   wfloclnd : ∀ ss, d.body = .structured ss → (HasVarsImp.definedVars (P:=Expression) ss false).Nodup
@@ -150,6 +226,7 @@ structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   wfspec : WFSpecProp p d.spec d
   bodyExitsCovered : ∀ ss, d.body = .structured ss →
     Block.exitsCoveredByBlocks [] ss
+  wfcfg : ∀ cfg, d.body = .cfg cfg → WFCFGProp p d cfg
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 structure WFRecFuncBlockProp (p : Program) (fs : List Function) : Prop where

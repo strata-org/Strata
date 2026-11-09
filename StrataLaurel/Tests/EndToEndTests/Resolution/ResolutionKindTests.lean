@@ -124,14 +124,13 @@ datatype Box<T> {
 
 /-! ## Constrained (subset) type as a generic datatype type argument -/
 
--- A constrained (subset) type used as a *type argument* of a generic datatype is
--- rejected at resolution time, in any position. Subset types are not yet
--- supported under polymorphism: the argument lowers through `resolveBaseType`,
--- which over-approximates it to its base (`int32` -> `int`) and silently drops
--- the refinement, so a value outside the subset would verify clean. Rather than
--- accept that, resolution rejects it wherever it appears.
+-- A constrained (subset) type is accepted as a direct type argument of a
+-- non-recursive generic datatype: `ConstrainedTypeElim` unfolds the constraint
+-- constructor by constructor and enforces it wherever a value of the type crosses a
+-- procedure boundary. Inside a datatype constructor field there is no such boundary,
+-- so it is still rejected there.
 
--- (1) In a variable's type — `resolveHighType`'s `.Applied` arm.
+-- (1) In a variable's type — accepted.
 #eval testLaurelResolution <|
 #strata
 program Laurel;
@@ -142,12 +141,10 @@ datatype Option<T> {
 }
 procedure foo() opaque {
   var o: Option<int32> := Nothing()
-//              ^^^^^ error: constrained (subset) type 'int32' is not yet supported as a generic datatype type argument
 };
 #end
 
--- (2) In a datatype constructor field's type (resolved via `resolveHighType`
---     with the datatype's type parameters in scope).
+-- (2) In a datatype constructor field's type — rejected.
 #eval testLaurelResolution <|
 #strata
 program Laurel;
@@ -160,6 +157,49 @@ datatype Wrap {
   W(inner: Option<int32>)
 //                ^^^^^ error: constrained (subset) type 'int32' is not yet supported as a generic datatype type argument
 }
+#end
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+datatype A<T> { MkA(t: T, b: B<T>), NilA() }
+datatype B<T> { MkB(a: A<T>) }
+procedure f(a: A<nat>) opaque { assert true };
+//               ^^^ error: constrained (subset) type 'nat' is not yet supported as a generic datatype type argument
+#end
+
+-- An argument of a field's type that does not mention the parameter is not unfolded, so it
+-- may be any type.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+datatype List<T> { Nil(), Cons(h: T, t: List<T>) }
+datatype P2<A, B> { MkP2(a: A, b: B) }
+datatype W<T> { MkW(p: P2<T, List<int>>) }
+procedure f(w: W<nat>) opaque { assert true };
+#end
+
+-- A field that holds the parameter inside a recursive datatype or a collection has no
+-- per-constructor unfolding, so the constraint could not be enforced there.
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+datatype List<T> { Nil(), Cons(h: T, t: List<T>) }
+datatype Holder<T> { MkH(l: List<T>) }
+procedure f() opaque { var h: Holder<nat> := MkH(Cons(-1, Nil())); assert true };
+//                                   ^^^ error: constrained (subset) type 'nat' is not yet supported as a generic datatype type argument
+#end
+
+#eval testLaurelResolution <|
+#strata
+program Laurel;
+constrained nat = x: int where x >= 0 witness 0
+datatype Wrap<T> { MkW(m: TotalMap int T) }
+procedure f() opaque { var w: Wrap<nat> := MkW(mapConst(-1)); assert true };
+//                                 ^^^ error: constrained (subset) type 'nat' is not yet supported as a generic datatype type argument
 #end
 
 /-! ## Malformed generic datatype references and applications

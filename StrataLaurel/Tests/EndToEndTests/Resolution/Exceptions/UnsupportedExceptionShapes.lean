@@ -105,32 +105,30 @@ procedure usesOwnResult() returns (r: Result<int, bool>) opaque {
 #end
 
 
--- (4) Multiple inheritance makes the "unrelated propagation edge" reachable. `C`
+-- (4) Multiple inheritance makes the "unrelated propagation edge" reachable. `D<T>`
 -- extends both `A` and `B`, so a `try` whose thrown types join at `B` can escape a
--- `C` — which is a legal escape from a `throws A` procedure, since `C <: A`. The
--- lowering has no copy for that edge (`B` and `A` are unrelated, so neither a
--- widening nor a downcast type-checks), and before this guard the procedure-level
--- exception variable was simply left unassigned: the case below then failed with a
--- misleading "postcondition could not be proved".
+-- `D<int>` — which is a legal escape from a `throws A` procedure, since `D<int> <: A`.
+-- The lowering copies across such an edge through a checked cast when a non-generic
+-- composite extends both (`escapesThroughSharedDescendant` in
+-- `Execution/Exceptions/UncaughtExceptions.lean`). Resolution does not count a generic
+-- one, so it rejects the edge rather than leave the procedure's exception variable
+-- unassigned.
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite A {}
 composite B {}
 composite B2 extends B {}
-composite C extends A, B {}
+composite D<T> extends A, B { var v: T }
 procedure propagatesUnrelated(pick: bool)
   throws (e: A)
   opaque
-  throwsOn true {
-    ensures e is C
-  }
 {
-  var c: C := new C;
+  var d: D<int> := new D<int>;
   var b2: B2 := new B2;
   try {
 //^ not-yet-implemented: an exception escaping this `try` is not yet supported here: the `try`'s exception type 'B' is unrelated to 'A'
-    if pick then { throw c } else { throw b2 }
+    if pick then { throw d } else { throw b2 }
   } catch e when e is B2 {
     assert true
   }
@@ -139,23 +137,22 @@ procedure propagatesUnrelated(pick: bool)
 
 -- The same unrelated pair is fine when nothing escapes the `try`: the catch-all
 -- absorbs both thrown types, so the lowering never needs a copy. This pins the
--- guard to an actual escape rather than to the types alone — the earlier,
--- single-inheritance-only reasoning would have rejected this too.
+-- guard to an actual escape rather than to the types alone.
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 composite A {}
 composite B {}
 composite B2 extends B {}
-composite C extends A, B {}
+composite D<T> extends A, B { var v: T }
 procedure handlesUnrelated(pick: bool)
   throws (e: A)
   opaque
 {
-  var c: C := new C;
+  var d: D<int> := new D<int>;
   var b2: B2 := new B2;
   try {
-    if pick then { throw c } else { throw b2 }
+    if pick then { throw d } else { throw b2 }
   } catch e {
     assert true
   }

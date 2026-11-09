@@ -17,7 +17,7 @@ procedure count(s: Sequence<int>, v: int, hi: int): int;
 
 procedure countAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
+  return (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
   && (forall(s: Sequence<int>) => forall(v: int) => forall(h: int) =>
         1 <= h ==> h <= seqLength(s) ==>
           count(s, v, h) == count(s, v, h - 1) + (if seqSelect(s, h - 1) == v then 1 else 0))
@@ -25,7 +25,7 @@ procedure countAxioms(): bool
 
 procedure heapExcept(h: Sequence<int>, size: int, hole: int): bool
 {
-  forall(k: int) => 0 < k ==> k < size ==> size <= seqLength(h) ==> k != hole ==>
+  return forall(k: int) => 0 < k ==> k < size ==> size <= seqLength(h) ==> k != hole ==>
     seqSelect(h, (k - 1) / 2) >= seqSelect(h, k)
 };
 
@@ -75,7 +75,7 @@ procedure count(s: Sequence<int>, v: int, hi: int): int;
 
 procedure countAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
+  return (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
   && (forall(s: Sequence<int>) => forall(v: int) => forall(h: int) =>
         1 <= h ==> h <= seqLength(s) ==>
           count(s, v, h) == count(s, v, h - 1) + (if seqSelect(s, h - 1) == v then 1 else 0))
@@ -83,7 +83,7 @@ procedure countAxioms(): bool
 
 procedure heapExcept(h: Sequence<int>, size: int, hole: int): bool
 {
-  forall(k: int) => 0 < k ==> k < size ==> size <= seqLength(h) ==> k != hole ==>
+  return forall(k: int) => 0 < k ==> k < size ==> size <= seqLength(h) ==> k != hole ==>
     seqSelect(h, (k - 1) / 2) >= seqSelect(h, k)
 };
 

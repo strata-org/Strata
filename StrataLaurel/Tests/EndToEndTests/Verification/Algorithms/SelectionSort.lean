@@ -15,7 +15,7 @@ program Laurel;
 
 procedure sortedBetween(s: Sequence<int>, lo: int, hi: int): bool
 {
-  forall(i: int) => forall(j: int) =>
+  return forall(i: int) => forall(j: int) =>
     0 <= lo ==> lo <= i ==> i <= j ==> j < hi ==> hi <= seqLength(s) ==> seqSelect(s, i) <= seqSelect(s, j)
 };
 
@@ -23,7 +23,7 @@ procedure count(s: Sequence<int>, v: int, hi: int): int;
 
 procedure countAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
+  return (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
   && (forall(s: Sequence<int>) => forall(v: int) => forall(h: int) =>
         1 <= h ==> h <= seqLength(s) ==>
           count(s, v, h) == count(s, v, h - 1) + (if seqSelect(s, h - 1) == v then 1 else 0))
@@ -31,18 +31,18 @@ procedure countAxioms(): bool
 
 procedure permutation(s: Sequence<int>, t: Sequence<int>): bool
 {
-  seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
+  return seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
 };
 
 procedure prefixBelowSuffix(s: Sequence<int>, i: int): bool
 {
-  forall(k: int) => forall(m: int) => 0 <= k ==> k < i ==> i <= m ==> m < seqLength(s) ==>
+  return forall(k: int) => forall(m: int) => 0 <= k ==> k < i ==> i <= m ==> m < seqLength(s) ==>
     seqSelect(s, k) <= seqSelect(s, m)
 };
 
 procedure minBetween(s: Sequence<int>, idx: int, lo: int, hi: int): bool
 {
-  forall(k: int) => lo <= k ==> k < hi ==> 0 <= k ==> k < seqLength(s) ==> 0 <= idx ==> idx < seqLength(s) ==>
+  return forall(k: int) => lo <= k ==> k < hi ==> 0 <= k ==> k < seqLength(s) ==> 0 <= idx ==> idx < seqLength(s) ==>
     seqSelect(s, idx) <= seqSelect(s, k)
 };
 
@@ -93,7 +93,7 @@ program Laurel;
 
 procedure sortedBetween(s: Sequence<int>, lo: int, hi: int): bool
 {
-  forall(i: int) => forall(j: int) =>
+  return forall(i: int) => forall(j: int) =>
     0 <= lo ==> lo <= i ==> i <= j ==> j < hi ==> hi <= seqLength(s) ==> seqSelect(s, i) <= seqSelect(s, j)
 };
 
@@ -101,7 +101,7 @@ procedure count(s: Sequence<int>, v: int, hi: int): int;
 
 procedure countAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
+  return (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
   && (forall(s: Sequence<int>) => forall(v: int) => forall(h: int) =>
         1 <= h ==> h <= seqLength(s) ==>
           count(s, v, h) == count(s, v, h - 1) + (if seqSelect(s, h - 1) == v then 1 else 0))
@@ -109,18 +109,18 @@ procedure countAxioms(): bool
 
 procedure permutation(s: Sequence<int>, t: Sequence<int>): bool
 {
-  seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
+  return seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
 };
 
 procedure prefixBelowSuffix(s: Sequence<int>, i: int): bool
 {
-  forall(k: int) => forall(m: int) => 0 <= k ==> k < i ==> i <= m ==> m < seqLength(s) ==>
+  return forall(k: int) => forall(m: int) => 0 <= k ==> k < i ==> i <= m ==> m < seqLength(s) ==>
     seqSelect(s, k) <= seqSelect(s, m)
 };
 
 procedure minBetween(s: Sequence<int>, idx: int, lo: int, hi: int): bool
 {
-  forall(k: int) => lo <= k ==> k < hi ==> 0 <= k ==> k < seqLength(s) ==> 0 <= idx ==> idx < seqLength(s) ==>
+  return forall(k: int) => lo <= k ==> k < hi ==> 0 <= k ==> k < seqLength(s) ==> 0 <= idx ==> idx < seqLength(s) ==>
     seqSelect(s, idx) <= seqSelect(s, k)
 };
 

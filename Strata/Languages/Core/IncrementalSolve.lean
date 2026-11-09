@@ -8,7 +8,6 @@ module
 public import Strata.Languages.Core.Verifier
 public import Std.Sync.Mutex
 import Strata.Languages.Core.ObligationExtraction
-import Strata.Transform.CommonSubexprElim
 
 /-! # Walking a verification tree with long-lived solver sessions
 
@@ -151,7 +150,7 @@ def VTree.goalCount : VTree → Nat
 /-- Read a procedure's body into a tree, for `readDecls`, which hangs the result off the point
     the procedure is declared at. `facts` and `goals` are those of the node
     being read, which a fact after a goal closes: the rest of the body then goes in a child. -/
-private partial def readStmts (facts : Array (PathConditionEntry Expression))
+private def readStmts (facts : Array (PathConditionEntry Expression))
     (goals : Array Goal) (ss : Statements) : Except String VTree :=
   match ss with
   | [] => .ok { facts, goals, children := #[] }
@@ -189,28 +188,28 @@ private partial def readStmts (facts : Array (PathConditionEntry Expression))
     and no others, which is what `ObligationExtraction` accumulates as it walks. That
     prefix is a chain of ancestors, so procedures sharing a prelude share the nodes
     holding it. -/
-private partial def readDecls (funcNames : List String)
+private def readDecls (funcNames : List String)
     (facts : Array (PathConditionEntry Expression))
     (goals : Array Goal) (kids : Array VTree) (ds : List Decl) : Except String VTree :=
-  -- What follows a goal or a child is read below it, so a node's facts precede its goals and
-  -- its children, and everything after keeps the declaration order.
-  let below (facts' : Array (PathConditionEntry Expression)) (goals' : Array Goal)
-      (rest : List Decl) : Except String VTree := do
-    let t ← readDecls funcNames facts' goals' #[] rest
-    .ok { facts, goals, children := kids.push t }
-  let global (entry : PathConditionEntry Expression) (rest : List Decl) :
-      Except String VTree :=
-    if kids.isEmpty && goals.isEmpty then readDecls funcNames (facts.push entry) goals kids rest
-    else below #[entry] #[] rest
-  let definition (rest : List Decl) : Except String VTree :=
-    if kids.isEmpty && goals.isEmpty then readDecls funcNames facts goals kids rest
-    else below #[] #[] rest
   match ds with
   | [] => .ok { facts, goals, children := kids }
   | d :: rest =>
+    -- What follows a goal or a child is read below it, so a node's facts precede its goals and
+    -- its children, and everything after keeps the declaration order.
+    let below (facts' : Array (PathConditionEntry Expression)) (goals' : Array Goal) :
+        Except String VTree := do
+      let t ← readDecls funcNames facts' goals' #[] rest
+      .ok { facts, goals, children := kids.push t }
+    let global (entry : PathConditionEntry Expression) : Except String VTree :=
+      if kids.isEmpty && goals.isEmpty then readDecls funcNames (facts.push entry) goals kids rest
+      else below #[entry] #[]
+    -- A function of `()`, so the rest is read only on the paths that use it.
+    let definition (_ : Unit) : Except String VTree :=
+      if kids.isEmpty && goals.isEmpty then readDecls funcNames facts goals kids rest
+      else below #[] #[]
     match d with
-    | .ax a _ => global (.assumption a.name a.e) rest
-    | .distinct name es _ => global (.distinct (toString name) es) rest
+    | .ax a _ => global (.assumption a.name a.e)
+    | .distinct name es _ => global (.distinct (toString name) es)
     -- Read from the statements `extractObligations` reads, so a parameter named like a
     -- function is renamed apart here too and a procedure with a contract is refused.
     | .proc proc _ => do
@@ -221,12 +220,12 @@ private partial def readDecls (funcNames : List String)
     -- declared before it: a definition need not be a conservative extension (a recursive one,
     -- for instance), and a goal must not be checked under one it could not see.
     | .func f _ =>
-      if f.preconditions.isEmpty then definition rest
+      if f.preconditions.isEmpty then definition ()
       else .error (preconditionError f.name)
     | .recFuncBlock funcs _ =>
       match funcs.find? (fun f => !f.preconditions.isEmpty) with
       | some f => .error (preconditionError f.name)
-      | none => definition rest
+      | none => definition ()
     -- A lemma is a goal checked under the declarations before it and never assumed, so it is a
     -- goal of the node it is declared at. The lemmas of one program therefore share a context:
     -- those declared one after another are goals of one node, and one after an axiom or a
@@ -237,15 +236,15 @@ private partial def readDecls (funcNames : List String)
                            property := Imperative.convertMetaDataPropertyType md,
                            expr := l.e, md }
       if kids.isEmpty then readDecls funcNames facts (goals.push goal) kids rest
-      else below #[] #[goal] rest
+      else below #[] #[goal]
     | _ => readDecls funcNames facts goals kids rest
 
 /-- Read a program as one tree. Every verdict of this back end rests on the tree holding exactly
     the obligations `extractObligations` finds, each under the same assumptions in the same order.
-    That agreement is tested, not proved: `sameObligations` in the tests compares the two on every
-    test program. -/
+    That agreement is proved: whenever this succeeds, so does `extractObligations`, with exactly
+    the tree's obligations. -/
 def readProgram (p : Program) : Except String VTree :=
-  readDecls (ObligationExtraction.programFuncNames p) #[] #[] #[] p.decls
+  readDecls p.funcNames #[] #[] #[] p.decls
 
 /-- A position in the tree, as the child indices taken from the root. -/
 abbrev Pos := Array Nat
@@ -267,9 +266,9 @@ structure WorkItem where
       `held &&& keptAxioms == held` says the goal keeps every axiom in `held`, in one step however
       many axioms the program has. -/
   keptAxioms : Nat := 0
-  /-- CSE definitions on the path that this goal does not use and that the solver must not be
-      sent, because their text cannot be written for it. Empty except on the path the
-      per-obligation discharge also isolates, see `pruneUnusedCSEDefinitions`. -/
+  /-- CSE definitions on the path that this goal does not use, which the solver is not sent
+      for this goal. The per-obligation discharge drops the same ones, see
+      `pruneUnusedCSEDefinitions`. -/
   skippedDefs : Std.HashSet String := {}
 
 /-- The tree laid out for the walk. Nodes, and so goals, are numbered in pre-order, which is
@@ -288,9 +287,17 @@ private structure Build where
   goalIds : Array (Array Nat) := #[]
   children : Array (Array Nat) := #[]
 
+/-- A child of a node is smaller than the node, which is what recursion over a tree's children
+    terminates by. -/
+theorem VTree.sizeOf_lt_of_mem {t c : VTree} (h : c ∈ t.children) : sizeOf c < sizeOf t := by
+  cases t
+  have hlt := Array.sizeOf_lt_of_mem h
+  simp only [VTree.mk.sizeOf_spec] at *
+  omega
+
 /-- For `layoutOf`: number the nodes in pre-order, collecting each one's goals and children, and
     building one `WorkItem` per goal. -/
-private partial def buildLayout (t : VTree) (pos : Pos)
+private def buildLayout (t : VTree) (pos : Pos)
     (path : Array (Array (PathConditionEntry Expression))) (b : Build) : Build :=
   let me := b.goalIds.size
   let path := path.push t.facts
@@ -300,14 +307,13 @@ private partial def buildLayout (t : VTree) (pos : Pos)
     let id := ts.size
     (ts.push { id, pos, path, goal := g }, ids.push id)
   let b := { b with tasks, goalIds := b.goalIds.setIfInBounds me ids }
-  (List.range t.children.size).foldl (init := b) fun b i =>
-    match t.children[i]? with
-    | none => b
-    | some c =>
-      let kid := b.goalIds.size
-      let b := { b with
-        children := b.children.setIfInBounds me ((b.children.getD me #[]).push kid) }
-      buildLayout c (pos.push i) path b
+  (t.children.foldl (init := (b, 0)) fun (b, i) c =>
+    let kid := b.goalIds.size
+    let b := { b with
+      children := b.children.setIfInBounds me ((b.children.getD me #[]).push kid) }
+    (buildLayout c (pos.push i) path b, i + 1)).1
+termination_by t
+decreasing_by exact VTree.sizeOf_lt_of_mem ‹_›
 
 /-- Lay the tree out for the walk. -/
 def layoutOf (t : VTree) : Layout :=
@@ -652,23 +658,28 @@ where
       | .ok id => values[id]?.map (v, ·)
       | .error _ => none
 
-/-- The obligation a goal stands for, in the shape every other back end reports. The path is
-    the assumptions: `PathConditions` is a list of runs, which is what `WorkItem.path` already
-    is. -/
+/-- The obligation `g` stands for under the facts `ctx`, oldest first, as one frame: the shape
+    `extractObligations` gives an obligation. -/
+private def Goal.obligation (ctx : List (PathConditionEntry Expression)) (g : Goal) :
+    Imperative.ProofObligation Expression :=
+  { label := g.label, property := g.property, assumptions := [ctx], obligation := g.expr,
+    metadata := g.md }
+
+/-- The obligation a goal stands for, in the shape every other back end reports. Its
+    assumptions are the facts of the runs on the goal's path, in order. -/
 def obligationOf (item : WorkItem) : Imperative.ProofObligation Expression :=
-  { label := item.goal.label, property := item.goal.property,
-    -- One frame, oldest fact first, which is the shape `extractObligations` gives an obligation.
-    assumptions := [item.path.toList.flatMap (·.toList)],
-    obligation := item.goal.expr, metadata := item.goal.md }
+  item.goal.obligation (item.path.toList.flatMap (·.toList))
 
 /-- Encode one assertion against this session's own state, send whatever that
     turned out to need and this solver has not been told, and check it.
 
     Encoding and sending are one step because they are one thing: advancing the
     fold discovers the sorts, functions and axioms the assertion mentions, and
-    those have to reach this solver before the check does. -/
+    those have to reach this solver before the check does. With
+    `removeDatatypes`, the solver is sent only the datatypes the query
+    mentions and their field types. -/
 def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory CoreLParams)
-    (item : WorkItem) (satCheck validCheck : Bool) :
+    (item : WorkItem) (satCheck validCheck removeDatatypes : Bool) :
     IO ((Except VCError VCOutcome × LExprModel) × Session τ σ) := do
   -- Append the runs of facts this session has not walked yet. `appendEntry` takes
   -- one entry at a time, so nothing is compared: a session knows what it holds
@@ -701,7 +712,7 @@ def Session.prove {τ σ : Type} (s : Session τ σ) (factory : @Lambda.Factory 
     -- function, axiom or datatype reachable only from the goal and from no assumption on the path
     -- appears in `r.ctx` alone. Declaring from the fold's context would omit it while the goal
     -- still refers to it, and the solver would reject an unknown symbol.
-    let ctx := r.ctx
+    let ctx := r.declaredCtx removeDatatypes
     let managed := (r.varDecls.map (·.name) ++ r.varDefs.map (·.name)).foldl
       (fun acc n => acc.insert n) s.managed
     let newDatatypes := ctx.seenDatatypes.toList.filter fun n => !s.declDatatypes.contains n
@@ -1009,6 +1020,7 @@ private partial def workLoop {τ σ : Type} (shared : Std.Mutex Schedule) (l : L
         s.encodingFailure.set none
         try
           let ((o, model), s') ← s.prove factory item satCheck validCheck
+            options.removeIrrelevantDatatypes
           -- Whether a `sat` reports as unknown depends on what this goal's
           -- pruning drops, as on the per-obligation path, even when lazy
           -- pruning left those axioms in the solver.
@@ -1115,19 +1127,11 @@ def run {τ σ : Type} (factory : @Lambda.Factory CoreLParams)
           | some i => if dropped.contains label then acc else acc ||| (1 <<< i)
           | none => acc
         | _ => acc
-    -- The per-obligation discharge drops a goal's unused CSE definitions only when one of them
-    -- holds a string literal SMT-LIB cannot spell; doing the same here keeps such a literal from
-    -- failing every goal below the node it was hoisted to.
     let ob := obligationOf t
     let skippedDefs : Std.HashSet String :=
-      if !hasUnsupportedStringCSEDefinition ob then {} else
-        let defsOf (o : Imperative.ProofObligation Expression) : List String :=
-          o.assumptions.flatMap fun pc => pc.filterMap fun
-            | .varDecl name _ (.det _) =>
-              if CSE.isCSEGeneratedName name.name then some name.name else none
-            | _ => none
-        let keptDefs := Std.HashSet.ofList (defsOf (pruneUnusedCSEDefinitions ob))
-        Std.HashSet.ofList ((defsOf ob).filter (!keptDefs.contains ·))
+      let defs := cseDefinitions ob
+      let needed := neededCSEDefinitions ob defs
+      Std.HashSet.ofList (defs.filterMap fun (n, _) => if needed.contains n then none else some n)
     pure { t with pruned, keptAxioms := keptMask, skippedDefs }
   let l := { l0 with tasks }
   let sessions := planSessions l (options.minSessions.getD n) options.splitByNode
@@ -1505,11 +1509,7 @@ def coreSMTSolver (sessions : Nat := 1) (options : VerifyOptions := VerifyOption
         (axiomProgram := axProg) (mkDischarge := mkDischarge) (pctx := pctx) : CoreSMTSolver)
         factory oblProgram)
     -- A goal sent alone is discharged against the environment of the whole program, as the
-    -- per-obligation path discharges it, and with that path's dropping of unused CSE definitions,
-    -- which it applies to every obligation once one needs it.
-    let anyUnsupportedCSE := match ObligationExtraction.extractObligations oblProgram with
-      | .ok obs => obs.any hasUnsupportedStringCSEDefinition
-      | .error _ => false
+    -- per-obligation path discharges it, and with that path's dropping of unused CSE definitions.
     -- Built on the first goal sent alone, and once, however many workers send at once.
     let env : Thunk (Except Strata.Pipeline.Message Env) := Thunk.mk fun _ =>
       (Core.buildEnv options oblProgram factory (registerCustomFunctions := true)).map (·.1)
@@ -1518,16 +1518,18 @@ def coreSMTSolver (sessions : Nat := 1) (options : VerifyOptions := VerifyOption
         | .ok E => pure E
         | .error m => throw (ofMsg m)
       let ob := obligationOf item
-      let ob := if anyUnsupportedCSE then pruneUnusedCSEDefinitions ob else ob
-      -- The caller's worker count is kept: several workers may send goals at once, and a back end
-      -- that shares one connection across a sequential run relies on `parallelWorkers` to tell it
-      -- when obligations may be sent concurrently. Each goal gets a pipeline context of its own,
-      -- since a context's phase stack is not meant to be shared by concurrent workers, and nothing
-      -- reads these contexts back.
+      let ob := pruneUnusedCSEDefinitions ob
+      -- A goal sent alone is a single obligation, so it is discharged with one worker whatever
+      -- the caller's worker count. That count describes this call only: several of the walk's
+      -- workers may send goals at once, so a back end that shares one connection between
+      -- obligations decides from the options of the run it was created for, not from these.
+      -- Each goal gets a pipeline context of its own, since a context's phase stack is not
+      -- meant to be shared by concurrent workers, and nothing reads these contexts back.
       let goalCtx ← (Strata.Pipeline.PipelineContext.create (outputMode := .quiet) : BaseIO _)
       let (rs, _) ← EIO.toIO ofMsg (dischargeObligations E #[ob]
-        { options with stopOnFirstError := false } counter tempDir
-        axiomCache axiomNames (axiomProgram := axProg) (mkDischarge := mkDischarge) (pctx := goalCtx))
+        { options with parallelWorkers := 1, stopOnFirstError := false } counter tempDir
+        axiomCache axiomNames (axiomProgram := axProg) (mkDischarge := mkDischarge)
+        (pctx := goalCtx))
       match rs[0]? with
       | some r => pure r
       | none => throw (IO.userError s!"no result for {item.goal.label}")
@@ -1562,7 +1564,12 @@ programs read by `strata verify`, and the programs the Laurel and Python front e
 translate to Core. It decides which back end discharges the obligations, the obligation-tree
 walk above or one solver per obligation, and runs the pipeline of
 `verifyPipeline` with it. Making that choice here, in the one function they all call, is
-what gives every front end the tree walk under `--incremental`.
+what lets every front end get the tree walk under `--incremental`. A caller gets it when it
+passes no `mkDischarge`, as `strata verify` does on its default solvers and Laurel does, or
+when it opens sessions with `mkSession`, unless one of the cases listed at `verify` keeps
+one solver per obligation. A caller that passes any `mkDischarge`, even
+`mkDischargeFn`, and no `mkSession` keeps one solver per obligation: the Python front end's
+`pyAnalyzeLaurel`, and `strata verify` with a `--solver` back end that opens no sessions.
 -/
 
 namespace Core
@@ -1577,9 +1584,9 @@ The back end is chosen as follows.
 - A `solver` passed in is used as it is.
 - Otherwise, under `--incremental`, the obligation tree is walked, sharing one solver
   session down a branch. The tree is walked on the sessions `mkSession` opens, or on local
-  solver processes, but never on local processes for a caller with its own `mkDischarge`
-  and no sessions: that caller decides where queries go. Goals alone in their procedure
-  go through `mkDischarge` either way.
+  solver processes, but never on local processes for a caller that passes any
+  `mkDischarge` and no `mkSession`: that caller decides where queries go. A session of one
+  goal goes through `mkDischarge` either way.
 - Otherwise each obligation is sent on its own through `mkDischarge`.
 
 The per-obligation path is kept, under `--incremental` too, when SMT files are to be kept
@@ -1587,6 +1594,19 @@ The per-obligation path is kept, under `--incremental` too, when SMT files are t
 (`obligationsToVerify`): that path is the only one that writes and filters them. A
 `vcDirectory` also turns `--incremental` off for that path, which writes SMT files only
 when it is not incremental.
+
+With `removeIrrelevantAxioms`, the tree walk prunes lazily unless `exactPruning` is set
+(`--incremental-pruning lazy`, the default, or `exact`): a solver keeps the axioms earlier
+goals on its path needed, so a goal checked on that shared solver may see more axioms than
+its own pruning keeps. Those axioms are the program's own, so a goal they prove still
+follows from the program, but its verdict may differ from the one it gets from one solver
+per obligation or exact pruning: an assertion may pass where it is refuted or unknown
+there, and a cover may be reported unreachable where it is reachable or unknown there.
+Goals sent alone, and goals that skip a definition the path holds, are checked on a fresh
+solver and see only their own axioms. With `exactPruning`, the solver is reset whenever a
+goal drops an axiom it holds, so every goal is checked with exactly its own axioms and is
+asked the per-obligation question. A caller that compares verdicts across modes should set
+`exactPruning`, as Laurel does.
 -/
 def verify (program : Program)
     (tempDir : System.FilePath)

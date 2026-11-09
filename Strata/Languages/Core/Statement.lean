@@ -115,21 +115,20 @@ end
 mutual
 /--
 Collect the `AssertId Expression` of every reachable assertion in `s`:
-`.assert` commands and each entry of a `.loop`'s invariant list. Mirrors
-the shape of `coreIsAtAssert`.
-
-NOTE: Once loop invariant is dropped from coreIsAtAssert, this will be a simple
-filtering of .assert commands.
+`.assert` commands (their label and metadata) and each entry of a `.loop`'s
+invariant list (its label and `MetaData.invariantMd`, the metadata that loop
+invariant elimination gives the asserts it generates for that invariant).
 -/
 def Statement.collectAssertIds (s : Statement) : List (Imperative.AssertId Expression) :=
   match s with
-  | .cmd (.cmd (.assert label expr _)) => [⟨label, expr⟩]
+  | .cmd (.cmd (.assert label _ md)) => [⟨label, md⟩]
   | .cmd _ => []
   | .block _ inner_ss _ => Statements.collectAssertIds inner_ss
   | .ite _ then_ss else_ss _ =>
     Statements.collectAssertIds then_ss ++ Statements.collectAssertIds else_ss
-  | .loop _ _ inv body_ss _ =>
-    inv.map (fun lp => ⟨lp.1, lp.2⟩) ++ Statements.collectAssertIds body_ss
+  | .loop _ _ inv body_ss md =>
+    inv.mapIdx (fun i lp => ⟨lp.1, md.invariantMd i⟩) ++
+      Statements.collectAssertIds body_ss
   | .exit _ _ | .typeDecl _ _ => []
   termination_by Imperative.Stmt.sizeOf s
 
@@ -260,9 +259,7 @@ def Command.mapExpr (f : Expression.Expr → Expression.Expr) : Command → Comm
   | .cmd (.cover l e md) => .cmd (.cover l (f e) md)
   | .cmd (.init n ty (.det e) md) => .cmd (.init n ty (.det (f e)) md)
   | .cmd (.set n (.det e) md) => .cmd (.set n (.det (f e)) md)
-  | .call pname args md => .call pname (args.map fun
-      | .inArg e => .inArg (f e)
-      | a => a) md
+  | .call pname args md => .call pname (args.map (CallArg.mapInput f)) md
   | c => c
 
 /-- Apply a function to all user-facing expressions in a statement. -/
@@ -295,38 +292,124 @@ def Statements.mapExprsM {M : Type → Type} [Monad M] (f : Expression.Expr → 
     (ss : Statements) : M Statements :=
   ss.mapM (Statement.mapExprsM f)
 
+section TypeAnnotations
+
+open Lambda
+
+/-- Apply `f` to every type annotation in a command. -/
+def mapCmdTys (f : LMonoTy → LMonoTy) (c : Command) : Command :=
+  match c with
+  | .cmd cc =>
+    match cc with
+    | .init x ty e md => .cmd (.init x (mapLTyTys f ty) (e.map (mapExprTys f ·)) md)
+    | .set x e md => .cmd (.set x (e.map (mapExprTys f ·)) md)
+    | .assert l b md => .cmd (.assert l (mapExprTys f b) md)
+    | .assume l b md => .cmd (.assume l (mapExprTys f b) md)
+    | .cover l b md => .cmd (.cover l (mapExprTys f b) md)
+  | .call pname args md => .call pname (args.map (CallArg.mapInput (mapExprTys f))) md
+
+/-- Apply `f` to every type annotation in a statement. -/
+def mapStmtTys (f : LMonoTy → LMonoTy) (s : Statement) : Statement :=
+  Stmt.mapExpr (mapExprTys f) (mapCmdTys f) s
+
+/-- Apply `f` to every type annotation in a list of statements. -/
+def mapStmtsTys (f : LMonoTy → LMonoTy) (ss : List Statement) : List Statement :=
+  Block.mapExpr (mapExprTys f) (mapCmdTys f) ss
+
+/-- Does every type annotation in an expression-or-nondeterministic-value
+    satisfy `p`? -/
+def allExprOrNondetTys (p : LMonoTy → Bool) (e : ExprOrNondet Expression) : Bool :=
+  match e with
+  | .det e => allExprTys p e
+  | .nondet => true
+
+/-- Does every type annotation in a command satisfy `p`? -/
+def allCmdTys (p : LMonoTy → Bool) (c : Command) : Bool :=
+  match c with
+  | .cmd cc =>
+    match cc with
+    | .init _ ty e _ => allLTyTys p ty && allExprOrNondetTys p e
+    | .set _ e _ => allExprOrNondetTys p e
+    | .assert _ b _ => allExprTys p b
+    | .assume _ b _ => allExprTys p b
+    | .cover _ b _ => allExprTys p b
+  | .call _ args _ =>
+    args.all fun
+      | .inArg e => allExprTys p e
+      | .inoutArg _ => true
+      | .outArg _ => true
+
+mutual
+/-- Does every type annotation in a statement satisfy `p`? -/
+def allStmtTys (p : LMonoTy → Bool) (s : Statement) : Bool :=
+  match s with
+  | .cmd c => allCmdTys p c
+  | .block _ bss _ => allStmtsTys p bss
+  | .ite cond tss ess _ =>
+    allExprOrNondetTys p cond && allStmtsTys p tss && allStmtsTys p ess
+  | .loop g m i bss _ =>
+    allExprOrNondetTys p g && m.all (allExprTys p)
+      && i.all (fun (_, e) => allExprTys p e) && allStmtsTys p bss
+  | .exit _ _ => true
+  | .typeDecl _ _ => true
+/-- Does every type annotation in a list of statements satisfy `p`? -/
+def allStmtsTys (p : LMonoTy → Bool) (ss : List Statement) : Bool :=
+  match ss with
+  | [] => true
+  | s :: rest => allStmtTys p s && allStmtsTys p rest
+end
+
+end TypeAnnotations
+
+/-- Push `e`'s expression onto `acc`, if it has one. -/
+private def pushExprOrNondet (acc : Array Expression.Expr) (e : ExprOrNondet Expression) :
+    Array Expression.Expr :=
+  match e with
+  | .det e => acc.push e
+  | .nondet => acc
+
+mutual
+/-- Push the user-facing expressions of `s` onto `acc`, in program order: a
+    guard before its branches or body, a loop's measure and invariants before
+    its body. An accumulator rather than concatenation, because nested blocks
+    concatenated with `++` at every level cost time quadratic in the nesting
+    depth, and symbolic evaluation nests a block per path split. -/
+def Statement.collectExprsInto (acc : Array Expression.Expr) (s : Statement) :
+    Array Expression.Expr :=
+  match s with
+  | .cmd (.cmd (.assert _ e _)) => acc.push e
+  | .cmd (.cmd (.assume _ e _)) => acc.push e
+  | .cmd (.cmd (.cover _ e _)) => acc.push e
+  | .cmd (.cmd (.init _ _ e _)) => pushExprOrNondet acc e
+  | .cmd (.cmd (.set _ e _)) => pushExprOrNondet acc e
+  | .cmd (.call _ args _) => args.foldl (fun acc a => match a with
+      | .inArg e => acc.push e
+      | _ => acc) acc
+  | .block _ ss _ => Statements.collectExprsInto acc ss
+  | .ite c tss ess _ =>
+    Statements.collectExprsInto (Statements.collectExprsInto (pushExprOrNondet acc c) tss) ess
+  | .loop g measure inv body _ =>
+    let acc := pushExprOrNondet acc g
+    let acc := match measure with | some m => acc.push m | none => acc
+    Statements.collectExprsInto (inv.foldl (fun acc p => acc.push p.2) acc) body
+  | .exit _ _ => acc
+  | .typeDecl _ _ => acc
+
+/-- `Statement.collectExprsInto` over a list of statements, in order. -/
+def Statements.collectExprsInto (acc : Array Expression.Expr) (ss : List Statement) :
+    Array Expression.Expr :=
+  match ss with
+  | [] => acc
+  | s :: rest => Statements.collectExprsInto (Statement.collectExprsInto acc s) rest
+end
+
 /-- Collect all user-facing expressions from a statement. -/
-def Statement.collectExprs :
-    Statement → List Expression.Expr
-  | .cmd (.cmd (.assert _ e _)) => [e]
-  | .cmd (.cmd (.assume _ e _)) => [e]
-  | .cmd (.cmd (.cover _ e _)) => [e]
-  | .cmd (.cmd (.init _ _ (.det e) _)) => [e]
-  | .cmd (.cmd (.set _ (.det e) _)) => [e]
-  | .cmd (.call _ args _) => args.filterMap fun
-      | .inArg e => some e
-      | _ => none
-  | .block _ ss _ => ss.flatMap Statement.collectExprs
-  | .ite (.det c) tss ess _ =>
-    [c] ++ tss.flatMap Statement.collectExprs ++
-    ess.flatMap Statement.collectExprs
-  | .ite .nondet tss ess _ =>
-    tss.flatMap Statement.collectExprs ++
-    ess.flatMap Statement.collectExprs
-  | .loop (.det g) measure inv body _ =>
-    [g] ++ measure.toList ++
-    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
-  | .loop .nondet measure inv body _ =>
-    measure.toList ++
-    inv.map Prod.snd ++ body.flatMap Statement.collectExprs
-  | .cmd (.cmd (.init _ _ .nondet _)) => []
-  | .cmd (.cmd (.set _ .nondet _)) => []
-  | .exit _ _ => []
-  | .typeDecl _ _ => []
+def Statement.collectExprs (s : Statement) : List Expression.Expr :=
+  (Statement.collectExprsInto #[] s).toList
 
 /-- Collect all user-facing expressions from a list of statements. -/
 def Statements.collectExprs (ss : Statements) : List Expression.Expr :=
-  ss.flatMap Statement.collectExprs
+  (Statements.collectExprsInto #[] ss).toList
 
 ---------------------------------------------------------------------
 
@@ -360,6 +443,16 @@ directly; what is left here is what genuinely mentions a Core command. -/
 @[expose] def Statements.staticSingleAssignment (ss : Statements) : Bool :=
   Imperative.Block.allSubstmts Statement.isNotReassignment ss
 
+/-- Not a declaration: `init` introduces a variable. -/
+@[expose] def Statement.isNotInit (s : Statement) : Bool :=
+  match s with
+  | .cmd (.cmd (.init ..)) => false
+  | _ => true
+
+/-- Does `ss` declare no variable, at any depth? -/
+@[expose] def Statements.noInits (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.isNotInit ss
+
 /-- Is this statement an `assume`, `assert`, `cover`, `init`, or `ite *`?
     These are the statements obligation extraction accepts. -/
 @[expose] def Statement.isObligationForm (s : Statement) : Bool :=
@@ -373,6 +466,20 @@ directly; what is left here is what genuinely mentions a Core command. -/
     `ite *` to any depth? -/
 @[expose] def Statements.hasObligationForm (ss : Statements) : Bool :=
   Imperative.Block.allSubstmts Statement.isObligationForm ss
+
+/-- Is this statement an `init`, `set`, `assume`, `assert`, `cover`, or `ite *`?
+    These are the statements of a guarded program (the output of the WP phase). -/
+@[expose] def Statement.isTreeForm (s : Statement) : Bool :=
+  match s with
+  | .cmd (.cmd (.assert ..)) | .cmd (.cmd (.assume ..)) | .cmd (.cmd (.cover ..))
+  | .cmd (.cmd (.init ..)) | .cmd (.cmd (.set ..)) => true
+  | .ite .nondet _ _ _ => true
+  | _ => false
+
+/-- Is `ss` in tree form: only `init`, `set`, `assume`, `assert` and `cover`, nested under
+    `ite *` to any depth, every `ite *` the last statement of its list? -/
+@[expose] def Statements.treeForm (ss : Statements) : Bool :=
+  Imperative.Block.allSubstmts Statement.isTreeForm ss && Imperative.Block.nondetIteLast ss
 
 ---------------------------------------------------------------------
 

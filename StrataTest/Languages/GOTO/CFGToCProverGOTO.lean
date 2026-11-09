@@ -33,6 +33,7 @@ private abbrev LExprTP : Imperative.PureExpr :=
      TyContext := @Lambda.LContext TestParams,
      EqIdent := inferInstanceAs (DecidableEq TestParams.Identifier)
      Factory := Unit,
+     Val := Lambda.LExprT TestParams.mono,
      eval := fun _f _σ e => some e }
 
 private def lookupType (T : LExprTP.TyEnv) (i : LExprTP.Ident) : Except Format CProverGOTO.Ty :=
@@ -59,18 +60,22 @@ instance : Imperative.HasVal LExprTP where
   valueOfTy _ _ _ := True
 
 
+instance : Imperative.HasFvars LExprTP where
+  getFvars _ := []
+  getTypedFvars _ := []
+
 instance : Imperative.LawfulHasVal LExprTP where
   valueOfTy_isVal := fun _ _ _ h => h
   valueOfTy_congr := fun _ _ _ _ _ _ _ _ => trivial
-
-instance : Imperative.HasFvars LExprTP where
-  getFvars _ := []
 
 instance : Imperative.HasBool LExprTP where
   tt := .const { underlying := (), type := mty[bool] } (.boolConst true)
   ff := .const { underlying := (), type := mty[bool] } (.boolConst false)
   tt_is_not_ff := by simp
   boolTy := .tcons "bool" []
+  ttVal _ := .const { underlying := (), type := mty[bool] } (.boolConst true)
+  ffVal _ := .const { underlying := (), type := mty[bool] } (.boolConst false)
+  ttVal_ne_ffVal _ := by simp
   boolIsValOfTy := fun _ => ⟨trivial, trivial⟩
 
 instance : Imperative.HasIdent LExprTP where
@@ -89,7 +94,7 @@ instance : Imperative.HasInt LExprTP where
   zero        := .intConst md 0
   intTy       := .tcons "int" []
   isNumeral _ := true
-  numeralIsValue := fun _ _ _ => trivial
+  isNumeralVal _ := true
   zeroIsNumeral := by decide
   numeralHasNoFvars := fun _ _ => rfl
 

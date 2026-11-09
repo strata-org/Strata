@@ -17,7 +17,7 @@ procedure count(s: Sequence<int>, v: int, hi: int): int;
 
 procedure countAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
+  return (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
   && (forall(s: Sequence<int>) => forall(v: int) => forall(h: int) =>
         1 <= h ==> h <= seqLength(s) ==>
           count(s, v, h) == count(s, v, h - 1) + (if seqSelect(s, h - 1) == v then 1 else 0))
@@ -25,23 +25,23 @@ procedure countAxioms(): bool
 
 procedure permutation(s: Sequence<int>, t: Sequence<int>): bool
 {
-  seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
+  return seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
 };
 
 procedure rank(x: int, p: int): int
 {
-  if x < p then 0 else if x == p then 1 else 2
+  return if x < p then 0 else if x == p then 1 else 2
 };
 
 procedure classified(s: Sequence<int>, p: int): bool
 {
-  forall(i: int) => forall(j: int) => 0 <= i ==> i <= j ==> j < seqLength(s) ==>
+  return forall(i: int) => forall(j: int) => 0 <= i ==> i <= j ==> j < seqLength(s) ==>
     rank(seqSelect(s, i), p) <= rank(seqSelect(s, j), p)
 };
 
 procedure regions(s: Sequence<int>, p: int, lt: int, i: int, gt: int): bool
 {
-  (forall(k: int) => 0 <= k ==> k < lt ==> k < seqLength(s) ==> seqSelect(s, k) < p)
+  return (forall(k: int) => 0 <= k ==> k < lt ==> k < seqLength(s) ==> seqSelect(s, k) < p)
   && (forall(k: int) => lt <= k ==> k < i ==> 0 <= k ==> k < seqLength(s) ==> seqSelect(s, k) == p)
   && (forall(k: int) => gt <= k ==> k < seqLength(s) ==> 0 <= k ==> seqSelect(s, k) > p)
 };
@@ -96,7 +96,7 @@ procedure count(s: Sequence<int>, v: int, hi: int): int;
 
 procedure countAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
+  return (forall(s: Sequence<int>) => forall(v: int) => count(s, v, 0) == 0)
   && (forall(s: Sequence<int>) => forall(v: int) => forall(h: int) =>
         1 <= h ==> h <= seqLength(s) ==>
           count(s, v, h) == count(s, v, h - 1) + (if seqSelect(s, h - 1) == v then 1 else 0))
@@ -104,23 +104,23 @@ procedure countAxioms(): bool
 
 procedure permutation(s: Sequence<int>, t: Sequence<int>): bool
 {
-  seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
+  return seqLength(s) == seqLength(t) && (forall(v: int) => count(s, v, seqLength(s)) == count(t, v, seqLength(t)))
 };
 
 procedure rank(x: int, p: int): int
 {
-  if x < p then 0 else if x == p then 1 else 2
+  return if x < p then 0 else if x == p then 1 else 2
 };
 
 procedure classified(s: Sequence<int>, p: int): bool
 {
-  forall(i: int) => forall(j: int) => 0 <= i ==> i <= j ==> j < seqLength(s) ==>
+  return forall(i: int) => forall(j: int) => 0 <= i ==> i <= j ==> j < seqLength(s) ==>
     rank(seqSelect(s, i), p) <= rank(seqSelect(s, j), p)
 };
 
 procedure regions(s: Sequence<int>, p: int, lt: int, i: int, gt: int): bool
 {
-  (forall(k: int) => 0 <= k ==> k < lt ==> k < seqLength(s) ==> seqSelect(s, k) < p)
+  return (forall(k: int) => 0 <= k ==> k < lt ==> k < seqLength(s) ==> seqSelect(s, k) < p)
   && (forall(k: int) => lt <= k ==> k < i ==> 0 <= k ==> k < seqLength(s) ==> seqSelect(s, k) == p)
   && (forall(k: int) => gt <= k ==> k < seqLength(s) ==> 0 <= k ==> seqSelect(s, k) > p)
 };

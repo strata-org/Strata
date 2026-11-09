@@ -559,7 +559,7 @@ def monomorphizeFunctionsPipelinePhase : PipelinePhase :=
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
                          .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .typeAnnotated])
+                         .typeAnnotated, .noInits, .exitsCovered])
     fun prog => monomorphizeFunctions prog
 
 end Core

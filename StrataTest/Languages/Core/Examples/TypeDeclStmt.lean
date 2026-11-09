@@ -42,10 +42,10 @@ VCs:
 Label: trans
 Property: assert
 Assumptions:
-ab: a == b
-bc: b == c
+ab: a@1 == b@1
+bc: b@1 == c@1
 Obligation:
-a == c
+a@1 == c@1
 
 ---
 info:
@@ -108,7 +108,7 @@ VCs:
 Label: reflexive
 Property: assert
 Assumptions:
-x_eq_z: x == z
+x_eq_z: x@1 == z@1
 Obligation:
 true
 
@@ -149,9 +149,9 @@ VCs:
 Label: neq
 Property: assert
 Assumptions:
-diff: !(x == y)
+diff: !(x@1 == y@1)
 Obligation:
-!(x == y)
+!(x@1 == y@1)
 
 ---
 info:

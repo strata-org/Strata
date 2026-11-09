@@ -64,7 +64,7 @@ procedure guardedDowncastWrongValue(p: Parent)
     var c: Child := p as Child;
     c#y := 9;
     assert c#y == 8
-//  ^^^^^^^^^^^^^^^ error: assertion could not be proved
+//  ^^^^^^^^^^^^^^^ error: assertion does not hold
   } else { }
 };
 #end
@@ -83,7 +83,7 @@ procedure unguardedDowncast(p: Parent)
   modifies p
 {
   var c: Child := p as Child;
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
   c#y := 9;
   assert c#y == 9
 };
@@ -126,7 +126,7 @@ composite Child extends Parent { var y: int }
 procedure castInPostconditionWrong(p: Parent) returns (r: int)
   opaque
   ensures (p is Child) ==> (r == (p as Child)#y + 1)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition could not be proved
+//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: postcondition does not hold
 {
   if (p is Child) then {
     var c: Child := p as Child;
@@ -202,7 +202,7 @@ procedure heapNeutralUnguardedDowncast(p: Parent) returns (r: int)
   ensures true
 {
   var c: Child := p as Child;
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
   r := c#y
 };
 #end

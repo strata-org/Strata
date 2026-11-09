@@ -7,12 +7,11 @@ module
 
 meta import Strata.Languages.Core.DDMTransform.ASTtoCST
 meta import Strata.Languages.Core.DDMTransform.Translate
-meta import StrataDDM.Elab
-meta import StrataDDM.BuiltinDialects.Init
+meta import StrataTest.Languages.Core.Tests.ReparseTestUtils
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
-open StrataDDM (Program initDialect)
+open StrataDDM (Program)
 
 /-!
 # Core Roundtrip Tests
@@ -28,20 +27,6 @@ open Strata
 open Strata.CoreDDM
 open Lean.Parser (InputContext)
 
-/-- Parse a string as a Core program and translate to AST. -/
-private def parseAndTranslate (input : String) : IO Core.Program := do
-  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[initDialect, Core]
-  -- Strip "program Core;\n\n" header if present
-  let body := if input.startsWith "program Core;\n\n" then
-    (input.drop "program Core;\n\n".length).toString
-  else input
-  let inputCtx := StrataDDM.Parser.stringInputContext ⟨"roundtrip-test"⟩ body
-  let strataProgram ← StrataDDM.Elab.parseStrataProgramFromDialect dialects "Core" inputCtx
-  let (ast, errs) := TransM.run Inhabited.default (translateProgram strataProgram)
-  if !errs.isEmpty then
-    throw (IO.userError s!"Translation errors: {errs}")
-  pure ast
-
 /-- Perform a roundtrip test: parse → format → re-parse → compare.
     Prints OK or FAIL with details. -/
 def roundtrip (program : StrataDDM.Program) : IO Unit := do
@@ -53,13 +38,16 @@ def roundtrip (program : StrataDDM.Program) : IO Unit := do
   -- Format back to text
   let formatted := (Core.formatProgram ast1).pretty
   -- Second pass: re-parse and re-translate
-  let ast2 ← parseAndTranslate formatted
-  -- Compare: format both ASTs and check they match
-  let formatted2 := (Core.formatProgram ast2).pretty
-  if formatted == formatted2 then
-    IO.println "OK"
-  else
-    IO.println s!"FAIL: Roundtrip mismatch.\nFirst format:\n{formatted}\nSecond format:\n{formatted2}"
+  match ← CoreReparse.parseAndTranslate formatted with
+  | .error msg => IO.println s!"FAIL: {msg}"
+  | .ok ast2 =>
+    -- Compare: format both ASTs and check they match
+    let formatted2 := (Core.formatProgram ast2).pretty
+    if formatted == formatted2 then
+      IO.println "OK"
+    else
+      IO.println s!"FAIL: Roundtrip mismatch.\nFirst format:\n{formatted}\n\
+        Second format:\n{formatted2}"
 
 -------------------------------------------------------------------------------
 -- Test: Basic types and type aliases
@@ -560,9 +548,13 @@ private def allOpsProgramText : String := Id.run do
 
 /-- Parse program text, translate, format, re-parse, re-translate, compare. -/
 private def roundtripText (text : String) : IO Unit := do
-  let ast1 ← parseAndTranslate text
+  let ast1 ← match ← CoreReparse.parseAndTranslate text with
+    | .ok ast => pure ast
+    | .error msg => IO.println s!"FAIL: input: {msg}"; return
   let formatted := (Core.formatProgram ast1).pretty
-  let ast2 ← parseAndTranslate formatted
+  let ast2 ← match ← CoreReparse.parseAndTranslate formatted with
+    | .ok ast => pure ast
+    | .error msg => IO.println s!"FAIL: printed: {msg}"; return
   let formatted2 := (Core.formatProgram ast2).pretty
   if formatted == formatted2 then
     IO.println "OK"
@@ -714,6 +706,71 @@ procedure p (n : int)
 /-- info: OK -/
 #guard_msgs in
 #eval roundtrip testNestedLoopDeclaringBodyRoundtrip
+
+-- A CFG body using every transfer form (`goto l`, `goto a, b`, `branch`,
+-- `return`), a spec, a block with no commands, and a local read by a later
+-- block.
+private def testCFGRoundtrip : Program :=
+#strata
+program Core;
+
+procedure P (c : bool, out y : int)
+spec {
+  ensures [P_ensures_0]: int.ge(y, 0);
+  } cfg entry {
+  entry: {
+    goto left, right;
+  }
+  left: {
+    var x : int;
+    x := 1;
+    goto mid;
+  }
+  mid: {
+    y := x;
+    branch (c) goto done else goto right;
+  }
+  right: {
+    y := 2;
+    goto done;
+  }
+  done: {
+    return;
+  }
+};
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testCFGRoundtrip
+
+-- A block that declares a nondeterministic `bool` and branches on it in the same
+-- block. The printer keeps the declaration and the `branch`; it does not mistake
+-- them for the hidden choice variable of a `goto a, b`.
+private def testCFGOwnLocalBranchRoundtrip : Program :=
+#strata
+program Core;
+
+procedure P (out y : int)
+cfg entry {
+  entry: {
+    var b : bool;
+    branch (b) goto t else goto f;
+  }
+  t: {
+    y := 1;
+    return;
+  }
+  f: {
+    y := 0;
+    return;
+  }
+};
+#end
+
+/-- info: OK -/
+#guard_msgs in
+#eval roundtrip testCFGOwnLocalBranchRoundtrip
 
 end Strata.Test.Roundtrip
 

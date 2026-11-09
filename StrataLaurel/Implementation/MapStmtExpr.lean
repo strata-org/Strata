@@ -87,11 +87,13 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
   | .IfThenElse cond th el =>
     pure ⟨.IfThenElse (← mapStmtExprUsedM f true cond) (← mapStmtExprUsedM f resultUsed th)
       (← el.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f resultUsed e), source⟩
-  | .Block stmts label =>
+  | .Block stmts label invs dec =>
+    let invs' ← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e
+    let dec' ← dec.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e
     -- Only the last statement is in value position (and only if the block is).
     let stmts' ← stmts.attach.mapIdxM fun i ⟨e, _⟩ =>
       mapStmtExprUsedM f (resultUsed && i + 1 == stmts.length) e
-    pure ⟨.Block stmts' label, source⟩
+    pure ⟨.Block stmts' label invs' dec', source⟩
   | .While cond invs dec body postTest =>
     pure ⟨.While (← mapStmtExprUsedM f true cond)
       (← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e)
@@ -172,7 +174,7 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
   -- ⚠ If a new StmtExpr constructor with StmtExprMd children is added,
   -- it must get its own arm above; otherwise all passes will silently
   -- skip recursion into those children.
-  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
+  | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole ..
   | .Snapshot _ => pure expr
   f resultUsed rebuilt
@@ -197,15 +199,6 @@ def mapStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (expr : StmtExprMd)
 /-- Pure bottom-up traversal of `StmtExprMd`. -/
 def mapStmtExpr (f : StmtExprMd → StmtExprMd) (expr : StmtExprMd) : StmtExprMd :=
   (mapStmtExprM (m := Id) f expr)
-
-/-- Prepend `stmts` to `body`, flattening an outer `Block` so the prepended
-    statements become siblings of the body statements rather than a nested block.
-    A no-op when `stmts` is empty. -/
-def prependStmts (stmts : List StmtExprMd) (body : StmtExprMd) : StmtExprMd :=
-  if stmts.isEmpty then body else
-  match body.val with
-  | .Block bodyStmts label => { body with val := .Block (stmts ++ bodyStmts) label }
-  | _ => { body with val := .Block (stmts ++ [body]) none }
 
 /-- Which coroutine-specific two-state form a plain `old` should become when
     retagged: the last-suspension heap (rely, `H1`) or the start-of-step /
@@ -274,8 +267,8 @@ def liftedProcName (typeName methodName : Identifier) : Identifier :=
   {mkId s!"{typeName.text}${methodName.text}" with source := methodName.source}
 
 /-- Name of the synthesized downcast helper for type `T`: `downcast$T`. Minted by
-    `TypeHierarchy` (the definition `function downcast$T(p: T): T requires (p is T)`) and
-    `HeapParameterization` (the `AsType`-arm call site). -/
+    `LowerComposite`, both the definition `function downcast$T(p: T): T requires (p is T)`
+    and the `AsType` call site. -/
 def downcastProcName (typeName : Identifier) : Identifier :=
   {mkId s!"downcast${typeName.text}" with source := typeName.source}
 
@@ -361,7 +354,7 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
   let collapse (results : List StmtExprMd) (src : FileRange) : StmtExprMd :=
     match results with
     | [single] => single
-    | many => ⟨.Block many none, src⟩
+    | many => ⟨.Block many none [] none, src⟩
   -- `go` returns the (post-expanded) statement list for `e`. Value-position
   -- children collapse that list into a single node (a value-block when it has
   -- multiple statements); `Block` children keep their lists and splice them.
@@ -374,9 +367,11 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
     | .IfThenElse cond th el =>
       pure ⟨.IfThenElse (collapse (← go true cond) cond.source) (collapse (← go used th) th.source)
         (← el.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go used x) x.source)), source⟩
-    | .Block stmts label =>
+    | .Block stmts label invs dec =>
+      let invs' ← invs.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)
+      let dec' ← dec.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)
       let nested ← stmts.attach.mapIdxM fun i ⟨x, _⟩ => go (used && i + 1 == stmts.length) x
-      pure ⟨.Block nested.flatten label, source⟩
+      pure ⟨.Block nested.flatten label invs' dec', source⟩
     | .While cond invs dec body postTest =>
       pure ⟨.While (collapse (← go true cond) cond.source)
         (← invs.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source))
@@ -444,7 +439,7 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
     | .ProveBy value proof =>
       pure ⟨.ProveBy (collapse (← go true value) value.source) (collapse (← go false proof) proof.source), source⟩
     | .ContractOf ty func => pure ⟨.ContractOf ty (collapse (← go true func) func.source), source⟩
-    | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
+    | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
     | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole ..
     | .Snapshot _ => pure e
     post used rebuilt
@@ -472,8 +467,11 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
   | .IfThenElse cond th el =>
     pure ⟨.IfThenElse (← mapStmtExprPrePostM pre post cond) (← mapStmtExprPrePostM pre post th)
       (← el.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e), source⟩
-  | .Block stmts label =>
-    pure ⟨.Block (← stmts.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) label, source⟩
+  | .Block stmts label invs dec =>
+    let invs' ← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e
+    let dec' ← dec.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e
+    pure ⟨.Block (← stmts.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) label invs' dec',
+      source⟩
   | .While cond invs dec body postTest =>
     pure ⟨.While (← mapStmtExprPrePostM pre post cond)
       (← invs.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e)
@@ -554,7 +552,7 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
   -- ⚠ If a new StmtExpr constructor with StmtExprMd children is added,
   -- it must get its own arm above; otherwise all passes will silently
   -- skip recursion into those children.
-  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
+  | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole ..
   | .Snapshot _ => pure expr
   post rebuilt
@@ -587,7 +585,9 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
   | .IfThenElse cond th el =>
     foldStmtExprM f cond; foldStmtExprM f th
     el.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
-  | .Block stmts _ =>
+  | .Block stmts _ invs dec =>
+    invs.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
+    dec.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
     stmts.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
   | .While cond invs dec body _ =>
     foldStmtExprM f cond
@@ -662,10 +662,31 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
   -- Leaves: no StmtExprMd children.
   | .Yield
   | .Snapshot _
-  | .Exit _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
+  | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
   | .Var (.Local _) | .Var (.Declare _) | .New .. | .This | .Abstract | .All | .Hole .. => pure ()
 termination_by sizeOf expr
 decreasing_by map_stmt_expr_decreasing expr
+
+/-- Whether `e` contains a `Goto` back to the start of the block labelled `label`. -/
+def jumpsBackTo (label : String) (e : StmtExprMd) : Bool :=
+  let visit (n : StmtExprMd) : StateM Bool Unit :=
+    match n.val with
+    | .Goto l .blockStart => if l == label then set true else pure ()
+    | _ => pure ()
+  ((foldStmtExprM visit e).run false).2
+
+/-- Prepend `stmts` to `body`, flattening an outer `Block` so the prepended
+    statements become siblings of the body statements rather than a nested block.
+    A block that is the target of a backward `Goto` is wrapped instead, since
+    flattening would re-run `stmts` on every jump back to its start. A no-op
+    when `stmts` is empty. -/
+def prependStmts (stmts : List StmtExprMd) (body : StmtExprMd) : StmtExprMd :=
+  if stmts.isEmpty then body else
+  match body.val with
+  | .Block bodyStmts label [] none =>
+    if label.any (jumpsBackTo · body) then { body with val := .Block (stmts ++ [body]) none [] none }
+    else { body with val := .Block (stmts ++ bodyStmts) label [] none }
+  | _ => { body with val := .Block (stmts ++ [body]) none [] none }
 
 /-- Pure accumulation over every node (pre-order, parent before children). -/
 def foldStmtExpr {β : Type} (f : StmtExprMd → β → β) (init : β) (expr : StmtExprMd) : β :=
@@ -751,46 +772,11 @@ def mapProcedureBodiesM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Proc
   | .Abstract posts => return { proc with body := .Abstract (← posts.mapM (·.mapM f)) }
   | .External => return proc
 
-/-- Every expression-bearing specification field outside the procedure body, in
-    declaration order: preconditions, coroutine relies/guarantees, decreases,
-    invoke-on trigger, axioms, then the `throwsOn` behavior cases. The coroutine
-    clauses (`relies`/`guarantees`, empty for a regular procedure) are included
-    so generic traversals such as heap-effect analysis see them without a
-    coroutine-specific special case.
-
-    A `throwsOn` case contributes all three of its expression-bearing parts — its
-    guard, its postconditions, and its frame targets — because a pass that walked
-    only some of them would silently miss the rest: `FilterPrelude` would delete a
-    prelude name reachable only from the part it skipped. -/
-def procedureSpecificationExprs (proc : Procedure) : List StmtExprMd :=
-  proc.preconditions.map (·.condition) ++
-    proc.relies.map (·.condition) ++ proc.guarantees.map (·.condition) ++
-    proc.decreases.toList ++ proc.invokeOn.toList ++ proc.axioms ++
-    proc.throwsOn.flatMap (fun blk =>
-      blk.guard :: blk.postconditions.map (·.condition) ++ blk.modifies)
-
-/-- Visit every expression node in a procedure in deterministic pre-order.
-    Body expressions come first, followed by preconditions, decreases, invoke-on,
-    and axioms. Opaque bodies visit postconditions, implementation, then modifies
-    entries; abstract bodies visit their postconditions. -/
-def foldProcedureExprsM [Monad m] (f : StmtExprMd → m Unit) (proc : Procedure) : m Unit := do
-  let visit := foldStmtExprM f
-  match proc.body with
-  | .Transparent body => visit body
-  | .Opaque postconditions implementation modifies =>
-    postconditions.forM (visit ·.condition)
-    implementation.forM visit
-    modifies.forM fun g => do
-      g.targets.forM visit
-      g.guard.forM visit
-  | .Abstract postconditions => postconditions.forM (visit ·.condition)
-  | .External => pure ()
-  procedureSpecificationExprs proc |>.forM visit
-
 /-- Map procedure specification fields with separate transformations for
-    proposition-valued fields (`preconditions`, `axioms`, and a `throwsOn` case's
-    `ensures`) and unconstrained value fields (`decreases`, `invokeOn`, and a case's
-    guard and frame targets). The body is intentionally excluded.
+    proposition-valued fields (`preconditions`, a coroutine's `relies`/`guarantees`,
+    `axioms`, and a `throwsOn` case's `ensures`) and unconstrained value fields
+    (`decreases`, `invokeOn`, and a case's guard and frame targets). The body is
+    intentionally excluded.
 
     A case's guard takes `mapValue` rather than `mapCondition` even though it is
     boolean: it is evaluated on entry, in the same position as a `decreases`, so a
@@ -801,6 +787,9 @@ def mapProcedureSpecificationsWithM [Monad m]
     (proc : Procedure) : m Procedure := do
   return { proc with
     preconditions := ← proc.preconditions.mapM (·.mapM mapCondition)
+    contracts := proc.contracts.withClauses
+      (relies := ← proc.relies.mapM (·.mapM mapCondition))
+      (guarantees := ← proc.guarantees.mapM (·.mapM mapCondition))
     decreases := ← proc.decreases.mapM mapValue
     invokeOn := ← proc.invokeOn.mapM mapValue
     axioms := ← proc.axioms.mapM mapCondition
@@ -810,44 +799,31 @@ def mapProcedureSpecificationsWithM [Monad m]
         postconditions := ← blk.postconditions.mapM (·.mapM mapCondition)
         modifies := ← blk.modifies.mapM mapValue }) }
 
-/-- Like `mapProcedureSpecificationsWithM`, but also maps the coroutine
-    `relies`/`guarantees` clauses (empty for a regular procedure) with
-    `mapCondition`. Kept separate so the plain version's bind shape — which
-    proofs in `ResolutionProps` mirror — is unchanged. -/
-def mapProcedureSpecificationsWithCoroutineM [Monad m]
-    (mapCondition mapValue : StmtExprMd → m StmtExprMd)
-    (proc : Procedure) : m Procedure := do
-  let proc ← mapProcedureSpecificationsWithM mapCondition mapValue proc
-  let relies' ← proc.relies.mapM (·.mapM mapCondition)
-  let guarantees' ← proc.guarantees.mapM (·.mapM mapCondition)
-  return { proc with
-    contracts := proc.contracts.withClauses (relies := relies') (guarantees := guarantees') }
-
 /-- Apply one monadic transformation to every expression-bearing specification
     field outside the procedure body. -/
 def mapProcedureSpecificationsM [Monad m] (f : StmtExprMd → m StmtExprMd)
     (proc : Procedure) : m Procedure :=
   mapProcedureSpecificationsWithM f f proc
 
-/-- `mapProcedureSpecificationsM` that also maps the coroutine
-    `relies`/`guarantees` clauses. -/
-def mapProcedureSpecificationsWithCoroutineM' [Monad m] (f : StmtExprMd → m StmtExprMd)
-    (proc : Procedure) : m Procedure :=
-  mapProcedureSpecificationsWithCoroutineM f f proc
+/-- Every expression-bearing specification field outside the procedure body, in the
+    order `mapProcedureSpecificationsWithM` visits them. Collected by running that
+    traversal, so what a pass reads of a specification is what one rewrites. -/
+def procedureSpecificationExprs (proc : Procedure) : List StmtExprMd :=
+  let collect (e : StmtExprMd) : StateM (List StmtExprMd) StmtExprMd := do
+    modify (e :: ·)
+    pure e
+  ((mapProcedureSpecificationsM collect proc).run []).2.reverse
 
-/-- Apply a monadic transformation to every `StmtExprMd` node in a procedure:
-    the body, the specification fields (preconditions, decreases, invokeOn,
-    axioms, `throwsOn` cases) and a coroutine's `relies`/`guarantees` clauses.
-
-    The coroutine clauses are included so that this is *every* expression a
-    procedure holds, which is what lets a claim about the node kinds of a whole
-    program be proved of a pass built on this walk. It is not a reachable
-    behaviour change: a clause is a contract, so resolution already rejects an
-    `x++` there as a destructive assignment, and a `do … while` there is a `void`
-    where a `bool` is expected. -/
+/-- Apply a monadic transformation to every `StmtExprMd` node in a procedure: the body
+    and every specification field. -/
 def mapProcedureM [Monad m] (f : StmtExprMd → m StmtExprMd) (proc : Procedure) : m Procedure := do
   let proc ← mapProcedureBodiesM f proc
-  mapProcedureSpecificationsWithCoroutineM' f proc
+  mapProcedureSpecificationsM f proc
+
+/-- Visit every expression node in a procedure, the expressions in `mapProcedureM`'s
+    order and each in pre-order. -/
+def foldProcedureExprsM [Monad m] (f : StmtExprMd → m Unit) (proc : Procedure) : m Unit := do
+  let _ ← mapProcedureM (fun e => do foldStmtExprM f e; pure e) proc
 
 /-- Apply a monadic transformation to every procedure in a program — the
     top-level static procedures and static functions, and the instance procedures
@@ -918,7 +894,10 @@ def mapLaurelProgramStmtExprM [Monad m] (f : StmtExprMd → m StmtExprMd) (progr
   let staticFields ← program.staticFields.mapM fun field => do
     let initializer ← field.initializer.mapM mapExpr
     pure { field with initializer }
-  return { program with types, constants, staticFields }
+  let heapFields ← program.heapFields.mapM fun field => do
+    let initializer ← field.initializer.mapM mapExpr
+    pure { field with initializer }
+  return { program with types, constants, staticFields, heapFields }
 
 /-- Pure version of `mapLaurelProgramStmtExprM`. -/
 def mapLaurelProgramStmtExpr (f : StmtExprMd → StmtExprMd) (program : LaurelProgram) : LaurelProgram :=
@@ -943,7 +922,7 @@ def mapVariableHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (v : Varia
 Apply `f` to every `HighType` annotation carried *directly* by a single
 `StmtExpr` node: local declarations (in `Var`, `Assign` targets, and `IncrDecr`
 targets), quantifier binders, `AsType`/`IsType` type arguments, a generic
-`StaticCall`'s inferred type arguments, and typed
+`StaticCall`'s inferred type arguments, the type a `new` allocates, and typed
 `Hole`s. Does **not** recurse into child expressions — compose with
 `mapStmtExprM` (see `mapStmtExprHighTypesM`) for a whole-tree traversal.
 -/
@@ -968,6 +947,13 @@ def mapNodeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (expr : StmtEx
     pure ⟨.StaticCall callee args (← tyArgs.mapM f), source⟩
   | .AsType target ty => pure ⟨.AsType target (← f ty), source⟩
   | .IsType target ty => pure ⟨.IsType target (← f ty), source⟩
+  -- `f` sees the allocated type, and the `new` allocates what `f` returns, such as a monomorph
+  -- `C$a1$int` without type arguments.
+  | .New ref tyArgs =>
+    match (← f (allocatedType ref tyArgs source)).val with
+    | .Applied ⟨.UserDefined ref', _⟩ tyArgs' => pure ⟨.New ref' tyArgs', source⟩
+    | .UserDefined ref' => pure ⟨.New ref' [], source⟩
+    | _ => pure expr
   | .Hole det (some ty) => pure ⟨.Hole det (some (← f ty)), source⟩
   | _ => pure expr
 
@@ -980,14 +966,19 @@ def mapStmtExprHighTypes (f : HighTypeMd → HighTypeMd) (expr : StmtExprMd) : S
   mapStmtExprHighTypesM (m := Id) f expr
 
 /-- Apply `f` to every `HighType` annotation in a procedure: parameter types,
-    body, preconditions, decreases measure, auto-invocation trigger, and axioms. -/
+    body, preconditions, decreases measure, auto-invocation trigger, axioms, the
+    declared `throws` type, and a coroutine's `yields`/`resumes` bindings and
+    `relies`/`guarantees` clauses. -/
 def mapProcedureHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (proc : Procedure) : m Procedure := do
   let mapExpr := mapStmtExprHighTypesM f
   let mapParam (p : Parameter) : m Parameter := do pure { p with type := ← f p.type }
   let proc ← mapProcedureBodiesM mapExpr proc
   let proc := { proc with
     inputs := ← proc.inputs.mapM mapParam
-    outputs := ← proc.outputs.mapM mapParam }
+    outputs := ← proc.outputs.mapM mapParam
+    throwsType := ← proc.throwsType.mapM f
+    contracts := proc.contracts.withClauses
+      (yields := ← proc.yields.mapM mapParam) (resumes := ← proc.resumes.mapM mapParam) }
   mapProcedureSpecificationsM mapExpr proc
 
 def mapDatatypeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (dt : DatatypeDefinition) :
@@ -996,14 +987,20 @@ def mapDatatypeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (dt : Data
     constructors := ← dt.constructors.mapM (fun ctor => do
       pure { ctor with args := ← ctor.args.mapM (fun p => do pure { p with type := ← f p.type }) }) }
 
+/-- Apply `f` to a field's declared type and (optional) initializer. -/
+def mapFieldHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (fld : Field) : m Field := do
+  pure { fld with type := ← f fld.type,
+                  initializer := ← fld.initializer.mapM (mapStmtExprHighTypesM f) }
+
 /-- Apply `f` to every `HighType` annotation in a type definition: composite
-    fields and instance procedures, constrained base/constraint/witness,
-    datatype constructor argument types, and alias targets. -/
+    parents, fields (initializers included) and instance procedures, constrained
+    base/constraint/witness, datatype constructor argument types, and alias targets. -/
 def mapTypeDefinitionHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (td : TypeDefinition) : m TypeDefinition := do
   match td with
   | .Composite ct =>
     pure (.Composite { ct with
-      fields := ← ct.fields.mapM (fun fld => do pure { fld with type := ← f fld.type })
+      extending := ← ct.extending.mapM f
+      fields := ← ct.fields.mapM (mapFieldHighTypesM f)
       instanceProcedures := ← ct.instanceProcedures.mapM (mapProcedureHighTypesM f) })
   | .Constrained ct =>
     pure (.Constrained { ct with
@@ -1018,10 +1015,6 @@ def mapTypeDefinitionHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (td 
 def mapConstantHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (c : Constant) : m Constant := do
   pure { c with type := ← f c.type, initializer := ← c.initializer.mapM (mapStmtExprHighTypesM f) }
 
-def mapFieldHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (fld : Field) : m Field := do
-  pure { fld with type := ← f fld.type,
-                  initializer := ← fld.initializer.mapM (mapStmtExprHighTypesM f) }
-
 /-- Apply `f` to every `HighType` annotation anywhere in a program: static
     procedures and functions, static fields, type definitions, and constants. -/
 def mapLaurelProgramHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (program : LaurelProgram) : m LaurelProgram := do
@@ -1029,6 +1022,8 @@ def mapLaurelProgramHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (prog
     staticProcedures := ← program.staticProcedures.mapM (mapProcedureHighTypesM f)
     staticFunctions := ← program.staticFunctions.mapM (mapProcedureHighTypesM f)
     staticFields := ← program.staticFields.mapM (mapFieldHighTypesM f)
+    heapFields := ← program.heapFields.mapM fun hf => do
+      pure { hf with toField := ← mapFieldHighTypesM f hf.toField }
     types := ← program.types.mapM (mapTypeDefinitionHighTypesM f)
     constants := ← program.constants.mapM (mapConstantHighTypesM f) }
 
@@ -1134,7 +1129,7 @@ private def covCtorKey : StmtExpr → Nat
   | .IfThenElse ..    => 0
   | .Block ..         => 1
   | .While ..         => 2
-  | .Exit ..          => 3
+  | .Goto ..          => 3
   | .Return ..        => 4
   | .LiteralInt ..    => 5
   | .LiteralBool ..   => 6
@@ -1180,10 +1175,10 @@ private def covCtorCount : Nat := 41
     places in `StmtExprMd` child positions. -/
 private def covProbes : List (StmtExprMd × Nat) := [
   (covMd (.IfThenElse covS covS (some covS)), 3),
-  (covMd (.Block [covS, covS] none), 2),
+  (covMd (.Block [covS, covS] (some "blk") [covS] (some covS)), 4),
   (covMd (.While covS [covS] (some covS) covS false), 4),
-  (covMd (.Exit "blk"), 0),
-  (covMd (.Return (some covS)), 1),
+  (covMd (.Return [covS, covS]), 2),
+  (covMd (.Goto "blk" .blockStart), 0),
   (covMd (.LiteralInt 0), 0),
   (covMd (.LiteralBool true), 0),
   (covMd (.LiteralString "x"), 0),

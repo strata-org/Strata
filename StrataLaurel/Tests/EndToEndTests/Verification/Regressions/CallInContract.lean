@@ -60,6 +60,15 @@ procedure precedingRequiresDischarges(x: int) returns (r: int)
   r := 0
 };
 
+// The same for an external's precondition, which only the clause as lowered shows.
+procedure precedingRequiresDischargesExternal(s: Sequence<int>, i: int) returns (r: int)
+  requires 0 <= i && i < seqLength(s)
+  requires seqSelect(s, i) > 0
+  opaque
+{
+  r := 0
+};
+
 procedure unguardedDivisionInRequires(x: int) returns (r: int)
   requires 10 / x > 1
 //         ^^^^^^ error: divisor is non-zero does not hold
@@ -206,6 +215,21 @@ procedure checkedEnsuresIsChecked() returns (r: int)
   checked ensures r == needsBig(0)
 //                ^^^^^^^^^^^^^^^^ error: postcondition does not hold
 //                     ^^^^^^^^^^^ error: precondition does not hold
+{
+  r := 0
+};
+
+// A destructor is held to its constructor guard too, in a clause that follows another.
+datatype IntList {
+  Nil(),
+  Cons(head: int, tail: IntList)
+}
+
+procedure unguardedDestructorInRequires(xs: IntList, n: int) returns (r: int)
+  requires n > 0
+  requires IntList..head(xs) > n
+//         ^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+  opaque
 {
   r := 0
 };

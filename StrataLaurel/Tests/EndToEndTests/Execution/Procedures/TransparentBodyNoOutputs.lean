@@ -28,7 +28,7 @@ show. -/
 -- Both interpreters run it too: the inlined transparent body is executed as well as verified,
 -- so a `TransparencyPass` result that type-checked but computed the wrong thing would show up
 -- here as a runtime failure rather than only as a proof that went through.
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 

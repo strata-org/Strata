@@ -9,6 +9,8 @@ meta import Strata.Transform.CommonSubexprElim
 meta import Strata.Transform.CoreTransform
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.SimpleAPI
+meta import StrataDDM.Elab
+meta import StrataDDM.BuiltinDialects.Init
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -226,6 +228,63 @@ private def gen12Cse : Bool × Core.Program :=
 -- `var $__cse.` prefixes (declarations, not references) also forces the whole
 -- transform to run, which is the performance regression guard.
 #guard (((toString gen12Cse.2).splitOn "var $__cse.").length - 1) = 38
+
+/-! ## Many sequential path splits
+
+`branchesProg n` is the program of `Examples/CSEPathSplits.core.st` with `n`
+branches: a shared term `y` built by four steps of `y := y * y + y`, then `n`
+sequential branches that each assume a fact about `y`, check `r == y` and leave
+the block. Symbolic evaluation nests a block per branch, and every resulting
+path repeats `y`. The test runs CSE on the obligation program and checks how
+many `$__cse.` variables it introduces. The timing of the same program at 400
+branches is checked by `StrataTestExtra/Transform/CommonSubexprElimScaling.lean`,
+which runs the compiled CLI under `lake test`. -/
+
+private def parseCore (text : String) : IO StrataDDM.Program := do
+  let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[StrataDDM.initDialect, Strata.Core]
+  let inputCtx := StrataDDM.Parser.stringInputContext ⟨"cse-branches-test"⟩ text
+  StrataDDM.Elab.parseStrataProgramFromDialect dialects "Core" inputCtx
+
+/-- The program of `Examples/CSEPathSplits.core.st`, with `n` branches. -/
+private def branchesProg (n : Nat) : String := Id.run do
+  let mut lines := #[
+    "procedure Dispatch(x : int, out y : int, out r : int)",
+    "spec { ensures [r_is_y]: r == y; }",
+    "{", "  y := x;"]
+  for _ in [0:4] do
+    lines := lines.push "  y := int.add(int.mul(y, y), y);"
+  lines := lines.push "  done: {"
+  for i in [0:n] do
+    lines := lines.push s!"    if (x == {i}) \{ assume [a{i}]: int.ge(int.add(y, {i}), 0); \
+      r := y; assert [b{i}]: r == y; exit done; }"
+  lines := lines ++ #["    r := y;", "  }", "};"]
+  return "\n".intercalate lines.toList
+
+/-- The number of `$__cse.` declarations CSE put in the procedure bodies of `p`. -/
+private def cseVarCount (p : Core.Program) : Nat :=
+  p.decls.foldl (fun n d => match d with
+    | .proc pr _ => match pr.body with
+      | .structured ss => n + (ss.filter fun s => match s with
+          | .cmd (.cmd (.init x _ _ _)) => Core.CSE.isCSEGeneratedName x.name
+          | _ => false).length
+      | _ => n
+    | _ => n) 0
+
+/-- The number of `$__cse.` variables CSE introduces on the obligation program of
+    `branchesProg n`. -/
+private def branchesCseVars (n : Nat) : IO Nat := do
+  let oblig ← match typeCheckAndBuildObligationProgram .quiet
+      (translateCore (← parseCore (branchesProg n))) with
+    | .ok (prog, _) => pure prog
+    | .error e => throw <| IO.userError s!"obligation building failed: {e}"
+  match Core.Transform.run oblig Core.CSE.runCSE
+      { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
+  | .ok (_, prog) => return cseVarCount prog
+  | .error e => throw <| IO.userError s!"CSE failed: {e}"
+
+/-- info: 63 -/
+#guard_msgs in
+#eval branchesCseVars 20
 
 end Core.CSE.LargeTests
 end

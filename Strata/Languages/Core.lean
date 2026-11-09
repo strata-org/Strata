@@ -225,8 +225,9 @@ def Core.passMonomorphizeFunctions : Core.PipelinePhase :=
 def Core.passSimplify : Core.PipelinePhase :=
   Core.simplifyPhase
 
-/-- Substitute into each `assert` and `cover` goal the values that ground axioms,
-    `assume`s and definitions give its terms, and fold. No default pipeline lists it. -/
+/-- Substitute into each `assert`, `cover` and lemma goal the values that
+    ground axioms, `assume`s and definitions give its terms, and fold. No
+    default pipeline lists it. -/
 def Core.passEqualitySimplification : Core.PipelinePhase :=
   _root_.Core.equalitySimplificationPhase
 
@@ -263,8 +264,26 @@ def Core.passSymbolicEval (options : Core.VerifyOptions := Core.VerifyOptions.de
     Core.PipelinePhase :=
   Core.symbolicEvalPipelinePhase options moreFns
 
-/-- Erase the unread `init`s of an obligation program. In no default order: a pipeline that
-    wants it names it. -/
+/-- Build the program-level declarations and the lemmas' obligation units, keeping every
+    procedure, the first phase that `--vcgen wp` runs in place of `passSymbolicEval`. -/
+def Core.passDeclObligations (options : Core.VerifyOptions := Core.VerifyOptions.default)
+    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
+    Core.PipelinePhase :=
+  _root_.Core.declObligationsPipelinePhase options moreFns
+
+/-- Build the guarded program of the WP phase, the phase that `--vcgen wp` runs after
+    `passDeclObligations`. -/
+def Core.passWP (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
+    Core.PipelinePhase :=
+  _root_.Core.wpPipelinePhase moreFns
+
+/-- Build the obligation program of the SSA phase from a guarded program, the phase that
+    `--vcgen wp` runs after `passWP`. -/
+def Core.passSSA (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
+    Core.PipelinePhase :=
+  _root_.Core.ssaPipelinePhase moreFns
+
+/-- Erase the unread `init`s of an obligation program. -/
 def Core.passDeadDefElim : Core.PipelinePhase :=
   Core.deadDefElimPipelinePhase
 
@@ -291,12 +310,21 @@ def Core.passUnrollBoundedQuantifiers : Core.PipelinePhase :=
 
     Pass the options of the run being resolved. Type checking and symbolic evaluation are built
     from them, and resolution hands back the phase values this list holds, so a vocabulary
-    built from the defaults would run those two under the defaults. -/
+    built from the defaults would run those two under the defaults.
+
+    The same phases are nameable under every `options.vcgen`. The phases `passDeclObligations`,
+    `passWP`, `passSSA` and `passDeadDefElim` are in the default order when `options.vcgen` is
+    `.wp`, and `passSymbolicEval` and `passCommonSubexprElim` when it is `.symbolic`; the phases
+    of the other mode are listed after it. -/
 def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.default) :
     List Core.PipelinePhase :=
   Core.corePipelinePhases options
     ++ [Core.passInlineAll, Core.passUnrollBoundedQuantifiers, Core.passFunctionInlining,
-        Core.passDeadDefElim, Core.passFoldAxioms, Core.passEqualitySimplification]
+        Core.passFoldAxioms, Core.passEqualitySimplification]
+    ++ (match options.vcgen with
+        | .symbolic => [Core.passDeclObligations options, Core.passWP, Core.passSSA,
+                        Core.passDeadDefElim]
+        | .wp => [Core.passSymbolicEval options, Core.passCommonSubexprElim])
 
 /-! ### Standard Core verification pipeline phases
 

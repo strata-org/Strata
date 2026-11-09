@@ -52,9 +52,9 @@ namespace.
 Because each `$exc_<i>` is typed at the `try`'s LCA, a `catch` handler's
 `e#field` type-checks against that supertype with no downcast. Propagating an
 exception out of a `try` into an enclosing region whose `$exc` is a *narrower*
-type inserts an assumed checked downcast (`assume e is T; … as T`) — sound
-because resolution's escape/residual analysis already proved only types `<: T`
-escape.
+type, or one a composite also extends, inserts an assumed checked cast
+(`assume e is T; … as T`) — sound because resolution's escape/residual analysis
+already proved only types `<: T` escape.
 
 - `throw v`  →  `$exc := v; $thrown := true; exit <nearest try | $exnexit>`.
 - `try B catch eᵢ when Pᵢ { Hᵢ } … finally { F }`  →  two nested labeled blocks
@@ -101,11 +101,25 @@ private def exnExcVar : String := "$exc"
 /-- Synthesized local: `true` once a `return` is unwinding through
     enclosing `try` blocks so their `finally` arms run. -/
 private def exnReturningVar : String := "$returning"
-/-- Synthesized local: `true` once an `exit <label>` is unwinding through
-    enclosing `try` blocks so their `finally` arms run. One flag per target label
-    (an `exit` carries no value, so a bool per label is all the unwind needs);
-    cleared when the jump is finally delivered to its label. -/
-private def exitPendingVar (label : String) : String := s!"$exiting_{label}"
+/-- A `goto` that is unwinding through enclosing `try` blocks so their `finally`
+    arms run: the target label and which end of it the jump lands on. -/
+private structure PendingJump where
+  label : String
+  destination : GotoDestination
+  deriving BEq
+
+/-- The name stem of a pending jump's flag: `exiting_<l>` for an `exit l`,
+    `restarting_<l>` for a `goto l`. -/
+private def PendingJump.stem (j : PendingJump) : String :=
+  match j.destination with
+  | .blockEnd => s!"exiting_{j.label}"
+  | .blockStart => s!"restarting_{j.label}"
+
+/-- Synthesized local: `true` once an `exit <label>` (or `goto <label>`) is
+    unwinding through enclosing `try` blocks so their `finally` arms run. One flag
+    per pending jump (a jump carries no value, so a bool each is all the unwind
+    needs); cleared when the jump is finally delivered to its label. -/
+private def exitPendingVar (j : PendingJump) : String := "$" ++ j.stem
 /-- Preferred spelling for a throwing procedure's synthesized output — the
     `Result<Val, T>` carrying its outcome. `resultOutputName` because after the
     lowering the carrier *is* the procedure's result (its only output), and a
@@ -152,33 +166,6 @@ private def usedNames (proc : Procedure) : Std.HashSet String :=
   (proc.throwsOn.foldl (fun acc blk =>
     blk.postconditions.foldl (fun acc c => fromBody c.condition acc) acc) acc)
 
-/-- `base` if unused in `taken`, else `base_1`, `base_2`, … -/
-private def freshName (base : String) (taken : Std.HashSet String) : String :=
-  if !taken.contains base then base
-  else
-    let rec go (i : Nat) (fuel : Nat) : String :=
-      match fuel with
-      -- Unreachable by pigeonhole: the search visits `taken.size + 1` candidates,
-      -- all distinct (`_1`, `_2`, … suffixes), and `taken` can contain at most
-      -- `taken.size` of them — so a free candidate is found before the fuel runs
-      -- out. The fuel exists only to make termination structural; this arm keeps
-      -- the function total without an in-proof pigeonhole argument.
-      | 0 => s!"{base}_{i}"
-      | fuel + 1 =>
-        let cand := s!"{base}_{i}"
-        if taken.contains cand then go (i + 1) fuel else cand
-    go 1 (taken.size + 1)
-
--- Pin `freshName`'s outputs for the cases the carrier naming relies on: the
--- preferred spelling when free, the first suffix when taken (the short-form
--- procedure's case), and stepping past consecutive taken names. Checked at compile
--- time; the end-to-end tests in `ThrowsClause.lean` only assert that the lowered
--- program verifies, which would not catch a freshener returning a wrong-but-unused
--- name.
-#guard freshName "$result" {} == "$result"
-#guard freshName "$result" (Std.HashSet.ofList ["$result"]) == "$result_1"
-#guard freshName "$result" (Std.HashSet.ofList ["$result", "$result_1"]) == "$result_2"
-#guard freshName "$result" (Std.HashSet.ofList ["$result_1"]) == "$result"
 /-- Label of the block a `throw`/`return` exits to leave the body region; the
     `Result` construction is placed immediately after this block. Distinct from
     the translator's `$body` label (which it auto-wraps around every body). -/
@@ -199,7 +186,7 @@ private def boolTy : HighTypeMd := tyNode .TBool
     type on the Bad path. `errTy` is a real exception type (the declared `throws`
     type), never the erased heap `Composite`. -/
 private def resultTyOf (valTy errTy : HighTypeMd) : HighTypeMd :=
-  tyNode (.Applied (tyNode (.UserDefined (mkId resultDatatypeName))) [valTy, errTy])
+  ⟨.Applied (tyNode (.UserDefined (mkId resultDatatypeName))) [valTy, errTy], valTy.source⟩
 
 private def litBool (b : Bool) : StmtExprMd := nn (.LiteralBool b)
 private def localRef (name : String) : StmtExprMd := nn (.Var (.Local (mkId name)))
@@ -216,9 +203,9 @@ private def callStatic (name : String) (args : List StmtExprMd) : StmtExprMd :=
   nn (.StaticCall (mkId name) args [])
 /-- `Ctor(arg)` / `Datatype..fn(arg)` — a single-argument datatype op. -/
 private def resultApp (fn : String) (arg : StmtExprMd) : StmtExprMd := callStatic fn [arg]
-private def exitTo (label : String) : StmtExprMd := nn (.Exit label)
+private def exitTo (label : String) : StmtExprMd := nn (.Goto label .blockEnd)
 private def blockOf (stmts : List StmtExprMd) (label : Option String := none) : StmtExprMd :=
-  nn (.Block stmts label)
+  nn (.Block stmts label [] none)
 private def iteOf (c t : StmtExprMd) (e : Option StmtExprMd) : StmtExprMd :=
   nn (.IfThenElse c t e)
 -- Operators are calls to their built-in wrappers (see `Operation.procName`); neither
@@ -333,10 +320,9 @@ private def localOccursById (targetId : Nat) (e : StmtExprMd) : Bool :=
     in a guard: the caught exception is typed at the join of what
     the `try` body throws, so it can never be a `T` (a Java multi-catch may name an
     unchecked type the body never throws). A type sharing a descendant with `bindTy`
-    is not unrelated (the exception may be that descendant), and Resolution rejects
-    such a test, so it is never folded. Afterwards the guard no longer tests the
-    in-flight exception variable against an unrelated type, which re-resolution
-    would reject. -/
+    is not unrelated (the exception may be that descendant), so such a test is never
+    folded. Afterwards the guard no longer tests the in-flight exception variable
+    against an unrelated type, which re-resolution would reject. -/
 private def falsifyUnrelatedTests (lattice : TypeLattice) (bindingId : Nat)
     (bindTy : HighTypeMd) (p : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun n => match n.val with
@@ -387,13 +373,13 @@ private structure EState where
       procedure being lowered. Accumulated (never cleared until the next
       procedure) so the procedure preamble can declare one `$exiting_<l>` flag
       per label. -/
-  exitFlagLabels : List String := []
+  exitFlagLabels : List PendingJump := []
   /-- The labels whose `exit` unwound within the *region currently being lowered*
       — a scoped accumulator that `lowerTry` saves, clears and restores around
       its body and handlers, so it can emit re-dispatch arms for exactly the
       unwinding jumps raised inside itself (and hand the still-unfinished ones
       back to the enclosing region). -/
-  raisedExits : List String := []
+  raisedExits : List PendingJump := []
   /-- The throw sites recorded inside the outermost `try` currently being lowered
       (see `Ctx.siteVar`): each site's number, source range and escape-assertion
       summary. `lowerTry` saves, clears and restores it around an outermost `try`,
@@ -428,14 +414,14 @@ private def recordThrowSite (siteVar : Option String) (src : FileRange) (summary
 private def markUsedExc : EM Unit := modify (fun s => { s with usedExc := true })
 private def emitDiag (d : Message) : EM Unit := modify (fun s => { s with diags := s.diags ++ [d] })
 
-/-- Append `l` to a label list unless it is already there (order-preserving, so
+/-- Append `l` to a jump list unless it is already there (order-preserving, so
     the emitted flag declarations and re-dispatch arms are deterministic). -/
-private def addLabel (labels : List String) (l : String) : List String :=
+private def addLabel (labels : List PendingJump) (l : PendingJump) : List PendingJump :=
   if labels.contains l then labels else labels ++ [l]
 
-/-- Record that an `exit l` is unwinding through a `finally`: the procedure needs
-    a `$exiting_l` flag, and the enclosing `try` needs a re-dispatch arm for it. -/
-private def recordPendingExit (l : String) : EM Unit :=
+/-- Record that a jump is unwinding through a `finally`: the procedure needs a
+    flag for it, and the enclosing `try` needs a re-dispatch arm for it. -/
+private def recordPendingExit (l : PendingJump) : EM Unit :=
   modify (fun s => { s with
     exitFlagLabels := addLabel s.exitFlagLabels l,
     raisedExits := addLabel s.raisedExits l })
@@ -473,6 +459,11 @@ private inductive Frame where
 private structure Ctx where
   /-- Whether the enclosing procedure declares `throws`. -/
   procThrows : Bool
+  /-- Whether the procedure's `throws` was inferred (`InferThrows`). Its body may
+      then let exceptions escape beyond that type (an override capped at the type of
+      the method it overrides); the lowering asserts that those do not happen,
+      where resolution checks a declared `throws` against the body instead. -/
+  capped : Bool := false
   /-- The procedure-level `$exc` (name and declared `throws` type) for a throwing
       procedure — the target for top-level throws and the `Bad` result. `none`
       for a non-throwing procedure (every exception is caught within a `try`). -/
@@ -487,6 +478,10 @@ private structure Ctx where
       `try`'s exit edge can be reported at the site rather than at the `try`.
       `none` everywhere else. -/
   siteVar : Option String := none
+  /-- Inside a `try` whose exception is copied across a shared descendant (and any
+      region nested in it): an exception raised here is assumed to have its type, so
+      the verifier can tell which `catch` takes it before that copy checks it. -/
+  assumeThrownType : Bool := false
 
 /-- The innermost enclosing `try` frame, if any. Labeled blocks are transparent
     to `throw`/`return` routing (only `exit` cares about them). -/
@@ -501,6 +496,14 @@ private def throwTargetOf (ctx : Ctx) : String :=
     does not happen. -/
 private def escapesUncaught (ctx : Ctx) : Bool :=
   ctx.procExc.isNone && (innerTry ctx.frames).isNone
+
+/-- Whether `exc` is the procedure-level `$exc` of a capped procedure
+    (`Ctx.capped`): the region at the top level, or a finally-only `try`, which
+    shares the enclosing region's `$exc`. -/
+private def isCappedProcExc (ctx : Ctx) (exc : Option (String × HighTypeMd)) : Bool :=
+  ctx.capped && match exc, ctx.procExc with
+    | some (v, _), some (p, _) => v == p
+    | _, _ => false
 private def finallyTargetOf (ctx : Ctx) : String :=
   ((innerTry ctx.frames).map (·.finallyLabel)).getD exnExitLabel
 /-- The `$exc` variable (name and type) active in the current region: the
@@ -509,6 +512,15 @@ private def currentExc (ctx : Ctx) : Option (String × HighTypeMd) :=
   match innerTry ctx.frames with
   | some f => f.exc
   | none   => ctx.procExc
+
+/-- Whether an exception of type `ty` raised here would be written into a capped
+    procedure's own `$exc` (`isCappedProcExc`) beyond its `throws` type. The
+    lowering asserts that it does not happen: the `$exc` cannot hold it. -/
+private def escapesBeyondCap (lattice : TypeLattice) (ctx : Ctx) (ty : HighTypeMd) : Bool :=
+  isCappedProcExc ctx (currentExc ctx) &&
+    match ctx.procExc with
+    | some (_, procTy) => !isSubtype lattice ty procTy
+    | none => false
 
 /-- The `finally` arm an `exit target` from here must run before it can leave:
     the innermost enclosing `try` that has a `finally` and that the jump would
@@ -525,16 +537,21 @@ private def crossedFinallyOf (frames : List Frame) (target : String) : Option St
   | .labeledBlock l :: rest => if l == target then none else crossedFinallyOf rest target
   | .tryRegion f :: rest => if f.hasFinally then some f.finallyLabel else crossedFinallyOf rest target
 
-/-- Raise an exception at the throw site `src`: write `value` into the current
+/-- Raise an exception of type `ty` at the throw site `src`: write `value` into the current
     region's `$exc` (a region with none -- a finally-only `try` in a procedure that
     declares no `throws` -- drops it), record the site with the `summary` its escape
     assertion carries (see `recordThrowSite`), set `$thrown` and leave for the
     nearest handler. Every raising edge goes through here, so an exception is never
     raised without its site being recorded. -/
-private def raiseAt (ctx : Ctx) (src : FileRange) (summary : String) (value : StmtExprMd) :
-    EM (List StmtExprMd) := do
+private def raiseAt (ctx : Ctx) (src : FileRange) (summary : String) (ty : HighTypeMd)
+    (value : StmtExprMd) : EM (List StmtExprMd) := do
+  let lattice := (← get).lattice
   let setExc := match currentExc ctx with
-    | some (v, _) => [setLocal v value]
+    | some (v, excTy) =>
+      setLocal v value ::
+        -- `$exc is ty` is well-formed only for a composite `ty` that an `excTy` can be.
+        (if ctx.assumeThrownType && lattice.shareDescendant ty excTy
+         then [assumeOf (isTypeOf (localRef v) ty)] else [])
     | none => []
   let setSite ← recordThrowSite ctx.siteVar src summary
   pure (setExc ++ setSite ++ [ setLocal exnThrownVar (litBool true), exitTo (throwTargetOf ctx) ])
@@ -597,12 +614,30 @@ private def lowerThrowingCall (ctx : Ctx) (callNode : StmtExprMd)
   -- reached only when the call did not throw. An else-less `if` keeps this void.
   -- The propagated exception is written into the current region's `$exc` (whose
   -- type is a supertype of the callee's `throws` type, so no cast is needed).
-  let onBad ← raiseAt ctx callNode.source (callEscapeSummary errTy)
-    (resultApp exnResultErr (localRef callres))
+  -- In a capped procedure, a callee type beyond the cap propagates only the part
+  -- that fits under it (as a checked downcast, after asserting the exception is
+  -- of that type) and asserts that nothing else escapes.
+  let lattice := (← get).lattice
+  -- The cap is compared with the callee's type at this call's type arguments; a
+  -- type that still mentions a type variable was rejected by `inferThrows`.
+  let errAtCall := match callNode.val with
+    | .StaticCall c _ typeArgs => typeAtCall model c typeArgs errTy
+    | _ => errTy
+  let beyondCap := !mentionsTVar errAtCall.val && escapesBeyondCap lattice ctx errAtCall
+  let capTy? : Option HighTypeMd :=
+    if beyondCap then (currentExc ctx).map Prod.snd |>.filter (isSubtype lattice · errAtCall) else none
+  let errVal := resultApp exnResultErr (localRef callres)
+  let onBad ← raiseAt ctx callNode.source (callEscapeSummary errTy) (capTy?.getD errTy)
+    (match capTy? with | some capTy => asTypeOf errVal capTy | none => errVal)
+  let onBad : List StmtExprMd := match capTy? with
+    | some capTy =>
+      ⟨.Assert (isTypeOf errVal capTy) (some (callEscapeSummary errTy)), callNode.source⟩ ::
+        assumeOf (isTypeOf errVal capTy) :: onBad
+    | none => onBad
   let propagate := iteOf (resultApp exnResultIsBad (localRef callres))
     (blockOf onBad) none
   let propagate : List StmtExprMd :=
-    if escapesUncaught ctx then
+    if escapesUncaught ctx || (beyondCap && capTy?.isNone) then
       assertThenLeave (resultApp exnResultIsGood (localRef callres))
         (callEscapeSummary errTy) propagate
     else [propagate]
@@ -638,7 +673,7 @@ private def lowerStmts (ctx : Ctx) (stmts : List StmtExprMd) : EM (List StmtExpr
       match s.val with
       -- Unconditional terminator: everything after it is unreachable, so stop
       -- (rather than emitting dead code after the synthesized `exit`).
-      | .Throw _ | .Return _ | .Exit _ => pure s'
+      | .Throw _ | .Return _ | .Goto _ _ => pure s'
       | _ => pure (s' ++ (← lowerStmts ctx rest))
   termination_by sizeOf stmts
   decreasing_by
@@ -653,14 +688,14 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
   -- proof can relate each child's size back to `stmt` (used only there, hence
   -- the `_` prefix).
   match _h : stmt.val with
-  | .Block stmts label =>
-      -- A labeled block enters a new `exit` target scope: an `exit` to this label
-      -- from inside stays within any enclosing `try`, so record it (see `Frame`).
+  | .Block stmts label invs dec =>
+      -- A labeled block enters a new jump target scope: an `exit`/`goto` to this
+      -- label from inside stays within any enclosing `try`, so record it (see `Frame`).
       let inner := match label with
         | some l => { ctx with frames := .labeledBlock l :: ctx.frames }
         | none => ctx
       let stmts' ← lowerStmts inner stmts
-      pure [⟨.Block stmts' label, src⟩]
+      pure [⟨.Block stmts' label invs dec, src⟩]
   | .IfThenElse c t e =>
       -- These branch/body recursions do not go through `lowerStmts`, so fill each
       -- child's output with that child's own range here.
@@ -673,18 +708,18 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
       let body' := fillSrcs body.source (← lowerStmt ctx body)
       pure [⟨.While c invs dec (blockOf body') postTest, src⟩]
   | .Throw value =>
-      if escapesUncaught ctx then
+      let thrownTy := computeExprType (← get).model value
+      if escapesUncaught ctx || escapesBeyondCap (← get).lattice ctx thrownTy then
         -- Reaching the `throw` is the failure. The thrown value is not evaluated:
         -- the path ends here either way.
-        let ty := computeExprType (← get).model value
-        return assertThenLeave (litBool false) (throwEscapeSummary ty)
+        return assertThenLeave (litBool false) (throwEscapeSummary thrownTy)
           (exitTo exnExitLabel)
       markUsedExc
       -- The current region's `$exc` is typed at a supertype of every type thrown
       -- here, so the value needs no cast. A region with no `$exc` drops it, and if
       -- it escapes the `try` the re-dispatch asserts that it does not.
       let ty := computeExprType (← get).model value
-      raiseAt ctx src (throwEscapeSummary ty) value
+      raiseAt ctx src (throwEscapeSummary ty) ty value
   | .Return _ =>
       -- Value payloads were removed by EliminateValueInReturns, so this is a
       -- valueless return. Route it so that any enclosing `finally` runs,
@@ -694,7 +729,7 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
       | none => pure [exitTo exnExitLabel]
       | some f =>
           pure [ setLocal exnReturningVar (litBool true), exitTo f.finallyLabel ]
-  | .Exit target =>
+  | .Goto target destination =>
       -- An `exit` that leaves an enclosing `try`/`finally` must run that arm on
       -- the way out, exactly like a `return` does: flag the pending jump, hand
       -- control to the `finally`, and let the re-dispatch after it continue the
@@ -704,8 +739,9 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
       | none => pure [stmt]
       | some finLbl => do
           markUsedExc
-          recordPendingExit target
-          pure [ setLocal (exitPendingVar target) (litBool true), exitTo finLbl ]
+          let jump : PendingJump := { label := target, destination }
+          recordPendingExit jump
+          pure [ setLocal (exitPendingVar jump) (litBool true), exitTo finLbl ]
   | .Try body catches finally? =>
       lowerTry ctx src body catches finally?
   | .Assign targets value =>
@@ -791,18 +827,28 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
     | c :: _ => (some (s!"$exc_{tryId}", c.bindingType), true)
   let excVar := (thisExc.map Prod.fst).getD exnExcVar
   let excTy := (thisExc.map Prod.snd).getD boolTy
+  let lattice := (← get).lattice
+  -- Whether this try's `$exc` is copied into the enclosing one across a shared
+  -- descendant (see `reDispatch`).
+  let crossesShared : Bool := match thisExc, parentExc with
+    | some (_, ti), some (_, tp) =>
+      introducedExc && !isSubtype lattice ti tp && !isSubtype lattice tp ti
+        && lattice.shareDescendant ti tp
+    | _, _ => false
+  let assumeThrownType := ctx.assumeThrownType || crossesShared
   let hasFinally := finally?.isSome
   -- Body phase: a `throw` enters the catch chain ($try); a `return` runs
   -- `finally` first ($tryfin).
   let bodyFrame : TryFrame :=
     { throwLabel := tryLbl, finallyLabel := tryFinLbl, exc := thisExc, hasFinally }
   let bStmts := fillSrcs body.source
-    (← lowerStmt { ctx with frames := .tryRegion bodyFrame :: saved, siteVar } body)
+    (← lowerStmt { ctx with frames := .tryRegion bodyFrame :: saved, siteVar, assumeThrownType } body)
   -- Catch phase: a re-`throw` or `return` in a handler skips the (remaining)
   -- catch chain but still runs `finally` ($tryfin).
   let catchFrame : TryFrame :=
     { throwLabel := tryFinLbl, finallyLabel := tryFinLbl, exc := thisExc, hasFinally }
-  let catchCtx : Ctx := { ctx with frames := .tryRegion catchFrame :: saved, siteVar }
+  let catchCtx : Ctx :=
+    { ctx with frames := .tryRegion catchFrame :: saved, siteVar, assumeThrownType }
   -- Map over the `catches` *parameter* (via `attach`, so each clause carries its
   -- membership proof for the termination argument); the unreachable-catch case is
   -- handled by the `catchesReachable` guard rather than by mapping over the
@@ -831,8 +877,9 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
     -- this try's `$exc`; without the snapshot a later use of this handler's
     -- binding would read that inner exception instead. Skipped when the binding
     -- is unused, to avoid an inert local in the common case. The snapshot is
-    -- typed at this try's LCA (the binding's own type), so `e#field` in the
-    -- handler needs no downcast.
+    -- typed as resolution typed the binding in the handler (`catchClauseBindingType`),
+    -- through a downcast the guard discharges where that narrows this try's LCA, so
+    -- `e#field` in the handler needs no downcast.
     -- Matched by id: lowered `hStmts` may hold id-less locals spelled like a user binding.
     let (bindDecls, hStmts) ←
       match c.binding.uniqueId with
@@ -840,7 +887,10 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
         if hStmts.any (localOccursById eid) then do
           let bid ← freshNat
           let bindLocal := s!"$exc_{c.binding.text}_{bid}"
-          pure ([declInit bindLocal excTy (localRef excVar)],
+          let clauseTy := Resolution.catchClauseBindingType lattice (·.uniqueId == some eid) excTy c.predicate
+          let init := if highEq clauseTy excTy then localRef excVar
+            else asTypeOf (localRef excVar) clauseTy
+          pure ([declInit bindLocal clauseTy init],
                 hStmts.map (substLocalById eid (localRef bindLocal)))
         else
           pure ([], hStmts)
@@ -856,7 +906,7 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   -- lowered below in the enclosing context, so anything it raises accumulates
   -- there — control never comes back to this re-dispatch.)
   let raisedExits := (← get).raisedExits
-  let onwardExits := raisedExits.filter (fun l => (crossedFinallyOf saved l).isSome)
+  let onwardExits := raisedExits.filter (fun l => (crossedFinallyOf saved l.label).isSome)
   modify (fun s => { s with raisedExits := onwardExits.foldl addLabel outerRaisedExits })
   -- Finally phase: a `throw`/`return` in F targets the enclosing `try`.
   -- Abrupt completion of the `finally` arm (a `return`/`throw`/unwinding `exit`
@@ -883,10 +933,10 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
               ([declInit savExc ty (localRef v)], [setLocal v (localRef savExc)])
           | none => ([], [])
         let exitSnap := raisedExits.map (fun l =>
-          declInit s!"$fin_exiting_{l}_{finId}" boolTy (localRef (exitPendingVar l)))
+          declInit s!"$fin_{l.stem}_{finId}" boolTy (localRef (exitPendingVar l)))
         let exitClear := raisedExits.map (fun l => setLocal (exitPendingVar l) (litBool false))
         let exitRestore := raisedExits.map (fun l =>
-          setLocal (exitPendingVar l) (localRef s!"$fin_exiting_{l}_{finId}"))
+          setLocal (exitPendingVar l) (localRef s!"$fin_{l.stem}_{finId}"))
         -- A nested `try`'s `finally` runs inside the enclosing outermost `try`, so a
         -- throw it catches internally rewrites the shared `$throwSite`; snapshot it
         -- with the pending exception. (An outermost `try`'s own `finally` is lowered
@@ -913,26 +963,40 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   -- exception edge, copy this try's `$exc` into the enclosing region's `$exc`,
   -- relating this try's LCA `ti` to the enclosing type `tp`:
   --   * `ti <: tp` — plain copy (the residual widens to a supertype).
-  --   * `tp <: ti` — assumed checked downcast (`assume … is tp; … as tp`), sound
-  --     because the residual analysis proved only types `<: tp` actually escape.
-  --   * unrelated — no copy is emitted, because none is well-typed (even
-  --     `vi as tp` is rejected as a cast between unrelated types). Reaching this
-  --     edge with something actually escaping needs a common subtype of `ti` and
-  --     `tp`, which only multiple inheritance can produce (`composite C extends
-  --     A, B`); resolution rejects that shape up front in
-  --     `checkPropagationEdges`, so what is left here is the dead case: nothing
-  --     can escape this try into `tp`.
+  --   * `tp <: ti` — assumed checked cast (`assume … is tp; … as tp`), relying on
+  --     only types `<: tp` escaping.
+  --   * a composite extends both — the same cast, asserted first: `tp` joins only
+  --     the throws resolution could type. Each exception is assumed to have its own
+  --     type where it is thrown (see `Ctx.assumeThrownType`), so the assertion holds
+  --     whenever every escaping throw fits.
+  --   * neither — no copy is emitted. Nothing can escape this try into `tp`:
+  --     it would be a common subtype of the two, and resolution rejects a
+  --     generic one up front in `checkPropagationEdges`.
   -- A finally-only try shares the enclosing `$exc` (same variable), so no copy.
   let thrownExit := ((innerTry saved).map (·.throwLabel)).getD exnExitLabel
   let returnExit := ((innerTry saved).map (·.finallyLabel)).getD exnExitLabel
-  let lattice := (← get).lattice
+  -- A capped procedure (`Ctx.capped`) has no residual analysis behind the
+  -- downcast into its own `$exc`, so the edge asserts it instead of assuming it,
+  -- and an unrelated type asserts that nothing escapes.
+  let toCappedProc := isCappedProcExc ctx parentExc
+  let capSummary (tp : HighTypeMd) : String :=
+    s!"an exception escaping this `try` is a '{showType tp}'"
   let copyStmts : List StmtExprMd :=
     match thisExc, parentExc with
     | some (vi, ti), some (vp, tp) =>
+        let isTp := isTypeOf (localRef vi) tp
+        let cast := [ assumeOf isTp, setLocal vp (asTypeOf (localRef vi) tp) ]
         if vi == vp then []
         else if isSubtype lattice ti tp then [ setLocal vp (localRef vi) ]
         else if isSubtype lattice tp ti then
-          [ assumeOf (isTypeOf (localRef vi) tp), setLocal vp (asTypeOf (localRef vi) tp) ]
+          -- In a capped procedure nothing behind the cast shows the exception is a
+          -- `tp`, so it is asserted.
+          (if toCappedProc then [⟨.Assert isTp (some (capSummary tp)), src⟩] else []) ++ cast
+        else if crossesShared then
+          ⟨.Assert isTp (some s!"the exception escaping this try fits the '{showType tp}' \
+              it propagates into"), src⟩ :: cast
+        else if toCappedProc then
+          [ ⟨.Assert (litBool false) (some (capSummary tp)), src⟩, assumeOf (litBool false) ]
         else []
     | _, _ => []
   -- Pending unwinding `exit`s, one arm each: continue to the next crossed
@@ -942,11 +1006,12 @@ private def lowerTry (ctx : Ctx) (src : FileRange)
   -- any path (control is linear), so these arms cannot compete with each other or
   -- with the throw/return arms above.
   let exitDispatch : List StmtExprMd := raisedExits.map (fun l =>
-    match crossedFinallyOf saved l with
+    match crossedFinallyOf saved l.label with
     | some outerFin => iteOf (localRef (exitPendingVar l)) (blockOf [exitTo outerFin]) none
     | none =>
         iteOf (localRef (exitPendingVar l))
-          (blockOf [setLocal (exitPendingVar l) (litBool false), exitTo l]) none)
+          (blockOf [setLocal (exitPendingVar l) (litBool false),
+            nn (.Goto l.label l.destination)]) none)
   -- The throw sites recorded inside this outermost `try` (empty for any other);
   -- the enclosing region's accumulator is restored either way.
   let recorded := (← get).throwSites
@@ -1014,7 +1079,7 @@ private def stmtUsesExn (model : SemanticModel) (stmt : StmtExprMd) : Bool :=
   | .StaticCall callee _ _ => calleeThrows model callee
   | .InstanceCall _ callee _ => calleeThrows model callee
   | .Assign _ v => stmtUsesExn model v
-  | .Block stmts _ => stmts.attach.any (fun ⟨s, _⟩ => stmtUsesExn model s)
+  | .Block stmts _ _ _ => stmts.attach.any (fun ⟨s, _⟩ => stmtUsesExn model s)
   | .IfThenElse c t e =>
       stmtUsesExn model c || stmtUsesExn model t || (e.attach.any (fun ⟨x, _⟩ => stmtUsesExn model x))
   | .While c _ _ b _ => stmtUsesExn model c || stmtUsesExn model b
@@ -1065,7 +1130,7 @@ private def lowerProc (proc : Procedure) : EM Procedure := do
   -- `throws` type. Non-throwing procedures have none — every exception they use
   -- is caught within a `try`, which supplies its own `$exc_<i>`.
   let procExc : Option (String × HighTypeMd) := proc.throwsType.map (fun t => (exnExcVar, t))
-  let ctx : Ctx := { procThrows, procExc, frames := [] }
+  let ctx : Ctx := { procThrows, capped := proc.throwsInferred && procThrows, procExc, frames := [] }
   let valueOutputs := valueOutputsOf proc
   -- Lowering limitation: a `throws` procedure lowers to a single `Result` value, so it
   -- can carry at most one value output.
@@ -1148,7 +1213,7 @@ private def lowerProc (proc : Procedure) : EM Procedure := do
   -- is the ubiquitous case: it mints its value output under this very name, so such
   -- a procedure's carrier freshens to `$result_1`, keeping the value output and the
   -- carrier distinct identifiers in the lowered signature's scope.
-  let carrier := freshName exnResultVar (usedNames proc)
+  let carrier := freshNameAvoiding exnResultVar (usedNames proc)
   let newOutputs := inoutOutputs ++ [⟨mkId carrier, resultTyOf valTy throwsTy⟩]
   -- Postconditions.
   let goodWrap (p : StmtExprMd) : StmtExprMd :=
@@ -1168,8 +1233,8 @@ private def lowerProc (proc : Procedure) : EM Procedure := do
   -- throwing path — the escape check has already established that only subtypes of
   -- `T` escape. Emitted only for a composite `T`: `e is T` would be ill-formed for
   -- a non-composite one and would cascade a spurious "cannot test unrelated type".
-  -- The `is` test itself is lowered later, by heap parameterization and the
-  -- type-hierarchy transform, both of which run after this pass.
+  -- The `is` test itself is lowered later, by `LowerComposite`, which runs after
+  -- this pass.
   let throwsTypePosts : List Condition :=
     match proc.throwsType with
     | some tyNode =>
@@ -1302,7 +1367,7 @@ where
       `$exc` (only for a throwing procedure, typed at its `throws` type) and one
       `$exiting_<l>` flag per label an `exit` had to unwind to, emitted when the
       body uses the exceptional channel. -/
-  excStateDecls (procExc : Option (String × HighTypeMd)) (exitFlags : List String)
+  excStateDecls (procExc : Option (String × HighTypeMd)) (exitFlags : List PendingJump)
       (needed : Bool) : List StmtExprMd :=
     if needed then
       [ declInit exnThrownVar boolTy (litBool false) ] ++
@@ -1398,7 +1463,7 @@ public def eliminateExceptionsPass : LaurelPass := .onUnordered {
   name := "EliminateExceptions"
   creates := [
       NodeKind.StmtExpr.Block,
-      NodeKind.StmtExpr.Exit,
+      NodeKind.StmtExpr.Goto,
       NodeKind.TypeDefinition.Datatype,
       NodeKind.StmtExpr.StaticCall,
       NodeKind.StmtExpr.Assign,

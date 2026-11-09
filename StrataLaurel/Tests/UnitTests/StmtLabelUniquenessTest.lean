@@ -32,7 +32,7 @@ private partial def labels : Core.Statement → List String
 
 private def report (stmts : List StmtExprMd) : IO Unit := do
   let (r, _) := runTranslateM { model := { nextId := 0, compositeCount := 0, refToDef := {} } }
-    (translateStmt (nodeAt 0 (.Block stmts none)))
+    (translateStmt (nodeAt 0 (.Block stmts none [] none)))
   match r with
   | .error e => IO.println s!"error: {e}"
   | .ok ss =>

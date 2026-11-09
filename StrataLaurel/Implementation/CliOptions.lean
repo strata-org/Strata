@@ -89,11 +89,15 @@ def laurelPassReportFlags : List (String × (ParsedFlags → IO Unit)) :=
   ["display-phases", "display-phase-contracts", "phases", "skip-phases"].map fun name =>
     (name, fun pflags => do let _ ← reportLaurelPasses pflags (withoutInput := true))
 
-/-- Build a `LaurelVerifyOptions` from parsed CLI flags. -/
+/-- Build a `LaurelVerifyOptions` from parsed CLI flags, refusing the options `--vcgen wp`
+    does not read (`vcgenFlagIssues`), as `strata verify` does. -/
 def parseLaurelVerifyOptions (pflags : ParsedFlags)
     (base : LaurelVerifyOptions := default)
     (inputFile : Option String := none) : IO LaurelVerifyOptions := do
   let verifyOptions ← parseVerifyOptions pflags base.verifyOptions (inputFile := inputFile)
+  let issues := vcgenFlagIssues verifyOptions
+  unless issues.isEmpty do
+    exitUserError (String.intercalate "\n" issues)
   let passes ← parseLaurelPasses pflags
   let translateOptions : LaurelTranslateOptions :=
     { base.translateOptions with

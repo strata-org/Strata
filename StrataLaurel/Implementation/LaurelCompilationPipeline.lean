@@ -10,6 +10,7 @@ public import StrataLaurel.Implementation.LaurelToCoreSchemaPass
 import StrataLaurel.Implementation.DesugarShortCircuit
 import StrataLaurel.Implementation.EliminateReturnStatements
 import StrataLaurel.Implementation.EliminateDoWhile
+import StrataLaurel.Implementation.RestructureGotos
 -- The passes' `NodeKind` declarations, proven against the pass bodies. Imported
 -- here so the pipeline's build checks them: `orderingRespected` below derives the
 -- pass order from declarations that these proofs tie to what the passes do.
@@ -22,7 +23,7 @@ import StrataLaurel.Implementation.EliminateValueInReturns
 import StrataLaurel.Implementation.ModifiesClauses
 import StrataLaurel.Implementation.HeapParameterization
 import StrataLaurel.Implementation.GlobalParameterization
-import StrataLaurel.Implementation.TypeHierarchy
+import StrataLaurel.Implementation.LowerComposite
 import StrataLaurel.Implementation.InferHoleTypes
 import StrataLaurel.Implementation.EliminateDeterministicHoles
 import StrataLaurel.Implementation.CoreDefinitionsForLaurel
@@ -32,6 +33,7 @@ import StrataLaurel.Implementation.FilterPrelude
 import StrataLaurel.Implementation.LiftImperativeExpressions
 import StrataLaurel.Implementation.InlineLocalVariables
 import StrataLaurel.Implementation.FunctionalRewrite
+import StrataLaurel.Implementation.PackageFunctionOutputs
 import StrataLaurel.Implementation.ConstrainedTypeElim
 import StrataLaurel.Implementation.ContractPass
 import StrataLaurel.Implementation.LoopInvariantWellFormedness
@@ -43,7 +45,9 @@ import StrataLaurel.Implementation.YieldElim
 import StrataLaurel.Implementation.CheckOverrideRefinement
 import StrataLaurel.Implementation.TypeAliasElim
 import StrataLaurel.Implementation.EliminateExceptions
+import StrataLaurel.Implementation.InferThrows
 import StrataLaurel.Implementation.MonomorphizeComposites
+import StrataLaurel.Implementation.OpaqueUnusedTypeParams
 import StrataLaurel.Implementation.LaurelNodeKindCheck
 public import StrataLaurel.Implementation.LaurelPass
 public import Strata.Languages.Core
@@ -141,6 +145,9 @@ def laurelPipeline : Array LaurelPass := #[
   -- into the non-parametric Box datatype, so any generic composite still un-monomorphized at
   -- that point would be boxed with no concrete instantiation and reach Core un-lowered.
   monomorphizeCompositesPass,
+  -- Runs before the passes that derive declarations from a procedure (constraint lemmas, contract
+  -- helpers, `$asFunction` copies), so each such declaration shares its opaque types.
+  opaqueUnusedTypeParamsPass,
   eliminateDoWhilePass,
   eliminateIncrDecrAndCompoundAssignPass,
   -- Placement rationale in the pass's module header.
@@ -149,29 +156,32 @@ def laurelPipeline : Array LaurelPass := #[
   -- `eliminateValueInReturnsPass`, as value-returning instance methods require, so no entry
   -- is needed here.
   eliminateValueInReturnsPass,
-  constrainedTypeElimPass,
   -- Note: the exception contract checks (the declared `throws` upper bound, plus the
   -- "not yet lowerable" source-shape guards) are *not* a pipeline pass. They are
   -- properties of the authored program, so `resolve` runs them on the initial
   -- resolution only — see `validateExceptionEscapes` /
   -- `validateExceptionLowerability` in `Resolution.lean`.
   eliminateExceptionsPass,
-  -- The heap trio: `HeapParameterization` declares `$heap` as a file-scope global
-  -- and rewrites field access against it; `TypeHierarchy` lowers `New` (which also
-  -- writes the heap); `ModifiesClauses` builds the frames. They share one
-  -- re-resolve, which binds those `$heap` references as `$static` fields.
+  -- `LowerComposite` replaces the composite types by the `Composite` datatype and the
+  -- program's heap fields, and allocation by `$allocate`; it re-resolves on its own, so
+  -- it runs before `YieldElim`, whose snapshot artifacts must reach
+  -- `HeapParameterization` without a re-resolve in between.
+  -- `HeapParameterization` then declares `$heap` as a file-scope global and rewrites
+  -- field access and allocation against it, and `ModifiesClauses` builds the frames.
+  -- `YieldElim` and those two share one re-resolve, which binds the `$heap` references
+  -- as `$static` fields.
   --
-  -- `globalParameterizationPass` runs after the trio: the heap global does not exist
-  -- until `HeapParameterization` declares it. Monomorphization precedes the trio (see
+  -- `globalParameterizationPass` runs after them: the heap global does not exist
+  -- until `HeapParameterization` declares it. Monomorphization precedes all of them (see
   -- `monomorphizeCompositesPass` above), so globals are layered onto already-
   -- monomorphized concrete procedures.
+  lowerCompositePass,
+  constrainedTypeElimPass,
   yieldElimPass,
   heapParameterizationPass,
-  typeHierarchyTransformPass,
   modifiesClausesTransformPass,
-  -- Threads `$heap` like any other global. Must follow the trio: the global does
-  -- not exist until `HeapParameterization` declares it, and `TypeHierarchy`
-  -- introduces further heap writes.
+  -- Threads `$heap` like any other global. Must follow `HeapParameterization`: the
+  -- global does not exist until it declares it.
   globalParameterizationPass,
   -- After global threading, so `old(g)` normalizes for an arbitrary global: a
   -- written global is by now an inout in the ordinary signature sense, which is
@@ -183,9 +193,16 @@ def laurelPipeline : Array LaurelPass := #[
   uniqueOverloadNamesPass,
   desugarShortCircuitPass,
   eliminateReturnStatementsPass,
+  -- Late, so every earlier pass works on the goto form; before
+  -- `loopInvariantWellFormednessPass`, which must see the loops it creates.
+  restructureGotosPass,
   loopInvariantWellFormednessPass,
   contractPass,
   transparencyPass,
+  -- Before `FunctionalRewrite`: a call binding one target per output is an assignment
+  -- to several targets, which that pass rejects outright, so the rewrite into one bind
+  -- plus a projection per target has to happen while the statement is still there.
+  packageFunctionOutputsPass,
   functionalRewritePass,
   liftImperativeExpressionsPass,
   inlineLocalVariablesPass,
@@ -206,10 +223,22 @@ def newPostPassResolutionErrors (initialDiags : Std.HashSet Message)
   if diagsSoFar.any (·.kind != .warning) then #[]
   else postPassDiags.filter fun e => e.kind != .warning && !initialDiags.contains e
 
+private unsafe def sameDeclarationsUnsafe : LaurelProgram → LaurelProgram → Bool
+  | ⟨procs, fns, fields, types, consts, heapFields⟩,
+    ⟨procs', fns', fields', types', consts', heapFields'⟩ =>
+    ptrEqList procs procs' && ptrEqList fns fns' && ptrEqList fields fields'
+      && ptrEqList types types' && ptrEqList consts consts'
+      && ptrEqList heapFields heapFields'
+
+/-- Whether `a` holds the very declaration objects `b` does. `false` in the logic, where
+    it only costs a re-resolve. -/
+@[implemented_by sameDeclarationsUnsafe]
+private def sameDeclarations (_ _ : LaurelProgram) : Bool := false
+
 /--
-Run every pass of `laurelPipeline` on a program, returning the final program, the
-last Laurel program it passed through, the accumulated diagnostics, the diagnostics
-of the last pass that ran, and merged statistics.
+Run `passes` on a program, returning the final program, the last Laurel program it
+passed through, the accumulated diagnostics, the diagnostics of the last pass that ran,
+merged statistics, and the semantic model the next pass would receive.
 
 When `keepAllFilesPrefix` is provided (via the `PipelineM` context), the
 program state after each pass is written to
@@ -219,7 +248,7 @@ private def runLaurelPasses
     (options: LaurelTranslateOptions) (passes : Array LaurelPass)
     (inputRequirements : List InputRequirement)
     (pctx : Strata.Pipeline.PipelineContext) (program : LaurelProgram)
-    : PipelineM (Program × LaurelProgram × List Message × List Message × Statistics) := do
+    : PipelineM (Program × LaurelProgram × List Message × List Message × Statistics × SemanticModel) := do
   -- Must run HERE, before the prelude is prepended below and before the first resolve:
   -- see `validateNoDollarNames`. Bails out rather than resolving, so the diagnostic
   -- lands on the declaration rather than on a later collision.
@@ -230,7 +259,8 @@ private def runLaurelPasses
       MessageKind.userError
   let inputDiags := dollarDiags ++ staticFunctionDiags
   if inputDiags.any (·.kind != .warning) then
-    return (.Unordered program, program, inputDiags, [], {})
+    return (.Unordered program, program, inputDiags, [], {},
+      { nextId := 0, compositeCount := 0, refToDef := {} })
 
   -- The always-on prelude: datatypes/functions, "free" for SMT. The generic
   -- `Result` datatype that the exceptional-channel lowering targets is *not*
@@ -246,7 +276,9 @@ private def runLaurelPasses
   emit "Initial" "laurel.st" program
 
   -- Initial resolution
-  let result := resolve program (gradualTypes := options.gradualTypes)
+  -- Inferred `throws` clauses are filled in here, so every check and pass below
+  -- sees ordinary ones (see `InferThrows`).
+  let result := resolveWithInferredThrows program (gradualTypes := options.gradualTypes)
                   (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
                   (reservedNames := options.reservedNames)
   let resolutionErrors : Std.HashSet Message := Std.HashSet.ofArray result.errors
@@ -258,7 +290,7 @@ private def runLaurelPasses
   let mut allStats : Statistics := {}
 
   if result.errors.any (·.kind != .warning) then
-    return (program, laurelProgram, allDiags, lastDiags, allStats)
+    return (program, laurelProgram, allDiags, lastDiags, allStats, model)
 
   let required := inputRequirements.map (·.kind)
   unless required.isEmpty || Program.containsB (fun k => !required.contains k) program do
@@ -267,8 +299,10 @@ private def runLaurelPasses
       let inputDiags := inputRequirements.filterMap fun r =>
         if present.contains r.kind then some (Message.fromString r.message MessageKind.userError)
         else none
-      return (program, laurelProgram, allDiags ++ inputDiags, lastDiags, allStats)
+      return (program, laurelProgram, allDiags ++ inputDiags, lastDiags, allStats, model)
 
+  -- The program `model` was resolved from
+  let mut resolved := result.program
   for pass in passes do
     let (program', diags, stats) ← pctx.withPhase pass.name do pure (pass.run options program model)
     program := program'
@@ -285,9 +319,13 @@ private def runLaurelPasses
     -- rejection is order-INDEPENDENT (it does not rely on a later re-resolve or the final gate to
     -- catch it). A pass emitting only warnings continues.
     if diags.any (·.kind != .warning) then
-      return (program, laurelProgram, allDiags, lastDiags, allStats)
-    -- Run resolve after the pass if needed
-    if pass.needsResolves then
+      return (program, laurelProgram, allDiags, lastDiags, allStats, model)
+    -- Run resolve after the pass if needed, unless the program is still the one `model` was
+    -- resolved from: resolving that again rebuilds the same model (`ReresolutionIdsTest`).
+    let unchanged := match program with
+      | .Unordered p => sameDeclarations p resolved
+      | _ => false
+    if pass.needsResolves && !unchanged then
       match program with
       | .Unordered p =>
         let result := resolve p (some model) (gradualTypes := options.gradualTypes)
@@ -347,7 +385,7 @@ private def runLaurelPasses
             -- except a deferred poly-throws escape (folded as its native user error).
             let newDiags := newErrors.toList.map foldNewError
             emit pass.name "laurel.st" p
-            return (program, laurelProgram, allDiags ++ newDiags, lastDiags, allStats)
+            return (program, laurelProgram, allDiags ++ newDiags, lastDiags, allStats, model)
           else
             -- A `Duplicate definition` collision is present. Its own downstream CASCADE — type
             -- mismatches restated over the doubly-defined name (a composite named `Field`/
@@ -366,27 +404,38 @@ private def runLaurelPasses
               collidingNames.any (fun n => (d.message.splitOn n).length > 1)
             let hinted := collisions.map fun d =>
               { d with
-                  message :=
-                    s!"{d.message} (this name collides with one introduced by an internal lowering \
-                       pass; rename the identifier — a reserved internal type name (e.g. `Heap`, \
-                       `Field`, `TypeTag`, `Composite`) or a name containing `$` / the \
-                       `$aN$` instantiation-tag shape can clash with a synthetic name)"
+                  message := s!"{d.message} ({generatedNameCollisionHint})"
                   kind := .userError }
             let independent := newErrors.toList.filter fun d =>
               !isUserCollision d && !mentionsColliding d
             let newDiags := hinted ++ independent.map foldNewError
             emit pass.name "laurel.st" p
-            return (program, laurelProgram, allDiags ++ newDiags, lastDiags, allStats)
+            return (program, laurelProgram, allDiags ++ newDiags, lastDiags, allStats, model)
         program := .Unordered result.program
         laurelProgram := result.program
+        resolved := result.program
         model := result.model
       | other =>
         return (program, laurelProgram, allDiags ++ [Message.fromString
           s!"Internal error: pass '{pass.name}' needs re-resolution, which a {other.kind} program does not support" .strataBug],
-          lastDiags, allStats)
+          lastDiags, allStats, model)
     emit pass.name program.fileExtension program
 
-  return (program, laurelProgram, allDiags, lastDiags, allStats)
+  return (program, laurelProgram, allDiags, lastDiags, allStats, model)
+
+/-- Run the passes of `laurelPipeline` before `pass`, for a test of a pass whose input only the
+    earlier passes produce. Returns the program and the semantic model the pass receives, and the
+    diagnostics so far; after an error the pipeline stops early, so the program and model are not
+    that input. A pass that is not in `laurelPipeline` is rejected. -/
+def runPassesBefore (pass : LaurelPass) (options : LaurelTranslateOptions) (program : LaurelProgram)
+    : IO (Program × SemanticModel × List Message) := do
+  let some idx := laurelPipeline.findIdx? (·.name == pass.name)
+    | throw (IO.userError s!"runPassesBefore: '{pass.name}' is not in laurelPipeline")
+  let pctx ← Strata.Pipeline.PipelineContext.create (outputMode := .quiet)
+  runPipelineM none do
+    let (program, _laurel, diags, _last, _stats, model) ←
+      runLaurelPasses options (laurelPipeline.take idx) [] pctx program
+    return (program, model, diags)
 
 /-- A pass whose declarations are not satisfied by the pipeline order. -/
 structure OrderingFailure where
@@ -625,7 +674,7 @@ def translateWithLaurel (options : LaurelTranslateOptions) (program : LaurelProg
       | .ok sel => pure sel
       | .error msg => return (none, [Message.fromString msg MessageKind.userError], program, {})
   runPipelineM options.keepAllFilesPrefix do
-  let (program, laurelProgram, diags, lastDiags, stats) ←
+  let (program, laurelProgram, diags, lastDiags, stats, _) ←
     runLaurelPasses options selection.passes selection.inputRequirements pctx program
   if diags.any (·.kind != .warning) then
     return (none, diags, laurelProgram, stats)

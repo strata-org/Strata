@@ -130,7 +130,8 @@ def Core.betaReducePipelinePhase : Core.PipelinePhase :=
                          .noLoopMeasures, .staticSingleAssignment, .noPrecondsFromFuncs, .noNondetGuards,
                          .hasObligationForm, .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .treeForm,
+                         .exitsCovered, .armsHaveObligations])
     fun prog => do
       return (true, Core.BetaReduce.betaReduceProgram prog)
 

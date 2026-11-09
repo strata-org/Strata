@@ -7,6 +7,7 @@
 import Strata.Languages.Core
 import Strata.Languages.Core.Logic.LangDef
 import Strata.Languages.Core.InstWellFormedSemanticsEval
+import Strata.Languages.Core.IntEvalProps
 import Strata.DL.Imperative.Logic.TerminationProps
 import Strata.DL.Imperative.Analysis.Verdict
 import Strata.DL.Imperative.Logic.ProgramEntries
@@ -29,7 +30,7 @@ proves a fact about the procedure body under the event semantics
   divergence given by a sequence `ℕ → CfgT` each of whose configurations steps
   to the next.
 - `fail_failed`, `ok_valid`: a `failed` and a `valid` verdict, with conditions
-  read by denotation in any model of `Core.Factory`.
+  read by evaluation in any model of `Core.Factory`.
 - `afterExit_reachable_not_final`, `afterExit_reaches_after`: an exit caught by
   its block does not finish the run.
 
@@ -81,13 +82,6 @@ private theorem wrap_star {c c' : Core.CoreConfig} {trace : Trace Core.Expressio
   | zero => exact h
   | succ n ih => exact ih (Imperative.seq_inner_starE _ h)
 
-/-- An administrative step as an event step. -/
-private theorem admin {c c' : Core.CoreConfig}
-    (h : StepStmt Core.Expression (noCommandEvalE Core.Expression Core.Command)
-      c c') :
-    Core.CoreStepE π c [] c' :=
-  .step_admin h
-
 /-- A loop `guard` with an empty body, whose guard lets it enter from every state
     satisfying `Good`, diverges from such states, provided `Good` survives an
     iteration. -/
@@ -95,8 +89,8 @@ private theorem emptyLoop_diverges (guard : ExprOrNondet Core.Expression)
     (m : Option Core.Expression.Expr) (inv : List (String × Core.Expression.Expr))
     (md : MetaData Core.Expression) (Good : Env Core.Expression → Prop)
     (henter : ∀ ρ, Good ρ →
-      StepStmt Core.Expression (noCommandEvalE Core.Expression Core.Command)
-        (.stmt (.loop guard m inv [] md) ρ)
+      Core.CoreStepE π
+        (.stmt (.loop guard m inv [] md) ρ) []
         (.seq (.block .none ρ.store (.stmts [] ρ)) [.loop guard m inv [] md]))
     (hgood : ∀ ρ, Good ρ →
       Good { ρ with store := projectStore ρ.store ρ.store })
@@ -112,14 +106,14 @@ private theorem emptyLoop_diverges (guard : ExprOrNondet Core.Expression)
         (.seq (.block .none ρ.store (.stmts [] ρ)) [L]) []
         (.seq (.stmt L { ρ with store := projectStore ρ.store ρ.store })
           []) :=
-      .step _ [] _ [] _ (admin π (.step_seq_inner (.step_block_body .step_stmts_nil))) <|
-      .step _ [] _ [] _ (admin π (.step_seq_inner .step_block_done)) <|
-      .step _ [] _ [] _ (admin π .step_seq_done) <|
-      .step _ [] _ [] _ (admin π .step_stmts_cons) (.refl _)
-    exact ⟨[], _, [], _, wrap_step π (admin π (henter ρ hρ)) (n + 1),
+      .step _ [] _ [] _ (.step_seq_inner (.step_block_body .step_stmts_nil)) <|
+      .step _ [] _ [] _ (.step_seq_inner .step_block_done) <|
+      .step _ [] _ [] _ .step_seq_done <|
+      .step _ [] _ [] _ .step_stmts_cons (.refl _)
+    exact ⟨[], _, [], _, wrap_step π (henter ρ hρ) (n + 1),
       wrap_star π hrun (n + 1), ⟨n + 1, _, hgood ρ hρ, rfl⟩⟩
   exact EventLang.CanDiverge.step (EL := Core.Logic.EventLang.coreBlock π)
-    (admin π .step_stmts_cons) hcycle
+    .step_stmts_cons hcycle
 
 end EmptyLoop
 
@@ -168,7 +162,7 @@ theorem spin_diverges (π : String → Option Core.Procedure) (ρ : Env Core.Exp
   emptyLoop_diverges π _ _ _ _ (fun _ => True)
     (fun ρ _ => .step_loop_enter (by
       rw [spinGuard_eq]
-      exact Lambda.evalFully_const ρ.factory ρ.store () (Lambda.LConst.boolConst true)))
+      exact Core.eval_boolConst ρ.factory ρ.store true))
     (fun _ _ => trivial) ρ trivial
 
 /-- `while (true) { }` does not terminate. -/
@@ -227,10 +221,10 @@ theorem star_mayTerminate (π : String → Option Core.Procedure)
     (ρ : Env Core.Expression) :
     ∃ trace ρ', (Core.Logic.EventLang.coreBlock π).TerminatesAt [starLoop] ρ trace ρ' :=
   ⟨_, ρ, .inl <|
-    .step _ [] _ _ _ (.step_admin .step_stmts_cons) <|
-    .step _ [] _ _ _ (.step_admin (.step_seq_inner .step_loop_nondet_exit)) <|
-    .step _ [] _ _ _ (.step_admin .step_seq_done) <|
-    .step _ [] _ _ _ (.step_admin .step_stmts_nil) (.refl _)⟩
+    .step _ [] _ _ _ .step_stmts_cons <|
+    .step _ [] _ _ _ (.step_seq_inner .step_loop_nondet_exit) <|
+    .step _ [] _ _ _ .step_seq_done <|
+    .step _ [] _ _ _ .step_stmts_nil (.refl _)⟩
 
 /-! ## A finite loop with a deterministic step terminates
 
@@ -276,21 +270,17 @@ private theorem no_step_exiting {l : String} {ρ : Env Core.Expression}
 /-- The empty statement list finishes at once. -/
 private theorem fin_nil {Q : Env Core.Expression → Prop} {ρ : Env Core.Expression}
     (hq : Q ρ) : Finishes π Q (.stmts [] ρ) :=
-  .step ⟨[], _, .step_admin .step_stmts_nil⟩ fun e c' hs => by
+  .step ⟨[], _, .step_stmts_nil⟩ fun e c' hs => by
     cases hs with
-    | step_admin ha =>
-      cases ha with
-      | step_stmts_nil => exact .done hq
+    | step_stmts_nil => exact .done hq
 
 /-- A statement list finishes when its head, followed by its tail, does. -/
 private theorem fin_cons {Q : Env Core.Expression → Prop} {s : Core.Statement}
     {ss : Core.Statements} {ρ : Env Core.Expression}
     (h : Finishes π Q (.seq (.stmt s ρ) ss)) : Finishes π Q (.stmts (s :: ss) ρ) :=
-  .step ⟨[], _, .step_admin .step_stmts_cons⟩ fun e c' hs => by
+  .step ⟨[], _, .step_stmts_cons⟩ fun e c' hs => by
     cases hs with
-    | step_admin ha =>
-      cases ha with
-      | step_stmts_cons => exact h
+    | step_stmts_cons => exact h
 
 /-- A sequence finishes when its head finishes at `Q` and the rest finishes from
     every environment satisfying `Q`. -/
@@ -299,23 +289,17 @@ private theorem fin_seq {Q R : Env Core.Expression → Prop} {inner : Core.CoreC
     (hk : ∀ ρ, Q ρ → Finishes π R (.stmts ss ρ)) : Finishes π R (.seq inner ss) := by
   induction h with
   | done hq =>
-    refine .step ⟨[], _, .step_admin .step_seq_done⟩ fun e c' hs => ?_
+    refine .step ⟨[], _, .step_seq_done⟩ fun e c' hs => ?_
     cases hs with
-    | step_admin ha =>
-      cases ha with
-      | step_seq_done => exact hk _ hq
-      | step_seq_inner ha' => cases ha'
+    | step_seq_done => exact hk _ hq
     | step_seq_inner hs' => exact absurd hs' (no_step_terminal π)
   | step prog _ ih =>
     obtain ⟨e₀, c₀, hs₀⟩ := prog
     refine .step ⟨e₀, _, .step_seq_inner hs₀⟩ fun e c' hs => ?_
     cases hs with
     | step_seq_inner hs' => exact ih _ _ hs'
-    | step_admin ha =>
-      cases ha with
-      | step_seq_inner ha' => exact ih _ _ (.step_admin ha')
-      | step_seq_done => exact absurd hs₀ (no_step_terminal π)
-      | step_seq_exit => exact absurd hs₀ (no_step_exiting π)
+    | step_seq_done => exact absurd hs₀ (no_step_terminal π)
+    | step_seq_exit => exact absurd hs₀ (no_step_exiting π)
 
 /-- A block finishes when its body does, at the body's environment with the
     block's scope restored. -/
@@ -326,24 +310,18 @@ private theorem fin_block {Q : Env Core.Expression → Prop} {inner : Core.CoreC
       (.block label σ inner) := by
   induction h with
   | done hq =>
-    refine .step ⟨[], _, .step_admin .step_block_done⟩ fun e c' hs => ?_
+    refine .step ⟨[], _, .step_block_done⟩ fun e c' hs => ?_
     cases hs with
-    | step_admin ha =>
-      cases ha with
-      | step_block_done => exact .done ⟨_, hq, rfl⟩
-      | step_block_body ha' => cases ha'
+    | step_block_done => exact .done ⟨_, hq, rfl⟩
     | step_block_body hs' => exact absurd hs' (no_step_terminal π)
   | step prog _ ih =>
     obtain ⟨e₀, c₀, hs₀⟩ := prog
     refine .step ⟨e₀, _, .step_block_body hs₀⟩ fun e c' hs => ?_
     cases hs with
     | step_block_body hs' => exact ih _ _ hs'
-    | step_admin ha =>
-      cases ha with
-      | step_block_body ha' => exact ih _ _ (.step_admin ha')
-      | step_block_done => exact absurd hs₀ (no_step_terminal π)
-      | step_block_exit_match _ => exact absurd hs₀ (no_step_exiting π)
-      | step_block_exit_mismatch _ => exact absurd hs₀ (no_step_exiting π)
+    | step_block_done => exact absurd hs₀ (no_step_terminal π)
+    | step_block_exit_match _ => exact absurd hs₀ (no_step_exiting π)
+    | step_block_exit_mismatch _ => exact absurd hs₀ (no_step_exiting π)
 
 /-- A command finishes when it can execute, at every store it can produce. -/
 private theorem fin_cmd {Q : Env Core.Expression → Prop} {cmd : Core.Command}
@@ -356,39 +334,32 @@ private theorem fin_cmd {Q : Env Core.Expression → Prop} {cmd : Core.Command}
   refine .step ⟨em, _, .step_cmd hc⟩ fun e c' hs => ?_
   cases hs with
   | step_cmd hc' => exact .done (hall _ _ hc')
-  | step_admin ha =>
-    cases ha with
-    | step_cmd hfalse => exact hfalse.elim
 
 /-- A loop whose guard is false exits. -/
 private theorem fin_loop_exit {Q : Env Core.Expression → Prop} {g : Core.Expression.Expr}
     {m : Option Core.Expression.Expr} {inv : List (String × Core.Expression.Expr)}
     {body : Core.Statements} {md : MetaData Core.Expression} {ρ : Env Core.Expression}
-    (hg : Core.Expression.eval ρ.factory ρ.store g = some HasBool.ff) (hq : Q ρ) :
+    (hg : Core.Expression.eval ρ.factory ρ.store g = some (HasBool.ffVal ρ.factory)) (hq : Q ρ) :
     Finishes π Q (.stmt (.loop (.det g) m inv body md) ρ) := by
-  refine .step ⟨[], _, .step_admin (.step_loop_exit hg)⟩ fun e c' hs => ?_
+  refine .step ⟨[], _, (.step_loop_exit hg)⟩ fun e c' hs => ?_
   cases hs with
-  | step_admin ha =>
-    cases ha with
-    | step_loop_exit _ => exact .done hq
-    | step_loop_enter hg' =>
-      exact absurd (Option.some.inj (hg'.symm.trans hg)) HasBool.tt_is_not_ff
+  | step_loop_exit _ => exact .done hq
+  | step_loop_enter hg' =>
+    exact absurd (Option.some.inj (hg'.symm.trans hg)) (HasBool.ttVal_ne_ffVal _)
 
 /-- A loop whose guard is true runs its body, then the loop again. -/
 private theorem fin_loop_enter {Q : Env Core.Expression → Prop} {g : Core.Expression.Expr}
     {m : Option Core.Expression.Expr} {inv : List (String × Core.Expression.Expr)}
     {body : Core.Statements} {md : MetaData Core.Expression} {ρ : Env Core.Expression}
-    (hg : Core.Expression.eval ρ.factory ρ.store g = some HasBool.tt)
+    (hg : Core.Expression.eval ρ.factory ρ.store g = some (HasBool.ttVal ρ.factory))
     (h : Finishes π Q
       (.seq (.block .none ρ.store (.stmts body ρ)) [.loop (.det g) m inv body md])) :
     Finishes π Q (.stmt (.loop (.det g) m inv body md) ρ) := by
-  refine .step ⟨[], _, .step_admin (.step_loop_enter hg)⟩ fun e c' hs => ?_
+  refine .step ⟨[], _, (.step_loop_enter hg)⟩ fun e c' hs => ?_
   cases hs with
-  | step_admin ha =>
-    cases ha with
-    | step_loop_enter _ => exact h
-    | step_loop_exit hg' =>
-      exact absurd (Option.some.inj (hg.symm.trans hg')) HasBool.tt_is_not_ff
+  | step_loop_enter _ => exact h
+  | step_loop_exit hg' =>
+    exact absurd (Option.some.inj (hg.symm.trans hg')) (HasBool.ttVal_ne_ffVal _)
 
 end Finishes
 
@@ -459,68 +430,70 @@ private theorem countRhs_shape :
         (Lambda.LExpr.const () (Lambda.LConst.intConst 1)) := by
   native_decide
 
-/-- An integer literal is a value of type `int`. -/
+/-- An integer is a value of type `int`. -/
 private theorem intConst_valueOfTy (f : Core.Expression.Factory) (n : Int) :
-    HasVal.valueOfTy (P := Core.Expression) f (Lambda.LExpr.intConst () n) countParts.1.1 :=
-  ⟨_, Lambda.isValue_const_true _ _ _, countTy_mono,
-    by simp [Lambda.LExpr.typeCheck, Lambda.LConst.ty, Lambda.LMonoTy.int]⟩
-
-/-- With `y ↦ n`, the guard evaluates to `n ≤ 9`. -/
-private theorem countGuard_eval (σ : Core.CoreStore) (n : Int)
-    (hy : σ countY = some (Lambda.LExpr.intConst () n)) :
-    Core.Expression.eval Core.Factory σ countParts.2.1.1
-      = some (Lambda.LExpr.boolConst () (decide (n ≤ 9))) := by
-  rw [countGuard_shape]
-  exact Core.coreEval_intLe_numeral σ _ n
-    (Lambda.evalFully_fvar_of_value Core.Factory σ () countY _ _ hy
-      (Lambda.isValue_const_true _ _ _))
-
-/-- With `y ↦ n`, the increment evaluates to `n + 1`. -/
-private theorem countRhs_eval (σ : Core.CoreStore) (n : Int)
-    (hy : σ countY = some (Lambda.LExpr.intConst () n)) :
-    Core.Expression.eval Core.Factory σ countParts.2.2.1
-      = some (Lambda.LExpr.intConst () (n + 1)) := by
-  rw [countRhs_shape]
-  exact Core.coreEval_intAdd_numeral σ _ n
-    (Lambda.evalFully_fvar_of_value Core.Factory σ () countY _ _ hy
-      (Lambda.isValue_const_true _ _ _))
+    HasVal.valueOfTy (P := Core.Expression) f (Lambda.SemValue.ofInt f.model.tcInterp n)
+      countParts.1.1 :=
+  ⟨rfl, by rw [countTy_mono]; rfl⟩
 
 section Count
 
 variable (π : String → Option Core.Procedure)
+variable (F : Core.Expression.Factory) (hF : F.factory = Core.Factory)
+include hF
+
+/-- With `y ↦ n`, the guard evaluates to `n ≤ 9`. -/
+private theorem countGuard_eval (σ : Core.CoreStore) (n : Int)
+    (hy : σ countY = some (Lambda.SemValue.ofInt F.model.tcInterp n)) :
+    Core.Expression.eval F σ countParts.2.1.1
+      = some (Lambda.SemValue.ofBool F.model.tcInterp (decide (n ≤ 9))) := by
+  rw [countGuard_shape]
+  exact Core.eval_intLe (hF ▸ Core.coreFactory_intLe) (Core.eval_fvar_int F hy)
+    (Core.eval_intConst F σ 9)
+
+/-- With `y ↦ n`, the increment evaluates to `n + 1`. -/
+private theorem countRhs_eval (σ : Core.CoreStore) (n : Int)
+    (hy : σ countY = some (Lambda.SemValue.ofInt F.model.tcInterp n)) :
+    Core.Expression.eval F σ countParts.2.2.1
+      = some (Lambda.SemValue.ofInt F.model.tcInterp (n + 1)) := by
+  rw [countRhs_shape]
+  exact Core.eval_intAdd (hF ▸ Core.coreFactory_intAdd) (Core.eval_fvar_int F hy)
+    (Core.eval_intConst F σ 1)
 
 /-- From `y ↦ n` with `n ≤ 10`, the loop finishes: by induction on the
     iterations left, `10 - n`. -/
 private theorem count_loop_finishes :
     ∀ (k : Nat) (n : Int) (ρ : Env Core.Expression), (10 - n).toNat = k →
-      ρ.factory = Core.Factory → ρ.store countY = some (Lambda.LExpr.intConst () n) → n ≤ 10 →
-      Finishes π (fun _ => True) (.stmt countLoop ρ) := by
+      ρ.factory = F → ρ.store countY = some (Lambda.SemValue.ofInt F.model.tcInterp n) →
+      n ≤ 10 → Finishes π (fun _ => True) (.stmt countLoop ρ) := by
   intro k
   induction k with
   | zero =>
     intro n ρ hk hf hy _
     refine fin_loop_exit π ?_ trivial
-    rw [hf, countGuard_eval ρ.store n hy, decide_eq_false (by omega)]
+    rw [hf, countGuard_eval F hF ρ.store n hy, decide_eq_false (by omega)]
     rfl
   | succ k ih =>
     intro n ρ hk hf hy hn
     have hle : n ≤ 9 := by omega
-    have hg : Core.Expression.eval ρ.factory ρ.store countParts.2.1.1 = some HasBool.tt := by
-      rw [hf, countGuard_eval ρ.store n hy, decide_eq_true hle]
+    have hg : Core.Expression.eval ρ.factory ρ.store countParts.2.1.1 =
+        some (HasBool.ttVal ρ.factory) := by
+      rw [hf, countGuard_eval F hF ρ.store n hy, decide_eq_true hle]
       rfl
     have hev : Core.Expression.eval ρ.factory ρ.store countParts.2.2.1
-        = some (Lambda.LExpr.intConst () (n + 1)) := by
-      rw [hf]; exact countRhs_eval ρ.store n hy
-    let σ' : Core.CoreStore := fun z => if z = countY then some (Lambda.LExpr.intConst () (n + 1))
-      else ρ.store z
+        = some (Lambda.SemValue.ofInt F.model.tcInterp (n + 1)) := by
+      rw [hf]; exact countRhs_eval F hF ρ.store n hy
+    let σ' : Core.CoreStore := fun z =>
+      if z = countY then some (Lambda.SemValue.ofInt F.model.tcInterp (n + 1)) else ρ.store z
     have hset : Finishes π
-        (fun ρ₁ => ρ₁.factory = Core.Factory ∧
-          ρ₁.store countY = some (Lambda.LExpr.intConst () (n + 1)))
+        (fun ρ₁ => ρ₁.factory = F ∧
+          ρ₁.store countY = some (Lambda.SemValue.ofInt F.model.tcInterp (n + 1)))
         (.stmt countSet ρ) := by
       refine fin_cmd π ⟨σ', [], .cmd_sem (.eval_set hev
           (.update hy (ite_eq_left rfl) (fun z hz => ite_eq_right (Ne.symm hz)))
-          ⟨_, _, hy, intConst_valueOfTy _ n, intConst_valueOfTy _ (n + 1)⟩
-          (hf ▸ Core.coreFactory_WellFormedSemanticEval.var))⟩ ?_
+          ⟨_, _, hy, by rw [hf]; exact intConst_valueOfTy F n,
+            by rw [hf]; exact intConst_valueOfTy F (n + 1)⟩
+          (Core.coreEvaluator_WellFormedSemanticEvalVar _))⟩ ?_
       intro σ'' em hc
       cases hc with
       | cmd_sem hc' =>
@@ -536,22 +509,23 @@ private theorem count_loop_finishes :
       (fun _ _ => fin_nil π trivial))
     simp [projectStore, hy, hy₁]
 
-/-- From a state where `y` is undeclared and the factory is `Core.Factory`,
-    the whole body finishes. -/
-private theorem count_finishes (ρ : Env Core.Expression) (hf : ρ.factory = Core.Factory)
+/-- From a state over `F` where `y` is undeclared, the whole body finishes. -/
+private theorem count_finishes (ρ : Env Core.Expression) (hf : ρ.factory = F)
     (hy : ρ.store countY = none) :
     Finishes π (fun _ => True) (.stmts [countInit, countLoop] ρ) := by
   have hev : Core.Expression.eval ρ.factory ρ.store (Lambda.LExpr.intConst () 0)
-      = some (Lambda.LExpr.intConst () 0) :=
-    Lambda.evalFully_const ρ.factory ρ.store () (Lambda.LConst.intConst 0)
-  let σ' : Core.CoreStore := fun z => if z = countY then some (Lambda.LExpr.intConst () 0)
-    else ρ.store z
+      = some (Lambda.SemValue.ofInt F.model.tcInterp 0) := by
+    rw [hf]; exact Core.eval_intConst F ρ.store 0
+  let σ' : Core.CoreStore := fun z =>
+    if z = countY then some (Lambda.SemValue.ofInt F.model.tcInterp 0) else ρ.store z
   have hinit : Finishes π
-      (fun ρ₁ => ρ₁.factory = Core.Factory ∧ ρ₁.store countY = some (Lambda.LExpr.intConst () 0))
+      (fun ρ₁ => ρ₁.factory = F ∧
+        ρ₁.store countY = some (Lambda.SemValue.ofInt F.model.tcInterp 0))
       (.stmt countInit ρ) := by
     refine fin_cmd π ⟨σ', [], .cmd_sem (.eval_init hev
         (.init hy (ite_eq_left rfl) (fun z hz => ite_eq_right (Ne.symm hz)))
-        (intConst_valueOfTy _ 0) (hf ▸ Core.coreFactory_WellFormedSemanticEval.var))⟩ ?_
+        (by rw [hf]; exact intConst_valueOfTy F 0)
+        (Core.coreEvaluator_WellFormedSemanticEvalVar _))⟩ ?_
     intro σ'' em hc
     cases hc with
     | cmd_sem hc' =>
@@ -562,23 +536,25 @@ private theorem count_finishes (ρ : Env Core.Expression) (hf : ρ.factory = Cor
         | init _ hnew _ => exact ⟨hf, hv ▸ hnew⟩
   refine fin_cons π (fin_seq π hinit ?_)
   rintro ρ₁ ⟨hf₁, hy₁⟩
-  exact fin_cons π (fin_seq π (count_loop_finishes π 10 0 ρ₁ (by decide) hf₁ hy₁
+  exact fin_cons π (fin_seq π (count_loop_finishes π F hF 10 0 ρ₁ (by decide) hf₁ hy₁
     (by decide)) (fun _ _ => fin_nil π trivial))
 
 end Count
 
 /-- **`var y : int := 0; while (int.le(y, 9)) { y := int.add(y, 1); }`
     terminates** from every state where `y` is undeclared and the factory is
-    `Core.Factory`: every execution finishes after ten iterations. -/
+    over `Core.Factory`: every execution finishes after ten iterations. -/
 theorem count_terminates (π : String → Option Core.Procedure)
-    (ρ : Env Core.Expression) (hf : ρ.factory = Core.Factory) (hy : ρ.store countY = none) :
+    (ρ : Env Core.Expression) (hf : ρ.factory.factory = Core.Factory)
+    (hy : ρ.store countY = none) :
     (Core.Logic.EventLang.coreBlock π).Terminates [countInit, countLoop] ρ :=
-  (count_finishes π ρ hf hy).mustTerminate π
+  (count_finishes π ρ.factory hf ρ rfl hy).mustTerminate π
 
 /-- The counting loop has no infinite run from any state where `y` is
-    undeclared and the factory is `Core.Factory`. -/
+    undeclared and the factory is over `Core.Factory`. -/
 theorem count_not_canDiverge (π : String → Option Core.Procedure)
-    (ρ : Env Core.Expression) (hf : ρ.factory = Core.Factory) (hy : ρ.store countY = none) :
+    (ρ : Env Core.Expression) (hf : ρ.factory.factory = Core.Factory)
+    (hy : ρ.store countY = none) :
     ¬ (Core.Logic.EventLang.coreBlock π).CanDiverge
       ((Core.Logic.EventLang.coreBlock π).stmtCfg [countInit, countLoop] ρ) :=
   (EventLang.mustTerminate_iff.mp (count_terminates π ρ hf hy)).1
@@ -589,13 +565,13 @@ theorem count_not_canDiverge (π : String → Option Core.Procedure)
 assertion command emits the assertion, whose condition denotes `false` in every
 world. The verdict's witness is the entry state. -/
 
-/-- The entries of a statement list: every state over `Core.Factory`, each
-    running `ss` from it. -/
+/-- The entries of a statement list: every state over a runtime factory over
+    `Core.Factory`, each running `ss` from it. -/
 private def blockEntries (π : String → Option Core.Procedure) (ss : List Core.Statement) :
     ProgramEntries (fun _ : Unit => Core.Logic.EventLang.coreBlock π) where
   Program := Unit
   Entry := Env Core.Expression
-  entries _ ρ := ρ.factory = Core.Factory
+  entries _ ρ := ρ.factory.factory = Core.Factory
   start _ ρ := ⟨(), (Core.Logic.EventLang.coreBlock π).stmtCfg ss ρ⟩
 
 private def failPgm : Program :=
@@ -630,29 +606,30 @@ private theorem failExpr_eq :
   native_decide
 
 /-- The assertion's identifier. -/
-private def failId : AssertId Core.Expression := ⟨"a", failParts.1⟩
+private def failId : AssertId Core.Expression := ⟨"a", failParts.2⟩
 
-/-- **`assert [a]: false;` has a correct `failed` verdict** in every model,
+/-- **`assert [a]: false;` has a correct `failed` verdict**,
     witnessed by any entry state `ρ`. -/
-theorem fail_failed (model : Lambda.Interp Core.Factory) (π : String → Option Core.Procedure)
-    (ρ : Env Core.Expression) (hρ : ρ.factory = Core.Factory) :
-    Strata.Analysis.VerdictCorrect (Core.Logic.DenoteBasedInterp model)
+theorem fail_failed (π : String → Option Core.Procedure)
+    (ρ : Env Core.Expression) (hρ : ρ.factory.factory = Core.Factory) :
+    Strata.Analysis.VerdictCorrect (Core.Logic.DenoteBasedInterp Core.Factory)
       (blockEntries π [failAssert]) () failId (.failed ρ) := by
   have hrun : (Core.Logic.EventLang.coreBlock π).ReachesWithin 2
       ((Core.Logic.EventLang.coreBlock π).stmtCfg [failAssert] ρ)
       [.assert ⟨ρ.factory, ρ.store, "a", failParts.fst, failParts.snd⟩]
       (.seq (.terminal ρ) []) :=
-    .inr ⟨[], _, _, .step_admin .step_stmts_cons,
+    .inr ⟨[], _, _, .step_stmts_cons,
       .inr ⟨_, _, [], .step_seq_inner (.step_cmd (.cmd_sem .eval_assert)), ⟨rfl, rfl⟩,
         rfl⟩, rfl⟩
   refine ⟨hρ, 2, _, ⟨_, hrun⟩, fun hvalid => ?_⟩
-  have hholds := hvalid.1 ⟨rfl, rfl⟩ (CoreHoareTestSupport.someValuation model)
+  have hholds := hvalid.1 ⟨rfl, rfl⟩ (CoreHoareTestSupport.someValuation _)
     (fun _ h => by simp at h)
-  rcases hholds with ⟨_, _, hd⟩ | ⟨hne, _⟩
-  · revert hd
-    simp only [Core.Logic.capturedExpr, failExpr_eq]
-    simp [Lambda.LExpr.substFvarsFromEnv, Lambda.LMonoTy.bool, Lambda.denote_boolConst]
-  · exact hne hρ
+  rcases hholds with ⟨_, he⟩ | ⟨_, hoff⟩
+  · have hff : Core.Expression.eval ρ.factory ρ.store failParts.1 =
+        some (HasBool.ffVal ρ.factory) := by
+      rw [failExpr_eq]; exact Core.eval_boolConst ρ.factory ρ.store false
+    exact HasBool.ttVal_ne_ffVal ρ.factory (Option.some.inj (he.symm.trans hff))
+  · exact hoff
 
 /-! ## A `valid` verdict
 
@@ -692,7 +669,7 @@ private theorem okExpr_eq :
   native_decide
 
 /-- The assertion's identifier. -/
-private def okId : AssertId Core.Expression := ⟨"b", okParts.1⟩
+private def okId : AssertId Core.Expression := ⟨"b", okParts.2⟩
 
 /-- The configurations a run of `assert [b]: true;` from `ρ` passes through. -/
 private def OkShape (ρ : Env Core.Expression) (c : Core.CoreConfig) : Prop :=
@@ -703,29 +680,12 @@ private def OkShape (ρ : Env Core.Expression) (c : Core.CoreConfig) : Prop :=
 private def OkEvents (ρ : Env Core.Expression) (trace : Trace Core.Expression) : Prop :=
   ∀ ev ∈ trace, ev = .assert ⟨ρ.factory, ρ.store, "b", okParts.1, okParts.2⟩
 
-/-- An administrative step keeps the shape. -/
-private theorem ok_admin_step {ρ : Env Core.Expression} {c c' : Core.CoreConfig}
-    (hc : OkShape ρ c)
-    (hs : StepStmt Core.Expression (noCommandEvalE Core.Expression Core.Command) c c') :
-    OkShape ρ c' := by
-  rcases hc with rfl | rfl | rfl | rfl | rfl
-  · cases hs; exact .inr (.inl rfl)
-  · cases hs with
-    | step_seq_inner h => cases h with
-      | step_cmd h => exact absurd h (by simp [noCommandEvalE])
-  · cases hs with
-    | step_seq_inner h => cases h
-    | step_seq_done => exact .inr (.inr (.inr (.inl rfl)))
-  · cases hs; exact .inr (.inr (.inr (.inr rfl)))
-  · cases hs
-
 /-- A step keeps the shape, and emits only the assertion `b`. -/
 private theorem ok_step (π : String → Option Core.Procedure) {ρ : Env Core.Expression}
     {c c' : Core.CoreConfig} {emitted : Trace Core.Expression} (hc : OkShape ρ c)
     (hs : Core.CoreStepE π c emitted c') :
     OkShape ρ c' ∧ OkEvents ρ emitted := by
   cases hs with
-  | step_admin h => exact ⟨ok_admin_step hc h, by simp [OkEvents]⟩
   | step_cmd h =>
     rcases hc with h' | h' | h' | h' | h' <;> cases h'
   | step_block_body h =>
@@ -739,11 +699,10 @@ private theorem ok_step (π : String → Option Core.Procedure) {ρ : Env Core.E
           cases hc'
           exact ⟨.inr (.inr (.inl rfl)), by
             intro ev hev; simpa using hev⟩
-      | step_admin h =>
-        cases h with
-        | step_cmd h => exact absurd h (by simp [noCommandEvalE])
-    · cases h with
-      | step_admin h => cases h
+    · cases h
+  | _ =>
+    refine ⟨?_, by simp [OkEvents]⟩
+    rcases hc with h' | h' | h' | h' | h' <;> cases h' <;> simp [OkShape]
 
 /-- Bounded paths from a shaped configuration stay shaped and emit only the
     assertion `b`. -/
@@ -762,32 +721,29 @@ private theorem ok_reaches (π : String → Option Core.Procedure) (ρ : Env Cor
       · exact he ev hev
       · exact ih hc₁ hr ev hev
 
-/-- On a trace of assertions `b` only, captured over `Core.Factory`, every
-    occurrence of `b` holds in every world. -/
-private theorem ok_valid_from (model : Lambda.Interp Core.Factory) (ρ : Env Core.Expression)
-    (hρ : ρ.factory = Core.Factory) :
+/-- On a trace of assertions `b` only, captured over a runtime factory over
+    `Core.Factory`, every occurrence of `b` holds in every world. -/
+private theorem ok_valid_from (ρ : Env Core.Expression)
+    (hρ : ρ.factory.factory = Core.Factory) :
     ∀ (trace assumptions : Trace Core.Expression), OkEvents ρ trace →
-      Trace.AssertionValidFrom Core.Expression (Core.Logic.DenoteBasedInterp model) okId
+      Trace.AssertionValidFrom Core.Expression (Core.Logic.DenoteBasedInterp Core.Factory) okId
         assumptions trace
   | [], _, _ => trivial
   | ev :: rest, assumptions, h => by
     obtain rfl := h ev (List.mem_cons_self ..)
-    refine ⟨fun _ _ _ => .inl ⟨hρ, ?_⟩, ok_valid_from model ρ hρ rest assumptions fun ev hev =>
+    refine ⟨fun _ _ _ => .inl ⟨hρ, ?_⟩, ok_valid_from ρ hρ rest assumptions fun ev hev =>
       h ev (List.mem_cons_of_mem _ hev)⟩
-    have hcap : Core.Logic.capturedExpr ⟨ρ.factory, ρ.store, "b", okParts.1, okParts.2⟩
-        = Lambda.LExpr.const () (Lambda.LConst.boolConst true) := by
-      simp [Core.Logic.capturedExpr, okExpr_eq, Lambda.LExpr.substFvarsFromEnv]
-    rw [hcap]
-    exact ⟨Lambda.LExpr.typeCheck_to_HasTypeA (by rfl),
-      Lambda.denote_boolConst _ _ _ _ _ _⟩
+    show Core.Expression.eval ρ.factory ρ.store okParts.1 = some (HasBool.ttVal ρ.factory)
+    rw [okExpr_eq]
+    exact Core.eval_boolConst ρ.factory ρ.store true
 
-/-- **`assert [b]: true;` has a correct `valid` verdict** in every model: it
-    holds from every entry state. -/
-theorem ok_valid (model : Lambda.Interp Core.Factory) (π : String → Option Core.Procedure) :
-    Strata.Analysis.VerdictCorrect (Core.Logic.DenoteBasedInterp model)
+/-- **`assert [b]: true;` has a correct `valid` verdict**: it holds from every
+    entry state, whatever model its runtime factory carries. -/
+theorem ok_valid (π : String → Option Core.Procedure) :
+    Strata.Analysis.VerdictCorrect (Core.Logic.DenoteBasedInterp Core.Factory)
       (blockEntries π [okAssert]) () okId .valid := by
   intro ρ hρ n trace ⟨_, hrun⟩
-  exact ok_valid_from model ρ hρ _ [] (ok_reaches π ρ n (.inl rfl) hrun)
+  exact ok_valid_from ρ hρ _ [] (ok_reaches π ρ n (.inl rfl) hrun)
 
 /-! ## An exit caught by its block does not finish the run
 
@@ -840,10 +796,10 @@ theorem afterExit_reachable_not_final (π : String → Option Core.Procedure)
         ((Core.Logic.EventLang.coreBlock π).stmtCfg [exitBlock, exitParts.2.2] ρ) []
         (afterExit ρ) ∧
       ¬ (Core.Logic.EventLang.coreBlock π).Final (afterExit ρ) := by
-  refine ⟨.inr ⟨[], _, [], .step_admin .step_stmts_cons,
-    .inr ⟨[], _, [], .step_admin (.step_seq_inner .step_block),
-    .inr ⟨[], _, [], .step_admin (.step_seq_inner (.step_block_body .step_stmts_cons)),
-    .inr ⟨[], _, [], .step_admin (.step_seq_inner (.step_block_body (.step_seq_inner .step_exit))),
+  refine ⟨.inr ⟨[], _, [], .step_stmts_cons,
+    .inr ⟨[], _, [], (.step_seq_inner .step_block),
+    .inr ⟨[], _, [], (.step_seq_inner (.step_block_body .step_stmts_cons)),
+    .inr ⟨[], _, [], (.step_seq_inner (.step_block_body (.step_seq_inner .step_exit))),
       ⟨rfl, rfl⟩, rfl⟩, rfl⟩, rfl⟩, rfl⟩, ?_⟩
   rintro (⟨_, h⟩ | ⟨_, _, h⟩) <;> cases h
 
@@ -853,10 +809,10 @@ theorem afterExit_reachable_not_final (π : String → Option Core.Procedure)
 theorem afterExit_reaches_after (π : String → Option Core.Procedure) (ρ : Env Core.Expression) :
     (Core.Logic.EventLang.coreBlock π).ReachesWithin 4 (afterExit ρ) []
       (.seq (.stmt exitParts.2.2 { ρ with store := projectStore ρ.store ρ.store }) []) :=
-  .inr ⟨[], _, [], .step_admin (.step_seq_inner (.step_block_body .step_seq_exit)),
-    .inr ⟨[], _, [], .step_admin (.step_seq_inner (.step_block_exit_match rfl)),
-    .inr ⟨[], _, [], .step_admin .step_seq_done,
-    .inr ⟨[], _, [], .step_admin .step_stmts_cons, ⟨rfl, rfl⟩, rfl⟩, rfl⟩, rfl⟩, rfl⟩
+  .inr ⟨[], _, [], (.step_seq_inner (.step_block_body .step_seq_exit)),
+    .inr ⟨[], _, [], (.step_seq_inner (.step_block_exit_match rfl)),
+    .inr ⟨[], _, [], .step_seq_done,
+    .inr ⟨[], _, [], .step_stmts_cons, ⟨rfl, rfl⟩, rfl⟩, rfl⟩, rfl⟩, rfl⟩
 
 end TerminationTests
 

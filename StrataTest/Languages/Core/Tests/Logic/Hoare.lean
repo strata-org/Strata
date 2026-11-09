@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
+import Strata.Languages.Core.ProgramProps
 import StrataTest.Languages.Core.Tests.Logic.HoareTestSupport
 import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core
@@ -18,6 +19,7 @@ import Strata.DL.Lambda.LState
 import Strata.DL.Lambda.LStateProps
 import Strata.DL.Imperative.StmtSemanticsProps
 import StrataDDM.Integration.Lean.HashCommands
+import Strata.Languages.Core.IntEvalProps
 
 /-! # Reading a Core procedure's contract as a Hoare triple
 
@@ -55,15 +57,15 @@ namespace Strata
 
 open CoreHoareTestSupport
 
-private def trueCondition : EventArg Core.Expression :=
-  { factory := Core.Factory
+private def trueCondition (model : Lambda.Interp Core.Factory) : EventArg Core.Expression :=
+  { factory := boolFactory model
     store := fun _ => none
     label := "true"
     expr := HasBool.tt
     metadata := #[] }
 
-private def falseCondition : EventArg Core.Expression :=
-  { factory := Core.Factory
+private def falseCondition (model : Lambda.Interp Core.Factory) : EventArg Core.Expression :=
+  { factory := boolFactory model
     store := fun _ => none
     label := "false"
     expr := HasBool.ff
@@ -71,47 +73,38 @@ private def falseCondition : EventArg Core.Expression :=
 
 /-- The captured `true` condition holds in every world of every Core model. -/
 private theorem true_holds (model : Lambda.Interp Core.Factory)
-    (world : Core.Logic.DenoteValuation model) :
-    (Core.Logic.DenoteBasedInterp model).holds world trueCondition := by
-  refine .inl ⟨rfl, ?_⟩
-  have hcap : Core.Logic.capturedExpr trueCondition
-      = Lambda.LExpr.const () (Lambda.LConst.boolConst true) := rfl
-  rw [hcap]
-  refine ⟨Lambda.LExpr.typeCheck_to_HasTypeA (by rfl), ?_⟩
-  exact Lambda.denote_boolConst _ _ _ _ _ _
+    (world : Core.Logic.DenoteValuation Core.Factory) :
+    (Core.Logic.DenoteBasedInterp Core.Factory).holds world (trueCondition model) :=
+  .inl ⟨rfl, Core.eval_const _ _ (.boolConst true)⟩
 
 /-- The captured `false` condition holds in no world of any Core model. -/
 private theorem false_not_holds (model : Lambda.Interp Core.Factory)
-    (world : Core.Logic.DenoteValuation model) :
-    ¬ (Core.Logic.DenoteBasedInterp model).holds world falseCondition := by
-  rintro (⟨_, hex⟩ | ⟨hne, _⟩)
-  · have hcap : Core.Logic.capturedExpr falseCondition
-        = Lambda.LExpr.const () (Lambda.LConst.boolConst false) := rfl
-    rw [hcap] at hex
-    obtain ⟨_hty, hd⟩ := hex
-    exact Bool.false_ne_true ((Lambda.denote_boolConst _ _ _ _ _ _hty).symm.trans hd)
+    (world : Core.Logic.DenoteValuation Core.Factory) :
+    ¬ (Core.Logic.DenoteBasedInterp Core.Factory).holds world (falseCondition model) := by
+  rintro (⟨_, he⟩ | ⟨hne, _⟩)
+  · exact HasBool.ttVal_ne_ffVal _
+      (Option.some.inj (he.symm.trans (Core.eval_const _ _ (.boolConst false))))
   · exact hne rfl
 
 /-- An assumption can discharge a later assertion. -/
 example (model : Lambda.Interp Core.Factory) :
-    Trace.AssertionsValid Core.Expression (Core.Logic.DenoteBasedInterp model)
-    [.assume falseCondition, .assert falseCondition] :=
-  ⟨fun _ _ hassumptions => hassumptions falseCondition (by simp), True.intro⟩
+    Trace.AssertionsValid Core.Expression (Core.Logic.DenoteBasedInterp Core.Factory)
+    [.assume (falseCondition model), .assert (falseCondition model)] :=
+  ⟨fun _ _ hassumptions => hassumptions (falseCondition model) (by simp), True.intro⟩
 
 /-- A later assumption cannot discharge an earlier assertion. -/
 example (model : Lambda.Interp Core.Factory) :
-    ¬ Trace.AssertionsValid Core.Expression (Core.Logic.DenoteBasedInterp model)
-    [.assert falseCondition, .assume falseCondition] := by
+    ¬ Trace.AssertionsValid Core.Expression (Core.Logic.DenoteBasedInterp Core.Factory)
+    [.assert (falseCondition model), .assume (falseCondition model)] := by
   intro h
-  exact false_not_holds model (someValuation model)
-    (h.1 True.intro (someValuation model) (by intro condition hmem; simp at hmem))
+  exact false_not_holds model (someValuation _)
+    (h.1 True.intro (someValuation _) (by intro condition hmem; simp at hmem))
 
 /-- Empty Core blocks satisfy the skip triple using the real `StepStmtStarE`
 semantics underlying `EventLang.coreBlock`. -/
 example (π : String → Option Core.Procedure)
     (params : Core.Logic.InitEnvWFParams) (Pre : Env Core.Expression → Prop) :
     Core.Logic.Hoare.Triple π params Pre [] Pre :=
-  fun _ =>
     Imperative.Logic.Hoare.skip_block (Core.EvalCommandE π)
       Core.Logic.BlockInitEnvWF params Pre
 
@@ -136,11 +129,11 @@ example {Pre Pre' Post Post' : Env Core.Expression → Prop} {ss : Core.Statemen
   Core.Logic.Hoare.consequence π params h hpre hpost
 
 example (command : Core.Command) (Pre Post : Env Core.Expression → Prop)
-    (h : ∀ (model : Lambda.Interp Core.Factory) ρ₀ σ' emitted,
+    (h : ∀ ρ₀ σ' emitted,
       Pre ρ₀ → Core.Logic.InitEnvWF params (.cmd command) ρ₀ →
       Core.EvalCommandE π ρ₀.factory ρ₀.store command σ' emitted →
-      Trace.AssertionsValid Core.Expression (Core.Logic.DenoteBasedInterp model) emitted ∧
-        (Trace.Reachable Core.Expression (Core.Logic.DenoteBasedInterp model) emitted →
+      Trace.AssertionsValid Core.Expression (Core.Logic.DenoteBasedInterp Core.Factory) emitted ∧
+        (Trace.Reachable Core.Expression (Core.Logic.DenoteBasedInterp Core.Factory) emitted →
           Post { ρ₀ with store := σ' })) :
     Core.Logic.Hoare.Triple π params Pre [.cmd command] Post :=
   Core.Logic.Hoare.cmd π params command Pre Post h
@@ -148,7 +141,7 @@ example (command : Core.Command) (Pre Post : Env Core.Expression → Prop)
 example (x : Core.Expression.Ident) (e : Core.Expression.Expr)
     (md : MetaData Core.Expression) (Pre Post : Env Core.Expression → Prop)
     (hpost : ∀ (ρ₀ : Env Core.Expression) (σ' : Core.CoreStore)
-      (v : Core.Expression.Expr), Pre ρ₀ →
+      (v : Core.Expression.Val), Pre ρ₀ →
       Core.Expression.eval ρ₀.factory ρ₀.store e = some v →
       UpdateState Core.Expression ρ₀.store x v σ' → Post { ρ₀ with store := σ' }) :
     Core.Logic.Hoare.Triple π params Pre [Core.Statement.set x e md] Post :=
@@ -158,7 +151,7 @@ example (x : Core.Expression.Ident) (ty : Core.Expression.Ty)
     (e : Core.Expression.Expr) (md : MetaData Core.Expression)
     (Pre Post : Env Core.Expression → Prop)
     (hpost : ∀ (ρ₀ : Env Core.Expression) (σ' : Core.CoreStore)
-      (v : Core.Expression.Expr), Pre ρ₀ →
+      (v : Core.Expression.Val), Pre ρ₀ →
       Core.Expression.eval ρ₀.factory ρ₀.store e = some v →
       InitState Core.Expression ρ₀.store x v σ' → Post { ρ₀ with store := σ' }) :
     Core.Logic.Hoare.Triple π params Pre
@@ -180,10 +173,12 @@ example (label : String) (md : MetaData Core.Expression)
 example {condition : Core.Expression.Expr} {thenStmts elseStmts : Core.Statements}
     {md : MetaData Core.Expression} {Pre Post : Env Core.Expression → Prop}
     (hthen : Core.Logic.Hoare.Triple π params
-      (fun ρ => Pre ρ ∧ Core.Expression.eval ρ.factory ρ.store condition = some HasBool.tt)
+      (fun ρ => Pre ρ ∧ Core.Expression.eval ρ.factory ρ.store condition = some
+          (HasBool.ttVal ρ.factory))
       thenStmts Post)
     (helse : Core.Logic.Hoare.Triple π params
-      (fun ρ => Pre ρ ∧ Core.Expression.eval ρ.factory ρ.store condition = some HasBool.ff)
+      (fun ρ => Pre ρ ∧ Core.Expression.eval ρ.factory ρ.store condition = some
+          (HasBool.ffVal ρ.factory))
       elseStmts Post)
     (hthenWF : Imperative.Logic.Hoare.PostWF thenStmts Post)
     (helseWF : Imperative.Logic.Hoare.PostWF elseStmts Post) :
@@ -215,13 +210,14 @@ example (π : String → Option Core.Procedure)
     (md : Imperative.MetaData Core.Expression) :
     Core.Logic.Hoare.Triple π params (fun _ => True)
       [.loop (.det guard) none [] [] md]
-      (fun ρ => True ∧ Core.Expression.eval ρ.factory ρ.store guard = some HasBool.ff) :=
+      (fun ρ => True ∧ Core.Expression.eval ρ.factory ρ.store guard = some
+          (HasBool.ffVal ρ.factory)) :=
   Core.Logic.Hoare.while_rule π params
     (Core.Logic.Hoare.consequence π params
-      (fun _ =>
-        Imperative.Logic.Hoare.skip_block (Core.EvalCommandE π)
+      (Imperative.Logic.Hoare.skip_block (Core.EvalCommandE π)
           Core.Logic.BlockInitEnvWF params
-          (fun ρ => True ∧ Core.Expression.eval ρ.factory ρ.store guard = some HasBool.tt))
+          (fun ρ => True ∧ Core.Expression.eval ρ.factory ρ.store guard = some
+              (HasBool.ttVal ρ.factory)))
       (fun _ h => h) (fun _ _ => trivial))
     trivial
     (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by simp [Imperative.Block.definedVars]))
@@ -257,53 +253,67 @@ private theorem procOf_eq {p : Core.Program} {nm : String} {proc : Core.Procedur
     declared (so `factoryDeclared` is immediate). -/
 private def testParams : Core.Logic.InitEnvWFParams := ⟨[], fun _ => true⟩
 
-/-! The evaluator diverges on a stuck expression — say `x == 1` with `x` unbound — so
-`decide` / `native_decide` hang rather than return `none`.  The refutations below
-therefore pick stores in which every clause reduces to a Boolean; refuting a contract
-via a *stuck* clause needs a proof, not a computation. -/
+/-- The value of the literal `κ` in the runtime factory of `ρ`. -/
+private abbrev cval (ρ : Imperative.Env Core.Expression) (κ : Lambda.LConst) :
+    Core.Expression.Val :=
+  Lambda.SemValue.ofConst ρ.factory.model.tcInterp κ
 
-private def xIs1Env : Imperative.Env Core.Expression :=
-  { store := fun n => if n.name = "x" then some eb[#1] else none
-    factory := Core.Factory
-    hasFailure := false }
+/-- The environment over the runtime factory of `model` where `x` holds `1` and every other
+    name is unbound. -/
+private def xIs1Env (model : Lambda.Interp Core.Factory) : Imperative.Env Core.Expression :=
+  { store := fun n => if n.name = "x" then
+      some (Lambda.SemValue.ofConst model.tcInterp (.intConst 1)) else none
+    factory := boolFactory model }
 
-/-- `xIs1Env` holds only values: its single binding is the literal `1`, which is a
-    value in every factory.  The well-formedness conditions require this of any
-    environment a run starts from. -/
-private theorem xIs1Env_storeWellDefined :
-    Imperative.WellFormedStore xIs1Env.store Core.Factory := by
+/-- `xIs1Env` holds only values of its factory.  The well-formedness conditions require
+    this of any environment a run starts from. -/
+private theorem xIs1Env_storeWellDefined (model : Lambda.Interp Core.Factory) :
+    Imperative.WellFormedStore (xIs1Env model).store (xIs1Env model).factory := by
   intro n v hn
-  show Lambda.LExpr.isValue _ v = true
   simp only [xIs1Env] at hn
   split at hn
   · injection hn with hv
     subst hv
-    simp [Lambda.LExpr.isValue]
+    rfl
   · exact absurd hn (by simp)
 
 /-- `xIs1Env` supplies the integer value required by a procedure whose only input
 is `x : int`. -/
-private theorem inputAsPredicate_xIs1 (proc : Core.Procedure)
+private theorem inputAsPredicate_xIs1 (model : Lambda.Interp Core.Factory)
+    (proc : Core.Procedure)
     (hinputs : proc.header.inputs.toList =
       [(⟨"x", ()⟩, Lambda.LMonoTy.tcons "int" [])]) :
-    Core.Logic.Hoare.Procedure.inputAsPredicate proc xIs1Env := by
+    Core.Logic.Hoare.Procedure.inputAsPredicate proc (xIs1Env model) := by
   intro id ty hmem
   rw [hinputs] at hmem
   simp only [List.mem_singleton, Prod.mk.injEq] at hmem
   obtain ⟨rfl, rfl⟩ := hmem
-  refine ⟨Lambda.LExpr.const () (.intConst 1), ?_, ?_⟩
-  · simp [xIs1Env]
-  · exact ⟨1, rfl⟩
+  exact ⟨Lambda.SemValue.ofConst model.tcInterp (.intConst 1), by simp [xIs1Env], rfl⟩
+
+/-- At `xIs1Env`, the clause `x == n` evaluates to `false` for every `n ≠ 1`. -/
+private theorem xIs1_eval_eq_false (model : Lambda.Interp Core.Factory) (n : Int)
+    (hn : n ≠ 1) :
+    Core.Expression.eval (xIs1Env model).factory (xIs1Env model).store
+      (Lambda.LExpr.eq () (Lambda.LExpr.fvar () ⟨"x", ()⟩ (some (Lambda.LMonoTy.tcons "int" [])))
+        (Lambda.LExpr.intConst () n)) =
+      some (HasBool.ffVal (xIs1Env model).factory) :=
+  Core.eval_eq_false _
+    (Core.eval_fvar (v := Lambda.SemValue.ofConst model.tcInterp (.intConst 1)) _
+      (by simp [xIs1Env]) rfl)
+    (Core.eval_intConst _ _ n) rfl
+    (fun h => hn (Lambda.SemValue.ofInt_injective
+      (show Lambda.SemValue.ofInt model.tcInterp 1 = Lambda.SemValue.ofInt model.tcInterp n
+        from h)).symm)
 
 /-- The block condition is immediate for an empty body: every clause that mentions
-    the statements is vacuous, `Core.Factory` is well-formed, and the store holds
-    only values. -/
+    the statements is vacuous, a runtime factory over `Core.Factory` is well-formed, and
+    the store holds only values. -/
 private theorem blockWF_nil (ρ : Imperative.Env Core.Expression)
-    (hfac : ρ.factory = Core.Factory)
-    (hsv : Imperative.WellFormedStore ρ.store Core.Factory) :
+    (hfac : ρ.factory.factory = Core.Factory)
+    (hsv : Imperative.WellFormedStore ρ.store ρ.factory) :
     Core.Logic.BlockInitEnvWF testParams [Imperative.Stmt.block "" [] #[]] ρ :=
-  Core.Logic.blockInitEnvWF_procBlock_nil (hfac.symm ▸ Core.coreFactory_WellFormedSemanticEval)
-    (hfac.symm ▸ hsv) rfl (fun _ _ => rfl)
+  Core.Logic.blockInitEnvWF_procBlock_nil (Core.coreFactory_WellFormedSemanticEval _ hfac)
+    hsv rfl (fun _ _ => rfl)
 
 /-- An empty body, wrapped as the procedure block a body actually runs in, returns to
     its own environment: entering and leaving the block projects the store through
@@ -316,18 +326,18 @@ private theorem run_procBlock_nil (π : String → Option Core.Procedure)
   have heq : ({ ρ with store := Imperative.projectStore ρ.store ρ.store }
       : Imperative.Env Core.Expression) = ρ := by
     simp [Imperative.projectStore_self]
-  refine .step _ [] _ [] _ (.step_admin .step_stmts_cons) ?_
-  refine .step _ [] _ [] _ (.step_admin (.step_seq_inner .step_block)) ?_
-  refine .step _ [] _ [] _ (.step_admin (.step_seq_inner (.step_block_body .step_stmts_nil))) ?_
-  refine .step _ [] _ [] _ (.step_admin (.step_seq_inner .step_block_done)) ?_
-  refine .step _ [] _ [] _ (.step_admin .step_seq_done) ?_
+  refine .step _ [] _ [] _ .step_stmts_cons ?_
+  refine .step _ [] _ [] _ (.step_seq_inner .step_block) ?_
+  refine .step _ [] _ [] _ (.step_seq_inner (.step_block_body .step_stmts_nil)) ?_
+  refine .step _ [] _ [] _ (.step_seq_inner .step_block_done) ?_
+  refine .step _ [] _ [] _ .step_seq_done ?_
   rw [heq]
-  exact .step _ [] _ [] _ (.step_admin .step_stmts_nil) (.refl _)
+  exact .step _ [] _ [] _ .step_stmts_nil (.refl _)
 
 /-- The empty trace is reachable. -/
-private theorem reachable_nil (model : Lambda.Interp Core.Factory) :
-    Trace.Reachable Core.Expression (Core.Logic.DenoteBasedInterp model) [] :=
-  ⟨someValuation model, fun _ hc => absurd hc (by simp)⟩
+private theorem reachable_nil (F : Lambda.Factory Core.CoreLParams) :
+    Trace.Reachable Core.Expression (Core.Logic.DenoteBasedInterp F) [] :=
+  ⟨someValuation F, fun _ hc => absurd hc (by simp)⟩
 
 /-- A procedure with no inout parameters satisfies `oldInoutAsPredicate` vacuously — its
     `getInoutParams` keys are empty, so there is no `old`/current pair to relate. -/
@@ -337,81 +347,52 @@ private theorem oldInoutAsPredicate_of_no_inout (proc : Core.Procedure)
     Core.Logic.Hoare.Procedure.oldInoutAsPredicate proc ρ := by
   intro id hid; rw [h] at hid; simp at hid
 
-/-! The semantic clauses `preAsPredicate model` / `postAsPredicate model` read a contract
-condition in *every* world of a model.  For an equality to a constant whose variable the
-store binds, `capturedExpr` substitutes the binding, the clause becomes `κ == κ`, and
-`denote_eq_true` settles it.  These helpers package that for pre- and postconditions. -/
+/-! The semantic clauses `preAsPredicate factory` / `postAsPredicate factory` read a contract
+condition in *every* world over a factory.  On a runtime factory over that factory a
+condition holds when it evaluates to `true`; for an equality to a constant whose variable
+the store binds to that constant, `Core.eval_eq_true` settles it.  These helpers package
+that for pre- and postconditions. -/
 
-/-- A clause `x == κ` holds in every world when the store binds `x` to `κ` and the
-    ambient factory is `Core.Factory`. -/
-private theorem checkAsPredicate_eqConst (model : Lambda.Interp Core.Factory)
+/-- A clause `x == κ` holds in every world over `factory` when the store binds `x` to `κ`
+    and the environment's runtime factory is over `factory`. -/
+private theorem checkAsPredicate_eqConst (factory : Lambda.Factory Core.CoreLParams)
     (ρ : Imperative.Env Core.Expression) (x : Core.Expression.Ident)
     (ty : Option Lambda.LMonoTy) (κ : Lambda.LConst)
-    (hfac : ρ.factory = Core.Factory)
-    (hstore : ρ.store x = some (Lambda.LExpr.const () κ))
+    (hfac : ρ.factory.factory = factory)
+    (hstore : ρ.store x = some (cval ρ κ))
     (label : Core.CoreLabel) (check : Core.Procedure.Check)
     (hexpr : check.expr =
       Lambda.LExpr.eq () (Lambda.LExpr.fvar () x ty) (Lambda.LExpr.const () κ)) :
-    Core.Logic.Hoare.Procedure.checkAsPredicate model ρ label check := by
+    Core.Logic.Hoare.Procedure.checkAsPredicate factory ρ label check := by
   intro world
   refine .inl ⟨hfac, ?_⟩
-  have hcap : Core.Logic.capturedExpr
-      { factory := ρ.factory, store := ρ.store, label := label,
-        expr := check.expr, metadata := check.md }
-      = Lambda.LExpr.eq () (Lambda.LExpr.const () κ) (Lambda.LExpr.const () κ) := by
-    rw [hexpr]
-    simp [Core.Logic.capturedExpr, Lambda.LExpr.substFvarsFromEnv, Lambda.Env.mk, hstore]
-  rw [hcap]
-  exact ⟨Lambda.LExpr.HasTypeA.eq Lambda.LExpr.HasTypeA.const Lambda.LExpr.HasTypeA.const,
-    Lambda.denote_eq_true HList.nil Lambda.LExpr.HasTypeA.const
-      Lambda.LExpr.HasTypeA.const
-      (Lambda.LExpr.HasTypeA.eq Lambda.LExpr.HasTypeA.const Lambda.LExpr.HasTypeA.const) rfl⟩
+  show Core.Expression.eval ρ.factory ρ.store check.expr = some (HasBool.ttVal ρ.factory)
+  rw [hexpr]
+  exact Core.eval_eq_true _ (Core.eval_fvar _ hstore rfl) (Core.eval_const _ _ κ)
 
 /-- **From store facts to the semantic precondition.**  If every `requires` is `x == κ`
-    for a listed `(x, κ)` bound by the store, the model's semantic precondition holds. -/
-private theorem preAsPredicate_of_binds (model : Lambda.Interp Core.Factory)
+    for a listed `(x, κ)` bound by the store, the semantic precondition holds. -/
+private theorem preAsPredicate_of_binds (factory : Lambda.Factory Core.CoreLParams)
     (proc : Core.Procedure) (ρ : Imperative.Env Core.Expression)
     (binds : List (Core.Expression.Ident × Option Lambda.LMonoTy × Lambda.LConst))
-    (hfac : ρ.factory = Core.Factory)
+    (hfac : ρ.factory.factory = factory)
     (hsyn : (proc.spec.preconditions.toList.all fun lc =>
       binds.any fun b => decide (lc.2.expr =
         Lambda.LExpr.eq () (Lambda.LExpr.fvar () b.1 b.2.1)
           (Lambda.LExpr.const () b.2.2))) = Bool.true)
-    (hstore : ∀ b ∈ binds, ρ.store b.1 = some (Lambda.LExpr.const () b.2.2)) :
-    Core.Logic.Hoare.Procedure.preAsPredicate model proc ρ := by
+    (hstore : ∀ b ∈ binds, ρ.store b.1 = some (cval ρ b.2.2)) :
+    Core.Logic.Hoare.Procedure.preAsPredicate factory proc ρ := by
   intro label check hmem
   simp only [List.all_eq_true, List.any_eq_true, decide_eq_true_eq] at hsyn
   obtain ⟨b, hb, hexpr⟩ := hsyn (label, check) hmem
-  exact checkAsPredicate_eqConst model ρ b.1 b.2.1 b.2.2 hfac (hstore b hb) label check hexpr
+  exact checkAsPredicate_eqConst factory ρ b.1 b.2.1 b.2.2 hfac (hstore b hb) label check hexpr
 
 /-- A procedure with no `requires` satisfies the semantic precondition vacuously. -/
-private theorem preAsPredicate_of_no_pre (model : Lambda.Interp Core.Factory)
+private theorem preAsPredicate_of_no_pre (factory : Lambda.Factory Core.CoreLParams)
     (proc : Core.Procedure) (ρ : Imperative.Env Core.Expression)
     (h : proc.spec.preconditions.toList = []) :
-    Core.Logic.Hoare.Procedure.preAsPredicate model proc ρ := by
+    Core.Logic.Hoare.Procedure.preAsPredicate factory proc ρ := by
   intro label check hmem; rw [h] at hmem; simp at hmem
-
-/-- A captured `1 == 2` cannot denote `true` in any world, since that would force
-    `(1 : Int) = 2`. -/
-private theorem not_denote_oneEqTwo (model : Lambda.Interp Core.Factory)
-    (world : Core.Logic.DenoteValuation model)
-    (h : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) []
-      (Lambda.LExpr.eq () (Lambda.LExpr.intConst () 1)
-        (Lambda.LExpr.intConst () 2)) .bool)
-    (htrue : (Lambda.LExpr.denote model.tcInterp model.opInterp world.freeVarVal
-      world.tyVarVal .nil (Lambda.LExpr.eq () (Lambda.LExpr.intConst () 1)
-        (Lambda.LExpr.intConst () 2)) .bool h : Bool) = true) : False := by
-  cases h with
-  | eq hleft hright =>
-    have htyi := Lambda.HasTypeA.const_inv hleft
-    cases htyi
-    have heq := Lambda.denote_eq_true_implies_eq .nil hleft hright (.eq hleft hright) htrue
-    have hd1 := Lambda.denote_intConst model.tcInterp model.opInterp world.freeVarVal
-      world.tyVarVal .nil hleft
-    have hd2 := Lambda.denote_intConst model.tcInterp model.opInterp world.freeVarVal
-      world.tyVarVal .nil hright
-    have : (1 : Int) = 2 := hd1.symm.trans (heq.trans hd2)
-    exact absurd this (by decide)
 
 
 /-! ## A procedure that meets its contract
@@ -508,16 +489,26 @@ private def freeOkPgmAST : Core.Program := cstToAST freeOkPgm
 private def freeOkProc : Core.Procedure :=
   (freeOkPgmAST.findProcByString? "FreeOk").get!
 
+/-- The spec has a `free` clause `x == 99`. -/
+private theorem freeOk_free_clause :
+    ∃ lc ∈ freeOkProc.spec.postconditions.toList,
+      lc.2.attr = Core.Procedure.CheckAttr.Free ∧
+      lc.2.expr = Lambda.LExpr.eq ()
+        (Lambda.LExpr.fvar () ⟨"x", ()⟩ (some (Lambda.LMonoTy.tcons "int" [])))
+        (Lambda.LExpr.intConst () 99) := by
+  native_decide
+
 /-- The spec really does contain a `free` clause, and it really is false at a store
     satisfying the `requires` — so the contract below holds *because* `free` clauses
     are excluded, not because every clause happens to be true.  Dropping the
     `= Default` guard in `postAsPredicate` would break `freeOk_meets_contract`. -/
-example :
-    (freeOkProc.spec.postconditions.toList.any fun lc =>
-      decide (lc.2.attr = Core.Procedure.CheckAttr.Free) &&
-        decide (Core.Expression.eval Core.Factory xIs1Env.store lc.2.expr ≠
-          some (Imperative.HasBool.tt : Core.Expression.Expr))) = true := by
-  native_decide
+example (model : Lambda.Interp Core.Factory) :
+    ∃ lc ∈ freeOkProc.spec.postconditions.toList,
+      lc.2.attr = Core.Procedure.CheckAttr.Free ∧
+      Core.Expression.eval (xIs1Env model).factory (xIs1Env model).store lc.2.expr =
+        some (HasBool.ffVal (xIs1Env model).factory) := by
+  obtain ⟨lc, hmem, hattr, hexpr⟩ := freeOk_free_clause
+  exact ⟨lc, hmem, hattr, hexpr ▸ xIs1_eval_eq_false model 99 (by decide)⟩
 
 /-- **Valid.**  The one non-`free` `ensures` is among the `requires`. -/
 theorem freeOk_meets_contract :
@@ -550,15 +541,13 @@ private def noReqPgmAST : Core.Program := cstToAST noReqPgm
 private def noReqProc : Core.Procedure :=
   (noReqPgmAST.findProcByString? "NoReq").get!
 
-/-- `NoReq` has a non-`free` `ensures` whose captured form at `xIs1Env` (where `x`
-    holds `1`) is `1 == 2`. -/
+/-- `NoReq` has a non-`free` `ensures` `x == 2`. -/
 private theorem noReq_post_clause :
     ∃ lc ∈ noReqProc.spec.postconditions.toList,
       (Prod.snd lc).attr = Core.Procedure.CheckAttr.Default ∧
-      Core.Logic.capturedExpr
-        { factory := xIs1Env.factory, store := xIs1Env.store, label := lc.1,
-          expr := (Prod.snd lc).expr, metadata := (Prod.snd lc).md }
-        = Lambda.LExpr.eq () (Lambda.LExpr.intConst () 1) (Lambda.LExpr.intConst () 2) := by
+      (Prod.snd lc).expr = Lambda.LExpr.eq ()
+        (Lambda.LExpr.fvar () ⟨"x", ()⟩ (some (Lambda.LMonoTy.tcons "int" [])))
+        (Lambda.LExpr.intConst () 2) := by
   native_decide
 
 /-- **Invalid.**  A procedure with no `requires` but an `ensures x == 2` does not meet
@@ -567,27 +556,31 @@ private theorem noReq_post_clause :
     empty trace has satisfiable assumptions. -/
 theorem noReq_violates_contract :
     ¬ Core.Logic.Hoare.Procedure.contractTriple noReqPgmAST testParams "NoReq" := by
+  have hfactory : noReqPgmAST.factoryBeforeProcedure "NoReq" = Core.Factory :=
+    Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by decide +kernel)
   obtain ⟨model⟩ := Core.factoryInterp_nonempty
   intro h
+  rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory] at h
   obtain ⟨proc, hproc, _htyped, htb⟩ := h
   have hp : proc = noReqProc := (procOf_eq hproc).symm
   subst hp
   have hbody : noReqProc.body = .structured [] := by native_decide
-  have htbm := htb model
+  have htbm := htb
   rw [hbody] at htbm
-  have ⟨_hvalid, hpostF⟩ := htbm xIs1Env xIs1Env []
-    ⟨preAsPredicate_of_no_pre model noReqProc xIs1Env (by native_decide), rfl,
-      oldInoutAsPredicate_of_no_inout noReqProc xIs1Env (by native_decide),
-      inputAsPredicate_xIs1 noReqProc (by native_decide)⟩
-    (blockWF_nil xIs1Env rfl xIs1Env_storeWellDefined)
-    (.inl (run_procBlock_nil _ xIs1Env "" #[]))
-  have hpost : Core.Logic.Hoare.Procedure.postAsPredicate model noReqProc xIs1Env :=
-    hpostF (reachable_nil model)
+  have ⟨_hvalid, hpostF⟩ := htbm (xIs1Env model) (xIs1Env model) []
+    ⟨preAsPredicate_of_no_pre _ noReqProc (xIs1Env model) (by native_decide), rfl,
+      oldInoutAsPredicate_of_no_inout noReqProc (xIs1Env model) (by native_decide),
+      inputAsPredicate_xIs1 model noReqProc (by native_decide)⟩
+    (blockWF_nil (xIs1Env model) rfl (xIs1Env_storeWellDefined model))
+    (.inl (run_procBlock_nil _ (xIs1Env model) "" #[]))
+  have hpost : Core.Logic.Hoare.Procedure.postAsPredicate Core.Factory noReqProc (xIs1Env model) :=
+    hpostF (reachable_nil _)
   obtain ⟨⟨label, check⟩, hmem, hattr, hcap⟩ := noReq_post_clause
-  rcases hpost label check hmem hattr (someValuation model) with ⟨_, hex⟩ | ⟨hne, _⟩
-  · rw [hcap] at hex
-    obtain ⟨hty, htrue⟩ := hex
-    exact not_denote_oneEqTwo model (someValuation model) hty htrue
+  rcases hpost label check hmem hattr (someValuation _) with ⟨_, hex⟩ | ⟨hne, _⟩
+  · change Core.Expression.eval (xIs1Env model).factory (xIs1Env model).store check.expr =
+      some (HasBool.ttVal (xIs1Env model).factory) at hex
+    rw [hcap, xIs1_eval_eq_false model 2 (by decide)] at hex
+    exact HasBool.ttVal_ne_ffVal _ (Option.some.inj hex).symm
   · exact hne rfl
 
 
@@ -615,14 +608,13 @@ private def offByOnePgmAST : Core.Program := cstToAST offByOnePgm
 private def offByOneProc : Core.Procedure :=
   (offByOnePgmAST.findProcByString? "OffByOne").get!
 
-/-- `OffByOne` has a non-`free` `ensures` whose captured form at `xIs1Env` is `1 == 2`. -/
+/-- `OffByOne` has a non-`free` `ensures` `x == 2`. -/
 private theorem offByOne_post_clause :
     ∃ lc ∈ offByOneProc.spec.postconditions.toList,
       (Prod.snd lc).attr = Core.Procedure.CheckAttr.Default ∧
-      Core.Logic.capturedExpr
-        { factory := xIs1Env.factory, store := xIs1Env.store, label := lc.1,
-          expr := (Prod.snd lc).expr, metadata := (Prod.snd lc).md }
-        = Lambda.LExpr.eq () (Lambda.LExpr.intConst () 1) (Lambda.LExpr.intConst () 2) := by
+      (Prod.snd lc).expr = Lambda.LExpr.eq ()
+        (Lambda.LExpr.fvar () ⟨"x", ()⟩ (some (Lambda.LMonoTy.tcons "int" [])))
+        (Lambda.LExpr.intConst () 2) := by
   native_decide
 
 /-- **Invalid.**  A procedure requiring `x == 1` and ensuring `x == 2` does not meet its
@@ -630,30 +622,35 @@ private theorem offByOne_post_clause :
     refuted on a run whose precondition genuinely held. -/
 theorem offByOne_violates_contract :
     ¬ Core.Logic.Hoare.Procedure.contractTriple offByOnePgmAST testParams "OffByOne" := by
+  have hfactory : offByOnePgmAST.factoryBeforeProcedure "OffByOne" = Core.Factory :=
+    Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by decide +kernel)
   obtain ⟨model⟩ := Core.factoryInterp_nonempty
   intro h
+  rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory] at h
   obtain ⟨proc, hproc, _htyped, htb⟩ := h
   have hp : proc = offByOneProc := (procOf_eq hproc).symm
   subst hp
   have hbody : offByOneProc.body = .structured [] := by native_decide
-  have htbm := htb model
+  have htbm := htb
   rw [hbody] at htbm
-  have ⟨_hvalid, hpostF⟩ := htbm xIs1Env xIs1Env []
-    ⟨preAsPredicate_of_binds model offByOneProc xIs1Env
+  have ⟨_hvalid, hpostF⟩ := htbm (xIs1Env model) (xIs1Env model) []
+    ⟨preAsPredicate_of_binds _ offByOneProc (xIs1Env model)
         [(⟨"x", ()⟩, some (Lambda.LMonoTy.tcons "int" []), Lambda.LConst.intConst 1)] rfl
         (by native_decide)
         (fun b hb => by simp only [List.mem_singleton] at hb; subst hb; simp [xIs1Env]), rfl,
-      oldInoutAsPredicate_of_no_inout offByOneProc xIs1Env (by native_decide),
-      inputAsPredicate_xIs1 offByOneProc (by native_decide)⟩
-    (blockWF_nil xIs1Env rfl xIs1Env_storeWellDefined)
-    (.inl (run_procBlock_nil _ xIs1Env "" #[]))
-  have hpost : Core.Logic.Hoare.Procedure.postAsPredicate model offByOneProc xIs1Env :=
-    hpostF (reachable_nil model)
+      oldInoutAsPredicate_of_no_inout offByOneProc (xIs1Env model) (by native_decide),
+      inputAsPredicate_xIs1 model offByOneProc (by native_decide)⟩
+    (blockWF_nil (xIs1Env model) rfl (xIs1Env_storeWellDefined model))
+    (.inl (run_procBlock_nil _ (xIs1Env model) "" #[]))
+  have hpost : Core.Logic.Hoare.Procedure.postAsPredicate Core.Factory offByOneProc
+      (xIs1Env model) :=
+    hpostF (reachable_nil _)
   obtain ⟨⟨label, check⟩, hmem, hattr, hcap⟩ := offByOne_post_clause
-  rcases hpost label check hmem hattr (someValuation model) with ⟨_, hex⟩ | ⟨hne, _⟩
-  · rw [hcap] at hex
-    obtain ⟨hty, htrue⟩ := hex
-    exact not_denote_oneEqTwo model (someValuation model) hty htrue
+  rcases hpost label check hmem hattr (someValuation _) with ⟨_, hex⟩ | ⟨hne, _⟩
+  · change Core.Expression.eval (xIs1Env model).factory (xIs1Env model).store check.expr =
+      some (HasBool.ttVal (xIs1Env model).factory) at hex
+    rw [hcap, xIs1_eval_eq_false model 2 (by decide)] at hex
+    exact HasBool.ttVal_ne_ffVal _ (Option.some.inj hex).symm
   · exact hne rfl
 
 /-! ## An ill-typed map-`Select` clause cannot satisfy the side condition
@@ -695,21 +692,22 @@ private theorem postWF_store_fact (ss : Core.Statements) (x : Core.Expression.Id
     (hnd : x ∉ Imperative.Block.definedVars
       (P := Core.Expression) (C := Core.Command) ss true) :
     Imperative.Logic.Hoare.PostWF ss
-      (fun ρ => ρ.store x = some (Lambda.LExpr.const () κ)) := by
+      (fun ρ => ρ.store x = some (cval ρ κ)) := by
   intro ρ hpost
   show Imperative.dropVars _ ρ.store x = _
   simp only [Imperative.dropVars, ite_eq_right hnd]
   exact hpost
 
-/-- `PostWF` for a store fact paired with the factory being `Core.Factory`.  Leaving a
-    block drops only declared names from the store and never touches the factory, so both
-    conjuncts survive. -/
-private theorem postWF_store_fact_factory (ss : Core.Statements) (x : Core.Expression.Ident)
+/-- `PostWF` for a store fact paired with the environment's runtime factory being over
+    `factory`.  Leaving a block drops only declared names from the store and never
+    touches the factory, so both conjuncts survive. -/
+private theorem postWF_store_fact_factory {factory : Lambda.Factory Core.CoreLParams}
+    (ss : Core.Statements) (x : Core.Expression.Ident)
     (κ : Lambda.LConst)
     (hnd : x ∉ Imperative.Block.definedVars
       (P := Core.Expression) (C := Core.Command) ss true) :
     Imperative.Logic.Hoare.PostWF ss
-      (fun ρ => ρ.store x = some (Lambda.LExpr.const () κ) ∧ ρ.factory = Core.Factory) := by
+      (fun ρ => ρ.store x = some (cval ρ κ) ∧ ρ.factory.factory = factory) := by
   intro ρ hpost
   refine ⟨?_, hpost.2⟩
   show Imperative.dropVars _ ρ.store x = _
@@ -717,62 +715,64 @@ private theorem postWF_store_fact_factory (ss : Core.Statements) (x : Core.Expre
   exact hpost.1
 
 /-- `Core.Logic.Hoare.set` at a literal right-hand side. -/
-private theorem set_const (π : String → Option Core.Procedure)
+private theorem set_const {factory : Lambda.Factory Core.CoreLParams}
+    (π : String → Option Core.Procedure)
     (params : Core.Logic.InitEnvWFParams)
     (x : Core.Expression.Ident) (κ : Lambda.LConst)
     (md : Imperative.MetaData Core.Expression)
     (Pre Post : Imperative.Env Core.Expression → Prop)
     (hpost : ∀ (ρ₀ : Imperative.Env Core.Expression) (σ' : Core.CoreStore), Pre ρ₀ →
-      σ' x = some (Lambda.LExpr.const () κ) → (∀ w, x ≠ w → σ' w = ρ₀.store w) →
+      σ' x = some (cval ρ₀ κ) → (∀ w, x ≠ w → σ' w = ρ₀.store w) →
       Post { ρ₀ with store := σ' }) :
     Core.Logic.Hoare.Triple π params Pre
-      [Core.Statement.set x (Lambda.LExpr.const () κ) md] Post :=
-  Core.Logic.Hoare.set π params x _ md Pre Post
+      [Core.Statement.set x (Lambda.LExpr.const () κ) md] Post (factory := factory) :=
+  Core.Logic.Hoare.set (factory := factory) π params x _ md Pre Post
     (fun ρ₀ σ' v hpre hev hup => by
-      have hv : v = Lambda.LExpr.const () κ := (Option.some.injEq _ _).mp
-        (hev.symm.trans (Lambda.evalFully_const ρ₀.factory ρ₀.store () κ))
+      have hv : v = cval ρ₀ κ := (Option.some.injEq _ _).mp
+        (hev.symm.trans (Core.eval_const ρ₀.factory ρ₀.store κ))
       subst hv
       cases hup with
       | update _hold hnew hoth => exact hpost ρ₀ σ' hpre hnew hoth)
 
 /-- `Core.Logic.Hoare.init` at a literal right-hand side. -/
-private theorem init_const (π : String → Option Core.Procedure)
+private theorem init_const {factory : Lambda.Factory Core.CoreLParams}
+    (π : String → Option Core.Procedure)
     (params : Core.Logic.InitEnvWFParams)
     (x : Core.Expression.Ident) (ty : Core.Expression.Ty) (κ : Lambda.LConst)
     (md : Imperative.MetaData Core.Expression)
     (Pre Post : Imperative.Env Core.Expression → Prop)
     (hpost : ∀ (ρ₀ : Imperative.Env Core.Expression) (σ' : Core.CoreStore), Pre ρ₀ →
-      σ' x = some (Lambda.LExpr.const () κ) → (∀ w, x ≠ w → σ' w = ρ₀.store w) →
+      σ' x = some (cval ρ₀ κ) → (∀ w, x ≠ w → σ' w = ρ₀.store w) →
       Post { ρ₀ with store := σ' }) :
     Core.Logic.Hoare.Triple π params Pre
-      [Core.Statement.init x ty (.det (Lambda.LExpr.const () κ)) md] Post :=
-  Core.Logic.Hoare.init π params x ty _ md Pre Post
+      [Core.Statement.init x ty (.det (Lambda.LExpr.const () κ)) md] Post
+      (factory := factory) :=
+  Core.Logic.Hoare.init (factory := factory) π params x ty _ md Pre Post
     (fun ρ₀ σ' v hpre hev hinit => by
-      have hv : v = Lambda.LExpr.const () κ := (Option.some.injEq _ _).mp
-        (hev.symm.trans (Lambda.evalFully_const ρ₀.factory ρ₀.store () κ))
+      have hv : v = cval ρ₀ κ := (Option.some.injEq _ _).mp
+        (hev.symm.trans (Core.eval_const ρ₀.factory ρ₀.store κ))
       subst hv
       cases hinit with
       | init _hold hnew hoth => exact hpost ρ₀ σ' hpre hnew hoth)
 
 /-- `Core.Logic.Hoare.set` where the right-hand side is a variable known to hold a
-    literal; `Lambda.evalFully_fvar_of_value` reads it, needing only that the binding is a
-    value — which a literal is, in every factory. -/
-private theorem set_fvar (π : String → Option Core.Procedure)
+    literal's value; `Core.eval_fvar` reads it. -/
+private theorem set_fvar {factory : Lambda.Factory Core.CoreLParams}
+    (π : String → Option Core.Procedure)
     (params : Core.Logic.InitEnvWFParams)
     (x src : Core.Expression.Ident) (ty : Option Lambda.LMonoTy) (κ : Lambda.LConst)
     (md : Imperative.MetaData Core.Expression)
     (Pre Post : Imperative.Env Core.Expression → Prop)
-    (hsrc : ∀ ρ₀, Pre ρ₀ → ρ₀.store src = some (Lambda.LExpr.const () κ))
+    (hsrc : ∀ ρ₀, Pre ρ₀ → ρ₀.store src = some (cval ρ₀ κ))
     (hpost : ∀ (ρ₀ : Imperative.Env Core.Expression) (σ' : Core.CoreStore), Pre ρ₀ →
-      σ' x = some (Lambda.LExpr.const () κ) → (∀ w, x ≠ w → σ' w = ρ₀.store w) →
+      σ' x = some (cval ρ₀ κ) → (∀ w, x ≠ w → σ' w = ρ₀.store w) →
       Post { ρ₀ with store := σ' }) :
     Core.Logic.Hoare.Triple π params Pre
-      [Core.Statement.set x (Lambda.LExpr.fvar () src ty) md] Post :=
-  Core.Logic.Hoare.set π params x _ md Pre Post
+      [Core.Statement.set x (Lambda.LExpr.fvar () src ty) md] Post (factory := factory) :=
+  Core.Logic.Hoare.set (factory := factory) π params x _ md Pre Post
     (fun ρ₀ σ' v hpre hev hup => by
-      have hv : v = Lambda.LExpr.const () κ := (Option.some.injEq _ _).mp
-        (hev.symm.trans (Lambda.evalFully_fvar_of_value ρ₀.factory ρ₀.store () src ty _
-          (hsrc ρ₀ hpre) (Lambda.isValue_const_true _ _ _)))
+      have hv : v = cval ρ₀ κ := (Option.some.injEq _ _).mp
+        (hev.symm.trans (Core.eval_fvar ρ₀.factory (hsrc ρ₀ hpre) rfl))
       subst hv
       cases hup with
       | update _hold hnew hoth => exact hpost ρ₀ σ' hpre hnew hoth)
@@ -798,19 +798,19 @@ private def ensuresAllEqConst (proc : Core.Procedure)
 
 /-- If every non-`free` `ensures` is `x == κ` for a listed `(x, κ)` bound by
     the store, the model's semantic postcondition holds. -/
-private theorem contractPost_of_binds (model : Lambda.Interp Core.Factory)
+private theorem contractPost_of_binds (factory : Lambda.Factory Core.CoreLParams)
     (proc : Core.Procedure) (ρ : Imperative.Env Core.Expression)
     (binds : List (Core.Expression.Ident × Option Lambda.LMonoTy × Lambda.LConst))
-    (hfac : ρ.factory = Core.Factory)
+    (hfac : ρ.factory.factory = factory)
     (hsyn : ensuresAllEqConst proc binds = Bool.true)
-    (hstore : ∀ b ∈ binds, ρ.store b.1 = some (Lambda.LExpr.const () b.2.2)) :
-    Core.Logic.Hoare.Procedure.contractPost model proc ρ := by
+    (hstore : ∀ b ∈ binds, ρ.store b.1 = some (cval ρ b.2.2)) :
+    Core.Logic.Hoare.Procedure.contractPost factory proc ρ := by
   intro label check hmem hattr
   simp only [ensuresAllEqConst, List.all_eq_true, List.any_eq_true, Bool.or_eq_true,
     decide_eq_true_eq] at hsyn
   rcases hsyn (label, check) hmem with hattr' | ⟨b, hb, hexpr⟩
   · exact absurd hattr hattr'
-  · exact checkAsPredicate_eqConst model ρ b.1 b.2.1 b.2.2 hfac (hstore b hb) label check hexpr
+  · exact checkAsPredicate_eqConst factory ρ b.1 b.2.1 b.2.2 hfac (hstore b hb) label check hexpr
 
 /-- A one-assignment body meets a contract whose non-`free` `ensures` clauses are
     all `x == κ` for the literal being assigned.
@@ -829,16 +829,16 @@ private theorem contractTriple_set_const (p : Core.Program)
     (hsyn : ensuresAllEqConst proc [(x, ty, κ)] = Bool.true) :
     Core.Logic.Hoare.Procedure.contractTriple p params procName := by
   refine Core.Logic.Hoare.Procedure.contractTriple_of_core p params procName proc _ hproc hbody
-    hChecksTyped (fun model => ?_)
+    hChecksTyped ?_
   refine (Core.Logic.Hoare.block p.findProcByString? params
     (set_const p.findProcByString? params x κ md _ _
       (fun _ρ₀ _σ' hpre hnew _hoth =>
-        contractPost_of_binds model proc _ [(x, ty, κ)] hpre.2.1 hsyn
+        contractPost_of_binds _ proc _ [(x, ty, κ)] hpre.2.1 hsyn
           (fun b hb => by simp only [List.mem_singleton] at hb; subst hb; exact hnew)))
     (Imperative.Logic.Hoare.postWF_of_definedVars_nil _
       (by simp [Imperative.Block.definedVars,
         Imperative.Stmt.definedVars, Imperative.HasVarsImp.definedVars,
-        Imperative.CmdExt.definedVars, Imperative.Cmd.definedVars]))) model
+        Imperative.CmdExt.definedVars, Imperative.Cmd.definedVars])))
 
 
 /-! ## A body with one command
@@ -849,11 +849,10 @@ The smallest contract with a non-empty body, and the first one whose proof has t
 say something about `Expression.eval`.  It goes through in two halves.
 
 It is `contractTriple_set_const` above, applied to the translated body.  What
-makes it work is the `==` law `Lambda.evalFully_eq_of_evalFully` in
-`Strata.DL.Lambda.LExprEvalProps`: `WellFormedSemanticEval` covers negation, values,
-free variables and integer comparison but says nothing about `LExpr.eq`, so that law
-had to be proved directly against `evalFully` — which does reduce `y == 1` to `true`
-when `y` holds `1`, via `Lambda.LExpr.eql`.
+makes it work is the `==` law `Core.eval_eq_true`: `WellFormedSemanticEval` covers
+negation, values, free variables and integer comparison but says nothing about
+`LExpr.eq`, so the law comes from Core's denotational evaluator, which evaluates
+`y == 1` to `true` when `y` holds `1`.
 
 The contract holds at every `params` and initial environment satisfying the
 condition. -/
@@ -994,12 +993,12 @@ private theorem set2_body_eq :
 theorem set2_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple set2PgmAST testParams "Set2" := by
   refine Core.Logic.Hoare.Procedure.contractTriple_of_core set2PgmAST testParams
-    "Set2" set2Proc _ (by native_decide) set2_body_eq (by native_decide) (fun model => ?_)
+    "Set2" set2Proc _ (by native_decide) set2_body_eq (by native_decide) ?_
   refine (Core.Logic.Hoare.block set2PgmAST.findProcByString? testParams
-    ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide))) model
+    ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
   refine Core.Logic.Hoare.seq set2PgmAST.findProcByString? testParams
-    (Mid := fun ρ => ρ.store set2Y = some (Lambda.LExpr.const () (.intConst 1))
-      ∧ ρ.factory = Core.Factory)
+    (Mid := fun ρ => ρ.store set2Y = some (cval ρ (.intConst 1))
+      ∧ ρ.factory.factory = set2PgmAST.factoryBeforeProcedure "Set2")
     ?_ ?_
     ⟨trivial, trivial⟩
   · -- `y := 1` establishes the store fact about `y`.
@@ -1009,7 +1008,7 @@ theorem set2_meets_contract :
   · -- `z := 2` keeps that fact (it only writes `z`) and adds one about `z`.
     refine set_const set2PgmAST.findProcByString? testParams set2Z (.intConst 2)
       (set2Md 1) _ _ (fun ρ₀ σ' hmid hnew hoth => ?_)
-    refine contractPost_of_binds model set2Proc _
+    refine contractPost_of_binds _ set2Proc _
       [(set2Y, intTy, .intConst 1), (set2Z, intTy, .intConst 2)] hmid.2 (by native_decide) ?_
     intro b hb
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
@@ -1031,9 +1030,9 @@ value side nothing changes — `init_const` and `set_const` have the same shape,
 `InitState` and `UpdateState` differ only in what they demand of the *old* store.
 
 The second statement reads `t`, so this is also the first test where an assignment's
-right-hand side is not a literal.  `Lambda.evalFully_fvar_of_value` handles it with
-its single premise "the binding read is a value", which the intermediate
-store fact supplies. -/
+right-hand side is not a literal.  `Core.eval_fvar` handles it with its premise
+"the binding read is a value of the factory", which the intermediate store fact
+supplies. -/
 
 private def initVarPgm : Program :=
 #strata
@@ -1098,24 +1097,24 @@ private theorem initVar_body_eq : initVarProc.body = .structured initVarBody := 
 theorem initVar_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple initVarPgmAST testParams "InitVar" := by
   refine Core.Logic.Hoare.Procedure.contractTriple_of_core initVarPgmAST testParams
-    "InitVar" initVarProc _ (by native_decide) initVar_body_eq (by native_decide) (fun model => ?_)
+    "InitVar" initVarProc _ (by native_decide) initVar_body_eq (by native_decide) ?_
   -- The body declares `t`, which leaving the procedure block drops, so the
   -- postcondition is carried as a store fact about `y` and read off outside the block.
   refine (Core.Logic.Hoare.consequence initVarPgmAST.findProcByString? testParams
     (Core.Logic.Hoare.block initVarPgmAST.findProcByString? testParams
-      (Post := fun ρ => ρ.store initVarY = some (Lambda.LExpr.const () (.intConst 3))
-        ∧ ρ.factory = Core.Factory)
+      (Post := fun ρ => ρ.store initVarY = some (cval ρ (.intConst 3))
+        ∧ ρ.factory.factory = initVarPgmAST.factoryBeforeProcedure "InitVar")
       ?_
       (postWF_store_fact_factory initVarBody initVarY (.intConst 3) (by native_decide)))
     (fun _ h => h)
-    (fun ρ h => contractPost_of_binds model initVarProc ρ [(initVarY, intTy, .intConst 3)] h.2
+    (fun ρ h => contractPost_of_binds _ initVarProc ρ [(initVarY, intTy, .intConst 3)] h.2
       (by native_decide)
       (fun b hb => by
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
-        subst hb; exact h.1))) model
+        subst hb; exact h.1)))
   refine Core.Logic.Hoare.seq initVarPgmAST.findProcByString? testParams
-    (Mid := fun ρ => ρ.store initVarT = some (Lambda.LExpr.const () (.intConst 3))
-      ∧ ρ.factory = Core.Factory)
+    (Mid := fun ρ => ρ.store initVarT = some (cval ρ (.intConst 3))
+      ∧ ρ.factory.factory = initVarPgmAST.factoryBeforeProcedure "InitVar")
     ?_ ?_
     ⟨trivial, trivial⟩
   · -- `var t : int := 3` establishes the store fact about `t`.
@@ -1209,18 +1208,18 @@ private theorem ite1Else_eq :
 theorem ite1_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple ite1PgmAST testParams "Ite1" := by
   refine Core.Logic.Hoare.Procedure.contractTriple_of_core ite1PgmAST testParams
-    "Ite1" ite1Proc _ (by native_decide) ite1_body_eq (by native_decide) (fun model => ?_)
+    "Ite1" ite1Proc _ (by native_decide) ite1_body_eq (by native_decide) ?_
   refine (Core.Logic.Hoare.block ite1PgmAST.findProcByString? testParams
-    ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide))) model
+    ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
   refine Core.Logic.Hoare.consequence ite1PgmAST.findProcByString? testParams
     (Core.Logic.Hoare.ite ite1PgmAST.findProcByString? testParams
-      (Post := fun ρ => ρ.store ite1Z = some (Lambda.LExpr.const () (.intConst 1))
-        ∧ ρ.factory = Core.Factory)
+      (Post := fun ρ => ρ.store ite1Z = some (cval ρ (.intConst 1))
+        ∧ ρ.factory.factory = ite1PgmAST.factoryBeforeProcedure "Ite1")
       ?_ ?_
       (postWF_store_fact_factory ite1Parts.2.1 ite1Z (.intConst 1) (by native_decide))
       (postWF_store_fact_factory ite1Parts.2.2.1 ite1Z (.intConst 1) (by native_decide)))
     (fun _ h => h.2.1)
-    (fun ρ h => contractPost_of_binds model ite1Proc ρ [(ite1Z, intTy, .intConst 1)] h.2
+    (fun ρ h => contractPost_of_binds _ ite1Proc ρ [(ite1Z, intTy, .intConst 1)] h.2
       (by native_decide)
       (fun b hb => by
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
@@ -1301,17 +1300,17 @@ private theorem blk1Inner_eq :
 theorem blk1_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple blk1PgmAST testParams "Blk1" := by
   refine Core.Logic.Hoare.Procedure.contractTriple_of_core blk1PgmAST testParams
-    "Blk1" blk1Proc _ (by native_decide) blk1_body_eq (by native_decide) (fun model => ?_)
+    "Blk1" blk1Proc _ (by native_decide) blk1_body_eq (by native_decide) ?_
   refine (Core.Logic.Hoare.block blk1PgmAST.findProcByString? testParams
-    ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide))) model
+    ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
   refine Core.Logic.Hoare.consequence blk1PgmAST.findProcByString? testParams
     (Core.Logic.Hoare.block blk1PgmAST.findProcByString? testParams
-      (Post := fun ρ => ρ.store blk1Y = some (Lambda.LExpr.const () (.intConst 5))
-        ∧ ρ.factory = Core.Factory)
+      (Post := fun ρ => ρ.store blk1Y = some (cval ρ (.intConst 5))
+        ∧ ρ.factory.factory = blk1PgmAST.factoryBeforeProcedure "Blk1")
       ?_
       (postWF_store_fact_factory blk1Parts.2.1 blk1Y (.intConst 5) (by native_decide)))
     (fun _ h => h.2.1)
-    (fun ρ h => contractPost_of_binds model blk1Proc ρ [(blk1Y, intTy, .intConst 5)] h.2
+    (fun ρ h => contractPost_of_binds _ blk1Proc ρ [(blk1Y, intTy, .intConst 5)] h.2
       (by native_decide)
       (fun b hb => by
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
@@ -1395,25 +1394,25 @@ private theorem exitBlkInner_eq :
 theorem exitBlk_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple exitBlkPgmAST testParams "ExitBlk" := by
   refine Core.Logic.Hoare.Procedure.contractTriple_of_core exitBlkPgmAST testParams
-    "ExitBlk" exitBlkProc _ (by native_decide) exitBlk_body_eq (by native_decide) (fun model => ?_)
+    "ExitBlk" exitBlkProc _ (by native_decide) exitBlk_body_eq (by native_decide) ?_
   refine (Core.Logic.Hoare.block exitBlkPgmAST.findProcByString? testParams
-    ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide))) model
+    ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
   refine Core.Logic.Hoare.consequence exitBlkPgmAST.findProcByString? testParams
     (Core.Logic.Hoare.block exitBlkPgmAST.findProcByString? testParams
-      (Post := fun ρ => ρ.store exitBlkY = some (Lambda.LExpr.const () (.intConst 4))
-        ∧ ρ.factory = Core.Factory)
+      (Post := fun ρ => ρ.store exitBlkY = some (cval ρ (.intConst 4))
+        ∧ ρ.factory.factory = exitBlkPgmAST.factoryBeforeProcedure "ExitBlk")
       ?_
       (postWF_store_fact_factory exitBlkParts.2.1 exitBlkY (.intConst 4) (by native_decide)))
     (fun _ h => h.2.1)
-    (fun ρ h => contractPost_of_binds model exitBlkProc ρ [(exitBlkY, intTy, .intConst 4)] h.2
+    (fun ρ h => contractPost_of_binds _ exitBlkProc ρ [(exitBlkY, intTy, .intConst 4)] h.2
       (by native_decide)
       (fun b hb => by
         simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
         subst hb; exact h.1))
   · rw [exitBlkInner_eq]
     refine Core.Logic.Hoare.seq exitBlkPgmAST.findProcByString? testParams
-      (Mid := fun ρ => ρ.store exitBlkY = some (Lambda.LExpr.const () (.intConst 4))
-        ∧ ρ.factory = Core.Factory)
+      (Mid := fun ρ => ρ.store exitBlkY = some (cval ρ (.intConst 4))
+        ∧ ρ.factory.factory = exitBlkPgmAST.factoryBeforeProcedure "ExitBlk")
       ?_ ?_
       ⟨trivial, trivial⟩
     · exact set_const exitBlkPgmAST.findProcByString? testParams exitBlkY
@@ -1533,19 +1532,20 @@ private theorem chk_input_mem :
 theorem chk_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple chkPgmAST testParams "Chk" := by
   refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed chkPgmAST testParams
-    "Chk" chkProc _ (by native_decide) chk_body_eq (by native_decide) (fun model => ?_)
+    "Chk" chkProc _ (by native_decide) chk_body_eq (by native_decide) ?_
   refine (Core.Logic.Hoare.block chkPgmAST.findProcByString? testParams
     ?_
-    (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide))) model
+    (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
   -- The inner body `[assume x==1, assert x==1]`, proved directly from the event run.
-  intro m ρ₀ ρ' trace hpre hwf hrun
+  intro ρ₀ ρ' trace hpre hwf hrun
   obtain ⟨hρ', htr⟩ := assume_assert_run_inv chkPgmAST.findProcByString? hrun
   subst ρ'
   subst htr
   obtain ⟨_hpre, hfac, _hold, hinput⟩ := hpre
   obtain ⟨v, hx, hv⟩ := hinput chkX Lambda.LMonoTy.int chk_input_mem
-  change ∃ i : Int, v = Lambda.LExpr.intConst () i at hv
-  obtain ⟨i, rfl⟩ := hv
+  obtain ⟨i, hvi⟩ := Lambda.SemValue.exists_ofInt hv
+  have htc : v.tc = ρ₀.factory.model.tcInterp := hwf.storeWellDefined chkX v hx
+  rw [hvi, htc] at hx
   refine ⟨?_, fun hreach => ?_⟩
   · -- The assertion is discharged by the preceding assumption on the same expression.
     refine ⟨fun _ world hassum => ?_, trivial⟩
@@ -1553,37 +1553,23 @@ theorem chk_meets_contract :
     rcases ha with ⟨_, hex⟩ | ⟨hne, _⟩
     · exact .inl ⟨hfac, hex⟩
     · exact absurd hfac hne
-  · -- Reachability forces the input literal to `1`, giving the semantic postcondition.
+  · -- Reachability forces the input to be `1`, giving the semantic postcondition.
     obtain ⟨world, hassum⟩ := hreach
     have ha := hassum ⟨ρ₀.factory, ρ₀.store, "a", chkParts.1, chkParts.2.1⟩ (by simp)
     rcases ha with ⟨_, hex⟩ | ⟨hne, _⟩
-    · have hcaptured : Core.Logic.capturedExpr
-          (⟨ρ₀.factory, ρ₀.store, "a", chkParts.1, chkParts.2.1⟩ :
-            Imperative.EventArg Core.Expression) =
-          Lambda.LExpr.eq () (Lambda.LExpr.intConst () i) (Lambda.LExpr.intConst () 1) := by
-        rw [hfac, chk_expr_shape]
-        simp [Core.Logic.capturedExpr, Lambda.LExpr.substFvarsFromEnv, Lambda.Env.mk, hx]
-      rw [hcaptured] at hex
-      obtain ⟨hty, htrue⟩ := hex
-      cases hty with
-      | eq hleft hright =>
-        have hty := Lambda.HasTypeA.const_inv hleft
-        cases hty
-        have hi := Lambda.denote_eq_true_implies_eq .nil hleft hright
-          (.eq hleft hright) htrue
-        change Lambda.LExpr.denote m.tcInterp m.opInterp world.freeVarVal
-          world.tyVarVal .nil (Lambda.LExpr.intConst () i) Lambda.LMonoTy.int hleft =
-            Lambda.LExpr.denote m.tcInterp m.opInterp world.freeVarVal
-              world.tyVarVal .nil (Lambda.LExpr.intConst () 1) Lambda.LMonoTy.int hright at hi
-        have hdi := Lambda.denote_intConst m.tcInterp m.opInterp
-          world.freeVarVal world.tyVarVal .nil hleft
-        have hd1 := Lambda.denote_intConst m.tcInterp m.opInterp
-          world.freeVarVal world.tyVarVal .nil hright
-        have hi' : i = 1 := hdi.symm.trans (hi.trans hd1)
-        subst i
-        intro label check hmem _hattr
-        exact checkAsPredicate_eqConst model ρ₀ chkX intTy (.intConst 1) hfac hx
-          label check ((chk_ensures_expr (label, check) hmem).trans chk_expr_shape)
+    · change Core.Expression.eval ρ₀.factory ρ₀.store chkParts.1 =
+        some (HasBool.ttVal ρ₀.factory) at hex
+      rw [chk_expr_shape] at hex
+      have hi : i = 1 := Classical.byContradiction fun hi => by
+        have hff := Core.eval_eq_false ρ₀.factory (m := ())
+          (Core.eval_fvar_int (m := ()) (ty := intTy) ρ₀.factory hx)
+          (Core.eval_intConst ρ₀.factory (m := ()) ρ₀.store 1) rfl
+          (fun h => hi (Lambda.SemValue.ofInt_injective h))
+        exact HasBool.ttVal_ne_ffVal _ (Option.some.inj (hex.symm.trans hff))
+      subst hi
+      intro label check hmem _hattr
+      exact checkAsPredicate_eqConst _ ρ₀ chkX intTy (.intConst 1) hfac hx
+        label check ((chk_ensures_expr (label, check) hmem).trans chk_expr_shape)
     · exact absurd hfac hne
 
 
@@ -1595,20 +1581,23 @@ theorem chk_meets_contract :
 A genuine counting loop, *fully verified to its result*: `y` starts at `0`, the body
 increments it while `y ≤ 9`, and the contract `y == 10` holds on exit.
 
-This is the payoff of pinning `fac = Core.Factory` in `Procedure.contractTriple`.
-With the concrete evaluator fixed, its arithmetic is available — `coreEval_intAdd_numeral`
-(`int.add(y, 1)` on `y ↦ n` yields `n + 1`) and `coreEval_intLe_numeral` (`int.le(y, 9)`
-yields `n ≤ 9`), both built from the `Int.Add`/`Int.Le` reductions in
-`InstWellFormedSemanticsEval`.  So the invariant can *track `y`'s value*:
-`(∃ n, y ↦ n ∧ 0 ≤ n ≤ 10) ∧ factory = Core.Factory`.
+This works because `Procedure.contractTriple` pins the runtime factory's functions to
+`p.factoryBeforeProcedure procName`: `Core.Factory` extended with the user-defined
+functions declared before the procedure, under any model of it.  This program declares no
+functions, so the pinned functions are those of `Core.Factory` itself (`hfactory` below).
+Every model of a factory containing Core's built-ins interprets its arithmetic as the
+standard operations — `Core.eval_intAdd` (`int.add(y, 1)` on `y ↦ n` yields `n + 1`)
+and `Core.eval_intLe` (`int.le(y, 9)` yields `n ≤ 9`).  So the invariant can *track `y`'s
+value*: `(∃ n, y ↦ n ∧ 0 ≤ n ≤ 10) ∧ ρ.factory.factory = Core.Factory`.
 
 `y := 0` establishes it (`n = 0`).  The body runs under the guard, which — by
-`coreEval_intLe_numeral` — gives `n ≤ 9`, so `int.add(y, 1)` takes `y ↦ n` to `y ↦ n + 1`
+`Core.eval_intLe` — gives `n ≤ 9`, so `int.add(y, 1)` takes `y ↦ n` to `y ↦ n + 1`
 with `0 ≤ n + 1 ≤ 10` (`omega`).  On exit `while_rule` supplies the negated guard
 `eval guard = ff`, i.e. `¬ (n ≤ 9)`; with `n ≤ 10` this forces `n = 10`, so `y == 10`
-evaluates to `true` (`evalFully_eq_self`).  Pinning the factory is essential here: over an
-arbitrary well-formed factory the evaluator's value laws for `int.add` and `int.le` are
-unspecified, so tracking `y`'s concrete value is only possible against `Core.Factory`. -/
+evaluates to `true` (`Core.eval_eq_true`).  Pinning the factory is essential here: over an
+arbitrary factory the interpretations of `int.add` and `int.le` are unspecified, so
+tracking `y`'s concrete value is only possible against a factory containing Core's
+built-ins. -/
 
 private def loopTermPgm : Program :=
 #strata
@@ -1682,44 +1671,50 @@ private theorem loopTermRhs_shape :
         (Lambda.LExpr.fvar () loopTermY intTy)) (Lambda.LExpr.const () (Lambda.LConst.intConst 1)) := by
   native_decide
 
-/-- With `y ↦ n`, the guard evaluates to `n ≤ 9` on `Core.Factory`. -/
-private theorem loopTermGuard_eval (σ : Core.CoreStore) (n : Int)
-    (hσy : σ loopTermY = some (Lambda.LExpr.intConst () n)) :
-    Core.Expression.eval Core.Factory σ loopTermParts.2.1
-      = some (Lambda.LExpr.boolConst () (decide (n ≤ 9))) := by
+/-- With `y ↦ n`, the guard evaluates to `n ≤ 9` on a runtime factory over
+    `Core.Factory`. -/
+private theorem loopTermGuard_eval (F : Core.Expression.Factory) (hF : F.factory = Core.Factory)
+    (σ : Core.CoreStore) (n : Int)
+    (hσy : σ loopTermY = some (Lambda.SemValue.ofInt F.model.tcInterp n)) :
+    Core.Expression.eval F σ loopTermParts.2.1
+      = some (Lambda.SemValue.ofBool F.model.tcInterp (decide (n ≤ 9))) := by
   rw [loopTermGuard_shape]
-  exact Core.coreEval_intLe_numeral σ (Lambda.LExpr.fvar () loopTermY intTy) n
-    (Lambda.evalFully_fvar_of_value Core.Factory σ () loopTermY intTy _ hσy
-      (Lambda.isValue_const_true _ _ _))
+  exact Core.eval_intLe (hF ▸ Core.coreFactory_intLe) (Core.eval_fvar_int F hσy)
+    (Core.eval_intConst F σ 9)
 
-/-- With `y ↦ n`, the loop body assigns `n + 1` on `Core.Factory`. -/
-private theorem loopTermRhs_eval (σ : Core.CoreStore) (n : Int)
-    (hσy : σ loopTermY = some (Lambda.LExpr.intConst () n)) :
-    Core.Expression.eval Core.Factory σ loopTermInnerParts.1
-      = some (Lambda.LExpr.intConst () (n + 1)) := by
+/-- With `y ↦ n`, the loop body assigns `n + 1` on a runtime factory over `Core.Factory`. -/
+private theorem loopTermRhs_eval (F : Core.Expression.Factory) (hF : F.factory = Core.Factory)
+    (σ : Core.CoreStore) (n : Int)
+    (hσy : σ loopTermY = some (Lambda.SemValue.ofInt F.model.tcInterp n)) :
+    Core.Expression.eval F σ loopTermInnerParts.1
+      = some (Lambda.SemValue.ofInt F.model.tcInterp (n + 1)) := by
   rw [loopTermRhs_shape]
-  exact Core.coreEval_intAdd_numeral σ (Lambda.LExpr.fvar () loopTermY intTy) n
-    (Lambda.evalFully_fvar_of_value Core.Factory σ () loopTermY intTy _ hσy
-      (Lambda.isValue_const_true _ _ _))
+  exact Core.eval_intAdd (hF ▸ Core.coreFactory_intAdd) (Core.eval_fvar_int F hσy)
+    (Core.eval_intConst F σ 1)
 
 /-- **Valid, and fully proved.**
     `y := 0; while (int.le(y, 9)) { y := int.add(y, 1) }` establishes `y == 10`.
 
-    Because `Procedure.contractTriple` pins `fac = Core.Factory`, the concrete
-    evaluator's arithmetic is available (`coreEval_intAdd_numeral`, `coreEval_intLe_numeral`),
-    so the invariant tracks `y`'s value: `0 ≤ y ≤ 10` together with the factory being
-    `Core.Factory`.  `y := 0` establishes it; the body takes `y ↦ n` (the guard giving
-    `n ≤ 9`) to `y ↦ n + 1`, still `≤ 10`; and on exit the negated guard `¬ (y ≤ 9)` with
-    `y ≤ 10` forces `y = 10`. -/
+    Because `Procedure.contractTriple` pins the runtime factory's functions to those
+    declared before the procedure on top of `Core.Factory` (here none, so exactly
+    `Core.Factory`), the standard arithmetic is available (`Core.eval_intAdd`,
+    `Core.eval_intLe`), so the invariant tracks `y`'s value: `0 ≤ y ≤ 10` together with
+    the runtime factory's functions.  `y := 0` establishes it; the body takes `y ↦ n` (the guard
+    giving `n ≤ 9`) to `y ↦ n + 1`, still `≤ 10`; and on exit the negated guard
+    `¬ (y ≤ 9)` with `y ≤ 10` forces `y = 10`. -/
 theorem loopTerm_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple loopTermPgmAST testParams "LoopTerm" := by
-  refine Core.Logic.Hoare.Procedure.contractTriple_of_core loopTermPgmAST testParams
-    "LoopTerm" loopTermProc _ (by native_decide) loopTerm_body_eq (by native_decide) (fun model => ?_)
+  have hfactory : loopTermPgmAST.factoryBeforeProcedure "LoopTerm" = Core.Factory :=
+    Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by decide +kernel)
+  rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
+  refine ⟨loopTermProc, by native_decide, by native_decide, ?_⟩
+  rw [loopTerm_body_eq]
   refine (Core.Logic.Hoare.block loopTermPgmAST.findProcByString? testParams
-    ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide))) model
+    ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
   refine Core.Logic.Hoare.seq loopTermPgmAST.findProcByString? testParams
-    (Mid := fun ρ => (∃ n : Int, ρ.store loopTermY = some (Lambda.LExpr.intConst () n)
-        ∧ 0 ≤ n ∧ n ≤ 10) ∧ ρ.factory = Core.Factory)
+    (Mid := fun ρ => (∃ n : Int,
+        ρ.store loopTermY = some (Lambda.SemValue.ofInt ρ.factory.model.tcInterp n)
+        ∧ 0 ≤ n ∧ n ≤ 10) ∧ ρ.factory.factory = Core.Factory)
     ?_ ?_
     ⟨trivial, trivial⟩
   · -- `y := 0` establishes `0 ≤ y ≤ 10` (and carries the factory through).
@@ -1737,20 +1732,11 @@ theorem loopTerm_meets_contract :
       refine Core.Logic.Hoare.set loopTermPgmAST.findProcByString? testParams loopTermY
         loopTermInnerParts.1 loopTermInnerParts.2 _ _ (fun ρ₀ σ' v hpre hev hup => ?_)
       obtain ⟨⟨n, hσy, hlo, hhi⟩, hfac⟩ := hpre.1
-      have hg : Core.Expression.eval Core.Factory ρ₀.store loopTermParts.2.1
-          = some Imperative.HasBool.tt := hfac ▸ hpre.2
-      have hle9 : n ≤ 9 := by
-        have heq : (Imperative.HasBool.tt : Core.Expression.Expr)
-            = Lambda.LExpr.boolConst () (decide (n ≤ 9)) :=
-          Option.some.inj (hg.symm.trans (loopTermGuard_eval ρ₀.store n hσy))
-        cases hdec : decide (n ≤ 9) with
-        | true => exact of_decide_eq_true hdec
-        | false =>
-          rw [hdec] at heq
-          exact absurd (show (Imperative.HasBool.tt : Core.Expression.Expr)
-            = Imperative.HasBool.ff from heq) Imperative.HasBool.tt_is_not_ff
-      have hv : v = Lambda.LExpr.intConst () (n + 1) :=
-        Option.some.inj ((hfac ▸ hev).symm.trans (loopTermRhs_eval ρ₀.store n hσy))
+      have hF : ρ₀.factory.factory = Core.Factory := hfac
+      have hle9 : n ≤ 9 := of_decide_eq_true (Lambda.SemValue.ofBool_injective
+        (Option.some.inj ((loopTermGuard_eval ρ₀.factory hF ρ₀.store n hσy).symm.trans hpre.2)))
+      have hv : v = Lambda.SemValue.ofInt ρ₀.factory.model.tcInterp (n + 1) :=
+        Option.some.inj (hev.symm.trans (loopTermRhs_eval ρ₀.factory hF ρ₀.store n hσy))
       cases hup with
       | update _hold hnew hoth =>
         exact ⟨⟨n + 1, by rw [hv] at hnew; exact hnew, by omega, by omega⟩, hfac⟩
@@ -1761,21 +1747,12 @@ theorem loopTerm_meets_contract :
       exact Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)
     · -- exit: `¬ (y ≤ 9)` and `y ≤ 10` force `y = 10`, so `y == 10` evaluates to `true`.
       obtain ⟨⟨n, hσy, hlo, hhi⟩, hfac⟩ := h.1
-      have hg : Core.Expression.eval Core.Factory ρ.store loopTermParts.2.1
-          = some Imperative.HasBool.ff := hfac ▸ h.2
-      have hng9 : ¬ (n ≤ 9) := by
-        have heq : (Imperative.HasBool.ff : Core.Expression.Expr)
-            = Lambda.LExpr.boolConst () (decide (n ≤ 9)) :=
-          Option.some.inj (hg.symm.trans (loopTermGuard_eval ρ.store n hσy))
-        cases hdec : decide (n ≤ 9) with
-        | false => exact of_decide_eq_false hdec
-        | true =>
-          rw [hdec] at heq
-          exact absurd (show (Imperative.HasBool.tt : Core.Expression.Expr)
-            = Imperative.HasBool.ff from heq.symm) Imperative.HasBool.tt_is_not_ff
+      have hF : ρ.factory.factory = Core.Factory := hfac
+      have hng9 : ¬ (n ≤ 9) := of_decide_eq_false (Lambda.SemValue.ofBool_injective
+        (Option.some.inj ((loopTermGuard_eval ρ.factory hF ρ.store n hσy).symm.trans h.2)))
       have hn10 : n = 10 := by omega
       subst hn10
-      refine contractPost_of_binds model loopTermProc ρ
+      refine contractPost_of_binds _ loopTermProc ρ
         [(loopTermY, intTy, .intConst 10)] hfac (by native_decide) ?_
       intro b hb
       simp only [List.mem_singleton] at hb; subst hb
@@ -1792,12 +1769,12 @@ under partial correctness a procedure that never returns meets *any* contract �
 the unsatisfiable `ensures false`.
 
 The proof pins this on the guard.  `while_rule` returns `Inv ∧ ¬guard` on exit, i.e.
-`Inv ρ ∧ Expression.eval fac ρ.store guard = some HasBool.ff`.  The guard is the
-literal `true`, which evaluates to `HasBool.tt` in *every* factory (a constant is its own
-value — `evalFully_const`, no well-formedness needed), so `= some HasBool.ff` is
-`some tt = some ff`, a contradiction.  The exit condition is therefore never satisfied,
-and `consequence` turns it into `ensures false`: the postcondition is proved from the
-impossibility of exiting, not from any run of the body.  The invariant `y ↦ 7` serves only
+`Inv ρ ∧ Expression.eval fac ρ.store guard = some (HasBool.ffVal fac)`.  The guard is the
+literal `true`, which evaluates to `HasBool.ttVal fac` in *every* factory
+(`Core.eval_const`), so `= some (HasBool.ffVal fac)` is a contradiction.  The exit
+condition is therefore never satisfied, and `consequence` turns it into `ensures false`: the
+postcondition is proved from the impossibility of exiting, not from any run of the body.  The
+invariant `y ↦ 7` serves only
 to satisfy `while_rule`'s remaining side conditions (`hcov`, `PostWF`);
 the exit contradiction is what carries the contract. -/
 
@@ -1863,11 +1840,11 @@ private theorem loopForeverGuard_eq :
 theorem loopForever_meets_contract :
     Core.Logic.Hoare.Procedure.contractTriple loopForeverPgmAST testParams "LoopForever" := by
   refine Core.Logic.Hoare.Procedure.contractTriple_of loopForeverPgmAST testParams
-    "LoopForever" loopForeverProc _ (by native_decide) loopForever_body_eq (by native_decide) (fun model => ?_)
+    "LoopForever" loopForeverProc _ (by native_decide) loopForever_body_eq (by native_decide) ?_
   refine (Core.Logic.Hoare.block loopForeverPgmAST.findProcByString? testParams
-    ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide))) model
+    ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
   refine Core.Logic.Hoare.seq loopForeverPgmAST.findProcByString? testParams
-    (Mid := fun ρ => ρ.store loopForeverY = some (Lambda.LExpr.const () (.intConst 7)))
+    (Mid := fun ρ => ρ.store loopForeverY = some (cval ρ (.intConst 7)))
     ?_ ?_
     ⟨trivial, trivial⟩
   · -- `y := 7` establishes the invariant.
@@ -1893,10 +1870,10 @@ theorem loopForever_meets_contract :
       -- `HasBool.tt`, not `HasBool.ff`.  From the contradiction, `ensures false` follows.
       exfalso
       have hg : Core.Expression.eval ρ.factory ρ.store loopForeverParts.2.1 =
-          some Imperative.HasBool.tt := by
+          some (Imperative.HasBool.ttVal ρ.factory) := by
         rw [loopForeverGuard_eq]
-        exact Lambda.evalFully_const ρ.factory ρ.store () (Lambda.LConst.boolConst true)
-      exact absurd (Option.some.inj (hg.symm.trans h.2)) Imperative.HasBool.tt_is_not_ff
+        exact Core.eval_const ρ.factory ρ.store (Lambda.LConst.boolConst true)
+      exact absurd (Option.some.inj (hg.symm.trans h.2)) (Imperative.HasBool.ttVal_ne_ffVal _)
 
 /-! ## A contract about a variable the body declares
 
@@ -1912,11 +1889,13 @@ example (x : Core.Expression.Ident) (ty : Core.Expression.Ty)
     (md : Imperative.MetaData Core.Expression) :
     ¬ Imperative.Logic.Hoare.PostWF
         [Core.Statement.init x ty (.det (Lambda.LExpr.const () (.intConst 1))) md]
-        (fun ρ => ρ.store x = some (Lambda.LExpr.const () (.intConst 1))) := by
+        (fun ρ => ρ.store x = some (cval ρ (.intConst 1))) := by
   intro h
   have hbad := h
-    { store := fun y => if y = x then some (Lambda.LExpr.const () (.intConst 1)) else none, factory := Core.Factory,
-      hasFailure := false } (by simp)
+    { store := fun y => if y = x then
+        some (Lambda.SemValue.ofConst Core.factoryInterp.tcInterp (.intConst 1)) else none,
+      factory := boolFactory Core.factoryInterp }
+      (by simp)
   simp [Imperative.dropVars, Imperative.Block.definedVars,
     Imperative.Stmt.definedVars, Imperative.HasVarsImp.definedVars,
     Imperative.CmdExt.definedVars, Imperative.Cmd.definedVars] at hbad

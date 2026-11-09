@@ -17,7 +17,7 @@ namespace Core
 namespace Procedure
 open Std
 
-open Statement Core.Lambda LExpr
+open Statement Lambda LExpr
 
 def fixupError (E : Env) : Env :=
   match E.error with
@@ -28,9 +28,11 @@ def fixupError (E : Env) : Env :=
 /--
 Merge multiple procedure evaluation results into one.
 
-After `fixupError`, all paths through a procedure have identical variable state
-and path conditions — the procedure scope and its path-condition scope have been
-popped, leaving only the outer (global) scope which is the same on every path.
+After `fixupError`, all paths through a procedure that did not fail have
+identical variable state and path conditions — the procedure scope and its
+path-condition scope have been popped, leaving only the outer (global) scope
+which is the same on every path. Every path also carries the same name supply, the one
+statement evaluation threads through all paths.
 The differences across paths are:
 
 - `deferred`: path-specific proof obligations (each already carries its own
@@ -38,24 +40,26 @@ The differences across paths are:
   clears `deferred` on the false branch, so pre-split obligations appear only
   in the first (true) path; post-split obligations appear in each path under
   distinct path conditions.
-- `exprEnv.config.usedNames`: may diverge when branches generate different
-  variables. We union the sets to prevent fresh-variable name collisions in
-  subsequent evaluation.
+- `error`: a path whose evaluation failed is not popped by `fixupError` and
+  carries no obligations for the statements after the failure. The merged Env
+  takes the first error of any path, so the caller reports the procedure as
+  failed instead of dropping that path.
 
-The `fallback` Env is returned when `results` is empty (which should not occur
-in practice, since `Statement.eval` always produces at least one result).
+`Statement.eval` produces at least one result; if `results` is empty, the result is
+`fallback` with an error.
 -/
 private def mergeResults (fallback : Env) (results : List Env) : Env :=
   match results with
-  | [] => fallback
+  | [] => { fallback with error := some (.Misc "symbolic evaluation produced no paths") }
   | [E] => E
   | E :: rest =>
-    let allDeferred := rest.foldl (fun acc e => acc ++ e.deferred) E.deferred
-    let mergedNames := rest.foldl (fun acc e =>
-      acc.union e.exprEnv.config.usedNames) E.exprEnv.config.usedNames
-    { E with
-      deferred := allDeferred,
-      exprEnv  := { E.exprEnv with config := { E.exprEnv.config with usedNames := mergedNames } } }
+    let error := results.findSome? (·.error)
+    -- The first path's obligations leave `E` before the others are appended, so they are
+    -- appended in place.
+    let first := E.deferred
+    let E := { E with deferred := #[] }
+    let allDeferred := rest.foldl (fun acc e => acc ++ e.deferred) first
+    { E with error, deferred := allDeferred }
 
 /--
 Evaluate a single procedure: generate fresh variables for parameters,
@@ -63,58 +67,29 @@ execute the body, check postconditions, and collect proof obligations.
 -/
 
 def eval (E : Env) (p : Procedure) : Env × Statistics :=
-  -- Create a new scope with the formals and return variables. We will pop this
-  -- scope at the end of this procedure.
-  -- Parameters go through genFVars for globally unique names.
-  -- Mark original parameter names as used so that fvar names always differ
-  -- from the scope keys. Without this, a bare fvar "x" would be captured
-  -- by the scope entry for "x" after reassignment, causing old(x) to
-  -- resolve to the post-assignment value instead of the initial value.
-  let vars := p.header.inputs.keys ++ p.header.outputs.keys
-  let E := vars.foldl (fun E (v : CoreIdent) =>
-    { E with exprEnv.config.usedNames := E.exprEnv.config.usedNames.insert v.name }) E
-  let var_tys := p.header.inputs.values ++ p.header.outputs.values
+  -- A new scope binds the parameters and the `old` values of the in-out parameters; it is
+  -- popped at the end of the procedure.
+  -- Each parameter's initial value is a fresh unknown (`genFVars`).
+  -- An in-out parameter is one variable: it is bound once, as an input.
+  let outputsOnly := p.header.outputs.filter fun (x, _) => !p.header.inputs.keys.contains x
+  let vars := p.header.inputs.keys ++ outputsOnly.map (·.1)
+  let var_tys := p.header.inputs.values ++ outputsOnly.map (·.2)
   let var_tys := var_tys.map (fun ty => some ty)
   let vars_typed := vars.zip var_tys
   let (vals, E) := E.genFVars vars_typed
   let pVarMap := List.zip vars (var_tys.zip vals)
-  let E := E.pushScope pVarMap
+  -- `old x`, for an in-out parameter `x`, is bound to `x`'s initial value.
+  let inoutNames := p.header.getInoutParams.keys
+  let oldVarMap := pVarMap.filterMap fun (x, tyv) =>
+    if inoutNames.contains x then some (CoreIdent.mkOld x.name, tyv) else none
+  let E := E.pushScope (pVarMap ++ oldVarMap)
   let E := { E with pathConditions := E.pathConditions.push [] }
-  -- For input parameters that also appear as outputs, old(param) should use
-  -- the input parameter's initial value.
-  let outputNames := p.header.outputs.keys
-  let inputParamSubst := E.exprEnv.state.newest.filterMap fun (id, _, e) =>
-    if p.header.inputs.keys.contains id && outputNames.contains id
-    then some (CoreIdent.mkOld id.name, e) else none
-  let old_g_subst := inputParamSubst
-  let postcond_asserts :=
-    List.map (fun (label, check) =>
-                match check.attr with
-                | .Free =>
-                    -- NOTE: A free postcondition is not checked.
-                    -- We simply change a free-postcondition to "assume true", but
-                    -- keep a record in the metadata field.
-                    -- TODO: Perhaps introduce an "opaque" expression construct
-                    -- that hides the expression from the evaluator, allowing us
-                    -- to retain the postcondition body instead of replacing it
-                    -- with "true".
-                  (Statement.assume label (.true ())
-                                 ((Imperative.MetaData.pushElem
-                                  #[]
-                                  (.label label)
-                                  (.expr check.expr)).pushElem
-                                  (.label label)
-                                  (.msg "FreePostCondition")))
-                | _ => (Statement.assert label check.expr check.md))
-      p.spec.postconditions
-  let precond_assumes :=
-    List.map (fun (label, check) =>
-      /- the assumptions from preconditions are set to have empty metadata  -/
-      (Statement.assume label check.expr check.md))
-      p.spec.preconditions
   match p.body with
   | .structured bodyStmts =>
-    let (ssEs, evalStats) := Statement.eval E old_g_subst (precond_assumes ++ bodyStmts ++ postcond_asserts)
+    -- `E` stays alive as the fallback without the name supply, so the supply has one
+    -- reference during evaluation.
+    let (names, E) := E.takeNames
+    let (ssEs, evalStats) := Statement.eval (E.withNames names) (p.contractWrapped bodyStmts)
     (mergeResults E (ssEs.map (fun sE => fixupError sE)), evalStats)
   | .cfg _ =>
     -- CFG bodies are not supported here.

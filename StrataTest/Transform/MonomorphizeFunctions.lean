@@ -13,8 +13,7 @@ meta import Strata.Transform.MonomorphizeFunctions
 meta import Strata.Transform.GenOpaqueTypeParams
 meta import Strata.Transform.PrecondElim
 meta import Strata.Transform.TerminationCheck
-meta import StrataDDM.Elab
-meta import StrataDDM.BuiltinDialects.Init
+meta import StrataTest.Languages.Core.Tests.ReparseTestUtils
 
 meta section
 
@@ -856,11 +855,11 @@ spec {
 -- discharged.
 /--
 info:
-Obligation: len_body_calls_MyList..tl_0
+Obligation: len_terminates_0
 Property: assert
 Result: ✅ pass
 
-Obligation: len_terminates_0
+Obligation: len_body_calls_MyList..tl_0
 Property: assert
 Result: ✅ pass
 
@@ -1190,17 +1189,7 @@ wrong variable indices. -/
 private def monoRoundtrips (t : StrataDDM.Program) : IO Bool := do
   match monoFns t with
   | .error _ => pure false
-  | .ok (p, _) =>
-    let printed := (Core.formatProgram p).pretty
-    let dialects := StrataDDM.Elab.LoadedDialects.ofDialects! #[StrataDDM.initDialect, Core]
-    let body := if printed.startsWith "program Core;\n\n" then
-      (printed.drop "program Core;\n\n".length).toString else printed
-    let inputCtx := StrataDDM.Parser.stringInputContext ⟨"mono-roundtrip-test"⟩ body
-    try
-      let sp ← StrataDDM.Elab.parseStrataProgramFromDialect dialects "Core" inputCtx
-      let (ast2, errs) := TransM.run Inhabited.default (translateProgram sp)
-      pure (errs.isEmpty && (Core.formatProgram ast2).pretty == printed)
-    catch _ => pure false
+  | .ok (p, _) => Strata.Test.CoreReparse.reprintsSame p
 
 /--
 info: done

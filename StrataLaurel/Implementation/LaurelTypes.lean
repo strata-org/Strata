@@ -126,16 +126,26 @@ def computeExprTypeWith (fieldType? : Option (Identifier → HighTypeMd → Opti
   | .StaticCall callee _ tyArgs => getCallType source model callee tyArgs
   | .InstanceCall _ callee _ => getCallType source model callee []
   -- Control flow
-  | .IfThenElse _ thenBranch _ => computeExprTypeWith fieldType? model thenBranch
-  | .Block stmts _ => match _blockGetLastResult: stmts.getLast? with
+  -- A then-branch typed `Unknown`, as a hole is, takes the else-branch's type, as in `Resolution`.
+  | .IfThenElse _ thenBranch elseBranch =>
+    let thenTy := computeExprTypeWith fieldType? model thenBranch
+    match thenTy.val, elseBranch with
+    | .Unknown, some e => computeExprTypeWith fieldType? model e
+    | _, _ => thenTy
+  | .Block stmts _ _ _ => match _blockGetLastResult: stmts.getLast? with
     | some last =>
         have := List.mem_of_getLast? _blockGetLastResult
         computeExprTypeWith fieldType? model last
     | none => ⟨ .TVoid, source ⟩
   -- Statements
   | .While _ _ _ _ _ => ⟨ .TVoid, source ⟩
-  | .Exit _ => ⟨ .TVoid, source ⟩
+  | .Goto _ _ => ⟨ .TVoid, source ⟩
   | .Return _ => ⟨ .TVoid, source ⟩
+  -- Its target's type, as `Synth.assign` types it.
+  | .Assign [⟨.Local id, _⟩] _ => (model.get id).getType
+  | .Assign [⟨.Field target fieldName, src⟩] _ =>
+    computeExprTypeWith fieldType? model ⟨.Var (.Field target fieldName), src⟩
+  | .Assign [⟨.Declare ⟨_, some ty⟩, _⟩] _ => ty
   | .Assign _ value => computeExprTypeWith fieldType? model value
   | .IncrDecr _ _ target =>
     -- The expression's type is the type of the target variable.
@@ -154,11 +164,7 @@ def computeExprTypeWith (fieldType? : Option (Identifier → HighTypeMd → Opti
   | .Throw _ => ⟨ .TVoid, source ⟩
   | .Try _ _ _ => ⟨ .TVoid, source ⟩
   -- Instance related
-  -- `new C` has type `C`; `new C<τ…>` has the applied type `C<τ…>` so downstream
-  -- (e.g. monomorphization) sees the concrete instantiation.
-  | .New name typeArgs =>
-    if typeArgs.isEmpty then ⟨ .UserDefined name, source ⟩
-    else ⟨ .Applied ⟨ .UserDefined name, source ⟩ typeArgs, source ⟩
+  | .New name typeArgs => allocatedType name typeArgs source
   | .This => default -- TODO: implement
   | .ReferenceEquals _ _ => ⟨ .TBool, source ⟩
   | .AsType _ ty => ty

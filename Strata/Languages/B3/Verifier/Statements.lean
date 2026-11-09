@@ -102,7 +102,7 @@ def statementToSMTWithoutDiagnosis (ctx : ConversionContext) (state : B3Verifica
   | _ =>
       pure { results := [], finalState := state }
   termination_by stmt => SizeOf.sizeOf stmt
-  decreasing_by cases stmts; simp_all; term_by_mem
+  decreasing_by cases stmts; simp_all only [Array.mem_toList_iff, B3AST.Statement.blockStmt.sizeOf_spec, Ann.mk.sizeOf_spec]; term_by_mem
 
 ---------------------------------------------------------------------
 -- Statement Formatting

@@ -159,8 +159,10 @@ op existsExpr (name: Ident, ty: LaurelType, trigger: Option Trigger, body: StmtE
   => "exists(" name ": " ty ")" trigger " => " body:0;
 
 // Error messages (used in assert, requires, ensures)
+// Precedence maxPrec + 1, like a literal, so no rule parenthesizes a summary, which would not parse
+// back. `msg:0`, else this precedence would parenthesize the message.
 category ErrorSummary;
-op errorSummary(msg: Str): ErrorSummary => " summary " msg;
+op errorSummary(msg: Str): ErrorSummary => @[prec(1025)] " summary " msg:0;
 
 // If-else
 category ElseBranch;
@@ -172,15 +174,20 @@ op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option ElseBran
 op assert (cond : StmtExpr, errorMessage: Option ErrorSummary) : StmtExpr => @[prec(0)] "assert " cond:0 errorMessage:0;
 op assume (cond : StmtExpr) : StmtExpr => @[prec(0)] "assume " cond:0;
 op throw (value : StmtExpr) : StmtExpr => @[prec(0)] "throw " value:0;
-op return (value : Option StmtExpr) : StmtExpr => @[prec(0)] "return " value:0;
+// A multi-output procedure returns one value per declared output. The extra values are
+// an optional comma-separated tail on the existing op rather than a second op spelling
+// the same `StmtExpr.Return`: two ops both starting with `return ` are ambiguous for a
+// single value, and the parser commits to the one without the tail.
+category ReturnMore;
+op returnMore (values : CommaSepBy StmtExpr) : ReturnMore => ", " values:0;
+op return (value : Option StmtExpr, more : Option ReturnMore) : StmtExpr =>
+  @[prec(0)] "return " value:0 more:0;
 // Coroutine suspension. Always nullary; to yield a value, the user
 // assigns it to the coroutine's `yields` binding before suspending.
 // `yield` is dual-position: as a statement, drops the resumed value;
 // as an expression, evaluates to the value sent in by the next resume.
 op yield: StmtExpr => @[prec(0)] "yield";
 op block (stmts : SemicolonSepBy StmtExpr) : StmtExpr => @[prec(1000)] "{\n  " indent(2, stmts) "\n}";
-op labelledBlock (stmts : SemicolonSepBy StmtExpr, label : Ident) : StmtExpr => @[prec(1000)] "{\n  " indent(2, stmts) "\n}" label;
-op exit (label : Ident) : StmtExpr => @[prec(0)] "exit " label;
 
 // Exception handling: try / catch (with optional `when` guard) / finally.
 category CatchGuard;
@@ -199,6 +206,13 @@ op tryCatch (body: StmtExpr, catches: Seq CatchClause, finallyClause: Option Fin
 // While loops
 category InvariantClause;
 op invariantClause (cond: StmtExpr): InvariantClause => "\n  invariant " cond:0;
+
+// A labelled block is the target of `exit` (jump past its end) and `goto`
+// (jump back to its start). Invariants are checked on entry and on every `goto`.
+op labelledBlock (stmts : SemicolonSepBy StmtExpr, label : Ident, invariants : Seq InvariantClause) : StmtExpr
+  => @[prec(1000)] "{\n  " indent(2, stmts) "\n}" label invariants;
+op exit (label : Ident) : StmtExpr => @[prec(0)] "exit " label;
+op goto (label : Ident) : StmtExpr => @[prec(0)] "goto " label;
 
 op while (cond: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): StmtExpr
   => "while" "(" cond ")" invariants " " body:0;
@@ -232,8 +246,9 @@ category Composite;
 
 // Type parameters (`<T, U>`) — declared here so both datatype (below) and
 // procedure/function/composite (further below) can reference it.
+// Precedence maxPrec + 1, like a summary.
 category TypeParams;
-op typeParams (params: CommaSepBy Ident): TypeParams => "<" params ">";
+op typeParams (params: CommaSepBy Ident): TypeParams => @[prec(1025)] "<" params ">";
 
 // Datatype definitions
 category DatatypeConstructorArg;
@@ -305,6 +320,13 @@ op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "\n  
 category ThrowsClause;
 op throwsClause(binding: Ident, throwsType: LaurelType): ThrowsClause =>
   " throws (" binding ": " throwsType ")";
+// An inferred clause: the thrown type is computed from the body by `inferThrows`
+// (the join of every exception type that may escape it uncaught). The second
+// form keeps a declared type and joins the inferred escapes with it.
+op throwsInferredClause(binding: Ident): ThrowsClause =>
+  " throws (" binding ": inferred)";
+op throwsDeclaredInferredClause(binding: Ident, throwsType: LaurelType): ThrowsClause =>
+  " throws (" binding ": " throwsType " inferred)";
 
 // The clauses inside a `throwsOn` block: the throwing-path counterparts of
 // `ensures` and `modifies`, scoped to that block's guard.
@@ -427,4 +449,7 @@ op datatypeCommand(datatype: Datatype): Command => datatype;
 op constrainedTypeCommand(ct: ConstrainedType): Command => ct;
 op typeAliasCommand(alias: TypeAliasDecl): Command => alias;
 op opaqueTypeCommand(ty: OpaqueTypeDecl): Command => ty;
+category HeapFieldLocation;
+op heapFieldLocation(location: Ident): HeapFieldLocation => " as " location;
+op heapFieldCommand(field: Field, location: Option HeapFieldLocation): Command => "$heapfield" field:0 location:0;
 

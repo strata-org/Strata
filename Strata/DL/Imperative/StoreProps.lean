@@ -19,7 +19,7 @@ List-level definedness laws, store-substitution symmetry, and generated-name
 reservation properties for the definitions in `Store`.
 
 Key results:
-- `isDefinedCons` / `isDefinedApp` and the corresponding `isNotDefined*` laws
+- `isDefinedCons` / `isDefinedApp` and the corresponding `SemanticStore.varsUndefined*` laws
   compose and decompose list-level definedness.
 - `substStoresFlip`, `substDefinedFlip`, `invStoresComm`, and
   `invStoresExceptComm` establish substitution and invariance symmetry.
@@ -34,23 +34,23 @@ variable (P : PureExpr)
 
 /-- Definedness of a singleton and a tail implies definedness of their cons. -/
 theorem isDefinedCons :
-    isDefined σ [v] →
-    isDefined σ vs2 →
-    isDefined σ (v :: vs2) := by
+    SemanticStore.varsDefined (· ∈ [v]) σ →
+    SemanticStore.varsDefined (· ∈ vs2) σ →
+    SemanticStore.varsDefined (· ∈ (v :: vs2)) σ := by
   intros Hd1 Hd2
-  simp [isDefined] at *
+  simp [SemanticStore.varsDefined] at *
   simp [Option.isSome] at *
   split <;> simp_all
 
 /-- Definedness of two lists implies definedness of their concatenation. -/
-theorem isDefinedApp :
-    isDefined σ vs1 →
-    isDefined σ vs2 →
-    isDefined σ (vs1 ++ vs2) := by
+theorem isDefinedApp {P : PureExpr} {σ : SemanticStore P} {vs1 vs2 : List P.Ident} :
+    SemanticStore.varsDefined (· ∈ vs1) σ →
+    SemanticStore.varsDefined (· ∈ vs2) σ →
+    SemanticStore.varsDefined (· ∈ (vs1 ++ vs2)) σ := by
   intros Hd1 Hd2
-  simp [isDefined] at *
+  simp only [SemanticStore.varsDefined, List.mem_append] at *
   intros ident hmem
-  simp [Option.isSome] at *
+  simp only [Option.isSome] at *
   cases hmem with
   | inl hmem =>
     split <;> simp
@@ -63,16 +63,16 @@ theorem isDefinedApp :
 
 /-- Definedness of a cons list implies definedness of its head and tail. -/
 theorem isDefinedCons' :
-    isDefined σ (h :: t) →
-    isDefined σ [h] ∧ isDefined σ t := by
-  simp [isDefined] at *
+    SemanticStore.varsDefined (· ∈ (h :: t)) σ →
+    SemanticStore.varsDefined (· ∈ [h]) σ ∧ SemanticStore.varsDefined (· ∈ t) σ := by
+  simp [SemanticStore.varsDefined] at *
 
 /-- Definedness of a concatenation implies definedness of both component lists. -/
-theorem isDefinedApp' :
-    isDefined σ (t1 ++ t2) →
-    isDefined σ t1 ∧ isDefined σ t2 := by
+theorem isDefinedApp' {P : PureExpr} {σ : SemanticStore P} {t1 t2 : List P.Ident} :
+    SemanticStore.varsDefined (· ∈ (t1 ++ t2)) σ →
+    SemanticStore.varsDefined (· ∈ t1) σ ∧ SemanticStore.varsDefined (· ∈ t2) σ := by
   intros hdefined
-  simp [isDefined] at *
+  simp only [SemanticStore.varsDefined, List.mem_append] at *
   apply And.intro
   · intros ident hmem
     apply hdefined
@@ -85,20 +85,20 @@ theorem isDefinedApp' :
 
 /-- Undefinedness of a singleton and a tail implies undefinedness of their cons. -/
 theorem isNotDefinedCons :
-    isNotDefined σ [v] →
-    isNotDefined σ vs2 →
-    isNotDefined σ (v :: vs2) := by
+    SemanticStore.varsUndefined (· ∈ [v]) σ →
+    SemanticStore.varsUndefined (· ∈ vs2) σ →
+    SemanticStore.varsUndefined (· ∈ (v :: vs2)) σ := by
   intros Hd1 Hd2
-  simp [isNotDefined] at *
+  simp [SemanticStore.varsUndefined] at *
   simp_all
 
 /-- Undefinedness of two lists implies undefinedness of their concatenation. -/
-theorem isNotDefinedApp :
-    isNotDefined σ vs1 →
-    isNotDefined σ vs2 →
-    isNotDefined σ (vs1 ++ vs2) := by
+theorem isNotDefinedApp {P : PureExpr} {σ : SemanticStore P} {vs1 vs2 : List P.Ident} :
+    SemanticStore.varsUndefined (· ∈ vs1) σ →
+    SemanticStore.varsUndefined (· ∈ vs2) σ →
+    SemanticStore.varsUndefined (· ∈ (vs1 ++ vs2)) σ := by
   intros Hd1 Hd2
-  simp [isNotDefined] at *
+  simp only [SemanticStore.varsUndefined, List.mem_append] at *
   intros ident hmem
   cases hmem with
   | inl hmem =>
@@ -110,16 +110,16 @@ theorem isNotDefinedApp :
 
 /-- Undefinedness of a cons list implies undefinedness of its head and tail. -/
 theorem isNotDefinedCons' :
-    isNotDefined σ (h :: t) →
-    isNotDefined σ [h] ∧ isNotDefined σ t := by
-  simp [isNotDefined] at *
+    SemanticStore.varsUndefined (· ∈ (h :: t)) σ →
+    SemanticStore.varsUndefined (· ∈ [h]) σ ∧ SemanticStore.varsUndefined (· ∈ t) σ := by
+  simp [SemanticStore.varsUndefined] at *
 
 /-- Undefinedness of a concatenation implies undefinedness of both components. -/
-theorem isNotDefinedApp' :
-    isNotDefined σ (t1 ++ t2) →
-    isNotDefined σ t1 ∧ isNotDefined σ t2 := by
+theorem isNotDefinedApp' {P : PureExpr} {σ : SemanticStore P} {t1 t2 : List P.Ident} :
+    SemanticStore.varsUndefined (· ∈ (t1 ++ t2)) σ →
+    SemanticStore.varsUndefined (· ∈ t1) σ ∧ SemanticStore.varsUndefined (· ∈ t2) σ := by
   intros hundefined
-  simp [isNotDefined] at *
+  simp only [SemanticStore.varsUndefined, List.mem_append] at *
   apply And.intro
   · intros ident hmem
     apply hundefined
@@ -143,9 +143,10 @@ theorem substStoresFlip :
     substStores σ₁ σ₂ substs →
     substStores σ₂ σ₁ (substSwap substs) := by
   intros hsubst
-  simp [substStores, substSwap] at *
+  simp only [substStores, substSwap, List.mem_map, Prod.exists, Prod.swap_prod_mk, Prod.mk.injEq,
+    forall_exists_index, and_imp] at *
   intros targetIdent sourceIdent targetValue sourceValue hmem hsource htarget
-  simp_all
+  simp_all only
   apply Eq.symm
   apply hsubst
   exact hmem
@@ -156,7 +157,7 @@ theorem substStoresFlip' :
     substStores σ₁ σ₂ substs := by
   intros hsubst
   have hsubst' := substStoresFlip hsubst
-  simp [substSwapId] at hsubst'
+  simp only [substSwapId] at hsubst'
   exact hsubst'
 
 /-- Pairwise definedness is symmetric after swapping substitution pairs. -/
@@ -164,9 +165,10 @@ theorem substDefinedFlip :
     substDefined σ₁ σ₂ substs →
     substDefined σ₂ σ₁ (substSwap substs) := by
   intros hsubst
-  simp [substDefined, substSwap] at *
+  simp only [substDefined, substSwap, List.mem_map, Prod.exists, Prod.swap_prod_mk, Prod.mk.injEq,
+    forall_exists_index, and_imp] at *
   intros targetIdent sourceIdent targetValue sourceValue hmem hsource htarget
-  simp_all
+  simp_all only
   exact And.comm.mp (hsubst sourceIdent targetIdent hmem)
 
 /-- Swapped pairwise definedness can be flipped back. -/
@@ -175,7 +177,7 @@ theorem substDefinedFlip' :
     substDefined σ₁ σ₂ substs := by
   intros hsubst
   have hsubst' := substDefinedFlip hsubst
-  simp [substSwapId] at hsubst'
+  simp only [substSwapId] at hsubst'
   exact hsubst'
 
 /-- Store invariance is symmetric. -/
@@ -183,9 +185,9 @@ theorem invStoresComm :
     invStores σ₁ σ₂ ks →
     invStores σ₂ σ₁ ks := by
   intros hinvariant
-  simp [invStores] at *
+  simp only [invStores] at *
   apply substStoresFlip'
-  simp [substSwap]
+  simp only [substSwap, zip_swap]
   assumption
 
 /-- Store invariance outside a key set is symmetric. -/
@@ -193,7 +195,7 @@ theorem invStoresExceptComm :
     invStoresExcept σ₁ σ₂ ks →
     invStoresExcept σ₂ σ₁ ks := by
   intros hinvariant other hdisjoint
-  simp [invStoresExcept] at *
+  simp only [invStoresExcept] at *
   exact invStoresComm (hinvariant other hdisjoint)
 
 /-! ## Generated-name reservations -/
@@ -215,7 +217,7 @@ theorem SemanticStore.isReserved.storeWith_gen {P : PureExpr} [HasIdent P]
     [DecidableEq P.Ident] [LawfulHasIdent P]
     {Q : String → Prop}
     {state : StringGenState} {store : SemanticStore P}
-    (pfx : String) (value : P.Expr)
+    (pfx : String) (value : P.Val)
     (hreserved : SemanticStore.isReserved Q state store) :
     SemanticStore.isReserved Q (StringGenState.gen pfx state).2
       (SemanticStore.update store

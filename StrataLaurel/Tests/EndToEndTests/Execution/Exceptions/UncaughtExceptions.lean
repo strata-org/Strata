@@ -129,7 +129,7 @@ procedure callsUnknown() returns (r: int)
   opaque
 {
   r := mayThrow()
-//     ^^^^^^^^^^ error: call does not throw an uncaught 'Exception' could not be proved
+//     ^^^^^^^^^^ error: call does not throw an uncaught 'Exception' does not hold
 };
 #end
 
@@ -190,7 +190,7 @@ procedure notMatched(x: int) returns (r: int)
     if x < 0 then {
       var b: Exception := new Boom;
       throw b
-//    ^^^^^^^ error: uncaught exception 'Exception' is not thrown could not be proved
+//    ^^^^^^^ error: uncaught exception 'Exception' is not thrown does not hold
     }
   } catch c when c is Other {
     r := -1
@@ -235,7 +235,7 @@ procedure rethrows() returns (r: int)
     throw b
   } catch c when c is Boom {
     throw c
-//  ^^^^^^^ error: uncaught exception 'Boom' is not thrown could not be proved
+//  ^^^^^^^ error: uncaught exception 'Boom' is not thrown does not hold
   }
 };
 #end
@@ -318,7 +318,7 @@ procedure throughInner() returns (r: int)
     try {
       var a: Exception := new A;
       throw a
-//    ^^^^^^^ error: uncaught exception 'Exception' is not thrown could not be proved
+//    ^^^^^^^ error: uncaught exception 'Exception' is not thrown does not hold
     } catch c when c is B {
       r := 1
     }
@@ -395,8 +395,8 @@ procedure onlyUnrelated(x: int) returns (r: int)
 #end
 
 -- A type sharing a descendant with the binding type is not unrelated: under
--- multiple inheritance an `A` may be a `D`, which is a `B`, so the test may be true.
--- It is rejected rather than lowered to `false`.
+-- multiple inheritance an `A` may be a `D`, which is a `B`, so the test is kept and
+-- catches the `D`.
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
@@ -405,17 +405,123 @@ composite B {}
 composite D extends A, B {}
 procedure commonDescendant() returns (r: int)
   opaque
-  ensures r == 0
+  ensures r == 1
 {
   r := 0;
-  { try {
-      var a: A := new D;
-      throw a
-    } catch c when c is B {
-//                 ^ error: cannot test unrelated type 'A' against 'B'
-      r := 1
-    } finally { exit L }
-  } L
+  try {
+    var a: A := new D;
+    throw a
+  } catch c when c is B {
+    r := 1
+  }
+};
+#end
+
+-- A `C` escapes a `try` whose exception type is `B` into a `throws A` procedure: the
+-- two exception variables are copied through a cast, so the escaping `C` arrives.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite A {}
+composite B {}
+composite B2 extends B {}
+composite C extends A, B {}
+procedure escapesThroughSharedDescendant(pick: bool)
+  throws (e: A)
+  opaque
+  throwsOn pick {
+    ensures e is C
+  }
+{
+  var c: C := new C;
+  var b2: B2 := new B2;
+  try {
+    if pick then { throw c } else { throw b2 }
+  } catch e when e is B2 {
+    assert true
+  }
+};
+
+procedure escapesThroughSharedDescendantFalse(pick: bool)
+  throws (e: A)
+  opaque
+  throwsOn pick {
+    ensures !(e is C)
+//          ^^^^^^^^^ error: postcondition does not hold
+  }
+{
+  var c: C := new C;
+  var b2: B2 := new B2;
+  try {
+    if pick then { throw c } else { throw b2 }
+  } catch e when e is B2 {
+    assert true
+  }
+};
+#end
+
+-- The cast is asserted where the exception crosses into an `A`-typed `try`. In
+-- `untypedEscape`, `collectThrownTypes` cannot type the handler's `throw h#b`, so the
+-- outer `try` is typed `A` (its `C` and `A2`). In `nestedInHandler`, the inner `try`
+-- propagates into its handler's `try`, typed `A` by that `try`'s body alone.
+-- `parameterEscape` verifies: its `h#b` is a `B4` and is caught, the parameter `c`,
+-- thrown in a nested `try` and rethrown by the handler, is an `A`, and the `int` raised
+-- inside, which `is` cannot test, is caught.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite A {}
+composite A2 extends A {}
+composite B {}
+composite B3 extends B {}
+composite B4 extends B {}
+composite C extends A, B {}
+composite H { var b: B }
+procedure untypedEscape(h: H, k: int)
+  opaque
+{
+  var c: C := new C;
+  var b4: B4 := new B4;
+  var a2: A2 := new A2;
+  try {
+    try {
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: the exception escaping this try fits the 'A' it propagates into does not hold
+      if k == 0 then { throw c } else { throw b4 }
+    } catch e when e is B4 { throw h#b };
+    if k == 5 then { throw a2 }
+  } catch e { assert e is A }
+};
+
+procedure nestedInHandler(k: int)
+  opaque
+{
+  var c: C := new C;
+  var a2: A2 := new A2;
+  var b3: B3 := new B3;
+  var b4: B4 := new B4;
+  try {
+    if k == 0 then { throw a2 } else { throw c }
+  } catch x {
+    try {
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: the exception escaping this try fits the 'A' it propagates into does not hold
+      if k == 1 then { throw b4 } else { throw b3 }
+    } catch e when e is B4 { }
+  }
+};
+
+procedure parameterEscape(h: H, c: C, b4: B4, k: int)
+  requires h#b is B4
+  opaque
+{
+  var a2: A2 := new A2;
+  try {
+    try {
+      try { throw 42 } catch n { };
+      if k == 0 then { try { throw c } finally { } }
+      else { if k == 1 then { throw b4 } else { throw h#b } }
+    } catch e when e is B4 { throw c };
+    if k == 5 then { throw a2 }
+  } catch e { assert e is A }
 };
 #end
 
@@ -499,9 +605,8 @@ procedure unrelatedTestInBody(x: int) returns (r: int)
 };
 #end
 
--- A binding typed at a wider join than its arm (`RtEx`, because the body also
--- throws an `ArEx`) read at the arm type reads the arm's fields.
-#eval testLaurelExecution { skipCoreInterpreter := true, skipVerification := true } <|
+-- A read at the arm type (`c as MyEx`), as a front end emits it, reads the arm's fields.
+#eval testLaurelExecution {} <|
 #strata
 program Laurel;
 composite RtEx {}
@@ -519,6 +624,140 @@ procedure readAtArmType() entry opaque modifies * {
     r := (c as MyEx)#code
   };
   assert r == 5
+};
+#end
+
+-- So does the binding without the cast: the clause sees it at what its guard admits, the
+-- arm type, or for a multi-catch its alternatives' join (`Mid`).
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+composite RtEx {}
+composite Mid extends RtEx { var code: int }
+composite MyEx extends Mid {}
+composite OtEx extends Mid {}
+composite ArEx extends RtEx {}
+procedure readUncast() entry opaque modifies * {
+  var r: int := 0;
+  var b: int := 1;
+  try {
+    if b == 0 then { var a: ArEx := new ArEx; throw a };
+    var m: MyEx := new MyEx;
+    m#code := 5;
+    throw m
+  } catch c when c is MyEx {
+    var n: MyEx := c;
+    r := n#code
+  };
+  assert r == 5
+};
+procedure readMultiCatch() entry opaque modifies * {
+  var r: int := 0;
+  var b: int := 1;
+  try {
+    if b == 0 then { var a: ArEx := new ArEx; throw a };
+    var m: MyEx := new MyEx;
+    m#code := 5;
+    throw m
+  } catch c when c is MyEx || c is OtEx {
+    r := c#code
+  };
+  assert r == 5
+};
+procedure rethrowMultiCatchRun() entry opaque modifies * {
+  var r: int := 0;
+  var b: int := 1;
+  try {
+    try {
+      if b == 0 then { var a: ArEx := new ArEx; throw a };
+      var m: MyEx := new MyEx;
+      m#code := 1;
+      throw m
+    } catch c when c is MyEx || c is OtEx { throw c } catch c2 { r := 2 }
+  } catch d { r := d#code };
+  assert r == 1
+};
+#end
+
+-- A multi-catch arm rethrows its binding at the alternatives' join (`Mid`), which the
+-- enclosing handler reads uncast.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Top {}
+composite Mid extends Top { var code: int }
+composite A extends Mid {}
+composite B extends Mid {}
+composite C extends Top {}
+procedure rethrowMultiCatch(k: int) returns (r: int)
+  opaque
+  ensures k > 0 ==> r == 1
+{
+  r := 0;
+  try {
+    try { if k > 0 then { var a: A := new A; a#code := 1; throw a } else { throw new C } }
+    catch c when c is A || c is B { throw c } catch c2 { r := 2 }
+  } catch d { r := d#code }
+};
+procedure rethrowMultiCatchWrong(k: int) returns (r: int)
+  opaque
+  ensures k > 0 ==> r == 2
+//        ^^^^^^^^^^^^^^^^ error: postcondition does not hold
+{
+  r := 0;
+  try {
+    try { if k > 0 then { var a: A := new A; a#code := 1; throw a } else { throw new C } }
+    catch c when c is A || c is B { throw c } catch c2 { r := 2 }
+  } catch d { r := d#code }
+};
+#end
+
+-- A guard that names an alternative through an alias narrows the binding as one naming the
+-- target does, to `Mid`: reading `code` would fail at the `try`'s join `Top`, testing for `B`
+-- at `A`, and testing for `AE` at `B`.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Top {}
+composite Mid extends Top { var code: int }
+composite A extends Mid {}
+composite B extends Mid {}
+composite C extends Top {}
+type AE = A
+procedure aliasMultiCatch(k: int) returns (r: int)
+  opaque
+  ensures k > 0 ==> r == 4
+  ensures k < 0 ==> r == 1
+{
+  r := 0;
+  try {
+    if k > 0 then { var a: A := new A; a#code := 4; throw a }
+    else { if k < 0 then { throw new B } else { throw new C } }
+  } catch c when c is AE || c is B {
+    if c is AE then { r := c#code } else { if c is B then { r := 1 } }
+  } catch c2 { r := 3 }
+};
+#end
+
+-- Narrowing to `A` keeps a cast to `B` that a `D extends A, B` makes possible.
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Base {}
+composite A extends Base {}
+composite B extends Base { var code: int }
+composite D extends A, B {}
+composite C extends Base {}
+procedure castToCommonDescendantParent(k: int) returns (r: int)
+  opaque
+  ensures k > 0 ==> r == 3
+{
+  r := 0;
+  try {
+    if k > 0 then { var d: D := new D; d#code := 3; throw d } else { throw new C }
+  } catch c when c is A {
+    if c is D then { var b: B := c as B; r := b#code }
+  } catch c2 { r := 2 }
 };
 #end
 

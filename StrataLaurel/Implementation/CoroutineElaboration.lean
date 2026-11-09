@@ -180,12 +180,12 @@ private def rewriteNode (naming : FieldNaming) (expr : StmtExprMd) : StmtExprMd 
         | none => t
       | .Field .. => t  -- inner target already rewritten by the recursion
     { expr with val := .Assign targets' value }
-  | .Block stmts label =>
+  | .Block stmts label invs dec =>
     let stmts' := stmts.filter fun s =>
       match s.val with
       | .Var (.Declare _) => false
       | _ => true
-    { expr with val := .Block stmts' label }
+    { expr with val := .Block stmts' label invs dec }
   | _ => expr
 
 /-- Promote every coroutine-body local to a `self#field` access (per-node rule
@@ -237,7 +237,7 @@ private def pcAssign (k : Nat) : StmtExprMd :=
   { val := .Assign [selfFieldTarget "$pc" .unknown] (intLit (Int.ofNat k)), source := .unknown }
 
 /-- A bare `return` (no value) — the suspend half of a yield. -/
-private def bareReturn : StmtExprMd := { val := .Return none, source := .unknown }
+private def bareReturn : StmtExprMd := { val := .Return [], source := .unknown }
 
 /-- Rewrite every bare `return` inside `expr` to `{ $pc := 0; return }`,
     so a yield-free subtree emitted as a single state always shuts the
@@ -245,10 +245,10 @@ private def bareReturn : StmtExprMd := { val := .Return none, source := .unknown
 private def lowerBareReturns (expr : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun e =>
     match e.val with
-    | .Return none =>
+    | .Return [] =>
       { val := .Block [{ val := .Assign [selfFieldTarget "$pc" e.source]
                                         (intLit (Int.ofNat endState)),
-                         source := e.source }, e] none,
+                         source := e.source }, e] none [] none,
         source := e.source }
     | _ => e) expr
 
@@ -258,13 +258,84 @@ private def eqInt (lhs rhs : StmtExprMd) : StmtExprMd :=
 
 /-- Wrap a list of statements as a `Block` with no label. -/
 private def block (stmts : List StmtExprMd) : StmtExprMd :=
-  { val := .Block stmts none, source := .unknown }
+  { val := .Block stmts none [] none, source := .unknown }
 
 /-- Does this subtree contain a `yield` (in statement or expression
     position)? Determines whether `linearize` keeps the subtree as a
     single straight-line state or must split it across `$pc` values. -/
 private def containsYield (expr : StmtExprMd) : Bool :=
   anyStmtExpr (fun e => e.val matches .Yield) expr
+
+/-- Which jumps inside `stmts` target the enclosing block labelled `label`:
+    the first component is true if some `goto label` (`.blockStart`) does,
+    the second if some `exit label` (`.blockEnd`) does. Does not descend
+    into a nested block that shadows the label (a jump under it targets the
+    nested block instead). Mirrors `RestructureGotos.redirectGotos`. -/
+private def unshadowedJumpsTo (label : String) (stmts : List StmtExprMd) :
+    Bool × Bool :=
+  let pre (e : StmtExprMd) : StateM (Bool × Bool) (Option StmtExprMd) :=
+    match e.val with
+    | .Block _ (some l) _ _ => pure (if l == label then some e else none)
+    | _ => pure none
+  let post (e : StmtExprMd) : StateM (Bool × Bool) StmtExprMd :=
+    match e.val with
+    | .Goto l dest => do
+      if l == label then
+        match dest with
+        | .blockStart => modify fun (_, toEnd) => (true, toEnd)
+        | .blockEnd => modify fun (toStart, _) => (toStart, true)
+      pure e
+    | _ => pure e
+  (stmts.mapM (mapStmtExprPrePostM pre post) |>.run (false, false)).snd
+
+/-- The block features `linearize` cannot carry across a suspension point.
+    Splitting a yield-containing block into dispatch states dissolves the
+    block itself: its label disappears, so a `goto` back to its start or an
+    `exit` past its end would dangle, and its invariants and measure lose
+    the block entry and back edge they are checked at. Rather than dropping
+    them silently — an `invariant false` on such a block would simply pass,
+    and a dangling jump would surface later as an internal "label is not in
+    scope" error — reject the coroutine. Labels are lexically scoped, so
+    every jump sits inside its target block: scanning each yield-containing
+    labelled block for unshadowed jumps to its own label also covers a jump
+    that crosses out of a dissolved region to an outer label (the outer
+    block contains the yield too and is scanned itself). A yield-*free*
+    block is kept whole as one straight-line state, label, invariants and
+    measure intact, so jumps within it are unaffected. -/
+private def unsupportedYieldBlockDiags (impl : StmtExprMd) : List Message :=
+  collectStmtExprList (fun e =>
+    match e.val with
+    | .Block stmts label invs dec =>
+      if containsYield e then
+        (if invs.isEmpty then [] else
+          [diagnosticFromSource e.source
+            "an invariant on a block containing 'yield' is not supported in a coroutine"]) ++
+        (if dec.isNone then [] else
+          [diagnosticFromSource e.source
+            "a decreases clause on a block containing 'yield' is not supported in a coroutine"]) ++
+        (match label with
+          | some l =>
+            let (toStart, toEnd) := unshadowedJumpsTo l stmts
+            (if toStart then
+              [diagnosticFromSource e.source
+                "a 'goto' back to the start of a block containing 'yield' is not supported in a coroutine"]
+             else []) ++
+            (if toEnd then
+              [diagnosticFromSource e.source
+                "an 'exit' out of a block containing 'yield' is not supported in a coroutine"]
+             else [])
+          | none => [])
+      else []
+    | _ => []) impl
+
+/-- Fatal diagnostics for every coroutine body carrying a block `linearize`
+    cannot lower faithfully (see `unsupportedYieldBlockDiags`). Only the full
+    elaboration path linearizes, so only it runs this check. -/
+private def coroutineLinearizationDiags (p : LaurelProgram) : List Message :=
+  (p.staticProcedures.filter Procedure.is_coroutine).flatMap fun proc =>
+    match proc.body with
+    | .Opaque _ (some impl) _ => unsupportedYieldBlockDiags impl
+    | _ => []
 
 /-- Linearization state: the accumulated `(stateId, body)` arms and a
     fresh-id counter. State ids start at 1 (`endState = 0` is reserved). -/
@@ -321,7 +392,7 @@ private def emitState (id : Nat) (body : StmtExprMd) : LinM Unit :=
       coroutine state, so it is read as a plain local. -/
 private def linearize (naming : FieldNaming) (resumeParam : Option Identifier)
     (stmt : StmtExprMd) (next : Nat) : LinM Nat := do
-  if let .Return none := stmt.val then
+  if let .Return [] := stmt.val then
     let id ← freshState
     emitState id (block [pcAssign endState, bareReturn])
     return id
@@ -330,7 +401,7 @@ private def linearize (naming : FieldNaming) (resumeParam : Option Identifier)
     emitState id (block [lowerBareReturns stmt, pcAssign next])
     return id
   match _h: stmt.val with
-  | .Block stmts _ =>
+  | .Block stmts _ _ _ =>
     -- Thread continuations right-to-left: the last statement's
     -- continuation is `next`, each earlier statement's continuation is
     -- the entry of the one after it. Empty block ≡ no-op → next.
@@ -439,7 +510,8 @@ private def linearize (naming : FieldNaming) (resumeParam : Option Identifier)
   termination_by sizeOf stmt
   decreasing_by
     all_goals (have := AstNode.sizeOf_val_lt stmt)
-    all_goals (simp_all; try term_by_mem)
+    all_goals (simp_all only [Bool.not_eq_eq_eq_not, Bool.not_true, Bool.not_eq_false, StmtExpr.Block.sizeOf_spec, gt_iff_lt,
+    StmtExpr.IfThenElse.sizeOf_spec, Option.some.sizeOf_spec, StmtExpr.While.sizeOf_spec, Bool.sizeOf_eq_one]; try term_by_mem)
     all_goals (cases stmt; simp_all; omega)
 
 
@@ -476,7 +548,7 @@ private def pcAssignTarget? (s : StmtExprMd) : Option Nat :=
 private def pcTargets (s : StmtExprMd) : List Nat :=
   match _h : s.val with
   | .Assign _ _ => (pcAssignTarget? s).toList
-  | .Block stmts _ => stmts.attach.flatMap (fun ⟨st, _⟩ => pcTargets st)
+  | .Block stmts _ _ _ => stmts.attach.flatMap (fun ⟨st, _⟩ => pcTargets st)
   | .IfThenElse _ t e => pcTargets t ++ (match e with | some eb => pcTargets eb | none => [])
   | _ => []
   termination_by sizeOf s
@@ -491,7 +563,7 @@ private def pcTargets (s : StmtExprMd) : List Nat :=
     `return` and conditional arms end in an `if`, so both return `none`. -/
 private def tailTransition? (body : StmtExprMd) : Option Nat :=
   match body.val with
-  | .Block stmts _ => stmts.getLast?.bind pcAssignTarget?
+  | .Block stmts _ _ _ => stmts.getLast?.bind pcAssignTarget?
   | _ => none
 
 /-- Splice `bbody` in place of `abody`'s trailing `$pc :=` statement.
@@ -500,11 +572,11 @@ private def tailTransition? (body : StmtExprMd) : Option Nat :=
     keeping the merged arm eligible for further coalescing. -/
 private def spliceTail (abody bbody : StmtExprMd) : StmtExprMd :=
   match abody.val with
-  | .Block astmts lbl =>
+  | .Block astmts lbl invs dec =>
     let bstmts := match bbody.val with
-      | .Block bs _ => bs
+      | .Block bs _ _ _ => bs
       | _ => [bbody]
-    { val := .Block (astmts.dropLast ++ bstmts) lbl, source := abody.source }
+    { val := .Block (astmts.dropLast ++ bstmts) lbl invs dec, source := abody.source }
   | _ => abody  -- not a block ⇒ not a tail-transition arm; unreachable
 
 /-- Fixpoint merge of tail-transition arms into their unique-predecessor
@@ -686,7 +758,7 @@ private def populateCoroutineComposite (naming : FieldNaming) (proc : Procedure)
       { val := .Assign [outTarget] fieldRead, source := .unknown }
     let copyBeforeReturn (e : StmtExprMd) : StmtExprMd :=
       match e.val with
-      | .Return none => block (yieldCopies ++ [e])
+      | .Return [] => block (yieldCopies ++ [e])
       | _ => e
     let dispatchBody'' :=
       if proc.yields.isEmpty then dispatchBody'
@@ -721,7 +793,7 @@ private def populateCoroutineComposite (naming : FieldNaming) (proc : Procedure)
         decreases := none
         invokeOn := none
         body := .Transparent
-          { val := .Return (some pcNeqEnd), source := .unknown } }
+          { val := .Return [pcNeqEnd], source := .unknown } }
     { composite with
       instanceProcedures := resumeProc :: hasNextProc :: composite.instanceProcedures }
   | _ => composite
@@ -1175,8 +1247,7 @@ private def elaborateForVerification (_ : SemanticModel) (p : LaurelProgram)
         decreases := none
         invokeOn := none
         body := .Transparent
-          { val := .Return (some
-              { val := .LiteralBool true, source := .unknown }),
+          { val := .Return [{ val := .LiteralBool true, source := .unknown }],
             source := .unknown } }
     .Composite { composite with
       instanceProcedures := [resumeProc, hasNextProc] }
@@ -1225,7 +1296,14 @@ public def coroutineElaborationPass : LaurelPass := .onUnordered {
     if options.verifyCoroutine then
       let (p', diags) := elaborateForVerification m p
       (p', diags, {})
-    else (elaborateCoroutines m p, [], {})
+    else
+      -- Reject, rather than linearize, a coroutine whose body carries block
+      -- features the state machine cannot represent (see
+      -- `unsupportedYieldBlockDiags`); a non-warning diagnostic stops the
+      -- pipeline, so the unelaborated program goes no further.
+      match coroutineLinearizationDiags p with
+      | [] => (elaborateCoroutines m p, [], {})
+      | diags => (p, diags, {})
 
 end Strata.Laurel
 end

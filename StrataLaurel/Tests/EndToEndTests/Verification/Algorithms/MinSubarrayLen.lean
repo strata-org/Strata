@@ -17,7 +17,7 @@ procedure sumRange(s: Sequence<int>, lo: int, hi: int): int;
 
 procedure sumAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(lo: int) => forall(hi: int) => hi <= lo ==> sumRange(s, lo, hi) == 0)
+  return (forall(s: Sequence<int>) => forall(lo: int) => forall(hi: int) => hi <= lo ==> sumRange(s, lo, hi) == 0)
   && (forall(s: Sequence<int>) => forall(lo: int) => forall(hi: int) =>
         0 <= lo ==> lo < hi ==> hi <= seqLength(s) ==>
           sumRange(s, lo, hi) == sumRange(s, lo, hi - 1) + seqSelect(s, hi - 1))
@@ -25,13 +25,13 @@ procedure sumAxioms(): bool
 
 procedure noWindowShorterThan(a: Sequence<int>, target: int, len: int, endBefore: int): bool
 {
-  forall(lo: int) => forall(hi: int) => 0 <= lo ==> lo < hi ==> hi <= endBefore ==> hi - lo < len ==>
+  return forall(lo: int) => forall(hi: int) => 0 <= lo ==> lo < hi ==> hi <= endBefore ==> hi - lo < len ==>
     sumRange(a, lo, hi) < target
 };
 
 procedure someWindowOfLength(a: Sequence<int>, target: int, len: int): bool
 {
-  exists(lo: int) => 0 <= lo && lo + len <= seqLength(a) && sumRange(a, lo, lo + len) >= target
+  return exists(lo: int) => 0 <= lo && lo + len <= seqLength(a) && sumRange(a, lo, lo + len) >= target
 };
 
 procedure minSubarrayLen(a: Sequence<int>, target: int) returns (r: int)
@@ -96,7 +96,7 @@ procedure sumRange(s: Sequence<int>, lo: int, hi: int): int;
 
 procedure sumAxioms(): bool
 {
-  (forall(s: Sequence<int>) => forall(lo: int) => forall(hi: int) => hi <= lo ==> sumRange(s, lo, hi) == 0)
+  return (forall(s: Sequence<int>) => forall(lo: int) => forall(hi: int) => hi <= lo ==> sumRange(s, lo, hi) == 0)
   && (forall(s: Sequence<int>) => forall(lo: int) => forall(hi: int) =>
         0 <= lo ==> lo < hi ==> hi <= seqLength(s) ==>
           sumRange(s, lo, hi) == sumRange(s, lo, hi - 1) + seqSelect(s, hi - 1))
@@ -104,13 +104,13 @@ procedure sumAxioms(): bool
 
 procedure noWindowShorterThan(a: Sequence<int>, target: int, len: int, endBefore: int): bool
 {
-  forall(lo: int) => forall(hi: int) => 0 <= lo ==> lo < hi ==> hi <= endBefore ==> hi - lo < len ==>
+  return forall(lo: int) => forall(hi: int) => 0 <= lo ==> lo < hi ==> hi <= endBefore ==> hi - lo < len ==>
     sumRange(a, lo, hi) < target
 };
 
 procedure someWindowOfLength(a: Sequence<int>, target: int, len: int): bool
 {
-  exists(lo: int) => 0 <= lo && lo + len <= seqLength(a) && sumRange(a, lo, lo + len) >= target
+  return exists(lo: int) => 0 <= lo && lo + len <= seqLength(a) && sumRange(a, lo, lo + len) >= target
 };
 
 procedure minSubarrayLen(a: Sequence<int>, target: int) returns (r: int)

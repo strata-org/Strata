@@ -59,29 +59,31 @@ info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
-Label: isEven_body_calls_MyNat..pred_0
-Property: assert
-Obligation:
-!(MyNat..isZero(n@1)) ==> MyNat..isSucc(n@1)
-
-Label: isOdd_body_calls_MyNat..pred_0
-Property: assert
-Obligation:
-!(MyNat..isZero(n@2)) ==> MyNat..isSucc(n@2)
-
 Label: isEven_terminates_0
 Property: assert
 Obligation:
 (forall x : MyNat ::  { MyNat..adtRank(x) }
   int.ge(MyNat..adtRank(x), 0)) ==> (forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
-  int.lt(MyNat..adtRank(pred), MyNat..adtRank(Succ(pred)))) ==> !(MyNat..isZero(n@3)) ==> int.lt(MyNat..adtRank(MyNat..pred(n@3)), MyNat..adtRank(n@3))
+  int.lt(MyNat..adtRank(pred), MyNat..adtRank(Succ(pred)))) ==> (forall x : MyNat ::  { MyNat..adtRank(x) }
+  !(MyNat..isZero(x)) ==> int.ge(MyNat..adtRank(x), 1)) ==> !(MyNat..isZero(n@1)) ==> int.lt(MyNat..adtRank(MyNat..pred(n@1)), MyNat..adtRank(n@1))
 
 Label: isOdd_terminates_0
 Property: assert
 Obligation:
 (forall x : MyNat ::  { MyNat..adtRank(x) }
   int.ge(MyNat..adtRank(x), 0)) ==> (forall pred : MyNat ::  { MyNat..adtRank(Succ(pred)) }
-  int.lt(MyNat..adtRank(pred), MyNat..adtRank(Succ(pred)))) ==> !(MyNat..isZero(n@4)) ==> int.lt(MyNat..adtRank(MyNat..pred(n@4)), MyNat..adtRank(n@4))
+  int.lt(MyNat..adtRank(pred), MyNat..adtRank(Succ(pred)))) ==> (forall x : MyNat ::  { MyNat..adtRank(x) }
+  !(MyNat..isZero(x)) ==> int.ge(MyNat..adtRank(x), 1)) ==> !(MyNat..isZero(n@2)) ==> int.lt(MyNat..adtRank(MyNat..pred(n@2)), MyNat..adtRank(n@2))
+
+Label: isEven_body_calls_MyNat..pred_0
+Property: assert
+Obligation:
+!(MyNat..isZero(n@3)) ==> MyNat..isSucc(n@3)
+
+Label: isOdd_body_calls_MyNat..pred_0
+Property: assert
+Obligation:
+!(MyNat..isZero(n@4)) ==> MyNat..isSucc(n@4)
 
 Label: zeroEven
 Property: assert
@@ -110,19 +112,19 @@ true
 
 ---
 info:
-Obligation: isEven_body_calls_MyNat..pred_0
-Property: assert
-Result: ✅ pass
-
-Obligation: isOdd_body_calls_MyNat..pred_0
-Property: assert
-Result: ✅ pass
-
 Obligation: isEven_terminates_0
 Property: assert
 Result: ✅ pass
 
 Obligation: isOdd_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isEven_body_calls_MyNat..pred_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isOdd_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
 
@@ -211,18 +213,6 @@ info: true
 
 /--
 info:
-Obligation: treeSize_body_calls_RoseTree..children_0
-Property: assert
-Result: ✅ pass
-
-Obligation: listSize_body_calls_RoseList..hd_0
-Property: assert
-Result: ✅ pass
-
-Obligation: listSize_body_calls_RoseList..tl_1
-Property: assert
-Result: ✅ pass
-
 Obligation: treeSize_terminates_0
 Property: assert
 Result: ✅ pass
@@ -232,6 +222,18 @@ Property: assert
 Result: ✅ pass
 
 Obligation: listSize_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: treeSize_body_calls_RoseTree..children_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listSize_body_calls_RoseList..hd_0
+Property: assert
+Result: ✅ pass
+
+Obligation: listSize_body_calls_RoseList..tl_1
 Property: assert
 Result: ✅ pass
 
@@ -334,6 +336,14 @@ info: true
 
 /--
 info:
+Obligation: isEven_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: isOdd_terminates_0
+Property: assert
+Result: ✅ pass
+
 Obligation: isEven_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
@@ -342,11 +352,11 @@ Obligation: isOdd_body_calls_MyNat..pred_0
 Property: assert
 Result: ✅ pass
 
-Obligation: isEven_terminates_0
+Obligation: evenHalf_terminates_0
 Property: assert
 Result: ✅ pass
 
-Obligation: isOdd_terminates_0
+Obligation: oddHalf_terminates_0
 Property: assert
 Result: ✅ pass
 
@@ -363,14 +373,6 @@ Property: assert
 Result: ✅ pass
 
 Obligation: oddHalf_body_calls_evenHalf_1
-Property: assert
-Result: ✅ pass
-
-Obligation: evenHalf_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: oddHalf_terminates_0
 Property: assert
 Result: ✅ pass
 
@@ -470,19 +472,19 @@ info: true
 
 /--
 info:
-Obligation: evenLen_body_calls_MyList..tl_0
-Property: assert
-Result: ✅ pass
-
-Obligation: oddLen_body_calls_MyList..tl_0
-Property: assert
-Result: ✅ pass
-
 Obligation: evenLen_terminates_0
 Property: assert
 Result: ✅ pass
 
 Obligation: oddLen_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: evenLen_body_calls_MyList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: oddLen_body_calls_MyList..tl_0
 Property: assert
 Result: ✅ pass
 

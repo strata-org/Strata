@@ -18,7 +18,7 @@ procedure seps(s: Sequence<int>, hi: int): int;
 
 procedure csvAxioms(): bool
 {
-  (forall(s: Sequence<int>) => !quoted(s, 0) && seps(s, 0) == 0)
+  return (forall(s: Sequence<int>) => !quoted(s, 0) && seps(s, 0) == 0)
   && (forall(s: Sequence<int>) => forall(h: int) => 1 <= h ==> h <= seqLength(s) ==>
         quoted(s, h) == (quoted(s, h - 1) != (seqSelect(s, h - 1) == 34))
         && seps(s, h) == seps(s, h - 1) + (if seqSelect(s, h - 1) == 44 && !quoted(s, h - 1) then 1 else 0))
@@ -60,7 +60,7 @@ procedure seps(s: Sequence<int>, hi: int): int;
 
 procedure csvAxioms(): bool
 {
-  (forall(s: Sequence<int>) => !quoted(s, 0) && seps(s, 0) == 0)
+  return (forall(s: Sequence<int>) => !quoted(s, 0) && seps(s, 0) == 0)
   && (forall(s: Sequence<int>) => forall(h: int) => 1 <= h ==> h <= seqLength(s) ==>
         quoted(s, h) == (quoted(s, h - 1) != (seqSelect(s, h - 1) == 34))
         && seps(s, h) == seps(s, h - 1) + (if seqSelect(s, h - 1) == 44 && !quoted(s, h - 1) then 1 else 0))

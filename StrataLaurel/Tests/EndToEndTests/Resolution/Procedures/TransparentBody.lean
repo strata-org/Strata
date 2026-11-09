@@ -41,13 +41,7 @@ procedure localVariableWithoutInitializer(): int {
 };
 #end
 
-/-! ## A transparent body must yield a single value
-
-`FunctionalRewrite` turns a body into one expression, and an expression evaluates
-to a single value, so a body with several outputs cannot be functionalized. (A
-body with *no* outputs is fine: its procedure carries the meaning, and its unused
-function copy is simply left alone — see `valuelessEarlyReturn` in the
-verification tests.)
+/-! ## A transparent body may yield several values
 
 An if-then-else followed by more statements is *not* an error: the continuation
 is duplicated into both branches. See `deadCodeAfterIfElse` in
@@ -58,7 +52,6 @@ is duplicated into both branches. See `deadCodeAfterIfElse` in
 program Laurel;
 
 procedure transparentBodyMultipleOuts() returns (q: int, r: int)
-//        ^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: a transparent body with 2 output parameters is not supported; it must have at most one
 {
   assert true;
   q := 3;

@@ -391,14 +391,18 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       return mkStmtExprMd (.Try body catches finally?) src
     | q`Laurel.block, #[arg0] =>
       let stmts ← translateSeqCommand arg0
-      return mkStmtExprMd (.Block stmts none) src
-    | q`Laurel.labelledBlock, #[arg0, arg1] =>
+      return mkStmtExprMd (.Block stmts none [] none) src
+    | q`Laurel.labelledBlock, #[arg0, arg1, invSeqArg] =>
       let stmts ← translateSeqCommand arg0
       let label ← translateIdent arg1
-      return mkStmtExprMd (.Block stmts (some label.text)) src
+      let invariants ← translateInvariantClauses translateStmtExpr invSeqArg
+      return mkStmtExprMd (.Block stmts (some label.text) invariants none) src
     | q`Laurel.exit, #[arg0] =>
       let label ← translateIdent arg0
-      return mkStmtExprMd (.Exit label.text) src
+      return mkStmtExprMd (.Goto label.text .blockEnd) src
+    | q`Laurel.goto, #[arg0] =>
+      let label ← translateIdent arg0
+      return mkStmtExprMd (.Goto label.text .blockStart) src
     | q`Laurel.literalBool, #[arg0] => return mkStmtExprMd (.LiteralBool (← translateBool arg0)) src
     | q`Laurel.int, #[arg0] =>
       let n ← translateNat arg0
@@ -549,11 +553,21 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
           return mkStmtExprMd (.StaticCall name argsList []) src
       | _ =>
         return mkStmtExprMd (.StaticCall (mkId "") argsList []) src
-    | q`Laurel.return, #[arg0] =>
+    | q`Laurel.return, #[arg0, moreArg] =>
       let value ← match arg0 with
         | .option _ (some valArg) => some <$> translateStmtExpr valArg
         | _ => pure none
-      return mkStmtExprMd (.Return value) src
+      let more ← match moreArg with
+        | .option _ (some (.op moreOp)) => match moreOp.name, moreOp.args with
+          | q`Laurel.returnMore, #[valuesSeq] => match valuesSeq with
+            | .seq _ .comma vals => vals.toList.mapM translateStmtExpr
+            | _ => pure []
+          | _, _ => pure []
+        | _ => pure []
+      if value.isNone && !more.isEmpty then
+        TransM.error "return: value list cannot begin with a comma"
+      else
+        return mkStmtExprMd (.Return (value.toList ++ more)) src
     | q`Laurel.yield, _ => return mkStmtExprMd .Yield src
     | q`Laurel.ifThenElse, #[arg0, arg1, elseArg] =>
       let cond ← translateStmtExpr arg0
@@ -580,9 +594,9 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       let step ← translateStmtExpr stepArg
       let invariants ← translateInvariantClauses translateStmtExpr invSeqArg
       let body ← translateStmtExpr bodyArg
-      let whileBody := mkStmtExprMd (.Block [body, step] none) src
+      let whileBody := mkStmtExprMd (.Block [body, step] none [] none) src
       let whileStmt := mkStmtExprMd (.While cond invariants none whileBody false) src
-      return mkStmtExprMd (.Block [init, whileStmt] none) src
+      return mkStmtExprMd (.Block [init, whileStmt] none [] none) src
     | q`Laurel.doWhile, #[bodyArg, condArg, invSeqArg] =>
       -- A `do … while` is a post-test `While`. The `EliminateDoWhile` pass
       -- lowers `postTest := true` to the pre-test form later.
@@ -845,14 +859,21 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     -- Parse the optional `throws (e: T)` clause, which names the thrown value as
     -- well as its type, scoping the name over the `throwsOn` blocks below. The two
     -- come from one op, so they are set or unset together.
-    let (throwsType, throwsBinding) ← match throwsArg with
+    let (throwsType, throwsBinding, throwsInferred) ← match throwsArg with
       | .option _ (some (.op throwsOp)) => match throwsOp.name, throwsOp.args with
         | q`Laurel.throwsClause, #[bindingArg, tyArg] => do
           let binding ← translateIdent bindingArg
           let ty ← translateHighType tyArg
-          pure (some ty, some binding)
+          pure (some ty, some binding, false)
+        | q`Laurel.throwsInferredClause, #[bindingArg] => do
+          let binding ← translateIdent bindingArg
+          pure (none, some binding, true)
+        | q`Laurel.throwsDeclaredInferredClause, #[bindingArg, tyArg] => do
+          let binding ← translateIdent bindingArg
+          let ty ← translateHighType tyArg
+          pure (some ty, some binding, true)
         | _, _ => TransM.error s!"Expected throwsClause, got {repr throwsOp.name}"
-      | _ => pure (none, none)
+      | _ => pure (none, none, false)
     -- Parse optional invokeOn clause
     let invokeOn ← match invokeOnArg with
       | .option _ (some (.op invokeOnOp)) => match invokeOnOp.name, invokeOnOp.args with
@@ -992,6 +1013,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       isInterpretEntry := isInterpretEntry
       throwsType := throwsType
       throwsBinding := throwsBinding
+      throwsInferred := throwsInferred
       throwsOn := throwsOn
       readsGlobals := readsGlobals
       writesGlobals := writesGlobals
@@ -1248,6 +1270,7 @@ private structure TopLevel where
   proc : Option Procedure := none
   type : Option TypeDefinition := none
   field : Option Field := none
+  heapField : Option HeapField := none
 
 private def parseTopLevelWithGlobals (arg : Arg) : TransM TopLevel := do
   let .op op := arg
@@ -1301,6 +1324,14 @@ private def parseTopLevelWithGlobals (arg : Arg) : TransM TopLevel := do
       | _ => TransM.error s!"global '{name.text}' has a malformed initializer"
     return { field := some { name := name, isMutable := true, type := fieldType,
                              initializer := some initializer } }
+  | q`Laurel.heapFieldCommand, #[fieldArg, locationArg] =>
+    let field ← parseField fieldArg
+    let location ← match locationArg with
+      | .option _ (some (.op locOp)) => match locOp.name, locOp.args with
+        | q`Laurel.heapFieldLocation, #[nameArg] => translateIdent nameArg
+        | _, _ => TransM.error s!"heap field '{field.name.text}' has a malformed location"
+      | _ => pure field.name
+    return { heapField := some { toField := field, location } }
   | q`Laurel.globalVarCommand, #[nameArg, _typeArg] =>
     let name ← translateIdent nameArg
     TransM.error s!"file-scope global '{name.text}' must declare an initializer: \
@@ -1311,7 +1342,7 @@ private def parseTopLevelWithGlobals (arg : Arg) : TransM TopLevel := do
 /-- Translate one non-global top-level command, preserving the existing public API. -/
 def parseTopLevel (arg : Arg) : TransM (Option Procedure × Option TypeDefinition) := do
   let topLevel ← parseTopLevelWithGlobals arg
-  if topLevel.field.isSome then
+  if topLevel.field.isSome || topLevel.heapField.isSome then
     TransM.error
       "parseTopLevel expects procedureCommand, compositeCommand, or datatypeCommand, got `Laurel.globalVarCommand`"
   return (topLevel.proc, topLevel.type)
@@ -1323,8 +1354,9 @@ def parseProgram (prog : StrataDDM.Program) : TransM Laurel.LaurelProgram := do
   let mut procedures : List Procedure := []
   let mut types : List TypeDefinition := []
   let mut fields : List Field := []
+  let mut heapFields : List HeapField := []
   for op in prog.commands do
-    let { proc := procOpt, type := typeOpt, field := fieldOpt } ←
+    let { proc := procOpt, type := typeOpt, field := fieldOpt, heapField := heapFieldOpt } ←
       parseTopLevelWithGlobals (.op op)
     match procOpt with
     | some proc => procedures := procedures ++ [proc]
@@ -1335,10 +1367,14 @@ def parseProgram (prog : StrataDDM.Program) : TransM Laurel.LaurelProgram := do
     match fieldOpt with
     | some field => fields := fields ++ [field]
     | none => pure ()
+    match heapFieldOpt with
+    | some field => heapFields := heapFields ++ [field]
+    | none => pure ()
   return {
     staticProcedures := procedures
     staticFields := fields
     types := types
+    heapFields := heapFields
   }
 
 end

@@ -124,7 +124,7 @@ private theorem fvars_annotated_by_keySet
   have h_k_mem := (List.of_mem_zip h_mem).1
   rw [List.mem_map] at h_k_mem
   obtain ⟨⟨k', w⟩, h_kw_mem, h_k_eq⟩ := h_k_mem
-  simp at h_k_eq; subst h_k_eq
+  simp only at h_k_eq; subst h_k_eq
   have h_env_kw := h_in_env k' w h_kw_mem
   obtain ⟨ty, h_envTys_k⟩ := hEnvTy.cover k' w h_env_kw
   obtain ⟨i, h_key_i, h_val_i, h_first_i⟩ := Map.find?_index h_find_zip
@@ -141,7 +141,7 @@ private theorem fvars_annotated_by_keySet
   cases h_ks_i : ks[i]? with
   | none => simp [h_ks_i] at h_key_i
   | some p =>
-    simp [h_ks_i] at h_key_i h_val_i
+    simp only [h_ks_i, Option.map_some, Option.some.injEq] at h_key_i h_val_i
     rw [h_key_i, h_envTys_k] at h_val_i
     exact h_val_i ▸ h_envTys_k
 
@@ -339,7 +339,7 @@ theorem Step.denote_preserved
   induction hstep generalizing τ with
   | expand_fvar x e henv =>
     cases h₁ with
-    | fvar => simp [LExpr.denote]; exact (hEnv vt x _ _ henv h₂).symm
+    | fvar => simp only [LExpr.denote]; exact (hEnv vt x _ _ henv h₂).symm
   | beta e1 v2 eres heq =>
     subst heq
     cases h₁
@@ -679,7 +679,7 @@ theorem Step.type_preserved
     cases h_fn with
     | abs h_body =>
       have h_tc := substK_typeCheck (e := e1) (Δ₁ := []) (fun _ => h_arg)
-      simp at h_tc
+      simp only [List.length_nil, List.nil_append] at h_tc
       rw [LExpr.HasTypeA_iff_typeCheck] at h_body ⊢
       simp only [LExpr.subst]
       rw [h_tc, h_body]

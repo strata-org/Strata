@@ -54,7 +54,9 @@ procedure test(x: B) returns (r: A) { return x };
 -- leaves the reference as written (`x: C`), while both alias declarations are
 -- still dropped.
 /--
-info: procedure cyclic(x: C)
+info: resolution diagnostic: type 'C' is defined in terms of itself
+resolution diagnostic: type 'D' is defined in terms of itself
+procedure cyclic(x: C)
   opaque
 {
   assert true

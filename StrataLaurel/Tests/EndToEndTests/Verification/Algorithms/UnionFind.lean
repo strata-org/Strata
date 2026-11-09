@@ -15,7 +15,7 @@ program Laurel;
 
 procedure ranked(parent: Sequence<int>, rank: Sequence<int>): bool
 {
-  seqLength(parent) == seqLength(rank)
+  return seqLength(parent) == seqLength(rank)
   && (forall(i: int) => 0 <= i ==> i < seqLength(parent) ==>
         0 <= seqSelect(parent, i) && seqSelect(parent, i) < seqLength(parent)
         && (seqSelect(parent, i) == i || seqSelect(rank, seqSelect(parent, i)) > seqSelect(rank, i)))
@@ -25,13 +25,13 @@ procedure rootOf(parent: Sequence<int>, i: int): int;
 
 procedure rootAxioms(rank: Sequence<int>): bool
 {
-  forall(parent: Sequence<int>) => forall(i: int) => ranked(parent, rank) ==> 0 <= i ==> i < seqLength(parent) ==>
+  return forall(parent: Sequence<int>) => forall(i: int) => ranked(parent, rank) ==> 0 <= i ==> i < seqLength(parent) ==>
     rootOf(parent, i) == (if seqSelect(parent, i) == i then i else rootOf(parent, seqSelect(parent, i)))
 };
 
 procedure sameRoots(p: Sequence<int>, q: Sequence<int>): bool
 {
-  seqLength(p) == seqLength(q) && (forall(i: int) => 0 <= i ==> i < seqLength(p) ==> rootOf(p, i) == rootOf(q, i))
+  return seqLength(p) == seqLength(q) && (forall(i: int) => 0 <= i ==> i < seqLength(p) ==> rootOf(p, i) == rootOf(q, i))
 };
 
 procedure find(parent: Sequence<int>, rank: Sequence<int>, x: int) returns (root: int, res: Sequence<int>)
@@ -78,7 +78,7 @@ program Laurel;
 
 procedure ranked(parent: Sequence<int>, rank: Sequence<int>): bool
 {
-  seqLength(parent) == seqLength(rank)
+  return seqLength(parent) == seqLength(rank)
   && (forall(i: int) => 0 <= i ==> i < seqLength(parent) ==>
         0 <= seqSelect(parent, i) && seqSelect(parent, i) < seqLength(parent)
         && (seqSelect(parent, i) == i || seqSelect(rank, seqSelect(parent, i)) > seqSelect(rank, i)))
@@ -88,13 +88,13 @@ procedure rootOf(parent: Sequence<int>, i: int): int;
 
 procedure rootAxioms(rank: Sequence<int>): bool
 {
-  forall(parent: Sequence<int>) => forall(i: int) => ranked(parent, rank) ==> 0 <= i ==> i < seqLength(parent) ==>
+  return forall(parent: Sequence<int>) => forall(i: int) => ranked(parent, rank) ==> 0 <= i ==> i < seqLength(parent) ==>
     rootOf(parent, i) == (if seqSelect(parent, i) == i then i else rootOf(parent, seqSelect(parent, i)))
 };
 
 procedure sameRoots(p: Sequence<int>, q: Sequence<int>): bool
 {
-  seqLength(p) == seqLength(q) && (forall(i: int) => 0 <= i ==> i < seqLength(p) ==> rootOf(p, i) == rootOf(q, i))
+  return seqLength(p) == seqLength(q) && (forall(i: int) => 0 <= i ==> i < seqLength(p) ==> rootOf(p, i) == rootOf(q, i))
 };
 
 procedure find(parent: Sequence<int>, rank: Sequence<int>, x: int) returns (root: int, res: Sequence<int>)

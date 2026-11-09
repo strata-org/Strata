@@ -38,8 +38,8 @@ procedure factoryContract()
 };
 #end
 
--- Only the clauses mention `Q`, so their helpers bind it. Nothing calls them: a call could not
--- infer `Q`.
+-- Only the clauses mention `Q`; it occurs in no input or output, so it
+-- becomes an opaque type, since a call could not infer it.
 #eval testLaurelVerification <|
 #strata
 program Laurel;
@@ -47,4 +47,31 @@ procedure clausesOnly<Q>(b: int) returns (r: int)
   requires forall(x: Q) => x == x
   opaque
   ensures forall(x: Q) => x == x;
+#end
+
+-- `E` occurs only in the thrown type, so it stays a type parameter, and the
+-- procedure verifies.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+procedure thrower<E>(x: int) returns (r: int)
+  throws (e: E)
+  opaque
+  ensures r == x + 1
+{ r := x + 1 };
+#end
+
+-- The body and the clauses use the same type for `Q`.
+#eval testLaurelVerification <|
+#strata
+program Laurel;
+procedure bodyUses<Q>(b: int) returns (r: int)
+  requires exists(x: Q) => x == x
+  opaque
+  ensures exists(x: Q) => x == x
+{
+  var q: Q;
+  assert q == q;
+  r := b
+};
 #end

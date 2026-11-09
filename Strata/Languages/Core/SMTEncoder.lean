@@ -16,6 +16,7 @@ public import Strata.Util.Statistics
 public import Strata.Languages.Core.NameMangling
 public import Strata.DL.SMT.DDMTransform.Translate -- shake: keep
 public import Strata.Util.PtrCache
+import Strata.Util.Worklist
 import Strata.Languages.Core.Statistics
 import Strata.Util.Tactics
 
@@ -227,7 +228,8 @@ def lMonoTyToTermType (useArrayTheory : Bool := false) (ty : LMonoTy) : TermType
 
 /-- Convert a datatype's constructors to typed SMT constructors: the one place that names
     constructors and selectors and lowers field types, for every solver interface. -/
-def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) (useArrayTheory : Bool := false): List SMTConstructor :=
+def datatypeConstructorsToSMT (d : LDatatype CoreLParams.IDMeta) (useArrayTheory : Bool := false)
+    : List SMTConstructor :=
   d.constrs.map fun c =>
     let fields := c.args.map fun (name, fieldTy) =>
       (Lambda.destructorFuncName d name, lMonoTyToTermType useArrayTheory fieldTy)
@@ -1345,6 +1347,41 @@ structure EncodeResult where
   ctx : SMT.Context
   /-- Encoding statistics for this obligation. -/
   stats : Statistics
+
+/-- The context `r`'s query is declared from. With `removeDatatypes`, it
+    declares only the datatypes that the query's text mentions and the
+    datatypes their constructor fields use. The text is the kept assumptions,
+    the goal, the variable declarations and definitions, and the functions
+    and axioms of the context, which every emitter declares in full.
+    Emission relies on the kept set containing every datatype the emitted
+    query mentions and every field type of each kept datatype, and on every
+    datatype being declared when `reachable` gives up. -/
+-- TODO: prove this closure property.
+def EncodeResult.declaredCtx (r : EncodeResult) (removeDatatypes : Bool) :
+    SMT.Context := Id.run do
+  if !removeDatatypes then return r.ctx
+  let ctx := r.ctx
+  let mut used := r.assumptions.foldl (fun acc t => t.addSortNames acc)
+    (r.goal.addSortNames {})
+  for d in r.varDefs do
+    used := d.body.addSortNames (d.ty.addSortNames used)
+  for d in r.varDecls do
+    used := d.ty.addSortNames used
+  for uf in ctx.ufs.toArray do
+    used := uf.out.addSortNames (uf.args.foldl TermType.addSortNames used)
+  for f in ctx.ifs.toArray do
+    used := f.args.foldl TermVar.addSortNames used
+    used := f.body.addSortNames (f.out.addSortNames used)
+  for ax in ctx.axms.toArray do
+    used := ax.addSortNames used
+  let seen := ctx.seenDatatypes
+  let fieldTypes := fun d => match ctx.datatypes.getType d with
+    | some dt => dt.fieldTypeRefs.filter seen.contains
+    | none => []
+  match Strata.Worklist.reachable (seen.toList.filter used.contains)
+      fieldTypes seen.size with
+  | some kept => return { ctx with seenDatatypes := kept }
+  | none => return ctx
 
 /-- The goal-independent stage of an `EncodeResult`: the kept entries' terms
     and drain seed, assembled from the frame list. -/

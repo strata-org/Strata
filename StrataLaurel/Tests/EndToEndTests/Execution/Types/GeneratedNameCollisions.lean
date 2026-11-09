@@ -106,3 +106,35 @@ procedure useBoth()
   assert f#val == t#val
 };
 #end
+
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Composite { var val: int }
+//        ^^^^^^^^^ error: Duplicate definition 'Composite' is already defined in this scope
+
+procedure useComposite()
+  opaque
+  modifies *
+{
+  var c: Composite := new Composite;
+  c#val := 7;
+  assert c#val == 7
+};
+#end
+
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Heap { var val: int }
+//        ^^^^ error: Duplicate definition 'Heap' is already defined in this scope
+
+procedure useHeap()
+  opaque
+  modifies *
+{
+  var h: Heap := new Heap;
+  h#val := 7;
+  assert h#val == 7
+};
+#end

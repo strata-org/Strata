@@ -1041,6 +1041,84 @@ def wrapperTy' : LDatatype Unit := {name := "Wrapper", typeArgs := [], constrs :
   typeCheckAndPartialEval #[[wrapperTy'], [listTy]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 ---------------------------------------------------------------------
+-- Type constructor applied at the wrong arity should be rejected
+---------------------------------------------------------------------
+
+-- `List` takes one type argument, but `MkPairs` applies it to two.
+def pairsConstr : LConstr Unit :=
+  {name := "MkPairs", args := [("xs", .tcons "List" [.int, .int])], testerName := "isMkPairs"}
+def pairsTy : LDatatype Unit :=
+  {name := "Pairs", typeArgs := [], constrs := [pairsConstr], constrs_ne := rfl}
+
+/--
+info: Error in datatype Pairs, constructor MkPairs: Type constructor 'List' expects 1 type argument(s) but was given 2
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[[listTy], [pairsTy]] (IntBoolFactory : @Factory TestParams)
+    (intConst () 0)
+
+---------------------------------------------------------------------
+-- A datatype named after a known type should be rejected
+---------------------------------------------------------------------
+
+def intClashTy : LDatatype Unit :=
+  {name := "int", typeArgs := [],
+   constrs := [{name := "MkInt", args := [], testerName := "isMkInt"}], constrs_ne := rfl}
+
+/--
+info: Cannot name datatype same as known type!
+type:
+int
+Type Arguments:
+[]
+Constructors:
+[Name: MkInt Args: [] Tester: isMkInt ]
+
+KnownTypes' names:
+[arrow, string, int, bool]
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[[intClashTy]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+
+---------------------------------------------------------------------
+-- Inhabitance that needs a second evaluation
+---------------------------------------------------------------------
+
+/-
+type RoundA = A1 RoundB | A2
+type RoundB = MkB RoundA
+
+Checking `RoundA` first visits `RoundB` while `RoundA` is still being expanded, so `RoundB`
+looks uninhabited then. That answer is not kept, and `RoundB` is found inhabited when it is
+checked on its own, once `RoundA` is known to be inhabited.
+-/
+
+def roundATy : LDatatype Unit :=
+  {name := "RoundA", typeArgs := [],
+   constrs := [{name := "A1", args := [("b", .tcons "RoundB" [])], testerName := "isA1"},
+               {name := "A2", args := [], testerName := "isA2"}],
+   constrs_ne := rfl}
+
+def roundBTy : LDatatype Unit :=
+  {name := "RoundB", typeArgs := [],
+   constrs := [{name := "MkB", args := [("a", .tcons "RoundA" [])], testerName := "isMkB"}],
+   constrs_ne := rfl}
+
+/--
+info: Annotated expression:
+#0
+
+---
+info: #0
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[[roundATy, roundBTy]] (IntBoolFactory : @Factory TestParams)
+    (intConst () 0)
+
+---------------------------------------------------------------------
 ---------------------------------------------------------------------
 -- 3-way mutually recursive datatypes (A -> B -> C -> A)
 ---------------------------------------------------------------------
@@ -1167,6 +1245,316 @@ Constructors:
   typeCheckAndPartialEval #[[dupTy1, dupTy2]] (Factory.default : @Factory TestParams) (intConst () 0)
 
 end MutualRecursion
+
+section DerivedNameScoping
+
+/-
+Datatypes in a mutual block must declare the same type parameters, and every derived
+function must bind each type variable in its type.
+-/
+
+def scopeAaTy : LDatatype Unit :=
+  {name := "Aa", typeArgs := ["x"],
+   constrs := [{name := "MkA", args := [("fa", .ftvar "x")], testerName := "isMkA"}],
+   constrs_ne := rfl}
+
+def scopeBbTy : LDatatype Unit :=
+  {name := "Bb", typeArgs := ["y", "z"],
+   constrs := [{name := "MkB", args := [("fb", .ftvar "y")], testerName := "isMkB"},
+               {name := "NilB", args := [], testerName := "isNilB"}],
+   constrs_ne := rfl}
+
+def mismatchedBlock : MutualDatatype Unit := [scopeAaTy, scopeBbTy]
+
+/-- `Bb` with the same type parameter `x` as `scopeAaTy`. -/
+def uniformBbTy : LDatatype Unit :=
+  {name := "Bb", typeArgs := ["x"],
+   constrs := [{name := "MkB", args := [("fb", .ftvar "x")], testerName := "isMkB"},
+               {name := "NilB", args := [], testerName := "isNilB"}],
+   constrs_ne := rfl}
+
+def uniformBlock : MutualDatatype Unit := [scopeAaTy, uniformBbTy]
+
+/-- `g` applied to each function derived from `block`, keeping the `some` results; `onError`
+    if derivation fails. -/
+def filterMapDerived {α : Type} (block : MutualDatatype Unit) (onError : List α)
+    (g : LFunc TestParams → Option α) : List α :=
+  match genBlockFactory (T := TestParams) block with
+  | .error _ => onError
+  | .ok f => f.toArray.toList.filterMap g
+
+/-- The derived functions of `block` whose type mentions a type variable their own
+    `typeArgs` does not bind, as `(name, unbound)`; `[("rejected", [])]` if derivation fails. -/
+def unboundTyVars (block : MutualDatatype Unit) : List (String × List TyIdentifier) :=
+  filterMapDerived block [("rejected", [])] fun fn =>
+    let ty := LMonoTy.mkArrow' fn.output fn.inputs.values
+    let free := ty.freeVars.filter (fun v => !fn.typeArgs.contains v)
+    if free.isEmpty then none else some (fn.name.name, free)
+
+/-- info: Datatypes in a mutual block must declare the same type parameters, but Aa declares [x] and Bb declares [y,
+ z]. If these datatypes are not mutually recursive, declare them in separate blocks. -/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[mismatchedBlock] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+
+/-- `Aa` with type parameter `x` whose constructor field has type `w`. -/
+def strayVarAaTy : LDatatype Unit :=
+  {name := "Aa", typeArgs := ["x"],
+   constrs := [{name := "MkA", args := [("fa", .ftvar "w")], testerName := "isMkA"}],
+   constrs_ne := rfl}
+
+-- The block `Aa x`, `Bb x` agrees on its type parameters but is rejected because `MkA`'s field
+-- uses the undeclared type variable `w`.
+/-- info: Datatype 'Aa': constructor 'MkA' uses type variable 'w' not in its type arguments -/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[[strayVarAaTy, uniformBbTy]] (IntBoolFactory : @Factory TestParams)
+    (intConst () 0)
+
+/-- info: [] -/
+#guard_msgs in
+#eval unboundTyVars uniformBlock
+
+/-
+`Aa$Elim` on an `Aa int` scrutinee needs a `MkB` case that takes an `int`, so one that takes a
+`bool` is a type error.
+-/
+def uniformMkA (v : LExpr TestParams.mono) : LExpr TestParams.mono :=
+  (LExpr.op () ("MkA" : TestParams.Identifier) .none).mkApp () [v]
+
+def elimAaWrongCase : LExpr TestParams.mono :=
+  (LExpr.op () ("Aa$Elim" : TestParams.Identifier) .none).mkApp ()
+    [uniformMkA (intConst () 1),
+     .abs () "" .none (.bvar () 0),
+     .abs () "" .none
+       ((LExpr.op () ("Bool.Not" : TestParams.Identifier) .none).mkApp () [.bvar () 0]),
+     LExpr.boolConst () true]
+
+/-- info: Impossible to unify (arrow (arrow int $__ty1) (arrow $__ty1 int)) with (arrow (arrow bool bool) $__ty12).
+First mismatch: int with bool. -/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[uniformBlock] (IntBoolFactory : @Factory TestParams) elimAaWrongCase
+
+/-
+Type parameters need only agree as a set: mutually recursive datatypes may list them in
+different orders.
+-/
+def permAaTy : LDatatype Unit :=
+  {name := "PermAa", typeArgs := ["x", "y"],
+   constrs := [{name := "MkPermA", args := [("f", .tcons "PermBb" [.ftvar "y", .ftvar "x"])],
+                testerName := "isMkPermA"},
+               {name := "BaseA", args := [], testerName := "isBaseA"}],
+   constrs_ne := rfl}
+
+def permBbTy : LDatatype Unit :=
+  {name := "PermBb", typeArgs := ["y", "x"],
+   constrs := [{name := "MkPermB", args := [("g", .tcons "PermAa" [.ftvar "x", .ftvar "y"])],
+                testerName := "isMkPermB"},
+               {name := "BaseB", args := [], testerName := "isBaseB"}],
+   constrs_ne := rfl}
+
+def permutedBlock : MutualDatatype Unit := [permAaTy, permBbTy]
+
+/--
+info: Annotated expression:
+#0
+
+---
+info: #0
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[permutedBlock] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+
+/-- info: [] -/
+#guard_msgs in
+#eval unboundTyVars permutedBlock
+
+/-
+No derived function's `typeArgs` entry is in the type checker's unification-variable namespace.
+-/
+
+/-- The `typeArgs` entries of `block`'s derived functions that start with `$__ty`, as
+    `(function name, entries)`; `[("rejected", [])]` if derivation fails. -/
+def checkerNamespaceTyArgs (block : MutualDatatype Unit) : List (String × List TyIdentifier) :=
+  filterMapDerived block [("rejected", [])] fun fn =>
+    let bad := fn.typeArgs.filter (fun v => TState.tyPrefix.toList.isPrefixOf v.toList)
+    if bad.isEmpty then none else some (fn.name.name, bad)
+
+/-- info: ([], []) -/
+#guard_msgs in
+#eval (checkerNamespaceTyArgs uniformBlock, checkerNamespaceTyArgs permutedBlock)
+
+/-- The `typeArgs` of `block`'s eliminators (derived functions whose name ends in `$Elim`),
+    as `(function name, typeArgs)`. -/
+def elimTyArgs (block : MutualDatatype Unit) : List (String × List TyIdentifier) :=
+  filterMapDerived block [] fun fn =>
+    if fn.name.name.endsWith "$Elim" then some (fn.name.name, fn.typeArgs) else none
+
+/-- info: [("Aa$Elim", ["$__elimty0", "$__elimty1", "x"]), ("Bb$Elim", ["$__elimty0", "$__elimty1", "x"])] -/
+#guard_msgs in
+#eval elimTyArgs uniformBlock
+
+end DerivedNameScoping
+
+section TypeParamValidation
+
+/- Block validation rejects a type parameter that has a reserved prefix or is repeated. -/
+
+/-- The error text of `validateMutualBlock` on `block`, or `"accepted"`. -/
+def validateMsg (block : MutualDatatype Unit) : String :=
+  match validateMutualBlock block with
+  | .ok _ => "accepted"
+  | .error m => toString m
+
+/-- A one-constructor datatype named `Pa` with type parameters `tyArgs`, whose
+    only constructor field has type `fieldTy`. -/
+def paramTy (tyArgs : List TyIdentifier) (fieldTy : LMonoTy) : LDatatype Unit :=
+  {name := "Pa", typeArgs := tyArgs,
+   constrs := [{name := "MkPa", args := [("fp", fieldTy)], testerName := "isMkPa"}],
+   constrs_ne := rfl}
+
+/-- info: Datatype 'Pa': type parameter '$__ty0' is a reserved name -/
+#guard_msgs in
+#eval IO.println (validateMsg [paramTy ["$__ty0"] (.ftvar "$__ty0")])
+
+/-- info: Datatype 'Pa': type parameter '$__elimty0' is a reserved name -/
+#guard_msgs in
+#eval IO.println (validateMsg [paramTy ["$__elimty0"] (.ftvar "$__elimty0")])
+
+/-- info: Datatype 'Pa': type parameter '$__rigid_a' is a reserved name -/
+#guard_msgs in
+#eval IO.println (validateMsg [paramTy ["$__rigid_a"] (.ftvar "$__rigid_a")])
+
+/-- info: Datatype 'Pa': type parameter '$__cety_0' is a reserved name -/
+#guard_msgs in
+#eval IO.println (validateMsg [paramTy ["$__cety_0"] (.ftvar "$__cety_0")])
+
+/-- info: Datatype 'Pa': type parameter '$__inlinety_0' is a reserved name -/
+#guard_msgs in
+#eval IO.println (validateMsg [paramTy ["$__inlinety_0"] (.ftvar "$__inlinety_0")])
+
+/-- info: Datatype 'Pa': duplicates found in the type arguments!
+Type Arguments: [x, x] -/
+#guard_msgs in
+#eval IO.println (validateMsg [paramTy ["x", "x"] (.ftvar "x")])
+
+/- A repeat in any member of the block is reported. -/
+/-- info: Datatype 'Qa': duplicates found in the type arguments!
+Type Arguments: [x, x] -/
+#guard_msgs in
+#eval IO.println (validateMsg [paramTy ["x"] (.ftvar "x"),
+                               {name := "Qa", typeArgs := ["x", "x"],
+                                constrs := [{name := "MkQa", args := [], testerName := "isMkQa"}],
+                                constrs_ne := rfl}])
+
+-- Distinct parameters without reserved prefixes are accepted.
+/-- info: ["accepted", "accepted"] -/
+#guard_msgs in
+#eval [validateMsg [paramTy ["x"] (.ftvar "x")], validateMsg [paramTy ["x", "y"] (.ftvar "x")]]
+
+/- A parameter that contains a reserved prefix after its start is accepted. -/
+/-- info: ["accepted", "accepted", "accepted"] -/
+#guard_msgs in
+#eval [validateMsg [paramTy ["a$__ty0"] (.ftvar "a$__ty0")],
+  validateMsg [paramTy ["ty$__elimty1"] (.ftvar "ty$__elimty1")],
+  validateMsg [paramTy ["a$__rigid_x"] (.ftvar "a$__rigid_x")]]
+
+end TypeParamValidation
+
+section ElimEvalArity
+
+/- The `Day$Elim` evaluator gives a result only at arity eight: a `Day` and seven cases. -/
+
+/-- The eliminator's concrete evaluator for the single-datatype block `[weekTy]`,
+    applied to `args`. -/
+def dayElimEval (args : List (LExpr TestParams.mono)) : Option (LExpr TestParams.mono) :=
+  elimConcreteEval (T := TestParams) [weekTy] () () args
+
+/-- The `Day` value built by constructor `c`. -/
+def dayVal (c : String) : LExpr TestParams.mono :=
+  .op () (c : TestParams.Identifier) (.some (.tcons "Day" []))
+
+/-- The seven cases of a `Day` eliminator, each its constructor's index as an integer. -/
+def dayCases : List (LExpr TestParams.mono) :=
+  (List.range 7).map (intConst () ∘ Int.ofNat)
+
+/-- info: some #3 -/
+#guard_msgs in
+#eval IO.println (format (dayElimEval (dayVal "W" :: dayCases)))
+
+/-- info: none -/
+#guard_msgs in
+#eval IO.println (format (dayElimEval (dayVal "W" :: dayCases ++ [intConst () 99])))
+
+/-- info: none -/
+#guard_msgs in
+#eval IO.println (format (dayElimEval [dayVal "Su", intConst () 0]))
+
+end ElimEvalArity
+
+section ConstructorFieldNames
+
+/-- The outcome of generating a block's derived functions. -/
+def genFactoryMsg (block : MutualDatatype Unit) : String :=
+  match genBlockFactory (T := TestParams) block with
+  | .ok _ => "accepted"
+  | .error m => toString m
+
+/-- A datatype named `nm` with no type parameters, whose constructors are given by
+    `cs`, each a constructor name paired with its field list. -/
+def fieldTy (nm : String) (cs : List (String × List (Identifier Unit × LMonoTy)))
+    (h : cs.length != 0 := by decide) : LDatatype Unit :=
+  {name := nm, typeArgs := [],
+   constrs := cs.map (fun p => {name := p.1, args := p.2, testerName := "is" ++ p.1}),
+   constrs_ne := by simpa using h}
+
+/-
+Field names may repeat across datatypes but not within one. Block validation accepts a
+repeat; generating the accessors rejects it.
+-/
+
+/-- info: accepted -/
+#guard_msgs in
+#eval IO.println (validateMsg [fieldTy "Fa" [("MkFa", [("f", .int), ("f", .bool)])]])
+
+-- A field name repeated within one constructor gives two accessors named `Fa..f`.
+/--
+info: A function of name Fa..f already exists! Redefinitions are not allowed.
+Existing Function: @[evalIfConstr 0]
+func Fa..f :  (($__tvar0 : Fa)) → int;
+New Function:@[evalIfConstr 0]
+func Fa..f :  (($__tvar0 : Fa)) → bool;
+-/
+#guard_msgs in
+#eval IO.println (genFactoryMsg [fieldTy "Fa" [("MkFa", [("f", .int), ("f", .bool)])]])
+
+/-- info: accepted -/
+#guard_msgs in
+#eval IO.println (genFactoryMsg [fieldTy "Fa" [("MkFa", [("f", .int), ("g", .bool)])]])
+
+-- A field name shared by two constructors of one datatype also gives two accessors `Fa..f`.
+/--
+info: A function of name Fa..f already exists! Redefinitions are not allowed.
+Existing Function: @[evalIfConstr 0]
+func Fa..f :  (($__tvar0 : Fa)) → int
+  requires (~isMkFa1 $__tvar0);
+New Function:@[evalIfConstr 0]
+func Fa..f :  (($__tvar0 : Fa)) → bool
+  requires (~isMkFa2 $__tvar0);
+-/
+#guard_msgs in
+#eval IO.println
+  (genFactoryMsg [fieldTy "Fa" [("MkFa1", [("f", .int)]), ("MkFa2", [("f", .bool)])]])
+
+-- The same field name in two datatypes gives the distinct accessors `Fa..f` and `Ga..f`.
+/-- info: accepted -/
+#guard_msgs in
+#eval IO.println (genFactoryMsg [fieldTy "Fa" [("MkFa", [("f", .int)])],
+                                 fieldTy "Ga" [("MkGa", [("f", .bool)])]])
+
+end ConstructorFieldNames
 
 end Lambda
 end

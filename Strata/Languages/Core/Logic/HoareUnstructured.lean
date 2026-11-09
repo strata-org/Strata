@@ -32,12 +32,13 @@ variable (π : String → Option Procedure)
   Strata.Logic.Hoare.TripleWith (EventLang.coreCFG π)
     conditionInterp params Pre cfg Post
 
-/-- **Core Hoare triple over an unstructured CFG.** -/
+/-- **Core Hoare triple over an unstructured CFG**, with conditions read by evaluation
+    in runtime factories over `factory`. The default is `Core.Factory`. -/
 @[expose] def TripleUnstructured (params : InitEnvWFParams)
     (Pre : Imperative.Env Expression → Prop) (cfg : Core.DetCFG)
-    (Post : Imperative.Env Expression → Prop) : Prop :=
-  ∀ model : Lambda.Interp Core.Factory,
-    TripleUnstructuredWith π (DenoteBasedInterp model) params Pre cfg Post
+    (Post : Imperative.Env Expression → Prop)
+    (factory : Lambda.Factory CoreLParams := Core.Factory) : Prop :=
+  TripleUnstructuredWith π (DenoteBasedInterp factory) params Pre cfg Post
 
 /-
 TODO: Add a block-local proof rule for `TripleUnstructured`. Attach a

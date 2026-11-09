@@ -148,17 +148,22 @@ procedure useDiscardsTheResult(x: int)
 };
 #end
 
-/-! Dropping a call must not drop a state change. It cannot: the state a callee writes is
-threaded through its signature as a hidden inout (`HeapParameterization` declares the
-`$heap` global, `GlobalParameterization` threads it and any written global), so by the time
-`functionalize` runs the call is an assignment to that inout, not a `StaticCall`. A
-transparent body cannot mutate an input — it has one result and no slot to thread the new
-value out — so the call is rejected rather than dropped, and the diagnostic lands on it.
+/-! The state a callee writes is threaded through its signature as a hidden inout
+(`HeapParameterization` declares the `$heap` global, `GlobalParameterization` threads it and
+any written global), so by the time `functionalize` runs the call is an assignment to that
+inout, not a `StaticCall`. A transparent body may make that assignment: the inout is its own
+output, so the new value has a slot to leave by, and the body below is accepted.
 
-Both cases below use a *void* transparent body on purpose. Given a return type as well,
-the threaded state makes two outputs and the diagnostic moves to the signature
-("a transparent body with 2 output parameters is not supported"), which is a different
-rule and would stop pinning this one. -/
+Accepted is not the same as useful, and the gap is known and not addressed here. The twin
+`bump$asFunction` is uninterpreted — `functionalize` strips the assumed postconditions that
+tell the imperative body what `bump` did — so it relates its outgoing heap to its incoming
+one not at all. A caller of `voidTransparentMutatesHeap` therefore cannot observe the write
+and cannot discharge its own `modifies`. Carrying a callee's postcondition into its twin
+needs an axiom per postcondition, guarded by the callee's precondition, which the contract
+pass does not emit.
+
+The `ensures` case is rejected at resolution: the heap is a global, and a contract cannot
+call a global writer. -/
 
 #eval testLaurelVerification <|
 #strata
@@ -175,22 +180,22 @@ procedure bump(c: C)
 procedure voidTransparentMutatesHeap(c: C)
 {
   bump(c)
-//^^^^^^^ error: a transparent body or contract cannot YET mutate any of its inputs, and this mutates '$heap'
 };
 
 procedure heapWriteInEnsures(c: C) returns (r: int)
   opaque
   ensures { bump(c); r == 0 }
-//          ^^^^^^^ error: a transparent body or contract cannot YET mutate any of its inputs, and this mutates '$heap'
+//          ^^^^ error: calls to global-writing procedure 'bump' are not yet supported in contracts, loop conditions, loop annotations, quantifiers, or old expressions
 { r := 0 };
 #end
 
-/-! A write to an ordinary file-scope global is caught by the same mechanism, even though
-such a write is not recorded in `modifies` at all.
+/-! A write to an ordinary file-scope global is threaded by the same mechanism, even though
+such a write is not recorded in `modifies` at all, and is accepted for the same reason: the
+global becomes an inout the transparent body may assign.
 
-The write does not have to be direct: `setGIndirect` writes `g` only through `setG`, and a
-transparent body calling it is rejected just the same, so the analysis is transitive. The
-direct case alone would pass even if it were not. -/
+The write does not have to be direct — `setGIndirect` writes `g` only through `setG` — so the
+threading is transitive. The same postcondition gap applies: a caller cannot observe `g`'s
+new value. -/
 
 #eval testLaurelVerification <|
 #strata
@@ -206,7 +211,6 @@ procedure setG()
 procedure voidTransparentWritesGlobal()
 {
   setG()
-//^^^^^^ error: a transparent body or contract cannot YET mutate any of its inputs, and this mutates 'g'
 };
 
 procedure setGIndirect()
@@ -218,7 +222,6 @@ procedure setGIndirect()
 procedure voidTransparentIndirectWrite()
 {
   setGIndirect()
-//^^^^^^^^^^^^^^ error: a transparent body or contract cannot YET mutate any of its inputs, and this mutates 'g'
 };
 #end
 
@@ -331,8 +334,7 @@ procedure withoutTheHint(x: int) returns (r: int)
   r := 0
 };
 
-// A `requires` is a separate path — its helper comes from `mkConditionProc`, which
-// assumes the preceding clauses, not `mkPostConditionProc` — so it is covered too.
+// A `requires` helper takes only the inputs, so it is covered too.
 procedure hintInRequires(x: int) returns (r: int)
   requires { knowsPositive(x); needsPositive(x) == needsPositive(x) }
   opaque

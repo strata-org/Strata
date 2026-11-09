@@ -33,35 +33,36 @@ private def eliminateReturnStmts (proc : Procedure) : Procedure :=
   | .Opaque postconds (some impl) mods =>
     let impl' := replaceReturn proc.outputs impl
     let wrapped := match impl'.val with
-      | .Block stmts none => ⟨.Block stmts (some returnLabel), impl'.source⟩
-      | _ => ⟨ .Block [impl'] (some returnLabel), proc.name.source ⟩
+      | .Block stmts none [] none => ⟨.Block stmts (some returnLabel) [] none, impl'.source⟩
+      | _ => ⟨ .Block [impl'] (some returnLabel) [] none, proc.name.source ⟩
     { proc with body := .Opaque postconds (some wrapped) mods }
   | .Transparent body =>
     let body' := replaceReturn proc.outputs body
     let wrapped := match body'.val with
-      | .Block stmts none => ⟨.Block stmts (some returnLabel), body'.source⟩
-      | _ => ⟨ .Block [body'] (some returnLabel), proc.name.source ⟩
+      | .Block stmts none [] none => ⟨.Block stmts (some returnLabel) [] none, body'.source⟩
+      | _ => ⟨ .Block [body'] (some returnLabel) [] none, proc.name.source ⟩
     { proc with body := .Transparent wrapped }
   | _ => proc
 where
 
-  /-- Replace `Return val` with `output := val; exit "$return"` (or just `exit`
-    for valueless returns). Uses `mapStmtExpr` for bottom-up traversal. -/
+  /-- Replace `Return vals` with one assignment per output followed by
+    `exit "$return"` (or just the `exit` for a valueless return). Uses
+    `mapStmtExpr` for bottom-up traversal.
+
+    Handling a valued return is required because the heap param pass introduces valued
+    returns in StrataLaurel/Implementation/HeapParameterizationConstants.lean.
+    We should change that so we can remove this case. -/
   replaceReturn (outputs : List Parameter) (expr : StmtExprMd) : StmtExprMd :=
     mapStmtExpr (fun e =>
       match e.val with
-      | .Return (some val) =>
-        /- Handling valued return is required because the heap param pass introduces valued return in
-        StrataLaurel/Implementation/HeapParameterizationConstants.lean
-        We should change that so we can remove this case.
-        -/
-        match outputs with
-        | [out] =>
-          let assign := ⟨ .Assign [⟨ .Local out.name, expr.source ⟩] val, expr.source ⟩
-          let exit := ⟨ .Exit returnLabel, expr.source ⟩
-          ⟨.Block [assign, exit] none, e.source⟩
-        | _ => ⟨ .Exit returnLabel, expr.source ⟩
-      | .Return none => ⟨ .Exit returnLabel, expr.source ⟩
+      | .Return [] => ⟨ .Goto returnLabel .blockEnd, expr.source ⟩
+      | .Return vals =>
+        let exit : StmtExprMd := ⟨ .Goto returnLabel .blockEnd, expr.source ⟩
+        if vals.length == outputs.length then
+          let assigns := (outputs.zip vals).map fun (out, val) =>
+            (⟨ .Assign [⟨ .Local out.name, expr.source ⟩] val, expr.source ⟩ : StmtExprMd)
+          ⟨.Block (assigns ++ [exit]) none [] none, e.source⟩
+        else exit
       | _ => e) expr
 
 /-- Transform a program by eliminating return statements in all procedure bodies. -/
@@ -70,7 +71,7 @@ def eliminateReturnStatements (program : Program) : Program :=
 
 public def eliminateReturnStatementsPass : LaurelPass where
   name := "EliminateReturnStatements"
-  creates := [NodeKind.StmtExpr.Exit, NodeKind.StmtExpr.Block]
+  creates := [NodeKind.StmtExpr.Goto, NodeKind.StmtExpr.Block]
   unsupported := [NodeKind.StmtExpr.Try.finally?.some]
   removes := [
       NodeKind.StmtExpr.Return,

@@ -79,12 +79,12 @@ theorem StringGenState.contains :
 theorem StringGenState.subset : gen pf σ = (n, σ') → σ ⊆ σ' := by
   intros Hgen
   simp [gen] at Hgen
-  simp [← Hgen, HasSubset.Subset]
+  simp only [Subset, List.unzip_snd, ← Hgen, List.unzip_cons, List.unzip_fst]
   intros a Hin
   simp_all
 
 theorem StringGenState.gen_nonEmpty: gen pf σ = (n, σ') → σ'.generated ≠ [] := by
-  simp [gen]
+  simp only [gen, Nat.toString_eq_repr, Prod.mk.injEq, ne_eq, and_imp]
   intro _ Hgen
   simp [← Hgen]
 
@@ -95,7 +95,9 @@ theorem StringGenState.genCounter_of_StringGenStategen
 
 theorem Nat_digitchar_neq_underscore {x: Nat}: ¬ '_' =  Nat.digitChar x := by
   unfold Nat.digitChar
-  repeat (cases x; simp; rename_i x; simp [*])
+  match x with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 => simp
+  | j + 16 => simp
 
 theorem Nat_toDigitsCore_not_contain_underscore {n m l} : '_' ∉ l → '_' ∉ Nat.toDigitsCore 10 n m l := by
   intro Hnin
@@ -104,13 +106,13 @@ theorem Nat_toDigitsCore_not_contain_underscore {n m l} : '_' ∉ l → '_' ∉ 
   cases n
   simp [Nat.toDigitsCore, Hnin]
   rename_i n
-  simp [Nat.toDigitsCore]
+  simp only [Nat.toDigitsCore, Nat.div_eq_zero_iff, reduceCtorEq, false_or, ↓Char.isValue]
   split
   simp [Nat_digitchar_neq_underscore, Hnin]
   apply ind <;> simp [*, Nat_digitchar_neq_underscore]
 
 theorem Nat_toString_not_contain_underscore {x: Nat} : '_' ∉ (toString x).toList := by
-  simp [toString, Nat.repr, Nat.toDigits]
+  simp only [toString, Nat.repr, Nat.toDigits, String.toList_ofList, ↓Char.isValue]
   exact Nat_toDigitsCore_not_contain_underscore (l := []) (by simp)
 
 theorem Nat_digitChar_index: x.digitChar =
@@ -136,19 +138,20 @@ theorem Nat_eq_of_digitChar_eq : n < 16 → m < 16 → n.digitChar = m.digitChar
   simp [Nat_digitChar_index, h1, h2]
 
 theorem Nat_toDigitsCore_list_suffix : l <:+ Nat.toDigitsCore 10 x n l := by
-  induction x generalizing n l <;> simp [Nat.toDigitsCore]
+  induction x generalizing n l <;> simp only [Nat.toDigitsCore, Nat.div_eq_zero_iff, reduceCtorEq, false_or]
+  · exact List.suffix_refl _
   split
-  simp
+  · exact List.suffix_cons _ _
   rename_i ind _
   have ind:= @ind ((n % 10).digitChar :: l) (n/10)
-  simp [List.IsSuffix] at *
+  simp only [List.IsSuffix, Nat.not_lt] at *
   obtain ⟨t, ind⟩ := ind
   exists t ++ [(n % 10).digitChar]
   simp [← ind]
 
 theorem Nat_toDigitsCore_list_len_le: (Nat.toDigitsCore 10 x n l).length ≥ l.length := by
   have H : l <:+ Nat.toDigitsCore 10 x n l := Nat_toDigitsCore_list_suffix
-  simp [List.IsSuffix] at H
+  simp only [List.IsSuffix] at H
   obtain ⟨t, H⟩ := H
   simp [← H]
 
@@ -166,7 +169,7 @@ theorem Nat_toDigitsCore_list_len_lt : x > 0 → n > 0 → (Nat.toDigitsCore 10 
 theorem Nat_toDigitsCore_list_head_eq : Nat.toDigitsCore 10 x n (h1::t) = Nat.toDigitsCore 10 y m (h2::t) → h1 = h2 := by
   intro H
   unfold Nat.toDigitsCore at H
-  split at H <;> (simp at H; split at H)
+  split at H <;> (simp only [Nat.div_eq_zero_iff, reduceCtorEq, false_or] at H; split at H)
   any_goals split at H
   any_goals simp at H
   any_goals split at H
@@ -203,10 +206,10 @@ theorem Nat_eq_of_toDigitsCore_eq : x > n → y > m
   cases x <;> cases y
   any_goals omega
   rename_i x y
-  simp [Nat.toDigitsCore]
+  simp only [Nat.toDigitsCore, Nat.div_eq_zero_iff, reduceCtorEq, false_or]
   split
   split <;> intro H
-  simp at H
+  simp only [List.cons.injEq, and_true] at H
   have := Nat_eq_of_digitChar_eq (by omega) (by omega) H
   omega
   have: (Nat.toDigitsCore 10 y (m / 10) ((m % 10).digitChar :: l)).length > ((m % 10).digitChar :: l).length := by
@@ -270,11 +273,12 @@ theorem StringGenState.WFMono :
   gen pf σ = (n, σ') →
   WF σ' := by
   intros Hwf Hgen
-  simp [WF] at *
+  simp only [WF, List.unzip_fst, List.unzip_snd, Nat.toString_eq_repr] at *
   constructor
   exact Counter.genCounterWFMono Hwf.left $ StringGenState.genCounter_of_StringGenStategen Hgen
   simp [gen] at Hgen
-  simp [← Hgen.right, Counter.genCounter, ←Hwf.right.left, Hwf.right.right.left]
+  simp only [← Hgen.right, Counter.genCounter, List.map_cons, ← Hwf.right.left, List.nodup_cons, List.mem_map,
+    Prod.exists, exists_eq_right, not_exists, Hwf.right.right.left, and_true, List.mem_cons, Prod.mk.injEq, true_and]
   constructor
   intro x Hx
   have Hx := Nat_eq_of_StringGen_suffix $ Hwf.right.right.right x _ Hx
@@ -363,6 +367,34 @@ theorem StringGenState.gen_hasUnderscoreDigitSuffix
     String.HasUnderscoreDigitSuffix (StringGenState.gen pf σ).1 := by
   refine ⟨pf, σ.cs.counter, ?_⟩
   exact StringGenState.gen_eq pf σ
+
+/-- Executable check for the `_<digits>` suffix shape: the trailing run of
+digits is nonempty and preceded by `_`. It accepts every string with
+`String.HasUnderscoreDigitSuffix`
+(`String.endsWithUnderscoreDigits_of_hasUnderscoreDigitSuffix`), so a string it
+rejects cannot be the output of `gen`. -/
+@[expose] def String.endsWithUnderscoreDigits (s : String) : Bool :=
+  let r := s.toList.reverse
+  let ds := r.takeWhile Char.isDigit
+  !ds.isEmpty && (r.drop ds.length).head? == some '_'
+
+/-- `String.endsWithUnderscoreDigits` accepts every string with the
+`_<digits>` suffix shape. -/
+theorem String.endsWithUnderscoreDigits_of_hasUnderscoreDigitSuffix {s : String}
+    (h : String.HasUnderscoreDigitSuffix s) :
+    String.endsWithUnderscoreDigits s = true := by
+  obtain ⟨pf, n, rfl⟩ := h
+  have hdig : ∀ c ∈ (Nat.toDigits 10 n).reverse, c.isDigit = true := fun c hc =>
+    Nat.isDigit_of_mem_toDigits (by decide) (by decide) (List.mem_reverse.mp hc)
+  have hrev : (pf ++ "_" ++ toString n).toList.reverse =
+      (Nat.toDigits 10 n).reverse ++ '_' :: pf.toList.reverse := by
+    simp [String.toList_append, Nat.toString_eq_repr, Nat.toList_repr]
+  have htake : ((Nat.toDigits 10 n).reverse ++ '_' :: pf.toList.reverse).takeWhile
+      Char.isDigit = (Nat.toDigits 10 n).reverse := by
+    rw [List.takeWhile_append_of_pos hdig]
+    simp [show Char.isDigit '_' = false from by decide]
+  simp only [String.endsWithUnderscoreDigits, hrev, htake]
+  simp
 
 /-- Every label inside a WF `StringGenState`'s `generated` list has the
 `_<digits>` suffix shape. -/

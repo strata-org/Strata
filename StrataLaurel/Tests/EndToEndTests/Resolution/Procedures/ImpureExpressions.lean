@@ -83,3 +83,22 @@ procedure functionWithWhile(x: int): int
   return 3
 };
 #end
+
+/-! A loop built from `goto` is rejected exactly as a `while` is, although after
+`RestructureGotos` its `while (true)` is the last statement of the block. -/
+
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+procedure transparentGotoLoop(n: int) returns (r: int)
+{
+    var i: int := 0;
+    {
+//  ^^^^^^^^^^^^^^^^^^^^^^^ error: loops are not YET supported in transparent bodies or contracts
+        if (i >= n) then { exit loop };
+        i := i + 1;
+        goto loop
+    } loop invariant i >= 0;
+    r := i
+};
+#end

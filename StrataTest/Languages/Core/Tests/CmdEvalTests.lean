@@ -31,8 +31,6 @@ assert [x_value_eq] true
 State:
 Error:
 none
-Subst Map:
-
 Expression Env:
 State:
 [(x : int) → 10]
@@ -66,18 +64,16 @@ private def testProgram2 : Cmds Expression :=
 
 /--
 info: Commands:
-init (x : int) := y
-assert [x_eq_12] y == 12
+init (x : int) := y@1
+assert [x_eq_12] y@1 == 12
 
 State:
 Error:
 none
-Subst Map:
-
 Expression Env:
 State:
-[(y : int) → y
-(x : int) → y]
+[(y : int) → y@1
+(x : int) → y@1]
 
 Evaluation Config:
 Eval Depth: 200
@@ -97,7 +93,7 @@ Label: x_eq_12
 Property: assert
 Assumptions:
 Proof Obligation:
-y == 12
+y@1 == 12
 -/
 #guard_msgs in
 #eval format $ Imperative.Cmds.eval (Env.init (empty_factory := true)) testProgram2

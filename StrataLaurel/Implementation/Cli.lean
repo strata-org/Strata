@@ -16,6 +16,7 @@ public import Strata.Languages.Core.SarifOutput
 public import Strata.Pipeline.Context
 public import Strata.Languages.B3.Verifier.Program
 public import StrataLaurel.Implementation.LaurelCompilationPipeline
+public import StrataLaurel.Implementation.InferThrows
 public import StrataLaurel.Implementation.Grammar.AbstractToConcreteTreeTranslator
 public import StrataLaurel.Implementation
 public import StrataLaurel.Implementation.CliOptions
@@ -131,7 +132,7 @@ private def runLaurelInterpretDirect (ionBytes : ByteArray) (pflags : ParsedFlag
                            Laurel source, or pass --entry <proc>"
       | ps => pure ps
   let translateOptions : LaurelTranslateOptions := {}
-  let resolved := Laurel.resolve
+  let resolved := Laurel.resolveWithInferredThrows
     { parsed with
       staticProcedures := Laurel.coreDefinitionsForLaurel.staticProcedures ++ parsed.staticProcedures,
       types := Laurel.coreDefinitionsForLaurel.types ++ parsed.types }

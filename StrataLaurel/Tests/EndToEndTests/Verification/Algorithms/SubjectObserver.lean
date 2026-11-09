@@ -24,12 +24,12 @@ composite Subject {
 
 procedure synced(s: Subject): bool
 {
-  forall(i: int) => 0 <= i ==> i < seqLength(s#observers) ==> seqSelect(s#observers, i)#cache == s#value
+  return forall(i: int) => 0 <= i ==> i < seqLength(s#observers) ==> seqSelect(s#observers, i)#cache == s#value
 };
 
 procedure syncedBelow(s: Subject, hi: int): bool
 {
-  forall(i: int) => 0 <= i ==> i < hi ==> i < seqLength(s#observers) ==> seqSelect(s#observers, i)#cache == s#value
+  return forall(i: int) => 0 <= i ==> i < hi ==> i < seqLength(s#observers) ==> seqSelect(s#observers, i)#cache == s#value
 };
 
 procedure register(s: Subject, o: Observer)
@@ -80,12 +80,12 @@ composite Subject {
 
 procedure synced(s: Subject): bool
 {
-  forall(i: int) => 0 <= i ==> i < seqLength(s#observers) ==> seqSelect(s#observers, i)#cache == s#value
+  return forall(i: int) => 0 <= i ==> i < seqLength(s#observers) ==> seqSelect(s#observers, i)#cache == s#value
 };
 
 procedure syncedBelow(s: Subject, hi: int): bool
 {
-  forall(i: int) => 0 <= i ==> i < hi ==> i < seqLength(s#observers) ==> seqSelect(s#observers, i)#cache == s#value
+  return forall(i: int) => 0 <= i ==> i < hi ==> i < seqLength(s#observers) ==> seqSelect(s#observers, i)#cache == s#value
 };
 
 procedure register(s: Subject, o: Observer)

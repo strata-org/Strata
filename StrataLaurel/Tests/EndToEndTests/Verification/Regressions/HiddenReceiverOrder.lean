@@ -30,9 +30,8 @@ The mismatch is only loud because `Heap` and `int` differ. Two hidden globals of
 type as the inout would be assigned each other's values silently, which is why the shape
 below — an explicit inout, a field write, and a second output — is worth pinning.
 
-Reachable only through `$heap`: resolution rejects a call to a global-*writing* procedure
-that also has an explicit inout output, and those checks run on user source only, before
-`$heap` exists.
+A declared global in the same position is ordered the same way; `GlobalVarTests`' `writeBoth`
+pins that case with a global of the inout's own type.
 -/
 
 #guard_msgs (drop info) in
