@@ -614,6 +614,11 @@ public section
     program, since the existential rule reads a witness's type from a
     function's type annotation.
 
+    Loop bodies are rewritten from the facts before the loop about variables
+    the body does not write. The correctness proof
+    (`EqualitySimplificationCorrect`) covers loop-free bodies only, so a
+    pipeline that relies on it must establish `noLoops` first.
+
     Limitation: a goal on a path whose assumptions contradict each other can
     fold to `false`. The phase leaves such goals alone only when an assumption
     itself folds to `false` under the earlier facts; it misses contradictions

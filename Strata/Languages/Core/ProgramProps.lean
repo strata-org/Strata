@@ -16,6 +16,8 @@ constructed from them.
 Key results:
 - `Program.factoryBeforeProcedure_eq_core_of_noFunctions` — when no user
   functions precede a procedure, its visible factory is `Core.Factory`.
+- `Program.declsBeforeProcedure_eq` — the declarations before the first procedure
+  of a name are `declsBeforeProcedure` of that name.
 -/
 
 public section
@@ -53,6 +55,21 @@ theorem Program.factoryBeforeProcedure_eq_core_of_noFunctions
         cases d <;> simp at hd
         all_goals simpa [Decl.addFunctionsToFactory] using ih hds
   exact go (p.declsBeforeProcedure procName) h
+
+/-- **The declarations before `q` are those the verifier gives it.** If `q` is the first
+    procedure of `p` with its name, the declarations before it are
+    `p.declsBeforeProcedure`, the prefix the entry semantics uses for `q`. -/
+theorem Program.declsBeforeProcedure_eq {p : Program} {pre post : List Decl} {q : Procedure}
+    {md : Imperative.MetaData Expression} (hd : p.decls = pre ++ Decl.proc q md :: post)
+    (hfirst : ∀ q' md', Decl.proc q' md' ∈ pre → q'.header.name.name ≠ q.header.name.name) :
+    p.declsBeforeProcedure q.header.name.name = pre := by
+  unfold Program.declsBeforeProcedure
+  rw [hd, List.takeWhile_append_of_pos]
+  · simp
+  · intro d hdm
+    cases d with
+    | proc q' md' => simpa using hfirst q' md' hdm
+    | _ => rfl
 
 end Core
 

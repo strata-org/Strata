@@ -180,6 +180,7 @@ import Strata.Transform.WP.WPCorePrefix
 
 -- Equality simplification: failures are kept, given its expression-level steps are sound.
 import Strata.Transform.EqualitySimplificationCorrect
+import Strata.Transform.FoldAxiomsEntry
 
 /- The monadic interpreter: the monad-generic engine, its soundness and completeness against
    the reference event semantics, Core's instantiation, the `EvalM`

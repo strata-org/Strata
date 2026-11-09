@@ -27,4 +27,12 @@ with the folding factory (`Lambda.OpsConsistentR`). -/
 
 #guard Core.Simplify.fold Core.Factory 100 Core.FoldAxioms.mistypedSum == .intConst () 3
 
+/-! The same with the folding factory and fuel the phase uses, `runCtx program F0`, for a
+program without declarations over Core's factory. -/
+
+#guard
+  let C := Core.FoldAxioms.runCtx { decls := [] } Core.Factory
+  Core.Simplify.fold C.foldFactory C.evalFuel Core.FoldAxioms.unannotatedSum == .intConst () 3 &&
+    Core.Simplify.fold C.foldFactory C.evalFuel Core.FoldAxioms.mistypedSum == .intConst () 3
+
 end

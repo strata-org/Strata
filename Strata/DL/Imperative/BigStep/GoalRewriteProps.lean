@@ -361,7 +361,8 @@ theorem Pass.reach_fwd (hS : Sound F π γ ok) : ∀ (ss : PStmts P) {d : D} {σ
 
 /-- **A reach of a loop-free statement is a reach of its rewrite**: `Pass.reach_fwd` for one
     statement. -/
-private theorem Pass.reachS_fwd (hS : Sound F π γ ok) : ∀ (s : PStmt P) {d : D} {σ : SemanticStore P}
+private theorem Pass.reachS_fwd (hS : Sound F π γ ok) :
+    ∀ (s : PStmt P) {d : D} {σ : SemanticStore P}
     {evs : List (Event P)}, γ d σ → BReachS F s σ evs → AssumeOk evs →
     StmtCmdsOk ok s → Stmt.noLoops s = true →
     ∃ evs', BReachS F (π.stmt d s).1 σ evs' ∧ List.Rel₂ EvRel evs evs'
@@ -429,7 +430,8 @@ theorem Pass.reach_bwd (hS : Sound F π γ ok) : ∀ (ss : PStmts P) {d : D} {σ
 
 /-- **A reach of the rewrite of a loop-free statement is a reach of it**: `Pass.reach_bwd` for
     one statement. -/
-private theorem Pass.reachS_bwd (hS : Sound F π γ ok) : ∀ (s : PStmt P) {d : D} {σ : SemanticStore P}
+private theorem Pass.reachS_bwd (hS : Sound F π γ ok) :
+    ∀ (s : PStmt P) {d : D} {σ : SemanticStore P}
     {evs' : List (Event P)}, γ d σ → BReachS F (π.stmt d s).1 σ evs' → AssumeOk evs' →
     StmtCmdsOk ok s → Stmt.noLoops s = true →
     ∃ evs, BReachS F s σ evs ∧ List.Rel₂ EvRel evs evs'

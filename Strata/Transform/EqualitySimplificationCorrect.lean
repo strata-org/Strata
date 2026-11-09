@@ -39,7 +39,8 @@ axioms give facts that hold where the ground axioms evaluate to `true`. Conseque
 the reference event semantics, a body without loops keeps its failures
 (`FailuresKept`, `stepStmts_failsE`): each assertion or cover (a label and metadata) it
 fails, its rewrite fails, and, where its goals have values (`GoalsDefined`), conversely.
-So does each body
+For a cover, whose failure the verifier reports as satisfied, it is the converse that rules
+out a wrong verdict, so it depends on the goals having values. So does each loop-free body
 the phase rewrites, from the facts of the axioms declared before its procedure
 (`rewriteBody`, `equalitySimplificationPhase_failsE`). The phase folds with the folding
 factory and fuel of `FoldAxioms.runCtx program F0`, where `F0` is the factory the run
@@ -56,8 +57,8 @@ variables with `Simplify.fold`. It keeps every procedure, and each folded axiom 
 value of the original, where that has one, wherever that fold is sound (`AxiomFoldSound`):
 every model of its input is one of its output (`FoldAxioms.foldAxiomsPhase_modelPreserving`, in
 `FoldAxiomsCorrect`). The two phases in order keep the failures of each body, from every
-store that agrees, outside the procedure's parameters, with one where the input's ground
-axioms evaluate to `true` (`foldAxioms_equalitySimplification_failsE`).
+store that agrees, outside the procedure's parameters, with one where the axioms declared
+before the procedure evaluate to `true` (`foldAxioms_equalitySimplification_failsE`).
 
 The folding and rewriting conditions keep values one way only: wherever an expression has a
 value, its fold or rewrite has the same one. Folding can give a value to an expression that
@@ -87,6 +88,12 @@ TODO: state the top-level result as `OverapproximatesTracesUptoWhen` (and its co
 of `Strata/Transform/Specification.lean` over `EventLang.coreBlock`, with the event relation
 `GoalRewrite.EvRel`, as `DeadDefElimCoreCorrect` does, so that it composes with the other
 passes.
+
+The phase's walk (`stepStmts`, `runEqualitySimplification`) and the generic pass (`pass`,
+`walkDecls`) are separate definitions, proved equal for every input (`stepStmts_eq`,
+`equalitySimplificationPhase_body`), so a change to one that the other does not follow breaks
+the build. The phase also rewrites loop bodies, from the facts about variables the body does
+not write; the theorems here cover loop-free bodies only.
 
 Key theorems: `stepStmts_eq`, `pass_sound`, `stepStmts_failsE`,
 `equalitySimplificationPhase_failsE`, `rewriteSound_of`,
@@ -167,11 +174,12 @@ private theorem eqHolds_congr {F : Expression.Factory}
   rw [← coreEvaluator_WellFormedSemanticEvalExprCongr F _ σ σ' hσ hσ' hag]
   exact h
 
-/-- Whether a list of names mentions none of `xs`. -/
+/-- If no name of `ys` is in the hash set built from `xs`, then no name of `ys` is in
+    `xs`. -/
 private theorem not_mentions {xs ys : List CoreIdent}
     (h : (ys.any fun y => (Std.HashSet.ofList xs).contains y) = false) : ∀ y ∈ ys, y ∉ xs := by
   intro y hy hx
-  have := List.any_eq_false.mp h y hy
+  have hnot := List.any_eq_false.mp h y hy
   simp_all [Std.HashSet.contains_ofList]
 
 /-- An entry `x ↦ v` that `forget xs` keeps holds in a store agreeing outside `xs`. -/
@@ -246,7 +254,7 @@ whose operators are annotated at instances of their signatures in the folding fa
     condition of an `assume` is moreover typed at `bool` by its own annotations, so the
     witness candidates it gives are typed (`AssumeSound`). Type checking is expected to supply
     both: it annotates each operator at an instance of its signature and each variable at its
-    declared type (`typeCheck_bodyFvarsAnnotated` in the denotational-evaluation work). -/
+    declared type. -/
 @[expose] def CmdOps (F : Lambda.Factory CoreLParams) : Cmd Expression → Prop
   | .assert _ e _ | .cover _ e _ | .init _ _ (.det e) _ => Lambda.OpsConsistentR F e
   | .assume _ e _ => Lambda.OpsConsistentR F e ∧ Lambda.LExpr.HasTypeA [] e .bool
@@ -264,7 +272,7 @@ whose operators are annotated at instances of their signatures in the folding fa
   (∀ f ty vs, fs.hints.get? (f, .arrow ty .bool) = some vs → ∀ v ∈ vs,
     Lambda.LExpr.HasTypeA [] v ty)
 
-/-- The empty facts record nothing. -/
+/-- The empty facts have consistent operators and typed witness candidates. -/
 private theorem Facts.ops_empty (F : Lambda.Factory CoreLParams) : ({} : Facts).Ops F :=
   ⟨fun _ _ h => by simp at h, fun _ _ h => by simp at h, fun _ _ h => by simp at h,
     fun _ _ _ h => by simp at h⟩
@@ -390,7 +398,8 @@ mutual
 
 /-- **A run writes only what the list defines or modifies**, and keeps the store well
     formed. -/
-private theorem brun_frame {F : Expression.Factory} : ∀ {ss : Statements} {σ : SemanticStore Expression}
+private theorem brun_frame {F : Expression.Factory} :
+    ∀ {ss : Statements} {σ : SemanticStore Expression}
     {evs : List (Event Expression)} {o : Outcome Expression}, BRun F ss σ evs o →
     WellFormedStore σ F →
     WellFormedStore (outStore o) F ∧
@@ -413,7 +422,8 @@ private theorem brun_frame {F : Expression.Factory} : ∀ {ss : Statements} {σ 
 
 /-- **A run writes only what the statement defines or modifies**, and keeps the store well
     formed. -/
-private theorem brunS_frame {F : Expression.Factory} : ∀ {s : Statement} {σ : SemanticStore Expression}
+private theorem brunS_frame {F : Expression.Factory} :
+    ∀ {s : Statement} {σ : SemanticStore Expression}
     {evs : List (Event Expression)} {o : Outcome Expression}, BRunS F s σ evs o →
     WellFormedStore σ F →
     WellFormedStore (outStore o) F ∧
@@ -525,13 +535,13 @@ end
     `str.in_re("a", re.none)` denote the same Boolean, while they fold to `true` and
     `false`.
 
-    TODO: derive it from `eval_denote_sound`, which needs reduction from the empty environment
-    to keep the free variables of `e` and their annotations, so that the store still defines
-    and annotates the result alike (`Step.freeVars_subset`, `StepStar.getVars_nil`), closed
-    function bodies (`Factory.Closed`), concrete evaluators that add no free variable
-    (`Factory.EvalFreeVars`), the empty environment's well-formedness (`noValuesStepWF`), and
-    the folding factory well formed and interpreted by the model of `Fs` as the program's
-    factory is (`IsMapOf.factoryWF`, `IsMapOf.interpConsistent`). -/
+    TODO: prove it. A proof needs the fuel-based reducer, the folding factory's concrete
+    evaluators and the node rules to keep the denotation of a well-typed expression under the
+    model of `Fs`, and to keep its free variables and their annotations, so that the store
+    still defines and annotates the result alike. It also needs the model of `Fs` to
+    interpret every function of `F` as `F` computes it, including the functions declared
+    after the procedure and the datatype functions, which a procedure's entry factory does not
+    constrain. -/
 @[expose] def FoldSound (F : Lambda.Factory CoreLParams) (Fs : Expression.Factory)
     (fuel : Nat) : Prop :=
   ∀ fs e, fs.Ops F → Lambda.OpsConsistentR F e →
@@ -634,7 +644,8 @@ private theorem eqHolds_init {Fs : Expression.Factory} {σ σ' : SemanticStore E
     by_cases h : x = y
     · subst h; rw [hx0] at hw; cases hw
     · rw [hy y h]; exact hw
-  have he' : Expression.eval Fs σ' e = some v := coreEvaluator_WellFormedSemanticEvalMono Fs e v σ σ' hext he
+  have he' : Expression.eval Fs σ' e = some v :=
+    coreEvaluator_WellFormedSemanticEvalMono Fs e v σ σ' hext he
   have hfx : Expression.eval Fs σ' (.fvar () x ty) = some v := by
     rw [coreEvaluator_WellFormedSemanticEvalVar Fs _ x σ' hσ' rfl]; exact hx
   exact Lambda.LExpr.denoteEval_eq_true hfx he'
@@ -757,7 +768,13 @@ private theorem stepStmts_fails_out (hrw : RewriteSound F Fs fuel)
 
 /-- **`ss'` keeps the failures of `ss` from `σ`** under the reference event semantics:
     each assertion or cover `t` (a label and metadata) that `ss` fails, `ss'` fails, and,
-    where the goals of `ss` have values, each one `ss'` fails, `ss` fails. -/
+    where the goals of `ss` have values, each one `ss'` fails, `ss` fails.
+
+    A cover "fails" when it is reached with a true condition, which the verifier reports as
+    satisfied. So for a cover the first half only rules out a wrong failing verdict, and
+    ruling out a wrong satisfied one is the second half, which needs the goals to have
+    values: `cover y == y` from a store without `y` is never reached, while its rewrite
+    `cover true` is. -/
 @[expose] def FailuresKept (Fs : Expression.Factory) (ss ss' : Statements)
     (σ : SemanticStore Expression) : Prop :=
   ∀ t : AssertId Expression,
@@ -865,11 +882,7 @@ private theorem equalitySimplificationPhase_body {program out : Program}
       rewriteBody, List.mem_append, List.mem_cons]
     exact .inr (.inl rfl)
 
-/-- Every axiom of `p` without bound variables is typed at `bool` by its own annotations. -/
-abbrev GroundAxiomsTyped (p : Program) : Prop :=
-  ∀ a md, Decl.ax a md ∈ p.decls → a.e.hasBVar = false → Lambda.LExpr.HasTypeA [] a.e .bool
-
-/-- No facts hold in every well-formed store. -/
+/-- The empty facts hold in every well-formed store. -/
 private theorem Facts.holds_empty {Fs : Expression.Factory} {σ : SemanticStore Expression}
     (hσ : WellFormedStore σ Fs) : ({} : Facts).Holds Fs σ :=
   ⟨hσ, fun _ _ h => by simp at h, fun _ _ h => by simp at h, fun _ _ h => by simp at h⟩
@@ -909,16 +922,22 @@ open Core.FoldAxioms in
     succeed with `out`, and let `q` be a procedure of `program`, declared after the
     declarations `pre`, with structured body `ss`. The run computes the factory `F0` of
     `program`, and `out` contains the procedure with body `rewriteBody (runCtx program F0) pre
-    q ss`. Write `F` and `fuel` for the folding factory and fuel of `runCtx program F0`. If
-    `ss` has no loops and the operators of its commands are consistent with `F`, then for
-    every runtime factory `Fs` evaluating negations as Booleans, for which the phase's two
-    expression-level steps are sound (`RewriteSound F Fs fuel`, `AssumeSound F Fs`), and
-    every store `σ` where the starting facts `procFacts F fuel pre q` hold, with values whose
-    operators are consistent with `F`, the output body keeps the failures of `ss` from `σ`
-    (`FailuresKept`). The operator premise is expected from type checking, which annotates
-    each operator at an instance of its signature in the program's factory
-    (`Lambda.OpsConsistent`, then `Lambda.OpsConsistent_OpsConsistentR`), and from `F`
-    keeping those signatures; no lemma derives either yet (follow-up work). -/
+    q ss`. Write `F` and `fuel` for the folding factory and fuel of `runCtx program F0`. Let
+    `ss` have no loops and commands whose operators are consistent with `F` (`CmdOps`), and
+    let the axioms of `pre` without bound variables have operators consistent with `F` and be
+    typed at `bool` by their own annotations. Then for every runtime factory `Fs` evaluating
+    negations as Booleans, for which the phase's two expression-level steps are sound
+    (`RewriteSound F Fs fuel`, `AssumeSound F Fs`), and every well-formed store `σ` that
+    agrees, outside the parameters of `q`, with a well-formed store where those axioms
+    evaluate to `true`, the output body keeps the failures of `ss` from `σ`
+    (`FailuresKept`).
+
+    The premises on `ss` and `pre` are expected from type checking, which annotates each
+    operator at an instance of its signature in the program's factory (`OpsConsistent`, then
+    `OpsConsistent_OpsConsistentR`) and each variable at its declared type, and from `F`
+    keeping those signatures; no lemma derives them yet. The phase also rewrites loop bodies,
+    from the facts about variables the body does not write; this theorem does not cover
+    them. -/
 theorem equalitySimplificationPhase_failsE {program out : Program}
     {s s' : Transform.CoreTransformState} {b : Bool}
     (h : (Core.equalitySimplificationPhase.transform program).run s = (.ok (b, out), s'))
@@ -932,38 +951,47 @@ theorem equalitySimplificationPhase_failsE {program out : Program}
         RewriteSound (runCtx program F0).foldFactory Fs (runCtx program F0).evalFuel →
         AssumeSound (runCtx program F0).foldFactory Fs → Block.noLoops ss = true →
         CmdsOk (CmdOps (runCtx program F0).foldFactory) ss →
-        ∀ {σ : SemanticStore Expression},
-        FactsInv (runCtx program F0).foldFactory Fs
-          (procFacts (runCtx program F0).foldFactory (runCtx program F0).evalFuel pre q) σ →
+        AxiomsOps (runCtx program F0).foldFactory pre → AxiomsTyped pre →
+        ∀ {σ₀ σ : SemanticStore Expression}, WellFormedStore σ₀ Fs → AxiomsHold Fs pre σ₀ →
+        WellFormedStore σ Fs →
+        (∀ x, x ∉ q.header.inputs.keys ++ q.header.outputs.keys → σ₀ x = σ x) →
         FailuresKept Fs ss (rewriteBody (runCtx program F0) pre q ss) σ := by
   obtain ⟨F0, s1, hF, pre, hpre, hm⟩ := equalitySimplificationPhase_body h hq hb
-  exact ⟨F0, s1, hF, pre, hpre, hm, fun hWB hrw has hss hok _ hγ =>
-    stepStmts_failsE hWB hrw has hγ hok hss⟩
+  refine ⟨F0, s1, hF, pre, hpre, hm,
+    fun hWB hrw has hss hok hops hty _ _ hσ₀ hax hσ hag => stepStmts_failsE hWB hrw has ?_ hok hss⟩
+  obtain ⟨hh, ho⟩ := axStep_holds (fuel := (runCtx program F0).evalFuel) has pre _
+    ⟨Facts.holds_empty hσ₀, Facts.ops_empty _⟩
+    (fun a md' ha hb' => ⟨hops a md' ha hb', hty a md' ha hb'⟩)
+    hax
+  exact ⟨Facts.holds_forget hh _ hσ hag, Facts.ops_forget ho _⟩
 
 /-! ## Axiom folding, then equality simplification -/
 
 open Core.FoldAxioms in
-/-- **Axiom folding then equality simplification keeps failures, and adds none where
-    the goals have values.** Let a run of `foldAxiomsPhase` on `program` from the state `s`
+/-- **Axiom folding then equality simplification keeps failures, and adds none where the
+    goals have values.** Let a run of `foldAxiomsPhase` on `program` from the state `s`
     succeed with `mid` and the state `s1`, and a run of `equalitySimplificationPhase` on
-    `mid` from `s1` succeed with `out`. Let `q` be a procedure of `program` with structured
-    body `ss`. The first run computes the factory `F₁` of `program`, the second the factory
-    `F₂` of `mid`, and `out` contains `q` with body `rewriteBody (runCtx mid F₂) pre q ss`,
-    for the declarations `pre` before `q` in `mid`. Let `ss` have no loops, the operators of
-    its commands be consistent with the folding factory of `runCtx mid F₂`, and those of the
-    ground axioms of `program` and of `mid` with the folding factories of `runCtx program F₁`
-    and `runCtx mid F₂`, and the ground axioms of `mid` be typed at `bool`. Then for every
-    runtime factory `Fs` evaluating negations as Booleans,
-    for which the expression-level steps of the two phases are sound (`AxiomFoldSound` with
+    `mid` from `s1` succeed with `out`. Let `q` be a procedure of `program`, declared after
+    the declarations `pre₀`, with structured body `ss`. The first run computes the factory
+    `F₁` of `program`, the second the factory `F₂` of `mid`; the declarations before `q` in
+    `mid` are `pre := pre₀.map (foldDecl (runCtx program F₁))`, and `out` contains `q` with
+    body `rewriteBody (runCtx mid F₂) pre q ss`. Let `ss` have no loops and commands whose
+    operators are consistent with the folding factory of `runCtx mid F₂`, the axioms of `pre₀`
+    without bound variables have operators consistent with that of `runCtx program F₁`, and
+    those of `pre` have operators consistent with that of `runCtx mid F₂` and be typed at
+    `bool`. Then for every runtime factory `Fs` evaluating negations as Booleans, for which
+    the expression-level steps of the two phases are sound (`AxiomFoldSound` with
     `runCtx program F₁`, `RewriteSound` and `AssumeSound` with `runCtx mid F₂`), and every
-    well-formed store `σ` that agrees, outside the parameters of `q`, with a well-formed store
-    where the ground axioms of `program` evaluate to `true`, the output body keeps the
-    failures of `ss` from `σ` (`FailuresKept`). The premises on `ss` and on the ground
-    axioms of `program` are expected from type checking, as for
+    well-formed store `σ` that agrees, outside the parameters of `q`, with a well-formed
+    store where the axioms of `pre₀` without bound variables evaluate to `true`, the output
+    body keeps the failures of `ss` from `σ` (`FailuresKept`).
+
+    Only the axioms declared before `q` matter, as the phase gives `q` only those. The
+    premises on `ss` and `pre₀` are expected from type checking, as for
     `equalitySimplificationPhase_failsE`. Type checking never sees `mid`, so the premises on
-    its ground axioms instead need axiom folding to keep operators consistent, with the
-    folding factory of `mid` in place of that of `program`, and to keep the axioms typed at
-    `bool`. `AxiomFoldSound` concludes neither, and no lemma derives them yet. -/
+    `pre` instead need axiom folding to keep operators consistent, with the folding factory
+    of `mid` in place of that of `program`, and to keep the axioms typed at `bool`.
+    `AxiomFoldSound` concludes neither, and no lemma derives them yet. -/
 theorem foldAxioms_equalitySimplification_failsE {program mid out : Program}
     {s s1 s' : Transform.CoreTransformState} {b1 b : Bool}
     (h1 : (Core.foldAxiomsPhase.transform program).run s = (.ok (b1, mid), s1))
@@ -972,7 +1000,8 @@ theorem foldAxioms_equalitySimplification_failsE {program mid out : Program}
     (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss) :
     ∃ F₁ s₁, (Simplify.programFactory program).run s = (.ok F₁, s₁) ∧
     ∃ F₂ s₂, (Simplify.programFactory mid).run s1 = (.ok F₂, s₂) ∧
-    ∃ pre, (∃ post, mid.decls = pre ++ Decl.proc q md :: post) ∧
+    ∃ pre₀, (∃ post, program.decls = pre₀ ++ Decl.proc q md :: post) ∧
+      let pre := pre₀.map (foldDecl (runCtx program F₁))
       Decl.proc { q with body := .structured (rewriteBody (runCtx mid F₂) pre q ss) } md ∈
         out.decls ∧
       ∀ {Fs : Expression.Factory}, WellFormedSemanticEvalBool (P := Expression) Fs →
@@ -980,25 +1009,24 @@ theorem foldAxioms_equalitySimplification_failsE {program mid out : Program}
         RewriteSound (runCtx mid F₂).foldFactory Fs (runCtx mid F₂).evalFuel →
         AssumeSound (runCtx mid F₂).foldFactory Fs → Block.noLoops ss = true →
         CmdsOk (CmdOps (runCtx mid F₂).foldFactory) ss →
-        GroundAxiomsOps (runCtx program F₁).foldFactory program →
-        GroundAxiomsOps (runCtx mid F₂).foldFactory mid → GroundAxiomsTyped mid →
-        ∀ {σ₀ σ : SemanticStore Expression}, WellFormedStore σ₀ Fs →
-        GroundAxiomsHold Fs program σ₀ → WellFormedStore σ Fs →
+        AxiomsOps (runCtx program F₁).foldFactory pre₀ →
+        AxiomsOps (runCtx mid F₂).foldFactory pre → AxiomsTyped pre →
+        ∀ {σ₀ σ : SemanticStore Expression}, WellFormedStore σ₀ Fs → AxiomsHold Fs pre₀ σ₀ →
+        WellFormedStore σ Fs →
         (∀ x, x ∉ q.header.inputs.keys ++ q.header.outputs.keys → σ₀ x = σ x) →
         FailuresKept Fs ss (rewriteBody (runCtx mid F₂) pre q ss) σ := by
-  obtain ⟨F₁, s₁, hF₁, hp, hout, -⟩ := foldAxiomsPhase_run h1
-  obtain ⟨F₂, s₂, hF₂, pre, ⟨post, hd⟩, hm, hiff⟩ :=
-    equalitySimplificationPhase_failsE h2 (hp q md hq) hb
-  refine ⟨F₁, s₁, hF₁, F₂, s₂, hF₂, pre, ⟨post, hd⟩, hm,
+  obtain ⟨F₁, s₁, hF₁, hdecls⟩ := foldAxiomsPhase_decls h1
+  have hmem : Decl.proc q md ∈ mid.decls := by
+    rw [hdecls]; exact List.mem_map.mpr ⟨_, hq, rfl⟩
+  obtain ⟨F₂, s₂, hF₂, pre, ⟨post, hd⟩, hm, hiff⟩ := equalitySimplificationPhase_failsE h2 hmem hb
+  rw [hdecls] at hd
+  obtain ⟨pre₀, rest, hsplit, hpre, hrest⟩ := List.map_eq_append_iff.mp hd
+  obtain ⟨d, post₀, rfl, hdq, -⟩ := List.map_eq_cons_iff.mp hrest
+  have hdq' := foldDecl_proc hdq
+  subst hdq' hpre
+  refine ⟨F₁, s₁, hF₁, F₂, s₂, hF₂, pre₀, ⟨post₀, hsplit⟩, hm,
     fun hWB hfold hrw has hss hok hops₁ hops₂ hty _ _ hσ₀ hax hσ hag =>
-      hiff hWB hrw has hss hok ?_⟩
-  have hpre : ∀ a md', Decl.ax a md' ∈ pre → Decl.ax a md' ∈ mid.decls := fun a md' ha => by
-    rw [hd]; exact List.mem_append_left _ ha
-  obtain ⟨hh, ho⟩ := axStep_holds (fuel := (runCtx mid F₂).evalFuel) has pre _
-    ⟨Facts.holds_empty hσ₀, Facts.ops_empty _⟩
-    (fun a md' ha hb' => ⟨hops₂ a md' (hpre a md' ha) hb', hty a md' (hpre a md' ha) hb'⟩)
-    (fun a md' ha hb' => groundAxiomsHold_fold hfold hσ₀ hout hops₁ hax a md' (hpre a md' ha) hb')
-  exact ⟨Facts.holds_forget hh _ hσ hag, Facts.ops_forget ho _⟩
+      hiff hWB hrw has hss hok hops₂ hty hσ₀ (axiomsHold_foldDecl hfold hσ₀ hops₁ hax) hσ hag⟩
 
 end -- public section
 

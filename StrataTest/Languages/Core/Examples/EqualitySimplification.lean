@@ -2926,11 +2926,32 @@ that type check (all but `shadowDefPgm`, which the type checker rejects by desig
 that `LExpr.typeCheck` types at `bool`, as type checking leaves them and after the phase. It
 is evidence that the premises can hold, not that the folding conditions do. -/
 
-private partial def stmtGoals : Core.Statement → List Core.Expression.Expr
-  | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) => [e]
-  | .block _ ss _ | .loop _ _ _ ss _ => ss.flatMap stmtGoals
-  | .ite _ ts es _ => ts.flatMap stmtGoals ++ es.flatMap stmtGoals
+mutual
+
+/-- The expressions `f` selects from the commands of `s`, in order. -/
+private def stmtExprs (f : Imperative.Cmd Core.Expression → List Core.Expression.Expr) :
+    Core.Statement → List Core.Expression.Expr
+  | .cmd (.cmd c) => f c
+  | .cmd (.call ..) => []
+  | .block _ ss _ => blockExprs f ss
+  | .ite _ ts es _ => blockExprs f ts ++ blockExprs f es
+  | .loop _ _ _ ss _ => blockExprs f ss
+  | .exit .. | .typeDecl .. => []
+
+/-- The expressions `f` selects from the commands of `ss`, in order. -/
+private def blockExprs (f : Imperative.Cmd Core.Expression → List Core.Expression.Expr) :
+    List Core.Statement → List Core.Expression.Expr
+  | [] => []
+  | s :: ss => stmtExprs f s ++ blockExprs f ss
+
+end
+
+/-- The goals of a command. -/
+private def cmdGoals : Imperative.Cmd Core.Expression → List Core.Expression.Expr
+  | .assert _ e _ | .cover _ e _ => [e]
   | _ => []
+
+private def stmtGoals : Core.Statement → List Core.Expression.Expr := stmtExprs cmdGoals
 
 /-- The goals, lemmas and axioms of a program. -/
 private def programGoals (p : Core.Program) : List Core.Expression.Expr :=
@@ -2955,32 +2976,62 @@ private def typedBeforeAfter (p : StrataDDM.Program) :
     { Core.Transform.CoreTransformState.emp with factory := Core.Factory }).mapError toString
   return (typedCount prog, typedCount out)
 
-/-- The fixtures that type check. -/
+/-- Every program of this file that type checks (all but `shadowDefPgm`). -/
 private def fixtures : List (String × StrataDDM.Program) :=
-  [("literalPgm", literalPgm),
-   ("constructorPgm", constructorPgm),
-   ("applicationPgm", applicationPgm),
-   ("booleanPgm", booleanPgm),
-   ("coverPgm", coverPgm),
-   ("residualPgm", residualPgm),
-   ("unusedPgm", unusedPgm),
-   ("foldFirstPgm", foldFirstPgm),
-   ("foldAxiomsPgm", foldAxiomsPgm),
-   ("axiomPgm", axiomPgm),
-   ("conjunctionPgm", conjunctionPgm),
-   ("definitionPgm", definitionPgm),
-   ("opaqueEqPgm", opaqueEqPgm),
-   ("depthPgm", depthPgm),
-   ("shadowPgm", shadowPgm),
-   ("axiomAfterPgm", axiomAfterPgm),
-   ("contradictionPgm", contradictionPgm),
-   ("lemmaPgm", lemmaPgm),
-   ("lemmaOrderPgm", lemmaOrderPgm),
-   ("lemmaContradictionPgm", lemmaContradictionPgm),
-   ("lemmaQuantPgm", lemmaQuantPgm)]
+  [("literalPgm", (literalPgm : StrataDDM.Program)),
+   ("constructorPgm", (constructorPgm : StrataDDM.Program)),
+   ("applicationPgm", (applicationPgm : StrataDDM.Program)),
+   ("booleanPgm", (booleanPgm : StrataDDM.Program)),
+   ("coverPgm", (coverPgm : StrataDDM.Program)),
+   ("residualPgm", (residualPgm : StrataDDM.Program)),
+   ("unusedPgm", (unusedPgm : StrataDDM.Program)),
+   ("foldFirstPgm", (foldFirstPgm : StrataDDM.Program)),
+   ("foldAxiomsPgm", (foldAxiomsPgm : StrataDDM.Program)),
+   ("axiomPgm", (axiomPgm : StrataDDM.Program)),
+   ("conjunctionPgm", (conjunctionPgm : StrataDDM.Program)),
+   ("definitionPgm", (definitionPgm : StrataDDM.Program)),
+   ("opaqueEqPgm", (opaqueEqPgm : StrataDDM.Program)),
+   ("depthPgm", (depthPgm : StrataDDM.Program)),
+   ("shadowPgm", (shadowPgm : StrataDDM.Program)),
+   ("axiomAfterPgm", (axiomAfterPgm : StrataDDM.Program)),
+   ("contradictionPgm", (contradictionPgm : StrataDDM.Program)),
+   ("unseenContradictionPgm", (unseenContradictionPgm : StrataDDM.Program)),
+   ("undetectedBvPgm", (undetectedBvPgm : StrataDDM.Program)),
+   ("undetectedQuantPgm", (undetectedQuantPgm : StrataDDM.Program)),
+   ("lemmaPgm", (lemmaPgm : StrataDDM.Program)),
+   ("lemmaOrderPgm", (lemmaOrderPgm : StrataDDM.Program)),
+   ("lemmaContradictionPgm", (lemmaContradictionPgm : StrataDDM.Program)),
+   ("lemmaQuantPgm", (lemmaQuantPgm : StrataDDM.Program)),
+   ("vacuousQuantPgm", (vacuousQuantPgm : StrataDDM.Program)),
+   ("noFactsQuantPgm", (noFactsQuantPgm : StrataDDM.Program)),
+   ("mixedQuantPgm", (mixedQuantPgm : StrataDDM.Program)),
+   ("nestedQuantPgm", (nestedQuantPgm : StrataDDM.Program)),
+   ("positionsQuantPgm", (positionsQuantPgm : StrataDDM.Program)),
+   ("absorbPgm", (absorbPgm : StrataDDM.Program)),
+   ("anyAddressPgm", (anyAddressPgm : StrataDDM.Program)),
+   ("positionsBvPgm", (positionsBvPgm : StrataDDM.Program)),
+   ("literalRePgm", (literalRePgm : StrataDDM.Program)),
+   ("factsRePgm", (factsRePgm : StrataDDM.Program)),
+   ("encoderRejectedPgm", (encoderRejectedPgm : StrataDDM.Program)),
+   ("longRePgm", (longRePgm : StrataDDM.Program)),
+   ("connectivesPgm", (connectivesPgm : StrataDDM.Program)),
+   ("connectivesDeadPgm", (connectivesDeadPgm : StrataDDM.Program)),
+   ("connectivesPositionsPgm", (connectivesPositionsPgm : StrataDDM.Program)),
+   ("connectivesRoundsPgm", (connectivesRoundsPgm : StrataDDM.Program)),
+   ("connectivesLimitPgm", (connectivesLimitPgm : StrataDDM.Program)),
+   ("connectivesGuardPgm", (connectivesGuardPgm : StrataDDM.Program)),
+   ("noFactsPgm", (noFactsPgm : StrataDDM.Program)),
+   ("hintPgm", (hintPgm : StrataDDM.Program)),
+   ("positionsPgm", (positionsPgm : StrataDDM.Program)),
+   ("hintScopePgm", (hintScopePgm : StrataDDM.Program)),
+   ("polyHintPgm", (polyHintPgm : StrataDDM.Program)),
+   ("hintProcPgm", (hintProcPgm : StrataDDM.Program)),
+   ("undetectedPgm", (undetectedPgm : StrataDDM.Program)),
+   ("hintFlowPgm", (hintFlowPgm : StrataDDM.Program)),
+   ("hintLimitPgm", (hintLimitPgm : StrataDDM.Program))]
 
 /--
-info: before: 49 of 49 typed at bool; after: 49 of 49
+info: before: 224 of 224 typed at bool; after: 224 of 224
 -/
 #guard_msgs in
 #eval show IO Unit from do
@@ -2998,22 +3049,22 @@ info: before: 49 of 49 typed at bool; after: 49 of 49
 /-! ## The fixtures' operators are consistent with the folding factories
 
 The theorems of `Strata.Transform.EqualitySimplificationCorrect` take as premise that the
-operators of a body's commands (`CmdOps`) and of the ground axioms (`GroundAxiomsOps`) are
+operators of a body's commands (`CmdOps`) and of the ground axioms (`AxiomsOps`) are
 annotated at instances of their signatures in the folding factory the phase uses. This
-check decides it, with `opsConsistentB`, which is sound for `Lambda.OpsConsistentR`
-(`opsConsistentR_of_opsConsistentB`), on every fixture that type checks: against the
+check decides it, with `LExpr.opsConsistent`, which is sound for `Lambda.OpsConsistentR`
+(`opsConsistent_sound`), on every fixture that type checks: against the
 folding factory of `runCtx program F0` for the program as type checking leaves it, and of
 `runCtx mid F0'` for the program `mid` that axiom folding gives, then on the output of the
 phase. It counts the expressions checked (the goals, assumptions and definition values of
 the bodies, and the ground axioms), those that pass, the operator nodes, and those the
 folding factory knows. -/
 
-private partial def stmtCmdExprs : Core.Statement → List Core.Expression.Expr
-  | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) | .cmd (.cmd (.assume _ e _))
-  | .cmd (.cmd (.init _ _ (.det e) _)) => [e]
-  | .block _ ss _ | .loop _ _ _ ss _ => ss.flatMap stmtCmdExprs
-  | .ite _ ts es _ => ts.flatMap stmtCmdExprs ++ es.flatMap stmtCmdExprs
+/-- The expressions the premises constrain in a command. -/
+private def cmdExprs : Imperative.Cmd Core.Expression → List Core.Expression.Expr
+  | .assert _ e _ | .cover _ e _ | .assume _ e _ | .init _ _ (.det e) _ => [e]
   | _ => []
+
+private def stmtCmdExprs : Core.Statement → List Core.Expression.Expr := stmtExprs cmdExprs
 
 /-- The expressions of the bodies' commands and the ground axioms of `p`. -/
 private def premiseExprs (p : Core.Program) : List Core.Expression.Expr :=
@@ -3024,7 +3075,7 @@ private def premiseExprs (p : Core.Program) : List Core.Expression.Expr :=
     | .ax a _ => if a.e.hasBVar then [] else [a.e]
     | _ => []
 
-private partial def opNames : Core.Expression.Expr → List String
+private def opNames : Core.Expression.Expr → List String
   | .op _ n _ => [n.name]
   | .app _ f a | .eq _ f a => opNames f ++ opNames a
   | .abs _ _ _ b => opNames b
@@ -3040,7 +3091,7 @@ private def opsCount (p : Core.Program) : Except String (Nat × Nat × Nat × Na
   let es := premiseExprs p
   let ops := es.flatMap opNames
   return (es.length,
-    (es.filter (Core.EqualitySimplification.GoalsDefinedTest.opsConsistentB F)).length,
+    (es.filter (·.opsConsistent F)).length,
     ops.length, (ops.filter fun n => F[n]?.isSome).length)
 
 private def addCounts (a b : Nat × Nat × Nat × Nat) : Nat × Nat × Nat × Nat :=
@@ -3050,9 +3101,9 @@ private def showCounts (label : String) (c : Nat × Nat × Nat × Nat) : String 
   s!"{label}: {c.2.1} of {c.1} consistent, {c.2.2.2} of {c.2.2.1} operators known"
 
 /--
-info: program: 87 of 87 consistent, 116 of 116 operators known
-after axiom folding: 87 of 87 consistent, 114 of 114 operators known
-after the phase: 87 of 87 consistent, 80 of 80 operators known
+info: program: 260 of 260 consistent, 518 of 518 operators known
+after axiom folding: 260 of 260 consistent, 516 of 516 operators known
+after the phase: 260 of 260 consistent, 251 of 251 operators known
 -/
 #guard_msgs in
 #eval show IO Unit from do
@@ -3082,9 +3133,10 @@ so the one-way folding conditions say nothing about them, though `wrongBeta` fol
 integer `3`. `mistypedSum` fails the premise. -/
 
 open Core.EqualitySimplification.GoalsDefinedTest in
-#guard opsConsistentB Core.Factory wrongArg && opsConsistentB Core.Factory wrongBeta &&
+#guard wrongArg.opsConsistent Core.Factory &&
+  wrongBeta.opsConsistent Core.Factory &&
   Core.Simplify.fold Core.Factory 100 wrongBeta == .intConst () 3 &&
-  !opsConsistentB Core.Factory Core.FoldAxioms.mistypedSum
+  !Core.FoldAxioms.mistypedSum.opsConsistent Core.Factory
 
 /-! Equality simplification folds goals with `foldTerm`, which `FoldSound` is about: it
 also folds the counterexample and the beta near miss to the integer `3`. -/
@@ -3166,11 +3218,12 @@ gives it, so `LExpr.typeCheck []` types such a candidate. This check learns ever
 and ground axiom of each program of this file that type checks, from no facts, and counts the
 candidates recorded and those of their key's type. -/
 
-private partial def stmtAssumes : Core.Statement → List Core.Expression.Expr
-  | .cmd (.cmd (.assume _ e _)) => [e]
-  | .block _ ss _ | .loop _ _ _ ss _ => ss.flatMap stmtAssumes
-  | .ite _ ts es _ => ts.flatMap stmtAssumes ++ es.flatMap stmtAssumes
+/-- The condition of an assumption. -/
+private def cmdAssume : Imperative.Cmd Core.Expression → List Core.Expression.Expr
+  | .assume _ e _ => [e]
   | _ => []
+
+private def stmtAssumes : Core.Statement → List Core.Expression.Expr := stmtExprs cmdAssume
 
 /-- The assumptions of `p`'s bodies and its ground axioms. -/
 private def learnedExprs (p : Core.Program) : List Core.Expression.Expr :=
@@ -3181,60 +3234,6 @@ private def learnedExprs (p : Core.Program) : List Core.Expression.Expr :=
     | .ax a _ => if a.e.hasBVar then [] else [a.e]
     | _ => []
 
-/-- Every program of this file that type checks (all but `shadowDefPgm`). -/
-private def allPrograms : List (String × StrataDDM.Program) :=
-  [("literalPgm", (literalPgm : StrataDDM.Program)),
-   ("constructorPgm", (constructorPgm : StrataDDM.Program)),
-   ("applicationPgm", (applicationPgm : StrataDDM.Program)),
-   ("booleanPgm", (booleanPgm : StrataDDM.Program)),
-   ("coverPgm", (coverPgm : StrataDDM.Program)),
-   ("residualPgm", (residualPgm : StrataDDM.Program)),
-   ("unusedPgm", (unusedPgm : StrataDDM.Program)),
-   ("foldFirstPgm", (foldFirstPgm : StrataDDM.Program)),
-   ("foldAxiomsPgm", (foldAxiomsPgm : StrataDDM.Program)),
-   ("axiomPgm", (axiomPgm : StrataDDM.Program)),
-   ("conjunctionPgm", (conjunctionPgm : StrataDDM.Program)),
-   ("definitionPgm", (definitionPgm : StrataDDM.Program)),
-   ("opaqueEqPgm", (opaqueEqPgm : StrataDDM.Program)),
-   ("depthPgm", (depthPgm : StrataDDM.Program)),
-   ("shadowPgm", (shadowPgm : StrataDDM.Program)),
-   ("axiomAfterPgm", (axiomAfterPgm : StrataDDM.Program)),
-   ("contradictionPgm", (contradictionPgm : StrataDDM.Program)),
-   ("unseenContradictionPgm", (unseenContradictionPgm : StrataDDM.Program)),
-   ("undetectedBvPgm", (undetectedBvPgm : StrataDDM.Program)),
-   ("undetectedQuantPgm", (undetectedQuantPgm : StrataDDM.Program)),
-   ("lemmaPgm", (lemmaPgm : StrataDDM.Program)),
-   ("lemmaOrderPgm", (lemmaOrderPgm : StrataDDM.Program)),
-   ("lemmaContradictionPgm", (lemmaContradictionPgm : StrataDDM.Program)),
-   ("lemmaQuantPgm", (lemmaQuantPgm : StrataDDM.Program)),
-   ("vacuousQuantPgm", (vacuousQuantPgm : StrataDDM.Program)),
-   ("noFactsQuantPgm", (noFactsQuantPgm : StrataDDM.Program)),
-   ("mixedQuantPgm", (mixedQuantPgm : StrataDDM.Program)),
-   ("nestedQuantPgm", (nestedQuantPgm : StrataDDM.Program)),
-   ("positionsQuantPgm", (positionsQuantPgm : StrataDDM.Program)),
-   ("absorbPgm", (absorbPgm : StrataDDM.Program)),
-   ("anyAddressPgm", (anyAddressPgm : StrataDDM.Program)),
-   ("positionsBvPgm", (positionsBvPgm : StrataDDM.Program)),
-   ("literalRePgm", (literalRePgm : StrataDDM.Program)),
-   ("factsRePgm", (factsRePgm : StrataDDM.Program)),
-   ("encoderRejectedPgm", (encoderRejectedPgm : StrataDDM.Program)),
-   ("longRePgm", (longRePgm : StrataDDM.Program)),
-   ("connectivesPgm", (connectivesPgm : StrataDDM.Program)),
-   ("connectivesDeadPgm", (connectivesDeadPgm : StrataDDM.Program)),
-   ("connectivesPositionsPgm", (connectivesPositionsPgm : StrataDDM.Program)),
-   ("connectivesRoundsPgm", (connectivesRoundsPgm : StrataDDM.Program)),
-   ("connectivesLimitPgm", (connectivesLimitPgm : StrataDDM.Program)),
-   ("connectivesGuardPgm", (connectivesGuardPgm : StrataDDM.Program)),
-   ("noFactsPgm", (noFactsPgm : StrataDDM.Program)),
-   ("hintPgm", (hintPgm : StrataDDM.Program)),
-   ("positionsPgm", (positionsPgm : StrataDDM.Program)),
-   ("hintScopePgm", (hintScopePgm : StrataDDM.Program)),
-   ("polyHintPgm", (polyHintPgm : StrataDDM.Program)),
-   ("hintProcPgm", (hintProcPgm : StrataDDM.Program)),
-   ("undetectedPgm", (undetectedPgm : StrataDDM.Program)),
-   ("hintFlowPgm", (hintFlowPgm : StrataDDM.Program)),
-   ("hintLimitPgm", (hintLimitPgm : StrataDDM.Program))]
-
 /-- Candidates recorded from `p`'s assumptions and ground axioms, and those of their key's
     type. -/
 private def hintCount (p : Core.Program) : Except String (Nat × Nat) := do
@@ -3242,7 +3241,8 @@ private def hintCount (p : Core.Program) : Except String (Nat × Nat) := do
     { Core.Transform.CoreTransformState.emp with factory := Core.Factory }).mapError toString
   let F := (Core.FoldAxioms.runCtx p F0).foldFactory
   let hs := (learnedExprs p).flatMap fun e =>
-    (Core.EqualitySimplification.addAssumption F {} Core.EqualitySimplification.defDepth e).hints.toList
+    (Core.EqualitySimplification.addAssumption F {} Core.EqualitySimplification.defDepth
+      e).hints.toList
   let cands := hs.flatMap fun ((_, fty), vs) => vs.map (fty, ·)
   return (cands.length, (cands.filter fun (fty, v) => match fty with
     | .tcons "arrow" [ty, .tcons "bool" []] => Lambda.LExpr.typeCheck [] v == some ty
@@ -3254,8 +3254,9 @@ info: candidates: 29 of 29 typed
 #guard_msgs in
 #eval show IO Unit from do
   let mut c : Nat × Nat := (0, 0)
-  for (name, p) in allPrograms do
-    match (Core.typeCheck .quiet (parse p)).mapError (fun e => toString e.message) >>= hintCount with
+  for (name, p) in fixtures do
+    let r := (Core.typeCheck .quiet (parse p)).mapError (fun e => toString e.message)
+    match r >>= hintCount with
     | .ok (a, b) => c := (c.1 + a, c.2 + b)
     | .error msg => IO.println s!"{name}: {msg}"
   IO.println s!"candidates: {c.2} of {c.1} typed"
@@ -3277,7 +3278,7 @@ open Core.EqualitySimplification.GoalsDefinedTest in
 
 The theorems take as premise that the condition of each `assume`, and each ground axiom of
 the program equality simplification runs on, is typed at `bool` by its own annotations
-(`CmdOps`, `GroundAxiomsTyped`), so that the witness candidates learned from them are typed.
+(`CmdOps`, `AxiomsTyped`), so that the witness candidates learned from them are typed.
 This counts them on every program of this file that type checks, as type checking leaves it
 and after axiom folding. -/
 
@@ -3291,7 +3292,7 @@ info: typed: 90 of 90, after axiom folding: 90 of 90
     (es.length, (es.filter fun e => Lambda.LExpr.typeCheck [] e == some .bool).length)
   let mut c₁ : Nat × Nat := (0, 0)
   let mut c₂ : Nat × Nat := (0, 0)
-  for (name, p) in allPrograms do
+  for (name, p) in fixtures do
     let r : Except String _ := do
       let prog ← (Core.typeCheck .quiet (parse p)).mapError (fun e => toString e.message)
       let st := { Core.Transform.CoreTransformState.emp with factory := Core.Factory }
@@ -3317,6 +3318,57 @@ open Core.EqualitySimplification.GoalsDefinedTest in
     Core.EqualitySimplification.defDepth mistypedAssume).hints.get? ("Bool.Not", arr boolTy boolTy)
     == some [.fvar () ⟨"x", ()⟩ (some intTy)] &&
   Lambda.LExpr.typeCheck [] mistypedAssume == none
+
+/-! ## Loop bodies
+
+The phase rewrites a loop body from the facts before the loop, minus those about variables
+the body writes, so that a fact true on entry but not on a later iteration is not used.
+`x` and `z` are written in the body (`z` after the goal that reads it, and inside an `if`),
+so the facts `x == 1` and `z == 3` from before the loop do not rewrite `stale` and
+`staleBefore`, which fail on the second iteration. `y` is not written, so `y == 2` rewrites
+`kept` to `true`. The correctness theorems cover loop-free bodies only. -/
+
+private def loopPgm :=
+#strata
+program Core;
+procedure P(c : bool)
+{
+  var x : int := 1;
+  var y : int := 2;
+  var z : int := 3;
+  while (c)
+  {
+    x := int.add(x, 1);
+    assert [stale]: x == 1;
+    assert [kept]: y == 2;
+    assert [staleBefore]: z == 3;
+    if (c) { z := int.add(z, 1); }
+  }
+};
+#end
+
+/--
+info: program Core;
+
+procedure P (c : bool)
+{
+  var x : int := 1;
+  var y : int := 2;
+  var z : int := 3;
+  while (c)
+  {
+    x := int.add(x, 1);
+    assert [stale]: x == 1;
+    assert [kept]: true;
+    assert [staleBefore]: z == 3;
+    if (c) {
+      z := int.add(z, 1);
+    }
+  }
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint loopPgm (typeCheck := true)
 
 end Strata.EqualitySimplificationTest
 

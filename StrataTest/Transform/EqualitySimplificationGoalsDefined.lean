@@ -145,66 +145,6 @@ theorem literal_goalsDefined {l₁ l₂ l₃ l₄ : String} {m₁ m₂ m₃ m₄
   · rw [hf, hst, hg]; exact hint
   · rw [hf, hst, hg]; exact hstr
 
-/-! ## Checking operator consistency
-
-`opsConsistentB` decides a sufficient condition for `Lambda.OpsConsistentR`: every operator
-the factory knows is annotated at the instance of its signature that `LFunc.opTypeSubst`
-computes. The fixture tests use it to check the operator premises of the equality
-simplification theorems on real programs. -/
-
-/-- Every operator of `e` that `F` knows is annotated at the instance of its signature that
-    `LFunc.opTypeSubst` computes. -/
-public def opsConsistentB (F : Lambda.Factory CoreLParams) : Expression.Expr → Bool
-  | e@(.op _ name ty) =>
-    match F[name.name]?, ty with
-    | none, _ => true
-    | some fn, some t =>
-      match LFunc.opTypeSubst fn e with
-      | some S => decide (t = (LMonoTy.mkArrow' fn.output (fn.inputs.map Prod.snd)).subst S)
-      | none => false
-    | some _, none => false
-  | .app _ f a => opsConsistentB F f && opsConsistentB F a
-  | .abs _ _ _ b => opsConsistentB F b
-  | .ite _ c t f => opsConsistentB F c && opsConsistentB F t && opsConsistentB F f
-  | .eq _ a b => opsConsistentB F a && opsConsistentB F b
-  | .quant _ _ _ _ tr b => opsConsistentB F tr && opsConsistentB F b
-  | .const .. | .bvar .. | .fvar .. => true
-
-/-- `opsConsistentB` is sound for `Lambda.OpsConsistentR`. -/
-public theorem opsConsistentR_of_opsConsistentB {F : Lambda.Factory CoreLParams} :
-    ∀ {e : Expression.Expr}, opsConsistentB F e = true → Lambda.OpsConsistentR F e
-  | .const .., _ => .const
-  | .bvar .., _ => .bvar
-  | .fvar .., _ => .fvar
-  | .op m name ty, h => by
-    unfold opsConsistentB at h
-    rcases hfn : F[name.name]? with _ | fn
-    · exact .op_notin hfn
-    · rw [hfn] at h
-      rcases ty with _ | t
-      · cases h
-      · simp only at h
-        rcases hS : LFunc.opTypeSubst fn (.op m name (some t)) with _ | S
-        · rw [hS] at h; cases h
-        · rw [hS] at h
-          exact .op_in hfn (of_decide_eq_true h)
-  | .app .., h => by
-    simp only [opsConsistentB, Bool.and_eq_true] at h
-    exact .app (opsConsistentR_of_opsConsistentB h.1) (opsConsistentR_of_opsConsistentB h.2)
-  | .abs .., h => by
-    simp only [opsConsistentB] at h
-    exact .abs (opsConsistentR_of_opsConsistentB h)
-  | .ite .., h => by
-    simp only [opsConsistentB, Bool.and_eq_true] at h
-    exact .ite (opsConsistentR_of_opsConsistentB h.1.1) (opsConsistentR_of_opsConsistentB h.1.2)
-      (opsConsistentR_of_opsConsistentB h.2)
-  | .eq .., h => by
-    simp only [opsConsistentB, Bool.and_eq_true] at h
-    exact .eq (opsConsistentR_of_opsConsistentB h.1) (opsConsistentR_of_opsConsistentB h.2)
-  | .quant .., h => by
-    simp only [opsConsistentB, Bool.and_eq_true] at h
-    exact .quant (opsConsistentR_of_opsConsistentB h.1) (opsConsistentR_of_opsConsistentB h.2)
-
 /-! ## Near misses of the operator premise
 
 These satisfy the operator premise and fold to something with a value, yet have no value
@@ -232,8 +172,8 @@ public theorem wrongArg_no_value (Fs : Expression.Factory) (σ : SemanticStore E
     cases hfn with
     | app hop harg =>
       cases hop
-      have := (LExpr.HasTypeA_iff_typeCheck _ _ _).mp harg
-      simp [LExpr.typeCheck, LConst.ty, intTy, LMonoTy.bool] at this
+      have htc := (LExpr.HasTypeA_iff_typeCheck _ _ _).mp harg
+      simp [LExpr.typeCheck, LConst.ty, intTy, LMonoTy.bool] at htc
 
 /-- `wrongBeta` has no value in any runtime factory and store: `3` is no Boolean. -/
 public theorem wrongBeta_no_value (Fs : Expression.Factory) (σ : SemanticStore Expression) :
@@ -245,7 +185,7 @@ public theorem wrongBeta_no_value (Fs : Expression.Factory) (σ : SemanticStore 
   cases hτ with
   | app hfn harg =>
     cases hfn
-    have := (LExpr.HasTypeA_iff_typeCheck _ _ _).mp harg
-    simp [LExpr.typeCheck, LConst.ty, boolTy, LMonoTy.int] at this
+    have htc := (LExpr.HasTypeA_iff_typeCheck _ _ _).mp harg
+    simp [LExpr.typeCheck, LConst.ty, boolTy, LMonoTy.int] at htc
 
 end Core.EqualitySimplification.GoalsDefinedTest
