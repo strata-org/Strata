@@ -451,6 +451,25 @@ theorem mem_foldlM_tryPush {T : LExprParams} [Inhabited T.Metadata] [Std.ToForma
       · exact Or.inr (by rw [h']; exact List.mem_cons_self)
     · exact Or.inr (List.mem_cons_of_mem fn hr)
 
+/-- Successfully appending a list of functions to a factory places them after
+    its existing functions, in list order. -/
+theorem toList_toArray_foldlM_tryPush {T : LExprParams} [Inhabited T.Metadata]
+    [Std.ToFormat T.IDMeta] (l : List (LFunc T)) : ∀ (F F' : Factory T),
+      l.foldlM (fun F fn => Factory.tryPush F fn) F = .ok F' →
+      F'.toArray.toList = F.toArray.toList ++ l := by
+  induction l with
+  | nil =>
+    intro F F' h
+    simp only [List.foldlM_nil, pure, Except.pure, Except.ok.injEq] at h
+    subst h
+    exact (List.append_nil _).symm
+  | cons fn rest ih =>
+    intro F F' h
+    obtain ⟨hfresh, h⟩ := foldlM_tryPush_cons_inv fn rest F F' h
+    rw [ih _ F' h]
+    simp only [Factory.push, Array.toList_push, List.append_assoc,
+      List.singleton_append]
+
 /-- Every function in the factory after a successful push was stored before or is the pushed
     one. -/
 theorem mem_tryPush {T : LExprParams} [Inhabited T.Metadata] [Std.ToFormat T.IDMeta]

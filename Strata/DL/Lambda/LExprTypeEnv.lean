@@ -1051,6 +1051,39 @@ def LMonoTy.WellKinded (arity : String → Option Nat) (ty : LMonoTy) : Prop :=
 def LContext.WellKindedTy (C : LContext T) (ty : LMonoTy) : Prop :=
   LMonoTy.WellKinded (fun n => C.knownTypes[n]?) ty
 
+/-- Every type registration in `ks` occurs with the same arity in `ks'`. -/
+@[expose] def KnownTypesExtends (ks ks' : KnownTypes) : Prop :=
+  ∀ (n : String) (a : Nat), ks[n]? = some a → ks'[n]? = some a
+
+/-- Every monotype in a substitution's range uses only constructors registered
+    in `ks`, at their recorded arities. -/
+@[expose] def Subst.RangeKnown (S : Subst) (ks : KnownTypes) : Prop :=
+  ∀ mty ∈ HMaps.values S, LMonoTy.knownInstance mty ks = true
+
+/-- Both sides of `c` use only type constructors that `ks` registers, each at
+    its recorded arity. -/
+@[expose] def Constraint.Known (c : Constraint) (ks : KnownTypes) : Prop :=
+  LMonoTy.knownInstance c.1 ks = true ∧ LMonoTy.knownInstance c.2 ks = true
+
+/-- A constraint list is registered when each of its constraints is. -/
+@[expose] def Constraints.Known (cs : Constraints) (ks : KnownTypes) : Prop :=
+  ∀ c ∈ cs, Constraint.Known c ks
+
+/-- `ks` registers `arrow` at arity 2, and every input and output type of every
+    function of `F` is an instance of the types `ks` registers. -/
+@[expose] def FactorySigsKnown {T : LExprParams} (ks : KnownTypes)
+    (F : Factory T) : Prop :=
+  ks["arrow"]? = some 2 ∧
+    ∀ f ∈ F.toArray, ∀ ty ∈ f.output :: f.inputs.values,
+      LMonoTy.knownInstance ty ks = true
+
+/-- Every datatype of `C` is registered in `C.knownTypes` at its
+    number of type parameters. -/
+@[expose] def LContext.DatatypesKnown {T : LExprParams}
+    (C : LContext T) : Prop :=
+  ∀ d ∈ C.datatypes.allDatatypes,
+    C.knownTypes[d.name]? = some d.typeArgs.length
+
 /-- Check whether a type variable name looks like a generated name (`tyPrefix ++ toString n`)
     with `n ≥ tyGen`. Returns `true` if the name is a "future" generated name that should
     not appear in a type at this point.

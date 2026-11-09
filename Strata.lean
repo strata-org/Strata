@@ -192,6 +192,7 @@ import Strata.DL.Lambda.LExprEvalSound
 import Strata.DL.Lambda.TypeFactoryWF
 import Strata.DL.Lambda.LExprTypeEnvProps
 import Strata.DL.Lambda.DatatypeFactoryWFProps
+import Strata.DL.Lambda.KnownTypesProps
 import Strata.Util.HListProps
 import Strata.Util.HMapsProps
 import Strata.Languages.Core.ProgramWF
@@ -204,6 +205,10 @@ import Strata.Languages.Core.DatatypeTypeSpecProps
 import Strata.Languages.Core.ProgramTypeSpec
 import Strata.Languages.Core.Typing.Spec.TypeSpecShared
 import Strata.Languages.Core.Typing.Spec.TypingSpec
+import Strata.Languages.Core.FactoryProps
+import Strata.Languages.Core.Typing.Props.FactoryRegistrationProps
+import Strata.Languages.Core.Typing.Props.ProcSigAgreementProps
+import Strata.Languages.Core.Typing.Props.TypingSpecProps
 import Strata.Util.Random
 
 import Strata.Examples.Embedded

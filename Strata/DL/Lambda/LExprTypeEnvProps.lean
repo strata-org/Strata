@@ -518,6 +518,22 @@ theorem addKnownTypeWithError_setIdents {T : LExprParams}
   subst h
   exact ⟨rfl, rfl⟩
 
+/-- Registering a type commutes with replacing the rigid type variables: when
+    registering `k` in `C` gives `C'`, registering it in `C` with rigid type
+    variables `r` gives `C'` with rigid type variables `r`. -/
+theorem addKnownTypeWithError_setRigidTypeVars {T : LExprParams}
+    {C C' : LContext T} {k : KnownType} {f : Message} (r : List TyIdentifier)
+    (h : C.addKnownTypeWithError k f = .ok C') :
+    { C with rigidTypeVars := r }.addKnownTypeWithError k f
+      = .ok { C' with rigidTypeVars := r } := by
+  simp only [LContext.addKnownTypeWithError, bind, Except.bind] at h ⊢
+  cases hkt : C.knownTypes.addWithError k f with
+  | error => simp only [hkt, reduceCtorEq] at h
+  | ok kt =>
+    simp only [hkt, Except.ok.injEq] at h ⊢
+    subst h
+    rfl
+
 /-- `addFactoryFunction` commutes with setting the `idents` field. -/
 theorem addFactoryFunction_setIdents {T : LExprParams} (C : LContext T)
     (f : LFunc T) (v : Identifiers T.IDMeta) :

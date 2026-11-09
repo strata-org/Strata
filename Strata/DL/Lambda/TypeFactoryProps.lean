@@ -791,6 +791,26 @@ theorem length_blockConstrs {IDMeta : Type} (block : MutualDatatype IDMeta) :
 
 /-! ### Projection names -/
 
+/-- Each projection built from a constructor's fields is named after its
+    field under the datatype's name, with the unsafe suffix when `safe` is
+    false. -/
+private theorem mkDestructorFuncs_names {T : LExprParams} [BEq T.Identifier]
+    [Inhabited T.IDMeta] [Inhabited T.Metadata] (d : LDatatype T.IDMeta)
+    (c : LConstr T.IDMeta) (safe : Bool) :
+    (c.args.mapIdx (fun i (name, ty) =>
+        mkDestructorFunc (T := T) d c i name ty safe)).map
+        (fun f => f.name.name)
+      = c.args.map (fun p => if safe then destructorFuncName d p.1
+          else unsafeDestructorFuncName d p.1) := by
+  have hidx : ∀ i j (p : Identifier T.IDMeta × LMonoTy),
+      (mkDestructorFunc (T := T) d c i p.1 p.2 safe).name.name =
+        (mkDestructorFunc (T := T) d c j p.1 p.2 safe).name.name := by
+    intro i j p
+    rfl
+  rw [List.map_mapIdx_ignore_index c.args (fun f : LFunc T => f.name.name) _
+    hidx]
+  cases safe <;> rfl
+
 /-- Each projection of a constructor is named after its field, under the
     datatype's name. -/
 theorem destructorFuncs_names {T : LExprParams} [BEq T.Identifier]
@@ -799,18 +819,39 @@ theorem destructorFuncs_names {T : LExprParams} [BEq T.Identifier]
     ((destructorFuncs (T := T) d c).map (fun f => f.name.name))
       = (c.args.map (fun p => p.1.name)).map
           (fun s => d.name ++ destructorSeparator ++ s) := by
-  rw [List.map_map]
-  simp only [destructorFuncs]
-  have hidx : ∀ i j (p : Identifier T.IDMeta × LMonoTy),
-      (mkDestructorFunc (T := T) d c i p.1 p.2 true).name.name =
-        (mkDestructorFunc (T := T) d c j p.1 p.2 true).name.name := by
-    intro i j p
+  rw [List.map_map]; exact mkDestructorFuncs_names d c true
+
+/-- Each unsafe projection of a constructor is named after its field, under
+    the datatype's name, with the unsafe suffix. -/
+theorem unsafeDestructorFuncs_names {T : LExprParams} [BEq T.Identifier]
+    [Inhabited T.IDMeta] [Inhabited T.Metadata] (d : LDatatype T.IDMeta)
+    (c : LConstr T.IDMeta) :
+    (unsafeDestructorFuncs (T := T) d c).map (fun f => f.name.name)
+      = c.args.map (fun p => unsafeDestructorFuncName d p.1) :=
+  mkDestructorFuncs_names d c false
+
+/-- The eliminators of a mutual block are named, in order, after the block's
+    datatypes. -/
+theorem elimFuncs_names {T : LExprParams} [Inhabited T.IDMeta]
+    [BEq T.Identifier] (block : MutualDatatype T.IDMeta) (m : T.Metadata) :
+    (elimFuncs (T := T) block m).map (fun f => f.name.name)
+      = block.map (fun d => (elimFuncName d).name) := by
+  simp only [elimFuncs]
+  split
+  · rename_i hempty
+    rw [List.isEmpty_iff.mp hempty]
     rfl
-  rw [List.map_mapIdx_ignore_index c.args (fun f : LFunc T => f.name.name) _
-    hidx]
-  refine List.map_congr_left ?_
-  intro p _
-  rfl
+  · have hzip : ∀ l : List TyIdentifier, block.length ≤ l.length →
+        (block.zip l).map (fun p => (elimFuncName p.1).name) =
+          block.map (fun d => (elimFuncName d).name) := by
+      intro l hlen
+      conv => rhs; rw [← List.map_fst_zip hlen, List.map_map]
+      rfl
+    rw [List.map_map]
+    refine (List.map_congr_left ?_).trans
+      (hzip _ (Nat.le_of_eq (freshTypeArgs_length _ _).symm))
+    intro p _
+    rfl
 
 /-! ### The datatype's own type -/
 
@@ -901,6 +942,126 @@ theorem freeVars_elimTy_subset {IDMeta : Type} (block : MutualDatatype IDMeta)
       rcases freeVars_genRecTy block retTyVars arg.2 t hgen v hv with h1 | h2
       · exact hret v h1
       · exact hargs arg harg v h2
+
+/-! ### Equations for the type-constructor name checks -/
+
+/-- A type variable names no type constructor, so it passes any check on
+    constructor names. -/
+theorem mtyAllTyConsNames_ftvar (p : String → Bool) (v : TyIdentifier) :
+    mtyAllTyConsNames p (.ftvar v) = true := by
+  simp only [mtyAllTyConsNames, getTypeRefs, List.all_nil]
+
+/-- A bitvector type names no type constructor, so it passes any check on
+    constructor names. -/
+theorem mtyAllTyConsNames_bitvec (p : String → Bool) (n : Nat) :
+    mtyAllTyConsNames p (.bitvec n) = true := by
+  simp only [mtyAllTyConsNames, getTypeRefs, List.all_nil]
+
+/-- A constructor application passes a check on constructor names exactly when
+    its constructor name and all its arguments do. -/
+theorem mtyAllTyConsNames_tcons (p : String → Bool) (name : String)
+    (args : LMonoTys) :
+    mtyAllTyConsNames p (.tcons name args) =
+      (p name && mtysAllTyConsNames p args) := by
+  simp only [mtyAllTyConsNames, mtysAllTyConsNames, getTypeRefs, List.all_cons,
+    List.all_flatMap]
+  rfl
+
+/-- The empty list of types passes any check on constructor names. -/
+theorem mtysAllTyConsNames_nil (p : String → Bool) :
+    mtysAllTyConsNames p [] = true := by
+  simp only [mtysAllTyConsNames, List.all_nil]
+
+/-- A nonempty list of types passes a check on constructor names exactly when
+    its head and its tail do. -/
+theorem mtysAllTyConsNames_cons (p : String → Bool) (t : LMonoTy)
+    (rest : LMonoTys) :
+    mtysAllTyConsNames p (t :: rest) =
+      (mtyAllTyConsNames p t && mtysAllTyConsNames p rest) := by
+  simp only [mtysAllTyConsNames, List.all_cons]
+
+/-- The Boolean type passes a check on constructor names exactly when the name
+    `bool` does. -/
+theorem mtyAllTyConsNames_bool (p : String → Bool) :
+    mtyAllTyConsNames p LMonoTy.bool = p "bool" := by
+  simp only [LMonoTy.bool, mtyAllTyConsNames_tcons, mtysAllTyConsNames_nil,
+    Bool.and_true]
+
+/-- A function arrow passes a check on constructor names when the name `arrow`
+    and both sides do. -/
+theorem mtyAllTyConsNames_arrow {p : String → Bool} {a b : LMonoTy}
+    (harrow : p "arrow" = true) (ha : mtyAllTyConsNames p a = true)
+    (hb : mtyAllTyConsNames p b = true) :
+    mtyAllTyConsNames p (LMonoTy.arrow a b) = true := by
+  simp only [LMonoTy.arrow, mtyAllTyConsNames_tcons, mtysAllTyConsNames_cons,
+    mtysAllTyConsNames_nil, harrow, ha, hb, Bool.and_self]
+
+/-- Both sides of a function arrow pass a check on constructor names that the
+    arrow passes. -/
+theorem mtyAllTyConsNames_arrow_inv {p : String → Bool} {a b : LMonoTy}
+    (h : mtyAllTyConsNames p (LMonoTy.arrow a b) = true) :
+    mtyAllTyConsNames p a = true ∧ mtyAllTyConsNames p b = true := by
+  simp only [LMonoTy.arrow, mtyAllTyConsNames_tcons, mtysAllTyConsNames_cons,
+    mtysAllTyConsNames_nil, Bool.and_true, Bool.and_eq_true] at h
+  exact ⟨h.2.1, h.2.2⟩
+
+/-- A datatype applied to its own type parameters passes a check on
+    constructor names when the datatype's name does. -/
+theorem mtyAllTyConsNames_dataDefault {IDMeta : Type} (p : String → Bool)
+    (d : LDatatype IDMeta) (h : p d.name = true) :
+    mtyAllTyConsNames p (dataDefault d) = true := by
+  simp [dataDefault, data, mtyAllTyConsNames, getTypeRefs, h]
+
+/-! ### Properties of types that arrows build and split -/
+
+/-- Replacing a recursive occurrence by a return-type variable keeps a property
+    that type variables have and that arrows build and split. -/
+private theorem prop_genRecTy {IDMeta : Type} (P : LMonoTy → Prop)
+    (h_ftvar : ∀ v, P (.ftvar v))
+    (h_arrow : ∀ a b, P a → P b → P (LMonoTy.arrow a b))
+    (h_split : ∀ a b, P (LMonoTy.arrow a b) → P a ∧ P b)
+    (block : MutualDatatype IDMeta) (retTyVars : List TyIdentifier)
+    (ty r : LMonoTy)
+    (hgen : genRecTy block retTyVars ty = some r) (hty : P ty) : P r := by
+  fun_induction genRecTy block retTyVars ty generalizing r
+  case case1 =>
+    simp only [Option.map_eq_some_iff] at hgen
+    obtain ⟨w, -, hrw⟩ := hgen
+    rw [← hrw]
+    exact h_ftvar w
+  case case2 =>
+    rename_i t1 t2 hfind ih1
+    simp only [Option.map_eq_some_iff] at hgen
+    obtain ⟨r2, hr2, hrEq⟩ := hgen
+    subst hrEq
+    exact h_arrow _ _ (h_split _ _ hty).1 (ih1 r2 hr2 (h_split _ _ hty).2)
+  case case3 => exact absurd hgen (by simp)
+
+/-- An eliminator's case-argument type has a property that type variables have
+    and arrows build and split, when the constructor's argument types have
+    it. -/
+theorem prop_elimTy {IDMeta : Type} (P : LMonoTy → Prop)
+    (h_ftvar : ∀ v, P (.ftvar v))
+    (h_arrow : ∀ a b, P a → P b → P (LMonoTy.arrow a b))
+    (h_split : ∀ a b, P (LMonoTy.arrow a b) → P a ∧ P b)
+    (block : MutualDatatype IDMeta) (retTyVars : List TyIdentifier)
+    (dtIdx : Nat) (c : LConstr IDMeta)
+    (hargs : ∀ arg ∈ c.args, P arg.2) :
+    P (elimTy block retTyVars dtIdx c) := by
+  have hout : P ((retTyVars[dtIdx]?.map LMonoTy.ftvar).getD (.ftvar "")) := by
+    cases retTyVars[dtIdx]? <;> exact h_ftvar _
+  simp only [elimTy]
+  split
+  · exact hout
+  · refine LMonoTy.mkArrow'_of_arrow P h_arrow _ _ hout ?_
+    intro t ht
+    rcases List.mem_append.mp ht with hfield | hrec
+    · obtain ⟨arg, harg, hargEq⟩ := List.mem_map.mp hfield
+      rw [← hargEq]
+      exact hargs arg harg
+    · obtain ⟨arg, harg, hgen⟩ := List.mem_filterMap.mp hrec
+      exact prop_genRecTy P h_ftvar h_arrow h_split block retTyVars arg.2 t
+        hgen (hargs arg harg)
 
 /-- A name made of `elimTyPrefix` followed by a number never starts with
     `genTyPrefix`, the prefix of the type checker's fresh type variables. -/

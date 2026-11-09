@@ -16,11 +16,18 @@ import all Strata.DL.Lambda.LExprWFProps
 import all Strata.DL.Lambda.LTyProps
 import Strata.DL.Lambda.NamePrefixesProps
 
-/-! ## Well-formedness of functions generated for mutual datatypes
+/-! ## Functions generated for mutual datatypes: well-formedness and signatures
 
-Key theorem: `genBlockFactory_wf` (every function generated for a block is well
-formed when the block passes validation and the check that its constructor
-fields use only the datatype's type parameters).
+Key theorems: `genBlockFactory_wf` (every function generated for a block is
+well formed when the block passes validation and the check that its constructor
+fields use only the datatype's type parameters), `mem_genBlockFactory` (each
+generated function is an eliminator, constructor, tester, destructor or unsafe
+destructor of the block) and `genBlockFactory_sigs_of` (a property of types
+that type variables, `bool`, the block's datatypes and its constructor argument
+types have, and that arrows build and split, holds for every generated
+signature type); `genBlockFactory_sigsAllowed` is its instance for names
+without a reserved prefix. `genBlockFactory_names` says the generated factory
+holds exactly the functions named by `generatedFuncNames`, in that order.
 
 `datatypeGetConstr_eraseMetadata_congr` and `elimConcreteEval_eraseMetadata`
 say constructor recognition and the eliminator's evaluator ignore metadata;
@@ -67,6 +74,50 @@ private theorem genBlockFactory_ok_inv {T : LExprParams} [Inhabited T.Metadata]
   · simp only [Factory.tryAddAll] at hgen
     rw [← Array.foldlM_toList] at hgen
     exact .inr hgen
+
+/-- Every function in the factory a mutual block generates is one of the
+    block's eliminators, or, for some constructor of a datatype of the block,
+    its constructor function, its tester, or one of its destructors or unsafe
+    destructors. -/
+theorem mem_genBlockFactory {T : LExprParams} [Inhabited T.Metadata]
+    [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier]
+    {block : MutualDatatype T.IDMeta} {fac : Factory T}
+    (hgen : genBlockFactory block = .ok fac) {f : LFunc T}
+    (hf : f ∈ fac.toArray) :
+    f ∈ elimFuncs block default ∨
+      (∃ d ∈ block, ∃ c ∈ d.constrs, f = constrFunc c d) ∨
+      (∃ d ∈ block, ∃ c ∈ d.constrs, f = testerFunc block d c default) ∨
+      (∃ d ∈ block, ∃ c ∈ d.constrs, f ∈ destructorFuncs d c) ∨
+      (∃ d ∈ block, ∃ c ∈ d.constrs, f ∈ unsafeDestructorFuncs d c) := by
+  rcases genBlockFactory_ok_inv block fac hgen with ⟨-, rfl⟩ | hgen
+  · exact absurd hf (by simp [Lambda.Factory.default])
+  rcases Factory.mem_foldlM_tryPush _ _ fac hgen f hf with hdef | hlist
+  · exact absurd hdef (by simp [Lambda.Factory.default])
+  simp only [List.mem_append, List.mem_flatMap, List.mem_map] at hlist
+  rcases hlist with
+    (((helim | ⟨d, hd, c, hc, hcf⟩) | ⟨d, hd, c, hc, hcf⟩) |
+      ⟨d, hd, c, hc, hcf⟩) | ⟨d, hd, c, hc, hcf⟩
+  · exact .inl helim
+  · exact .inr (.inl ⟨d, hd, c, hc, hcf.symm⟩)
+  · exact .inr (.inr (.inl ⟨d, hd, c, hc, hcf.symm⟩))
+  · exact .inr (.inr (.inr (.inl ⟨d, hd, c, hc, hcf⟩)))
+  · exact .inr (.inr (.inr (.inr ⟨d, hd, c, hc, hcf⟩)))
+
+/-- The factory a mutual block generates holds exactly the functions named by
+    `MutualDatatype.generatedFuncNames`, in that order. -/
+theorem genBlockFactory_names {T : LExprParams} [Inhabited T.Metadata]
+    [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier]
+    {block : MutualDatatype T.IDMeta} {fac : Factory T}
+    (hgen : genBlockFactory block = .ok fac) :
+    fac.toArray.toList.map (·.name.name) = block.generatedFuncNames := by
+  rcases genBlockFactory_ok_inv block fac hgen with ⟨rfl, rfl⟩ | hgen
+  · rfl
+  rw [Factory.toList_toArray_foldlM_tryPush _ _ fac hgen]
+  simp only [Lambda.Factory.default, List.nil_append, List.map_append,
+    elimFuncs_names, List.map_flatMap, List.map_map, Function.comp_def,
+    destructorFuncs_names, unsafeDestructorFuncs_names,
+    MutualDatatype.generatedFuncNames]
+  rfl
 
 /-- A constructor's field names are distinct whenever the block's factory could
     be built. -/
@@ -969,37 +1020,17 @@ theorem genBlockFactory_wf {T : LExprParams} [DecidableEq T.IDMeta]
   have hscoped := checkConstructorArgVarsScoped_sound block hvars
   have hargnames := genBlockFactory_constr_args_nodup block fac hgen
   intro f hf
-  rcases genBlockFactory_ok_inv block fac hgen with ⟨-, rfl⟩ | hgen
-  · -- An empty block generates nothing.
-    exact absurd hf (by simp [Lambda.Factory.default])
-  rcases Factory.mem_foldlM_tryPush _ _ fac hgen f hf with hdef | hlist
-  · exact absurd hdef (by simp [Lambda.Factory.default])
-  -- Classify the generated function by the family it came from.
-  rcases List.mem_append.mp hlist with hfirst4 | hunsafe
-  case inr =>
-    obtain ⟨d, hd, hdc⟩ := List.mem_flatMap.mp hunsafe
-    obtain ⟨c, hc, hcf⟩ := List.mem_flatMap.mp hdc
-    exact destructorFuncs_wf d c false (hnodup d hd) (hscoped d hd c hc)
-      (hres d hd) f hcf
-  rcases List.mem_append.mp hfirst4 with hfirst3 | hdestr
-  case inr =>
-    obtain ⟨d, hd, hdc⟩ := List.mem_flatMap.mp hdestr
-    obtain ⟨c, hc, hcf⟩ := List.mem_flatMap.mp hdc
-    exact destructorFuncs_wf d c true (hnodup d hd) (hscoped d hd c hc)
-      (hres d hd) f hcf
-  rcases List.mem_append.mp hfirst3 with hfirst2 | htester
-  case inr =>
-    obtain ⟨d, hd, hdc⟩ := List.mem_flatMap.mp htester
-    obtain ⟨c, hc, hcf⟩ := List.mem_map.mp hdc
-    rw [← hcf]
-    exact testerFunc_wf block d c default (hnodup d hd) (hres d hd)
-  rcases List.mem_append.mp hfirst2 with helim | hconstr
+  rcases mem_genBlockFactory hgen hf with
+    helim | ⟨d, hd, c, hc, rfl⟩ | ⟨d, hd, c, hc, rfl⟩ | ⟨d, hd, c, hc, hcf⟩ |
+      ⟨d, hd, c, hc, hcf⟩
   · exact elimFuncs_wf block default hnodup hagree hres hscoped f helim
-  · obtain ⟨d, hd, hdc⟩ := List.mem_flatMap.mp hconstr
-    obtain ⟨c, hc, hcf⟩ := List.mem_map.mp hdc
-    rw [← hcf]
-    exact constrFunc_wf d c (hargnames d hd c hc) (hnodup d hd)
+  · exact constrFunc_wf d c (hargnames d hd c hc) (hnodup d hd)
       (hscoped d hd c hc) (hres d hd)
+  · exact testerFunc_wf block d c default (hnodup d hd) (hres d hd)
+  · exact destructorFuncs_wf d c true (hnodup d hd) (hscoped d hd c hc)
+      (hres d hd) f hcf
+  · exact destructorFuncs_wf d c false (hnodup d hd) (hscoped d hd c hc)
+      (hres d hd) f hcf
 
 /-- If a context accepts a mutual block, `genBlockFactory` succeeds on that
     block and every function it generates is well formed. -/
@@ -1013,6 +1044,106 @@ theorem LContext.addMutualBlock_genBlockFactory_wf {T : LExprParams}
   obtain ⟨hval, -, hvars, -⟩ :=
     TypeFactory.addMutualBlock_ok_inv C.datatypes ds block C.knownTypes hds
   exact ⟨fac, hgen, genBlockFactory_wf block fac hval hvars hgen⟩
+
+/-! ### Signatures of generated functions -/
+
+/-- Let `P` be a property of types that holds for every type variable, for
+    `bool`, for each datatype of the block applied to its own type parameters
+    and for each constructor argument type, and that holds for an arrow exactly
+    when it holds for both sides. Then every input and output type of every
+    function the block generates has `P`. -/
+theorem genBlockFactory_sigs_of {T : LExprParams} [Inhabited T.Metadata]
+    [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier]
+    (P : LMonoTy → Prop) (h_ftvar : ∀ v, P (.ftvar v))
+    (h_arrow : ∀ a b, P a → P b → P (LMonoTy.arrow a b))
+    (h_split : ∀ a b, P (LMonoTy.arrow a b) → P a ∧ P b)
+    (h_bool : P LMonoTy.bool)
+    (block : MutualDatatype T.IDMeta) (fac : Factory T)
+    (hdata : ∀ d ∈ block, P (dataDefault d))
+    (hargs : ∀ d ∈ block, ∀ c ∈ d.constrs, ∀ arg ∈ c.args, P arg.2)
+    (hgen : genBlockFactory block = .ok fac) :
+    ∀ f ∈ fac.toArray, ∀ ty ∈ f.output :: f.inputs.values, P ty := by
+  intro f hf
+  have hdestr : ∀ d ∈ block, ∀ c ∈ d.constrs, ∀ b : Bool,
+      ∀ g ∈ (bif b then destructorFuncs (T := T) d c
+        else unsafeDestructorFuncs d c),
+      ∀ ty ∈ g.output :: g.inputs.values, P ty := by
+    intro d hd c hc b g hg
+    cases b
+    all_goals
+      simp only [Bool.cond_true, Bool.cond_false, destructorFuncs,
+        unsafeDestructorFuncs, List.mem_mapIdx] at hg
+      obtain ⟨k, hk, hkEq⟩ := hg
+      rw [← hkEq]
+      refine List.forall_mem_cons.mpr
+        ⟨hargs d hd c hc c.args[k] (List.getElem_mem hk), ?_⟩
+      intro ty hty
+      simp only [mkDestructorFunc] at hty
+      rw [ListMap.values_eq_map_snd [(_, _)], List.map_cons, List.map_nil,
+        List.mem_singleton] at hty
+      rw [hty]
+      exact hdata d hd
+  rcases mem_genBlockFactory hgen hf with
+    helim | ⟨d, hd, c, hc, rfl⟩ | ⟨d, hd, c, hc, rfl⟩ | ⟨d, hd, c, hc, hcf⟩ |
+      ⟨d, hd, c, hc, hcf⟩
+  · simp only [elimFuncs] at helim
+    split at helim
+    · exact absurd helim (by simp)
+    obtain ⟨p, hp, hpf⟩ := List.mem_map.mp helim
+    obtain ⟨d, outputTyVar⟩ := p
+    have hd : d ∈ block := (List.of_mem_zip hp).1
+    rw [← hpf]
+    refine List.forall_mem_cons.mpr ⟨h_ftvar _, ?_⟩
+    intro ty hty
+    rw [ListMap.values_eq_map_snd] at hty
+    obtain ⟨q, hq, hqty⟩ := List.mem_map.mp hty
+    have hqsnd := (List.of_mem_zip hq).2
+    rw [← hqty]
+    rcases List.mem_cons.mp hqsnd with hdef | hcase
+    · rw [hdef]
+      exact hdata d hd
+    · obtain ⟨r, hr, hrty⟩ := List.mem_map.mp hcase
+      obtain ⟨hlt, hcmem⟩ := mem_blockConstrs block r.1 r.2 hr
+      rw [← hrty]
+      exact prop_elimTy P h_ftvar h_arrow h_split block _ r.1 r.2
+        (hargs block[r.1] (List.getElem_mem hlt) r.2 hcmem)
+  · refine List.forall_mem_cons.mpr ⟨hdata d hd, ?_⟩
+    intro ty hty
+    simp only [constrFunc] at hty
+    rw [ListMap.values_eq_map_snd c.args] at hty
+    obtain ⟨arg, harg, hargEq⟩ := List.mem_map.mp hty
+    rw [← hargEq]
+    exact hargs d hd c hc arg harg
+  · refine List.forall_mem_cons.mpr ⟨h_bool, ?_⟩
+    intro ty hty
+    simp only [testerFunc] at hty
+    rw [ListMap.values_eq_map_snd [(_, _)], List.map_cons, List.map_nil,
+      List.mem_singleton] at hty
+    rw [hty]
+    exact hdata d hd
+  · exact hdestr d hd c hc true f hcf
+  · exact hdestr d hd c hc false f hcf
+
+/-- Every input and output type of every function a mutual block generates
+    names only type constructors without a reserved prefix, when the block's
+    datatype names and constructor argument types have none. -/
+theorem genBlockFactory_sigsAllowed {T : LExprParams} [Inhabited T.Metadata]
+    [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier]
+    (block : MutualDatatype T.IDMeta) (fac : Factory T)
+    (hnames : ∀ d ∈ block, isAllowedName d.name = true)
+    (hargs : ∀ d ∈ block, ∀ c ∈ d.constrs, ∀ arg ∈ c.args,
+      mtyAllTyConsNames isAllowedName arg.2 = true)
+    (hgen : genBlockFactory block = .ok fac) :
+    ∀ f ∈ fac.toArray, ∀ ty ∈ f.output :: f.inputs.values,
+      mtyAllTyConsNames isAllowedName ty = true := by
+  exact genBlockFactory_sigs_of
+    (fun ty => mtyAllTyConsNames isAllowedName ty = true)
+    (mtyAllTyConsNames_ftvar isAllowedName)
+    (fun _ _ ha hb => mtyAllTyConsNames_arrow isAllowedName_arrow ha hb)
+    (fun _ _ h => mtyAllTyConsNames_arrow_inv h)
+    ((mtyAllTyConsNames_bool isAllowedName).trans isAllowedName_bool) block fac
+    (fun d hd => mtyAllTyConsNames_dataDefault isAllowedName d (hnames d hd))
+    hargs hgen
 
 end
 

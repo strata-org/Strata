@@ -31,6 +31,14 @@ theorem not_genTyPrefix_of_isAllowedName {n : String} (h : isAllowedName n = tru
     Bool.or_false, Bool.not_eq_true', Bool.or_eq_false_iff] at h
   simp only [h.1, Bool.false_eq_true, not_false_eq_true]
 
+/-- The name `arrow` starts with no reserved prefix. -/
+theorem isAllowedName_arrow : isAllowedName "arrow" = true :=
+  isAllowedName_eq_toList ▸ rfl
+
+/-- The name `bool` starts with no reserved prefix. -/
+theorem isAllowedName_bool : isAllowedName "bool" = true :=
+  isAllowedName_eq_toList ▸ rfl
+
 end Lambda
 
 end -- public section
