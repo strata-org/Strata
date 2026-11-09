@@ -20,6 +20,7 @@ meta section
 
 
 open Core
+private abbrev testLoc : ExprSourceLoc := ExprSourceLoc.synthesized "test"
 open Core.Transform
 open CallElim
 open Strata
@@ -225,14 +226,14 @@ private def unknownResult : Result := .unknown (some [])
 /-- Obligation with call-elimination labels in path conditions. -/
 private def callElimObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_callElim", property := .assert,
-    assumptions := [[.assumption "callElimAssume_post" (.true ())]],
-    obligation := .true (), metadata := {} }
+    assumptions := [[.assumption "callElimAssume_post" (.true testLoc)]],
+    obligation := .true testLoc, metadata := {} }
 
 /-- Obligation with no abstraction labels — models are sound. -/
 private def cleanObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_clean", property := .assert,
-    assumptions := [[.assumption "precond_x_positive" (.true ())]],
-    obligation := .true (), metadata := {} }
+    assumptions := [[.assumption "precond_x_positive" (.true testLoc)]],
+    obligation := .true testLoc, metadata := {} }
 
 -- callElimPipelinePhase: rejects sat when obligation has call-elim labels
 #guard (satResult.adjustForPhases [callElimPipelinePhase.phase] callElimObligation).1 == unknownResult

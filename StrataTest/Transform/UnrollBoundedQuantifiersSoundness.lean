@@ -340,18 +340,18 @@ beta reduction before the pass would remove the redex. -/
 private def lcAtProbe : String :=
   let int : Lambda.LMonoTy := .int
   let bin (f : Lambda.LExpr Core.CoreLParams.mono) (a b : Lambda.LExpr Core.CoreLParams.mono) :=
-    Lambda.LExpr.app () (.app () f a) b
+    Lambda.LExpr.app Core.coreLoc (.app Core.coreLoc f a) b
   let le := (Lambda.intLeFunc (T := Core.CoreLParams)).opExpr
   let lt := (Lambda.intLtFunc (T := Core.CoreLParams)).opExpr
   let andOp := (Lambda.boolAndFunc (T := Core.CoreLParams)).opExpr
   let impl := (Lambda.boolImpliesFunc (T := Core.CoreLParams)).opExpr
-  let zero : Lambda.LExpr Core.CoreLParams.mono := .const () (.intConst 0)
-  let i : Lambda.LExpr Core.CoreLParams.mono := .bvar () 0
+  let zero : Lambda.LExpr Core.CoreLParams.mono := .const Core.coreLoc (.intConst 0)
+  let i : Lambda.LExpr Core.CoreLParams.mono := .bvar Core.coreLoc 0
   let bound : Lambda.LExpr Core.CoreLParams.mono :=
-    .app () (.abs () "x" (some int) (.const () (.intConst 2))) (.bvar () 1)
-  let inner := Lambda.LExpr.all () "i" (some int)
-    (bin impl (bin andOp (bin le zero i) (bin lt i bound)) (bin lt i (.const () (.intConst 5))))
-  let goal := Lambda.LExpr.exist () "m" (some int) inner
+    .app Core.coreLoc (.abs Core.coreLoc "x" (some int) (.const Core.coreLoc (.intConst 2))) (.bvar Core.coreLoc 1)
+  let inner := Lambda.LExpr.all Core.coreLoc "i" (some int)
+    (bin impl (bin andOp (bin le zero i) (bin lt i bound)) (bin lt i (.const Core.coreLoc (.intConst 5))))
+  let goal := Lambda.LExpr.exist Core.coreLoc "m" (some int) inner
   let env : Core.UnrollBoundedQuantifiers.UEnv := ⟨[], [], Core.Factory⟩
   let (goal', c) := Core.UnrollBoundedQuantifiers.processExpr env goal
   s!"unchanged: {goal' == goal}, unrolled: {c.get .unrolled}, unresolved: {c.get .unresolved}"

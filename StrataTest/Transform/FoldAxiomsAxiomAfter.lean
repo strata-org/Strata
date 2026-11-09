@@ -33,7 +33,7 @@ namespace Core.FoldAxioms.AxiomAfterTest
 open Lambda Imperative
 
 /-- `axiom f: false;` -/
-public abbrev falseAx : Axiom := { name := "f", e := .boolConst () false }
+public abbrev falseAx : Axiom := { name := "f", e := .boolConst Core.valueLoc false }
 
 /-- A procedure `q`, then `axiom f: false;`. -/
 public abbrev axiomAfter (q : Procedure) (md md' : Imperative.MetaData Expression) : Program :=

@@ -85,7 +85,7 @@ def mkRecursiveAxioms [Inhabited T.Metadata] [DecidableEq T.Metadata] [Decidable
     ) (LFunc.opExpr func)
     -- RHS: PE inlines the function since the recursive arg is a constructor
     let rhs := pe lhs
-    if lhs == rhs then
+    if lhs.beqIgnoringMetadata rhs then
       .error f!"Recursive function {func.name}: PE did not reduce axiom for \
                constructor {c.name}. Ensure the function is in the factory \
                and that the function body can be partially evaluated when \

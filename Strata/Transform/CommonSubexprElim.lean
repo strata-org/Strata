@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.PipelinePhase
 import Strata.DL.Lambda.LExprType
+import all Strata.DL.Lambda.LExprProps
 import Strata.Util.ListUtils
 public import Strata.Util.PtrCache
 
@@ -119,9 +120,12 @@ private def CollectedExprs.recordSeen (st : CollectedExprs) (h : UInt64)
     (e : Expression.Expr) : CollectedExprs :=
   { st with seen := st.seen.insert h ((st.seen.getD h #[]).push e) }
 
-/-- Structural equality with a safe pointer-equality fast path. -/
+/-- Structural equality ignoring metadata, with a safe pointer-equality fast
+    path. Two occurrences of the same term at different source locations are
+    duplicates; `hashExpr` already ignores metadata, so the hash buckets agree
+    with this equality. -/
 private def exprEq (a b : Expression.Expr) : Bool :=
-  (withPtrEqDecEq a b (fun _ => (inferInstance : DecidableEq Expression.Expr) a b)).decide
+  LExpr.beqIgnoringMetadataFast a b
 
 /-- Note a repeated occurrence: add `e` to the `dups` bucket for `h` (once). -/
 private def CollectedExprs.recordDup (st : CollectedExprs) (h : UInt64)
@@ -222,20 +226,67 @@ private def collectExprsToAbbreviate (exprs : List Expression.Expr) :
 -- Fast replacement of subexpressions
 ---------------------------------------------------------------------
 
-/-- A memoized rewrite of one node: the `original` expression and its
-    `rewritten` form. Bucketed by the original node's structural hash (the memo
-    map key), kept collision-safe by an `exprEq` guard on `original`. -/
+/-- A memoized rewrite of one node. Bucketed by the original node's structural
+    hash (the memo map key), kept collision-safe by an `exprEq` guard on
+    `original`. `changed` records whether the rewrite differs from `original`;
+    when it does not, the node is returned as `original` on a hit, so an unchanged
+    node is never rebuilt into a physically distinct copy (which would defeat the
+    next round's pointer-equality sharing and force whole-tree comparisons). -/
 private structure Rewrite where
-  original  : Expression.Expr
-  rewritten : Expression.Expr
-  /-- Whether `rewritten` differs from `original` (when not, it IS `original`). -/
-  changed   : Bool
+  original        : Expression.Expr
+  /-- The rewritten form with locations erased once at insertion, consulted only
+      when `changed`, so a memo hit re-tags just the root via `replaceMetadata1`
+      (O(1)) instead of calling `eraseLocs` on every lookup. -/
+  rewrittenErased : Expression.Expr
+  changed         : Bool
 
-/-- Traversal state for `replaceSubexprs`: the shared structural-hash `PtrCache`
-    plus the rewrite memo (bucketed by original-node hash). -/
+/-- Safe, pointer-address-memoized location erase: each physically distinct
+    subterm is erased exactly once, keyed by its memory address via the safe
+    `PtrCache`, mirroring `LExpr.hashExprPtrCache`. The returned
+    `Result Core.eraseLocs e` carries a proof that the value equals
+    `Core.eraseLocs e`, so the pass's output is byte-identical to a plain
+    `Core.eraseLocs`. Unlike a bare `eraseLocs` walk, this is proportional to the
+    number of distinct DAG nodes rather than the (possibly quadratic) tree. -/
+private def eraseLocsPtrCache :
+    (e : Expression.Expr) → PtrCacheM Core.eraseLocs e
+  | .const _ c => pure ⟨.const Core.valueLoc c, by simp only [Core.eraseLocs, LExpr.replaceMetadata]⟩
+  | .bvar _ i => pure ⟨.bvar Core.valueLoc i, by simp only [Core.eraseLocs, LExpr.replaceMetadata]⟩
+  | .fvar _ n ty => pure ⟨.fvar Core.valueLoc n ty, by simp only [Core.eraseLocs, LExpr.replaceMetadata]⟩
+  | .op _ o ty => pure ⟨.op Core.valueLoc o ty, by simp only [Core.eraseLocs, LExpr.replaceMetadata]⟩
+  | .app _ fn arg => do
+    let rfn ← evalPtrCache fn (eraseLocsPtrCache fn)
+    let rarg ← evalPtrCache arg (eraseLocsPtrCache arg)
+    pure ⟨.app Core.valueLoc rfn.output rarg.output,
+          by simp only [Core.eraseLocs, LExpr.replaceMetadata, rfn.h, rarg.h]⟩
+  | .ite _ c t f => do
+    let rc ← evalPtrCache c (eraseLocsPtrCache c)
+    let rt ← evalPtrCache t (eraseLocsPtrCache t)
+    let rf ← evalPtrCache f (eraseLocsPtrCache f)
+    pure ⟨.ite Core.valueLoc rc.output rt.output rf.output,
+          by simp only [Core.eraseLocs, LExpr.replaceMetadata, rc.h, rt.h, rf.h]⟩
+  | .eq _ e1 e2 => do
+    let r1 ← evalPtrCache e1 (eraseLocsPtrCache e1)
+    let r2 ← evalPtrCache e2 (eraseLocsPtrCache e2)
+    pure ⟨.eq Core.valueLoc r1.output r2.output,
+          by simp only [Core.eraseLocs, LExpr.replaceMetadata, r1.h, r2.h]⟩
+  | .abs _ name ty body => do
+    let rb ← evalPtrCache body (eraseLocsPtrCache body)
+    pure ⟨.abs Core.valueLoc name ty rb.output,
+          by simp only [Core.eraseLocs, LExpr.replaceMetadata, rb.h]⟩
+  | .quant _ k name ty tr body => do
+    let rtr ← evalPtrCache tr (eraseLocsPtrCache tr)
+    let rb ← evalPtrCache body (eraseLocsPtrCache body)
+    pure ⟨.quant Core.valueLoc k name ty rtr.output rb.output,
+          by simp only [Core.eraseLocs, LExpr.replaceMetadata, rtr.h, rb.h]⟩
+
+/-- Traversal state for `replaceSubexprs`: the shared structural-hash `PtrCache`,
+    a pointer-memoized erase cache (threaded through the whole pass, so each
+    distinct subterm is erased at most once), plus the rewrite memo (bucketed by
+    original-node hash). -/
 private structure RwState where
-  cache : PtrCache hx := PtrCache.empty
-  memo  : Std.HashMap UInt64 (List Rewrite) := {}
+  cache      : PtrCache hx := PtrCache.empty
+  eraseCache : PtrCache Core.eraseLocs := PtrCache.empty
+  memo       : Std.HashMap UInt64 (List Rewrite) := {}
 
 /-- Structural hash of `e` (O(1) once cached) against the shared `PtrCache`,
     returning the updated cache. -/
@@ -251,13 +302,35 @@ private def RwState.hashM (e : Expression.Expr) : StateM RwState UInt64 := do
   set { s with cache }
   return h
 
+/-- Pointer-memoized `Core.eraseLocs` against the shared erase cache, threading
+    the updated cache. Each distinct subterm is erased at most once across the
+    whole pass; an erased output reached as a child on a later memo hit is itself
+    recorded in the same cache (erase is idempotent), so re-erasing it is a cache
+    hit on its shared interior, with only its re-tagged root costing O(1). -/
+private def eraseCached (cache : PtrCache Core.eraseLocs) (e : Expression.Expr) :
+    Expression.Expr × PtrCache Core.eraseLocs :=
+  let (r, cache) := (evalPtrCache e (eraseLocsPtrCache e)).run cache
+  (r.output, cache)
+
+/-- `Core.eraseLocs e` (O(distinct nodes) once cached), threading the erase cache
+    held in the `RwState`. -/
+private def RwState.eraseM (e : Expression.Expr) : StateM RwState Expression.Expr := do
+  let s ← get
+  let (er, eraseCache) := eraseCached s.eraseCache e
+  set { s with eraseCache }
+  return er
+
 /-- If the original node `e` (identified by its structural hash `h`) matches a
-    replacement target, return `some` of its replacement; otherwise `none`. -/
+    replacement target, ignoring metadata, return the replacement variable
+    carrying `e`'s own metadata, so each abbreviated occurrence keeps its source
+    location. Otherwise return `none`. -/
 private def tryReplace
     (replacements : Std.HashMap UInt64 (List (Expression.Expr × Expression.Expr)))
     (h : UInt64) (e : Expression.Expr) : Option Expression.Expr :=
   match replacements[h]? with
-  | some pairs => (pairs.find? (fun (t, _) => exprEq e t)).map (·.2)
+  | some pairs =>
+    (pairs.find? (fun (t, _) => exprEq e t)).map
+      (fun (_, replacement) => replacement.replaceMetadata1 e.metadata)
   | none => none
 
 /-- Bottom-up rewrite of `e` into its rewritten form. Each node's result is
@@ -273,15 +346,17 @@ private def replaceSubexprs
   let ho ← RwState.hashM e
   let s ← get
   match (s.memo.getD ho []).find? (fun r => exprEq r.original e) with
-  | some r => return (r.rewritten, r.changed)
+  | some r =>
+    -- An unchanged node is returned as `e` itself, so it keeps this occurrence's
+    -- location and stays physically shared; a changed rewrite re-tags its root
+    -- with this occurrence's metadata.
+    if r.changed then return (r.rewrittenErased.replaceMetadata1 e.metadata, true)
+    else return (e, false)
   | none =>
     -- Rebuild the node with its children rewritten (relevant when `e` itself is
-    -- not a target but contains targets in its subterms). A node none of whose
-    -- children changed is returned as is rather than rebuilt: a rebuilt copy is
-    -- structurally equal to the original but physically distinct, so the next
-    -- round's `exprEq` against the original (still held by the declarations
-    -- this round prepends) would compare the two as whole trees.
-    let (e', ch) ← match e with
+    -- not a target but contains targets in its subterms); a node none of whose
+    -- children changed is returned as is rather than rebuilt (see `Rewrite`).
+    let (e', childChanged) ← match e with
       | .const _ _ | .bvar _ _ | .fvar _ _ _ | .op _ _ _ => pure (e, false)
       | .app m fn arg =>
         let (fn', c1) ← replaceSubexprs replacements fn
@@ -303,10 +378,12 @@ private def replaceSubexprs
         let (tr', c1) ← replaceSubexprs replacements tr
         let (body', c2) ← replaceSubexprs replacements body
         pure (if c1 || c2 then (.quant m k name ty tr' body', true) else (e, false))
+    -- `e` itself may be a replacement target; a replacement is always a change.
     let (result, changed) := match tryReplace replacements ho e with
-      | some r => (r, true)
-      | none => (e', ch)
-    modify fun s => { s with memo := s.memo.insert ho (⟨e, result, changed⟩ :: s.memo.getD ho []) }
+      | some replacement => (replacement, true)
+      | none => (e', childChanged)
+    let erased ← if changed then RwState.eraseM result else pure e
+    modify fun s => { s with memo := s.memo.insert ho (⟨e, erased, changed⟩ :: s.memo.getD ho []) }
     return (result, changed)
   termination_by e
 
@@ -390,7 +467,7 @@ def stmtRunCSEIter (body : Statements) (startIdx : Nat) : Option (Statements × 
     let (revDecls, replacements, nextIdx) := targets.foldl
         (fun (decls, repMap, idx) (h, dup, freshTy) =>
       let freshName : CoreIdent := ⟨s!"{cseVarPrefix}{idx}", ()⟩
-      let freshVar : Expression.Expr := .fvar () freshName (some freshTy)
+      let freshVar : Expression.Expr := .fvar valueLoc freshName (some freshTy)
       let ty : Expression.Ty := LTy.forAll [] freshTy
       let varDecl := Statement.init freshName ty (.det dup) .empty
       -- `h` is `dup`'s structural hash, already computed by

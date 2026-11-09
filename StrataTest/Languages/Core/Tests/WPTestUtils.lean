@@ -84,7 +84,7 @@ merges. -/
 
 /-- The expression with every free variable replaced by a placeholder. -/
 def skeleton : Expression.Expr → Expression.Expr
-  | .fvar _ _ _ => .fvar () ⟨"_", ()⟩ none
+  | .fvar _ _ _ => .fvar Core.valueLoc ⟨"_", ()⟩ none
   | .abs m n ty e => .abs m n ty (skeleton e)
   | .quant m k n ty tr e => .quant m k n ty (skeleton tr) (skeleton e)
   | .app m f a => .app m (skeleton f) (skeleton a)

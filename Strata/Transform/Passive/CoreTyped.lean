@@ -52,7 +52,7 @@ private theorem mem_typedFvars {e : Expression.Expr} {x : Expression.Ident} {τ 
 theorem typedLaws :
     TypedLaws (P := Expression) Expression.Typed where
   ite {c t f ty} := by
-    change Expression.Typed (.ite () c t f) ty ↔ _
+    change Expression.Typed (.ite _ c t f) ty ↔ _
     constructor
     · rintro ⟨τ, hτ, hg, ha, hT⟩
       obtain ⟨hc, ht, hf⟩ := HasTypeA.ite_inv hT
@@ -83,7 +83,7 @@ theorem typedLaws :
       cases hτr
       exact LExpr.HasTypeA_to_typeCheck (HasTypeA_append_right hTr Δ')
   typedFvars_ite {c t f p} h := by
-    change p ∈ Expression.typedFvars (.ite () c t f)
+    change p ∈ Expression.typedFvars (.ite _ c t f)
     change p ∈ Expression.typedFvars c ∨ p ∈ Expression.typedFvars t ∨
       p ∈ Expression.typedFvars f at h
     simpa [Expression.typedFvars, LExpr.freeVars, List.filterMap_append, or_assoc] using h

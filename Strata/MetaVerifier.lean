@@ -364,7 +364,14 @@ deriving instance ToExpr for SMT.Term
 deriving instance ToExpr for Strata.DL.SMT.Sort
 deriving instance ToExpr for IF
 deriving instance ToExpr for SanitizedContext
-deriving instance ToExpr for Core.CoreExprMetadata
+deriving instance ToExpr for Strata.Uri
+
+instance : ToExpr String.Pos.Raw where
+  toTypeExpr := mkConst ``String.Pos.Raw
+  toExpr p := mkApp (mkConst ``String.Pos.Raw.mk) (toExpr p.byteIdx)
+
+deriving instance ToExpr for StrataDDM.SourceRange
+deriving instance ToExpr for ExprSourceLoc
 deriving instance ToExpr for Lambda.LMonoTy
 
 instance [ToExpr α] : ToExpr (Lambda.Identifier α) where

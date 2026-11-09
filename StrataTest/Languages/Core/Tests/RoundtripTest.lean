@@ -25,6 +25,7 @@ namespace Strata.Test.Roundtrip
 
 open Strata
 open Strata.CoreDDM
+private abbrev testLoc : _root_.ExprSourceLoc := _root_.ExprSourceLoc.synthesized "test"
 open Lean.Parser (InputContext)
 
 /-- Perform a roundtrip test: parse → format → re-parse → compare.
@@ -580,14 +581,14 @@ private def roundtripText (text : String) : IO Unit := do
 
 /-- `Real.Neg` applied to expression `e`. -/
 private def rNeg (e : Core.Expression.Expr) : Core.Expression.Expr :=
-  .app () (.op () ⟨"Real.Neg", ()⟩ (some (.arrow .real .real))) e
+  .app testLoc (.op testLoc ⟨"Real.Neg", ()⟩ (some (.arrow .real .real))) e
 
 /-- A bare negative real literal, and `Real.Neg` applied to one. -/
 private def negRealLitPgm : Core.Program := { decls := [
   .func { name := "negLit", typeArgs := [], inputs := [], output := .real,
-          body := some (.rationalConst () (-3 : Rat)) } .empty,
+          body := some (.rationalConst testLoc (-3 : Rat)) } .empty,
   .func { name := "negNegLit", typeArgs := [], inputs := [], output := .real,
-          body := some (rNeg (.rationalConst () (-3 : Rat))) } .empty
+          body := some (rNeg (.rationalConst testLoc (-3 : Rat))) } .empty
 ]}
 
 /--

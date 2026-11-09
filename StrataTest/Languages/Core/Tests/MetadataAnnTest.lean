@@ -25,6 +25,7 @@ namespace Strata.Test.MetadataAnn
 
 open Strata
 open Strata.CoreDDM
+private abbrev testLoc : _root_.ExprSourceLoc := _root_.ExprSourceLoc.synthesized "test"
 
 /-- Format a program with a given MetadataAnnFilter. -/
 private def formatWithFilter (program : StrataDDM.Program) (filter : MetadataAnnFilter) : IO Unit := do
@@ -351,11 +352,11 @@ procedure Test ()
 private def testEmitOnlyStmt : Core.Statement :=
   let yVar : Core.CoreIdent := "y"
   let md : Imperative.MetaData Core.Expression := #[
-    { fld := .label "exprMeta", value := .expr (.intConst () 42) },
+    { fld := .label "exprMeta", value := .expr (.intConst testLoc 42) },
     { fld := .var yVar, value := .switch true },
     { fld := .label "offFlag", value := .switch false }
   ]
-  Core.Statement.assert "a1" (.intConst () 0) md
+  Core.Statement.assert "a1" (.intConst testLoc 0) md
 
 -- With `.all`, every value kind is visible: the expression `42`, the var key
 -- `$y`, and the false flag rendered as the string `"false"`.

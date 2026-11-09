@@ -15,13 +15,14 @@ public import Strata.Util.OrderedSet
 public section
 
 namespace Core
+abbrev envLoc : ExprSourceLoc := ExprSourceLoc.synthesized "env"
 open Std (ToFormat Format format)
 open Imperative
 open Strata
 open Strata.Util (OrderedSet)
 
 instance : ToFormat ExpressionMetadata :=
-  show ToFormat Unit from inferInstance
+  show ToFormat ExprSourceLoc from inferInstance
 
 -- ToFormat instance for Expression.Expr
 instance : ToFormat Expression.Expr := by
@@ -44,13 +45,10 @@ instance : ToFormat (Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) w
   format := formatScope
 
 instance : Inhabited ExpressionMetadata :=
-  show Inhabited Unit from inferInstance
-
-instance : Lambda.Traceable Lambda.LExpr.EvalProvenance ExpressionMetadata where
-  combine _ := ()
+  show Inhabited ExprSourceLoc from inferInstance
 
 instance : Inhabited (Lambda.LExpr ⟨⟨ExpressionMetadata, CoreIdent⟩, LMonoTy⟩) :=
-  show Inhabited (Lambda.LExpr ⟨⟨Unit, CoreIdent⟩, LMonoTy⟩) from inferInstance
+  show Inhabited (Lambda.LExpr ⟨⟨ExprSourceLoc, CoreIdent⟩, LMonoTy⟩) from inferInstance
 
 ---------------------------------------------------------------------
 
@@ -299,8 +297,8 @@ def Env.genFVar (E : Env) (xt : (Lambda.IdentT Lambda.LMonoTy Unit)) :
   Expression.Expr × Env :=
   let (xid, E) := E.genVar xt.ident
   let xe := match xt.ty? with
-            | none => .fvar () xid none
-            | some xty => .fvar () xid (some xty)
+            | none => .fvar envLoc xid none
+            | some xty => .fvar envLoc xid (some xty)
   (xe, E)
 
 /--
@@ -345,12 +343,12 @@ def PathCondition.merge (cond : Expression.Expr) (pc1 pc2 : PathCondition Expres
   let wrapAssumption (ant : Expression.Expr) : PathConditionEntry Expression → PathConditionEntry Expression
     | .assumption label e => .assumption label (mkImplies ant e)
     | entry => entry
-  let negCond := LExpr.ite () cond (LExpr.false ()) (LExpr.true ())
+  let negCond := LExpr.ite envLoc cond (LExpr.false envLoc) (LExpr.true envLoc)
   let pc1' := pc1.map (wrapAssumption cond)
   let pc2' := pc2.map (wrapAssumption negCond)
   pc1' ++ pc2'
   where mkImplies (ant con : Expression.Expr) : Expression.Expr :=
-  LExpr.ite () ant con (LExpr.true ())
+  LExpr.ite envLoc ant con (LExpr.true envLoc)
 
 def Env.performMerge (cond : Expression.Expr) (E1 E2 : Env)
     (_h1 : E1.error.isNone) (_h2 : E2.error.isNone) : Env :=

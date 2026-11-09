@@ -235,7 +235,7 @@ private def lemmaBinders (e : Lambda.LExpr Core.CoreLParams.mono) :
       let (bs, tr, b) := lemmaBinders body
       ((name, ty) :: bs, tr, b)
     else ([(name, ty)], trigger, body)
-  | _ => ([], .bvar () 0, e)
+  | _ => ([], .bvar default 0, e)
 
 /-- Convert a lemma to CST.
 

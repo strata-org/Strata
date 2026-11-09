@@ -27,13 +27,13 @@ def Pass.onUnordered (name : String) (run : UnorderedProgram → Except String U
     | .unordered p => .unordered <$> run p
     | .ordered _ => .error s!"Internal error: pass '{name}' cannot run on an ordered Cortex program"
 
-def mkFvar (n : String) : Expr := .fvar () ⟨n, ()⟩ none
-def mkOp (n : String) : Expr := .op () ⟨n, ()⟩ none
-def mkApp (f : Expr) (args : List Expr) : Expr := args.foldl (fun acc a => .app () acc a) f
+def mkFvar (n : String) : Expr := .fvar Core.coreLoc ⟨n, ()⟩ none
+def mkOp (n : String) : Expr := .op Core.coreLoc ⟨n, ()⟩ none
+def mkApp (f : Expr) (args : List Expr) : Expr := args.foldl (fun acc a => .app Core.coreLoc acc a) f
 def mkCall (n : String) (args : List Expr) : Expr := mkApp (mkOp n) args
-def tt : Expr := .const () (.boolConst true)
-def ff : Expr := .const () (.boolConst false)
-def intLit (i : Int) : Expr := .const () (.intConst i)
+def tt : Expr := .const Core.valueLoc (.boolConst true)
+def ff : Expr := .const Core.valueLoc (.boolConst false)
+def intLit (i : Int) : Expr := .const Core.valueLoc (.intConst i)
 def mono (t : LMonoTy) : LTy := .forAll [] t
 def tcon (n : String) : LMonoTy := .tcons n []
 

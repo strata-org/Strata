@@ -82,7 +82,7 @@ abbrev runCtx (program : Program) (F0 : Lambda.Factory CoreLParams) : Simplify.C
 /-- `1 + 2` with the operator `+` (`Int.Add`) left without a type annotation: an expression
     with no value under the denotational semantics, which folding reduces to `3`. -/
 @[expose] def unannotatedSum : Expression.Expr :=
-  .app () (.app () (.op () ⟨"Int.Add", ()⟩ none) (.intConst () 1)) (.intConst () 2)
+  .app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨"Int.Add", ()⟩ none) (.intConst Core.valueLoc 1)) (.intConst Core.valueLoc 2)
 
 /-- **Folding can give a value to an expression that has none.** In every runtime factory and
     store, `unannotatedSum` has no value, since an operator without a type annotation has no
@@ -92,7 +92,7 @@ abbrev runCtx (program : Program) (F0 : Lambda.Factory CoreLParams) : Simplify.C
     stated for expressions that have a value. -/
 theorem fold_gives_value (Fs : Expression.Factory) (σ : SemanticStore Expression) :
     Expression.eval Fs σ unannotatedSum = none ∧
-      Expression.eval Fs σ (.intConst () 3) = some (Lambda.SemValue.ofInt Fs.model.tcInterp 3) := by
+      Expression.eval Fs σ (.intConst Core.valueLoc 3) = some (Lambda.SemValue.ofInt Fs.model.tcInterp 3) := by
   refine ⟨?_, Lambda.LExpr.denoteEval_intConst⟩
   apply Option.eq_none_iff_forall_ne_some.mpr
   intro v h
@@ -109,9 +109,9 @@ theorem fold_gives_value (Fs : Expression.Factory) (σ : SemanticStore Expressio
     integer `3`. -/
 @[expose] def mistypedSum : Expression.Expr :=
   let int : Lambda.LMonoTy := .tcons "int" []
-  .app () (.app () (.op () ⟨"Int.Add", ()⟩
+  .app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨"Int.Add", ()⟩
       (some (.tcons "arrow" [int, .tcons "arrow" [int, .tcons "bool" []]])))
-    (.intConst () 1)) (.intConst () 2)
+    (.intConst Core.valueLoc 1)) (.intConst Core.valueLoc 2)
 
 /-- **An operator annotated at a type its signature lacks has a value of that type.** In every
     runtime factory and store, `mistypedSum` has a value other than the integer `3`, to which

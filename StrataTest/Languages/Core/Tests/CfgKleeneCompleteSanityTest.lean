@@ -96,7 +96,7 @@ private theorem env0_abs_none (x : Expression.Ident) : (env0.abs M0).store x = n
 /-! ## A CFG program -/
 
 /-- The literal `true`, the guard of the caller's conditional transfer. -/
-private def ttE : Expression.Expr := .boolConst () true
+private def ttE : Expression.Expr := .boolConst default true
 
 /-- The literal `true` evaluates to `ttVal` on every store. -/
 private theorem ttE_denote (F : Expression.Factory) (σ : SemanticStore Expression) :
@@ -116,7 +116,7 @@ private theorem ttE_engEval (σ : SemanticStore Expression) :
       ttE_eval .., typeCheckWith_const _ _ _ rfl, rfl⟩, denotes_literal ((ttE_denote M0 _).trans
         ((ttE_denote M0 _).symm.trans hv))⟩,
     fun _ _ _ _ h => (Prod.mk.inj ((ttE_eval ..).symm.trans
-      (evalBounded_eq_some_iff.1 h).2.1)).1 ▸ boolLit?_boolConst () true⟩
+      (evalBounded_eq_some_iff.1 h).2.1)).1 ▸ boolLit?_boolConst default true⟩
 
 /-- The caller CFG: block `b0` runs `init b : bool := *` and `call w()`, then branches on `true`
     to `b1`, which finishes; `b2` finishes too. -/
@@ -321,7 +321,7 @@ theorem kleene_not_chooseResolves {m : Type → Type} [Monad m] [InterpEffects E
   not_chooseResolves_of_tt_ff obs cfgr (storeDenotes_absStore env0_denoting.1) htt hff st
 
 /-- The free variable `b`, a runtime expression that is not a value. -/
-private def bE : Expression.Expr := .fvar () bId none
+private def bE : Expression.Expr := .fvar default bId none
 
 /-- **`ReplayM` resolves no nonempty choice record.**  Whatever the reader config, a replay state
     whose oracle tail starts with the non-value `b` makes `choose` throw, so `ChooseResolves`

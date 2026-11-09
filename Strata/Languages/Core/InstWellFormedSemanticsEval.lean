@@ -175,10 +175,10 @@ theorem boolNot_opInterp_of_lookup {factory : Lambda.Factory CoreLParams}
   have h_ic := model.interpConsistent.2 "Bool.Not" hmem ceval h_ceval_eq
   rw [hget] at h_ic h_ceval_eq
   unfold Lambda.LFunc.InterpConsistentEval at h_ic
-  have h_eval : ∀ opTy, ceval () opTy [.boolConst () b] = some (.boolConst () (!b)) := by
+  have h_eval : ∀ opTy, ceval coreLoc opTy [.boolConst coreLoc b] = some (.boolConst coreLoc (!b)) := by
     intro opTy
     have key : (Lambda.boolNotFunc (T := CoreLParams)).func.concreteEval.bind
-        (fun ce => ce () opTy [.boolConst () b]) = some (.boolConst () (!b)) := by
+        (fun ce => ce coreLoc opTy [.boolConst coreLoc b]) = some (.boolConst coreLoc (!b)) := by
       cases b <;> rfl
     rw [h_ceval_eq, Option.bind_some] at key
     exact key
@@ -186,10 +186,10 @@ theorem boolNot_opInterp_of_lookup {factory : Lambda.Factory CoreLParams}
   have fv : Lambda.FreeVarVal CoreLParams model.tcInterp := fun _ s =>
     @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s)
   have h_inst :=
-    h_ic vt fv () Lambda.Subst.empty [.boolConst () b] (.boolConst () (!b)) (h_eval _)
+    h_ic vt fv coreLoc Lambda.Subst.empty [.boolConst coreLoc b] (.boolConst coreLoc (!b)) (h_eval _)
   have h_args : List.Rel₂ (Lambda.LExpr.HasTypeA (T := CoreLParams) [])
-      [.boolConst () b] [Lambda.LMonoTy.bool] := .cons (.const rfl) .nil
-  have h_result : Lambda.LExpr.HasTypeA (T := CoreLParams) [] (.boolConst () (!b)) .bool :=
+      [.boolConst coreLoc b] [Lambda.LMonoTy.bool] := .cons (.const rfl) .nil
+  have h_result : Lambda.LExpr.HasTypeA (T := CoreLParams) [] (.boolConst coreLoc (!b)) .bool :=
     .const rfl
   have h_eq := h_inst h_args h_result
   change (!b) = model.opInterp "Bool.Not" (Lambda.LSort.mkArrow .bool [.bool]) b at h_eq
@@ -198,7 +198,7 @@ theorem boolNot_opInterp_of_lookup {factory : Lambda.Factory CoreLParams}
 /-- `boolNotFunc`'s operator expression is the `Bool.Not` operator at `bool → bool`. -/
 private theorem boolNot_opExpr :
     (Lambda.boolNotFunc (T := CoreLParams)).opExpr =
-      Lambda.LExpr.op () ⟨"Bool.Not", ()⟩ (some (Lambda.LMonoTy.arrow .bool .bool)) := rfl
+      Lambda.LExpr.op (default : CoreExprMetadata) ⟨"Bool.Not", ()⟩ (some (Lambda.LMonoTy.arrow .bool .bool)) := rfl
 
 /-- The Core evaluator respects Boolean negation when the factory resolves `Bool.Not`
     to Core's built-in negation. -/
@@ -214,14 +214,14 @@ theorem coreEvaluator_WellFormedSemanticEvalBool (f : Expression.Factory)
     fun h => HasBool.ttVal_ne_ffVal f (Option.some.inj h)
   have hApp : ∀ (e0 : Expression.Expr),
       (Expression.eval f σ e0 = some (HasBool.ttVal f) ↔
-        Expression.eval f σ (Lambda.LExpr.app () (Lambda.boolNotFunc (T := CoreLParams)).opExpr e0)
+        Expression.eval f σ (Lambda.LExpr.app coreLoc (Lambda.boolNotFunc (T := CoreLParams)).opExpr e0)
           = some (HasBool.ffVal f)) ∧
       (Expression.eval f σ e0 = some (HasBool.ffVal f) ↔
-        Expression.eval f σ (Lambda.LExpr.app () (Lambda.boolNotFunc (T := CoreLParams)).opExpr e0)
+        Expression.eval f σ (Lambda.LExpr.app coreLoc (Lambda.boolNotFunc (T := CoreLParams)).opExpr e0)
           = some (HasBool.ttVal f)) := by
     intro e0
     have key : ∀ b', Expression.eval f σ
-        (Lambda.LExpr.app () (Lambda.boolNotFunc (T := CoreLParams)).opExpr e0) =
+        (Lambda.LExpr.app coreLoc (Lambda.boolNotFunc (T := CoreLParams)).opExpr e0) =
           some (Lambda.SemValue.ofBool f.model.tcInterp b') ↔
         Expression.eval f σ e0 = some (Lambda.SemValue.ofBool f.model.tcInterp (!b')) := by
       intro b'
@@ -243,15 +243,21 @@ theorem coreEvaluator_WellFormedSemanticEvalBool (f : Expression.Factory)
   | const m c =>
     cases c with
     | boolConst b =>
+      -- `not` of a literal keeps the literal's metadata, so use metadata-`m`
+      -- evaluation facts (denotation ignores metadata) rather than `Core.true`/`false`.
+      have hevTm : Expression.eval f σ (.const m (.boolConst true)) = some (HasBool.ttVal f) :=
+        Lambda.LExpr.denoteEval_boolConst
+      have hevFm : Expression.eval f σ (.const m (.boolConst false)) = some (HasBool.ffVal f) :=
+        Lambda.LExpr.denoteEval_boolConst
       cases b with
       | true =>
-        exact ⟨⟨fun _ => hevF, fun _ => hevT⟩,
-               ⟨fun h => absurd (hevT.symm.trans h) hTF,
-                fun h => absurd (hevF.symm.trans h) hTF.symm⟩⟩
+        exact ⟨⟨fun _ => hevFm, fun _ => hevTm⟩,
+               ⟨fun h => absurd (hevTm.symm.trans h) hTF,
+                fun h => absurd (hevFm.symm.trans h) hTF.symm⟩⟩
       | false =>
-        exact ⟨⟨fun h => absurd (hevF.symm.trans h) hTF.symm,
-                fun h => absurd (hevT.symm.trans h) hTF⟩,
-               ⟨fun _ => hevT, fun _ => hevF⟩⟩
+        exact ⟨⟨fun h => absurd (hevFm.symm.trans h) hTF.symm,
+                fun h => absurd (hevTm.symm.trans h) hTF⟩,
+               ⟨fun _ => hevTm, fun _ => hevFm⟩⟩
     | intConst i => exact hApp _
     | strConst s => exact hApp _
     | rationalConst r => exact hApp _
@@ -292,7 +298,7 @@ theorem coreFactory_boolNot :
 /-- `intLtFunc`'s operator expression is the `Int.Lt` operator at `int → int → bool`. -/
 private theorem intLt_opExpr :
     (Lambda.intLtFunc (T := CoreLParams)).opExpr =
-      Lambda.LExpr.op () ⟨"Int.Lt", ()⟩
+      Lambda.LExpr.op (default : CoreExprMetadata) ⟨"Int.Lt", ()⟩
         (some (Lambda.LMonoTy.arrow .int (Lambda.LMonoTy.arrow .int .bool))) := rfl
 
 /-- The Core evaluator reduces the comparison of two integer values to a Boolean. -/
@@ -312,16 +318,16 @@ theorem coreEvaluator_WellFormedSemanticEvalInt (f : Expression.Factory) :
         · rename_i h; exact h.trans rfl
         · simp at hv
       | bitvec => simp [Lambda.LSort.isInt] at hv
-    obtain ⟨v, hv, hvs⟩ := Lambda.LExpr.denoteEval_app2_op (m := ()) (m' := ()) (m'' := ())
+    obtain ⟨v, hv, hvs⟩ := Lambda.LExpr.denoteEval_app2_op (m := coreLoc) (m' := coreLoc) (m'' := (default : CoreExprMetadata))
       (o := ⟨"Int.Lt", ()⟩) (c := .bool) rfl rfl rfl hx (hint hnx) hy (hint hny)
     have hvtc := Lambda.LExpr.denoteEval_tc hv
     obtain ⟨tc, s, val⟩ := v
     simp only at hvs hvtc
     subst hvs hvtc
     show Lambda.LExpr.denoteEval f σ
-          (.app () (.app () (Lambda.intLtFunc (T := CoreLParams)).opExpr x) y) = _ ∨
+          (.app coreLoc (.app coreLoc (Lambda.intLtFunc (T := CoreLParams)).opExpr x) y) = _ ∨
         Lambda.LExpr.denoteEval f σ
-          (.app () (.app () (Lambda.intLtFunc (T := CoreLParams)).opExpr x) y) = _
+          (.app coreLoc (.app coreLoc (Lambda.intLtFunc (T := CoreLParams)).opExpr x) y) = _
     rw [intLt_opExpr, hv]
     cases val
     · exact .inr rfl
@@ -454,7 +460,7 @@ theorem opInterp_of_concreteEval {factory : Lambda.Factory CoreLParams}
     (model : Lambda.Interp factory) {name : String} {fn : Lambda.LFunc CoreLParams}
     (hlookup : factory[name]? = some fn) (hname : fn.name.name = name)
     {args : List Expression.Expr} {res : Expression.Expr}
-    (heval : fn.concreteEval.bind (fun ce => ce () (some (fn.instTy Lambda.Subst.empty)) args) =
+    (heval : fn.concreteEval.bind (fun ce => ce coreLoc (some (fn.instTy Lambda.Subst.empty)) args) =
       some res)
     (vt : Lambda.TyVarVal) (fv : Lambda.FreeVarVal CoreLParams model.tcInterp)
     (h_args : List.Rel₂ (Lambda.LExpr.HasTypeA []) args
@@ -476,7 +482,7 @@ theorem opInterp_of_concreteEval {factory : Lambda.Factory CoreLParams}
     have h_ic := model.interpConsistent.2 name hmem ceval (by rw [hget]; exact hce)
     rw [hget] at h_ic
     rw [← hname]
-    exact h_ic vt fv () Lambda.Subst.empty args res heval h_args h_result
+    exact h_ic vt fv coreLoc Lambda.Subst.empty args res heval h_args h_result
 
 /-- **Binary operator evaluation.**  An operator annotated `a → b → c`, at ground types,
     applied to arguments with values `va` and `vb` evaluates to `w` when the model interprets

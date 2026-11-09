@@ -53,7 +53,7 @@ private def dropL2 (p : Core.Program) : Core.Program :=
 private def pass (label : String) (md : Imperative.MetaData Core.Expression := {}) :
     Core.VCResult :=
   { obligation := { label, property := .assert, assumptions := [],
-                    obligation := .boolConst () true, metadata := md },
+                    obligation := .boolConst Core.valueLoc true, metadata := md },
     outcome := .ok { satisfiabilityProperty := .unknown, validityProperty := .unsat } }
 
 /-- A passing result for the lemma of `p` named `name`, with its metadata. -/
@@ -89,8 +89,8 @@ private def lems (p : Core.Program) : Core.VCResults :=
 -- would stand for both. Dropping one of them keeps the name once, but not the lemma.
 private def sameName : Core.Program :=
   { decls := [
-      .lemma { name := "l", e := .boolConst () true } .empty,
-      .lemma { name := "l", e := .boolConst () false } .empty] }
+      .lemma { name := "l", e := .boolConst Core.valueLoc true } .empty,
+      .lemma { name := "l", e := .boolConst Core.valueLoc false } .empty] }
 private def sameNameDropped : Core.Program := { decls := sameName.decls.take 1 }
 #guard decide (ResultsCover sameNameDropped #[pass "l"])
 #guard !decide (ResultsCover sameName #[pass "l"])
@@ -108,8 +108,8 @@ private def sameNameDropped : Core.Program := { decls := sameName.decls.take 1 }
     evaluate its lemma names. -/
 private def twoLemmasDirect : Core.Program :=
   { decls := [
-      .lemma { name := "l1", e := .boolConst () true } .empty,
-      .lemma { name := "l2", e := .boolConst () false } .empty] }
+      .lemma { name := "l1", e := .boolConst Core.valueLoc true } .empty,
+      .lemma { name := "l2", e := .boolConst Core.valueLoc false } .empty] }
 
 #guard lemmaLabels twoLemmasDirect.decls == lemmaLabels (translate twoLemmas).decls
 
@@ -208,7 +208,7 @@ private def assertLikeLemmaNoLocations : Core.Program :=
   { decls := (translate assertNamedLikeLemma).decls.map fun
       | .lemma l _ => .lemma l .empty
       | .proc p md =>
-        let body : List Core.Statement := [.cmd (.cmd (.assert "l1" (.boolConst () true) .empty))]
+        let body : List Core.Statement := [.cmd (.cmd (.assert "l1" (.boolConst Core.valueLoc true) .empty))]
         .proc { p with body := .structured body } md
       | d => d }
 

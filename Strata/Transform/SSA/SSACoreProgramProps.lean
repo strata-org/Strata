@@ -77,7 +77,7 @@ private theorem foldE_ops (ρ : Std.HashMap Expression.Ident (SVal Expression))
     (e : Expression.Expr) : ∀ o ∈ HasOps.getOps (foldE ρ e), o ∈ HasOps.getOps e := by
   have hite (c t f : Expression.Expr) : HasOps.getOps (WPOps.ite c t f) =
       HasOps.getOps c ++ HasOps.getOps t ++ HasOps.getOps f := rfl
-  fun_induction foldE ρ e <;> intro o ho <;> (try obtain rfl := WPLang.iteView?_eq ‹_›)
+  fun_induction foldE ρ e <;> intro o ho <;> (try rw [Core.WP.iteView?_getOps ‹_›])
   case case5 e _ =>
     refine substFn_ops (look := fun x => ρ[x]?.map SVal.expr) (fun x v h => ?_) e o ho
     obtain ⟨w, -, rfl⟩ := Option.map_eq_some_iff.1 h

@@ -122,7 +122,8 @@ info: [LExpr.quant () QuantifierKind.all "m" (some Lambda.LMonoTy.tcons
 -/
 #guard_msgs in
 #eval
-  extractAxiomsWithFreeTypeVars examplePgm ["k", "v"]
+  -- Source locations are erased; this test checks the extracted structure.
+  (extractAxiomsWithFreeTypeVars examplePgm ["k", "v"]).map Lambda.LExpr.eraseMetadata
 
 end Strata
 end

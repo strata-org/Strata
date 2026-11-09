@@ -13,6 +13,7 @@ import all Strata.DL.Lambda.Denote.LExprDenoteProps
 import all Strata.DL.Lambda.Denote.LExprAnnotated
 import all Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LExprWFProps
+import Strata.DL.Lambda.LExprTProps
 import Strata.DL.Lambda.OperationalSemanticsProps
 
 /-!
@@ -38,6 +39,12 @@ definitions it uses.
   — conditionals and operator applications
 - `LExpr.denoteEval_const`, `LExpr.denoteEval_eq_true`, `LExpr.denoteEval_eq_false` —
   literals and equality
+- `LExpr.denoteEval_replaceMetadata1`, `LExpr.denoteEvalResult_replaceMetadata1`,
+  `LExpr.typeCheckWith_replaceMetadata1` — evaluation is invariant under replacing an
+  expression's root metadata
+- `LExpr.denoteEval_replaceMetadata`, `LExpr.denoteEvalResult_replaceMetadata` — evaluation
+  is invariant under a full same-type metadata replacement (the basis of `Core.eraseLocs`
+  value invariance)
 -/
 
 namespace Lambda
@@ -537,7 +544,7 @@ theorem LExpr.typeCheck_substFvarsBy (look : Identifier T.IDMeta → Option (LEx
     | none => rfl
     | some r =>
       simp only
-      rw [hl x tyo r (by simp [LExpr.freeVars]) h Δ]
+      rw [typeCheck_replaceMetadata1, hl x tyo r (by simp [LExpr.freeVars]) h Δ]
       cases tyo <;> rfl
   | abs m n ty b ih =>
     intro Δ hl
@@ -591,6 +598,16 @@ private theorem Denotes.of_expr_eq {tc : TyConstrInterp} {op : OpInterp tc} {vt 
     (he : e₁ = e₂) (hd : Denotes tc op fv vt bv e₂ τ h₂ v) : Denotes tc op fv vt bv e₁ τ h₁ v := by
   subst he; exact hd
 
+/-- Denotation is invariant under a root-metadata replacement, lifted to `Denotes`. -/
+private theorem Denotes.replaceMetadata1 {tc : TyConstrInterp} {op : OpInterp tc} {vt : TyVarVal}
+    {fv : FreeVarVal T tc} {Δ : List LMonoTy} {bv : BVarVal tc vt Δ} (m : T.mono.base.Metadata)
+    {e : LExpr T.mono} {τ : LMonoTy} {h : (LExpr.replaceMetadata1 m e).HasTypeA Δ τ}
+    {v : TyDenote tc vt τ}
+    (hd : Denotes tc op fv vt bv e τ (HasTypeA_of_replaceMetadata1 m h) v) :
+    Denotes tc op fv vt bv (LExpr.replaceMetadata1 m e) τ h v := by
+  rw [Denotes_denote hd, ← denote_replaceMetadata1 _ _ _ _ bv m h]
+  exact denote_Denotes _ _ _ _ bv (LExpr.replaceMetadata1 m e) τ h
+
 /-- Substituting, for free variables, expressions that denote the variables' values
 preserves the denotation. -/
 private theorem Denotes.substFvarsBy {tc : TyConstrInterp} {op : OpInterp tc} {vt : TyVarVal}
@@ -622,9 +639,13 @@ private theorem Denotes.substFvarsBy {tc : TyConstrInterp} {op : OpInterp tc} {v
       rw [← hfv x ty (by simp [LExpr.freeVars]) hl]
       exact .fvar _
     | some r =>
-      have he : (LExpr.fvar m x (some ty) : LExpr T.mono).substFvarsBy look = r := by
+      have he : (LExpr.fvar m x (some ty) : LExpr T.mono).substFvarsBy look =
+          LExpr.replaceMetadata1 m r := by
         simp [LExpr.substFvarsBy, hl]
-      exact Denotes.of_expr_eq he (hden x ty r (by simp [LExpr.freeVars]) hl _ _ (he ▸ h'))
+      refine Denotes.of_expr_eq he (h₂ := he ▸ h') ?_
+      exact Denotes.replaceMetadata1 m
+        (hden x ty r (by simp [LExpr.freeVars]) hl _ _
+          (HasTypeA_of_replaceMetadata1 m (he ▸ h')))
   | abs bv' hbody ih =>
     rename_i m name aty rty body h_body _ f
     intro htc hden hfv h'
@@ -752,6 +773,147 @@ theorem denote_substFvarsBy {tc : TyConstrInterp} {op : OpInterp tc} {vt : TyVar
       (hden x ty r hx hl Δ' bv' hr) ▸ denote_Denotes _ _ _ _ bv' r ty hr)
     hfv h')).symm
 
+/-- Annotating commutes with a root-metadata replacement (neither looks at the root metadata). -/
+private theorem LExpr.annotateFvars_replaceMetadata1 (ann : Identifier T.IDMeta → Option LMonoTy)
+    (m : T.mono.base.Metadata) (e : LExpr T.mono) :
+    (LExpr.replaceMetadata1 m e).annotateFvars ann = LExpr.replaceMetadata1 m (e.annotateFvars ann) := by
+  cases e <;> rfl
+
+/-- `typeCheckWith` is invariant under a root-metadata replacement. -/
+theorem LExpr.typeCheckWith_replaceMetadata1 (F : Factory T) (ctx : List LMonoTy)
+    (m : T.Metadata) (e : LExpr T.mono) :
+    (LExpr.replaceMetadata1 m e).typeCheckWith F ctx = e.typeCheckWith F ctx := by
+  unfold LExpr.typeCheckWith
+  rw [typeCheck_replaceMetadata1,
+    show (LExpr.replaceMetadata1 m e).opsConsistent F = e.opsConsistent F from by cases e <;> rfl]
+
+/-- `denoteEvalResult` is invariant under a root-metadata replacement. -/
+theorem LExpr.denoteEvalResult_replaceMetadata1 [DecidableEq T.IDMeta] (M : ModeledFactory T)
+    (σ : ValStore T) (m : T.mono.base.Metadata) (e : LExpr T.mono) (τ : LMonoTy)
+    (h1 : ((LExpr.replaceMetadata1 m e).annotateFvars σ.ann).HasTypeA [] τ)
+    (h2 : (e.annotateFvars σ.ann).HasTypeA [] τ) :
+    (LExpr.replaceMetadata1 m e).denoteEvalResult M σ τ h1 = e.denoteEvalResult M σ τ h2 := by
+  unfold LExpr.denoteEvalResult
+  simp only [LExpr.annotateFvars_replaceMetadata1]
+  rw [denote_replaceMetadata1]
+
+/-- `denoteEval` is invariant under a root-metadata replacement: the root metadata affects
+neither the free variables, the annotated type check, nor the denotation. -/
+theorem LExpr.denoteEval_replaceMetadata1 [DecidableEq T.IDMeta] (M : ModeledFactory T) (σ : ValStore T)
+    (m : T.mono.base.Metadata) (e : LExpr T.mono) :
+    (LExpr.replaceMetadata1 m e).denoteEval M σ = e.denoteEval M σ := by
+  have hgv : LExpr.LExpr.getVars (LExpr.replaceMetadata1 m e) = LExpr.LExpr.getVars e := by
+    cases e <;> rfl
+  have hdef : σ.Defines M.model.tcInterp (LExpr.replaceMetadata1 m e)
+            ↔ σ.Defines M.model.tcInterp e := by
+    unfold ValStore.Defines; rw [hgv]
+  have hs : LExpr.typeCheck [] ((LExpr.replaceMetadata1 m e).annotateFvars σ.ann)
+          = LExpr.typeCheck [] (e.annotateFvars σ.ann) := by
+    rw [LExpr.annotateFvars_replaceMetadata1, typeCheck_replaceMetadata1]
+  unfold LExpr.denoteEval
+  rw [propext hdef]
+  congr 1
+  split
+  · rename_i τ h1
+    rw [hs] at h1
+    split
+    · rename_i hg
+      split
+      · rename_i τ' h2
+        rw [h1] at h2
+        obtain rfl := Option.some.inj h2
+        split
+        · exact congrArg some (LExpr.denoteEvalResult_replaceMetadata1 M σ m e τ _ _)
+        · rename_i hg'
+          exact absurd hg hg'
+      · simp_all
+    · rename_i hg
+      split
+      · rename_i τ' h2
+        rw [h1] at h2
+        obtain rfl := Option.some.inj h2
+        split
+        · rename_i hg'
+          exact absurd hg' hg
+        · rfl
+      · simp_all
+  · rename_i h1
+    rw [hs] at h1
+    split
+    · rename_i τ' h2
+      rw [h1] at h2
+      simp at h2
+    · rfl
+
+/-- `annotateFvars` commutes with a full same-type metadata replacement. -/
+private theorem LExpr.annotateFvars_replaceMetadata (ann : Identifier T.IDMeta → Option LMonoTy)
+    (f : T.mono.base.Metadata → T.mono.base.Metadata) (e : LExpr T.mono) :
+    (LExpr.replaceMetadata e f).annotateFvars ann = LExpr.replaceMetadata (e.annotateFvars ann) f := by
+  induction e <;> simp_all [LExpr.replaceMetadata, LExpr.annotateFvars]
+
+/-- `denoteEvalResult` is invariant under a full same-type metadata replacement. -/
+theorem LExpr.denoteEvalResult_replaceMetadata [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
+    (M : ModeledFactory T)
+    (σ : ValStore T) (f : T.mono.base.Metadata → T.mono.base.Metadata) (e : LExpr T.mono) (τ : LMonoTy)
+    (h1 : ((LExpr.replaceMetadata e f).annotateFvars σ.ann).HasTypeA [] τ)
+    (h2 : (e.annotateFvars σ.ann).HasTypeA [] τ) :
+    (LExpr.replaceMetadata e f).denoteEvalResult M σ τ h1 = e.denoteEvalResult M σ τ h2 := by
+  unfold LExpr.denoteEvalResult
+  congr 1
+  rw [denote_replaceMetadata (e₁ := annotateFvars σ.ann e) (f := f)]
+  congr 1
+  exact LExpr.annotateFvars_replaceMetadata σ.ann f e
+
+/-- `denoteEval` is invariant under a full same-type metadata replacement: metadata affects
+neither the free variables, the annotated type check, nor the denotation. -/
+theorem LExpr.denoteEval_replaceMetadata [DecidableEq T.IDMeta] [Inhabited T.mono.base.IDMeta]
+    (M : ModeledFactory T) (σ : ValStore T)
+    (f : T.mono.base.Metadata → T.mono.base.Metadata) (e : LExpr T.mono) :
+    (LExpr.replaceMetadata e f).denoteEval M σ = e.denoteEval M σ := by
+  have hgv : LExpr.LExpr.getVars (LExpr.replaceMetadata e f) = LExpr.LExpr.getVars e :=
+    LExpr.Proofs.getVars_replaceMetadata e f
+  have hdef : σ.Defines M.model.tcInterp (LExpr.replaceMetadata e f)
+            ↔ σ.Defines M.model.tcInterp e := by
+    unfold ValStore.Defines; rw [hgv]
+  have hs : LExpr.typeCheck [] ((LExpr.replaceMetadata e f).annotateFvars σ.ann)
+          = LExpr.typeCheck [] (e.annotateFvars σ.ann) := by
+    rw [LExpr.annotateFvars_replaceMetadata, ← replaceMetadata_typeCheck]
+  unfold LExpr.denoteEval
+  rw [propext hdef]
+  congr 1
+  split
+  · rename_i τ h1
+    rw [hs] at h1
+    split
+    · rename_i hg
+      split
+      · rename_i τ' h2
+        rw [h1] at h2
+        obtain rfl := Option.some.inj h2
+        split
+        · exact congrArg some (LExpr.denoteEvalResult_replaceMetadata M σ f e τ _ _)
+        · rename_i hg'
+          exact absurd hg hg'
+      · simp_all
+    · rename_i hg
+      split
+      · rename_i τ' h2
+        rw [h1] at h2
+        obtain rfl := Option.some.inj h2
+        split
+        · rename_i hg'
+          exact absurd hg' hg
+        · rfl
+      · simp_all
+  · rename_i h1
+    rw [hs] at h1
+    split
+    · rename_i τ' h2
+      rw [h1] at h2
+      simp at h2
+    · rfl
+
+
 /-- Annotating a substituted expression is substituting, by the annotated replacements, into
 the expression annotated on its unsubstituted variables. -/
 theorem LExpr.annotateFvars_substFvarsBy (look : Identifier T.IDMeta → Option (LExpr T.mono))
@@ -765,7 +927,7 @@ theorem LExpr.annotateFvars_substFvarsBy (look : Identifier T.IDMeta → Option 
     cases hl : look x with
     | none =>
       simp [LExpr.substFvarsBy, LExpr.annotateFvars, hl, h x ty (by simp [LExpr.freeVars]) hl]
-    | some r => simp [LExpr.substFvarsBy, LExpr.annotateFvars, hl]
+    | some r => simp [LExpr.substFvarsBy, LExpr.annotateFvars, hl, LExpr.annotateFvars_replaceMetadata1]
   | abs m n ty b ih =>
     simp only [LExpr.substFvarsBy, LExpr.annotateFvars]
     rw [ih (fun x ty hx => h x ty (by simpa [LExpr.freeVars] using hx))]
@@ -805,6 +967,7 @@ theorem LExpr.mem_freeVars_substFvarsBy {look : Identifier T.IDMeta → Option (
       exact .inl ⟨by simp [LExpr.freeVars], hl⟩
     | some r =>
       simp only [LExpr.substFvarsBy, hl] at hx
+      rw [LExpr.freeVars_replaceMetadata1] at hx
       exact .inr ⟨y, tyy, r, by simp [LExpr.freeVars], hl, hx⟩
   | abs m n ty' b ih =>
     simp only [LExpr.substFvarsBy, LExpr.freeVars] at hx ⊢
@@ -862,7 +1025,7 @@ theorem LExpr.mem_freeVars_substFvarsBy_of {look : Identifier T.IDMeta → Optio
     simp only [LExpr.freeVars, List.mem_singleton, Prod.mk.injEq] at hx
     obtain ⟨rfl, rfl⟩ := hx
     refine ⟨fun hl => by simp [LExpr.substFvarsBy, hl, LExpr.freeVars], fun r hl p hp => ?_⟩
-    simpa [LExpr.substFvarsBy, hl] using hp
+    simpa [LExpr.substFvarsBy, hl, LExpr.freeVars_replaceMetadata1] using hp
   | abs m n ty' b ih =>
     simp only [LExpr.substFvarsBy, LExpr.freeVars] at hx ⊢
     exact ih hx

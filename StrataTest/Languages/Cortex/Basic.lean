@@ -21,7 +21,7 @@ def composites : List CompositeDecl :=
       fields := [{ name := "code", ty := .forAll [] .int }] },
     { name := "Other", extending := [], fields := [] } ]
 
-def e : Core.Expression.Expr := .fvar () "e" none
+def e : Core.Expression.Expr := .fvar Core.coreLoc "e" none
 
 def body : Body :=
   { cfg :=
@@ -73,7 +73,7 @@ def interpBody : Body :=
                 transfer := .goto "try" }),
             ("try",
               { cmds := [.new (cid "e") "IOExn" .empty,
-                         .writeField e ⟨"IOExn", "code"⟩ (.const () (.intConst 7)) .empty,
+                         .writeField e ⟨"IOExn", "code"⟩ (.const Core.valueLoc (.intConst 7)) .empty,
                          .throw e .empty],
                 transfer := .goto "done" }),
             ("handler",
@@ -96,12 +96,12 @@ def interpResult : Option Core.Expression.Expr :=
     | _ => none
   | [] => none
 
-#guard interpResult == some (.const () (.intConst 7))
+#guard interpResult == some (.const Core.valueLoc (.intConst 7))
 
 def refTy (n : String) : Lambda.LTy := .forAll [] (.tcons n [])
 def intTy : Lambda.LTy := .forAll [] .int
-def intC (i : Int) : Core.Expression.Expr := .const () (.intConst i)
-def fv (n : String) : Core.Expression.Expr := .fvar () (cid n) none
+def intC (i : Int) : Core.Expression.Expr := .const Core.valueLoc (.intConst i)
+def fv (n : String) : Core.Expression.Expr := .fvar Core.coreLoc (cid n) none
 
 def getBody (v : Int) : Body :=
   { cfg := { entry := "b", blocks := [("b", { cmds := [.cmd (.set (cid "r") (.det (intC v)) .empty)],
@@ -181,7 +181,7 @@ def diamonds (n : Nat) : UnorderedProgram :=
 
 def posDecl : ConstrainedDecl :=
   { name := "pos", base := intTy, binder := cid "$x",
-    constraint := .app () (.app () (.op () ⟨"Int.Gt", ()⟩ none) (fv "$x")) (intC 0) }
+    constraint := .app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨"Int.Gt", ()⟩ none) (fv "$x")) (intC 0) }
 
 def castProgram (v : Int) (mode : CastMode) : UnorderedProgram :=
   { composites := [], constrained := [posDecl], procedures :=

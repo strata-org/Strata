@@ -185,12 +185,12 @@ partial def Expr.toCore : Expr → Cortex.Expr
   | .var n => mkFvar n
   | .int i => intLit i
   | .bool b => if b then tt else ff
-  | .str s => .const () (.strConst s)
-  | .bv w v => .const () (.bitvecConst w (BitVec.ofInt w v))
+  | .str s => .const Core.valueLoc (.strConst s)
+  | .bv w v => .const Core.valueLoc (.bitvecConst w (BitVec.ofInt w v))
   | .op n [] => mkOp n
   | .op n args => mkCall n (args.map Expr.toCore)
-  | .ite c t e => .ite () c.toCore t.toCore e.toCore
-  | .eq a b => .eq () a.toCore b.toCore
+  | .ite c t e => .ite Core.coreLoc c.toCore t.toCore e.toCore
+  | .eq a b => .eq Core.coreLoc a.toCore b.toCore
 
 /-- A range whose file path is empty stands for no location. -/
 def mdOf (source : Strata.FileRange) : Cortex.MD :=

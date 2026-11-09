@@ -52,6 +52,7 @@ open Std
 open Strata.SMT
 
 section FuncWithAxiomsTests
+private abbrev testLoc : ExprSourceLoc := ExprSourceLoc.synthesized "test"
 
 /- A little `SMT.Context` printer, via SMTDDM -/
 
@@ -116,12 +117,12 @@ private def intToInt : LMonoTy := .arrow .int .int
 
 /- `name(arg)` where `name : Int → Int`. -/
 private def appI (name : String) (arg : LExpr CoreLParams.mono) : LExpr CoreLParams.mono :=
-  .app () (.op () ⟨name, ()⟩ (.some intToInt)) arg
+  .app testLoc (.op testLoc ⟨name, ()⟩ (.some intToInt)) arg
 
 /- `∀ (x : Int). lhs(x) == rhs(x)` -/
 private def eqAxiomI (lhs rhs : String) : LExpr CoreLParams.mono :=
-  .quant () .all "x" (.some .int) (LExpr.noTrigger ())
-    (.eq () (appI lhs (.bvar () 0)) (appI rhs (.bvar () 0)))
+  .quant testLoc .all "x" (.some .int) (LExpr.noTrigger testLoc)
+    (.eq testLoc (appI lhs (.bvar testLoc 0)) (appI rhs (.bvar testLoc 0)))
 
 /- A monomorphic `Int → Int` function `name` with a single axiom `∀ x. name(x) == callee(x)`. -/
 private def monoFuncWithAxiom (name callee : String) : Lambda.LFunc CoreLParams :=
@@ -135,15 +136,15 @@ private def monoFuncWithAxiomId (name : String) : Lambda.LFunc CoreLParams :=
   { name := ⟨name, ()⟩,
     inputs := [(⟨"v", ()⟩, .int)],
     output := .int,
-    axioms := [.quant () .all "x" (.some .int) (LExpr.noTrigger ())
-                 (.eq () (appI name (.bvar () 0)) (.bvar () 0))] }
+    axioms := [.quant testLoc .all "x" (.some .int) (LExpr.noTrigger testLoc)
+                 (.eq testLoc (appI name (.bvar testLoc 0)) (.bvar testLoc 0))] }
 
 /-- An `Int → Int` function `name` whose function body is `callee(v)`. -/
 private def monoDefFunc (name callee : String) : Lambda.LFunc CoreLParams :=
   { name := ⟨name, ()⟩,
     inputs := [(⟨"v", ()⟩, .int)],
     output := .int,
-    body := some (appI callee (.fvar () ⟨"v", ()⟩ (.some .int))) }
+    body := some (appI callee (.fvar testLoc ⟨"v", ()⟩ (.some .int))) }
 
 /-- An `Int → Int` function `name` with function body `body` and the axiom
     `∀ x. name(x) == axiomCallee(x)`. -/
@@ -173,7 +174,7 @@ Axioms:
 -/
 #guard_msgs in
 #eval runTest
-  [(.eq () (appI "f" (.intConst () 0)) (.intConst () 0))]
+  [(.eq testLoc (appI "f" (.intConst testLoc 0)) (.intConst testLoc 0))]
   [monoFuncWithAxiom "f" "g", monoFuncWithAxiomId "g"]
 
 /-! ## Test 2: three monomorphic functions whose axioms call each other cyclically -/
@@ -195,7 +196,7 @@ Axioms:
 -/
 #guard_msgs in
 #eval runTest
-  [(.eq () (appI "f" (.intConst () 0)) (.intConst () 0))]
+  [(.eq testLoc (appI "f" (.intConst testLoc 0)) (.intConst testLoc 0))]
   [monoFuncWithAxiom "f" "g", monoFuncWithAxiom "g" "h", monoFuncWithAxiom "h" "f"]
 
 /-! ## Test 4: an interpreted function whose body calls an axiomatized function -/
@@ -215,12 +216,12 @@ Axioms:
 -/
 #guard_msgs in
 #eval runTest
-  [(.eq () (appI "d" (.intConst () 0)) (.intConst () 0))]
+  [(.eq testLoc (appI "d" (.intConst testLoc 0)) (.intConst testLoc 0))]
   [monoDefFunc "d" "g", monoFuncWithAxiomId "g"]
 
 /-! ## Test 5: three interpreted functions with bodies and axioms calling each other -/
 
-private def vInt : LExpr CoreLParams.mono := .fvar () ⟨"v", ()⟩ (.some .int)
+private def vInt : LExpr CoreLParams.mono := .fvar testLoc ⟨"v", ()⟩ (.some .int)
 
 /-- An interpreted identity `Int → Int` `name` (body `v`) with axiom `∀ x. name(x) == x` -/
 private def monoDefFuncWithAxiomId (name : String) : Lambda.LFunc CoreLParams :=
@@ -228,8 +229,8 @@ private def monoDefFuncWithAxiomId (name : String) : Lambda.LFunc CoreLParams :=
     inputs := [(⟨"v", ()⟩, .int)],
     output := .int,
     body := some vInt,
-    axioms := [.quant () .all "x" (.some .int) (LExpr.noTrigger ())
-                 (.eq () (appI name (.bvar () 0)) (.bvar () 0))] }
+    axioms := [.quant testLoc .all "x" (.some .int) (LExpr.noTrigger testLoc)
+                 (.eq testLoc (appI name (.bvar testLoc 0)) (.bvar testLoc 0))] }
 
 /--
 info: Terms:
@@ -246,7 +247,7 @@ Axioms:
 -/
 #guard_msgs in
 #eval runTest
-  [(.eq () (appI "da" (.intConst () 0)) (.intConst () 0))]
+  [(.eq testLoc (appI "da" (.intConst testLoc 0)) (.intConst testLoc 0))]
   [monoDefFuncWithAxiom "da" (appI "db" vInt) "db",
    monoDefFuncWithAxiom "db" (appI "dc" vInt) "dc",
    monoDefFuncWithAxiomId "dc"]
@@ -285,7 +286,7 @@ private def testAllCommitted : Except Format String := do
   let factory := env.factory
   let ctx := { SMT.Context.default with datatypes := .ofFactory env.datatypes }
   let (_, ctx, pending) ← toSMTTerms factory
-    [(.eq () (appI "f" (.intConst () 0)) (.intConst () 0))] ctx {}
+    [(.eq testLoc (appI "f" (.intConst testLoc 0)) (.intConst testLoc 0))] ctx {}
   let ctx' ← processPendingFnDefs factory ctx pending
   let allCommitted := pending.toList.all (fun p => SMT.Context.committedFn ctx' p.uf)
   return s!"{allCommitted}"
@@ -312,9 +313,9 @@ private def testScheduleDedup : Except Format String := do
   let ctx := { SMT.Context.default with datatypes := .ofFactory env.datatypes }
   -- Each of f, g, h is referenced twice; the six references share three `UF`s.
   let (_, _, pending) ← toSMTTerms factory
-    [(.eq () (appI "f" (.intConst () 0)) (appI "f" (.intConst () 1))),
-     (.eq () (appI "g" (.intConst () 0)) (appI "g" (.intConst () 1))),
-     (.eq () (appI "h" (.intConst () 0)) (appI "h" (.intConst () 1)))] ctx {}
+    [(.eq testLoc (appI "f" (.intConst testLoc 0)) (appI "f" (.intConst testLoc 1))),
+     (.eq testLoc (appI "g" (.intConst testLoc 0)) (appI "g" (.intConst testLoc 1))),
+     (.eq testLoc (appI "h" (.intConst testLoc 0)) (appI "h" (.intConst testLoc 1)))] ctx {}
   -- f, g, h scheduled exactly once each despite the duplicate references.
   return s!"{pending.size}"
 

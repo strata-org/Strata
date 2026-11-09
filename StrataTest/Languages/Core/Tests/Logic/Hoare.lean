@@ -292,12 +292,21 @@ Along the event step relation an empty-body run emits no events, and
 are satisfiable — the premise the negative tests feed to the triple. -/
 
 
+/-- Replace the real source locations of every procedure expression by `valueLoc`,
+    so `native_decide` shape assertions below are stable. Typing and evaluation
+    ignore locations, so a triple proved of the erased program holds of the parsed
+    one. -/
+private def eraseProgLocs (pr : Core.Program) : Core.Program :=
+  { pr with decls := pr.decls.map fun d => match d with
+      | .proc proc md => .proc (Core.Procedure.mapExprs Core.eraseLocs proc) md
+      | other => other }
+
 /-- Translate a DDM concrete-syntax program to the Core AST.  Each test stores the
     result in a `…PgmAST` definition, so that the procedure environment it passes to
     the logic is literally `Core.Program.findProcByString?` on an AST value — the
     same thing a real verification run uses. -/
 private def cstToAST (p : Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram p)).fst
+  eraseProgLocs (TransM.run Inhabited.default (translateProgram p)).fst
 
 /-- The procedure a `contractTriple` obligation hands you is the one the test's
     `…Proc` abbreviation names. -/
@@ -351,8 +360,8 @@ private theorem inputAsPredicate_xIs1 (model : Lambda.Interp Core.Factory)
 private theorem xIs1_eval_eq_false (model : Lambda.Interp Core.Factory) (n : Int)
     (hn : n ≠ 1) :
     Core.Expression.eval (xIs1Env model).factory (xIs1Env model).store
-      (Lambda.LExpr.eq () (Lambda.LExpr.fvar () ⟨"x", ()⟩ (some (Lambda.LMonoTy.tcons "int" [])))
-        (Lambda.LExpr.intConst () n)) =
+      (Lambda.LExpr.eq Core.valueLoc (Lambda.LExpr.fvar Core.valueLoc ⟨"x", ()⟩ (some (Lambda.LMonoTy.tcons "int" [])))
+        (Lambda.LExpr.intConst Core.valueLoc n)) =
       some (HasBool.ffVal (xIs1Env model).factory) :=
   Core.eval_eq_false _
     (Core.eval_fvar (v := Lambda.SemValue.ofConst model.tcInterp (.intConst 1)) _
@@ -419,7 +428,7 @@ private theorem checkAsPredicate_eqConst (factory : Lambda.Factory Core.CoreLPar
     (hstore : ρ.store x = some (cval ρ κ))
     (label : Core.CoreLabel) (check : Core.Procedure.Check)
     (hexpr : check.expr =
-      Lambda.LExpr.eq () (Lambda.LExpr.fvar () x ty) (Lambda.LExpr.const () κ))
+      Lambda.LExpr.eq Core.valueLoc (Lambda.LExpr.fvar Core.valueLoc x ty) (Lambda.LExpr.const Core.valueLoc κ))
     (hκ : κ.wt = true := by rfl) :
     Core.Logic.Hoare.Procedure.checkAsPredicate factory ρ label check := by
   intro world
@@ -436,8 +445,8 @@ private theorem preAsPredicate_of_binds (factory : Lambda.Factory Core.CoreLPara
     (hfac : ρ.factory.factory = factory)
     (hsyn : (proc.spec.preconditions.toList.all fun lc =>
       binds.any fun b => decide (lc.2.expr =
-        Lambda.LExpr.eq () (Lambda.LExpr.fvar () b.1 b.2.1)
-          (Lambda.LExpr.const () b.2.2)) && b.2.2.wt) = Bool.true)
+        Lambda.LExpr.eq Core.valueLoc (Lambda.LExpr.fvar Core.valueLoc b.1 b.2.1)
+          (Lambda.LExpr.const Core.valueLoc b.2.2)) && b.2.2.wt) = Bool.true)
     (hstore : ∀ b ∈ binds, ρ.store b.1 = some (cval ρ b.2.2)) :
     Core.Logic.Hoare.Procedure.preAsPredicate factory proc ρ := by
   intro label check hmem
@@ -552,9 +561,9 @@ private def freeOkProc : Core.Procedure :=
 private theorem freeOk_free_clause :
     ∃ lc ∈ freeOkProc.spec.postconditions.toList,
       lc.2.attr = Core.Procedure.CheckAttr.Free ∧
-      lc.2.expr = Lambda.LExpr.eq ()
-        (Lambda.LExpr.fvar () ⟨"x", ()⟩ (some (Lambda.LMonoTy.tcons "int" [])))
-        (Lambda.LExpr.intConst () 99) := by
+      lc.2.expr = Lambda.LExpr.eq Core.valueLoc
+        (Lambda.LExpr.fvar Core.valueLoc ⟨"x", ()⟩ (some (Lambda.LMonoTy.tcons "int" [])))
+        (Lambda.LExpr.intConst Core.valueLoc 99) := by
   native_decide
 
 /-- The spec really does contain a `free` clause, and it really is false at a store
@@ -604,9 +613,9 @@ private def noReqProc : Core.Procedure :=
 private theorem noReq_post_clause :
     ∃ lc ∈ noReqProc.spec.postconditions.toList,
       (Prod.snd lc).attr = Core.Procedure.CheckAttr.Default ∧
-      (Prod.snd lc).expr = Lambda.LExpr.eq ()
-        (Lambda.LExpr.fvar () ⟨"x", ()⟩ (some (Lambda.LMonoTy.tcons "int" [])))
-        (Lambda.LExpr.intConst () 2) := by
+      (Prod.snd lc).expr = Lambda.LExpr.eq Core.valueLoc
+        (Lambda.LExpr.fvar Core.valueLoc ⟨"x", ()⟩ (some (Lambda.LMonoTy.tcons "int" [])))
+        (Lambda.LExpr.intConst Core.valueLoc 2) := by
   native_decide
 
 /-- **Invalid.**  A procedure with no `requires` but an `ensures x == 2` does not meet
@@ -671,9 +680,9 @@ private def offByOneProc : Core.Procedure :=
 private theorem offByOne_post_clause :
     ∃ lc ∈ offByOneProc.spec.postconditions.toList,
       (Prod.snd lc).attr = Core.Procedure.CheckAttr.Default ∧
-      (Prod.snd lc).expr = Lambda.LExpr.eq ()
-        (Lambda.LExpr.fvar () ⟨"x", ()⟩ (some (Lambda.LMonoTy.tcons "int" [])))
-        (Lambda.LExpr.intConst () 2) := by
+      (Prod.snd lc).expr = Lambda.LExpr.eq Core.valueLoc
+        (Lambda.LExpr.fvar Core.valueLoc ⟨"x", ()⟩ (some (Lambda.LMonoTy.tcons "int" [])))
+        (Lambda.LExpr.intConst Core.valueLoc 2) := by
   native_decide
 
 /-- **Invalid.**  A procedure requiring `x == 1` and ensuring `x == 2` does not meet its
@@ -722,13 +731,13 @@ than vacuously true. -/
 
 /-- An equality containing an unannotated map selection. -/
 private def mapSelectClause : Core.Procedure.Check :=
-  { expr := .eq ()
-      (.app ()
-        (.app () (.op () ⟨"select", ()⟩ none)
-          (Lambda.LExpr.fvar () ⟨"m", ()⟩
+  { expr := .eq Core.valueLoc
+      (.app Core.valueLoc
+        (.app Core.valueLoc (.op Core.valueLoc ⟨"select", ()⟩ none)
+          (Lambda.LExpr.fvar Core.valueLoc ⟨"m", ()⟩
             (some (.tcons "Map" [.int, .int]))))
-        (Lambda.LExpr.fvar () ⟨"k", ()⟩ (some .int)))
-      (Lambda.LExpr.intConst () 1) }
+        (Lambda.LExpr.fvar Core.valueLoc ⟨"k", ()⟩ (some .int)))
+      (Lambda.LExpr.intConst Core.valueLoc 1) }
 
 /-- The unannotated map selection prevents the clause from type-checking as `bool`. -/
 example :
@@ -784,7 +793,7 @@ private theorem set_const {factory : Lambda.Factory Core.CoreLParams}
       σ' x = some (cval ρ₀ κ) → (∀ w, x ≠ w → σ' w = ρ₀.store w) →
       Post { ρ₀ with store := σ' }) (hκ : κ.wt = true := by rfl) :
     Core.Logic.Hoare.Triple π params Pre
-      [Core.Statement.set x (Lambda.LExpr.const () κ) md] Post (factory := factory) :=
+      [Core.Statement.set x (Lambda.LExpr.const Core.valueLoc κ) md] Post (factory := factory) :=
   Core.Logic.Hoare.set (factory := factory) π params x _ md Pre Post
     (fun ρ₀ σ' v hpre hev hup => by
       have hv : v = cval ρ₀ κ := (Option.some.injEq _ _).mp
@@ -804,7 +813,7 @@ private theorem init_const {factory : Lambda.Factory Core.CoreLParams}
       σ' x = some (cval ρ₀ κ) → (∀ w, x ≠ w → σ' w = ρ₀.store w) →
       Post { ρ₀ with store := σ' }) (hκ : κ.wt = true := by rfl) :
     Core.Logic.Hoare.Triple π params Pre
-      [Core.Statement.init x ty (.det (Lambda.LExpr.const () κ)) md] Post
+      [Core.Statement.init x ty (.det (Lambda.LExpr.const Core.valueLoc κ)) md] Post
       (factory := factory) :=
   Core.Logic.Hoare.init (factory := factory) π params x ty _ md Pre Post
     (fun ρ₀ σ' v hpre hev hinit => by
@@ -827,7 +836,7 @@ private theorem set_fvar {factory : Lambda.Factory Core.CoreLParams}
       σ' x = some (cval ρ₀ κ) → (∀ w, x ≠ w → σ' w = ρ₀.store w) →
       Post { ρ₀ with store := σ' }) :
     Core.Logic.Hoare.Triple π params Pre
-      [Core.Statement.set x (Lambda.LExpr.fvar () src ty) md] Post (factory := factory) :=
+      [Core.Statement.set x (Lambda.LExpr.fvar Core.valueLoc src ty) md] Post (factory := factory) :=
   Core.Logic.Hoare.set (factory := factory) π params x _ md Pre Post
     (fun ρ₀ σ' v hpre hev hup => by
       have hv : v = cval ρ₀ κ := (Option.some.injEq _ _).mp
@@ -852,8 +861,8 @@ private def ensuresAllEqConst (proc : Core.Procedure)
   proc.spec.postconditions.toList.all fun lc =>
     decide (lc.2.attr ≠ Core.Procedure.CheckAttr.Default) ||
       binds.any fun b =>
-        decide (lc.2.expr = Lambda.LExpr.eq () (Lambda.LExpr.fvar () b.1 b.2.1)
-          (Lambda.LExpr.const () b.2.2)) && b.2.2.wt
+        decide (lc.2.expr = Lambda.LExpr.eq Core.valueLoc (Lambda.LExpr.fvar Core.valueLoc b.1 b.2.1)
+          (Lambda.LExpr.const Core.valueLoc b.2.2)) && b.2.2.wt
 
 /-- If every non-`free` `ensures` is `x == κ` for a listed `(x, κ)` bound by
     the store, the model's semantic postcondition holds. -/
@@ -884,7 +893,7 @@ private theorem contractTriple_set_const (p : Core.Program)
     (hproc : p.findProcByString? procName = some proc)
     (x : Core.Expression.Ident) (ty : Option Lambda.LMonoTy)
     (κ : Lambda.LConst) (md : Imperative.MetaData Core.Expression)
-    (hbody : proc.body = .structured [Core.Statement.set x (Lambda.LExpr.const () κ) md])
+    (hbody : proc.body = .structured [Core.Statement.set x (Lambda.LExpr.const Core.valueLoc κ) md])
     (hChecksTyped : Core.Logic.Hoare.Procedure.contractChecksTyped proc)
     (hsyn : ensuresAllEqConst proc [(x, ty, κ)] = Bool.true) (hκ : κ.wt = true := by rfl) :
     Core.Logic.Hoare.Procedure.contractTriple p params procName := by
@@ -961,7 +970,7 @@ private def set1Y : Core.Expression.Ident := ⟨"y", ()⟩
 /-- The translated body really is the single assignment `y := 1`. -/
 private theorem set1_body_eq :
     set1Proc.body = .structured
-      [Core.Statement.set set1Y (Lambda.LExpr.const () (.intConst 1)) set1Md] := by
+      [Core.Statement.set set1Y (Lambda.LExpr.const Core.valueLoc (.intConst 1)) set1Md] := by
   native_decide
 
 /-- **Valid, and fully proved.**  `Set1` meets its contract: for every initial
@@ -1044,8 +1053,8 @@ private def set2Md (i : Nat) : Imperative.MetaData Core.Expression :=
 /-- The translated body really is the two assignments, in order. -/
 private theorem set2_body_eq :
     set2Proc.body = .structured
-      ([Core.Statement.set set2Y (Lambda.LExpr.const () (.intConst 1)) (set2Md 0)] ++
-       [Core.Statement.set set2Z (Lambda.LExpr.const () (.intConst 2)) (set2Md 1)]) := by
+      ([Core.Statement.set set2Y (Lambda.LExpr.const Core.valueLoc (.intConst 1)) (set2Md 0)] ++
+       [Core.Statement.set set2Z (Lambda.LExpr.const Core.valueLoc (.intConst 2)) (set2Md 1)]) := by
   native_decide
 
 /-- **Valid, and fully proved.**  `Set2` meets its contract: the body leaves both
@@ -1143,9 +1152,9 @@ private def initVarParts :
   | _ => default
 
 private def initVarBody : Core.Statements :=
-  [Core.Statement.init initVarT initVarParts.1 (.det (Lambda.LExpr.const () (.intConst 3)))
+  [Core.Statement.init initVarT initVarParts.1 (.det (Lambda.LExpr.const Core.valueLoc (.intConst 3)))
      initVarParts.2.1] ++
-  [Core.Statement.set initVarY (Lambda.LExpr.fvar () initVarT initVarParts.2.2.1)
+  [Core.Statement.set initVarY (Lambda.LExpr.fvar Core.valueLoc initVarT initVarParts.2.2.1)
      initVarParts.2.2.2]
 
 /-- The translated body really is the declaration followed by the assignment. -/
@@ -1255,12 +1264,12 @@ private theorem ite1_body_eq : ite1Proc.body = .structured [ite1Stmt] := by nati
 
 /-- The *then* branch really is the single assignment `z := 1`. -/
 private theorem ite1Then_eq :
-    ite1Parts.2.1 = [Core.Statement.set ite1Z (Lambda.LExpr.const () (.intConst 1))
+    ite1Parts.2.1 = [Core.Statement.set ite1Z (Lambda.LExpr.const Core.valueLoc (.intConst 1))
       (branchMd ite1Parts.2.1)] := by native_decide
 
 /-- The *else* branch really is the same assignment `z := 1`. -/
 private theorem ite1Else_eq :
-    ite1Parts.2.2.1 = [Core.Statement.set ite1Z (Lambda.LExpr.const () (.intConst 1))
+    ite1Parts.2.2.1 = [Core.Statement.set ite1Z (Lambda.LExpr.const Core.valueLoc (.intConst 1))
       (branchMd ite1Parts.2.2.1)] := by native_decide
 
 /-- **Valid, and fully proved.**  No hypotheses at all: `ite` carries no
@@ -1352,7 +1361,7 @@ private theorem blk1_body_eq : blk1Proc.body = .structured [blk1Stmt] := by nati
 
 /-- The block's body really is the single assignment `y := 5`. -/
 private theorem blk1Inner_eq :
-    blk1Parts.2.1 = [Core.Statement.set blk1Y (Lambda.LExpr.const () (.intConst 5))
+    blk1Parts.2.1 = [Core.Statement.set blk1Y (Lambda.LExpr.const Core.valueLoc (.intConst 5))
       (branchMd blk1Parts.2.1)] := by native_decide
 
 /-- **Valid, and fully proved.**  `blk: { y := 5 }` leaves `y == 5` true — the store
@@ -1439,9 +1448,9 @@ private def exitBlkInnerParts :
   | _ => default
 
 private def exitBlkInnerBody : Core.Statements :=
-  [Core.Statement.set exitBlkY (Lambda.LExpr.const () (.intConst 4)) exitBlkInnerParts.1] ++
+  [Core.Statement.set exitBlkY (Lambda.LExpr.const Core.valueLoc (.intConst 4)) exitBlkInnerParts.1] ++
   [Imperative.Stmt.exit exitBlkInnerParts.2.1 exitBlkInnerParts.2.2.1,
-   Core.Statement.set exitBlkY (Lambda.LExpr.const () (.intConst 99))
+   Core.Statement.set exitBlkY (Lambda.LExpr.const Core.valueLoc (.intConst 99))
      exitBlkInnerParts.2.2.2]
 
 /-- The block's body really is the assignment, the `exit`, and the dead assignment after it. -/
@@ -1579,8 +1588,8 @@ private def chkX : Core.Expression.Ident := ⟨"x", ()⟩
 
 /-- The condition used by `Chk` is `x == 1`. -/
 private theorem chk_expr_shape :
-    chkParts.1 = Lambda.LExpr.eq () (Lambda.LExpr.fvar () chkX intTy)
-      (Lambda.LExpr.intConst () 1) := by
+    chkParts.1 = Lambda.LExpr.eq Core.valueLoc (Lambda.LExpr.fvar Core.valueLoc chkX intTy)
+      (Lambda.LExpr.intConst Core.valueLoc 1) := by
   native_decide
 
 /-- `x` is the sole integer input of `Chk`. -/
@@ -1623,9 +1632,9 @@ theorem chk_meets_contract :
         some (HasBool.ttVal ρ₀.factory) at hex
       rw [chk_expr_shape] at hex
       have hi : i = 1 := Classical.byContradiction fun hi => by
-        have hff := Core.eval_eq_false ρ₀.factory (m := ())
-          (Core.eval_fvar_int (m := ()) (ty := intTy) ρ₀.factory hx)
-          (Core.eval_intConst ρ₀.factory (m := ()) ρ₀.store 1) rfl
+        have hff := Core.eval_eq_false ρ₀.factory (m := Core.valueLoc)
+          (Core.eval_fvar_int (m := Core.valueLoc) (ty := intTy) ρ₀.factory hx)
+          (Core.eval_intConst ρ₀.factory (m := Core.valueLoc) ρ₀.store 1) rfl
           (fun h => hi (Lambda.SemValue.ofInt_injective h))
         exact HasBool.ttVal_ne_ffVal _ (Option.some.inj (hex.symm.trans hff))
       subst hi
@@ -1716,7 +1725,7 @@ private def freshParts :
 private def freshBody : Core.Statements :=
   [Core.Statement.init freshT freshParts.1 .nondet freshParts.2.1] ++
   ([Core.Statement.havoc freshY freshParts.2.2.1] ++
-   [Core.Statement.set freshY (Lambda.LExpr.const () (.intConst 3)) freshParts.2.2.2])
+   [Core.Statement.set freshY (Lambda.LExpr.const Core.valueLoc (.intConst 3)) freshParts.2.2.2])
 
 /-- The translated body really is the declaration, the havoc and the assignment. -/
 private theorem fresh_body_eq : freshProc.body = .structured freshBody := by native_decide
@@ -1824,7 +1833,7 @@ private def loopTermStmt : Core.Statement :=
     loopTermParts.2.2.2.2.1 loopTermParts.2.2.2.2.2
 
 private def loopTermBody : Core.Statements :=
-  [Core.Statement.set loopTermY (Lambda.LExpr.const () (.intConst 0)) loopTermParts.1] ++
+  [Core.Statement.set loopTermY (Lambda.LExpr.const Core.valueLoc (.intConst 0)) loopTermParts.1] ++
     [loopTermStmt]
 
 /-- The translated body really is the initialisation followed by the loop. -/
@@ -1848,15 +1857,15 @@ private theorem loopTermInner_eq :
 /-- The translated guard `int.le(y, 9)` in `Core.Factory`'s operator form. -/
 private theorem loopTermGuard_shape :
     loopTermParts.2.1 =
-      Lambda.LExpr.app () (Lambda.LExpr.app () Core.coreIntLeOpExpr
-        (Lambda.LExpr.fvar () loopTermY intTy)) (Lambda.LExpr.const () (Lambda.LConst.intConst 9)) := by
+      Lambda.LExpr.app Core.valueLoc (Lambda.LExpr.app Core.valueLoc Core.coreIntLeOpExpr
+        (Lambda.LExpr.fvar Core.valueLoc loopTermY intTy)) (Lambda.LExpr.const Core.valueLoc (Lambda.LConst.intConst 9)) := by
   native_decide
 
 /-- The loop body's assigned expression `int.add(y, 1)` in operator form. -/
 private theorem loopTermRhs_shape :
     loopTermInnerParts.1 =
-      Lambda.LExpr.app () (Lambda.LExpr.app () Core.coreIntAddOpExpr
-        (Lambda.LExpr.fvar () loopTermY intTy)) (Lambda.LExpr.const () (Lambda.LConst.intConst 1)) := by
+      Lambda.LExpr.app Core.valueLoc (Lambda.LExpr.app Core.valueLoc Core.coreIntAddOpExpr
+        (Lambda.LExpr.fvar Core.valueLoc loopTermY intTy)) (Lambda.LExpr.const Core.valueLoc (Lambda.LConst.intConst 1)) := by
   native_decide
 
 /-- With `y ↦ n`, the guard evaluates to `n ≤ 9` on a runtime factory over
@@ -2003,7 +2012,7 @@ private def loopForeverStmt : Core.Statement :=
     loopForeverParts.2.2.2.1 loopForeverParts.2.2.2.2.1 loopForeverParts.2.2.2.2.2
 
 private def loopForeverBody : Core.Statements :=
-  [Core.Statement.set loopForeverY (Lambda.LExpr.const () (.intConst 7)) loopForeverParts.1] ++
+  [Core.Statement.set loopForeverY (Lambda.LExpr.const Core.valueLoc (.intConst 7)) loopForeverParts.1] ++
     [loopForeverStmt]
 
 /-- The translated body really is the assignment followed by the loop. -/
@@ -2013,12 +2022,12 @@ private theorem loopForever_body_eq : loopForeverProc.body = .structured loopFor
 /-- The loop body really is the single assignment `y := 7`. -/
 private theorem loopForeverInner_eq :
     loopForeverParts.2.2.2.2.1 = [Core.Statement.set loopForeverY
-      (Lambda.LExpr.const () (.intConst 7)) (branchMd loopForeverParts.2.2.2.2.1)] := by
+      (Lambda.LExpr.const Core.valueLoc (.intConst 7)) (branchMd loopForeverParts.2.2.2.2.1)] := by
   native_decide
 
 /-- The loop guard really is the literal `true`. -/
 private theorem loopForeverGuard_eq :
-    loopForeverParts.2.1 = Lambda.LExpr.const () (Lambda.LConst.boolConst true) := by
+    loopForeverParts.2.1 = Lambda.LExpr.const Core.valueLoc (Lambda.LConst.boolConst true) := by
   native_decide
 
 /-- **Valid, and fully proved — vacuously.**  `y := 7; while (true) { y := 7 }` meets
@@ -2076,7 +2085,7 @@ names the body declared, so a postcondition naming one of them fails `PostWF`. -
 example (x : Core.Expression.Ident) (ty : Core.Expression.Ty)
     (md : Imperative.MetaData Core.Expression) :
     ¬ Imperative.Logic.Hoare.PostWF
-        [Core.Statement.init x ty (.det (Lambda.LExpr.const () (.intConst 1))) md]
+        [Core.Statement.init x ty (.det (Lambda.LExpr.const Core.valueLoc (.intConst 1))) md]
         (fun ρ => ρ.store x = some (cval ρ (.intConst 1))) := by
   intro h
   have hbad := h

@@ -19,10 +19,10 @@ def toDynamicOp : String := "$toDynamic"
 def fromDynamicOp : String := "$fromDynamic"
 
 def toDynamic (t : LMonoTy) (e : Expr) : Expr :=
-  .app () (.op () ⟨toDynamicOp, ()⟩ (some (.arrow t (tcon dynamicTy)))) e
+  .app Core.coreLoc (.op Core.coreLoc ⟨toDynamicOp, ()⟩ (some (.arrow t (tcon dynamicTy)))) e
 
 def fromDynamic (t : LMonoTy) (e : Expr) : Expr :=
-  .app () (.op () ⟨fromDynamicOp, ()⟩ (some (.arrow (tcon dynamicTy) t))) e
+  .app Core.coreLoc (.op Core.coreLoc ⟨fromDynamicOp, ()⟩ (some (.arrow (tcon dynamicTy) t))) e
 
 def boxCtor (t : LMonoTy) : String := s!"$Box${mangle t}"
 def boxField (t : LMonoTy) : String := s!"$val${mangle t}"

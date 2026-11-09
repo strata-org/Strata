@@ -87,16 +87,17 @@ end Strata
 /-! ## substitutePrecondition: iterated capture -/
 
 namespace Core
+private abbrev testLoc : ExprSourceLoc := ExprSourceLoc.synthesized "test"
 open _root_.Lambda
 
 private def precond : LExpr CoreLParams.mono :=
-  .eq () (.fvar () ⟨"x", ()⟩ (some .int)) (.fvar () ⟨"y", ()⟩ (some .int))
+  .eq testLoc (.fvar testLoc ⟨"x", ()⟩ (some .int)) (.fvar testLoc ⟨"y", ()⟩ (some .int))
 
 private def formals : List (Identifier Unit × LMonoTy) :=
   [(⟨"x", ()⟩, .int), (⟨"y", ()⟩, .int)]
 
 private def actuals : List (LExpr CoreLParams.mono) :=
-  [.fvar () ⟨"y", ()⟩ (some .int), .intConst () 0]
+  [.fvar testLoc ⟨"y", ()⟩ (some .int), .intConst testLoc 0]
 
 -- f(y,0): iterated [x↦y][y↦0] on `x==y` produces `0==0`. Correct: `y==0`.
 /-- info: y == 0 -/
@@ -107,12 +108,13 @@ private def actuals : List (LExpr CoreLParams.mono) :=
 /-! ## substitutePrecondition: bvar capture under quantifier -/
 
 private def precondBvar : LExpr CoreLParams.mono :=
-  .quant () .all "z" (some .int) (.bvar () 0)
-    (.app () (.app () (.op () ⟨"Int.Gt", ()⟩ (some (.arrow .int (.arrow .int .bool))))
-      (.fvar () ⟨"x", ()⟩ (some .int))) (.bvar () 0))
+  .quant testLoc .all "z" (some .int) (.bvar testLoc 0)
+    (.app testLoc (.app testLoc (.op testLoc ⟨"Int.Gt",
+        ()⟩ (some (.arrow .int (.arrow .int .bool))))
+      (.fvar testLoc ⟨"x", ()⟩ (some .int))) (.bvar testLoc 0))
 
 private def formalsBvar : List (Identifier Unit × LMonoTy) := [(⟨"x", ()⟩, .int)]
-private def actualsBvar : List (LExpr CoreLParams.mono) := [.bvar () 0]
+private def actualsBvar : List (LExpr CoreLParams.mono) := [.bvar testLoc 0]
 
 -- bvar!1 refers to an outer binder not present in this subexpression
 -- (collectWFObligations wraps it in a quantifier).

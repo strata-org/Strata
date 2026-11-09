@@ -339,8 +339,8 @@ its element type. -/
   | .inBlock b _ [] (.condGoto e lt lf _) ρ =>
     match evalPure ρ.factory ρ.store e with
     | some v =>
-      if v = HasBool.tt (P := Core.Expression) then pure (.atBlock b lt ρ)
-      else if v = HasBool.ff (P := Core.Expression) then pure (.atBlock b lf ρ)
+      if Core.eraseLocs v = HasBool.tt (P := Core.Expression) then pure (.atBlock b lt ρ)
+      else if Core.eraseLocs v = HasBool.ff (P := Core.Expression) then pure (.atBlock b lf ρ)
       else throw .expressionWasNotBoolean
     | none => throw .expressionDidNotEvaluate
   | .inBlock _ _ [] (.finish _) ρ => pure (.terminal ρ)
@@ -427,13 +427,13 @@ def datatypeDefault (prog : UnorderedProgram) (n : String) : Option Expr :=
 
 def defaultValue (prog : UnorderedProgram) (_f : LFactory) (ty : Core.Expression.Ty) (_n : Nat) : Option Expr :=
   match (ty : LTy) with
-  | .forAll [] (.tcons "int" []) => some (.const () (.intConst 0) : Core.Expression.Expr)
-  | .forAll [] (.tcons "bool" []) => some (.const () (.boolConst false) : Core.Expression.Expr)
-  | .forAll [] (.tcons "string" []) => some (.const () (.strConst "") : Core.Expression.Expr)
-  | .forAll [] (.tcons "real" []) => some (.const () (.rationalConst 0) : Core.Expression.Expr)
-  | .forAll [] (.bitvec n) => some (.const () (.bitvecConst n 0) : Core.Expression.Expr)
+  | .forAll [] (.tcons "int" []) => some (.const Core.valueLoc (.intConst 0) : Core.Expression.Expr)
+  | .forAll [] (.tcons "bool" []) => some (.const Core.valueLoc (.boolConst false) : Core.Expression.Expr)
+  | .forAll [] (.tcons "string" []) => some (.const Core.valueLoc (.strConst "") : Core.Expression.Expr)
+  | .forAll [] (.tcons "real" []) => some (.const Core.valueLoc (.rationalConst 0) : Core.Expression.Expr)
+  | .forAll [] (.bitvec n) => some (.const Core.valueLoc (.bitvecConst n 0) : Core.Expression.Expr)
   | t@(.forAll [] (.tcons n [])) =>
-    if isRefTy prog t then some (.const () (.intConst (-1)) : Core.Expression.Expr)
+    if isRefTy prog t then some (.const Core.valueLoc (.intConst (-1)) : Core.Expression.Expr)
     else datatypeDefault prog n
   | _ => none
 
@@ -566,6 +566,7 @@ def programFactory (prog : UnorderedProgram) : Except Strata.Message LFactory :=
     let bf ← Lambda.genBlockFactory (T := Core.CoreLParams) [d]
     Lambda.Factory.addFactory F bf
 
+
 def isEntry (p : Procedure) : Bool :=
   match p.md.findElem Imperative.MetaData.interpretEntry with
   | some { value := .switch true, .. } => true
@@ -597,7 +598,7 @@ def runEntry (prog : UnorderedProgram) (fuel : Nat) (p : Procedure) :
 
 def evalsTo (a : EventArg) (b : Bool) : Bool :=
   match evalPure a.factory a.store a.expr with
-  | some v => decide (v = if b then HasBool.tt (P := Core.Expression) else HasBool.ff (P := Core.Expression))
+  | some v => decide (Core.eraseLocs v = if b then HasBool.tt (P := Core.Expression) else HasBool.ff (P := Core.Expression))
   | none => false
 
 def unevaluated : Trace → Nat

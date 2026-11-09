@@ -52,9 +52,17 @@ open StrataDDM (Program)
 
 namespace Strata.HoareAfterLoopElimTest
 
+/-- Expression source locations are normalized to `Core.valueLoc` so the tests' exact
+    structural comparisons hold; execution ignores locations, so this changes nothing the
+    evaluator observes. -/
+private def eraseProgLocs (pr : Core.Program) : Core.Program :=
+  { pr with decls := pr.decls.map fun d => match d with
+      | .proc proc md => .proc (Core.Procedure.mapExprs Core.eraseLocs proc) md
+      | other => other }
+
 /-- Translate a DDM concrete-syntax program to the Core AST. -/
 private def cstToAST (p : Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram p)).fst
+  eraseProgLocs (TransM.run Inhabited.default (translateProgram p)).fst
 
 /-- Gate parameters: no reserved fresh-prefixes, and every name counts as declared. -/
 private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
@@ -109,10 +117,18 @@ private def countMd : Imperative.MetaData Core.Expression :=
 private theorem count_decl : countPgmAST.decls[0]? = some (.proc countProc countMd) := by
   native_decide
 
+/-- The right-hand side of the initialisation `y := 0`, whose source location the
+translation fixes; extracted from the translated body rather than written out so the
+test pins the shape, not the location. -/
+private def countInitExpr : Core.Expression.Expr :=
+  match countProc.body with
+  | .structured (Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ (.det e) _)) :: _) => e
+  | _ => default
+
 /-- The translated body really is the initialisation followed by the loop. -/
 private theorem count_body_eq :
     countProc.body = .structured
-      ([Core.Statement.set countY (Lambda.LExpr.const () (.intConst 0)) countParts.1] ++
+      ([Core.Statement.set countY (countInitExpr) countParts.1] ++
         [.loop (.det countGuard) countParts.2.2.1 countParts.2.2.2.1 countInner
           countParts.2.2.2.2.2]) := by
   native_decide
@@ -147,7 +163,7 @@ private def countThen : Core.Statements :=
 
 /-- The procedure body the Core pass returns. -/
 private def countTgt : Core.Statements :=
-  [Core.Statement.set countY (Lambda.LExpr.const () (.intConst 0)) countParts.1] ++
+  [Core.Statement.set countY (countInitExpr) countParts.1] ++
     [.ite (.det countGuard) countThen [] {}]
 
 /-- A run of the Core pass `Core.loopElim` on the program. -/
@@ -181,9 +197,10 @@ private theorem count_out_decl :
 
 /-- The postcondition `!(int.le(y, 9))` is the negated guard. -/
 private theorem count_post_expr :
-    ∀ lc ∈ countProc.spec.postconditions.toList, lc.2.expr = HasBoolOps.not countGuard := by
+    ∀ lc ∈ countProc.spec.postconditions.toList,
+      Core.eraseLocs lc.2.expr = Core.eraseLocs (HasBoolOps.not countGuard) := by
   have h : countProc.spec.postconditions.toList.all
-      (fun lc => decide (lc.2.expr = HasBoolOps.not countGuard)) = Bool.true := by
+      (fun lc => decide (Core.eraseLocs lc.2.expr = Core.eraseLocs (HasBoolOps.not countGuard))) = Bool.true := by
     native_decide
   intro lc hlc
   simpa using (List.all_eq_true.1 h) lc hlc
@@ -197,7 +214,9 @@ private theorem post_of_not_guard {ρ : Env Core.Expression} (hpin : Pinned ρ)
       some (HasBool.ttVal ρ.factory)) :
     Core.Logic.Hoare.Procedure.contractPost Core.Factory countProc ρ := by
   intro label check hmem _ _
-  exact .inl ⟨hpin, by rw [count_post_expr _ hmem]; exact h⟩
+  refine .inl ⟨hpin, ?_⟩
+  rw [← Core.Expression.eval_eraseLocs, count_post_expr _ hmem, Core.Expression.eval_eraseLocs]
+  exact h
 
 /-- A havoc keeps the runtime factory. -/
 private theorem havoc_pinned (x : Core.Expression.Ident) (md : MetaData Core.Expression)

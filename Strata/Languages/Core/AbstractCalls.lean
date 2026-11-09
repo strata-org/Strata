@@ -78,12 +78,12 @@ private def varFor (func : Function) : StateM AbstractState (LExpr CoreLParams.m
   let ty ← functionType func
   let st ← get
   match if func.typeArgs.isEmpty then st.shared.lookup f else none with
-  | some x => return .fvar () x (some ty)
+  | some x => return .fvar coreLoc x (some ty)
   | none =>
     let x : CoreIdent := ⟨Strata.Name.freshName st.used s!"{f}_fn", ()⟩
     set { st with shared := (f, x) :: st.shared, vars := (x, ty) :: st.vars,
                   used := st.used.insert x.name }
-    return .fvar () x (some ty)
+    return .fvar coreLoc x (some ty)
 
 /-- Replace each occurrence of a function of `fns` by a variable of the
     function's type: the same variable for every occurrence of a monomorphic

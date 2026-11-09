@@ -131,7 +131,7 @@ def run (prog : UnorderedProgram) : Except String UnorderedProgram :=
               used := used ++ [tmp]
               tmps := tmps ++ [.cmd (.init (ident tmp) (outTy q i) .nondet .empty)]
               lhs' := lhs' ++ [ident tmp]
-              let v : Expr := if thrown then .ite () (mkFvar "$callThrown") (mkFvar x.name) (mkFvar tmp) else mkFvar tmp
+              let v : Expr := if thrown then .ite Core.coreLoc (mkFvar "$callThrown") (mkFvar x.name) (mkFvar tmp) else mkFvar tmp
               post := post ++ [.cmd (.set x (.det v) md)]
             else
               lhs' := lhs' ++ [x]

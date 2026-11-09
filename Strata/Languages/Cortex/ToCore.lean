@@ -116,7 +116,7 @@ a body gets a structured body that assumes `true`. -/
 def procedureToCore (sigs : Std.HashMap String Sig) (p : Procedure) : Except String Core.Procedure := do
   let header ← procedureHeader p
   let body ← match p.body with
-    | none => pure (.structured [Core.Statement.assume "assume_true" (.true ()) .empty])
+    | none => pure (.structured [Core.Statement.assume "assume_true" (.true Core.valueLoc) .empty])
     | some b => do
       b.refuseHandlers "Core"
       pure (.cfg (← cfgToCore sigs b.cfg))

@@ -33,17 +33,17 @@ def witnessFactory : Lambda.Factory CoreLParams :=
 /-- `id<a>(x : a) : a := x`. -/
 def idFn : Function :=
   { name := ⟨"id", ()⟩, typeArgs := ["a"], inputs := [(⟨"x", ()⟩, .ftvar "a")],
-    output := .ftvar "a", body := some (.fvar () ⟨"x", ()⟩ (some (.ftvar "a"))) }
+    output := .ftvar "a", body := some (.fvar Core.coreLoc ⟨"x", ()⟩ (some (.ftvar "a"))) }
 
 /-- `id`, as an operator annotated with its instance at `int`. -/
 def idAtInt : Expression.Expr :=
-  .op () ⟨"id", ()⟩ (some (Lambda.LMonoTy.mkArrow' .int [.int]))
+  .op Core.coreLoc ⟨"id", ()⟩ (some (Lambda.LMonoTy.mkArrow' .int [.int]))
 
 /-- `lemma l : forall x : int :: id(x) == x`, which uses `id` at `int`, so the pass adds the
     copy `$__mono#id#int` and renames the operator to it. -/
 def idLemma : Lemma :=
-  { name := "l", e := .quant () .all "x" (some .int) (.bvar () 0)
-      (.eq () (.app () idAtInt (.bvar () 0)) (.bvar () 0)) }
+  { name := "l", e := .quant Core.coreLoc .all "x" (some .int) (.bvar Core.coreLoc 0)
+      (.eq Core.coreLoc (.app Core.coreLoc idAtInt (.bvar Core.coreLoc 0)) (.bvar Core.coreLoc 0)) }
 
 /-- The program: the polymorphic identity and the lemma. -/
 def witnessProgram : Program :=
@@ -198,7 +198,7 @@ theorem monoPre_witness : MonoPre witnessState witnessProgram := by
           witnessProgram.decls)["id"]? = some idFn.toLFunc :=
         getElem?_runtimeFactoryOf_of_contributed hD hid
       refine ⟨trivial, ⟨⟨?_, trivial⟩, trivial⟩⟩
-      show MonoOpsAnnotated _ (.op () ⟨"id", ()⟩ _)
+      show MonoOpsAnnotated _ (.op Core.coreLoc ⟨"id", ()⟩ _)
       unfold MonoOpsAnnotated
       rw [hR]
       simp [idFn, LFuncDefined.toLFunc]

@@ -45,8 +45,8 @@ private theorem intArith_opInterp_of_lookup {factory : Lambda.Factory CoreLParam
       (Lambda.binaryOp (T := CoreLParams) (InValTy := Int) (OutValTy := Int) ⟨name, ()⟩ op).func)
     (a b : Int) :
     (model.opInterp name (Lambda.LSort.mkArrow .int [.int, .int]) a b : Int) = op a b :=
-  (opInterp_of_concreteEval model hlookup rfl (args := [.intConst () a, .intConst () b])
-    (res := .intConst () (op a b)) rfl (fun _ => .int) (fun _ s =>
+  (opInterp_of_concreteEval model hlookup rfl (args := [.intConst coreLoc a, .intConst coreLoc b])
+    (res := .intConst coreLoc (op a b)) rfl (fun _ => .int) (fun _ s =>
       @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s))
     (.cons (.const rfl) (.cons (.const rfl) .nil)) (.const rfl)).symm
 
@@ -58,8 +58,8 @@ private theorem intCmp_opInterp_of_lookup {factory : Lambda.Factory CoreLParams}
       (Lambda.binaryOp (T := CoreLParams) (InValTy := Int) (OutValTy := Bool) ⟨name, ()⟩ op).func)
     (a b : Int) :
     (model.opInterp name (Lambda.LSort.mkArrow .bool [.int, .int]) a b : Bool) = op a b :=
-  (opInterp_of_concreteEval model hlookup rfl (args := [.intConst () a, .intConst () b])
-    (res := .boolConst () (op a b)) rfl (fun _ => .int) (fun _ s =>
+  (opInterp_of_concreteEval model hlookup rfl (args := [.intConst coreLoc a, .intConst coreLoc b])
+    (res := .boolConst coreLoc (op a b)) rfl (fun _ => .int) (fun _ s =>
       @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s))
     (.cons (.const rfl) (.cons (.const rfl) .nil)) (.const rfl)).symm
 
@@ -161,16 +161,16 @@ theorem denote_intAdd_of_lookup {factory : Lambda.Factory CoreLParams}
     (hlookup : factory["Int.Add"]? = some (Lambda.intAddFunc (T := CoreLParams)).func)
     (fv : Lambda.FreeVarVal CoreLParams model.tcInterp) (vt : Lambda.TyVarVal)
     {Δ : List Lambda.LMonoTy} (bv : Lambda.BVarVal model.tcInterp vt Δ)
-    {e₁ e₂ : Expression.Expr} {a b : Int}
-    (h : Lambda.LExpr.HasTypeA Δ (.app () (.app () intAddOp e₁) e₂) .int)
+    {m : Core.ExpressionMetadata} {e₁ e₂ : Expression.Expr} {a b : Int}
+    (h : Lambda.LExpr.HasTypeA Δ (.app m (.app m intAddOp e₁) e₂) .int)
     (h₁ : Lambda.LExpr.HasTypeA Δ e₁ .int) (h₂ : Lambda.LExpr.HasTypeA Δ e₂ .int)
     (hv₁ : Lambda.LExpr.denote model.tcInterp model.opInterp fv vt bv e₁ .int h₁ = a)
     (hv₂ : Lambda.LExpr.denote model.tcInterp model.opInterp fv vt bv e₂ .int h₂ = b) :
     Lambda.LExpr.denote model.tcInterp model.opInterp fv vt bv
-      (.app () (.app () intAddOp e₁) e₂) .int h = a + b := by
+      (.app m (.app m intAddOp e₁) e₂) .int h = a + b := by
   have hop : Lambda.LExpr.HasTypeA (T := CoreLParams) Δ intAddOp
       (.arrow .int (.arrow .int .int)) := .op
-  have happ : Lambda.LExpr.HasTypeA Δ (.app () intAddOp e₁) (.arrow .int .int) :=
+  have happ : Lambda.LExpr.HasTypeA Δ (.app m intAddOp e₁) (.arrow .int .int) :=
     .app hop h₁
   rw [Lambda.denote_app bv happ h₂ h, Lambda.denote_app bv hop h₁ happ, hv₁, hv₂]
   simp only [intAddOp, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr,
@@ -185,16 +185,16 @@ theorem denote_intSub_of_lookup {factory : Lambda.Factory CoreLParams}
     (hlookup : factory["Int.Sub"]? = some (Lambda.intSubFunc (T := CoreLParams)).func)
     (fv : Lambda.FreeVarVal CoreLParams model.tcInterp) (vt : Lambda.TyVarVal)
     {Δ : List Lambda.LMonoTy} (bv : Lambda.BVarVal model.tcInterp vt Δ)
-    {e₁ e₂ : Expression.Expr} {a b : Int}
-    (h : Lambda.LExpr.HasTypeA Δ (.app () (.app () intSubOp e₁) e₂) .int)
+    {m : Core.ExpressionMetadata} {e₁ e₂ : Expression.Expr} {a b : Int}
+    (h : Lambda.LExpr.HasTypeA Δ (.app m (.app m intSubOp e₁) e₂) .int)
     (h₁ : Lambda.LExpr.HasTypeA Δ e₁ .int) (h₂ : Lambda.LExpr.HasTypeA Δ e₂ .int)
     (hv₁ : Lambda.LExpr.denote model.tcInterp model.opInterp fv vt bv e₁ .int h₁ = a)
     (hv₂ : Lambda.LExpr.denote model.tcInterp model.opInterp fv vt bv e₂ .int h₂ = b) :
     Lambda.LExpr.denote model.tcInterp model.opInterp fv vt bv
-      (.app () (.app () intSubOp e₁) e₂) .int h = a - b := by
+      (.app m (.app m intSubOp e₁) e₂) .int h = a - b := by
   have hop : Lambda.LExpr.HasTypeA (T := CoreLParams) Δ intSubOp
       (.arrow .int (.arrow .int .int)) := .op
-  have happ : Lambda.LExpr.HasTypeA Δ (.app () intSubOp e₁) (.arrow .int .int) :=
+  have happ : Lambda.LExpr.HasTypeA Δ (.app m intSubOp e₁) (.arrow .int .int) :=
     .app hop h₁
   rw [Lambda.denote_app bv happ h₂ h, Lambda.denote_app bv hop h₁ happ, hv₁, hv₂]
   simp only [intSubOp, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr,
@@ -209,16 +209,16 @@ theorem denote_intMul_of_lookup {factory : Lambda.Factory CoreLParams}
     (hlookup : factory["Int.Mul"]? = some (Lambda.intMulFunc (T := CoreLParams)).func)
     (fv : Lambda.FreeVarVal CoreLParams model.tcInterp) (vt : Lambda.TyVarVal)
     {Δ : List Lambda.LMonoTy} (bv : Lambda.BVarVal model.tcInterp vt Δ)
-    {e₁ e₂ : Expression.Expr} {a b : Int}
-    (h : Lambda.LExpr.HasTypeA Δ (.app () (.app () intMulOp e₁) e₂) .int)
+    {m : Core.ExpressionMetadata} {e₁ e₂ : Expression.Expr} {a b : Int}
+    (h : Lambda.LExpr.HasTypeA Δ (.app m (.app m intMulOp e₁) e₂) .int)
     (h₁ : Lambda.LExpr.HasTypeA Δ e₁ .int) (h₂ : Lambda.LExpr.HasTypeA Δ e₂ .int)
     (hv₁ : Lambda.LExpr.denote model.tcInterp model.opInterp fv vt bv e₁ .int h₁ = a)
     (hv₂ : Lambda.LExpr.denote model.tcInterp model.opInterp fv vt bv e₂ .int h₂ = b) :
     Lambda.LExpr.denote model.tcInterp model.opInterp fv vt bv
-      (.app () (.app () intMulOp e₁) e₂) .int h = a * b := by
+      (.app m (.app m intMulOp e₁) e₂) .int h = a * b := by
   have hop : Lambda.LExpr.HasTypeA (T := CoreLParams) Δ intMulOp
       (.arrow .int (.arrow .int .int)) := .op
-  have happ : Lambda.LExpr.HasTypeA Δ (.app () intMulOp e₁) (.arrow .int .int) :=
+  have happ : Lambda.LExpr.HasTypeA Δ (.app m intMulOp e₁) (.arrow .int .int) :=
     .app hop h₁
   rw [Lambda.denote_app bv happ h₂ h, Lambda.denote_app bv hop h₁ happ, hv₁, hv₂]
   simp only [intMulOp, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr,
@@ -234,16 +234,16 @@ theorem denote_intGt_of_lookup {factory : Lambda.Factory CoreLParams}
     (hlookup : factory["Int.Gt"]? = some (Lambda.intGtFunc (T := CoreLParams)).func)
     (fv : Lambda.FreeVarVal CoreLParams model.tcInterp) (vt : Lambda.TyVarVal)
     {Δ : List Lambda.LMonoTy} (bv : Lambda.BVarVal model.tcInterp vt Δ)
-    {e₁ e₂ : Expression.Expr} {a b : Int}
-    (h : Lambda.LExpr.HasTypeA Δ (.app () (.app () intGtOp e₁) e₂) .bool)
+    {m : Core.ExpressionMetadata} {e₁ e₂ : Expression.Expr} {a b : Int}
+    (h : Lambda.LExpr.HasTypeA Δ (.app m (.app m intGtOp e₁) e₂) .bool)
     (h₁ : Lambda.LExpr.HasTypeA Δ e₁ .int) (h₂ : Lambda.LExpr.HasTypeA Δ e₂ .int)
     (hv₁ : Lambda.LExpr.denote model.tcInterp model.opInterp fv vt bv e₁ .int h₁ = a)
     (hv₂ : Lambda.LExpr.denote model.tcInterp model.opInterp fv vt bv e₂ .int h₂ = b) :
     (Lambda.LExpr.denote model.tcInterp model.opInterp fv vt bv
-      (.app () (.app () intGtOp e₁) e₂) .bool h : Bool) = decide (a > b) := by
+      (.app m (.app m intGtOp e₁) e₂) .bool h : Bool) = decide (a > b) := by
   have hop : Lambda.LExpr.HasTypeA (T := CoreLParams) Δ intGtOp
       (.arrow .int (.arrow .int .bool)) := .op
-  have happ : Lambda.LExpr.HasTypeA Δ (.app () intGtOp e₁) (.arrow .int .bool) :=
+  have happ : Lambda.LExpr.HasTypeA Δ (.app m intGtOp e₁) (.arrow .int .bool) :=
     .app hop h₁
   rw [Lambda.denote_app bv happ h₂ h, Lambda.denote_app bv hop h₁ happ, hv₁, hv₂]
   simp only [intGtOp, Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr,

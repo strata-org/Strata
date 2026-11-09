@@ -16,28 +16,32 @@ emits output that does not re-parse. (`RoundtripTest` covers that the supported 
 -/
 
 open Lambda Core Strata Strata.CoreDDM
+private abbrev testLoc : ExprSourceLoc := ExprSourceLoc.synthesized "test"
+open StrataDDM (initDialect)
 
 namespace Strata.Test.BvWidthPrinter
 
-private def bvLit (w v : Nat) : Expression.Expr := .const () (.bitvecConst w (BitVec.ofNat w v))
+private def bvLit (w v : Nat) : Expression.Expr := .const testLoc (.bitvecConst w (BitVec.ofNat w
+    v))
 
 /-- `g() : bool { bvLit == bvLit }` — puts a bitvector literal in value position. -/
 private def litProg (w v : Nat) : Core.Program :=
   { decls := [Decl.func
       { name := ⟨"g", ()⟩, typeArgs := [], inputs := [], output := .bool,
-        body := some (.eq () (bvLit w v) (bvLit w v)) } .empty] }
+        body := some (.eq testLoc (bvLit w v) (bvLit w v)) } .empty] }
 
 /-- `f(x : bv w) : bv w { x }` — puts a bitvector width in type position. -/
 private def typeProg (w : Nat) : Core.Program :=
   { decls := [Decl.func
       { name := ⟨"f", ()⟩, typeArgs := [], inputs := [("x", .bitvec w)],
-        output := .bitvec w, body := some (.fvar () ⟨"x", ()⟩ (some (.bitvec w))) } .empty] }
+        output := .bitvec w, body := some (.fvar testLoc ⟨"x", ()⟩ (some (.bitvec w))) } .empty] }
 
 /-- `f(x : inTy) : outTy { op(x) }` — applies a unary op (e.g. a bitvector conversion). -/
 private def unaryOpProg (inTy outTy : Lambda.LMonoTy) (op : String) : Core.Program :=
   { decls := [Decl.func
       { name := ⟨"f", ()⟩, typeArgs := [], inputs := [("x", inTy)], output := outTy,
-        body := some (.app () (.op () ⟨op, ()⟩ none) (.fvar () ⟨"x", ()⟩ (some inTy))) } .empty] }
+        body := some (.app testLoc (.op testLoc ⟨op, ()⟩ none) (.fvar testLoc ⟨"x",
+            ()⟩ (some inTy))) } .empty] }
 
 /-- AST→CST conversion errors recorded while printing `p`, each as `"<fn>: <description>"`
     (the print-direction analog of `BvWidthMarkerTest`'s `transErrors`). -/

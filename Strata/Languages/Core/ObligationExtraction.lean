@@ -105,7 +105,7 @@ def renameShadowingParams (taken : List String) (proc : Procedure) (ss : Stateme
     if taken.contains x.name then
       let name := fresh used x.name
       let x' : Expression.Ident := ⟨name, x.metadata⟩
-      (Block.renameLhs (Block.substFvar ss x (.fvar () x' (some ty))) x x', name :: used)
+      (Block.renameLhs (Block.substFvar ss x (.fvar valueLoc x' (some ty))) x x', name :: used)
     else (ss, used)).1
 
 /-- The statements a procedure's obligations are read from: its structured body, with the

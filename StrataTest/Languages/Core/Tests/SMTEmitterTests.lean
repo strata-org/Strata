@@ -14,6 +14,7 @@ meta section
 /-! # Tests for `Core.SMT.Emitter` -/
 
 namespace Core.SMT.EmitterTest
+private abbrev testLoc : ExprSourceLoc := ExprSourceLoc.synthesized "test"
 open Core Core.SMT Core.SMT.Emitter Lambda Strata.SMT
 open Strata.SMT.TestUtils
 open Imperative (PathConditionEntry)
@@ -22,7 +23,7 @@ private def boolTy : LMonoTy := .tcons "bool" []
 
 /-- An `.assumption` entry asserting the boolean variable `v`. -/
 private def assm (label v : String) : PathConditionEntry Expression :=
-  .assumption label (.fvar () v (.some boolTy))
+  .assumption label (.fvar testLoc v (.some boolTy))
 
 private def mkCaptured (entries : List (PathConditionEntry Expression))
     (declText : String := "") (assertText : String := "") : CapturedFrame :=
@@ -100,7 +101,7 @@ private def ob (label : String)
     (assumptions : List (List (PathConditionEntry Expression))) :
     Imperative.ProofObligation Expression :=
   { label, property := .assert, assumptions := assumptions.reverse,
-    obligation := .boolConst () true, metadata := {} }
+    obligation := .boolConst testLoc true, metadata := {} }
 
 /-- Run the fold and emission over `obs` (`true` marks a pruned obligation),
     printing per obligation the frame count after sync, whether a captured
@@ -177,7 +178,7 @@ B2: frames=1 captured=yes matchesEncodeCore=true
   (ob "B2" [[.varDecl ⟨"x", ()⟩ (.forAll [] boolTy) .nondet,
              assm "h0" "x",
              .varDecl ⟨"y", ()⟩ (.forAll [] boolTy)
-               (.det (.fvar () "x" (.some boolTy))),
+               (.det (.fvar testLoc "x" (.some boolTy))),
              assm "h1" "y"]], false)]
 
 -- A pruned obligation gets no captured file, but its frames still sync,
@@ -280,7 +281,7 @@ E2: frames=1 captured=yes matchesEncodeCore=true
   -- The delta: one entry of each kind (the newest of each Rev list).
   let items := deltaItems out
     #[assm "h1" "p", .distinct "d1" [], .varDecl ⟨"y", ()⟩ (.forAll [] boolTy)
-        (.det (.boolConst () true)), .varDecl ⟨"x", ()⟩ (.forAll [] boolTy) .nondet]
+        (.det (.boolConst testLoc true)), .varDecl ⟨"x", ()⟩ (.forAll [] boolTy) .nondet]
   (items.varDefs.map (·.1.name), items.varDecls.map (·.name),
    items.assumptions.map (·.1), items.distincts.map (·.1))
 

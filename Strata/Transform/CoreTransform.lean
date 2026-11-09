@@ -33,7 +33,7 @@ def createHavocs (ident : List Expression.Ident) (md : (Imperative.MetaData Expr
 
 def createFvar (ident : Expression.Ident)
   : Expression.Expr
-  := Lambda.LExpr.fvar ((): ExpressionMetadata) ident none
+  := Lambda.LExpr.fvar (ExprSourceLoc.synthesized "transform") ident none
 
 @[expose]
 def createFvars (ident : List Expression.Ident)
@@ -249,7 +249,9 @@ def createInitVar (trip : (Expression.Ident × Expression.Ty) × Expression.Iden
     (md:Imperative.MetaData Expression)
   : Statement :=
   match trip with
-  | ((v', ty), v) => Statement.init v' ty (.det (Lambda.LExpr.fvar () v none)) md
+  | ((v', ty),
+      v) => Statement.init v' ty (.det (Lambda.LExpr.fvar (ExprSourceLoc.synthesized "transform") v
+      none)) md
 
 def createInitVars (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
     (md : (Imperative.MetaData Expression))

@@ -77,7 +77,7 @@ private def getDecreasesKind (func : Function) (tf : @TypeFactory Unit)
   match func.measure with
   | some (.fvar _ id _) =>
     match func.inputs.findWithIdx? id with
-    | some (_, .int) => .ok (.intValued (.fvar () id (.some .int)))
+    | some (_, .int) => .ok (.intValued (.fvar coreLoc id (.some .int)))
     | some (idx, _) => validateStructuralParam func tf idx
     | none =>
       .error s!"recursive function '{func.name.name}': decreases variable '{id}' is not a parameter"
@@ -123,15 +123,15 @@ private def extractTermObligations
     : Except String (List Expression.Expr) :=
   go (LExpr.betaReduceRedexesPreservingArgs body) []
 where
-  go (e : Expression.Expr) (implications : List (Unit × Expression.Expr))
+  go (e : Expression.Expr) (implications : List (ExpressionMetadata × Expression.Expr))
       : Except String (List Expression.Expr) :=
     match _he: e with
     | .ite _ c t f => do
       let cObs ← go c implications
-      let tObs ← go t (((), c) :: implications)
+      let tObs ← go t ((coreLoc, c) :: implications)
       let notC : Expression.Expr :=
-        LExpr.mkApp () (@boolNotFunc CoreLParams).opExpr [c]
-      let fObs ← go f (((), notC) :: implications)
+        LExpr.mkApp coreLoc (@boolNotFunc CoreLParams).opExpr [c]
+      let fObs ← go f ((coreLoc, notC) :: implications)
       return cObs ++ tObs ++ fObs
     | .app _ fn arg =>
       match _h : getLFuncCall e with
@@ -226,8 +226,8 @@ private def computeCallMeasure
       -- whose rank is `0` whatever `y` is. The call need not decrease, and an
       -- unproved termination lemma does not stop the function's definition
       -- from being assumed, which may then prove a false assertion.
-      if !arg.hasBVar && isRankZeroConstr tf calleeDtName arg then .ok (LExpr.intConst () 0)
-      else .ok (LExpr.mkApp () (.op () (adtRankFuncName calleeDtName) (.some (.arrow calleeAdtTy .int))) [arg])
+      if !arg.hasBVar && isRankZeroConstr tf calleeDtName arg then .ok (LExpr.intConst coreLoc 0)
+      else .ok (LExpr.mkApp coreLoc (.op coreLoc (adtRankFuncName calleeDtName) (.some (.arrow calleeAdtTy .int))) [arg])
     | _, _ => .error s!"termination checking '{calleeName}': decreasing parameter index {calleeIdx} is out of range at call site"
   | .intValued calleeMeasure =>
     if calleeFormals.length != callArgs.length then
@@ -242,8 +242,8 @@ private def computeCallerMeasure (func : Function) (kind : DecreasesKind)
   | .structural idx dtName =>
     match func.inputs.keys[idx]?, func.inputs.values[idx]? with
     | some param, some adtTy =>
-      .ok (LExpr.mkApp () (.op () (adtRankFuncName dtName) (.some (.arrow adtTy .int)))
-        [.fvar () param (.some adtTy)])
+      .ok (LExpr.mkApp coreLoc (.op coreLoc (adtRankFuncName dtName) (.some (.arrow adtTy .int)))
+        [.fvar coreLoc param (.some adtTy)])
     | _, _ => .error s!"termination checking '{func.name.name}': decreasing parameter index {idx} is out of range"
   | .intValued m => .ok m
 
@@ -285,11 +285,11 @@ private def mkTermCheckLemmas
         else if containsOpCall callMeasure recFuncNames then
           .error s!"termination checking '{func.name.name}': decreasing argument contains a recursive call"
         else
-          let decrease := LExpr.mkApp () (@intLtFunc CoreLParams).opExpr
+          let decrease := LExpr.mkApp coreLoc (@intLtFunc CoreLParams).opExpr
             [callMeasure, callerMeasure]
           if needsNonNeg then
-            let nonNeg := LExpr.mkApp () (@intLeFunc CoreLParams).opExpr
-              [LExpr.intConst () 0, callMeasure]
+            let nonNeg := LExpr.mkApp coreLoc (@intLeFunc CoreLParams).opExpr
+              [LExpr.intConst coreLoc 0, callMeasure]
             .ok [nonNeg, decrease]
           else
             .ok [decrease]
@@ -313,7 +313,7 @@ private def mkTermCheckLemmas
     | .intValued _ => []
   let hyps := rankHyps ++ func.preconditions.map (·.expr)
   return obligations.mapIdx fun i ob =>
-    let e := hyps.foldr (init := ob) fun p body => LExpr.mkApp () boolImpliesOp [p, body]
+    let e := hyps.foldr (init := ob) fun p body => LExpr.mkApp coreLoc boolImpliesOp [p, body]
     .lemma { name := s!"{func.name.name}_terminates_{i}", typeArgs := func.typeArgs,
              e := Lemma.forallAbstractingCalls block func.inputs.toList e } md
 
@@ -334,7 +334,7 @@ private def mkAdtRankDecls
     { namedDecls := block.map fun dt =>
         (dt.name, Decl.func (mkAdtRankFunc (T := CoreLParams) dt).toFunc md)
       axioms := block.flatMap fun dt =>
-        let axioms := mkAdtRankAxioms (T := CoreLParams) dt block ()
+        let axioms := mkAdtRankAxioms (T := CoreLParams) dt block coreLoc
         axioms.mapIdx fun i ax =>
           (s!"{adtRankFuncName dt.name}_{i}", ax) }
 

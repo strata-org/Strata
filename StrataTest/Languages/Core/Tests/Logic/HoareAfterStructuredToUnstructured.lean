@@ -83,10 +83,10 @@ private def nId : Core.Expression.Ident := ⟨"n", ()⟩
 private def rId : Core.Expression.Ident := ⟨"r", ()⟩
 
 /-- The loop guard `int.gt(r, 0)`. -/
-private abbrev gtE : Core.Expression.Expr := .app () (.app () Core.intGtOp (v rId)) (.intConst () 0)
+private abbrev gtE : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc Core.intGtOp (v rId)) (.intConst Core.valueLoc 0)
 /-- `int.sub(r, 1)`. -/
 private abbrev subE : Core.Expression.Expr :=
-  .app () (.app () Core.intSubOp (v rId)) (.intConst () 1)
+  .app Core.valueLoc (.app Core.valueLoc Core.intSubOp (v rId)) (.intConst Core.valueLoc 1)
 
 /-- The translated body. -/
 private abbrev cdBody : Core.Statements :=
@@ -141,7 +141,7 @@ private theorem cd_pre_expr : ∀ lc ∈ cdProc.spec.preconditions.toList, lc.2.
 
 /-- The postcondition is `r == 0`. -/
 private theorem cd_post_expr :
-    ∀ lc ∈ cdProc.spec.postconditions.toList, lc.2.expr = .eq () (v rId) (.intConst () 0) :=
+    ∀ lc ∈ cdProc.spec.postconditions.toList, lc.2.expr = .eq Core.valueLoc (v rId) (.intConst Core.valueLoc 0) :=
   List.forall_of_all_decide (by native_decide)
 
 /-! ## The configuration invariant

@@ -68,8 +68,8 @@ private def copyInputs (p : Procedure) : Except String Procedure := do
       let renamed : Core.Expression.Ident := ⟨fresh used s!"{x.name}$in", ()⟩
       used := renamed.name :: used
       inputs := inputs.push (renamed, t)
-      renames := renames.insert x (.fvar () renamed none)
-      copies := copies.push (.cmd (.init x t (.det (.fvar () renamed none)) .empty))
+      renames := renames.insert x (.fvar Core.coreLoc renamed none)
+      copies := copies.push (.cmd (.init x t (.det (.fvar Core.coreLoc renamed none)) .empty))
     else
       inputs := inputs.push (x, t)
   if copies.isEmpty then return p
