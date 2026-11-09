@@ -10,6 +10,11 @@ import all Strata.DL.Lambda.LExprWFProps
 
 import all Strata.DL.Lambda.LExprEval
 import all Strata.DL.Lambda.LExprType
+import Strata.DL.Lambda.LTyUnifyProps
+import all Strata.DL.Lambda.LTyProps
+import all Strata.DL.Lambda.Denote.CallOfLFuncDenote
+import all Strata.DL.Lambda.Denote.LExprAnnotated
+import all Strata.DL.Lambda.LTyUnify
 import all Strata.DL.Lambda.FactoryProps
 import all Strata.DL.Lambda.LState
 public import Strata.DL.Lambda.LStateProps
@@ -24,6 +29,8 @@ import Strata.DL.Lambda.OperationalSemanticsProps
 - `LExpr.shortCircuitCall?_some` — what a successful short-circuit lookup returns.
 - `eval_eraseMetadata_invariant` — expressions that differ only in metadata
   evaluate to results that also differ only in metadata.
+- `LExpr.isValue_bool_eq_boolConst` — a value whose factory-checked type is
+  `bool` is a Boolean constant, when no constructor produces a Boolean (Part VI).
 -/
 
 namespace Lambda
@@ -268,13 +275,15 @@ theorem eval_eraseMetadata_invariant
             · have hi₁ : (args₁.map (fun a => (LExpr.eval n' F env a).fst)).length ≤ i := by simp; omega
               have hi₂ : (args₂.map (fun a => (LExpr.eval n' F env a).fst)).length ≤ i := by simp; omega
               simp [List.getElem?_eq_none hi₁, List.getElem?_eq_none hi₂]
-        -- Show that all arguments are values on both sides.
-        have h_all_values :
-            (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F) =
-            (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F) := by
+        -- Show all-p equality for every metadata-insensitive p
+        have h_all_eq : ∀ p : LExpr Tbase.mono → Bool,
+            (∀ a b : LExpr Tbase.mono, a.eraseMetadata = b.eraseMetadata → p a = p b) →
+            (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all p =
+            (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all p := by
+          intro p hp
           have h_map_eq :
-              (args₁.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isValue F) =
-              (args₂.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isValue F) := by
+              (args₁.map (fun a => (LExpr.eval n' F env a).fst)).map p =
+              (args₂.map (fun a => (LExpr.eval n' F env a).fst)).map p := by
             apply List.ext_getElem
             · simp [h_len]
             · intro i hi₁ hi₂
@@ -285,14 +294,15 @@ theorem eval_eraseMetadata_invariant
                 simp only [List.length_map, show i < args₁.length from by simp at hi₁; omega, getElem?_pos, List.getElem_map,
     show i < args₂.length from by simp at hi₂; omega, Option.some.injEq] at h_eM_i
                 exact h_eM_i
-              exact isValue_eraseMetadata_eq F _ _ (ih _ _ h_arg_eM)
-          rw [show (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F) =
-              ((args₁.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isValue F)).all id
+              exact hp _ _ (ih _ _ h_arg_eM)
+          rw [show (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all p =
+              ((args₁.map (fun a => (LExpr.eval n' F env a).fst)).map p).all id
               from by simp [List.all_map]]
-          rw [show (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F) =
-              ((args₂.map (fun a => (LExpr.eval n' F env a).fst)).map (LExpr.isValue F)).all id
+          rw [show (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all p =
+              ((args₂.map (fun a => (LExpr.eval n' F env a).fst)).map p).all id
               from by simp [List.all_map]]
           rw [h_map_eq]
+        have h_all_values := h_all_eq _ (isValue_eraseMetadata_eq F)
         -- Show inline condition equality
         have h_inline_cond_eq :
             (lfunc.body.isSome && (lfunc.attr.contains Strata.DL.Util.FuncAttr.inline ||
@@ -301,17 +311,18 @@ theorem eval_eraseMetadata_invariant
                   (LExpr.isConstrApp F)).getD false
               | none => false) ||
               (Strata.DL.Util.FuncAttr.hasInlineIfAllValues lfunc.attr &&
-                (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F)))) =
+                (args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isInlineArg F)))) =
             (lfunc.body.isSome && (lfunc.attr.contains Strata.DL.Util.FuncAttr.inline ||
               (match Strata.DL.Util.FuncAttr.findInlineIfConstr lfunc.attr with
               | some i => ((args₂.map (fun a => (LExpr.eval n' F env a).fst))[i]? |>.map
                   (LExpr.isConstrApp F)).getD false
               | none => false) ||
               (Strata.DL.Util.FuncAttr.hasInlineIfAllValues lfunc.attr &&
-                (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F)))) := by
+                (args₂.map (fun a => (LExpr.eval n' F env a).fst)).all
+                  (LExpr.isInlineArg F)))) := by
           congr 1; congr 1; congr 1
           · exact h_constrArgAt_eq _
-          · exact congrArg _ h_all_values
+          · exact congrArg _ (h_all_eq _ (isInlineArg_eraseMetadata_eq F))
         -- Show can_cond equality (for non-inline branch)
         have h_val_cond_eq :
             ((args₁.map (fun a => (LExpr.eval n' F env a).fst)).all (LExpr.isValue F) ||
@@ -474,6 +485,83 @@ theorem eval_eraseMetadata_invariant
         have h_none₂ := callOfLFunc_none_of_eraseMetadata_eq F _ _ false h_eM h_none₁
         rw [h_none₂]
         exact evalCore_eraseMetadata_congr n' F env e₁ e₂ h_eM ih
+
+end -- public section
+
+/-! ## Part VI: values of type `bool`
+
+With operator annotations checked against the factory, and no constructor
+producing a Boolean, the values of type `bool` are exactly the two
+Boolean constants (`LExpr.isValue_bool_eq_boolConst`). -/
+
+public section
+
+section value_bool
+
+/-- The head of an application spine inherits `opsConsistent` from the spine. -/
+private theorem opsConsistent_getLFuncCall_go {T : LExprParams} {F : Factory T}
+    (e : LExpr T.mono) (acc : List (LExpr T.mono)) (h : e.opsConsistent F = true) :
+    (getLFuncCall.go e acc).1.opsConsistent F = true := by
+  fun_induction getLFuncCall.go e acc <;> simp_all only [LExpr.opsConsistent, Bool.and_eq_true]
+
+/-- **Values of type `bool` are Boolean constants.** If no constructor of `F`
+produces a Boolean (`Factory.ConstrsNotBool`), a value whose type,
+checked against `F` by `LExpr.typeCheckWith`, is `bool` is `.boolConst m b`. -/
+theorem LExpr.isValue_bool_eq_boolConst {T : LExprParams} {F : Factory T} (hF : F.ConstrsNotBool)
+    {e : LExpr T.mono} (hc : LExpr.isValue F e = true)
+    (ht : LExpr.typeCheckWith F [] e = some .bool) : ∃ m b, e = .boolConst m b := by
+  unfold LExpr.typeCheckWith at ht
+  split at ht
+  rotate_left
+  · cases ht
+  rename_i hops
+  unfold LExpr.isValue at hc
+  split at hc
+  · cases ‹LConst› <;> simp_all [LExpr.typeCheck, LConst.ty, LExpr.boolConst, LMonoTy.bool,
+      LMonoTy.int, LMonoTy.real, LMonoTy.string]
+  · cases ‹Option LMonoTy› <;>
+      simp_all [LExpr.typeCheck, LMonoTy.arrow, LMonoTy.bool, Option.bind_eq_some_iff]
+  · cases hc
+  split at hc
+  rotate_left
+  · cases hc
+  rename_i op args fn hcall
+  have hle : args.length ≤ fn.inputs.length := by
+    simp only [Factory.callOfLFunc] at hcall
+    repeat' split at hcall
+    all_goals simp_all [Nat.ble_eq]
+  obtain ⟨m, name, ty, rfl, hget⟩ := Factory.callOfLFunc_getElem? hcall
+  have hgl := callOfLFunc_getLFuncCall hcall
+  have hspec := getLFuncCall_spec (LExpr.typeCheck_to_HasTypeA ht)
+  rw [hgl] at hspec
+  obtain ⟨tys, hrel, hop⟩ := hspec
+  have hlen := hrel.length_eq.symm
+  replace hop := LExpr.HasTypeA_to_typeCheck hop
+  simp only [getLFuncCall] at hgl
+  have hops' := opsConsistent_getLFuncCall_go e [] hops
+  rw [hgl] at hops'
+  cases ty
+  · cases hop
+  simp only [LExpr.typeCheck, Option.some.injEq] at hop
+  subst hop
+  simp only [LExpr.opsConsistent, hget] at hops'
+  obtain ⟨S, hS⟩ := Option.isSome_iff_exists.mp hops'
+  have hops' := (LMonoTy.matchSubst_sound hS).symm
+  rw [subst_mkArrow'] at hops'
+  have hd := LMonoTy.mkArrow'_eq_drop hops' (by
+    rw [hlen, List.length_map]
+    exact Nat.le_trans hle (Nat.le_of_eq (List.length_map _).symm))
+  simp only [Bool.and_eq_true, Bool.or_eq_true, Nat.blt_eq] at hc
+  revert hd
+  cases hdrop : List.drop tys.length (List.map (LMonoTy.subst _) (List.map Prod.snd fn.inputs))
+  · have hn : ¬ args.length < fn.inputs.length := by
+      simp only [List.drop_eq_nil_iff, List.length_map] at hdrop
+      exact Nat.not_lt_of_le (hlen ▸ (List.length_map _) ▸ hdrop)
+    exact fun hd => absurd hd.symm
+      (hF fn (Factory.getElem?_is_some_implies_mem hget) (hc.1.resolve_right hn) _)
+  · simp [LMonoTy.bool, LMonoTy.arrow]
+
+end value_bool
 
 end -- public section
 

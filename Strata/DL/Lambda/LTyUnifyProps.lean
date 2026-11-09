@@ -22,7 +22,8 @@ import Std.Tactic.BVDecide.Normalize.BitVec
 
 Properties of substitution, and the soundness, most-general-unifier, and matching
 completeness of `Constraints.unify`. Key theorems: `Constraints.unify_sound`,
-`Constraints.unify_mgu`, and `Constraints_unify_matching_complete`.
+`Constraints.unify_mgu`, and `Constraints_unify_matching_complete`. One-way matching
+(`LMonoTy.matchSubst`) is sound: `LMonoTy.matchSubst_sound`.
 
 Also: unification preserves any substitution property that each variable binding preserves
 (`Constraint.unify_preserves`), and the ambient renaming of generated type variables keeps a
@@ -1386,6 +1387,16 @@ theorem Constraints_unify_matching_complete
       LMonoTy.subst_no_relevant_keys relS.newS.subst τ
         (fun x hx h_key => hdisj x (h_keys x h_key) hx)
     rw [h_sound, h_fix]
+
+/-- Soundness of one-way matching: a substitution returned by `LMonoTy.matchSubst pat ty` turns
+`pat` into `ty`. -/
+theorem LMonoTy.matchSubst_sound {pat ty : LMonoTy} {S : Subst}
+    (h : pat.matchSubst ty = some S) : pat.subst S = ty := by
+  unfold LMonoTy.matchSubst at h
+  split at h
+  · cases h
+  · simp only [Option.ite_none_right_eq_some, Option.some.injEq] at h
+    exact h.2 ▸ h.1
 
 /-! ### Substitution -/
 

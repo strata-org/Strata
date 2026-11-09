@@ -232,6 +232,40 @@ Apply substitution `S` to monotypes `mtys`.
 @[expose] def LMonoTys.subst (S : Subst) (mtys : LMonoTys) : LMonoTys :=
   if Subst.hasEmptyScopes S then mtys else LMonoTys.substCore S mtys
 
+mutual
+/-- Bindings for the type variables of `pat` that make `pat` equal to `ty`, read off position by
+position: a type variable of `pat` is bound to the type at the same position in `ty`, and the
+type variables of `ty` are never bound. `none` when the two types differ in a constructor, a
+bit-vector width or an arity. The bindings may conflict; `LMonoTy.matchSubst` rejects those. -/
+@[expose] def LMonoTy.matchBindings : LMonoTy → LMonoTy → Option (List (TyIdentifier × LMonoTy))
+  | .ftvar x, ty => some [(x, ty)]
+  | .bitvec n, .bitvec m => if n = m then some [] else none
+  | .tcons n as, .tcons m bs => if n = m then LMonoTys.matchBindings as bs else none
+  | _, _ => none
+/-- `LMonoTy.matchBindings`, position by position along two lists of types. -/
+@[expose] def LMonoTys.matchBindings :
+    LMonoTys → LMonoTys → Option (List (TyIdentifier × LMonoTy))
+  | [], [] => some []
+  | p :: ps, t :: ts =>
+    match LMonoTy.matchBindings p t, LMonoTys.matchBindings ps ts with
+    | some b, some bs => some (b ++ bs)
+    | _, _ => none
+  | _, _ => none
+end
+
+/-- One-way matching of the pattern `pat` against the type `ty`: a substitution `S` of the type
+variables of `pat` with `pat.subst S = ty`, or `none`. The type variables of `ty` are fixed, so
+`ty` must be an instance of `pat`: `MyList t` matches the pattern `MyList a`, but `MyList t` does
+not match the pattern `MyList int`. When `pat` has no type variable, the substitution is
+`Subst.empty`. -/
+@[expose] def LMonoTy.matchSubst (pat ty : LMonoTy) : Option Subst :=
+  match pat.matchBindings ty with
+  | none => none
+  | some bs =>
+    let S : Subst :=
+      if bs.isEmpty then Subst.empty else [bs.foldl (fun m b => m.insert b.1 b.2) (∅ : SubstOne)]
+    if pat.subst S = ty then some S else none
+
 /-- If all scopes are empty, `find?` is always `none`. -/
 theorem Subst.find?_none_of_hasEmptyScopes
     (h : Subst.hasEmptyScopes S) (x : TyIdentifier) : HMaps.find? S x = none := by

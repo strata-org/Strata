@@ -2014,4 +2014,96 @@ private def cGuard : Imperative.ExprOrNondet Expression := .det (.fvar () ⟨"c"
 #guard dropDeadDefs Core.Factory {} {} [.ite cGuard [tDef, noRead] [tRead] .empty] =
   [.ite cGuard [noRead] [tRead] .empty]
 
+/-! ## An operator whose annotation is not its signature
+
+`Bool.Not` has the signature `bool → bool`, so the operator annotated `bool` has no type
+in the factory and is not a value of type `bool`. The semantics cannot run its `init`,
+so the phase keeps the dead definition. -/
+
+/-- `Bool.Not` annotated with the type `bool`. -/
+private def notAsBool : Expression.Expr := .op () ⟨"Bool.Not", ()⟩ (some .bool)
+
+/-- info: false -/
+#guard_msgs in
+#eval isValueOfTy Core.Factory (.forAll [] .bool) notAsBool
+
+/-- A procedure whose only `init` is dead. -/
+private def deadInit :=
+#strata
+program Core;
+
+procedure p () {
+  var c : bool := true;
+  assert [ok]: true;
+};
+#end
+
+/-- `deadInit` with the right-hand side of its `init` replaced by `notAsBool`. -/
+private def deadNotInit : Core.Program :=
+  let p := translateCore deadInit
+  let swap : Statement → Statement
+    | .cmd (.cmd (.init x ty (.det _) md)) => .cmd (.cmd (.init x ty (.det notAsBool) md))
+    | s => s
+  { p with decls := p.decls.map fun
+      | .proc pr md => match pr.body with
+        | .structured ss => .proc { pr with body := .structured (ss.map swap) } md
+        | _ => .proc pr md
+      | d => d }
+
+/-- info: program Core;
+
+procedure p ()
+{
+  var c : bool := Bool.Not;
+  assert [ok]: true;
+};
+
+
+-- Errors encountered during conversion:
+Unsupported construct in handleZeroaryOps: unknown operation, rendering as generic call: Bool.Not
+Context: Global scope:
+Scope 1:
+Scope 2: -/
+#guard_msgs in
+#eval match Core.Transform.run deadNotInit runSimplify
+    { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
+  | .error e => IO.println s!"error: {e}"
+  | .ok (_, q) =>
+    IO.print ((Core.formatProgram q).pretty.toList.reverse.dropWhile (· == '\n') |>.reverse |>
+      String.ofList)
+
+/-! ## A closed quantifier is not a value
+
+A closed quantifier is not a value (`LExpr.isValue`): evaluation does not decide it. So the
+phase does not substitute the quantifier an `init` gives `b` into the reads of `b`, as it
+substitutes the constant `c` has, and the dead-definition sweep keeps the `init` of `d`,
+which nothing reads. -/
+
+private def quantInit :=
+#strata
+program Core;
+
+procedure p () {
+  var b : bool := forall n : int :: n == n;
+  var c : bool := true;
+  var d : bool := forall n : int :: n == n;
+  assert [bRead]: b;
+  assert [bReadAgain]: b ==> b;
+  assert [cRead]: c;
+};
+#end
+
+/-- info: program Core;
+
+procedure p ()
+{
+  var b : bool := forall n : int :: n == n;
+  var d : bool := forall n : int :: n == n;
+  assert [bRead]: b;
+  assert [bReadAgain]: b ==> b;
+  assert [cRead]: true;
+}; -/
+#guard_msgs in
+#eval simplifyAndPrint quantInit
+
 end Core.Simplify.Tests

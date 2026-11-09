@@ -39,8 +39,8 @@ nothing.
 
 `inlineIfConstr` and `inlineIfAllValues` stay. Both already carry the condition
 that makes them worth doing — an argument that is a constructor application, or
-arguments that are all canonical — and datatype destructors, testers and regular
-expressions do not fold at all without them. -/
+arguments that are all values or closed quantifiers (`LExpr.isInlineArg`) — and datatype
+destructors, testers and regular expressions do not fold at all without them. -/
 
 /-- Whether expanding this function's calls may be what keeps the term encodable. The
     test is syntactic, on the declaration, so it can say yes where expansion would remove
@@ -77,11 +77,11 @@ where
 /-- Weaken the unconditional `inline` attribute to `inlineIfAllValues`, from a
     function whose expansion is not what erases a lambda.
 
-    What remains automatic is the case that cannot compound: every argument canonical,
-    so the arguments mention no variable and the expanded body folds against closed
-    values. Every other expansion becomes this phase's decision. The evaluator already
-    implements that condition, which is why it is expressed as an attribute rather than
-    as a check of this phase's own. -/
+    What remains automatic is the case that cannot compound: every argument a value or a
+    closed quantifier (`LExpr.isInlineArg`), so the arguments mention no variable and the
+    expanded body folds against closed terms. Every other expansion becomes this phase's
+    decision. The evaluator already implements that condition, which is why it is
+    expressed as an attribute rather than as a check of this phase's own. -/
 def stripInlineFunc (carriers : List String) (fn : Core.Function) : Core.Function :=
   if mayEliminateLambdas carriers fn || !fn.attr.contains .inline then fn
   else
@@ -108,16 +108,16 @@ def oneValue (x : CoreIdent) (v : Expression.Expr) : Lambda.Env CoreLParams :=
   Lambda.Env.mk (fun y => if y == x then some v else none)
 
 /-- The known values substituted wherever they are read, with no size check: values of
-    one node, and canonical values.
+    one node, and those that are values of the factory (`LExpr.isValue`).
 
     A value of one node (a constant, another variable, a nullary operator) cannot grow
-    an expression at all. A canonical value, such as a literal or a constructor applied
-    to canonical values, can be larger, but it mentions no variable, so a copy of it
+    an expression at all. A value of the factory, such as a literal or a constructor
+    applied to such values, can be larger, but it mentions no variable, so a copy of it
     never exposes another variable whose value would then be copied in turn within one
     expression. It is also what folding needs, since a destructor or tester reduces only
     when its argument is a constructor.
 
-    The size of a recorded canonical value is not bounded, though. A value is recorded
+    The size of a recorded value of the factory is not bounded, though. A value is recorded
     after substitution, so a chain `t1 := Node(t0, t0)`, `t2 := Node(t1, t1)`, … records a
     value that doubles at each definition, and a read of `t12` copies 4096 leaves. That is
     the size symbolic evaluation reaches on the same program, so it is no regression, but
@@ -345,11 +345,11 @@ def occursCount (x : CoreIdent) (e : Expression.Expr) : Nat :=
     A body that mentions a parameter twice or more copies that argument, and what the
     copy costs is the argument's size. A single node is free -- expanding a bounds
     predicate over a variable, `lo <= x && x <= hi`, adds one node and puts arithmetic
-    where a solver can use it. A canonical argument is free for the reason `Env.smallValues`
-    substitutes one: it mentions no variable, so its copies cannot compound, and a body
-    applied to canonical arguments is what folding reduces. Any other argument larger
-    than a node is what doubles per level of nesting, so that is where expansion is
-    declined. -/
+    where a solver can use it. An argument that is a value (`LExpr.isValue`) is free for
+    the reason `Env.smallValues` substitutes one: it mentions no variable, so its copies
+    cannot compound, and a body applied to such arguments is what folding reduces. Any
+    other argument larger than a node is what doubles per level of nesting, so that is
+    where expansion is declined. -/
 def worthExpanding (F : Lambda.Factory CoreLParams) (fn : LFunc CoreLParams)
     (args : List Expression.Expr) : Bool :=
   match fn.body with

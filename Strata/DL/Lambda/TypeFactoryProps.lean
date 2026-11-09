@@ -8,6 +8,7 @@ module
 public import Strata.DL.Lambda.TypeFactory
 public import Strata.DL.Lambda.LExprTypeEnv
 public import Strata.DL.Lambda.DatatypeWF
+public import Strata.DL.Lambda.FactoryWF
 import all Strata.DL.Lambda.TypeFactory
 import all Strata.DL.Lambda.LExprTypeEnv
 import all Strata.DL.Lambda.DatatypeWF
@@ -15,6 +16,8 @@ import Strata.Util.ExceptProps
 import Strata.Util.ListMapProps
 import Strata.Util.ListUtilsProps
 import Strata.Util.StateMProps
+import all Strata.DL.Lambda.Factory
+import all Strata.DL.Lambda.FactoryProps
 
 /-! ## Properties of mutual-datatype validation
 
@@ -24,7 +27,18 @@ are distinct and its datatypes share their type parameters),
 `checkConstructorArgVarsScoped_sound` and `validateTypeReferences_arities` (field types use only
 datatype parameters and registered arities), `checkConstructorArgsWF_sound` (the constructor-field
 check establishes `ConstrArgWF` for every field), and `checkMutualBlockInhab_sound` (the
-inhabitance check establishes `TySymInhab` for every datatype). -/
+inhabitance check establishes `TySymInhab` for every datatype).
+
+## Properties of the factories generated from datatype declarations
+
+The only constructors (`isConstr = true` functions) `genBlockFactory` generates are the
+`constrFunc`s of the block's datatypes, whose output is the datatype's type constructor
+applied to its parameters (`dataDefault`).  So no generated constructor produces a
+Boolean when no datatype of the block is named `bool`.
+
+Key theorems: `genBlockFactory_constrsNotBool`, `Factory.ConstrsNotBool.addFactory`,
+`Factory.ConstrsNotBool.addFactory_genBlockFactory`, `TypeFactory.genFactory_constrsNotBool`.
+-/
 
 namespace Lambda
 
@@ -664,5 +678,101 @@ theorem checkMutualBlockInhab_sound (adts : @TypeFactory Unit) (block : MutualDa
   cases x <;> rfl
 
 end
+
+public section
+
+variable {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.IDMeta] [Std.ToFormat T.IDMeta]
+
+omit [Inhabited T.IDMeta] in
+/-- Adding functions none of which is a constructor producing a Boolean keeps
+    `ConstrsNotBool`. -/
+private theorem Factory.ConstrsNotBool.tryAddAll {F F' : Factory T} {fs : List (LFunc T)}
+    (hF : F.ConstrsNotBool)
+    (hfs : ∀ fn ∈ fs, fn.isConstr = true → ∀ S, LMonoTy.subst S fn.output ≠ .bool)
+    (h : F.tryAddAll fs.toArray = .ok F') : F'.ConstrsNotBool := by
+  rw [Factory.tryAddAll, List.foldlM_toArray] at h
+  exact fun fn hfn => (Factory.mem_foldlM_tryPush fs F F' h fn hfn).elim (hF fn) (hfs fn)
+
+omit [Inhabited T.Metadata] [Inhabited T.IDMeta] [Std.ToFormat T.IDMeta] in
+/-- No substitution turns a datatype not named `bool` into the Boolean type. -/
+private theorem subst_dataDefault_ne_bool {d : LDatatype T.IDMeta} (hd : d.name ≠ "bool")
+    (S : Subst) : LMonoTy.subst S (dataDefault d) ≠ .bool := by
+  unfold LMonoTy.subst
+  split <;> simp [dataDefault, data, LMonoTy.substCore, LMonoTy.bool, hd]
+
+/-- **Generated constructors are not Boolean.**  When no datatype of the block is named
+    `bool`, the factory `genBlockFactory` generates has no constructor whose output is
+    `bool` under any type substitution. -/
+theorem genBlockFactory_constrsNotBool [BEq T.Identifier] {block : MutualDatatype T.IDMeta}
+    {F : Factory T} (hname : ∀ d ∈ block, d.name ≠ "bool")
+    (h : genBlockFactory block = .ok F) : F.ConstrsNotBool := by
+  unfold genBlockFactory at h
+  split at h
+  · cases h
+    exact fun _ hfn => absurd hfn (by simp [Factory.default])
+  · refine Factory.ConstrsNotBool.tryAddAll (fun _ hfn => absurd hfn (by simp [Factory.default]))
+      ?_ h
+    intro fn hfn hc
+    simp only [List.mem_append, List.mem_flatMap, List.mem_map, elimFuncs, testerFunc,
+      destructorFuncs, unsafeDestructorFuncs, mkDestructorFunc, List.mem_mapIdx] at hfn
+    rcases hfn with (((hfn | hfn) | hfn) | hfn) | hfn
+    · split at hfn
+      · simp at hfn
+      · simp only [List.mem_map] at hfn
+        obtain ⟨_, -, rfl⟩ := hfn
+        simp at hc
+    · obtain ⟨d, hd, c, -, rfl⟩ := hfn
+      exact subst_dataDefault_ne_bool (hname d hd)
+    all_goals grind
+
+omit [Inhabited T.IDMeta] in
+/-- **Extending keeps `ConstrsNotBool`.**  Adding to a factory none of whose constructors
+    produces a Boolean a factory with the same property gives a factory with the same
+    property. -/
+theorem Factory.ConstrsNotBool.addFactory {F G F' : Factory T} (hF : F.ConstrsNotBool)
+    (hG : G.ConstrsNotBool) (h : F.addFactory G = .ok F') : F'.ConstrsNotBool :=
+  Factory.ConstrsNotBool.tryAddAll hF (fs := G.toArray.toList)
+    (fun fn hfn => hG fn (by simpa using hfn)) (by simpa [Factory.addFactory] using h)
+
+/-- **Extending with generated constructors keeps `ConstrsNotBool`.**  Adding the factory
+    of a block of datatypes, none named `bool`, to a factory none of whose constructors
+    produces a Boolean gives a factory none of whose constructors produces a Boolean. -/
+theorem Factory.ConstrsNotBool.addFactory_genBlockFactory [BEq T.Identifier]
+    {block : MutualDatatype T.IDMeta} {F G F' : Factory T} (hF : F.ConstrsNotBool)
+    (hname : ∀ d ∈ block, d.name ≠ "bool") (hG : genBlockFactory block = .ok G)
+    (h : F.addFactory G = .ok F') : F'.ConstrsNotBool :=
+  hF.addFactory (genBlockFactory_constrsNotBool hname hG) h
+
+/-- **The factory of a type factory has no Boolean constructor.**  When no datatype of the
+    type factory `t` is named `bool`, no constructor of `t.genFactory` produces a Boolean. -/
+theorem TypeFactory.genFactory_constrsNotBool [BEq T.Identifier] {t : @TypeFactory T.IDMeta}
+    {F : Factory T} (hname : ∀ d ∈ t.allDatatypes, d.name ≠ "bool")
+    (h : t.genFactory = .ok F) : F.ConstrsNotBool := by
+  unfold TypeFactory.genFactory at h
+  rw [← Array.foldlM_toList (xs := t)] at h
+  have hname' : ∀ b ∈ t.toList, ∀ d ∈ b, d.name ≠ "bool" := fun b hb d hd =>
+    hname d (List.mem_flatten.mpr ⟨b, hb, hd⟩)
+  generalize t.toList = l at h hname'
+  suffices hgen : ∀ (l : List (MutualDatatype T.IDMeta)) (F0 : Factory T), F0.ConstrsNotBool →
+      (∀ b ∈ l, ∀ d ∈ b, d.name ≠ "bool") →
+      l.foldlM (fun f block => do f.addFactory (← genBlockFactory block)) F0 = .ok F →
+      F.ConstrsNotBool from
+    hgen l _ (fun _ hfn => absurd hfn (by simp [Factory.default])) hname' h
+  intro l
+  induction l with
+  | nil => intro F0 hF0 _ h; cases h; exact hF0
+  | cons b bs ih =>
+    intro F0 hF0 hn h
+    simp only [List.foldlM_cons, bind, Except.bind] at h
+    split at h
+    · cases h
+    · rename_i F1 hF1
+      split at hF1
+      · cases hF1
+      · rename_i G hG
+        exact ih F1 (hF0.addFactory_genBlockFactory (hn b (by simp)) hG hF1)
+          (fun b' hb' => hn b' (by simp [hb'])) h
+
+end -- public section
 
 end Lambda

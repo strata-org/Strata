@@ -172,5 +172,43 @@ Returns `none` if the type substitution cannot be derived.
         | .ok substInfo => some substInfo.subst
         | .error _ => none
 
+/--
+Check every operator annotation of `e` against the factory `F`: an `.op` naming
+a function `fn` of `F` must be annotated, and its annotation must be an instance of
+`fn`'s type `inputs → output`, that is, `LMonoTy.matchSubst` finds a substitution of the
+type variables of `fn`'s type that turns it into the annotation. The annotation's own type
+variables are not substituted. Operators that `F` does not define are not constrained.
+
+The check implies the declarative `OpsConsistentR` (`opsConsistent_sound`), but not
+`OpsConsistent`, which requires the annotation to equal the function's type under the
+substitution `LFunc.opTypeSubst` computes by two-way unification. That substitution can
+differ from the one-way match in two ways. When the annotation has type variables of its
+own, unification may bind those instead of the function's: `id : a → a` annotated `b → b`
+matches, but unification maps `b` to `a`, and `a → a` is not the annotation. And a
+function with no `typeArgs` gets the empty substitution, even when its type mentions a
+type variable that matching binds.
+-/
+@[expose]
+def LExpr.opsConsistent {T : LExprParams} (F : Factory T) : LExpr T.mono → Bool
+  | .op _ name ty =>
+    match F[name.name]?, ty with
+    | none, _ => true
+    | some fn, some tyOp =>
+      ((LMonoTy.mkArrow' fn.output (fn.inputs.map Prod.snd)).matchSubst tyOp).isSome
+    | some _, none => false
+  | .app _ fn arg => opsConsistent F fn && opsConsistent F arg
+  | .abs _ _ _ body => opsConsistent F body
+  | .ite _ c t f => opsConsistent F c && opsConsistent F t && opsConsistent F f
+  | .eq _ e1 e2 => opsConsistent F e1 && opsConsistent F e2
+  | .quant _ _ _ _ tr body => opsConsistent F tr && opsConsistent F body
+  | _ => true
+
+/-- Type check `e` (as `LExpr.typeCheck`) against the factory `F`: `none` unless
+every operator annotation of `e` agrees with its signature in `F`. -/
+@[expose]
+def LExpr.typeCheckWith {T : LExprParams} (F : Factory T) (ctx : List LMonoTy)
+    (e : LExpr T.mono) : Option LMonoTy :=
+  if e.opsConsistent F then e.typeCheck ctx else none
+
 end -- public section
 end Lambda

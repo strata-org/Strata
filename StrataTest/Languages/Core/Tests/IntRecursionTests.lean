@@ -750,6 +750,105 @@ Result: ❌ fail -/
 #guard_msgs in
 #eval Core.verify constantMeasureFailPgm (options := .quiet)
 
+---------------------------------------------------------------------
+-- Test 13: a closed quantifier argument unfolds a recursive call
+-- The call `idb(forall x : int :: x == x, 2)` unfolds like `idb(true, 2)`:
+-- both assertions pass.
+---------------------------------------------------------------------
+
+def quantArgUnfoldPgm : Program :=
+#strata
+program Core;
+
+rec function idb (b : bool, n : int) : bool
+  decreases n
+{
+  if int.le(n, 0) then b else idb(b, int.sub(n, 1))
+};
+
+procedure TestQuantArg() spec {
+  ensures true;
+}
+{
+  assert [rec_q]: idb(forall x : int :: x == x, 2);
+  assert [rec_true]: idb(true, 2);
+};
+#end
+
+/-- info:
+Obligation: idb_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: idb_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: rec_q
+Property: assert
+Result: ✅ pass
+
+Obligation: rec_true
+Property: assert
+Result: ✅ pass
+
+Obligation: TestQuantArg_ensures_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval Core.verify quantArgUnfoldPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Test 14: a closed quantifier inside a constructor argument unfolds a
+-- recursive call
+-- The call `boxid(MkBox(forall x : int :: x == x), 2)` unfolds like
+-- `boxid(MkBox(true), 2)`: both assertions pass.
+---------------------------------------------------------------------
+
+def quantInConstrArgUnfoldPgm : Program :=
+#strata
+program Core;
+
+datatype Box { MkBox(v: bool) };
+
+rec function boxid (b : Box, n : int) : bool
+  decreases n
+{
+  if int.le(n, 0) then Box..v(b) else boxid(b, int.sub(n, 1))
+};
+
+procedure TestQuantInConstrArg() spec {
+  ensures true;
+}
+{
+  assert [box_quant]: boxid(MkBox(forall x : int :: x == x), 2);
+  assert [box_true]: boxid(MkBox(true), 2);
+};
+#end
+
+/-- info:
+Obligation: boxid_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: boxid_terminates_1
+Property: assert
+Result: ✅ pass
+
+Obligation: box_quant
+Property: assert
+Result: ✅ pass
+
+Obligation: box_true
+Property: assert
+Result: ✅ pass
+
+Obligation: TestQuantInConstrArg_ensures_0
+Property: assert
+Result: ✅ pass -/
+#guard_msgs in
+#eval Core.verify quantInConstrArgUnfoldPgm (options := .quiet)
+
 end Strata.IntRecursionTermCheckTest
 
 end

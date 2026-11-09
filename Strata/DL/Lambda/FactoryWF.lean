@@ -149,5 +149,13 @@ structure FactorySigWF {T} (fac : Factory T) : Prop where
 theorem WFLFactory.toFactory_wf {T} (wf : WFLFactory T) : FactoryWF wf.toFactory :=
   { lfuncs_wf := wf.wf }
 
+/--
+No constructor of `fac` produces a Boolean: the output type of every function
+marked `isConstr` differs from `bool` under every type substitution. Then the
+only values of type `bool` are the two Boolean constants.
+-/
+@[expose] def Factory.ConstrsNotBool {T} (fac : Factory T) : Prop :=
+  ∀ fn ∈ fac.toArray, fn.isConstr = true → ∀ S, LMonoTy.subst S fn.output ≠ .bool
+
 end -- public section
 end Lambda

@@ -203,7 +203,8 @@ def runEntry (E : Env) (proc : Procedure) (fuel : Nat) : Env :=
     also protects against runaway unfolding.)
 
     `inline` rather than `inlineIfAllValues`, because the latter unfolds a body
-    only once *every* argument is a value and a `Map` argument never is:
+    only once *every* argument satisfies `isInlineArg` (a value in which
+    closed quantifiers may also appear), and a `Map` argument does not:
     a map value is a stack of `update`s over a `mapConst`, a saturated call of an
     uninterpreted function rather than a constructor application, which
     `isValue` rejects. That gate blocks every call taking a map, such as

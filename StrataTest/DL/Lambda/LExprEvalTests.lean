@@ -7,6 +7,7 @@ module
 
 meta import all Strata.DL.Lambda.LExprEvalSound
 meta import all Strata.DL.Lambda.LExprEval
+meta import Strata.DL.Lambda.IntBoolFactory
 
 ---------------------------------------------------------------------
 
@@ -1060,6 +1061,101 @@ def test_nvt_int_add_symbolic := TestCase.new
 /-- info: false -/
 #guard_msgs in
 #eval checkResultValueTrue test_nvt_int_add_symbolic
+
+---------------------------------------------------------------------
+-- Tests for `LExpr.run` on a fully applied uninterpreted function: the call is
+-- a stuck redex on a Boolean constant, and not on a closed quantifier, which is
+-- not a value.
+
+-- f(x : bool) : bool, with neither a body nor a concreteEval.
+private def uninterpFuncs : Array (LFunc TestParams) :=
+  #[{ name := "f",
+      inputs := [("x", mty[bool])],
+      output := mty[bool] }]
+
+private def uninterpState : LState TestParams :=
+  { (LState.init : LState TestParams) with
+    config := { (LState.init : LState TestParams).config with
+      factory := .ofArray uninterpFuncs } }
+
+/-- The result of `LExpr.run` on `e` in `uninterpState`: `ok` when it succeeds, and
+    its error message otherwise. -/
+private def runUninterp (e : LExpr TestParams.mono) : String :=
+  match LExpr.run uninterpState e with
+  | .ok _ => "ok"
+  | .error msg => s!"error: {msg}"
+
+/-- info: "error: expression contains stuck redex" -/
+#guard_msgs in
+#eval runUninterp esM[((~f : bool → bool) #true)]
+
+/-- info: "ok" -/
+#guard_msgs in
+#eval runUninterp esM[((~f : bool → bool) (∀ (bool): (%0 == %0)))]
+
+---------------------------------------------------------------------
+-- Tests that a closed quantifier is not propagated as a value: `eval` does not
+-- apply a `concreteEval` to it, and a short-circuit connective does not decide
+-- on it as its first operand.
+
+-- g(x : bool) : bool, whose `concreteEval` returns `true` on any argument.
+private def constTrueFuncs : Array (LFunc TestParams) :=
+  #[{ name := "g",
+      inputs := [("x", mty[bool])],
+      output := mty[bool],
+      concreteEval := some (fun _ _ => some (.boolConst () true)) }]
+
+private def constTrueState : LState TestParams :=
+  { (LState.init : LState TestParams) with
+    config := { (LState.init : LState TestParams).config with
+      factory := .ofArray constTrueFuncs } }
+
+/-- `g` folds on a Boolean constant. -/
+def test_ceval_const := TestCase.new constTrueState
+  esM[((~g : bool → bool) #false)]
+  esM[#true]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_ceval_const
+
+/-- `g` does not fold on a closed quantifier. -/
+def test_ceval_quant := TestCase.new constTrueState
+  esM[((~g : bool → bool) (∀ (bool): (%0 == %0)))]
+  esM[((~g : bool → bool) (∀ (bool): (%0 == %0)))]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test_ceval_quant
+
+private def boolOpsState : LState TestParams :=
+  { (LState.init : LState TestParams) with
+    config := { (LState.init : LState TestParams).config with
+      factory := .ofArray #[(@boolAndFunc TestParams).func, (@boolOrFunc TestParams).func,
+        (@boolImpliesFunc TestParams).func] } }
+
+/-- `false && y`, `true || y` and `false → y` fold on a constant first operand. -/
+def test_shortCircuit_const := [
+  TestCase.new boolOpsState esM[((~Bool.And #false) #true)] esM[#false],
+  TestCase.new boolOpsState esM[((~Bool.Or #true) #false)] esM[#true],
+  TestCase.new boolOpsState esM[((~Bool.Implies #false) #false)] esM[#true]]
+
+/-- info: [true, true, true] -/
+#guard_msgs in
+#eval test_shortCircuit_const.map check
+
+/-- None of them folds on a closed quantifier as the first operand. -/
+def test_shortCircuit_quant := [
+  TestCase.new boolOpsState esM[((~Bool.And (∀ (bool): (%0 == %0))) #false)]
+    esM[((~Bool.And (∀ (bool): (%0 == %0))) #false)],
+  TestCase.new boolOpsState esM[((~Bool.Or (∀ (bool): (%0 == %0))) #true)]
+    esM[((~Bool.Or (∀ (bool): (%0 == %0))) #true)],
+  TestCase.new boolOpsState esM[((~Bool.Implies (∀ (bool): (%0 == %0))) #true)]
+    esM[((~Bool.Implies (∀ (bool): (%0 == %0))) #true)]]
+
+/-- info: [true, true, true] -/
+#guard_msgs in
+#eval test_shortCircuit_quant.map check
 
 end EvalTest
 ---------------------------------------------------------------------

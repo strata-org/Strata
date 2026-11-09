@@ -215,15 +215,16 @@ Substituting a variable's value into its last use leaves the definition behind
 with nothing reading it. -/
 
 /-- `e` is a value of the factory `F` (`LExpr.isValue`) of type `ty`: a constant, a
-    closed abstraction or quantifier, or a constructor of `F` applied to values, a nullary
-    one included (`None()`). A function of `F` applied to fewer arguments than it takes is
-    a value too. This is a syntactic check, not `HasVal.valueOfTy` (a predicate on semantic
-    values). -/
+    closed abstraction, or a constructor of `F` applied to values, a nullary one included
+    (`None()`). A function of `F` applied to fewer arguments than it takes is
+    a value too. The type is checked against `F` (`typeCheckWith`), so an operator whose
+    annotation is not an instance of its signature in `F` has no type. This is a syntactic
+    check, not `HasVal.valueOfTy` (a predicate on semantic values). -/
 def isValueOfTy (F : Lambda.Factory CoreLParams) (ty : Expression.Ty) (e : Expression.Expr) :
     Bool :=
   Lambda.LExpr.isValue F e &&
   (match ty.toMonoType? with
-   | some t => Lambda.LExpr.typeCheck [] e == some t
+   | some t => Lambda.LExpr.typeCheckWith F [] e == some t
    | none => false)
 
 /-- The variables definitely defined at a point of a body, with their declared types:

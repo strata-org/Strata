@@ -85,15 +85,15 @@ transitive closure of the {name Lambda.Step}`Lambda.Step` relation.
 {docstring Lambda.StepStar}
 
 The predicate {name Lambda.LExpr.isValue}`isValue` returns
-`true` for `LExpr` that is a value: constants, closed abstractions and quantifiers,
-etc.
+`true` for `LExpr` that is a value: constants, closed abstractions, constructor
+applications of values, etc. A quantifier is never a value.
 
 {docstring Lambda.LExpr.isValue}
 
 The theorem {name Lambda.value_not_step}`value_not_step`
-confirms the intended relationship between the two notions: values are
-precisely the normal forms of {name Lambda.Step}`Step`, so no reduction rule can
-fire on them.
+confirms the intended relationship between the two notions: no reduction rule of
+{name Lambda.Step}`Step` fires on a value. The converse fails: some normal forms are not
+values, e.g. closed quantifiers.
 
 ### Soundness of Partial Evaluator of Lambda
 

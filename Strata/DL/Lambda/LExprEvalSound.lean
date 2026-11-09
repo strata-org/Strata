@@ -266,7 +266,7 @@ theorem eval_StepStar
     simp only [LExpr.eval, LExpr.List_map_fst_map_eval,
       LExpr.List_all_snd_isValueTrue_map_eval, LExpr.combineEvalResValueFlag_eq_pair]
     split
-    · -- Canonical: eval returns e
+    · -- A value (`isValue`): eval returns e
       rename_i h_value
       have h_eval_n : (LExpr.eval fuel F env e).fst = e := by
         cases fuel with

@@ -838,10 +838,7 @@ theorem isValue_getVars_nil
       have h_body_closed : LExpr.closed body = true := by
         simp only [LExpr.closed, LExpr.freeVars, List.isEmpty_iff] at h_closed ⊢; exact h_closed
       exact closed_implies_getVars_nil body h_body_closed
-    | quant m qk n ty tr body =>
-      have h_closed : LExpr.closed (.quant m qk n ty tr body) = true := by
-        simp only [LExpr.isValue] at hc; exact hc
-      exact closed_implies_getVars_nil (.quant m qk n ty tr body) h_closed
+    | quant => simp [LExpr.isValue] at hc
     | app m e1 e2 =>
       simp only [LExpr.LExpr.getVars, List.append_eq_nil_iff]
       have hc_app := hc
@@ -903,18 +900,7 @@ theorem value_not_step
       have h_fvs : LExpr.freeVars body = [] := by
         simp only [LExpr.closed, List.isEmpty_iff] at hc; exact hc
       simp [h_fvs] at h_fv
-  | quant _ _ _ _ tr body ih_tr ih_body =>
-    intro e' hstep
-    simp only [LExpr.isValue] at hc
-    cases hstep with
-    | expand_fn _ _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
-    | eval_fn _ _ _ _ _ _ h_call => simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go] at h_call
-    | quant_subst_fvars_body _ _ _ h_fv =>
-      simp [LExpr.closed, LExpr.freeVars, List.isEmpty_iff] at hc
-      simp [hc.2] at h_fv
-    | quant_subst_fvars_trigger _ _ _ h_fv =>
-      simp [LExpr.closed, LExpr.freeVars, List.isEmpty_iff] at hc
-      simp [hc.1] at h_fv
+  | quant => simp [LExpr.isValue] at hc
   | op =>
     intro e' hstep
     simp only [LExpr.isValue, List.map_subtype, List.unattach_attach, List.all_map, Function.id_comp] at hc
@@ -1714,7 +1700,7 @@ theorem isValue_eraseMetadata_eq
     | quant m qk nm ty tr body =>
       have hv := EMEquiv.of_eraseMetadata_eq _ e₂ heM
       cases hv with
-      | quant _ _ => simp only [LExpr.isValue]; unfold LExpr.closed; rw [LExpr.freeVars_of_eraseMetadata_eq _ _ heM]
+      | quant _ _ => simp only [LExpr.isValue]
     | op m nm ty =>
       have hv := EMEquiv.of_eraseMetadata_eq _ e₂ heM
       cases hv with
@@ -1822,6 +1808,42 @@ theorem isConstrApp_eraseMetadata_eq
       rw [h₁, h₂] at h
       simp only at h
       rw [h.1]
+
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
+  [Inhabited Tbase.IDMeta] in
+/-- Whether an expression is an `inlineIfAllValues` unfolding argument (`isInlineArg`)
+depends only on the expression with its metadata erased. -/
+theorem isInlineArg_eraseMetadata_eq
+    (F : @Factory Tbase)
+    (e₁ e₂ : LExpr Tbase.mono)
+    (h_eM : e₁.eraseMetadata = e₂.eraseMetadata) :
+    LExpr.isInlineArg F e₁ = LExpr.isInlineArg F e₂ := by
+  induction e₁ using LExpr.isInlineArg.induct (T := Tbase.mono) F generalizing e₂ with
+  | case4 e hc ha hq op args f h ih =>
+    obtain ⟨op₂, args₂, h2, hA, -⟩ :=
+      callOfLFunc_some_of_eraseMetadata_eq F _ _ true h_eM _ _ _ h
+    have hL : args.length = args₂.length := by simpa using congrArg List.length hA
+    have hAll : args.all (LExpr.isInlineArg F) = args₂.all (LExpr.isInlineArg F) := by
+      clear h h2
+      induction args generalizing args₂ <;> cases args₂ <;> grind
+    rw [LExpr.isInlineArg.eq_4 F e hc ha hq, LExpr.isInlineArg.eq_4 F e₂]
+    · split <;> split <;> simp_all [List.all_map]
+    all_goals
+      intros; subst_vars
+      cases EMEquiv.of_eraseMetadata_eq _ _ h_eM
+      first | exact hc _ _ rfl | exact ha _ _ _ _ rfl | exact hq _ _ _ _ _ _ rfl
+  | case5 e hc ha hq h =>
+    have h2 := callOfLFunc_none_of_eraseMetadata_eq F _ _ true h_eM h
+    rw [LExpr.isInlineArg.eq_4 F e hc ha hq, LExpr.isInlineArg.eq_4 F e₂]
+    · split <;> split <;> simp_all
+    all_goals
+      intros; subst_vars
+      cases EMEquiv.of_eraseMetadata_eq _ _ h_eM
+      first | exact hc _ _ rfl | exact ha _ _ _ _ rfl | exact hq _ _ _ _ _ _ rfl
+  | _ =>
+    cases EMEquiv.of_eraseMetadata_eq _ _ h_eM <;>
+      simp only [LExpr.isInlineArg, LExpr.closed, LExpr.freeVars_of_eraseMetadata_eq _ _ h_eM]
+
 
 ---------------------------------------------------------------------
 -- Helper lemmas for eval_eraseMetadata_invariant

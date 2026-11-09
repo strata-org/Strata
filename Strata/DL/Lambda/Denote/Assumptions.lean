@@ -12,6 +12,7 @@ import all Strata.DL.Lambda.FactoryWF
 public import Strata.DL.Lambda.LExpr
 public import Strata.DL.Lambda.LTy
 public import Strata.DL.Lambda.LExprType
+import Strata.DL.Lambda.LTyUnifyProps
 
 /-!
 ## Typing Assumptions
@@ -23,6 +24,8 @@ semantics proofs. Semantic (denotation-level) assumptions live in
 ### Expression-level predicates (TODO: prove satisfied after `LExpr.resolve`)
 - `fvars_annotated_by` — free variable annotations match a type map
 - `OpsConsistent` — operator type annotations are valid factory instantiations
+- `OpsConsistentR` — declarative form: some substitution turns each operator's generic type
+  into its annotation (checked by `LExpr.opsConsistent`, `opsConsistent_sound`)
 
 ### Factory assumptions (TODO: prove satisfied after `Function.typeCheck`)
 - `Factory.WellTyped` / `Factory.EvalWellTyped` — bodies and evaluators preserve typing
@@ -143,6 +146,40 @@ theorem OpsConsistent_OpsConsistentR {F : @Factory T} :
   | quant m k name ty tr body ihtr ihbody =>
     intro h; exact .quant (ihtr h.1) (ihbody h.2)
 
+omit [DecidableEq T.IDMeta] in
+/-- The executable check `LExpr.opsConsistent` is sound for `OpsConsistentR`: when it holds,
+every operator of the factory in `e` is annotated with an instance of its generic type. -/
+theorem opsConsistent_sound {F : @Factory T} {e : LExpr T.mono} :
+    e.opsConsistent F = true → OpsConsistentR F e := by
+  induction e with
+  | op m name ty =>
+    unfold LExpr.opsConsistent
+    cases hfn : F[name.name]? with
+    | none => exact fun _ => .op_notin hfn
+    | some fn =>
+      cases ty with
+      | none => simp
+      | some tyOp =>
+        intro h
+        obtain ⟨S, hS⟩ := Option.isSome_iff_exists.mp h
+        exact .op_in hfn (LMonoTy.matchSubst_sound hS).symm
+  | app m fn arg ihfn iharg =>
+    simp only [LExpr.opsConsistent, Bool.and_eq_true]
+    exact fun h => .app (ihfn h.1) (iharg h.2)
+  | abs m name ty body ih => exact fun h => .abs (ih h)
+  | ite m c t f ihc iht ihf =>
+    simp only [LExpr.opsConsistent, Bool.and_eq_true]
+    exact fun h => .ite (ihc h.1.1) (iht h.1.2) (ihf h.2)
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.opsConsistent, Bool.and_eq_true]
+    exact fun h => .eq (ih1 h.1) (ih2 h.2)
+  | quant m k name ty tr body ihtr ihbody =>
+    simp only [LExpr.opsConsistent, Bool.and_eq_true]
+    exact fun h => .quant (ihtr h.1) (ihbody h.2)
+  | const => exact fun _ => .const
+  | bvar => exact fun _ => .bvar
+  | fvar => exact fun _ => .fvar
+
 /-! ### Factory assumptions -/
 
 /-- A factory is well-typed when every function body type-checks at the
@@ -171,6 +208,19 @@ def Factory.ConstrWellFormed (F : @Factory T) (tf : @TypeFactory T.IDMeta) : Pro
     ∃ (d : LDatatype T.IDMeta) (_ : d ∈ tf.allDatatypes)
       (c : LConstr T.IDMeta) (_ : c ∈ d.constrs),
       f = constrFunc c d
+
+omit [DecidableEq T.IDMeta] in
+/-- No constructor of a factory whose constructors come from the type factory `tf`
+(`Factory.ConstrWellFormed`) produces a Boolean, when no datatype of `tf` is named `bool`:
+each constructor's output is its datatype's type constructor applied to the datatype's
+parameters, which no type substitution turns into `bool`. -/
+theorem Factory.ConstrWellFormed.constrsNotBool {F : @Factory T} {tf : @TypeFactory T.IDMeta}
+    (h : F.ConstrWellFormed tf) (hname : ∀ d ∈ tf.allDatatypes, d.name ≠ "bool") :
+    F.ConstrsNotBool := by
+  intro fn hfn hc S
+  obtain ⟨d, hd, c, -, rfl⟩ := h fn hfn hc
+  unfold LMonoTy.subst
+  split <;> simp [constrFunc, dataDefault, data, LMonoTy.substCore, LMonoTy.bool, hname d hd]
 
 /-- Every function body in the factory satisfies `OpsConsistent` after type
 instantiation via `applyTypeSubst`. -/

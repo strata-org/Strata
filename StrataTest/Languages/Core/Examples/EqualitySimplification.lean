@@ -1018,6 +1018,38 @@ procedure P ()
 #guard_msgs in
 #eval rewriteAndPrint lemmaQuantPgm
 
+/-! ### A quantifier is not a value
+
+A closed quantifier is not a value (`LExpr.isValue`), so `b == ∀ …` does not replace `b`:
+the `assert` of `b` is kept, while the `assert` of `c`, which `c == true` gives a value,
+folds to `true`. -/
+
+private def quantNotValuePgm :=
+#strata
+program Core;
+procedure P(b : bool, c : bool)
+{
+  assume c == true;
+  assume b == (forall n : int :: n == n);
+  assert [cValue]: c;
+  assert [bQuant]: b;
+};
+#end
+
+/--
+info: program Core;
+
+procedure P (b : bool, c : bool)
+{
+  assume [assume_0]: c == true;
+  assume [assume_1]: b == (forall n : int :: n == n);
+  assert [cValue]: true;
+  assert [bQuant]: b;
+};
+-/
+#guard_msgs in
+#eval rewriteAndPrint quantNotValuePgm
+
 /-! ### Agreement with the solver
 
 Each lemma program above, verified by `agreesWithSolver` in both modes. -/

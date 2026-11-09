@@ -29,6 +29,7 @@ import Strata.Languages.Core.IntEvalProps
 import Strata.Languages.Core.InstWellFormedSemanticsEval
 import Strata.Languages.Core.InstExprTyping
 import Strata.Languages.Core.FactoryWF
+import Strata.Languages.Core.EnvProps
 import Strata.Languages.Core.SeqModel
 import Strata.Languages.Core.SMTEncoderProps
 import Strata.Languages.Core.SMTEmitter

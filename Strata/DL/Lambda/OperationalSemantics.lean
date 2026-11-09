@@ -187,14 +187,16 @@ to fire on.
     Step F rf (.abs m name ty body) (.abs m' name ty (LExpr.substFvarsFromEnv rf body))
 
 /-- Substitute free variables under a quantifier binder (body). Same motivation
-as `abs_subst_fvars`. -/
+as `abs_subst_fvars`, except for `value_not_step`, which does not concern quantifiers:
+a quantifier is never a value. -/
 | quant_subst_fvars_body:
   ∀ (tr body : LExpr Tbase.mono) (x : Tbase.Identifier),
     x ∈ (LExpr.freeVars body).map Prod.fst →
     Step F rf (.quant m qk name ty tr body) (.quant m' qk name ty tr (LExpr.substFvarsFromEnv rf body))
 
 /-- Substitute free variables in the trigger of a quantifier. Same motivation
-as `abs_subst_fvars`. -/
+as `abs_subst_fvars`, except for `value_not_step`, which does not concern quantifiers:
+a quantifier is never a value. -/
 | quant_subst_fvars_trigger:
   ∀ (tr body : LExpr Tbase.mono) (x : Tbase.Identifier),
     x ∈ (LExpr.freeVars tr).map Prod.fst →
