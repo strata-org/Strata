@@ -10,22 +10,38 @@ open Strata
 
 /-! ## `ignoreAssumes` path exercised under concrete execution
 
-`assume false` is a no-op during interpretation (`ignoreAssumes := true`), so
+The Core interpreter treats `assume false` as a no-op (`ignoreAssumes := true`), so
 execution proceeds past it and the subsequent `assert true` succeeds. If
 `ignoreAssumes` regressed, the interpret path would throw
 `assume (…) condition is false` as a non-assertion error and the build would
-fail.
+fail. The Laurel interpreter does not ignore assumes, so it skips this block; the
+block after it pins what the Laurel interpreter does instead.
 
 Both blocks run through `Core.Program.interpretEntries`, the same entry point the
 `laurelInterpret` CLI command uses, so these also pin the CLI's behaviour. -/
 
 #guard_msgs (drop info) in
-#eval testLaurelExecution {} <|
+#eval testLaurelExecution { skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 procedure ignoresAssume() entry opaque {
   assume false;
   assert true
+};
+#end
+
+/-! The Laurel interpreter ends the run at a false `assume` and reports it, so the
+`assert false` after it is never evaluated and the run is not counted as a success. -/
+
+/-- error: the run stopped on an infeasible path (a false `assume` or an undeclared `throw`), so the rest was not run
+-/
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+procedure stopsAtAssume() entry opaque {
+  assume false;
+  assert false
 };
 #end
 

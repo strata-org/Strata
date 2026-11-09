@@ -597,3 +597,28 @@ procedure runAll() entry
   var r: int := ordinaryOutput(c)
 };
 #end
+
+#eval testLaurelExecution { skipVerification := true } <|
+#strata
+program Laurel;
+composite Err { var code: int }
+constrained CErr = x: Err where x#code >= 0 witness new Err
+procedure f() throws (e: CErr) opaque modifies * { var x: Err := new Err; x#code := 5; throw x };
+procedure main() entry opaque modifies * {
+  var handled: bool := false;
+  try { f() } catch e { assert e#code == 5; handled := true };
+  assert handled
+};
+#end
+
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true } <|
+#strata
+program Laurel;
+datatype E { Bad(code: int) }
+procedure f() throws (e: E) opaque { throw Bad(3) };
+procedure main() entry opaque modifies * {
+  var handled: bool := false;
+  try { f() } catch e { handled := true };
+  assert handled
+};
+#end

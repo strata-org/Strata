@@ -338,3 +338,56 @@ procedure aliasInParent()
   assert b#val == 1
 };
 #end
+
+/-! ## Allocating through a composite alias
+
+`new A` with `A` an alias of `C` allocates a `C`: the object carries `C`'s tag, so `is C`
+holds, and `C`'s field is there to write and read back. Resolution rejects `new` of an alias,
+so the program is handed to the Laurel interpreter unresolved; the false twin's failure shows
+the asserts are evaluated. -/
+
+private def runUnresolved (program : StrataDDM.Program) (entry : String) : IO Unit := do
+  let laurel ← match Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProgram program) with
+    | .error e => throw (IO.userError s!"parse failed: {e}")
+    | .ok p => pure p
+  let (_, failures) ← Strata.Laurel.Interpreter.evalProgram
+    ({} : Strata.Laurel.Interpreter.ExternalBackend)
+    { entryProcedure := entry, dumpState := false, printAsserts := false, fuel := 100000 }
+    (withBuiltins laurel)
+  IO.println s!"failures: {failures.size}"
+
+def newThroughAliasProgram : StrataDDM.Program :=
+#strata
+program Laurel;
+composite C { var f: int }
+type A = C
+
+procedure newThroughAlias()
+  entry
+  opaque
+  modifies *
+{
+  var a: C := new A;
+  assert a is C;
+  a#f := 4;
+  assert a#f == 4
+};
+
+procedure newThroughAliasFalse()
+  entry
+  opaque
+  modifies *
+{
+  var a: C := new A;
+  a#f := 4;
+  assert a#f == 5
+};
+#end
+
+/-- info: failures: 0 -/
+#guard_msgs in
+#eval runUnresolved newThroughAliasProgram "newThroughAlias"
+
+/-- info: failures: 1 -/
+#guard_msgs in
+#eval runUnresolved newThroughAliasProgram "newThroughAliasFalse"

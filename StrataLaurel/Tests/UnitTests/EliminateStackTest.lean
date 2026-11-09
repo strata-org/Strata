@@ -271,6 +271,7 @@ private def interpret (source : String) : IO Unit := do
     | .completed => "completed"
     | .escaped v => s!"escaped {v.display}"
     | .outOfFuel => "out of fuel"
+    | .infeasible => "infeasible"
   IO.println s!"failures: {failures.map (·.message)}"
   IO.println outcome
 
