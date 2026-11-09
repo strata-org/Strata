@@ -187,6 +187,27 @@ procedure throughFinally()
 };
 #end
 
+/-! `RestructureGotos` appends `exit L` after a trailing `if/else` whose arm
+holds the backward `goto`, so the `if` is in non-last position when the lowered
+program is re-resolved; a statement-position `if` must not join its arm types
+(`bool` and `int` here). -/
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+procedure gotoInArmOfTrailingIf()
+  entry
+  opaque
+{
+  var go: bool := true;
+  var steps: int := 0;
+  {
+    if (go) then { go := false; goto L } else { steps := steps + 1 }
+  } L
+    invariant steps == 0;
+  assert steps == 1
+};
+#end
+
 /-! A runaway backward jump stops on the Laurel interpreter's step budget. -/
 
 -- Laurel interpreter only: the Core interpreter reports divergence as "failed to terminate".

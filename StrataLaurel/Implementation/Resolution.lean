@@ -1325,8 +1325,9 @@ where that type is expected), and its check rule skips the \[⇐\] Sub
 boundary check only when the expected type is `TVoid` — i.e. when the
 assignment is used purely for effect. `Block` routes the surrounding
 expected type to its last statement (the block's value); non-last
-statements are in effect position (synthesized and discarded via
-`Check.statement`).
+statements are in effect position (`Check.statement`: an `if` or a
+block is checked against `TVoid`, anything else is synthesized and its
+type discarded).
 
 Each typing rule is implemented as its own helper inside the mutual
 block below. Helpers are grouped by section to mirror the *Typing
@@ -2463,33 +2464,54 @@ def Check.return (exprMd : StmtExprMd)
 def Synth.emptyBlock (source : FileRange) : HighTypeMd :=
   { val := .TVoid, source := source }
 
-/-- (Synth-Discard) Check a statement in *effect position*, written `Γ ⊢ s ⋄`.
+/-- (Stmt) Check a statement in *effect position*, written `Γ ⊢ s ⋄`.
 
     Laurel has no syntactic statement/expression split — everything is a
     `StmtExpr` — so "what may appear where its value is discarded" is
-    defined by this rule rather than by the grammar. Every expression in
-    statement position is synthesized and its type discarded:
+    defined by this rule rather than by the grammar. A statement's value is
+    never consumed, so it is accepted whatever its type:
 
     ```
-    Γ ⊢ s ⇒ _
-    ──────────────
+    Γ ⊢ s ⇐ TVoid            s is an `IfThenElse` or a non-empty `Block`
+    ──────────────────────
+    Γ ⊢ s ⋄
+
+    Γ ⊢ s ⇒ _                otherwise
+    ──────────────────────
     Γ ⊢ s ⋄
     ```
 
-    Statement-shaped forms (`Var-Declare`, `Assign`, `Assert`, `Assume`,
-    `While`, `Exit`, `Return`) synthesize `TVoid`; value-producing forms
-    (calls, `IncrDecr`, literals, etc.) synthesize their natural type,
-    which is then discarded. This means any expression is accepted in
-    statement position — the `f(x);` idiom works regardless of `f`'s
-    return type, and `x++;` is admitted even though `++` synthesizes the
-    target's type.
+    The two check-capable compound forms are *checked* against `TVoid`, the
+    file's marker for statement position (`Check.block` routes its last
+    statement back through this rule under `TVoid`; `Check.ifThenElse` does the
+    same for its arms; `Check.assign`/`Check.declInfer` skip their Sub check
+    under it). So the whole statement chain — body → block → `if` → arm →
+    block → last statement — ends here, and an `if` in statement position
+    never has to *synthesize* a type: `Synth.ifThenElse`'s branch join is for
+    an `if` whose value is used (`(if c then 1 else 2) + x`), and for a
+    statement `if c then { go := false } else { steps := steps + 1 }` the join
+    would only compare `bool` with `int` for nobody. `TVoid` rather than
+    `Unknown` because the marker is never handed to synthesis as an expected
+    type: a trailing generic call `mk()` is synthesized with `expected? =
+    none` and still reports "cannot infer type argument", whereas `Unknown`
+    would silently bind the type argument. Every other form is synthesized
+    and its type discarded: statement-shaped forms (`Assert`, `Assume`,
+    `While`, `Exit`, `Return`) synthesize `TVoid`, value-producing forms
+    (calls, `Assign`, `IncrDecr`, literals, etc.) synthesize their natural
+    type, which is then dropped. So any expression is accepted in statement
+    position — the `f(x);` idiom works regardless of `f`'s return type, and
+    `x++;` is admitted even though `++` synthesizes the target's type.
 
     This is the single definition of "what counts as a statement". It is
-    used by `Check.block` for every non-last statement, and for the last
-    statement when the block itself sits in statement position
-    (`expected = TVoid`). -/
+    used by `Check.block` for every non-last statement (and for the last one
+    when the block itself sits in statement position, `expected = TVoid`), and
+    by `resolveBody` for a procedure body. -/
 def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
-  let (s', _) ← Synth.resolveStmtExpr s; pure s'
+  match s.val with
+  | .IfThenElse .. | .Block (_ :: _) .. =>
+    Check.resolveStmtExpr s { val := .TVoid, source := s.source }
+  | _ =>
+    let (s', _) ← Synth.resolveStmtExpr s; pure s'
   termination_by sizeOf s * 5 + 4
   decreasing_by all_goals (omega)
 
@@ -2524,8 +2546,10 @@ def resolveBlockInvariantsAndMeasure (invs : List StmtExprMd) (dec : Option Stmt
     handling each part as follows:
 
     * **non-last — `Γ ⊢ s ⋄`.** A non-last statement is in effect
-      position: it is synthesized and its type discarded (see
-      `Check.statement`). Any expression is accepted — statement-shaped
+      position (see `Check.statement`): an `IfThenElse` or a non-empty
+      `Block` is checked against `TVoid`, so its arms and its own last
+      statement are statements in turn; every other form is synthesized
+      and its type discarded. Any expression is accepted — statement-shaped
       forms synthesize `TVoid`, value-producing forms (calls,
       `IncrDecr`, etc.) synthesize their natural type which is then
       discarded.
@@ -2556,7 +2580,7 @@ def Check.block (exprMd : StmtExprMd)
     (h : exprMd.val = .Block stmts label invs dec) : ResolveM StmtExprMd := do
   let (invs', dec') ← resolveBlockInvariantsAndMeasure invs dec label source
   -- A non-last statement is in effect position: admitted by `Check.statement`
-  -- (`Γ ⊢ s ⋄` — synthesized and the type discarded).
+  -- (`Γ ⊢ s ⋄` — its value is never consumed).
   let checkNonLast (s : StmtExprMd) (_h_mem : s ∈ stmts) : ResolveM StmtExprMd :=
     Check.statement s
   -- The last statement carries the block's value: push `expected` in (so
@@ -2630,6 +2654,10 @@ def Check.block (exprMd : StmtExprMd)
     propagates through nested `Block` / `IfThenElse` / `Hole`
     constructs that have their own check rules.
 
+    When `T = TVoid` (the `if` is a statement, see `Check.statement`) each
+    arm is a statement as well (`Γ ⊢ thenBr ⋄`, `Γ ⊢ elseBr ⋄`), exactly as
+    `Check.block` treats the last statement of a block in statement position.
+
     Without an `else`, the implicit branch is an empty block of type
     `TVoid`, so the rule degenerates to require `TVoid <: T` — the
     standard \[⇐\] Sub boundary check that `Resolution.Synth.emptyBlock`
@@ -2639,8 +2667,31 @@ def Check.ifThenElse (exprMd : StmtExprMd)
     (expected : HighTypeMd) (source : FileRange)
     (h : exprMd.val = .IfThenElse cond thenBr elseBr) : ResolveM StmtExprMd := do
   let cond' ← Check.resolveStmtExpr cond { val := .TBool, source := cond.source }
-  let thenBr' ← Check.resolveStmtExpr thenBr expected
-  let elseBr' ← elseBr.attach.mapM (fun ⟨e, _⟩ => Check.resolveStmtExpr e expected)
+  -- Statement position (`TVoid`): each arm is a statement; otherwise the
+  -- expectation is pushed into the arm.
+  have hthen : sizeOf thenBr < sizeOf exprMd := by
+    have hsz := exprMd.sizeOf_val_lt
+    rw [h] at hsz
+    simp only [StmtExpr.IfThenElse.sizeOf_spec] at hsz
+    omega
+  have helse : ∀ e, e ∈ elseBr → sizeOf e < sizeOf exprMd := by
+    intro e he
+    have hsz := exprMd.sizeOf_val_lt
+    rw [h] at hsz
+    simp only [StmtExpr.IfThenElse.sizeOf_spec] at hsz
+    cases elseBr with
+    | none => exact absurd he (by simp)
+    | some v =>
+      simp only [Option.mem_def, Option.some.injEq] at he
+      subst he
+      simp only [Option.some.sizeOf_spec] at hsz
+      omega
+  let checkArm (e : StmtExprMd) (_h_lt : sizeOf e < sizeOf exprMd) : ResolveM StmtExprMd :=
+    match expected.val with
+    | .TVoid => Check.statement e
+    | _ => Check.resolveStmtExpr e expected
+  let thenBr' ← checkArm thenBr hthen
+  let elseBr' ← elseBr.attach.mapM (fun ⟨e, he⟩ => checkArm e (helse e he))
   if elseBr.isNone then
     checkSubtype source expected { val := .TVoid, source := source }
   pure { val := .IfThenElse cond' thenBr' elseBr', source := source }
@@ -4891,23 +4942,23 @@ private def resolveOutputParameters (inputNames : List String) (outputs : List P
 private def scopeTypeParams (typeArgs : List Identifier) : ResolveM (List Identifier) :=
   typeArgs.mapM (fun tv => defineNameCheckDup tv (.typeParameter tv))
 
-/-- Resolve a procedure body by synthesizing its body (if any).
-    Bodies without an body (`Abstract`, `External`) resolve
-    postconditions only. -/
+/-- Resolve a procedure body (if any) in statement position (`Check.statement`:
+    its value is never consumed, outputs flow only through `return` and
+    named-output assignment). Bodies without an implementation (`Abstract`,
+    `External`) resolve postconditions only. -/
 def resolveBody (body : Body) : ResolveM Body := do
   match body with
   | .Transparent b =>
-    let (b', _) ← Synth.resolveStmtExpr b
-    return .Transparent b'
+    return .Transparent (← Check.statement b)
   | .Opaque posts impl mods =>
     -- Postconditions are boolean: check against `TBool` (like preconditions and loop
     -- invariants) so a non-bool `ensures` errors instead of silently synthesizing, and
     -- the truthiness coercion is inserted for an `Any`-typed condition.
     let posts' ← posts.mapM (·.mapM (fun c =>
       Check.resolveStmtExpr c { val := .TBool, source := c.source }))
-    let impl' ← impl.mapM Synth.resolveStmtExpr
+    let impl' ← impl.mapM Check.statement
     let mods' ← resolveModifies mods
-    return .Opaque posts' (impl'.map (fun t => t.1)) mods'
+    return .Opaque posts' impl' mods'
   | .Abstract posts =>
     let posts' ← posts.mapM (·.mapM (fun c =>
       Check.resolveStmtExpr c { val := .TBool, source := c.source }))
@@ -4962,13 +5013,13 @@ def resolveExceptionalContract (proc : Procedure)
 /-- (Procedure)
     ```
     T_o-bar = proc.outputs.types
-    Γ_global, params(proc) ⊢ proc.body ⇒ _
+    Γ_global, params(proc) ⊢ proc.body ⋄
     ──────────────────────────────────────────────────────────
     Γ_global ⊢ Procedure proc
     ```
-    The body is synthesized (not checked against a computed expected
-    type) under a scope that includes the procedure's input and output
-    parameters. Outputs are matched only via `return e` (checked against
+    The body is resolved in statement position (`Check.statement`: its
+    value is discarded) under a scope that includes the procedure's input
+    and output parameters. Outputs are matched only via `return e` (checked against
     the declared output by `Check.return`) or via named-output
     assignment. The procedure's declared output list `T_o-bar` is stored
     on `ResolveState.answerType`, set on entry and restored on exit. -/

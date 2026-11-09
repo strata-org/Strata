@@ -596,26 +596,33 @@ theorem resolveModifies_clean (mods : List ModifiesGroup) :
   exact ⟨hts, hgd⟩
 
 include masterSynth masterCheck in
+/-- A statement in effect position (`Check.statement`) is Clean: it is either
+    checked against `TVoid` or synthesized with its type dropped. -/
+private theorem statement_clean (e : StmtExprMd) :
+    PostM (Check.statement e) Clean := by
+  unfold Check.statement
+  split
+  · exact masterCheck _ _
+  · exact masterCheck _ _
+  · exact postM_bind (masterSynth _) fun ⟨r, _⟩ hr => postM_pure hr
+
+include masterSynth masterCheck in
 theorem resolveBody_clean (body : Body) :
     PostM (resolveBody body) CleanBody := by
   unfold resolveBody
   split
   · -- Transparent
-    exact postM_bind (masterSynth _) fun b hb => postM_pure hb
+    exact postM_bind (statement_clean masterSynth masterCheck _) fun b hb => postM_pure hb
   · -- Opaque
     refine postM_bind (postM_mapM _ _ (fun c _ =>
         condition_mapM_clean c _
           (fun e => masterCheck e { val := .TBool, source := e.source })))
       fun posts' hposts => ?_
-    refine postM_bind (postM_option_mapM _ _ (fun e => masterSynth e))
+    refine postM_bind (postM_option_mapM _ _ (fun e => statement_clean masterSynth masterCheck e))
       fun impl' himpl => ?_
     refine postM_bind (resolveModifies_clean masterSynth masterCheck _)
       fun mods' hmods => postM_pure ?_
-    refine ⟨fun p hp => hposts p hp, ?_, hmods⟩
-    intro e he
-    -- impl'.map (·.1): e is the first component of some pair in impl'
-    obtain ⟨pr, hpr, hpre⟩ := Option.map_eq_some_iff.mp he
-    exact hpre ▸ himpl pr hpr
+    exact ⟨fun p hp => hposts p hp, himpl, hmods⟩
   · -- Abstract
     refine postM_bind (postM_mapM _ _ (fun c _ =>
         condition_mapM_clean c _

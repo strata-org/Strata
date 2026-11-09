@@ -808,7 +808,7 @@ The Index below links to each construct's subsection.
   \[⇒\] Var-Declare, \[⇒\] Var-Declare-Infer
 - {ref "rules-control-flow"}[*Control flow*] — \[⇐\] If, \[⇐\] If-NoElse,
   \[⇒\] If-Synth, \[⇒\] If-Synth-NoElse;
-  \[⇐\] Block, \[⇒\] Block-Synth, \[⋄\] Synth-Discard,
+  \[⇐\] Block, \[⇒\] Block-Synth, \[⋄\] Stmt,
   \[⇒\] Empty-Block; \[⇒\] Exit;
   \[⇒\] Return-None-Void, \[⇒\] Return-None-Single, \[⇒\] Return-None-Multi,
   \[⇒\] Return-Some, \[⇒\] Return-Void-Error,
@@ -961,19 +961,27 @@ $`\mathit{last}\;\diamond` rather than $`\mathit{last} \Leftarrow
 $`\{\ldots;\,\mathit{foo}()\}` type-checks as a statement even when
 `foo` returns a non-void type.
 
-The effect-position judgment $`\Gamma \vdash s\;\diamond` synthesizes
-the statement and discards the result:
+The effect-position judgment $`\Gamma \vdash s\;\diamond` has two
+cases. An `IfThenElse` or a non-empty `Block` is *checked* against
+$`\mathsf{TVoid}`, the marker for statement position, so that its arms
+(rule \[⇐\] If) and its last statement (rule \[⇐\] Block) are in effect
+position in turn and no type is ever joined or compared for them. Every
+other form is synthesized and its result discarded:
 
-$$`\frac{\Gamma \vdash s \Rightarrow \_ \;\dashv\; \Gamma'}{\Gamma \vdash s \;\diamond \;\dashv\; \Gamma'} \quad \text{([⋄] Synth-Discard)}`
+$$`\frac{\Gamma \vdash s \Leftarrow \mathsf{TVoid} \;\dashv\; \Gamma'}{\Gamma \vdash s \;\diamond \;\dashv\; \Gamma'} \quad s \text{ an } \mathit{if} \text{ or a non-empty block} \qquad \frac{\Gamma \vdash s \Rightarrow \_ \;\dashv\; \Gamma'}{\Gamma \vdash s \;\diamond \;\dashv\; \Gamma'} \quad \text{otherwise} \qquad \text{([⋄] Stmt)}`
 
-Every expression in statement position is synthesized and its type
-discarded. Statement-shaped forms (`Var-Declare`, `Assign`, `Assert`,
-`Assume`, `While`, `Exit`, `Return`) synthesize $`\mathsf{TVoid}`;
-value-producing forms (calls, `IncrDecr`, literals, etc.) synthesize
-their natural type, which is then discarded. This means any expression
-is accepted in statement position — the `f(x);` idiom works regardless
-of `f`'s return type, and `x++;` is admitted even though `++`
-synthesizes the target's type.
+Statement-shaped forms (`Var-Declare`, `Assert`, `Assume`, `While`,
+`Exit`, `Return`) synthesize $`\mathsf{TVoid}`; value-producing forms
+(calls, `Assign`, `IncrDecr`, literals, etc.) synthesize their natural
+type, which is then discarded. This means any expression is accepted in
+statement position — the `f(x);` idiom works regardless of `f`'s
+return type, and `x++;` is admitted even though `++` synthesizes the
+target's type. A statement `if c then { go := false } else { steps := steps + 1 }`
+is accepted whatever the arms' types, because nobody consumes its value;
+only an `if` whose value is used (\[⇒\] If-Synth) joins its branch
+types. A trailing generic call such as `mk()` is synthesized with no
+expected type, so a type argument that nothing determines is still
+reported.
 
 Only declarations actually extend the scope $`\Gamma_i` — `Var (.Declare …)`
 and `Assign` statements with `Declare` targets (`var x := e`,
@@ -1006,7 +1014,7 @@ $`\mathsf{TVoid} <: \mathit{expected}`).
 
 {docstring Strata.Laurel.Resolution.Check.block}
 
-The $`\Gamma \vdash s\;\diamond` judgment — the \[⋄\] Synth-Discard
+The $`\Gamma \vdash s\;\diamond` judgment — the \[⋄\] Stmt
 rule above — is the single definition of what counts as a statement in
 effect position, factored out into
 {name Strata.Laurel.Resolution.Check.statement}`Check.statement`:
