@@ -6,6 +6,7 @@ lintDriver = "CheckImports"
 
 [leanOptions]
 warningAsError = true
+weak.linter.strata.flexible = true
 
 [[require]]
 name = "StrataDDM"
@@ -35,6 +36,15 @@ name = "StrataLaurel"
 roots = ["StrataLaurel.Implementation"]
 
 [[lean_lib]]
+name = "StrataCortex"
+roots = ["StrataCortex.Implementation"]
+
+[[lean_lib]]
+name = "StrataCortexTest"
+roots = []
+globs = ["StrataCortex.Tests.+"]
+
+[[lean_lib]]
 name = "StrataLaurelTest"
 roots = []
 globs = ["StrataLaurel.Tests.+"]
@@ -55,7 +65,9 @@ root = "Scripts.StrataTestMain"
 # modules from the `Strata` library that are not in `StrataTest`'s transitive
 # closure (e.g., `Strata.Java.Gen`, `Strata.Go.Gen`), so without this the
 # oleans would be missing when running `lake test` from a clean `.lake`.
-needs = ["Strata", "StrataLaurel", "StrataTest", "StrataLaurelTest", "laurelJavaGen", "laurelGoGen"]
+# `strataLaurel` is listed because `StrataTestExtra/Transform/CommonSubexprElimScaling.lean`
+# runs the compiled executable.
+needs = ["Strata", "StrataLaurel", "StrataTest", "StrataLaurelTest", "StrataCortex", "StrataCortexTest", "laurelJavaGen", "laurelGoGen", "strataLaurel"]
 
 [[lean_exe]]
 name = "StrataToCBMC"
@@ -85,7 +97,7 @@ root = "StrataLaurel.Scripts.LaurelGoGen"
 
 [[lean_exe]]
 name = "strataLaurel"
-root = "StrataLaurel.Scripts.StrataLaurelMain"
+root = "Scripts.StrataLaurelMain"
 
 # `StrataLaurel/Tests/CBMC/run_laurel_cbmc_tests.sh` runs this script with
 # `lean --run`; building it as a default target keeps it compiling.
