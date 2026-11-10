@@ -9,6 +9,7 @@ public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.CallWFProps
 public import Strata.DL.Lambda.LExprWF
 public import Strata.Pipeline.FactSet
+public import Strata.Languages.Core.NameMangling
 
 /-! # Program facts
 
@@ -214,6 +215,112 @@ structured-to-unstructured lowering. They are represented by
 phase that establishes the required declaration shape.
 The `ProgramFact.*_of_program` lemmas in `ProgramFactProps` turn these facts
 into the matching `Block` conditions on each structured procedure body. -/
+
+/-! ### Shapes the correctness proofs of the pipeline's phases cover
+
+Checks on a program that the correctness proofs of the phases assume of their input. -/
+
+namespace Specification.Analysis
+
+open Lambda
+
+/-- Every datatype block of `p` is one datatype without recursive constructor arguments,
+    in the shape `LDatatype.argsWF` checks: what the proofs about the functions generated
+    for datatypes cover. -/
+@[expose] def DatatypesProvable (p : Program) : Bool :=
+  p.decls.all fun
+    | .type (.data block) _ => block.length == 1 && Lambda.MutualDatatype.NoRecursive block &&
+        block.all Lambda.LDatatype.argsWF
+    | _ => Bool.true
+
+
+/-- Is every character of every string literal of `e` in SMT-LIB's string alphabet, the
+    code points 0 to 0x2FFFF? Lean characters go up to 0x10FFFF. The bound is the SMT
+    encoder's `Strata.SMT.StringLit.maxCodePoint`, written out here so that the check
+    reduces in proofs: `maxCodePoint` is not exposed outside its module. -/
+@[expose] def StrLitsInAlphabet : Expression.Expr → Bool
+  | .const _ (.strConst str) => str.toList.all (·.toNat ≤ 0x2FFFF)
+  | .app _ f a => StrLitsInAlphabet f && StrLitsInAlphabet a
+  | .abs _ _ _ e => StrLitsInAlphabet e
+  | .quant _ _ _ _ tr e => StrLitsInAlphabet tr && StrLitsInAlphabet e
+  | .ite _ c t e => StrLitsInAlphabet c && StrLitsInAlphabet t && StrLitsInAlphabet e
+  | .eq _ e1 e2 => StrLitsInAlphabet e1 && StrLitsInAlphabet e2
+  | .const _ _ | .op _ _ _ | .bvar _ _ | .fvar _ _ _ => true
+
+end Specification.Analysis
+
+namespace MonomorphizeFunctions
+
+open Lambda
+
+/-- The type variables of the annotated operators of `e` are among `vs`. -/
+@[expose] def opAnnotsWithin (vs : List TyIdentifier) (e : Expression.Expr) : Bool :=
+  e.opAnnots.all fun a => a.2.freeVars.all (· ∈ vs)
+
+/-- The type variables in `f`'s expressions are among its type parameters. -/
+@[expose] def fnAnnotsWithin (f : LFunc CoreLParams) : Bool :=
+  f.toFunc.exprs.all (opAnnotsWithin f.typeArgs)
+
+/-- **Every instantiation the pass can make is ground**, as a Boolean: the operators of `p`'s
+    lemmas, axioms and `distinct` declarations are annotated with ground types, and the
+    expressions of every function `p` declares, and of every function of the factory `F`,
+    mention only that function's type parameters (none for a monomorphic one). The pass reads
+    instantiations off these annotations, so each copy it makes is at ground types. -/
+@[expose] def groundInstantiationsB (F : Lambda.Factory CoreLParams) (p : Program) : Bool :=
+  (p.decls.all fun d =>
+    match d with
+    | .ax a _ => opAnnotsWithin [] a.e
+    | .lemma l _ => opAnnotsWithin [] l.e
+    | .distinct _ es _ => es.all (opAnnotsWithin [])
+    | .func f _ => fnAnnotsWithin f.toLFunc
+    | .recFuncBlock fs _ => fs.all fun f => fnAnnotsWithin f.toLFunc
+    | _ => true) &&
+  F.toArray.toList.all fnAnnotsWithin
+
+/-- Every type parameter of `f` occurs in its signature. The pass reads a call's instantiation
+    off the signature, so a parameter outside it would be left a type variable. -/
+@[expose] def sigVarsB (f : LFunc CoreLParams) : Bool :=
+  f.typeArgs.all fun ta => decide (ta ∈ (LMonoTy.mkArrow' f.output (f.inputs.map
+      Prod.snd)).freeVars)
+
+/-- **Every type parameter of a function occurs in its signature**, for every function `p`
+    declares and every function of the factory `F`. -/
+@[expose] def sigTypeArgsB (F : Lambda.Factory CoreLParams) (p : Program) : Bool :=
+  (p.decls.all fun d =>
+    match d with
+    | .func f _ => sigVarsB f.toLFunc
+    | .recFuncBlock fs _ => fs.all fun f => sigVarsB f.toLFunc
+    | _ => true) &&
+  F.toArray.toList.all sigVarsB
+
+/-- `c` can name a type constructor in a mangled name: no `#`, not a numeral, not `$bv`. -/
+@[expose] def plainNameB (c : String) : Bool :=
+  !c.toList.contains '#' && !(!c.toList.isEmpty && c.toList.all Char.isDigit) && c != "$bv"
+
+/-- Every type constructor in an operator annotation of `e` has a plain name. -/
+@[expose] def annotsPlainB (e : Expression.Expr) : Bool :=
+  e.opAnnots.all fun a => (Core.NameMangling.tconsNames a.2).all plainNameB
+
+/-- Every type constructor in an operator annotation of `f`'s expressions has a plain name. -/
+@[expose] def fnAnnotsPlainB (f : LFunc CoreLParams) : Bool :=
+  f.toFunc.exprs.all annotsPlainB
+
+/-- **Every type constructor the pass can put into a mangled name has a plain name**: those in
+    the operator annotations of `p`'s lemmas, axioms, `distinct` declarations and functions,
+    and of the functions of the factory `F`. The pass names a copy after the type constructors
+    of its instantiation, which it reads off these annotations. -/
+@[expose] def plainAnnotsB (F : Lambda.Factory CoreLParams) (p : Program) : Bool :=
+  (p.decls.all fun d =>
+    match d with
+    | .ax a _ => annotsPlainB a.e
+    | .lemma l _ => annotsPlainB l.e
+    | .distinct _ es _ => es.all annotsPlainB
+    | .func f _ => fnAnnotsPlainB f.toLFunc
+    | .recFuncBlock fs _ => fs.all fun f => fnAnnotsPlainB f.toLFunc
+    | _ => true) &&
+  F.toArray.toList.all fnAnnotsPlainB
+
+end MonomorphizeFunctions
 
 /-- Short, human-readable name for each fact. Used in diagnostic
     messages produced by the pipeline-composition check and by

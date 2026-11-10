@@ -47,6 +47,13 @@ import Strata.Languages.Core.Analysis.ProcedureCorrectness
 import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Strata.Languages.Core.Analysis.DeductiveVerification
 import Strata.Languages.Core.Analysis.DeductiveVerificationProps
+import Strata.Languages.Core.Analysis.FragmentFactory
+import Strata.DL.Lambda.LFuncEvalSound
+import Strata.DL.Lambda.LExprRenameOps
+import Strata.Transform.MonomorphizeBasics
+import Strata.Transform.MonomorphizeWorklist
+import Strata.Transform.MonomorphizeInstances
+import Strata.Transform.MonomorphizeFunctionsCorrect
 import Strata.Languages.Core.ProcedureProps
 import Strata.Languages.Core.ProgramProps
 import Strata.Transform.CoreTransformProps

@@ -7,6 +7,9 @@ module
 
 public import Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.LExprType
+public import Strata.Util.ListUtils
+public import Strata.DL.Lambda.TypeFactory
+import Strata.Util.ListUtilsProps
 
 /-!
 ## Properties of `Lambda.Factory`
@@ -31,6 +34,20 @@ and lookups predictably (`push_mem_iff`, `push_mem_match`, `mem_iff_mem_names`).
 family of `getElem?_*`/`mem_name_eq_getElem` lemmas connects a successful lookup to
 array membership and names, and the `ofArray`/`get?_foldl_pushIfNew_*` lemmas lift
 these facts to factories built from arrays.
+
+### Factories related function by function
+Two factories whose functions are related one by one (`List.Rel₂` on their arrays), by a
+relation that keeps names, hold the same names (`mem_of_forall₂`) and find related functions
+(`getElem?_of_forall₂`); `pushIfNew` keeps them related (`forall₂_pushIfNew`,
+`forall₂_foldl_pushIfNew`).
+
+### Factories that differ only in function attributes, and lookups as list searches
+`IsMapOf F G g` says `G` holds the images under `g` of `F`'s functions under the same names, and
+`AttrOnly g` says `g` changes only attributes. Maps compose (`IsMapOf.trans`) and arise from
+`ofArray` of a mapped array (`isMapOf_ofArray_map`). Lookups are list searches
+(`getElem?_eq_find?`), and the lemmas `getElem?_pushIfNew`, `getElem?_foldl_pushIfNew`,
+`getElem?_ofArray`, `getElem?_addFactory` and `getElem?_ofArray_map` compute lookups in built
+factories. The semantic conditions that carry along such maps are in `LExprEvalDenoteEval`.
 
 ### `LFunc` conversions and type substitution
 These are the algebraic facts about `LFunc` plumbing. The `LFuncDefined ↔ LFunc`
@@ -616,5 +633,330 @@ theorem Factory.BindsTo.tryPush {T : LExprParams} [Inhabited T.Metadata]
   grind [Factory.tryPush, push_getElem?_of_mem, BindsTo]
 
 end -- public section
+namespace Factory
+
+section Related
+
+variable {T : LExprParams}
+
+/-! ### Factories related function by function -/
+
+/-- `pushIfNew` appends a function whose name is new and leaves the factory otherwise. -/
+theorem toArray_pushIfNew (F : Factory T) (g : LFunc T) :
+    (F.pushIfNew g).toArray = if g.name.name ∈ F then F.toArray else F.toArray.push g := by
+  unfold pushIfNew
+  split <;> rfl
+
+/-- A factory finds `g` under `n` exactly when it stores `g` and `g` is named `n`. -/
+theorem getElem?_eq_some_iff' {F : Factory T} {n : String} {g : LFunc T} :
+    F[n]? = some g ↔ g ∈ F.toArray ∧ g.name.name = n :=
+  ⟨fun h => ⟨getElem?_is_some_implies_mem h, getElem?_name h⟩,
+   fun ⟨hm, hn⟩ => hn ▸ getElem?_of_mem_toArray F g hm⟩
+
+variable {R : LFunc T → LFunc T → Prop}
+
+/-- Functions related one by one by a relation that keeps names have the same names. -/
+private theorem forall₂_names {l l' : List (LFunc T)}
+    (hname : ∀ g g', R g g' → g'.name.name = g.name.name) (h : List.Rel₂ R l l') :
+    l'.map (·.name.name) = l.map (·.name.name) := by
+  induction h with
+  | nil => rfl
+  | cons hab _ ih => simp [hname _ _ hab, ih]
+
+/-- A function of the second of two lists related one by one is related to one of the
+    first. -/
+theorem forall₂_mem_right {l l' : List (LFunc T)} (h : List.Rel₂ R l l')
+    {g' : LFunc T} (hg' : g' ∈ l') : ∃ g ∈ l, R g g' := by
+  induction h with
+  | nil => simp at hg'
+  | cons hab _ ih =>
+    rcases List.mem_cons.mp hg' with rfl | hg'
+    · exact ⟨_, List.mem_cons_self .., hab⟩
+    · obtain ⟨g, hg, hr⟩ := ih hg'
+      exact ⟨g, List.mem_cons_of_mem _ hg, hr⟩
+
+/-- Two factories whose functions are related one by one, by a relation that keeps names,
+    hold the same names. -/
+theorem mem_of_forall₂ {F F' : Factory T} (hname : ∀ g g', R g g' → g'.name.name = g.name.name)
+    (h : List.Rel₂ R F.toArray.toList F'.toArray.toList) (n : String) : n ∈ F' ↔ n ∈ F := by
+  rw [mem_iff_mem_names, mem_iff_mem_names, ← Array.mem_toList_iff, ← Array.mem_toList_iff,
+    Array.toList_map, Array.toList_map, forall₂_names hname h]
+
+/-- In two factories whose functions are related one by one, by a relation that keeps
+    names, a function found under a name is related to the one the other finds. -/
+theorem getElem?_of_forall₂ {F F' : Factory T}
+    (hname : ∀ g g', R g g' → g'.name.name = g.name.name)
+    (h : List.Rel₂ R F.toArray.toList F'.toArray.toList) {n : String} {g' : LFunc T}
+    (hg' : F'[n]? = some g') : ∃ g, F[n]? = some g ∧ R g g' := by
+  obtain ⟨hm, hn⟩ := getElem?_eq_some_iff'.mp hg'
+  obtain ⟨g, hg, hr⟩ := forall₂_mem_right h (Array.mem_toList_iff.mpr hm)
+  exact ⟨g, getElem?_eq_some_iff'.mpr ⟨Array.mem_toList_iff.mp hg, (hname _ _ hr) ▸ hn⟩, hr⟩
+
+/-- Pushing related functions keeps two factories related function by function. -/
+theorem forall₂_pushIfNew {F F' : Factory T} {g g' : LFunc T}
+    (hname : ∀ g g', R g g' → g'.name.name = g.name.name)
+    (h : List.Rel₂ R F.toArray.toList F'.toArray.toList) (hg : R g g') :
+    List.Rel₂ R (F.pushIfNew g).toArray.toList (F'.pushIfNew g').toArray.toList := by
+  rw [toArray_pushIfNew, toArray_pushIfNew, hname _ _ hg]
+  by_cases hm : g.name.name ∈ F
+  · have hm' : g.name.name ∈ F' := (mem_of_forall₂ hname h _).mpr hm
+    simp only [hm, hm', ↓reduceIte]
+    exact h
+  · have hm' : g.name.name ∉ F' := fun h' => hm ((mem_of_forall₂ hname h _).mp h')
+    simp only [hm, hm', ↓reduceIte, Array.toList_push]
+    exact List.Rel₂.append h (.cons hg .nil)
+
+/-- Pushing the same functions keeps two factories related function by function, for a
+    reflexive relation. -/
+theorem forall₂_foldl_pushIfNew {F F' : Factory T}
+    (hname : ∀ g g', R g g' → g'.name.name = g.name.name) (hrefl : ∀ g, R g g) :
+    ∀ (fs : List (LFunc T)), List.Rel₂ R F.toArray.toList F'.toArray.toList →
+      List.Rel₂ R (fs.foldl pushIfNew F).toArray.toList (fs.foldl pushIfNew F').toArray.toList
+  | [], h => h
+  | g :: fs, h => by
+    simp only [List.foldl_cons]
+    exact forall₂_foldl_pushIfNew (F := F.pushIfNew g) (F' := F'.pushIfNew g) hname hrefl fs
+      (forall₂_pushIfNew hname h (hrefl g))
+
+end Related
+
+section Maps
+
+variable {T : LExprParams}
+
+/-! ## Factories that differ only in function attributes
+
+A factory `G` is a map of `F` by `g` when it holds the images under `g` of `F`'s functions,
+under the same names. When `g` changes only attributes, which no semantic condition reads
+except `shortCircuit` and constructor identity, every condition on `F` carries to `G`. -/
+
+/-- `G` holds the images under `g` of `F`'s functions, each under its name. -/
+structure IsMapOf (F G : @Factory T) (g : LFunc T → LFunc T) : Prop where
+  mem : ∀ fn, fn ∈ G.toArray → ∃ fn0 ∈ F.toArray, fn = g fn0
+  get : ∀ (n : String) fn0, F[n]? = some fn0 → G[n]? = some (g fn0)
+  get' : ∀ (n : String) fn, G[n]? = some fn → ∃ fn0, F[n]? = some fn0 ∧ fn = g fn0
+
+/-- `g` changes only attributes, keeps whether a function short-circuits, and leaves
+    constructors as they are. -/
+structure AttrOnly (g : LFunc T → LFunc T) : Prop where
+  eq : ∀ f, g f = { f with attr := (g f).attr }
+  shortCircuit : ∀ f, Strata.DL.Util.FuncAttr.hasShortCircuit (g f).attr = Bool.true →
+    Strata.DL.Util.FuncAttr.hasShortCircuit f.attr = Bool.true
+  constr : ∀ c d, g (constrFunc c d) = constrFunc c d
+
+/-- A map of a factory holds exactly the names the factory holds. -/
+theorem IsMapOf.mem_iff {F G : @Factory T} {g} (h : IsMapOf F G g) (n : String) :
+    n ∈ G ↔ n ∈ F := by
+  rw [mem_iff_getElem?_isSome, mem_iff_getElem?_isSome]
+  constructor
+  · intro hs
+    obtain ⟨fn, hfn⟩ := Option.isSome_iff_exists.mp hs
+    obtain ⟨fn0, h0, -⟩ := h.get' n fn hfn
+    simp [h0]
+  · intro hs
+    obtain ⟨fn0, h0⟩ := Option.isSome_iff_exists.mp hs
+    simp [h.get n fn0 h0]
+
+/-- A map of a factory finds, under each name, the image of what the factory finds. -/
+theorem IsMapOf.getElem {F G : @Factory T} {g} (h : IsMapOf F G g) {n : String} (hn : n ∈ G) :
+    G[n]'hn = g (F[n]'((h.mem_iff n).mp hn)) := by
+  have hF : F[n]? = some (F[n]'((h.mem_iff n).mp hn)) := by
+    obtain ⟨fn, hfn⟩ := Option.isSome_iff_exists.mp
+      ((mem_iff_getElem?_isSome F n).mp ((h.mem_iff n).mp hn))
+    rw [hfn, getElem?_some_getElem hfn]
+  exact getElem?_some_getElem (h.get n _ hF)
+
+/-- A map changing only attributes keeps the type substitution an operator call gets. -/
+theorem AttrOnly.opTypeSubst {g : LFunc T → LFunc T} (hg : AttrOnly g) (fn : LFunc T)
+    (e : LExpr T.mono) : LFunc.opTypeSubst (g fn) e = LFunc.opTypeSubst fn e := by
+  rw [hg.eq fn]; rfl
+
+/-- Every function of a map of a factory is the image of one of its functions. -/
+theorem IsMapOf.mem_toArray {F G : @Factory T} {g} (h : IsMapOf F G g) {fn : LFunc T}
+    (hfn : fn ∈ G.toArray) : ∃ fn0 ∈ F.toArray, fn = g fn0 := h.mem fn hfn
+
+/-- Maps of factories compose. -/
+theorem IsMapOf.trans {F G H : @Factory T} {g g'} (h : IsMapOf F G g) (h' : IsMapOf G H g') :
+    IsMapOf F H (g' ∘ g) where
+  mem fn hfn := by
+    obtain ⟨fn1, h1, rfl⟩ := h'.mem fn hfn
+    obtain ⟨fn0, h0, rfl⟩ := h.mem fn1 h1
+    exact ⟨fn0, h0, rfl⟩
+  get n fn0 hF := h'.get n _ (h.get n fn0 hF)
+  get' n fn hH := by
+    obtain ⟨fn1, h1, rfl⟩ := h'.get' n fn hH
+    obtain ⟨fn0, h0, rfl⟩ := h.get' n fn1 h1
+    exact ⟨fn0, h0, rfl⟩
+
+/-- The identity changes only attributes. -/
+theorem AttrOnly.id : AttrOnly (T := T) id := ⟨fun _ => rfl, fun _ h => h, fun _ _ => rfl⟩
+
+/-- **A factory built from a map of another's functions is a map of it**, when the map keeps
+    names. -/
+theorem isMapOf_ofArray_map (F : @Factory T) (g : LFunc T → LFunc T)
+    (hname : ∀ f, (g f).name.name = f.name.name) : IsMapOf F (Factory.ofArray (F.toArray.map g)) g
+        := by
+  have hnd : List.Nodup ((F.toArray.map g).toList.map (·.name.name)) := by
+    simp only [Array.toList_map, List.map_map]
+    have : (fun f : LFunc T => f.name.name) ∘ g = fun f => f.name.name := funext hname
+    rw [this]
+    exact name_nodup F
+  refine ⟨fun fn hfn => ?_, fun n fn0 hF => ?_, fun n fn hG => ?_⟩
+  · obtain ⟨fn0, h0, rfl⟩ := Array.mem_map.mp (ofArray_mem hfn)
+    exact ⟨fn0, h0, rfl⟩
+  · have hmem := getElem?_is_some_implies_mem hF
+    have hn := getElem?_name hF
+    have hget := get?_ofArray_of_mem (Array.mem_map_of_mem (f := g) hmem) hnd
+    rw [hname, hn] at hget
+    exact hget
+  · have hmem := getElem?_is_some_implies_mem hG
+    obtain ⟨fn0, h0, rfl⟩ := Array.mem_map.mp (ofArray_mem hmem)
+    have hn := getElem?_name hG
+    rw [hname] at hn
+    exact ⟨fn0, hn ▸ getElem?_of_mem_toArray F fn0 h0, rfl⟩
+
+/-! ### Lookups as list searches -/
+
+/-- Looking a name up finds the first function of that name. -/
+theorem getElem?_eq_find? (F : @Factory T) (n : String) :
+    F[n]? = F.toArray.toList.find? (fun f => f.name.name == n) := by
+  rcases hf : F.toArray.toList.find? (fun f => f.name.name == n) with _ | fn
+  · rcases hg : F[n]? with _ | fn
+    · rw [hf]
+    · have hmem := getElem?_is_some_implies_mem hg
+      have hn := getElem?_name hg
+      have := List.find?_eq_none.mp hf fn (Array.mem_def.mp hmem)
+      simp [hn] at this
+  · have hmem := Array.mem_def.mpr (List.mem_of_find?_eq_some hf)
+    have hn : fn.name.name = n := by simpa using List.find?_some hf
+    rw [hf, ← hn]
+    exact getElem?_of_mem_toArray F fn hmem
+
+/-- `pushIfNew` adds a function under its name only when the name is free. -/
+theorem getElem?_pushIfNew (F : @Factory T) (fn : LFunc T) (n : String) :
+    (F.pushIfNew fn)[n]? = (F[n]?).or (if fn.name.name = n then some fn else none) := by
+  rw [getElem?_eq_find?, getElem?_eq_find?, toArray_pushIfNew]
+  split
+  · rename_i hin
+    split
+    · rename_i hn
+      subst hn
+      obtain ⟨g, hg⟩ := Option.isSome_iff_exists.mp ((mem_iff_getElem?_isSome F _).mp hin)
+      rw [getElem?_eq_find? F] at hg
+      rw [hg]; rfl
+    · simp
+  · rw [Array.toList_push, List.find?_append]
+    split <;> simp_all
+
+/-- Pushing a list of functions finds a name in the factory first, then in the list. -/
+theorem getElem?_foldl_pushIfNew (L : List (LFunc T)) (F : @Factory T) (n : String) :
+    (L.foldl pushIfNew F)[n]? = (F[n]?).or (L.find? (fun f => f.name.name == n)) := by
+  induction L generalizing F with
+  | nil => simp
+  | cons fn rest ih =>
+    simp only [List.foldl_cons, ih, getElem?_pushIfNew, List.find?_cons]
+    by_cases h : fn.name.name = n
+    · simp [h]
+    · have : (fn.name.name == n) = Bool.false := by simpa using h
+      simp [h, this]
+
+/-- A factory built from an array finds a name at the first function of that name. -/
+theorem getElem?_ofArray (a : Array (LFunc T)) (n : String) :
+    (Factory.ofArray a)[n]? = a.toList.find? (fun f => f.name.name == n) := by
+  unfold Factory.ofArray Factory.append
+  rw [← Array.foldl_toList, getElem?_foldl_pushIfNew]
+  have : (Factory.default : @Factory T)[n]? = none := by
+    rw [getElem?_eq_find?]; simp
+  rw [this]; rfl
+
+/-- Adding functions that all succeed in being added is pushing them. -/
+private theorem foldlM_tryPush_eq (L : List (LFunc T)) [Inhabited T.Metadata]
+    [Std.ToFormat T.IDMeta] (F F' : @Factory T)
+    (h : L.foldlM (fun F fn => Factory.tryPush F fn) F = .ok F') :
+    F' = L.foldl pushIfNew F := by
+  induction L generalizing F with
+  | nil => simp only [List.foldlM_nil, pure, Except.pure, Except.ok.injEq] at h; exact h.symm
+  | cons fn rest ih =>
+    simp only [List.foldlM_cons, bind, Except.bind] at h
+    rcases hp : F.tryPush fn with _ | F1
+    · rw [hp] at h; cases h
+    · rw [hp] at h
+      unfold tryPush at hp
+      split at hp
+      · cases hp
+      · rename_i hfresh
+        simp only [Except.ok.injEq] at hp
+        subst hp
+        simp only [List.foldl_cons, pushIfNew, hfresh, dite_false]
+        exact ih _ h
+
+/-- Adding a factory finds a name in the first one, then in the second. -/
+theorem getElem?_addFactory [Inhabited T.Metadata] [Std.ToFormat T.IDMeta] {F G F' : @Factory T}
+    (h : F.addFactory G = .ok F') (n : String) : F'[n]? = (F[n]?).or (G[n]?) := by
+  unfold addFactory tryAddAll at h
+  rw [← Array.foldlM_toList] at h
+  rw [foldlM_tryPush_eq _ F F' h, getElem?_foldl_pushIfNew, getElem?_eq_find? G]
+
+/-- Two factories with the same lookups hold the same functions. -/
+theorem isMapOf_id_of_getElem? {F G : @Factory T} (h : ∀ n : String, G[n]? = F[n]?) :
+    IsMapOf F G id where
+  mem fn hfn := by
+    have hg := getElem?_of_mem_toArray G fn hfn
+    rw [h] at hg
+    exact ⟨fn, getElem?_is_some_implies_mem hg, rfl⟩
+  get n fn0 hF := by rw [h]; exact hF
+  get' n fn hG := ⟨fn, by rw [← h]; exact hG, rfl⟩
+
+/-- A factory built from the images of another's functions finds the image of what that one
+    finds. -/
+theorem getElem?_ofArray_map (F : @Factory T) (g : LFunc T → LFunc T)
+    (hname : ∀ f, (g f).name.name = f.name.name) (n : String) :
+    (Factory.ofArray (F.toArray.map g))[n]? = (F[n]?).map g := by
+  have h := isMapOf_ofArray_map F g hname
+  rcases hF : F[n]? with _ | fn
+  · rcases hG : (Factory.ofArray (F.toArray.map g))[n]? with _ | fn'
+    · rfl
+    · obtain ⟨fn0, h0, -⟩ := h.get' n fn' hG; rw [hF] at h0; cases h0
+  · exact h.get n fn hF
+
+/-- Pushing the same function onto factories with the same lookups keeps their lookups equal. -/
+theorem lookup_pushIfNew_congr {T : LExprParams} {F1 F2 : Factory T}
+    (h : ∀ n : String, F1[n]? = F2[n]?) (f : LFunc T) :
+    ∀ n : String, (F1.pushIfNew f)[n]? = (F2.pushIfNew f)[n]? := by
+  intro n
+  rw [getElem?_pushIfNew, getElem?_pushIfNew, h n]
+
+/-- A successful `tryPush` is `pushIfNew`. -/
+theorem tryPush_eq_pushIfNew {T : LExprParams} [Inhabited T.Metadata] [Std.ToFormat T.IDMeta]
+    {F F' : Factory T} {f : LFunc T} (h : F.tryPush f = .ok F') : F' = F.pushIfNew f := by
+  unfold tryPush at h
+  unfold pushIfNew
+  split at h
+  · cases h
+  · rename_i hn
+    cases h
+    simp [hn]
+
+/-- **A successful `tryPush` fold has the lookups of the `pushIfNew` fold**, from factories with
+    the same lookups. -/
+theorem lookup_tryAddAll_congr {T : LExprParams} [Inhabited T.Metadata] [Std.ToFormat T.IDMeta] :
+    ∀ (l : List (LFunc T)) {F1 F2 F1' : Factory T}, (∀ n : String, F1[n]? = F2[n]?) →
+      (l.foldlM (·.tryPush ·) F1 : Except Strata.Message (Factory T)) = .ok F1' →
+      ∀ n : String, F1'[n]? = (l.foldl pushIfNew F2)[n]?
+  | [], F1, F2, F1', h, hok => by
+    simp only [List.foldlM_nil, pure, Except.pure, Except.ok.injEq] at hok
+    subst hok
+    exact h
+  | f :: l, F1, F2, F1', h, hok => by
+    simp only [List.foldlM_cons, bind, Except.bind] at hok
+    split at hok
+    · cases hok
+    · rename_i G hG
+      rw [tryPush_eq_pushIfNew hG] at hok
+      exact lookup_tryAddAll_congr l (lookup_pushIfNew_congr h f) hok
+
+end Maps
+
+end Factory
 
 end Lambda

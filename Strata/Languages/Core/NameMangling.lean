@@ -33,8 +33,10 @@ open Strata.PtrCache
 @[expose] def monoDelim : String := "#"
 
 /-- `s` contains a character of `monoDelim`. `MonomorphizeFunctions` rejects any program
-    with such a name, so a mangled name is never mistaken for an input name or vice versa. -/
-@[expose] def hasMonoDelim (s : String) : Bool := s.any (· ∈ monoDelim.toList)
+    with such a name, so a mangled name is never mistaken for an input name or vice versa.
+    Defined over `s.toList`, so proofs can use list lemmas; `String.any` has none relating
+    it to `toList`. -/
+@[expose] def hasMonoDelim (s : String) : Bool := s.toList.any (· ∈ monoDelim.toList)
 
 /-! ### Type mangling -/
 

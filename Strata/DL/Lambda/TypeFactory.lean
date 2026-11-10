@@ -347,6 +347,23 @@ def isRecTy (block : MutualDatatype IDMeta) (ty : LMonoTy) : Bool :=
     whose result is a datatype of `block` is not one. -/
 def findDirectRecTy (block : MutualDatatype IDMeta) (ty : LMonoTy) : Option (LDatatype IDMeta) :=
   block.find? (dataDefault · == ty)
+/-- No constructor of the block has an argument whose type is one of the block's
+    datatypes, possibly under arrows (`isRecTy`). On such a block the eliminators'
+    evaluators make no recursive call. -/
+@[expose] def MutualDatatype.NoRecursive (block : MutualDatatype IDMeta) : Bool :=
+  block.all fun d => d.constrs.all fun c => c.args.all fun (_, ty) => !isRecTy block ty
+
+/-- The shape of a datatype the proofs about its generated functions cover: distinct type
+    parameters with no type-checker prefix, constructors with distinct names whose
+    arguments have distinct names and types over the type parameters, and a name other
+    than the arrow type's. -/
+@[expose] def LDatatype.argsWF (d : LDatatype IDMeta) : Bool :=
+  decide d.typeArgs.Nodup &&
+  d.typeArgs.all (fun ta => !(genTyPrefix.toList.isPrefixOf ta.toList)) &&
+  decide (d.constrs.map (·.name.name)).Nodup &&
+  d.constrs.all (fun c => decide (c.args.map (·.1.name)).Nodup &&
+    c.args.all fun a => a.2.freeVars.all (· ∈ d.typeArgs)) &&
+  d.name != "arrow"
 
 
 

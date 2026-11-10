@@ -16,6 +16,7 @@ import all Strata.Util.ListUtilsProps
 import all Strata.Util.HMaps
 import all Strata.Util.HMap
 import Std.Tactic.BVDecide.Normalize.BitVec
+import Strata.DL.Lambda.LTyProps
 
 /-!
 ## Theorems for Type Substitution and Unification
@@ -23,7 +24,10 @@ import Std.Tactic.BVDecide.Normalize.BitVec
 Properties of substitution, and the soundness, most-general-unifier, and matching
 completeness of `Constraints.unify`. Key theorems: `Constraints.unify_sound`,
 `Constraints.unify_mgu`, and `Constraints_unify_matching_complete`. One-way matching
-(`LMonoTy.matchSubst`) is sound: `LMonoTy.matchSubst_sound`.
+(`LMonoTy.matchSubst`) is sound: `LMonoTy.matchSubst_sound`. Unifying a ground instance with
+its pattern succeeds and maps the pattern to the instance
+(`Constraints_unify_ground_instance_complete`), and substitutions that agree on a type's
+variables agree on it (`LMonoTy.subst_congr_vars`).
 
 Also: unification preserves any substitution property that each variable binding preserves
 (`Constraint.unify_preserves`), and the ambient renaming of generated type variables keeps a
@@ -1461,6 +1465,292 @@ theorem LMonoTy.subst_nil (m : LMonoTy) : LMonoTy.subst [] m = m :=
 theorem LMonoTy.subst_ground (S : Subst) (m : LMonoTy) (h : LMonoTy.freeVars m = []) :
     LMonoTy.subst S m = m :=
   LMonoTy.subst_no_relevant_keys S m (fun x hx => absurd (h ▸ hx) (by simp))
+
+/-- A type whose type variables all map to ground types is substituted to a ground type. -/
+theorem LMonoTy.freeVars_subst_ground (S : Subst) :
+    ∀ (t : LMonoTy), (∀ a ∈ t.freeVars, (LMonoTy.subst S (.ftvar a)).freeVars = []) →
+      (LMonoTy.subst S t).freeVars = [] := by
+  intro t
+  induction t with
+  | ftvar y => intro h; exact h y (by simp [LMonoTy.freeVars])
+  | bitvec n => intro _; simp [LMonoTy.subst_bitvec, LMonoTy.freeVars]
+  | tcons name args ih =>
+    intro h
+    rw [LMonoTy.subst_tcons, LMonoTys.subst_eq_map, LMonoTy.freeVars]
+    apply List.eq_nil_iff_forall_not_mem.mpr
+    intro x hx
+    obtain ⟨u, hu, hxu⟩ := LMonoTys.freeVars_exists hx
+    obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hu
+    have := ih a ha (fun b hb => h b (LMonoTys.freeVars_mem_subset ha hb))
+    rw [this] at hxu
+    cases hxu
+
+
+section GroundInstance
+open Strata.Util
+
+
+/-- **`unifyOne` completeness with a ground left side.** If the left side of every constraint
+    is ground and the right side, whose variables lie in `L`, matches it under `M`, then
+    `unifyOne` succeeds, binding only `L`-keys to ground types. The mirror of
+    `Constraint.unifyOne_matching_complete` for the orientation `(instance, pattern)`. -/
+private theorem Constraint.unifyOne_ground_left_complete
+    (c : Constraint) (S : SubstInfo) (L : List TyIdentifier) (M : Subst)
+    (hMkeys : ∀ v ∈ HMaps.keys M, v ∈ L)
+    (hb1 : LMonoTy.freeVars c.1 ⊆ [])
+    (hb2 : LMonoTy.freeVars c.2 ⊆ L)
+    (hmatch : LMonoTy.subst M c.2 = c.1)
+    (hMabs : Subst.absorbs M S.subst)
+    (hSkeys : ∀ k ∈ HMaps.keys S.subst, k ∈ L)
+    (hSval : Subst.freeVars S.subst ⊆ []) :
+    ∃ relS : ValidSubstRelation [c] S,
+      Constraint.unifyOne c S = .ok relS ∧
+      (∀ k ∈ HMaps.keys relS.newS.subst, k ∈ L) ∧
+      Subst.freeVars relS.newS.subst ⊆ [] := by
+  have hLF : ∀ v ∈ L, v ∉ ([] : List TyIdentifier) := fun _ _ h => by cases h
+  revert hb1 hb2 hmatch hMabs hSkeys hSval
+  apply Constraint.unifyOne.induct
+    (motive1 := fun c S =>
+      (LMonoTy.freeVars c.1 ⊆ []) → (LMonoTy.freeVars c.2 ⊆ L) →
+      LMonoTy.subst M c.2 = c.1 → Subst.absorbs M S.subst →
+      (∀ k ∈ HMaps.keys S.subst, k ∈ L) → Subst.freeVars S.subst ⊆ [] →
+      ∃ relS : ValidSubstRelation [c] S,
+        Constraint.unifyOne c S = .ok relS ∧
+        (∀ k ∈ HMaps.keys relS.newS.subst, k ∈ L) ∧
+        Subst.freeVars relS.newS.subst ⊆ [])
+    (motive2 := fun cs S =>
+      (∀ p ∈ cs, LMonoTy.freeVars p.1 ⊆ []) → (∀ p ∈ cs, LMonoTy.freeVars p.2 ⊆ L) →
+      (∀ p ∈ cs, LMonoTy.subst M p.2 = p.1) → Subst.absorbs M S.subst →
+      (∀ k ∈ HMaps.keys S.subst, k ∈ L) → Subst.freeVars S.subst ⊆ [] →
+      ∃ relS : ValidSubstRelation cs S,
+        Constraints.unifyCore cs S = .ok relS ∧
+        (∀ k ∈ HMaps.keys relS.newS.subst, k ∈ L) ∧
+        Subst.freeVars relS.newS.subst ⊆ [])
+  -- Case 1: t1 == t2
+  · intro S t1 t2 h_eq _ _ _ _ _ hSkeys hSval
+    rw [Constraint.unifyOne.eq_def]; simp only; split
+    · exact ⟨_, rfl, hSkeys, hSval⟩
+    · exact absurd h_eq ‹_›
+  -- Cases 2-5: the left side is `ftvar id`, not ground.
+  · intro S id _ _ _ _ _ _ hb1; exfalso; simp [LMonoTy.freeVars] at hb1
+  · intro S id _ _ _ _ _ _ _ hb1; exfalso; simp [LMonoTy.freeVars] at hb1
+  · intro S id _ _ _ _ _ _ _ _ _ _ hb1; exfalso; simp [LMonoTy.freeVars] at hb1
+  · intro S id _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hb1; exfalso; simp [LMonoTy.freeVars] at hb1
+  -- Case 6: (orig_lty, ftvar id) with ftvar id == lty
+  · intro S orig_lty id h_neq _ _ _ _ _ _ _ _ _ hSkeys hSval
+    rw [Constraint.unifyOne.eq_def]; simp only; split
+    · exact absurd ‹_› h_neq
+    · exact ⟨_, rfl, hSkeys, hSval⟩
+  -- Case 7: occurs check: impossible, `lty` is ground.
+  · intro S orig_lty id _ _ _ _ _ _ h_occurs hb1 _ _ _ hSkeys _
+    exfalso
+    have h_lty_eq : LMonoTy.subst S.subst orig_lty = orig_lty :=
+      subst_fix_of_keys_disjoint S.subst L [] hLF hSkeys orig_lty hb1
+    change id ∈ (LMonoTy.subst S.subst orig_lty).freeVars at h_occurs
+    rw [h_lty_eq] at h_occurs
+    exact absurd (hb1 h_occurs) (by simp)
+  -- Case 8: existing binding `sty` — recursive on (sty, lty)
+  · intro S orig_lty id h_neq _ _ _ _ _ _ sty h_some ih_rec hb1 _ hmatch hMabs hSkeys hSval
+    have h_lty_eq : LMonoTy.subst S.subst orig_lty = orig_lty :=
+      subst_fix_of_keys_disjoint S.subst L [] hLF hSkeys orig_lty hb1
+    have h_sty_fv : LMonoTy.freeVars sty ⊆ [] := fun x hx =>
+      hSval (Subst.freeVars_of_find_subset S.subst h_some hx)
+    have h_M_sty : LMonoTy.subst M sty = sty :=
+      subst_fix_of_keys_disjoint M L [] hLF hMkeys sty h_sty_fv
+    have h_M_orig : LMonoTy.subst M orig_lty = orig_lty :=
+      subst_fix_of_keys_disjoint M L [] hLF hMkeys orig_lty hb1
+    have h_sty_eq : sty = orig_lty := by
+      have h1 : LMonoTy.subst M sty = LMonoTy.subst M (.ftvar id) := hMabs id sty h_some
+      rw [h_M_sty] at h1; rw [h1]; exact hmatch
+    have ih := ih_rec h_sty_fv
+      (by show LMonoTy.freeVars (LMonoTy.subst S.subst orig_lty) ⊆ L
+          rw [h_lty_eq]; exact fun x hx => absurd (hb1 hx) (by simp))
+      (by show LMonoTy.subst M (LMonoTy.subst S.subst orig_lty) = sty
+          rw [h_lty_eq, h_M_orig, h_sty_eq])
+      hMabs hSkeys hSval
+    obtain ⟨relS', h_call, h_keys', h_val'⟩ := ih
+    rw [Constraint.unifyOne.eq_def]; simp only; split
+    · exact absurd ‹_› h_neq
+    · split
+      · rename_i sty' h_some'
+        rw [h_some] at h_some'; simp only [Option.some.injEq] at h_some'; subst h_some'
+        simp only [bind, Except.bind]
+        rw [h_call]
+        exact ⟨_, rfl, h_keys', h_val'⟩
+      · rename_i h_none; rw [h_some] at h_none; simp at h_none
+  -- Case 9: no binding — insert [id ↦ lty]
+  · intro S orig_lty id h_neq _ _ _ _ _ _ h_none _ _ _ _ _ _ _ hb1 hb2 _ _ hSkeys hSval
+    have h_lty_eq : LMonoTy.subst S.subst orig_lty = orig_lty :=
+      subst_fix_of_keys_disjoint S.subst L [] hLF hSkeys orig_lty hb1
+    have h_id_L : id ∈ L := hb2 (by simp [LMonoTy.freeVars])
+    rw [Constraint.unifyOne.eq_def]; simp only; split
+    · exact absurd ‹_› h_neq
+    · split
+      · rename_i sty h_some; rw [h_none] at h_some; simp at h_some
+      · refine ⟨_, rfl, ?_, ?_⟩
+        · intro k hk
+          have hk' := HMaps.insert_keys_subset
+            (Subst.apply (HMap.single id (LMonoTy.subst S.subst orig_lty)) S.subst) id
+            (LMonoTy.subst S.subst orig_lty) k hk
+          rcases List.mem_cons.mp hk' with rfl | h_old
+          · exact h_id_L
+          · exact hSkeys k ((Subst.mem_keys_apply_iff _ S.subst k).mp h_old)
+        · intro x hx
+          have h_ins := Subst.freeVars_of_insert
+            (Subst.apply (HMap.single id (LMonoTy.subst S.subst orig_lty)) S.subst) id
+            (LMonoTy.subst S.subst orig_lty) hx
+          rcases List.mem_append.mp h_ins with h_apply | h_lty
+          · rcases List.mem_append.mp (Subst.freeVars_of_apply_subset_alt _ S.subst h_apply)
+              with h1 | h2
+            · exact (h_lty_eq ▸ hb1) (Subst.freeVars_singleton_subset id _ h1)
+            · exact hSval h2
+          · exact (h_lty_eq ▸ hb1) h_lty
+  -- Case 10, 11: bitvec
+  · intro S n1 n2 h_neq h_eq_n; intros; grind
+  · intro S n1 n2 h_neq h_neq_n; intro _ _ hmatch; intros
+    exfalso; simp only at hmatch; rw [LMonoTy.subst_bitvec] at hmatch
+    exact h_neq_n (by simp only [LMonoTy.bitvec.injEq] at hmatch; simp [hmatch])
+  -- Case 12: tcons match — recurse on zipped args
+  · intro S name1 args1 name2 args2 h_neq h_match _ ih_core hb1 hb2 hmatch hMabs hSkeys hSval
+    simp only at hmatch hb1 hb2
+    have h_name : name1 = name2 := by
+      have := (Bool.and_eq_true _ _ ▸ h_match : _ ∧ _).1; exact eq_of_beq this
+    have h_len : args1.length = args2.length := by
+      have := (Bool.and_eq_true _ _ ▸ h_match : _ ∧ _).2; exact of_decide_eq_true this
+    subst h_name
+    have h_pw : ∀ p ∈ args1.zip args2, LMonoTy.subst M p.2 = p.1 := by
+      rw [LMonoTy.subst_tcons] at hmatch
+      simp only [LMonoTy.tcons.injEq, true_and] at hmatch
+      rw [LMonoTys.subst_eq_map] at hmatch
+      have h_map_eq := List.map_eq_iff.mp hmatch
+      intro p hp
+      obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hp
+      have hi1 : i < args1.length := by
+        have := List.length_zip (l₁ := args1) (l₂ := args2); omega
+      rw [List.getElem_zip]
+      have hmap := h_map_eq i
+      rw [List.getElem?_eq_getElem (by omega : i < args2.length),
+        List.getElem?_eq_getElem hi1, Option.map_some] at hmap
+      simpa using hmap.symm
+    have hb1' : ∀ p ∈ args1.zip args2, LMonoTy.freeVars p.1 ⊆ [] := by
+      intro p hp x hx
+      apply hb1
+      have hp1 : p.1 ∈ args1 := List.of_mem_zip hp |>.1
+      show x ∈ LMonoTy.freeVars (LMonoTy.tcons name1 args1)
+      rw [LMonoTy.freeVars]; exact LMonoTys.freeVars_mem_subset hp1 hx
+    have hb2' : ∀ p ∈ args1.zip args2, LMonoTy.freeVars p.2 ⊆ L := by
+      intro p hp x hx
+      apply hb2
+      have hp2 : p.2 ∈ args2 := List.of_mem_zip hp |>.2
+      show x ∈ LMonoTy.freeVars (LMonoTy.tcons name1 args2)
+      rw [LMonoTy.freeVars]; exact LMonoTys.freeVars_mem_subset hp2 hx
+    obtain ⟨relS', h_call, h_keys', h_val'⟩ := ih_core hb1' hb2' h_pw hMabs hSkeys hSval
+    rw [Constraint.unifyOne.eq_def]; simp only; split
+    · exact absurd ‹_› h_neq
+    · simp only [bind, Except.bind]
+      rw [h_call]
+      exact ⟨_, rfl, h_keys', h_val'⟩
+  -- Case 13: tcons mismatch
+  · intro S name1 args1 name2 args2 h_neq h_mismatch; intro _ _ hmatch; intros
+    exfalso; simp only at hmatch; rw [LMonoTy.subst_tcons] at hmatch
+    simp only [LMonoTy.tcons.injEq] at hmatch
+    apply h_mismatch
+    obtain ⟨h_nm, h_args⟩ := hmatch
+    subst h_nm
+    rw [LMonoTys.subst_eq_map] at h_args
+    simp only [beq_self_eq_true, Bool.true_and]
+    have := congrArg List.length h_args; simpa using this.symm
+  -- Cases 14, 15: bitvec vs tcons
+  · intro S size name args h_neq; intro _ _ hmatch; intros
+    exfalso; simp only at hmatch; rw [LMonoTy.subst_tcons] at hmatch
+    exact absurd hmatch (by simp)
+  · intro S name args size h_neq; intro _ _ hmatch; intros
+    exfalso; simp only at hmatch; rw [LMonoTy.subst_bitvec] at hmatch
+    exact absurd hmatch (by simp)
+  -- Case 16: unifyCore []
+  · intro S _ _ _ _ hSkeys hSval
+    rw [Constraints.unifyCore.eq_def]; simp only
+    exact ⟨_, rfl, hSkeys, hSval⟩
+  -- Case 17: unifyCore (c :: c_rest)
+  · intro S c c_rest ih1 ih2 hb1 hb2 hmatch hMabs hSkeys hSval
+    have hb1_c := hb1 c List.mem_cons_self
+    have hb2_c := hb2 c List.mem_cons_self
+    have hm_c := hmatch c List.mem_cons_self
+    obtain ⟨relS_one, h_one, h_keys_one, h_val_one⟩ := ih1 hb1_c hb2_c hm_c hMabs hSkeys hSval
+    have h_M_fix_c1 : LMonoTy.subst M c.1 = c.1 :=
+      subst_fix_of_keys_disjoint M L [] hLF hMkeys c.1 hb1_c
+    have hM_unif_c : LMonoTy.subst M c.1 = LMonoTy.subst M c.2 := by rw [h_M_fix_c1, hm_c]
+    have hMabs_one : Subst.absorbs M relS_one.newS.subst :=
+      Constraint.unifyOne_mgu c S relS_one h_one M hM_unif_c hMabs
+    obtain ⟨relS_rest, h_rest, h_keys_rest, h_val_rest⟩ := ih2 relS_one
+      (fun p hp => hb1 p (List.mem_cons_of_mem c hp))
+      (fun p hp => hb2 p (List.mem_cons_of_mem c hp))
+      (fun p hp => hmatch p (List.mem_cons_of_mem c hp))
+      hMabs_one h_keys_one h_val_one
+    rw [Constraints.unifyCore.eq_def]; simp only
+    simp only [Bind.bind, Except.bind, Except.mapError]
+    rw [h_one]; simp only; rw [h_rest]
+    exact ⟨_, rfl, h_keys_rest, h_val_rest⟩
+
+/-- **Unifying a ground instance with its pattern succeeds**, in the orientation
+    `[(instance, pattern)]` that `LFunc.opTypeSubst` uses, and the result maps the pattern to
+    the instance. -/
+theorem Constraints_unify_ground_instance_complete
+    (τ pat : LMonoTy) (S : Lambda.Subst) (hτ : τ.freeVars = [])
+    (hmatch : LMonoTy.subst S pat = τ) :
+    ∃ si : Lambda.SubstInfo,
+      Lambda.Constraints.unify [(τ, pat)] Lambda.SubstInfo.empty = .ok si ∧
+      LMonoTy.subst si.subst pat = τ := by
+  obtain ⟨M, hMkeys, hMpat⟩ := exists_restricted_matcher pat τ S hmatch
+  have hcore : ∃ relS : ValidSubstRelation [(τ, pat)] SubstInfo.empty,
+      Constraints.unifyCore [(τ, pat)] SubstInfo.empty = .ok relS ∧
+      (∀ k ∈ HMaps.keys relS.newS.subst, k ∈ pat.freeVars) := by
+    rw [Constraints.unifyCore.eq_def]; simp only
+    obtain ⟨relS_one, h_one, h_keys_one, h_val_one⟩ :=
+      Constraint.unifyOne_ground_left_complete (τ, pat) SubstInfo.empty pat.freeVars M hMkeys
+        (by rw [hτ]; exact fun _ h => h) (fun _ h => h) hMpat
+        (by intro a t h; simp [SubstInfo.empty, Subst.empty, HMaps.find?] at h)
+        (by intro k hk; simp [SubstInfo.empty, Subst.empty, HMaps.keys] at hk)
+        (by intro x hx; simp [SubstInfo.empty, Subst.empty, Subst.freeVars, HMaps.values] at hx)
+    simp only [Bind.bind, Except.bind, Except.mapError]
+    rw [h_one]; simp only
+    rw [Constraints.unifyCore.eq_def]; simp only
+    exact ⟨_, rfl, h_keys_one⟩
+  obtain ⟨relS, h_core, h_keys⟩ := hcore
+  have h_unify : Constraints.unify [(τ, pat)] SubstInfo.empty = .ok relS.newS := by
+    simp only [Constraints.unify, bind, Except.bind, h_core]
+  refine ⟨relS.newS, h_unify, ?_⟩
+  have h_sound := Constraints.unify_sound [(τ, pat)] SubstInfo.empty relS.newS h_unify
+    (τ, pat) List.mem_cons_self
+  have h_fix : LMonoTy.subst relS.newS.subst τ = τ := LMonoTy.subst_ground _ _ hτ
+  simp only at h_sound
+  rw [← h_sound, h_fix]
+
+end GroundInstance
+
+/-- A free variable of a list of types is a free variable of one of them. -/
+theorem mem_freeVars_list : ∀ {l : List LMonoTy} {v : TyIdentifier},
+    v ∈ LMonoTys.freeVars l → ∃ a ∈ l, v ∈ LMonoTy.freeVars a
+  | [], _, h => by simp [LMonoTys.freeVars] at h
+  | a :: l, v, h => by
+    simp only [LMonoTys.freeVars, List.mem_append] at h
+    rcases h with h | h
+    · exact ⟨a, List.mem_cons_self, h⟩
+    · obtain ⟨b, hb, hv⟩ := mem_freeVars_list h
+      exact ⟨b, List.mem_cons_of_mem _ hb, hv⟩
+
+/-- **Substitutions that send every free variable of `mty` to the same type agree on `mty`.** -/
+theorem LMonoTy.subst_congr_vars (S1 S2 : Subst) (mty : LMonoTy)
+    (h : ∀ x ∈ LMonoTy.freeVars mty, LMonoTy.subst S1 (.ftvar x) = LMonoTy.subst S2 (.ftvar x)) :
+    LMonoTy.subst S1 mty = LMonoTy.subst S2 mty := by
+  induction mty with
+  | ftvar x => exact h x (by simp [LMonoTy.freeVars])
+  | bitvec n => rw [LMonoTy.subst_bitvec, LMonoTy.subst_bitvec]
+  | tcons name args ih =>
+    rw [LMonoTy.subst_tcons, LMonoTy.subst_tcons, LMonoTys.subst_eq_map, LMonoTys.subst_eq_map]
+    congr 1
+    exact List.map_congr_left (fun a ha => ih a ha (fun x hx =>
+      h x (by simp only [LMonoTy.freeVars]; exact LMonoTys.freeVars_mem_subset ha hx)))
 
 /-- A single-variable substitution fixes every other type variable. -/
 private theorem Subst.find?_singleton_ne (a x : TyIdentifier) (v : LMonoTy) (h : x ≠ a) :
