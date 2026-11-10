@@ -266,6 +266,7 @@ import Strata.Examples.EmbeddedData
 import Strata.Languages.Core.InterpreterReplayTactics
 
 -- noimport: Strata.Util.IOTests (used for tests)
+-- noimport: Strata.Util.Tests (used for tests)
 -- noimport: Strata.CodeGen.TypeShape (meta module, used by the code generators)
 -- noimport: Strata.Java.Gen (meta module, used by laurelJavaGen executable)
 -- noimport: Strata.Go.Gen (meta module, used by laurelGoGen executable)

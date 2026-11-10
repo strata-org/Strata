@@ -13,6 +13,7 @@ meta import StrataLaurel.Implementation.Grammar.LaurelGrammar
 meta import StrataLaurel.Implementation.Grammar.ConcreteToAbstractTreeTranslator
 meta import StrataLaurel.Implementation.LaurelCompilationPipeline
 meta import all StrataLaurel.Tests.Util.LaurelCorpusHarness
+meta import Strata.Util.Tests
 
 /-!
 # Dynamic dispatch + behavioral-subtyping (Liskov) corpus
@@ -1000,8 +1001,20 @@ procedure innerD<T>(p: GBaseD2<T>) returns (r: T) opaque ensures true { r := p#v
 procedure outerD<S>(d: D2<S>) returns (r: S) opaque ensures true { r := innerD(d) };
 procedure u() opaque { var d: D2<bool> := new D2<bool>; var g: bool := outerD(d); assert 1 == 1 };"} ]
 
-def runDynamicDispatchTest : IO Unit := checkCases dynamicDispatchCorpus
+/-- Run one corpus case by name — the single-case entry point each generated child
+    module calls. The corpus source lives only in this file; a child carries just the
+    name, looks the case up here, and runs it. -/
+def runDynamicByName (name : String) : IO Unit :=
+  match dynamicDispatchCorpus.find? (·.name == name) with
+  | some c => checkCase c
+  | none => throw (IO.userError s!"no dynamic-dispatch case named {name}")
 
-#guard_msgs (drop info, error) in
-#eval runDynamicDispatchTest
 end Strata.Laurel
+
+open Strata.Laurel
+
+-- One child module per corpus case, under StrataTestExtra/ so the test driver runs
+-- them concurrently. Each child looks its case up by name and runs it; the corpus
+-- source is not copied into the children.
+#test_for_each runDynamicByName (dynamicDispatchCorpus.map (·.name))
+#run_tests_as_modules "StrataTestExtra/StrataLaurel/DynamicDispatch/Gen"
