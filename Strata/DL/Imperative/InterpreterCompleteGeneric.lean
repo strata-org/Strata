@@ -345,7 +345,7 @@ private theorem traceExt_single {obs : InterpObs P m} {F : P.Factory} {st st' : 
 
 omit [HasBoolOps P] [HasFvar P] [DecidableEq P.Ident] [LawfulMonad m] in
 /-- Trace extensions compose: extending by `e1` and then by `e2` extends by `e1 ++ e2`. -/
-private theorem InterpObs.TraceExt.append {obs : InterpObs P m} {F : P.Factory}
+theorem InterpObs.TraceExt.append {obs : InterpObs P m} {F : P.Factory}
     {st s s' : obs.St} {e1 e2 : List (Event P)} (h1 : obs.TraceExt F st s e1)
     (h2 : obs.TraceExt F s s' e2) : obs.TraceExt F st s' (e1 ++ e2) := by
   obtain ⟨r1, rfl, t1⟩ := h1

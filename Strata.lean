@@ -178,8 +178,12 @@ import Strata.Languages.Core.InterpreterBridgeStatements
 import Strata.Languages.Core.InterpreterCallComplete
 import Strata.Languages.Core.InterpreterCallSound
 import Strata.Languages.Core.InterpreterComplete
+import Strata.Languages.Core.InterpreterCFG
+import Strata.Languages.Core.InterpreterCFGProps
 import Strata.Languages.Core.InterpreterEval
 import Strata.Languages.Core.InterpreterEvalProps
+import Strata.Languages.Core.InterpreterKleene
+import Strata.Languages.Core.InterpreterKleeneProps
 import Strata.Languages.Core.InterpreterReach
 import Strata.Languages.Core.InterpreterReachBridge
 import Strata.Languages.Core.InterpreterReachBuiltins
@@ -192,8 +196,6 @@ import Strata.Languages.Core.StmtCallFree
  -- deletion candidates: nothing imports these modules:
 
 -- noimport:
-import Strata.DL.Imperative.CFGSemantics
-import Strata.DL.Imperative.CFGSemanticsProps
 import Strata.DL.Lambda.Denote.Assumptions
 import Strata.DL.Lambda.Denote.CallOfLFuncDenote
 import Strata.DL.Lambda.Denote.LExprDenote

@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Imperative.StmtCFGCallSemantics
 public import Strata.DL.Imperative.InterpreterReplay
+public import Strata.DL.Imperative.InterpreterCFG
 import Strata.DL.Imperative.InterpreterReplayTactics
 public import Strata.DL.Imperative.InterpreterReplayProps
 
@@ -14,15 +15,14 @@ public import Strata.DL.Imperative.InterpreterReplayProps
 
 `Calls.stepCmd π` steps a `CmdExt P` command: a base command through the generic
 `stepBaseCmdStore`, and a `.call` as an **exact run-to-completion** of the callee
-body in the same effect monad, by reusing the Imperative driver `runInterp` at
-strictly smaller fuel.  It follows the reference rule `Calls.EvalCmdExtE.call_sem`:
-`callEntryStore` is its `InitCallFrame`, the argument evaluation and `out` read its
-other `CallEntry` premises, the trailing `readVarList`/`bindPositional` pair its `CallExit`, and the
-callee's non-`free` pre- and postconditions are **emitted** as assertion events
-(never adjudicated) around the body run.
+body in the same effect monad, at strictly smaller fuel: a structured body through the
+Imperative driver `runInterp`, a CFG body through the CFG driver `runInterpCFG`.  It follows the
+reference rule `Calls.EvalCmdExtE.call_sem`: `callEntryStore` is its `InitCallFrame`, the
+argument evaluation and `out` read its other `CallEntry` premises, the trailing
+`readVarList`/`bindPositional` pair its `CallExit`, and the callee's non-`free` pre- and
+postconditions are **emitted** as assertion events (never adjudicated) around the body run.
 
-A callee with a `.cfg` body, an unresolved callee, and a positional arity mismatch
-are refused.
+An unresolved callee and a positional arity mismatch are refused.
 
 It also defines, over this stepper, the target-event predicates `assertFailureHalt` and
 `targetReached` and the replay verdicts `genuine`, `genuineFeasible`, `genuineEnforced`.
@@ -131,9 +131,11 @@ variable [HasBool P] [DecidableEq P.Expr] [InterpLang P] [HasFvar P]
 /-- The callee body run of a `.call`, from the entry frame `entryStore` at the caller's factory
     `fac` and driver fuel `fuel`, over the command stepper `step`; it returns the body's final
     store.  A structured body `ss` runs as `.block "" ss` through `runInterp`, and its final
-    store is the store of the terminal configuration; a body that does not end in a terminal
-    configuration stops with `programCallBodyExited`.  A CFG body stops with
-    `unsupportedCalleeCfgBody`. -/
+    store is the store of the terminal configuration.  A CFG body `g` runs through
+    `runInterpCFG` from its entry block, each command through `step` at the running store, and
+    its final store is the halting store projected through the entry frame (`projectStore`), as
+    in `BigStepE`.  A body that does not end in a terminal configuration stops with
+    `programCallBodyExited`. -/
 @[expose] def runCallee {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopReason m]
     (step : StepCmdM P (CmdExt P) m) (procName : String) (body : Body P (CmdExt P))
     (fac : InterpLang.RFactory P) (fuel : Nat) (entryStore : RStore P) : m (RStore P) :=
@@ -145,18 +147,22 @@ variable [HasBool P] [DecidableEq P.Expr] [InterpLang P] [HasFvar P]
     let .terminal finalEnv := finalCfg
       | throw (.programCallBodyExited procName)
     pure finalEnv.store.get
-  | .cfg _ => throw (.unsupportedCalleeCfgBody procName)
+  | .cfg g => do
+    let finalCfg ← runInterpCFG step.toStore fuel (.atBlock g g.entry
+        { store := .ofStore entryStore, factory := fac })
+    let .terminal ρEnd := finalCfg
+      | throw (.programCallBodyExited procName)
+    pure (RStore.project entryStore ρEnd.store.get)
 
 /-- The call-aware command stepper, generic over the effect monad `m`.  `depth` is the
     remaining call-depth budget: how many more calls may nest inside this one.  Base
     commands go through `stepBaseCmdStore` (presented as `.terminal`).  `.call` at
-    fuel `fuel' + 1` stops with `callDepthExceeded` at budget `0`, and on a callee with a
-    `.cfg` body with `unsupportedCalleeCfgBody`; at budget `depth' + 1` it evaluates its
-    arguments, builds the callee frame, emits the non-free preconditions with their site
-    metadata (`checksAtCall md`), runs the callee body (`runCallee`) at the caller's factory with
-    this stepper baked at budget `depth'` and fuel `fuel'`, emits the non-free postconditions at
-    the callee's final store, checks that each output has the type of the value its target held
-    (`writeBackTyped`; `illTypedValue` otherwise), and writes the outputs back. -/
+    fuel `fuel' + 1` stops with `callDepthExceeded` at budget `0`; at budget `depth' + 1` it
+    evaluates its arguments, builds the callee frame, emits the non-free preconditions with
+    their site metadata (`checksAtCall md`), runs the callee body (`runCallee`) at the caller's
+    factory with this stepper baked at budget `depth'` and fuel `fuel'`, emits the non-free
+    postconditions at the callee's final store, checks that each output has the type of the value
+    its target held (`writeBackTyped`; `illTypedValue` otherwise), and writes the outputs back. -/
 def stepCmd {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopReason m]
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (depth : Nat)
     (fuel : Nat) (env : IEnv P) (cmd : CmdExt P) : m (IConfig P (CmdExt P)) :=
@@ -174,9 +180,7 @@ def stepCmd {m : Type → Type} [Monad m] [InterpEffects P m] [MonadExcept StopR
       match π procName with
       | none => throw (.unsupportedCalleeNotFound procName)
       | some p =>
-        match p.body with
-        | .cfg _ => throw (.unsupportedCalleeCfgBody procName)
-        | .structured _ => do
+        do
           let inArgs := getInputExprs args
           let outArgs := CallArg.getOutArgs args
           let lhs := CallArg.getLhs args

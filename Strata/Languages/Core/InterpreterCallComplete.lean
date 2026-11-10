@@ -24,6 +24,7 @@ import all Strata.Languages.Core.Interpreter
 import all Strata.DL.Imperative.InterpreterCallComplete
 import all Strata.DL.Imperative.InterpreterCallCompleteProps
 import Strata.Languages.Core.InterpreterReplayTactics
+import Strata.DL.Imperative.CFGSemanticsProps
 public import Strata.Languages.Core.InterpreterComplete
 public import Strata.DL.Imperative.CmdSemanticsProps
 
@@ -53,7 +54,8 @@ a nondeterministic `init x : ty` may commit a value of any type, and the engine'
 relation — the reference `EvalCommandE` with its base-command arm replaced by
 `EvalCmdEngE` (which carries the engine's executable value checks), its call arm carrying the
 engine's argument evaluation (`Calls.CallArgsReach`) and typed write-back check
-(`Calls.WriteBackOK`), and with a **call-nesting height** index.
+(`Calls.WriteBackOK`), CFG callee bodies run through `StepCFGEngE`, and with a
+**call-nesting height** index.
 
 The height index carries no semantic content: `EvalCommandEngAtE π R n` is the
 engine-realizable command relation restricted to derivations whose calls nest at
@@ -79,9 +81,12 @@ abbrev CoreCmdRel :=
 abbrev CoreBodyRel :=
   Procedure.Body → Imperative.Env Expression → CoreStore → Trace Expression → Prop
 
-/-- Execution of a structured Core procedure body whose statements run through the
-    engine-realizable statement relation built from the command relation `E`.  Only
-    `.structured` bodies have an execution; `.cfg` bodies have none. -/
+/-- Execution of a Core procedure body whose commands run through the command relation `E`,
+    matching `BigStepE`: a structured body runs as `.block ""` through the engine-realizable
+    statement relation built from `E`; a CFG body runs from its entry block at the factory of the
+    entry environment through the engine-realizable event-trace CFG relation over `E`
+    (`StepCFGEngE`), and its final store is the halting store projected through the entry
+    store. -/
 @[expose] def CoreBodyExecEngOf
     (R : ChoiceRecord Expression) (E : CoreCmdRel) : CoreBodyRel
   | .structured ss, ρ, σ', emitted =>
@@ -89,7 +94,10 @@ abbrev CoreBodyRel :=
         ReflTransTrace (Imperative.StepEngParamE Expression R E)
           (.stmt (Stmt.block "" ss #[]) ρ) emitted (.terminal ρ')
         ∧ ρ'.store = σ'
-  | .cfg _, _, _, _ => False
+  | .cfg g, ρ, σ', emitted =>
+      ∃ ρEnd : Imperative.Env Expression,
+        StepCFGEngStarE Expression E (.atBlock g g.entry ρ) emitted (.terminal ρEnd)
+        ∧ projectStore ρ.store ρEnd.store = σ'
 
 /-- The base-command arm of the engine-realizable Core command relation: the
     reference `EvalCommandE.cmd_sem` arm with the engine's executable value checks
@@ -151,11 +159,16 @@ private theorem evalCommandEngAtE_toGeneric :
   induction n with
   | zero => exact id
   | succ _ ih =>
-    rintro _ _ _ _ _ (h | ⟨_, ⟨_, _, _ | _⟩, _, _, _, _, _, rfl, k, l, ⟨_, o, p⟩, s, t, ha, hw⟩)
+    rintro _ _ _ _ _ (h | ⟨_, ⟨_, _, _ | _⟩, _, _, _, _, _, rfl, k, l, hb, s, t, ha, hw⟩)
     · exact .inl h
-    exact .inr ⟨_, _, _, _, _, _, _, rfl, k, (callEntry_iff ..).1 l,
-      ⟨_, o.imp fun _ _ _ => Calls.stepEngParamE_imp (P := Expression) fun _ _ _ _ _ => ih, p⟩,
-      (callExit_iff ..).1 s, t, ha, hw⟩
+    · obtain ⟨_, o, p⟩ := hb
+      exact .inr ⟨_, _, _, _, _, _, _, rfl, k, (callEntry_iff ..).1 l,
+        ⟨_, o.imp fun _ _ _ => Calls.stepEngParamE_imp (P := Expression) fun _ _ _ _ _ => ih, p⟩,
+        (callExit_iff ..).1 s, t, ha, hw⟩
+    · obtain ⟨_, o, p⟩ := hb
+      exact .inr ⟨_, _, _, _, _, _, _, rfl, k, (callEntry_iff ..).1 l,
+        ⟨_, o.imp fun _ _ _ => StepCFGEngE.imp fun _ _ _ _ _ => ih, p⟩, (callExit_iff ..).1 s, t,
+        ha, hw⟩
 
 /-- Core's engine-realizable run at height `n` is a generic one. -/
 private theorem coreStepEngAtStarE_toGeneric (n : Nat) {c c' : CoreConfig}
@@ -174,7 +187,7 @@ end Bridge
     `runCoreInterp π` from every interpreter configuration `istart` denoting `start` to one
     denoting `final` at every sufficiently large fuel and call-depth limit, emitting runtime events
     denoting exactly the run's events.  The run's rules carry the engine's evaluation facts
-    (`EngEval`, `Calls.CallArgsReach`, `Calls.WriteBackOK`). -/
+    (`EngEval`, `Calls.CallArgsReach`, `Calls.WriteBackOK`, `StepCFGEngE`). -/
 theorem core_runCoreInterp_complete {m : Type → Type} [Monad m] [LawfulMonad m]
     [InterpEffects Expression m] [MonadExcept StopReason m]
     (obs : InterpObs Expression m)

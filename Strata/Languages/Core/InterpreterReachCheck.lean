@@ -29,7 +29,8 @@ A decidable criterion on Core programs under which every reference run is replay
   `BlockInFragment`, `ConfigInFragment`, `ProcInFragment`, decided by their lower-case
   counterparts): every `init` type is a type of literals (`isLitTy`), and every deterministic
   guard, right-hand side, assertion and cover condition, call argument and specification clause
-  is in the computable fragment; every procedure has a structured body;
+  is in the computable fragment, and so is every guard of a conditional transfer of a CFG body
+  (`TransferInFragment`, `CFGInFragment`);
 * the criterion `programInFragment`, read by `programInFragment_iff`.
 
 Excluded, with the reason: quantifiers and abstractions (the evaluator does not decide them);
@@ -37,7 +38,7 @@ bound variables; maps, sets, sequences, real arithmetic, regular expressions and
 functions (no concrete evaluator); division, remainder and shifts (guarded concrete evaluators);
 polymorphic operators and datatypes (values of literal types only); user functions without
 `inline` or `inlineIfAllValues` or calling later functions (not unfolded, or possibly recursive);
-`init` of a non-literal type; CFG bodies.
+`init` of a non-literal type.
 
 On a factory meeting `FragmentFactoryWF` (program factories do:
 `fragmentFactoryWF_of_userFuncs`), the expressions of the fragment are computable on stores of
@@ -519,10 +520,25 @@ end
   | .block _ _ inner => ConfigInFragment P inner
   | .seq inner ss => ConfigInFragment P inner ∧ BlockInFragment P ss
 
-/-- A procedure is in the fragment `P` of expressions: it has a structured body in the fragment,
-    and the conditions of its pre- and postconditions satisfy `P`. -/
+/-- A transfer command is in the fragment `P` of expressions: the guard of a conditional transfer
+    satisfies `P`. -/
+@[expose] def TransferInFragment (P : Expression.Expr → Prop) :
+    DetTransferCmd String Expression → Prop
+  | .condGoto c _ _ _ => P c
+  | .finish _ => True
+
+/-- A CFG is in the fragment `P` of expressions: the commands of each of its blocks are
+    (`CmdInFragment`), and so is the block's transfer (`TransferInFragment`). -/
+@[expose] def CFGInFragment (P : Expression.Expr → Prop)
+    (g : Imperative.DetCFG Expression Command) : Prop :=
+  ∀ lb ∈ g.blocks, (∀ c ∈ lb.2.cmds, CmdInFragment P c) ∧ TransferInFragment P lb.2.transfer
+
+/-- A procedure is in the fragment `P` of expressions: it has a structured body in the fragment
+    or a CFG body in the fragment, and the conditions of its pre- and postconditions satisfy
+    `P`. -/
 @[expose] def ProcInFragment (P : Expression.Expr → Prop) (p : Procedure) : Prop :=
-  (∃ ss, p.body = .structured ss ∧ BlockInFragment P ss) ∧
+  ((∃ ss, p.body = .structured ss ∧ BlockInFragment P ss) ∨
+    ∃ g, p.body = .cfg g ∧ CFGInFragment P g) ∧
     (∀ lc ∈ p.spec.preconditions.toList, P lc.2.expr) ∧
     ∀ lc ∈ p.spec.postconditions.toList, P lc.2.expr
 
@@ -565,9 +581,20 @@ end
   | .block _ _ inner => configInFragment fe inner
   | .seq inner ss => configInFragment fe inner && blockInFragment fe ss
 
+/-- The decision procedure for `TransferInFragment`. -/
+@[expose] def transferInFragment (fe : Expression.Expr → Bool) :
+    DetTransferCmd String Expression → Bool
+  | .condGoto c _ _ _ => fe c
+  | .finish _ => true
+
+/-- The decision procedure for `CFGInFragment`. -/
+@[expose] def cfgInFragment (fe : Expression.Expr → Bool)
+    (g : Imperative.DetCFG Expression Command) : Bool :=
+  g.blocks.all fun lb => lb.2.cmds.all (cmdInFragment fe) && transferInFragment fe lb.2.transfer
+
 /-- The decision procedure for `ProcInFragment`. -/
 @[expose] def procInFragment (fe : Expression.Expr → Bool) (p : Procedure) : Bool :=
-  (match p.body with | .structured ss => blockInFragment fe ss | .cfg _ => false) &&
+  (match p.body with | .structured ss => blockInFragment fe ss | .cfg g => cfgInFragment fe g) &&
     (p.spec.preconditions.toList.all fun lc => fe lc.2.expr) &&
     p.spec.postconditions.toList.all fun lc => fe lc.2.expr
 
@@ -627,13 +654,21 @@ theorem configInFragment_iff (fe : Expression.Expr → Bool) :
     simp only [configInFragment, ConfigInFragment, Bool.and_eq_true, configInFragment_iff fe inner,
       blockInFragment_iff fe ss]
 
+/-- `cfgInFragment` decides `CFGInFragment`. -/
+theorem cfgInFragment_iff (fe : Expression.Expr → Bool) (g : Imperative.DetCFG Expression Command) :
+    cfgInFragment fe g = true ↔ CFGInFragment (fe · = true) g := by
+  unfold cfgInFragment CFGInFragment
+  refine List.all_eq_true.trans (forall₂_congr fun lb _ => ?_)
+  cases h : lb.2.transfer <;>
+    simp [transferInFragment, TransferInFragment, List.all_eq_true, cmdInFragment_iff]
+
 /-- `procInFragment` decides `ProcInFragment`. -/
 theorem procInFragment_iff (fe : Expression.Expr → Bool) (p : Procedure) :
     procInFragment fe p = true ↔ ProcInFragment (fe · = true) p := by
   unfold procInFragment ProcInFragment
   simp only [Bool.and_eq_true, List.all_eq_true, and_assoc]
   refine and_congr_left fun _ => ?_
-  split <;> simp_all [blockInFragment_iff]
+  split <;> simp_all [blockInFragment_iff, cfgInFragment_iff]
 
 /-! ## Runs of programs in the fragment -/
 
@@ -856,6 +891,55 @@ private theorem star_inFragment {F : Expression.Factory} {E : CoreCmdRel}
     obtain ⟨h4, h5, h6⟩ := ih h1 h2
     exact ⟨h4, h5, fun ev hev => (List.mem_append.1 hev).elim (h3 ev) (h6 ev)⟩
 
+/-- A CFG configuration of the fragment whose environment has the factory `F` and a store of
+    literals: its CFG is in the fragment (`CFGInFragment`), and so are the residual commands and
+    the transfer of the block it executes. -/
+private def CFGConfigOK (F : Expression.Factory) (P : Expression.Expr → Prop) :
+    CFGConfig String Command Expression → Prop
+  | .atBlock g _ ρ => CFGInFragment P g ∧ ρ.factory = F ∧ LitStore F ρ.store
+  | .inBlock g _ cs tr ρ => CFGInFragment P g ∧ (∀ c ∈ cs, CmdInFragment P c) ∧
+      TransferInFragment P tr ∧ ρ.factory = F ∧ LitStore F ρ.store
+  | .terminal ρ => ρ.factory = F ∧ LitStore F ρ.store
+
+/-- **CFG steps of the fragment keep stores of literals**: a reference CFG step over a command
+    relation that keeps stores of literals at the factory `F`, from a CFG configuration of the
+    fragment whose environment has the factory `F` and a store of literals (`CFGConfigOK`),
+    reaches such a CFG configuration and emits only events the fragment covers. -/
+private theorem cfgStep_inFragment {F : Expression.Factory} {E : CoreCmdRel}
+    (hE : ∀ σ cmd σ' evs, E F σ cmd σ' evs → LitStore F σ →
+      CmdInFragment (InFragment F.factory) cmd → LitStore F σ' ∧ ∀ ev ∈ evs, EventInFragment F ev)
+    {x y : CFGConfig String Command Expression} {evs : List (Event Expression)}
+    (hs : StepCFGE Expression E x evs y) (hx : CFGConfigOK F (InFragment F.factory) x) :
+    CFGConfigOK F (InFragment F.factory) y ∧ ∀ ev ∈ evs, EventInFragment F ev := by
+  cases hs with
+  | step_cmd h =>
+    obtain ⟨hg, hcs, htr, hf, hl⟩ := hx
+    rw [hf] at h
+    obtain ⟨hl', hev⟩ := hE _ _ _ _ h hl (hcs _ List.mem_cons_self)
+    exact ⟨⟨hg, fun c hc => hcs c (List.mem_cons_of_mem _ hc), htr, hf, hl'⟩, hev⟩
+  | fetch h =>
+    obtain ⟨hg, hf, hl⟩ := hx
+    obtain ⟨_, _, he, -⟩ := List.lookup_eq_some_iff.1 h
+    obtain ⟨h1, h2⟩ := hg _ (he ▸ List.mem_append_right _ List.mem_cons_self)
+    exact ⟨⟨hg, h1, h2, hf, hl⟩, nofun⟩
+  | goto_true | goto_false => exact ⟨⟨hx.1, hx.2.2.2⟩, nofun⟩
+  | finish => exact ⟨hx.2.2.2, nofun⟩
+
+/-- CFG runs of the fragment keep stores of literals: the multi-step form of
+    `cfgStep_inFragment`. -/
+private theorem cfgStar_inFragment {F : Expression.Factory} {E : CoreCmdRel}
+    (hE : ∀ σ cmd σ' evs, E F σ cmd σ' evs → LitStore F σ →
+      CmdInFragment (InFragment F.factory) cmd → LitStore F σ' ∧ ∀ ev ∈ evs, EventInFragment F ev)
+    {x y : CFGConfig String Command Expression} {evs : List (Event Expression)}
+    (h : StepCFGStarE Expression E x evs y) (hx : CFGConfigOK F (InFragment F.factory) x) :
+    CFGConfigOK F (InFragment F.factory) y ∧ ∀ ev ∈ evs, EventInFragment F ev := by
+  induction h with
+  | refl => exact ⟨hx, nofun⟩
+  | step _ _ _ _ _ hs _ ih =>
+    obtain ⟨h1, h2⟩ := cfgStep_inFragment hE hs hx
+    obtain ⟨h3, h4⟩ := ih h1
+    exact ⟨h3, fun ev hev => (List.mem_append.1 hev).elim (h2 ev) (h4 ev)⟩
+
 /-- The assertion events a list of specification clauses in the fragment emits at a store of
     literals are covered by the fragment. -/
 private theorem defaultAssertEvents_inFragment {F : Expression.Factory} {σ : CoreStore}
@@ -902,17 +986,24 @@ private theorem evalCommandE_inFragment {F : Expression.Factory} (hF : FragmentF
   | cmd_sem h =>
     rintro rfl hσ hc
     exact evalCmdE_inFragment hF h hσ hc
-  | call_sem hπ he _ hx ih =>
-    rintro rfl hσ hc
-    obtain ⟨⟨ss, hss, hblk⟩, hpre, hpost⟩ := hprocs _ _ hπ
+  | @call_sem _ _ _ _ _ σF bev _ f _ hπ he _ hx ih =>
+    intro hf hσ hc
+    subst f
+    obtain ⟨hbody, hpre, hpost⟩ := hprocs _ _ hπ
     have hAO := callEntry_lit hF hσ hc he
-    obtain ⟨ss', ρ', hss', rfl, hr⟩ := ih.resolve_right fun ⟨g, _, hg, _⟩ => by
-      rw [hss] at hg
-      cases hg
-    rw [hss] at hss'
-    cases hss'
-    obtain ⟨⟨-, hfin⟩, -, hbev⟩ := star_inFragment (fun _ _ _ _ ⟨_, hm⟩ hl hc => hm rfl hl hc) hr
-      ⟨rfl, hAO⟩ hblk
+    obtain ⟨hfin, hbev⟩ : LitStore F σF ∧ ∀ ev ∈ bev, EventInFragment F ev := by
+      rcases ih with ⟨ss', ρ', hss', rfl, hr⟩ | ⟨g', ρ', hg', rfl, hr⟩ <;>
+        rcases hbody with ⟨ss, hss, hblk⟩ | ⟨g, hg, hcfg⟩
+      · cases hss.symm.trans hss'
+        obtain ⟨⟨-, hfin⟩, -, hbev⟩ :=
+          star_inFragment (fun _ _ _ _ ⟨_, hm⟩ hl hc => hm rfl hl hc) hr ⟨rfl, hAO⟩ hblk
+        exact ⟨hfin, hbev⟩
+      · cases hss'.symm.trans hg
+      · cases hg'.symm.trans hss
+      · cases hg.symm.trans hg'
+        obtain ⟨⟨-, hfin⟩, hbev⟩ :=
+          cfgStar_inFragment (fun _ _ _ _ ⟨_, hm⟩ hl hc => hm rfl hl hc) hr ⟨hcfg, rfl, hAO⟩
+        exact ⟨hfin.project, hbev⟩
     obtain ⟨-, outs, hread, hupd, -⟩ := hx
     refine ⟨hσ.sets (hfin.read hread) hupd, fun ev hev => ?_⟩
     rcases List.mem_append.1 hev with hev | hev
@@ -944,44 +1035,96 @@ private theorem StmtInFragment.evalExprs {P : Expression.Expr → Prop} {s : Sta
     | (subst he; first | exact h.1 _ rfl | exact h.2 _ rfl | exact h _ rfl)
     | exact h e he
 
+mutual
 /-- **Programs of the fragment keep stores of literals along their visits**: from a configuration
     of the fragment whose environments have the factory `F` and stores of literals, in a program
     every procedure of which is in the fragment, every configuration the reference semantics
     visits (`Visits`) is such a configuration. -/
 private theorem visits_inFragment {F : Expression.Factory} (hF : FragmentFactoryWF F)
     {π : String → Option Procedure}
-    (hprocs : ∀ n p, π n = some p → ProcInFragment (InFragment F.factory) p) {c d : CoreConfig}
-    (hv : Visits π c d) (hc : ConfigLit F c) (hcc : ConfigInFragment (InFragment F.factory) c) :
-    ConfigLit F d ∧ ConfigInFragment (InFragment F.factory) d := by
-  induction hv with
-  | refl => exact ⟨hc, hcc⟩
-  | step _ hs ih =>
+    (hprocs : ∀ n p, π n = some p → ProcInFragment (InFragment F.factory) p) {c : CoreConfig}
+    (hc : ConfigLit F c) (hcc : ConfigInFragment (InFragment F.factory) c) :
+    ∀ {d : CoreConfig}, Visits π c d →
+      ConfigLit F d ∧ ConfigInFragment (InFragment F.factory) d
+  | _, .refl => ⟨hc, hcc⟩
+  | _, .step hv hs => by
+    obtain ⟨h1, h2⟩ := visits_inFragment hF hprocs hc hcc hv
     obtain ⟨h1, h2, -⟩ := step_inFragment
-      (fun _ _ _ _ h hl hcmd => evalCommandE_inFragment hF hprocs h rfl hl hcmd) hs ih.1 ih.2
+      (fun _ _ _ _ h hl hcmd => evalCommandE_inFragment hF hprocs h rfl hl hcmd) hs h1 h2
     exact ⟨h1, h2⟩
-  | call _ ha hp hb he ih =>
-    obtain ⟨⟨hf, hl⟩, hs⟩ := ha.inFragment ih.1 ih.2
-    obtain ⟨⟨ss, hss, hblk⟩, -, -⟩ := hprocs _ _ hp
-    rw [hss] at hb
-    cases hb
-    rw [hf] at he ⊢
-    exact ⟨⟨rfl, callEntry_lit hF hl hs he⟩, hblk⟩
+  | _, .call hv ha hp hb he => by
+    obtain ⟨h1, h2⟩ := visits_inFragment hF hprocs hc hcc hv
+    obtain ⟨⟨hf, hl⟩, hs⟩ := ha.inFragment h1 h2
+    obtain ⟨⟨ss, hss, hblk⟩ | ⟨g, hg, -⟩, -, -⟩ := hprocs _ _ hp
+    · cases hb.symm.trans hss
+      rw [hf] at he ⊢
+      exact ⟨⟨rfl, callEntry_lit hF hl hs he⟩, hblk⟩
+    · cases hb.symm.trans hg
+  | _, .cfgCall hv hp hb he => by
+    obtain ⟨-, hcs, -, hf, hl⟩ := visitsCFG_inFragment hF hprocs hc hcc hv
+    obtain ⟨⟨ss, hss, hblk⟩ | ⟨g, hg, -⟩, -, -⟩ := hprocs _ _ hp
+    · cases hb.symm.trans hss
+      rw [hf] at he ⊢
+      exact ⟨⟨rfl, callEntry_lit hF hl (hcs _ List.mem_cons_self) he⟩, hblk⟩
+    · cases hb.symm.trans hg
+
+/-- Programs of the fragment keep stores of literals along their CFG visits: under the hypotheses
+    of `visits_inFragment`, every CFG configuration the reference semantics visits in a CFG callee
+    body (`VisitsCFG`) is a CFG configuration of the fragment whose environment has the factory
+    `F` and a store of literals (`CFGConfigOK`). -/
+private theorem visitsCFG_inFragment {F : Expression.Factory} (hF : FragmentFactoryWF F)
+    {π : String → Option Procedure}
+    (hprocs : ∀ n p, π n = some p → ProcInFragment (InFragment F.factory) p) {c : CoreConfig}
+    (hc : ConfigLit F c) (hcc : ConfigInFragment (InFragment F.factory) c) :
+    ∀ {d : CFGConfig String Command Expression}, VisitsCFG π c d →
+      CFGConfigOK F (InFragment F.factory) d
+  | _, .call hv ha hp hb he => by
+    obtain ⟨h1, h2⟩ := visits_inFragment hF hprocs hc hcc hv
+    obtain ⟨⟨hf, hl⟩, hs⟩ := ha.inFragment h1 h2
+    obtain ⟨⟨ss, hss, -⟩ | ⟨g, hg, hcfg⟩, -, -⟩ := hprocs _ _ hp
+    · cases hb.symm.trans hss
+    · cases hb.symm.trans hg
+      rw [hf] at he ⊢
+      exact ⟨hcfg, rfl, callEntry_lit hF hl hs he⟩
+  | _, .cfgCall hv hp hb he => by
+    obtain ⟨-, hcs, -, hf, hl⟩ := visitsCFG_inFragment hF hprocs hc hcc hv
+    obtain ⟨⟨ss, hss, -⟩ | ⟨g, hg, hcfg⟩, -, -⟩ := hprocs _ _ hp
+    · cases hb.symm.trans hss
+    · cases hb.symm.trans hg
+      rw [hf] at he ⊢
+      exact ⟨hcfg, rfl, callEntry_lit hF hl (hcs _ List.mem_cons_self) he⟩
+  | _, .step hv hs =>
+    (cfgStep_inFragment (fun _ _ _ _ h hl hcmd => evalCommandE_inFragment hF hprocs h rfl hl hcmd)
+      hs (visitsCFG_inFragment hF hprocs hc hcc hv)).1
+end
 
 /-- **The fragment's evaluations are computable** (the static criterion implies the run
     condition): in a program every procedure of which is in the fragment, on a factory meeting
     `FragmentFactoryWF`, every expression a reference run from a configuration of the fragment
-    whose environments have the factory `F` and stores of literals evaluates is computable
-    (`EvalsComputable`). -/
+    whose environments have the factory `F` and stores of literals evaluates, in structured and
+    CFG callee bodies alike, is computable (`EvalsComputable`). -/
 theorem evalsComputable_of_inFragment {F : Expression.Factory} (hF : FragmentFactoryWF F)
     {π : String → Option Procedure}
     (hprocs : ∀ n p, π n = some p → ProcInFragment (InFragment F.factory) p) {c : CoreConfig}
     (hc : ConfigLit F c) (hcc : ConfigInFragment (InFragment F.factory) c) :
     EvalsComputable π c := by
-  intro d hd ρ s ha e he
-  obtain ⟨hdl, hdc⟩ := visits_inFragment hF hprocs hd hc hcc
-  obtain ⟨⟨hf, hl⟩, hs⟩ := ha.inFragment hdl hdc
-  rw [hf]
-  exact computableEval_of_inFragment hF (hs.evalExprs e he) fun x _ v hx => hl x v hx
+  have hcomp : ∀ {σ : CoreStore} {e}, LitStore F σ → InFragment F.factory e →
+      ComputableEval F σ e := fun hl he =>
+    computableEval_of_inFragment hF he fun x _ v hx => hl x v hx
+  refine ⟨fun d hd ρ s ha e he => ?_, fun d hd e he => ?_⟩
+  · obtain ⟨hdl, hdc⟩ := visits_inFragment hF hprocs hc hcc hd
+    obtain ⟨⟨hf, hl⟩, hs⟩ := ha.inFragment hdl hdc
+    exact hf ▸ hcomp hl (hs.evalExprs e he)
+  · have hd' := visitsCFG_inFragment hF hprocs hc hcc hd
+    rcases d with _ | ⟨_, _, _ | ⟨cmd, _⟩, _ | _, _⟩ | _
+    all_goals simp only [cfgEvalExprs, List.not_mem_nil, List.mem_singleton] at he
+    · obtain ⟨-, -, htr, hf, hl⟩ := hd'
+      subst he
+      exact hf ▸ hcomp hl htr
+    all_goals obtain ⟨-, hcs, -, hf, hl⟩ := hd'
+    all_goals
+      exact hf ▸ hcomp hl
+        (StmtInFragment.evalExprs (s := .cmd cmd) (hcs cmd List.mem_cons_self) e he)
 
 /-- Every event a reference run of the fragment emits, from a configuration of the fragment whose
     environments have the factory `F` and stores of literals, in a program every procedure of
@@ -1000,8 +1143,8 @@ theorem run_events_inFragment {F : Expression.Factory} (hF : FragmentFactoryWF F
 /-- **The static criterion on Core programs**: the statements a configuration still executes and
     every procedure of `procs` are in the fragment of the factory `F` (`inFragment`): every type
     of an `init` is a type of literals, every deterministic guard, right-hand side, assertion and
-    cover condition, call argument and specification clause is in the computable fragment, every
-    procedure has a structured body. -/
+    cover condition, call argument and specification clause is in the computable fragment, and so
+    is every guard of a conditional transfer of a CFG body. -/
 @[expose] def programInFragment (F : Lambda.Factory CoreLParams) (procs : List Procedure)
     (c : CoreConfig) : Bool :=
   configInFragment (inFragment F) c && procs.all (procInFragment (inFragment F))
@@ -1042,20 +1185,16 @@ private theorem computableFailure_of_ref {F : Expression.Factory} (hF : Fragment
     ⟨h1, h2, h3, hf ▸ computableEval_of_inFragment hF he fun x _ v hx => hl x v hx⟩
 
 /-- The facts the static criterion gives about a program whose procedures are among `procs`:
-    its procedures are in the fragment and have structured bodies, and every expression a run from
-    `c` evaluates is computable. -/
+    its procedures are in the fragment, and every expression a run from `c` evaluates is
+    computable. -/
 private theorem criterion_facts {F : Expression.Factory} (hF : FragmentFactoryWF F)
     {π : String → Option Procedure} {procs : List Procedure}
     (hπ : ∀ n p, π n = some p → p ∈ procs) {c : CoreConfig}
     (hcrit : programInFragment F.factory procs c = true) (hc : ConfigLit F c) :
-    (∀ n p, π n = some p → ProcInFragment (InFragment F.factory) p) ∧
-      (∀ n p, π n = some p → ∀ g, p.body ≠ .cfg g) ∧ EvalsComputable π c := by
+    (∀ n p, π n = some p → ProcInFragment (InFragment F.factory) p) ∧ EvalsComputable π c := by
   obtain ⟨hcc, hps⟩ := (programInFragment_iff _ _ _).1 hcrit
   have hprocs := fun n p h => hps p (hπ n p h)
-  refine ⟨hprocs, fun n p h g hg => ?_, evalsComputable_of_inFragment hF hprocs hc hcc⟩
-  obtain ⟨⟨ss, hss, -⟩, -⟩ := hprocs n p h
-  rw [hss] at hg
-  cases hg
+  exact ⟨hprocs, evalsComputable_of_inFragment hF hprocs hc hcc⟩
 
 /-- **Completeness of Core replay on programs of the fragment** (reference ⇒ engine).  Let the
     procedures of `π` be among `procs` and the modeled factory meet `FragmentFactoryWF`.  If the
@@ -1078,12 +1217,12 @@ theorem core_replayComplete_of_programInFragment {F : Expression.Factory}
       ∀ rs : List Expression.Expr, rs <+: cex.oracle → OracleWitness F rs cs →
         OracleTyped F (ChoiceRecord.typed Expression) rs cs →
           ∃ f0, ∀ fuel d, f0 ≤ fuel → f0 ≤ d → genuine π target fuel cex d := by
-  obtain ⟨hprocs, hstruct, hcomp⟩ := criterion_facts hF hπ hcrit hstart
+  obtain ⟨hprocs, hcomp⟩ := criterion_facts hF hπ hcrit hstart
   obtain ⟨ev, hev, hf⟩ := hfail
   have hcf := computableFailure_of_ref hF
     (run_events_inFragment hF hprocs hstart ((programInFragment_iff _ _ _).1 hcrit).1 hrun ev hev)
     hf
-  exact core_replayComplete_of_evalsComputable π hstruct target cex hd ht hcomp hrun
+  exact core_replayComplete_of_evalsComputable π target cex hd ht hcomp hrun
     ⟨ev, hev, hcf⟩
 
 /-- **Completeness of Core replay on deterministic programs of the fragment** (reference ⇒
@@ -1129,8 +1268,8 @@ theorem core_runCoreInterp_complete_eval_of_programInFragment {F : Expression.Fa
       (∀ fuel d, f0 ≤ fuel → f0 ≤ d →
         evalRun (runCoreInterp π fuel istart d) opts st = (.ok final', st'))
       ∧ obsEval.TraceExt F st st' evs := by
-  obtain ⟨-, hstruct, hcomp⟩ := criterion_facts hF hπ hcrit hlits
-  exact core_runCoreInterp_complete_eval_of_computable π hstruct opts istart hstart hdet hcomp
+  obtain ⟨-, hcomp⟩ := criterion_facts hF hπ hcrit hlits
+  exact core_runCoreInterp_complete_eval_of_computable π opts istart hstart hdet hcomp
     hrun hdone hemit st
 
 end

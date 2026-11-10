@@ -120,13 +120,15 @@ abbrev TypedActual : Expression.Expr → Bool := Calls.TypedActual (P := Express
 abbrev CmdCallOk (π : String → Option Procedure) : Command → Bool := Calls.CmdCallOk π
 
 /-- Shallow check on one procedure, mentioning no calls: its frame-binding formals
-    are pairwise distinct (what `InitCallFrame` needs), and a structured body is
-    exit-covered and has well-formed call sites everywhere. -/
+    are pairwise distinct (what `InitCallFrame` needs), a structured body is
+    exit-covered and has well-formed call sites everywhere, and every command of every
+    block of a CFG body is a well-formed call site. -/
 @[expose] def ProcOk (π : String → Option Procedure) (p : Procedure) : Prop :=
   (ListMap.keys p.header.inputs ++ ListMap.keys p.header.getOutputOnlyParams).Nodup ∧
-  ∀ ss, p.body = .structured ss →
+  (∀ ss, p.body = .structured ss →
     Block.exitsCoveredByBlocks (P := Expression) (CmdT := Command) [] ss ∧
-    Block.allCmds (P := Expression) (CmdCallOk π) ss = true
+    Block.allCmds (P := Expression) (CmdCallOk π) ss = true) ∧
+  ∀ g, p.body = .cfg g → g.allCmds (CmdCallOk π)
 
 /-- Flat program-level check: every procedure `π` resolves satisfies `ProcOk`. -/
 @[expose] def ProcsOk (π : String → Option Procedure) : Prop :=
@@ -154,8 +156,9 @@ abbrev CallActive :
     relation packages a whole call as one atomic `call_sem` step, so there is no flat
     `StepStmtStarE start evs mid` ending mid-callee.  `clean` covers any completed run
     of steps; the other constructors cover the one interrupted call at the tail
-    (inside the body, recursing on the callee; at the write-back; mid-precondition;
-    mid-postcondition). -/
+    (inside a structured body, recursing on the callee; inside a CFG body, between its
+    commands or inside one of them, recursing on the command; at the write-back;
+    mid-precondition; mid-postcondition). -/
 inductive CoreInterruptedSound (π : String → Option Procedure)
     :
     CoreConfig → Trace Expression → Prop where
@@ -178,32 +181,63 @@ inductive CoreInterruptedSound (π : String → Option Procedure)
       CoreInterruptedSound π start
         (outerEvs ++ defaultAssertEvents env.factory σAO
             (Imperative.Calls.checksAtCall md p.spec.preconditions) ++ calleeEvs)
-  | inCallExit {start : CoreConfig} {outerEvs : Trace Expression} {C : CoreConfig}
+  | inCallCfg {start : CoreConfig} {outerEvs : Trace Expression} {C : CoreConfig}
       {env : Imperative.Env Expression} {pn : String}
       {args : List (Imperative.CallArg Expression)} {md : Imperative.MetaData Expression}
-      {p : Procedure} {σAO : CoreStore} {bodyStmts : List Statement}
-      {ρ' : Imperative.Env Expression} {bodyEvs : Trace Expression} :
+      {p : Procedure} {σAO : CoreStore} {g : Imperative.DetCFG Expression Command}
+      {cfgEvs : Trace Expression} {mid : CFGConfig String Command Expression} :
       StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
       CallActive C pn args md env →
       π pn = some p →
-      p.body = .structured bodyStmts →
+      p.body = .cfg g →
       CallEntry env.factory env.store p args σAO →
-      StepStmtStarE Expression (EvalCommandE π)
-        (.stmt (.block "" bodyStmts #[]) (⟨σAO, env.factory⟩ : Imperative.Env Expression))
-        bodyEvs (.terminal ρ') →
+      StepCFGStarE Expression (EvalCommandE π)
+        (.atBlock g g.entry (⟨σAO, env.factory⟩ : Imperative.Env Expression)) cfgEvs mid →
+      CoreInterruptedSound π start
+        (outerEvs ++ defaultAssertEvents env.factory σAO
+            (Imperative.Calls.checksAtCall md p.spec.preconditions) ++ cfgEvs)
+  | inCallCfgCmd {start : CoreConfig} {outerEvs : Trace Expression} {C : CoreConfig}
+      {env : Imperative.Env Expression} {pn : String}
+      {args : List (Imperative.CallArg Expression)} {md : Imperative.MetaData Expression}
+      {p : Procedure} {σAO : CoreStore} {g g' : Imperative.DetCFG Expression Command}
+      {cfgEvs : Trace Expression} {t : String} {c : Command} {cs : List Command}
+      {tr : DetTransferCmd String Expression} {ρ : Imperative.Env Expression}
+      {cmdEvs : Trace Expression} :
+      StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
+      CallActive C pn args md env →
+      π pn = some p →
+      p.body = .cfg g →
+      CallEntry env.factory env.store p args σAO →
+      StepCFGStarE Expression (EvalCommandE π)
+        (.atBlock g g.entry (⟨σAO, env.factory⟩ : Imperative.Env Expression)) cfgEvs
+        (.inBlock g' t (c :: cs) tr ρ) →
+      CoreInterruptedSound π
+        (.stmt (.cmd c) (⟨ρ.store, env.factory⟩ : Imperative.Env Expression)) cmdEvs →
+      CoreInterruptedSound π start
+        (outerEvs ++ defaultAssertEvents env.factory σAO
+            (Imperative.Calls.checksAtCall md p.spec.preconditions) ++ cfgEvs
+          ++ cmdEvs)
+  | inCallExit {start : CoreConfig} {outerEvs : Trace Expression} {C : CoreConfig}
+      {env : Imperative.Env Expression} {pn : String}
+      {args : List (Imperative.CallArg Expression)} {md : Imperative.MetaData Expression}
+      {p : Procedure} {σAO σf : CoreStore} {bodyEvs : Trace Expression} :
+      StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
+      CallActive C pn args md env →
+      π pn = some p →
+      CallEntry env.factory env.store p args σAO →
+      BigStepE π p.body ⟨σAO, env.factory⟩ σf bodyEvs →
       CoreInterruptedSound π start
         (outerEvs ++ defaultAssertEvents env.factory σAO
             (Imperative.Calls.checksAtCall md p.spec.preconditions)
-          ++ bodyEvs ++ defaultAssertEvents ρ'.factory ρ'.store p.spec.postconditions)
+          ++ bodyEvs ++ defaultAssertEvents env.factory σf p.spec.postconditions)
   | preThrow {start : CoreConfig} {outerEvs : Trace Expression} {C : CoreConfig}
       {env : Imperative.Env Expression} {pn : String}
       {args : List (Imperative.CallArg Expression)} {md : Imperative.MetaData Expression}
-      {p : Procedure} {σAO : CoreStore} {bodyStmts : List Statement}
+      {p : Procedure} {σAO : CoreStore}
       {preEvs : Trace Expression} :
       StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
       CallActive C pn args md env →
       π pn = some p →
-      p.body = .structured bodyStmts →
       CallEntry env.factory env.store p args σAO →
       preEvs <+: defaultAssertEvents env.factory σAO
           (Imperative.Calls.checksAtCall md p.spec.preconditions) →
@@ -211,18 +245,14 @@ inductive CoreInterruptedSound (π : String → Option Procedure)
   | postThrow {start : CoreConfig} {outerEvs : Trace Expression} {C : CoreConfig}
       {env : Imperative.Env Expression} {pn : String}
       {args : List (Imperative.CallArg Expression)} {md : Imperative.MetaData Expression}
-      {p : Procedure} {σAO : CoreStore} {bodyStmts : List Statement}
-      {ρ' : Imperative.Env Expression} {bodyEvs : Trace Expression}
+      {p : Procedure} {σAO σf : CoreStore} {bodyEvs : Trace Expression}
       {postEvs : Trace Expression} :
       StepStmtStarE Expression (EvalCommandE π) start outerEvs C →
       CallActive C pn args md env →
       π pn = some p →
-      p.body = .structured bodyStmts →
       CallEntry env.factory env.store p args σAO →
-      StepStmtStarE Expression (EvalCommandE π)
-        (.stmt (.block "" bodyStmts #[]) (⟨σAO, env.factory⟩ : Imperative.Env Expression))
-        bodyEvs (.terminal ρ') →
-      postEvs <+: defaultAssertEvents ρ'.factory ρ'.store p.spec.postconditions →
+      BigStepE π p.body ⟨σAO, env.factory⟩ σf bodyEvs →
+      postEvs <+: defaultAssertEvents env.factory σf p.spec.postconditions →
       CoreInterruptedSound π start
         (outerEvs ++ defaultAssertEvents env.factory σAO
             (Imperative.Calls.checksAtCall md p.spec.preconditions)
@@ -242,8 +272,8 @@ abbrev ChecksAvoidTarget (target : AssertId Expression) :
 
 /-- **The target id occurs in no procedure of `π`**: for every `p` that `π`
     resolves, no pre- or postcondition clause of `p` has `target`'s label and
-    metadata, no `assert`/`cover` command anywhere in `p`'s structured body
-    does, and `p`'s body is structured, not a CFG (`Calls.TargetNotInProcs` at `Expression`). -/
+    metadata, and no `assert`/`cover` command of `p`'s body does: anywhere in a
+    structured body, and in any block of a CFG body (`Calls.TargetNotInProcs` at `Expression`). -/
 abbrev TargetNotInProcs (π : String → Option Procedure) (target : AssertId Expression) : Prop :=
   Calls.TargetNotInProcs π target
 
@@ -278,11 +308,14 @@ private theorem coreInterruptedSound_of_generic {start : CoreConfig} {evs : Trac
   | clean h => exact .clean h
   | inCall a b c d e _ ih =>
     exact .inCall a b c d ((callEntry_iff ..).2 e) ih
-  | inCallExit a b c d e f =>
-    exact .inCallExit a b c d ((callEntry_iff ..).2 e) f
-  | preThrow a b c d e f => exact .preThrow a b c d ((callEntry_iff ..).2 e) f
-  | postThrow a b c d e f g =>
-    exact .postThrow a b c d ((callEntry_iff ..).2 e) f g
+  | inCallCfg a b c d e f =>
+    exact .inCallCfg a b c d ((callEntry_iff ..).2 e) f
+  | inCallCfgCmd a b c d e f _ ih =>
+    exact .inCallCfgCmd a b c d ((callEntry_iff ..).2 e) f ih
+  | inCallExit a b c e f => exact .inCallExit a b c ((callEntry_iff ..).2 e) f
+  | preThrow a b c e f => exact .preThrow a b c ((callEntry_iff ..).2 e) f
+  | postThrow a b c e f g =>
+    exact .postThrow a b c ((callEntry_iff ..).2 e) f g
 
 /-- Core's interrupted-run certificate is a generic one at `Expression`. -/
 private theorem coreInterruptedSound_toGeneric {start : CoreConfig} {evs : Trace Expression}
@@ -292,11 +325,14 @@ private theorem coreInterruptedSound_toGeneric {start : CoreConfig} {evs : Trace
   | clean h => exact .clean h
   | inCall a b c d e _ ih =>
     exact .inCall a b c d ((callEntry_iff ..).1 e) ih
-  | inCallExit a b c d e f =>
-    exact .inCallExit a b c d ((callEntry_iff ..).1 e) f
-  | preThrow a b c d e f => exact .preThrow a b c d ((callEntry_iff ..).1 e) f
-  | postThrow a b c d e f g =>
-    exact .postThrow a b c d ((callEntry_iff ..).1 e) f g
+  | inCallCfg a b c d e f =>
+    exact .inCallCfg a b c d ((callEntry_iff ..).1 e) f
+  | inCallCfgCmd a b c d e f _ ih =>
+    exact .inCallCfgCmd a b c d ((callEntry_iff ..).1 e) f ih
+  | inCallExit a b c e f => exact .inCallExit a b c ((callEntry_iff ..).1 e) f
+  | preThrow a b c e f => exact .preThrow a b c ((callEntry_iff ..).1 e) f
+  | postThrow a b c e f g =>
+    exact .postThrow a b c ((callEntry_iff ..).1 e) f g
 
 /-- Core's interrupted-run certificate `CoreInterruptedSound` is the generic
     `Calls.InterruptedSound`. -/

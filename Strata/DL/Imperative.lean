@@ -58,6 +58,17 @@ public import Strata.DL.Imperative.KleeneStmt
 public import Strata.DL.Imperative.KleeneStmtSemantics
 public import Strata.DL.Imperative.CallAwareSemantics
 public import Strata.DL.Imperative.StmtCFGCallSemanticsProps
+public import Strata.DL.Imperative.InterpreterCFG
+public import Strata.DL.Imperative.InterpreterCFGProps
+public import Strata.DL.Imperative.InterpreterCFGSound
+public import Strata.DL.Imperative.InterpreterCFGComplete
+public import Strata.DL.Imperative.InterpreterCFGCallSound
+public import Strata.DL.Imperative.InterpreterCFGCallComplete
+public import Strata.DL.Imperative.InterpreterKleene
+public import Strata.DL.Imperative.InterpreterKleeneCall
+public import Strata.DL.Imperative.InterpreterKleeneSound
+public import Strata.DL.Imperative.InterpreterKleeneComplete
+public import Strata.DL.Imperative.InterpreterCFGKleeneFollows
 
 public import Strata.DL.Imperative.StmtExtendCallBridge
 public import Strata.DL.Imperative.StmtExtendCallBridgeProps

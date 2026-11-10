@@ -95,7 +95,7 @@ private theorem wRun (F : Expression.Factory) :
       ∃ ev ∈ evs, Calls.assertFailureE wTarget ev := by
   refine ⟨_, _, ⟨1, fun rest =>
     .step _ _ _ _ _ (.step_det .step_stmts_cons)
-    (.step _ _ _ _ _ (.step_seq_inner (.step_cmd (.inr
+    (.step _ _ _ _ _ (.step_seq_inner (.step_cmd (.inr (.inl
       ⟨"w", wProc, [], md, _, _, _, _, rfl, rfl, rfl,
         ⟨[], [], .eval_none, .read_none, ⟨_, _, .init_none, .init_none, rfl⟩⟩,
         .step _ _ _ _ _ (.step_det .step_block)
@@ -106,7 +106,7 @@ private theorem wRun (F : Expression.Factory) :
           (.step _ _ _ _ _ (.step_det (.step_block_body .step_stmts_nil))
           (.step _ _ _ _ _ (.step_det .step_block_done) (.refl _)))))),
         ⟨List.nodup_nil, [], .read_none, .update_none, .nil⟩, rfl, nofun,
-        fun _ _ _ _ _ _ h _ => by cases h; rfl⟩)))
+        fun _ _ _ _ _ _ h _ => by cases h; rfl⟩))))
     (.refl _))⟩, .assert ⟨F,
       Calls.withOldSnapshots (Calls.inoutParams wProc.header) emptyStore, "fail", ffE, md⟩,
     by simp [Calls.defaultAssertEvents, wProc, IEnv.abs], rfl, rfl, ffE_denote F _,
@@ -219,7 +219,7 @@ private theorem hRun (F : Expression.Factory) (hF : F.factory = Core.Factory) :
     .step _ _ _ _ _ (.step_det .step_stmts_cons)
     (.step _ _ _ _ _ (.step_seq_inner .step_ite_then)
     (.step _ _ _ _ _ (.step_det (.step_seq_inner (.step_block_body .step_stmts_cons)))
-    (.step _ _ _ _ _ (.step_seq_inner (.step_block_body (.step_seq_inner (.step_cmd (.inr
+    (.step _ _ _ _ _ (.step_seq_inner (.step_block_body (.step_seq_inner (.step_cmd (.inr (.inl
       ⟨"h", hProc, [], md, _, _, _, _, rfl, rfl, rfl,
         ⟨[], [], .eval_none, .read_none, ⟨_, _, .init_none, .init_none, rfl⟩⟩,
         .step _ _ _ _ _ (.step_det .step_block)
@@ -238,7 +238,7 @@ private theorem hRun (F : Expression.Factory) (hF : F.factory = Core.Factory) :
             (.step _ _ _ _ _ (.step_det (.step_block_body .step_stmts_nil))
             (.step _ _ _ _ _ (.step_det .step_block_done) (.refl _))))))))),
         ⟨List.nodup_nil, [], .read_none, .update_none, .nil⟩, rfl, nofun,
-        fun _ _ _ _ _ _ h _ => by cases h; rfl⟩)))))
+        fun _ _ _ _ _ _ h _ => by cases h; rfl⟩))))))
     (.refl _))))⟩, .assert ⟨F, hStore F, "neg", bE, md⟩,
     by simp [Calls.defaultAssertEvents, hProc, IEnv.abs, hStore, hFrame], rfl, rfl,
     hAssert_denote F,
@@ -325,7 +325,7 @@ def wCex : CexA Expression Command :=
 def wFuel : Nat := 100
 
 /-- No target assertion id occurs in a procedure of the witness table: the callee has no spec
-    clauses and its body is structured, with no `assert` or `cover`. -/
+    clauses and its body has no `assert` or `cover`. -/
 private theorem targetNotInProcs_wPi (target : AssertId Expression) :
     TargetNotInProcs wPi target := by
   simp [Calls.TargetNotInProcs, wPi, wCallee, Calls.ChecksAvoidTarget, Calls.cmdAvoidsTarget,

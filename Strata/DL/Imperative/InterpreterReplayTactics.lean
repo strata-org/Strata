@@ -41,12 +41,16 @@ macro "bridge_close " b:ident : tactic => do
        exact fun _ => by assumption)
     | (apply $(n "_runCallee")
        exact fun _ => by assumption)
+    | (apply $(n "_runInterpCFG")
+       intro _ _ _ _ _ _
+       apply $(n "_bind'") (hg := fun _ _ => ?_))
     | apply_assumption
-    | apply $(n "_stepInterp"))
+    | apply $(n "_stepInterp")
+    | apply $(n "_stepInterpCFG"))
 
 set_option hygiene false in
 /-- `bridge_ind X`: prove an
-    `X_{forM_emit,stepBaseCmdStore,stepInterp,runInterp,runCallee,stepCmd}`
+    `X_{forM_emit,stepBaseCmdStore,stepInterp,runInterp,stepInterpCFG,runInterpCFG,stepCmd}`
     lemma by its recursion, then `bridge_close X`.  A `stepCmd` lemma is stated over the fuel
     and then the call-depth budget; its recursion is on the fuel, and the callee body's case
     uses the induction hypothesis at the callee's budget. -/
@@ -62,6 +66,12 @@ macro "bridge_ind " b:ident : tactic => `(tactic| first
      done)
   | (intro n
      induction n <;> intro c _ _ <;> cases c <;> unfold runInterp <;> bridge_close $b
+     done)
+  | (intro n c
+     cases c <;> intro _ _ <;> unfold stepInterpCFG <;> bridge_close $b
+     done)
+  | (intro n
+     induction n <;> intro c _ _ <;> cases c <;> unfold runInterpCFG <;> bridge_close $b
      done)
   | (intro k
      induction k with

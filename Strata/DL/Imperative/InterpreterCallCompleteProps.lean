@@ -15,6 +15,7 @@ import all Strata.DL.Imperative.Interpreter
 import all Strata.DL.Imperative.InterpreterSemanticsSpec
 import all Strata.DL.Imperative.InterpreterCall
 import all Strata.DL.Imperative.StmtCFGCallSemantics
+import all Strata.DL.Imperative.InterpreterCFG
 import Strata.DL.Imperative.StmtCFGCallSemanticsProps
 public import Strata.DL.Imperative.InterpreterObsProps
 public import Strata.DL.Imperative.CmdSemanticsProps
@@ -256,15 +257,9 @@ private theorem stepCmd_call_completeG
     exact denoting_bindPositional _ hd hmsrel
   · obtain ⟨i, rfl⟩ : ∃ k, i = k + 1 := ⟨i - 1, by omega⟩
     obtain ⟨j, rfl⟩ : ∃ k, j = k + 1 := ⟨j - 1, by omega⟩
-    have hr := hrun i j (by omega) (by omega)
-    obtain ⟨ss, hss⟩ : ∃ ss, p.body = .structured ss := by
-      cases hb : p.body
-      · exact ⟨_, rfl⟩
-      · simp [hb, runCallee, obs.run_throw] at hr
-    rw [hss] at hr
     rw [stepCmd]
-    simp (disch := omega) [hπ, hss, hf, hev, hro, hlin, hlout, hri.length_eq, hrorel.length_eq,
-      e1, hr, e3, hms, hold, hwb, ReadValuesLength hrd, hbind.1, -List.forM_eq_forM]
+    simp (disch := omega) [hπ, hf, hev, hro, hlin, hlout, hri.length_eq, hrorel.length_eq, e1,
+      hrun i j, e3, hms, hold, hwb, ReadValuesLength hrd, hbind.1, -List.forM_eq_forM]
   · simp only [List.map_append, rDefaultAssertEvents_abs, habs, hrb]
   · simp [t1, t2, t3]
 
@@ -280,9 +275,10 @@ private theorem oracleCmdAt_defines (π : String → Option (Procedure P (CmdExt
     hc ▸ evalCmdE_cmdDefsSound _ _ _ _ _ h.toEvalCmdE
   rintro (_ | n) _ _ _ _ _ _ _ h
   · exact hb h
-  rcases h with h | ⟨_, _, _, _, _, _, _, _, rfl, -, -, -, -, ⟨_, _, _, hup, -⟩, -⟩
+  rcases h with h | ⟨_, _, _, _, _, _, _, _, rfl, -, -, -, -, ⟨_, _, _, hup, -⟩, -⟩ |
+    ⟨_, _, _, _, _, _, _, _, rfl, -, -, -, -, ⟨_, _, _, hup, -⟩, -⟩
   · exact hb h
-  exact fun x hx => .inl (UpdateStatesDefMonotone' (vs := [x])
+  all_goals exact fun x hx => .inl (UpdateStatesDefMonotone' (vs := [x])
     (fun _ hv => List.mem_singleton.1 hv ▸ hx) hup x (List.mem_singleton_self x))
 
 /-- Every command of an oracle-reading run, calls included, at every call-nesting height `n`, is
@@ -310,19 +306,47 @@ private theorem oracleCmdAt_followsG {F : P.Factory}
     obtain ⟨hdρ, hfρ⟩ := hd
     have hq2 : ∀ {a b c : List (Event P)}, (∀ ev ∈ a ++ b ++ c, Q ev) → ∀ ev ∈ b, Q ev :=
       fun h ev hev => h ev (by simp [hev])
-    obtain ⟨nm, p, args, md, σAO, ss, ρ', bodyEvs, rfl, hπ, hss, hentry, hbody, hexit, rfl,
-      hargs, hwb⟩ := hcall
-    refine (stepCmd_call_completeG obs cfgr π hMono hem hdρ hfρ hπ hentry hexit hargs hwb
-      (fun er habs hder s1 p1 => ?_) hq st hst).imp fun _ ⟨σi, s, h1, h2, hr, hp, ht⟩ =>
-        ⟨σi, s, h1, h2, fun i j _ hi hj _ => hr i j hi hj, hp, ht⟩
-    obtain ⟨f, cy, s2, ⟨hcd, -, hcy⟩, hb, p2, t2⟩ := runInterp_complete_follows_fam obs
-      (callStepOf π) cfgr Pending hf hMono ih (oracleCmdAt_defines π n)
-      (hbody.imp fun _ _ _ => OracleStepE.toParam hbool) (.inl ⟨_, rfl⟩) (hq2 hq) s1 p1
-      (.stmt (.block "" ss #[]) ⟨.ofStore er, InterpLang.rfactory F⟩)
-      (by simp [IConfig.abs, IEnv.abs, habs]) ⟨(by simpa using hder), rfl⟩ trivial
-    obtain ⟨ie, rfl, rfl⟩ := (IConfig.abs_eq_terminal (P := P) _ _ _).1 hcy
-    exact ⟨f, ie.store.get, s2, rfl, hcd.1, fun i j hi hj => by
-      simp [runCallee, hss, hb i j j hi hj hj], p2, t2⟩
+    rcases hcall with ⟨nm, p, args, md, σAO, ss, ρ', bodyEvs, rfl, hπ, hss, hentry, hbody, hexit,
+        rfl, hargs, hwb⟩ |
+      ⟨nm, p, args, md, σAO, gr, ρEnd, bodyEvs, rfl, hπ, hgr, hentry, hbody, hexit, rfl, hargs, hwb⟩
+    all_goals
+      refine (stepCmd_call_completeG obs cfgr π hMono hem hdρ hfρ hπ hentry hexit hargs hwb
+        (fun er habs hder s1 p1 => ?_) hq st hst).imp fun _ ⟨σi, s, h1, h2, hr, hp, ht⟩ =>
+          ⟨σi, s, h1, h2, fun i j _ hi hj _ => hr i j hi hj, hp, ht⟩
+    · obtain ⟨f, cy, s2, ⟨hcd, -, hcy⟩, hb, p2, t2⟩ := runInterp_complete_follows_fam obs
+        (callStepOf π) cfgr Pending hf hMono ih (oracleCmdAt_defines π n)
+        (hbody.imp fun _ _ _ => OracleStepE.toParam hbool) (.inl ⟨_, rfl⟩) (hq2 hq) s1 p1
+        (.stmt (.block "" ss #[]) ⟨.ofStore er, InterpLang.rfactory F⟩)
+        (by simp [IConfig.abs, IEnv.abs, habs]) ⟨(by simpa using hder), rfl⟩ trivial
+      obtain ⟨ie, rfl, rfl⟩ := (IConfig.abs_eq_terminal (P := P) _ _ _).1 hcy
+      exact ⟨f, ie.store.get, s2, rfl, hcd.1, fun i j hi hj => by
+        simp [runCallee, hss, hb i j j hi hj hj], p2, t2⟩
+    · have hx : (ICFGConfig.atBlock gr gr.entry ⟨.ofStore er, InterpLang.rfactory F⟩ :
+          ICFGConfig String (CmdExt P) P).abs F =
+            .atBlock gr gr.entry { store := σAO, factory := F } := by
+        simp [ICFGConfig.abs, IEnv.abs, habs]
+      obtain ⟨f, s2, y1, ⟨hyd, hy⟩, hb, p2, t2⟩ := runInterpCFG_follows_fam obs cfgr F Pending
+        (Q := Q) (E := OracleCmdAt π n)
+        (fun i j _ => StepCmdM.toStore (stepCmd π i) j)
+        (fun σ c σ' evs o o' hσ hc hq st hst => by
+          obtain ⟨f0, σi, s', hσi, hdi, hs, hp, ht⟩ :=
+            ih ⟨σ, InterpLang.rfactory F⟩ c σ' evs o o' ⟨hσ, rfl⟩ hc hq st hst
+          refine ⟨f0, s', σi, hσi, hdi, fun i j k hi hj hk => ?_, hp, ht⟩
+          have hijk := hs i j k hi hj hk
+          simp only [stepInterp_stmt_cmd, callStepOf] at hijk
+          simp [hijk, IConfig.getEnv])
+        hMono
+        (x1 := .atBlock gr gr.entry ⟨.ofStore er, InterpLang.rfactory F⟩)
+        (y := (.terminal ρEnd, o')) ⟨(by simpa [ICFGConfig.env] using hder), rfl⟩ (hx ▸ hbody)
+        trivial (hq2 hq) s1 p1
+      rcases y1 with _ | _ | ie <;> simp only [ICFGConfig.abs, CFGConfig.terminal.injEq,
+        reduceCtorEq] at hy
+      subst hy
+      refine ⟨f, RStore.project er ie.store.get, s2, ?_, hyd.1.project er, fun i j hi hj => ?_,
+        p2, t2⟩
+      · rw [InterpLang.absStore_project _ hder, habs]
+        rfl
+      · simp [runCallee, hgr, hb i j j hi hj hj]
 
 /-- Every command of an oracle-reading run, calls included, at every call-nesting height `n`, is
     performed by one `stepCmd π i j` step that follows its choices (`CmdFollowsFam` of the stepper
@@ -409,7 +433,8 @@ private theorem call_runCallInterp_follows_prefixG (obs : InterpObs P m)
     every engine-realizable base-command step with typed choices (`EvalCmdEngE` at
     `ChoiceRecord.typed`) is one with choices in `R` (`hlift`); `R` allows `tt` and `ff` as
     Booleans (`hbool`).  The run's
-    evaluations carry the engine's facts (`OracleCmdBase`, `OracleCallArm`, `StepEngParamE`). -/
+    evaluations carry the engine's facts (`OracleCmdBase`, `OracleCallArm`, `StepEngParamE`,
+    `StepCFGEngE`). -/
 theorem call_runCallInterp_follows_prefix (obs : InterpObs P m)
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (cfgr : obs.Cfg) {F : P.Factory}
     {R : ChoiceRecord P} {Q : Event P → Prop} (Pending : obs.St → List P.Val → Prop)
@@ -444,7 +469,8 @@ theorem call_runCallInterp_follows_prefix (obs : InterpObs P m)
     every engine-realizable base-command step with typed choices (`EvalCmdEngE` at
     `ChoiceRecord.typed`) is one with choices in `R` (`hlift`); `R` allows `tt` and `ff` as
     Booleans (`hbool`).  The run's
-    evaluations carry the engine's facts (`OracleCmdBase`, `OracleCallArm`, `StepEngParamE`). -/
+    evaluations carry the engine's facts (`OracleCmdBase`, `OracleCallArm`, `StepEngParamE`,
+    `StepCFGEngE`). -/
 theorem call_runCallInterp_complete_follows (obs : InterpObs P m)
     (π : String → Option (Procedure P (CmdExt P) Hdr)) (cfgr : obs.Cfg) {F : P.Factory}
     {R : ChoiceRecord P} {Q : Event P → Prop} (Pending : obs.St → List P.Val → Prop)
@@ -679,6 +705,24 @@ private theorem gBridge_runInterp {CmdT : Type} [CmdDefs P CmdT]
       (st : ReplayState P), GBridge (runInterp stepCmd fuel c) cfg st := by bridge_ind gBridge
 
 omit [HasFvar P] [HasFvars P] [HasOldIdent P] in
+/-- `GBridge` holds for `stepInterpCFG` over a store stepper satisfying it. -/
+private theorem gBridge_stepInterpCFG {l CmdT : Type} [BEq l]
+    (stepCmd : StepCmdStoreM P CmdT (ReplayM P))
+    (hstep : ∀ (f : Nat) (fac : InterpLang.RFactory P) (σ : IStore P) (cmd : CmdT)
+        (cfg : ReplayCfg P) (st : ReplayState P), GBridge (stepCmd f fac σ cmd) cfg st) :
+    ∀ (n : Nat) (c : ICFGConfig l CmdT P) (cfg : ReplayCfg P) (st : ReplayState P),
+      GBridge (stepInterpCFG stepCmd n c) cfg st := by bridge_ind gBridge
+
+omit [HasFvar P] [HasFvars P] [HasOldIdent P] in
+/-- `GBridge` holds for `runInterpCFG` over a store stepper satisfying it. -/
+private theorem gBridge_runInterpCFG {l CmdT : Type} [BEq l]
+    (stepCmd : StepCmdStoreM P CmdT (ReplayM P))
+    (hstep : ∀ (f : Nat) (fac : InterpLang.RFactory P) (σ : IStore P) (cmd : CmdT)
+        (cfg : ReplayCfg P) (st : ReplayState P), GBridge (stepCmd f fac σ cmd) cfg st) :
+    ∀ (n : Nat) (c : ICFGConfig l CmdT P) (cfg : ReplayCfg P) (st : ReplayState P),
+      GBridge (runInterpCFG stepCmd n c) cfg st := by bridge_ind gBridge
+
+omit [HasFvar P] [HasFvars P] [HasOldIdent P] in
 /-- `GBridge` holds for the callee body run `runCallee` over a command stepper satisfying it. -/
 private theorem gBridge_runCallee (step : StepCmdM P (CmdExt P) (ReplayM P))
     (hstep : ∀ (f : Nat) (e : IEnv P) (cmd : CmdExt P) (cfg : ReplayCfg P) (st : ReplayState P),
@@ -798,6 +842,17 @@ private theorem OracleStepE.imp {E E' : OracleCmdRel P}
   induction h' <;> constructor <;> first | assumption | exact h _ _ _ _ _ _ _ ‹_›
 
 
+omit [HasFvar P] [HasFvars P] [DecidableEq P.Expr] [DecidableEq P.Ident] [HasOldIdent P] in
+/-- The oracle-reading CFG step relation is monotone in its command relation. -/
+private theorem OracleCFGStepE.imp {E E' : OracleCmdRel P}
+    (h : ∀ f σ c σ' evs o o', E f σ c σ' evs o o' → E' f σ c σ' evs o o') :
+    ∀ {x : CFGConfig String (CmdExt P) P × List P.Val} {evs y},
+      OracleCFGStepE E x evs y → OracleCFGStepE E' x evs y := by
+  intro _ _ _ h'
+  cases h' with
+  | step_cmd he => exact .step_cmd (h _ _ _ _ _ _ _ he)
+  | step_admin hs => exact .step_admin hs
+
 omit [DecidableEq P.Expr] in
 /-- The oracle-reading command relation grows with the call-nesting height: a derivation whose
     calls nest at most `n` deep also nests at most `m` deep, for every `m ≥ n`. -/
@@ -815,10 +870,14 @@ private theorem oracleCmdAt_mono (π : String → Option (Procedure P (CmdExt P)
   | succ n ih =>
     intro m hm _ _ _ _ _ _ _ h
     obtain ⟨m, rfl⟩ : ∃ k, m = k + 1 := ⟨m - 1, by omega⟩
-    rcases h with h | ⟨nm, p, a, md, σAO, ss, ρ', be, rfl, hp, hs, he, hb, hx, rfl, hr, hw⟩
+    rcases h with h | ⟨nm, p, a, md, σAO, ss, ρ', be, rfl, hp, hs, he, hb, hx, rfl, hr, hw⟩ |
+      ⟨nm, p, a, md, σAO, g, ρE, be, rfl, hp, hs, he, hb, hx, rfl, hr, hw⟩
     · exact .inl h
-    · exact .inr ⟨nm, p, a, md, σAO, ss, ρ', be, rfl, hp, hs, he,
-        hb.imp fun _ _ _ => OracleStepE.imp fun _ _ _ _ _ _ _ => ih (by omega), hx, rfl, hr, hw⟩
+    · exact .inr (.inl ⟨nm, p, a, md, σAO, ss, ρ', be, rfl, hp, hs, he,
+        hb.imp fun _ _ _ => OracleStepE.imp fun _ _ _ _ _ _ _ => ih (by omega), hx, rfl, hr, hw⟩)
+    · exact .inr (.inr ⟨nm, p, a, md, σAO, g, ρE, be, rfl, hp, hs, he,
+        hb.imp fun _ _ _ => OracleCFGStepE.imp fun _ _ _ _ _ _ _ => ih (by omega), hx, rfl, hr,
+          hw⟩)
 
 
 omit [DecidableEq P.Expr] in
@@ -878,16 +937,52 @@ private theorem runChoices_of_star
 
 
 omit [DecidableEq P.Expr] in
-/-- **Every reference run has a choice sequence.**  If every procedure of `π` has a structured
-    body, a run of the call-aware reference semantics has a choice sequence (`RunChoices`), when
-    the bounded evaluator reaches every reference value (`hEvalComplete`), runtime guard values
-    agree with the reference ones (`hGuards`), the runtime value checks are complete for typed
-    write-back (`hWB`) and every reference base-command evaluation passes the engine's value
-    checks with typed choices (`hchk`). -/
+/-- A CFG reference run over the command relation `E` reads its choices off an oracle, when
+    every `E`-step of a command has a choice sequence (`hE`), the bounded evaluator reaches every
+    reference value and runtime guard values agree with the reference ones. -/
+private theorem oracleCFG_of_star
+    (π : String → Option (Procedure P (CmdExt P) Hdr))
+    (hEvalComplete : BoundedEvalComplete P) (hGuards : EngineGuardsAgree P)
+    {E : EvalCmdParamE P (CmdExt P) (Event P)}
+    (hE : ∀ f σ c σ' evs, E f σ c σ' evs →
+      ∃ cs n, ∀ rest, OracleCmdAt π n f σ c σ' evs (cs ++ rest) rest)
+    {c c' : CFGConfig String (CmdExt P) P} {evs : List (Event P)}
+    (h : StepCFGStarE P E c evs c') :
+    ∃ cs n, ∀ rest,
+      ReflTransTrace (OracleCFGStepE (OracleCmdAt π n)) (c, cs ++ rest) evs (c', rest) := by
+  induction h with
+  | refl => exact ⟨[], 0, fun _ => .refl _⟩
+  | step x e y _ _ hs _ ih =>
+    obtain ⟨a, n, ha⟩ : ∃ cs n, ∀ rest,
+        OracleCFGStepE (OracleCmdAt π n) (x, cs ++ rest) e (y, rest) := by
+      cases hs with
+      | step_cmd h =>
+        obtain ⟨cs, n, H⟩ := hE _ _ _ _ _ h
+        exact ⟨cs, n, fun r => .step_cmd (H r)⟩
+      | _ =>
+        refine ⟨[], 0, fun _ => .step_admin ?_⟩
+        first
+          | exact .fetch ‹_›
+          | exact .goto_true ‹_› ⟨hEvalComplete.reach, (hGuards ..).1 ‹_›⟩
+          | exact .goto_false ‹_› ⟨hEvalComplete.reach, (hGuards ..).2 ‹_›⟩
+          | exact .finish
+    obtain ⟨b, m, hb⟩ := ih
+    refine ⟨a ++ b, n + m, fun r => ?_⟩
+    rw [List.append_assoc]
+    exact .step _ _ _ _ _
+      (OracleCFGStepE.imp (fun _ _ _ _ _ _ _ => oracleCmdAt_mono π (by omega)) (ha _))
+      ((hb r).imp fun _ _ _ =>
+        OracleCFGStepE.imp fun _ _ _ _ _ _ _ => oracleCmdAt_mono π (by omega))
+
+omit [DecidableEq P.Expr] in
+/-- **Every reference run has a choice sequence.**  A run of the call-aware reference semantics
+    has a choice sequence (`RunChoices`), when the bounded evaluator reaches every reference value
+    (`hEvalComplete`), runtime guard values agree with the reference ones (`hGuards`), the runtime
+    value checks are complete for typed write-back (`hWB`) and every reference base-command
+    evaluation passes the engine's value checks with typed choices (`hchk`). -/
 theorem runChoices_of_stepStmtExtStarE
     (π : String → Option (Procedure P (CmdExt P) Hdr))
     (hEvalComplete : BoundedEvalComplete P)
-    (hstruct : ∀ n p, π n = some p → ∀ g, p.body ≠ .cfg g)
     (hGuards : EngineGuardsAgree P)
     (hWB : WriteBackTypedComplete P)
     (hchk : ∀ f σ c σ' evs, EvalCmdE (P := P) f σ c σ' evs →
@@ -914,12 +1009,17 @@ theorem runChoices_of_stepStmtExtStarE
       | _ => exact ⟨[], 0, fun _ => ⟨_, rfl, hchk _ _ _ _ _ (by constructor <;> assumption),
           .inl ⟨rfl, rfl⟩⟩⟩
     | call_sem hπ he _ hx ih =>
-      obtain ⟨ss, ρ', hss, rfl, hr⟩ := ih.resolve_right fun ⟨g, _, hg, _⟩ => hstruct _ _ hπ g hg
-      obtain ⟨cs, n, hn⟩ :=
-        runChoices_of_star π hEvalComplete hGuards (fun _ _ _ _ _ ⟨_, hm⟩ => hm) hr
-      exact ⟨cs, n + 1, fun r =>
-        .inr ⟨_, _, _, _, _, _, _, _, rfl, hπ, hss, he, hn r, hx, rfl,
-          fun _ _ => hEvalComplete.reach, writeBackOK_of_complete hWB hx⟩⟩
+      obtain ⟨ss, ρ', hss, rfl, hr⟩ | ⟨g, ρE, hg, rfl, hr⟩ := ih
+      · obtain ⟨cs, n, hn⟩ :=
+          runChoices_of_star π hEvalComplete hGuards (fun _ _ _ _ _ ⟨_, hm⟩ => hm) hr
+        exact ⟨cs, n + 1, fun r =>
+          .inr (.inl ⟨_, _, _, _, _, _, _, _, rfl, hπ, hss, he, hn r, hx, rfl,
+            fun _ _ => hEvalComplete.reach, writeBackOK_of_complete hWB hx⟩)⟩
+      · obtain ⟨cs, n, hn⟩ :=
+          oracleCFG_of_star π hEvalComplete hGuards (fun _ _ _ _ _ ⟨_, hm⟩ => hm) hr
+        exact ⟨cs, n + 1, fun r =>
+          .inr (.inr ⟨_, _, _, _, _, _, _, _, rfl, hπ, hg, he, hn r, hx, rfl,
+            fun _ _ => hEvalComplete.reach, writeBackOK_of_complete hWB hx⟩)⟩
   exact runChoices_of_star π hEvalComplete hGuards hcmd h
 
 /-! ## Deterministic programs resolve no choice -/
@@ -960,11 +1060,34 @@ private theorem oracleCmdBase_det {f : P.Factory} {σ σ' : SemanticStore P} {c 
     simp_all [CmdExtDeterministic, CmdDeterministic, ExprOrNondet.isDet]
 
 
+omit [HasFvar P] [HasFvars P] [DecidableEq P.Expr] [DecidableEq P.Ident] [HasOldIdent P] in
+/-- An oracle-reading CFG run over `E` from a configuration whose remaining commands are
+    deterministic (`CFGConfig.allCmds`) leaves the oracle alone and ends in a configuration whose
+    remaining commands are deterministic, given that the deterministic `E`-commands leave the oracle alone
+    (`harm`). -/
+private theorem oracleCFG_det {E : OracleCmdRel P}
+    (harm : ∀ f σ c σ' evs o o', E f σ c σ' evs o o' → CmdExtDeterministic c = true → o' = o)
+    {x y : CFGConfig String (CmdExt P) P × List P.Val} {evs : List (Event P)}
+    (h : ReflTransTrace (OracleCFGStepE E) x evs y) :
+    x.1.allCmds CmdExtDeterministic → y.2 = x.2 ∧ y.1.allCmds CmdExtDeterministic := by
+  induction h with
+  | refl => exact fun h => ⟨rfl, h⟩
+  | step _ _ _ _ _ hs _ ih =>
+    intro hr
+    cases hs with
+    | step_cmd he =>
+      simp only [CFGConfig.allCmds, List.all_cons, Bool.and_eq_true] at hr
+      obtain rfl := harm _ _ _ _ _ _ _ he hr.2.1
+      exact ih ⟨hr.1, hr.2.2⟩
+    | step_admin hs =>
+      apply ih
+      cases hs <;> grind [CFGConfig.allCmds, CFG.allCmds]
+
 omit [DecidableEq P.Expr] in
 /-- **A deterministic program's runs resolve no choice**: if neither the statements still to be
-    executed in `c` nor any structured callee body of `π` contains a `.nondet` guard or a
-    nondeterministic base command (`ProgDeterministic`), every choice sequence of a reference run
-    from `c` is empty. -/
+    executed in `c`, nor any structured callee body of `π`, nor any block of a CFG callee body of
+    `π` contains a `.nondet` guard or a nondeterministic base command (`ProgDeterministic`), every
+    choice sequence of a reference run from `c` is empty. -/
 theorem runChoices_nil_of_deterministic {π : String → Option (Procedure P (CmdExt P) Hdr)}
     {c c' : Config P (CmdExt P)} {evs : List (Event P)}
     {cs : List P.Val} (hdet : ProgDeterministic π c) (h : RunChoices π c evs c' cs) :
@@ -975,10 +1098,12 @@ theorem runChoices_nil_of_deterministic {π : String → Option (Procedure P (Cm
     induction n with
     | zero => exact fun _ _ _ _ _ _ _ => oracleCmdBase_det
     | succ n ih =>
-      rintro _ _ _ _ _ _ _ (h | ⟨_, _, _, _, _, ss, _, _, rfl, hp, hs, -, hb, -, rfl, -⟩) hd
+      rintro _ _ _ _ _ _ _ (h | ⟨_, _, _, _, _, ss, _, _, rfl, hp, hs, -, hb, -, rfl, -⟩ |
+        ⟨_, _, _, _, _, g, _, _, rfl, hp, hg, -, hb, -, rfl, -⟩) hd
       · exact oracleCmdBase_det h hd
       · exact (oracleStar_det ih hb (by simpa [Config.noNondetGuards, Stmt.noNondetGuards,
-          Config.allCmds, Stmt.allCmds] using hdet.2 _ _ _ hp hs)).1
+          Config.allCmds, Stmt.allCmds] using hdet.2.1 _ _ _ hp hs)).1
+      · exact (oracleCFG_det ih hb (hdet.2.2 _ _ _ hp hg)).1
   obtain ⟨n, hn⟩ := h
   exact (oracleStar_det (hcmd n) (List.append_nil cs ▸ hn []) hdet.1).1.symm
 

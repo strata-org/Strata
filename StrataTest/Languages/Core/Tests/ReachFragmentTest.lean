@@ -7,6 +7,7 @@ import Strata.Languages.Core.InterpreterReachCheck
 import Strata.Languages.Core.Logic.FactoryInterp
 import Strata.Languages.Core.InterpreterReplay
 import Strata.DL.Imperative.InterpreterConfig
+import Strata.DL.Imperative.InterpreterCFGProps
 import Strata.DL.Imperative.StmtCFGCallSemantics
 import Strata.DL.Imperative.StmtSemantics
 import Strata.DL.Imperative.CmdSemantics
@@ -23,7 +24,11 @@ import Strata.DL.Imperative.Stmt
   passes the static criterion (`Core.programInFragment`), so the replay completeness corollary for
   deterministic programs of the fragment
   (`Core.core_replayComplete_of_deterministic_programInFragment`) gives `genuine` from a bare
-  reference run, every hypothesis beyond the criterion being discharged. -/
+  reference run, every hypothesis beyond the criterion being discharged.
+* `wcGenuine_of_fragment`: the same for the program `call wc()`, whose callee `wcProc` has a CFG
+  body: one block `assert fail : false` followed by `finish`.
+* The procedure check (`Core.procInFragment`) accepts a CFG body whose block guard is in the
+  fragment (`cProcIn`) and rejects one whose guard is a division (`cProcOut`). -/
 
 namespace ReachFragmentTest
 
@@ -141,11 +146,11 @@ theorem wGenuine_of_fragment :
   · simp [wCex, IConfig.abs, ConfigInFragment, BlockInFragment, StmtInFragment, CmdInFragment,
       Calls.getInputExprs]
   · simp only [List.mem_singleton, forall_eq]
-    refine ⟨⟨_, rfl, ?_⟩, by simp [wProc, ListMap.toList], by simp [wProc, ListMap.toList]⟩
+    refine ⟨.inl ⟨_, rfl, ?_⟩, by simp [wProc, ListMap.toList], by simp [wProc, ListMap.toList]⟩
     exact ⟨.const () _, trivial⟩
   · simp [wEnv, IEnv.abs, InterpLang.absStore, IEnv.ofStore, IStore.get,
       IStore.ofStore, InterpLang.writesFind?_empty] at h
-  · refine ⟨?_, fun n p ss hp hss => ?_⟩
+  · refine ⟨?_, fun n p ss hp hss => ?_, fun n p g hp hg => ?_⟩
     · refine ⟨?_, ?_⟩ <;> simp only [wCex, IConfig.abs, Config.noNondetGuards, Config.allCmds]
       · unfold Block.noNondetGuards Stmt.noNondetGuards Block.noNondetGuards
         rfl
@@ -161,5 +166,97 @@ theorem wGenuine_of_fragment :
         · unfold Block.allCmds Stmt.allCmds Block.allCmds
           rfl
       · cases hp
+    · unfold wPi at hp
+      split at hp
+      · cases hp
+        cases hg
+      · cases hp
+
+/-- The callee with a CFG body: no formals, no spec clauses, one block `b` running
+    `assert fail : false` and then `finish`. -/
+def wcProc : Procedure :=
+  { header := { name := ⟨"wc", ()⟩, typeArgs := [], inputs := [], outputs := [] },
+    spec := { preconditions := [], postconditions := [] },
+    body := .cfg (CFG.mk "b" [("b", BasicBlock.mk [.cmd (.assert "fail" ffE md)] (.finish md))]) }
+
+/-- The procedure table: `"wc"` resolves to `wcProc`. -/
+def wcPi : String → Option Procedure := fun n => if n = "wc" then some wcProc else none
+
+/-- The counterexample: the call of `wc`, with an empty oracle. -/
+def wcCex : CexA Expression Command :=
+  { cfg := .stmts [.cmd (.call "wc" [] md)] wEnv, oracle := [] }
+
+/-- A bare reference run of `wcCex.cfg`, stopped right after the call, emits the callee's failing
+    assertion. -/
+private theorem wcRefRun :
+    ∃ evs final, CoreStepStarE wcPi (wcCex.cfg.abs M0) evs final ∧
+      ∃ ev ∈ evs, RefFailure wTarget ev :=
+  ⟨_, _, .step _ _ _ _ _ .step_stmts_cons
+    (.step _ _ _ _ _ (.step_seq_inner (.step_cmd (.call_sem (n := "wc") (p := wcProc)
+      (σAO := Calls.withOldSnapshots (Calls.inoutParams wcProc.header) emptyStore) rfl
+      ⟨[], [], .eval_none, .read_none, ⟨_, _, .init_none, .init_none, rfl⟩⟩
+      (.cfg (.step _ _ _ _ _ (.fetch rfl)
+        (.step _ _ _ _ _ (.step_cmd (EvalCmdExtE.cmd_sem .eval_assert))
+        (.step _ _ _ _ _ .finish (.refl _)))))
+      ⟨List.nodup_nil, [], .read_none, .update_none, .nil⟩)))
+    (.refl _)),
+    .assert ⟨M0, Calls.withOldSnapshots (Calls.inoutParams wcProc.header) emptyStore, "fail", ffE,
+      md⟩, by simp [Calls.defaultAssertEvents, wcProc, Calls.checksAtCall, IEnv.abs],
+    rfl, rfl, LExpr.denoteEval_boolConst⟩
+
+/-- **Replay completeness for `wcCex` from the static criterion**: replaying `wcCex` with its own
+    (empty) oracle reaches the failing assert of the CFG callee at every sufficiently large fuel
+    and call-depth limit. -/
+theorem wcGenuine_of_fragment :
+    ∃ f0, ∀ fuel d, f0 ≤ fuel → f0 ≤ d → genuine wcPi wTarget fuel wcCex d := by
+  obtain ⟨_, _, hrun, hfail⟩ := wcRefRun
+  refine core_replayComplete_of_deterministic_programInFragment wcPi [wcProc]
+    (fun n p h => ?_) (fragmentFactoryWF_coreFactory M0 rfl) wTarget wcCex
+    (show IConfig.Denoting M0 (.stmts _ wEnv) from ⟨by simp [wEnv, IEnv.ofStore,
+      RStore.Denoting, IStore.get, IStore.ofStore, InterpLang.writesFind?_empty], rfl⟩)
+    trivial ((programInFragment_iff _ _ _).2 ⟨?_, ?_⟩) ⟨rfl, fun x v h => ?_⟩ ?_ hrun hfail
+  · unfold wcPi at h
+    split at h <;> simp_all
+  · simp [wcCex, IConfig.abs, ConfigInFragment, BlockInFragment, StmtInFragment, CmdInFragment,
+      Calls.getInputExprs]
+  · simp only [List.mem_singleton, forall_eq]
+    refine ⟨.inr ⟨_, rfl, ?_⟩, by simp [wcProc, ListMap.toList], by simp [wcProc, ListMap.toList]⟩
+    simp only [CFGInFragment, List.mem_singleton, forall_eq, CmdInFragment, TransferInFragment,
+      and_true]
+    exact .const () _
+  · simp [wEnv, IEnv.abs, InterpLang.absStore, IEnv.ofStore, IStore.get,
+      IStore.ofStore, InterpLang.writesFind?_empty] at h
+  · refine ⟨?_, fun n p ss hp hss => ?_, fun n p g hp hg => ?_⟩
+    · refine ⟨?_, ?_⟩ <;> simp only [wcCex, IConfig.abs, Config.noNondetGuards, Config.allCmds]
+      · unfold Block.noNondetGuards Stmt.noNondetGuards Block.noNondetGuards
+        rfl
+      · unfold Block.allCmds Stmt.allCmds Block.allCmds
+        rfl
+    · unfold wcPi at hp
+      split at hp
+      · cases hp
+        cases hss
+      · cases hp
+    · unfold wcPi at hp
+      split at hp
+      · cases hp
+        cases hg
+        exact CFG.allCmds_of_mem (by simp [Calls.CmdExtDeterministic, CmdDeterministic])
+      · cases hp
+
+/-- A CFG body whose block guard `x + 1 < y` is in the fragment. -/
+private def cProcIn : Procedure :=
+  { wcProc with
+    body := .cfg (CFG.mk "b" [("b", BasicBlock.mk [] (.condGoto e1 "b" "c" md)),
+      ("c", BasicBlock.mk [.cmd (.assert "fail" ffE md)] (.finish md))]) }
+
+/-- A CFG body whose block guard is a division, outside the fragment. -/
+private def cProcOut : Procedure :=
+  { wcProc with
+    body := .cfg (CFG.mk "b" [("b", BasicBlock.mk [] (.condGoto (.eq () e4 xE) "b" "b" md))]) }
+
+#guard procInFragment (inFragment Core.Factory) wcProc
+#guard procInFragment (inFragment Core.Factory) cProcIn
+#guard !procInFragment (inFragment Core.Factory) cProcOut
 
 end ReachFragmentTest

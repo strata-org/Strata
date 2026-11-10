@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Core.InterpreterReplayProps
 public import Strata.Languages.Core.ConfigWF
 import all Strata.DL.Imperative.Interpreter
+import all Strata.DL.Imperative.InterpreterCFG
 import all Strata.DL.Imperative.InterpreterCall
 import all Strata.DL.Imperative.InterpreterReplay
 import all Strata.Languages.Core.InterpreterReplay
@@ -256,6 +257,35 @@ theorem runInterp_storesClosed {sc : StepCmdM Expression Command (ReplayM Expres
     | exact .bind (stepInterp_storesClosed hsc _ _ hc) ‹_›
     | nofun
 
+/-- A successful CFG step from a configuration whose store is closed, over a command stepper that
+    keeps stores closed, yields a configuration whose store is closed. -/
+private theorem stepInterpCFG_closed {l CmdT : Type} [BEq l]
+    {sc : StepCmdStoreM Expression CmdT (ReplayM Expression)}
+    (hsc : ∀ k f σ c, StoreClosed (IStore.get σ) → OkPost (sc k f σ c) (StoreClosed ·.get))
+    (k : Nat) :
+    ∀ c : ICFGConfig l CmdT Expression, StoreClosed c.env.store.get →
+      OkPost (stepInterpCFG sc k c) (StoreClosed ·.env.store.get) := fun c h => by
+  fun_cases stepInterpCFG <;>
+    simp only [ICFGConfig.env] at h ⊢ <;>
+    repeat' first
+      | exact .pure h
+      | exact .bind (hsc _ _ _ _ h) fun _ h => .pure h
+      | exact .throw _
+      | split
+
+/-- A successful CFG run from a configuration whose store is closed, over a command stepper that
+    keeps stores closed, ends in a configuration whose store is closed. -/
+private theorem runInterpCFG_closed {l CmdT : Type} [BEq l]
+    {sc : StepCmdStoreM Expression CmdT (ReplayM Expression)}
+    (hsc : ∀ k f σ c, StoreClosed (IStore.get σ) → OkPost (sc k f σ c) (StoreClosed ·.get)) :
+    ∀ (n : Nat) (c : ICFGConfig l CmdT Expression), StoreClosed c.env.store.get →
+      OkPost (runInterpCFG sc n c) (StoreClosed ·.env.store.get) := fun n c h => by
+  fun_induction runInterpCFG <;> first
+    | exact .pure h
+    | exact .bind (stepInterpCFG_closed hsc _ _ h) ‹_›
+    | exact .throw _
+    | nofun
+
 /-- A successful callee body run (`Calls.runCallee`) from a closed entry store, over a command
     stepper that keeps stores closed, returns a closed store. -/
 private theorem runCallee_closed {sc : StepCmdM Expression Command (ReplayM Expression)}
@@ -268,7 +298,12 @@ private theorem runCallee_closed {sc : StepCmdM Expression Command (ReplayM Expr
     split
     · exact .pure hc
     · exact .throw _
-  · exact .throw _
+  · refine .bind (runInterpCFG_closed (fun _ _ _ _ h => .bind (hsc _ _ _ h) fun _ hc =>
+      .pure (by simpa [IEnv.abs] using CfgStoresClosed.getEnv hc)) _ _
+      (by simpa [ICFGConfig.env] using h)) fun c hc => ?_
+    split
+    · exact .pure (projectStore_closed hc)
+    · exact .throw _
 
 /-- From a closed store, every successful step of Core's command stepper yields a terminal
     configuration with the caller's factory and a closed store. -/

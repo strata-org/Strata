@@ -13,6 +13,7 @@ import all Strata.DL.Imperative.InterpreterReplay
 import all Strata.DL.Imperative.Interpreter
 import all Strata.DL.Imperative.InterpreterProps
 import all Strata.DL.Imperative.InterpreterCall
+import all Strata.DL.Imperative.InterpreterCFG
 import Strata.DL.Imperative.InterpreterReplayTactics
 public import Strata.DL.Imperative.InterpreterObsProps
 public import Strata.DL.Imperative.InterpreterReplayProps
@@ -23,8 +24,8 @@ public import Strata.DL.Imperative.InterpreterCallProps
 The production replay run stops at the first event its stop hook `interruptOn` fires on; the spec
 run records every event and never stops early.  Each bridge below is a relation between the two
 runs of a `ReplayM` computation, proved for `pure`, `throw`, `emit`, `choose` and `>>=`, then
-lifted to `stepInterp`, `runInterp`, the callee body run `runCallee`, the call-aware stepper
-`stepCmd π` and `runCallInterp π`:
+lifted to `stepInterp`, `runInterp`, the CFG driver (`stepInterpCFG`, `runInterpCFG`), the
+call-aware stepper `stepCmd π` and `runCallInterp π`:
 
 * `DBridge` (`dBridge_runCallInterp`): the interrupt-on trace is a suffix of the interrupt-off
   trace, and a non-throwing interrupt-on run coincides with the off-run; hence an interrupt-on
@@ -152,6 +153,26 @@ theorem dBridge_runInterp {CmdT : Type} [CmdDefs P CmdT]
         DBridge (stepCmd f e cmd) cfg st) :
     ∀ (fuel : Nat) (c : IConfig P CmdT) (cfg : ReplayCfg P)
       (st : ReplayState P), DBridge (runInterp stepCmd fuel c) cfg st := by bridge_ind dBridge
+
+/-- `DBridge` (the stop hook only truncates the run) holds for `stepInterpCFG` over a store stepper
+    satisfying it. -/
+private theorem dBridge_stepInterpCFG {l CmdT : Type} [BEq l]
+    (stepCmd : StepCmdStoreM P CmdT (ReplayM P))
+    (hstep : ∀ (f : Nat) (fac : InterpLang.RFactory P) (σ : IStore P) (cmd : CmdT)
+        (cfg : ReplayCfg P) (st : ReplayState P),
+        DBridge (stepCmd f fac σ cmd) cfg st) :
+    ∀ (n : Nat) (c : ICFGConfig l CmdT P) (cfg : ReplayCfg P) (st : ReplayState P),
+      DBridge (stepInterpCFG stepCmd n c) cfg st := by bridge_ind dBridge
+
+/-- `DBridge` (the stop hook only truncates the run) holds for `runInterpCFG` over a store stepper
+    satisfying it. -/
+private theorem dBridge_runInterpCFG {l CmdT : Type} [BEq l]
+    (stepCmd : StepCmdStoreM P CmdT (ReplayM P))
+    (hstep : ∀ (f : Nat) (fac : InterpLang.RFactory P) (σ : IStore P) (cmd : CmdT)
+        (cfg : ReplayCfg P) (st : ReplayState P),
+        DBridge (stepCmd f fac σ cmd) cfg st) :
+    ∀ (n : Nat) (c : ICFGConfig l CmdT P) (cfg : ReplayCfg P) (st : ReplayState P),
+      DBridge (runInterpCFG stepCmd n c) cfg st := by bridge_ind dBridge
 
 /-- `DBridge` (the stop hook only truncates the run) holds for the callee body run `runCallee` over
     a command stepper satisfying it. -/
@@ -306,6 +327,28 @@ theorem feasBridge_runInterp {CmdT : Type} [CmdDefs P CmdT]
     ∀ (dfuel : Nat) (c : IConfig P CmdT) (cfg : ReplayCfg P)
       (st : ReplayState P), FeasBridge target fuel (runInterp stepCmd dfuel c) cfg st := by
   bridge_ind feasBridge
+
+/-- `FeasBridge` (an `.ok` or interrupted run keeps the trace path-feasible) holds for
+    `stepInterpCFG` over a store stepper satisfying it. -/
+private theorem feasBridge_stepInterpCFG {l CmdT : Type} [BEq l]
+    (target : AssertId P)
+    (fuel : Nat) (stepCmd : StepCmdStoreM P CmdT (ReplayM P))
+    (hstep : ∀ (f : Nat) (fac : InterpLang.RFactory P) (σ : IStore P) (cmd : CmdT)
+        (cfg : ReplayCfg P) (st : ReplayState P),
+        FeasBridge target fuel (stepCmd f fac σ cmd) cfg st) :
+    ∀ (n : Nat) (c : ICFGConfig l CmdT P) (cfg : ReplayCfg P) (st : ReplayState P),
+      FeasBridge target fuel (stepInterpCFG stepCmd n c) cfg st := by bridge_ind feasBridge
+
+/-- `FeasBridge` (an `.ok` or interrupted run keeps the trace path-feasible) holds for
+    `runInterpCFG` over a store stepper satisfying it. -/
+private theorem feasBridge_runInterpCFG {l CmdT : Type} [BEq l]
+    (target : AssertId P)
+    (fuel : Nat) (stepCmd : StepCmdStoreM P CmdT (ReplayM P))
+    (hstep : ∀ (f : Nat) (fac : InterpLang.RFactory P) (σ : IStore P) (cmd : CmdT)
+        (cfg : ReplayCfg P) (st : ReplayState P),
+        FeasBridge target fuel (stepCmd f fac σ cmd) cfg st) :
+    ∀ (n : Nat) (c : ICFGConfig l CmdT P) (cfg : ReplayCfg P) (st : ReplayState P),
+      FeasBridge target fuel (runInterpCFG stepCmd n c) cfg st := by bridge_ind feasBridge
 
 /-- `FeasBridge` (an `.ok` or interrupted run keeps the trace path-feasible) holds for the callee
     body run `runCallee` over a command stepper satisfying it. -/
@@ -464,6 +507,28 @@ theorem stopBridge_runInterp {CmdT : Type} [CmdDefs P CmdT]
       (st : ReplayState P), StopBridge target fuel (runInterp stepCmd dfuel c) cfg st := by
   bridge_ind stopBridge
 
+/-- `StopBridge` (a newly recorded failing target event interrupts the run) holds for
+    `stepInterpCFG` over a store stepper satisfying it. -/
+private theorem stopBridge_stepInterpCFG {l CmdT : Type} [BEq l]
+    (target : AssertId P)
+    (fuel : Nat) (stepCmd : StepCmdStoreM P CmdT (ReplayM P))
+    (hstep : ∀ (f : Nat) (fac : InterpLang.RFactory P) (σ : IStore P) (cmd : CmdT)
+        (cfg : ReplayCfg P) (st : ReplayState P),
+        StopBridge target fuel (stepCmd f fac σ cmd) cfg st) :
+    ∀ (n : Nat) (c : ICFGConfig l CmdT P) (cfg : ReplayCfg P) (st : ReplayState P),
+      StopBridge target fuel (stepInterpCFG stepCmd n c) cfg st := by bridge_ind stopBridge
+
+/-- `StopBridge` (a newly recorded failing target event interrupts the run) holds for `runInterpCFG`
+    over a store stepper satisfying it. -/
+private theorem stopBridge_runInterpCFG {l CmdT : Type} [BEq l]
+    (target : AssertId P)
+    (fuel : Nat) (stepCmd : StepCmdStoreM P CmdT (ReplayM P))
+    (hstep : ∀ (f : Nat) (fac : InterpLang.RFactory P) (σ : IStore P) (cmd : CmdT)
+        (cfg : ReplayCfg P) (st : ReplayState P),
+        StopBridge target fuel (stepCmd f fac σ cmd) cfg st) :
+    ∀ (n : Nat) (c : ICFGConfig l CmdT P) (cfg : ReplayCfg P) (st : ReplayState P),
+      StopBridge target fuel (runInterpCFG stepCmd n c) cfg st := by bridge_ind stopBridge
+
 /-- `StopBridge` (a newly recorded failing target event interrupts the run) holds for the callee
     body run `runCallee` over a command stepper satisfying it. -/
 private theorem stopBridge_runCallee (target : AssertId P) (fuel : Nat)
@@ -592,6 +657,26 @@ theorem coBridge_runInterp {CmdT : Type} [CmdDefs P CmdT]
         CoBridge (stepCmd f e cmd) cfg st) :
     ∀ (dfuel : Nat) (c : IConfig P CmdT) (cfg : ReplayCfg P)
       (st : ReplayState P), CoBridge (runInterp stepCmd dfuel c) cfg st := by bridge_ind coBridge
+
+/-- `CoBridge` (the stop hook can only stop the run at its last event) holds for `stepInterpCFG`
+    over a store stepper satisfying it. -/
+private theorem coBridge_stepInterpCFG {l CmdT : Type} [BEq l]
+    (stepCmd : StepCmdStoreM P CmdT (ReplayM P))
+    (hstep : ∀ (f : Nat) (fac : InterpLang.RFactory P) (σ : IStore P) (cmd : CmdT)
+        (cfg : ReplayCfg P) (st : ReplayState P),
+        CoBridge (stepCmd f fac σ cmd) cfg st) :
+    ∀ (n : Nat) (c : ICFGConfig l CmdT P) (cfg : ReplayCfg P) (st : ReplayState P),
+      CoBridge (stepInterpCFG stepCmd n c) cfg st := by bridge_ind coBridge
+
+/-- `CoBridge` (the stop hook can only stop the run at its last event) holds for `runInterpCFG` over
+    a store stepper satisfying it. -/
+private theorem coBridge_runInterpCFG {l CmdT : Type} [BEq l]
+    (stepCmd : StepCmdStoreM P CmdT (ReplayM P))
+    (hstep : ∀ (f : Nat) (fac : InterpLang.RFactory P) (σ : IStore P) (cmd : CmdT)
+        (cfg : ReplayCfg P) (st : ReplayState P),
+        CoBridge (stepCmd f fac σ cmd) cfg st) :
+    ∀ (n : Nat) (c : ICFGConfig l CmdT P) (cfg : ReplayCfg P) (st : ReplayState P),
+      CoBridge (runInterpCFG stepCmd n c) cfg st := by bridge_ind coBridge
 
 /-- `CoBridge` (the stop hook can only stop the run at its last event) holds for the callee body run
     `runCallee` over a command stepper satisfying it. -/

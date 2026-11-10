@@ -15,6 +15,7 @@ import all Strata.Languages.Core.Interpreter
 import Strata.DL.Imperative.CmdSemanticsProps
 import Strata.DL.Imperative.StmtSemanticsProps
 import Strata.DL.Imperative.StmtCFGCallSemanticsProps
+import Strata.DL.Imperative.CFGSemanticsProps
 import Strata.DL.Lambda.LExprEvalFuelProps
 import Strata.DL.Lambda.LExprDenoteEvalProps
 import all Strata.DL.Lambda.LExprDenoteEval
@@ -26,13 +27,17 @@ The bridges from Core's reference semantics to the engine (reference ⇒ engine)
 global premise `BoundedEvalComplete Expression`, which Core's bounded evaluator does not meet.
 A reference run is engine-realizable when every expression it evaluates is computable
 (`ComputableEval`), stated on the run as `EvalsComputable`: at every configuration the reference
-semantics visits from the start (`Visits`: by reference steps, or by entering the body of a call
-in active position), every guard, deterministic right-hand side and call argument the statement in
-active position (`ActiveStmt`) evaluates (`stmtEvalExprs`) is computable at its environment.
+semantics visits from the start (`Visits`: by reference steps, or by entering the structured body
+of a call), every guard, deterministic right-hand side and call argument the statement in active
+position (`ActiveStmt`) evaluates (`stmtEvalExprs`) is computable at its environment, and at every
+CFG configuration it visits in a CFG callee body (`VisitsCFG`: by entering the CFG body of a call,
+or by reference CFG steps), every right-hand side and call argument of the command heading the
+residual commands and every guard of a conditional transfer (`cfgEvalExprs`) is computable.
 The engine reads guards and failing conditions as the literals `HasBool.tt` and `HasBool.ff` up to
 metadata, and a computable evaluation commits such a literal with some metadata.
 
-Key definitions: `stmtEvalExprs`, `ActiveStmt`, `Visits`, `EvalsComputable`,
+Key definitions: `stmtEvalExprs`, `ActiveStmt`, `Visits`, `VisitsCFG`, `cfgEvalExprs`,
+`EvalsComputable`,
 `ComputableFailure`. Key theorems: `evalCmdEngE_of_computable`,
 `writeBackTypedComplete_core`, `runChoices_of_evalsComputable` (the bridge to choice sequences,
 `Calls.RunChoices`), and its corollaries `core_replayComplete_of_evalsComputable`,
@@ -71,30 +76,80 @@ inductive ActiveStmt : CoreConfig → Imperative.Env Expression → Statement �
       {ρ : Imperative.Env Expression} {s : Statement} :
       ActiveStmt inner ρ s → ActiveStmt (.block label σp inner) ρ s
 
+mutual
 /-- `Visits π c d`: the reference semantics visits the configuration `d` from `c`: by reference
-    steps, or by entering the structured body of a call in active position of a visited
-    configuration, from a callee frame the reference call rule builds (`CallEntry`). -/
+    steps, or by entering the structured body of a call, from a callee frame the reference call
+    rule builds (`CallEntry`), where the call is in active position of a visited configuration or
+    heads the residual commands of a visited CFG configuration (`VisitsCFG`). -/
 inductive Visits (π : String → Option Procedure) (c : CoreConfig) : CoreConfig → Prop where
   /-- The start configuration. -/
   | refl : Visits π c c
   /-- A reference step from a visited configuration. -/
   | step {x y : CoreConfig} {evs : List (Event Expression)} :
       Visits π c x → CoreStepE π x evs y → Visits π c y
-  /-- The entry of the body of a call in active position of a visited configuration. -/
+  /-- The entry of the structured body of a call in active position of a visited configuration. -/
   | call {x : CoreConfig} {ρ : Imperative.Env Expression} {n : String}
       {args : List (CallArg Expression)} {md : MetaData Expression} {p : Procedure}
       {ss : Statements} {σAO : CoreStore} :
       Visits π c x → ActiveStmt x ρ (.cmd (.call n args md)) → π n = some p →
       p.body = .structured ss → CallEntry ρ.factory ρ.store p args σAO →
       Visits π c (.stmt (Stmt.block "" ss #[]) ⟨σAO, ρ.factory⟩)
+  /-- The entry of the structured body of a call heading the residual commands of a visited CFG
+      configuration. -/
+  | cfgCall {g : Imperative.DetCFG Expression Command} {t : String} {cs : List Command}
+      {tr : DetTransferCmd String Expression} {ρ : Imperative.Env Expression} {n : String}
+      {args : List (CallArg Expression)} {md : MetaData Expression} {p : Procedure}
+      {ss : Statements} {σAO : CoreStore} :
+      VisitsCFG π c (.inBlock g t (.call n args md :: cs) tr ρ) → π n = some p →
+      p.body = .structured ss → CallEntry ρ.factory ρ.store p args σAO →
+      Visits π c (.stmt (Stmt.block "" ss #[]) ⟨σAO, ρ.factory⟩)
+
+/-- `VisitsCFG π c d`: the reference semantics visits the CFG configuration `d` from `c`: by
+    entering the CFG body of a call at its entry block, from a callee frame the reference call
+    rule builds (`CallEntry`), where the call is in active position of a visited configuration
+    (`Visits`) or heads the residual commands of a visited CFG configuration, or by reference CFG
+    steps from a visited CFG configuration. -/
+inductive VisitsCFG (π : String → Option Procedure) (c : CoreConfig) :
+    CFGConfig String Command Expression → Prop where
+  /-- The entry of the CFG body of a call in active position of a visited configuration. -/
+  | call {x : CoreConfig} {ρ : Imperative.Env Expression} {n : String}
+      {args : List (CallArg Expression)} {md : MetaData Expression} {p : Procedure}
+      {g : Imperative.DetCFG Expression Command} {σAO : CoreStore} :
+      Visits π c x → ActiveStmt x ρ (.cmd (.call n args md)) → π n = some p →
+      p.body = .cfg g → CallEntry ρ.factory ρ.store p args σAO →
+      VisitsCFG π c (.atBlock g g.entry ⟨σAO, ρ.factory⟩)
+  /-- The entry of the CFG body of a call heading the residual commands of a visited CFG
+      configuration. -/
+  | cfgCall {g' : Imperative.DetCFG Expression Command} {t : String} {cs : List Command}
+      {tr : DetTransferCmd String Expression} {ρ : Imperative.Env Expression} {n : String}
+      {args : List (CallArg Expression)} {md : MetaData Expression} {p : Procedure}
+      {g : Imperative.DetCFG Expression Command} {σAO : CoreStore} :
+      VisitsCFG π c (.inBlock g' t (.call n args md :: cs) tr ρ) → π n = some p →
+      p.body = .cfg g → CallEntry ρ.factory ρ.store p args σAO →
+      VisitsCFG π c (.atBlock g g.entry ⟨σAO, ρ.factory⟩)
+  /-- A reference CFG step from a visited CFG configuration. -/
+  | step {x y : CFGConfig String Command Expression} {evs : List (Event Expression)} :
+      VisitsCFG π c x → StepCFGE Expression (EvalCommandE π) x evs y → VisitsCFG π c y
+end
+
+/-- The expressions a CFG configuration evaluates when it steps: those the command heading the
+    residual commands of its block evaluates (`stmtEvalExprs`), or, once the residual commands are
+    exhausted, the guard of the block's conditional transfer. -/
+@[expose] def cfgEvalExprs : CFGConfig String Command Expression → List Expression.Expr
+  | .inBlock _ _ (c :: _) _ _ => stmtEvalExprs (.cmd c)
+  | .inBlock _ _ [] (.condGoto e _ _ _) _ => [e]
+  | _ => []
 
 /-- **Every expression a reference run from `c` evaluates is computable**: at every configuration
     the reference semantics visits from `c` (`Visits`), every expression the statement in active
     position evaluates (`stmtEvalExprs`) is computable (`ComputableEval`) at the environment it
-    is evaluated in. -/
+    is evaluated in, and at every CFG configuration it visits in a CFG callee body (`VisitsCFG`),
+    every expression the configuration evaluates (`cfgEvalExprs`) is computable at the
+    configuration's environment. -/
 @[expose] def EvalsComputable (π : String → Option Procedure) (c : CoreConfig) : Prop :=
-  ∀ d, Visits π c d → ∀ ρ s, ActiveStmt d ρ s → ∀ e ∈ stmtEvalExprs s,
-    ComputableEval ρ.factory ρ.store e
+  (∀ d, Visits π c d → ∀ ρ s, ActiveStmt d ρ s → ∀ e ∈ stmtEvalExprs s,
+    ComputableEval ρ.factory ρ.store e) ∧
+  ∀ d, VisitsCFG π c d → ∀ e ∈ cfgEvalExprs d, ComputableEval d.getEnv.factory d.getEnv.store e
 
 /-! ## Core's executable checks on computable evaluations -/
 
@@ -231,39 +286,75 @@ theorem evalCmdEngE_of_computable {f : Expression.Factory} {σ σ' : CoreStore}
 
 /-! ## Reference runs on computable evaluations have choice sequences -/
 
-/-- The context a reference step at `x` is taken in, relative to a set `Q` of configurations: at
-    every statement in active position of `x`, every expression it evaluates is computable, and
-    the body of a call there starts, from every callee frame the call rule builds, at a
-    configuration `Q` admits. -/
-private def StepCtx (π : String → Option Procedure) (Q : CoreConfig → Prop) (x : CoreConfig) :
-    Prop :=
-  ∀ ρ s, ActiveStmt x ρ s → (∀ e ∈ stmtEvalExprs s, ComputableEval ρ.factory ρ.store e) ∧
-    ∀ n args md p ss σAO, s = .cmd (.call n args md) → π n = some p →
-      p.body = .structured ss → CallEntry ρ.factory ρ.store p args σAO →
-      Q (.stmt (Stmt.block "" ss #[]) ⟨σAO, ρ.factory⟩)
+/-- The context a statement `s` is evaluated in under `ρ`, relative to a set `Q` of
+    configurations and a set `QC` of CFG configurations: every expression `s` evaluates is
+    computable, and when `s` is a call, the body of the callee starts, from every callee frame
+    the call rule builds, at a configuration `Q` admits (a structured body) or at a CFG
+    configuration `QC` admits (a CFG body). -/
+private def StmtCtx (π : String → Option Procedure) (Q : CoreConfig → Prop)
+    (QC : CFGConfig String Command Expression → Prop) (ρ : Imperative.Env Expression)
+    (s : Statement) : Prop :=
+  (∀ e ∈ stmtEvalExprs s, ComputableEval ρ.factory ρ.store e) ∧
+    ∀ n args md p σAO, s = .cmd (.call n args md) → π n = some p →
+      CallEntry ρ.factory ρ.store p args σAO →
+      (∀ ss, p.body = .structured ss → Q (.stmt (Stmt.block "" ss #[]) ⟨σAO, ρ.factory⟩)) ∧
+        ∀ g, p.body = .cfg g → QC (.atBlock g g.entry ⟨σAO, ρ.factory⟩)
 
-/-- `StepCtx` at a configuration holds at its sequence head and its block body. -/
-private theorem StepCtx.seq {π : String → Option Procedure} {Q : CoreConfig → Prop}
-    {inner : CoreConfig} {ss : Statements} (h : StepCtx π Q (.seq inner ss)) :
-    StepCtx π Q inner := fun ρ s ha => h ρ s (.seq ha)
+/-- The context a reference step at `x` is taken in: every statement in active position of `x`
+    is evaluated in the context `StmtCtx` relative to `Q` and `QC`. -/
+private def StepCtx (π : String → Option Procedure) (Q : CoreConfig → Prop)
+    (QC : CFGConfig String Command Expression → Prop) (x : CoreConfig) : Prop :=
+  ∀ ρ s, ActiveStmt x ρ s → StmtCtx π Q QC ρ s
 
-/-- `StepCtx` at a block holds at its body. -/
-private theorem StepCtx.block {π : String → Option Procedure} {Q : CoreConfig → Prop}
-    {l : Option String} {σp : CoreStore} {inner : CoreConfig}
-    (h : StepCtx π Q (.block l σp inner)) : StepCtx π Q inner := fun ρ s ha => h ρ s (.block ha)
+/-- The context a reference CFG step at `x` is taken in: the command heading the residual
+    commands of its block is evaluated in the context `StmtCtx` relative to `Q` and `QC`, and,
+    once the residual commands are exhausted, the guard of a conditional transfer is
+    computable. -/
+private def CFGCtx (π : String → Option Procedure) (Q : CoreConfig → Prop)
+    (QC : CFGConfig String Command Expression → Prop) :
+    CFGConfig String Command Expression → Prop
+  | .inBlock _ _ (c :: _) _ ρ => StmtCtx π Q QC ρ (.cmd c)
+  | .inBlock _ _ [] (.condGoto e _ _ _) ρ => ComputableEval ρ.factory ρ.store e
+  | _ => True
+
+/-- A reference run from a configuration of a set `Q` closed under its steps reads its choices
+    off an oracle, given that each of its steps from a configuration of `Q` does, through an
+    oracle-reading step relation `R` over the oracle-reading command relation at some
+    call-nesting height, `R` being monotone in its command relation. -/
+private theorem oracle_star {π : String → Option Procedure} {α : Type 1}
+    {S : α → List (Event Expression) → α → Prop}
+    {R : Calls.OracleCmdRel Expression → α × List Expression.Val → List (Event Expression) →
+      α × List Expression.Val → Prop}
+    (hR : ∀ {E E' : Calls.OracleCmdRel Expression},
+      (∀ f σ c σ' evs o o', E f σ c σ' evs o o' → E' f σ c σ' evs o o') →
+        ∀ {x e y}, R E x e y → R E' x e y)
+    {x y : α} {evs : List (Event Expression)} (h : ReflTransTrace S x evs y) {Q : α → Prop}
+    (hQ : ∀ x e y, Q x → S x e y → Q y)
+    (hS : ∀ x e y, Q x → S x e y →
+      ∃ cs n, ∀ rest, R (Calls.OracleCmdAt π n) (x, cs ++ rest) e (y, rest)) (hx : Q x) :
+    ∃ cs n, ∀ rest, ReflTransTrace (R (Calls.OracleCmdAt π n)) (x, cs ++ rest) evs (y, rest) := by
+  induction h with
+  | refl => exact ⟨[], 0, fun _ => .refl _⟩
+  | step x e y _ _ hs _ ih =>
+    obtain ⟨a, n, ha⟩ := hS x e y hx hs
+    obtain ⟨b, m, hb⟩ := ih (hQ x e y hx hs)
+    refine ⟨a ++ b, n + m, fun r => ?_⟩
+    rw [List.append_assoc]
+    exact .step _ _ _ _ _ (hR (fun _ _ _ _ _ _ _ => Calls.oracleCmdAt_mono π (by omega)) (ha _))
+      ((hb r).imp fun _ _ _ => hR fun _ _ _ _ _ _ _ => Calls.oracleCmdAt_mono π (by omega))
 
 /-- A reference step in a context where its evaluations are computable reads its choices off an
     oracle, given that every command step in its context does. -/
 private theorem oracleStep {π : String → Option Procedure} {Q : CoreConfig → Prop}
-    {E : CoreCmdRel}
-    (hE : ∀ f σ cmd σ' evs, E f σ cmd σ' evs → StepCtx π Q (.stmt (.cmd cmd) ⟨σ, f⟩) →
+    {QC : CFGConfig String Command Expression → Prop} {E : CoreCmdRel}
+    (hE : ∀ f σ cmd σ' evs, E f σ cmd σ' evs → StmtCtx π Q QC ⟨σ, f⟩ (.cmd cmd) →
       ∃ cs n, ∀ rest, Calls.OracleCmdAt π n f σ cmd σ' evs (cs ++ rest) rest)
     {x y : CoreConfig} {evs : List (Event Expression)} (hs : StepStmtE Expression E x evs y)
-    (hx : StepCtx π Q x) :
+    (hx : StepCtx π Q QC x) :
     ∃ cs n, ∀ rest, Calls.OracleStepE (Calls.OracleCmdAt π n) (x, cs ++ rest) evs (y, rest) := by
   induction hs with
   | step_cmd h =>
-    obtain ⟨cs, n, H⟩ := hE _ _ _ _ _ h hx
+    obtain ⟨cs, n, H⟩ := hE _ _ _ _ _ h (hx _ _ .here)
     exact ⟨cs, n, fun r => .step_cmd (H r)⟩
   | step_ite_true he =>
     exact ⟨[], 0, fun _ => .step_det (.step_ite_true he
@@ -282,53 +373,51 @@ private theorem oracleStep {π : String → Option Procedure} {Q : CoreConfig �
   | step_loop_nondet_enter => exact ⟨[_], 0, fun _ => .step_loop_enter⟩
   | step_loop_nondet_exit => exact ⟨[_], 0, fun _ => .step_loop_exit⟩
   | step_seq_inner _ ih =>
-    obtain ⟨cs, n, H⟩ := ih hx.seq
+    obtain ⟨cs, n, H⟩ := ih fun ρ s ha => hx ρ s (.seq ha)
     exact ⟨cs, n, fun r => .step_seq_inner (H r)⟩
   | step_block_body _ ih =>
-    obtain ⟨cs, n, H⟩ := ih hx.block
+    obtain ⟨cs, n, H⟩ := ih fun ρ s ha => hx ρ s (.block ha)
     exact ⟨cs, n, fun r => .step_block_body (H r)⟩
   | _ => exact ⟨[], 0, fun _ => .step_det (by constructor <;> assumption)⟩
 
-/-- A reference run from a configuration of a set `Q` closed under its steps, in each of whose
-    configurations the evaluations are computable and call bodies start in `Q`, reads its choices
-    off an oracle, given that every command step in such a context does. -/
-private theorem oracleStar {π : String → Option Procedure} {Q : CoreConfig → Prop}
-    {E : CoreCmdRel}
-    (hE : ∀ f σ cmd σ' evs, E f σ cmd σ' evs → StepCtx π Q (.stmt (.cmd cmd) ⟨σ, f⟩) →
+/-- A reference CFG step in a context where its evaluations are computable reads its choices off
+    an oracle, given that every command step in its context does. -/
+private theorem oracleCFGStep {π : String → Option Procedure} {Q : CoreConfig → Prop}
+    {QC : CFGConfig String Command Expression → Prop} {E : CoreCmdRel}
+    (hE : ∀ f σ cmd σ' evs, E f σ cmd σ' evs → StmtCtx π Q QC ⟨σ, f⟩ (.cmd cmd) →
       ∃ cs n, ∀ rest, Calls.OracleCmdAt π n f σ cmd σ' evs (cs ++ rest) rest)
-    (hQ : ∀ x evs y, Q x → StepStmtE Expression E x evs y → Q y)
-    (hctx : ∀ x, Q x → StepCtx π Q x)
-    {x y : CoreConfig} {evs : List (Event Expression)} (h : StepStmtStarE Expression E x evs y)
-    (hx : Q x) :
-    ∃ cs n, ∀ rest, ReflTransTrace (Calls.OracleStepE (Calls.OracleCmdAt π n))
-      (x, cs ++ rest) evs (y, rest) := by
-  induction h with
-  | refl => exact ⟨[], 0, fun _ => .refl _⟩
-  | step x e y _ _ hs _ ih =>
-    obtain ⟨a, n, ha⟩ := oracleStep hE hs (hctx x hx)
-    obtain ⟨b, m, hb⟩ := ih (hQ x e y hx hs)
-    refine ⟨a ++ b, n + m, fun r => ?_⟩
-    rw [List.append_assoc]
-    exact .step _ _ _ _ _
-      (Calls.OracleStepE.imp (fun _ _ _ _ _ _ _ => Calls.oracleCmdAt_mono π (by omega)) (ha _))
-      ((hb r).imp fun _ _ _ =>
-        Calls.OracleStepE.imp fun _ _ _ _ _ _ _ => Calls.oracleCmdAt_mono π (by omega))
+    {x y : CFGConfig String Command Expression} {evs : List (Event Expression)}
+    (hs : StepCFGE Expression E x evs y) (hx : CFGCtx π Q QC x) :
+    ∃ cs n, ∀ rest, OracleCFGStepE (Calls.OracleCmdAt π n) (x, cs ++ rest) evs (y, rest) := by
+  cases hs with
+  | step_cmd h =>
+    obtain ⟨cs, n, H⟩ := hE _ _ _ _ _ h hx
+    exact ⟨cs, n, fun r => .step_cmd (H r)⟩
+  | fetch h => exact ⟨[], 0, fun _ => .step_admin (.fetch h)⟩
+  | goto_true he =>
+    exact ⟨[], 0, fun _ => .step_admin (.goto_true he (engEval_tt_of_computable hx he))⟩
+  | goto_false he =>
+    exact ⟨[], 0, fun _ => .step_admin (.goto_false he (engEval_ff_of_computable hx he))⟩
+  | finish => exact ⟨[], 0, fun _ => .step_admin .finish⟩
 
-/-- A reference command evaluation in a context where its evaluations are computable and call
-    bodies start in a set `Q` of configurations closed under reference steps, every configuration
-    of which is such a context, reads its choices off an oracle. -/
+/-- A reference command evaluation in a context where its evaluations are computable reads its
+    choices off an oracle, when callee bodies start in a set `Q` of configurations closed under
+    reference steps, every configuration of which is such a context, or in a set `QC` of CFG
+    configurations closed under reference CFG steps, every CFG configuration of which is such a
+    context. -/
 private theorem oracleCmd {π : String → Option Procedure}
-    (hstruct : ∀ n p, π n = some p → ∀ g, p.body ≠ .cfg g)
-    {Q : CoreConfig → Prop} (hQ : ∀ x evs y, Q x → CoreStepE π x evs y → Q y)
-    (hctx : ∀ x, Q x → StepCtx π Q x) {f : Expression.Factory} {σ σ' : CoreStore}
-    {cmd : Command} {evs : Trace Expression} (h : EvalCommandE π f σ cmd σ' evs) :
-    StepCtx π Q (.stmt (.cmd cmd) ⟨σ, f⟩) →
+    {Q : CoreConfig → Prop} {QC : CFGConfig String Command Expression → Prop}
+    (hQ : ∀ x evs y, Q x → CoreStepE π x evs y → Q y)
+    (hQC : ∀ x evs y, QC x → StepCFGE Expression (EvalCommandE π) x evs y → QC y)
+    (hctx : ∀ x, Q x → StepCtx π Q QC x) (hctxC : ∀ x, QC x → CFGCtx π Q QC x)
+    {f : Expression.Factory} {σ σ' : CoreStore} {cmd : Command} {evs : Trace Expression}
+    (h : EvalCommandE π f σ cmd σ' evs) :
+    StmtCtx π Q QC ⟨σ, f⟩ (.cmd cmd) →
       ∃ cs n, ∀ rest, Calls.OracleCmdAt π n f σ cmd σ' evs (cs ++ rest) rest := by
   induction h using EvalCmdExtE.induct with
   | cmd_sem h =>
     intro hc
-    have hce := (hc _ _ .here).1
-    have heng := evalCmdEngE_of_computable h hce
+    have heng := evalCmdEngE_of_computable h hc.1
     cases h with
     | eval_init_unconstrained hi =>
       obtain ⟨_, hx, _⟩ := hi
@@ -338,30 +427,46 @@ private theorem oracleCmd {π : String → Option Procedure}
       exact ⟨[_], 0, fun _ => ⟨_, rfl, heng, .inr ⟨_, _, rfl, hx, .inr ⟨_, rfl⟩⟩⟩⟩
     | _ => exact ⟨[], 0, fun _ => ⟨_, rfl, heng, .inl ⟨rfl, rfl⟩⟩⟩
   | call_sem hπ he _ hx ih =>
-    intro hc
-    obtain ⟨hargs, hbody⟩ := hc _ _ .here
-    obtain ⟨ss, ρ', hss, rfl, hr⟩ := ih.resolve_right fun ⟨g, _, hg, _⟩ => hstruct _ _ hπ g hg
-    obtain ⟨cs, n, hn⟩ := oracleStar (fun _ _ _ _ _ ⟨_, hm⟩ => hm)
-      (fun x e y hq hs => hQ x e y hq (hs.imp fun _ _ _ _ _ ⟨h, _⟩ => h)) hctx hr
-      (hbody _ _ _ _ _ _ rfl hπ hss he)
-    exact ⟨cs, n + 1, fun r =>
-      .inr ⟨_, _, _, _, _, _, _, _, rfl, hπ, hss, he, hn r, hx, rfl,
-        fun e he' => engEvalReach_of_computableEval (hargs e he'),
-        Calls.writeBackOK_of_complete writeBackTypedComplete_core hx⟩⟩
+    rintro ⟨hargs, hbody⟩
+    obtain ⟨hs, hg⟩ := hbody _ _ _ _ _ rfl hπ he
+    have hreach := fun e he' => engEvalReach_of_computableEval (hargs e he')
+    have hwb := Calls.writeBackOK_of_complete writeBackTypedComplete_core hx
+    rcases ih with ⟨ss, ρ', hss, rfl, hr⟩ | ⟨g, ρ', hcfg, rfl, hr⟩
+    · obtain ⟨cs, n, hn⟩ := oracle_star Calls.OracleStepE.imp hr
+        (fun x e y hq hs => hQ x e y hq (hs.imp fun _ _ _ _ _ ⟨h, _⟩ => h))
+        (fun x _ _ hq hs => oracleStep (fun _ _ _ _ _ ⟨_, hm⟩ => hm) hs (hctx x hq))
+        (hs ss hss)
+      exact ⟨cs, n + 1, fun r =>
+        .inr (.inl ⟨_, _, _, _, _, _, _, _, rfl, hπ, hss, he, hn r, hx, rfl, hreach, hwb⟩)⟩
+    · obtain ⟨cs, n, hn⟩ := oracle_star Calls.OracleCFGStepE.imp hr
+        (fun x e y hq hs => hQC x e y hq (hs.imp fun _ _ _ _ _ ⟨h, _⟩ => h))
+        (fun x _ _ hq hs => oracleCFGStep (fun _ _ _ _ _ ⟨_, hm⟩ => hm) hs (hctxC x hq))
+        (hg g hcfg)
+      exact ⟨cs, n + 1, fun r =>
+        .inr (.inr ⟨_, _, _, _, _, _, _, _, rfl, hπ, hcfg, he, hn r, hx, rfl, hreach, hwb⟩)⟩
 
-/-- **Reference runs on computable evaluations have choice sequences** (reference ⇒ engine).  If
-    every procedure of `π` has a structured body, a reference run of `π` from `c` along which every
-    evaluated expression is computable (`EvalsComputable`) has a choice sequence
+/-- **Reference runs on computable evaluations have choice sequences** (reference ⇒ engine).  A
+    reference run of `π` from `c` along which every evaluated expression is computable
+    (`EvalsComputable`), in structured and CFG callee bodies alike, has a choice sequence
     (`Calls.RunChoices`): it is a run the engine reproduces. -/
-theorem runChoices_of_evalsComputable (π : String → Option Procedure)
-    (hstruct : ∀ n p, π n = some p → ∀ g, p.body ≠ .cfg g)
-    {c c' : CoreConfig} {evs : List (Event Expression)} (hcomp : EvalsComputable π c)
-    (h : CoreStepStarE π c evs c') : ∃ cs, Calls.RunChoices π c evs c' cs := by
-  have hctx : ∀ x, Visits π c x → StepCtx π (Visits π c) x := fun x hx ρ s ha =>
-    ⟨hcomp x hx ρ s ha, fun _ _ _ _ _ _ hs hp hb he => .call hx (hs ▸ ha) hp hb he⟩
-  obtain ⟨cs, n, hn⟩ := oracleStar
-    (fun _ _ _ _ _ hc hx => oracleCmd hstruct (fun _ _ _ hq hs => .step hq hs) hctx hc hx)
-    (fun _ _ _ hq hs => .step hq hs) hctx h .refl
+theorem runChoices_of_evalsComputable (π : String → Option Procedure) {c c' : CoreConfig}
+    {evs : List (Event Expression)} (hcomp : EvalsComputable π c) (h : CoreStepStarE π c evs c') :
+    ∃ cs, Calls.RunChoices π c evs c' cs := by
+  have hctx : ∀ x, Visits π c x → StepCtx π (Visits π c) (VisitsCFG π c) x := fun x hx ρ s ha =>
+    ⟨hcomp.1 x hx ρ s ha, fun _ _ _ _ _ hs hp he =>
+      ⟨fun _ hb => .call hx (hs ▸ ha) hp hb he, fun _ hb => .call hx (hs ▸ ha) hp hb he⟩⟩
+  have hctxC : ∀ x, VisitsCFG π c x → CFGCtx π (Visits π c) (VisitsCFG π c) x := by
+    rintro (_ | ⟨_, _, _ | ⟨_, _⟩, _ | _, _⟩ | _) hx
+    all_goals first
+      | trivial
+      | exact hcomp.2 _ hx _ (List.mem_singleton_self _)
+      | exact ⟨hcomp.2 _ hx, fun _ _ _ _ _ hs hp he =>
+          ⟨fun _ hb => .cfgCall (Stmt.cmd.inj hs ▸ hx) hp hb he,
+            fun _ hb => .cfgCall (Stmt.cmd.inj hs ▸ hx) hp hb he⟩⟩
+  obtain ⟨cs, n, hn⟩ := oracle_star Calls.OracleStepE.imp h (fun _ _ _ hq hs => .step hq hs)
+    (fun x _ _ hq hs => oracleStep (fun _ _ _ _ _ hc hx => oracleCmd
+      (fun _ _ _ hq hs => .step hq hs) (fun _ _ _ hq hs => .step hq hs) hctx hctxC hc hx) hs
+      (hctx x hq)) .refl
   exact ⟨cs, n, hn⟩
 
 /-! ## Completeness of Core replay on computable evaluations -/
@@ -398,17 +503,16 @@ theorem assertFailureE_of_computable
   | .cover _, ⟨hl, hm, he, hc⟩ =>
     ⟨hl, hm, he, engEval_eqModuloMeta (b := true) hc he⟩
 
-/-- **Completeness of Core replay on computable evaluations** (reference ⇒ engine).  Let every
-    procedure of `π` have a structured body.  If a reference run of `π` from the configuration
-    `cex.cfg` stands for, along which every evaluated expression is computable (`EvalsComputable`),
-    emits a failure of the target with a computable condition (`ComputableFailure`), then the run
-    has a choice sequence `cs` (`Calls.RunChoices`) such that, whenever `cex.oracle` begins with a
-    runtime segment witnessing `cs` (`OracleWitness`) that passes `choose`'s type check
-    (`OracleTyped`), `cex` replayed with its own oracle reaches that failure (`genuine`) at every
-    sufficiently large fuel and call-depth limit. -/
+/-- **Completeness of Core replay on computable evaluations** (reference ⇒ engine).  If a
+    reference run of `π` from the configuration `cex.cfg` stands for, along which every evaluated
+    expression is computable (`EvalsComputable`), emits a failure of the target with a computable
+    condition (`ComputableFailure`), then the run has a choice sequence `cs` (`Calls.RunChoices`)
+    such that, whenever `cex.oracle` begins with a runtime segment witnessing `cs`
+    (`OracleWitness`) that passes `choose`'s type check (`OracleTyped`), `cex` replayed with its
+    own oracle reaches that failure (`genuine`) at every sufficiently large fuel and call-depth
+    limit. -/
 theorem core_replayComplete_of_evalsComputable {F : Expression.Factory}
-    (π : String → Option Procedure) (hstruct : ∀ n p, π n = some p → ∀ g, p.body ≠ .cfg g)
-    (target : AssertId Expression)
+    (π : String → Option Procedure) (target : AssertId Expression)
     (cex : CexA Expression Command) {evs : List (Event Expression)}
     {final : Config Expression Command} (hd : cex.cfg.Denoting F) (ht : cex.cfg.Tracked)
     (hcomp : EvalsComputable π (cex.cfg.abs F)) (hrun : CoreStepStarE π (cex.cfg.abs F) evs final)
@@ -417,42 +521,39 @@ theorem core_replayComplete_of_evalsComputable {F : Expression.Factory}
       ∀ rs : List Expression.Expr, rs <+: cex.oracle → OracleWitness F rs cs →
         OracleTyped F (ChoiceRecord.typed Expression) rs cs →
           ∃ f0, ∀ fuel d, f0 ≤ fuel → f0 ≤ d → genuine π target fuel cex d := by
-  obtain ⟨cs, hcs⟩ := runChoices_of_evalsComputable π hstruct hcomp hrun
+  obtain ⟨cs, hcs⟩ := runChoices_of_evalsComputable π hcomp hrun
   obtain ⟨ev, hev, hf⟩ := hfail
   exact ⟨cs, hcs, fun rs hpre hrs hty => core_replayComplete π target cex hd ht hcs rs hpre hrs hty
     ⟨ev, hev, assertFailureE_of_computable hf⟩⟩
 
-/-- **Completeness of Core replay on deterministic programs with computable evaluations** (reference
-    ⇒ engine).  If every procedure of `π` has a structured body, the program is deterministic
-    (`Calls.ProgDeterministic`), and a reference run of `π` from `cex.cfg`, along which every
-    evaluated expression is computable, emits a failure of the target with a computable condition,
-    then `cex`, replayed with its own oracle, reaches that failure (`genuine`) at every sufficiently
-    large fuel and call-depth limit. -/
+/-- **Completeness of Core replay on deterministic programs with computable evaluations**
+    (reference ⇒ engine).  If the program is deterministic (`Calls.ProgDeterministic`), and a
+    reference run of `π` from `cex.cfg`, along which every evaluated expression is computable,
+    emits a failure of the target with a computable condition, then `cex`, replayed with its own
+    oracle, reaches that failure (`genuine`) at every sufficiently large fuel and call-depth
+    limit. -/
 theorem core_replayComplete_of_deterministic_computable {F : Expression.Factory}
-    (π : String → Option Procedure) (hstruct : ∀ n p, π n = some p → ∀ g, p.body ≠ .cfg g)
-    (target : AssertId Expression)
+    (π : String → Option Procedure) (target : AssertId Expression)
     (cex : CexA Expression Command) {evs : List (Event Expression)}
     {final : Config Expression Command} (hd : cex.cfg.Denoting F) (ht : cex.cfg.Tracked)
     (hdet : Calls.ProgDeterministic π (cex.cfg.abs F))
     (hcomp : EvalsComputable π (cex.cfg.abs F)) (hrun : CoreStepStarE π (cex.cfg.abs F) evs final)
     (hfail : ∃ ev ∈ evs, ComputableFailure target ev) :
     ∃ f0, ∀ fuel d, f0 ≤ fuel → f0 ≤ d → genuine π target fuel cex d := by
-  obtain ⟨cs, hcs, h⟩ := core_replayComplete_of_evalsComputable π hstruct target cex hd ht
-    hcomp hrun hfail
+  obtain ⟨cs, hcs, h⟩ := core_replayComplete_of_evalsComputable π target cex hd ht hcomp hrun hfail
   obtain rfl := Calls.runChoices_nil_of_deterministic hdet hcs
   exact h [] (List.nil_prefix) ⟨rfl, nofun⟩ nofun
 
 /-- **Whole-run Core `EvalM` completeness on deterministic programs with computable evaluations**
-    (reference ⇒ engine).  If every procedure of `π` has a structured body, the program is
-    deterministic, and a reference run of `π` from `start`, along which every evaluated expression
-    is computable, ends in a done configuration `final` and its events go through at `opts` for
-    every list of well-formed runtime events standing for them, then `runCoreInterp π` at `EvalM`
-    from every interpreter configuration denoting `start` reaches one denoting `final`, from every
-    state at every large enough fuel and call-depth limit, prepending runtime events denoting
-    exactly the run's events to the trace. -/
+    (reference ⇒ engine).  If the program is deterministic, and a reference run of `π` from
+    `start`, along which every evaluated expression is computable, ends in a done configuration
+    `final` and its events go through at `opts` for every list of well-formed runtime events
+    standing for them, then `runCoreInterp π` at `EvalM` from every interpreter configuration
+    denoting `start` reaches one denoting `final`, from every state at every large enough fuel
+    and call-depth limit, prepending runtime events denoting exactly the run's events to the
+    trace. -/
 theorem core_runCoreInterp_complete_eval_of_computable {F : Expression.Factory}
-    (π : String → Option Procedure) (hstruct : ∀ n p, π n = some p → ∀ g, p.body ≠ .cfg g)
-    (opts : EvalOpts)
+    (π : String → Option Procedure) (opts : EvalOpts)
     {start final : Config Expression Command} {evs : List (Event Expression)}
     (istart : IConfig Expression Command) (hstart : istart.Denotes F start)
     (hdet : Calls.ProgDeterministic π start) (hcomp : EvalsComputable π start)
@@ -463,7 +564,7 @@ theorem core_runCoreInterp_complete_eval_of_computable {F : Expression.Factory}
       (∀ fuel d, f0 ≤ fuel → f0 ≤ d →
         evalRun (runCoreInterp π fuel istart d) opts st = (.ok final', st'))
       ∧ obsEval.TraceExt F st st' evs := by
-  obtain ⟨cs, hcs⟩ := runChoices_of_evalsComputable π hstruct hcomp hrun
+  obtain ⟨cs, hcs⟩ := runChoices_of_evalsComputable π hcomp hrun
   exact core_runCoreInterp_complete_eval_of_deterministic π opts istart hstart hdet hcs hdone
     hemit st
 

@@ -50,8 +50,8 @@ properties the branch reproduces:
   `getDefaultCheckExprs` filter), not every clause.
 
 Faithful-mirror choices:
-* `.cfg` bodies and unresolved callees are refused (`unsupportedCalleeCfgBody` /
-  `unsupportedCalleeNotFound`).
+* Unresolved callees are refused (`unsupportedCalleeNotFound`); a `.cfg` body runs from its
+  entry block through the CFG driver.
 * Call arguments are evaluated with the fuel-bounded `evalBounded`, for engine
   consistency, not the unbounded `Expression.eval`.
 
