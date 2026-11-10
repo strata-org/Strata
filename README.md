@@ -88,7 +88,7 @@ For how to write a new test, see [docs/Testing.md](docs/Testing.md).
 To build executable files only and omit proof checks that might take a long time, use
 
 ```bash
-lake build StrataToCBMC StrataCoreToGoto
+lake build StrataToCBMC
 ```
 
 ### Running specific test subsets

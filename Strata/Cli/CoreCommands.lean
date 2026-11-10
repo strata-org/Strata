@@ -15,6 +15,7 @@ public import Strata.Languages.Core.SarifOutput
 public import Strata.Pipeline.Context
 public import Strata.Languages.B3.Verifier.Program
 public import Strata.Transform.ProcedureInlining
+public import Strata.Backends.CBMC.GOTO.CoreToCProverGOTO
 public import StrataDDM.Util.IO
 public import Strata.SimpleAPI
 public import StrataDDM.BuiltinDialects
@@ -138,6 +139,42 @@ private def buildPassConfigs (entries : Array (String × Option String))
       configs := configs.pop.push { cur with functions := cur.functions ++ fns }
     | _ => pure ()
   return configs
+
+/-- Translate a Strata Core program to CProver GOTO JSON: writes
+    `<name>.symtab.json` and `<name>.goto.json`, which `symtab2gb` turns into a
+    GOTO binary for CBMC. -/
+def coreToGotoCommand (dialects : LoadedDialects) : Command where
+  name := "coreToGoto"
+  args := [ "file" ]
+  flags := [
+    includeFlag,
+    { name := "output-dir", help := "Directory for the output files (default: the current directory).",
+      takesArg := .arg "dir" },
+    { name := "program-name",
+      help := "Program name for the GOTO output and the output file names \
+               (default: the input file name without `.core.st`).",
+      takesArg := .arg "name" }]
+  help := "Translate a Strata Core program (.core.st) to CProver GOTO JSON files."
+  callback := fun v pflags => do
+    let file := v[0]
+    unless file.endsWith ".core.st" do
+      exitCmdFailure "coreToGoto" s!"Expected a .core.st file, got {file}."
+    let programName := (pflags.getString "program-name").getD
+      (deriveBaseName [".core.st", ".st"] file)
+    if programName.any "/" || programName.any ".." then
+      exitCmdFailure "coreToGoto" "--program-name must be a simple file name without path separators."
+    let dir := System.FilePath.mk ((pflags.getString "output-dir").getD ".")
+    IO.FS.createDirAll dir
+    let fm ← pflags.buildDialectFileMap dialects
+    let (pgm, _) ← readStrataProgram fm file
+    let symTabFile := dir / s!"{programName}.symtab.json"
+    let gotoFile := dir / s!"{programName}.goto.json"
+    try
+      CoreToGOTO.writeToGotoJson (programName := programName)
+        (symTabFileName := symTabFile.toString) (gotoFileName := gotoFile.toString) pgm
+    catch e =>
+      exitFailure s!"coreToGoto: {e}"
+    IO.println s!"Written {symTabFile} and {gotoFile}"
 
 def transformCommand (dialects : LoadedDialects) : Command where
   name := "transform"
@@ -482,7 +519,8 @@ def buildCommandGroups (backends : List SolverBackend := [])
   [ { name := "Core"
       commands := [verifyCommand dialects extraFlags checkOptions resolver
                      (dispatchBackend backends),
-                   transformCommand dialects, checkCommand dialects, toIonCommand dialects,
+                   transformCommand dialects, coreToGotoCommand dialects, checkCommand dialects,
+                   toIonCommand dialects,
                    printCommand dialects, diffCommand dialects]
       commonFlags := [includeFlag] } ] ++
   frontends.map (·.group mkDischarge)
@@ -500,7 +538,7 @@ def buildCommandMap (backends : List SolverBackend := [])
   (buildCommandList backends resolver frontends).foldl (init := {}) fun m c => m.insert c.name c
 
 private def expectedCommandNames : List String :=
-  ["check", "diff", "print", "toIon", "transform", "verify"]
+  ["check", "coreToGoto", "diff", "print", "toIon", "transform", "verify"]
 
 private def commandNames (backends : List SolverBackend := []) : List String :=
   (buildCommandList backends).map (·.name) |>.mergeSort (· < ·)

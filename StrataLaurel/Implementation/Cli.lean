@@ -487,7 +487,7 @@ def laurelFrontend : Strata.Cli.CliFrontend where
                    laurelPrintCommand, laurelToCoreCommand] }
 
 private def expectedCommandNames : List String :=
-  ["check", "diff",
+  ["check", "coreToGoto", "diff",
    "laurelAnalyze", "laurelAnalyzeBinary", "laurelAnalyzeToGoto",
    "laurelInterpret", "laurelInterpretBinary", "laurelParse",
    "laurelPrint", "laurelToCore", "print",
