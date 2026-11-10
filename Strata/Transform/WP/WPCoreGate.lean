@@ -87,7 +87,8 @@ theorem wp_gate {G : IdSet Expression} {tys : Tys Expression} {ss : Statements}
       · exact ⟨_, bool_valueOfTy (.inl rfl)⟩
       · obtain ⟨v, hv⟩ := Option.isSome_iff_exists.1 (hsrc x hx)
         exact ⟨v, hty x (hfvS x hx) (hfvS x hx) ty hg v hv⟩
-    fvarTypesOk := ⟨fvTyping tys ss, hST, (wpEntry_wellTyped hw ⟨hfvS, hwfl, hcov⟩ htyp).1.2.2⟩ }
+    fvarTypesOk := ⟨fvTyping tys ss, hST, (wpEntry_wellTyped hw ⟨hfvS, hwfl, hcov⟩ htyp).1.2.2⟩
+    measuresTyped := by simp [Imperative.Block.measures_of_treeForm htree] }
 
 end -- public section
 

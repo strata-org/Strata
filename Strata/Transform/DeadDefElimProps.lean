@@ -366,6 +366,27 @@ private theorem dd_initTypes : ∀ (live : List Expression.Ident) (ss : Statemen
     have ih := dd_initTypes live rest
     simp_all [deadDefElim, erasable, deadDefElimS, Block.initTypes, Stmt.initTypes] <;> grind
 
+/-- Erasure keeps the loop measures among those of the input. -/
+private theorem dd_measures : ∀ (live : List Expression.Ident) (ss : Statements),
+    ∀ m ∈ Block.measures (deadDefElim live ss), m ∈ Block.measures ss
+  | _, [] => by simp [deadDefElim, Block.measures]
+  | live, .ite c t e md :: rest => by
+    have iht := fun l => dd_measures l t
+    have ihe := fun l => dd_measures l e
+    have ih := dd_measures live rest
+    simp_all [deadDefElim, erasable, deadDefElimS, Block.measures, Stmt.measures] <;> grind
+  | live, .block l bs md :: rest => by
+    have ihb := fun l => dd_measures l bs
+    have ih := dd_measures live rest
+    simp_all [deadDefElim, erasable, deadDefElimS, Block.measures, Stmt.measures] <;> grind
+  | live, .cmd c :: rest => by
+    have ih := dd_measures live rest
+    simp only [deadDefElim]
+    split <;> simp_all [deadDefElimS, Block.measures, Stmt.measures] <;> grind
+  | live, .loop .. :: rest | live, .exit .. :: rest | live, .typeDecl .. :: rest => by
+    have ih := dd_measures live rest
+    simp_all [deadDefElim, erasable, deadDefElimS, Block.measures, Stmt.measures] <;> grind
+
 /-- Erasure keeps the `exit` targets among those of the input. -/
 private theorem dd_labels : ∀ (live : List Expression.Ident) (ss : Statements),
     ∀ l ∈ Block.labels (deadDefElim live ss), l ∈ Block.labels ss
@@ -586,7 +607,8 @@ theorem blockInitEnvWF_dd {params : InitEnvWFParams} {ss : Statements}
     initTypesInhabited := fun ty hty => h.initTypesInhabited ty (dd_initTypes [] ss ty hty)
     fvarTypesOk := by
       obtain ⟨Γ, hσ, hw⟩ := h.fvarTypesOk
-      exact ⟨Γ, hσ, dd_fvarTypes [] ss Γ Γ hss hnc hw fun _ _ => rfl⟩ }
+      exact ⟨Γ, hσ, dd_fvarTypes [] ss Γ Γ hss hnc hw fun _ _ => rfl⟩
+    measuresTyped := fun m hm => h.measuresTyped m (dd_measures [] ss m hm) }
 
 end -- public section
 

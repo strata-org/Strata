@@ -93,14 +93,18 @@ theorem CoreGenState.WFMono : ∀ (γ γ' : CoreGenState) (pf l : CoreIdent),
   · simp only [Subset, ← Hgen.right]
     exact List.subset_cons_self _ _
 
+/-- The empty generator state is well formed: a transformation run from
+    `Transform.CoreTransformState.emp` starts from a well-formed generator state. -/
+theorem CoreGenState.wf_emp : CoreGenState.emp.WF := by
+  simp [CoreGenState.WF, StringGenState.WF, Counter.WF]
+
 /-- CoreLabelGen guarantees that all labels are .temp -/
 instance : LabelGen.WFLabelGen CoreIdent CoreGenState where
   emp := .emp
   gen := CoreGenState.gen
   generated := CoreGenState.generated
   wf := CoreGenState.WF
-  wf_emp := by
-    simp [CoreGenState.WF, StringGenState.WF, Counter.WF]
+  wf_emp := CoreGenState.wf_emp
   wf_gen := CoreGenState.WFMono
 
 abbrev CoreGenM := StateM CoreGenState

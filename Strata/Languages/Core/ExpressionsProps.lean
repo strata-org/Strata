@@ -19,7 +19,9 @@ import all Strata.DL.Lambda.IntBoolFactory
 The negation `HasBoolOps.not` of a Core expression reads no variable the expression does not
 read (`Core.not_getFvars`), has no annotated free-variable occurrence the expression does not
 have (`Core.not_getTypedFvars`), and refers only to the operators of the expression and the
-built-in `Bool.Not` (`Core.not_getOps`). -/
+built-in `Bool.Not` (`Core.not_getOps`); a comparison `a < b` of expressions reads, annotates and
+refers only to theirs and the built-in `Int.Lt` (`Core.lt_getFvars`, `Core.lt_getTypedFvars`,
+`Core.lt_getOps`). -/
 
 namespace Core
 
@@ -65,6 +67,37 @@ theorem not_getOps (g : Expression.Expr) :
       simpa [Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr,
         Lambda.LExpr.getOps, Lambda.boolNotFunc, Lambda.unaryOp] using ho
     · exact .inl ho
+
+/-- The comparison `a < b` of expressions reads only the variables they read. -/
+theorem lt_getFvars (a b : Expression.Expr) :
+    ∀ x ∈ HasFvars.getFvars (HasIntOps.lt a b),
+      x ∈ HasFvars.getFvars a ∨ x ∈ HasFvars.getFvars b := by
+  intro x hx
+  simpa [HasIntOps.lt, HasFvars.getFvars, Lambda.LExpr.LExpr.getVars, Lambda.WFLFunc.opExpr,
+    Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr] using hx
+
+/-- The comparison `a < b` of expressions has only their annotated free-variable
+    occurrences. -/
+theorem lt_getTypedFvars (a b : Expression.Expr) :
+    ∀ p ∈ HasFvars.getTypedFvars (HasIntOps.lt a b),
+      p ∈ HasFvars.getTypedFvars a ∨ p ∈ HasFvars.getTypedFvars b := by
+  intro p hp
+  simpa [HasIntOps.lt, HasFvars.getTypedFvars, Expression.typedFvars, Lambda.LExpr.freeVars,
+    Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr] using hp
+
+/-- The comparison `a < b` of expressions refers only to their operators and to the built-in
+    `Int.Lt`. -/
+theorem lt_getOps (a b : Expression.Expr) :
+    ∀ o ∈ HasOps.getOps (HasIntOps.lt a b),
+      o ∈ HasOps.getOps a ∨ o ∈ HasOps.getOps b ∨ o = ⟨"Int.Lt", ()⟩ := by
+  intro o ho
+  simp only [HasIntOps.lt, HasOps.getOps, Lambda.LExpr.getOps, List.mem_append] at ho
+  rcases ho with (ho | ho) | ho
+  · right; right
+    simpa [Lambda.WFLFunc.opExpr, Lambda.LFunc.opExpr, Lambda.LFuncDefined.opExpr,
+      Lambda.LExpr.getOps, Lambda.intLtFunc, Lambda.binaryOp] using ho
+  · exact .inl ho
+  · exact .inr (.inl ho)
 
 end -- public section
 

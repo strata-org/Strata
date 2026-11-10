@@ -664,6 +664,50 @@ theorem Block.nondetElim_labels {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool
     Block.labels (Block.nondetElim ss) = Block.labels ss := by
   rw [Block.nondetElim, Block.nondetElimM_labels]
 
+mutual
+/-- `Stmt.nondetElimM` keeps the loop measures at any threaded state. -/
+theorem Stmt.nondetElimM_measures {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
+    (s : Stmt P (Cmd P)) (σ : StringGenState) :
+    Block.measures (Stmt.nondetElimM s σ).1 = Stmt.measures s := by
+  match s with
+  | .cmd c => simp [Stmt.nondetElimM, Block.measures, Stmt.measures]
+  | .block lbl bss md =>
+      simp [Stmt.nondetElimM_block_out, Block.measures, Stmt.measures,
+        Block.nondetElimM_measures bss σ]
+  | .ite (.det e) tss ess md =>
+      simp [Stmt.nondetElimM_ite_det_out, Block.measures, Stmt.measures,
+        Block.nondetElimM_measures tss, Block.nondetElimM_measures ess]
+  | .ite .nondet tss ess md =>
+      simp [Stmt.nondetElimM_ite_nondet_out, Block.measures, Stmt.measures,
+        Block.nondetElimM_measures tss, Block.nondetElimM_measures ess]
+  | .loop (.det e) m inv body md =>
+      simp [Stmt.nondetElimM_loop_det_out, Block.measures, Stmt.measures,
+        Block.nondetElimM_measures body σ]
+  | .loop .nondet m inv body md =>
+      simp [Stmt.nondetElimM_loop_nondet_out, Block.measures, Stmt.measures,
+        Block.measures_append, Block.nondetElimM_measures body]
+  | .exit lbl md => simp [Stmt.nondetElimM, Block.measures, Stmt.measures]
+  | .typeDecl t md => simp [Stmt.nondetElimM, Block.measures, Stmt.measures]
+  termination_by sizeOf s
+
+/-- `Block.nondetElimM` keeps the loop measures at any threaded state. -/
+theorem Block.nondetElimM_measures {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
+    (ss : List (Stmt P (Cmd P))) (σ : StringGenState) :
+    Block.measures (Block.nondetElimM ss σ).1 = Block.measures ss := by
+  match ss with
+  | [] => simp [Block.nondetElimM, Block.measures]
+  | s :: rest =>
+      rw [Block.nondetElimM_cons_out, Block.measures_append, Block.measures,
+        Stmt.nondetElimM_measures s σ, Block.nondetElimM_measures rest _]
+  termination_by sizeOf ss
+end
+
+/-- Pure-wrapper corollary: `Block.nondetElim` keeps the loop measures. -/
+theorem Block.nondetElim_measures {P : PureExpr} [HasIdent P] [HasFvar P] [HasBool P]
+    (ss : List (Stmt P (Cmd P))) :
+    Block.measures (Block.nondetElim ss) = Block.measures ss := by
+  rw [Block.nondetElim, Block.nondetElimM_measures]
+
 /-! ## `nondetElim` per-pass event-trace overapproximation instance
 
 The pass's `OverapproximatesTracesUptoWhen` instance uses the event-trace block

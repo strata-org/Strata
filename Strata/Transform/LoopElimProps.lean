@@ -5,7 +5,7 @@
 -/
 module
 
-public import Strata.Transform.LoopElimPure
+public import Strata.Transform.LoopElim
 public import Strata.DL.Imperative.StmtProps
 public import Strata.Languages.Core.Logic.LangDef
 public import Strata.Transform.CoreTransformProps
@@ -13,7 +13,6 @@ import Strata.Languages.Core.ExpressionsProps
 import all Strata.Languages.Core.Factory
 import all Strata.Transform.LoopElim
 import all Strata.Transform.CoreTransform
-import all Strata.Transform.LoopElimPure
 import all Strata.DL.Imperative.Cmd
 import all Strata.DL.Imperative.Stmt
 
@@ -48,10 +47,10 @@ parameters without any block-label reservation (`Core.LoopElim.blockInitEnvWF_of
 `Core.LoopElim.single_blockRel` turns one related pair into a transformation for the trace
 theorems of `LoopElimCoreCorrect`.
 
-The properties of the pure pass of `LoopElimPure.lean` and of the Core pass of `LoopElim.lean`
-are kept together here: the pure pass exists only for the correctness proof, and `BlockRel`
-relates both to their inputs.  For the Core pass, `Core.LoopElim.loopElim_blockRel` states it
-for a whole program and `Core.LoopElim.loopElim_body_blockRel` for one procedure body. -/
+The properties of the pure pass and of the Core pass of `LoopElim.lean` are kept together here:
+`BlockRel` relates both to their inputs.  For the Core pass, `Core.LoopElim.loopElim_blockRel`
+states it for a whole program and `Core.LoopElim.loopElim_body_blockRel` for one procedure
+body. -/
 
 -- `CmdExt.hasHavoc_eq`, imported through `CoreTransformProps`, unfolds the havocs of the
 -- encoding before the `havocs_*` lemmas below can rewrite them.
@@ -308,6 +307,27 @@ theorem BlockRel.labels {ss ss' : List (Stmt P (CmdExt P))} (h : BlockRel ss ss'
   match h with
   | .nil => rfl
   | .cons hs hr => simp [Block.labels, hs.labels, hr.labels]
+end
+
+mutual
+/-- A statement and its output have the same loop measures. -/
+theorem StmtRel.measures {s s' : Stmt P (CmdExt P)} (h : StmtRel s s') :
+    Stmt.measures s' = Stmt.measures s := by
+  match h with
+  | .cmd _ | .exit _ _ | .typeDecl _ _ => rfl
+  | .block hb => simp [Stmt.measures, hb.measures]
+  | .ite ht he => simp [Stmt.measures, ht.measures, he.measures]
+  | @StmtRel.loop _ _ _ _ g body body' md n hb _ =>
+    cases g <;>
+      simp [Stmt.loopPassive, LoopElim.havocBlock, LoopElim.enterAssume, LoopElim.exitAssume,
+        Stmt.measures, Block.measures, Block.measures_map_cmd, hb.measures]
+
+/-- A list and its output have the same loop measures. -/
+theorem BlockRel.measures {ss ss' : List (Stmt P (CmdExt P))} (h : BlockRel ss ss') :
+    Block.measures ss' = Block.measures ss := by
+  match h with
+  | .nil => rfl
+  | .cons hs hr => simp [Block.measures, hs.measures, hr.measures]
 end
 
 /-- A statement and its output define the same variables, with the same declared types, in the
@@ -721,10 +741,8 @@ private theorem removeLoop_post (s : Statement) :
           Option.isSome_iff_exists, not_or, not_exists] at hinv
         obtain rfl : inv = [] := List.eq_nil_iff_forall_not_mem.2 hinv.1
         obtain rfl : m = none := Option.eq_none_iff_forall_ne_some.2 fun e h => hinv.2 e h
-        refine ⟨g, bss, md, n, rfl, fun l hl' => ?_, ?_⟩
-        · simpa using fun h => hl (List.any_eq_true.2 ⟨l, hl', h⟩)
-        · cases g <;> simp [Stmt.loopPassive, LoopElim.havocBlock, LoopElim.enterAssume,
-            LoopElim.exitAssume, Block.carriedVars]
+        exact ⟨g, bss, md, n, rfl, fun l hl' => by
+          simpa using fun h => hl (List.any_eq_true.2 ⟨l, hl', h⟩), rfl⟩
   · rename_i hne
     exact Transform.Post.pure fun g m inv bss md h => hne g m inv bss md h
 
@@ -1067,7 +1085,8 @@ theorem blockInitEnvWF_of_blockRel {params : InitEnvWFParams} {L : List String}
     initTypesInhabited := fun ty hty => hwf.initTypesInhabited ty (hrel.initTypes ty hty)
     fvarTypesOk := by
       obtain ⟨Γ, hσ, hw⟩ := hwf.fvarTypesOk
-      exact ⟨Γ, hσ, hrel.fvarTypesWellAnnotated Core.not_getTypedFvars hw⟩ }
+      exact ⟨Γ, hσ, hrel.fvarTypesWellAnnotated Core.not_getTypedFvars hw⟩
+    measuresTyped := fun m hm => hwf.measuresTyped m (hrel.measures ▸ hm) }
 
 end -- public section
 

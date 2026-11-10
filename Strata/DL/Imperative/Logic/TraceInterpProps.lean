@@ -31,7 +31,8 @@ together with basic assumption-prefix algebra.
 - `Trace.AssertionsValidFromP.mono_keep`,
   `Trace.AssertionValid.of_assertionsValid`, and
   `Trace.AssertionsValid.of_all_assertionValid` — weaken the assertion filter
-  and relate whole-trace validity to pointwise assertion-identifier validity.
+  and relate whole-trace validity to pointwise assertion-identifier validity;
+  `Trace.AssertionsValidFromP.or` combines two filters.
 - `Trace.AssertionValidFrom.drop_true_assumption` — removes a universally true
   assumption from an accumulated validity prefix.
 - `Trace.AssumptionsHold_append_assume` and `Trace.AssumptionsHold_append` —
@@ -152,6 +153,22 @@ theorem Trace.AssertionsValidFromP.mono_keep
       exact ⟨fun hkeep => hvalid.1 (himp condition hkeep), ih hvalid.2⟩
     | assume condition => exact ih hvalid
     | cover _ => exact ih hvalid
+
+/-- Filtered assertion validity under two filters is validity under their disjunction. -/
+theorem Trace.AssertionsValidFromP.or
+    {P : PureExpr} (I : ConditionInterp P) {keep₁ keep₂ : EventArg P → Prop}
+    {assumptions trace : Trace P}
+    (h₁ : Trace.AssertionsValidFromP P I keep₁ assumptions trace)
+    (h₂ : Trace.AssertionsValidFromP P I keep₂ assumptions trace) :
+    Trace.AssertionsValidFromP P I (fun c => keep₁ c ∨ keep₂ c) assumptions trace := by
+  induction trace generalizing assumptions with
+  | nil => trivial
+  | cons event rest ih =>
+    cases event with
+    | assert condition =>
+      exact ⟨fun hk => hk.elim h₁.1 h₂.1, ih h₁.2 h₂.2⟩
+    | assume condition => exact ih h₁ h₂
+    | cover _ => exact ih h₁ h₂
 
 /-- Validity of every assertion implies validity of the occurrences matching one
 assertion identifier: `AssertionValid` keeps a subset of what `AssertionsValid`

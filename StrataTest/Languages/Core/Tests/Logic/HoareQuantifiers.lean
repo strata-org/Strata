@@ -548,6 +548,11 @@ private theorem xFalseEnv_blockWF (model : Lambda.Interp Core.Factory) :
       simp only [Block.fvarTypesWellAnnotated, Stmt.fvarTypesWellAnnotated, and_true]
       exact ⟨annotates_boolTy (by decide +kernel), annotates_boolTy (by decide +kernel),
         annotates_boolTy (by decide +kernel)⟩⟩
+    (by
+      intro m hm
+      rw [show Block.measures (P := Core.Expression) (C := Core.Command)
+        [Stmt.block "" pNoAssumeBody #[]] = [] from by native_decide] at hm
+      simp at hm)
 
 /-- **`pNoAssume` cannot meet its contract.** With no guard on the conditional, a
     well-typed `false`-valued entry runs the `assert false` with no discharging

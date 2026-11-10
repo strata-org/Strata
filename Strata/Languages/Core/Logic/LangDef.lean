@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Core.StatementSemantics
 public import Strata.Languages.Core.Factory
 public import Strata.DL.Imperative.Logic.LangDef
+public import Strata.Languages.Core.InstExprTyping
 import all Strata.Languages.Core.Factory
 
 /-! # Core language bundles and initial-environment well-formedness
@@ -24,7 +25,7 @@ on the transform-specification framework, mirroring
   names, shared by all Core initial-environment gates.
 - **`InitEnvWF`** / **`BlockInitEnvWF`** — gates for a structured statement or
   statement list. They extend `Imperative.WellFormedSemanticEval` with Core
-  store, freshness, def-use, and initialization conditions.
+  store, freshness, def-use, initialization and loop-measure typing conditions.
 - **`CFGInitEnvWF`** — the corresponding gate for an unstructured CFG. Its
   CFG-wide analyses require every external read/update to have an entry slot,
   every CFG-local declaration to start undefined, and every declared init-type
@@ -89,6 +90,15 @@ structure InitEnvWF (params : InitEnvWFParams)
       statement defines, and an `init` whose declared type mentions one fails
       `initTypesInhabited`. -/
   fvarTypesOk : ∃ Γ, StoreHasTyping ρ.factory ρ.store Γ ∧ Stmt.fvarTypesWellAnnotated Γ s
+  /-- Every loop measure of the statement has the integer type under the types its own
+      annotations give its free variables.  With `fvarTypesOk`, a measure therefore evaluates
+      to an integer wherever its loop is entered (`Core.eval_of_annotates`).  Type checking
+      checks each `decreases` clause against `int`, so this is expected of type-checked
+      programs, but no theorem derives it yet: it is an assumption on the entries, as the
+      connection between type checking and typing is stated
+      (`Core.Specification.Analysis.TypeCheckWellTypes`) but not proved. -/
+  measuresTyped : ∀ m ∈ Stmt.measures s,
+    Expression.HasType (Expression.annotationTyping m) m (HasInt.intTy (P := Expression))
 
 /-- Block-level analog of `InitEnvWF`: well-formedness for executing a block of
     statements `bss` from env `ρ`.  The factory is read from `ρ.factory`. -/
@@ -99,6 +109,10 @@ structure BlockInitEnvWF (params : InitEnvWFParams)
       (P := Expression) (CmdT := Command) params bss ρ where
   factoryDeclared : ∀ s, Core.isNameInFactory s = Bool.true →
     params.declaredFuncs ⟨s, ()⟩ = Bool.true
+  /-- Every loop measure of the block has the integer type under the types its own
+      annotations give its free variables (see `InitEnvWF.measuresTyped`). -/
+  measuresTyped : ∀ m ∈ Block.measures bss,
+    Expression.HasType (Expression.annotationTyping m) m (HasInt.intTy (P := Expression))
 
 /-- Initial-environment well-formedness for a Core CFG. This mirrors
 `BlockInitEnvWF`'s store, freshness, factory, and init-type conditions using

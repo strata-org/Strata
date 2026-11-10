@@ -39,8 +39,8 @@ overapproximation. The general transport supports an arbitrary run trace relatio
   `OverapproximatesTraces2UptoWhen Rtrace Rtrace_full Rin Rout`, reading only its run
   clauses, so the prefix relation `Rtrace` is arbitrary. It requires `Rin` to relate every
   environment satisfying the precondition to itself, target-run validity to reflect to the
-  source run across `Rtrace_full`, source-run reachability to transfer to the target run, and
-  the target postcondition to transport backward across `Rout`.
+  source run across `Rtrace_full`, source-run reachability to transfer to a target run whose
+  assertions are valid, and the target postcondition to transport backward across `Rout`.
 - `overapproximatesTracesUptoWhen_triple_general` is its instance for
   `OverapproximatesTracesUptoWhen Rtrace (· = ·) Rout`. It requires target-trace
   validity to reflect to the source trace, source-trace reachability to transfer
@@ -132,7 +132,9 @@ variable {P : PureExpr}
 
     The terminal and exiting simulations may return a related target trace and
     final environment. The compatibility premises connect those witnesses to
-    assertion validity, reachability, and the postcondition. -/
+    assertion validity, reachability, and the postcondition; reachability need only
+    transfer to a target trace whose assertions are valid, as the target triple
+    provides. -/
 theorem overapproximatesTraces2UptoWhen_triple_general
     (L₁ L₂ : EventLang P (Event P)) (I : ConditionInterp P) {Rtrace : Relation (Trace P)}
     (Rtrace_full : Relation (Trace P)) (Rin Rout : Relation (Env P))
@@ -148,6 +150,7 @@ theorem overapproximatesTraces2UptoWhen_triple_general
     (hvalid_reflect : ∀ sourceTr targetTr, Rtrace_full sourceTr targetTr →
       Trace.AssertionsValid P I targetTr → Trace.AssertionsValid P I sourceTr)
     (hreach_transfer : ∀ sourceTr targetTr, Rtrace_full sourceTr targetTr →
+      Trace.AssertionsValid P I targetTr →
       Trace.Reachable P I sourceTr → Trace.Reachable P I targetTr)
     (hpost_transport : ∀ ρ' ρ'', Rout ρ' ρ'' → Post ρ'' → Post ρ') :
     Strata.Logic.Hoare.TripleWith L₁ I params₁ Pre st Post := by
@@ -158,12 +161,12 @@ theorem overapproximatesTraces2UptoWhen_triple_general
     have hres := htriple ρ₀ ρ'' trace' hpre hr.2.2.2 (.inl hrun')
     exact ⟨hvalid_reflect trace trace' htr hres.1,
       fun hreach => hpost_transport ρ' ρ'' hout
-        (hres.2 (hreach_transfer trace trace' htr hreach))⟩
+        (hres.2 (hreach_transfer trace trace' htr hres.1 hreach))⟩
   · obtain ⟨ρ'', trace', hrun', hout, htr⟩ := hr.2.2.1 label ρ' trace hexit
     have hres := htriple ρ₀ ρ'' trace' hpre hr.2.2.2 (.inr ⟨label, hrun'⟩)
     exact ⟨hvalid_reflect trace trace' htr hres.1,
       fun hreach => hpost_transport ρ' ρ'' hout
-        (hres.2 (hreach_transfer trace trace' htr hreach))⟩
+        (hres.2 (hreach_transfer trace trace' htr hres.1 hreach))⟩
 
 /-- **General trace-overapproximation transport for `TripleWith`, one trace relation.**
     `overapproximatesTraces2UptoWhen_triple_general` for an `OverapproximatesTracesUptoWhen`
@@ -189,7 +192,7 @@ theorem overapproximatesTracesUptoWhen_triple_general
     Strata.Logic.Hoare.TripleWith L₁ I params₁ Pre st Post :=
   overapproximatesTraces2UptoWhen_triple_general L₁ L₂ I Rtrace (· = ·) Rout T pre
     params₁ params₂ st s' ht hsem htriple hsource_pre (fun _ _ => rfl) hvalid_reflect
-    hreach_transfer hpost_transport
+    (fun s t h _ hr => hreach_transfer s t h hr) hpost_transport
 
 /-- Precondition-bearing equality corollary: if `T` overapproximates traces when
     `pre` holds (trace relation equality) and `pre st` holds, then an event-trace

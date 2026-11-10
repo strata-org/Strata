@@ -540,6 +540,7 @@ private theorem setBlockWF (setE : Core.Expression.Expr)
       simp [Block.InitTypesInhabited, Block.initTypes, Stmt.initTypes,
         HasInitTypesImp.initTypes, CmdExt.initTypes, Cmd.initTypes])
     (by obtain ⟨Γ, hσ, ha⟩ := hty; exact ⟨Γ, hσ, ⟨ha, trivial⟩, trivial⟩)
+    (by simp [Block.measures, Stmt.measures])
   · simp [Imperative.Block.definedVars, Imperative.Stmt.definedVars,
       Imperative.HasVarsImp.definedVars, Imperative.CmdExt.definedVars,
       Imperative.Cmd.definedVars] at hn

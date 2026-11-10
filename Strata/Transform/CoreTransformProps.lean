@@ -40,7 +40,9 @@ end Imperative
 
 Properties of the per-call-site type-variable freshening in
 `Strata.Transform.CoreTransform`, and of the successful runs of the generic runners
-(`Post m Q`: every successful run of `m` returns a value satisfying `Q`). Key results:
+(`Post m Q`: every successful run of `m` returns a value satisfying `Q`; `PostGen P m Q`: every
+successful run of `m` from a generator state satisfying `P` ends with a value and a generator
+state satisfying `Q`). Key results:
 
 - `runProgram_post` — `runProgram f p` replaces each structured procedure body by the result
   of a run of `runStmtsRec f` on it when that run reports a change (`DeclStep`), and reports a
@@ -48,6 +50,9 @@ Properties of the per-call-site type-variable freshening in
 - `runProgramUntil_post` — `runProgramUntil f p (some n)` keeps any invariant that each pass
   keeps, and returns a program of measure zero when the measure of `p` is below `n` and each
   pass lowers the measure when it reports a change and returns measure zero otherwise.
+- `runProgram_postGen`, `runProgramUntil_postGen` — the same, following the generator state,
+  so that a transformation can show that the names it draws in different passes differ; the
+  two results above are their instances.
 
 - `freshenTypeArgsSubst_fresh` — mechanism freshness: every type in the
   substitution's range is a fresh `<prefix>_<n>` variable, present in the output
@@ -179,6 +184,86 @@ theorem Post.forIn {α β : Type} {I : List α → β → Prop} {Q : β → Prop
     | .done _, hc => Post.pure hc
     | .yield c, hc => Post.forIn hend hstep l c hc
 
+/-! ## Successful runs and the generator state
+
+`PostGen P m Q` says that every successful run of `m` from a state whose generator state
+satisfies `P` returns a value `a` in a state whose generator state `γ'` satisfies `Q a γ'`.
+`Post m Q` is its instance ignoring the generator (`Post.of_postGen`).  Tracking the generator
+lets a transformation show that the names it draws in different runs differ. -/
+
+/-- Every successful run of `m` from a state whose generator state satisfies `P` returns a value
+    `a` in a state whose generator state `γ'` satisfies `Q a γ'`. -/
+@[expose] def PostGen {α : Type} (P : CoreGenState → Prop) (m : CoreTransformM α)
+    (Q : α → CoreGenState → Prop) : Prop :=
+  ∀ σ a σ', P σ.genState → m σ = (Except.ok a, σ') → Q a σ'.genState
+
+/-- A run of `pure a` returns `a` in the generator state it starts in. -/
+theorem PostGen.pure {α : Type} {a : α} {P : CoreGenState → Prop} {Q : α → CoreGenState → Prop}
+    (h : ∀ γ, P γ → Q a γ) : PostGen P (Pure.pure a : CoreTransformM α) Q :=
+  fun _ _ _ hP hr => by obtain ⟨rfl, rfl⟩ := ok_pair_inj hr; exact h _ hP
+
+/-- A failing computation has no successful run. -/
+theorem PostGen.throw {α : Type} {e : Err} {P : CoreGenState → Prop}
+    {Q : α → CoreGenState → Prop} : PostGen P (MonadExcept.throw e : CoreTransformM α) Q :=
+  fun σ _ _ _ hr => by rw [throw_apply] at hr; cases hr
+
+/-- A run of `x >>= f` ends with `Q` when `x` ends with `Q₁ a` and `f a` runs from there to
+    `Q`. -/
+theorem PostGen.bind {α β : Type} {x : CoreTransformM α} {f : α → CoreTransformM β}
+    {P : CoreGenState → Prop} {Q₁ : α → CoreGenState → Prop} {Q : β → CoreGenState → Prop}
+    (hx : PostGen P x Q₁) (hf : ∀ a, PostGen (Q₁ a) (f a) Q) : PostGen P (x >>= f) Q :=
+  fun _ _ _ hP h =>
+    have ⟨a, _, ha, hk⟩ := bind_ok_inv x f h
+    hf a _ _ _ (hx _ _ _ hP ha) hk
+
+/-- Strengthening the precondition and weakening the postcondition. -/
+theorem PostGen.mono {α : Type} {m : CoreTransformM α} {P P' : CoreGenState → Prop}
+    {Q Q' : α → CoreGenState → Prop} (h : PostGen P m Q) (hP : ∀ γ, P' γ → P γ)
+    (hQ : ∀ a γ, Q a γ → Q' a γ) : PostGen P' m Q' :=
+  fun _ _ _ hP' hr => hQ _ _ (h _ _ _ (hP _ hP') hr)
+
+/-- A computation runs from every generator state satisfying `P` to `Q` when it does from each
+    such state `γ`, fixed. -/
+theorem PostGen.of_forall {α : Type} {m : CoreTransformM α} {P : CoreGenState → Prop}
+    {Q : α → CoreGenState → Prop} (h : ∀ γ, P γ → PostGen (· = γ) m Q) : PostGen P m Q :=
+  fun _ _ _ hP hr => h _ hP _ _ _ rfl hr
+
+/-- A change of the state that keeps the generator state keeps it. -/
+theorem PostGen.modify {g : CoreTransformState → CoreTransformState}
+    (hg : ∀ σ, (g σ).genState = σ.genState) {P : CoreGenState → Prop}
+    {Q : Unit → CoreGenState → Prop} (h : ∀ γ, P γ → Q () γ) :
+    PostGen P (modify g : CoreTransformM Unit) Q :=
+  fun σ _ _ hP hr => by
+    obtain ⟨rfl, rfl⟩ := ok_pair_inj (show (Except.ok (), g σ) = _ from hr)
+    rw [hg]
+    exact h _ hP
+
+/-- A `for` loop over `l` ends with `Q` when it starts from a generator state satisfying
+    `I l b`, each step from a state satisfying `I` on the elements left either continues to one
+    satisfying `I` on the remaining elements or stops with `Q`, and `I []` implies `Q`. -/
+theorem PostGen.forIn {α β : Type} {I : List α → β → CoreGenState → Prop}
+    {Q : β → CoreGenState → Prop} {f : α → β → CoreTransformM (ForInStep β)}
+    (hend : ∀ b γ, I [] b γ → Q b γ)
+    (hstep : ∀ x rest b, PostGen (I (x :: rest) b) (f x b) fun r γ => match r with
+      | .yield b' => I rest b' γ
+      | .done b' => Q b' γ) :
+    ∀ (l : List α) (b : β), PostGen (I l b) (forIn l b f) Q
+  | [], _ => (List.forIn_nil (m := CoreTransformM)).symm ▸ PostGen.pure (hend _)
+  | x :: l, b => (List.forIn_cons f x l b).symm ▸ PostGen.bind (hstep x l b) fun
+    | .done _ => PostGen.pure fun _ h => h
+    | .yield c => PostGen.forIn hend hstep l c
+
+/-- A computation's successful runs from every state satisfy `Q` when they do from every
+    generator state. -/
+theorem Post.of_postGen {α : Type} {m : CoreTransformM α} {Q : α → Prop}
+    (h : PostGen (fun _ => True) m fun a _ => Q a) : Post m Q :=
+  fun σ a σ' hr => h σ a σ' trivial hr
+
+/-- A computation whose successful runs satisfy `Q` runs from every generator state to `Q`. -/
+theorem Post.postGen {α : Type} {m : CoreTransformM α} {Q : α → Prop} (h : Post m Q)
+    (P : CoreGenState → Prop) : PostGen P m fun a _ => Q a :=
+  fun σ a σ' _ hr => h σ a σ' hr
+
 /-- `r` is what `runProgram` makes of the declaration `d`, with its change flag, when every
     successful run of `runStmtsRec` on a list `ss` returning `(c, ss')` satisfies
     `Q ss (c, ss')`: a procedure with a structured body `ss` gets the body `ss'` when `c` is set
@@ -190,31 +275,61 @@ theorem Post.forIn {α β : Type} {I : List α → β → Prop} {Q : β → Prop
       r.2 = if r.1 then .proc { proc with body := .structured ss' } md else .proc proc md
   | _ => r = (false, d)
 
-/-- **What `runProgram` does to each declaration.**  When every successful run of
-    `runStmtsRec f` on a list `ss` returns a value satisfying `Q ss`, a successful run of
-    `runProgram f p` (over every procedure) returns the program of the declarations `rs` makes of
-    those of `p` (`DeclStep Q`), and reports a change exactly when one of them does. -/
-theorem runProgram_post {f : Statement → CoreTransformM (Option (List Statement))}
-    {Q : Statements → Bool × Statements → Prop} (hf : ∀ ss, Post (runStmtsRec f ss) (Q ss))
-    (p : Program) :
-    Post (runProgram f p) fun r => ∃ rs : List (Bool × Decl),
-      List.Rel₂ (DeclStep Q) p.decls rs ∧ r.2.decls = rs.map (·.2) ∧ r.1 = rs.any (·.1) := by
+/-- **What `runProgram` does to each declaration, tracking the generator state.**  Let `le` be
+    a preorder on generator states, and let every successful run of `runStmtsRec f` on a list
+    `ss` from a generator state `γ` end in a generator state `γ'` with `le γ γ'` and return a
+    value `r` with `Q ss γ r γ'`, a property kept by any wider pair of generator states.  A
+    successful run of `runProgram f p` from `γ₀` ends in some `γ₁` with `le γ₀ γ₁`, and returns
+    the program of the declarations `rs` makes of those of `p` (`DeclStep (Q · γ₀ · γ₁)`),
+    reporting a change exactly when one of them does. -/
+theorem runProgram_postGen {f : Statement → CoreTransformM (Option (List Statement))}
+    {le : CoreGenState → CoreGenState → Prop} (hrefl : ∀ γ, le γ γ)
+    (htrans : ∀ {γ₁ γ₂ γ₃}, le γ₁ γ₂ → le γ₂ γ₃ → le γ₁ γ₃)
+    {Q : Statements → CoreGenState → Bool × Statements → CoreGenState → Prop}
+    (hQ : ∀ {ss γ₀ γ r γ' γ₁}, le γ₀ γ → le γ' γ₁ → Q ss γ r γ' → Q ss γ₀ r γ₁)
+    (hf : ∀ ss γ, PostGen (· = γ) (runStmtsRec f ss) fun r γ' => le γ γ' ∧ Q ss γ r γ')
+    (p : Program) (γ₀ : CoreGenState) :
+    PostGen (· = γ₀) (runProgram f p) fun r γ₁ => le γ₀ γ₁ ∧ ∃ rs : List (Bool × Decl),
+      List.Rel₂ (DeclStep fun ss r => Q ss γ₀ r γ₁) p.decls rs ∧ r.2.decls = rs.map (·.2) ∧
+      r.1 = rs.any (·.1) := by
+  -- The declarations made so far keep their property in a wider generator state.
+  have hwiden : ∀ {γ γ'}, le γ γ' → ∀ {ds : List Decl} {rs : List (Bool × Decl)},
+      List.Rel₂ (DeclStep fun ss r => Q ss γ₀ r γ) ds rs →
+      List.Rel₂ (DeclStep fun ss r => Q ss γ₀ r γ') ds rs := fun hle _ _ h =>
+    h.imp fun {d r} hd => by
+      cases d
+      case proc proc md =>
+        obtain ⟨ss, ss', hb, hq, hr⟩ := hd
+        exact ⟨ss, ss', hb, hQ (hrefl _) hle hq, hr⟩
+      all_goals exact hd
   unfold runProgram
-  refine Post.bind (Post.true _) fun _ _ => ?_
-  refine Post.bind (Q₁ := fun s => ∃ rs : List (Bool × Decl),
-      List.Rel₂ (DeclStep Q) p.decls rs ∧ s.2 = rs.map (·.2) ∧ s.1 = rs.any (·.1))
-    ?_ fun s hs => Post.bind (Post.true _) fun _ _ => Post.pure hs
-  refine Post.forIn (I := fun rest s => ∃ k rs, rest = p.decls.zipIdx.drop k ∧ rs.length = k ∧
-      List.Rel₂ (DeclStep Q) (p.decls.take k) rs ∧ s.2 = rs.map (·.2) ++ p.decls.drop k ∧
-      s.1 = rs.any (·.1)) ?_ ?_ _ _ ⟨0, [], by simp, rfl, .nil, by simp, rfl⟩
-  · rintro s ⟨k, rs, hrest, -, hrel, h2, h1⟩
+  refine PostGen.bind (PostGen.modify (Q := fun _ γ => γ = γ₀) (by intro; rfl) fun _ h => h)
+    fun _ => ?_
+  refine PostGen.bind (Q₁ := fun (s : Bool × List Decl) γ => le γ₀ γ ∧
+      ∃ rs : List (Bool × Decl),
+      List.Rel₂ (DeclStep fun ss r => Q ss γ₀ r γ) p.decls rs ∧ s.2 = rs.map (·.2) ∧
+      s.1 = rs.any (·.1))
+    ?_ fun s => ?_
+  rotate_left
+  · refine PostGen.bind (PostGen.modify (Q := fun _ γ => le γ₀ γ ∧ ∃ rs : List (Bool × Decl),
+      List.Rel₂ (DeclStep fun ss r => Q ss γ₀ r γ) p.decls rs ∧ s.2 = rs.map (·.2) ∧
+      s.1 = rs.any (·.1)) (by intro; rfl) fun _ h => h) fun _ => ?_
+    exact PostGen.pure fun _ h => h
+  refine PostGen.mono
+    (PostGen.forIn (I := fun rest s γ => le γ₀ γ ∧ ∃ k rs, rest = p.decls.zipIdx.drop k ∧
+      rs.length = k ∧ List.Rel₂ (DeclStep fun ss r => Q ss γ₀ r γ) (p.decls.take k) rs ∧
+      s.2 = rs.map (·.2) ++ p.decls.drop k ∧ s.1 = rs.any (·.1)) ?_ ?_ _ _)
+    (fun γ h => by subst h; exact ⟨hrefl _, 0, [], by simp, rfl, .nil, by simp, rfl⟩)
+    (fun _ _ h => h)
+  · rintro s γ ⟨hle, k, rs, hrest, -, hrel, h2, h1⟩
     have hk : p.decls.length ≤ k := by
       have := congrArg List.length hrest
       simp only [List.length_nil, List.length_drop, List.length_zipIdx] at this
       omega
-    exact ⟨rs, by rwa [List.take_of_length_le hk] at hrel,
+    exact ⟨hle, rs, by rwa [List.take_of_length_le hk] at hrel,
       by rw [h2, List.drop_of_length_le hk, List.append_nil], h1⟩
-  · rintro x rest s ⟨k, rs, hrest, hlen, hrel, h2, h1⟩
+  · intro x rest s
+    refine PostGen.of_forall fun γ ⟨hle, k, rs, hrest, hlen, hrel, h2, h1⟩ => ?_
     have hk : k < p.decls.length := by
       have := congrArg List.length hrest
       simp only [List.length_cons, List.length_drop, List.length_zipIdx] at this
@@ -227,44 +342,98 @@ theorem runProgram_post {f : Statement → CoreTransformM (Option (List Statemen
       List.drop_eq_getElem_cons hk
     have htake : p.decls.take (k + 1) = p.decls.take k ++ [p.decls[k]] := by
       rw [List.take_add_one, List.getElem?_eq_getElem hk]; rfl
-    have hnext : ∀ r : Bool × Decl, DeclStep Q p.decls[k] r →
+    have hnext : ∀ γ' (r : Bool × Decl), le γ γ' →
+        DeclStep (fun ss r => Q ss γ₀ r γ') p.decls[k] r →
         ∃ k' rs', p.decls.zipIdx.drop (k + 1) = p.decls.zipIdx.drop k' ∧ rs'.length = k' ∧
-          List.Rel₂ (DeclStep Q) (p.decls.take k') rs' ∧
+          List.Rel₂ (DeclStep fun ss r => Q ss γ₀ r γ') (p.decls.take k') rs' ∧
           rs.map (·.2) ++ r.2 :: p.decls.drop (k + 1) = rs'.map (·.2) ++ p.decls.drop k' ∧
-          (s.1 || r.1) = rs'.any (·.1) := fun r hr =>
-      ⟨k + 1, rs ++ [r], rfl, by simp [hlen], htake ▸ hrel.append (.cons hr .nil),
+          (s.1 || r.1) = rs'.any (·.1) := fun γ' r hle' hr =>
+      ⟨k + 1, rs ++ [r], rfl, by simp [hlen], htake ▸ (hwiden hle' hrel).append (.cons hr .nil),
         by simp, by simp [h1]⟩
     generalize hd : p.decls[k] = d at hnext hdrop
     cases d
     case proc proc md =>
       simp only [↓reduceIte]
-      refine Post.bind (Post.true _) fun _ _ => ?_
+      refine PostGen.bind (PostGen.modify (Q := fun _ γ' => γ' = γ) (by intro; rfl)
+        fun _ h => h) fun _ => ?_
       split
       · rename_i ss hbody
-        refine Post.bind (Post.pure (a := ss) rfl) fun _ hss => ?_
-        subst hss
-        refine Post.bind (hf ss) fun r hr => ?_
+        refine PostGen.bind (PostGen.pure (a := ss) (Q := fun a γ' => a = ss ∧ γ' = γ)
+          fun _ h => ⟨rfl, h⟩) fun a => ?_
+        refine PostGen.of_forall fun γ' ⟨hss, hγ⟩ => ?_
+        rw [hss, hγ]
+        refine PostGen.bind (hf ss γ) fun r => ?_
         obtain ⟨c, ss'⟩ := r
         cases c
-        · refine Post.pure ?_
-          obtain ⟨k', rs', h₁, h₂, h₃, h₄, h₅⟩ := hnext (false, .proc proc md)
-            ⟨ss, ss', hbody, hr, by simp⟩
-          exact ⟨k', rs', h₁, h₂, h₃, by rw [h2, hdrop]; exact h₄, by simpa using h₅⟩
-        · refine Post.bind (Post.true _) fun _ _ => Post.pure ?_
+        · refine PostGen.pure fun γ' ⟨hle', hq⟩ => ?_
+          obtain ⟨k', rs', h₁, h₂, h₃, h₄, h₅⟩ := hnext γ' (false, .proc proc md) hle'
+            ⟨ss, ss', hbody, hQ hle (hrefl _) hq, by simp⟩
+          exact ⟨htrans hle hle', k', rs', h₁, h₂, h₃, by rw [h2, hdrop]; exact h₄,
+            by simpa using h₅⟩
+        · refine PostGen.bind (PostGen.modify (Q := fun _ γ' => le γ γ' ∧ Q ss γ (true, ss') γ')
+            (by intro; rfl) fun _ h => h) fun _ => PostGen.pure fun γ' ⟨hle', hq⟩ => ?_
           have hset : s.2.set k (.proc { proc with body := .structured ss' } md) =
               rs.map (·.2) ++ .proc { proc with body := .structured ss' } md ::
                 p.decls.drop (k + 1) := by
             rw [h2, hdrop, List.set_append_right _ _ (by simp [hlen])]
             simp [hlen]
           obtain ⟨k', rs', h₁, h₂, h₃, h₄, h₅⟩ :=
-            hnext (true, .proc { proc with body := .structured ss' } md)
-              ⟨ss, ss', hbody, hr, by simp⟩
-          exact ⟨k', rs', h₁, h₂, h₃, hset.trans h₄, by simpa using h₅⟩
-      · exact Post.bind (Q₁ := fun _ => False) Post.throw fun _ h => h.elim
+            hnext γ' (true, .proc { proc with body := .structured ss' } md) hle'
+              ⟨ss, ss', hbody, hQ hle (hrefl _) hq, by simp⟩
+          exact ⟨htrans hle hle', k', rs', h₁, h₂, h₃, hset.trans h₄, by simpa using h₅⟩
+      · exact PostGen.bind (Q₁ := fun _ _ => False) PostGen.throw fun _ _ _ _ h _ => h.elim
     all_goals
-      refine Post.pure ?_
-      obtain ⟨k', rs', h₁, h₂, h₃, h₄, h₅⟩ := hnext (false, _) rfl
-      exact ⟨k', rs', h₁, h₂, h₃, by rw [h2, hdrop]; exact h₄, by simpa using h₅⟩
+      refine PostGen.pure fun _ h => ?_
+      rw [h]
+      obtain ⟨k', rs', h₁, h₂, h₃, h₄, h₅⟩ := hnext γ (false, _) (hrefl _) rfl
+      exact ⟨hle, k', rs', h₁, h₂, h₃, by rw [h2, hdrop]; exact h₄, by simpa using h₅⟩
+
+/-- **What `runProgram` does to each declaration.**  When every successful run of
+    `runStmtsRec f` on a list `ss` returns a value satisfying `Q ss`, a successful run of
+    `runProgram f p` (over every procedure) returns the program of the declarations `rs` makes of
+    those of `p` (`DeclStep Q`), and reports a change exactly when one of them does. -/
+theorem runProgram_post {f : Statement → CoreTransformM (Option (List Statement))}
+    {Q : Statements → Bool × Statements → Prop} (hf : ∀ ss, Post (runStmtsRec f ss) (Q ss))
+    (p : Program) :
+    Post (runProgram f p) fun r => ∃ rs : List (Bool × Decl),
+      List.Rel₂ (DeclStep Q) p.decls rs ∧ r.2.decls = rs.map (·.2) ∧ r.1 = rs.any (·.1) :=
+  fun σ a σ' hr => (runProgram_postGen (le := fun _ _ => True) (Q := fun ss _ r _ => Q ss r)
+    (fun _ => trivial) (fun _ _ => trivial) (fun _ _ h => h)
+    (fun ss _ => ((hf ss).postGen _).mono (fun _ h => h) fun _ _ h => ⟨trivial, h⟩)
+    p σ.genState σ a σ' rfl hr).2
+
+/-- **Bounded iteration of a statement-level transformation reaches measure zero, tracking the
+    generator state.**  Let every successful run of `runProgram f q` from a generator state with
+    `Inv q` end in one with `Inv` of the program it returns, of smaller measure `μ` when it
+    reports a change and of measure zero when it reports none.  Then every successful run of
+    `runProgramUntil f p (some n)` from a generator state with `Inv p`, where `μ p < n`, ends in
+    one with `Inv` of the program it returns, of measure zero. -/
+theorem runProgramUntil_postGen {f : Statement → CoreTransformM (Option (List Statement))}
+    {Inv : Program → CoreGenState → Prop} {μ : Program → Nat}
+    (hstep : ∀ q, PostGen (Inv q) (runProgram f q) fun r γ =>
+      Inv r.2 γ ∧ (r.1 = true → μ r.2 < μ q) ∧ (r.1 = false → μ r.2 = 0))
+    {p : Program} {n : Nat} (hn : μ p < n) :
+    PostGen (Inv p) (runProgramUntil f p (some n)) fun r γ => Inv r.2 γ ∧ μ r.2 = 0 := by
+  simp only [runProgramUntil]
+  refine PostGen.bind (Q₁ := fun s γ => Inv s.1 γ ∧ μ s.1 = 0) ?_ fun _ =>
+    PostGen.pure fun _ h => h
+  refine PostGen.mono (PostGen.forIn
+    (I := fun rest s γ => Inv s.1 γ ∧ μ s.1 + (n - rest.length) ≤ μ p) ?_ ?_ _ _)
+    (fun _ h => ⟨h, by simp⟩) (fun _ _ h => h)
+  · rintro s γ ⟨hi, hμ⟩
+    exact ⟨hi, by simp only [List.length_nil, Nat.sub_zero] at hμ; omega⟩
+  · intro x rest s
+    refine PostGen.of_forall fun γ ⟨hi, hμ⟩ => ?_
+    refine PostGen.bind ((hstep s.1).mono (fun _ h => h ▸ hi) fun _ _ h => h) fun r => ?_
+    obtain ⟨c, q'⟩ := r
+    cases c <;>
+      simp only [Bool.not_false, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+    · exact PostGen.pure fun _ ⟨hi', _, hz⟩ => ⟨hi', hz trivial⟩
+    · refine PostGen.pure fun _ ⟨hi', hlt, _⟩ => ⟨hi', ?_⟩
+      have hlt' := hlt trivial
+      simp only [List.length_cons] at hμ
+      dsimp only at hlt' ⊢
+      omega
 
 /-- **Bounded iteration of a statement-level transformation reaches measure zero.**  Let every
     successful run of `runProgram f` from a program satisfying `Inv` return a program satisfying
@@ -276,24 +445,9 @@ theorem runProgramUntil_post {f : Statement → CoreTransformM (Option (List Sta
     (hstep : ∀ q, Inv q → Post (runProgram f q) fun r =>
       Inv r.2 ∧ (r.1 = true → μ r.2 < μ q) ∧ (r.1 = false → μ r.2 = 0))
     {p : Program} {n : Nat} (hp : Inv p) (hn : μ p < n) :
-    Post (runProgramUntil f p (some n)) fun r => Inv r.2 ∧ μ r.2 = 0 := by
-  simp only [runProgramUntil]
-  refine Post.bind (Q₁ := fun s => Inv s.1 ∧ μ s.1 = 0) ?_ fun s hs => Post.pure hs
-  refine Post.forIn (I := fun rest s => Inv s.1 ∧ μ s.1 + (n - rest.length) ≤ μ p) ?_ ?_ _ _
-    ⟨hp, by simp⟩
-  · rintro s ⟨hi, hμ⟩
-    exact ⟨hi, by simp only [List.length_nil, Nat.sub_zero] at hμ; omega⟩
-  · rintro x rest s ⟨hi, hμ⟩
-    refine Post.bind (hstep _ hi) fun r ⟨hi', hlt, hz⟩ => ?_
-    obtain ⟨c, q'⟩ := r
-    cases c <;>
-      simp only [Bool.not_false, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
-    · exact Post.pure ⟨hi', hz rfl⟩
-    · refine Post.pure ⟨hi', ?_⟩
-      have := hlt rfl
-      simp only [List.length_cons] at hμ
-      dsimp only at this ⊢
-      omega
+    Post (runProgramUntil f p (some n)) fun r => Inv r.2 ∧ μ r.2 = 0 :=
+  fun σ a σ' hr => runProgramUntil_postGen (Inv := fun q _ => Inv q)
+    (fun q σ a σ' hq hr => hstep q hq σ a σ' hr) hn σ a σ' hp hr
 
 variable (prefixStr : String)
 

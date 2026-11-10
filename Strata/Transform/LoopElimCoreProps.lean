@@ -227,7 +227,7 @@ theorem triple_of_blockRel (params : InitEnvWFParams) (L : List String)
     (ite_eq_left_iff.mpr fun h => absurd rfl h)
     (overapproximatesTraces_whenLoopExitsLocal_of_blockRel π params L (single_blockRel hrel) F)
     h ⟨hnc, hloc⟩
-    (fun ρ₀ hpre => ⟨rfl, hpin ρ₀ hpre⟩) (fun _ _ h => h.2.1) (fun _ _ h => h.2.2)
+    (fun ρ₀ hpre => ⟨rfl, hpin ρ₀ hpre⟩) (fun _ _ h => h.2.1) (fun _ _ h _ => h.2.2)
     (fun _ _ h hp => h ▸ hp)
 
 /-- **A verifier run after loop elimination is sound on the source.**  For a transformation `T`

@@ -537,6 +537,14 @@ theorem Block.initTypes_append [HasInitTypesImp P C] (as bs : Block P C) :
   | cons a rest ih =>
     simp only [List.cons_append, Block.initTypes, ih, List.append_assoc]
 
+/-- `Block.measures` distributes over list append. -/
+theorem Block.measures_append (as bs : Block P C) :
+    Block.measures (as ++ bs) = Block.measures as ++ Block.measures bs := by
+  induction as with
+  | nil => rfl
+  | cons a rest ih =>
+    simp only [List.cons_append, Block.measures, ih, List.append_assoc]
+
 /-- Concatenation distributes over `Block.initVars`. -/
 theorem Block.initVars_append [HasFvars P] (xs ys : List (Stmt P (Cmd P))) :
     Block.initVars (xs ++ ys) = Block.initVars xs ++ Block.initVars ys := by
@@ -2257,6 +2265,13 @@ theorem Block.labels_map_cmd {α : Type} (f : α → C) (cs : List α) :
   | nil => rfl
   | cons _ _ ih => simp only [List.map_cons, Block.labels, Stmt.labels, ih, List.append_nil]
 
+/-- A list of command statements has no loop measure. -/
+theorem Block.measures_map_cmd {α : Type} (f : α → C) (cs : List α) :
+    Block.measures (cs.map fun a => Stmt.cmd (P := P) (f a)) = [] := by
+  induction cs with
+  | nil => rfl
+  | cons _ _ ih => simp only [List.map_cons, Block.measures, Stmt.measures, ih, List.append_nil]
+
 /-- The empty list has no loops. -/
 theorem Block.noLoops_nil : Block.noLoops ([] : List (Stmt P C)) = true := by
   simp [Block.noLoops, Block.allSubstmts]
@@ -2313,6 +2328,13 @@ theorem Block.labels_of_treeForm :
   intro ss h
   induction ss using Block.treeForm.induct <;>
     simp_all [Block.treeForm, Block.labels, Stmt.labels]
+
+/-- A list in tree form has no loop measure. -/
+theorem Block.measures_of_treeForm :
+    ∀ {ss : Block P (CmdExt P)}, Block.treeForm ss = true → Block.measures ss = [] := by
+  intro ss h
+  induction ss using Block.treeForm.induct <;>
+    simp_all [Block.treeForm, Block.measures, Stmt.measures]
 
 /-! ## Checks after assertions -/
 
@@ -2430,6 +2452,127 @@ theorem Block.getOps_declared_of_defUseWellFormed {df : P.Ident → Bool} (ss : 
     refine ho.elim (fun ho => ?_) (ih (by simpa [Block.treeForm] using hT) hd.2 o)
     simp only [Stmt.getOps, Stmt.defUseWellFormed, Bool.and_eq_true, List.all_eq_true] at ho hd
     exact hd.1.2 o ho
+
+omit [HasOps P] [DecidableEq P.Ident] in
+mutual
+/-- Every variable a statement defines occurs in it. -/
+theorem Stmt.definedVars_subset_idents :
+    ∀ (s : Stmt P (CmdExt P)) (b : Bool), ∀ x ∈ Stmt.definedVars s b, x ∈ Stmt.idents s
+  | .cmd (.cmd (.init y _ e _)), _, x, hx => by
+    cases e <;> simp_all [HasVarsImp.definedVars, CmdExt.definedVars, Cmd.definedVars,
+      Stmt.idents]
+  | .cmd (.cmd (.set _ _ _)), _, x, hx | .cmd (.cmd (.assert _ _ _)), _, x, hx
+  | .cmd (.cmd (.assume _ _ _)), _, x, hx | .cmd (.cmd (.cover _ _ _)), _, x, hx
+  | .cmd (.call _ _ _), _, x, hx => by
+    simp [HasVarsImp.definedVars, CmdExt.definedVars, Cmd.definedVars] at hx
+  | .block _ bss _, b, x, hx => by
+    cases b <;> simp only [Stmt.definedVars, Bool.false_eq_true, ite_false, ite_true,
+      List.not_mem_nil] at hx
+    exact Block.definedVars_subset_idents bss _ x hx
+  | .ite _ tss ess _, b, x, hx => by
+    cases b <;> simp only [Stmt.definedVars, Bool.false_eq_true, ite_false, ite_true,
+      List.not_mem_nil, List.mem_append] at hx
+    simp only [Stmt.idents, List.mem_append]
+    rcases hx with hx | hx
+    · exact .inl (.inr (Block.definedVars_subset_idents tss _ x hx))
+    · exact .inr (Block.definedVars_subset_idents ess _ x hx)
+  | .loop _ _ _ body _, b, x, hx => by
+    cases b <;> simp only [Stmt.definedVars, Bool.false_eq_true, ite_false, ite_true,
+      List.not_mem_nil] at hx
+    simp only [Stmt.idents, List.mem_append]
+    exact .inr (Block.definedVars_subset_idents body _ x hx)
+  | .exit _ _, _, x, hx | .typeDecl _ _, _, x, hx => by simp at hx
+
+/-- Every variable a statement list defines occurs in it. -/
+theorem Block.definedVars_subset_idents :
+    ∀ (ss : List (Stmt P (CmdExt P))) (b : Bool), ∀ x ∈ Block.definedVars ss b, x ∈ Block.idents ss
+  | [], _, x, hx => by simp at hx
+  | s :: rest, b, x, hx => by
+    simp only [Block.definedVars, List.mem_append] at hx
+    simp only [Block.idents, List.mem_append]
+    exact hx.imp (Stmt.definedVars_subset_idents s b x) (Block.definedVars_subset_idents rest b x)
+end
+
+omit [HasOps P] [DecidableEq P.Ident] in
+mutual
+/-- Every variable occurring in a statement is one it reads, modifies or defines. -/
+theorem Stmt.idents_subset_vars :
+    ∀ (s : Stmt P (CmdExt P)), ∀ x ∈ Stmt.idents s,
+      x ∈ Stmt.getVars s ∨ x ∈ Stmt.modifiedVars s ∨ x ∈ Stmt.definedVars s false
+  | .cmd (.cmd (.init y _ e _)), x, hx => by
+    cases e <;> simp only [Stmt.idents, List.mem_cons] at hx <;>
+      simp only [Stmt.getVars, Stmt.modifiedVars, Stmt.definedVars, HasVarsImp.readVars,
+        HasVarsImp.modifiedVars, HasVarsImp.definedVars, CmdExt.readVars, CmdExt.modifiedVars,
+        CmdExt.definedVars, Cmd.getVars, Cmd.modifiedVars, Cmd.definedVars,
+        ExprOrNondet.getVars, List.mem_singleton, List.not_mem_nil, false_or] <;>
+      rcases hx with h | h <;> simp_all
+  | .cmd (.cmd (.set y e _)), x, hx => by
+    cases e <;> simp only [Stmt.idents, List.mem_cons] at hx <;>
+      simp only [Stmt.getVars, Stmt.modifiedVars, Stmt.definedVars, HasVarsImp.readVars,
+        HasVarsImp.modifiedVars, HasVarsImp.definedVars, CmdExt.readVars, CmdExt.modifiedVars,
+        CmdExt.definedVars, Cmd.getVars, Cmd.modifiedVars, Cmd.definedVars,
+        ExprOrNondet.getVars, List.mem_singleton, List.not_mem_nil, or_false] <;>
+      rcases hx with h | h <;> simp_all
+  | .cmd (.cmd (.assert _ _ _)), x, hx | .cmd (.cmd (.assume _ _ _)), x, hx
+  | .cmd (.cmd (.cover _ _ _)), x, hx => by
+    simp_all [Stmt.idents, Stmt.getVars, HasVarsImp.readVars, CmdExt.readVars, Cmd.getVars]
+  | .cmd (.call _ args _), x, hx => by
+    simp only [Stmt.idents, List.mem_append, List.mem_flatMap] at hx
+    simp only [Stmt.getVars, Stmt.modifiedVars, HasVarsImp.readVars, CmdExt.readVars,
+      HasVarsImp.modifiedVars, CmdExt.modifiedVars, List.mem_flatMap]
+    rcases hx with ⟨e, he, hx⟩ | hx
+    · refine .inl ⟨e, ?_, hx⟩
+      simp only [CallArg.getInArgs, List.mem_filterMap] at he
+      obtain ⟨a, ha, hae⟩ := he
+      simp only [Calls.getInputExprs, List.mem_filterMap]
+      exact ⟨a, ha, by cases a <;> simp_all⟩
+    · exact .inr (.inl hx)
+  | .block _ bss _, x, hx => by
+    simpa [Stmt.getVars, Stmt.modifiedVars, Stmt.definedVars, Stmt.idents] using
+      Block.idents_subset_vars bss x hx
+  | .ite c tss ess _, x, hx => by
+    simp only [Stmt.idents, List.mem_append] at hx
+    simp only [Stmt.getVars, Stmt.modifiedVars, Stmt.definedVars, Bool.false_eq_true,
+      ite_false, List.mem_append]
+    rcases hx with (hx | hx) | hx
+    · exact .inl (.inl (.inl hx))
+    · rcases Block.idents_subset_vars tss x hx with h | h | h
+      · exact .inl (.inl (.inr h))
+      · exact .inr (.inl (.inl h))
+      · exact .inr (.inr (.inl h))
+    · rcases Block.idents_subset_vars ess x hx with h | h | h
+      · exact .inl (.inr h)
+      · exact .inr (.inl (.inr h))
+      · exact .inr (.inr (.inr h))
+  | .loop g m inv body _, x, hx => by
+    simp only [Stmt.idents, List.mem_append] at hx
+    simp only [Stmt.getVars, Stmt.modifiedVars, Stmt.definedVars, Bool.false_eq_true,
+      ite_false, List.mem_append]
+    rcases hx with ((hx | hx) | hx) | hx
+    · exact .inl (.inl (.inl (.inl hx)))
+    · exact .inl (.inl (.inl (.inr hx)))
+    · exact .inl (.inl (.inr hx))
+    · exact (Block.idents_subset_vars body x hx).imp_left .inr
+  | .exit _ _, x, hx | .typeDecl _ _, x, hx => by simp [Stmt.idents] at hx
+
+/-- Every variable occurring in a statement list is one it reads, modifies or defines. -/
+theorem Block.idents_subset_vars :
+    ∀ (ss : List (Stmt P (CmdExt P))), ∀ x ∈ Block.idents ss,
+      x ∈ Block.getVars ss ∨ x ∈ Block.modifiedVars ss ∨ x ∈ Block.definedVars ss false
+  | [], x, hx => by simp [Block.idents] at hx
+  | s :: rest, x, hx => by
+    simp only [Block.idents, List.mem_append] at hx
+    simp only [Block.getVars, Block.modifiedVars, Block.definedVars, List.mem_append]
+    rcases hx with hx | hx
+    · rcases Stmt.idents_subset_vars s x hx with h | h | h
+      · exact .inl (.inl h)
+      · exact .inr (.inl (.inl h))
+      · exact .inr (.inr (.inl h))
+    · rcases Block.idents_subset_vars rest x hx with h | h | h
+      · exact .inl (.inr h)
+      · exact .inr (.inl (.inr h))
+      · exact .inr (.inr (.inr h))
+end
 
 end DefUseCmdExt
 

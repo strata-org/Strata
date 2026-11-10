@@ -143,6 +143,9 @@ import Strata.Cli.VerifyOptions
 import Strata.Transform.DeadDefElimCoreCorrect
 -- Loop elimination: its over-approximation and assertion-validity proofs.
 import Strata.Transform.LoopElimCoreCorrect
+-- Inserting loop invariant checks: its over-approximation, assertion-validity and Hoare-triple
+-- proofs.
+import Strata.Transform.InsertLoopInvariantAssertsCoreCorrect
 -- The WP and SSA phases: their properties, the failure preservation of the SSA phase, and
 -- the properties of their Core instance.
 import Strata.Transform.SSA.SSAEval

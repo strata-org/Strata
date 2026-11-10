@@ -14,15 +14,17 @@ import Strata.DL.Imperative.Logic.TraceInterpProps
 
 Inversions of the command semantics `EvalE` for `init`, `set`, `assume`, `assert` and `cover`,
 and the effect of a store update; sequencing of runs and reaches (`brun_append`,
-`breach_append_run`, `breach_cmd_cons`) and failures as reaches whose events claim them
-(`fails_iff_claim`); claims of a failure along `++` (`claim_prepend`, `claim_split`), on one
-event (`claim_single`), on no event (`Claim.not_nil`) and after a command (`reach_cmd_claim`),
-and reaches after a run or a statement (`reach_after_run`, `reach_after_stmt`); evaluation to
+`brun_append_exit`, `breach_append_left`, `breach_append_run`, `breach_cmd_cons`) and failures
+as reaches whose events claim them (`fails_iff_claim`); claims of a failure along `++`
+(`claim_prepend`, `claim_split`), on one event (`claim_single`), on no event (`Claim.not_nil`)
+and after a command (`reach_cmd_claim`), and reaches after a run or a statement
+(`reach_after_run`, `reach_after_stmt`); evaluation to
 `true` (`evalInterp_holds_iff`) and a failing check carried over to a condition with the same
 values (`failsAt_transfer`); and
 the conditions of the events of a run, a reach or a failure read only identifiers of the list
 (`brun_fv`, `breach_fv`, `fails_fv`). A run keeps the variables defined
-at its start defined (`brun_dom`), changes no variable it does not modify (`brun_frame`), keeps
+at its start defined (`brun_dom`), defines only those and the list's (`brun_sub`), changes no
+variable it does not modify (`brun_frame`), keeps
 the store value-valued, its values typed in agreement with the start (`brun_typed`,
 `brunS_typed`, `TypeAgree`), leaving a scope keeps it value-valued (`WellFormedStore.proj`), and a
 statement ending normally defines exactly its start's variables and its top-level definitions
@@ -35,9 +37,10 @@ required (`Event.WeakensAssume.assume`, `Event.WeakensAssume.check`).
 Key theorems: `evalE_init_det_inv`, `evalE_init_nondet_inv`, `evalE_set_det_inv`,
 `evalE_set_nondet_inv`, `evalE_assume_inv`, `evalE_assert_inv`, `evalE_cover_inv`,
 `update_facts`, `evalInterp_stableUnder` (evaluation to `true` is stable under the shared
-semantic event relation `EventArg.WithWF`), `brun_append`, `breach_append_run`,
+semantic event relation `EventArg.WithWF`), `brun_append`, `brun_append_exit`,
+`breach_append_left`, `breach_append_run`,
 `fails_iff_claim`, `claim_prepend`, `claim_split`, `reach_cmd_claim`, `failsAt_transfer`,
-`brun_fv`, `breach_fv`, `fails_fv`, `brun_dom`, `brun_frame`,
+`brun_fv`, `breach_fv`, `fails_fv`, `brun_dom`, `brun_sub`, `brun_frame`,
 `brun_typed`, `brunS_normal_isSome`, `brun_exit_label`, `brun_exit_covered`,
 `Event.WeakensAssume.assume`,
 `Event.WeakensAssume.check`. -/
@@ -187,6 +190,19 @@ theorem brun_append : ∀ {a b : PStmts P} {σ σ1 : SemanticStore P}
   | [], _, _, _, _, _, _, .nil, h2 => h2
   | _ :: _, _, _, _, _, _, _, .cons_normal h1 h2, h3 =>
     List.append_assoc .. ▸ .cons_normal h1 (brun_append h2 h3)
+
+/-- A run of `a` exiting is a run of `a ++ b`, which exits the same way. -/
+theorem brun_append_exit : ∀ {a b : PStmts P} {σ σ1 : SemanticStore P}
+    {t : List (Event P)} {l : String},
+    BRun F a σ t (.exit l σ1) → BRun F (a ++ b) σ t (.exit l σ1)
+  | _ :: _, _, _, _, _, _, .cons_normal h1 h2 => .cons_normal h1 (brun_append_exit h2)
+  | _ :: _, _, _, _, _, _, .cons_exit h1 => .cons_exit h1
+
+/-- A reach of `a` is a reach of `a ++ b`. -/
+theorem breach_append_left : ∀ {a b : PStmts P} {σ : SemanticStore P} {t : List (Event P)},
+    BReach F a σ t → BReach F (a ++ b) σ t
+  | _ :: _, _, _, _, .here h => .here h
+  | _ :: _, _, _, _, .later h1 h2 => .later h1 (breach_append_left h2)
 
 /-- A run of `a` ending normally followed by a reach of `b` is a reach of `a ++ b`. -/
 theorem breach_append_run :
@@ -622,6 +638,12 @@ private theorem brunS_runStore : ∀ {s : PStmt P} {σ : SemanticStore P}
   | _, _, _, _, .loop_break _ h =>
     (brun_runStore h).proj.mono (fun _ hx => by simp [Stmt.modifiedVars, hx]) (by simp)
 end
+
+/-- A run defines only the variables of its start and those the list defines at any depth. -/
+theorem brun_sub {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)}
+    {o : Outcome P} (h : BRun F ss σ evs o) :
+    ∀ x, (o.store x).isSome → (σ x).isSome ∨ x ∈ Block.definedVars ss true :=
+  (brun_runStore h).sub
 
 /-- A run keeps every variable defined at its start defined. -/
 theorem brun_dom {ss : PStmts P} {σ : SemanticStore P} {evs : List (Event P)}

@@ -62,6 +62,12 @@ Key theorem families:
   `drop_left` drops a prefix of the source).  `Trace.PreservesLastEvent` composes on the
   left (`append_left`), and a relation preserving the last event followed by extra events
   reflects last assertions (`Trace.PreservesLastEvent.reflectsLastAssertion`).
+* **`Trace.InsertsAsserts`** and **`Trace.InsertsCheckedAssumes`** hold under a larger set of
+  allowed factories (`mono_allowed`), and, under an interpretation for which conditions with the
+  same value hold alike (and, for the second, true conditions hold), reflect assertion validity
+  (`reflect`, `assertionsValidFromP_reflect`) and carry reachability forward
+  (`reachable_transfer`, for the second when the inserted checks of the target are valid); so
+  does their composition (`Trace.insertsAsserts_insertsCheckedAssumes_*`).
 -/
 
 namespace Imperative
@@ -896,6 +902,272 @@ theorem Trace.mayDropEvents_insertsTrueAssumes_assumptionsHold {I : ConditionInt
   h₂.assumptionsHold htrue fun c hc => hA c (h₁.subset hc)
 
 end InsertsTrueAssumes
+
+section InsertsAsserts
+
+variable [HasBool P] {allowed : P.Factory → Prop}
+
+/-- Inserting assertions under some allowed factories inserts them under any larger set of
+    allowed factories. -/
+theorem Trace.InsertsAsserts.mono_allowed {allowed' : P.Factory → Prop}
+    (hmono : ∀ F, allowed F → allowed' F) {t t' : Trace P}
+    (h : Trace.InsertsAsserts allowed t t') : Trace.InsertsAsserts allowed' t t' := by
+  induction h with
+  | nil => exact .nil
+  | @keep e e' _ _ he _ ih =>
+    refine .keep ?_ ih
+    cases e <;> cases e' <;> simp only [Event.SameValue] at he ⊢ <;>
+      first | exact he.elim | exact ⟨he.1, he.2.1, hmono _ he.2.2.1, he.2.2.2⟩
+  | assert _ ih => exact .assert ih
+
+/-- **Reflecting validity across inserted assertions.**  For an interpretation `I` under which
+    conditions with the same value hold alike under allowed factories
+    (`EventArg.SameValue`), and a filter `keep` of assertions that depends only on label and
+    metadata: when the target `t'` keeps `keep` valid after the assumptions `A'`, and `A'`
+    holds where `A` does, then `t` keeps `keep` valid after `A`, and the assumptions of `t'`
+    hold where those of `A` and `t` do. -/
+theorem Trace.InsertsAsserts.reflect {I : ConditionInterp P}
+    (hstable : I.StableUnder (EventArg.SameValue allowed)) {keep : EventArg P → Prop}
+    (hkeep : ∀ a b, b.label = a.label → b.metadata = a.metadata → keep a → keep b)
+    {t t' : Trace P} (h : Trace.InsertsAsserts allowed t t') :
+    ∀ {A A' : Trace P},
+    (∀ w, Trace.AssumptionsHold P I w A → Trace.AssumptionsHold P I w A') →
+    Trace.AssertionsValidFromP P I keep A' t' →
+    Trace.AssertionsValidFromP P I keep A t ∧
+      ∀ w, Trace.AssumptionsHold P I w A → Trace.AssumptionsHold P I w t →
+        Trace.AssumptionsHold P I w t' := by
+  induction h with
+  | nil => exact fun _ _ => ⟨trivial, fun _ _ _ => by simp [Trace.AssumptionsHold]⟩
+  | @keep e e' t t' he _ ih =>
+    intro A A' himp hv
+    rcases e with a | a | a <;> rcases e' with b | b | b <;>
+      simp only [Event.SameValue] at he <;> try exact he.elim
+    · obtain ⟨hl, hm, hs⟩ := he
+      obtain ⟨ih₁, ih₂⟩ := ih himp hv.2
+      refine ⟨⟨fun hk w hw => (hstable w a b hs).2 (hv.1 (hkeep a b hl hm hk) w (himp w hw)),
+        ih₁⟩, fun w hA ht => ?_⟩
+      simp only [Trace.assumptionsHold_cons_assert] at ht ⊢
+      exact ih₂ w hA ht
+    · obtain ⟨-, -, hs⟩ := he
+      obtain ⟨ih₁, ih₂⟩ := ih (A := A ++ [.assume a]) (A' := A' ++ [.assume b])
+        (fun w hw => by
+          rw [Trace.AssumptionsHold_append_assume] at hw ⊢
+          exact ⟨himp w hw.1, (hstable w a b hs).1 hw.2⟩) hv
+      refine ⟨ih₁, fun w hA ht => ?_⟩
+      simp only [Trace.assumptionsHold_cons_assume] at ht ⊢
+      exact ⟨(hstable w a b hs).1 ht.1,
+        ih₂ w ((Trace.AssumptionsHold_append_assume I w A a).2 ⟨hA, ht.1⟩) ht.2⟩
+    · obtain ⟨ih₁, ih₂⟩ := ih himp hv
+      refine ⟨ih₁, fun w hA ht => ?_⟩
+      simp only [Trace.assumptionsHold_cons_cover] at ht ⊢
+      exact ih₂ w hA ht
+  | assert _ ih =>
+    intro A A' himp hv
+    obtain ⟨ih₁, ih₂⟩ := ih himp hv.2
+    exact ⟨ih₁, fun w hA ht => by
+      simp only [Trace.assumptionsHold_cons_assert]; exact ih₂ w hA ht⟩
+
+/-- Under an interpretation for which conditions with the same value hold alike under allowed
+    factories, the validity of the assertions of the target satisfying `keep` implies that of
+    the assertions of the source satisfying `keep`, for a filter `keep` depending only on label
+    and metadata. -/
+theorem Trace.InsertsAsserts.assertionsValidFromP_reflect {I : ConditionInterp P}
+    (hstable : I.StableUnder (EventArg.SameValue allowed)) {keep : EventArg P → Prop}
+    (hkeep : ∀ a b, b.label = a.label → b.metadata = a.metadata → keep a → keep b)
+    {t t' : Trace P} (h : Trace.InsertsAsserts allowed t t')
+    (hv : Trace.AssertionsValidFromP P I keep [] t') : Trace.AssertionsValidFromP P I keep [] t :=
+  (h.reflect hstable hkeep (fun _ h => h) hv).1
+
+omit [HasBool P] in
+/-- No assertion is kept by the empty filter, so every trace keeps it valid. -/
+private theorem assertionsValidFromP_false {I : ConditionInterp P} :
+    ∀ (A t : Trace P), Trace.AssertionsValidFromP P I (fun _ => False) A t
+  | _, [] => trivial
+  | _, .assume _ :: rest => assertionsValidFromP_false _ rest
+  | _, .assert _ :: rest => ⟨False.elim, assertionsValidFromP_false _ rest⟩
+  | _, .cover _ :: rest => assertionsValidFromP_false _ rest
+
+/-- Under an interpretation for which conditions with the same value hold alike under allowed
+    factories, the target is reachable where the source is. -/
+theorem Trace.InsertsAsserts.reachable_transfer {I : ConditionInterp P}
+    (hstable : I.StableUnder (EventArg.SameValue allowed)) {t t' : Trace P}
+    (h : Trace.InsertsAsserts allowed t t') (hr : Trace.Reachable P I t) :
+    Trace.Reachable P I t' :=
+  have ⟨w, hw⟩ := hr
+  ⟨w, (h.reflect hstable (keep := fun _ => False) (fun _ _ _ _ h => h) (A := []) (A' := [])
+    (fun _ h => h) (assertionsValidFromP_false _ _)).2 w (by simp [Trace.AssumptionsHold]) hw⟩
+
+end InsertsAsserts
+
+section InsertsCheckedAssumes
+
+variable [HasBool P] {allowed : P.Factory → Prop} {Checks : EventArg P → Prop}
+
+/-- Inserting checked assumptions under some allowed factories inserts them under any larger set
+    of allowed factories. -/
+theorem Trace.InsertsCheckedAssumes.mono_allowed {allowed' : P.Factory → Prop}
+    (hmono : ∀ F, allowed F → allowed' F) {before t t' : Trace P}
+    (h : Trace.InsertsCheckedAssumes allowed Checks before t t') :
+    Trace.InsertsCheckedAssumes allowed' Checks before t t' := by
+  induction h with
+  | nil => exact .nil
+  | keep _ ih => exact .keep ih
+  | assumeTrue hf he _ ih => exact .assumeTrue (hmono _ hf) he ih
+  | assumeChecked hc hC hs _ ih =>
+    exact .assumeChecked hc hC ⟨hmono _ hs.1, hs.2⟩ ih
+
+/-- **Reflecting validity across inserted checked assumptions.**  For an interpretation `I`
+    under which conditions with the same value hold alike and true conditions hold, both under
+    allowed factories: when the target `t'` keeps (`Checks c ∨ keep c`) valid after the
+    assumptions `A'`, its checking assertions before it hold where `A'` does, and `A'` holds
+    where `A` does, then `t` keeps `keep` valid after `A`, and the assumptions of `t'` hold
+    where those of `A` and `t` do. -/
+theorem Trace.InsertsCheckedAssumes.reflect {I : ConditionInterp P}
+    (hstable : I.StableUnder (EventArg.SameValue allowed)) (htrue : I.TrueStutterHolds allowed)
+    {keep : EventArg P → Prop} {before t t' : Trace P}
+    (h : Trace.InsertsCheckedAssumes allowed Checks before t t') :
+    ∀ {A A' : Trace P},
+    (∀ c, Event.assert c ∈ before → Checks c → ∀ w, Trace.AssumptionsHold P I w A' →
+      I.holds w c) →
+    (∀ w, Trace.AssumptionsHold P I w A → Trace.AssumptionsHold P I w A') →
+    Trace.AssertionsValidFromP P I (fun c => Checks c ∨ keep c) A' t' →
+    Trace.AssertionsValidFromP P I keep A t ∧
+      ∀ w, Trace.AssumptionsHold P I w A → Trace.AssumptionsHold P I w t →
+        Trace.AssumptionsHold P I w t' := by
+  -- Membership in the events after an appended non-assertion.
+  have hnotAssert : ∀ {b : Trace P} {e : Event P} {c : EventArg P}, (∀ a, e ≠ .assert a) →
+      Event.assert c ∈ b ++ [e] → Event.assert c ∈ b := fun hne hc => by
+    rcases List.mem_append.1 hc with hc | hc
+    · exact hc
+    · exact absurd (List.mem_singleton.1 hc).symm (hne _)
+  induction h with
+  | nil => exact fun _ _ _ => ⟨trivial, fun _ _ _ => by simp [Trace.AssumptionsHold]⟩
+  | @keep before e t t' _ ih =>
+    intro A A' hC himp hv
+    rcases e with a | a | a
+    · obtain ⟨ih₁, ih₂⟩ := ih (A := A) (A' := A') (fun c hc hCk w hw => by
+          rcases List.mem_append.1 hc with hc | hc
+          · exact hC c hc hCk w hw
+          · cases List.mem_singleton.1 hc
+            exact hv.1 (.inl hCk) w hw) himp hv.2
+      refine ⟨⟨fun hk w hw => hv.1 (.inr hk) w (himp w hw), ih₁⟩, fun w hA ht => ?_⟩
+      simp only [Trace.assumptionsHold_cons_assert] at ht ⊢
+      exact ih₂ w hA ht
+    · obtain ⟨ih₁, ih₂⟩ := ih (A := A ++ [.assume a]) (A' := A' ++ [.assume a])
+        (fun c hc hCk w hw => hC c (hnotAssert (by simp) hc) hCk w
+          ((Trace.AssumptionsHold_append_assume I w A' a).1 hw).1)
+        (fun w hw => by
+          rw [Trace.AssumptionsHold_append_assume] at hw ⊢
+          exact ⟨himp w hw.1, hw.2⟩) hv
+      refine ⟨ih₁, fun w hA ht => ?_⟩
+      simp only [Trace.assumptionsHold_cons_assume] at ht ⊢
+      exact ⟨ht.1, ih₂ w ((Trace.AssumptionsHold_append_assume I w A a).2 ⟨hA, ht.1⟩) ht.2⟩
+    · obtain ⟨ih₁, ih₂⟩ := ih (A := A) (A' := A')
+        (fun c hc hCk w hw => hC c (hnotAssert (by simp) hc) hCk w hw) himp hv
+      refine ⟨ih₁, fun w hA ht => ?_⟩
+      simp only [Trace.assumptionsHold_cons_cover] at ht ⊢
+      exact ih₂ w hA ht
+  | @assumeTrue before a t t' hf he _ ih =>
+    intro A A' hC himp hv
+    have ha : ∀ w, I.holds w a := htrue a hf he
+    obtain ⟨ih₁, ih₂⟩ := ih (A := A) (A' := A' ++ [.assume a])
+      (fun c hc hCk w hw => hC c (hnotAssert (by simp) hc) hCk w
+        ((Trace.AssumptionsHold_append_assume I w A' a).1 hw).1)
+      (fun w hw => (Trace.AssumptionsHold_append_assume I w A' a).2 ⟨himp w hw, ha w⟩) hv
+    exact ⟨ih₁, fun w hA ht => by
+      simp only [Trace.assumptionsHold_cons_assume]; exact ⟨ha w, ih₂ w hA ht⟩⟩
+  | @assumeChecked before a c t t' hc hCk hs _ ih =>
+    intro A A' hC himp hv
+    have ha : ∀ w, Trace.AssumptionsHold P I w A → I.holds w a :=
+      fun w hw => (hstable w c a hs).1 (hC c hc hCk w (himp w hw))
+    obtain ⟨ih₁, ih₂⟩ := ih (A := A) (A' := A' ++ [.assume a])
+      (fun c' hc' hCk' w hw => hC c' (hnotAssert (by simp) hc') hCk' w
+        ((Trace.AssumptionsHold_append_assume I w A' a).1 hw).1)
+      (fun w hw => (Trace.AssumptionsHold_append_assume I w A' a).2 ⟨himp w hw, ha w hw⟩) hv
+    exact ⟨ih₁, fun w hA ht => by
+      simp only [Trace.assumptionsHold_cons_assume]; exact ⟨ha w hA, ih₂ w hA ht⟩⟩
+
+/-- Under an interpretation for which conditions with the same value hold alike and true
+    conditions hold, under allowed factories, the validity of the assertions of the target
+    satisfying `Checks` or `keep` implies that of the assertions of the source satisfying
+    `keep`. -/
+theorem Trace.InsertsCheckedAssumes.assertionsValidFromP_reflect {I : ConditionInterp P}
+    (hstable : I.StableUnder (EventArg.SameValue allowed)) (htrue : I.TrueStutterHolds allowed)
+    {keep : EventArg P → Prop} {t t' : Trace P}
+    (h : Trace.InsertsCheckedAssumes allowed Checks [] t t')
+    (hv : Trace.AssertionsValidFromP P I (fun c => Checks c ∨ keep c) [] t') :
+    Trace.AssertionsValidFromP P I keep [] t :=
+  (h.reflect hstable htrue (fun _ hc => by simp at hc) (fun _ h => h) hv).1
+
+/-- Under an interpretation for which conditions with the same value hold alike and true
+    conditions hold, under allowed factories, the target is reachable where the source is,
+    when its assertions satisfying `Checks` are valid. -/
+theorem Trace.InsertsCheckedAssumes.reachable_transfer {I : ConditionInterp P}
+    (hstable : I.StableUnder (EventArg.SameValue allowed)) (htrue : I.TrueStutterHolds allowed)
+    {t t' : Trace P} (h : Trace.InsertsCheckedAssumes allowed Checks [] t t')
+    (hv : Trace.AssertionsValidFromP P I Checks [] t') (hr : Trace.Reachable P I t) :
+    Trace.Reachable P I t' :=
+  have ⟨w, hw⟩ := hr
+  ⟨w, (h.reflect hstable htrue (keep := fun _ => False) (fun _ hc => by simp at hc)
+    (fun _ h => h) (Trace.AssertionsValidFromP.mono_keep I (fun _ h => h.elim id False.elim) hv)).2
+    w (by simp [Trace.AssumptionsHold]) hw⟩
+
+/-- Inserting assertions, then checked assumptions, under some allowed factories, relates the
+    same traces under any larger set of allowed factories. -/
+theorem Trace.insertsAsserts_insertsCheckedAssumes_mono {allowed' : P.Factory → Prop}
+    (hmono : ∀ F, allowed F → allowed' F) {t t' : Trace P}
+    (h : RComp (Trace.InsertsAsserts allowed) (Trace.InsertsCheckedAssumes allowed Checks [])
+      t t') :
+    RComp (Trace.InsertsAsserts allowed') (Trace.InsertsCheckedAssumes allowed' Checks []) t t' :=
+  have ⟨_, h₁, h₂⟩ := h
+  ⟨_, h₁.mono_allowed hmono, h₂.mono_allowed hmono⟩
+
+/-- **Validity reflected across inserted assertions and then checked assumptions.**  Under an
+    interpretation for which conditions with the same value hold alike and true conditions
+    hold, under allowed factories, the validity of the assertions of the target satisfying
+    `Checks` or `keep` implies that of the assertions of the source satisfying `keep`, for a
+    filter `keep` depending only on label and metadata. -/
+theorem Trace.insertsAsserts_insertsCheckedAssumes_assertionsValidFromP_reflect
+    {I : ConditionInterp P} (hstable : I.StableUnder (EventArg.SameValue allowed))
+    (htrue : I.TrueStutterHolds allowed) {keep : EventArg P → Prop}
+    (hkeep : ∀ a b, b.label = a.label → b.metadata = a.metadata → keep a → keep b)
+    {t t' : Trace P}
+    (h : RComp (Trace.InsertsAsserts allowed) (Trace.InsertsCheckedAssumes allowed Checks [])
+      t t')
+    (hv : Trace.AssertionsValidFromP P I (fun c => Checks c ∨ keep c) [] t') :
+    Trace.AssertionsValidFromP P I keep [] t :=
+  have ⟨_, h₁, h₂⟩ := h
+  h₁.assertionsValidFromP_reflect hstable hkeep (h₂.assertionsValidFromP_reflect hstable htrue hv)
+
+/-- Under an interpretation for which conditions with the same value hold alike and true
+    conditions hold, under allowed factories, the validity of the assertions of the target
+    implies that of the assertions of the source, across inserted assertions and then checked
+    assumptions. -/
+theorem Trace.insertsAsserts_insertsCheckedAssumes_assertionsValid_reflect
+    {I : ConditionInterp P} (hstable : I.StableUnder (EventArg.SameValue allowed))
+    (htrue : I.TrueStutterHolds allowed) {t t' : Trace P}
+    (h : RComp (Trace.InsertsAsserts allowed) (Trace.InsertsCheckedAssumes allowed Checks [])
+      t t')
+    (hv : Trace.AssertionsValid P I t') : Trace.AssertionsValid P I t :=
+  Trace.insertsAsserts_insertsCheckedAssumes_assertionsValidFromP_reflect hstable htrue
+    (keep := fun _ => True) (fun _ _ _ _ h => h) h
+    (Trace.AssertionsValidFromP.mono_keep I (fun _ _ => trivial) hv)
+
+/-- Under an interpretation for which conditions with the same value hold alike and true
+    conditions hold, under allowed factories, the target is reachable where the source is,
+    across inserted assertions and then checked assumptions, when the assertions of the target
+    satisfying `Checks` are valid. -/
+theorem Trace.insertsAsserts_insertsCheckedAssumes_reachable_transfer {I : ConditionInterp P}
+    (hstable : I.StableUnder (EventArg.SameValue allowed)) (htrue : I.TrueStutterHolds allowed)
+    {t t' : Trace P}
+    (h : RComp (Trace.InsertsAsserts allowed) (Trace.InsertsCheckedAssumes allowed Checks [])
+      t t')
+    (hv : Trace.AssertionsValidFromP P I Checks [] t') (hr : Trace.Reachable P I t) :
+    Trace.Reachable P I t' :=
+  have ⟨_, h₁, h₂⟩ := h
+  h₂.reachable_transfer hstable htrue hv (h₁.reachable_transfer hstable hr)
+
+end InsertsCheckedAssumes
 
 /-- A relation closed under concatenation, relating `a` to `a'`, followed by a nonempty target
     preserving the last event of `b`, preserves the last event of `a ++ b`. -/

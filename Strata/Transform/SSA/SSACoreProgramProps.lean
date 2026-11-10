@@ -402,7 +402,8 @@ theorem ssaEntry_blockInitEnvWF {params : InitEnvWFParams}
            defUseOk := d1
            factoryDeclared := hwf.factoryDeclared
            initTypesInhabited := o4
-           fvarTypesOk := hty }
+           fvarTypesOk := hty
+           measuresTyped := by simp [Imperative.Block.measures_of_treeForm o1] }
   · intro y v hy
     obtain ⟨x, hx, rfl⟩ := hdomS y (by simp [hy])
     exact hF ▸ hwf.storeWellDefined x v ((hval x hx).1.trans hy)

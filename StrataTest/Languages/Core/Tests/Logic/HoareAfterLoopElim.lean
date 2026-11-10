@@ -50,7 +50,7 @@ cannot reduce them and `decide +kernel` gets stuck on these steps.  The other si
 open Imperative
 open StrataDDM (Program)
 
-namespace Strata.HoareLoopElimTest
+namespace Strata.HoareAfterLoopElimTest
 
 /-- Translate a DDM concrete-syntax program to the Core AST. -/
 private def cstToAST (p : Program) : Core.Program :=
@@ -313,4 +313,4 @@ theorem count_meets_contract :
   exact block_rule (htriple (fun _ hpre => hpre.2.1) countTgt_triple)
     (by rw [count_inner_eq]; decide +kernel)
 
-end Strata.HoareLoopElimTest
+end Strata.HoareAfterLoopElimTest

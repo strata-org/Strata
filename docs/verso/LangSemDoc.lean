@@ -39,6 +39,7 @@ import Strata.Transform.CoreSpecification
 import Strata.Languages.Core.Analysis.ProcedureCorrectness
 import Strata.Transform.SpecHoareConnection
 import Strata.Transform.SpecificationProps
+import Strata.Transform.InsertLoopInvariantAssertsCoreCorrect
 import Strata.Languages.Core.Logic.LangDef
 
 open Lambda
@@ -686,9 +687,12 @@ environment required by the target triple. It is an instance of
 {name Imperative.Specification.Transform.overapproximatesTraces2UptoWhen_triple_general}`overapproximatesTraces2UptoWhen_triple_general`,
 which reads only
 the run clauses: the run trace relation must reflect the validity of every assertion of a
-run and carry its reachability forward, and the output environment relation must carry the
-postcondition back. Its one-relation instance is
+run and carry its reachability forward to a target run whose assertions are valid, and the
+output environment relation must carry the postcondition back. Its one-relation instance is
 {name Imperative.Specification.Transform.overapproximatesTracesUptoWhen_triple_general}`overapproximatesTracesUptoWhen_triple_general`.
+Inserting the checks of loop invariants needs reachability only on such target runs: an
+inserted assumption of an invariant holds only where the inserted assertion before it does
+({name Core.InsertLoopInvAsserts.triple_of_blockRel}`Core.InsertLoopInvAsserts.triple_of_blockRel`).
 
 {docstring Imperative.Specification.Transform.overapproximatesTraces2UptoWhen_triple_general}
 

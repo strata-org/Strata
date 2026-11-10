@@ -920,6 +920,36 @@ theorem embedStmts_labels (ss : List (Stmt P (Cmd P))) :
   termination_by sizeOf ss
 end
 
+mutual
+/-- Loop measures are unchanged by command embedding. -/
+theorem embedStmt_measures (s : Stmt P (Cmd P)) :
+    Stmt.measures (embedStmt s) = Stmt.measures s := by
+  match s with
+  | .cmd c => simp [embedStmt, Stmt.measures]
+  | .block label ss md =>
+      simp only [embedStmt, Stmt.measures]
+      rw [embedStmts_measures ss]
+  | .ite cond tss ess md =>
+      simp only [embedStmt, Stmt.measures]
+      rw [embedStmts_measures tss, embedStmts_measures ess]
+  | .loop guard measure invariant body md =>
+      simp only [embedStmt, Stmt.measures]
+      rw [embedStmts_measures body]
+  | .exit label md => simp [embedStmt, Stmt.measures]
+  | .typeDecl tc md => simp [embedStmt, Stmt.measures]
+  termination_by sizeOf s
+
+/-- Loop measures of a statement list are unchanged by command embedding. -/
+theorem embedStmts_measures (ss : List (Stmt P (Cmd P))) :
+    Block.measures (embedStmts ss) = Block.measures ss := by
+  match ss with
+  | [] => simp [embedStmts, Block.measures]
+  | s :: rest =>
+      simp only [embedStmts, Block.measures]
+      rw [embedStmt_measures s, embedStmts_measures rest]
+  termination_by sizeOf ss
+end
+
 /-- User-label shape and uniqueness are unchanged by command embedding. -/
 theorem embedStmts_userLabelsShapeNodup (ss : List (Stmt P (Cmd P))) :
     Block.userLabelsShapeNodup (C := CmdExt P) (embedStmts ss) ↔

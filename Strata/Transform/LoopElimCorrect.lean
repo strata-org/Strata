@@ -12,7 +12,6 @@ import Strata.DL.Imperative.Logic.TraceRelationsProps
 import Strata.DL.Imperative.StmtSemanticsProps
 import Strata.Util.ListUtilsProps
 import all Strata.Transform.LoopElim
-import all Strata.Transform.LoopElimPure
 import all Strata.DL.Imperative.Cmd
 
 /-! # Loop elimination over-approximates (big-step)

@@ -42,6 +42,10 @@ Index of relations defined here:
 * `Trace.MayDropEvents` — the target trace is a sublist of the source trace: it keeps some
   source events in order and drops the others; `Trace.InsertsTrueAssumes` — the target trace
   is the source trace with operationally true assumptions inserted.
+* `Trace.InsertsAsserts` — the target trace is the source trace with conditions captured with
+  the same value and assertions inserted; `Trace.InsertsCheckedAssumes` — the target trace is
+  the source trace with assumptions inserted that evaluate to `true` or copy an earlier
+  checking assertion.
 * `Trace.PreservesLastEvent R` — the target trace ends with the last source event, after
   events related by `R` to those before it; `Trace.HasExtraEvents R Extra` — the target trace
   is one related by `R` followed by extra events satisfying `Extra`.
@@ -193,6 +197,66 @@ inductive Trace.InsertsTrueAssumes [HasBool P] (allowedFactory : P.Factory → P
 @[expose] def Trace.HasExtraEvents (R : Trace P → Trace P → Prop) (Extra : Trace P → Prop)
     (source target : Trace P) : Prop :=
   ∃ target₁ extra, target = target₁ ++ extra ∧ R source target₁ ∧ Extra extra
+
+/-- The condition `target` is that of `source`, captured under the same factory, satisfying
+    `allowedFactory`, with the same value. -/
+@[expose] def EventArg.SameValue [HasBool P] (allowedFactory : P.Factory → Prop)
+    (source target : EventArg P) : Prop :=
+  allowedFactory source.factory ∧ target.factory = source.factory ∧
+    target.expr = source.expr ∧
+    P.eval target.factory target.store target.expr =
+      P.eval source.factory source.store source.expr
+
+/-- The event `target` is the event `source` up to the store its condition is captured in: the
+    same kind, label and metadata, and a condition with the same value
+    (`EventArg.SameValue`). -/
+@[expose] def Event.SameValue [HasBool P] (allowedFactory : P.Factory → Prop) :
+    Event P → Event P → Prop
+  | .assert a, .assert b | .assume a, .assume b | .cover a, .cover b =>
+    b.label = a.label ∧ b.metadata = a.metadata ∧ EventArg.SameValue allowedFactory a b
+  | _, _ => False
+
+/-- `target` is `source` with each event replaced by one differing only in the store its
+    condition is captured in (`Event.SameValue`, the factories of the conditions satisfying
+    `allowedFactory`), and with assertions inserted.  The assumptions of `target` hold where
+    those of `source` do, and validity of the assertions of `target` implies that of the
+    assertions of `source`. -/
+inductive Trace.InsertsAsserts [HasBool P] (allowedFactory : P.Factory → Prop) :
+    Trace P → Trace P → Prop where
+  | nil : Trace.InsertsAsserts allowedFactory [] []
+  | keep {e e' : Event P} {t t' : Trace P} :
+      Event.SameValue allowedFactory e e' → Trace.InsertsAsserts allowedFactory t t' →
+      Trace.InsertsAsserts allowedFactory (e :: t) (e' :: t')
+  | assert {a : EventArg P} {t t' : Trace P} :
+      Trace.InsertsAsserts allowedFactory t t' →
+      Trace.InsertsAsserts allowedFactory t (.assert a :: t')
+
+/-- `target`, following the target events `before`, is `source` with assumptions inserted that
+    hold wherever the target reaches them with its checking assertions valid: assumptions
+    evaluating to `true`, and assumptions of the condition, with the same value, of an
+    assertion satisfying `Checks` among the target events before them.  The factories of the
+    conditions satisfy `allowedFactory`.  Inserting the invariant checks of a loop relates its
+    traces, after inserting their assertions (`Trace.InsertsAsserts`), this way: an inserted
+    assumption of an invariant follows an inserted assertion of it.
+
+    An inserted assumption may fail, but then so does the assertion before it, so validity of
+    the target's assertions implies that of the source's, and reachability of the source
+    implies that of the target when its checking assertions are valid. -/
+inductive Trace.InsertsCheckedAssumes [HasBool P] (allowedFactory : P.Factory → Prop)
+    (Checks : EventArg P → Prop) : Trace P → Trace P → Trace P → Prop where
+  | nil {before : Trace P} : Trace.InsertsCheckedAssumes allowedFactory Checks before [] []
+  | keep {before : Trace P} {e : Event P} {t t' : Trace P} :
+      Trace.InsertsCheckedAssumes allowedFactory Checks (before ++ [e]) t t' →
+      Trace.InsertsCheckedAssumes allowedFactory Checks before (e :: t) (e :: t')
+  | assumeTrue {before : Trace P} {a : EventArg P} {t t' : Trace P} :
+      allowedFactory a.factory →
+      P.eval a.factory a.store a.expr = some (HasBool.ttVal a.factory) →
+      Trace.InsertsCheckedAssumes allowedFactory Checks (before ++ [.assume a]) t t' →
+      Trace.InsertsCheckedAssumes allowedFactory Checks before t (.assume a :: t')
+  | assumeChecked {before : Trace P} {a c : EventArg P} {t t' : Trace P} :
+      Event.assert c ∈ before → Checks c → EventArg.SameValue allowedFactory c a →
+      Trace.InsertsCheckedAssumes allowedFactory Checks (before ++ [.assume a]) t t' →
+      Trace.InsertsCheckedAssumes allowedFactory Checks before t (.assume a :: t')
 
 end DropsAndInserts
 

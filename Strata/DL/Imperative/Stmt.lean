@@ -485,6 +485,27 @@ def Block.initTypes [HasInitTypesImp P C] (ss : Block P C) : List P.Ty :=
   | s :: srest => Stmt.initTypes s ++ Block.initTypes srest
 end
 
+mutual
+/-- Deep measure list of a statement: the `decreases` measure of every loop at any nesting
+    level. -/
+@[expose]
+def Stmt.measures (s : Stmt P C) : List P.Expr :=
+  match s with
+  | .cmd _ => []
+  | .block _ bss _ => Block.measures bss
+  | .ite _ tbss ebss _ => Block.measures tbss ++ Block.measures ebss
+  | .loop _ measure _ body _ => measure.toList ++ Block.measures body
+  | .exit _ _ => []
+  | .typeDecl _ _ => []
+
+/-- Deep measure list of a block. -/
+@[expose]
+def Block.measures (ss : Block P C) : List P.Expr :=
+  match ss with
+  | [] => []
+  | s :: srest => Stmt.measures s ++ Block.measures srest
+end
+
 /-- Every init-type collected from the statement `s` has a `valueOfTy` witness in
     the factory `f`; types absent from `s` need no witness. -/
 @[expose]

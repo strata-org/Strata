@@ -98,12 +98,171 @@ inductive Stats where
 
 end InsertLoopInvariantAsserts
 
+end -- public section
+
+end Core
+
+/-! ### The statements inserted for one loop
+
+The checked form of one loop (`Stmt.invChecked`), as the module note above describes it.  The
+label of each check carries the index `i` of its invariant, which keeps labels unique when source
+labels coincide or are empty, and the invariant's source label, so that each check refers back to
+its invariant; it carries the invariant's own source location (`MetaData.invariantMd`), falling
+back to the loop's.  The definitions are generic over the expression language, so that the
+correctness proof of the pass reasons about them over Imperative statements. -/
+
+namespace Imperative
+
+public section
+
+variable {P : PureExpr} {C : Type}
+
+namespace InsertLoopInvAsserts
+
+/-- The label suffix of the invariant at index `i` with source label `lbl`. -/
+def invSuffix (i : Nat) (lbl : String) : String :=
+  if lbl.isEmpty then toString i else s!"{i}_{lbl}"
+
+/-- The label of the assertion, before loop `n`, of the invariant at index `i` with source
+    label `lbl`. -/
+def entryAssertLabel (n : String) (i : Nat) (lbl : String) : String :=
+  s!"{Core.insertLoopInvAssertPrefix}entry_invariant_{n}_{invSuffix i lbl}"
+
+/-- The label of the assumption, before loop `n`, of the invariant at index `i` with source
+    label `lbl`. -/
+def entryAssumeLabel (n : String) (i : Nat) (lbl : String) : String :=
+  s!"{Core.insertLoopInvAssumePrefix}entry_invariant_{n}_{invSuffix i lbl}"
+
+/-- The label of the assumption, at the start of an iteration of loop `n`, of the invariant at
+    index `i` with source label `lbl`. -/
+def midAssumeLabel (n : String) (i : Nat) (lbl : String) : String :=
+  s!"{Core.insertLoopInvAssumePrefix}invariant_{n}_{invSuffix i lbl}"
+
+/-- The label of the assertion, at the end of an iteration of loop `n`, of the invariant at index
+    `i` with source label `lbl`. -/
+def maintainAssertLabel (n : String) (i : Nat) (lbl : String) : String :=
+  s!"{Core.insertLoopInvAssertPrefix}arbitrary_iter_maintain_invariant_{n}_{invSuffix i lbl}"
+
+/-- The label of the assumption, after loop `n`, of the invariant at index `i` with source label
+    `lbl`. -/
+def exitAssumeLabel (n : String) (i : Nat) (lbl : String) : String :=
+  s!"{Core.insertLoopInvAssumePrefix}exit_invariant_{n}_{invSuffix i lbl}"
+
+/-- The prefix of the names of the variables recording loop measures. -/
+@[expose] def measurePrefix : String := s!"{Core.insertLoopInvAssertReservedPrefix}_measure_"
+
+/-- The variable recording the measure of loop `n` before an iteration. -/
+def measureIdent [HasIdent P] (n : String) : P.Ident :=
+  HasIdent.ident (measurePrefix ++ n)
+
+/-- The prefixes of the measure snapshot variables, which the source must not use: the only
+    names the checks introduce are snapshot variables (`measureIdent`), which start with
+    `measurePrefix`. -/
+@[expose] def prefixesReserved : List String := [measurePrefix]
+
+/-- The variables the checks of loop `n` with measure `measure` define: the measure snapshot
+    when there is a measure. -/
+def measureVars [HasIdent P] (n : String) : Option P.Expr → List P.Ident
+  | some _ => [measureIdent n]
+  | none => []
+
+/-- The assertions of the invariants `inv` of loop `n` before the loop. -/
+def entryAsserts [HasPassiveCmds P C] (n : String) (inv : List (String × P.Expr))
+    (md : MetaData P) : List (Stmt P C) :=
+  inv.mapIdx fun i (lbl, e) =>
+    Stmt.cmd (HasPassiveCmds.assert (entryAssertLabel n i lbl) e (md.invariantMd i))
+
+/-- The assumptions of the invariants `inv` of loop `n` before the loop. -/
+def entryAssumes [HasPassiveCmds P C] (n : String) (inv : List (String × P.Expr))
+    (md : MetaData P) : List (Stmt P C) :=
+  inv.mapIdx fun i (lbl, e) =>
+    Stmt.cmd (HasPassiveCmds.assume (entryAssumeLabel n i lbl) e (md.invariantMd i))
+
+/-- The assumptions of the invariants `inv` of loop `n` at the start of an iteration. -/
+def midAssumes [HasPassiveCmds P C] (n : String) (inv : List (String × P.Expr))
+    (md : MetaData P) : List (Stmt P C) :=
+  inv.mapIdx fun i (lbl, e) =>
+    Stmt.cmd (HasPassiveCmds.assume (midAssumeLabel n i lbl) e (md.invariantMd i))
+
+/-- The assertions of the invariants `inv` of loop `n` at the end of an iteration. -/
+def maintainAsserts [HasPassiveCmds P C] (n : String) (inv : List (String × P.Expr))
+    (md : MetaData P) : List (Stmt P C) :=
+  inv.mapIdx fun i (lbl, e) =>
+    Stmt.cmd (HasPassiveCmds.assert (maintainAssertLabel n i lbl) e (md.invariantMd i))
+
+/-- The assumptions of the invariants `inv` and, for a deterministic guard, of the negation of
+    the guard of loop `n` after the loop. -/
+def exitAssumes [HasPassiveCmds P C] [HasBoolOps P] (n : String) (guard : ExprOrNondet P)
+    (inv : List (String × P.Expr)) (md : MetaData P) : List (Stmt P C) :=
+  (inv.mapIdx fun i (lbl, e) =>
+    Stmt.cmd (HasPassiveCmds.assume (exitAssumeLabel n i lbl) e (md.invariantMd i))) ++
+  match guard with
+  | .det g => [Stmt.cmd (HasPassiveCmds.assume
+      s!"{Core.insertLoopInvAssumePrefix}exit_not_guard_{n}" (HasBoolOps.not g) md)]
+  | .nondet => []
+
+/-- At the start of an iteration of loop `n` with measure `m`: the snapshot of the measure and
+    the assertion that it is not negative. -/
+def measurePre [HasIdent P] [HasFvar P] [HasFvars P] [HasBoolOps P] [HasInt P]
+    [HasIntOps P] [HasInit P C] [HasPassiveCmds P C] (n : String) (measure : Option P.Expr)
+    (md : MetaData P) : List (Stmt P C) :=
+  match measure with
+  | none => []
+  | some m =>
+    [Stmt.cmd (HasInit.init (measureIdent n) HasInt.intTy (.det m) md),
+     Stmt.cmd (HasPassiveCmds.assert s!"{Core.insertLoopInvAssertPrefix}measure_lb_{n}"
+      (HasBoolOps.not (HasIntOps.lt (HasFvar.mkTypedFvar (measureIdent n) HasInt.intTy)
+        HasInt.zero)) md)]
+
+/-- At the end of an iteration of loop `n` with measure `m`: the assertion that the measure
+    decreased. -/
+def measurePost [HasIdent P] [HasFvar P] [HasFvars P] [HasBoolOps P] [HasInt P]
+    [HasIntOps P] [HasPassiveCmds P C] (n : String) (measure : Option P.Expr)
+    (md : MetaData P) : List (Stmt P C) :=
+  match measure with
+  | none => []
+  | some m =>
+    [Stmt.cmd (HasPassiveCmds.assert s!"{Core.insertLoopInvAssertPrefix}measure_decrease_{n}"
+      (HasIntOps.lt m (HasFvar.mkTypedFvar (measureIdent n) HasInt.intTy)) md)]
+
+/-- The body of the checked loop `n`: the body `body` between the checks of the invariants
+    `inv` and of the measure `measure`. -/
+def loopBody [HasIdent P] [HasFvar P] [HasFvars P] [HasBoolOps P] [HasInt P]
+    [HasIntOps P] [HasInit P C] [HasPassiveCmds P C] (n : String) (measure : Option P.Expr)
+    (inv : List (String × P.Expr)) (body : List (Stmt P C)) (md : MetaData P) :
+    List (Stmt P C) :=
+  midAssumes n inv md ++ measurePre n measure md ++ body ++ maintainAsserts n inv md ++
+    measurePost n measure md
+
+end InsertLoopInvAsserts
+
+open InsertLoopInvAsserts in
+/-- The statements checking the invariants `inv` and the measure `measure` of loop `n` with
+    guard `guard`, body `body` and metadata `md`: the loop without invariants and measure
+    between the checks before, during and after it (see the module note above). -/
+def Stmt.invChecked [HasIdent P] [HasFvar P] [HasFvars P] [HasBoolOps P] [HasInt P]
+    [HasIntOps P] [HasInit P C] [HasPassiveCmds P C] (n : String) (guard : ExprOrNondet P)
+    (measure : Option P.Expr) (inv : List (String × P.Expr)) (body : List (Stmt P C))
+    (md : MetaData P) : List (Stmt P C) :=
+  entryAsserts n inv md ++ entryAssumes n inv md ++
+    [.loop guard none [] (loopBody n measure inv body md) md] ++ exitAssumes n guard inv md
+
+end -- public section
+
+end Imperative
+
+namespace Core
+open Imperative
+
+public section
+
 /-- Materialize a single loop's invariant/measure VCs as explicit
     `assert`/`assume` statements around and inside the loop, and clear the
     loop's `invariants`/`measure` metadata.
 
-    Returns `some` (a list: entry asserts/assumes, the bare loop, exit assumes)
-    for a loop that still carries invariants or a measure, and `none` otherwise.
+    Returns `some` (a list: entry asserts/assumes, the bare loop, exit assumes;
+    `Stmt.invChecked`) for a loop that still carries invariants or a measure, and
+    `none` otherwise.
     A `decreases` measure works for a nondeterministic guard as well as a
     deterministic one: the measure VCs never mention the guard, and a measure
     that decreases across the body and stays non-negative bounds the number of
@@ -115,77 +274,29 @@ def insertInvariantAsserts (s : Statement)
     -- Nothing to materialize for a bare loop; let traversal descend into it.
     if invariants.isEmpty && measure.isNone then
       return none
-    -- The guard expression for a deterministic loop; `none` for a
-    -- nondeterministic (`while *`) loop.
-    let guardExpr? : Option Expression.Expr := match guard with
-      | .det g => some g
-      | .nondet => none
     let loop_num ← genLoopNum
-    -- The per-invariant source label is carried through as part of the suffix
-    -- (alongside the index `i`, which guarantees uniqueness when source labels
-    -- coincide or are empty) so each generated assert/assume preserves a stable
-    -- reference to the source invariant.
-    let invSuffix : Nat → String → String := fun i lbl =>
-      if lbl.isEmpty then toString i else s!"{i}_{lbl}"
-    -- Per-invariant source provenance, threaded through the loop metadata by the
-    -- Laurel→Core translation (in invariant order). When present, each
-    -- invariant's generated assert/assume is attributed to that invariant's own
-    -- source location instead of the whole loop; otherwise we fall back to the
-    -- loop metadata `md`. A size mismatch degrades gracefully via the index
-    -- lookup in `MetaData.invariantMd` rather than mis-attributing ranges.
-    -- Before the loop: assert(I) (VC1) and assume(I) (zero-iteration path).
-    let entry_asserts := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assert s!"{insertLoopInvAssertPrefix}entry_invariant_{loop_num}_{invSuffix i lbl}" inv (md.invariantMd i))
-    let entry_assumes := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assume s!"{insertLoopInvAssumePrefix}entry_invariant_{loop_num}_{invSuffix i lbl}" inv (md.invariantMd i))
-    -- Top of the body: assume(I) (invariant at the arbitrary mid-loop state).
-    let mid_assumes := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assume s!"{insertLoopInvAssumePrefix}invariant_{loop_num}_{invSuffix i lbl}" inv (md.invariantMd i))
-    -- Bottom of the body: assert(I) (VC2, invariant maintained).
-    let maintain_asserts := invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assert s!"{insertLoopInvAssertPrefix}arbitrary_iter_maintain_invariant_{loop_num}_{invSuffix i lbl}" inv (md.invariantMd i))
-    -- After the loop: assume(I ∧ ¬g) — the invariant, and the negated guard, at
-    -- the exit state. The `¬g` conjunct is only added for a deterministic
-    -- guard; a nondeterministic loop has no guard to negate.
-    let exit_not_guard := match guardExpr? with
-      | some g => [Stmt.cmd (HasPassiveCmds.assume
-          s!"{insertLoopInvAssumePrefix}exit_not_guard_{loop_num}" (HasBoolOps.not g) md)]
-      | none => []
-    let exit_assumes := (invariants.mapIdx fun i (lbl, inv) =>
-      Stmt.cmd (HasPassiveCmds.assume s!"{insertLoopInvAssumePrefix}exit_invariant_{loop_num}_{invSuffix i lbl}" inv (md.invariantMd i)))
-      ++ exit_not_guard
-    -- Measure: init m_old := D; assert(!(m_old<0)) at the top of the body, and
-    -- assert(D < m_old) at the bottom.
-    let (measure_pre, measure_post) := match measure with
-      | none => ([], [])
-      | some m =>
-        let m_old_ident    := HasIdent.ident s!"{insertLoopInvAssertReservedPrefix}_measure_{loop_num}"
-        let m_old_expr     := HasFvar.mkTypedFvar m_old_ident HasInt.intTy
-        let init_m_old     := Stmt.cmd (HasInit.init m_old_ident HasInt.intTy (.det m) md)
-        let assert_lb      := Stmt.cmd (HasPassiveCmds.assert
-          s!"{insertLoopInvAssertPrefix}measure_lb_{loop_num}"
-          (HasBoolOps.not (HasIntOps.lt m_old_expr HasInt.zero)) md)
-        let assert_decrease := Stmt.cmd (HasPassiveCmds.assert
-          s!"{insertLoopInvAssertPrefix}measure_decrease_{loop_num}" (HasIntOps.lt m m_old_expr) md)
-        ([init_m_old, assert_lb], [assert_decrease])
-    -- Decorated body and bare loop (invariants/measure cleared).
-    let new_body := mid_assumes ++ measure_pre ++ bss ++ maintain_asserts ++ measure_post
-    let bare_loop : Statement := .loop guard none [] new_body md
     -- Count assert/assume statements inserted (init is not an assert/assume;
     -- the measure contributes assert_lb + assert_decrease = 2).
-    let numAssertAssumes := entry_asserts.length + entry_assumes.length +
-      mid_assumes.length + maintain_asserts.length + exit_assumes.length +
+    let numAssertAssumes :=
+      (InsertLoopInvAsserts.entryAsserts (C := Command) loop_num invariants md).length +
+      (InsertLoopInvAsserts.entryAssumes (C := Command) loop_num invariants md).length +
+      (InsertLoopInvAsserts.midAssumes (C := Command) loop_num invariants md).length +
+      (InsertLoopInvAsserts.maintainAsserts (C := Command) loop_num invariants md).length +
+      (InsertLoopInvAsserts.exitAssumes (C := Command) loop_num guard invariants md).length +
       (if measure.isSome then 2 else 0)
     Transform.incrementStat s!"{InsertLoopInvariantAsserts.Stats.insertedAssertAssumes}" numAssertAssumes
-    return some (entry_asserts ++ entry_assumes ++ [bare_loop] ++ exit_assumes)
+    return some (Stmt.invChecked loop_num guard measure invariants bss md)
   | _ => return none
 
 /-- Insert loop invariant/measure assertions across all procedures of a Core
-    program, iterating to a fixed point so that loops nested inside loop bodies
-    are also decorated. Returns whether anything changed and the transformed
+    program, iterating so that loops nested inside loop bodies are also
+    decorated. Each iteration decorates the outermost loops not decorated yet, so
+    the iterations are bounded by `numLoops p + 1`: at least the loop nesting
+    depth, and at least one, so a CFG procedure body is rejected even when `p`
+    has no loops. Returns whether anything changed and the transformed
     program. -/
 def insertLoopInvariantAsserts (p : Program) : Transform.CoreTransformM (Bool × Program) :=
-  Transform.runProgramUntil insertInvariantAsserts p
+  Transform.runProgramUntil insertInvariantAsserts p (maxIters := some (numLoops p + 1))
 
 /-- Pipeline phase that materializes loop invariant/measure verification
     conditions. -/
