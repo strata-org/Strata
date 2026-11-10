@@ -17,8 +17,8 @@ Verdict printing: the tests of `--vcgen wp` run `Core.verify` on a program in sy
 under `--vcgen wp` and print one verdict per obligation, so that `#guard_msgs` compares the two
 modes.
 
-Checks on the phases' outputs: nothing follows an `assert` (`NoStmtAfterAssert`), the names an
-output declares (`stmtsInits`), and the duplication checker (`noDuplication`). -/
+Checks on the phases' outputs: nothing follows an `assert` (`NoStmtAfterAssert`), and the
+duplication checker (`noDuplication`). -/
 
 meta section
 
@@ -69,16 +69,6 @@ def NoStmtAfterAssert : PStmts P → Bool
   | (.ite _ thenSs elseSs _) :: rest =>
       NoStmtAfterAssert thenSs && NoStmtAfterAssert elseSs && NoStmtAfterAssert rest
   | _ :: rest => NoStmtAfterAssert rest
-
-/-- The names declared by the `init`s of a list, at any depth. -/
-def stmtsInits : PStmts P → List P.Ident
-  | [] => []
-  | .cmd (.cmd (.init x _ _ _)) :: rest => x :: stmtsInits rest
-  | .ite _ t e _ :: rest => stmtsInits t ++ stmtsInits e ++ stmtsInits rest
-  | .block _ b _ :: rest => stmtsInits b ++ stmtsInits rest
-  | .loop _ _ _ b _ :: rest => stmtsInits b ++ stmtsInits rest
-  | _ :: rest => stmtsInits rest
-  termination_by ss => sizeOf ss
 end
 
 /-! ## Duplication checker

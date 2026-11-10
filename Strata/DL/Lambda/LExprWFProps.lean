@@ -1092,6 +1092,19 @@ theorem getOps_substFvarsBy {look : T.Identifier → Option (LExpr T.mono)}
   all_goals simp only [substFvarsBy, LExpr.getOps, List.mem_append] at ho ⊢
   all_goals grind
 
+omit [DecidableEq T.IDMeta] in
+/-- Every operator of `substFvarsBy e look` is an operator of `e` or of a substituted value. -/
+theorem getOps_substFvarsBy_mem (e : LExpr T.mono) (look : T.Identifier → Option (LExpr T.mono))
+    (o : T.Identifier) (h : o ∈ LExpr.getOps (LExpr.substFvarsBy e look)) :
+    o ∈ LExpr.getOps e ∨ ∃ y v, look y = some v ∧ o ∈ LExpr.getOps v := by
+  induction e with
+  | fvar _ name _ =>
+    simp only [substFvarsBy] at h
+    split at h
+    · exact .inr ⟨name, _, ‹_›, h⟩
+    · exact .inl h
+  | _ => simp only [substFvarsBy, LExpr.getOps, List.mem_append] at h ⊢ <;> grind
+
 end LExpr
 
 /-- Every user-provided annotation of `e` satisfies `p` exactly when every type

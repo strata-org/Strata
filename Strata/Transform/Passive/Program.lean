@@ -71,6 +71,15 @@ abbrev Tys (P : PureExpr) := List (P.Ident × P.Ty)
 @[expose] def Tys.get? (tys : (Tys P)) (x : P.Ident) : Option P.Ty :=
   (tys.find? (fun p => p.1 == x)).map (·.2)
 
+/-- Free variables of a continuation (a stack of statement lists). -/
+@[expose] def contFV (k : List (PStmts P)) : List P.Ident :=
+  Strata.Util.OrderedSet.eraseDups (k.flatMap Block.freeVars)
+
+/-- A branch is *local* when it consists only of `assert`/`cover` commands: skipping
+    it on the continuation's path skips no evaluation, no assumption and no
+    assignment, so it can become a side branch of its own. -/
+@[expose] def isLocal (ss : (PStmts P)) : Bool := ss.all Stmt.isCheck
+
 /-! ## Reachability conditions and the flat output -/
 
 /-- A reachability condition: `top` (reached whenever the enclosing path is), a Boolean
@@ -242,6 +251,17 @@ inductive LogEntry (P : PureExpr) where
 /-- The statement `assume l : e`. -/
 @[expose] def mkAssume (l : String) (e : P.Expr) : (PStmt P) :=
   .cmd (.cmd (.assume l e .empty))
+
+
+/-- The names declared by the `init`s of a list, at any depth. -/
+@[expose] def stmtsInits : PStmts P → List P.Ident
+  | [] => []
+  | .cmd (.cmd (.init x _ _ _)) :: rest => x :: stmtsInits rest
+  | .ite _ t e _ :: rest => stmtsInits t ++ stmtsInits e ++ stmtsInits rest
+  | .block _ b _ :: rest => stmtsInits b ++ stmtsInits rest
+  | .loop _ _ _ b _ :: rest => stmtsInits b ++ stmtsInits rest
+  | _ :: rest => stmtsInits rest
+  termination_by ss => sizeOf ss
 
 
 /-- A hash set of identifiers. -/

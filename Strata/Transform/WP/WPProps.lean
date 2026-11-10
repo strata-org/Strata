@@ -10,14 +10,17 @@ import Strata.Util.ExceptProps
 import Strata.Transform.Passive.ProgramProps
 import Strata.DL.Imperative.StmtProps
 import Strata.Util.RopeProps
+import Strata.Transform.WP.WPOverIteLaid
+import Strata.Transform.WP.WPOverFacts
 public meta import Lean.Elab.Tactic.Basic
 public meta import Lean.Elab.Tactic.ElabTerm
 
 /-! # Properties of the WP phase
 
 The output of `wpBody` is a guarded program in which only obligations follow an `assert`
-(`wpBody_shape`), and every arm of every `ite` of the output of `wpEntry`, at any depth, contains
-an `assert` or a `cover` (`wpEntry_armsHaveObl`).
+(`wpBody_shape`), the output of `wpEntry` on a well-scoped list reads only variables the list
+reads (`wpEntry_fv`), and every arm of every `ite` of the output of `wpEntry`, at any depth,
+contains an `assert` or a `cover` (`wpEntry_armsHaveObl`).
 
 The `ite`s of the output come from the nesting of the flat items (`nest`): a side branch is the
 `then` arm of an `ite` whose `else` arm is the nesting of the rest of the list, and a real branch
@@ -29,7 +32,7 @@ computations of the WP monad: `Post m Q` says that every successful run of `m` r
 with `Q`, and the tactic `post_step` decomposes such a goal along the binds, conditionals, matches
 and join points of a `do` block.
 
-Key theorems: `wpBody_shape`, `wpEntry_armsHaveObl`. -/
+Key theorems: `wpBody_shape`, `wpEntry_fv`, `wpEntry_armsHaveObl`. -/
 
 namespace Imperative
 namespace WP
@@ -101,6 +104,65 @@ theorem wpBody_shape {st : FreshSt P} {ss : PStmts P} {w : WOut P} (h : wpBody s
   simp only [wpBody, emit, StateT.run, Except.bind_is_ok, Except.pure_is_ok] at h
   obtain ⟨⟨r, st1⟩, -, lay, ⟨items, hr, rfl⟩, rfl⟩ := h
   exact nest_shape _ (hm _ (hres _ _ _ _ hr))
+
+/-! ## The names the output reads -/
+
+mutual
+/-- Every statement-list walk has the read property. -/
+private theorem listReads_all [LawfulHasVal P] [HasOps P] [LawfulHasFvar P] [LawfulHasFvars P]
+    (Lc : List P.Ident) :
+    ∀ (ss : PStmts P) (κ : RE P) (d : Nat) (fEnd : Bool), ListReads Lc κ d fEnd ss
+  | [], κ, d, fEnd => listReads_nil Lc κ d fEnd
+  | s :: rest, κ, d, fEnd =>
+    listReads_cons (fun f => stmtReads_all Lc s κ d f) (listReads_all Lc rest κ d fEnd)
+/-- Every statement walk has the read property. -/
+private theorem stmtReads_all [LawfulHasVal P] [HasOps P] [LawfulHasFvar P] [LawfulHasFvars P]
+    (Lc : List P.Ident) :
+    ∀ (s : PStmt P) (κ : RE P) (d : Nat) (f : Bool), StmtReads Lc κ d f s
+  | .cmd c, κ, d, f => stmtReads_cmd Lc κ d f c
+  | .exit l md, κ, d, f => stmtReads_exit Lc κ d f l md
+  | .block l body md, κ, d, f => stmtReads_block md fun κB => listReads_all Lc body κB (d + 1) f
+  | .ite (.det c) tss ess md, κ, d, f => by
+    cases f <;> simp only [StmtReads, wpStmt, Bool.false_eq_true, ↓reduceIte]
+    · exact iteRealReads md (listReads_all Lc tss .top d false) (listReads_all Lc ess .top d false)
+    · exact iteLaidReads md (fun κ' => listReads_all Lc tss κ' d true)
+        (fun κ' => listReads_all Lc ess κ' d true)
+  | .ite .nondet _ _ _, κ, d, f | .loop _ _ _ _ _, κ, d, f | .typeDecl _ _, κ, d, f =>
+    stmtReads_other Lc κ d f _ ⟨nofun, nofun, nofun, nofun⟩
+end
+
+/-- The output of the WP phase of a well-scoped loop-free list reads only variables the list
+    reads. -/
+theorem wpEntry_fv [LawfulHasVal P] [HasOps P] [LawfulHasFvar P] [LawfulHasFvars P] {G : IdSet P}
+    {tys : Tys P} {ss : PStmts P} {w : WOut P} (h : wpEntry G tys ss = .ok w)
+    {Lc S : List P.Ident} (hwf : Block.WellScoped Lc S ss) :
+    ∀ x ∈ Block.freeVars w.lay, x ∈ Block.freeVars ss := by
+  have hres : ∀ {S S' : List P.Ident} {ss : PStmts P}, (∀ x ∈ S', x ∈ S) →
+      (∀ x ∈ S, x ∈ Block.idents ss → x ∈ S') → Block.WellScoped Lc S ss →
+      Block.WellScoped Lc S' ss := by
+    intro S S' ss
+    induction S, ss using Block.WellScoped.induct (motive_2 := fun S s => ∀ S', (∀ x ∈ S', x ∈ S) →
+      (∀ x ∈ S, x ∈ Stmt.idents s → x ∈ S') → Stmt.WellScoped Lc S s →
+        Stmt.WellScoped Lc S' s) generalizing S' <;>
+      grind [Block.WellScoped, Stmt.WellScoped, Block.idents, Stmt.idents, mem_exprFV,
+        ExprOrNondet.getVars_det]
+  simp only [wpEntry, wpBody, StateT.run, Except.bind_is_ok, Except.pure_is_ok] at h
+  obtain ⟨⟨r, st1⟩, hrun, lay, hlay, rfl⟩ := h
+  intro x hx
+  let S' := S.filter fun y => (Block.idents ss).contains y
+  have hwf' : Block.WellScoped Lc S' ss := hres (fun y hy => (List.mem_filter.1 hy).1)
+    (fun y hy hi => List.mem_filter.2 ⟨hy, by simpa using hi⟩) hwf
+  have havS : ∀ y ∈ S' ++ Block.idents ss, ∀ b j, y = freshName b j →
+      (inputAvoid G tys ss).contains y = true := fun y hy _ _ _ => by
+    grind [inputAvoid, AvoidSet.contains, IdSet.ofList]
+  have R := listReads_all Lc ss .top 0 false (fun _ => rfl) _ r st1
+    (by constructor <;> grind [TyKey, inputAvoid, AvoidSet.contains, IdSet.ofList,
+      → foldr_insert_key]) hrun S' hwf' havS (fun _ _ h => by simp at h) (fun _ _ => by simp) nofun
+    (deadBelow_of_dead_empty rfl) (liveKeys_empty rfl)
+  obtain ⟨z, hz, hv, hc⟩ := (R.reads false nofun x (emit_fv hlay x hx)).resolve_right nofun
+  obtain ⟨hcz, -⟩ := (wpList_top_facts hwf' ⟨rfl, rfl, rfl, rfl⟩
+    (fun y hy b j hj => havS y (List.mem_append_left _ hy) b j hj) hrun).1 z hz
+  exact Option.some.inj (hcz.symm.trans hc) ▸ hv
 
 end -- public section
 

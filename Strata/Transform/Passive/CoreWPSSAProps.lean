@@ -23,7 +23,11 @@ empty contract), `wpSSALoopFree_ok` (what a successful run of both phases on one
 computes), `wpSSAProgramWith_lemma` (each lemma of a program has the obligation unit of its
 obligation in the obligation program), `wpSSALoopFree_hal` (with the values of `old x` in place,
 the entry aliases hold the values of the names they alias), `wpSSALoopFree_checks` (a
-successful run discharges the syntactic hypotheses on the loop-free list). -/
+successful run discharges the syntactic hypotheses on the loop-free list) and
+`entryStore_rel` (the entry store satisfies `Rel` and `SemanticStore.DomIn`).
+
+Key definitions: `entryDom` (the names an obligation store may bind at entry), `entryStore`
+(the obligation store read from a loop-free store through the entry renaming). -/
 
 namespace Core
 namespace WP
@@ -40,6 +44,13 @@ private theorem ren_get_cases (ρ : Ren Expression) (x : Expression.Ident) :
     (ρ.get x = x ∧ x ∉ ρ.map Prod.fst) ∨ ∃ q ∈ ρ, q.1 = x ∧ ρ.get x = q.2 := by
   induction ρ <;> grind [Ren.get]
 
+/-- The names an obligation store may bind at the entry of the obligation program of the
+    loop-free list `ss`, under the entry renaming `ρ0` with in-scope variables `S`: the targets
+    of `ρ0`, and the variables of `S` and of `ss` that `ρ0` does not rename. -/
+@[expose] def entryDom (ρ0 : Ren Expression) (S : List Expression.Ident) (ss : Statements) :
+    List Expression.Ident :=
+  ρ0.map Prod.snd ++ (S ++ Block.idents ss).filter fun x => !(ρ0.map Prod.fst).contains x
+
 /-- **A successful run of both phases on a loop-free list** `ss` of `p`: the WP phase succeeds
     (`wpLoopFree`, after `checkLoopFree`) with `w`, and the SSA phase on its guarded program
     (`ssaLoopFree`) with the entry renaming `ρ0` and the output `so`. -/
@@ -49,6 +60,36 @@ theorem wpSSALoopFree_ok {Gw Gs : IdSet Expression} {p : Procedure} {ss : Statem
     wpLoopFree Gw p ss = .ok w ∧ checkLoopFree p ss = .ok () ∧
       ssaLoopFree Gs p w.lay = .ok (ρ0, so) := by
   grind [wpSSALoopFree, wpLoopFree, Except.bind_is_ok, Except.pure_is_ok]
+
+/-! ## The entry store
+
+The obligation store built from the loop-free store through the entry renaming
+(`entryStore`), on which `Rel` and `SemanticStore.DomIn` hold by construction. -/
+
+/-- The obligation store that reads each name `y` from the loop-free store `σ` at the first
+    variable of `R` that `ρ0` renames to `y`; a name that no variable of `R` is renamed to is
+    unbound. -/
+@[expose] def entryStore (ρ0 : Ren Expression) (R : List Expression.Ident)
+    (σ : SemanticStore Expression) : SemanticStore Expression :=
+  fun y => (R.find? fun x => ρ0.get x == y).bind σ
+
+/-- The entry store built from the variables of `S` that `V` contains is related to `σ`
+    through `ρ0` on those variables (`Rel`) and binds only names of `entryDom ρ0 S ss`,
+    provided `σ` binds each of these variables, gives equal values to two of them that `ρ0`
+    maps to the same name, leaves every local of `Lc` outside `S` unbound, and binds only
+    values. -/
+theorem entryStore_rel {F : Expression.Factory} {Lc S V : List Expression.Ident}
+    {ρ0 : Ren Expression} {σ : SemanticStore Expression} (ss : Statements)
+    (hal : ∀ x ∈ S, x ∈ V → ∀ y ∈ S, y ∈ V → ρ0.get x = ρ0.get y → σ x = σ y)
+    (hdef : ∀ x ∈ S, x ∈ V → (σ x).isSome) (hundef : ∀ x ∈ Lc, x ∉ S → σ x = none)
+    (hC : WellFormedStore σ F) :
+    Rel F Lc ρ0 S V σ (entryStore ρ0 (S.filter (· ∈ V)) σ) ∧
+      SemanticStore.DomIn (entryStore ρ0 (S.filter (· ∈ V)) σ) (entryDom ρ0 S ss) := by
+  refine ⟨⟨fun x hx hv => ⟨?_, hdef x hx hv⟩, hundef, hC, fun y v hy => ?_⟩, fun y hy => ?_⟩
+  · grind [entryStore, List.find?_isSome, Option.isSome_iff_exists, List.mem_of_find?_eq_some]
+  · exact (Option.bind_eq_some_iff.1 hy).elim fun _ h => hC _ v h.2
+  · obtain ⟨x, hf, -⟩ := (Option.any_eq_true _ _).1 (Option.isSome_bind .. ▸ hy)
+    grind [entryDom, List.mem_of_find?_eq_some, ren_get_cases ρ0 x]
 
 /-! ## Aliasing at entry from the values of `old x`
 

@@ -149,17 +149,34 @@ import Strata.Transform.SSA.SSAEval
 import Strata.Transform.SSA.SSAOver
 import Strata.Transform.WP.WPProps
 import Strata.Util.RopeProps
+import Strata.Util.LeftistHeapProps
 import Strata.Transform.Passive.CoreProgram
 import Strata.Transform.Passive.CoreProgramProps
 import Strata.Transform.Passive.DeclObligationsCoreCorrect
 import Strata.Transform.Passive.CoreWPSSA
 import Strata.Transform.Passive.CoreWPSSAProps
+import Strata.Transform.Passive.CoreTyped
 import Strata.Transform.WP.WPCoreProgram
 import Strata.Transform.WP.WPCoreProgramProps
 import Strata.Transform.WP.WPCoreCorrect
 import Strata.Transform.SSA.SSACoreProgram
 import Strata.Transform.SSA.SSACoreProgramProps
 import Strata.Transform.SSA.SSACoreCorrect
+import Strata.Transform.Passive.Over
+import Strata.Transform.WP.WPRestrict
+import Strata.Transform.WP.WPCoreDefs
+import Strata.Transform.WP.WPEvalIface
+import Strata.Transform.WP.WPOutDecls
+import Strata.Transform.WP.WPOutOps
+import Strata.Transform.WP.WPOutSyntax
+import Strata.Transform.WP.WPOutTypes
+import Strata.Transform.WP.WPOutTyping
+import Strata.Transform.WP.WPOutTypingWalk
+import Strata.Transform.WP.WPReplay
+import Strata.Transform.WP.WPCoreGate
+import Strata.Transform.WP.WPCoreTyping
+import Strata.Transform.WP.WPCoreOps
+import Strata.Transform.WP.WPCorePrefix
 
 -- Equality simplification: failures are kept, given its expression-level steps are sound.
 import Strata.Transform.EqualitySimplificationCorrect

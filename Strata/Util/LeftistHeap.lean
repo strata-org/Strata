@@ -11,10 +11,12 @@ public import Strata.Init
 
 A leftist max-heap of natural numbers: the largest element is at the root (`LeftistHeap.max?`),
 two heaps merge in logarithmic time (`LeftistHeap.merge`), and the largest elements equal to a
-given number are removed together (`LeftistHeap.popEq`).
+given number are removed together (`LeftistHeap.popEq`). The elements of a heap
+(`LeftistHeap.elems`) and the heap order (`LeftistHeap.Ord`) state their properties, in
+`Strata.Util.LeftistHeapProps`.
 
 Key definitions: `LeftistHeap`, `LeftistHeap.merge`, `LeftistHeap.single`, `LeftistHeap.max?`,
-`LeftistHeap.popEq`. -/
+`LeftistHeap.popEq`, `LeftistHeap.elems`, `LeftistHeap.Ord`. -/
 
 namespace Strata.Util
 
@@ -76,6 +78,16 @@ private theorem size_merge :
     if v = k then popEq k (merge l q) else .node r v l q
   termination_by h => h.size
   decreasing_by rw [size_merge]; simp only [size]; omega
+
+/-- The elements of a heap. -/
+@[expose] def elems : LeftistHeap → List Nat
+  | .empty => []
+  | .node _ v l r => v :: (elems l ++ elems r)
+
+/-- A heap is ordered: the value of each node bounds the elements below it. -/
+@[expose] def Ord : LeftistHeap → Prop
+  | .empty => True
+  | .node _ v l r => Ord l ∧ Ord r ∧ ∀ x ∈ elems l ++ elems r, x ≤ v
 
 end LeftistHeap
 
