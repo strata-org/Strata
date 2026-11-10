@@ -840,12 +840,68 @@ public def testLaurelVerification (block : SourcedProgram)
   let annotations := parseAnnotations block.source
   runVerifyPath block options annotations showLocations showSnippet debug
 
+/-- The Core program that Cortex translates a Laurel program to, with CFG
+bodies when `cfg` holds, or the messages of the failed translation. -/
+private def cortexCore (program : Laurel.LaurelProgram) (options : Laurel.LaurelTranslateOptions)
+    (cfg : Bool) : Except String Core.Program :=
+  match Cortex.translate options program (cfg := cfg) with
+  | (some core, _) => .ok core
+  | (none, messages) => .error ("; ".intercalate (messages.map fun m => s!"[{m.kind}] {m.message}"))
+
+/-- Check the Core program with CFG bodies that Cortex emits for `program`
+against the structured one. The CFG program has to translate and type-check,
+unless the structured program fails at the same stage: a failure that both
+routes share comes from the program and is left to the verification path. A
+program that does not parse is left to that path as well. The error thrown
+carries the messages of the failed translation or type check. -/
+private def checkCortexCFGTypes (program : StrataDDM.Program)
+    (options : Laurel.LaurelTranslateOptions) : IO Unit := do
+  let .ok laurelProgram :=
+    Laurel.TransM.run (Strata.Uri.file "<#strata>") (Laurel.parseProgram program) | return
+  let structured := cortexCore laurelProgram options (cfg := false)
+  match cortexCore laurelProgram options (cfg := true) with
+  | .error e =>
+    if structured.isOk then
+      throw (IO.userError s!"cortex-cfg: translation to Core with CFG bodies failed: {e}")
+  | .ok cfgCore =>
+    let .error e := Core.typeCheck .quiet cfgCore | return
+    let shared := match structured with
+      | .ok core => !(Core.typeCheck .quiet core).isOk
+      | .error _ => false
+    unless shared do
+      throw (IO.userError s!"cortex-cfg: Core type checking failed: {e}")
+
+/-- Verify a `#strata`-parsed Laurel program through the Cortex pipeline and
+check its diagnostics against the inline annotations, as
+`testLaurelVerification` does for the Laurel pipeline. Also checks the Core
+program with CFG bodies, as `checkCortexCFGTypes` describes. -/
 public def testCortexVerification (block : SourcedProgram)
     (options : LaurelVerifyOptions := defaultLaurelTestOptions)
     (showLocations : Bool := false) (showSnippet : Bool := false)
     (debug : Bool := false) : IO Unit := do
   let annotations := parseAnnotations block.source
   runVerifyPath block options annotations showLocations showSnippet debug (cortex := true)
+  checkCortexCFGTypes block.program options.translateOptions
+
+/-- Print the named procedures of the Core program with CFG bodies that Cortex
+translates a `#strata`-parsed Laurel program to, then the result of
+type-checking that program. -/
+public def printCortexCoreCFG (block : SourcedProgram) (procs : List String) : IO Unit := do
+  let laurelProgram ← translateLaurel block.program
+  let core ← match cortexCore laurelProgram {} (cfg := true) with
+    | .ok core => pure core
+    | .error e => throw (IO.userError s!"cortex-cfg: translation to Core with CFG bodies failed: {e}")
+  -- The program is printed whole, so that its types and functions are in scope
+  -- for the printer, and only the named procedures are kept: each runs from its
+  -- `procedure <name> (` line to the `};` that closes it.
+  let mut keep := false
+  for line in (toString (Std.format core)).splitOn "\n" do
+    if procs.any (fun p => line.startsWith s!"procedure {p} (") then keep := true
+    if keep then IO.println line
+    if line == "};" then keep := false
+  match Core.typeCheck .quiet core with
+  | .ok _ => IO.println "type check: ok"
+  | .error e => IO.println s!"type check: {e}"
 
 /-- Run a `#strata`-parsed program through the execution paths selected by
     `paths`, checking each enabled path against the block's inline

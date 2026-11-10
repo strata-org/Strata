@@ -29,7 +29,11 @@ def resolveLaurel (options : LaurelTranslateOptions) (program : LaurelProgram) :
   let errs := result.errors.toList
   if errs.any (·.kind != .warning) then .error errs else .ok (result.program, result.model, errs)
 
-def translate (options : LaurelTranslateOptions) (program : LaurelProgram) :
+/-- Translate a Laurel program to Core through Cortex. With `cfg`, procedure
+bodies are Core CFG bodies; otherwise they are structured. The verifier
+(`Core.verify`) and the evaluator behind `Core.Program.interpretEntries` accept
+only structured bodies. -/
+def translate (options : LaurelTranslateOptions) (program : LaurelProgram) (cfg : Bool := false) :
     Option Core.Program × List Message :=
   if options.passes.isSome then
     (none, [Message.fromString "--phases and --skip-phases select Laurel phases, which the Cortex pipeline does not run"
@@ -43,7 +47,7 @@ def translate (options : LaurelTranslateOptions) (program : LaurelProgram) :
       let all := ds ++ d
       (none, if all.isEmpty then [Message.fromString "Laurel to Cortex translation failed" MessageKind.strataBug] else all)
     | (some m, d) =>
-      match toCoreProgram m with
+      match (if cfg then toCoreProgramCFG m else toCoreProgram m) with
       | .ok core => (some core, ds ++ d)
       | .error e => (none, ds ++ d ++ [Message.fromString s!"Cortex lowering failed: {e}" MessageKind.strataBug])
 

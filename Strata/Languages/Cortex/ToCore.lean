@@ -169,10 +169,10 @@ def callArgs (sig : Option Sig) (lhs : List Core.Expression.Ident) (args : List 
     termination_by is.length
     return merge (s.inputs.zip ins) outs
 
-def toCoreCmd (sigs : Std.HashMap String Sig) : IRCmd → Except String Core.Statement
-  | .cmd c => .ok (.cmd (.cmd c))
+def toCoreCmd (sigs : Std.HashMap String Sig) : IRCmd → Except String Core.Command
+  | .cmd c => .ok (.cmd c)
   | .call lhs p args md => do
-    return Core.Statement.call p (← callArgs (sigs.get? p) lhs args) md
+    return .call p (← callArgs (sigs.get? p) lhs args) md
   | .virtualCall .. => .error "Cortex `virtualCall` must be lowered by LowerDispatch before Core"
   | .new .. => .error "Cortex `new` must be lowered before Core"
   | .readField .. => .error "Cortex field read must be lowered before Core"
@@ -221,7 +221,7 @@ partial def nodeWithin (sigs : Std.HashMap String Sig) (g : Graph) (x : String) 
           let f ← doBranch sigs g x lf
           pure [Stmt.ite (.det c) t f md]
       | .finish md => pure [Stmt.exit bodyLabel md]
-    return cmds ++ tail
+    return cmds.map Stmt.cmd ++ tail
 
 partial def doBranch (sigs : Std.HashMap String Sig) (g : Graph) (x l : String) :
     Except String (List Core.Statement) :=
@@ -231,38 +231,37 @@ partial def doBranch (sigs : Std.HashMap String Sig) (g : Graph) (x l : String) 
 
 end
 
-def assignedNames : IRCmd → List String
-  | .cmd (.init x ..) | .cmd (.set x ..) => [x.name]
-  | .call lhs .. | .virtualCall lhs .. => lhs.map (·.name)
-  | .new x .. | .readField x .. | .instanceOf x .. => [x.name]
-  | _ => []
-
 def structureBody (sigs : Std.HashMap String Sig) (b : Body) : Except String (List Core.Statement) := do
-  unless b.handlers.isEmpty do throw "exception handlers must be lowered before Core"
+  b.refuseHandlers "Core"
   let g ← buildGraph b.cfg
   let code ← doTree sigs g b.cfg.entry
   return [.block bodyLabel code .empty]
 
-def procedureToCore (sigs : Std.HashMap String Sig) (p : Procedure) : Except String Core.Procedure := do
+/-- The Core header of a procedure: its name and its parameters with monomorphic
+types. A body may assign only its outputs and its locals, so an assigned input
+that is not an output is an error: the `CopyAssignedInputs` pass replaces such
+an assignment by one to a local copy. -/
+def procedureHeader (p : Procedure) : Except String Core.Procedure.Header := do
   let outNames := p.outputs.map (·.1.name)
-  let assigned : List String := match p.body with
-    | some b => b.cfg.blocks.flatMap fun (_, blk) => blk.cmds.flatMap assignedNames
-    | none => []
-  let mutatedInputs := p.inputs.filter fun (x, _) => assigned.contains x.name && !outNames.contains x.name
-  let rename := fun (x : Core.Expression.Ident) =>
-    if mutatedInputs.any (·.1 == x) then (⟨s!"{x.name}$in", ()⟩ : Core.Expression.Ident) else x
-  let inputs ← p.inputs.mapM fun (x, t) => do return (rename x, ← toMono t)
+  let assigned := (p.body.map Body.assignedNames).getD []
+  if let some (x, _) := p.inputs.find? fun (x, _) => assigned.contains x.name && !outNames.contains x.name then
+    throw s!"procedure '{p.name}' assigns its input '{x.name}': the CopyAssignedInputs pass must run before Core"
+  let inputs ← p.inputs.mapM fun (x, t) => do return (x, ← toMono t)
   let outputs ← p.outputs.mapM fun (x, t) => do return (x, ← toMono t)
-  let copies : List Core.Statement := mutatedInputs.map fun (x, t) =>
-    Core.Statement.init x t (.det (.fvar () (rename x) none)) .empty
+  return { name := ⟨p.name, ()⟩, typeArgs := [], inputs, outputs }
+
+def procedureToCore (sigs : Std.HashMap String Sig) (p : Procedure) : Except String Core.Procedure := do
+  let header ← procedureHeader p
   let body ← match p.body with
-    | some b => do pure (copies ++ (← structureBody sigs b))
+    | some b => structureBody sigs b
     | none => pure [Core.Statement.assume "assume_true" (.true ()) .empty]
-  let header : Core.Procedure.Header :=
-    { name := ⟨p.name, ()⟩, typeArgs := [], inputs, outputs }
   return { header, spec := { preconditions := [], postconditions := [] }, body := .structured body }
 
-def programToCore : Program → Except String Core.Program
+/-- An ordered Cortex program as a Core program, translating each procedure with
+`procToCore`. -/
+def programToCoreWith
+    (procToCore : Std.HashMap String Sig → Procedure → Except String Core.Procedure) :
+    Program → Except String Core.Program
   | .unordered _ => .error "Internal error: Cortex must be ordered by the Ordering pass before Core"
   | .ordered prog => do
     let sigs : Std.HashMap String Sig := prog.decls.foldl (fun s d => match d with
@@ -271,8 +270,12 @@ def programToCore : Program → Except String Core.Program
     let decls ← prog.decls.mapM fun
       | .datatypes ds => pure (Core.Decl.type (.data ds) .empty)
       | .opaqueType tc => pure (Core.Decl.type (.con tc) .empty)
-      | .procedure p => do return Core.Decl.proc (← procedureToCore sigs p) p.md
+      | .procedure p => do return Core.Decl.proc (← procToCore sigs p) p.md
     return { decls }
+
+/-- An ordered Cortex program as a Core program with structured bodies. -/
+def programToCore : Program → Except String Core.Program :=
+  programToCoreWith procedureToCore
 
 end
 

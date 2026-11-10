@@ -122,15 +122,24 @@ def cortexInterpretBinaryCommand : Command where
 def cortexToCoreCommand : Command where
   name := "cortexToCore"
   args := [ "file" ]
+  flags := [{ name := "cfg",
+              help := "Emit procedure bodies as Core CFG bodies and type-check the result; \
+                       exit with an error on a type error." }]
   help := "Translate a Laurel source file to Core through the Cortex pipeline and print it."
-  callback := fun v _ => do
+  callback := fun v pflags => do
+    let cfg := pflags.getBool "cfg"
     let laurelProgram ← Strata.readLaurelTextFile v[0]
-    let (coreProgramOption, errors) := Cortex.translate {} laurelProgram
+    let (coreProgramOption, errors) := Cortex.translate {} laurelProgram (cfg := cfg)
     if !errors.isEmpty then
       IO.println s!"Core translation errors: {errors.map (·.message)}"
     match coreProgramOption with
     | none => return
-    | some coreProgram => IO.println (prettyPrintCore coreProgram)
+    | some coreProgram =>
+      IO.println (prettyPrintCore coreProgram)
+      if cfg then
+        match _root_.Core.typeCheck .quiet coreProgram with
+        | .ok _ => IO.println "Core type checking succeeded."
+        | .error e => exitFailure s!"Core type checking failed: {e}"
 
 def cortexFrontend : CliFrontend where
   dialects := []

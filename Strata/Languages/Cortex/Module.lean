@@ -137,6 +137,21 @@ def UnorderedProgram.refuseVirtualCalls (p : UnorderedProgram) (pass : String) :
   if p.hasVirtualCall then .error s!"Cortex `virtualCall` must be lowered by LowerDispatch before {pass}"
   else .ok ()
 
+def Body.refuseHandlers (b : Body) (stage : String) : Except String Unit :=
+  if b.handlers.isEmpty then .ok ()
+  else .error s!"exception handlers must be lowered before {stage}"
+
+/-- The variables that a command declares or assigns. -/
+def assignedNames : IRCmd → List String
+  | .cmd (.init x ..) | .cmd (.set x ..) => [x.name]
+  | .call lhs .. | .virtualCall lhs .. => lhs.map (·.name)
+  | .new x .. | .readField x .. | .instanceOf x .. => [x.name]
+  | _ => []
+
+/-- The variables that the commands of `b` declare or assign. -/
+def Body.assignedNames (b : Body) : List String :=
+  b.cfg.blocks.flatMap fun (_, blk) => blk.cmds.flatMap Cortex.assignedNames
+
 def Body.maxFresh (b : Body) : Nat := b.cfg.blocks.length
 
 end
