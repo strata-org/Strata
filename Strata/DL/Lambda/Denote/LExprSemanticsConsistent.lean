@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.LTyProps
 
 import all Strata.DL.Lambda.LExprEvalSound
@@ -34,6 +35,19 @@ evaluation steps preserve denotation, type, and structural invariants.
 ### Bundled assumption structures
 - `Env.InterpConsistent` — environment values denote as the free-variable valuation
 - `InterpConsistent` — interpretation consistency (factory, constructors, environment)
+
+### At one type-variable valuation, under weaker factory conditions
+The results above follow from versions that ask the environment to be consistent at the one
+type-variable valuation `vt` of the run (`Env.InterpConsistentAt`) and ask the factory
+conditions only where a step uses them (`Factory.StepWFOn`): concrete evaluators on arguments
+that satisfy the condition (`Factory.EvalOpsConsistentOn`, `Factory.EvalAnnotatedOn`), function
+bodies at the type substitutions inlining computes (`Factory.BodyOpsConsistentOn`), and inlined
+bodies, whose parameters are replaced by the arguments, rather than bodies
+(`Factory.BodyInlineAnnotated`).
+- `Step.denote_preservedAt`, `Step.OpsConsistent_preservedOn`, `Step.fvars_annotated_preservedOn`
+- `StepStar.type_preservedOn`, `StepStar.denote_preservedAt`
+- `eval_denote_soundAt` — `LExpr.eval` preserves denotation at `vt`; `Factory.EvalSoundWF` bundles
+  its factory conditions
 -/
 
 namespace Lambda
@@ -63,6 +77,104 @@ structure InterpConsistent [DecidableEq T.IDMeta] (F : @Factory T)
   factory : Factory.InterpConsistent tcInterp opInterp F
   constr : ConstrInterpConsistent tcInterp opInterp F
   env : Env.InterpConsistent tcInterp opInterp env fvarVal
+
+/-- The free-variable valuation `fvarVal` is consistent with the environment `env` at the
+type-variable valuation `vt`: every binding `env x = some e` that is well-typed at `ty` denotes,
+under `vt`, the value `fvarVal` gives `x` at the sort `ty` denotes under `vt`. -/
+def Env.InterpConsistentAt (env : T.Identifier → Option (LExpr T.mono)) : Prop :=
+  ∀ (x : T.Identifier) (e : LExpr T.mono) (ty : LMonoTy),
+    env x = some e →
+    ∀ (h : LExpr.HasTypeA [] e ty),
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e ty h = fvarVal x (ty.substTyVars vt)
+
+/-- Every concrete evaluator of the factory returns an `OpsConsistent` result on arguments that
+are `OpsConsistent`. -/
+def Factory.EvalOpsConsistentOn [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
+  ∀ (f : String), (hf : f ∈ F) → ∀ ceval md args result, (F[f]).concreteEval = some ceval →
+    .some result = ceval md args → (∀ a ∈ args, OpsConsistent F a) → OpsConsistent F result
+
+/-- Every concrete evaluator of the factory returns a result whose free variables are annotated
+by `tyMap` on arguments whose free variables are. -/
+def Factory.EvalAnnotatedOn [DecidableEq T.IDMeta] (F : @Factory T)
+    (tyMap : Map T.Identifier LMonoTy) : Prop :=
+  ∀ (f : String), (hf : f ∈ F) → ∀ ceval md args result, (F[f]).concreteEval = some ceval →
+    .some result = ceval md args → (∀ a ∈ args, fvars_annotated_by tyMap a) →
+      fvars_annotated_by tyMap result
+
+/-- Every function body of the factory satisfies `OpsConsistent` after instantiation at every
+type substitution `computeTypeSubst` computes for a call, the substitutions inlining uses. -/
+def Factory.BodyOpsConsistentOn [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
+  ∀ (f : String), (hf : f ∈ F) → ∀ body callee args S, (F[f]).body = some body →
+    (F[f]).computeTypeSubst callee args = some S → OpsConsistent F (body.applyTypeSubst S)
+
+/-- Inlining a function body keeps free-variable annotations: the body, instantiated at any type
+substitution, with its parameters replaced by arguments whose free variables are annotated by
+`tyMap`, has its free variables annotated by `tyMap`. -/
+def Factory.BodyInlineAnnotated [DecidableEq T.IDMeta] (F : @Factory T)
+    (tyMap : Map T.Identifier LMonoTy) : Prop :=
+  ∀ (f : String), (hf : f ∈ F) → ∀ body S (args : List (LExpr T.mono)),
+    (F[f]).body = some body → args.length = (F[f]).inputs.length →
+    (∀ a ∈ args, fvars_annotated_by tyMap a) →
+    fvars_annotated_by tyMap
+      (LExpr.substFvarsLifting (body.applyTypeSubst S) ((F[f]).inputs.keys.zip args))
+
+/-- The factory conditions under which steps preserve typing, operator annotations and
+free-variable annotations at the type map `tyMap` (`StepStar.type_preservedOn`): function bodies
+and concrete evaluators are well typed, function bodies satisfy `OpsConsistent` at the type
+substitutions inlining uses, inlined bodies are annotated by `tyMap`, and concrete evaluators
+return `OpsConsistent` and annotated results on arguments that are. -/
+structure Factory.StepWFOn [DecidableEq T.IDMeta] (F : @Factory T)
+    (tyMap : Map T.Identifier LMonoTy) : Prop where
+  wt : Factory.WellTyped F
+  evalWt : Factory.EvalWellTyped F
+  bodyOps : Factory.BodyOpsConsistentOn F
+  evalOps : Factory.EvalOpsConsistentOn F
+  bodyAnnot : Factory.BodyInlineAnnotated F tyMap
+  evalAnnot : Factory.EvalAnnotatedOn F tyMap
+
+/-- The factory conditions under which `LExpr.eval` preserves denotation
+(`eval_denote_soundAt`): the factory and a type factory are well formed, and the conditions of
+`Factory.StepWFOn` hold at every type map. -/
+structure Factory.EvalSoundWFS [DecidableEq T.IDMeta] (F : @Factory T) : Prop where
+  wf : ∃ tf, Factory.WF F tf
+  step : ∀ tyMap, Factory.StepWFOn F tyMap
+
+/-- The factory conditions of `Factory.EvalSoundWFS`, under which `LExpr.eval` preserves
+denotation: the factory and a type factory are well formed (`Factory.WF`), function bodies and
+concrete evaluators preserve typing (`Factory.WellTyped`, `Factory.EvalWellTyped`), operator
+annotations (`OpsConsistent`) and free-variable annotations (`fvars_annotated_by`), function
+bodies at the type substitutions inlining uses and once inlined, the evaluators on arguments that
+have them. -/
+public def Factory.EvalSoundWF [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
+  Factory.EvalSoundWFS F
+
+/-- `Factory.EvalOpsConsistent` implies its form on `OpsConsistent` arguments. -/
+theorem Factory.EvalOpsConsistent.on [DecidableEq T.IDMeta] {F : @Factory T}
+    (h : Factory.EvalOpsConsistent F) : Factory.EvalOpsConsistentOn F :=
+  fun f hf ceval md args result hc hr _ => h f hf ceval md args result hc hr
+
+/-- `Factory.EvalAnnotated` implies its form on annotated arguments. -/
+theorem Factory.EvalAnnotated.on [DecidableEq T.IDMeta] {F : @Factory T}
+    {tyMap : Map T.Identifier LMonoTy} (h : Factory.EvalAnnotated F tyMap) :
+    Factory.EvalAnnotatedOn F tyMap :=
+  fun f hf ceval md args result hc hr _ => h f hf ceval md args result hc hr
+
+/-- `Factory.BodyOpsConsistent` implies its form at the substitutions inlining uses. -/
+theorem Factory.BodyOpsConsistent.on [DecidableEq T.IDMeta] {F : @Factory T}
+    (h : Factory.BodyOpsConsistent F) : Factory.BodyOpsConsistentOn F :=
+  fun f hf body _ _ S hb _ => h f hf body S hb
+
+/-- Bodies annotated by `tyMap` stay annotated once inlined with annotated arguments. -/
+theorem Factory.BodyAnnotated.inline [DecidableEq T.IDMeta] {F : @Factory T}
+    {tyMap : Map T.Identifier LMonoTy} (h : Factory.BodyAnnotated F tyMap) :
+    Factory.BodyInlineAnnotated F tyMap :=
+  fun f hf body S _ hb _ hargs => fvars_annotated_by_substFvarsLifting (h f hf body S hb)
+    fun _ v hv => hargs v (List.of_mem_zip (Map.find?_mem _ _ _ hv)).2
+
+/-- `Factory.StepWF` implies `Factory.StepWFOn`. -/
+theorem Factory.StepWF.toOn [DecidableEq T.IDMeta] {F : @Factory T}
+    {tyMap : Map T.Identifier LMonoTy} (h : Factory.StepWF F tyMap) : Factory.StepWFOn F tyMap :=
+  ⟨h.wt, h.evalWt, h.bodyOps.on, h.evalOps.on, h.bodyAnnot.inline, h.evalAnnot.on⟩
 
 /-! ### State substitution and denotation -/
 
@@ -202,12 +314,12 @@ Requires that the environment is:
 - locally closed (`hEnvLC`): env values have no dangling bound variables,
 - well-typed (`hEnvTy`): env values are well-typed at the types given by `hEnvTy.tyMap`,
 - annotated (`hAnnot`): fvar annotations in `e` match `hEnvTy.tyMap`. -/
-private theorem substFvarsFromEnv_denote_preserved
+private theorem substFvarsFromEnv_denote_preservedAt
     {env : Env T} {e : LExpr T.mono} {τ : LMonoTy}
     {Δ : List LMonoTy} {bvarVal : BVarVal tcInterp vt Δ}
     (h₁ : LExpr.HasTypeA Δ e τ)
     (h₂ : LExpr.HasTypeA Δ (LExpr.substFvarsFromEnv env e) τ)
-    (hEnv : Env.InterpConsistent tcInterp opInterp env fvarVal)
+    (hEnv : Env.InterpConsistentAt tcInterp opInterp fvarVal vt env)
     (hEnvLC : ∀ (x : T.Identifier) (v : LExpr T.mono),
       env x = some v → LExpr.lcAt 0 v = true)
     (hEnvTy : Env.Typed env)
@@ -231,7 +343,7 @@ private theorem substFvarsFromEnv_denote_preserved
         subst h_annot_eq
         have h_wt := hEnvTy.wt name v τ henv h_ty'
         have h_lc := hEnvLC name v henv
-        rw [← hEnv vt name v τ henv h_wt]
+        rw [← hEnv name v τ henv h_wt]
         exact denote_irrel_of_lcAt tcInterp opInterp fvarVal vt h_lc h_wt h₂ .nil bvarVal
       · rename_i henv
         simp only [LExpr.substFvarsFromEnv, henv]
@@ -300,6 +412,31 @@ private theorem substFvarsFromEnv_denote_preserved
               denote_eq_false bvarVal h_1' h_2' _
                 (by rw [← ih_eq1, ← ih_eq2]; exact heq)]
 
+
+omit [Inhabited T.mono.base.IDMeta] in
+/-- Substituting free variables from an environment preserves denotation.
+
+Requires that the environment is:
+- interpretation-consistent (`hEnv`): env values denote to what `fvarVal` gives,
+- locally closed (`hEnvLC`): env values have no dangling bound variables,
+- well-typed (`hEnvTy`): env values are well-typed at the types given by `hEnvTy.tyMap`,
+- annotated (`hAnnot`): fvar annotations in `e` match `hEnvTy.tyMap`. -/
+private theorem substFvarsFromEnv_denote_preserved
+    {env : Env T} {e : LExpr T.mono} {τ : LMonoTy}
+    {Δ : List LMonoTy} {bvarVal : BVarVal tcInterp vt Δ}
+    (h₁ : LExpr.HasTypeA Δ e τ)
+    (h₂ : LExpr.HasTypeA Δ (LExpr.substFvarsFromEnv env e) τ)
+    (hEnv : Env.InterpConsistent tcInterp opInterp env fvarVal)
+    (hEnvLC : ∀ (x : T.Identifier) (v : LExpr T.mono),
+      env x = some v → LExpr.lcAt 0 v = true)
+    (hEnvTy : Env.Typed env)
+    (hAnnot : fvars_annotated_by hEnvTy.tyMap e)
+    : LExpr.denote tcInterp opInterp fvarVal vt bvarVal e τ h₁ =
+      LExpr.denote tcInterp opInterp fvarVal vt bvarVal
+        (LExpr.substFvarsFromEnv env e) τ h₂ :=
+  substFvarsFromEnv_denote_preservedAt tcInterp opInterp fvarVal vt h₁ h₂
+    (fun x e ty hx hty => hEnv vt x e ty hx hty) hEnvLC hEnvTy hAnnot
+
 /-! ### Step relation preserves denotation -/
 
 /-- If `e₁` steps to `e₂` under a factory `F` and environment `env`, and both
@@ -317,7 +454,7 @@ Assumptions:
 - `hEnvLC`: environment values are locally closed (no dangling bound variables).
 - `hEnvTy`: environment values are well-typed (type map, consistency, coverage).
 - `hAnnot`: free variable annotations in `e₁` match `hEnvTy.tyMap`. -/
-theorem Step.denote_preserved
+theorem Step.denote_preservedAt
     {F : @Factory T} {env : Env T} {tf : @TypeFactory T.IDMeta}
     {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
     (hstep : Step F env e₁ e₂)
@@ -325,7 +462,7 @@ theorem Step.denote_preserved
     (h₂ : LExpr.HasTypeA [] e₂ τ)
     (hF : Factory.InterpConsistent tcInterp opInterp F)
     (hFwt : Factory.WellTyped F)
-    (hEnv : Env.InterpConsistent tcInterp opInterp env fvarVal)
+    (hEnv : Env.InterpConsistentAt tcInterp opInterp fvarVal vt env)
     (hOps : OpsConsistent F e₁)
     (hFwf : FactoryWF F)
     (hcwf : Factory.ConstrWellFormed F tf)
@@ -339,7 +476,7 @@ theorem Step.denote_preserved
   induction hstep generalizing τ with
   | expand_fvar x e henv =>
     cases h₁ with
-    | fvar => simp only [LExpr.denote]; exact (hEnv vt x _ _ henv h₂).symm
+    | fvar => simp only [LExpr.denote]; exact (hEnv x _ _ henv h₂).symm
   | beta e1 v2 eres heq =>
     subst heq
     cases h₁
@@ -462,7 +599,7 @@ theorem Step.denote_preserved
       | abs h_subst_body =>
         rw [denote_abs .nil h_body, denote_abs .nil h_subst_body]
         funext v
-        exact substFvarsFromEnv_denote_preserved tcInterp opInterp fvarVal vt
+        exact substFvarsFromEnv_denote_preservedAt tcInterp opInterp fvarVal vt
           h_body h_subst_body hEnv hEnvLC hEnvTy hAnnot
   | quant_subst_fvars_body tr body x hfv =>
     cases h₁ with
@@ -473,7 +610,7 @@ theorem Step.denote_preserved
               body .bool h_body =
             LExpr.denote tcInterp opInterp fvarVal vt (.cons v .nil)
               (LExpr.substFvarsFromEnv env body) .bool h_subst_body :=
-          fun v => substFvarsFromEnv_denote_preserved tcInterp opInterp fvarVal vt
+          fun v => substFvarsFromEnv_denote_preservedAt tcInterp opInterp fvarVal vt
             h_body h_subst_body hEnv hEnvLC hEnvTy hAnnot.2
         exact denote_quant_congr h_body h_subst_body _ _ h_body_eq
   | quant_subst_fvars_trigger tr body x hfv =>
@@ -642,6 +779,44 @@ theorem Step.denote_preserved
     congr 1
     subst hty_op
     grind
+
+
+/-- If `e₁` steps to `e₂` under a factory `F` and environment `env`, and both
+are well-typed at the same type `τ`, then they have the same denotation.
+
+Assumptions:
+- `hF`: the factory's function bodies denote consistently with `opInterp`.
+- `hFwt`: the factory's function bodies are well-typed.
+- `hEnv`: environment values denote consistently with `fvarVal`.
+- `hOps`: every op referenced in `e₁` has a corresponding factory entry.
+- `hFwf`: the factory is well-formed (arities, types match declarations).
+- `hcwf`: constructor declarations in `F` are well-formed w.r.t. `tf`.
+- `hConstrIC`: constructor interpretations are consistent with `tcInterp`/`opInterp`.
+- `htfwf`: the type factory is well-formed.
+- `hEnvLC`: environment values are locally closed (no dangling bound variables).
+- `hEnvTy`: environment values are well-typed (type map, consistency, coverage).
+- `hAnnot`: free variable annotations in `e₁` match `hEnvTy.tyMap`. -/
+theorem Step.denote_preserved
+    {F : @Factory T} {env : Env T} {tf : @TypeFactory T.IDMeta}
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    (hstep : Step F env e₁ e₂)
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (h₂ : LExpr.HasTypeA [] e₂ τ)
+    (hF : Factory.InterpConsistent tcInterp opInterp F)
+    (hFwt : Factory.WellTyped F)
+    (hEnv : Env.InterpConsistent tcInterp opInterp env fvarVal)
+    (hOps : OpsConsistent F e₁)
+    (hFwf : FactoryWF F)
+    (hcwf : Factory.ConstrWellFormed F tf)
+    (hConstrIC : ConstrInterpConsistent tcInterp opInterp F)
+    (htfwf : TypeFactoryWF tf)
+    (hEnvLC : ∀ (x : T.Identifier) (e : LExpr T.mono), env x = some e → LExpr.lcAt 0 e = true)
+    (hEnvTy : Env.Typed env)
+    (hAnnot : fvars_annotated_by hEnvTy.tyMap e₁)
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ :=
+  Step.denote_preservedAt tcInterp opInterp fvarVal vt hstep h₁ h₂ hF hFwt
+    (fun x e ty hx hty => hEnv vt x e ty hx hty) hOps hFwf hcwf hConstrIC htfwf hEnvLC hEnvTy hAnnot
 
 /-- A single step preserves well-typedness.
 
@@ -899,15 +1074,18 @@ private theorem substFvarsFromEnv_OpsConsistent
     simp only [LExpr.substFvarsFromEnv, OpsConsistent]
     exact ⟨ih1 hOps.1, ih2 hOps.2⟩
 
-/-- A single step preserves `OpsConsistent`. -/
-theorem Step.OpsConsistent_preserved
+/-- A single step preserves `OpsConsistent`, when function bodies are `OpsConsistent` at the
+type substitutions inlining computes (`Factory.BodyOpsConsistentOn`) and the factory's concrete
+evaluators return `OpsConsistent` results on `OpsConsistent` arguments
+(`Factory.EvalOpsConsistentOn`). -/
+theorem Step.OpsConsistent_preservedOn
     {F : @Factory T} {env : Env T}
     {e₁ e₂ : LExpr T.mono}
     (hstep : Step F env e₁ e₂)
     (hOps : OpsConsistent F e₁)
     (hEnvOps : ∀ (x : T.Identifier) (e : LExpr T.mono), env x = some e → OpsConsistent F e)
-    (hFBodyOps : Factory.BodyOpsConsistent F)
-    (hFEvalOps : Factory.EvalOpsConsistent F)
+    (hFBodyOps : Factory.BodyOpsConsistentOn F)
+    (hFEvalOps : Factory.EvalOpsConsistentOn F)
     : OpsConsistent F e₂ := by
   induction hstep with
   | expand_fvar x e henv => exact hEnvOps x e henv
@@ -946,7 +1124,8 @@ theorem Step.OpsConsistent_preserved
     -- Body satisfies OpsConsistent after applyTypeSubst
     have h_body_eq : (F[name.name]).body = some fnbody := by rw [h_fn_eq]; exact hbody
     have h_body_ops : OpsConsistent F (fnbody.applyTypeSubst tySubst) :=
-      hFBodyOps name.name h_fn_mem fnbody tySubst h_body_eq
+      hFBodyOps name.name h_fn_mem fnbody callee args tySubst h_body_eq
+        (by rw [h_fn_eq]; exact htysubst)
     -- Args satisfy OpsConsistent
     have h_args_ops : ∀ a ∈ args, OpsConsistent F a :=
       OpsConsistent_callOfLFunc_args hOps hcall
@@ -963,6 +1142,7 @@ theorem Step.OpsConsistent_preserved
     have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
     have h_eval_eq : (F[name.name]).concreteEval = some denotefn := by rw [h_fn_eq]; exact heval
     exact hFEvalOps name.name h_fn_mem denotefn _ args e' h_eval_eq hresult
+      (OpsConsistent_callOfLFunc_args hOps hcall)
   | abs_subst_fvars body x hfv =>
     exact substFvarsFromEnv_OpsConsistent hOps hEnvOps
   | quant_subst_fvars_body tr body x hfv =>
@@ -970,8 +1150,22 @@ theorem Step.OpsConsistent_preserved
   | quant_subst_fvars_trigger tr body x hfv =>
     exact ⟨substFvarsFromEnv_OpsConsistent hOps.1 hEnvOps, hOps.2⟩
 
-/-- A single step preserves `fvars_annotated_by`. -/
-theorem Step.fvars_annotated_preserved
+/-- A single step preserves `OpsConsistent`. -/
+theorem Step.OpsConsistent_preserved
+    {F : @Factory T} {env : Env T}
+    {e₁ e₂ : LExpr T.mono}
+    (hstep : Step F env e₁ e₂)
+    (hOps : OpsConsistent F e₁)
+    (hEnvOps : ∀ (x : T.Identifier) (e : LExpr T.mono), env x = some e → OpsConsistent F e)
+    (hFBodyOps : Factory.BodyOpsConsistent F)
+    (hFEvalOps : Factory.EvalOpsConsistent F)
+    : OpsConsistent F e₂ :=
+  Step.OpsConsistent_preservedOn hstep hOps hEnvOps hFBodyOps.on hFEvalOps.on
+
+/-- A single step preserves `fvars_annotated_by`, when inlined function bodies are annotated
+(`Factory.BodyInlineAnnotated`) and the factory's concrete evaluators return annotated results on
+annotated arguments (`Factory.EvalAnnotatedOn`). -/
+theorem Step.fvars_annotated_preservedOn
     {F : @Factory T} {env : Env T}
     {e₁ e₂ : LExpr T.mono}
     (hstep : Step F env e₁ e₂)
@@ -979,8 +1173,8 @@ theorem Step.fvars_annotated_preserved
     (hAnnot : fvars_annotated_by hEnvTy.tyMap e₁)
     (hEnvAnnot : ∀ (x : T.Identifier) (e : LExpr T.mono), env x = some e →
         fvars_annotated_by hEnvTy.tyMap e)
-    (hFBodyAnnot : Factory.BodyAnnotated F hEnvTy.tyMap)
-    (hFEvalAnnot : Factory.EvalAnnotated F hEnvTy.tyMap)
+    (hFBodyAnnot : Factory.BodyInlineAnnotated F hEnvTy.tyMap)
+    (hFEvalAnnot : Factory.EvalAnnotatedOn F hEnvTy.tyMap)
     : fvars_annotated_by hEnvTy.tyMap e₂ := by
   induction hstep with
   | expand_fvar x e henv => exact hEnvAnnot x e henv
@@ -1007,29 +1201,90 @@ theorem Step.fvars_annotated_preserved
     obtain ⟨_, name, _, _, h_get⟩ := Factory.callOfLFunc_getElem? hcall
     have h_fn_mem : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
     have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
-    have h_body_eq : (F[name.name]).body = some fnbody := by rw [h_fn_eq]; exact hbody
-    have h_body_annot : fvars_annotated_by hEnvTy.tyMap (fnbody.applyTypeSubst tySubst) :=
-      hFBodyAnnot name.name h_fn_mem fnbody tySubst h_body_eq
-    have h_args_annot : ∀ a ∈ args, fvars_annotated_by hEnvTy.tyMap a :=
-      fvars_annotated_by_callOfLFunc_args hAnnot hcall
-    have h_sm_annot : ∀ k v, Map.find? (fn.inputs.keys.zip args) k = some v →
-        fvars_annotated_by hEnvTy.tyMap v := by
-      intro k v hfind
-      have h_mem := Map.find?_mem _ _ _ hfind
-      exact h_args_annot v (List.of_mem_zip h_mem).2
-    exact fvars_annotated_by_substFvarsLifting h_body_annot h_sm_annot
+    have h := hFBodyAnnot name.name h_fn_mem fnbody tySubst args (by rw [h_fn_eq]; exact hbody)
+      (by rw [h_fn_eq]; exact Factory.callOfLFunc_arity hcall)
+      (fvars_annotated_by_callOfLFunc_args hAnnot hcall)
+    rwa [h_fn_eq] at h
   | eval_fn e callee e' args fn denotefn hcall heval hresult =>
     obtain ⟨_, name, _, _, h_get⟩ := Factory.callOfLFunc_getElem? hcall
     have h_fn_mem : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
     have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
     have h_eval_eq : (F[name.name]).concreteEval = some denotefn := by rw [h_fn_eq]; exact heval
     exact hFEvalAnnot name.name h_fn_mem denotefn _ args e' h_eval_eq hresult
+      (fvars_annotated_by_callOfLFunc_args hAnnot hcall)
   | abs_subst_fvars body x hfv =>
     exact substFvarsFromEnv_fvars_annotated hAnnot hEnvAnnot
   | quant_subst_fvars_body tr body x hfv =>
     exact ⟨hAnnot.1, substFvarsFromEnv_fvars_annotated hAnnot.2 hEnvAnnot⟩
   | quant_subst_fvars_trigger tr body x hfv =>
     exact ⟨substFvarsFromEnv_fvars_annotated hAnnot.1 hEnvAnnot, hAnnot.2⟩
+
+/-- A single step preserves `fvars_annotated_by`. -/
+theorem Step.fvars_annotated_preserved
+    {F : @Factory T} {env : Env T}
+    {e₁ e₂ : LExpr T.mono}
+    (hstep : Step F env e₁ e₂)
+    (hEnvTy : Env.Typed env)
+    (hAnnot : fvars_annotated_by hEnvTy.tyMap e₁)
+    (hEnvAnnot : ∀ (x : T.Identifier) (e : LExpr T.mono), env x = some e →
+        fvars_annotated_by hEnvTy.tyMap e)
+    (hFBodyAnnot : Factory.BodyAnnotated F hEnvTy.tyMap)
+    (hFEvalAnnot : Factory.EvalAnnotated F hEnvTy.tyMap)
+    : fvars_annotated_by hEnvTy.tyMap e₂ :=
+  Step.fvars_annotated_preservedOn hstep hEnvTy hAnnot hEnvAnnot hFBodyAnnot.inline hFEvalAnnot.on
+
+/-- Multi-step version of `Step.type_preserved`, `Step.OpsConsistent_preservedOn` and
+`Step.fvars_annotated_preservedOn`: `StepStar` preserves `HasTypeA`, `OpsConsistent` and
+`fvars_annotated_by` under `Factory.StepWFOn`. -/
+theorem StepStar.type_preservedOn
+    {F : @Factory T} {env : Env T}
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    (hsteps : StepStar F env e₁ e₂)
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (hEnvWF : Env.StepWF F env)
+    (hFWF : Factory.StepWFOn F hEnvWF.typed.tyMap)
+    (hOps : OpsConsistent F e₁)
+    (hAnnot : fvars_annotated_by hEnvWF.typed.tyMap e₁)
+    : LExpr.HasTypeA [] e₂ τ ∧ OpsConsistent F e₂ ∧ fvars_annotated_by hEnvWF.typed.tyMap e₂ := by
+  induction hsteps with
+  | refl => exact ⟨h₁, hOps, hAnnot⟩
+  | step x y z hstep hrest ih =>
+    exact ih (Step.type_preserved hstep h₁ hFWF.wt hFWF.evalWt hOps hEnvWF.lc hEnvWF.typed hAnnot)
+      (Step.OpsConsistent_preservedOn hstep hOps hEnvWF.ops hFWF.bodyOps hFWF.evalOps)
+      (Step.fvars_annotated_preservedOn hstep hEnvWF.typed hAnnot hEnvWF.annot
+        hFWF.bodyAnnot hFWF.evalAnnot)
+
+/-- Multi-step version of `Step.denote_preservedAt`: if `e₁` reduces to `e₂` and both are
+well-typed at `τ`, they have the same denotation at `vt`, when the environment is consistent with
+`fvarVal` at `vt` and the factory meets `Factory.StepWFOn`. -/
+theorem StepStar.denote_preservedAt
+    {F : @Factory T} {env : Env T} {tf : @TypeFactory T.IDMeta}
+    {e₁ e₂ : LExpr T.mono} {τ : LMonoTy}
+    (hsteps : StepStar F env e₁ e₂)
+    (h₁ : LExpr.HasTypeA [] e₁ τ)
+    (h₂ : LExpr.HasTypeA [] e₂ τ)
+    (hEnvWF : Env.StepWF F env)
+    (hFWF : Factory.StepWFOn F hEnvWF.typed.tyMap)
+    (hFacWF : Factory.WF F tf)
+    (hF : Factory.InterpConsistent tcInterp opInterp F)
+    (hConstrIC : ConstrInterpConsistent tcInterp opInterp F)
+    (hEnv : Env.InterpConsistentAt tcInterp opInterp fvarVal vt env)
+    (hOps : OpsConsistent F e₁)
+    (hAnnot : fvars_annotated_by hEnvWF.typed.tyMap e₁)
+    : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
+  induction hsteps with
+  | refl => rfl
+  | step x y z hstep hrest ih =>
+    have h_mid :=
+      Step.type_preserved hstep h₁ hFWF.wt hFWF.evalWt hOps hEnvWF.lc hEnvWF.typed hAnnot
+    have h_step_eq := Step.denote_preservedAt tcInterp opInterp fvarVal vt hstep h₁ h_mid hF
+      hFWF.wt hEnv hOps hFacWF.factoryWF hFacWF.constrWF hConstrIC hFacWF.tfWF hEnvWF.lc
+      hEnvWF.typed hAnnot
+    exact h_step_eq.trans (ih h_mid h₂
+      (Step.OpsConsistent_preservedOn hstep hOps hEnvWF.ops hFWF.bodyOps hFWF.evalOps)
+      (Step.fvars_annotated_preservedOn hstep hEnvWF.typed hAnnot hEnvWF.annot
+        hFWF.bodyAnnot hFWF.evalAnnot))
 
 /-- Multi-step version: `HasTypeA` is preserved by `StepStar`.
 
@@ -1047,14 +1302,8 @@ theorem StepStar.type_preserved
     (hFWF : Factory.StepWF F hEnvWF.typed.tyMap)
     (hOps : OpsConsistent F e₁)
     (hAnnot : fvars_annotated_by hEnvWF.typed.tyMap e₁)
-    : LExpr.HasTypeA [] e₂ τ := by
-  induction hsteps with
-  | refl => exact h₁
-  | step x y z hstep hrest ih =>
-    have h_mid := Step.type_preserved hstep h₁ hFWF.wt hFWF.evalWt hOps hEnvWF.lc hEnvWF.typed hAnnot
-    have h_ops_mid := Step.OpsConsistent_preserved hstep hOps hEnvWF.ops hFWF.bodyOps hFWF.evalOps
-    have h_annot_mid := Step.fvars_annotated_preserved hstep hEnvWF.typed hAnnot hEnvWF.annot hFWF.bodyAnnot hFWF.evalAnnot
-    exact ih h_mid h_ops_mid h_annot_mid
+    : LExpr.HasTypeA [] e₂ τ :=
+  (StepStar.type_preservedOn hsteps h₁ hEnvWF hFWF.toOn hOps hAnnot).1
 
 /-- Multi-step version: if `e₁` reduces to `e₂` in zero or more steps, and
 both are well-typed at `τ`, they have the same denotation.
@@ -1079,16 +1328,9 @@ theorem StepStar.denote_preserved
     (hOps : OpsConsistent F e₁)
     (hAnnot : fvars_annotated_by hEnvWF.typed.tyMap e₁)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e₁ τ h₁ =
-      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
-  induction hsteps with
-  | refl => rfl
-  | step x y z hstep hrest ih =>
-    have h_mid := Step.type_preserved hstep h₁ hFWF.wt hFWF.evalWt hOps hEnvWF.lc hEnvWF.typed hAnnot
-    have h_ops_mid := Step.OpsConsistent_preserved hstep hOps hEnvWF.ops hFWF.bodyOps hFWF.evalOps
-    have h_annot_mid := Step.fvars_annotated_preserved hstep hEnvWF.typed hAnnot hEnvWF.annot hFWF.bodyAnnot hFWF.evalAnnot
-    have h_step_eq := Step.denote_preserved (tcInterp := tcInterp) (opInterp := opInterp) (fvarVal := fvarVal) (vt := vt) (tf := tf) hstep h₁ h_mid hIC.factory hFWF.wt hIC.env hOps hFacWF.factoryWF hFacWF.constrWF hIC.constr hFacWF.tfWF hEnvWF.lc hEnvWF.typed hAnnot
-    have h_rest_eq := ih h_mid h₂ h_ops_mid h_annot_mid
-    exact h_step_eq.trans h_rest_eq
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ :=
+  StepStar.denote_preservedAt tcInterp opInterp fvarVal vt hsteps h₁ h₂ hEnvWF hFWF.toOn hFacWF
+    hIC.factory hIC.constr (fun x e ty hx hty => hIC.env vt x e ty hx hty) hOps hAnnot
 
 /-- Corollary of `StepStar.denote_preserved` that requires no assumptions
 on`e₂`. It derives the typing proof for `e₂` via `StepStar.type_preserved`. -/
@@ -1115,6 +1357,42 @@ end
 section
 variable [DecidableEq T.IDMeta]
 
+/-- **Evaluator soundness at one type-variable valuation.** If `e₂` is the result of `LExpr.eval`
+on `e`, `e` is well-typed at `τ`, and the environment is consistent with `fvarVal` at `vt`, then
+`e₂` is well-typed at `τ` and has the denotation of `e` at `vt`, under a factory satisfying
+`Factory.StepWFOn` and `Factory.WF` and interpretations consistent with it. -/
+theorem eval_denote_soundAt
+    [DecidableEq T.Metadata] [Inhabited T.IDMeta]
+    [Std.ToFormat T.Metadata] [Std.ToFormat T.IDMeta]
+    [Traceable LExpr.EvalProvenance T.Metadata]
+    {F : @Factory T} {env : Env T} {e : LExpr T.mono} {τ : LMonoTy} {n : Nat}
+    {tf : @TypeFactory T.IDMeta}
+    (h₁ : LExpr.HasTypeA [] e τ)
+    (hEnvWF : Env.StepWF F env)
+    (hFWF : Factory.StepWFOn F hEnvWF.typed.tyMap)
+    (hFacWF : Factory.WF F tf)
+    (hF : Factory.InterpConsistent tcInterp opInterp F)
+    (hConstrIC : ConstrInterpConsistent tcInterp opInterp F)
+    (hEnv : Env.InterpConsistentAt tcInterp opInterp fvarVal vt env)
+    (hOps : OpsConsistent F e)
+    (hAnnot : fvars_annotated_by hEnvWF.typed.tyMap e)
+    : ∃ h₂ : LExpr.HasTypeA [] (LExpr.eval n F env e).fst τ,
+      LExpr.denote tcInterp opInterp fvarVal vt .nil e τ h₁ =
+        LExpr.denote tcInterp opInterp fvarVal vt .nil (LExpr.eval n F env e).fst τ h₂ := by
+  obtain ⟨e', hsteps, h_erase⟩ := eval_StepStar F env e _ n hFacWF.factoryWF rfl
+  have h_ty_e' := (StepStar.type_preservedOn hsteps h₁ hEnvWF hFWF hOps hAnnot).1
+  have h₂ : LExpr.HasTypeA [] (LExpr.eval n F env e).fst τ := by
+    rw [LExpr.HasTypeA_iff_typeCheck, replaceMetadata_typeCheck (fun _ => ()),
+      ← LExpr.eraseMetadata, ← h_erase, LExpr.eraseMetadata, ← replaceMetadata_typeCheck,
+      ← LExpr.HasTypeA_iff_typeCheck]
+    exact h_ty_e'
+  refine ⟨h₂, ?_⟩
+  rw [StepStar.denote_preservedAt tcInterp opInterp fvarVal vt hsteps h₁ h_ty_e' hEnvWF hFWF hFacWF
+    hF hConstrIC hEnv hOps hAnnot,
+    denote_replaceMetadata tcInterp opInterp fvarVal vt .nil (fun _ => ()) h_ty_e',
+    denote_replaceMetadata tcInterp opInterp fvarVal vt .nil (fun _ => ()) h₂]
+  congr 1
+
 /-- Soundness of the evaluator w.r.t. denotational semantics: if `e₂ = eval n σ e`
 and both `e` and `e₂` are well-typed at `τ`, then `denote e = denote e₂`.
 This is a simple composition of `eval_StepStar` and `StepStar.denote_preserved`.
@@ -1136,14 +1414,10 @@ theorem eval_denote_sound
     (hAnnot : fvars_annotated_by hEnvWF.typed.tyMap e)
     : LExpr.denote tcInterp opInterp fvarVal vt .nil e τ h₁ =
       LExpr.denote tcInterp opInterp fvarVal vt .nil e₂ τ h₂ := by
-  obtain ⟨e', hsteps, h_erase⟩ := eval_StepStar F env e e₂ n hFacWF.factoryWF hEval
-  have h_ty_e' := StepStar.type_preserved hsteps h₁ hEnvWF hFWF hOps hAnnot
-  have h_step_eq := StepStar.denote_preserved tcInterp opInterp fvarVal vt hsteps h₁ h_ty_e' hEnvWF hFWF hFacWF hIC hOps hAnnot
-  have h_denote_e' := denote_replaceMetadata tcInterp opInterp fvarVal vt .nil (fun _ => ()) h_ty_e'
-  have h_denote_e₂ := denote_replaceMetadata tcInterp opInterp fvarVal vt .nil (fun _ => ()) h₂
-  rw [h_step_eq, h_denote_e']
-  rw [h_denote_e₂]
-  congr 1
+  subst hEval
+  obtain ⟨_, h⟩ := eval_denote_soundAt tcInterp opInterp fvarVal vt (n := n) h₁ hEnvWF hFWF.toOn
+    hFacWF hIC.factory hIC.constr (fun x e ty hx hty => hIC.env vt x e ty hx hty) hOps hAnnot
+  exact h
 
 end
 

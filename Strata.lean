@@ -29,7 +29,6 @@ import Strata.Languages.Core.IntEvalProps
 import Strata.Languages.Core.InstWellFormedSemanticsEval
 import Strata.Languages.Core.InstExprTyping
 import Strata.Languages.Core.FactoryWF
-import Strata.Languages.Core.EnvProps
 import Strata.Languages.Core.SeqModel
 import Strata.Languages.Core.SMTEncoderProps
 import Strata.Languages.Core.SMTEmitter
@@ -163,6 +162,33 @@ import Strata.Transform.SSA.SSACoreCorrect
 -- Equality simplification: failures are kept, given its expression-level steps are sound.
 import Strata.Transform.EqualitySimplificationCorrect
 
+/- The monadic interpreter: the monad-generic engine, its soundness and completeness against
+   the reference event semantics, Core's instantiation, the `EvalM`
+   instance and its soundness and completeness, and counterexample replay -/
+import Strata.DL.Imperative.InterpreterFuelMono
+import Strata.DL.Imperative.InterpreterTowerProps
+import Strata.Languages.Core.ConfigWF
+import Strata.Languages.Core.EnvProps
+import Strata.Languages.Core.ReplayWF
+import Strata.Languages.Core.Interpreter
+import Strata.Languages.Core.InterpreterDomainProps
+import Strata.Languages.Core.InterpreterEvalSound
+import Strata.Languages.Core.FactoryEvalSoundWF
+import Strata.Languages.Core.InterpreterBridgeStatements
+import Strata.Languages.Core.InterpreterCallComplete
+import Strata.Languages.Core.InterpreterCallSound
+import Strata.Languages.Core.InterpreterComplete
+import Strata.Languages.Core.InterpreterEval
+import Strata.Languages.Core.InterpreterEvalProps
+import Strata.Languages.Core.InterpreterReach
+import Strata.Languages.Core.InterpreterReachBridge
+import Strata.Languages.Core.InterpreterReachBuiltins
+import Strata.Languages.Core.InterpreterReachCheck
+import Strata.Languages.Core.InterpreterObs
+import Strata.Languages.Core.InterpreterObsProps
+import Strata.Languages.Core.InterpreterSound
+import Strata.Languages.Core.StmtCallFree
+
  -- deletion candidates: nothing imports these modules:
 
 -- noimport:
@@ -176,6 +202,9 @@ import Strata.DL.Lambda.Denote.LExprDenoteConstrs
 import Strata.DL.Lambda.Denote.LExprDenoteEq
 import Strata.DL.Lambda.LExprDenoteEval
 import Strata.DL.Lambda.LExprDenoteEvalProps
+import Strata.DL.Lambda.LExprEvalFully
+import Strata.DL.Lambda.LExprEvalFuelProps
+import Strata.DL.Lambda.LExprEvalAnnotateProps
 import Strata.DL.Lambda.Denote.LExprDenoteProps
 import Strata.DL.Lambda.Denote.LExprDenoteSubst
 import Strata.DL.Lambda.Denote.LExprDenoteTySubst
@@ -213,6 +242,7 @@ import Strata.Util.Random
 
 import Strata.Examples.Embedded
 import Strata.Examples.EmbeddedData
+import Strata.Languages.Core.InterpreterReplayTactics
 
 -- noimport: Strata.Util.IOTests (used for tests)
 -- noimport: Strata.CodeGen.TypeShape (meta module, used by the code generators)

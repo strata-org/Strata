@@ -27,6 +27,16 @@ public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.StmtSemanticsProps
 public import Strata.DL.Imperative.Logic.TraceRelations
 public import Strata.DL.Imperative.Logic.TraceRelationsProps
+public import Strata.DL.Imperative.CmdCallFormals
+public import Strata.DL.Imperative.StmtCFGCallSemantics
+public import Strata.DL.Imperative.StmtSemanticsDeterminism
+public import Strata.DL.Imperative.InterpreterCall
+public import Strata.DL.Imperative.InterpreterCallInterrupt
+public import Strata.DL.Imperative.InterpreterCallSound
+public import Strata.DL.Imperative.InterpreterCallComplete
+public import Strata.DL.Imperative.InterpreterCallCompleteProps
+public import Strata.DL.Imperative.InterpreterCallEmbed
+public import Strata.DL.Imperative.InterpreterCallEmbedProps
 public import Strata.DL.Imperative.Logic.LangDefProps
 public import Strata.DL.Imperative.Logic.TraceInterp
 public import Strata.DL.Imperative.Logic.TraceInterpProps
@@ -53,3 +63,4 @@ public import Strata.DL.Imperative.StmtExtendCallBridge
 public import Strata.DL.Imperative.StmtExtendCallBridgeProps
 
 public import Strata.DL.Imperative.SMTUtils
+public import Strata.DL.Imperative.InterpreterReplayTactics

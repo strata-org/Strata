@@ -137,6 +137,16 @@ Administrative configurations and non-command statements are silent. -/
   | none => .terminal ρ
   | some lbl => .exiting lbl ρ
 
+/-- Config-level `allCmds`: every command node still reachable in the config
+    satisfies the per-command check `Q`. -/
+@[expose] def Config.allCmds (Q : CmdT → Bool) : Config P CmdT → Prop
+  | .stmt s _ => Stmt.allCmds Q s = true
+  | .stmts ss _ => Block.allCmds Q ss = true
+  | .terminal _ => True
+  | .exiting _ _ => True
+  | .block _ _ inner => Config.allCmds Q inner
+  | .seq inner ss => Config.allCmds Q inner ∧ Block.allCmds Q ss = true
+
 /-- Extend `exitsCoveredByBlocks` to configurations.
 
     The label list has type `List String` (matching `Stmt.exit`'s mandatory-label

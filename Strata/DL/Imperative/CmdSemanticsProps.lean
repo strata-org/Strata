@@ -73,6 +73,16 @@ evaluation relation `EvalCmdE`. Key results:
 - Evaluation: `EvalsTo.det` (evaluation is deterministic); under `WellFormedSemanticEvalVal`
   results in a well-formed store are values (`EvalsTo.value`); under
   `WellFormedSemanticEvalVar` a variable evaluates to its value in the store (`EvalsTo.var`).
+- `InitState.eq_update` / `UpdateState.eq_update`: a store produced by
+  `InitState`/`UpdateState` is the point update `SemanticStore.update`;
+  conversely, `InitState.of_update` / `UpdateState.of_update`: the point update of an
+  unbound/bound name is an `InitState`/`UpdateState` step.
+- `evalExpressions_defined`: every expression `EvalExpressions` evaluates has its
+  free variables defined.
+- Value-only results: every value `ReadValues` reads (`readValues_values`) or
+  `EvalExpressions` produces from a value-only store (`evalExpressions_values`) is a
+  factory value; `wellFormedStore_updateStates`: an `UpdateStates` fold writing only
+  values keeps a store value-only.
 -/
 
 public section
@@ -1599,3 +1609,106 @@ theorem EvalsTo.var {P : PureExpr} [HasVal P] [HasFvar P] {F : P.Factory}
   (hVar e y σ hC hy).symm.trans h
 
 end -- public section
+
+end Imperative
+
+namespace Imperative
+public section
+variable {P : PureExpr} [DecidableEq P.Ident]
+
+/-- An `InitState` step that binds `x` to `v` starts from a store where `x` is unbound, and its
+    result is the point update of that store at `x`. -/
+theorem InitState.eq_update {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Val}
+    (h : InitState (P := P) σ x v σ') :
+    σ x = none ∧ σ' = SemanticStore.update σ x v := h.rec (by grind [SemanticStore.update])
+
+/-- An `UpdateState` step that sets `x` to `v` starts from a store where `x` is bound, and its
+    result is the point update of that store at `x`. -/
+theorem UpdateState.eq_update {σ σ' : SemanticStore P} {x : P.Ident} {v : P.Val}
+    (h : UpdateState (P := P) σ x v σ') :
+    (∃ old, σ x = some old) ∧ σ' = SemanticStore.update σ x v :=
+  h.rec (by grind [SemanticStore.update])
+
+end
+end Imperative
+
+namespace Imperative
+public section
+variable {P : PureExpr}
+
+/-- The point update of an unbound name is an `InitState` step. -/
+theorem InitState.of_update [DecidableEq P.Ident] {σ : SemanticStore P} {x : P.Ident}
+    {v : P.Val} (h : σ x = none) :
+    InitState (P := P) σ x v (SemanticStore.update σ x v) :=
+  ⟨h, ite_eq_left rfl, fun _ hne => ite_eq_right hne.symm⟩
+
+/-- The point update of a bound name is an `UpdateState` step. -/
+theorem UpdateState.of_update [DecidableEq P.Ident] {σ : SemanticStore P} {x : P.Ident}
+    {old : P.Val} {v : P.Val} (h : σ x = some old) :
+    UpdateState (P := P) σ x v (SemanticStore.update σ x v) :=
+  ⟨h, ite_eq_left rfl, fun _ hne => ite_eq_right hne.symm⟩
+
+end
+end Imperative
+
+namespace Imperative
+public section
+variable {P : PureExpr} [HasFvars P]
+
+/-- If `EvalExpressions` evaluates a list of expressions in a store, every free variable of each
+    expression is defined in that store. -/
+theorem evalExpressions_defined {f : P.Factory} {σ : SemanticStore P} :
+    ∀ {es : List P.Expr} {vs : List P.Val}, EvalExpressions f σ es vs →
+      ∀ e ∈ es, SemanticStore.varsDefined (· ∈ HasFvars.getFvars (P := P) e) σ := fun h => by induction h <;> grind
+
+end
+end Imperative
+
+namespace Imperative
+public section
+variable {P : PureExpr} [HasBoolOps P]
+
+/-- Every value `ReadValues` returns is a value in the factory. -/
+theorem readValues_values {f : P.Factory} {σ : SemanticStore P} :
+    ∀ {xs : List P.Ident} {vs : List P.Val},
+      ReadValues (P := P) f σ xs vs → ∀ v ∈ vs, HasVal.value f v := fun h => by
+        induction h <;> grind
+
+end
+end Imperative
+
+namespace Imperative
+public section
+variable {P : PureExpr} [HasBoolOps P] [DecidableEq P.Ident]
+
+omit [DecidableEq P.Ident] in
+/-- An `UpdateStates` fold that writes only factory values keeps a store value-only
+    (`WellFormedStore`: every bound expression is a value of the factory). -/
+theorem wellFormedStore_updateStates {f : P.Factory} :
+    ∀ {σ σ' : SemanticStore P} {names : List P.Ident} {vals : List P.Val},
+      UpdateStates (P := P) σ names vals σ' →
+      (∀ v ∈ vals, HasVal.value f v) → WellFormedStore σ f → WellFormedStore σ' f := fun h => by
+        induction h <;> simp_all only [List.not_mem_nil, false_implies, implies_true,
+          WellFormedStore, imp_self, List.mem_cons, forall_eq_or_imp, and_imp]
+        rename_i hupd _ _
+        cases hupd
+        grind
+
+end
+end Imperative
+
+namespace Imperative
+public section
+variable {P : PureExpr} [HasBoolOps P] [HasFvars P]
+
+/-- If the factory's evaluator returns only values (`WellFormedSemanticEvalVal`) and every
+    expression bound in the store is a factory value, every result of `EvalExpressions` is a
+    value in the factory. -/
+theorem evalExpressions_values {f : P.Factory} {σ : SemanticStore P}
+    (hval : WellFormedSemanticEvalVal (P := P) f) (hwfs : WellFormedStore σ f) :
+    ∀ {es : List P.Expr} {vs : List P.Val},
+      EvalExpressions f σ es vs → ∀ v ∈ vs, HasVal.value f v := fun h => by
+        induction h <;> grind [hval.outputsAreValues]
+
+end
+end Imperative
