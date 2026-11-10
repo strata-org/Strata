@@ -479,6 +479,67 @@ procedure labelledBlockNotLast(x: int) returns (r: int) {
 };
 #end
 
+/-! ## A block whose exits share a branching continuation translates it once
+
+Each block of a chain exits to its own label to try the next operand, or to `found`.
+Bound to every exit, the continuation of `first` — the blocks after it — would be
+copied once per exit, doubling with each block. Instead the block computes, once per
+outer local it assigns and once per exit target but the last, which exit it took,
+and the continuation follows once, chosen by those values. -/
+
+/--
+info: procedure $declHole_chain_5(a: bool, b: bool, c: bool): bool
+  opaque;
+procedure chain(a: bool, b: bool, c: bool)
+  returns (r: bool)
+{
+  var r: bool := $declHole_chain_5(a, b, c);
+  {
+    var $join_first_0: bool := if a
+      then true
+      else false;
+    if $join_first_0
+      then {
+        var $join_second_0: bool := if b
+          then true
+          else false;
+        if $join_second_0
+          then if c
+            then {
+              var r: bool := false;
+              r
+            }
+            else {
+              var r: bool := true;
+              r
+            }
+          else {
+            var r: bool := true;
+            r
+          }
+      }
+      else {
+        var r: bool := true;
+        r
+      }
+  }
+};
+-/
+#guard_msgs in
+#eval printRewritten <|
+#strata
+program Laurel;
+procedure chain(a: bool, b: bool, c: bool) returns (r: bool) {
+  {
+    { if (a) then { exit first } else { exit found } } first;
+    { if (b) then { exit second } else { exit found } } second;
+    { if (c) then { exit third } else { exit found } } third;
+    return false
+  } found;
+  return true
+};
+#end
+
 /-! ## A block-valued assignment's statements are hoisted ahead of it
 
 The transparency pass can emit a transparent body as

@@ -1,6 +1,7 @@
 import StrataLaurel.PassSemantics.ProgTrav
 import StrataLaurel.Implementation.EliminateIncrDecrAndCompoundAssign
 import StrataLaurel.PassSemantics.EntryAt
+import StrataLaurel.PassSemantics.NoJump
 
 /-!
 # Correctness of `EliminateIncrDecrAndCompoundAssign`
@@ -147,6 +148,36 @@ private theorem rewriteNode_notYield (u : Bool) (r : StmtExprMd) (st : ElimState
     | simp [NotYield, StateT.run, bind, StateT.bind, freshReceiver, modifyGet, MonadStateOf.modifyGet,
         StateT.modifyGet, pure, StateT.pure]
 
+private theorem sl_assign (ts : List VariableMd) (v : StmtExprMd) (src : FileRange) :
+    statementLabels ⟨.Assign ts v, src⟩ = [] :=
+  statementLabels_other _ _ (by intros; nofun) (by intros; nofun)
+
+private theorem sa_assign (ts : List VariableMd) (v : StmtExprMd) (src : FileRange) :
+    (stackAnnotation? ⟨.Assign ts v, src⟩).isNone = true := by
+  simp [stackAnnotation?]
+
+private theorem sl_call (r : Option StmtExprMd) (f : Identifier) (as : List StmtExprMd) (ta : List HighTypeMd)
+    (src : FileRange) : statementLabels ⟨.Call r f as ta, src⟩ = [] :=
+  statementLabels_other _ _ (by intros; nofun) (by intros; nofun)
+
+private theorem lowerOpAssign_plain (op : Operation) (t : VariableMd) (R : StmtExprMd) (src : FileRange) :
+    statementLabels (lowerOpAssign op t R src) = [] ∧ (stackAnnotation? (lowerOpAssign op t R src)).isNone = true := by
+  simp [lowerOpAssign, sl_assign, stackAnnotation?]
+
+private theorem lowerIncrDecr_plain (m : IncrDecrMode) (o : IncrDecrOp) (t : VariableMd) (src : FileRange) :
+    statementLabels (lowerIncrDecr m o t src) = [] ∧ (stackAnnotation? (lowerIncrDecr m o t src)).isNone = true := by
+  cases m <;> simp [lowerIncrDecr, lowerToAssign, lowerOpAssign, sl_assign, sl_call, stackAnnotation?]
+
+private theorem rewriteNode_plain (r : StmtExprMd) (st : ElimState)
+    (hk : (∃ m o v, r.val = .IncrDecr m o v) ∨ ∃ o v e, r.val = .CompoundAssign o v e) :
+    statementLabels ((rewriteNode rt r).run st).1 = [] ∧ (stackAnnotation? ((rewriteNode rt r).run st).1).isNone = true := by
+  rcases r with ⟨rv, rs⟩
+  rcases hk with ⟨m, o, v, hv⟩ | ⟨o, v, e, hv⟩ <;> dsimp only at hv <;> subst hv <;>
+    (rcases v with ⟨vv, vs⟩; cases vv) <;>
+    simp [rewriteNode, withReceiverBound, lowerIncrDecr_plain, lowerOpAssign_plain, statementLabels_block,
+      sl_assign, StateT.run, bind, StateT.bind, freshReceiver, modifyGet, MonadStateOf.modifyGet,
+      StateT.modifyGet, pure, StateT.pure] <;> simp [stackAnnotation?]
+
 /-- The term relation `E rt` of `EliminateIncrDecrAndCompoundAssign` is closed under
 `NR (E rt) (Rw rt) Gl`: a term and its traversal result either have the same shape with related
 value children, or the term is an `IncrDecr` or `CompoundAssign` and the result is its rewrite
@@ -166,7 +197,7 @@ theorem closed (s t : StmtExprMd) (h : E rt s t) : NR (E rt) (Rw rt) Gl s t := b
       cases hsh <;> simp_all [Unsup]
     show NR _ _ _ s ((rewriteNode rt r).run st1).1
     rw [rewriteNode_other r st1 h1 h2]
-    exact nr_triv (fun _ _ => trivial) (fun _ _ => trivial) hsh (fun _ _ => trivial)
+    exact nr_triv (fun _ _ => trivial) (fun _ _ => trivial) hsh (fun _ _ _ => trivial)
 
 end
 
@@ -225,16 +256,20 @@ private theorem of_procName (op : Operation) : opOf? (mkId op.procName).text = s
 
 private theorem tcall (k : Nat) (c : Identifier) (args : List StmtExprMd) (ta : List HighTypeMd) (src : FileRange) :
     evalExprMd cfg (k + 1) ⟨.Call none c args ta, src⟩ =
-      (modify fun (s : EvalState) => { s with callSite := src }) >>= fun _ => evalExpr cfg k (.Call none c args ta) := rfl
+      (modify fun (s : EvalState) => { s with callSite := src }) >>= fun _ => evalExpr cfg k (.Call none c args ta) :=
+  jumpBoundary_noJ (NoJ.bind (NoJ.modify _) (fun _ => noJ_callNone cfg _ _ _ _))
 
 private theorem tvar (k : Nat) (x : Identifier) (src : FileRange) :
-    evalExprMd cfg (k + 1) ⟨.Var (.Local x), src⟩ = evalExpr cfg k (.Var (.Local x)) := rfl
+    evalExprMd cfg (k + 1) ⟨.Var (.Local x), src⟩ = evalExpr cfg k (.Var (.Local x)) :=
+  jumpBoundary_noJ (noJ_varLocal cfg _ _)
 
 private theorem tlit (k : Nat) (i : Int) (src : FileRange) :
-    evalExprMd cfg (k + 2) ⟨.LiteralInt i, src⟩ = pure (.int ⟨i⟩) := rfl
+    evalExprMd cfg (k + 2) ⟨.LiteralInt i, src⟩ = pure (.int ⟨i⟩) :=
+  jumpBoundary_noJ (NoJ.pure _)
 
 private theorem tassign (k : Nat) (t : VariableMd) (v : StmtExprMd) (src : FileRange) :
-    evalExprMd cfg (k + 1) ⟨.Assign [t] v, src⟩ = evalExpr cfg k (.Assign [t] v) := rfl
+    evalExprMd cfg (k + 1) ⟨.Assign [t] v, src⟩ = evalExpr cfg k (.Assign [t] v) :=
+  jumpBoundary_noJ (noJ_assign1 cfg _ _ _)
 
 private theorem lookupCallee_mkId (ix : ProgramIndex) (n : String) : lookupCallee ix (mkId n) = ix.procs[n]? := by
   simp [lookupCallee, mkId]
@@ -334,7 +369,8 @@ private theorem cmp_local {op : Operation} (hop : okOp op = true) {x x' : Identi
        exact fs_bind (fs_assignLocal x x' hx hr (notV_none rfl _) v) (fun _ _ _ => fs_pure rfl))
 
 private theorem tlit1 (k : Nat) (i : Int) (src : FileRange) :
-    evalExprMd cfg (k + 1) ⟨.LiteralInt i, src⟩ = evalExpr cfg k (.LiteralInt i) := rfl
+    evalExprMd cfg (k + 1) ⟨.LiteralInt i, src⟩ = evalExpr cfg k (.LiteralInt i) :=
+  jumpBoundary_noJ (noJ_literalInt cfg _ _)
 
 def addSub : IncrDecrOp → Operation
   | .Incr => .Add
@@ -557,7 +593,8 @@ macro "lookup_tac" : tactic => `(tactic| (
   simp only [pure_bind]))
 
 private theorem tvarField (k : Nat) (t : StmtExprMd) (f : Identifier) (src : FileRange) :
-    evalExprMd cfg (k + 1) ⟨.Var (.Field t f), src⟩ = evalExpr cfg k (.Var (.Field t f)) := rfl
+    evalExprMd cfg (k + 1) ⟨.Var (.Field t f), src⟩ = evalExpr cfg k (.Var (.Field t f)) :=
+  jumpBoundary_noJ (noJ_varField cfg _ _ _)
 
 private theorem pre_field (o : IncrDecrOp) {G' : StackFrame} {recv : Identifier} (hres : Reserved.res recv.text)
     {v : Value} (hv : G'[recv.text]? = some v) {fn fn' : Identifier} (hfn : fn.text = fn'.text)
@@ -926,7 +963,19 @@ private theorem stmt_assign (k : Nat) (t : VariableMd) (v : StmtExprMd) (src : F
   rcases v with ⟨vv, vs⟩
   cases vv
   case Yield => simp [NotYield] at hv
-  all_goals simp [evalStmt, evalExprMd, evalExpr, hnp]
+  all_goals rw [tassign]; simp [evalStmt, evalExpr, hnp]
+
+private theorem stmt_incr (k : Nat) (m : IncrDecrMode) (o : IncrDecrOp) (t : VariableMd) (src : FileRange) :
+    evalStmt cfg (k + 2) ⟨.IncrDecr m o t, src⟩ = (evalExpr cfg k (.IncrDecr m o t) >>= fun _ => pure ()) := by
+  show (evalExprMd cfg (k + 1) ⟨.IncrDecr m o t, src⟩ >>= fun _ => pure ()) = _
+  rw [show evalExprMd cfg (k + 1) ⟨.IncrDecr m o t, src⟩ = jumpBoundary (evalExpr cfg k (.IncrDecr m o t)) from rfl,
+    jumpBoundary_noJ (noJ_incrDecr cfg _ _ _ _)]
+
+private theorem stmt_cmp (k : Nat) (op : Operation) (t : VariableMd) (R : StmtExprMd) (src : FileRange) :
+    evalStmt cfg (k + 2) ⟨.CompoundAssign op t R, src⟩ = (evalExpr cfg k (.CompoundAssign op t R) >>= fun _ => pure ()) := by
+  show (evalExprMd cfg (k + 1) ⟨.CompoundAssign op t R, src⟩ >>= fun _ => pure ()) = _
+  rw [show evalExprMd cfg (k + 1) ⟨.CompoundAssign op t R, src⟩ =
+    jumpBoundary (evalExpr cfg k (.CompoundAssign op t R)) from rfl, jumpBoundary_noJ (noJ_compoundAssign cfg _ _ _ _)]
 
 private theorem stmt_call (k : Nat) (c : Identifier) (args : List StmtExprMd) (ta : List HighTypeMd) (src : FileRange) :
     evalStmt cfg (k + 1) ⟨.Call none c args ta, src⟩ = (evalExprMd cfg k ⟨.Call none c args ta, src⟩ >>= fun _ => pure ()) :=
@@ -982,14 +1031,21 @@ private theorem field_pre_stmt (o : IncrDecrOp) {tg tg' : StmtExprMd} (hy : NotY
       lowerIncrDecr .Pre o ⟨.Field ⟨.Var (.Local recv), s1⟩ fn', ts'⟩ src'] = [recv.text] := by
     cases o <;> rfl
   rw [show evalStmt cfg (n + 4) ⟨.IncrDecr .Pre o ⟨.Field tg fn, ts⟩, src⟩ =
-    (evalExpr cfg (n + 2) (.IncrDecr .Pre o ⟨.Field tg fn, ts⟩) >>= fun _ => pure ()) from rfl]
+    (evalExpr cfg (n + 2) (.IncrDecr .Pre o ⟨.Field tg fn, ts⟩) >>= fun _ => pure ()) from stmt_incr _ _ _ _ _]
   simp only [evalStmt]
   refine fsr_charge ?_
   refine fs_bind (A := fun _ _ => True) (fsr_wbs hd hres ?_) (fun _ _ _ => fs_pure rfl)
   simp only [evalExpr, readForUpdate, writeUpdate, bind_assoc, pure_bind]
-  simp only [evalStmtList, List.forM_eq_forM, List.forM_cons, List.forM_nil, bind_assoc, pure_bind]
+  rw [evalStmtList_plain (by
+    intro t ht
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at ht
+    rcases ht with rfl | rfl
+    · exact sl_assign _ _ _
+    · first | exact (lowerIncrDecr_plain _ _ _ _).1 | exact (lowerOpAssign_plain _ _ _ _).1)]
+  simp only [List.forM_eq_forM, List.forM_cons, List.forM_nil, bind_assoc, pure_bind, sa_assign,
+    (lowerIncrDecr_plain _ _ _ _).2, ite_true]
   refine fsr_get (fun st hco => ?_)
-  simp only [hco, Option.isNone_none, ite_true, Bool.false_eq_true, ite_false]
+  simp only [hco, Option.isNone_none, ite_true]
   refine fsr_modify (fun σ σ' h => by strel h) ?_
   refine fs_wowRb ?_
   refine field_core hy hres hnk htg (fun v hab => ?_) (fun v hab σ τ => src_fails hab _ _ σ τ)
@@ -1016,14 +1072,21 @@ private theorem field_post_stmt (o : IncrDecrOp) {tg tg' : StmtExprMd} (hy : Not
       lowerIncrDecr .Post o ⟨.Field ⟨.Var (.Local recv), s1⟩ fn', ts'⟩ src'] = [recv.text] := by
     cases o <;> rfl
   rw [show evalStmt cfg (n + 4) ⟨.IncrDecr .Post o ⟨.Field tg fn, ts⟩, src⟩ =
-    (evalExpr cfg (n + 2) (.IncrDecr .Post o ⟨.Field tg fn, ts⟩) >>= fun _ => pure ()) from rfl]
+    (evalExpr cfg (n + 2) (.IncrDecr .Post o ⟨.Field tg fn, ts⟩) >>= fun _ => pure ()) from stmt_incr _ _ _ _ _]
   simp only [evalStmt]
   refine fsr_charge ?_
   refine fs_bind (A := fun _ _ => True) (fsr_wbs hd hres ?_) (fun _ _ _ => fs_pure rfl)
   simp only [evalExpr, readForUpdate, writeUpdate, bind_assoc, pure_bind]
-  simp only [evalStmtList, List.forM_eq_forM, List.forM_cons, List.forM_nil, bind_assoc, pure_bind]
+  rw [evalStmtList_plain (by
+    intro t ht
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at ht
+    rcases ht with rfl | rfl
+    · exact sl_assign _ _ _
+    · first | exact (lowerIncrDecr_plain _ _ _ _).1 | exact (lowerOpAssign_plain _ _ _ _).1)]
+  simp only [List.forM_eq_forM, List.forM_cons, List.forM_nil, bind_assoc, pure_bind, sa_assign,
+    (lowerIncrDecr_plain _ _ _ _).2, ite_true]
   refine fsr_get (fun st hco => ?_)
-  simp only [hco, Option.isNone_none, ite_true, Bool.false_eq_true, ite_false]
+  simp only [hco, Option.isNone_none, ite_true]
   refine fsr_modify (fun σ σ' h => by strel h) ?_
   refine fs_wowRb ?_
   refine field_core hy hres hnk htg (fun v hab => ?_) (fun v hab σ τ => src_fails hab _ _ σ τ)
@@ -1054,16 +1117,23 @@ private theorem field_cmp_stmt {op : Operation} (hop : okOp op = true) {tg tg' :
   have hd : blockDeclarations [⟨.Assign [⟨.Declare ⟨recv, ty⟩, s1⟩] tg', s1⟩,
       lowerOpAssign op ⟨.Field ⟨.Var (.Local recv), s1⟩ fn', ts'⟩ R' src'] = [recv.text] := rfl
   rw [show evalStmt cfg (n + 4) ⟨.CompoundAssign op ⟨.Field tg fn, ts⟩ R, src⟩ =
-    (evalExpr cfg (n + 2) (.CompoundAssign op ⟨.Field tg fn, ts⟩ R) >>= fun _ => pure ()) from rfl]
+    (evalExpr cfg (n + 2) (.CompoundAssign op ⟨.Field tg fn, ts⟩ R) >>= fun _ => pure ()) from stmt_cmp _ _ _ _ _]
   simp only [evalStmt]
   refine fsr_charge ?_
   refine fs_bind (A := fun _ _ => True) (fsr_wbs hd hres ?_) (fun _ _ _ => fs_pure rfl)
   cases op <;> simp only [okOp, plainOp, Bool.false_eq_true] at hop
   case DivT | ModT =>
     simp only [evalExpr, readForUpdate, writeUpdate, bind_assoc, pure_bind]
-    simp only [evalStmtList, List.forM_eq_forM, List.forM_cons, List.forM_nil, bind_assoc, pure_bind]
+    rw [evalStmtList_plain (by
+      intro t ht
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at ht
+      rcases ht with rfl | rfl
+      · exact sl_assign _ _ _
+      · first | exact (lowerIncrDecr_plain _ _ _ _).1 | exact (lowerOpAssign_plain _ _ _ _).1)]
+    simp only [List.forM_eq_forM, List.forM_cons, List.forM_nil, bind_assoc, pure_bind, sa_assign,
+      (lowerOpAssign_plain _ _ _ _).2, ite_true]
     refine fsr_get (fun st hco => ?_)
-    simp only [hco, Option.isNone_none, ite_true, Bool.false_eq_true, ite_false]
+    simp only [hco, Option.isNone_none, ite_true]
     refine fsr_modify (fun σ σ' h => by strel h) ?_
     refine fs_wowRb ?_
     refine field_core hy hres hnk htg (fun v hab => ?_) (fun v hab σ τ => src_fails hab _ _ σ τ)
@@ -1081,9 +1151,16 @@ private theorem field_cmp_stmt {op : Operation} (hop : okOp op = true) {tg tg' :
       exact fails_bindF (cmp_field_fails hc (show okOp _ = true from rfl) hab (K + 5) _ τ' (by simpa using hst))
   all_goals
     simp only [evalExpr, readForUpdate, writeUpdate, bind_assoc, pure_bind]
-    simp only [evalStmtList, List.forM_eq_forM, List.forM_cons, List.forM_nil, bind_assoc, pure_bind]
+    rw [evalStmtList_plain (by
+      intro t ht
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at ht
+      rcases ht with rfl | rfl
+      · exact sl_assign _ _ _
+      · first | exact (lowerIncrDecr_plain _ _ _ _).1 | exact (lowerOpAssign_plain _ _ _ _).1)]
+    simp only [List.forM_eq_forM, List.forM_cons, List.forM_nil, bind_assoc, pure_bind, sa_assign,
+      (lowerOpAssign_plain _ _ _ _).2, ite_true]
     refine fsr_get (fun st hco => ?_)
-    simp only [hco, Option.isNone_none, ite_true, Bool.false_eq_true, ite_false]
+    simp only [hco, Option.isNone_none, ite_true]
     refine fsr_modify (fun σ σ' h => by strel h) ?_
     refine fs_wowRb ?_
     refine field_core hy hres hnk htg (fun v hab => ?_) (fun v hab σ τ => src_fails hab _ _ σ τ)
@@ -1291,11 +1368,11 @@ private theorem id_exprMd {s t : StmtExprMd} (hrw : Rw rt s t) (M : Nat) (hM : 7
     ⟨op, tg, tg', fn, fn', vs, vs', R, R', src, rsrc, c, ty, rfl, rfl, -⟩
   · cases m <;> cases o
     all_goals first
-      | exact he
-      | exact fsr_modify (fun σ σ' h => by strel h) he
-  · exact he
-  · exact he
-  · exact he
+      | exact fs_jumpBoundary he
+      | exact fs_jumpBoundary (fsr_modify (fun σ σ' h => by strel h) he)
+  · exact fs_jumpBoundary he
+  · exact fs_jumpBoundary he
+  · exact fs_jumpBoundary he
 
 include ihs in
 private theorem id_outputs {s t : StmtExprMd} (hrw : Rw rt s t) (M : Nat) (hM : 7 * (n + 1) ≤ M) :
@@ -1345,10 +1422,10 @@ private theorem id_stmt {s t : StmtExprMd} (hrw : Rw rt s t) (M : Nat) (hM : 7 *
   · have he := (ihs (n + 2) (by omega)).exprT (fun _ _ => trivial) (G := G) _ _ hN (ovOK_none rfl _ _) (M + 12) (by omega)
     have he' := (ihs (n + 2) (by omega)).exprT (fun _ _ => trivial) (G := G) _ _ hN (ovOK_none rfl _ _) (M + 14) (by omega)
     rw [show evalStmt cfg (n + 4) ⟨.IncrDecr m o ⟨.Local x, vs⟩, src⟩ =
-      (evalExpr cfg (n + 2) (.IncrDecr m o ⟨.Local x, vs⟩) >>= fun _ => pure ()) from rfl]
+      (evalExpr cfg (n + 2) (.IncrDecr m o ⟨.Local x, vs⟩) >>= fun _ => pure ()) from stmt_incr _ _ _ _ _]
     cases m
     · rw [pre_stmt_eq (t := ⟨.Local _, _⟩) (ht := rfl)]
-      exact fs_bind he' (fun _ _ _ => fs_pure rfl)
+      exact fs_bind (fs_jumpBoundaryR (noJ_incrDecr cfg _ _ _ _) he') (fun _ _ _ => fs_pure rfl)
     · rw [post_stmt_eq]
       cases o
       all_goals
@@ -1356,8 +1433,8 @@ private theorem id_stmt {s t : StmtExprMd} (hrw : Rw rt s t) (M : Nat) (hM : 7 *
         exact fsr_modify (fun σ σ' h => by strel h) (fs_bind he (fun _ _ _ => fs_pure rfl))
   · have he' := (ihs (n + 2) (by omega)).exprT (fun _ _ => trivial) (G := G) _ _ hN (ovOK_none rfl _ _) (M + 14) (by omega)
     rw [show evalStmt cfg (n + 4) ⟨.CompoundAssign op ⟨.Local x, vs⟩ R, src⟩ =
-      (evalExpr cfg (n + 2) (.CompoundAssign op ⟨.Local x, vs⟩ R) >>= fun _ => pure ()) from rfl, cmp_stmt_eq (t := ⟨.Local _, _⟩) (ht := rfl)]
-    exact fs_bind he' (fun _ _ _ => fs_pure rfl)
+      (evalExpr cfg (n + 2) (.CompoundAssign op ⟨.Local x, vs⟩ R) >>= fun _ => pure ()) from stmt_cmp _ _ _ _ _, cmp_stmt_eq (t := ⟨.Local _, _⟩) (ht := rfl)]
+    exact fs_bind (fs_jumpBoundaryR (noJ_compoundAssign cfg _ _ _ _) he') (fun _ _ _ => fs_pure rfl)
   · have h1 := (ihs n (by omega)).exprMdT (fun _ _ => trivial) (G := G) _ _ (closed _ _ htg) (ovOK_none rfl _ _) (M + 11) (by omega)
     cases m
     · exact field_pre_stmt o (E_notYield htg) hfn (fresh_res c) (fresh_not_shadow c) h1 hc
@@ -1376,6 +1453,52 @@ private theorem id_decl {rt : StmtExprMd → Option Identifier} {s t : StmtExprM
     ⟨op, tg, tg', fn, fn', vs, vs', R, R', src, rsrc, c, ty, rfl, rfl, -⟩
   all_goals (try (cases m <;> cases o))
   all_goals rfl
+
+private theorem recvBlock_plain (c : Nat) (ty : Option HighTypeMd) (tg' : StmtExprMd) (fn' : Identifier)
+    (vs : FileRange) (lower : VariableMd → StmtExprMd) (src : FileRange)
+    (hl : ∀ t, statementLabels (lower t) = [] ∧ (stackAnnotation? (lower t)).isNone = true) :
+    statementLabels (recvBlock c ty tg' fn' vs lower src) = [] ∧
+      (stackAnnotation? (recvBlock c ty tg' fn' vs lower src)).isNone = true := by
+  simp [recvBlock, statementLabels_block, sl_assign, (hl _).1, stackAnnotation?]
+
+/-- A rewrite step of `EliminateIncrDecrAndCompoundAssign` holds no statement-position label and neither side is
+a stack annotation. -/
+private theorem id_rwLab {rt : StmtExprMd → Option Identifier} (s t : StmtExprMd) (hrw : Rw rt s t) :
+    (∀ l, ¬ Reserved.resLabel l → l ∉ statementLabels s ∧ l ∉ statementLabels t) ∧
+      (stackAnnotation? s).isNone = true ∧ (stackAnnotation? t).isNone = true := by
+  rcases rw_cases hrw with ⟨m, o, x, x', vs, vs', src, rsrc, rfl, rfl, -⟩ | ⟨op, x, x', vs, vs', R, R', src, rsrc, rfl, rfl, -⟩ |
+    ⟨m, o, tg, tg', fn, fn', vs, vs', src, rsrc, c, ty, rfl, rfl, -⟩ |
+    ⟨op, tg, tg', fn, fn', vs, vs', R, R', src, rsrc, c, ty, rfl, rfl, -⟩
+  · have := lowerIncrDecr_plain m o ⟨.Local x', vs'⟩ rsrc
+    exact ⟨fun l _ => ⟨by rw [statementLabels_other _ _ (by intros; nofun) (by intros; nofun)]; simp,
+      by rw [this.1]; simp⟩, by simp [stackAnnotation?], this.2⟩
+  · have := lowerOpAssign_plain op ⟨.Local x', vs'⟩ R' rsrc
+    exact ⟨fun l _ => ⟨by rw [statementLabels_other _ _ (by intros; nofun) (by intros; nofun)]; simp,
+      by rw [this.1]; simp⟩, by simp [stackAnnotation?], this.2⟩
+  · have := recvBlock_plain c ty tg' fn' vs' (fun t => lowerIncrDecr m o t rsrc) rsrc (fun t => lowerIncrDecr_plain m o t rsrc)
+    exact ⟨fun l _ => ⟨by rw [statementLabels_other _ _ (by intros; nofun) (by intros; nofun)]; simp,
+      by rw [this.1]; simp⟩, by simp [stackAnnotation?], this.2⟩
+  · have := recvBlock_plain c ty tg' fn' vs' (fun t => lowerOpAssign op t R' rsrc) rsrc (fun t => lowerOpAssign_plain op t R' rsrc)
+    exact ⟨fun l _ => ⟨by rw [statementLabels_other _ _ (by intros; nofun) (by intros; nofun)]; simp,
+      by rw [this.1]; simp⟩, by simp [stackAnnotation?], this.2⟩
+
+/-- Every pair of terms related by `E rt` holds the same statement-position labels. -/
+private theorem id_labE {rt : StmtExprMd → Option Identifier} (s t : StmtExprMd) (h : E rt s t) (l : String)
+    (hl : ¬ Reserved.resLabel l) : (l ∈ statementLabels s ↔ l ∈ statementLabels t) := by
+  obtain ⟨⟨u, st, rfl⟩, hs⟩ := h
+  refine (trav_labels (f := fID rt) (P := PID) (fun e he => he.1) (fun e he => he.2.1) rewriteNode_notYield
+    (fun u r st l hl => ?_) (fun l hl a ts h => h.elim) l hl s u st hs).symm
+  show l ∈ statementLabels ((rewriteNode rt r).run st).1 ↔ _
+  by_cases hk : (∃ m o v, r.val = .IncrDecr m o v) ∨ ∃ o v e, r.val = .CompoundAssign o v e
+  · have h1 := (rewriteNode_plain (rt := rt) r st hk).1
+    have h2 : statementLabels r = [] := by
+      rcases r with ⟨rv, rs⟩
+      rcases hk with ⟨m, o, v, hv⟩ | ⟨o, v, e, hv⟩ <;> dsimp only at hv <;> subst hv <;>
+        exact statementLabels_other _ _ (by intros; nofun) (by intros; nofun)
+    rw [h1, h2]
+  · have h1 : ∀ m o v, r.val ≠ .IncrDecr m o v := fun m o v h => hk (.inl ⟨m, o, v, h⟩)
+    have h2 : ∀ o v e, r.val ≠ .CompoundAssign o v e := fun o v e h => hk (.inr ⟨o, v, e, h⟩)
+    rw [rewriteNode_other r st h1 h2]
 
 /-- `EliminateIncrDecrAndCompoundAssign`, for every receiver-type function `rt`, satisfies
 `PassRel cfg (E rt) (Rw rt) 7 Gl` for every backend `cfg` that satisfies `CfgB`. -/
@@ -1396,6 +1519,12 @@ theorem id_rel {rt : StmtExprMd → Option Identifier} {cfg : ExternalBackendM P
   retHook := fun _ _ _ => trivial
   retPlain := fun _ _ => ⟨fun _ h => h, fun _ => rfl⟩
   retGl := fun _ h => by cases h
+  retRes := fun _ h => by cases h
+  glRes := fun _ _ h => h
+  labE := fun s t h l hl => id_labE s t h l hl
+  rwLab := fun s t hrw => id_rwLab s t hrw
+  exLab := fun _ _ h => h.elim
+  renAnn := fun _ _ h => h.elim
   retK := fun h => absurd rfl h
   retNG := fun h => absurd rfl h
   retVok := fun h => absurd rfl h

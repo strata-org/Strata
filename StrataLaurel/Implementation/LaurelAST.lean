@@ -549,6 +549,8 @@ inductive StmtExpr : Type where
   /-- Conditional with a then-branch and optional else-branch. -/
   | IfThenElse (cond : AstNode StmtExpr) (thenBranch : AstNode StmtExpr) (elseBranch : Option (AstNode StmtExpr))
   /-- A sequence of statements with an optional label, the target of a `Goto`.
+      A labelled block may start with a stack annotation (`stackAnnotation?`), the
+      types of the operand stack values live at its start.
 
       `invariants` and `decreases` matter when the block is the target of a
       backward `Goto` (`destination = .blockStart`), which makes the block a loop:
@@ -574,9 +576,12 @@ inductive StmtExpr : Type where
     (decreases : Option (AstNode StmtExpr))
     (body : AstNode StmtExpr)
     (postTest : Bool)
-  /-- Jump to the start or past the end of an enclosing labelled block. Models
-      `break` and `continue` statements, and the reducible control flow of a
-      bytecode method. -/
+  /-- Jump to the start or past the end of a labelled block. Models `break` and
+      `continue` statements when the block encloses the jump. The block may also be
+      any other labelled block in a statement position of the same procedure body,
+      named by a label unique there, which models the control flow of a bytecode
+      method: see `LabelledJumps` for the rules and `RestructureGotos` for how the
+      blocks are nested into structured control flow. -/
   | Goto (target : String) (destination : GotoDestination)
   /-- Return from the enclosing procedure with one value per declared output; a bare
       `return` is `[]`. The arity is checked by `Check.return`. -/

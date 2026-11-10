@@ -10,6 +10,7 @@ public import StrataLaurel.Implementation.LaurelPass
 public import StrataLaurel.Implementation.StackShape
 public import StrataLaurel.Implementation.HeapAnalysis
 import StrataLaurel.Implementation.MapStmtExpr
+import StrataLaurel.Implementation.LabelledJumps
 
 namespace Strata.Laurel
 
@@ -93,6 +94,12 @@ private structure StackState where
   globals : Std.HashSet String := {}
   openLabels : List String := []
   exits : List (String × Nat × List (Identifier × Option HighTypeMd)) := []
+  targets : Std.HashSet String := {}
+  points : List ((String × Bool) × List (Identifier × Option HighTypeMd)) := []
+  hoisted : List StmtExprMd := []
+  hidden : Nat := 0
+  prevAbrupt : Bool := false
+  exited : Std.HashSet String := {}
 
 private abbrev StackM := StateM StackState
 
@@ -304,9 +311,12 @@ private partial def unexit (isPure : String → Bool) (label : String) (source :
         else combineArms isPure s.source c th' el' r
       | _ => none
 
-private def structureExits (isPure : String → Bool) (e : StmtExprMd) : StmtExprMd :=
+private def structureExits (targets : Std.HashSet String) (isPure : String → Bool) (e : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun n => match n.val with
     | .Block stmts (some label) [] none =>
+      if (statementLabels n).any targets.contains || anyStmtExpr (fun x => match x.val with
+          | .Goto l _ => targets.contains l
+          | _ => false) n then n else
       if stmts.any (exitsTo label) && !(stmts.any (anyStmtExpr fun x => match x.val with
           | .Goto l .blockStart => l == label
           | _ => false)) then
@@ -333,12 +343,55 @@ private def isLoop (label : String) (stmts : List StmtExprMd) : Bool :=
     | .Goto l .blockStart => l == label
     | _ => false)
 
+private def sharedDecl (name : Identifier) (ty : Option HighTypeMd) (source : FileRange) : StackM StmtExprMd := do
+  match ty with
+  | some t => match defaultValue (← get).witnesses t source with
+    | some init => pure ⟨.Assign [⟨.Declare ⟨name, some t⟩, source⟩] init, source⟩
+    | none => pure ⟨.Var (.Declare ⟨name, some t⟩), source⟩
+  | none => pure ⟨.Var (.Declare ⟨name, none⟩), source⟩
+
+private def allocatePoint (label : String) (start : Bool) (slots : List (Option HighTypeMd))
+    (source : FileRange) : StackM (List (Identifier × Option HighTypeMd)) := do
+  let mut names : List (Identifier × Option HighTypeMd) := []
+  for ty in slots do
+    let name ← fresh
+    if ty.isNone then report source s!"a stack value live at '{label}' needs a type, on its push or on the label"
+    let decl ← sharedDecl name ty source
+    modify fun st => { st with shared := name.text :: st.shared, hoisted := st.hoisted ++ [decl] }
+    names := names ++ [(name, ty)]
+  modify fun st => { st with points := ((label, start), names) :: st.points }
+  pure names
+
+/-- The copies that carry the stack into the jump target `label`, a block start
+    when `start`: one assignment per value live there, into the locals the target
+    reads them from, which the first edge to reach the target allocates. -/
+private def enterPoint (label : String) (start : Bool) (source : FileRange) : StackM (List StmtExprMd) := do
+  let st ← get
+  if st.hidden > 0 && !st.stack.isEmpty then
+    report source "a jump to a block that does not enclose it cannot carry stack values out of a loop, try or quantifier"
+    return []
+  let names ← match st.points.find? (·.1 == (label, start)) with
+    | some (_, ns) => pure ns
+    | none => allocatePoint label start (st.stack.map (·.2)) source
+  if names.length != st.stack.length then
+    report source s!"the jumps to '{label}' carry different numbers of stack values"
+    return []
+  pure ((names.zip st.stack).map fun ((n, _), (v, _)) =>
+    (⟨.Assign [⟨.Local n, source⟩] ⟨.Var (.Local v), source⟩, source⟩ : StmtExprMd))
+
+private def pointStack (label : String) (start : Bool) : StackM (List (Identifier × Option HighTypeMd)) := do
+  pure (((← get).points.find? (·.1 == (label, start))).map (·.2) |>.getD [])
+
 mutual
 
-private partial def elimStmts (stmts : List StmtExprMd) : StackM (List StmtExprMd) :=
-  stmts.flatMapM elimStmt
+private partial def elimStmts (stmts : List StmtExprMd) : StackM (List StmtExprMd) := do
+  stmts.flatMapM fun s => do
+    let r ← elimStmt s
+    modify fun st => { st with prevAbrupt := endsAbruptlyIn st.exited s }
+    pure r
 
 private partial def elimBranch (branch : StmtExprMd) : StackM StmtExprMd := do
+  modify fun st => { st with prevAbrupt := false }
   match branch.val with
   | .Block stmts none [] none => pure ⟨.Block (← elimStmts stmts) none [] none, branch.source⟩
   | _ => pure (wrapBlock (← elimStmt branch) branch.source)
@@ -404,12 +457,39 @@ private partial def mergeArms (source : FileRange) (base : List (Identifier × O
 
 private partial def elimIsolated (body : StmtExprMd) (what : String) : StackM StmtExprMd := do
   let outer := (← get).stack
-  set { (← get) with stack := [] }
+  set { (← get) with stack := [], hidden := (← get).hidden + outer.length }
   let body' ← elimBranch body
   unless (← get).stack.isEmpty do
     report body.source s!"stack values are left over at the end of {what}"
-  set { (← get) with stack := outer }
+  set { (← get) with stack := outer, hidden := (← get).hidden - outer.length }
   pure body'
+
+private partial def elimJumpTarget (s : StmtExprMd) (stmts : List StmtExprMd) (label : String)
+    (invs : List StmtExprMd) (dec : Option StmtExprMd) : StackM (List StmtExprMd) := do
+  let invs' ← invs.mapM elimRoot
+  let dec' ← dec.mapM elimRoot
+  let fallIn ← if (← get).prevAbrupt then pure [] else enterPoint label true s.source
+  let entry ← pointStack label true
+  set { (← get) with stack := entry }
+  let body := match stmts with
+    | first :: rest => if (stackAnnotation? first).isSome then rest else stmts
+    | [] => []
+  modify fun st => { st with prevAbrupt := false }
+  let stmts' ← elimStmts body
+  let fallOut ← if endsAbruptlyIn (← get).exited ⟨.Block stmts' none [] none, s.source⟩ then pure []
+    else enterPoint label false s.source
+  set { (← get) with stack := ← pointStack label false }
+  pure (fallIn ++ [⟨.Block (stmts' ++ fallOut) (some label) invs' dec', s.source⟩])
+
+private partial def elimLabelled (s : StmtExprMd) (stmts : List StmtExprMd) (label : Option String)
+    (invs : List StmtExprMd) (dec : Option StmtExprMd) : StackM (List StmtExprMd) := do
+  let invs' ← invs.mapM elimRoot
+  let dec' ← dec.mapM elimRoot
+  let body' ← elimIsolated ⟨.Block stmts none [] none, s.source⟩ "a labelled block"
+  let stmts' := match body'.val with
+    | .Block inner none [] none => inner
+    | _ => [body']
+  pure [⟨.Block stmts' label invs' dec', s.source⟩]
 
 private partial def elimRoot (e : StmtExprMd) : StackM StmtExprMd :=
   elimIsolated e "an expression"
@@ -475,7 +555,9 @@ private partial def elimStmt (s0 : StmtExprMd) : StackM (List StmtExprMd) := do
     let final := (← get).stack
     let (decls, arms') ← mergeArms s.source base [(⟨.Block stmts' none [] none, s.source⟩, final)]
     pure (decls ++ arms')
-  | .Block stmts (some label) [] none =>
+  | .Block stmts (some label) invs dec =>
+    if (← get).targets.contains label then return ← elimJumpTarget s stmts label invs dec
+    if !invs.isEmpty || dec.isSome then return ← elimLabelled s stmts (some label) invs dec
     if isLoop label stmts then
       let body' ← elimIsolated ⟨.Block stmts none [] none, s.source⟩ "a labelled block"
       let stmts' := match body'.val with
@@ -496,14 +578,7 @@ private partial def elimStmt (s0 : StmtExprMd) : StackM (List StmtExprMd) := do
     let placed := ((mine.map (·.2.1)).zip (exitCopies ++ mine.map fun _ => []))
     let body := (stmts' ++ natCopies).map (placeExitCopies placed)
     pure (decls ++ [⟨.Block body (some label) [] none, s.source⟩])
-  | .Block stmts label invs dec =>
-    let invs' ← invs.mapM elimRoot
-    let dec' ← dec.mapM elimRoot
-    let body' ← elimIsolated ⟨.Block stmts none [] none, s.source⟩ "a labelled block"
-    let stmts' := match body'.val with
-      | .Block inner none [] none => inner
-      | _ => [body']
-    pure [⟨.Block stmts' label invs' dec', s.source⟩]
+  | .Block stmts label invs dec => elimLabelled s stmts label invs dec
   | .While c invs dec body postTest =>
     if countStackReads c > 0 || hasStackPush c then
       report c.source "a loop condition cannot use the stack"
@@ -517,8 +592,16 @@ private partial def elimStmt (s0 : StmtExprMd) : StackM (List StmtExprMd) := do
       pure { c with body := ← elimIsolated c.body "a catch handler" }
     let fin' ← fin.mapM (elimIsolated · "a finally block")
     pure [⟨.Try body' catches' fin', s.source⟩]
-  | .Goto target .blockEnd =>
+  | .Goto target destination =>
     let st ← get
+    if st.targets.contains target then
+      let copies ← enterPoint target (destination matches .blockStart) s.source
+      modify fun st => { st with stack := [] }
+      return copies ++ [s]
+    if destination matches .blockStart then
+      unless st.stack.isEmpty do
+        report s.source "stack values are left over at a jump"
+      return [s]
     if st.openLabels.contains target then
       set { st with counter := st.counter + 1, exits := st.exits ++ [(target, st.counter, st.stack)] }
       pure [exitMarker st.counter s]
@@ -526,10 +609,6 @@ private partial def elimStmt (s0 : StmtExprMd) : StackM (List StmtExprMd) := do
       unless st.stack.isEmpty do
         report s.source "stack values are left over at a jump"
       pure [s]
-  | .Goto .. =>
-    unless (← get).stack.isEmpty do
-      report s.source "stack values are left over at a jump"
-    pure [s]
   | _ =>
     if hasStackPush s then report s.source "a stack push must be a statement"
     pure [← popReads s]
@@ -846,16 +925,34 @@ private def inlinePushes (e : StmtExprMd) : StackM StmtExprMd := do
   let step (e : StmtExprMd) := boolSimplify (simplifyQuantifiers (unwrapValue isPure (simplify isPure writers globals (tempUses e) e)))
   pure ((List.range 4).foldl (fun e _ => step e) e)
 
+private def annotatePoints (targets : Std.HashSet String) (e : StmtExprMd) : StackM Unit := do
+  let blocks := collectStmtExprList (fun n => match n.val with
+    | .Block (first :: _) (some l) _ _ =>
+      if targets.contains l then ((stackAnnotation? first).map fun tys => (l, tys, n.source)).toList else []
+    | _ => []) e
+  for (l, tys, source) in blocks do
+    if !((← get).points.any (·.1 == (l, true))) then
+      let _ ← allocatePoint l true (tys.reverse.map some) source
+
 def eliminateStack (program : LaurelProgram) (wrapOld : StmtExprMd → Bool := fun _ => true)
     (heapWriters : Option (Std.HashSet Nat) := none) : LaurelProgram × List Message :=
   let run (proc : Procedure) : StateM StackState Procedure :=
     if procedureTouchesStack proc then do
       let entry := (proc.inputs ++ proc.outputs).map (·.name.text)
-      modify fun s => { s with
-        wrapOld := fun v => wrapOld v || (localNames v).any fun n => entry.contains n || s.globals.contains n }
+      let (targets, exited) := match proc.body with
+        | .Transparent b | .Opaque _ (some b) _ => (nonEnclosingTargets b, exitedLabels b)
+        | _ => ({}, {})
+      modify fun st => { st with targets, exited, points := [], hoisted := [] }
+      modify fun st => { st with
+        wrapOld := fun v => wrapOld v || (localNames v).any fun n => entry.contains n || st.globals.contains n }
       let isPure := (← get).pure
-      mapProcedureM (fun e => elimRoot (structureExits isPure e) >>= retypeShared >>= oldifyPushes >>= inlinePushes
-        >>= fun e' => inlinePushes (structureExits isPure e')) proc
+      mapProcedureM (fun e => do
+        annotatePoints targets e
+        let e' ← elimRoot (structureExits targets isPure e)
+        let hoisted := (← get).hoisted
+        modify fun st => { st with hoisted := [] }
+        let e'' ← retypeShared (prependStmts hoisted e') >>= oldifyPushes >>= inlinePushes
+        inlinePushes (structureExits targets isPure e'')) proc
     else pure proc
   let witnesses := program.types.filterMap fun
     | .Constrained ct => some (ct.name.text, ct.witness)

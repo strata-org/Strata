@@ -3,7 +3,7 @@ import StrataLaurel.PassSemantics.Host
 /-!
 # Fuel monotonicity of the Laurel interpreter
 
-`monoAt : ∀ n, MonoAt cfg n`: each of the interpreter's 18 mutual functions satisfies
+`monoAt : ∀ n, MonoAt cfg n`: each of the interpreter's 22 mutual functions satisfies
 `Le (f n …) (f (n + 1) …)`, for every external backend `cfg`. It is one induction on
 `n`; each `step_*` lemma unfolds one function and closes the goal with `mono_real`.
 
@@ -27,6 +27,19 @@ theorem withBlockScope_le {stmts : List StmtExprMd} {x y : EvalM PM α} (h : Le 
   unfold withBlockScope
   mono_tac
 
+theorem withLabels_le {f : List String → List String} {x y : EvalM PM α} (h : Le x y) :
+    Le (withLabels f x) (withLabels f y) := by
+  unfold withLabels
+  mono_tac
+
+theorem jumpBoundary_le {x y : EvalM PM α} (h : Le x y) : Le (jumpBoundary x) (jumpBoundary y) := by
+  unfold jumpBoundary
+  mono_tac
+
+theorem withOpenLabel_le {l : String} {x y : EvalM PM α} (h : Le x y) :
+    Le (withOpenLabel l x) (withOpenLabel l y) :=
+  withLabels_le h
+
 theorem withOperandWindow_le {s : StmtExprMd} {x y : EvalM PM α} (h : Le x y) :
     Le (withOperandWindow s x) (withOperandWindow s y) := by
   simp only [withOperandWindow]
@@ -49,6 +62,10 @@ structure MonoAt (n : Nat) : Prop where
   iter : ∀ c b p ci ci' eb eb', Le ci ci' → Le eb eb' →
     Le (evalWhileIter cfg c b p ci eb n) (evalWhileIter cfg c b p ci' eb' (n + 1))
   blockLoop : ∀ ss l invs base, Le (evalBlockLoop cfg n ss l invs base) (evalBlockLoop cfg (n + 1) ss l invs base)
+  blockFrom : ∀ ss bl invs k l d,
+    Le (evalBlockFrom cfg n ss bl invs k l d) (evalBlockFrom cfg (n + 1) ss bl invs k l d)
+  stmtFrom : ∀ s l d, Le (evalStmtFrom cfg n s l d) (evalStmtFrom cfg (n + 1) s l d)
+  runFrom : ∀ ss k l d, Le (runFrom cfg n ss k l d) (runFrom cfg (n + 1) ss k l d)
   fin : ∀ f i b k, Le (runTryFinally cfg n f i b k) (runTryFinally cfg (n + 1) f i b k)
   finish : ∀ f i b k c, Le (finishCatchClause cfg n f i b k c) (finishCatchClause cfg (n + 1) f i b k c)
   clauses : ∀ f i b k v j cs,
@@ -79,6 +96,9 @@ macro "mono_real" : tactic => `(tactic|
     | with_reducible exact ih.stmt _
     | with_reducible (apply ih.iter <;> assumption)
     | with_reducible exact ih.blockLoop _ _ _ _
+    | with_reducible exact ih.blockFrom _ _ _ _ _ _
+    | with_reducible exact ih.stmtFrom _ _ _
+    | with_reducible exact ih.runFrom _ _ _ _
     | with_reducible exact ih.fin _ _ _ _
     | with_reducible exact ih.finish _ _ _ _ _
     | with_reducible exact ih.clauses _ _ _ _ _ _ _
@@ -90,6 +110,7 @@ macro "mono_real" : tactic => `(tactic|
     | with_reducible exact ih.pre _ _ _
     | with_reducible exact ih.post _ _ _ _ _ _ _
     | with_reducible exact ih.proc _ _ _
+    | with_reducible apply jumpBoundary_le
     | ((with_reducible show KeepsOOF _); keeps_oof)
     | with_reducible apply muteSel_le
     | with_reducible apply muteE_le
@@ -102,6 +123,8 @@ macro "mono_real" : tactic => `(tactic|
     | apply forIn_le
     | apply arrayMapM_le
     | apply withBlockScope_le
+    | apply withLabels_le
+    | apply withOpenLabel_le
     | apply withOperandWindow_le
     | apply preconditionValue_le
     | refine fun _ => ?_
@@ -190,6 +213,45 @@ theorem step_blockLoop {n : Nat} (ih : MonoAt cfg n) :
   intro ss l invs base; rw [evalBlockLoop, evalBlockLoop]; mono_real
 
 set_option maxHeartbeats 4000000 in
+/-- `evalBlockFrom` is monotone in its fuel at `n + 1`, given `MonoAt cfg n`. -/
+theorem step_blockFrom {n : Nat} (ih : MonoAt cfg n) :
+    ∀ ss bl invs k l d,
+    Le (evalBlockFrom cfg (n + 1) ss bl invs k l d) (evalBlockFrom cfg (n + 1 + 1) ss bl invs k l d) := by
+  intro ss bl invs k l d
+  unfold evalBlockFrom
+  dsimp only
+  mono_real
+
+set_option maxHeartbeats 4000000 in
+/-- `evalStmtFrom` is monotone in its fuel at `n + 1`, given `MonoAt cfg n`. -/
+theorem step_stmtFrom {n : Nat} (ih : MonoAt cfg n) :
+    ∀ s l d, Le (evalStmtFrom cfg (n + 1) s l d) (evalStmtFrom cfg (n + 1 + 1) s l d) := by
+  intro s l d
+  rcases s with ⟨v, src⟩
+  cases v
+  case Block stmts bl invs dec =>
+    unfold evalStmtFrom
+    dsimp only
+    mono_real
+  case IfThenElse c th el =>
+    unfold evalStmtFrom
+    dsimp only
+    mono_real
+  all_goals
+    unfold evalStmtFrom
+    dsimp only
+    mono_real
+
+set_option maxHeartbeats 4000000 in
+/-- `runFrom` is monotone in its fuel at `n + 1`, given `MonoAt cfg n`. -/
+theorem step_runFrom {n : Nat} (ih : MonoAt cfg n) :
+    ∀ ss k l d, Le (runFrom cfg (n + 1) ss k l d) (runFrom cfg (n + 1 + 1) ss k l d) := by
+  intro ss k l d
+  unfold runFrom
+  dsimp only
+  mono_real
+
+set_option maxHeartbeats 4000000 in
 /-- `evalWhileIter` is monotone in its fuel at `n + 1`, given `MonoAt cfg n`. -/
 theorem step_iter {n : Nat} (ih : MonoAt cfg n) :
     ∀ c b p ci ci' eb eb', Le ci ci' → Le eb eb' →
@@ -271,18 +333,19 @@ interpreter's mutual functions run with fuel `n + 1` gives exactly the result of
 `n` whenever that run does not run out of fuel (`Le`). -/
 theorem monoAt : ∀ n, MonoAt cfg n
   | 0 => by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
       intros <;> first
         | (rw [evalExpr]; exact oof_le _)
         | (rw [evalStmt]; exact oof_le _)
         | (rw [evalWhileIter]; exact oof_le _)
         | (rw [evalBlockLoop]; exact oof_le _)
-        | (simp only [evalScopedStmt, evalExprMd, assignTarget, readForUpdate, runTryFinally,
+        | (simp only [evalScopedStmt, evalExprMd, assignTarget, readForUpdate, evalBlockFrom, evalStmtFrom, runFrom,
+            runTryFinally,
             finishCatchClause, tryCatchClauses, evalStmtListGo, evalStmtList, resumeCoroutine,
             evalCallOutputs, invokeCallee, checkPreconditions, checkPostconditions, invokeProc]
            exact oof_le _)
   | n + 1 => by
     have ih := monoAt n
-    exact ⟨step_scoped_ cfg ih, step_exprMd cfg ih, step_expr cfg ih, step_assign cfg ih, step_update cfg ih, step_stmt cfg ih, step_iter cfg ih, step_blockLoop cfg ih, step_fin cfg ih, step_finish cfg ih, step_clauses cfg ih, step_go cfg ih, step_list cfg ih, step_resume cfg ih, step_outputs cfg ih, step_callee cfg ih, step_pre cfg ih, step_post cfg ih, step_proc cfg ih⟩
+    exact ⟨step_scoped_ cfg ih, step_exprMd cfg ih, step_expr cfg ih, step_assign cfg ih, step_update cfg ih, step_stmt cfg ih, step_iter cfg ih, step_blockLoop cfg ih, step_blockFrom cfg ih, step_stmtFrom cfg ih, step_runFrom cfg ih, step_fin cfg ih, step_finish cfg ih, step_clauses cfg ih, step_go cfg ih, step_list cfg ih, step_resume cfg ih, step_outputs cfg ih, step_callee cfg ih, step_pre cfg ih, step_post cfg ih, step_proc cfg ih⟩
 
 end Strata.Laurel.PassSemantics

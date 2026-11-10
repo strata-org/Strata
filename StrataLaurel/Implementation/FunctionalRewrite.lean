@@ -782,6 +782,35 @@ decreasing_by
   all_goals omega
 end
 
+/-- Whether `s` branches: copying a continuation that branches compounds with every
+    block whose exits copy it again. -/
+private def branches (s : StmtExprMd) : Bool :=
+  let check (n : StmtExprMd) : StateM Bool StmtExprMd := do
+    match n.val with
+    | .IfThenElse .. | .Block _ (some _) _ _ => set true; pure n
+    | _ => pure n
+  ((mapStmtExprM check s).run false).2
+
+/-- For a block labelled `l` with body `block`: the locals declared outside it that it
+    assigns, and the labels outside it that it exits to other than `l`, when it exits to
+    `l` at least once and contains no `return`; otherwise none. What follows the block
+    then depends on it only through those locals and the exit taken, so it is translated
+    once rather than at each exit. -/
+private def sharedJoin (l : String) (block : StmtExprMd) : Option (List Identifier × List String) :=
+  let scan (n : StmtExprMd) : StateM (List String × List String × Bool) StmtExprMd := do
+    match n.val with
+    | .Goto t _ => modify fun (ts, ls, r) => (t :: ts, ls, r)
+    | .Block _ (some m) _ _ => modify fun (ts, ls, r) => (ts, m :: ls, r)
+    | .Return _ => modify fun (ts, ls, _) => (ts, ls, true)
+    | _ => pure ()
+    pure n
+  let (targets, labels, returns) := ((mapStmtExprM scan block).run ([], [], false)).2
+  let declared := declaredLocalUids block
+  let assigned := (assignedLocals block).filter fun x => !(x.uniqueId.any declared.contains)
+  let distinct := assigned.foldl (fun acc x => if acc.any (sameVar x) then acc else acc ++ [x]) []
+  let outer := (targets.filter fun t => t != l && !labels.contains t).eraseDups
+  if returns || !targets.contains l then none else some (distinct, outer)
+
 /-- Translate a statement sequence into a single expression, or report the first
     statement that has no functional form.
 
@@ -907,8 +936,43 @@ private def functionalizeStmts (model : SemanticModel) (inputUids : List Nat)
       -- Like the if rule, this duplicates the continuation: it appears once per
       -- exit plus once for the fall-through path.
       | some l => do
-        let kr ← functionalizeStmts model inputUids retExpr labelConts rest k
-        functionalizeStmts model inputUids retExpr ((l, kr) :: labelConts) stmts' kr
+        let inner : StmtExprMd := ⟨.Block stmts' none [] none, s.source⟩
+        let src := s.source
+        let ref (x : Identifier) : StmtExprMd := ⟨.Var (.Local x), src⟩
+        let lit (b : Bool) : StmtExprMd := ⟨.LiteralBool b, src⟩
+        let contOf (o : String) : Option StmtExprMd :=
+          if o == returnLabel then some retExpr else (labelConts.find? (·.1 == o)).map (·.2)
+        match (if rest.any branches then sharedJoin l inner else none) with
+        | some (assigned, outer) =>
+          match outer.mapM contOf with
+          | some outerConts => do
+            let outcomes := l :: outer
+            let under (value : String → StmtExprMd) : Except Message StmtExprMd :=
+              functionalizeStmts model inputUids (value returnLabel)
+                (outcomes.map (fun o => (o, value o)) ++ labelConts) stmts' (value l)
+            let values ← assigned.mapM fun x => under fun _ => ref x
+            let flags ← (outcomes.dropLast).mapM fun o => under fun o' => lit (o' == o)
+            let tmp (i : Nat) : Identifier := mkId s!"$join_{l}_{i}"
+            let declare (name : Identifier) (ty : HighTypeMd) (v : StmtExprMd) : StmtExprMd :=
+              ⟨.Assign [⟨.Declare ⟨name, some ty⟩, src⟩] v, src⟩
+            let boolTy : HighTypeMd := ⟨.TBool, src⟩
+            let staged := (values.zipIdx.map fun (v, i) =>
+                declare (tmp i) (model.get assigned[i]!).getType v) ++
+              (flags.zipIdx.map fun (f, i) => declare (tmp (values.length + i)) boolTy f)
+            let rebound := assigned.zipIdx.map fun (x, i) =>
+              declare x (model.get x).getType (ref (tmp i))
+            let restExpr ← functionalizeStmts model inputUids retExpr labelConts rest k
+            let conts := restExpr :: outerConts
+            let last := conts.getLast?.getD restExpr
+            let dispatch := (conts.dropLast.zipIdx).foldr (fun (c, i) acc =>
+              ⟨.IfThenElse (ref (tmp (values.length + i))) c (some acc), src⟩) last
+            .ok ⟨.Block (staged ++ rebound ++ [dispatch]) none [] none, src⟩
+          | none =>
+            let kr ← functionalizeStmts model inputUids retExpr labelConts rest k
+            functionalizeStmts model inputUids retExpr ((l, kr) :: labelConts) stmts' kr
+        | _ =>
+          let kr ← functionalizeStmts model inputUids retExpr labelConts rest k
+          functionalizeStmts model inputUids retExpr ((l, kr) :: labelConts) stmts' kr
     -- A pure expression with nothing following it is discarded, as in the procedure: the
     -- value is the continuation, so an output the body never assigns keeps its hole.
     -- Anything else, or an expression with statements after it, has no functional form.
