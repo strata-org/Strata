@@ -340,16 +340,7 @@ def processTopDecls (index : PolymorphicFuncDecls) (factory : Lambda.Factory Cor
 /-- Apply a type substitution to every field of `f`. -/
 def monomorphizeFunction (f : Function) (newName : CoreIdent) (inst : TypeArgsSubstitution)
   : Function :=
-  let S := inst.subst
-  { f with
-    inputs := f.inputs.map (fun (id, mty) => (id, LMonoTy.subst S mty)),
-    output := LMonoTy.subst S f.output,
-    body := f.body.map (·.applyTypeSubst S),
-    axioms := f.axioms.map (·.applyTypeSubst S),
-    preconditions := f.preconditions.map (fun p => { p with expr := p.expr.applyTypeSubst S }),
-    measure := f.measure.map (·.applyTypeSubst S)
-    name := newName,
-    typeArgs := [] }
+  { Lambda.LFuncDefined.applyTypeSubst f inst.subst with name := newName, typeArgs := [] }
 
 /-- The state threaded through the worklist while working on monomorphization -/
 structure MonoWorklistState where

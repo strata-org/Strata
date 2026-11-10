@@ -14,6 +14,7 @@ import Strata.Languages.Core.Factory
 import Strata.Transform.TerminationCheck
 import Strata.Languages.Core.AbstractCalls
 import Strata.Util.Tactics
+import Strata.Util.Name
 
 /-! # Partial Function Precondition Elimination
 
@@ -177,7 +178,7 @@ def mkWFLemmas (taken : Std.HashSet String) (fns : List Function) (typeArgs : Li
       | .assume _ p _ => (p :: hyps, names, lemmas)
       | .assert label q md =>
         let e := hyps.foldl (init := q) fun body p => LExpr.mkApp () boolImpliesOp [p, body]
-        let name := Lemma.freshName names label
+        let name := Strata.Name.freshName names label
         let e := Lemma.forallAbstractingCalls fns binders e
         (hyps, names.insert name, .lemma { name, typeArgs, e } md :: lemmas)
       | _ => (hyps, names, lemmas)

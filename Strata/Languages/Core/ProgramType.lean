@@ -11,6 +11,7 @@ public import Strata.Languages.Core.ProcedureType
 public import Strata.DL.Lambda.LExprT
 public import Strata.Languages.Core.Factory
 public import Strata.DL.Lambda.LTyWF
+public import Strata.Util.Name
 
 public section
 
@@ -175,7 +176,18 @@ C are already well-typed.
         -- type parameter: it is first checked with each one replaced by a
         -- fresh opaque type.
         unless l.typeArgs.isEmpty do
-          let rigid := l.typeArgs.map fun a => (a, s!"{skolemPrefix}{l.name}_{a}")
+          -- The opaque types skip the names already known as types or type
+          -- synonyms, so that none of them is a type the program declares.
+          -- Almost no program declares one, so the set of known names is built
+          -- only when a candidate is taken.
+          let candidates := l.typeArgs.map fun a => s!"{skolemPrefix}{l.name}_{a}"
+          let isTaken n := C.knownTypes.containsName n || Env.context.aliases.any (·.name == n)
+          let rigidNames :=
+            if candidates.any isTaken then
+              (Strata.Name.freshNames (Std.HashSet.ofList
+                (C.knownTypes.keywords ++ Env.context.aliases.map (·.name))) candidates).1
+            else candidates
+          let rigid := l.typeArgs.zip rigidNames
           let C' ← rigid.foldlM (init := C) fun C (_, n) =>
             C.addKnownTypeWithError { name := n, metadata := 0 }
               (Message.withRange fileRange f!"Error in lemma {l.name}: type {n} already exists.")

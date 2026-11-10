@@ -44,6 +44,13 @@ theorem ListMap.keys_eq_map_fst (m : ListMap α β) : m.keys = m.map Prod.fst :=
   | nil => rfl
   | cons p t ih => cases p; simp [ListMap.keys, ih]
 
+/-- Mapping over the values of a map keeps its keys. -/
+theorem ListMap.keys_map_values {γ : Type _} (m : ListMap α β) (g : α × β → γ) :
+    @ListMap.keys α γ (List.map (fun x => (x.fst, g x)) m) = m.keys := by
+  have h := ListMap.keys_eq_map_fst (α := α) (β := γ) (List.map (fun x => (x.fst, g x)) m)
+  rw [h, ListMap.keys_eq_map_fst m]
+  exact List.map_map.trans rfl
+
 
 theorem ListMap.values_eq_map_snd (m : ListMap α β) : m.values = m.map Prod.snd := by
   induction m with

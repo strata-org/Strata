@@ -14,6 +14,7 @@ import all Strata.DL.Lambda.FactoryProps
 import Strata.Util.Tactics
 import Strata.Languages.Core.AbstractCalls
 import Strata.Transform.FoldConnectives
+import Strata.Util.Name
 
 /-! # Termination Checking for Recursive Functions
 
@@ -420,7 +421,7 @@ where
           for d in decls do
             match d with
             | .lemma l md' =>
-              let name := Lemma.freshName taken l.name
+              let name := Strata.Name.freshName taken l.name
               taken := taken.insert name
               revNamed := .lemma { l with name } md' :: revNamed
             | _ => revNamed := d :: revNamed

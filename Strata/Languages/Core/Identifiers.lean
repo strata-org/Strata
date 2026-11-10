@@ -89,12 +89,6 @@ def checkTypeArgsNodup (pfx : String) (ta : List String) : Except Format Unit :=
   else
     pure ()
 
-/-- Reject a type parameter that is not an allowed name; the error message starts with `pfx`. -/
-def checkTypeArgsAllowed (pfx : String) (ta : List String) : Except Format Unit :=
-  match ta.find? (fun a => !Lambda.isAllowedName a) with
-  | some a => throw f!"{pfx}: type parameter '{a}' is a reserved name"
-  | none => pure ()
-
 end -- public section
 
 namespace Syntax

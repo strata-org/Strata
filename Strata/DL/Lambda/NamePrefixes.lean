@@ -50,9 +50,11 @@ def exprPrefix : String := "$__tvar"
     variables. -/
 @[expose] def freeTyPrefix : String := "$__free_"
 
-/-- Name prefixes reserved for generated identifiers. The passes that use them choose names
+/-- Name prefixes reserved for generated identifiers. Some passes that use them choose names
     without checking all of the program's names, so a written name with one of these prefixes
-    could be captured. -/
+    could be captured. Type checking and `GenOpaqueTypeParams` instead avoid the program's
+    names for the types they generate (`$__free_`, `$__rigid_`, `$__opaque`), and rename a
+    function type parameter with a reserved prefix. -/
 @[expose]
 def reservedNamePrefixes : List String :=
   [genTyPrefix, skolemPrefix, elimTyPrefix, callElimTyPrefix, inlineTyPrefix,

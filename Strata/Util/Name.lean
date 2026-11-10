@@ -81,6 +81,31 @@ def findUnique (baseName : String) (startSuffix : Nat)
     | some name => name
     | none => disambiguate baseName (slowSuffix + usedList.length + 1)
 
+/-- `base`, or `base_k` for the smallest `k ≥ 1` that makes it differ from
+every name in `taken`. Generated lemmas, abstracted calls and generated types
+are named this way, so that they never clash with a name of the program or
+with each other. -/
+def freshName (taken : Std.HashSet String) (base : String) : String :=
+  if !taken.contains base then base
+  else
+    let rec go (k : Nat) (fuel : Nat) : String :=
+      match fuel with
+      | 0 => s!"{base}_{k}"
+      | fuel + 1 =>
+        let n := s!"{base}_{k}"
+        if taken.contains n then go (k + 1) fuel else n
+    go 1 taken.size
+
+/-- A fresh name for each of `bases` in turn, as `freshName` picks it, avoiding
+the names in `taken` and the names picked before it. Returns the names and
+`taken` with them added. -/
+def freshNames (taken : Std.HashSet String) (bases : List String) :
+    List String × Std.HashSet String :=
+  let (acc, taken) := bases.foldl (init := ([], taken)) fun (acc, taken) b =>
+    let n := freshName taken b
+    (n :: acc, taken.insert n)
+  (acc.reverse, taken)
+
 end Strata.Name
 
 end -- public section

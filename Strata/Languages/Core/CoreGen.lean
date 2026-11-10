@@ -109,5 +109,15 @@ instance : LabelGen.WFLabelGen CoreIdent CoreGenState where
 
 abbrev CoreGenM := StateM CoreGenState
 
+/-- Generate a name with prefix `pf` that is not in `taken`, retrying
+    `CoreGenState.gen`, which knows only the names it generated, until the name
+    avoids `taken`. `taken.size + 1` calls suffice. -/
+def CoreGenState.genAvoiding (taken : Std.HashSet String) (pf : CoreIdent) :
+    CoreGenM CoreIdent := do
+  let mut n ← CoreGenState.gen pf
+  for _ in [0:taken.size] do
+    if taken.contains n.name then n ← CoreGenState.gen pf else break
+  return n
+
 end
 end Core

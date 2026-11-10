@@ -217,6 +217,12 @@ def Program.init : Program :=
 instance : Inhabited Program where
   default := .init
 
+/-- The names of the types the program declares at the top level. -/
+def Program.typeNames (p : Program) : List String :=
+  p.decls.flatMap fun
+    | .type td _ => td.names.map (·.name)
+    | _ => []
+
 /-- Declarations that appear strictly before the first procedure named
     `procName`. If no such procedure exists, this is every declaration. -/
 @[expose] def Program.declsBeforeProcedure (p : Program) (procName : String) : List Decl :=

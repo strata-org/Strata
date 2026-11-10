@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.Factory
+import Strata.Util.ListMapProps
 
 /-! ## Lambda Expression Typing -/
 
@@ -23,6 +24,25 @@ If e is an LExprT whose metadata contains type information, use applySubstT.
 -/
 def LExpr.applyTypeSubst {T : LExprParams} (e : LExpr T.mono) (S : Subst) : LExpr T.mono :=
   if S.hasEmptyScopes then e else replaceUserProvidedType e (LMonoTy.subst S)
+
+/-- Apply type substitution `S` to every type of `f`: its input and output
+types and the type annotations of its body, axioms, preconditions and measure.
+Its name and type parameters are unchanged. -/
+def LFuncDefined.applyTypeSubst {T : LExprParams} (f : LFuncDefined T) (S : Subst) :
+    LFuncDefined T :=
+  { f with
+    inputs := f.inputs.map (fun (id, mty) => (id, LMonoTy.subst S mty)),
+    output := LMonoTy.subst S f.output,
+    body := f.body.map (·.applyTypeSubst S),
+    axioms := f.axioms.map (·.applyTypeSubst S),
+    preconditions := f.preconditions.map (fun p => { p with expr := p.expr.applyTypeSubst S }),
+    measure := f.measure.map (·.applyTypeSubst S) }
+
+/-- A type substitution keeps a function's input names. It sits beside the
+definition because this module has no companion `Props` file. -/
+theorem LFuncDefined.applyTypeSubst_inputs_keys {T : LExprParams} (f : LFuncDefined T)
+    (S : Subst) : (LFuncDefined.applyTypeSubst f S).inputs.keys = f.inputs.keys :=
+  ListMap.keys_map_values _ _
 
 /-- Typecheck an annotated `LExpr`, returning `some τ` if well-typed, `none`
 otherwise. `ctx` maps de Bruijn indices to their types from enclosing

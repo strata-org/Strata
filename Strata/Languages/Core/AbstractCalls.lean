@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Core.Axiom
 public import Strata.Languages.Core.Function
 public import Strata.DL.Lambda.NamePrefixes
+import Strata.Util.Name
 
 /-! # Abstracting calls in generated lemmas
 
@@ -79,7 +80,7 @@ private def varFor (func : Function) : StateM AbstractState (LExpr CoreLParams.m
   match if func.typeArgs.isEmpty then st.shared.lookup f else none with
   | some x => return .fvar () x (some ty)
   | none =>
-    let x : CoreIdent := ⟨Lemma.freshName st.used s!"{f}_fn", ()⟩
+    let x : CoreIdent := ⟨Strata.Name.freshName st.used s!"{f}_fn", ()⟩
     set { st with shared := (f, x) :: st.shared, vars := (x, ty) :: st.vars,
                   used := st.used.insert x.name }
     return .fvar () x (some ty)

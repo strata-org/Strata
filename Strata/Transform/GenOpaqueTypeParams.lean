@@ -14,6 +14,7 @@ public import Strata.DL.Lambda.LExprType
 public import Strata.DL.Lambda.NamePrefixes
 public import Strata.Languages.Core.NameMangling
 import all Strata.DL.Imperative.Stmt
+public import Strata.Util.Name
 
 /-! # Generalize Type Parameters to Opaque Types
 
@@ -50,10 +51,9 @@ body.
 For each procedure whose `header.typeArgs` is `x₁, …, xₖ`:
 
 1. A fresh, globally-unique *opaque type* is minted per type parameter, named
-   `$__opaque_{procName}_{xᵢ}_N` (the `$__` prefix reserves the internal
-   namespace so the name cannot collide with a user-declared type; the trailing
-   `_N` is a fresh counter from the shared `CoreGenState`, guaranteeing
-   uniqueness).  Each becomes a nullary top-level type declaration `type {name};`
+   `$__opaque_{procName}_{xᵢ}_N`, where `_N` is a fresh counter from the shared
+   `CoreGenState`, skipping any name the program already declares as a type, so
+   it never collides with one.  Each becomes a nullary top-level type declaration `type {name};`
    emitted immediately before the procedure.
 2. A type substitution mapping each `xᵢ` to its opaque nullary type constructor
    is applied to the whole procedure: input/output signatures, precondition and
@@ -107,19 +107,19 @@ def substProc (S : Subst) (proc : Procedure) : CoreTransformM Procedure := do
 
 /-! ### The transformation -/
 
-/-- Reserved prefix for generated opaque type names.  Uses the `$__` internal
-    namespace (as `Lambda.callElimTyPrefix := "$__cety"` does) so that a
-    generated opaque type name can never collide with a user-declared type — the
-    `CoreGenState` counter does not ingest existing source names, so without a
-    reserved prefix a user `type P_a_opaque_type_0;` alongside `procedure P<a>`
-    would clash. -/
+/-- Prefix for generated opaque type names, in the `$__` internal namespace as
+    `Lambda.callElimTyPrefix := "$__cety"` is, so that generated names stand out.
+    It does not make them fresh: `genOpaqueTypeName` skips the names the
+    program declares with it. -/
 private def opaqueTypePrefix : String := "$__opaque"
 
 /-- Mint a fresh, globally-unique opaque type name for type variable `tyVar` of
-    procedure `procName`.  The shared `CoreGenState` appends a fresh `_N`
-    counter, e.g. `$__opaque_P_a_0`. -/
-private def genOpaqueTypeName (procName tyVar : String) : CoreGenM CoreIdent :=
-  CoreGenState.gen ⟨s!"{opaqueTypePrefix}_{procName}_{tyVar}", ()⟩
+    procedure `procName`, differing from every name in `taken` (the program's
+    type names that start with `opaqueTypePrefix`).  The shared `CoreGenState`
+    appends a fresh `_N` counter, e.g. `$__opaque_P_a_0`. -/
+private def genOpaqueTypeName (taken : Std.HashSet String) (procName tyVar : String) :
+    CoreGenM CoreIdent :=
+  CoreGenState.genAvoiding taken ⟨s!"{opaqueTypePrefix}_{procName}_{tyVar}", ()⟩
 
 /-- One nullary opaque type declaration per pair `(tv, n)` of `names`, named
     `n`, and the substitution mapping each type variable `tv` to its opaque
@@ -128,7 +128,8 @@ def opaqueTypes (names : List (TyIdentifier × String)) : List Decl × Subst :=
   (names.map fun (_, n) => Decl.type (.con { name := n, params := [] }) .empty,
    [HMap.ofList (names.map fun (tv, n) => (tv, LMonoTy.tcons n []))])
 
-/-- Mint one fresh opaque type per type variable of the declaration `name`.
+/-- Mint one fresh opaque type per type variable of the declaration `name`,
+    avoiding the type names in `taken`.
     Returns the opaque type declarations and the substitution mapping each type
     variable to its opaque type.
 
@@ -136,43 +137,46 @@ def opaqueTypes (names : List (TyIdentifier × String)) : List Decl × Subst :=
     opaque type's name is built from both, and `MonomorphizeFunctions` rejects any
     type name containing the delimiter. Rejecting here reports the name the user
     wrote, not the generated one. -/
-def mkOpaqueSubst (name : String) (tyVars : List TyIdentifier) :
+def mkOpaqueSubst (taken : Std.HashSet String) (name : String) (tyVars : List TyIdentifier) :
     CoreTransformM (List Decl × Subst) := do
   if let some bad := (name :: tyVars).find? Core.NameMangling.hasMonoDelim then
     throw (Strata.Message.fromString
       s!"GenOpaqueTypeParams: the name '{bad}' contains '{Core.NameMangling.monoDelim}', \
          which is reserved for monomorphized copies")
-  let names ← tyVars.mapM fun tv => return (tv, (← genOpaqueTypeName name tv).name)
+  let names ← tyVars.mapM fun tv => return (tv, (← genOpaqueTypeName taken name tv).name)
   return opaqueTypes names
 
 /-- Replace the type parameters of a single procedure by opaque types.  One fresh opaque type is minted per
     declared type parameter (`header.typeArgs`); the opaque type declarations are
     returned first, followed by the substituted procedure.  A procedure with no
     type parameters is returned unchanged. -/
-def genOpaqueProc (proc : Procedure) (md : MetaData Expression) :
+def genOpaqueProc (taken : Std.HashSet String) (proc : Procedure) (md : MetaData Expression) :
     CoreTransformM (List Decl) := do
   let tyVars := proc.header.typeArgs.uniq
   if tyVars.isEmpty then
     return [Decl.proc proc md]
   else
-    let (opaqueDecls, S) ← mkOpaqueSubst proc.header.name.name tyVars
+    let (opaqueDecls, S) ← mkOpaqueSubst taken proc.header.name.name tyVars
     let proc' ← substProc S proc
     return opaqueDecls ++ [Decl.proc proc' md]
 
 /-- Replace the type parameters of a lemma by opaque types: a lemma holds at every instantiation of its type
     parameters, so it is checked at fresh opaque types, as a procedure is. -/
-def genOpaqueLemma (l : Lemma) (md : MetaData Expression) :
+def genOpaqueLemma (taken : Std.HashSet String) (l : Lemma) (md : MetaData Expression) :
     CoreTransformM (List Decl) := do
   let tyVars := l.typeArgs.uniq
   if tyVars.isEmpty then
     return [Decl.lemma l md]
   else
-    let (opaqueDecls, S) ← mkOpaqueSubst l.name tyVars
+    let (opaqueDecls, S) ← mkOpaqueSubst taken l.name tyVars
     return opaqueDecls ++ [Decl.lemma { l with typeArgs := [], e := l.e.applyTypeSubst S } md]
 
 /-- Introduce opaque types for the type parameters of every polymorphic
     procedure and lemma in the program. -/
 def run (p : Program) : CoreTransformM Program := do
+  -- Only a declared type with the opaque prefix can equal a generated name; for
+  -- most programs there is none, and nothing is hashed or retried.
+  let taken := Std.HashSet.ofList (p.typeNames.filter (·.startsWith opaqueTypePrefix))
   let out ← p.decls.foldlM (init := (#[] : Array Decl)) fun acc decl => do
     match decl with
     | .proc proc md =>
@@ -194,10 +198,10 @@ def run (p : Program) : CoreTransformM Program := do
               f!"❌ GenOpaqueTypeParams: procedure {proc.header.name.name} still \
                  contains a call; eliminate calls before running this pass.")
           else
-            let contrib ← genOpaqueProc proc md
+            let contrib ← genOpaqueProc taken proc md
             pure (acc ++ contrib.toArray)
     | .lemma l md => do
-      let contrib ← genOpaqueLemma l md
+      let contrib ← genOpaqueLemma taken l md
       pure (acc ++ contrib.toArray)
     | _ => pure (acc.push decl)
   return { decls := out.toList }
@@ -216,14 +220,29 @@ def run (p : Program) : CoreTransformM Program := do
     constrains an opaque type. This is the argument by which
     `genOpaqueTypeParams` is model-preserving. -/
 def closeLemmaTypeVars (p : Program) : Program :=
-  { p with decls := p.decls.flatMap fun
-      | .lemma l md =>
-        match (annotTyVars l.e).eraseDups with
-        | [] => [.lemma l md]
-        | tvs =>
-          let (decls, S) := opaqueTypes (tvs.mapIdx fun i tv => (tv, s!"{freeTyPrefix}{l.name}_{i}"))
-          decls ++ [.lemma { l with typeArgs := [], e := l.e.applyTypeSubst S } md]
-      | d => [d] }
+  -- Only a declared type with the free-type prefix can clash with a generated
+  -- name. The base names `{lemma}_{i}` of different lemmas differ, since lemma
+  -- names are distinct and the index after the last `_` has no `_`. So when no
+  -- declared type has the prefix, the base names are used as they are.
+  let taken := Std.HashSet.ofList (p.typeNames.filter (·.startsWith freeTyPrefix))
+  let close (taken : Std.HashSet String) (l : Lemma) (md : MetaData Expression) :
+      List Decl × Std.HashSet String :=
+    match (annotTyVars l.e).eraseDups with
+    | [] => ([.lemma l md], taken)
+    | tvs =>
+      let bases := tvs.mapIdx fun i _ => s!"{freeTyPrefix}{l.name}_{i}"
+      -- Skip the names the program declares, so none of them is captured.
+      let (names, taken) :=
+        if taken.isEmpty then (bases, taken) else Strata.Name.freshNames taken bases
+      let (decls, S) := opaqueTypes (tvs.zip names)
+      (decls ++ [.lemma { l with typeArgs := [], e := l.e.applyTypeSubst S } md], taken)
+  let (decls, _) := p.decls.foldl (init := (#[], taken)) fun (acc, taken) d =>
+    match d with
+    | .lemma l md =>
+      let (ds, taken) := close taken l md
+      (acc ++ ds.toArray, taken)
+    | d => (acc.push d, taken)
+  { p with decls := decls.toList }
 
 end GenOpaqueTypeParams
 

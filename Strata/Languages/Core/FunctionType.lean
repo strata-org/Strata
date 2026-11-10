@@ -9,6 +9,9 @@ import all Strata.DL.Lambda.LTyProps
 public import Strata.Languages.Core.Function
 import Strata.DL.Lambda.LExprT
 import Strata.Languages.Core.Procedure
+import Strata.DL.Lambda.NamePrefixes
+import Strata.DL.Lambda.LExprWF
+import Strata.Util.Name
 
 ---------------------------------------------------------------------
 
@@ -21,8 +24,30 @@ namespace Function
 open Lambda Imperative
 open Std (ToFormat Format format)
 
+/-- Rename each type parameter of `func` that starts with a reserved prefix
+(`Lambda.isAllowedName`) to a fresh name, throughout the function, and keep the
+others. Type checking generates type variables with such names, so it renames
+the function's own first instead of requiring anything of them. This is
+alpha-conversion: the new names avoid every type variable the function
+mentions, so the renamed function means the same. -/
+def renameReservedTypeArgs (func : Function) : Function :=
+  let reserved := func.typeArgs.filter (!isAllowedName ·)
+  if reserved.isEmpty then func
+  else
+    -- Avoid every type variable the function mentions, declared or not, so
+    -- that the renamed parameters capture none of them.
+    let mentioned := func.typeArgs ++ func.output.freeVars ++
+      func.inputs.flatMap (fun (_, mty) => mty.freeVars) ++ func.exprs.flatMap annotTyVars
+    let fresh := (Strata.Name.freshNames (Std.HashSet.ofList mentioned)
+      (reserved.map fun _ => "a")).1
+    let ren := reserved.zip fresh
+    let S : Subst := Strata.Util.HMaps.ofScopes [ren.map fun (a, n) => (a, .ftvar n)]
+    { LFuncDefined.applyTypeSubst func S with
+      typeArgs := func.typeArgs.map fun a => (ren.lookup a).getD a }
+
 def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func : Function) :
     Except Format (Function × Core.Expression.TyEnv) := do
+  let func := renameReservedTypeArgs func
   -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
   -- where there are duplicates in the formals, etc.).
   let origTypeArgs := func.typeArgs
@@ -122,6 +147,15 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func
 
 end Function
 
+/-- Renaming type parameters keeps the names of the inputs. -/
+private theorem Function.renameReservedTypeArgs_inputs_keys (func : Function) :
+    (Function.renameReservedTypeArgs func).inputs.keys = func.inputs.keys := by
+  unfold Function.renameReservedTypeArgs
+  dsimp only
+  split
+  · rfl
+  · exact Lambda.LFuncDefined.applyTypeSubst_inputs_keys _ _
+
 /--
 If `Function.typeCheck` succeeds, the inputs of the resulting function have no duplicate names.
 -/
@@ -133,7 +167,8 @@ theorem Function.typeCheck_inputs_nodup (C: Core.Expression.TyContext) (Env : Co
   split at h <;> try contradiction
   rename_i ty hty
   -- func.type succeeded, so we can use LFuncDefined.type_inputs_nodup
-  exact Lambda.LFuncDefined.type_inputs_nodup func ty hty
+  rw [← Function.renameReservedTypeArgs_inputs_keys]
+  exact Lambda.LFuncDefined.type_inputs_nodup _ ty hty
 
 namespace PureFunc
 

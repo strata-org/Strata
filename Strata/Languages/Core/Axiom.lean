@@ -81,20 +81,6 @@ def Lemma.forallOver (binders : List (CoreIdent × LMonoTy)) (e : LExpr CoreLPar
   binders.foldr (init := e) fun (x, ty) body =>
     .quant () .all x.name (some ty) (LExpr.noTrigger ()) (closeVarByName 0 x body)
 
-/-- `label`, or `label_k` for the smallest `k ≥ 1` that makes it differ from
-every name in `taken`. Generated lemmas are named this way, so that they never
-clash with a declaration of the program or with each other. -/
-def Lemma.freshName (taken : Std.HashSet String) (label : String) : String :=
-  if !taken.contains label then label
-  else
-    let rec go (k : Nat) (fuel : Nat) : String :=
-      match fuel with
-      | 0 => s!"{label}_{k}"
-      | fuel + 1 =>
-        let n := s!"{label}_{k}"
-        if taken.contains n then go (k + 1) fuel else n
-    go 1 taken.size
-
 def Lemma.eraseTypes (l : Lemma) : Lemma :=
   { l with e := l.e.eraseTypes }
 

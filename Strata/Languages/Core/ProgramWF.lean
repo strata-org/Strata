@@ -222,7 +222,7 @@ private theorem Program.typeCheck.go_elim_acc:
   intro  H
   simp [← H]
   rename_i h t ind
-  simp only [Program.typeCheck.go, List.isEmpty_iff, List.map_map]
+  simp only [Program.typeCheck.go, List.isEmpty_iff]
   simp only [bind, Except.bind]
   split; intros; contradiction
   any_goals (split <;> try contradiction)
@@ -385,7 +385,7 @@ private theorem Program.typeCheckFunctionDisjoint :
   | nil => simp[Program.getNames.go]
   | cons r rs IH =>
     simp only [Program.typeCheck.go, Program.typeCheckFuncDecl, bind, Except.bind, tryCatch, tryCatchThe, MonadExceptOf.tryCatch,
-      Except.tryCatch, List.isEmpty_iff, List.map_map, Array.any_eq_true, Program.getNames.go, List.flatMap_cons,
+      Except.tryCatch, List.isEmpty_iff, Array.any_eq_true, Program.getNames.go, List.flatMap_cons,
       List.mem_append, List.mem_flatMap, Bool.not_eq_true]
     split <;> try (intros;contradiction)
     rename_i x v Hid
@@ -509,7 +509,7 @@ private theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decl
   | nil => simp[Program.getNames.go]
   | cons r rs IH =>
     simp only [Program.typeCheck.go, Program.typeCheckFuncDecl, bind, Except.bind, tryCatch, tryCatchThe, MonadExceptOf.tryCatch,
-      Except.tryCatch, List.isEmpty_iff, List.map_map, Array.any_eq_true, Program.getNames.go, List.flatMap_cons]
+      Except.tryCatch, List.isEmpty_iff, Array.any_eq_true, Program.getNames.go, List.flatMap_cons]
     split <;> try (intros;contradiction)
     rename_i x v Hid
     cases r with (simp only[]; intros tcok <;> split_contra tcok <;> simp only [Decl.names] at Hid <;> rename_i Hty)
