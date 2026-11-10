@@ -1378,6 +1378,25 @@ theorem of_mem_groupValuesByKey {K V : Type} [BEq K] [Hashable K] [LawfulBEq K]
   · simp at h
   · exact h
 
+/-- The ordered pairs of a mapped list are the mapped pairs. -/
+theorem orderedPairs_map {α β : Type _} (f : α → β) :
+    ∀ l : List α, (l.map f).orderedPairs = l.orderedPairs.map fun q => (f q.1, f q.2)
+  | [] => rfl
+  | a :: rest => by
+    simp only [List.map_cons, orderedPairs, List.map_append, List.map_map, orderedPairs_map f rest]
+    rfl
+
+/-- Both elements of an ordered pair of a list belong to the list. -/
+theorem mem_orderedPairs {α : Type _} :
+    ∀ {l : List α} {a b : α}, (a, b) ∈ l.orderedPairs → a ∈ l ∧ b ∈ l
+  | [], _, _, h => by simp [orderedPairs] at h
+  | x :: rest, a, b, h => by
+    simp only [orderedPairs, List.mem_append, List.mem_map, Prod.mk.injEq] at h
+    rcases h with ⟨c, hc, rfl, rfl⟩ | h
+    · exact ⟨List.mem_cons_self, List.mem_cons_of_mem _ hc⟩
+    · obtain ⟨ha, hb⟩ := mem_orderedPairs h
+      exact ⟨List.mem_cons_of_mem _ ha, List.mem_cons_of_mem _ hb⟩
+
 end List
 
 theorem List.Rel₂.head {R : α → β → Prop} (h : Rel₂ R (a :: as) (b :: bs)) : R a b := by

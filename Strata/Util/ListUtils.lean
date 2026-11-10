@@ -186,6 +186,10 @@ def occurrences {α : Type} [DecidableEq α] (l : List α) : List (α × Nat) :=
 def foldlIdxVal (f : β → Nat → α → β) (init : β) (l : List α) : β :=
   ((List.range l.length).zip l).foldl (fun acc (i, a) => f acc i a) init
 
+/-- The ordered pairs of a list, each element with each later one. -/
+@[expose] def orderedPairs : List α → List (α × α)
+  | [] => []
+  | a :: rest => rest.map (a, ·) ++ orderedPairs rest
 
 end List
 

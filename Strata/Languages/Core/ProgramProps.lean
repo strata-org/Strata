@@ -71,6 +71,19 @@ theorem Program.declsBeforeProcedure_eq {p : Program} {pre post : List Decl} {q 
     | proc q' md' => simpa using hfirst q' md' hdm
     | _ => rfl
 
+/-- A declaration `Program.find?` returns is one of the program's declarations. -/
+theorem Program.find?_mem {p : Program} {k : DeclKind} {x : Expression.Ident} {d : Decl}
+    (h : p.find? k x = some d) : d ∈ p.decls := by
+  simp only [find?] at h
+  generalize p.decls = decls at h
+  induction decls with
+  | nil => simp [Program.find?.go] at h
+  | cons e rest ih =>
+    unfold Program.find?.go at h
+    split at h
+    · cases h; exact List.mem_cons_self ..
+    · exact List.mem_cons_of_mem _ (ih h)
+
 end Core
 
 end -- public section

@@ -95,6 +95,7 @@ import Strata.Languages.Cortex
 import Strata.Languages.Core.EntryPoint
 import Strata.Languages.Core.IncrementalSolve
 import Strata.Languages.Core.IncrementalSolveCorrect
+import Strata.Languages.Core.DeclFormulas
 import Strata.Languages.Core.ProgramFact
 import Strata.Languages.Core.ProgramFactProps
 import Strata.Languages.Core.ProgramFactSet

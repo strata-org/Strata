@@ -242,6 +242,19 @@ def Program.typeNames (p : Program) : List String :=
       fs.foldl (fun factory f => factory.pushIfNew f.toLFunc) factory
   | _ => factory
 
+/-- Extend `factory` with the functions `decl` declares: a function or a recursive block
+    adds its functions, as `Decl.addFunctionsToFactory` does, and a datatype block adds
+    the functions `Lambda.genBlockFactory` generates for it. A block it rejects adds
+    nothing; type checking rejects such a block. -/
+@[expose] def Decl.addToRuntimeFactory
+    (factory : Lambda.Factory CoreLParams) (decl : Decl) : Lambda.Factory CoreLParams :=
+  match decl with
+  | .type (.data block) _ =>
+    match Lambda.genBlockFactory (T := CoreLParams) block with
+    | .ok fs => factory.append fs.toArray
+    | .error _ => factory
+  | _ => decl.addFunctionsToFactory factory
+
 /-- The initial expression factory visible at entry to the procedure named
     `procName`: Core's built-ins extended with user-defined functions declared
     before that procedure. Later declarations are intentionally excluded.

@@ -382,6 +382,17 @@ def runTransforms (p : Program) (phases : List PipelinePhase)
     | .error e => throw e
   pure (current, state)
 
+/-- `phase` turns `p` into `p'`, from transform state `s` to state `s'`. -/
+@[expose] def PipelinePhase.Runs (phase : PipelinePhase)
+    (s : Transform.CoreTransformState) (p : Program)
+    (s' : Transform.CoreTransformState) (p' : Program) : Prop :=
+  ∃ changed, (phase.transform p).run.run s = (.ok (changed, p'), s')
+
+/-- `phase` produces `p'` from `p`, from some transformation state. -/
+@[expose] def PipelinePhase.Transforms (phase : PipelinePhase) (p p' : Program) :
+    Prop :=
+  ∃ s changed s', (phase.transform p).run.run s = (.ok (changed, p'), s')
+
 end -- public section
 
 end Core
