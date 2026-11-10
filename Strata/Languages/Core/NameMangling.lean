@@ -32,6 +32,10 @@ open Strata.PtrCache
     identifier-alphabet argument. -/
 @[expose] def monoDelim : String := "#"
 
+/-- `s` contains a character of `monoDelim`. `MonomorphizeFunctions` rejects any program
+    with such a name, so a mangled name is never mistaken for an input name or vice versa. -/
+@[expose] def hasMonoDelim (s : String) : Bool := s.any (· ∈ monoDelim.toList)
+
 /-! ### Type mangling -/
 
 mutual
@@ -81,6 +85,16 @@ def mangleTyArgsPtrCache :
           by simp only [mangleTyArgs, rt.h, rts.h]⟩
 end
 
+/-- The type constructor names in `ty`, which `mangleTy` writes into a mangled name. -/
+@[expose] def tconsNames : Lambda.LMonoTy → List String
+  | .ftvar _ => []
+  | .bitvec _ => []
+  | .tcons c args => c :: tconsNamesList args
+where
+  tconsNamesList : List Lambda.LMonoTy → List String
+    | [] => []
+    | t :: ts => tconsNames t ++ tconsNamesList ts
+
 /-! ### Function-name mangling -/
 
 /-- The specialized `CoreIdent` for a polymorphic-function reference with base
@@ -109,9 +123,9 @@ end
   if !name.startsWith fullPrefix then none
   else
     let rest := (name.drop fullPrefix.length).toString
-    -- Split at the first `#`.  `funcname` never contains `#` (not a legal
-    -- Strata ident char), so any additional `#` chars belong to the
-    -- typemangle.
+    -- Split at the first `#`.  `funcname` never contains `#`
+    -- (`MonomorphizeFunctions` rejects any program with such a name, see
+    -- `hasMonoDelim`), so any additional `#` chars belong to the typemangle.
     match rest.splitOn monoDelim with
     | [] => none
     | [base] => some (base, "")

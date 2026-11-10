@@ -490,8 +490,59 @@ def updateFactory (polyfuncDecls : PolymorphicFuncDecls) (factory : Lambda.Facto
 
 /-! ### The top-level transformation -/
 
+/-- The names the pass checks: every operator `p` refers to, in a statement or not, and the
+    type constructors in its annotation; and every name `p` declares for a function, a type,
+    a constructor, a tester or a field. Copies are named after the operator and the type
+    constructors of its instantiation (`mangleTy`), so a `#` in any of these could make an
+    input name, or two distinct instantiations, collide with a copy's name. Type variables
+    are not checked, since only ground instantiations are mangled, nor are the types of
+    free variables: the pass runs after type checking, which rejects an undeclared type
+    constructor, so every type constructor there is a declared one, checked here, or a
+    built-in one, none of which contains `#`. -/
+def checkedNames (p : Program) : List String :=
+  let opNames := p.decls.flatMap fun d =>
+    (Statements.allExprs d.statements ++ d.ownExprs).flatMap fun e =>
+      e.getOps.map (·.name) ++ e.opAnnots.flatMap fun a => tconsNames a.2
+  let declNames := p.decls.flatMap fun d =>
+    match d with
+    | .func f _ => [f.name.name]
+    | .recFuncBlock fs _ => fs.map (·.name.name)
+    | .type (.con tc) _ => [tc.name]
+    | .type (.syn ts) _ => [ts.name]
+    | .type (.data block) _ => block.flatMap fun dt =>
+        dt.name :: dt.constrs.flatMap fun c =>
+          c.name.name :: c.testerName :: c.args.map (·.1.name)
+    | _ => []
+  opNames ++ declNames
+
+/-- The first checked name that contains the delimiter of mangled names, if any. -/
+def mangledNameIn? (p : Program) : Option String :=
+  (checkedNames p).find? hasMonoDelim
+
+/-- No name in `checkedNames p` contains the delimiter of mangled names. -/
+def namesUnmangled (p : Program) : Bool :=
+  (mangledNameIn? p).isNone
+
+/-- The error for an input name `name` that contains the delimiter of mangled names. -/
+def delimNameError (name : String) : Strata.Message :=
+  Strata.Message.fromString
+    s!"MonomorphizeFunctions: the name '{name}' contains '{monoDelim}', \
+       which is reserved for monomorphized copies"
+
+/-- The error for a program `namesUnmangled` rejects, naming the offending identifier. -/
+def mangledNameError (p : Program) : Strata.Message :=
+  delimNameError ((mangledNameIn? p).getD "")
+
+/-- The pass rejects any program with a `#` in a checked name (`namesUnmangled`), and any
+    Factory whose function names contain one: a front end can supply Factory functions the
+    program never declares, and one named like a copy would clash with it. Its own output
+    names copies `$__mono#…`, so it is not meant to run twice on a program. -/
 def run (p : Program) (cap : Nat := maxSpecializations) : CoreTransformM Program := do
+  if !namesUnmangled p then
+    throw (mangledNameError p)
   let factory ← Core.Transform.getFactory
+  if let some f := factory.toArray.find? (hasMonoDelim ·.name.name) then
+    throw (delimNameError f.name.name)
   let polyfuncDecls := collectPolymorphicFuncDecls p factory
 
   -- Seed from the always-live top-level declarations (procedures, axioms,

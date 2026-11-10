@@ -12,6 +12,7 @@ public import Strata.Languages.Core.StatementType
 public import Strata.DL.Lambda.LTyUnify
 public import Strata.DL.Lambda.LExprType
 public import Strata.DL.Lambda.NamePrefixes
+public import Strata.Languages.Core.NameMangling
 import all Strata.DL.Imperative.Stmt
 
 /-! # Generalize Type Parameters to Opaque Types
@@ -129,9 +130,18 @@ def opaqueTypes (names : List (TyIdentifier × String)) : List Decl × Subst :=
 
 /-- Mint one fresh opaque type per type variable of the declaration `name`.
     Returns the opaque type declarations and the substitution mapping each type
-    variable to its opaque type. -/
+    variable to its opaque type.
+
+    Rejects a `name` or type variable containing `Core.NameMangling.monoDelim`. The
+    opaque type's name is built from both, and `MonomorphizeFunctions` rejects any
+    type name containing the delimiter. Rejecting here reports the name the user
+    wrote, not the generated one. -/
 def mkOpaqueSubst (name : String) (tyVars : List TyIdentifier) :
     CoreTransformM (List Decl × Subst) := do
+  if let some bad := (name :: tyVars).find? Core.NameMangling.hasMonoDelim then
+    throw (Strata.Message.fromString
+      s!"GenOpaqueTypeParams: the name '{bad}' contains '{Core.NameMangling.monoDelim}', \
+         which is reserved for monomorphized copies")
   let names ← tyVars.mapM fun tv => return (tv, (← genOpaqueTypeName name tv).name)
   return opaqueTypes names
 
