@@ -1,6 +1,6 @@
 name = "Strata"
 version = "0.1.0"
-defaultTargets = ["Strata", "StrataToCBMC", "StrataCoreToGoto", "laurelJavaGen", "laurelGoGen", "strataLaurel", "laurelToCBMC", "CoreSyntaxGen"]
+defaultTargets = ["Strata", "StrataToCBMC", "laurelJavaGen", "laurelGoGen", "strataLaurel", "laurelToCBMC", "CoreSyntaxGen"]
 testDriver = "StrataTestMain"
 lintDriver = "CheckImports"
 
@@ -71,9 +71,6 @@ needs = ["Strata", "StrataLaurel", "StrataTest", "StrataLaurelTest", "StrataCort
 
 [[lean_exe]]
 name = "StrataToCBMC"
-
-[[lean_exe]]
-name = "StrataCoreToGoto"
 
 [[lean_exe]]
 name = "CheckImports"
