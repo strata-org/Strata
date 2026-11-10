@@ -33,6 +33,24 @@ is expressed by passing a small `fuel`.
 
 public section
 
+/-- The body of `lfunc`, called as `op_expr` applied to `args`, with its type
+    parameters instantiated and `args` substituted for its parameters. `none`
+    when `lfunc` has no body, or when the type substitution does not exist
+    (which a well-typed call does not produce). -/
+@[expose] def inlineCallBody
+    (lfunc : Lambda.LFunc Core.CoreLParams)
+    (op_expr : Lambda.LExpr Core.CoreLParams.mono)
+    (args : List (Lambda.LExpr Core.CoreLParams.mono))
+    : Option (Lambda.LExpr Core.CoreLParams.mono) :=
+  match lfunc.body with
+  | none => none
+  | some body =>
+    match Lambda.LFunc.computeTypeSubst lfunc op_expr args with
+    | none => none
+    | some tySubst =>
+      let body := body.applyTypeSubst tySubst
+      some (Lambda.LExpr.substFvarsLifting body (lfunc.inputs.keys.zip args))
+
 /-- Try to inline a single function call. Returns `some result` if the
     function has a body and is fully applied; `none` otherwise.
     Handles polymorphic functions via type substitution, matching
@@ -42,16 +60,7 @@ private def tryInlineCall
     (e : Lambda.LExpr Core.CoreLParams.mono)
     : Option (Lambda.LExpr Core.CoreLParams.mono) :=
   match factory.callOfLFunc e with
-  | some (op_expr, args, lfunc) =>
-    match lfunc.body with
-    | none => none
-    | some body =>
-      match Lambda.LFunc.computeTypeSubst lfunc op_expr args with
-      | some tySubst =>
-        let body := body.applyTypeSubst tySubst
-        let input_map := lfunc.inputs.keys.zip args
-        some (Lambda.LExpr.substFvarsLifting body input_map)
-      | none => none
+  | some (op_expr, args, lfunc) => inlineCallBody lfunc op_expr args
   | none => none
 
 /--

@@ -191,6 +191,37 @@ instance : DecidableEq (Stmt P C) :=
 
 ---------------------------------------------------------------------
 
+/-! ### AllCmds
+
+`Stmt.allCmds Q s` says every command node syntactically inside `s` satisfies the
+per-command check `Q`.  It is the syntactic carrier for a side condition that a
+language's command semantics needs at *each* command it evaluates: the predicate
+is checked once on the whole statement and is preserved by execution, so a step
+relation never reaches a command that fails `Q`.
+-/
+
+mutual
+/-- Every command node inside the statement satisfies `Q`. -/
+@[expose] def Stmt.allCmds (Q : C → Bool) (s : Stmt P C) : Bool :=
+  match s with
+  | .cmd c => Q c
+  | .block _ bss _ => Block.allCmds Q bss
+  | .ite _ tss ess _ => Block.allCmds Q tss && Block.allCmds Q ess
+  | .loop _ _ _ bss _ => Block.allCmds Q bss
+  | .exit _ _ => true
+  | .typeDecl _ _ => true
+  termination_by (Stmt.sizeOf s)
+
+/-- Every command node inside the block satisfies `Q`. -/
+@[expose] def Block.allCmds (Q : C → Bool) (ss : Block P C) : Bool :=
+  match ss with
+  | [] => true
+  | s :: srest => Stmt.allCmds Q s && Block.allCmds Q srest
+  termination_by (Block.sizeOf ss)
+end
+
+---------------------------------------------------------------------
+
 /-! ### LocalTypeDecls
 
 Collect the type declarations (`typeDecl`) that appear inside a statement or

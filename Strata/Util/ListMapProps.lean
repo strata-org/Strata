@@ -1035,6 +1035,45 @@ theorem Map.find?_insert_self [DecidableEq α]
     · rw [Map.insert_cons_of_ne h]; simp_all [Map.find?]
 
 
+/-- An entry of a map with a key inserted is either the inserted entry or an entry of
+the original map. -/
+theorem Map.mem_insert [DecidableEq α] {m : Map α β} {k : α} {w : β} {p : α × β}
+    (h : p ∈ (m.insert k w).toList) : p = (k, w) ∨ p ∈ m.toList := by
+  induction m with
+  | nil => simp only [Map.insert, Map.toList, List.mem_singleton] at h; exact Or.inl h
+  | cons q rest ih =>
+    obtain ⟨a, b⟩ := q
+    by_cases hak : a = k
+    · rw [Map.insert_cons_of_eq hak] at h
+      rcases List.mem_cons.mp h with rfl | hrest
+      · exact Or.inl rfl
+      · exact Or.inr (List.mem_cons_of_mem _ hrest)
+    · rw [Map.insert_cons_of_ne hak] at h
+      rcases List.mem_cons.mp h with rfl | hrest
+      · exact Or.inr List.mem_cons_self
+      · exact (ih hrest).imp id (List.mem_cons_of_mem _)
+
+/-- Inserting into a map whose keys are distinct keeps them distinct. -/
+theorem Map.nodup_keys_insert [DecidableEq α] {m : Map α β} {k : α} {w : β}
+    (h : (m.toList.map Prod.fst).Nodup) : ((m.insert k w).toList.map Prod.fst).Nodup := by
+  induction m with
+  | nil => simp [Map.insert, Map.toList]
+  | cons q rest ih =>
+    obtain ⟨a, b⟩ := q
+    simp only [Map.toList, List.map_cons, List.nodup_cons] at h
+    by_cases hak : a = k
+    · rw [Map.insert_cons_of_eq hak]
+      subst hak
+      simpa only [Map.toList, List.map_cons, List.nodup_cons] using h
+    · rw [Map.insert_cons_of_ne hak]
+      show ((a :: ((Map.insert rest k w).toList.map Prod.fst)).Nodup)
+      rw [List.nodup_cons]
+      refine ⟨fun hm => ?_, ih h.2⟩
+      obtain ⟨p, hp, hpa⟩ := List.mem_map.mp hm
+      rcases Map.mem_insert (m := rest) hp with rfl | hp
+      · exact hak hpa.symm
+      · exact h.1 (List.mem_map.mpr ⟨p, hp, hpa⟩)
+
 /-- `Map.find?` is unchanged for a different key after `Map.insert`. -/
 theorem Map.find?_insert_ne [DecidableEq α]
     (m : Map α β) (x y : α) (v : β) (h : x ≠ y) :

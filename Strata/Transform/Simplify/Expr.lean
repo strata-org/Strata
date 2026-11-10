@@ -9,6 +9,7 @@ public import Strata.Languages.Core.Function
 public import Strata.Languages.Core.Factory
 public import Strata.DL.Imperative.Cmd
 public import Strata.DL.Lambda.LExprEval
+public import Strata.Transform.FunctionInlining
 import all Strata.DL.Lambda.LExprWFProps
 
 /-! # Simplify: expressions, the value context, and base commands
@@ -314,20 +315,6 @@ replaces. `LExpr.size` counts every node, so a rewrite that duplicates a subterm
 for each copy out of what the reduction saves. Expansion does not use it; the shape of
 the call decides that, before a candidate exists. -/
 
-/-- The body of the function `fn` was called with, with `args` substituted for its
-    parameters. `none` when the call cannot be expanded: no body, or a type
-    substitution that does not exist (which a well-typed term does not produce). -/
-def expandCall (fn : LFunc CoreLParams) (opExpr : Expression.Expr)
-    (args : List Expression.Expr) : Option Expression.Expr :=
-  match fn.body with
-  | none => none
-  | some body =>
-    match LFunc.computeTypeSubst fn opExpr args with
-    | none => none
-    | some tySubst =>
-      let body := body.applyTypeSubst tySubst
-      some (LExpr.substFvarsLifting body (fn.inputs.keys.zip args))
-
 /-- How many times `e` mentions the free variable `x`. -/
 def occursCount (x : CoreIdent) (e : Expression.Expr) : Nat :=
   ((HasFvars.getFvars e).filter (fun f => f.name == x.name)).length
@@ -380,7 +367,7 @@ def tryExpand (ctx : Ctx) (simp : Ctx → Expression.Expr → Expression.Expr)
     if !fn.attr.contains .inline then e else
     -- A function, so that a declined call builds nothing: Lean evaluates a `let` eagerly.
     let expand (_ : Unit) : Option Expression.Expr :=
-      (expandCall fn opExpr args).map fun x => fold ctx.foldFactory ctx.evalFuel (simp ctx.spend x)
+      (Strata.inlineCallBody fn opExpr args).map fun x => fold ctx.foldFactory ctx.evalFuel (simp ctx.spend x)
     if worthExpanding ctx.foldFactory fn args then (expand ()).getD e
     -- An argument built by a constructor is what a body's testers and destructors reduce,
     -- so expanding the call can fold away the copies the shape test counts. That is
@@ -403,27 +390,41 @@ def tryExpand (ctx : Ctx) (simp : Ctx → Expression.Expr → Expression.Expr)
     tried at most once, and only a variable with a recorded value spends fuel, so the
     fuel, the number of recorded values, bounds the substitutions tried without
     cutting off one that comes after many unrecorded variables. A variable's
-    occurrences are substituted together, so `getFvars`' repetitions are dropped. -/
+    occurrences are substituted together, so `getFvars`' repetitions are dropped.
+
+    Variables are tried in the order they are found: those of `e` first, then those each
+    substitution exposes, in turn. The exposed ones are collected in `next`, newest first,
+    and taken up once `todo` is done. -/
 def trySubstWide (ctx : Ctx) (e : Expression.Expr) : Expression.Expr :=
   let distinct (t : Expression.Expr) := (HasFvars.getFvars t).eraseDups
-  let rec go (fuel : Nat) (tried : List String) (todo : List CoreIdent)
+  let rec go (fuel : Nat) (tried : List String) (todo next : List CoreIdent)
       (acc : Expression.Expr) : Expression.Expr :=
     match fuel, todo with
-    | 0, _ | _, [] => acc
+    | 0, _ => acc
+    | fuel + 1, [] => if next.isEmpty then acc else go (fuel + 1) tried next.reverse [] acc
     | fuel + 1, x :: rest =>
-      if tried.contains x.name then go (fuel + 1) tried rest acc else
+      if tried.contains x.name then go (fuel + 1) tried rest next acc else
       let tried := x.name :: tried
       match Map.find? ctx.values x with
-      | none => go (fuel + 1) tried rest acc
+      | none => go (fuel + 1) tried rest next acc
       | some v =>
-        if LExpr.size _ v ≤ 1 then go fuel tried rest acc else
+        if LExpr.size _ v ≤ 1 then go fuel tried rest next acc else
         let cand := foldWith ctx.foldFactory ctx.evalFuel x v acc
         if LExpr.size _ cand < LExpr.size _ acc then
           let exposed := (distinct cand).filter (fun y => !tried.contains y.name)
-          go fuel tried (rest ++ exposed) cand
-        else go fuel tried rest acc
-  termination_by (fuel, todo.length)
-  go ctx.values.toList.length [] (distinct e) e
+          go fuel tried rest (exposed.reverseAux next) cand
+        else go fuel tried rest next acc
+  termination_by (fuel, todo.length + next.length, next.length)
+  decreasing_by
+    all_goals simp_wf
+    all_goals first
+      | (apply Prod.Lex.left; omega)
+      | (apply Prod.Lex.right; apply Prod.Lex.left; omega)
+      | (apply Prod.Lex.right; apply Prod.Lex.right
+         rename_i hne
+         have := List.length_pos_iff.mpr (fun h => hne (List.isEmpty_iff.mpr h))
+         omega)
+  go ctx.values.toList.length [] (distinct e) [] e
 
 /-! ## Expressions -/
 

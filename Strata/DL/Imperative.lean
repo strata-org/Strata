@@ -27,6 +27,16 @@ public import Strata.DL.Imperative.StmtSemantics
 public import Strata.DL.Imperative.StmtSemanticsProps
 public import Strata.DL.Imperative.Logic.TraceRelations
 public import Strata.DL.Imperative.Logic.TraceRelationsProps
+public import Strata.DL.Imperative.CmdCallFormals
+public import Strata.DL.Imperative.StmtCFGCallSemantics
+public import Strata.DL.Imperative.StmtSemanticsDeterminism
+public import Strata.DL.Imperative.InterpreterCall
+public import Strata.DL.Imperative.InterpreterCallInterrupt
+public import Strata.DL.Imperative.InterpreterCallSound
+public import Strata.DL.Imperative.InterpreterCallComplete
+public import Strata.DL.Imperative.InterpreterCallCompleteProps
+public import Strata.DL.Imperative.InterpreterCallEmbed
+public import Strata.DL.Imperative.InterpreterCallEmbedProps
 public import Strata.DL.Imperative.Logic.LangDefProps
 public import Strata.DL.Imperative.Logic.TraceInterp
 public import Strata.DL.Imperative.Logic.TraceInterpProps
@@ -48,8 +58,20 @@ public import Strata.DL.Imperative.KleeneStmt
 public import Strata.DL.Imperative.KleeneStmtSemantics
 public import Strata.DL.Imperative.CallAwareSemantics
 public import Strata.DL.Imperative.StmtCFGCallSemanticsProps
+public import Strata.DL.Imperative.InterpreterCFG
+public import Strata.DL.Imperative.InterpreterCFGProps
+public import Strata.DL.Imperative.InterpreterCFGSound
+public import Strata.DL.Imperative.InterpreterCFGComplete
+public import Strata.DL.Imperative.InterpreterCFGCallSound
+public import Strata.DL.Imperative.InterpreterCFGCallComplete
+public import Strata.DL.Imperative.InterpreterKleene
+public import Strata.DL.Imperative.InterpreterKleeneCall
+public import Strata.DL.Imperative.InterpreterKleeneSound
+public import Strata.DL.Imperative.InterpreterKleeneComplete
+public import Strata.DL.Imperative.InterpreterCFGKleeneFollows
 
 public import Strata.DL.Imperative.StmtExtendCallBridge
 public import Strata.DL.Imperative.StmtExtendCallBridgeProps
 
 public import Strata.DL.Imperative.SMTUtils
+public import Strata.DL.Imperative.InterpreterReplayTactics

@@ -64,6 +64,9 @@ Key results for `StepStmtE` / `StepStmtStarE`:
   evaluator value law at the run's unchanged factory.
 - `Config.typedAt_star_ofE`: a traced run keeps a slot defined in every store of the
   starting configuration at its type, when commands do.
+- Single traced steps preserve `Config.allCmds Q` (`stepStmtE_preserves_allCmds`),
+  `Config.exitsCoveredByBlocks` (`stepStmtE_preserves_exitsCoveredByBlocks`), and
+  `Config.storeWellDefined` (`Config.storeWellDefined_stepE_of`).
 - `StepStmtE.imp` and `StepStmtStarE.imp`: `StepStmtE` and `StepStmtStarE` are
   monotone in their command relation.
 - `stmts_prefix_terminal_appendE`, `stmts_prefix_exiting_appendE`, and
@@ -558,6 +561,15 @@ theorem stepStmtE_preserves_exitsCoveredByBlocks
   | step_block_exit_mismatch hne =>
     intro labels hwp
     exact block_exit_mismatch_unfold (P := P) (CmdT := CmdT) hwp hne
+
+/-- A single traced step preserves `Config.allCmds Q` (every command node still in the
+    configuration satisfies `Q`): execution only exposes command nodes that were already
+    syntactically present. -/
+theorem stepStmtE_preserves_allCmds
+    {Q : CmdT → Bool} {c₁ c₂ : Config P CmdT} {tr : List EventT}
+    (hstep : StepStmtE P EvalCmd c₁ tr c₂) :
+    c₁.allCmds Q → c₂.allCmds Q := by
+  induction hstep <;> grind [Config.allCmds, Stmt.allCmds, Block.allCmds]
 
 /-- Well-paired statement lists cannot escape via `.exiting` under the traced
 semantics. -/
@@ -1281,7 +1293,7 @@ theorem starE_preserves_factory
 
 /-- Single traced event step preserves `Config.storeWellDefined`, given the
 command evaluator does (`h_cmd`). -/
-private theorem Config.storeWellDefined_stepE_of
+theorem Config.storeWellDefined_stepE_of
     (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT},
       EvalCmd f σ c σ' emitted → WellFormedStore σ f → WellFormedStore σ' f)
     {cfg cfg' : Config P CmdT} {tr : List EventT}

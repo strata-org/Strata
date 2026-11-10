@@ -748,5 +748,117 @@ Result: ✅ pass
 #guard_msgs in
 #eval Strata.Core.verify seqSelectBangBuildPgm
 
+-- `Sequence.select!` equals `Sequence.select` wherever the latter's precondition
+-- holds, so a fact stated with one proves a lemma stated with the other. The lemma
+-- `consistent` stays unknown as long as the axioms have a model.
+
+private def seqUnsafeAgreesInRangePgm :=
+#strata
+program Core;
+
+const s : Sequence int;
+axiom [s_len]: Sequence.length(s) == 1;
+axiom [s_0]: Sequence.select!(s, 0) == 1;
+
+lemma [consistent]: false;
+lemma [select_agrees]: forall i : int :: int.le(0, i) && int.lt(i, Sequence.length(s)) ==> Sequence.select(s, i) == 1;
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: consistent
+Property: assert
+Assumptions:
+s_len: Sequence.length(s) == 1
+s_0: Sequence.select!(s, 0) == 1
+Obligation:
+false
+
+Label: select_agrees_calls_Sequence.select_0
+Property: out-of-bounds access check
+Assumptions:
+s_len: Sequence.length(s) == 1
+s_0: Sequence.select!(s, 0) == 1
+Obligation:
+int.le(0, i@1) && int.lt(i@1, Sequence.length(s)) ==> int.le(0, i@1) && int.lt(i@1, Sequence.length(s))
+
+Label: select_agrees
+Property: assert
+Assumptions:
+s_len: Sequence.length(s) == 1
+s_0: Sequence.select!(s, 0) == 1
+Obligation:
+int.le(0, i@2) && int.lt(i@2, Sequence.length(s)) ==> Sequence.select(s, i@2) == 1
+
+---
+info:
+Obligation: consistent
+Property: assert
+Result: ❓ unknown
+
+Obligation: select_agrees_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: select_agrees
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify seqUnsafeAgreesInRangePgm
+
+-- Out of range, `Sequence.select!` stays unconstrained: the lemma does not follow,
+-- although it holds in the list model.
+
+private def seqUnsafeOutOfRangePgm :=
+#strata
+program Core;
+
+const s : Sequence int;
+axiom [s_len]: Sequence.length(s) == 2;
+axiom [s_5]: Sequence.select!(s, 5) == 1;
+
+lemma [select_no_transfer]: forall i : int :: int.le(0, i) && int.lt(i, Sequence.length(s)) ==> Sequence.select(s, i) == 1;
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+Label: select_no_transfer_calls_Sequence.select_0
+Property: out-of-bounds access check
+Assumptions:
+s_len: Sequence.length(s) == 2
+s_5: Sequence.select!(s, 5) == 1
+Obligation:
+int.le(0, i@1) && int.lt(i@1, Sequence.length(s)) ==> int.le(0, i@1) && int.lt(i@1, Sequence.length(s))
+
+Label: select_no_transfer
+Property: assert
+Assumptions:
+s_len: Sequence.length(s) == 2
+s_5: Sequence.select!(s, 5) == 1
+Obligation:
+int.le(0, i@2) && int.lt(i@2, Sequence.length(s)) ==> Sequence.select(s, i@2) == 1
+
+---
+info:
+Obligation: select_no_transfer_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: select_no_transfer
+Property: assert
+Result: ❓ unknown
+Model:
+(i@2, 0)
+-/
+#guard_msgs in
+#eval Strata.Core.verify seqUnsafeOutOfRangePgm
+
 end
 ----------------------------------------------------------------------

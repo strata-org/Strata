@@ -1312,7 +1312,8 @@ macro_rules
     | rw [opInterp_seqUpdate]
     | rw [opInterp_seqContains]
     | rw [opInterp_seqTake]
-    | rw [opInterp_seqDrop])
+    | rw [opInterp_seqDrop]
+    | rw [opInterp_seqSelectBang])
 
 /-- Unfold the sorts in the types of the goal's binders and values. -/
 macro "ax_sorts" : tactic => `(tactic|
@@ -1434,6 +1435,14 @@ private theorem ax_seqEmpty : AxOK seqEmptyFunc.func.axioms := by
   intro ax hax
   simp only [seqEmptyFunc, polyUneval, Int.ofNat_eq_natCast, Int.cast_ofNat_Int, List.mem_cons,
     List.not_mem_nil, or_false] at hax
+  ax_cases hax
+
+/-- The only axiom of `Sequence.select`, the agreement of `Sequence.select!` with it in range,
+holds in the model. -/
+private theorem ax_seqSelect : AxOK seqSelectFunc.func.axioms := by
+  intro ax hax
+  simp only [seqSelectFunc, polyUneval, Int.ofNat_eq_natCast, Int.cast_ofNat_Int,
+    List.mem_cons, List.not_mem_nil, or_false] at hax
   ax_cases hax
 
 /-- The `i`-th axiom of a built-in function, used to prove a long axiom list one axiom per
@@ -1590,6 +1599,7 @@ private theorem all_axOK : ∀ wf ∈ Core.WFFactoryArray.toList, AxOK wf.func.a
     | exact ax_setDifference
     | exact ax_seqLength
     | exact ax_seqEmpty
+    | exact ax_seqSelect
     | exact ax_seqAppend
     | exact ax_seqBuild
     | exact ax_seqUpdate

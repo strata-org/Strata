@@ -2675,6 +2675,8 @@ structure ConstrainedType where
   constraint : StmtExprMd
   /-- A witness value proving the type is inhabited. -/
   witness : StmtExprMd
+  /-- When true, the constraint is assumed wherever a value of this type
+  enters and is never asserted. -/
   free : Bool := false
 
 /-- A constructor of a Laurel datatype, with a name and typed arguments. -/

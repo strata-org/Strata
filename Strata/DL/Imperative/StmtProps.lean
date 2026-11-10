@@ -49,6 +49,10 @@ Equational theory for the boolean shape walkers defined in
   the dual for names a statement list defines.
   `Strata.Languages.Core.Logic.LangDefProps` consumes both to move a
   well-formedness condition around a derivation.
+- Per-constructor equations for `allSubstmts` (`Block.allSubstmts_nil`/`_cons`,
+  `Stmt.allSubstmts_cmd`/`_exit`/`_typeDecl`/`_block`/`_ite`/`_loop`): a predicate holds
+  of every statement of a list, nested ones included, exactly when it holds of each
+  statement and of what that statement nests.
 - Per-constructor equations for `noLoops` (`Block.noLoops_nil`, `Block.noLoops_cons`,
   `Stmt.noLoops_cmd`/`_ite`/`_block`/`_loop`/`_exit`/`_typeDecl`): the empty list has no
   loops, a non-empty list has no loops exactly when its head and its rest have none; a loop
@@ -2185,6 +2189,57 @@ theorem Block.mapExpr_eq_mapExprM (fExpr : P.Expr → P.Expr) (mapCmd : C → C)
       rw [Stmt.mapExpr_eq_mapExprM fExpr mapCmd s, Block.mapExpr_eq_mapExprM fExpr mapCmd rest]; rfl
   termination_by sizeOf ss
 end
+
+/-! ## `allSubstmts` by constructor -/
+
+/-- `f` holds of every statement of the empty list. -/
+theorem Block.allSubstmts_nil (f : Stmt P C → Bool) : Block.allSubstmts f [] = true := by
+  simp [Block.allSubstmts]
+
+/-- `f` holds of every statement of a list, nested ones included, exactly when it does of
+its head's and of its rest's. -/
+theorem Block.allSubstmts_cons (f : Stmt P C → Bool) (s : Stmt P C) (ss : List (Stmt P C)) :
+    Block.allSubstmts f (s :: ss) = (Stmt.allSubstmts f s && Block.allSubstmts f ss) := by
+  simp [Block.allSubstmts]
+
+/-- At a command, `allSubstmts f` is `f` itself. -/
+theorem Stmt.allSubstmts_cmd (f : Stmt P C → Bool) (c : C) :
+    Stmt.allSubstmts f (.cmd c) = f (.cmd c) := by
+  simp [Stmt.allSubstmts]
+
+/-- At an `exit`, `allSubstmts f` is `f` itself. -/
+theorem Stmt.allSubstmts_exit (f : Stmt P C → Bool) (l : String) (md : MetaData P) :
+    Stmt.allSubstmts f (.exit l md) = f (.exit l md) := by
+  simp [Stmt.allSubstmts]
+
+/-- At a type declaration, `allSubstmts f` is `f` itself. -/
+theorem Stmt.allSubstmts_typeDecl (f : Stmt P C → Bool) (tc : TypeConstructor)
+    (md : MetaData P) :
+    Stmt.allSubstmts f (.typeDecl tc md) = f (.typeDecl tc md) := by
+  simp [Stmt.allSubstmts]
+
+/-- At a block, `allSubstmts f` asks `f` of the block and of every statement of its
+body. -/
+theorem Stmt.allSubstmts_block (f : Stmt P C → Bool) (l : String) (ss : List (Stmt P C))
+    (md : MetaData P) :
+    Stmt.allSubstmts f (.block l ss md) = (f (.block l ss md) && Block.allSubstmts f ss) := by
+  simp [Stmt.allSubstmts]
+
+/-- At a conditional, `allSubstmts f` asks `f` of the conditional and of every statement
+of both arms. -/
+theorem Stmt.allSubstmts_ite (f : Stmt P C → Bool) (g : ExprOrNondet P)
+    (tss ess : List (Stmt P C)) (md : MetaData P) :
+    Stmt.allSubstmts f (.ite g tss ess md) =
+      (f (.ite g tss ess md) && (Block.allSubstmts f tss && Block.allSubstmts f ess)) := by
+  simp [Stmt.allSubstmts]
+
+/-- At a loop, `allSubstmts f` asks `f` of the loop and of every statement of its body. -/
+theorem Stmt.allSubstmts_loop (f : Stmt P C → Bool) (g : ExprOrNondet P)
+    (m : Option P.Expr) (invs : List (String × P.Expr)) (body : List (Stmt P C))
+    (md : MetaData P) :
+    Stmt.allSubstmts f (.loop g m invs body md) =
+      (f (.loop g m invs body md) && Block.allSubstmts f body) := by
+  simp [Stmt.allSubstmts]
 
 /-! ## `noLoops` by constructor -/
 

@@ -277,7 +277,7 @@ namespace CallArg
 def getInArgs (args : List (CallArg P)) : List P.Expr :=
   args.filterMap fun | .inArg e => some e | _ => none
 
-def getInoutArgs (args : List (CallArg P)) : List P.Ident :=
+@[expose] def getInoutArgs (args : List (CallArg P)) : List P.Ident :=
   args.filterMap fun | .inoutArg id => some id | _ => none
 
 @[expose] def getOutArgs (args : List (CallArg P)) : List P.Ident :=

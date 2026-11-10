@@ -5,6 +5,7 @@
 -/
 module
 
+public import Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.LExprType
 
 /-!
@@ -38,6 +39,14 @@ conversions are mutually inverse (`LFuncDefined.toLFunc_toFunc`,
 `applyTypeSubst` reduces to `replaceUserProvidedType`
 (`LExpr.applyTypeSubst_eq_replaceUserProvidedType`) and `computeTypeSubst` agrees with
 `opTypeSubst` whenever the latter succeeds (`LFunc.computeTypeSubst_of_opTypeSubst`).
+
+### Lookups across `Factory.push`
+`Factory.push` only accepts a function whose name is absent from the factory
+(`Factory.tryPush` rejects a redefinition), so a push cannot disturb any
+existing binding: every `F[_]?` hit and every resolved `Factory.callOfLFunc`
+survives a push unchanged (`Factory.push_getElem?_of_mem`, `callOfLFunc_push`).
+The binding predicate `Factory.BindsTo` is preserved by a successful
+`Factory.tryPush` (`Factory.BindsTo.tryPush`).
 -/
 
 namespace Lambda
@@ -451,6 +460,25 @@ theorem mem_foldlM_tryPush {T : LExprParams} [Inhabited T.Metadata] [Std.ToForma
       · exact Or.inr (by rw [h']; exact List.mem_cons_self)
     · exact Or.inr (List.mem_cons_of_mem fn hr)
 
+/-- Successfully appending a list of functions to a factory places them after
+    its existing functions, in list order. -/
+theorem toList_toArray_foldlM_tryPush {T : LExprParams} [Inhabited T.Metadata]
+    [Std.ToFormat T.IDMeta] (l : List (LFunc T)) : ∀ (F F' : Factory T),
+      l.foldlM (fun F fn => Factory.tryPush F fn) F = .ok F' →
+      F'.toArray.toList = F.toArray.toList ++ l := by
+  induction l with
+  | nil =>
+    intro F F' h
+    simp only [List.foldlM_nil, pure, Except.pure, Except.ok.injEq] at h
+    subst h
+    exact (List.append_nil _).symm
+  | cons fn rest ih =>
+    intro F F' h
+    obtain ⟨hfresh, h⟩ := foldlM_tryPush_cons_inv fn rest F F' h
+    rw [ih _ F' h]
+    simp only [Factory.push, Array.toList_push, List.append_assoc,
+      List.singleton_append]
+
 /-- Every function in the factory after a successful push was stored before or is the pushed
     one. -/
 theorem mem_tryPush {T : LExprParams} [Inhabited T.Metadata] [Std.ToFormat T.IDMeta]
@@ -545,5 +573,48 @@ theorem foldlM_tryPush_names_nodup {T : LExprParams} [Inhabited T.Metadata]
     have hnew := foldlM_tryPush_name_new rest _ F' h g hg
     rw [hgEq] at hnew
     exact hnew (name_mem_push F fn hfresh)
+
+/-! ## Lookup transport across a `Factory.push` -/
+
+/-- A name absent from the factory has no binding. -/
+theorem Factory.getElem?_eq_none_of_not_mem {Tbase : LExprParams}
+    {F : @Factory Tbase} {nm : String}
+    (h : nm ∉ F) : F[nm]? = none := by
+  cases hget : F[nm]? <;> grind [getElem?_some_implies_mem]
+
+/-- `Factory.push` preserves every pre-existing binding. -/
+theorem Factory.push_getElem?_of_mem {Tbase : LExprParams}
+    {F : @Factory Tbase} {g : LFunc Tbase}
+    (hg : g.name.name ∉ F) {nm : String} {fn : LFunc Tbase}
+    (h : F[nm]? = some fn) : (F.push g hg)[nm]? = some fn := by
+  grind [push_mem_match, getElem?_some_implies_mem]
+
+/-- A factory call resolved by `F` is resolved identically by `F.push g`. -/
+theorem callOfLFunc_push {Tbase : LExprParams} {F : @Factory Tbase} {g : LFunc Tbase}
+    (hg : g.name.name ∉ F) {e op_expr : LExpr Tbase.mono}
+    {args : List (LExpr Tbase.mono)} {lfunc : LFunc Tbase} {ap : Bool}
+    (h : Factory.callOfLFunc F e (allowPartialApp := ap) = some (op_expr, args, lfunc)) :
+    Factory.callOfLFunc (F.push g hg) e (allowPartialApp := ap)
+      = some (op_expr, args, lfunc) := by
+  grind [Factory.callOfLFunc, Factory.push_getElem?_of_mem]
+
+/-! ## A binding invariant preserved by `Factory.tryPush` -/
+
+public section
+
+/-- `F` resolves the name `nm` to exactly the function `fn`. -/
+@[expose] def Factory.BindsTo {T : LExprParams} (F : Factory T) (nm : String)
+    (fn : LFunc T) : Prop :=
+  F[nm]? = some fn
+
+/-- A *successful* `Factory.tryPush` preserves a `Factory.BindsTo` binding: the
+    pushed name is absent from `F`, hence different from the already-bound `nm`. -/
+theorem Factory.BindsTo.tryPush {T : LExprParams} [Inhabited T.Metadata]
+    [Std.ToFormat T.IDMeta]
+    {F F' : Factory T} {g : LFunc T} {nm : String} {fn : LFunc T}
+    (h : F.BindsTo nm fn) (hpush : F.tryPush g = .ok F') : F'.BindsTo nm fn := by
+  grind [Factory.tryPush, push_getElem?_of_mem, BindsTo]
+
+end -- public section
 
 end Lambda

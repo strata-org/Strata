@@ -44,6 +44,21 @@ theorem LMonoTys.knownInstances_of_forall {ks : KnownTypes} {tys : LMonoTys}
     simp only [LMonoTys.knownInstances, h t List.mem_cons_self, ite_true]
     exact ih (fun u hu => h u (List.mem_cons_of_mem t hu))
 
+/-- A list of types is registered exactly when each of its members is. -/
+theorem LMonoTys.knownInstances_iff_forall {ks : KnownTypes} {tys : LMonoTys} :
+    LMonoTys.knownInstances tys ks = true ↔
+      ∀ t ∈ tys, LMonoTy.knownInstance t ks = true := by
+  refine ⟨fun h => ?_, LMonoTys.knownInstances_of_forall⟩
+  induction tys with
+  | nil => intro t ht; exact absurd ht List.not_mem_nil
+  | cons hd tl ih =>
+    simp only [LMonoTys.knownInstances] at h
+    elim_err h with hhd
+    intro t ht
+    rcases List.mem_cons.mp ht with rfl | htl
+    · exact hhd
+    · exact ih h t htl
+
 /-- A successful source check resolves aliases to a type with admissible free variables and
     only registered constructors, and returns that type and environment. -/
 theorem LMonoTy.typeCheckSource_ok_inv
@@ -227,6 +242,14 @@ private theorem LMonoTys.wellKinded_knownInstances (tys : LMonoTys) (ks : KnownT
     simp only [LMonoTys.knownInstances, hhead, ite_true]
     exact LMonoTys.wellKinded_knownInstances rest ks htail
 end
+
+/-- A type uses only registered constructors at their arities exactly when it
+    is well kinded under the known-type arities. -/
+theorem LMonoTy.knownInstance_iff_wellKinded (ty : LMonoTy) (ks : KnownTypes) :
+    LMonoTy.knownInstance ty ks = true ↔
+      LMonoTy.WellKinded (fun n => ks[n]?) ty :=
+  ⟨LMonoTy.knownInstance_wellKinded ty ks,
+    LMonoTy.wellKinded_knownInstance ty ks⟩
 
 mutual
 /-- Alias resolution commutes with a variable-to-variable substitution when aliases are well

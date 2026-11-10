@@ -39,7 +39,9 @@ indices used in the SMT axioms).
 Each unsafe (`!`) operation models to the same Lean op as its checked twin,
 because it denotes the same function and differs only in dropping the bounds
 precondition. Its axioms are the twin's with the operator renamed, so the
-theorems below model both.
+theorems below model both. `Sequence.select` also carries one axiom stating that
+`Sequence.select!` equals it wherever its precondition holds, which the shared model
+satisfies by reflexivity.
 -/
 
 namespace Strata.SeqModel

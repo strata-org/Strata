@@ -19,6 +19,8 @@ Theorems about the identifier predicates defined in
   identifiers produced by `mkOld`.
 * `not_isOldIdent_of_ne_mkOld` — its contrapositive: an identifier that is no
   `mkOld s` is not `old`-prefixed.
+* `coreIdent_eq_of_name` — a Core identifier is determined by its name, so membership
+  of names and of identifiers agree (`mem_of_name_mem`, `not_mem_of_name_ne`).
 -/
 
 public section
@@ -50,6 +52,20 @@ theorem not_isOldIdent_of_ne_mkOld (id : CoreIdent)
   intro hc
   obtain ⟨s, hs⟩ := (isOldIdent_iff_exists_mkOld id).1 hc
   exact h s hs
+
+/-- Two Core identifiers with the same name are equal. -/
+theorem coreIdent_eq_of_name {x y : CoreIdent} (h : x.name = y.name) : x = y := by
+  cases x; cases y; simp only at h; subst h; rfl
+
+/-- An identifier whose name is the name of a member of `xs` is itself a member. -/
+theorem mem_of_name_mem {xs : List CoreIdent} {x : CoreIdent}
+    (h : x.name ∈ xs.map (·.name)) : x ∈ xs := by
+  obtain ⟨z, hz, hzx⟩ := List.mem_map.mp h
+  exact coreIdent_eq_of_name hzx ▸ hz
+
+/-- A variable whose name no member of `xs` carries is not a member of `xs`. -/
+theorem not_mem_of_name_ne {xs : List CoreIdent} {x : CoreIdent}
+    (h : ∀ z ∈ xs, z.name ≠ x.name) : x ∉ xs := fun hx => h x hx rfl
 
 end Core
 

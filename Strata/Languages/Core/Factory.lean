@@ -16,6 +16,10 @@ import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.FactoryWF
 import Strata.DL.Util.BitVec
+import Strata.Util.StringNodupProps
+import all Strata.Util.StringNodup
+-- Lets the kernel compute the names built with `s!"Bv{size}..."`.
+import all Init.Data.Repr
 public meta import Strata.DL.Lambda.IntBoolFactory
 ---------------------------------------------------------------------
 
@@ -735,10 +739,33 @@ private def mkSeqBoundsPrecond
    default⟩
 
 /- A `Sequence` selection function with type `∀a. Sequence a → int → a`.
-   Partial: requires `0 <= i && i < Sequence.length(s)`. -/
+   Partial: requires `0 <= i && i < Sequence.length(s)`.
+
+   Its one axiom states that, wherever its precondition holds,
+   `Sequence.select!` equals it. The axiom belongs to `Sequence.select`, so the
+   encoder sends it only for a query that uses `Sequence.select`: a program
+   written with `Sequence.select!` alone pays nothing for it. It mentions
+   `Sequence.select!`, which carries no axioms of its own, so it pulls in nothing
+   else. It is triggered on the unchecked call, so a query using only
+   `Sequence.select` never instantiates it. -/
 def seqSelectFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.select" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
+    (axioms := [
+      -- 0 <= i < length(s) ==> select!(s, i) == select(s, i)
+      esM[∀ (Sequence %a): -- %1 s
+          (∀ (int): -- %0 i
+            {(((~Sequence.select! : (Sequence %a) → int → %a) %1) %0)}
+            if (((~Bool.And : bool → bool → bool)
+                  (((~Int.Le : int → int → bool) #0) %0))
+                  (((~Int.Lt : int → int → bool) %0)
+                    ((~Sequence.length : (Sequence %a) → int) %1)))
+            then
+              (((~Sequence.select! : (Sequence %a) → int → %a) %1) %0)
+              ==
+              (((~Sequence.select : (Sequence %a) → int → %a) %1) %0)
+            else #true)]
+    ])
     (preconditions := [mkSeqBoundsPrecond "i" .Lt])
 
 /- An *unsafe* total variant of `Sequence.select`: no bounds precondition, so
@@ -1223,20 +1250,32 @@ def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[
   ++ (ExpandBVSafeOpFuncNames [1,8,16,32,64,128])
   ++ (ExpandBVSafeDivOpFuncNames [1,8,16,32,64,128])
 
+/-- The function names in the mapped factory array are pairwise distinct. The
+    array is first rewritten into plain lists, so the kernel does not evaluate
+    the array operations. -/
+theorem WFFactoryArray_func_name_nodup :
+    List.Nodup ((WFFactoryArray.map (·.func)).toList.map (·.name.name)) := by
+  simp only [WFFactoryArray, Array.toList_map, Array.toList_appendList,
+    List.map_append, List.map_map]
+  exact Strata.StringNodup.nodup_of_strictlyIncreasing_sortFuel _
+    (by decide +kernel)
+
+/-- The function names in the factory array are pairwise distinct, stated in
+    the form `WFLFactory.ofArray` takes. -/
+theorem WFFactoryArray_name_nodup :
+    List.Nodup (WFFactoryArray.toList.map (·.func.name.name)) := by
+  simpa only [Array.toList_map, List.map_map, Function.comp_def] using
+    WFFactoryArray_func_name_nodup
+
 @[expose]
 def WFFactory : Lambda.WFLFactory CoreLParams :=
-  WFLFactory.ofArray (name_nodup := by native_decide) WFFactoryArray
+  WFLFactory.ofArray (name_nodup := WFFactoryArray_name_nodup) WFFactoryArray
 
 @[expose]
 def Factory : @Factory CoreLParams := WFLFactory.toFactory WFFactory
 
 def FactoryFuncNames : List String :=
   (WFFactoryArray.map (·.func.name.name)).toList
-
-/-- The function names in the mapped factory array are pairwise distinct. -/
-theorem WFFactoryArray_func_name_nodup :
-    List.Nodup ((WFFactoryArray.map (·.func)).toList.map (·.name.name)) := by
-  native_decide
 
 /-- Decidable predicate: is `s` the name of a built-in factory function? -/
 def isNameInFactory (s : String) : Bool := s ∈ FactoryFuncNames
@@ -1246,11 +1285,29 @@ def isNameInFactory (s : String) : Bool := s ∈ FactoryFuncNames
 Used by transforms (e.g. `LoopElim`) that synthesize references to standard
 ops to discharge downstream `factoryDeclared`-style preconditions. -/
 
-theorem boolNot_isNameInFactory :
-    Core.isNameInFactory "Bool.Not" = Bool.true := by native_decide
+/-- The name of every function in `WFFactoryArray` is a factory name. -/
+private theorem isNameInFactory_of_mem (f : WFLFunc CoreLParams)
+    (h : f ∈ WFFactoryArray) :
+    Core.isNameInFactory f.func.name.name = Bool.true :=
+  decide_eq_true (Array.mem_map_of_mem (f := (·.func.name.name)) h).val
 
+/-- Proves `f ∈ WFFactoryArray` for a function `f` written out in the array,
+    as opposed to one of the generated bit-vector operations. -/
+local macro "factory_mem" : tactic => `(tactic| (
+  simp only [WFFactoryArray, ← Array.mem_toList_iff, Array.toList_appendList]
+  refine List.mem_append_left _ (List.mem_append_left _
+    (List.mem_append_left _ ?_))
+  simp only [List.mem_cons, true_or, or_true]))
+
+/-- `Bool.Not` is the name of a built-in factory function. -/
+theorem boolNot_isNameInFactory :
+    Core.isNameInFactory "Bool.Not" = Bool.true :=
+  isNameInFactory_of_mem (boolNotFunc (T := CoreLParams)) (by factory_mem)
+
+/-- `Int.Lt` is the name of a built-in factory function. -/
 theorem intLt_isNameInFactory :
-    Core.isNameInFactory "Int.Lt" = Bool.true := by native_decide
+    Core.isNameInFactory "Int.Lt" = Bool.true :=
+  isNameInFactory_of_mem (intLtFunc (T := CoreLParams)) (by factory_mem)
 
 end -- public section
 

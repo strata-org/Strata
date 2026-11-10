@@ -943,6 +943,19 @@ def genBlockFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.I
   let unsafeDestrs := block.flatMap (fun d => d.constrs.flatMap (fun c => unsafeDestructorFuncs d c))
   Factory.default.tryAddAll (elims ++ constrs ++ testers ++ destrs ++ unsafeDestrs).toArray
 
+/-- The names `genBlockFactory` gives the functions it generates for a mutual
+    block: its eliminators, constructors, testers, destructors and unsafe
+    destructors. -/
+@[expose] def MutualDatatype.generatedFuncNames
+    (block : MutualDatatype IDMeta) : List String :=
+  block.map (fun d => (elimFuncName d).name) ++
+    block.flatMap (fun d => d.constrs.map (fun c => c.name.name)) ++
+    block.flatMap (fun d => d.constrs.map (fun c => c.testerName)) ++
+    block.flatMap (fun d => d.constrs.flatMap (fun c =>
+      c.args.map (fun arg => destructorFuncName d arg.1))) ++
+    block.flatMap (fun d => d.constrs.flatMap (fun c =>
+      c.args.map (fun arg => unsafeDestructorFuncName d arg.1)))
+
 /--
 Generates the Factory (containing all constructor and eliminator functions) for the given `TypeFactory`.
 -/
