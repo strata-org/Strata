@@ -33,7 +33,6 @@ cfg $heapEntry {
     goto $start;
   }
   $start: {
-    s := 0;
     branch (int.gt(n, 0)) goto $then$0 else goto $else$1;
   }
   $then$0: {
@@ -218,8 +217,6 @@ cfg $heapEntry {
   $entry: {
     var $c1 : $Composite;
     assume [constraint_Node_0]: $Composite..typeTag!($c1) == Node$TypeTag;
-    var a : $Composite;
-    assume [constraint_Node_1]: $Composite..typeTag!(a) == Node$TypeTag;
     var $c2 : int;
     var $c3 : int;
     goto $start;
@@ -227,10 +224,9 @@ cfg $heapEntry {
   $start: {
     $c1 := $MkComposite($Heap..nextReference!($heap), Node$TypeTag);
     $heap := $MkHeap($Heap..data!($heap), int.add($Heap..nextReference!($heap), 1));
-    a := $c1;
     call inc(3, out $c2);
-    $heap := $MkHeap(($Heap..data!($heap))[$Composite..ref!(a):=(($Heap..data!($heap))[$Composite..ref!(a)])[$field$Node.value:=$Box$int($c2)]], $Heap..nextReference!($heap));
-    $c3 := $Box..$val$int!((($Heap..data!($heap))[$Composite..ref!(a)])[$field$Node.value]);
+    $heap := $MkHeap(($Heap..data!($heap))[$Composite..ref!($c1):=(($Heap..data!($heap))[$Composite..ref!($c1)])[$field$Node.value:=$Box$int($c2)]], $Heap..nextReference!($heap));
+    $c3 := $Box..$val$int!((($Heap..data!($heap))[$Composite..ref!($c1)])[$field$Node.value]);
     assert [assert_4]: $c3 == 4;
     goto $return;
   }
@@ -281,20 +277,14 @@ cfg $heapEntry {
   $entry: {
     var caught : int;
     var $c0 : $Composite;
-    var $c2 : $Composite;
     var $c6 : $Composite;
     assume [constraint_Exn_0]: $Composite..typeTag!($c6) == Exn$TypeTag;
-    var x : $Composite;
-    assume [constraint_Exn_1]: $Composite..typeTag!(x) == Exn$TypeTag;
-    var err : $Composite;
-    assume [constraint_Exn_2]: $Composite..typeTag!(err) == Exn$TypeTag;
     var f : int;
     var $c12 : $Composite;
     var $c14 : $Composite;
     goto $start;
   }
   $start: {
-    caught := 0;
     goto $region$5;
   }
   $catch$exn0: {
@@ -304,17 +294,14 @@ cfg $heapEntry {
   $region$5: {
     $c6 := $MkComposite($Heap..nextReference!($heap), Exn$TypeTag);
     $heap := $MkHeap($Heap..data!($heap), int.add($Heap..nextReference!($heap), 1));
-    x := $c6;
-    $exv := x;
+    $exv := $c6;
     goto $catch$exn0;
   }
   $catch_dispatch$1: {
-    err := $c0;
     caught := 1;
     goto $try_end$4;
   }
   $try_end$4: {
-    f := 0;
     goto $region$17;
   }
   $region$17: {
@@ -377,15 +364,14 @@ cfg $heapEntry {
     goto $entry;
   }
   $entry: {
-    var $c0 : int;
     goto $start;
   }
   $dispatch_default$vd1: {
-    call A$get(a, $heap, out $c0);
+    call A$get(a, $heap, out r);
     goto $dispatch_join$vd0;
   }
   $dispatch$vd2: {
-    call B$get(a, $heap, out $c0);
+    call B$get(a, $heap, out r);
     goto $dispatch_join$vd0;
   }
   $dispatch_test$vd3: {
@@ -396,7 +382,6 @@ cfg $heapEntry {
     goto $dispatch_test$vd3;
   }
   $dispatch_join$vd0: {
-    r := $c0;
     goto $return;
   }
   $return: {
@@ -442,16 +427,9 @@ cfg $heapEntry {
   }
   $entry: {
     var $c0 : $Composite;
-    var $c2 : $Composite;
     var $c6 : $Composite;
     assume [constraint_Exn_0]: $Composite..typeTag!($c6) == Exn$TypeTag || $Composite..typeTag!($c6) == Special$TypeTag;
-    var x : $Composite;
-    assume [constraint_Exn_1]: $Composite..typeTag!(x) == Exn$TypeTag || $Composite..typeTag!(x) == Special$TypeTag;
-    var err : $Composite;
-    assume [constraint_Exn_2]: $Composite..typeTag!(err) == Exn$TypeTag || $Composite..typeTag!(err) == Special$TypeTag;
     var $c10 : bool;
-    var err2 : $Composite;
-    assume [constraint_Exn_3]: $Composite..typeTag!(err2) == Exn$TypeTag || $Composite..typeTag!(err2) == Special$TypeTag;
     goto $start;
   }
   $start: {
@@ -464,13 +442,11 @@ cfg $heapEntry {
   $region$5: {
     $c6 := $MkComposite($Heap..nextReference!($heap), Exn$TypeTag);
     $heap := $MkHeap($Heap..data!($heap), int.add($Heap..nextReference!($heap), 1));
-    x := $c6;
-    $exv := x;
+    $exv := $c6;
     goto $catch$exn0;
   }
   $catch_dispatch$1: {
-    err := $c0;
-    $c10 := $Composite..typeTag!(err) == Special$TypeTag;
+    $c10 := $Composite..typeTag!($c0) == Special$TypeTag;
     branch ($c10) goto $catch$11 else goto $catch_next$12;
   }
   $catch$11: {
@@ -478,7 +454,6 @@ cfg $heapEntry {
     goto $try_end$4;
   }
   $catch_next$12: {
-    err2 := $c0;
     r := 1;
     goto $try_end$4;
   }
@@ -537,8 +512,6 @@ cfg $heapEntry {
   $entry: {
     var $c0 : $Composite;
     assume [constraint_Exn_0]: $Composite..typeTag!($c0) == Exn$TypeTag;
-    var ex : $Composite;
-    assume [constraint_Exn_1]: $Composite..typeTag!(ex) == Exn$TypeTag;
     goto $start;
   }
   $uncaught$exn0: {
@@ -549,8 +522,7 @@ cfg $heapEntry {
   $start: {
     $c0 := $MkComposite($Heap..nextReference!($heap), Exn$TypeTag);
     $heap := $MkHeap($Heap..data!($heap), int.add($Heap..nextReference!($heap), 1));
-    ex := $c0;
-    $exv := ex;
+    $exv := $c0;
     goto $uncaught$exn0;
   }
 };
@@ -649,9 +621,6 @@ cfg $heapEntry {
     var hit : int;
     var i : int;
     var $c6 : $Composite;
-    var $c8 : $Composite;
-    var e : $Composite;
-    assume [constraint_Exn_0]: $Composite..typeTag!(e) == Exn$TypeTag;
     goto $start;
   }
   $start: {
@@ -687,7 +656,6 @@ cfg $heapEntry {
     goto $try_end$10;
   }
   $catch_dispatch$7: {
-    e := $c6;
     hit := int.add(hit, 1);
     goto $try_end$10;
   }

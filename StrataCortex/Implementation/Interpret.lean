@@ -9,6 +9,7 @@ public import StrataLaurel.Implementation.LaurelCompilationPipeline
 public import StrataCortex.Implementation.Pipeline
 public import Strata.Languages.Cortex.Interpreter
 public import Strata.Languages.Cortex.LowerCTE
+public import Strata.Languages.Cortex.Cleanup
 public import Strata.Languages.Core.ProgramEval
 
 namespace Cortex
@@ -56,10 +57,18 @@ def toInterpretableCore (options : LaurelTranslateOptions) (program : LaurelProg
     | (none, diags) => throw s!"Laurel to Core translation failed: {diags.map (·.message)}"
   interpretableCore core
 
-/-- Run every entry procedure of `m` on the Cortex interpreter, after LowerCTE.
+/-- Run every entry procedure of `m` on the Cortex interpreter, after the
+cleanup passes and LowerCTE. With `cleanup := false` the cleanup passes are
+skipped, for comparing the two runs.
 Returns the failed checks as diagnostics, and the runs that stopped or left an
 assertion unevaluated as errors. -/
-def interpretProgram (m : Cortex.UnorderedProgram) (fuel : Nat) : Except String (Array Message × Array String) := do
+def interpretProgram (m : Cortex.UnorderedProgram) (fuel : Nat) (cleanup : Bool := true) :
+    Except String (Array Message × Array String) := do
+  let m ← if cleanup then
+      match Cortex.Cleanup.run m with
+      | .ok m => pure m
+      | .error e => throw s!"Cleanup: {e}"
+    else pure m
   let m ← match Cortex.LowerCTE.runWith true m with
     | .ok m => pure m
     | .error e => throw s!"LowerCTE: {e}"
