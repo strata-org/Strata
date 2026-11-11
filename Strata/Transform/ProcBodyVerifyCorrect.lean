@@ -457,19 +457,6 @@ private theorem nodup_mkOld_map (ids : List Expression.Ident)
       exact h_nodup.1 (this ▸ hid'_mem)
     · exact ih h_nodup.2
 
-/-- Helper: the mapM calls in procToVerifyStmt are effectively pure maps,
-    since the body only uses `return` (no state mutation or error). -/
-private theorem mapM_stateT_pure_eq {α β : Type} {σ : Type} {ε : Type}
-    (f : α → β) (xs : List α) (s0 : σ) :
-    (List.mapM (m := ExceptT ε (StateM σ)) (fun x => StateT.pure (Except.ok (f x))) xs) s0 =
-    (Except.ok (xs.map f), s0) := by
-  induction xs generalizing s0 with
-  | nil => simp [List.mapM_nil, pure, ExceptT.pure]; rfl
-  | cons a rest ih =>
-    simp only [List.mapM_cons, bind, ExceptT.bind, ExceptT.mk,
-      ExceptT.bindCont, pure, ExceptT.pure, StateT.bind, StateT.pure, List.map_cons]
-    rw [ih]; rfl
-
 /-! ## Verification Statement Structure -/
 
 /-- if `procToVerifyStmt` succeeds, then the input procedure has `.structured` body -/
@@ -481,7 +468,7 @@ theorem procToVerifyStmt_is_structured
     cases hb: proc.body with
     | structured ss => simp
     | cfg blk =>
-      simp only [List.mapM_pure (l := proc.header.getInoutParams), hb, pure_bind] at h
+      simp only [hb] at h
       cases h
 
 /-- Structure: the output of `procToVerifyStmt` is a block
@@ -512,7 +499,6 @@ theorem procToVerifyStmt_structure
   rw [h_body_eq] at h
   simp only [bind, ExceptT.bind, ExceptT.mk, ExceptT.run, ExceptT.bindCont,
     pure, ExceptT.pure, StateT.bind] at h
-  rw [mapM_stateT_pure_eq _ proc.header.getInoutParams] at h
   have h_eq := (Prod.mk.inj h).1 |> Except.ok.inj
   -- Define the prefix components
   let inputInits := proc.header.inputs.toList.map fun (id, ty) =>
@@ -525,7 +511,10 @@ theorem procToVerifyStmt_structure
   let assumes := requiresToAssumes proc.spec.preconditions
   let prefixStmts := inputInits ++ outputOnlyInits ++ oldInoutInits ++ assumes
   rw [h_body_eq]
-  refine ⟨prefixStmts, ss, rfl, h_eq.symm, ?_, ?_⟩
+  refine ⟨prefixStmts, ss, rfl, ?_, ?_, ?_⟩
+  · rw [← h_eq]
+    simp [prefixStmts, inputInits, outputOnlyInits, oldInoutInits, assumes, paramInits,
+      oldInits, List.append_assoc]
   · intro s hs
     simp only [prefixStmts, List.mem_append] at hs
     rcases hs with ((hs | hs) | hs) | hs

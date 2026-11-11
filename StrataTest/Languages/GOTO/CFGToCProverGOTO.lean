@@ -106,6 +106,7 @@ instance : Imperative.HasIntOps LExprTP where
 instance : Imperative.HasBoolOps LExprTP where
   not e := .app md (.op md ⟨"Bool.Not", ()⟩ none) e
   and e1 e2 := .app md (.app md (.op md ⟨"Bool.And", ()⟩ none) e1) e2
+  or e1 e2 := .app md (.app md (.op md ⟨"Bool.Or", ()⟩ none) e1) e2
   imp e1 e2 := .app md (.app md (.op md ⟨"Bool.Imp", ()⟩ none) e1) e2
 
 -------------------------------------------------------------------------------

@@ -89,6 +89,7 @@ instance : HasBool MiniPureExpr where
 instance : HasBoolOps MiniPureExpr where
   not := .not
   and := fun _ _ => .tt
+  or := fun _ _ => .tt
   imp := fun _ _ => .tt
 
 instance : HasInt MiniPureExpr where
@@ -356,6 +357,7 @@ instance : HasBool MiniPureExpr2 where
 instance : HasBoolOps MiniPureExpr2 where
   not := .not
   and := fun _ _ => .tt
+  or := fun _ _ => .tt
   imp := fun _ _ => .tt
 
 /-- Test: `set x := var "y"` has `modifiedOrDefinedVars = ["x"]` (write-set only)

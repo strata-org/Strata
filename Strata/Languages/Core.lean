@@ -368,10 +368,11 @@ def Core.passUnrollBoundedQuantifiers : Core.PipelinePhase :=
     The same phases are nameable in every mode (`options.vcgen`, `options.symExec`): the
     default order, then each phase in `others` it leaves out, each name once. Among these are
     `assertNoCFGBodies`, which `--vcgen symexec` drops, the CFG loop phases
-    (`hoistNondetChoices`, `cfgLoopElim`), which only `--vcgen symexec` runs, the VC generation
-    phases outside the mode's order, and the components of `passWPLoop` other than beta reduction
-    (`passGuardFwd`, `passDefInline`, `passDeadDefElim`, `passGuardProp`, `passCtorFold`), which
-    are in no default order. -/
+    (`hoistNondetChoices`, `cfgLoopElim`), which only `--vcgen symexec` and `--vcgen usp/uwp`
+    run, the VC generation phases outside the mode's order, the passive one (`--vcgen usp/uwp`)
+    included, and the components of `passWPLoop` other than beta reduction (`passGuardFwd`,
+    `passDefInline`, `passDeadDefElim`, `passGuardProp`, `passCtorFold`), which are in no
+    default order. -/
 def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.default) :
     List Core.PipelinePhase :=
   let defaults := Core.corePipelinePhases options
@@ -381,7 +382,14 @@ def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.defa
       Core.passWP, Core.passSSA, Core.passGuardFwd, Core.passDefInline, Core.passDeadDefElim,
       Core.passWPLoop, Core.passGuardProp, Core.passCtorFold, Core.passSymbolicEval options,
       Core.passSymExec options, Core.passCommonSubexprElim,
-      _root_.Core.hoistNondetChoicesPipelinePhase, Core.passCFGLoopElim]
+      _root_.Core.hoistNondetChoicesPipelinePhase, Core.passCFGLoopElim,
+      -- In the default orders of symbolic evaluation and WP, but not of `usp`/`uwp`.
+      Core.passNondetElim] ++
+    -- The passive VC phase, from the order of `--vcgen usp` (`uwp` when that is the mode),
+    -- which knows the validation prefixes of the phases before it.
+    ((Core.passiveVCGenPhases
+        { options with vcgen := if options.vcgen == .uwp then .uwp else .usp }).filter
+      fun p => p.phase.name == "passiveVC")
   defaults ++ others.filter fun p => !defaults.any (·.phase.name == p.phase.name)
 
 /-! ### Standard Core verification pipeline phases
@@ -517,7 +525,7 @@ def Core.displayPhasesText (flags : Core.PhaseFlagNames)
     to unknown. -/
 def frontEndPhase : Core.AbstractedPhase where
   name := "FrontEnd"
-  getValidation _ := .modelToValidate (fun _ => /- TODO -/ false)
+  getValidation _ := .modelToValidate (fun _ _ => /- TODO -/ none)
 
 /-! ### Analysis of Core programs -/
 
@@ -549,6 +557,9 @@ def Core.verifyProgram
     (solver : Option Core.CoreSMTSolver := none)
     (mkSession : Option Core.IncrementalSolve.SessionFactory := none)
     : EIO String Core.VCResults := do
+  -- `--vcgen` dispatch: `Core.corePipelinePhases` returns the phases of the
+  -- chosen generator, and all generators reach the same back end.
+
   let runVerification (tempDir : System.FilePath) : IO Core.VCResults :=
     EIO.toIO (fun dm => IO.Error.userError (toString (dm.format fileMap)))
       (_root_.Core.verify program tempDir options moreFns externalPhases

@@ -116,12 +116,13 @@ def blockInitsNodupB (cfg : DetCFG) : Bool :=
   cfg.blocks.all fun lb => (WF.blockInitVars lb.2).nodupB
 
 /-- Every CFG-local a *reachable* block reads or assigns has a dominating
-declarer. Unreachable blocks are excluded (their dominator set is `⊤`).
+declarer. Unreachable blocks are excluded (every block dominates them; see
+`Dom.DomMap`).
 
 Each use of `x` is checked only against the declarers of `x` (`groupValuesByKey`), so
-a local with one declarer costs one `dominates` query per use. `dominates`
-searches the block's dominator list from `computeDominators`. -/
-def domScopedB (dom : Std.HashMap String (List String)) (reachable : Std.HashSet String)
+a local with one declarer costs one `dominates` query per use, which is a
+constant-time interval test (`computeDominators`). -/
+def domScopedB (dom : Imperative.CFG.Dom.DomMap) (reachable : Std.HashSet String)
     (cfg : DetCFG) : Bool :=
   let inits := Std.HashSet.ofList (WF.cfgInitVars cfg)
   let groups := (cfgInitDeclBlocks cfg).groupValuesByKey (fun _ => true)
@@ -132,15 +133,15 @@ def domScopedB (dom : Std.HashMap String (List String)) (reachable : Std.HashSet
       (groups.getD x []).any (fun d => dominates dom d lb.1)
 
 /-- Two distinct *reachable* blocks declaring the same local are
-dominance-incomparable. Unreachable declarers are excluded (their dominator set
-is `⊤`).
+dominance-incomparable. Unreachable declarers are excluded (every block dominates
+them; see `Dom.DomMap`).
 
 Each reachable declarer is compared only with the other declarers of the same
 local (`groupValuesByKey`): none of them may dominate it. Running this for
 every declarer covers both directions of each pair. A local declared in a single
 block makes no `dominates` query, so the check is linear when locals are
 distinct. -/
-def initsIncomparableB (dom : Std.HashMap String (List String)) (reachable : Std.HashSet String)
+def initsIncomparableB (dom : Imperative.CFG.Dom.DomMap) (reachable : Std.HashSet String)
     (cfg : DetCFG) : Bool :=
   let ds := cfgInitDeclBlocks cfg
   let groups := ds.groupValuesByKey reachable.contains
@@ -161,7 +162,7 @@ def checkBlockInitsNodup (procName : CoreIdent) (cfg : DetCFG) (sourceLoc : File
 before the per-block loop (over the order-independent dominance oracle) so a
 genuine scope error surfaces as this CFG-level message ahead of the low-level
 in-loop fvar error. -/
-def checkDomScoped (dom : Std.HashMap String (List String)) (reachable : Std.HashSet String)
+def checkDomScoped (dom : Imperative.CFG.Dom.DomMap) (reachable : Std.HashSet String)
     (procName : CoreIdent) (cfg : DetCFG) (sourceLoc : FileRange) :
     Except Message Unit :=
   if domScopedB dom reachable cfg then .ok ()
@@ -173,7 +174,7 @@ def checkDomScoped (dom : Std.HashMap String (List String)) (reachable : Std.Has
     header (`CFG.misplacedInvariants`). CFG loop elimination cuts loops at their headers, so
     an invariant elsewhere would mean nothing; rejecting it here makes every generator
     report it. -/
-def checkLoopInvariantsAtHeaders (dom : Std.HashMap String (List String))
+def checkLoopInvariantsAtHeaders (dom : Imperative.CFG.Dom.DomMap)
     (reachable : Std.HashSet String) (procName : CoreIdent) (cfg : DetCFG)
     (sourceLoc : FileRange) : Except Message Unit := do
   if let some l := (Imperative.CFG.misplacedInvariants dom reachable cfg).head? then
@@ -184,7 +185,7 @@ def checkLoopInvariantsAtHeaders (dom : Std.HashMap String (List String))
 /-- Error unless same-local declarers are dominance-incomparable. Runs before the
 per-block loop (over the order-independent dominance oracle) so this CFG-level
 message surfaces for a comparable pair ahead of the low-level in-loop error. -/
-def checkInitsIncomparable (dom : Std.HashMap String (List String)) (reachable : Std.HashSet String)
+def checkInitsIncomparable (dom : Imperative.CFG.Dom.DomMap) (reachable : Std.HashSet String)
     (procName : CoreIdent) (cfg : DetCFG) (sourceLoc : FileRange) :
     Except Message Unit :=
   if initsIncomparableB dom reachable cfg then .ok ()
@@ -448,7 +449,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
   -- depend on insertion order.
   --
   -- Extending the parent's newest frame copies it, so on a chain of declaring
-  -- blocks this walk is quadratic, like the dominator map itself.
+  -- blocks this walk is quadratic in their number.
   let (rpo, idom) := idoms
   let mut scopeCtx : Std.HashMap String (type_of% Env.context) := {}
   for lbl in rpo do

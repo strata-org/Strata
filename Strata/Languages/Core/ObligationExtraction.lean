@@ -116,9 +116,7 @@ end
 def renameShadowingParams (taken : List String) (proc : Procedure) (ss : Statements) :
     Statements :=
   let params := proc.header.inputs ++ proc.header.outputs
-  let bodyNames := (Statements.allExprs ss).flatMap (fun e => (HasFvars.getFvars e).map (·.name)) ++
-    (Imperative.Block.definedVars (P := Expression) (C := Command) ss false).map (·.name)
-  let used := taken ++ params.map (·.1.name) ++ bodyNames
+  let used := taken ++ params.map (·.1.name) ++ Statements.varNames ss
   let fresh (used : List String) (x : String) : String :=
     let rec go (n : Nat) (fuel : Nat) : String :=
       match fuel with

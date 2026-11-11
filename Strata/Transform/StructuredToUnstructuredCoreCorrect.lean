@@ -314,8 +314,8 @@ private theorem structuredToUnstructuredDecls_proc_mem
     · subst d
       cases h1 : Imperative.Block.checkExitsCoveredByBlocks [] ss <;>
         cases h2 : userLabelsOk ss <;> cases h3 : initsAvoidReservedPrefixes ss <;>
-        simp only [List.mapM_cons, structuredToUnstructuredDecl, hb, hempty, hcfg,
-          h1, h2, h3, bind, Except.bind, pure, Except.pure] at h
+        simp only [List.mapM_cons, structuredToUnstructuredDecl, shapeError?, hb, hempty,
+          hcfg, h1, h2, h3, bind, Except.bind, pure, Except.pure] at h
       all_goals
         repeat' first | split at h | simp_all
       all_goals
@@ -327,8 +327,7 @@ private theorem structuredToUnstructuredDecls_proc_mem
       all_goals
         repeat' first | split at h | simp_all only [ne_eq, List.isEmpty_eq_false_iff,
           not_false_eq_true, Except.ok.injEq, forall_const, forall_eq', List.mem_cons,
-          reduceCtorEq, or_true, and_self, true_and, Decl.proc.injEq, List.isEmpty_iff,
-          Bool.not_eq_eq_eq_not, Bool.not_true]
+          reduceCtorEq, or_true, and_self, true_and, Decl.proc.injEq, List.isEmpty_iff]
         subst results
         exact List.mem_cons_of_mem _ ih.2
 

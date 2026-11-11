@@ -74,6 +74,7 @@ public import Strata.DL.Imperative.InterpreterCFGKleeneFollows
 
 public import Strata.DL.Imperative.StmtExtendCallBridge
 public import Strata.DL.Imperative.StmtExtendCallBridgeProps
+public import Strata.DL.Imperative.PassiveVCGen
 
 public import Strata.DL.Imperative.SMTUtils
 public import Strata.DL.Imperative.InterpreterReplayTactics

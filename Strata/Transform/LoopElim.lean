@@ -261,9 +261,10 @@ def loopElimPipelinePhase : PipelinePhase where
     rejectMarkerLabels "loop elimination" loopElimAssumePrefix p
     loopElim p
   phase.name := "loopElim"
+  phase.validationPrefixes := [loopElimAssumePrefix]
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation loopElimAssumePrefix then
-      .modelToValidate (fun _ => /- TODO -/ false)
+      .modelToValidate (fun _ _ => /- TODO -/ none)
     else .modelPreserving
   -- Iterating to a fixed point dissolves nested loops as well, so a successful
   -- run leaves none; what replaces them havocs, which is why

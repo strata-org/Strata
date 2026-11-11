@@ -190,8 +190,9 @@ inductive ProgramFact where
       arm's definitions, which need not agree with it. -/
   | armsHaveObligations
   /-- No CFG body has a cycle reachable from its entry (`Program.noCFGCycles`).
-      Established by CFG loop elimination, which cuts each loop at its header.
-      Structured loops are a separate matter (`noLoops`). -/
+      Established by CFG loop elimination, which cuts each loop at its header, and
+      required by passive VC generation, which needs an acyclic CFG. Structured
+      loops are a separate matter (`noLoops`). -/
   | noCFGCycles
   deriving DecidableEq, Repr
 

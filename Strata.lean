@@ -353,6 +353,8 @@ import Strata.Languages.Core.TypeSkolem
 import Strata.Languages.Core.WrittenTyVarScope
 import Strata.Languages.Core.Typing.Spec.ProcedureTypeSpec
 import Strata.Languages.Core.ProcedureTypeProps
+import Strata.Transform.CFGLoopElimProps
+import Strata.Transform.CFGLoopElimReplay
 import Strata.Languages.Core.Typing.Spec.DatatypeTypeSpec
 import Strata.Languages.Core.Typing.Spec.ProgramTypeSpec
 import Strata.Languages.Core.Typing.Spec.NamesWF

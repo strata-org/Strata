@@ -869,6 +869,13 @@ entry, the body is executed, and the postconditions must hold on exit. If the
 body is empty, the procedure is abstract and can only be reasoned about via its
 contract.
 
+A body may instead be a control-flow graph (`cfg entry { ... }`): labelled basic
+blocks, each a sequence of commands ending in a transfer, with optional block
+annotations such as loop invariants. Such procedures are verified by passive VC
+generation (`--vcgen usp`); the
+[Transforms and Analysis](../../transforms/html-single/) document describes the
+syntax and how they are verified.
+
 ### The Procedure type
 
 {docstring Core.Procedure}

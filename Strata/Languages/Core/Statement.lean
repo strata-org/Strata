@@ -562,6 +562,13 @@ directly; what is left here is what genuinely mentions a Core command. -/
 @[expose] def Statement.noCalls (s : Statement) : Bool :=
   Imperative.Stmt.allSubstmts Statement.isNotCall s
 
+/-- The commands of a list of statements, in order; other statements are
+    dropped. -/
+def Statements.commands (ss : Statements) : List Command :=
+  ss.filterMap fun s => match s with
+    | .cmd c => some c
+    | _ => none
+
 /-- Does `ss` make no procedure call, at any nesting depth? -/
 @[expose] def Statements.noCalls (ss : Statements) : Bool :=
   Imperative.Block.allSubstmts Statement.isNotCall ss
@@ -627,6 +634,17 @@ facts. -/
 /-- Every expression in `ss`. -/
 @[expose] def Statements.allExprs (ss : Statements) : List Expression.Expr :=
   Statements.collectExprs ss
+
+/-- The variable names `ss` reads (its expressions' free variables) or declares. -/
+def Statements.varNames (ss : Statements) : List String :=
+  (Statements.allExprs ss).flatMap (fun e => (HasFvars.getFvars e).map (·.name)) ++
+    (Imperative.Block.definedVars (P := Expression) (C := Command) ss false).map (·.name)
+
+/-- `ss` with variable `x` renamed to `x'`, which has type `ty`, in its reads and
+    its writes. -/
+def Statements.renameVar (ss : Statements) (x x' : Expression.Ident)
+    (ty : Option Lambda.LMonoTy) : Statements :=
+  Block.renameLhs (Block.substFvar ss x (.fvar default x' ty)) x x'
 
 ---------------------------------------------------------------------
 

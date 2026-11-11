@@ -27,6 +27,7 @@ import Strata.Transform.UnrollBoundedQuantifiers
 import Strata.Transform.BetaReduce
 import Strata.Transform.CallElim
 import Strata.Transform.CFGLoopElim
+import Strata.Transform.PassiveVCGenCoreProgram
 import Strata.Transform.CommonSubexprElim
 import Strata.Transform.FilterProcedures
 import Strata.Transform.FunctionInlining
@@ -961,7 +962,8 @@ def toCoreProofObligationProgram (options : VerifyOptions) (program : Program)
             if/loop guard; run nondetElim before symbolic evaluation."
         | .cfg _ =>
           some s!"procedure '{proc.header.name.1}' has a CFG body; symbolic \
-            evaluation supports only structured bodies.")
+            evaluation supports only structured bodies. Pass --vcgen symexec (for an \
+            acyclic one) or --vcgen usp (or uwp) to verify it.")
     | _ => none) with
   | some msg => throw (Message.fromString s!"toCoreProofObligationProgram: {msg}")
   | none => pure ()
@@ -1211,13 +1213,18 @@ structure SolverPhaseLog where
 def AbstractedPhase.validateModel (phases : List AbstractedPhase)
     (result : SMT.Result)
     (obligation : ProofObligation Expression)
+    (holds : Bool := false)
     : SMT.Result × List SolverPhaseLog :=
   -- Process phases innermost-first; accumulate log entries in reverse
   let (finalResult, revLog) := phases.reverse.foldl (init := (result, [])) fun (r, log) p =>
     let validation := p.getValidation obligation
     let r' := match r, validation with
-      | .sat m, .modelToValidate f => if f m then .sat m else .unknown (some m)
-      | .unknown (some m), .modelToValidate f => if f m then .sat m else .unknown (some m)
+      | .sat m, .modelToValidate f => match f holds m with
+        | some m' => .sat m'
+        | none => .unknown (some m)
+      | .unknown (some m), .modelToValidate f => match f holds m with
+        | some m' => .sat m'
+        | none => .unknown (some m)
       -- .unknown none or .modelPreserving: pass through unchanged
       | _, _ => r
     (r', { phase := p.name, result := r' } :: log)
@@ -1534,6 +1541,34 @@ def LExprModel.format (model : LExprModel) : Format :=
 
 instance : ToFormat LExprModel where
   format := LExprModel.format
+
+/-- A model in the program's variables at the check whose metadata is `md`. The passive
+    VC phase names, at each check, the incarnation each variable is at
+    (`PassiveVCGen.varAtPrefix`); the model then gives each such variable the value of
+    that incarnation, in place of the incarnations. A model of any other check is kept. -/
+def LExprModel.atCheck (md : Imperative.MetaData Expression) (model : LExprModel) :
+    LExprModel :=
+  let pfx := Imperative.PassiveVCGen.varAtPrefix
+  let at_ : List (String × String) := md.toList.filterMap fun e =>
+    match e.fld, e.value with
+    | .label l, .msg inc => (l.dropPrefix? pfx).map fun x => (x.toString, inc)
+    | _, _ => none
+  if at_.isEmpty then model else
+  at_.filterMap fun (x, inc) =>
+    (model.find? (·.1.name == inc)).map fun (_, v) => (⟨x, ()⟩, v)
+
+/-- `names`, the missing variables of a model, in the program's variables as `atCheck`
+    gives the model: each variable whose incarnation at the check (`md`'s `varAtPrefix`
+    entries) is among `names`. Without such entries, `names` itself. -/
+def LExprModel.missingAtCheck (md : Imperative.MetaData Expression) (names : List String) :
+    List String :=
+  let pfx := Imperative.PassiveVCGen.varAtPrefix
+  let at_ : List (String × String) := md.toList.filterMap fun e =>
+    match e.fld, e.value with
+    | .label l, .msg inc => (l.dropPrefix? pfx).map fun x => (x.toString, inc)
+    | _, _ => none
+  if at_.isEmpty then names else
+  at_.filterMap fun (x, inc) => if names.contains inc then some x else none
 
 /-- Classifies errors that prevent a verification condition from being resolved. -/
 inductive VCError where
@@ -2023,6 +2058,18 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
         pure ({ obligation with assumptions := newAssumptions }, irrelevantAxioms)
   return (obligation, peSatResult, peValResult, prunedAxiomLabels)
 
+/-- The procedure filters of `--procedures`, as the default order and the passive
+    VC order place them: one before call elimination, which keeps the named
+    procedures and their transitive callees (whose contracts call elimination
+    reads), and one after precondition elimination, which keeps only the named
+    procedures and drops the lemmas not named. Both are empty without
+    `--procedures`. -/
+def procedureFilterPhases (options : VerifyOptions) : List PipelinePhase × List PipelinePhase :=
+  match options.proceduresToVerify with
+  | some ps => ([filterProceduresPipelinePhase ps],
+                [filterProceduresPipelinePhase ps (keepUnlistedLemmas := false)])
+  | none => ([], [])
+
 /-- The Core verification pipeline phases. Each entry pairs a program
     transformation with its per-obligation model validation. The pipeline
     extracts transforms from this list, and the validation extracts phases,
@@ -2065,14 +2112,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
 def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     List PipelinePhase :=
-  let procs := options.proceduresToVerify
-  let filterPhases := match procs with
-    | some ps => [filterProceduresPipelinePhase ps]
-    | none => []
-  let postFilterPhases := match procs with
-    | some ps =>
-      [filterProceduresPipelinePhase ps (keepUnlistedLemmas := false)]
-    | none => []
+  let (filterPhases, postFilterPhases) := procedureFilterPhases options
   let cfgCheck := if options.symExec.isSome && options.vcgen == .symbolic then []
     else [ProgramFact.assertPhase .noCFGBodies]
   -- The filter runs before `assertNoCFGBodies`, so a caller naming structured
@@ -2181,6 +2221,73 @@ def symExecPipelinePhase
       modify fun σ => { σ with statistics := σ.statistics.merge stats }
       return (true, prog')
 
+/-- The passive VC pipeline phase (`--vcgen uwp/usp`): each procedure that is not an
+    obligation unit becomes an obligation procedure (`PassiveVC.passiveVCProgram`), whose
+    body declares the variables and definitions of its verification conditions and has one
+    branch per assertion or cover. Structured and CFG bodies are both lowered, so it
+    establishes `noCFGBodies`. It requires a call-free program with no structured loop and
+    no CFG cycle (`noLoops`, `noCFGCycles`: the phases that eliminate loops run earlier).
+    Every other declaration is kept. `prefixes` are the validation prefixes of the
+    phases before it (`AbstractedPhase.validationPrefixes`), whose labels it keeps
+    on the obligations' paths. The names it introduces also avoid those of the functions
+    in the transform state's factory, which holds the functions given outside the program
+    (`moreFns`, which `verifyPipeline` seeds it with), so no pipeline can leave them out. -/
+def passiveVCPipelinePhase (vcMode : VCGenMode) (prefixes : List String) : PipelinePhase where
+  transform prog := do
+    let F ← Transform.getFactory
+    let prog' ← Transform.liftDiag
+      (PassiveVC.passiveVCProgram (PassiveVC.vcModeToMethod vcMode) prog
+          (prefixes ++ [PassiveVCGen.joinResetLabel])
+          (F.toArray.toList.map (·.name.name))
+        |>.mapError fun err =>
+        Strata.Message.fromString s!"❌ Passive VC generation error.\n{err}")
+    return (true, prog')
+  phase.name := "passiveVC"
+  phase.validationPrefixes := [PassiveVCGen.joinResetLabel]
+  -- A result resting on a reset at a join (a variable written different lambdas
+  -- on different paths) is not about the program, so it is not reported as definite.
+  phase.getValidation obligation :=
+    if obligationHasLabelPrefix obligation PassiveVCGen.joinResetLabel then
+      .modelToValidate (fun _ _ => /- TODO -/ none)
+    else .modelPreserving
+  requires := factSet![.noCalls, .noLoops, .typeAnnotated, .noCFGCycles]
+  establishes := factSet![.noCFGBodies, .noLoops, .staticSingleAssignment,
+                          .hasObligationForm, .noProcedureContracts]
+  preserves := factSet![.wellFormedCalls, .noCalls, .noPrecondsFromFuncs,
+                        .noPolymorphicProcedures, .noPolymorphicFunctions, .typeAnnotated]
+
+/-- The phases `--vcgen uwp/usp` runs, in place of the whole default order: type
+    checking and the procedure filters of `transformPipelinePhases` (the second filter
+    after precondition elimination); CFG loop elimination, which cuts the loops of CFG
+    bodies at their headers; call elimination; the termination check and
+    precondition elimination; the invariant and measure assertions and loop
+    elimination of structured bodies (a CFG body is left to the CFG phase); opaque
+    type parameters and function monomorphization; simplification, which unfolds calls of
+    recursive functions on values as in the default order (`simplifyPhase`);
+    the declaration phase, which builds the lemmas' obligation units; the passive VC
+    phase; and beta reduction. Structured and CFG bodies are both accepted. -/
+def passiveVCGenPhases (options : VerifyOptions := VerifyOptions.default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
+  let (filterPhases, postFilterPhases) := procedureFilterPhases options
+  -- As in `transformPipelinePhases`, `typeCheck` comes first, and every later phase keeps
+  -- the expressions it annotates annotated.
+  -- The choices of nondeterministic `goto`s in CFG loops are declared at the entry first,
+  -- since type checking rejects a declaration on a cycle.
+  let before := [hoistNondetChoicesPipelinePhase,
+      typeCheckPipelinePhase options (moreFns := moreFns)] ++ filterPhases ++
+    -- CFG loop elimination comes before call elimination, so that the program its
+    -- validation replays a model through still has its calls, whose callees replay runs.
+    [cfgLoopElimPipelinePhase, callElimPipelinePhase, termCheckPipelinePhase,
+     precondElimPipelinePhase] ++ postFilterPhases ++
+    [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase,
+     genOpaqueTypeParamsPipelinePhase,
+     monomorphizeFunctionsPipelinePhase,
+     simplifyPhase,
+     declObligationsPipelinePhase options moreFns]
+  before ++
+    [passiveVCPipelinePhase options.vcgen (before.flatMap (·.phase.validationPrefixes)),
+     betaReducePipelinePhase]
+
 /-- The phases that run between `transformPipelinePhases` and `symbolicEvalPipelinePhase`:
     replace procedure and lemma type parameters by opaque types, monomorphize functions,
     simplify, and eliminate nondeterminism. -/
@@ -2208,26 +2315,30 @@ def symExecPerPathCSETreeSize : Nat := 100000
 def corePipelinePhases
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
-  transformPipelinePhases options moreFns
-    ++ preSymbolicEvalPipelinePhases
-    ++ (match options.vcgen with
-        | .symbolic =>
-          if options.symExec.isSome then
-            -- Under `never`, CSE runs only on a program with an expression whose tree has
-            -- more than `symExecPerPathCSETreeSize` nodes (a value that copies itself, such as
-            -- `r := r + r` repeated). When paths can merge (`always`, `pathsAbove`) it does not
-            -- run: the explorer names each merged value at its join, and its output declares
-            -- those names, which CSE's `noInits` excludes.
-            if options.symExecMode == .never then
-              [symExecPipelinePhase options moreFns, betaReducePipelinePhase,
-                commonSubexprElimPhase (minTreeSize := some symExecPerPathCSETreeSize)]
-            else [symExecPipelinePhase options moreFns, betaReducePipelinePhase]
-          else [symbolicEvalPipelinePhase options moreFns, betaReducePipelinePhase,
-                commonSubexprElimPhase]
-        -- CSE requires `noInits`, which the SSA phase does not establish. The rewrite loop
-        -- beta-reduces procedure bodies; `betaReducePipelinePhase` reduces the other
-        -- declarations (function bodies, axioms).
-        | .wp => wpVCGenPhases options moreFns ++ [betaReducePipelinePhase])
+  match options.vcgen with
+  | .usp | .uwp => passiveVCGenPhases options moreFns
+  | .symbolic | .wp =>
+    transformPipelinePhases options moreFns
+      ++ preSymbolicEvalPipelinePhases
+      ++ (match options.vcgen with
+          | .symbolic =>
+            if options.symExec.isSome then
+              -- Under `never`, CSE runs only on a program with an expression whose tree has
+              -- more than `symExecPerPathCSETreeSize` nodes (a value that copies itself, such
+              -- as `r := r + r` repeated). When paths can merge (`always`, `pathsAbove`) it
+              -- does not run: the explorer names each merged value at its join, and its output
+              -- declares those names, which CSE's `noInits` excludes.
+              if options.symExecMode == .never then
+                [symExecPipelinePhase options moreFns, betaReducePipelinePhase,
+                  commonSubexprElimPhase (minTreeSize := some symExecPerPathCSETreeSize)]
+              else [symExecPipelinePhase options moreFns, betaReducePipelinePhase]
+            else [symbolicEvalPipelinePhase options moreFns, betaReducePipelinePhase,
+                  commonSubexprElimPhase]
+          -- CSE requires `noInits`, which the SSA phase does not establish. The rewrite loop
+          -- beta-reduces procedure bodies; `betaReducePipelinePhase` reduces the other
+          -- declarations (function bodies, axioms).
+          | .wp => wpVCGenPhases options moreFns ++ [betaReducePipelinePhase]
+          | .usp | .uwp => [])
 
 /-- What the back end needs of the program the pipeline hands it, as opposed to
     what one phase asks of another. A phase list that does not deliver these is
@@ -2288,12 +2399,14 @@ private def buildSolverLog (satResult valResult : SMT.Result)
     may be demoted to `.unknown` if a phase cannot validate the model, and
     an `.unknown` result may be promoted back to `.sat` if a phase can
     validate the model. Returns the adjusted result and a log of
-    intermediate results per phase. -/
+    intermediate results per phase. `holds` says whether `r` is the result of
+    the satisfiability query (the check holding) rather than the validity query. -/
 def SMT.Result.adjustForPhases (r : SMT.Result)
     (phases : List AbstractedPhase)
-    (obligation : ProofObligation Expression) : SMT.Result × List SolverPhaseLog :=
+    (obligation : ProofObligation Expression) (holds : Bool := false) :
+    SMT.Result × List SolverPhaseLog :=
   match r with
-  | .sat _ | .unknown _ => AbstractedPhase.validateModel phases r obligation
+  | .sat _ | .unknown _ => AbstractedPhase.validateModel phases r obligation holds
   | other => (other, [])
 
 /-- The outcome as reported. When `axiomsDropped` is set, a `sat` becomes
@@ -2323,7 +2436,8 @@ def VCResult.validateModels (r : VCResult) (phases : List AbstractedPhase) : VCR
   match r.outcome with
   | .error _ => r
   | .ok o =>
-    let (sat, satLog) := o.satisfiabilityProperty.adjustForPhases phases r.obligation
+    let (sat, satLog) :=
+      o.satisfiabilityProperty.adjustForPhases phases r.obligation (holds := true)
     let (valid, validLog) := o.validityProperty.adjustForPhases phases r.obligation
     -- A model a phase accepts may still violate an axiom pruning dropped.
     { r with outcome := .ok ({ o with
@@ -2409,7 +2523,7 @@ open CSE (isCSEGeneratedName)
 def outcomeOfAnswers (satResult validityResult : SMT.Result) (phases : List AbstractedPhase)
     (obligation : ProofObligation Expression) (satisfiabilityCheck validityCheck : Bool)
     (pruning : IrrelevantAxiomsMode) (prunedAxiomLabels : List String) : VCOutcome :=
-  let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation
+  let (adjSat, satPhaseLog) := satResult.adjustForPhases phases obligation (holds := true)
   let (adjVal, valPhaseLog) := validityResult.adjustForPhases phases obligation
   let smtLog := buildSolverLog satResult validityResult
     satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
@@ -2509,16 +2623,21 @@ def reportedModels (ctx : SMT.Context) (satResult validityResult : SMT.Result)
   | .ok (satResult, validityResult, estate) =>
     let outcome := outcomeOfAnswers satResult validityResult phases obligation
       satisfiabilityCheck validityCheck options.removeIrrelevantAxioms prunedAxiomLabels
-    let (model, report) := reportedModels ctx satResult validityResult varDefinitions requestedVars
+    -- The models of the validated answers: a phase that confirms a model may report a
+    -- refined one. A counterexample is given in the program's variables (`atCheck`).
+    let (model, report) := reportedModels ctx outcome.satisfiabilityProperty
+      outcome.validityProperty varDefinitions requestedVars
+    let atCheck := LExprModel.atCheck obligation.metadata
+    let missingAt := LExprModel.missingAtCheck obligation.metadata
     { obligation,
       outcome := .ok outcome,
       estate,
       verbose := options.verbose,
       checkLevel := options.checkLevel,
       checkMode := options.checkMode,
-      lexprModel := model, modelMissing := report.missing,
-      checkModelMissing := report.checkMissing,
-      checkModels := (some report.checkModels.1, some report.checkModels.2) }
+      lexprModel := atCheck model, modelMissing := missingAt report.missing,
+      checkModelMissing := (missingAt report.checkMissing.1, missingAt report.checkMissing.2),
+      checkModels := (some (atCheck report.checkModels.1), some (atCheck report.checkModels.2)) }
 
 /--
 Invoke a backend engine and get the analysis result for a
@@ -2944,7 +3063,7 @@ def dischargeObligations (E : Env) (obligations : ProofObligations Expression)
     if not options.alwaysGenerateSMT then
       if let (some peSat, some peVal) := (peSatResult?, peValResult?) then
         let phases := externalPhases ++ corePhases
-        let (adjPeSat, satPhaseLog) := peSat.adjustForPhases phases obligation
+        let (adjPeSat, satPhaseLog) := peSat.adjustForPhases phases obligation (holds := true)
         let (adjPeVal, valPhaseLog) := peVal.adjustForPhases phases obligation
         let peLog := buildSolverLog peSat peVal
           satisfiabilityCheck validityCheck satPhaseLog valPhaseLog
@@ -3212,13 +3331,17 @@ def verifyPipeline (program : Program)
   let pipelinePhases := pipelinePhases.map fun p =>
     if p.phase.name == (recursiveAxiomsPhase).phase.name then recursiveAxiomsPhase options
     else p
-  let phases := pipelinePhases.map (·.phase)
-  let (oblProgram, factory, pipelineStats) ← pctx.withPhase "programTransformations" do
-    let (prog, state) ← runTransforms program pipelinePhases
+  let (oblProgram, factory, pipelineStats, inputs) ← pctx.withPhase "programTransformations" do
+    let (prog, state, inputs) ← runTransformsRecording program pipelinePhases
       (initState := { Transform.CoreTransformState.emp with factory := factory })
       (pipelineCtx := some pctx)
       (keepAllFilesPrefix := options.keepAllFilesPrefix)
-    pure (prog, state.factory, state.statistics)
+    pure (prog, state.factory, state.statistics, inputs)
+  -- A phase that validates models against its input gets the input it was given.
+  let phases := pipelinePhases.zipIdx.map fun (p, i) =>
+    match inputs.lookup i with
+    | some input => p.phase.onInput input
+    | none => p.phase
   let allStats := pipelineStats
   let axiomNames := program.decls.filterMap fun decl =>
     match decl with | .ax a _ => some a.name | _ => none

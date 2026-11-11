@@ -1355,11 +1355,16 @@ def run {τ σ : Type} (factory : @Lambda.Factory CoreLParams)
       match st.claims.getD t.id default with
       | .sent _ r => r
       | .done _ outcome model missing =>
+        -- Counterexamples are given in the program's variables (`atCheck`).
+        let atCheck := LExprModel.atCheck (obligationOf t).metadata
+        let missingAt := LExprModel.missingAtCheck (obligationOf t).metadata
         { obligation := obligationOf t, outcome,
           verbose := options.verbose, checkLevel := options.checkLevel,
-          checkMode := options.checkMode, lexprModel := model, modelMissing := missing.missing,
-          checkModelMissing := missing.checkMissing,
-          checkModels := (some missing.checkModels.1, some missing.checkModels.2) }
+          checkMode := options.checkMode, lexprModel := atCheck model,
+          modelMissing := missingAt missing.missing,
+          checkModelMissing := (missingAt missing.checkMissing.1, missingAt missing.checkMissing.2),
+          checkModels :=
+            (some (atCheck missing.checkModels.1), some (atCheck missing.checkModels.2)) }
       | .unclaimed =>
         -- No verdict was obtained, which `unknown` says.
         let outcome := match firstError with

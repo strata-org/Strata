@@ -650,10 +650,10 @@ cfg entry {
 #guard_msgs in
 #eval verifyCFG pricePgm (.pathsAbove 2)
 
--- Without `--vcgen symexec`, the verifier refuses a CFG body (`assertNoCFGBodies`).
+-- Without `--vcgen symexec`, the legacy symbolic evaluator cannot verify a CFG body, and the
+-- verifier refuses it.
 /--
-info: error: ❌ Expected every procedure body to be structured, but found procedure Price with a CFG
-  body.
+info: error: ❌ Expected every procedure body to be structured, but found procedure Price with a CFG body. To verify it, pass --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp).
 -/
 #guard_msgs (whitespace := lax) in
 #eval do

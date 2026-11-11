@@ -158,14 +158,22 @@ def CheckLevel.ofString? (s : String) : Option CheckLevel :=
 def CheckLevel.options : String :=
   "'minimal' (simple messages), 'minimalVerbose' (detailed messages, one check), or 'full' (both checks, all outcomes)"
 
-/-- How verification conditions are generated from the loop-free program:
-    `symbolic` (symbolic evaluation, `toCoreProofObligationProgram`) or `wp` (the WP phase, the
-    SSA phase, then beta reduction, guard forwarding, the inlining of single-use definitions,
-    dead-definition elimination, guard propagation and the constructor fold repeated until they
-    change nothing, `Core.wpVCGenPhases`). -/
+/-- How verification conditions are generated: from the loop-free program, `symbolic`
+    (symbolic evaluation, `toCoreProofObligationProgram`, or symbolic execution with `symExec`)
+    or `wp` (the WP phase, the SSA phase, then beta reduction, guard forwarding, the inlining of
+    single-use definitions, dead-definition elimination, guard propagation and the constructor
+    fold repeated until they change nothing, `Core.wpVCGenPhases`); or, by passification of
+    each procedure's control-flow graph (`Imperative.PassiveVCGen`), `uwp` (then weakest
+    preconditions) or `usp` (then strongest postconditions). `uwp` and `usp` lower structured
+    bodies to CFGs, after eliminating their loops, and also accept CFG bodies, which the legacy
+    symbolic evaluator and `wp` reject. `uwp` and `usp` are not yet proved sound (see the
+    transforms documentation), so they run only when selected. Symbolic execution (`symExec`)
+    also handles an acyclic CFG body. -/
 inductive VCGenMode where
   | symbolic
   | wp
+  | uwp
+  | usp
   deriving Repr, DecidableEq, Inhabited
 
 /-- When symbolic execution (`--vcgen symexec`) merges the two branches of an `if` where they meet

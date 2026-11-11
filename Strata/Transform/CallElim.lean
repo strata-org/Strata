@@ -244,9 +244,12 @@ def callElimPipelinePhase : PipelinePhase where
     rejectMarkerLabels "call elimination" CallElim.callElimAssumePrefix p
     CallElim.callElim' p
   phase.name := "callElim"
+  phase.validationPrefixes := [CallElim.callElimAssumePrefix]
+  -- A call to a callee without postconditions becomes a bare `havoc` of its outputs.
+  phase.leavesUnmarkedAbstractions := true
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation CallElim.callElimAssumePrefix then
-      .modelToValidate (fun _ => /- TODO -/ false)
+      .modelToValidate (fun _ _ => /- TODO -/ none)
     else .modelPreserving
   phase.getAssertDescription label :=
     if label.startsWith CallElim.callElimAssertPrefix then

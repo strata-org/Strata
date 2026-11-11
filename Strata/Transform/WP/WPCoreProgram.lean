@@ -68,7 +68,8 @@ public section
 @[expose] def wpProc (G : IdSet Expression) (p : Procedure) (md : Imperative.MetaData Expression) :
     Except String Decl := do
   match p.body with
-  | .cfg _ => throw s!"WP: procedure '{p.header.name.name}' has a CFG body"
+  | .cfg _ => throw s!"WP: procedure '{p.header.name.name}' has a CFG body; pass \
+    --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp) to verify it"
   | .structured body =>
     let w ← wpLoopFree G p (p.contractWrapped body)
     pure (Decl.proc {

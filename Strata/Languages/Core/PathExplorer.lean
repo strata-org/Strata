@@ -513,13 +513,13 @@ abbrev BlockConfig (scfg : ExploreCfg) : Type :=
     declares) that no block dominating block `j` declares, given the dominators `dom`
     (`computeDominators`). A local declared both in a block that dominates `j` and in one that
     does not is still in scope at `j`. -/
-private def localsOutOfScope (dom : Std.HashMap String (List String))
+private def localsOutOfScope (dom : CFG.Dom.DomMap)
     (decls : List (String × List CoreIdent)) (j : String) : List CoreIdent :=
   if decls.isEmpty then [] else
-  let doms : Std.HashSet String := .ofList (dom.getD j [])
   let kept : Std.HashSet CoreIdent :=
-    .ofList (decls.flatMap fun p => bif doms.contains p.1 then p.2 else [])
-  decls.flatMap fun p => bif doms.contains p.1 then [] else p.2.filter (!kept.contains ·)
+    .ofList (decls.flatMap fun p => bif CFG.Dom.dominates dom p.1 j then p.2 else [])
+  decls.flatMap fun p =>
+    bif CFG.Dom.dominates dom p.1 j then [] else p.2.filter (!kept.contains ·)
 
 /-- Where the branches of a fork to `t` and `e` first meet: with `R` the blocks both reach
     (each counting as reaching itself), the one block of `R` none of whose predecessors (`preds`)

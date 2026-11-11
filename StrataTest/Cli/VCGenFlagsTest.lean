@@ -51,6 +51,7 @@ Available, not in the default order:
   symExec
   hoistNondetChoices
   cfgLoopElim
+  passiveVC
 -/
 #guard_msgs in
 #eval IO.println (displayPhasesFor {} { Core.VerifyOptions.quiet with vcgen := .wp })
@@ -224,7 +225,7 @@ private def vcgenFlagOf (value : String) : String :=
   | .error msg => s!"refused: {msg}"
 
 /--
-info: refused: Invalid vcgen: 'bogus'. Must be 'symbolic', 'wp' or
+info: refused: Invalid vcgen: 'bogus'. Must be 'symbolic', 'wp', 'usp', 'uwp' or
   'symexec[:per-path|merged|merge-above:N]'.
 -/
 #guard_msgs (whitespace := lax) in
@@ -321,5 +322,26 @@ info: This order composes: typeCheck, assertNoCFGBodies, callElim, termCheck, pr
 -/
 #guard_msgs in
 #eval reportOf [("vcgen", "wp"), ("phases", wpOrder)]
+
+
+/-! The passive generators: `--vcgen usp` and `--vcgen uwp` name them, with no symbolic
+execution mode, and a path cap, which only the legacy symbolic evaluator reads, is refused
+under them. -/
+
+/-- info: ok Core.VCGenMode.usp none -/
+#guard_msgs in
+#eval IO.println (vcgenFlagOf "usp")
+
+/-- info: ok Core.VCGenMode.uwp none -/
+#guard_msgs in
+#eval IO.println (vcgenFlagOf "uwp")
+
+/-- info: [--path-cap applies only to a pipeline that runs symbolic evaluation, such as the default order of --vcgen symbolic: it bounds the paths symbolic evaluation keeps, and the pipeline of this run keeps none.] -/
+#guard_msgs in
+#eval do IO.println (← issuesOf [("vcgen", "usp"), ("path-cap", "3")])
+
+/-- info: [] -/
+#guard_msgs in
+#eval do IO.println (← issuesOf [("vcgen", "uwp")])
 
 end

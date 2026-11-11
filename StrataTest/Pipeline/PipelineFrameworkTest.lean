@@ -1150,7 +1150,9 @@ private def runPhases (phases : List PipelinePhase) (p : Program) : String :=
 #eval IO.println (runPhases (transformPipelinePhases
     { Core.VerifyOptions.quiet with proceduresToVerify := some ["structured"] }) namedMixedProgram)
 
-/-- info: rejected: ❌ Expected every procedure body to be structured, but found procedure cfgHelper with a CFG body. -/
+/--
+info: rejected: ❌ Expected every procedure body to be structured, but found procedure cfgHelper with a CFG body. To verify it, pass --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp).
+-/
 #guard_msgs in
 #eval IO.println (runPhases (transformPipelinePhases
     { Core.VerifyOptions.quiet with proceduresToVerify := some ["cfgHelper"] }) namedMixedProgram)
@@ -1414,7 +1416,9 @@ private def runAsserter (phase : PipelinePhase) (p : Program) : String :=
   | (.ok _, _)    => "accepted"
   | (.error e, _) => s!"rejected: {e.message}"
 
-/-- info: rejected: ❌ Expected every procedure body to be structured, but found procedure cfgProc with a CFG body. -/
+/--
+info: rejected: ❌ Expected every procedure body to be structured, but found procedure cfgProc with a CFG body. To verify it, pass --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp).
+-/
 #guard_msgs in
 #eval IO.println (runAsserter (ProgramFact.assertPhase .noCFGBodies) cfgBodiedProgram)
 
@@ -1423,7 +1427,9 @@ private def runAsserter (phase : PipelinePhase) (p : Program) : String :=
 #eval IO.println (runAsserter (ProgramFact.assertPhase .noCFGBodies) { decls := [] })
 
 -- The phase that `--phases assertNoCFGBodies` names reports the same message.
-/-- info: rejected: ❌ Expected every procedure body to be structured, but found procedure cfgProc with a CFG body. -/
+/--
+info: rejected: ❌ Expected every procedure body to be structured, but found procedure cfgProc with a CFG body. To verify it, pass --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp).
+-/
 #guard_msgs in
 #eval IO.println (match Strata.Core.assertPhaseFor "assertNoCFGBodies" with
   | some phase => runAsserter phase cfgBodiedProgram
@@ -1504,8 +1510,10 @@ procedure '_': [ERROR] cannot evaluate a `loop` statement: eliminate loops befor
 #guard_msgs in
 #eval IO.println (runAsserter (symbolicEvalPipelinePhase) loopProgram)
 
-/-- info: rejected: ❌ Symbolic evaluation error.
-toCoreProofObligationProgram: procedure 'cfgProc' has a CFG body; symbolic evaluation supports only structured bodies. -/
+/--
+info: rejected: ❌ Symbolic evaluation error.
+toCoreProofObligationProgram: procedure 'cfgProc' has a CFG body; symbolic evaluation supports only structured bodies. Pass --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp) to verify it.
+-/
 #guard_msgs in
 #eval IO.println (runAsserter (symbolicEvalPipelinePhase) cfgBodiedProgram)
 
@@ -1649,8 +1657,10 @@ private def mixedProgram : Program :=
       [.proc { (default : Procedure) with body := .structured [] } default,
        .proc { (default : Procedure) with body := .cfg { entry := "entry", blocks := [] } } default] }
 
-/-- info: rejected: ❌ Symbolic evaluation error.
-toCoreProofObligationProgram: procedure '_' has a CFG body; symbolic evaluation supports only structured bodies. -/
+/--
+info: rejected: ❌ Symbolic evaluation error.
+toCoreProofObligationProgram: procedure '_' has a CFG body; symbolic evaluation supports only structured bodies. Pass --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp) to verify it.
+-/
 #guard_msgs in
 #eval IO.println (runAsserter (symbolicEvalPipelinePhase) mixedProgram)
 

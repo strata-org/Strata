@@ -192,10 +192,10 @@ private def preservingPhase : AbstractedPhase :=
   { name := "Preserving" }
 
 private def rejectingPhase : AbstractedPhase :=
-  { name := "Rejecting", getValidation := fun _ => .modelToValidate (fun _ => false) }
+  { name := "Rejecting", getValidation := fun _ => .modelToValidate (fun _ _ => none) }
 
 private def acceptingPhase : AbstractedPhase :=
-  { name := "Accepting", getValidation := fun _ => .modelToValidate (fun _ => true) }
+  { name := "Accepting", getValidation := fun _ => .modelToValidate (fun _ m => some m) }
 
 private def needsValidation (phases : List AbstractedPhase)
     (obligation : Imperative.ProofObligation Core.Expression) : Bool :=

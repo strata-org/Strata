@@ -103,8 +103,9 @@ annotations of the annotated commands and branch conditions directly:
 ## Shipped examples
 
 `Examples/CFGSimple.core.st` and `Examples/CFGNondet.core.st` are type-checked
-(pinning the annotated program) and passed to `Core.verify`, which rejects them
-because it requires structured procedure bodies.
+(pinning the annotated program) and passed to `Core.verify`. The default
+`--vcgen symbolic` refuses CFG bodies, and `--vcgen usp` verifies them; the refusal
+and the verdicts of each obligation are pinned.
 
 ## Differential
 
@@ -318,6 +319,116 @@ info: error: Procedure 'P': [P]: Branch condition in block "entry" is not of typ
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm nonBoolGuardPgm).stripMetaData))
+
+/-! ## Expression-valued block metadata is type-checked.
+
+Each `@[key = (e)]` on a block is resolved in the scope at the start of the
+block, the formals plus the locals of its strict dominators, at any type (a
+`loopInvariant` must be boolean). An ill-typed one is rejected even though nothing
+consumes it. -/
+
+private def illTypedBlockMdPgm :=
+#strata
+program Core;
+
+procedure P(n : int, out y : int)
+cfg entry {
+  @[note = (int.add(y, true))]
+  entry: {
+    y := n;
+    return;
+  }
+};
+#end
+
+/--
+info: error: Procedure 'P': [P]: in metadata `note` of block "entry": Impossible to unify (arrow int int) with (arrow bool _).
+First mismatch: int with bool.
+-/
+#guard_msgs in
+#eval (Std.format (Core.typeCheck .default (translatePgm illTypedBlockMdPgm).stripMetaData))
+
+/-! The translator scopes block annotations left to right, but the type checker
+scopes them by dominance, as it does commands: `k` is declared in `left`, which
+is earlier in the text but does not dominate `join`. -/
+
+private def nonDomBlockMdPgm :=
+#strata
+program Core;
+
+procedure P(n : int, out y : int)
+cfg entry {
+  entry: {
+    branch (int.lt(n, 0)) goto left else goto right;
+  }
+  left: {
+    var k : int := 1;
+    goto join;
+  }
+  right: {
+    goto join;
+  }
+  @[note = (int.le(k, n))]
+  join: {
+    y := n;
+    return;
+  }
+};
+#end
+
+/--
+info: error: Procedure 'P': [P]: in metadata `note` of block "join": No free variables are allowed here!
+Free Variables: [k]
+-/
+#guard_msgs in
+#eval (Std.format (Core.typeCheck .default (translatePgm nonDomBlockMdPgm).stripMetaData))
+
+/-! A dominator's local is in scope, and any type is accepted: `size` is `int`-valued. -/
+
+private def wellTypedBlockMdPgm :=
+#strata
+program Core;
+
+procedure P(n : int, out y : int)
+cfg entry {
+  entry: {
+    var k : int := 1;
+    goto mid;
+  }
+  @[loopInvariant = (int.le(k, n)), size = (int.add(k, n)), note = "x"]
+  mid: {
+    y := k;
+    branch (int.lt(k, n)) goto mid else goto done;
+  }
+  done: {
+    return;
+  }
+};
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+procedure P (n : int, out y : int)
+cfg entry {
+  entry: {
+    var k : int := 1;
+    goto mid;
+  }
+  @[loopInvariant = ((int.le(k, n)))] mid: {
+    y := k;
+    branch (int.lt(k, n)) goto mid else goto done;
+  }
+  done: {
+    return;
+  }
+};
+-/
+#guard_msgs in
+#eval (Std.format (Core.typeCheck .default (translatePgm wellTypedBlockMdPgm).stripMetaData))
 
 /-! ## Same local declared by two dominance-comparable blocks.
 
@@ -1583,6 +1694,45 @@ info: Except.ok [("entry", [("x", "some int"), ("x", "some int")]), ("n", [("x",
 #guard_msgs in
 #eval annotatedTypes laterSolvesEarlierAst
 
+/-! ### Block metadata expressions are annotated, with the final substitution.
+
+`entry` declares `x` at the written type variable `b`. `n`'s annotation compares `x`
+with itself, at the start of `n`; `n` then assigns `x` to the `int` output `y`, solving
+`b` to `int`, and the annotation's types read `int` too. -/
+
+private def mdLaterSolvedAst : Core.Program :=
+  cfgProgram [("y", .int)]
+    [("entry", { cmds := [.cmd (.init "x" (.forAll [] (.ftvar "b")) .nondet .empty)],
+                 transfer := .goto "n" }),
+     ("n", { cmds := [.cmd (.set "y" (.det xVar) .empty)], transfer := .finish .empty,
+             md := Imperative.MetaData.empty.pushElem (.label "note")
+               (.expr (.eq Core.coreLoc xVar xVar)) })]
+
+/-- For each block of each CFG body that `typeCheck` returns, the annotations of
+its metadata expressions. -/
+private def mdAnnotatedTypes (p : Core.Program) :
+    Except String (List (String × List (String × String))) := do
+  let p' ← (Core.typeCheck .default p.stripMetaData).mapError (toString ·.message)
+  pure <| p'.decls.flatMap fun d =>
+    match d with
+    | Core.Decl.proc q _ =>
+      match q.body with
+      | .cfg g => g.blocks.map fun (l, blk) =>
+          (l, blk.md.toList.flatMap fun elem => match elem.value with
+            | .expr e => exprAnnots e
+            | _ => [])
+      | .structured _ => []
+    | _ => []
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: Except.ok [("entry", []), ("n", [("x", "some int"), ("x", "some int")])]
+-/
+#guard_msgs in
+#eval mdAnnotatedTypes mdLaterSolvedAst
+
 /-! ### An unreachable block does not share fresh type variables.
 
 `dead` and the later live block `live` each compare two `None()`s, which leaves
@@ -1965,12 +2115,12 @@ info: error: Procedure 'P': [P]: a CFG-local is declared in two blocks where one
 
 /-! ## Differential: `computeDominators` matches the set-dataflow reference.
 
-`computeDominators` derives each block's dominators from the immediate-dominator
-tree; `computeDominatorsFullFuel` computes them directly from the textbook set
-equations. This check runs both on the CFG body of every program above (a range
-of shapes: straight-line, diamonds, a merge, an unreachable block, cycles, and
-an alias-typed local) and asserts the two dominator maps agree label-by-label
-(order-insensitively). -/
+`computeDominators` numbers the immediate-dominator tree, so that block `a`
+dominates `b` when `a`'s interval contains `b`'s; `computeDominatorsFullFuel`
+computes the dominator sets directly from the textbook set equations. This check
+runs both on the CFG body of every program above (a range of shapes:
+straight-line, diamonds, a merge, an unreachable block, cycles, and an
+alias-typed local) and asserts they agree on every ordered pair of labels. -/
 
 open Imperative in
 /-- Reference dominator sets: the fixpoint of `dom(entry) = {entry}` and
@@ -2002,15 +2152,13 @@ private def computeDominatorsFullFuel
   return dom
 
 open Imperative in
-/-- Order-insensitive agreement of two dominator maps over a CFG's labels: for
-every block label, the two maps assign the same dominator set (compared by mutual
-containment, so map iteration order and order within a set do not matter). -/
+/-- Agreement of the dominator map with a reference of dominator sets over a CFG's
+labels: for every ordered pair of labels, `dominates` is whether the first is in
+the reference set of the second. -/
 private def domMapsAgree (cfg : CFG String (DetBlock String Core.Command Core.Expression))
-    (d1 d2 : Std.HashMap String (List String)) : Bool :=
-  cfg.labels.all (fun l =>
-    let s1 := d1.getD l []
-    let s2 := d2.getD l []
-    s1.all (s2.contains ·) && s2.all (s1.contains ·))
+    (d : CFG.Dom.DomMap) (ref : Std.HashMap String (List String)) : Bool :=
+  cfg.labels.all (fun b => cfg.labels.all (fun a =>
+    CFG.Dom.dominates d a b == (ref.getD b []).contains a))
 
 open Imperative in
 private def allCFGBodies (p : Core.Program) :
@@ -2088,7 +2236,7 @@ private def initsNotReachableRef (ds : List (Core.Expression.Ident × String))
 
 /-- Pairwise reference for `initsIncomparableB`: every ordered pair of distinct
 same-local reachable declarers is dominance-incomparable. -/
-private def initsIncomparableRef (dom : Std.HashMap String (List String))
+private def initsIncomparableRef (dom : Imperative.CFG.Dom.DomMap)
     (reachable : Std.HashSet String) (ds : List (Core.Expression.Ident × String)) : Bool :=
   ds.all fun p1 => ds.all fun p2 =>
     !(reachable.contains p1.2 && reachable.contains p2.2 &&
@@ -2096,7 +2244,7 @@ private def initsIncomparableRef (dom : Std.HashMap String (List String))
 
 /-- Reference for `domScopedB`: every use of a CFG-local in a reachable block is
 checked against every declarer in `cfgInitDeclBlocks`. -/
-private def domScopedRef (dom : Std.HashMap String (List String))
+private def domScopedRef (dom : Imperative.CFG.Dom.DomMap)
     (reachable : Std.HashSet String) (cfg : Core.DetCFG) : Bool :=
   let inits := Std.HashSet.ofList (Core.WF.cfgInitVars cfg)
   let ds := Core.Procedure.cfgInitDeclBlocks cfg
@@ -2130,10 +2278,11 @@ private def linearGuardsAgreeOnPgm (p : Core.Program) : Bool :=
 /-! ## The shipped CFG examples, end to end.
 
 Each example is parsed from its embedded source text, type-checked, and passed
-to `Core.verify`. Type checking accepts it and returns the annotated program;
-verification then stops at the verifier's requirement that every procedure
-body be structured. Symbolic evaluation called directly, without the verifier's
-pipeline, rejects the CFG body as well rather than dropping its obligations. -/
+to `Core.verify`. Type checking accepts it and returns the annotated program.
+Symbolic evaluation called directly, without the verifier's pipeline, rejects the
+CFG body rather than dropping its obligations; so does `Core.verify` under the
+default `--vcgen symbolic`, and under `--vcgen usp` it reports a verdict for each
+obligation. -/
 
 /-- The shipped example `name`, parsed as a Core program. -/
 private def parseExample (name : String) : IO StrataDDM.Program := do
@@ -2154,10 +2303,14 @@ private def runExample (name : String) : IO Unit := do
   match Core.toCoreProofObligationProgram .quiet (translatePgm p) with
   | .ok _ => IO.println "symbolic evaluation: ok"
   | .error e => IO.println s!"symbolic evaluation: {e.message}"
-  try
-    let results ← _root_.Strata.Core.verify p
-    IO.println s!"verify: {results.size} results"
-  catch e => IO.println s!"verify: {e}"
+  for (flag, mode) in [("", Core.VCGenMode.symbolic), (" --vcgen usp", .usp)] do
+    try
+      let results ← _root_.Strata.Core.verify p
+        (options := { Core.VerifyOptions.default with vcgen := mode })
+      IO.println s!"verify{flag}: {results.size} results"
+      for r in results do
+        IO.println s!"  {r.obligation.label}: {if r.isSuccess then "pass" else "not proved"}"
+    catch e => IO.println s!"verify{flag}: {e}"
 
 /--
 info: [Strata.Core] Type checking succeeded.
@@ -2206,10 +2359,19 @@ spec {
   }
 };
 
-symbolic evaluation: toCoreProofObligationProgram: procedure 'Max' has a CFG body; symbolic evaluation supports only structured bodies.
+symbolic evaluation: toCoreProofObligationProgram: procedure 'Max' has a CFG body; symbolic evaluation supports only structured bodies. Pass --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp) to verify it.
 [Strata.Core] Type checking succeeded.
 
-verify: ❌ Expected every procedure body to be structured, but found procedure Max with a CFG body.
+verify: ❌ Expected every procedure body to be structured, but found procedure Max with a CFG body. To verify it, pass --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp).
+[Strata.Core] Type checking succeeded.
+
+verify --vcgen usp: 6 results
+  Max_ensures_0: pass
+  Max_ensures_1: pass
+  Max_ensures_2: pass
+  CountUp_ensures_1: pass
+  cfgLoopElimAssert_entry_loop_0: pass
+  cfgLoopElimAssert_maintain_loop_body_0: pass
 -/
 #guard_msgs in
 #eval runExample "CFGSimple.core.st"
@@ -2239,10 +2401,14 @@ spec {
   }
 };
 
-symbolic evaluation: toCoreProofObligationProgram: procedure 'NondetChoice' has a CFG body; symbolic evaluation supports only structured bodies.
+symbolic evaluation: toCoreProofObligationProgram: procedure 'NondetChoice' has a CFG body; symbolic evaluation supports only structured bodies. Pass --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp) to verify it.
 [Strata.Core] Type checking succeeded.
 
-verify: ❌ Expected every procedure body to be structured, but found procedure NondetChoice with a CFG body.
+verify: ❌ Expected every procedure body to be structured, but found procedure NondetChoice with a CFG body. To verify it, pass --vcgen symexec (for an acyclic one) or --vcgen usp (or uwp).
+[Strata.Core] Type checking succeeded.
+
+verify --vcgen usp: 1 results
+  NondetChoice_ensures_0: pass
 -/
 #guard_msgs in
 #eval runExample "CFGNondet.core.st"

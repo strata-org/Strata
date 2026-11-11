@@ -578,7 +578,8 @@ end Core.Simplify
     over-approximated, so no obligation becomes easier than it was.
 
     It requires bodies without calls; every pipeline that runs it eliminates them first.
-    It keeps a CFG body as it is and simplifies its procedure's contract.
+    It keeps a CFG body as it is and simplifies its procedure's contract, so it preserves
+    `noCFGCycles`.
     It accepts loops: a loop body is simplified knowing nothing about the variables it
     writes, and the unit tests pin that behavior. Its correctness theorem covers
     loop-free bodies only, and states that as a hypothesis. It also requires that
