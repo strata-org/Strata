@@ -9,6 +9,7 @@ public import Strata.Languages.Core.Analysis.DeductiveVerification
 public import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 public import Strata.DL.Imperative.Analysis.DeductiveVerificationProps
 public import Strata.DL.Imperative.Analysis.DefinitionsProps
+public import Strata.Languages.Core.Logic.TraceInterpUsingDenoteProps
 import Strata.Languages.Core.IntEvalProps
 import Strata.DL.Lambda.LExprDenoteEvalProps
 import Strata.DL.Lambda.Denote.LExprAnnotated
@@ -27,9 +28,6 @@ import Strata.Languages.Core.ProgramProps
 - `Analysis.PhaseOverapproximates.preservesDeductiveVerification` — such a
   phase meets `PhasePreservesDeductiveVerification`, the per-phase hypothesis of
   `CoreVerifyIsDeductive`.
-- `evalInterp_holds_iff_denoteBasedInterp` — for a condition captured under a
-  runtime factory over `F`, the reading of `DeductiveVerificationOnCore` agrees
-  with `DenoteBasedInterp F` in every world.
 - `Analysis.deductiveVerificationOnCoreWith_of_overapproximates` — deductive
   verification carries back from a program whose entries' runs overapproximate
   another's.
@@ -60,6 +58,11 @@ import Strata.Languages.Core.ProgramProps
   (`NoProcedures`).
 - `Analysis.PhaseReflectsLemmas.overapproximates` — on such programs it meets
   `PhaseOverapproximatesFrom`, the contract over every entry.
+
+How the reading of `DeductiveVerificationOnCore` (evaluation to `true`) relates to
+`DenoteBasedInterp F` is `Core.Logic.evalInterp_holds_iff_denoteBasedInterp`
+(`Strata.Languages.Core.Logic.TraceInterpUsingDenoteProps`); the former name
+`Core.Specification.evalInterp_holds_iff_denoteBasedInterp` remains as a deprecated alias.
 -/
 
 public section
@@ -70,13 +73,14 @@ open Core Core.Logic Imperative Strata.Logic Imperative.Logic
 
 /-- For a condition captured under a runtime factory over `F`, reading it under its own
     runtime factory (`Imperative.BigStep.evalInterp`) agrees with `DenoteBasedInterp F` in
-    every world. -/
+    every world.  Deprecated: use `Core.Logic.evalInterp_holds_iff_denoteBasedInterp`. -/
+@[deprecated Core.Logic.evalInterp_holds_iff_denoteBasedInterp (since := "2026-11-11")]
 theorem evalInterp_holds_iff_denoteBasedInterp {F : Lambda.Factory Core.CoreLParams}
     (w : (DenoteBasedInterp F).World) (c : Imperative.EventArg Expression)
     (hc : c.factory.factory = F) :
     (Imperative.BigStep.evalInterp : ConditionInterp Expression).holds () c ↔
-      (DenoteBasedInterp F).holds w c := by
-  simp [Imperative.BigStep.evalInterp, DenoteBasedInterp, hc]
+      (DenoteBasedInterp F).holds w c :=
+  Core.Logic.evalInterp_holds_iff_denoteBasedInterp w c hc
 
 /-! ## Pipelines of overapproximating phases -/
 

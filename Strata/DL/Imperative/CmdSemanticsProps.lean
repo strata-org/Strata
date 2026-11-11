@@ -49,7 +49,8 @@ evaluation relation `EvalCmdE`. Key results:
   every slot it declares), and `evalCmdE_storeWellDefined` (a command leaves a
   store that holds only values, given that it started from one).
 - `EvalCmdE.emitted_eq`: event-producing command evaluation emits exactly the
-  trace determined by the command and input snapshot.
+  trace determined by the command and input snapshot; `evalCmdE_events_factory`: every
+  event it emits is captured under the factory it runs with.
 - List-level store relations (`EvalExpressions`, `ReadValues`, `UpdateStates`,
   `InitStates`): lengths (`ReadValuesLength`, `InitStatesLength`,
   `UpdateStatesLength`), uniqueness (`ReadValuesInjective`, `InitStatesInjective`),
@@ -478,6 +479,14 @@ theorem evalCmdE_preserves_isSome {P : PureExpr} [HasFvar P] [HasBool P]
   | eval_assert => exact h_some
   | eval_assume => exact h_some
   | eval_cover => exact h_some
+
+/-- An `EvalCmdE` step emits only events captured under the factory it runs with: only
+`assert`/`assume`/`cover` emit, each capturing its own factory. -/
+theorem evalCmdE_events_factory {P : PureExpr} [HasFvar P] [HasBool P]
+    {f : P.Factory} {σ σ' : SemanticStore P} {c : Cmd P} {emitted : Trace P}
+    (h_eval : EvalCmdE P f σ c σ' emitted) :
+    ∀ ev ∈ emitted, ev.condition.factory = f := by
+  cases h_eval <;> simp [Event.condition]
 
 /-- **Declarations take effect.**  A command that declares
 `y` leaves it defined.  Only `init` declares variables. -/

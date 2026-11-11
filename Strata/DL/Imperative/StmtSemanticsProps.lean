@@ -41,7 +41,9 @@ command-level store relations in `StoreRelationsProps`.
 Key results for `StepStmtE` / `StepStmtStarE`:
 
 - `stepE_preserves_factory` and `starE_preserves_factory` establish factory
-  invariance for single-step and multi-step event runs.
+  invariance for single-step and multi-step event runs; `stepE_events_factory` and
+  `starE_events_factory` show that such runs emit only events captured under the
+  factory of their initial environment, when commands do.
 - `seq_run_decomposeE`, `seq_reaches_terminalE`, and
   `seq_reaches_exitingE` split traced sequence runs chronologically;
   `stmtRun_to_singletonE` lifts a completed statement run to its singleton-list run.
@@ -1290,6 +1292,36 @@ theorem starE_preserves_factory
   | refl => rfl
   | step _ _ _ _ _ h_step _ ih =>
     exact (stepE_preserves_factory h_step).trans ih
+
+/-- A single traced event step emits only events captured under the environment's factory,
+given a command evaluator that does (`h_cmd`). -/
+theorem stepE_events_factory {fac : EventT → P.Factory}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT},
+      EvalCmd f σ c σ' emitted → ∀ ev ∈ emitted, fac ev = f)
+    {cfg cfg' : Config P CmdT} {tr : List EventT}
+    (h_step : StepStmtE P EvalCmd cfg tr cfg') :
+    ∀ ev ∈ tr, fac ev = cfg.getEnv.factory := by
+  induction h_step with
+  | step_cmd h_eval => exact h_cmd h_eval
+  | step_seq_inner _ ih => exact ih
+  | step_block_body _ ih => exact ih
+  | _ => simp
+
+/-- A traced event run emits only events captured under the factory of its initial
+environment, given a command evaluator that captures its own factory (`h_cmd`). -/
+theorem starE_events_factory {fac : EventT → P.Factory}
+    (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : List EventT},
+      EvalCmd f σ c σ' emitted → ∀ ev ∈ emitted, fac ev = f)
+    {cfg cfg' : Config P CmdT} {tr : List EventT}
+    (h_run : StepStmtStarE P EvalCmd cfg tr cfg') :
+    ∀ ev ∈ tr, fac ev = cfg.getEnv.factory := by
+  induction h_run with
+  | refl => simp
+  | step _ _ _ _ _ h_step _ ih =>
+    intro ev hev
+    rcases List.mem_append.mp hev with h | h
+    · exact stepE_events_factory h_cmd h_step ev h
+    · exact (ih ev h).trans (stepE_preserves_factory h_step).symm
 
 /-- Single traced event step preserves `Config.storeWellDefined`, given the
 command evaluator does (`h_cmd`). -/

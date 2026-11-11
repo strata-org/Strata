@@ -11,6 +11,7 @@ public import Strata.DL.Imperative.BigStep.SemProps
 import Strata.DL.Imperative.Logic.TraceRelationsProps
 public import Strata.DL.Imperative.Logic.TraceInterpProps
 public import Strata.Transform.SpecificationProps
+public import Strata.Transform.CoreSpecHoareConnection
 public import Strata.Languages.Core.StmtExtendCallBridgeProps
 import all Strata.Transform.NondetElim
 import all Strata.Languages.Core.PipelinePhase
@@ -27,7 +28,9 @@ inherited prefixes disjoint from generated guard names.
 `Core.NondetElim.assertValid` reflects assertion validity from the transformed
 Core block to its source for interpretations stable under `EventArg.WithWF`.
 `Core.NondetElim.evalInterp_stableUnder` discharges this condition for the
-verifier's evaluation interpretation.
+verifier's evaluation interpretation.  `Core.NondetElim.triple` transports a Core Hoare
+triple back from the transformed block to its source, for postconditions that survive
+dropping the generated guard bindings.
 
 `Core.NondetElim.nondetElimPipelinePhase_ok` identifies the phase transform,
 and `nondetElimPipelinePhase_over` connects a successful phase run and its
@@ -331,6 +334,36 @@ theorem assertValid (base : InitEnvWFParams)
       Trace.WithWF.assertionValidFrom_reflect hstable htrace aid)
     (overapproximatesTraces π base hprefixes) rfl
       ⟨hnoCalls, hnoGeneratedWrites⟩ hvalid
+
+/-- **A Hoare triple transported back through nondeterminism elimination.**  For a call-free
+    Core statement list `ss` that defines and modifies no generated guard name, and a
+    precondition admitting only entry environments over `F`: a Core triple
+    `{Pre} Block.nondetElim ss {Post}` over `F` at `base` gives the triple `{Pre} ss {Post}` at
+    `base` with the generated prefixes reserved, when `Post` survives dropping generated guard
+    bindings: it holds of every environment that a target final environment extends only by
+    generated names, with the same factory, wherever it holds of the target's. -/
+theorem triple (base : InitEnvWFParams)
+    {ss : Statements}
+    (hnoCalls : Statements.noCalls ss = Bool.true)
+    (hnoGeneratedWrites : ∀ name,
+      Imperative.NondetElim.isGeneratedName name →
+      HasIdent.ident (P := Expression) name ∉
+        (Block.definedVars (C := Command) ss false ++
+          Block.modifiedVars (C := Command) ss))
+    (hprefixes : prefixesDisjoint base.prefixIdents
+      Imperative.NondetElim.isGeneratedName)
+    {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop}
+    (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
+    (hpost : ∀ ρ' ρ'', Env.ExtendsWith
+        (Imperative.IdentOfStringKind Imperative.NondetElim.isGeneratedName) ρ' ρ'' →
+      Post ρ'' → Post ρ')
+    (h : Core.Logic.Hoare.Triple π base Pre (Imperative.Block.nondetElim ss) Post F) :
+    Core.Logic.Hoare.Triple π (base.extend Imperative.NondetElim.prefixesReserved) Pre ss
+      Post F :=
+  Core.Logic.triple_of_overapproximatesTraces_matches_sameEntry π evalInterp_stableUnder
+    EventArg.WithWF.factory_label_metadata
+    (overapproximatesTraces π base hprefixes) rfl ⟨hnoCalls, hnoGeneratedWrites⟩ hnoCalls hpin
+    (fun _ _ _ _ _ _ _ h hx => hpost _ _ h hx) h
 
 /-- A successful NondetElim phase run rewrites each structured procedure body
 with `Block.nondetElim`; under the phase's `noCalls` requirement, the body-level

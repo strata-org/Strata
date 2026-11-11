@@ -49,12 +49,16 @@ Key theorem families:
   `Trace.matches_comp` compose such matches.
 * **`WithWF` strengthenings** of `EventArg.ExtendsEnv` (`EventArg.WithWF` is
   defined in `TraceRelations`): `EventArg.WithWF.mono` / `trans` /
-  `label_metadata`, with trace-level `Trace.WithWF.append` / `toExtendsEnv` /
+  `label_metadata` / `factory_label_metadata`, with trace-level `Trace.WithWF.append` /
+  `toExtendsEnv` /
   `of_extends` / `mono` / `trans` / `toTraceStuttersEnv` /
   `assertionValidFrom_reflect`.
 * **`Trace.WeakensAssumes`** is reflexive and transitive
   (`Trace.WeakensAssumes.refl`, `Trace.WeakensAssumes.trans`), as is its event-level
-  counterpart relation `Event.WeakensAssume`.
+  counterpart relation `Event.WeakensAssume`.  It carries assumption satisfaction from
+  the source to the target (`Trace.WeakensAssumes.assumptionsHold_transfer`) and reflects
+  assertion validity from the target to the source
+  (`Trace.WeakensAssumes.assertionsValid_reflect`).
 * **`Trace.InsertsTrueAssumes`** is reflexive and closed under concatenation (`refl`,
   `append`) and carries assumption satisfaction forward under
   `ConditionInterp.TrueStutterHolds` (`assumptionsHold`).  So is its composition with
@@ -673,6 +677,15 @@ theorem label_metadata {P : PureExpr} [HasVal P] [HasFvars P]
   obtain ⟨_, _, hlabel, _, hmd⟩ := h.rel
   exact ⟨hlabel, hmd⟩
 
+/-- `WithWF (ExtendsEnv _)` keeps the factory, the label and the metadata of the source
+argument. -/
+theorem factory_label_metadata {P : PureExpr} [HasVal P] [HasFvars P]
+    {Extra : P.Ident → Prop} {source target : EventArg P}
+    (h : EventArg.WithWF (EventArg.ExtendsEnv Extra) source target) :
+    target.factory = source.factory ∧ source.label = target.label ∧
+      source.metadata = target.metadata :=
+  ⟨h.rel.1.symm, h.label_metadata⟩
+
 end EventArg.WithWF
 
 /-- Forgetting the well-formedness evidence recovers ordinary event extension. -/
@@ -804,6 +817,51 @@ theorem Trace.WeakensAssumes.trans {I : ConditionInterp P} {t₁ t₂ t₃ : Tra
       cases e <;> simp only [Event.WeakensAssume] at he
       exact .dropAssume (ih h)
   | dropAssume _ ih => exact .dropAssume (ih h₂)
+
+/-- Assumptions of the source holding in a world hold in it for the target: every assumption of
+    the target is the counterpart of one of the source, which holds in every world the
+    source's does. -/
+theorem Trace.WeakensAssumes.assumptionsHold_transfer {I : ConditionInterp P} {s t : Trace P}
+    (h : Trace.WeakensAssumes I s t) {w : I.World} (hs : Trace.AssumptionsHold P I w s) :
+    Trace.AssumptionsHold P I w t := by
+  induction h with
+  | nil => exact hs
+  | @cons e e' _ _ he _ ih =>
+    cases e <;> cases e' <;> simp only [Event.WeakensAssume] at he <;>
+      simp only [Trace.assumptionsHold_cons_assert, Trace.assumptionsHold_cons_assume,
+        Trace.assumptionsHold_cons_cover] at hs ⊢
+    · exact ih hs
+    · exact ⟨he.2.2 w hs.1, ih hs.2⟩
+    · exact ih hs
+  | dropAssume _ ih => exact ih ((Trace.assumptionsHold_cons_assume I w _ _).1 hs).2
+
+/-- Assertion validity reflects from the target to the source, from assumptions accumulated
+    before the source whose holding in a world gives that of those accumulated before the
+    target. -/
+private theorem Trace.WeakensAssumes.assertionsValidFrom_reflect {I : ConditionInterp P}
+    {s t : Trace P} (h : Trace.WeakensAssumes I s t) :
+    ∀ {acc acc' : Trace P},
+      (∀ w, Trace.AssumptionsHold P I w acc → Trace.AssumptionsHold P I w acc') →
+      Trace.AssertionsValidFrom P I acc' t → Trace.AssertionsValidFrom P I acc s := by
+  induction h with
+  | nil => exact fun _ _ => trivial
+  | @cons e e' _ _ he _ ih =>
+    intro acc acc' hacc hv
+    cases e <;> cases e' <;> simp only [Event.WeakensAssume] at he
+    · exact ⟨fun _ w hw => (he.2.2 w).2 (hv.1 trivial w (hacc w hw)), ih hacc hv.2⟩
+    · refine ih (fun w hw => ?_) hv
+      rw [Trace.AssumptionsHold_append_assume] at hw ⊢
+      exact ⟨hacc w hw.1, he.2.2 w hw.2⟩
+    · exact ih hacc hv
+  | dropAssume _ ih =>
+    intro acc acc' hacc hv
+    exact ih (fun w hw => hacc w fun c hc => hw c (List.mem_append_left _ hc)) hv
+
+/-- Assertion validity reflects from the target to the source. -/
+theorem Trace.WeakensAssumes.assertionsValid_reflect {I : ConditionInterp P} {s t : Trace P}
+    (h : Trace.WeakensAssumes I s t) (hv : Trace.AssertionsValid P I t) :
+    Trace.AssertionsValid P I s :=
+  h.assertionsValidFrom_reflect (fun _ hw => hw) hv
 
 end WeakensAssumes
 

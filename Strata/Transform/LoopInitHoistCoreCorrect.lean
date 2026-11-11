@@ -11,6 +11,7 @@ public import Strata.DL.Imperative.BigStep.SemProps
 import Strata.DL.Imperative.Logic.TraceRelationsProps
 public import Strata.DL.Imperative.Logic.TraceInterpProps
 public import Strata.Transform.SpecificationProps
+public import Strata.Transform.CoreSpecHoareConnection
 public import Strata.Languages.Core.StmtExtendCallBridgeProps
 public import Strata.Languages.Core.ProgramFactProps
 import all Strata.Transform.LoopInitHoist
@@ -21,8 +22,9 @@ import all Strata.Languages.Core.PipelinePhase
 This module transports the generic loop-init-hoist trace simulation across the
 call-free Core command bridge. `EventArg.WithWF`
 carries evaluator-stability evidence. The main Core results are
-`Core.LoopInitHoist.overapproximatesTraces`, `evalInterp_stableUnder`, and
-`assertValid`.
+`Core.LoopInitHoist.overapproximatesTraces`, `evalInterp_stableUnder`,
+`assertValid`, and `triple`, which transports a Core Hoare triple back from the hoisted
+block to its source.
 
 `loopInitHoistPipelinePhase_ok` identifies the phase transform, and
 `loopInitHoistPipelinePhase_over` connects a successful phase run to the
@@ -141,6 +143,36 @@ theorem assertValid (params : InitEnvWFParams)
     (fun _ _ htrace aid =>
       Trace.WithWF.assertionValidFrom_reflect hstable htrace aid)
     (overapproximatesTraces π params) htransform hpre hvalid
+
+/-- **A Hoare triple transported back through loop-init hoisting.**  For a call-free Core
+    statement list `ss` with unique `init`s that `Core.hoistLoopPrefixInits` hoists into `out`,
+    and a precondition admitting only entry environments over `F`: a Core triple
+    `{Pre} out {Post}` over `F` at `params` gives the triple `{Pre} ss {Post}`, when `Post` of a
+    final environment of `out` gives `Post` of each final environment of `ss` agreeing with it
+    on the bindings of the latter (`EnvStoreAgree`), for entries satisfying `Pre` and the gate.
+    The final environment of `ss` has the entry's factory and keeps every binding of the entry
+    defined; the hoisted `init`s may leave
+    bindings in the final environment of `out` that `ss` does not make, as when its loop runs no
+    iteration. -/
+theorem triple (params : InitEnvWFParams)
+    {ss out : Statements}
+    (htransform : Core.hoistLoopPrefixInits ss = some out)
+    (hpre :
+      Statements.noCalls ss = Bool.true
+      ∧ Block.uniqueInits (C := Command) ss)
+    {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop}
+    (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
+    (hpost : ∀ ρ₀ ρ' ρ'', Pre ρ₀ → Core.Logic.BlockInitEnvWF params ss ρ₀ →
+      ρ'.factory = ρ₀.factory →
+      (∀ x, (ρ₀.store x).isSome = Bool.true → (ρ'.store x).isSome = Bool.true) →
+      EnvStoreAgree ρ' ρ'' → Post ρ'' → Post ρ')
+    (h : Core.Logic.Hoare.Triple π params Pre out Post F) :
+    Core.Logic.Hoare.Triple π params Pre ss Post F :=
+  Core.Logic.triple_of_overapproximatesTraces_matches_sameEntry π
+    Imperative.BigStep.evalInterp_stableUnder
+    EventArg.WithWF.factory_label_metadata
+    (overapproximatesTraces π params) htransform hpre hpre.1 hpin
+    hpost h
 
 /-- Running the loop-init-hoist pipeline phase runs its program transform. -/
 theorem loopInitHoistPipelinePhase_ok (program : Program)

@@ -24,7 +24,7 @@ The SSA phase keeps the initial-environment gate `BlockInitEnvWF` of a statement
 form (`ssaEntry_blockInitEnvWF`): its output is passive and in tree form, defines only fresh
 names, declares only inhabited types and uses only operators of the input (`ssaList_outFacts`).
 
-Key theorems: `ssaEntry_blockInitEnvWF`. -/
+Key theorems: `ssaEntry_blockInitEnvWF`, `ssaEntry_treeForm`. -/
 
 namespace Core
 namespace WP
@@ -342,6 +342,17 @@ private theorem fresh_notReserved {p b : String} {x : Expression.Ident} (j : Nat
     · simp [hpc]
     · cases (List.cons.inj hc).1
       simp [hpc] at hp
+
+/-- **The SSA output of a list in tree form is in tree form.** -/
+theorem ssaEntry_treeForm {G : IdSet Expression} {tys : Tys Expression}
+    {xs : List Expression.Ident} {al : List (Expression.Ident × Expression.Ident)}
+    {ss₀ : Statements} {ρ0 : Ren Expression} {so : SOut Expression}
+    (h : ssaEntry G tys xs al ss₀ = .ok (ρ0, so)) (hTF : Block.treeForm ss₀ = true) :
+    Block.treeForm so.out = true := by
+  obtain ⟨rfl, hb⟩ := ssaEntry_ok h
+  obtain ⟨s1, h1, -⟩ := ssaBody_ok hb
+  exact (ssaList_outFacts (fun _ => True) trivial ss₀ h1 hTF (fun _ _ => trivial)
+    fun _ _ _ _ => trivial).1
 
 /-- **The SSA phase keeps the initial-environment gate.**  For a Core statement list `ss₀` in
     tree form whose free variables are parameters of `xs` or aliases of `al`, on which

@@ -77,6 +77,7 @@ import Strata.Transform.Simplify.StmtShape
 import Strata.Transform.Simplify.DeadDefsShape
 import Strata.Transform.RecursiveFunctionAxioms
 import Strata.Transform.SpecHoareConnection
+import Strata.Transform.CoreSpecHoareConnection
 import Strata.Transform.StructuredToUnstructured
 import Strata.Transform.StructuredToUnstructuredProps
 import Strata.Transform.StructuredToUnstructuredCorrect
@@ -91,6 +92,7 @@ import Strata.DL.Imperative.Logic.HoareTemplate
 import Strata.Languages.Core.Logic.LangDefProps
 import Strata.Languages.Core.Logic.FactoryInterp
 import Strata.Languages.Core.Logic.TraceInterpUsingDenote
+import Strata.Languages.Core.Logic.TraceInterpUsingDenoteProps
 import Strata.Languages.Core.Logic.Hoare
 import Strata.Languages.Core.Logic.HoareCall
 import Strata.Languages.Core.Logic.ContractToHoareTriple

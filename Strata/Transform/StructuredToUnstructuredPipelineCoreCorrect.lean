@@ -29,6 +29,8 @@ Key results:
   * `Core.StructuredToUnstructuredPipeline.assertValid` — assertion validity on
     the final CFG reflects to the source for interpretations stable under
     `EventArg.WithWF`; `evalInterp_stableUnder` supplies this for `evalInterp`.
+  * `Core.StructuredToUnstructuredPipeline.triple` — a CFG Hoare triple of the final CFG
+    transports back to a Core triple of the source.
 -/
 
 public section
@@ -274,6 +276,53 @@ theorem assertValid (base : InitEnvWFParams)
       Trace.WithWF.assertionValidFrom_reflect hstable htrace aid)
     (overapproximatesTraces π base hbase)
     htransform hpre hvalid
+
+/-- **A Hoare triple transported back from the CFG of the composed pipeline.**  For a
+    call-free structured Core statement list `ss` that `s2uPipeline` lowers to the CFG `out`,
+    under the pipeline's shape conditions, and a precondition admitting only entry environments
+    over `F`: a CFG triple `{Pre} out {Post'}` over `F` at `base`
+    (`Core.Logic.Hoare.TripleUnstructured`) gives the Core triple `{Pre} ss {Post}` at `base`
+    with the generated prefixes of both lowering passes reserved, when `Post'` of a final
+    environment of `out` gives `Post` of each final environment of `ss` agreeing with it on the
+    bindings of the latter (`EnvStoreAgree`), for entries satisfying `Pre` and the gate.  The
+    final environment of `ss` has the entry's factory and keeps every binding of the entry
+    defined. -/
+theorem triple (base : InitEnvWFParams)
+    (hbase : prefixesDisjoint base.prefixIdents
+      Imperative.NondetElim.isGeneratedName)
+    {ss : Statements} {out : CFG String (DetBlock String Command Expression)}
+    (htransform : s2uPipeline ss = some out)
+    (hpre :
+      Statements.noCalls ss = Bool.true
+      ∧ Block.loopHasNoInvariants ss = Bool.true
+      ∧ Block.noMeasureLoops ss = Bool.true
+      ∧ Block.uniqueInits (C := Command) ss
+      ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] ss
+      ∧ Block.userLabelsShapeNodup (C := Command) ss
+      ∧ (∀ name : String, Imperative.NondetElim.isGeneratedName name →
+          HasIdent.ident (P := Expression) name ∉
+            (Block.definedVars (C := Command) ss false ++
+              Block.modifiedVars (C := Command) ss))
+      ∧ (∀ name : String, Imperative.StructuredToUnstructured.isGeneratedName name →
+          HasIdent.ident (P := Expression) name ∉
+            Block.initVars (C := Command) ss))
+    {F : Lambda.Factory CoreLParams} {Pre Post Post' : Env Expression → Prop}
+    (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
+    (hpost : ∀ ρ₀ ρ' ρ'', Pre ρ₀ →
+      Core.Logic.BlockInitEnvWF
+        ((base.extend Imperative.StructuredToUnstructured.prefixesReserved).extend
+          Imperative.NondetElim.prefixesReserved) ss ρ₀ →
+      ρ'.factory = ρ₀.factory →
+      (∀ x, (ρ₀.store x).isSome = Bool.true → (ρ'.store x).isSome = Bool.true) →
+      EnvStoreAgree ρ' ρ'' → Post' ρ'' → Post ρ')
+    (h : Core.Logic.Hoare.TripleUnstructured π base Pre out Post' F) :
+    Core.Logic.Hoare.Triple π
+      ((base.extend Imperative.StructuredToUnstructured.prefixesReserved).extend
+        Imperative.NondetElim.prefixesReserved) Pre ss Post F :=
+  Core.Logic.triple_of_overapproximatesTraces_matches_sameEntry π evalInterp_stableUnder
+    EventArg.WithWF.factory_label_metadata
+    (overapproximatesTraces π base hbase) htransform hpre hpre.1 hpin
+    hpost h
 
 end Core.StructuredToUnstructuredPipeline
 

@@ -9,6 +9,7 @@ public import Strata.Transform.DeadDefElimCorrect
 public import Strata.Transform.DeadDefElimProps
 public import Strata.Languages.Core.Logic.LangDef
 public import Strata.Transform.SpecificationProps
+public import Strata.Transform.CoreSpecHoareConnection
 import all Strata.Transform.DeadDefElim
 import all Strata.Languages.Core.PipelinePhase
 
@@ -39,12 +40,17 @@ it into a big-step reach or run (`star_breach`, `star_brun`), replays it on the
 output (`deadDefElim_reach_rel`, `deadDefElim_run_rel`) and turns the replay back into a Core
 trace (`breach_star`, `brun_star`, `star_core`).
 
-The executable pass `deadDefElimH`, which the phase runs, has the same two properties
-(`deadDefElimH_overapproximatesTraces`, `deadDefElimH_assertValid`), through `deadDefElimH_eq`.
+A Core Hoare triple of the output transports back to the input, for postconditions that
+survive putting back the erased bindings (`deadDefElim_triple`).
+
+The executable pass `deadDefElimH`, which the phase runs, has the same three properties
+(`deadDefElimH_overapproximatesTraces`, `deadDefElimH_assertValid`, `deadDefElimH_triple`),
+through `deadDefElimH_eq`.
 
 Key theorems: `deadDefElimProgram_over`, `deadDefElimPipelinePhase_ok`,
 `deadDefElimPipelinePhase_over`, `deadDefElim_overapproximatesTraces`, `deadDefElim_assertValid`,
-`deadDefElimH_overapproximatesTraces`, `deadDefElimH_assertValid`. -/
+`deadDefElim_triple`, `deadDefElimH_overapproximatesTraces`, `deadDefElimH_assertValid`,
+`deadDefElimH_triple`. -/
 
 namespace Core
 namespace DeadDefElim
@@ -189,6 +195,36 @@ theorem deadDefElimH_assertValid (π : String → Option Procedure) (params : In
       (BlockInitEnvWF params (deadDefElimH [] ss)) (deadDefElimH [] ss) aid) :
     AssertValidOnTracesWhen (EventLang.coreBlock π) I (BlockInitEnvWF params ss) ss aid :=
   deadDefElim_assertValid π params hI hss hnc (deadDefElimH_eq [] ss ▸ h)
+
+/-- **A Hoare triple transported back through erasure.**  For a Core statement list `ss`
+    without loops and procedure calls, and a precondition admitting only entry environments over
+    `F`: a Core triple `{Pre} deadDefElim [] ss {Post}` over `F` at `params` gives the triple
+    `{Pre} ss {Post}`, when `Post` survives putting back the bindings that erasure removed: it
+    holds of every environment whose store extends that of an environment where it holds, with
+    the same factory (`DDOut`). -/
+theorem deadDefElim_triple (π : String → Option Procedure) (params : InitEnvWFParams)
+    {ss : Statements} (hss : Block.noLoops ss = true) (hnc : Statements.noCalls ss = true)
+    {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop}
+    (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
+    (hpost : ∀ ρ' ρ'', DDOut ρ' ρ'' → Post ρ'' → Post ρ')
+    (h : Core.Logic.Hoare.Triple π params Pre (deadDefElim [] ss) Post F) :
+    Core.Logic.Hoare.Triple π params Pre ss Post F :=
+  Core.Logic.triple_of_overapproximatesTraces_matches_sameEntry π
+    Imperative.DeadDefElim.evalInterp_stableUnder
+    (fun h => ⟨h.factory_eq, h.label_eq.symm, h.metadata_eq.symm⟩)
+    (deadDefElim_overapproximatesTraces π params) rfl ⟨hss, hnc⟩ hnc hpin
+    (fun _ _ _ _ _ _ _ h hx => hpost _ _ h hx) h
+
+/-- **A Hoare triple transported back through the executable pass**: `deadDefElim_triple` for
+    `deadDefElimH`. -/
+theorem deadDefElimH_triple (π : String → Option Procedure) (params : InitEnvWFParams)
+    {ss : Statements} (hss : Block.noLoops ss = true) (hnc : Statements.noCalls ss = true)
+    {F : Lambda.Factory CoreLParams} {Pre Post : Env Expression → Prop}
+    (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
+    (hpost : ∀ ρ' ρ'', DDOut ρ' ρ'' → Post ρ'' → Post ρ')
+    (h : Core.Logic.Hoare.Triple π params Pre (deadDefElimH [] ss) Post F) :
+    Core.Logic.Hoare.Triple π params Pre ss Post F :=
+  deadDefElim_triple π params hss hnc hpin hpost (deadDefElimH_eq [] ss ▸ h)
 
 end -- public section
 

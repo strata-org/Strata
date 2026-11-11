@@ -41,6 +41,11 @@ overapproximation. The general transport supports an arbitrary run trace relatio
   environment satisfying the precondition to itself, target-run validity to reflect to the
   source run across `Rtrace_full`, source-run reachability to transfer to a target run whose
   assertions are valid, and the target postcondition to transport backward across `Rout`.
+- `overapproximatesTraces2UptoWhen_triple_of_sourceRuns` is the same transport when the target
+  runs from an entry related to the source's by `Rin`, under its own precondition and
+  postcondition, with the compatibility premises restricted to traces of completed runs
+  (`Src`, `Tgt`) and the postcondition transport to final environments of source runs;
+  `overapproximatesTraces2UptoWhen_triple_general` is its instance at `Rin ρ₀ ρ₀`.
 - `overapproximatesTracesUptoWhen_triple_general` is its instance for
   `OverapproximatesTracesUptoWhen Rtrace (· = ·) Rout`. It requires target-trace
   validity to reflect to the source trace, source-trace reachability to transfer
@@ -122,6 +127,60 @@ namespace Transform
 
 variable {P : PureExpr}
 
+/-- **Trace-overapproximation transport for `TripleWith` between related entries.**  Transports
+    an event-trace Hoare triple `{Pre'} s' {Post'}` of the target `L₂` to a triple
+    `{Pre} st {Post}` of the source `L₁` across an `OverapproximatesTraces2UptoWhen` with run
+    trace relation `Rtrace_full`, input relation `Rin` and output relation `Rout`: the target
+    runs from an entry `ρ₀'` related to the source's by `Rin` that satisfies `Pre'`, and the
+    compatibility premises need only hold for source traces satisfying `Src`,
+    a property of every completed run of `st` from an entry satisfying `Pre` and the gate, and
+    target traces satisfying `Tgt`, a property of every completed run of `s'` from a related
+    entry satisfying `Pre'`;
+    `Post'` need only give `Post` of the final environments of such runs. -/
+theorem overapproximatesTraces2UptoWhen_triple_of_sourceRuns
+    (L₁ L₂ : EventLang P (Event P)) (I : ConditionInterp P) {Rtrace : Relation (Trace P)}
+    (Rtrace_full : Relation (Trace P)) (Rin Rout : Relation (Env P))
+    (T : L₁.StmtT → Option L₂.StmtT) (pre : L₁.StmtT → Prop)
+    (params₁ : L₁.InitEnvWFParamsTy) (params₂ : L₂.InitEnvWFParamsTy)
+    (st : L₁.StmtT) (s' : L₂.StmtT) (ht : T st = some s')
+    (hsem : OverapproximatesTraces2UptoWhen Rtrace Rtrace_full Rin Rout
+      L₁ L₂ T pre params₁ params₂)
+    {Pre Post Pre' Post' : Env P → Prop}
+    (htriple : Strata.Logic.Hoare.TripleWith L₂ I params₂ Pre' s' Post')
+    (hsource_pre : pre st)
+    (Src Tgt : Trace P → Prop)
+    (hsrc : ∀ ρ₀ ρ' trace, Pre ρ₀ → L₁.initEnvWF params₁ st ρ₀ →
+      L₁.TerminatesAt st ρ₀ trace ρ' → Src trace)
+    (htgt : ∀ ρ₀ ρ₀' ρ'' trace', Pre ρ₀ → Rin ρ₀ ρ₀' → Pre' ρ₀' →
+      L₂.TerminatesAt s' ρ₀' trace' ρ'' → Tgt trace')
+    (hin : ∀ ρ₀, Pre ρ₀ → L₁.initEnvWF params₁ st ρ₀ → ∃ ρ₀', Rin ρ₀ ρ₀' ∧ Pre' ρ₀')
+    (hvalid_reflect : ∀ sourceTr targetTr, Src sourceTr → Tgt targetTr →
+      Rtrace_full sourceTr targetTr →
+      Trace.AssertionsValid P I targetTr → Trace.AssertionsValid P I sourceTr)
+    (hreach_transfer : ∀ sourceTr targetTr, Src sourceTr → Tgt targetTr →
+      Rtrace_full sourceTr targetTr → Trace.AssertionsValid P I targetTr →
+      Trace.Reachable P I sourceTr → Trace.Reachable P I targetTr)
+    (hpost_transport : ∀ ρ₀ ρ' ρ'' trace, Pre ρ₀ → L₁.initEnvWF params₁ st ρ₀ →
+      L₁.TerminatesAt st ρ₀ trace ρ' → Rout ρ' ρ'' → Post' ρ'' → Post ρ') :
+    Strata.Logic.Hoare.TripleWith L₁ I params₁ Pre st Post := by
+  intro ρ₀ ρ' trace hpre hinit hrun
+  have hs := hsrc ρ₀ ρ' trace hpre hinit hrun
+  obtain ⟨ρ₀', hR, hpre'⟩ := hin ρ₀ hpre hinit
+  have hr := hsem st s' ht hsource_pre ρ₀ ρ₀' hR hinit
+  rcases hrun with hterm | ⟨label, hexit⟩
+  · obtain ⟨ρ'', trace', hrun', hout, htr⟩ := hr.2.1 ρ' trace hterm
+    have hres := htriple ρ₀' ρ'' trace' hpre' hr.2.2.2 (.inl hrun')
+    have ht := htgt ρ₀ ρ₀' ρ'' trace' hpre hR hpre' (.inl hrun')
+    exact ⟨hvalid_reflect trace trace' hs ht htr hres.1,
+      fun hreach => hpost_transport ρ₀ ρ' ρ'' trace hpre hinit (.inl hterm) hout
+        (hres.2 (hreach_transfer trace trace' hs ht htr hres.1 hreach))⟩
+  · obtain ⟨ρ'', trace', hrun', hout, htr⟩ := hr.2.2.1 label ρ' trace hexit
+    have hres := htriple ρ₀' ρ'' trace' hpre' hr.2.2.2 (.inr ⟨label, hrun'⟩)
+    have ht := htgt ρ₀ ρ₀' ρ'' trace' hpre hR hpre' (.inr ⟨label, hrun'⟩)
+    exact ⟨hvalid_reflect trace trace' hs ht htr hres.1,
+      fun hreach => hpost_transport ρ₀ ρ' ρ'' trace hpre hinit (.inr ⟨label, hexit⟩) hout
+        (hres.2 (hreach_transfer trace trace' hs ht htr hres.1 hreach))⟩
+
 /-- **General trace-overapproximation transport for `TripleWith`.**  Transports
     an event-trace Hoare triple from the target `L₂` back to the source `L₁`
     across an `OverapproximatesTraces2UptoWhen` with an *arbitrary* trace relation
@@ -153,20 +212,13 @@ theorem overapproximatesTraces2UptoWhen_triple_general
       Trace.AssertionsValid P I targetTr →
       Trace.Reachable P I sourceTr → Trace.Reachable P I targetTr)
     (hpost_transport : ∀ ρ' ρ'', Rout ρ' ρ'' → Post ρ'' → Post ρ') :
-    Strata.Logic.Hoare.TripleWith L₁ I params₁ Pre st Post := by
-  intro ρ₀ ρ' trace hpre hinit hrun
-  have hr := hsem st s' ht hsource_pre ρ₀ ρ₀ (hin ρ₀ hpre) hinit
-  rcases hrun with hterm | ⟨label, hexit⟩
-  · obtain ⟨ρ'', trace', hrun', hout, htr⟩ := hr.2.1 ρ' trace hterm
-    have hres := htriple ρ₀ ρ'' trace' hpre hr.2.2.2 (.inl hrun')
-    exact ⟨hvalid_reflect trace trace' htr hres.1,
-      fun hreach => hpost_transport ρ' ρ'' hout
-        (hres.2 (hreach_transfer trace trace' htr hres.1 hreach))⟩
-  · obtain ⟨ρ'', trace', hrun', hout, htr⟩ := hr.2.2.1 label ρ' trace hexit
-    have hres := htriple ρ₀ ρ'' trace' hpre hr.2.2.2 (.inr ⟨label, hrun'⟩)
-    exact ⟨hvalid_reflect trace trace' htr hres.1,
-      fun hreach => hpost_transport ρ' ρ'' hout
-        (hres.2 (hreach_transfer trace trace' htr hres.1 hreach))⟩
+    Strata.Logic.Hoare.TripleWith L₁ I params₁ Pre st Post :=
+  overapproximatesTraces2UptoWhen_triple_of_sourceRuns L₁ L₂ I Rtrace_full Rin Rout T pre
+    params₁ params₂ st s' ht hsem htriple hsource_pre (fun _ => True) (fun _ => True)
+    (fun _ _ _ _ _ _ => trivial) (fun _ _ _ _ _ _ _ _ => trivial)
+    (fun ρ₀ hp _ => ⟨ρ₀, hin ρ₀ hp, hp⟩)
+    (fun s t _ _ => hvalid_reflect s t) (fun s t _ _ => hreach_transfer s t)
+    (fun _ ρ' ρ'' _ _ _ _ hout hp => hpost_transport ρ' ρ'' hout hp)
 
 /-- **General trace-overapproximation transport for `TripleWith`, one trace relation.**
     `overapproximatesTraces2UptoWhen_triple_general` for an `OverapproximatesTracesUptoWhen`

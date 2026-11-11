@@ -10,6 +10,8 @@ public import Strata.Languages.Core.Logic.LangDef
 public import Strata.Transform.Specification
 public import Strata.Languages.Core.Verifier
 public import Strata.Transform.DeadDefElimCoreCorrect
+public import Strata.Transform.CoreSpecHoareConnection
+import Strata.DL.Imperative.Logic.TraceRelationsProps
 import all Strata.Transform.SSA.SSACoreProgramProps
 import Strata.DL.Imperative.BigStep.Adequacy
 import Strata.Languages.Core.ProcedureProps
@@ -54,7 +56,11 @@ with the parameter types, the parameters and the `old` aliases of `q`
 TODO: state the soundness of `ssaPipelinePhase` as `OverapproximatesTracesUptoWhen` on each
 procedure body it rewrites.
 
-Key theorems: `ssa_overapproximatesTraces`, `ssaLoopFree_overapproximatesTraces`,
+Assertion validity on completed runs, as a Core Hoare triple with the postcondition `True`,
+transports back from the output to the input (`ssa_triple`), from entries related by the entry
+renaming; the final stores are not related, so no postcondition transports.
+
+Key theorems: `ssa_overapproximatesTraces`, `ssaLoopFree_overapproximatesTraces`, `ssa_triple`,
 `ssaPipelinePhase_ok`.
 
 Key definitions: `ssaEntryRenOf`, `SSAEntryRel`. -/
@@ -244,6 +250,55 @@ theorem ssaLoopFree_overapproximatesTraces (π : String → Option Procedure)
         ∀ x ∈ Block.freeVars ss, x ∈ q.entryParams ∨ x ∈ q.oldAliases.map (·.1))
       params params :=
   ssa_overapproximatesTraces π params hp G _ _ _ (Procedure.oldAliases_mem q) ss₀
+
+/-- **The SSA phase transports assertion validity, not postconditions.**  For a Core statement
+    list `ss₀` in tree form, with an assertion or a cover in every arm of every `ite *` and its
+    free variables among the parameters `xs` and the aliases of `al`, on which
+    `ssaEntry G tys xs al` succeeds with the output `so.out`, every reserved prefix of `params`
+    being free of `@` and every alias of `al` denoting a parameter of `xs`, and a precondition
+    admitting only entry environments over `F`: a Core triple `{Pre'} so.out {True}` over `F`
+    at `params`, saying every assertion of `so.out` holds on its completed runs from entries
+    satisfying `Pre'`, gives the triple `{Pre} ss₀ {True}`, when each entry of `ss₀` satisfying
+    `Pre` and the gate has an entry of `so.out` related to it by the entry renaming
+    (`SSAEntryRel`) that satisfies `Pre'`.  The final stores of the two are not related: the
+    output holds every value under a fresh name.  The assertions of `ss₀`, which the WP phase
+    makes of its postconditions, are what the triple checks. -/
+theorem ssa_triple (π : String → Option Procedure) (params : InitEnvWFParams)
+    (hp : ∀ p ∈ params.prefixIdents, '@' ∉ p.toList) (G : IdSet Expression)
+    (tys : Tys Expression) (xs : List Expression.Ident)
+    (al : List (Expression.Ident × Expression.Ident)) (hal : ∀ q ∈ al, q.2 ∈ xs)
+    {ss₀ : Statements} {ρ0 : Ren Expression} {so : SOut Expression}
+    (hss : ssaEntry G tys xs al ss₀ = .ok (ρ0, so)) (htf : Block.treeForm ss₀ = true)
+    (harm : Block.armsHaveChecks ss₀ = true)
+    (hfv : ∀ x ∈ Block.freeVars ss₀, x ∈ xs ∨ x ∈ al.map (·.1))
+    {F : Lambda.Factory CoreLParams} {Pre Pre' : Imperative.Env Expression → Prop}
+    (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
+    (hin : ∀ ρ₀, Pre ρ₀ → BlockInitEnvWF params ss₀ ρ₀ →
+      ∃ ρ₀', SSAEntryRel G tys xs al ss₀ ρ₀ ρ₀' ∧ Pre' ρ₀')
+    (h : Core.Logic.Hoare.Triple π params Pre' so.out (fun _ => True) F) :
+    Core.Logic.Hoare.Triple π params Pre ss₀ (fun _ => True) F := by
+  have hnc : Statements.noCalls ss₀ = true :=
+    Block.treeForm_allSubstmts (fun _ => rfl) (fun _ _ _ => rfl) htf
+  have hnc' : Statements.noCalls so.out = true :=
+    Block.treeForm_allSubstmts (fun _ => rfl) (fun _ _ _ => rfl) (ssaEntry_treeForm hss htf)
+  have hT : (fun ss => (ssaEntry G tys xs al ss).toOption.map (·.2.out)) ss₀ = some so.out := by
+    simp [hss, Except.toOption]
+  refine overapproximatesTraces2UptoWhen_triple_of_sourceRuns (EventLang.coreBlock π)
+    (EventLang.coreBlock π) (DenoteBasedInterp F) _ _ _ _ _ params params ss₀ so.out hT
+    (ssa_overapproximatesTraces π params hp G tys xs al hal ss₀) h ⟨rfl, htf, harm, hfv⟩
+    (fun tr => ∀ ev ∈ tr, ev.condition.factory.factory = F)
+    (fun tr => ∀ ev ∈ tr, ev.condition.factory.factory = F) ?_ ?_ hin ?_ ?_
+    (fun _ _ _ _ _ _ _ _ _ => trivial)
+  · intro ρ₀ ρ' trace hp _ hrun ev hev
+    rw [Core.Logic.coreBlock_terminatesAt_events_factory hnc hrun ev hev]
+    exact hpin ρ₀ hp
+  · intro ρ₀ ρ₀' ρ'' trace hp hrel _ hrun ev hev
+    rw [Core.Logic.coreBlock_terminatesAt_events_factory hnc' hrun ev hev, hrel.factory]
+    exact hpin ρ₀ hp
+  · intro _ _ hs ht hrel hv
+    exact (Core.Logic.weakensAssumes_denoteBasedInterp hrel hs ht).assertionsValid_reflect hv
+  · intro _ _ hs ht hrel _ ⟨w, hw⟩
+    exact ⟨w, (Core.Logic.weakensAssumes_denoteBasedInterp hrel hs ht).assumptionsHold_transfer hw⟩
 
 /-! ## The pipeline phase -/
 

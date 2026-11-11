@@ -11,6 +11,8 @@ public import Strata.DL.Imperative.BigStep.SemProps
 import Strata.DL.Imperative.Logic.TraceRelationsProps
 public import Strata.DL.Imperative.Logic.TraceInterpProps
 public import Strata.Transform.SpecificationProps
+public import Strata.Transform.CoreSpecHoareConnection
+public import Strata.Languages.Core.Logic.HoareUnstructured
 public import Strata.Languages.Core.StmtExtendCallBridgeProps
 import all Strata.Transform.StructuredToUnstructured
 import Strata.Transform.StructuredToUnstructuredProps
@@ -30,6 +32,9 @@ Key results:
   * `Core.StructuredToUnstructured.assertValid` — assertion validity on the
     lowered CFG reflects to its source for interpretations stable under
     `EventArg.WithWF`; `evalInterp_stableUnder` supplies this for `evalInterp`.
+  * `Core.StructuredToUnstructured.triple` — a CFG Hoare triple
+    (`Core.Logic.Hoare.TripleUnstructured`) of the lowered CFG transports back to a Core
+    triple of its source.
   * `structuredToUnstructuredPipelinePhase_ok` identifies the phase transform,
     and `structuredToUnstructuredPipelinePhase_over` connects a successful
     phase run and its fact-tracked `requires` to the lowered procedure and the
@@ -270,6 +275,46 @@ theorem assertValid (base : InitEnvWFParams)
     (fun _ _ htrace aid =>
       Trace.WithWF.assertionValidFrom_reflect hstable htrace aid)
     (overapproximatesTraces π base) htransform hpre hvalid
+
+/-- **A Hoare triple transported back from the lowered CFG.**  For a call-free structured
+    Core statement list `ss` that `Core.stmtsToCFG` lowers to the CFG `out`, under the
+    lowering's shape conditions, and a precondition admitting only entry environments over
+    `F`: a CFG triple `{Pre} out {Post'}` over `F` at `base`
+    (`Core.Logic.Hoare.TripleUnstructured`) gives the Core triple `{Pre} ss {Post}` at `base`
+    with the generated-label prefixes reserved, when `Post'` of a final environment of `out`
+    gives `Post` of each final environment of `ss` agreeing with it on the bindings of the
+    latter (`EnvStoreAgree`), for entries satisfying `Pre` and the gate.  The final
+    environment of `ss` has the entry's factory and keeps every binding of the entry defined;
+    the CFG keeps the bindings of its declarations, which `ss` drops when it leaves their
+    scopes. -/
+theorem triple (base : InitEnvWFParams)
+    {ss : Statements} {out : CFG String (DetBlock String Command Expression)}
+    (htransform : Core.stmtsToCFG ss = some out)
+    (hpre :
+      Statements.noCalls ss = Bool.true
+      ∧ Block.noNondetGuards ss = Bool.true
+      ∧ Block.uniqueInits (C := Command) ss
+      ∧ Block.loopBodyNoInits (C := Command) ss = Bool.true
+      ∧ Block.loopHasNoInvariants ss = Bool.true
+      ∧ Block.noMeasureLoops ss = Bool.true
+      ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] ss
+      ∧ Block.userLabelsShapeNodup (C := Command) ss
+      ∧ (∀ name : String, Imperative.StructuredToUnstructured.isGeneratedName name →
+          HasIdent.ident (P := Expression) name ∉
+            Block.initVars (C := Command) ss))
+    {F : Lambda.Factory CoreLParams} {Pre Post Post' : Env Expression → Prop}
+    (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
+    (hpost : ∀ ρ₀ ρ' ρ'', Pre ρ₀ →
+      Core.Logic.BlockInitEnvWF (base.extend prefixesReserved) ss ρ₀ →
+      ρ'.factory = ρ₀.factory →
+      (∀ x, (ρ₀.store x).isSome = Bool.true → (ρ'.store x).isSome = Bool.true) →
+      EnvStoreAgree ρ' ρ'' → Post' ρ'' → Post ρ')
+    (h : Core.Logic.Hoare.TripleUnstructured π base Pre out Post' F) :
+    Core.Logic.Hoare.Triple π (base.extend prefixesReserved) Pre ss Post F :=
+  Core.Logic.triple_of_overapproximatesTraces_matches_sameEntry π evalInterp_stableUnder
+    EventArg.WithWF.factory_label_metadata
+    (overapproximatesTraces π base) htransform hpre hpre.1 hpin
+    hpost h
 
 /-- Running the structured-to-unstructured pipeline phase runs its program
 transform. -/

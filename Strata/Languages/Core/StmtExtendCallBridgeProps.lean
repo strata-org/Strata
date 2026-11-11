@@ -8,6 +8,9 @@ module
 public import Strata.Languages.Core.Statement
 public import Strata.Languages.Core.Logic.LangDefProps
 public import Strata.DL.Imperative.StmtExtendCallBridgeProps
+public import Strata.DL.Imperative.Logic.Termination
+import Strata.DL.Imperative.StmtSemanticsProps
+import Strata.DL.Imperative.CmdSemanticsProps
 
 /-! # Core-specific residue of the call-free bridge
 
@@ -25,7 +28,12 @@ stated at the generic layer:
   `Statement.isNotCall` / `Statements.noCalls`; and
 * Core `BlockInitEnvWF` transports across projection and embedding
   (`Core.Logic`), phrased with `InitEnvWFParams` and both the Core and generic
-  `BlockInitEnvWF`.
+  `BlockInitEnvWF`; and
+* through the embedding, the runs of a call-free Core statement list are runs over base
+  commands, so every event they emit is captured under the entry's factory
+  (`Core.Logic.coreBlock_events_factory`, `coreBlock_terminatesAt_events_factory`) and a
+  completed run keeps the entry's factory and its defined bindings
+  (`Core.Logic.coreBlock_terminatesAt_env`).
 
 Everything else (inversion, round trips, injectivity, analysis commutation, and
 the native event-step/star correspondence) is reused from the generic module. -/
@@ -284,6 +292,68 @@ theorem blockInitEnvWF_project_embed {params : InitEnvWFParams} {ss : Statements
   obtain ⟨hwf, hsv, hdefs, hdnr, hres, hlab, hdu, hfd, hinit, hty, hmt⟩ :=
     blockInitEnvWF_projectBase h hp
   exact BlockInitEnvWF.ofBaseEmbed hwf hsv hdefs hdnr hres hlab hdu hfd hinit hty hmt
+
+/-! ## Runs of call-free statement lists -/
+
+/-- Through the embedding, a run of a call-free Core statement list `ss` from `ρ₀` is a run over
+    base commands: from the base statements `bs` that `ss` embeds, to a base configuration whose
+    embedding is the run's last configuration. -/
+private theorem coreBlock_baseRun {π : String → Option Procedure} {ss : Statements}
+    {ρ₀ : Imperative.Env Expression} {trace : Trace Expression}
+    {cfg : Config Expression Command} (hnc : Statements.noCalls ss = Bool.true)
+    (h : (EventLang.coreBlock π).traceStar ((EventLang.coreBlock π).stmtCfg ss ρ₀) trace cfg) :
+    ∃ bs c, cfg = embedConfig c ∧
+      StepStmtStarE Expression (EvalCmdE Expression) (.stmts bs ρ₀) trace c := by
+  obtain ⟨bs, _, hemb⟩ := noCalls_projectStmts hnc
+  have hsrc : (EventLang.coreBlock π).stmtCfg ss ρ₀ = embedConfig (.stmts bs ρ₀) := by
+    simp only [EventLang.coreBlock, EventLang.imperativeBlockE, embedConfig, hemb]
+  rw [hsrc] at h
+  obtain ⟨c, hc, hrun⟩ := Imperative.embedConfig_stepStarE_rev π h
+  exact ⟨bs, c, hc, hrun⟩
+
+/-- **Every event of a call-free Core run is captured under the entry's factory.**  For a
+    call-free Core statement list `ss`, every event of every trace of `ss` from `ρ₀` has the
+    factory of `ρ₀`. -/
+theorem coreBlock_events_factory {π : String → Option Procedure} {ss : Statements}
+    {ρ₀ : Imperative.Env Expression} {trace : Trace Expression}
+    {cfg : Config Expression Command} (hnc : Statements.noCalls ss = Bool.true)
+    (h : (EventLang.coreBlock π).traceStar ((EventLang.coreBlock π).stmtCfg ss ρ₀) trace cfg) :
+    ∀ ev ∈ trace, ev.condition.factory = ρ₀.factory := by
+  obtain ⟨_, _, _, hrun⟩ := coreBlock_baseRun hnc h
+  exact starE_events_factory (fac := fun ev => ev.condition.factory)
+    evalCmdE_events_factory hrun
+
+/-- **Every event of a completed call-free Core run is captured under the entry's factory.**  For
+    a call-free Core statement list `ss` and a run of `ss` from `ρ₀` ending normally or by an
+    `exit`, every event of its trace has the factory of `ρ₀`. -/
+theorem coreBlock_terminatesAt_events_factory {π : String → Option Procedure} {ss : Statements}
+    {ρ₀ ρ' : Imperative.Env Expression} {trace : Trace Expression}
+    (hnc : Statements.noCalls ss = Bool.true)
+    (h : (EventLang.coreBlock π).TerminatesAt ss ρ₀ trace ρ') :
+    ∀ ev ∈ trace, ev.condition.factory = ρ₀.factory := by
+  rcases h with h | ⟨_, h⟩ <;> exact coreBlock_events_factory hnc h
+
+/-- **A completed call-free Core run keeps the entry's factory and its bindings.**  For a
+    call-free Core statement list `ss` and a run of `ss` from `ρ₀` ending normally or by an
+    `exit` in `ρ'`: `ρ'` has the factory of `ρ₀`, and every variable defined in `ρ₀` is defined
+    in `ρ'`. -/
+theorem coreBlock_terminatesAt_env {π : String → Option Procedure} {ss : Statements}
+    {ρ₀ ρ' : Imperative.Env Expression} {trace : Trace Expression}
+    (hnc : Statements.noCalls ss = Bool.true)
+    (h : (EventLang.coreBlock π).TerminatesAt ss ρ₀ trace ρ') :
+    ρ'.factory = ρ₀.factory ∧
+      ∀ x, (ρ₀.store x).isSome = Bool.true → (ρ'.store x).isSome = Bool.true := by
+  obtain ⟨bs, c, hc, hrun⟩ : ∃ bs c, (c = .terminal ρ' ∨ ∃ l, c = .exiting l ρ') ∧
+      StepStmtStarE Expression (EvalCmdE Expression) (.stmts bs ρ₀) trace c := by
+    rcases h with h | ⟨l, h⟩
+    · obtain ⟨bs, c, hc, hrun⟩ := coreBlock_baseRun hnc h
+      exact ⟨bs, c, .inl (Imperative.embedConfig_injective (hc.symm.trans (by rfl))), hrun⟩
+    · obtain ⟨bs, c, hc, hrun⟩ := coreBlock_baseRun hnc h
+      exact ⟨bs, c, .inr ⟨l, Imperative.embedConfig_injective (hc.symm.trans (by rfl))⟩, hrun⟩
+  have hdef : ∀ x, (ρ₀.store x).isSome = Bool.true → Config.varsDefined (· = x) c :=
+    fun x hx => Config.varsDefined_star_ofE evalCmdE_preserves_isSome hrun fun _ hy => hy ▸ hx
+  rcases hc with rfl | ⟨_, rfl⟩ <;>
+    exact ⟨(starE_preserves_factory hrun).symm, fun x hx => hdef x hx x rfl⟩
 
 end Core.Logic
 
