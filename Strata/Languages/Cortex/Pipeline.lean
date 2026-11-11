@@ -6,7 +6,6 @@
 module
 
 public import Strata.Languages.Cortex.ToCore
-public import Strata.Languages.Cortex.ToCoreCFG
 public import Strata.Languages.Cortex.LowerDispatch
 public import Strata.Languages.Cortex.LowerExceptions
 public import Strata.Languages.Cortex.PruneUnreachable
@@ -38,14 +37,11 @@ def runPasses (ps : List Pass) (prog : Program) : Except String Program :=
     | .ok prog' => .ok prog'
     | .error e => .error s!"{p.name}: {e}") prog
 
-/-- The Core program of `prog`. With `cleanup := false` the cleanup passes are
+/-- Lower a Cortex program and translate it to Core, with each procedure body
+emitted as a Core CFG body. With `cleanup := false` the cleanup passes are
 skipped, for comparing the two results. -/
 def toCoreProgram (prog : UnorderedProgram) (cleanup : Bool := true) : Except String Core.Program := do
   ToCore.programToCore (← runPasses (if cleanup then passes else loweringPasses) (.unordered prog))
-
-/-- As `toCoreProgram`, with each procedure body emitted as a Core CFG body. -/
-def toCoreProgramCFG (prog : UnorderedProgram) (cleanup : Bool := true) : Except String Core.Program := do
-  ToCore.programToCoreCFG (← runPasses (if cleanup then passes else loweringPasses) (.unordered prog))
 
 end
 

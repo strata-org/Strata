@@ -322,35 +322,67 @@ with the precondition's property summary. -/
   | some s => callMd.pushElem Imperative.MetaData.propertySummary (.msg s)
   | none => callMd
 
+/-- Give each output of composite type a fresh object, allocated as `new`
+allocates it. The other outputs keep their values. -/
+@[expose] def freshOutputs (prog : UnorderedProgram) (ρ : IEnv) :
+    List (Core.Expression.Ident × Core.Expression.Ty) → m IEnv
+  | [] => pure ρ
+  | (x, ty) :: rest =>
+    match (ty : LTy) with
+    | .forAll [] (.tcons n []) =>
+      if (prog.findComposite? n).isSome then do
+        let o ← freshObject prog ρ.factory n
+        let σ' ← setVar ρ.store x (mkRef ρ.next)
+        freshOutputs prog { ρ with store := σ', heap := ρ.heap.update ρ.next o, next := ρ.next + 1 } rest
+      else freshOutputs prog ρ rest
+    | _ => freshOutputs prog ρ rest
+
+/-- Call procedure `n`. The callee starts in the frame that `callFrame` builds,
+in which every output holds a value from `Effects.choose`. Its preconditions
+are checked in that frame, each located at the call.
+
+A procedure without a body returns from that frame at once, with one change:
+each output of composite type that is not also an input gets a fresh object, so
+the caller can read and write the fields of the result. Every other output
+keeps its value: the chosen one, or the argument for an output that is also an
+input, which is how a lowered global passes through the call. That includes an
+output of an `$Any` type, which names no composite to allocate.
+The objects that exist before the call and the globals are left as they are.
+This is one of the behaviours such a procedure can have, not all of them: a
+real callee could return other values, write the heap or throw, so what the
+caller computes from the results can differ from a run against the real
+callee. -/
 @[expose] def callProc (prog : UnorderedProgram) (runBody : IConfig → m (IConfig)) (ρ : IEnv)
     (lhs : List Core.Expression.Ident) (n : ProcName) (args : List Expr) (callMd : MD) : m CmdResult := do
   match prog.findProcedure? n with
   | none => throw (.unknownProcedure n)
   | some p =>
-    match p.body with
-    | none => throw (.procedureWithoutBody n)
-    | some body =>
-      let σ₀ ← callFrame prog ρ.factory ρ.store p args
-      for pre in p.requires do
-        Effects.emit (emittedEvents (.assert s!"requires_{p.name}" pre.cond (preconditionMd callMd pre)) ρ.factory σ₀)
-      let final ← runBody (.atBlock body body.cfg.entry
-        { store := σ₀, heap := ρ.heap, factory := ρ.factory, next := ρ.next, tys := paramTys p })
-      match final with
-      | .terminal ρE =>
-        if lhs.Nodup then
-          let outs ← readValues ρ.factory ρE.store (p.outputs.map Prod.fst)
-          let σL ← updateStates ρ.store lhs outs
-          let σ' ← globalsBack prog ρ.factory σL ρE.store
-          pure ⟨σ', ρE.heap, ρE.next, .normal⟩
-        else throw .aliasedResults
-      | .raised ρE v _ =>
-        unless lhs.Nodup do throw .aliasedResults
-        let σ' ← globalsBack prog ρ.factory ρ.store ρE.store
-        let inouts := (lhs.zip (p.outputs.map Prod.fst)).filter fun (_, o) => p.inputs.any (·.1 == o)
-        let vals ← readValues ρ.factory ρE.store (inouts.map Prod.snd)
-        let σ' ← updateStates σ' (inouts.map Prod.fst) vals
-        pure ⟨σ', ρE.heap, ρE.next, .exn v⟩
-      | _ => throw (.calleeDidNotTerminate n)
+    let σ₀ ← callFrame prog ρ.factory ρ.store p args
+    for pre in p.requires do
+      Effects.emit (emittedEvents (.assert s!"requires_{p.name}" pre.cond (preconditionMd callMd pre)) ρ.factory σ₀)
+    let ρ₀ : IEnv :=
+      { store := σ₀, heap := ρ.heap, factory := ρ.factory, next := ρ.next, tys := paramTys p }
+    let final ← match p.body with
+      | some body => runBody (.atBlock body body.cfg.entry ρ₀)
+      | none => do
+        let ρ₁ ← freshOutputs prog ρ₀ (p.outputs.filter fun (x, _) => !p.inputs.any (·.1 == x))
+        pure (.terminal ρ₁)
+    match final with
+    | .terminal ρE =>
+      if lhs.Nodup then
+        let outs ← readValues ρ.factory ρE.store (p.outputs.map Prod.fst)
+        let σL ← updateStates ρ.store lhs outs
+        let σ' ← globalsBack prog ρ.factory σL ρE.store
+        pure ⟨σ', ρE.heap, ρE.next, .normal⟩
+      else throw .aliasedResults
+    | .raised ρE v _ =>
+      unless lhs.Nodup do throw .aliasedResults
+      let σ' ← globalsBack prog ρ.factory ρ.store ρE.store
+      let inouts := (lhs.zip (p.outputs.map Prod.fst)).filter fun (_, o) => p.inputs.any (·.1 == o)
+      let vals ← readValues ρ.factory ρE.store (inouts.map Prod.snd)
+      let σ' ← updateStates σ' (inouts.map Prod.fst) vals
+      pure ⟨σ', ρE.heap, ρE.next, .exn v⟩
+    | _ => throw (.calleeDidNotTerminate n)
 
 mutual
 
