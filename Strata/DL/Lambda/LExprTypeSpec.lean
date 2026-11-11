@@ -1187,6 +1187,30 @@ variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashable 
 /-! ### Generator-freshness preservation -/
 
 omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
+/-- Every key and value variable of a unifier's output substitution is a variable of the
+    constraints or a key or value variable of the input substitution. -/
+theorem Constraints.unify_vars_mem {cs : Constraints} {S S' : SubstInfo}
+    (h_unify : Constraints.unify cs S = .ok S') (v : TyIdentifier)
+    (hv : v ∈ HMaps.keys S'.subst ∨ v ∈ Subst.freeVars S'.subst) :
+    v ∈ Constraints.freeVars cs ∨ v ∈ HMaps.keys S.subst ∨ v ∈ Subst.freeVars S.subst := by
+  rcases hv with h_key | h_fv
+  · rcases Constraints.unify_keys_incl h_unify v h_key with h | h | h
+    · exact .inr (.inl h)
+    · exact .inl h
+    · exact .inr (.inr h)
+  · have h_incl : Subst.freeVars S'.subst ⊆
+        Constraints.freeVars cs ++ Subst.freeVars S.subst := by
+      simp only [Constraints.unify, Bind.bind, Except.bind] at h_unify
+      split at h_unify
+      · simp at h_unify
+      · rename_i relS _
+        simp only [Except.ok.injEq] at h_unify; subst h_unify
+        exact relS.goodSubset
+    rcases List.mem_append.mp (h_incl h_fv) with h | h
+    · exact .inl h
+    · exact .inr (.inr h)
+
+omit [ToString T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- `Constraints.unify` preserves `SubstFreshForGen`. -/
 private theorem unify_preserves_SubstFreshForGen
     {cs : Constraints} {S S' : SubstInfo} {state : TState}
@@ -1195,28 +1219,10 @@ private theorem unify_preserves_SubstFreshForGen
     (h_fresh_cs : ∀ v, v ∈ Constraints.freeVars cs →
       ∀ n, n ≥ state.tyGen → v ≠ TState.tyPrefix ++ toString n) :
     SubstFreshForGen S' state := by
-  -- All vars in S' come from old S vars ∪ constraint fvs (by unify_keys_incl + goodSubset)
   intro v hv n hn
-  cases hv with
-  | inl h_key =>
-    -- v is a key of S'.subst
-    rcases Constraints.unify_keys_incl h_unify v h_key with h | h | h
-    · exact h_fresh_S v (Or.inl h) n hn
-    · exact h_fresh_cs v h n hn
-    · exact h_fresh_S v (Or.inr h) n hn
-  | inr h_fv =>
-    -- v is in freeVars of S'.subst values. Extract goodSubset from unify.
-    have h_incl : Subst.freeVars S'.subst ⊆
-        Constraints.freeVars cs ++ Subst.freeVars S.subst := by
-      simp only [Constraints.unify, Bind.bind, Except.bind] at h_unify
-      split at h_unify
-      · simp at h_unify
-      · rename_i relS h_core
-        simp only [Except.ok.injEq] at h_unify; subst h_unify
-        exact relS.goodSubset
-    rcases List.mem_append.mp (h_incl h_fv) with h | h
-    · exact h_fresh_cs v h n hn
-    · exact h_fresh_S v (Or.inr h) n hn
+  rcases Constraints.unify_vars_mem h_unify v hv with h | h
+  · exact h_fresh_cs v h n hn
+  · exact h_fresh_S v h n hn
 
 omit [ToString T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [ToFormat T.Metadata] in
 /-- Each var produced by `TGenEnv.genTyVar` is `tyPrefix ++ toString k` for

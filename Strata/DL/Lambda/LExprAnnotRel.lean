@@ -30,6 +30,14 @@ public section
     for every name. -/
 def TableAgree (ks1 ks2 : KnownTypes) : Prop := ∀ n : String, ks1[n]? = ks2[n]?
 
+/-- Tables that give the same lookup result for every name agree. -/
+theorem TableAgree.of_getElem? {ks1 ks2 : KnownTypes}
+    (h : ∀ n : String, ks1[n]? = ks2[n]?) : TableAgree ks1 ks2 := h
+
+/-- Agreeing tables give the same lookup result for every name. -/
+theorem TableAgree.getElem?_eq {ks1 ks2 : KnownTypes} (h : TableAgree ks1 ks2)
+    (n : String) : ks1[n]? = ks2[n]? := h n
+
 namespace LExpr
 
 variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta]

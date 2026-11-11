@@ -7,26 +7,33 @@ module
 
 public import Strata.DL.Lambda.LExprTypeEnv
 public import Strata.DL.Lambda.TypeFactory
+public import Strata.DL.Lambda.LExprAnnotRel
 import all Strata.DL.Lambda.LExprTypeEnvProps
 import Strata.DL.Lambda.TypeFactoryProps
 import Strata.DL.Lambda.DatatypeFactoryWFProps
 
 /-! # Registered type constructors
 
-Facts about `KnownTypesExtends`, `LContext.KnownTypesAll`, `Subst.RangeKnown`,
-`Constraints.Known`, `FactorySigsKnown` and `LContext.DatatypesKnown`.
-They live in a separate file so that `LExprTypeEnvProps` does not grow.
+Facts about `KnownTypesExtends`, `TableAgree`, `LContext.KnownTypesAll`,
+`Subst.RangeKnown`, `Constraints.Known`, `FactorySigsKnown` and
+`LContext.DatatypesKnown`. They live in a separate file so that
+`LExprTypeEnvProps` does not grow.
 
 Key theorems: `knownInstance_mono`, `knownInstance_subst` and
 `Constraints.unify_RangeKnown` (registered types survive table growth,
-substitution and unification); `KnownTypesAll_addKnownTypeWithError` and
-`KnownTypesAll_addMutualBlock` (registering types keeps a property of every
-registered name); `LFunc.type_eq_mkArrow'` (the type scheme of a function with
-a registered output type is the arrow from its inputs to its output);
-`FactorySigsKnown.tryAddAll` (adding functions keeps signatures registered);
-`genBlockFactory_sigsKnown` (every signature a block generates uses only
-registered constructors); and `knownTypes_foldlM_add_mem` and
-`datatypesKnown_addMutualBlock` (registering a datatype block records each
+substitution and unification); `knownInstance_congr` (tables that record the
+same arities, `TableAgree`, have the same registered instances);
+`KnownTypesAll_addKnownTypeWithError` and `KnownTypesAll_addMutualBlock`
+(registering types keeps a property of every registered name);
+`LFunc.type_eq_mkArrow'` (the type scheme of a function with a registered output
+type is the arrow from its inputs to its output); `FactorySigsKnown.tryAddAll`
+(adding functions keeps signatures registered);
+`tablesKnown_foldl_addFactoryFunction` (adding functions with registered
+signature types keeps every signature and datatype registered);
+`LFunc.body_knownInstance` (the body of such a function's type scheme is a
+registered instance); `genBlockFactory_sigsKnown` (every signature a block
+generates uses only registered constructors); and `knownTypes_foldlM_add_mem`
+and `datatypesKnown_addMutualBlock` (registering a datatype block records each
 datatype at its arity). -/
 
 namespace Lambda
@@ -140,6 +147,32 @@ theorem knownInstance_mono (mty : LMonoTy) (ks ks' : KnownTypes)
     LMonoTy.knownInstance mty ks' = true := by
   rw [LMonoTy.knownInstance_iff_wellKinded] at h ⊢
   exact fun ref n hmem => hext ref n (h ref n hmem)
+
+/-- A table extending another registers every name the other does. -/
+theorem KnownTypesExtends.mem {ks ks' : KnownTypes} (h : KnownTypesExtends ks ks')
+    (n : String) (hn : n ∈ ks) : n ∈ ks' := by
+  obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp (Std.HashMap.mem_iff_isSome_getElem?.mp hn)
+  have h_some : ks'[n]?.isSome = true := by rw [h n a ha]; rfl
+  exact Std.HashMap.mem_iff_isSome_getElem?.mpr h_some
+
+/-- Registering one type constructor extends the table. -/
+theorem KnownTypesExtends.of_addKnownTypeWithError {T : LExprParams}
+    (C C' : LContext T) (k : KnownType) (msg : Strata.Message)
+    (h : C.addKnownTypeWithError k msg = .ok C') :
+    KnownTypesExtends C.knownTypes C'.knownTypes := by
+  intro ref n hn
+  simp only [LContext.addKnownTypeWithError, bind, Except.bind] at h
+  split at h
+  · simp only [reduceCtorEq] at h
+  · rename_i v hv
+    simp only [Except.ok.injEq] at h
+    subst h
+    exact Identifiers.addWithError_getElem?_mono C.knownTypes v k msg hv ref n hn
+
+/-- A table extends any equal table. -/
+theorem KnownTypesExtends.of_knownTypes_eq {T : LExprParams} (C C' : LContext T)
+    (h : C'.knownTypes = C.knownTypes) : KnownTypesExtends C.knownTypes C'.knownTypes :=
+  fun n a hn => by rw [h]; exact hn
 
 /-! ### Substitution and unification keep constructor references registered -/
 
@@ -271,6 +304,160 @@ theorem Constraints.unify_RangeKnown (ks : KnownTypes) (cs : Constraints)
   elim_err h with relS h_core
   simp only [Except.ok.injEq] at h; subst h
   exact (unify_RangeKnown_both ks).2 cs S relS h_core hS hcs
+
+/-! ### Tables recording the same arities (`TableAgree`) -/
+
+/-- `TableAgree` is symmetric. -/
+private theorem TableAgree.symm {ks1 ks2 : KnownTypes} (h : TableAgree ks1 ks2) :
+    TableAgree ks2 ks1 :=
+  TableAgree.of_getElem? fun n => (h.getElem?_eq n).symm
+
+/-- Agreeing tables extend each other. -/
+private theorem TableAgree.extends {ks1 ks2 : KnownTypes} (h : TableAgree ks1 ks2) :
+    KnownTypesExtends ks1 ks2 := by
+  intro n a ha
+  rw [← h.getElem?_eq n]
+  exact ha
+
+/-- Adding the same registration to agreeing tables keeps them agreeing. -/
+theorem TableAgree.insert {ks1 ks2 : KnownTypes} (h : TableAgree ks1 ks2)
+    (n : String) (a : Nat) : TableAgree (ks1.insert n a) (ks2.insert n a) := by
+  refine TableAgree.of_getElem? ?_
+  intro m
+  rw [Std.HashMap.getElem?_insert, Std.HashMap.getElem?_insert, h.getElem?_eq m]
+
+/-- Agreeing tables have the same registered instances. -/
+theorem knownInstance_congr (mty : LMonoTy) {ks1 ks2 : KnownTypes} (h : TableAgree ks1 ks2) :
+    LMonoTy.knownInstance mty ks1 = LMonoTy.knownInstance mty ks2 := by
+  cases h1 : LMonoTy.knownInstance mty ks1 with
+  | true => exact (knownInstance_mono mty ks1 ks2 h.extends h1).symm
+  | false =>
+    cases h2 : LMonoTy.knownInstance mty ks2 with
+    | true =>
+      rw [knownInstance_mono mty ks2 ks1 h.symm.extends h2] at h1
+      exact absurd h1 (by simp)
+    | false => rfl
+
+/-- Registering one type constructor agrees with inserting it into the table. -/
+theorem addKnownTypeWithError_tableAgree {T : LExprParams}
+    (C C' : LContext T) (k : KnownType) (msg : Strata.Message)
+    (h : C.addKnownTypeWithError k msg = .ok C') :
+    TableAgree C'.knownTypes (C.knownTypes.insert k.name k.arity) := by
+  refine TableAgree.of_getElem? ?_
+  intro n
+  simp only [LContext.addKnownTypeWithError, bind, Except.bind] at h
+  split at h
+  · simp only [reduceCtorEq] at h
+  · rename_i v hv
+    simp only [Except.ok.injEq] at h
+    subst h
+    simp only [KnownTypes.addWithError, Identifiers.addWithError,
+      Std.HashMap.containsThenInsertIfNew_fst, Std.HashMap.containsThenInsertIfNew_snd] at hv
+    split at hv
+    · simp only [reduceCtorEq] at hv
+    · rename_i hc
+      simp only [Except.ok.injEq] at hv
+      subst hv
+      have hnm : ¬ (k.name ∈ C.knownTypes) := fun hm =>
+        hc (Std.HashMap.contains_iff_mem.mpr hm)
+      show (C.knownTypes.insertIfNew k.name k.arity)[n]?
+        = (C.knownTypes.insert k.name k.arity)[n]?
+      rw [Std.HashMap.getElem?_insertIfNew, Std.HashMap.getElem?_insert]
+      simp [hnm]
+
+/-! ### Substitution ranges under scope operations -/
+
+/-- Dropping a binding keeps the range registered. -/
+theorem Subst.RangeKnown_remove (ks : KnownTypes) (S : Subst) (id : TyIdentifier)
+    (hS : Subst.RangeKnown S ks) :
+    Subst.RangeKnown (HMaps.remove S id) ks :=
+  fun mty hmty => hS mty (HMaps.values_remove_subset S id mty hmty)
+
+/-- The empty substitution has a registered range. -/
+theorem Subst.RangeKnown_empty (ks : KnownTypes) : Subst.RangeKnown Subst.empty ks := by
+  intro mty hmty
+  have h_not_mem : mty ∉ HMaps.values (Subst.empty : Subst) := by
+    simp [HMaps.values]
+  exact absurd hmty h_not_mem
+
+/-- Dropping the newest scope keeps the range registered. -/
+private theorem Subst.RangeKnown_pop (ks : KnownTypes) (S : Subst)
+    (hS : Subst.RangeKnown S ks) :
+    Subst.RangeKnown (HMaps.pop S) ks := by
+  intro mty hmty
+  refine hS mty ?_
+  cases S with
+  | nil =>
+    have h_not_mem : mty ∉ HMaps.values (HMaps.pop ([] : Subst)) := by
+      simp [HMaps.pop, HMaps.values]
+    exact absurd hmty h_not_mem
+  | cons m rest =>
+    simp only [HMaps.pop] at hmty
+    simp only [HMaps.values, List.mem_append]
+    exact Or.inr hmty
+
+/-- Pushing a scope of registered types keeps the range registered. -/
+private theorem Subst.RangeKnown_push (ks : KnownTypes) (S : Subst) (m : SubstOne)
+    (hm : ∀ mty ∈ m.values, LMonoTy.knownInstance mty ks = true)
+    (hS : Subst.RangeKnown S ks) :
+    Subst.RangeKnown (HMaps.push S m) ks := by
+  intro mty hmty
+  simp only [HMaps.push, HMaps.values, List.mem_append] at hmty
+  rcases hmty with hmty | hmty
+  · exact hm mty hmty
+  · exact hS mty hmty
+
+/-- Pushing a scope that binds nothing keeps the range registered. -/
+theorem Subst.RangeKnown_push_empty (ks : KnownTypes) (S : Subst)
+    (hS : Subst.RangeKnown S ks) :
+    Subst.RangeKnown (HMaps.push S (HMap.empty : SubstOne)) ks :=
+  have h_empty : ∀ mty ∈ (HMap.empty : SubstOne).values,
+      LMonoTy.knownInstance mty ks = true := by
+    intro mty hmty
+    rw [HMap.values_empty] at hmty
+    exact absurd hmty List.not_mem_nil
+  Subst.RangeKnown_push ks S HMap.empty h_empty hS
+
+/-- A registered range stays registered in any extending table. -/
+theorem Subst.RangeKnown_mono (ks ks' : KnownTypes) (S : Subst)
+    (hext : KnownTypesExtends ks ks')
+    (hS : Subst.RangeKnown S ks) :
+    Subst.RangeKnown S ks' :=
+  fun mty hmty => knownInstance_mono mty ks ks' hext (hS mty hmty)
+
+section RangeKnownEnv
+
+variable {IDMeta : Type} [DecidableEq IDMeta] [Hashable IDMeta]
+
+/-- Opening a substitution scope keeps the range registered. -/
+theorem TEnv.RangeKnown_pushEmptySubstScope (Env : TEnv IDMeta) (ks : KnownTypes)
+    (hS : Subst.RangeKnown Env.stateSubstInfo.subst ks) :
+    Subst.RangeKnown Env.pushEmptySubstScope.stateSubstInfo.subst ks := by
+  simp only [TEnv.pushEmptySubstScope]
+  exact Subst.RangeKnown_push_empty ks _ hS
+
+/-- Closing the newest substitution scope keeps the range registered. -/
+theorem TEnv.RangeKnown_popSubstScope (Env : TEnv IDMeta) (ks : KnownTypes)
+    (hS : Subst.RangeKnown Env.stateSubstInfo.subst ks) :
+    Subst.RangeKnown Env.popSubstScope.stateSubstInfo.subst ks := by
+  simp only [TEnv.popSubstScope]
+  exact Subst.RangeKnown_pop ks _ hS
+
+/-- Opening a variable scope keeps the range registered. -/
+theorem TEnv.RangeKnown_pushEmptyContext (Env : TEnv IDMeta) (ks : KnownTypes)
+    (hS : Subst.RangeKnown Env.stateSubstInfo.subst ks) :
+    Subst.RangeKnown Env.pushEmptyContext.stateSubstInfo.subst ks := by
+  rw [TEnv.pushEmptyContext_stateSubstInfo]
+  exact hS
+
+/-- Closing the newest variable scope keeps the range registered. -/
+theorem TEnv.RangeKnown_popContext (Env : TEnv IDMeta) (ks : KnownTypes)
+    (hS : Subst.RangeKnown Env.stateSubstInfo.subst ks) :
+    Subst.RangeKnown Env.popContext.stateSubstInfo.subst ks := by
+  rw [TEnv.popContext_stateSubstInfo]
+  exact hS
+
+end RangeKnownEnv
 
 /-! ### Registered-type tables for factory signatures and datatypes -/
 
@@ -481,6 +668,75 @@ theorem datatypesKnown_addMutualBlock {T : LExprParams}
   · exact KnownTypesExtends.of_add_foldlM C.knownTypes ks block hks _ _
       (hC d hold)
   · exact knownTypes_foldlM_add_mem C.knownTypes ks block hks d hnew
+
+/-- An iterated arrow from registered instances to a registered instance is a registered instance
+    when `ks` registers `arrow` at arity 2. -/
+private theorem knownInstance_mkArrow' {ks : KnownTypes} (h_arrow : ks["arrow"]? = some 2)
+    (out : LMonoTy) (ms : LMonoTys) (hout : LMonoTy.knownInstance out ks = true)
+    (hms : ∀ t ∈ ms, LMonoTy.knownInstance t ks = true) :
+    LMonoTy.knownInstance (LMonoTy.mkArrow' out ms) ks = true :=
+  LMonoTy.mkArrow'_of_arrow (fun ty => LMonoTy.knownInstance ty ks = true)
+    (fun a b ha hb => knownInstance_arrow ks a b h_arrow ha hb) out ms hout hms
+
+/-- Adding a function whose input and output types are registered instances keeps every
+    signature and every datatype registered. -/
+theorem tablesKnown_addFactoryFunction {T : LExprParams} {C : LContext T} {fn : LFunc T}
+    (hfn : ∀ ty ∈ fn.output :: fn.inputs.values, LMonoTy.knownInstance ty C.knownTypes = true)
+    (hs : FactorySigsKnown C.knownTypes C.functions) (hd : C.DatatypesKnown) :
+    FactorySigsKnown (C.addFactoryFunction fn).knownTypes (C.addFactoryFunction fn).functions ∧
+      (C.addFactoryFunction fn).DatatypesKnown := by
+  rw [addFactoryFunction_knownTypes C fn]
+  refine ⟨hs.addFactoryFunction hfn, ?_⟩
+  unfold LContext.addFactoryFunction
+  split <;> exact hd
+
+/-- Adding functions whose input and output types are registered instances keeps every signature
+    and every datatype registered. -/
+theorem tablesKnown_foldl_addFactoryFunction {T : LExprParams} {α : Type} (l : List α)
+    (g : α → LFunc T) (C : LContext T)
+    (hs : FactorySigsKnown C.knownTypes C.functions) (hd : C.DatatypesKnown)
+    (hg : ∀ a ∈ l, ∀ ty ∈ (g a).output :: (g a).inputs.values,
+      LMonoTy.knownInstance ty C.knownTypes = true) :
+    FactorySigsKnown (l.foldl (fun C a => C.addFactoryFunction (g a)) C).knownTypes
+        (l.foldl (fun C a => C.addFactoryFunction (g a)) C).functions ∧
+      (l.foldl (fun C a => C.addFactoryFunction (g a)) C).DatatypesKnown := by
+  induction l generalizing C with
+  | nil => exact ⟨hs, hd⟩
+  | cons a rest ih =>
+    rw [List.foldl_cons]
+    obtain ⟨hs', hd'⟩ := tablesKnown_addFactoryFunction (hg a List.mem_cons_self) hs hd
+    refine ih _ hs' hd' fun b hb ty hty => ?_
+    rw [addFactoryFunction_knownTypes C (g a)]
+    exact hg b (List.mem_cons_of_mem a hb) ty hty
+
+/-- When `ks` registers `arrow` at arity 2 and every input and output type of `f` is a registered
+    instance, so is the body of `f`'s type scheme. -/
+theorem LFunc.body_knownInstance {T : LExprParams} [DecidableEq T.IDMeta]
+    {ks : KnownTypes} {f : LFunc T} (harrow : ks["arrow"]? = some 2)
+    (hsigf : ∀ ty ∈ f.output :: f.inputs.values, LMonoTy.knownInstance ty ks = true)
+    {xs : List TyIdentifier} {body : LMonoTy}
+    (hty : f.type = .ok (.forAll xs body)) : LMonoTy.knownInstance body ks = true := by
+  have hout := hsigf f.output List.mem_cons_self
+  have hbody := LFunc.type_eq_mkArrow' harrow hty hout
+  simp only [LTy.forAll.injEq] at hbody
+  rw [hbody.2]
+  refine knownInstance_mkArrow' harrow _ _ hout fun t ht => ?_
+  rw [← ListMap.values_eq_map_snd] at ht
+  exact hsigf t (List.mem_cons_of_mem _ ht)
+
+/-- Signatures registered in a table that names no alias of `A` are fixed for `A`. -/
+theorem FactorySigsKnown.sigsFixed {T : LExprParams} {ks : KnownTypes} {F : Factory T}
+    {A : List TypeAlias} (h : FactorySigsKnown ks F)
+    (hfresh : ∀ al ∈ A, ks.containsName al.name = false) : FactorySigsFixed A F :=
+  fun f hf => ⟨ks, h.1, hfresh, h.2 f hf⟩
+
+/-- `DatatypesKnown` survives growing the registered-type table with the datatypes unchanged. -/
+theorem LContext.DatatypesKnown.of_extends {T : LExprParams} {C C' : LContext T}
+    (hds : C'.datatypes = C.datatypes) (hext : KnownTypesExtends C.knownTypes C'.knownTypes)
+    (h : C.DatatypesKnown) : C'.DatatypesKnown := by
+  intro d hd
+  rw [hds] at hd
+  exact hext _ _ (h d hd)
 
 end -- public section
 

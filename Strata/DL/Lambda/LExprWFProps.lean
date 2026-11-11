@@ -1105,6 +1105,32 @@ theorem getOps_substFvarsBy_mem (e : LExpr T.mono) (look : T.Identifier → Opti
     · exact .inl h
   | _ => simp only [substFvarsBy, LExpr.getOps, List.mem_append] at h ⊢ <;> grind
 
+omit [DecidableEq T.IDMeta] in
+/-- Rewriting annotations by `φ` keeps the operators. -/
+theorem getOps_replaceUserProvidedType (e : LExpr T.mono)
+    (φ : LMonoTy → LMonoTy) :
+    LExpr.getOps (LExpr.replaceUserProvidedType e φ) = LExpr.getOps e := by
+  induction e <;> simp_all [LExpr.replaceUserProvidedType, LExpr.getOps]
+
+omit [DecidableEq T.IDMeta] in
+/-- Rewriting annotations by `φ` rewrites the annotation of each free-variable occurrence by
+    `φ`. -/
+theorem freeVars_replaceUserProvidedType (e : LExpr T.mono)
+    (φ : LMonoTy → LMonoTy) :
+    LExpr.freeVars (LExpr.replaceUserProvidedType e φ) =
+      (LExpr.freeVars e).map (fun p => (p.1, p.2.map φ)) := by
+  induction e <;> simp_all [LExpr.replaceUserProvidedType, LExpr.freeVars]
+
+omit [DecidableEq T.IDMeta] in
+/-- Rewriting annotations by `φ` rewrites the annotation of each annotated operator by `φ`. -/
+theorem opAnnots_replaceUserProvidedType (e : LExpr T.mono)
+    (φ : LMonoTy → LMonoTy) :
+    LExpr.opAnnots (LExpr.replaceUserProvidedType e φ) =
+      (LExpr.opAnnots e).map (fun p => (p.1, φ p.2)) := by
+  induction e with
+  | op m o ty => cases ty <;> rfl
+  | _ => simp_all [LExpr.replaceUserProvidedType, LExpr.opAnnots]
+
 end LExpr
 
 /-- Every user-provided annotation of `e` satisfies `p` exactly when every type
