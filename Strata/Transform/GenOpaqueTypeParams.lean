@@ -128,6 +128,17 @@ def opaqueTypes (names : List (TyIdentifier × String)) : List Decl × Subst :=
   (names.map fun (_, n) => Decl.type (.con { name := n, params := [] }) .empty,
    [HMap.ofList (names.map fun (tv, n) => (tv, LMonoTy.tcons n []))])
 
+/-- Reject the first of `names` containing `Core.NameMangling.monoDelim`, naming it. The
+    names opaque types are built from are checked here, so the error names what the user
+    wrote, not the generated type. This is the early half of
+    `MonomorphizeFunctions.namesUnmangled`, which rejects the generated name later. -/
+def checkNoMonoDelim {m : Type → Type} [Monad m] [MonadExcept Strata.Message m]
+    (names : List String) : m Unit := do
+  if let some bad := names.find? Core.NameMangling.hasMonoDelim then
+    throw (Strata.Message.fromString
+      s!"GenOpaqueTypeParams: the name '{bad}' contains '{Core.NameMangling.monoDelim}', \
+         which is reserved for monomorphized copies")
+
 /-- Mint one fresh opaque type per type variable of the declaration `name`,
     avoiding the type names in `taken`.
     Returns the opaque type declarations and the substitution mapping each type
@@ -139,10 +150,7 @@ def opaqueTypes (names : List (TyIdentifier × String)) : List Decl × Subst :=
     wrote, not the generated one. -/
 def mkOpaqueSubst (taken : Std.HashSet String) (name : String) (tyVars : List TyIdentifier) :
     CoreTransformM (List Decl × Subst) := do
-  if let some bad := (name :: tyVars).find? Core.NameMangling.hasMonoDelim then
-    throw (Strata.Message.fromString
-      s!"GenOpaqueTypeParams: the name '{bad}' contains '{Core.NameMangling.monoDelim}', \
-         which is reserved for monomorphized copies")
+  checkNoMonoDelim (name :: tyVars)
   let names ← tyVars.mapM fun tv => return (tv, (← genOpaqueTypeName taken name tv).name)
   return opaqueTypes names
 
@@ -243,6 +251,19 @@ def closeLemmaTypeVars (p : Program) : Program :=
       (acc ++ ds.toArray, taken)
     | d => (acc.push d, taken)
   { p with decls := decls.toList }
+
+/-- Reject a lemma that `closeLemmaTypeVars` would build an opaque type name from (one
+    whose formula's annotations have type variables) when its name contains
+    `Core.NameMangling.monoDelim`, naming the lemma: `MonomorphizeFunctions` would reject
+    the generated `$__free_L#1_0` anyway. A lemma it closes nothing in keeps its name. -/
+def checkClosedLemmaNames (p : Program) : Except Strata.Message Unit :=
+  checkNoMonoDelim (p.decls.filterMap fun
+    -- Test the name first: almost no lemma name has the delimiter, so the formula is
+    -- rarely walked a second time.
+    | .lemma l _ =>
+      if Core.NameMangling.hasMonoDelim l.name && !(annotTyVars l.e).isEmpty then some l.name
+      else none
+    | _ => none)
 
 end GenOpaqueTypeParams
 

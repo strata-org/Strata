@@ -56,7 +56,7 @@ spec {
 #end
 
 /--
-info: error: MonomorphizeFunctions: the name '$__mono#id#int' contains '#', which is reserved for monomorphized copies
+info: error: MonomorphizeFunctions: the name '$__mono#id#int' contains '#', which is reserved for monomorphized copies; if it is a copy, monomorphizeFunctions ran on its own output, and it must run once per pipeline
 -/
 #guard_msgs in
 #eval fmtMonoFns clashPgm
@@ -193,7 +193,7 @@ private def monoWithFactoryFn (t : StrataDDM.Program) (name : String) : String :
     | .error m => toString m
 
 /--
-info: "MonomorphizeFunctions: the name '$__mono#id#int' contains '#', which is reserved for monomorphized copies"
+info: "MonomorphizeFunctions: the name '$__mono#id#int' contains '#', which is reserved for monomorphized copies; if it is a copy, monomorphizeFunctions ran on its own output, and it must run once per pipeline"
 -/
 #guard_msgs in
 #eval monoWithFactoryFn factoryClashPgm "$__mono#id#int"
@@ -238,5 +238,57 @@ error: GenOpaqueTypeParams: the name 'P#1' contains '#', which is reserved for m
 -/
 #guard_msgs in
 #eval EIO.toIO (fun s => IO.userError s) (Core.verifyProgram (translate hashProcPgm) quietOpts)
+
+/-- A lemma whose name contains `#` is rejected with that name when an opaque type is built
+    from it, even without type parameters: the element type of `Nil()` would otherwise become
+    `$__free_L#1_0`. -/
+private def hashLemmaPgm :=
+#strata
+program Core;
+datatype List (a : Type) { Nil(), Cons(hd : a, tl : List a) };
+lemma [|L#1|]: List..isNil(Nil());
+#end
+
+/--
+error: ❌ Type checking error.
+GenOpaqueTypeParams: the name 'L#1' contains '#', which is reserved for monomorphized copies
+-/
+#guard_msgs in
+#eval EIO.toIO (fun s => IO.userError s) (Core.verifyProgram (translate hashLemmaPgm) quietOpts)
+
+/-- A lemma whose name contains `#` but from which no opaque type is built is accepted, and
+    is verified under its own name. -/
+private def hashLabelLemmaPgm :=
+#strata
+program Core;
+lemma [|L#1|]: true;
+#end
+
+/-- info: #[("L#1", true)] -/
+#guard_msgs in
+#eval do
+  let r ← EIO.toIO (fun s => IO.userError s)
+    (Core.verifyProgram (translate hashLabelLemmaPgm) quietOpts)
+  return r.map fun (v : Core.VCResult) => (v.obligation.label, v.isSuccess)
+
+/-- A pipeline that runs the pass twice is rejected by the second run, which finds the first
+    one's copies, and the error says so: it never yields a verdict. -/
+private def twiceMsg : String :=
+  match Core.typeCheck quietOpts (translate factoryClashPgm) with
+  | .error msg => s!"{msg}"
+  | .ok tc =>
+    let seedState : Core.Transform.CoreTransformState :=
+      { Core.Transform.CoreTransformState.emp with factory := Core.Factory }
+    let twice (p : Core.Program) : Core.Transform.CoreTransformM Core.Program := do
+      Core.MonomorphizeFunctions.run (← Core.MonomorphizeFunctions.run p)
+    match (Core.Transform.runWith tc twice seedState).1 with
+    | .ok _ => "OK"
+    | .error m => toString m
+
+/--
+info: "MonomorphizeFunctions: the name '$__mono#id#int' contains '#', which is reserved for monomorphized copies; if it is a copy, monomorphizeFunctions ran on its own output, and it must run once per pipeline"
+-/
+#guard_msgs in
+#eval twiceMsg
 
 end

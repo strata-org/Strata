@@ -717,6 +717,7 @@ def typeCheck (options : VerifyOptions) (program : Program)
     throw (Message.fromFormat k)
   | .ok T =>
     let (program, _T) ← Program.typeCheck C T program
+    GenOpaqueTypeParams.checkClosedLemmaNames program
     let program := GenOpaqueTypeParams.closeLemmaTypeVars program
     -- dbg_trace f!"[Strata.Core] Annotated program:\n{program}"
     if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"

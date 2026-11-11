@@ -516,9 +516,15 @@ def namesUnmangled (p : Program) : Bool :=
 
 /-- The error for an input name `name` that contains the delimiter of mangled names. -/
 def delimNameError (name : String) : Strata.Message :=
-  Strata.Message.fromString
+  Strata.Message.fromString <|
     s!"MonomorphizeFunctions: the name '{name}' contains '{monoDelim}', \
-       which is reserved for monomorphized copies"
+       which is reserved for monomorphized copies" ++
+    -- A name of a copy's shape is the user's or the pass's own output, which it can't tell
+    -- apart; say what the second case means.
+    if name.startsWith (monoPrefix ++ monoDelim) then
+      "; if it is a copy, monomorphizeFunctions ran on its own output, and it must run \
+       once per pipeline"
+    else ""
 
 /-- The error for a program `namesUnmangled` rejects, naming the offending identifier. -/
 def mangledNameError (p : Program) : Strata.Message :=
@@ -526,8 +532,10 @@ def mangledNameError (p : Program) : Strata.Message :=
 
 /-- The pass rejects any program with a `#` in a checked name (`namesUnmangled`), and any
     Factory whose function names contain one: a front end can supply Factory functions the
-    program never declares, and one named like a copy would clash with it. Its own output
-    names copies `$__mono#…`, so it is not meant to run twice on a program. -/
+    program never declares, and one named like a copy would clash with it.
+
+    It runs at most once per pipeline: its own output names copies `$__mono#…`, which
+    contain `#`, so a second run rejects the first one's output, with an error saying so. -/
 def run (p : Program) (cap : Nat := maxSpecializations) : CoreTransformM Program := do
   if !namesUnmangled p then
     throw (mangledNameError p)
