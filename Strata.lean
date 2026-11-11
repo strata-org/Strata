@@ -19,6 +19,7 @@ import Strata.DL.Imperative
 /- Utilities -/
 import Strata.Util.NameProofs
 import Strata.Util.OrderedSetProps
+import Strata.Util.RealProps
 import Strata.Util.IonDeserializer
 import Strata.Util.Sarif
 import Strata.Util.Worklist
