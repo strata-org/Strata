@@ -53,9 +53,9 @@ namespace FactoryInterpModel
 /-- Core's Lambda expression parameters. -/
 abbrev T : LExprParams := Core.CoreLParams
 
-/-- The carrier of each sort in the model. Primitive sorts and arrows are
-interpreted as by `SortDenote`; a `Map k v` is a function, a `Set a` a predicate
-and a `Sequence a` a list. Every other type constructor is `Unit`. -/
+/-- The carrier of each sort in the model. Primitive sorts, arrows, maps (functions)
+and sequences (lists) are interpreted as by `SortDenote`, and a `Set a` is a
+predicate. Every other type constructor is `Unit`. -/
 @[expose] def Carrier : LSort → Type
   | .tcons "bool" []      => Bool
   | .tcons "int" []       => Int
@@ -86,6 +86,9 @@ theorem sortDenote_eq_carrier (s : LSort) : SortDenote tcInterp s = Carrier s :=
       | (rename_i a b
          show (SortDenote tcInterp a → SortDenote tcInterp b) = (Carrier a → Carrier b)
          rw [ih a (by simp), ih b (by simp)])
+      | (rename_i a
+         show List (SortDenote tcInterp a) = List (Carrier a)
+         rw [ih a (by simp)])
 
 /-- A default value of every carrier. -/
 def Carrier.default (s : LSort) : Carrier s := by
@@ -144,6 +147,20 @@ use `coe` where the typing rules make two of those pieces equal. -/
 
 /-- `coe a a` is the identity function. -/
 @[simp] private theorem coe_self_fun (a : LSort) : coe a a = id := funext (coe_self a)
+
+open Classical in
+/-- Move a semantic value between sorts, as the identity when the sorts agree (`coe` on
+semantic values rather than carriers). -/
+@[expose] noncomputable def coeS (a b : LSort) (x : SortDenote tcInterp a) :
+    SortDenote tcInterp b :=
+  if h : a = b then h ▸ x else default
+
+/-- Moving a semantic value to its own sort leaves it unchanged. -/
+@[simp] private theorem coeS_self (a : LSort) (x : SortDenote tcInterp a) : coeS a a x = x := by
+  simp [coeS]
+
+/-- `coeS a a` is the identity function. -/
+@[simp] private theorem coeS_self_fun (a : LSort) : coeS a a = id := funext (coeS_self a)
 
 open Classical in
 /-- Reify a primitive semantic value as a Core literal. A real that is not the image of a
@@ -231,9 +248,9 @@ Division by zero is `0` here; `Core.RealsAsReal` leaves it unconstrained, as
 SMT-LIB does. -/
 
 /-- The element at index `i` of a sequence, or a default value out of range. -/
-@[expose] noncomputable def seqGet (a b : LSort) (s : List (Carrier a)) (i : Int) :
+@[expose] noncomputable def seqGet (a b : LSort) (s : List (SortDenote tcInterp a)) (i : Int) :
     SortDenote tcInterp b :=
-  if h : 0 ≤ i ∧ i.toNat < s.length then ofC (coe a b (s[i.toNat]'h.2)) else default
+  if h : 0 ≤ i ∧ i.toNat < s.length then coeS a b (s[i.toNat]'h.2) else default
 
 /-- The unchecked sequence operations have the meaning of their checked counterparts;
 their axioms are the same up to the name. -/
@@ -244,25 +261,25 @@ their axioms are the same up to the name. -/
   | "Sequence.drop!" => "Sequence.drop"
   | n => n
 
-/-- The carrier of a `Sequence a`. -/
-abbrev SeqC (a : LSort) : Type := List (Carrier a)
+/-- The semantic values of a `Sequence a`. -/
+abbrev SeqC (a : LSort) : Type := List (SortDenote tcInterp a)
 /-- The carrier of a `Set a`. -/
 abbrev SetC (a : LSort) : Type := Carrier a → Bool
-/-- The carrier of a `Map k v`. -/
-abbrev MapC (k v : LSort) : Type := Carrier k → Carrier v
+/-- The semantic values of a `Map k v`. -/
+abbrev MapC (k v : LSort) : Type := SortDenote tcInterp k → SortDenote tcInterp v
 
 open Classical in
 /-- Interpretation of the operations of `Core.Factory` that are only axiomatized,
 by name (after `checkedName`) and sort. -/
 @[expose] noncomputable def axiomOpAt : (name : String) → (s : LSort) → SortDenote tcInterp s
   | "mapConst", .tcons "arrow" [v, .tcons "Map" [_, v']] =>
-    fun (d : SortDenote tcInterp v) => (fun _ => coe v v' (toC d) : MapC _ v')
+    fun (d : SortDenote tcInterp v) => (fun _ => coeS v v' d : MapC _ v')
   | "select", .tcons "arrow" [.tcons "Map" [k, v], .tcons "arrow" [k', v']] =>
-    fun (mm : MapC k v) (x : SortDenote tcInterp k') => ofC (coe v v' (mm (coe k' k (toC x))))
+    fun (mm : MapC k v) (x : SortDenote tcInterp k') => coeS v v' (mm (coeS k' k x))
   | "update", .tcons "arrow" [.tcons "Map" [k, v],
       .tcons "arrow" [k1, .tcons "arrow" [v1, .tcons "Map" [k2, v2]]]] =>
     fun (mm : MapC k v) (x : SortDenote tcInterp k1) (y : SortDenote tcInterp v1) =>
-      (fun z => if coe k2 k1 z = toC x then coe v1 v2 (toC y) else coe v v2 (mm (coe k2 k z))
+      (fun z => if coeS k2 k1 z = x then coeS v1 v2 y else coeS v v2 (mm (coeS k2 k z))
         : MapC k2 v2)
   | "Set.empty", .tcons "Set" [a] => (fun _ => false : SetC a)
   | "Set.contains", .tcons "arrow" [.tcons "Set" [a], .tcons "arrow" [a', .tcons "bool" []]] =>
@@ -287,31 +304,31 @@ by name (after `checkedName`) and sort. -/
   | "Sequence.empty", .tcons "Sequence" [a] => ([] : SeqC a)
   | "Sequence.append", .tcons "arrow" [.tcons "Sequence" [a],
       .tcons "arrow" [.tcons "Sequence" [a'], .tcons "Sequence" [a'']]] =>
-    fun (s : SeqC a) (t : SeqC a') => ((s ++ t.map (coe a' a)).map (coe a a'') : SeqC a'')
+    fun (s : SeqC a) (t : SeqC a') => ((s ++ t.map (coeS a' a)).map (coeS a a'') : SeqC a'')
   | "Sequence.select",
       .tcons "arrow" [.tcons "Sequence" [a], .tcons "arrow" [.tcons "int" [], b]] =>
     fun (s : SeqC a) (i : Int) => seqGet a b s i
   | "Sequence.build", .tcons "arrow" [.tcons "Sequence" [a],
       .tcons "arrow" [a', .tcons "Sequence" [a'']]] =>
     fun (s : SeqC a) (v : SortDenote tcInterp a') =>
-      ((s ++ [coe a' a (toC v)]).map (coe a a'') : SeqC a'')
+      ((s ++ [coeS a' a v]).map (coeS a a'') : SeqC a'')
   | "Sequence.update", .tcons "arrow" [.tcons "Sequence" [a],
       .tcons "arrow" [.tcons "int" [], .tcons "arrow" [a', .tcons "Sequence" [a'']]]] =>
     fun (s : SeqC a) (i : Int) (v : SortDenote tcInterp a') =>
-      ((if 0 ≤ i then s.set i.toNat (coe a' a (toC v)) else s).map (coe a a'') : SeqC a'')
+      ((if 0 ≤ i then s.set i.toNat (coeS a' a v) else s).map (coeS a a'') : SeqC a'')
   | "Sequence.contains", .tcons "arrow" [.tcons "Sequence" [a],
       .tcons "arrow" [a', .tcons "bool" []]] =>
     fun (s : SeqC a) (v : SortDenote tcInterp a') =>
       decide (∃ i : Int, 0 ≤ i ∧ i < s.length ∧ seqGet a a' s i = v)
   | "Sequence.take", .tcons "arrow" [.tcons "Sequence" [a],
       .tcons "arrow" [.tcons "int" [], .tcons "Sequence" [a']]] =>
-    fun (s : SeqC a) (n : Int) => ((s.take n.toNat).map (coe a a') : SeqC a')
+    fun (s : SeqC a) (n : Int) => ((s.take n.toNat).map (coeS a a') : SeqC a')
   | "Sequence.drop", .tcons "arrow" [.tcons "Sequence" [a],
       .tcons "arrow" [.tcons "int" [], .tcons "Sequence" [a']]] =>
     fun (s : SeqC a) (n : Int) =>
       ((if 0 ≤ n then s.drop n.toNat
-        else List.replicate (-n).toNat (toC (default : SortDenote tcInterp a)) ++ s).map
-          (coe a a') : SeqC a')
+        else List.replicate (-n).toNat (default : SortDenote tcInterp a) ++ s).map
+          (coeS a a') : SeqC a')
   | "Real.Add", realBinSort (.tcons "real" []) =>
     fun (x y : Strata.Util.Real) => x + y
   | "Real.Sub", realBinSort (.tcons "real" []) =>
@@ -932,8 +949,8 @@ private theorem opInterp_boolNot :
   funext x; simp only [opInterp, hl]; cases x <;> rfl
 
 /-- The model interprets `mapConst` as the constant function returning its argument. -/
-private theorem opInterp_mapConst (d : SortDenote tcInterp v) (z : Carrier k) :
-    opInterp "mapConst" (arr v (.tcons "Map" [k, v'])) d z = coe v v' (toC d) := by
+private theorem opInterp_mapConst (d : SortDenote tcInterp v) (z : SortDenote tcInterp k) :
+    opInterp "mapConst" (arr v (.tcons "Map" [k, v'])) d z = coeS v v' d := by
   rw [show opInterp "mapConst" (arr v (.tcons "Map" [k, v'])) = axiomOp "mapConst" _ from
     opInterp_axiom (wf := mapConstFunc) (by wf_mem) rfl _]; rfl
 
@@ -941,7 +958,7 @@ private theorem opInterp_mapConst (d : SortDenote tcInterp v) (z : Carrier k) :
 private theorem opInterp_select (mm : SortDenote tcInterp (.tcons "Map" [k, v]))
     (x : SortDenote tcInterp k') :
     opInterp "select" (arr (.tcons "Map" [k, v]) (arr k' v')) mm x =
-      ofC (coe v v' ((mm : MapC k v) (coe k' k (toC x)))) := by
+      coeS v v' ((mm : MapC k v) (coeS k' k x)) := by
   rw [show opInterp "select" (arr (.tcons "Map" [k, v]) (arr k' v')) = axiomOp "select" _ from
     opInterp_axiom (wf := mapSelectFunc) (by wf_mem) rfl _]; rfl
 
@@ -950,10 +967,10 @@ open Classical in
 and the old map's value elsewhere. -/
 private theorem opInterp_update (mm : SortDenote tcInterp (.tcons "Map" [k, v]))
     (x : SortDenote tcInterp k1)
-    (y : SortDenote tcInterp v1) (z : Carrier k2) :
+    (y : SortDenote tcInterp v1) (z : SortDenote tcInterp k2) :
     opInterp "update" (arr (.tcons "Map" [k, v]) (arr k1 (arr v1 (.tcons "Map" [k2, v2]))))
         mm x y z =
-      if coe k2 k1 z = toC x then coe v1 v2 (toC y) else coe v v2 ((mm : MapC k v) (coe k2 k z))
+      if coeS k2 k1 z = x then coeS v1 v2 y else coeS v v2 ((mm : MapC k v) (coeS k2 k z))
       := by
   rw [show opInterp "update" (arr (.tcons "Map" [k, v]) (arr k1 (arr v1 (.tcons "Map" [k2, v2]))))
       = axiomOp "update" _ from opInterp_axiom (wf := mapUpdateFunc) (by wf_mem) rfl _]; rfl
@@ -1053,7 +1070,7 @@ private theorem opInterp_seqAppend (s : SortDenote tcInterp (.tcons "Sequence" [
     (t : SortDenote tcInterp (.tcons "Sequence" [a'])) :
     opInterp "Sequence.append"
         (arr (.tcons "Sequence" [a]) (arr (.tcons "Sequence" [a']) (.tcons "Sequence" [a''])))
-        s t = (List.map (coe a a'') (List.append (s : SeqC a) (List.map (coe a' a) (t : SeqC a')))
+        s t = (List.map (coeS a a'') (List.append (s : SeqC a) (List.map (coeS a' a) (t : SeqC a')))
           : SeqC a'') := by
   rw [show opInterp "Sequence.append"
       (arr (.tcons "Sequence" [a]) (arr (.tcons "Sequence" [a']) (.tcons "Sequence" [a''])))
@@ -1073,7 +1090,7 @@ private theorem opInterp_seqSelect (s : SortDenote tcInterp (.tcons "Sequence" [
 private theorem opInterp_seqBuild (s : SortDenote tcInterp (.tcons "Sequence" [a]))
     (x : SortDenote tcInterp a') :
     opInterp "Sequence.build" (arr (.tcons "Sequence" [a]) (arr a' (.tcons "Sequence" [a''])))
-        s x = (List.map (coe a a'') (List.append (s : SeqC a) [coe a' a (toC x)]) : SeqC a'') := by
+        s x = (List.map (coeS a a'') (List.append (s : SeqC a) [coeS a' a x]) : SeqC a'') := by
   rw [show opInterp "Sequence.build"
       (arr (.tcons "Sequence" [a]) (arr a' (.tcons "Sequence" [a''])))
       = axiomOp "Sequence.build" _ from opInterp_axiom (wf := seqBuildFunc) (by wf_mem) rfl _]
@@ -1086,9 +1103,9 @@ private theorem opInterp_seqUpdate (s : SortDenote tcInterp (.tcons "Sequence" [
     opInterp "Sequence.update"
         (arr (.tcons "Sequence" [a]) (arr (.tcons "int" []) (arr a' (.tcons "Sequence" [a'']))))
         s i x =
-      ((if 0 ≤ @id Int i then (s : SeqC a).set (@id Int i).toNat (coe a' a (toC x))
+      ((if 0 ≤ @id Int i then (s : SeqC a).set (@id Int i).toNat (coeS a' a x)
         else (s : SeqC a)).map
-        (coe a a'') : SeqC a'') := by
+        (coeS a a'') : SeqC a'') := by
   rw [show opInterp "Sequence.update"
       (arr (.tcons "Sequence" [a]) (arr (.tcons "int" []) (arr a' (.tcons "Sequence" [a'']))))
       = axiomOp "Sequence.update" _ from opInterp_axiom (wf := seqUpdateFunc) (by wf_mem) rfl _]
@@ -1113,7 +1130,7 @@ private theorem opInterp_seqTake (s : SortDenote tcInterp (.tcons "Sequence" [a]
     (n : SortDenote tcInterp (.tcons "int" [])) :
     opInterp "Sequence.take"
         (arr (.tcons "Sequence" [a]) (arr (.tcons "int" []) (.tcons "Sequence" [a']))) s n =
-      (((s : SeqC a).take (@id Int n).toNat).map (coe a a') : SeqC a') := by
+      (((s : SeqC a).take (@id Int n).toNat).map (coeS a a') : SeqC a') := by
   rw [show opInterp "Sequence.take"
       (arr (.tcons "Sequence" [a]) (arr (.tcons "int" []) (.tcons "Sequence" [a'])))
       = axiomOp "Sequence.take" _ from opInterp_axiom (wf := seqTakeFunc) (by wf_mem) rfl _]
@@ -1126,8 +1143,8 @@ private theorem opInterp_seqDrop (s : SortDenote tcInterp (.tcons "Sequence" [a]
     opInterp "Sequence.drop"
         (arr (.tcons "Sequence" [a]) (arr (.tcons "int" []) (.tcons "Sequence" [a']))) s n =
       ((if 0 ≤ @id Int n then (s : SeqC a).drop (@id Int n).toNat
-        else List.replicate (-(@id Int n)).toNat (toC (default : SortDenote tcInterp a)) ++
-          @id (SeqC a) s).map (coe a a')
+        else List.replicate (-(@id Int n)).toNat (default : SortDenote tcInterp a) ++
+          @id (SeqC a) s).map (coeS a a')
         : SeqC a') := by
   rw [show opInterp "Sequence.drop"
       (arr (.tcons "Sequence" [a]) (arr (.tcons "int" []) (.tcons "Sequence" [a'])))
@@ -1229,8 +1246,8 @@ end OpLemmas
 
 
 /-- Reading index `j < n` of the first `n` elements reads index `j` of the sequence. -/
-private theorem seqGet_take {a b : LSort} (s : List (Carrier a)) (n j : Int) (h0 : 0 ≤ j)
-    (hj : j < n) :
+private theorem seqGet_take {a b : LSort} (s : List (SortDenote tcInterp a)) (n j : Int)
+    (h0 : 0 ≤ j) (hj : j < n) :
     seqGet a b (s.take n.toNat) j = seqGet a b s j := by
   unfold seqGet
   by_cases hs : j.toNat < s.length
@@ -1239,14 +1256,14 @@ private theorem seqGet_take {a b : LSort} (s : List (Carrier a)) (n j : Int) (h0
   · rw [dite_eq_right (by simp; omega), dite_eq_right (by omega)]
 
 /-- Reading an index of `s ++ t` inside `s` reads it in `s`. -/
-private theorem seqGet_append_left {a b : LSort} (s t : List (Carrier a)) (i : Int) (h0 : 0 ≤ i)
-    (hi : i < s.length) : seqGet a b (s ++ t) i = seqGet a b s i := by
+private theorem seqGet_append_left {a b : LSort} (s t : List (SortDenote tcInterp a)) (i : Int)
+    (h0 : 0 ≤ i) (hi : i < s.length) : seqGet a b (s ++ t) i = seqGet a b s i := by
   unfold seqGet
   rw [dite_eq_left ⟨h0, by simp; omega⟩, dite_eq_left ⟨h0, by omega⟩]
   simp [List.getElem_append_left (show i.toNat < s.length by omega)]
 
 /-- Reading an index of `s ++ t` past `s` reads `t` at the index shifted by the length of `s`. -/
-private theorem seqGet_append_right {a b : LSort} (s t : List (Carrier a)) (i : Int)
+private theorem seqGet_append_right {a b : LSort} (s t : List (SortDenote tcInterp a)) (i : Int)
     (h0 : s.length ≤ i) (hi : i < s.length + t.length) :
     seqGet a b (s ++ t) i = seqGet a b t (i - s.length) := by
   unfold seqGet
@@ -1255,21 +1272,24 @@ private theorem seqGet_append_right {a b : LSort} (s t : List (Carrier a)) (i : 
   congr 3; omega
 
 /-- Reading index `length s` of `s ++ [x]` reads `x`. -/
-private theorem seqGet_append_last {a b : LSort} (s : List (Carrier a)) (x : Carrier a) :
-    seqGet a b (s ++ [x]) s.length = ofC (coe a b x) := by
+private theorem seqGet_append_last {a b : LSort} (s : List (SortDenote tcInterp a))
+    (x : SortDenote tcInterp a) :
+    seqGet a b (s ++ [x]) s.length = coeS a b x := by
   unfold seqGet
   rw [dite_eq_left ⟨by omega, by simp⟩]
   simp
 
 /-- Reading an in-range index just set reads the new element. -/
-private theorem seqGet_set_same {a b : LSort} (s : List (Carrier a)) (i : Int) (x : Carrier a)
-    (h0 : 0 ≤ i) (hi : i < s.length) : seqGet a b (s.set i.toNat x) i = ofC (coe a b x) := by
+private theorem seqGet_set_same {a b : LSort} (s : List (SortDenote tcInterp a)) (i : Int)
+    (x : SortDenote tcInterp a)
+    (h0 : 0 ≤ i) (hi : i < s.length) : seqGet a b (s.set i.toNat x) i = coeS a b x := by
   unfold seqGet
   rw [dite_eq_left ⟨h0, by simp; omega⟩]
   simp
 
 /-- Setting one index leaves every other non-negative index unchanged. -/
-private theorem seqGet_set_ne {a b : LSort} (s : List (Carrier a)) (i j : Int) (x : Carrier a)
+private theorem seqGet_set_ne {a b : LSort} (s : List (SortDenote tcInterp a)) (i j : Int)
+    (x : SortDenote tcInterp a)
     (hi : 0 ≤ i) (hj : 0 ≤ j) (hne : j ≠ i) :
     seqGet a b (s.set i.toNat x) j = seqGet a b s j := by
   unfold seqGet
@@ -1280,9 +1300,10 @@ private theorem seqGet_set_ne {a b : LSort} (s : List (Carrier a)) (i j : Int) (
 
 /-- Reading index `j` after dropping `n` elements reads index `j + n` of the sequence; for a
 negative `n`, `drop` pads with default values, which read back as the default. -/
-private theorem seqGet_drop {a : LSort} (s : List (Carrier a)) (n j : Int) (h0 : 0 ≤ j) :
+private theorem seqGet_drop {a : LSort} (s : List (SortDenote tcInterp a)) (n j : Int)
+    (h0 : 0 ≤ j) :
     seqGet a a (if 0 ≤ n then s.drop n.toNat
-      else List.replicate (-n).toNat (toC (default : SortDenote tcInterp a)) ++ s) j =
+      else List.replicate (-n).toNat (default : SortDenote tcInterp a) ++ s) j =
       seqGet a a s (j + n) := by
   unfold seqGet
   split
@@ -1420,7 +1441,8 @@ macro "ax_sorts" : tactic => `(tactic|
 bounds with `omega`. -/
 macro "seq_simp" : tactic => `(tactic|
   simp (disch := omega) [seqGet_take, seqGet_append_left, seqGet_append_right,
-    seqGet_append_last, seqGet_set_same, seqGet_set_ne, seqGet_drop, coe_self, ofC_toC])
+    seqGet_append_last, seqGet_set_same, seqGet_set_ne, seqGet_drop, coe_self, coeS_self,
+    ofC_toC])
 
 /-- Close an axiom: check its typing by evaluating `typeCheck`, then peel its universal
 quantifiers, compute its value, rewrite the interpretations of its operators, and simplify. -/
@@ -1434,7 +1456,8 @@ macro "ax_close" : tactic => `(tactic| (
   ax_sorts
   repeat ax_rw_op
   repeat (first
-    | rw [decide_eq_cdec] | rw [coe_self] | rw [coe_self_fun] | rw [ofC_toC]
+    | rw [decide_eq_cdec] | rw [coe_self] | rw [coe_self_fun] | rw [coeS_self]
+    | rw [coeS_self_fun] | rw [ofC_toC]
     | rw [toC_ofC] | rw [cdec_toC])
   try rw [cdec_eq_true]
   try rfl

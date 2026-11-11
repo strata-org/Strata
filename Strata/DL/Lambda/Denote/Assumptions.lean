@@ -259,13 +259,13 @@ def Factory.WellTyped [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
     fvars_annotated_by (F[f]).inputs body
 
 /-- A factory's concrete evaluators preserve well-typedness: if `ceval` returns
-a result and the arguments are well-typed at the instantiated input types,
-then the result is well-typed at the instantiated output type. -/
+a result at the function's instantiated type (`LFunc.instTy`) and the arguments are
+well-typed at the instantiated input types, then the result is well-typed at the
+instantiated output type. -/
 def Factory.EvalWellTyped [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
   ∀ (f : String), (hf : f ∈ F) → ∀ ceval, (F[f]).concreteEval = some ceval →
     ∀ (md : T.Metadata) (args : List (LExpr T.mono)) (result : LExpr T.mono) (tySubst : Subst),
-      ceval md (some (LMonoTy.mkArrow' (LMonoTy.subst tySubst (F[f]).output)
-        ((F[f]).inputs.map Prod.snd |>.map (LMonoTy.subst tySubst)))) args = some result →
+      ceval md (some ((F[f]).instTy tySubst)) args = some result →
       List.Rel₂ (LExpr.HasTypeA []) args ((F[f]).inputs.map Prod.snd |>.map (LMonoTy.subst tySubst)) →
       LExpr.HasTypeA [] result (LMonoTy.subst tySubst (F[f]).output)
 

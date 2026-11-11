@@ -49,7 +49,7 @@ otherwise. `ctx` maps de Bruijn indices to their types from enclosing
 binders. -/
 @[expose]
 def LExpr.typeCheck {T : LExprParams} (ctx : List LMonoTy) : LExpr T.mono → Option LMonoTy
-  | .const _ c => some c.ty
+  | .const _ c => if c.wt then some c.ty else none
   | .op _ _ (some ty) => some ty
   | .op _ _ none => none
   | .fvar _ _ (some ty) => some ty

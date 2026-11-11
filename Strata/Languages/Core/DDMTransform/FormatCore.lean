@@ -10,7 +10,7 @@ public import Strata.Languages.Core.DDMTransform.FracLit
 public import Strata.Languages.Core.Procedure
 public import StrataDDM.Util.DecimalRat
 public import StrataDDM.Format
-import Strata.Languages.Core.Factory
+public import Strata.Languages.Core.Factory
 public import Strata.Languages.Core.NameMangling
 open StrataDDM
 
@@ -401,6 +401,11 @@ def lconstToExpr {M} [Inhabited M] (c : Lambda.LConst) :
     -- so this does not go through `mkGenericCall`.
     ToCSTM.logError "lconstToExpr" "unsupported bitvec width" (toString w)
     renderAsGenericCall s!"Bv{w}.Lit" [.natToInt default ⟨default, v.toNat⟩]
+  | .mapConst .. | .sequenceConst .. => do
+    -- `lexprToExpr` renders collection literals as operator applications
+    -- (`Core.litToOpExpr`) and does not call this function on them.
+    ToCSTM.logError "lconstToExpr" "collection literal" (toString c)
+    renderAsGenericCall "$__collectionLiteral" []
 
 
 /-- Handle 0-ary operations -/
@@ -900,7 +905,11 @@ partial def lexprToExpr {M} [Inhabited M]
     : ToCSTM M (CoreDDM.Expr M) := do
   let ctx ← get
   match e with
-  | .const _ c => lconstToExpr c
+  | .const _ c =>
+    match c with
+    -- A collection literal renders as the operator applications that build it.
+    | .mapConst .. | .sequenceConst .. => lexprToExpr (Core.litToOpExpr c) qLevel
+    | _ => lconstToExpr c
   | .bvar _ idx =>
     if idx < ctx.allBoundVars.size then
       pure (.bvar default idx)

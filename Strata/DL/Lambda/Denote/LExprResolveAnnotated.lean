@@ -541,11 +541,13 @@ private theorem resolveAux_HasTypeA_aux [DecidableEq T.IDMeta] [Hashable T.IDMet
     simp only [applySubstT, replaceMetadata, unresolved, toLMonoTy]
     rename_i heq_inferConst
     split at heq_inferConst
-    · simp only [Except.ok.injEq] at heq_inferConst ⊢
+    · rename_i h_cond
+      simp only [Except.ok.injEq] at heq_inferConst ⊢
       rw [← heq_inferConst]
       simp only
       rw [LConst.ty_subst]
-      exact HasTypeA.const
+      simp only [Bool.and_eq_true] at h_cond
+      exact HasTypeA.const h_cond.1.2
     · simp at heq_inferConst
   case h_op =>
     intro m o oty et C Env Env' h h_envwf h_ne h_fwf h_resolved S h_absorbs

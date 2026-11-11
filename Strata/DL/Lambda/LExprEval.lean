@@ -58,7 +58,9 @@ Returns `some true` if provably equal, `some false` if provably not equal,
 
 This test is relatively conservative:
 - Terms are equal if syntactically equal
-- Syntactically different constants are not equal
+- Syntactically different constants are not equal, unless one involves a map
+  literal (or is not well typed; see `LConst.eqDecidable`), in which case `eql`
+  decides nothing
 - Closed lambdas of the same type are compared extensionally (i.e.
 syntactically after substituting a fresh variable for the body). Note that this
 does not evaluate the body, which may not be a value.
@@ -71,8 +73,9 @@ def eql (F : @Factory T.base) (e1 e2 : LExpr T) : Option Bool :=
   else
   -- Disproving equality is harder, we have several special cases
   match _he: e1, e2 with
-  -- Case 1: Syntactic inequality of constants implies semantic inequality
-  | .const _ c1, .const _ c2 => some (c1 == c2)
+  -- Case 1: Syntactic inequality of constants implies semantic inequality, except
+  -- for constants involving map literals, which are not canonical (`LConst.eql`)
+  | .const _ c1, .const _ c2 => LConst.eql c1 c2
   -- Case 2: Comparing Lambdas
   | .abs _ _ ty1 e1, .abs _ _ ty2 e2 =>
     if ty1 != ty2 then some false

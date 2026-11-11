@@ -32,17 +32,18 @@ public section
 
 /-! ## Built-in operators the evaluator computes on literals -/
 
-/-- The literal decoder of a primitive Lean type decodes every literal of the corresponding
-    Core type. -/
+/-- The literal decoder of a primitive Lean type decodes every well-typed literal of the
+    corresponding Core type. -/
 private def DecodesLits (inTy : LMonoTy) {InV : Type} [LambdaLeanType inTy InV] : Prop :=
-  ∀ (m : ExpressionMetadata) (c : LConst), c.ty = inTy →
+  ∀ (m : ExpressionMetadata) (c : LConst), c.wt = true → c.ty = inTy →
     ∃ a, LambdaLeanType.cevalTy (ty := inTy) (ValTy := InV) CoreLParams (.const m c) = some a
 
 /-- The literal builder of a primitive Lean type builds literals of the corresponding Core
-    type. -/
+    type, primitive (`LConst.isPrimitive`). -/
 private def BuildsLits (outTy : LMonoTy) {OutV : Type} [LambdaLeanType outTy OutV] : Prop :=
   ∀ (md : ExpressionMetadata) (w : OutV), ∃ m c,
-    LambdaLeanType.mkConst (ty := outTy) CoreLParams md w = .const m c ∧ c.ty = outTy
+    LambdaLeanType.mkConst (ty := outTy) CoreLParams md w = .const m c ∧ c.ty = outTy ∧
+      c.isPrimitive = true
 
 /-- The literal decoder and builder of a primitive Lean type decode and build exactly the literals
     of the corresponding Core type. -/
@@ -54,31 +55,35 @@ private class LitCodec (ty : LMonoTy) (V : Type) [LambdaLeanType ty V] : Prop wh
 
 /-- Integer literals decode. -/
 private theorem decodesLits_int : DecodesLits (InV := Int) .int := by
-  intro m c hc
-  cases c <;> first | exact ⟨_, rfl⟩ | simp [LConst.ty, LMonoTy.int, LMonoTy.bool,
-    LMonoTy.real, LMonoTy.string] at hc
+  intro m c hw hc
+  rw [LConst.ty_of_wt hw] at hc
+  cases c <;> first | exact ⟨_, rfl⟩ | simp [LConst.sort, LSort.toMonoTy, LSort.toMonoTy.map,
+    LMonoTy.int] at hc
 
 /-- Boolean literals decode. -/
 private theorem decodesLits_bool : DecodesLits (InV := Bool) .bool := by
-  intro m c hc
-  cases c <;> first | exact ⟨_, rfl⟩ | simp [LConst.ty, LMonoTy.int, LMonoTy.bool,
-    LMonoTy.real, LMonoTy.string] at hc
+  intro m c hw hc
+  rw [LConst.ty_of_wt hw] at hc
+  cases c <;> first | exact ⟨_, rfl⟩ | simp [LConst.sort, LSort.toMonoTy, LSort.toMonoTy.map,
+    LMonoTy.bool] at hc
 
 /-- String literals decode. -/
 private theorem decodesLits_string : DecodesLits (InV := String) .string := by
-  intro m c hc
-  cases c <;> first | exact ⟨_, rfl⟩ | simp [LConst.ty, LMonoTy.int, LMonoTy.bool,
-    LMonoTy.real, LMonoTy.string] at hc
+  intro m c hw hc
+  rw [LConst.ty_of_wt hw] at hc
+  cases c <;> first | exact ⟨_, rfl⟩ | simp [LConst.sort, LSort.toMonoTy, LSort.toMonoTy.map,
+    LMonoTy.string] at hc
 
 /-- Bit-vector literals of width `n` decode. -/
 private theorem decodesLits_bitvec (n : Nat) : DecodesLits (InV := BitVec n) (.bitvec n) := by
-  intro m c hc
+  intro m c hw hc
+  rw [LConst.ty_of_wt hw] at hc
   cases c with
   | bitvecConst n' b =>
-    simp only [LConst.ty, LMonoTy.bitvec.injEq] at hc
+    simp only [LConst.sort, LSort.toMonoTy, LMonoTy.bitvec.injEq] at hc
     subst hc
     exact ⟨b, by simp [LambdaLeanType.cevalTy, LExpr.denoteBitVec]⟩
-  | _ => simp [LConst.ty, LMonoTy.int, LMonoTy.bool, LMonoTy.real, LMonoTy.string] at hc
+  | _ => simp [LConst.sort, LSort.toMonoTy, LSort.toMonoTy.map] at hc
 
 /-- A `unaryOp` over primitive types whose decoder decodes every literal of its input type and
     whose builder builds literals of its output type is computed on literals. -/
@@ -92,8 +97,8 @@ private theorem computableOp_unaryOp {inTy outTy : LMonoTy} {InV OutV : Type} [T
   cases h with
   | cons h1 h2 =>
   cases h2
-  obtain ⟨m, c, rfl, hc⟩ := h1
-  obtain ⟨a, ha⟩ := hdec.decodes m c hc
+  obtain ⟨m, c, rfl, hc, hcd⟩ := h1
+  obtain ⟨a, ha⟩ := hdec.decodes m c (LConst.wt_of_isPrimitive hcd) hc
   obtain ⟨m', c', hmc, hc'⟩ := hmk.builds md (f a)
   exact ⟨m', c', by simp only [ha, hmc], hc'⟩
 
@@ -112,10 +117,10 @@ private theorem computableOp_binaryOp {inTy outTy : LMonoTy} {InV OutV : Type} [
   cases h2 with
   | cons h3 h4 =>
   cases h4
-  obtain ⟨m, c, rfl, hc⟩ := h1
-  obtain ⟨m2, c2, rfl, hc2⟩ := h3
-  obtain ⟨a, ha⟩ := hdec.decodes m c hc
-  obtain ⟨b, hb⟩ := hdec.decodes m2 c2 hc2
+  obtain ⟨m, c, rfl, hc, hcd⟩ := h1
+  obtain ⟨m2, c2, rfl, hc2, hcd2⟩ := h3
+  obtain ⟨a, ha⟩ := hdec.decodes m c (LConst.wt_of_isPrimitive hcd) hc
+  obtain ⟨b, hb⟩ := hdec.decodes m2 c2 (LConst.wt_of_isPrimitive hcd2) hc2
   obtain ⟨m', c', hmc, hc'⟩ := hmk.builds md (g a b)
   exact ⟨m', c', by simp only [ha, hb, hmc, ↓reduceIte], hc'⟩
 
@@ -130,8 +135,8 @@ private theorem computableOp_shortCircuitOp {n : CoreLParams.Identifier} {absorb
     decide
   · cases ha with
     | cons h1 h2 =>
-    obtain ⟨m, c, rfl, hc⟩ := h1
-    obtain ⟨b, hb⟩ := decodesLits_bool m c hc
+    obtain ⟨m, c, rfl, hc, hcd⟩ := h1
+    obtain ⟨b, hb⟩ := decodesLits_bool m c (LConst.wt_of_isPrimitive hcd) hc
     obtain ⟨y, rfl⟩ : ∃ y, rest = [y] := by
       cases rest with
       | nil => cases hlen
@@ -139,24 +144,25 @@ private theorem computableOp_shortCircuitOp {n : CoreLParams.Identifier} {absorb
         | nil => exact ⟨y, rfl⟩
         | cons _ _ => cases hlen
     by_cases hab : b = absorb
-    · refine ⟨_, ?_, .inl ⟨md, .boolConst decided, rfl, rfl⟩⟩
+    · refine ⟨_, ?_, .inl ⟨md, .boolConst decided, rfl, rfl, rfl⟩⟩
       simp only [hb, hab, beq_self_eq_true, ↓reduceIte]
       rfl
     · exact ⟨y, by simp only [hb, beq_iff_eq, hab, ↓reduceIte], .inr (List.mem_singleton_self _)⟩
 
 /-- Integer literals build. -/
-private theorem buildsLits_int : BuildsLits (OutV := Int) .int := fun md _ => ⟨md, _, rfl, rfl⟩
+private theorem buildsLits_int : BuildsLits (OutV := Int) .int := fun md _ => ⟨md, _, rfl, rfl, rfl⟩
 
 /-- Boolean literals build. -/
-private theorem buildsLits_bool : BuildsLits (OutV := Bool) .bool := fun md _ => ⟨md, _, rfl, rfl⟩
+private theorem buildsLits_bool : BuildsLits (OutV := Bool) .bool :=
+  fun md _ => ⟨md, _, rfl, rfl, rfl⟩
 
 /-- String literals build. -/
 private theorem buildsLits_string : BuildsLits (OutV := String) .string :=
-  fun md _ => ⟨md, _, rfl, rfl⟩
+  fun md _ => ⟨md, _, rfl, rfl, rfl⟩
 
 /-- Bit-vector literals of width `n` build. -/
 private theorem buildsLits_bitvec (n : Nat) : BuildsLits (OutV := BitVec n) (.bitvec n) :=
-  fun md _ => ⟨md, _, rfl, rfl⟩
+  fun md _ => ⟨md, _, rfl, rfl, rfl⟩
 
 /-- Integer literals are coded by `Int`. -/
 private instance : LitCodec .int Int := ⟨decodesLits_int, buildsLits_int⟩

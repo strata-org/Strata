@@ -7,6 +7,7 @@ module
 
 import all Strata.DL.Lambda.Denote.LExprDenote
 import all Strata.DL.Lambda.LExprType
+import Strata.DL.Lambda.LExprProps
 import all Strata.DL.Lambda.Denote.LExprDenoteSubst
 import all Strata.DL.Lambda.Denote.LExprDenoteProps
 
@@ -72,7 +73,13 @@ theorem substTyVars_subst (vt : TyVarVal) (S : Subst) (ty : LMonoTy) :
       · exact iha (fun t ht => ih t (List.Mem.tail _ ht))
 
 private theorem LConst.subst_ty (S : Subst) (c : LConst) : LMonoTy.subst S c.ty = c.ty := by
-  cases c <;> simp only [ty, LMonoTy.int, LMonoTy.string, LMonoTy.real, LMonoTy.bool] <;> try rw [LMonoTy.subst_tcons, LMonoTys.subst_nil]<;> rfl
+  cases c
+  case mapConst | sequenceConst =>
+    exact LMonoTy.subst_no_relevant_keys _ _ (fun x hx => by
+      rw [LConst.ty_freeVars] at hx; cases hx)
+  all_goals
+    simp only [ty, LMonoTy.int, LMonoTy.string, LMonoTy.real, LMonoTy.bool] <;>
+    try rw [LMonoTy.subst_tcons, LMonoTys.subst_nil] <;> rfl
   apply LMonoTy.subst_bitvec
 
 /-- `applyTypeSubst` preserves typing, mapping types through `subst S`. -/
@@ -82,10 +89,10 @@ theorem applyTypeSubst_typeCheck (S : Subst)
     : LExpr.HasTypeA (Δ.map (LMonoTy.subst S)) (e.applyTypeSubst S) (LMonoTy.subst S τ) := by
   rw [LExpr.applyTypeSubst_eq_replaceUserProvidedType]
   induction h with
-  | const =>
+  | const hw =>
     simp only [LExpr.replaceUserProvidedType]
     rename_i c
-    rw [LConst.subst_ty S c]; exact .const
+    rw [LConst.subst_ty S c]; exact .const hw
   | op => simp only [LExpr.replaceUserProvidedType, Option.map]; exact .op
   | fvar => simp only [LExpr.replaceUserProvidedType, Option.map]; exact .fvar
   | bvar h_lookup =>

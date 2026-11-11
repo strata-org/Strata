@@ -46,7 +46,7 @@ theorem LExpr.HasTypeA_replaceUserProvidedType_map {T : LExprParams}
     (h : LExpr.HasTypeA Δ e τ) :
     LExpr.HasTypeA (Δ.map φ) (LExpr.replaceUserProvidedType e φ) (φ τ) := by
   induction h with
-  | const => rw [hφ_const]; exact .const
+  | const hw => rw [hφ_const]; exact .const hw
   | op => exact .op
   | fvar => exact .fvar
   | bvar hlk =>
@@ -369,6 +369,8 @@ private theorem HasType_of_HasTypeA_of_annots_aux {T : LExprParams}
       | rationalConst r => exact .treal_const Γ m r hk
       | bitvecConst w b => exact .tbitvec_const Γ m w b hk
       | boolConst b => exact .tbool_const Γ m b hk
+      | mapConst k v d es => exact .tmap_const Γ m k v d es hk (HasTypeA.const_wt hA)
+      | sequenceConst a es => exact .tseq_const Γ m a es hk (HasTypeA.const_wt hA)
     | bvar m i =>
       have hlookup := HasTypeA.bvar_inv hA
       rw [List.getElem?_nil] at hlookup

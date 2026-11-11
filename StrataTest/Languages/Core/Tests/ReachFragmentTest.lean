@@ -181,7 +181,7 @@ theorem wGenuine_of_fragment :
       Calls.getInputExprs]
   · simp only [List.mem_singleton, forall_eq]
     refine ⟨.inl ⟨_, rfl, ?_⟩, by simp [wProc, ListMap.toList], by simp [wProc, ListMap.toList]⟩
-    exact ⟨⟨.const () _, rfl⟩, trivial⟩
+    exact ⟨⟨.const () _ rfl, rfl⟩, trivial⟩
   · simp [wEnv, IEnv.abs, InterpLang.absStore, IEnv.ofStore, IStore.get,
       IStore.ofStore, InterpLang.writesFind?_empty] at h
   · refine ⟨?_, fun n p ss hp hss => ?_, fun n p g hp hg => ?_⟩
@@ -257,7 +257,7 @@ theorem wcGenuine_of_fragment :
     refine ⟨.inr ⟨_, rfl, ?_⟩, by simp [wcProc, ListMap.toList], by simp [wcProc, ListMap.toList]⟩
     simp only [CFGInFragment, List.mem_singleton, forall_eq, CmdInFragment, TransferInFragment,
       and_true]
-    exact ⟨.const () _, rfl⟩
+    exact ⟨.const () _ rfl, rfl⟩
   · simp [wEnv, IEnv.abs, InterpLang.absStore, IEnv.ofStore, IStore.get,
       IStore.ofStore, InterpLang.writesFind?_empty] at h
   · refine ⟨?_, fun n p ss hp hss => ?_, fun n p g hp hg => ?_⟩

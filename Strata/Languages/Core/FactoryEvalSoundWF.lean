@@ -16,6 +16,7 @@ import all Strata.DL.Lambda.TypeFactory
 import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.Factory
 import Strata.Util.ListMapProps
+import Strata.DL.Lambda.LExprProps
 
 /-! # Program factories meet the conditions of evaluator soundness
 
@@ -36,12 +37,12 @@ namespace Core
 
 public section
 
-/-- The shape of the results of a factory function's concrete evaluator: a constant of the
-    function's output type, or the second of exactly two arguments when both inputs and the
-    output have type `bool`. -/
+/-- The shape of the results of a factory function's concrete evaluator: a well-typed constant
+    of the function's output type, or the second of exactly two arguments when both inputs and
+    the output have type `bool`. -/
 private def EvalShape (fn : Lambda.LFunc CoreLParams) : Prop :=
   ∀ ceval, fn.concreteEval = some ceval → ∀ md opTy args r, ceval md opTy args = some r →
-    (∃ m c, r = .const m c ∧ c.ty = fn.output) ∨
+    (∃ m c, r = .const m c ∧ c.wt = true ∧ c.ty = fn.output) ∨
     (∃ x, args = [x, r] ∧ fn.inputs.map Prod.snd = [.bool, .bool] ∧ fn.output = .bool)
 
 /-- The concrete evaluator of a short-circuit factory function commutes with re-annotating the
@@ -60,7 +61,7 @@ private theorem unaryOp_shape {inTy outTy : LMonoTy} {InV OutV : Type} [ToString
     [LambdaLeanType inTy InV] [LambdaLeanType outTy OutV]
     {n : CoreLParams.Identifier} {f : InV → OutV} {pre hI hO hp}
     (hmk : ∀ md (v : OutV), ∃ m c, LambdaLeanType.mkConst (ty := outTy) CoreLParams md v =
-      .const m c ∧ c.ty = outTy := by intro md v; exact ⟨_, _, rfl, rfl⟩) :
+      .const m c ∧ c.wt = true ∧ c.ty = outTy := by intro md v; exact ⟨_, _, rfl, rfl, rfl⟩) :
     EvalShape (unaryOp n f pre hI hO hp).func ∧ SCShape (unaryOp n f pre hI hO hp).func := by
   refine ⟨fun ceval hce md opTy args r h => .inl ?_, fun h => nomatch h⟩
   cases hce
@@ -79,7 +80,7 @@ private theorem binaryOp_shape {inTy outTy : LMonoTy} {InV OutV : Type} [ToStrin
     [LambdaLeanType inTy InV] [LambdaLeanType outTy OutV]
     {n : CoreLParams.Identifier} {g : InV → InV → OutV} {guard pre hI hO hp}
     (hmk : ∀ md (v : OutV), ∃ m c, LambdaLeanType.mkConst (ty := outTy) CoreLParams md v =
-      .const m c ∧ c.ty = outTy := by intro md v; exact ⟨_, _, rfl, rfl⟩) :
+      .const m c ∧ c.wt = true ∧ c.ty = outTy := by intro md v; exact ⟨_, _, rfl, rfl, rfl⟩) :
     EvalShape (binaryOp n g guard pre hI hO hp).func ∧
       SCShape (binaryOp n g guard pre hI hO hp).func := by
   refine ⟨fun ceval hce md opTy args r h => .inl ?_, fun h => nomatch h⟩
@@ -107,7 +108,7 @@ private theorem shortCircuitOp_shape {n : CoreLParams.Identifier} {absorb decide
     · split at h
       · split at h
         · cases h
-          exact .inl ⟨_, _, rfl, rfl⟩
+          exact .inl ⟨_, _, rfl, rfl, rfl⟩
         · cases h
           exact .inr ⟨_, rfl, rfl, rfl⟩
       · cases h
@@ -152,7 +153,7 @@ private theorem shape_of_mem {fn : Lambda.LFunc CoreLParams} (h : fn ∈ Core.Fa
 private theorem LConst_ty_subst (c : Lambda.LConst) (S : Lambda.Subst) :
     c.ty.subst S = c.ty :=
   Lambda.LMonoTy.subst_no_relevant_keys _ _ (by
-    cases c <;> simp [Lambda.LConst.ty, Lambda.LMonoTy.freeVars, Lambda.LMonoTys.freeVars])
+    intro x hx; rw [Lambda.LConst.ty_freeVars] at hx; cases hx)
 
 /-- A concrete evaluator of a `Core.Factory` function returns, on arguments well typed at the
     input types instantiated by `S`, a result well typed at the output type instantiated by `S`. -/
@@ -163,9 +164,9 @@ private theorem evalWt_of_mem {fn : Lambda.LFunc CoreLParams} (hfn : fn ∈ Core
       args ((fn.inputs.map Prod.snd).map (Lambda.LMonoTy.subst S))) :
     Lambda.LExpr.HasTypeA [] r (fn.output.subst S) := by
   rcases (shape_of_mem hfn).1 ceval hce md opTy args r h with
-    ⟨m, c, rfl, hc⟩ | ⟨x, rfl, hin, hout⟩
+    ⟨m, c, rfl, hw, hc⟩ | ⟨x, rfl, hin, hout⟩
   · rw [← hc, LConst_ty_subst]
-    exact .const
+    exact .const hw
   · rw [hin] at hargs
     rw [hout]
     cases hargs with

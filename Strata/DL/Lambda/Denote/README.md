@@ -27,6 +27,8 @@ variables (`substK`, `subst`) and free variables (`substFvarsLifting`)
 - `CallOfLFuncDenote.lean` - proofs about semantics of Factory function calls
 and `callOfLFunc` more generally
 - `LExprDenoteConstrs.lean` - proofs about semantics of datatype constructors
+- `LExprDenoteConsts.lean` - typing facts about constants, and the equations
+and laws of their values (`constVal`) and denotations (`denoteConst`)
 - `LExprDenoteEq.lean` - proof of soundness of equality check `eql`
 - `LExprDenoteCompute.lean` - forms of the `Denotes` rules that compute the
 value of a concrete expression, and the `denotes` tactic that applies them

@@ -69,6 +69,16 @@ not apply (e.g. the arguments are not literals). The operator's type gives the
 evaluator the instantiation of the function's type parameters, which it needs to
 build a literal of a type that is not determined by the arguments (e.g. the empty
 sequence).
+
+The soundness obligations on an evaluator (`LFunc.InterpConsistentEval`,
+`Factory.EvalWellTyped`, `LFunc.EvalSound`) constrain its result only when the
+annotation is the function's type instantiated by the call's type substitution
+(`LFunc.instTy`), which is the annotation of the operator of a well-typed call. No
+theorem covers its result at other annotations: `none`, which `LExpr.eval` passes
+for an unannotated operator and Core's model (`gatherEval`) always passes, or a type
+with type variables. So an evaluator that reads the annotation returns `none`
+unless the annotation is a ground type; an evaluator that ignores the annotation is
+covered at every annotation.
 -/
 abbrev ConcreteEval (T : LExprParams) :=
   T.Metadata → Option LMonoTy → List (LExpr T.mono) → Option (LExpr T.mono)
@@ -100,14 +110,12 @@ when all the arguments of a function are concrete; its type is `ConcreteEval`.
 Here's an example of a `concreteEval` function for `Int.Add`:
 
 ```
-(fun e _ args => match args with
-               | [e1, e2] =>
-                 let e1i := LExpr.denoteInt e1
-                 let e2i := LExpr.denoteInt e2
-                 match e1i, e2i with
-                 | some x, some y => (.const (toString (x + y)) mty[int])
-                 | _, _ => e
-               | _ => e)
+(fun md _ args => match args with
+  | [e1, e2] =>
+    match LExpr.denoteInt e1, LExpr.denoteInt e2 with
+    | some x, some y => some (.intConst md (x + y))
+    | _, _ => none
+  | _ => none)
 ```
 
 Note that if there is an arity mismatch or if the arguments are not
@@ -120,6 +128,13 @@ structure LFunc (T : LExprParams) extends
   -- The Metadata argument is attached to the resulting expression of
   -- concreteEval if evaluation was successful.
   concreteEval : Option (ConcreteEval T) := .none
+
+/-- The type of the function `f` instantiated by the type substitution `S`: the arrow from its
+    input types to its output type, each under `S`. The operator of a call of `f` well typed at
+    the instance `S` is annotated with it, and the soundness obligations on concrete evaluators
+    are stated at it (see `ConcreteEval`). -/
+@[expose] def LFunc.instTy {T : LExprParams} (f : LFunc T) (S : Subst) : LMonoTy :=
+  LMonoTy.mkArrow' (LMonoTy.subst S f.output) ((f.inputs.map Prod.snd).map (LMonoTy.subst S))
 
 /--
 Helper constructor for LFunc to maintain backward compatibility.

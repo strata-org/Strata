@@ -44,26 +44,6 @@ namespace Lambda
 
 public section
 
-/-! ### Sorts as monomorphic types -/
-
-/-- Substituting any type-variable valuation into the monomorphic type naming a sort gives back that
-    sort. -/
-theorem LSort.toMonoTy_substTyVars (ρ : TyVarVal) (s : LSort) :
-    (s.toMonoTy).substTyVars ρ = s := by
-  induction s using LSort.ind with
-  | htcons name args ih =>
-    simp only [LSort.toMonoTy, LMonoTy.substTyVars, LSort.tcons.injEq, true_and]
-    induction args with
-    | nil => rfl
-    | cons a as iha =>
-      simp only [LSort.toMonoTy.map, LMonoTy.substTyVars.map, List.cons.injEq]
-      exact ⟨ih a List.mem_cons_self, iha fun x hx => ih x (List.mem_cons_of_mem _ hx)⟩
-  | hbitvec n => rfl
-
-/-- A sort is determined by its monomorphic type. -/
-theorem LSort.toMonoTy_injective {s t : LSort} (h : s.toMonoTy = t.toMonoTy) : s = t := by
-  rw [← LSort.toMonoTy_substTyVars (fun _ => .bool) s, h, LSort.toMonoTy_substTyVars]
-
 /-! ### Semantic values -/
 
 /-- Reading a value at its own interpretation and sort returns it. -/
@@ -397,8 +377,8 @@ theorem LExpr.denoteEval_boolConst {M : ModeledFactory T} {σ : ValStore T}
     (LExpr.const m (.boolConst b) : LExpr T.mono).denoteEval M σ =
       some (SemValue.ofBool M.model.tcInterp b) := by
   rw [LExpr.denoteEval_eq_some_iff]
-  exact ⟨fun y hy => by simp [getVars_eq_freeVars_idents, LExpr.freeVars] at hy, .bool, .const, rfl,
-      rfl⟩
+  exact ⟨fun y hy => by simp [getVars_eq_freeVars_idents, LExpr.freeVars] at hy, .bool,
+    .const rfl, rfl, rfl⟩
 
 /-- Evaluation is monotone under store extension. -/
 theorem LExpr.denoteEval_mono {M : ModeledFactory T} {σ σ' : ValStore T}
@@ -435,7 +415,7 @@ theorem LExpr.HasTypeA_mapFvarNames (g : Identifier T.IDMeta → Identifier T.ID
     {Δ : List LMonoTy} {e : LExpr T.mono} {τ : LMonoTy} (h : e.HasTypeA Δ τ) :
     (e.mapFvarNames g).HasTypeA Δ τ := by
   induction h with
-  | const => exact .const
+  | const hw => exact .const hw
   | op => exact .op
   | fvar => exact .fvar
   | bvar h => exact .bvar h
@@ -1248,14 +1228,35 @@ theorem LExpr.denoteEval_app2_op {M : ModeledFactory T} {σ : ValStore T}
     · exact hdy z (by rwa [getVars_eq_freeVars_idents])
   exact ⟨_, LExpr.denoteEval_of_hasTypeA hd h hgc, rfl⟩
 
-/-- A literal evaluates to its value. -/
+/-- The type of a literal is ground. -/
+theorem LConst.ty_isGround (c : LConst) : c.ty.IsGround := by
+  cases h : c.wt
+  · rw [LConst.ty_of_not_wt h]; rfl
+  · rw [LConst.ty_of_wt h]; exact LSort.toMonoTy_isGround _
+
+/-- A well-typed literal (`LConst.wt`, which holds of every primitive literal)
+evaluates to its value. -/
 theorem LExpr.denoteEval_const {M : ModeledFactory T} {σ : ValStore T}
-    {m : T.Metadata} {c : LConst} :
+    {m : T.Metadata} {c : LConst} (hc : c.wt = true := by rfl) :
     (LExpr.const m c : LExpr T.mono).denoteEval M σ =
       some (SemValue.ofConst M.model.tcInterp c) := by
   rw [LExpr.denoteEval_eq_some_iff]
-  exact ⟨fun y hy => by simp [getVars_eq_freeVars_idents, LExpr.freeVars] at hy, c.ty, .const,
-    by cases c <;> rfl, by cases c <;> rfl⟩
+  refine ⟨fun y hy => by simp [getVars_eq_freeVars_idents, LExpr.freeVars] at hy, c.ty, .const hc,
+    LConst.ty_isGround c, ?_⟩
+  apply SemValue.mk_eq_mk ((LConst.ty_isGround c).substTyVars_eq _ _)
+  show HEq _ (LExpr.denote _ _ _ _ _ (.const m c) _ _)
+  rw [denote_const]
+  show HEq _ (denoteConst M.model.tcInterp M.tyVarVal c)
+  have hs := congrArg (SortDenote M.model.tcInterp)
+    ((LConst.ty_isGround c).substTyVars_eq M.tyVarVal refTyVarVal)
+  exact (heq_of_eq (denoteConst_cast_vt _ _ _ c hs)).trans (cast_heq _ _)
+
+/-- A literal that evaluates is well typed. -/
+theorem LExpr.denoteEval_const_wt {M : ModeledFactory T} {σ : ValStore T}
+    {m : T.Metadata} {c : LConst} {v : SemValue}
+    (h : (LExpr.const m c : LExpr T.mono).denoteEval M σ = some v) : c.wt = true := by
+  obtain ⟨-, τ, hτ, -, -⟩ := LExpr.denoteEval_eq_some_iff.mp h
+  exact HasTypeA.const_wt hτ
 
 /-- An integer literal evaluates to its value. -/
 theorem LExpr.denoteEval_intConst {M : ModeledFactory T} {σ : ValStore T}

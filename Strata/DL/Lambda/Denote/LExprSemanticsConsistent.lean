@@ -892,10 +892,10 @@ theorem Step.type_preserved
     exact .ite h_c h_t h_e'
   | eq_reduce_true e1 e2 heql =>
     have ⟨_, h_τ, _, _⟩ := HasTypeA.eq_inv h₁
-    subst h_τ; exact .const
+    subst h_τ; exact .const rfl
   | eq_reduce_false e1 e2 heql =>
     have ⟨_, h_τ, _, _⟩ := HasTypeA.eq_inv h₁
-    subst h_τ; exact .const
+    subst h_τ; exact .const rfl
   | eq_reduce_lhs e1 e1' e2 hstep ih =>
     have ⟨eqty, h_τ, h_1, h_2⟩ := HasTypeA.eq_inv h₁
     subst h_τ

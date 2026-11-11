@@ -7,12 +7,14 @@ import Strata.Languages.Core.DDMTransform.ASTtoCST
 import Strata.Languages.Core.Factory
 import StrataTest.Languages.Core.Tests.ReparseTestUtils
 
-/-! # Printer coverage for the `Set` and `Sequence` operators
+/-! # Printer coverage for the `Set` and `Sequence` operators and collection literals
 
 The programs below are built as ASTs. Each one with annotated empty
 collections prints without a conversion error, and the printed text parses back
 to a program that prints the same way. The sequence program covers the
-operators the grammar groups under one wrapper. An empty collection without a
+operators the grammar groups under one wrapper. A map literal prints as the
+`mapConst` and updates that build it, its first entry outermost, and a sequence
+literal as `Sequence.empty` and `Sequence.build`. An empty collection without a
 matching type annotation prints with a placeholder element type and a
 conversion error.
 -/
@@ -90,6 +92,14 @@ private def seqOpsProg : Core.Program :=
     initVar "g" (seqTy .int) (opApp "Sequence.update" [q, one, one]),
     initVar "h" (seqTy .int) (opApp "Sequence.update!" [q, one, one])]
 
+/-- Declares a variable initialized with a map literal of two entries and one initialized
+    with a sequence literal. -/
+private def literalsProg : Core.Program :=
+  procProg [
+    initVar "m" (mapTy .int .int) (.const () (.mapConst .int .int (.intConst 0)
+      #[(.intConst 1, .intConst 10), (.intConst 2, .intConst 20)])),
+    initVar "q" (seqTy .int) (.const () (.sequenceConst .int #[.intConst 1, .intConst 2]))]
+
 /-- The printed program followed by its AST-to-CST conversion errors, one per
     line, or `[]` when there are none. -/
 private def printWithErrors (p : Core.Program) : String :=
@@ -166,14 +176,29 @@ errors:
 #guard_msgs in
 #eval IO.println (printWithErrors missingElemTyEmptyProg)
 
+/-- info: program Core;
+
+procedure P ()
+{
+  var m : Map int int := ((mapConst<int>(0))[2:=20])[1:=10];
+  var q : Sequence int := Sequence.build(Sequence.build(Sequence.empty<int>(), 1), 2);
+};
+
+errors: []
+-/
+#guard_msgs in
+#eval IO.println (printWithErrors literalsProg)
+
 /-- info: set variable round-trips: true
 set operators round-trip: true
 sequence operators round-trip: true
+collection literals round-trip: true
 -/
 #guard_msgs in
 #eval do
   IO.println s!"set variable round-trips: {← reprintsSame setVarProg}"
   IO.println s!"set operators round-trip: {← reprintsSame setOpsProg}"
   IO.println s!"sequence operators round-trip: {← reprintsSame seqOpsProg}"
+  IO.println s!"collection literals round-trip: {← reprintsSame literalsProg}"
 
 end Strata.Test.CollectionPrinter

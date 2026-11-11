@@ -258,7 +258,7 @@ private theorem HasTypeA_substOpsAux
     (h : LExpr.HasTypeA Δ e τ) :
     LExpr.HasTypeA Δ (LExpr.substOps.substOpsAux e sm) τ := by
   induction h with
-  | const => exact .const
+  | const hw => exact .const hw
   | @op _ m o ty =>
     simp only [LExpr.substOps.substOpsAux]
     cases hf : sm.find? o with

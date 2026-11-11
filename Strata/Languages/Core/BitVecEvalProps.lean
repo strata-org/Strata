@@ -135,7 +135,7 @@ private theorem bvPredicate_opInterp
   exact (opInterp_of_concreteEval model hF rfl (concreteEval_bvOp width name op rfl a b _)
     (fun _ => .bool) (fun _ s =>
       @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s))
-    (.cons .const (.cons .const .nil)) .const).symm
+    (.cons (.const rfl) (.cons (.const rfl) .nil)) (.const rfl)).symm
 
 /-- Any registered concrete binary bitvector operation has its Lean semantics in every
 consistent interpretation of `Core.Factory`, at any bitwidth. -/
@@ -149,7 +149,7 @@ private theorem bvBinary_opInterp
   exact (opInterp_of_concreteEval model hF rfl (concreteEval_bvOp width name op rfl a b _)
     (fun _ => .bool) (fun _ s =>
       @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s))
-    (.cons .const (.cons .const .nil)) .const).symm
+    (.cons (.const rfl) (.cons (.const rfl) .nil)) (.const rfl)).symm
 
 /-- `Bv{width}.ULe` is unsigned comparison in every consistent interpretation
 whenever that width is registered in `Core.Factory`. -/

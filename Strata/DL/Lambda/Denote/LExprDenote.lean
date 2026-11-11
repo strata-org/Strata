@@ -27,105 +27,17 @@ Also defines interpretation structures (`OpInterp`, `IdentInterp`,
 - `denote_Denotes` / `Denotes_denote` — soundness and completeness of `Denotes` w.r.t. `denote`
 - `denote_boolConst` / `denote_intConst` / `denote_strConst` / `denote_bitvecConst` —
   denotations of primitive literals
+- `constVal` — the value of a literal at a sort, including map and sequence literals
+  (`SortDenote` interprets `Map k v` as functions and `Sequence a` as lists); `constVal_isSome`
+  (with `constValEntries_isSome` / `constValElems_isSome`) — every well-typed literal has a value
+  at its sort; `denoteConst` / `denoteCollection` — the denotation of a literal. Their
+  equations and laws are in `LExprDenoteConsts`.
 - `Interp` / `Satisfiable` / `Valid` / `LogConseq` — semantic notions over consistent interpretations
 -/
 
 namespace Lambda
 
 /-! ### Sorts and Type Denotation -/
-
-/-- A sort is a ground monomorphic type — an `LMonoTy` with no free type
-variables. We use a separate type rather than `LMonoTy` to avoid carrying
-around proofs that a type has no type variables. -/
-public inductive LSort where
-  /-- A named type constructor applied to sort arguments. -/
-  | tcons (name : String) (args : List LSort)
-  /-- A bit vector sort of the given size. -/
-  | bitvec (size : Nat)
-
-public section
-
-/-- The Boolean sort. -/
-protected abbrev LSort.bool : LSort := .tcons "bool" []
-/-- The integer sort. -/
-protected abbrev LSort.int : LSort := .tcons "int" []
-/-- The real sort. -/
-protected abbrev LSort.real : LSort := .tcons "real" []
-/-- The string sort. -/
-protected abbrev LSort.string : LSort := .tcons "string" []
-
-end
-
-def LSort_eqb (s1 s2: LSort) : Bool :=
-  match s1, s2 with
-  | .tcons n1 a1, .tcons n2 a2 =>
-    n1 == n2 && LSort_eqb_list a1 a2
-  | .bitvec s1, .bitvec s2 => s1 == s2
-  | _ , _ => false
-where LSort_eqb_list : List LSort → List LSort → Bool
-  | [], [] => true
-  | x :: xs, y :: ys => LSort_eqb x y && LSort_eqb_list xs ys
-  | _, _ => false
-
-theorem LSort.ind (P : LSort → Prop)
-    (htcons : ∀ name args, (∀ x, x ∈ args → P x) → P (.tcons name args))
-    (hbitvec : ∀ n, P (.bitvec n)) : ∀ s, P s
-  | .tcons name args => htcons name args (fun x _ => ind P htcons hbitvec x)
-  | .bitvec n => hbitvec n
-
-def LSort.rec' (P : LSort → Sort u)
-    (htcons : ∀ name args, (∀ x, x ∈ args → P x) → P (.tcons name args))
-    (hbitvec : ∀ n, P (.bitvec n)) : ∀ s, P s
-  | .tcons name args => htcons name args (fun x _ => rec' P htcons hbitvec x)
-  | .bitvec n => hbitvec n
-
-private theorem LSort_eqb_list_eq
-    (ih : ∀ x ∈ a1, ∀ s2, LSort_eqb x s2 = true → x = s2)
-    (heq : LSort_eqb.LSort_eqb_list a1 a2 = true) : a1 = a2 := by
-  induction a1 generalizing a2 with
-  | nil => cases a2 <;> simp_all [LSort_eqb.LSort_eqb_list]
-  | cons h t iht =>
-    cases a2 with
-    | nil => simp [LSort_eqb.LSort_eqb_list] at heq
-    | cons h2 t2 =>
-      simp only [LSort_eqb.LSort_eqb_list, Bool.and_eq_true] at heq
-      obtain ⟨hh, ht⟩ := heq
-      congr 1
-      · exact ih h (List.mem_cons_self ..) h2 hh
-      · exact iht (fun x hx => ih x (List.mem_cons_of_mem _ hx)) ht
-
-private theorem LSort_eqb_eq {s1 s2} (heq: LSort_eqb s1 s2 = true) :
-  s1 = s2 := by
-  induction s1 using LSort.ind generalizing s2 with
-  | htcons n1 a1 ih =>
-    cases s2 with
-    | bitvec => simp [LSort_eqb] at heq
-    | tcons n2 a2 =>
-      simp only [LSort_eqb, Bool.and_eq_true, beq_iff_eq] at heq
-      obtain ⟨hn, ha⟩ := heq
-      subst_vars; congr 1
-      exact LSort_eqb_list_eq ih ha
-  | hbitvec n1 =>
-    cases s2 with
-    | tcons => simp [LSort_eqb] at heq
-    | bitvec => simp only [LSort_eqb, beq_iff_eq] at heq; exact congrArg _ heq
-
-instance : BEq LSort := ⟨LSort_eqb⟩
-
-private theorem LSort_eqb_refl : ∀ a : LSort, LSort_eqb a a = true := by
-  intro a; induction a using LSort.ind with
-  | htcons n args ih =>
-    simp only [LSort_eqb, BEq.rfl, Bool.true_and]
-    induction args with
-    | nil => simp [LSort_eqb.LSort_eqb_list]
-    | cons x xs ihxs =>
-      simp only [LSort_eqb.LSort_eqb_list, Bool.and_eq_true]
-      exact ⟨ih x (List.mem_cons_self ..), ihxs (fun z hz => ih z (List.mem_cons_of_mem _ hz))⟩
-  | hbitvec => simp [LSort_eqb]
-
-instance : DecidableEq LSort := fun a b =>
-  if h : LSort_eqb a b then isTrue (LSort_eqb_eq h)
-  else isFalse (fun heq => h (heq ▸ LSort_eqb_refl a))
 
 /-- Iterated arrow at the sort level: `mkArrow ret [s₁, s₂] = s₁ → s₂ → ret`. -/
 @[expose] public def LSort.mkArrow (ret : LSort) : List LSort → LSort
@@ -144,14 +56,23 @@ where
   | [] => []
   | x :: xs => substTyVars ρ x :: map xs
 
-/-- The monomorphic type (without type variables) naming a sort. -/
-@[expose] public def LSort.toMonoTy : LSort → LMonoTy
-  | .tcons name args => .tcons name (map args)
-  | .bitvec n => .bitvec n
-where
-  map : List LSort → List LMonoTy
-  | [] => []
-  | s :: ss => toMonoTy s :: map ss
+/-- Substituting any type-variable valuation into the monomorphic type naming a sort gives back that
+    sort. -/
+public theorem LSort.toMonoTy_substTyVars (ρ : TyIdentifier → LSort) (s : LSort) :
+    (s.toMonoTy).substTyVars ρ = s := by
+  induction s using LSort.ind with
+  | htcons name args ih =>
+    simp only [LSort.toMonoTy, LMonoTy.substTyVars, LSort.tcons.injEq, true_and]
+    induction args with
+    | nil => rfl
+    | cons a as iha =>
+      simp only [LSort.toMonoTy.map, LMonoTy.substTyVars.map, List.cons.injEq]
+      exact ⟨ih a List.mem_cons_self, iha fun x hx => ih x (List.mem_cons_of_mem _ hx)⟩
+  | hbitvec n => rfl
+
+/-- A sort is determined by its monomorphic type. -/
+public theorem LSort.toMonoTy_injective {s t : LSort} (h : s.toMonoTy = t.toMonoTy) : s = t := by
+  rw [← LSort.toMonoTy_substTyVars (fun _ => .bool) s, h, LSort.toMonoTy_substTyVars]
 
 /-- Whether a sort is the integer sort. -/
 @[expose] public def LSort.isInt : LSort → Bool
@@ -180,8 +101,17 @@ public class TyConstrInterp.AllInhabited (tcInterp : TyConstrInterp) : Type wher
   inhabited : ∀ name args, Inhabited (tcInterp name args)
 
 /-- Interpret a sort into a Lean `Type`. Built-in sorts (bool, int, real,
-string, bitvec, arrow) are mapped to their Lean counterparts; all others
-are delegated to `tcInterp`.
+string, bitvec, arrow) are mapped to their Lean counterparts, a `Map k v` to
+the functions from `k` to `v` and a `Sequence a` to the lists of `a`; all
+others are delegated to `tcInterp`.
+
+`Map` and `Sequence` are built in because they have literals
+(`LConst.mapConst`, `LConst.sequenceConst`), which must denote values whatever
+`tcInterp` is. Maps are total and extensional, and sequences finite, as in the
+SMT-LIB theories of arrays and sequences. So `Map` with two arguments and `Sequence`
+with one are reserved type-constructor names for every Lambda language: a client
+type constructor registered under one of them has the built-in meaning, whatever
+`tcInterp` says.
 
 The `real` sort denotes `Strata.Util.Real`, the real numbers, a complete ordered
 field. A rational literal `r` denotes `Real.ofRat r`. -/
@@ -192,6 +122,8 @@ field. A rational literal `r` denotes `Real.ofRat r`. -/
   | .tcons "string" []    => String
   | .bitvec n             => BitVec n
   | .tcons "arrow" [a, b] => SortDenote tcInterp a → SortDenote tcInterp b
+  | .tcons "Map" [k, v]   => SortDenote tcInterp k → SortDenote tcInterp v
+  | .tcons "Sequence" [a] => List (SortDenote tcInterp a)
   | .tcons name args      => tcInterp name args
 
 /--
@@ -212,6 +144,8 @@ public def SortDenote.inhabited (tcInterp : TyConstrInterp)
     · exact ⟨""⟩
     . rename_i n _; exact ⟨(0 : BitVec n)⟩
     · exact ⟨fun _ => (ih _ (by simp_all)).default⟩
+    · exact ⟨fun _ => (ih _ (by simp_all)).default⟩
+    · exact ⟨[]⟩
     · exact h _ _
   | hbitvec n => exact ⟨(0 : BitVec n)⟩
 
@@ -277,13 +211,162 @@ def IdentInterp.withArgs [DecidableEq T.IDMeta]
 
 /-! ### Denotational Semantics -/
 
+/-! ### Constants -/
+
+open Classical in
+/-- The map with default value `dv` sending each key of `kvs` to the value of its
+first entry with that key. -/
+@[expose] public noncomputable def SortDenote.mapOf {tcInterp : TyConstrInterp} {k v : LSort}
+    (dv : SortDenote tcInterp v) (kvs : List (SortDenote tcInterp k × SortDenote tcInterp v)) :
+    SortDenote tcInterp (.map k v) :=
+  fun x => match kvs.find? (fun p => decide (p.1 = x)) with
+    | some p => p.2
+    | none => dv
+
+/-- The sequence of the values `xs`. -/
+@[expose] public def SortDenote.seqOf {tcInterp : TyConstrInterp} {a : LSort}
+    (xs : List (SortDenote tcInterp a)) : SortDenote tcInterp (.seq a) :=
+  xs
+
+mutual
+/-- The value of constant `c` at sort `s`: `none` unless `c` is well typed
+(`LConst.wt`) and declares sort `s`. A map literal denotes `SortDenote.mapOf` of
+its default and entries, a sequence literal the list of its elements. -/
+@[expose] public noncomputable def constVal (tcInterp : TyConstrInterp) (s : LSort) :
+    LConst → Option (SortDenote tcInterp s)
+  | .boolConst b =>
+    if h : LSort.bool = s then some (h ▸ (show SortDenote tcInterp .bool from b)) else none
+  | .intConst i =>
+    if h : LSort.int = s then some (h ▸ (show SortDenote tcInterp .int from i)) else none
+  | .rationalConst r =>
+    if h : LSort.real = s then
+      some (h ▸ (show SortDenote tcInterp .real from Strata.Util.Real.ofRat r))
+    else none
+  | .strConst x =>
+    if h : LSort.string = s then some (h ▸ (show SortDenote tcInterp .string from x)) else none
+  | .bitvecConst n b =>
+    if h : LSort.bitvec n = s then some (h ▸ (show SortDenote tcInterp (.bitvec n) from b))
+    else none
+  | .mapConst k v d ⟨es⟩ =>
+    if h : LSort.map k v = s then
+      match constVal tcInterp v d, constValEntries tcInterp k v es with
+      | some dv, some kvs => some (h ▸ SortDenote.mapOf dv kvs)
+      | _, _ => none
+    else none
+  | .sequenceConst a ⟨es⟩ =>
+    if h : LSort.seq a = s then
+      (constValElems tcInterp a es).map (fun xs => h ▸ SortDenote.seqOf xs)
+    else none
+/-- The values of the entries of a map literal at key sort `k` and value sort `v`,
+if all of them have one. -/
+@[expose] public noncomputable def constValEntries (tcInterp : TyConstrInterp) (k v : LSort) :
+    List (LConst × LConst) → Option (List (SortDenote tcInterp k × SortDenote tcInterp v))
+  | [] => some []
+  | (a, b) :: r =>
+    match constVal tcInterp k a, constVal tcInterp v b, constValEntries tcInterp k v r with
+    | some x, some y, some r' => some ((x, y) :: r')
+    | _, _, _ => none
+/-- The values of the elements of a sequence literal at sort `a`, if all of them
+have one. -/
+@[expose] public noncomputable def constValElems (tcInterp : TyConstrInterp) (a : LSort) :
+    List LConst → Option (List (SortDenote tcInterp a))
+  | [] => some []
+  | e :: r =>
+    match constVal tcInterp a e, constValElems tcInterp a r with
+    | some x, some r' => some (x :: r')
+    | _, _ => none
+end
+
+mutual
+/-- A well-typed constant has a value at the sort it declares. -/
+public theorem constVal_isSome (tcInterp : TyConstrInterp) :
+    ∀ (c : LConst), c.wt = true → (constVal tcInterp c.sort c).isSome
+  | .boolConst _, _ | .intConst _, _ | .rationalConst _, _ | .strConst _, _
+  | .bitvecConst _ _, _ => by
+    unfold constVal
+    split
+    · rfl
+    · exact absurd rfl ‹_›
+  | .mapConst k v d ⟨es⟩, h => by
+    simp only [LConst.wt, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨hd, hds⟩, hes⟩ := h
+    have h1 := constVal_isSome tcInterp d hd
+    rw [hds] at h1
+    have h2 := constValEntries_isSome tcInterp k v es hes
+    obtain ⟨dv, hdv⟩ := Option.isSome_iff_exists.mp h1
+    obtain ⟨kvs, hkvs⟩ := Option.isSome_iff_exists.mp h2
+    unfold constVal
+    split
+    · simp only [hdv, hkvs]; rfl
+    · exact absurd rfl ‹_›
+  | .sequenceConst a ⟨es⟩, h => by
+    have h2 := constValElems_isSome tcInterp a es h
+    unfold constVal
+    split
+    · rw [Option.isSome_map]; exact h2
+    · exact absurd rfl ‹_›
+/-- The entries of a well-typed map literal have values. -/
+public theorem constValEntries_isSome (tcInterp : TyConstrInterp) (k v : LSort) :
+    ∀ (es : List (LConst × LConst)), LConst.wtEntries k v es = true →
+      (constValEntries tcInterp k v es).isSome
+  | [], _ => rfl
+  | (a, b) :: r, h => by
+    simp only [LConst.wtEntries, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨⟨ha, has⟩, hb⟩, hbs⟩, hr⟩ := h
+    have h1 := constVal_isSome tcInterp a ha
+    have h2 := constVal_isSome tcInterp b hb
+    rw [has] at h1; rw [hbs] at h2
+    have h3 := constValEntries_isSome tcInterp k v r hr
+    obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp h1
+    obtain ⟨y, hy⟩ := Option.isSome_iff_exists.mp h2
+    obtain ⟨z, hz⟩ := Option.isSome_iff_exists.mp h3
+    simp [constValEntries, hx, hy, hz]
+/-- The elements of a well-typed sequence literal have values. -/
+public theorem constValElems_isSome (tcInterp : TyConstrInterp) (s : LSort) :
+    ∀ (es : List LConst), LConst.wtElems s es = true → (constValElems tcInterp s es).isSome
+  | [], _ => rfl
+  | e :: r, h => by
+    simp only [LConst.wtElems, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨he, hes⟩, hr⟩ := h
+    have h1 := constVal_isSome tcInterp e he
+    rw [hes] at h1
+    have h3 := constValElems_isSome tcInterp s r hr
+    obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp h1
+    obtain ⟨z, hz⟩ := Option.isSome_iff_exists.mp h3
+    simp [constValElems, hx, hz]
+end
+
+/-- A well-typed constant has the type naming the sort it declares. -/
+public theorem LConst.ty_of_wt {c : LConst} (h : c.wt = true) : c.ty = c.sort.toMonoTy := by
+  cases c <;> simp_all [LConst.ty, LConst.sort, LSort.toMonoTy, LSort.toMonoTy.map] <;> rfl
+
+/-- A constant that is not well typed has type `bool`. -/
+public theorem LConst.ty_of_not_wt {c : LConst} (h : c.wt = false) : c.ty = .bool := by
+  cases c <;> simp_all [LConst.ty, LConst.wt]
+
+/-- The value of a collection literal at its type: its value at its sort if it is
+well typed (`constVal`), and `false` otherwise (its type is then `bool`). -/
+@[expose] public noncomputable def denoteCollection (tcInterp : TyConstrInterp) (vt : TyVarVal)
+    (c : LConst) : TyDenote tcInterp vt c.ty :=
+  if h : c.wt = true then
+    cast (congrArg (SortDenote tcInterp)
+        (by rw [LConst.ty_of_wt h, LSort.toMonoTy_substTyVars])).symm
+      ((constVal tcInterp c.sort c).get (constVal_isSome tcInterp c h))
+  else
+    cast (congrArg (SortDenote tcInterp)
+        (by rw [LConst.ty_of_not_wt (Bool.eq_false_iff.mpr h)]; rfl)).symm
+      (show SortDenote tcInterp .bool from false)
+
 /-- Denote a constant literal. -/
-public def denoteConst (tcInterp : TyConstrInterp) (vt : TyVarVal) : (c : LConst) → TyDenote tcInterp vt c.ty
+public noncomputable def denoteConst (tcInterp : TyConstrInterp) (vt : TyVarVal) :
+    (c : LConst) → TyDenote tcInterp vt c.ty
     | .boolConst b     => b
     | .intConst i      => i
     | .rationalConst r => Strata.Util.Real.ofRat r
     | .strConst s      => s
     | .bitvecConst _ b => b
+    | .mapConst k v d es => denoteCollection tcInterp vt (.mapConst k v d es)
+    | .sequenceConst a es => denoteCollection tcInterp vt (.sequenceConst a es)
 
 /-- Interpret a well-typed annotated `LExpr` into a Lean value.
 
@@ -1103,7 +1186,7 @@ public noncomputable def denoteArgs
 /-- An `opInterp` is consistent with an `LFunc` whose definition is given by
 a `concreteEval` function: whenever `ceval md opTy argExprs = some resultExpr`,
 where `opTy` is the function's type instantiated by a type substitution
-`tySubst`, and all expressions are well-typed at the instantiated types, the
+`tySubst` (`LFunc.instTy`), and all expressions are well-typed at the instantiated types, the
 denotation of the result equals the interpretation of the op applied to the
 denotations of the arguments. -/
 public def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
@@ -1116,7 +1199,7 @@ public def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
     (resultExpr : LExpr T.mono),
   let instInputTys := (List.map Prod.snd f.inputs).map (LMonoTy.subst tySubst)
   let instOutputTy := LMonoTy.subst tySubst f.output
-  ceval md (some (LMonoTy.mkArrow' instOutputTy instInputTys)) argExprs = some resultExpr →
+  ceval md (some (f.instTy tySubst)) argExprs = some resultExpr →
   let inputSorts := instInputTys.map (LMonoTy.substTyVars vt)
   let outputSort := LMonoTy.substTyVars vt instOutputTy
   let fullSort := LSort.mkArrow outputSort inputSorts

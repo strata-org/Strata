@@ -20,6 +20,7 @@ import Strata.DL.Lambda.LExprEvalFuelProps
 import Strata.DL.Lambda.LExprDenoteEvalProps
 import all Strata.DL.Lambda.LExprDenoteEval
 import all Strata.DL.Lambda.Denote.LExprDenote
+import Strata.DL.Lambda.Denote.LExprDenoteConsts
 
 /-! # Reference runs on computable evaluations are replayed by the engine
 
@@ -178,29 +179,30 @@ theorem writeBackTypedComplete_core : WriteBackTypedComplete Expression := by
   rw [typeCheckWith_of_denotes hold, typeCheckWith_of_denotes hr, hs]
 
 /-- Every runtime value the engine commits for a computable expression whose reference value is
-    `v` is a literal whose value is `v`. -/
+    `v` is a primitive literal (`LConst.isPrimitive`) whose value is `v`. -/
 theorem computable_committed {F : Expression.Factory} {σ : SemanticStore Expression}
     {e : Expression.Expr} {v : Expression.Val} {σr : RStore Expression} {n : Nat}
     {r : Expression.Expr} (h : ComputableEval F σ e) (hv : Expression.eval F σ e = some v)
     (hS : StoreDenotes F σr σ) (hb : evalBounded n F.factory σr e = some r) :
-    ∃ m c, r = .const m c ∧ v = SemValue.ofConst F.model.tcInterp c := by
+    ∃ m c, r = .const m c ∧ v = SemValue.ofConst F.model.tcInterp c ∧ c.isPrimitive = true := by
   obtain ⟨hd, τ, hτ, -, -⟩ := (LExpr.denoteEval_eq_some_iff (T := CoreLParams)).1 hv
-  obtain ⟨c, -, hc, n0, m, hb0⟩ := h σr τ hS hd hτ
+  obtain ⟨c, hcd, -, hc, n0, m, hb0⟩ := h σr τ hS hd hτ
   obtain ⟨-, he, -⟩ := evalBounded_eq_some_iff.1 hb
   obtain ⟨-, he0, -⟩ := evalBounded_eq_some_iff.1 hb0
   exact ⟨m, c, eval_value_true_deterministic _ _ _ _ _ _ _ he he0,
-    Option.some.inj (hv.symm.trans hc)⟩
+    Option.some.inj (hv.symm.trans hc), hcd⟩
 
-/-- The value of a literal is the Boolean value `b` only for the literal `b`. -/
+/-- The value of a well-typed literal is the Boolean value `b` only for the literal `b`. -/
 private theorem ofConst_eq_ofBool {tc : TyConstrInterp} {c : LConst} {b : Bool}
-    (h : SemValue.ofConst tc c = SemValue.ofBool tc b) : c = .boolConst b := by
+    (hw : c.wt = true) (h : SemValue.ofConst tc c = SemValue.ofBool tc b) :
+    c = .boolConst b := by
   have hs := congrArg SemValue.sort h
   cases c with
   | boolConst b' =>
     obtain ⟨-, -, hv⟩ := SemValue.mk.inj h
     exact congrArg LConst.boolConst (eq_of_heq (by exact hv : b' ≍ b))
   | _ => simp [SemValue.ofConst, SemValue.ofBool, LConst.ty, LMonoTy.substTyVars, LMonoTy.int,
-      LMonoTy.real, LMonoTy.string, LSort.bool] at hs
+      LMonoTy.real, LMonoTy.string, LSort.bool, hw] at hs
 
 /-- On a computable expression whose reference value is the Boolean `b`, every runtime value
     the engine commits is the Boolean literal of `b` with some metadata. -/
@@ -209,8 +211,8 @@ private theorem engEvalOK_bool {F : Expression.Factory} {σ : SemanticStore Expr
     (hv : Expression.eval F σ e = some (SemValue.ofBool F.model.tcInterp b)) :
     EngEvalOK Expression F σ e (fun _ r => ∃ m, r = LExpr.boolConst m b) := by
   intro σr n r hS hb
-  obtain ⟨m, c, rfl, hc⟩ := computable_committed h hv hS hb
-  obtain rfl := ofConst_eq_ofBool hc.symm
+  obtain ⟨m, c, rfl, hc, hcd⟩ := computable_committed h hv hS hb
+  obtain rfl := ofConst_eq_ofBool (LConst.wt_of_isPrimitive hcd) hc.symm
   exact ⟨m, rfl⟩
 
 /-- The evaluation of a computable guard whose reference value is `ttVal` is one the engine
@@ -249,13 +251,14 @@ theorem evalCmdEngE_of_computable {f : Expression.Factory} {σ σ' : CoreStore}
     obtain ⟨hx, rfl⟩ := i.eq_update
     have hce := hc _ (List.mem_singleton_self _)
     refine .eval_init hx he ⟨engEvalReach_of_computableEval hce, fun σr n r hS hb => ?_⟩ hty hwf
-    obtain ⟨m, c, rfl, rfl⟩ := computable_committed hce he hS hb
+    obtain ⟨m, c, rfl, rfl, hcd⟩ := computable_committed hce he hS hb
     obtain ⟨-, hτ⟩ := hty
     rw [ofConst_sort] at hτ
     refine ⟨isValue_const_true _ m c, ?_⟩
     simp only [InterpLang.ops, replayValueOps, valueHasType, hτ, valueHasMonoType,
       Bool.and_eq_true, beq_iff_eq, isGroundTy_iff]
-    exact ⟨rfl, LConst.ty_isGround c⟩
+    exact ⟨by simp [LExpr.typeCheckWith, LExpr.opsConsistent, LExpr.typeCheck,
+      LConst.wt_of_isPrimitive hcd], LConst.ty_isGround c⟩
   | eval_init_unconstrained i hty hwf =>
     obtain ⟨hx, rfl⟩ := i.eq_update
     exact .eval_init_nondet hx hty hty hwf
@@ -264,10 +267,10 @@ theorem evalCmdEngE_of_computable {f : Expression.Factory} {σ σ' : CoreStore}
     have hce := hc _ (List.mem_singleton_self _)
     refine .eval_set ho he ⟨engEvalReach_of_computableEval hce,
       fun σr n r hS hb ro hro => ?_⟩ hty hwf
-    obtain ⟨m, c, rfl, rfl⟩ := computable_committed hce he hS hb
+    obtain ⟨m, c, rfl, rfl, hcd⟩ := computable_committed hce he hS hb
     obtain ⟨prev, ty, hp, hpt, hvt⟩ := hty
     exact writeBackTypedComplete_core f ro _ prev _ ty (hS.2 _ ro prev hro hp)
-      (denotes_const_iff.2 rfl) hpt hvt
+      ((denotes_const_iff (LConst.wt_of_isPrimitive hcd)).2 rfl) hpt hvt
   | eval_set_nondet u hty hwf =>
     obtain ⟨⟨old, ho⟩, rfl⟩ := u.eq_update
     obtain ⟨prev, ty, hp, ⟨hpc, hpt⟩, ⟨hvc, hvt⟩⟩ := id hty

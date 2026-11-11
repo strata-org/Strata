@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Lambda.LTy
+public import Strata.DL.Lambda.LSortProps
 public import Strata.DL.Lambda.Identifiers
 public import Lean.Meta.Basic
 public import Strata.Util.PtrCache
@@ -84,8 +85,14 @@ abbrev LExprParamsT.typed (T: LExprParamsT): LExprParamsT :=
 /--
 Lambda constants.
 
-Constants are integers, strings, reals, bitvectors of a fixed length, or
-booleans.
+Constants are integers, strings, reals, bitvectors of a fixed length,
+booleans, and literals of the collection types `Map k v` and `Sequence a`
+built from constants.
+
+A collection literal names the sorts of its elements, so its type is known even
+when it has no elements. Its elements are not checked against those sorts by
+construction; `LConst.wt` checks them, and `LConst.ty` gives a collection
+literal that fails the check the type `bool` (see `LConst.ty`).
 -/
 inductive LConst : Type where
   /-- An unbounded integer constant. -/
@@ -106,7 +113,91 @@ inductive LConst : Type where
 
   /-- A Boolean constant. -/
   | boolConst (b: Bool)
-deriving Repr, DecidableEq, Hashable
+
+  /-- A literal of type `Map keySort valSort`: the total map sending each key of
+  `entries` to its value and every other key to `dflt`. When two entries have
+  the same key, the first one counts. The literals the evaluator builds have
+  distinct keys and no entry whose value is `dflt` (see `LConst.mapUpdate`). -/
+  | mapConst (keySort valSort : LSort) (dflt : LConst) (entries : Array (LConst × LConst))
+
+  /-- A literal of type `Sequence elemSort`: the finite sequence `elems`. -/
+  | sequenceConst (elemSort : LSort) (elems : Array LConst)
+deriving Repr, Hashable
+
+namespace LConst
+
+mutual
+/-- Decidable equality of constants. Written by hand because `deriving DecidableEq`
+does not support the nested occurrences of `LConst` in `Array`. -/
+def decEqConst : (a b : LConst) → Decidable (a = b)
+  | .intConst i, .intConst j =>
+    if h : i = j then isTrue (h ▸ rfl) else isFalse (by intro e; cases e; exact h rfl)
+  | .strConst i, .strConst j =>
+    if h : i = j then isTrue (h ▸ rfl) else isFalse (by intro e; cases e; exact h rfl)
+  | .rationalConst i, .rationalConst j =>
+    if h : i = j then isTrue (h ▸ rfl) else isFalse (by intro e; cases e; exact h rfl)
+  | .bitvecConst n i, .bitvecConst n' j =>
+    if hn : n = n' then
+      if h : hn ▸ i = j then isTrue (by subst hn h; rfl)
+      else isFalse (by intro e; cases e; exact h rfl)
+    else isFalse (by intro e; cases e; exact hn rfl)
+  | .boolConst i, .boolConst j =>
+    if h : i = j then isTrue (h ▸ rfl) else isFalse (by intro e; cases e; exact h rfl)
+  | .mapConst k v d ⟨es⟩, .mapConst k' v' d' ⟨es'⟩ =>
+    if hk : k = k' then
+      if hv : v = v' then
+        match decEqConst d d', decEqConstEntries es es' with
+        | isTrue h1, isTrue h2 => isTrue (by subst hk hv h1 h2; rfl)
+        | isFalse h1, _ => isFalse (by intro e; cases e; exact h1 rfl)
+        | _, isFalse h2 => isFalse (by intro e; cases e; exact h2 rfl)
+      else isFalse (by intro e; cases e; exact hv rfl)
+    else isFalse (by intro e; cases e; exact hk rfl)
+  | .sequenceConst a ⟨es⟩, .sequenceConst a' ⟨es'⟩ =>
+    if ha : a = a' then
+      match decEqConstElems es es' with
+      | isTrue h => isTrue (by subst ha h; rfl)
+      | isFalse h => isFalse (by intro e; cases e; exact h rfl)
+    else isFalse (by intro e; cases e; exact ha rfl)
+  | .intConst _, .strConst _ | .intConst _, .rationalConst _ | .intConst _, .bitvecConst ..
+  | .intConst _, .boolConst _ | .intConst _, .mapConst .. | .intConst _, .sequenceConst ..
+  | .strConst _, .intConst _ | .strConst _, .rationalConst _ | .strConst _, .bitvecConst ..
+  | .strConst _, .boolConst _ | .strConst _, .mapConst .. | .strConst _, .sequenceConst ..
+  | .rationalConst _, .intConst _ | .rationalConst _, .strConst _
+  | .rationalConst _, .bitvecConst .. | .rationalConst _, .boolConst _
+  | .rationalConst _, .mapConst .. | .rationalConst _, .sequenceConst ..
+  | .bitvecConst .., .intConst _ | .bitvecConst .., .strConst _
+  | .bitvecConst .., .rationalConst _ | .bitvecConst .., .boolConst _
+  | .bitvecConst .., .mapConst .. | .bitvecConst .., .sequenceConst ..
+  | .boolConst _, .intConst _ | .boolConst _, .strConst _ | .boolConst _, .rationalConst _
+  | .boolConst _, .bitvecConst .. | .boolConst _, .mapConst .. | .boolConst _, .sequenceConst ..
+  | .mapConst .., .intConst _ | .mapConst .., .strConst _ | .mapConst .., .rationalConst _
+  | .mapConst .., .bitvecConst .. | .mapConst .., .boolConst _ | .mapConst .., .sequenceConst ..
+  | .sequenceConst .., .intConst _ | .sequenceConst .., .strConst _
+  | .sequenceConst .., .rationalConst _ | .sequenceConst .., .bitvecConst ..
+  | .sequenceConst .., .boolConst _ | .sequenceConst .., .mapConst .. =>
+    isFalse (by intro e; cases e)
+def decEqConstEntries : (a b : List (LConst × LConst)) → Decidable (a = b)
+  | [], [] => isTrue rfl
+  | [], _ :: _ | _ :: _, [] => isFalse (by intro e; cases e)
+  | (x, y) :: r, (x', y') :: r' =>
+    match decEqConst x x', decEqConst y y', decEqConstEntries r r' with
+    | isTrue h1, isTrue h2, isTrue h3 => isTrue (by subst h1 h2 h3; rfl)
+    | isFalse h, _, _ => isFalse (by intro e; cases e; exact h rfl)
+    | _, isFalse h, _ => isFalse (by intro e; cases e; exact h rfl)
+    | _, _, isFalse h => isFalse (by intro e; cases e; exact h rfl)
+def decEqConstElems : (a b : List LConst) → Decidable (a = b)
+  | [], [] => isTrue rfl
+  | [], _ :: _ | _ :: _, [] => isFalse (by intro e; cases e)
+  | x :: r, x' :: r' =>
+    match decEqConst x x', decEqConstElems r r' with
+    | isTrue h1, isTrue h2 => isTrue (by subst h1 h2; rfl)
+    | isFalse h, _ => isFalse (by intro e; cases e; exact h rfl)
+    | _, isFalse h => isFalse (by intro e; cases e; exact h rfl)
+end
+
+instance : DecidableEq LConst := decEqConst
+
+end LConst
 
 /--
 Lambda expressions with quantifiers.
@@ -278,7 +369,48 @@ def LExpr.sizeOf: LExpr T → Nat
   | _ => 1
 
 /--
-Get type of a constant `c`
+The sort a constant declares: the sort of a primitive constant, and `Map k v` or
+`Sequence a` for a collection literal, whatever its elements are. -/
+@[expose]
+def LConst.sort : LConst → LSort
+  | .intConst _ => .int
+  | .strConst _ => .string
+  | .bitvecConst n _ => .bitvec n
+  | .rationalConst _ => .real
+  | .boolConst _ => .bool
+  | .mapConst k v _ _ => .map k v
+  | .sequenceConst a _ => .seq a
+
+mutual
+/-- A constant is well typed when every element of every collection literal in it
+has the sort its literal declares for it (and is itself well typed). Primitive
+constants are always well typed. -/
+@[expose]
+def LConst.wt : LConst → Bool
+  | .intConst _ | .strConst _ | .rationalConst _ | .bitvecConst _ _ | .boolConst _ => true
+  | .mapConst k v d ⟨es⟩ => d.wt && decide (d.sort = v) && LConst.wtEntries k v es
+  | .sequenceConst a ⟨es⟩ => LConst.wtElems a es
+/-- Every entry of a map literal is well typed at key sort `k` and value sort `v`. -/
+@[expose]
+def LConst.wtEntries (k v : LSort) : List (LConst × LConst) → Bool
+  | [] => true
+  | (a, b) :: rest =>
+    a.wt && decide (a.sort = k) && b.wt && decide (b.sort = v) && LConst.wtEntries k v rest
+/-- Every element of a sequence literal is well typed at sort `s`. -/
+@[expose]
+def LConst.wtElems (s : LSort) : List LConst → Bool
+  | [] => true
+  | a :: rest => a.wt && decide (a.sort = s) && LConst.wtElems s rest
+end
+
+/--
+Get type of a constant `c`.
+
+A collection literal that is not well typed (`LConst.wt`) has type `bool` (and
+denotes `false`). This keeps `ty` total and every typed constant denotable: an
+element of the wrong sort has no value of the sort its literal declares, and that
+sort need not have any value at all. Such a literal is a type error wherever a
+collection is expected.
 -/
 @[expose]
 def LConst.ty (c: LConst) : LMonoTy :=
@@ -288,6 +420,10 @@ def LConst.ty (c: LConst) : LMonoTy :=
   | .bitvecConst n _ => .bitvec n
   | .rationalConst _ => .real
   | .boolConst _ => .bool
+  | .mapConst k v d es =>
+    cond (LConst.mapConst k v d es).wt (.tcons "Map" [k.toMonoTy, v.toMonoTy]) .bool
+  | .sequenceConst a es =>
+    cond (LConst.sequenceConst a es).wt (.tcons "Sequence" [a.toMonoTy]) .bool
 
 /--
 Get type name of a constant `c` (e.g. "int")
@@ -299,6 +435,8 @@ def LConst.tyName (c: LConst) : String :=
   | .bitvecConst _ _ => "bitvec"
   | .rationalConst _ => "real"
   | .boolConst _ => "bool"
+  | .mapConst .. => "Map"
+  | .sequenceConst .. => "Sequence"
 
 /--
 Get type name of a constant `c` as a Format (e.g. "Integers")
@@ -310,6 +448,51 @@ def LConst.tyNameFormat (c: LConst) : Format :=
   | .bitvecConst n _ => f!"Bit vectors of size {n}"
   | .rationalConst _ => f!"Reals"
   | .boolConst _ => f!"Booleans"
+  | .mapConst .. => f!"Maps"
+  | .sequenceConst .. => f!"Sequences"
+
+/-- Whether syntactic inequality of `c` with another constant of the same type
+implies semantic inequality: `c` is well typed and its sort has no `Map`. -/
+@[expose]
+def LConst.eqDecidable (c : LConst) : Bool :=
+  c.wt && !c.sort.hasMap
+
+/-- Whether `c` is a primitive literal (Boolean, integer, rational, string or
+bit-vector), not a map or sequence literal. -/
+@[expose]
+def LConst.isPrimitive : LConst → Bool
+  | .mapConst .. => false
+  | .sequenceConst .. => false
+  | _ => true
+
+/-- Decide the equality of two constants of the same type: equal constants are
+equal, and different ones are different when both are `LConst.eqDecidable`;
+otherwise `none`. -/
+@[expose]
+def LConst.eql (c1 c2 : LConst) : Option Bool :=
+  if c1 == c2 then some true
+  else if c1.eqDecidable && c2.eqDecidable then some false
+  else none
+
+/-- The entries of a map literal with default `dflt` after setting key `k` to `v`.
+If the entries have distinct keys and no value `dflt`, so does the result. Keys are
+compared syntactically ("distinct" means syntactically distinct), so this is the update
+of the map the literal denotes only at a key sort without `Map` (`LSort.hasMap`). -/
+@[expose]
+def LConst.mapUpdate (dflt : LConst) (es : Array (LConst × LConst)) (k v : LConst) :
+    Array (LConst × LConst) :=
+  let es := es.filter (fun e => e.1 != k)
+  if v = dflt then es else es.push (k, v)
+
+/-- The value a map literal with default `dflt` and entries `es` gives key `k`:
+the value of the first entry with key `k`, else `dflt`. Keys are compared
+syntactically, so this is the value of the map the literal denotes only at a key
+sort without `Map` (`LSort.hasMap`). -/
+@[expose]
+def LConst.mapSelect (dflt : LConst) (es : Array (LConst × LConst)) (k : LConst) : LConst :=
+  match es.find? (fun e => e.1 == k) with
+  | some e => e.2
+  | none => dflt
 
 ---------------------------------------------------------------------
 
@@ -741,14 +924,31 @@ def eraseTypes {T : LExprParamsT} (e : LExpr T) : LExpr T :=
 ---------------------------------------------------------------------
 
 /- Formatting and Parsing of Lambda Expressions -/
+mutual
+/-- Render a constant. A map literal is shown as its entries and default value,
+`{k₁ ↦ v₁, …, _ ↦ d}`, and a sequence literal as `[e₁, …]`. -/
+def LConst.toStr : LConst → String
+  | .intConst i => toString i
+  | .strConst s => s
+  | .rationalConst r => toString r
+  | .bitvecConst _ b => toString (b.toNat)
+  | .boolConst b => toString b
+  | .mapConst _ _ d ⟨es⟩ => "{" ++ LConst.entriesToStr es ++ "_ ↦ " ++ LConst.toStr d ++ "}"
+  | .sequenceConst _ ⟨es⟩ => "[" ++ LConst.elemsToStr es ++ "]"
+/-- Render map entries, each followed by `, `. -/
+def LConst.entriesToStr : List (LConst × LConst) → String
+  | [] => ""
+  | (a, b) :: rest =>
+    LConst.toStr a ++ " ↦ " ++ LConst.toStr b ++ ", " ++ LConst.entriesToStr rest
+/-- Render sequence elements separated by `, `. -/
+def LConst.elemsToStr : List LConst → String
+  | [] => ""
+  | [a] => LConst.toStr a
+  | a :: rest => LConst.toStr a ++ ", " ++ LConst.elemsToStr rest
+end
+
 instance : ToString LConst where
-  toString c :=
-    match c with
-    | .intConst i => toString i
-    | .strConst s => s
-    | .rationalConst r => toString r
-    | .bitvecConst _ b => toString (b.toNat)
-    | .boolConst b => toString b
+  toString := LConst.toStr
 
 instance (T : LExprParamsT) [Repr T.base.IDMeta] [Repr T.TypeType] [Repr T.base.Metadata] : ToString (LExpr T) where
    toString a := toString (repr a)

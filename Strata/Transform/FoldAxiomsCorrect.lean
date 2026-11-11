@@ -123,7 +123,7 @@ theorem fold_mistyped (Fs : Expression.Factory) (σ : SemanticStore Expression) 
       v ≠ Lambda.SemValue.ofInt Fs.model.tcInterp 3 := by
   refine ⟨_, (Lambda.LExpr.denoteEval_eq_some_iff (T := CoreLParams)).mpr
     ⟨fun x hx => by simp [mistypedSum, Lambda.LExpr.LExpr.getVars] at hx, .bool,
-      .app (.app .op .const) .const, rfl, rfl⟩, fun h => ?_⟩
+      .app (.app .op (.const rfl)) (.const rfl), rfl, rfl⟩, fun h => ?_⟩
   have hsort := congrArg Lambda.SemValue.sort h
   unfold Lambda.LExpr.denoteEvalResult at hsort
   simp [Lambda.SemValue.ofInt, Lambda.LMonoTy.substTyVars, Lambda.LMonoTy.substTyVars.map] at hsort

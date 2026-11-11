@@ -188,8 +188,9 @@ theorem boolNot_opInterp_of_lookup {factory : Lambda.Factory CoreLParams}
   have h_inst :=
     h_ic vt fv () Lambda.Subst.empty [.boolConst () b] (.boolConst () (!b)) (h_eval _)
   have h_args : List.Rel₂ (Lambda.LExpr.HasTypeA (T := CoreLParams) [])
-      [.boolConst () b] [Lambda.LMonoTy.bool] := .cons .const .nil
-  have h_result : Lambda.LExpr.HasTypeA (T := CoreLParams) [] (.boolConst () (!b)) .bool := .const
+      [.boolConst () b] [Lambda.LMonoTy.bool] := .cons (.const rfl) .nil
+  have h_result : Lambda.LExpr.HasTypeA (T := CoreLParams) [] (.boolConst () (!b)) .bool :=
+    .const rfl
   have h_eq := h_inst h_args h_result
   change (!b) = model.opInterp "Bool.Not" (Lambda.LSort.mkArrow .bool [.bool]) b at h_eq
   exact h_eq.symm
@@ -255,6 +256,8 @@ theorem coreEvaluator_WellFormedSemanticEvalBool (f : Expression.Factory)
     | strConst s => exact hApp _
     | rationalConst r => exact hApp _
     | bitvecConst n bv => exact hApp _
+    | mapConst k v d es => exact hApp _
+    | sequenceConst a es => exact hApp _
   | op m o ty => exact hApp _
   | bvar m i => exact hApp _
   | fvar m x ty => exact hApp _
@@ -451,9 +454,7 @@ theorem opInterp_of_concreteEval {factory : Lambda.Factory CoreLParams}
     (model : Lambda.Interp factory) {name : String} {fn : Lambda.LFunc CoreLParams}
     (hlookup : factory[name]? = some fn) (hname : fn.name.name = name)
     {args : List Expression.Expr} {res : Expression.Expr}
-    (heval : fn.concreteEval.bind (fun ce => ce ()
-      (some (Lambda.LMonoTy.mkArrow' (fn.output.subst Lambda.Subst.empty)
-        ((fn.inputs.map Prod.snd).map (Lambda.LMonoTy.subst Lambda.Subst.empty)))) args) =
+    (heval : fn.concreteEval.bind (fun ce => ce () (some (fn.instTy Lambda.Subst.empty)) args) =
       some res)
     (vt : Lambda.TyVarVal) (fv : Lambda.FreeVarVal CoreLParams model.tcInterp)
     (h_args : List.Rel₂ (Lambda.LExpr.HasTypeA []) args

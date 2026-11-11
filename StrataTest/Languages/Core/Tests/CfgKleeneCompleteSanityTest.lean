@@ -112,8 +112,8 @@ private theorem ttE_eval (n : Nat) (F : Lambda.Factory CoreLParams) (σr : RStor
     and every runtime value it commits is read as `true` (`InterpLang.boolLit?`). -/
 private theorem ttE_engEval (σ : SemanticStore Expression) :
     EngEval Expression M0 σ ttE (fun _ r => InterpLang.boolLit? r = some true) :=
-  ⟨fun _ _ _ hv => ⟨0, ttE, evalBounded_eq_some_iff.2 ⟨evalTypedDomain_const .., ttE_eval ..,
-      typeCheckWith_const .., rfl⟩, denotes_literal ((ttE_denote M0 _).trans
+  ⟨fun _ _ _ hv => ⟨0, ttE, evalBounded_eq_some_iff.2 ⟨evalTypedDomain_const _ _ _ rfl,
+      ttE_eval .., typeCheckWith_const _ _ _ rfl, rfl⟩, denotes_literal ((ttE_denote M0 _).trans
         ((ttE_denote M0 _).symm.trans hv))⟩,
     fun _ _ _ _ h => (Prod.mk.inj ((ttE_eval ..).symm.trans
       (evalBounded_eq_some_iff.1 h).2.1)).1 ▸ boolLit?_boolConst () true⟩

@@ -97,6 +97,41 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (
 
 /-! ## Tests for Array Theory Support -/
 
+section MapLiterals
+
+/-- `select({1 ↦ 2, 1 ↦ 3, _ ↦ 0}, 1)`: the map literal repeats key `1`. -/
+private def selectRepeatedKey : LExpr CoreLParams.mono :=
+  .app () (.app () (.op () "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
+    (.const () (.mapConst .int .int (.intConst 0)
+      #[(.intConst 1, .intConst 2), (.intConst 1, .intConst 3)])))
+    (.intConst () 1)
+
+-- The first entry of a map literal counts, as in the semantics (`SortDenote.mapOf`), so the
+-- encoding puts it outermost: the update of key `1` to `2` is applied last.
+/--
+info: "; mapConst\n(declare-fun mapConst (Int) (Map Int Int))\n; update\n(declare-fun update ((Map Int Int) Int Int) (Map Int Int))\n; select\n(declare-fun select@1 ((Map Int Int) Int) Int)\n(assert (select@1 (update (update (mapConst 0) 1 3) 1 2) 1))\n"
+-/
+#guard_msgs in
+#eval toSMTCommandsWithAssert selectRepeatedKey (factory := Core.Factory)
+
+-- With the array theory, `select` of the outer `store` at key `1` is `2`.
+/--
+info: "; mapConst\n(declare-fun mapConst (Int) (Array Int Int))\n(assert (select (store (store (mapConst 0) 1 3) 1 2) 1))\n"
+-/
+#guard_msgs in
+#eval toSMTCommandsWithAssert selectRepeatedKey
+  (ctx := { SMT.Context.default with useArrayTheory := true })
+  (factory := Core.Factory)
+
+-- A literal that is not well typed (`LConst.wt`) is not encoded.
+/-- info: "Cannot encode the ill-typed literal Sequence.build(Sequence.empty<bool>(), 1)." -/
+#guard_msgs in
+#eval toSMTCommandsWithAssert
+  (.const () (.sequenceConst .bool #[.intConst 1]) : LExpr CoreLParams.mono)
+  (factory := Core.Factory)
+
+end MapLiterals
+
 section ArrayTheory
 
 -- Test map select with Array theory enabled

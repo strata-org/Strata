@@ -77,10 +77,24 @@ section CoreLang
 
 /-- `evalBounded` returns a literal unchanged at every fuel. -/
 theorem evalBounded_const (n : Nat) (f : @Lambda.Factory CoreLParams)
-    (σ : RStore Expression) (m : ExpressionMetadata) (c : Lambda.LConst) :
+    (σ : RStore Expression) (m : ExpressionMetadata) (c : Lambda.LConst)
+    (hc : c.wt = true := by rfl) :
     evalBounded n f σ (.const m c) = some (.const m c) :=
-  evalBounded_eq_some_iff.2 ⟨evalTypedDomain_const σ m c, by
-    cases n <;> simp [Lambda.LExpr.eval, Lambda.LExpr.isValue.eq_def], typeCheckWith_const .., rfl⟩
+  evalBounded_eq_some_iff.2 ⟨evalTypedDomain_const σ m c hc, by
+    cases n <;> simp [Lambda.LExpr.eval, Lambda.LExpr.isValue.eq_def],
+    typeCheckWith_const _ _ _ hc, rfl⟩
+
+/-- A literal that `evalBounded` evaluates is well typed. -/
+theorem evalBounded_const_wt {n : Nat} {f : @Lambda.Factory CoreLParams}
+    {σ : RStore Expression} {m : ExpressionMetadata} {c : Lambda.LConst} {r : Expression.Expr}
+    (h : evalBounded n f σ (.const m c) = some r) : c.wt = true := by
+  obtain ⟨hd, -⟩ := evalBounded_eq_some_iff.1 h
+  unfold evalTypedDomain at hd
+  simp only [Lambda.LExpr.LExpr.getVars, List.all_nil, Lambda.LExpr.annotateFvars,
+    Lambda.LExpr.typeCheck, Bool.true_and] at hd
+  cases hw : c.wt
+  · simp [hw] at hd
+  · rfl
 
 /-- `evalBounded` returns an integer literal unchanged at every fuel. -/
 theorem evalBounded_intConst (n : Nat) (f : @Lambda.Factory CoreLParams)
@@ -119,10 +133,11 @@ theorem boundedEvalComplete_core (f : Expression.Factory) (σr : RStore Expressi
       InterpLang.Denotes f r v := by
   cases he with
   | const m c =>
+    have hw := Lambda.LExpr.denoteEval_const_wt hv
     have hc : Expression.eval f σ (.const m c) = some (Lambda.SemValue.ofConst _ c) :=
-      Lambda.LExpr.denoteEval_const
-    exact ⟨0, _, evalBounded_const 0 _ σr m c, Option.some.inj (hc.symm.trans hv) ▸
-      denotes_literal Lambda.LExpr.denoteEval_const⟩
+      Lambda.LExpr.denoteEval_const hw
+    exact ⟨0, _, evalBounded_const 0 _ σr m c hw, Option.some.inj (hc.symm.trans hv) ▸
+      denotes_literal (Lambda.LExpr.denoteEval_const hw)⟩
   | fvar m x ty =>
     obtain ⟨w, hw, htc⟩ := Lambda.LExpr.denoteEval_defines hv x
       (by simp [Lambda.getVars_eq_freeVars_idents, Lambda.LExpr.freeVars])

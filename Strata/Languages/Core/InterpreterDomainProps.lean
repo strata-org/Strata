@@ -60,16 +60,24 @@ theorem denotes_iff {F : Expression.Factory} {r : Expression.Expr} {v : Expressi
       Option.isSome_eq_false_iff, Option.isNone_iff_eq_none, reduceCtorEq, false_iff,
       Option.isSome_none, Bool.false_eq_true, false_and, not_false_eq_true, implies_true]
 
-/-- A literal type checks against every factory (`typeCheckWith`). -/
+/-- A literal type checks against a factory (`typeCheckWith`) exactly when it is well typed
+    (`LConst.wt`). -/
+theorem typeCheckWith_const_isSome (F : Lambda.Factory CoreLParams) (m : ExpressionMetadata)
+    (c : LConst) : ((LExpr.const m c : Expression.Expr).typeCheckWith F []).isSome = c.wt := by
+  simp only [LExpr.typeCheckWith, LExpr.opsConsistent, LExpr.typeCheck, ↓reduceIte]
+  cases c.wt <;> rfl
+
+/-- A well-typed literal (`LConst.wt`) type checks against every factory (`typeCheckWith`). -/
 theorem typeCheckWith_const (F : Lambda.Factory CoreLParams) (m : ExpressionMetadata)
-    (c : LConst) : ((LExpr.const m c : Expression.Expr).typeCheckWith F []).isSome = true :=
-  rfl
+    (c : LConst) (hc : c.wt = true) :
+    ((LExpr.const m c : Expression.Expr).typeCheckWith F []).isSome = true := by
+  rw [typeCheckWith_const_isSome, hc]
 
 /-- A literal denotes the value `denoteEval` gives it on the empty store. -/
 theorem denotes_literal {F : Expression.Factory} {m : ExpressionMetadata} {c : LConst}
     {v : Expression.Val} (h : (LExpr.const m c : Expression.Expr).denoteEval F (fun _ => none) =
       some v) : InterpLang.Denotes F (.const m c) v :=
-  denotes_iff.2 ⟨isValue_const_true .., typeCheckWith_const .., h⟩
+  denotes_iff.2 ⟨isValue_const_true .., typeCheckWith_const _ _ _ (LExpr.denoteEval_const_wt h), h⟩
 
 /-- A runtime value that denotes `v` (`InterpLang.Denotes`) type checks, with no bound type
     variables, to the type of `v`'s sort. -/
@@ -101,11 +109,13 @@ theorem runtimeAnn_eq_ann {F : Expression.Factory} {σr : RStore Expression}
 theorem isGroundTy_iff {τ : LMonoTy} : isGroundTy τ = true ↔ τ.IsGround := by
   simp [isGroundTy, LMonoTy.IsGround]
 
-/-- A literal is in the evaluation domain on every runtime store. -/
-theorem evalTypedDomain_const (σr : RStore Expression) (m : Unit) (c : LConst) :
-    evalTypedDomain σr (.const m c) = true := by
+/-- A well-typed literal (`LConst.wt`) is in the evaluation domain on every runtime store. -/
+theorem evalTypedDomain_const (σr : RStore Expression) (m : Unit) (c : LConst)
+    (hc : c.wt = true) : evalTypedDomain σr (.const m c) = true := by
   unfold evalTypedDomain
-  exact isGroundTy_iff.2 (by cases c <;> rfl)
+  simp only [LExpr.LExpr.getVars, List.all_nil, LExpr.annotateFvars, LExpr.typeCheck, hc,
+    ↓reduceIte, Option.any_some, Bool.true_and]
+  exact isGroundTy_iff.2 (LConst.ty_isGround c)
 
 /-- A variable bound in the runtime store to a value that type checks at a ground type is in
     the evaluation domain. -/

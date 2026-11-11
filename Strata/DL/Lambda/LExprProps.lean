@@ -6,6 +6,7 @@
 module
 import all Strata.DL.Lambda.LExprWFProps
 
+public import Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.LExprWF
 import all Strata.DL.Lambda.Factory
@@ -19,7 +20,8 @@ import Strata.Util.PtrCacheProps
 Structural lemmas relating `LExpr.getVars` (the free variables of an expression)
 to the various substitution and decomposition operations on `LExpr`. These are
 factored out of `LExprEvalProps` so they can be reused independently of the
-evaluator.
+evaluator. Also: the type of a constant has no free type variables
+(`LConst.ty_freeVars`).
 -/
 
 namespace Lambda
@@ -283,5 +285,26 @@ theorem exists_fresh_ftvar {T : LExprParams}
     ∃ v : TyIdentifier, LExpr.fresh ((y, some (LMonoTy.ftvar v)) : IdentT LMonoTy T.IDMeta) e :=
   let ⟨v, hv, _⟩ := exists_fresh_ftvar_avoiding y e []
   ⟨v, hv⟩
+
+/-! ### Types of constants -/
+
+public section
+
+/-- The type of a constant has no free type variables: it names the sort the constant declares,
+    or is `bool` for a collection literal that is not well typed. -/
+theorem LConst.ty_freeVars (c : LConst) : LMonoTy.freeVars c.ty = [] := by
+  cases c
+  case mapConst k v d es =>
+    simp only [LConst.ty]
+    cases (LConst.mapConst k v d es).wt <;>
+      simp [LMonoTy.freeVars, LMonoTys.freeVars, LSort.toMonoTy_freeVars]
+  case sequenceConst a es =>
+    simp only [LConst.ty]
+    cases (LConst.sequenceConst a es).wt <;>
+      simp [LMonoTy.freeVars, LMonoTys.freeVars, LSort.toMonoTy_freeVars]
+  all_goals simp [LConst.ty, LMonoTy.int, LMonoTy.bool, LMonoTy.real, LMonoTy.string,
+    LMonoTy.freeVars, LMonoTys.freeVars]
+
+end -- public section
 
 end Lambda

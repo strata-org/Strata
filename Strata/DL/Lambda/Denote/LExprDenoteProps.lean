@@ -49,11 +49,21 @@ theorem cast_injective {α β : Sort _} (h : α = β) {a b : α}
     (heq : cast h a = cast h b) : a = b := by
   cases h; exact heq
 
+/-- The denotation of a collection literal is independent of the type variable
+valuation `vt`. -/
+private theorem denoteCollection_cast_vt (vt vt' : TyVarVal) (c : LConst)
+    (h : TyDenote tcInterp vt' c.ty = TyDenote tcInterp vt c.ty)
+    : denoteCollection tcInterp vt c = cast h (denoteCollection tcInterp vt' c) := by
+  unfold denoteCollection
+  split <;> rw [cast_cast]
+
 /-- `denoteConst` is independent of the type variable valuation `vt`. -/
 theorem denoteConst_cast_vt (vt vt' : TyVarVal) (c : LConst)
     (h : TyDenote tcInterp vt' c.ty = TyDenote tcInterp vt c.ty)
     : denoteConst tcInterp vt c = cast h (denoteConst tcInterp vt' c) := by
-  cases c <;> simp [denoteConst, LConst.ty, TyDenote, LMonoTy.substTyVars] at h ⊢ <;> grind
+  cases c
+  case mapConst | sequenceConst => exact denoteCollection_cast_vt tcInterp vt vt' _ h
+  all_goals simp [denoteConst, LConst.ty, TyDenote, LMonoTy.substTyVars] at h ⊢ <;> grind
 
 /-- If the body denotation agrees for all witnesses, the quantifier denotation
 agrees regardless of quantifier kind. Allows different expressions, metadata,

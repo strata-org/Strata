@@ -254,13 +254,14 @@ private theorem procOf_eq {p : Core.Program} {nm : String} {proc : Core.Procedur
 private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
 
 /-- The value of the literal `κ` in the runtime factory of `ρ`. -/
-private abbrev cval (ρ : Imperative.Env Core.Expression) (κ : Lambda.LConst) :
+private noncomputable abbrev cval (ρ : Imperative.Env Core.Expression) (κ : Lambda.LConst) :
     Core.Expression.Val :=
   Lambda.SemValue.ofConst ρ.factory.model.tcInterp κ
 
 /-- The environment over the runtime factory of `model` where `x` holds `1` and every other
     name is unbound. -/
-private def xIs1Env (model : Lambda.Interp Core.Factory) : Imperative.Env Core.Expression :=
+private noncomputable def xIs1Env (model : Lambda.Interp Core.Factory) :
+    Imperative.Env Core.Expression :=
   { store := fun n => if n.name = "x" then
       some (Lambda.SemValue.ofConst model.tcInterp (.intConst 1)) else none
     factory := boolFactory model }
@@ -362,13 +363,14 @@ private theorem checkAsPredicate_eqConst (factory : Lambda.Factory Core.CoreLPar
     (hstore : ρ.store x = some (cval ρ κ))
     (label : Core.CoreLabel) (check : Core.Procedure.Check)
     (hexpr : check.expr =
-      Lambda.LExpr.eq () (Lambda.LExpr.fvar () x ty) (Lambda.LExpr.const () κ)) :
+      Lambda.LExpr.eq () (Lambda.LExpr.fvar () x ty) (Lambda.LExpr.const () κ))
+    (hκ : κ.wt = true := by rfl) :
     Core.Logic.Hoare.Procedure.checkAsPredicate factory ρ label check := by
   intro world
   refine .inl ⟨hfac, ?_⟩
   show Core.Expression.eval ρ.factory ρ.store check.expr = some (HasBool.ttVal ρ.factory)
   rw [hexpr]
-  exact Core.eval_eq_true _ (Core.eval_fvar _ hstore rfl) (Core.eval_const _ _ κ)
+  exact Core.eval_eq_true _ (Core.eval_fvar _ hstore rfl) (Core.eval_const _ _ κ hκ)
 
 /-- **From store facts to the semantic precondition.**  If every `requires` is `x == κ`
     for a listed `(x, κ)` bound by the store, the semantic precondition holds. -/
@@ -379,13 +381,14 @@ private theorem preAsPredicate_of_binds (factory : Lambda.Factory Core.CoreLPara
     (hsyn : (proc.spec.preconditions.toList.all fun lc =>
       binds.any fun b => decide (lc.2.expr =
         Lambda.LExpr.eq () (Lambda.LExpr.fvar () b.1 b.2.1)
-          (Lambda.LExpr.const () b.2.2))) = Bool.true)
+          (Lambda.LExpr.const () b.2.2)) && b.2.2.wt) = Bool.true)
     (hstore : ∀ b ∈ binds, ρ.store b.1 = some (cval ρ b.2.2)) :
     Core.Logic.Hoare.Procedure.preAsPredicate factory proc ρ := by
   intro label check hmem
-  simp only [List.all_eq_true, List.any_eq_true, decide_eq_true_eq] at hsyn
-  obtain ⟨b, hb, hexpr⟩ := hsyn (label, check) hmem
+  simp only [List.all_eq_true, List.any_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hsyn
+  obtain ⟨b, hb, hexpr, hw⟩ := hsyn (label, check) hmem
   exact checkAsPredicate_eqConst factory ρ b.1 b.2.1 b.2.2 hfac (hstore b hb) label check hexpr
+    hw
 
 /-- A procedure with no `requires` satisfies the semantic precondition vacuously. -/
 private theorem preAsPredicate_of_no_pre (factory : Lambda.Factory Core.CoreLParams)
@@ -723,13 +726,13 @@ private theorem set_const {factory : Lambda.Factory Core.CoreLParams}
     (Pre Post : Imperative.Env Core.Expression → Prop)
     (hpost : ∀ (ρ₀ : Imperative.Env Core.Expression) (σ' : Core.CoreStore), Pre ρ₀ →
       σ' x = some (cval ρ₀ κ) → (∀ w, x ≠ w → σ' w = ρ₀.store w) →
-      Post { ρ₀ with store := σ' }) :
+      Post { ρ₀ with store := σ' }) (hκ : κ.wt = true := by rfl) :
     Core.Logic.Hoare.Triple π params Pre
       [Core.Statement.set x (Lambda.LExpr.const () κ) md] Post (factory := factory) :=
   Core.Logic.Hoare.set (factory := factory) π params x _ md Pre Post
     (fun ρ₀ σ' v hpre hev hup => by
       have hv : v = cval ρ₀ κ := (Option.some.injEq _ _).mp
-        (hev.symm.trans (Core.eval_const ρ₀.factory ρ₀.store κ))
+        (hev.symm.trans (Core.eval_const ρ₀.factory ρ₀.store κ hκ))
       subst hv
       cases hup with
       | update _hold hnew hoth => exact hpost ρ₀ σ' hpre hnew hoth)
@@ -743,14 +746,14 @@ private theorem init_const {factory : Lambda.Factory Core.CoreLParams}
     (Pre Post : Imperative.Env Core.Expression → Prop)
     (hpost : ∀ (ρ₀ : Imperative.Env Core.Expression) (σ' : Core.CoreStore), Pre ρ₀ →
       σ' x = some (cval ρ₀ κ) → (∀ w, x ≠ w → σ' w = ρ₀.store w) →
-      Post { ρ₀ with store := σ' }) :
+      Post { ρ₀ with store := σ' }) (hκ : κ.wt = true := by rfl) :
     Core.Logic.Hoare.Triple π params Pre
       [Core.Statement.init x ty (.det (Lambda.LExpr.const () κ)) md] Post
       (factory := factory) :=
   Core.Logic.Hoare.init (factory := factory) π params x ty _ md Pre Post
     (fun ρ₀ σ' v hpre hev hinit => by
       have hv : v = cval ρ₀ κ := (Option.some.injEq _ _).mp
-        (hev.symm.trans (Core.eval_const ρ₀.factory ρ₀.store κ))
+        (hev.symm.trans (Core.eval_const ρ₀.factory ρ₀.store κ hκ))
       subst hv
       cases hinit with
       | init _hold hnew hoth => exact hpost ρ₀ σ' hpre hnew hoth)
@@ -794,7 +797,7 @@ private def ensuresAllEqConst (proc : Core.Procedure)
     decide (lc.2.attr ≠ Core.Procedure.CheckAttr.Default) ||
       binds.any fun b =>
         decide (lc.2.expr = Lambda.LExpr.eq () (Lambda.LExpr.fvar () b.1 b.2.1)
-          (Lambda.LExpr.const () b.2.2))
+          (Lambda.LExpr.const () b.2.2)) && b.2.2.wt
 
 /-- If every non-`free` `ensures` is `x == κ` for a listed `(x, κ)` bound by
     the store, the model's semantic postcondition holds. -/
@@ -807,10 +810,11 @@ private theorem contractPost_of_binds (factory : Lambda.Factory Core.CoreLParams
     Core.Logic.Hoare.Procedure.contractPost factory proc ρ := by
   intro label check hmem hattr
   simp only [ensuresAllEqConst, List.all_eq_true, List.any_eq_true, Bool.or_eq_true,
-    decide_eq_true_eq] at hsyn
-  rcases hsyn (label, check) hmem with hattr' | ⟨b, hb, hexpr⟩
+    Bool.and_eq_true, decide_eq_true_eq] at hsyn
+  rcases hsyn (label, check) hmem with hattr' | ⟨b, hb, hexpr, hw⟩
   · exact absurd hattr hattr'
   · exact checkAsPredicate_eqConst factory ρ b.1 b.2.1 b.2.2 hfac (hstore b hb) label check hexpr
+      hw
 
 /-- A one-assignment body meets a contract whose non-`free` `ensures` clauses are
     all `x == κ` for the literal being assigned.
@@ -826,7 +830,7 @@ private theorem contractTriple_set_const (p : Core.Program)
     (κ : Lambda.LConst) (md : Imperative.MetaData Core.Expression)
     (hbody : proc.body = .structured [Core.Statement.set x (Lambda.LExpr.const () κ) md])
     (hChecksTyped : Core.Logic.Hoare.Procedure.contractChecksTyped proc)
-    (hsyn : ensuresAllEqConst proc [(x, ty, κ)] = Bool.true) :
+    (hsyn : ensuresAllEqConst proc [(x, ty, κ)] = Bool.true) (hκ : κ.wt = true := by rfl) :
     Core.Logic.Hoare.Procedure.contractTriple p params procName := by
   refine Core.Logic.Hoare.Procedure.contractTriple_of_core p params procName proc _ hproc hbody
     hChecksTyped ?_
@@ -834,7 +838,7 @@ private theorem contractTriple_set_const (p : Core.Program)
     (set_const p.findProcByString? params x κ md _ _
       (fun _ρ₀ _σ' hpre hnew _hoth =>
         contractPost_of_binds _ proc _ [(x, ty, κ)] hpre.2.1 hsyn
-          (fun b hb => by simp only [List.mem_singleton] at hb; subst hb; exact hnew)))
+          (fun b hb => by simp only [List.mem_singleton] at hb; subst hb; exact hnew)) hκ)
     (Imperative.Logic.Hoare.postWF_of_definedVars_nil _
       (by simp [Imperative.Block.definedVars,
         Imperative.Stmt.definedVars, Imperative.HasVarsImp.definedVars,

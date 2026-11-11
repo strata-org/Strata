@@ -44,10 +44,10 @@ variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta]
   [Hashable T.IDMeta] [Std.ToFormat T.IDMeta] [HasGen T.IDMeta]
   [Std.ToFormat (LFunc T)]
 
-/-- Every enabled literal type uses registered constructors
-    at their recorded arities. -/
+/-- Every enabled primitive literal type uses registered constructors at their recorded
+    arities. (Type inference checks the types of map and sequence literals itself.) -/
 def LiteralTysKnown (C : LContext T) : Prop :=
-  ∀ c : LConst, C.knownTypes.containsName c.tyName = true →
+  ∀ c : LConst, c.isPrimitive = true → C.knownTypes.containsName c.tyName = true →
     LMonoTy.knownInstance c.ty C.knownTypes = true
 
 /-- Two optional type schemes are related when they are equal, or both are

@@ -86,9 +86,10 @@ private theorem closedTypedActual_sound (n : Nat) (f : Expression.Factory) (σ :
     ∃ v ty, InterpLang.Denotes f r v ∧ HasVal.valueOfTy f v ty := by
   obtain ⟨m, c, rfl⟩ : ∃ m c, e = .const m c := by
     cases e <;> simp_all [closedTypedActual]
-  obtain rfl := Option.some.inj ((evalBounded_const n _ σ m c).symm.trans he)
-  exact ⟨_, .forAll [] c.ty, denotes_literal Lambda.LExpr.denoteEval_const,
-    rfl, by cases c <;> rfl⟩
+  have hw := evalBounded_const_wt he
+  obtain rfl := Option.some.inj ((evalBounded_const n _ σ m c hw).symm.trans he)
+  exact ⟨_, .forAll [] c.ty, denotes_literal (Lambda.LExpr.denoteEval_const hw),
+    rfl, congrArg some (Lambda.LConst.ty_isGround c).symm⟩
 
 /-- Core's expression language satisfies the facts the generic call-aware
     soundness proofs use. -/

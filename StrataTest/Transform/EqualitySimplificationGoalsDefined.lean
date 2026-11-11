@@ -85,14 +85,14 @@ theorem literal_goalsDefined {l₁ l₂ l₃ l₄ : String} {m₁ m₂ m₃ m₄
       List.mem_cons, List.not_mem_nil, or_false] at hx
       subst hx; exact ⟨_, hn, hvn⟩
     · simp only [LExpr.annotateFvars, hann_n]
-      exact .app (.app .op (.app (.app .op .fvar) .const)) .const
+      exact .app (.app .op (.app (.app .op .fvar) (.const rfl))) (.const rfl)
   have hstr : ∃ v, Expression.eval Fs σ strGoal = some v := by
     refine has_value (fun x hx => ?_) ?_
     · simp only [LExpr.LExpr.getVars, List.nil_append, List.append_nil,
       List.mem_cons, List.not_mem_nil, or_false] at hx
       subst hx; exact ⟨_, hs, hvs⟩
     · simp only [LExpr.annotateFvars, hann_s]
-      exact .eq (.app .op (.app (.app .op .fvar) .const)) .const
+      exact .eq (.app .op (.app (.app .op .fvar) (.const rfl))) (.const rfl)
   -- Each statement is a command, and the commands keep the store, so every event of a
   -- reach is an assumption or an assertion of one of the two goals, in `σ`.
   have hev : ∀ L, BReach Fs (body l₁ l₂ l₃ l₄ m₁ m₂ m₃ m₄) σ L → ∀ x ∈ L,

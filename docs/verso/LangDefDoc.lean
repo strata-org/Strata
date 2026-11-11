@@ -151,7 +151,8 @@ can be annotated with metadata.
 {docstring Lambda.Identifier}
 
 Specific constructors exist for constants of various scalar types, including
-booleans, bit vectors, integers, reals, and strings.
+booleans, bit vectors, integers, reals, and strings, and for literals of the
+collection types `Map k v` and `Sequence a`.
 
 {docstring Lambda.LConst}
 

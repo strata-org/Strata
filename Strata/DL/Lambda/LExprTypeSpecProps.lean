@@ -146,6 +146,8 @@ theorem HasType_idents_irrel (C : LContext T) (j : Identifiers T.IDMeta)
   | treal_const Γ m r h => exact .treal_const Γ m r h
   | tstr_const Γ m s h => exact .tstr_const Γ m s h
   | tbitvec_const Γ m n b h => exact .tbitvec_const Γ m n b h
+  | tmap_const Γ m k v d es h hw => exact .tmap_const Γ m k v d es h hw
+  | tseq_const Γ m a es h hw => exact .tseq_const Γ m a es h hw
   | tvar Γ m x ty h_find => exact .tvar Γ m x ty h_find
   | tvar_annotated Γ m x ty_o ty_s tys ann h_find h_len h_open h_ac =>
     exact .tvar_annotated Γ m x ty_o ty_s tys ann h_find h_len h_open h_ac
@@ -402,6 +404,8 @@ theorem HasType_ScopeRel (C : LContext T) (ΓR : TContext T.IDMeta)
   | treal_const Γ m r hk => exact fun tsD _ _ => .treal_const _ m r hk
   | tstr_const Γ m s hk => exact fun tsD _ _ => .tstr_const _ m s hk
   | tbitvec_const Γ m n b hk => exact fun tsD _ _ => .tbitvec_const _ m n b hk
+  | tmap_const Γ m k v d es hk hw => exact fun tsD _ _ => .tmap_const _ m k v d es hk hw
+  | tseq_const Γ m a es hk hw => exact fun tsD _ _ => .tseq_const _ m a es hk hw
   | tvar Γ m x ty h_find =>
     intro tsD hwf hrel
     rcases hrel x with heq | ⟨d, r, hd, hr, hae⟩
@@ -862,7 +866,10 @@ private theorem inferConst_knownInstance
   elim_err h with hname
   simp only [Except.ok.injEq, Prod.mk.injEq] at h
   obtain ⟨h1, h2⟩ := h
-  exact ⟨h1 ▸ hlit c hname, h2.symm⟩
+  simp only [Bool.and_eq_true, Bool.or_eq_true] at hname
+  obtain ⟨⟨hknown, -⟩, hp | hk⟩ := hname
+  · exact ⟨h1 ▸ hlit c hp hknown, h2.symm⟩
+  · exact ⟨h1 ▸ hk, h2.symm⟩
 
 omit [ToString T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] in
 /-- Unifying an instantiated annotation with a registered type keeps the range registered. -/
@@ -1709,6 +1716,10 @@ private theorem HasType_of_AnnotRewrite {T : LExprParams} [DecidableEq T.IDMeta]
     intro _ E' hr; cases hr; exact LExpr.HasType.tstr_const Γ' m s hk
   | tbitvec_const Γ' m n b hk =>
     intro _ E' hr; cases hr; exact LExpr.HasType.tbitvec_const Γ' m n b hk
+  | tmap_const Γ' m k v d es hk hw =>
+    intro _ E' hr; cases hr; exact LExpr.HasType.tmap_const Γ' m k v d es hk hw
+  | tseq_const Γ' m a es hk hw =>
+    intro _ E' hr; cases hr; exact LExpr.HasType.tseq_const Γ' m a es hk hw
   | tvar Γ' m z tz h_find =>
     intro h_mono E' hr
     cases hr with
@@ -1967,6 +1978,10 @@ theorem HasType_of_AnnotInstRewrite {T : LExprParams} [DecidableEq T.IDMeta] [Ha
     intro E hr; cases hr; exact LExpr.HasType.tstr_const Γ' m s hk
   | tbitvec_const Γ' m n b hk =>
     intro E hr; cases hr; exact LExpr.HasType.tbitvec_const Γ' m n b hk
+  | tmap_const Γ' m k v d es hk hw =>
+    intro E hr; cases hr; exact LExpr.HasType.tmap_const Γ' m k v d es hk hw
+  | tseq_const Γ' m a es hk hw =>
+    intro E hr; cases hr; exact LExpr.HasType.tseq_const Γ' m a es hk hw
   | tvar Γ' m z tz h_find =>
     intro E hr
     cases hr with
@@ -2713,12 +2728,14 @@ theorem resolveAux_const_shape (C : LContext T) (Env Env' : TEnv T.IDMeta) (m : 
     (h : resolveAux C Env (.const m c) = .ok (et, Env')) :
     C.knownTypes.containsName c.tyName = true ∧ inferConst C Env c = .ok (c.ty, Env) ∧
       et = .const ⟨m, c.ty⟩ c ∧ Env' = Env := by
-  by_cases hk : C.knownTypes.containsName c.tyName = true
+  by_cases hk : (C.knownTypes.containsName c.tyName && c.wt &&
+      (c.isPrimitive || c.ty.knownInstance C.knownTypes)) = true
   · have hinf : inferConst C Env c = .ok (c.ty, Env) := by
       simp only [inferConst, hk, ite_true]
     simp only [resolveAux, hinf, bind, Except.bind, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h
-    exact ⟨hk, hinf, rfl, rfl⟩
+    simp only [Bool.and_eq_true] at hk
+    exact ⟨hk.1.1, hinf, rfl, rfl⟩
   · simp only [resolveAux, inferConst, hk, ite_false, bind, Except.bind, reduceCtorEq] at h
 
 omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in

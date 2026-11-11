@@ -29,7 +29,9 @@ ordered by De Bruijn indices: the head of the list is the type of the most
 recently bound variable (index 0), the next element is the type of the
 variable at index 1, and so on. -/
 inductive LExpr.HasTypeA {T : LExprParams} : List LMonoTy → LExpr T.mono → LMonoTy → Prop where
-  | const : HasTypeA Δ (.const m c) c.ty
+  /-- A constant has its type if it is well typed (`LConst.wt`, which only
+  constrains the elements of collection literals). -/
+  | const : c.wt = true → HasTypeA Δ (.const m c) c.ty
   | op    : HasTypeA Δ (.op m o (some ty)) ty
   | fvar  : HasTypeA Δ (.fvar m x (some ty)) ty
   | bvar  : Δ[i]? = some t → HasTypeA Δ (.bvar m i) t
@@ -53,7 +55,7 @@ theorem LExpr.HasTypeA_to_typeCheck {T : LExprParams} {Δ : List LMonoTy}
     {e : LExpr T.mono} {τ : LMonoTy}
     (h : HasTypeA Δ e τ) : typeCheck Δ e = some τ := by
   induction h with
-  | const => simp [typeCheck]
+  | const hw => simp [typeCheck, hw]
   | op => simp [typeCheck]
   | fvar => simp [typeCheck]
   | bvar hlookup => simp [typeCheck, hlookup]
@@ -71,7 +73,11 @@ theorem LExpr.typeCheck_to_HasTypeA {T : LExprParams} {Δ : List LMonoTy}
     {e : LExpr T.mono} {τ : LMonoTy}
     (h : typeCheck Δ e = some τ) : HasTypeA Δ e τ := by
   induction e generalizing Δ τ with
-  | const _ c => simp only [typeCheck, Option.some.injEq] at h; subst h; exact .const
+  | const _ c =>
+    simp only [typeCheck] at h
+    split at h
+    · rename_i hw; simp only [Option.some.injEq] at h; subst h; exact .const hw
+    · cases h
   | op _ _ ty =>
     cases ty with
     | some t => simp only [typeCheck, Option.some.injEq] at h; subst h; exact .op
@@ -291,6 +297,11 @@ using the computable `typeCheck` function. -/
 theorem HasTypeA.const_inv {T : LExprParams} {Δ : List LMonoTy} {m c τ}
     (h : @LExpr.HasTypeA T Δ (.const m c) τ) : τ = c.ty := by
   cases h; rfl
+
+/-- From `HasTypeA Δ (.const m c) τ`, conclude that `c` is well typed. -/
+theorem HasTypeA.const_wt {T : LExprParams} {Δ : List LMonoTy} {m c τ}
+    (h : @LExpr.HasTypeA T Δ (.const m c) τ) : c.wt = true := by
+  cases h; assumption
 
 /-- An operator is annotated typeable only when it carries an annotation, which
     is its type. -/

@@ -235,6 +235,7 @@ import Strata.DL.Lambda.Denote.CallOfLFuncDenote
 import Strata.DL.Lambda.Denote.LExprDenote
 import Strata.DL.Lambda.Denote.LExprDenoteCompute
 import Strata.DL.Lambda.Denote.LExprDenoteConstrs
+import Strata.DL.Lambda.Denote.LExprDenoteConsts
 import Strata.DL.Lambda.Denote.LExprDenoteEq
 import Strata.DL.Lambda.LExprDenoteEval
 import Strata.DL.Lambda.LExprDenoteEvalProps

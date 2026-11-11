@@ -391,7 +391,7 @@ theorem FnInstance.interpConsistentEval [DecidableEq T.IDMeta] {tc : TyConstrInt
     rw [hin, ← hτi]; exact hl g.inputs
   have hout' : LMonoTy.subst tySubst g'.output = LMonoTy.subst τ g.output := by
     rw [hout, hτo]
-  rw [hins, hout'] at hres
+  rw [show g'.instTy tySubst = g.instTy τ by simp only [LFunc.instTy, hins, hout']] at hres
   have hold := hI vt fvarVal md τ _ _ (hnat md _ args res hres)
   dsimp only at hold
   have h_args0 : List.Rel₂ (LExpr.HasTypeA []) (args.map (·.renameOps demangleRen))

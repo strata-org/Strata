@@ -51,7 +51,8 @@ factories. The semantic conditions that carry along such maps are in `LExprEvalD
 
 ### `LFunc` conversions and type substitution
 These are the algebraic facts about `LFunc` plumbing. Erasing metadata keeps an operator's
-type annotation, which concrete evaluators receive (`LExpr.opTy?_eraseMetadata`). The
+type annotation, which concrete evaluators receive (`LExpr.opTy?_eraseMetadata`), and a
+function's instantiated type is its type under the substitution (`LFunc.instTy_eq`). The
 `LFuncDefined ↔ LFunc` conversions are mutually inverse (`LFuncDefined.toLFunc_toFunc`,
 `LFunc.toFunc_toLFunc`). The remaining lemmas unfold type-substitution helpers:
 `applyTypeSubst` reduces to `replaceUserProvidedType`
@@ -197,6 +198,12 @@ theorem LFunc.computeTypeSubst_of_opTypeSubst {T : LExprParams}
 theorem LExpr.opTy?_eraseMetadata {T : LExprParamsT} (e : LExpr T) :
     e.eraseMetadata.opTy? = e.opTy? := by
   cases e <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.opTy?]
+
+/-- The instantiated type of a function (`LFunc.instTy`) is its type, the arrow from its input
+    types to its output type, under the substitution. -/
+theorem LFunc.instTy_eq {T : LExprParams} (f : LFunc T) (S : Subst) :
+    f.instTy S = LMonoTy.subst S (LMonoTy.mkArrow' f.output (f.inputs.map Prod.snd)) :=
+  (subst_mkArrow' S _ _).symm
 
 /-- Lifting an `LFuncDefined` to the full `LFunc` then projecting back recovers
     the original. -/

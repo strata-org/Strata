@@ -43,10 +43,10 @@ theorem typingLaws : TypingLaws (P := Expression) Expression.Typed
   toTypedLaws := typedLaws
   tt := ⟨.bool, boolTy_toMonoType, rfl, fun _ _ h => by
     simp [Imperative.WP.tt, HasBool.tt, Core.true, Lambda.LExpr.boolConst,
-      Lambda.LExpr.freeVars] at h, .const⟩
+      Lambda.LExpr.freeVars] at h, .const rfl⟩
   ff := ⟨.bool, boolTy_toMonoType, rfl, fun _ _ h => by
     simp [Imperative.WP.ff, HasBool.ff, Core.false, Lambda.LExpr.boolConst,
-      Lambda.LExpr.freeVars] at h, .const⟩
+      Lambda.LExpr.freeVars] at h, .const rfl⟩
   ground h := let ⟨τ, h1, h2, _⟩ := h; ⟨τ, h1, h2⟩
   mkVar x ty h := by
     obtain ⟨τ, h1, h2⟩ := h

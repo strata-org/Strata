@@ -113,7 +113,7 @@ a type is ground, and to denote literals, whose types are ground. -/
 @[expose] def refTyVarVal : TyVarVal := fun _ => .bool
 
 /-- The value of the literal `c` under `tc`. -/
-@[expose] def SemValue.ofConst (tc : TyConstrInterp) (c : LConst) : SemValue :=
+@[expose] noncomputable def SemValue.ofConst (tc : TyConstrInterp) (c : LConst) : SemValue :=
   ⟨tc, c.ty.substTyVars refTyVarVal, denoteConst tc refTyVarVal c⟩
 
 /-- The type `τ` is ground: it is the type of the sort it denotes, so it mentions no type

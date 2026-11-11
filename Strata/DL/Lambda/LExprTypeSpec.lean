@@ -5,6 +5,7 @@
 -/
 module
 import all Strata.DL.Lambda.LExprWFProps
+import Strata.DL.Lambda.LExprProps
 
 public import Strata.DL.Lambda.LExprTypeEnv
 import all Strata.DL.Lambda.LExprTypeEnv
@@ -140,6 +141,22 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] [Hashable T.IDMeta] (C
   | tbitvec_const : ∀ Γ m n b,
             C.knownTypes.containsName "bitvec" →
             HasType C Γ (.bitvecConst m n b) (.forAll [] (.bitvec n))
+
+  /-- A well-typed map literal (`LConst.wt`) with key sort `k` and value sort `v`
+  has type `Map k v` (its `LConst.ty`) if `Map` is a known type in this context. -/
+  | tmap_const : ∀ Γ m k v d es,
+            C.knownTypes.containsName "Map" →
+            (LConst.mapConst k v d es).wt = true →
+            HasType C Γ (.const m (.mapConst k v d es))
+              (.forAll [] (LConst.mapConst k v d es).ty)
+
+  /-- A well-typed sequence literal (`LConst.wt`) with element sort `a` has type
+  `Sequence a` (its `LConst.ty`) if `Sequence` is a known type in this context. -/
+  | tseq_const : ∀ Γ m a es,
+            C.knownTypes.containsName "Sequence" →
+            (LConst.sequenceConst a es).wt = true →
+            HasType C Γ (.const m (.sequenceConst a es))
+              (.forAll [] (LConst.sequenceConst a es).ty)
 
   /-- An un-annotated variable has the type recorded for it in `Γ`, if any. -/
   | tvar : ∀ Γ m x ty, Γ.types.find? x = some ty → HasType C Γ (.fvar m x none) ty
@@ -292,13 +309,7 @@ attribute [local simp] Pure.pure Except.pure
 ### Helper lemmas for `resolve_HasType`
 -/
 
-/--
-Ground types (from constants) are unaffected by type substitution.
--/
-theorem LConst.ty_freeVars (c : LConst) : LMonoTy.freeVars c.ty = [] := by
-  cases c <;> simp [LConst.ty, LMonoTy.int, LMonoTy.bool, LMonoTy.real, LMonoTy.string,
-    LMonoTy.freeVars, LMonoTys.freeVars]
-
+/-- Ground types (from constants) are unaffected by type substitution. -/
 theorem LConst.ty_subst [DecidableEq TyIdentifier] (c : LConst) (S : Subst) :
     LMonoTy.subst S c.ty = c.ty := by
   apply LMonoTy.subst_no_key_free
@@ -1130,6 +1141,8 @@ theorem HasType_FindEq (C : LContext T) (Γ Ξ : TContext T.IDMeta)
   | treal_const Γ m r h => exact .treal_const Ξ m r h
   | tstr_const Γ m s h => exact .tstr_const Ξ m s h
   | tbitvec_const Γ m n b h => exact .tbitvec_const Ξ m n b h
+  | tmap_const Γ m k v d es h hw => exact .tmap_const Ξ m k v d es h hw
+  | tseq_const Γ m a es h hw => exact .tseq_const Ξ m a es h hw
   | tvar Γ m x ty h_find =>
     exact .tvar Ξ m x ty ((hEq.1 x).trans h_find)
   | tvar_annotated Γ m x ty_o ty_s tys ann h_find h_len h_open h_ac =>
@@ -4206,7 +4219,8 @@ theorem resolveAux_preserves (C : LContext T)
   induction Env, e using LExpr.resolveAux.induct (T := T) C with
   | case1 Env m c =>
     intro Env' et h
-    by_cases hc : C.knownTypes.containsName c.tyName = true
+    by_cases hc : (C.knownTypes.containsName c.tyName && c.wt &&
+        (c.isPrimitive || c.ty.knownInstance C.knownTypes)) = true
     · simp only [resolveAux, inferConst, hc, ite_true, bind, Except.bind,
         Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨rfl, rfl⟩ := h
@@ -5757,6 +5771,8 @@ private theorem resolveAux_HasType_fits :
     simp only [resolveAux, inferConst] at h
     elim_err h
     rename_i h_known
+    simp only [Bool.and_eq_true] at h_known
+    obtain ⟨⟨h_known, h_wt⟩, -⟩ := h_known
     simp only [bind, Except.bind, Except.ok.injEq, Prod.mk.injEq] at h
     obtain ⟨h_et, h_env⟩ := h
     constructor
@@ -5772,6 +5788,8 @@ private theorem resolveAux_HasType_fits :
       | rationalConst r => exact HasType.treal_const _ _ _ h_known
       | strConst s => exact HasType.tstr_const _ _ _ h_known
       | bitvecConst n b => exact HasType.tbitvec_const _ _ _ _ h_known
+      | mapConst k v d es => exact HasType.tmap_const _ _ _ _ _ _ h_known h_wt
+      | sequenceConst a es => exact HasType.tseq_const _ _ _ _ h_known h_wt
   case h_op =>
     intro m o oty et C Env Env' h h_envwf h_ne h_fwf h_ws
     have h_aw := h_envwf.aliasesWF
@@ -6492,6 +6510,8 @@ private theorem HasType_transfer_empty_scope
   | treal_const _ m r h_known => exact HasType.treal_const _ m r h_known
   | tstr_const _ m s h_known => exact HasType.tstr_const _ m s h_known
   | tbitvec_const _ m n b h_known => exact HasType.tbitvec_const _ m n b h_known
+  | tmap_const _ m k v d es h_known hw => exact HasType.tmap_const _ m k v d es h_known hw
+  | tseq_const _ m a es h_known hw => exact HasType.tseq_const _ m a es h_known hw
   | tvar _ m x ty h_find =>
     subst hΓ_eq; simp [HMaps.find?, HMap.find?_empty] at h_find
   | tvar_annotated _ m x ty_o ty_s tys ann h_find h_len h_open h_compat =>

@@ -178,9 +178,17 @@ that.
 -/
 def inferConst (C: LContext T) (Env : TEnv T.IDMeta) (c : LConst) :
   Except Format (LMonoTy × (TEnv T.IDMeta)) :=
-  if C.knownTypes.containsName c.tyName then
+  if C.knownTypes.containsName c.tyName && c.wt &&
+      (c.isPrimitive || c.ty.knownInstance C.knownTypes) then
     .ok (c.ty, Env)
-  else .error (c.tyNameFormat ++ f!" are not registered in the known types.\n\
+  else .error (if !c.wt then
+                f!"Ill-typed literal: an element of {c} does not have the sort its \
+                  literal declares."
+              else if C.knownTypes.containsName c.tyName then
+                f!"The type {c.ty} of the literal {c} uses a type constructor that is \
+                  not registered in the known types.\n\
+                  Known Types: {C.knownTypes}"
+              else c.tyNameFormat ++ f!" are not registered in the known types.\n\
                 Don't know how to interpret the following constant:\n\
                 {c}\n\
                 Known Types: {C.knownTypes}")

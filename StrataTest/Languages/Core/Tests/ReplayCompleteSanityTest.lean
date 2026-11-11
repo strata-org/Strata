@@ -110,8 +110,8 @@ private theorem wRun (F : Expression.Factory) :
     (.refl _))⟩, .assert ⟨F,
       Calls.withOldSnapshots (Calls.inoutParams wProc.header) emptyStore, "fail", ffE, md⟩,
     by simp [Calls.defaultAssertEvents, wProc, IEnv.abs], rfl, rfl, ffE_denote F _,
-    fun σr v _ hv => ⟨0, ffE, evalBounded_eq_some_iff.2 ⟨evalTypedDomain_const .., ffE_eval ..,
-      typeCheckWith_const .., rfl⟩, denotes_literal ((ffE_denote F _).trans
+    fun σr v _ hv => ⟨0, ffE, evalBounded_eq_some_iff.2 ⟨evalTypedDomain_const _ _ _ rfl,
+      ffE_eval .., typeCheckWith_const _ _ _ rfl, rfl⟩, denotes_literal ((ffE_denote F _).trans
         ((ffE_denote F _).symm.trans hv))⟩,
     fun σr n r _ h => (Prod.mk.inj ((ffE_eval ..).symm.trans
       (evalBounded_eq_some_iff.1 h).2.1)).1 ▸ rfl⟩

@@ -11,6 +11,7 @@ import all Strata.DL.Lambda.Denote.LExprDenoteSubst
 import all Strata.DL.Lambda.Denote.CallOfLFuncDenote
 import all Strata.DL.Lambda.LExprEval
 import all Strata.DL.Lambda.Denote.LExprDenoteConstrs
+import Strata.DL.Lambda.Denote.LExprDenoteConsts
 import all Strata.DL.Lambda.TypeFactoryWF
 import Strata.Util.RealProps
 
@@ -62,45 +63,25 @@ theorem eqModuloMeta_true_implies_denote_eq
 
 /-! ## `denoteConst` injectivity -/
 
-/-- For constants of the same type, `denoteConst` is injective:
-distinct constants of the same type have distinct denotations. -/
+/-- For constants of the same type that are `LConst.eqDecidable` (well typed, of a
+sort without `Map`), `denoteConst` is injective: distinct constants of the same
+type have distinct denotations. -/
 theorem denoteConst_injective
     (c1 c2 : LConst)
+    (h1 : c1.eqDecidable = true) (h2 : c2.eqDecidable = true)
     (hty : c1.ty = c2.ty)
     (heq : (hty ▸ denoteConst tcInterp vt c1 : TyDenote tcInterp vt c2.ty) =
             denoteConst tcInterp vt c2)
     : c1 = c2 := by
-  cases c1 <;> cases c2 <;> simp only [LConst.ty] at hty <;> try contradiction
-  case intConst.intConst =>
-    rename_i i1 i2 hty_orig
-    have hty_rfl : hty_orig = rfl := by rfl
-    rw [hty_rfl] at heq
-    simp only [denoteConst] at heq
-    exact congrArg _ heq
-  case strConst.strConst =>
-    rename_i s1 s2 hty_orig
-    have hty_rfl : hty_orig = rfl := by rfl
-    rw [hty_rfl] at heq
-    simp only [denoteConst] at heq
-    exact congrArg _ heq
-  case rationalConst.rationalConst =>
-    rename_i r1 r2 hty_orig
-    have hty_rfl : hty_orig = rfl := by rfl
-    rw [hty_rfl] at heq
-    simp only [denoteConst] at heq
-    exact congrArg _ (Strata.Util.Real.ofRat_inj.mp heq)
-  case boolConst.boolConst =>
-    rename_i b1 b2 hty_orig
-    have hty_rfl : hty_orig = rfl := by rfl
-    rw [hty_rfl] at heq
-    simp only [denoteConst] at heq
-    exact congrArg _ heq
-  case bitvecConst.bitvecConst =>
-    rename_i n1 b1 n2 b2
-    simp only [LMonoTy.bitvec.injEq] at hty
-    subst hty
-    simp only [denoteConst] at heq
-    exact congrArg _ heq
+  simp only [LConst.eqDecidable, Bool.and_eq_true, Bool.not_eq_true'] at h1 h2
+  have key : ∀ (t : LMonoTy) (ht : c1.ty = t),
+      constVal tcInterp (t.substTyVars vt) c1 = some (ht ▸ denoteConst tcInterp vt c1) := by
+    intro t ht; subst ht; exact constVal_denoteConst (tcInterp := tcInterp) vt h1.1
+  have hv1 := key c2.ty hty
+  rw [heq] at hv1
+  have hs : (c2.ty.substTyVars vt).hasMap = false := by
+    rw [LConst.ty_of_wt h2.1, LSort.toMonoTy_substTyVars]; exact h2.2
+  exact constVal_injective c1 c2 hs hv1 (constVal_denoteConst (tcInterp := tcInterp) vt h2.1)
 
 /-! ## `eqlCombine` helpers -/
 
@@ -250,7 +231,11 @@ theorem eql_true_implies_denote_eq
     | case1 e1 e2 hmod => -- eqModuloMeta = true
       exact eqModuloMeta_true_implies_denote_eq tcInterp opInterp fvarVal vt .nil h₁ h₂ hmod
     | case2 m1 c1 m2 c2 hnotmod => -- constants
-      have hceq : c1 = c2 := by grind
+      have hceq : c1 = c2 := by
+        simp only [LConst.eql] at heql
+        split at heql
+        · rename_i h; simpa using h
+        · split at heql <;> simp at heql
       subst c2
       rfl
     | case3 => contradiction -- abs vs abs, ty1 ≠ ty2: some false ≠ some true
@@ -443,7 +428,15 @@ theorem eql_false_implies_denote_ne
   | case1 e1 e2 hmod => -- eqModuloMeta = true → returns some true
     simp at heql
   | case2 m1 c1 m2 c2 hnotmod => -- constants
-    have hneq : c1 ≠ c2 := by grind
+    have ⟨hneq, hd1, hd2⟩ : c1 ≠ c2 ∧ c1.eqDecidable = true ∧ c2.eqDecidable = true := by
+      simp only [LConst.eql] at heql
+      split at heql
+      · simp at heql
+      · split at heql
+        · rename_i hne hd
+          simp only [Bool.and_eq_true] at hd
+          exact ⟨by simpa using hne, hd⟩
+        · simp at heql
     have hty1 : τ = c1.ty := by cases h₁; rfl
     have hty2 : τ = c2.ty := by cases h₂; rfl
     have htyeq : c1.ty = c2.ty := by rw [← hty1, ← hty2]
@@ -454,7 +447,7 @@ theorem eql_false_implies_denote_ne
       rw [denote_const tcInterp opInterp fvarVal vt .nil h₁,
           denote_const tcInterp opInterp fvarVal vt .nil h₂] at heq
       grind
-    exact hneq (denoteConst_injective tcInterp vt c1 c2 htyeq hdenote_eq)
+    exact hneq (denoteConst_injective tcInterp vt c1 c2 hd1 hd2 htyeq hdenote_eq)
   | case3 m1 pn1 ty1 body1 m2 pn2 ty2 body2 htyneq hnotmod => -- abs/abs, ty1 ≠ ty2
     -- Vacuous: HasTypeA forces ty1 = ty2
     have htyneq' : ty1 ≠ ty2 := by simp only [bne_iff_ne, ne_eq] at htyneq; exact htyneq
@@ -494,7 +487,7 @@ theorem eql_false_implies_denote_ne
     | some aty =>
       have ⟨rty, hty2, _⟩ := HasTypeA.abs_inv h₂
       rw [hty1] at hty2
-      cases c <;> simp [LConst.ty, LMonoTy.int, LMonoTy.bool, LMonoTy.string, LMonoTy.real, LMonoTy.arrow] at hty2
+      exact LConst.ty_ne_arrow c _ _ hty2
   | case7 m1 pn ty body m2 c => -- abs/const → vacuous
     exfalso
     have hty2 : τ = c.ty := by cases h₂; rfl
@@ -503,7 +496,7 @@ theorem eql_false_implies_denote_ne
     | some aty =>
       have ⟨rty, hty1, _⟩ := HasTypeA.abs_inv h₁
       rw [hty2] at hty1
-      cases c <;> simp [LConst.ty, LMonoTy.int, LMonoTy.bool, LMonoTy.string, LMonoTy.real, LMonoTy.arrow] at hty1
+      exact LConst.ty_ne_arrow c _ _ hty1
   | case8 e1 e2 hnotmod callee1 args1 f1 callee2 args2 f2 hcall1 hcall2 hnotconstr =>
     -- both callOfLFunc, not both isConstr → returns none
     rw [hcall1, hcall2] at heql; simp [hnotconstr] at heql

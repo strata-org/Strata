@@ -413,6 +413,43 @@ def reCompFunc : WFLFunc CoreLParams :=
 def reNoneFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.None" mty[regex]
 
+mutual
+/-- A collection literal as the expression that builds it from operators:
+    `mapConst(d)` updated with the entries (the first entry outermost, since it is
+    the one that counts), or `Sequence.empty()` built on with the elements in
+    order. Any other constant is itself. -/
+def litToOpExpr : LConst → Expression.Expr
+  | .mapConst k v d ⟨xs⟩ =>
+    let kt := k.toMonoTy
+    let vt := v.toMonoTy
+    litEntriesToOpExpr kt vt
+      (.app default (.op default "mapConst" (some (.arrow vt (mapTy kt vt)))) (litToOpExpr d))
+      xs
+  | .sequenceConst a ⟨xs⟩ =>
+    litElemsToOpExpr a.toMonoTy (.op default "Sequence.empty" (some (seqTy a.toMonoTy))) xs
+  | c => .const default c
+/-- `base` updated with the map entries `xs`, the first one outermost. -/
+def litEntriesToOpExpr (kt vt : LMonoTy) (base : Expression.Expr) :
+    List (LConst × LConst) → Expression.Expr
+  | [] => base
+  | (key, x) :: rest =>
+    let updTy := LMonoTy.arrow (mapTy kt vt) (.arrow kt (.arrow vt (mapTy kt vt)))
+    .app default
+      (.app default (.app default (.op default "update" (some updTy))
+        (litEntriesToOpExpr kt vt base rest)) (litToOpExpr key))
+      (litToOpExpr x)
+/-- `acc` with the sequence elements `xs` appended in order. -/
+def litElemsToOpExpr (et : LMonoTy) (acc : Expression.Expr) : List LConst → Expression.Expr
+  | [] => acc
+  | x :: rest =>
+    let buildTy := LMonoTy.arrow (seqTy et) (.arrow et (seqTy et))
+    litElemsToOpExpr et
+      (.app default (.app default (.op default "Sequence.build" (some buildTy)) acc)
+        (litToOpExpr x))
+      rest
+end
+
+
 /- A constant `Map` constructor with type `∀k, v. v → Map k v`.
    `mapConst(d)` returns a map where every key maps to the value `d`.
    Named `mapConst` (not `const`) to avoid colliding with the `const`

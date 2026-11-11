@@ -48,7 +48,7 @@ private theorem intArith_opInterp_of_lookup {factory : Lambda.Factory CoreLParam
   (opInterp_of_concreteEval model hlookup rfl (args := [.intConst () a, .intConst () b])
     (res := .intConst () (op a b)) rfl (fun _ => .int) (fun _ s =>
       @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s))
-    (.cons .const (.cons .const .nil)) .const).symm
+    (.cons (.const rfl) (.cons (.const rfl) .nil)) (.const rfl)).symm
 
 /-- An integer comparison built by `binaryOp` from `op : Int → Int → Bool` keeps `op` as its
     interpretation in any factory that resolves `name` to it. -/
@@ -61,7 +61,7 @@ private theorem intCmp_opInterp_of_lookup {factory : Lambda.Factory CoreLParams}
   (opInterp_of_concreteEval model hlookup rfl (args := [.intConst () a, .intConst () b])
     (res := .boolConst () (op a b)) rfl (fun _ => .int) (fun _ s =>
       @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s))
-    (.cons .const (.cons .const .nil)) .const).symm
+    (.cons (.const rfl) (.cons (.const rfl) .nil)) (.const rfl)).symm
 
 /-- `Int.Ge`'s interpretation at `int, int → bool` is `≥` in every consistent model. -/
 theorem intGe_opInterp (model : Lambda.Interp Core.Factory) (a b : Int) :
@@ -269,10 +269,12 @@ theorem eval_boolConst (f : Expression.Factory)
     Expression.eval f σ (.boolConst m b) = some (SemValue.ofBool f.model.tcInterp b) :=
   LExpr.denoteEval_boolConst
 
-/-- A literal evaluates to its value. -/
-theorem eval_const (f : Expression.Factory) {m : ExpressionMetadata} (σ : CoreStore) (c : LConst) :
+/-- A well-typed literal (`LConst.wt`, which holds of every primitive literal)
+evaluates to its value. -/
+theorem eval_const (f : Expression.Factory) {m : ExpressionMetadata} (σ : CoreStore) (c : LConst)
+    (hc : c.wt = true := by rfl) :
     Expression.eval f σ (.const m c) = some (SemValue.ofConst f.model.tcInterp c) :=
-  LExpr.denoteEval_const
+  LExpr.denoteEval_const hc
 
 /-- An equality of two expressions with the same value evaluates to `true`. -/
 theorem eval_eq_true (f : Expression.Factory)

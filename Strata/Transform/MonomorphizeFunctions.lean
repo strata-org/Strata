@@ -229,18 +229,29 @@ def mangleOpsInLExpr (polyfunDecls : PolymorphicFuncDecls) (factory : Lambda.Fac
 
 /-! ### Collecting .op LExpr nodes that provide the monomorphic types for specialization  -/
 
+/-- The reference to a polymorphic function (Program-level or Factory) that the
+    node `e` makes, if it is such an `.op`. -/
+def opFuncSpecialization (pfunDecls : PolymorphicFuncDecls)
+    (factory : Lambda.Factory CoreLParams) (e : Expression.Expr) :
+    List FuncSpecialization := Id.run do
+  let .op _ o ty := e | pure []
+  let some (fdef, source) := pfunDecls.lookup factory o.name | pure []
+  let some typeSubst := getTypeSubstitution fdef ty | pure []
+  pure [{ name := o.name, typeSubst, source }]
+
 /-- Fold out the references to polymorphic functions (Program-level or
     Factory) in `e`, visiting each physically distinct subterm once
-    (`PtrCache`). -/
+    (`PtrCache`). A map or sequence literal refers to the operators that build it
+    (`Core.litToOpExpr`), since the SMT encoder emits their specialized copies for it. -/
 def collectFuncSpecializations (pfunDecls : PolymorphicFuncDecls)
     (factory : Lambda.Factory CoreLParams) (e : Expression.Expr) :
     List FuncSpecialization :=
   Lambda.LExpr.Traversal.visitDFSPtrCached .preorder
-    (fun e => Id.run do
-      let .op _ o ty := e | pure []
-      let some (fdef, source) := pfunDecls.lookup factory o.name | pure []
-      let some typeSubst := getTypeSubstitution fdef ty | pure []
-      pure [{ name := o.name, typeSubst, source }])
+    (fun e => match e with
+      | .const _ c@(.mapConst ..) | .const _ c@(.sequenceConst ..) =>
+        Lambda.LExpr.Traversal.visitDFSPtrCached .preorder
+          (opFuncSpecialization pfunDecls factory) (litToOpExpr c)
+      | _ => opFuncSpecialization pfunDecls factory e)
     e
 
 /-- The user-facing expressions in a `Command` (mirror of `Command.mapExprM`). -/

@@ -685,16 +685,25 @@ def isCoreTriggerListExpr (tr : LExpr CoreLParams.mono) : Bool :=
     | _ => false
   | _ => false
 
-mutual
+/-- The function of `factory` that implements the built-in collection operator `base` at type
+    instantiation `tys`: `base` itself, or, once functions are monomorphized, its specialized
+    copy. -/
+def collectionOpIdent (factory : @Lambda.Factory CoreLParams) (base : String)
+    (tys : List LMonoTy) : CoreIdent :=
+  if (factory[base]?).isSome then ⟨base, ()⟩
+  else (Core.NameMangling.mangleFuncName Strata.PtrCache.PtrCache.empty base tys).1
 
-@[expose]
-def toSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (ctx : SMT.Context)
-  (pending : SMT.PendingFnQueue)
-  : Except Format (Term × SMT.Context × SMT.PendingFnQueue) := do
-  match e with
-  | .boolConst _ b => .ok (Term.bool b, ctx, pending)
-  | .intConst _ i => .ok (Term.int i, ctx, pending)
-  | .rationalConst _ r =>
+mutual
+/-- Encode a constant. A collection literal is encoded as the applications of the operators
+    that build it (see `Core.litToOpExpr`): `mapConst` and `update` for a map, the first entry
+    outermost, and `Sequence.empty` and `Sequence.build` for a sequence. -/
+def litToSMTTerm (factory : @Lambda.Factory CoreLParams) (c : LConst) (ctx : SMT.Context)
+    (pending : SMT.PendingFnQueue) :
+    Except Format (Term × SMT.Context × SMT.PendingFnQueue) :=
+  match c with
+  | .boolConst b => .ok (Term.bool b, ctx, pending)
+  | .intConst i => .ok (Term.int i, ctx, pending)
+  | .rationalConst r =>
     match StrataDDM.Decimal.fromRat r with
     | some d => .ok (Term.real d, ctx, pending)
     | none =>
@@ -703,8 +712,59 @@ def toSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (e : LEx
       let num := Term.real (StrataDDM.Decimal.ofInt r.num)
       let den := Term.real (StrataDDM.Decimal.ofInt (Int.ofNat r.den))
       .ok (.app Op.rdiv [num, den] .real, ctx, pending)
-  | .bitvecConst _ n b => .ok (Term.bitvec b, ctx, pending)
-  | .strConst _ s => .ok (Term.string s, ctx, pending)
+  | .bitvecConst _ b => .ok (Term.bitvec b, ctx, pending)
+  | .strConst s => .ok (Term.string s, ctx, pending)
+  | .mapConst k v d ⟨xs⟩ => do
+    let kt := k.toMonoTy
+    let vt := v.toMonoTy
+    let (dT, ctx, pending) ← litToSMTTerm factory d ctx pending
+    let (mk, mty, ctx, pending) ←
+      toSMTOp factory (collectionOpIdent factory "mapConst" [kt, vt])
+        (.arrow vt (mapTy kt vt)) ctx pending
+    litEntriesToSMTTerm factory kt vt (mk [dT] mty) xs ctx pending
+  | .sequenceConst a ⟨xs⟩ => do
+    let et := a.toMonoTy
+    let (mk, sty, ctx, pending) ←
+      toSMTOp factory (collectionOpIdent factory "Sequence.empty" [et]) (seqTy et) ctx pending
+    litElemsToSMTTerm factory et (mk [] sty) xs ctx pending
+/-- Encode `base` updated with map entries, the first one outermost. -/
+def litEntriesToSMTTerm (factory : @Lambda.Factory CoreLParams) (kt vt : LMonoTy) (base : Term) :
+    List (LConst × LConst) → SMT.Context → SMT.PendingFnQueue →
+    Except Format (Term × SMT.Context × SMT.PendingFnQueue)
+  | [], ctx, pending => .ok (base, ctx, pending)
+  | (key, x) :: rest, ctx, pending => do
+    let (restT, ctx, pending) ← litEntriesToSMTTerm factory kt vt base rest ctx pending
+    let (keyT, ctx, pending) ← litToSMTTerm factory key ctx pending
+    let (xT, ctx, pending) ← litToSMTTerm factory x ctx pending
+    let (upd, uty, ctx, pending) ←
+      toSMTOp factory (collectionOpIdent factory "update" [kt, vt])
+        (.arrow (mapTy kt vt) (.arrow kt (.arrow vt (mapTy kt vt)))) ctx pending
+    .ok (upd [restT, keyT, xT] uty, ctx, pending)
+/-- Encode `acc` with sequence elements appended in order. -/
+def litElemsToSMTTerm (factory : @Lambda.Factory CoreLParams) (et : LMonoTy) (acc : Term) :
+    List LConst → SMT.Context → SMT.PendingFnQueue →
+    Except Format (Term × SMT.Context × SMT.PendingFnQueue)
+  | [], ctx, pending => .ok (acc, ctx, pending)
+  | x :: rest, ctx, pending => do
+    let (xT, ctx, pending) ← litToSMTTerm factory x ctx pending
+    let (bld, bty, ctx, pending) ←
+      toSMTOp factory (collectionOpIdent factory "Sequence.build" [et])
+        (.arrow (seqTy et) (.arrow et (seqTy et))) ctx pending
+    litElemsToSMTTerm factory et (bld [acc, xT] bty) rest ctx pending
+end
+
+mutual
+
+@[expose]
+def toSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (ctx : SMT.Context)
+  (pending : SMT.PendingFnQueue)
+  : Except Format (Term × SMT.Context × SMT.PendingFnQueue) := do
+  match e with
+  | .const _ c =>
+    -- An ill-typed literal has type `bool` (`LConst.ty`), so its encoding would disagree
+    -- with its type.
+    if c.wt then litToSMTTerm factory c ctx pending
+    else .error f!"Cannot encode the ill-typed literal {e}."
   | .op _ fn fnty =>
     match fnty with
     | none => .error f!"Cannot encode unannotated operation {fn}."

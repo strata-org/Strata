@@ -1205,6 +1205,62 @@ info: done
     if !(← monoRoundtrips pgm) then IO.println s!"FAIL: {nm}"
   IO.println "done"
 
+/-! ### Collection literals
+
+The SMT encoder encodes a map or sequence literal with the specialized copies of the
+operators that build it (`mapConst` and `update`, `Sequence.empty` and `Sequence.build`), so
+monomorphization creates those copies even where no `.op` names them. -/
+
+private def intS : Lambda.LSort := .tcons "int" []
+
+/-- Two map literals compared, and two sequence literals compared. -/
+private def litAxioms : List Core.Expression.Expr :=
+  let m (x : Int) : Core.Expression.Expr :=
+    .const () (.mapConst intS intS (.intConst 0) #[(.intConst 1, .intConst x)])
+  let q (x : Int) : Core.Expression.Expr :=
+    .const () (.sequenceConst intS #[.intConst 1, .intConst x])
+  [.eq () (m 10) (m 20), .eq () (q 2) (q 3)]
+
+/-- Monomorphize a program of `litAxioms`, then print the specialized functions in the
+    resulting factory and the SMT encoding of each axiom with that factory. The literals
+    bring in the copies of `mapConst`, `update`, `Sequence.empty` and `Sequence.build`;
+    the others come from those operators' axioms. -/
+private def litAxiomsEncode : IO Unit := do
+  let p : Core.Program :=
+    { decls := litAxioms.map fun e => .ax { name := "lit", e } .empty }
+  let seedState : Core.Transform.CoreTransformState :=
+    { Core.Transform.CoreTransformState.emp with factory := Core.Factory }
+  let (res, st) := Core.Transform.runWith p Core.MonomorphizeFunctions.run seedState
+  if let .error msg := res then throw (IO.userError s!"{msg}")
+  let mono := st.factory.toArray.toList.filterMap fun f =>
+    if f.name.name.startsWith "$__mono#" then some f.name.name else none
+  for n in mono do IO.println n
+  for e in litAxioms do
+    IO.print (← Core.toSMTCommandsWithAssert e st.factory)
+
+/--
+info: $__mono#update#int#int
+$__mono#mapConst#int#int
+$__mono#Sequence.build#int
+$__mono#Sequence.empty#int
+$__mono#select#int#int
+$__mono#Sequence.length#int
+$__mono#Sequence.select#int
+$__mono#Sequence.select!#int
+; $__mono#mapConst#int#int
+(declare-fun |$__mono#mapConst#int#int| (Int) (Map Int Int))
+; $__mono#update#int#int
+(declare-fun |$__mono#update#int#int| ((Map Int Int) Int Int) (Map Int Int))
+(assert (= (|$__mono#update#int#int| (|$__mono#mapConst#int#int| 0) 1 10) (|$__mono#update#int#int| (|$__mono#mapConst#int#int| 0) 1 20)))
+; $__mono#Sequence.empty#int
+(declare-const |$__mono#Sequence.empty#int| (Sequence Int))
+; $__mono#Sequence.build#int
+(declare-fun |$__mono#Sequence.build#int| ((Sequence Int) Int) (Sequence Int))
+(assert (= (|$__mono#Sequence.build#int| (|$__mono#Sequence.build#int| |$__mono#Sequence.empty#int| 1) 2) (|$__mono#Sequence.build#int| (|$__mono#Sequence.build#int| |$__mono#Sequence.empty#int| 1) 3)))
+-/
+#guard_msgs in
+#eval litAxiomsEncode
+
 end MonomorphizeFunctionsTests
 
 end

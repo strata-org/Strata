@@ -451,4 +451,24 @@ error: SMT text encoding failed: this is an ordinary backend IO failure
   (options := Core.VerifyOptions.quiet)
   (mkDischarge := similarLookingIOFailure)
 
+/-! ### The alphabet check looks inside collection literals
+
+`StrLitsInAlphabet`, which the phase-correctness proofs assume of a program, checks the strings
+in map and sequence literals as well as the top-level ones. -/
+
+section
+open Core.Specification.Analysis
+
+/-- A code point outside SMT-LIB's string alphabet. -/
+private def outside : String := String.singleton (Char.ofNat 0x10FFFF)
+
+#guard !StrLitsInAlphabet (.const () (.strConst outside))
+#guard !StrLitsInAlphabet (.const () (.sequenceConst .string #[.strConst "a", .strConst outside]))
+#guard !StrLitsInAlphabet
+  (.const () (.mapConst .string .int (.intConst 0) #[(.strConst outside, .intConst 1)]))
+#guard !StrLitsInAlphabet (.const () (.mapConst .int .string (.strConst outside) #[]))
+#guard StrLitsInAlphabet
+  (.const () (.mapConst .string .string (.strConst "d") #[(.strConst "k", .strConst "v")]))
+end
+
 end Strata

@@ -234,18 +234,37 @@ open Lambda
     | _ => Bool.true
 
 
+mutual
+/-- Is every character of every string literal in the constant `c`, including the strings
+    inside map and sequence literals, in SMT-LIB's string alphabet (see `StrLitsInAlphabet`)? -/
+@[expose] def ConstStrsInAlphabet : LConst → Bool
+  | .strConst str => str.toList.all (·.toNat ≤ 0x2FFFF)
+  | .mapConst _ _ d ⟨es⟩ => ConstStrsInAlphabet d && EntriesStrsInAlphabet es
+  | .sequenceConst _ ⟨es⟩ => ElemsStrsInAlphabet es
+  | .intConst _ | .rationalConst _ | .bitvecConst _ _ | .boolConst _ => true
+/-- `ConstStrsInAlphabet` holds of the key and the value of every entry of a map literal. -/
+@[expose] def EntriesStrsInAlphabet : List (LConst × LConst) → Bool
+  | [] => true
+  | (k, v) :: r => ConstStrsInAlphabet k && ConstStrsInAlphabet v && EntriesStrsInAlphabet r
+/-- `ConstStrsInAlphabet` holds of every element of a sequence literal. -/
+@[expose] def ElemsStrsInAlphabet : List LConst → Bool
+  | [] => true
+  | e :: r => ConstStrsInAlphabet e && ElemsStrsInAlphabet r
+end
+
 /-- Is every character of every string literal of `e` in SMT-LIB's string alphabet, the
     code points 0 to 0x2FFFF? Lean characters go up to 0x10FFFF. The bound is the SMT
     encoder's `Strata.SMT.StringLit.maxCodePoint`, written out here so that the check
-    reduces in proofs: `maxCodePoint` is not exposed outside its module. -/
+    reduces in proofs: `maxCodePoint` is not exposed outside its module. The strings
+    inside map and sequence literals count (`ConstStrsInAlphabet`). -/
 @[expose] def StrLitsInAlphabet : Expression.Expr → Bool
-  | .const _ (.strConst str) => str.toList.all (·.toNat ≤ 0x2FFFF)
+  | .const _ c => ConstStrsInAlphabet c
   | .app _ f a => StrLitsInAlphabet f && StrLitsInAlphabet a
   | .abs _ _ _ e => StrLitsInAlphabet e
   | .quant _ _ _ _ tr e => StrLitsInAlphabet tr && StrLitsInAlphabet e
   | .ite _ c t e => StrLitsInAlphabet c && StrLitsInAlphabet t && StrLitsInAlphabet e
   | .eq _ e1 e2 => StrLitsInAlphabet e1 && StrLitsInAlphabet e2
-  | .const _ _ | .op _ _ _ | .bvar _ _ | .fvar _ _ _ => true
+  | .op _ _ _ | .bvar _ _ | .fvar _ _ _ => true
 
 end Specification.Analysis
 
