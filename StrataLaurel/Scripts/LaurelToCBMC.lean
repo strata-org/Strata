@@ -9,8 +9,9 @@ import StrataLaurel.Implementation
 
 /-! # LaurelToCBMC
 
-Script that replaces `laurel_to_cbmc.sh`. Translates a Laurel `.lr.st` source
-file through the full Strata pipeline to CBMC verification:
+Translates a Laurel `.lr.st` source file through the full Strata pipeline to
+CBMC verification (`StrataLaurel/Tests/CBMC/laurel_to_cbmc.sh` wraps the
+compiled executable):
 
 1. Parse Laurel source → Laurel AST
 2. Translate Laurel → Core
