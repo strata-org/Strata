@@ -28,11 +28,14 @@ import Strata.Languages.Core.ProgramProps
 - `Analysis.PhaseOverapproximates.preservesDeductiveVerification` — such a
   phase meets `PhasePreservesDeductiveVerification`, the per-phase hypothesis of
   `CoreVerifyIsDeductive`.
+- `Analysis.ResultsCover.of_lemmaLabelsKept` — exactly one result per lemma carries back to
+  a program whose lemma names the other program keeps.
 - `Analysis.deductiveVerificationOnCoreWith_of_overapproximates` — deductive
   verification carries back from a program whose entries' runs overapproximate
-  another's.
+  another's and whose lemmas keep the other's names.
 - `Analysis.PhaseOverapproximatesFrom.preservesDeductiveVerification` — a phase that
-  overapproximates the runs of every entry meets `PhasePreservesDeductiveVerificationFrom`.
+  overapproximates the runs of every entry and keeps the names of the lemmas meets
+  `PhasePreservesDeductiveVerificationFrom`.
 - `Analysis.deductiveVerificationOnCore_of_with` — deductive verification over a base factory
   implies deductive verification as `DeductiveVerificationOnCore` reads it.
 - `Analysis.PhasesRun.preservesDeductiveVerification` — a pipeline of phases that each
@@ -54,8 +57,8 @@ import Strata.Languages.Core.ProgramProps
 - `Analysis.deductiveVerificationOnCoreWith_of_declsReflect` — deductive verification carries
   back from `p'` to a program `p` without entry procedures.
 - `Analysis.PhaseReflectsLemmas.preservesDeductiveVerification` — a phase that reflects the
-  declarations entry preserves deductive verification on programs without procedures
-  (`NoProcedures`).
+  declarations entry and keeps the names of the lemmas preserves deductive verification on
+  programs without procedures (`NoProcedures`).
 - `Analysis.PhaseReflectsLemmas.overapproximates` — on such programs it meets
   `PhaseOverapproximatesFrom`, the contract over every entry.
 
@@ -94,10 +97,26 @@ private theorem vcResultsVerdict_keepValid {E : Type _} {E' : Type _} (results :
   unfold vcResultsVerdict
   split <;> rfl
 
+/-- Declarations whose lemmas have distinct names keep the names of their own lemmas, once
+    each. -/
+theorem LemmaLabelsKept.refl_of_nodup {ds : List Decl} (h : (lemmaLabels ds).Nodup) :
+    LemmaLabelsKept ds ds :=
+  ⟨id, h, fun _ ha => ⟨ha, h.count_of_mem (List.mem_map_of_mem (f := (·.1)) ha)⟩⟩
+
+/-- **Exactly one result per lemma carries back** to a program whose lemma names the other
+    program keeps. -/
+theorem ResultsCover.of_lemmaLabelsKept {p p' : Program} {results : VCResults}
+    (hlabels : LemmaLabelsKept p.decls p'.decls) (h : ResultsCover p' results) :
+    ResultsCover p results :=
+  fun hnp => ⟨hlabels.2.1, fun a ha => (h (hlabels.1 hnp)).2 a (hlabels.2.2 a ha).1⟩
+
 /-- Deductive verification of a program whose entries' runs overapproximate those of
-    another program's entries carries back to that program. -/
+    another program's entries, and whose lemmas keep the names of the other's, carries back
+    to that program. For programs without procedures, every lemma has exactly one result;
+    otherwise no coverage is claimed (`ResultsCover`). -/
 theorem deductiveVerificationOnCoreWith_of_overapproximates
     {base base' : Lambda.Factory CoreLParams} {p p' : Program}
+    (hlabels : LemmaLabelsKept p.decls p'.decls)
     (hover : ∀ w, IsCoreEntryAt base p w →
       ∃ w', w.Corresponds w' ∧ IsCoreEntryAt base' p' w' ∧
         (coreEventLangWithDecls (coreStartWithDecls p w).1).RunsOverapproximate
@@ -128,18 +147,19 @@ theorem deductiveVerificationOnCoreWith_of_overapproximates
         cases w' with
         | proc => exact hcorr.elim
         | decls => exact hw'')
-    (fun _ _ h => h) hdv
+    (fun _ _ h => h) hdv.2
   simp only [vcResultsVerdict_keepValid] at hv
-  exact hv
+  exact ⟨ResultsCover.of_lemmaLabelsKept hlabels hdv.1, hv⟩
 
-/-- **A phase that overapproximates the runs of every entry preserves deductive
-    verification backwards.** -/
+/-- **A phase that overapproximates the runs of every entry and keeps the names of the
+    lemmas preserves deductive verification backwards.** -/
 theorem PhaseOverapproximatesFrom.preservesDeductiveVerification
     {pre : Transform.CoreTransformState → Program → Prop} {phase : PipelinePhase}
-    (h : PhaseOverapproximatesFrom pre phase) :
+    (h : PhaseOverapproximatesFrom pre phase) (hlabels : PhaseKeepsLemmaLabels pre phase) :
     PhasePreservesDeductiveVerificationFrom pre phase :=
   fun s p s' p' hpre hrun _ _ hdv =>
-    deductiveVerificationOnCoreWith_of_overapproximates (h s p s' p' hpre hrun) hdv
+    deductiveVerificationOnCoreWith_of_overapproximates (hlabels s p s' p' hpre hrun)
+      (h s p s' p' hpre hrun) hdv
 
 /-- **A closed Boolean formula has a value** in every model, under every store: the direction
     of `declFormulasTyped` the declarations entry needs. -/
@@ -183,7 +203,7 @@ theorem deductiveVerificationOnCore_of_with {base : Lambda.Factory CoreLParams}
     (E₁ := coreEntries) (E₂ := coreEntriesFrom base) (p₁ := input) (p₂ := input)
     (R := fun t t' => t = t')
     (fun w hw => ⟨.proc w, hw, fun n t c hr => ⟨n, t, c, hr, rfl⟩⟩)
-    (fun _ _ ht => ht ▸ fun _ ha => ha) h
+    (fun _ _ ht => ht ▸ fun _ ha => ha) h.2
   simp only [vcResultsVerdict_keepValid] at hv
   exact hv
 
@@ -550,18 +570,21 @@ private theorem entriesOverapproximate_of_declsReflect
     exact ⟨.decls ρ', trivial, hw', hr.runsOverapproximate⟩
 
 /-- **Deductive verification carries back through the declarations entry.** If `p` has no
-    entry procedure, and the declarations of each declarations entry of `p` over `base` are
-    reflected by those of a declarations entry of `p'` over `base'`, deductive verification
-    of `p'` is deductive verification of `p`. -/
+    entry procedure, the declarations of each declarations entry of `p` over `base` are
+    reflected by those of a declarations entry of `p'` over `base'`, and the lemmas of `p'`
+    keep the names of those of `p`, deductive verification of `p'` is deductive
+    verification of `p`. For programs without procedures, every lemma has exactly one
+    result; otherwise no coverage is claimed (`ResultsCover`). -/
 theorem deductiveVerificationOnCoreWith_of_declsReflect
     {base base' : Lambda.Factory CoreLParams} {p p' : Program}
+    (hlabels : LemmaLabelsKept p.decls p'.decls)
     (hnoproc : ∀ w, ¬ IsCoreEntryAt base p (.proc w))
     (hdecls : ∀ ρ, IsCoreEntryAt base p (.decls ρ) →
       ∃ ρ', IsCoreEntryAt base' p' (.decls ρ') ∧ DeclsReflect ρ p.decls ρ' p'.decls)
     {entryPoints : List String} {results : VCResults}
     (hdv : DeductiveVerificationOnCoreWith base' ⟨entryPoints, p'⟩ results) :
     DeductiveVerificationOnCoreWith base ⟨entryPoints, p⟩ results :=
-  deductiveVerificationOnCoreWith_of_overapproximates
+  deductiveVerificationOnCoreWith_of_overapproximates hlabels
     (entriesOverapproximate_of_declsReflect hnoproc hdecls) hdv
 
 /-! ## Phases on programs without procedures -/
@@ -574,15 +597,15 @@ private theorem NoProcedures.not_procEntry {base : Lambda.Factory CoreLParams} {
   obtain ⟨d, hd, _⟩ := hfind
   exact h d (Program.find?_mem hd) (Program.find?_kind hd)
 
-/-- **A phase that reflects the declarations entry preserves deductive verification
-    backwards on programs without procedures.** -/
+/-- **A phase that reflects the declarations entry and keeps the names of the lemmas
+    preserves deductive verification backwards on programs without procedures.** -/
 theorem PhaseReflectsLemmas.preservesDeductiveVerification
     {pre : Transform.CoreTransformState → Program → Prop} {phase : PipelinePhase}
-    (h : PhaseReflectsLemmas pre phase) :
+    (h : PhaseReflectsLemmas pre phase) (hlabels : PhaseKeepsLemmaLabels pre phase) :
     PhasePreservesDeductiveVerificationFrom (fun s p => pre s p ∧ NoProcedures p) phase :=
   fun s p s' p' ⟨hpre, hnp⟩ hrun _ _ hdv =>
-    deductiveVerificationOnCoreWith_of_declsReflect (hnp.not_procEntry)
-      (h s p s' p' hpre hrun) hdv
+    deductiveVerificationOnCoreWith_of_declsReflect (hlabels s p s' p' hpre hrun)
+      (hnp.not_procEntry) (h s p s' p' hpre hrun) hdv
 
 /-- **A phase that reflects the declarations entry overapproximates every entry on programs
     without procedures** (`PhaseOverapproximatesFrom`, the contract that also covers

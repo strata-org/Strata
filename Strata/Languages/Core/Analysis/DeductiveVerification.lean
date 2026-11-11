@@ -49,9 +49,12 @@ and `distinct` declaration and asserting each lemma, which it never assumes afte
 procedure, without `base` or the functions generated for datatypes. Conditions are read
 under the factory and store they were captured with (`Imperative.BigStep.evalInterp`).
 `DeductiveVerificationOnCoreWith base` says results are deductive verification of a
-program over `base`, and `PhasePreservesDeductiveVerificationFrom` says a pipeline phase,
-run from a transform state, carries it back from its output to its input. A phase that
-overapproximates the runs of every entry (`PhaseOverapproximatesFrom`) does.
+program over `base`: they have exactly one result for each lemma of the program
+(`ResultsCover`), and their verdicts are deductive verification over these entries.
+`PhasePreservesDeductiveVerificationFrom` says a pipeline phase, run from a transform state,
+carries it back from its output to its input. A phase that overapproximates the runs of
+every entry (`PhaseOverapproximatesFrom`) and keeps the names of the lemmas
+(`PhaseKeepsLemmaLabels`) does.
 
 These are the definitions later correctness proofs build on. The earlier ones
 (`DeductiveVerificationOnCore`, `PhaseOverapproximates`, `CoreVerifyIsDeductive`) stay for
@@ -492,7 +495,92 @@ inductive CoreEntryWithDecls where
     | .decls .. => IsCoreEntryAt base input.prog w
   start input w := coreStartWithDecls input.prog w
 
-/-- **Deductive verification of a Core program over the factory `base`.** The report
+/-! #### Results for every lemma -/
+
+/-- `p` declares no procedure, so its only entry is its declarations. -/
+@[expose] def NoProcedures (p : Program) : Prop :=
+  ∀ d ∈ p.decls, d.kind ≠ .proc
+
+instance (p : Program) : Decidable (NoProcedures p) :=
+  inferInstanceAs (Decidable (∀ d ∈ p.decls, d.kind ≠ .proc))
+
+/-- The lemmas among `ds`, in order, each by its name and metadata: what a lemma's
+    obligation, and so its result, carries. -/
+@[expose] def lemmaIds (ds : List Decl) : List (String × Imperative.MetaData Expression) :=
+  ds.filterMap fun
+    | .lemma l md => some (l.name, md)
+    | _ => none
+
+/-- The names of the lemmas among `ds`, in order. A name may occur twice in a program that
+    has not been type checked; `ResultsCover` then does not hold of it. -/
+@[expose] def lemmaLabels (ds : List Decl) : List String :=
+  (lemmaIds ds).map (·.1)
+
+/-- `r` is a result for the lemma named `name` with metadata `md`: its obligation has the
+    lemma's name and metadata, which every phase of `Core.verify`'s pipeline passes through
+    unchanged and symbolic evaluation copies into the lemma's obligation. A procedure
+    assertion may carry a lemma's name as its label; its result is told apart from the
+    lemma's by its metadata, which records a different source location when the program
+    carries locations. -/
+@[expose] def _root_.Core.VCResult.isForLemma (r : VCResult) (name : String)
+    (md : Imperative.MetaData Expression) : Bool :=
+  r.obligation.label == name && r.obligation.metadata == md
+
+/-- **`results` has exactly one result for each lemma of `p`, when `p` has no procedures**:
+    the lemmas of `p` have distinct names, and for every lemma, exactly one result is for an
+    obligation with the lemma's name and metadata (`VCResult.isForLemma`). Without distinct
+    names, one result could stand for two lemmas. For a program with procedures it claims
+    no coverage and holds.
+
+    `vcResultsVerdict` reads `valid` for a lemma only when some result carries its label, so
+    a lemma without a result gets `unknown`, which the verdicts alone do not distinguish from
+    a lemma the back end could not prove. This condition rules out that a lemma is left out
+    of the results: a pipeline that drops a lemma reports no result for it, and its results
+    are not deductive verification of the program.
+
+    It is stated only for programs without procedures because results do not record which
+    declaration an obligation came from. In a program with procedures, an obligation that a
+    procedure has or that a phase generates in one (a loop invariant, a call's precondition)
+    may have a lemma's name and metadata, as in a program built without source locations.
+    Its result would then stand in for the lemma's if the lemma's own were dropped. A
+    collision without a drop is harmless: `vcResultsVerdict` reads the lemma `valid` only if
+    every result with its label passes, so a collision only makes a verdict more
+    conservative. Keying each result by the obligation it answers, not by name and metadata,
+    is follow-up work, together with covering procedure assertions.
+
+    `ResultsCover` covers the lemmas of the program it is given, so stated of a program
+    that a phase has added lemmas to, it asks for a result for those too.
+
+    The names are distinct, so the condition can be met, in a program that type checks:
+    `Program.typeCheck` rejects two declarations with one name
+    (`addListWithError`). Termination checking and precondition elimination start from the
+    names of all of the program's declarations and name each lemma they add apart from them
+    and from each other (`Strata.Name.freshName`), so the repaired program's lemma names are
+    distinct too. -/
+@[expose] def ResultsCover (p : Program) (results : VCResults) : Prop :=
+  NoProcedures p → (lemmaLabels p.decls).Nodup ∧
+    ∀ a ∈ lemmaIds p.decls, results.countP (·.isForLemma a.1 a.2) = 1
+
+instance (p : Program) (results : VCResults) : Decidable (ResultsCover p results) :=
+  inferInstanceAs (Decidable (NoProcedures p → (lemmaLabels p.decls).Nodup ∧
+    ∀ a ∈ lemmaIds p.decls, _ = 1))
+
+/-- **Every result of `results` is for a lemma of `q`**: the back end that verified `q`
+    reported no label of its own. For a program `p` that a pipeline turned into `q`,
+    `ResultsCover p results` and `ResultsWithin q results` together say that each lemma of
+    `p` has exactly one result and that every result is for a lemma of `q`. Stated for
+    programs without procedures: a procedure assertion's result carries the assertion's
+    label, which is not a lemma's. No theorem here takes it: it is the condition a statement
+    about the back end's results takes, and the condition a runner checks of them. -/
+@[expose] def ResultsWithin (q : Program) (results : VCResults) : Prop :=
+  ∀ r ∈ results, r.obligation.label ∈ lemmaLabels q.decls
+
+instance (q : Program) (results : VCResults) : Decidable (ResultsWithin q results) :=
+  inferInstanceAs (Decidable (∀ r ∈ results, r.obligation.label ∈ lemmaLabels q.decls))
+
+/-- **Deductive verification of a Core program over the factory `base`.** For a
+    program without procedures, `results` has exactly one result for each lemma
+    (`ResultsCover`); otherwise no coverage is claimed. The report
     read from `results` by `vcResultsVerdict` is deductive verification of `input`, with
     each condition read under the runtime factory and store it was captured with
     (`Imperative.BigStep.evalInterp`): each `valid` verdict holds on every bounded run from
@@ -505,6 +593,7 @@ inductive CoreEntryWithDecls where
     entries the run starts from, which pin the runtime factory. -/
 @[expose] def DeductiveVerificationOnCoreWith (base : Lambda.Factory CoreLParams)
     (input : CoreVerifierInput) (results : VCResults) : Prop :=
+  ResultsCover input.prog results ∧
   Strata.Analysis.DeductiveVerification Imperative.BigStep.evalInterp (coreEntriesFrom base) input
     (vcResultsVerdict results)
 
@@ -512,7 +601,14 @@ inductive CoreEntryWithDecls where
     the type annotations its expressions need for a value (a program parsed from text
     carries none), so it means what its elaboration means: the program `Core.typeCheck`
     produces, over Core's own factory. The report read from `results` is deductive
-    verification of that program. A program that does not type check claims nothing. -/
+    verification of that program. A program that does not type check claims nothing.
+
+    It describes a full run: `ResultsCover` asks for a result for every lemma of the
+    program, whatever `input.entryPoints` is. A run that leaves some lemma without a result
+    does not meet it, even when the lemma is outside the selected entry points: one
+    restricted by `proceduresToVerify` (which drops unlisted lemmas) or
+    `obligationsToVerify`, one that stops with `stopOnFirstError`, and one that ends before
+    verification conditions are discharged (`parseOnly`, `typeCheckOnly`, `checkOnly`). -/
 @[expose] def DeductiveVerificationOnElaborated
     (input : CoreVerifierInput) (results : VCResults) : Prop :=
   ∀ prog', Core.typeCheck .default input.prog Core.Factory = .ok prog' →
@@ -546,8 +642,9 @@ inductive PhasesRun : List PipelinePhase → Transform.CoreTransformState → Pr
     that are deductive verification of `p'`, over the factory of the state it ends in,
     are deductive verification of `p`, over the factory of the state it starts in, for
     the same entry points. A phase that overapproximates the runs of every entry
-    (`PhaseOverapproximatesFrom`) has this property; a phase that does not can establish
-    it some other way. -/
+    (`PhaseOverapproximatesFrom`) and keeps the names of the lemmas
+    (`PhaseKeepsLemmaLabels`) has this property; a phase that does not can establish it
+    some other way. -/
 @[expose] def PhasePreservesDeductiveVerificationFrom
     (pre : Transform.CoreTransformState → Program → Prop) (phase : PipelinePhase) : Prop :=
   ∀ s p s' p', pre s p → phase.Runs s p s' p' → ∀ entryPoints results,
@@ -576,6 +673,46 @@ inductive PhasesRun : List PipelinePhase → Transform.CoreTransformState → Pr
         (coreEventLangWithDecls (coreStartWithDecls p' w').1)
           (coreStartWithDecls p w).2 (coreStartWithDecls p' w').2
 
+/-- **The lemmas of `ds'` keep the names of those of `ds`, once each**: the lemmas of `ds`
+    have distinct names, `ds'` declares no procedure if `ds` declares none, and each is,
+    with its metadata, a lemma of `ds'`, whose name no other lemma of `ds'` has. Results
+    with exactly one result for each lemma of `ds'` then have exactly one for each lemma of
+    `ds` (`ResultsCover.of_lemmaLabelsKept`). The lemmas of `ds'` may have other names too.
+    Keeping each lemma's name and metadata would be enough to carry `ResultsCover` back; the
+    count states that a phase maps each lemma to exactly one, which a phase that splits a
+    lemma does not.
+
+    A phase that splits one lemma into several with the same name does not keep its name
+    once. No phase of `Core.verify`'s pipeline splits a declaration-level lemma: symbolic
+    evaluation splits procedure assertions by path, and those are outside `ResultsCover`.
+    Phases that split or drop a lemma are out of scope until the follow-up on per-phase
+    results hooks: each phase transforms the results back, as it does for models, so a
+    phase that splits a lemma merges its pieces' results into one, and a phase that drops
+    a lemma reinserts its result. -/
+@[expose] def LemmaLabelsKept (ds ds' : List Decl) : Prop :=
+  ((∀ d ∈ ds, d.kind ≠ .proc) → ∀ d ∈ ds', d.kind ≠ .proc) ∧ (lemmaLabels ds).Nodup ∧
+    ∀ a ∈ lemmaIds ds, a ∈ lemmaIds ds' ∧ (lemmaLabels ds').count a.1 = 1
+
+instance (ds ds' : List Decl) : Decidable (LemmaLabelsKept ds ds') :=
+  inferInstanceAs (Decidable (((∀ d ∈ ds, d.kind ≠ .proc) → ∀ d ∈ ds', d.kind ≠ .proc) ∧
+    (lemmaLabels ds).Nodup ∧
+    ∀ a ∈ lemmaIds ds, a ∈ lemmaIds ds' ∧ (lemmaLabels ds').count a.1 = 1))
+
+/-- **`phase` keeps the names of the lemmas, from what `pre` admits.** Whenever it turns `p`
+    into `p'`, every lemma of `p` is, with its name and metadata, the one lemma of `p'` with
+    that name (`LemmaLabelsKept`). A phase that preserves runs also needs this to carry
+    deductive verification back, since deductive verification asks for a result for each
+    lemma (`ResultsCover`): a phase that drops or renames a lemma loses it from the
+    results.
+
+    `LemmaLabelsKept` asks the input for distinct lemma names, so `pre` must give them.
+    Type checking establishes them (`addListWithError`), and every phase of `Core.verify`'s
+    pipeline preserves them, naming the lemmas it adds apart from every declaration
+    (`Strata.Name.freshName`). `LemmaLabelsKept` does not give them of the output, which may
+    have lemmas of its own: composing phases needs, for each phase, that it preserves them. -/
+@[expose] def PhaseKeepsLemmaLabels
+    (pre : Transform.CoreTransformState → Program → Prop) (phase : PipelinePhase) : Prop :=
+  ∀ s p s' p', pre s p → phase.Runs s p s' p' → LemmaLabelsKept p.decls p'.decls
 
 /-! ### Phases that reflect the declarations entry -/
 
@@ -608,10 +745,6 @@ inductive PhasesRun : List PipelinePhase → Transform.CoreTransformState → Pr
       DeclsFactsHold (ds'.take j) ρ' ∧
       (Imperative.BigStep.evalInterp.holds () (lemmaEvent l' md ρ') →
         Imperative.BigStep.evalInterp.holds () (lemmaEvent l md ρ))
-
-/-- `p` declares no procedure, so its only entry is its declarations. -/
-@[expose] def NoProcedures (p : Program) : Prop :=
-  ∀ d ∈ p.decls, d.kind ≠ .proc
 
 /-- **`phase` reflects the declarations entry, from what `pre` admits.** Whenever it turns
     `p` into `p'`, the declarations of each declarations entry of `p`, over the factory of
