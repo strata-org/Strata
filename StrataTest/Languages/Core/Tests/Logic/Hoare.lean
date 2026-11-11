@@ -158,6 +158,62 @@ example (x : Core.Expression.Ident) (ty : Core.Expression.Ty)
       [Core.Statement.init x ty (.det e) md] Post :=
   Core.Logic.Hoare.init π params x ty e md Pre Post hpost
 
+example (x : Core.Expression.Ident) (ty : Core.Expression.Ty)
+    (md : MetaData Core.Expression) (Pre Post : Env Core.Expression → Prop)
+    (hpost : ∀ (ρ₀ : Env Core.Expression) (σ' : Core.CoreStore)
+      (v : Core.Expression.Val), Pre ρ₀ →
+      InitState Core.Expression ρ₀.store x v σ' →
+      HasVal.valueOfTy (P := Core.Expression) ρ₀.factory v ty →
+      Post { ρ₀ with store := σ' }) :
+    Core.Logic.Hoare.Triple π params Pre [Core.Statement.init x ty .nondet md] Post :=
+  Core.Logic.Hoare.init_nondet π params x ty md Pre Post hpost
+
+example (x : Core.Expression.Ident) (md : MetaData Core.Expression)
+    (Pre Post : Env Core.Expression → Prop)
+    (hpost : ∀ (ρ₀ : Env Core.Expression) (σ' : Core.CoreStore)
+      (v : Core.Expression.Val), Pre ρ₀ →
+      UpdateState Core.Expression ρ₀.store x v σ' →
+      HasVal.valueOfStoredTy (P := Core.Expression) ρ₀.factory ρ₀.store x v →
+      Post { ρ₀ with store := σ' }) :
+    Core.Logic.Hoare.Triple π params Pre [Core.Statement.havoc x md] Post :=
+  Core.Logic.Hoare.havoc π params x md Pre Post hpost
+
+example (label : String) (e : Core.Expression.Expr) (md : MetaData Core.Expression)
+    (Pre Post : Env Core.Expression → Prop)
+    (hpost : ∀ (ρ₀ : Env Core.Expression), Pre ρ₀ →
+      (∃ world, (Core.Logic.DenoteBasedInterp Core.Factory).holds world
+        { factory := ρ₀.factory, store := ρ₀.store, label := label, expr := e,
+          metadata := md }) →
+      Post ρ₀) :
+    Core.Logic.Hoare.Triple π params Pre [Core.Statement.assume label e md] Post :=
+  Core.Logic.Hoare.assume π params label e md Pre Post hpost
+
+example (label : String) (e : Core.Expression.Expr) (md : MetaData Core.Expression)
+    (Pre Post : Env Core.Expression → Prop)
+    (hfac : ∀ (ρ₀ : Env Core.Expression), Pre ρ₀ → ρ₀.factory.factory = Core.Factory)
+    (hpost : ∀ (ρ₀ : Env Core.Expression), Pre ρ₀ →
+      Core.Expression.eval ρ₀.factory ρ₀.store e = some (HasBool.ttVal ρ₀.factory) →
+      Post ρ₀) :
+    Core.Logic.Hoare.Triple π params Pre [Core.Statement.assume label e md] Post :=
+  Core.Logic.Hoare.assume_eval π params label e md Pre Post hfac hpost
+
+example (label : String) (e : Core.Expression.Expr) (md : MetaData Core.Expression)
+    (Pre : Env Core.Expression → Prop)
+    (hvalid : ∀ (ρ₀ : Env Core.Expression), Pre ρ₀ →
+      ∀ world, (Core.Logic.DenoteBasedInterp Core.Factory).holds world
+        { factory := ρ₀.factory, store := ρ₀.store, label := label, expr := e,
+          metadata := md }) :
+    Core.Logic.Hoare.Triple π params Pre [Core.Statement.assert label e md] Pre :=
+  Core.Logic.Hoare.assert π params label e md Pre hvalid
+
+example (label : String) (e : Core.Expression.Expr) (md : MetaData Core.Expression)
+    (Pre : Env Core.Expression → Prop)
+    (hfac : ∀ (ρ₀ : Env Core.Expression), Pre ρ₀ → ρ₀.factory.factory = Core.Factory)
+    (hvalid : ∀ (ρ₀ : Env Core.Expression), Pre ρ₀ →
+      Core.Expression.eval ρ₀.factory ρ₀.store e = some (HasBool.ttVal ρ₀.factory)) :
+    Core.Logic.Hoare.Triple π params Pre [Core.Statement.assert label e md] Pre :=
+  Core.Logic.Hoare.assert_eval π params label e md Pre hfac hvalid
+
 example {ss : Core.Statements} {label : String} {md : MetaData Core.Expression}
     {Pre Post : Env Core.Expression → Prop}
     (h : Core.Logic.Hoare.Triple π params Pre ss Post)
@@ -1577,6 +1633,132 @@ theorem chk_meets_contract :
       exact checkAsPredicate_eqConst _ ρ₀ chkX intTy (.intConst 1) hfac hx
         label check ((chk_ensures_expr (label, check) hmem).trans chk_expr_shape)
     · exact absurd hfac hne
+
+/-- **The same contract by the structural rules.**  `assume_eval` hands the assumed fact
+    to the rest of the body as a precondition, `assert_eval` discharges the assertion
+    from it, and the postcondition is the same expression again.  No run is inverted
+    and the input's value is never inspected. -/
+theorem chk_meets_contract_by_rules :
+    Core.Logic.Hoare.Procedure.contractTriple chkPgmAST testParams "Chk" := by
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core_typed chkPgmAST testParams
+    "Chk" chkProc _ (by native_decide) chk_body_eq (by native_decide) ?_
+  refine (Core.Logic.Hoare.block chkPgmAST.findProcByString? testParams
+    ?_
+    (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
+  refine Core.Logic.Hoare.consequence chkPgmAST.findProcByString? testParams
+    (Core.Logic.Hoare.seq chkPgmAST.findProcByString? testParams
+      (Mid := fun ρ => ρ.factory.factory = chkPgmAST.factoryBeforeProcedure "Chk" ∧
+        Core.Expression.eval ρ.factory ρ.store chkParts.1 =
+          some (HasBool.ttVal ρ.factory))
+      (Core.Logic.Hoare.assume_eval chkPgmAST.findProcByString? testParams "a"
+        chkParts.1 chkParts.2.1 _ _
+        (fun _ hpre => hpre.2.1) (fun _ hpre heval => ⟨hpre.2.1, heval⟩))
+      (Core.Logic.Hoare.assert_eval chkPgmAST.findProcByString? testParams "b"
+        chkParts.1 chkParts.2.2 _ (fun _ h => h.1) (fun _ h => h.2))
+      (by simp [Block.exitsCoveredByBlocks, Stmt.exitsCoveredByBlocks]))
+    (fun _ h => h)
+    (fun ρ h => by
+      intro label check hmem _hattr world
+      refine Or.inl ⟨h.1, ?_⟩
+      have hexpr : check.expr = chkParts.1 := chk_ensures_expr (label, check) hmem
+      show Core.Expression.eval ρ.factory ρ.store check.expr =
+        some (HasBool.ttVal ρ.factory)
+      rw [hexpr]
+      exact h.2)
+
+
+/-! ## A declaration without a value, and a havoc
+
+`procedure Fresh(out y : int) spec { ensures y == 3; } { var t : int; havoc y; y := 3; }`
+
+`var t : int` and `havoc y` each bind an arbitrary value of the variable's type, so
+neither contributes a store fact: `init_nondet` and `havoc` carry only the factory
+across, and the final assignment establishes the postcondition.  The body declares `t`,
+which leaving the procedure block drops, as in `InitVar`. -/
+
+private def freshPgm : Program :=
+#strata
+program Core;
+
+procedure Fresh(out y : int)
+spec {
+  ensures y == 3;
+}
+{
+  var t : int;
+  havoc y;
+  y := 3;
+};
+#end
+
+private def freshPgmAST : Core.Program := cstToAST freshPgm
+
+private def freshProc : Core.Procedure :=
+  (freshPgmAST.findProcByString? "Fresh").get!
+
+private def freshT : Core.Expression.Ident := ⟨"t", ()⟩
+private def freshY : Core.Expression.Ident := ⟨"y", ()⟩
+
+/-- The declared type and the three source-span metadata records. -/
+private def freshParts :
+    Core.Expression.Ty × Imperative.MetaData Core.Expression ×
+      Imperative.MetaData Core.Expression × Imperative.MetaData Core.Expression :=
+  match freshProc.body with
+  | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd
+                   (Imperative.Cmd.init _ ty .nondet md0)),
+                 Imperative.Stmt.cmd (Imperative.CmdExt.cmd
+                   (Imperative.Cmd.set _ .nondet md1)),
+                 Imperative.Stmt.cmd (Imperative.CmdExt.cmd
+                   (Imperative.Cmd.set _ (.det _) md2))] =>
+      (ty, md0, md1, md2)
+  | _ => default
+
+private def freshBody : Core.Statements :=
+  [Core.Statement.init freshT freshParts.1 .nondet freshParts.2.1] ++
+  ([Core.Statement.havoc freshY freshParts.2.2.1] ++
+   [Core.Statement.set freshY (Lambda.LExpr.const () (.intConst 3)) freshParts.2.2.2])
+
+/-- The translated body really is the declaration, the havoc and the assignment. -/
+private theorem fresh_body_eq : freshProc.body = .structured freshBody := by native_decide
+
+/-- **Valid, and fully proved.**  Whatever `t` and `y` are bound to by the declaration
+    and the havoc, the assignment leaves `y == 3`. -/
+theorem fresh_meets_contract :
+    Core.Logic.Hoare.Procedure.contractTriple freshPgmAST testParams "Fresh" := by
+  refine Core.Logic.Hoare.Procedure.contractTriple_of_core freshPgmAST testParams
+    "Fresh" freshProc _ (by native_decide) fresh_body_eq (by native_decide) ?_
+  refine (Core.Logic.Hoare.consequence freshPgmAST.findProcByString? testParams
+    (Core.Logic.Hoare.block freshPgmAST.findProcByString? testParams
+      (Post := fun ρ => ρ.store freshY = some (cval ρ (.intConst 3))
+        ∧ ρ.factory.factory = freshPgmAST.factoryBeforeProcedure "Fresh")
+      ?_
+      (postWF_store_fact_factory freshBody freshY (.intConst 3) (by native_decide)))
+    (fun _ h => h)
+    (fun ρ h => contractPost_of_binds _ freshProc ρ [(freshY, intTy, .intConst 3)] h.2
+      (by native_decide)
+      (fun b hb => by
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
+        subst hb; exact h.1)))
+  refine Core.Logic.Hoare.seq freshPgmAST.findProcByString? testParams
+    (Mid := fun ρ => ρ.factory.factory = freshPgmAST.factoryBeforeProcedure "Fresh")
+    ?_ ?_
+    ⟨trivial, trivial⟩
+  · -- `var t : int` binds some integer; only the factory is carried across.
+    exact Core.Logic.Hoare.init_nondet freshPgmAST.findProcByString? testParams freshT
+      freshParts.1 freshParts.2.1 _ _
+      (fun _ρ₀ _σ' _v hpre _hinit _hty => hpre.2.1)
+  · refine Core.Logic.Hoare.seq freshPgmAST.findProcByString? testParams
+      (Mid := fun ρ => ρ.factory.factory = freshPgmAST.factoryBeforeProcedure "Fresh")
+      ?_ ?_
+      ⟨trivial, trivial⟩
+    · -- `havoc y` rebinds `y` to some value of its type.
+      exact Core.Logic.Hoare.havoc freshPgmAST.findProcByString? testParams freshY
+        freshParts.2.2.1 _ _
+        (fun _ρ₀ _σ' _v hpre _hup _hty => hpre)
+    · -- `y := 3` establishes the store fact.
+      exact set_const freshPgmAST.findProcByString? testParams freshY (.intConst 3)
+        freshParts.2.2.2 _ _
+        (fun _ρ₀ _σ' hpre hnew _hoth => ⟨hnew, hpre⟩)
 
 
 /-! ## A while loop that terminates
