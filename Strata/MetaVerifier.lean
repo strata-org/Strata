@@ -77,7 +77,11 @@ namespace Core
 abbrev CoreVC := Env × Imperative.ProofObligation Expression
 abbrev coreVCs := List (Env × Imperative.ProofObligation Expression)
 
-def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs := do
+/-- Generate the verification conditions of `program`, or the message of the
+    step that failed: phase validation, a pipeline phase (named in the
+    message), symbolic evaluation, or obligation extraction. -/
+def genVCsWithError (program : Program) (options : VerifyOptions := .default) :
+    Except String coreVCs := do
   -- Boole programs arrive with structured bodies and no calls. Mirror the
   -- prefix of `transformPipelinePhases` that still applies to them: termination
   -- checks for recursive functions and well-formedness checks for function
@@ -93,7 +97,8 @@ def genVCs (program : Program) (options : VerifyOptions := .default) : Option co
   -- Validate phase composition from Boole's guaranteed invariants (structured
   -- bodies, no calls).
   let _ ← (ValidatedPipeline.ofListFrom
-              (factSet![.noCFGBodies, .noCalls]) phases).toOption
+              (factSet![.noCFGBodies, .noCalls]) phases).mapError
+            (s!"invalid phase pipeline: {·}")
   -- The factory is seeded with Core.Factory so monomorphizeFunctions can look
   -- up built-in polymorphic functions.
   let initState := { Transform.CoreTransformState.emp with factory := Core.Factory }
@@ -101,22 +106,27 @@ def genVCs (program : Program) (options : VerifyOptions := .default) : Option co
     phases.foldlM (init := (program, initState)) fun (prog, state) pp =>
       let (result, newState) :=
         Transform.runWith prog (fun q => do let (_, q') ← pp.transform q; return q') state
-      result.toOption.map fun q' => (q', newState)
+      match result with
+      | .ok q' => .ok (q', newState)
+      | .error e => .error s!"phase '{pp.phase.name}' failed: {e}"
   -- symbolicEval (toCoreProofObligationProgram) runs separately so we can keep
   -- monoProgram for buildEnv, which needs the pre-symbolic-evaluation program.
-  match Core.toCoreProofObligationProgram options monoProgram with
-  | .error _ => none
-  | .ok (oblProgram, _stats) =>
-    match Core.ObligationExtraction.extractObligations oblProgram with
-    | .error _ => none
-    | .ok obligations =>
-      let E := match Core.buildEnv options monoProgram monoState.factory with
-        | .ok (initE, _) =>
-          match Program.eval initE with
-          | .ok (pEs, _) => pEs.head?.getD initE
-          | .error _ => initE
-        | .error _ => Env.init (empty_factory := true)
-      return obligations.toList.map (fun ob => (E, ob))
+  let (oblProgram, _stats) ← (Core.toCoreProofObligationProgram options monoProgram).mapError
+    (s!"symbolic evaluation failed: {·}")
+  let obligations ← (Core.ObligationExtraction.extractObligations oblProgram).mapError
+    (s!"obligation extraction failed: {·}")
+  let E := match Core.buildEnv options monoProgram monoState.factory with
+    | .ok (initE, _) =>
+      match Program.eval initE with
+      | .ok (pEs, _) => pEs.head?.getD initE
+      | .error _ => initE
+    | .error _ => Env.init (empty_factory := true)
+  return obligations.toList.map (fun ob => (E, ob))
+
+/-- Generate the verification conditions of `program`, or `none` if a step
+    fails. `genVCsWithError` reports which step failed and why. -/
+def genVCs (program : Program) (options : VerifyOptions := .default) : Option coreVCs :=
+  (genVCsWithError program options).toOption
 
 end Core
 
@@ -150,18 +160,28 @@ end MetaVerifier
 
 /--
 Generate verification conditions for a `StrataDDM.Program` by translating it to the
-appropriate frontend verifier and collecting its deferred proof obligations.
+appropriate frontend verifier and collecting its deferred proof obligations, or
+report why that failed.
 
 Note that this can be extended to new dialects by using
 `unsafe/@[implemented_by]` as in [`StrataBoole.MetaVerifier`](https://github.com/strata-org/Strata-Boole).
 -/
-def genCoreVCs (program : Program)
-    (options : MetaVerifier.Options := {}) : Option Core.coreVCs := do
+def genCoreVCsWithError (program : Program)
+    (options : MetaVerifier.Options := {}) : Except String Core.coreVCs := do
   if program.dialect == "Core" then
-    let (program, #[]) := TransM.run default (translateProgram program) | none
-    Core.genVCs program options.toVerifyOptions
+    let (program, errs) := TransM.run default (translateProgram program)
+    unless errs.isEmpty do
+      throw s!"translation to Core failed: {String.intercalate "; " errs.toList}"
+    Core.genVCsWithError program options.toVerifyOptions
   else
-    none
+    throw s!"dialect '{program.dialect}' is not supported"
+
+/--
+`genCoreVCsWithError`, with the failure message dropped.
+-/
+def genCoreVCs (program : Program)
+    (options : MetaVerifier.Options := {}) : Option Core.coreVCs :=
+  (genCoreVCsWithError program options).toOption
 
 /--
 Remove solver-side caches that destabilize definitional equality in metaprograms.
@@ -225,6 +245,23 @@ def genSMTVCs (program : Program)
     (options : MetaVerifier.Options := {}) : Option SMT.SMTVCs := do
   let coreVCs ← genCoreVCs program options
   toSMTVCs coreVCs options
+
+/--
+Why `genSMTVCs` returned `none`, for the error of `gen_smt_vcs`. The reason is
+given only for Core programs: an extension may override `genCoreVCs` for its own
+dialect, and `genCoreVCsWithError` does not describe that override.
+
+This runs the whole pipeline again, but only after generation has failed, so the
+success path pays nothing for it.
+-/
+def genSMTVCsFailure (program : Program)
+    (options : MetaVerifier.Options := {}) : String :=
+  if program.dialect != "Core" then
+    "failed to generate VCs"
+  else
+    match genCoreVCsWithError program options with
+    | .error msg => s!"failed to generate VCs: {msg}"
+    | .ok _ => "failed to encode the VCs to SMT"
 
 /--
 State semantic correctness of the SMT verification conditions generated for a
@@ -1231,7 +1268,8 @@ private unsafe def genSMTVCsUnsafe (mv : MVarId) : MetaM (List MVarId) := do
   let ovcs := mkApp2 (.const ``Strata.genSMTVCs []) program options
   let ovcsType := .app (.const ``Option [0]) (.const ``Strata.SMT.SMTVCs [])
   let some evcs ← Meta.evalExpr (Option Strata.SMT.SMTVCs) ovcsType ovcs
-    | throwError "Failed to generate VCs"
+    | let failure := mkApp2 (.const ``Strata.genSMTVCsFailure []) program options
+      throwError "gen_smt_vcs: {← Meta.evalExpr String (.const ``String []) failure}"
   trace[debug] m!"Generated {repr evcs}"
   -- Build the VC list literal from per-component expressions so the
   -- expressions passed to the per-VC proofs are shared with it.
