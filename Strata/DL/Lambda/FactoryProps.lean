@@ -50,8 +50,9 @@ relation that keeps names, hold the same names (`mem_of_forall₂`) and find rel
 factories. The semantic conditions that carry along such maps are in `LExprEvalDenoteEval`.
 
 ### `LFunc` conversions and type substitution
-These are the algebraic facts about `LFunc` plumbing. The `LFuncDefined ↔ LFunc`
-conversions are mutually inverse (`LFuncDefined.toLFunc_toFunc`,
+These are the algebraic facts about `LFunc` plumbing. Erasing metadata keeps an operator's
+type annotation, which concrete evaluators receive (`LExpr.opTy?_eraseMetadata`). The
+`LFuncDefined ↔ LFunc` conversions are mutually inverse (`LFuncDefined.toLFunc_toFunc`,
 `LFunc.toFunc_toLFunc`). The remaining lemmas unfold type-substitution helpers:
 `applyTypeSubst` reduces to `replaceUserProvidedType`
 (`LExpr.applyTypeSubst_eq_replaceUserProvidedType`) and `computeTypeSubst` agrees with
@@ -192,10 +193,15 @@ theorem LFunc.computeTypeSubst_of_opTypeSubst {T : LExprParams}
   unfold LFunc.computeTypeSubst
   rw [h]
 
+/-- `eraseMetadata` keeps the type annotation of an operator (`LExpr.opTy?`). -/
+theorem LExpr.opTy?_eraseMetadata {T : LExprParamsT} (e : LExpr T) :
+    e.eraseMetadata.opTy? = e.opTy? := by
+  cases e <;> simp [LExpr.eraseMetadata, LExpr.replaceMetadata, LExpr.opTy?]
+
 /-- Lifting an `LFuncDefined` to the full `LFunc` then projecting back recovers
     the original. -/
 theorem LFuncDefined.toLFunc_toFunc {T : LExprParams} (f : LFuncDefined T)
-    (ce : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))) :
+    (ce : Option (ConcreteEval T)) :
     (f.toLFunc ce).toFunc = f := rfl
 
 /-- Projecting an `LFunc` to its base then lifting back (restoring

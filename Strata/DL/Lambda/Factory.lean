@@ -61,6 +61,24 @@ abbrev LTySignature {IDMeta : Type} := Signature IDMeta LTy
 open Strata.DL.Util (Func FuncPrecondition TyIdentifier)
 
 /--
+A concrete evaluator for a factory function (see `LFunc.concreteEval`). It takes
+the metadata to attach to the result, the type annotation of the function's
+operator at the call (`none` when the operator is not annotated), and the
+arguments of the call. It returns the result of the call, or `none` when it does
+not apply (e.g. the arguments are not literals). The operator's type gives the
+evaluator the instantiation of the function's type parameters, which it needs to
+build a literal of a type that is not determined by the arguments (e.g. the empty
+sequence).
+-/
+abbrev ConcreteEval (T : LExprParams) :=
+  T.Metadata → Option LMonoTy → List (LExpr T.mono) → Option (LExpr T.mono)
+
+/-- The type annotation of an operator, and `none` for any other expression. -/
+@[expose] def LExpr.opTy? {T : LExprParamsT} : LExpr T → Option T.TypeType
+  | .op _ _ ty => ty
+  | _ => none
+
+/--
 The AST-facing Lambda function structure - instantiation of the base `Func` for
 Lambda expressions. It is used for functions that appear in the Strata AST
 (e.g. `Core.Function`), and carries only plain data — the base
@@ -78,13 +96,11 @@ structure. It extends the AST-facing `Func` with the partial-evaluator hook
 
 A optional evaluation function can be provided in the `concreteEval` field for
 each factory function to allow the partial evaluator to do constant propagation
-when all the arguments of a function are concrete. Such a function should take
-two inputs: a function call expression and also -- somewhat redundantly, but
-perhaps more conveniently -- the list of arguments in this expression.  Here's
-an example of a `concreteEval` function for `Int.Add`:
+when all the arguments of a function are concrete; its type is `ConcreteEval`.
+Here's an example of a `concreteEval` function for `Int.Add`:
 
 ```
-(fun e args => match args with
+(fun e _ args => match args with
                | [e1, e2] =>
                  let e1i := LExpr.denoteInt e1
                  let e2i := LExpr.denoteInt e2
@@ -103,7 +119,7 @@ structure LFunc (T : LExprParams) extends
   mk' ::
   -- The Metadata argument is attached to the resulting expression of
   -- concreteEval if evaluation was successful.
-  concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none
+  concreteEval : Option (ConcreteEval T) := .none
 
 /--
 Helper constructor for LFunc to maintain backward compatibility.
@@ -112,7 +128,7 @@ Helper constructor for LFunc to maintain backward compatibility.
     (isConstr : Bool := false) (isRecursive : Bool := false)
     (inputs : ListMap T.Identifier LMonoTy) (output : LMonoTy)
     (body : Option (LExpr T.mono) := .none) (attr : Array Strata.DL.Util.FuncAttr := #[])
-    (concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none)
+    (concreteEval : Option (ConcreteEval T) := .none)
     (axioms : List (LExpr T.mono) := [])
     (preconditions : List (FuncPrecondition (LExpr T.mono) T.Metadata) := [])
     (measure : Option (LExpr T.mono) := .none) : LFunc T :=
@@ -123,7 +139,7 @@ Helper constructor for LFunc to maintain backward compatibility.
     optionally attaching `concreteEval` at the evaluator boundary. All other
     data carries over unchanged via `toFunc`. -/
 @[expose] def LFuncDefined.toLFunc {T : LExprParams} (f : LFuncDefined T)
-    (concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none) : LFunc T :=
+    (concreteEval : Option (ConcreteEval T) := .none) : LFunc T :=
   { toFunc := f, concreteEval }
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where

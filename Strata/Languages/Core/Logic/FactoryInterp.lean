@@ -159,44 +159,44 @@ use `coe` where the typing rules make two of those pieces equal. -/
 
 /-- Lift a concrete evaluator to a curried semantic value at the requested sort. -/
 @[expose] def gatherEval
-    (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
+    (ceval : ConcreteEval T)
     (acc : List (LExpr T.mono)) : (s : LSort) → SortDenote tcInterp s
   | .tcons "arrow" [a, b] => fun (x : SortDenote tcInterp a) =>
       gatherEval ceval (acc ++ [reifyAt a x]) b
-  | .tcons "bool" [] => decodeAt (.tcons "bool" []) (ceval default acc)
-  | .tcons "int" [] => decodeAt (.tcons "int" []) (ceval default acc)
-  | .tcons "real" [] => decodeAt (.tcons "real" []) (ceval default acc)
-  | .tcons "string" [] => decodeAt (.tcons "string" []) (ceval default acc)
-  | .bitvec n => decodeAt (.bitvec n) (ceval default acc)
-  | .tcons nm args => decodeAt (.tcons nm args) (ceval default acc)
+  | .tcons "bool" [] => decodeAt (.tcons "bool" []) (ceval default none acc)
+  | .tcons "int" [] => decodeAt (.tcons "int" []) (ceval default none acc)
+  | .tcons "real" [] => decodeAt (.tcons "real" []) (ceval default none acc)
+  | .tcons "string" [] => decodeAt (.tcons "string" []) (ceval default none acc)
+  | .bitvec n => decodeAt (.bitvec n) (ceval default none acc)
+  | .tcons nm args => decodeAt (.tcons nm args) (ceval default none acc)
 
 /-! Equations for `gatherEval` at the primitive output sorts. Lean cannot generate
 `gatherEval`'s equation lemmas automatically, so we state the cases used below
 directly. -/
 
 theorem gatherEval_bool
-    (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
+    (ceval : ConcreteEval T)
     (acc : List (LExpr T.mono)) :
     gatherEval ceval acc (.tcons "bool" []) =
-      decodeAt (.tcons "bool" []) (ceval default acc) := rfl
+      decodeAt (.tcons "bool" []) (ceval default none acc) := rfl
 
 theorem gatherEval_int
-    (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
+    (ceval : ConcreteEval T)
     (acc : List (LExpr T.mono)) :
     gatherEval ceval acc (.tcons "int" []) =
-      decodeAt (.tcons "int" []) (ceval default acc) := rfl
+      decodeAt (.tcons "int" []) (ceval default none acc) := rfl
 
 theorem gatherEval_string
-    (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
+    (ceval : ConcreteEval T)
     (acc : List (LExpr T.mono)) :
     gatherEval ceval acc (.tcons "string" []) =
-      decodeAt (.tcons "string" []) (ceval default acc) := rfl
+      decodeAt (.tcons "string" []) (ceval default none acc) := rfl
 
 theorem gatherEval_bitvec
-    (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
+    (ceval : ConcreteEval T)
     (acc : List (LExpr T.mono)) (n : Nat) :
     gatherEval ceval acc (.bitvec n) =
-      decodeAt (.bitvec n) (ceval default acc) := rfl
+      decodeAt (.bitvec n) (ceval default none acc) := rfl
 
 /-! ### Interpretation of the axiomatized operations
 
@@ -375,7 +375,7 @@ class OutPrim (outTy : LMonoTy) (OutV : outParam Type) where
   /-- `outTy`'s sort is not an arrow, so `gatherEval` decodes directly. -/
   gather_eq : ∀ (vt : TyVarVal) ceval acc,
       gatherEval ceval acc (LMonoTy.substTyVars vt outTy)
-        = decodeAt (LMonoTy.substTyVars vt outTy) (ceval default acc)
+        = decodeAt (LMonoTy.substTyVars vt outTy) (ceval default none acc)
   /-- Denoting a built constant equals decoding it (metadata-insensitive). -/
   denote_decode : ∀ (fvarVal : FreeVarVal T tcInterp) (vt : TyVarVal)
       (md md' : T.Metadata) (w : OutV) (h : LExpr.HasTypeA [] (mkOut md w) outTy),
@@ -386,21 +386,21 @@ class OutPrim (outTy : LMonoTy) (OutV : outParam Type) where
 private theorem unaryOp_consistent
     {inTy outTy : LMonoTy} {InV OutV : Type}
     (func : LFunc T)
-    (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
+    (ceval : ConcreteEval T)
     (hin : (List.map Prod.snd func.inputs) = [inTy])
     (hout : func.output = outTy)
     (hce : func.concreteEval = some ceval)
     (hlook : Core.Factory.get? func.name.name = some func)
     [ip : InPrim inTy InV] [op : OutPrim outTy OutV]
     (f : InV → OutV)
-    (hbeh : ∀ md x, ceval md [x] =
+    (hbeh : ∀ md opTy x, ceval md opTy [x] =
       (match InPrim.cevalIn (inTy := inTy) x with
        | some a => some (OutPrim.mkOut (outTy := outTy) md (f a))
        | _ => none)) :
     LFunc.InterpConsistentEval tcInterp opInterp func ceval := by
-  intro vt fvarVal md tySubst argExprs resultExpr heval
+  intro vt fvarVal md tySubst argExprs resultExpr
   simp only []
-  intro h_args h_result
+  intro heval h_args h_result
   have hci : LMonoTy.subst tySubst inTy = inTy :=
     LMonoTy.subst_no_relevant_keys _ _ (by rw [ip.closed]; simp)
   have hco : LMonoTy.subst tySubst outTy = outTy :=
@@ -414,7 +414,7 @@ private theorem unaryOp_consistent
   cases h_args with
   | @cons a b as bs hx htail =>
     cases htail
-    rw [hbeh md a] at heval
+    rw [hbeh md _ a] at heval
     cases hca : InPrim.cevalIn (inTy := inTy) a with
     | none => rw [hca] at heval; simp at heval
     | some av =>
@@ -425,7 +425,7 @@ private theorem unaryOp_consistent
       show LExpr.denote tcInterp opInterp fvarVal vt HList.nil (OutPrim.mkOut outTy md (f av)) outTy h_result
           = gatherEval ceval [reifyAt (LMonoTy.substTyVars vt inTy)
               (LExpr.denote tcInterp opInterp fvarVal vt HList.nil a inTy hx)] (LMonoTy.substTyVars vt outTy)
-      rw [OutPrim.gather_eq, hbeh default, InPrim.reify_ceval fvarVal vt a hx av hca]
+      rw [OutPrim.gather_eq, hbeh default none, InPrim.reify_ceval fvarVal vt a hx av hca]
       rw [OutPrim.denote_decode fvarVal vt md default (f av) h_result]
 
 /-- Generic `concreteEval` consistency for a binary op over primitive types.
@@ -433,21 +433,21 @@ Both inputs share type `inTy`; `guard` is checked on the second argument. -/
 private theorem binaryOp_consistent
     {inTy outTy : LMonoTy} {InV OutV : Type}
     (func : LFunc T)
-    (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
+    (ceval : ConcreteEval T)
     (hin : (List.map Prod.snd func.inputs) = [inTy, inTy])
     (hout : func.output = outTy)
     (hce : func.concreteEval = some ceval)
     (hlook : Core.Factory.get? func.name.name = some func)
     [ip : InPrim inTy InV] [opr : OutPrim outTy OutV]
     (g : InV → InV → OutV) (guard : InV → Bool)
-    (hbeh : ∀ md x y, ceval md [x, y] =
+    (hbeh : ∀ md opTy x y, ceval md opTy [x, y] =
       (match InPrim.cevalIn (inTy := inTy) x, InPrim.cevalIn (inTy := inTy) y with
        | some a, some b => if guard b then some (OutPrim.mkOut (outTy := outTy) md (g a b)) else none
        | _, _ => none)) :
     LFunc.InterpConsistentEval tcInterp opInterp func ceval := by
-  intro vt fvarVal md tySubst argExprs resultExpr heval
+  intro vt fvarVal md tySubst argExprs resultExpr
   simp only []
-  intro h_args h_result
+  intro heval h_args h_result
   have hci : LMonoTy.subst tySubst inTy = inTy :=
     LMonoTy.subst_no_relevant_keys _ _ (by rw [ip.closed]; simp)
   have hco : LMonoTy.subst tySubst outTy = outTy :=
@@ -463,7 +463,7 @@ private theorem binaryOp_consistent
     cases htail with
     | @cons a2 b2 as2 bs2 hy htail2 =>
       cases htail2
-      rw [hbeh md a a2] at heval
+      rw [hbeh md _ a a2] at heval
       cases hca : InPrim.cevalIn (inTy := inTy) a with
       | none => rw [hca] at heval; simp at heval
       | some av =>
@@ -485,7 +485,7 @@ private theorem binaryOp_consistent
                      reifyAt (LMonoTy.substTyVars vt inTy)
                         (LExpr.denote tcInterp opInterp fvarVal vt HList.nil a2 inTy hy)]
                     (LMonoTy.substTyVars vt outTy)
-            rw [OutPrim.gather_eq, hbeh default,
+            rw [OutPrim.gather_eq, hbeh default none,
                 InPrim.reify_ceval fvarVal vt a hx av hca,
                 InPrim.reify_ceval fvarVal vt a2 hy bv hcb,
                 OutPrim.denote_decode fvarVal vt md default (g av bv) h_result]
@@ -535,21 +535,21 @@ interpretation decodes the reified denotation of the second operand, which is th
 denotation again. -/
 private theorem shortCircuit_consistent
     (func : LFunc T)
-    (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))
+    (ceval : ConcreteEval T)
     (hin : (List.map Prod.snd func.inputs) = [LMonoTy.bool, LMonoTy.bool])
     (hout : func.output = LMonoTy.bool)
     (hce : func.concreteEval = some ceval)
     (hlook : Core.Factory.get? func.name.name = some func)
     (absorb decided : Bool)
-    (hbeh : ∀ md x y, ceval md [x, y] =
+    (hbeh : ∀ md opTy x y, ceval md opTy [x, y] =
       (match InPrim.cevalIn (inTy := LMonoTy.bool) x with
        | some a =>
          if a == absorb then some (OutPrim.mkOut (outTy := LMonoTy.bool) md decided) else some y
        | none => none)) :
     LFunc.InterpConsistentEval tcInterp opInterp func ceval := by
-  intro vt fvarVal md tySubst argExprs resultExpr heval
+  intro vt fvarVal md tySubst argExprs resultExpr
   simp only []
-  intro h_args h_result
+  intro heval h_args h_result
   have hb : LMonoTy.subst tySubst LMonoTy.bool = LMonoTy.bool :=
     LMonoTy.subst_no_relevant_keys _ _ (by rw [InPrim.closed (inTy := LMonoTy.bool)]; simp)
   have hIT : (List.map (LMonoTy.subst tySubst) (List.map Prod.snd func.inputs))
@@ -564,7 +564,7 @@ private theorem shortCircuit_consistent
     cases htail with
     | @cons a2 b2 as2 bs2 hy htail2 =>
       cases htail2
-      rw [hbeh md a a2] at heval
+      rw [hbeh md _ a a2] at heval
       cases hca : InPrim.cevalIn (inTy := LMonoTy.bool) a with
       | none => rw [hca] at heval; simp at heval
       | some av =>
@@ -577,7 +577,7 @@ private theorem shortCircuit_consistent
                  reifyAt (LMonoTy.substTyVars vt LMonoTy.bool)
                     (LExpr.denote tcInterp opInterp fvarVal vt HList.nil a2 LMonoTy.bool hy)]
                 (LMonoTy.substTyVars vt LMonoTy.bool)
-        rw [OutPrim.gather_eq (outTy := LMonoTy.bool), hbeh default,
+        rw [OutPrim.gather_eq (outTy := LMonoTy.bool), hbeh default none,
             InPrim.reify_ceval fvarVal vt a hx av hca]
         simp only at heval ⊢
         cases hg : (av == absorb)
@@ -710,14 +710,14 @@ private theorem unaryOp_func_consistent
     (hcin : ip.cevalIn = LambdaLeanType.cevalTy T := by rfl)
     (hmk : opr.mkOut = LambdaLeanType.mkConst T := by rfl)
     {n : T.Identifier} {f : InV → OutV} {pre hI hO hp}
-    {ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)}
+    {ceval : ConcreteEval T}
     (hce : (unaryOp n f pre hI hO hp).func.concreteEval = some ceval)
     (hlook : Core.Factory.get? n.name = some (unaryOp n f pre hI hO hp).func) :
     LFunc.InterpConsistentEval tcInterp opInterp (unaryOp n f pre hI hO hp).func ceval := by
   injection hce with hce
   subst hce
   refine unaryOp_consistent (inTy := inTy) (outTy := outTy) _ _ rfl rfl rfl hlook f ?_
-  intro md x
+  intro md _ x
   rw [hcin, hmk]
   rfl
 
@@ -731,14 +731,14 @@ private theorem binaryOp_func_consistent
     (hcin : ip.cevalIn = LambdaLeanType.cevalTy T := by rfl)
     (hmk : opr.mkOut = LambdaLeanType.mkConst T := by rfl)
     {n : T.Identifier} {g : InV → InV → OutV} {guard pre hI hO hp}
-    {ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)}
+    {ceval : ConcreteEval T}
     (hce : (binaryOp n g guard pre hI hO hp).func.concreteEval = some ceval)
     (hlook : Core.Factory.get? n.name = some (binaryOp n g guard pre hI hO hp).func) :
     LFunc.InterpConsistentEval tcInterp opInterp (binaryOp n g guard pre hI hO hp).func ceval := by
   injection hce with hce
   subst hce
   refine binaryOp_consistent (inTy := inTy) (outTy := outTy) _ _ rfl rfl rfl hlook g guard ?_
-  intro md x y
+  intro md _ x y
   rw [hcin, hmk]
   rfl
 
@@ -746,13 +746,13 @@ private theorem binaryOp_func_consistent
 Stated over `shortCircuitOp` itself so a factory entry unifies with it directly. -/
 private theorem shortCircuit_func_consistent
     {n : T.Identifier} {absorb decided : Bool}
-    {ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)}
+    {ceval : ConcreteEval T}
     (hce : (shortCircuitOp n absorb decided).func.concreteEval = some ceval)
     (hlook : Core.Factory.get? n.name = some (shortCircuitOp n absorb decided).func) :
     LFunc.InterpConsistentEval tcInterp opInterp (shortCircuitOp n absorb decided).func ceval := by
   injection hce with hce
   subst hce
-  exact shortCircuit_consistent _ _ rfl rfl rfl hlook absorb decided (by intro md x y; rfl)
+  exact shortCircuit_consistent _ _ rfl rfl rfl hlook absorb decided (by intro md _ x y; rfl)
 
 /-- For every `Core.Factory` function with a concrete evaluator, `opInterp` agrees
     with that evaluator. -/

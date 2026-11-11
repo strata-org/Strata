@@ -37,10 +37,10 @@ variable {Tbase : LExprParams}
   ∀ (lf : LFunc Tbase), lf ∈ F.toArray →
     Strata.DL.Util.FuncAttr.hasShortCircuit lf.attr = true →
     ∀ ceval, lf.concreteEval = some ceval →
-    ∀ (md : Tbase.Metadata) (a : LExpr Tbase.mono) (rest : List (LExpr Tbase.mono))
-      (A : Identifier Tbase.IDMeta → Option LMonoTy),
-      ceval md (a :: rest.map (LExpr.annotateFvars A)) =
-        (ceval md (a :: rest)).map (LExpr.annotateFvars A)
+    ∀ (md : Tbase.Metadata) (opTy : Option LMonoTy) (a : LExpr Tbase.mono)
+      (rest : List (LExpr Tbase.mono)) (A : Identifier Tbase.IDMeta → Option LMonoTy),
+      ceval md opTy (a :: rest.map (LExpr.annotateFvars A)) =
+        (ceval md opTy (a :: rest)).map (LExpr.annotateFvars A)
 
 /-- Re-annotating free variables keeps the free variables. -/
 private theorem getVars_annotateFvars (A : Identifier Tbase.IDMeta → Option LMonoTy)
@@ -154,7 +154,7 @@ private theorem evalShortCircuit_annotateFvars
     (A : Identifier Tbase.IDMeta → Option LMonoTy) (e op a : LExpr Tbase.mono)
     (rest : List (LExpr Tbase.mono)) (lf : LFunc Tbase) (hmem : lf ∈ F.toArray)
     (hsc : Strata.DL.Util.FuncAttr.hasShortCircuit lf.attr = true)
-    (ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono))
+    (ceval : ConcreteEval Tbase)
     (hce : lf.concreteEval = some ceval)
     (hb : ∀ x ∈ a :: rest, ∀ y ∈ LExpr.LExpr.getVars x, (env y).isSome = true)
     (ih : ∀ e', (∀ x ∈ LExpr.LExpr.getVars e', (env x).isSome = true) →
@@ -171,12 +171,12 @@ private theorem evalShortCircuit_annotateFvars
   simp only [LExpr.evalShortCircuit, metadata_annotateFvars, ha, hSC lf hmem hsc ceval hce, hrest]
   cases hv : LExpr.isValue F (LExpr.eval n' F env a).fst
   · rfl
-  · cases hc : ceval e.metadata ((LExpr.eval n' F env a).fst :: rest) with
+  · cases hc : ceval e.metadata op.opTy? ((LExpr.eval n' F env a).fst :: rest) with
     | none => rfl
     | some e' =>
       have hb' : ∀ z ∈ LExpr.LExpr.getVars e', (env z).isSome = true := fun z hz => by
         obtain ⟨x, hx, hzx⟩ :=
-          (hWF.lfuncs_wf lf hmem).concreteEval_freeVars ceval hce _ _ e' hc z hz
+          (hWF.lfuncs_wf lf hmem).concreteEval_freeVars ceval hce _ _ _ e' hc z hz
         rcases List.mem_cons.1 hx with rfl | hx
         · rw [eval_getVars_nil hIdent n' F env hWF henv a (hb a List.mem_cons_self)] at hzx
           cases hzx

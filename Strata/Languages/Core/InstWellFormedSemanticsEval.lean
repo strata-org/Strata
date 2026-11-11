@@ -175,16 +175,18 @@ theorem boolNot_opInterp_of_lookup {factory : Lambda.Factory CoreLParams}
   have h_ic := model.interpConsistent.2 "Bool.Not" hmem ceval h_ceval_eq
   rw [hget] at h_ic h_ceval_eq
   unfold Lambda.LFunc.InterpConsistentEval at h_ic
-  have h_eval : ceval () [.boolConst () b] = some (.boolConst () (!b)) := by
+  have h_eval : ∀ opTy, ceval () opTy [.boolConst () b] = some (.boolConst () (!b)) := by
+    intro opTy
     have key : (Lambda.boolNotFunc (T := CoreLParams)).func.concreteEval.bind
-        (fun ce => ce () [.boolConst () b]) = some (.boolConst () (!b)) := by
+        (fun ce => ce () opTy [.boolConst () b]) = some (.boolConst () (!b)) := by
       cases b <;> rfl
     rw [h_ceval_eq, Option.bind_some] at key
     exact key
   have vt : Lambda.TyVarVal := fun _ => .bool
   have fv : Lambda.FreeVarVal CoreLParams model.tcInterp := fun _ s =>
     @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s)
-  have h_inst := h_ic vt fv () Lambda.Subst.empty [.boolConst () b] (.boolConst () (!b)) h_eval
+  have h_inst :=
+    h_ic vt fv () Lambda.Subst.empty [.boolConst () b] (.boolConst () (!b)) (h_eval _)
   have h_args : List.Rel₂ (Lambda.LExpr.HasTypeA (T := CoreLParams) [])
       [.boolConst () b] [Lambda.LMonoTy.bool] := .cons .const .nil
   have h_result : Lambda.LExpr.HasTypeA (T := CoreLParams) [] (.boolConst () (!b)) .bool := .const
@@ -449,7 +451,10 @@ theorem opInterp_of_concreteEval {factory : Lambda.Factory CoreLParams}
     (model : Lambda.Interp factory) {name : String} {fn : Lambda.LFunc CoreLParams}
     (hlookup : factory[name]? = some fn) (hname : fn.name.name = name)
     {args : List Expression.Expr} {res : Expression.Expr}
-    (heval : fn.concreteEval.bind (fun ce => ce () args) = some res)
+    (heval : fn.concreteEval.bind (fun ce => ce ()
+      (some (Lambda.LMonoTy.mkArrow' (fn.output.subst Lambda.Subst.empty)
+        ((fn.inputs.map Prod.snd).map (Lambda.LMonoTy.subst Lambda.Subst.empty)))) args) =
+      some res)
     (vt : Lambda.TyVarVal) (fv : Lambda.FreeVarVal CoreLParams model.tcInterp)
     (h_args : List.Rel₂ (Lambda.LExpr.HasTypeA []) args
       ((fn.inputs.map Prod.snd).map (Lambda.LMonoTy.subst Lambda.Subst.empty)))

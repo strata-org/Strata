@@ -587,8 +587,8 @@ section Pre
 
 /-- `f`'s concrete evaluator, if any, commutes with demangling operator names. -/
 @[expose] public def EvalCommutesDemangle (f : LFunc CoreLParams) : Prop :=
-  ∀ c, f.concreteEval = some c → ∀ md args res, c md args = some res →
-    c md (args.map (·.renameOps demangleRen)) = some (res.renameOps demangleRen)
+  ∀ c, f.concreteEval = some c → ∀ md opTy args res, c md opTy args = some res →
+    c md opTy (args.map (·.renameOps demangleRen)) = some (res.renameOps demangleRen)
 
 /-- The operator names the same-theory fragment's checks read: `Real.Mul` and `Real.Div` for
     linear real terms, `Real.Neg` for real literals,

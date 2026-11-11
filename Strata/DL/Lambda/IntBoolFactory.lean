@@ -147,7 +147,7 @@ def polyUneval (n : T.Identifier) (typeArgs : List String)
   ⟨{ name := n, typeArgs := typeArgs, inputs := inputs, output := output,
      axioms := axioms, preconditions := preconditions }, {
     arg_nodup := h_nodup
-    concreteEval_argmatch := by intro fn _ _ _ hfn; simp at hfn
+    concreteEval_argmatch := by intro fn _ _ _ _ hfn; simp at hfn
     body_or_concreteEval := by simp
     constr_no_eval := by simp
     typeArgs_nodup := h_ta_nodup
@@ -240,14 +240,14 @@ def unaryOp (n : T.Identifier)
      inputs := [(unaryParamName, inTy)],
      output := outTy,
      preconditions := preconditions,
-     concreteEval := some (fun md args => match args with
+     concreteEval := some (fun md _ args => match args with
        | [x] => match cevalInTy x with
          | some a => .some (mkConst md (op a))
          | _ => .none
        | _ => none) }, {
     arg_nodup := by simp
     concreteEval_argmatch := by
-      intro fn md args res hfn heval
+      intro fn md _ args res hfn heval
       simp only [Option.some.injEq] at hfn; subst hfn
       match args with
       | [] | _ :: _ :: _ => simp at heval
@@ -260,7 +260,7 @@ def unaryOp (n : T.Identifier)
     typeArgs_no_gen_prefix := by simp
     constr_no_eval := by simp
     concreteEval_freeVars := by
-      intro ceval h md args res heval z hz
+      intro ceval h md _ args res heval z hz
       simp only [Option.some.injEq] at h; subst h
       match args, heval with
       | [x], heval =>
@@ -271,7 +271,7 @@ def unaryOp (n : T.Identifier)
           simp only [hc, Option.some.injEq] at heval; subst heval
           rw [hOut.mkConst_closed] at hz; simp at hz
     concreteEval_eraseMetadata := by
-      intro ceval h md1 md2 args1 args2 res1 hmap heval
+      intro ceval h md1 md2 _ args1 args2 res1 hmap heval
       simp only [Option.some.injEq] at h; subst h
       match args1, heval with
       | [x1], heval =>
@@ -322,7 +322,7 @@ def binaryOp (n : T.Identifier)
      inputs := [(binaryParam1Name, inTy), (binaryParam2Name, inTy)],
      output := outTy,
      preconditions := preconditions,
-     concreteEval := some (fun md args => match args with
+     concreteEval := some (fun md _ args => match args with
        | [x, y] => match cevalInTy x, cevalInTy y with
          | some a, some b =>
            if guard b then mkConst md (op a b) else .none
@@ -330,7 +330,7 @@ def binaryOp (n : T.Identifier)
        | _ => none) }, {
     arg_nodup := by simp [binaryParam1Name, binaryParam2Name]
     concreteEval_argmatch := by
-      intro fn md args res hfn heval
+      intro fn md _ args res hfn heval
       simp only [Option.some.injEq] at hfn; subst hfn
       match args with
       | [] | [_] | _ :: _ :: _ :: _ => simp at heval
@@ -344,7 +344,7 @@ def binaryOp (n : T.Identifier)
     typeArgs_no_gen_prefix := by simp
     constr_no_eval := by simp
     concreteEval_freeVars := by
-      intro ceval h md args res heval z hz
+      intro ceval h md _ args res heval z hz
       simp only [Option.some.injEq] at h; subst h
       match args, heval with
       | [x, y], heval =>
@@ -359,7 +359,7 @@ def binaryOp (n : T.Identifier)
             rw [hOut.mkConst_closed] at hz; simp at hz
           · simp at heval
     concreteEval_eraseMetadata := by
-      intro ceval h md1 md2 args1 args2 res1 hmap heval
+      intro ceval h md1 md2 _ args1 args2 res1 hmap heval
       simp only [Option.some.injEq] at h; subst h
       match args1, heval with
       | [x1, y1], heval =>
@@ -449,14 +449,14 @@ def shortCircuitOp (n : T.Identifier) (absorb decided : Bool) : WFLFunc T :=
      inputs := [(binaryParam1Name, .bool), (binaryParam2Name, .bool)],
      output := .bool,
      attr := #[.shortCircuit],
-     concreteEval := some (fun md args => match args with
+     concreteEval := some (fun md _ args => match args with
        | [x, y] => match cevalB x with
          | some a => if a == absorb then some (mkConst md decided) else some y
          | none => none
        | _ => none) }, {
     arg_nodup := by simp [binaryParam1Name, binaryParam2Name]
     concreteEval_argmatch := by
-      intro fn md args res hfn heval
+      intro fn md _ args res hfn heval
       simp only [beq_iff_eq, Option.some.injEq] at hfn; subst hfn
       match args with
       | [] | [_] | _ :: _ :: _ :: _ => simp at heval
@@ -470,7 +470,7 @@ def shortCircuitOp (n : T.Identifier) (absorb decided : Bool) : WFLFunc T :=
     typeArgs_no_gen_prefix := by simp
     constr_no_eval := by simp
     concreteEval_freeVars := by
-      intro ceval h md args res heval z hz
+      intro ceval h md _ args res heval z hz
       simp only [beq_iff_eq, Option.some.injEq] at h; subst h
       match args, heval with
       | [x, y], heval =>
@@ -485,7 +485,7 @@ def shortCircuitOp (n : T.Identifier) (absorb decided : Bool) : WFLFunc T :=
           · simp only [Option.some.injEq] at heval; subst heval
             exact ⟨y, by simp, hz⟩
     concreteEval_eraseMetadata := by
-      intro ceval h md1 md2 args1 args2 res1 hmap heval
+      intro ceval h md1 md2 _ args1 args2 res1 hmap heval
       simp only [beq_iff_eq, Option.some.injEq] at h; subst h
       match args1, heval with
       | [x1, y1], heval =>
@@ -515,7 +515,7 @@ def shortCircuitOp (n : T.Identifier) (absorb decided : Bool) : WFLFunc T :=
     body_freevars := by intro b hb; simp at hb
     precond_freevars := by intro p hp; simp at hp
     shortCircuit_substFvars := by
-      intro _ ceval h _ md a rest sm
+      intro _ ceval h _ md _ a rest sm
       simp only [beq_iff_eq, Option.some.injEq] at h; subst h
       match rest with
       | [] | _ :: _ :: _ => simp

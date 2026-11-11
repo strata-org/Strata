@@ -371,15 +371,15 @@ private theorem exists_subst_comp (S tySubst : Subst) (out : LMonoTy) (ins : Lis
     when the evaluator commutes with demangling. -/
 theorem FnInstance.interpConsistentEval [DecidableEq T.IDMeta] {tc : TyConstrInterp}
     {op : OpInterp tc} {g g' : LFunc T} (hrel : FnInstance g g')
-    {c : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)}
+    {c : ConcreteEval T}
     (hI : LFunc.InterpConsistentEval tc op g c)
-    (hnat : ∀ md args res, c md args = some res →
-      c md (args.map (·.renameOps demangleRen)) = some (res.renameOps demangleRen)) :
+    (hnat : ∀ md opTy args res, c md opTy args = some res →
+      c md opTy (args.map (·.renameOps demangleRen)) = some (res.renameOps demangleRen)) :
     LFunc.InterpConsistentEval tc (demangledOpInterp op) g' c := by
   obtain ⟨S, r, hname, hin, hout, -, -, -, -, -, -⟩ := hrel
-  intro vt fvarVal md tySubst args res hres
+  intro vt fvarVal md tySubst args res
   dsimp only
-  intro h_args h_result
+  intro hres h_args h_result
   obtain ⟨τ, hτo, hτi⟩ := exists_subst_comp S tySubst g.output (g.inputs.map Prod.snd)
   have hins : (List.map Prod.snd g'.inputs).map (LMonoTy.subst tySubst) =
       (List.map Prod.snd g.inputs).map (LMonoTy.subst τ) := by
@@ -391,7 +391,8 @@ theorem FnInstance.interpConsistentEval [DecidableEq T.IDMeta] {tc : TyConstrInt
     rw [hin, ← hτi]; exact hl g.inputs
   have hout' : LMonoTy.subst tySubst g'.output = LMonoTy.subst τ g.output := by
     rw [hout, hτo]
-  have hold := hI vt fvarVal md τ _ _ (hnat md args res hres)
+  rw [hins, hout'] at hres
+  have hold := hI vt fvarVal md τ _ _ (hnat md _ args res hres)
   dsimp only at hold
   have h_args0 : List.Rel₂ (LExpr.HasTypeA []) (args.map (·.renameOps demangleRen))
       ((List.map Prod.snd g.inputs).map (LMonoTy.subst τ)) :=
@@ -417,8 +418,9 @@ private theorem FnInstance.concreteEval_eq {g g' : LFunc T} (hrel : FnInstance g
 
 /-- Demangling is a renaming every concrete evaluator of `F` commutes with. -/
 @[expose] def ConcreteEvalsCommuteDemangle (F : Lambda.Factory T) : Prop :=
-  ∀ o (ho : o ∈ F), ∀ c, (F[o]'ho).concreteEval = some c → ∀ md args res, c md args = some res →
-    c md (args.map (·.renameOps demangleRen)) = some (res.renameOps demangleRen)
+  ∀ o (ho : o ∈ F), ∀ c, (F[o]'ho).concreteEval = some c → ∀ md opTy args res,
+    c md opTy args = some res →
+    c md opTy (args.map (·.renameOps demangleRen)) = some (res.renameOps demangleRen)
 
 /-- **A model of a factory of instances.** If every function of `F'` is an instance of a
     function of `F`, `F`'s concrete evaluators commute with demangling, and every

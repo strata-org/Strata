@@ -40,7 +40,7 @@ public section
     function's output type, or the second of exactly two arguments when both inputs and the
     output have type `bool`. -/
 private def EvalShape (fn : Lambda.LFunc CoreLParams) : Prop :=
-  ∀ ceval, fn.concreteEval = some ceval → ∀ md args r, ceval md args = some r →
+  ∀ ceval, fn.concreteEval = some ceval → ∀ md opTy args r, ceval md opTy args = some r →
     (∃ m c, r = .const m c ∧ c.ty = fn.output) ∨
     (∃ x, args = [x, r] ∧ fn.inputs.map Prod.snd = [.bool, .bool] ∧ fn.output = .bool)
 
@@ -49,9 +49,9 @@ private def EvalShape (fn : Lambda.LFunc CoreLParams) : Prop :=
 private def SCShape (fn : Lambda.LFunc CoreLParams) : Prop :=
   Strata.DL.Util.FuncAttr.hasShortCircuit fn.attr = true →
     ∀ ceval, fn.concreteEval = some ceval →
-    ∀ md (a : Lambda.LExpr CoreLParams.mono) rest A,
-      ceval md (a :: rest.map (Lambda.LExpr.annotateFvars A)) =
-        (ceval md (a :: rest)).map (Lambda.LExpr.annotateFvars A)
+    ∀ md opTy (a : Lambda.LExpr CoreLParams.mono) rest A,
+      ceval md opTy (a :: rest.map (Lambda.LExpr.annotateFvars A)) =
+        (ceval md opTy (a :: rest)).map (Lambda.LExpr.annotateFvars A)
 
 open Lambda in
 /-- A `unaryOp` evaluator returns a constant of its output type, provided the literal builder
@@ -62,7 +62,7 @@ private theorem unaryOp_shape {inTy outTy : LMonoTy} {InV OutV : Type} [ToString
     (hmk : ∀ md (v : OutV), ∃ m c, LambdaLeanType.mkConst (ty := outTy) CoreLParams md v =
       .const m c ∧ c.ty = outTy := by intro md v; exact ⟨_, _, rfl, rfl⟩) :
     EvalShape (unaryOp n f pre hI hO hp).func ∧ SCShape (unaryOp n f pre hI hO hp).func := by
-  refine ⟨fun ceval hce md args r h => .inl ?_, fun h => nomatch h⟩
+  refine ⟨fun ceval hce md opTy args r h => .inl ?_, fun h => nomatch h⟩
   cases hce
   simp only at h
   split at h
@@ -82,7 +82,7 @@ private theorem binaryOp_shape {inTy outTy : LMonoTy} {InV OutV : Type} [ToStrin
       .const m c ∧ c.ty = outTy := by intro md v; exact ⟨_, _, rfl, rfl⟩) :
     EvalShape (binaryOp n g guard pre hI hO hp).func ∧
       SCShape (binaryOp n g guard pre hI hO hp).func := by
-  refine ⟨fun ceval hce md args r h => .inl ?_, fun h => nomatch h⟩
+  refine ⟨fun ceval hce md opTy args r h => .inl ?_, fun h => nomatch h⟩
   cases hce
   simp only at h
   split at h
@@ -100,7 +100,7 @@ open Lambda in
 private theorem shortCircuitOp_shape {n : CoreLParams.Identifier} {absorb decided : Bool} :
     EvalShape (shortCircuitOp n absorb decided).func ∧
       SCShape (shortCircuitOp n absorb decided).func := by
-  refine ⟨fun ceval hce md args r h => ?_, fun _ ceval hce md a rest A => ?_⟩
+  refine ⟨fun ceval hce md opTy args r h => ?_, fun _ ceval hce md opTy a rest A => ?_⟩
   · cases hce
     simp only at h
     split at h
@@ -157,12 +157,13 @@ private theorem LConst_ty_subst (c : Lambda.LConst) (S : Lambda.Subst) :
 /-- A concrete evaluator of a `Core.Factory` function returns, on arguments well typed at the
     input types instantiated by `S`, a result well typed at the output type instantiated by `S`. -/
 private theorem evalWt_of_mem {fn : Lambda.LFunc CoreLParams} (hfn : fn ∈ Core.Factory.toArray)
-    {ceval md args r} (hce : fn.concreteEval = some ceval) (S : Lambda.Subst)
-    (h : ceval md args = some r)
+    {ceval md opTy args r} (hce : fn.concreteEval = some ceval) (S : Lambda.Subst)
+    (h : ceval md opTy args = some r)
     (hargs : List.Rel₂ (Lambda.LExpr.HasTypeA [])
       args ((fn.inputs.map Prod.snd).map (Lambda.LMonoTy.subst S))) :
     Lambda.LExpr.HasTypeA [] r (fn.output.subst S) := by
-  rcases (shape_of_mem hfn).1 ceval hce md args r h with ⟨m, c, rfl, hc⟩ | ⟨x, rfl, hin, hout⟩
+  rcases (shape_of_mem hfn).1 ceval hce md opTy args r h with
+    ⟨m, c, rfl, hc⟩ | ⟨x, rfl, hin, hout⟩
   · rw [← hc, LConst_ty_subst]
     exact .const
   · rw [hin] at hargs
@@ -174,10 +175,10 @@ private theorem evalWt_of_mem {fn : Lambda.LFunc CoreLParams} (hfn : fn ∈ Core
 /-- A concrete evaluator of a `Core.Factory` function returns a result satisfying a property `P`
     of expressions that holds of every constant, on arguments that satisfy `P`. -/
 private theorem evalPres_of_mem {fn : Lambda.LFunc CoreLParams} (hfn : fn ∈ Core.Factory.toArray)
-    {ceval md args r} (hce : fn.concreteEval = some ceval) (h : ceval md args = some r)
+    {ceval md opTy args r} (hce : fn.concreteEval = some ceval) (h : ceval md opTy args = some r)
     (P : Lambda.LExpr CoreLParams.mono → Prop) (hc : ∀ m c, P (.const m c))
     (hargs : ∀ a ∈ args, P a) : P r := by
-  rcases (shape_of_mem hfn).1 ceval hce md args r h with ⟨m, c, rfl, -⟩ | ⟨x, rfl, -⟩
+  rcases (shape_of_mem hfn).1 ceval hce md opTy args r h with ⟨m, c, rfl, -⟩ | ⟨x, rfl, -⟩
   · exact hc m c
   · exact hargs r (by simp)
 
@@ -288,8 +289,8 @@ theorem programFactory_evalSoundWF (F : Lambda.Factory CoreLParams) (hWF : Lambd
     hfns _ (getElem_mem_toArray hf)
   refine ⟨⟨#[], hWF, fun fn hfn hct => ?_, ⟨by simp [Lambda.TypeFactory.allDatatypes]⟩⟩,
     fun tyMap => ⟨fun f hf body hb => ?_, fun f hf _ hce _ _ _ S h hargs => ?_,
-      fun f hf body callee args S hb hS => ?_, fun f hf _ _ _ _ hce h => ?_,
-      bodyInlineAnnotated_of_wf hWF tyMap, fun f hf _ _ _ _ hce h => ?_⟩⟩
+      fun f hf body callee args S hb hS => ?_, fun f hf _ _ _ _ _ hce h => ?_,
+      bodyInlineAnnotated_of_wf hWF tyMap, fun f hf _ _ _ _ _ hce h => ?_⟩⟩
   · exact ((hfns fn hfn).elim (fun h => Bool.false_ne_true ((all_not_constr fn h).symm.trans hct))
       fun h => Bool.false_ne_true (h.2.1.symm.trans hct)).elim
   · exact (hc f hf).elim (fun h => nomatch (all_bodies_none _ h).symm.trans hb)

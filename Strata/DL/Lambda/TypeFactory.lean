@@ -497,8 +497,8 @@ The evaluator returns `none` unless given a scrutinee and one case function per
 constructor of the block.
 -/
 def elimConcreteEval {T: LExprParams} [BEq T.Identifier] [Inhabited T.IDMeta] (block : MutualDatatype T.IDMeta)
-    (m : T.Metadata) : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono) :=
-  fun _ args =>
+    (m : T.Metadata) : ConcreteEval T :=
+  fun _ _ args =>
     if args.length != blockConstrCount block + 1 then none else
     match args with
     | x :: xs =>
@@ -630,7 +630,7 @@ private def mkDestructorFunc {T} [BEq T.Identifier] [Inhabited T.IDMeta]
     typeArgs := d.typeArgs,
     inputs := [(arg, dataDefault d)],
     output := ty,
-    concreteEval := some (fun _ => destructorConcreteEval d c i),
+    concreteEval := some (fun _ _ => destructorConcreteEval d c i),
     attr := #[.evalIfConstr 0],
     -- With one constructor the tester follows from exhaustiveness, so a
     -- precondition would only add a vacuously true obligation at every use site.

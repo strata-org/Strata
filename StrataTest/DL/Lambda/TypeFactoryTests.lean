@@ -1470,7 +1470,7 @@ section ElimEvalArity
 /-- The eliminator's concrete evaluator for the single-datatype block `[weekTy]`,
     applied to `args`. -/
 def dayElimEval (args : List (LExpr TestParams.mono)) : Option (LExpr TestParams.mono) :=
-  elimConcreteEval (T := TestParams) [weekTy] () () args
+  elimConcreteEval (T := TestParams) [weekTy] () () none args
 
 /-- The `Day` value built by constructor `c`. -/
 def dayVal (c : String) : LExpr TestParams.mono :=

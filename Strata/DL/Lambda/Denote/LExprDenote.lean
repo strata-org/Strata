@@ -1102,21 +1102,22 @@ public noncomputable def denoteArgs
           (denoteArgs fvarVal vt bvarVal es tys h.tail)
 
 /-- An `opInterp` is consistent with an `LFunc` whose definition is given by
-a `concreteEval` function: whenever `ceval md argExprs = some resultExpr` and
-all expressions are well-typed at the instantiated types (via a type
-substitution `tySubst`), the denotation of the result equals the
-interpretation of the op applied to the denotations of the arguments. -/
+a `concreteEval` function: whenever `ceval md opTy argExprs = some resultExpr`,
+where `opTy` is the function's type instantiated by a type substitution
+`tySubst`, and all expressions are well-typed at the instantiated types, the
+denotation of the result equals the interpretation of the op applied to the
+denotations of the arguments. -/
 public def LFunc.InterpConsistentEval [DecidableEq T.IDMeta]
-    (f : LFunc T) (ceval : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) : Prop :=
+    (f : LFunc T) (ceval : ConcreteEval T) : Prop :=
   ∀ (vt : TyVarVal)
     (fvarVal : FreeVarVal T tcInterp)
     (md : T.Metadata)
     (tySubst : Subst)
     (argExprs : List (LExpr T.mono))
     (resultExpr : LExpr T.mono),
-  ceval md argExprs = some resultExpr →
   let instInputTys := (List.map Prod.snd f.inputs).map (LMonoTy.subst tySubst)
   let instOutputTy := LMonoTy.subst tySubst f.output
+  ceval md (some (LMonoTy.mkArrow' instOutputTy instInputTys)) argExprs = some resultExpr →
   let inputSorts := instInputTys.map (LMonoTy.substTyVars vt)
   let outputSort := LMonoTy.substTyVars vt instOutputTy
   let fullSort := LSort.mkArrow outputSort inputSorts

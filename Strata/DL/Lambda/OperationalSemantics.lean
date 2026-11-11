@@ -166,7 +166,7 @@ order. -/
   ∀ (e callee e':LExpr Tbase.mono) args fn denotefn,
     F.callOfLFunc e = .some (callee,args,fn) →
     fn.concreteEval = .some denotefn →
-    .some e' = denotefn m args →
+    .some e' = denotefn m callee.opTy? args →
     Step F rf e e'
 
 /-- Substitute free variables under an abstraction binder using the full state.

@@ -195,7 +195,8 @@ then the result is well-typed at the instantiated output type. -/
 def Factory.EvalWellTyped [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
   ∀ (f : String), (hf : f ∈ F) → ∀ ceval, (F[f]).concreteEval = some ceval →
     ∀ (md : T.Metadata) (args : List (LExpr T.mono)) (result : LExpr T.mono) (tySubst : Subst),
-      ceval md args = some result →
+      ceval md (some (LMonoTy.mkArrow' (LMonoTy.subst tySubst (F[f]).output)
+        ((F[f]).inputs.map Prod.snd |>.map (LMonoTy.subst tySubst)))) args = some result →
       List.Rel₂ (LExpr.HasTypeA []) args ((F[f]).inputs.map Prod.snd |>.map (LMonoTy.subst tySubst)) →
       LExpr.HasTypeA [] result (LMonoTy.subst tySubst (F[f]).output)
 
@@ -231,8 +232,8 @@ def Factory.BodyOpsConsistent (F : @Factory T) : Prop :=
 /-- Every concrete evaluator in the factory returns results that satisfy
 `OpsConsistent`. -/
 def Factory.EvalOpsConsistent (F : @Factory T) : Prop :=
-  ∀ (f : String), (hf : f ∈ F) → ∀ ceval md args result, (F[f]).concreteEval = some ceval →
-    .some result = ceval md args → OpsConsistent F result
+  ∀ (f : String), (hf : f ∈ F) → ∀ ceval md opTy args result, (F[f]).concreteEval = some ceval →
+    .some result = ceval md opTy args → OpsConsistent F result
 
 /-- Every function body in the factory, after type instantiation, has fvar
 annotations consistent with `tyMap`. -/
@@ -245,8 +246,8 @@ def Factory.BodyAnnotated [DecidableEq T.IDMeta] (F : @Factory T)
 annotations consistent with `tyMap`. -/
 def Factory.EvalAnnotated [DecidableEq T.IDMeta] (F : @Factory T)
     (tyMap : Map T.Identifier LMonoTy) : Prop :=
-  ∀ (f : String), (hf : f ∈ F) → ∀ ceval md args result, (F[f]).concreteEval = some ceval →
-    .some result = ceval md args → fvars_annotated_by tyMap result
+  ∀ (f : String), (hf : f ∈ F) → ∀ ceval md opTy args result, (F[f]).concreteEval = some ceval →
+    .some result = ceval md opTy args → fvars_annotated_by tyMap result
 
 /-! ### Environment assumptions -/
 

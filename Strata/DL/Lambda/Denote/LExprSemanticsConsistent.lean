@@ -90,15 +90,15 @@ def Env.InterpConsistentAt (env : T.Identifier → Option (LExpr T.mono)) : Prop
 /-- Every concrete evaluator of the factory returns an `OpsConsistent` result on arguments that
 are `OpsConsistent`. -/
 def Factory.EvalOpsConsistentOn [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
-  ∀ (f : String), (hf : f ∈ F) → ∀ ceval md args result, (F[f]).concreteEval = some ceval →
-    .some result = ceval md args → (∀ a ∈ args, OpsConsistent F a) → OpsConsistent F result
+  ∀ (f : String), (hf : f ∈ F) → ∀ ceval md opTy args result, (F[f]).concreteEval = some ceval →
+    .some result = ceval md opTy args → (∀ a ∈ args, OpsConsistent F a) → OpsConsistent F result
 
 /-- Every concrete evaluator of the factory returns a result whose free variables are annotated
 by `tyMap` on arguments whose free variables are. -/
 def Factory.EvalAnnotatedOn [DecidableEq T.IDMeta] (F : @Factory T)
     (tyMap : Map T.Identifier LMonoTy) : Prop :=
-  ∀ (f : String), (hf : f ∈ F) → ∀ ceval md args result, (F[f]).concreteEval = some ceval →
-    .some result = ceval md args → (∀ a ∈ args, fvars_annotated_by tyMap a) →
+  ∀ (f : String), (hf : f ∈ F) → ∀ ceval md opTy args result, (F[f]).concreteEval = some ceval →
+    .some result = ceval md opTy args → (∀ a ∈ args, fvars_annotated_by tyMap a) →
       fvars_annotated_by tyMap result
 
 /-- Every function body of the factory satisfies `OpsConsistent` after instantiation at every
@@ -151,13 +151,13 @@ public def Factory.EvalSoundWF [DecidableEq T.IDMeta] (F : @Factory T) : Prop :=
 /-- `Factory.EvalOpsConsistent` implies its form on `OpsConsistent` arguments. -/
 theorem Factory.EvalOpsConsistent.on [DecidableEq T.IDMeta] {F : @Factory T}
     (h : Factory.EvalOpsConsistent F) : Factory.EvalOpsConsistentOn F :=
-  fun f hf ceval md args result hc hr _ => h f hf ceval md args result hc hr
+  fun f hf ceval md opTy args result hc hr _ => h f hf ceval md opTy args result hc hr
 
 /-- `Factory.EvalAnnotated` implies its form on annotated arguments. -/
 theorem Factory.EvalAnnotated.on [DecidableEq T.IDMeta] {F : @Factory T}
     {tyMap : Map T.Identifier LMonoTy} (h : Factory.EvalAnnotated F tyMap) :
     Factory.EvalAnnotatedOn F tyMap :=
-  fun f hf ceval md args result hc hr _ => h f hf ceval md args result hc hr
+  fun f hf ceval md opTy args result hc hr _ => h f hf ceval md opTy args result hc hr
 
 /-- `Factory.BodyOpsConsistent` implies its form at the substitutions inlining uses. -/
 theorem Factory.BodyOpsConsistent.on [DecidableEq T.IDMeta] {F : @Factory T}
@@ -770,8 +770,9 @@ theorem Step.denote_preservedAt
     have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
     have h_ice := h_fn_eq ▸ hF.2 name.name h_fn_mem_str denotefn (h_fn_eq ▸ heval)
     -- Step 5: Instantiate InterpConsistentEval
-    have h_ceval : denotefn step_md args = some e' := hresult.symm
     subst h_τ_eq h_argTys_eq
+    rw [h_callee_eq, hty_op] at hresult
+    have h_ceval := hresult.symm
     have h_ice_inst := h_ice vt fvarVal step_md tySubst args e' h_ceval h_args h₂
     -- Step 6-7: Connect and conclude
     have h_fn_name : fn.name.name = name.name := Factory.getElem?_name h_get
@@ -985,8 +986,9 @@ theorem Step.type_preserved
     have h_fn_mem : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
     have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
     -- Apply EvalWellTyped
-    exact h_fn_eq ▸ hFeval name.name h_fn_mem denotefn (h_fn_eq ▸ heval)
-      _ args e' tySubst hresult.symm (h_fn_eq ▸ h_args)
+    rw [h_callee_eq, hty_op] at hresult
+    subst h_fn_eq
+    exact hFeval name.name h_fn_mem denotefn heval _ args e' tySubst hresult.symm h_args
   | abs_subst_fvars body x hfv =>
     cases h₁ with
     | abs h_body =>
@@ -1141,7 +1143,7 @@ theorem Step.OpsConsistent_preservedOn
     have h_fn_mem : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
     have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
     have h_eval_eq : (F[name.name]).concreteEval = some denotefn := by rw [h_fn_eq]; exact heval
-    exact hFEvalOps name.name h_fn_mem denotefn _ args e' h_eval_eq hresult
+    exact hFEvalOps name.name h_fn_mem denotefn _ _ args e' h_eval_eq hresult
       (OpsConsistent_callOfLFunc_args hOps hcall)
   | abs_subst_fvars body x hfv =>
     exact substFvarsFromEnv_OpsConsistent hOps hEnvOps
@@ -1210,7 +1212,7 @@ theorem Step.fvars_annotated_preservedOn
     have h_fn_mem : name.name ∈ F := Factory.getElem?_some_implies_mem h_get
     have h_fn_eq : F[name.name] = fn := Factory.getElem?_some_getElem h_get
     have h_eval_eq : (F[name.name]).concreteEval = some denotefn := by rw [h_fn_eq]; exact heval
-    exact hFEvalAnnot name.name h_fn_mem denotefn _ args e' h_eval_eq hresult
+    exact hFEvalAnnot name.name h_fn_mem denotefn _ _ args e' h_eval_eq hresult
       (fvars_annotated_by_callOfLFunc_args hAnnot hcall)
   | abs_subst_fvars body x hfv =>
     exact substFvarsFromEnv_fvars_annotated hAnnot hEnvAnnot

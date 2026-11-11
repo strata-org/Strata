@@ -48,7 +48,7 @@ omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
     `lfunc.concreteEval = some ceval`. -/
 public theorem LExpr.shortCircuitCall?_some {lfunc : LFunc Tbase} {args : List (LExpr Tbase.mono)}
     {a : LExpr Tbase.mono} {rest : List (LExpr Tbase.mono)}
-    {ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono)}
+    {ceval : ConcreteEval Tbase}
     (h : LExpr.shortCircuitCall? lfunc args = some (a, rest, ceval)) :
     args = a :: rest ∧ lfunc.concreteEval = some ceval := by
   unfold LExpr.shortCircuitCall? at h
@@ -81,7 +81,7 @@ omit [DecidableEq Tbase.IDMeta] [Inhabited Tbase.IDMeta]
 /-- `shortCircuitCall?` accepts every non-empty argument list once it accepts one. -/
 private theorem LExpr.shortCircuitCall?_cons {lfunc : LFunc Tbase}
     {args : List (LExpr Tbase.mono)} {a : LExpr Tbase.mono} {rest : List (LExpr Tbase.mono)}
-    {ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono)}
+    {ceval : ConcreteEval Tbase}
     (h : LExpr.shortCircuitCall? lfunc args = some (a, rest, ceval))
     (b : LExpr Tbase.mono) (rest' : List (LExpr Tbase.mono)) :
     LExpr.shortCircuitCall? lfunc (b :: rest') = some (b, rest', ceval) := by
@@ -110,7 +110,7 @@ private theorem evalShortCircuit_eraseMetadata
     [Traceable LExpr.EvalProvenance Tbase.Metadata]
     (F : @Factory Tbase) (env : Env Tbase) (n' : Nat) (lfunc : LFunc Tbase)
     (h_wf : LFuncWF lfunc)
-    (ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono))
+    (ceval : ConcreteEval Tbase)
     (hce : lfunc.concreteEval = some ceval)
     (e₁ e₂ op₁ op₂ a₁ a₂ : LExpr Tbase.mono) (rest₁ rest₂ : List (LExpr Tbase.mono))
     (h_op : op₁.eraseMetadata = op₂.eraseMetadata)
@@ -148,22 +148,25 @@ private theorem evalShortCircuit_eraseMetadata
         ).eraseMetadata := by
     rw [LExpr.eraseMetadata_mkApp, LExpr.eraseMetadata_mkApp, h_op]
     simp only [List.map_cons, hr1, hrest_ev rest₁ rest₂ h_rest]
+  have h_opTy : op₁.opTy? = op₂.opTy? := by
+    rw [← LExpr.opTy?_eraseMetadata op₁, h_op, LExpr.opTy?_eraseMetadata]
   unfold LExpr.evalShortCircuit
   simp only [LExpr.combineEvalResValueFlag_eq_pair]
   by_cases hv : LExpr.isValue F (LExpr.eval n' F env a₁).fst = true
   · rw [ite_eq_left hv, ite_eq_left (hval ▸ hv)]
-    cases hc₁ : ceval e₁.metadata ((LExpr.eval n' F env a₁).fst :: rest₁) with
+    cases hc₁ : ceval e₁.metadata op₁.opTy? ((LExpr.eval n' F env a₁).fst :: rest₁) with
     | some r₁ =>
       obtain ⟨r₂, hc₂, hr⟩ :=
-        h_wf.concreteEval_eraseMetadata ceval hce _ e₂.metadata _ _ r₁ hargs hc₁
+        h_wf.concreteEval_eraseMetadata ceval hce _ e₂.metadata _ _ _ r₁ hargs hc₁
+      rw [h_opTy] at hc₂
       rw [hc₂]
       exact ih _ _ hr
     | none =>
-      cases hc₂ : ceval e₂.metadata ((LExpr.eval n' F env a₂).fst :: rest₂) with
+      cases hc₂ : ceval e₂.metadata op₂.opTy? ((LExpr.eval n' F env a₂).fst :: rest₂) with
       | some r₂ =>
         obtain ⟨r₁, hc₁', _⟩ :=
-          h_wf.concreteEval_eraseMetadata ceval hce _ e₁.metadata _ _ r₂ hargs.symm hc₂
-        rw [hc₁] at hc₁'; simp at hc₁'
+          h_wf.concreteEval_eraseMetadata ceval hce _ e₁.metadata _ _ _ r₂ hargs.symm hc₂
+        rw [← h_opTy, hc₁] at hc₁'; simp at hc₁'
       | none => exact hrebuild
   · rw [ite_eq_right hv, ite_eq_right (by rwa [← hval])]
     exact hrebuild
@@ -196,6 +199,8 @@ theorem eval_eraseMetadata_invariant
         -- Get the corresponding callOfLFunc for e₂
         obtain ⟨op₂, args₂, h_call₂, h_args_eM_raw, h_op_eM⟩ :=
           callOfLFunc_some_of_eraseMetadata_eq F e₁ e₂ false h_eM op_expr₁ args₁ lfunc h_call₁
+        have h_opTy : op_expr₁.opTy? = op₂.opTy? := by
+          rw [← LExpr.opTy?_eraseMetadata op_expr₁, h_op_eM, LExpr.opTy?_eraseMetadata]
         rw [h_call₂]; simp only []
         -- Derive length equality
         have h_len : args₁.length = args₂.length := by
@@ -430,7 +435,7 @@ theorem eval_eraseMetadata_invariant
                     h_op_eM, h_eval_args_eM]
               | some ceval =>
                 match h_cv₁ : ceval (@LExpr.mkApp Tbase.mono e₁.metadata op_expr₁
-                    (args₁.map (fun a => (LExpr.eval n' F env a).fst))).metadata
+                    (args₁.map (fun a => (LExpr.eval n' F env a).fst))).metadata op_expr₁.opTy?
                     (args₁.map (fun a => (LExpr.eval n' F env a).fst)) with
                 | some e'₁ =>
                   simp only [h_cv₁]
@@ -442,16 +447,20 @@ theorem eval_eraseMetadata_invariant
                     have h_val₂ := h_val_cond_eq ▸ h_val₁
                     rw [ite_eq_left h_val₂]
                     match h_cv₂ : ceval (@LExpr.mkApp Tbase.mono e₂.metadata op₂
-                        (args₂.map (fun a => (LExpr.eval n' F env a).fst))).metadata
+                        (args₂.map (fun a => (LExpr.eval n' F env a).fst))).metadata op₂.opTy?
                         (args₂.map (fun a => (LExpr.eval n' F env a).fst)) with
                     | some e'₂ =>
                       obtain ⟨e'₂', h_cv₂', h_res_eM⟩ :=
-                        h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ e'₁ h_eval_args_eM h_cv₁
+                        h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ _ e'₁ h_eval_args_eM
+                          h_cv₁
+                      rw [h_opTy] at h_cv₂'
                       rw [h_cv₂'] at h_cv₂; cases h_cv₂
                       exact ih _ _ h_res_eM
                     | none =>
                       obtain ⟨e'₂, h_cv₂', _⟩ :=
-                        h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ e'₁ h_eval_args_eM h_cv₁
+                        h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ _ e'₁ h_eval_args_eM
+                          h_cv₁
+                      rw [h_opTy] at h_cv₂'
                       exact absurd (h_cv₂.symm.trans h_cv₂') (by simp)
                 | none =>
                   simp only [h_cv₁]
@@ -462,11 +471,13 @@ theorem eval_eraseMetadata_invariant
                     have h_val₂ := h_val_cond_eq ▸ h_val₁
                     rw [ite_eq_left h_val₂]
                     match h_cv₂ : ceval (@LExpr.mkApp Tbase.mono e₂.metadata op₂
-                        (args₂.map (fun a => (LExpr.eval n' F env a).fst))).metadata
+                        (args₂.map (fun a => (LExpr.eval n' F env a).fst))).metadata op₂.opTy?
                         (args₂.map (fun a => (LExpr.eval n' F env a).fst)) with
                     | some e'₂ =>
                       obtain ⟨e'₁, h_cv₁', _⟩ :=
-                        h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ e'₂ h_eval_args_eM.symm h_cv₂
+                        h_wf_fn.concreteEval_eraseMetadata ceval h_ce _ _ _ _ _ e'₂
+                          h_eval_args_eM.symm h_cv₂
+                      rw [← h_opTy] at h_cv₁'
                       exact absurd (h_cv₁.symm.trans h_cv₁') (by simp)
                     | none =>
                       simp [LExpr.eraseMetadata_mkApp, h_op_eM, h_eval_args_eM]

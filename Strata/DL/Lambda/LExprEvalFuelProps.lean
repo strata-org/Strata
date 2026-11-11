@@ -697,7 +697,7 @@ private theorem evalCore_value_isValue
 private theorem evalShortCircuit_value_isValue
     (n' : Nat) (F : @Factory Tbase) (env : Env Tbase)
     (e op_expr a : LExpr Tbase.mono) (rest : List (LExpr Tbase.mono))
-    (ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono))
+    (ceval : ConcreteEval Tbase)
     (ih_eval : ∀ e' b, (LExpr.eval n' F env e').snd = .value b →
         LExpr.isValue F (LExpr.eval n' F env e').fst = true)
     {b : Bool} (h : (LExpr.evalShortCircuit n' F env e op_expr a rest ceval).snd = .value b) :
@@ -1044,13 +1044,14 @@ public theorem eval_getVars_origin
           split
           · rename_i e' h_if
             intro hy
-            have h_ceval : ceval e.metadata ((LExpr.eval n' F env a).fst :: rest) = some e' := by
+            have h_ceval :
+                ceval e.metadata op_expr.opTy? ((LExpr.eval n' F env a).fst :: rest) = some e' := by
               split at h_if
               · exact h_if
               · simp at h_if
             refine getVars_origin_trans hidem (fun z hz => ?_) (ih _ y hy)
             obtain ⟨x, hx_mem, hzx⟩ :=
-              h_wf.concreteEval_freeVars ceval h_ce _ _ e' h_ceval z hz
+              h_wf.concreteEval_freeVars ceval h_ce _ _ _ e' h_ceval z hz
             rcases List.mem_cons.mp hx_mem with rfl | hx_rest
             · exact Or.inr (h_arg a (by simp) z hzx)
             · exact Or.inl (callOfLFunc_getVars_args F e op_expr _ lfunc h_call x
@@ -1114,7 +1115,7 @@ public theorem eval_getVars_origin
                   intro hy
                   refine getVars_origin_trans hidem (fun z hz => Or.inr ?_) (ih _ y hy)
                   obtain ⟨a, ha_mem, hza⟩ :=
-                    h_wf.concreteEval_freeVars ceval h_ce _ _ e'c h_ceval_eq z hz
+                    h_wf.concreteEval_freeVars ceval h_ce _ _ _ e'c h_ceval_eq z hz
                   rw [List.mem_map] at ha_mem
                   obtain ⟨a0, ha0_mem, ha0_eq⟩ := ha_mem
                   exact h_arg a0 ha0_mem z (by rw [ha0_eq]; exact hza)
@@ -1355,14 +1356,16 @@ theorem eval_env_congr
           rw [h_arg a (by simp)]
           split
           · rename_i e' h_if
-            have h_ceval : ceval e.metadata ((LExpr.eval n' F env₂ a).fst :: rest) = some e' := by
+            have h_ceval :
+                ceval e.metadata op_expr.opTy? ((LExpr.eval n' F env₂ a).fst :: rest) =
+                  some e' := by
               split at h_if
               · exact h_if
               · simp at h_if
             have h_ih_new : LExpr.eval n' F env₁ e' = LExpr.eval n' F env₂ e' := by
               apply ih; intro x hx
               obtain ⟨y, hy_mem, hxy⟩ :=
-                h_wf.concreteEval_freeVars ceval h_ce _ _ e' h_ceval x hx
+                h_wf.concreteEval_freeVars ceval h_ce _ _ _ e' h_ceval x hx
               rcases List.mem_cons.mp hy_mem with rfl | hy_rest
               · exact hag x (callOfLFunc_getVars_args F e op_expr _ lfunc h_call a (by simp) x
                   (eval_getVars_subset hIdent F env₂ hWF henv₂ n' a x hxy))
@@ -1432,7 +1435,7 @@ theorem eval_env_congr
                   have h_ih_new : LExpr.eval n' F env₁ e'c = LExpr.eval n' F env₂ e'c := by
                     apply ih
                     intro x hx
-                    have hexists := h_wf.concreteEval_freeVars ceval h_ce _ _ e'c h_ceval_eq x hx
+                    have hexists := h_wf.concreteEval_freeVars ceval h_ce _ _ _ e'c h_ceval_eq x hx
                     obtain ⟨a, ha_mem, hxa'⟩ := hexists
                     rw [List.mem_map] at ha_mem
                     obtain ⟨a0, ha0_mem, ha0_eq⟩ := ha_mem
@@ -1833,7 +1836,7 @@ private theorem evalCore_value_true_mono
 private theorem evalShortCircuit_value_true_transfer
     (n₁ n₂ : Nat) (F : @Factory Tbase) (env₁ env₂ : Env Tbase)
     (e op_expr a : LExpr Tbase.mono) (rest : List (LExpr Tbase.mono))
-    (ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono))
+    (ceval : ConcreteEval Tbase)
     (v : LExpr Tbase.mono)
     (ih_eval : ∀ e' v', LExpr.eval n₁ F env₁ e' = (v', .value true) →
         LExpr.eval n₂ F env₂ e' = (v', .value true))

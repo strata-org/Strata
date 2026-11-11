@@ -98,11 +98,11 @@ private theorem eval_StepStar_factory_ceval_of_stepped
     (args : List (LExpr Tbase.mono))
     (lfunc : LFunc Tbase)
     (h_call : F.callOfLFunc e = some (op_expr, args, lfunc))
-    (ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono))
+    (ceval : ConcreteEval Tbase)
     (h_ceval : lfunc.concreteEval = some ceval)
     (md : Tbase.Metadata) (vals stepped_args : List (LExpr Tbase.mono))
     (e'_ceval : LExpr Tbase.mono)
-    (h_ceval_succ : ceval md vals = some e'_ceval)
+    (h_ceval_succ : ceval md op_expr.opTy? vals = some e'_ceval)
     (h_stepped_len : args.length = stepped_args.length)
     (h_per_step : ∀ i (hi : i < args.length),
       StepStar F env (args.get ⟨i, hi⟩) (stepped_args.get ⟨i, h_stepped_len ▸ hi⟩))
@@ -132,16 +132,19 @@ private theorem eval_StepStar_factory_ceval_of_stepped
       some (op_expr, vals, lfunc) :=
     callOfLFunc_mkApp_op F e.metadata op_expr args vals lfunc ⟨m_op, name_op, ty_op, h_op_eq⟩
       h_call_mkApp h_vals_len
-  obtain ⟨op_s, args_s, h_call_s, h_args_s_eM, _⟩ :=
+  obtain ⟨op_s, args_s, h_call_s, h_args_s_eM, h_op_s_eM⟩ :=
     callOfLFunc_some_of_eraseMetadata_eq F (LExpr.mkApp e.metadata op_expr vals)
       e_stepped false h_eM_eq.symm op_expr vals lfunc h_call_eval
+  have h_opTy : op_s.opTy? = op_expr.opTy? := by
+    rw [← LExpr.opTy?_eraseMetadata op_s, ← h_op_s_eM, LExpr.opTy?_eraseMetadata]
   have h_lfunc_mem := callOfLFunc_func_mem F _ _ _ lfunc false h_call
   have h_wf_fn := hWF.lfuncs_wf lfunc h_lfunc_mem
   obtain ⟨res_s, h_ceval_s, h_res_eM⟩ :=
-    h_wf_fn.concreteEval_eraseMetadata ceval h_ceval md e.metadata vals args_s e'_ceval
-      h_args_s_eM h_ceval_succ
+    h_wf_fn.concreteEval_eraseMetadata ceval h_ceval md e.metadata op_expr.opTy? vals args_s
+      e'_ceval h_args_s_eM h_ceval_succ
   have h_step_eval : Step F env e_stepped res_s :=
-    Step.eval_fn e_stepped op_s res_s args_s lfunc ceval h_call_s h_ceval h_ceval_s.symm
+    Step.eval_fn e_stepped op_s res_s args_s lfunc ceval h_call_s h_ceval
+      (h_opTy ▸ h_ceval_s.symm)
   obtain ⟨e_final, h_step_final, h_eM_final⟩ := ih res_s
   refine ⟨e_final, ReflTrans_Transitive _ _ _ _ h_step_e (ReflTrans.step _ _ _ h_step_eval h_step_final), ?_⟩
   rw [h_eM_final]
@@ -161,11 +164,12 @@ private theorem eval_StepStar_factory_ceval
     (args : List (LExpr Tbase.mono))
     (lfunc : LFunc Tbase)
     (h_call : F.callOfLFunc e = some (op_expr, args, lfunc))
-    (ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono))
+    (ceval : ConcreteEval Tbase)
     (h_ceval : lfunc.concreteEval = some ceval)
     (e'_ceval : LExpr Tbase.mono)
     (h_ceval_succ : ceval (LExpr.mkApp e.metadata op_expr
-        (args.map (fun a => (LExpr.eval n F env a).fst))).metadata (args.map (fun a => (LExpr.eval n F env a).fst)) = some e'_ceval)
+        (args.map (fun a => (LExpr.eval n F env a).fst))).metadata op_expr.opTy?
+        (args.map (fun a => (LExpr.eval n F env a).fst)) = some e'_ceval)
     (ih : ∀ (e : LExpr Tbase.mono),
       ∃ (e' : LExpr Tbase.mono),
         StepStar F env e e' ∧
@@ -207,7 +211,7 @@ private theorem eval_StepStar_shortCircuit
     (lfunc : LFunc Tbase)
     (h_call : F.callOfLFunc e = some (op_expr, args, lfunc))
     (a : LExpr Tbase.mono) (rest : List (LExpr Tbase.mono))
-    (ceval : Tbase.Metadata → List (LExpr Tbase.mono) → Option (LExpr Tbase.mono))
+    (ceval : ConcreteEval Tbase)
     (h_sc : LExpr.shortCircuitCall? lfunc args = some (a, rest, ceval))
     (ih : ∀ (e : LExpr Tbase.mono),
       ∃ (e' : LExpr Tbase.mono),
@@ -222,7 +226,8 @@ private theorem eval_StepStar_shortCircuit
   simp only [LExpr.combineEvalResValueFlag_eq_pair]
   split
   · rename_i e'_ceval h_if
-    have h_ceval_succ : ceval e.metadata ((LExpr.eval n F env a).fst :: rest) = some e'_ceval := by
+    have h_ceval_succ :
+        ceval e.metadata op_expr.opTy? ((LExpr.eval n F env a).fst :: rest) = some e'_ceval := by
       split at h_if
       · exact h_if
       · simp at h_if

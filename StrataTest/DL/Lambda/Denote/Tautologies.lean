@@ -148,6 +148,18 @@ private abbrev boolBinSort : LSort :=
 private abbrev boolUnSort : LSort :=
   .tcons "arrow" [.tcons "bool" [], .tcons "bool" []]
 
+/-- The operator annotation the interpretation-consistency condition gives a binary Boolean
+    operator, at the empty type substitution. -/
+private abbrev binOpTy : Option LMonoTy :=
+  some (LMonoTy.mkArrow' (LMonoTy.subst Subst.empty .bool)
+    ([LMonoTy.bool, .bool].map (LMonoTy.subst Subst.empty)))
+
+/-- The operator annotation the interpretation-consistency condition gives a unary Boolean
+    operator, at the empty type substitution. -/
+private abbrev unOpTy : Option LMonoTy :=
+  some (LMonoTy.mkArrow' (LMonoTy.subst Subst.empty .bool)
+    ([LMonoTy.bool].map (LMonoTy.subst Subst.empty)))
+
 private theorem bool_and_mem : "Bool.And" ∈ F := by native_decide
 private theorem bool_and_has_ceval : (F["Bool.And"]'bool_and_mem).concreteEval.isSome = true := by native_decide
 private theorem bool_and_name : (F["Bool.And"]'bool_and_mem).name.name = "Bool.And" := by native_decide
@@ -162,12 +174,12 @@ private theorem bool_and_interp (I : Interp F) :
   unfold LFunc.InterpConsistentEval at h_ic
   rw [bool_and_input_tys, bool_and_output, bool_and_name] at h_ic
   funext p q
-  have h_eval : ceval () [.boolConst () p, .boolConst () q]
+  have h_eval : ceval () binOpTy [.boolConst () p, .boolConst () q]
       = some (.boolConst () (p && q)) := by
     have h_concrete :
         ∀ (b1 b2 : Bool),
           (F["Bool.And"]'bool_and_mem).concreteEval.bind
-            (fun f => f () [.boolConst () b1, .boolConst () b2])
+            (fun f => f () binOpTy [.boolConst () b1, .boolConst () b2])
           = some (.boolConst () (b1 && b2)) := by
       intro b1 b2; cases b1 <;> cases b2 <;> native_decide
     have h_inst_concrete := h_concrete p q
@@ -203,12 +215,12 @@ private theorem bool_implies_interp (I : Interp F) :
   unfold LFunc.InterpConsistentEval at h_ic
   rw [bool_implies_input_tys, bool_implies_output, bool_implies_name] at h_ic
   funext p q
-  have h_eval : ceval () [.boolConst () p, .boolConst () q]
+  have h_eval : ceval () binOpTy [.boolConst () p, .boolConst () q]
       = some (.boolConst () (!p || q)) := by
     have h_concrete :
         ∀ (b1 b2 : Bool),
           (F["Bool.Implies"]'bool_implies_mem).concreteEval.bind
-            (fun f => f () [.boolConst () b1, .boolConst () b2])
+            (fun f => f () binOpTy [.boolConst () b1, .boolConst () b2])
           = some (.boolConst () (!b1 || b2)) := by
       intro b1 b2; cases b1 <;> cases b2 <;> native_decide
     have h_inst_concrete := h_concrete p q
@@ -244,12 +256,12 @@ private theorem bool_or_interp (I : Interp F) :
   unfold LFunc.InterpConsistentEval at h_ic
   rw [bool_or_input_tys, bool_or_output, bool_or_name] at h_ic
   funext p q
-  have h_eval : ceval () [.boolConst () p, .boolConst () q]
+  have h_eval : ceval () binOpTy [.boolConst () p, .boolConst () q]
       = some (.boolConst () (p || q)) := by
     have h_concrete :
         ∀ (b1 b2 : Bool),
           (F["Bool.Or"]'bool_or_mem).concreteEval.bind
-            (fun f => f () [.boolConst () b1, .boolConst () b2])
+            (fun f => f () binOpTy [.boolConst () b1, .boolConst () b2])
           = some (.boolConst () (b1 || b2)) := by
       intro b1 b2; cases b1 <;> cases b2 <;> native_decide
     have h_inst_concrete := h_concrete p q
@@ -285,12 +297,12 @@ private theorem bool_not_interp (I : Interp F) :
   unfold LFunc.InterpConsistentEval at h_ic
   rw [bool_not_input_tys, bool_not_output, bool_not_name] at h_ic
   funext p
-  have h_eval : ceval () [.boolConst () p]
+  have h_eval : ceval () unOpTy [.boolConst () p]
       = some (.boolConst () (!p)) := by
     have h_concrete :
         ∀ (b : Bool),
           (F["Bool.Not"]'bool_not_mem).concreteEval.bind
-            (fun f => f () [.boolConst () b])
+            (fun f => f () unOpTy [.boolConst () b])
           = some (.boolConst () (!b)) := by
       intro b; cases b <;> native_decide
     have h_inst_concrete := h_concrete p

@@ -226,7 +226,7 @@ private def testFuncs : Array (LFunc TestParams) :=
   #[{ name := "Int.Add",
       inputs := [("x", mty[int]), ("y", mty[int])],
       output := mty[int],
-      concreteEval := some (fun _e args => match args with
+      concreteEval := some (fun _e _ args => match args with
                         | [e1, e2] =>
                           let e1i := LExpr.denoteInt e1
                           let e2i := LExpr.denoteInt e2
@@ -237,7 +237,7 @@ private def testFuncs : Array (LFunc TestParams) :=
     { name := "Int.Div",
       inputs := [("x", mty[int]), ("y", mty[int])],
       output := mty[int],
-      concreteEval :=  some (fun _e args => match args with
+      concreteEval :=  some (fun _e _ args => match args with
                           | [e1, e2] =>
                             let e1i := LExpr.denoteInt e1
                             let e2i := LExpr.denoteInt e2
@@ -250,7 +250,7 @@ private def testFuncs : Array (LFunc TestParams) :=
     { name := "Int.Neg",
       inputs := [("x", mty[int])],
       output := mty[int],
-      concreteEval :=  some (fun _e args => match args with
+      concreteEval :=  some (fun _e _ args => match args with
                               | [e1] =>
                                 let e1i := LExpr.denoteInt e1
                                 match e1i with
@@ -268,7 +268,7 @@ private def testFuncs : Array (LFunc TestParams) :=
     { name := "Int.Add3",
       inputs := [("x", mty[int]), ("y", mty[int]), ("z", mty[int])],
       output := mty[int],
-      concreteEval := some (fun _e args => match args with
+      concreteEval := some (fun _e _ args => match args with
                         | [e1, e2, e3] =>
                           let e1i := LExpr.denoteInt e1
                           let e2i := LExpr.denoteInt e2
@@ -296,12 +296,12 @@ private theorem list_eraseMetadata_id_unit :
 private theorem concreteEval_eraseMetadata_of_unit
     {f : LFunc TestParams} :
     ∀ ceval, f.concreteEval = some ceval →
-      ∀ md1 md2 (args1 args2 : List (LExpr TestParams.mono)) res1,
+      ∀ md1 md2 opTy (args1 args2 : List (LExpr TestParams.mono)) res1,
         args1.map LExpr.eraseMetadata = args2.map LExpr.eraseMetadata →
-        ceval md1 args1 = some res1 →
-        ∃ res2, ceval md2 args2 = some res2 ∧
+        ceval md1 opTy args1 = some res1 →
+        ∃ res2, ceval md2 opTy args2 = some res2 ∧
           LExpr.eraseMetadata res1 = LExpr.eraseMetadata res2 := by
-  intro ceval hceval md1 md2 args1 args2 res1 hargs heval
+  intro ceval hceval md1 md2 opTy args1 args2 res1 hargs heval
   rw [list_eraseMetadata_id_unit, list_eraseMetadata_id_unit] at hargs
   subst hargs
   -- md1 = md2 = () since both are Unit
@@ -311,7 +311,7 @@ private theorem concreteEval_eraseMetadata_of_unit
 
 -- Tactic to prove concreteEval_argmatch for concrete functions
 macro "prove_ceval_argmatch" : tactic => `(tactic|
-  (intro fn md args res h1 h2;
+  (intro fn md _ args res h1 h2;
    first
    | (simp only [Strata.DL.Util.Func.mk.injEq] at h1
       obtain ⟨_, _, _, _, _, _, _, _, rfl, _⟩ := h1
@@ -325,7 +325,7 @@ macro "prove_ceval_argmatch" : tactic => `(tactic|
 -- evaluator only produces results whose free variables come from an argument
 -- (constants contribute none; `.eq`/identity terms reuse an argument subterm).
 macro "prove_ceval_freeVars" : tactic => `(tactic|
-  (intro ceval hce md args res hres z hz
+  (intro ceval hce md _ args res hres z hz
    simp only [Option.some.injEq, reduceCtorEq] at hce
    all_goals (
      subst hce
@@ -717,7 +717,7 @@ private def evalIfValueFuncs : Array (LFunc TestParams) :=
       inputs := [("x", mty[int]), ("y", mty[int])],
       output := mty[bool],
       attr := #[.evalIfValue 0],
-      concreteEval := some (fun _m args => match args with
+      concreteEval := some (fun _m _ args => match args with
         | [e1, e2] =>
           match LExpr.denoteInt e1 with
           | some x => .some (.eq () (.intConst () (- x)) e2)
@@ -728,7 +728,7 @@ private def evalIfValueFuncs : Array (LFunc TestParams) :=
     { name := "NegEqNoAttr",
       inputs := [("x", mty[int]), ("y", mty[int])],
       output := mty[bool],
-      concreteEval := some (fun _m args => match args with
+      concreteEval := some (fun _m _ args => match args with
         | [e1, e2] =>
           match LExpr.denoteInt e1 with
           | some x => .some (.eq () (.intConst () (- x)) e2)
@@ -1103,7 +1103,7 @@ private def constTrueFuncs : Array (LFunc TestParams) :=
   #[{ name := "g",
       inputs := [("x", mty[bool])],
       output := mty[bool],
-      concreteEval := some (fun _ _ => some (.boolConst () true)) }]
+      concreteEval := some (fun _ _ _ => some (.boolConst () true)) }]
 
 private def constTrueState : LState TestParams :=
   { (LState.init : LState TestParams) with

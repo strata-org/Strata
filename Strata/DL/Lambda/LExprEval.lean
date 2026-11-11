@@ -262,8 +262,7 @@ def EvalResult.combineValueFlag (r : EvalResult) (b : Bool) : EvalResult :=
     first argument, the other arguments, and the concrete evaluator. `none` when the
     function lacks the attribute or a concrete evaluator, or the call has no argument. -/
 @[expose] def shortCircuitCall? (lfunc : LFunc TBase) (args : List (LExpr TBase.mono)) :
-    Option (LExpr TBase.mono × List (LExpr TBase.mono) ×
-      (TBase.Metadata → List (LExpr TBase.mono) → Option (LExpr TBase.mono))) :=
+    Option (LExpr TBase.mono × List (LExpr TBase.mono) × ConcreteEval TBase) :=
   if FuncAttr.hasShortCircuit lfunc.attr then
     match args, lfunc.concreteEval with
     | a :: rest, some ceval => some (a, rest, ceval)
@@ -344,7 +343,7 @@ def eval (n : Nat) (F : @Factory TBase) (env : Env TBase) (e : (LExpr TBase.mono
                 combineEvalResValueFlag argsAllFull
                   (rebuilt, if isValue F rebuilt then .value true else .nonvalue)
               | some ceval =>
-                match ceval rebuilt.metadata args with
+                match ceval rebuilt.metadata op_expr.opTy? args with
                 | .some e' =>
                   combineEvalResValueFlag argsAllFull (eval n' F env e')
                 | .none => (rebuilt, .nonvalue)
@@ -390,10 +389,10 @@ def evalCore (n' : Nat) (F : @Factory TBase) (env : Env TBase) (e : LExpr TBase.
     `true && (z && (true && …))` takes time linear in its depth. -/
 def evalShortCircuit (n' : Nat) (F : @Factory TBase) (env : Env TBase)
     (e op_expr a : LExpr TBase.mono) (rest : List (LExpr TBase.mono))
-    (ceval : TBase.Metadata → List (LExpr TBase.mono) → Option (LExpr TBase.mono))
+    (ceval : ConcreteEval TBase)
     : LExpr TBase.mono × EvalResult :=
   let r1 := eval n' F env a
-  match (if isValue F r1.fst then ceval e.metadata (r1.fst :: rest) else none) with
+  match (if isValue F r1.fst then ceval e.metadata op_expr.opTy? (r1.fst :: rest) else none) with
   | some e' => combineEvalResValueFlag r1.snd.isValueTrue (eval n' F env e')
   | none =>
     (@mkApp TBase.mono e.metadata op_expr (r1.fst :: rest.map (fun x => (eval n' F env x).fst)),

@@ -28,7 +28,7 @@ public section
 structure FragmentFactory (F : Lambda.Factory CoreLParams) : Prop where
   noBody : ∀ fn ∈ F.toArray, fn.body = none
   evalShape : ∀ fn ∈ F.toArray, ∀ ceval, fn.concreteEval = some ceval →
-    ∀ md args r, ceval md args = some r →
+    ∀ md opTy args r, ceval md opTy args = some r →
       ((∃ m c, r = .const m c) ∧
           ((∀ a ∈ args, StrLitsInAlphabet a = Bool.true) → StrLitsInAlphabet r = Bool.true)) ∨
         ∃ x, args = [x, r]

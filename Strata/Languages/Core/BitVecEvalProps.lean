@@ -107,10 +107,11 @@ output type, maps two width-`width` bitvector literals to the literal of its Lea
 applied to them. -/
 private theorem concreteEval_bvOp (width : Nat) (name : CoreIdent) {c : Lambda.LMonoTy}
     {OutV : Type} [ToString OutV] [Lambda.LambdaLeanType c OutV]
-    (op : BitVec width → BitVec width → OutV) (hO : c.freeVars = []) (a b : BitVec width) :
+    (op : BitVec width → BitVec width → OutV) (hO : c.freeVars = []) (a b : BitVec width)
+    (opTy : Option Lambda.LMonoTy) :
     (Lambda.binaryOp (T := CoreLParams) (inTy := .bitvec width) (outTy := c) name op
         (hInTy := rfl) (hOutTy := hO) (h_precond := fun _ h => by simp at h)).func.concreteEval.bind
-      (fun ce => ce () [.bitvecConst () width a, .bitvecConst () width b]) =
+      (fun ce => ce () opTy [.bitvecConst () width a, .bitvecConst () width b]) =
       some (Lambda.LambdaLeanType.mkConst CoreLParams () (op a b)) := by
   have hda : Lambda.LExpr.denoteBitVec width
       (Lambda.LExpr.bitvecConst () width a : Expression.Expr) = some a := by
@@ -131,7 +132,7 @@ private theorem bvPredicate_opInterp
     model.opInterp name.name
         (Lambda.LSort.mkArrow .bool [.bitvec width, .bitvec width]) = op := by
   funext a b
-  exact (opInterp_of_concreteEval model hF rfl (concreteEval_bvOp width name op rfl a b)
+  exact (opInterp_of_concreteEval model hF rfl (concreteEval_bvOp width name op rfl a b _)
     (fun _ => .bool) (fun _ s =>
       @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s))
     (.cons .const (.cons .const .nil)) .const).symm
@@ -145,7 +146,7 @@ private theorem bvBinary_opInterp
     model.opInterp name.name
         (Lambda.LSort.mkArrow (.bitvec width) [.bitvec width, .bitvec width]) = op := by
   funext a b
-  exact (opInterp_of_concreteEval model hF rfl (concreteEval_bvOp width name op rfl a b)
+  exact (opInterp_of_concreteEval model hF rfl (concreteEval_bvOp width name op rfl a b _)
     (fun _ => .bool) (fun _ s =>
       @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s))
     (.cons .const (.cons .const .nil)) .const).symm

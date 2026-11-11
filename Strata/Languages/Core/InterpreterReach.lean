@@ -400,14 +400,13 @@ private theorem eval_args_split {F : Lambda.Factory CoreLParams} {σr : RStore E
     the values `ls`, returns the literal the concrete evaluator gives on `ls`. -/
 private theorem eval_call_ceval {F : Lambda.Factory CoreLParams} {σr : RStore Expression} {N : Nat}
     {e op : Expression.Expr} {args ls : List Expression.Expr} {fn : LFunc CoreLParams}
-    {ceval : ExpressionMetadata → List Expression.Expr → Option Expression.Expr}
-    {m : ExpressionMetadata} {c : LConst}
+    {ceval : ConcreteEval CoreLParams} {m : ExpressionMetadata} {c : LConst}
     (hcall : F.callOfLFunc e = some (op, args, fn)) (hc : fn.isConstr = false)
     (hb : fn.body = none) (hsc : LExpr.shortCircuitCall? fn args = none)
     (hce : fn.concreteEval = some ceval)
     (hargs : args.map (LExpr.eval N F σr) = ls.map (·, .value true))
     (hlits : ls.all (LExpr.isValue F) = true)
-    (hres : ceval (LExpr.mkApp e.metadata op ls).metadata ls = some (.const m c)) :
+    (hres : ceval (LExpr.mkApp e.metadata op ls).metadata op.opTy? ls = some (.const m c)) :
     LExpr.eval (N + 1) F σr e = (.const m c, .value true) := by
   obtain ⟨hmap, hall⟩ := eval_args_split hargs
   simp only [LExpr.eval, isValue_call hcall hc, hcall, hsc, LExpr.List_map_fst_map_eval,
@@ -422,13 +421,12 @@ private theorem eval_call_ceval {F : Lambda.Factory CoreLParams} {σr : RStore E
     a value returns what it reduces the concrete evaluator's result to, when that is a literal. -/
 private theorem eval_call_shortCircuit {F : Lambda.Factory CoreLParams} {σr : RStore Expression}
     {N : Nat} {e op a e' la : Expression.Expr} {rest : List Expression.Expr}
-    {fn : LFunc CoreLParams}
-    {ceval : ExpressionMetadata → List Expression.Expr → Option Expression.Expr}
+    {fn : LFunc CoreLParams} {ceval : ConcreteEval CoreLParams}
     {m : ExpressionMetadata} {c : LConst}
     (hcall : F.callOfLFunc e = some (op, a :: rest, fn)) (hc : fn.isConstr = false)
     (hsc : LExpr.shortCircuitCall? fn (a :: rest) = some (a, rest, ceval))
     (ha : LExpr.eval N F σr a = (la, .value true)) (hla : LExpr.isValue F la = true)
-    (hres : ceval e.metadata (la :: rest) = some e')
+    (hres : ceval e.metadata op.opTy? (la :: rest) = some e')
     (he' : LExpr.eval N F σr e' = (.const m c, .value true)) :
     LExpr.eval (N + 1) F σr e = (.const m c, .value true) := by
   simp only [LExpr.eval, isValue_call hcall hc, hcall, hsc, LExpr.evalShortCircuit, ha, hla, hres,
@@ -559,20 +557,19 @@ private theorem call_types {F : Lambda.Factory CoreLParams} {A : CoreIdent → O
 
 
 /-- The concrete evaluator `ceval` of `fn` computes every call on literals of `fn`'s input types,
-    as a literal of its output type. -/
-@[expose] def CevalTotal (fn : LFunc CoreLParams)
-    (ceval : ExpressionMetadata → List Expression.Expr → Option Expression.Expr) : Prop :=
-  ∀ md args, LitsOfTypes args (fn.inputs.map Prod.snd) →
-    ∃ m c, ceval md args = some (.const m c) ∧ LConst.ty c = fn.output
+    at every operator annotation, as a literal of its output type. -/
+@[expose] def CevalTotal (fn : LFunc CoreLParams) (ceval : ConcreteEval CoreLParams) : Prop :=
+  ∀ md ty args, LitsOfTypes args (fn.inputs.map Prod.snd) →
+    ∃ m c, ceval md ty args = some (.const m c) ∧ LConst.ty c = fn.output
 
 /-- The concrete evaluator `ceval` of the short-circuiting connective `fn`, whose inputs and output
-    have one type: on a literal first argument it returns a literal of that type or one of the
-    remaining arguments, whatever they are. -/
-@[expose] def CevalShortCircuits (fn : LFunc CoreLParams)
-    (ceval : ExpressionMetadata → List Expression.Expr → Option Expression.Expr) : Prop :=
+    have one type: on a literal first argument, at every operator annotation, it returns a literal
+    of that type or one of the remaining arguments, whatever they are. -/
+@[expose] def CevalShortCircuits (fn : LFunc CoreLParams) (ceval : ConcreteEval CoreLParams) :
+    Prop :=
   fn.inputs ≠ [] ∧ (∀ ty ∈ fn.inputs.map Prod.snd, ty = fn.output) ∧
-    ∀ md a rest, LitsOfTypes [a] [fn.output] → rest.length + 1 = fn.inputs.length →
-      ∃ e', ceval md (a :: rest) = some e' ∧
+    ∀ md ty a rest, LitsOfTypes [a] [fn.output] → rest.length + 1 = fn.inputs.length →
+      ∃ e', ceval md ty (a :: rest) = some e' ∧
         ((∃ m c, e' = .const m c ∧ LConst.ty c = fn.output) ∨ e' ∈ rest)
 
 /-- **A factory operator the evaluator computes on literals**: monomorphic, not a constructor,
@@ -639,7 +636,7 @@ theorem computableEval_op (F : Expression.Factory) (hF : EvalFactoryWF F.factory
   obtain ⟨ceval, hce, hcases⟩ := hfn.eval
   cases hsc : Strata.DL.Util.FuncAttr.hasShortCircuit fn.attr
   · rw [hsc] at hcases
-    obtain ⟨m, c, hres, hct⟩ := hcases (LExpr.mkApp e.metadata op ls).metadata ls hls
+    obtain ⟨m, c, hres, hct⟩ := hcases (LExpr.mkApp e.metadata op ls).metadata op.opTy? ls hls
     refine computable_of_evalBounded hF hS hty (n := N + 1) (m := m)
       (evalBounded_of_eval hS hd (hct ▸ hty) hops ?_)
     exact eval_call_ceval hcall hfn.notConstr hfn.noBody (by simp [LExpr.shortCircuitCall?, hsc])
@@ -660,7 +657,7 @@ theorem computableEval_op (F : Expression.Factory) (hF : EvalFactoryWF F.factory
     have hla : LitsOfTypes [la] [fn.output] := by
       obtain ⟨m, c, rfl, hc⟩ := hls.mem List.mem_cons_self
       exact .cons ⟨m, c, rfl, hall _ hc⟩ .nil
-    obtain ⟨e', hres, he'⟩ := htot e.metadata la rest hla (by simpa using hlen)
+    obtain ⟨e', hres, he'⟩ := htot e.metadata op.opTy? la rest hla (by simpa using hlen)
     obtain ⟨m, c, he'', hct⟩ : ∃ m c, LExpr.eval N F.factory σr e' = (.const m c, .value true) ∧
         LConst.ty c = fn.output := by
       rcases he' with ⟨m, c, rfl, hc⟩ | hmem

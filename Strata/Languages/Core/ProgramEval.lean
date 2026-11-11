@@ -280,7 +280,7 @@ private def selectFromMapTerm (m i : Expression.Expr) : Option Expression.Expr :
 private def interpretSelect (f : Lambda.LFunc CoreLParams) : Lambda.LFunc CoreLParams :=
   if f.name.name == mapSelectName then
     { f with
-      concreteEval := some (fun _ args =>
+      concreteEval := some (fun _ _ args =>
         match args with
         | [m, i] => selectFromMapTerm m i
         | _ => none)

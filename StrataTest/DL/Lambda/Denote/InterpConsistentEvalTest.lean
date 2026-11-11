@@ -25,12 +25,12 @@ private def idFunc : LFunc TP :=
     (typeArgs := ["a"])
     (inputs := [(⟨"x", ()⟩, .ftvar "a")])
     (output := .ftvar "a")
-    (concreteEval := some fun _ args => match args with
+    (concreteEval := some fun _ _ args => match args with
       | [x] => some x
       | _ => none)
 
-private def idCeval : Unit → List (LExpr TP.mono) → Option (LExpr TP.mono) :=
-  fun _ args => match args with
+private def idCeval : ConcreteEval TP :=
+  fun _ _ args => match args with
   | [x] => some x
   | _ => none
 
@@ -56,7 +56,7 @@ private theorem idOpInterp_apply (tcInterp : TyConstrInterp) [TyConstrInterp.All
 -- The key test: InterpConsistentEval holds for the polymorphic id function
 noncomputable example (tcInterp : TyConstrInterp) [TyConstrInterp.AllInhabited tcInterp] :
     LFunc.InterpConsistentEval tcInterp (idOpInterp tcInterp) idFunc idCeval := by
-  intro vt fvarVal md tySubst argExprs resultExpr heval
+  intro vt fvarVal md tySubst argExprs resultExpr _ _ heval _ _ _
   -- Normalize the types manually
   change ∀ (h_args : List.Rel₂ (LExpr.HasTypeA []) argExprs [LMonoTy.subst tySubst (.ftvar "a")])
     (h_result : LExpr.HasTypeA [] resultExpr (LMonoTy.subst tySubst (.ftvar "a"))), _

@@ -45,9 +45,10 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
     ∀ ta, ta ∈ f.typeArgs → ¬ (genTyPrefix.toList.isPrefixOf ta.toList = true) := by decide
   /-- `concreteEval` does not succeed if the length of args is incorrect. -/
   concreteEval_argmatch :
-    ∀ fn md args res, f.concreteEval = .some fn
-      → fn md args = .some res
-      → args.length = f.inputs.length := by intro fn _ _ _ hfn; simp [LFunc.concreteEval] at hfn
+    ∀ fn md opTy args res, f.concreteEval = .some fn
+      → fn md opTy args = .some res
+      → args.length = f.inputs.length := by
+    intro fn _ _ _ _ hfn; simp [LFunc.concreteEval] at hfn
   /-- body and concreteEval cannot exist at once. -/
   body_or_concreteEval :
     ¬ (f.concreteEval.isSome ∧ f.body.isSome) := by simp [LFunc.concreteEval]
@@ -56,18 +57,18 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
       arguments, regardless of the metadata parameter. -/
   concreteEval_eraseMetadata :
     ∀ ceval, f.concreteEval = some ceval →
-      ∀ md1 md2 (args1 args2 : List (LExpr T.mono)) res1,
+      ∀ md1 md2 opTy (args1 args2 : List (LExpr T.mono)) res1,
         args1.map LExpr.eraseMetadata = args2.map LExpr.eraseMetadata →
-        ceval md1 args1 = some res1 →
-        ∃ res2, ceval md2 args2 = some res2 ∧
+        ceval md1 opTy args1 = some res1 →
+        ∃ res2, ceval md2 opTy args2 = some res2 ∧
           LExpr.eraseMetadata res1 = LExpr.eraseMetadata res2 := by
     intro _ h; simp [LFunc.concreteEval] at h
   /-- `concreteEval` does not introduce fresh free variables: every free
       variable of a successful result was already free in some argument. -/
   concreteEval_freeVars :
     ∀ ceval, f.concreteEval = some ceval →
-      ∀ md (args : List (LExpr T.mono)) res,
-        ceval md args = some res →
+      ∀ md opTy (args : List (LExpr T.mono)) res,
+        ceval md opTy args = some res →
         ∀ z ∈ LExpr.LExpr.getVars res, ∃ a ∈ args, z ∈ LExpr.LExpr.getVars a := by
     intro _ h; simp [LFunc.concreteEval] at h
   /-- The concrete evaluator of a `shortCircuit` function, which `eval` applies to
@@ -76,10 +77,10 @@ structure LFuncWF {T : LExprParams} (f : LFunc T) extends
   shortCircuit_substFvars :
     Strata.DL.Util.FuncAttr.hasShortCircuit f.attr = true →
       ∀ ceval, f.concreteEval = some ceval →
-      ∀ [DecidableEq T.IDMeta] md (a : LExpr T.mono) (rest : List (LExpr T.mono))
+      ∀ [DecidableEq T.IDMeta] md opTy (a : LExpr T.mono) (rest : List (LExpr T.mono))
         (sm : Map T.Identifier (LExpr T.mono)),
-        ceval md (a :: rest.map (LExpr.substFvars · sm)) =
-          (ceval md (a :: rest)).map (LExpr.substFvars · sm) := by
+        ceval md opTy (a :: rest.map (LExpr.substFvars · sm)) =
+          (ceval md opTy (a :: rest)).map (LExpr.substFvars · sm) := by
     intro h c hc
     first
       | (simp [Strata.DL.Util.FuncAttr.hasShortCircuit] at h; done)

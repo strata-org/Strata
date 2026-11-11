@@ -525,8 +525,8 @@ private theorem matchConstr_getVars {T : LExprParams} [BEq T.Identifier]
     case function per constructor of the block. -/
 private theorem elimConcreteEval_length {T : LExprParams} [BEq T.Identifier]
     [Inhabited T.IDMeta] (block : MutualDatatype T.IDMeta) (m md : T.Metadata)
-    (args : List (LExpr T.mono))
-    (res : LExpr T.mono) (h : elimConcreteEval block m md args = some res) :
+    (opTy : Option LMonoTy) (args : List (LExpr T.mono))
+    (res : LExpr T.mono) (h : elimConcreteEval block m md opTy args = some res) :
     args.length = blockConstrCount block + 1 := by
   simp only [elimConcreteEval] at h
   elim_err h with hlen
@@ -537,11 +537,11 @@ private theorem elimConcreteEval_length {T : LExprParams} [BEq T.Identifier]
     result differing only in metadata. -/
 theorem elimConcreteEval_eraseMetadata {T : LExprParams} [BEq T.Identifier]
     [Inhabited T.IDMeta] (block : MutualDatatype T.IDMeta)
-    (m md1 md2 : T.Metadata)
+    (m md1 md2 : T.Metadata) (opTy : Option LMonoTy)
     (args1 args2 : List (LExpr T.mono)) (res1 : LExpr T.mono)
     (hmap : args1.map LExpr.eraseMetadata = args2.map LExpr.eraseMetadata)
-    (h : elimConcreteEval block m md1 args1 = some res1) :
-    ∃ res2, elimConcreteEval block m md2 args2 = some res2 ∧
+    (h : elimConcreteEval block m md1 opTy args1 = some res1) :
+    ∃ res2, elimConcreteEval block m md2 opTy args2 = some res2 ∧
       LExpr.eraseMetadata res1 = LExpr.eraseMetadata res2 := by
   have hlen : args1.length = args2.length := by
     have h_len := congrArg List.length hmap
@@ -596,8 +596,8 @@ theorem elimConcreteEval_eraseMetadata {T : LExprParams} [BEq T.Identifier]
     argument. -/
 theorem elimConcreteEval_getVars {T : LExprParams} [BEq T.Identifier]
     [Inhabited T.IDMeta] (block : MutualDatatype T.IDMeta) (m md : T.Metadata)
-    (args : List (LExpr T.mono))
-    (res : LExpr T.mono) (h : elimConcreteEval block m md args = some res) :
+    (opTy : Option LMonoTy) (args : List (LExpr T.mono))
+    (res : LExpr T.mono) (h : elimConcreteEval block m md opTy args = some res) :
     ∀ z ∈ LExpr.LExpr.getVars res, ∃ a ∈ args, z ∈ LExpr.LExpr.getVars a := by
   simp only [elimConcreteEval] at h
   elim_err h
@@ -657,7 +657,7 @@ private theorem constrFunc_wf {T : LExprParams} (d : LDatatype T.IDMeta)
   constr_no_eval := by intro _; exact ⟨rfl, rfl⟩
   typeArgs_no_gen_prefix := fun ta hta => Bool.ne_true_of_eq_false (hres ta hta)
   concreteEval_argmatch := by
-    intro fn _ _ _ hfn; exact absurd hfn (by simp [constrFunc])
+    intro fn _ _ _ _ hfn; exact absurd hfn (by simp [constrFunc])
   body_or_concreteEval := by simp [constrFunc]
   concreteEval_eraseMetadata := by
     intro _ h; exact absurd h (by simp [constrFunc])
@@ -709,7 +709,7 @@ private theorem testerFunc_wf {T : LExprParams} [Inhabited T.IDMeta]
   constr_no_eval := by intro hc; exact absurd hc (by simp [testerFunc])
   typeArgs_no_gen_prefix := fun ta hta => Bool.ne_true_of_eq_false (hres ta hta)
   concreteEval_argmatch := by
-    intro fn _ _ _ hfn; exact absurd hfn (by simp [testerFunc])
+    intro fn _ _ _ _ hfn; exact absurd hfn (by simp [testerFunc])
   body_or_concreteEval := by simp [testerFunc]
   concreteEval_eraseMetadata := by
     intro _ h; exact absurd h (by simp [testerFunc])
@@ -756,7 +756,7 @@ private theorem mkDestructorFunc_wf {T : LExprParams} [BEq T.Identifier]
   constr_no_eval := by intro hc; exact absurd hc (by simp [mkDestructorFunc])
   typeArgs_no_gen_prefix := fun ta hta => Bool.ne_true_of_eq_false (hres ta hta)
   concreteEval_argmatch := by
-    intro fn md args res hfn heval
+    intro fn md _ args res hfn heval
     simp only [mkDestructorFunc, Option.some.injEq] at hfn
     subst hfn
     rcases args with _ | ⟨x, xs⟩
@@ -769,7 +769,7 @@ private theorem mkDestructorFunc_wf {T : LExprParams} [BEq T.Identifier]
     intro h
     simp [mkDestructorFunc, Strata.DL.Util.FuncAttr.hasShortCircuit] at h
   concreteEval_eraseMetadata := by
-    intro ceval hceval md1 md2 args1 args2 res1 hmap heval
+    intro ceval hceval md1 md2 _ args1 args2 res1 hmap heval
     simp only [mkDestructorFunc, Option.some.injEq] at hceval
     subst hceval
     rcases args1 with _ | ⟨x1, xs1⟩
@@ -795,7 +795,7 @@ private theorem mkDestructorFunc_wf {T : LExprParams} [BEq T.Identifier]
       · exact absurd hmap (by simp)
     · exact absurd heval (by simp [destructorConcreteEval])
   concreteEval_freeVars := by
-    intro ceval hceval md args res heval z hz
+    intro ceval hceval md _ args res heval z hz
     simp only [mkDestructorFunc, Option.some.injEq] at hceval
     subst hceval
     rcases args with _ | ⟨x, xs⟩
@@ -936,22 +936,22 @@ private theorem elimFunc_wf {T : LExprParams} [Inhabited T.IDMeta]
     rcases List.mem_append.mp hta with hret | hown
     · exact Bool.ne_true_of_eq_false (hretgen ta hret)
     · exact Bool.ne_true_of_eq_false (howngen ta hown)
-  · intro fn md args res hfn heval
+  · intro fn md opTy args res hfn heval
     simp only [Option.some.injEq] at hfn
     subst hfn
-    rw [elimConcreteEval_length block m md args res heval, List.length_zip,
+    rw [elimConcreteEval_length block m md opTy args res heval, List.length_zip,
       ← hlensame, genArgNames_length, hcount]
     simp
   · simp
-  · intro ceval hceval md1 md2 args1 args2 res1 hmap heval
+  · intro ceval hceval md1 md2 opTy args1 args2 res1 hmap heval
     simp only [Option.some.injEq] at hceval
     subst hceval
-    exact elimConcreteEval_eraseMetadata block m md1 md2 args1 args2 res1 hmap
+    exact elimConcreteEval_eraseMetadata block m md1 md2 opTy args1 args2 res1 hmap
       heval
-  · intro ceval hceval md args res heval z hz
+  · intro ceval hceval md opTy args res heval z hz
     simp only [Option.some.injEq] at hceval
     subst hceval
-    exact elimConcreteEval_getVars block m md args res heval z hz
+    exact elimConcreteEval_getVars block m md opTy args res heval z hz
 
 /-- Every eliminator a mutual block generates is well formed when each
     datatype's type parameters are distinct and none of them starts with

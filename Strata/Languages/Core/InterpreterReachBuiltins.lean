@@ -88,7 +88,7 @@ private theorem computableOp_unaryOp {inTy outTy : LMonoTy} {InV OutV : Type} [T
     ComputableOp (unaryOp n f pre hI hO hp).func := by
   refine ⟨rfl, rfl, rfl, ⟨_, rfl, ?_⟩⟩
   change CevalTotal _ _
-  intro md args h
+  intro md _ args h
   cases h with
   | cons h1 h2 =>
   cases h2
@@ -106,7 +106,7 @@ private theorem computableOp_binaryOp {inTy outTy : LMonoTy} {InV OutV : Type} [
     ComputableOp (binaryOp n g (fun _ => true) pre hI hO hp).func := by
   refine ⟨rfl, rfl, rfl, ⟨_, rfl, ?_⟩⟩
   change CevalTotal _ _
-  intro md args h
+  intro md _ args h
   cases h with
   | cons h1 h2 =>
   cases h2 with
@@ -125,7 +125,7 @@ private theorem computableOp_shortCircuitOp {n : CoreLParams.Identifier} {absorb
   refine ⟨rfl, rfl, rfl, ⟨_, rfl, ?_⟩⟩
   simp only [show Strata.DL.Util.FuncAttr.hasShortCircuit
     (shortCircuitOp (T := CoreLParams) n absorb decided).func.attr = true from rfl, ↓reduceIte]
-  refine ⟨nofun, ?_, fun md a rest ha hlen => ?_⟩
+  refine ⟨nofun, ?_, fun md _ a rest ha hlen => ?_⟩
   · show ∀ ty ∈ [LMonoTy.bool, LMonoTy.bool], ty = LMonoTy.bool
     decide
   · cases ha with

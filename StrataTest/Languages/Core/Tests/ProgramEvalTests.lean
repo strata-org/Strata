@@ -742,7 +742,7 @@ private def dummyDouble : Lambda.LFunc CoreLParams :=
     typeArgs := [],
     inputs := [("x", mty[int])],
     output := mty[int],
-    concreteEval := some (fun md args => match args with
+    concreteEval := some (fun md _ args => match args with
       | [x] => (Lambda.LExpr.denoteInt x).map (fun v => Lambda.LExpr.intConst md (2 * v))
       | _ => none) }
 
