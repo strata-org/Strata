@@ -18,31 +18,41 @@ no inference is performed.
 
 namespace Strata.Laurel
 
-/-- `declared`, a type in a declaration with type parameters `params`, at the type arguments
-    `typeArgs`. Matching by name is sound here, since a declaration's types mention only its own
-    parameters. An arity mismatch keeps the declared type rather than a half-applied one. -/
+/-- Each of `params` as `Unknown`, where nothing instantiates them. -/
+def unknownSubst (params : List Identifier) : Std.HashMap String HighTypeMd :=
+  params.foldl (fun m p => m.insert p.text ⟨.Unknown, p.source⟩) ∅
+
+/-- `declared`, a type in a declaration with type parameters `params`, at the type arguments a call
+    records. Matching by name is sound here, since a declaration's types mention only its own
+    parameters. A recorded list of the wrong length (`[]`, beside a hole) reads each parameter as
+    `Unknown`, since it means nothing at the call. -/
 private def instantiateDeclared (params : List Identifier) (typeArgs : List HighTypeMd)
     (declared : HighTypeMd) : HighTypeMd :=
-  if params.isEmpty || typeArgs.length != params.length then declared
-  else substTypeVars ((params.zip typeArgs).foldl (fun m (p, t) => m.insert p.text t) ∅) declared
+  if params.isEmpty then declared
+  else if typeArgs.length == params.length then
+    substTypeVars ((params.zip typeArgs).foldl (fun m (p, t) => m.insert p.text t) ∅) declared
+  else substTypeVars (unknownSubst params) declared
 
-/-- A procedure's declared result type at `typeArgs`: `TVoid` with no outputs, the single output's
-    type, or a `MultiValuedExpr` of all of them — with the procedure's type parameters
-    substituted. -/
-def procResultTypeAt (source : FileRange) (proc : Procedure)
-    (typeArgs : List HighTypeMd) : HighTypeMd :=
-  instantiateDeclared proc.typeArgs typeArgs <| match proc.outputs with
-    | [] => { val := .TVoid, source := source }
-    | [singleOutput] => singleOutput.type
-    | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := source }
+/-- A procedure's declared result type: `TVoid` with no outputs, the single output's type, or a
+    `MultiValuedExpr` of all of them. -/
+def procResultType (source : FileRange) (proc : Procedure) : HighTypeMd :=
+  match proc.outputs with
+  | [] => { val := .TVoid, source := source }
+  | [singleOutput] => singleOutput.type
+  | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := source }
+
+/-- `procResultType` at `typeArgs`, substituted for the procedure's type parameters. -/
+def procResultTypeAt (source : FileRange) (proc : Procedure) (typeArgs : List HighTypeMd) :
+    HighTypeMd :=
+  instantiateDeclared proc.typeArgs typeArgs (procResultType source proc)
 
 /-- The type a call has AT THIS CALL SITE. `typeArgs` are the type arguments the call node
-    records; pass `[]` for a call shape that carries none. A constructor's type is its datatype
-    applied to `typeArgs`, a destructor's is its field's declared type with `typeArgs`
-    substituted for the datatype's type parameters, and a procedure's is its declared output
-    type with `typeArgs` substituted for the procedure's type parameters. When `typeArgs` is
-    empty the constructor stays the bare datatype head: an applied shape with free type variables
-    in it would read as a wildcard instead of the arity error we want. -/
+    records. A constructor's type is its datatype applied to `typeArgs`, a destructor's is its
+    field's declared type with `typeArgs` substituted for the datatype's type parameters, and a
+    procedure's is its declared output type with `typeArgs` substituted for the procedure's type
+    parameters. When `typeArgs` is empty the constructor stays the bare datatype head: an applied
+    shape with free type variables in it would read as a wildcard instead of the arity error we
+    want. -/
 def getCallType (source : FileRange) (model : SemanticModel) (callee : Identifier)
     (typeArgs : List HighTypeMd) : HighTypeMd :=
   match model.get callee with
@@ -137,12 +147,12 @@ def computeExprTypeWith (lattice? : Option TypeLattice)
       let fromArgs := (callSiteTypeSubst lattice (fun _ => false) (proc.inputs.map (·.type)) argTys).1
       let fromHolder := ((lattice.holderSubst? owner receiverTy).getD {}).fold (·.insert) fromArgs
       let subst := (proc.typeArgs.zip tyArgs).foldl (fun m (a, t) => m.insert a.text t) fromHolder
-      let result := procResultTypeAt source proc []
+      let result := procResultType source proc
       -- A type parameter neither the call's recorded type arguments nor its receiver and
       -- arguments bind, as a bare `Holder`'s, is not known here.
       if (tvarIdents result.val).any (!subst.contains ·.text) then { result with val := .Unknown }
       else substTypeVars subst result
-    | _, _ => getCallType source model callee []
+    | _, _ => getCallType source model callee tyArgs
   -- Control flow
   -- A then-branch typed `Unknown`, as a hole is, takes the else-branch's type, as in `Resolution`.
   | .IfThenElse _ thenBranch elseBranch =>

@@ -598,7 +598,8 @@ private def lowerThrowingCall (ctx : Ctx) (callNode : StmtExprMd)
   -- The callee's `Result` carries its `throws` type on the Bad path.
   let errTy := ((p?.bind (·.throwsType)).map (typeAtCall model callee tyArgs)).getD boolTy
   let calleeInputNames := (p?.map (·.inputs.map (·.name.text))).getD []
-  let calleeOutputs := (p?.map (·.outputs)).getD []
+  let calleeOutputs :=
+    (p?.map (·.outputs.map fun o => { o with type := typeAtCall model callee tyArgs o.type })).getD []
   let tid ← freshNat
   let callres := s!"$callres_{tid}"
   -- Split targets (positional with callee outputs) into kept inout targets and

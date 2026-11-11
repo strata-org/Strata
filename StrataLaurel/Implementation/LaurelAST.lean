@@ -1163,6 +1163,57 @@ def mentionsTVar (ty : HighType) : Bool := anyHighType (· matches .TVar _) ty
     as a bare one, so a head-only test under-reports. -/
 def mentionsUnknown (ty : HighType) : Bool := anyHighType (· matches .Unknown) ty
 
+/-- Whether a type variable is an INFERENCE VARIABLE: one generic call's not-yet-known type
+    argument, which resolution creates and solves. Its name starts with `?`, which no Laurel
+    identifier does. -/
+def isInferVarName (n : String) : Bool := n.startsWith "?"
+
+/-- Whether identifier `r` is an inference variable, by its name. -/
+def isInferVar (r : Identifier) : Bool := isInferVarName r.text
+
+/-- The `n`th inference variable, for type parameter `param`: `?T.3`. Unique, since solutions
+    are substituted by name. -/
+def inferVarName (param : String) (n : Nat) : String := s!"?{param}.{n}"
+
+/-- The type parameter an inference variable stands for, from its name: what a diagnostic shows. -/
+def inferVarParam (name : String) : String :=
+  let parts := ((name.drop 1).toString).splitOn "."
+  ".".intercalate (parts.take (parts.length - 1))
+
+/-- Does `ty` contain an inference variable anywhere? -/
+def mentionsInferVar (ty : HighType) : Bool :=
+  anyHighType (fun t => match t with | .TVar r => isInferVar r | _ => false) ty
+
+/-- Does `ty` contain the type variable named `n`? -/
+def mentionsTVarNamed (n : String) (ty : HighType) : Bool :=
+  anyHighType (fun t => match t with | .TVar r => r.text == n | _ => false) ty
+
+/-- Solve inference variables by aligning two types: `?n ↦ τ` where one side is `?n` and `τ`
+    mentions neither `?n` nor `Unknown`. A mismatch binds nothing (the caller's check reports
+    it), and a variable `acc` already solves keeps its solution. -/
+partial def solveInferVars (a b : HighType) (acc : Std.HashMap String HighType := {})
+    : Std.HashMap String HighType :=
+  let bind (r : Identifier) (t : HighType) (acc : Std.HashMap String HighType) :=
+    if acc.contains r.text || mentionsUnknown t || mentionsTVarNamed r.text t then acc
+    else acc.insert r.text t
+  match a, b with
+  | .TVar r, _ =>
+    if isInferVar r then bind r b acc
+    else match b with
+      | .TVar s => if isInferVar s then bind s a acc else acc
+      | _ => acc
+  | _, .TVar s => if isInferVar s then bind s a acc else acc
+  | .Applied ab aargs, .Applied bb bargs =>
+    if aargs.length != bargs.length then acc
+    else (aargs.zip bargs).foldl (fun acc (x, y) => solveInferVars x.val y.val acc)
+      (solveInferVars ab.val bb.val acc)
+  | .TMap ak av, .TMap bk bv => solveInferVars av.val bv.val (solveInferVars ak.val bk.val acc)
+  | .TSet ae, .TSet be => solveInferVars ae.val be.val acc
+  | .MultiValuedExpr as, .MultiValuedExpr bs =>
+    if as.length != bs.length then acc
+    else (as.zip bs).foldl (fun acc (x, y) => solveInferVars x.val y.val acc) acc
+  | _, _ => acc
+
 /-- Substitute type variables (by name) throughout a `HighType`. A parameter may appear as
     `.TVar name` (when resolution scoped it) or `.UserDefined name` (if it didn't); either
     is replaced by its `subst` entry (by name), or left as-is. -/
@@ -1304,7 +1355,7 @@ instance : BEq HighType where
 /-- Structurally match a DECLARED type (which may mention type variables `.TVar`)
     against an ACTUAL type, accumulating bindings `tv ↦ actual`: matching the declared
     param `Box<T>` against an arg of type `Box<int>` yields `T ↦ int`. It is the primitive
-    of call-site type-argument inference (`callSiteTypeSubst`, `callSiteDeterminedTypeParams`).
+    of call-site type-argument inference (`callSiteTypeSubst`).
 
     Matching, not unification (binds a `.TVar` only on the DECLARED side): we infer one
     procedure's type args from a single call's arg types, so no two-sided `F<X>` vs `F<Y>`
@@ -1791,27 +1842,28 @@ def TypeLattice.fieldTypeAt (ctx : TypeLattice) (declType : Identifier)
   (ctx.holderSubst? declType holderTy).map (substTypeVars · fldType)
 
 /-- Match a SUBSTITUTED ancestor `anc` (from `substitutedAncestors`) against a target `sup`,
-    wildcarding a `.TVar`/`.Unknown` on either side and recursing element-wise through
-    applications/collections; every other leaf is exact `highEq`. Used at `isSubtype`'s
+    wildcarding an inference variable or `.Unknown` on either side and recursing element-wise
+    through applications/collections; every other leaf is exact `highEq`. Used at `isSubtype`'s
     `substitutedAncestors` sites instead of exact `highEq`.
 
     Motivating case: an instance method INHERITED (not redeclared) from a generic parent lifts to
     `Base$get<T>(self: Base<T>)`, checked against a `Sub<int>` receiver. `substitutedAncestors Sub
     [int]` yields concrete `Base<int>`, but the target is `Base<T>`, so exact `highEq` would
-    mis-reject the sound upcast (`int` ≠ `T`); the wildcard absorbs the concrete arg. (`anc` is not
-    always concrete — a still-generic body can yield `Base<T>` — so the wildcard fires on either
-    side.)
+    mis-reject the sound upcast (`int` ≠ `T`). At the call the target is instantiated, `Base<?T>`,
+    and the inference variable absorbs the concrete arg. (`anc` is not always concrete — a
+    still-generic body can yield `Base<?T>` — so the wildcard fires on either side.)
 
     SOUND (no new admission): concrete-vs-concrete stays strict (`Base<int>` vs `Base<bool>` fails
-    on the leaf), and the `.TVar`/`.Unknown` wildcard set is a STRICT SUBSET of `isConsistent`'s. A
-    `T`-abstract accept is not final: `MonomorphizeComposites` re-resolves each clone concretely
-    (`needsResolves := true`), where the strict leaf check rejects a wrong instantiation — so a
-    wrong-`T` is deferred to monomorphization, never silently accepted. A local `partial def` (not a
-    call to `isConsistent`) only because the latter is defined below `isSubtype`. -/
+    on the leaf), a declared type variable matches only itself, and the wildcard set (an inference
+    variable or `Unknown`) is a subset of `isConsistent`'s. A local `partial def` (not a call to
+    `isConsistent`) only because the latter is defined below `isSubtype`. -/
 partial def ancestorMatchesTarget (anc sup : HighTypeMd) : Bool :=
+  let wildcard (t : HighType) := match t with
+    | .TVar r => isInferVar r
+    | .Unknown => true
+    | _ => false
+  if wildcard anc.val || wildcard sup.val then true else
   match anc.val, sup.val with
-  | .TVar _, _ | _, .TVar _ => true
-  | .Unknown, _ | _, .Unknown => true
   | .Applied ba aargs, .Applied bb bargs =>
     ancestorMatchesTarget ba bb && aargs.length == bargs.length &&
       (aargs.zip bargs).all (fun (x, y) => ancestorMatchesTarget x y)
@@ -1839,11 +1891,11 @@ def isSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
   -- `C<args>` matches `sup`. `substitutedAncestors` applies the `extends` remap, so
   -- `P2<A,B> extends Pair<B,A>` gives `P2<int,bool>` the ancestor `Pair<bool,int>` (not
   -- `Pair<int,bool>`), and `Box<bool> extends Base<int>` has ancestor `Base<int>`. The match is
-  -- `ancestorMatchesTarget` (wildcard-aware on `sup`'s `.TVar`/`.Unknown`), NOT exact `highEq`, so a
-  -- concrete substituted ancestor `Base<int>` also satisfies a still-type-variable target `Base<T>`
-  -- (the inherited-generic-method `self` case). Concrete args stay INVARIANT (`Base<int>` vs
-  -- `Base<bool>` fails on the leaf), so wrong instantiations (`Box<int> <: Base<bool>`) still fail;
-  -- a non-substituting check would be unsound.
+  -- `ancestorMatchesTarget` (wildcard-aware on an inference variable or `.Unknown`), NOT exact
+  -- `highEq`, so a concrete substituted ancestor `Base<int>` also satisfies an instantiated target
+  -- `Base<?T>` (the inherited-generic-method `self` case). Concrete args stay INVARIANT
+  -- (`Base<int>` vs `Base<bool>` fails on the leaf), so wrong instantiations
+  -- (`Box<int> <: Base<bool>`) still fail; a non-substituting check would be unsound.
   | .Applied subBase subArgs, _ =>
     (match highBaseName? subBase.val with
      | some subName => (ctx.substitutedAncestors subName.text subArgs).any (fun anc => ancestorMatchesTarget anc sup')
@@ -1928,7 +1980,7 @@ def TypeLattice.haveCommonDescendant (ctx : TypeLattice) (a b : HighTypeMd) : Bo
 
 /- ### Variance policy (covers `isSubtype` and `isConsistent`)
    `isConsistent` RECURSES element-wise (with `isConsistent`, not `highEq`) through
-   `TSet`, `TMap`, `Applied`, and `MultiValuedExpr`, so an `Unknown`/`.TVar` wildcard
+   `TSet`, `TMap`, `Applied`, and `MultiValuedExpr`, so an `Unknown`/inference-variable wildcard
    DOES penetrate under these constructors: `TSet Unknown ~ TSet TInt` is TRUE (the inner
    `Unknown ~ TInt` hits the wildcard). The recursion keeps two CONCRETE instantiations
    INVARIANT, though — `TSet TInt ~ TSet TBool` is FALSE (`int`/`bool` on the element leaf) —
@@ -1944,10 +1996,10 @@ def TypeLattice.haveCommonDescendant (ctx : TypeLattice) (a b : HighTypeMd) : Bo
      protect. That covariance is `coerce`-only; a tuple reaching `isConsistent` or
      `isSubtype` stays invariant.
    - `Applied` (generics) recurses element-wise in `isConsistent` so a concrete
-     `Box<int>` argument can satisfy a `Box<T>` parameter (the inner `int`/`.TVar T`
-     pairing reaches the `.TVar` wildcard). The args stay INVARIANT between two
-     CONCRETE instantiations — `Box<int> ~ Box<bool>` still FAILS on `int`/`bool`,
-     so this is not covariance, just wildcard-penetration for `.TVar`/`Unknown`.
+     `Box<int>` argument can satisfy a `Box<?T>` parameter at its call (the inner
+     `int`/`?T` pairing reaches the inference-variable wildcard). The args stay INVARIANT
+     between two CONCRETE instantiations — `Box<int> ~ Box<bool>` still FAILS on
+     `int`/`bool`, so this is not covariance, just wildcard-penetration.
      For SUBTYPING, `isSubtype` additionally relates `C<args> <: P<pargs>` via
      `substitutedAncestors` (the `extends` chain with the type-arg remap applied);
      args there are likewise invariant (compared against the already-substituted
@@ -1980,18 +2032,17 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
   -- `MultiValuedExpr`), so the args remain demonstrable subterms for termination and
   -- `unfold` (identity on a generic-COMPOSITE `.Applied` — composites aren't in `unfoldMap`;
   -- only alias applications unfold) loses no precision here. This is what lets a concrete
-  -- `Box<int>` argument satisfy a `Box<T>` parameter: the bases match by consistency and
-  -- the inner `int`/`.TVar T` pairing hits the `.TVar` wildcard below. Without this arm
-  -- `.Applied` falls to the invariant structural `highEq`, where `int` vs `T` is false —
-  -- so the `.TVar` wildcard (which only fires at the TOP of a type) never reaches the
-  -- nested type var and every generic-composite-param call is spuriously rejected. (The
-  -- recursion keeps full strictness between two CONCRETE instantiations: `Box<int>` vs
-  -- `Box<bool>` still fails on the inner `int`/`bool`.)
+  -- `Box<int>` argument satisfy a call's `Box<?T>` parameter: the bases match by consistency
+  -- and the inner `int`/`?T` pairing hits the inference-variable wildcard below. Without this
+  -- arm `.Applied` falls to the invariant structural `highEq`, where `int` vs `?T` is false,
+  -- since the wildcard only fires at the TOP of a type. (The recursion keeps full strictness
+  -- between two CONCRETE instantiations: `Box<int>` vs `Box<bool>` still fails on the inner
+  -- `int`/`bool`.)
   | .Applied base1 args1, .Applied base2 args2 =>
     args1.length == args2.length && isConsistent ctx base1 base2 &&
       (args1.attach.zip args2).all (fun (t1, t2) => isConsistent ctx t1.1 t2)
   -- Collection types recurse element-wise *before* unfolding, for the same reason as
-  -- `.Applied`: so the `.TVar` wildcard reaches a nested type var (a `TotalMap K V` parameter
+  -- `.Applied`: so the wildcard reaches a nested inference variable (a `TotalMap ?K ?V` parameter
   -- satisfied by a concrete `TotalMap int bool` argument). Recursion only — concrete-vs-concrete
   -- stays strict (`TotalMap int bool` vs `TotalMap int int` fails on the value leaf). `.TSet` mirrors
   -- `.TMap` for symmetry with the other type traversals (`highEq`, `substTypeVars`), though
@@ -2017,19 +2068,12 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
   | _, _ =>
     let a' := ctx.unfold a
     let b' := ctx.unfold b
-    -- A type VARIABLE is consistent with everything (like `Unknown`): an
-    -- un-monomorphized `T` is a not-yet-known concrete type. Polymorphic code
-    -- (`idp<T>(x:T)` called at `int`; a generic composite field `val:T` written
-    -- with an `int`) is type-checked at the INITIAL resolution where `T` is still
-    -- `.TVar` — before monomorphization erases it or CallElim freshens it. Without
-    -- this arm the gradual checker would reject every polymorphic use with a
-    -- spurious "expected 'T', got 'int'" and (since any non-warning resolution
-    -- diagnostic gates translation) block ALL polymorphic programs. This is the
-    -- gradual-typing-correct treatment, mirroring the `Unknown` wildcard. `.TVar`
-    -- joins `Unknown` as a top-of-type wildcard.
+    -- An INFERENCE VARIABLE is consistent with everything, like `Unknown`: resolution solves it
+    -- from this evidence and checks again. A declared type variable is not: inside `w<U>`, `U` is
+    -- one fixed type and matches only itself.
     let isGradual (t : HighType) := match t with
       | .Unknown => true
-      | .TVar _ => true
+      | .TVar r => isInferVar r
       | _ => false
     if isGradual a'.val || isGradual b'.val then true
     else highEq a' b'
@@ -2044,6 +2088,8 @@ def isConsistent (ctx : TypeLattice) (a b : HighTypeMd) : Bool :=
 def TypeLattice.isGradualTop (ctx : TypeLattice) (t : HighTypeMd) : Bool :=
   match (ctx.unfold t).val with
   | .Unknown => true
+  -- An inference variable teaches nothing about a type argument either, until it is solved.
+  | .TVar r => isInferVar r
   | _ => false
 
 /-- Would `unfold` expand either side's head? These are the two shapes it expands, so a head it
@@ -2160,7 +2206,7 @@ def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
         if (ctx.ancestors subName.text).contains supName.text then some .upcast else none
       -- Generic polymorphism (poly feature): the element-wise / substituted-ancestor
       -- relations live in `isConsistent`/`isSubtype` (a concrete `Box<int>` satisfying a
-      -- `Box<T>` param via the nested `.TVar` wildcard; a `.TVar`/bare-composite wildcard;
+      -- `Box<?T>` param via the nested inference-variable wildcard; a bare-composite wildcard;
       -- `C<args> <: P<pargs>` via `substitutedAncestors`). None of these carry a runtime
       -- coercion — generic composites monomorphize and type variables erase before Core —
       -- so the witness is `refl`. This keeps `isConsistentSubtype := coerce.isSome` equal to
@@ -2178,8 +2224,8 @@ def coerce (ctx : TypeLattice) (sub sup : HighTypeMd) : Option Coercion :=
     any typed slot, and any expression flows freely into a slot of type `Unknown`.
 
     Generic polymorphism flows through `coerce`'s final fallback, which delegates
-    to `isConsistent`/`isSubtype` (element-wise generic args, `.TVar` wildcard,
-    `substitutedAncestors`) — so a concrete `Box<int>` satisfies a `Box<T>` slot and
+    to `isConsistent`/`isSubtype` (element-wise generic args, inference-variable wildcard,
+    `substitutedAncestors`) — so a concrete `Box<int>` satisfies a `Box<?T>` slot and
     `C<args> <: P<pargs>` holds, all as a `refl` witness. -/
 def isConsistentSubtype (ctx : TypeLattice) (sub sup : HighTypeMd) : Bool :=
   (coerce ctx sub sup).isSome
@@ -2217,11 +2263,7 @@ def TypeLattice.unrelatedToCatchBinding (ctx : TypeLattice) (bindTy ty : HighTyp
     `substitutedAncestors` remaps `GDerived` up to `GBase<int>`, which matches head-to-head.
 
     Empty when the heads already agree, when either side has no head, or when no ancestor reaches
-    the declared head; the caller then uses `actual` unchanged.
-
-    ONE definition for both call-site questions — `callSiteTypeSubst` (what does the call bind) and
-    `callSiteDeterminedTypeParams` (is the parameter determined) — so the two cannot claim
-    different lifts. -/
+    the declared head; the caller then uses `actual` unchanged. -/
 def ancestorLiftCandidates (ctx : TypeLattice) (declared actual : HighType) : List HighTypeMd :=
   match highBaseName? declared, highBaseName? actual with
   | some dHead, some aHead =>
@@ -2241,8 +2283,7 @@ def ancestorLiftCandidates (ctx : TypeLattice) (declared actual : HighType) : Li
     when `D` extends both `Base<int>` and `Base<bool>`. Binding off an arbitrary witness would
     make the call report a type argument the program never fixed, so nothing is bound and the case
     is left to `MonomorphizeComposites.settleCallNode`, which rejects it with a diagnostic naming
-    both instantiations and the disambiguating upcast. `callSiteDeterminedTypeParams` deliberately
-    differs here: see its own note.
+    both instantiations and the disambiguating upcast.
 
     Distinctness is `highEq`, the equality `substitutedAncestors` already dedups with, so a
     redundant `extends` edge re-deriving one instantiation is not an ambiguity. -/
@@ -2251,22 +2292,27 @@ def callSiteAncestorLift? (ctx : TypeLattice) (declared actual : HighType) : Opt
   | [] => none
   | hit :: rest => if rest.all (highEq · hit) then some hit else none
 
+/-- Whether `actual` reaches `declared`'s head through more than one instantiation: an ambiguous
+    diamond, where `callSiteAncestorLift?` binds nothing. -/
+def callSiteLiftAmbiguous (ctx : TypeLattice) (declared actual : HighType) : Bool :=
+  match ancestorLiftCandidates ctx declared actual with
+  | [] => false
+  | hit :: rest => !rest.all (highEq · hit)
+
 /-- Call-site type-argument inference: the substitution a call makes for its callee's type
     parameters, derived by matching each DECLARED parameter type against the ACTUAL argument
     type. `select<K,V>(map: TotalMap K V, key: K)` applied to a `TotalMap int bool` and an `int` yields
     `{K ↦ int, V ↦ bool}`, so the declared return `V` can be reported as `bool` rather than as
-    a bare `.TVar` — which `isConsistent` treats as a gradual wildcard, i.e. unchecked.
+    the callee's own `V`, which means nothing at the call.
 
     Deliberately BEST-EFFORT: a parameter that fails to match contributes nothing instead of
     abandoning the whole call, and a type parameter that no argument determines
-    (`mapConst<K,V>(value: V)` never fixes `K`) is left unbound — substitution then leaves it the
-    `.TVar` it already was, which `isConsistent` treats as a gradual wildcard.
+    (`mapConst<K,V>(value: V)` never fixes `K`) is left unbound, and the call's inference variable
+    stands for it until something solves it.
 
     Best-effort HERE does not mean the call site gets away with it. This function answers only
-    "what do the ARGUMENTS say"; `Synth.staticCall` additionally pairs the declared return type
-    against the expected type, and then requires every type parameter to be determined —
-    reporting the call when one is not (see `callSiteDeterminedTypeParams`, which is what that
-    check must consult).
+    "what do the ARGUMENTS say"; the call's own inference solves its inference variables from the
+    expected type too, and reports a type parameter that is still open when its statement ends.
 
     Each parameter matches under its OWN accumulator and the results are merged here, so a
     type variable occurring in two parameters (`$eq<T>(x: T, y: T)`) is reconciled by
@@ -2276,32 +2322,24 @@ def callSiteAncestorLift? (ctx : TypeLattice) (declared actual : HighType) : Opt
     Genuine disagreements are returned in the second component for the caller to report, and
     the first binding is kept so one bad slot cannot poison the others.
 
-    The `tvarInScope` filter is the one `callSiteDeterminedTypeParams` applies to an argument.
-    Inside `outer<T>`, `inner(b)` at `b : Box<T>` is instantiated at `outer`'s `T`. A variable the
-    call site does not declare names nothing there, like `mapSet`'s own `V` in the slot
-    `mapSet(mapEmpty(), k, f(v))` hands `mapEmpty()`; kept, that `V ↦ V` is consistent with
-    anything and could win over `f(v)`'s type.
+    A binding is kept only when every type variable it mentions means something at the call: one
+    the call site declares (`tvarInScope`: inside `outer<T>`, `inner(b)` at `b : Box<T>` is
+    instantiated at `outer`'s `T`), or an inference variable.
 
     Actuals are `unfold`ed first so an alias-typed argument (`type IM = TotalMap int bool`) matches
     a `TotalMap K V` parameter — `matchTypeArg` is purely structural and would otherwise compare
     `.UserDefined IM` against `.TMap` and fail.
 
     A DESCENDANT actual is lifted to the declared head's instantiation via the shared
-    `callSiteAncestorLift?`, which is the SAME lift `callSiteDeterminedTypeParams` reads to call a
-    parameter determined. The two must share it: matching `Base<T>` structurally against an
-    `IntBox` (where `IntBox extends Base<int>`) binds nothing while determinacy sees `Base<int>`
-    among the ancestors and reports success, so the callee's `T` stays a bare variable that
-    `isConsistent` waves through and Core then rejects. -/
-def callSiteTypeSubst (ctx : TypeLattice) (tvarInScope : Identifier → Bool)
-    (params actuals : List HighTypeMd)
-    : Std.HashMap String HighTypeMd × List (String × HighTypeMd × HighTypeMd) :=
-  let candidates : List (String × HighTypeMd) :=
+    `callSiteAncestorLift?`: matching `Base<T>` structurally against an `IntBox` (where
+    `IntBox extends Base<int>`) would bind nothing, and `T` would be reported undetermined. -/
+def callSiteCandidates (ctx : TypeLattice) (tvarInScope : Identifier → Bool)
+    (params actuals : List HighTypeMd) : List (String × HighTypeMd) :=
     (params.zip actuals).flatMap fun (p, a) =>
       -- BOTH sides unfolded. `matchTypeArg` is purely structural, so an alias-declared parameter
       -- (`m: Map<K,V>`) never matches an unfolded actual (`TotalMap int ($MapEntry bool)`) and
       -- would bind nothing — leaving the reported result type full of type variables even though
-      -- the call is perfectly determined. `callSiteDeterminedTypeParams` unfolds the same way, so
-      -- the two cannot disagree about which positions bind what.
+      -- the call is perfectly determined.
       let d := (ctx.unfold p).val
       let a' := (ctx.unfold a).val
       let lifted := match callSiteAncestorLift? ctx d a' with
@@ -2311,47 +2349,93 @@ def callSiteTypeSubst (ctx : TypeLattice) (tvarInScope : Identifier → Bool)
       | none => []
       | some bindings =>
         bindings.toList.filterMap fun (name, ty) =>
-          if (tvarIdents ty).all tvarInScope then
+          if (tvarIdents ty).all (fun r => isInferVar r || tvarInScope r) then
             some (name, ({ val := ty, source := a.source } : HighTypeMd))
           else none
-  let names := (candidates.map (·.1)).eraseDups
-  names.foldl (init := ({}, [])) fun (subst, conflicts) name =>
-    let forName := (candidates.filter (·.1 == name)).map (·.2)
-    -- A candidate that is gradual at the TOP teaches nothing, so it is set aside unless it is all
-    -- there is: `<?> == 1` binds `T ↦ int` rather than stalling at `Unknown`. It also dominates
-    -- every sibling, so keeping it would hide a disagreement between two concrete ones. A type
-    -- gradual only BELOW the top (`Box<Unknown>`) stays in the pool, because its head can still
-    -- conflict with a sibling of another shape (`Pair<int,int>`); the ranking below is what
-    -- deprioritizes it.
-    let concrete := forName.filter (fun t => !ctx.isGradualTop t)
-    let pool := if concrete.isEmpty then forName else concrete
-    -- The binding is the candidate every other candidate satisfies, by consistency or by
-    -- subtyping. `isConsistent` alone relates two distinct composites only when they are the
-    -- same type, so a subtype argument would otherwise conflict with its own supertype: this is
-    -- what lets `update<K,V>(map: TotalMap K V, key: K, value: V)` take a `TotalMap int Animal` and a
-    -- `Dog`, binding `V ↦ Animal`.
-    --
-    -- Decided over the WHOLE candidate set rather than by folding pairwise, which would make the
-    -- verdict depend on argument order once a variable occurs three or more times: widening the
-    -- accumulated binding to a supertype would then absorb a later sibling that the original
-    -- binding would have rejected. `both3<T>` at a `Dog`, an `Animal` and a `Cat` resolves in
-    -- every order — `Animal` dominates both siblings — and a `Dog` with a `Cat` alone conflicts
-    -- in every order, since neither is a supertype of the other and their common ancestor is not
-    -- among the candidates. Reconciling to a common ancestor is deliberately NOT done: passing a
-    -- `Dog` where a `Cat` is also expected is far more often a mistake than an intent.
-    --
-    -- Two candidates can dominate EACH OTHER when graduality relates them, or a bare composite name
-    -- its own instantiation, and then argument position must not decide the winner. Take a MOST
-    -- PRECISE dominator instead: one that no other dominator strictly refines. That is the
-    -- informative choice (`Box<int>` over `Box<Unknown>`, `int` over `Unknown`). Where precision relates
-    -- the tied candidates in neither direction, the first dominator wins.
-    let dominators :=
-      pool.filter (fun cand => pool.all (fun o => isConsistent ctx o cand || isSubtype ctx o cand))
-    let mostPrecise := dominators.find? (fun c =>
-      !dominators.any (fun o => ctx.atLeastAsPrecise o c && !ctx.atLeastAsPrecise c o))
-    match mostPrecise <|> dominators.head? with
-    | some winner => (subst.insert name winner, conflicts)
-    | none =>
+
+/-- One type parameter's candidates as `callSiteCombine` weighs them, kept as they arrive
+    (`CandidatePool.add`): each pool without repeats, and its dominators, in pool order.
+
+    A candidate that is gradual at the TOP teaches nothing, so it is set aside unless it is all
+    there is: `<?> == 1` binds `T ↦ int` rather than stalling at `Unknown`. It also dominates
+    every sibling, so keeping it would hide a disagreement between two concrete ones. A type
+    gradual only BELOW the top (`Box<Unknown>`) stays in the pool, because its head can still
+    conflict with a sibling of another shape (`Pair<int,int>`); the ranking in `winner?` is what
+    deprioritizes it. Equal candidates decide alike, so only the first of each is kept. -/
+structure CandidatePool where
+  concrete : List HighTypeMd := []
+  concreteDominators : List HighTypeMd := []
+  gradual : List HighTypeMd := []
+  gradualDominators : List HighTypeMd := []
+
+/-- `cp` with candidate `t`.
+
+    The binding is the candidate every other candidate satisfies, by consistency or by
+    subtyping. `isConsistent` alone relates two distinct composites only when they are the
+    same type, so a subtype argument would otherwise conflict with its own supertype: this is
+    what lets `update<K,V>(map: TotalMap K V, key: K, value: V)` take a `TotalMap int Animal` and a
+    `Dog`, binding `V ↦ Animal`.
+
+    Decided over the WHOLE candidate set rather than by folding pairwise, which would make the
+    verdict depend on argument order once a variable occurs three or more times: widening the
+    accumulated binding to a supertype would then absorb a later sibling that the original
+    binding would have rejected. `both3<T>` at a `Dog`, an `Animal` and a `Cat` resolves in
+    every order — `Animal` dominates both siblings — and a `Dog` with a `Cat` alone conflicts
+    in every order, since neither is a supertype of the other and their common ancestor is not
+    among the candidates. Reconciling to a common ancestor is deliberately NOT done: passing a
+    `Dog` where a `Cat` is also expected is far more often a mistake than an intent.
+
+    The dominators are kept as candidates arrive: an old one stays if it satisfies `t`, and `t`
+    joins if every candidate satisfies it. So a call with many arguments at one type parameter
+    costs one pass over its pool per argument. -/
+def CandidatePool.add (ctx : TypeLattice) (cp : CandidatePool) (t : HighTypeMd) : CandidatePool :=
+  let sat := fun (o cand : HighTypeMd) => isConsistent ctx o cand || isSubtype ctx o cand
+  let step := fun (pool doms : List HighTypeMd) =>
+    if pool.any (highEq · t) then (pool, doms) else
+    let pool' := pool ++ [t]
+    (pool', doms.filter (sat t ·) ++ (if pool'.all (sat · t) then [t] else []))
+  if ctx.isGradualTop t then
+    let (g, gd) := step cp.gradual cp.gradualDominators
+    { cp with gradual := g, gradualDominators := gd }
+  else
+    let (c, cd) := step cp.concrete cp.concreteDominators
+    { cp with concrete := c, concreteDominators := cd }
+
+/-- The pool `cp` decides over: the concrete candidates, or the gradual ones if there are none. -/
+def CandidatePool.pool (cp : CandidatePool) : List HighTypeMd :=
+  if cp.concrete.isEmpty then cp.gradual else cp.concrete
+
+/-- The binding `cp` decides, when a candidate dominates.
+
+    Two candidates can dominate EACH OTHER when graduality relates them, or a bare composite name
+    its own instantiation, and then argument position must not decide the winner. Take a MOST
+    PRECISE dominator instead: one that no other dominator strictly refines. That is the
+    informative choice (`Box<int>` over `Box<Unknown>`, `int` over `Unknown`). Where precision relates
+    the tied candidates in neither direction, the first dominator wins. -/
+def CandidatePool.winner? (ctx : TypeLattice) (cp : CandidatePool) : Option HighTypeMd :=
+  let dominators := if cp.concrete.isEmpty then cp.gradualDominators else cp.concreteDominators
+  let mostPrecise := dominators.find? (fun c =>
+    !dominators.any (fun o => ctx.atLeastAsPrecise o c && !ctx.atLeastAsPrecise c o))
+  mostPrecise <|> dominators.head?
+
+/-- One type parameter's candidates as `callSiteCombine` weighs them: the pool it decides over, and
+    the binding, when a candidate dominates. -/
+def callSiteDecide (ctx : TypeLattice) (forName : List HighTypeMd) : List HighTypeMd × Option HighTypeMd :=
+  let cp := forName.foldl (CandidatePool.add ctx) {}
+  (cp.pool, cp.winner? ctx)
+
+/-- `callSiteTypeSubst`'s reconciliation of the candidates `callSiteCandidates` found. -/
+def callSiteCombine (ctx : TypeLattice) (candidates : List (String × HighTypeMd))
+    : Std.HashMap String HighTypeMd × List (String × HighTypeMd × HighTypeMd) :=
+  -- Grouped once, in first-occurrence order, so a call with many type parameters is linear here.
+  let (names, byName) := candidates.foldl (init := (([] : List String), ({} : Std.HashMap String (List HighTypeMd))))
+    fun (names, byName) (name, ty) =>
+      (if byName.contains name then names else name :: names, byName.insert name (ty :: byName.getD name []))
+  names.reverse.foldl (init := ({}, [])) fun (subst, conflicts) name =>
+    let forName := (byName.getD name []).reverse
+    match callSiteDecide ctx forName with
+    | (_, some winner) => (subst.insert name winner, conflicts)
+    | (pool, none) =>
       -- No candidate dominates: report the first mutually unrelated pair, which is the one a
       -- reader can act on.
       match pool.findSome? (fun a =>
@@ -2360,69 +2444,12 @@ def callSiteTypeSubst (ctx : TypeLattice) (tvarInScope : Identifier → Bool)
       | some (a, b) => (subst, (name, a, b) :: conflicts)
       | none => (subst, conflicts)
 
-/-- The type-parameter names a call site DETERMINES, which is a different question from the
-    one `callSiteTypeSubst` answers: that function binds nothing from an ambiguous diamond,
-    which counts as determined here (see below).
-
-    Used only to decide whether to REPORT an un-inferable type argument. Concreteness is
-    separately guaranteed: a `.TVar` binding here means the enclosing entity is itself generic,
-    so `MonomorphizeComposites` re-resolves this call on a concrete clone and the same check
-    runs again with real types.
-
-    `pairs` is the declared/actual list (parameters, plus the return/expected pair when the
-    caller has one), matched with the SAME `matchTypeArg` as the substitution so the two can
-    never disagree about which positions bind what.
-
-    BOTH sides are `unfold`ed, as in `callSiteTypeSubst`. Unfolding only the actual would make
-    every alias-declared signature look undeterminable: `mapContains<K,V>(m: Map<K,V>, k: K)` declares
-    the alias `Map<K,V>`, and `matchTypeArg` is purely structural, so matching it against an
-    unfolded `TotalMap int ($MapEntry bool)` fails outright and reports `K`/`V` as un-inferable.
-    Aliases are only eliminated later (`TypeAliasElim`), so resolution has to see through them
-    itself. -/
-def callSiteDeterminedTypeParams (ctx : TypeLattice)
-    (tvarInScope : Identifier → Bool) (requireInScope : Bool)
-    (pairs : List (HighTypeMd × HighTypeMd)) : List String :=
-  -- The shared `ancestorLiftCandidates`, so determinacy and `callSiteTypeSubst` cannot disagree
-  -- about which ancestor a descendant actual lifts to.
-  --
-  -- An ambiguous diamond (two parents fixing the ancestor's argument differently) counts as
-  -- DETERMINED here, on ANY witness — which is why this reads the raw candidates rather than
-  -- `callSiteAncestorLift?`, whose whole job is to refuse an arbitrary witness. That is
-  -- deliberately not this function's call to make: `MonomorphizeComposites.settleCallNode` already
-  -- rejects it with a diagnostic naming both instantiations and the upcast that disambiguates,
-  -- which is strictly more useful than "cannot infer T". Reporting it from here would also arrive
-  -- too late to be a clean user error — an inherited call is an instance `.Call` at first
-  -- resolution, which does not ask whether its composite's type arguments are determined, so the
-  -- diagnostic would only appear on the post-`LiftInstanceProcedures` re-resolution, where the
-  -- pipeline wraps any newly introduced diagnostic as an internal error.
-  let lift (declared actual : HighType) : List HighType :=
-    match ancestorLiftCandidates ctx declared actual with
-    | [] => [actual]
-    | c :: _ => [c.val]
-  (pairs.flatMap fun (declared, actual) =>
-    let d := (ctx.unfold declared).val
-    (lift d (ctx.unfold actual).val).flatMap fun a =>
-      match matchTypeArg d a {} with
-      | none => []
-      | some bindings =>
-        -- `requireInScope` distinguishes the two directions, and the distinction is what keeps this
-        -- both sound and quiet:
-        --
-        -- * from an ARGUMENT (`true`), a binding resting on an OUT-OF-SCOPE type variable is no
-        --   evidence at all. Inside a generic body `T ↦ T` is real — `T` is declared by the
-        --   enclosing entity and cloning makes it concrete later — but `mapContains(mapEmpty(), k)`
-        --   in a monomorphic procedure binds `mapContains`'s `V` to `mapEmpty`'s own unbound
-        --   parameter, which names nothing anywhere. Counting that is what let an un-inferable map
-        --   value type escape to Core translation. Scope membership is decided on binder identity,
-        --   so the same program inside `outer<K, V>` is still rejected: `mapEmpty`'s `V` is a
-        --   different binder from `outer`'s.
-        -- * from the EXPECTED type (`false`), such a binding is DEFERRED, not absent: the slot came
-        --   from an enclosing call that has not finished inferring. `mapEmpty()` under
-        --   `mapSet(mapEmpty(), k, true)` is handed `Map<K,V>` before `mapSet`'s own `V` is fixed by
-        --   `true`, and it has done all it can. Reporting there would reject a valid program;
-        --   staying quiet leaves it to the enclosing call, which reports if IT cannot resolve.
-        bindings.toList.filterMap fun (name, ty) =>
-          if !requireInScope || (tvarIdents ty).all tvarInScope then some name else none).eraseDups
+/-- Call-site type-argument inference over `params` and `actuals`: `callSiteCombine` of their
+    `callSiteCandidates` (see the docstring above `callSiteCandidates`). -/
+def callSiteTypeSubst (ctx : TypeLattice) (tvarInScope : Identifier → Bool)
+    (params actuals : List HighTypeMd)
+    : Std.HashMap String HighTypeMd × List (String × HighTypeMd × HighTypeMd) :=
+  callSiteCombine ctx (callSiteCandidates ctx tvarInScope params actuals)
 
 def HighType.isBool : HighType → Bool
   | TBool => true

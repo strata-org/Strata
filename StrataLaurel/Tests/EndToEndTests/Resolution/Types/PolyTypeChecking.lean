@@ -135,29 +135,14 @@ procedure inPolyBody<T>(x: T) returns (r: T)
 };
 #end
 
-/-! ## An ill-typed polymorphic FUNCTION is reported, not thrown
+/-! ## An ill-typed polymorphic FUNCTION is reported by resolution
 
-`coerce<A, B>(x: A): B` returns an `A` where a `B` is required. Laurel's own relation lets it
-through — `A` and `B` are both type variables, so both are wildcards — and Core is what catches
-it. The point of pinning it here is the REPORTING path: the Core type error has to come back as
-a diagnostic rather than as a thrown exception, or a front end driving the pipeline gets a crash
-instead of a message.
+`coerce<A, B>(x: A): B` returns an `A` where a `B` is required. Inside `coerce`, `A` and `B` are
+its own type parameters, so each is one fixed type and they are not interchangeable. -/
 
-This check belongs in Laurel resolution. Two distinct type variables in a signature are not
-interchangeable, and returning an `A` where the signature promises a `B` is decidable from the
-signature alone — no Core needed. Because resolution does not check it, the case reports
-nothing under `testLaurelResolution` and has to run the full pipeline here. Moving the check
-into resolution would let this join the rest of the file on `testLaurelResolution`, and would
-report the error in Laurel's vocabulary instead of as a generic Core type error.
-
-No interpreters: the Core path is rejected by Core's type checker, so there is nothing to
-run — and the standalone Laurel interpreter never type-checks through Core, so an `entry` on
-`main` there would run the program and report nothing, leaving the annotation unfired. -/
-
-#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#eval testLaurelResolution <|
 #strata
 program Laurel;
 procedure coerce<A, B>(x: A): B { return x };
-//        ^^^^^^ error: ❌ Type checking error.
-procedure main() opaque { assert 1 == 1 };
+//                                       ^ error: expected 'B', got 'A'
 #end

@@ -141,6 +141,14 @@ abbrev Scope := Std.HashMap String ScopeEntry
 /-- Per-composite-type scope mapping field names to their scope entries. -/
 abbrev TypeScopes := Std.HashMap String Scope
 
+/-- A call whose type parameters were open when it finished, each with its inference variable
+    (`deferCannotInfer`). -/
+structure PendingCannotInfer where
+  callee : String
+  openParams : List (String × String)
+  hasExpected : Bool
+  source : FileRange
+
 /-- State threaded through the resolution pass. -/
 structure ResolveState where
   /-- Next fresh ID to allocate. -/
@@ -208,6 +216,15 @@ structure ResolveState where
   prevAbrupt : Bool := false
   /-- The labels of the current procedure body whose end some `exit` reaches. -/
   exitedLabels : Std.HashSet String := {}
+  /-- How many inference variables (`?T.n`) have been created, for fresh names. -/
+  inferVarCount : Nat := 0
+  /-- The solution of each solved inference variable, by name. -/
+  inferSolutions : Std.HashMap String HighTypeMd := {}
+  /-- For each unsolved inference variable, the solved ones whose solution mentions it, so that
+      solving it rewrites only those (`recordInferSolutions`). -/
+  inferMentions : Std.HashMap String (List String) := {}
+  /-- The calls whose type arguments were still open when they finished, latest first. -/
+  pendingCannotInfer : List PendingCannotInfer := []
   /-- Overload table for static procedures: each name maps to the list of
       registered overloads as `(uniqueId, procedure)` pairs, in declaration
       order. A name with more than one entry is overloaded. The flat `scope`
@@ -420,6 +437,41 @@ def resolveFieldRef (fieldName : Identifier)
   -- `resolveRef` also binds a variable of the field's name.
   resolveRef fieldName source
 
+
+/-- `ty` with every inference variable solved so far replaced by its solution. One substitution
+    is enough: no solution mentions a solved variable (see `recordInferSolutions`). -/
+private def zonkType (ty : HighTypeMd) : ResolveM HighTypeMd := do
+  pure (substTypeVars (← get).inferSolutions ty)
+
+/-- `e` with every inference variable solved so far replaced in each of its type slots. -/
+private def zonkExpr (e : StmtExprMd) : ResolveM StmtExprMd := do
+  let sols := (← get).inferSolutions
+  if sols.isEmpty then return e
+  pure (mapStmtExprHighTypes (substTypeVars sols) e)
+
+/-- Record `?n := τ` solutions, skipping one already solved or whose solution mentions it, and
+    ignoring bindings of anything but an inference variable. Solutions are kept substituted into
+    each other, so none mentions a solved variable. -/
+private def recordInferSolutions (bindings : Std.HashMap String HighType) (source : FileRange)
+    : ResolveM Unit := do
+  for (n, t) in bindings.toList do
+    let sols := (← get).inferSolutions
+    if isInferVarName n && !sols.contains n then
+      let t' := substTypeVars sols { val := t, source }
+      unless mentionsTVarNamed n t'.val do
+        let one : Std.HashMap String HighTypeMd := ({} : Std.HashMap String HighTypeMd).insert n t'
+        -- Only the solutions that mention `n` are rewritten, so a chain of calls records in
+        -- linear time; they and `n` now mention what `t'` mentions.
+        modify fun s =>
+          let users := s.inferMentions.getD n []
+          let sols' := users.foldl (fun m k => match m.get? k with
+            | some u => m.insert k (substTypeVars one u)
+            | none => m) s.inferSolutions
+          let vars := (((tvarIdents t'.val).filter isInferVar).map (·.text)).eraseDups
+          let mentions := vars.foldl (fun m v => m.insert v (n :: users ++ m.getD v []))
+            (s.inferMentions.erase n)
+          { s with inferSolutions := sols'.insert n t', inferMentions := mentions }
+
 /-- Save and restore scope around a block (for lexical scoping). -/
 def withScope (action : ResolveM α) : ResolveM α := do
   let savedScope := (← get).scope
@@ -441,6 +493,37 @@ def withLabel (label : Option String) (action : ResolveM α) : ResolveM α := do
   return result
 
 /-! ## AST traversal (Phase 1) -/
+
+/-- Report each pending call's type parameters that are still unsolved. -/
+private def dischargeInferObligations : ResolveM Unit := do
+  let st ← get
+  for pending in st.pendingCannotInfer.reverse do
+    let still := pending.openParams.filter fun (_, n) => !st.inferSolutions.contains n
+    unless still.isEmpty do
+      let names := String.intercalate ", " (still.map (fun (p, _) => s!"'{p}'"))
+      let what := if still.length == 1 then "type argument" else "type arguments"
+      let hint :=
+        if pending.hasExpected then
+          "the expected type does not determine it either; annotate with a concrete instantiation"
+        else
+          "annotate the variable or output it is assigned to with a concrete type"
+      let diag := diagnosticFromSource pending.source
+        s!"cannot infer {what} {names} of '{pending.callee}': {hint}"
+      modify fun s => { s with errors := s.errors.push diag }
+
+/-- Run `act` as a ROOT of inference: a statement, a procedure, an initializer, or a constrained
+    type's constraint or witness. Nothing outside it can solve the inference variables it creates
+    (a statement is resolved at `void`, and a local keeps the type it was given), so what it leaves
+    open is reported here and its solutions do not outlive it. A nested root starts afresh. -/
+def withInferScope (act : ResolveM α) : ResolveM α := do
+  let outer ← get
+  modify fun s => { s with pendingCannotInfer := [], inferSolutions := {}, inferMentions := {} }
+  let result ← act
+  dischargeInferObligations
+  modify fun s =>
+    { s with pendingCannotInfer := outer.pendingCannotInfer,
+             inferSolutions := outer.inferSolutions, inferMentions := outer.inferMentions }
+  return result
 
 /-- Type-argument arity error when `numDeclared ≠ numProvided`; shared by `resolveHighType`'s
     `.Applied` arm and `Synth.new` for identical wording. -/
@@ -785,6 +868,12 @@ def resolveHighType (ty : HighTypeMd) : ResolveM HighTypeMd := do
 
 /-- Format a type for use in diagnostics. -/
 private def formatType (ty : HighTypeMd) : String :=
+  -- An inference variable `?T.3` is shown as the type parameter it stands for.
+  let shown : Std.HashMap String HighTypeMd := (tvarIdents ty.val).foldl (fun m r =>
+    if isInferVar r then
+      m.insert r.text { val := .TVar { r with text := inferVarParam r.text }, source := ty.source }
+    else m) {}
+  let ty := substTypeVars shown ty
   match ty.val with
   | .MultiValuedExpr tys =>
     let parts := tys.map (fun t => toString (formatHighTypeVal t.val))
@@ -970,20 +1059,30 @@ private def getVarType (ref : Identifier) : ResolveM HighTypeMd := do
     | some (id, node) => pure ((s.inferredDecls.get? id).getD node.getType)
     | none => pure { val := .Unknown, source := ref.source }
 
-/-- The declared return type of a call to `proc`, tagged with `callee`'s source.
-    Zero outputs synthesize `TVoid`, a single output its type, and multiple
-    outputs a `MultiValuedExpr`. Shared by `getCallInfo` and overload selection. -/
-private def procReturnType (callee : Identifier) (proc : Procedure) : HighTypeMd :=
-  match proc.outputs with
-  | [] => { val := .TVoid, source := callee.source }
-  | [singleOutput] => singleOutput.type
-  | outputs => { val := .MultiValuedExpr (outputs.map (·.type)), source := callee.source }
+/-- Whether `ty` is a generic composite without its type arguments (`raw: Box` for `Box<T>`),
+    which determines none of its own type parameters. -/
+private def isRawGeneric (ctx : TypeLattice) (ty : HighTypeMd) : Bool :=
+  match (ctx.unfold ty).val with
+  | .UserDefined n => (ctx.parentExprMap.get? n.text).any (!·.1.isEmpty)
+  | _ => false
+
+/-- A raw generic composite (`isRawGeneric`) at `Unknown` arguments, `Box<Unknown>` for a raw
+    `Box`, so that an ancestor's parameter its `extends` clause fixes keeps that instantiation;
+    any other type unchanged. -/
+private def rawAtUnknown (ctx : TypeLattice) (ty : HighTypeMd) : HighTypeMd :=
+  match (ctx.unfold ty).val with
+  | .UserDefined n =>
+    match ctx.parentExprMap.get? n.text with
+    | some (params@(_ :: _), _) =>
+      ⟨.Applied ⟨.UserDefined n, ty.source⟩ (params.map fun p => ⟨.Unknown, p.source⟩), ty.source⟩
+    | _ => ty
+  | _ => ty
 
 /-- Concretize a field's declared type at an access site: substitute the field's DECLARING
-    composite's params with the holder's args (`TypeLattice.fieldTypeAt`). Else raw `.TVar T`
-    hits the wildcard and a cross-type write is wrongly accepted (imprecise, not unsound — Core
-    havocs the read back). Only ever more concrete; identity on polymorphic accesses; raw-type
-    fallback otherwise. -/
+    composite's params with the holder's args (`TypeLattice.fieldTypeAt`). Else the raw `T` is the
+    composite's own type variable, which matches nothing at the access site. Only ever more
+    concrete; identity on polymorphic accesses; raw-type fallback otherwise, with `Unknown`
+    parameters for a holder of the wrong arity or a raw one (`isRawGeneric`). -/
 private def concretizeFieldType (holderTy : HighTypeMd) (fieldName' : Identifier)
     : ResolveM HighTypeMd := do
   let s ← get
@@ -991,7 +1090,17 @@ private def concretizeFieldType (holderTy : HighTypeMd) (fieldName' : Identifier
   -- Need the field's declaring composite + raw type.
   match fieldName'.uniqueId.bind s.idToNode.get? with
   | some (.field declType fld) =>
-    pure ((s.typeLattice.fieldTypeAt declType fld.type holderTy).getD raw)
+    match s.typeLattice.fieldTypeAt declType fld.type holderTy with
+    | some t => pure t
+    | none =>
+      -- A holder that supplies arguments, but not as many as `declType` declares (the wrong arity
+      -- is reported at the type), or none: nothing determines the parameters.
+      let undetermined := (s.typeLattice.unfold holderTy).val matches .Applied _ (_ :: _) ||
+        isRawGeneric s.typeLattice holderTy
+      match s.typeLattice.parentExprMap.get? declType.text with
+      | some (declParams, _) =>
+        pure (if undetermined then substTypeVars (unknownSubst declParams) fld.type else raw)
+      | none => pure raw
   | _ => pure raw
 
 /-- Get the call return type and parameter types for a callee from scope. -/
@@ -999,7 +1108,7 @@ private def getCallInfo (callee : Identifier) : ResolveM (HighTypeMd × List Hig
   let s ← get
   match s.scope.get? callee.text with
   | some (_, .staticProcedure proc) | some (_, .instanceProcedure _ proc) =>
-    pure (procReturnType callee proc, proc.inputs.map (·.type))
+    pure (procResultType callee.source proc, proc.inputs.map (·.type))
   | some (_, .datatypeConstructor t ctor) =>
     -- Testers (e.g. "Color..isRed") return Bool; constructors return the type.
     -- A constructor's argument types ARE its parameter types: return them so the
@@ -1092,6 +1201,11 @@ private def sameSignature (a b : Procedure) : Bool :=
   a.inputs.length == b.inputs.length &&
     (a.inputs.zip b.inputs).all (fun (pa, pb) => highEq pa.type pb.type)
 
+/-- A candidate's parameter types with its own type parameters read as `Unknown`: overload
+    selection asks only whether some instantiation accepts the arguments. -/
+private def openInputTypes (proc : Procedure) : List HighTypeMd :=
+  proc.inputs.map (substTypeVars (unknownSubst proc.typeArgs) ·.type)
+
 /-- Whether `proc` accepts a call with the given argument types: the arity
     matches and every argument is a consistent subtype of the corresponding
     parameter. Uses the same relation (`isConsistentSubtype`) as ordinary
@@ -1099,7 +1213,7 @@ private def sameSignature (a b : Procedure) : Bool :=
 private def overloadAccepts (ctx : TypeLattice) (proc : Procedure)
     (argTys : List HighTypeMd) : Bool :=
   proc.inputs.length == argTys.length &&
-    (proc.inputs.zip argTys).all (fun (p, argTy) => isConsistentSubtype ctx argTy p.type)
+    ((openInputTypes proc).zip argTys).all (fun (p, argTy) => isConsistentSubtype ctx argTy p)
 
 /-- All overloads that accept a call's argument types. Registration only rejects
     *pairwise* parameter overlap (`signaturesConflict`), which is not enough to
@@ -1943,10 +2057,9 @@ private def thrownTypes (model : SemanticModel) (lattice : TypeLattice) (expr : 
 
 /-- The `thrownTypesWith` that the escape checks see. A type that MENTIONS a type
     variable (a poly `throws (e:T)` or `throws Box<T>` called at the enclosing procedure's own
-    `T`, via `mentionsTVar`) is dropped: at the initial resolution `T` is not concrete, so —
-    exactly as a poly RETURN flows gradually through `isConsistent`'s recursive `.TVar`
-    wildcard — the escape is deferred to the post-mono re-resolution, where the clone's throws
-    type is concrete and genuinely checkable (the un-gated `validateExceptionEscapes` in
+    `T`, via `mentionsTVar`) is dropped: at the initial resolution `T` is not concrete, so the
+    escape is deferred to the post-mono re-resolution, where the clone's throws type is concrete
+    and genuinely checkable (the un-gated `validateExceptionEscapes` in
     `resolve`). With `keepTVars`, such types are kept, so `inferThrows` can tell that it cannot
     infer them. -/
 public def exceptionEscapesWith (model : SemanticModel) (lattice : TypeLattice)
@@ -1966,32 +2079,49 @@ private def tvarInScope (scope : Scope) (n : Identifier) : Bool :=
   | some (defId, .typeParameter _) => n.uniqueId == some defId
   | _ => false
 
-/-- STAGE 1 of a generic call — bind from the RETURN position, before the arguments are touched.
-    `setEmpty<T>() : Set<T>` and `mapConst<K,V>(value: V) : TotalMap K V` mention `T`/`K` only in
-    the result, so matching the declared return type against the expected type is the only thing
-    that can determine them. Doing it first is what lets stage 2 hand each argument a concrete slot.
-    Bindings that still MENTION a type variable are KEPT here: a structured binding is what the
-    prelude needs. `mapRemove<K,V>`'s `update(m, k, $MapAbsent())` binds `update`'s
-    `V2 ↦ $MapEntry V` from the expected `Map<K,V>`, and that is precisely what tells the
-    `$MapAbsent()` slot which datatype it is building. Substituting a `T ↦ T` is a no-op, so keeping
-    those costs nothing.
+/-- A call's instantiation: the callee's parameter and result types, each of its type
+    parameters replaced by a fresh inference variable. -/
+private structure CallInstance where
+  /-- Each type parameter's inference variable, by parameter name. -/
+  metas : Std.HashMap String HighTypeMd
+  /-- The type parameters, in the callee's order. -/
+  order : List String
+  params : List HighTypeMd
+  result : HighTypeMd
 
-    Pure in the procedure and the expected type, so an overloaded name can run it on the procedure
-    `selectOverloads` picked. -/
-private def returnPositionSubst (ctx : TypeLattice) (callee : Identifier) (proc : Procedure)
+/-- Instantiate a call: a fresh inference variable for each type parameter. A type parameter
+    spelled `.UserDefined`, as in a datatype's stored constructor arguments, is replaced too.
+
+    Unless two of `typeParams` share a name: a method's own `T` beside its composite's, which
+    `LiftInstanceProcedures` puts in one list, where the re-resolution reports the clash as a
+    duplicate definition. Such a call reads each type parameter as `Unknown` and so reports nothing
+    of its own. -/
+private def instantiateCall (typeParams : List Identifier) (params : List HighTypeMd)
+    (result : HighTypeMd) (source : FileRange) : ResolveM CallInstance := do
+  let order := typeParams.map (·.text)
+  let metas ← if order.eraseDups.length == order.length then
+      typeParams.foldlM (fun vars tp => do
+        let n := (← get).inferVarCount
+        modify fun s => { s with inferVarCount := n + 1 }
+        pure (vars.insert tp.text { val := .TVar { text := inferVarName tp.text n, source }, source }))
+        {}
+    else pure (unknownSubst typeParams)
+  pure { metas, order, params := params.map (substTypeVars metas), result := substTypeVars metas result }
+
+/-- STAGE 1 of a call: what the expected type says about its inference variables, before the
+    arguments are resolved, so they can be handed slots (`argSlot`). Hints only: `solveCall` ranks
+    the arguments first.
+
+    A hint may mention a type variable and must be kept: in `mapRemove`, `update(m, k,
+    $MapAbsent())` learns `V2 := $MapEntry V` from it, which tells `$MapAbsent()` what it builds.
+    Both sides are unfolded, since `mapEmpty` returns the alias `Map<K,V>`. -/
+private def expectedHints (ctx : TypeLattice) (inst : CallInstance)
     (expected? : Option HighTypeMd) : Std.HashMap String HighTypeMd :=
   match expected? with
-  | none => ∅
+  | none => {}
   | some exp =>
-    -- Declared side `unfold`ed too: `mapEmpty<K,V>() : Map<K,V>` returns the ALIAS, and
-    -- `matchTypeArg` is structural, so without this it never matches an unfolded expected
-    -- `TotalMap int ($MapEntry bool)`. `TypeAliasElim` runs later than resolution.
-    match matchTypeArg (ctx.unfold (procReturnType callee proc)).val (ctx.unfold exp).val {} with
-    | none => ∅
-    | some bindings =>
-      bindings.toList.foldl
-        (fun acc (name, ty) => acc.insert name { val := ty, source := exp.source })
-        (∅ : Std.HashMap String HighTypeMd)
+    (solveInferVars (ctx.unfold inst.result).val (ctx.unfold exp).val).fold
+      (fun m k v => m.insert k { val := v, source := exp.source }) {}
 
 /-- Which of `tyName` and its ancestors declares the method `callee`: the most specific one, unless
     unrelated ones do. -/
@@ -2000,184 +2130,193 @@ private def methodDeclarer (tyName : String) (callee : Identifier) : ResolveM Me
   let declares := fun n => s.scope.contains (containerScopedName (mkId n) callee).text
   return s.typeLattice.resolveInheritedMember tyName declares
 
-/-- The declared result of the procedure the call `e` calls, read before `e` is resolved: for an
-    instance call, the method of the composite that `targetTypeName` reads off the receiver without
-    resolving it; for a static call, the procedure its name is bound to, unless overloaded. Its type
-    variables are the callee's, which the call has yet to instantiate, so they lose their binders:
-    in a recursive call, or a call to a method of the caller's own composite, they would otherwise
-    read as the caller's. -/
-private def declaredCallResult? (e : StmtExprMd) : ResolveM (Option HighTypeMd) := do
-  let s ← get
-  let key? ← match e.val with
-    | .Call (some target) callee _ _ => do
-      let some tyName ← targetTypeName target | pure none
-      let .resolved owner ← methodDeclarer tyName callee | pure none
-      pure (some (callee, containerScopedName (mkId owner) callee))
-    | .Call none callee _ _ =>
-      pure (if (s.overloads.getD callee.text []).length > 1 then none else some (callee, callee))
-    | _ => pure none
-  let some (callee, key) := key? | pure none
-  match s.scope.get? key.text with
-  | some (_, .staticProcedure proc) | some (_, .instanceProcedure _ proc) =>
-    pure (some (mapHighTypeNames (fun mk n => match mk n with
-      | .TVar _ => .TVar { n with uniqueId := none }
-      | t => t) (procReturnType callee proc)))
-  | _ => pure none
+/-- The arguments' evidence about a call's inference variables, reconciled by `callSiteTypeSubst`,
+    with the conflicts it found. -/
+private def argEvidence (ctx : TypeLattice) (params argTys : List HighTypeMd)
+    : ResolveM (Std.HashMap String HighTypeMd × List (String × HighTypeMd × HighTypeMd)) := do
+  let (subst, conflicts) :=
+    callSiteTypeSubst ctx (tvarInScope (← get).scope) (← params.mapM zonkType) argTys
+  -- Only an inference variable is solved. A solution may put a type variable of the caller's in a
+  -- parameter (a receiver's `Box<U>` fixes `self: Box<?T>` at `?T := U`), and that one is fixed.
+  pure (subst.filter fun k _ => isInferVarName k, conflicts.filter (isInferVarName ·.1))
 
-/-- The tail of a generic call: infer the type arguments from the actual argument types, check
-    each argument against its instantiated parameter, report anything left undetermined, and
-    report the declared return type at that instantiation.
+/-- STAGE 2 of a call: the slot an argument is handed, its parameter unfolded with what is known
+    so far (`working`, over the expected type's `hints`), so a nested call can infer from it: in
+    `mapConst(mapConst(false))` only the outer expected type fixes the inner call's `K`.
 
-    Shared by the single-definition generic path, a uniquely selected generic overload, and an
-    instance call into a generic composite or to a generic method. Takes the SELECTED procedure
-    rather than looking it up, since `scope` keeps only the last definition of an overloaded
-    name.
+    A bare type variable is withheld: it solves nothing and perturbs how generated exceptional code
+    resolves. So is a bare `Unknown`: as an expected type it silences the nested call's
+    diagnostics. -/
+private def argSlot (ctx : TypeLattice) (hints working : Std.HashMap String HighTypeMd)
+    (param : HighTypeMd) : ResolveM (Option HighTypeMd) := do
+  -- Only the parameter's own variables are looked up, so a call with many type parameters is
+  -- linear here; `working` wins over `hints`.
+  let param' := ctx.unfold param
+  let known := (tvarIdents param'.val).foldl (init := ({} : Std.HashMap String HighTypeMd)) fun acc r =>
+    match working.get? r.text <|> hints.get? r.text with
+    | some t => acc.insert r.text t
+    | none => acc
+  let slot ← zonkType (substTypeVars known param')
+  pure (if slot.val matches .TVar _ | .Unknown then none else some slot)
 
-    The arguments arrive already resolved, and the lattice is read HERE, after them: resolving an
-    argument can extend it, and every subtype/coercion decision below must see the final one.
-    `retSubst` is the caller's stage-1 binding from the return position. `receiver?` pairs an
-    instance call's `self` type with its receiver's. Inference takes them as the first parameter
-    and argument of the static call that `LiftInstanceProcedures` makes the instance call, so that
-    its re-resolution after the lift agrees. Where that call is rejected, over a type parameter the
-    receiver binds or at the receiver itself, what the receiver binds, unless a gradual type, is
-    kept instead, so that the argument check blames the argument rather than a conflict being
-    reported.
+/-- The expected type as EXACT evidence, paired with the result, unless the result is `Unknown`,
+    several outputs, or a bare type variable; for the last it is only an upper bound (see
+    `solveCall`). -/
+private def exactExpected (ctx : TypeLattice) (inst : CallInstance) (expected? : Option HighTypeMd)
+    : List (HighTypeMd × HighTypeMd) :=
+  match expected? with
+  | some exp =>
+    if (ctx.unfold inst.result).val matches .TVar _ | .Unknown | .MultiValuedExpr _ then []
+    else [(inst.result, exp)]
+  | none => []
 
-    An overloaded name's arguments are resolved before selection, so they get no instantiated slot
-    handed down; a nested generic call inside such an argument has nothing to infer from. -/
-private def genericCallResult (callee callee' : Identifier) (proc : Procedure)
-    (args' : List StmtExprMd) (argTys : List HighTypeMd)
-    (expected? : Option HighTypeMd) (retSubst : Std.HashMap String HighTypeMd)
-    (source : FileRange) (receiver? : Option (HighTypeMd × HighTypeMd) := none) :
-    ResolveM (StmtExpr × HighTypeMd) := do
+/-- STAGE 3 of a call: solve its inference variables, first from the arguments (`argEvidence`: a
+    `Dog` and an `Animal` give `Animal`, a `Dog` and a `Cat` conflict), then from the inference
+    variables the arguments' own types carry, then from the expected type. Returns the conflicts.
+
+    At a bare `T` the expected type is only an upper bound, so the arguments win: `var a: Animal :=
+    identity(aDog)` keeps `T := Dog`. Under a type constructor the result must equal it, so it is
+    evidence alongside the arguments: `var m: Map<int, Animal> := mapSet(m0, 1, aDog)` binds
+    `V := Animal`. An expected type that conflicts with the arguments is set aside; the mismatch
+    against it is reported instead. -/
+private def solveCall (inst : CallInstance) (argTys : List HighTypeMd)
+    (expected? : Option HighTypeMd) (source : FileRange)
+    : ResolveM (List (String × HighTypeMd × HighTypeMd)) := do
   let ctx := (← get).typeLattice
-  let inScope := tvarInScope (← get).scope
-  let paramTys := proc.inputs.map (·.type)
-  let (argSubst, conflicts) := match receiver? with
-    | none => callSiteTypeSubst ctx inScope paramTys argTys
-    | some (selfTy, recvTy) =>
-      let (lifted, conflicts) :=
-        callSiteTypeSubst ctx inScope (selfTy :: paramTys) (recvTy :: argTys)
-      if conflicts.isEmpty && isConsistentSubtype ctx recvTy (substTypeVars lifted selfTy) then
-        (lifted, conflicts)
-      else
-        let recv := (callSiteTypeSubst ctx inScope [selfTy] [recvTy]).1.filter
-          fun _ ty => !ctx.isGradualTop ty
-        (recv.fold (fun acc name ty => acc.insert name ty) lifted,
-          conflicts.filter fun (name, _, _) => !recv.contains name)
-  -- STAGE 3 — merge. Argument bindings WIN over the stage-1 return bindings: an argument is
-  -- direct evidence, whereas the expected type has already passed through subsumption and may
-  -- be a supertype (`var a: Animal := identity(aDog)` must keep `T ↦ Dog`, not widen it to
-  -- `Animal`). So the return position only fills parameters the arguments left open, and can
-  -- neither override them nor conflict with them.
-  let subst : Std.HashMap String HighTypeMd :=
-    retSubst.fold (fun acc name ty => if acc.contains name then acc else acc.insert name ty)
-      argSubst
-  -- A type variable pinned to two inconsistent types by different arguments. This is what
-  -- makes `1 == true` an error: `$eq<T>(x: T, y: T)` feeds both operands into the same `T`.
-  -- Reported as the operator for `$eq`/`$neq`, whose reserved names the user never wrote.
+  let exact := exactExpected ctx inst expected?
+  let paired := inst.params.zip argTys
+  let alone ← argEvidence ctx (paired.map (·.1)) (paired.map (·.2))
+  let withExpected ← argEvidence ctx ((paired ++ exact).map (·.1)) ((paired ++ exact).map (·.2))
+  -- A conflict the expected type adds is the mismatch against it, which is reported as such.
+  let (argSubst, conflicts) :=
+    (withExpected.1, withExpected.2.filter fun (n, _, _) => alone.2.any (·.1 == n))
+  recordInferSolutions (argSubst.fold (fun m k v => m.insert k v.val) {}) source
+  let mut sols : Std.HashMap String HighType := {}
+  for (p, a) in paired do
+    sols := solveInferVars (← zonkType p).val a.val sols
+  if let some exp := expected? then
+    sols := solveInferVars (ctx.unfold (← zonkType inst.result)).val (ctx.unfold exp).val sols
+  recordInferSolutions sols source
+  pure (conflicts.map fun (n, a, b) => (inferVarParam n, a, b))
+
+/-- Check each argument at a parameter that mentions an inference variable, which
+    `Synth.callArgs` synthesized, against it, the solutions applied: a `Set<int>` for a `Box<T>`
+    binds nothing and is rejected here. Not after a conflict, whose losing argument
+    would only restate it ("cannot pass 'real' as the 'int' parameter of '$eq'" beside "cannot
+    compare 'int' with 'real'"). Returns whether every argument passed. -/
+private def checkCallArgs (callee : String) (args : List (StmtExprMd × HighTypeMd))
+    (params : List HighTypeMd) : ResolveM Bool := do
+  let ctx := (← get).typeLattice
+  let mut ok := true
+  for ((a, aTy), p) in args.zip params do
+    if mentionsInferVar p.val then
+      let aTy ← zonkType aTy
+      let p ← zonkType p
+      unless isConsistentSubtype ctx aTy p do
+        -- At the argument: a variable's type would point at its declaration.
+        let diag := diagnosticFromSource a.source
+          s!"cannot pass '{formatType aTy}' as the '{formatType p}' parameter of '{callee}'"
+        modify fun s => { s with errors := s.errors.push diag }
+        ok := false
+  return ok
+
+/-- The type parameters a call left open, each with its inference variable: not solved yet. One
+    solved to another call's open variable is that call's to report. -/
+private def openTypeParams (inst : CallInstance) : ResolveM (List (String × String)) := do
+  let sols := (← get).inferSolutions
+  pure (inst.order.filterMap fun p => match inst.metas.get? p with
+    | some ⟨.TVar v, _⟩ => if sols.contains v.text then none else some (p, v.text)
+    | _ => none)
+
+/-- Report the type parameters a call left open (`openTypeParams`) when the root ends, unless a
+    later argument, the enclosing call or the statement solves them first. -/
+private def deferCannotInfer (callee : String) (openParams : List (String × String))
+    (hasExpected : Bool) (source : FileRange) : ResolveM Unit := do
+  unless openParams.isEmpty do
+    modify fun s =>
+      { s with pendingCannotInfer :=
+          { callee, openParams, hasExpected, source } :: s.pendingCannotInfer }
+
+/-- Report each type parameter that different arguments pinned to inconsistent types. This is
+    what makes `1 == true` an error: `$eq<T>(x: T, y: T)` feeds both operands into the same `T`.
+    Reported as the operator for `$eq`/`$neq`, whose reserved names the user never wrote. -/
+private def reportConflicts (callee : String) (conflicts : List (String × HighTypeMd × HighTypeMd))
+    (source : FileRange) : ResolveM Unit := do
+  let opName? : Option String :=
+    if callee == Operation.Eq.procName then some "=="
+    else if callee == Operation.Neq.procName then some "!=" else none
   for (name, t1, t2) in conflicts.reverse do
-    let opName? : Option String :=
-      if callee.text == Operation.Eq.procName then some "=="
-      else if callee.text == Operation.Neq.procName then some "!=" else none
     let msg := match opName? with
       | some op => s!"cannot compare '{formatType t1}' with '{formatType t2}' using '{op}'"
       | none =>
-        s!"cannot infer type argument '{name}' of '{callee.text}': "
+        s!"cannot infer type argument '{name}' of '{callee}': "
           ++ s!"'{formatType t1}' and '{formatType t2}' disagree"
     modify fun s => { s with errors := s.errors.push (diagnosticFromSource source msg) }
-  -- Check each argument against its INSTANTIATED parameter type. Once `T` is bound this is a
-  -- real check rather than a wildcard: a concrete slot rejects a mismatched argument, while
-  -- an unbound parameter stays a `.TVar` and so still accepts anything, as it must.
-  --
-  -- Only when inference agreed. A conflict already means one argument disagrees with
-  -- another, and the substitution then carries whichever binding won — so checking the
-  -- losing argument against it restates the same problem in weaker words ("cannot pass
-  -- 'real' as the 'int' parameter of '$eq'" next to "cannot compare 'int' with 'real'").
-  --
-  -- Anchored on the argument, not on its type, whose range is wherever the type was written.
-  let mut rejectedAt : List HighTypeMd := []
-  if conflicts.isEmpty then
-    for ((a, aTy), pTy) in (args'.zip argTys).zip paramTys do
-      let pTy' := substTypeVars subst pTy
-      unless isConsistentSubtype ctx aTy pTy' do
-        let diag := diagnosticFromSource a.source
-          s!"cannot pass '{formatType aTy}' as the '{formatType pTy'}' parameter of '{callee.text}'"
-        modify fun s => { s with errors := s.errors.push diag }
-        rejectedAt := pTy :: rejectedAt
-  -- `zip` above pairs only as far as the shorter list, so a surplus argument would otherwise
-  -- reach Core and fail there as an arity mismatch with no source range and no callee name.
-  -- Under-arity is deliberately not flagged.
-  if args'.length > paramTys.length then
-    let diag := diagnosticFromSource source
-      s!"call to '{callee}' expects {paramTys.length} argument(s) but {args'.length} were provided"
-    modify fun s => { s with errors := s.errors.push diag }
-  -- COMPLETENESS: every type parameter must be determined. An unbound one would survive as a
-  -- bare `.TVar`, which `isConsistent` treats as a gradual wildcard, leaving the call unchecked
-  -- and sending the type argument to Core as a free variable for HM to bind — Laurel's type
-  -- correctness in Core's hands, and a `strata-bug` blaming the compiler for an under-annotated
-  -- program. Reported here instead, at the call, naming the parameter and the annotation that
-  -- fixes it.
-  --
-  -- Suppressed when the call already has a diagnostic (a conflict, or an argument that failed
-  -- to resolve and so synthesized `Unknown`): inference genuinely had nothing to work with
-  -- there, and a second error about a type argument would only bury the first. Likewise for a
-  -- type parameter mentioned where an argument was rejected (`wrap(5)` at `x: Box<T>`): that
-  -- argument would have determined it. Not for one that no input or output mentions, which no
-  -- call determines: beside a hole, as `U` of `two<T, U>(x: T, y: T)` at `two(1, <?>)`, it
-  -- would go unreported, since `OpaqueUnusedTypeParams` then drops it and the hole is typed.
-  --
-  -- Determinacy is asked of `callSiteDeterminedTypeParams`, not of `subst`: an ambiguous diamond
-  -- binds nothing in `subst` yet the parameter IS determined.
-  let determined :=
-    callSiteDeterminedTypeParams ctx inScope (requireInScope := true) (paramTys.zip argTys) ++
-    callSiteDeterminedTypeParams ctx inScope (requireInScope := false)
-      (match expected? with
-       | some exp => [(procReturnType callee proc, exp)]
-       | none => [])
-  let unbound := proc.typeArgs.filter fun tv =>
-    !determined.contains tv.text && !rejectedAt.any (mentionsTypeParam ctx [tv.text])
-  let unbound := if argTys.any (·.val matches .Unknown) then
-      unbound.filter fun tv =>
-        !(proc.inputs ++ proc.outputs).any (mentionsTypeParam ctx [tv.text] ·.type)
-    else unbound
-  if conflicts.isEmpty && !unbound.isEmpty then
-    let names := String.intercalate ", " (unbound.map (fun tv => s!"'{tv.text}'"))
-    let what := if unbound.length == 1 then "type argument" else "type arguments"
-    -- Laurel has no syntax for type arguments at a call (only `new C<τ…>`), so the actionable
-    -- advice is always to annotate the context the result flows into, never the call itself.
-    let hint :=
-      if expected?.isSome then
-        "the expected type does not determine it either; annotate with a concrete instantiation"
-      else
-        "annotate the variable or output it is assigned to with a concrete type"
-    let diag := diagnosticFromSource source
-      s!"cannot infer {what} {names} of '{callee.text}': {hint}"
-    modify fun s => { s with errors := s.errors.push diag }
-  -- RECORD the instantiation, in the callee's declaration order, so a downstream pass reads it
-  -- off the node instead of recovering it from context: `MonomorphizeComposites` clones the callee
-  -- at it, `LaurelToCoreSchemaPass` needs it for the external generic primitives, which never
-  -- monomorphize, and a pass that introduces a local for a call declares the local at it
-  -- (`typeAtCall`).
-  --
-  -- Stamped only when every parameter is bound: a partial list would be worse than none, since
-  -- position carries meaning. `unbound` above has already reported anything missing.
-  let inferredTypeArgs : List HighTypeMd :=
-    if proc.typeArgs.isEmpty then []
-    else
-      let bound := proc.typeArgs.map (fun tv => subst[tv.text]?)
-      -- A `.TVar` from the enclosing generic body is fine: `MonomorphizeComposites` substitutes
-      -- into recorded type arguments on each clone, so an abstract recording becomes the real
-      -- instantiation there. An `Unknown` is not: it slips through every consistency check but
-      -- is missing information, not a type. `mapConst(<?>)` would record `Unknown` as its value
-      -- type and leave the hole unresolved past hole elimination ("holes should have been
-      -- eliminated before translation").
-      if bound.all (·.isSome) && bound.all (fun b => match b with
-                                            | some t => !mentionsUnknown t.val
-                                            | none => false)
-      then bound.filterMap id else []
-  return (.Call none callee' args' inferredTypeArgs,
-          substTypeVars subst (procReturnType callee proc))
+
+/-- The instantiation a call records, in its callee's parameter order: nothing while a parameter
+    is missing or still `Unknown`, which slips through every consistency check but is missing
+    information, not a type. `mapConst(<?>)` would record `Unknown` as its value type and leave the
+    hole unresolved past hole elimination; the re-resolution after hole inference records it.
+
+    Recorded so a downstream pass reads it off the node: `MonomorphizeComposites` clones the callee
+    at it, `LaurelToCoreSchemaPass` needs it for the external generic primitives, and a pass that
+    introduces a local for a call declares the local at it (`typeAtCall`). An open parameter is
+    recorded as its inference variable, which the enclosing call's solution replaces; a type
+    variable of the enclosing generic body is substituted on each clone. -/
+private def recordedTypeArgs (subst : Std.HashMap String HighTypeMd) (params : List String) :
+    List HighTypeMd :=
+  match params.mapM (subst[·]?) with
+  | some tys => if tys.any (mentionsUnknown ·.val) then [] else tys
+  | none => []
+
+/-- STAGE 3 and every check after it, for every call path; an instance call's receiver is the
+    argument for `self`. `owner` names whose type parameters are inferred (a constructor's
+    datatype). Returns the arguments, solutions applied, the instantiation to record over `record`
+    (`recordedTypeArgs`; none where the arguments conflict, whose solutions carry an arbitrary
+    winner) and the result type.
+
+    "Cannot infer" is left out when the call already has a diagnostic (a conflict or a rejected
+    argument), which it would only bury; once an error is reported, for a parameter that an
+    `Unknown` argument's parameter mentions, or at an `Unknown` expected type, one that any input or
+    output mentions; for an ambiguous diamond
+    (`callSiteLiftAmbiguous`), which `MonomorphizeComposites.settleCallNode` reports; and when
+    `quiet`. -/
+private def finishCall (callee owner : String) (inst : CallInstance)
+    (args : List (StmtExprMd × HighTypeMd))
+    (expected? : Option HighTypeMd) (quiet : Bool) (source : FileRange)
+    (record : List String := inst.order)
+    : ResolveM (List StmtExprMd × List HighTypeMd × HighTypeMd) := do
+  let argTys := args.map (·.2)
+  let conflicts ← solveCall inst argTys expected? source
+  reportConflicts owner conflicts source
+  let argsOk ← if conflicts.isEmpty then checkCallArgs callee args inst.params else pure false
+  let ctx := (← get).typeLattice
+  let ambiguous := (inst.params.zip argTys).any fun (p, a) =>
+    callSiteLiftAmbiguous ctx (ctx.unfold p).val (ctx.unfold a).val
+  if argsOk && !quiet && !ambiguous then
+    let openParams ← openTypeParams inst
+    -- Once any error is reported, an `Unknown` is not reported against, as it may be that error's:
+    -- a parameter that an `Unknown` argument's parameter mentions, as `T` of `same2<T>(a: Set<T>, b: Set<T>)` at
+    -- `same2(nope, setEmpty())`, and at an `Unknown` expected type, as after `var x: Undeclared`,
+    -- one that any input or output mentions. Otherwise every open parameter is reported, beside a
+    -- hole too (`T` of `k4<T, U>(x: Opt<T>, y: U): T` at `k4(<?>, 1)`); unreported, it would reach
+    -- Core undetermined.
+    let errorReported := (← get).errors.any (·.kind != .warning)
+    let atUnknown := errorReported && expected?.any (·.val matches .Unknown)
+    let openParams := openParams.filter fun (_, v) =>
+      !(errorReported && (inst.params.zip argTys).any (fun (p, a) => a.val matches .Unknown && mentionsTVarNamed v p.val)) &&
+      !(atUnknown && (inst.result :: inst.params).any (mentionsTVarNamed v ·.val))
+    deferCannotInfer owner openParams expected?.isSome source
+  let subst ← inst.metas.toList.foldlM (fun acc (k, v) => do pure (acc.insert k (← zonkType v))) {}
+  -- An argument whose type mentions no SOLVED inference variable has nothing to zonk: the calls
+  -- inside it zonked their own arguments already, and what is still open there is still open.
+  let sols := (← get).inferSolutions
+  return (← args.mapM (fun (a, t) =>
+      if (tvarIdents t.val).any (fun v => isInferVar v && sols.contains v.text) then zonkExpr a
+      else pure a),
+    if conflicts.isEmpty then recordedTypeArgs subst record else [],
+    ← zonkType inst.result)
+
 -- The `h : exprMd.val = .Foo args ...` parameters on the recursive helpers
 -- look unused to the linter, but each one is referenced by that helper's
 -- `decreasing_by` tactic to relate `sizeOf args` to `sizeOf exprMd`.
@@ -2826,11 +2965,12 @@ def Synth.emptyBlock (source : FileRange) : HighTypeMd :=
     when the block itself sits in statement position, `expected = TVoid`), and
     by `resolveBody` for a procedure body. -/
 def Check.statement (s : StmtExprMd) : ResolveM StmtExprMd := do
-  match s.val with
-  | .IfThenElse .. | .Block (_ :: _) .. =>
-    withStackWindow s (Check.resolveStmtExpr s { val := .TVoid, source := s.source })
-  | _ =>
-    let (s', _) ← withStackWindow s (Synth.resolveStmtExpr s); pure s'
+  withInferScope do
+    match s.val with
+    | .IfThenElse .. | .Block (_ :: _) .. =>
+      withStackWindow s (Check.resolveStmtExpr s { val := .TVoid, source := s.source })
+    | _ =>
+      let (s', _) ← withStackWindow s (Synth.resolveStmtExpr s); pure s'
   termination_by sizeOf s * 5 + 4
   decreasing_by all_goals (omega)
 
@@ -3065,6 +3205,16 @@ def Synth.ifThenElse (exprMd : StmtExprMd)
   | some e =>
     let (e', elseTy) ← Synth.resolveStmtExpr e expected?
     mergeStackArms thenStack (← currentStack) (endsAbruptly thenBr) (endsAbruptly e)
+    -- An inference variable in one branch takes the other's type: the wildcard alone would accept
+    -- `if c then mk() else true` as `mk`'s still-open `?T`, which a later argument could solve to
+    -- something `true` is not.
+    let joinSols := solveInferVars thenTy.val elseTy.val
+    recordInferSolutions joinSols source
+    -- Written back into the branches, as a call writes its solutions into its arguments.
+    let thenBr' ← if joinSols.isEmpty then pure thenBr' else zonkExpr thenBr'
+    let e' ← if joinSols.isEmpty then pure e' else zonkExpr e'
+    let thenTy ← zonkType thenTy
+    let elseTy ← zonkType elseTy
     let ctx := (← get).typeLattice
     -- A branch ending in a heap-threading assign synthesizes the plumbing type `Heap`, while a
     -- sibling branch with no field-write stays `void`. These are not incompatible: in statement
@@ -3650,103 +3800,6 @@ def Synth.compoundAssign (exprMd : StmtExprMd)
 
 -- ### Calls
 
-/-- STAGES 1–2 of a call to the generic `proc`: bind type parameters from the return position,
-    then resolve each argument against its parameter type as instantiated so far. Returns the
-    resolved arguments, their types, and the stage-1 bindings, for `genericCallResult`.
-
-    `receiver?` pairs `self`'s type with the receiver's, for an instance call resolved in its
-    lifted form: the receiver is then evidence alongside the first group below. -/
-def Synth.genericCallArgs (exprMd : StmtExprMd) (callee : Identifier) (proc : Procedure)
-    (args : List StmtExprMd) (hArgs : ∀ a ∈ args, sizeOf a < sizeOf exprMd)
-    (expected? : Option HighTypeMd) (receiver? : Option (HighTypeMd × HighTypeMd) := none) :
-    ResolveM (List StmtExprMd × List HighTypeMd × Std.HashMap String HighTypeMd) := do
-  -- Two reads of the lattice on purpose. `ctx0` is what stages 1–2 need, before the arguments
-  -- are resolved; `genericCallResult` re-reads it afterwards, because resolving an argument can
-  -- extend the lattice and every subtype/coercion decision downstream must see the final one.
-  -- Reusing the pre-argument lattice there would silently change which coercions get realized.
-  let ctx0 := (← get).typeLattice
-  let inScope := tvarInScope (← get).scope
-  let paramTys := proc.inputs.map (·.type)
-  let retSubst := returnPositionSubst ctx0 callee proc expected?
-  -- STAGE 2 — resolve each argument, handing it its parameter type instantiated by stage 1.
-  -- This is the check direction reaching one level down: the argument of
-  -- `mapConst(mapConst(false))` is declared `V`, and only the outer call's expected type says
-  -- what `V` is, so without this the inner call has nothing to infer `K` from. Each argument is
-  -- still resolved exactly ONCE — the expected type is passed into synthesis rather than checked
-  -- in a second pass — so no diagnostic or `uniqueId` is produced twice.
-  -- Unfolded so an alias-declared slot (`m: Map<K,V>`) hands down the structural type the
-  -- nested call's own inference can match against.
-  let slotAt := fun (subst : Std.HashMap String HighTypeMd) (i : Nat) =>
-    match (paramTys[i]?).map (fun pTy => substTypeVars subst (ctx0.unfold pTy)) with
-    -- A BARE type variable slot is withheld: it carries no structure, so `matchTypeArg` (which
-    -- keys off the declared shape) can bind nothing from it, while handing it down perturbs
-    -- how generated exceptional code resolves. A STRUCTURED slot that merely MENTIONS a
-    -- variable is kept, and must be: `mapRemove<K,V>`'s `update(m, k, $MapAbsent())` has slot
-    -- `$MapEntry V`, which is what tells `$MapAbsent` which datatype to build even though `V`
-    -- is not ground, so the prelude's own bodies resolve only with such slots.
-    | some ⟨.TVar _, _⟩ => none
-    | other => other
-  -- The arguments are resolved in TWO GROUPS, because a slot is only worth having for an
-  -- argument that can use one, and the evidence for that slot lives in the siblings.
-  -- `choose<T>(setEmpty(), known)` determines `T` from `known` alone, and only then is there a
-  -- slot to hand `setEmpty()`. So the arguments that cannot consume a slot go first and their
-  -- bindings extend the working substitution; those that can follow, each seeing everything
-  -- resolved before it. They are the calls, instance calls included, which
-  -- `LiftInstanceProcedures` makes a static call, and the wrappers that forward the slot to the
-  -- value they produce, such as an `.IfThenElse` or a `.Block`; the wrappers go first, since
-  -- their type may give a call its slot.
-  --
-  -- An argument whose parameter mentions no type variable is CHECKED against it, as for a
-  -- non-generic callee: inference needs nothing from it, and checking keeps the bidirectional
-  -- push and the coercion a frontend realizes into the parameter. It needs no slot either, so it
-  -- goes in the first group.
-  let concreteParam := fun (i : Nat) => (paramTys[i]?).filter (!mentionsTVar ·.val)
-  let isCall := fun (a : StmtExprMd) => a.val matches .Call .. | .New ..
-  let forwardsSlot := fun (a : StmtExprMd) =>
-    a.val matches .IfThenElse .. | .Block (_ :: _) _ _ _ | .Old .. | .OldGuarantee .. | .OldRelies ..
-      | .ProveBy ..
-  let (deferred, immediate) :=
-    args.attach.zipIdx.partition fun (⟨a, _⟩, i) =>
-      (isCall a || forwardsSlot a) && (concreteParam i).isNone
-  let deferred := deferred.filter (!isCall ·.1.1) ++ deferred.filter (isCall ·.1.1)
-  let resolvedImmediate ← immediate.mapM (fun (⟨a, hMem⟩, i) => do
-    have := hMem
-    match concreteParam i with
-    | some pTy => return (i, ← Check.resolveStmtExpr a pTy, pTy)
-    | none =>
-      let (a', aTy) ← Synth.resolveStmtExpr a
-      return (i, a', aTy))
-  -- Their evidence merged OVER `retSubst`, matching stage 3: an argument is direct evidence and
-  -- outranks the expected type. Conflicts are dropped here — `genericCallResult` recomputes them
-  -- over all the arguments, and reporting them twice would duplicate the diagnostic.
-  --
-  -- So is a deferred call's declared result, which is known before the call is resolved:
-  -- `choose(setEmpty(), getS())` needs it to type `setEmpty()`. An instance call's counts too, as
-  -- it will once the lift makes it a static call.
-  let declared ← deferred.filterMapM fun (⟨a, _⟩, i) => do
-    pure ((← declaredCallResult? a).bind fun ty => (paramTys[i]?).map (·, ty))
-  let mut working : Std.HashMap String HighTypeMd := retSubst
-  let evidence : List (HighTypeMd × HighTypeMd) := receiver?.toList ++ declared ++
-    resolvedImmediate.filterMap fun (i, _, aTy) => (paramTys[i]?).map (fun pTy => (pTy, aTy))
-  working := (callSiteTypeSubst ctx0 inScope (evidence.map (·.1)) (evidence.map (·.2))).1.fold
-    (fun acc name ty => acc.insert name ty) working
-  let mut resolvedDeferred : List (Nat × StmtExprMd × HighTypeMd) := []
-  for (⟨a, hMem⟩, i) in deferred do
-    have := hMem
-    let (a', aTy) ← Synth.resolveStmtExpr a (slotAt working i)
-    resolvedDeferred := resolvedDeferred ++ [(i, a', aTy)]
-    if let some pTy := paramTys[i]? then
-      working := (callSiteTypeSubst ctx0 inScope [pTy] [aTy]).1.fold
-        (fun acc name ty => acc.insert name ty) working
-  -- Back to SOURCE ORDER: `genericCallResult` index-zips against `paramTys`.
-  let resolvedByIdx := resolvedImmediate ++ resolvedDeferred
-  let resolved : List (StmtExprMd × HighTypeMd) :=
-    (List.range args.length).filterMap fun i =>
-      (resolvedByIdx.find? (·.1 == i)).map (fun (_, a', aTy) => (a', aTy))
-  return (resolved.map (·.1), resolved.map (·.2), retSubst)
-  termination_by sizeOf exprMd * 5 + 0
-  decreasing_by all_goals (have := hArgs _ ‹_ ∈ args›; omega)
-
 /-- Cases on the arity of the callee's declared outputs.
     ```
     Γ(callee) = static-procedure with inputs Ts                  (Static-Call)
@@ -3855,8 +3908,8 @@ def Synth.staticCall (exprMd : StmtExprMd)
       (argTys.zipIdx.any fun (argTy, i) =>
         !(argTy.val matches .Unknown) &&
         candidates.all fun (_, proc) =>
-          match proc.inputs[i]? with
-          | some p => !isConsistentSubtype ctx argTy p.type
+          match (openInputTypes proc)[i]? with
+          | some p => !isConsistentSubtype ctx argTy p
           -- An arity mismatch is not this argument's fault; leave the blame to
           -- another position (or to `hasUnknownArg` if there is none).
           | none => false)
@@ -3871,9 +3924,12 @@ def Synth.staticCall (exprMd : StmtExprMd)
       -- lookup that path starts from cannot serve an overloaded name, hence the selected procedure
       -- is handed over directly. A monomorphic overload reports its declared result as is.
       if proc.typeArgs.isEmpty then
-        return (.Call none callee' args' [], procReturnType callee proc)
-      let retSubst := returnPositionSubst ctx callee proc expected?
-      return (← genericCallResult callee callee' proc args' argTys expected? retSubst source)
+        return (.Call none callee' args' [], procResultType callee.source proc)
+      let inst ← instantiateCall proc.typeArgs (proc.inputs.map (·.type))
+        (procResultType callee.source proc) source
+      let (args', typeArgs, ty) ← finishCall callee.text callee.text inst
+        resolved expected? (quiet := false) source
+      return (.Call none callee' args' typeArgs, ty)
     | [] =>
       unless suppressDiagnostic do
         let diag := diagnosticFromSource source
@@ -3893,19 +3949,8 @@ def Synth.staticCall (exprMd : StmtExprMd)
       return (.Call none { callee with uniqueId := none } args' [],
               { val := .Unknown, source := callee.source })
 
-  -- GENERIC callee: infer the call's type arguments from the actual argument types
-  -- (`callSiteTypeSubst`, whose docstring covers the inference itself) and report the declared
-  -- return type at that instantiation.
-  --
-  -- Runs AFTER overload selection: `scope` keeps only the last definition of an overloaded
-  -- name, so an overloaded generic must go through `selectOverloads` above, not this lookup.
-  --
-  -- Arguments are SYNTHESIZED rather than checked when their parameter mentions a type variable,
-  -- because inference needs their actual types before the expected ones are known. That gives up
-  -- the bidirectional push for them (an impure-expression argument bottoms out at the synth
-  -- wildcard instead of its own check rule), the same trade the overload path makes; a `.TVar`
-  -- parameter loses no coercion, since it coerces as `refl`. Other arguments are checked, as for
-  -- a non-generic callee.
+  -- GENERIC callee. Runs AFTER overload selection: `scope` keeps only the last definition of an
+  -- overloaded name, so an overloaded generic must go through `selectOverloads` above.
   let genericProc? : Option Procedure := match (← get).scope.get? callee.text with
     | some (_, .staticProcedure proc) | some (_, .instanceProcedure _ proc) =>
       if proc.typeArgs.isEmpty then none else some proc
@@ -3913,8 +3958,15 @@ def Synth.staticCall (exprMd : StmtExprMd)
   if let some gproc := genericProc? then
     let callee' ← resolveRef callee source
       (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
-    let (args', argTys, retSubst) ← Synth.genericCallArgs exprMd callee gproc args
-      (fun _ hMem => by have hsz := exprMd.sizeOf_val_lt; rw [h] at hsz; term_by_mem) expected?
+    let inst ← instantiateCall gproc.typeArgs
+      (gproc.inputs.map (·.type)) (procResultType callee.source gproc) source
+    let hints := expectedHints (← get).typeLattice inst expected?
+    let resolved ← Synth.callArgs exprMd args (fun a hMem => by
+        have hsz := exprMd.sizeOf_val_lt
+        rw [h] at hsz
+        term_by_mem) inst.params hints (exactExpected (← get).typeLattice inst expected?)
+    let args' := resolved.map (·.1)
+    let argTys := resolved.map (·.2)
     -- OPERAND SHAPE guards for the equality wrappers. These are not typing rules — no signature
     -- can express them — so they live here rather than in the inference: a `MultiValuedExpr`
     -- operand is a multi-output call used in value position, an internal pseudo-type with no
@@ -3944,14 +3996,22 @@ def Synth.staticCall (exprMd : StmtExprMd)
           modify fun s => { s with errors := s.errors.push diag }
           return (.Call none callee' args' [], { val := .TBool, source := source })
       | _ => pure ()
-    return (← genericCallResult callee callee' gproc args' argTys expected? retSubst source)
+    let (args', typeArgs, ty) ← finishCall callee.text callee.text inst resolved expected?
+      (quiet := false) source
+    -- `zip` pairs only as far as the shorter list, so a surplus argument would otherwise reach Core
+    -- and fail there as an arity mismatch with no source range and no callee name. Under-arity is
+    -- deliberately not flagged.
+    if args'.length > inst.params.length then
+      let diag := diagnosticFromSource source
+        s!"call to '{callee}' expects {inst.params.length} argument(s) but {args'.length} were provided"
+      modify fun s => { s with errors := s.errors.push diag }
+    return (.Call none callee' args' typeArgs, ty)
 
-  -- GENERIC DATATYPE DESTRUCTOR: `Option..value(o)` is declared to return `T`, and unlike a
-  -- procedure the instantiation is not in a parameter — a destructor's only argument IS the
-  -- datatype value, so `Option<int>` is carried by the RECEIVER's type. Recover it here by
-  -- pairing the datatype's declared type parameters with the receiver's type arguments;
-  -- `getCallInfo` cannot, since it is given only the callee and so reports the gradual
-  -- `Unknown`, under which every use of the result goes unchecked.
+  -- GENERIC DATATYPE DESTRUCTOR: `Opt..v!(o)` is a generic call like any other
+  -- (`instantiateCall`): its one parameter is the datatype at the call's inference variables,
+  -- `Opt<?T>`, and its result the field's type at them, `?T`. So the receiver is checked against
+  -- the datatype (`Opt..v!(rk)` with `rk: Rock` is rejected) and solves its type arguments, and
+  -- one it leaves open (`Opt..v!(Non())`) is solved by the expected type or reported.
   --
   -- Only for a field type that actually mentions a parameter: a concrete field (`Pair..fst` at
   -- `first: int`) is already precise from `getCallInfo`, so it takes the ordinary path below and
@@ -3965,35 +4025,23 @@ def Synth.staticCall (exprMd : StmtExprMd)
     if !dtParams.isEmpty && mentionsTypeParam ctx dtParams fld.type then
       let callee' ← resolveRef callee source
         (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant])
-      let resolved ← args.attach.mapM (fun ⟨a, hMem⟩ => do
-        have := hMem
-        Synth.resolveStmtExpr a)
-      let args' := resolved.map (·.1)
-      -- The receiver's type arguments, when it is a concrete instantiation. `unfold` first so a
-      -- receiver typed through an alias (`type OI = Opt<int>`) still exposes them.
-      let recvArgs : List HighTypeMd := match resolved.head? with
-        | some (_, recvTy) =>
-          match (ctx.unfold recvTy).val with
-          | .Applied _ tyArgs => tyArgs
-          | _ => []
-        | none => []
-      -- With no instantiation to pair against the result is gradual, so a receiver shape this
-      -- cannot resolve yields no rejection. Two shapes land here. A CONSTRUCTOR CALL used
-      -- directly as the receiver carries no type arguments, because `getCallInfo`'s constructor
-      -- arm reports the bare `.UserDefined Opt`; so `Opt..value!(Som(5)) == true` is accepted
-      -- while `var o: Opt<int> := Som(5); Opt..value!(o) == true` is reported.
-      -- `ResolutionTypeCheckTests` pins both. Recovering the first needs the constructor call to
-      -- report its own instantiation, which is a separate change. An `Unknown` receiver (a hole,
-      -- an undefined name) also lands here and must stay gradual.
-      let retTy : HighTypeMd :=
-        if !recvArgs.isEmpty && recvArgs.length == dtParams.length then
-          let subst := (dtParams.zip recvArgs).foldl (fun m (n, t) => m.insert n t) (∅ : Std.HashMap String HighTypeMd)
-          substTypeVars subst fld.type
-        else { val := .Unknown, source := callee.source }
-      -- Recorded like a procedure call's instantiation, and on the same condition.
-      let recorded := if recvArgs.length == dtParams.length
-          && !recvArgs.any (fun t => mentionsUnknown t.val) then recvArgs else []
-      return (.Call none callee' args' recorded, retTy)
+      let receiverShape : HighTypeMd :=
+        { val := .Applied { val := .UserDefined dtName, source := source }
+                          (dtParams.map (fun p => { val := HighType.TVar (mkId p), source := source })),
+          source := source }
+      let inst ← instantiateCall (dtParams.map mkId) [receiverShape]
+        fld.type source
+      let resolved ← Synth.callArgs exprMd args (fun a hMem => by
+          have hsz := exprMd.sizeOf_val_lt
+          rw [h] at hsz
+          term_by_mem) inst.params (expectedHints ctx inst expected?) (exactExpected ctx inst expected?)
+      let (args', typeArgs, ty) ← finishCall callee.text dtName.text inst resolved expected?
+        (quiet := false) source
+      -- An `Unknown` receiver (a hole, an undefined name) keeps the result gradual: a hole is typed
+      -- later (`InferHoleTypes`), and an open variable for it would outlive its statement.
+      if resolved.any (·.2.val matches .Unknown) then
+        return (.Call none callee' args' [], { val := .Unknown, source := callee.source })
+      return (.Call none callee' args' typeArgs, ty)
 
   let callee' ← resolveRef callee source
     (expected := #[.parameter, .staticProcedure, .datatypeConstructor, .datatypeDestructor, .constant, .coroutineType])
@@ -4012,9 +4060,10 @@ def Synth.staticCall (exprMd : StmtExprMd)
   let ctorNode? := (← get).scope.get? callee.text
   if let some (_, .datatypeConstructor typeName ctor) := ctorNode? then
     -- The datatype's own type parameters (empty for a non-generic datatype).
-    let typeParams : List String := match (← get).scope.get? typeName.text with
-      | some (_, .datatypeDefinition dt) => dt.typeArgs.map (·.text)
+    let dtParams : List Identifier := match (← get).scope.get? typeName.text with
+      | some (_, .datatypeDefinition dt) => dt.typeArgs
       | _ => []
+    let typeParams := dtParams.map (·.text)
     if args.length != ctor.args.length then
       let diag := diagnosticFromSource source
         s!"constructor '{callee}' expects {ctor.args.length} argument(s) but {args.length} were provided"
@@ -4036,76 +4085,17 @@ def Synth.staticCall (exprMd : StmtExprMd)
       { val := .Applied { val := .UserDefined typeName, source := source }
                         (typeParams.map (fun p => { val := HighType.TVar (mkId p), source := source })),
         source := source }
-    let ctorRetSubst : Std.HashMap String HighTypeMd :=
-      if typeParams.isEmpty then ∅ else
-      match expected? with
-      | none => ∅
-      | some exp =>
-        match matchTypeArg ctorRetShape.val (ctx.unfold exp).val {} with
-        | none => ∅
-        | some bindings =>
-          -- Tvar-mentioning bindings kept, for the same reason as `retSubst` above.
-          bindings.toList.foldl
-            (fun acc (name, ty) => acc.insert name { val := ty, source := exp.source })
-            (∅ : Std.HashMap String HighTypeMd)
-    -- TVARIZED field types. A datatype's stored constructor arguments keep a type parameter as
-    -- `.UserDefined "T"` (which is why the polymorphic-slot test below is the name-based
-    -- `mentionsTypeParam` rather than a `.TVar` test). Both the slot handed to an argument and the
-    -- inference below need the `.TVar` form: `matchTypeArg` only binds on `.TVar`, and a
-    -- `.UserDefined "T"` binding is not recognised as uninformative, so it CONFLICTS with a real
-    -- one — `Cons(1, Nil())` reported "'int' and 'T' disagree". The raw type is kept for the
-    -- argument check, so declared-type wording in diagnostics is unchanged.
-    let matchFieldTys := fieldTys.map
-      (mapHighTypeNames (fun ctor n => if typeParams.contains n.text then .TVar n else ctor n))
-    let resolvedArgs ← (args.attach.zip (fieldTys.zip matchFieldTys)).mapM
-        (fun (⟨a, hMem⟩, fieldTy, matchFieldTy) => do
-      have := hMem
-      -- A field is a *polymorphic slot* when its declared type mentions one of the
-      -- datatype's own type parameters anywhere — `T`, but equally `TotalMap int T` or
-      -- `Option<T>`. The parameter is erased, so checking the argument against the
-      -- declared type would compare a concrete instantiation against a phantom
-      -- parameter and fail at every construction site; instead the argument is
-      -- synthesized and the deep check is Core's. A field type with no parameter in
-      -- it (a concrete primitive, constrained, composite, or closed generic
-      -- application) is checked here as usual. See `mentionsTypeParam` for why the
-      -- datatype's own `typeParams` list is the reliable source rather than a
-      -- scope lookup at this call site.
-      if mentionsTypeParam ctx typeParams fieldTy then
-        -- Still SYNTHESIZED, not checked: the slot's parameter may be undetermined at this
-        -- point, and an erased parameter accepts any argument. What is new is that the
-        -- stage-1 instantiation is handed down as the expected type, so a nested generic call in
-        -- this slot (`Som(setEmpty())`) can infer from it.
-        let (a', aTy) ← Synth.resolveStmtExpr a (some (substTypeVars ctorRetSubst matchFieldTy))
-        pure (a', aTy)
-      else do
-        let a' ← Check.resolveStmtExpr a fieldTy
-        pure (a', fieldTy))
-    let args' := resolvedArgs.map (·.1)
-    let ctorArgTys := resolvedArgs.map (·.2)
-    -- Bind the remaining parameters from the ARGUMENTS, which win over the expected type for the
-    -- same reason as in the generic-procedure path (direct evidence, no subsumption widening).
-    let inScope := tvarInScope (← get).scope
-    let (ctorArgSubst, ctorConflicts) := callSiteTypeSubst ctx inScope matchFieldTys ctorArgTys
-    let ctorSubst := ctorRetSubst.fold
-      (fun acc name ty => if acc.contains name then acc else acc.insert name ty) ctorArgSubst
-    for (name, t1, t2) in ctorConflicts.reverse do
-      let diag := diagnosticFromSource source
-        (s!"cannot infer type argument '{name}' of '{typeName.text}': "
-          ++ s!"'{formatType t1}' and '{formatType t2}' disagree")
-      modify fun s => { s with errors := s.errors.push diag }
-    -- Report the INSTANTIATED datatype, so a use of the result is checked against the real type
-    -- instead of the bare head's wildcard. This is also what lets a destructor applied directly
-    -- to a constructor call (`Opt..value!(Som(5))`) recover the instantiation.
-    let determined :=
-      callSiteDeterminedTypeParams ctx inScope (requireInScope := true)
-        (matchFieldTys.zip ctorArgTys) ++
-      callSiteDeterminedTypeParams ctx inScope (requireInScope := false)
-        (match expected? with | some exp => [(ctorRetShape, exp)] | none => [])
-    let ctorUnbound := typeParams.filter (fun p => !determined.contains p)
-    -- Suppressed when the expected type already NAMES this datatype. The user did annotate; if
-    -- the annotation still leaves a parameter open it is malformed (`var o: Option := Nothing()`
-    -- for `Option<T>`), and the type-argument arity diagnostic on the annotation is the message
-    -- to act on. Adding "cannot infer T" on top would just restate it from the other side.
+    let inst ← instantiateCall dtParams fieldTys ctorRetShape source
+    let hints := expectedHints ctx inst expected?
+    let resolvedArgs ← Synth.callArgs exprMd args (fun a hMem => by
+        have hsz := exprMd.sizeOf_val_lt
+        rw [h] at hsz
+        term_by_mem) inst.params hints (exactExpected (← get).typeLattice inst expected?)
+    -- "Cannot infer" is left out when the expected type already NAMES this datatype. The user did
+    -- annotate; if the annotation still leaves a parameter open it is malformed
+    -- (`var o: Option := Nothing()` for `Option<T>`), and the type-argument arity diagnostic on the
+    -- annotation is the message to act on. Adding "cannot infer T" on top would just restate it
+    -- from the other side.
     let expectedAlreadyReported : Bool := match expected? with
       | some exp =>
         exp.val matches .Unknown ||
@@ -4113,35 +4103,34 @@ def Synth.staticCall (exprMd : StmtExprMd)
            | some n => n.text == typeName.text
            | none => false)
       | none => false
-    if !typeParams.isEmpty && ctorConflicts.isEmpty && !expectedAlreadyReported
-        && !ctorArgTys.any (·.val matches .Unknown) then
-      unless ctorUnbound.isEmpty do
-        let names := String.intercalate ", " (ctorUnbound.map (fun p => s!"'{p}'"))
-        let what := if ctorUnbound.length == 1 then "type argument" else "type arguments"
-        let diag := diagnosticFromSource source
-          s!"cannot infer {what} {names} of '{typeName.text}': annotate the variable or output \
-             it is assigned to with a concrete type"
-        modify fun s => { s with errors := s.errors.push diag }
-    let ctorRetTy : HighTypeMd :=
-      if typeParams.isEmpty || !ctorUnbound.isEmpty then retTy
-      else substTypeVars ctorSubst ctorRetShape
-    -- RECORD the instantiation on the node, in the DATATYPE's parameter order (the order
-    -- `ctorRetShape` applies them in), so a downstream pass reads a constructor call's
-    -- instantiation off the node instead of getting the bare datatype head. Gated on
-    -- `ctorUnbound.isEmpty` alone: when a parameter is undetermined the diagnostic above already
-    -- said so, and a partial list is worse than none since position carries meaning.
-    let ctorTypeArgs : List HighTypeMd :=
-      if typeParams.isEmpty || !ctorUnbound.isEmpty then []
-      else (typeParams.mapM (fun p => ctorSubst[p]?)).getD []
-    return (.Call none callee' args' ctorTypeArgs, ctorRetTy)
+    let (args', typeArgs, ctorTy) ← finishCall callee.text typeName.text inst resolvedArgs
+      expected? (quiet := expectedAlreadyReported) source
+    -- The INSTANTIATED datatype, an open parameter as its inference variable, which a use of the
+    -- result may still solve; recorded on the node in the datatype's parameter order too. An open
+    -- parameter that is not reported (an `Unknown` expected type, or a malformed annotation with
+    -- its own arity diagnostic) gets the bare head and records nothing.
+    let bare := typeParams.isEmpty || (expectedAlreadyReported && !(← openTypeParams inst).isEmpty)
+    return (.Call none callee' args' (if bare then [] else typeArgs), if bare then retTy else ctorTy)
   -- Surplus arguments (an arity error, reported below) have no declared
   -- parameter type. Pad with `.Unknown` carrying each surplus argument's own
   -- source, so diagnostics point at the offending argument.
   let expectedTys : List HighTypeMd :=
     paramTypes ++ (args.drop paramTypes.length).map (fun a => { val := .Unknown, source := a.source })
+  -- The receiver of a non-generic datatype's destructor is synthesized at that datatype, so a
+  -- generic call in it is solved: `D..ref!(mk())`, and `Composite..ref!(mk())`, which
+  -- `LowerComposite` makes of `ct == mk()`, also when the receiver is a block or an `if`. The
+  -- receiver is still not checked, as any destructor's is not (`getCallInfo`).
+  let recvHint? : Option HighTypeMd ← match ctorNode? with
+    | some (_, .datatypeDestructor dtName _) => do
+      if (← datatypeTypeParamNames dtName.text).isEmpty then
+        pure (some { val := .UserDefined dtName, source := callee.source })
+      else pure none
+    | _ => pure none
   let args' ← (args.attach.zip expectedTys).mapM (fun (⟨a, hMem⟩, paramTy) => do
     have := hMem
-    Check.resolveStmtExpr a paramTy)
+    match recvHint? with
+    | some hint => Prod.fst <$> Synth.resolveStmtExpr a (some hint)
+    | none => Check.resolveStmtExpr a paramTy)
   -- Over-arity check: reject calls that supply MORE arguments than the callee
   -- declares, but *only* when the callee genuinely resolves to a procedure with
   -- a known parameter count (`procArity`). For any other resolution kind —
@@ -4164,6 +4153,68 @@ def Synth.staticCall (exprMd : StmtExprMd)
       | (have hsz := exprMd.sizeOf_val_lt
          rw [h] at hsz
          term_by_mem)
+
+/-- STAGE 2 of a call: resolve each argument once. One whose parameter mentions an inference
+    variable is synthesized and handed its slot (`argSlot`), so its type can solve the variable;
+    the others are checked, keeping the bidirectional push and coercions. Returns each argument
+    with its type, its parameter where it was checked.
+
+    Calls (instance calls too, which `LiftInstanceProcedures` makes static) and allocations go
+    last, so their slots have the evidence of the other arguments and of `known` (a receiver at its
+    `self`, the exact expected type): in `choose<T>(setEmpty(), known)` only `known` fixes `T`. A
+    call inside an `.IfThenElse` or `.Block` is not deferred. -/
+def Synth.callArgs (exprMd : StmtExprMd) (args : List StmtExprMd)
+    (hArgs : ∀ a ∈ args, sizeOf a < sizeOf exprMd) (params : List HighTypeMd)
+    (hints : Std.HashMap String HighTypeMd) (known : List (HighTypeMd × HighTypeMd))
+    : ResolveM (List (StmtExprMd × HighTypeMd)) := do
+  let ctx := (← get).typeLattice
+  let (deferred, immediate) := args.attach.zipIdx.partition fun (⟨a, _⟩, _) =>
+    a.val matches .Call .. | .New ..
+  let mut evidence := known
+  let mut resolved : List (Nat × StmtExprMd × HighTypeMd) := []
+  -- `argEvidence` of `evidence`, kept as its candidates: one argument's are added as it is
+  -- resolved, and all are found again only once a solution may have changed a parameter's zonk, so
+  -- a call with many arguments costs linear, not cubic, time.
+  let inScope := tvarInScope (← get).scope
+  -- Candidates by name, as `CandidatePool`s; only the slot's own variables are decided.
+  let group := fun (m : Std.HashMap String CandidatePool) (cs : List (String × HighTypeMd)) =>
+    cs.foldl (fun m (n, t) => m.insert n ((m.getD n {}).add ctx t)) m
+  -- The inference variables the candidates' zonked parameters mention: a new solution changes a
+  -- parameter's zonk, and so its candidates, only if it solves one of them.
+  let openIn := fun (s : Std.HashSet String) (ps : List HighTypeMd) =>
+    ps.foldl (fun s p => (tvarIdents p.val).foldl (fun s r => if isInferVar r then s.insert r.text else s) s) s
+  let knownZ ← (known.map (·.1)).mapM zonkType
+  let mut candidates := group {} (callSiteCandidates ctx inScope knownZ (known.map (·.2)))
+  let mut watched := openIn {} knownZ
+  let mut solvedAt := (← get).inferSolutions.size
+  for (⟨a, hMem⟩, i) in immediate ++ deferred do
+    have hLt := hArgs a hMem
+    let p := params.getD i { val := .Unknown, source := a.source }
+    if mentionsInferVar p.val then
+      let sols := (← get).inferSolutions
+      if sols.size != solvedAt then
+        if watched.fold (fun b v => b || sols.contains v) false then
+          let zs ← (evidence.map (·.1)).mapM zonkType
+          candidates := group {} (callSiteCandidates ctx inScope zs (evidence.map (·.2)))
+          watched := openIn {} zs
+        solvedAt := sols.size
+      let working := (tvarIdents (ctx.unfold p).val).foldl (init := {}) fun m r =>
+        if !isInferVar r || m.contains r.text then m else
+        match (candidates.getD r.text {}).winner? ctx with
+        | some t => m.insert r.text t
+        | none => m
+      let (a', aTy) ← Synth.resolveStmtExpr a (← argSlot ctx hints working p)
+      evidence := evidence ++ [(p, aTy)]
+      let zp ← zonkType p
+      candidates := group candidates (callSiteCandidates ctx inScope [zp] [aTy])
+      watched := openIn watched [zp]
+      resolved := resolved ++ [(i, a', aTy)]
+    else
+      resolved := resolved ++ [(i, ← Check.resolveStmtExpr a p, p)]
+  return (List.range args.length).filterMap fun i =>
+    (resolved.find? (·.1 == i)).map (·.2)
+  termination_by sizeOf exprMd * 5 + 0
+  decreasing_by all_goals omega
 
 /-- Cases on the arity of the callee's declared outputs.
     ```
@@ -4194,13 +4245,13 @@ def Synth.staticCall (exprMd : StmtExprMd)
     `Synth.staticCall`, the push is bidirectional so block- and
     conditional-shaped arguments route through their own check rules.
 
-    **Generic composites and methods.** A method of a generic composite, or a generic
-    method, is resolved instead the way `Synth.staticCall`'s generic path will resolve the
-    static call `Owner$m(obj, args)` that `LiftInstanceProcedures` turns it into. Only its
-    errors differ: where that call is rejected, what the receiver binds a type parameter to is
-    kept, so that a mismatched argument is the one blamed (on a `Box<int>`, `mix(true, 5)`
-    reports `true`, not a conflict over `T`). A method that redeclares a type parameter of its
-    composite follows the rules above.
+    **Generic composites and methods.** The call is resolved the way `Synth.staticCall`'s
+    generic path will resolve the static call `Owner$m(obj, args)` that
+    `LiftInstanceProcedures` turns it into. Only its errors differ: where that call is
+    rejected, what the receiver binds a type parameter to is kept, so that a mismatched
+    argument is the one blamed. A method that redeclares a type parameter of its composite
+    reads its type parameters as `Unknown`; the re-resolution after the lift reports the
+    clash.
 
     **Ambiguity.** With no single most-specific declarer
     (`MemberResolution.ambiguous`) the call reports the ambiguity and stops, typed
@@ -4285,36 +4336,43 @@ def Synth.instanceCall (exprMd : StmtExprMd)
   -- A key that names no instance procedure, which `resolveRef` has reported, binds nothing.
   let some (_, .instanceProcedure owner proc) := (← get).scope.get? lookupKey.text
     | return (← unbound)
-  -- The receiver is the lifted call's first argument, with `self` its parameter. Not for a method
-  -- that redeclares a type parameter of its composite: the re-resolution after the lift reports
-  -- that clash as a duplicate definition.
+  -- INSTANTIATE the composite's type parameters and the method's own. A raw receiver is read at
+  -- `Unknown` arguments (`rawAtUnknown`).
   let ownerParams := match (← get).scope.get? owner.text with
     | some (_, .compositeType ct) => ct.typeArgs
     | _ => []
-  if let self :: params := proc.inputs then
-    if (!ownerParams.isEmpty || !proc.typeArgs.isEmpty)
-        && !proc.typeArgs.any (fun tv => ownerParams.any (·.text == tv.text)) then
-      let receiver? := some (self.type, targetTy)
-      let proc := { proc with inputs := params }
-      let (args', argTys, retSubst) ← Synth.genericCallArgs exprMd callee proc args
-        (fun _ hMem => by have hsz := exprMd.sizeOf_val_lt; rw [h] at hsz; term_by_mem) expected?
-        receiver?
-      let (call, ty) ← genericCallResult callee callee' proc args' argTys expected? retSubst
-        source receiver?
-      let tyArgs := match call with | .Call none _ _ tyArgs => tyArgs | _ => []
-      return (.Call (some target') callee' args' tyArgs, ty)
-  let retTy := procReturnType lookupKey proc
-  -- The first parameter is the implicit `self` receiver, which is not supplied
-  -- positionally here, so it is dropped before pairing parameter types with `args`.
-  let callParamTypes := (proc.inputs.drop 1).map (·.type)
-  -- As in `Synth.staticCall`: pad surplus arguments with `.Unknown` carrying
-  -- the argument's own source so diagnostics point at the offending argument.
-  let expectedTys : List HighTypeMd :=
-    callParamTypes
-      ++ (args.drop callParamTypes.length).map (fun a => { val := .Unknown, source := a.source })
-  let args' ← (args.attach.zip expectedTys).mapM (fun (⟨a, hMem⟩, paramTy) => do
-    have := hMem
-    Check.resolveStmtExpr a paramTy)
+  let recvTy := rawAtUnknown (← get).typeLattice targetTy
+  let inst ← instantiateCall (ownerParams ++ proc.typeArgs) (proc.inputs.map (·.type))
+    (procResultType lookupKey.source proc) source
+  -- The first parameter is the implicit `self` receiver, which is not supplied positionally.
+  let (selfParam?, callParamTypes) : Option HighTypeMd × List HighTypeMd :=
+    match inst.params with
+    | p :: rest => (some p, rest)
+    | [] => (none, [])
+  let hints := expectedHints (← get).typeLattice inst expected?
+  let resolvedArgs ← Synth.callArgs exprMd args (fun a hMem => by
+        have hsz := exprMd.sizeOf_val_lt
+        rw [h] at hsz
+        term_by_mem) callParamTypes hints
+    ((selfParam?.map (fun p => (p, recvTy))).toList ++ exactExpected (← get).typeLattice inst expected?)
+  -- Where the call would be rejected over what the receiver binds, or at the receiver itself, the
+  -- receiver's non-gradual bindings win, so the argument is blamed: on a `Box<int>`,
+  -- `mix(true, 5)` reports `true`, and `put(anAnimal)` on a `Box<Dog>` the `Animal`.
+  if let some selfP := selfParam? then
+    let ctx := (← get).typeLattice
+    let (lifted, conflicts) ←
+      argEvidence ctx (selfP :: callParamTypes) (recvTy :: resolvedArgs.map (·.2))
+    let selfTy ← zonkType selfP
+    unless conflicts.isEmpty && isConsistentSubtype ctx recvTy (substTypeVars lifted selfTy) do
+      let recv := (← argEvidence ctx [selfP] [recvTy]).1.filter fun _ ty => !ctx.isGradualTop ty
+      recordInferSolutions (recv.fold (fun m k v => m.insert k v.val) {}) source
+  -- The receiver is `self`'s argument.
+  let receiver := (selfParam?.map (fun _ => (target', recvTy))).toList
+  let (allArgs', tyArgs, retTy) ← finishCall callee.text callee.text inst (receiver ++ resolvedArgs)
+    expected? (quiet := false) source (record := proc.typeArgs.map (·.text))
+  let (target', args') := match receiver, allArgs' with
+    | [_], r :: rest => (r, rest)
+    | _, _ => (target', allArgs')
   -- Over-arity check (mirrors `Synth.staticCall`): reject calls supplying more
   -- arguments than the callee declares, comparing against the post-`self`
   -- parameter count. Args are resolved above regardless.
@@ -4322,7 +4380,7 @@ def Synth.instanceCall (exprMd : StmtExprMd)
     let diag := diagnosticFromSource source
       s!"call to '{callee}' expects {callParamTypes.length} argument(s) but {args.length} were provided"
     modify fun s => { s with errors := s.errors.push diag }
-  pure (.Call (some target') callee' args' [], retTy)
+  pure (.Call (some target') callee' args' tyArgs, retTy)
   termination_by sizeOf exprMd * 5 + 1
   decreasing_by
     all_goals first
@@ -5374,7 +5432,7 @@ def resolveProcedure (proc : Procedure) : ResolveM Procedure := do
   let procName' ← match ← defIdForProcedure proc with
     | some id => pure { proc.name with uniqueId := some id }
     | none => resolveRef proc.name
-  withScope do
+  withScope <| withInferScope do
     modify fun s => { s with stackTypes := [], stackWindow := none, exitStacks := [] }
     -- Scope type params first, so `T` in inputs/outputs/body resolves to `.TVar`.
     let typeArgs' ← scopeTypeParams proc.typeArgs
@@ -5451,7 +5509,7 @@ def resolveField (ownerName : Identifier) (field : Field) : ResolveM Field := do
   -- resolveRef returns text = "Owner.field" (the qualified lookup key), but the
   -- field's own name should stay unqualified.
   let name' := { field.name with uniqueId := resolved.uniqueId }
-  let init' ← field.initializer.mapM (Check.resolveStmtExpr · ty')
+  let init' ← field.initializer.mapM (fun e => withInferScope (Check.resolveStmtExpr e ty'))
   return { field with name := name', type := ty', initializer := init' }
 
 def resolveHeapField (field : HeapField) : ResolveM HeapField := do
@@ -5464,7 +5522,7 @@ def resolveInstanceProcedure (typeName : Identifier) (proc : Procedure) : Resolv
   let scopedKey := containerScopedName typeName proc.name
   let resolved ← resolveRef scopedKey
   let procName' := { proc.name with uniqueId := resolved.uniqueId }
-  withScope do
+  withScope <| withInferScope do
     modify fun s => { s with stackTypes := [], stackWindow := none, exitStacks := [] }
     let savedInstType := (← get).instanceTypeName
     modify fun s => { s with instanceTypeName := some typeName.text }
@@ -5544,8 +5602,8 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
     -- in scope when resolving the constraint and witness expressions.
     let (valueName', constraint', witness') ← withScope do
       let valueName' ← defineNameCheckDup ct.valueName (.quantifierVar ct.valueName base')
-      let (constraint', _) ← Synth.resolveStmtExpr ct.constraint
-      let (witness', _) ← Synth.resolveStmtExpr ct.witness
+      let (constraint', _) ← withInferScope (Synth.resolveStmtExpr ct.constraint)
+      let (witness', _) ← withInferScope (Synth.resolveStmtExpr ct.witness)
       return (valueName', constraint', witness')
     return .Constrained { ct with name := ctName', base := base', valueName := valueName',
                                   constraint := constraint', witness := witness' }
@@ -5610,7 +5668,7 @@ def resolveTypeDefinition (td : TypeDefinition) : ResolveM TypeDefinition := do
 /-- Resolve a constant definition. -/
 def resolveConstant (c : Constant) : ResolveM Constant := do
   let ty' ← resolveHighType c.type
-  let init' ← c.initializer.mapM (Check.resolveStmtExpr · ty')
+  let init' ← c.initializer.mapM (fun e => withInferScope (Check.resolveStmtExpr e ty'))
   let name' ← resolveRef c.name
   return { c with name := name', type := ty', initializer := init' }
 
@@ -5899,7 +5957,7 @@ private def placeholderNode : ResolvedNode :=
 /-- Rewrite each `.UserDefined n` with `n ∈ params` to `.TVar n`, so a generic entity's STORED
     signature/fields match the `.TVar` form `resolveHighType` produces in scope. NEEDED: the #1121
     checker reads types from `preRegisterTopLevel`'s maps off RAW nodes, where a param is still
-    `.UserDefined "T"` — else the `.TVar` wildcard never fires (spurious mismatch). No-op if empty.
+    `.UserDefined "T"` — else a call could not instantiate it (spurious mismatch). No-op if empty.
 
     The emitted `.TVar` carries the BINDER's identifier (only its source range is the use
     site's), so the stored type names the parameter by `uniqueId` and not just by spelling.
@@ -5920,7 +5978,7 @@ private def tvarizeParam (params : List Identifier) (p : Parameter) : Parameter 
     of scope, over the given type params. Exactly the three fields a call site
     consults on a scope-resident callee:
     - `inputs`  — argument checking (`getCallInfo`/`overloadAccepts`);
-    - `outputs` — the call's result type (`procReturnType`);
+    - `outputs` — the call's result type (`procResultType`);
     - `throwsType` — the `try`/`catch` binding type (`calleeThrowsName`, which
       matches `.UserDefined`, so a raw `.UserDefined "T"` here makes the CALLER
       collect the bare name `T` and fail to resolve it: "'T' is not defined").
