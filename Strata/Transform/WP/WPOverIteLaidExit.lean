@@ -1777,7 +1777,7 @@ private theorem rtx_maxIdx {Q : Nat → Prop} {i0 : Nat} (h0 : Q i0) :
   | 0, hN => absurd (hN i0 h0) (Nat.not_lt_zero _)
   | N + 1, hN => (Classical.em (Q N)).elim
     (fun hQ => ⟨N, hQ, fun j hj => Nat.le_of_lt_succ (hN j hj)⟩) fun hQ => rtx_maxIdx h0
-      fun i hi => Nat.lt_of_le_of_ne (Nat.le_of_lt_succ (hN i hi)) fun he => hQ (he ▸ hi) 
+      fun i hi => Nat.lt_of_le_of_ne (Nat.le_of_lt_succ (hN i hi)) fun he => hQ (he ▸ hi)
 include iIL in
 /-- On the then path of a laid-out `ite` one of whose arms always exits, with a nonempty body
     (the context holding, the condition true), a feasible loop-free run of the then arm (ending
