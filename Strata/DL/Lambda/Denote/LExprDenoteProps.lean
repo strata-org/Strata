@@ -733,4 +733,70 @@ theorem fvars_annotated_by_freeVars
     · exact ih_tr h_annot.1 h_tr
     · exact ih_body h_annot.2 h_body
 
+/-- Annotations of free variables agree with a type map when every free variable
+    is annotated and every annotated free variable has the map's type wherever
+    the map has that variable. -/
+theorem fvars_annotated_by_of_agree
+    (tyMap : Map T.Identifier LMonoTy) :
+    ∀ e : LExpr T.mono, (∀ y t, (y, t) ∈ LExpr.freeVars e → t.isSome) →
+      (∀ y ann, (y, some ann) ∈ LExpr.freeVars e →
+        ∀ ty, Map.find? tyMap y = some ty → ann = ty) →
+      fvars_annotated_by tyMap e := by
+  have restrict : ∀ {l l' : List (T.Identifier × Option LMonoTy)}, l ⊆ l' →
+      (∀ y t, (y, t) ∈ l' → t.isSome) →
+      (∀ y ann, (y, some ann) ∈ l' → ∀ ty, Map.find? tyMap y = some ty →
+        ann = ty) →
+      (∀ y t, (y, t) ∈ l → t.isSome) ∧
+        (∀ y ann, (y, some ann) ∈ l → ∀ ty, Map.find? tyMap y = some ty →
+          ann = ty) :=
+    fun hsub hann hagree =>
+      ⟨fun y t hmem => hann y t (hsub hmem),
+        fun y ann hmem => hagree y ann (hsub hmem)⟩
+  intro e
+  induction e with
+  | const _ _ => intro _ _; trivial
+  | bvar _ _ => intro _ _; trivial
+  | op _ _ _ => intro _ _; trivial
+  | fvar _ y oty =>
+    intro hann hagree
+    cases oty with
+    | none =>
+      have hsome := hann y none (List.mem_singleton_self _)
+      exact nomatch hsome
+    | some ty =>
+      exact hagree y ty (List.mem_singleton_self _)
+  | abs _ _ _ body ih => exact ih
+  | quant _ _ _ _ tr body ihtr ihbody =>
+    intro hann hagree
+    obtain ⟨hann1, hagree1⟩ :=
+      restrict (List.subset_append_left _ _) hann hagree
+    obtain ⟨hann2, hagree2⟩ :=
+      restrict (List.subset_append_right _ _) hann hagree
+    exact ⟨ihtr hann1 hagree1, ihbody hann2 hagree2⟩
+  | app _ fn arg ihfn iharg =>
+    intro hann hagree
+    obtain ⟨hann1, hagree1⟩ :=
+      restrict (List.subset_append_left _ _) hann hagree
+    obtain ⟨hann2, hagree2⟩ :=
+      restrict (List.subset_append_right _ _) hann hagree
+    exact ⟨ihfn hann1 hagree1, iharg hann2 hagree2⟩
+  | ite _ c t f ihc iht ihf =>
+    intro hann hagree
+    obtain ⟨hannL, hagreeL⟩ :=
+      restrict (List.subset_append_left _ _) hann hagree
+    obtain ⟨hann3, hagree3⟩ :=
+      restrict (List.subset_append_right _ _) hann hagree
+    obtain ⟨hann1, hagree1⟩ :=
+      restrict (List.subset_append_left _ _) hannL hagreeL
+    obtain ⟨hann2, hagree2⟩ :=
+      restrict (List.subset_append_right _ _) hannL hagreeL
+    exact ⟨ihc hann1 hagree1, iht hann2 hagree2, ihf hann3 hagree3⟩
+  | eq _ e1 e2 ih1 ih2 =>
+    intro hann hagree
+    obtain ⟨hann1, hagree1⟩ :=
+      restrict (List.subset_append_left _ _) hann hagree
+    obtain ⟨hann2, hagree2⟩ :=
+      restrict (List.subset_append_right _ _) hann hagree
+    exact ⟨ih1 hann1 hagree1, ih2 hann2 hagree2⟩
+
 end FvarsAnnotatedBy

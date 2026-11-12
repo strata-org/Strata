@@ -10,8 +10,10 @@ import all Strata.DL.Lambda.LExprAliasFree
 import Strata.DL.Lambda.Denote.LExprAnnotated
 import all Strata.DL.Lambda.Denote.LExprAnnotated
 import Strata.DL.Lambda.Denote.LExprAnnotatedProps
+import all Strata.DL.Lambda.Denote.LExprDenoteProps
 import Strata.DL.Lambda.LExprTProps
-import Strata.DL.Lambda.LExprTypeSpecProps
+public import Strata.DL.Lambda.LExprTypeSpec
+public import Strata.DL.Lambda.Denote.Assumptions
 
 /-! # `resolve` produces well-annotated expressions (`HasTypeA`)
 
@@ -20,8 +22,11 @@ satisfies `HasTypeA` — i.e., the type annotations placed by resolution are
 internally consistent. `resolve_HasTypeA_subst` gives the same under any
 substitution absorbing the resolver's; `resolve_opsConsistentR`,
 `resolve_opAnnots` and `resolve_binderAnnotations_known` give the operator and
-binder annotation conditions; and `resolve_fvarAnnots_agree` relates the
-free-variable annotations to the input context.
+binder annotation conditions; `resolve_fvarAnnots_agree` relates the
+free-variable annotations to the input context; `resolve_fvars_annotated_by`
+gives `fvars_annotated_by` for every type map the substituted context holds; and
+`resolve_output_HasType` combines these with the bridge to `HasType` to type
+the output.
 
 ### Comparison with `resolve_HasType`
 
@@ -1294,6 +1299,212 @@ theorem resolve_opsConsistentR [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hasha
     OpsConsistentR C.functions (LExpr.unresolved (LExpr.applySubstT et S)) :=
   OpsConsistentR.of_opAnnots_resolveTy h_sigs h_fresh (Proofs.fullyAnnotated_unresolved _)
     (resolve_opAnnots C Env Env' e et h h_envwf h_fwf S)
+
+/-! ### Constants of the resolver's output -/
+
+/-- Every constant of `resolveAux`'s output has its type name registered in the
+    known types. -/
+private theorem resolveAux_getConsts_known [DecidableEq T.IDMeta]
+    [Hashable T.IDMeta] [HasGen T.IDMeta]
+    (C : LContext T) (Env Env' : TEnv T.IDMeta) (e : LExpr T.mono)
+    (et : LExprT T.mono)
+    (h_res : resolveAux C Env e = .ok (et, Env'))
+    (h_envwf : TEnvWF Env) (h_ne : Env.context.types ≠ [])
+    (h_fwf : FactorySigWF C.functions) :
+    ∀ c ∈ LExpr.getConsts et, C.knownTypes.containsName c.tyName = true := by
+  apply resolveAux_ind
+    (P := fun _ et (C : LContext T) _ _ =>
+      ∀ c ∈ LExpr.getConsts et, C.knownTypes.containsName c.tyName = true)
+    (e := e) (et := et) (C := C) (Env := Env) (Env' := Env')
+    (h_res := h_res) (h_envwf := h_envwf) (h_ne := h_ne) (h_fwf := h_fwf)
+  case h_const =>
+    intro m c et C Env Env' h_res _ _ _ c' hc'
+    obtain ⟨hk, -, rfl, -⟩ :=
+      LExpr.resolveAux_const_shape C Env Env' m c et h_res
+    simp only [LExpr.getConsts, List.mem_singleton] at hc'
+    subst hc'
+    exact hk
+  case h_op =>
+    intro m o oty et C Env Env' h_res _ _ _ c hc
+    obtain ⟨_, _, _, _, _, _, _, h_et, _⟩ :=
+      LExpr.resolveAux_op_shape C Env Env' m o oty et h_res
+    subst h_et
+    simp only [LExpr.getConsts, List.not_mem_nil] at hc
+  case h_fvar =>
+    intro m x fty et C Env Env' h_res _ _ _ c hc
+    obtain ⟨_, _, h_et⟩ :=
+      LExpr.resolveAux_fvar_shape C Env Env' m x fty et h_res
+    subst h_et
+    simp only [LExpr.getConsts, List.not_mem_nil] at hc
+  case h_app =>
+    intro m e1 e2 et C Env Env' e1t Env1 e2t Env2 freshName EnvGen substInfo
+      hRes hRes1 hRes2 hGen hUnify hEt _ _ _ _ _ _ _ _ _ _ _ _ _ ih1 ih2 c hc
+    subst hEt
+    simp only [LExpr.getConsts, List.mem_append] at hc
+    exact hc.elim (ih1 c) (ih2 c)
+  case h_abs =>
+    intro m name annotation body et C Env Env' xv xty Env1 bodyT Env2
+      hRes hBound hBody hEt hEnv' _ _ _ _ _ _ ih c hc
+    subst hEt
+    simp only [LExpr.getConsts, Proofs.getConsts_varCloseT] at hc
+    exact ih c hc
+  case h_quant =>
+    intro m qk name bty triggers body et C Env Env' xvb xtyb Env1 et_body Env2
+      et_tr Env3 substInfo hRes hBound hBody hTr _ hEt _ _ _ _ _ _ _ _ _ _
+      ihBody ihTr c hc
+    subst hEt
+    simp only [LExpr.getConsts, Proofs.getConsts_varCloseT, List.mem_append]
+      at hc
+    exact hc.elim (ihTr c) (ihBody c)
+  case h_eq =>
+    intro m e1 e2 et C Env Env' e1t Env1 e2t Env2 substInfo
+      hRes hRes1 hRes2 hUnify hEt _ _ _ _ _ _ _ _ _ _ ih1 ih2 c hc
+    subst hEt
+    simp only [LExpr.getConsts, List.mem_append] at hc
+    exact hc.elim (ih1 c) (ih2 c)
+  case h_ite =>
+    intro m c th el et C Env Env' ct Env1 tht Env2 elt Env3 substInfo
+      hRes hc ht he hUnify hEt _ _ _ _ _ _ _ _ _ _ _ _ ihc iht ihe c' hc'
+    subst hEt
+    simp only [LExpr.getConsts, List.mem_append] at hc'
+    rcases hc' with (hc' | hc') | hc'
+    · exact ihc c' hc'
+    · exact iht c' hc'
+    · exact ihe c' hc'
+
+/-- Every constant of `LExpr.resolve`'s output, under any type substitution, has
+    its type name registered in the known types. -/
+private theorem resolve_getConsts_known [ToString T.IDMeta]
+    [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+    [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
+    (C : LContext T) (Env Env' : TEnv T.IDMeta) (e : LExpr T.mono)
+    (et : LExprT T.mono)
+    (h : LExpr.resolve C Env e = .ok (et, Env'))
+    (h_envwf : TEnvWF Env) (h_fwf : FactorySigWF C.functions) (S : Subst) :
+    ∀ c ∈ LExpr.getConsts (LExpr.unresolved (LExpr.applySubstT et S)),
+      C.knownTypes.containsName c.tyName = true := by
+  obtain ⟨Env0, et_aux, h_res, h_et, h_wf_init, h_ne0, -, -⟩ :=
+    resolve_resolveAux_init e et C Env Env' h
+  have h_envwf0 := h_wf_init h_envwf
+  intro c hc
+  rw [Proofs.getConsts_unresolved, ← h_et, Proofs.getConsts_applySubstT,
+    Proofs.getConsts_applySubstT] at hc
+  exact resolveAux_getConsts_known C Env0 Env' e et_aux h_res h_envwf0 h_ne0
+    h_fwf c hc
+
+/-! ### The free variables of the resolver's output in the typing context -/
+
+/-- The alias-resolved input context, with the resolver's final substitution
+    applied, holds every annotated free variable of `LExpr.resolve`'s output at
+    its annotation as a monotype. -/
+private theorem resolve_freeVars_ctx [ToString T.IDMeta] [DecidableEq T.IDMeta]
+    [Hashable T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)]
+    [Std.ToFormat T.Metadata]
+    (C : LContext T) (Env Env' : TEnv T.IDMeta) (e : LExpr T.mono)
+    (et : LExprT T.mono)
+    (h : LExpr.resolve C Env e = .ok (et, Env'))
+    (h_envwf : TEnvWF Env) (h_fwf : FactorySigWF C.functions)
+    (h_mono : MonoScope Env.context) :
+    ∀ y ann, (y, some ann) ∈ LExpr.freeVars (LExpr.unresolved et) →
+      (TContext.subst Env.context.resolveTypes
+        Env'.stateSubstInfo.subst).types.find? y = some (.forAll [] ann) := by
+  have h_abs :=
+    Subst.absorbs_refl Env'.stateSubstInfo.subst Env'.stateSubstInfo.isWF
+  obtain ⟨-, etAux, -, h_et, -⟩ := resolve_resolveAux_init e et C Env Env' h
+  have h_idem : applySubstT et Env'.stateSubstInfo.subst = et := by
+    rw [← h_et, applySubstT_absorbs _ _ h_abs]
+  have hagree :=
+    resolve_fvarAnnots_agree C Env Env' e et h h_envwf h_fwf h_mono _ h_abs
+  rw [h_idem] at hagree
+  intro y ann hmem
+  obtain ⟨ty, hfind, rfl⟩ := hagree y ann hmem
+  exact TContext_types_subst_find Env.context.resolveTypes.types
+    Env'.stateSubstInfo.subst y (.forAll [] ty) hfind
+
+/-- Every free variable of `LExpr.resolve`'s output is annotated, and the
+    annotations agree with any type map whose entries the alias-resolved input
+    context, with the final substitution applied, holds as monotypes. -/
+public theorem resolve_fvars_annotated_by [ToString T.IDMeta]
+    [DecidableEq T.IDMeta] [Hashable T.IDMeta] [HasGen T.IDMeta]
+    [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
+    (C : LContext T) (Env Env' : TEnv T.IDMeta) (e : LExpr T.mono)
+    (et : LExprT T.mono)
+    (h : LExpr.resolve C Env e = .ok (et, Env'))
+    (h_envwf : TEnvWF Env) (h_fwf : FactorySigWF C.functions)
+    (h_mono : MonoScope Env.context)
+    (tyMap : Map T.Identifier LMonoTy)
+    (hlink : ∀ y mty, Map.find? tyMap y = some mty →
+      (TContext.subst Env.context.resolveTypes
+        Env'.stateSubstInfo.subst).types.find? y = some (.forAll [] mty)) :
+    fvars_annotated_by tyMap (LExpr.unresolved et) := by
+  have hctx := resolve_freeVars_ctx C Env Env' e et h h_envwf h_fwf h_mono
+  have hsome := freeVars_isSome_of_fullyAnnotated
+    (Proofs.fullyAnnotated_unresolved et)
+  refine fvars_annotated_by_of_agree tyMap _ hsome ?_
+  intro y ann hmem ty hfind
+  have hl := hlink y ty hfind
+  rw [hctx y ann hmem] at hl
+  exact (LTy.forAll.inj (Option.some.inj hl)).2
+
+/-! ### Polymorphic typing of the resolver's output -/
+
+/-- The output of a successful `LExpr.resolve` has polymorphic typing at its
+    reported monotype, in the alias-resolved input context with the resolver's
+    final substitution applied. The input context stores only monotypes, the
+    factory's signatures are well formed and registered, `bool`, the literal
+    types and the range of the initial substitution are registered, and no
+    alias is named like a registered type. -/
+public theorem resolve_output_HasType [ToString T.IDMeta] [DecidableEq T.IDMeta]
+    [Hashable T.IDMeta] [HasGen T.IDMeta] [Inhabited T.IDMeta]
+    [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata]
+    (C : LContext T) (Env Env' : TEnv T.IDMeta) (e : LExpr T.mono)
+    (et : LExprT T.mono)
+    (h : LExpr.resolve C Env e = .ok (et, Env'))
+    (h_envwf : TEnvWF Env) (h_fwf : FactorySigWF C.functions)
+    (h_resolved : TContext.AliasesResolved Env.context)
+    (h_mono : MonoScope Env.context)
+    (h_sigs : FactorySigsKnown C.knownTypes C.functions)
+    (h_fresh : ∀ al ∈ Env.context.aliases,
+      KnownTypes.containsName C.knownTypes al.name = false)
+    (h_bool : C.knownTypes["bool"]? = some 0) (h_lit : LiteralTysKnown C)
+    (h_range : Subst.RangeKnown Env.stateSubstInfo.subst C.knownTypes) :
+    LExpr.HasType C
+      (TContext.subst Env.context.resolveTypes Env'.stateSubstInfo.subst)
+      (LExpr.unresolved et) (.forAll [] et.toLMonoTy) := by
+  have h_abs :=
+    Subst.absorbs_refl Env'.stateSubstInfo.subst Env'.stateSubstInfo.isWF
+  obtain ⟨-, etAux, -, h_et, -⟩ := resolve_resolveAux_init e et C Env Env' h
+  have h_idem : applySubstT et Env'.stateSubstInfo.subst = et := by
+    rw [← h_et, applySubstT_absorbs _ _ h_abs]
+  have hA := resolve_HasTypeA e et C Env Env' h h_envwf h_fwf h_resolved
+  have hctx := resolve_freeVars_ctx C Env Env' e et h h_envwf h_fwf h_mono
+  have hop :=
+    resolve_opsConsistentR C Env Env' e et h h_envwf h_fwf h_sigs h_fresh
+    Env'.stateSubstInfo.subst
+  have hann :=
+    resolve_opAnnots C Env Env' e et h h_envwf h_fwf Env'.stateSubstInfo.subst
+  have hconst := resolve_getConsts_known C Env Env' e et h h_envwf h_fwf
+    Env'.stateSubstInfo.subst
+  have hrange :=
+    (resolve_RangeKnown e et C Env Env' h h_envwf h_fwf h_sigs.1 h_bool h_lit
+    h_range).1
+  have hbind := resolve_binderAnnotations_known C Env Env' e et h h_envwf h_fwf
+    Env'.stateSubstInfo.subst h_abs hrange
+  rw [h_idem] at hop hann hconst hbind
+  have hdecl : ∀ o ∈ LExpr.getOps (LExpr.unresolved et),
+      ∃ f ty, C.functions[o.name]? = some f ∧ f.type = .ok ty := by
+    intro o ho
+    obtain ⟨ty, hty⟩ := exists_opAnnots_of_fullyAnnotated
+      (Proofs.fullyAnnotated_unresolved et) o ho
+    obtain ⟨f, xs, body, hf, hft, -⟩ := hann o ty hty
+    exact ⟨f, .forAll xs body, hf, hft⟩
+  have hfreshΓ : ∀ al ∈ (TContext.subst Env.context.resolveTypes
+      Env'.stateSubstInfo.subst).aliases,
+      KnownTypes.containsName C.knownTypes al.name = false := by
+    rw [TContext.subst_aliases]
+    exact h_fresh
+  exact HasType_of_HasTypeA_of_annots hA hctx hop hdecl hconst h_fwf h_sigs
+    hbind hfreshΓ
 
 end
 

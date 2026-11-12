@@ -101,64 +101,6 @@ theorem getVars_replaceMetadata1 (r : Tbase.Metadata) (e : LExpr Tbase.mono) :
   cases e <;> rfl
 
 omit [DecidableEq Tbase.IDMeta] in
-/-- Free variables introduced by `substK` come from the base expression or the
-    substituted term. -/
-theorem getVars_substK_mem (k : Nat) (s : Tbase.mono.base.Metadata → LExpr Tbase.mono)
-    (e : LExpr Tbase.mono) (y : Tbase.Identifier)
-    (hy : y ∈ LExpr.LExpr.getVars (LExpr.substK k s e)) :
-    y ∈ LExpr.LExpr.getVars e ∨ ∃ m, y ∈ LExpr.LExpr.getVars (s m) := by
-  induction e generalizing k with
-  | const | op => simp [LExpr.substK, LExpr.LExpr.getVars] at hy
-  | bvar m i =>
-    simp only [LExpr.substK] at hy
-    split at hy
-    · exact Or.inr ⟨m, hy⟩
-    · simp [LExpr.LExpr.getVars] at hy
-  | fvar m x ty => simp only [LExpr.substK] at hy; exact Or.inl hy
-  | abs _ _ _ _ ih =>
-    simp only [LExpr.substK, LExpr.LExpr.getVars] at hy
-    exact ih (k + 1) hy
-  | quant _ _ _ _ _ _ iht ihb =>
-    simp only [LExpr.substK, LExpr.LExpr.getVars, List.mem_append] at hy
-    rcases hy with h | h
-    · rcases iht (k + 1) h with hl | hr
-      · exact Or.inl (by simp only [LExpr.LExpr.getVars, List.mem_append]; exact Or.inl hl)
-      · exact Or.inr hr
-    · rcases ihb (k + 1) h with hl | hr
-      · exact Or.inl (by simp only [LExpr.LExpr.getVars, List.mem_append]; exact Or.inr hl)
-      · exact Or.inr hr
-  | app _ _ _ ih1 ih2 =>
-    simp only [LExpr.substK, LExpr.LExpr.getVars, List.mem_append] at hy
-    rcases hy with h | h
-    · rcases ih1 k h with hl | hr
-      · exact Or.inl (by simp only [LExpr.LExpr.getVars, List.mem_append]; exact Or.inl hl)
-      · exact Or.inr hr
-    · rcases ih2 k h with hl | hr
-      · exact Or.inl (by simp only [LExpr.LExpr.getVars, List.mem_append]; exact Or.inr hl)
-      · exact Or.inr hr
-  | ite _ _ _ _ ih1 ih2 ih3 =>
-    simp only [LExpr.substK, LExpr.LExpr.getVars, List.mem_append] at hy
-    rcases hy with (h | h) | h
-    · rcases ih1 k h with hl | hr
-      · exact Or.inl (by simp only [LExpr.LExpr.getVars, List.mem_append]; exact Or.inl (Or.inl hl))
-      · exact Or.inr hr
-    · rcases ih2 k h with hl | hr
-      · exact Or.inl (by simp only [LExpr.LExpr.getVars, List.mem_append]; exact Or.inl (Or.inr hl))
-      · exact Or.inr hr
-    · rcases ih3 k h with hl | hr
-      · exact Or.inl (by simp only [LExpr.LExpr.getVars, List.mem_append]; exact Or.inr hl)
-      · exact Or.inr hr
-  | eq _ _ _ ih1 ih2 =>
-    simp only [LExpr.substK, LExpr.LExpr.getVars, List.mem_append] at hy
-    rcases hy with h | h
-    · rcases ih1 k h with hl | hr
-      · exact Or.inl (by simp only [LExpr.LExpr.getVars, List.mem_append]; exact Or.inl hl)
-      · exact Or.inr hr
-    · rcases ih2 k h with hl | hr
-      · exact Or.inl (by simp only [LExpr.LExpr.getVars, List.mem_append]; exact Or.inr hl)
-      · exact Or.inr hr
-
-omit [DecidableEq Tbase.IDMeta] in
 /-- Free variables introduced by `mkApp` come from the head or an argument. -/
 theorem getVars_mkApp_mem (m : Tbase.Metadata) (op : LExpr Tbase.mono)
     (args : List (LExpr Tbase.mono)) (y : Tbase.Identifier)

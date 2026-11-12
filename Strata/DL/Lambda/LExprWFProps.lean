@@ -46,6 +46,12 @@ closed (`substFvars_eq_substFvarsLifting_of_lcAt`).
 ### `getVars` and `freeVars`
 `getVars` is the identifier projection of `freeVars` (`getVars_eq_freeVars_idents`),
 so closed terms have no `getVars` (`closed_implies_getVars_nil`).
+Opening a binder keeps the operators, constants and binder annotations
+(`getOps_varOpen`, `getConsts_varOpen`, `binderAnnotations_varOpen`) and adds
+at most the opened variable to `freeVars` (`varOpen_freeVars_subset`); every
+free variable of `substK` comes from the base or the substituted term
+(`freeVars_substK_mem`, `getVars_substK_mem`); some identifier is always fresh
+(`exists_notMem_getVars`, `fresh_of_notMem_getVars`).
 
 ### Beta reduction (`betaReduce` / `betaReduceRedexes*`)
 On a locally-closed redex, the lifting/decrementing reduction coincides with
@@ -65,6 +71,10 @@ constant-lambda redex erases its argument's operators
 two substitutions compose into one (`substFvarsBy_comp`), and substituting expressions
 without operators adds no operator (`getOps_substFvarsBy`). `freeVars_substFvars` says where
 each free variable of a substitution's result comes from.
+
+### Fully annotated expressions
+In a fully annotated expression every free variable and every operator carries an
+annotation (`freeVars_isSome_of_fullyAnnotated`, `exists_opAnnots_of_fullyAnnotated`).
 -/
 
 namespace Lambda
@@ -649,6 +659,238 @@ theorem allUserProvidedTypes_fvarAnnotations {T : LExprParamsT} {p : T.TypeType 
   intro e
   induction e <;> simp_all [LExpr.allUserProvidedTypes, LExpr.fvarAnnotations, or_imp,
     Option.all_eq_true]
+
+/-- An identifier absent from an expression's free-variable names is fresh for
+    the expression at any annotation. -/
+public theorem fresh_of_notMem_getVars {T : LExprParams} {x : T.Identifier}
+    {t : Option LMonoTy} {e : LExpr T.mono} (h : x ∉ LExpr.LExpr.getVars e) :
+    LExpr.fresh ((x, t) : IdentT LMonoTy T.IDMeta) e := by
+  intro hmem
+  rw [getVars_eq_freeVars_idents] at h
+  exact h (List.mem_map.mpr ⟨(x, t), hmem, rfl⟩)
+
+/-- Some identifier does not occur free in a given expression. Identifiers carry
+    a string name, and only finitely many names occur. -/
+public theorem exists_notMem_getVars {T : LExprParams} [Inhabited T.IDMeta]
+    (e : LExpr T.mono) :
+    ∃ x : T.Identifier, x ∉ LExpr.LExpr.getVars e := by
+  obtain ⟨sname, hsname⟩ :=
+    String.exists_notMem_strings ((LExpr.LExpr.getVars e).map (fun y => y.name))
+  refine ⟨⟨sname, default⟩, fun hmem => hsname ?_⟩
+  exact List.mem_map.mpr ⟨⟨sname, default⟩, hmem, rfl⟩
+
+/-! ### Opening a binder: operators, constants, annotations and free variables
+
+Replacing a de Bruijn variable by a free variable rewrites only variable
+occurrences. -/
+
+/-- Opening a binder leaves the operators of an expression unchanged. -/
+public theorem getOps_varOpen {T : LExprParams} (x : IdentT LMonoTy T.IDMeta) :
+    ∀ (k : Nat) (e : LExpr T.mono),
+      LExpr.getOps (LExpr.varOpen k x e) = LExpr.getOps e := by
+  intro k e
+  unfold LExpr.varOpen
+  induction e generalizing k <;> simp only [LExpr.substK, LExpr.getOps, *] <;>
+    split <;> rfl
+
+/-- Opening a binder leaves the constants of an expression unchanged. -/
+public theorem getConsts_varOpen {T : LExprParams}
+    (x : IdentT LMonoTy T.IDMeta) :
+    ∀ (k : Nat) (e : LExpr T.mono),
+      LExpr.getConsts (LExpr.varOpen k x e) = LExpr.getConsts e := by
+  intro k e
+  unfold LExpr.varOpen
+  induction e generalizing k <;>
+    simp only [LExpr.substK, LExpr.getConsts, *] <;> split <;> rfl
+
+/-- Opening a binder leaves an expression's binder annotations unchanged. -/
+public theorem binderAnnotations_varOpen {T : LExprParams}
+    (x : IdentT LMonoTy T.IDMeta) :
+    ∀ (k : Nat) (e : LExpr T.mono),
+      LExpr.binderAnnotations (LExpr.varOpen k x e) =
+        LExpr.binderAnnotations e := by
+  intro k e
+  unfold LExpr.varOpen
+  induction e generalizing k <;>
+    simp only [LExpr.substK, LExpr.binderAnnotations, *] <;>
+    split <;> rfl
+
+/-- Every free variable of `substK k s e` is a free variable of `e` or of some
+    substituted term `s m`. -/
+public theorem freeVars_substK_mem {T : LExprParams} (k : Nat)
+    (s : T.mono.base.Metadata → LExpr T.mono) (e : LExpr T.mono)
+    (y : T.Identifier × Option LMonoTy)
+    (hy : y ∈ LExpr.freeVars (LExpr.substK k s e)) :
+    y ∈ LExpr.freeVars e ∨ ∃ m, y ∈ LExpr.freeVars (s m) := by
+  induction e generalizing k with
+  | const | op =>
+    simp only [LExpr.substK, LExpr.freeVars, List.not_mem_nil] at hy
+  | bvar m i =>
+    simp only [LExpr.substK] at hy
+    split at hy
+    · exact Or.inr ⟨m, hy⟩
+    · simp only [LExpr.freeVars, List.not_mem_nil] at hy
+  | fvar => exact Or.inl hy
+  | abs _ _ _ _ ih =>
+    simp only [LExpr.substK, LExpr.freeVars] at hy ⊢
+    exact ih (k + 1) hy
+  | quant _ _ _ _ _ _ iht ihb =>
+    simp only [LExpr.substK, LExpr.freeVars, List.mem_append] at hy ⊢
+    rcases hy with h | h
+    · exact (iht (k + 1) h).imp_left Or.inl
+    · exact (ihb (k + 1) h).imp_left Or.inr
+  | app _ _ _ ih1 ih2 | eq _ _ _ ih1 ih2 =>
+    simp only [LExpr.substK, LExpr.freeVars, List.mem_append] at hy ⊢
+    rcases hy with h | h
+    · exact (ih1 k h).imp_left Or.inl
+    · exact (ih2 k h).imp_left Or.inr
+  | ite _ _ _ _ ih1 ih2 ih3 =>
+    simp only [LExpr.substK, LExpr.freeVars, List.mem_append] at hy ⊢
+    rcases hy with (h | h) | h
+    · exact (ih1 k h).imp_left (fun hm => Or.inl (Or.inl hm))
+    · exact (ih2 k h).imp_left (fun hm => Or.inl (Or.inr hm))
+    · exact (ih3 k h).imp_left Or.inr
+
+/-- Free variables introduced by `substK` come from the base expression or the
+    substituted term. -/
+public theorem getVars_substK_mem {T : LExprParams} (k : Nat)
+    (s : T.mono.base.Metadata → LExpr T.mono) (e : LExpr T.mono)
+    (y : T.Identifier) (hy : y ∈ LExpr.LExpr.getVars (LExpr.substK k s e)) :
+    y ∈ LExpr.LExpr.getVars e ∨ ∃ m, y ∈ LExpr.LExpr.getVars (s m) := by
+  rw [getVars_eq_freeVars_idents] at hy
+  obtain ⟨p, hp, hpy⟩ := List.mem_map.mp hy
+  subst hpy
+  rcases freeVars_substK_mem k s e p hp with h | ⟨m, hm⟩
+  · rw [getVars_eq_freeVars_idents]
+    exact Or.inl (List.mem_map.mpr ⟨p, h, rfl⟩)
+  · refine Or.inr ⟨m, ?_⟩
+    rw [getVars_eq_freeVars_idents]
+    exact List.mem_map.mpr ⟨p, hm, rfl⟩
+
+/-- `varOpen k x e` only adds `x` to the free variables: every fvar of the
+    opened expression is either an original fvar of `e` or the new `x`. -/
+public theorem varOpen_freeVars_subset {T : LExprParams}
+    (k : Nat) (x : T.mono.base.Identifier × Option LMonoTy) (e : LExpr T.mono) :
+    ∀ y, y ∈ LExpr.freeVars (LExpr.varOpen k x e) →
+      y = x ∨ y ∈ LExpr.freeVars e := by
+  intro y hy
+  rcases freeVars_substK_mem k (fun m => .fvar m x.fst x.snd) e y hy with
+    h | ⟨m, hm⟩
+  · exact Or.inr h
+  · simp only [LExpr.freeVars, List.mem_singleton] at hm
+    exact Or.inl hm
+
+/-! ### Fully annotated expressions -/
+
+/-- Every free variable of a fully annotated expression carries an
+    annotation. -/
+public theorem freeVars_isSome_of_fullyAnnotated {T : LExprParams}
+    {GenericTy : Type} {e : LExpr ⟨T, GenericTy⟩}
+    (h : LExpr.fullyAnnotated e = true) :
+    ∀ y t, (y, t) ∈ LExpr.freeVars e → t.isSome := by
+  induction e with
+  | const | op | bvar =>
+    intro y t hmem
+    simp only [LExpr.freeVars, List.not_mem_nil] at hmem
+  | fvar m x ty =>
+    intro y t hmem
+    simp only [LExpr.freeVars, List.mem_singleton, Prod.mk.injEq] at hmem
+    simp only [LExpr.fullyAnnotated] at h
+    rw [hmem.2]
+    exact h
+  | abs m name ty body ih =>
+    simp only [LExpr.fullyAnnotated] at h
+    exact ih h
+  | quant m k name ty tr body ihtr ihbody =>
+    simp only [LExpr.fullyAnnotated, Bool.and_eq_true] at h
+    intro y t hmem
+    simp only [LExpr.freeVars, List.mem_append] at hmem
+    exact hmem.elim (ihtr h.1.2 y t) (ihbody h.2 y t)
+  | app m fn arg ihfn iharg =>
+    simp only [LExpr.fullyAnnotated, Bool.and_eq_true] at h
+    intro y t hmem
+    simp only [LExpr.freeVars, List.mem_append] at hmem
+    exact hmem.elim (ihfn h.1 y t) (iharg h.2 y t)
+  | ite m c th el ihc iht ihe =>
+    simp only [LExpr.fullyAnnotated, Bool.and_eq_true] at h
+    intro y t hmem
+    simp only [LExpr.freeVars, List.mem_append] at hmem
+    rcases hmem with (hmem | hmem) | hmem
+    · exact ihc h.1.1 y t hmem
+    · exact iht h.1.2 y t hmem
+    · exact ihe h.2 y t hmem
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.fullyAnnotated, Bool.and_eq_true] at h
+    intro y t hmem
+    simp only [LExpr.freeVars, List.mem_append] at hmem
+    exact hmem.elim (ih1 h.1 y t) (ih2 h.2 y t)
+
+/-- Every operator of a fully annotated expression carries an annotation, so it
+    appears among the expression's annotated operators. -/
+public theorem exists_opAnnots_of_fullyAnnotated {T : LExprParamsT}
+    {e : LExpr T} (h : LExpr.fullyAnnotated e = true) :
+    ∀ o ∈ LExpr.getOps e, ∃ ty, (o, ty) ∈ LExpr.opAnnots e := by
+  induction e with
+  | const | bvar | fvar =>
+    intro o ho
+    simp only [LExpr.getOps, List.not_mem_nil] at ho
+  | op m name ty =>
+    intro o ho
+    simp only [LExpr.getOps, List.mem_singleton] at ho
+    subst ho
+    cases ty with
+    | none =>
+      simp only [LExpr.fullyAnnotated, Option.isSome_none,
+        Bool.false_eq_true] at h
+    | some t =>
+      refine ⟨t, ?_⟩
+      simp only [LExpr.opAnnots, Option.toList_some, List.map_cons,
+        List.map_nil, List.mem_singleton]
+  | abs m name ty body ih =>
+    simp only [LExpr.fullyAnnotated] at h
+    exact ih h
+  | quant m k name ty tr body ihtr ihbody =>
+    simp only [LExpr.fullyAnnotated, Bool.and_eq_true] at h
+    intro o ho
+    simp only [LExpr.getOps, List.mem_append] at ho
+    simp only [LExpr.opAnnots, List.mem_append]
+    rcases ho with ho | ho
+    · obtain ⟨t, ht⟩ := ihtr h.1.2 o ho
+      exact ⟨t, Or.inl ht⟩
+    · obtain ⟨t, ht⟩ := ihbody h.2 o ho
+      exact ⟨t, Or.inr ht⟩
+  | app m fn arg ihfn iharg =>
+    simp only [LExpr.fullyAnnotated, Bool.and_eq_true] at h
+    intro o ho
+    simp only [LExpr.getOps, List.mem_append] at ho
+    simp only [LExpr.opAnnots, List.mem_append]
+    rcases ho with ho | ho
+    · obtain ⟨t, ht⟩ := ihfn h.1 o ho
+      exact ⟨t, Or.inl ht⟩
+    · obtain ⟨t, ht⟩ := iharg h.2 o ho
+      exact ⟨t, Or.inr ht⟩
+  | ite m c th el ihc iht ihe =>
+    simp only [LExpr.fullyAnnotated, Bool.and_eq_true] at h
+    intro o ho
+    simp only [LExpr.getOps, List.mem_append] at ho
+    simp only [LExpr.opAnnots, List.mem_append]
+    rcases ho with (ho | ho) | ho
+    · obtain ⟨t, ht⟩ := ihc h.1.1 o ho
+      exact ⟨t, Or.inl (Or.inl ht)⟩
+    · obtain ⟨t, ht⟩ := iht h.1.2 o ho
+      exact ⟨t, Or.inl (Or.inr ht)⟩
+    · obtain ⟨t, ht⟩ := ihe h.2 o ho
+      exact ⟨t, Or.inr ht⟩
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.fullyAnnotated, Bool.and_eq_true] at h
+    intro o ho
+    simp only [LExpr.getOps, List.mem_append] at ho
+    simp only [LExpr.opAnnots, List.mem_append]
+    rcases ho with ho | ho
+    · obtain ⟨t, ht⟩ := ih1 h.1 o ho
+      exact ⟨t, Or.inl ht⟩
+    · obtain ⟨t, ht⟩ := ih2 h.2 o ho
+      exact ⟨t, Or.inr ht⟩
 
 /-! ## Properties of beta reduction
 

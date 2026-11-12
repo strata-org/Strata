@@ -59,8 +59,9 @@ Two free-variable families live here:
 * `typeBoundVar_knownVars_reverse` — a var known after `typeBoundVar` is either
   the generated binder or was already known.
 * `inferFVar_mem_knownVars` — `inferFVar` succeeds only for known vars.
-* `getVars_replaceMetadata`, `getOps_replaceMetadata` — rewriting metadata
-  keeps the free variables and the operators.
+* `getVars_replaceMetadata`, `getOps_replaceMetadata`,
+  `getConsts_replaceMetadata` — rewriting metadata keeps the free variables,
+  the operators and the constants.
 * The annotation lemmas — how the operators and the free-variable and binder
   annotations of the `unresolved` form change under type substitution and
   under closing a variable.
@@ -380,6 +381,23 @@ theorem getOps_replaceMetadata {Tt : LExprParamsT} {NewMeta : Type}
   | eq m e1 e2 ih1 ih2 =>
     simp only [LExpr.replaceMetadata, LExpr.getOps, ih1, ih2]
 
+/-- `getConsts` ignores metadata: it is invariant under `replaceMetadata`. -/
+theorem getConsts_replaceMetadata {Tt : LExprParamsT} {NewMeta : Type}
+    (e : LExpr Tt) (f : Tt.base.Metadata → NewMeta) :
+    LExpr.getConsts (LExpr.replaceMetadata e f) = LExpr.getConsts e := by
+  induction e with
+  | const | op | bvar | fvar => rfl
+  | abs m name ty e ih =>
+    simp only [LExpr.replaceMetadata, LExpr.getConsts, ih]
+  | quant m qk name ty tr e ih_tr ih_e =>
+    simp only [LExpr.replaceMetadata, LExpr.getConsts, ih_tr, ih_e]
+  | app m e1 e2 ih1 ih2 =>
+    simp only [LExpr.replaceMetadata, LExpr.getConsts, ih1, ih2]
+  | ite m c t f ihc iht ihf =>
+    simp only [LExpr.replaceMetadata, LExpr.getConsts, ihc, iht, ihf]
+  | eq m e1 e2 ih1 ih2 =>
+    simp only [LExpr.replaceMetadata, LExpr.getConsts, ih1, ih2]
+
 omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashable T.IDMeta] [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 /-- `getVars` is invariant under `applySubstT` (only type annotations change). -/
 theorem getVars_applySubstT (et : LExprT T.mono) (S : Subst) :
@@ -396,6 +414,16 @@ theorem getOps_applySubstT (et : LExprT T.mono) (S : Subst) :
   unfold LExpr.applySubstT
   exact getOps_replaceMetadata et _
 
+omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [Hashable T.IDMeta]
+  [Std.ToFormat T.IDMeta] [HasGen T.IDMeta] [Std.ToFormat (LFunc T)]
+  [Std.ToFormat T.Metadata] in
+/-- `getConsts` is invariant under `applySubstT`, which only changes
+    annotations. -/
+theorem getConsts_applySubstT (et : LExprT T.mono) (S : Subst) :
+    LExpr.getConsts (LExpr.applySubstT et S) = LExpr.getConsts et := by
+  unfold LExpr.applySubstT
+  exact getConsts_replaceMetadata et _
+
 omit [ToString T.IDMeta] [Hashable T.IDMeta] [Std.ToFormat T.IDMeta]
   [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 /-- Closing a variable into a bound variable does not change the operators. -/
@@ -406,6 +434,27 @@ theorem getOps_varCloseT (k : Nat) (xv : T.Identifier) (et : LExprT T.mono) :
     simp only [LExpr.varCloseT]
     split <;> rfl
   | _ => simp_all [LExpr.varCloseT, LExpr.getOps]
+
+omit [ToString T.IDMeta] [Hashable T.IDMeta] [Std.ToFormat T.IDMeta]
+  [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
+/-- Closing a variable into a bound variable does not change the constants. -/
+theorem getConsts_varCloseT (k : Nat) (xv : T.Identifier)
+    (et : LExprT T.mono) :
+    LExpr.getConsts (LExpr.varCloseT k xv et) = LExpr.getConsts et := by
+  induction et generalizing k with
+  | fvar m y yty =>
+    simp only [LExpr.varCloseT]
+    split <;> rfl
+  | _ => simp_all [LExpr.varCloseT, LExpr.getConsts]
+
+/-- `LExpr.unresolved` does not change the constants. -/
+theorem getConsts_unresolved {Tt : LExprParamsT} (et : LExprT Tt) :
+    LExpr.getConsts (LExpr.unresolved et) = LExpr.getConsts et := by
+  induction et with
+  | abs m name ty e ih =>
+    simp only [LExpr.unresolved]
+    split <;> simp [LExpr.getConsts, ih]
+  | _ => simp_all [LExpr.unresolved, LExpr.getConsts]
 
 /-- `LExpr.unresolved` does not change the operators. -/
 theorem getOps_unresolved {Tt : LExprParamsT} (et : LExprT Tt) :

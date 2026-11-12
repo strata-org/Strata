@@ -91,6 +91,49 @@ theorem OpsConsistent_varOpen
   unfold LExpr.varOpen
   exact OpsConsistent_substK_fvar h
 
+/-- Replacing a de Bruijn variable by a free variable preserves operator
+    consistency: it rewrites only variable occurrences. -/
+theorem OpsConsistentR_varOpen {T : LExprParams} {F : @Factory T}
+    (x : IdentT LMonoTy T.IDMeta) :
+    ∀ (k : Nat) (e : LExpr T.mono),
+      OpsConsistentR F e → OpsConsistentR F (LExpr.varOpen k x e) := by
+  intro k e
+  unfold LExpr.varOpen
+  induction e generalizing k with
+  | const _ _ => intro _; exact .const
+  | op _ _ _ => intro h; exact h
+  | fvar _ _ _ => intro _; exact .fvar
+  | bvar _ i =>
+    intro _
+    simp only [LExpr.substK]
+    split
+    · exact .fvar
+    · exact .bvar
+  | abs _ _ _ _ ih =>
+    intro h
+    simp only [LExpr.substK]
+    exact .abs (ih (k + 1) (OpsConsistentR.abs_inv h))
+  | quant _ _ _ _ _ _ ihtr ihb =>
+    intro h
+    simp only [LExpr.substK]
+    obtain ⟨htr, hb⟩ := OpsConsistentR.quant_inv h
+    exact .quant (ihtr (k + 1) htr) (ihb (k + 1) hb)
+  | app _ _ _ ih1 ih2 =>
+    intro h
+    simp only [LExpr.substK]
+    obtain ⟨h1, h2⟩ := OpsConsistentR.app_inv h
+    exact .app (ih1 k h1) (ih2 k h2)
+  | ite _ _ _ _ ihc iht ihf =>
+    intro h
+    simp only [LExpr.substK]
+    obtain ⟨hc, ht, hf⟩ := OpsConsistentR.ite_inv h
+    exact .ite (ihc k hc) (iht k ht) (ihf k hf)
+  | eq _ _ _ ih1 ih2 =>
+    intro h
+    simp only [LExpr.substK]
+    obtain ⟨h1, h2⟩ := OpsConsistentR.eq_inv h
+    exact .eq (ih1 k h1) (ih2 k h2)
+
 /-- `OpsConsistent` is preserved by `substFvars`, provided all substituted
 values satisfy `OpsConsistent`. -/
 theorem OpsConsistent_substFvars

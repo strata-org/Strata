@@ -5508,58 +5508,6 @@ theorem inferFVar_HasType
 @[expose] def WellScoped (e : LExpr T.mono) (Γ : TContext T.IDMeta) : Prop :=
   ∀ x ∈ LExpr.freeVars e, x.1 ∈ TContext.knownVars Γ
 
-omit [ToString T.IDMeta] [DecidableEq T.IDMeta] [Std.ToFormat T.IDMeta]
-  [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] [Hashable T.IDMeta] in
-/-- `varOpen k x e` only adds `x` to the free variables: every fvar of the
-    opened expression is either an original fvar of `e` or the new `x`. -/
-private theorem varOpen_freeVars_subset
-    (k : Nat) (x : T.mono.base.Identifier × Option LMonoTy) (e : LExpr T.mono) :
-    ∀ y, y ∈ LExpr.freeVars (LExpr.varOpen k x e) → y = x ∨ y ∈ LExpr.freeVars e := by
-  induction e generalizing k with
-  | const _ _ | op _ _ _ => simp [LExpr.varOpen, LExpr.substK, LExpr.freeVars]
-  | bvar _ i =>
-    intro y hy
-    simp only [varOpen, substK, beq_iff_eq] at hy
-    split at hy
-    · simp only [freeVars, List.mem_cons, List.not_mem_nil, or_false] at hy; left; exact hy
-    · simp [LExpr.freeVars] at hy
-  | fvar _ v ty =>
-    intro y hy
-    simp only [varOpen, substK, freeVars, List.mem_cons, List.not_mem_nil, or_false] at hy
-    right; simp only [freeVars, List.mem_cons, List.not_mem_nil, or_false]; exact hy
-  | abs _ _ _ e ih =>
-    intro y hy
-    simp only [varOpen, substK, freeVars_abs, freeVars] at hy ⊢
-    exact ih (k + 1) y hy
-  | quant _ _ _ _ tr body ih_tr ih_body =>
-    intro y hy
-    simp only [varOpen, substK, freeVars, List.mem_append] at hy ⊢
-    rcases hy with h_tr | h_body
-    · rcases ih_tr (k + 1) y h_tr with rfl | h <;> grind
-    · rcases ih_body (k + 1) y h_body with rfl | h <;> grind
-  | app _ e1 e2 ih1 ih2 =>
-    intro y hy
-    simp only [LExpr.varOpen, LExpr.substK, LExpr.freeVars, List.mem_append] at hy
-    rcases hy with h1 | h2
-    · exact (ih1 k y h1).imp_right (List.mem_append_left _)
-    · exact (ih2 k y h2).imp_right (List.mem_append_right _)
-  | ite m_ite c t e ih_c ih_t ih_e =>
-    intro y hy
-    simp only [LExpr.varOpen, LExpr.substK, LExpr.freeVars] at hy
-    rw [show LExpr.freeVars (.ite m_ite c t e) =
-      LExpr.freeVars c ++ LExpr.freeVars t ++ LExpr.freeVars e from rfl]
-    simp only [List.mem_append] at hy ⊢
-    rcases hy with (h_c | h_t) | h_e
-    · exact (ih_c k y h_c).imp_right (fun h => Or.inl (Or.inl h))
-    · exact (ih_t k y h_t).imp_right (fun h => Or.inl (Or.inr h))
-    · exact (ih_e k y h_e).imp_right (fun h => Or.inr h)
-  | eq _ e1 e2 ih1 ih2 =>
-    intro y hy
-    simp only [LExpr.varOpen, LExpr.substK, LExpr.freeVars, List.mem_append] at hy
-    rcases hy with h1 | h2
-    · exact (ih1 k y h1).imp_right (List.mem_append_left _)
-    · exact (ih2 k y h2).imp_right (List.mem_append_right _)
-
 omit [ToString T.IDMeta] [Std.ToFormat T.IDMeta]
   [HasGen T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 /-- `WellScoped` propagates through `varOpen` + context extension:

@@ -340,6 +340,18 @@ def getOps (e : LExpr T) := match e with
   | .ite _ c t e => getOps c ++ getOps t ++ getOps e
   | .eq _ e1 e2 => getOps e1 ++ getOps e2
 
+/-- The constants occurring in an expression, in syntax order. -/
+@[expose]
+def getConsts (e : LExpr T) : List LConst :=
+  match e with
+  | .const _ c => [c]
+  | .bvar _ _ | .op _ _ _ | .fvar _ _ _ => []
+  | .abs _ _ _ body => getConsts body
+  | .quant _ _ _ _ tr body => getConsts tr ++ getConsts body
+  | .app _ fn arg => getConsts fn ++ getConsts arg
+  | .ite _ c t f => getConsts c ++ getConsts t ++ getConsts f
+  | .eq _ e1 e2 => getConsts e1 ++ getConsts e2
+
 def getFVarName? {T : LExprParamsT} (e : LExpr T) : Option (Identifier T.base.IDMeta) :=
   match e with
   | .fvar _ name _ => some name

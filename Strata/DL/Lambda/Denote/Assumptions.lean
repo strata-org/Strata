@@ -21,11 +21,14 @@ Collects all well-formedness and typing assumptions used by the denotational
 semantics proofs. Semantic (denotation-level) assumptions live in
 `LExprSemanticsConsistent`.
 
-### Expression-level predicates (TODO: prove satisfied after `LExpr.resolve`)
-- `fvars_annotated_by` — free variable annotations match a type map
+### Expression-level predicates
+- `fvars_annotated_by` — free variable annotations match a type map; holds for
+  `LExpr.resolve`'s output (`resolve_fvars_annotated_by`)
 - `OpsConsistent` — operator type annotations are valid factory instantiations
+  (TODO: prove satisfied after `LExpr.resolve`)
 - `OpsConsistentR` — declarative form: some substitution turns each operator's generic type
-  into its annotation (checked by `LExpr.opsConsistent`, `opsConsistent_sound`)
+  into its annotation (checked by `LExpr.opsConsistent`, `opsConsistent_sound`);
+  holds for `LExpr.resolve`'s output (`resolve_opsConsistentR`)
 
 ### Factory assumptions (TODO: prove satisfied after `Function.typeCheck`)
 - `Factory.WellTyped` / `Factory.EvalWellTyped` — bodies and evaluators preserve typing
@@ -50,7 +53,7 @@ variable {T : LExprParams} [DecidableEq T.IDMeta]
 
 /-- Every fvar in `e` whose name is in `tyMap` is annotated with the
 corresponding type. -/
-def fvars_annotated_by [DecidableEq T.IDMeta]
+public def fvars_annotated_by [DecidableEq T.IDMeta]
     (tyMap : Map T.Identifier LMonoTy) : LExpr T.mono → Prop
   | .fvar _ name (some ty) =>
     ∀ ty', Map.find? tyMap name = some ty' → ty = ty'
@@ -110,6 +113,72 @@ public inductive OpsConsistentR (F : @Factory T) : LExpr T.mono → Prop where
   | quant {m k name ty tr body} :
       OpsConsistentR F tr → OpsConsistentR F body →
       OpsConsistentR F (.quant m k name ty tr body)
+
+section OpsConsistentRInversion
+omit [DecidableEq T.IDMeta]
+variable {F : @Factory T}
+
+/-- Operator consistency at an application is operator consistency of the
+    function and of the argument. -/
+theorem OpsConsistentR.app_inv {m : T.Metadata} {fn arg : LExpr T.mono}
+    (h : OpsConsistentR F (.app m fn arg)) :
+    OpsConsistentR F fn ∧ OpsConsistentR F arg := by
+  cases h with
+  | app hf ha => exact ⟨hf, ha⟩
+
+/-- Operator consistency of an abstraction gives that of its body. -/
+theorem OpsConsistentR.abs_inv {m : T.Metadata} {name : String}
+    {ty : Option LMonoTy} {body : LExpr T.mono}
+    (h : OpsConsistentR F (.abs m name ty body)) :
+    OpsConsistentR F body := by
+  cases h with
+  | abs hb => exact hb
+
+/-- Operator consistency at a quantifier is operator consistency of its trigger
+    and of its body. -/
+theorem OpsConsistentR.quant_inv {m : T.Metadata} {k : QuantifierKind}
+    {name : String} {ty : Option LMonoTy} {tr body : LExpr T.mono}
+    (h : OpsConsistentR F (.quant m k name ty tr body)) :
+    OpsConsistentR F tr ∧ OpsConsistentR F body := by
+  cases h with
+  | quant htr hb => exact ⟨htr, hb⟩
+
+/-- Operator consistency at a conditional is operator consistency of the test
+    and both branches. -/
+theorem OpsConsistentR.ite_inv {m : T.Metadata} {c t f : LExpr T.mono}
+    (h : OpsConsistentR F (.ite m c t f)) :
+    OpsConsistentR F c ∧ OpsConsistentR F t ∧ OpsConsistentR F f := by
+  cases h with
+  | ite hc ht hf => exact ⟨hc, ht, hf⟩
+
+/-- Operator consistency of an equality gives that of both sides. -/
+theorem OpsConsistentR.eq_inv {m : T.Metadata} {e1 e2 : LExpr T.mono}
+    (h : OpsConsistentR F (.eq m e1 e2)) :
+    OpsConsistentR F e1 ∧ OpsConsistentR F e2 := by
+  cases h with
+  | eq h1 h2 => exact ⟨h1, h2⟩
+
+/-- At an annotated operator the factory declares, operator consistency exhibits
+    a substitution sending the declared arrow type to the annotation. -/
+theorem OpsConsistentR.op_inv_of_declared {m : T.Metadata}
+    {o : Identifier T.IDMeta} {f : LFunc T} {ty : LMonoTy}
+    (hfind : F[o.name]? = some f) (h : OpsConsistentR F (.op m o (some ty))) :
+    ∃ tySubst : Subst,
+      ty = LMonoTy.subst tySubst
+        (LMonoTy.mkArrow' f.output (List.map Prod.snd f.inputs)) := by
+  cases h with
+  | op_notin hnone =>
+    rw [hfind] at hnone
+    exact nomatch hnone
+  | op_in hfn hty =>
+    rename_i fn tySubst
+    have hfneq : fn = f := by
+      rw [hfn] at hfind
+      exact Option.some_inj.mp hfind
+    subst hfneq
+    exact ⟨tySubst, hty⟩
+
+end OpsConsistentRInversion
 
 omit [DecidableEq T.IDMeta] in
 /-- Soundness: `OpsConsistent` implies `OpsConsistentR`, using the substitution

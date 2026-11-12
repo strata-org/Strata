@@ -292,15 +292,29 @@ theorem HasTypeA.const_inv {T : LExprParams} {Δ : List LMonoTy} {m c τ}
     (h : @LExpr.HasTypeA T Δ (.const m c) τ) : τ = c.ty := by
   cases h; rfl
 
+/-- An operator is annotated typeable only when it carries an annotation, which
+    is its type. -/
+theorem HasTypeA.op_inv_opt {T : LExprParams} {Δ : List LMonoTy} {m o}
+    {oty : Option LMonoTy} {τ : LMonoTy}
+    (h : @LExpr.HasTypeA T Δ (.op m o oty) τ) : oty = some τ := by
+  cases h; rfl
+
 /-- From `HasTypeA Δ (.op m o (some ty)) τ`, conclude `τ = ty`. -/
 theorem HasTypeA.op_inv {T : LExprParams} {Δ : List LMonoTy} {m o ty τ}
-    (h : @LExpr.HasTypeA T Δ (.op m o (some ty)) τ) : τ = ty := by
+    (h : @LExpr.HasTypeA T Δ (.op m o (some ty)) τ) : τ = ty :=
+  (Option.some.inj (HasTypeA.op_inv_opt h)).symm
+
+/-- A free variable is annotated typeable only when it carries an annotation,
+    which is its type. -/
+theorem HasTypeA.fvar_inv_opt {T : LExprParams} {Δ : List LMonoTy} {m x}
+    {oty : Option LMonoTy} {τ : LMonoTy}
+    (h : @LExpr.HasTypeA T Δ (.fvar m x oty) τ) : oty = some τ := by
   cases h; rfl
 
 /-- From `HasTypeA Δ (.fvar m x (some ty)) τ`, conclude `τ = ty`. -/
 theorem HasTypeA.fvar_inv {T : LExprParams} {Δ : List LMonoTy} {m x ty τ}
-    (h : @LExpr.HasTypeA T Δ (.fvar m x (some ty)) τ) : τ = ty := by
-  cases h; rfl
+    (h : @LExpr.HasTypeA T Δ (.fvar m x (some ty)) τ) : τ = ty :=
+  (Option.some.inj (HasTypeA.fvar_inv_opt h)).symm
 
 /-- From `HasTypeA Δ (.bvar m i) τ`, conclude `Δ[i]? = some τ`. -/
 theorem HasTypeA.bvar_inv {T : LExprParams} {Δ : List LMonoTy} {m i τ}
@@ -326,6 +340,20 @@ def HasTypeA.abs_inv {T : LExprParams} {Δ : List LMonoTy} {m name aty body τ}
     absurd (LExpr.HasTypeA_to_typeCheck h)
       (by unfold tc at *
           simp [LExpr.typeCheck, h_tc, Option.bind])
+
+/-- An abstraction is annotated typeable only when its binder is annotated, and
+    then its type is the arrow from the annotation to the body's type in the
+    extended context. -/
+theorem HasTypeA.abs_inv_opt {T : LExprParams} {Δ : List LMonoTy} {m name}
+    {oty : Option LMonoTy} {body : LExpr T.mono} {τ : LMonoTy}
+    (h : LExpr.HasTypeA Δ (.abs m name oty body) τ) :
+    ∃ aty rty, oty = some aty ∧ τ = .arrow aty rty ∧
+      LExpr.HasTypeA (aty :: Δ) body rty := by
+  cases oty with
+  | none => cases h
+  | some aty =>
+    obtain ⟨rty, hτ, hbody⟩ := HasTypeA.abs_inv h
+    exact ⟨aty, rty, rfl, hτ, hbody⟩
 
 /-- From `HasTypeA Δ (.app m fn arg) τ`, extract the domain type and
 sub-proofs. -/
@@ -442,6 +470,21 @@ def HasTypeA.quant_inv {T : LExprParams} {Δ : List LMonoTy} {m k name qty tr bo
   | none, _ => absurd (LExpr.HasTypeA_to_typeCheck h)
       (by unfold tcTr tcBody at *
           simp [LExpr.typeCheck, h_tr, Option.bind])
+
+/-- A quantifier is annotated typeable only when its binder is annotated, and
+    then its type is `bool`, its body has type `bool` in the extended context,
+    and its trigger is typeable there. -/
+theorem HasTypeA.quant_inv_opt {T : LExprParams} {Δ : List LMonoTy} {m k name}
+    {oty : Option LMonoTy} {tr body : LExpr T.mono} {τ : LMonoTy}
+    (h : LExpr.HasTypeA Δ (.quant m k name oty tr body) τ) :
+    ∃ qty τ_tr, oty = some qty ∧ τ = .bool ∧
+      LExpr.HasTypeA (qty :: Δ) tr τ_tr ∧
+      LExpr.HasTypeA (qty :: Δ) body .bool := by
+  cases oty with
+  | none => cases h
+  | some qty =>
+    obtain ⟨τ_tr, hτ, htr, hbody⟩ := HasTypeA.quant_inv h
+    exact ⟨qty, τ_tr, rfl, hτ, htr, hbody⟩
 
 /-- Weakening: extending the bound-variable context on the right preserves typing. -/
 theorem HasTypeA_append_right {T : LExprParams} {e : LExpr T.mono} {τ : LMonoTy} {Δ : List LMonoTy}
