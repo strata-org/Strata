@@ -175,6 +175,7 @@ def toCoreCmd (sigs : Std.HashMap String Sig) : IRCmd → Except String Core.Com
     return .call p (← callArgs (sigs.get? p) lhs args) md
   | .virtualCall .. => .error "Cortex `virtualCall` must be lowered by LowerDispatch before Core"
   | .new .. => .error "Cortex `new` must be lowered before Core"
+  | .cast .. => .error "Cortex `cast` must be lowered by LowerCTE before Core"
   | .readField .. => .error "Cortex field read must be lowered before Core"
   | .writeField .. => .error "Cortex field write must be lowered before Core"
   | .instanceOf .. => .error "Cortex `instanceOf` must be lowered before Core"

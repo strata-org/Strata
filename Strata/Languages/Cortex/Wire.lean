@@ -94,6 +94,16 @@ structure Param where
   ty : Ty
   deriving Repr, Inhabited
 
+/-- A global variable. `init` is its value when an entry procedure starts; without one it
+starts with an arbitrary value of its type. Every other procedure starts with an arbitrary
+value in each global. -/
+structure Global where
+  name : String
+  ty : Ty
+  init : Option Expr
+  source : Strata.FileRange
+  deriving Repr, Inhabited
+
 /-- A precondition over the procedure's inputs, checked at each call with the
 call's location and `summary`. -/
 structure Precondition where
@@ -135,6 +145,7 @@ structure Program where
   composites : List Composite
   constrained : List Constrained
   procedures : List Procedure
+  globals : List Global := []
   /-- Preludes whose procedures the program calls, such as `"java"`; see
   `Cortex.Preludes`. -/
   preludes : List String := []
@@ -149,6 +160,14 @@ def Ty.toMono : Ty → LMonoTy
   | .named n => .tcons n []
 
 def Ty.toLTy (t : Ty) : LTy := .forAll [] t.toMono
+
+/-- The variables an expression mentions. -/
+partial def Expr.vars : Expr → List String
+  | .var n => [n]
+  | .op _ args => args.flatMap Expr.vars
+  | .ite c t e => c.vars ++ t.vars ++ e.vars
+  | .eq a b => a.vars ++ b.vars
+  | .int _ | .bool _ | .str _ | .bv .. => []
 
 partial def Expr.toCore : Expr → Cortex.Expr
   | .var n => mkFvar n
@@ -221,9 +240,26 @@ def Body.toCortex (proc : String) (b : Body) : Except String Cortex.Body := do
        md := mdOf h.source } : Cortex.Handler)
   return { cfg := { entry := b.entry, blocks }, handlers }
 
-def Procedure.toCortex (p : Procedure) : Except String Cortex.Procedure := do
+/-- `globals` are the program's global names. Lowering matches a variable to a global by its
+name, so a parameter or local may not have one. -/
+def Procedure.toCortex (globals : List String) (p : Procedure) : Except String Cortex.Procedure := do
   let params := fun (ps : List Param) => ps.map fun q => (ident q.name, q.ty.toLTy)
   checkUnique s!"parameter of '{p.name}'" ((p.inputs ++ p.outputs).map (·.name))
+  for q in p.inputs ++ p.outputs do
+    if globals.contains q.name then throw s!"'{p.name}': parameter '{q.name}' has the name of a global"
+  -- An entry procedure starts with the globals at their initializers, and no call checks
+  -- its precondition, so a precondition over a global would be meaningless; one over the
+  -- inputs is assumed, as in any procedure.
+  if p.entry then
+    for pre in p.requires do
+      for v in pre.cond.vars do
+        if globals.contains v then
+          throw s!"'{p.name}': the precondition of an entry procedure reads global '{v}', which starts at its initializer there"
+  for b in p.body.toList do
+    for blk in b.blocks do
+      for c in blk.cmds do
+        if let .init x _ _ _ := c then
+          if globals.contains x then throw s!"'{p.name}': local '{x}' has the name of a global"
   let body ← p.body.mapM (Body.toCortex p.name)
   let md := mdOf p.source
   let md := if p.entry then md.pushElem MetaData.interpretEntry (.switch true) else md
@@ -260,6 +296,7 @@ def Program.toCortex (p : Program) : Except String Cortex.UnorderedProgram := do
   checkUnique "composite" (p.composites.map (·.name))
   checkUnique "constrained type" (p.constrained.map (·.name))
   checkUnique "procedure" (p.procedures.map (·.name))
+  checkUnique "global" (p.globals.map (·.name))
   let composites := p.composites.map fun c =>
     ({ name := c.name, extending := c.extending,
        fields := c.fields.map fun f => { name := f.name, ty := f.ty.toLTy } } : Cortex.CompositeDecl)
@@ -270,9 +307,19 @@ def Program.toCortex (p : Program) : Except String Cortex.UnorderedProgram := do
   let constrained := p.constrained.map fun c =>
     ({ name := c.name, base := c.base.toLTy, binder := ident c.binder, constraint := c.constraint.toCore,
        witness := c.witness.map Expr.toCore } : Cortex.ConstrainedDecl)
-  let procedures ← p.procedures.mapM Procedure.toCortex
+  let procedures ← p.procedures.mapM (Procedure.toCortex (p.globals.map (·.name)))
   p.checkCallArities
-  let program : Cortex.UnorderedProgram := { composites, constrained, procedures }
+  -- The initializers run in declaration order, each able to read the globals before it.
+  let mut earlier : List String := []
+  for g in p.globals do
+    for v in (g.init.map Expr.vars).getD [] do
+      unless earlier.contains v do
+        throw s!"global '{g.name}': initializer refers to '{v}', which is not a global declared before it"
+    earlier := earlier ++ [g.name]
+  let globals := p.globals.map fun g => (ident g.name, g.ty.toLTy)
+  let globalInit : List (Imperative.Cmd Core.Expression) := p.globals.map fun g =>
+    .init (ident g.name) g.ty.toLTy (g.init.elim .nondet (.det ·.toCore)) (mdOf g.source)
+  let program : Cortex.UnorderedProgram := { composites, constrained, procedures, globals, globalInit }
   program.checkHandlers
   return program
 

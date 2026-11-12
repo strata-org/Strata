@@ -133,15 +133,27 @@ def runWireInterpret (ionBytes : ByteArray) (pflags : ParsedFlags) : IO Unit := 
   unless errors.isEmpty do
     IO.Process.exit ExitCode.failuresFound
 
+def inlineFlag : Flag :=
+  { name := "inline-procedures",
+    help := "Comma-separated names of procedures whose calls are replaced by their bodies, \
+             so that a caller can rely on what they do. A procedure that can reach itself \
+             through calls is not inlined.",
+    takesArg := .arg "names" }
+
+def inlineNames (pflags : ParsedFlags) : List String :=
+  match pflags.getString "inline-procedures" with
+  | some s => (s.splitOn ",").map (·.trimAscii.toString) |>.filter (· != "")
+  | none => []
+
 def cortexAnalyzeCommand : Command where
   name := "cortexAnalyze"
   args := [ "file" ]
-  flags := verifyOptionsFlags
+  flags := verifyOptionsFlags ++ [inlineFlag]
   help := "Analyze a Laurel source file through the Cortex pipeline. Write results to stdout."
   callback := fun v pflags => do
     let options ← parseLaurelVerifyOptions pflags (inputFile := some v[0])
     let laurelProgram ← Strata.readLaurelTextFile v[0]
-    let (vcResultsOption, errors) ← Cortex.verifyToVcResults laurelProgram options
+    let (vcResultsOption, errors) ← Cortex.verifyToVcResults laurelProgram options (inlineNames pflags)
     if !errors.isEmpty then
       IO.println s!"==== ERRORS ===="
     for err in errors do
@@ -156,13 +168,13 @@ def cortexAnalyzeCommand : Command where
 def cortexAnalyzeBinaryCommand : Command where
   name := "cortexAnalyzeBinary"
   args := []
-  flags := verifyOptionsFlags
+  flags := verifyOptionsFlags ++ [inlineFlag]
   help := "Verify Laurel Ion programs read from stdin through the Cortex pipeline and print diagnostics."
   callback := fun _ pflags => do
     let options ← parseLaurelVerifyOptions pflags
     let stdinBytes ← (← IO.getStdin).readBinToEnd
     let combinedProgram ← Strata.readLaurelIonProgram stdinBytes
-    printDiagnostics (← Cortex.verifyToMessages combinedProgram options)
+    printDiagnostics (← Cortex.verifyToMessages combinedProgram options (inlineNames pflags))
 
 def cortexInterpretBinaryCommand : Command where
   name := "cortexInterpretBinary"
@@ -199,12 +211,12 @@ def cortexToCoreCommand : Command where
 def cortexWireAnalyzeBinaryCommand : Command where
   name := "cortexWireAnalyzeBinary"
   args := []
-  flags := verifyOptionsFlags
+  flags := verifyOptionsFlags ++ [inlineFlag]
   help := "Verify a Cortex program in the Cortex wire format, read as Ion from stdin, and print diagnostics."
   callback := fun _ pflags => do
     let options ← parseLaurelVerifyOptions pflags
     let program ← readWireProgram (← (← IO.getStdin).readBinToEnd)
-    printDiagnostics (← Cortex.verifyWireToMessages program options)
+    printDiagnostics (← Cortex.verifyWireToMessages program options (inlineNames pflags))
 
 def cortexWireInterpretBinaryCommand : Command where
   name := "cortexWireInterpretBinary"

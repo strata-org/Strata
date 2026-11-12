@@ -204,11 +204,12 @@ procedure assignInput(x: int) returns (r: int)
 -- A call, after `LowerHeap` and `LowerGlobals`, and field accesses.
 /--
 info: procedure callAndHeap (inout $heap : $Heap)
-cfg $heapEntry {
-  $heapEntry: {
-    goto $cteEntry;
-  }
+cfg $cteEntry {
   $cteEntry: {
+    goto $heapEntry;
+  }
+  $heapEntry: {
+    var $fieldValue5 : int;
     goto $exnEntry;
   }
   $exnEntry: {
@@ -225,7 +226,8 @@ cfg $heapEntry {
     $c1 := $MkComposite($Heap..nextReference!($heap), Node$TypeTag);
     $heap := $MkHeap($Heap..data!($heap), int.add($Heap..nextReference!($heap), 1));
     call inc(3, out $c2);
-    $heap := $MkHeap(($Heap..data!($heap))[$Composite..ref!($c1):=(($Heap..data!($heap))[$Composite..ref!($c1)])[$field$Node.value:=$Box$int($c2)]], $Heap..nextReference!($heap));
+    $fieldValue5 := $c2;
+    $heap := $MkHeap(($Heap..data!($heap))[$Composite..ref!($c1):=(($Heap..data!($heap))[$Composite..ref!($c1)])[$field$Node.value:=$Box$int($fieldValue5)]], $Heap..nextReference!($heap));
     $c3 := $Box..$val$int!((($Heap..data!($heap))[$Composite..ref!($c1)])[$field$Node.value]);
     assert [assert_4]: $c3 == 4;
     goto $return;
@@ -260,11 +262,11 @@ procedure callAndHeap()
 -- handler of the `finally` region, which no `throw` reaches.
 /--
 info: procedure handlers (inout $heap : $Heap)
-cfg $heapEntry {
-  $heapEntry: {
-    goto $cteEntry;
-  }
+cfg $cteEntry {
   $cteEntry: {
+    goto $heapEntry;
+  }
+  $heapEntry: {
     goto $exnEntry;
   }
   $exnEntry: {
@@ -347,13 +349,13 @@ procedure handlers()
 -- A dynamically dispatched call after `LowerDispatch`.
 /--
 info: procedure dispatch (a : $Composite, $heap : $Heap, out r : int)
-cfg $heapEntry {
-  $heapEntry: {
-    assume [allocated]: int.lt($Composite..ref!(a), $Heap..nextReference!($heap));
-    goto $cteEntry;
-  }
+cfg $cteEntry {
   $cteEntry: {
     assume [constraint_A_0]: $Composite..typeTag!(a) == A$TypeTag || $Composite..typeTag!(a) == B$TypeTag;
+    goto $heapEntry;
+  }
+  $heapEntry: {
+    assume [allocated]: int.lt($Composite..ref!(a), $Heap..nextReference!($heap));
     goto $exnEntry;
   }
   $exnEntry: {
@@ -411,11 +413,11 @@ procedure dispatch(a: A) returns (r: int)
 -- falls through to the next clause when it does not match.
 /--
 info: procedure typedCatch (inout $heap : $Heap, out r : int)
-cfg $heapEntry {
-  $heapEntry: {
-    goto $cteEntry;
-  }
+cfg $cteEntry {
   $cteEntry: {
+    goto $heapEntry;
+  }
+  $heapEntry: {
     goto $exnEntry;
   }
   $exnEntry: {
@@ -491,11 +493,11 @@ procedure typedCatch() returns (r: int)
 -- exit block. The caller propagates an exception that it does not catch.
 /--
 info: procedure thrower (inout $heap : $Heap, out $thrown : bool, out $exc : $Composite)
-cfg $heapEntry {
-  $heapEntry: {
-    goto $cteEntry;
-  }
+cfg $cteEntry {
   $cteEntry: {
+    goto $heapEntry;
+  }
+  $heapEntry: {
     goto $exnEntry;
   }
   $exnEntry: {
@@ -527,12 +529,12 @@ cfg $heapEntry {
   }
 };
 procedure propagates (inout $heap : $Heap, out r : int, out $thrown : bool, out $exc : $Composite)
-cfg $heapEntry {
+cfg $cteEntry {
+  $cteEntry: {
+    goto $heapEntry;
+  }
   $heapEntry: {
     var $heapNextSnap : int;
-    goto $cteEntry;
-  }
-  $cteEntry: {
     goto $exnEntry;
   }
   $exnEntry: {
@@ -602,12 +604,12 @@ procedure propagates() returns (r: int)
 -- local is declared before the loop.
 /--
 info: procedure catchInLoop (inout $heap : $Heap, out r : int)
-cfg $heapEntry {
+cfg $cteEntry {
+  $cteEntry: {
+    goto $heapEntry;
+  }
   $heapEntry: {
     var $heapNextSnap : int;
-    goto $cteEntry;
-  }
-  $cteEntry: {
     goto $exnEntry;
   }
   $exnEntry: {

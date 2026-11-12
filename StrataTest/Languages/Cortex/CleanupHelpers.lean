@@ -79,6 +79,7 @@ def showCmd : IRCmd → String
   | .cmd (.assert l e md) => s!"assert {l}: {Std.format e}{offset md}"
   | .cmd (.assume l e md) => s!"assume {l}: {Std.format e}{offset md}"
   | .cmd (.cover l e md) => s!"cover {l}: {Std.format e}{offset md}"
+  | .cast x ty e mode md => s!"{x.name} := cast {ty} {Std.format e} {repr mode}{offset md}"
   | .new x ty md => s!"{x.name} := new {ty}{offset md}"
   | .readField x o f md => s!"{x.name} := {Std.format o}.{f.owner}.{f.field}{offset md}"
   | .writeField o f e md => s!"{Std.format o}.{f.owner}.{f.field} := {Std.format e}{offset md}"

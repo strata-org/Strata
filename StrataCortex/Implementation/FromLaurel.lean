@@ -53,6 +53,9 @@ structure CState where
   prelude : Std.HashSet String := {}
   preludeProcs : List Strata.Laurel.Procedure := []
   composites : List CompositeType := []
+  /-- The program's global variables. A procedure body refers to a global by its name, and
+      `LowerGlobals` finds a procedure's reads and writes of a global by that name. -/
+  globals : List Identifier := []
   uncheck : Bool := true
 
 abbrev CM := StateT CState TranslateM
@@ -269,7 +272,17 @@ def uncheckedIntOp : String → Option String
 
 def pureExpr (e : StmtExprMd) : CM Expr := do
   let model := (← getThe TranslateState).model
-  translateExpr (inlineWrappers model (← get).prelude e)
+  let r ← translateExpr (inlineWrappers model (← get).prelude e)
+  -- `translateExpr` renders a read of a global as an operator with the global's name, the way
+  -- it renders a field name. Cortex reads a global as a variable, which is also what
+  -- `LowerGlobals` looks for, so the operator is turned back into a variable here.
+  -- `translateProgram` refuses a global that has the name of a composite field, so an
+  -- operator with the name of a global is always a read of that global.
+  let globals := (← get).globals
+  if globals.isEmpty then return r
+  return Cortex.mapExpr (fun
+    | .op _ o _ => if globals.any (·.text == o.name) then some (mkFvar o.name) else none
+    | _ => none) r
 
 def uncheckedExpr (e : StmtExprMd) : CM Expr := do
   let r ← pureExpr e
@@ -870,7 +883,10 @@ def translateBody (proc : Strata.Laurel.Procedure) (body : StmtExprMd) : CM Cort
   modify fun s => { s with
     sealed := #[], cur := { label := "$start" }, frames := [], finals := [], handlers := #[],
     locals := #[], outputs := proc.outputs.map (·.name.text) }
-  stmt (renameShadowed ((proc.inputs ++ proc.outputs).map (·.name)) body)
+  -- A local declared with the name of a global is renamed like a local that shadows a
+  -- parameter. Without this, `LowerGlobals`, which matches variables by name, would take
+  -- every use of that local for a use of the global.
+  stmt (renameShadowed ((← get).globals ++ (proc.inputs ++ proc.outputs).map (·.name)) body)
   jumpTo "$return"
   switchTo "$return"
   sealWith (.finish .empty) "$unused"
@@ -943,6 +959,11 @@ def translateProcedure (cortexName : String) (proc : Strata.Laurel.Procedure) : 
       | none =>
         unsupported t.source "a non-composite throws type"
         pure none
+  -- A parameter cannot be renamed without changing the procedure's signature, so one that
+  -- hides a global is refused instead.
+  for p in proc.inputs ++ proc.outputs do
+    if (← get).globals.any (·.text == p.name.text) then
+      unsupported p.name.source s!"the parameter '{p.name.text}', which has the name of a global variable"
   let inputs ← translateParams proc.inputs
   let outputs ← translateParams proc.outputs
   let body ← impl.mapM (translateBody proc)
@@ -963,15 +984,38 @@ def translateConstrained (c : ConstrainedType) : CM Cortex.ConstrainedDecl := do
   let witness ← if ← isImpure c.witness then pure none else some <$> pureExpr c.witness
   return { name := c.name.text, base := ← lty c.base, binder := ⟨c.valueName.text, ()⟩, constraint, witness }
 
+/-- A Laurel global becomes a Cortex global with the same name, and its initializer becomes
+    one `init` command of `globalInit`. `LowerGlobals` runs those commands at the start of an
+    entry procedure only; every other procedure starts with an arbitrary value of the global.
+    A global without an initializer, or with a hole as initializer, starts with an arbitrary
+    value in an entry procedure too. -/
+def translateGlobal (f : Field) : CM ((Core.Expression.Ident × LTy) × Imperative.Cmd Core.Expression) := do
+  let ty ← lty f.type
+  let x : Core.Expression.Ident := ⟨f.name.text, ()⟩
+  let md := identifierToCoreMd f.name
+  let init ← match f.initializer with
+    | none => pure .nondet
+    | some e =>
+      if e.val matches .Hole .. then pure .nondet
+      else if ← isImpure e then do
+        unsupported e.source s!"an initializer of the global '{f.name.text}' that reads the heap, calls a procedure or tests a type"
+        pure .nondet
+      else .det <$> pureExpr e
+  return ((x, ty), .init x ty init md)
+
 def translateProgram (prelude : Std.HashSet String) (program : LaurelProgram) : CM Cortex.UnorderedProgram := do
-  unless program.staticFields.isEmpty do unsupported .unknown "static fields"
   unless program.staticFunctions.isEmpty do unsupported .unknown "static functions"
   unless program.constants.isEmpty do unsupported .unknown "constants"
   let composites := program.types.filterMap fun | .Composite c => some c | _ => none
   let userProcs := program.staticProcedures.filter fun p => !prelude.contains p.name.text
   let procNames : Std.HashSet String := userProcs.foldl (fun s p => s.insert p.name.text) {}
   let preludeProcs := program.staticProcedures.filter fun p => prelude.contains p.name.text
-  modify fun s => { s with composites, procNames, prelude, preludeProcs }
+  modify fun s => { s with composites, procNames, prelude, preludeProcs,
+                           globals := program.staticFields.map (·.name) }
+  for g in program.staticFields do
+    if composites.any fun c => c.fields.any (·.name.text == g.name.text) then
+      unsupported g.name.source s!"the global '{g.name.text}', which has the name of a composite field"
+  let globals ← program.staticFields.mapM translateGlobal
   let mut datatypes : Array (LDatatype Unit) := #[]
   let mut opaqueTypes : Array TypeConstructor := #[]
   let mut cdecls := #[]
@@ -994,6 +1038,7 @@ def translateProgram (prelude : Std.HashSet String) (program : LaurelProgram) : 
     for p in c.instanceProcedures do
       procs := procs.push (← translateProcedure s!"{c.name.text}${p.name.text}" p)
   return { composites := cdecls.toList, constrained := constrained.toList,
+           globals := globals.map (·.1), globalInit := globals.map (·.2),
            datatypes := datatypes.toList, opaqueTypes := opaqueTypes.toList,
            procedures := procs.toList }
 

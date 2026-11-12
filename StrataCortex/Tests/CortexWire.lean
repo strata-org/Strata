@@ -218,4 +218,317 @@ info: 92: no int overflow on '+' does not hold
 #guard_msgs in
 #eval interpret preludeProgram
 
+/-! Globals: an entry procedure starts from the initializers; any other procedure starts with
+arbitrary values. A flag-guarded initializer is seen by the caller only when it is inlined. -/
+
+meta def i32v (n : Int) : Wire.Expr := .int n
+
+meta def globalsProgram : Wire.Program :=
+  { composites := [], constrained := [int32],
+    globals := [{ name := "C:x", ty := i32, init := some (i32v 0), source := at_ 60 },
+                { name := "C:ready", ty := .bool, init := some (.bool false), source := at_ 61 }],
+    procedures := [
+      { name := "C:<clinit>", inputs := [], outputs := [], throws := none, requires := [], entry := false,
+        source := at_ 62,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.set "C:x" (some (i32v 5)) (at_ 63)] (.finish (at_ 63))] } },
+      { name := "reader", inputs := [], outputs := [{ name := "r", ty := i32 }], throws := none, requires := [],
+        entry := false, source := at_ 70,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [] (.condGoto (.var "C:ready") "use" "init" (at_ 71)),
+          blk "init" [.set "C:ready" (some (.bool true)) (at_ 72), .call [] "C:<clinit>" [] (at_ 72),
+                      .set "C:ready" (some (.bool true)) (at_ 72)] (.goto "use" (at_ 72)),
+          blk "use" [.set "r" (some (.var "C:x")) (at_ 73),
+                     .assert "arbitrary" (.eq (.var "C:x") (i32v 5)) none (at_ 74)] (.finish (at_ 75))] } },
+      { name := "main", inputs := [], outputs := [], throws := none, requires := [], entry := true, source := at_ 80,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.assert "fromInit" (.eq (.var "C:x") (i32v 0)) none (at_ 81)]
+            (.condGoto (.var "C:ready") "use" "init" (at_ 82)),
+          blk "init" [.set "C:ready" (some (.bool true)) (at_ 83), .call [] "C:<clinit>" [] (at_ 83),
+                      .set "C:ready" (some (.bool true)) (at_ 83)] (.goto "use" (at_ 83)),
+          blk "use" [.assert "initialized" (.eq (.var "C:x") (i32v 5)) none (at_ 84)] (.finish (at_ 85))] } }] }
+
+-- Without inlining, the caller knows nothing about `C:x` after the call.
+/--
+info: 74: assertion does not hold
+84: assertion does not hold
+-/
+#guard_msgs in
+#eval run globalsProgram
+
+meta def runInlining (p : Wire.Program) (inline : List String) : IO Unit := do
+  let options : Laurel.LaurelVerifyOptions := { verifyOptions := Core.VerifyOptions.quiet }
+  for m in ← Cortex.verifyWireToMessages p options inline do
+    IO.println s!"{m.fileRange.range.start.byteIdx}: {m.message}"
+
+-- With the initializer inlined, the entry procedure sees the value it assigns; `reader` still
+-- starts with an arbitrary `C:x` and an arbitrary flag.
+/--
+info: 74: assertion does not hold
+-/
+#guard_msgs in
+#eval runInlining globalsProgram ["C:<clinit>"]
+
+-- The interpreter starts the entry procedure from the initializers.
+/--
+info: 84: assertion does not hold
+-/
+#guard_msgs in
+#eval interpret { globalsProgram with
+  procedures := globalsProgram.procedures.filter (·.name != "reader") |>.map fun q =>
+    if q.name != "main" then q else
+    { q with body := q.body.map fun b => { b with blocks := b.blocks.map fun blk =>
+        if blk.label != "use" then blk else
+        { blk with cmds := [.assert "initialized" (.eq (.var "C:x") (i32v 6)) none (at_ 84)] } } } }
+
+meta def entryLabelledGlobalsEntry : Wire.Program :=
+  { globalsProgram with procedures := globalsProgram.procedures.map fun q =>
+      if q.name != "main" then q else
+      { q with body := q.body.map fun b => { b with entry := "$globalsEntry", blocks := b.blocks.map fun blk =>
+          if blk.label == "b0" then { blk with label := "$globalsEntry" } else blk } } }
+
+/--
+info: 74: assertion does not hold
+84: assertion does not hold
+-/
+#guard_msgs in
+#eval run entryLabelledGlobalsEntry
+
+#guard_msgs in
+#eval interpret entryLabelledGlobalsEntry
+
+meta def callResultClash : Wire.Program :=
+  { composites := [], constrained := [int32],
+    globals := [{ name := "g", ty := i32, init := some (i32v 0), source := at_ 90 }],
+    procedures := [
+      { name := "f", inputs := [], outputs := [{ name := "r", ty := i32 }], throws := none, requires := [], entry := false,
+        source := at_ 91,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.set "g" (some (i32v 5)) (at_ 92), .set "r" (some (i32v 8)) (at_ 92)] (.finish (at_ 92))] } },
+      { name := "main", inputs := [], outputs := [], throws := none, requires := [], entry := true, source := at_ 93,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "$callResult" i32 (some (i32v 1)) (at_ 94), .init "$callResult0" i32 (some (i32v 1)) (at_ 94),
+                    .call ["g"] "f" [] (at_ 95),
+                    .assert "kept" (.eq (.var "$callResult") (i32v 1)) none (at_ 96),
+                    .assert "result" (.eq (.var "g") (i32v 8)) none (at_ 97)] (.finish (at_ 98))] } }] }
+
+/--
+info: 97: assertion does not hold
+-/
+#guard_msgs in
+#eval run callResultClash
+
+#guard_msgs in
+#eval interpret callResultClash
+
+-- `dec` has a precondition. Without inlining, Core checks it at the call, and the caller knows
+-- nothing about `y` afterwards.
+meta def requiresProgram : Wire.Program :=
+  { composites := [], constrained := [int32],
+    procedures := [
+      { name := "dec", inputs := [{ name := "x", ty := i32 }], outputs := [{ name := "r", ty := i32 }], throws := none,
+        requires := [{ cond := .op "Int.Lt" [i32v 0, .var "x"], summary := some "x is positive" }], entry := false,
+        source := at_ 100,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.set "r" (some (.op "Int.Add" [.var "x", i32v (-1)])) (at_ 101)] (.finish (at_ 101))] } },
+      { name := "good", inputs := [], outputs := [], throws := none, requires := [], entry := false, source := at_ 102,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "y" i32 none (at_ 103), .call ["y"] "dec" [i32v 3] (at_ 103),
+                    .assert "dec3" (.eq (.var "y") (i32v 2)) none (at_ 104)] (.finish (at_ 105))] } },
+      { name := "bad", inputs := [], outputs := [], throws := none, requires := [], entry := false, source := at_ 106,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "y" i32 none (at_ 107), .call ["y"] "dec" [i32v 0] (at_ 107)] (.finish (at_ 108))] } }] }
+
+/--
+info: 104: assertion does not hold
+107: x is positive does not hold
+-/
+#guard_msgs in
+#eval run requiresProgram
+
+-- With `dec` inlined, its precondition is still checked at the call, and `good` sees the body.
+/--
+info: 107: x is positive does not hold
+-/
+#guard_msgs in
+#eval runInlining requiresProgram ["dec"]
+
+-- A precondition may mention a global the body does not use.
+meta def requiresGlobal : Wire.Program :=
+  { composites := [], constrained := [int32],
+    globals := [{ name := "g", ty := i32, init := some (i32v 0), source := at_ 120 }],
+    procedures := [
+      { name := "f", inputs := [], outputs := [{ name := "r", ty := i32 }], throws := none,
+        requires := [{ cond := .op "Int.Lt" [i32v 0, .var "g"], summary := some "g is positive" }], entry := false,
+        source := at_ 121,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.set "r" (some (i32v 1)) (at_ 122)] (.finish (at_ 122))] } },
+      { name := "main", inputs := [], outputs := [], throws := none, requires := [], entry := true, source := at_ 123,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "y" i32 none (at_ 124), .call ["y"] "f" [] (at_ 124),
+                    .set "g" (some (i32v 1)) (at_ 125), .call ["y"] "f" [] (at_ 126)] (.finish (at_ 127))] } }] }
+
+/--
+info: 124: g is positive does not hold
+-/
+#guard_msgs in
+#eval run requiresGlobal
+
+/--
+info: 124: g is positive does not hold
+-/
+#guard_msgs in
+#eval runInlining requiresGlobal ["f"]
+
+-- Lowering matches variables to globals by name, so a parameter or local may not have a global's name.
+meta def paramClash : Wire.Program :=
+  { composites := [], constrained := [int32],
+    globals := [{ name := "g", ty := i32, init := some (i32v 0), source := at_ 110 }],
+    procedures := [
+      { name := "f", inputs := [{ name := "g", ty := i32 }], outputs := [{ name := "r", ty := i32 }], throws := none,
+        requires := [], entry := false, source := at_ 111,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.set "r" (some (.var "g")) (at_ 112)] (.finish (at_ 112))] } }] }
+
+/--
+info: 0: invalid Cortex program: 'f': parameter 'g' has the name of a global
+-/
+#guard_msgs in
+#eval run paramClash
+
+/--
+info: 0: invalid Cortex program: 'f': local 'g' has the name of a global
+-/
+#guard_msgs in
+#eval run { paramClash with procedures := paramClash.procedures.map fun q =>
+  { q with inputs := [], body := q.body.map fun b => { b with blocks := b.blocks.map fun blk =>
+      { blk with cmds := .init "g" i32 (some (i32v 1)) (at_ 112) :: blk.cmds } } } }
+
+-- An initializer may read only the globals declared before it.
+meta def orderedInit : Wire.Program :=
+  { composites := [], constrained := [int32],
+    globals := [{ name := "b", ty := i32, init := some (i32v 2), source := at_ 130 },
+                { name := "a", ty := i32, init := some (.op "Int.Add" [.var "b", i32v 1]), source := at_ 131 }],
+    procedures := [
+      { name := "main", inputs := [], outputs := [], throws := none, requires := [], entry := true, source := at_ 132,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.assert "a3" (.eq (.var "a") (i32v 3)) none (at_ 133)] (.finish (at_ 134))] } }] }
+
+#guard_msgs in
+#eval run orderedInit
+
+#guard_msgs in
+#eval interpret orderedInit
+
+/--
+info: 0: invalid Cortex program: global 'a': initializer refers to 'b', which is not a global declared before it
+-/
+#guard_msgs in
+#eval run { orderedInit with globals := orderedInit.globals.reverse }
+
+-- A call that throws assigns none of its results, also when the callee is inlined.
+meta def throwingResult (expected : Int) : Wire.Program :=
+  { composites := [{ name := "Throwable", extending := [], fields := [] },
+                   { name := "Exn", extending := ["Throwable"], fields := [] }],
+    constrained := [int32],
+    procedures := [
+      { name := "f", inputs := [], outputs := [{ name := "r", ty := i32 }], throws := some "Exn", requires := [],
+        entry := false, source := at_ 140,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.set "r" (some (i32v 8)) (at_ 141), .init "x" (.named "Exn") none (at_ 142), .new "x" "Exn" (at_ 142),
+                    .throw (.var "x") none (at_ 143)] (.finish (at_ 144))] } },
+      { name := "main", inputs := [], outputs := [], throws := none, requires := [], entry := true, source := at_ 145,
+        body := some { entry := "b0", handlers := [{ covered := ["b0"], catchType := some "Exn", binder := "e", target := "h", source := at_ 146 }], blocks := [
+            blk "b0" [.init "e" (.named "Exn") none (at_ 147), .init "y" i32 (some (i32v 1)) (at_ 147),
+                      .call ["y"] "f" [] (at_ 148)] (.finish (at_ 149)),
+            blk "h" [.assert "kept" (.eq (.var "y") (i32v expected)) none (at_ 150)] (.finish (at_ 151))] } }] }
+
+#guard_msgs in
+#eval runInlining (throwingResult 1) ["f"]
+
+#guard_msgs in
+#eval interpret (throwingResult 1)
+
+/--
+info: 150: assertion does not hold
+-/
+#guard_msgs in
+#eval runInlining (throwingResult 8) ["f"]
+
+/--
+info: 150: assertion does not hold
+-/
+#guard_msgs in
+#eval interpret (throwingResult 8)
+
+-- A failed precondition is reported once: the inlined body has the precondition as a fact.
+meta def requiresAssumed : Wire.Program :=
+  { composites := [], constrained := [int32],
+    procedures := [
+      { name := "f", inputs := [{ name := "x", ty := i32 }], outputs := [], throws := none,
+        requires := [{ cond := .op "Int.Lt" [i32v 0, .var "x"], summary := some "x is positive" }], entry := false,
+        source := at_ 160,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.assert "nonzero" (.op "Bool.Not" [.eq (.var "x") (i32v 0)]) none (at_ 161)] (.finish (at_ 162))] } },
+      { name := "caller", inputs := [{ name := "a", ty := i32 }], outputs := [], throws := none, requires := [],
+        entry := false, source := at_ 163,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.call [] "f" [.var "a"] (at_ 164)] (.finish (at_ 165))] } }] }
+
+/--
+info: 164: x is positive does not hold
+-/
+#guard_msgs in
+#eval runInlining requiresAssumed ["f"]
+
+-- An entry procedure's precondition is assumed, like any procedure's; one over a global is refused.
+/--
+info: 0: invalid Cortex program: 'main': the precondition of an entry procedure reads global 'g', which starts at its initializer there
+-/
+#guard_msgs in
+#eval run { requiresGlobal with procedures := requiresGlobal.procedures.map fun q =>
+  if q.name != "main" then q else
+  { q with requires := [{ cond := .op "Int.Le" [i32v 0, .var "g"], summary := none }] } }
+
+meta def entryInputPrecondition : Wire.Program :=
+  { composites := [], constrained := [int32],
+    procedures := [
+      { name := "main", inputs := [{ name := "a", ty := i32 }], outputs := [], throws := none,
+        requires := [{ cond := .op "Int.Le" [i32v 0, .var "a"], summary := none }], entry := true, source := at_ 190,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.assert "nonneg" (.op "Int.Le" [i32v 0, .var "a"]) none (at_ 191)] (.finish (at_ 192))] } }] }
+
+#guard_msgs in
+#eval run entryInputPrecondition
+
+-- A value of a constrained type over a composite is a reference: a fresh allocation is not it.
+meta def constrainedComposite : Wire.Program :=
+  { composites := [{ name := "Box", extending := [], fields := [{ name := "v", ty := i32 }] },
+                   { name := "Holder", extending := [], fields := [{ name := "b", ty := .named "NB" }] }],
+    constrained := [int32, { name := "NB", base := .named "Box", binder := "$v", constraint := .bool true, witness := none }],
+    procedures := [
+      { name := "mk", inputs := [], outputs := [{ name := "r", ty := .named "NB" }], throws := none, requires := [],
+        entry := false, source := at_ 170, body := none },
+      { name := "input", inputs := [{ name := "x", ty := .named "NB" }], outputs := [], throws := none, requires := [],
+        entry := false, source := at_ 171,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "y" (.named "Box") none (at_ 172), .new "y" "Box" (at_ 172),
+                    .assert "fresh" (.op "Bool.Not" [.eq (.var "x") (.var "y")]) none (at_ 173)] (.finish (at_ 174))] } },
+      { name := "fieldRead", inputs := [], outputs := [], throws := none, requires := [],
+        entry := false, source := at_ 175,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "h" (.named "Holder") none (at_ 175), .new "h" "Holder" (at_ 175),
+                    .init "t" (.named "NB") none (at_ 176), .readField "t" (.var "h") "Holder" "b" (at_ 176),
+                    .init "y" (.named "Box") none (at_ 177), .new "y" "Box" (at_ 177),
+                    .assert "fresh" (.op "Bool.Not" [.eq (.var "t") (.var "y")]) none (at_ 178)] (.finish (at_ 179))] } },
+      { name := "callOut", inputs := [], outputs := [], throws := none, requires := [],
+        entry := false, source := at_ 180,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "t" (.named "NB") none (at_ 181), .call ["t"] "mk" [] (at_ 181),
+                    .init "y" (.named "Box") none (at_ 182), .new "y" "Box" (at_ 182),
+                    .assert "fresh" (.op "Bool.Not" [.eq (.var "t") (.var "y")]) none (at_ 183)] (.finish (at_ 184))] } }] }
+
+#guard_msgs in
+#eval run constrainedComposite
+
 end Cortex.WireTest

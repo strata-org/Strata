@@ -313,10 +313,12 @@ def resolveWithInferredThrows (program : LaurelProgram)
     (gradualTypes : Std.HashSet String := {})
     (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
     (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none)
-    (reservedNames : Std.HashSet String := {}) : ResolutionResult :=
+    (reservedNames : Std.HashSet String := {})
+    (entryConstrainedGlobals : Bool := false) : ResolutionResult :=
   let resolveFresh (p : LaurelProgram) :=
     resolve p (gradualTypes := gradualTypes) (realizeCoercion := realizeCoercion)
       (toBool := toBool) (reservedNames := reservedNames)
+      (entryConstrainedGlobals := entryConstrainedGlobals)
   let first := resolveFresh program
   if !hasInferredThrows program then first
   else

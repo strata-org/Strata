@@ -179,6 +179,43 @@ def diamonds (n : Nat) : UnorderedProgram :=
 #guard !(diamonds 40).isSubtype "C40" "Other"
 #guard ((diamonds 40).ancestors "C40").length == 120
 
+def posDecl : ConstrainedDecl :=
+  { name := "pos", base := intTy, binder := cid "$x",
+    constraint := .app () (.app () (.op () ⟨"Int.Gt", ()⟩ none) (fv "$x")) (intC 0) }
+
+def castProgram (v : Int) (mode : CastMode) : UnorderedProgram :=
+  { composites := [], constrained := [posDecl], procedures :=
+      [{ name := "main", inputs := [], outputs := [], throws := none, body := some
+          { cfg := { entry := "b", blocks := [("b",
+              { cmds := [.cmd (.init (cid "x") intTy .nondet .empty),
+                         .cast (cid "x") "pos" (intC v) mode .empty],
+                transfer := .finish .empty })] },
+            handlers := [] } }] }
+
+def castRun (v : Int) (mode : CastMode) : Option (Option Core.Expression.Expr × Interp.Trace) :=
+  match (castProgram v mode).procedures with
+  | p :: _ =>
+    match Interp.runEntry (castProgram v mode) 100 p with
+    | .ok (.terminal ρ, t) => some (ρ.store (cid "x"), t)
+    | _ => none
+  | [] => none
+
+def castFailures (v : Int) (mode : CastMode) : Option Nat :=
+  (castRun v mode).map fun (_, t) => (Interp.failures t).length
+
+def castEvents (v : Int) (mode : CastMode) : Option (List String) :=
+  (castRun v mode).map fun (_, t) => t.map fun
+    | .assert a => s!"assert {a.label}"
+    | .assume a => s!"assume {a.label}"
+    | .cover a => s!"cover {a.label}"
+
+#guard ((castRun 5 .check).map (·.1)) == some (some (intC 5))
+#guard castFailures 5 .check == some 0
+#guard castFailures 0 .check == some 1
+#guard castEvents 0 .check == some ["assert constraint_pos"]
+#guard castFailures 0 .assume == some 0
+#guard castEvents 0 .assume == some ["assume constraint_pos"]
+
 end Cortex.Test
 
 end

@@ -7658,12 +7658,17 @@ private def validateInvokeOnGlobalWrites (program : LaurelProgram)
         MessageKind.userError)
     else none
 
-/-- Run the full resolution pass on a Laurel program. -/
+/-- Run the full resolution pass on a Laurel program.
+
+    `entryConstrainedGlobals` allows an entry procedure to use a global of a constrained type
+    (see `validateEntryConstrainedGlobalUse`). Set it only for a pipeline that checks a
+    global's constraint inside the entry procedure's body; the Laurel pipeline does not. -/
 public def resolve (program : LaurelProgram) (existingModel: Option SemanticModel := none)
     (gradualTypes : Std.HashSet String := {})
     (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
     (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none)
-    (reservedNames : Std.HashSet String := {}) : ResolutionResult :=
+    (reservedNames : Std.HashSet String := {})
+    (entryConstrainedGlobals : Bool := false) : ResolutionResult :=
   -- Phase 1: pre-register all top-level names, then assign IDs and resolve references
   let phase1 : ResolveM LaurelProgram := do
     -- Binders get their ids first, so pre-registration and `scopeTypeParams` name the same
@@ -7747,7 +7752,8 @@ public def resolve (program : LaurelProgram) (existingModel: Option SemanticMode
       validateEntryProcedureContracts semanticModel program' analysis ++
       validateEntryContractGlobalUse semanticModel program' analysis ++
       validateCallsToGlobalEntryProcedures program' analysis ++
-      validateEntryConstrainedGlobalUse program' analysis) |>.getD []
+      (if entryConstrainedGlobals then [] else validateEntryConstrainedGlobalUse program' analysis))
+      |>.getD []
   -- `invokeOn` procedures may not declare outputs (see `validateInvokeOnOutputRefs`).
   -- Only on the initial resolution, since `ContractPass` clears `invokeOn`.
   let invokeOnErrors : Array Message :=

@@ -14,6 +14,8 @@ public import Strata.Languages.Cortex.LowerComposites
 public import Strata.Languages.Cortex.LowerCTE
 public import Strata.Languages.Cortex.LowerHeap
 public import Strata.Languages.Cortex.LowerGlobals
+public import Strata.Languages.Cortex.LowerDynamic
+public import Strata.Languages.Cortex.FieldCasts
 public import Strata.Languages.Cortex.Ordering
 public import Strata.Languages.Cortex.CopyAssignedInputs
 public import Strata.Languages.Cortex.Cleanup
@@ -25,7 +27,8 @@ public section
 /-- The passes that lower a Cortex program to the form `ToCore` translates. -/
 def loweringPasses : List Pass :=
   [LowerDispatch.pass, LowerExceptions.pass, PruneUnreachable.pass, LowerComposites.pass,
-   LowerCTE.pass, LowerHeap.pass, LowerGlobals.pass, Ordering.pass, CopyAssignedInputs.pass]
+   LowerHeap.pass, LowerGlobals.pass, LowerCTE.pass, LowerDynamic.pass, Ordering.pass,
+   CopyAssignedInputs.pass]
 
 /-- The passes of the route to Core: the cleanup, then the lowering passes. -/
 def passes : List Pass := Cleanup.pass :: loweringPasses

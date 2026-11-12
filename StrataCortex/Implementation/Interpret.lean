@@ -10,6 +10,9 @@ public import StrataCortex.Implementation.Pipeline
 public import Strata.Languages.Cortex.Interpreter
 public import Strata.Languages.Cortex.LowerCTE
 public import Strata.Languages.Cortex.Cleanup
+public import Strata.Languages.Cortex.LowerDispatch
+public import Strata.Languages.Cortex.LowerGlobals
+public import Strata.Languages.Cortex.FieldCasts
 public import Strata.Languages.Core.ProgramEval
 
 namespace Cortex
@@ -57,9 +60,9 @@ def toInterpretableCore (options : LaurelTranslateOptions) (program : LaurelProg
     | (none, diags) => throw s!"Laurel to Core translation failed: {diags.map (·.message)}"
   interpretableCore core
 
-/-- Run every entry procedure of `m` on the Cortex interpreter, after the
-cleanup passes and LowerCTE. With `cleanup := false` the cleanup passes are
-skipped, for comparing the two runs.
+/-- Run every entry procedure of `m` on the Cortex interpreter, after the cleanup passes,
+LowerDispatch, LowerGlobals, FieldCasts and LowerCTE. With `cleanup := false` the cleanup
+passes are skipped, for comparing the two runs.
 Returns the failed checks as diagnostics, and the runs that stopped or left an
 assertion unevaluated as errors. -/
 def interpretProgram (m : Cortex.UnorderedProgram) (fuel : Nat) (cleanup : Bool := true) :
@@ -69,9 +72,9 @@ def interpretProgram (m : Cortex.UnorderedProgram) (fuel : Nat) (cleanup : Bool 
       | .ok m => pure m
       | .error e => throw s!"Cleanup: {e}"
     else pure m
-  let m ← match Cortex.LowerCTE.runWith true m with
+  let m ← match Cortex.LowerDispatch.run m >>= Cortex.LowerGlobals.run >>= Cortex.FieldCasts.run >>= Cortex.LowerCTE.runWith true with
     | .ok m => pure m
-    | .error e => throw s!"LowerCTE: {e}"
+    | .error e => throw s!"lowering: {e}"
   let mut out : Array Message := #[]
   let mut seen : Std.HashSet Message := {}
   let mut errors : Array String := #[]

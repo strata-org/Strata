@@ -28,6 +28,7 @@ def eOrN : ExprOrNondet Core.Expression → List Expr
 
 def cmdExprs : IRCmd → List Expr
   | .cmd (.init _ _ e _) | .cmd (.set _ e _) => eOrN e
+  | .cast _ _ e _ _ => [e]
   | .cmd (.assert _ b _) | .cmd (.assume _ b _) | .cmd (.cover _ b _) => [b]
   | .readField _ o _ _ | .instanceOf _ o _ _ => [o]
   | .writeField o _ v _ => [o, v]
@@ -36,7 +37,7 @@ def cmdExprs : IRCmd → List Expr
   | .new .. => []
 
 def cmdWrites : IRCmd → List String
-  | .cmd (.init x ..) | .cmd (.set x ..) | .new x .. | .readField x .. | .instanceOf x .. => [x.name]
+  | .cmd (.init x ..) | .cmd (.set x ..) | .cast x .. | .new x .. | .readField x .. | .instanceOf x .. => [x.name]
   | .call lhs .. | .virtualCall lhs .. => lhs.map (·.name)
   | _ => []
 
@@ -55,7 +56,10 @@ def directEff (gs : List String) (p : Procedure) : Eff :=
   | none => { reads := gs, writes := gs }
   | some b =>
     let cmds := b.cfg.blocks.flatMap fun (_, blk) => blk.cmds
-    let exprs := cmds.flatMap cmdExprs ++ b.cfg.blocks.flatMap fun (_, blk) => transferExprs blk.transfer
+    -- A precondition is checked at each call and assumed on entry, so the globals it mentions
+    -- must reach the procedure like the ones its body reads.
+    let exprs := cmds.flatMap cmdExprs ++ b.cfg.blocks.flatMap (fun (_, blk) => transferExprs blk.transfer)
+      ++ p.requires.map (·.cond)
     let reads := gs.filter fun g => exprs.any fun e => (fvarsOf e).contains g
     let writes := gs.filter fun g => cmds.any fun c => (cmdWrites c).contains g
     { reads, writes }
@@ -101,21 +105,47 @@ def run (prog : UnorderedProgram) : Except String UnorderedProgram :=
   let order := prog.globals.map (·.1.name)
   let insOf := fun (n : String) => let e := eff.getD n {}; order.filter fun g => e.reads.contains g || e.writes.contains g
   let outsOf := fun (n : String) => let e := eff.getD n {}; order.filter e.writes.contains
-  let lowerCmd : IRCmd → List IRCmd
-    | .call lhs q args md =>
-      [.call (lhs ++ (outsOf q).map ident) q (args ++ (insOf q).map mkFvar) md]
-    | c => [c]
+  let outTy := fun (q : String) (i : Nat) =>
+    (((prog.findProcedure? q).bind fun pr => pr.outputs[i]?).map (·.2)).getD (mono .int)
+  let lowerBody := fun (params : List String) (entryCmds : List IRCmd) (b : Body) => Id.run do
+    let mut used : List String := params ++ order ++ b.assignedNames
+    let mut tmps : List IRCmd := []
+    let mut blocks : List (Label × LBlock) := []
+    for (l, blk) in b.cfg.blocks do
+      let mut cmds : List IRCmd := []
+      for c in blk.cmds do
+        match c with
+        | .call lhs q args md =>
+          let outs := outsOf q
+          let thrown := lhs.any (·.name == "$callThrown")
+          let mut lhs' : List Core.Expression.Ident := []
+          let mut post : List IRCmd := []
+          for (x, i) in lhs.zipIdx do
+            if outs.contains x.name then
+              let tmp := freshLabel "$callResult" used
+              used := used ++ [tmp]
+              tmps := tmps ++ [.cmd (.init (ident tmp) (outTy q i) .nondet .empty)]
+              lhs' := lhs' ++ [ident tmp]
+              let v : Expr := if thrown then .ite () (mkFvar "$callThrown") (mkFvar x.name) (mkFvar tmp) else mkFvar tmp
+              post := post ++ [.cmd (.set x (.det v) md)]
+            else
+              lhs' := lhs' ++ [x]
+          cmds := cmds ++ [.call (lhs' ++ outs.map ident) q (args ++ (insOf q).map mkFvar) md] ++ post
+        | c => cmds := cmds ++ [c]
+      let blk' : LBlock := { blk with cmds }
+      blocks := blocks ++ [(l, blk')]
+    let pre := entryCmds ++ tmps
+    if pre.isEmpty then return { b with cfg := { b.cfg with blocks } }
+    let entry := freshLabel "$globalsEntry" (blocks.map (·.1))
+    return { b with cfg := { entry, blocks := (entry, { cmds := pre, transfer := .goto b.cfg.entry }) :: blocks } }
   let procs := prog.procedures.map fun p =>
     if isEntry p then
-      { p with body := p.body.map fun b =>
-          let b := mapBody lowerCmd id b
-          let entry := "$globalsEntry"
-          { b with cfg := { entry, blocks := (entry, { cmds := prog.globalInit.map .cmd, transfer := .goto b.cfg.entry }) :: b.cfg.blocks } } }
+      { p with body := p.body.map (lowerBody ((p.inputs ++ p.outputs).map (·.1.name)) (prog.globalInit.map .cmd)) }
     else
     { p with
       inputs := p.inputs ++ (insOf p.name).map fun g => (ident g, gty g)
       outputs := p.outputs ++ (outsOf p.name).map fun g => (ident g, gty g)
-      body := p.body.map (mapBody lowerCmd id) }
+      body := p.body.map (lowerBody ((p.inputs ++ p.outputs).map (·.1.name)) []) }
   .ok { prog with procedures := procs, globals := [], globalInit := [] }
 
 def pass : Pass := Pass.onUnordered "LowerGlobals" run

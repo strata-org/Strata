@@ -15,38 +15,6 @@ public section
 
 def ident (n : String) : Core.Expression.Ident := ⟨n, ()⟩
 
-def conTyName? (t : LTy) : Option String :=
-  match t with
-  | .forAll [] (.tcons n []) => some n
-  | _ => none
-
-def atomsFuel (cs : List ConstrainedDecl) (name : String) (e : Expr) :
-    Nat → List (Bool × Expr)
-  | 0 => []
-  | fuel + 1 =>
-    match cs.find? (·.name == name) with
-    | none => []
-    | some c =>
-      let here := (c.free, substFvars [(c.binder.name, e)] c.constraint)
-      ((conTyName? c.base).map fun b => atomsFuel cs b e fuel).getD [] ++ [here]
-
-def conjoin : List Expr → Option Expr
-  | [] => none
-  | e :: es => some (es.foldl (fun acc x => mkCall "Bool.And" [acc, x]) e)
-
-def pred (cs : List ConstrainedDecl) (name : String) (e : Expr)
-    (checkedOnly : Bool := false) : Option Expr :=
-  conjoin ((atomsFuel cs name e (cs.length + 1)).filter (fun a => !checkedOnly || !a.1) |>.map (·.2))
-
-partial def baseOf (cs : List ConstrainedDecl) (name : String) (fuel : Nat := 32) : Option LMonoTy :=
-  match fuel, cs.find? (·.name == name) with
-  | 0, _ => none
-  | _, none => none
-  | fuel + 1, some c =>
-    match c.base with
-    | .forAll _ (.tcons b []) => (baseOf cs b fuel).orElse fun _ => some (.tcons b [])
-    | .forAll _ t => some t
-
 def summaryMd (md : MD) (_t : String) : MD := md
 
 structure Ctx where
@@ -54,7 +22,6 @@ structure Ctx where
   witnessHavoc : Bool := false
   vars : Std.HashMap String String
   procs : Std.HashMap String (List (Option String) × List (Option String))
-  fieldTy : FieldRef → Option String
 
 def checkOf (ctx : Ctx) (assert : Bool) (t : String) (e : Expr) (md : MD) : List IRCmd :=
   match pred ctx.cs t e (checkedOnly := assert) with
@@ -99,16 +66,10 @@ def lowerCmd (ctx : Ctx) : IRCmd → List IRCmd
     | none => c :: checkVar ctx false x.name md
   | c@(.call lhs p args md) => callChecks ctx c lhs p args md
   | c@(.virtualCall lhs o meth args md) => callChecks ctx c lhs (implName o meth) args md
-  | c@(.readField x _ f md) =>
-    let fromField := match ctx.fieldTy f with
-      | some t => checkOf ctx false t (mkFvar x.name) md
-      | none => []
-    let toVar := if ctx.vars.get? x.name == ctx.fieldTy f then [] else checkVar ctx true x.name md
-    c :: (fromField ++ toVar)
-  | c@(.writeField _ f v md) =>
-    (match ctx.fieldTy f with
-      | some t => checkOf ctx true t v md
-      | none => []) ++ [c]
+  | .cast x t e mode md =>
+    let own := checkOf ctx (mode == .check) t (mkFvar x.name) md
+    let toVar := if ctx.vars.get? x.name == some t then [] else checkVar ctx true x.name md
+    .cmd (.set x (.det e) md) :: (own ++ toVar)
   | c => [c]
 
 def varTypes (cs : List ConstrainedDecl) (p : Procedure) : Std.HashMap String String :=
@@ -133,11 +94,10 @@ def numberLabels (blocks : List (Label × LBlock)) : List (Label × LBlock) :=
   out
 
 def lowerProcedure (witnessHavoc : Bool) (cs : List ConstrainedDecl)
-    (procs : Std.HashMap String (List (Option String) × List (Option String)))
-    (fieldTy : FieldRef → Option String) (p : Procedure) : Procedure :=
+    (procs : Std.HashMap String (List (Option String) × List (Option String))) (p : Procedure) : Procedure :=
   let outNames := p.outputs.map (·.1.name)
   let allVars := varTypes cs p
-  let ctx : Ctx := { cs, witnessHavoc, vars := allVars.filter fun x _ => !outNames.contains x, procs, fieldTy }
+  let ctx : Ctx := { cs, witnessHavoc, vars := allVars.filter fun x _ => !outNames.contains x, procs }
   let outCtx : Ctx := { ctx with vars := allVars }
   let body := p.body.map fun b =>
     let b := mapBody (lowerCmd ctx) id b
@@ -151,7 +111,10 @@ def lowerProcedure (witnessHavoc : Bool) (cs : List ConstrainedDecl)
       match blk.transfer with
       | .finish _ => (l, { blk with cmds := blk.cmds ++ outChecks })
       | _ => (l, blk)
-    let inChecks : List IRCmd := p.inputs.flatMap fun (x, _) => checkVar ctx false x.name p.md
+    -- `outCtx`, not `ctx`: `ctx` leaves out every output name, and an input that is also an
+    -- output (a parameter passed in and out, such as a global that the procedure writes)
+    -- holds a value of its type on entry like any other input.
+    let inChecks : List IRCmd := p.inputs.flatMap fun (x, _) => checkVar outCtx false x.name p.md
     let entry := "$cteEntry"
     let blocks := (entry, ({ cmds := inChecks, transfer := .goto b.cfg.entry } : LBlock)) :: blocks
     { b with cfg := { entry, blocks := numberLabels blocks } }
@@ -163,8 +126,7 @@ def runWith (witnessHavoc : Bool) (p : UnorderedProgram) : Except String Unorder
   let isCon := fun (t : LTy) => (conTyName? t).filter fun n => cs.any (·.name == n)
   let procs : Std.HashMap String (List (Option String) × List (Option String)) :=
     p.procedures.foldl (fun s pr => s.insert pr.name (pr.inputs.map (isCon ·.2), pr.outputs.map (isCon ·.2))) {}
-  let fieldTy := fun (f : FieldRef) => (p.findField? f) >>= fun fd => isCon fd.ty
-  let q := p.mapProcedures (lowerProcedure witnessHavoc cs procs fieldTy)
+  let q := p.mapProcedures (lowerProcedure witnessHavoc cs procs)
   let names : Std.HashSet String := cs.foldl (fun s c => s.insert c.name) {}
   let q := q.mapTys fun n => if names.contains n then baseOf cs n else none
   .ok { q with constrained := [] }

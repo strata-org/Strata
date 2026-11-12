@@ -138,7 +138,7 @@ inductive IConfig where
 @[expose] def IRCmd.md : IRCmd → MD
   | .cmd (.init _ _ _ md) | .cmd (.set _ _ md) | .cmd (.assert _ _ md) | .cmd (.assume _ _ md)
   | .cmd (.cover _ _ md) => md
-  | .new _ _ md | .readField _ _ _ md | .writeField _ _ _ md | .instanceOf _ _ _ md
+  | .cast _ _ _ _ md | .new _ _ md | .readField _ _ _ md | .writeField _ _ _ md | .instanceOf _ _ _ md
   | .call _ _ _ md | .virtualCall _ _ _ _ md | .throw _ md => md
 
 structure CmdResult where
@@ -270,8 +270,9 @@ variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
   let σG ← initStates Store.empty gnames gvals
   let ins ← evalArgs f σ args
   let σI ← initStates σG (p.inputs.map Prod.fst) ins
-  let outs ← chooseValues prog f (p.outputs.map Prod.snd)
-  initStates σI (p.outputs.map Prod.fst) outs
+  let fresh := p.outputs.filter fun (x, _) => !p.inputs.any (·.1 == x)
+  let outs ← chooseValues prog f (fresh.map Prod.snd)
+  initStates σI (fresh.map Prod.fst) outs
 
 @[expose] def globalsBack (prog : UnorderedProgram) (f : LFactory) (σ σEnd : Store) :
     m (Store) := do
@@ -343,7 +344,11 @@ with the precondition's property summary. -/
           pure ⟨σ', ρE.heap, ρE.next, .normal⟩
         else throw .aliasedResults
       | .raised ρE v _ =>
+        unless lhs.Nodup do throw .aliasedResults
         let σ' ← globalsBack prog ρ.factory ρ.store ρE.store
+        let inouts := (lhs.zip (p.outputs.map Prod.fst)).filter fun (_, o) => p.inputs.any (·.1 == o)
+        let vals ← readValues ρ.factory ρE.store (inouts.map Prod.snd)
+        let σ' ← updateStates σ' (inouts.map Prod.fst) vals
         pure ⟨σ', ρE.heap, ρE.next, .exn v⟩
       | _ => throw (.calleeDidNotTerminate n)
 
@@ -352,6 +357,17 @@ mutual
 @[expose] def evalCmd (prog : UnorderedProgram) : Nat → IEnv → IRCmd → m CmdResult
   | _, ρ, .cmd c => do
     let σ' ← evalBaseCmd prog ρ.factory ρ.store ρ.tys c
+    pure ⟨σ', ρ.heap, ρ.next, .normal⟩
+  | _, ρ, .cast x t e mode md => do
+    let v ← evalExpr ρ.factory ρ.store e
+    let σ' ← setVar ρ.store x v
+    match pred prog.constrained t (mkFvar x.name) (checkedOnly := mode == .check) with
+    | some p =>
+      let c : Cmd Core.Expression := match mode with
+        | .check => .assert s!"constraint_{t}" p md
+        | .assume => .assume s!"constraint_{t}" p md
+      Effects.emit (emittedEvents c ρ.factory σ')
+    | none => pure ()
     pure ⟨σ', ρ.heap, ρ.next, .normal⟩
   | _, ρ, .new x ty _ => do
     if (prog.findComposite? ty).isSome then
@@ -453,11 +469,18 @@ def isEntry (p : Procedure) : Bool :=
   | some { value := .switch true, .. } => true
   | _ => false
 
+/-- Start `p` as the program's entry: its frame has no caller to take the globals from, so
+the globals are defined by running `globalInit` first, in a block in front of the body. -/
 def startProc (prog : UnorderedProgram) (f : LFactory) (fuel : Nat) (p : Procedure) : HostM IConfig := do
   match p.body with
   | none => throw (.procedureWithoutBody p.name)
   | some body =>
-    let σ₀ ← callFrame prog f Store.empty p []
+    let outs ← chooseValues prog f (p.outputs.map Prod.snd)
+    let σ₀ ← initStates Store.empty (p.outputs.map Prod.fst) outs
+    let entry := freshLabel "$globalsEntry" (body.cfg.blocks.map (·.1))
+    let initBlock : Cortex.LBlock := { cmds := prog.globalInit.map .cmd, transfer := .goto body.cfg.entry }
+    let body := if prog.globalInit.isEmpty then body else
+      { body with cfg := { entry := entry, blocks := (entry, initBlock) :: body.cfg.blocks } }
     run prog fuel (.atBlock body body.cfg.entry
       { store := σ₀, heap := fun _ => none, factory := f, next := 0, tys := paramTys p })
 

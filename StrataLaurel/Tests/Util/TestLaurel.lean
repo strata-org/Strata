@@ -766,11 +766,11 @@ private def runAndCheck (block : SourcedProgram)
     (showLocations := showLocations) (showSnippet := showSnippet)
 
 private def runCortexPipelineRaw (program : StrataDDM.Program)
-    (options : LaurelVerifyOptions) : IO (Array Strata.Message) := do
+    (options : LaurelVerifyOptions) (inline : List String := []) : IO (Array Strata.Message) := do
   let uri := Strata.Uri.file "<#strata>"
   match Laurel.TransM.run uri (Laurel.parseProgram program) with
   | .error e => return #[Strata.Message.fromString s!"Translation error: {e}"]
-  | .ok laurelProgram => Cortex.verifyToMessages laurelProgram options
+  | .ok laurelProgram => Cortex.verifyToMessages laurelProgram options inline
 
 /-- Shared verification pass used by both `testLaurelVerification` and `testLaurelExecution`:
     run the full Laurel pipeline (translate + resolve + verify) and check the
@@ -779,8 +779,9 @@ private def runCortexPipelineRaw (program : StrataDDM.Program)
     `debug` before they're matched. -/
 private def runVerifyPath (block : SourcedProgram) (options : LaurelVerifyOptions)
     (annotations : Array DiagnosticAnnotation)
-    (showLocations showSnippet debug : Bool) (cortex : Bool := false) : IO Unit := do
-  let verifyDms ← if cortex then runCortexPipelineRaw block.program options
+    (showLocations showSnippet debug : Bool) (cortex : Bool := false)
+    (inline : List String := []) : IO Unit := do
+  let verifyDms ← if cortex then runCortexPipelineRaw block.program options inline
     else runLaurelPipelineRaw block.program options
   let verifyActual := renderSnippetLocal block.basePos block.source verifyDms
   if debug then
@@ -878,9 +879,10 @@ program with CFG bodies, as `checkCortexCFGTypes` describes. -/
 public def testCortexVerification (block : SourcedProgram)
     (options : LaurelVerifyOptions := defaultLaurelTestOptions)
     (showLocations : Bool := false) (showSnippet : Bool := false)
-    (debug : Bool := false) : IO Unit := do
+    (debug : Bool := false) (inline : List String := []) : IO Unit := do
   let annotations := parseAnnotations block.source
   runVerifyPath block options annotations showLocations showSnippet debug (cortex := true)
+    (inline := inline)
   checkCortexCFGTypes block.program options.translateOptions
 
 /-- Print the named procedures of the Core program with CFG bodies that Cortex

@@ -46,8 +46,14 @@ structure FieldRef where
   field : FieldName
   deriving DecidableEq, Repr, Inhabited
 
+inductive CastMode where
+  | check
+  | assume
+  deriving DecidableEq, Repr, Inhabited
+
 inductive IRCmd where
   | cmd (c : Cmd Core.Expression)
+  | cast (lhs : Core.Expression.Ident) (ty : TypeName) (e : Expr) (mode : CastMode) (md : MD)
   | new (lhs : Core.Expression.Ident) (ty : TypeName) (md : MD)
   | readField (lhs : Core.Expression.Ident) (obj : Expr) (field : FieldRef) (md : MD)
   | writeField (obj : Expr) (field : FieldRef) (rhs : Expr) (md : MD)

@@ -73,6 +73,7 @@ def cmdExprs : IRCmd → List Expr
   | .cmd (.init _ _ (.det e) _) | .cmd (.set _ (.det e) _) => [e]
   | .cmd (.init _ _ .nondet _) | .cmd (.set _ .nondet _) => []
   | .cmd (.assert _ e _) | .cmd (.assume _ e _) | .cmd (.cover _ e _) => [e]
+  | .cast _ _ e _ _ => [e]
   | .new .. => []
   | .readField _ o _ _ | .instanceOf _ o _ _ => [o]
   | .writeField o _ v _ => [o, v]
