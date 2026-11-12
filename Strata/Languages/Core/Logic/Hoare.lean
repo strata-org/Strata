@@ -31,9 +31,9 @@ separately is the contract integration: `ContractToHoareTriple` defines the
 contract reading, `ContractToHoareTripleProps` discharges it, and `HoareCall`
 provides the rule for procedure calls.
 
-The current denotational domain of Core `real` is `Rat`, inherited from
-`Lambda.SortDenote`. Accordingly, these Hoare judgements currently state
-correctness over rational semantics rather than mathematical or SMT reals.
+The denotational domain of Core `real` is `Strata.Util.Real`, inherited from
+`Lambda.SortDenote`, so these Hoare judgements state correctness over the real
+numbers.
 -/
 
 public section

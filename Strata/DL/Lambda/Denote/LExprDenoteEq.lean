@@ -12,6 +12,7 @@ import all Strata.DL.Lambda.Denote.CallOfLFuncDenote
 import all Strata.DL.Lambda.LExprEval
 import all Strata.DL.Lambda.Denote.LExprDenoteConstrs
 import all Strata.DL.Lambda.TypeFactoryWF
+import Strata.Util.RealProps
 
 /-!
 ## Syntactic Equality Soundness
@@ -87,7 +88,7 @@ theorem denoteConst_injective
     have hty_rfl : hty_orig = rfl := by rfl
     rw [hty_rfl] at heq
     simp only [denoteConst] at heq
-    exact congrArg _ heq
+    exact congrArg _ (Strata.Util.Real.ofRat_inj.mp heq)
   case boolConst.boolConst =>
     rename_i b1 b2 hty_orig
     have hty_rfl : hty_orig = rfl := by rfl

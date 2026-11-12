@@ -419,19 +419,86 @@ theorem fragmentFns_sound {F : Expression.Factory} (hF : FragmentFactoryWF F) :
       ComputableOp fn ∨ UserFnComputable F fn :=
   fragmentFnsFrom_sound hF _ [] (fun _ h => Array.mem_def.2 h) fun _ _ h => nomatch h
 
+/-! ## Expressions whose values are not real
+
+The semantics of `real` is `Strata.Util.Real`, whose values are not all literals, so the fragment
+keeps real values out of the stores of its runs: an arbitrary value of a variable holding a real
+could be irrational, and no literal would denote it. A type annotation of an expression of the
+fragment never has `real` as its result type (`notRealResult`), so neither does the expression's
+type (`notRealResult_of_hasTypeA`). -/
+
+/-- Whether a type is not `real`, nor a function type whose result, after all its arguments, is
+    `real`. -/
+@[expose] def notRealResult : LMonoTy → Bool
+  | .tcons "real" [] => false
+  | .tcons "arrow" [_, r] => notRealResult r
+  | _ => true
+
+/-- Whether every literal and type annotation of an expression has a type that `notRealResult`
+    accepts: in particular, the expression has no `real` literal. -/
+@[expose] def annNotReal : Expression.Expr → Bool
+  | .const _ c => notRealResult c.ty
+  | .op _ _ ty => ty.all notRealResult
+  | .fvar _ _ ty => ty.all notRealResult
+  | .bvar _ _ => true
+  | .abs _ _ ty b => ty.all notRealResult && annNotReal b
+  | .quant _ _ _ ty tr b => ty.all notRealResult && annNotReal tr && annNotReal b
+  | .app _ f a => annNotReal f && annNotReal a
+  | .ite _ c t f => annNotReal c && annNotReal t && annNotReal f
+  | .eq _ a b => annNotReal a && annNotReal b
+
+/-- The type of an expression whose annotations `annNotReal` accepts, in a context of such types,
+    is not `real`, nor a function type with result `real`. -/
+private theorem notRealResult_of_hasTypeA {Δ : List LMonoTy} {e : Expression.Expr} {τ : LMonoTy}
+    (h : LExpr.HasTypeA Δ e τ) (hΔ : ∀ t ∈ Δ, notRealResult t = true)
+    (he : annNotReal e = true) : notRealResult τ = true := by
+  induction h with
+  | const => exact he
+  | op => simpa [annNotReal] using he
+  | fvar => simpa [annNotReal] using he
+  | bvar hi => exact hΔ _ (List.mem_of_getElem? hi)
+  | abs _ ih =>
+    simp only [annNotReal, Bool.and_eq_true, Option.all_some] at he
+    exact ih (fun t ht => by
+      rcases List.mem_cons.1 ht with rfl | ht
+      · exact he.1
+      · exact hΔ t ht) he.2
+  | quant => rfl
+  | app _ _ ihf _ =>
+    simp only [annNotReal, Bool.and_eq_true] at he
+    exact ihf hΔ he.1
+  | ite _ _ _ _ iht _ =>
+    simp only [annNotReal, Bool.and_eq_true] at he
+    exact iht hΔ he.1.2
+  | eq => rfl
+
+/-- Annotating the free variables of an expression `annNotReal` accepts with types
+    `notRealResult` accepts keeps it accepted. -/
+private theorem annNotReal_annotateFvars {ann : CoreIdent → Option LMonoTy}
+    (hann : ∀ x t, ann x = some t → notRealResult t = true) {e : Expression.Expr}
+    (he : annNotReal e = true) : annNotReal (e.annotateFvars ann) = true := by
+  induction e with
+  | fvar m x ty =>
+    simp only [LExpr.annotateFvars, annNotReal] at he ⊢
+    split
+    · rename_i t ht; exact by simpa using hann x t ht
+    · exact he
+  | _ => simp_all [LExpr.annotateFvars, annNotReal]
+
 /-- **The expressions of the fragment** of the factory `F`: the computable fragment relative to
-    the functions of the fragment (`fragmentFns`). -/
-abbrev InFragment (F : Lambda.Factory CoreLParams) : Expression.Expr → Prop :=
-  FragmentExpr F (·.name.name ∈ fragmentFns F)
+    the functions of the fragment (`fragmentFns`), with no annotation of result type `real`
+    (`annNotReal`). -/
+abbrev InFragment (F : Lambda.Factory CoreLParams) (e : Expression.Expr) : Prop :=
+  FragmentExpr F (·.name.name ∈ fragmentFns F) e ∧ annNotReal e = true
 
 /-- The decision procedure for `InFragment`. -/
-@[expose] def inFragment (F : Lambda.Factory CoreLParams) : Expression.Expr → Bool :=
-  fragmentExpr F (fun g => (fragmentFns F).contains g.name.name)
+@[expose] def inFragment (F : Lambda.Factory CoreLParams) (e : Expression.Expr) : Bool :=
+  fragmentExpr F (fun g => (fragmentFns F).contains g.name.name) e && annNotReal e
 
 /-- `inFragment` decides `InFragment`. -/
 theorem inFragment_iff (F : Lambda.Factory CoreLParams) (e : Expression.Expr) :
     inFragment F e = true ↔ InFragment F e := by
-  rw [inFragment, fragmentExpr_iff]
+  rw [inFragment, Bool.and_eq_true, fragmentExpr_iff]
   simp only [List.contains_iff_mem]
 
 /-- **Computable evaluation of the fragment**: on a factory meeting `FragmentFactoryWF`, an
@@ -442,16 +509,18 @@ theorem computableEval_of_inFragment {F : Expression.Factory} (hF : FragmentFact
     (hσ : ∀ x ∈ LExpr.LExpr.getVars e, ∀ v, σ x = some v →
       ∃ c, v = SemValue.ofConst F.model.tcInterp c) :
     ComputableEval F σ e :=
-  computableEval_of_fragment F hF.1 hF.2.1 (fun fn hfn hin => fragmentFns_sound hF fn hfn hin) h hσ
+  computableEval_of_fragment F hF.1 hF.2.1 (fun fn hfn hin => fragmentFns_sound hF fn hfn hin) h.1
+    hσ
 
 /-! ## The static criterion on programs -/
 
-/-- Whether a monomorphic type is a type of literals: `bool`, `int`, `real`, `string`, or a
-    bit-vector type. -/
+/-- Whether a monomorphic type is a type of literals: `bool`, `int`, `string`, or a bit-vector
+    type. `real` is excluded, for the reason given at the start of this section, for instance
+    `var x : real; havoc x`. Deterministic real code (literals, copies, conditionals) could be
+    readmitted under the invariant that every stored real is the value of a rational literal. -/
 @[expose] def isLitMonoTy : LMonoTy → Bool
   | .tcons "bool" [] => true
   | .tcons "int" [] => true
-  | .tcons "real" [] => true
   | .tcons "string" [] => true
   | .bitvec _ => true
   | _ => false
@@ -459,12 +528,13 @@ theorem computableEval_of_inFragment {F : Expression.Factory} (hF : FragmentFact
 /-- Whether a type is a monomorphic type of literals. -/
 @[expose] def isLitTy (ty : Expression.Ty) : Bool := ty.toMonoType?.any isLitMonoTy
 
-/-- A semantic value of a sort whose type is a type of literals is the value of a literal. -/
+/-- A semantic value of a sort whose type is a type of literals is the value of a literal whose
+    type is not `real`. -/
 theorem eq_ofConst_of_isLitMonoTy {v : SemValue} (h : isLitMonoTy v.sort.toMonoTy = true) :
-    ∃ c, v = SemValue.ofConst v.tc c := by
+    ∃ c, notRealResult c.ty = true ∧ v = SemValue.ofConst v.tc c := by
   obtain ⟨tc, s, val⟩ := v
   cases s with
-  | bitvec n => exact ⟨.bitvecConst n val, rfl⟩
+  | bitvec n => exact ⟨.bitvecConst n val, rfl, rfl⟩
   | tcons name args =>
     simp only [LSort.toMonoTy] at h
     unfold isLitMonoTy at h
@@ -476,10 +546,9 @@ theorem eq_ofConst_of_isLitMonoTy {v : SemValue} (h : isLitMonoTy v.sort.toMonoT
          | cons _ _ => cases h2
          | nil =>
            first
-           | exact ⟨.boolConst val, rfl⟩
-           | exact ⟨.intConst val, rfl⟩
-           | exact ⟨.rationalConst val, rfl⟩
-           | exact ⟨.strConst val, rfl⟩)
+           | exact ⟨.boolConst val, rfl, rfl⟩
+           | exact ⟨.intConst val, rfl, rfl⟩
+           | exact ⟨.strConst val, rfl, rfl⟩)
       | cases heq
       | cases h
 
@@ -672,9 +741,10 @@ theorem procInFragment_iff (fe : Expression.Expr → Bool) (p : Procedure) :
 
 /-! ## Runs of programs in the fragment -/
 
-/-- A semantic value is the value of a literal of the factory's model. -/
+/-- A semantic value is the value of a literal of the factory's model, of a type other than
+    `real`. -/
 @[expose] def LitVal (F : Expression.Factory) (v : Expression.Val) : Prop :=
-  ∃ c, v = SemValue.ofConst F.model.tcInterp c
+  ∃ c, notRealResult c.ty = true ∧ v = SemValue.ofConst F.model.tcInterp c
 
 /-- Every value of the store is the value of a literal (`LitVal`). -/
 @[expose] def LitStore (F : Expression.Factory) (σ : CoreStore) : Prop :=
@@ -706,7 +776,7 @@ private theorem exists_storeDenotes {F : Expression.Factory} {σ : CoreStore}
   simp only [hx, Option.map_some, Option.some.injEq] at hr
   subst hr
   split
-  · exact denotes_const_iff.2 (Classical.choose_spec ‹_›)
+  · rename_i h; exact denotes_const_iff.2 (Classical.choose_spec h).2
   · exact absurd (hσ x v hx) ‹_›
 
 /-- In the model `Core.factoryInterp` of `Core.Factory`, the value of a literal is reified, by the
@@ -715,16 +785,26 @@ theorem reifyAt_ofConst (c : LConst) :
     FactoryInterpModel.reifyAt (SemValue.ofConst FactoryInterpModel.tcInterp c).sort
       (SemValue.ofConst FactoryInterpModel.tcInterp c).val =
         (LExpr.const default c : Expression.Expr) := by
-  cases c <;> rfl
+  cases c with
+  | rationalConst r => exact FactoryInterpModel.reifyAt_ofRat r
+  | _ => rfl
 
-/-- The value of a computable expression on a store of literals is the value of a literal. -/
+/-- The value of a computable expression on a store of literals, none of whose literals and
+    annotations has result type `real`, is the value of a literal whose type is not `real`. -/
 private theorem litVal_of_computable {F : Expression.Factory} {σ : CoreStore}
     {e : Expression.Expr} {v : Expression.Val} (hσ : LitStore F σ) (h : ComputableEval F σ e)
-    (hv : Expression.eval F σ e = some v) : LitVal F v := by
+    (he : annNotReal e = true) (hv : Expression.eval F σ e = some v) : LitVal F v := by
   obtain ⟨hd, τ, hτ, -, -⟩ := (LExpr.denoteEval_eq_some_iff (T := CoreLParams)).1 hv
   obtain ⟨σr, hS⟩ := exists_storeDenotes hσ
-  obtain ⟨c, -, hc, -⟩ := h σr τ hS hd hτ
-  exact ⟨c, Option.some.inj (hv.symm.trans hc)⟩
+  obtain ⟨c, hct, hc, -⟩ := h σr τ hS hd hτ
+  refine ⟨c, hct ▸ notRealResult_of_hasTypeA hτ nofun (annNotReal_annotateFvars ?_ he),
+    Option.some.inj (hv.symm.trans hc)⟩
+  intro x t hx
+  simp only [ValStore.ann, Option.map_eq_some_iff] at hx
+  obtain ⟨w, hw, rfl⟩ := hx
+  obtain ⟨c', hc', rfl⟩ := hσ x w hw
+  simp only [SemValue.ofConst]
+  exact (congrArg notRealResult (LConst.ty_isGround c')).trans hc'
 
 /-- A point update of a store of literals by the value of a literal is a store of literals. -/
 private theorem LitStore.update {F : Expression.Factory} {σ : CoreStore} {x : CoreIdent}
@@ -785,27 +865,29 @@ private theorem LitStore.read {F : Expression.Factory} {σ : SemanticStore Expre
 /-- The values of computable expressions on a store of literals are values of literals. -/
 private theorem LitStore.evals {F : Expression.Factory} {σ : CoreStore}
     {es : List Expression.Expr} {vs : List Expression.Val} (hσ : LitStore F σ)
-    (hc : ∀ e ∈ es, ComputableEval F σ e) (h : EvalExpressions (P := Expression) F σ es vs) :
+    (hc : ∀ e ∈ es, ComputableEval F σ e ∧ annNotReal e = true)
+    (h : EvalExpressions (P := Expression) F σ es vs) :
     ∀ v ∈ vs, LitVal F v := by
   induction h with
   | eval_none => exact nofun
   | eval_some _ he _ ih =>
     intro v hv
     rcases List.mem_cons.1 hv with rfl | hv
-    · exact litVal_of_computable hσ (hc _ List.mem_cons_self) he
+    · exact litVal_of_computable hσ (hc _ List.mem_cons_self).1 (hc _ List.mem_cons_self).2 he
     · exact ih hσ (fun e' h' => hc e' (List.mem_cons_of_mem _ h')) v hv
 
-/-- The type of a literal is a type of literals. -/
-private theorem isLitMonoTy_ty (c : LConst) : isLitMonoTy c.ty = true := by
-  cases c <;> rfl
+/-- The type of a literal whose type is not `real` is a type of literals. -/
+private theorem isLitMonoTy_ty (c : LConst) (h : notRealResult c.ty = true) :
+    isLitMonoTy c.ty = true := by
+  cases c <;> first | rfl | cases h
 
 /-- A value of a type of literals is the value of a literal. -/
 private theorem litVal_of_valueOfTy {F : Expression.Factory} {v : Expression.Val}
     {ty : Expression.Ty} (hty : isLitTy ty = true) (h : HasVal.valueOfTy F v ty) : LitVal F v := by
   obtain ⟨htc, hv⟩ := h
   simp only [isLitTy, hv, Option.any_some] at hty
-  obtain ⟨c, hc⟩ := eq_ofConst_of_isLitMonoTy hty
-  exact ⟨c, htc ▸ hc⟩
+  obtain ⟨c, hcr, hc⟩ := eq_ofConst_of_isLitMonoTy hty
+  exact ⟨c, hcr, htc ▸ hc⟩
 
 /-- A value of the type of the value a variable of a store of literals holds is the value of a
     literal. -/
@@ -813,10 +895,10 @@ private theorem litVal_of_valueOfStoredTy {F : Expression.Factory} {σ : CoreSto
     {x : CoreIdent} {v : Expression.Val} (hσ : LitStore F σ)
     (h : HasVal.valueOfStoredTy (P := Expression) F σ x v) : LitVal F v := by
   obtain ⟨prev, ty, hp, ⟨-, hpt⟩, hvt⟩ := h
-  obtain ⟨c, rfl⟩ := hσ x prev hp
+  obtain ⟨c, hcr, rfl⟩ := hσ x prev hp
   refine litVal_of_valueOfTy ?_ hvt
   simp only [isLitTy, hpt, Option.any_some]
-  exact (congrArg isLitMonoTy (LConst.ty_isGround c)).trans (isLitMonoTy_ty c)
+  exact (congrArg isLitMonoTy (LConst.ty_isGround c)).trans (isLitMonoTy_ty c hcr)
 
 /-- **Base commands of the fragment keep stores of literals**: a reference evaluation of a base
     command in the fragment from a store of literals ends in a store of literals and emits only
@@ -827,13 +909,13 @@ private theorem evalCmdE_inFragment {F : Expression.Factory} (hF : FragmentFacto
     (hc : CmdInFragment (InFragment F.factory) (.cmd c)) :
     LitStore F σ' ∧ ∀ ev ∈ evs, EventInFragment F ev := by
   have hcomp : ∀ e, InFragment F.factory e → ComputableEval F σ e :=
-    fun e he => computableEval_of_inFragment hF he fun x _ v hx => hσ x v hx
+    fun e he => computableEval_of_inFragment hF he fun x _ v hx => (hσ x v hx).imp fun _ h => h.2
   cases h with
   | eval_init he i _ _ =>
-    exact ⟨hσ.init (litVal_of_computable hσ (hcomp _ (hc.2 _ rfl)) he) i, nofun⟩
+    exact ⟨hσ.init (litVal_of_computable hσ (hcomp _ (hc.2 _ rfl)) (hc.2 _ rfl).2 he) i, nofun⟩
   | eval_init_unconstrained i hty _ => exact ⟨hσ.init (litVal_of_valueOfTy hc.1 hty) i, nofun⟩
   | eval_set he u _ _ =>
-    exact ⟨hσ.set (litVal_of_computable hσ (hcomp _ (hc _ rfl)) he) u, nofun⟩
+    exact ⟨hσ.set (litVal_of_computable hσ (hcomp _ (hc _ rfl)) (hc _ rfl).2 he) u, nofun⟩
   | eval_set_nondet u hty _ => exact ⟨hσ.set (litVal_of_valueOfStoredTy hσ hty) u, nofun⟩
   | eval_assert => exact ⟨hσ, by simpa [EventInFragment] using ⟨hσ, hc⟩⟩
   | eval_assume => exact ⟨hσ, by simp [EventInFragment]⟩
@@ -874,7 +956,7 @@ private theorem step_inFragment {F : Expression.Factory} {E : CoreCmdRel}
     exact ⟨⟨hx.1, hx.2.project⟩, trivial, nofun⟩
   | step_block_exit_mismatch => exact ⟨⟨hx.1, hx.2.project⟩, trivial, nofun⟩
   | _ =>
-    simp_all [ConfigLit, ConfigInFragment, StmtInFragment, BlockInFragment]
+    simp_all [ConfigLit, ConfigInFragment, StmtInFragment, BlockInFragment, InFragment]
 
 /-- Runs of the fragment keep stores of literals: the multi-step form of `step_inFragment`. -/
 private theorem star_inFragment {F : Expression.Factory} {E : CoreCmdRel}
@@ -962,8 +1044,8 @@ private theorem callEntry_lit {F : Expression.Factory} (hF : FragmentFactoryWF F
     (he : CallEntry F σ p args σAO) : LitStore F σAO := by
   obtain ⟨ins, outs, hins, houts, σA, σIO, hA, hIO, rfl⟩ := he
   have hA' := LitStore.inits (σ := emptyStore) (fun _ _ h => by cases h)
-    (hσ.evals (fun e h => computableEval_of_inFragment hF (hargs e h)
-      fun x _ v hx => hσ x v hx) hins) hA
+    (hσ.evals (fun e h => ⟨computableEval_of_inFragment hF (hargs e h)
+      fun x _ v hx => (hσ x v hx).imp fun _ h => h.2, (hargs e h).2⟩) hins) hA
   have hIO' := hA'.inits (hσ.read houts) hIO
   intro x v hx
   unfold Calls.withOldSnapshots at hx
@@ -1110,7 +1192,7 @@ theorem evalsComputable_of_inFragment {F : Expression.Factory} (hF : FragmentFac
     EvalsComputable π c := by
   have hcomp : ∀ {σ : CoreStore} {e}, LitStore F σ → InFragment F.factory e →
       ComputableEval F σ e := fun hl he =>
-    computableEval_of_inFragment hF he fun x _ v hx => hl x v hx
+    computableEval_of_inFragment hF he fun x _ v hx => (hl x v hx).imp fun _ h => h.2
   refine ⟨fun d hd ρ s ha e he => ?_, fun d hd e he => ?_⟩
   · obtain ⟨hdl, hdc⟩ := visits_inFragment hF hprocs hc hcc hd
     obtain ⟨⟨hf, hl⟩, hs⟩ := ha.inFragment hdl hdc
@@ -1180,9 +1262,11 @@ private theorem computableFailure_of_ref {F : Expression.Factory} (hF : Fragment
     ∀ {ev : Event Expression}, EventInFragment F ev → RefFailure target ev →
       ComputableFailure target ev
   | .assert _, ⟨hf, hl, he⟩, ⟨h1, h2, h3⟩ =>
-    ⟨h1, h2, h3, hf ▸ computableEval_of_inFragment hF he fun x _ v hx => hl x v hx⟩
+    ⟨h1, h2, h3, hf ▸ computableEval_of_inFragment hF he fun x _ v hx =>
+      (hl x v hx).imp fun _ h => h.2⟩
   | .cover _, ⟨hf, hl, he⟩, ⟨h1, h2, h3⟩ =>
-    ⟨h1, h2, h3, hf ▸ computableEval_of_inFragment hF he fun x _ v hx => hl x v hx⟩
+    ⟨h1, h2, h3, hf ▸ computableEval_of_inFragment hF he fun x _ v hx =>
+      (hl x v hx).imp fun _ h => h.2⟩
 
 /-- The facts the static criterion gives about a program whose procedures are among `procs`:
     its procedures are in the fragment, and every expression a run from `c` evaluates is

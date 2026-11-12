@@ -15,6 +15,7 @@ import all Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.FactoryWF
 import all Strata.DL.Lambda.FactoryProps
 import all Strata.DL.Lambda.Denote.LExprDenoteCompute
+import Strata.Util.RealProps
 
 /-!
 ## A Sound Interpretation of `Core.Factory`
@@ -30,6 +31,9 @@ The primary entry points are:
 - `Core.factory_axioms_wellTyped`: every axiom of `Core.Factory` is a well-typed closed
   Boolean formula, so the previous result applies to all of them
 - `Core.factoryInterp_nonempty : Nonempty (Lambda.Interp Core.Factory)`
+- `Core.RealsAsReal`: an operator interpretation gives the real operations their SMT-LIB
+  meaning on `Strata.Util.Real`, and `Core.factoryInterp_realsAsReal` shows the concrete
+  interpretation does
 
 Implementation declarations live under `Core.FactoryInterpModel`.
 -/
@@ -39,6 +43,10 @@ open Lambda
 namespace Core
 
 public section
+
+/-- The sort `real → real → out` of a binary real operation. -/
+@[match_pattern] abbrev realBinSort (out : LSort) : LSort :=
+  .tcons "arrow" [.tcons "real" [], .tcons "arrow" [.tcons "real" [], out]]
 
 namespace FactoryInterpModel
 
@@ -51,7 +59,7 @@ and a `Sequence a` a list. Every other type constructor is `Unit`. -/
 @[expose] def Carrier : LSort → Type
   | .tcons "bool" []      => Bool
   | .tcons "int" []       => Int
-  | .tcons "real" []      => Rat
+  | .tcons "real" []      => Strata.Util.Real
   | .tcons "string" []    => String
   | .bitvec n             => BitVec n
   | .tcons "arrow" [a, b] => Carrier a → Carrier b
@@ -88,7 +96,7 @@ def Carrier.default (s : LSort) : Carrier s := by
     split
     next => exact false
     next => exact (0 : Int)
-    next => exact (0 : Rat)
+    next => exact (0 : Strata.Util.Real)
     next => exact ""
     next n _ => exact (0 : BitVec n)
     next _ _ b heq => cases heq; exact fun _ => ih b (by simp)
@@ -137,28 +145,43 @@ use `coe` where the typing rules make two of those pieces equal. -/
 /-- `coe a a` is the identity function. -/
 @[simp] private theorem coe_self_fun (a : LSort) : coe a a = id := funext (coe_self a)
 
-/-- Reify a primitive semantic value as a Core literal. -/
-@[expose] def reifyAt : (s : LSort) → SortDenote tcInterp s → LExpr T.mono
+open Classical in
+/-- Reify a primitive semantic value as a Core literal. A real that is not the image of a
+rational has no literal and is reified as `0`. -/
+@[expose] noncomputable def reifyAt : (s : LSort) → SortDenote tcInterp s → LExpr T.mono
   | .tcons "bool" [],   v => .const default (.boolConst v)
   | .tcons "int" [],    v => .const default (.intConst v)
-  | .tcons "real" [],   v => .const default (.rationalConst v)
+  | .tcons "real" [],   v => .const default (.rationalConst
+      (if h : ∃ r, Strata.Util.Real.ofRat r = v then Classical.choose h else 0))
   | .tcons "string" [], v => .const default (.strConst v)
   | .bitvec n,          v => .const default (.bitvecConst n v)
   | .tcons "arrow" [_, _], _ => .const default (.boolConst false)
   | .tcons _ _, _ => .const default (.boolConst false)
 
+open Classical in
+/-- The embedding of a rational is reified as its literal. -/
+theorem reifyAt_ofRat (r : Rat) :
+    reifyAt (.tcons "real" []) (Strata.Util.Real.ofRat r) = .const default (.rationalConst r) := by
+  have h : ∃ r', Strata.Util.Real.ofRat r' = Strata.Util.Real.ofRat r := ⟨r, rfl⟩
+  show LExpr.const (T := T.mono) default (.rationalConst
+    (if h : ∃ r', Strata.Util.Real.ofRat r' = Strata.Util.Real.ofRat r then Classical.choose h
+      else 0)) = _
+  split
+  · rename_i h'; rw [Strata.Util.Real.ofRat_inj.mp (Classical.choose_spec h')]
+  · contradiction
+
 /-- Decode a Core literal as a semantic value, defaulting for unsupported forms. -/
 @[expose] def decodeAt : (s : LSort) → Option (LExpr T.mono) → SortDenote tcInterp s
   | .tcons "bool" [],   some (.const _ (.boolConst b)) => b
   | .tcons "int" [],    some (.const _ (.intConst i))  => i
-  | .tcons "real" [],   some (.const _ (.rationalConst r)) => r
+  | .tcons "real" [],   some (.const _ (.rationalConst r)) => Strata.Util.Real.ofRat r
   | .tcons "string" [], some (.const _ (.strConst s)) => s
   | .bitvec n,          some (.const _ (.bitvecConst n' b)) =>
       if h : n = n' then h ▸ b else default
   | s, _ => (SortDenote.instInhabited s).default
 
 /-- Lift a concrete evaluator to a curried semantic value at the requested sort. -/
-@[expose] def gatherEval
+@[expose] noncomputable def gatherEval
     (ceval : ConcreteEval T)
     (acc : List (LExpr T.mono)) : (s : LSort) → SortDenote tcInterp s
   | .tcons "arrow" [a, b] => fun (x : SortDenote tcInterp a) =>
@@ -202,7 +225,10 @@ theorem gatherEval_bitvec
 
 The functions of `Core.Factory` without a concrete evaluator are interpreted by
 `axiomOp`, which gives `Map`, `Set` and `Sequence` operations the meaning their
-axioms describe on the carriers above (every other one is a default value). -/
+axioms describe on the carriers above, and the real operations their meaning in
+the SMT-LIB theory of reals, on `Strata.Util.Real` (every other one is a default value).
+Division by zero is `0` here; `Core.RealsAsReal` leaves it unconstrained, as
+SMT-LIB does. -/
 
 /-- The element at index `i` of a sequence, or a default value out of range. -/
 @[expose] noncomputable def seqGet (a b : LSort) (s : List (Carrier a)) (i : Int) :
@@ -286,6 +312,23 @@ by name (after `checkedName`) and sort. -/
       ((if 0 ≤ n then s.drop n.toNat
         else List.replicate (-n).toNat (toC (default : SortDenote tcInterp a)) ++ s).map
           (coe a a') : SeqC a')
+  | "Real.Add", realBinSort (.tcons "real" []) =>
+    fun (x y : Strata.Util.Real) => x + y
+  | "Real.Sub", realBinSort (.tcons "real" []) =>
+    fun (x y : Strata.Util.Real) => x - y
+  | "Real.Mul", realBinSort (.tcons "real" []) =>
+    fun (x y : Strata.Util.Real) => x * y
+  | "Real.Div", realBinSort (.tcons "real" []) =>
+    fun (x y : Strata.Util.Real) => x / y
+  | "Real.Neg", .tcons "arrow" [.tcons "real" [], .tcons "real" []] => fun (x : Strata.Util.Real) => -x
+  | "Real.Lt", realBinSort (.tcons "bool" []) =>
+    fun (x y : Strata.Util.Real) => decide (x < y)
+  | "Real.Le", realBinSort (.tcons "bool" []) =>
+    fun (x y : Strata.Util.Real) => decide (x ≤ y)
+  | "Real.Gt", realBinSort (.tcons "bool" []) =>
+    fun (x y : Strata.Util.Real) => decide (x > y)
+  | "Real.Ge", realBinSort (.tcons "bool" []) =>
+    fun (x y : Strata.Util.Real) => decide (x ≥ y)
   | _, s => (SortDenote.instInhabited s).default
 
 /-- Interpretation of the operations of `Core.Factory` without a concrete evaluator. -/
@@ -1125,6 +1168,60 @@ private theorem opInterp_seqDropBang : opInterp "Sequence.drop!" = opInterp "Seq
     get?_wf (wf := seqDropFunc) (by wf_mem)
   funext s; simp only [opInterp, h1, h2]; rfl
 
+/-- The model interprets a real operation, built by `binaryFuncUneval` or `unaryFuncUneval`,
+by `axiomOp`, whose case for it is the given operation of `Strata.Util.Real`. -/
+local macro "real_op" wf:ident : term =>
+  `((opInterp_axiom (wf := $wf) (by wf_mem) rfl _).trans rfl)
+
+/-- The model interprets `Real.Add` as addition on `Real`. -/
+private theorem opInterp_realAdd :
+    opInterp "Real.Add" (arr .real (arr .real .real)) = fun (x y : Strata.Util.Real) => x + y :=
+  real_op realAddFunc
+
+/-- The model interprets `Real.Sub` as subtraction on `Real`. -/
+private theorem opInterp_realSub :
+    opInterp "Real.Sub" (arr .real (arr .real .real)) = fun (x y : Strata.Util.Real) => x - y :=
+  real_op realSubFunc
+
+/-- The model interprets `Real.Mul` as multiplication on `Real`. -/
+private theorem opInterp_realMul :
+    opInterp "Real.Mul" (arr .real (arr .real .real)) = fun (x y : Strata.Util.Real) => x * y :=
+  real_op realMulFunc
+
+/-- The model interprets `Real.Div` as division on `Real`, which is `0` at a zero divisor. -/
+private theorem opInterp_realDiv :
+    opInterp "Real.Div" (arr .real (arr .real .real)) = fun (x y : Strata.Util.Real) => x / y :=
+  real_op realDivFunc
+
+/-- The model interprets `Real.Neg` as negation on `Real`. -/
+private theorem opInterp_realNeg :
+    opInterp "Real.Neg" (arr .real .real) = fun (x : Strata.Util.Real) => -x :=
+  real_op realNegFunc
+
+open Classical in
+/-- The model interprets `Real.Lt` as the order `x < y` on `Real`. -/
+private theorem opInterp_realLt :
+    opInterp "Real.Lt" (arr .real (arr .real .bool)) = fun (x y : Strata.Util.Real) => decide (x < y) :=
+  real_op realLtFunc
+
+open Classical in
+/-- The model interprets `Real.Le` as the order `x ≤ y` on `Real`. -/
+private theorem opInterp_realLe :
+    opInterp "Real.Le" (arr .real (arr .real .bool)) = fun (x y : Strata.Util.Real) => decide (x ≤ y) :=
+  real_op realLeFunc
+
+open Classical in
+/-- The model interprets `Real.Gt` as the order `x > y` on `Real`. -/
+private theorem opInterp_realGt :
+    opInterp "Real.Gt" (arr .real (arr .real .bool)) = fun (x y : Strata.Util.Real) => decide (x > y) :=
+  real_op realGtFunc
+
+open Classical in
+/-- The model interprets `Real.Ge` as the order `x ≥ y` on `Real`. -/
+private theorem opInterp_realGe :
+    opInterp "Real.Ge" (arr .real (arr .real .bool)) = fun (x y : Strata.Util.Real) => decide (x ≥ y) :=
+  real_op realGeFunc
+
 end OpLemmas
 
 
@@ -1642,6 +1739,38 @@ noncomputable def model : Interp Core.Factory where
 
 end FactoryInterpModel
 
+open Classical in
+/-- **An operator interpretation gives the real operations their SMT-LIB meaning.** The
+    SMT encoder sends `Real.Add`, `Real.Sub`, `Real.Mul`, `Real.Div`, `Real.Neg`,
+    `Real.Lt`, `Real.Le`, `Real.Gt` and `Real.Ge` to the operations of the SMT-LIB theory
+    of reals, while `Core.Factory` gives them no evaluator and no axiom, so nothing else
+    constrains them in a model. This states that `op` interprets each as the
+    corresponding operation of `Strata.Util.Real`, the carrier of `real`, at every
+    argument. Division is constrained only at a nonzero divisor: SMT-LIB makes `x / 0`
+    some unspecified real for each `x`. `factoryInterp` happens to make it `0`; a back end
+    may assume this predicate, not that value.
+
+    Core's real carrier is `Strata.Util.Real`, a complete ordered field (proved:
+    `Strata.Util.Real.exists_isLUB`), as the reals of SMT-LIB's theory are. That the solver
+    decides that theory correctly is not proved: it is part of the solver's trusted
+    specification, as for every other theory.
+
+    It is stated on the operator interpretation rather than on an `Interp` of a given
+    factory, so it applies as is to a model of any extension of `Core.Factory`, such as
+    the factory of a program with its own functions and datatypes: write
+    `RealsAsReal I.opInterp`. -/
+structure RealsAsReal {tcInterp : TyConstrInterp} (op : OpInterp tcInterp) : Prop where
+  add : op "Real.Add" (realBinSort .real) = fun (x y : Strata.Util.Real) => x + y
+  sub : op "Real.Sub" (realBinSort .real) = fun (x y : Strata.Util.Real) => x - y
+  mul : op "Real.Mul" (realBinSort .real) = fun (x y : Strata.Util.Real) => x * y
+  div : ∀ x y : Strata.Util.Real, y ≠ 0 →
+    (op "Real.Div" (realBinSort .real) : Strata.Util.Real → Strata.Util.Real → Strata.Util.Real) x y = x / y
+  neg : op "Real.Neg" (.tcons "arrow" [.real, .real]) = fun (x : Strata.Util.Real) => -x
+  lt : op "Real.Lt" (realBinSort .bool) = fun (x y : Strata.Util.Real) => decide (x < y)
+  le : op "Real.Le" (realBinSort .bool) = fun (x y : Strata.Util.Real) => decide (x ≤ y)
+  gt : op "Real.Gt" (realBinSort .bool) = fun (x y : Strata.Util.Real) => decide (x > y)
+  ge : op "Real.Ge" (realBinSort .bool) = fun (x y : Strata.Util.Real) => decide (x ≥ y)
+
 /-- A sound, consistent interpretation of `Core.Factory`. -/
 noncomputable def factoryInterp : Lambda.Interp Core.Factory :=
   FactoryInterpModel.model
@@ -1669,6 +1798,27 @@ theorem factoryInterp_interpConsistent :
 
 /-- `Core.Factory` admits a consistent interpretation. -/
 theorem factoryInterp_nonempty : Nonempty (Lambda.Interp Core.Factory) := ⟨factoryInterp⟩
+
+open FactoryInterpModel in
+/-- The concrete Core interpretation gives the real operations their SMT-LIB meaning, so
+    `RealsAsReal` is satisfiable together with the factory's other constraints. -/
+theorem factoryInterp_realsAsReal : RealsAsReal factoryInterp.opInterp where
+  add := opInterp_realAdd
+  sub := opInterp_realSub
+  mul := opInterp_realMul
+  div x y _ := congrFun (congrFun opInterp_realDiv x) y
+  neg := opInterp_realNeg
+  lt := opInterp_realLt
+  le := opInterp_realLe
+  gt := opInterp_realGt
+  ge := opInterp_realGe
+
+/-- The concrete interpretation's `Real.Add` is addition on `Real` at every argument, irrational
+    ones included: the real operations are defined directly as operations of `Real`, not through
+    a concrete evaluator on literals. -/
+theorem factoryInterp_realAdd (x y : Strata.Util.Real) :
+    (factoryInterp.opInterp "Real.Add" (realBinSort .real) : Strata.Util.Real → Strata.Util.Real → Strata.Util.Real) x y = x + y := by
+  rw [factoryInterp_realsAsReal.add]
 
 end
 

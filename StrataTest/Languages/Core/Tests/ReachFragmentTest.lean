@@ -81,6 +81,40 @@ private def e6 : Expression.Expr := bin "Int.Add" boolTy boolTy xE (lit 1)
 #guard !inFragment Core.Factory e5
 #guard !inFragment Core.Factory e6
 
+/-! Real values stay out of the fragment. The semantics of `real` is `Strata.Util.Real`, so
+`havoc x` at a variable holding a real can pick an irrational value, which no literal denotes
+and so the engine cannot replay. No literal or annotation of result type `real` is in the
+fragment, and no variable is declared at a type that is not a literal type, real-reaching sorts
+included. -/
+
+/-- The real type. -/
+private def realTy : LMonoTy := .tcons "real" []
+/-- A real literal. -/
+private def rlit : Expression.Expr := .const () (.rationalConst (3 / 2))
+
+/-- `if x < y then 1.5 else 1.5`: a conditional on real literals. -/
+private def e7 : Expression.Expr := .ite () (bin "Int.Lt" intTy boolTy xE yE) rlit rlit
+
+/-- `select(m, x)` with `m : Map int real`: the polymorphic map read instantiated at `real`. -/
+private def e8 : Expression.Expr :=
+  .app () (.app () (.op () ⟨"select", ()⟩
+    (some (.arrow (.tcons "Map" [intTy, realTy]) (.arrow intTy realTy))))
+    (.fvar () ⟨"m", ()⟩ (some (.tcons "Map" [intTy, realTy])))) xE
+
+/-- `x + 1` with the operator unannotated. -/
+private def e9 : Expression.Expr :=
+  .app () (.app () (.op () ⟨"Int.Add", ()⟩ none) xE) (lit 1)
+
+#guard !inFragment Core.Factory e7
+#guard !inFragment Core.Factory e8
+#guard !inFragment Core.Factory e9
+#guard !inFragment Core.Factory rlit
+#guard !isLitTy (.forAll [] realTy)
+#guard !isLitTy (.forAll [] (.tcons "Map" [intTy, realTy]))
+-- A datatype, whatever its fields: here one with a real field.
+#guard !isLitTy (.forAll [] (.tcons "RealBox" []))
+#guard isLitTy (.forAll [] intTy)
+
 /-- Core's factory, modeled by its interpretation `Core.factoryInterp`. -/
 private noncomputable def M0 : Expression.Factory :=
   ⟨Core.Factory, Core.factoryInterp, fun _ => .bool⟩
@@ -147,7 +181,7 @@ theorem wGenuine_of_fragment :
       Calls.getInputExprs]
   · simp only [List.mem_singleton, forall_eq]
     refine ⟨.inl ⟨_, rfl, ?_⟩, by simp [wProc, ListMap.toList], by simp [wProc, ListMap.toList]⟩
-    exact ⟨.const () _, trivial⟩
+    exact ⟨⟨.const () _, rfl⟩, trivial⟩
   · simp [wEnv, IEnv.abs, InterpLang.absStore, IEnv.ofStore, IStore.get,
       IStore.ofStore, InterpLang.writesFind?_empty] at h
   · refine ⟨?_, fun n p ss hp hss => ?_, fun n p g hp hg => ?_⟩
@@ -223,7 +257,7 @@ theorem wcGenuine_of_fragment :
     refine ⟨.inr ⟨_, rfl, ?_⟩, by simp [wcProc, ListMap.toList], by simp [wcProc, ListMap.toList]⟩
     simp only [CFGInFragment, List.mem_singleton, forall_eq, CmdInFragment, TransferInFragment,
       and_true]
-    exact .const () _
+    exact ⟨.const () _, rfl⟩
   · simp [wEnv, IEnv.abs, InterpLang.absStore, IEnv.ofStore, IStore.get,
       IStore.ofStore, InterpLang.writesFind?_empty] at h
   · refine ⟨?_, fun n p ss hp hss => ?_, fun n p g hp hg => ?_⟩

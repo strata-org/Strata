@@ -11,6 +11,7 @@ meta import Init.Grind.Cases
 import Std.Tactic.BVDecide.Normalize.BitVec
 import Std.Tactic.BVDecide.Normalize.Prop
 public import Strata.Util.HListProps
+public import Strata.Util.Real
 
 /-!
 ## Core Denotational Semantics
@@ -182,14 +183,12 @@ public class TyConstrInterp.AllInhabited (tcInterp : TyConstrInterp) : Type wher
 string, bitvec, arrow) are mapped to their Lean counterparts; all others
 are delegated to `tcInterp`.
 
-The `real` sort intentionally denotes `Rat` in this semantics. Consequently,
-`Valid`, `LogConseq`, and clients such as the current Core Hoare logic quantify
-over rational values, not mathematical or SMT reals; no adequacy result relating
-this domain to SMT `Real` is claimed. -/
+The `real` sort denotes `Strata.Util.Real`, the real numbers, a complete ordered
+field. A rational literal `r` denotes `Real.ofRat r`. -/
 @[expose] public def SortDenote (tcInterp : TyConstrInterp) : LSort → Type
   | .tcons "bool" []      => Bool
   | .tcons "int" []       => Int
-  | .tcons "real" []      => Rat
+  | .tcons "real" []      => Strata.Util.Real
   | .tcons "string" []    => String
   | .bitvec n             => BitVec n
   | .tcons "arrow" [a, b] => SortDenote tcInterp a → SortDenote tcInterp b
@@ -209,7 +208,7 @@ public def SortDenote.inhabited (tcInterp : TyConstrInterp)
     split
     · exact ⟨false⟩
     · exact ⟨(0 : Int)⟩
-    · exact ⟨(0 : Rat)⟩
+    · exact ⟨(0 : Strata.Util.Real)⟩
     · exact ⟨""⟩
     . rename_i n _; exact ⟨(0 : BitVec n)⟩
     · exact ⟨fun _ => (ih _ (by simp_all)).default⟩
@@ -282,7 +281,7 @@ def IdentInterp.withArgs [DecidableEq T.IDMeta]
 public def denoteConst (tcInterp : TyConstrInterp) (vt : TyVarVal) : (c : LConst) → TyDenote tcInterp vt c.ty
     | .boolConst b     => b
     | .intConst i      => i
-    | .rationalConst r => r
+    | .rationalConst r => Strata.Util.Real.ofRat r
     | .strConst s      => s
     | .bitvecConst _ b => b
 
