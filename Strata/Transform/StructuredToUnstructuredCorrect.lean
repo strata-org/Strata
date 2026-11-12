@@ -51,7 +51,6 @@ open Imperative.StructuredToUnstructured
 namespace StructuredToUnstructuredCorrect
 
 open Imperative Specification
-open Imperative.StructuredToUnstructured (isGeneratedName)
 
 /-! ## `modifiedVars` and replay lemmas used by the transform proof
 
@@ -544,7 +543,7 @@ private theorem stmtsToBlocks_genStep
               h_step_flush)
     | nondet =>
       simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
-      generalize h_nondet_gen : StringGenState.gen NondetElim.prefixIte gen_e = r_nd at h_gen
+      generalize h_nondet_gen : StringGenState.gen nondetItePrefix gen_e = r_nd at h_gen
       obtain ⟨freshName, gen_n⟩ := r_nd
       simp only at h_gen
       generalize h_flush_eq : @flushCmds P (Cmd P) _ iteFlushPrefix
@@ -555,9 +554,9 @@ private theorem stmtsToBlocks_genStep
         r_flush at h_gen
       obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
       have h_step_nondet : StringGenState.GenStep gen_e gen_n := by
-        rw [show gen_n = (StringGenState.gen NondetElim.prefixIte gen_e).2 from
+        rw [show gen_n = (StringGenState.gen nondetItePrefix gen_e).2 from
               (by rw [h_nondet_gen])]
-        exact StringGenState.GenStep.of_gen NondetElim.prefixIte gen_e
+        exact StringGenState.GenStep.of_gen nondetItePrefix gen_e
       have h_step_flush : StringGenState.GenStep gen_n gen_f :=
         flushCmds_genStep iteFlushPrefix _ _ l_ite gen_n gen_f
           accumEntry accumBlocks h_flush_eq
@@ -615,15 +614,15 @@ private theorem stmtsToBlocks_genStep
         exact h_gen_eq ▸ h_step_prefix.trans h_step_flush
       | nondet =>
         simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
-        generalize h_nondet_gen : StringGenState.gen NondetElim.prefixLoop gen_i = r_nd at h_gen
+        generalize h_nondet_gen : StringGenState.gen nondetLoopPrefix gen_i = r_nd at h_gen
         obtain ⟨freshName, gen_n⟩ := r_nd
         generalize h_flush_eq : @flushCmds P (Cmd P) _ beforeLoopPrefix accum
           Option.none lentry gen_n = r_flush at h_gen
         obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
         have h_step_nondet : StringGenState.GenStep gen_i gen_n := by
-          rw [show gen_n = (StringGenState.gen NondetElim.prefixLoop gen_i).2 from
+          rw [show gen_n = (StringGenState.gen nondetLoopPrefix gen_i).2 from
                 (by rw [h_nondet_gen])]
-          exact StringGenState.GenStep.of_gen NondetElim.prefixLoop gen_i
+          exact StringGenState.GenStep.of_gen nondetLoopPrefix gen_i
         have h_step_flush : StringGenState.GenStep gen_n gen_f :=
           flushCmds_genStep beforeLoopPrefix accum _ lentry gen_n gen_f
             accumEntry accumBlocks h_flush_eq
@@ -677,15 +676,15 @@ private theorem stmtsToBlocks_genStep
         exact h_gen_eq ▸ h_step_prefix.trans h_step_flush
       | nondet =>
         simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
-        generalize h_nondet_gen : StringGenState.gen NondetElim.prefixLoop gen_i = r_nd at h_gen
+        generalize h_nondet_gen : StringGenState.gen nondetLoopPrefix gen_i = r_nd at h_gen
         obtain ⟨freshName, gen_n⟩ := r_nd
         generalize h_flush_eq : @flushCmds P (Cmd P) _ beforeLoopPrefix accum
           Option.none lentry gen_n = r_flush at h_gen
         obtain ⟨⟨accumEntry, accumBlocks⟩, gen_f⟩ := r_flush
         have h_step_nondet : StringGenState.GenStep gen_i gen_n := by
-          rw [show gen_n = (StringGenState.gen NondetElim.prefixLoop gen_i).2 from
+          rw [show gen_n = (StringGenState.gen nondetLoopPrefix gen_i).2 from
                 (by rw [h_nondet_gen])]
-          exact StringGenState.GenStep.of_gen NondetElim.prefixLoop gen_i
+          exact StringGenState.GenStep.of_gen nondetLoopPrefix gen_i
         have h_step_flush : StringGenState.GenStep gen_n gen_f :=
           flushCmds_genStep beforeLoopPrefix accum _ lentry gen_n gen_f
             accumEntry accumBlocks h_flush_eq
@@ -1028,7 +1027,7 @@ private theorem stmtsToBlocks_invariant_block_arm
 
 /-- The `.ite c tss fss md :: rest` arm of `stmtsToBlocks_invariant`.
 Sub-computations: rest, gen iteLabelPrefix, tss, fss, optional gen
-NondetElim.prefixIte, flushCmds (with condGoto transfer). The output is
+nondetItePrefix, flushCmds (with condGoto transfer). The output is
 accumBlocks ++ tbs ++ fbs ++ bsNext. -/
 private theorem stmtsToBlocks_invariant_ite_arm
     {P : PureExpr} [HasBool P] [HasIdent P] [HasFvar P] [HasFvars P] [HasInt P] [HasIntOps P] [HasBoolOps P]
@@ -1050,7 +1049,7 @@ private theorem stmtsToBlocks_invariant_ite_arm
           Block.userLabelsDisjoint ss_sub gen' →
           @StmtsToBlocksInv P gen gen' (Block.getBlockLabels ss_sub) blocks) :
     @StmtsToBlocksInv P gen gen' (Block.getBlockLabels (.ite c tss fss md :: rest)) blocks := by
-  -- Sub-computations: rest, gen iteLabelPrefix, tss, fss, optional gen NondetElim.prefixIte,
+  -- Sub-computations: rest, gen iteLabelPrefix, tss, fss, optional gen nondetItePrefix,
   -- flushCmds (with condGoto transfer). The output is
   -- accumBlocks ++ tbs ++ fbs ++ bsNext.
   simp only [stmtsToBlocks, bind, StateT.bind, pure] at h_gen
@@ -1245,11 +1244,11 @@ private theorem stmtsToBlocks_invariant_ite_arm
       exact h_disj.2.2 x hx h_in
     · exact h_disj.2.1
   | nondet =>
-    -- Nondet adds an extra `gen NondetElim.prefixIte` call before flushCmds, plus an init
+    -- Nondet adds an extra `gen nondetItePrefix` call before flushCmds, plus an init
     -- command in extraCmds. The structure is otherwise identical.
     rw [h_c] at h_gen
     simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
-    generalize h_nondet_gen : StringGenState.gen NondetElim.prefixIte gen_e = r_nd at h_gen
+    generalize h_nondet_gen : StringGenState.gen nondetItePrefix gen_e = r_nd at h_gen
     obtain ⟨freshName, gen_n⟩ := r_nd
     simp only at h_gen
     generalize h_flush_eq : @flushCmds P (Cmd P) _ iteFlushPrefix
@@ -1277,9 +1276,9 @@ private theorem stmtsToBlocks_invariant_ite_arm
     have h_step_else := stmtsToBlocks_genStep kNext fss exitConts [] gen_t gen_e
       fl fbs h_else_eq
     have h_step_nondet : StringGenState.GenStep gen_e gen_n := by
-      rw [show gen_n = (StringGenState.gen NondetElim.prefixIte gen_e).2 from
+      rw [show gen_n = (StringGenState.gen nondetItePrefix gen_e).2 from
             (by rw [h_nondet_gen])]
-      exact StringGenState.GenStep.of_gen NondetElim.prefixIte gen_e
+      exact StringGenState.GenStep.of_gen nondetItePrefix gen_e
     have h_step_flush : StringGenState.GenStep gen_n gen_f :=
       flushCmds_genStep iteFlushPrefix _ _ l_ite gen_n gen_f
         accumEntry accumBlocks h_flush_eq
@@ -1679,7 +1678,7 @@ Chronological pipeline:
   gen_le → gen_m: match m (none: id; some: gen loopMeasurePrefix then gen measureDecreasePrefix)
   gen_m → gen_b:  stmtsToBlocks bss
   gen_b → gen_i:  is.mapM
-  gen_i → gen_? : match c (det: id; nondet: gen NondetElim.prefixLoop)
+  gen_i → gen_? : match c (det: id; nondet: gen nondetLoopPrefix)
   gen_? → gen_f:  flushCmds beforeLoopPrefix
 
 We split on `m` first (this also reduces the contractMd `match m`),
@@ -1711,7 +1710,7 @@ private theorem stmtsToBlocks_invariant_loop_arm
   --   gen_le → gen_m: match m (none: id; some: gen loopMeasurePrefix then gen measureDecreasePrefix)
   --   gen_m → gen_b:  stmtsToBlocks bss
   --   gen_b → gen_i:  is.mapM
-  --   gen_i → gen_? : match c (det: id; nondet: gen NondetElim.prefixLoop)
+  --   gen_i → gen_? : match c (det: id; nondet: gen nondetLoopPrefix)
   --   gen_? → gen_f:  flushCmds beforeLoopPrefix
   --
   -- We split on `m` first (this also reduces the contractMd `match m`),
@@ -1873,7 +1872,7 @@ private theorem stmtsToBlocks_invariant_loop_arm
     | nondet =>
       rw [h_c] at h_gen
       simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
-      generalize h_nondet_gen : StringGenState.gen NondetElim.prefixLoop gen_i = r_nd at h_gen
+      generalize h_nondet_gen : StringGenState.gen nondetLoopPrefix gen_i = r_nd at h_gen
       obtain ⟨freshName, gen_n⟩ := r_nd
       simp only at h_gen
       generalize h_flush_eq : @flushCmds P (Cmd P) _ beforeLoopPrefix accum
@@ -1892,9 +1891,9 @@ private theorem stmtsToBlocks_invariant_loop_arm
           accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ [] ++ bsNext = blocks :=
         (Prod.mk.inj h_pair).2
       have h_step_nondet : StringGenState.GenStep gen_i gen_n := by
-        rw [show gen_n = (StringGenState.gen NondetElim.prefixLoop gen_i).2 from
+        rw [show gen_n = (StringGenState.gen nondetLoopPrefix gen_i).2 from
               (by rw [h_nondet_gen])]
-        exact StringGenState.GenStep.of_gen NondetElim.prefixLoop gen_i
+        exact StringGenState.GenStep.of_gen nondetLoopPrefix gen_i
       have h_step_flush : StringGenState.GenStep gen_n gen_f :=
         flushCmds_genStep beforeLoopPrefix accum _ lentry gen_n gen_f
           accumEntry accumBlocks h_flush_eq
@@ -2168,7 +2167,7 @@ private theorem stmtsToBlocks_invariant_loop_arm
     | nondet =>
       rw [h_c] at h_gen
       simp only [bind, StateT.bind, pure, StateT.pure] at h_gen
-      generalize h_nondet_gen : StringGenState.gen NondetElim.prefixLoop gen_i = r_nd at h_gen
+      generalize h_nondet_gen : StringGenState.gen nondetLoopPrefix gen_i = r_nd at h_gen
       obtain ⟨freshName, gen_n⟩ := r_nd
       simp only at h_gen
       generalize h_flush_eq : @flushCmds P (Cmd P) _ beforeLoopPrefix accum
@@ -2203,9 +2202,9 @@ private theorem stmtsToBlocks_invariant_loop_arm
           accumBlocks ++ [(lentry, lentryBlk)] ++ bbs ++ [decBlock] ++ bsNext = blocks :=
         (Prod.mk.inj h_pair).2
       have h_step_nondet : StringGenState.GenStep gen_i gen_n := by
-        rw [show gen_n = (StringGenState.gen NondetElim.prefixLoop gen_i).2 from
+        rw [show gen_n = (StringGenState.gen nondetLoopPrefix gen_i).2 from
               (by rw [h_nondet_gen])]
-        exact StringGenState.GenStep.of_gen NondetElim.prefixLoop gen_i
+        exact StringGenState.GenStep.of_gen nondetLoopPrefix gen_i
       have h_step_flush : StringGenState.GenStep gen_n gen_f :=
         flushCmds_genStep beforeLoopPrefix accum _ lentry gen_n gen_f
           accumEntry accumBlocks h_flush_eq
@@ -6573,13 +6572,11 @@ theorem cfgInitEnvWF {P : PureExpr}
       ∧ Block.loopHasNoInvariants statements = true
       ∧ Block.noMeasureLoops statements = true
       ∧ Block.exitsCoveredByBlocks [] statements
-      ∧ Block.userLabelsShapeNodup statements
-      ∧ (∀ name : String, isGeneratedName name →
-        HasIdent.ident (P := P) name ∉ Block.initVars statements))
+      ∧ Block.userLabelsShapeNodup statements)
     (ρ : Env P)
     (hwf : BlockInitEnvWF (base.extend prefixesReserved) statements ρ) :
     CFGInitEnvWF base (stmtsToCFG statements) ρ := by
-  obtain ⟨hng, _, _, hni, hnm, _, _, _⟩ := hpre
+  obtain ⟨hng, _, _, hni, hnm, _, _⟩ := hpre
   have hduLive := Block.cfgLive_defUseWellFormed
     (fun ident => (ρ.store ident).isSome)
     (base.extend prefixesReserved).declaredFuncs statements hwf.defUseOk
@@ -6651,9 +6648,7 @@ theorem overapproximatesTraces {P : PureExpr}
         ∧ Block.loopHasNoInvariants statements = true
         ∧ Block.noMeasureLoops statements = true
         ∧ Block.exitsCoveredByBlocks [] statements
-        ∧ Block.userLabelsShapeNodup statements
-        ∧ (∀ name : String, isGeneratedName name →
-          HasIdent.ident (P := P) name ∉ Block.initVars statements))
+        ∧ Block.userLabelsShapeNodup statements)
       (base.extend prefixesReserved) base := by
   intro statements cfg htransform hpre source target hinput hwf
   subst hinput
@@ -6661,7 +6656,7 @@ theorem overapproximatesTraces {P : PureExpr}
   subst cfg
   change BlockInitEnvWF (base.extend prefixesReserved) statements source at hwf
   have hpre' := hpre
-  obtain ⟨hsimple, hunique, hlbni, hlhni, hnml, hcovered, hlabels, _⟩ := hpre'
+  obtain ⟨hsimple, hunique, hlbni, hlhni, hnml, hcovered, hlabels⟩ := hpre'
   have hsim := S2UTrace.stmtsToCFGTraceSimWithNodup statements source
     hsimple hunique hlbni hlhni hnml hcovered hlabels
     (fun ident hident =>

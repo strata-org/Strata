@@ -72,9 +72,11 @@ private theorem evalE_init_inv {σ σ1 : SemanticStore P} {x : P.Ident} {ty : P.
       evs = [] := by
   cases e with
   | det e =>
-    obtain ⟨v, -, h0, h1, hfr, rfl, hty⟩ := evalE_init_det_inv_typed h
+    obtain ⟨v, -, h0, h1, hfr, rfl, hty⟩ := EvalCmdE.init_det_inv h
     exact ⟨v, LawfulHasVal.valueOfTy_isVal _ _ _ hty, h0, h1, hfr, rfl⟩
-  | nondet => exact evalE_init_nondet_inv h
+  | nondet =>
+    obtain ⟨v, hty, h0, h1, hfr, rfl⟩ := EvalCmdE.init_nondet_inv h
+    exact ⟨v, LawfulHasVal.valueOfTy_isVal _ _ _ hty, h0, h1, hfr, rfl⟩
 
 omit [DecidableEq P.Ident] [HasBool P] [HasFvar P] [LawfulHasVal P] [HasFvars P] in
 /-- An erasable statement is an `init` whose variable is not in `live`. -/

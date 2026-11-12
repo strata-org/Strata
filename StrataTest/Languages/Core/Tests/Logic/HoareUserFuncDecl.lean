@@ -135,7 +135,7 @@ private theorem visibleFactory_get?_of_ne_f
     rw [hfname]
     native_decide
   simp only [Lambda.Factory.pushIfNew, hnew, ↓reduceDIte]
-  rw [CoreHoareTestSupport.factory_push_get?]
+  rw [Lambda.Factory.push_mem_match]
   rw [ite_eq_right (fun h => hne (h.trans hfname))]
   exact hcore
 
@@ -147,7 +147,7 @@ private theorem visibleFactory_f : visibleFactory["f"]? = some fDef.toLFunc := b
     rw [hfname]
     native_decide
   simp only [Lambda.Factory.pushIfNew, hnew, ↓reduceDIte]
-  rw [CoreHoareTestSupport.factory_push_get?]
+  rw [Lambda.Factory.push_mem_match]
   have hname : "f" = fDef.toLFunc.name.name := hfname.symm
   simp only [hname, ↓reduceIte]
 
@@ -221,9 +221,9 @@ private theorem f_opInterp (model : Lambda.Interp visibleFactory) (a b : Int) :
     (model.opInterp "f" (Lambda.LSort.mkArrow .int [.int, .int]) a b : Int) =
       (a + b) * (a - b) := by
   have hmem : "f" ∈ visibleFactory :=
-    CoreHoareTestSupport.factory_mem_of_get? visibleFactory_f
+    Lambda.Factory.getElem?_some_implies_mem visibleFactory_f
   have hget : visibleFactory["f"]'hmem = fDef.toLFunc :=
-    CoreHoareTestSupport.factory_get_of_get? visibleFactory_f
+    Lambda.Factory.getElem?_some_getElem visibleFactory_f
   have hbody : (visibleFactory["f"]'hmem).body = some fBody := by
     rw [hget, fDef_shape]
     rfl
@@ -587,7 +587,7 @@ private theorem specFactory_fSpec :
     rw [hname]
     native_decide
   simp only [Lambda.Factory.pushIfNew, hnew, ↓reduceDIte]
-  rw [CoreHoareTestSupport.factory_push_get?]
+  rw [Lambda.Factory.push_mem_match]
   have : "fSpec" = fSpecDef.toLFunc.name.name := hname.symm
   simp only [this, ↓reduceIte]
 
@@ -602,7 +602,7 @@ private theorem specFactory_get?_of_ne_fSpec
     rw [hname]
     native_decide
   simp only [Lambda.Factory.pushIfNew, hnew, ↓reduceDIte]
-  rw [CoreHoareTestSupport.factory_push_get?]
+  rw [Lambda.Factory.push_mem_match]
   rw [ite_eq_right (fun h => hne (h.trans hname))]
   exact hcore
 
@@ -673,9 +673,9 @@ private theorem fSpec_opInterp (model : Lambda.Interp specFactory)
     (model.opInterp "fSpec" (Lambda.LSort.mkArrow .int [.int, .int]) a b : Int) =
       (a + b) * (a - b) := by
   have hmem : "fSpec" ∈ specFactory :=
-    CoreHoareTestSupport.factory_mem_of_get? specFactory_fSpec
+    Lambda.Factory.getElem?_some_implies_mem specFactory_fSpec
   have hget : specFactory["fSpec"]'hmem = fSpecDef.toLFunc :=
-    CoreHoareTestSupport.factory_get_of_get? specFactory_fSpec
+    Lambda.Factory.getElem?_some_getElem specFactory_fSpec
   have hbody : (specFactory["fSpec"]'hmem).body = some fBody := by
     rw [hget, fSpecDef_shape]
     rfl

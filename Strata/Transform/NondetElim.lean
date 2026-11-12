@@ -28,9 +28,9 @@ of a freshly-generated boolean variable that is havoc'd at the construct's site.
 After the pass, no `.ite`/`.loop` carries a `.nondet` guard; nondeterminism
 survives only as havoc commands.
 
-The fresh-name prefixes are distinct from the str2unstr translator's
-`$__nondet_*` prefixes so the two passes' generated names are unmistakable in
-origin; disjointness in the proofs is suffix-based, not prefix-based. -/
+The fresh-name prefixes are distinct from the structured-to-unstructured
+translator's `$__s2u_` prefix, so the two passes' generated names are unmistakable in
+origin; the pipeline proofs rely on the two prefixes being disjoint. -/
 
 /-- Fresh-name prefix for nondet `.ite` guard variables. -/
 @[expose] def prefixIte : String := "$__ndelim_ite$"

@@ -244,15 +244,15 @@ theorem cmd_sim (hE : EvCongr F) {c : Cmd P} {σ σ1 σ' : SemanticStore P}
           ⟨p, ty, hx.trans hp, hpt, hvt⟩ hwf, .nil,
           agree_def hA' hC (LawfulHasVal.valueOfTy_isVal _ _ _ hvt) h1 hfr⟩
   | assert l e md =>
-    obtain ⟨rfl, rfl⟩ := evalE_assert_inv h
+    obtain ⟨rfl, rfl⟩ := EvalCmdE.assert_inv h
     exact ⟨σ', _, .eval_assert, .cons ⟨rfl, rfl, rfl, rfl, rfl, hobl e rfl, hC⟩ .nil,
       hA.mono fun y hy => List.mem_append_right _ hy, hC⟩
   | assume l e md =>
-    obtain ⟨rfl, rfl⟩ := evalE_assume_inv h
+    obtain ⟨rfl, rfl⟩ := EvalCmdE.assume_inv h
     exact ⟨σ', _, .eval_assume, .cons ⟨rfl, rfl, rfl, rfl, rfl, hobl e rfl, hC⟩ .nil,
       hA.mono fun y hy => List.mem_append_right _ hy, hC⟩
   | cover l e md =>
-    obtain ⟨rfl, rfl⟩ := evalE_cover_inv h
+    obtain ⟨rfl, rfl⟩ := EvalCmdE.cover_inv h
     exact ⟨σ', _, .eval_cover, .cons ⟨rfl, rfl, rfl, rfl, rfl, hobl e rfl, hC⟩ .nil,
       hA.mono fun y hy => List.mem_append_right _ hy, hC⟩
 

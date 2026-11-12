@@ -55,25 +55,25 @@ spec {
 #end
 
 /--
-info: Entry: before_loop$_7
+info: Entry: $__s2u_before_loop$_7
 
-before_loop$_7:
+$__s2u_before_loop$_7:
   i := 0;
-  condGoto true loop_entry$_1 loop_entry$_1
-loop_entry$_1:
-  assert [inv$_5]: int.le(0, i);
-  assert [inv$_6]: int.le(i, n);
-  var loop_measure$_2 : int;
-  assume [assume_loop_measure$_2]: loop_measure$_2 == n;
-  assert [measure_lb_loop_measure$_2]: !(int.lt(loop_measure$_2, 0));
-  condGoto int.lt(i, n) l$_4 end$_0
-l$_4:
+  condGoto true $__s2u_loop_entry$_1 $__s2u_loop_entry$_1
+$__s2u_loop_entry$_1:
+  assert [$__s2u_inv$_5]: int.le(0, i);
+  assert [$__s2u_inv$_6]: int.le(i, n);
+  var $__s2u_loop_measure$_2 : int;
+  assume [assume_$__s2u_loop_measure$_2]: $__s2u_loop_measure$_2 == n;
+  assert [measure_lb_$__s2u_loop_measure$_2]: !(int.lt($__s2u_loop_measure$_2, 0));
+  condGoto int.lt(i, n) $__s2u_l$_4 $__s2u_end$_0
+$__s2u_l$_4:
   i := int.add(i, 1);
-  condGoto true measure_decrease$_3 measure_decrease$_3
-measure_decrease$_3:
-  assert [measure_decrease_loop_measure$_2]: int.lt(n, loop_measure$_2);
-  condGoto true loop_entry$_1 loop_entry$_1
-end$_0:
+  condGoto true $__s2u_measure_decrease$_3 $__s2u_measure_decrease$_3
+$__s2u_measure_decrease$_3:
+  assert [measure_decrease_$__s2u_loop_measure$_2]: int.lt(n, $__s2u_loop_measure$_2);
+  condGoto true $__s2u_loop_entry$_1 $__s2u_loop_entry$_1
+$__s2u_end$_0:
   finish
 -/
 #guard_msgs in
@@ -140,29 +140,29 @@ spec {
 #end
 
 /--
-info: Entry: before_loop$_8
+info: Entry: $__s2u_before_loop$_8
 
-before_loop$_8:
+$__s2u_before_loop$_8:
   var i : int;
   i := 0;
   s := 0;
-  condGoto true loop_entry$_1 loop_entry$_1
-loop_entry$_1:
-  assert [inv$_5]: int.le(0, i);
-  assert [inv$_6]: int.le(i, n);
-  assert [inv$_7]: s == int.safeDiv(int.mul(i, int.add(i, 1)), 2);
-  var loop_measure$_2 : int;
-  assume [assume_loop_measure$_2]: loop_measure$_2 == int.sub(n, i);
-  assert [measure_lb_loop_measure$_2]: !(int.lt(loop_measure$_2, 0));
-  condGoto int.lt(i, n) l$_4 end$_0
-l$_4:
+  condGoto true $__s2u_loop_entry$_1 $__s2u_loop_entry$_1
+$__s2u_loop_entry$_1:
+  assert [$__s2u_inv$_5]: int.le(0, i);
+  assert [$__s2u_inv$_6]: int.le(i, n);
+  assert [$__s2u_inv$_7]: s == int.safeDiv(int.mul(i, int.add(i, 1)), 2);
+  var $__s2u_loop_measure$_2 : int;
+  assume [assume_$__s2u_loop_measure$_2]: $__s2u_loop_measure$_2 == int.sub(n, i);
+  assert [measure_lb_$__s2u_loop_measure$_2]: !(int.lt($__s2u_loop_measure$_2, 0));
+  condGoto int.lt(i, n) $__s2u_l$_4 $__s2u_end$_0
+$__s2u_l$_4:
   i := int.add(i, 1);
   s := int.add(s, i);
-  condGoto true measure_decrease$_3 measure_decrease$_3
-measure_decrease$_3:
-  assert [measure_decrease_loop_measure$_2]: int.lt(int.sub(n, i), loop_measure$_2);
-  condGoto true loop_entry$_1 loop_entry$_1
-end$_0:
+  condGoto true $__s2u_measure_decrease$_3 $__s2u_measure_decrease$_3
+$__s2u_measure_decrease$_3:
+  assert [measure_decrease_$__s2u_loop_measure$_2]: int.lt(int.sub(n, i), $__s2u_loop_measure$_2);
+  condGoto true $__s2u_loop_entry$_1 $__s2u_loop_entry$_1
+$__s2u_end$_0:
   finish
 -/
 #guard_msgs in
@@ -380,49 +380,49 @@ spec {
 #end
 
 /--
-info: Entry: before_loop$_15
+info: Entry: $__s2u_before_loop$_15
 
-before_loop$_15:
+$__s2u_before_loop$_15:
   var x : int;
   var y : int;
   x := 0;
-  condGoto true loop_entry$_1 loop_entry$_1
-loop_entry$_1:
-  assert [inv$_12]: int.ge(x, 0);
-  assert [inv$_13]: int.le(x, n);
-  assert [inv$_14]: int.lt(n, top);
+  condGoto true $__s2u_loop_entry$_1 $__s2u_loop_entry$_1
+$__s2u_loop_entry$_1:
+  assert [$__s2u_inv$_12]: int.ge(x, 0);
+  assert [$__s2u_inv$_13]: int.le(x, n);
+  assert [$__s2u_inv$_14]: int.lt(n, top);
 
 -- Errors encountered during conversion:
 Unsupported construct in handleZeroaryOps: unknown operation, rendering as generic call: top
 Context: Global scope:
   freeVars: [n]
-  var loop_measure$_2 : int;
-  assume [assume_loop_measure$_2]: loop_measure$_2 == int.sub(n, x);
-  assert [measure_lb_loop_measure$_2]: !(int.lt(loop_measure$_2, 0));
-  condGoto int.lt(x, n) before_loop$_11 end$_0
-before_loop$_11:
+  var $__s2u_loop_measure$_2 : int;
+  assume [assume_$__s2u_loop_measure$_2]: $__s2u_loop_measure$_2 == int.sub(n, x);
+  assert [measure_lb_$__s2u_loop_measure$_2]: !(int.lt($__s2u_loop_measure$_2, 0));
+  condGoto int.lt(x, n) $__s2u_before_loop$_11 $__s2u_end$_0
+$__s2u_before_loop$_11:
   y := 0;
-  condGoto true loop_entry$_5 loop_entry$_5
-loop_entry$_5:
-  assert [inv$_9]: int.ge(y, 0);
-  assert [inv$_10]: int.le(y, x);
-  var loop_measure$_6 : int;
-  assume [assume_loop_measure$_6]: loop_measure$_6 == int.sub(x, y);
-  assert [measure_lb_loop_measure$_6]: !(int.lt(loop_measure$_6, 0));
-  condGoto int.lt(y, x) l$_8 l$_4
-l$_8:
+  condGoto true $__s2u_loop_entry$_5 $__s2u_loop_entry$_5
+$__s2u_loop_entry$_5:
+  assert [$__s2u_inv$_9]: int.ge(y, 0);
+  assert [$__s2u_inv$_10]: int.le(y, x);
+  var $__s2u_loop_measure$_6 : int;
+  assume [assume_$__s2u_loop_measure$_6]: $__s2u_loop_measure$_6 == int.sub(x, y);
+  assert [measure_lb_$__s2u_loop_measure$_6]: !(int.lt($__s2u_loop_measure$_6, 0));
+  condGoto int.lt(y, x) $__s2u_l$_8 $__s2u_l$_4
+$__s2u_l$_8:
   y := int.add(y, 1);
-  condGoto true measure_decrease$_7 measure_decrease$_7
-measure_decrease$_7:
-  assert [measure_decrease_loop_measure$_6]: int.lt(int.sub(x, y), loop_measure$_6);
-  condGoto true loop_entry$_5 loop_entry$_5
-l$_4:
+  condGoto true $__s2u_measure_decrease$_7 $__s2u_measure_decrease$_7
+$__s2u_measure_decrease$_7:
+  assert [measure_decrease_$__s2u_loop_measure$_6]: int.lt(int.sub(x, y), $__s2u_loop_measure$_6);
+  condGoto true $__s2u_loop_entry$_5 $__s2u_loop_entry$_5
+$__s2u_l$_4:
   x := int.add(x, 1);
-  condGoto true measure_decrease$_3 measure_decrease$_3
-measure_decrease$_3:
-  assert [measure_decrease_loop_measure$_2]: int.lt(int.sub(n, x), loop_measure$_2);
-  condGoto true loop_entry$_1 loop_entry$_1
-end$_0:
+  condGoto true $__s2u_measure_decrease$_3 $__s2u_measure_decrease$_3
+$__s2u_measure_decrease$_3:
+  assert [measure_decrease_$__s2u_loop_measure$_2]: int.lt(int.sub(n, x), $__s2u_loop_measure$_2);
+  condGoto true $__s2u_loop_entry$_1 $__s2u_loop_entry$_1
+$__s2u_end$_0:
   finish
 -/
 #guard_msgs in

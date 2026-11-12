@@ -185,12 +185,12 @@ theorem walk_out : (∃ c σ', walkRun = (.ok (c, walkOut), σ')) ∧
 
 /-- The precondition is `int.ge(n, 0)`. -/
 private theorem walk_pre_expr : ∀ lc ∈ walkProc.spec.preconditions.toList, lc.2.expr = ge0 nId :=
-  forall_of_all (by native_decide)
+  List.forall_of_all_decide (by native_decide)
 
 /-- The postcondition is `int.ge(r, 0)`. -/
 private theorem walk_post_expr :
     ∀ lc ∈ walkProc.spec.postconditions.toList, lc.2.expr = ge0 rId :=
-  forall_of_all (by native_decide)
+  List.forall_of_all_decide (by native_decide)
 
 /-- `x` holds the integer `k`. -/
 private abbrev Holds (x : Core.Expression.Ident) (k : Int) (ρ : Env Core.Expression) : Prop :=
@@ -233,7 +233,7 @@ private theorem init_nondet_keep (x : Core.Expression.Ident) (hx : x ≠ rId) (t
     (md : MetaData Core.Expression) {Q : Env Core.Expression → Prop} (hQ : OnR Q) :
     Core.Logic.Hoare.Triple π testParams Q [.cmd (HasInit.init x ty .nondet md)] Q :=
   Core.Logic.Hoare.cmd π testParams _ Q Q fun ρ₀ σ' _ hρ _ hstep =>
-    have ⟨hoth, he⟩ := init_nondet_inv hstep
+    have ⟨_, _, _, _, hoth, he⟩ := EvalCmdE.init_nondet_inv (evalCmdExtE_cmd_iff.mp hstep)
     ⟨by rw [he]; trivial, fun _ => hQ ρ₀ σ' (hoth rId hx).symm hρ⟩
 
 /-- A havoc of a name other than `r` keeps a precondition reading only `r`. -/
@@ -241,7 +241,7 @@ private theorem havoc_keep (x : Core.Expression.Ident) (hx : x ≠ rId)
     (md : MetaData Core.Expression) {Q : Env Core.Expression → Prop} (hQ : OnR Q) :
     Core.Logic.Hoare.Triple π testParams Q [.cmd (HasHavoc.havoc x md)] Q :=
   Core.Logic.Hoare.cmd π testParams _ Q Q fun ρ₀ σ' _ hρ _ hstep =>
-    have ⟨hoth, he⟩ := havoc_inv hstep
+    have ⟨_, _, _, hoth, he⟩ := EvalCmdE.set_nondet_inv (evalCmdExtE_cmd_iff.mp hstep)
     ⟨by rw [he]; trivial, fun _ => hQ ρ₀ σ' (hoth rId hx).symm hρ⟩
 
 /-! ## The triple of the encoded body -/
@@ -311,7 +311,7 @@ private theorem loopBody_triple :
 private theorem walkTgt_triple :
     Core.Logic.Hoare.Triple π testParams
       (Core.Logic.Hoare.Procedure.contractPre Core.Factory walkProc) walkTgt Inv := by
-  refine with_wf π (Core.Logic.Hoare.consequence π testParams
+  refine Core.Logic.Hoare.of_storeWF_pre π _ (Core.Logic.Hoare.consequence π testParams
     (Pre := fun ρ => Pinned ρ ∧ ∃ k, Holds nId k ρ ∧ 0 ≤ k) ?_
     (fun _ ⟨h, hwf⟩ => ⟨h.2.1, nonneg_of_pre h hwf (by native_decide) walk_pre_expr
       (by native_decide)⟩) (fun _ h => h))

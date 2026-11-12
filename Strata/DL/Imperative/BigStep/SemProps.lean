@@ -12,8 +12,7 @@ import Strata.DL.Imperative.Logic.TraceInterpProps
 
 /-! # Properties of the big-step semantics
 
-Inversions of the command semantics `EvalE` for `init`, `set`, `assume`, `assert` and `cover`,
-and the effect of a store update; sequencing of runs and reaches (`brun_append`,
+The effect of a store update; sequencing of runs and reaches (`brun_append`,
 `brun_append_exit`, `breach_append_left`, `breach_append_run`, `breach_cmd_cons`) and failures
 as reaches whose events claim them (`fails_iff_claim`); claims of a failure along `++`
 (`claim_prepend`, `claim_split`), on one event (`claim_single`), on no event (`Claim.not_nil`)
@@ -34,10 +33,11 @@ Under evaluation to `true`, an assumption or a check is
 the counterpart (`Event.WeakensAssume`) of one with the same label whose condition evaluates as
 required (`Event.WeakensAssume.assume`, `Event.WeakensAssume.check`).
 
-Key theorems: `evalE_init_det_inv`, `evalE_init_nondet_inv`, `evalE_set_det_inv`,
-`evalE_set_nondet_inv`, `evalE_assume_inv`, `evalE_assert_inv`, `evalE_cover_inv`,
-`update_facts`, `evalInterp_stableUnder` (evaluation to `true` is stable under the shared
-semantic event relation `EventArg.WithWF`), `brun_append`, `brun_append_exit`,
+Inversions of single command steps are the `EvalCmdE.*_inv` lemmas of `CmdSemanticsProps`;
+they apply to `EvalE` on a base command, which unfolds to `EvalCmdE`.
+
+Key theorems: `update_facts`, `evalInterp_stableUnder` (evaluation to `true` is stable
+under the shared semantic event relation `EventArg.WithWF`), `brun_append`, `brun_append_exit`,
 `breach_append_left`, `breach_append_run`,
 `fails_iff_claim`, `claim_prepend`, `claim_split`, `reach_cmd_claim`, `failsAt_transfer`,
 `brun_fv`, `breach_fv`, `fails_fv`, `brun_dom`, `brun_sub`, `brun_frame`,
@@ -55,100 +55,6 @@ variable {P : PureExpr} [HasBool P] [HasFvar P]
 section
 variable [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
   [HasFvars P] [LawfulHasVal P]
-
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
-    [HasFvars P] [LawfulHasVal P] in
-/-- A deterministic `init x : ty := e` step evaluates `e` to a value `v` of type `ty`
-    (`HasVal.valueOfTy F v ty`), defines the undefined `x` as `v`, leaves the other
-    variables unchanged and emits no event. -/
-theorem evalE_init_det_inv_typed {F : P.Factory} {σ σ1 : SemanticStore P}
-    {x : P.Ident} {ty : P.Ty} {e : P.Expr} {md : MetaData P}
-    {evs : List (Event P)} (h : EvalE F σ (.cmd (.init x ty (.det e) md)) σ1 evs) :
-    ∃ v, P.eval F σ e = some v ∧ σ x = none ∧ σ1 x = some v ∧ (∀ y, x ≠ y → σ1 y = σ y) ∧
-      evs = [] ∧ HasVal.valueOfTy F v ty :=
-  match h with | .eval_init hev (.init h0 h1 hfr) hty _ => ⟨_, hev, h0, h1, hfr, rfl, hty⟩
-
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
-    [HasFvars P] [LawfulHasVal P] in
-/-- A nondeterministic `init x : ty` step defines the undefined `x` as some value `v` of
-    type `ty`, leaves the other variables unchanged and emits no event. -/
-theorem evalE_init_nondet_inv_typed {F : P.Factory} {σ σ1 : SemanticStore P}
-    {x : P.Ident} {ty : P.Ty} {md : MetaData P}
-    {evs : List (Event P)} (h : EvalE F σ (.cmd (.init x ty .nondet md)) σ1 evs) :
-    ∃ v, HasVal.valueOfTy F v ty ∧ σ x = none ∧ σ1 x = some v ∧
-      (∀ y, x ≠ y → σ1 y = σ y) ∧ evs = [] :=
-  match h with | .eval_init_unconstrained (.init h0 h1 hfr) hty _ => ⟨_, hty, h0, h1, hfr, rfl⟩
-
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
-    [HasFvars P] [LawfulHasVal P] in
-/-- A deterministic `init x := e` step evaluates `e` to a value `v`, defines the
-    undefined `x` as `v`, leaves the other variables unchanged and emits no event. -/
-theorem evalE_init_det_inv {F : P.Factory} {σ σ1 : SemanticStore P}
-    {x : P.Ident} {ty : P.Ty} {e : P.Expr} {md : MetaData P}
-    {evs : List (Event P)} (h : EvalE F σ (.cmd (.init x ty (.det e) md)) σ1 evs) :
-    ∃ v, P.eval F σ e = some v ∧ σ x = none ∧ σ1 x = some v ∧ (∀ y, x ≠ y → σ1 y = σ y) ∧
-      evs = [] :=
-  (evalE_init_det_inv_typed h).imp fun _ ⟨hev, h0, h1, hfr, he, _⟩ => ⟨hev, h0, h1, hfr, he⟩
-
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident] [HasFvars P] in
-/-- A nondeterministic `init x` step defines the undefined `x` as some value `v`,
-    leaves the other variables unchanged and emits no event. -/
-theorem evalE_init_nondet_inv {F : P.Factory} {σ σ1 : SemanticStore P}
-    {x : P.Ident} {ty : P.Ty} {md : MetaData P}
-    {evs : List (Event P)} (h : EvalE F σ (.cmd (.init x ty .nondet md)) σ1 evs) :
-    ∃ v, HasVal.value F v ∧ σ x = none ∧ σ1 x = some v ∧
-      (∀ y, x ≠ y → σ1 y = σ y) ∧ evs = [] :=
-  (evalE_init_nondet_inv_typed h).imp fun _ ⟨hty, hrest⟩ =>
-    ⟨LawfulHasVal.valueOfTy_isVal _ _ _ hty, hrest⟩
-
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
-    [HasFvars P] [LawfulHasVal P] in
-/-- Inversion of a deterministic `set`: its value and the updated store. -/
-theorem evalE_set_det_inv {F : P.Factory} {σ σ1 : SemanticStore P}
-    {x : P.Ident} {e : P.Expr} {md : MetaData P}
-    {evs : List (Event P)} (h : EvalE F σ (.cmd (.set x (.det e) md)) σ1 evs) :
-    ∃ v, P.eval F σ e = some v ∧ HasVal.valueOfStoredTy (P := P) F σ x v ∧ σ1 x = some v ∧
-      (∀ y, x ≠ y → σ1 y = σ y) ∧ evs = [] :=
-  match h with | .eval_set hev (.update _ h1 hfr) hty _ => ⟨_, hev, hty, h1, hfr, rfl⟩
-
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
-    [HasFvars P] [LawfulHasVal P] in
-/-- Inversion of a nondeterministic `set`: its value and the updated store. -/
-theorem evalE_set_nondet_inv {F : P.Factory} {σ σ1 : SemanticStore P}
-    {x : P.Ident} {md : MetaData P}
-    {evs : List (Event P)} (h : EvalE F σ (.cmd (.set x .nondet md)) σ1 evs) :
-    ∃ v, HasVal.valueOfStoredTy (P := P) F σ x v ∧ σ1 x = some v ∧ (∀ y, x ≠ y → σ1 y = σ y) ∧
-      evs = [] := match h with | .eval_set_nondet (.update _ h1 hfr) hty _ => ⟨_, hty, h1, hfr, rfl⟩
-
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
-    [HasFvars P] [LawfulHasVal P] in
-/-- An `assume` step keeps the store and emits its assumption event. -/
-theorem evalE_assume_inv {F : P.Factory} {σ σ1 : SemanticStore P}
-    {l : String} {e : P.Expr} {md : MetaData P}
-    {evs : List (Event P)} (h : EvalE F σ (.cmd (.assume l e md)) σ1 evs) :
-    σ1 = σ ∧
-      evs = [.assume { factory := F, store := σ, label := l, expr := e, metadata := md }] :=
-  match h with | .eval_assume => ⟨rfl, rfl⟩
-
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
-    [HasFvars P] [LawfulHasVal P] in
-/-- An `assert` step keeps the store and emits its assertion event. -/
-theorem evalE_assert_inv {F : P.Factory} {σ σ1 : SemanticStore P}
-    {l : String} {e : P.Expr} {md : MetaData P}
-    {evs : List (Event P)} (h : EvalE F σ (.cmd (.assert l e md)) σ1 evs) :
-    σ1 = σ ∧
-      evs = [.assert { factory := F, store := σ, label := l, expr := e, metadata := md }] :=
-  match h with | .eval_assert => ⟨rfl, rfl⟩
-
-omit [DecidableEq P.Ident] [BEq P.Ident] [LawfulBEq P.Ident]
-    [HasFvars P] [LawfulHasVal P] in
-/-- A `cover` step keeps the store and emits its cover event. -/
-theorem evalE_cover_inv {F : P.Factory} {σ σ1 : SemanticStore P}
-    {l : String} {e : P.Expr} {md : MetaData P}
-    {evs : List (Event P)} (h : EvalE F σ (.cmd (.cover l e md)) σ1 evs) :
-    σ1 = σ ∧
-      evs = [.cover { factory := F, store := σ, label := l, expr := e, metadata := md }] :=
-  match h with | .eval_cover => ⟨rfl, rfl⟩
 
 omit [BEq P.Ident] [LawfulBEq P.Ident] [HasBool P] [HasFvar P]
     [HasFvars P] [LawfulHasVal P] in

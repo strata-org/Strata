@@ -187,7 +187,7 @@ theorem sum_out : (∃ c σ', sumRun = (.ok (c, sumOut), σ')) ∧
 /-- The postcondition is `int.ge(s, 0)`. -/
 private theorem sum_post_expr :
     ∀ lc ∈ sumProc.spec.postconditions.toList, lc.2.expr = ge0 sId :=
-  forall_of_all (by native_decide)
+  List.forall_of_all_decide (by native_decide)
 
 /-! ## The triple of the hoisted body
 
@@ -285,7 +285,7 @@ private theorem sumTgt_triple :
   refine Core.Logic.Hoare.seq π testParams (Mid := Inv E) ?_ ?_ (by covered)
   · refine Core.Logic.Hoare.cmd π testParams _ _ _
       (fun ρ₀ σ' emitted ⟨hf, hs, hi⟩ _ hstep => ?_)
-    have ⟨hoth, he⟩ := init_nondet_inv hstep
+    have ⟨_, _, _, _, hoth, he⟩ := EvalCmdE.init_nondet_inv (evalCmdExtE_cmd_iff.mp hstep)
     exact ⟨by rw [he]; trivial, fun _ => ⟨hf, 0, 0, (hoth _ s_ne_sq.symm).trans hs,
       (hoth _ i_ne_sq.symm).trans hi, Int.le_refl 0, Int.le_refl 0⟩⟩
   refine Core.Logic.Hoare.consequence π testParams
@@ -320,7 +320,7 @@ theorem sum_meets_contract :
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨sumProc, by native_decide, by native_decide, ?_⟩
   rw [sum_body_eq]
-  refine of_forall_factory π fun E => ?_
+  refine Core.Logic.Hoare.of_forall_entryFactory π _ fun E => ?_
   by_cases hE : E.factory = Core.Factory
   case neg =>
     exact Core.Logic.Hoare.consequence π testParams (Core.Logic.Hoare.false_pre π testParams _ _)

@@ -284,26 +284,30 @@ private theorem ite_run_inv
       cases hstep with
       | step_ite_true hc =>
         obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inl hrest)
-        have ⟨htr, _⟩ := assert_run_inv π (l := "t") (e := forallExpr) (md := mdT) (ρ := ρ)
-          (ρ' := ρi) (singleton_run_inv π hin)
+        have ⟨htr, _⟩ := EvalCmdExtE.assertRun_inv (π := π)
+          (l := "t") (e := forallExpr) (md := mdT) (ρ := ρ)
+          (ρ' := ρi) (singletonRun_to_stmtRunE (Core.EvalCommandE π) hin)
         exact .inl ⟨hc, by simpa using htr⟩
       | step_ite_false hc =>
         obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inl hrest)
-        have ⟨htr, _⟩ := assert_run_inv π (l := "f") (e := ff0) (md := mdF) (ρ := ρ)
-          (ρ' := ρi) (singleton_run_inv π hin)
+        have ⟨htr, _⟩ := EvalCmdExtE.assertRun_inv (π := π)
+          (l := "f") (e := ff0) (md := mdF) (ρ := ρ)
+          (ρ' := ρi) (singletonRun_to_stmtRunE (Core.EvalCommandE π) hin)
         exact .inr ⟨hc, by simpa using htr⟩
   · cases hexit with
     | step _ emitted _ restTr _ hstep hrest =>
       cases hstep with
       | step_ite_true hc =>
         obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inr ⟨lbl, hrest⟩)
-        have ⟨htr, _⟩ := assert_run_inv π (l := "t") (e := forallExpr) (md := mdT) (ρ := ρ)
-          (ρ' := ρi) (singleton_run_inv π hin)
+        have ⟨htr, _⟩ := EvalCmdExtE.assertRun_inv (π := π)
+          (l := "t") (e := forallExpr) (md := mdT) (ρ := ρ)
+          (ρ' := ρi) (singletonRun_to_stmtRunE (Core.EvalCommandE π) hin)
         exact .inl ⟨hc, by simpa using htr⟩
       | step_ite_false hc =>
         obtain ⟨ρi, hin, _⟩ := block_reaches_doneE (.inr ⟨lbl, hrest⟩)
-        have ⟨htr, _⟩ := assert_run_inv π (l := "f") (e := ff0) (md := mdF) (ρ := ρ)
-          (ρ' := ρi) (singleton_run_inv π hin)
+        have ⟨htr, _⟩ := EvalCmdExtE.assertRun_inv (π := π)
+          (l := "f") (e := ff0) (md := mdF) (ρ := ρ)
+          (ρ' := ρi) (singletonRun_to_stmtRunE (Core.EvalCommandE π) hin)
         exact .inr ⟨hc, by simpa using htr⟩
 
 end
@@ -368,7 +372,8 @@ theorem pAssume_meets_contract :
   intro ρ₀ ρ' trace hpre hwf hrun
   obtain ⟨_hpreP, hfac, _hold, _hin⟩ := hpre
   obtain ⟨ρ_inner, hinner, _hρ'⟩ :=
-    stmt_block_reaches_doneE (singleton_run_inv examplePgmAST.findProcByString? hrun)
+    stmt_block_reaches_doneE
+      (singletonRun_to_stmtRunE (Core.EvalCommandE examplePgmAST.findProcByString?) hrun)
   refine ⟨?_, fun _ => ?_⟩
   ·
     rw [pAssumeBody_eq] at hinner
@@ -384,12 +389,12 @@ theorem pAssume_meets_contract :
         [Core.Statement.assume "a" xExpr (assumeMdOf pAssumeBody)]
         (by simp [Block.exitsCoveredByBlocks, Stmt.exitsCoveredByBlocks]) ρ₀ lbl ρ_inner)
     ·
-      obtain ⟨htr₁, hρ₁⟩ := assume_run_inv examplePgmAST.findProcByString?
+      obtain ⟨htr₁, hρ₁⟩ := EvalCmdExtE.assumeRun_inv (π := examplePgmAST.findProcByString?)
         (l := "a") (e := xExpr) (md := assumeMdOf pAssumeBody) (ρ := ρ₀) (ρ' := ρ₁)
-        (singleton_run_inv examplePgmAST.findProcByString? (.inl hterm₁))
+        (singletonRun_to_stmtRunE (Core.EvalCommandE examplePgmAST.findProcByString?) (.inl hterm₁))
       subst ρ₁; subst htr; subst htr₁
       rcases ite_run_inv examplePgmAST.findProcByString? (ρ := ρ₀) (ρ' := ρ_inner)
-        (singleton_run_inv examplePgmAST.findProcByString? hfin₂) with
+        (singletonRun_to_stmtRunE (Core.EvalCommandE examplePgmAST.findProcByString?) hfin₂) with
         ⟨_hc, htr₂⟩ | ⟨hc, htr₂⟩
       ·
         subst htr₂
@@ -601,12 +606,13 @@ theorem pReq_meets_contract :
   intro ρ₀ ρ' trace hpre hwf hrun
   obtain ⟨hpreP, hfac, _hold, _hin⟩ := hpre
   obtain ⟨ρ_inner, hinner, _hρ'⟩ :=
-    stmt_block_reaches_doneE (singleton_run_inv examplePgmAST.findProcByString? hrun)
+    stmt_block_reaches_doneE
+      (singletonRun_to_stmtRunE (Core.EvalCommandE examplePgmAST.findProcByString?) hrun)
   refine ⟨?_, fun _ => ?_⟩
   ·
     rw [pReqBody_eq] at hinner
     rcases ite_run_inv examplePgmAST.findProcByString? (ρ := ρ₀) (ρ' := ρ_inner)
-      (singleton_run_inv examplePgmAST.findProcByString? hinner) with
+      (singletonRun_to_stmtRunE (Core.EvalCommandE examplePgmAST.findProcByString?) hinner) with
       ⟨_hc, htr⟩ | ⟨hc, htr⟩
     ·
       subst htr

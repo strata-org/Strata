@@ -19,7 +19,8 @@ judgement, `Triple`, conditioned on `Core.Logic.BlockInitEnvWF`.
 
 ## Contents
 
-`Triple`, and the rules `false_pre`, `consequence`, `cmd`, `set`, `init`, `seq`,
+`Triple`, and the rules `false_pre`, `consequence`, `of_storeWF_pre`,
+`of_forall_entryFactory`, `cmd`, `set`, `init`, `seq`,
 `exit_cons`, `block`, `skip`, `ite` and `while_rule`.
 
 ## Why the rules are here and not in a `HoareProps` module
@@ -83,6 +84,23 @@ theorem consequence (params : InitEnvWFParams)
     (hpre : ∀ ρ, Pre' ρ → Pre ρ) (hpost : ∀ ρ, Post ρ → Post' ρ) :
     Triple π params Pre' ss Post' (factory := factory) := by
   exact Strata.Logic.Hoare.consequence (EventLang.coreBlock π) params h hpre hpost
+
+/-- A triple whose precondition also requires a well-formed entry store holds without that
+    requirement: the gate of every admitted entry gives it. -/
+theorem of_storeWF_pre (params : InitEnvWFParams)
+    {Pre Post : Imperative.Env Expression → Prop} {ss : Statements}
+    (h : Triple π params (fun ρ => Pre ρ ∧ Imperative.WellFormedStore ρ.store ρ.factory) ss
+      Post (factory := factory)) :
+    Triple π params Pre ss Post (factory := factory) :=
+  fun ρ₀ ρ' tr hpre hinit hrun => h ρ₀ ρ' tr ⟨hpre, hinit.storeWellDefined⟩ hinit hrun
+
+/-- A triple holds when it holds, for every runtime factory `E`, from the entries whose
+    runtime factory is `E`. -/
+theorem of_forall_entryFactory (params : InitEnvWFParams)
+    {Pre Post : Imperative.Env Expression → Prop} {ss : Statements}
+    (h : ∀ E, Triple π params (fun ρ => Pre ρ ∧ ρ.factory = E) ss Post (factory := factory)) :
+    Triple π params Pre ss Post (factory := factory) :=
+  fun ρ₀ ρ' tr hpre hinit hrun => h ρ₀.factory ρ₀ ρ' tr ⟨hpre, rfl⟩ hinit hrun
 
 /-! ## Rules for a single command -/
 

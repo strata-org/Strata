@@ -120,7 +120,7 @@ theorem max_run_out :
 /-- The two postconditions are `int.ge(m, a)` and `int.ge(m, b)`. -/
 private theorem max_post_expr :
     ∀ lc ∈ maxProc.spec.postconditions.toList, lc.2.expr = geE mId aId ∨ lc.2.expr = geE mId bId :=
-  forall_of_all (by native_decide)
+  List.forall_of_all_decide (by native_decide)
 
 /-- `x` holds the integer `n`. -/
 private abbrev Holds (x : Core.Expression.Ident) (n : Int) (ρ : Env Core.Expression) : Prop :=
@@ -154,10 +154,11 @@ private theorem b_ne_m : mId ≠ bId := by decide
 private theorem maxTgt_triple :
     Core.Logic.Hoare.Triple π testParams
       (Core.Logic.Hoare.Procedure.contractPre Core.Factory maxProc) [maxIte] Exit := by
-  refine with_wf π (Core.Logic.Hoare.consequence π testParams (Pre := Entry) ?_
+  refine Core.Logic.Hoare.of_storeWF_pre π _
+    (Core.Logic.Hoare.consequence π testParams (Pre := Entry) ?_
     (fun ρ ⟨⟨_, hp, _, hin⟩, hwf⟩ =>
-      have ⟨p, ha⟩ := input_int hwf hin aId (by native_decide)
-      have ⟨q, hb⟩ := input_int hwf hin bId (by native_decide)
+      have ⟨p, ha⟩ := Core.Logic.Hoare.Procedure.inputAsPredicate_int hwf hin aId (by native_decide)
+      have ⟨q, hb⟩ := Core.Logic.Hoare.Procedure.inputAsPredicate_int hwf hin bId (by native_decide)
       ⟨hp, p, q, ha, hb⟩) (fun _ h => h))
   refine Core.Logic.Hoare.ite π testParams ?_ ?_
     (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by decide +kernel))

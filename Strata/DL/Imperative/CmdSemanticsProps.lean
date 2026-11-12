@@ -51,6 +51,9 @@ evaluation relation `EvalCmdE`. Key results:
 - `EvalCmdE.emitted_eq`: event-producing command evaluation emits exactly the
   trace determined by the command and input snapshot; `evalCmdE_events_factory`: every
   event it emits is captured under the factory it runs with.
+- Inversions of single steps: `EvalCmdE.init_det_inv`, `EvalCmdE.init_nondet_inv`,
+  `EvalCmdE.set_det_inv`, `EvalCmdE.set_nondet_inv`, `EvalCmdE.assume_inv`,
+  `EvalCmdE.assert_inv` and `EvalCmdE.cover_inv`.
 - List-level store relations (`EvalExpressions`, `ReadValues`, `UpdateStates`,
   `InitStates`): lengths (`ReadValuesLength`, `InitStatesLength`,
   `UpdateStatesLength`), uniqueness (`ReadValuesInjective`, `InitStatesInjective`),
@@ -549,6 +552,68 @@ theorem EvalCmdE.emitted_eq {P : PureExpr} [HasFvar P] [HasBool P]
     (h : EvalCmdE P f σ c σ' emitted) :
     emitted = Cmd.emittedEvents P c f σ := by
   cases h <;> rfl
+
+/-! ## Inversions of single command steps -/
+
+section Inversions
+
+variable {P : PureExpr} [HasFvar P] [HasBool P] {F : P.Factory} {σ σ' : SemanticStore P}
+  {evs : Trace P} {md : MetaData P}
+
+/-- A deterministic `init x : ty := e` step evaluates `e` to a value `v` of type `ty`, defines
+the undefined `x` as `v`, keeps every other variable and emits no event. -/
+theorem EvalCmdE.init_det_inv {x : P.Ident} {ty : P.Ty} {e : P.Expr}
+    (h : EvalCmdE P F σ (.init x ty (.det e) md) σ' evs) :
+    ∃ v, P.eval F σ e = some v ∧ σ x = none ∧ σ' x = some v ∧ (∀ y, x ≠ y → σ' y = σ y) ∧
+      evs = [] ∧ HasVal.valueOfTy F v ty :=
+  match h with | .eval_init hev (.init h0 h1 hfr) hty _ => ⟨_, hev, h0, h1, hfr, rfl, hty⟩
+
+/-- A nondeterministic `init x : ty` step defines the undefined `x` as some value `v` of type
+`ty`, keeps every other variable and emits no event. -/
+theorem EvalCmdE.init_nondet_inv {x : P.Ident} {ty : P.Ty}
+    (h : EvalCmdE P F σ (.init x ty .nondet md) σ' evs) :
+    ∃ v, HasVal.valueOfTy F v ty ∧ σ x = none ∧ σ' x = some v ∧
+      (∀ y, x ≠ y → σ' y = σ y) ∧ evs = [] :=
+  match h with | .eval_init_unconstrained (.init h0 h1 hfr) hty _ => ⟨_, hty, h0, h1, hfr, rfl⟩
+
+/-- A deterministic `set x := e` step evaluates `e` to a value `v` of the type stored at `x`,
+writes `v` to `x`, keeps every other variable and emits no event. -/
+theorem EvalCmdE.set_det_inv {x : P.Ident} {e : P.Expr}
+    (h : EvalCmdE P F σ (.set x (.det e) md) σ' evs) :
+    ∃ v, P.eval F σ e = some v ∧ HasVal.valueOfStoredTy (P := P) F σ x v ∧ σ' x = some v ∧
+      (∀ y, x ≠ y → σ' y = σ y) ∧ evs = [] :=
+  match h with | .eval_set hev (.update _ h1 hfr) hty _ => ⟨_, hev, hty, h1, hfr, rfl⟩
+
+/-- A nondeterministic `set x` step writes to `x` some value `v` of the type stored there,
+keeps every other variable and emits no event. -/
+theorem EvalCmdE.set_nondet_inv {x : P.Ident}
+    (h : EvalCmdE P F σ (.set x .nondet md) σ' evs) :
+    ∃ v, HasVal.valueOfStoredTy (P := P) F σ x v ∧ σ' x = some v ∧
+      (∀ y, x ≠ y → σ' y = σ y) ∧ evs = [] :=
+  match h with | .eval_set_nondet (.update _ h1 hfr) hty _ => ⟨_, hty, h1, hfr, rfl⟩
+
+/-- An `assume` step keeps the store and emits its assumption event. -/
+theorem EvalCmdE.assume_inv {l : String} {e : P.Expr}
+    (h : EvalCmdE P F σ (.assume l e md) σ' evs) :
+    σ' = σ ∧
+      evs = [.assume { factory := F, store := σ, label := l, expr := e, metadata := md }] :=
+  match h with | .eval_assume => ⟨rfl, rfl⟩
+
+/-- An `assert` step keeps the store and emits its assertion event. -/
+theorem EvalCmdE.assert_inv {l : String} {e : P.Expr}
+    (h : EvalCmdE P F σ (.assert l e md) σ' evs) :
+    σ' = σ ∧
+      evs = [.assert { factory := F, store := σ, label := l, expr := e, metadata := md }] :=
+  match h with | .eval_assert => ⟨rfl, rfl⟩
+
+/-- A `cover` step keeps the store and emits its cover event. -/
+theorem EvalCmdE.cover_inv {l : String} {e : P.Expr}
+    (h : EvalCmdE P F σ (.cover l e md) σ' evs) :
+    σ' = σ ∧
+      evs = [.cover { factory := F, store := σ, label := l, expr := e, metadata := md }] :=
+  match h with | .eval_cover => ⟨rfl, rfl⟩
+
+end Inversions
 
 /-! ## List-level store relations
 

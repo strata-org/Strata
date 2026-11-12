@@ -6,6 +6,7 @@
 module
 
 public import Strata.DL.Imperative.StmtCFGCallSemantics
+import Strata.DL.Imperative.StmtSemanticsProps
 
 /-! # Properties of the call-aware command semantics
 
@@ -17,9 +18,11 @@ motives and ordinary `induction` cannot use it directly.
 induction hypothesis re-states the callee run over the command relation
 "`EvalCmdExtE` and the motive holds", for either a structured or CFG body.
 `evalCmdExtE_cmd_iff` characterizes evaluation of an embedded base command as
-exactly `EvalCmdE`, with no call event behavior. `Calls.mem_checksAtCall`: a clause checked
-at a call site (`Calls.checksAtCall`) is a clause of the callee's specification with the same
-label, expression and attribute. `Calls.defaultAssertEvents_label_metadata`: the assertion
+exactly `EvalCmdE`, with no call event behavior, so the `EvalCmdE.*_inv` inversions of
+`CmdSemanticsProps` apply to it. `EvalCmdExtE.assumeRun_inv` and `EvalCmdExtE.assertRun_inv`
+invert completed runs of an `assume` or `assert` statement. `Calls.mem_checksAtCall`: a clause
+checked at a call site (`Calls.checksAtCall`) is a clause of the callee's specification with
+the same label, expression and attribute. `Calls.defaultAssertEvents_label_metadata`: the assertion
 events emitted for a list of clauses carry the labels and metadata of its non-free clauses,
 whatever the factory and store. -/
 
@@ -121,6 +124,34 @@ theorem evalCmdExtE_cmd_iff
   constructor
   · intro h; cases h with | cmd_sem hb => exact hb
   · intro h; exact EvalCmdExtE.cmd_sem h
+
+/-- A run of an `assume` statement that terminates or exits emits the assumption captured at
+its entry environment and ends in that environment. -/
+theorem EvalCmdExtE.assumeRun_inv
+    {π : String → Option (Procedure P (CmdExt P) Hdr)}
+    {l : String} {e : P.Expr} {md : MetaData P} {ρ ρ' : Env P} {tr : Trace P}
+    (h : StepStmtStarE P (EvalCmdExtE π) (.stmt (.cmd (.cmd (.assume l e md))) ρ) tr
+        (.terminal ρ') ∨
+      ∃ lbl, StepStmtStarE P (EvalCmdExtE π) (.stmt (.cmd (.cmd (.assume l e md))) ρ) tr
+        (.exiting lbl ρ')) :
+    tr = [.assume ⟨ρ.factory, ρ.store, l, e, md⟩] ∧ ρ' = ρ := by
+  obtain ⟨hcmd, hρ'⟩ := cmdRun_invE h
+  obtain ⟨hσ, rfl⟩ := EvalCmdE.assume_inv (evalCmdExtE_cmd_iff.mp hcmd)
+  exact ⟨rfl, by rw [hρ', hσ]⟩
+
+/-- A run of an `assert` statement that terminates or exits emits the assertion captured at
+its entry environment and ends in that environment. -/
+theorem EvalCmdExtE.assertRun_inv
+    {π : String → Option (Procedure P (CmdExt P) Hdr)}
+    {l : String} {e : P.Expr} {md : MetaData P} {ρ ρ' : Env P} {tr : Trace P}
+    (h : StepStmtStarE P (EvalCmdExtE π) (.stmt (.cmd (.cmd (.assert l e md))) ρ) tr
+        (.terminal ρ') ∨
+      ∃ lbl, StepStmtStarE P (EvalCmdExtE π) (.stmt (.cmd (.cmd (.assert l e md))) ρ) tr
+        (.exiting lbl ρ')) :
+    tr = [.assert ⟨ρ.factory, ρ.store, l, e, md⟩] ∧ ρ' = ρ := by
+  obtain ⟨hcmd, hρ'⟩ := cmdRun_invE h
+  obtain ⟨hσ, rfl⟩ := EvalCmdE.assert_inv (evalCmdExtE_cmd_iff.mp hcmd)
+  exact ⟨rfl, by rw [hρ', hσ]⟩
 
 end
 

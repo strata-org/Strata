@@ -73,15 +73,12 @@ theorem overapproximatesTraces (base : InitEnvWFParams) :
         ∧ Block.loopHasNoInvariants ss = Bool.true
         ∧ Block.noMeasureLoops ss = Bool.true
         ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] ss
-        ∧ Block.userLabelsShapeNodup (C := Command) ss
-        ∧ (∀ name : String, Imperative.StructuredToUnstructured.isGeneratedName name →
-            HasIdent.ident (P := Expression) name ∉
-              Block.initVars (C := Command) ss))
+        ∧ Block.userLabelsShapeNodup (C := Command) ss)
       (base.extend prefixesReserved) base := by
   intro ss out ht hpre ρ₀ ρ₀' hEq hwf
   subst hEq
   obtain ⟨hnc, hngCore, huniqCore, hlbniCore, hlhniCore, hnmlCore,
-    hcovCore, hlabelsCore, hs2uCore⟩ := hpre
+    hcovCore, hlabelsCore⟩ := hpre
   obtain ⟨bs, hproj, hemb⟩ := Core.noCalls_projectStmts hnc
   have hng : Block.noNondetGuards bs = Bool.true := by
     rw [← Imperative.embedStmts_noNondetGuards bs, hemb]
@@ -101,12 +98,6 @@ theorem overapproximatesTraces (base : InitEnvWFParams) :
     (Imperative.embedStmts_exitsCoveredByBlocks [] bs).mp (by rwa [hemb])
   have hlabels : Block.userLabelsShapeNodup (C := Cmd Expression) bs :=
     (Imperative.embedStmts_userLabelsShapeNodup bs).mp (by rwa [hemb])
-  have hs2u : ∀ name : String, Imperative.StructuredToUnstructured.isGeneratedName name →
-      HasIdent.ident (P := Expression) name ∉ Block.initVars (C := Cmd Expression) bs := by
-    intro name hkindName hmem
-    exact hs2uCore name hkindName (by
-      rw [← hemb, Block.initVars, Imperative.embedStmts_definedVars]
-      exact hmem)
   have hout_eq : out = Imperative.embedCFG (Imperative.stmtsToCFG bs) := by
     rw [Core.stmtsToCFG_eq_some hproj] at ht; exact (Option.some.inj ht).symm
   change Core.Logic.BlockInitEnvWF (base.extend prefixesReserved) ss ρ₀ at hwf
@@ -118,7 +109,7 @@ theorem overapproximatesTraces (base : InitEnvWFParams) :
     Imperative.StructuredToUnstructured.overapproximatesTraces
       (P := Expression) base
       bs (Imperative.stmtsToCFG bs) rfl
-      ⟨hng, huniq, hlbni, hlhni, hnml, hcov, hlabels, hs2u⟩ ρ₀ ρ₀ rfl hbaseWF
+      ⟨hng, huniq, hlbni, hlhni, hnml, hcov, hlabels⟩ ρ₀ ρ₀ rfl hbaseWF
   have hsrc : (EventLang.coreBlock π).stmtCfg ss ρ₀ = embedConfig (.stmts bs ρ₀) := by
     simp only [EventLang.coreBlock, EventLang.imperativeBlockE, embedConfig, hemb]
   have htgt : (EventLang.coreCFG π).stmtCfg out ρ₀
@@ -244,10 +235,7 @@ theorem assertValid (base : InitEnvWFParams)
       ∧ Block.loopHasNoInvariants ss = Bool.true
       ∧ Block.noMeasureLoops ss = Bool.true
       ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] ss
-      ∧ Block.userLabelsShapeNodup (C := Command) ss
-      ∧ (∀ name : String, Imperative.StructuredToUnstructured.isGeneratedName name →
-          HasIdent.ident (P := Expression) name ∉
-            Block.initVars (C := Command) ss))
+      ∧ Block.userLabelsShapeNodup (C := Command) ss)
     {I : ConditionInterp Expression}
     (hstable : I.StableUnder
       (EventArg.WithWF (P := Expression) (EventArg.ExtendsEnv (fun _ => True))))
@@ -267,10 +255,7 @@ theorem assertValid (base : InitEnvWFParams)
       ∧ Block.loopHasNoInvariants block = Bool.true
       ∧ Block.noMeasureLoops block = Bool.true
       ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] block
-      ∧ Block.userLabelsShapeNodup (C := Command) block
-      ∧ (∀ name : String, Imperative.StructuredToUnstructured.isGeneratedName name →
-          HasIdent.ident (P := Expression) name ∉
-            Block.initVars (C := Command) block))
+      ∧ Block.userLabelsShapeNodup (C := Command) block)
     (base.extend prefixesReserved) (base)
     (fun _ _ htrace aid =>
       Trace.WithWF.assertionValidFrom_reflect hstable htrace aid)
@@ -298,10 +283,7 @@ theorem triple (base : InitEnvWFParams)
       ∧ Block.loopHasNoInvariants ss = Bool.true
       ∧ Block.noMeasureLoops ss = Bool.true
       ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] ss
-      ∧ Block.userLabelsShapeNodup (C := Command) ss
-      ∧ (∀ name : String, Imperative.StructuredToUnstructured.isGeneratedName name →
-          HasIdent.ident (P := Expression) name ∉
-            Block.initVars (C := Command) ss))
+      ∧ Block.userLabelsShapeNodup (C := Command) ss)
     {F : Lambda.Factory CoreLParams} {Pre Post Post' : Env Expression → Prop}
     (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
     (hpost : ∀ ρ₀ ρ' ρ'', Pre ρ₀ →
@@ -336,7 +318,7 @@ private theorem structuredToUnstructuredDecls_proc_mem
     (hq : Decl.proc q md ∈ decls) (hb : q.body = .structured ss)
     (hne : ss ≠ []) (hcfg : Core.stmtsToCFG ss = some cfg) :
     (Imperative.Block.checkExitsCoveredByBlocks [] ss = Bool.true
-      ∧ userLabelsOk ss = Bool.true ∧ initsAvoidReservedPrefixes ss = Bool.true)
+      ∧ userLabelsOk ss = Bool.true)
     ∧ (Decl.proc { q with body := .cfg cfg } md, Bool.true) ∈ results := by
   have hempty : ss.isEmpty = Bool.false := List.isEmpty_eq_false_iff.mpr hne
   induction decls generalizing results with
@@ -375,7 +357,7 @@ private theorem structuredToUnstructured_proc_mem
     (hq : Decl.proc q md ∈ program.decls) (hb : q.body = .structured ss)
     (hne : ss ≠ []) (hcfg : Core.stmtsToCFG ss = some cfg) :
     (Imperative.Block.checkExitsCoveredByBlocks [] ss = Bool.true
-      ∧ userLabelsOk ss = Bool.true ∧ initsAvoidReservedPrefixes ss = Bool.true)
+      ∧ userLabelsOk ss = Bool.true)
     ∧ Decl.proc { q with body := .cfg cfg } md ∈ out.decls := by
   cases hmap : program.decls.mapM structuredToUnstructuredDecl with
   | error error =>
@@ -427,7 +409,7 @@ theorem structuredToUnstructuredPipelinePhase_over
   have hnc := ProgramFact.noCalls_of_program hnoCallsProgram hq hb
   obtain ⟨bs, hproj, _⟩ := Core.noCalls_projectStmts hnc
   have hcfg := Core.stmtsToCFG_eq_some hproj
-  obtain ⟨⟨hexits, hlabels, hinits⟩, hmem⟩ :=
+  obtain ⟨⟨hexits, hlabels⟩, hmem⟩ :=
     structuredToUnstructured_proc_mem htransform hq hb hne hcfg
   have hpre :=
     And.intro (ProgramFact.noNondetGuards_of_program hnoNondetGuardsProgram hq hb)
@@ -435,7 +417,7 @@ theorem structuredToUnstructuredPipelinePhase_over
         (And.intro (ProgramFact.loopBodyNoInits_of_program hloopBodyNoInitsProgram hq hb)
           (And.intro (ProgramFact.noLoopInvariants_of_program hnoLoopInvariantsProgram hq hb)
             (And.intro (ProgramFact.noLoopMeasures_of_program hnoLoopMeasuresProgram hq hb)
-              (loweringShape_of_checks hexits hlabels hinits)))))
+              (loweringShape_of_checks hexits hlabels)))))
   refine ⟨_, hcfg, hmem, ?_⟩
   intro base I hstable aid hvalid
   exact assertValid π base hcfg ⟨hnc, hpre⟩ hstable hvalid

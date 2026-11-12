@@ -231,10 +231,10 @@ private theorem ssaList_over (hF : SSALaws F) (t : AssertId P) (cond : P.Expr) (
   case initDet | setDet | initNondet | setNondet =>
     obtain ⟨σL1, _, hE, hC1⟩ := reach_cmd_claim hR hC
     first
-    | obtain ⟨v0, he, -, hx1, hfr, rfl, hty⟩ := evalE_init_det_inv_typed hE
-    | obtain ⟨v0, hty, -, hx1, hfr, rfl⟩ := evalE_init_nondet_inv_typed hE
-    | obtain ⟨v0, he, ⟨prev, T, hp, hpT, hvT⟩, hx1, hfr, rfl⟩ := evalE_set_det_inv hE
-    | obtain ⟨v0, ⟨prev, T, hp, hpT, hvT⟩, hx1, hfr, rfl⟩ := evalE_set_nondet_inv hE
+    | obtain ⟨v0, he, -, hx1, hfr, rfl, hty⟩ := EvalCmdE.init_det_inv hE
+    | obtain ⟨v0, hty, -, hx1, hfr, rfl⟩ := EvalCmdE.init_nondet_inv hE
+    | obtain ⟨v0, he, ⟨prev, T, hp, hpT, hvT⟩, hx1, hfr, rfl⟩ := EvalCmdE.set_det_inv hE
+    | obtain ⟨v0, ⟨prev, T, hp, hpT, hvT⟩, hx1, hfr, rfl⟩ := EvalCmdE.set_nondet_inv hE
     obtain ⟨tr', hR', -, hC'⟩ := hC1.resolve_left Claim.not_nil
     try
       obtain ⟨w, hw, hh⟩ := hA x (by simp [Block.freeVars, Stmt.freeVars])
@@ -367,10 +367,10 @@ private theorem ssaList_sim (hF : SSALaws F) (A : AvoidSet P) (D : List P.Ident)
     case' refine_2 => rcases hR with _ | ⟨⟨hE⟩, hR'⟩ | ⟨⟨⟩⟩
     all_goals
       first
-      | obtain ⟨v0, he, -, hx1, hfr, rfl, hty⟩ := evalE_init_det_inv_typed hE
-      | obtain ⟨v0, hty, -, hx1, hfr, rfl⟩ := evalE_init_nondet_inv_typed hE
-      | obtain ⟨v0, he, ⟨prev, T, hp, hpT, hvT⟩, hx1, hfr, rfl⟩ := evalE_set_det_inv hE
-      | obtain ⟨v0, ⟨prev, T, hp, hpT, hvT⟩, hx1, hfr, rfl⟩ := evalE_set_nondet_inv hE
+      | obtain ⟨v0, he, -, hx1, hfr, rfl, hty⟩ := EvalCmdE.init_det_inv hE
+      | obtain ⟨v0, hty, -, hx1, hfr, rfl⟩ := EvalCmdE.init_nondet_inv hE
+      | obtain ⟨v0, he, ⟨prev, T, hp, hpT, hvT⟩, hx1, hfr, rfl⟩ := EvalCmdE.set_det_inv hE
+      | obtain ⟨v0, ⟨prev, T, hp, hpT, hvT⟩, hx1, hfr, rfl⟩ := EvalCmdE.set_nondet_inv hE
     all_goals try exact ⟨[], .nil, .inl rfl⟩
     all_goals
       try

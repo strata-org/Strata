@@ -29,6 +29,8 @@ procedure's contract decidable. The definitions being established live in
   another clause with the same expression.
 - `assertionsValid_defaultAssertEvents` — turns non-`free` contract clauses that hold in
   every world into a valid assertion-event trace.
+- `Procedure.inputAsPredicate_int` — an `int` input holds an integer at a well-formed
+  entry satisfying the input typing.
 -/
 
 public section
@@ -253,6 +255,17 @@ theorem Procedure.contractTriple_singleton_cmd (p : Core.Program)
       (Procedure.contractPost (p.factoryBeforeProcedure procName) proc)
       hsem hpost_proj)
 
+
+/-- An input of type `int` holds an integer of the runtime factory at an entry with a
+    well-formed store satisfying the procedure's input typing. -/
+theorem Procedure.inputAsPredicate_int {proc : Procedure} {ρ : Imperative.Env Expression}
+    (hwf : Imperative.WellFormedStore ρ.store ρ.factory)
+    (hin : Procedure.inputAsPredicate proc ρ) (x : Expression.Ident)
+    (hx : (x, Lambda.LMonoTy.int) ∈ proc.header.inputs.toList) :
+    ∃ k, ρ.store x = some (Lambda.SemValue.ofInt ρ.factory.model.tcInterp k) := by
+  obtain ⟨w, hw, hty⟩ := hin x _ hx
+  obtain ⟨k, hk⟩ := Lambda.SemValue.exists_ofInt hty
+  exact ⟨k, by rw [hw, hk, hwf x w hw]⟩
 
 end Hoare
 

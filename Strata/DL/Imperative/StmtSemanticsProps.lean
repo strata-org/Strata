@@ -46,8 +46,9 @@ Key results for `StepStmtE` / `StepStmtStarE`:
   factory of their initial environment, when commands do.
 - `seq_run_decomposeE`, `seq_reaches_terminalE`, and
   `seq_reaches_exitingE` split traced sequence runs chronologically;
-  `stmtRun_to_singletonE` lifts a completed statement run to its singleton-list run.
-- `stepStmtStarE_from_terminal` / `stepStmtStarE_from_exiting`,
+  `stmtRun_to_singletonE` lifts a completed statement run to its singleton-list run, and
+  `singletonRun_to_stmtRunE` recovers a statement run from a completed singleton-list run.
+- `stepStmtStarE_from_terminal` / `stepStmtStarE_from_exiting`, `cmdRun_invE`,
   `block_reaches_doneE`, and `stmt_block_reaches_doneE` characterize completed
   traced runs.
 - `projectStore_eq_dropVarsE`: leaving a block drops exactly the names scoped
@@ -505,6 +506,32 @@ theorem seq_reaches_exitingE
   · exact .inr ⟨ρ₁, tr₁, tr₂, htr, hterm, htail⟩
   · injection hcfg with hl hρ; subst hρ; subst hl; exact .inl hexit
 
+/-- A traced run of the one-element statement list `[s]` that terminates or exits is a run
+of `s` with the same trace and final environment that terminates or exits. -/
+theorem singletonRun_to_stmtRunE
+    {s : Stmt P CmdT} {ρ ρ' : Env P} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd (.stmts [s] ρ) tr (.terminal ρ') ∨
+      ∃ lbl, StepStmtStarE P EvalCmd (.stmts [s] ρ) tr (.exiting lbl ρ')) :
+    StepStmtStarE P EvalCmd (.stmt s ρ) tr (.terminal ρ') ∨
+      ∃ lbl, StepStmtStarE P EvalCmd (.stmt s ρ) tr (.exiting lbl ρ') := by
+  rcases h with hterm | ⟨lbl, hexit⟩
+  · rcases stmts_cons_headE EvalCmd hterm with ⟨hcfg, _⟩ | hseq
+    · simp at hcfg
+    · obtain ⟨ρ₁, tr₁, tr₂, htr, hhead, htail⟩ := seq_reaches_terminalE EvalCmd hseq
+      obtain ⟨htr₂, hcfg⟩ := stmts_nil_runE EvalCmd htail
+      subst htr₂
+      rcases hcfg with hcfg | hcfg
+      · simp at hcfg
+      · injection hcfg with hρ; subst hρ
+        rw [htr, List.append_nil]; exact .inl hhead
+  · rcases stmts_cons_headE EvalCmd hexit with ⟨hcfg, _⟩ | hseq
+    · simp at hcfg
+    · rcases seq_reaches_exitingE EvalCmd hseq with
+        hhead | ⟨ρ₁, tr₁, tr₂, _, _, htail⟩
+      · exact .inr ⟨lbl, hhead⟩
+      · obtain ⟨_, hcfg⟩ := stmts_nil_runE EvalCmd htail
+        rcases hcfg with hcfg | hcfg <;> simp at hcfg
+
 omit [HasBool P] in
 /-- Helper: when the inner of a block reaches `.exiting l` and the
     block's label (if some) doesn't match `l`, then `l` must be in the outer
@@ -763,6 +790,28 @@ theorem stepStmtStarE_from_terminal
   cases h with
   | refl => exact ⟨rfl, rfl⟩
   | step _ _ _ _ _ hstep _ => exact (stepStmtE_from_terminal_none hstep).elim
+
+/-- A run of a command statement that terminates or exits evaluates the command once from
+the entry store to the final store, with the run's trace, and terminates with the entry's
+factory. -/
+theorem cmdRun_invE
+    {c : CmdT} {ρ ρ' : Env P} {tr : List EventT}
+    (h : StepStmtStarE P EvalCmd (.stmt (.cmd c) ρ) tr (.terminal ρ') ∨
+      ∃ lbl, StepStmtStarE P EvalCmd (.stmt (.cmd c) ρ) tr (.exiting lbl ρ')) :
+    EvalCmd ρ.factory ρ.store c ρ'.store tr ∧ ρ' = { ρ with store := ρ'.store } := by
+  rcases h with hrun | ⟨lbl, hrun⟩
+  · cases hrun with
+    | step _ _ _ _ _ hstep hrest =>
+      obtain ⟨σ', hcmd, rfl⟩ := StepStmtE.cmd_cases hstep
+      obtain ⟨hcfg, rfl⟩ := stepStmtStarE_from_terminal hrest
+      injection hcfg with hρ
+      subst hρ
+      simpa using hcmd
+  · cases hrun with
+    | step _ _ _ _ _ hstep hrest =>
+      obtain ⟨σ', _, rfl⟩ := StepStmtE.cmd_cases hstep
+      obtain ⟨hcfg, _⟩ := stepStmtStarE_from_terminal hrest
+      simp at hcfg
 
 /-- No traced event step leaves an exiting configuration. -/
 private theorem stepStmtE_from_exiting_none

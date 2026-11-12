@@ -114,50 +114,50 @@ Result: ✅ pass
 
 
 /--
-info: Entry: block$l1$_2
+info: Entry: $__s2u_block$l1$_2
 
 l1:
-  condGoto true block$l1$_2 block$l1$_2
-block$l1$_2:
+  condGoto true $__s2u_block$l1$_2 $__s2u_block$l1$_2
+$__s2u_block$l1$_2:
   assert [a1]: x == x;
-  condGoto true l$_1 l$_1
-l$_1:
+  condGoto true $__s2u_l$_1 $__s2u_l$_1
+$__s2u_l$_1:
   assert [a3]: x == x;
-  condGoto true end$_0 end$_0
-end$_0:
+  condGoto true $__s2u_end$_0 $__s2u_end$_0
+$__s2u_end$_0:
   finish
 -/
 #guard_msgs in
 #eval (Std.format (singleCFG exitPgm 0))
 
 /--
-info: Entry: ite$_5
+info: Entry: $__s2u_ite$_5
 
 l5:
-  condGoto true ite$_5 ite$_5
+  condGoto true $__s2u_ite$_5 $__s2u_ite$_5
 l4:
-  condGoto true ite$_5 ite$_5
+  condGoto true $__s2u_ite$_5 $__s2u_ite$_5
 l4_before:
-  condGoto true ite$_5 ite$_5
+  condGoto true $__s2u_ite$_5 $__s2u_ite$_5
 l3_before:
-  condGoto true ite$_5 ite$_5
+  condGoto true $__s2u_ite$_5 $__s2u_ite$_5
 l1:
-  condGoto true ite$_5 ite$_5
-ite$_5:
+  condGoto true $__s2u_ite$_5 $__s2u_ite$_5
+$__s2u_ite$_5:
   assert [a4]: x == x;
-  condGoto int.gt(x, 0) block$l5$_2 block$l5$_1
+  condGoto int.gt(x, 0) $__s2u_block$l5$_2 $__s2u_block$l5$_1
 l2:
-  condGoto true l$_3 l$_3
-l$_3:
+  condGoto true $__s2u_l$_3 $__s2u_l$_3
+$__s2u_l$_3:
   assert [a5]: !(x == x);
-  condGoto true block$l5$_2 block$l5$_2
-block$l5$_2:
+  condGoto true $__s2u_block$l5$_2 $__s2u_block$l5$_2
+$__s2u_block$l5$_2:
   assert [a6]: int.gt(int.mul(x, 2), x);
-  condGoto true end$_0 end$_0
-block$l5$_1:
+  condGoto true $__s2u_end$_0 $__s2u_end$_0
+$__s2u_block$l5$_1:
   assert [a7]: int.le(x, 0);
-  condGoto true end$_0 end$_0
-end$_0:
+  condGoto true $__s2u_end$_0 $__s2u_end$_0
+$__s2u_end$_0:
   finish
 -/
 #guard_msgs in

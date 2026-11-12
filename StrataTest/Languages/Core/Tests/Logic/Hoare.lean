@@ -1462,9 +1462,11 @@ private theorem assume_assert_run_inv
   · exact absurd hexit (stmts_exitsCoveredByBlocks_noEscapeE (Core.EvalCommandE π)
       [Core.Statement.assume la e mda]
       (by simp [Block.exitsCoveredByBlocks, Stmt.exitsCoveredByBlocks]) ρ lbl ρ')
-  · obtain ⟨htr₁, hρ₁⟩ := assume_run_inv π (singleton_run_inv π (.inl hterm₁))
+  · obtain ⟨htr₁, hρ₁⟩ := EvalCmdExtE.assumeRun_inv (π := π)
+      (singletonRun_to_stmtRunE (Core.EvalCommandE π) (.inl hterm₁))
     subst hρ₁
-    obtain ⟨htr₂, hρ'⟩ := assert_run_inv π (singleton_run_inv π hfin₂)
+    obtain ⟨htr₂, hρ'⟩ := EvalCmdExtE.assertRun_inv (π := π)
+      (singletonRun_to_stmtRunE (Core.EvalCommandE π) hfin₂)
     subst hρ'
     subst htr₁; subst htr₂; subst htr
     exact ⟨rfl, rfl⟩

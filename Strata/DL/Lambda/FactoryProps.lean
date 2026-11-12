@@ -297,7 +297,8 @@ theorem mem_iff_mem_names {T} (f : Factory T) (s : String) :
     rw [← hname]
     grind
 
-theorem push_mem_match {T} (f : Factory T) (fn : LFunc T) (h : fn.name.name ∉ f) (name : String) :
+public theorem push_mem_match {T} (f : Factory T) (fn : LFunc T) (h : fn.name.name ∉ f)
+    (name : String) :
   (f.push fn h)[name]? = if name = fn.name.name then some fn else f[name]? := by
   simp +instances [push, instGetElem?, Factory.get?]
   grind
@@ -318,12 +319,12 @@ theorem getElem?_is_some_implies_mem {T} {f : Factory T} {name : String} {fn : L
       exact f.nameMapValid h_mem
     exact Array.mem_def.mpr (Array.getElem_mem_toList idx_lt)
 
-theorem getElem?_some_implies_mem {T} {f : Factory T} {name : String} {fn : LFunc T}
+public theorem getElem?_some_implies_mem {T} {f : Factory T} {name : String} {fn : LFunc T}
     (eq : f[name]? = some fn) : name ∈ f := by
   simp +instances [instGetElem?, Factory.get?, instMem, Factory.mem] at eq ⊢
   grind
 
-theorem getElem?_some_getElem {T} {f : Factory T} {name : String} {fn : LFunc T}
+public theorem getElem?_some_getElem {T} {f : Factory T} {name : String} {fn : LFunc T}
     (eq : f[name]? = some fn) : f[name]'(getElem?_some_implies_mem eq) = fn := by
   simp +instances only [instGetElem?, get?, Lean.Elab.WF.paramLet, get] at eq ⊢
   split at eq

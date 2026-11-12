@@ -358,19 +358,6 @@ private theorem runInv_terminal {F : Core.Expression.Factory} {nv : Int} {ρ : E
 
 /-! ## One step preserves the invariant -/
 
-/-- Inversion of a `set x := e` command step. -/
-private theorem set_inv {π : String → Option Core.Procedure} {fac : Core.Expression.Factory}
-    {σ σ' : SemanticStore Core.Expression} {x : Core.Expression.Ident}
-    {e : Core.Expression.Expr} {md : MetaData Core.Expression} {emitted}
-    (h : Core.EvalCommandE π fac σ (.cmd (.set x (.det e) md)) σ' emitted) :
-    ∃ v, Core.Expression.eval fac σ e = some v ∧ σ' x = some v ∧
-      (∀ y, x ≠ y → σ' y = σ y) ∧ emitted = [] := by
-  rcases h with ⟨hbase⟩
-  cases hbase with
-  | eval_set heval hupdate _ _ =>
-    cases hupdate with
-    | update _ hres hother => exact ⟨_, heval, hres, hother, rfl⟩
-
 /-- A `set x := e` command step can only fire when `x` is already bound: the
     `UpdateState` it performs requires a prior binding. -/
 private theorem set_pre {π : String → Option Core.Procedure} {fac : Core.Expression.Factory}
@@ -442,7 +429,8 @@ private theorem step_preserves {π : String → Option Core.Procedure} {F : Core
   | entryPreSetI0 ρ hf h =>
     cases hstep with
     | step_cmd hcmd =>
-      obtain ⟨v, heval, hres, hother, rfl⟩ := set_inv hcmd
+      obtain ⟨v, heval, -, hres, hother, rfl⟩ :=
+        EvalCmdE.set_det_inv (evalCmdExtE_cmd_iff.mp hcmd)
       rw [hf] at heval
       have hv : v = intV F 0 :=
         Option.some.inj (heval.symm.trans (Core.eval_const F ρ.store (.intConst 0)))
@@ -451,7 +439,8 @@ private theorem step_preserves {π : String → Option Core.Procedure} {F : Core
   | entryPreSetS0 ρ hf h =>
     cases hstep with
     | step_cmd hcmd =>
-      obtain ⟨v, heval, hres, hother, rfl⟩ := set_inv hcmd
+      obtain ⟨v, heval, -, hres, hother, rfl⟩ :=
+        EvalCmdE.set_det_inv (evalCmdExtE_cmd_iff.mp hcmd)
       rw [hf] at heval
       have hv : v = intV F 0 :=
         Option.some.inj (heval.symm.trans (Core.eval_const F ρ.store (.intConst 0)))
@@ -492,7 +481,8 @@ private theorem step_preserves {π : String → Option Core.Procedure} {F : Core
     obtain ⟨iv, sv, hn, hi, hs, hsum, hlt⟩ := h
     cases hstep with
     | step_cmd hcmd =>
-      obtain ⟨v, heval, hres, hother, rfl⟩ := set_inv hcmd
+      obtain ⟨v, heval, -, hres, hother, rfl⟩ :=
+        EvalCmdE.set_det_inv (evalCmdExtE_cmd_iff.mp hcmd)
       rw [hf] at heval
       have hv : v = intV F (iv + 1) :=
         Option.some.inj (heval.symm.trans (eval_inc F hF ρ.store iv hi))
@@ -503,7 +493,8 @@ private theorem step_preserves {π : String → Option Core.Procedure} {F : Core
     obtain ⟨iv, sv, hn, hi, hs, hsum, hle⟩ := h
     cases hstep with
     | step_cmd hcmd =>
-      obtain ⟨v, heval, hres, hother, rfl⟩ := set_inv hcmd
+      obtain ⟨v, heval, -, hres, hother, rfl⟩ :=
+        EvalCmdE.set_det_inv (evalCmdExtE_cmd_iff.mp hcmd)
       rw [hf] at heval
       have hv : v = intV F (sv + iv) :=
         Option.some.inj (heval.symm.trans (eval_add F hF ρ.store sv iv hs hi))
@@ -524,7 +515,8 @@ private theorem step_preserves {π : String → Option Core.Procedure} {F : Core
     obtain ⟨iv, sv, hn, hi, hs, hsum, hiv⟩ := h
     cases hstep with
     | step_cmd hcmd =>
-      obtain ⟨v, heval, hres, hother, rfl⟩ := set_inv hcmd
+      obtain ⟨v, heval, -, hres, hother, rfl⟩ :=
+        EvalCmdE.set_det_inv (evalCmdExtE_cmd_iff.mp hcmd)
       rw [hf] at heval
       have hv : v = intV F sv :=
         Option.some.inj (heval.symm.trans (Core.eval_fvar_int (ty := intTy) F hs))
@@ -956,7 +948,8 @@ private theorem step_preserves_copy {π : String → Option Core.Procedure}
   | preSet ρ hf hx =>
     cases hstep with
     | step_cmd hcmd =>
-      obtain ⟨v, heval, hres, hother, rfl⟩ := set_inv hcmd
+      obtain ⟨v, heval, -, hres, hother, rfl⟩ :=
+        EvalCmdE.set_det_inv (evalCmdExtE_cmd_iff.mp hcmd)
       rw [hf] at heval
       have hv : v = intV F a :=
         Option.some.inj (heval.symm.trans (Core.eval_fvar_int (ty := intTy) F hx))
@@ -1103,7 +1096,8 @@ private theorem step_preserves_frame {π : String → Option Core.Procedure} {σ
   | preSet ρ hs =>
     cases hstep with
     | step_cmd hcmd =>
-      obtain ⟨v, _heval, _hres, hother, rfl⟩ := set_inv hcmd
+      obtain ⟨v, _heval, -, _hres, hother, rfl⟩ :=
+        EvalCmdE.set_det_inv (evalCmdExtE_cmd_iff.mp hcmd)
       refine ⟨CopyFrame.atFinish _ ?_, rfl⟩
       rw [← hs]
       exact frame_of_update hother
@@ -1190,7 +1184,8 @@ private theorem step_preserves_typed {π : String → Option Core.Procedure}
     cases hstep with
     | step_cmd hcmd =>
       have hre : (ρ.store resultId).isSome = true := set_pre hcmd
-      obtain ⟨v, heval, hres, hother, rfl⟩ := set_inv hcmd
+      obtain ⟨v, heval, -, hres, hother, rfl⟩ :=
+        EvalCmdE.set_det_inv (evalCmdExtE_cmd_iff.mp hcmd)
       rw [hf, hs] at heval
       rw [hs] at hre
       have hv : v = w := eval_fvar_inv hx heval

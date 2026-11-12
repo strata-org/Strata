@@ -78,10 +78,7 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
         ∧ (∀ name : String, Imperative.NondetElim.isGeneratedName name →
             HasIdent.ident (P := Expression) name ∉
               (Block.definedVars (C := Command) ss false ++
-                Block.modifiedVars (C := Command) ss))
-        ∧ (∀ name : String, Imperative.StructuredToUnstructured.isGeneratedName name →
-            HasIdent.ident (P := Expression) name ∉
-              Block.initVars (C := Command) ss))
+                Block.modifiedVars (C := Command) ss)))
       ((base.extend Imperative.StructuredToUnstructured.prefixesReserved).extend
         Imperative.NondetElim.prefixesReserved) base := by
   let params_src := (base.extend Imperative.StructuredToUnstructured.prefixesReserved).extend
@@ -108,13 +105,10 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
           ∧ (∀ name : String, Imperative.NondetElim.isGeneratedName name →
               HasIdent.ident (P := Expression) name ∉
                 (Block.definedVars (C := Command) ss false ++
-                  Block.modifiedVars (C := Command) ss))
-          ∧ (∀ name : String, Imperative.StructuredToUnstructured.isGeneratedName name →
-              HasIdent.ident (P := Expression) name ∉
-                Block.initVars (C := Command) ss))
+                  Block.modifiedVars (C := Command) ss)))
         params_src params_a := by
     intro ss out ht hpre ρ₀ ρ₀' hEq hwf
-    obtain ⟨hnc, _, _, _, _, _, hnogen, _⟩ := hpre
+    obtain ⟨hnc, _, _, _, _, _, hnogen⟩ := hpre
     obtain ⟨h1, h2, h3, h4⟩ :=
       Core.NondetElim.overapproximatesTraces π params_a hprefixes
         ss out ht ⟨hnc, hnogen⟩ ρ₀ ρ₀' hEq hwf
@@ -139,10 +133,7 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
           ∧ Block.loopHasNoInvariants ss = Bool.true
           ∧ Block.noMeasureLoops ss = Bool.true
           ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] ss
-          ∧ Block.userLabelsShapeNodup (C := Command) ss
-          ∧ (∀ name : String, Imperative.StructuredToUnstructured.isGeneratedName name →
-              HasIdent.ident (P := Expression) name ∉
-                Block.initVars (C := Command) ss))
+          ∧ Block.userLabelsShapeNodup (C := Command) ss)
         params_a params_a := by
     intro ss out ht hpre ρ₀ ρ₀' hEq hwf
     obtain ⟨hnc, _, huniq, _⟩ := hpre
@@ -177,10 +168,7 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
           ∧ (∀ name : String, Imperative.NondetElim.isGeneratedName name →
               HasIdent.ident (P := Expression) name ∉
                 (Block.definedVars (C := Command) st false ++
-                  Block.modifiedVars (C := Command) st))
-          ∧ (∀ name : String, Imperative.StructuredToUnstructured.isGeneratedName name →
-              HasIdent.ident (P := Expression) name ∉
-                Block.initVars (C := Command) st)) →
+                  Block.modifiedVars (C := Command) st))) →
         (Statements.noCalls st' = Bool.true
           ∧ Block.noNondetGuards st' = Bool.true
           ∧ Block.uniqueInits (C := Command) st'
@@ -188,10 +176,7 @@ theorem overapproximatesTraces (base : InitEnvWFParams)
           ∧ Block.loopHasNoInvariants st' = Bool.true
           ∧ Block.noMeasureLoops st' = Bool.true
           ∧ Block.exitsCoveredByBlocks (CmdT := Command) [] st'
-          ∧ Block.userLabelsShapeNodup (C := Command) st'
-          ∧ (∀ name : String, Imperative.StructuredToUnstructured.isGeneratedName name →
-              HasIdent.ident (P := Expression) name ∉
-                Block.initVars (C := Command) st')) := by
+          ∧ Block.userLabelsShapeNodup (C := Command) st') := by
     intro st st' ht hpre
     simp only [bind, Option.bind] at ht
     exact hoist_establishes_loweringPre _ _ ht (nondetElim_establishes_hoistPre _ _ rfl hpre)
@@ -238,10 +223,7 @@ theorem assertValid (base : InitEnvWFParams)
       ∧ (∀ name : String, Imperative.NondetElim.isGeneratedName name →
           HasIdent.ident (P := Expression) name ∉
             (Block.definedVars (C := Command) ss false ++
-              Block.modifiedVars (C := Command) ss))
-      ∧ (∀ name : String, Imperative.StructuredToUnstructured.isGeneratedName name →
-          HasIdent.ident (P := Expression) name ∉
-            Block.initVars (C := Command) ss))
+              Block.modifiedVars (C := Command) ss)))
     {I : ConditionInterp Expression}
     (hstable : I.StableUnder
       (EventArg.WithWF (EventArg.ExtendsEnv (fun _ => True))
@@ -266,10 +248,7 @@ theorem assertValid (base : InitEnvWFParams)
       ∧ (∀ name : String, Imperative.NondetElim.isGeneratedName name →
           HasIdent.ident (P := Expression) name ∉
             (Block.definedVars (C := Command) block false ++
-              Block.modifiedVars (C := Command) block))
-      ∧ (∀ name : String, Imperative.StructuredToUnstructured.isGeneratedName name →
-          HasIdent.ident (P := Expression) name ∉
-            Block.initVars (C := Command) block))
+              Block.modifiedVars (C := Command) block)))
     ((base.extend Imperative.StructuredToUnstructured.prefixesReserved).extend
         Imperative.NondetElim.prefixesReserved) base
     (fun _ _ htrace aid =>
@@ -302,10 +281,7 @@ theorem triple (base : InitEnvWFParams)
       ∧ (∀ name : String, Imperative.NondetElim.isGeneratedName name →
           HasIdent.ident (P := Expression) name ∉
             (Block.definedVars (C := Command) ss false ++
-              Block.modifiedVars (C := Command) ss))
-      ∧ (∀ name : String, Imperative.StructuredToUnstructured.isGeneratedName name →
-          HasIdent.ident (P := Expression) name ∉
-            Block.initVars (C := Command) ss))
+              Block.modifiedVars (C := Command) ss)))
     {F : Lambda.Factory CoreLParams} {Pre Post Post' : Env Expression → Prop}
     (hpin : ∀ ρ₀, Pre ρ₀ → ρ₀.factory.factory = F)
     (hpost : ∀ ρ₀ ρ' ρ'', Pre ρ₀ →

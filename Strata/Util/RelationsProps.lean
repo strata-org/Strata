@@ -25,6 +25,8 @@ import all Strata.Util.Relations
 * `ReflTransTrace.toReflTrans` — erasing each step's emitted events recovers an
   ordinary reflexive-transitive execution
 * `ReflTransTrace.imp` — a traced closure is monotone in its step relation
+* `ReflTransTrace.invariant_of_silent_step` — an invariant kept by silent steps holds at
+  the end of a run, whose trace is empty
 * `ReflTransTraceN.mono`, `reflTransTrace_iff_reflTransTraceN` — a larger bound
   allows more, and a finite traced execution is one within some bound
 -/
@@ -134,6 +136,21 @@ theorem ReflTransTrace.imp {A : Type _} {E : Type _} {r r' : A → List E → A 
     (h : ∀ x evs y, r x evs y → r' x evs y) :
     ∀ {x evs y}, ReflTransTrace r x evs y → ReflTransTrace r' x evs y :=
   (by induction · <;> solve_by_elim)
+
+/-- An invariant that every step from a state satisfying it keeps, emitting nothing, holds
+at the end of every traced execution from such a state, and the trace is empty. -/
+theorem ReflTransTrace.invariant_of_silent_step {A : Type _} {E : Type _}
+    {r : A → List E → A → Prop} {Inv : A → Prop}
+    {x y : A} {trace : List E} (hrun : ReflTransTrace r x trace y)
+    (hstep : ∀ {x emitted y}, Inv x → r x emitted y → Inv y ∧ emitted = [])
+    (hinv : Inv x) :
+    Inv y ∧ trace = [] := by
+  induction hrun with
+  | refl => exact ⟨hinv, rfl⟩
+  | step _ _ _ _ _ h _ ih =>
+    obtain ⟨hnext, rfl⟩ := hstep hinv h
+    obtain ⟨hfinal, rfl⟩ := ih hnext
+    exact ⟨hfinal, rfl⟩
 
 /-- A larger bound allows every execution a smaller one does. -/
 theorem ReflTransTraceN.mono {A : Type _} {E : Type _} {r : A → List E → A → Prop} {n m : Nat}

@@ -105,7 +105,7 @@ pipeline produces. -/
 
 `s2uPipeline = stmtsToCFG ∘ hoistLoopPrefixInits ∘ nondetElim`.  On the source it
 produces a CFG entered at the pre-loop block with one block per control point. -/
-#guard (s2uPipeline s2uSrc).entry == "before_loop$_3"
+#guard (s2uPipeline s2uSrc).entry == "$__s2u_before_loop$_3"
 #guard (s2uPipeline s2uSrc).blocks.length == 4
 
 /-! ### What the transformation actually produces
@@ -131,21 +131,21 @@ lowers the whole program to a labeled CFG with `condGoto`/`finish` transfers. -/
 open Std (format) in
 #eval format (Block.nondetElim s2uSrc)
 
-/-- info: Entry: before_loop$_3
+/-- info: Entry: $__s2u_before_loop$_3
 
-before_loop$_3:
+$__s2u_before_loop$_3:
   init (i : int) := 0
   init ($__ndelim_loop$_0 : bool)
   init (x : int)
-  condGoto true loop_entry$_1 loop_entry$_1
-loop_entry$_1:
-  condGoto $__ndelim_loop$_0 l$_2 end$_0
-l$_2:
+  condGoto true $__s2u_loop_entry$_1 $__s2u_loop_entry$_1
+$__s2u_loop_entry$_1:
+  condGoto $__ndelim_loop$_0 $__s2u_l$_2 $__s2u_end$_0
+$__s2u_l$_2:
   x := 0
   havoc i
   havoc $__ndelim_loop$_0
-  condGoto true loop_entry$_1 loop_entry$_1
-end$_0:
+  condGoto true $__s2u_loop_entry$_1 $__s2u_loop_entry$_1
+$__s2u_end$_0:
   finish -/
 #guard_msgs in
 open Std (format) in
@@ -195,18 +195,18 @@ whose loop-free control flow is two `condGoto` branches joining at the exit. -/
 open Std (format) in
 #eval format (Block.nondetElim iteSrc)
 
-/-- info: Entry: ite$_4
+/-- info: Entry: $__s2u_ite$_4
 
-ite$_4:
+$__s2u_ite$_4:
   init ($__ndelim_ite$_0 : bool)
-  condGoto $__ndelim_ite$_0 l$_2 l$_3
-l$_2:
+  condGoto $__ndelim_ite$_0 $__s2u_l$_2 $__s2u_l$_3
+$__s2u_l$_2:
   x := true
-  condGoto true end$_0 end$_0
-l$_3:
+  condGoto true $__s2u_end$_0 $__s2u_end$_0
+$__s2u_l$_3:
   y := false
-  condGoto true end$_0 end$_0
-end$_0:
+  condGoto true $__s2u_end$_0 $__s2u_end$_0
+$__s2u_end$_0:
   finish -/
 #guard_msgs in
 open Std (format) in
@@ -235,14 +235,14 @@ procedure detLoop(out i : int)
 #guard Block.loopBodyNoInits detSrc == true
 #guard s2uPipeline detSrc == stmtsToCFG detSrc
 
-/-- info: Entry: loop_entry$_1
+/-- info: Entry: $__s2u_loop_entry$_1
 
-loop_entry$_1:
-  condGoto true l$_2 end$_0
-l$_2:
+$__s2u_loop_entry$_1:
+  condGoto true $__s2u_l$_2 $__s2u_end$_0
+$__s2u_l$_2:
   havoc i
-  condGoto true loop_entry$_1 loop_entry$_1
-end$_0:
+  condGoto true $__s2u_loop_entry$_1 $__s2u_loop_entry$_1
+$__s2u_end$_0:
   finish -/
 #guard_msgs in
 open Std (format) in
@@ -278,7 +278,7 @@ procedure blockExit(out x : int)
 
 /-! `nondetElim` rewrites the nondeterministic `if` inside the block into a
 deterministic guard on a fresh havoc'd boolean, and `stmtsToCFG` lowers the
-`exit outer` to a `condGoto` into the block's continuation label `end$_0` (the
+`exit outer` to a `condGoto` into the block's continuation label `$__s2u_end$_0` (the
 true-branch target), while the else-branch falls through to `havoc x`. -/
 
 /-- info: {
@@ -297,17 +297,17 @@ true-branch target), while the else-branch falls through to `havoc x`. -/
 open Std (format) in
 #eval format (Block.nondetElim exitSrc)
 
-/-- info: Entry: ite$_3
+/-- info: Entry: $__s2u_ite$_3
 
 outer:
-  condGoto true ite$_3 ite$_3
-ite$_3:
+  condGoto true $__s2u_ite$_3 $__s2u_ite$_3
+$__s2u_ite$_3:
   init ($__ndelim_ite$_0 : bool)
-  condGoto $__ndelim_ite$_0 end$_0 l$_2
-l$_2:
+  condGoto $__ndelim_ite$_0 $__s2u_end$_0 $__s2u_l$_2
+$__s2u_l$_2:
   havoc x
-  condGoto true end$_0 end$_0
-end$_0:
+  condGoto true $__s2u_end$_0 $__s2u_end$_0
+$__s2u_end$_0:
   finish -/
 #guard_msgs in
 open Std (format) in
@@ -320,11 +320,11 @@ single terminal block with no statements — the entry is the `finish` block
 itself. This pins the base case of the recursive CFG construction. -/
 
 #guard (s2uPipeline (P := Expression) []).blocks.length == 1
-#guard (s2uPipeline (P := Expression) []).entry == "end$_0"
+#guard (s2uPipeline (P := Expression) []).entry == "$__s2u_end$_0"
 
-/-- info: Entry: end$_0
+/-- info: Entry: $__s2u_end$_0
 
-end$_0:
+$__s2u_end$_0:
   finish -/
 #guard_msgs in
 open Std (format) in
@@ -362,30 +362,30 @@ procedure nestedLoops(out i : int)
 #guard stmtsToCFG (Block.hoistLoopPrefixInits (Block.nondetElim nestedSrc))
          == s2uPipeline nestedSrc
 
-/-- info: Entry: before_loop$_6
+/-- info: Entry: $__s2u_before_loop$_6
 
-before_loop$_6:
+$__s2u_before_loop$_6:
   init ($__ndelim_loop$_0 : bool)
   init ($__ndelim_loop$_1 : bool)
   init (x : int)
-  condGoto true loop_entry$_1 loop_entry$_1
-loop_entry$_1:
-  condGoto $__ndelim_loop$_0 before_loop$_5 end$_0
-before_loop$_5:
+  condGoto true $__s2u_loop_entry$_1 $__s2u_loop_entry$_1
+$__s2u_loop_entry$_1:
+  condGoto $__ndelim_loop$_0 $__s2u_before_loop$_5 $__s2u_end$_0
+$__s2u_before_loop$_5:
   havoc $__ndelim_loop$_1
   havoc x
-  condGoto true loop_entry$_3 loop_entry$_3
-loop_entry$_3:
-  condGoto $__ndelim_loop$_1 l$_4 l$_2
-l$_4:
+  condGoto true $__s2u_loop_entry$_3 $__s2u_loop_entry$_3
+$__s2u_loop_entry$_3:
+  condGoto $__ndelim_loop$_1 $__s2u_l$_4 $__s2u_l$_2
+$__s2u_l$_4:
   x := 0
   havoc i
   havoc $__ndelim_loop$_1
-  condGoto true loop_entry$_3 loop_entry$_3
-l$_2:
+  condGoto true $__s2u_loop_entry$_3 $__s2u_loop_entry$_3
+$__s2u_l$_2:
   havoc $__ndelim_loop$_0
-  condGoto true loop_entry$_1 loop_entry$_1
-end$_0:
+  condGoto true $__s2u_loop_entry$_1 $__s2u_loop_entry$_1
+$__s2u_end$_0:
   finish -/
 #guard_msgs in
 open Std (format) in

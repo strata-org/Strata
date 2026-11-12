@@ -18,7 +18,8 @@ Miscellaneous list lemmas: `Forall`/`Rel₂`, `Disj`, `Subset`,
 
 ## Key theorems
 
-* `List.Forall_mem_iff`, `List.Forall_append`, `List.Forall_flatMap`, `List.all_mono`
+* `List.Forall_mem_iff`, `List.Forall_append`, `List.Forall_flatMap`, `List.all_mono`,
+  `List.forall_of_all_decide`
 * `List.Disjoint_app`, `List.Disjoint_Nodup_iff`
 * `List.nodup_uniq`, `List.length_dedup_of_subset_le`
 * `List.length_eq_of_nodup_of_mem_iff`, `List.inj_implies_nodup`, `List.sum_size_le`
@@ -36,6 +37,12 @@ theorem List.all_mono {α : Type} {source target : α → Bool} {xs : List α}
   rw [List.all_eq_true] at h ⊢
   intro x hx
   exact hmono x (h x hx)
+
+/-- Every element of a list satisfies a decidable predicate when the list's `all` check of
+it passes. -/
+theorem List.forall_of_all_decide {α : Type} {l : List α} {p : α → Prop} [DecidablePred p]
+    (h : l.all (fun x => decide (p x)) = true) : ∀ x ∈ l, p x :=
+  fun x hx => of_decide_eq_true ((List.all_eq_true.1 h) x hx)
 
 @[simp, grind =]
 theorem List.Forall_nil {α} (p : α → Prop) : Forall p [] ↔ True := by

@@ -538,7 +538,7 @@ private theorem spec_setDet (hF : WellFormedSemanticEvalBase F) (Lc : List P.Ide
     refine ⟨fun _ _ _ _ _ _ _ (.cmd hE) hct => absurd hct.claim (claim_noObl rfl hE),
       fun _ σ σL X evs o hOn hR _ => ?_, fun _ σs σL K hOff hK => ?_⟩
     · obtain ⟨σ1, rfl, hE⟩ := hR.cmd_inv
-      obtain ⟨v, hv, ⟨prev, ty0, hprev, hpty, hvty0⟩, h1x, h1o, rfl⟩ := evalE_set_det_inv hE
+      obtain ⟨v, hv, ⟨prev, ty0, hprev, hpty, hvty0⟩, h1x, h1o, rfl⟩ := EvalCmdE.set_det_inv hE
       obtain ⟨w', hw'⟩ := Option.isSome_iff_exists.1 ((hOn.defd x hwfS.1 hxV).2 n hxn')
       have hxav := hav x (List.mem_append_left _ hwfS.1)
       have hY := noTyRef hfin hwf' (hW.avoid ▸ hxav) hxn'
@@ -643,7 +643,7 @@ private theorem spec_setNondet (hF : WellFormedSemanticEvalBase F) (Lc : List P.
   refine ⟨fun _ _ _ _ _ _ _ (.cmd hE) hct => absurd hct.claim (claim_noObl rfl hE),
     fun _ σ σL X evs o hI hD _ => ?_, fun _ σs σL K hO hSh => ?_⟩
   · obtain ⟨σ1, rfl, hE⟩ := DRunS.cmd_inv hD
-    obtain ⟨v, ⟨prev, ty0, hprev, hpty, hvty0⟩, hx1, hfro, -⟩ := evalE_set_nondet_inv hE
+    obtain ⟨v, ⟨prev, ty0, hprev, hpty, hvty0⟩, hx1, hfro, -⟩ := EvalCmdE.set_nondet_inv hE
     obtain ⟨w', hw'⟩ := Option.isSome_iff_exists.1 ((hI.defd x hxS hxV).2 n hxn)
     have hv := LawfulHasVal.valueOfTy_isVal _ _ _ hvty0
     have h0 := hunb σL hI.fresh
@@ -725,7 +725,7 @@ private theorem spec_initNondet (hF : WellFormedSemanticEvalBase F) (Lc : List P
   refine ⟨fun _ _ _ _ _ _ _ (.cmd hE) hct => absurd hct.claim (claim_noObl rfl hE),
     fun _ σ σL X evs o hOn hR _ => ?_, fun _ σs σL K hOff ⟨v, hvt, hKv⟩ => ?_⟩
   · obtain ⟨σ1, rfl, hE⟩ := hR.cmd_inv
-    obtain ⟨v, hvt, -, h1x, h1o, rfl⟩ := evalE_init_nondet_inv_typed hE
+    obtain ⟨v, hvt, -, h1x, h1o, rfl⟩ := EvalCmdE.init_nondet_inv hE
     have hnL := hn0 _ hOn.fresh
     have hval := LawfulHasVal.valueOfTy_isVal F v ty hvt
     exact .inr ⟨[], _, .plain (initN_run hF hnL hvt) .nil, nofun,
@@ -822,7 +822,7 @@ private theorem spec_initDet (hF : WellFormedSemanticEvalBase F) (Lc : List P.Id
     refine ⟨fun _ _ _ _ _ _ _ (.cmd hE) hct => absurd hct.claim (claim_noObl rfl hE),
       fun _ σ σL X evs o hI hD _ => ?_, fun _ σs σL K hO _ => hO.reach.elim⟩
     · obtain ⟨σ1, rfl, hE⟩ := DRunS.cmd_inv hD
-      obtain ⟨v, hev, -, hx1, h1o, rfl, hvty0⟩ := evalE_init_det_inv_typed hE
+      obtain ⟨v, hev, -, hx1, h1o, rfl, hvty0⟩ := EvalCmdE.init_det_inv hE
       have hv := EvalsTo.value hF.val hI.canon hev
       have hn0 := hun σL hI.fresh
       have hev' := (ev_ren_onInv hF hI hI.canonL (fun _ _ => rfl) hren' hrd' hS hV he').trans hev
@@ -866,7 +866,7 @@ private theorem spec_initDet (hF : WellFormedSemanticEvalBase F) (Lc : List P.Id
     refine ⟨fun _ _ _ _ _ _ _ (.cmd hE) hct => absurd hct.claim (claim_noObl rfl hE),
       fun _ σ σL X evs o hI hD _ => ?_, fun _ σs σL K hO hSh => ?_⟩
     · obtain ⟨σ1, rfl, hE⟩ := DRunS.cmd_inv hD
-      obtain ⟨v, hev, -, hx1, h1o, rfl, hvty0⟩ := evalE_init_det_inv_typed hE
+      obtain ⟨v, hev, -, hx1, h1o, rfl, hvty0⟩ := EvalCmdE.init_det_inv hE
       have hv := EvalsTo.value hF.val hI.canon hev
       obtain ⟨hn0, hx0, hn1, hm, hm1, hC1⟩ := hstore σL v hI.fresh hI.canonL hv
       have hev' := ev_kIte_holds hF hC1 (hI.reach.mono hm1) he'' (fun t' ht' =>

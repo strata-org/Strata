@@ -49,10 +49,10 @@ spec { requires int.ge(n, 0); ensures r == 0; }
 `Core.stmtsToCFG` lowers the body to the control-flow graph
 
 ```
-before_loop$_3: { r := n;              goto loop_entry$_1; }
-loop_entry$_1:  { branch (int.gt(r, 0)) goto l$_2 else goto end$_0; }
-l$_2:           { r := int.sub(r, 1);  goto loop_entry$_1; }
-end$_0:         { return; }
+$__s2u_before_loop$_3: { r := n;              goto $__s2u_loop_entry$_1; }
+$__s2u_loop_entry$_1:  { branch (int.gt(r, 0)) goto $__s2u_l$_2 else goto $__s2u_end$_0; }
+$__s2u_l$_2:           { r := int.sub(r, 1);  goto $__s2u_loop_entry$_1; }
+$__s2u_end$_0:         { return; }
 ```
 
 There is no proof rule for CFGs.  As in `HoareUnstructured`, the triple of the CFG is proved
@@ -103,10 +103,10 @@ private abbrev setR0 : Core.Command := .cmd (.set rId (.det (v nId)) (loc 689 69
 /-- `r := int.sub(r, 1)`. -/
 private abbrev setSub : Core.Command := .cmd (.set rId (.det subE) (loc 726 745))
 
-private abbrev lEntry : String := "before_loop$_3"
-private abbrev lLoop : String := "loop_entry$_1"
-private abbrev lBody : String := "l$_2"
-private abbrev lEnd : String := "end$_0"
+private abbrev lEntry : String := "$__s2u_before_loop$_3"
+private abbrev lLoop : String := "$__s2u_loop_entry$_1"
+private abbrev lBody : String := "$__s2u_l$_2"
+private abbrev lEnd : String := "$__s2u_end$_0"
 
 /-- The CFG the lowering returns. -/
 private abbrev cdCFG : Core.DetCFG :=
@@ -137,12 +137,12 @@ private theorem end_lookup : cdCFG.blocks.lookup lEnd =
 
 /-- The precondition is `int.ge(n, 0)`. -/
 private theorem cd_pre_expr : ∀ lc ∈ cdProc.spec.preconditions.toList, lc.2.expr = ge0 nId :=
-  forall_of_all (by native_decide)
+  List.forall_of_all_decide (by native_decide)
 
 /-- The postcondition is `r == 0`. -/
 private theorem cd_post_expr :
     ∀ lc ∈ cdProc.spec.postconditions.toList, lc.2.expr = .eq () (v rId) (.intConst () 0) :=
-  forall_of_all (by native_decide)
+  List.forall_of_all_decide (by native_decide)
 
 /-! ## The configuration invariant
 
@@ -202,7 +202,8 @@ private theorem step_preserves {before after : CFGConfig String Core.Command Cor
     obtain ⟨k, hn, hk⟩ := h
     cases hstep with
     | step_cmd hcmd =>
-      obtain ⟨w, heval, hres, _, rfl⟩ := set_inv hcmd
+      obtain ⟨w, heval, -, hres, _, rfl⟩ :=
+        EvalCmdE.set_det_inv (evalCmdExtE_cmd_iff.mp hcmd)
       rw [hf, Core.eval_fvar_int F hn] at heval
       cases heval
       exact ⟨.entryAtGoto _ hf ⟨k, hres, hk, trivial⟩, rfl⟩
@@ -242,7 +243,8 @@ private theorem step_preserves {before after : CFGConfig String Core.Command Cor
     obtain ⟨k, hr, _, hpos⟩ := h
     cases hstep with
     | step_cmd hcmd =>
-      obtain ⟨w, heval, hres, _, rfl⟩ := set_inv hcmd
+      obtain ⟨w, heval, -, hres, _, rfl⟩ :=
+        EvalCmdE.set_det_inv (evalCmdExtE_cmd_iff.mp hcmd)
       rw [hf, Core.eval_intSub (hF ▸ Core.coreFactory_intSub)
         (Core.eval_fvar_int F hr) (Core.eval_intConst F ρ.store 1)] at heval
       cases heval
@@ -284,7 +286,7 @@ private theorem cdCFG_triple {E : Core.Expression.Factory} (hE : E.factory = Cor
     cd_pre_expr (by native_decide)
   rw [hf] at hn
   obtain ⟨hfinal, rfl⟩ :=
-    run_preserves_of_step (step_preserves hE) (.atEntry ρ₀ hf ⟨k, hn, hk⟩) hrun
+    ReflTransTrace.invariant_of_silent_step hrun (step_preserves hE) (.atEntry ρ₀ hf ⟨k, hn, hk⟩)
   refine ⟨trivial, fun _ => ?_⟩
   cases hfinal with
   | terminal _ hf' h =>
@@ -302,7 +304,7 @@ theorem countdown_meets_contract :
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨cdProc, by native_decide, by native_decide, ?_⟩
   rw [cd_body_eq]
-  refine of_forall_factory π fun E => ?_
+  refine Core.Logic.Hoare.of_forall_entryFactory π _ fun E => ?_
   by_cases hE : E.factory = Core.Factory
   case neg =>
     exact Core.Logic.Hoare.consequence π srcParams (Core.Logic.Hoare.false_pre π srcParams _ _)
@@ -313,7 +315,7 @@ theorem countdown_meets_contract :
     (Post' := Done E)
     ⟨by decide +kernel, by decide +kernel, by rw [Block.uniqueInits, hinits]; exact .nil,
       by decide +kernel, by decide +kernel, by decide +kernel, by covered,
-      ⟨by simp [hlabels], by simp [hlabels]⟩, fun _ _ => by simp [hinits]⟩
+      ⟨by simp [hlabels], by simp [hlabels]⟩⟩
     (fun _ h => h.1.2.1)
     (fun ρ₀ ρ' ρ'' ⟨_, h0⟩ hwf hf hd hag ⟨_, hr⟩ => by
       have hr0 : (ρ₀.store rId).isSome = Bool.true :=
