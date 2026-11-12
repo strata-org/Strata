@@ -50,19 +50,3 @@ composite C {
   };
 }
 #end
-
-/-! In a method of a composite whose own type is gradual, a missing field is still reported. -/
-
-#eval testLaurelResolution (gradualTypes := ({} : Std.HashSet String).insert "C") <|
-#strata
-program Laurel;
-composite C {
-  var x: int
-  procedure inGradualComposite(self: C, z: int) returns (r: int)
-    opaque
-  {
-    r := z#y
-//         ^ error: Resolution failed: 'y' is not defined
-  };
-}
-#end

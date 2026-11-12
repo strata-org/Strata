@@ -310,13 +310,12 @@ private def inferUntilStable (resolveFresh : LaurelProgram → ResolutionResult)
     inference failed keeps its inferred clause, which the resolution checks skip, so
     only the inference diagnostic is reported for it. -/
 def resolveWithInferredThrows (program : LaurelProgram)
-    (gradualTypes : Std.HashSet String := {})
     (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
     (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none)
     (reservedNames : Std.HashSet String := {})
     (entryConstrainedGlobals : Bool := false) : ResolutionResult :=
   let resolveFresh (p : LaurelProgram) :=
-    resolve p (gradualTypes := gradualTypes) (realizeCoercion := realizeCoercion)
+    resolve p (realizeCoercion := realizeCoercion)
       (toBool := toBool) (reservedNames := reservedNames)
       (entryConstrainedGlobals := entryConstrainedGlobals)
   let first := resolveFresh program
