@@ -214,9 +214,9 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   computeExprTypeWith none model expr
 
 /-- `ty`, a type in `callee`'s signature, at the instantiation `typeArgs` a call to it records. A
-    pass that introduces a local for one of the call's outputs declares it at this type: the callee's
-    declared type variable is the same at every call site, so declaring that would make two
-    instantiations collide. -/
+    pass that introduces a local for one of the call's arguments or outputs declares it at this type:
+    the callee's declared type variable is the same at every call site, so declaring that would make
+    two instantiations collide. -/
 def typeAtCall (model : SemanticModel) (callee : Identifier) (typeArgs : List HighTypeMd)
     (ty : HighTypeMd) : HighTypeMd :=
   match model.get callee with

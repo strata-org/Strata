@@ -6930,21 +6930,6 @@ private def blockTupleCall (ctx : GlobalCallValidationContext)
             ordinaryOutputCount ctx.model callee > 1
   | _ => none
 
-private def effectfulTupleCall (ctx : GlobalCallValidationContext)
-    (expr : StmtExprMd) : Option Identifier :=
-  let candidate := match expr.val with
-    | .Call receiver? callee args _ => some (callee, receiver?.toList ++ args)
-    | _ => none
-  candidate.bind fun (callee, args) =>
-    if containsProcId ctx.dependentIds callee &&
-        ordinaryOutputCount ctx.model callee > 1 &&
-        args.any (containsArgumentMutation ctx)
-    then some callee else none
-
-private def tupleCallNeedingBlock (ctx : GlobalCallValidationContext)
-    (expr : StmtExprMd) : Option Identifier :=
-  (blockTupleCall ctx expr).orElse fun _ => effectfulTupleCall ctx expr
-
 private def globalCallErrors (ctx : GlobalCallValidationContext)
     (initialRestricted : Bool) (expr : StmtExprMd) : List Message :=
   let mutationError (source : FileRange) : GlobalValidationM Unit :=
@@ -6958,7 +6943,11 @@ private def globalCallErrors (ctx : GlobalCallValidationContext)
           validateGlobalCall ctx restricted callee (receiver?.toList ++ args)
       | .Assign targets rhs => do
           if targets.length > 1 then
-            if let some callee := tupleCallNeedingBlock ctx rhs then
+            -- Only a block-valued right-hand side needs a lowering that does not exist.
+            -- A multi-output call whose arguments write globals or the heap is fine:
+            -- `GlobalParameterization.transformAssignWithCall` binds every argument to a
+            -- temporary, left to right, before it samples the hidden globals.
+            if let some callee := blockTupleCall ctx rhs then
               modify (· ++ [diagnosticFromSource callee.source
                 s!"multi-output calls to global-dependent procedure '{callee.text}' that require block-valued lowering are not yet supported"
                 MessageKind.userError])
