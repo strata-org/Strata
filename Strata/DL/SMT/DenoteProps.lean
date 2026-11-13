@@ -99,7 +99,7 @@ abbrev lookupVar {ctx : Context} {v : TermVar} {i : Nat} {h : (denoteSort ctx.sc
   Option.get_congr (vs_findIdx_ty hi tdi) ▸ (tdi.tΓ.vs[i]'(vs_findIdx_lt hi tdi)).varΓ
 
 /-- The empty sort environment is well-formed for the empty sort context. -/
-theorem sortEnv_nil_wf (iss : ISContext) : SortEnvironment.WF ⟨[], iss⟩ [] :=
+theorem sortEnv_nil_wf (iss : ISContext) : SortEnvironment.WF ⟨[], iss, []⟩ [] :=
   { h := rfl, ha := fun _ hi => nomatch hi }
 
 /-- The empty term environment is well-formed for the empty term context. -/
@@ -213,16 +213,20 @@ end
 
 /-- Reduce `denoteQuery` to `denoteBoolTermFromContext` on the implication of
 the axioms and assumptions over the conclusion, given that the datatype
-machinery of the context is empty. -/
+machinery of the context is empty. Only `hs` is needed: with no datatype seen,
+the datatype list is empty and every datatype check passes trivially. The other
+two are kept so that callers state the same facts as before. -/
 theorem denoteQuery_of (ctx : Core.SMT.Context) (assums : List Term) (conc : Term) (P : Prop)
-    (hdt : ctx.datatypes.factory.isEmpty = true) (hs : ctx.seenDatatypes.isEmpty = true)
-    (hf : ctx.datatypeFuns.isEmpty = true)
+    (_hdt : ctx.datatypes.factory.isEmpty = true) (hs : ctx.seenDatatypes.isEmpty = true)
+    (_hf : ctx.datatypeFuns.isEmpty = true)
     (h : denoteBoolTermFromContext ctx.sorts.toList.reverse (mkISContext ctx.tySubst).reverse
           ctx.ufs.toList.reverse ctx.ifs.toList.reverse
           (ctx.axms.toList.foldr (.app .implies [·, ·] (.prim .bool))
             (assums.foldr (.app .implies [·, ·] (.prim .bool)) conc)) = some (PLift.up P)) :
     denoteQuery ctx assums conc = some P := by
-  simp only [denoteQuery, hdt, hs, hf, Bool.not_true, Bool.or_false]
+  simp only [denoteQuery, hs, ↓reduceIte, bind, Option.bind, dtSubstituteIS, List.map_nil,
+    dtFieldsDenotable, dtAllInhabited, dtUnspecUFs, List.all_nil, List.flatMap_nil, List.any_nil,
+    List.nil_append, Bool.not_true, Bool.or_false, Bool.false_eq_true]
   rw [h]
   rfl
 
@@ -237,27 +241,27 @@ and evaluate in the empty environment. The substituted declarations and term
 -/
 theorem denoteBoolTermFromContext_of (uss : USContext) (iss : ISContext) (ufs : UFContext)
     (ifs : List IF) (t : Term) (ufs' : UFContext) (ifs' : List IF) (t' : Term)
-    (h : (denoteSort ⟨uss, iss⟩ (.prim .bool)).isSome)
-    (ft : TermDenoteInput ⟨⟨uss, iss⟩, ⟨[], ifs'.map IF.toUF ++ ufs'⟩⟩ → Prop)
-    (ft₁ : TermDenoteInput ⟨⟨uss, iss⟩, ⟨[], ufs'⟩⟩ → Prop)
-    (ft₂ : TermDenoteInput ⟨⟨uss, iss⟩, ⟨[], []⟩⟩ → Prop)
-    (ft₃ : SortDenoteInput ⟨[], []⟩ → Prop)
+    (h : (denoteSort ⟨uss, iss, []⟩ (.prim .bool)).isSome)
+    (ft : TermDenoteInput ⟨⟨uss, iss, []⟩, ⟨[], ifs'.map IF.toUF ++ ufs'⟩⟩ → Prop)
+    (ft₁ : TermDenoteInput ⟨⟨uss, iss, []⟩, ⟨[], ufs'⟩⟩ → Prop)
+    (ft₂ : TermDenoteInput ⟨⟨uss, iss, []⟩, ⟨[], []⟩⟩ → Prop)
+    (ft₃ : SortDenoteInput ⟨[], [], []⟩ → Prop)
     (hufs : (if iss.isEmpty then ufs else ufs.map (substituteUFIS iss)) = ufs')
     (hifs : (if iss.isEmpty then ifs else ifs.map (substituteIFIS iss)) = ifs')
     (htt : substituteTermIS iss t = t')
-    (ht : denoteTerm ⟨⟨uss, iss⟩, ⟨[], ifs'.map IF.toUF ++ ufs'⟩⟩ t' = some ⟨.prim .bool, h, ft⟩)
-    (hif : denoteBoolTermFromContext.bindIFs ⟨uss, iss⟩ [] ufs' ifs' ft = some ft₁)
-    (huf : denoteBoolTermFromContext.bindUFs ⟨uss, iss⟩ [] ufs' ft₁ = some ft₂)
+    (ht : denoteTerm ⟨⟨uss, iss, []⟩, ⟨[], ifs'.map IF.toUF ++ ufs'⟩⟩ t' = some ⟨.prim .bool, h, ft⟩)
+    (hif : denoteBoolTermFromContext.bindIFs ⟨uss, iss, []⟩ [] ufs' ifs' ft = some ft₁)
+    (huf : denoteBoolTermFromContext.bindUFs ⟨uss, iss, []⟩ [] ufs' ft₁ = some ft₂)
     (hus : denoteBoolTermFromContext.bindUSs uss []
       (fun sdi => ft₂ ⟨sdi.sΓ, sdi.hsΓ, ⟨[], []⟩, termEnv_nil_wf _⟩) = some ft₃) :
     denoteBoolTermFromContext uss iss ufs ifs t = some (PLift.up (ft₃ ⟨[], sortEnv_nil_wf []⟩)) := by
   subst hufs hifs htt
   rw [denoteBoolTermFromContext]
-  show Option.bind (denoteTerm ⟨⟨uss, iss⟩, ⟨[], _⟩⟩ _) _ = _
+  show Option.bind (denoteTerm ⟨⟨uss, iss, []⟩, ⟨[], _⟩⟩ _) _ = _
   rw [ht, Option.bind_some]
-  show Option.bind (denoteBoolTermFromContext.bindIFs ⟨uss, iss⟩ [] _ _ ft) _ = _
+  show Option.bind (denoteBoolTermFromContext.bindIFs ⟨uss, iss, []⟩ [] _ _ ft) _ = _
   rw [hif, Option.bind_some]
-  show Option.bind (denoteBoolTermFromContext.bindUFs ⟨uss, iss⟩ [] _ ft₁) _ = _
+  show Option.bind (denoteBoolTermFromContext.bindUFs ⟨uss, iss, []⟩ [] _ ft₁) _ = _
   rw [huf, Option.bind_some]
   show Option.bind (denoteBoolTermFromContext.bindISs uss iss _) _ = _
   rw [denoteBoolTermFromContext.bindISs, Option.pure_def, Option.bind_some]
@@ -277,7 +281,7 @@ theorem usEnv_cons_wf {uss : USContext} {Γ : USEnvironment} (h : USEnvironment.
 
 /-- Closing over an empty list of uninterpreted sorts leaves the predicate
 unchanged. -/
-theorem bindUSs_nil (iss : ISContext) (ft : SortDenoteInput ⟨[], iss⟩ → Prop) :
+theorem bindUSs_nil (iss : ISContext) (ft : SortDenoteInput ⟨[], iss, []⟩ → Prop) :
     denoteBoolTermFromContext.bindUSs [] iss ft = some ft := by
   simp [denoteBoolTermFromContext.bindUSs]
 
@@ -287,7 +291,7 @@ set_option checkBinderAnnotations false
 /-- Closing over `us :: uss` universally quantifies the realization of `us`
 (and its nonemptiness witness) before closing over the rest. -/
 theorem bindUSs_cons (us : Strata.DL.SMT.Sort) (uss : USContext) (iss : ISContext)
-    (ft : SortDenoteInput ⟨us :: uss, iss⟩ → Prop) (ft' : SortDenoteInput ⟨[], iss⟩ → Prop)
+    (ft : SortDenoteInput ⟨us :: uss, iss, []⟩ → Prop) (ft' : SortDenoteInput ⟨[], iss, []⟩ → Prop)
     (h : denoteBoolTermFromContext.bindUSs uss iss
       (fun sdi => ∀ (α : mkTypeFunType us.arity) [inst : mkNonemptyPred α],
         ft ⟨⟨us, α, inst⟩ :: sdi.sΓ, usEnv_cons_wf sdi.hsΓ ⟨us, α, inst⟩⟩) = some ft') :
