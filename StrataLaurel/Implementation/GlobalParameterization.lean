@@ -160,7 +160,11 @@ private def calleeOutputs (model : SemanticModel) (callee : Identifier) : List P
 
 /-- Evaluate explicit arguments before sampling hidden globals when an argument
     contains an effect. Binding every explicit argument preserves left-to-right
-    source evaluation even when a later argument writes a global.
+    source evaluation even when a later argument writes a global, including an inout
+    actual: in `w(x, (x := 3))` the callee receives `x`'s value from before the write,
+    as the Laurel User Guide's "Evaluation order" requires. A bound inout actual is a
+    local that differs from the call's receiver, which `LaurelToCoreSchemaPass`
+    (`translateCallTargets`) passes through a `$inout_` copy back to the receiver.
 
     A temporary takes its parameter's type instantiated at the call (`typeArgs`), as
     `emitStaticCall`'s discards do: a generic callee's own `T` would leave the
@@ -171,14 +175,9 @@ private def bindEffectfulArgs (model : SemanticModel) (callee : Identifier)
   if hiddenInputs.isEmpty || !(args.any (containsAssignmentOrImperativeCall [])) then
     return ([], args)
   let params := calleeInputs model callee
-  let outputs := calleeOutputs model callee
   let bound ← args.attach.mapIdxM fun i ⟨arg, _⟩ => do
     match params[i]? with
     | some param =>
-      let isInout := param.name.uniqueId.isSome &&
-        outputs.any (·.name.uniqueId == param.name.uniqueId)
-      if isInout then
-        return (none, arg)
       let name ← freshVarName
       let target :=
         mkVarMd (.Declare ⟨name, some (typeAtCall model callee typeArgs param.type)⟩) arg.source

@@ -1195,6 +1195,160 @@ procedure caller() opaque {
 };
 #end
 
+/-! An inout actual followed by an argument that assigns it. Left to right (the Laurel User
+Guide's "Evaluation order"), `x` enters the call as 1, before `(x := 3)` runs, so the callee
+leaves it at `1 + 3 == 4` when the call assigns it, and `x` keeps the later argument's write when
+the inout output goes elsewhere. With a hidden global, `bindEffectfulArgs` binds every argument,
+`x` included, to a temporary in order. -/
+
+-- Two ordinary outputs besides the inout.
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure w(x: int, v: int) returns (x: int, r: int, s: int) opaque
+  ensures g == v ensures x == old(x) + v ensures r == x ensures s == v
+{
+  g := v;
+  x := x + v;
+  r := x;
+  s := v
+};
+procedure caller() opaque {
+  var x: int := 1;
+  var r: int;
+  var s: int;
+  assign x, r, s := w(x, (x := 3));
+  assert x == 4;
+  assert r == 4;
+  assert s == 3;
+  assert g == 3;
+  assert x == 6
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+-- One ordinary output besides the inout.
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure w1(x: int, v: int) returns (x: int, r: int) opaque
+  ensures g == v ensures x == old(x) + v ensures r == x
+{
+  g := v;
+  x := x + v;
+  r := x
+};
+procedure caller() opaque {
+  var x: int := 1;
+  var r: int;
+  assign x, r := w1(x, (x := 3));
+  assert x == 4;
+  assert r == 4;
+  assert x == 6
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+-- The inout output goes to another target: `x` keeps the later argument's write.
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure w1(x: int, v: int) returns (x: int, r: int) opaque
+  ensures g == v ensures x == old(x) + v ensures r == x
+{
+  g := v;
+  x := x + v;
+  r := x
+};
+procedure caller() opaque {
+  var x: int := 1;
+  var y: int;
+  var r: int;
+  assign y, r := w1(x, (x := 3));
+  assert x == 3;
+  assert y == 4;
+  assert r == 4;
+  assert x == 1
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+-- Expression position: the call's value is its one output, the inout, so `x` keeps the
+-- later argument's write.
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure w2(x: int, v: int) returns (x: int) opaque
+  ensures g == v ensures x == old(x) + v
+{
+  g := v;
+  x := x + v
+};
+procedure caller() opaque {
+  var x: int := 1;
+  var t: int := w2(x, (x := 3));
+  assert x == 3;
+  assert t == 4;
+  assert x == 1
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+-- The heap as the hidden global: no file-scope global declared.
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Box { var v: int }
+procedure wh(x: int, c: Box, v: int) returns (x: int, r: int) opaque
+  ensures x == old(x) + v ensures r == x ensures c#v == v modifies c
+{
+  x := x + v;
+  r := x;
+  c#v := v
+};
+procedure caller(b: Box) opaque modifies b {
+  var x: int := 1;
+  var r: int;
+  assign x, r := wh(x, b, (x := 3));
+  assert x == 4;
+  assert b#v == 3;
+  assert x == 6
+//^^^^^^^^^^^^^ error: assertion could not be proved
+};
+#end
+
+-- Control: no global, so `bindEffectfulArgs` binds nothing and the call reads `x` before `(x := 3)` runs.
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+procedure w0(x: int, v: int) returns (x: int, r: int, s: int) opaque
+  ensures x == old(x) + v ensures r == x ensures s == v
+{
+  x := x + v;
+  r := x;
+  s := v
+};
+procedure caller() opaque {
+  var x: int := 1;
+  var r: int;
+  var s: int;
+  assign x, r, s := w0(x, (x := 3));
+  assert x == 4;
+  assert x == 6
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
 -- The heap, which `GlobalParameterization` threads like a global: a heap writer as the
 -- argument of a heap-writing multi-output call. No file-scope global is declared.
 #guard_msgs in
