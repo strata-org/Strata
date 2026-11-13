@@ -160,9 +160,13 @@ private def calleeOutputs (model : SemanticModel) (callee : Identifier) : List P
 
 /-- Evaluate explicit arguments before sampling hidden globals when an argument
     contains an effect. Binding every explicit argument preserves left-to-right
-    source evaluation even when a later argument writes a global. -/
+    source evaluation even when a later argument writes a global.
+
+    A temporary takes its parameter's type instantiated at the call (`typeArgs`), as
+    `emitStaticCall`'s discards do: a generic callee's own `T` would leave the
+    re-resolution after this pass unable to infer the call's type argument. -/
 private def bindEffectfulArgs (model : SemanticModel) (callee : Identifier)
-    (hiddenInputs : List Identifier) (args : List StmtExprMd)
+    (typeArgs : List HighTypeMd) (hiddenInputs : List Identifier) (args : List StmtExprMd)
     : GlobalTransformM (List StmtExprMd × List StmtExprMd) := do
   if hiddenInputs.isEmpty || !(args.any (containsAssignmentOrImperativeCall [])) then
     return ([], args)
@@ -176,7 +180,8 @@ private def bindEffectfulArgs (model : SemanticModel) (callee : Identifier)
       if isInout then
         return (none, arg)
       let name ← freshVarName
-      let target := mkVarMd (.Declare ⟨name, some param.type⟩) arg.source
+      let target :=
+        mkVarMd (.Declare ⟨name, some (typeAtCall model callee typeArgs param.type)⟩) arg.source
       let binding : StmtExprMd := ⟨.Assign [target] arg, arg.source⟩
       return (some binding, mkMd (.Var (.Local name)) arg.source)
     | none =>
@@ -191,11 +196,11 @@ private def threadedStaticCall (model : SemanticModel) (callee : Identifier)
     : GlobalTransformM (List StmtExprMd × StmtExprMd × List Identifier) := do
   let inputs ← inputGlobalsOf callee
   let outputs ← writeGlobalsOf callee
-  let (bindings, boundArgs) ← bindEffectfulArgs model callee inputs args
+  let (bindings, boundArgs) ← bindEffectfulArgs model callee typeArgs inputs args
   -- `typeArgs` is carried onto the rebuilt call. Threading globals prepends arguments but does
   -- not change the callee's instantiation, and dropping it here would erase a recorded
   -- instantiation before `LaurelToCoreSchemaPass` can read it.
-  let call := ⟨.StaticCall callee ((← globalArgs inputs callee) ++ boundArgs) typeArgs, source⟩
+  let call := ⟨.Call none callee ((← globalArgs inputs callee) ++ boundArgs) typeArgs, source⟩
   return (bindings, call, outputs)
 
 private def emitStaticCall (model : SemanticModel) (original : StmtExprMd)
@@ -244,7 +249,7 @@ private def renameTarget (model : SemanticModel) (target : VariableMd)
 private def transformNode (model : SemanticModel) (valueUsed : Bool) (expr : StmtExprMd)
     : GlobalTransformM (List StmtExprMd) := do
   match expr.val with
-  | .StaticCall callee args tyArgs => emitStaticCall model expr callee args tyArgs valueUsed
+  | .Call none callee args tyArgs => emitStaticCall model expr callee args tyArgs valueUsed
   | .Var (.Local name) =>
       return [{ expr with val := .Var (.Local (← renameGlobalRef model name)) }]
   | .Assign targets rhs =>
@@ -270,7 +275,7 @@ private def transformAssignWithCall (model : SemanticModel)
   match expr.val with
   | .Assign targets rhs =>
     match rhs.val with
-    | .StaticCall callee args tyArgs =>
+    | .Call none callee args tyArgs =>
       if targets.length <= 1 then return none
       let hiddenOutputs ← writeGlobalsOf callee
       if hiddenOutputs.isEmpty && (← inputGlobalsOf callee).isEmpty then

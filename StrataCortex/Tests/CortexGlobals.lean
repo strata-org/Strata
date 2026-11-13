@@ -11,12 +11,10 @@ open Strata
 
 /-! # Global variables through the Cortex pipeline
 
-A global is an arbitrary value at the start of every procedure except an entry procedure,
-where it starts with its initializer. A caller keeps what it knows about a global that the
-callee does not write, and knows nothing about one that the callee writes: Cortex procedures
-have no contracts. -/
+Every entry procedure starts with each global at its initializer, and sees what the
+procedures it calls write to the globals. -/
 
-#eval testCortexVerification <|
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -34,14 +32,15 @@ procedure sum() returns (r: int)
     r := g + h
 };
 
-procedure startsArbitrary()
+procedure startsFromInitializers() entry
   opaque
 {
-    assert g == 0
+    assert g == 0 && h == 3;
+    assert g == 1
 //  ^^^^^^^^^^^^^ error: assertion does not hold
 };
 
-procedure readsAndWrites()
+procedure readsAndWrites() entry
   opaque
 {
     g := 1;
@@ -49,7 +48,7 @@ procedure readsAndWrites()
     assert g + h == 3
 };
 
-procedure unwrittenGlobalIsKept()
+procedure unwrittenGlobalIsKept() entry
   opaque
 {
     h := 9;
@@ -57,24 +56,26 @@ procedure unwrittenGlobalIsKept()
     assert h == 9
 };
 
-procedure writtenGlobalIsUnknown()
+procedure calleeWriteIsSeen() entry
   opaque
 {
     setG(42);
-    assert g == 42
-//  ^^^^^^^^^^^^^^ error: assertion does not hold
+    assert g == 42;
+    assert g == 0
+//  ^^^^^^^^^^^^^ error: assertion does not hold
 };
 
-procedure readerLeavesGlobalsAlone()
+procedure readerLeavesGlobalsAlone() entry
   opaque
 {
     g := 1;
     h := 2;
     var s: int := sum();
+    assert s == 3;
     assert g == 1 && h == 2
 };
 
-procedure entryStartsFromInitializers() entry
+procedure otherEntriesLeaveNoTrace() entry
   opaque
 {
     assert g == 0 && h == 3;
@@ -85,7 +86,7 @@ procedure entryStartsFromInitializers() entry
 
 /-! A local with the name of a global is a different variable. -/
 
-#eval testCortexVerification <|
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 var g: int := 0
@@ -97,20 +98,22 @@ procedure localHidesGlobal()
     g := g + 1
 };
 
-procedure caller()
+procedure caller() entry
   opaque
 {
     g := 5;
     localHidesGlobal();
-    assert g == 5
+    assert g == 5;
+    assert g == 2
+//  ^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
 
-/-! A global of a constrained type holds a value of that type wherever a procedure starts
-    or returns. A procedure that may leave another value in it is reported at its name, which
+/-! A global of a constrained type holds a value of that type wherever a procedure
+    returns. A procedure that leaves another value in it is reported at its name, which
     is where the check on return is located. -/
 
-#eval testCortexVerification <|
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 constrained small = x: int where 0 <= x && x < 10 witness 0
@@ -126,7 +129,6 @@ procedure increment()
 //        ^^^^^^^^^ error: assertion does not hold
   opaque
 {
-    assert c < 10;
     c := c + 1
 };
 
@@ -136,19 +138,28 @@ procedure reset()
     c := 0
 };
 
-procedure caller()
+procedure staysInRange() entry
   opaque
 {
+    increment();
+    assert c == 1;
     reset();
     assert 0 <= c && c < 10;
     var r: small := read()
 };
+
+procedure leavesRange() entry
+  opaque
+{
+    c := 9;
+    increment()
+};
 #end
 
-/-! Inlining a named procedure lets the caller rely on what it does. The pattern below is a
-    flag-guarded, run-once initializer. -/
+/-! A flag-guarded, run-once initializer: the caller sees what the initializer wrote, and
+    a procedure that does not run it sees the declared initializers. -/
 
-#eval testCortexVerification (inline := ["init"]) <|
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 var x: int := 0
@@ -161,14 +172,15 @@ procedure init()
     x := 5
 };
 
-procedure reader() returns (r: int)
+procedure reader() returns (r: int) entry
   opaque
 {
     var before: int := y;
     if !ready then { ready := true; init() };
     assert ready;
     assert y == before;
-    r := x
+    r := x;
+    assert r == 5
 };
 
 procedure fromEntry() entry
@@ -179,7 +191,7 @@ procedure fromEntry() entry
     assert x == 5
 };
 
-procedure notInitialized()
+procedure notInitialized() entry
   opaque
 {
     assert x == 5
@@ -187,33 +199,9 @@ procedure notInitialized()
 };
 #end
 
-/-! Without inlining, the same caller does not know what the initializer wrote. -/
+/-! Initializers that call each other each run once. -/
 
-#eval testCortexVerification <|
-#strata
-program Laurel;
-var x: int := 0
-var ready: bool := false
-
-procedure init()
-  opaque
-{
-    x := 5
-};
-
-procedure fromEntry() entry
-  opaque
-{
-    if !ready then { ready := true; init() };
-    assert x == 5
-//  ^^^^^^^^^^^^^ error: assertion does not hold
-};
-#end
-
-/-! Procedures that call each other are not inlined, so the callers still verify, and know
-    nothing about what the cycle wrote. -/
-
-#eval testCortexVerification (inline := ["initA", "initB"]) <|
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 var a: int := 0
@@ -224,22 +212,23 @@ var readyB: bool := false
 procedure initA()
   opaque
 {
-    a := 1;
+    a := a + 1;
     if !readyB then { readyB := true; initB() }
 };
 
 procedure initB()
   opaque
 {
-    b := 2;
+    b := b + 2;
     if !readyA then { readyA := true; initA() }
 };
 
-procedure caller()
+procedure caller() entry
   opaque
 {
     if !readyA then { readyA := true; initA() };
-    assert a == 1
+    assert a == 1 && b == 2;
+    assert b == 0
 //  ^^^^^^^^^^^^^ error: assertion does not hold
 };
 #end
@@ -247,7 +236,7 @@ procedure caller()
 /-! An entry procedure may use a global of a constrained type: the constraint is checked where
     the global is initialized and at each assignment. -/
 
-#eval testCortexVerification <|
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 constrained small = x: int where 0 <= x && x < 10 witness 0
@@ -272,7 +261,7 @@ procedure leavesRange() entry
 /-! An initializer outside the global's constrained type is reported in the entry procedure, where
     the global is initialized. -/
 
-#eval testCortexVerification <|
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 constrained small = x: int where 0 <= x && x < 10 witness 0
@@ -287,24 +276,7 @@ procedure startsOutOfRange() entry
 };
 #end
 
-#eval testCortexVerification <|
-#strata
-program Laurel;
-var g: int := 0
-
-procedure f() returns (r: int)
-  opaque
-{
-    g := 5;
-    r := 8
-};
-
-procedure assignsResultToWrittenGlobal()
-  opaque
-{
-    g := f()
-};
-#end
+/-! A call result assigned to a global that the callee also writes: the result wins. -/
 
 #eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata
@@ -328,38 +300,8 @@ procedure main() entry
 };
 #end
 
-#eval testCortexVerification (inline := ["f"]) <|
-#strata
-program Laurel;
-composite Exn { var code: int }
-var g: int := 0
-
-procedure f() returns (r: int)
-  throws (e: Exn)
-  opaque
-  modifies *
-{
-    r := 8;
-    g := 5;
-    var ex: Exn := new Exn;
-    throw ex
-};
-
-procedure handlerSeesCalleeWrite()
-  opaque
-  modifies *
-{
-    try { g := f() } catch err { assert g == 5 }
-};
-
-procedure handlerDoesNotSeeResult()
-  opaque
-  modifies *
-{
-    try { g := f() } catch err { assert g == 8 }
-//                               ^^^^^^^^^^^^^ error: assertion does not hold
-};
-#end
+/-! A call that throws keeps what the callee wrote to a global, and assigns none of its
+    results. -/
 
 #eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata
@@ -388,39 +330,8 @@ procedure main() entry
 };
 #end
 
-/-! A call that throws assigns none of its results, also when the callee is inlined: the
-handler sees the local's value from before the call. -/
-#eval testCortexVerification (inline := ["f"]) <|
-#strata
-program Laurel;
-composite Exn { var code: int }
-
-procedure f() returns (r: int)
-  throws (e: Exn)
-  opaque
-{
-    r := 8;
-    var ex: Exn := new Exn;
-    throw ex
-};
-
-procedure handlerKeepsLocal()
-  opaque
-  modifies *
-{
-    var y: int := 1;
-    try { y := f() } catch err { assert y == 1 }
-};
-
-procedure handlerDoesNotSeeLocalResult()
-  opaque
-  modifies *
-{
-    var y: int := 1;
-    try { y := f() } catch err { assert y == 8 }
-//                               ^^^^^^^^^^^^^ error: assertion does not hold
-};
-#end
+/-! A call that throws assigns none of its results: the handler sees the local's value from
+    before the call. -/
 
 #eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata

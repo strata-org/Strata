@@ -66,14 +66,14 @@ structure CteCtx where
 
 private def conjoin (src : FileRange) : List StmtExprMd → Option StmtExprMd
   | [] => none
-  | e :: es => some (es.foldl (fun acc x => ⟨.StaticCall (mkId Operation.And.procName) [acc, x] [], src⟩) e)
+  | e :: es => some (es.foldl (fun acc x => ⟨.Call none (mkId Operation.And.procName) [acc, x] [], src⟩) e)
 
 partial def constraintAtoms (cx : CteCtx) (ty : HighType) (ref : StmtExprMd)
     (src : FileRange) : List (Bool × StmtExprMd) :=
   match ty with
   | .UserDefined name =>
     match cx.ptMap.get? name.text with
-    | some ct => [(ct.free, ⟨.StaticCall (mkId s!"{name.text}$constraint") [ref] [], src⟩)]
+    | some ct => [(ct.free, ⟨.Call none (mkId s!"{name.text}$constraint") [ref] [], src⟩)]
     | none => []
   | .Applied base args =>
     match base.val with
@@ -84,15 +84,15 @@ partial def constraintAtoms (cx : CteCtx) (ty : HighType) (ref : StmtExprMd)
         let subst : Std.HashMap String HighTypeMd :=
           (dt.typeArgs.zip args).foldl (fun m (p, a) => m.insert p.text a) {}
         dt.constructors.flatMap fun ctor =>
-          let tester : StmtExprMd := ⟨.StaticCall (mkId (dt.testerName ctor)) [ref] [], src⟩
+          let tester : StmtExprMd := ⟨.Call none (mkId (dt.testerName ctor)) [ref] [], src⟩
           let generic := ctor.args.filter fun p =>
             p.type.val.mentionedNames.any fun n => dt.typeArgs.any (·.text == n)
           let inner := generic.flatMap fun p =>
-            let read : StmtExprMd := ⟨.StaticCall (mkId (dt.unsafeDestructorName p)) [ref] [], src⟩
+            let read : StmtExprMd := ⟨.Call none (mkId (dt.unsafeDestructorName p)) [ref] [], src⟩
             constraintAtoms cx (substTypeVars subst p.type).val read src
           [false, true].filterMap fun free =>
             (conjoin src ((inner.filter (·.1 == free)).map (·.2))).map fun body =>
-              (free, ⟨.StaticCall (mkId Operation.Implies.procName) [tester, body] [], src⟩)
+              (free, ⟨.Call none (mkId Operation.Implies.procName) [tester, body] [], src⟩)
       | none => []
     | _ => []
   | _ => []
@@ -128,8 +128,8 @@ def mkConstraintProc (ptMap : ConstrainedTypeMap) (ct : ConstrainedType) : Proce
         let paramRef : StmtExprMd :=
           { val := .Var (.Local paramId), source := src }
         let parentCall : StmtExprMd :=
-          { val := .StaticCall (mkId s!"{parent.text}$constraint") [paramRef] [], source := src }
-        { val := .StaticCall (mkId Operation.AndThen.procName) [parentCall, ct.constraint] [], source := src }
+          { val := .Call none (mkId s!"{parent.text}$constraint") [paramRef] [], source := src }
+        { val := .Call none (mkId Operation.AndThen.procName) [parentCall, ct.constraint] [], source := src }
       else ct.constraint
     | _ => ct.constraint
   { name := mkId s!"{ct.name.text}$constraint"
@@ -162,16 +162,16 @@ def resolveExprNode (cx : CteCtx) (expr : StmtExprMd) : StmtExprMd :=
     let combiner := match mode with | .Forall => Operation.Implies | .Exists => Operation.AndThen
     -- With bottom-up traversal, `body` is already recursed into. The newly
     -- created operator call won't be visited again, which is safe because
-    -- `c` (from `constraintCallFor`) is a StaticCall with Identifier leaves
+    -- `c` (from `constraintCallFor`) is a static `Call` with Identifier leaves
     -- that don't need further resolution.
     let injected := match constraintCallFor cx param.type.val param.name (src := source) with
-      | some c => ⟨.StaticCall (mkId combiner.procName) [c, body] [], source⟩
+      | some c => ⟨.Call none (mkId combiner.procName) [c, body] [], source⟩
       | none => body
     ⟨.Quantifier mode param' trigger injected, source⟩
   | .AsType t ty =>
     match ty.val with
     | .UserDefined name =>
-      if cx.ptMap.contains name.text then ⟨.StaticCall (downcastProcName name) [t] [], source⟩
+      if cx.ptMap.contains name.text then ⟨.Call none (downcastProcName name) [t] [], source⟩
       else ⟨.AsType t (resolveType cx.ptMap ty), source⟩
     | _ => ⟨.AsType t (resolveType cx.ptMap ty), source⟩
   | .IsType t ty =>
@@ -375,7 +375,7 @@ private def descendantTags (ptMap : ConstrainedTypeMap) (owner : String) : List 
   | some ct =>
     if !ct.free then [] else
     foldStmtExpr (fun e acc => match e.val with
-      | .StaticCall callee [] _ => if callee.text.endsWith "_TypeTag" then callee.text :: acc else acc
+      | .Call none callee [] _ => if callee.text.endsWith "_TypeTag" then callee.text :: acc else acc
       | _ => acc) [] ct.constraint
   | none => []
 
@@ -548,7 +548,7 @@ public def constrainedTypeElimPass : LaurelPass := .onUnordered {
       NodeKind.StmtExpr.Return.value.some,
       NodeKind.Pseudo.unstableFieldReceiver
     ]
-  creates := [NodeKind.LaurelProgram.staticProcedures.cons, NodeKind.StmtExpr.StaticCall]
+  creates := [NodeKind.LaurelProgram.staticProcedures.cons, NodeKind.StmtExpr.Call]
   removes := [NodeKind.TypeDefinition.Constrained, NodeKind.StmtExpr.IsType, NodeKind.StmtExpr.AsType]
   documentation := "Eliminates constrained types by replacing them with their base types and generating constraint-checking procedures and witness procedures. A free constraint is assumed wherever a value of its type enters and never asserted. Type tests against constrained types are rewritten to call the generated constraint procedure, and casts to a `downcast$T` helper that requires it."
   needsResolves := true }

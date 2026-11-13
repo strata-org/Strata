@@ -126,8 +126,8 @@ def computeExprTypeWith (lattice? : Option TypeLattice)
   -- Calls — the callee's return type at this call site, so a generic callee reports its
   -- instantiation rather than its declared `T`. `ContractPass` types a polymorphic callee's
   -- argument temp from the argument itself and needs that instantiation.
-  | .StaticCall callee _ tyArgs => getCallType source model callee tyArgs
-  | .InstanceCall target callee args tyArgs =>
+  | .Call none callee _ tyArgs => getCallType source model callee tyArgs
+  | .Call (some target) callee args tyArgs =>
     match lattice?, model.get callee with
     | some lattice, .instanceProcedure owner proc =>
       let receiverTy := computeExprTypeWith lattice? model target
@@ -214,9 +214,9 @@ def computeExprType (model : SemanticModel) (expr : StmtExprMd) : HighTypeMd :=
   computeExprTypeWith none model expr
 
 /-- `ty`, a type in `callee`'s signature, at the instantiation `typeArgs` a call to it records. A
-    pass that introduces a local for one of the call's outputs declares it at this type: the callee's
-    declared type variable is the same at every call site, so declaring that would make two
-    instantiations collide. -/
+    pass that introduces a local for one of the call's arguments or outputs declares it at this type:
+    the callee's declared type variable is the same at every call site, so declaring that would make
+    two instantiations collide. -/
 def typeAtCall (model : SemanticModel) (callee : Identifier) (typeArgs : List HighTypeMd)
     (ty : HighTypeMd) : HighTypeMd :=
   match model.get callee with

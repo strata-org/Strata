@@ -241,7 +241,7 @@ def containsAssignmentOrImperativeCall (imperativeCallees : List String) (expr :
     (liftsAssertsAssumes : Bool := false) : Bool :=
   anyStmtExpr (fun e => match e.val with
     | .Assign .. | .IncrDecr .. | .CompoundAssign .. | .While .. => true
-    | .StaticCall name _ _ => imperativeCallees.contains name.text
+    | .Call none name _ _ => imperativeCallees.contains name.text
     | .Assert .. | .Assume .. => liftsAssertsAssumes
     | _ => false) expr
 
@@ -290,11 +290,11 @@ def transformExpr (expr : StmtExprMd) (discard : Bool := false) : LiftM StmtExpr
       transformLiftedStmt expr
       return resultExpr
 
-  | .StaticCall callee args tyArgs =>
+  | .Call none callee args tyArgs =>
     let imperativeCallees := (← get).imperativeCallees
     if !imperativeCallees.contains callee.text then
       let seqArgs ← args.reverse.mapM (transformExpr · discard)
-      let seqCall := ⟨.StaticCall callee seqArgs.reverse tyArgs, source⟩
+      let seqCall := ⟨.Call none callee seqArgs.reverse tyArgs, source⟩
       return seqCall
     else if discard then
       transformLiftedStmt expr
@@ -430,10 +430,10 @@ def transformExpr (expr : StmtExprMd) (discard : Bool := false) : LiftM StmtExpr
       let seqTarget ← transformExpr target
       return ⟨.IsType seqTarget ty, source⟩
 
-  | .InstanceCall target callee args tys =>
+  | .Call (some target) callee args tys =>
       let seqArgs ← args.reverse.mapM transformExpr
       let seqTarget ← transformExpr target
-      return ⟨.InstanceCall seqTarget callee seqArgs.reverse tys, source⟩
+      return ⟨.Call (some seqTarget) callee seqArgs.reverse tys, source⟩
 
   | .Quantifier .. =>
       -- The body and trigger are *spec* positions under a binder, like a loop
@@ -509,7 +509,7 @@ def transformStmtAssignImperativeCall
   let argPrepends ← takePrepends
   -- `typeArgs` carried onto the rebuilt call: lifting reorders and renames arguments but does
   -- not change the callee's instantiation.
-  return argPrepends ++ [⟨.Assign targets ⟨.StaticCall callee seqArgs.reverse typeArgs, callSource⟩, source⟩]
+  return argPrepends ++ [⟨.Assign targets ⟨.Call none callee seqArgs.reverse typeArgs, callSource⟩, source⟩]
   termination_by (sizeOf args, 0)
   decreasing_by
     all_goals try (apply Prod.Lex.right; omega)
@@ -553,12 +553,12 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
       return [stmt]
 
   | .Assign targets valueMd =>
-      -- If the RHS is a direct imperative StaticCall, don't lift it —
-      -- translateStmt handles Assign + StaticCall directly as a call statement.
+      -- If the RHS is a direct imperative static call, don't lift it —
+      -- translateStmt handles Assign + static call directly as a call statement.
       match _: valueMd with
       | AstNode.mk value callSource =>
       match _: value with
-      | .StaticCall callee args tyArgs =>
+      | .Call none callee args tyArgs =>
           let imperativeCallees := (← get).imperativeCallees
           if imperativeCallees.contains callee.text then
             transformStmtAssignImperativeCall targets callee args tyArgs source callSource
@@ -614,8 +614,8 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
       return condPrepends ++
         [⟨.While seqCond invs dec seqBody postTest, source⟩]
 
-  | .StaticCall name args tyArgs =>
-      -- Right-to-left, like the expression-position `.StaticCall` arm: a snapshot
+  | .Call none name args tyArgs =>
+      -- Right-to-left, like the expression-position static `.Call` arm: a snapshot
       -- created for an assignment argument must be visible to the arguments to its
       -- *left* in source order (those are the ones that have to read the old
       -- value), so they must be traversed after it.
@@ -627,7 +627,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
       -- rewrite that statement's reads to the stale snapshot, so clear it here
       -- as every sibling statement arm does.
       modify fun s => { s with subst := {} }
-      return prepends ++ [⟨.StaticCall name seqArgs.reverse tyArgs, source⟩]
+      return prepends ++ [⟨.Call none name seqArgs.reverse tyArgs, source⟩]
 
   | .Return retExprs =>
       let seqRets ← retExprs.attach.mapM fun ⟨e, _⟩ => transformExpr e
@@ -647,7 +647,7 @@ def transformStmt (stmt : StmtExprMd) : LiftM (List StmtExprMd) := withStatement
     all_goals (try have := CatchClause.sizeOf_predicate_lt ‹_›)
     all_goals (try simp_all only [AstNode.mk.sizeOf_spec, StmtExpr.Assert.sizeOf_spec, StmtExpr.Assume.sizeOf_spec,
     StmtExpr.Block.sizeOf_spec, List.contains_eq_mem, decide_eq_true_eq, StmtExpr.Assign.sizeOf_spec,
-    StmtExpr.StaticCall.sizeOf_spec, StmtExpr.IfThenElse.sizeOf_spec, Option.some.sizeOf_spec,
+    StmtExpr.Call.sizeOf_spec, StmtExpr.IfThenElse.sizeOf_spec, Option.some.sizeOf_spec,
     StmtExpr.While.sizeOf_spec, Bool.sizeOf_eq_one, StmtExpr.Return.sizeOf_spec]; try have := Condition.sizeOf_condition_lt ‹_›; try term_by_mem)
     all_goals (try (apply Prod.Lex.left); try term_by_mem; try omega)
 end

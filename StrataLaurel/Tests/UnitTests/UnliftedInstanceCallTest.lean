@@ -6,7 +6,7 @@
 
 import StrataLaurel.Implementation.LaurelToCoreSchemaPass
 
-/-! Core translation reports an `InstanceCall` in each position it can occupy. The calls are built
+/-! Core translation reports an instance `Call` in each position it can occupy. The calls are built
 directly, since a source program reaches Core translation with one only through a gap in
 resolution. -/
 
@@ -17,7 +17,7 @@ private def nn (e : StmtExpr) : StmtExprMd := ⟨e, .unknown⟩
 
 private def target (name : String) : VariableMd := ⟨.Local (mkId name), .unknown⟩
 
-private def call : StmtExprMd := nn (.InstanceCall (nn (.Var (.Local (mkId "c")))) (mkId "m") [] [])
+private def call : StmtExprMd := nn (.Call (some (nn (.Var (.Local (mkId "c"))))) (mkId "m") [] [])
 
 private def report {α : Type} (m : TranslateM α) : IO Unit := do
   let (_, s) := runTranslateM { model := { nextId := 0, compositeCount := 0, refToDef := {} } } m

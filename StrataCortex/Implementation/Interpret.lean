@@ -13,7 +13,6 @@ public import Strata.Languages.Cortex.Cleanup
 public import Strata.Languages.Cortex.LowerDispatch
 public import Strata.Languages.Cortex.LowerGlobals
 public import Strata.Languages.Cortex.FieldCasts
-public import Strata.Languages.Core.ProgramEval
 
 namespace Cortex
 
@@ -30,7 +29,7 @@ def cortexStopMessage : StopReason → String
   | .expressionDidNotEvaluate => "an expression did not evaluate"
   | .expressionWasNotBoolean => "a branch condition was not a Boolean"
   | .unknownProcedure n => s!"unknown procedure {n}"
-  | .procedureWithoutBody n => s!"call to procedure {n}, which has no body"
+  | .procedureWithoutBody n => s!"entry procedure {n} has no body"
   | .unknownComposite n => s!"unknown composite {n}"
   | .unknownField f => s!"unknown field {f.owner}.{f.field}"
   | .notAReference => "not a reference"
@@ -47,46 +46,37 @@ def cortexStopMessage : StopReason → String
   | .calleeDidNotTerminate n => s!"callee {n} did not terminate"
   | .invalidDatatypes msg => s!"invalid datatypes: {msg}"
 
-def interpretableCore (core : _root_.Core.Program) : Except String _root_.Core.Program := do
-  let core ← match _root_.Core.typeCheck _root_.Core.VerifyOptions.quiet core with
-    | .ok prog => pure prog
-    | .error e => throw s!"Core type checking failed: {e.message}"
-  return _root_.Core.Program.inlineBodiedFunctions core
+/-- What running the `entry` procedures of a program on the Cortex interpreter
+produced. -/
+structure InterpretOutcome where
+  /-- The failed assertions and uncaught exceptions, each reported once. -/
+  diagnostics : Array Message := #[]
+  /-- The entry procedures that did not run to completion, each with the reason. -/
+  errors : Array (String × String) := #[]
 
-def toInterpretableCore (options : LaurelTranslateOptions) (program : LaurelProgram) :
-    Except String _root_.Core.Program := do
-  let core ← match translate options program with
-    | (some core, _) => pure core
-    | (none, diags) => throw s!"Laurel to Core translation failed: {diags.map (·.message)}"
-  interpretableCore core
-
-/-- Run every entry procedure of `m` on the Cortex interpreter, after the cleanup passes,
-LowerDispatch, LowerGlobals, FieldCasts and LowerCTE. With `cleanup := false` the cleanup
-passes are skipped, for comparing the two runs.
-Returns the failed checks as diagnostics, and the runs that stopped or left an
-assertion unevaluated as errors. -/
+/-- Run every `entry` procedure of `m` on the Cortex interpreter, after the
+cleanup passes, LowerDispatch, LowerGlobals, FieldCasts and LowerCTE, giving
+each procedure and each call `fuel` steps. With `cleanup := false` the cleanup
+passes are skipped, for comparing the two runs. The error is the reason a pass
+rejected the program. -/
 def interpretProgram (m : Cortex.UnorderedProgram) (fuel : Nat) (cleanup : Bool := true) :
-    Except String (Array Message × Array String) := do
-  let m ← if cleanup then
-      match Cortex.Cleanup.run m with
-      | .ok m => pure m
-      | .error e => throw s!"Cleanup: {e}"
-    else pure m
-  let m ← match Cortex.LowerDispatch.run m >>= Cortex.LowerGlobals.run >>= Cortex.FieldCasts.run >>= Cortex.LowerCTE.runWith true with
-    | .ok m => pure m
-    | .error e => throw s!"lowering: {e}"
+    Except String InterpretOutcome := do
+  let m ← if cleanup then (Cortex.Cleanup.run m).mapError (s!"Cleanup: {·}") else pure m
+  let m ← (Cortex.LowerDispatch.run m >>= Cortex.LowerGlobals.run >>= Cortex.FieldCasts.run
+    >>= Cortex.LowerCTE.runWith true).mapError (s!"lowering: {·}")
   let mut out : Array Message := #[]
   let mut seen : Std.HashSet Message := {}
-  let mut errors : Array String := #[]
+  let mut errors : Array (String × String) := #[]
   for p in m.procedures do
     unless isEntry p do continue
     match runEntry m fuel p with
-    | .error e => errors := errors.push s!"'{p.name}': {cortexStopMessage e}"
+    | .error e => errors := errors.push (p.name, cortexStopMessage e)
     | .ok (final, trace) =>
       if unevaluated trace > 0 then
-        errors := errors.push s!"'{p.name}': an assertion could not be evaluated"
-      let fs := failures trace
-      let msgs := fs.filterMap fun (md, summary) =>
+        errors := errors.push (p.name, "an assertion could not be evaluated")
+      -- A failed check without a source range is in a helper procedure, whose
+      -- precondition reports the failure at the call.
+      let msgs := (failures trace).filterMap fun (md, summary) =>
         (Imperative.getFileRange md).map fun fr => Message.withRange fr s!"{summary} does not hold"
       let msgs := match final with
         | .raised ρ v md =>
@@ -102,28 +92,41 @@ def interpretProgram (m : Cortex.UnorderedProgram) (fuel : Nat) (cleanup : Bool 
         unless seen.contains dm do
           out := out.push dm
           seen := seen.insert dm
-  return (out, errors)
+  return { diagnostics := out, errors }
 
+/-- Run every `entry` procedure of a Laurel program on the Cortex interpreter,
+as `interpretProgram` does. The error is the reason the program could not be
+run at all: it does not resolve, Cortex does not accept it, or it has no
+`entry` procedure. -/
+def interpretEntries (program : LaurelProgram) (fuel : Nat := 10000)
+    (options : LaurelTranslateOptions := {}) : Except String InterpretOutcome := do
+  let (resolved, model, _) ← match resolveLaurel options program with
+    | .ok r => pure r
+    | .error ds => throw s!"Laurel resolution failed: {ds.map (·.message)}"
+  let (mod?, diags) := FromLaurel.run model resolved options.overflowChecks (uncheck := false)
+  let some m := mod?
+    | throw s!"Laurel to Cortex translation failed: {diags.map (·.message)}"
+  unless m.procedures.any isEntry do
+    throw "no entry point found: mark a procedure with `entry` in the Laurel source, or pass --entry <proc>"
+  interpretProgram m fuel
+
+/-- The diagnostics of `interpretEntries`, or one error that also covers every
+entry procedure that did not run to completion. -/
 def interpretLaurel (program : LaurelProgram) (fuel : Nat := 10000) :
     IO (Except String (Array Message)) := do
-  let (resolved, model, _) ← match resolveLaurel {} program with
-    | .ok r => pure r
-    | .error ds => return .error s!"Laurel resolution failed: {ds.map (·.message)}"
-  let (mod?, diags) := FromLaurel.run model resolved (uncheck := false)
-  match mod? with
-  | none => return .error s!"Laurel to Cortex translation failed: {diags.map (·.message)}"
-  | some m =>
-    match interpretProgram m fuel with
-    | .error e => return .error e
-    | .ok (out, errors) =>
-      if errors.isEmpty then return .ok out
-      return .error s!"{String.intercalate "; " errors.toList} (diagnostics: {out.toList.map (·.message)})"
+  match interpretEntries program fuel with
+  | .error e => return .error e
+  | .ok outcome =>
+    if outcome.errors.isEmpty then return .ok outcome.diagnostics
+    let errors := outcome.errors.toList.map fun (name, reason) => s!"'{name}': {reason}"
+    return .error s!"{String.intercalate "; " errors} (diagnostics: {outcome.diagnostics.toList.map (·.message)})"
 
-/-- Run a wire program's entry procedures on the Cortex interpreter. -/
-def interpretWire (program : Wire.Program) (fuel : Nat) : Except String (Array Message × Array String) := do
-  match program.withPreludes >>= Wire.Program.toCortex with
-  | .error e => throw s!"invalid Cortex program: {e}"
-  | .ok m => interpretProgram m fuel
+/-- Run the `entry` procedures of a wire program on the Cortex interpreter, as
+`interpretProgram` does. The error is the reason the wire program is not a
+Cortex program. -/
+def interpretWire (program : Wire.Program) (fuel : Nat) : Except String InterpretOutcome := do
+  let m ← (wireToCortex program).mapError (s!"invalid Cortex program: {·}")
+  interpretProgram m fuel
 
 end
 

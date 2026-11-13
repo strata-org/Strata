@@ -151,7 +151,7 @@ procedure useDiscardsTheResult(x: int)
 /-! The state a callee writes is threaded through its signature as a hidden inout
 (`HeapParameterization` declares the `$heap` global, `GlobalParameterization` threads it and
 any written global), so by the time `functionalize` runs the call is an assignment to that
-inout, not a `StaticCall`. A transparent body may make that assignment: the inout is its own
+inout, not a static `Call`. A transparent body may make that assignment: the inout is its own
 output, so the new value has a slot to leave by, and the body below is accepted.
 
 Accepted is not the same as useful, and the gap is known and not addressed here. The twin

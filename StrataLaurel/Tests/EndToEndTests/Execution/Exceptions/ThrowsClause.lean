@@ -126,7 +126,7 @@ rather than throwing directly or catching it. The rejection side (a caller that
 declares no `throws`) is in `Resolution/Exceptions/ThrowsEscape.lean`; the direct
 `throw` is in `Throw.lean`.
 
-The mechanism is the `.StaticCall` arm of the lowering: it binds the callee's
+The mechanism is the static `.Call` arm of the lowering: it binds the callee's
 `Result`, and on `Bad` copies the error into the enclosing region's exception variable
 and exits to its throw target. The second case pins the consequence that is easiest to
 get wrong when reading that arm — after a throwing call the *normal* continuation is

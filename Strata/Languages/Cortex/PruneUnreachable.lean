@@ -15,11 +15,10 @@ Drops the blocks of each procedure body that no path from the entry reaches.
 `LowerExceptions` leaves such blocks behind: a handler that no `throw` reaches,
 and the block that follows a `throw`.
 
-The CFG route to Core (`ToCore.programToCoreCFG`) requires the pass, and it has
+The translation to Core (`ToCore.programToCore`) requires the pass, and it has
 to run before the Core type check: Core's CFG type checker gives an unreachable
 block none of its dominators' locals, so it rejects every local that such a
-block uses. On the structured route (`ToCore.programToCore`) the pass changes
-nothing, since that route emits only the blocks that the entry reaches.
+block uses.
 
 The pass runs after `LowerExceptions`. Before it, a handler block is entered
 through the handler table and not through a transfer, so the pass refuses a

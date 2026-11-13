@@ -21,7 +21,7 @@ whenever either:
   state.
 
 These tests pin down the cases the heap-only classification regressed:
-inout parameters and heap writes performed through an `InstanceCall`. -/
+inout parameters and heap writes performed through an instance `Call`. -/
 
 /-! ### Regression 1: `old` of an inout parameter
 
@@ -37,11 +37,11 @@ procedure inc(x: int) returns (x: int)
 { x := x + 1 };
 #end
 
-/-! ### Regression 2: heap write performed through an `InstanceCall`
+/-! ### Regression 2: heap write performed through an instance `Call`
 
-`caller` writes the heap only by calling `c#bump()`, which is an `InstanceCall`
+`caller` writes the heap only by calling `c#bump()`, which is an instance `Call`
 at initial resolution (before `LiftInstanceProcedures` rewrites it to a static
-call). The heap-effect analysis must follow `InstanceCall` callees, otherwise
+call). The heap-effect analysis must follow instance `Call` callees, otherwise
 `caller` is misclassified as non-heap-writing and `old(c#v)` is spuriously
 warned. No warning. -/
 

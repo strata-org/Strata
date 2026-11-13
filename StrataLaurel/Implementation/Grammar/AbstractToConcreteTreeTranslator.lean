@@ -231,7 +231,7 @@ where
     -- The inferred `typeArgs` are DROPPED when printing: the grammar's `call` op has no
     -- type-argument slot (unlike `new`), so there is nothing to print them as. Nothing is lost —
     -- they are a resolution output, and re-resolving the printed program re-infers them.
-    | .StaticCall callee args _ =>
+    | .Call none callee args _ =>
       -- A call to a built-in operator wrapper (`$add`, `$lt`, …) came from
       -- operator syntax, so print it back as an operator to round-trip. A
       -- type-specific delegate (`$intLe`, …) prints as its operator too, unless
@@ -290,7 +290,7 @@ where
       laurelOp "isType" #[stmtExprToArg target, highTypeToArg ty]
     | .AsType target ty =>
       laurelOp "asType" #[stmtExprToArg target, highTypeToArg ty]
-    | .InstanceCall target callee args _ =>
+    | .Call (some target) callee args _ =>
       -- Emit as a static call on target.callee(args)
       let calleeExpr := laurelOp "fieldAccess" #[stmtExprToArg target, ident callee.text]
       let argsArr := args.map stmtExprToArg |>.toArray

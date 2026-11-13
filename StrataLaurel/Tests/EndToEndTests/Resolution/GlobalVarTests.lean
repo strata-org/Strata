@@ -1084,24 +1084,171 @@ procedure caller() opaque {
 #end
 
 
+/-! A multi-output call to a global-dependent procedure whose ARGUMENTS write a global or
+the heap. `GlobalParameterization.transformAssignWithCall` binds every argument to a
+temporary, left to right, before it samples the hidden globals, so these verify. Each
+test refutes one assertion, so a vacuous pass would show. Only a block-valued right-hand
+side (above and below) is still rejected. -/
+
+-- The argument writes the global the callee reads.
 #guard_msgs in
 #eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
 #strata
 program Laurel;
 var g: int := 0
-procedure setG(v: int) returns (r: int) opaque {
+procedure setG(v: int) returns (r: int) opaque ensures g == v ensures r == v {
   g := v;
   return v
 };
-procedure pair(a: int) returns (x: int, y: int) opaque {
+procedure pair(a: int) returns (x: int, y: int) opaque ensures x == g + a ensures y == a {
   x := g + a;
   y := a
 };
 procedure caller() opaque {
   var x: int;
   var y: int;
-  assign x, y := pair(setG(5))
-//               ^^^^ error: multi-output calls to global-dependent procedure 'pair' that require block-valued lowering are not yet supported
+  assign x, y := pair(setG(5));
+  assert x == 10;
+  assert y == 5;
+  assert g == 5;
+  assert x == 5
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+-- Left-to-right: the first argument reads `g` before the second writes it.
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure setG(v: int) returns (r: int) opaque ensures g == v ensures r == v {
+  g := v;
+  return v
+};
+procedure pair2(a: int, b: int) returns (x: int, y: int) opaque ensures x == a ensures y == b + g {
+  x := a;
+  y := b + g
+};
+procedure caller() opaque {
+  g := 1;
+  var x: int;
+  var y: int;
+  assign x, y := pair2(g, setG(5));
+  assert x == 1;
+  assert y == 10;
+  assert x == 5
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+-- An instance-method callee.
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure setG(v: int) returns (r: int) opaque ensures g == v ensures r == v {
+  g := v;
+  return v
+};
+composite P {
+  procedure pair(self: P, a: int) returns (x: int, y: int) opaque ensures x == g + a ensures y == a {
+    x := g + a;
+    y := a
+  };
+}
+procedure caller(c: P) opaque {
+  var x: int;
+  var y: int;
+  assign x, y := c#pair(setG(5));
+  assert x == 10;
+  assert y == 5;
+  assert y == 6
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+-- A generic callee: the argument temporaries take the parameter types instantiated at the
+-- call (`T := int`), not the callee's own `T`, which re-resolution could not infer.
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+var g: int := 0
+procedure setG(v: int) returns (r: int) opaque ensures g == v ensures r == v {
+  g := v;
+  return v
+};
+procedure polyPair<T>(a: T, b: int) returns (p: T, q: int) opaque ensures p == a ensures q == b + g {
+  p := a;
+  q := b + g
+};
+procedure caller() opaque {
+  var p: int;
+  var q: int;
+  assign p, q := polyPair(setG(5), 1);
+  assert p == 5;
+  assert q == 6;
+  assert q == 1
+//^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+-- The heap, which `GlobalParameterization` threads like a global: a heap writer as the
+-- argument of a heap-writing multi-output call. No file-scope global is declared.
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Box { var v: int }
+procedure bump(b: Box) returns (r: int) opaque ensures b#v == old(b#v) + 1 ensures r == b#v modifies b {
+  b#v := b#v + 1;
+  r := b#v
+};
+procedure pair(a: int, c: Box) returns (x: int, y: int) opaque
+  ensures x == a ensures y == old(c#v) ensures c#v == a + 10 modifies c {
+  x := a;
+  y := c#v;
+  c#v := a + 10
+};
+procedure caller(b: Box) opaque modifies b {
+  b#v := 0;
+  var x: int;
+  var y: int;
+  assign x, y := pair(bump(b), b);
+  assert x == 1;
+  assert y == 1;
+  assert b#v == 11;
+  assert y == 0
+//^^^^^^^^^^^^^ error: assertion could not be proved
+};
+#end
+
+-- Left-to-right on the heap: the first argument reads `b#v` before `bump` writes it.
+#guard_msgs in
+#eval testLaurelExecution { skipCoreInterpreter := true, skipLaurelInterpreter := true } <|
+#strata
+program Laurel;
+composite Box { var v: int }
+procedure bump(b: Box) returns (r: int) opaque ensures b#v == old(b#v) + 1 ensures r == b#v modifies b {
+  b#v := b#v + 1;
+  r := b#v
+};
+procedure pair3(a: int, c: Box, d: int) returns (x: int, y: int) opaque
+  ensures x == a ensures y == d + c#v {
+  x := a;
+  y := d + c#v
+};
+procedure caller(b: Box) opaque modifies b {
+  b#v := 0;
+  var x: int;
+  var y: int;
+  assign x, y := pair3(b#v, b, bump(b));
+  assert x == 0;
+  assert y == 2;
+  assert x == 1
+//^^^^^^^^^^^^^ error: assertion could not be proved
 };
 #end
 

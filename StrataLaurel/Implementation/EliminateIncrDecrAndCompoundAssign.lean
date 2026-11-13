@@ -82,7 +82,7 @@ namespace EliminateIncrDecr
 @[expose] public def lowerOpAssign (primOp : Operation) (target : VariableMd)
     (rhs : StmtExprMd) (source : FileRange) : StmtExprMd :=
   let read := targetAsRead target
-  let updated : StmtExprMd := ⟨.StaticCall (mkId primOp.procName) [read, rhs] [], source⟩
+  let updated : StmtExprMd := ⟨.Call none (mkId primOp.procName) [read, rhs] [], source⟩
   ⟨.Assign [target] updated, source⟩
 
 /-- Build `.Assign [target] (target ⊕ 1)` where `⊕` is `Add` for `Incr` and
@@ -107,7 +107,7 @@ namespace EliminateIncrDecr
       | .Incr => .Sub
       | .Decr => .Add
     let one : StmtExprMd := ⟨.LiteralInt 1, source⟩
-    ⟨.StaticCall (mkId inverseOp.procName) [assign, one] [], source⟩
+    ⟨.Call none (mkId inverseOp.procName) [assign, one] [], source⟩
 
 /-- The rewrite step applied bottom-up by `mapStmtExpr`. Replaces `.IncrDecr`
     and `.CompoundAssign` with their lowered forms; all other nodes pass through.
@@ -146,7 +146,7 @@ public def eliminateIncrDecrAndCompoundAssignPass : LaurelPass where
   name := "EliminateIncrDecrAndCompoundAssign"
   creates := [
       NodeKind.StmtExpr.Assign,
-      NodeKind.StmtExpr.StaticCall,
+      NodeKind.StmtExpr.Call,
       NodeKind.StmtExpr.Var,
       -- a field target's read side is `o#f`, a `Var.var.Field`
       NodeKind.StmtExpr.Var.var.Field

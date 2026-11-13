@@ -107,10 +107,10 @@ private def calleeParamTypes (model : SemanticModel) (callee : Identifier)
       some [⟨.UserDefined typeName, callee.source⟩]
   | _ => none
 
-/-- Expected type for the arguments of a `StaticCall` whose callee did not
+/-- Expected type for the arguments of a static `Call` whose callee did not
     resolve to a single definition.
 
-    This is the operator case. `x + y` is a `StaticCall` to the overloaded
+    This is the operator case. `x + y` is a static `Call` to the overloaded
     wrapper `$add`, and overload selection needs the argument types to pick
     between the `int` and `real` overloads — so when *every* argument is a hole
     (`<?> + <?>`, `-<?>`) there is nothing to select on, the callee keeps no
@@ -251,14 +251,14 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
       else
         modify fun s => { s with statistics := s.statistics.increment s!"{InferHoleTypesStats.holesAnnotated}" }
         return ⟨.Hole det (some expectedType), source⟩
-  | .StaticCall callee args tyArgs =>
+  | .Call none callee args tyArgs =>
       let args' ← match calleeParamTypes model callee tyArgs with
         | some paramTypes => inferArgsTyped args paramTypes source outputType
         | none =>
           inferArgs args (unresolvedOperatorArgType model callee args expectedType source) outputType
-      return ⟨.StaticCall callee args' tyArgs, source⟩
-  | .InstanceCall target callee args tys =>
-      return ⟨.InstanceCall (← inferExpr target ⟨ .Unknown, source ⟩ outputType) callee (← inferArgs args ⟨ .Unknown, source ⟩ outputType) tys, source⟩
+      return ⟨.Call none callee args' tyArgs, source⟩
+  | .Call (some target) callee args tys =>
+      return ⟨.Call (some (← inferExpr target ⟨ .Unknown, source ⟩ outputType)) callee (← inferArgs args ⟨ .Unknown, source ⟩ outputType) tys, source⟩
   | .ReferenceEquals lhs rhs =>
       let lhsType := computeExprType model lhs
       let rhsType := computeExprType model rhs
