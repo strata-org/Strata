@@ -11,7 +11,8 @@ public import Strata.Languages.Cortex.Liveness
 # Copy coalescing
 
 Rewrites `call t := p(..); x := t` to `call x := p(..)`, and likewise for a
-`virtualCall` with one result, a `new`, a field read and an `instanceOf`. The
+`virtualCall` with one result, a `new`, a field read, an `instanceOf`, a
+`newArray`, an element read and an `arrayLength`. The
 defining command keeps its place and its source location, and only the copy
 `x := t` is deleted.
 
@@ -37,6 +38,7 @@ public section
 can be redirected. -/
 private def definedVar? : IRCmd → Option String
   | .new x .. | .readField x .. | .instanceOf x .. => some x.name
+  | .newArray x .. | .readElem x .. | .arrayLength x .. => some x.name
   | .call [x] .. | .virtualCall [x] .. => some x.name
   | _ => none
 
@@ -44,6 +46,9 @@ private def withDefinedVar (y : Core.Expression.Ident) : IRCmd → IRCmd
   | .new _ ty md => .new y ty md
   | .readField _ o f md => .readField y o f md
   | .instanceOf _ o ty md => .instanceOf y o ty md
+  | .newArray _ ty len md => .newArray y ty len md
+  | .readElem _ a i ty md => .readElem y a i ty md
+  | .arrayLength _ a md => .arrayLength y a md
   | .call _ p args md => .call [y] p args md
   | .virtualCall _ o m args md => .virtualCall [y] o m args md
   | c => c

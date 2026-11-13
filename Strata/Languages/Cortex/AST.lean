@@ -28,10 +28,13 @@ structure FieldDecl where
   name : FieldName
   ty : Core.Expression.Ty
 
+/-- A reference type. With `elem`, it is an array type whose objects hold elements of that
+type, and it declares no fields. -/
 structure CompositeDecl where
   name : TypeName
   extending : List TypeName
   fields : List FieldDecl
+  elem : Option Core.Expression.Ty := none
 
 structure ConstrainedDecl where
   name : TypeName
@@ -58,6 +61,16 @@ inductive IRCmd where
   | readField (lhs : Core.Expression.Ident) (obj : Expr) (field : FieldRef) (md : MD)
   | writeField (obj : Expr) (field : FieldRef) (rhs : Expr) (md : MD)
   | instanceOf (lhs : Core.Expression.Ident) (obj : Expr) (ty : TypeName) (md : MD)
+  /-- Allocates an array of the declared array type `ty` with `len` elements, each the default
+  value of the element type. A negative `len` is a stuck state. -/
+  | newArray (lhs : Core.Expression.Ident) (ty : TypeName) (len : Expr) (md : MD)
+  /-- Reads the element at `index`, an `int`. `elemTy` is the element type of the array that
+  `arr` refers to. An index outside the array is a stuck state. -/
+  | readElem (lhs : Core.Expression.Ident) (arr : Expr) (index : Expr) (elemTy : Core.Expression.Ty) (md : MD)
+  /-- Writes the element at `index`, with the conventions of `readElem`. -/
+  | writeElem (arr : Expr) (index : Expr) (rhs : Expr) (elemTy : Core.Expression.Ty) (md : MD)
+  /-- Reads the number of elements, an `int` that is fixed when the array is allocated. -/
+  | arrayLength (lhs : Core.Expression.Ident) (arr : Expr) (md : MD)
   | call (lhs : List Core.Expression.Ident) (proc : ProcName) (args : List Expr) (md : MD)
   | virtualCall (lhs : List Core.Expression.Ident) (owner : TypeName) (method : String) (args : List Expr)
       (md : MD)
@@ -115,6 +128,10 @@ inductive Program where
 
 @[expose] def UnorderedProgram.findComposite? (p : UnorderedProgram) (n : TypeName) : Option CompositeDecl :=
   p.composites.find? (·.name == n)
+
+/-- The element type of array type `n`. -/
+@[expose] def UnorderedProgram.arrayElem? (p : UnorderedProgram) (n : TypeName) : Option Core.Expression.Ty :=
+  (p.findComposite? n).bind (·.elem)
 
 @[expose] def UnorderedProgram.findProcedure? (p : UnorderedProgram) (n : ProcName) : Option Procedure :=
   p.procedures.find? (·.name == n)

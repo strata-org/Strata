@@ -56,10 +56,13 @@ def composites : List Wire.Composite :=
   [{ name := "Exn", extending := [], fields := [] },
    { name := "Box", extending := [], fields := [{ name := "val", ty := int }] }]
 
-/-- The Cortex program of `procedures` over `composites`. -/
+/-- The array type `Ints`, with `int` elements. -/
+def arrays : List Wire.ArrayDecl := [{ name := "Ints", elem := int, extending := [] }]
+
+/-- The Cortex program of `procedures` over `composites` and `arrays`. -/
 def program (procedures : List Wire.Procedure) (constrained : List Wire.Constrained := []) :
     Except String UnorderedProgram :=
-  Wire.Program.toCortex { composites, constrained, procedures }
+  Wire.Program.toCortex { composites, constrained, procedures, arrays }
 
 def offset (md : MD) : String :=
   match Imperative.getFileRange md with
@@ -84,6 +87,10 @@ def showCmd : IRCmd → String
   | .readField x o f md => s!"{x.name} := {Std.format o}.{f.owner}.{f.field}{offset md}"
   | .writeField o f e md => s!"{Std.format o}.{f.owner}.{f.field} := {Std.format e}{offset md}"
   | .instanceOf x o ty md => s!"{x.name} := {Std.format o} instanceof {ty}{offset md}"
+  | .newArray x ty len md => s!"{x.name} := newArray {ty}[{Std.format len}]{offset md}"
+  | .readElem x a i ty md => s!"{x.name} := {Std.format a}[{Std.format i}] : {Std.format ty}{offset md}"
+  | .writeElem a i v ty md => s!"{Std.format a}[{Std.format i}] := {Std.format v} : {Std.format ty}{offset md}"
+  | .arrayLength x a md => s!"{x.name} := length {Std.format a}{offset md}"
   | .call lhs p args md => s!"call {showResults lhs}{p}({showExprs args}){offset md}"
   | .virtualCall lhs o m args md => s!"virtualCall {showResults lhs}{o}.{m}({showExprs args}){offset md}"
   | .throw e md => s!"throw {Std.format e}{offset md}"

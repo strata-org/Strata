@@ -58,6 +58,10 @@ inductive Cmd where
   | readField (lhs : String) (obj : Expr) (owner field : String) (source : Strata.FileRange)
   | writeField (obj : Expr) (owner field : String) (rhs : Expr) (source : Strata.FileRange)
   | instanceOf (lhs : String) (obj : Expr) (ty : String) (source : Strata.FileRange)
+  | newArray (lhs : String) (ty : String) (len : Expr) (source : Strata.FileRange)
+  | readElem (lhs : String) (arr : Expr) (index : Expr) (elemTy : Ty) (source : Strata.FileRange)
+  | writeElem (arr : Expr) (index : Expr) (rhs : Expr) (elemTy : Ty) (source : Strata.FileRange)
+  | arrayLength (lhs : String) (arr : Expr) (source : Strata.FileRange)
   | call (lhs : List String) (proc : String) (args : List Expr) (source : Strata.FileRange)
   | virtualCall (lhs : List String) (owner method : String) (args : List Expr) (source : Strata.FileRange)
   | throw (exn : Expr) (summary : Option String) (source : Strata.FileRange)
@@ -133,6 +137,13 @@ structure Composite where
   fields : List Field
   deriving Repr, Inhabited
 
+/-- An array type: a reference type whose objects hold `int`-indexed elements of type `elem`. -/
+structure ArrayDecl where
+  name : String
+  elem : Ty
+  extending : List String
+  deriving Repr, Inhabited
+
 structure Constrained where
   name : String
   base : Ty
@@ -149,6 +160,7 @@ structure Program where
   /-- Preludes whose procedures the program calls, such as `"java"`; see
   `Cortex.Preludes`. -/
   preludes : List String := []
+  arrays : List ArrayDecl := []
   deriving Repr, Inhabited
 
 def Ty.toMono : Ty → LMonoTy
@@ -202,6 +214,10 @@ def Cmd.toCortex : Cmd → IRCmd
   | .readField x o owner f src => .readField (ident x) o.toCore { owner, field := f } (mdOf src)
   | .writeField o owner f v src => .writeField o.toCore { owner, field := f } v.toCore (mdOf src)
   | .instanceOf x o ty src => .instanceOf (ident x) o.toCore ty (mdOf src)
+  | .newArray x ty len src => .newArray (ident x) ty len.toCore (mdOf src)
+  | .readElem x a i ty src => .readElem (ident x) a.toCore i.toCore ty.toLTy (mdOf src)
+  | .writeElem a i v ty src => .writeElem a.toCore i.toCore v.toCore ty.toLTy (mdOf src)
+  | .arrayLength x a src => .arrayLength (ident x) a.toCore (mdOf src)
   | .call lhs p args src => .call (lhs.map ident) p (args.map Expr.toCore) (mdOf src)
   | .virtualCall lhs o m args src => .virtualCall (lhs.map ident) o m (args.map Expr.toCore) (mdOf src)
   | .throw e summary src =>
@@ -292,14 +308,32 @@ def Program.checkCallArities (p : Program) : Except String Unit := do
             check q.name (Cortex.implName owner method) args.length lhs.length
           | _ => pure ()
 
+/-- `new` allocates an object with fields and `newArray` one with elements, so `new` names a
+composite and `newArray` an array type. -/
+def Program.checkAllocations (p : Program) : Except String Unit := do
+  let arrays := p.arrays.map (·.name)
+  for q in p.procedures do
+    for b in q.body.toList do
+      for blk in b.blocks do
+        for c in blk.cmds do
+          match c with
+          | .new _ ty _ =>
+            if arrays.contains ty then throw s!"'{q.name}': `new` of array type '{ty}'"
+          | .newArray _ ty _ _ =>
+            unless arrays.contains ty do
+              throw s!"'{q.name}': `newArray` of '{ty}', which is not an array type"
+          | _ => pure ()
+
 def Program.toCortex (p : Program) : Except String Cortex.UnorderedProgram := do
-  checkUnique "composite" (p.composites.map (·.name))
+  checkUnique "composite" (p.composites.map (·.name) ++ p.arrays.map (·.name))
   checkUnique "constrained type" (p.constrained.map (·.name))
   checkUnique "procedure" (p.procedures.map (·.name))
   checkUnique "global" (p.globals.map (·.name))
   let composites := p.composites.map fun c =>
     ({ name := c.name, extending := c.extending,
        fields := c.fields.map fun f => { name := f.name, ty := f.ty.toLTy } } : Cortex.CompositeDecl)
+  let composites := composites ++ p.arrays.map fun a =>
+    ({ name := a.name, extending := a.extending, fields := [], elem := some a.elem.toLTy } : Cortex.CompositeDecl)
   for c in composites do
     for parent in c.extending do
       unless composites.any (·.name == parent) do
@@ -309,6 +343,7 @@ def Program.toCortex (p : Program) : Except String Cortex.UnorderedProgram := do
        witness := c.witness.map Expr.toCore } : Cortex.ConstrainedDecl)
   let procedures ← p.procedures.mapM (Procedure.toCortex (p.globals.map (·.name)))
   p.checkCallArities
+  p.checkAllocations
   -- The initializers run in declaration order, each able to read the globals before it.
   let mut earlier : List String := []
   for g in p.globals do
