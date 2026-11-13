@@ -1,0 +1,151 @@
+# Copyright Strata Contributors
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+name: Install strata
+description: >
+  Build the `strata` CLI from a pinned `Strata-CLI` commit and put it on the
+  PATH, alongside the `laurelJavaGen` Laurel-bindings generator from the
+  `Strata` package that `Strata-CLI` depends on.
+
+  Companion to `install-z3` / `install-cvc5`, for consumers that shell out to
+  `strata` (notably `strata-org/jverify`). Those actions download a published
+  release archive; this one builds from source, because neither `Strata` nor
+  `Strata-CLI` publishes release binaries today — `nightly-release.yml` only
+  pushes tags. If that changes, this action can switch to downloading an
+  archive without its callers changing anything.
+
+  Solvers are deliberately NOT installed here: `strata` needs z3 and/or cvc5 at
+  run time, but callers compose that themselves via `install-z3` /
+  `install-cvc5`, the same way `Strata-CLI`'s own `ci.yml` does.
+
+  Linux runners only. Every existing solver action in this repo is Linux-only
+  and `Strata-CLI`'s CI is `ubuntu-latest`, so building `strata` on Windows or
+  macOS is unproven; the action fails fast rather than half-working.
+
+inputs:
+  ref:
+    description: >
+      `Strata-CLI` commit SHA to build. Pass a full SHA rather than a branch:
+      the built `strata` determines verification results, and `Strata-CLI`'s
+      `lakefile.toml` floats its own dependencies on `rev = "main"`, so a
+      branch here would make builds unreproducible. `Strata-CLI` publishes no
+      tags, so a SHA is the only stable pin.
+    required: true
+  repository:
+    description: Repository providing the `strata` executable.
+    required: false
+    default: strata-org/Strata-CLI
+  checkout-path:
+    description: >
+      Where to check out `Strata-CLI`, relative to the workspace.
+      `actions/checkout` requires a path inside `$GITHUB_WORKSPACE`, so this
+      cannot be moved to the runner temp dir. Callers that check their own repo
+      out under a `path:` should keep this a sibling of it, so the build tree
+      never lands inside the consuming repo's working tree.
+    required: false
+    default: strata-cli
+  cache:
+    description: >
+      Cache the Lake build, keyed on `ref`. Must be the string 'true' or
+      'false'.
+
+      This does not reuse `restore-lake-cache`/`save-lake-cache`: those hash
+      `lean-toolchain` and `lake-manifest.json` via `hashFiles`, which resolves
+      relative to the workspace root, not to `checkout-path` — their own docs
+      note sub-projects with their own toolchain do not fit them. Keying on the
+      pinned SHA is both simpler and exact, since the pin fully determines the
+      build.
+    required: false
+    default: "true"
+
+outputs:
+  strata-bin:
+    description: Absolute path to the built `strata` executable.
+    value: ${{ steps.locate.outputs.strata-bin }}
+  laurel-java-gen-bin:
+    description: Absolute path to the built `laurelJavaGen` executable.
+    value: ${{ steps.locate.outputs.laurel-java-gen-bin }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check runner platform
+      shell: bash
+      run: |
+        set -eu
+        if [ "${RUNNER_OS}" != "Linux" ]; then
+          echo "install-strata supports Linux runners only (got ${RUNNER_OS})." >&2
+          exit 1
+        fi
+
+    - name: Checkout Strata-CLI
+      uses: actions/checkout@v6
+      with:
+        repository: ${{ inputs.repository }}
+        ref: ${{ inputs.ref }}
+        path: ${{ inputs.checkout-path }}
+
+    - name: Cache the Lake build
+      if: inputs.cache == 'true'
+      uses: actions/cache@v5
+      with:
+        path: ${{ inputs.checkout-path }}/.lake
+        key: strata-cli-${{ runner.os }}-${{ runner.arch }}-${{ inputs.ref }}
+
+    # `strata` is Strata-CLI's own executable; `laurelJavaGen` belongs to the
+    # `Strata` package it depends on, hence the `@Strata/` target prefix.
+    - name: Build strata and laurelJavaGen
+      uses: leanprover/lean-action@v1
+      with:
+        lake-package-directory: ${{ inputs.checkout-path }}
+        auto-config: "false"
+        build: "true"
+        build-args: "strata @Strata/laurelJavaGen"
+        test: "false"
+        lint: "false"
+        use-github-cache: "false"
+        use-mathlib-cache: "false"
+
+    # Located by search rather than by hardcoded path: the root package's exe
+    # lands in .lake/build/bin, but a dependency's lands under
+    # .lake/packages/<pkg>/.lake/build/bin, and pinning that layout here would
+    # break quietly if Lake ever changed it. Restricting to */build/bin/ keeps
+    # the search from matching sources.
+    - name: Locate the built executables
+      id: locate
+      shell: bash
+      run: |
+        set -eu
+        root="${GITHUB_WORKSPACE}/${{ inputs.checkout-path }}"
+
+        find_exe() {
+          find "$root/.lake" -type f -perm -u+x -name "$1" -path '*/build/bin/*' \
+            -print -quit 2>/dev/null
+        }
+
+        strata_exe=$(find_exe strata)
+        gen_exe=$(find_exe laurelJavaGen)
+
+        for pair in "strata:$strata_exe" "laurelJavaGen:$gen_exe"; do
+          name=${pair%%:*}
+          path=${pair#*:}
+          if [ -z "$path" ]; then
+            echo "install-strata: built no '$name' executable under $root/.lake." >&2
+            echo "Searched */build/bin/ after 'lake build strata @Strata/laurelJavaGen'." >&2
+            exit 1
+          fi
+        done
+
+        echo "strata-bin=$strata_exe" >> "$GITHUB_OUTPUT"
+        echo "laurel-java-gen-bin=$gen_exe" >> "$GITHUB_OUTPUT"
+        dirname "$strata_exe" >> "$GITHUB_PATH"
+        dirname "$gen_exe" >> "$GITHUB_PATH"
+
+    # Separate step on purpose: $GITHUB_PATH additions only take effect in
+    # steps after the one that writes them.
+    - name: Verify strata and laurelJavaGen are on the PATH
+      shell: bash
+      run: |
+        set -eu
+        command -v strata
+        command -v laurelJavaGen
+        strata --help > /dev/null
