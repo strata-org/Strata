@@ -575,16 +575,17 @@ phase                           CF  Lo  LM  LB  BR  NG  PC  Po  In  EC
  3 callElim                   + + V : : :         : :   : : :
  4 termCheck                  ' + | : : :     :   : :   :   : : :
  5 precondElim                  + | : : :     :   V :   :   : : :
- 6 insertLoopInvariantAsserts   + | : V V     : : | :   : : : :
- 7 loopElim                     + | V + +       : | :   : : : :
- 8 genOpaqueTypeParams          + + | | |     : : | :   : V : : :
- 9 typeCheck                    | | | | |     : : | :   : | : V :   V
-10 monomorphizeFunctions        | | | | |     : : | :   : + V | :   |
-11 simplify                     + + | | |     :   + : : : | | | : : |
-12 nondetElim                   + + | | |       : | V   : | | |     |
-13 symbolicEval                 + V + | |     V   | - V V | | | V   |
-14 betaReduce                   | | | | |     | V | : | | | | | | : | :
-15 commonSubexprElim            + | | | |     + | | : | | | | | -   |
+ 6 seqTotalize                : + | : : : : : : : + : : : : : : : : : :
+ 7 insertLoopInvariantAsserts   + | : V V     : : | :   : : : :
+ 8 loopElim                     + | V + +       : | :   : : : :
+ 9 genOpaqueTypeParams          + + | | |     : : | :   : V : : :
+10 typeCheck                    | | | | |     : : | :   : | : V :   V
+11 monomorphizeFunctions        | | | | |     : : | :   : + V | :   |
+12 simplify                     + + | | |     :   + : : : | | | : : |
+13 nondetElim                   + + | | |       : | V   : | | |     |
+14 symbolicEval                 + V + | |     V   | - V V | | | V   |
+15 betaReduce                   | | | | |     | V | : | | | | | | : | :
+16 commonSubexprElim            + | | | |     + | | : | | | | | -   |
    the backend                  + + +         + + +   + + + + +
 
 established and preserved, name it once: none
@@ -639,6 +640,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   insertLoopInvariantAsserts
   loopElim
   genOpaqueTypeParams
@@ -663,6 +665,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   filterProcedures
   insertLoopInvariantAsserts
   loopElim
@@ -693,6 +696,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   insertLoopInvariantAsserts
   loopElim
   genOpaqueTypeParams
@@ -724,7 +728,7 @@ somewhere the caller did not ask for. -/
 /-! Anchoring on the last phase is the boundary where nothing follows it, so the
 spliced phases end the list. -/
 
-/-- info: [assertWellFormedCalls, assertNoCFGBodies, callElim, termCheck, precondElim, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, typeCheck, monomorphizeFunctions, simplify, nondetElim, symbolicEval, betaReduce, commonSubexprElim, inlineProcedures] -/
+/-- info: [assertWellFormedCalls, assertNoCFGBodies, callElim, termCheck, precondElim, seqTotalize, insertLoopInvariantAsserts, loopElim, genOpaqueTypeParams, typeCheck, monomorphizeFunctions, simplify, nondetElim, symbolicEval, betaReduce, commonSubexprElim, inlineProcedures] -/
 #guard_msgs in
 #eval IO.println (match Strata.Core.splicePhasesAfter "commonSubexprElim"
     [procedureInliningPipelinePhase] corePipelinePhases with
@@ -758,6 +762,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   insertLoopInvariantAsserts
   loopElim
   genOpaqueTypeParams
@@ -782,6 +787,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   insertLoopInvariantAsserts
   loopElim
   genOpaqueTypeParams
@@ -815,6 +821,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   insertLoopInvariantAsserts
   loopElim
   genOpaqueTypeParams
@@ -839,9 +846,9 @@ the functions it calls. -/
 /--
 info: rejected: phase #1 `deadDefElim` requires:
   • `noCalls`: no preceding phase guarantees it — phase #4 `callElim` later in this pipeline establishes it, so it may be ordered too late
-  • `noLoops`: no preceding phase guarantees it — phase #8 `loopElim` later in this pipeline establishes it, so it may be ordered too late
+  • `noLoops`: no preceding phase guarantees it — phase #9 `loopElim` later in this pipeline establishes it, so it may be ordered too late
   • `noPrecondsFromFuncs`: no preceding phase guarantees it — phase #6 `precondElim` later in this pipeline establishes it, so it may be ordered too late
-  • `typeAnnotated`: no preceding phase guarantees it — phase #10 `typeCheck` later in this pipeline establishes it, so it may be ordered too late
+  • `typeAnnotated`: no preceding phase guarantees it — phase #11 `typeCheck` later in this pipeline establishes it, so it may be ordered too late
 -/
 #guard_msgs in
 #eval report (Strata.Core.validatePipeline (Strata.Core.passDeadDefElim :: corePipelinePhases))
@@ -851,9 +858,9 @@ info: rejected: phase #1 `deadDefElim` requires:
 
 /--
 info: rejected: phase #4 `deadDefElim` requires:
-  • `noLoops`: preceding phases only guarantee `wellFormedCalls, noCFGBodies, noCalls` — phase #8 `loopElim` later in this pipeline establishes it, so it may be ordered too late
+  • `noLoops`: preceding phases only guarantee `wellFormedCalls, noCFGBodies, noCalls` — phase #9 `loopElim` later in this pipeline establishes it, so it may be ordered too late
   • `noPrecondsFromFuncs`: preceding phases only guarantee `wellFormedCalls, noCFGBodies, noCalls` — phase #6 `precondElim` later in this pipeline establishes it, so it may be ordered too late
-  • `typeAnnotated`: preceding phases only guarantee `wellFormedCalls, noCFGBodies, noCalls` — phase #10 `typeCheck` later in this pipeline establishes it, so it may be ordered too late
+  • `typeAnnotated`: preceding phases only guarantee `wellFormedCalls, noCFGBodies, noCalls` — phase #11 `typeCheck` later in this pipeline establishes it, so it may be ordered too late
 -/
 #guard_msgs in
 #eval report (do
@@ -866,7 +873,7 @@ info: rejected: phase #4 `deadDefElim` requires:
 `typeCheck` would erase its type errors with it. -/
 
 /--
-info: rejected: phase #8 `deadDefElim` requires `typeAnnotated` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, noPrecondsFromFuncs` — phase #10 `typeCheck` later in this pipeline establishes it, so it may be ordered too late
+info: rejected: phase #9 `deadDefElim` requires `typeAnnotated` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, noPrecondsFromFuncs` — phase #11 `typeCheck` later in this pipeline establishes it, so it may be ordered too late
 -/
 #guard_msgs in
 #eval report (do
@@ -875,7 +882,7 @@ info: rejected: phase #8 `deadDefElim` requires `typeAnnotated` but preceding ph
   Strata.Core.validatePipeline phases)
 
 /--
-info: rejected: phase #9 `deadDefElim` requires `typeAnnotated` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, noPrecondsFromFuncs, noPolymorphicProcedures` — phase #10 `typeCheck` later in this pipeline establishes it, so it may be ordered too late
+info: rejected: phase #10 `deadDefElim` requires `typeAnnotated` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, noPrecondsFromFuncs, noPolymorphicProcedures` — phase #11 `typeCheck` later in this pipeline establishes it, so it may be ordered too late
 -/
 #guard_msgs in
 #eval report (do
@@ -891,6 +898,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   insertLoopInvariantAsserts
   loopElim
   genOpaqueTypeParams
@@ -923,7 +931,7 @@ exit: noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSin
 supplies `staticSingleAssignment`: only symbolic evaluation establishes
 `hasObligationForm`. -/
 
-/-- info: rejected: phase #15 `unrollBoundedQuantifiers` requires `hasObligationForm` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered` — phase #16 `symbolicEval` later in this pipeline establishes it, so it may be ordered too late -/
+/-- info: rejected: phase #16 `unrollBoundedQuantifiers` requires `hasObligationForm` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered` — phase #17 `symbolicEval` later in this pipeline establishes it, so it may be ordered too late -/
 #guard_msgs in
 #eval report (match Strata.Core.resolvePhases
     (corePipelinePhases ++ [Strata.Core.passUnrollBoundedQuantifiers])
@@ -1106,6 +1114,7 @@ phases:
   callElim
   termCheck
   precondElim
+  seqTotalize
   genOpaqueTypeParams
   typeCheck
   monomorphizeFunctions
@@ -1124,7 +1133,7 @@ exit: noCFGBodies, noCalls, noLoops, staticSingleAssignment, noBetaRedexes, noPr
 /-! Dropping those two phases without assuming the fact is rejected, naming the
 phase that needed it. -/
 
-/-- info: rejected: phase #11 `symbolicEval` requires `noLoops` but preceding phases only guarantee `noCFGBodies, noCalls, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered` -/
+/-- info: rejected: phase #12 `symbolicEval` requires `noLoops` but preceding phases only guarantee `noCFGBodies, noCalls, noPrecondsFromFuncs, noNondetGuards, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered` -/
 #guard_msgs in
 #eval report (Strata.Core.validatePipeline
   (corePipelinePhases.filter fun p =>
@@ -1136,7 +1145,7 @@ the phases that exist but are not in it. -/
 /--
 info: To run the phases in the default order:
 
-  --phases assertWellFormedCalls,assertNoCFGBodies,callElim,termCheck,precondElim,insertLoopInvariantAsserts,loopElim,genOpaqueTypeParams,typeCheck,monomorphizeFunctions,simplify,nondetElim,symbolicEval,betaReduce,commonSubexprElim
+  --phases assertWellFormedCalls,assertNoCFGBodies,callElim,termCheck,precondElim,seqTotalize,insertLoopInvariantAsserts,loopElim,genOpaqueTypeParams,typeCheck,monomorphizeFunctions,simplify,nondetElim,symbolicEval,betaReduce,commonSubexprElim
 
 You can change this order. Give it back to --phases with no input file and
 Strata reports whether it composes without verifying anything.

@@ -24,6 +24,7 @@ import Strata.Transform.GenOpaqueTypeParams
 import Strata.Transform.MonomorphizeFunctions
 import Strata.Transform.NondetElim
 import Strata.Transform.PrecondElim
+import Strata.Transform.SeqTotalize
 public import Strata.Transform.RecursiveFunctionAxioms
 import Strata.Transform.TerminationCheck
 import Strata.Languages.Core.ObligationExtraction
@@ -1823,7 +1824,8 @@ def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
   -- procedures to verify is not refused for an excluded CFG body.
   [ProgramFact.assertPhase .wellFormedCalls] ++ filterPhases ++
     [ProgramFact.assertPhase .noCFGBodies,
-      callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
+      callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase,
+      seqTotalizePipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
 /-- Type-checking pipeline phase: runs `Core.typeCheck` on the program against

@@ -83,7 +83,7 @@ Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 0) == 10
+Sequence.select!(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 0) == 10
 
 Label: assert_t_1_calls_Sequence.select_0
 Property: out-of-bounds access check
@@ -97,7 +97,7 @@ Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1) == 20
+Sequence.select!(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1) == 20
 
 Label: assert_t_2_calls_Sequence.select_0
 Property: out-of-bounds access check
@@ -111,7 +111,7 @@ Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.select(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2) == 30
+Sequence.select!(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2) == 30
 
 Label: t_length_wrong
 Property: assert
@@ -233,7 +233,7 @@ Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.select(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)), 0) == 10
+Sequence.select!(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)), 0) == 10
 
 Label: assert_append_elem_4_calls_Sequence.select_0
 Property: out-of-bounds access check
@@ -247,7 +247,7 @@ Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.select(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)), 4) == 50
+Sequence.select!(Sequence.append(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), Sequence.build(Sequence.build(s, 40), 50)), 4) == 50
 
 Label: set_u_calls_Sequence.update_0
 Property: out-of-bounds access check
@@ -261,35 +261,35 @@ Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.length(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99)) == 3
+Sequence.length(Sequence.update!(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99)) == 3
 
 Label: assert_update_same_calls_Sequence.select_0
 Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-int.lt(1, Sequence.length(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99)))
+int.lt(1, Sequence.length(Sequence.update!(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99)))
 
 Label: update_same
 Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.select(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99), 1) == 99
+Sequence.select!(Sequence.update!(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99), 1) == 99
 
 Label: assert_update_other_calls_Sequence.select_0
 Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-int.lt(0, Sequence.length(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99)))
+int.lt(0, Sequence.length(Sequence.update!(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99)))
 
 Label: update_other
 Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.select(Sequence.update(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99), 0) == 10
+Sequence.select!(Sequence.update!(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1, 99), 0) == 10
 
 Label: contains_yes
 Property: assert
@@ -310,21 +310,21 @@ Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.length(Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2)) == 2
+Sequence.length(Sequence.take!(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2)) == 2
 
 Label: assert_take_elem_calls_Sequence.select_0
 Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-int.lt(0, Sequence.length(Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2)))
+int.lt(0, Sequence.length(Sequence.take!(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2)))
 
 Label: take_elem
 Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.select(Sequence.take(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2), 0) == 10
+Sequence.select!(Sequence.take!(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 2), 0) == 10
 
 Label: set_u_calls_Sequence.drop_0
 Property: out-of-bounds access check
@@ -338,21 +338,21 @@ Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.length(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1)) == 2
+Sequence.length(Sequence.drop!(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1)) == 2
 
 Label: assert_drop_elem_calls_Sequence.select_0
 Property: out-of-bounds access check
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-int.lt(0, Sequence.length(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1)))
+int.lt(0, Sequence.length(Sequence.drop!(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1)))
 
 Label: drop_elem
 Property: assert
 Assumptions:
 s_empty: Sequence.length(s) == 0
 Obligation:
-Sequence.select(Sequence.drop(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1), 0) == 20
+Sequence.select!(Sequence.drop!(Sequence.build(Sequence.build(Sequence.build(s, 10), 20), 30), 1), 0) == 20
 
 ---
 info:
@@ -508,7 +508,7 @@ int.lt(0, Sequence.length(Sequence.build(Sequence.empty<int>(), 42)))
 Label: build_on_empty_elem
 Property: assert
 Obligation:
-Sequence.select(Sequence.build(Sequence.empty<int>(), 42), 0) == 42
+Sequence.select!(Sequence.build(Sequence.empty<int>(), 42), 0) == 42
 
 ---
 info:
@@ -791,7 +791,7 @@ Assumptions:
 s_len: Sequence.length(s) == 1
 s_0: Sequence.select!(s, 0) == 1
 Obligation:
-int.le(0, i@2) && int.lt(i@2, Sequence.length(s)) ==> Sequence.select(s, i@2) == 1
+int.le(0, i@2) && int.lt(i@2, Sequence.length(s)) ==> Sequence.select!(s, i@2) == 1
 
 ---
 info:
@@ -843,7 +843,7 @@ Assumptions:
 s_len: Sequence.length(s) == 2
 s_5: Sequence.select!(s, 5) == 1
 Obligation:
-int.le(0, i@2) && int.lt(i@2, Sequence.length(s)) ==> Sequence.select(s, i@2) == 1
+int.le(0, i@2) && int.lt(i@2, Sequence.length(s)) ==> Sequence.select!(s, i@2) == 1
 
 ---
 info:
@@ -859,6 +859,93 @@ Model:
 -/
 #guard_msgs in
 #eval Strata.Core.verify seqUnsafeOutOfRangePgm
+
+-- A checked sequence operation and its total twin denote the same function, so
+-- in bounds the two agree. They are encoded as one solver symbol.
+
+private def seqCheckedTotalPgm :=
+#strata
+program Core;
+
+const g : Sequence int;
+
+procedure P()
+{
+  assume [g_len]: Sequence.length(g) == 2;
+  assert [select_pair]: Sequence.select(g, 0) == Sequence.select!(g, 0);
+  assert [update_pair]: Sequence.update(g, 0, 7) == Sequence.update!(g, 0, 7);
+  assert [take_pair]: Sequence.take(g, 1) == Sequence.take!(g, 1);
+  assert [drop_pair]: Sequence.drop(g, 1) == Sequence.drop!(g, 1);
+};
+#end
+
+/--
+info:
+Obligation: assert_select_pair_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: select_pair
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_update_pair_calls_Sequence.update_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: update_pair
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_take_pair_calls_Sequence.take_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: take_pair
+Property: assert
+Result: ✅ pass
+
+Obligation: assert_drop_pair_calls_Sequence.drop_0
+Property: out-of-bounds access check
+Result: ✅ pass
+
+Obligation: drop_pair
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify seqCheckedTotalPgm (options := .quiet)
+
+-- Out of range, the checked operation's bounds obligation is not provable (the
+-- solver answers unknown rather than fail, as for `t_length_wrong` above,
+-- because the length axiom is quantified); the equality with the total twin
+-- still holds, since after `SeqTotalize` both sides are the same term.
+
+private def seqCheckedTotalOobPgm :=
+#strata
+program Core;
+
+const g : Sequence int;
+
+procedure Q()
+{
+  assume [g_len]: Sequence.length(g) == 2;
+  assert [select_oob]: Sequence.select(g, 5) == Sequence.select!(g, 5);
+};
+#end
+
+/--
+info:
+Obligation: assert_select_oob_calls_Sequence.select_0
+Property: out-of-bounds access check
+Result: ❓ unknown
+
+Obligation: select_oob
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify seqCheckedTotalOobPgm (options := .quiet)
 
 end
 ----------------------------------------------------------------------

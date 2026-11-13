@@ -108,7 +108,7 @@ private def validation (names : List String) : Except String String := do
   | .error e => pure e
 
 /--
-info: Except.ok "phase #18 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`"
+info: Except.ok "phase #19 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`"
 -/
 #guard_msgs in
 #eval validation wpThenCSE
@@ -117,7 +117,7 @@ info: Except.ok "phase #18 `commonSubexprElim` requires `noInits` but preceding 
 nameable under `--vcgen wp`, the same list is rejected with the same diagnostic. -/
 
 /--
-info: Except.ok "phase #18 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`"
+info: Except.ok "phase #19 `commonSubexprElim` requires `noInits` but preceding phases only guarantee `noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, typeAnnotated, exitsCovered, armsHaveObligations`"
 -/
 #guard_msgs in
 #eval show Except String String from do

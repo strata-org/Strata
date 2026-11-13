@@ -1639,12 +1639,15 @@ private theorem ax_seqUpdateBang : AxOK seqUpdateUnsafeFunc.func.axioms := by
   simp only [seqUpdateUnsafeFunc, polyUneval]
   exact AxOK.renameOpIn opInterp_seqUpdateBang ax_seqUpdate
 
-/-- Every axiom of `Sequence.contains` holds in the model. -/
-private theorem ax_seqContains : AxOK seqContainsFunc.func.axioms := by
+/-- The `Sequence.contains` axiom, `contains(s, v)` iff some in-range index selects `v`,
+holds in the model. -/
+private theorem ax_seqContains_0 : AxOK [axAt seqContainsFunc 0] := by
   intro ax hax
-  simp only [seqContainsFunc, polyUneval, Int.ofNat_eq_natCast, Int.cast_ofNat_Int, List.mem_cons,
-    List.not_mem_nil, or_false] at hax
-  ax_cases hax
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hax
+  subst hax
+  simp only [axAt, seqContainsFunc, polyUneval, withSelectBang, List.cons_append,
+    List.nil_append, List.getElem!_cons_zero, Int.ofNat_eq_natCast, Int.cast_ofNat_Int]
+  ax_close
   -- The right-hand side is an existential whose body is still a `denote`: compute it
   -- under the binder.
   refine congrArg (fun p => @decide p (Classical.propDecidable p)) (propext ?_)
@@ -1655,6 +1658,12 @@ private theorem ax_seqContains : AxOK seqContainsFunc.func.axioms := by
   ax_sorts
   repeat ax_rw_op
   simp [cdec, and_assoc]
+
+/-- Every axiom of `Sequence.contains` holds in the model: the axiom above and its
+`Sequence.select!` copy. -/
+private theorem ax_seqContains : AxOK seqContainsFunc.func.axioms := by
+  rw [show seqContainsFunc.func.axioms = withSelectBang [axAt seqContainsFunc 0] from rfl]
+  exact AxOK.withSelectBang ax_seqContains_0
 
 /-- The `Sequence.take` axiom for `0 <= n <= length(s)`, `length(take(s, n)) == n` holds in the
 model. -/
