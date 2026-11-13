@@ -23,6 +23,8 @@ open Imperative
 structure Obj where
   type : TypeName
   fields : FieldRef → Option Expr
+  /-- The elements of an array; `none` for an object that is not an array. -/
+  elems : Option (Array Expr) := none
 
 abbrev Heap := Nat → Option Obj
 

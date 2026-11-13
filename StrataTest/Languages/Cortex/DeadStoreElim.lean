@@ -201,6 +201,27 @@ b0:
              .assert "positive" (.op "Int.Gt" [v "x", .int 0]) none (at_ 9),
              .assume "positive" (.op "Int.Gt" [v "x", .int 0]) (at_ 10)] (.finish (at_ 11))], idProc]
 
+/-! The array commands stay too: a `newArray`, an element read and an `arrayLength` whose
+result is dead, and an element write. The dead `set` at offset 7 goes. -/
+
+/--
+info: procedure arrays(x: int) returns ()
+b0:
+  var t: int := 0  @1
+  var a: Ints  @2
+  a := newArray Ints[x]  @3
+  a[0] := x : int  @4
+  t := a[0] : int  @5
+  t := length a  @6
+  finish  @8
+-/
+#guard_msgs in
+#eval show_ [proc "arrays" [("x", int)] []
+  [blk "b0" [decl "t" 1, .init "a" (.named "Ints") none (at_ 2),
+             .newArray "a" "Ints" (v "x") (at_ 3), .writeElem (v "a") (.int 0) (v "x") int (at_ 4),
+             .readElem "t" (v "a") (.int 0) int (at_ 5), .arrayLength "t" (v "a") (at_ 6),
+             .set "t" (some (.int 1)) (at_ 7)] (.finish (at_ 8))]]
+
 /-! A dead store whose right-hand side has an operator with a precondition
 stays: evaluating `Int.SafeDiv(x, y)` checks that `y` is not zero. The dead
 store at offset 4 uses the total `Int.Add`, so it goes. -/

@@ -65,8 +65,8 @@ partial def baseOf (cs : List ConstrainedDecl) (name : String) (fuel : Nat := 32
     | .forAll _ (.tcons b []) => (baseOf cs b fuel).orElse fun _ => some (.tcons b [])
     | .forAll _ t => some t
 
-/-- The temporary that holds the value a field write stores, so the value is checked against
-the field's type as an assignment before it reaches the heap. -/
+/-- The temporary that holds the value a field or element write stores, so the value is
+checked against the field's or element's type as an assignment before it reaches the heap. -/
 def fieldValueVar (n : Nat) : String := s!"$fieldValue{n}"
 
 /-- The declared type of field `f`, which Cortex fields have monomorphic. -/
@@ -76,6 +76,12 @@ def fieldMono (p : UnorderedProgram) (f : FieldRef) : Except String LMonoTy :=
     | .forAll [] t => .ok t
     | _ => .error s!"polymorphic field {f.owner}.{f.field}"
   | none => .error s!"unknown field {f.owner}.{f.field}"
+
+/-- The element type that an element read or write states, which is monomorphic. -/
+def elemMono (ty : Core.Expression.Ty) : Except String LMonoTy :=
+  match (ty : LTy) with
+  | .forAll [] t => .ok t
+  | _ => .error "polymorphic array element type"
 
 partial def mapMonoTy (f : String → Option LMonoTy) : LMonoTy → LMonoTy
   | .tcons n [] => (f n).getD (.tcons n [])
@@ -148,6 +154,10 @@ def mapCmdExprs (g : Expr → Expr) (t : LTy → LTy) : IRCmd → IRCmd
   | .readField x o f md => .readField x (g o) f md
   | .writeField o f v md => .writeField (g o) f (g v) md
   | .instanceOf x o ty md => .instanceOf x (g o) ty md
+  | .newArray x ty len md => .newArray x ty (g len) md
+  | .readElem x a i ty md => .readElem x (g a) (g i) (t ty) md
+  | .writeElem a i v ty md => .writeElem (g a) (g i) (g v) (t ty) md
+  | .arrayLength x a md => .arrayLength x (g a) md
   | .call lhs p args md => .call lhs p (args.map g) md
   | .virtualCall lhs o meth args md => .virtualCall lhs o meth (args.map g) md
   | .throw e md => .throw (g e) md
@@ -168,7 +178,7 @@ def mapProgramTys (f : String → Option LMonoTy) (p : UnorderedProgram) : Unord
   let params := fun (ps : List (Core.Expression.Ident × LTy)) => ps.map fun (x, ty) => (x, t ty)
   { p with
     composites := p.composites.map fun c =>
-      { c with fields := c.fields.map fun fd => { fd with ty := t fd.ty } }
+      { c with fields := c.fields.map fun fd => { fd with ty := t fd.ty }, elem := c.elem.map t }
     constrained := p.constrained.map fun c => { c with base := t c.base, constraint := g c.constraint }
     globals := params p.globals
     globalInit := p.globalInit.map (mapBaseCmd g t)
@@ -206,6 +216,7 @@ def assignedNames : IRCmd → List String
   | .cmd (.init x ..) | .cmd (.set x ..) | .cast x .. => [x.name]
   | .call lhs .. | .virtualCall lhs .. => lhs.map (·.name)
   | .new x .. | .readField x .. | .instanceOf x .. => [x.name]
+  | .newArray x .. | .readElem x .. | .arrayLength x .. => [x.name]
   | _ => []
 
 /-- The variables that the commands of `b` declare or assign. -/

@@ -81,6 +81,8 @@ def toCoreCmd (sigs : Std.HashMap String Sig) : IRCmd → Except String Core.Com
   | .readField .. => .error "Cortex field read must be lowered before Core"
   | .writeField .. => .error "Cortex field write must be lowered before Core"
   | .instanceOf .. => .error "Cortex `instanceOf` must be lowered before Core"
+  | .newArray .. | .readElem .. | .writeElem .. | .arrayLength .. =>
+    .error "Cortex array commands are not lowered to Core"
   | .throw .. => .error "Cortex `throw` must be lowered before Core"
 
 /-- The Core header of a procedure: its name and its parameters with monomorphic

@@ -45,6 +45,11 @@ def cortexStopMessage : StopReason → String
   | .exceptionWithoutType => "thrown value has no runtime type"
   | .calleeDidNotTerminate n => s!"callee {n} did not terminate"
   | .invalidDatatypes msg => s!"invalid datatypes: {msg}"
+  | .notAnArray => "not an array"
+  | .unknownArrayType n => s!"unknown array type {n}"
+  | .negativeArrayLength n => s!"array length {n} is negative"
+  | .indexOutOfRange i n => s!"index {i} is out of range for an array of length {n}"
+  | .elementTypeMismatch t a => s!"element type {Std.format (t : Lambda.LTy)} does not match array type {a}"
 
 /-- What running the `entry` procedures of a program on the Cortex interpreter
 produced. -/

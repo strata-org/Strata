@@ -67,6 +67,30 @@ b0:
              .instanceOf "c" (v "p") "Box" (at_ 14), .set "b" (some (v "c")) (at_ 13)] (.finish (at_ 15))],
   idProc]
 
+/-! The result of a `newArray`, an element read and an `arrayLength` is written straight to
+the variable it was copied to. The copies at offsets 5, 8 and 10 are gone, and each defining
+command keeps its offset. -/
+
+/--
+info: procedure arrays(x: int) returns (a: Ints, r: int, n: int)
+b0:
+  var t: int := 0  @1
+  var l: int := 0  @2
+  var o: Ints  @3
+  a := newArray Ints[x]  @4
+  a[0] := x : int  @6
+  r := a[0] : int  @7
+  n := length a  @9
+  finish  @11
+-/
+#guard_msgs in
+#eval show_ [proc "arrays" [("x", int)] [("a", .named "Ints"), ("r", int), ("n", int)]
+  [blk "b0" [decl "t" 1, decl "l" 2, .init "o" (.named "Ints") none (at_ 3),
+             .newArray "o" "Ints" (v "x") (at_ 4), .set "a" (some (v "o")) (at_ 5),
+             .writeElem (v "a") (.int 0) (v "x") int (at_ 6),
+             .readElem "t" (v "a") (.int 0) int (at_ 7), .set "r" (some (v "t")) (at_ 8),
+             .arrayLength "l" (v "a") (at_ 9), .set "n" (some (v "l")) (at_ 10)] (.finish (at_ 11))]]
+
 /-! `x` is live into the handler that covers `b1`. If the call throws, the
 handler must see the old `x`, so the call must not write to `x`. -/
 

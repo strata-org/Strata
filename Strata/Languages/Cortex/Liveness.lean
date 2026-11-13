@@ -77,6 +77,10 @@ def cmdExprs : IRCmd → List Expr
   | .new .. => []
   | .readField _ o _ _ | .instanceOf _ o _ _ => [o]
   | .writeField o _ v _ => [o, v]
+  | .newArray _ _ len _ => [len]
+  | .readElem _ a i _ _ => [a, i]
+  | .writeElem a i v _ _ => [a, i, v]
+  | .arrayLength _ a _ => [a]
   | .call _ _ args _ | .virtualCall _ _ _ args _ => args
   | .throw e _ => [e]
 
