@@ -49,6 +49,10 @@ abbrev Trace := List Event
 
 @[expose] def exprFuel : Nat := 1000
 
+/-- The longest array the interpreter allocates. A `newArray` of a greater length stops the run:
+all the elements are allocated in one step, so the fuel does not bound their number. -/
+@[expose] def maxArrayLength : Nat := 65536
+
 @[expose] def evalPure (f : LFactory) (σ : Store) (e : Expr) : Option Expr :=
   match LExpr.eval exprFuel f σ e with
   | (v, .value true) => some v
@@ -80,6 +84,7 @@ inductive StopReason where
   | notAnArray
   | unknownArrayType (name : TypeName)
   | negativeArrayLength (len : Int)
+  | arrayLengthOverLimit (len : Int) (limit : Nat)
   | indexOutOfRange (index : Int) (length : Nat)
   | elementTypeMismatch (elemTy : Core.Expression.Ty) (array : TypeName)
   deriving Repr, Inhabited
@@ -486,6 +491,7 @@ mutual
     | some et =>
       let k ← intValue (← evalExpr ρ.factory ρ.store len)
       if k < 0 then throw (.negativeArrayLength k) else
+      if k > maxArrayLength then throw (.arrayLengthOverLimit k maxArrayLength) else
       -- Every element starts at the default of the element type, whatever the choice oracle is.
       match defaultValue prog ρ.factory et 0 with
       | none => throw .noChoice

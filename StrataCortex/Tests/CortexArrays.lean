@@ -199,6 +199,34 @@ stopped: 'fieldOfDefaultElement': not a reference
     .readElem "o" (.var "b") (.int 0) (.named "Box") (at_ 4),
     .readField "x" (.var "o") "Box" "v" (at_ 5)])])
 
+/-! The longest array the interpreter allocates has 65536 elements. An array of that length
+is allocated whole: its length is the one given and its last element is the default. The
+assertions at offsets 10 and 11 state the opposite of those before them and fail, so the ones
+before them are checked. A greater length stops the run without allocating: one more than
+the limit, and the greatest length a Java array can be given. -/
+
+meta def atLengthLimit : Wire.Procedure :=
+  entry "atLengthLimit" [
+    .init "a" (.named "Ints") none (at_ 1), .newArray "a" "Ints" (.int 65536) (at_ 1),
+    .init "n" .int none (at_ 2), .arrayLength "n" (.var "a") (at_ 2),
+    .init "x" bv32 none (at_ 3), .readElem "x" (.var "a") (.int 65535) bv32 (at_ 3),
+    isTrue "length" (.eq (.var "n") (.int 65536)) 4,
+    isTrue "lastDefault" (.eq (.var "x") (.bv 32 0)) 5,
+    isTrue "otherLength" (.eq (.var "n") (.int 65535)) 10,
+    isTrue "lastNotDefault" (.op "Bool.Not" [.eq (.var "x") (.bv 32 0)]) 11]
+
+/--
+info: 10: assertion does not hold
+11: assertion does not hold
+stopped: 'oneOverLengthLimit': array length 65537 is over the interpreter's limit of 65536
+stopped: 'greatestJavaLength': array length 2147483647 is over the interpreter's limit of 65536
+-/
+#guard_msgs in
+#eval interpret (program [
+  atLengthLimit,
+  entry "oneOverLengthLimit" (ints [.newArray "a" "Ints" (.op "Int.Add" [.int 65536, .int 1]) (at_ 3)]),
+  entry "greatestJavaLength" (ints [.newArray "a" "Ints" (.int 2147483647) (at_ 3)])])
+
 /-! `new` names a composite and `newArray` an array type, and the two kinds of type share
 one name space. -/
 

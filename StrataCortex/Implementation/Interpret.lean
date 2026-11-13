@@ -48,6 +48,7 @@ def cortexStopMessage : StopReason → String
   | .notAnArray => "not an array"
   | .unknownArrayType n => s!"unknown array type {n}"
   | .negativeArrayLength n => s!"array length {n} is negative"
+  | .arrayLengthOverLimit n limit => s!"array length {n} is over the interpreter's limit of {limit}"
   | .indexOutOfRange i n => s!"index {i} is out of range for an array of length {n}"
   | .elementTypeMismatch t a => s!"element type {Std.format (t : Lambda.LTy)} does not match array type {a}"
 
