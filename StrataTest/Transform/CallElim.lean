@@ -64,8 +64,8 @@ procedure h(i : bool, inout j : bool, k : bool) {
   assert [callElimAssert_f_requires_0_5]: (tmp_arg_0 == (!tmp_arg_2));
   havoc j;
   havoc b;
-  assume [callElimAssume_f_ensures_1_6]: (b == tmp_arg_2);
-  assume [callElimAssume_f_ensures_2_7]: (b == j);
+  assume [$__callElimAssume_f_ensures_1_6]: (b == tmp_arg_2);
+  assume [$__callElimAssume_f_ensures_2_7]: (b == j);
 };
 #end
 
@@ -106,8 +106,8 @@ procedure h(i : bool, inout j : bool, k : bool, l : bool) {
   assert [callElimAssert_f_requires_0_8]: tmp_arg_0 == !tmp_arg_3;
   havoc j;
   havoc b;
-  assume [callElimAssume_f_ensures_1_9]: b == (tmp_arg_2 && old_j_7);
-  assume [callElimAssume_f_ensures_2_10]: b == old_j_7;
+  assume [$__callElimAssume_f_ensures_1_9]: b == (tmp_arg_2 && old_j_7);
+  assume [$__callElimAssume_f_ensures_2_10]: b == old_j_7;
 };
 #end
 
@@ -148,8 +148,8 @@ procedure h(i : bool, inout j : bool, k : bool, l : bool) {
   assert [callElimAssert_f_requires_0_8]: tmp_arg_0 == !tmp_arg_3;
   havoc j;
   havoc b;
-  assume [callElimAssume_f_ensures_1_9]: b == (tmp_arg_2 && old_j_7);
-  assume [callElimAssume_f_ensures_2_10]: b == old_j_7;
+  assume [$__callElimAssume_f_ensures_1_9]: b == (tmp_arg_2 && old_j_7);
+  assume [$__callElimAssume_f_ensures_2_10]: b == old_j_7;
 };
 #end
 
@@ -188,7 +188,7 @@ procedure h(inout j : bool, k : bool) {
   assert [callElimAssert_f_requires_1_5]: (tmp_arg_2 == tmp_arg_0);
   havoc j;
   havoc b;
-  assume [callElimAssume_f_ensures_2_6]: (b == tmp_arg_2);
+  assume [$__callElimAssume_f_ensures_2_6]: (b == tmp_arg_2);
 };
 #end
 
@@ -267,7 +267,7 @@ procedure Caller ()
   var tmp_arg_0 : int := 7;
   var tmp_ai_1 : int := ai;
   havoc ai;
-  assume [callElimAssume_idp_ensures_0_2]: ai == tmp_arg_0;
+  assume [$__callElimAssume_idp_ensures_0_2]: ai == tmp_arg_0;
 };
 -/
 #guard_msgs in
@@ -294,7 +294,7 @@ procedure Caller ()
   var old_j_4 : int := j;
   havoc i;
   havoc j;
-  assume [callElimAssume_swap_ensures_0_5]: i == old_j_4;
+  assume [$__callElimAssume_swap_ensures_0_5]: i == old_j_4;
 };
 -/
 #guard_msgs in
@@ -335,7 +335,7 @@ procedure Caller<a> (z : a)
   var tmp_arg_0 : a := z;
   var tmp_w_1 : a := w;
   havoc w;
-  assume [callElimAssume_idp_ensures_0_2]: w == tmp_arg_0;
+  assume [$__callElimAssume_idp_ensures_0_2]: w == tmp_arg_0;
 };
 -/
 #guard_msgs in
@@ -358,7 +358,7 @@ procedure Caller<a, b> (x : a, y : b)
   var tmp_arg_1 : a := x;
   var tmp_w_2 : b := w;
   havoc w;
-  assume [callElimAssume_pair_ensures_0_3]: w == tmp_arg_0;
+  assume [$__callElimAssume_pair_ensures_0_3]: w == tmp_arg_0;
 };
 -/
 #guard_msgs in
@@ -800,7 +800,7 @@ procedure Caller ()
   var tmp_arg_1 : $__cety_0 := 7;
   var tmp_bb_2 : $__cety_0 := bb;
   havoc bb;
-  assume [callElimAssume_idp_ensures_0_3]: bb == tmp_arg_1;
+  assume [$__callElimAssume_idp_ensures_0_3]: bb == tmp_arg_1;
 };
 -/
 #guard_msgs in
@@ -824,7 +824,7 @@ procedure Caller ()
   var tmp_arg_0 : int := 7;
   var tmp_bb_1 : int := bb;
   havoc bb;
-  assume [callElimAssume_idp_ensures_0_2]: bb == tmp_arg_0;
+  assume [$__callElimAssume_idp_ensures_0_2]: bb == tmp_arg_0;
 };
 -/
 #guard_msgs in
@@ -947,12 +947,12 @@ cfg entry {
     var tmp_c_1 : int := c;
     assert [callElimAssert_inc_pre_2]: int.ge(tmp_arg_0, 0);
     havoc c;
-    assume [callElimAssume_inc_post_3]: c == int.add(tmp_arg_0, 1);
+    assume [$__callElimAssume_inc_post_3]: c == int.add(tmp_arg_0, 1);
     var tmp_arg_4 : int := c;
     var tmp_b_5 : int := b;
     assert [callElimAssert_inc_pre_6]: int.ge(tmp_arg_4, 0);
     havoc b;
-    assume [callElimAssume_inc_post_7]: b == int.add(tmp_arg_4, 1);
+    assume [$__callElimAssume_inc_post_7]: b == int.add(tmp_arg_4, 1);
     assert [b_big]: int.gt(b, a);
     goto check;
   }
@@ -961,7 +961,7 @@ cfg entry {
     var tmp_c_9 : int := c;
     assert [callElimAssert_inc_pre_10]: int.ge(tmp_arg_8, 0);
     havoc c;
-    assume [callElimAssume_inc_post_11]: c == int.add(tmp_arg_8, 1);
+    assume [$__callElimAssume_inc_post_11]: c == int.add(tmp_arg_8, 1);
     branch (int.gt(c, b)) goto up else goto down;
   }
   up: {
@@ -1034,7 +1034,7 @@ private def unknownResult : Result := .unknown (some [])
 /-- Obligation with call-elimination labels in path conditions. -/
 private def callElimObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_callElim", property := .assert,
-    assumptions := [[.assumption "callElimAssume_post" (.true testLoc)]],
+    assumptions := [[.assumption "$__callElimAssume_post" (.true testLoc)]],
     obligation := .true testLoc, metadata := {} }
 
 /-- Obligation with no abstraction labels — models are sound. -/

@@ -104,8 +104,8 @@ Label: callElimAssert_counter_ge_zero_14
 Property: assert
 Assumptions:
 counter_ge_zero: int.ge(counter@2, 0)
-callElimAssume_new_g_value_7: counter@3 == int.add(counter@2, 8)
-callElimAssume_old_g_property_8: int.sub(b@2, 8) == counter@2
+$__callElimAssume_new_g_value_7: counter@3 == int.add(counter@2, 8)
+$__callElimAssume_old_g_property_8: int.sub(b@2, 8) == counter@2
 Obligation:
 int.ge(counter@3, 0)
 
@@ -113,8 +113,8 @@ Label: callElimAssert_a_positive_15
 Property: assert
 Assumptions:
 counter_ge_zero: int.ge(counter@2, 0)
-callElimAssume_new_g_value_7: counter@3 == int.add(counter@2, 8)
-callElimAssume_old_g_property_8: int.sub(b@2, 8) == counter@2
+$__callElimAssume_new_g_value_7: counter@3 == int.add(counter@2, 8)
+$__callElimAssume_old_g_property_8: int.sub(b@2, 8) == counter@2
 Obligation:
 true
 
@@ -122,10 +122,10 @@ Label: return_value_lemma
 Property: assert
 Assumptions:
 counter_ge_zero: int.ge(counter@2, 0)
-callElimAssume_new_g_value_7: counter@3 == int.add(counter@2, 8)
-callElimAssume_old_g_property_8: int.sub(b@2, 8) == counter@2
-callElimAssume_new_g_value_16: counter@4 == int.add(counter@3, 8)
-callElimAssume_old_g_property_17: int.sub(b@3, 8) == counter@3
+$__callElimAssume_new_g_value_7: counter@3 == int.add(counter@2, 8)
+$__callElimAssume_old_g_property_8: int.sub(b@2, 8) == counter@2
+$__callElimAssume_new_g_value_16: counter@4 == int.add(counter@3, 8)
+$__callElimAssume_old_g_property_17: int.sub(b@3, 8) == counter@3
 Obligation:
 b@3 == int.add(counter@2, 16)
 

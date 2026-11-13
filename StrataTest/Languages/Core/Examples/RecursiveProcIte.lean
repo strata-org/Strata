@@ -44,10 +44,10 @@ Property: assert
 Assumptions:
 <label_ite_cond_true: int.lt(100, n)>: if int.lt(100, n@1) then int.lt(100, n@1) else true
 <label_ite_cond_false: !(int.lt(100, n))>: if if int.lt(100, n@1) then false else true then if int.lt(100, n@1) then false else true else true
-callElimAssume_n_gt_100_postcond_2: if if int.lt(100, n@1) then false else true then int.lt(100, int.add(n@1, 11)) ==> r@2 == int.sub(int.add(n@1, 11), 10) else true
-callElimAssume_n_le_100_postcond_3: if if int.lt(100, n@1) then false else true then int.le(int.add(n@1, 11), 100) ==> r@2 == 91 else true
-callElimAssume_n_gt_100_postcond_6: if if int.lt(100, n@1) then false else true then int.lt(100, r@2) ==> r@3 == int.sub(r@2, 10) else true
-callElimAssume_n_le_100_postcond_7: if if int.lt(100, n@1) then false else true then int.le(r@2, 100) ==> r@3 == 91 else true
+$__callElimAssume_n_gt_100_postcond_2: if if int.lt(100, n@1) then false else true then int.lt(100, int.add(n@1, 11)) ==> r@2 == int.sub(int.add(n@1, 11), 10) else true
+$__callElimAssume_n_le_100_postcond_3: if if int.lt(100, n@1) then false else true then int.le(int.add(n@1, 11), 100) ==> r@2 == 91 else true
+$__callElimAssume_n_gt_100_postcond_6: if if int.lt(100, n@1) then false else true then int.lt(100, r@2) ==> r@3 == int.sub(r@2, 10) else true
+$__callElimAssume_n_le_100_postcond_7: if if int.lt(100, n@1) then false else true then int.le(r@2, 100) ==> r@3 == 91 else true
 Obligation:
 int.lt(100, n@1) ==> (if int.lt(100, n@1) then int.sub(n@1, 10) else r@3) == int.sub(n@1, 10)
 
@@ -56,10 +56,10 @@ Property: assert
 Assumptions:
 <label_ite_cond_true: int.lt(100, n)>: if int.lt(100, n@1) then int.lt(100, n@1) else true
 <label_ite_cond_false: !(int.lt(100, n))>: if if int.lt(100, n@1) then false else true then if int.lt(100, n@1) then false else true else true
-callElimAssume_n_gt_100_postcond_2: if if int.lt(100, n@1) then false else true then int.lt(100, int.add(n@1, 11)) ==> r@2 == int.sub(int.add(n@1, 11), 10) else true
-callElimAssume_n_le_100_postcond_3: if if int.lt(100, n@1) then false else true then int.le(int.add(n@1, 11), 100) ==> r@2 == 91 else true
-callElimAssume_n_gt_100_postcond_6: if if int.lt(100, n@1) then false else true then int.lt(100, r@2) ==> r@3 == int.sub(r@2, 10) else true
-callElimAssume_n_le_100_postcond_7: if if int.lt(100, n@1) then false else true then int.le(r@2, 100) ==> r@3 == 91 else true
+$__callElimAssume_n_gt_100_postcond_2: if if int.lt(100, n@1) then false else true then int.lt(100, int.add(n@1, 11)) ==> r@2 == int.sub(int.add(n@1, 11), 10) else true
+$__callElimAssume_n_le_100_postcond_3: if if int.lt(100, n@1) then false else true then int.le(int.add(n@1, 11), 100) ==> r@2 == 91 else true
+$__callElimAssume_n_gt_100_postcond_6: if if int.lt(100, n@1) then false else true then int.lt(100, r@2) ==> r@3 == int.sub(r@2, 10) else true
+$__callElimAssume_n_le_100_postcond_7: if if int.lt(100, n@1) then false else true then int.le(r@2, 100) ==> r@3 == 91 else true
 Obligation:
 int.le(n@1, 100) ==> (if int.lt(100, n@1) then int.sub(n@1, 10) else r@3) == 91
 

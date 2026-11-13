@@ -7,6 +7,7 @@ module
 public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
+public import Strata.Languages.Core.MarkerLabels
 public import Strata.DL.Util.StringGen
 import Strata.Languages.Core.StatementSemantics
 import Strata.Transform.CoreTransform
@@ -20,8 +21,6 @@ public section
     with an `exit` whose target starts with this prefix, which a generated block would
     otherwise capture. -/
 def loopElimPrefix : String := "$__loopElim"
-/-- Label prefix for loop-elimination assumptions. -/
-def loopElimAssumePrefix : String := "$__loopElimAssume_"
 /-- Label prefix of blocks created by LoopElim. -/
 def loopElimBlockPrefix : String := "$__loopElim_"
 
@@ -109,24 +108,28 @@ def LoopElim.havocBlock [HasHavoc P C] (loop_num : String) (M : List P.Ident)
   .block s!"{Core.loopElimBlockPrefix}havoc_{loop_num}"
     (M.map (fun n => Stmt.cmd (HasHavoc.havoc n md))) {}
 
-/-- The assumption of loop `loop_num` that its guard holds; none for a nondeterministic
-    guard. -/
-def LoopElim.enterAssume [HasPassiveCmds P C] (loop_num : String) (guard : ExprOrNondet P)
-    (md : MetaData P) : List (Stmt P C) :=
+/-- The assumption of loop `loop_num` that its guard holds.  For a nondeterministic guard it
+    assumes `true`, so that every path through the arbitrary iteration carries the label. -/
+def LoopElim.enterAssume [HasPassiveCmds P C] [HasBoolOps P] (loop_num : String)
+    (guard : ExprOrNondet P) (md : MetaData P) : List (Stmt P C) :=
   match guard with
   | .det g =>
     [Stmt.cmd (HasPassiveCmds.assume s!"{Core.loopElimAssumePrefix}guard_{loop_num}" g md)]
-  | .nondet => []
+  | .nondet =>
+    [Stmt.cmd (HasPassiveCmds.assume s!"{Core.loopElimAssumePrefix}guard_{loop_num}"
+      HasBool.tt md)]
 
-/-- The assumption of loop `loop_num` that its guard fails; none for a nondeterministic
-    guard. -/
+/-- The assumption of loop `loop_num` that its guard fails.  For a nondeterministic guard it
+    assumes `true`, so that every path after the arbitrary iteration carries the label. -/
 def LoopElim.exitAssume [HasPassiveCmds P C] [HasBoolOps P] (loop_num : String)
     (guard : ExprOrNondet P) (md : MetaData P) : List (Stmt P C) :=
   match guard with
   | .det g =>
     [Stmt.cmd (HasPassiveCmds.assume s!"{Core.loopElimAssumePrefix}not_guard_{loop_num}"
       (HasBoolOps.not g) md)]
-  | .nondet => []
+  | .nondet =>
+    [Stmt.cmd (HasPassiveCmds.assume s!"{Core.loopElimAssumePrefix}not_guard_{loop_num}"
+      HasBool.tt md)]
 
 /-- The passive encoding of `loop guard { body }`, numbered `loop_num`, with the loop-carried
     variables `M` and `body'` in place of the body, as `Core.removeLoop` builds it:
@@ -254,7 +257,9 @@ def loopElim (p : Program) : Transform.CoreTransformM (Bool × Program) :=
 /-- Loop-elimination pipeline phase: replaces each loop with an acyclic
     encoding (`loopElim`). -/
 def loopElimPipelinePhase : PipelinePhase where
-  transform p := loopElim p
+  transform p := do
+    rejectMarkerLabels "loop elimination" loopElimAssumePrefix p
+    loopElim p
   phase.name := "loopElim"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation loopElimAssumePrefix then

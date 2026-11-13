@@ -13,6 +13,7 @@ import Strata.Languages.Core.ExpressionsProps
 import Strata.Languages.Core.Logic.LangDefProps
 import all Strata.Languages.Core.Factory
 import all Strata.Transform.InsertLoopInvariantAsserts
+import all Strata.Languages.Core.AbstractionMarkers
 public import Strata.Transform.CoreTransformProps
 import all Strata.Transform.CoreTransform
 import all Strata.Languages.Core.CoreGen

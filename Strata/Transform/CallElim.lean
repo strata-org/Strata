@@ -7,6 +7,7 @@ module
 public import Strata.Pipeline.Messages
 
 public import Strata.Languages.Core.PipelinePhase
+public import Strata.Languages.Core.MarkerLabels
 import Strata.Languages.Core.StatementType
 import Strata.Languages.Core.CallWF
 import Strata.DL.Lambda.LExprType
@@ -34,9 +35,6 @@ inductive Stats where
 
 /-- Label prefix for call-elimination assert statements. -/
 def callElimAssertPrefix : String := "callElimAssert_"
-
-/-- Label prefix for call-elimination assume statements. -/
-def callElimAssumePrefix : String := "callElimAssume_"
 
 /--
 The call elimination kernel: replace the call `procName(callArgs)` (with call-site metadata `md`)
@@ -233,7 +231,9 @@ end CallElim
     on a cycle are rejected by `CFG.typeCheck` (`checkNoLoopInits`) if the body is checked
     again. -/
 def callElimPipelinePhase : PipelinePhase where
-  transform := CallElim.callElim'
+  transform p := do
+    rejectMarkerLabels "call elimination" CallElim.callElimAssumePrefix p
+    CallElim.callElim' p
   phase.name := "callElim"
   phase.getValidation obligation :=
     if obligationHasLabelPrefix obligation CallElim.callElimAssumePrefix then

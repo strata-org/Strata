@@ -48,12 +48,17 @@ structure AbstractedPhase where
       label does not belong to this phase. -/
   getAssertDescription : String → Option String := fun _ => none
 
-/-- True when any label in the obligation's path conditions starts with the
-    given string, indicating the obligation went through that transform. -/
+/-- True when the label of an assumption in the obligation's path conditions
+    starts with the given string, indicating the obligation went through that
+    transform. Only assumptions are read: a marker is an assumption, while the
+    names of variable declarations and `distinct` facts come from the program. -/
 def obligationHasLabelPrefix (obligation : ProofObligation Expression)
     (pfx : String) : Bool :=
   obligation.assumptions.any fun pc =>
-    pc.any fun entry => entry.name.startsWith pfx
+    pc.any fun
+      | .assumption l _ => l.startsWith pfx
+      | _ => false
+
 
 /-! ## Proof obligations, deferred
 

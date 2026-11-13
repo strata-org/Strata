@@ -25,9 +25,9 @@ measure turns the body into
 ```
 y := 0;
 assert [insertLoopInvAssert_entry_invariant_loop_0_0]: int.le(y, 10);
-assume [insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(y, 10);
+assume [$__insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(y, 10);
 while (int.le(y, 9)) {
-  assume [insertLoopInvAssume_invariant_loop_0_0]: int.le(y, 10);
+  assume [$__insertLoopInvAssume_invariant_loop_0_0]: int.le(y, 10);
   var $__loop_measure_loop_0 : int := int.sub(10, y);
   assert [insertLoopInvAssert_measure_lb_loop_0]: !(int.lt($__loop_measure_loop_0, 0));
   y := int.add(y, 1);
@@ -35,8 +35,8 @@ while (int.le(y, 9)) {
   assert [insertLoopInvAssert_measure_decrease_loop_0]:
     int.lt(int.sub(10, y), $__loop_measure_loop_0);
 }
-assume [insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(y, 10);
-assume [insertLoopInvAssume_exit_not_guard_loop_0]: !(int.le(y, 9));
+assume [$__insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(y, 10);
+assume [$__insertLoopInvAssume_exit_not_guard_loop_0]: !(int.le(y, 9));
 ```
 
 whose triple follows from the structural rules and the while rule with the invariant
@@ -168,7 +168,7 @@ private abbrev decExpr : Core.Expression.Expr :=
 
 /-- The body of the checked loop. -/
 private def tgtBody : Core.Statements :=
-  [.cmd (HasPassiveCmds.assume "insertLoopInvAssume_invariant_loop_0_0" parts.inv imd)] ++
+  [.cmd (HasPassiveCmds.assume "$__insertLoopInvAssume_invariant_loop_0_0" parts.inv imd)] ++
   ([.cmd (HasInit.init mId HasInt.intTy (.det parts.measure) parts.md1)] ++
   ([.cmd (HasPassiveCmds.assert "insertLoopInvAssert_measure_lb_loop_0" lbExpr parts.md1)] ++
   ([countSet] ++
@@ -180,10 +180,10 @@ private def tgtBody : Core.Statements :=
 /-- The statements after `y := 0` of the checked body. -/
 private def tgtLoop : Core.Statements :=
   [.cmd (HasPassiveCmds.assert "insertLoopInvAssert_entry_invariant_loop_0_0" parts.inv imd)] ++
-  ([.cmd (HasPassiveCmds.assume "insertLoopInvAssume_entry_invariant_loop_0_0" parts.inv imd)] ++
+  ([.cmd (HasPassiveCmds.assume "$__insertLoopInvAssume_entry_invariant_loop_0_0" parts.inv imd)] ++
   ([.loop (.det parts.guard) none [] tgtBody parts.md1] ++
-  ([.cmd (HasPassiveCmds.assume "insertLoopInvAssume_exit_invariant_loop_0_0" parts.inv imd)] ++
-  [.cmd (HasPassiveCmds.assume "insertLoopInvAssume_exit_not_guard_loop_0"
+  ([.cmd (HasPassiveCmds.assume "$__insertLoopInvAssume_exit_invariant_loop_0_0" parts.inv imd)] ++
+  [.cmd (HasPassiveCmds.assume "$__insertLoopInvAssume_exit_not_guard_loop_0"
       (HasBoolOps.not parts.guard) parts.md1)])))
 
 /-- The run of the Core pass on the program, from the empty transformation state. -/

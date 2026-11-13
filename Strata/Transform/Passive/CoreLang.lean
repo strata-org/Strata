@@ -7,6 +7,7 @@ module
 
 public import Strata.Transform.Passive.Lang
 public import Strata.Languages.Core.Statement
+public import Strata.Languages.Core.AbstractionMarkers
 public import Strata.DL.Lambda.LExprDenoteEval
 public import Strata.DL.Lambda.LExprDenoteEvalProps
 public import Strata.DL.Lambda.LExprWFProps
@@ -96,6 +97,7 @@ instance : Imperative.WP.WPOps Expression where
   boolLit? := LExpr.denoteBool
   substFn := LExpr.substFvarsBy
   tyBEq a b := decide (a = b)
+  keepsTrueAssume := isAbstractionMarker
 
 /-- The laws of the operations of the WP and SSA phases on Core expressions. -/
 instance : Imperative.WP.WPLang Expression where
