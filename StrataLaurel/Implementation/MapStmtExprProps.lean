@@ -315,8 +315,8 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
     simp only [] at head types kids ih
     rw [mapStmtExprUsedM.eq_def]
     simp only []
-    -- Most arms peel their children with `ih` and close with `hf`. Five need more,
-    -- and are proved by hand below: `Return` and `Try` (a kind of theirs depends on
+    -- Most arms peel their children with `ih` and close with `hf`. Six need more,
+    -- and are proved by hand below: `Return`, `Call` and `Try` (a kind of theirs depends on
     -- a list being non-empty / an option being present, so the rebuilt node needs
     -- `mapM`'s preservation of that), `Assign` and `Try` again (children sit inside a
     -- `Variable` / `CatchClause`, so the per-element postcondition is not just
@@ -404,6 +404,31 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
       · intro c hc
         simp only [stmtExprChildren] at hc
         exact hvalues'.1 c hc
+    -- `Call`: `StmtExpr.Call.receiver?.some` holds of the rebuilt node because
+    -- `Option.mapM` preserves presence.
+    case h_17 receiver? callee args tyArgs =>
+      refine post_bind (post_and
+        (post_option_attach_mapM _ _ (fun x => ih x.1 (by
+          have hx := x.2
+          simp only [stmtExprChildren, List.mem_append, Option.mem_toList]
+          exact Or.inl (Option.mem_def.mp hx)) true))
+        (post_option_mapM_isSome _ _)) (fun recv' hrecv' => ?_)
+      refine post_bind (post_attach_mapM _ _ (fun x => ih x.1 (by
+          have hx := x.2
+          simp only [stmtExprChildren, List.mem_append]
+          exact Or.inr hx) true)) (fun args' hargs' => ?_)
+      refine post_bind (Q := Rebuilt s t) (post_pure ⟨?_, ?_, ?_⟩) (fun x hx => hf u x hx)
+      · have hSome : recv'.isSome = receiver?.isSome := by
+          simpa [option_attach_isSome] using hrecv'.2
+        intro k hk
+        refine head k ?_
+        cases receiver? <;> cases recv' <;> simp_all [NodeKind.ofStmtExpr]
+      · simpa [stmtExprTypes] using types
+      · intro c hc
+        simp only [stmtExprChildren, List.mem_append, Option.mem_toList] at hc
+        rcases hc with hc | hc
+        · exact hrecv'.1 c hc
+        · exact hargs' c hc
     -- `Assign`: a target's rewritten child sits inside a `Variable`, so the
     -- per-target postcondition covers that `Variable`'s own types and children.
     case h_8 targets value =>
@@ -470,7 +495,7 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
           exact hc ▸ hrhs'
     -- `Old`: `StmtExpr.Old.value.Var.Local` reads the child's constructor, so it
     -- transfers to the rebuilt node only because `f` is `ShapeStable`.
-    case h_24 value label? =>
+    case h_23 value label? =>
       refine post_bind (post_and (ih value (by simp [stmtExprChildren]) true)
         (mapStmtExprUsedM_isVarLocal hshape true value)) (fun value' hvalue' => ?_)
       refine post_bind (Q := Rebuilt s t) (post_pure ⟨?_, ?_, ?_⟩) (fun x hx => hf u x hx)
@@ -491,7 +516,7 @@ theorem mapStmtExprUsedM_contains {m : Type → Type} [Monad m] [LawfulMonad m] 
         exact hc ▸ hvalue'.1
     -- `Try`: children sit inside `CatchClause`es, whose `bindingType` is also a
     -- type annotation the node carries.
-    case h_31 body catches finally? =>
+    case h_30 body catches finally? =>
       refine post_bind (ih body (by simp [stmtExprChildren]) false) (fun body' hbody' => ?_)
       refine post_bind (post_attach_mapM
         (P := fun c' => ContainsType s c'.bindingType

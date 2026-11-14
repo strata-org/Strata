@@ -46,7 +46,7 @@ def directWriter (pr : Procedure) : Bool :=
   match pr.body with
   | none => true
   | some b => b.cfg.blocks.any fun (_, blk) => blk.cmds.any fun
-    | .new .. | .writeField .. => true
+    | .new .. | .writeField .. | .newArray .. | .writeElem .. => true
     | _ => false
 
 def callees (p : UnorderedProgram) (pr : Procedure) : List String :=
@@ -93,6 +93,8 @@ def lowerCmd (p : UnorderedProgram) (outs : Std.HashMap String (List Bool)) (wri
             .cmd (.assume "heapMonotone" (mkCall "Int.Le" [mkFvar snapVar, heapNext heap]) md)] ++ post)
     else .ok (c :: post)
   | .virtualCall .. => .error "Cortex `virtualCall` must be lowered by LowerDispatch before LowerHeap"
+  | .newArray .. | .readElem .. | .writeElem .. | .arrayLength .. =>
+    .error "Cortex array commands are not lowered to Core"
   | c => .ok [c]
 
 def lowerBody (p : UnorderedProgram) (outs : Std.HashMap String (List Bool)) (writers : Std.HashSet String) (inputs : List (Core.Expression.Ident × LTy))

@@ -20,10 +20,10 @@ for SMT verification.
 
 We collect two categories of names from the user program:
 
-- **procNames**: targets of `StaticCall` and `InstanceCall`. In practice
+- **procNames**: targets of static `Call` and instance `Call`. In practice
   this includes true procedure calls (e.g. `print`, `Any_get`) as well as
   datatype constructor calls (`NoError`, `from_string`), testers (`isError`),
-  and destructors (`Any..as_string!`), since the Laurel IR uses `StaticCall`
+  and destructors (`Any..as_string!`), since the Laurel IR uses static `Call`
   as the uniform calling convention for all of these.
 
 - **typeNames**: references from `UserDefined` types, `New` expressions,
@@ -40,7 +40,7 @@ and destructor names resolve back to the parent type:
 - Destructor: key `"D..field"` → deps of `D` ∪ {`D`}
 - Bang destructor: key `"D..field!"` → deps of `D` ∪ {`D`}
 
-This ensures that e.g. a `StaticCall "NoError"` in the user program
+This ensures that e.g. a `Call none "NoError"` in the user program
 transitively pulls in the `Error` datatype and all its dependencies.
 
 #### Reachability
@@ -55,7 +55,7 @@ open Laurel
 
 /-- State for name collection, distinguishing procedure names from type names. -/
 structure CollectState where
-  /-- Names from StaticCall, InstanceCall targets. -/
+  /-- Names from `Call` targets. -/
   procNames : Std.HashSet String := {}
   /-- Names from UserDefined types, New, extending. -/
   typeNames : Std.HashSet String := {}
@@ -90,13 +90,12 @@ private def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
 private def collectExprNames (expr : StmtExprMd) : CollectM Unit :=
   foldStmtExprM (fun e => do
     match e.val with
-    | .StaticCall callee _ tyArgs =>
+    | .Call _ callee _ tyArgs =>
       addProcName callee.text
       -- An inferred instantiation names types; those are reachability edges too, exactly as
       -- `New`'s explicit ones are. Missing them would filter out a prelude type the program
       -- still mentions after lowering.
       tyArgs.forM collectHighTypeNames
-    | .InstanceCall _ callee _ _ => addProcName callee.text
     -- `New` gained a `typeArgs` field with polymorphism; collect any explicit
     -- instantiation type names (`new Box<int>`) as well as the composite name.
     | .New ref typeArgs => addTypeName ref.text; typeArgs.forM collectHighTypeNames
@@ -191,14 +190,14 @@ private def runCollect (action : CollectM Unit) : CollectState :=
 private def CollectState.allNames (s : CollectState) : Std.HashSet String :=
   s.typeNames.fold (init := s.procNames) fun acc n => acc.insert n
 
-/-- Collect StaticCall targets from an invokeOn expression.
-    invokeOn expressions are expected to be simple `StaticCall` trees
+/-- Collect static call targets from an invokeOn expression.
+    invokeOn expressions are expected to be simple static `Call` trees
     like `f(g(x))` with `Identifier` or literal leaves.  Returns an
     error if an unexpected node is encountered. -/
 private def collectInvokeOnTargets (expr : StmtExprMd)
     : Except String (List String) := do
   match _h : expr.val with
-  | .StaticCall callee args _ =>
+  | .Call none callee args _ =>
     let rest ← args.attach.flatMapM (fun ⟨a, _⟩ => collectInvokeOnTargets a)
     return callee.text :: rest
   | .Var (.Local _) | .LiteralInt _ | .LiteralBool _ | .LiteralString _

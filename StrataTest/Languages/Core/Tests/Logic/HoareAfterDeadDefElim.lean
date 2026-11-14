@@ -72,7 +72,7 @@ private def sqId : Core.Expression.Ident := ⟨"sq", ()⟩
 
 /-- `int.ge(x, y)` of two variables. -/
 private abbrev geE (x y : Core.Expression.Ident) : Core.Expression.Expr :=
-  .app () (.app () Core.intGeOp (v x)) (v y)
+  .app Core.valueLoc (.app Core.valueLoc Core.intGeOp (v x)) (v y)
 
 /-- The `if` of the body. -/
 private abbrev maxIte : Core.Statement :=
@@ -81,9 +81,9 @@ private abbrev maxIte : Core.Statement :=
 
 /-- The translated body. -/
 private abbrev maxBody : Core.Statements :=
-  [Core.Statement.init dId intLTy (.det (.app () (.app () Core.intSubOp (v aId)) (v bId)))
+  [Core.Statement.init dId intLTy (.det (.app Core.valueLoc (.app Core.valueLoc Core.intSubOp (v aId)) (v bId)))
       (loc 673 702),
-   Core.Statement.init sqId intLTy (.det (.app () (.app () Core.intMulOp (v dId)) (v dId)))
+   Core.Statement.init sqId intLTy (.det (.app Core.valueLoc (.app Core.valueLoc Core.intMulOp (v dId)) (v dId)))
       (loc 705 735),
    maxIte]
 

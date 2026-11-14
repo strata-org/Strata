@@ -200,7 +200,7 @@ private def declNoInit (name : String) (ty : HighTypeMd) : StmtExprMd :=
 private def declInit (name : String) (ty : HighTypeMd) (val : StmtExprMd) : StmtExprMd :=
   nn (.Assign [⟨.Declare ⟨mkId name, ty⟩, .unknown⟩] val)
 private def callStatic (name : String) (args : List StmtExprMd) : StmtExprMd :=
-  nn (.StaticCall (mkId name) args [])
+  nn (.Call none (mkId name) args [])
 /-- `Ctor(arg)` / `Datatype..fn(arg)` — a single-argument datatype op. -/
 private def resultApp (fn : String) (arg : StmtExprMd) : StmtExprMd := callStatic fn [arg]
 private def exitTo (label : String) : StmtExprMd := nn (.Goto label .blockEnd)
@@ -211,11 +211,11 @@ private def iteOf (c t : StmtExprMd) (e : Option StmtExprMd) : StmtExprMd :=
 -- Operators are calls to their built-in wrappers (see `Operation.procName`); neither
 -- `$implies` nor `$and` is overloaded, so these names survive `UniqueOverloadNames`.
 private def impliesOf (a b : StmtExprMd) : StmtExprMd :=
-  nn (.StaticCall (mkId Operation.Implies.procName) [a, b] [])
+  nn (.Call none (mkId Operation.Implies.procName) [a, b] [])
 private def orOf (a b : StmtExprMd) : StmtExprMd :=
   callStatic Operation.Or.procName [a, b]
 private def andOf (a b : StmtExprMd) : StmtExprMd :=
-  nn (.StaticCall (mkId Operation.And.procName) [a, b] [])
+  nn (.Call none (mkId Operation.And.procName) [a, b] [])
 /-- `e as ty` — a downcast. On a propagation edge its runtime cast-assert is
     discharged by a preceding `assume e is ty` (see `lowerTry`). -/
 private def asTypeOf (e : StmtExprMd) (ty : HighTypeMd) : StmtExprMd := nn (.AsType e ty)
@@ -579,8 +579,8 @@ private def lowerThrowingCall (ctx : Ctx) (callNode : StmtExprMd)
   markUsedExc
   let model := (← get).model
   let (callee, tyArgs) := match callNode.val with
-    | .StaticCall c _ ts => (c, ts)
-    | .InstanceCall _ c _ _ => (c, [])
+    | .Call none c _ ts => (c, ts)
+    | .Call (some _) c _ _ => (c, [])
     | _ => (mkId "?", [])
   let p? := calleeProc model callee
   -- At the call's instantiation: at the callee's own type variables, calls at two instantiations
@@ -623,7 +623,7 @@ private def lowerThrowingCall (ctx : Ctx) (callNode : StmtExprMd)
   -- The cap is compared with the callee's type at this call's type arguments; a
   -- type that still mentions a type variable was rejected by `inferThrows`.
   let errAtCall := match callNode.val with
-    | .StaticCall c _ typeArgs => typeAtCall model c typeArgs errTy
+    | .Call none c _ typeArgs => typeAtCall model c typeArgs errTy
     | _ => errTy
   let beyondCap := !mentionsTVar errAtCall.val && escapesBeyondCap lattice ctx errAtCall
   let capTy? : Option HighTypeMd :=
@@ -750,16 +750,12 @@ private def lowerStmt (ctx : Ctx) (stmt : StmtExprMd) : EM (List StmtExprMd) := 
       -- A call to a throwing procedure on the RHS needs the propagate/unwrap
       -- dispatch; any other assignment is left untouched.
       match value.val with
-      | .StaticCall callee _ _ | .InstanceCall _ callee _ _ =>
+      | .Call _ callee _ _ =>
           if calleeThrows (← get).model callee then
             lowerThrowingCall ctx value targets
           else pure [stmt]
       | _ => pure [stmt]
-  | .StaticCall callee _ _ =>
-      if calleeThrows (← get).model callee then
-        lowerThrowingCall ctx stmt []
-      else pure [stmt]
-  | .InstanceCall _ callee _ _ =>
+  | .Call _ callee _ _ =>
       if calleeThrows (← get).model callee then
         lowerThrowingCall ctx stmt []
       else pure [stmt]
@@ -1078,8 +1074,7 @@ private def stmtUsesExn (model : SemanticModel) (stmt : StmtExprMd) : Bool :=
   match _h : stmt.val with
   | .Throw _ => true
   | .Try _ _ _ => true
-  | .StaticCall callee _ _ => calleeThrows model callee
-  | .InstanceCall _ callee _ _ => calleeThrows model callee
+  | .Call _ callee _ _ => calleeThrows model callee
   | .Assign _ v => stmtUsesExn model v
   | .Block stmts _ _ _ => stmts.attach.any (fun ⟨s, _⟩ => stmtUsesExn model s)
   | .IfThenElse c t e =>
@@ -1467,7 +1462,7 @@ public def eliminateExceptionsPass : LaurelPass := .onUnordered {
       NodeKind.StmtExpr.Block,
       NodeKind.StmtExpr.Goto,
       NodeKind.TypeDefinition.Datatype,
-      NodeKind.StmtExpr.StaticCall,
+      NodeKind.StmtExpr.Call,
       NodeKind.StmtExpr.Assign,
       NodeKind.StmtExpr.IfThenElse,
       NodeKind.Body.postconditions.cons,

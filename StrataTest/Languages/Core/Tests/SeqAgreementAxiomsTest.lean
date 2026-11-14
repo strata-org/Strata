@@ -38,10 +38,10 @@ private def agreementGuard (checked : WFLFunc CoreLParams) :
 private def preconds (checked : WFLFunc CoreLParams) : List (LExpr CoreLParams.mono) :=
   checked.func.preconditions.map (·.expr)
 
-#guard agreementGuard seqSelectFunc == preconds seqSelectFunc
+#guard agreementGuard seqSelectFunc =ₘ preconds seqSelectFunc
 
 -- The check tells bounds apart: `select`'s `i < length(s)` is not `take`'s `n <= length(s)`.
-#guard agreementGuard seqSelectFunc != preconds seqTakeFunc
+#guard !(agreementGuard seqSelectFunc =ₘ preconds seqTakeFunc)
 
 -- `Sequence.select` has exactly the agreement axiom, and `Sequence.select!` none, so a
 -- query that uses `select` receives one extra axiom and pulls in nothing else.

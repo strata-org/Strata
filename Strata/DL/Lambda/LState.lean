@@ -186,7 +186,7 @@ The replacement expressions must be closed (no dangling bvars).
 def LExpr.substFvarsFromEnv (env : Env T) (e : LExpr T.mono) : LExpr T.mono :=
   match e with
   | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
-  | .fvar _ name _ => match env name with | some to => to | none => e
+  | .fvar m name _ => match env name with | some to => replaceMetadata1 m to | none => e
   | .abs m nm ty e' => .abs m nm ty (substFvarsFromEnv env e')
   | .quant m qk nm ty tr' e' => .quant m qk nm ty (substFvarsFromEnv env tr') (substFvarsFromEnv env e')
   | .app m fn e' => .app m (substFvarsFromEnv env fn) (substFvarsFromEnv env e')

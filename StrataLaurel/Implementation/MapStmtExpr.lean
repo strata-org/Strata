@@ -140,17 +140,15 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
     pure ⟨.CompoundAssign op target (← mapStmtExprUsedM f true rhs), source⟩
   | .PureFieldUpdate target fieldName newValue =>
     pure ⟨.PureFieldUpdate (← mapStmtExprUsedM f true target) fieldName (← mapStmtExprUsedM f true newValue), source⟩
-  | .StaticCall callee args tyArgs =>
-    pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e) tyArgs, source⟩
+  | .Call receiver? callee args tyArgs =>
+    pure ⟨.Call (← receiver?.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e) callee
+      (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e) tyArgs, source⟩
   | .ReferenceEquals lhs rhs =>
     pure ⟨.ReferenceEquals (← mapStmtExprUsedM f true lhs) (← mapStmtExprUsedM f true rhs), source⟩
   | .AsType target ty =>
     pure ⟨.AsType (← mapStmtExprUsedM f true target) ty, source⟩
   | .IsType target ty =>
     pure ⟨.IsType (← mapStmtExprUsedM f true target) ty, source⟩
-  | .InstanceCall target callee args tys =>
-    pure ⟨.InstanceCall (← mapStmtExprUsedM f true target) callee
-      (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e) tys, source⟩
   | .Quantifier mode param trigger body =>
     pure ⟨.Quantifier mode param (← trigger.attach.mapM fun ⟨e, _⟩ => mapStmtExprUsedM f true e)
       (← mapStmtExprUsedM f true body), source⟩
@@ -242,11 +240,11 @@ def retagOldAs (kind : OldKind) (e : StmtExprMd) : StmtExprMd :=
 
 Shared by the passes that synthesize obligation expressions (e.g. the Liskov
 refinement checker and the dynamic-dispatch dispatcher), which otherwise hand-roll
-the same `.StaticCall Operation.And/.Implies/.Not.procName` nodes and the same
+the same `.Call none Operation.And/.Implies/.Not.procName` nodes and the same
 param-renaming map. -/
 
 def andMd (src : FileRange) (a b : StmtExprMd) : StmtExprMd :=
-  ⟨ .StaticCall (mkId Operation.And.procName) [a, b] [], src ⟩
+  ⟨ .Call none (mkId Operation.And.procName) [a, b] [], src ⟩
 
 /-- `a ==> b` as a `StmtExprMd`. A literal-`true` antecedent is dropped (`true ==> b` ≡ `b`),
     so a vacuous guard (e.g. an empty `notAnyOverrider` conjunction) does not clutter the
@@ -254,10 +252,10 @@ def andMd (src : FileRange) (a b : StmtExprMd) : StmtExprMd :=
 def impliesMd (src : FileRange) (a b : StmtExprMd) : StmtExprMd :=
   match a.val with
   | .LiteralBool true => b
-  | _ => ⟨ .StaticCall (mkId Operation.Implies.procName) [a, b] [], src ⟩
+  | _ => ⟨ .Call none (mkId Operation.Implies.procName) [a, b] [], src ⟩
 
 def notMd (src : FileRange) (a : StmtExprMd) : StmtExprMd :=
-  ⟨ .StaticCall (mkId Operation.Not.procName) [a] [], src ⟩
+  ⟨ .Call none (mkId Operation.Not.procName) [a] [], src ⟩
 
 /-- Conjoin a list of boolean `StmtExprMd`s: the empty list is the literal `true` (the `.And`
     identity), a non-empty list folds from its FIRST element so there is no leading `true &`
@@ -318,7 +316,7 @@ def nonFreeConditions (cs : List Condition) : List Condition :=
     `$heap`-threaded call) is the caller's concern. -/
 def mkCallAssigningOutputs (src : FileRange) (callee : Identifier)
     (args : List StmtExprMd) (outputs : List Parameter) : StmtExprMd :=
-  let call : StmtExprMd := ⟨ .StaticCall callee args [], src ⟩
+  let call : StmtExprMd := ⟨ .Call none callee args [], src ⟩
   match outputs with
   | [] => call
   | outs => ⟨ .Assign (outs.map fun o => ⟨ .Local o.name, src ⟩) call, src ⟩
@@ -420,17 +418,15 @@ def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List
     | .PureFieldUpdate target fieldName newValue =>
       pure ⟨.PureFieldUpdate (collapse (← go true target) target.source) fieldName
         (collapse (← go true newValue) newValue.source), source⟩
-    | .StaticCall callee args tyArgs =>
-      pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)) tyArgs, source⟩
+    | .Call receiver? callee args tyArgs =>
+      pure ⟨.Call (← receiver?.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)) callee
+        (← args.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)) tyArgs, source⟩
     | .ReferenceEquals lhs rhs =>
       pure ⟨.ReferenceEquals (collapse (← go true lhs) lhs.source) (collapse (← go true rhs) rhs.source), source⟩
     | .AsType target ty =>
       pure ⟨.AsType (collapse (← go true target) target.source) ty, source⟩
     | .IsType target ty =>
       pure ⟨.IsType (collapse (← go true target) target.source) ty, source⟩
-    | .InstanceCall target callee args tys =>
-      pure ⟨.InstanceCall (collapse (← go true target) target.source) callee
-        (← args.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)) tys, source⟩
     | .Quantifier mode param trigger body =>
       pure ⟨.Quantifier mode param (← trigger.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source))
         (collapse (← go true body) body.source), source⟩
@@ -522,17 +518,15 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
 
   | .PureFieldUpdate target fieldName newValue =>
     pure ⟨.PureFieldUpdate (← mapStmtExprPrePostM pre post target) fieldName (← mapStmtExprPrePostM pre post newValue), source⟩
-  | .StaticCall callee args tyArgs =>
-    pure ⟨.StaticCall callee (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) tyArgs, source⟩
+  | .Call receiver? callee args tyArgs =>
+    pure ⟨.Call (← receiver?.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) callee
+      (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) tyArgs, source⟩
   | .ReferenceEquals lhs rhs =>
     pure ⟨.ReferenceEquals (← mapStmtExprPrePostM pre post lhs) (← mapStmtExprPrePostM pre post rhs), source⟩
   | .AsType target ty =>
     pure ⟨.AsType (← mapStmtExprPrePostM pre post target) ty, source⟩
   | .IsType target ty =>
     pure ⟨.IsType (← mapStmtExprPrePostM pre post target) ty, source⟩
-  | .InstanceCall target callee args tys =>
-    pure ⟨.InstanceCall (← mapStmtExprPrePostM pre post target) callee
-      (← args.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e) tys, source⟩
   | .Quantifier mode param trigger body =>
     pure ⟨.Quantifier mode param (← trigger.attach.mapM fun ⟨e, _⟩ => mapStmtExprPrePostM pre post e)
       (← mapStmtExprPrePostM pre post body), source⟩
@@ -629,7 +623,8 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
     foldStmtExprM f rhs
   | .PureFieldUpdate target _ newValue =>
     foldStmtExprM f target; foldStmtExprM f newValue
-  | .StaticCall _ args _ =>
+  | .Call receiver? _ args _ =>
+    receiver?.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
     args.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
   | .ReferenceEquals lhs rhs =>
     foldStmtExprM f lhs; foldStmtExprM f rhs
@@ -637,9 +632,6 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
     foldStmtExprM f target
   | .IsType target _ =>
     foldStmtExprM f target
-  | .InstanceCall target _ args _ =>
-    foldStmtExprM f target
-    args.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
   | .Quantifier _ _ trigger body =>
     trigger.attach.forM fun ⟨e, _⟩ => foldStmtExprM f e
     foldStmtExprM f body
@@ -967,7 +959,7 @@ def mapVariableHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (v : Varia
 Apply `f` to every `HighType` annotation carried *directly* by a single
 `StmtExpr` node: local declarations (in `Var`, `Assign` targets, and `IncrDecr`
 targets), quantifier binders, `AsType`/`IsType` type arguments, a generic
-`StaticCall`'s inferred type arguments, the type a `new` allocates, and typed
+call's inferred type arguments, the type a `new` allocates, and typed
 `Hole`s. Does **not** recurse into child expressions — compose with
 `mapStmtExprM` (see `mapStmtExprHighTypesM`) for a whole-tree traversal.
 -/
@@ -988,8 +980,8 @@ def mapNodeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (expr : StmtEx
   -- type-rewriting pass (alias expansion, heap boxing, constrained-type elimination) must see
   -- them. Omitting them leaves stale types in the tree, which also perturbs prelude
   -- name-reachability filtering and so the set of Core declarations emitted.
-  | .StaticCall callee args tyArgs =>
-    pure ⟨.StaticCall callee args (← tyArgs.mapM f), source⟩
+  | .Call receiver? callee args tyArgs =>
+    pure ⟨.Call receiver? callee args (← tyArgs.mapM f), source⟩
   | .AsType target ty => pure ⟨.AsType target (← f ty), source⟩
   | .IsType target ty => pure ⟨.IsType target (← f ty), source⟩
   -- `f` sees the allocated type, and the `new` allocates what `f` returns, such as a monomorph
@@ -1183,13 +1175,12 @@ private def covCtorKey : StmtExpr → Nat
   | .Var ..           => 9
   | .Assign ..        => 10
   | .PureFieldUpdate .. => 11
-  | .StaticCall ..    => 12
+  | .Call ..         => 12
   | .New ..           => 13
   | .This             => 14
   | .ReferenceEquals .. => 15
   | .AsType ..        => 16
   | .IsType ..        => 17
-  | .InstanceCall ..  => 18
   | .Quantifier ..    => 19
   | .Assigned ..      => 20
   | .Old ..           => 21
@@ -1214,7 +1205,7 @@ private def covCtorKey : StmtExpr → Nat
   | .Snapshot ..      => 40
 
 /-- The total number of `StmtExpr` constructors. Bump this when adding one. -/
-private def covCtorCount : Nat := 41
+private def covCtorCount : Nat := 40
 
 /-- One representative per constructor, paired with the number of sentinels it
     places in `StmtExprMd` child positions. -/
@@ -1231,13 +1222,12 @@ private def covProbes : List (StmtExprMd × Nat) := [
   (covMd (.Var (.Field covS (covId "f"))), 1),
   (covMd (.Assign [covVmd (.Field covS (covId "f"))] covS), 2),
   (covMd (.PureFieldUpdate covS (covId "f") covS), 2),
-  (covMd (.StaticCall (covId "c") [covS, covS] []), 2),
   (covMd (.New (covId "r")), 0),
   (covMd .This, 0),
   (covMd (.ReferenceEquals covS covS), 2),
   (covMd (.AsType covS covTy), 1),
   (covMd (.IsType covS covTy), 1),
-  (covMd (.InstanceCall covS (covId "c") [covS, covS] []), 3),
+  (covMd (.Call (some covS) (covId "c") [covS, covS] []), 3),
   (covMd (.Quantifier .Forall covParam (some covS) covS), 2),
   (covMd (.Assigned covS), 1),
   (covMd (.Old covS), 1),

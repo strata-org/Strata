@@ -16,10 +16,10 @@ bottom-up fold of a nested term. -/
 
 namespace Core.FoldConnectives.Tests
 
-private def p : Expression.Expr := .fvar () ⟨"p", ()⟩ none
-private def lit (b : Bool) : Expression.Expr := .const () (.boolConst b)
+private def p : Expression.Expr := .fvar Core.coreLoc ⟨"p", ()⟩ none
+private def lit (b : Bool) : Expression.Expr := .const Core.coreLoc (.boolConst b)
 private def bin (op a b : Expression.Expr) : Expression.Expr :=
-  .app () (.app () op a) b
+  .app Core.coreLoc (.app Core.coreLoc op a) b
 
 #guard connectiveValue? (bin boolAndOp p (lit false)) == some (lit false)
 #guard connectiveValue? (bin boolAndOp (lit false) p) == some (lit false)

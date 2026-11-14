@@ -9,65 +9,52 @@ meta import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testCortexVerification <|
+/-! A field of a constrained type is checked at each write, and a value read into a
+    constrained local or global is checked at that assignment. -/
+
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 constrained pos = x: int where x > 0 witness 1
 composite Cell { var v: pos var w: int }
 var g: pos := 1
 
-procedure writeOutOfRange(c: Cell)
+procedure writeInRange() entry
   opaque
   modifies *
 {
-    c#v := 0
-//  ^^^^^^^^ error: assertion does not hold
-};
-
-procedure writeInRange(c: Cell)
-  opaque
-  modifies *
-{
+    var c: Cell := new Cell;
     c#v := 5;
     assert c#v == 5
 };
 
-procedure readIsInRange(c: Cell)
+procedure readIntoConstrainedLocal() entry
   opaque
+  modifies *
 {
-    var y: int := c#v;
-    assert y > 0
-};
-
-procedure unconstrainedFieldIsArbitrary(c: Cell)
-  opaque
-{
-    var y: int := c#w;
-    assert y > 0
-//  ^^^^^^^^^^^^ error: assertion does not hold
-};
-
-procedure readIntoConstrainedLocal(c: Cell)
-  opaque
-{
+    var c: Cell := new Cell;
+    c#w := 0;
     var y: pos := c#w
 //  ^^^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
-procedure globalIntoField(c: Cell)
+procedure globalIntoField() entry
   opaque
   modifies *
 {
+    var c: Cell := new Cell;
     c#v := g;
-    assert c#v > 0
+    assert c#v == 1
 };
 
-procedure fieldIntoGlobal(c: Cell)
+procedure fieldIntoGlobal() entry
   opaque
   modifies *
 {
+    var c: Cell := new Cell;
+    c#v := 7;
     g := c#v;
-    assert g > 0
+    assert g == 7
 };
 
 procedure globalOutOfRange()
@@ -75,6 +62,12 @@ procedure globalOutOfRange()
   opaque
 {
     g := 0
+};
+
+procedure calleeLeavesRange() entry
+  opaque
+{
+    globalOutOfRange()
 };
 #end
 

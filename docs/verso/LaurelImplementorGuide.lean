@@ -154,11 +154,10 @@ If two Laurel language constructs share semantic properties, we try to capture t
 AST by having a shared constructor. For example,
 instead of having a separate constructor for `StmtExpr.Forall` and for `StmtExpr.Exists`, there is a
 single `StmtExpr.Quantifier` with a boolean field to determine its type. A more complicated example:
-calls to statically defined user procedures, to datatype constructors, and to datatype destructors
-all go through the same `StmtExpr.StaticCall` constructor; resolution distinguishes them by the
-resolved kind of the callee rather than by AST constructor. A further consolidation is in progress
-(WIP): calls to primitive operators and to user-defined instance procedures are planned to go
-through this same call constructor as well.
+calls to statically defined user procedures, to datatype constructors, to datatype destructors,
+to primitive operators, and to user-defined instance procedures all go through the same
+`StmtExpr.Call` constructor; an instance call is the one that carries a receiver. Resolution
+distinguishes the rest by the resolved kind of the callee rather than by AST constructor.
 
 All information in the Laurel AST is strongly typed. There are no fields that can hold unstructured
 data, which could be used by extensions to Strata. Instead, Strata extensions should attach data to

@@ -67,7 +67,7 @@ def Changes.of (effects : Effects) (e : StmtExprMd) : Changes :=
     | .Assign ts _ => ts
     | _ => []) e
   let callees := collectStmtExprList (fun n => match n.val with
-    | .StaticCall callee _ _ => callee.uniqueId.toList
+    | .Call none callee _ _ => callee.uniqueId.toList
     | _ => []) e
   let yields := anyStmtExpr (fun n => n.val matches .Yield) e
   { locals := assigned.filterMap (fun t => match t.val with
@@ -135,8 +135,8 @@ partial def floatAccess (wrap : StmtExprMd → StmtExprMd) (recv : StmtExprMd) :
     | none => wrap recv
   | .IfThenElse c a (some b) =>
     ⟨.IfThenElse c (floatAccess wrap a) (some (floatAccess wrap b)), recv.source⟩
-  | .StaticCall callee [arg] targs =>
-    floatAccess (fun a => wrap ⟨.StaticCall callee [a] targs, recv.source⟩) arg
+  | .Call none callee [arg] targs =>
+    floatAccess (fun a => wrap ⟨.Call none callee [a] targs, recv.source⟩) arg
   | .AsType t ty => floatAccess (fun t' => wrap ⟨.AsType t' ty, recv.source⟩) t
   | _ => wrap recv
 
@@ -230,7 +230,7 @@ public def bindFieldReceiversPass : LaurelPass := .onUnordered {
   -- A call's effects are looked up by callee, which an instance call does not name, and a
   -- `resume` runs a coroutine, which may change anything.
   unsupported := [
-      NodeKind.StmtExpr.InstanceCall,
+      NodeKind.StmtExpr.Call.receiver?.some,
       NodeKind.StmtExpr.Resume,
       NodeKind.LaurelProgram.staticFunctions.cons
     ]

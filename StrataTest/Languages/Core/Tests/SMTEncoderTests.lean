@@ -21,30 +21,35 @@ open Lambda
 open Strata.SMT
 open Strata.SMT.TestUtils
 
+/-- Synthesized source location tagged onto every node of the hand-built test
+expressions in this file. -/
+private abbrev testLoc : ExprSourceLoc := ExprSourceLoc.synthesized "test"
+
 /--
 info: "(assert (forall ((n Int)) (exists ((m Int)) (= n m))))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.quant () .all "n" (.some .int) (LExpr.noTrigger ())
-   (.quant () .exist "m" (.some .int) (LExpr.noTrigger ())
-   (.eq () (.bvar () 1) (.bvar () 0))))
+  (.quant testLoc .all "n" (.some .int) (LExpr.noTrigger testLoc)
+   (.quant testLoc .exist "m" (.some .int) (LExpr.noTrigger testLoc)
+   (.eq testLoc (.bvar testLoc 1) (.bvar testLoc 0))))
 
 /--
 info: "; x\n(declare-const x Int)\n(assert (exists ((i Int)) (= i x)))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-   (.quant () .exist "i" (.some .int) (LExpr.noTrigger ())
-   (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
+   (.quant testLoc .exist "i" (.some .int) (LExpr.noTrigger testLoc)
+   (.eq testLoc (.bvar testLoc 0) (.fvar testLoc "x" (.some .int))))
 
 /--
 info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= i x) :pattern ((f i)))))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-   (.quant ()  .exist "i" (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
-   (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
+   (.quant testLoc  .exist "i" (.some .int) (.app testLoc (.fvar testLoc "f" (.some
+       (.arrow .int .int))) (.bvar testLoc 0))
+   (.eq testLoc (.bvar testLoc 0) (.fvar testLoc "x" (.some .int))))
 
 
 /--
@@ -52,23 +57,28 @@ info: "; f\n(declare-fun f (Int) Int)\n; x\n(declare-const x Int)\n(assert (exis
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-   (.quant () .exist "i" (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
-   (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
+   (.quant testLoc .exist "i" (.some .int) (.app testLoc (.fvar testLoc "f" (.some
+       (.arrow .int .int))) (.bvar testLoc 0))
+   (.eq testLoc (.app testLoc (.fvar testLoc "f" (.some (.arrow .int .int))) (.bvar testLoc 0))
+       (.fvar testLoc "x" (.some .int))))
 
 /-- info: "Cannot encode .app expression f(bvar!0)\n-- Errors: Unsupported construct in lexprToExpr: bvar index out of bounds: 0\nContext: Global scope:\n  freeVars: [f]" -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-   (.quant () .exist "i" (.some .int) (.app () (.fvar () "f" (.none)) (.bvar () 0))
-   (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
+   (.quant testLoc .exist "i" (.some .int) (.app testLoc (.fvar testLoc "f" (.none)) (.bvar testLoc
+       0))
+   (.eq testLoc (.app testLoc (.fvar testLoc "f" (.some (.arrow .int .int))) (.bvar testLoc 0))
+       (.fvar testLoc "x" (.some .int))))
 
 /--
 info: "; f\n(declare-const f (arrow Int Int))\n; f\n(declare-fun f@1 (Int) Int)\n; x\n(declare-const x Int)\n(assert (exists ((i Int)) (! (= (f@1 i) x) :pattern (f))))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-   (.quant () .exist "i" (.some .int)
-   (mkTriggerExpr [[.fvar () "f" (.some (.arrow .int .int))]])
-   (.eq () (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0)) (.fvar () "x" (.some .int))))
+   (.quant testLoc .exist "i" (.some .int)
+   (mkTriggerExpr [[.fvar testLoc "f" (.some (.arrow .int .int))]])
+   (.eq testLoc (.app testLoc (.fvar testLoc "f" (.some (.arrow .int .int))) (.bvar testLoc 0))
+       (.fvar testLoc "x" (.some .int))))
    (ctx := SMT.Context.default)
    (factory := Core.Factory)
 
@@ -77,8 +87,12 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-   (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
-   (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
+   (.quant testLoc .all "m" (.some .int) (.bvar testLoc 0) (.quant testLoc .all "n" (.some .int)
+       (.app testLoc (.app testLoc (.op testLoc "f" (.some (.arrow .int (.arrow .int .int))))
+       (.bvar testLoc 0)) (.bvar testLoc 1))
+   (.eq testLoc (.app testLoc (.app testLoc (.op testLoc "f" (.some (.arrow .int
+       (.arrow .int .int)))) (.bvar testLoc 0)) (.bvar testLoc 1)) (.fvar testLoc "x"
+       (.some .int)))))
    (ctx := { ufs := .ofArray #[UF.mk "f" (TermType.int :: TermType.int :: []) TermType.int] })
    (factory := Core.Factory.pushIfNew $
           LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] [])
@@ -89,8 +103,11 @@ info: "; f\n(declare-fun f (Int Int) Int)\n; x\n(declare-const x Int)\n(assert (
 -/
 #guard_msgs in -- No valid trigger
 #eval toSMTCommandsWithAssert
-   (.quant () .all "m" (.some .int) (.bvar () 0) (.quant () .all "n" (.some .int) (.bvar () 0)
-   (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
+   (.quant testLoc .all "m" (.some .int) (.bvar testLoc 0) (.quant testLoc .all "n" (.some .int)
+       (.bvar testLoc 0)
+   (.eq testLoc (.app testLoc (.app testLoc (.op testLoc "f" (.some (.arrow .int
+       (.arrow .int .int)))) (.bvar testLoc 0)) (.bvar testLoc 1)) (.fvar testLoc "x"
+       (.some .int)))))
    (ctx := { ufs := .ofArray #[UF.mk "f" (TermType.int :: TermType.int :: []) TermType.int] })
    (factory := Core.Factory.pushIfNew $
           LFunc.mk "f" [] false false [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none [] [])
@@ -101,10 +118,10 @@ section MapLiterals
 
 /-- `select({1 ↦ 2, 1 ↦ 3, _ ↦ 0}, 1)`: the map literal repeats key `1`. -/
 private def selectRepeatedKey : LExpr CoreLParams.mono :=
-  .app () (.app () (.op () "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
-    (.const () (.mapConst .int .int (.intConst 0)
+  .app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
+    (.const Core.valueLoc (.mapConst .int .int (.intConst 0)
       #[(.intConst 1, .intConst 2), (.intConst 1, .intConst 3)])))
-    (.intConst () 1)
+    (.intConst Core.valueLoc 1)
 
 -- The first entry of a map literal counts, as in the semantics (`SortDenote.mapOf`), so the
 -- encoding puts it outermost: the update of key `1` to `2` is applied last.
@@ -127,7 +144,7 @@ info: "; mapConst\n(declare-fun mapConst (Int) (Array Int Int))\n(assert (select
 /-- info: "Cannot encode the ill-typed literal Sequence.build(Sequence.empty<bool>(), 1)." -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.const () (.sequenceConst .bool #[.intConst 1]) : LExpr CoreLParams.mono)
+  (.const Core.valueLoc (.sequenceConst .bool #[.intConst 1]) : LExpr CoreLParams.mono)
   (factory := Core.Factory)
 
 end MapLiterals
@@ -140,9 +157,10 @@ info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n(asse
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app () (.app () (.op () "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
-    (.fvar () "m" (.some (mapTy .int .int))))
-    (.fvar () "i" (.some .int)))
+  (.app testLoc (.app testLoc (.op testLoc "select" (.some (.arrow (mapTy .int .int)
+      (.arrow .int .int))))
+    (.fvar testLoc "m" (.some (mapTy .int .int))))
+    (.fvar testLoc "i" (.some .int)))
   (ctx := { SMT.Context.default with useArrayTheory := true })
   (factory := Core.Factory)
 
@@ -152,10 +170,11 @@ info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app () (.app () (.app () (.op () "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
-    (.fvar () "m" (.some (mapTy .int .int))))
-    (.fvar () "i" (.some .int)))
-    (.fvar () "v" (.some .int)))
+  (.app testLoc (.app testLoc (.app testLoc (.op testLoc "update" (.some (.arrow (mapTy .int .int)
+      (.arrow .int (.arrow .int (mapTy .int .int))))))
+    (.fvar testLoc "m" (.some (mapTy .int .int))))
+    (.fvar testLoc "i" (.some .int)))
+    (.fvar testLoc "v" (.some .int)))
   (ctx := { SMT.Context.default with useArrayTheory := true })
   (factory := Core.Factory)
 
@@ -165,12 +184,14 @@ info: "; m\n(declare-const m (Array Int Int))\n; i\n(declare-const i Int)\n; v\n
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app () (.app () (.op () "select" (.some (.arrow (mapTy .int .int) (.arrow .int .int))))
-    (.app () (.app () (.app () (.op () "update" (.some (.arrow (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
-      (.fvar () "m" (.some (mapTy .int .int))))
-      (.fvar () "i" (.some .int)))
-      (.fvar () "v" (.some .int))))
-    (.fvar () "j" (.some .int)))
+  (.app testLoc (.app testLoc (.op testLoc "select" (.some (.arrow (mapTy .int .int)
+      (.arrow .int .int))))
+    (.app testLoc (.app testLoc (.app testLoc (.op testLoc "update" (.some (.arrow
+        (mapTy .int .int) (.arrow .int (.arrow .int (mapTy .int .int))))))
+      (.fvar testLoc "m" (.some (mapTy .int .int))))
+      (.fvar testLoc "i" (.some .int)))
+      (.fvar testLoc "v" (.some .int))))
+    (.fvar testLoc "j" (.some .int)))
   (ctx := { SMT.Context.default with useArrayTheory := true })
   (factory := Core.Factory)
 
@@ -180,8 +201,8 @@ info: "; m\n(declare-const m (Array Int Int))\n; getFirst\n(declare-fun getFirst
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app () (.op () (⟨"getFirst", ()⟩) (.some (.arrow (mapTy .int .int) .int)))
-           (.fvar () (⟨"m", ()⟩) (.some (mapTy .int .int))))
+  (.app testLoc (.op testLoc (⟨"getFirst", ()⟩) (.some (.arrow (mapTy .int .int) .int)))
+           (.fvar testLoc (⟨"m", ()⟩) (.some (mapTy .int .int))))
   (ctx := { SMT.Context.default with useArrayTheory := true })
   (factory := Core.Factory.pushIfNew $
           LFunc.mk (⟨"getFirst", ()⟩) [] false false
@@ -192,9 +213,9 @@ info: "; m\n(declare-const m (Array Int Int))\n; getFirst\n(declare-fun getFirst
 /-- info: "(assert (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.quant () .all "" (.some .int) (LExpr.noTrigger ())
-   (.quant () .exist "" (.some .int) (LExpr.noTrigger ())
-   (.eq () (.bvar () 1) (.bvar () 0))))
+  (.quant testLoc .all "" (.some .int) (LExpr.noTrigger testLoc)
+   (.quant testLoc .exist "" (.some .int) (LExpr.noTrigger testLoc)
+   (.eq testLoc (.bvar testLoc 1) (.bvar testLoc 0))))
 
 -- Test nested quantifiers with same user name get disambiguated human-readable names
 /--
@@ -202,9 +223,9 @@ info: "(assert (forall ((x Int)) (exists ((x@1 Int)) (= x x@1))))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
-   (.quant () .exist "x" (.some .int) (LExpr.noTrigger ())
-   (.eq () (.bvar () 1) (.bvar () 0))))
+  (.quant testLoc .all "x" (.some .int) (LExpr.noTrigger testLoc)
+   (.quant testLoc .exist "x" (.some .int) (LExpr.noTrigger testLoc)
+   (.eq testLoc (.bvar testLoc 1) (.bvar testLoc 0))))
 
 -- Test triply nested quantifiers all get distinct disambiguated human-readable names
 /--
@@ -212,10 +233,10 @@ info: "(assert (forall ((x Int) (x@1 Int) (x@2 Int)) (= x@2 x)))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
-   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
-    (.quant () .all "x@1" (.some .int) (LExpr.noTrigger ())
-     (.eq () (.bvar () 0) (.bvar () 2)))))
+  (.quant testLoc .all "x" (.some .int) (LExpr.noTrigger testLoc)
+   (.quant testLoc .all "x" (.some .int) (LExpr.noTrigger testLoc)
+    (.quant testLoc .all "x@1" (.some .int) (LExpr.noTrigger testLoc)
+     (.eq testLoc (.bvar testLoc 0) (.bvar testLoc 2)))))
 
 -- Test mixed named/unnamed nesting: de Bruijn depth (`bvs.length`) counts user-named binders too, so
 -- the inner unnamed binder gets `$__bv2` (its stack depth), not `$__bv1`. (The two adjacent `forall`s
@@ -225,10 +246,10 @@ info: "(assert (forall (($__bv0 Int) (x Int)) (exists (($__bv2 Int)) (= $__bv0 $
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.quant () .all "" (.some .int) (LExpr.noTrigger ())
-   (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
-    (.quant () .exist "" (.some .int) (LExpr.noTrigger ())
-     (.eq () (.bvar () 2) (.bvar () 0)))))
+  (.quant testLoc .all "" (.some .int) (LExpr.noTrigger testLoc)
+   (.quant testLoc .all "x" (.some .int) (LExpr.noTrigger testLoc)
+    (.quant testLoc .exist "" (.some .int) (LExpr.noTrigger testLoc)
+     (.eq testLoc (.bvar testLoc 2) (.bvar testLoc 0)))))
 
 
 /--
@@ -236,8 +257,8 @@ info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.quant () .all "x" (.some .int) (LExpr.noTrigger ())
-   (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
+  (.quant testLoc .all "x" (.some .int) (LExpr.noTrigger testLoc)
+   (.eq testLoc (.bvar testLoc 0) (.fvar testLoc "x" (.some .int))))
 
 -- Empty-named quantifier binders are named by de Bruijn depth (`$__bv{depth}`). Each term encoded
 -- via toSMTTerms starts from an empty binder stack, so two independent top-level foralls each get
@@ -246,11 +267,11 @@ info: "; x\n(declare-const x Int)\n(assert (forall ((x@1 Int)) (= x@1 x)))\n"
 #guard
   match toSMTTerms Lambda.Factory.default [
     -- Term 1: ∀ x:Int. x = x
-    (.quant () .all "" (.some .int) (LExpr.noTrigger ())
-     (.eq () (.bvar () 0) (.bvar () 0))),
+    (.quant testLoc .all "" (.some .int) (LExpr.noTrigger testLoc)
+     (.eq testLoc (.bvar testLoc 0) (.bvar testLoc 0))),
     -- Term 2: ∀ y:Bool. y
-    (.quant () .all "" (.some .bool) (LExpr.noTrigger ())
-     (.bvar () 0))
+    (.quant testLoc .all "" (.some .bool) (LExpr.noTrigger testLoc)
+     (.bvar testLoc 0))
   ] SMT.Context.default {} with
   | .ok ([t1, t2], _, _) =>
     match Strata.SMTDDM.termToString t1, Strata.SMTDDM.termToString t2 with
@@ -268,7 +289,7 @@ info: "; x\n(declare-const x String)\n(assert (= x \"{\\u{22}key\\u{22}:\\u{22}v
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.eq () (.fvar () "x" (.some .string)) (.strConst () "{\"key\":\"val\"}"))
+  (.eq testLoc (.fvar testLoc "x" (.some .string)) (.strConst testLoc "{\"key\":\"val\"}"))
 
 -- Test that negative integer constants are lowered to (- N) form
 /-- info: Except.ok "(- 1)" -/
@@ -281,11 +302,11 @@ info: "; x\n(declare-const x Real)\n; y\n(declare-const y Real)\n(assert (|/| x 
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app ()
-    (.app ()
-      (.op () "Real.Div" (.some (.arrow .real (.arrow .real .real))))
-      (.fvar () "x" (.some .real)))
-    (.fvar () "y" (.some .real)))
+  (.app testLoc
+    (.app testLoc
+      (.op testLoc "Real.Div" (.some (.arrow .real (.arrow .real .real))))
+      (.fvar testLoc "x" (.some .real)))
+    (.fvar testLoc "y" (.some .real)))
   (factory := Core.Factory)
 
 -- A `rationalConst` whose value has no terminating decimal expansion (e.g. `1/3`,
@@ -294,14 +315,14 @@ info: "; x\n(declare-const x Real)\n; y\n(declare-const y Real)\n(assert (|/| x 
 -- `(/ num den)` rather than erroring.
 /-- info: "(assert (|/| 1.0 3.0))\n" -/
 #guard_msgs in
-#eval toSMTCommandsWithAssert (.rationalConst () (1 / 3 : Rat))
+#eval toSMTCommandsWithAssert (.rationalConst testLoc (1 / 3 : Rat))
 
 -- The sign of a negative non-terminating value (e.g. `-2/3`, the value of
 -- `-frac{2, 3}`) rides on the numerator, which the serializer wraps in unary
 -- minus; the denominator stays positive.
 /-- info: "(assert (|/| (- 2.0) 3.0))\n" -/
 #guard_msgs in
-#eval toSMTCommandsWithAssert (.rationalConst () (-2 / 3 : Rat))
+#eval toSMTCommandsWithAssert (.rationalConst testLoc (-2 / 3 : Rat))
 
 -- Conversely, a *terminating* value (e.g. `1/4`) keeps routing through the
 -- `Decimal.fromRat = some` branch and emits a single SMT-LIB decimal literal,
@@ -310,7 +331,7 @@ info: "; x\n(declare-const x Real)\n; y\n(declare-const y Real)\n(assert (|/| x 
 -- emitted SMT.
 /-- info: "(assert 0.25)\n" -/
 #guard_msgs in
-#eval toSMTCommandsWithAssert (.rationalConst () (1 / 4 : Rat))
+#eval toSMTCommandsWithAssert (.rationalConst testLoc (1 / 4 : Rat))
 
 end ArrayTheory
 
@@ -328,16 +349,17 @@ private def negUF (arg : Strata.SMT.Term) : Strata.SMT.Term :=
     [arg] (.constr "_placeholder" [])
 
 -- Integer constant operand ⇒ `Int.Neg`.
-#guard smtTermToLExpr (negUF (.prim (.int 1)))
-  == .app () (.op () "Int.Neg" none) (.intConst () 1)
+#guard (smtTermToLExpr (negUF (.prim (.int 1)))).eqModuloMeta
+  (.app testLoc (.op testLoc "Int.Neg" none) (.intConst testLoc 1))
 
 -- Real constant operand ⇒ `Real.Neg` (the untyped placeholder return type is ignored).
-#guard smtTermToLExpr (negUF (.prim (.real (StrataDDM.Decimal.mk 628 (-2)))))
-  == .app () (.op () "Real.Neg" none) (.rationalConst () (StrataDDM.Decimal.mk 628 (-2)).toRat)
+#guard (smtTermToLExpr (negUF (.prim (.real (StrataDDM.Decimal.mk 628 (-2)))))).eqModuloMeta
+  (.app testLoc (.op testLoc "Real.Neg" none) (.rationalConst testLoc (StrataDDM.Decimal.mk 628
+      (-2)).toRat))
 
 -- A non-constant operand (here a variable) is not a real literal ⇒ defaults to `Int.Neg`.
-#guard smtTermToLExpr (negUF (.var { id := "x", ty := .constr "_placeholder" [] }))
-  == .app () (.op () "Int.Neg" none) (.fvar () "x" none)
+#guard (smtTermToLExpr (negUF (.var { id := "x", ty := .constr "_placeholder" [] }))).eqModuloMeta
+  (.app testLoc (.op testLoc "Int.Neg" none) (.fvar testLoc "x" none))
 
 /-- Build a binary `(- a b)` UF application (two operands). -/
 private def binMinusUF (a b : Strata.SMT.Term) : Strata.SMT.Term :=
@@ -345,20 +367,21 @@ private def binMinusUF (a b : Strata.SMT.Term) : Strata.SMT.Term :=
     [a, b] (.constr "_placeholder" [])
 
 -- Binary `-` (two args) is NOT rewritten to Int.Neg; it falls through to a plain UF.
-#guard smtTermToLExpr (binMinusUF (.prim (.int 3)) (.prim (.int 1)))
-  == .app () (.app () (.fvar () "-" none) (.intConst () 3)) (.intConst () 1)
+#guard (smtTermToLExpr (binMinusUF (.prim (.int 3)) (.prim (.int 1)))).eqModuloMeta
+  (.app testLoc (.app testLoc (.fvar testLoc "-" none) (.intConst testLoc 3)) (.intConst testLoc 1))
 
 -- Nested negation `-(-(1))` decodes recursively to `int.neg(int.neg(1))`.
-#guard smtTermToLExpr (negUF (negUF (.prim (.int 1))))
-  == .app () (.op () "Int.Neg" none)
-       (.app () (.op () "Int.Neg" none) (.intConst () 1))
+#guard (smtTermToLExpr (negUF (negUF (.prim (.int 1))))).eqModuloMeta
+  (.app testLoc (.op testLoc "Int.Neg" none)
+       (.app testLoc (.op testLoc "Int.Neg" none) (.intConst testLoc 1)))
 
 -- Nested real negation: `smtTermIsReal` inspects only the immediate operand, so
 -- the outer `-` sees an `.app` (not a real literal) and defaults to `Int.Neg`,
 -- while the inner `-` over the real literal is `Real.Neg`.
-#guard smtTermToLExpr (negUF (negUF (.prim (.real (StrataDDM.Decimal.mk 100 0)))))
-  == .app () (.op () "Int.Neg" none)
-       (.app () (.op () "Real.Neg" none) (.rationalConst () (StrataDDM.Decimal.mk 100 0).toRat))
+#guard (smtTermToLExpr (negUF (negUF (.prim (.real (StrataDDM.Decimal.mk 100 0)))))).eqModuloMeta
+  (.app testLoc (.op testLoc "Int.Neg" none)
+       (.app testLoc (.op testLoc "Real.Neg" none) (.rationalConst testLoc (StrataDDM.Decimal.mk
+           100 0).toRat)))
 
 /-! ## Test that built-in types do not produce declare-sort -/
 
@@ -566,16 +589,16 @@ info: "; s1\n(declare-const s1 String)\n; s2\n(declare-const s2 String)\n(assert
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app () (.app () strPrefixOfOp (.fvar () "s1" (.some .string)))
-    (.fvar () "s2" (.some .string)))
+  (.app testLoc (.app testLoc strPrefixOfOp (.fvar testLoc "s1" (.some .string)))
+    (.fvar testLoc "s2" (.some .string)))
 
 /--
 info: "; s1\n(declare-const s1 String)\n; s2\n(declare-const s2 String)\n(assert (str.suffixof s1 s2))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app () (.app () strSuffixOfOp (.fvar () "s1" (.some .string)))
-    (.fvar () "s2" (.some .string)))
+  (.app testLoc (.app testLoc strSuffixOfOp (.fvar testLoc "s1" (.some .string)))
+    (.fvar testLoc "s2" (.some .string)))
 
 /-! ## Obligation encoding preserves the input datatype factory
 
@@ -615,20 +638,20 @@ private def typeFactoryPreserved (blocks : List (List (Lambda.LDatatype Unit)))
 /-- info: ok: true -/
 #guard_msgs in
 #eval show Except Std.Format Bool from
-  let nil : LExpr CoreLParams.mono := .op () ⟨"Nil", ()⟩ (.some (.tcons "IntList" []))
-  typeFactoryPreserved [[intListDatatypeRT]] (assertOb (.eq () nil nil))
+  let nil : LExpr CoreLParams.mono := .op testLoc ⟨"Nil", ()⟩ (.some (.tcons "IntList" []))
+  typeFactoryPreserved [[intListDatatypeRT]] (assertOb (.eq testLoc nil nil))
 
 -- Obligation that does not reference the datatype at all: unused datatypes are
 -- still retained in `typeFactory`.
 /-- info: ok: true -/
 #guard_msgs in
 #eval typeFactoryPreserved [[intListDatatypeRT]]
-  (assertOb (.eq () (.intConst () 0) (.intConst () 0)))
+  (assertOb (.eq testLoc (.intConst testLoc 0) (.intConst testLoc 0)))
 
 -- Empty datatype factory: trivially preserved.
 /-- info: ok: true -/
 #guard_msgs in
-#eval typeFactoryPreserved [] (assertOb (.boolConst () true))
+#eval typeFactoryPreserved [] (assertOb (.boolConst testLoc true))
 
 /-! ## Regression: a directly-applied lambda redex in an obligation term encodes
     (rather than hitting `appToSMTTerm`'s "Cannot encode .app expression").
@@ -644,15 +667,15 @@ private def typeFactoryPreserved (blocks : List (List (Lambda.LDatatype Unit)))
 /-- `(fun _ : string => true)("v1")` — a constant-lambda redex, the shape
     an argument-value constraint lowers to. -/
 private def constLambdaRedex : LExpr CoreLParams.mono :=
-  .app ()
-    (.abs () "ignored" (.some (.tcons "string" [])) (.boolConst () true))
-    (.strConst () "v1")
+  .app testLoc
+    (.abs testLoc "ignored" (.some (.tcons "string" [])) (.boolConst testLoc true))
+    (.strConst testLoc "v1")
 
 /-- A second constant-lambda redex reducing to `false`, for the distinctness test. -/
 private def constLambdaRedexFalse : LExpr CoreLParams.mono :=
-  .app ()
-    (.abs () "ignored" (.some (.tcons "string" [])) (.boolConst () false))
-    (.strConst () "x")
+  .app testLoc
+    (.abs testLoc "ignored" (.some (.tcons "string" [])) (.boolConst testLoc false))
+    (.strConst testLoc "x")
 
 /-- A program carrying `constLambdaRedex` in each obligation-feeding position:
     an `assume` (the argument-precondition shape), a variable definition
@@ -753,8 +776,8 @@ label-prunable entry kinds are covered: `.assumption` and `.distinct`. -/
 private def badAxOb : Imperative.ProofObligation Expression :=
   { label := "q", property := .assert,
     assumptions := [[.assumption "bad_ax"
-      (.app () (.abs () "x" none (.bvar () 0)) (.intConst () 0))]],
-    obligation := .boolConst () true, metadata := {} }
+      (.app testLoc (.abs testLoc "x" none (.bvar testLoc 0)) (.intConst testLoc 0))]],
+    obligation := .boolConst testLoc true, metadata := {} }
 
 -- Pruning `bad_ax` at emission time: its deferred encoding error is never
 -- forced, and the obligation encodes to just the goal — no assumption (or
@@ -781,14 +804,15 @@ private def badAxOb : Imperative.ProofObligation Expression :=
 private def mixedOb : Imperative.ProofObligation Expression :=
   { label := "q", property := .assert,
     assumptions := [[
-      .distinct "good_d" [.intConst () 0, .intConst () 1],
-      .assumption "good_ax_1" (.boolConst () true),
+      .distinct "good_d" [.intConst testLoc 0, .intConst testLoc 1],
+      .assumption "good_ax_1" (.boolConst testLoc true),
       .distinct "bad_d"
-        [.app () (.abs () "y" none (.bvar () 0)) (.intConst () 7), .intConst () 2],
+        [.app testLoc (.abs testLoc "y" none (.bvar testLoc 0)) (.intConst testLoc 7), .intConst
+            testLoc 2],
       .assumption "bad_ax"
-        (.app () (.abs () "x" none (.bvar () 0)) (.intConst () 0)),
-      .assumption "good_ax_2" (.boolConst () false)]],
-    obligation := .boolConst () true, metadata := {} }
+        (.app testLoc (.abs testLoc "x" none (.bvar testLoc 0)) (.intConst testLoc 0)),
+      .assumption "good_ax_2" (.boolConst testLoc false)]],
+    obligation := .boolConst testLoc true, metadata := {} }
 
 /-- Render encoding `ob` under `pruned`: the kept asserted terms,
     definition/declaration counts and goal, or the encoder's error. -/

@@ -1965,6 +1965,7 @@ theorem substFvarsLifting_zip_eraseMetadata_congr
           | none => simp [h1, h2] at hfc
           | some w₂ =>
             simp only [h1, Option.map_some, h2, Option.some.injEq] at hfc
+            simp only [LExpr.eraseMetadata_replaceMetadata1]
             exact LExpr.liftBVars_eraseMetadata_congr depth w₁ w₂ 0 hfc
       | abs m n t b ih =>
         simp only [LExpr.substFvarsLifting.go, LExpr.eraseMetadata, LExpr.replaceMetadata]
@@ -2062,7 +2063,7 @@ theorem evalCore_eraseMetadata_congr
   | fvar =>
     simp only [LExpr.evalCore]
     cases env _ with
-    | some v => rfl
+    | some v => simp only [LExpr.eraseMetadata_replaceMetadata1]
     | none => simp [LExpr.eraseMetadata, LExpr.replaceMetadata]
   | abs hv_body =>
     simp only [LExpr.evalCore]

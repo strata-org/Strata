@@ -12,6 +12,7 @@ meta section
 /-! ## Tests for Core Function -/
 
 namespace Core
+private abbrev testLoc : ExprSourceLoc := ExprSourceLoc.synthesized "test"
 open Std (ToFormat Format format)
 open Lambda
 open LTy.Syntax LExpr.SyntaxMono
@@ -23,7 +24,7 @@ open LTy.Syntax LExpr.SyntaxMono
                         typeArgs := ["a", "b"],
                         inputs := [(⟨"w", ()⟩, mty[int]), (⟨"x", ()⟩, mty[%a]), (⟨"y", ()⟩, mty[%b]), (⟨"z", ()⟩, mty[%a])],
                         output := mty[%a],
-                        body := some (LExpr.fvar () (⟨"x", ()⟩) none) } : Function)
+                        body := some (LExpr.fvar testLoc (⟨"x", ()⟩) none) } : Function)
          return format type
 
 end Core

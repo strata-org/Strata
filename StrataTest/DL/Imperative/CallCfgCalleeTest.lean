@@ -214,8 +214,10 @@ cfg entry {
 };
 #end
 
-/-- A command with its metadata erased. -/
-private def eraseCmdMd : Command → Command
+/-- A command with its metadata (statement metadata and expression source
+    locations) erased. -/
+private def eraseCmdMd (c : Command) : Command :=
+  Command.mapExpr Core.eraseLocs <| match c with
   | .cmd (.init x ty e _) => .cmd (.init x ty e .empty)
   | .cmd (.set x e _) => .cmd (.set x e .empty)
   | .cmd (.assert l b _) => .cmd (.assert l b .empty)

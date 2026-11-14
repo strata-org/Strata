@@ -9,9 +9,9 @@ meta import StrataLaurel.Tests.Util.TestLaurel
 /-!
 # Cortex to Core with CFG bodies
 
-Each test translates a Laurel program through Cortex to Core with CFG bodies
-(`Cortex.ToCore.programToCoreCFG`), pins the emitted procedures, and pins that
-the whole program type-checks with Core's CFG type checker.
+Each test translates a Laurel program through Cortex to Core
+(`Cortex.translate`), pins the emitted procedures, whose bodies are CFGs, and
+pins that the whole program type-checks with Core's CFG type checker.
 -/
 
 open StrataTest.Util

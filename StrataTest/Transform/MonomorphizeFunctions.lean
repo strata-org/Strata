@@ -1216,10 +1216,10 @@ private def intS : Lambda.LSort := .tcons "int" []
 /-- Two map literals compared, and two sequence literals compared. -/
 private def litAxioms : List Core.Expression.Expr :=
   let m (x : Int) : Core.Expression.Expr :=
-    .const () (.mapConst intS intS (.intConst 0) #[(.intConst 1, .intConst x)])
+    .const Core.valueLoc (.mapConst intS intS (.intConst 0) #[(.intConst 1, .intConst x)])
   let q (x : Int) : Core.Expression.Expr :=
-    .const () (.sequenceConst intS #[.intConst 1, .intConst x])
-  [.eq () (m 10) (m 20), .eq () (q 2) (q 3)]
+    .const Core.valueLoc (.sequenceConst intS #[.intConst 1, .intConst x])
+  [.eq Core.coreLoc (m 10) (m 20), .eq Core.coreLoc (q 2) (q 3)]
 
 /-- Monomorphize a program of `litAxioms`, then print the specialized functions in the
     resulting factory and the SMT encoding of each axiom with that factory. The literals

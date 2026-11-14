@@ -254,12 +254,11 @@ def childCollect {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd) : Lis
      | _ => []) ++ collectStmtExprList g rhs
   | .PureFieldUpdate target _ newValue =>
     collectStmtExprList g target ++ collectStmtExprList g newValue
-  | .StaticCall _ args _ => args.flatMap (collectStmtExprList g)
+  | .Call receiver? _ args _ =>
+    receiver?.elim [] (collectStmtExprList g) ++ args.flatMap (collectStmtExprList g)
   | .ReferenceEquals lhs rhs => collectStmtExprList g lhs ++ collectStmtExprList g rhs
   | .AsType target _ => collectStmtExprList g target
   | .IsType target _ => collectStmtExprList g target
-  | .InstanceCall target _ args _ =>
-    collectStmtExprList g target ++ args.flatMap (collectStmtExprList g)
   | .Quantifier _ _ trigger body =>
     trigger.elim [] (collectStmtExprList g) ++ collectStmtExprList g body
   | .Assigned name => collectStmtExprList g name

@@ -492,7 +492,7 @@ theorem runChoices_of_evalsComputable (π : String → Option Procedure) {c c' :
 private theorem engEval_eqModuloMeta {F : Expression.Factory} {σ : SemanticStore Expression}
     {e : Expression.Expr} {b : Bool} (h : ComputableEval F σ e)
     (hv : Expression.eval F σ e = some (SemValue.ofBool F.model.tcInterp b)) :
-    EngEval Expression F σ e (fun _ r => InterpLang.eqModuloMeta r (LExpr.boolConst () b)) :=
+    EngEval Expression F σ e (fun _ r => InterpLang.eqModuloMeta r (LExpr.boolConst default b)) :=
   ⟨engEvalReach_of_computableEval h, fun σr n r hS hb =>
     (engEvalOK_bool h hv σr n r hS hb).elim fun m hm => by subst hm; cases b <;> rfl⟩
 

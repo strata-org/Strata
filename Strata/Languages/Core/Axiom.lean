@@ -17,6 +17,9 @@ public section
 open Std (ToFormat Format format)
 open Lambda
 
+/-- Location of expressions this file builds itself. -/
+abbrev axiomLoc : ExprSourceLoc := ExprSourceLoc.synthesized "axiom"
+
 /-!
 ## Axioms
 
@@ -79,7 +82,7 @@ occurrences of each binder's name become bound by it. -/
 def Lemma.forallOver (binders : List (CoreIdent × LMonoTy)) (e : LExpr CoreLParams.mono) :
     LExpr CoreLParams.mono :=
   binders.foldr (init := e) fun (x, ty) body =>
-    .quant () .all x.name (some ty) (LExpr.noTrigger ()) (closeVarByName 0 x body)
+    .quant axiomLoc .all x.name (some ty) (LExpr.noTrigger axiomLoc) (closeVarByName 0 x body)
 
 def Lemma.eraseTypes (l : Lemma) : Lemma :=
   { l with e := l.e.eraseTypes }

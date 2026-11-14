@@ -93,7 +93,8 @@ private def renameAllLocalNames
     : @Lambda.LMonoTySignature Unit × @Lambda.LMonoTySignature Unit × List Statement :=
   let new_body := bodyStmts.map (fun (s0 : Statement) =>
     let s := var_map.toList.foldl (fun (s : Statement) (old_id, new_id) =>
-        let s := Statement.substFvar s old_id (.fvar () new_id .none)
+        let s := Statement.substFvar s old_id (.fvar (ExprSourceLoc.synthesized "inlining")
+            new_id .none)
         Statement.renameLhs s old_id new_id)
       s0
     Statement.replaceLabelsOfBlocksAndAssertAssumes s label_map)
@@ -290,7 +291,8 @@ def inlineCallCmd
           let outs_lhs_and_sig := List.zip lhs out_vars
           List.map
             (fun (lhs_var,out_var) =>
-              Statement.set lhs_var (.fvar () out_var (.none)) md)
+              Statement.set lhs_var (.fvar (ExprSourceLoc.synthesized "inlining") out_var
+                  (.none)) md)
             outs_lhs_and_sig
 
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)

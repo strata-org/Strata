@@ -30,6 +30,12 @@ open Imperative (PathConditionEntry ExprOrNondet PathCondition PathConditions)
 open Imperative.PathConditions (Fold FoldState)
 
 public section
+
+/-- Location of expressions this file builds itself. -/
+abbrev smtEncodingLoc : ExprSourceLoc := ExprSourceLoc.synthesized "smt-encoding"
+
+/-- Location of expressions decoded from an SMT model. -/
+abbrev smtModelLoc : ExprSourceLoc := ExprSourceLoc.synthesized "smt-model"
 /--
 A factory function whose UF declaration has been emitted but whose
 definition (interpreted body and/or axioms) has not been encoded as SMT.Term yet.
@@ -870,9 +876,9 @@ def appToSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (fn a
       | .some n1n, .some n2n =>
         .ok (.app (Op.re_loop n1n n2n) [xt] .regex, ctx, pending)
       | _, _ => .error f!"Natural numbers expected as indices for re.loop.\n\
-                          Original expression: {(LExpr.app () fn arg).eraseTypes}"
+                          Original expression: {(LExpr.app smtEncodingLoc fn arg).eraseTypes}"
     | _, _ => .error f!"Natural numbers expected as indices for re.loop.\n\
-                        Original expression: {(LExpr.app () fn arg).eraseTypes}"
+                        Original expression: {(LExpr.app smtEncodingLoc fn arg).eraseTypes}"
 
   | .app _ fn' e1, e2 => do
     let (e2t, ctx, pending) ← toSMTTerm factory bvs e2 ctx pending
@@ -881,7 +887,8 @@ def appToSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (fn a
   | .op _ fn fnty, e1 => do
     match fnty with
     | none => .error f!"Cannot encode unannotated operation {fn}. \n\
-                        Appears in expression: {LExpr.app () (LExpr.op () fn fnty) e1}"
+                        Appears in expression: {LExpr.app smtEncodingLoc (LExpr.op smtEncodingLoc
+                            fn fnty) e1}"
     | some fnty =>
       let (op, retty, ctx, pending) ← toSMTOp factory fn fnty ctx pending
       let (e1t, ctx, pending) ← toSMTTerm factory bvs e1 ctx pending
@@ -903,7 +910,7 @@ def appToSMTTerm (factory : @Lambda.Factory CoreLParams) (bvs : BoundVars) (fn a
     let uf := UF.mk (id := (toString $ format fn)) (args := argTys) (out := smt_outty)
     .ok (Term.app (.uf uf) allArgs smt_outty, ctx, pending)
   | _, _ =>
-    .error f!"Cannot encode .app expression {LExpr.app () fn arg}"
+    .error f!"Cannot encode .app expression {LExpr.app smtEncodingLoc fn arg}"
 termination_by (sizeOf fn + sizeOf arg, 0)
 decreasing_by
   all_goals simp_wf
@@ -999,7 +1006,7 @@ def resolveOnePendingFnDef (factory : @Lambda.Factory CoreLParams)
       -- Substitute the formals in the function body with appropriate `.bvar`s.
       -- Use substFvarsLifting to properly lift indices under binders.
       let bvs := args.map fun v => (v.id, v.ty)
-      let bvars := (List.range formals.length).map (fun i => LExpr.bvar () i)
+      let bvars := (List.range formals.length).map (fun i => LExpr.bvar smtEncodingLoc i)
       let body := LExpr.substFvarsLifting body (formals.zip bvars)
       let (term, ctx, pending) ← toSMTTerm factory bvs body ctx {}
       .ok (some term, ctx, pending)
@@ -1200,18 +1207,18 @@ and render them with the correct Core data structure.
 def smtTermToLExpr (t : Strata.SMT.Term)
     (constructorNames : Std.HashSet String := {}) : LExpr CoreLParams.mono :=
   match t with
-  | .prim (.bool b)       => .boolConst () b
-  | .prim (.int i)        => .intConst () i
-  | .prim (.real d)       => .rationalConst () d.toRat
-  | .prim (.bitvec b)     => .bitvecConst () _ b
-  | .prim (.string s)     => .strConst () s
+  | .prim (.bool b)       => .boolConst smtModelLoc b
+  | .prim (.int i)        => .intConst smtModelLoc i
+  | .prim (.real d)       => .rationalConst smtModelLoc d.toRat
+  | .prim (.bitvec b)     => .bitvecConst smtModelLoc _ b
+  | .prim (.string s)     => .strConst smtModelLoc s
   | .var v                =>
     -- Zero-arg constructors arrive as plain variables from the SMT solver.
     -- Mark them with `.op` so the formatter can emit `Name()`.
     if constructorNames.contains v.id then
-      .op () v.id none
+      .op smtModelLoc v.id none
     else
-      .fvar () v.id none
+      .fvar smtModelLoc v.id none
   | .app (.core (.uf uf)) args _retTy =>
     -- Constructor names use `.op` so the formatter can distinguish them
     -- from plain variables (e.g., `Nil` constructor must not be .fvar).
@@ -1221,28 +1228,29 @@ def smtTermToLExpr (t : Strata.SMT.Term)
     -- re-parseable syntax.
     let fnExpr : LExpr CoreLParams.mono :=
       match uf.id, args with
-      | "-", [arg] => .op () (if smtTermIsReal arg then "Real.Neg" else "Int.Neg") none
+      | "-", [arg] => .op smtModelLoc (if smtTermIsReal arg then "Real.Neg" else "Int.Neg") none
       | _, _ =>
         if constructorNames.contains uf.id then
-          .op () uf.id none
+          .op smtModelLoc uf.id none
         else
-          .fvar () uf.id none
-    args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg constructorNames)) fnExpr
+          .fvar smtModelLoc uf.id none
+    args.foldl (fun acc arg => .app smtModelLoc acc (smtTermToLExpr arg constructorNames)) fnExpr
   | .app (.datatype_op _kind name) args _retTy =>
-    let fnExpr : LExpr CoreLParams.mono := .op () name none
-    args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg constructorNames)) fnExpr
+    let fnExpr : LExpr CoreLParams.mono := .op smtModelLoc name none
+    args.foldl (fun acc arg => .app smtModelLoc acc (smtTermToLExpr arg constructorNames)) fnExpr
   | .app op args _ =>
     -- Generic fallback for other ops: render as op name applied to args
     let opName := op.mkName
-    let fnExpr : LExpr CoreLParams.mono := .op () opName none
-    args.foldl (fun acc arg => .app () acc (smtTermToLExpr arg constructorNames)) fnExpr
-  | .none _ty             => .op () "none" none
-  | .some inner           => .app () (.op () "some" none) (smtTermToLExpr inner constructorNames)
+    let fnExpr : LExpr CoreLParams.mono := .op smtModelLoc opName none
+    args.foldl (fun acc arg => .app smtModelLoc acc (smtTermToLExpr arg constructorNames)) fnExpr
+  | .none _ty             => .op smtModelLoc "none" none
+  | .some inner           => .app smtModelLoc (.op smtModelLoc "some" none) (smtTermToLExpr inner
+      constructorNames)
   | .quant _ _ _ _        =>
     -- Quantifiers in model values are unusual; fall back to string repr
     let s := match Strata.SMTDDM.termToString t with
              | .ok s => s | .error _ => repr t |>.pretty
-    .fvar () s none
+    .fvar smtModelLoc s none
 
 /--
 Extract the set of datatype constructor names from an `SMT.Context`.

@@ -18,21 +18,21 @@ why the folding soundness conditions (`AxiomFoldSound`, `FoldSound`, `RewriteSou
 that folding keeps the value an expression has, rather than that folding and the original
 evaluate alike, which no runtime factory satisfies. -/
 
-#guard Core.Simplify.fold Core.Factory 100 Core.FoldAxioms.unannotatedSum == .intConst () 3
+#guard Core.eraseLocs (Core.Simplify.fold Core.Factory 100 Core.FoldAxioms.unannotatedSum) == Core.eraseLocs (.intConst Core.coreLoc 3)
 
 /-! `Core.FoldAxioms.mistypedSum` is `1 + 2` with `+` annotated at `int → int → bool`, a type
 its signature does not have: it denotes a Boolean, and Core's factory folds it to the integer
 `3`. This is why the folding conditions ask the operators of an expression to be consistent
 with the folding factory (`Lambda.OpsConsistentR`). -/
 
-#guard Core.Simplify.fold Core.Factory 100 Core.FoldAxioms.mistypedSum == .intConst () 3
+#guard Core.eraseLocs (Core.Simplify.fold Core.Factory 100 Core.FoldAxioms.mistypedSum) == Core.eraseLocs (.intConst Core.coreLoc 3)
 
 /-! The same with the folding factory and fuel the phase uses, `runCtx program F0`, for a
 program without declarations over Core's factory. -/
 
 #guard
   let C := Core.FoldAxioms.runCtx { decls := [] } Core.Factory
-  Core.Simplify.fold C.foldFactory C.evalFuel Core.FoldAxioms.unannotatedSum == .intConst () 3 &&
-    Core.Simplify.fold C.foldFactory C.evalFuel Core.FoldAxioms.mistypedSum == .intConst () 3
+  Core.eraseLocs (Core.Simplify.fold C.foldFactory C.evalFuel Core.FoldAxioms.unannotatedSum) == Core.eraseLocs (.intConst Core.coreLoc 3) &&
+    Core.eraseLocs (Core.Simplify.fold C.foldFactory C.evalFuel Core.FoldAxioms.mistypedSum) == Core.eraseLocs (.intConst Core.coreLoc 3)
 
 end

@@ -105,11 +105,11 @@ theorem evalCmd_init_nondet_bool_literal {f : Expression.Factory}
 
 /-- `Bool.Not` annotated as `bool`: a partial application (hence a value) whose
 annotation is not an instance of the signature `bool → bool`. -/
-private def notAsBool : Expression.Expr := .op () ⟨"Bool.Not", ()⟩ (some .bool)
+private def notAsBool : Expression.Expr := .op Core.coreLoc ⟨"Bool.Not", ()⟩ (some .bool)
 
 /-- `Bool.Not` with its signature as annotation. -/
 private def notAsArrow : Expression.Expr :=
-  .op () ⟨"Bool.Not", ()⟩ (some (.arrow .bool .bool))
+  .op Core.coreLoc ⟨"Bool.Not", ()⟩ (some (.arrow .bool .bool))
 
 #guard Lambda.LExpr.isValue Core.Factory notAsBool
 #guard Lambda.LExpr.typeCheck [] notAsBool == some .bool
@@ -118,15 +118,15 @@ private def notAsArrow : Expression.Expr :=
 
 /-- `Sequence.empty` (signature `Sequence a`) annotated with its own type variable `t`. -/
 private def emptyAsSeqT : Expression.Expr :=
-  .op () ⟨"Sequence.empty", ()⟩ (some (Core.seqTy (.ftvar "t")))
+  .op Core.coreLoc ⟨"Sequence.empty", ()⟩ (some (Core.seqTy (.ftvar "t")))
 
 /-- `Sequence.empty` annotated with an instance of its signature. -/
 private def emptyAsSeqInt : Expression.Expr :=
-  .op () ⟨"Sequence.empty", ()⟩ (some (Core.seqTy .int))
+  .op Core.coreLoc ⟨"Sequence.empty", ()⟩ (some (Core.seqTy .int))
 
 /-- `Bool.Not` (signature `bool → bool`) annotated with the more general `t → t`. -/
 private def notAsPoly : Expression.Expr :=
-  .op () ⟨"Bool.Not", ()⟩ (some (.arrow (.ftvar "t") (.ftvar "t")))
+  .op Core.coreLoc ⟨"Bool.Not", ()⟩ (some (.arrow (.ftvar "t") (.ftvar "t")))
 
 #guard Lambda.LExpr.typeCheckWith Core.Factory [] emptyAsSeqT ==
   Lambda.LExpr.typeCheck [] emptyAsSeqT
@@ -140,7 +140,7 @@ private def notAsPoly : Expression.Expr :=
 
 /-- The closed quantifier `∀ y : int. y = y`. -/
 private def quantExpr : Expression.Expr :=
-  .quant () .all "y" (some .int) (.bvar () 0) (.eq () (.bvar () 0) (.bvar () 0))
+  .quant Core.coreLoc .all "y" (some .int) (.bvar Core.coreLoc 0) (.eq Core.coreLoc (.bvar Core.coreLoc 0) (.bvar Core.coreLoc 0))
 
 #guard !Lambda.LExpr.isValue Core.Factory quantExpr
 

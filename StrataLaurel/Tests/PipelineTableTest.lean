@@ -15,11 +15,11 @@ pass creates, removes or rejects shows up as a diff in the expected output. -/
 info: V starts holding here   | holds, and is carried on   + required here, holds, and is carried on
 ' was holding, and is dropped here   : not holding, but would be carried   (blank) not holding, and would not be carried
 S: LaurelProgram.staticFunctions.cons   O: Program.Ordered   N: Pseudo.needsOverrideRules
-I: StmtExpr.InstanceCall   R: StmtExpr.Resume   U: Pseudo.unstableFieldReceiver
-In: StmtExpr.IncrDecr   C: StmtExpr.CompoundAssign   Ic: CompositeType.instanceProcedures.cons
-Rv: StmtExpr.Return.value.some   T: CompositeType.typeArgs.cons   Co: TypeDefinition.Composite
+C: StmtExpr.Call.receiver?.some   R: StmtExpr.Resume   U: Pseudo.unstableFieldReceiver
+I: StmtExpr.IncrDecr   Co: StmtExpr.CompoundAssign   Ic: CompositeType.instanceProcedures.cons
+Rv: StmtExpr.Return.value.some   T: CompositeType.typeArgs.cons   tC: TypeDefinition.Composite
 Ne: StmtExpr.New   Is: StmtExpr.IsType   A: StmtExpr.AsType
-tC: TypeDefinition.Constrained   Th: StmtExpr.Throw   Tr: StmtExpr.Try
+tO: TypeDefinition.Constrained   Th: StmtExpr.Throw   Tr: StmtExpr.Try
 Im: Pseudo.implicitHeap   Ts: Procedure.throwsType.some   H: StmtExpr.Hole.type.none
 Tf: StmtExpr.Try.finally?.some   G: StmtExpr.Goto.destination.blockStart   B: StmtExpr.Block.invariants.cons
 Bd: StmtExpr.Block.decreases.some   Re: StmtExpr.Return   Sc: LaurelProgram.staticFields.cons
@@ -31,8 +31,8 @@ sT: StmtExpr.This   pM: Pseudo.imperativeFunction   Un: Program.Unordered
 Al: TypeDefinition.Alias   pN: Pseudo.needsLoopInvariantChecks   M: Pseudo.mutatedInput
 CC: Procedure.contracts.Coroutine   sO: StmtExpr.OldGuarantee   sL: StmtExpr.OldRelies
 
-                                      S   N   R   In  Ic  T   Ne  A   Th  Im  H   G   Bd  Sc  pI  V   Ol  Y   Hd  L   pM  Al  M   sO
-phase                                   O   I   U   C   Rv  Co  Is  tC  Tr  Ts  Tf  B   Re  Ov  W   P   pO  Ha  St  sT  Un  pN  CC  sL
+                                      S   N   R   I   Ic  T   Ne  A   Th  Im  H   G   Bd  Sc  pI  V   Ol  Y   Hd  L   pM  Al  M   sO
+phase                                   O   C   U   Co  Rv  tC  Is  tO  Tr  Ts  Tf  B   Re  Ov  W   P   pO  Ha  St  sT  Un  pN  CC  sL
  1 EliminateStack                     | | : : : : : : : : : : : : : : : : : : : : : : : : : : : : : : | : : : : : | : | : : : : : : :
  2 CoroutineElaboration               + + :   V : : :   : :   : : : : : : : : : : : : : : : : : : : : | : : V : : | : | : : : : V
  3 CheckOverrideRefinement            + + V : | : : : : : : : : : : : : : : : : : : : : : : : : : : : | : : | : : | : | : : : : | : :

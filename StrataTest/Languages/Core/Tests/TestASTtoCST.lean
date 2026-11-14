@@ -20,6 +20,7 @@ namespace Strata.Test
 
 open Strata.CoreDDM
 open Strata
+private abbrev testLoc : _root_.ExprSourceLoc := _root_.ExprSourceLoc.synthesized "test"
 
 def ASTtoCST (program : StrataDDM.Program) := do
   -- Use old translator to get AST
@@ -810,7 +811,7 @@ private def formatCore (p : Core.Program) : IO Unit :=
 private def lambdaIdentityPgm : Core.Program := { decls := [
   .func { name := "intID", typeArgs := [], inputs := [],
           output := .arrow .int .int,
-          body := some (.abs () "" (.some .int) (.bvar () 0)) } .empty
+          body := some (.abs testLoc "" (.some .int) (.bvar testLoc 0)) } .empty
 ]}
 
 /--
@@ -826,8 +827,8 @@ function intID () : int -> int {
 private def lambdaNestedPgm : Core.Program := { decls := [
   .func { name := "constFn", typeArgs := [], inputs := [],
           output := .arrow .int (.arrow .int .int),
-          body := some (.abs () "" (.some .int)
-            (.abs () "" (.some .int) (.bvar () 1))) } .empty
+          body := some (.abs testLoc "" (.some .int)
+            (.abs testLoc "" (.some .int) (.bvar testLoc 1))) } .empty
 ]}
 
 /--
@@ -843,7 +844,7 @@ function constFn () : int -> int -> int {
 private def lambdaNamedPgm : Core.Program := { decls := [
   .func { name := "namedLam", typeArgs := [], inputs := [],
           output := .arrow .int .int,
-          body := some (.abs () "x" (.some .int) (.bvar () 0)) } .empty
+          body := some (.abs testLoc "x" (.some .int) (.bvar testLoc 0)) } .empty
 ]}
 
 /--
@@ -860,7 +861,8 @@ function namedLam () : int -> int {
 private def lambdaAppliedPgm : Core.Program := { decls := [
   .func { name := "test", typeArgs := [], inputs := [],
           output := .int,
-          body := some (.app () (.abs () "x" (.some .int) (.bvar () 0)) (.intConst () 5)) } .empty
+          body := some (.app testLoc (.abs testLoc "x" (.some .int) (.bvar testLoc 0)) (.intConst
+              testLoc 5)) } .empty
 ]}
 
 /--
@@ -877,9 +879,10 @@ function test () : int {
 private def lambdaMultiBindPgm : Core.Program := { decls := [
   .func { name := "add", typeArgs := [], inputs := [],
           output := .arrow .int (.arrow .int .int),
-          body := some (.abs () "x" (.some .int)
-            (.abs () "y" (.some .int)
-              (.app () (.app () Core.intAddOp (.bvar () 1)) (.bvar () 0)))) } .empty
+          body := some (.abs testLoc "x" (.some .int)
+            (.abs testLoc "y" (.some .int)
+              (.app testLoc (.app testLoc Core.intAddOp (.bvar testLoc 1)) (.bvar testLoc
+                  0)))) } .empty
 ]}
 
 /--
@@ -896,9 +899,9 @@ function add () : int -> int -> int {
 private def lambdaHigherOrderPgm : Core.Program := { decls := [
   .func { name := "applyFn", typeArgs := [], inputs := [],
           output := .arrow (.arrow .int .int) (.arrow .int .int),
-          body := some (.abs () "f" (.some (.arrow .int .int))
-            (.abs () "x" (.some .int)
-              (.app () (.bvar () 1) (.bvar () 0)))) } .empty
+          body := some (.abs testLoc "f" (.some (.arrow .int .int))
+            (.abs testLoc "x" (.some .int)
+              (.app testLoc (.bvar testLoc 1) (.bvar testLoc 0)))) } .empty
 ]}
 
 /-- info: program Core;
@@ -960,7 +963,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.rationalConst () (1/3 : Rat))
+#eval showReal (.rationalConst testLoc (1/3 : Rat))
 
 /--
 info: program Core;
@@ -970,7 +973,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.rationalConst () (1/7 : Rat))
+#eval showReal (.rationalConst testLoc (1/7 : Rat))
 
 /--
 info: program Core;
@@ -980,7 +983,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.rationalConst () (-2/3 : Rat))
+#eval showReal (.rationalConst testLoc (-2/3 : Rat))
 
 -- A `Rat` keeps its sign in the numerator, so the denominator is never
 -- negative. Writing the sign on the denominator (`1 / (-3)`) normalizes to
@@ -993,7 +996,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.rationalConst () (1 / (-3) : Rat))
+#eval showReal (.rationalConst testLoc (1 / (-3) : Rat))
 
 -- Terminating decimals are unaffected: they still print as decimals.
 /--
@@ -1004,7 +1007,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.rationalConst () (1/2 : Rat))
+#eval showReal (.rationalConst testLoc (1/2 : Rat))
 
 -- Negative terminating decimals are decomposed into `real.neg(…)`.
 /--
@@ -1015,7 +1018,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.rationalConst () (-3 : Rat))
+#eval showReal (.rationalConst testLoc (-3 : Rat))
 
 -- Negative non-integer terminating decimal.
 /--
@@ -1026,7 +1029,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.rationalConst () (-1/2 : Rat))
+#eval showReal (.rationalConst testLoc (-1/2 : Rat))
 
 -------------------------------------------------------------------------------
 -- Round-trip: `frac{n, d}` written in surface syntax parses back to the exact
@@ -1133,7 +1136,7 @@ function f () : real {
 }
 -/
 #guard_msgs in
-#eval showReal (.rationalConst () (1/0 : Rat))
+#eval showReal (.rationalConst testLoc (1/0 : Rat))
 
 -------------------------------------------------------------------------------
 -- The `frac{...}` literal uses `frac{` as its leading token (like `bv{N}`), so
@@ -1171,9 +1174,10 @@ function g () : bool {
 
 private def constAstPgm : Core.Program := { decls := [
   Core.Decl.const "opaque" .int,
-  Core.Decl.const "five" .int (value := some (.intConst () 5)),
+  Core.Decl.const "five" .int (value := some (.intConst testLoc 5)),
   Core.Decl.const "seven" .int
-    (value := some (.app () (.app () Core.intAddOp (.fvar () "five" none)) (.intConst () 2)))
+    (value := some (.app testLoc (.app testLoc Core.intAddOp (.fvar testLoc "five" none))
+        (.intConst testLoc 2)))
     (attr := #[.inline])
 ]}
 

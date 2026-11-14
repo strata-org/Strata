@@ -35,7 +35,7 @@ namespace Core.StatementSemanticsTests
 
 open Imperative
 
-private def intVal (n : Int) : Expression.Expr := .intConst () n
+private def intVal (n : Int) : Expression.Expr := .intConst Core.coreLoc n
 /-- The integer `n` as a value of the factory `fac`. -/
 private def intV (fac : Expression.Factory) (n : Int) : Expression.Val :=
   ⟨fac.model.tcInterp, .int, (n : Int)⟩
@@ -80,8 +80,8 @@ private def oneInoutProc (y : Expression.Ident) (ty : Lambda.LMonoTy) : Procedur
 private def oldCalleeY : Expression.Ident := CoreIdent.mkOld calleeY.name
 
 private def oldYIs7 : Expression.Expr :=
-  Lambda.LExpr.eq ()
-    (Lambda.LExpr.fvar () oldCalleeY (some .int)) (intVal 7)
+  Lambda.LExpr.eq Core.coreLoc
+    (Lambda.LExpr.fvar Core.coreLoc oldCalleeY (some .int)) (intVal 7)
 
 private def oneInoutOldProc : Procedure :=
   { oneInoutProc calleeY .int with
@@ -154,7 +154,7 @@ private theorem initCallFrame_oneInout (v : Expression.Val) :
 private theorem evalExpressions_inout
     (fac : Expression.Factory) (v : Expression.Val) (hv : HasVal.value fac v) :
     EvalExpressions fac (calleeFrame v)
-      [Lambda.LExpr.fvar () calleeY none] [v] := by
+      [Lambda.LExpr.fvar Core.coreLoc calleeY none] [v] := by
   apply EvalExpressions.eval_some
   · simp [SemanticStore.varsDefined, HasFvars.getFvars, Lambda.LExpr.LExpr.getVars,
       calleeFrame, updatedState]
@@ -248,7 +248,7 @@ The helpers hold in every runtime factory, so the examples quantify over one.
 
 /-- A Boolean literal evaluates to its value in any factory and store. -/
 private theorem eval_boolConst (fac : Expression.Factory) (σ : CoreStore) (b : Bool) :
-    Expression.eval fac σ (Lambda.LExpr.boolConst () b)
+    Expression.eval fac σ (Lambda.LExpr.boolConst Core.coreLoc b)
       = some (Lambda.SemValue.ofBool fac.model.tcInterp b) :=
   Lambda.LExpr.denoteEval_boolConst
 
@@ -1029,7 +1029,7 @@ private theorem intV_not_bool (fac : Expression.Factory) (n : Int) (b : Bool)
 example (fac : Expression.Factory) :
     ¬ ∃ Γ, StoreHasTyping fac (updatedState emptyStore callerResult (intV fac 0)) Γ ∧
       Block.fvarTypesWellAnnotated Γ
-        [Statement.assert "p" (.fvar () callerResult (some .bool)) #[]] := by
+        [Statement.assert "p" (.fvar Core.coreLoc callerResult (some .bool)) #[]] := by
   rintro ⟨Γ, hσ, hw, -⟩
   have hx : Γ callerResult = some (.forAll [] .bool) :=
     hw _ _ List.mem_cons_self

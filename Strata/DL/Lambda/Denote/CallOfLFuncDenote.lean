@@ -134,6 +134,29 @@ theorem OpsConsistentR_varOpen {T : LExprParams} {F : @Factory T}
     obtain ⟨h1, h2⟩ := OpsConsistentR.eq_inv h
     exact .eq (ih1 k h1) (ih2 k h2)
 
+/-- `OpsConsistent` does not depend on the root metadata. -/
+theorem OpsConsistent_replaceMetadata1 {F : @Factory T} (m : T.Metadata) {e : LExpr T.mono}
+    (h : OpsConsistent F e) : OpsConsistent F (LExpr.replaceMetadata1 m e) := by
+  cases e with
+  | op m' o ty =>
+    -- `LFunc.opTypeSubst` reads only the operator's type annotation.
+    have hsub : ∀ fn : LFunc T, LFunc.opTypeSubst fn (.op m o ty) = LFunc.opTypeSubst fn (.op m' o
+        ty) := by
+      intro fn; unfold LFunc.opTypeSubst; cases ty <;> rfl
+    simp only [LExpr.replaceMetadata1]
+    unfold OpsConsistent at h ⊢
+    simp only [hsub]
+    exact h
+  | _ => exact h
+
+/-- `fvars_annotated_by` does not depend on the root metadata. -/
+theorem fvars_annotated_by_replaceMetadata1 {T : LExprParams} [DecidableEq T.IDMeta]
+    {tyMap : Map T.Identifier LMonoTy} (m : T.Metadata) {e : LExpr T.mono}
+    (h : fvars_annotated_by tyMap e) : fvars_annotated_by tyMap (LExpr.replaceMetadata1 m e) := by
+  cases e with
+  | fvar _ _ ty => cases ty <;> exact h
+  | _ => exact h
+
 /-- `OpsConsistent` is preserved by `substFvars`, provided all substituted
 values satisfy `OpsConsistent`. -/
 theorem OpsConsistent_substFvars
@@ -157,7 +180,7 @@ theorem OpsConsistent_substFvars
     | fvar m name ty =>
       simp only [LExpr.substFvars.substFvarsAux]
       split
-      · next v hfind => exact hsm name v hfind
+      · next v hfind => exact OpsConsistent_replaceMetadata1 m (hsm name v hfind)
       · exact h'
     | app m e1 e2 ih1 ih2 =>
       simp only [LExpr.substFvars.substFvarsAux, OpsConsistent]
@@ -224,7 +247,8 @@ theorem OpsConsistent_substFvarsLifting
     | fvar m name ty =>
       simp only [LExpr.substFvarsLifting.go]
       split
-      · next v hfind => exact OpsConsistent_liftBVars (hsm name v hfind)
+      · next v hfind => exact OpsConsistent_replaceMetadata1 m (OpsConsistent_liftBVars (hsm name v
+          hfind))
       · exact h'
     | app m e1 e2 ih1 ih2 =>
       simp only [LExpr.substFvarsLifting.go, OpsConsistent]
@@ -343,7 +367,7 @@ theorem fvars_annotated_by_substFvars {T : LExprParams} [DecidableEq T.IDMeta]
     | fvar m name ty =>
       simp only [LExpr.substFvars.substFvarsAux]
       split
-      · next v hfind => exact hsm name v hfind
+      · next v hfind => exact fvars_annotated_by_replaceMetadata1 m (hsm name v hfind)
       · exact h'
     | app m e1 e2 ih1 ih2 =>
       simp only [LExpr.substFvars.substFvarsAux, fvars_annotated_by]
@@ -410,7 +434,8 @@ theorem fvars_annotated_by_substFvarsLifting {T : LExprParams} [DecidableEq T.ID
     | fvar m name ty =>
       simp only [LExpr.substFvarsLifting.go]
       split
-      · next v hfind => exact fvars_annotated_by_liftBVars (hsm name v hfind)
+      · next v hfind => exact fvars_annotated_by_replaceMetadata1 m (fvars_annotated_by_liftBVars
+          (hsm name v hfind))
       · exact h'
     | app m e1 e2 ih1 ih2 =>
       simp only [LExpr.substFvarsLifting.go, fvars_annotated_by]

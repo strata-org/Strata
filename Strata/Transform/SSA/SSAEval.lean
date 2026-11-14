@@ -76,7 +76,7 @@ omit iBE iLB iHI iLI iHa iLV in
 theorem evalsTo_boolLit (hF : SSALaws F) {e : P.Expr} {v : P.Val} {b : Bool}
     (hb : WPOps.boolLit? e = some b) (h : EvalsTo F σ e v) :
     v = if b then HasBool.ttVal F else HasBool.ffVal F :=
-  h.det (WPLang.boolLit?_eq hb ▸ evalsTo_lit F hF σ b)
+  h.det ((WPLang.boolLit?_eval hb).trans (evalsTo_lit F hF σ b))
 
 omit iHI iLV in
 /-- Substituting, by `g`, for free variables of `e` variables holding their value or the Boolean
@@ -100,7 +100,12 @@ omit iHI iHa iLV in
 private theorem sameValue_ev (hF : SSALaws F) (hC : WellFormedStore σ F) {a b : P.Expr}
     (h : sameValue a b = true) : P.eval F σ a = P.eval F σ b := by
   unfold sameValue at h
-  repeat' split at h <;> grind [hF.var a, hF.var b, → WPLang.boolLit?_eq]
+  split at h
+  · grind [hF.var a, hF.var b]
+  · split at h
+    · rw [WPLang.boolLit?_eval ‹WPOps.boolLit? a = _›, WPLang.boolLit?_eval ‹WPOps.boolLit? b = _›]
+      grind
+    · exact absurd h (by simp)
 
 omit iHI iLV in
 /-- **Folding is a refinement.**  Under agreement on the free variables of `e`, the folded
@@ -119,21 +124,22 @@ theorem evalsTo_foldE (hF : SSALaws F) (hCL : WellFormedStore σL F)
         grind [SHolds, SVal.expr, HasFvar.mkVar]
     · simp_all [SHolds]
   all_goals
-    obtain rfl := WPLang.iteView?_eq ‹_›
-    have hA' := fun x hx => hA x ((WPLang.getFvars_ite _ _ _ x).2 hx)
-  case case1 c t f c' hb ihc ihb _ | case2 c t f c' hb ihc ihb _ =>
+    replace he := (WPLang.iteView?_eval ‹_›).symm.trans he
+    have hA' := fun x hx =>
+      hA x ((WPLang.iteView?_getFvars x ‹_›).mpr ((WPLang.getFvars_ite _ _ _ x).2 hx))
+  case case1 e c t f hv c' hb ihc ihb | case2 e c t f hv c' hb ihc ihb =>
     rcases WPLang.ev_ite_inv he with ⟨h1, h2⟩ | ⟨h1, h2⟩
     all_goals first
       | exact ihb (fun x hx => hA' x (by simp [hx])) h2
       | have hc := ihc (fun x hx => hA' x (.inl hx)) h1
         simp only [c'] at hb
-        simp_all [WPLang.boolLit?_eq hb, hF.val.eval_tt, hF.val.eval_ff, HasBool.ttVal_ne_ffVal,
+        simp_all [WPLang.boolLit?_eval hb, hF.val.eval_tt, hF.val.eval_ff, HasBool.ttVal_ne_ffVal,
           (HasBool.ttVal_ne_ffVal F).symm]
-  case case3 c t f c' _ t' f' hs _ iht ihf _ =>
+  case case3 e c t f _ _ _ _ _ hs _ iht ihf =>
     rcases WPLang.ev_ite_inv he with ⟨-, h2⟩ | ⟨-, h2⟩
     · exact iht (fun x hx => hA' x (.inr (.inl hx))) h2
     · exact (sameValue_ev hF hCS hs).trans (ihf (fun x hx => hA' x (.inr (.inr hx))) h2)
-  case case4 c t f c' _ t' f' _ ihc iht ihf _ =>
+  case case4 e c t f _ _ _ _ _ _ ihc iht ihf =>
     exact WPLang.ev_ite_congr he (fun _ => ihc fun x hx => hA' x (.inl hx))
       (fun _ => iht fun x hx => hA' x (.inr (.inl hx)))
       (fun _ => ihf fun x hx => hA' x (.inr (.inr hx)))

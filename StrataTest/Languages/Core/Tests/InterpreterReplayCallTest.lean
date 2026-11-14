@@ -19,9 +19,9 @@ namespace InterpreterReplayCallTest
 open Core Lambda Imperative
 
 private def id (name : String) : CoreIdent := ⟨name, ()⟩
-private def int (n : Int) : Expression.Expr := .intConst () n
+private def int (n : Int) : Expression.Expr := .intConst default n
 private def md : MetaData Expression := #[]
-private def yVar : Expression.Expr := .fvar () (id "y") (some .int)
+private def yVar : Expression.Expr := .fvar default (id "y") (some .int)
 
 /-- Callee `Double(n : int, out result : int) { result := n; }`. -/
 private def doubleProc : Procedure := {
@@ -30,7 +30,7 @@ private def doubleProc : Procedure := {
               outputs := [(id "result", (.int : Lambda.LMonoTy))] }
   spec := { preconditions := [], postconditions := [] }
   body := .structured
-    [ .cmd (.cmd (.set (id "result") (.det (.fvar () (id "n") (some .int))) md)) ] }
+    [ .cmd (.cmd (.set (id "result") (.det (.fvar default (id "n") (some .int))) md)) ] }
 
 /-- Procedure environment resolving `Double`. -/
 private def piEnv : String → Option Procedure :=
@@ -42,7 +42,7 @@ private def callStmt : Statement :=
 
 /-- Target assert `y == rhs`. -/
 private def assertTgt (rhs : Int) : Statement :=
-  .cmd (.cmd (.assert "tgt" (.eq () yVar (int rhs)) md))
+  .cmd (.cmd (.assert "tgt" (.eq default yVar (int rhs)) md))
 
 /-- The target assertion id matching `assertTgt rhs` (label and metadata). -/
 private def tgtId (_rhs : Int) : Imperative.AssertId Expression :=

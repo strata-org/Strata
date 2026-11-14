@@ -177,7 +177,7 @@ def mkWFLemmas (taken : Std.HashSet String) (fns : List Function) (typeArgs : Li
       match s with
       | .assume _ p _ => (p :: hyps, names, lemmas)
       | .assert label q md =>
-        let e := hyps.foldl (init := q) fun body p => LExpr.mkApp () boolImpliesOp [p, body]
+        let e := hyps.foldl (init := q) fun body p => LExpr.mkApp coreLoc boolImpliesOp [p, body]
         let name := Strata.Name.freshName names label
         let e := Lemma.forallAbstractingCalls fns binders e
         (hyps, names.insert name, .lemma { name, typeArgs, e } md :: lemmas)
@@ -201,7 +201,7 @@ def mkContractWFLemmas (F : @Lambda.Factory CoreLParams) (taken : Std.HashSet St
   let inouts := proc.header.getInoutParams.toList
   let atEntry (e : Expression.Expr) : Expression.Expr :=
     inouts.foldl (init := e) fun e (x, _) =>
-      LExpr.substFvar e x (.fvar () (CoreIdent.mkOld x.name) none)
+      LExpr.substFvar e x (.fvar coreLoc (CoreIdent.mkOld x.name) none)
   let precondStmts := proc.spec.preconditions.flatMap fun (label, check) =>
     processCondition F (atEntry check.expr) s!"{name}_pre_{label}" label check.md
   let postcondStmts := proc.spec.postconditions.flatMap fun (label, check) =>

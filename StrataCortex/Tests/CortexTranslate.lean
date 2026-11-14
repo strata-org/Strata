@@ -7,12 +7,13 @@
 import StrataLaurel.Implementation
 import StrataLaurel.Implementation.LaurelCompilationPipeline
 import StrataCortex.Implementation.Pipeline
+import StrataCortex.Implementation.Interpret
 
 /-! # The Cortex translation of a Laurel program
 
 The entry point `Cortex.translate` and its resolution: a program that uses the Stack is
 resolved a second time after the stack is eliminated, with the same allowance for
-constrained-type globals in an entry procedure; and inlining is refused with CFG bodies. -/
+constrained-type globals in an entry procedure. -/
 
 open Strata
 
@@ -69,16 +70,22 @@ procedure main() entry
   | .ok _ => IO.println "resolved"
   | .error ms => printMessages ms
 
+/-- info: Core type checking succeeded. -/
 #guard_msgs in
 #eval show IO Unit from do
-  let ms ← Cortex.verifyToMessages (← parse stackGlobal) { verifyOptions := Core.VerifyOptions.quiet }
-  printMessages ms.toList
-
-/-- info: 0: --inline-procedures works on structured bodies, which the CFG translation does not produce -/
-#guard_msgs in
-#eval show IO Unit from do
-  let (core?, ms) := Cortex.translate {} (← parse stackGlobal) (cfg := true) (inline := ["main"])
-  if core?.isSome then IO.println "translated"
+  let (core?, ms) := Cortex.translate {} (← parse stackGlobal)
   printMessages ms
+  let some core := core? | IO.println "not translated"
+  match Core.typeCheck .quiet core with
+  | .error e => IO.println s!"Core type checking failed: {e}"
+  | .ok _ => IO.println "Core type checking succeeded."
+
+#guard_msgs in
+#eval show IO Unit from do
+  match Cortex.interpretEntries (← parse stackGlobal) with
+  | .error e => IO.println s!"error: {e}"
+  | .ok outcome =>
+    printMessages outcome.diagnostics.toList
+    for (name, reason) in outcome.errors do IO.println s!"stopped: '{name}': {reason}"
 
 end Cortex.TranslateTest

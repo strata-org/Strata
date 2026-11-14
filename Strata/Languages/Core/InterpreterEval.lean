@@ -29,11 +29,11 @@ public section
 /-- A canonical value of a monomorphic primitive type, for don't-care slots; `none` for types
     with no literal default. -/
 def defaultCanonicalValue : Lambda.LMonoTy → Option Expression.Expr
-  | .tcons "int" [] => some (.intConst () 0)
-  | .tcons "bool" [] => some (.boolConst () false)
-  | .tcons "string" [] => some (.strConst () "")
-  | .tcons "real" [] => some (.rationalConst () 0)
-  | .bitvec n => some (.bitvecConst () n 0)
+  | .tcons "int" [] => some (.intConst default 0)
+  | .tcons "bool" [] => some (.boolConst default false)
+  | .tcons "string" [] => some (.strConst default "")
+  | .tcons "real" [] => some (.rationalConst default 0)
+  | .bitvec n => some (.bitvecConst default n 0)
   | _ => none
 
 /-- The constructor-nesting bound for `datatypeDefault`. -/
@@ -65,7 +65,7 @@ def datatypeDefault (F : @Lambda.Factory CoreLParams) :
               let inst (t : Lambda.LMonoTy) : Lambda.LMonoTy := Lambda.LMonoTy.subst S t
               let generic := Lambda.LMonoTy.mkArrow' f.output f.inputs.values
               (f.inputs.values.map inst).mapM (datatypeDefault F depth) |>.map fun args =>
-                args.foldl (fun acc a => .app () acc a) (.op () f.name (some (inst generic)))
+                args.foldl (fun acc a => .app default acc a) (.op default f.name (some (inst generic)))
           | _ => none
       | _ => none
 

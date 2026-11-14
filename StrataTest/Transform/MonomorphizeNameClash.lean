@@ -103,7 +103,7 @@ info: error: MonomorphizeFunctions: the name 'v#1' contains '#', which is reserv
     `g#1`, which no declaration introduces (the program is built directly, since it would
     not type-check). -/
 private def hashOpProgram : Core.Program :=
-  { decls := [.ax { name := "a", e := .op () ⟨"g#1", ()⟩ none } .empty] }
+  { decls := [.ax { name := "a", e := .op default ⟨"g#1", ()⟩ none } .empty] }
 
 /--
 info: "MonomorphizeFunctions: the name 'g#1' contains '#', which is reserved for monomorphized copies"
@@ -209,7 +209,7 @@ info: "MonomorphizeFunctions: the name '$__mono#id#int' contains '#', which is r
     declares it (the program is built directly, since it would not type-check). -/
 private def nestedHashTyProgram : Core.Program :=
   let ty : Lambda.LMonoTy := .tcons "Map" [.int, .tcons "Set" [.tcons "Foo#bar" []]]
-  { decls := [.ax { name := "a", e := .op () ⟨"g", ()⟩ (some ty) } .empty] }
+  { decls := [.ax { name := "a", e := .op default ⟨"g", ()⟩ (some ty) } .empty] }
 
 /--
 info: "MonomorphizeFunctions: the name 'Foo#bar' contains '#', which is reserved for monomorphized copies"

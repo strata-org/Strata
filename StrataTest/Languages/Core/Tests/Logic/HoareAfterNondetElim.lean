@@ -85,13 +85,13 @@ private def nId : Core.Expression.Ident := ⟨"n", ()⟩
 private def rId : Core.Expression.Ident := ⟨"r", ()⟩
 
 /-- `int.gt(r, 0)`. -/
-private abbrev gtE : Core.Expression.Expr := .app () (.app () Core.intGtOp (v rId)) (.intConst () 0)
+private abbrev gtE : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc Core.intGtOp (v rId)) (.intConst Core.valueLoc 0)
 /-- `int.sub(r, 1)`. -/
 private abbrev subE : Core.Expression.Expr :=
-  .app () (.app () Core.intSubOp (v rId)) (.intConst () 1)
+  .app Core.valueLoc (.app Core.valueLoc Core.intSubOp (v rId)) (.intConst Core.valueLoc 1)
 /-- `int.add(r, 2)`. -/
 private abbrev addE : Core.Expression.Expr :=
-  .app () (.app () Core.intAddOp (v rId)) (.intConst () 2)
+  .app Core.valueLoc (.app Core.valueLoc Core.intAddOp (v rId)) (.intConst Core.valueLoc 2)
 
 /-- The inner `if`. -/
 private abbrev innerIte : Core.Statement :=

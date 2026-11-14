@@ -47,7 +47,7 @@ namespace ReplayCompleteSanityTest
 open Core Imperative
 
 private def md : MetaData Expression := #[]
-private def ffE : Expression.Expr := .boolConst () false
+private def ffE : Expression.Expr := .boolConst default false
 
 /-- Core's factory, modeled by its interpretation `Core.factoryInterp`: the factory the
     counterexamples below are replayed at. -/
@@ -129,7 +129,7 @@ theorem wGenuine :
 /-! ## A run that resolves a nondeterministic guard and a nondeterministic `init` -/
 
 private def bId : Expression.Ident := ⟨"b", ()⟩
-private def bE : Expression.Expr := .fvar () bId none
+private def bE : Expression.Expr := .fvar default bId none
 
 /-- The callee: no formals, no spec clauses, body `init b : bool := *; assert neg : b`. -/
 def hProc : Procedure :=
@@ -167,13 +167,18 @@ private theorem ff_of_denotes (F : Expression.Factory) (hF : F.factory = Core.Fa
 
 /-- Every value the engine commits for `b` is the value `b` holds in the runtime store. -/
 private theorem bE_eval (F : Lambda.Factory CoreLParams) (σr : RStore Expression) (n : Nat)
-    (r : Expression.Expr) (h : evalBounded n F σr bE = some r) : σr bId = some r := by
+    (r : Expression.Expr) (h : evalBounded n F σr bE = some r) :
+    ∃ v, σr bId = some v ∧ r = Lambda.LExpr.replaceMetadata1 (default : ExpressionMetadata) v := by
   have h2 := (evalBounded_eq_some_iff.1 h).2.1
-  have hbv : Lambda.LExpr.isValue F (.fvar () bId none : Expression.Expr) = false := by
+  have hbv : Lambda.LExpr.isValue F (.fvar default bId none : Expression.Expr) = false := by
     rw [Lambda.LExpr.isValue.eq_def]; rfl
-  cases n <;> cases hσ : σr bId <;>
-    simp_all [Lambda.LExpr.eval, Lambda.LExpr.evalCore, Lambda.Factory.callOfLFunc,
-      Lambda.getLFuncCall, Lambda.getLFuncCall.go, bE]
+  cases hσ : σr bId with
+  | none => cases n <;>
+      simp_all [Lambda.LExpr.eval, Lambda.LExpr.evalCore, Lambda.Factory.callOfLFunc,
+        Lambda.getLFuncCall, Lambda.getLFuncCall.go, bE]
+  | some v => exact ⟨v, rfl, by cases n <;>
+      simp_all [Lambda.LExpr.eval, Lambda.LExpr.evalCore, Lambda.Factory.callOfLFunc,
+        Lambda.getLFuncCall, Lambda.getLFuncCall.go, bE]⟩
 
 /-- The callee's entry frame. -/
 private def hFrame : SemanticStore Expression :=
@@ -198,13 +203,14 @@ private theorem hAssert_eval (F : Expression.Factory) (hF : F.factory = Core.Fac
     Option.ne_none_iff_exists'.1 fun h => by simp [(hS.1 bId).2 h] at hb
   have hd := hS.2 bId rb _ hr hb
   obtain ⟨m, c, rfl⟩ := denotes_boolConst (hF ▸ Factory_constrsNotBool) hd rfl
-  refine ⟨_, evalBounded_eq_some_iff.2 ⟨(evalTypedDomain_iff hS _).2 ⟨_, hAssert_denote F⟩, ?_,
-    rfl, evalOpsChecked_fvar hr rfl⟩, hd⟩
-  have hbv : Lambda.LExpr.isValue F.factory (.fvar () bId none : Expression.Expr) = false := by
+  refine ⟨Lambda.LExpr.replaceMetadata1 (default : ExpressionMetadata) (Lambda.LExpr.boolConst m c),
+    evalBounded_eq_some_iff.2 ⟨(evalTypedDomain_iff hS _).2 ⟨_, hAssert_denote F⟩, ?_,
+    rfl, evalOpsChecked_fvar hr rfl⟩, Denotes_replaceMetadata1 (default : ExpressionMetadata) hd⟩
+  have hbv : Lambda.LExpr.isValue F.factory (.fvar default bId none : Expression.Expr) = false := by
     rw [Lambda.LExpr.isValue.eq_def]; rfl
   simp [Lambda.LExpr.eval, Lambda.LExpr.evalCore, hbv, Lambda.Factory.callOfLFunc,
     Lambda.getLFuncCall, Lambda.getLFuncCall.go, bE, hr, Lambda.LExpr.boolConst,
-    Lambda.isValue_const_true]
+    Lambda.LExpr.replaceMetadata1, Lambda.isValue_const_true]
 
 /-- The reference semantics has a run of `hCex.cfg`, stopped right after the call, that takes the
     then-branch, has the callee's `init b` write `ff`, and emits an assert event of the callee's
@@ -244,8 +250,10 @@ private theorem hRun (F : Expression.Factory) (hF : F.factory = Core.Factory) :
     hAssert_denote F,
     ⟨fun σr v hS hv => ⟨1, Option.some.inj ((hAssert_denote F).symm.trans hv) ▸
       hAssert_eval F hF σr hS⟩,
-    fun σr n r hS h => ff_of_denotes F hF r
-      (hS.2 bId r _ (bE_eval _ σr n r h) (by simp [hStore, SemanticStore.update]))⟩⟩
+    fun σr n r hS h => by
+      obtain ⟨v, hv, rfl⟩ := bE_eval _ σr n r h
+      exact ff_of_denotes F hF _ (Denotes_replaceMetadata1 (default : ExpressionMetadata)
+        (hS.2 bId v _ hv (by simp [hStore, SemanticStore.update])))⟩⟩
 
 /-- Replaying `hCex` with its own oracle `[tt, ff]` reaches the callee's failing assert at every
     sufficiently large fuel and call-depth limit, so the replay verdict is `genuine`. -/
@@ -271,7 +279,7 @@ theorem hGenuine :
 namespace CallSideConditionWitness
 
 private def vid (s : String) : Expression.Ident := ⟨s, ()⟩
-private def rd (s : String) : Expression.Expr := .fvar () (vid s) none
+private def rd (s : String) : Expression.Expr := .fvar default (vid s) none
 private def mdE : Imperative.MetaData Expression := {}
 
 /-- The callee: input `a`, output `b`, body `b := a`, no spec clauses. -/

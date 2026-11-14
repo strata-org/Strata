@@ -40,15 +40,15 @@ private def intTy : LMonoTy := .int
 private def boolTy : LMonoTy := .bool
 
 /-- The variable `x : int`. -/
-private def xE : Expression.Expr := .fvar () ⟨"x", ()⟩ (some intTy)
+private def xE : Expression.Expr := .fvar default ⟨"x", ()⟩ (some intTy)
 /-- The variable `y : int`. -/
-private def yE : Expression.Expr := .fvar () ⟨"y", ()⟩ (some intTy)
+private def yE : Expression.Expr := .fvar default ⟨"y", ()⟩ (some intTy)
 /-- An integer literal. -/
-private def lit (i : Int) : Expression.Expr := .intConst () i
+private def lit (i : Int) : Expression.Expr := .intConst default i
 
 /-- A binary operator applied to two arguments, annotated with the type `a → a → b`. -/
 private def bin (name : String) (a b : LMonoTy) (x y : Expression.Expr) : Expression.Expr :=
-  .app () (.app () (.op () ⟨name, ()⟩ (some (.arrow a (.arrow a b)))) x) y
+  .app default (.app default (.op default ⟨name, ()⟩ (some (.arrow a (.arrow a b)))) x) y
 
 /-- `x + 1 < y`. -/
 private def e1 : Expression.Expr :=
@@ -56,19 +56,19 @@ private def e1 : Expression.Expr :=
 
 /-- `if x < y then x - y else y * 2`. -/
 private def e2 : Expression.Expr :=
-  .ite () (bin "Int.Lt" intTy boolTy xE yE) (bin "Int.Sub" intTy intTy xE yE)
+  .ite default (bin "Int.Lt" intTy boolTy xE yE) (bin "Int.Sub" intTy intTy xE yE)
     (bin "Int.Mul" intTy intTy yE (lit 2))
 
 /-- `(x == y) && (x <= y)`. -/
 private def e3 : Expression.Expr :=
-  bin "Bool.And" boolTy boolTy (.eq () xE yE) (bin "Int.Le" intTy boolTy xE yE)
+  bin "Bool.And" boolTy boolTy (.eq default xE yE) (bin "Int.Le" intTy boolTy xE yE)
 
 /-- `x div 0`. -/
 private def e4 : Expression.Expr := bin "Int.Div" intTy intTy xE (lit 0)
 
 /-- `∀ z : int. z == z`. -/
 private def e5 : Expression.Expr :=
-  .quant () .all "z" (some intTy) (.bvar () 0) (.eq () (.bvar () 0) (.bvar () 0))
+  .quant default .all "z" (some intTy) (.bvar default 0) (.eq default (.bvar default 0) (.bvar default 0))
 
 /-- `x + 1` with the operator annotated `bool → bool → bool`, not an instance of `Int.Add`'s
     signature. -/
@@ -90,20 +90,20 @@ included. -/
 /-- The real type. -/
 private def realTy : LMonoTy := .tcons "real" []
 /-- A real literal. -/
-private def rlit : Expression.Expr := .const () (.rationalConst (3 / 2))
+private def rlit : Expression.Expr := .const Core.valueLoc (.rationalConst (3 / 2))
 
 /-- `if x < y then 1.5 else 1.5`: a conditional on real literals. -/
-private def e7 : Expression.Expr := .ite () (bin "Int.Lt" intTy boolTy xE yE) rlit rlit
+private def e7 : Expression.Expr := .ite Core.coreLoc (bin "Int.Lt" intTy boolTy xE yE) rlit rlit
 
 /-- `select(m, x)` with `m : Map int real`: the polymorphic map read instantiated at `real`. -/
 private def e8 : Expression.Expr :=
-  .app () (.app () (.op () ⟨"select", ()⟩
+  .app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨"select", ()⟩
     (some (.arrow (.tcons "Map" [intTy, realTy]) (.arrow intTy realTy))))
-    (.fvar () ⟨"m", ()⟩ (some (.tcons "Map" [intTy, realTy])))) xE
+    (.fvar Core.coreLoc ⟨"m", ()⟩ (some (.tcons "Map" [intTy, realTy])))) xE
 
 /-- `x + 1` with the operator unannotated. -/
 private def e9 : Expression.Expr :=
-  .app () (.app () (.op () ⟨"Int.Add", ()⟩ none) xE) (lit 1)
+  .app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨"Int.Add", ()⟩ none) xE) (lit 1)
 
 #guard !inFragment Core.Factory e7
 #guard !inFragment Core.Factory e8
@@ -122,7 +122,7 @@ private noncomputable def M0 : Expression.Factory :=
 /-- Empty metadata. -/
 private def md : MetaData Expression := #[]
 /-- The literal `false`. -/
-private def ffE : Expression.Expr := .boolConst () false
+private def ffE : Expression.Expr := .boolConst default false
 
 /-- The callee: no formals, no spec clauses, body `assert fail : false`. -/
 def wProc : Procedure :=
@@ -181,7 +181,7 @@ theorem wGenuine_of_fragment :
       Calls.getInputExprs]
   · simp only [List.mem_singleton, forall_eq]
     refine ⟨.inl ⟨_, rfl, ?_⟩, by simp [wProc, ListMap.toList], by simp [wProc, ListMap.toList]⟩
-    exact ⟨⟨.const () _ rfl, rfl⟩, trivial⟩
+    exact ⟨⟨.const default _ rfl, rfl⟩, trivial⟩
   · simp [wEnv, IEnv.abs, InterpLang.absStore, IEnv.ofStore, IStore.get,
       IStore.ofStore, InterpLang.writesFind?_empty] at h
   · refine ⟨?_, fun n p ss hp hss => ?_, fun n p g hp hg => ?_⟩
@@ -257,7 +257,7 @@ theorem wcGenuine_of_fragment :
     refine ⟨.inr ⟨_, rfl, ?_⟩, by simp [wcProc, ListMap.toList], by simp [wcProc, ListMap.toList]⟩
     simp only [CFGInFragment, List.mem_singleton, forall_eq, CmdInFragment, TransferInFragment,
       and_true]
-    exact ⟨.const () _ rfl, rfl⟩
+    exact ⟨.const default _ rfl, rfl⟩
   · simp [wEnv, IEnv.abs, InterpLang.absStore, IEnv.ofStore, IStore.get,
       IStore.ofStore, InterpLang.writesFind?_empty] at h
   · refine ⟨?_, fun n p ss hp hss => ?_, fun n p g hp hg => ?_⟩
@@ -287,7 +287,7 @@ private def cProcIn : Procedure :=
 /-- A CFG body whose block guard is a division, outside the fragment. -/
 private def cProcOut : Procedure :=
   { wcProc with
-    body := .cfg (CFG.mk "b" [("b", BasicBlock.mk [] (.condGoto (.eq () e4 xE) "b" "b" md))]) }
+    body := .cfg (CFG.mk "b" [("b", BasicBlock.mk [] (.condGoto (.eq default e4 xE) "b" "b" md))]) }
 
 #guard procInFragment (inFragment Core.Factory) wcProc
 #guard procInFragment (inFragment Core.Factory) cProcIn

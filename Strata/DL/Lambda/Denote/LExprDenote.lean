@@ -882,7 +882,7 @@ public theorem denote_op
       HasTypeA.op_inv h ▸ opInterp o.name (ty.substTyVars vt) := by rfl
 
 /-- Unfolding lemma for `denote` of a free variable. -/
-theorem denote_fvar
+public theorem denote_fvar
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp tcInterp)
@@ -895,7 +895,7 @@ theorem denote_fvar
       HasTypeA.fvar_inv h ▸ fvarVal name (ty.substTyVars vt) := by rfl
 
 /-- Unfolding lemma for `denote` of a bound variable. -/
-theorem denote_bvar
+public theorem denote_bvar
     {T : LExprParams}
     (tcInterp : TyConstrInterp)
     (opInterp : OpInterp tcInterp)
@@ -928,7 +928,7 @@ public theorem denote_app
   exact (Denotes_denote hd_app).symm
 
 /-- Unfolding lemma for `denote` of an abstraction. -/
-theorem denote_abs
+public theorem denote_abs
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -968,7 +968,7 @@ public theorem denote_eq_true
   exact (Denotes_denote (Denotes.eq_true bvarVal (h := h_eq) hd1 hd2)).symm
 
 /-- Unfolding lemma for `denote` of `eq` when operands are not equal. -/
-theorem denote_eq_false
+public theorem denote_eq_false
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -1072,7 +1072,7 @@ public theorem denote_quant_all_true
   exact (Denotes_denote hd).symm
 
 /-- Unfolding lemma for `denote` of `quant .all` when the body is false for some value. -/
-theorem denote_quant_all_false
+public theorem denote_quant_all_false
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -1091,7 +1091,7 @@ theorem denote_quant_all_false
   exact (Denotes_denote hd).symm
 
 /-- Unfolding lemma for `denote` of `quant .exist` when the body is true for some value. -/
-theorem denote_quant_exist_true
+public theorem denote_quant_exist_true
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}
@@ -1110,7 +1110,7 @@ theorem denote_quant_exist_true
   exact (Denotes_denote hd).symm
 
 /-- Unfolding lemma for `denote` of `quant .exist` when the body is false for all values. -/
-theorem denote_quant_exist_false
+public theorem denote_quant_exist_false
     {T : LExprParams}
     {tcInterp : TyConstrInterp}
     {opInterp : OpInterp tcInterp}

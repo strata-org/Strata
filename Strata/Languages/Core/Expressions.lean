@@ -28,7 +28,57 @@ public section
 
 open Imperative
 
-abbrev ExpressionMetadata := Unit
+/-- Location of expressions this file builds itself. -/
+abbrev coreLoc : ExprSourceLoc := ExprSourceLoc.synthesized "core"
+
+/-- Location of values and of expressions whose real source location has been
+erased (equal to `default`). -/
+abbrev valueLoc : ExprSourceLoc := ExprSourceLoc.synthesized "value"
+
+/-- Replace every location in `e` by `valueLoc`. Used by tests to normalize the
+real source locations a parsed program carries, so shape assertions are stable;
+typing and evaluation ignore locations, so the normalized program behaves as the
+parsed one does. -/
+@[expose] def eraseLocs (e : Lambda.LExpr CoreLParams.mono) : Lambda.LExpr CoreLParams.mono :=
+  e.replaceMetadata (fun _ => valueLoc)
+
+abbrev ExpressionMetadata := CoreExprMetadata
+
+/-- How evaluation relabels the expression it substitutes for a bound variable
+when applying a lambda; the beta-reduction phase uses the same merge
+(`LExpr.mergeMetadataForSubst`). The merge takes the first *parsed* location in
+the order `ReplacementVar` (the replaced bound variable or variable reference),
+`Original` (the inserted expression), `Abstraction` (the lambda), falling back
+to a synthesized one only if none is parsed; the other parsed locations go into
+`relatedLocs`, each once — their *direct* locations only, not their own
+`relatedLocs`, so the list holds at most the two non-primary locations and does
+not grow across chained substitutions. Only the formatter reads `relatedLocs`
+(the `related:` suffix); SARIF and counterexamples use obligation metadata.
+Keeping only the direct locations bounds the list at two entries, so
+location-sensitive equality and hashing stay independent of substitution depth.
+Store lookups, function inlining and CSE do not use this merge — they keep the
+replaced occurrence's own location directly. -/
+instance : Lambda.Traceable Lambda.LExpr.EvalProvenance ExprSourceLoc where
+  combine reasons :=
+    let find (p : Lambda.LExpr.EvalProvenance) : Option ExprSourceLoc :=
+      reasons.find? (fun r => match r.1, p with
+        | .Original, .Original | .ReplacementVar, .ReplacementVar
+        | .Abstraction, .Abstraction => Bool.true
+        | _, _ => Bool.false) |>.map (·.2)
+    let order := [Lambda.LExpr.EvalProvenance.ReplacementVar, .Original, .Abstraction]
+    let parsed := order.findSome? fun p => (find p).filter (!·.isSynthesized)
+    match parsed <|> order.findSome? find with
+    | none => ExprSourceLoc.synthesized "eval"
+    | some primary =>
+      let related := order.foldr (init := []) fun p acc =>
+        match find p with
+        | some loc =>
+          if loc == primary || loc.isSynthesized then acc
+          else (loc.uri, loc.range) :: acc
+        | none => acc
+      { primary with
+        relatedLocs :=
+          (related.filter (· != (primary.uri, primary.range))).eraseDups }
 
 /-- Core's expression language.  Its runtime factory is a Lambda factory bundled with a
 consistent interpretation (`Lambda.ModeledFactory`); runtime values are semantic values
@@ -47,6 +97,14 @@ abbrev Expression : PureExpr :=
      Factory := Lambda.ModeledFactory CoreLParams,
      Val := Lambda.SemValue,
      eval := fun F σ e => Lambda.LExpr.denoteEval F σ e }
+
+-- Kept here, not in ExpressionsProps: its loop-elim consumer sees Expressions but not the privately-imported Props file.
+/-- Core evaluation ignores source locations: erasing them does not change the value. This is
+the metadata-only invariance behind verification conditions being identical up to locations. -/
+theorem Expression.eval_eraseLocs (F : Lambda.ModeledFactory CoreLParams)
+    (σ : Lambda.ValStore CoreLParams) (e : Expression.Expr) :
+    Expression.eval F σ (eraseLocs e) = Expression.eval F σ e :=
+  Lambda.LExpr.denoteEval_replaceMetadata F σ (fun _ => valueLoc) e
 
 /-- The annotated free-variable occurrences of a Core expression, each annotation read as a
     monomorphic type scheme. -/
@@ -67,11 +125,11 @@ instance : HasOps Expression where
   getOps := Lambda.LExpr.getOps
 
 instance : Inhabited Expression.Expr where
-  default := .intConst () 0
+  default := .intConst coreLoc 0
 
 /-- Build an `LExpr.op` node from a structured `CoreOp`. -/
 def coreOpExpr (op : CoreOp) (ty : Option Lambda.LMonoTy := none) : Expression.Expr :=
-  .op () op.toString ty
+  .op coreLoc op.toString ty
 
 /-- A runtime value belongs to a factory when it was produced under the factory's
 interpretation of type constructors; it is a value of `ty` when moreover `ty` is the
@@ -88,10 +146,10 @@ instance : LawfulHasVal Core.Expression where
     exact ⟨hb, ha₁.trans (ha₂.symm.trans hb₂)⟩
 
 instance : HasFvar Core.Expression where
-  mkFvar := (.fvar () · none)
+  mkFvar := (.fvar coreLoc · none)
   -- A Core variable's annotation is a monomorphic type, so a polymorphic one
   -- annotates nothing: `toMonoType?` yields `none` and the variable stays bare.
-  mkTypedFvar := fun v ty => .fvar () v ty.toMonoType?
+  mkTypedFvar := fun v ty => .fvar coreLoc v ty.toMonoType?
   getFvar
   | .fvar _ v _ => some v
   | _ => none
@@ -173,9 +231,9 @@ instance : LawfulHasIdent Core.Expression where
     rfl
 
 @[expose, match_pattern]
-def Core.true : Core.Expression.Expr := .boolConst () Bool.true
+def Core.true : Core.Expression.Expr := .boolConst valueLoc Bool.true
 @[expose, match_pattern]
-def Core.false : Core.Expression.Expr := .boolConst () Bool.false
+def Core.false : Core.Expression.Expr := .boolConst valueLoc Bool.false
 
 /-- Syntactic check for integer numeral literals in Core. -/
 @[expose] def Core.isNumeral : Core.Expression.Expr → Bool
@@ -198,12 +256,12 @@ instance : HasBool Core.Expression where
   boolIsValOfTy := fun _ => ⟨⟨rfl, boolTy_toMonoType⟩, ⟨rfl, boolTy_toMonoType⟩⟩
 
 instance : HasInt Core.Expression where
-  zero        := .intConst () 0
+  zero        := .intConst valueLoc 0
   intTy       := .forAll [] (.tcons "int" [])
   isNumeral   := Core.isNumeral
   isNumeralVal v := v.sort.isInt
   zeroIsNumeral := by
-    show Core.isNumeral (.intConst () 0) = Bool.true
+    show Core.isNumeral (.intConst valueLoc 0) = Bool.true
     rfl
   numeralHasNoFvars n hn := by
     cases n with
@@ -215,17 +273,17 @@ instance : LawfulHasBool Core.Expression where
   ff_getFvars := rfl
 
 instance : HasIntOps Core.Expression where
-  eq    e1 e2 := .eq () e1 e2
-  lt    e1 e2 := .app () (.app () (@Lambda.intLtFunc CoreLParams _).opExpr e1) e2
+  eq    e1 e2 := .eq coreLoc e1 e2
+  lt    e1 e2 := .app coreLoc (.app coreLoc (@Lambda.intLtFunc CoreLParams _).opExpr e1) e2
 
 instance : HasBoolOps Core.Expression where
+  -- Negating a literal keeps the literal's location.
   not
-  | Core.true => Core.false
-  | Core.false => Core.true
-  | e => Lambda.LExpr.app () (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
-  and e1 e2 := Lambda.LExpr.app () (Lambda.LExpr.app ()
+  | .const m (.boolConst b) => .boolConst m (!b)
+  | e => Lambda.LExpr.app coreLoc (Lambda.boolNotFunc (T:=CoreLParams)).opExpr e
+  and e1 e2 := Lambda.LExpr.app coreLoc (Lambda.LExpr.app coreLoc
     (Lambda.boolAndFunc (T:=CoreLParams)).opExpr e1) e2
-  imp e1 e2 := Lambda.LExpr.app () (Lambda.LExpr.app ()
+  imp e1 e2 := Lambda.LExpr.app coreLoc (Lambda.LExpr.app coreLoc
     (Lambda.boolImpliesFunc (T:=CoreLParams)).opExpr e1) e2
 
 ---------------------------------------------------------------------

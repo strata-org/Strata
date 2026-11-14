@@ -87,8 +87,16 @@ private def literalBodyExprs : Option (List Core.Expression.Expr) := do
     | _ => none
 
 open Core.EqualitySimplification.GoalsDefinedTest in
-#guard literalBodyExprs ==
-  some [.eq () n (.intConst () 3), .eq () s (.strConst () "ab"), intGoal, strGoal]
+#guard (literalBodyExprs.map (List.map Core.eraseLocs)) ==
+  some (List.map Core.eraseLocs [.eq Core.coreLoc n (.intConst Core.coreLoc 3), .eq Core.coreLoc s (.strConst Core.coreLoc "ab"), intGoal, strGoal])
+
+-- Two witness candidates equal up to source location take a single `witnessLimit`
+-- slot: `addValues` dedups with `beqIgnoringMetadata`, so a value hinted at several
+-- source locations no longer consumes a slot per occurrence and crowds out the witness
+-- that discharges the existential.
+#guard
+  (Core.EqualitySimplification.addValues Core.Factory 16
+    [(.intConst Core.valueLoc 5 : Core.Expression.Expr), .intConst Core.coreLoc 5] []).length == 1
 
 /--
 info: intFolds: pass
@@ -1483,16 +1491,16 @@ procedure P (a : bv W32)
 builtin `and` has none, so it is not absorbed. Surface syntax cannot declare
 one, so the factory is built here. -/
 
-private def varA : Core.Expression.Expr := .fvar () ⟨"a", ()⟩ none
+private def varA : Core.Expression.Expr := .fvar Core.coreLoc ⟨"a", ()⟩ none
 
 /-- The builtin `and` at width `n` applied to `a` and `b`. -/
 private def bvAndAt (n : Nat) (a b : Core.Expression.Expr) :
     Core.Expression.Expr :=
   let op := toString (Core.CoreOp.bv ⟨n, .And⟩)
-  .app () (.app () (.op () ⟨op, ()⟩ none) a) b
+  .app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨op, ()⟩ none) a) b
 
 private def andZero : Core.Expression.Expr :=
-  bvAndAt 32 varA (.const () (.bitvecConst 32 0))
+  bvAndAt 32 varA (.const Core.coreLoc (.bitvecConst 32 0))
 
 private def shadowedAnd : Lambda.Factory Core.CoreLParams :=
   Lambda.Factory.ofArray (Core.Factory.toArray.map fun fn =>
@@ -1501,7 +1509,7 @@ private def shadowedAnd : Lambda.Factory Core.CoreLParams :=
     else fn)
 
 #guard Core.EqualitySimplification.bvAndRule Core.Factory andZero ==
-  some (.const () (.bitvecConst 32 0))
+  some (.const Core.coreLoc (.bitvecConst 32 0))
 #guard (Core.EqualitySimplification.bvAndRule shadowedAnd andZero).isNone
 
 /-! Absorption at every width the factory defines an `and` for. -/
@@ -1513,9 +1521,9 @@ private def andWidths : List Nat :=
     | _ => none
 
 #guard !andWidths.isEmpty && andWidths.all fun n =>
-  let zero : Core.Expression.Expr := .const () (.bitvecConst n 0)
+  let zero : Core.Expression.Expr := .const Core.coreLoc (.bitvecConst n 0)
   let ones : Core.Expression.Expr :=
-    .const () (.bitvecConst n (BitVec.allOnes n))
+    .const Core.coreLoc (.bitvecConst n (BitVec.allOnes n))
   Core.EqualitySimplification.bvAndRule Core.Factory (bvAndAt n varA zero)
       == some zero &&
     Core.EqualitySimplification.bvAndRule Core.Factory (bvAndAt n varA ones)
@@ -1525,7 +1533,7 @@ private def andWidths : List Nat :=
 rejects one as ill-typed, so the term is built here. -/
 
 #guard (Core.EqualitySimplification.bvAndRule Core.Factory
-  (bvAndAt 16 varA (.const () (.bitvecConst 8 255)))).isNone
+  (bvAndAt 16 varA (.const Core.coreLoc (.bitvecConst 8 255)))).isNone
 
 /-! ### Agreement with the solver
 
@@ -1837,34 +1845,34 @@ private def outsideAlphabet : String := String.singleton (Char.ofNat 0x30000)
 
 private def inRe (s : String) (r : Core.Expression.Expr) :
     Core.Expression.Expr :=
-  .app () (.app () (.op () ⟨toString (Core.CoreOp.str .InRegEx), ()⟩ none)
-    (.const () (.strConst s))) r
+  .app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨toString (Core.CoreOp.str .InRegEx), ()⟩ none)
+    (.const Core.coreLoc (.strConst s))) r
 
 private def toRe (s : String) : Core.Expression.Expr :=
-  .app () (.op () ⟨toString (Core.CoreOp.str .ToRegEx), ()⟩ none)
-    (.const () (.strConst s))
+  .app Core.coreLoc (.op Core.coreLoc ⟨toString (Core.CoreOp.str .ToRegEx), ()⟩ none)
+    (.const Core.coreLoc (.strConst s))
 
 private def reAll : Core.Expression.Expr :=
-  .op () ⟨toString (Core.CoreOp.re .All), ()⟩ none
+  .op Core.coreLoc ⟨toString (Core.CoreOp.re .All), ()⟩ none
 
 #guard (Core.EqualitySimplification.inRegexRule
   (inRe outsideAlphabet reAll)).isNone
 #guard (Core.EqualitySimplification.inRegexRule
   (inRe "a" (toRe outsideAlphabet))).isNone
 #guard Core.EqualitySimplification.inRegexRule (inRe "a" (toRe "a")) ==
-  some (.const () (.boolConst true))
+  some (.const Core.coreLoc (.boolConst true))
 
 /-! A loop with a negative literal bound, or a range with a bound outside the
 alphabet, is not read as a regex. -/
 
 private def reLoop (a : Core.Expression.Expr) (lo hi : Int) :
     Core.Expression.Expr :=
-  .app () (.app () (.app () (.op () ⟨toString (Core.CoreOp.re .Loop), ()⟩ none)
-    a) (.const () (.intConst lo))) (.const () (.intConst hi))
+  .app Core.coreLoc (.app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨toString (Core.CoreOp.re .Loop), ()⟩ none)
+    a) (.const Core.coreLoc (.intConst lo))) (.const Core.coreLoc (.intConst hi))
 
 private def reRange (lo hi : String) : Core.Expression.Expr :=
-  .app () (.app () (.op () ⟨toString (Core.CoreOp.re .Range), ()⟩ none)
-    (.const () (.strConst lo))) (.const () (.strConst hi))
+  .app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨toString (Core.CoreOp.re .Range), ()⟩ none)
+    (.const Core.coreLoc (.strConst lo))) (.const Core.coreLoc (.strConst hi))
 
 #guard (Core.EqualitySimplification.regexOf? (reLoop (toRe "a") (-1) 2)).isNone
 #guard (Core.EqualitySimplification.regexOf? (reLoop (toRe "a") 0 (-1))).isNone
@@ -3135,17 +3143,17 @@ integer `3`. `mistypedSum` fails the premise. -/
 open Core.EqualitySimplification.GoalsDefinedTest in
 #guard wrongArg.opsConsistent Core.Factory &&
   wrongBeta.opsConsistent Core.Factory &&
-  Core.Simplify.fold Core.Factory 100 wrongBeta == .intConst () 3 &&
+  Core.eraseLocs (Core.Simplify.fold Core.Factory 100 wrongBeta) == Core.eraseLocs (.intConst Core.coreLoc 3) &&
   !Core.FoldAxioms.mistypedSum.opsConsistent Core.Factory
 
 /-! Equality simplification folds goals with `foldTerm`, which `FoldSound` is about: it
 also folds the counterexample and the beta near miss to the integer `3`. -/
 
 open Core.EqualitySimplification.GoalsDefinedTest in
-#guard Core.EqualitySimplification.foldTerm Core.Factory {} 100 Core.FoldAxioms.mistypedSum ==
-    .intConst () 3 &&
-  Core.EqualitySimplification.foldTerm Core.Factory {} 100 wrongBeta == .intConst () 3 &&
-  Core.EqualitySimplification.foldTerm Core.Factory {} 100 wrongArg == wrongArg
+#guard Core.eraseLocs (Core.EqualitySimplification.foldTerm Core.Factory {} 100 Core.FoldAxioms.mistypedSum) ==
+    Core.eraseLocs (.intConst Core.coreLoc 3) &&
+  Core.eraseLocs (Core.EqualitySimplification.foldTerm Core.Factory {} 100 wrongBeta) == Core.eraseLocs (.intConst Core.coreLoc 3) &&
+  Core.eraseLocs (Core.EqualitySimplification.foldTerm Core.Factory {} 100 wrongArg) == Core.eraseLocs wrongArg
 
 /-! ## Witness candidates must have the quantifier's type
 
@@ -3162,16 +3170,16 @@ private def tgTy : Lambda.LMonoTy := .tcons "TriggerGroup" []
 open Core.EqualitySimplification.GoalsDefinedTest in
 /-- `∃ x : bool :: { f(x) } ¬(x == true) ∧ ¬(x == false)`, with `f : bool → bool`. -/
 private def noBool : Core.Expression.Expr :=
-  let x : Core.Expression.Expr := .bvar () 0
+  let x : Core.Expression.Expr := .bvar Core.coreLoc 0
   let notE (a : Core.Expression.Expr) : Core.Expression.Expr :=
-    .app () (.op () ⟨"Bool.Not", ()⟩ (some (arr boolTy boolTy))) a
+    .app Core.coreLoc (.op Core.coreLoc ⟨"Bool.Not", ()⟩ (some (arr boolTy boolTy))) a
   let trig : Core.Expression.Expr :=
-    .app () (.app () (.op () ⟨"TriggerGroup.addTrigger", ()⟩ (some (arr boolTy (arr tgTy tgTy))))
-      (.app () (.op () ⟨"f", ()⟩ (some (arr boolTy boolTy))) x))
-      (.op () ⟨"TriggerGroup.empty", ()⟩ (some tgTy))
-  .quant () .exist "x" (some boolTy) trig
-    (.app () (.app () (.op () ⟨"Bool.And", ()⟩ (some (arr boolTy (arr boolTy boolTy))))
-      (notE (.eq () x (.boolConst () true)))) (notE (.eq () x (.boolConst () false))))
+    .app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨"TriggerGroup.addTrigger", ()⟩ (some (arr boolTy (arr tgTy tgTy))))
+      (.app Core.coreLoc (.op Core.coreLoc ⟨"f", ()⟩ (some (arr boolTy boolTy))) x))
+      (.op Core.coreLoc ⟨"TriggerGroup.empty", ()⟩ (some tgTy))
+  .quant Core.coreLoc .exist "x" (some boolTy) trig
+    (.app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨"Bool.And", ()⟩ (some (arr boolTy (arr boolTy boolTy))))
+      (notE (.eq Core.coreLoc x (.boolConst Core.valueLoc true)))) (notE (.eq Core.coreLoc x (.boolConst Core.valueLoc false))))
 
 open Core.EqualitySimplification.GoalsDefinedTest in
 /-- Facts recording the witness candidate `v` for `f : bool → bool`. -/
@@ -3179,9 +3187,9 @@ private def candidate (v : Core.Expression.Expr) : Core.EqualitySimplification.F
   { hints := ({} : Std.HashMap _ _).insert ("f", arr boolTy boolTy) [v] }
 
 #guard Lambda.LExpr.typeCheck [] noBool == some .bool
-#guard Core.EqualitySimplification.foldTerm Core.Factory (candidate (.intConst () 3)) 100 noBool ==
-  .boolConst () true
-#guard Core.EqualitySimplification.foldTerm Core.Factory (candidate (.boolConst () true)) 100
+#guard Core.EqualitySimplification.foldTerm Core.Factory (candidate (.intConst Core.valueLoc 3)) 100 noBool ==
+  .boolConst Core.valueLoc true
+#guard Core.EqualitySimplification.foldTerm Core.Factory (candidate (.boolConst Core.valueLoc true)) 100
   noBool == Core.EqualitySimplification.foldTerm Core.Factory {} 100 noBool
 #guard !(Core.EqualitySimplification.foldTerm Core.Factory {} 100 noBool).isTrue
 
@@ -3192,18 +3200,18 @@ folds to `false` too. -/
 open Core.EqualitySimplification.GoalsDefinedTest in
 /-- `∃ x : int :: { g(x) } x == 3 ∧ x == 4`, with `g : int → bool`. -/
 private def threeAndFour : Core.Expression.Expr :=
-  let x : Core.Expression.Expr := .bvar () 0
+  let x : Core.Expression.Expr := .bvar Core.coreLoc 0
   let trig : Core.Expression.Expr :=
-    .app () (.app () (.op () ⟨"TriggerGroup.addTrigger", ()⟩ (some (arr boolTy (arr tgTy tgTy))))
-      (.app () (.op () ⟨"g", ()⟩ (some (arr intTy boolTy))) x))
-      (.op () ⟨"TriggerGroup.empty", ()⟩ (some tgTy))
-  .quant () .exist "x" (some intTy) trig
-    (.app () (.app () (.op () ⟨"Bool.And", ()⟩ (some (arr boolTy (arr boolTy boolTy))))
-      (.eq () x (.intConst () 3))) (.eq () x (.intConst () 4)))
+    .app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨"TriggerGroup.addTrigger", ()⟩ (some (arr boolTy (arr tgTy tgTy))))
+      (.app Core.coreLoc (.op Core.coreLoc ⟨"g", ()⟩ (some (arr intTy boolTy))) x))
+      (.op Core.coreLoc ⟨"TriggerGroup.empty", ()⟩ (some tgTy))
+  .quant Core.coreLoc .exist "x" (some intTy) trig
+    (.app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨"Bool.And", ()⟩ (some (arr boolTy (arr boolTy boolTy))))
+      (.eq Core.coreLoc x (.intConst Core.valueLoc 3))) (.eq Core.coreLoc x (.intConst Core.valueLoc 4)))
 
 open Core.EqualitySimplification.GoalsDefinedTest in
 private def trueCandidate : Core.EqualitySimplification.Facts :=
-  { hints := ({} : Std.HashMap _ _).insert ("g", arr intTy boolTy) [.boolConst () true] }
+  { hints := ({} : Std.HashMap _ _).insert ("g", arr intTy boolTy) [.boolConst Core.valueLoc true] }
 open Core.EqualitySimplification.GoalsDefinedTest in
 #guard Lambda.LExpr.typeCheck [] threeAndFour == some .bool &&
   !(Core.EqualitySimplification.foldTerm Core.Factory
@@ -3265,14 +3273,14 @@ open Core.EqualitySimplification.GoalsDefinedTest in
 /-- Learning `assume f(x)`, with `x : bool` and `f : bool → bool`, records the candidate `x`,
     which `LExpr.typeCheck []` types at `bool` by its annotation. -/
 private def varCandidate : Option (List Core.Expression.Expr) :=
-  let x : Core.Expression.Expr := .fvar () ⟨"x", ()⟩ (some boolTy)
+  let x : Core.Expression.Expr := .fvar Core.coreLoc ⟨"x", ()⟩ (some boolTy)
   let fs := Core.EqualitySimplification.addAssumption Core.Factory {}
-    Core.EqualitySimplification.defDepth (.app () (.op () ⟨"f", ()⟩ (some (arr boolTy boolTy))) x)
+    Core.EqualitySimplification.defDepth (.app Core.coreLoc (.op Core.coreLoc ⟨"f", ()⟩ (some (arr boolTy boolTy))) x)
   fs.hints.get? ("f", arr boolTy boolTy)
 
 open Core.EqualitySimplification.GoalsDefinedTest in
-#guard varCandidate == some [.fvar () ⟨"x", ()⟩ (some boolTy)] &&
-  Lambda.LExpr.typeCheck [] (.fvar () ⟨"x", ()⟩ (some boolTy) : Core.Expression.Expr) == some boolTy
+#guard varCandidate == some [.fvar Core.coreLoc ⟨"x", ()⟩ (some boolTy)] &&
+  Lambda.LExpr.typeCheck [] (.fvar Core.coreLoc ⟨"x", ()⟩ (some boolTy) : Core.Expression.Expr) == some boolTy
 
 /-! ## Assumptions and ground axioms are typed by their own annotations
 
@@ -3310,13 +3318,13 @@ open Core.EqualitySimplification.GoalsDefinedTest in
     `x`'s sort from the store, so where `x` holds the Boolean `false` the assumption is
     `true`. -/
 private def mistypedAssume : Core.Expression.Expr :=
-  .eq () (.app () (.op () ⟨"Bool.Not", ()⟩ (some (arr boolTy boolTy)))
-    (.fvar () ⟨"x", ()⟩ (some intTy))) (.boolConst () true)
+  .eq Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨"Bool.Not", ()⟩ (some (arr boolTy boolTy)))
+    (.fvar Core.coreLoc ⟨"x", ()⟩ (some intTy))) (.boolConst Core.valueLoc true)
 
 open Core.EqualitySimplification.GoalsDefinedTest in
 #guard (Core.EqualitySimplification.addAssumption Core.Factory {}
     Core.EqualitySimplification.defDepth mistypedAssume).hints.get? ("Bool.Not", arr boolTy boolTy)
-    == some [.fvar () ⟨"x", ()⟩ (some intTy)] &&
+    == some [.fvar Core.coreLoc ⟨"x", ()⟩ (some intTy)] &&
   Lambda.LExpr.typeCheck [] mistypedAssume == none
 
 /-! ## Loop bodies

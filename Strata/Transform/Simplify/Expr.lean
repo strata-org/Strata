@@ -174,7 +174,7 @@ def underBinder (ty : Option LMonoTy) (body : Expression.Expr)
   let transformed := f ⟨opened, LExpr.varOpen_sizeOf (x, ty) body 0⟩
   if LExpr.eqModuloMeta transformed opened then (body, false)
   -- `substFvarsLifting` matches `x` by name, ignoring any type `f` gave it.
-  else (LExpr.substFvarsLifting transformed [(x, .bvar () 0)], true)
+  else (LExpr.substFvarsLifting transformed [(x, .bvar coreLoc 0)], true)
 
 /-! ## Rewriting bottom up -/
 
@@ -512,7 +512,8 @@ def agreedDefs (live : List Ctx) (assigned scopedNames : Std.HashSet String) :
   | first :: rest =>
     let agreed (x : CoreIdent) (v : Expression.Expr) : Bool :=
       !scopedNames.contains x.name &&
-        rest.all (fun (c : Ctx) => Map.find? c.values x == some v) &&
+        rest.all (fun (c : Ctx) => match Map.find? c.values x with
+                                 | some v' => v'.beqIgnoringMetadata v | none => false) &&
         !(HasFvars.getFvars (P := Core.Expression) v).any (fun f => scopedNames.contains f.name)
     if assigned.size == 1 then
       assigned.toList.filterMap fun n =>

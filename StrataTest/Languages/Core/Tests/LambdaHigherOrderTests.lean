@@ -958,4 +958,30 @@ Result: ✅ pass
 #guard_msgs in
 #eval Strata.Core.verify polyDatatypeFnInstPgm (options := .quiet)
 
+/-! ## Substitution metadata stays bounded (direct related locations only)
+
+Each `mergeMetadataForSubst` keeps only the direct non-primary locations of the
+step, not the locations those in turn relate, so chained substitutions do not
+grow `relatedLocs`. The transitive merge grew it linearly with depth. -/
+
+private def parsedLoc (name : String) : ExprSourceLoc :=
+  { uri := some (.file name), range := SourceRange.none }
+
+/-- The running metadata of a substitution chain: each step merges the previous
+step (as the lambda) with a fresh argument and replaced-variable location. -/
+private def substChain : Nat → ExprSourceLoc
+  | 0 => parsedLoc "base"
+  | n + 1 =>
+    Lambda.LExpr.mergeMetadataForSubst (TBase := CoreLParams) (substChain n)
+      (parsedLoc s!"arg{n}") (parsedLoc s!"var{n}")
+
+-- A two-step chain keeps exactly this step's two direct locations: the fresh
+-- argument and the previous step's own location.
+#guard (substChain 2).relatedLocs.length = 2 &&
+  (substChain 2).relatedLocs.contains (some (Uri.file "arg1"), SourceRange.none) &&
+  (substChain 2).relatedLocs.contains (some (Uri.file "var0"), SourceRange.none)
+
+-- A deep chain stays bounded at two related locations.
+#guard (substChain 100).relatedLocs.length ≤ 2
+
 end

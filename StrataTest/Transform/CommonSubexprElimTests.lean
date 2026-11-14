@@ -300,5 +300,98 @@ procedure test (x : int)
 #guard_msgs in
 #eval IO.println (toString (cseProgram quantLiftProg))
 
+/-! ## Each abbreviated occurrence keeps its own source location
+
+The three occurrences of `int.add(x, y)` below are at different source ranges.
+CSE finds them as duplicates although their locations differ, and each
+`$__cse.0` that replaces one carries the range of the occurrence it replaces. -/
+
+private def locDupProg :=
+#strata
+program Core;
+procedure test(x : int, y : int) {
+  assert (int.gt(int.add(x, y), 0));
+  assert (int.lt(int.add(x, y), 9));
+  assert (int.le(int.add(x, y), 5));
+};
+#end
+
+/-- The source ranges of the `$__cse.0` references in `p`'s first procedure. -/
+private def cseVarRanges (p : Core.Program) : List (Nat × Nat) :=
+  let rec go : Expression.Expr → List (Nat × Nat)
+    | .fvar m x _ => if x.name == "$__cse.0" then [(m.range.start.byteIdx,
+        m.range.stop.byteIdx)] else []
+    | .app _ f a => go f ++ go a
+    | .ite _ c t e => go c ++ go t ++ go e
+    | .eq _ a b => go a ++ go b
+    | .abs _ _ _ b => go b
+    | .quant _ _ _ _ tr b => go tr ++ go b
+    | _ => []
+  match p.decls.findSome? (fun | .proc pr _ => some pr | _ => none) with
+  | some pr =>
+    match pr.body with
+    | .structured ss => (Statements.collectExprs ss).flatMap go
+    | .cfg _ => []
+  | none => []
+
+-- The duplicate is found, and its three uses have three distinct ranges: each
+-- abbreviated occurrence carries the range of the occurrence it replaces.
+#guard ((toString (cseProgram locDupProg)).splitOn "var $__cse.0").length == 2
+#guard (cseVarRanges (cseProgram locDupProg)).length == 3
+#guard (cseVarRanges (cseProgram locDupProg)).eraseDups.length == 3
+
+/-! ## `beqIgnoringMetadata` compares modulo metadata and by structure
+
+CSE deduplicates by `beqIgnoringMetadata`, which ignores every node's source
+location and decides equality purely by structure. The accelerated runtime
+implementation (`beqIgnoringMetadataUnsafe`, a per-level pointer-equality fast
+path) decides the same relation as the pure definition, which is why it is a
+sound `@[implemented_by]`: a pointer hit means the two nodes are literally the
+same object, and `beqIgnoringMetadata_refl` makes the pure function return `true`
+there too. These guards pin both halves: equal structure under different
+locations is still equal (so duplicates are found), and different structure at
+the *same* location is still unequal (so unrelated terms are never merged). -/
+
+private def mdA : ExprSourceLoc := ExprSourceLoc.synthesized "A"
+private def mdB : ExprSourceLoc := ExprSourceLoc.synthesized "B"
+private def vx : Expression.Expr := .fvar mdA ⟨"x", ()⟩ none
+/-- `int.add(x, x)`, with the shared child `vx` under both arguments, rooted at
+    location A. -/
+private def addA : Expression.Expr :=
+  .app mdA (.app mdA (.op mdA ⟨"int.Add", ()⟩ none) vx) vx
+/-- The same structure as `addA`, but its root carries location B instead of A
+    (as a metadata re-tag produces). -/
+private def addB : Expression.Expr :=
+  .app mdB (.app mdA (.op mdA ⟨"int.Add", ()⟩ none) vx) vx
+/-- `int.mul(x, x)`: a different operator from `addA`, but rooted at the *same*
+    location A. -/
+private def mulA : Expression.Expr :=
+  .app mdA (.app mdA (.op mdA ⟨"int.Mul", ()⟩ none) vx) vx
+/-- A doubling chain of depth `k`: `int.add` nested `k` deep, both arguments the
+    same shared subterm, so its shared DAG is `O(k)` while its logical tree is
+    `2^k` -- the shape CSE deduplicates. -/
+private def dblTerm : Nat → Expression.Expr
+  | 0 => vx
+  | k + 1 => let w := dblTerm k; .app mdA (.app mdA (.op mdA ⟨"int.Add", ()⟩ none) w) w
+
+-- The pointer-accelerated impl (`beqIgnoringMetadataFast`) must decide exactly
+-- the pure spec (`beqIgnoringMetadata`) on every pair, so a drift in either the
+-- impl or the spec fails the build. Pairs cover: equal modulo metadata but NOT
+-- pointer-equal (the recursive path, `addA`/`addB` -- the `locDupProg` pattern
+-- of `int.add` at two source locations), reflexive (the pointer shortcut), and
+-- the doubling chain with a root re-tag (the exact shape CSE deduplicates).
+#guard LExpr.beqIgnoringMetadataFast addA addB == addA.beqIgnoringMetadata addB
+#guard LExpr.beqIgnoringMetadataFast addA addA == addA.beqIgnoringMetadata addA
+#guard LExpr.beqIgnoringMetadataFast addA mulA == addA.beqIgnoringMetadata mulA
+#guard LExpr.beqIgnoringMetadataFast (dblTerm 8) (dblTerm 8)
+         == (dblTerm 8).beqIgnoringMetadata (dblTerm 8)
+#guard LExpr.beqIgnoringMetadataFast (dblTerm 8) (LExpr.replaceMetadata1 mdB (dblTerm 8))
+         == (dblTerm 8).beqIgnoringMetadata (LExpr.replaceMetadata1 mdB (dblTerm 8))
+-- The intended outcomes: a duplicate is found (equal modulo metadata), and two
+-- subterms of different meaning at the same location are NOT merged.
+#guard addA.beqIgnoringMetadata addB
+#guard !(addA.beqIgnoringMetadata mulA)
+
+
 end Core.CSE.Tests
 end

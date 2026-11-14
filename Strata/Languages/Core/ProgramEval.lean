@@ -265,8 +265,8 @@ private def selectFromMapTerm (m i : Expression.Expr) : Option Expression.Expr :
       -- The base need not reduce: `select(m', i)` is left as a term, and the `ite`
       -- discards it whenever `i == k` decides true.
       let rest := (selectFromMapTerm m' i).getD
-        (.app () (.app () Core.mapSelectOp m') i)
-      some (.ite () (.eq () i k) v rest)
+        (.app coreLoc (.app coreLoc Core.mapSelectOp m') i)
+      some (.ite coreLoc (.eq coreLoc i k) v rest)
     else none
   | _ => none
 

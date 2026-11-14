@@ -11,9 +11,8 @@ public meta import Strata.Languages.Core.Verifier
 /-!
 # Hand-built Cortex programs
 
-Builders for one-procedure Cortex programs, and `report`, which prints what the
-structured route (`ToCore.programToCore`) and the CFG route
-(`ToCore.programToCoreCFG`) make of such a program.
+Builders for one-procedure Cortex programs, and `report`, which prints what
+`ToCore.programToCore` makes of such a program.
 -/
 
 meta section
@@ -50,23 +49,20 @@ def typeCheckResult (p : Core.Program) : String :=
   | .ok _ => "type check ok"
   | .error e => s!"type check: {e}"
 
-/-- Run `passes` on `prog` and print how each route to Core fares on the
+/-- Run `passes` on `prog` and print how the translation to Core fares on the
 result: a translation error, or the result of type-checking the Core program.
-With `print`, the Core program of the CFG route is printed as well. A pass that
-fails is printed instead. -/
+With `print`, the Core program is printed as well. A pass that fails is printed
+instead. -/
 def report (prog : UnorderedProgram) (passes : List Pass := [Ordering.pass])
     (print : Bool := false) : IO Unit := do
   match runPasses passes (.unordered prog) with
   | .error e => IO.println e
   | .ok prog =>
     match ToCore.programToCore prog with
-    | .error e => IO.println s!"structured: translation error: {e}"
-    | .ok p => IO.println s!"structured: {typeCheckResult p}"
-    match ToCore.programToCoreCFG prog with
-    | .error e => IO.println s!"cfg: translation error: {e}"
+    | .error e => IO.println s!"translation error: {e}"
     | .ok p =>
       if print then IO.println (toString (Std.format p))
-      IO.println s!"cfg: {typeCheckResult p}"
+      IO.println (typeCheckResult p)
 
 end Cortex.HandBuilt
 
