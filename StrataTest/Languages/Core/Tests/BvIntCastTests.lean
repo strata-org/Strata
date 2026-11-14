@@ -17,6 +17,8 @@ the SMT pipeline via the encoder API.
 -/
 
 namespace Core
+private abbrev testLoc : ExprSourceLoc := ExprSourceLoc.synthesized "test"
+open _root_.Lambda
 open Strata.SMT
 
 /-! ## Bv8.ToUInt — unsigned bitvector → Int (ubv_to_int) -/
@@ -26,7 +28,8 @@ info: "; x\n(declare-const x (_ BitVec 8))\n(assert (ubv_to_int x))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app () (.op () ⟨"Bv8.ToUInt", ()⟩ (.some (.arrow (.bitvec 8) .int))) (.fvar () "x" (.some (.bitvec 8))))
+  (.app testLoc (.op testLoc ⟨"Bv8.ToUInt",
+      ()⟩ (.some (.arrow (.bitvec 8) .int))) (.fvar testLoc "x" (.some (.bitvec 8))))
 
 /-! ## Bv8.ToInt — signed bitvector → Int (sbv_to_int) -/
 
@@ -35,7 +38,8 @@ info: "; x\n(declare-const x (_ BitVec 8))\n(assert (sbv_to_int x))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app () (.op () ⟨"Bv8.ToInt", ()⟩ (.some (.arrow (.bitvec 8) .int))) (.fvar () "x" (.some (.bitvec 8))))
+  (.app testLoc (.op testLoc ⟨"Bv8.ToInt",
+      ()⟩ (.some (.arrow (.bitvec 8) .int))) (.fvar testLoc "x" (.some (.bitvec 8))))
 
 /-! ## Int.ToBv8 — Int → bitvector (int_to_bv 8) -/
 
@@ -44,6 +48,7 @@ info: "; x\n(declare-const x Int)\n(assert ((_ int_to_bv 8) x))\n"
 -/
 #guard_msgs in
 #eval toSMTCommandsWithAssert
-  (.app () (.op () ⟨"Int.ToBv8", ()⟩ (.some (.arrow .int (.bitvec 8)))) (.fvar () "x" (.some .int)))
+  (.app testLoc (.op testLoc ⟨"Int.ToBv8",
+      ()⟩ (.some (.arrow .int (.bitvec 8)))) (.fvar testLoc "x" (.some .int)))
 
 end Core

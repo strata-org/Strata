@@ -204,7 +204,7 @@ private theorem fvars_annotated_by_go {tyMap : Map CoreIdent Lambda.LMonoTy}
     intro d h
     simp only [Lambda.LExpr.substFvarsLifting.go]
     split
-    · next v hv => exact Lambda.fvars_annotated_by_liftBVars (hsm _ _ hv)
+    · next v hv => exact Lambda.fvars_annotated_by_replaceMetadata1 m (Lambda.fvars_annotated_by_liftBVars (hsm _ _ hv))
     · next hn => exact absurd hn (h x (by simp [Lambda.LExpr.LExpr.getVars]))
   | const | op | bvar => intro _ _; trivial
   | abs _ _ _ _ ih => exact fun d h => ih (d + 1) h

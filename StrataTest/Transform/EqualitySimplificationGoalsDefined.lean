@@ -34,27 +34,27 @@ public abbrev strTy : LMonoTy := .tcons "string" []
 public abbrev boolTy : LMonoTy := .tcons "bool" []
 public abbrev arr (a b : LMonoTy) : LMonoTy := .tcons "arrow" [a, b]
 
-public abbrev n : Expression.Expr := .fvar () ⟨"n", ()⟩ (some intTy)
-public abbrev s : Expression.Expr := .fvar () ⟨"s", ()⟩ (some strTy)
+public abbrev n : Expression.Expr := .fvar Core.coreLoc ⟨"n", ()⟩ (some intTy)
+public abbrev s : Expression.Expr := .fvar Core.coreLoc ⟨"s", ()⟩ (some strTy)
 
 /-- `int.gt(int.add(n, 1), 3)`, as type checking annotates it. -/
 public abbrev intGoal : Expression.Expr :=
-  .app () (.app () (.op () ⟨"Int.Gt", ()⟩ (some (arr intTy (arr intTy boolTy))))
-    (.app () (.app () (.op () ⟨"Int.Add", ()⟩ (some (arr intTy (arr intTy intTy)))) n)
-      (.intConst () 1)))
-    (.intConst () 3)
+  .app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨"Int.Gt", ()⟩ (some (arr intTy (arr intTy boolTy))))
+    (.app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨"Int.Add", ()⟩ (some (arr intTy (arr intTy intTy)))) n)
+      (.intConst Core.valueLoc 1)))
+    (.intConst Core.valueLoc 3)
 
 /-- `str.len(str.concat(s, "c")) == 3`, as type checking annotates it. -/
 public abbrev strGoal : Expression.Expr :=
-  .eq () (.app () (.op () ⟨"Str.Length", ()⟩ (some (arr strTy intTy)))
-      (.app () (.app () (.op () ⟨"Str.Concat", ()⟩ (some (arr strTy (arr strTy strTy)))) s)
-        (.strConst () "c")))
-    (.intConst () 3)
+  .eq Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨"Str.Length", ()⟩ (some (arr strTy intTy)))
+      (.app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨"Str.Concat", ()⟩ (some (arr strTy (arr strTy strTy)))) s)
+        (.strConst Core.valueLoc "c")))
+    (.intConst Core.valueLoc 3)
 
 /-- The body of `literalPgm`, for any labels and metadata. -/
 public abbrev body (l₁ l₂ l₃ l₄ : String) (m₁ m₂ m₃ m₄ : MetaData Expression) : Statements :=
-  [.cmd (.cmd (.assume l₁ (.eq () n (.intConst () 3)) m₁)),
-   .cmd (.cmd (.assume l₂ (.eq () s (.strConst () "ab")) m₂)),
+  [.cmd (.cmd (.assume l₁ (.eq Core.coreLoc n (.intConst Core.valueLoc 3)) m₁)),
+   .cmd (.cmd (.assume l₂ (.eq Core.coreLoc s (.strConst Core.valueLoc "ab")) m₂)),
    .cmd (.cmd (.assert l₃ intGoal m₃)),
    .cmd (.cmd (.assert l₄ strGoal m₄))]
 
@@ -153,12 +153,12 @@ signature applied to a Boolean, and a beta redex whose argument has the wrong ty
 
 /-- `Int.Add` at its signature `int → int → int`, applied to `true` and `2`. -/
 public abbrev wrongArg : Expression.Expr :=
-  .app () (.app () (.op () ⟨"Int.Add", ()⟩ (some (arr intTy (arr intTy intTy))))
-    (.boolConst () true)) (.intConst () 2)
+  .app Core.coreLoc (.app Core.coreLoc (.op Core.coreLoc ⟨"Int.Add", ()⟩ (some (arr intTy (arr intTy intTy))))
+    (.boolConst Core.valueLoc true)) (.intConst Core.valueLoc 2)
 
 /-- `(fun (y : bool) => y) 3`. -/
 public abbrev wrongBeta : Expression.Expr :=
-  .app () (.abs () "y" (some boolTy) (.bvar () 0)) (.intConst () 3)
+  .app Core.coreLoc (.abs Core.coreLoc "y" (some boolTy) (.bvar Core.coreLoc 0)) (.intConst Core.valueLoc 3)
 
 /-- `wrongArg` has no value in any runtime factory and store: `true` is no integer. -/
 public theorem wrongArg_no_value (Fs : Expression.Factory) (σ : SemanticStore Expression) :

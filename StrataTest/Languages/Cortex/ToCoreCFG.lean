@@ -8,12 +8,11 @@ module
 meta import StrataTest.Languages.Cortex.HandBuilt
 
 /-!
-# Cortex to unstructured Core, on hand-built programs
+# Cortex to Core, on hand-built programs
 
-Each test builds a one-procedure Cortex program by hand and prints what the
-structured route (`ToCore.programToCore`) and the CFG route
-(`ToCore.programToCoreCFG`) make of it. Hand-built programs reach control flow
-and declaration placements that Laurel does not produce.
+Each test builds a one-procedure Cortex program by hand and prints what
+`ToCore.programToCore` makes of it. Hand-built programs reach control flow and
+declaration placements that Laurel does not produce.
 -/
 
 meta section
@@ -25,11 +24,10 @@ open Imperative Lambda Cortex.HandBuilt
 /-! ## Irreducible control flow
 
 The entry branches into either block of the cycle `A ⇄ B`, so the cycle has two
-entries. The structured route cannot rebuild it; the CFG route keeps it. -/
+entries. The translation keeps the cycle, block for block. -/
 
 /--
-info: structured: translation error: irreducible control flow: edge B → A
-program Core;
+info: program Core;
 
 procedure irreducible (c : bool, out r : int)
 cfg E {
@@ -49,7 +47,7 @@ cfg E {
   }
 };
 
-cfg: type check ok
+type check ok
 -/
 #guard_msgs in
 #eval report (print := true) <| mkProg "irreducible" [("c", .bool)] [("r", .int)] "E"
@@ -58,12 +56,11 @@ cfg: type check ok
 
 /-! ## A declaration in a loop body
 
-Block `B` is on the cycle `H ⇄ B` and declares `t`. The structured route scopes
-`t` to the loop body; Core's CFG type checker rejects a declaration on a cycle. -/
+Block `B` is on the cycle `H ⇄ B` and declares `t`. Core's CFG type checker
+rejects a declaration on a cycle. -/
 
 /--
-info: structured: type check ok
-cfg: type check: [loopInit]: a CFG-local is declared in a block that lies on a cycle; a loop-carried declaration would be re-initialized on re-entry.
+info: type check: [loopInit]: a CFG-local is declared in a block that lies on a cycle; a loop-carried declaration would be re-initialized on re-entry.
 -/
 #guard_msgs in
 #eval report <| mkProg "loopInit" [("c", .bool)] [("r", .int)] "E"
@@ -73,7 +70,7 @@ cfg: type check: [loopInit]: a CFG-local is declared in a block that lies on a c
 /-! ## A dead block
 
 No transfer reaches block `D`, which reads the local `t` of the entry block. The
-CFG route maps `D` like any other block, and Core's CFG type checker rejects it,
+translation maps `D` like any other block, and Core's CFG type checker rejects it,
 since an unreachable block has no dominator whose locals it could see.
 `PruneUnreachable` drops `D`. -/
 
@@ -81,8 +78,7 @@ def deadBlock : UnorderedProgram := mkProg "dead" [] [("r", .int)] "E"
   [("E", blk [initI "t" 0, setV "r" "t"] fin), ("D", blk [setV "r" "t"] (.goto "E"))]
 
 /--
-info: structured: type check ok
-program Core;
+info: program Core;
 
 procedure dead (out r : int)
 cfg E {
@@ -97,15 +93,14 @@ cfg E {
   }
 };
 
-cfg: type check: [r := t] No free variables are allowed here!
+type check: [r := t] No free variables are allowed here!
 Free Variables: [t]
 -/
 #guard_msgs in
 #eval report (print := true) deadBlock
 
 /--
-info: structured: type check ok
-program Core;
+info: program Core;
 
 procedure dead (out r : int)
 cfg E {
@@ -116,7 +111,7 @@ cfg E {
   }
 };
 
-cfg: type check ok
+type check ok
 -/
 #guard_msgs in
 #eval report (passes := [PruneUnreachable.pass, Ordering.pass]) (print := true) deadBlock

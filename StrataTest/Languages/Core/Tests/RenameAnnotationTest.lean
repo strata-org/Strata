@@ -18,16 +18,16 @@ The generic rename machinery (`substFvarManyExpr`) renames a free variable by
 NAME, so on `Core.Expression` it must keep the variable's type annotation: a
 type-annotated `x : int` renamed to `y` becomes `y : int`, not a bare `y`.
 (Replacing the node with a freshly built `mkFvar` free variable would drop the
-annotation, since `Core`'s `mkFvar` is `.fvar () · none`.) -/
+annotation, since `Core`'s `mkFvar` is `.fvar Core.valueLoc · none`.) -/
 
 namespace CoreRenameAnnotationTest
 open Imperative Lambda
 
 /-- A `Core.Expression` free variable `x` annotated with type `int`. -/
-def xInt : Core.Expression.Expr := .fvar () ⟨"x", ()⟩ (some .int)
+def xInt : Core.Expression.Expr := .fvar Core.valueLoc ⟨"x", ()⟩ (some .int)
 
 /-- The same variable renamed to `y`, still annotated with `int`. -/
-def yInt : Core.Expression.Expr := .fvar () ⟨"y", ()⟩ (some .int)
+def yInt : Core.Expression.Expr := .fvar Core.valueLoc ⟨"y", ()⟩ (some .int)
 
 -- Renaming `x ↦ y` on `x : int` yields `y : int`: the annotation is preserved,
 -- NOT dropped to a bare `y`.
@@ -35,11 +35,11 @@ def yInt : Core.Expression.Expr := .fvar () ⟨"y", ()⟩ (some .int)
 
 -- Complementary check: the result differs from the bare, unannotated `y`.
 #guard (substFvarManyExpr (P := Core.Expression) [(⟨"x", ()⟩, ⟨"y", ()⟩)] xInt
-          == (.fvar () ⟨"y", ()⟩ none : Core.Expression.Expr)) == false
+          == (.fvar Core.valueLoc ⟨"y", ()⟩ none : Core.Expression.Expr)) == false
 
 -- An unrelated annotated variable is left untouched (name and annotation both).
 #guard substFvarManyExpr (P := Core.Expression) [(⟨"x", ()⟩, ⟨"y", ()⟩)]
-         (.fvar () ⟨"w", ()⟩ (some .int)) == (.fvar () ⟨"w", ()⟩ (some .int) : Core.Expression.Expr)
+         (.fvar Core.valueLoc ⟨"w", ()⟩ (some .int)) == (.fvar Core.valueLoc ⟨"w", ()⟩ (some .int) : Core.Expression.Expr)
 
 /-! ## Multi-pair renames on the real `Core.Expression` instance
 
@@ -50,15 +50,15 @@ multi-pair list, so pin them directly on `Core.Expression` (not on the
 `RenameTest` fixture's own `substAll`). -/
 
 /-- `x : int`, `y : int`, `z : int` and an equality node `x == y` over `Core.Expression`. -/
-def xI : Core.Expression.Expr := .fvar () ⟨"x", ()⟩ (some .int)
-def yI : Core.Expression.Expr := .fvar () ⟨"y", ()⟩ (some .int)
-def zI : Core.Expression.Expr := .fvar () ⟨"z", ()⟩ (some .int)
+def xI : Core.Expression.Expr := .fvar Core.valueLoc ⟨"x", ()⟩ (some .int)
+def yI : Core.Expression.Expr := .fvar Core.valueLoc ⟨"y", ()⟩ (some .int)
+def zI : Core.Expression.Expr := .fvar Core.valueLoc ⟨"z", ()⟩ (some .int)
 
 -- Simultaneous, non-cascading: renaming `[(x, y), (y, z)]` in `x == y` gives
 -- `y == z`, NOT `z == z` — the `y` introduced by the first pair is not itself
 -- re-renamed by the second. Annotations are carried through on both subterms.
 #guard substFvarManyExpr (P := Core.Expression) [(⟨"x", ()⟩, ⟨"y", ()⟩), (⟨"y", ()⟩, ⟨"z", ()⟩)]
-         (.eq () xI yI) == (.eq () yI zI : Core.Expression.Expr)
+         (.eq Core.valueLoc xI yI) == (.eq Core.valueLoc yI zI : Core.Expression.Expr)
 
 -- First-match: a duplicated source resolves through the FIRST matching pair, so
 -- `[(x, y), (x, z)]` renames `x` to `y` (not `z`).
@@ -82,9 +82,9 @@ open Imperative (Cmd ExprOrNondet)
 -- declaring occurrence, so the binder must not appear as a rename source here.
 #guard Cmd.substIdentMany (P := Core.Expression)
          [(⟨"x", ()⟩, ⟨"x'", ()⟩), (⟨"y", ()⟩, ⟨"y'", ()⟩)]
-         (.init ⟨"w", ()⟩ (.forAll [] .int) (.det (.eq () xI yI)) #[])
+         (.init ⟨"w", ()⟩ (.forAll [] .int) (.det (.eq Core.valueLoc xI yI)) #[])
        == (Cmd.init ⟨"w", ()⟩ (.forAll [] .int)
-             (.det (.eq () (.fvar () ⟨"x'", ()⟩ (some .int)) (.fvar () ⟨"y'", ()⟩ (some .int)))) #[]
+             (.det (.eq Core.valueLoc (.fvar Core.valueLoc ⟨"x'", ()⟩ (some .int)) (.fvar Core.valueLoc ⟨"y'", ()⟩ (some .int)))) #[]
             : Cmd Core.Expression)
 
 -- `set x := y` under `[x ↦ x', y ↦ y']` rewrites BOTH the `set` binder target
@@ -92,16 +92,16 @@ open Imperative (Cmd ExprOrNondet)
 #guard Cmd.substIdentMany (P := Core.Expression)
          [(⟨"x", ()⟩, ⟨"x'", ()⟩), (⟨"y", ()⟩, ⟨"y'", ()⟩)]
          (.set ⟨"x", ()⟩ (.det yI) #[])
-       == (Cmd.set ⟨"x'", ()⟩ (.det (.fvar () ⟨"y'", ()⟩ (some .int))) #[]
+       == (Cmd.set ⟨"x'", ()⟩ (.det (.fvar Core.valueLoc ⟨"y'", ()⟩ (some .int))) #[]
             : Cmd Core.Expression)
 
 -- `assert "l" (x == y)` under `[x ↦ x', y ↦ y']` rewrites the asserted body's
 -- fvars, keeping the label and annotations.
 #guard Cmd.substIdentMany (P := Core.Expression)
          [(⟨"x", ()⟩, ⟨"x'", ()⟩), (⟨"y", ()⟩, ⟨"y'", ()⟩)]
-         (.assert "l" (.eq () xI yI) #[])
+         (.assert "l" (.eq Core.valueLoc xI yI) #[])
        == (Cmd.assert "l"
-             (.eq () (.fvar () ⟨"x'", ()⟩ (some .int)) (.fvar () ⟨"y'", ()⟩ (some .int))) #[]
+             (.eq Core.valueLoc (.fvar Core.valueLoc ⟨"x'", ()⟩ (some .int)) (.fvar Core.valueLoc ⟨"y'", ()⟩ (some .int))) #[]
             : Cmd Core.Expression)
 
 /-! ## Nested terms: the rename descends through every compound constructor
@@ -113,15 +113,15 @@ occurrence of `x`/`y` is renamed with its `int` annotation kept, the off-source
 quantifier kind is carried through unchanged. -/
 
 /-- `x' : int` and `y' : int`, the renamed counterparts of `xI` and `yI`. -/
-def xI' : Core.Expression.Expr := .fvar () ⟨"x'", ()⟩ (some .int)
-def yI' : Core.Expression.Expr := .fvar () ⟨"y'", ()⟩ (some .int)
+def xI' : Core.Expression.Expr := .fvar Core.valueLoc ⟨"x'", ()⟩ (some .int)
+def yI' : Core.Expression.Expr := .fvar Core.valueLoc ⟨"y'", ()⟩ (some .int)
 
 /-- `∀ q : int {x}. (λ f : int. if (#0 x) then y else (x == z))`, built from the
 fvars `x`, `y`, `z`. -/
 def nestedTerm (x y z : Core.Expression.Expr) : Core.Expression.Expr :=
-  .quant () .all "q" (some .int) x
-    (.abs () "f" (some .int)
-      (.ite () (.app () (.bvar () 0) x) y (.eq () x z)))
+  .quant Core.valueLoc .all "q" (some .int) x
+    (.abs Core.valueLoc "f" (some .int)
+      (.ite Core.valueLoc (.app Core.valueLoc (.bvar Core.valueLoc 0) x) y (.eq Core.valueLoc x z)))
 
 #guard substFvarManyExpr (P := Core.Expression)
          [(⟨"x", ()⟩, ⟨"x'", ()⟩), (⟨"y", ()⟩, ⟨"y'", ()⟩)]

@@ -103,7 +103,8 @@ private def mkProc (name : String) (postcond : Core.Expression.Expr) : Core.Decl
       preconditions  := []
       postconditions := [(s!"{name}_ensures_0", { expr := postcond })]
     }
-    body := .structured [Core.Statement.assume "body" (.true ()) #[]]
+    body := .structured [Core.Statement.assume "body" (.true (ExprSourceLoc.synthesized "test"))
+        #[]]
   } #[]
 
 /--

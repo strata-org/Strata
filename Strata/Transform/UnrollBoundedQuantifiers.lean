@@ -121,10 +121,10 @@ def factoryIntFactEnv (F : @Lambda.Factory CoreLParams) : IntFactEnv :=
   F.toArray.toList.flatMap (fun f => f.axioms.filterMap intFactOf?)
 
 /-- The value an assumption in scope pins for `t`, if one does. Terms are compared
-    as written, so a term that only names its value after reduction has to be
-    normalized first. -/
+    as written, ignoring source locations, so a term that only names its value
+    after reduction has to be normalized first. -/
 def resolveIntFact (env : IntFactEnv) (t : LExpr CoreLParams.mono) : Option Nat :=
-  (env.find? (fun (t', _) => t' == t)).map Prod.snd
+  (env.find? (fun (t', _) => t'.beqIgnoringMetadata t)).map Prod.snd
 
 /-! ## Element facts (`select!(s,k) == elem`)
 
@@ -174,11 +174,12 @@ def collectAssumeSelectFactsBlock (ss : List Statement) : SelectEnv :=
 end
 
 /-- The element an assumption in scope pins for the selector term `t`, if one does.
-    Terms are compared as written, operator and annotation included, so a fact about
-    `select` does not resolve `select!`, nor the reverse. -/
+    Terms are compared ignoring source locations, but otherwise as written —
+    operator and annotation included, so a fact about `select` does not resolve
+    `select!`, nor the reverse. -/
 def resolveSelect (env : SelectEnv) (t : LExpr CoreLParams.mono) :
     Option (LExpr CoreLParams.mono) :=
-  (env.find? (fun (t', _) => t' == t)).map Prod.snd
+  (env.find? (fun (t', _) => t'.beqIgnoringMetadata t)).map Prod.snd
 
 /-- Replace pinned `select[!](s, literal k)` by its element, top-down. The element
     substituted in is not rescanned, so a fact stating an element in terms of a
@@ -241,7 +242,7 @@ def extendUEnv (env : UEnv) (s : Statement) : UEnv :=
 def normTerm (env : UEnv) (fuel : Nat) (e : LExpr CoreLParams.mono) :
     LExpr CoreLParams.mono :=
   let e1 := evalTerm env.F (normalizeSelects env.sel e)
-  if e1 == e || fuel == 0 then e1 else normTerm env (fuel - 1) e1
+  if e1.beqIgnoringMetadata e || fuel == 0 then e1 else normTerm env (fuel - 1) e1
   termination_by fuel
   decreasing_by
     rename_i hguard
@@ -486,11 +487,11 @@ def combineFold (qk : QuantifierKind) (ts : List (LExpr CoreLParams.mono)) :
     LExpr CoreLParams.mono :=
   match qk with
   | .all => ts.foldr (fun t acc =>
-      .app () (.app () (boolAndFunc (T := CoreLParams)).opExpr t) acc)
-      (.const () (.boolConst true))
+      .app coreLoc (.app coreLoc (boolAndFunc (T := CoreLParams)).opExpr t) acc)
+      (.const coreLoc (.boolConst true))
   | .exist => ts.foldr (fun t acc =>
-      .app () (.app () (boolOrFunc (T := CoreLParams)).opExpr t) acc)
-      (.const () (.boolConst false))
+      .app coreLoc (.app coreLoc (boolOrFunc (T := CoreLParams)).opExpr t) acc)
+      (.const coreLoc (.boolConst false))
 
 /-- Replace each bounded index quantifier whose count resolves by `⋀/⋁_{k<n}` of
     the index-substituted body, recursing into the instances for nested
@@ -529,7 +530,7 @@ def unrollExpr (env : UEnv) (fuel : Nat) (prod : Nat) (depth : Nat)
             let (instances, cinst) := unzipCounts ((List.range cnt).map (fun k =>
               unrollExpr env fuel' (prod * cnt) depth
                 (reduceInstance env depth
-                  (LExpr.betaReduce (.const () (.intConst (Int.ofNat k))) body))))
+                  (LExpr.betaReduce (.const coreLoc (.intConst (Int.ofNat k))) body))))
             let folded := foldConnectives (combineFold qk instances)
             -- Stricter than the per-obligation rule: an instance copies what is inside it.
             if containsQuant folded then (e, cinst.discardFolds + Counts.one .reverted)

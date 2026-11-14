@@ -76,7 +76,7 @@ private def writerProc : Procedure :=
     decreases := none
     throwsType := some (mkTy (.UserDefined (mkId "OtherError")))
     body := .Transparent (nn (.Assign
-      [⟨.Field (nn (.StaticCall (mkId "mk") [] [])) (mkId "x"), .unknown⟩]
+      [⟨.Field (nn (.Call none (mkId "mk") [] [])) (mkId "x"), .unknown⟩]
       (nn (.LiteralInt 1)))) }
 
 private def program : LaurelProgram :=

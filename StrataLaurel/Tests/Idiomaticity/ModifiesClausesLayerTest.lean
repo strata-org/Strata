@@ -79,7 +79,7 @@ private def containsQuantifier (e : StmtExprMd) : Bool :=
 
 private def isImpliesWrapped (e : StmtExprMd) : Bool :=
   match e.val with
-  | .StaticCall n (_ :: _ :: _) _ => n.text == Operation.Implies.procName
+  | .Call none n (_ :: _ :: _) _ => n.text == Operation.Implies.procName
   | _ => false
 
 /-- One line per condition: mode, whether the group's guard survived as an

@@ -101,7 +101,7 @@ private def cfgBody (n : String) : DetCFG Expression Command :=
 /-- The Core identifier `name`. -/
 private def id (name : String) : CoreIdent := ⟨name, ()⟩
 /-- The integer literal `n`. -/
-private def int (n : Int) : Expression.Expr := .intConst () n
+private def int (n : Int) : Expression.Expr := .intConst default n
 
 /-- The caller store `x ↦ 7`. -/
 private def σ0 : RStore Expression := fun n => if n == id "x" then some (int 7) else none
@@ -141,10 +141,10 @@ private def structGeneric (n : String) : Option Expression.Expr :=
 private def structCore (n : String) : Option Expression.Expr :=
   xOfCfg (runCoreEvalWith π opts 100 (.stmt (.cmd (callerCmd n)) env0))
 
-#guard structGeneric "structuredCallerPos" == some (int 1)
-#guard structGeneric "structuredCallerNeg" == some (int 0)
-#guard structCore "structuredCallerPos" == some (int 1)
-#guard structCore "structuredCallerNeg" == some (int 0)
+#guard structGeneric "structuredCallerPos" =ₘ some (int 1)
+#guard structGeneric "structuredCallerNeg" =ₘ some (int 0)
+#guard structCore "structuredCallerPos" =ₘ some (int 1)
+#guard structCore "structuredCallerNeg" =ₘ some (int 0)
 
 /-! ## A CFG caller -/
 
@@ -159,10 +159,10 @@ private def cfgCore (n : String) : Option Expression.Expr :=
   xOfCFG ((((runCoreInterpCFG (m := EvalM) π 100
     (.atBlock (cfgBody n) "c0" env0)).run opts).run).run {})
 
-#guard cfgGeneric "cfgCallerPos" == some (int 1)
-#guard cfgGeneric "cfgCallerNeg" == some (int 0)
-#guard cfgCore "cfgCallerPos" == some (int 1)
-#guard cfgCore "cfgCallerNeg" == some (int 0)
+#guard cfgGeneric "cfgCallerPos" =ₘ some (int 1)
+#guard cfgGeneric "cfgCallerNeg" =ₘ some (int 0)
+#guard cfgCore "cfgCallerPos" =ₘ some (int 1)
+#guard cfgCore "cfgCallerNeg" =ₘ some (int 0)
 
 /-! ## A Kleene caller -/
 
@@ -176,9 +176,9 @@ private def kleeneCore (n : String) : Option Expression.Expr :=
   xOfKleene ((((runCoreInterpKleene (m := EvalM) π 100
     (.stmt (.cmd (callerCmd n)) env0)).run opts).run).run {})
 
-#guard kleeneGeneric "structuredCallerPos" == some (int 1)
-#guard kleeneGeneric "structuredCallerNeg" == some (int 0)
-#guard kleeneCore "structuredCallerPos" == some (int 1)
-#guard kleeneCore "structuredCallerNeg" == some (int 0)
+#guard kleeneGeneric "structuredCallerPos" =ₘ some (int 1)
+#guard kleeneGeneric "structuredCallerNeg" =ₘ some (int 0)
+#guard kleeneCore "structuredCallerPos" =ₘ some (int 1)
+#guard kleeneCore "structuredCallerNeg" =ₘ some (int 0)
 
 end InterpreterCfgCalleeTest

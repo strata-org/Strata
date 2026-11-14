@@ -195,7 +195,7 @@ private def clearIdsInStmtNode (e : StmtExprMd) : StmtExprMd :=
     | .Var (.Local n) => .Var (.Local (clearId n))
     | .Var (.Field tgt fn) => .Var (.Field tgt (clearId fn))
     | .Var (.Declare param) => .Var (.Declare (clrDeclParam param))
-    | .StaticCall callee args tyArgs => .StaticCall (clearId callee) args tyArgs
+    | .Call none callee args tyArgs => .Call none (clearId callee) args tyArgs
     | .Assign targets value => .Assign (targets.map clrVarTarget) value
     -- `IncrDecr`/`CompoundAssign` carry a `Variable` target too; clear its id like `.Assign`
     -- so a per-instantiation `.Field` target does not cross-link clones (it survives to clone
@@ -269,7 +269,7 @@ private def argType (ctx : TypeLattice) (model : SemanticModel) (a : StmtExprMd)
 private def settleCallNode (model : SemanticModel) (ctx : TypeLattice)
     (polyProcDefs : Std.HashMap String Procedure) (binders : List Identifier)
     (subst : Std.HashMap String HighTypeMd) (e : StmtExprMd) : StateM (List Message) StmtExprMd := do
-  let .StaticCall callee args tyArgs := e.val | return e
+  let .Call none callee args tyArgs := e.val | return e
   let some calleeDef := polyProcDefs.get? callee.text | return e
   let params := calleeDef.inputs.map (·.type)
   let argTys := args.map fun a =>
@@ -293,7 +293,7 @@ private def settleCallNode (model : SemanticModel) (ctx : TypeLattice)
   if binders.isEmpty then return e
   let argSubst := (callSiteTypeSubst ctx (fun _ => false) params argTys).1
   let settled := (calleeDef.typeArgs.zip tyArgs).map fun (tv, t) => argSubst.getD tv.text t
-  return { e with val := .StaticCall callee args settled }
+  return { e with val := .Call none callee args settled }
 
 /-- Threaded through a poly-call rewrite traversal. -/
 private structure RewriteState where
@@ -302,7 +302,7 @@ private structure RewriteState where
   /-- Whether a call was left unrenamed, its instantiation missing or not concrete. -/
   leftOpen : Bool := false
 
-/-- Rewrite ONE node: a `StaticCall` to an indexed poly procedure becomes a call to the monomorph at
+/-- Rewrite ONE node: a static `Call` to an indexed poly procedure becomes a call to the monomorph at
     the instantiation `Resolution` recorded on it, as `settleCallNode` left it, so that the clone
     re-resolves as the call did, and the instantiation is kept in `renamed`. `subst` makes an
     enclosing clone's abstract type arguments concrete (`T` inside `outer<T>` cloned at int becomes
@@ -314,7 +314,7 @@ private structure RewriteState where
     mis-monomorphizing. -/
 private def rewritePolyCallNode (polyProcDefs : Std.HashMap String Procedure)
     (subst : Std.HashMap String HighTypeMd) (e : StmtExprMd) : StateM RewriteState StmtExprMd := do
-  let .StaticCall callee args tyArgs := e.val | return e
+  let .Call none callee args tyArgs := e.val | return e
   let some calleeDef := polyProcDefs.get? callee.text | return e
   let targs := tyArgs.map (substTypeVars subst · |>.val)
   unless targs.length == calleeDef.typeArgs.length && targs.all (tyTag · |>.isSome) do
@@ -323,7 +323,7 @@ private def rewritePolyCallNode (polyProcDefs : Std.HashMap String Procedure)
   let pinst := (calleeDef.name.text, targs)
   modify fun st => { st with renamed := st.renamed ++ [pinst] }
   -- `procInstKey` bakes the instantiation into the name, so the type arguments are dropped.
-  return { e with val := .StaticCall (mkId (procInstKey pinst)) args [] }
+  return { e with val := .Call none (mkId (procInstKey pinst)) args [] }
 
 /-- Discover and rewrite polymorphic-procedure CALLS inside a (pristine, resolved)
     procedure's StmtExpr slots — preconditions, decreases, invokeOn, and body — under

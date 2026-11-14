@@ -34,9 +34,18 @@ open StrataDDM (Program)
 
 namespace Strata.HoareAfterSupport
 
-/-- Translate a DDM concrete-syntax program to the Core AST. -/
+/-- Expression source locations are normalized to `Core.valueLoc` so the tests' exact
+    structural comparisons hold; execution ignores locations, so this changes nothing the
+    evaluator observes. -/
+def eraseProgLocs (pr : Core.Program) : Core.Program :=
+  { pr with decls := pr.decls.map fun d => match d with
+      | .proc proc md => .proc (Core.Procedure.mapExprs Core.eraseLocs proc) md
+      | other => other }
+
+/-- Translate a DDM concrete-syntax program to the Core AST, with expression source
+    locations normalized to `Core.valueLoc`. -/
 def cstToAST (p : Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram p)).fst
+  eraseProgLocs (TransM.run Inhabited.default (translateProgram p)).fst
 
 /-- Gate parameters: no reserved fresh-prefixes, and every name counts as declared. -/
 def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
@@ -53,11 +62,11 @@ abbrev intMono : Lambda.LMonoTy := .tcons "int" []
 abbrev intLTy : Lambda.LTy := .forAll [] intMono
 
 /-- An integer-annotated variable. -/
-abbrev v (x : Core.Expression.Ident) : Core.Expression.Expr := .fvar () x (some intMono)
+abbrev v (x : Core.Expression.Ident) : Core.Expression.Expr := .fvar Core.valueLoc x (some intMono)
 
 /-- `int.ge(x, 0)`. -/
 abbrev ge0 (x : Core.Expression.Ident) : Core.Expression.Expr :=
-  .app () (.app () Core.intGeOp (v x)) (.intConst () 0)
+  .app Core.valueLoc (.app Core.valueLoc Core.intGeOp (v x)) (.intConst Core.valueLoc 0)
 
 /-- The runtime factory's functions are those of `Core.Factory`. -/
 abbrev Pinned (ρ : Env Core.Expression) : Prop := ρ.factory.factory = Core.Factory

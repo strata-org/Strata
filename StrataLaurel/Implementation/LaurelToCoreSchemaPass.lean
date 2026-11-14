@@ -47,6 +47,16 @@ open Lambda (LMonoTy LTy LExpr)
 
 public section
 
+/-- Location of expressions this file builds itself. -/
+abbrev laurelLoc : ExprSourceLoc := ExprSourceLoc.synthesized "laurel"
+
+/-- Give an operator head taken from the factory, which carries a synthesized
+location, the location `l` of the call it heads. -/
+private def headAt (l : ExprSourceLoc) (fn : Core.Expression.Expr) : Core.Expression.Expr :=
+  match fn with
+  | .op m o ty => if m.isSynthesized then .op l o ty else fn
+  | _ => fn
+
 private def mdWithUnknownLoc : Imperative.MetaData Core.Expression :=
   Imperative.MetaData.ofProvenance (.synthesized .laurelToCore)
 
@@ -84,7 +94,7 @@ structure TranslateState where
       why the program was deemed invalid so that if no other diagnostics explain
       the suppression, these can be surfaced to the user. -/
   coreDiagnostics : List Message := []
-  /-- Names of the program's (non-functional) procedures. A `StaticCall` whose
+  /-- Names of the program's (non-functional) procedures. A static `Call` whose
       callee is in this set is a procedure call; anything else (Core functions,
       the `$asFunction` twins produced by TransparencyPass, constants, etc.) is a
       pure function application. This is name-based on purpose: TransparencyPass
@@ -263,7 +273,7 @@ def lookupType (name : Identifier) : TranslateM LMonoTy := do
     `TotalMap TypeTag (value type of the inner call)`. -/
 private partial def mapConstValTy (model : SemanticModel) (arg : StmtExprMd) : TranslateM LMonoTy := do
   match arg.val with
-  | .StaticCall callee [inner] [] =>
+  | .Call none callee [inner] [] =>
       if callee.text == "mapConst" then
         return Core.mapTy (.tcons "TypeTag" []) (← mapConstValTy model inner)
       else translateType (computeExprType model arg)
@@ -408,7 +418,7 @@ private def isCoreNativeTypeName (name : String) : Bool :=
 private def bvOperatorWidths : List Nat := [1, 8, 16, 32, 64, 128]
 
 /-- Signed bitvector comparisons, as `(externalProcSuffix, Core op)` pairs
-    parameterized by width. Signed to match the pre-`StaticCall` lowering, which
+    parameterized by width. Signed to match the pre-static `Call` lowering, which
     sent bitvector comparisons through the *integer* operators. -/
 private def bvComparisonOp (width : Nat) (suffix : String) : Option Core.Expression.Expr :=
   match width, suffix with
@@ -633,16 +643,18 @@ def translateExpr (expr : StmtExprMd)
   let s ← get
   let model := s.model
   let md := astNodeToCoreMd expr
+  -- Every Core node built for this Laurel expression carries its source location.
+  let loc : ExprSourceLoc := ExprSourceLoc.ofUriRange expr.source.file expr.source.range
 
   let disallowed (source : FileRange) (msg : String) : TranslateM Core.Expression.Expr := do
       emitExprDiagnostic $ diagnosticFromSource source msg
 
   match h: expr.val with
-  | .LiteralBool b => return .const () (.boolConst b)
-  | .LiteralInt i => return .const () (.intConst i)
-  | .LiteralString s => return .const () (.strConst s)
-  | .LiteralDecimal d => return .const () (.rationalConst (StrataDDM.Decimal.toRat d))
-  | .LiteralBv value width => return .const () (.bitvecConst width (BitVec.ofNat width value))
+  | .LiteralBool b => return .const loc (.boolConst b)
+  | .LiteralInt i => return .const loc (.intConst i)
+  | .LiteralString s => return .const loc (.strConst s)
+  | .LiteralDecimal d => return .const loc (.rationalConst (StrataDDM.Decimal.toRat d))
+  | .LiteralBv value width => return .const loc (.bitvecConst width (BitVec.ofNat width value))
   | .Var (.Local name) =>
       -- First check if this name is bound by an enclosing quantifier
       let mut bvarIdx : Option Nat := none
@@ -651,11 +663,11 @@ def translateExpr (expr : StmtExprMd)
           bvarIdx := some idx
           break
       match bvarIdx with
-      | some idx => return .bvar () idx
+      | some idx => return .bvar loc idx
       | none =>
         match model.get name with
-        | .field _ f => return .op () ⟨f.name.text, ()⟩ none
-        | astNode => return .fvar () ⟨name.text, ()⟩ (some (← translateType astNode.getType))
+        | .field _ f => return .op loc ⟨f.name.text, ()⟩ none
+        | astNode => return .fvar loc ⟨name.text, ()⟩ (some (← translateType astNode.getType))
   | .Var (.Declare _) =>
       emitExprDiagnostic $ md.toDiagnostic "variable declaration in expression context should have been lowered" MessageKind.strataBug
   | .Var (.Stack _) =>
@@ -671,8 +683,8 @@ def translateExpr (expr : StmtExprMd)
               have := AstNode.sizeOf_val_lt expr
               cases expr; simp_all; omega
             translateExpr e boundVars isPureContext
-      return .ite () bcond bthen belse
-  | .StaticCall callee args callTypeArgs =>
+      return .ite loc bcond bthen belse
+  | .Call none callee args callTypeArgs =>
       if isOperatorProcName callee.text then
         -- Match on the bare name: every prelude procedure carries the reserved `$`
         -- prefix, and `$eq`/`$neq` additionally reach here under their wrapper
@@ -682,17 +694,17 @@ def translateExpr (expr : StmtExprMd)
           have h_e : sizeOf e < sizeOf expr := by
             have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
           let re ← translateExpr e boundVars isPureContext
-          return .app () boolNotOp re
+          return .app loc (headAt loc boolNotOp) re
         | "intNeg", [e] =>
           have h_e : sizeOf e < sizeOf expr := by
             have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
           let re ← translateExpr e boundVars isPureContext
-          return .app () intNegOp re
+          return .app loc (headAt loc intNegOp) re
         | "realNeg", [e] =>
           have h_e : sizeOf e < sizeOf expr := by
             have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
           let re ← translateExpr e boundVars isPureContext
-          return .app () realNegOp re
+          return .app loc (headAt loc realNegOp) re
         | "eq", [e1, e2] =>
           have h_e1 : sizeOf e1 < sizeOf expr := by
             have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
@@ -700,7 +712,7 @@ def translateExpr (expr : StmtExprMd)
             have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
           let re1 ← translateExpr e1 boundVars isPureContext
           let re2 ← translateExpr e2 boundVars isPureContext
-          return .eq () re1 re2
+          return .eq loc re1 re2
         | "neq", [e1, e2] =>
           have h_e1 : sizeOf e1 < sizeOf expr := by
             have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
@@ -708,7 +720,7 @@ def translateExpr (expr : StmtExprMd)
             have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
           let re1 ← translateExpr e1 boundVars isPureContext
           let re2 ← translateExpr e2 boundVars isPureContext
-          return .app () boolNotOp (.eq () re1 re2)
+          return .app loc (headAt loc boolNotOp) (.eq loc re1 re2)
         | "andThen", [e1, e2] =>
           have h_e1 : sizeOf e1 < sizeOf expr := by
             have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
@@ -716,7 +728,7 @@ def translateExpr (expr : StmtExprMd)
             have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
           let re1 ← translateExpr e1 boundVars isPureContext
           let re2 ← translateExpr e2 boundVars isPureContext
-          return .ite () re1 re2 (.boolConst () false)
+          return .ite loc re1 re2 (.boolConst loc false)
         | "orElse", [e1, e2] =>
           have h_e1 : sizeOf e1 < sizeOf expr := by
             have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
@@ -724,7 +736,7 @@ def translateExpr (expr : StmtExprMd)
             have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
           let re1 ← translateExpr e1 boundVars isPureContext
           let re2 ← translateExpr e2 boundVars isPureContext
-          return .ite () re1 (.boolConst () true) re2
+          return .ite loc re1 (.boolConst loc true) re2
         -- `==>` short-circuits: its right operand must not be evaluated when the
         -- left one is `false`, or a guarded partial destructor such as
         -- `isfrom_int(v) ==> as_int!(v) != 0` would get stuck on a wrong-variant
@@ -736,7 +748,7 @@ def translateExpr (expr : StmtExprMd)
             have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
           let re1 ← translateExpr e1 boundVars isPureContext
           let re2 ← translateExpr e2 boundVars isPureContext
-          return .ite () re1 re2 (.boolConst () true)
+          return .ite loc re1 re2 (.boolConst loc true)
         -- Unary fallthrough: the bitvector unary externals (`$bv32Not`,
         -- `$bv32ToInt`, `$bv32ToUInt`, `$intToBv32`). It sits BEFORE the binary
         -- fallthrough because the two are distinguished only by arity, and after
@@ -748,7 +760,7 @@ def translateExpr (expr : StmtExprMd)
             have h_e : sizeOf e < sizeOf expr := by
               have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
             let re ← translateExpr e boundVars isPureContext
-            return .app () op re
+            return .app loc (headAt loc op) re
           | none =>
             emitExprDiagnostic $ diagnosticFromSource expr.source
               s!"operator procedure '{callee.text}' called with wrong number of arguments" .userError
@@ -761,7 +773,7 @@ def translateExpr (expr : StmtExprMd)
               have := AstNode.sizeOf_val_lt expr; cases expr; simp_all; omega
             let re1 ← translateExpr e1 boundVars isPureContext
             let re2 ← translateExpr e2 boundVars isPureContext
-            return LExpr.mkApp () op [re1, re2]
+            return LExpr.mkApp loc (headAt loc op) [re1, re2]
           | none =>
             emitExprDiagnostic $ diagnosticFromSource expr.source
               s!"operator procedure '{callee.text}' called with wrong number of arguments" .userError
@@ -799,14 +811,15 @@ def translateExpr (expr : StmtExprMd)
         | some (k, v) =>
           let kTy ← translateType k
           let vTy ← translateType v
-          return .app () (.op () ⟨"mapConst", ()⟩ (some (LMonoTy.mkArrow vTy [Core.mapTy kTy vTy])))
-                         (.op () ⟨mapEntryAbsentCtor, ()⟩ (some vTy))
+          return .app loc (.op loc ⟨"mapConst",
+              ()⟩ (some (LMonoTy.mkArrow vTy [Core.mapTy kTy vTy])))
+                         (.op loc ⟨mapEntryAbsentCtor, ()⟩ (some vTy))
         -- Reached only for a call with no recorded instantiation and no expected type: one
         -- synthesized after resolution, since resolution rejects a `mapEmpty()` whose `K`/`V`
         -- nothing determines. The op is emitted unannotated, and the enclosing term constrains it
         -- (`mapSet(mapEmpty(), 1, true)` fixes both parameters through `update`).
         | none =>
-          return .app () (.op () ⟨"mapConst", ()⟩ none) (.op () ⟨mapEntryAbsentCtor, ()⟩ none)
+          return .app loc (.op loc ⟨"mapConst", ()⟩ none) (.op loc ⟨mapEntryAbsentCtor, ()⟩ none)
       else
       -- The `mapConst` constant-map builtin has no inferable key type, so we annotate its op with
       -- the concrete function type `V → TotalMap K V`. This lets the pretty-printer emit the
@@ -832,8 +845,8 @@ def translateExpr (expr : StmtExprMd)
                     "internal error: 'mapConst' reached Core translation with no inferred or \
                      expected map type, but resolution accepted it" .strataBug)
                   pure (.tcons "TypeTag" [])
-              pure (.op () ⟨callee.text, ()⟩ (some (LMonoTy.mkArrow vTy [Core.mapTy kTy vTy])))
-          | _ => pure (.op () ⟨callee.text, ()⟩ none)
+              pure (.op loc ⟨callee.text, ()⟩ (some (LMonoTy.mkArrow vTy [Core.mapTy kTy vTy])))
+          | _ => pure (.op loc ⟨callee.text, ()⟩ none)
         else match coreSetOpName? callee.text <|> coreSeqOpName? callee.text with
         -- A set or sequence primitive: emit Core's `Set.*`/`Sequence.*` factory op under
         -- its own name.
@@ -848,11 +861,11 @@ def translateExpr (expr : StmtExprMd)
           else if coreName == "Sequence.empty" then
             pure (Core.seqEmptyOp (← emptyCollectionElemTy!
               "Sequence" callTypeArgs expectedType expr.source))
-          else pure (.op () ⟨coreName, ()⟩ none)
-        | none => pure (.op () ⟨callee.text, ()⟩ none)
+          else pure (.op loc ⟨coreName, ()⟩ none)
+        | none => pure (.op loc ⟨callee.text, ()⟩ none)
       args.attach.foldlM (fun acc ⟨arg, _⟩ => do
         let re ← translateExpr arg boundVars isPureContext
-        return .app () acc re) fnOp
+        return .app loc acc re) (headAt loc fnOp)
   | .Block [single] _ _ _ => translateExpr single boundVars isPureContext
   | .Quantifier mode ⟨ name, ty ⟩ trigger body =>
       let coreTy ← translateType ty
@@ -861,19 +874,19 @@ def translateExpr (expr : StmtExprMd)
       | some trig =>
         let coreTrig ← translateExpr trig (name :: boundVars) isPureContext
         match mode with
-        | .Forall => return LExpr.allTr () name.text (some coreTy) coreTrig coreBody
-        | .Exists => return LExpr.existTr () name.text (some coreTy) coreTrig coreBody
+        | .Forall => return LExpr.allTr loc name.text (some coreTy) coreTrig coreBody
+        | .Exists => return LExpr.existTr loc name.text (some coreTy) coreTrig coreBody
       | none =>
         match mode with
-        | .Forall => return LExpr.all () name.text (some coreTy) coreBody
-        | .Exists => return LExpr.exist () name.text (some coreTy) coreBody
+        | .Forall => return LExpr.all loc name.text (some coreTy) coreBody
+        | .Exists => return LExpr.exist loc name.text (some coreTy) coreBody
   | .Hole _ _ =>
       -- Holes should have been eliminated before translation.
       disallowed expr.source "holes should have been eliminated before translation"
   | .ReferenceEquals e1 e2 =>
       let re1 ← translateExpr e1 boundVars isPureContext
       let re2 ← translateExpr e2 boundVars isPureContext
-      return .eq () re1 re2
+      return .eq loc re1 re2
   | .Assign _ _ =>
       disallowed expr.source "destructive assignments are not supported in transparent bodies or contracts"
   | .IncrDecr _ _ _ =>
@@ -955,7 +968,7 @@ def translateExpr (expr : StmtExprMd)
               MessageKind.strataBug
           else
             let coreTy ← translateType (model.get name).getType
-            return .fvar () (Core.CoreIdent.mkOld name.text) (some coreTy)
+            return .fvar loc (Core.CoreIdent.mkOld name.text) (some coreTy)
       | _ =>
           emitExprDiagnostic $ diagnosticFromSource expr.source
             "old(...) should have been pushed inward to a variable reference. \
@@ -968,7 +981,7 @@ def translateExpr (expr : StmtExprMd)
   | .ContractOf _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "contractOf expression translation" MessageKind.notYetImplemented
   | .Abstract => emitExprDiagnostic $ diagnosticFromSource expr.source "abstract expression translation" MessageKind.notYetImplemented
   | .All => emitExprDiagnostic $ diagnosticFromSource expr.source "all expression translation" MessageKind.notYetImplemented
-  | .InstanceCall .. => emitExprDiagnostic (unliftedInstanceCall expr.source)
+  | .Call (some _) .. => emitExprDiagnostic (unliftedInstanceCall expr.source)
   | .PureFieldUpdate _ _ _ => emitExprDiagnostic $ diagnosticFromSource expr.source "pure field update expression translation" MessageKind.notYetImplemented
   | .This => emitExprDiagnostic $ diagnosticFromSource expr.source "this expression translation" MessageKind.notYetImplemented
   -- The exceptional channel is lowered to ordinary Laurel by the
@@ -1011,15 +1024,15 @@ def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
 
 def defaultExprForType (ty : HighTypeMd) : TranslateM Core.Expression.Expr := do
   match ty.val with
-  | .TInt => return .const () (.intConst 0)
-  | .TBool => return .const () (.boolConst false)
-  | .TString => return .const () (.strConst "")
+  | .TInt => return .const laurelLoc (.intConst 0)
+  | .TBool => return .const laurelLoc (.boolConst false)
+  | .TString => return .const laurelLoc (.strConst "")
   | _ =>
     -- For types without a natural default (arrays, composites, etc.),
     -- use a fresh free variable. This is only used when the value is
     -- immediately overwritten by a procedure call.
     let coreTy ← translateType ty
-    return .fvar () (⟨"$default", ()⟩) (some coreTy)
+    return .fvar laurelLoc (⟨"$default", ()⟩) (some coreTy)
 
 /--
 Translate an expression in statement position into a `var $unused_N := expr` init.
@@ -1195,11 +1208,12 @@ def translateStmt (stmt : StmtExprMd)
           let temp : Core.CoreIdent := ⟨s!"$inout_{← freshId}", ()⟩
           tempInits := tempInits ++ [Core.Statement.init temp (LTy.forAll [] coreTy) (.det initial) md]
           callArgs := callArgs.set i (.inoutArg temp)
-          copyBacks := copyBacks ++ [Core.Statement.set target (.fvar () temp (some coreTy)) md]
+          copyBacks := copyBacks ++ [Core.Statement.set target (.fvar laurelLoc temp (some coreTy))
+              md]
         return inits ++ tempInits ++ [Core.Statement.call calleeId.text (callArgs ++ outArgs) md] ++ copyBacks
       -- Match on the value to decide how to translate
       match _hv : value.val with
-      | .StaticCall callee args _ =>
+      | .Call none callee args _ =>
         if (← containsProcedure callee) then
           translateCallTargets callee args
         else
@@ -1225,7 +1239,7 @@ def translateStmt (stmt : StmtExprMd)
             return result
           | _ =>
             throwStmtDiagnostic $ md.toDiagnostic "function call without a single target" MessageKind.strataBug
-      | .InstanceCall .. => throwStmtDiagnostic (unliftedInstanceCall value.source)
+      | .Call (some _) .. => throwStmtDiagnostic (unliftedInstanceCall value.source)
       | .Hole _ _ =>
           -- Hole RHS: havoc all targets (unmodeled call side-effect).
           dispatchTargets
@@ -1247,7 +1261,7 @@ def translateStmt (stmt : StmtExprMd)
                   | some e => translateStmt e
                   | none => pure []
       return [Imperative.Stmt.ite (.det bcond) bthen belse md]
-  | .StaticCall callee args _ =>
+  | .Call none callee args _ =>
       -- Check if this is a function or procedure
       if !(← containsProcedure callee) then
         -- Function call in statement position: preserve as unused init
@@ -1266,7 +1280,7 @@ def translateStmt (stmt : StmtExprMd)
           inits := inits ++ [Core.Statement.init ident coreType .nondet md]
           outArgs := outArgs ++ [.outArg ident]
         return inits ++ [Core.Statement.call callee.text (callArgs ++ outArgs) md]
-  | .InstanceCall .. => throwStmtDiagnostic (unliftedInstanceCall stmt.source)
+  | .Call (some _) .. => throwStmtDiagnostic (unliftedInstanceCall stmt.source)
   | .Return _ =>
       let d := md.toDiagnostic "Return statement should have been eliminated by EliminateReturnStatements pass" MessageKind.strataBug
       emitCoreDiagnostic d
@@ -1418,7 +1432,7 @@ def translateProcedure (proc : Procedure) : TranslateM Core.Procedure := do
       -- `free`, so there is nothing to check against the body) and concrete
       -- execution (the outputs stay havoc'd), but it lets the interpreter step
       -- through the call instead of erroring.
-      [Core.Statement.assume "assume_true" (.true ()) Imperative.MetaData.empty]
+      [Core.Statement.assume "assume_true" (.true laurelLoc) Imperative.MetaData.empty]
   let spec : Core.Procedure.Spec := { preconditions, postconditions }
   return { header, spec, body := .structured body }
 
@@ -1449,7 +1463,7 @@ def translateProcedureToFunction (options: LaurelTranslateOptions) (isRecursive:
   -- Translate precondition to FuncPrecondition (skip trivial `true`)
   let preconditions ← proc.preconditions.mapM (fun precondition => do
     let checkExpr ← translateExpr precondition.condition [] true
-    return { expr := checkExpr, md := () })
+    return { expr := checkExpr, md := checkExpr.metadata })
 
   -- For recursive functions, infer the @[cases] parameter index: the first input
   -- whose type is a user-defined datatype (has constructors). This is the argument
@@ -1607,7 +1621,7 @@ public def laurelToCoreSchemaPass : LaurelPass where
       NodeKind.CompositeType.typeArgs.cons,
       NodeKind.Pseudo.statementExpression,
       NodeKind.Pseudo.letExpr,
-      NodeKind.StmtExpr.InstanceCall,
+      NodeKind.StmtExpr.Call.receiver?.some,
       NodeKind.CompositeType.instanceProcedures.cons,
       NodeKind.StmtExpr.This,
       NodeKind.Pseudo.imperativeFunction,

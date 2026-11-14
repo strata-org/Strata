@@ -26,12 +26,12 @@ abbrev x : CoreIdent := ⟨"x", ()⟩
 abbrev Γ : VarTyping Expression := fun y => if y = x then some (.forAll [] .int) else none
 
 /-- The condition `x == 1`. -/
-abbrev cond : Expression.Expr := .eq () (.fvar () x none) (.intConst () 1)
+abbrev cond : Expression.Expr := .eq Core.coreLoc (.fvar Core.coreLoc x none) (.intConst Core.coreLoc 1)
 
 /-- Annotating `cond` by `Γ` marks `x` as an integer. -/
 theorem cond_annotated :
     cond.annotateFvars (fun y => (Γ y).bind Lambda.LTy.toMonoType?) =
-      .eq () (.fvar () x (some .int)) (.intConst () 1) := by
+      .eq Core.coreLoc (.fvar Core.coreLoc x (some .int)) (.intConst Core.coreLoc 1) := by
   simp [Γ, Lambda.LExpr.annotateFvars, Lambda.LTy.toMonoType?]
   rfl
 

@@ -61,7 +61,7 @@ private def testRejectsGlobalConstant (transitive : Bool)
     (program : StrataDDM.Program) : IO Unit := do
   let laurelProgram ← translateLaurel program
   let initializer : StmtExprMd := if transitive then
-    ⟨.StaticCall (mkId "readG") [] [], default⟩
+    ⟨.Call none (mkId "readG") [] [], default⟩
   else
     ⟨.Var (.Local (mkId "g")), default⟩
   let withConstant := { laurelProgram with constants := [{

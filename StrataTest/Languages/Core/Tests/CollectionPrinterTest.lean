@@ -24,14 +24,14 @@ open Strata.Test.CoreReparse (reprintsSame)
 
 namespace Strata.Test.CollectionPrinter
 
-private def intLit (i : Int) : Expression.Expr := .const () (.intConst i)
+private def intLit (i : Int) : Expression.Expr := .const Core.valueLoc (.intConst i)
 
 private def opApp (name : String) (args : List Expression.Expr) :
     Expression.Expr :=
-  LExpr.mkApp () (.op () ⟨name, ()⟩ none) args
+  LExpr.mkApp Core.valueLoc (.op Core.valueLoc ⟨name, ()⟩ none) args
 
 private def emptyIntSet : Expression.Expr :=
-  .op () ⟨"Set.empty", ()⟩ (some (setTy .int))
+  .op Core.valueLoc ⟨"Set.empty", ()⟩ (some (setTy .int))
 
 /-- A program with one procedure `P`, without parameters, whose body is
     `body`. -/
@@ -56,7 +56,7 @@ private def initVar (name : String) (ty : LMonoTy) (e : Expression.Expr) :
 private def setOpsProg : Core.Program :=
   let s := emptyIntSet
   let emptySet (ety : LMonoTy) : Expression.Expr :=
-    .op () ⟨"Set.empty", ()⟩ (some (setTy ety))
+    .op Core.valueLoc ⟨"Set.empty", ()⟩ (some (setTy ety))
   procProg [
     initVar "eb" (setTy .bool) (emptySet .bool),
     initVar "eq" (setTy (seqTy .int)) (emptySet (seqTy .int)),
@@ -73,14 +73,14 @@ private def setOpsProg : Core.Program :=
     reports each missing element type. -/
 private def missingElemTyEmptyProg : Core.Program :=
   procProg [
-    initVar "x" (setTy .int) (.op () ⟨"Set.empty", ()⟩ none),
-    initVar "y" (seqTy .int) (.op () ⟨"Sequence.empty", ()⟩ none),
-    initVar "z" (setTy .int) (.op () ⟨"Set.empty", ()⟩ (some (seqTy .int)))]
+    initVar "x" (setTy .int) (.op Core.valueLoc ⟨"Set.empty", ()⟩ none),
+    initVar "y" (seqTy .int) (.op Core.valueLoc ⟨"Sequence.empty", ()⟩ none),
+    initVar "z" (setTy .int) (.op Core.valueLoc ⟨"Set.empty", ()⟩ (some (seqTy .int)))]
 
 /-- Declares one variable initialized with each grouped `Sequence.*`
     operator. -/
 private def seqOpsProg : Core.Program :=
-  let q : Expression.Expr := .op () ⟨"Sequence.empty", ()⟩ (some (seqTy .int))
+  let q : Expression.Expr := .op Core.valueLoc ⟨"Sequence.empty", ()⟩ (some (seqTy .int))
   let one := intLit 1
   procProg [
     initVar "a" .int (opApp "Sequence.select" [q, one]),
@@ -96,9 +96,9 @@ private def seqOpsProg : Core.Program :=
     with a sequence literal. -/
 private def literalsProg : Core.Program :=
   procProg [
-    initVar "m" (mapTy .int .int) (.const () (.mapConst .int .int (.intConst 0)
+    initVar "m" (mapTy .int .int) (.const Core.valueLoc (.mapConst .int .int (.intConst 0)
       #[(.intConst 1, .intConst 10), (.intConst 2, .intConst 20)])),
-    initVar "q" (seqTy .int) (.const () (.sequenceConst .int #[.intConst 1, .intConst 2]))]
+    initVar "q" (seqTy .int) (.const Core.valueLoc (.sequenceConst .int #[.intConst 1, .intConst 2]))]
 
 /-- The printed program followed by its AST-to-CST conversion errors, one per
     line, or `[]` when there are none. -/

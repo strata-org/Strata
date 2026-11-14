@@ -38,9 +38,18 @@ namespace Strata
 open CoreHoareTestSupport
 
 
+/-- Replace the real source locations of every procedure expression by `valueLoc`,
+    so `native_decide` shape assertions below are stable. Typing and evaluation
+    ignore locations, so a triple proved of the erased program holds of the parsed
+    one. -/
+private def eraseProgLocs (pr : Core.Program) : Core.Program :=
+  { pr with decls := pr.decls.map fun d => match d with
+      | .proc proc md => .proc (Core.Procedure.mapExprs Core.eraseLocs proc) md
+      | other => other }
+
 /-- Translate a DDM concrete-syntax program to the Core AST. -/
 private def cstToAST (p : Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram p)).fst
+  eraseProgLocs (TransM.run Inhabited.default (translateProgram p)).fst
 
 /-- Recover the concrete procedure named by a successful program lookup. -/
 private theorem procOf_eq {p : Core.Program} {nm : String} {proc : Core.Procedure}
@@ -130,7 +139,7 @@ private def resultId : Core.Expression.Ident := ⟨"result", ()⟩
 private def maxSetExpr : Core.Expression.Expr :=
   match maxProc.body with
   | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ (.det e) _))] => e
-  | _ => Lambda.LExpr.const () (Lambda.LConst.boolConst true)
+  | _ => Lambda.LExpr.const Core.valueLoc (Lambda.LConst.boolConst true)
 
 private def maxSetMd : Imperative.MetaData Core.Expression :=
   match maxProc.body with
@@ -146,14 +155,14 @@ private theorem max_body_eq :
 private def maxSpecExpr : Core.Expression.Expr :=
   match (maxProc.spec.postconditions.toList.head!).2.expr with
   | .eq _ _ rhs => rhs
-  | _ => Lambda.LExpr.const () (Lambda.LConst.boolConst true)
+  | _ => Lambda.LExpr.const Core.valueLoc (Lambda.LConst.boolConst true)
 
 /-- Max16's non-free postcondition equates `result` with its specification expression. -/
 private theorem max_ensures_shape :
     ∀ lc ∈ maxProc.spec.postconditions.toList,
       (Prod.snd lc).attr = Core.Procedure.CheckAttr.Default →
       (Prod.snd lc).expr =
-        Lambda.LExpr.eq () (Lambda.LExpr.fvar () resultId bv16Ty) maxSpecExpr := by
+        Lambda.LExpr.eq Core.valueLoc (Lambda.LExpr.fvar Core.valueLoc resultId bv16Ty) maxSpecExpr := by
   native_decide
 
 /-! ## Min16 body/ensures projections -/
@@ -161,7 +170,7 @@ private theorem max_ensures_shape :
 private def minSetExpr : Core.Expression.Expr :=
   match minProc.body with
   | .structured [Imperative.Stmt.cmd (Imperative.CmdExt.cmd (Imperative.Cmd.set _ (.det e) _))] => e
-  | _ => Lambda.LExpr.const () (Lambda.LConst.boolConst true)
+  | _ => Lambda.LExpr.const Core.valueLoc (Lambda.LConst.boolConst true)
 
 private def minSetMd : Imperative.MetaData Core.Expression :=
   match minProc.body with
@@ -177,14 +186,14 @@ private theorem min_body_eq :
 private def minSpecExpr : Core.Expression.Expr :=
   match (minProc.spec.postconditions.toList.head!).2.expr with
   | .eq _ _ rhs => rhs
-  | _ => Lambda.LExpr.const () (Lambda.LConst.boolConst true)
+  | _ => Lambda.LExpr.const Core.valueLoc (Lambda.LConst.boolConst true)
 
 /-- Min16's non-free postcondition equates `result` with its specification expression. -/
 private theorem min_ensures_shape :
     ∀ lc ∈ minProc.spec.postconditions.toList,
       (Prod.snd lc).attr = Core.Procedure.CheckAttr.Default →
       (Prod.snd lc).expr =
-        Lambda.LExpr.eq () (Lambda.LExpr.fvar () resultId bv16Ty) minSpecExpr := by
+        Lambda.LExpr.eq Core.valueLoc (Lambda.LExpr.fvar Core.valueLoc resultId bv16Ty) minSpecExpr := by
   native_decide
 
 
@@ -204,30 +213,30 @@ private def minABId : Core.Expression.Ident := ⟨"minAB", ()⟩
 private def maxMinAId : Core.Expression.Ident := ⟨"maxMinA", ()⟩
 
 private def bv16ULeApp (x y : Core.Expression.Expr) : Core.Expression.Expr :=
-  .app () (.app () (Lambda.LExpr.op () ⟨"Bv16.ULe", ()⟩ (some bv16ArrowTy)) x) y
+  .app Core.valueLoc (.app Core.valueLoc (Lambda.LExpr.op Core.valueLoc ⟨"Bv16.ULe", ()⟩ (some bv16ArrowTy)) x) y
 
 private def bv16XorApp (x y : Core.Expression.Expr) : Core.Expression.Expr :=
-  .app () (.app () Core.bv16XorFunc.opExpr x) y
+  .app Core.valueLoc (.app Core.valueLoc Core.bv16XorFunc.opExpr x) y
 
 private def bv16AndApp (x y : Core.Expression.Expr) : Core.Expression.Expr :=
-  .app () (.app () Core.bv16AndFunc.opExpr x) y
+  .app Core.valueLoc (.app Core.valueLoc Core.bv16AndFunc.opExpr x) y
 
 private def bitHackMaskExpr : Core.Expression.Expr :=
-  Lambda.LExpr.ite ()
-    (bv16ULeApp (.fvar () xId bv16Ty) (.fvar () yId bv16Ty))
-    (Lambda.LExpr.bitvecConst () 16 (BitVec.ofNat 16 65535))
-    (Lambda.LExpr.bitvecConst () 16 (BitVec.ofNat 16 0))
+  Lambda.LExpr.ite Core.valueLoc
+    (bv16ULeApp (.fvar Core.valueLoc xId bv16Ty) (.fvar Core.valueLoc yId bv16Ty))
+    (Lambda.LExpr.bitvecConst Core.valueLoc 16 (BitVec.ofNat 16 65535))
+    (Lambda.LExpr.bitvecConst Core.valueLoc 16 (BitVec.ofNat 16 0))
 
 private def maxBitHackExpr : Core.Expression.Expr :=
-  bv16XorApp (.fvar () xId bv16Ty)
+  bv16XorApp (.fvar Core.valueLoc xId bv16Ty)
     (bv16AndApp
-      (bv16XorApp (.fvar () xId bv16Ty) (.fvar () yId bv16Ty))
+      (bv16XorApp (.fvar Core.valueLoc xId bv16Ty) (.fvar Core.valueLoc yId bv16Ty))
       bitHackMaskExpr)
 
 private def minBitHackExpr : Core.Expression.Expr :=
-  bv16XorApp (.fvar () yId bv16Ty)
+  bv16XorApp (.fvar Core.valueLoc yId bv16Ty)
     (bv16AndApp
-      (bv16XorApp (.fvar () xId bv16Ty) (.fvar () yId bv16Ty))
+      (bv16XorApp (.fvar Core.valueLoc xId bv16Ty) (.fvar Core.valueLoc yId bv16Ty))
       bitHackMaskExpr)
 
 private def maxABInitTy : Core.Expression.Ty :=
@@ -337,7 +346,7 @@ private theorem min_body_frame :
 
 private def vMax (a b : BitVec 16) : BitVec 16 := if BitVec.ule a b then b else a
 private def vMin (a b : BitVec 16) : BitVec 16 := if BitVec.ule a b then a else b
-private def bvc (w : BitVec 16) : Core.Expression.Expr := Lambda.LExpr.bitvecConst () 16 w
+private def bvc (w : BitVec 16) : Core.Expression.Expr := Lambda.LExpr.bitvecConst Core.valueLoc 16 w
 
 /-- The 16-bit bitvector `w` as a value of the runtime factory `F`. -/
 private abbrev bvV (F : Core.Expression.Factory) (w : BitVec 16) : Core.Expression.Val :=
@@ -351,13 +360,13 @@ private theorem bvc_eval (F : Core.Expression.Factory) (σ : Core.CoreStore) (w 
 /-- A variable bound to a 16-bit value of the factory evaluates to it. -/
 private theorem bv_fvar_eval {F : Core.Expression.Factory} {σ : Core.CoreStore}
     {id : Core.Expression.Ident} {w : BitVec 16} (h : σ id = some (bvV F w)) :
-    Core.Expression.eval F σ (.fvar () id bv16Ty) = some (bvV F w) :=
+    Core.Expression.eval F σ (.fvar Core.valueLoc id bv16Ty) = some (bvV F w) :=
   Core.eval_fvar F h rfl
 
 /-- The test helper for unsigned comparison is the generated `Bv16.ULe` operator. -/
 private theorem bv16ULeApp_eq (x y : Core.Expression.Expr) :
-    bv16ULeApp x y = .app () (.app () (Core.bv16ULeFunc).opExpr x) y := by
-  have h : (Core.bv16ULeFunc).opExpr = Lambda.LExpr.op () ⟨"Bv16.ULe", ()⟩ (some bv16ArrowTy) := by
+    bv16ULeApp x y = .app Core.valueLoc (.app Core.valueLoc (Core.bv16ULeFunc).opExpr x) y := by
+  have h : (Core.bv16ULeFunc).opExpr = Lambda.LExpr.op Core.valueLoc ⟨"Bv16.ULe", ()⟩ (some bv16ArrowTy) := by
     native_decide
   simp only [bv16ULeApp, h]
 
@@ -468,10 +477,10 @@ private theorem ite_bv16ULe_eval (F : Core.Expression.Factory) (hF : F.factory =
     (hcx : σ cxId = some (bvV F va)) (hcy : σ cyId = some (bvV F vb))
     (ht : σ tId = some (bvV F vt)) (he : σ eId = some (bvV F ve)) :
     Core.Expression.eval F σ
-      (Lambda.LExpr.ite () (bv16ULeApp (.fvar () cxId bv16Ty) (.fvar () cyId bv16Ty))
-        (.fvar () tId bv16Ty) (.fvar () eId bv16Ty)) =
+      (Lambda.LExpr.ite Core.valueLoc (bv16ULeApp (.fvar Core.valueLoc cxId bv16Ty) (.fvar Core.valueLoc cyId bv16Ty))
+        (.fvar Core.valueLoc tId bv16Ty) (.fvar Core.valueLoc eId bv16Ty)) =
       some (bvV F (if BitVec.ule va vb then vt else ve)) := by
-  have hcond : Core.Expression.eval F σ (bv16ULeApp (.fvar () cxId bv16Ty) (.fvar () cyId bv16Ty)) =
+  have hcond : Core.Expression.eval F σ (bv16ULeApp (.fvar Core.valueLoc cxId bv16Ty) (.fvar Core.valueLoc cyId bv16Ty)) =
       some (Lambda.SemValue.ofBool F.model.tcInterp (BitVec.ule va vb)) := by
     rw [bv16ULeApp_eq]
     exact Core.eval_bv16ULe hF (bv_fvar_eval hcx) (bv_fvar_eval hcy)
@@ -490,9 +499,9 @@ private theorem bv16_result_value
     (hOutList : (resultId, Lambda.LMonoTy.bitvec 16) ∈ proc.header.outputs.toList)
     (hens1 : ∃ lbl chk, (lbl, chk) ∈ proc.spec.postconditions.toList ∧
         chk.attr = Core.Procedure.CheckAttr.Default ∧
-        chk.expr = Lambda.LExpr.eq () (.fvar () resultId bv16Ty)
-          (Lambda.LExpr.ite () (bv16ULeApp (.fvar () cxId bv16Ty) (.fvar () cyId bv16Ty))
-            (.fvar () tId bv16Ty) (.fvar () eId bv16Ty)))
+        chk.expr = Lambda.LExpr.eq Core.valueLoc (.fvar Core.valueLoc resultId bv16Ty)
+          (Lambda.LExpr.ite Core.valueLoc (bv16ULeApp (.fvar Core.valueLoc cxId bv16Ty) (.fvar Core.valueLoc cyId bv16Ty))
+            (.fvar Core.valueLoc tId bv16Ty) (.fvar Core.valueLoc eId bv16Ty)))
     (hcx : ρ'.store cxId = some (bvV F va)) (hcy : ρ'.store cyId = some (bvV F vb))
     (ht : ρ'.store tId = some (bvV F vt)) (he : ρ'.store eId = some (bvV F ve)) :
     ρ'.store resultId = some (bvV F (if BitVec.ule va vb then vt else ve)) := by
@@ -700,16 +709,16 @@ private theorem min_setE_eq : minSetExpr = minBitHackExpr := by native_decide
 
 /-- The unchanged Max16 specification uses the unsigned conditional maximum. -/
 private theorem max_specE_eq :
-    maxSpecExpr = Lambda.LExpr.ite ()
-      (bv16ULeApp (.fvar () xId bv16Ty) (.fvar () yId bv16Ty))
-      (.fvar () yId bv16Ty) (.fvar () xId bv16Ty) := by
+    maxSpecExpr = Lambda.LExpr.ite Core.valueLoc
+      (bv16ULeApp (.fvar Core.valueLoc xId bv16Ty) (.fvar Core.valueLoc yId bv16Ty))
+      (.fvar Core.valueLoc yId bv16Ty) (.fvar Core.valueLoc xId bv16Ty) := by
   native_decide
 
 /-- The unchanged Min16 specification uses the unsigned conditional minimum. -/
 private theorem min_specE_eq :
-    minSpecExpr = Lambda.LExpr.ite ()
-      (bv16ULeApp (.fvar () xId bv16Ty) (.fvar () yId bv16Ty))
-      (.fvar () xId bv16Ty) (.fvar () yId bv16Ty) := by
+    minSpecExpr = Lambda.LExpr.ite Core.valueLoc
+      (bv16ULeApp (.fvar Core.valueLoc xId bv16Ty) (.fvar Core.valueLoc yId bv16Ty))
+      (.fvar Core.valueLoc xId bv16Ty) (.fvar Core.valueLoc yId bv16Ty) := by
   native_decide
 
 private def vMask (a b : BitVec 16) : BitVec 16 :=
@@ -721,11 +730,11 @@ private theorem hEval_mask (F : Core.Expression.Factory) (hF : F.factory = Core.
     (hx : σ xId = some (bvV F va)) (hy : σ yId = some (bvV F vb)) :
     Core.Expression.eval F σ bitHackMaskExpr = some (bvV F (vMask va vb)) := by
   have hcond : Core.Expression.eval F σ
-      (bv16ULeApp (.fvar () xId bv16Ty) (.fvar () yId bv16Ty)) =
+      (bv16ULeApp (.fvar Core.valueLoc xId bv16Ty) (.fvar Core.valueLoc yId bv16Ty)) =
       some (Lambda.SemValue.ofBool F.model.tcInterp (BitVec.ule va vb)) := by
     rw [bv16ULeApp_eq]
-    exact Core.eval_bv16ULe (m := ()) (m' := ()) hF (bv_fvar_eval hx) (bv_fvar_eval hy)
-  have hite := Core.eval_ite F (m := ()) hcond (bvc_eval F σ (BitVec.ofNat 16 65535))
+    exact Core.eval_bv16ULe (m := Core.valueLoc) (m' := Core.valueLoc) hF (bv_fvar_eval hx) (bv_fvar_eval hy)
+  have hite := Core.eval_ite F (m := Core.valueLoc) hcond (bvc_eval F σ (BitVec.ofNat 16 65535))
     (bvc_eval F σ (BitVec.ofNat 16 0)) rfl
   refine hite.trans (congrArg some ?_)
   unfold vMask
@@ -759,11 +768,11 @@ private theorem hEval_max (F : Core.Expression.Factory) (hF : F.factory = Core.F
     Core.Expression.eval F σ maxSetExpr = some (bvV F (vMax va vb)) := by
   rw [max_setE_eq]
   have hxy : Core.Expression.eval F σ
-      (bv16XorApp (.fvar () xId bv16Ty) (.fvar () yId bv16Ty)) =
+      (bv16XorApp (.fvar Core.valueLoc xId bv16Ty) (.fvar Core.valueLoc yId bv16Ty)) =
       some (bvV F (BitVec.xor va vb)) :=
     Core.eval_bv16Xor hF (bv_fvar_eval hx) (bv_fvar_eval hy)
   have hand : Core.Expression.eval F σ
-      (bv16AndApp (bv16XorApp (.fvar () xId bv16Ty) (.fvar () yId bv16Ty)) bitHackMaskExpr) =
+      (bv16AndApp (bv16XorApp (.fvar Core.valueLoc xId bv16Ty) (.fvar Core.valueLoc yId bv16Ty)) bitHackMaskExpr) =
       some (bvV F (BitVec.and (BitVec.xor va vb) (vMask va vb))) :=
     Core.eval_bv16And hF hxy (hEval_mask F hF σ va vb hx hy)
   have hout : Core.Expression.eval F σ maxBitHackExpr =
@@ -779,11 +788,11 @@ private theorem hEval_min (F : Core.Expression.Factory) (hF : F.factory = Core.F
     Core.Expression.eval F σ minSetExpr = some (bvV F (vMin va vb)) := by
   rw [min_setE_eq]
   have hxy : Core.Expression.eval F σ
-      (bv16XorApp (.fvar () xId bv16Ty) (.fvar () yId bv16Ty)) =
+      (bv16XorApp (.fvar Core.valueLoc xId bv16Ty) (.fvar Core.valueLoc yId bv16Ty)) =
       some (bvV F (BitVec.xor va vb)) :=
     Core.eval_bv16Xor hF (bv_fvar_eval hx) (bv_fvar_eval hy)
   have hand : Core.Expression.eval F σ
-      (bv16AndApp (bv16XorApp (.fvar () xId bv16Ty) (.fvar () yId bv16Ty)) bitHackMaskExpr) =
+      (bv16AndApp (bv16XorApp (.fvar Core.valueLoc xId bv16Ty) (.fvar Core.valueLoc yId bv16Ty)) bitHackMaskExpr) =
       some (bvV F (BitVec.and (BitVec.xor va vb) (vMask va vb))) :=
     Core.eval_bv16And hF hxy (hEval_mask F hF σ va vb hx hy)
   have hout : Core.Expression.eval F σ minBitHackExpr =
@@ -806,9 +815,9 @@ private theorem post_eq_ite_holds
     (hval : vr = if BitVec.ule va vb then vt else ve) :
     (Core.Logic.DenoteBasedInterp Core.Factory).holds world
       { factory := F, store := σ, label := label,
-        expr := Lambda.LExpr.eq () (.fvar () rId bv16Ty)
-          (Lambda.LExpr.ite () (bv16ULeApp (.fvar () cxId bv16Ty) (.fvar () cyId bv16Ty))
-            (.fvar () tId bv16Ty) (.fvar () eId bv16Ty)),
+        expr := Lambda.LExpr.eq Core.valueLoc (.fvar Core.valueLoc rId bv16Ty)
+          (Lambda.LExpr.ite Core.valueLoc (bv16ULeApp (.fvar Core.valueLoc cxId bv16Ty) (.fvar Core.valueLoc cyId bv16Ty))
+            (.fvar Core.valueLoc tId bv16Ty) (.fvar Core.valueLoc eId bv16Ty)),
         metadata := md } := by
   refine Or.inl ⟨hF, ?_⟩
   have hite := ite_bv16ULe_eval F hF σ va vb vt ve cxId cyId tId eId hcx hcy ht he
@@ -938,13 +947,13 @@ private theorem min_typedSub : ∀ p ∈ Imperative.HasTypedVarsImp.typedReadVar
 /-- Max16 has the expected non-free functional postcondition. -/
 private theorem max_hens1 : ∃ lbl chk, (lbl, chk) ∈ maxProc.spec.postconditions.toList ∧
     chk.attr = Core.Procedure.CheckAttr.Default ∧
-    chk.expr = Lambda.LExpr.eq () (.fvar () resultId bv16Ty) maxSpecExpr :=
+    chk.expr = Lambda.LExpr.eq Core.valueLoc (.fvar Core.valueLoc resultId bv16Ty) maxSpecExpr :=
   ⟨(maxProc.spec.postconditions.toList.head!).1, (maxProc.spec.postconditions.toList.head!).2,
     by native_decide, by native_decide, by native_decide⟩
 /-- Min16 has the expected non-free functional postcondition. -/
 private theorem min_hens1 : ∃ lbl chk, (lbl, chk) ∈ minProc.spec.postconditions.toList ∧
     chk.attr = Core.Procedure.CheckAttr.Default ∧
-    chk.expr = Lambda.LExpr.eq () (.fvar () resultId bv16Ty) minSpecExpr :=
+    chk.expr = Lambda.LExpr.eq Core.valueLoc (.fvar Core.valueLoc resultId bv16Ty) minSpecExpr :=
   ⟨(minProc.spec.postconditions.toList.head!).1, (minProc.spec.postconditions.toList.head!).2,
     by native_decide, by native_decide, by native_decide⟩
 
@@ -1074,9 +1083,9 @@ private theorem max_result_val (F : Core.Expression.Factory)
     ρ'.store resultId = some (bvV F (vMax va vb)) := by
   have hens : ∃ lbl chk, (lbl, chk) ∈ maxProc.spec.postconditions.toList ∧
       chk.attr = Core.Procedure.CheckAttr.Default ∧
-      chk.expr = Lambda.LExpr.eq () (.fvar () resultId bv16Ty)
-        (Lambda.LExpr.ite () (bv16ULeApp (.fvar () xId bv16Ty) (.fvar () yId bv16Ty))
-          (.fvar () yId bv16Ty) (.fvar () xId bv16Ty)) := by
+      chk.expr = Lambda.LExpr.eq Core.valueLoc (.fvar Core.valueLoc resultId bv16Ty)
+        (Lambda.LExpr.ite Core.valueLoc (bv16ULeApp (.fvar Core.valueLoc xId bv16Ty) (.fvar Core.valueLoc yId bv16Ty))
+          (.fvar Core.valueLoc yId bv16Ty) (.fvar Core.valueLoc xId bv16Ty)) := by
     obtain ⟨lbl, chk, hmem, hattr, hexpr⟩ := max_hens1
     exact ⟨lbl, chk, hmem, hattr, by rw [hexpr, max_specE_eq]⟩
   exact bv16_result_value F hF maxProc ρ' hρ va vb vb va xId yId yId xId
@@ -1093,9 +1102,9 @@ private theorem min_result_val (F : Core.Expression.Factory)
     ρ'.store resultId = some (bvV F (vMin va vb)) := by
   have hens : ∃ lbl chk, (lbl, chk) ∈ minProc.spec.postconditions.toList ∧
       chk.attr = Core.Procedure.CheckAttr.Default ∧
-      chk.expr = Lambda.LExpr.eq () (.fvar () resultId bv16Ty)
-        (Lambda.LExpr.ite () (bv16ULeApp (.fvar () xId bv16Ty) (.fvar () yId bv16Ty))
-          (.fvar () xId bv16Ty) (.fvar () yId bv16Ty)) := by
+      chk.expr = Lambda.LExpr.eq Core.valueLoc (.fvar Core.valueLoc resultId bv16Ty)
+        (Lambda.LExpr.ite Core.valueLoc (bv16ULeApp (.fvar Core.valueLoc xId bv16Ty) (.fvar Core.valueLoc yId bv16Ty))
+          (.fvar Core.valueLoc xId bv16Ty) (.fvar Core.valueLoc yId bv16Ty)) := by
     obtain ⟨lbl, chk, hmem, hattr, hexpr⟩ := min_hens1
     exact ⟨lbl, chk, hmem, hattr, by rw [hexpr, min_specE_eq]⟩
   exact bv16_result_value F hF minProc ρ' hρ va vb va vb xId yId xId yId
@@ -1143,28 +1152,28 @@ private def PA4 (ρ : Imperative.Env Core.Expression) : Prop :=
 
 /-- The first call passes `a` and `b` as inputs. -/
 private theorem cArgs1_in : Core.CallArg.getInputExprs cArgs1 =
-    [.fvar () aId bv16Ty, .fvar () bId bv16Ty] := by native_decide
+    [.fvar Core.valueLoc aId bv16Ty, .fvar Core.valueLoc bId bv16Ty] := by native_decide
 /-- The first call reads the initialized `maxAB` output slot. -/
 private theorem cArgs1_out : Imperative.CallArg.getOutArgs cArgs1 = [maxABId] := by native_decide
 /-- The first call writes its result to `maxAB`. -/
 private theorem cArgs1_lhs : Imperative.CallArg.getLhs cArgs1 = [maxABId] := by native_decide
 /-- The second call passes `maxAB` and `a` as inputs. -/
 private theorem cArgs2_in : Core.CallArg.getInputExprs cArgs2 =
-    [.fvar () maxABId bv16Ty, .fvar () aId bv16Ty] := by native_decide
+    [.fvar Core.valueLoc maxABId bv16Ty, .fvar Core.valueLoc aId bv16Ty] := by native_decide
 /-- The second call reads the initialized `minMaxA` output slot. -/
 private theorem cArgs2_out : Imperative.CallArg.getOutArgs cArgs2 = [minMaxAId] := by native_decide
 /-- The second call writes its result to `minMaxA`. -/
 private theorem cArgs2_lhs : Imperative.CallArg.getLhs cArgs2 = [minMaxAId] := by native_decide
 /-- The third call passes `a` and `b` as inputs. -/
 private theorem cArgs3_in : Core.CallArg.getInputExprs cArgs3 =
-    [.fvar () aId bv16Ty, .fvar () bId bv16Ty] := by native_decide
+    [.fvar Core.valueLoc aId bv16Ty, .fvar Core.valueLoc bId bv16Ty] := by native_decide
 /-- The third call reads the initialized `minAB` output slot. -/
 private theorem cArgs3_out : Imperative.CallArg.getOutArgs cArgs3 = [minABId] := by native_decide
 /-- The third call writes its result to `minAB`. -/
 private theorem cArgs3_lhs : Imperative.CallArg.getLhs cArgs3 = [minABId] := by native_decide
 /-- The fourth call passes `minAB` and `a` as inputs. -/
 private theorem cArgs4_in : Core.CallArg.getInputExprs cArgs4 =
-    [.fvar () minABId bv16Ty, .fvar () aId bv16Ty] := by native_decide
+    [.fvar Core.valueLoc minABId bv16Ty, .fvar Core.valueLoc aId bv16Ty] := by native_decide
 /-- The fourth call reads the initialized `maxMinA` output slot. -/
 private theorem cArgs4_out : Imperative.CallArg.getOutArgs cArgs4 = [maxMinAId] := by native_decide
 /-- The fourth call writes its result to `maxMinA`. -/
@@ -1177,7 +1186,7 @@ private theorem mm_run_ensures_shape :
     ∀ lc ∈ mmRunProc.spec.postconditions.toList,
       (Prod.snd lc).attr = Core.Procedure.CheckAttr.Default →
       (Prod.snd lc).expr =
-        Lambda.LExpr.eq () (.fvar () maxMinAId bv16Ty) (.fvar () minMaxAId bv16Ty) := by
+        Lambda.LExpr.eq Core.valueLoc (.fvar Core.valueLoc maxMinAId bv16Ty) (.fvar Core.valueLoc minMaxAId bv16Ty) := by
   native_decide
 
 /-! ### The four call triples -/
@@ -1187,7 +1196,7 @@ private theorem call1_triple :
     Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA0
       [Core.Statement.call "Max16" cArgs1 cMd1] PA1 := by
   refine bv16_call_triple "Max16" maxProc cArgs1 cMd1 maxSetMd maxSetExpr
-    (.fvar () aId bv16Ty) (.fvar () bId bv16Ty) maxABId vMax PA0 PA1
+    (.fvar Core.valueLoc aId bv16Ty) (.fvar Core.valueLoc bId bv16Ty) maxABId vMax PA0 PA1
     max16_meets_contract (max_body_frame) (max_body_outputs) (by native_decide) max_body_eq
     cArgs1_in cArgs1_out cArgs1_lhs max_inKeys max_inList max_outOnly max_inout max_outKeys max_noPre
     max_readsSub max_typedSub max_result_val ?_ (fun ρ hpre => hpre.1) max_factory
@@ -1211,7 +1220,7 @@ private theorem call2_triple :
     Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA1
       [Core.Statement.call "Min16" cArgs2 cMd2] PA2 := by
   refine bv16_call_triple "Min16" minProc cArgs2 cMd2 minSetMd minSetExpr
-    (.fvar () maxABId bv16Ty) (.fvar () aId bv16Ty) minMaxAId vMin PA1 PA2
+    (.fvar Core.valueLoc maxABId bv16Ty) (.fvar Core.valueLoc aId bv16Ty) minMaxAId vMin PA1 PA2
     min16_meets_contract (min_body_frame) (min_body_outputs) (by native_decide) min_body_eq
     cArgs2_in cArgs2_out cArgs2_lhs min_inKeys min_inList min_outOnly min_inout min_outKeys min_noPre
     min_readsSub min_typedSub min_result_val ?_ (fun ρ hpre => hpre.1) min_factory
@@ -1226,7 +1235,7 @@ private theorem call3_triple :
     Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA2
       [Core.Statement.call "Min16" cArgs3 cMd3] PA3 := by
   refine bv16_call_triple "Min16" minProc cArgs3 cMd3 minSetMd minSetExpr
-    (.fvar () aId bv16Ty) (.fvar () bId bv16Ty) minABId vMin PA2 PA3
+    (.fvar Core.valueLoc aId bv16Ty) (.fvar Core.valueLoc bId bv16Ty) minABId vMin PA2 PA3
     min16_meets_contract (min_body_frame) (min_body_outputs) (by native_decide) min_body_eq
     cArgs3_in cArgs3_out cArgs3_lhs min_inKeys min_inList min_outOnly min_inout min_outKeys min_noPre
     min_readsSub min_typedSub min_result_val ?_ (fun ρ hpre => hpre.1) min_factory
@@ -1242,7 +1251,7 @@ private theorem call4_triple :
     Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA3
       [Core.Statement.call "Max16" cArgs4 cMd4] PA4 := by
   refine bv16_call_triple "Max16" maxProc cArgs4 cMd4 maxSetMd maxSetExpr
-    (.fvar () minABId bv16Ty) (.fvar () aId bv16Ty) maxMinAId vMax PA3 PA4
+    (.fvar Core.valueLoc minABId bv16Ty) (.fvar Core.valueLoc aId bv16Ty) maxMinAId vMax PA3 PA4
     max16_meets_contract (max_body_frame) (max_body_outputs) (by native_decide) max_body_eq
     cArgs4_in cArgs4_out cArgs4_lhs max_inKeys max_inList max_outOnly max_inout max_outKeys max_noPre
     max_readsSub max_typedSub max_result_val ?_ (fun ρ hpre => hpre.1) max_factory
@@ -1339,7 +1348,7 @@ private theorem eq_fvars_holds
     (h1 : σ id1 = some (bvV F w)) (h2 : σ id2 = some (bvV F w)) :
     (Core.Logic.DenoteBasedInterp Core.Factory).holds world
       { factory := F, store := σ, label := label,
-        expr := Lambda.LExpr.eq () (.fvar () id1 bv16Ty) (.fvar () id2 bv16Ty),
+        expr := Lambda.LExpr.eq Core.valueLoc (.fvar Core.valueLoc id1 bv16Ty) (.fvar Core.valueLoc id2 bv16Ty),
         metadata := md } :=
   Or.inl ⟨hF, Core.eval_eq_true F (bv_fvar_eval h1) (bv_fvar_eval h2)⟩
 

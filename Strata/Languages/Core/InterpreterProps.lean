@@ -98,9 +98,9 @@ theorem evalBounded_const_wt {n : Nat} {f : @Lambda.Factory CoreLParams}
 
 /-- `evalBounded` returns an integer literal unchanged at every fuel. -/
 theorem evalBounded_intConst (n : Nat) (f : @Lambda.Factory CoreLParams)
-    (σ : RStore Expression) (k : Int) :
-    evalBounded n f σ (.intConst () k) = some (.intConst () k) :=
-  evalBounded_const n f σ () (.intConst k)
+    (σ : RStore Expression) (m : ExpressionMetadata) (k : Int) :
+    evalBounded n f σ (.intConst m k) = some (.intConst m k) :=
+  evalBounded_const n f σ m (.intConst k)
 
 /-! ## Fuel monotonicity and completeness of the bounded evaluator -/
 
@@ -143,7 +143,7 @@ theorem boundedEvalComplete_core (f : Expression.Factory) (σr : RStore Expressi
       (by simp [Lambda.getVars_eq_freeVars_idents, Lambda.LExpr.freeVars])
     obtain rfl := Option.some.inj ((Lambda.LExpr.denoteEval_fvar hw htc).symm.trans hv)
     obtain ⟨r, hr⟩ := Option.ne_none_iff_exists'.1 fun h => by simp [(hσ.1 x).2 h] at hw
-    refine ⟨1, r, ?_, hσ.2 x r w hr hw⟩
+    refine ⟨1, Lambda.LExpr.replaceMetadata1 m r, ?_, Denotes_replaceMetadata1 m (hσ.2 x r w hr hw)⟩
     have hnv : Lambda.LExpr.isValue f.factory (.fvar m x ty : Expression.Expr) = false := by
       simp [Lambda.LExpr.isValue.eq_def, Lambda.Factory.callOfLFunc, Lambda.getLFuncCall,
         Lambda.getLFuncCall.go]
@@ -152,11 +152,12 @@ theorem boundedEvalComplete_core (f : Expression.Factory) (σr : RStore Expressi
     have hdom := evalTypedDomain_fvar (m := m) (ty := ty) hr (by
       simpa [denotes_typeCheck (hσ.2 x r w hr hw), isGroundTy_iff] using
         Lambda.LSort.toMonoTy_isGround w.sort)
-    show evalBounded 1 f.factory σr _ = some r
-    refine evalBounded_eq_some_iff.2 ⟨hdom, ?_, (denotes_iff.1 (hσ.2 x r w hr hw)).2.1,
+    show evalBounded 1 f.factory σr _ = some (Lambda.LExpr.replaceMetadata1 m r)
+    refine evalBounded_eq_some_iff.2 ⟨hdom, ?_,
+      (by rw [Lambda.LExpr.typeCheckWith_replaceMetadata1]; exact (denotes_iff.1 (hσ.2 x r w hr hw)).2.1),
       evalOpsChecked_fvar hr (hops x r hr)⟩
-    simp only [Lambda.LExpr.eval, hnv, hnc, Lambda.LExpr.evalCore, hr, hval x r hr]
-    rfl
+    simp only [Lambda.LExpr.eval, hnv, hnc, Lambda.LExpr.evalCore, hr, Lambda.isValue_replaceMetadata1,
+      hval x r hr, ↓reduceIte, Bool.false_eq_true]
 
 end CoreLang
 end
@@ -177,7 +178,7 @@ theorem isValue_hasVal (f : Expression.Factory) (r : Expression.Expr) (v : Expre
 /-- A Core expression equal to the Boolean literal of `b` up to metadata is that literal with some
     metadata. -/
 theorem eq_boolConst_of_eqModuloMeta {r : Expression.Expr} {b : Bool}
-    (h : InterpLang.eqModuloMeta r (LExpr.boolConst () b) = true) :
+    (h : InterpLang.eqModuloMeta r (LExpr.boolConst default b) = true) :
     ∃ m, r = LExpr.boolConst m b := by
   change LExpr.eqModuloMeta r _ = true at h
   unfold LExpr.eqModuloMeta BEq.beq instBEqLExprOfIdentifier at h

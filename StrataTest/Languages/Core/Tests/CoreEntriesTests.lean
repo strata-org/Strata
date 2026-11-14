@@ -58,16 +58,16 @@ procedure P() spec { ensures true; } { assert [a]: true; };
   ((translate dtBeforeProc).declsBeforeProcedure "P")).toArray.any (·.name.name == "Some")
 
 /-- The constant `n`, as an operator. -/
-private def cst (n : String) : Core.Expression.Expr := .op () ⟨n, ()⟩ none
+private def cst (n : String) : Core.Expression.Expr := .op Core.coreLoc ⟨n, ()⟩ none
 
 /-- An axiom, a `distinct` declaration and two lemmas:
     `axiom [ax1]: c == 1; distinct [dist]: [c, d]; lemma [l1]: c == 1; lemma [l2]: d == d`. -/
 private def declsProg : Core.Program :=
   { decls := [
-      .ax { name := "ax1", e := .eq () (cst "c") (.intConst () 1) } .empty,
+      .ax { name := "ax1", e := .eq Core.coreLoc (cst "c") (.intConst Core.valueLoc 1) } .empty,
       .distinct ⟨"dist", ()⟩ [cst "c", cst "d"] .empty,
-      .lemma { name := "l1", e := .eq () (cst "c") (.intConst () 1) } .empty,
-      .lemma { name := "l2", e := .eq () (cst "d") (cst "d") } .empty] }
+      .lemma { name := "l1", e := .eq Core.coreLoc (cst "c") (.intConst Core.valueLoc 1) } .empty,
+      .lemma { name := "l2", e := .eq Core.coreLoc (cst "d") (cst "d") } .empty] }
 
 /-- The declarations entry's walk, read off `declAssumes`: for each declaration in order,
     the labels of the conditions it assumes (`false`), or, for a lemma, its name as an

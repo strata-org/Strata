@@ -61,7 +61,9 @@ theorem LExpr.substFvarsFromEnv_eraseMetadata_congr
     cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
     rename_i m₂; injection h with _ h_x h_ty; subst h_x h_ty
     simp only [LExpr.substFvarsFromEnv]
-    split <;> (first | rfl | simp [LExpr.eraseMetadata, LExpr.replaceMetadata])
+    cases env x with
+    | none => rfl
+    | some to => cases to <;> rfl
   | abs m n t b ih =>
     cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
     rename_i m₂ n₂ t₂ b₂; injection h with _ hn ht hb; subst hn ht

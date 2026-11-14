@@ -32,12 +32,17 @@ def cmdExprs : IRCmd → List Expr
   | .cmd (.assert _ b _) | .cmd (.assume _ b _) | .cmd (.cover _ b _) => [b]
   | .readField _ o _ _ | .instanceOf _ o _ _ => [o]
   | .writeField o _ v _ => [o, v]
+  | .newArray _ _ len _ => [len]
+  | .readElem _ a i _ _ => [a, i]
+  | .writeElem a i v _ _ => [a, i, v]
+  | .arrayLength _ a _ => [a]
   | .call _ _ args _ | .virtualCall _ _ _ args _ => args
   | .throw e _ => [e]
   | .new .. => []
 
 def cmdWrites : IRCmd → List String
   | .cmd (.init x ..) | .cmd (.set x ..) | .cast x .. | .new x .. | .readField x .. | .instanceOf x .. => [x.name]
+  | .newArray x .. | .readElem x .. | .arrayLength x .. => [x.name]
   | .call lhs .. | .virtualCall lhs .. => lhs.map (·.name)
   | _ => []
 
@@ -126,7 +131,7 @@ def run (prog : UnorderedProgram) : Except String UnorderedProgram :=
               used := used ++ [tmp]
               tmps := tmps ++ [.cmd (.init (ident tmp) (outTy q i) .nondet .empty)]
               lhs' := lhs' ++ [ident tmp]
-              let v : Expr := if thrown then .ite () (mkFvar "$callThrown") (mkFvar x.name) (mkFvar tmp) else mkFvar tmp
+              let v : Expr := if thrown then .ite Core.coreLoc (mkFvar "$callThrown") (mkFvar x.name) (mkFvar tmp) else mkFvar tmp
               post := post ++ [.cmd (.set x (.det v) md)]
             else
               lhs' := lhs' ++ [x]

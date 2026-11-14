@@ -224,12 +224,16 @@ theorem computableEval_fvar (F : Expression.Factory) (hF : EvalFactoryWF F.facto
     simp [LExpr.isValue.eq_def, Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]
   have hnc : F.factory.callOfLFunc (.fvar m x ty : Expression.Expr) = none := by
     simp [Factory.callOfLFunc, getLFuncCall, getLFuncCall.go]
-  refine computable_of_evalBounded hF hS hty (n := 1)
-    (evalBounded_eq_some_iff.2 ⟨?_, ?_, hw', ?_⟩) fun _ => LConst.isPrimitive_of_ty hw'' hcc hcd
+  refine computable_of_evalBounded hF hS hty (n := 1) (m := m) (c := c')
+    (evalBounded_eq_some_iff.2 ⟨?_, ?_, ?_, ?_⟩) fun _ => LConst.isPrimitive_of_ty hw'' hcc hcd
   · exact evalTypedDomain_fvar hr
       (by simpa [LExpr.typeCheck, hw'', isGroundTy_iff] using LConst.ty_isGround c')
-  · simp only [LExpr.eval, hnv, hnc, LExpr.evalCore, hr, hv]
-    rfl
+  · simp only [LExpr.eval, hnv, hnc, LExpr.evalCore, hr, ↓reduceIte, Bool.false_eq_true,
+      LExpr.replaceMetadata1, LExpr.isValue]
+  · rw [show (LExpr.const m c' : Expression.Expr)
+          = LExpr.replaceMetadata1 m (LExpr.const m' c') from rfl,
+        LExpr.typeCheckWith_replaceMetadata1]
+    exact hw'
   · exact evalOpsChecked_fvar hr rfl
 
 

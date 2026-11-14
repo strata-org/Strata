@@ -80,8 +80,38 @@ namespace Strata
 
 open CoreHoareTestSupport
 
+private def eraseTransfer
+    (tr : Imperative.DetTransferCmd String Core.Expression) :
+    Imperative.DetTransferCmd String Core.Expression :=
+  match tr with
+  | .condGoto p lt lf md => .condGoto (Core.eraseLocs p) lt lf md
+  | .finish md => .finish md
+
+private def eraseBlk (blk : Imperative.DetBlock String Core.Command Core.Expression) :
+    Imperative.DetBlock String Core.Command Core.Expression :=
+  { blk with
+      cmds := blk.cmds.map (Core.Command.mapExpr Core.eraseLocs),
+      transfer := eraseTransfer blk.transfer }
+
+private def eraseLocsCFG (cfg : Core.DetCFG) : Core.DetCFG :=
+  { cfg with blocks := cfg.blocks.map fun p => (p.1, eraseBlk p.2) }
+
+private def eraseProc (proc : Core.Procedure) : Core.Procedure :=
+  let q := Core.Procedure.mapExprs Core.eraseLocs proc
+  match q.body with
+  | .cfg c => { q with body := .cfg (eraseLocsCFG c) }
+  | _ => q
+
+/-- Expression source locations are normalized to `Core.valueLoc` so the tests'
+    exact structural comparisons (incl. CFG shapes) hold; execution ignores
+    locations, so this changes nothing the evaluator observes. -/
+private def eraseProgLocs (pr : Core.Program) : Core.Program :=
+  { pr with decls := pr.decls.map fun d => match d with
+      | .proc proc md => .proc (eraseProc proc) md
+      | other => other }
+
 private def cstToAST (p : Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram p)).fst
+  eraseProgLocs (TransM.run Inhabited.default (translateProgram p)).fst
 
 private def sumToNAST := cstToAST sumToNPgm
 private def sumToNProc : Core.Procedure := (sumToNAST.findProcByString? "sum_to_n").get!
@@ -96,21 +126,21 @@ private def resultId : Core.Expression.Ident := ⟨"result", ()⟩
 
 private def intTy : Option Lambda.LMonoTy := some .int
 private def intLTy : Lambda.LTy := .forAll [] .int
-private def iExpr : Core.Expression.Expr := .fvar () iId intTy
-private def sExpr : Core.Expression.Expr := .fvar () sId intTy
-private def nExpr : Core.Expression.Expr := .fvar () nId intTy
-private def resultExpr : Core.Expression.Expr := .fvar () resultId intTy
-private def zeroExpr : Core.Expression.Expr := .const () (.intConst 0)
-private def oneExpr : Core.Expression.Expr := .const () (.intConst 1)
-private def trueExpr : Core.Expression.Expr := .const () (.boolConst true)
+private def iExpr : Core.Expression.Expr := .fvar Core.valueLoc iId intTy
+private def sExpr : Core.Expression.Expr := .fvar Core.valueLoc sId intTy
+private def nExpr : Core.Expression.Expr := .fvar Core.valueLoc nId intTy
+private def resultExpr : Core.Expression.Expr := .fvar Core.valueLoc resultId intTy
+private def zeroExpr : Core.Expression.Expr := .const Core.valueLoc (.intConst 0)
+private def oneExpr : Core.Expression.Expr := .const Core.valueLoc (.intConst 1)
+private def trueExpr : Core.Expression.Expr := .const Core.valueLoc (.boolConst true)
 /-- `int.lt(i, n)` -/
 private def ltExpr : Core.Expression.Expr :=
-  .app () (.app () (Lambda.intLtFunc (T := Core.CoreLParams)).opExpr iExpr) nExpr
+  .app Core.valueLoc (.app Core.valueLoc (Lambda.intLtFunc (T := Core.CoreLParams)).opExpr iExpr) nExpr
 /-- `int.add(i, 1)` -/
-private def incExpr : Core.Expression.Expr := .app () (.app () Core.coreIntAddOpExpr iExpr) oneExpr
+private def incExpr : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc Core.coreIntAddOpExpr iExpr) oneExpr
 /-- `int.add(s, i)` -/
 private def addExpr : Core.Expression.Expr :=
-  .app () (.app () (Lambda.intAddFunc (T := Core.CoreLParams)).opExpr sExpr) iExpr
+  .app Core.valueLoc (.app Core.valueLoc (Lambda.intAddFunc (T := Core.CoreLParams)).opExpr sExpr) iExpr
 
 /-! ## The translated CFG, spelled out -/
 
@@ -190,7 +220,7 @@ private abbrev intV (F : Core.Expression.Factory) (k : Int) : Core.Expression.Va
 /-- A free variable that evaluates reads its store binding. -/
 private theorem eval_fvar_inv {F : Core.Expression.Factory} {σ : SemanticStore Core.Expression}
     {x : Core.Expression.Ident} {ty : Option Lambda.LMonoTy} {v w : Core.Expression.Val}
-    (hx : σ x = some w) (h : Core.Expression.eval F σ (.fvar () x ty) = some v) : v = w := by
+    (hx : σ x = some w) (h : Core.Expression.eval F σ (.fvar Core.valueLoc x ty) = some v) : v = w := by
   obtain ⟨w', hw', htc⟩ := Lambda.LExpr.denoteEval_defines h x
     (by simp [Lambda.LExpr.LExpr.getVars])
   rw [hx] at hw'
@@ -559,24 +589,24 @@ private theorem sumToN_find : sumToNAST.findProcByString? "sum_to_n" = some sumT
 /-! ## Contract denotation -/
 
 /-- `int.mul(2, _)`'s operand literal. -/
-private def twoExpr : Core.Expression.Expr := .const () (.intConst 2)
+private def twoExpr : Core.Expression.Expr := .const Core.valueLoc (.intConst 2)
 /-- The arrow type carried by the `int.ge` operator. -/
 private def geArrowTy : Lambda.LMonoTy := .arrow .int (.arrow .int .bool)
 /-- The arrow type carried by the `int.add`/`int.mul` operators. -/
 private def intArrowTy : Lambda.LMonoTy := .arrow .int (.arrow .int .int)
 /-- The `int.ge` operator expression. -/
-private def geOpE : Core.Expression.Expr := .op () ⟨"Int.Ge", ()⟩ (some geArrowTy)
+private def geOpE : Core.Expression.Expr := .op Core.valueLoc ⟨"Int.Ge", ()⟩ (some geArrowTy)
 /-- The `int.add` operator expression. -/
-private def addOpE : Core.Expression.Expr := .op () ⟨"Int.Add", ()⟩ (some intArrowTy)
+private def addOpE : Core.Expression.Expr := .op Core.valueLoc ⟨"Int.Add", ()⟩ (some intArrowTy)
 /-- The `int.mul` operator expression. -/
-private def mulOpE : Core.Expression.Expr := .op () ⟨"Int.Mul", ()⟩ (some intArrowTy)
+private def mulOpE : Core.Expression.Expr := .op Core.valueLoc ⟨"Int.Mul", ()⟩ (some intArrowTy)
 /-- The `sum_to_n` precondition expression `int.ge(n, 0)`. -/
-private def reqExprSpec : Core.Expression.Expr := .app () (.app () geOpE nExpr) zeroExpr
+private def reqExprSpec : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc geOpE nExpr) zeroExpr
 /-- The `sum_to_n` postcondition expression `int.mul(2, result) == int.mul(n, int.add(n, 1))`. -/
 private def ensExprSpec : Core.Expression.Expr :=
-  .eq ()
-    (.app () (.app () mulOpE twoExpr) resultExpr)
-    (.app () (.app () mulOpE nExpr) (.app () (.app () addOpE nExpr) oneExpr))
+  .eq Core.valueLoc
+    (.app Core.valueLoc (.app Core.valueLoc mulOpE twoExpr) resultExpr)
+    (.app Core.valueLoc (.app Core.valueLoc mulOpE nExpr) (.app Core.valueLoc (.app Core.valueLoc addOpE nExpr) oneExpr))
 
 /-- The semantic `requires` forces `0 ≤ n` on an integer `n` binding. -/
 private theorem req_nonneg (ρ : Imperative.Env Core.Expression)
@@ -616,11 +646,11 @@ private theorem post_holds (F : Core.Expression.Factory) (hF : F.factory = Core.
   show Core.Expression.eval ρ.factory ρ.store c.expr = some (HasBool.ttVal ρ.factory)
   rw [hcexpr, hρ]
   have hl : Core.Expression.eval F ρ.store
-      (.app () (.app () mulOpE twoExpr) resultExpr) = some (intV F (2 * rv)) :=
+      (.app Core.valueLoc (.app Core.valueLoc mulOpE twoExpr) resultExpr) = some (intV F (2 * rv)) :=
     Core.eval_intMul (hF ▸ Core.coreFactory_intMul) (Core.eval_const F ρ.store (.intConst 2))
       (Core.eval_fvar_int F hr)
   have hrhs : Core.Expression.eval F ρ.store
-      (.app () (.app () mulOpE nExpr) (.app () (.app () addOpE nExpr) oneExpr)) =
+      (.app Core.valueLoc (.app Core.valueLoc mulOpE nExpr) (.app Core.valueLoc (.app Core.valueLoc addOpE nExpr) oneExpr)) =
         some (intV F (nv * (nv + 1))) :=
     Core.eval_intMul (hF ▸ Core.coreFactory_intMul) (Core.eval_fvar_int F hvn)
       (Core.eval_intAdd (hF ▸ Core.coreFactory_intAdd) (Core.eval_fvar_int F hvn)
@@ -859,9 +889,9 @@ private def aIdC : Core.Expression.Ident := ⟨"a", ()⟩
 /-- The caller output variable `z`. -/
 private def zIdC : Core.Expression.Ident := ⟨"z", ()⟩
 /-- `x` as an expression. -/
-private def xExprC : Core.Expression.Expr := .fvar () xIdC intTy
+private def xExprC : Core.Expression.Expr := .fvar Core.valueLoc xIdC intTy
 /-- `result == x`, the callee's `ensures`. -/
-private def ensExprC : Core.Expression.Expr := Lambda.LExpr.eq () resultExpr xExprC
+private def ensExprC : Core.Expression.Expr := Lambda.LExpr.eq Core.valueLoc resultExpr xExprC
 
 /-- `copy` written first in readable DDM `Core` syntax: input `x : int`, output
     `result : int`, `ensures result == x`, and a single-block CFG body
@@ -985,7 +1015,7 @@ private theorem checkAsPredicate_eq_of_binds (ρ : Imperative.Env Core.Expressio
     (x y : Core.Expression.Ident) (tyx tyy : Option Lambda.LMonoTy) (v : Core.Expression.Val)
     (hfac : ρ.factory.factory = Core.Factory)
     (hexpr : check.expr =
-      Lambda.LExpr.eq () (.fvar () x tyx) (.fvar () y tyy))
+      Lambda.LExpr.eq Core.valueLoc (.fvar Core.valueLoc x tyx) (.fvar Core.valueLoc y tyy))
     (hx : ρ.store x = some v) (hy : ρ.store y = some v)
     (hv : v.tc = ρ.factory.model.tcInterp) :
     Core.Logic.Hoare.Procedure.checkAsPredicate Core.Factory ρ lbl check := by
@@ -1246,7 +1276,7 @@ private theorem copy_body_outputs_typed :
 
 /-- The call `call copy(a, out z)`. -/
 private def copyCall : List (Imperative.CallArg Core.Expression) :=
-  [.inArg (Lambda.LExpr.fvar () aIdC intTy), .outArg zIdC]
+  [.inArg (Lambda.LExpr.fvar Core.valueLoc aIdC intTy), .outArg zIdC]
 
 /-- Caller precondition: the runtime factory is over `Core.Factory`, `a` holds an
     integer of it, and `z` is allocated. -/
@@ -1261,7 +1291,7 @@ private def CopyCallPre (ρ : Env Core.Expression) : Prop :=
 private def CopyCallPost (ρ : Env Core.Expression) : Prop :=
   ρ.factory.factory = Core.Factory ∧
     Core.Expression.eval ρ.factory ρ.store
-      (Lambda.LExpr.eq () (Lambda.LExpr.fvar () zIdC intTy) (Lambda.LExpr.fvar () aIdC intTy))
+      (Lambda.LExpr.eq Core.valueLoc (Lambda.LExpr.fvar Core.valueLoc zIdC intTy) (Lambda.LExpr.fvar Core.valueLoc aIdC intTy))
       = some (Imperative.HasBool.ttVal ρ.factory)
 
 /-- When `result` and `x` hold values of the same sort, holding their equality in one
@@ -1296,7 +1326,7 @@ private theorem copy_callentry_facts
       (∃ vz, σAO resultId = some vz ∧ HasVal.value ρ₀.factory vz) ∧
       Imperative.WellFormedStore σAO ρ₀.factory := by
   obtain ⟨inputVals, outOnlyVals, hEE, hRV, σA, σIO, hIA, hIO, hSnap⟩ := h
-  rw [show Imperative.Calls.getInputExprs copyCall = [Lambda.LExpr.fvar () aIdC intTy] from rfl]
+  rw [show Imperative.Calls.getInputExprs copyCall = [Lambda.LExpr.fvar Core.valueLoc aIdC intTy] from rfl]
     at hEE
   rw [show Imperative.CallArg.getOutArgs copyCall = [zIdC] from rfl] at hRV
   rw [show Imperative.ProcedureHeader.inputParams (P := Core.Expression) copyProc.header = [xIdC]

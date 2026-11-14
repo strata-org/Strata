@@ -507,7 +507,7 @@ private theorem go_typeCheck [DecidableEq T.IDMeta]
         simp only [LExpr.typeCheck]
         have h := liftBVars_typeCheck e' (Δ₁ := []) (Δ_insert := Δ_body) (Δ_outer := Δ_outer)
         simp only [List.nil_append, List.length_nil] at h
-        rw[h]
+        rw[typeCheck_replaceMetadata1, h]
         -- Need: typeCheck Δ_outer e' = some ty
         -- From find?_zip: get ty' with find? tyMap name = some ty' and index i
         -- From h_annot: ty = ty'
@@ -624,7 +624,11 @@ private theorem substFvarsLifting_go_denote [DecidableEq T.IDMeta]
       | some e =>
         rename_i hfind
         simp only
-        intro heq
+        intro heq0
+        -- The inserted copy carries the replaced occurrence's root metadata,
+        -- which does not affect its denotation.
+        rw [denote_replaceMetadata1 _ _ _ _ _ m heq0]
+        have heq := HasTypeA_of_replaceMetadata1 m heq0
         -- LHS: liftBVars_denote with Δ₁=[], Δ_insert=Δ_body
         -- Need h_orig : HasTypeA Δ_outer e τ from h_wt and hfind
         have h_orig : LExpr.HasTypeA Δ_outer e τ := by

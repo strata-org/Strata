@@ -31,6 +31,13 @@ def lowerBody (p : UnorderedProgram) (b : Body) : Except String Body := do
         n := n + 1
         tmps := tmps ++ [(tmp, ← fieldMono p f)]
         cmds := cmds ++ [.cmd (.set (ident tmp) (.det v) md), .writeField o f (mkFvar tmp) md]
+      | .readElem x _ _ ty md =>
+        cmds := cmds ++ [c, .cast x (mangle (← elemMono ty)) (mkFvar x.name) .assume md]
+      | .writeElem a i v ty md =>
+        let tmp := fieldValueVar n
+        n := n + 1
+        tmps := tmps ++ [(tmp, ← elemMono ty)]
+        cmds := cmds ++ [.cmd (.set (ident tmp) (.det v) md), .writeElem a i (mkFvar tmp) ty md]
       | c => cmds := cmds ++ [c]
     let blk' : LBlock := { blk with cmds }
     blocks := blocks ++ [(l, blk')]

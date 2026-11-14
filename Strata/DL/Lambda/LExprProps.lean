@@ -159,6 +159,12 @@ theorem hasBVarCached_eq {T : LExprParamsT} (e : LExpr T) :
     hasBVarCached e = hasBVar e :=
   run'_output_eq (hasBVarPtrCache e) PtrCache.empty
 
+/-- Every expression equals itself when metadata is ignored. -/
+theorem beqIgnoringMetadata_refl {T : LExprParamsT} [BEq T.TypeType] [LawfulBEq T.TypeType]
+    [BEq (Identifier T.base.IDMeta)] [LawfulBEq (Identifier T.base.IDMeta)] (e : LExpr T) :
+    LExpr.beqIgnoringMetadata e e = true := by
+  induction e <;> simp_all [LExpr.beqIgnoringMetadata]
+
 end LExpr
 
 /-- Two lists are pointwise equal up to metadata iff their metadata erasures are equal. -/

@@ -242,6 +242,45 @@ b0:
                .set "s" (some (v "g")) (at_ 6)] (.finish (at_ 7))], idProc]).map
     fun prog => { prog with globals := [(⟨"g", ()⟩, Wire.Ty.toLTy int)] }
 
+/-! A copy is propagated into the operands of the array commands: the length, the array,
+the index and the stored value. A command that assigns its result ends the facts about that
+variable, so `r := t` after the element read and `s := i` after the `arrayLength` stay. -/
+
+/--
+info: procedure arrays(k: int, x: int) returns (r: int, s: int)
+b0:
+  var n: int := 0  @1
+  var i: int := 0  @2
+  var t: int := 0  @3
+  var a: Ints  @4
+  var b: Ints  @5
+  call n := id(k)  @6
+  i := 0  @7
+  t := x  @8
+  a := newArray Ints[n]  @9
+  b := a  @10
+  a[0] := x : int  @11
+  t := a[0] : int  @12
+  r := t  @13
+  i := length a  @14
+  s := i  @15
+  finish  @16
+procedure id(a: int) returns (r: int)
+b0:
+  r := a  @90
+  finish  @91
+-/
+#guard_msgs in
+#eval show_ [proc "arrays" [("k", int), ("x", int)] [("r", int), ("s", int)]
+  [blk "b0" [decl "n" 1, decl "i" 2, decl "t" 3, .init "a" (.named "Ints") none (at_ 4),
+             .init "b" (.named "Ints") none (at_ 5), .call ["n"] "id" [v "k"] (at_ 6),
+             .set "i" (some (.int 0)) (at_ 7), .set "t" (some (v "x")) (at_ 8),
+             .newArray "a" "Ints" (v "n") (at_ 9), .set "b" (some (v "a")) (at_ 10),
+             .writeElem (v "b") (v "i") (v "t") int (at_ 11),
+             .readElem "t" (v "b") (v "i") int (at_ 12), .set "r" (some (v "t")) (at_ 13),
+             .arrayLength "i" (v "b") (at_ 14), .set "s" (some (v "i")) (at_ 15)] (.finish (at_ 16))],
+  idProc]
+
 end Cortex.CopyPropagationTest
 
 end

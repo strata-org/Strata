@@ -14,6 +14,7 @@ import StrataDDM.Integration.Lean.HashCommands
 meta section
 
 namespace Core
+private abbrev testLoc : ExprSourceLoc := ExprSourceLoc.synthesized "test"
 
 ---------------------------------------------------------------------
 
@@ -575,7 +576,7 @@ procedure Test(x : int, out y : int)
 
 /-- info: y = (some 10) -/
 #guard_msgs in
-#eval runProc arithPgm "Test" [.intConst () 5]
+#eval runProc arithPgm "Test" [.intConst testLoc 5]
 
 -- If-then-else
 private def itePgm : StrataDDM.Program :=
@@ -593,11 +594,11 @@ procedure Test(x : int, out y : int)
 
 /-- info: y = (some 7) -/
 #guard_msgs in
-#eval runProc itePgm "Test" [.intConst () 7]
+#eval runProc itePgm "Test" [.intConst testLoc 7]
 
 /-- info: y = (some 3) -/
 #guard_msgs in
-#eval runProc itePgm "Test" [.intConst () (-3)]
+#eval runProc itePgm "Test" [.intConst testLoc (-3)]
 
 -- Procedure call
 private def callPgm : StrataDDM.Program :=
@@ -615,7 +616,7 @@ procedure Test(x : int, out y : int)
 
 /-- info: y = (some 20) -/
 #guard_msgs in
-#eval runProc callPgm "Test" [.intConst () 10]
+#eval runProc callPgm "Test" [.intConst testLoc 10]
 
 -- Chained procedure calls (DoubleTwice)
 private def chainedCallPgm : StrataDDM.Program :=
@@ -634,7 +635,7 @@ procedure Test(x : int, out output : int)
 
 /-- info: output = (some 20) -/
 #guard_msgs in
-#eval runProc chainedCallPgm "Test" [.intConst () 5]
+#eval runProc chainedCallPgm "Test" [.intConst testLoc 5]
 
 private def inoutCallPgm : StrataDDM.Program :=
 #strata
@@ -673,7 +674,7 @@ procedure Test(n : int, out sum : int)
 
 /-- info: sum = (some 15) -/
 #guard_msgs in
-#eval runProc loopPgm "Test" [.intConst () 5]
+#eval runProc loopPgm "Test" [.intConst testLoc 5]
 
 -- Assertion success
 private def assertSuccessPgm : StrataDDM.Program :=
@@ -762,8 +763,8 @@ private def moreFnsFolds (moreFns : Lambda.Factory CoreLParams) : IO Unit := do
   | .error diag => IO.println s!"error: {diag}"
   | .ok E =>
     let call : Lambda.LExpr CoreLParams.mono :=
-      Lambda.LExpr.mkApp () (.op () "dummy_double" (some mty[int]))
-        [Lambda.LExpr.intConst () 21]
+      Lambda.LExpr.mkApp testLoc (.op testLoc "dummy_double" (some mty[int]))
+        [Lambda.LExpr.intConst testLoc 21]
     let result := (Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv call).fst
     IO.println s!"result = {format result}"
 

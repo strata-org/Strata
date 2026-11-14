@@ -84,6 +84,19 @@ namespace LExpr
 
 variable {T : LExprParams} [DecidableEq T.IDMeta]
 
+/-- Replacing the root metadata and then erasing all metadata is the same as
+erasing directly: `replaceMetadata1` only touches the root, which erasure
+overwrites. The substitution functions keep each occurrence's root metadata via
+`replaceMetadata1`, so proofs up to `eraseMetadata` use this to discharge it. -/
+theorem eraseMetadata_replaceMetadata1 {T : LExprParamsT} (m : T.base.Metadata) (e : LExpr T) :
+    (replaceMetadata1 m e).eraseMetadata = e.eraseMetadata := by
+  cases e <;> simp [replaceMetadata1, eraseMetadata, replaceMetadata]
+
+/-- `replaceMetadata1` changes only the root metadata, not the operator occurrences. -/
+private theorem getOps_replaceMetadata1 {T : LExprParamsT} (m : T.base.Metadata) (e : LExpr T) :
+    getOps (replaceMetadata1 m e) = getOps e := by
+  cases e <;> rfl
+
 /-! ### Local closedness: `varOpen` / `varClose` / `lcAt` -/
 
 theorem varOpen_sizeOf {T}:
@@ -265,7 +278,7 @@ theorem substFvars_unfold
     (e : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono)) :
     LExpr.substFvars e sm = match e with
       | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
-      | .fvar _ name _ => match sm.find? name with | some to => to | none => e
+      | .fvar m name _ => match sm.find? name with | some to => replaceMetadata1 m to | none => e
       | .abs m name ty e' => .abs m name ty (LExpr.substFvars e' sm)
       | .quant m qk name ty tr' e' =>
           .quant m qk name ty (LExpr.substFvars tr' sm) (LExpr.substFvars e' sm)
@@ -367,7 +380,7 @@ theorem substFvars_eraseMetadata_congr
     cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
     rename_i m₂; injection h; subst_vars
     simp only [LExpr.substFvars.substFvarsAux]
-    split <;> (first | rfl | simp [LExpr.eraseMetadata, LExpr.replaceMetadata])
+    split <;> (first | rfl | simp [eraseMetadata_replaceMetadata1] | simp [LExpr.eraseMetadata, LExpr.replaceMetadata])
   | abs m n t b ih =>
     cases e₂ <;> delta LExpr.eraseMetadata LExpr.replaceMetadata at h <;> try contradiction
     rename_i m₂ n₂ t₂ b₂; injection h; subst_vars
@@ -455,7 +468,7 @@ theorem substFvars_eraseMetadata_values_congr
       | some v₁ =>
         cases h2 : Map.find? (p₂ :: rest₂) x with
         | none => simp [h1, h2] at hfc
-        | some v₂ => simp only [h1, Option.map_some, h2, Option.some.injEq] at hfc; exact hfc
+        | some v₂ => simp only [h1, Option.map_some, h2, Option.some.injEq] at hfc; simp only [eraseMetadata_replaceMetadata1]; exact hfc
     | abs m n t b ih =>
       simp only [LExpr.substFvars.substFvarsAux, LExpr.eraseMetadata, LExpr.replaceMetadata]
       exact congrArg _ ih
@@ -1022,9 +1035,10 @@ private theorem getOps_subset_betaReduceK {T : LExprParamsT} (s : T.base.Metadat
 /-- If the redex body uses its bound variable (an *alias* redex), `betaReduceK`
 places the argument at that occurrence, so the argument's operator
 occurrences — including any recursive call — survive. -/
-private theorem getOps_arg_subset_betaReduceK {T : LExprParamsT} (arg : LExpr T) :
+private theorem getOps_arg_subset_betaReduceK {T : LExprParamsT} (arg : LExpr T)
+    (s : T.base.Metadata → LExpr T) (hs : ∀ m, getOps (s m) = getOps arg) :
     ∀ (e : LExpr T) (k : Nat), bvarUsed k e = true →
-      getOps arg ⊆ getOps (betaReduceK k (fun _ => arg) e) := by
+      getOps arg ⊆ getOps (betaReduceK k s e) := by
   intro e
   induction e with
   | const | op | fvar => intro k h; simp [bvarUsed] at h
@@ -1033,7 +1047,7 @@ private theorem getOps_arg_subset_betaReduceK {T : LExprParamsT} (arg : LExpr T)
     simp only [bvarUsed, beq_iff_eq] at h
     subst h
     simp only [betaReduceK, beq_self_eq_true, ite_true]
-    rw [getOps_liftBVars]
+    rw [getOps_liftBVars, hs m]
     exact List.Subset.refl _
   | abs _ _ _ b ih =>
     intro k h
@@ -1124,7 +1138,7 @@ theorem getOps_arg_subset_betaReduce {T : LExprParamsT} (arg body : LExpr T)
     (h : bvarUsed 0 body = true) :
     getOps arg ⊆ getOps (betaReduce arg body) := by
   unfold betaReduce betaReduceWith
-  exact getOps_arg_subset_betaReduceK arg body 0 h
+  exact getOps_arg_subset_betaReduceK arg (fun _ => arg) (fun _ => rfl) body 0 h
 
 /-- A CONSTANT-lambda redex erases its argument: `betaReduce` drops every operator
 occurrence of `arg`. This is why the erasing `betaReduceRedexes` is unsound for
@@ -1136,6 +1150,21 @@ theorem getOps_betaReduce_of_not_bvarUsed {T : LExprParamsT} (arg body : LExpr T
   unfold betaReduce betaReduceWith
   exact getOps_betaReduceK_of_not_bvarUsed (fun _ => arg) body 0 h
 
+/-- `betaReduceWith` never drops the body's operator occurrences. -/
+private theorem getOps_body_subset_betaReduceWith {T : LExprParamsT}
+    (s : T.base.Metadata → LExpr T) (body : LExpr T) :
+    getOps body ⊆ getOps (betaReduceWith s body) :=
+  getOps_subset_betaReduceK s body 0
+
+/-- If the body uses its bound variable, `betaReduceWith` keeps the operator
+occurrences of an argument whose copies only differ from it in their root
+metadata. -/
+private theorem getOps_arg_subset_betaReduceWith_replaceMetadata1 {T : LExprParamsT}
+    (f : T.base.Metadata → T.base.Metadata) (arg body : LExpr T)
+    (h : bvarUsed 0 body = true) :
+    getOps arg ⊆ getOps (betaReduceWith (fun m => replaceMetadata1 (f m) arg) body) :=
+  getOps_arg_subset_betaReduceK arg _ (fun m => getOps_replaceMetadata1 (f m) arg) body 0 h
+
 /-- Whole-function call-preservation for the *non-erasing* reducer: every
 operator occurrence (call head, `.op`) of `e` survives `betaReduceRedexesFuel
 true`. It holds at *every* fuel (even `0`), so consumers do not depend on the
@@ -1145,8 +1174,10 @@ applies and the argument's calls survive. The analogous statement for the
 *erasing* reducer (`betaReduceRedexesFuel false`) is provably FALSE: a
 constant-lambda redex erases its argument's calls
 (`getOps_betaReduce_of_not_bvarUsed`). -/
-theorem getOps_subset_betaReduceRedexesFuel {T : LExprParamsT} (fuel : Nat) :
-    ∀ e : LExpr T, getOps e ⊆ getOps (betaReduceRedexesFuel true fuel e) := by
+theorem getOps_subset_betaReduceRedexesFuel {T : LExprParamsT}
+    (merge : T.base.Metadata → T.base.Metadata → T.base.Metadata → T.base.Metadata)
+    (fuel : Nat) :
+    ∀ e : LExpr T, getOps e ⊆ getOps (betaReduceRedexesFuel merge true fuel e) := by
   induction fuel with
   | zero =>
     intro e
@@ -1164,7 +1195,7 @@ theorem getOps_subset_betaReduceRedexesFuel {T : LExprParamsT} (fuel : Nat) :
       exact List.Subset.refl _
     | abs m n t body =>
       simp only [betaReduceRedexesFuel, betaReduceRedexesFuel?]
-      cases hbv : betaReduceRedexesFuel? true fuel body
+      cases hbv : betaReduceRedexesFuel? merge true fuel body
       · simp only [Option.map_none, Option.getD_none]
         exact List.Subset.refl _
       · have hb := ih body
@@ -1206,16 +1237,12 @@ theorem getOps_subset_betaReduceRedexesFuel {T : LExprParamsT} (fuel : Nat) :
             | true => rfl
             | false => rw [hb] at hcond; simp at hcond
           simp only [Option.getD_some, getOps]
-          refine List.Subset.trans ?_
-            (ih (betaReduce ((betaReduceRedexesFuel? true fuel arg).getD arg) body))
+          refine List.Subset.trans ?_ (ih _)
           intro x hx
           rcases List.mem_append.mp hx with h | h
-          · exact List.Subset.trans hfnbody
-              (getOps_body_subset_betaReduce
-                ((betaReduceRedexesFuel? true fuel arg).getD arg) body) h
+          · exact List.Subset.trans hfnbody (getOps_body_subset_betaReduceWith _ body) h
           · exact List.Subset.trans (ih arg)
-              (getOps_arg_subset_betaReduce
-                ((betaReduceRedexesFuel? true fuel arg).getD arg) body hbv) h
+              (getOps_arg_subset_betaReduceWith_replaceMetadata1 _ _ body hbv) h
       · split
         · exact List.Subset.refl _
         · simp only [Option.getD_some, getOps]
@@ -1228,7 +1255,7 @@ theorem getOps_subset_betaReduceRedexesPreservingArgs {T : LExprParamsT}
     (e : LExpr T) :
     getOps e ⊆ getOps (betaReduceRedexesPreservingArgs e) := by
   unfold betaReduceRedexesPreservingArgs
-  exact getOps_subset_betaReduceRedexesFuel (sizeOf e * (maxBvarMultiplicity e + 1)) e
+  exact getOps_subset_betaReduceRedexesFuel keepArgMetadata (sizeOf e * (maxBvarMultiplicity e + 1)) e
 
 omit [DecidableEq T.IDMeta] in
 /-- An annotation map commutes with opening a bound variable, when also applied to the opened
@@ -1300,12 +1327,40 @@ theorem substFvarsBy_congr (e : LExpr T.mono) (f g : T.Identifier → Option (LE
   induction e <;> grind [substFvarsBy, LExpr.freeVars]
 
 omit [DecidableEq T.IDMeta] in
+/-- Replacing the root metadata twice equals a single replacement by the outer
+metadata: the inner `replaceMetadata1` only touches the root, which the outer
+one overwrites. -/
+private theorem replaceMetadata1_replaceMetadata1 (m m' : T.mono.base.Metadata) (e : LExpr T.mono) :
+    replaceMetadata1 m (replaceMetadata1 m' e) = replaceMetadata1 m e := by
+  cases e <;> rfl
+
+omit [DecidableEq T.IDMeta] in
+/-- Replacing the root metadata does not change the free variables. -/
+theorem freeVars_replaceMetadata1 (m : T.mono.base.Metadata) (e : LExpr T.mono) :
+    freeVars (replaceMetadata1 m e) = freeVars e := by
+  cases e <;> rfl
+
+omit [DecidableEq T.IDMeta] in
+/-- Substitution by a lookup commutes with a root-metadata replacement. -/
+private theorem substFvarsBy_replaceMetadata1 (m : T.mono.base.Metadata) (e : LExpr T.mono)
+    (look : T.Identifier → Option (LExpr T.mono)) :
+    substFvarsBy (replaceMetadata1 m e) look = replaceMetadata1 m (substFvarsBy e look) := by
+  cases e with
+  | fvar m' name ty =>
+    simp only [replaceMetadata1, substFvarsBy]
+    cases look name with
+    | none => rfl
+    | some to => exact (replaceMetadata1_replaceMetadata1 m m' to).symm
+  | _ => rfl
+
+omit [DecidableEq T.IDMeta] in
 /-- Substituting by `f` then by `g` is substituting by their composition. -/
 theorem substFvarsBy_comp (e : LExpr T.mono) (f g : T.Identifier → Option (LExpr T.mono)) :
     LExpr.substFvarsBy (LExpr.substFvarsBy e f) g =
       LExpr.substFvarsBy e fun x => match f x with
         | some v => some (LExpr.substFvarsBy v g) | none => g x := by
-  induction e <;> grind [substFvarsBy]
+  induction e <;> grind [substFvarsBy, substFvarsBy_replaceMetadata1,
+      replaceMetadata1_replaceMetadata1]
 
 /-- A free variable of `e` with the map `sm` substituted is either a free variable of `e`
     that `sm` does not map, or a free variable of the image under `sm` of a free variable
@@ -1316,7 +1371,7 @@ theorem freeVars_substFvars (sm : Map T.Identifier (LExpr T.mono)) :
       (y ∈ (LExpr.freeVars e).map (·.1) ∧ Map.find? sm y = none) ∨
       ∃ x v, x ∈ (LExpr.freeVars e).map (·.1) ∧ Map.find? sm x = some v ∧
         y ∈ (LExpr.freeVars v).map (·.1) := fun e y => by
-  induction e <;> rw [substFvars_unfold] <;> grind [LExpr.freeVars]
+  induction e <;> rw [substFvars_unfold] <;> grind [LExpr.freeVars, freeVars_replaceMetadata1]
 
 omit [DecidableEq T.IDMeta] in
 /-- Substituting expressions without operators for free variables adds no operator. -/
@@ -1328,6 +1383,7 @@ theorem getOps_substFvarsBy {look : T.Identifier → Option (LExpr T.mono)}
     simp only [substFvarsBy] at ho
     split at ho
     · rename_i v hv
+      rw [getOps_replaceMetadata1] at ho
       exact absurd ho (by rw [show LExpr.getOps v = [] from hl _ _ hv]; simp)
     · exact ho
   case const | op | bvar => exact ho
@@ -1343,7 +1399,8 @@ theorem getOps_substFvarsBy_mem (e : LExpr T.mono) (look : T.Identifier → Opti
   | fvar _ name _ =>
     simp only [substFvarsBy] at h
     split at h
-    · exact .inr ⟨name, _, ‹_›, h⟩
+    · rw [getOps_replaceMetadata1] at h
+      exact .inr ⟨name, _, ‹_›, h⟩
     · exact .inl h
   | _ => simp only [substFvarsBy, LExpr.getOps, List.mem_append] at h ⊢ <;> grind
 

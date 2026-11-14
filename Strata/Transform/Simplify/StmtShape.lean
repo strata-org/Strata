@@ -6,6 +6,7 @@
 module
 
 public import Strata.Transform.Simplify
+import all Strata.DL.Lambda.LExprProps
 public import Strata.Languages.Core.IdentifiersProps
 import all Strata.Transform.Simplify
 import all Strata.Transform.Simplify.Expr
@@ -452,11 +453,12 @@ private theorem eq_of_beq_option {a b : Option Expression.Expr} (h : (a == b) = 
       rw [huv]
 
 /-- What `agreedDefs` guarantees of each definition it records: the variable is
-    assigned and not scoped, every live context records this very value for it, and the
-    value mentions no scoped name. -/
+    assigned and not scoped, every live context records a value for it equal up to
+    source location, and the value mentions no scoped name. -/
 theorem mem_agreedDefs {live : List Ctx} {assigned scopedNames : Std.HashSet String}
     {x : CoreIdent} {v : Expression.Expr} (h : (x, v) ∈ agreedDefs live assigned scopedNames) :
-    x.name ∈ assigned ∧ x.name ∉ scopedNames ∧ (∀ c ∈ live, (x, v) ∈ c.values.toList) ∧
+    x.name ∈ assigned ∧ x.name ∉ scopedNames ∧
+      (∀ c ∈ live, ∃ v', (x, v') ∈ c.values.toList ∧ v'.beqIgnoringMetadata v) ∧
       ∀ f ∈ HasFvars.getFvars (P := Core.Expression) v, f.name ∉ scopedNames := by
   match live with
   | [] => simp [agreedDefs] at h
@@ -464,10 +466,12 @@ theorem mem_agreedDefs {live : List Ctx} {assigned scopedNames : Std.HashSet Str
     -- What the agreement test gives, once the candidate is known to be `first`'s.
     have hagreed : (x, v) ∈ first.values.toList →
         (!scopedNames.contains x.name &&
-          rest.all (fun (c : Ctx) => Map.find? c.values x == some v) &&
+          rest.all (fun (c : Ctx) => match Map.find? c.values x with
+            | some v' => v'.beqIgnoringMetadata v | none => false) &&
           !(HasFvars.getFvars (P := Core.Expression) v).any
             (fun f => scopedNames.contains f.name)) = true →
-        x.name ∉ scopedNames ∧ (∀ c ∈ first :: rest, (x, v) ∈ c.values.toList) ∧
+        x.name ∉ scopedNames ∧
+          (∀ c ∈ first :: rest, ∃ v', (x, v') ∈ c.values.toList ∧ v'.beqIgnoringMetadata v) ∧
           ∀ f ∈ HasFvars.getFvars (P := Core.Expression) v, f.name ∉ scopedNames := by
       intro hfirst hok
       simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, List.all_eq_true,
@@ -478,8 +482,14 @@ theorem mem_agreedDefs {live : List Ctx} {assigned scopedNames : Std.HashSet Str
           have := hfv f hf; rw [Std.HashSet.mem_iff_contains.mp hm] at this; cases this⟩
       intro c hc
       rcases List.mem_cons.mp hc with rfl | hc
-      · exact hfirst
-      · exact Map.find?_mem _ _ _ (eq_of_beq_option (hall c hc))
+      · exact ⟨v, hfirst, Lambda.LExpr.beqIgnoringMetadata_refl v⟩
+      · have hc' := hall c hc
+        cases hfind' : Map.find? c.values x with
+        | none => simp [hfind'] at hc'
+        | some v' =>
+          refine ⟨v', Map.find?_mem _ _ _ hfind', ?_⟩
+          simp only [hfind'] at hc'
+          exact hc'
     simp only [agreedDefs] at h
     split at h
     · obtain ⟨n, hn, hsome⟩ := List.mem_filterMap.mp h
@@ -503,7 +513,8 @@ theorem mem_agreedDefs {live : List Ctx} {assigned scopedNames : Std.HashSet Str
 theorem mem_join {base : Ctx} {live : List Ctx} {assigned scopedNames : Std.HashSet String}
     {y : CoreIdent} {v : Expression.Expr}
     (h : (y, v) ∈ (base.join live assigned scopedNames).values.toList) :
-    (y.name ∈ assigned ∧ y.name ∉ scopedNames ∧ (∀ c ∈ live, (y, v) ∈ c.values.toList) ∧
+    (y.name ∈ assigned ∧ y.name ∉ scopedNames ∧
+      (∀ c ∈ live, ∃ v', (y, v') ∈ c.values.toList ∧ v'.beqIgnoringMetadata v) ∧
       ∀ f ∈ HasFvars.getFvars (P := Core.Expression) v, f.name ∉ scopedNames) ∨
     ((y, v) ∈ base.values.toList ∧ y.name ∉ assigned ∧
       ∀ f ∈ HasFvars.getFvars (P := Core.Expression) v, f.name ∉ assigned) := by

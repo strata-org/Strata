@@ -49,7 +49,7 @@ private def rewriteMultiOutputCalls (packagedFunctions : List (String × List Pa
     (body : StmtExprMd) : RewriteM StmtExprMd :=
   mapStmtExprFlattenM (fun _ _ => pure none) (fun _ e =>
     match e.val with
-    | .Assign targets ⟨.StaticCall callee args tyArgs, callSrc⟩ =>
+    | .Assign targets ⟨.Call none callee args tyArgs, callSrc⟩ =>
       if targets.length < 2 then pure [e]
       else match packagedFunctions.find? (·.1 == callee.text) with
         | none => pure [e]
@@ -61,10 +61,10 @@ private def rewriteMultiOutputCalls (packagedFunctions : List (String × List Pa
             let src := e.source
             let bind : StmtExprMd :=
               ⟨.Assign [⟨.Declare ⟨tempName, none⟩, src⟩]
-                 ⟨.StaticCall callee args tyArgs, callSrc⟩, src⟩
+                 ⟨.Call none callee args tyArgs, callSrc⟩, src⟩
             let projections : List StmtExprMd := (targets.zip outputs).map fun (t, out) =>
               ⟨.Assign [t]
-                 ⟨.StaticCall (mkId (multiOutputDestructorName callee.text out.name.text))
+                 ⟨.Call none (mkId (multiOutputDestructorName callee.text out.name.text))
                     [⟨.Var (.Local tempName), src⟩] [], src⟩, src⟩
             return bind :: projections
     | _ => pure [e]) true body
@@ -72,7 +72,7 @@ private def rewriteMultiOutputCalls (packagedFunctions : List (String × List Pa
 private def unbindableOutputs (packagedFunctions : List (String × List Parameter))
     (body : StmtExprMd) : List Message :=
   collectStmtExprList (fun n => match n.val with
-    | .Assign targets ⟨.StaticCall callee _ _, _⟩ =>
+    | .Assign targets ⟨.Call none callee _ _, _⟩ =>
       if targets.length < 2 then []
       else match packagedFunctions.find? (·.1 == callee.text) with
         | none => []
@@ -146,7 +146,7 @@ private def packageFunctionOutputs (uc : LaurelProgram)
 
 public def packageFunctionOutputsPass : LaurelPass := .onUnordered {
   name := "PackageFunctionOutputsPass"
-  creates := [NodeKind.StmtExpr.Assign, NodeKind.StmtExpr.StaticCall]
+  creates := [NodeKind.StmtExpr.Assign, NodeKind.StmtExpr.Call]
   documentation := "Rewrites a function that yields several outputs into one that yields a single value of a generated datatype holding all of them: it declares the datatype, holding all of that function's outputs in a single constructor, replaces the output list with a single output of that datatype's type, declares each output it drops as a bare local at the top of the body (reusing that output's uniqueId, and skipping an inout, which shares an input's binding), and rewrites a call filling several targets into one call binding the packaged value plus one projection per target. Runs before FunctionalRewrite, which rejects an assignment to several targets, and which places the constructor call the body evaluates to — reading the outputs' names, types and order back off the datatype declared here."
   needsResolves := true }
   fun _ uc _model =>

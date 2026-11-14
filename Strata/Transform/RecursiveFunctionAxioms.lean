@@ -40,7 +40,7 @@ def generateRecursiveAxioms (tf : @Lambda.TypeFactory CoreLParams.IDMeta)
     Except Strata.Message (Lambda.LFunc CoreLParams) := do
   if func.isRecursive && (Strata.DL.Util.FuncAttr.findInlineIfConstr func.attr).isSome &&
       func.axioms.isEmpty then
-    match Lambda.genRecursiveAxioms func tf exprEval () with
+    match Lambda.genRecursiveAxioms func tf exprEval (ExprSourceLoc.synthesized "verifier") with
     | .ok recAxioms => .ok { func with axioms := recAxioms }
     | .error msg => throw (Strata.Message.fromFormat msg)
   else

@@ -408,9 +408,9 @@ theorem eval_StepStar
           | none =>
             exact ⟨_, ReflTrans.refl _, rfl⟩
           | some v =>
-            have h_step : Step F env (.fvar m x ty) v :=
+            have h_step : Step F env (.fvar m x ty) (LExpr.replaceMetadata1 m v) :=
               Step.expand_fvar x v h_env
-            exact ⟨v, ReflTrans.step _ v _ h_step (ReflTrans.refl _), rfl⟩
+            exact ⟨LExpr.replaceMetadata1 m v, ReflTrans.step _ _ _ h_step (ReflTrans.refl _), rfl⟩
         | .abs m name ty body, _, _ =>
           simp only [LExpr.evalCore]
           exact ⟨LExpr.substFvarsFromEnv env (.abs m name ty body),

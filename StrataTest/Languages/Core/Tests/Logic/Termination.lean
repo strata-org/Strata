@@ -47,9 +47,18 @@ open StrataDDM (Program)
 
 namespace Strata
 
+/-- Replace the real source locations of every procedure expression by `valueLoc`,
+    so `native_decide` shape assertions below are stable. Typing and evaluation
+    ignore locations, so a triple proved of the erased program holds of the parsed
+    one. -/
+private def eraseProgLocs (pr : Core.Program) : Core.Program :=
+  { pr with decls := pr.decls.map fun d => match d with
+      | .proc proc md => .proc (Core.Procedure.mapExprs Core.eraseLocs proc) md
+      | other => other }
+
 /-- Translate a DDM concrete-syntax program to the Core AST. -/
 private def cstToAST (p : Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram p)).fst
+  eraseProgLocs (TransM.run Inhabited.default (translateProgram p)).fst
 
 namespace TerminationTests
 
@@ -151,7 +160,7 @@ private theorem spin_body_eq : spinProc.body = .structured [spinLoop] := by
 
 /-- The loop guard really is the literal `true`. -/
 private theorem spinGuard_eq :
-    spinParts.1 = Lambda.LExpr.const () (Lambda.LConst.boolConst true) := by
+    spinParts.1 = Lambda.LExpr.const Core.valueLoc (Lambda.LConst.boolConst true) := by
   native_decide
 
 /-- **`while (true) { }` diverges** from every state: the guard is the literal
@@ -403,7 +412,7 @@ private def countLoop : Core.Statement :=
     countParts.2.1.2.2.2
 
 private def countInit : Core.Statement :=
-  Core.Statement.init countY countParts.1.1 (.det (Lambda.LExpr.intConst () 0)) countParts.1.2
+  Core.Statement.init countY countParts.1.1 (.det (Lambda.LExpr.intConst Core.valueLoc 0)) countParts.1.2
 
 /-- The translated body really is the declaration followed by the loop. -/
 private theorem count_body_eq : countProc.body = .structured [countInit, countLoop] := by
@@ -417,17 +426,17 @@ private theorem countTy_mono :
 /-- The guard is `int.le(y, 9)` in `Core.Factory`'s operator form. -/
 private theorem countGuard_shape :
     countParts.2.1.1 =
-      Lambda.LExpr.app () (Lambda.LExpr.app () Core.coreIntLeOpExpr
-        (Lambda.LExpr.fvar () countY (some (Lambda.LMonoTy.tcons "int" []))))
-        (Lambda.LExpr.const () (Lambda.LConst.intConst 9)) := by
+      Lambda.LExpr.app Core.valueLoc (Lambda.LExpr.app Core.valueLoc Core.coreIntLeOpExpr
+        (Lambda.LExpr.fvar Core.valueLoc countY (some (Lambda.LMonoTy.tcons "int" []))))
+        (Lambda.LExpr.const Core.valueLoc (Lambda.LConst.intConst 9)) := by
   native_decide
 
 /-- The increment is `int.add(y, 1)` in `Core.Factory`'s operator form. -/
 private theorem countRhs_shape :
     countParts.2.2.1 =
-      Lambda.LExpr.app () (Lambda.LExpr.app () Core.coreIntAddOpExpr
-        (Lambda.LExpr.fvar () countY (some (Lambda.LMonoTy.tcons "int" []))))
-        (Lambda.LExpr.const () (Lambda.LConst.intConst 1)) := by
+      Lambda.LExpr.app Core.valueLoc (Lambda.LExpr.app Core.valueLoc Core.coreIntAddOpExpr
+        (Lambda.LExpr.fvar Core.valueLoc countY (some (Lambda.LMonoTy.tcons "int" []))))
+        (Lambda.LExpr.const Core.valueLoc (Lambda.LConst.intConst 1)) := by
   native_decide
 
 /-- An integer is a value of type `int`. -/
@@ -513,7 +522,7 @@ private theorem count_loop_finishes :
 private theorem count_finishes (ρ : Env Core.Expression) (hf : ρ.factory = F)
     (hy : ρ.store countY = none) :
     Finishes π (fun _ => True) (.stmts [countInit, countLoop] ρ) := by
-  have hev : Core.Expression.eval ρ.factory ρ.store (Lambda.LExpr.intConst () 0)
+  have hev : Core.Expression.eval ρ.factory ρ.store (Lambda.LExpr.intConst Core.valueLoc 0)
       = some (Lambda.SemValue.ofInt F.model.tcInterp 0) := by
     rw [hf]; exact Core.eval_intConst F ρ.store 0
   let σ' : Core.CoreStore := fun z =>
@@ -602,7 +611,7 @@ private theorem fail_body_eq : failProc.body = .structured [failAssert] := by
 
 /-- The asserted expression really is the literal `false`. -/
 private theorem failExpr_eq :
-    failParts.1 = Lambda.LExpr.const () (Lambda.LConst.boolConst false) := by
+    failParts.1 = Lambda.LExpr.const Core.valueLoc (Lambda.LConst.boolConst false) := by
   native_decide
 
 /-- The assertion's identifier. -/
@@ -665,7 +674,7 @@ private theorem ok_body_eq : okProc.body = .structured [okAssert] := by
 
 /-- The asserted expression really is the literal `true`. -/
 private theorem okExpr_eq :
-    okParts.1 = Lambda.LExpr.const () (Lambda.LConst.boolConst true) := by
+    okParts.1 = Lambda.LExpr.const Core.valueLoc (Lambda.LConst.boolConst true) := by
   native_decide
 
 /-- The assertion's identifier. -/

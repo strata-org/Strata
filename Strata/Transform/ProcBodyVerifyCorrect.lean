@@ -346,23 +346,23 @@ private theorem PrefixStepsOK_det_init_cons
     (h_id_eq_old : (prefixInitEnv rest ρ).store id = (prefixInitEnv rest ρ).store oldG)
     (h_ne : oldG ≠ id) :
     PrefixStepsOK π
-      (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ := by
+      (Statement.init oldG ty (.det (LExpr.fvar (ExprSourceLoc.synthesized "transform") id none)) #[] :: rest) ρ := by
   constructor
   · exact h_rest
   · refine ⟨_, rfl, (prefixInitEnv rest ρ).store, [], ?_, rfl, by simp⟩
     simp only [prefixInitEnv_factory]
-    have h_none : (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ).store oldG = none :=
+    have h_none : (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar (ExprSourceLoc.synthesized "transform") id none)) #[] :: rest) ρ).store oldG = none :=
       prefixInitEnv_store_init _ _ _ _ rfl
-    have h_id_val : (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ).store id =
+    have h_id_val : (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar (ExprSourceLoc.synthesized "transform") id none)) #[] :: rest) ρ).store id =
         (prefixInitEnv rest ρ).store id := by
       rw [prefixInitEnv_store_other _ _ _ id oldG rfl h_ne]
     obtain ⟨v, hv, hvty⟩ := h_ty
-    have h_getFvar : HasFvar.getFvar (LExpr.fvar () id none : Expression.Expr) = some id := by
+    have h_getFvar : HasFvar.getFvar (LExpr.fvar (ExprSourceLoc.synthesized "transform") id none : Expression.Expr) = some id := by
       simp [HasFvar.getFvar]
-    have h_eval : Expression.eval ρ.factory (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ).store
-        (LExpr.fvar () id none) = some v := by
+    have h_eval : Expression.eval ρ.factory (prefixInitEnv (Statement.init oldG ty (.det (LExpr.fvar (ExprSourceLoc.synthesized "transform") id none)) #[] :: rest) ρ).store
+        (LExpr.fvar (ExprSourceLoc.synthesized "transform") id none) = some v := by
       have h_wfStore' := prefixInitEnv_store_wf
-        (Statement.init oldG ty (.det (LExpr.fvar () id none)) #[] :: rest) ρ ρ.factory h_wfStore
+        (Statement.init oldG ty (.det (LExpr.fvar (ExprSourceLoc.synthesized "transform") id none)) #[] :: rest) ρ ρ.factory h_wfStore
       rw [h_wfVar _ _ _ h_wfStore' h_getFvar, h_id_val, h_id_eq_old, hv]
     exact EvalCmdExtE.cmd_sem (EvalCmdE.eval_init h_eval
       (InitState.init h_none hv (fun y hne => by
@@ -390,7 +390,7 @@ private theorem PrefixStepsOK_det_init_map
     : PrefixStepsOK π
         (entries.map fun (id, ty) =>
           Statement.init (CoreIdent.mkOld id.name) (Lambda.LTy.forAll [] ty)
-            (.det (LExpr.fvar () id none)) #[]) ρ := by
+            (.det (LExpr.fvar (ExprSourceLoc.synthesized "transform") id none)) #[]) ρ := by
   induction entries with
   | nil => exact trivial
   | cons e rest ih =>
@@ -526,7 +526,7 @@ theorem procToVerifyStmt_structure
     Statement.init id (Lambda.LTy.forAll [] ty) .nondet #[]
   let oldInoutInits := proc.header.getInoutParams.toList.map fun (id, ty) =>
     Statement.init (CoreIdent.mkOld id.name) (Lambda.LTy.forAll [] ty)
-      (.det (LExpr.fvar () id none)) #[]
+      (.det (LExpr.fvar (ExprSourceLoc.synthesized "transform") id none)) #[]
   let assumes := requiresToAssumes proc.spec.preconditions
   let prefixStmts := inputInits ++ outputOnlyInits ++ oldInoutInits ++ assumes
   rw [h_body_eq]

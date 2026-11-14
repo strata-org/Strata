@@ -20,8 +20,9 @@ judgement, `Triple`, conditioned on `Core.Logic.BlockInitEnvWF`.
 ## Contents
 
 `Triple`, and the rules `false_pre`, `consequence`, `of_storeWF_pre`,
-`of_forall_entryFactory`, `cmd`, `set`, `init`, `seq`,
-`exit_cons`, `block`, `skip`, `ite` and `while_rule`.
+`of_forall_entryFactory`, `cmd`, `set`, `init`, `init_nondet`, `havoc`, `assume`,
+`assume_eval`, `assert`, `assert_eval`, `seq`, `exit_cons`, `block`, `skip`, `ite`
+and `while_rule`.
 
 ## Why the rules are here and not in a `HoareProps` module
 
@@ -157,6 +158,106 @@ theorem init (params : InitEnvWFParams)
     cases hbase with
     | eval_init heval hinit _ _ =>
         exact ⟨True.intro, fun _ => hpost ρ₀ σ' _ hpre heval hinit⟩
+
+/-- Declaration without an initial value.  The variable is bound to an arbitrary value of
+    its declared type, which is all the postcondition may rely on. -/
+theorem init_nondet (params : InitEnvWFParams)
+    (x : Expression.Ident) (ty : Expression.Ty)
+    (md : Imperative.MetaData Expression)
+    (Pre Post : Imperative.Env Expression → Prop)
+    (hpost : ∀ (ρ₀ : Imperative.Env Expression) (σ' : CoreStore) (v : Expression.Val),
+      Pre ρ₀ → Imperative.InitState Expression ρ₀.store x v σ' →
+      HasVal.valueOfTy (P := Expression) ρ₀.factory v ty →
+      Post { ρ₀ with store := σ' }) :
+    Triple π params Pre [Statement.init x ty .nondet md] Post (factory := factory) := by
+  refine cmd (factory := factory) π params _ Pre Post (fun ρ₀ σ' emitted hpre _ hstep => ?_)
+  cases hstep with
+  | cmd_sem hbase =>
+    cases hbase with
+    | eval_init_unconstrained hinit hty _ =>
+        exact ⟨True.intro, fun _ => hpost ρ₀ σ' _ hpre hinit hty⟩
+
+/-- Havoc.  The variable takes an arbitrary value of the type of the value it held, which
+    is all the postcondition may rely on. -/
+theorem havoc (params : InitEnvWFParams)
+    (x : Expression.Ident) (md : Imperative.MetaData Expression)
+    (Pre Post : Imperative.Env Expression → Prop)
+    (hpost : ∀ (ρ₀ : Imperative.Env Expression) (σ' : CoreStore) (v : Expression.Val),
+      Pre ρ₀ → Imperative.UpdateState Expression ρ₀.store x v σ' →
+      HasVal.valueOfStoredTy (P := Expression) ρ₀.factory ρ₀.store x v →
+      Post { ρ₀ with store := σ' }) :
+    Triple π params Pre [Statement.havoc x md] Post (factory := factory) := by
+  refine cmd (factory := factory) π params _ Pre Post (fun ρ₀ σ' emitted hpre _ hstep => ?_)
+  cases hstep with
+  | cmd_sem hbase =>
+    cases hbase with
+    | eval_set_nondet hupdate hty _ =>
+        exact ⟨True.intro, fun _ => hpost ρ₀ σ' _ hpre hupdate hty⟩
+
+/-- Assumption.  The store is unchanged, and the postcondition is owed only where the
+    assumed condition holds in some world: an assumption that cannot hold makes the
+    rest of the run unreachable. -/
+theorem assume (params : InitEnvWFParams)
+    (label : String) (e : Expression.Expr) (md : Imperative.MetaData Expression)
+    (Pre Post : Imperative.Env Expression → Prop)
+    (hpost : ∀ (ρ₀ : Imperative.Env Expression), Pre ρ₀ →
+      (∃ world, (DenoteBasedInterp factory).holds world
+        { factory := ρ₀.factory, store := ρ₀.store, label := label, expr := e,
+          metadata := md }) →
+      Post ρ₀) :
+    Triple π params Pre [Statement.assume label e md] Post (factory := factory) := by
+  refine cmd (factory := factory) π params _ Pre Post (fun ρ₀ σ' emitted hpre _ hstep => ?_)
+  cases hstep with
+  | cmd_sem hbase =>
+    cases hbase with
+    | eval_assume =>
+        exact ⟨True.intro, fun ⟨world, hassum⟩ =>
+          hpost ρ₀ hpre ⟨world, hassum _ List.mem_cons_self⟩⟩
+
+/-- Assumption, where the precondition fixes the runtime factory to be over `factory`:
+    the assumed condition then holds exactly when it evaluates to `true`. -/
+theorem assume_eval (params : InitEnvWFParams)
+    (label : String) (e : Expression.Expr) (md : Imperative.MetaData Expression)
+    (Pre Post : Imperative.Env Expression → Prop)
+    (hfac : ∀ (ρ₀ : Imperative.Env Expression), Pre ρ₀ → ρ₀.factory.factory = factory)
+    (hpost : ∀ (ρ₀ : Imperative.Env Expression), Pre ρ₀ →
+      Expression.eval ρ₀.factory ρ₀.store e = some (HasBool.ttVal ρ₀.factory) →
+      Post ρ₀) :
+    Triple π params Pre [Statement.assume label e md] Post (factory := factory) := by
+  refine assume (factory := factory) π params label e md Pre Post
+    (fun ρ₀ hpre ⟨_, hholds⟩ => ?_)
+  rcases hholds with ⟨_, heval⟩ | ⟨hne, _⟩
+  · exact hpost ρ₀ hpre heval
+  · exact absurd (hfac ρ₀ hpre) hne
+
+/-- Assertion.  The store is unchanged, and the asserted condition must hold in every
+    world at every environment the precondition admits. -/
+theorem assert (params : InitEnvWFParams)
+    (label : String) (e : Expression.Expr) (md : Imperative.MetaData Expression)
+    (Pre : Imperative.Env Expression → Prop)
+    (hvalid : ∀ (ρ₀ : Imperative.Env Expression), Pre ρ₀ →
+      ∀ world, (DenoteBasedInterp factory).holds world
+        { factory := ρ₀.factory, store := ρ₀.store, label := label, expr := e,
+          metadata := md }) :
+    Triple π params Pre [Statement.assert label e md] Pre (factory := factory) := by
+  refine cmd (factory := factory) π params _ Pre Pre (fun ρ₀ σ' emitted hpre _ hstep => ?_)
+  cases hstep with
+  | cmd_sem hbase =>
+    cases hbase with
+    | eval_assert =>
+        exact ⟨⟨fun _ world _ => hvalid ρ₀ hpre world, True.intro⟩, fun _ => hpre⟩
+
+/-- Assertion, where the precondition fixes the runtime factory to be over `factory`:
+    the asserted condition then holds exactly when it evaluates to `true`. -/
+theorem assert_eval (params : InitEnvWFParams)
+    (label : String) (e : Expression.Expr) (md : Imperative.MetaData Expression)
+    (Pre : Imperative.Env Expression → Prop)
+    (hfac : ∀ (ρ₀ : Imperative.Env Expression), Pre ρ₀ → ρ₀.factory.factory = factory)
+    (hvalid : ∀ (ρ₀ : Imperative.Env Expression), Pre ρ₀ →
+      Expression.eval ρ₀.factory ρ₀.store e = some (HasBool.ttVal ρ₀.factory)) :
+    Triple π params Pre [Statement.assert label e md] Pre (factory := factory) :=
+  assert (factory := factory) π params label e md Pre
+    (fun ρ₀ hpre _ => Or.inl ⟨hfac ρ₀ hpre, hvalid ρ₀ hpre⟩)
 
 /-! ## Structural rules -/
 

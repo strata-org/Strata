@@ -426,8 +426,8 @@ omit iLB iHI in
 private theorem foldE_fv (ρ : Std.HashMap P.Ident (SVal P)) (e : P.Expr) :
     (∀ x ∈ HasFvars.getFvars e, SNames Dd x ρ[x]?) →
       ∀ y ∈ HasFvars.getFvars (foldE ρ e), y ∈ Dd := by
-  fun_induction foldE ρ e <;> intro hA y hy <;> (try obtain rfl := WPLang.iteView?_eq ‹_›) <;>
-    grind [WPLang.getFvars_ite, renM_fv]
+  fun_induction foldE ρ e <;> intro hA y hy <;>
+    grind [WPLang.getFvars_ite, WPLang.iteView?_getFvars, getFvars_of_iteView, renM_fv]
 
 omit iHB iHF iSF iHI iHFs in
 /-- The entry mapping maps each name the entry renaming renames to its entry name, typed by
@@ -780,10 +780,9 @@ private theorem foldE_typed {Γ : VarTyping P} (ρ : Std.HashMap P.Ident (SVal P
       (∀ x ∈ HasFvars.getFvars c, ∃ v, ρ[x]? = some v ∧ STyped Γ x v) ∧
       (∀ x ∈ HasFvars.getFvars t, ∃ v, ρ[x]? = some v ∧ STyped Γ x v) ∧
       (∀ x ∈ HasFvars.getFvars f, ∃ v, ρ[x]? = some v ∧ STyped Γ x v) := fun hv hA => by
-    obtain rfl := WPLang.iteView?_eq hv
-    exact ⟨fun x hx => hA x ((WPLang.getFvars_ite _ _ _ x).2 (.inl hx)),
-      fun x hx => hA x ((WPLang.getFvars_ite _ _ _ x).2 (.inr (.inl hx))),
-      fun x hx => hA x ((WPLang.getFvars_ite _ _ _ x).2 (.inr (.inr hx)))⟩
+    exact ⟨fun x hx => hA x ((WPLang.iteView?_getFvars x hv).mpr ((WPLang.getFvars_ite _ _ _ x).2 (.inl hx))),
+      fun x hx => hA x ((WPLang.iteView?_getFvars x hv).mpr ((WPLang.getFvars_ite _ _ _ x).2 (.inr (.inl hx)))),
+      fun x hx => hA x ((WPLang.iteView?_getFvars x hv).mpr ((WPLang.getFvars_ite _ _ _ x).2 (.inr (.inr hx))))⟩
   fun_induction foldE ρ e
   case case1 e c t f hv c' hb ih2 ih1 | case2 e c t f hv c' hb ih2 ih1 =>
     intro hA p hp

@@ -30,18 +30,18 @@ public section
 /-- A Core identifier. -/
 def id' (name : String) : CoreIdent := ⟨name, ()⟩
 /-- An integer variable, annotated with its type. -/
-def iv (x : String) : Expression.Expr := .fvar () (id' x) (some .int)
+def iv (x : String) : Expression.Expr := .fvar Core.valueLoc (id' x) (some .int)
 /-- A binary integer operator with the result type `τ`. -/
 def binOp (name : String) (τ : LMonoTy) (a b : Expression.Expr) : Expression.Expr :=
-  .app () (.app () (.op () (id' name) (some (.arrow .int (.arrow .int τ)))) a) b
+  .app Core.valueLoc (.app Core.valueLoc (.op Core.valueLoc (id' name) (some (.arrow .int (.arrow .int τ)))) a) b
 
 /-- The precondition of `inc`. -/
-def incPre : Expression.Expr := binOp "Int.Gt" .bool (iv "x") (.intConst () 0)
+def incPre : Expression.Expr := binOp "Int.Gt" .bool (iv "x") (.intConst Core.valueLoc 0)
 /-- The postcondition of `inc`. -/
 def incPost : Expression.Expr := binOp "Int.Gt" .bool (iv "y") (iv "x")
 /-- The body of `inc`. -/
 def incBody : Statements :=
-  [.cmd (.cmd (.set (id' "y") (.det (binOp "Int.Add" .int (iv "x") (.intConst () 1))) #[]))]
+  [.cmd (.cmd (.set (id' "y") (.det (binOp "Int.Add" .int (iv "x") (.intConst Core.valueLoc 1))) #[]))]
 
 /-- The procedure `inc` as `Core.typeCheck` returns it, with empty metadata. -/
 def inc : Procedure where
@@ -109,13 +109,14 @@ private meta def checked : Option Procedure :=
 
 /-- `p` with empty metadata on its contract checks and its body's assignments. -/
 private meta def eraseMd (p : Procedure) : Procedure :=
-  let ck := fun ((l, c) : String × Procedure.Check) => (l, { c with md := #[] })
+  let ck := fun ((l, c) : String × Procedure.Check) =>
+    (l, { c with expr := Core.eraseLocs c.expr, md := #[] })
   { p with
     spec := { preconditions := p.spec.preconditions.map ck,
               postconditions := p.spec.postconditions.map ck }
     body := match p.body with
       | .structured ss => .structured (ss.map fun
-        | .cmd (.cmd (.set x e _)) => .cmd (.cmd (.set x e #[]))
+        | .cmd (.cmd (.set x (.det e) _)) => .cmd (.cmd (.set x (.det (Core.eraseLocs e)) #[]))
         | s => s)
       | b => b }
 

@@ -11,9 +11,9 @@ meta import StrataTest.Languages.Cortex.HandBuilt
 # The `CopyAssignedInputs` pass, on hand-built programs
 
 Each test builds a one-procedure Cortex program by hand, runs
-`CopyAssignedInputs` on it, and prints the result as a Core program with CFG
-bodies, which has the blocks and the parameters of the Cortex program. Both
-routes to Core then type-check the result.
+`CopyAssignedInputs` on it, and prints the result as a Core program, which has
+the blocks and the parameters of the Cortex program, with the result of
+type-checking it.
 -/
 
 meta section
@@ -23,7 +23,7 @@ namespace Cortex.CopyAssignedInputsTest
 open Imperative Lambda Cortex.HandBuilt
 
 /-- `report` on `prog` after `Ordering` and `CopyAssignedInputs`, printing the
-Core program of the CFG route. -/
+Core program. -/
 def reportCopied (prog : UnorderedProgram) : IO Unit :=
   report (passes := [Ordering.pass, CopyAssignedInputs.pass]) (print := true) prog
 
@@ -35,8 +35,7 @@ starts by copying it into the local `x`. -/
 /-! No block transfers to the entry `E`: the copy is prepended to `E`. -/
 
 /--
-info: structured: type check ok
-program Core;
+info: program Core;
 
 procedure prepend (x$in : int, out r : int)
 cfg E {
@@ -48,7 +47,7 @@ cfg E {
   }
 };
 
-cfg: type check ok
+type check ok
 -/
 #guard_msgs in
 #eval reportCopied <| mkProg "prepend" [("x", .int)] [("r", .int)] "E"
@@ -58,8 +57,7 @@ cfg: type check ok
 the loop does not repeat it. -/
 
 /--
-info: structured: type check ok
-program Core;
+info: program Core;
 
 procedure entryInLoop (x$in : int, c : bool, out r : int)
 cfg $inputCopy {
@@ -77,7 +75,7 @@ cfg $inputCopy {
   }
 };
 
-cfg: type check ok
+type check ok
 -/
 #guard_msgs in
 #eval reportCopied <| mkProg "entryInLoop" [("x", .int), ("c", .bool)] [("r", .int)] "E"
@@ -86,8 +84,7 @@ cfg: type check ok
 /-! The label of the new entry block avoids the labels of the body. -/
 
 /--
-info: structured: type check ok
-program Core;
+info: program Core;
 
 procedure labelTaken (x$in : int, c : bool, out r : int)
 cfg $inputCopy$ {
@@ -105,7 +102,7 @@ cfg $inputCopy$ {
   }
 };
 
-cfg: type check ok
+type check ok
 -/
 #guard_msgs in
 #eval reportCopied <| mkProg "labelTaken" [("x", .int), ("c", .bool)] [("r", .int)] "$inputCopy"
@@ -117,8 +114,7 @@ Only an input that the body assigns and that is not an output is copied: `y` is
 only read, and `z` is also an output, which a Core body may assign. -/
 
 /--
-info: structured: type check ok
-program Core;
+info: program Core;
 
 procedure selective (x$in : int, y : int, inout z : int)
 cfg E {
@@ -130,7 +126,7 @@ cfg E {
   }
 };
 
-cfg: type check ok
+type check ok
 -/
 #guard_msgs in
 #eval reportCopied <| mkProg "selective" [("x", .int), ("y", .int), ("z", .int)] [("z", .int)] "E"
@@ -144,8 +140,7 @@ The renamed input avoids the names in use. -/
 `x$in$`, and `x$in` becomes `x$in$in`. -/
 
 /--
-info: structured: type check ok
-program Core;
+info: program Core;
 
 procedure inputTaken (x$in$ : int, x$in$in : int, out r : int)
 cfg E {
@@ -159,7 +154,7 @@ cfg E {
   }
 };
 
-cfg: type check ok
+type check ok
 -/
 #guard_msgs in
 #eval reportCopied <| mkProg "inputTaken" [("x", .int), ("x$in", .int)] [("r", .int)] "E"
@@ -168,8 +163,7 @@ cfg: type check ok
 /-! The body declares a local named `x$in`. -/
 
 /--
-info: structured: type check ok
-program Core;
+info: program Core;
 
 procedure localTaken (x$in$ : int, out r : int)
 cfg E {
@@ -182,7 +176,7 @@ cfg E {
   }
 };
 
-cfg: type check ok
+type check ok
 -/
 #guard_msgs in
 #eval reportCopied <| mkProg "localTaken" [("x", .int)] [("r", .int)] "E"
@@ -191,8 +185,7 @@ cfg: type check ok
 /-! An output is named `x$in`. -/
 
 /--
-info: structured: type check ok
-program Core;
+info: program Core;
 
 procedure outputTaken (x$in$ : int, out x$in : int)
 cfg E {
@@ -204,7 +197,7 @@ cfg E {
   }
 };
 
-cfg: type check ok
+type check ok
 -/
 #guard_msgs in
 #eval reportCopied <| mkProg "outputTaken" [("x", .int)] [("x$in", .int)] "E"
@@ -226,11 +219,10 @@ info: CopyAssignedInputs: exception handlers must be lowered before CopyAssigned
 
 /-! ## Without the pass
 
-Neither route to Core accepts a procedure that assigns an input. -/
+The translation to Core refuses a procedure that assigns an input. -/
 
 /--
-info: structured: translation error: procedure 'skipped' assigns its input 'x': the CopyAssignedInputs pass must run before Core
-cfg: translation error: procedure 'skipped' assigns its input 'x': the CopyAssignedInputs pass must run before Core
+info: translation error: procedure 'skipped' assigns its input 'x': the CopyAssignedInputs pass must run before Core
 -/
 #guard_msgs in
 #eval report <| mkProg "skipped" [("x", .int)] [("r", .int)] "E"

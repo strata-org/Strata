@@ -26,7 +26,7 @@ open Core
 
 /-- That `a` and `b` are different: false when they are equal, true otherwise. -/
 @[expose] def distinctPairExpr (a b : Expression.Expr) : Expression.Expr :=
-  .ite () (.eq () a b) (.boolConst () false) (.boolConst () true)
+  .ite Core.coreLoc (.eq Core.coreLoc a b) (.boolConst Core.valueLoc false) (.boolConst Core.valueLoc true)
 
 /-- The formulas declaration `d` contributes to the declarations entry: an axiom's and a
     lemma's formula, and the disequality of each pair of a `distinct` declaration's

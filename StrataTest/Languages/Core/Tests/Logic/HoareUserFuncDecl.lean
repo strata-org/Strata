@@ -29,8 +29,25 @@ open StrataDDM (Program)
 
 namespace Strata
 
+private def eraseFuncLocs (fn : Core.Function) : Core.Function :=
+  { fn with
+    body := fn.body.map Core.eraseLocs
+    axioms := fn.axioms.map Core.eraseLocs
+    preconditions := fn.preconditions.map (fun pc => { pc with expr := Core.eraseLocs pc.expr })
+    measure := fn.measure.map Core.eraseLocs }
+
+/-- Normalize every expression's source locations to `Core.valueLoc`, so the
+    exact-structure facts below (checked by `native_decide`) do not depend on the
+    concrete source ranges the translator attaches. -/
+private def eraseProgLocs (pr : Core.Program) : Core.Program :=
+  { pr with decls := pr.decls.map fun d => match d with
+      | .proc proc md => .proc (Core.Procedure.mapExprs Core.eraseLocs proc) md
+      | .func fn md => .func (eraseFuncLocs fn) md
+      | .recFuncBlock fs md => .recFuncBlock (fs.map eraseFuncLocs) md
+      | other => other }
+
 private def cstToAST (p : Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram p)).fst
+  eraseProgLocs (TransM.run Inhabited.default (translateProgram p)).fst
 
 private def userFuncPgm : Program :=
 #strata
@@ -69,9 +86,9 @@ private abbrev zId : Core.Expression.Ident := ⟨"z", ()⟩
 private abbrev intTy : Option Lambda.LMonoTy := some .int
 
 private def fBody : Core.Expression.Expr :=
-  Lambda.LExpr.mkApp () Core.intMulOp [
-    Lambda.LExpr.mkApp () Core.intAddOp [.fvar () xId intTy, .fvar () yId intTy],
-    Lambda.LExpr.mkApp () Core.intSubOp [.fvar () xId intTy, .fvar () yId intTy]]
+  Lambda.LExpr.mkApp Core.valueLoc Core.intMulOp [
+    Lambda.LExpr.mkApp Core.valueLoc Core.intAddOp [.fvar Core.valueLoc xId intTy, .fvar Core.valueLoc yId intTy],
+    Lambda.LExpr.mkApp Core.valueLoc Core.intSubOp [.fvar Core.valueLoc xId intTy, .fvar Core.valueLoc yId intTy]]
 
 /-- The translated declaration of `f` has two integer parameters and the
     arithmetic body. -/
@@ -96,8 +113,8 @@ private def bodyMd : Imperative.MetaData Core.Expression :=
 
 /-- The expression assigned by `Compute` is `f(x, y)`. -/
 private theorem bodyExpr_shape :
-    bodyExpr = Lambda.LExpr.mkApp () fDef.opExpr
-      [.fvar () xId intTy, .fvar () yId intTy] := by
+    bodyExpr = Lambda.LExpr.mkApp Core.valueLoc fDef.opExpr
+      [.fvar Core.valueLoc xId intTy, .fvar Core.valueLoc yId intTy] := by
   native_decide
 
 /-- `Compute` consists of the single assignment `z := bodyExpr`. -/
@@ -174,7 +191,7 @@ private abbrev intV (F : Core.Expression.Factory) (k : Int) : Core.Expression.Va
 
 /-- `f`'s operator expression is the `f` operator at `int → int → int`. -/
 private theorem fDef_opExpr :
-    fDef.opExpr = .op () ⟨"f", ()⟩ (some (.arrow .int (.arrow .int .int))) := by
+    fDef.opExpr = .op Core.valueLoc ⟨"f", ()⟩ (some (.arrow .int (.arrow .int .int))) := by
   native_decide
 
 /-- The arithmetic body `(x + y) * (x - y)` denotes that expression when `x = a` and
@@ -194,10 +211,10 @@ private theorem denote_fBody {factory : Lambda.Factory Core.CoreLParams}
     (h : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] fBody .int) :
     Lambda.LExpr.denote model.tcInterp model.opInterp fv vt .nil fBody .int h =
       (a + b) * (a - b) := by
-  let xe : Core.Expression.Expr := .fvar () xId intTy
-  let ye : Core.Expression.Expr := .fvar () yId intTy
-  let ae : Core.Expression.Expr := .app () (.app () Core.intAddOp xe) ye
-  let se : Core.Expression.Expr := .app () (.app () Core.intSubOp xe) ye
+  let xe : Core.Expression.Expr := .fvar Core.valueLoc xId intTy
+  let ye : Core.Expression.Expr := .fvar Core.valueLoc yId intTy
+  let ae : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc Core.intAddOp xe) ye
+  let se : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc Core.intSubOp xe) ye
   have hxTy : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] xe .int := .fvar
   have hyTy : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] ye .int := .fvar
   have hdx : Lambda.LExpr.denote model.tcInterp model.opInterp fv vt .nil xe .int hxTy = a := by
@@ -260,9 +277,9 @@ private theorem bodyExpr_eval (F : Core.Expression.Factory) (hF : F.factory = vi
   obtain rfl : Fl = visibleFactory := hF
   rw [bodyExpr_shape, fDef_opExpr]
   have h := Lambda.LExpr.denoteEval_app2_op_int (T := Core.CoreLParams)
-    (M := ⟨visibleFactory, model, tv⟩) (m := ()) (m' := ()) (m'' := ()) (o := ⟨"f", ()⟩)
-    (c := .int) rfl (Core.eval_fvar_int (m := ()) (ty := intTy) _ hx)
-    (Core.eval_fvar_int (m := ()) (ty := intTy) _ hy)
+    (M := ⟨visibleFactory, model, tv⟩) (m := Core.valueLoc) (m' := Core.valueLoc) (m'' := Core.valueLoc) (o := ⟨"f", ()⟩)
+    (c := .int) rfl (Core.eval_fvar_int (m := Core.valueLoc) (ty := intTy) _ hx)
+    (Core.eval_fvar_int (m := Core.valueLoc) (ty := intTy) _ hy)
   refine h.trans (congrArg some ?_)
   unfold intV Lambda.SemValue.ofInt
   congr 1
@@ -308,17 +325,17 @@ example : assignedFunctionName? = some "f" := by
 private def intArrowTy : Lambda.LMonoTy := .arrow .int (.arrow .int .int)
 private abbrev gtOp : Core.Expression.Expr := Core.intGtOp
 private abbrev addOp : Core.Expression.Expr := Core.intAddOp
-private def xExpr : Core.Expression.Expr := .fvar () xId intTy
-private def yExpr : Core.Expression.Expr := .fvar () yId intTy
-private def zExpr : Core.Expression.Expr := .fvar () zId intTy
-private def zeroExpr : Core.Expression.Expr := .const () (.intConst 0)
+private def xExpr : Core.Expression.Expr := .fvar Core.valueLoc xId intTy
+private def yExpr : Core.Expression.Expr := .fvar Core.valueLoc yId intTy
+private def zExpr : Core.Expression.Expr := .fvar Core.valueLoc zId intTy
+private def zeroExpr : Core.Expression.Expr := .const Core.valueLoc (.intConst 0)
 /-- `LExpr.intConst` is the Core integer-literal constructor. -/
 private theorem intConst_eq (i : Int) :
-    (Lambda.LExpr.intConst () i : Core.Expression.Expr) = .const () (.intConst i) := rfl
-private def addXY : Core.Expression.Expr := .app () (.app () addOp xExpr) yExpr
-private def reqXY : Core.Expression.Expr := .app () (.app () gtOp xExpr) yExpr
-private def reqSum : Core.Expression.Expr := .app () (.app () gtOp addXY) zeroExpr
-private def ensZ : Core.Expression.Expr := .app () (.app () gtOp zExpr) zeroExpr
+    (Lambda.LExpr.intConst Core.valueLoc i : Core.Expression.Expr) = .const Core.valueLoc (.intConst i) := rfl
+private def addXY : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc addOp xExpr) yExpr
+private def reqXY : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc gtOp xExpr) yExpr
+private def reqSum : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc gtOp addXY) zeroExpr
+private def ensZ : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc gtOp zExpr) zeroExpr
 
 /-- The first precondition of `Compute` is `int.gt(x, y)`. -/
 private theorem reqXY_mem : ∃ label check,
@@ -423,8 +440,8 @@ private theorem check_reqSum_implies (factory : Lambda.Factory Core.CoreLParams)
         some (Lambda.SemValue.ofBool ρ.factory.model.tcInterp (decide (a + b > 0))) :=
       Core.eval_intGt (by rw [hfac]; exact hgtLookup)
         (Core.eval_intAdd (by rw [hfac]; exact haddLookup)
-          (Core.eval_fvar_int (m := ()) (ty := intTy) _ hx)
-    (Core.eval_fvar_int (m := ()) (ty := intTy) _ hy))
+          (Core.eval_fvar_int (m := Core.valueLoc) (ty := intTy) _ hx)
+    (Core.eval_fvar_int (m := Core.valueLoc) (ty := intTy) _ hy))
         (Core.eval_const _ _ (.intConst 0))
     exact of_decide_eq_true
       (Lambda.SemValue.ofBool_injective (Option.some.inj (hgt.symm.trans hex)))
@@ -624,10 +641,10 @@ private theorem specFactory_intGt :
   specFactory_get?_of_ne_fSpec (by decide) Core.coreFactory_intGt
 
 private def fSpecOp : Core.Expression.Expr :=
-  .op () ⟨"fSpec", ()⟩ (some intArrowTy)
+  .op Core.valueLoc ⟨"fSpec", ()⟩ (some intArrowTy)
 private def fSpecCall : Core.Expression.Expr :=
-  .app () (.app () fSpecOp xExpr) yExpr
-private def specEns : Core.Expression.Expr := .app () (.app () gtOp fSpecCall) zeroExpr
+  .app Core.valueLoc (.app Core.valueLoc fSpecOp xExpr) yExpr
+private def specEns : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc gtOp fSpecCall) zeroExpr
 
 /-- `CheckProduct` has an empty body. -/
 private theorem checkProduct_body : checkProductProc.body = .structured [] := by
@@ -709,9 +726,9 @@ private theorem fSpecCall_eval (F : Core.Expression.Factory) (hF : F.factory = s
   obtain ⟨Fl, model, tv⟩ := F
   obtain rfl : Fl = specFactory := hF
   have h := Lambda.LExpr.denoteEval_app2_op_int (T := Core.CoreLParams)
-    (M := ⟨specFactory, model, tv⟩) (m := ()) (m' := ()) (m'' := ()) (o := ⟨"fSpec", ()⟩)
-    (c := .int) rfl (Core.eval_fvar_int (m := ()) (ty := intTy) _ hx)
-    (Core.eval_fvar_int (m := ()) (ty := intTy) _ hy)
+    (M := ⟨specFactory, model, tv⟩) (m := Core.valueLoc) (m' := Core.valueLoc) (m'' := Core.valueLoc) (o := ⟨"fSpec", ()⟩)
+    (c := .int) rfl (Core.eval_fvar_int (m := Core.valueLoc) (ty := intTy) _ hx)
+    (Core.eval_fvar_int (m := Core.valueLoc) (ty := intTy) _ hy)
   refine h.trans (congrArg some ?_)
   unfold intV Lambda.SemValue.ofInt
   congr 1

@@ -38,16 +38,16 @@ def resolveQualifiedFieldName (model : SemanticModel) (fieldName : Identifier) :
   | _ => none
 
 private def refOf (e : StmtExprMd) : StmtExprMd :=
-  mkMd (.StaticCall compositeRefAccessor [e] []) e.source
+  mkMd (.Call none compositeRefAccessor [e] []) e.source
 
 def lowerNew (name : Identifier) (source : FileRange) : StmtExprMd :=
-  mkMd (.StaticCall compositeCtorName
-    [mkMd (.StaticCall allocateProcName [] []) source,
-     mkMd (.StaticCall (name.text ++ "_TypeTag") [] []) source] []) source
+  mkMd (.Call none compositeCtorName
+    [mkMd (.Call none allocateProcName [] []) source,
+     mkMd (.Call none (name.text ++ "_TypeTag") [] []) source] []) source
 
 private def rewriteReferenceEquality (model : SemanticModel) (e : StmtExprMd) : StmtExprMd :=
   match e.val with
-  | .StaticCall callee [a, b] tyArgs =>
+  | .Call none callee [a, b] tyArgs =>
     -- For `==` and `!=` on Composite types, compare refs instead. These are
     -- calls to the built-in `$eq`/`$neq` wrappers (see `Operation.procName`);
     -- neither is overloaded, so `UniqueOverloadNames` leaves the names alone
@@ -64,7 +64,7 @@ private def rewriteReferenceEquality (model : SemanticModel) (e : StmtExprMd) : 
     if callee.text == Operation.Eq.procName || callee.text == Operation.Neq.procName then
       match (computeExprType model a).val with
       | .UserDefined name =>
-        if isComposite model name then ⟨.StaticCall callee [refOf a, refOf b] tyArgs, e.source⟩
+        if isComposite model name then ⟨.Call none callee [refOf a, refOf b] tyArgs, e.source⟩
         else e
       | _ => e
     else e
@@ -79,7 +79,7 @@ def quantifyOverReference (isReferenceType : HighType → Bool) (param : Paramet
     | .Var (.Local n) => n.text == x
     | _ => false
   let isRefOfX (e : StmtExprMd) : Bool := match e.val with
-    | .StaticCall callee [arg] _ => callee.text == compositeRefAccessor && isX arg
+    | .Call none callee [arg] _ => callee.text == compositeRefAccessor && isX arg
     | _ => false
   let rebinds (e : StmtExprMd) : Bool := match e.val with
     | .Quantifier _ p _ _ => p.name.text == x
@@ -156,8 +156,8 @@ partial def compositeRefToConstrained (composites : Std.HashSet String)
 
 private def flattenCallTypeArgs (composites : Std.HashSet String) (e : StmtExprMd) : StmtExprMd :=
   match e.val with
-  | .StaticCall callee args tyArgs@(_ :: _) =>
-    ⟨.StaticCall callee args (tyArgs.map (compositeRefToComposite composites)), e.source⟩
+  | .Call none callee args tyArgs@(_ :: _) =>
+    ⟨.Call none callee args (tyArgs.map (compositeRefToComposite composites)), e.source⟩
   | _ => e
 
 def compositeConstrainedType (model : SemanticModel) (composites : List CompositeType)
@@ -166,16 +166,16 @@ def compositeConstrainedType (model : SemanticModel) (composites : List Composit
   let src := ct.name.source
   let descendants ← composites.filterM fun d => do
     (← computeAncestors model d.name).anyM fun anc => anc.name.sameId ct.name
-  let tag := mkMd (.StaticCall "Composite..typeTag!" [mkMd (.Var (.Local valueName)) src] []) src
+  let tag := mkMd (.Call none "Composite..typeTag!" [mkMd (.Var (.Local valueName)) src] []) src
   let tagIs (d : CompositeType) : StmtExprMd :=
-    mkMd (.StaticCall (mkId Operation.Eq.procName)
-      [tag, mkMd (.StaticCall (mkId $ d.name.text ++ "_TypeTag") [] []) src] []) src
+    mkMd (.Call none (mkId Operation.Eq.procName)
+      [tag, mkMd (.Call none (mkId $ d.name.text ++ "_TypeTag") [] []) src] []) src
   let constraint := if gradualTypes.contains ct.name.text then mkMd (.LiteralBool true) src else
     match descendants.map tagIs with
     | [] => mkMd (.LiteralBool false) src
-    | c :: cs => cs.foldl (fun acc x => mkMd (.StaticCall (mkId Operation.Or.procName) [acc, x] []) src) c
-  let witness := mkMd (.StaticCall compositeCtorName
-    [mkMd (.LiteralInt 0) src, mkMd (.StaticCall (ct.name.text ++ "_TypeTag") [] []) src] []) src
+    | c :: cs => cs.foldl (fun acc x => mkMd (.Call none (mkId Operation.Or.procName) [acc, x] []) src) c
+  let witness := mkMd (.Call none compositeCtorName
+    [mkMd (.LiteralInt 0) src, mkMd (.Call none (ct.name.text ++ "_TypeTag") [] []) src] []) src
   return { name := ct.name, base := ⟨.UserDefined compositeTypeName, src⟩, valueName,
            constraint, witness, free := true }
 
@@ -287,7 +287,7 @@ public def lowerCompositePass : LaurelPass := .onUnordered {
   name := "LowerComposite"
   needsResolves := true
   creates := [
-      NodeKind.StmtExpr.StaticCall,
+      NodeKind.StmtExpr.Call,
       NodeKind.Procedure.inputs.cons,
       NodeKind.Procedure.preconditions.cons,
       NodeKind.Pseudo.typeTag,
