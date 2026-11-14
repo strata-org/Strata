@@ -38,10 +38,12 @@ def pairs : List (WFLFunc CoreLParams × WFLFunc CoreLParams) :=
     (seqDropFunc, seqDropUnsafeFunc) ]
 
 /-- Rewrite each checked operation to its total twin, keeping the occurrence's
-    own type annotation. -/
+    own type annotation. The renamed operator gets a synthesized location, as
+    the operator renaming in `Factory.lean` does; the enclosing application keeps
+    the source location. -/
 def totalize (e : Expression.Expr) : Expression.Expr :=
   e.substOps (Strata.Util.HMap.ofList (pairs.map fun (checked, total) =>
-    (checked.name, fun ty => .op () total.name ty)))
+    (checked.name, fun ty => .op (ExprSourceLoc.synthesized "seqTotalize") total.name ty)))
 
 private def totalizeFunction (f : Function) : Function :=
   { f with
