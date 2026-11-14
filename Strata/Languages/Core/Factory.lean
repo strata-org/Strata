@@ -805,6 +805,13 @@ def seqSelectFunc : WFLFunc CoreLParams :=
     ])
     (preconditions := [mkSeqBoundsPrecond "i" .Lt])
 
+/- The total twins (`select!`, `update!`, `take!`, `drop!`) share the axioms of
+   their checked forms, renamed: `withSelectBang` states every select axiom in
+   both forms, and each twin below takes the checked list with its own name
+   substituted. Keep them equivalent. After `PrecondElim` the `SeqTotalize`
+   phase rewrites every checked operation to its twin, so downstream of it only
+   the total forms, and hence only their axioms, reach a solver. -/
+
 /- An *unsafe* total variant of `Sequence.select`: no bounds precondition, so
    no out-of-bounds obligation per call site; out-of-range access is
    unconstrained. Shares `Sequence.select`'s interaction axioms (mirrored on the
@@ -933,7 +940,7 @@ def seqUpdateUnsafeFunc : WFLFunc CoreLParams :=
 def seqContainsFunc : WFLFunc CoreLParams :=
   polyUneval "Sequence.contains" ["a"]
     [("s", seqTy mty[%a]), ("v", mty[%a])] mty[bool]
-    (axioms := [
+    (axioms := withSelectBang [
       -- contains(s, v) <==> exists i :: 0 <= i < length(s) && select(s, i) == v
       eb[∀ (Sequence %a): -- %1 s
           (∀ (%a): -- %0 v
