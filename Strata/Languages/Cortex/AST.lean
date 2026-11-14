@@ -123,6 +123,12 @@ structure Postcondition where
   cond : Expr
   md : MD := .empty
 
+/-- The labels under which postconditions with the labels `labels` reach Core: the empty label
+of the postcondition at index `i` becomes `ensures_i`, as the precondition at index `i` is named
+`requires_i`, and a non-empty label is kept. -/
+@[expose] def postconditionLabels (labels : List String) : List String :=
+  labels.zipIdx.map fun (l, i) => if l.isEmpty then s!"ensures_{i}" else l
+
 structure Procedure where
   name : ProcName
   inputs : List (Core.Expression.Ident × Core.Expression.Ty)

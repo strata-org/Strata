@@ -961,4 +961,56 @@ info: Core type checking succeeded.
 #guard_msgs in
 #eval typeCheck (postScope "x")
 
+-- A postcondition's label names it, so two postconditions of one procedure may not share
+-- a non-empty one: `dec` of `ensuresProgram` has the distinct labels `below` and `wrong`
+-- and is accepted (above), and the same procedure with `below` twice is refused.
+/--
+info: invalid Cortex program: duplicate postcondition label of 'dec' 'below'
+-/
+#guard_msgs in
+#eval typeCheck { ensuresProgram with procedures := ensuresProgram.procedures.map fun q =>
+  if q.name != "dec" then q else
+  { q with ensures := q.ensures.map fun post => { post with label := "below" } } }
+
+/-- `ensuresProgram` with the labels of `dec`'s two postconditions replaced by `labels`. -/
+meta def relabeled (labels : List String) : Wire.Program :=
+  { ensuresProgram with procedures := ensuresProgram.procedures.map fun q =>
+    if q.name != "dec" then q else
+    { q with ensures := (q.ensures.zip labels).map fun (post, l) => { post with label := l } } }
+
+-- An unlabeled postcondition reaches Core as `ensures_i`, `i` its index, so several of them are
+-- accepted and each obligation of `dec` is reported under its own name.
+/--
+info: Core type checking succeeded.
+-/
+#guard_msgs in
+#eval typeCheck (relabeled ["", ""])
+
+/--
+info: obligations: [ensures_0, ensures_1]
+ensures_0: ✅ pass
+ensures_1: ❌ fail
+-/
+#guard_msgs in
+#eval verifyWire (relabeled ["", ""])
+
+-- The uniqueness check reads the labels after that naming: a source label `ensures_0` next to an
+-- unlabeled postcondition at index 0 is refused.
+/--
+info: invalid Cortex program: duplicate postcondition label of 'dec' 'ensures_0'
+-/
+#guard_msgs in
+#eval typeCheck (relabeled ["", "ensures_0"])
+
+-- A body `assert` is reported under its label as a postcondition is, so an `assert` labeled
+-- `ensures_0` in `dec` next to an unlabeled postcondition at index 0 is refused.
+/--
+info: invalid Cortex program: 'dec': postcondition label 'ensures_0' is also the label of an assert
+-/
+#guard_msgs in
+#eval typeCheck { relabeled ["", ""] with procedures := (relabeled ["", ""]).procedures.map fun q =>
+  if q.name != "dec" then q else
+  { q with body := q.body.map fun b => { b with blocks := b.blocks.map fun blk =>
+    { blk with cmds := .assert "ensures_0" (.bool true) none default :: blk.cmds } } } }
+
 end Cortex.WireTest

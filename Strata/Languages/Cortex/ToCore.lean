@@ -104,8 +104,9 @@ postconditions as Core's, with their own labels. -/
 def procedureSpec (p : Procedure) : Core.Procedure.Spec :=
   let preconditions := (p.requires.zipIdx).map fun (pre, i) =>
     ((s!"requires_{i}" : Core.CoreLabel), ({ expr := pre.cond, md := pre.md } : Core.Procedure.Check))
-  let postconditions := p.ensures.map fun post =>
-    ((post.label : Core.CoreLabel), ({ expr := post.cond, md := post.md } : Core.Procedure.Check))
+  let labels := postconditionLabels (p.ensures.map (·.label))
+  let postconditions := (p.ensures.zip labels).map fun (post, l) =>
+    ((l : Core.CoreLabel), ({ expr := post.cond, md := post.md } : Core.Procedure.Check))
   { preconditions, postconditions }
 
 /-- A Cortex CFG as a Core CFG with the same labels and transfers. -/

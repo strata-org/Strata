@@ -121,6 +121,10 @@ structure Precondition where
 /-- A postcondition, checked when the procedure returns normally. It reads the parameters
 and the globals at return, an input at its entry value, and `old g` for a global `g`. -/
 structure Postcondition where
+  /-- The source's name for this postcondition, reported when it fails; empty when the source
+  gave none, in which case Core names it `ensures_i`, `i` its index among the procedure's
+  postconditions (`Cortex.postconditionLabels`). The labels of a procedure's postconditions,
+  after that naming, are distinct, and none is the label of an `assert` of its body. -/
   label : String
   cond : Expr
   summary : Option String
@@ -286,6 +290,19 @@ def Procedure.toCortex (globals : List String) (p : Procedure) : Except String C
       for v in pre.cond.vars do
         if globals.contains v then
           throw s!"'{p.name}': the precondition of an entry procedure reads global '{v}', which starts at its initializer there"
+  -- A postcondition's label names it in a lookup and in a diagnostic, so two
+  -- postconditions of one procedure may not share a label, once an unlabeled one is named
+  -- `ensures_i` as Core names it.
+  let postLabels := Cortex.postconditionLabels (p.ensures.map (·.label))
+  checkUnique s!"postcondition label of '{p.name}'" postLabels
+  -- A postcondition and a body `assert` are both obligations reported under their label, so
+  -- a postcondition's label, once named, may not be the label of an `assert` of the body.
+  for b in p.body.toList do
+    for blk in b.blocks do
+      for c in blk.cmds do
+        if let .assert l .. := c then
+          if postLabels.contains l then
+            throw s!"'{p.name}': postcondition label '{l}' is also the label of an assert"
   -- A postcondition reads the parameters, an input at its entry value, the globals at
   -- return, and the entry value `old g` of a global, and nothing else: a local of the body
   -- is out of scope there. A parameter has no entry value of its own: no name is both an
