@@ -186,9 +186,11 @@ def genCoreVCs (program : Program)
 /--
 Remove solver-side caches that destabilize definitional equality in metaprograms.
 
-At the moment this is semantically harmless for denotation because
-`Strata.DL.SMT.Denote.denoteQuery` rejects contexts with datatype machinery
-(`datatypes`, `seenDatatypes`, `datatypeFuns`) populated anyway.
+The sanitized context carries no datatypes, so `Strata.DL.SMT.Denote.denoteQuery`
+sees none through this path and a verification condition that mentions a
+datatype has no denotation; `createGoal` refuses such conditions before this
+matters. Passing the datatypes through, as the plain list `denoteQuery` accepts,
+is what lifts that refusal.
 -/
 private def sanitizeSMTContext (ctx : Core.SMT.Context) : SMT.SanitizedContext :=
   SMT.SanitizedContext.ofCore ctx
@@ -1116,8 +1118,9 @@ private partial def bindIFsChain (ufs : List UF) (ifs : List IF) (lhs : Lean.Exp
 /-- Close the sort context: eliminate uninterpreted-sort binders one at a time.
 Proves `bindUSs ... = some ft'`. -/
 private partial def bindUSsChain (lhs : Lean.Expr) : MetaM SomeEqProof := do
-  -- lhs = bindUSs uss iss ft
-  let #[uss, iss, ft] := lhs.getAppArgs | throwError "proveQuery: unexpected bindUSs"
+  -- lhs = bindUSs uss iss (dts := []) ft; the datatype list is implicit, and empty in
+  -- every query this tactic proves today
+  let #[uss, iss, _dts, ft] := lhs.getAppArgs | throwError "proveQuery: unexpected bindUSs"
   match_expr ← whnfR uss with
   | List.nil _ => return { rhs := ft, proof := mkAppN (lem `bindUSs_nil) #[iss, ft] }
   | List.cons _ us uss' =>
