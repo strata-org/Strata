@@ -17,6 +17,7 @@ including predicates, SARIF messages, and SARIF severity levels.
 -/
 
 namespace Core
+private abbrev testLoc : ExprSourceLoc := ExprSourceLoc.synthesized "test"
 open Strata.SMT
 open Core.Sarif
 open Core.SMT (Result)
@@ -208,7 +209,8 @@ private def unknownResult : Result := .unknown (some [])
 
 /-- A dummy obligation for testing phase validation. -/
 private def dummyObligation : Imperative.ProofObligation Core.Expression :=
-  { label := "test", property := .assert, assumptions := [], obligation := .true (), metadata := {} }
+  { label := "test", property := .assert, assumptions := [], obligation := .true testLoc,
+      metadata := {} }
 
 /-- info: false -/
 #guard_msgs in #eval needsValidation [preservingPhase] dummyObligation
@@ -279,14 +281,14 @@ private def validityAfterValidation (phases : List AbstractedPhase)
 /-- Obligation with call-elimination labels in path conditions. -/
 private def callElimObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_callElim", property := .assert,
-    assumptions := [[.assumption "callElimAssume_post" (.true ())]],
-    obligation := .true (), metadata := {} }
+    assumptions := [[.assumption "callElimAssume_post" (.true testLoc)]],
+    obligation := .true testLoc, metadata := {} }
 
 /-- Obligation with no abstraction labels — models are sound. -/
 private def cleanObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_clean", property := .assert,
-    assumptions := [[.assumption "precond_x_positive" (.true ())]],
-    obligation := .true (), metadata := {} }
+    assumptions := [[.assumption "precond_x_positive" (.true testLoc)]],
+    obligation := .true testLoc, metadata := {} }
 
 -- Combined Core phases: clean obligation preserves sat
 #guard (satResult.adjustForPhases [callElimPipelinePhase.phase, loopElimPipelinePhase.phase] cleanObligation).1 == satResult

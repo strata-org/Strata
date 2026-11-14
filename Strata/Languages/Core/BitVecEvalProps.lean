@@ -111,13 +111,13 @@ private theorem concreteEval_bvOp (width : Nat) (name : CoreIdent) {c : Lambda.L
     (opTy : Option Lambda.LMonoTy) :
     (Lambda.binaryOp (T := CoreLParams) (inTy := .bitvec width) (outTy := c) name op
         (hInTy := rfl) (hOutTy := hO) (h_precond := fun _ h => by simp at h)).func.concreteEval.bind
-      (fun ce => ce () opTy [.bitvecConst () width a, .bitvecConst () width b]) =
-      some (Lambda.LambdaLeanType.mkConst CoreLParams () (op a b)) := by
+      (fun ce => ce coreLoc opTy [.bitvecConst coreLoc width a, .bitvecConst coreLoc width b]) =
+      some (Lambda.LambdaLeanType.mkConst CoreLParams coreLoc (op a b)) := by
   have hda : Lambda.LExpr.denoteBitVec width
-      (Lambda.LExpr.bitvecConst () width a : Expression.Expr) = some a := by
+      (Lambda.LExpr.bitvecConst coreLoc width a : Expression.Expr) = some a := by
     simp [Lambda.LExpr.denoteBitVec]
   have hdb : Lambda.LExpr.denoteBitVec width
-      (Lambda.LExpr.bitvecConst () width b : Expression.Expr) = some b := by
+      (Lambda.LExpr.bitvecConst coreLoc width b : Expression.Expr) = some b := by
     simp [Lambda.LExpr.denoteBitVec]
   have hcev : Lambda.LambdaLeanType.cevalTy (ty := Lambda.LMonoTy.bitvec width)
       (ValTy := BitVec width) CoreLParams = Lambda.LExpr.denoteBitVec width := rfl

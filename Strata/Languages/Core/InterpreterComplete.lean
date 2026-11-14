@@ -196,7 +196,7 @@ private theorem emitTotal_obsEval_iff (opts : EvalOpts) :
 
 /-- An `assert` event whose captured condition is the integer literal `0`. -/
 def nonBoolAssertEvent (f : Lambda.Factory CoreLParams) : IEvent Expression :=
-  .assert { factory := f, store := fun _ => none, label := "", expr := .intConst () 0,
+  .assert { factory := f, store := fun _ => none, label := "", expr := .intConst default 0,
             metadata := #[] }
 
 /-- `nonBoolAssertEvent f` fails `EvalEmitOk` under every `EvalOpts`. -/

@@ -24,7 +24,7 @@ Includes:
 - The partial `Map<K, V>` and its operations, built on top of `TotalMap`.
 - Type-specific external operators (`intAdd`, `realAdd`, etc.) — the Core primitives.
 - Overloaded transparent wrappers (`add`, `sub`, etc.) — dispatching to the
-  type-specific externals. The parser emits `StaticCall "add"` and resolution
+  type-specific externals. The parser emits `Call none "add"` and resolution
   picks the right overload based on argument types.
 
 The map primitives and the equality wrappers carry generic signatures
@@ -531,7 +531,7 @@ procedure $bitXorS64(x: int, y: int) : int
 // wrapper site below rather than delegated to a second procedure.
 
 // --- Overloaded operator wrappers ($ prefix = reserved namespace) ---
-// The parser emits StaticCall "$add" for "+", etc. Resolution picks the overload.
+// The parser emits a static Call to "$add" for "+", etc. Resolution picks the overload.
 
 // Arithmetic (int overload)
 procedure $add(x: int, y: int) : int

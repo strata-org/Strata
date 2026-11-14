@@ -38,8 +38,45 @@ inductive EvalProvenance
 Check for boolean equality of two expressions `e1` and `e2` after erasing any
 metadata.
 -/
-def eqModuloMeta (e1 e2 : LExpr T) : Bool :=
+@[expose] def eqModuloMeta (e1 e2 : LExpr T) : Bool :=
   e1.eraseMetadata == e2.eraseMetadata
+
+/-- `EqModuloMeta α` is the single notion of "equal up to source-location metadata" on `α`,
+lifted structurally so an interpreter result built from several types is compared by one
+helper. For `LExpr` it is `eqModuloMeta`, i.e. equality after `eraseMetadata`; it lifts over
+`Option`, products, and `Nat` (which carries no metadata). `EqModuloMeta.beq` ignores only
+metadata, never a value: it is `true` exactly when the metadata-erased values are equal.
+End-to-end tests should compare results with this helper rather than `==`. -/
+class EqModuloMeta (α : Type _) where
+  /-- Boolean equality on `α` that ignores source-location metadata. -/
+  beq : α → α → Bool
+
+instance : EqModuloMeta (LExpr T) := ⟨eqModuloMeta⟩
+
+instance {α : Type _} [EqModuloMeta α] : EqModuloMeta (Option α) where
+  beq
+    | none, none => true
+    | some x, some y => EqModuloMeta.beq x y
+    | _, _ => false
+
+instance {α β : Type _} [EqModuloMeta α] [EqModuloMeta β] : EqModuloMeta (α × β) where
+  beq p q := EqModuloMeta.beq p.1 q.1 && EqModuloMeta.beq p.2 q.2
+
+instance : EqModuloMeta Nat where
+  beq a b := a == b
+
+/-- Element-wise comparison of lists up to source-location metadata. -/
+def listEqModuloMeta {α : Type _} [EqModuloMeta α] : List α → List α → Bool
+  | [], [] => true
+  | x :: xs, y :: ys => EqModuloMeta.beq x y && listEqModuloMeta xs ys
+  | _, _ => false
+
+instance {α : Type _} [EqModuloMeta α] : EqModuloMeta (List α) where
+  beq := listEqModuloMeta
+
+/-- `a =ₘ b` compares `a` and `b` up to source-location metadata (`EqModuloMeta.beq`). -/
+infixl:50 " =ₘ " => EqModuloMeta.beq
+
 
 /-- Three-valued `and` for `Option Bool`: `some false` if either is `some false`,
   `some true` if both are `some true`, `none` (inconclusive) otherwise. -/
@@ -363,11 +400,15 @@ def evalCore (n' : Nat) (F : @Factory TBase) (env : Env TBase) (e : LExpr TBase.
   | .const _ _  => (e, .value true)
   | .op _ _ _     => (e, .nonvalue)
   | .bvar _ _     => (e, .nonvalue)
-  | .fvar _ x _  =>
+  | .fvar m x _  =>
     -- Note: closed .abs terms are values; we'll be here if .abs
     -- contains free variables.
     match env x with
-    | some v => (v, if isValue F v then .value true else .nonvalue)
+    | some v =>
+      -- The value takes the place of the reference, so it carries the
+      -- reference's root metadata, as in `substFvars`.
+      let v := replaceMetadata1 m v
+      (v, if isValue F v then .value true else .nonvalue)
     | none => (e, .nonvalue)
   | .abs _ _ _ _   =>
     let e' := LExpr.substFvarsFromEnv env e

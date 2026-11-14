@@ -109,10 +109,21 @@ private def examplePgmASTUntyped : Core.Program :=
   (Strata.TransM.run Inhabited.default
     (Strata.translateProgram examplePgm)).fst.stripMetaData
 
-/-- The syntax program after Core verification's type-inference phase. -/
+/-- The syntax program after Core verification's type-inference phase.
+
+    Expression source locations are normalized to `Core.valueLoc` here: these tests
+    compare the translated body against hand-built expected statements, and that
+    comparison is only meaningful up to source locations (translation records a real
+    range per expression). Normalizing keeps the structural `*_eq` checks exact while
+    leaving typing and verification — which ignore locations — unchanged. -/
+private def eraseProgLocs (p : Core.Program) : Core.Program :=
+  { p with decls := p.decls.map fun d => match d with
+      | .proc proc md => .proc (Core.Procedure.mapExprs Core.eraseLocs proc) md
+      | other => other }
+
 private def examplePgmAST : Core.Program :=
   match _root_.Core.typeCheck .quiet examplePgmASTUntyped with
-  | .ok program => program
+  | .ok program => eraseProgLocs program
   | .error _ => default
 
 /-- The inferred program's `pAssume` procedure. -/
@@ -142,12 +153,12 @@ private def pReqBody : Core.Statements :=
 /-- The expected inferred identifier and expression shapes used by the
 operational and denotational proofs. -/
 private abbrev xIdent : Core.Expression.Ident := ⟨"x", ()⟩
-private abbrev xExpr : Core.Expression.Expr := .fvar () xIdent (some Lambda.LMonoTy.bool)
+private abbrev xExpr : Core.Expression.Expr := .fvar Core.valueLoc xIdent (some Lambda.LMonoTy.bool)
 private abbrev ff0 : Core.Expression.Expr :=
-  Lambda.LExpr.const () (Lambda.LConst.boolConst false)
+  Lambda.LExpr.const Core.valueLoc (Lambda.LConst.boolConst false)
 private abbrev forallExpr : Core.Expression.Expr :=
-  .quant () .all "y" (some Lambda.LMonoTy.bool) (.bvar () 0)
-    (.eq () (.bvar () 0) (.bvar () 0))
+  .quant Core.valueLoc .all "y" (some Lambda.LMonoTy.bool) (.bvar Core.valueLoc 0)
+    (.eq Core.valueLoc (.bvar Core.valueLoc 0) (.bvar Core.valueLoc 0))
 
 /-! ### Metadata projections
 
@@ -321,7 +332,7 @@ private theorem forallExpr_eval (f : Core.Expression.Factory) (σ : SemanticStor
   refine Lambda.LExpr.denoteEval_eq_ofBool_iff (T := Core.CoreLParams) |>.mpr
     ⟨fun x hx => by simp [Lambda.LExpr.LExpr.getVars] at hx, forallExpr_ty, ?_⟩
   have hbody : Lambda.LExpr.HasTypeA [Lambda.LMonoTy.bool]
-      ((.eq () (.bvar () 0) (.bvar () 0) : Core.Expression.Expr)) .bool :=
+      ((.eq Core.valueLoc (.bvar Core.valueLoc 0) (.bvar Core.valueLoc 0) : Core.Expression.Expr)) .bool :=
     .eq (.bvar (by rfl)) (.bvar (by rfl))
   apply Lambda.denote_quant_all_true .nil hbody forallExpr_ty
   intro x

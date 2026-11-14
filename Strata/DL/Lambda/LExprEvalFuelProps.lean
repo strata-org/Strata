@@ -100,6 +100,12 @@ theorem getVars_replaceMetadata1 (r : Tbase.Metadata) (e : LExpr Tbase.mono) :
     LExpr.LExpr.getVars (LExpr.replaceMetadata1 r e) = LExpr.LExpr.getVars e := by
   cases e <;> rfl
 
+/-- `replaceMetadata1` does not change `isValue` (metadata-irrelevant). -/
+theorem isValue_replaceMetadata1 [Inhabited Tbase.IDMeta] (F : @Factory Tbase) (r : Tbase.Metadata)
+    (e : LExpr Tbase.mono) :
+    LExpr.isValue F (LExpr.replaceMetadata1 r e) = LExpr.isValue F e :=
+  isValue_eraseMetadata_eq F (LExpr.replaceMetadata1 r e) e (LExpr.eraseMetadata_replaceMetadata1 r e)
+
 omit [DecidableEq Tbase.IDMeta] in
 /-- Free variables introduced by `mkApp` come from the head or an argument. -/
 theorem getVars_mkApp_mem (m : Tbase.Metadata) (op : LExpr Tbase.mono)
@@ -138,7 +144,7 @@ private theorem getVars_substFvarsLifting_go_mem
       exact Or.inl ⟨by simp [LExpr.LExpr.getVars], hf⟩
     | some v =>
       rw [hf] at hy
-      rw [getVars_liftBVars] at hy
+      rw [getVars_replaceMetadata1, getVars_liftBVars] at hy
       exact Or.inr ⟨x, v, hf, hy⟩
   | abs _ _ _ _ ih =>
     simp only [LExpr.substFvarsLifting.go, LExpr.LExpr.getVars] at hy
@@ -357,7 +363,7 @@ theorem getVars_substFvarsFromEnv_origin {Tbase : LExprParams} (env : Env Tbase)
       simp only [LExpr.LExpr.getVars, List.mem_singleton] at hy
       subst hy
       exact Or.inl ⟨by simp [LExpr.LExpr.getVars], hv⟩
-    | some v => rw [hv] at hy; exact Or.inr ⟨x, v, by simp [LExpr.LExpr.getVars], hv, hy⟩
+    | some v => rw [hv, getVars_replaceMetadata1] at hy; exact Or.inr ⟨x, v, by simp [LExpr.LExpr.getVars], hv, hy⟩
   | abs _ _ _ _ ih => exact ih hy
   | quant _ _ _ _ _ _ iht ihb =>
     simp only [LExpr.substFvarsFromEnv, LExpr.LExpr.getVars, List.mem_append] at hy
@@ -604,9 +610,9 @@ private theorem evalCore_value_isValue
       · -- env x = some v
         subst hp
         rename_i v hx
-        simp only at hv
+        simp only [isValue_replaceMetadata1] at hv ⊢
         by_cases hcan : LExpr.isValue F v = true
-        · rw [ite_eq_left hcan]; exact hcan
+        · exact hcan
         · rw [ite_eq_right hcan] at hv; simp at hv
       · -- env x = none
         subst hp; simp at hv
@@ -916,7 +922,7 @@ private theorem evalCore_getVars_origin (n' : Nat) (F : @Factory Tbase) (env : E
       subst hy
       exact Or.inl ⟨by simp [LExpr.LExpr.getVars], hv⟩
     | some v =>
-      simp only [hv] at hy
+      simp only [hv, getVars_replaceMetadata1] at hy
       exact Or.inr ⟨x, v, by simp [LExpr.LExpr.getVars], hv, hy⟩
   | abs m n ty body =>
     simp only [LExpr.evalCore] at hy

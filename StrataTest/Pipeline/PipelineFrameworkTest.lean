@@ -45,6 +45,7 @@ rejects ill-composed ones, and explains the rejection. Each `#guard_msgs`
 block fails the build if its pinned message diverges. -/
 
 open Core
+private abbrev testLoc : ExprSourceLoc := ExprSourceLoc.synthesized "test"
 open Strata.Pipeline (applyPhase)
 
 /-! ### Fact sets are canonical by construction -/
@@ -235,7 +236,7 @@ private def obligationForm (body : List Statement) : Bool :=
   [.ite .nondet [] [.ite .nondet [Statement.set "x" trueExpr {}] [] {}] {}] == false
 
 private def redexExpr : Expression.Expr :=
-  .app () (.abs () "x" none (.bvar () 0)) trueExpr
+  .app testLoc (.abs testLoc "x" none (.bvar testLoc 0)) trueExpr
 
 /-- info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm, exitsCovered, armsHaveObligations -/
 #guard_msgs in
@@ -271,40 +272,43 @@ private def assumeProg (e : Expression.Expr) : Program :=
 
 /-- info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm, exitsCovered, armsHaveObligations -/
 #guard_msgs in
-#eval IO.println (factNames (ofProgramFacts (assumeProg (.ite () trueExpr redexExpr trueExpr))))
+#eval IO.println (factNames (ofProgramFacts (assumeProg (.ite testLoc trueExpr redexExpr
+    trueExpr))))
 
 /-- info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm, exitsCovered, armsHaveObligations -/
 #guard_msgs in
 #eval IO.println
-  (factNames (ofProgramFacts (assumeProg (.app () (Transform.createFvar "f") redexExpr))))
+  (factNames (ofProgramFacts (assumeProg (.app testLoc (Transform.createFvar "f") redexExpr))))
 
 /-- info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm, exitsCovered, armsHaveObligations -/
 #guard_msgs in
 #eval IO.println
-  (factNames (ofProgramFacts (assumeProg (.app () (.app () (Transform.createFvar "f") redexExpr) trueExpr))))
+  (factNames (ofProgramFacts (assumeProg (.app testLoc (.app testLoc (Transform.createFvar "f")
+      redexExpr) trueExpr))))
 
 /-- info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm, exitsCovered, armsHaveObligations -/
 #guard_msgs in
 #eval IO.println
-  (factNames (ofProgramFacts (assumeProg (.quant () .all "x" none trueExpr redexExpr))))
+  (factNames (ofProgramFacts (assumeProg (.quant testLoc .all "x" none trueExpr redexExpr))))
 
 /-- info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm, exitsCovered, armsHaveObligations -/
 #guard_msgs in
 #eval IO.println
-  (factNames (ofProgramFacts (assumeProg (.quant () .exist "x" none redexExpr trueExpr))))
+  (factNames (ofProgramFacts (assumeProg (.quant testLoc .exist "x" none redexExpr trueExpr))))
 
 /-- info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm, exitsCovered, armsHaveObligations -/
 #guard_msgs in
-#eval IO.println (factNames (ofProgramFacts (assumeProg (.abs () "x" none redexExpr))))
+#eval IO.println (factNames (ofProgramFacts (assumeProg (.abs testLoc "x" none redexExpr))))
 
 /-- info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, staticSingleAssignment, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm, exitsCovered, armsHaveObligations -/
 #guard_msgs in
-#eval IO.println (factNames (ofProgramFacts (assumeProg (.eq () trueExpr redexExpr))))
+#eval IO.println (factNames (ofProgramFacts (assumeProg (.eq testLoc trueExpr redexExpr))))
 
 /-- info: wellFormedCalls, noCFGBodies, noCalls, noLoops, noLoopInvariants, noLoopMeasures, uniqueInits, loopBodyNoInits, staticSingleAssignment, noBetaRedexes, noPrecondsFromFuncs, noNondetGuards, hasObligationForm, noProcedureContracts, noPolymorphicProcedures, noPolymorphicFunctions, noInits, treeForm, exitsCovered, armsHaveObligations -/
 #guard_msgs in
 #eval IO.println
-  (factNames (ofProgramFacts (assumeProg (.abs () "x" none (.app () (Transform.createFvar "f") trueExpr)))))
+  (factNames (ofProgramFacts (assumeProg (.abs testLoc "x" none (.app testLoc (Transform.createFvar
+      "f") trueExpr)))))
 example (f : ProgramFact) (c : Program → Bool) (hc : f.check? = some c) (p : Program)
     (h : c p = true) : f.holds p := (ProgramFact.holds_iff_check hc p).mpr h
 
@@ -1354,8 +1358,8 @@ private def paramNextToConst (x c : String) : Program :=
                                   inputs := [(x, Lambda.LMonoTy.tcons "int" [])], outputs := [] },
                       spec := { preconditions := [], postconditions := [] },
                       body := .structured [Statement.assert "nz"
-                        (.eq () (.fvar () x (some (Lambda.LMonoTy.tcons "int" [])))
-                          (.intConst () 0)) {}] } default] }
+                        (.eq testLoc (.fvar testLoc x (some (Lambda.LMonoTy.tcons "int" [])))
+                          (.intConst testLoc 0)) {}] } default] }
 
 /-- info: [r@1 == 0] -/
 #guard_msgs in
@@ -1373,10 +1377,11 @@ body, the parameter becomes `r@2`. -/
                       spec := { preconditions := [], postconditions := [] },
                       body := .structured [
                         Statement.init "r@1" (.forAll [] (Lambda.LMonoTy.tcons "int" []))
-                          (.det (.intConst () 0)) {},
+                          (.det (.intConst testLoc 0)) {},
                         Statement.assert "eq"
-                          (.eq () (.fvar () "r" (some (Lambda.LMonoTy.tcons "int" [])))
-                            (.fvar () "r@1" (some (Lambda.LMonoTy.tcons "int" [])))) {}] } default] })
+                          (.eq testLoc (.fvar testLoc "r" (some (Lambda.LMonoTy.tcons "int" [])))
+                            (.fvar testLoc "r@1" (some (Lambda.LMonoTy.tcons "int"
+                                [])))) {}] } default] })
 
 /-! A parameter named like a nullary constructor is renamed too: `Nil` is a constant of
 the datatype's factory. -/
@@ -1391,8 +1396,8 @@ the datatype's factory. -/
                                   inputs := [("Nil", Lambda.LMonoTy.tcons "int" [])], outputs := [] },
                       spec := { preconditions := [], postconditions := [] },
                       body := .structured [Statement.assert "nz"
-                        (.eq () (.fvar () "Nil" (some (Lambda.LMonoTy.tcons "int" [])))
-                          (.intConst () 0)) {}] } default] })
+                        (.eq testLoc (.fvar testLoc "Nil" (some (Lambda.LMonoTy.tcons "int" [])))
+                          (.intConst testLoc 0)) {}] } default] })
 
 /-! A parameter with a name of its own keeps it. -/
 

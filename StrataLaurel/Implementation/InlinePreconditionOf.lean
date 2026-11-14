@@ -54,7 +54,7 @@ private def sameProcedure (a b : Identifier) : Bool :=
 private partial def inlineNode (procs : List Procedure) (chain : List Identifier) (e : StmtExprMd) :
     StateM (Nat × List Message) StmtExprMd := do
   match e.val with
-  | .ContractOf .Precondition ⟨.StaticCall callee args _, _⟩ =>
+  | .ContractOf .Precondition ⟨.Call none callee args _, _⟩ =>
     match calleeOf procs callee with
     | none =>
       report e.source s!"preconditionOf names '{callee.text}', which has no procedure"
@@ -85,7 +85,7 @@ def inlinePreconditionOfPass : LaurelPass := .onUnordered {
   name := "InlinePreconditionOf"
   needsResolves := true
   documentation := "Replaces each `contractOf(precondition, f(args))` with `f`'s checked preconditions, conjoined, its parameters substituted by `args`. Runs after LiftInstanceProcedures, so every call names a static procedure."
-  creates := [NodeKind.StmtExpr.StaticCall, NodeKind.StmtExpr.LiteralBool] }
+  creates := [NodeKind.StmtExpr.Call, NodeKind.StmtExpr.LiteralBool] }
   fun _ p _ => let (p', diags) := inlinePreconditionOf p; (p', diags, {})
 
 end

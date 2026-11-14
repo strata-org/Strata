@@ -16,6 +16,7 @@ meta import Strata.Languages.Core.Verifier
 meta section
 
 open Core
+private abbrev testLoc : ExprSourceLoc := ExprSourceLoc.synthesized "test"
 open Core.Transform
 open Strata
 
@@ -350,14 +351,14 @@ private def unknownResult : Result := .unknown (some [])
     was over-approximated, so a sat model must be demoted to unknown. -/
 private def insertObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_insert", property := .assert,
-    assumptions := [[.assumption "insertLoopInvAssume_invariant_loop_0_0" (.true ())]],
-    obligation := .true (), metadata := {} }
+    assumptions := [[.assumption "insertLoopInvAssume_invariant_loop_0_0" (.true testLoc)]],
+    obligation := .true testLoc, metadata := {} }
 
 /-- Obligation with no abstraction labels — models are sound. -/
 private def cleanObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_clean", property := .assert,
-    assumptions := [[.assumption "precond_x_positive" (.true ())]],
-    obligation := .true (), metadata := {} }
+    assumptions := [[.assumption "precond_x_positive" (.true testLoc)]],
+    obligation := .true testLoc, metadata := {} }
 
 -- rejects sat when obligation has an inserted invariant assumption
 #guard (satResult.adjustForPhases [insertLoopInvariantAssertsPipelinePhase.phase] insertObligation).1 == unknownResult

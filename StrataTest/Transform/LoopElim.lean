@@ -16,6 +16,7 @@ meta import Strata.Languages.Core.Verifier
 meta section
 
 open Core
+private abbrev testLoc : ExprSourceLoc := ExprSourceLoc.synthesized "test"
 open Core.Transform
 open Strata
 
@@ -206,14 +207,15 @@ private def unknownResult : Result := .unknown (some [])
 /-- Obligation with loop-elimination labels in path conditions. -/
 private def loopElimObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_loopElim", property := .assert,
-    assumptions := [[.assumption "$__loopElimAssume_invariant_loop_0_0" (.true ()), .assumption "$__loopElimAssume_guard_loop_0" (.true ())]],
-    obligation := .true (), metadata := {} }
+    assumptions := [[.assumption "$__loopElimAssume_invariant_loop_0_0" (.true testLoc), .assumption
+        "$__loopElimAssume_guard_loop_0" (.true testLoc)]],
+    obligation := .true testLoc, metadata := {} }
 
 /-- Obligation with no abstraction labels — models are sound. -/
 private def cleanObligation : Imperative.ProofObligation Core.Expression :=
   { label := "test_clean", property := .assert,
-    assumptions := [[.assumption "precond_x_positive" (.true ())]],
-    obligation := .true (), metadata := {} }
+    assumptions := [[.assumption "precond_x_positive" (.true testLoc)]],
+    obligation := .true testLoc, metadata := {} }
 
 -- loopElimPipelinePhase: rejects sat when obligation has loop-elim labels
 #guard (satResult.adjustForPhases [loopElimPipelinePhase.phase] loopElimObligation).1 == unknownResult

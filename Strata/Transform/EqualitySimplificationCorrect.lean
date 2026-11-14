@@ -152,15 +152,15 @@ end
 /-- The equation `lhs == rhs` evaluates to `true` in `σ`. -/
 abbrev EqHolds (F : Expression.Factory) (σ : SemanticStore Expression)
     (lhs rhs : Expression.Expr) : Prop :=
-  Expression.eval F σ (.eq () lhs rhs) = some (HasBool.ttVal F)
+  Expression.eval F σ (.eq Core.coreLoc lhs rhs) = some (HasBool.ttVal F)
 
 /-- **The facts hold in a store**: `σ` is well formed, and every equation the facts record
     (a variable's value, a definition, a closed term's value) evaluates to `true` in it. -/
 @[expose] def Facts.Holds (F : Expression.Factory) (σ : SemanticStore Expression) (fs : Facts) :
     Prop :=
   WellFormedStore σ F ∧
-  (∀ x v, fs.vars.get? x = some (some v) → ∀ ty, EqHolds F σ (.fvar () x ty) v) ∧
-  (∀ x v, fs.defs.get? x = some v → ∀ ty, EqHolds F σ (.fvar () x ty) v) ∧
+  (∀ x v, fs.vars.get? x = some (some v) → ∀ ty, EqHolds F σ (.fvar Core.coreLoc x ty) v) ∧
+  (∀ x v, fs.defs.get? x = some v → ∀ ty, EqHolds F σ (.fvar Core.coreLoc x ty) v) ∧
   (∀ h b, fs.terms.get? h = some b → ∀ t v, (t, some v) ∈ b → EqHolds F σ t v)
 
 /-- An equation keeps holding in a store that agrees on its free variables. -/
@@ -190,7 +190,7 @@ private theorem eqHolds_keep {F : Expression.Factory}
     (hk : (!(Std.HashSet.ofList xs).contains x && !(Option.map (fun e =>
       (HasFvars.getFvars (P := Expression) e).any fun x => (Std.HashSet.ofList xs).contains x)
       (some v)).getD false) = true)
-    (h : EqHolds F σ (.fvar () x ty) v) : EqHolds F σ' (.fvar () x ty) v := by
+    (h : EqHolds F σ (.fvar Core.coreLoc x ty) v) : EqHolds F σ' (.fvar Core.coreLoc x ty) v := by
   simp only [Bool.and_eq_true, Bool.not_eq_true', Option.map_some, Option.getD_some] at hk
   obtain ⟨hx, hm⟩ := hk
   refine eqHolds_congr hσ hσ' (fun y hy => hag y ?_) h
@@ -553,7 +553,7 @@ end
     value. -/
 @[expose] def CacheOk (Fs : Expression.Factory) (σ : SemanticStore Expression)
     (c : DefCache) : Prop :=
-  ∀ x d v, c.get? (x, d) = some (some v) → ∀ ty, EqHolds Fs σ (.fvar () x ty) v
+  ∀ x d v, c.get? (x, d) = some (some v) → ∀ ty, EqHolds Fs σ (.fvar Core.coreLoc x ty) v
 
 /-- Every replacement the cache records has operators consistent with `F`. -/
 @[expose] def CacheOps (F : Lambda.Factory CoreLParams) (c : DefCache) : Prop :=
@@ -638,7 +638,7 @@ private theorem eqHolds_init {Fs : Expression.Factory} {σ σ' : SemanticStore E
     (he : Expression.eval Fs σ e = some v)
     (hx0 : σ x = none) (hx : σ' x = some v) (hy : ∀ y, x ≠ y → σ' y = σ y)
     (hσ' : WellFormedStore σ' Fs) (ty : Option Lambda.LMonoTy) :
-    EqHolds Fs σ' (.fvar () x ty) e := by
+    EqHolds Fs σ' (.fvar Core.coreLoc x ty) e := by
   have hext : ∀ y w, σ y = some w → σ' y = some w := by
     intro y w hw
     by_cases h : x = y
@@ -646,7 +646,7 @@ private theorem eqHolds_init {Fs : Expression.Factory} {σ σ' : SemanticStore E
     · rw [hy y h]; exact hw
   have he' : Expression.eval Fs σ' e = some v :=
     coreEvaluator_WellFormedSemanticEvalMono Fs e v σ σ' hext he
-  have hfx : Expression.eval Fs σ' (.fvar () x ty) = some v := by
+  have hfx : Expression.eval Fs σ' (.fvar Core.coreLoc x ty) = some v := by
     rw [coreEvaluator_WellFormedSemanticEvalVar Fs _ x σ' hσ' rfl]; exact hx
   exact Lambda.LExpr.denoteEval_eq_true hfx he'
 

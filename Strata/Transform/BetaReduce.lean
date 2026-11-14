@@ -28,7 +28,8 @@ encoding.
 
 The phase is currently scheduled at the end of `corePipelinePhases`; in
 principle it could run at any point after type checking. Reduction uses the
-erasing `LExpr.betaReduceRedexes`. The termination checker — the one consumer
+erasing `LExpr.betaReduceRedexesWith`, with the evaluator's location merging
+(`LExpr.mergeMetadataForSubst`). The termination checker — the one consumer
 that must not erase calls hidden in dead arguments — does not rely on this
 phase: it runs on the unreduced program with its own non-erasing
 `betaReduceRedexesPreservingArgs`.
@@ -44,32 +45,37 @@ namespace Core.BetaReduce
 
 open Lambda Imperative
 
+/-- Beta-reduce the redexes of `e`. See the module header for how locations are
+merged during reduction. -/
+private def reduceExpr (e : Expression.Expr) : Expression.Expr :=
+  LExpr.betaReduceRedexesWith LExpr.mergeMetadataForSubst e
+
 /-- Beta-reduce every expression of a top-level function declaration: its body,
     axioms, preconditions, and measure. -/
 private def reduceFunction (f : Function) : Function :=
   { f with
-    body := f.body.map LExpr.betaReduceRedexes
-    axioms := f.axioms.map LExpr.betaReduceRedexes
-    preconditions := f.preconditions.map fun pc => { pc with expr := LExpr.betaReduceRedexes pc.expr }
-    measure := f.measure.map LExpr.betaReduceRedexes }
+    body := f.body.map reduceExpr
+    axioms := f.axioms.map reduceExpr
+    preconditions := f.preconditions.map fun pc => { pc with expr := reduceExpr pc.expr }
+    measure := f.measure.map reduceExpr }
 
 mutual
 /-- Beta-reduce all expressions in a statement, recursing into the statements
     nested in blocks, conditional branches, and loop bodies. -/
 private def reduceStmt (s : Statement) : Statement :=
   match s with
-  | .cmd c => .cmd (Command.mapExpr LExpr.betaReduceRedexes c)
+  | .cmd c => .cmd (Command.mapExpr reduceExpr c)
   | .block l ss md => .block l (reduceBlock ss) md
   | .ite (.det c) tss ess md =>
-    .ite (.det (LExpr.betaReduceRedexes c)) (reduceBlock tss) (reduceBlock ess) md
+    .ite (.det (reduceExpr c)) (reduceBlock tss) (reduceBlock ess) md
   | .ite .nondet tss ess md =>
     .ite .nondet (reduceBlock tss) (reduceBlock ess) md
   | .loop (.det g) measure inv body md =>
-    .loop (.det (LExpr.betaReduceRedexes g)) (measure.map LExpr.betaReduceRedexes)
-      (inv.map fun (l, e) => (l, LExpr.betaReduceRedexes e)) (reduceBlock body) md
+    .loop (.det (reduceExpr g)) (measure.map reduceExpr)
+      (inv.map fun (l, e) => (l, reduceExpr e)) (reduceBlock body) md
   | .loop .nondet measure inv body md =>
-    .loop .nondet (measure.map LExpr.betaReduceRedexes)
-      (inv.map fun (l, e) => (l, LExpr.betaReduceRedexes e)) (reduceBlock body) md
+    .loop .nondet (measure.map reduceExpr)
+      (inv.map fun (l, e) => (l, reduceExpr e)) (reduceBlock body) md
   | .exit l md => .exit l md
   | .typeDecl tc md => .typeDecl tc md
   termination_by Imperative.Stmt.sizeOf s
@@ -86,10 +92,10 @@ end
     and its transfer guard. -/
 private def reduceDetBlock (blk : Imperative.DetBlock String Command Expression) :
     Imperative.DetBlock String Command Expression :=
-  { cmds := blk.cmds.map (Command.mapExpr LExpr.betaReduceRedexes)
+  { cmds := blk.cmds.map (Command.mapExpr reduceExpr)
     transfer :=
       match blk.transfer with
-      | .condGoto p lt lf md => .condGoto (LExpr.betaReduceRedexes p) lt lf md
+      | .condGoto p lt lf md => .condGoto (reduceExpr p) lt lf md
       | .finish md => .finish md }
 
 /-- Beta-reduce all lambda redexes in every expression of the program. -/
@@ -99,18 +105,18 @@ def betaReduceProgram (p : Program) : Program :=
       | .proc proc md =>
         let spec := { proc.spec with
           preconditions := proc.spec.preconditions.map
-            fun (n, c) => (n, { c with expr := LExpr.betaReduceRedexes c.expr }),
+            fun (n, c) => (n, { c with expr := reduceExpr c.expr }),
           postconditions := proc.spec.postconditions.map
-            fun (n, c) => (n, { c with expr := LExpr.betaReduceRedexes c.expr }) }
+            fun (n, c) => (n, { c with expr := reduceExpr c.expr }) }
         let body := match proc.body with
           | .structured ss => .structured (reduceBlock ss)
           | .cfg g => .cfg { g with blocks := g.blocks.map fun (l, b) => (l, reduceDetBlock b) }
         .proc { proc with spec := spec, body := body } md
       | .func f md => .func (reduceFunction f) md
       | .recFuncBlock fs md => .recFuncBlock (fs.map reduceFunction) md
-      | .ax a md => .ax { a with e := LExpr.betaReduceRedexes a.e } md
-      | .lemma l md => .lemma { l with e := LExpr.betaReduceRedexes l.e } md
-      | .distinct n es md => .distinct n (es.map LExpr.betaReduceRedexes) md
+      | .ax a md => .ax { a with e := reduceExpr a.e } md
+      | .lemma l md => .lemma { l with e := reduceExpr l.e } md
+      | .distinct n es md => .distinct n (es.map reduceExpr) md
       | d => d }
 
 end Core.BetaReduce
@@ -121,7 +127,7 @@ end Core.BetaReduce
     value of any expression. -/
 def Core.betaReducePipelinePhase : Core.PipelinePhase :=
   -- Contracting every redex is the phase's whole purpose, hence
-  -- `noBetaRedexes`. `betaReduceRedexes` is fuel-bounded, so a term no budget
+  -- `noBetaRedexes`. `betaReduceRedexesWith` is fuel-bounded, so a term no budget
   -- normalizes, such as an ill-typed self-application, comes back with a
   -- redex intact: that is the one way the claim can fail.
   Core.modelPreservingPipelinePhase "betaReduce"

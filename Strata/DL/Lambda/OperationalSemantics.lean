@@ -61,7 +61,7 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
 | expand_fvar:
   ∀ (x:Tbase.Identifier) (e:LExpr Tbase.mono),
     rf x = .some e →
-    Step F rf (.fvar m x ty) e
+    Step F rf (.fvar m x ty) (LExpr.replaceMetadata1 m e)
 
 /-- Beta reduction. The argument `e2` need not be a value;
 this relaxation (compared to strict call-by-value) is necessary because `LExpr.eval`

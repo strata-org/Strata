@@ -254,19 +254,29 @@ def bvarUsed {T : LExprParamsT} (k : Nat) (e : LExpr T) : Bool :=
   | .eq _ a b => bvarUsed k a || bvarUsed k b
   | _ => false
 
+/-- The metadata merge used by the erasing/argument-preserving β-reducers, which
+keep the argument's metadata. -/
+@[expose] def keepArgMetadata {T : LExprParamsT} (_mAbs mArg _mVar : T.base.Metadata) :
+    T.base.Metadata :=
+  mArg
+
 /-- Worker for `betaReduceRedexesFuel`: reduces `e`, answering `none` when
-nothing was reduced. -/
+nothing was reduced. When a redex `(λ. body) arg` is contracted, each
+substituted copy of `arg` gets the metadata `merge mAbs arg.metadata mVar`,
+where `mAbs` is the abstraction's metadata and `mVar` the replaced bound
+variable's. -/
 def betaReduceRedexesFuel? {T : LExprParamsT}
+    (merge : T.base.Metadata → T.base.Metadata → T.base.Metadata → T.base.Metadata)
     (keepConstantRedexes : Bool) (fuel : Nat) (e : LExpr T) : Option (LExpr T) :=
   match fuel with
   | 0 => none
   | fuel + 1 =>
     match e with
     | .app m fn arg =>
-      let ra := betaReduceRedexesFuel? keepConstantRedexes fuel arg
-      let rf := betaReduceRedexesFuel? keepConstantRedexes fuel fn
+      let ra := betaReduceRedexesFuel? merge keepConstantRedexes fuel arg
+      let rf := betaReduceRedexesFuel? merge keepConstantRedexes fuel fn
       match rf.getD fn with
-      | .abs _ _ _ body =>
+      | .abs mAbs _ _ body =>
         if keepConstantRedexes && !bvarUsed 0 body then
           -- Constant lambda: reducing would erase `arg`. Keep the redex so `arg`
           -- (and any recursive call inside it) remains syntactically present.
@@ -276,26 +286,28 @@ def betaReduceRedexesFuel? {T : LExprParamsT}
           else some (.app m (rf.getD fn) (ra.getD arg))
         else
           -- A redex is contracted here, so this subterm does change.
-          let contracted := betaReduce (ra.getD arg) body
-          some ((betaReduceRedexesFuel? keepConstantRedexes fuel contracted).getD contracted)
+          let arg' := ra.getD arg
+          let contracted := betaReduceWith
+            (fun mVar => replaceMetadata1 (merge mAbs arg'.metadata mVar) arg') body
+          some ((betaReduceRedexesFuel? merge keepConstantRedexes fuel contracted).getD contracted)
       | fn' =>
         if ra.isNone && rf.isNone then none else some (.app m fn' (ra.getD arg))
     | .abs m n t body =>
-      (betaReduceRedexesFuel? keepConstantRedexes fuel body).map (.abs m n t ·)
+      (betaReduceRedexesFuel? merge keepConstantRedexes fuel body).map (.abs m n t ·)
     | .ite m c t f =>
-      let rc := betaReduceRedexesFuel? keepConstantRedexes fuel c
-      let rt := betaReduceRedexesFuel? keepConstantRedexes fuel t
-      let rf := betaReduceRedexesFuel? keepConstantRedexes fuel f
+      let rc := betaReduceRedexesFuel? merge keepConstantRedexes fuel c
+      let rt := betaReduceRedexesFuel? merge keepConstantRedexes fuel t
+      let rf := betaReduceRedexesFuel? merge keepConstantRedexes fuel f
       if rc.isNone && rt.isNone && rf.isNone then none
       else some (.ite m (rc.getD c) (rt.getD t) (rf.getD f))
     | .eq m a b =>
-      let ra := betaReduceRedexesFuel? keepConstantRedexes fuel a
-      let rb := betaReduceRedexesFuel? keepConstantRedexes fuel b
+      let ra := betaReduceRedexesFuel? merge keepConstantRedexes fuel a
+      let rb := betaReduceRedexesFuel? merge keepConstantRedexes fuel b
       if ra.isNone && rb.isNone then none
       else some (.eq m (ra.getD a) (rb.getD b))
     | .quant m qk n t tr body =>
-      let rtr := betaReduceRedexesFuel? keepConstantRedexes fuel tr
-      let rb := betaReduceRedexesFuel? keepConstantRedexes fuel body
+      let rtr := betaReduceRedexesFuel? merge keepConstantRedexes fuel tr
+      let rb := betaReduceRedexesFuel? merge keepConstantRedexes fuel body
       if rtr.isNone && rb.isNone then none
       else some (.quant m qk n t (rtr.getD tr) (rb.getD body))
     | _ => none
@@ -320,8 +332,9 @@ When `keepConstantRedexes` is `true`, a redex `(λ _. e0) arg` whose body does
 otherwise the redex is β-reduced and `arg` is erased (`betaReduce` drops the
 argument of a constant lambda). -/
 def betaReduceRedexesFuel {T : LExprParamsT}
+    (merge : T.base.Metadata → T.base.Metadata → T.base.Metadata → T.base.Metadata)
     (keepConstantRedexes : Bool) (fuel : Nat) (e : LExpr T) : LExpr T :=
-  (betaReduceRedexesFuel? keepConstantRedexes fuel e).getD e
+  (betaReduceRedexesFuel? merge keepConstantRedexes fuel e).getD e
 
 /-- Count occurrences of the bound variable introduced `d` binders out (i.e. the
 `.bvar` leaves with index `d` at this depth). Helper for `maxBvarMultiplicity`. -/
@@ -396,7 +409,16 @@ analysis that must see every subterm, such as extracting the calls a term
 makes — use `betaReduceRedexesPreservingArgs` there.
 -/
 def betaReduceRedexes {T : LExprParamsT} (e : LExpr T) : LExpr T :=
-  betaReduceRedexesFuel false (sizeOf e * (maxBvarMultiplicity e + 1)) e
+  betaReduceRedexesFuel keepArgMetadata false (sizeOf e * (maxBvarMultiplicity e + 1)) e
+
+/-- Like `betaReduceRedexes`, but each substituted copy of a redex argument gets
+the metadata `merge mAbs mArg mVar` (abstraction, argument, replaced bound
+variable). Passing the evaluator's `LExpr.mergeMetadataForSubst` gives beta
+reduction the same provenance tracking as substitution during evaluation. -/
+def betaReduceRedexesWith {T : LExprParamsT}
+    (merge : T.base.Metadata → T.base.Metadata → T.base.Metadata → T.base.Metadata)
+    (e : LExpr T) : LExpr T :=
+  betaReduceRedexesFuel merge false (sizeOf e * (maxBvarMultiplicity e + 1)) e
 
 /--
 Like `betaReduceRedexes`, but never erases a redex's argument: a constant-lambda
@@ -411,7 +433,7 @@ the analysis sees it. Alias redexes (bound variable used, e.g.
 `getOps_subset_betaReduceRedexesPreservingArgs`.
 -/
 def betaReduceRedexesPreservingArgs {T : LExprParamsT} (e : LExpr T) : LExpr T :=
-  betaReduceRedexesFuel true (sizeOf e * (maxBvarMultiplicity e + 1)) e
+  betaReduceRedexesFuel keepArgMetadata true (sizeOf e * (maxBvarMultiplicity e + 1)) e
 
 /--
 This function turns some bound variables to free variables to investigate the
@@ -485,7 +507,7 @@ def substFvar [BEq T.IDMeta] (e : LExpr ⟨T, GenericTy⟩) (fr : T.Identifier) 
   : (LExpr ⟨T, GenericTy⟩) :=
   match e with
   | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
-  | .fvar _ name _ => if name == fr then to else e
+  | .fvar m name _ => if name == fr then replaceMetadata1 m to else e
   | .abs m name ty e' => .abs m name ty (substFvar e' fr to)
   | .quant m qk name ty tr' e' => .quant m qk name ty (substFvar tr' fr to) (substFvar e' fr to)
   | .app m fn e' => .app m (substFvar fn fr to) (substFvar e' fr to)
@@ -530,7 +552,7 @@ where
     : LExpr ⟨T, GenericTy⟩ :=
     match e with
     | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
-    | .fvar _ name _ => match sm.find? name with | some to => to | none => e
+    | .fvar m name _ => match sm.find? name with | some to => replaceMetadata1 m to | none => e
     | .abs m name ty e' => .abs m name ty (substFvarsAux e' sm)
     | .quant m qk name ty tr' e' => .quant m qk name ty (substFvarsAux tr' sm) (substFvarsAux e' sm)
     | .app m fn e' => .app m (substFvarsAux fn sm) (substFvarsAux e' sm)
@@ -547,7 +569,7 @@ list `sm`. Like `substFvars`, it does not lift de Bruijn indices under binders.
     (look : T.Identifier → Option (LExpr ⟨T, GenericTy⟩)) : LExpr ⟨T, GenericTy⟩ :=
   match e with
   | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
-  | .fvar _ name _ => match look name with | some to => to | none => e
+  | .fvar m name _ => match look name with | some to => replaceMetadata1 m to | none => e
   | .abs m name ty e' => .abs m name ty (substFvarsBy e' look)
   | .quant m qk name ty tr' e' => .quant m qk name ty (substFvarsBy tr' look) (substFvarsBy e' look)
   | .app m fn e' => .app m (substFvarsBy fn look) (substFvarsBy e' look)
@@ -597,7 +619,7 @@ where
   go (e : LExpr ⟨T, GenericTy⟩) (depth : Nat) : LExpr ⟨T, GenericTy⟩ :=
     match e with
     | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
-    | .fvar _ name _ => match sm.find? name with | some to => liftBVars depth to | none => e
+    | .fvar m name _ => match sm.find? name with | some to => replaceMetadata1 m (liftBVars depth to) | none => e
     | .abs m name ty e' => .abs m name ty (go e' (depth + 1))
     | .quant m qk name ty tr' e' => .quant m qk name ty (go tr' (depth + 1)) (go e' (depth + 1))
     | .app m fn e' => .app m (go fn depth) (go e' depth)

@@ -27,12 +27,12 @@ namespace InterpreterScopeCostTest
 open Core Lambda Imperative
 
 private def id (name : String) : CoreIdent := ⟨name, ()⟩
-private def int (n : Int) : Expression.Expr := .intConst () n
+private def int (n : Int) : Expression.Expr := .intConst default n
 private def md : MetaData Expression := #[]
-private def v (n : String) : Expression.Expr := .fvar () (id n) (some .int)
+private def v (n : String) : Expression.Expr := .fvar default (id n) (some .int)
 private def lt (x : String) (e : Expression.Expr) : Expression.Expr :=
-  .app () (.app () intLtOp (v x)) e
-private def plus1 (x : String) : Expression.Expr := .app () (.app () intAddOp (v x)) (int 1)
+  .app default (.app default intLtOp (v x)) e
+private def plus1 (x : String) : Expression.Expr := .app default (.app default intAddOp (v x)) (int 1)
 private def initS (x : String) (e : Expression.Expr) : Statement :=
   .cmd (.cmd (.init (id x) (.forAll [] .int) (.det e) md))
 private def setS (x : String) (e : Expression.Expr) : Statement :=
@@ -57,7 +57,7 @@ private def piEnv : String → Option Procedure :=
 
 /-- Target assert `x == k`. -/
 private def tgt (x : String) (k : Nat) : Statement :=
-  .cmd (.cmd (.assert "tgt" (.eq () (v x) (int k)) md))
+  .cmd (.cmd (.assert "tgt" (.eq default (v x) (int k)) md))
 
 /-- The target assertion id matching `tgt x k`. -/
 private def tgtId (_x : String) (_k : Nat) : AssertId Expression :=

@@ -50,15 +50,15 @@ def connectiveValue? (e : LExpr CoreLParams.mono) :
   | .app _ (.app _ (.op _ o _) x) y =>
     match boolOpOf? o.name, x.denoteBool, y.denoteBool with
     | some .And, some false, _ | some .And, _, some false =>
-      some (.boolConst () false)
+      some (.boolConst coreLoc false)
     | some .And, some true, _ => some y
     | some .And, _, some true => some x
     | some .Or, some true, _ | some .Or, _, some true =>
-      some (.boolConst () true)
+      some (.boolConst coreLoc true)
     | some .Or, some false, _ => some y
     | some .Or, _, some false => some x
     | some .Implies, some false, _ | some .Implies, _, some true =>
-      some (.boolConst () true)
+      some (.boolConst coreLoc true)
     | some .Implies, some true, _ => some y
     | _, _, _ => none
   | _ => none

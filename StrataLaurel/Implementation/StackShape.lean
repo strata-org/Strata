@@ -31,7 +31,7 @@ def hasStackPush (e : StmtExprMd) : Bool :=
 
 def stackPermutation (targets : List VariableMd) (value : StmtExprMd) : Option (List Nat) :=
   match value.val with
-  | .StaticCall callee args _ =>
+  | .Call none callee args _ =>
     match callee.text.splitOn "_" with
     | "$permute" :: indices =>
       let order := indices.filterMap String.toNat?

@@ -456,7 +456,7 @@ private def holePrelude (procName : Identifier) (inputs : List Parameter)
   let src := body.source
   let args : List StmtExprMd := inputs.map fun p => ⟨.Var (.Local p.name), src⟩
   decls.foldr (init := body) fun (uid, name, ty) acc =>
-    let call : StmtExprMd := ⟨.StaticCall (declHoleName procName uid) args [], src⟩
+    let call : StmtExprMd := ⟨.Call none (declHoleName procName uid) args [], src⟩
     let decl : StmtExprMd :=
       ⟨.Assign [⟨.Declare ⟨name, some ty⟩, src⟩] call, src⟩
     ⟨.Block [decl, acc] none [] none, src⟩
@@ -470,7 +470,7 @@ private def holePrelude (procName : Identifier) (inputs : List Parameter)
 private def isPureValue (s : StmtExprMd) : Bool :=
   match s.val with
   | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-  | .Var (.Local _) | .Var (.Field ..) | .StaticCall .. | .ReferenceEquals .. | .AsType ..
+  | .Var (.Local _) | .Var (.Field ..) | .Call none .. | .ReferenceEquals .. | .AsType ..
   | .IsType .. | .Quantifier .. | .PureFieldUpdate .. | .Old .. => true
   | _ => false
 
@@ -509,7 +509,7 @@ private def unsupportedStmt (s : StmtExprMd) : String × MessageKind :=
   | .Assume _ =>
     ("assume should have been stripped from the function copy by the transparency pass",
      .strataBug)
-  | .StaticCall .. | .InstanceCall .. =>
+  | .Call .. =>
     ("call should have been rewritten to functional form by the transparency pass", .strataBug)
   | _ =>
     (s!"{s.val.constructorName} should have been eliminated before the functional rewrite",
@@ -686,7 +686,7 @@ private def hoistExpr (model : SemanticModel) (e : StmtExprMd)
       hc.bindM fun c' => return .branch [] c' src ht he
     else
       return hc.map fun c' => ⟨.IfThenElse c' t (some el), src⟩
-  | ⟨.StaticCall callee args tyArgs, src⟩ => do
+  | ⟨.Call none callee args tyArgs, src⟩ => do
     let lit (b : Bool) : Hoisted StmtExprMd := .done [] ⟨.LiteralBool b, src⟩
     let hs ← args.attach.mapM fun ⟨a, _⟩ => hoistExpr model a
     match Operation.ofProcName? callee.text, hs with
@@ -694,12 +694,12 @@ private def hoistExpr (model : SemanticModel) (e : StmtExprMd)
     | some .Implies, [ha, hb] => ha.bindM fun a' => return .branch [] a' src hb (lit true)
     | some .OrElse, [ha, hb] => ha.bindM fun a' => return .branch [] a' src (lit true) hb
     | _, _ =>
-      return (← hoistSequence model hs).map fun args' => ⟨.StaticCall callee args' tyArgs, src⟩
-  | ⟨.InstanceCall target callee args tys, src⟩ => do
+      return (← hoistSequence model hs).map fun args' => ⟨.Call none callee args' tyArgs, src⟩
+  | ⟨.Call (some target) callee args tys, src⟩ => do
     let ht ← hoistExpr model target
     let hs ← args.attach.mapM fun ⟨a, _⟩ => hoistExpr model a
     return (← hoistSequence model (ht :: hs)).map fun
-      | t' :: args' => ⟨.InstanceCall t' callee args' tys, src⟩
+      | t' :: args' => ⟨.Call (some t') callee args' tys, src⟩
       | [] => e
   | ⟨.ReferenceEquals l r, src⟩ => do
     hoistPair model (← hoistExpr model l) (← hoistExpr model r)
@@ -979,7 +979,7 @@ private def rewriteFunctionBody (model : SemanticModel)
           ⟨.Var (.Local (renamedLocal declaredUids o.name)), proc.name.source⟩
       let retExpr : StmtExprMd := match packaged?, outputRefs with
         | some _, refs =>
-          ⟨.StaticCall (mkId (multiOutputCtorName proc.name.text)) refs [], proc.name.source⟩
+          ⟨.Call none (mkId (multiOutputCtorName proc.name.text)) refs [], proc.name.source⟩
         | none, [single] => single
         | none, refs => ⟨.Return refs, proc.name.source⟩
       let outputNames := effectiveOutputs.map (·.name.text)

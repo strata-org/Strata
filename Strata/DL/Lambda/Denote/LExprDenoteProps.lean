@@ -17,6 +17,8 @@ Extensionality, irrelevance, and structural properties of `denote`.
 - `denote_ext` — extensionality: denotation depends only on used ops, fvars, and bvars
 - `denote_irrel_of_lcAt` — closed expressions are independent of the bvar valuation
 - `denote_replaceMetadata` — denotation is invariant under metadata replacement
+- `typeCheck_replaceMetadata1` / `HasTypeA_replaceMetadata1` / `denote_replaceMetadata1` — typing
+    and denotation are invariant under root-metadata replacement
 - `denoteArgs_eq_of_denote_eq` / `denoteArgs_eq_implies_denote_eq` — pointwise ↔ aggregate argument equality
 -/
 
@@ -565,6 +567,86 @@ theorem denote_replaceMetadata
               exact (denote_quant_exist_false bvarVal h_body' (.quant h_tr' h_body')
                 (fun x => by rw [← ih_body (.cons x bvarVal) h_body]; exact hexist_f x)).symm
 
+/-! ### Replacing only the root metadata -/
+
+/-- Replacing the root metadata does not change the type. -/
+theorem typeCheck_replaceMetadata1 {Δ : List LMonoTy} (m : T.Metadata) (e : LExpr T.mono) :
+    LExpr.typeCheck Δ (LExpr.replaceMetadata1 m e) = LExpr.typeCheck Δ e := by
+  cases e with
+  | const | bvar | app | ite | eq => rfl
+  | op _ _ ty => cases ty <;> rfl
+  | fvar _ _ ty => cases ty <;> rfl
+  | abs _ _ ty _ => cases ty <;> rfl
+  | quant _ _ _ ty _ _ => cases ty <;> rfl
+
+/-- Replacing the root metadata preserves typing. -/
+theorem HasTypeA_replaceMetadata1 {Δ : List LMonoTy} {τ : LMonoTy} (m : T.Metadata) {e : LExpr
+    T.mono}
+    (h : LExpr.HasTypeA Δ e τ) : LExpr.HasTypeA Δ (LExpr.replaceMetadata1 m e) τ := by
+  rw [LExpr.HasTypeA_iff_typeCheck] at h ⊢
+  rw [typeCheck_replaceMetadata1]; exact h
+
+/-- Typing is reflected by replacing the root metadata. -/
+theorem HasTypeA_of_replaceMetadata1 {Δ : List LMonoTy} {τ : LMonoTy} (m : T.Metadata) {e : LExpr
+    T.mono}
+    (h : LExpr.HasTypeA Δ (LExpr.replaceMetadata1 m e) τ) : LExpr.HasTypeA Δ e τ := by
+  rw [LExpr.HasTypeA_iff_typeCheck] at h ⊢
+  rw [typeCheck_replaceMetadata1] at h; exact h
+
+/-- Replacing the root metadata preserves the denotation. -/
+theorem denote_replaceMetadata1 {Δ : List LMonoTy}
+    (bvarVal : BVarVal tcInterp vt Δ) {τ : LMonoTy} (m : T.Metadata) {e : LExpr T.mono}
+    (h : LExpr.HasTypeA Δ (LExpr.replaceMetadata1 m e) τ) :
+    LExpr.denote tcInterp opInterp fvarVal vt bvarVal (LExpr.replaceMetadata1 m e) τ h =
+      LExpr.denote tcInterp opInterp fvarVal vt bvarVal e τ (HasTypeA_of_replaceMetadata1 m h) := by
+  have h' := HasTypeA_of_replaceMetadata1 m h
+  cases e with
+  | const | bvar | app | ite | eq => rfl
+  | op _ _ ty =>
+    cases ty with
+    | none => exact absurd (LExpr.HasTypeA_to_typeCheck h') (by simp [LExpr.typeCheck])
+    | some _ => rfl
+  | fvar _ _ ty =>
+    cases ty with
+    | none => exact absurd (LExpr.HasTypeA_to_typeCheck h') (by simp [LExpr.typeCheck])
+    | some _ => rfl
+  | abs _ _ ty _ =>
+    cases ty with
+    | none => exact absurd (LExpr.HasTypeA_to_typeCheck h') (by simp [LExpr.typeCheck])
+    | some _ => rfl
+  | quant _ k _ ty _ body =>
+    cases ty with
+    | none => exact absurd (LExpr.HasTypeA_to_typeCheck h') (by simp [LExpr.typeCheck])
+    | some qty =>
+      simp only [LExpr.replaceMetadata1] at h ⊢
+      cases h' with
+      | quant h_tr h_body =>
+        cases k with
+        | all =>
+          by_cases hall : ∀ x : TyDenote tcInterp vt qty,
+              (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body :
+                  Bool) = true
+          · rw [denote_quant_all_true bvarVal h_body _ hall,
+              denote_quant_all_true bvarVal h_body _ hall]
+          · have ⟨w, hw⟩ := Classical.not_forall.mp hall
+            have hwf : (LExpr.denote tcInterp opInterp fvarVal vt (.cons w bvarVal) body .bool
+                h_body : Bool) = false :=
+              Bool.eq_false_iff.mpr hw
+            rw [denote_quant_all_false bvarVal h_body _ w hwf,
+                denote_quant_all_false bvarVal h_body _ w hwf]
+        | exist =>
+          by_cases hexist : ∃ x : TyDenote tcInterp vt qty,
+              (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body :
+                  Bool) = true
+          · obtain ⟨w, hw⟩ := hexist
+            rw [denote_quant_exist_true bvarVal h_body _ w hw,
+                denote_quant_exist_true bvarVal h_body _ w hw]
+          · have hexist_f : ∀ x : TyDenote tcInterp vt qty,
+                (LExpr.denote tcInterp opInterp fvarVal vt (.cons x bvarVal) body .bool h_body :
+                    Bool) = false :=
+              fun x => Bool.eq_false_iff.mpr (fun h => hexist ⟨x, h⟩)
+            rw [denote_quant_exist_false bvarVal h_body _ hexist_f,
+                denote_quant_exist_false bvarVal h_body _ hexist_f]
 /-- If two expression lists have pointwise equal denotations at the same types,
 then `denoteArgs` produces equal HLists. -/
 theorem denoteArgs_eq_of_denote_eq

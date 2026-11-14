@@ -194,7 +194,7 @@ def PolymorphicFuncDecls.lookup (self : PolymorphicFuncDecls)
     module header). -/
 def getTypeSubstitution (f : Function) (ty : Option LMonoTy)
   : Option TypeArgsSubstitution :=
-  match f.toLFunc.opTypeSubst (.op () f.name ty) with
+  match f.toLFunc.opTypeSubst (.op (ExprSourceLoc.synthesized "monomorphize") f.name ty) with
   | some S =>
     some {
       givenTypes := f.typeArgs.map (fun ta => LMonoTy.subst S (.ftvar ta))

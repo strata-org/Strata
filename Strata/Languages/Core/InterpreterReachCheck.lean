@@ -286,7 +286,7 @@ theorem fragmentExpr_inline {F : Lambda.Factory CoreLParams} {ok : LFunc CoreLPa
       · rename_i l hl
         obtain ⟨⟨k, l'⟩, hp, rfl⟩ := List.mem_map.1 (Map_find?_some_mem_values _ x l hl)
         obtain ⟨m', c, rfl, -, hc⟩ := hls.mem (List.of_mem_zip hp).2
-        exact .const m' c hc
+        exact .const m c hc
       · exact .fvar m x ty
     | ite _ _ _ ihc iht ihf => exact .ite (ihc d) (iht d) (ihf d)
     | eq _ _ iha ihb => exact .eq (iha d) (ihb d)

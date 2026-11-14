@@ -748,7 +748,7 @@ private def resolvedMultiAssign : LaurelProgram :=
         body := .Opaque []
           (some (node (.Block [
             node (.Assign [declTarget "x" .TInt, declTarget "y" .TBool]
-              (node (.StaticCall (mkId "twoOut") [] [])))
+              (node (.Call none (mkId "twoOut") [] [])))
           ] none [] none)))
           [] }
     ],
@@ -933,7 +933,7 @@ which primitive that overload bottoms out in. `$intDiv` is deliberately not
 mapped: `int` also has a `Safe` division delegate and both would print as `/`. -/
 
 private def opCall (nm : String) : StmtExprMd :=
-  node (.StaticCall (mkId nm) [node (.LiteralInt 1), node (.LiteralInt 2)] [])
+  node (.Call none (mkId nm) [node (.LiteralInt 1), node (.LiteralInt 2)] [])
 
 /-- info: 1 <= 2 -/
 #guard_msgs in
@@ -956,10 +956,10 @@ private def opCall (nm : String) : StmtExprMd :=
     to the call fallback, instead of the DDM formatter panicking on an operand
     count the operator's binding shape can't hold. -/
 private def opCall1 (nm : String) : StmtExprMd :=
-  node (.StaticCall (mkId nm) [node (.LiteralInt 1)] [])
+  node (.Call none (mkId nm) [node (.LiteralInt 1)] [])
 
 private def opCall3 (nm : String) : StmtExprMd :=
-  node (.StaticCall (mkId nm) [node (.LiteralInt 1), node (.LiteralInt 2), node (.LiteralInt 3)] [])
+  node (.Call none (mkId nm) [node (.LiteralInt 1), node (.LiteralInt 2), node (.LiteralInt 3)] [])
 
 /-- info: $le(1) -/
 #guard_msgs in
@@ -977,7 +977,7 @@ private def leWrapper (nm : String) : Procedure :=
                { name := mkId "y", type := node .TInt }],
     outputs := [{ name := mkId resultOutputName, type := node .TBool }],
     preconditions := [], decreases := none,
-    body := .Transparent (node (.Return [node (.StaticCall (mkId "$intLe")
+    body := .Transparent (node (.Return [node (.Call none (mkId "$intLe")
       [node (.Var (.Local (mkId "x"))), node (.Var (.Local (mkId "y")))] [])])) }
 
 /--

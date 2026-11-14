@@ -56,7 +56,7 @@ private def mkHoleCall (source : FileRange) (holeType : HighTypeMd) : ElimHoleM 
     body := .Opaque [] none []
   }
   modify fun s => { s with generatedFunctions := s.generatedFunctions ++ [holeProc] }
-  return ⟨ .StaticCall holeName (inputs.map (fun p => ⟨ .Var (.Local p.name), source⟩)) [], source⟩
+  return ⟨ .Call none holeName (inputs.map (fun p => ⟨ .Var (.Local p.name), source⟩)) [], source⟩
 
 /-- Replace a deterministic `.Hole` with a call to a fresh uninterpreted function.
     Non-hole nodes pass through unchanged; recursion is handled by `mapStmtExprM`. -/
@@ -97,7 +97,7 @@ end -- public section
 /-- Pipeline pass: eliminate deterministic holes. -/
 public def eliminateDeterministicHolesPass : LaurelPass := .onUnordered {
   name := "EliminateDeterministicHoles"
-  creates := [NodeKind.LaurelProgram.staticProcedures.cons, NodeKind.StmtExpr.StaticCall]
+  creates := [NodeKind.LaurelProgram.staticProcedures.cons, NodeKind.StmtExpr.Call]
   removes := [NodeKind.StmtExpr.Hole.deterministic.true]
   unsupported := [
       NodeKind.StmtExpr.Hole.type.none,

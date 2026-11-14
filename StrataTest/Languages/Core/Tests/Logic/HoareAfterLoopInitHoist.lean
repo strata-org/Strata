@@ -90,14 +90,14 @@ private def iId : Core.Expression.Ident := ⟨"i", ()⟩
 private def sqId : Core.Expression.Ident := ⟨"sq", ()⟩
 
 /-- The guard `int.lt(i, n)`. -/
-private abbrev ltE : Core.Expression.Expr := .app () (.app () Core.intLtOp (v iId)) (v nId)
+private abbrev ltE : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc Core.intLtOp (v iId)) (v nId)
 /-- `int.mul(i, i)`. -/
-private abbrev mulE : Core.Expression.Expr := .app () (.app () Core.intMulOp (v iId)) (v iId)
+private abbrev mulE : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc Core.intMulOp (v iId)) (v iId)
 /-- `int.add(s, sq)`. -/
-private abbrev addE : Core.Expression.Expr := .app () (.app () Core.intAddOp (v sId)) (v sqId)
+private abbrev addE : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc Core.intAddOp (v sId)) (v sqId)
 /-- `int.add(i, 1)`. -/
 private abbrev incE : Core.Expression.Expr :=
-  .app () (.app () Core.intAddOp (v iId)) (.intConst () 1)
+  .app Core.valueLoc (.app Core.valueLoc Core.intAddOp (v iId)) (.intConst Core.valueLoc 1)
 
 /-- The metadata of the declaration of `sq` and of the loop. -/
 private abbrev mdSq : MetaData Core.Expression := loc 708 738
@@ -108,11 +108,11 @@ private abbrev bodyTail : Core.Statements :=
   [Core.Statement.set sId addE (loc 743 763), Core.Statement.set iId incE (loc 768 787)]
 
 /-- `s := 0`. -/
-private abbrev setS0 : Core.Statement := Core.Statement.set sId (.intConst () 0) (loc 651 658)
+private abbrev setS0 : Core.Statement := Core.Statement.set sId (.intConst Core.valueLoc 0) (loc 651 658)
 
 /-- `var i : int := 0`. -/
 private abbrev initI : Core.Statement :=
-  Core.Statement.init iId intLTy (.det (.intConst () 0)) (loc 661 678)
+  Core.Statement.init iId intLTy (.det (.intConst Core.valueLoc 0)) (loc 661 678)
 
 /-- The translated body. -/
 private abbrev sumBody : Core.Statements :=

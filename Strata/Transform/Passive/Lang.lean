@@ -91,9 +91,12 @@ class WPLang (P : PureExpr) [DecidableEq P.Ident] [HasBool P] [HasFvar P] [HasFv
   ev_ite_inv : ∀ {F σ c t e v}, P.eval F σ (ite c t e) = some v →
     (P.eval F σ c = some (HasBool.ttVal F) ∧ P.eval F σ t = some v) ∨
     (P.eval F σ c = some (HasBool.ffVal F) ∧ P.eval F σ e = some v)
-  iteView?_eq : ∀ {e c t f}, iteView? e = some (c, t, f) → e = ite c t f
-  boolLit?_eq : ∀ {e b}, boolLit? e = some b →
-    e = if b then HasBool.tt (P := P) else HasBool.ff (P := P)
+  iteView?_eval : ∀ {F σ e c t f}, iteView? e = some (c, t, f) →
+    P.eval F σ e = P.eval F σ (ite c t f)
+  iteView?_getFvars : ∀ {e c t f} (y), iteView? e = some (c, t, f) →
+    (y ∈ HasFvars.getFvars e ↔ y ∈ HasFvars.getFvars (ite c t f))
+  boolLit?_eval : ∀ {F σ e b}, boolLit? e = some b →
+    P.eval F σ e = P.eval F σ (if b then HasBool.tt (P := P) else HasBool.ff (P := P))
   substFn_eq : ∀ (e : P.Expr) (look : P.Ident → Option P.Expr) (sm : Map P.Ident P.Expr),
     (∀ x ∈ HasFvars.getFvars e, look x = Map.find? sm x) →
       substFn e look = HasSubstFvar.substFvars e sm
@@ -123,6 +126,14 @@ structure SSALaws (f : P.Factory) : Prop where
   val : WellFormedSemanticEvalVal (P := P) f
   /-- Substituting variables or Boolean literals holding the values preserves evaluation. -/
   lits : WellFormedSemanticEvalSubstLits (P := P) f
+
+/-- A free variable of any part of a conditional recognized by `iteView?` is a free variable of
+    the conditional itself. -/
+theorem getFvars_of_iteView [WPLang P] {e c t f : P.Expr}
+    (hv : WPOps.iteView? e = some (c, t, f)) {y : P.Ident}
+    (hy : y ∈ HasFvars.getFvars c ∨ y ∈ HasFvars.getFvars t ∨ y ∈ HasFvars.getFvars f) :
+    y ∈ HasFvars.getFvars e :=
+  (WPLang.iteView?_getFvars y hv).mpr ((WPLang.getFvars_ite c t f y).2 hy)
 
 variable [WPOps P]
 

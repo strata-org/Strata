@@ -46,13 +46,13 @@ def datatypeRefs (dt : DatatypeDefinition) : List String :=
   dt.constructors.flatMap fun c => c.args.flatMap fun p => collectTypeRefs p.type
 
 /--
-Collect all `StaticCall` callee names referenced anywhere in a `StmtExpr`.
+Collect all static `Call` callee names referenced anywhere in a `StmtExpr`.
 Used to build the call graph for SCC-based procedure ordering. Recursion into
 child nodes is handled by `collectStmtExprList`.
 -/
 def collectStaticCallNames (expr : StmtExprMd) : List String :=
   collectStmtExprList (fun e => match e.val with
-    | .StaticCall callee _ _ => [callee.text]
+    | .Call none callee _ _ => [callee.text]
     | _ => []) expr
 
 /--
@@ -74,7 +74,7 @@ public def computeSccDecls (program : LaurelProgram) : List (List Procedure × B
   let orderedProcs : List Procedure := withAxioms ++ withoutAxioms
 
   -- Build a call-graph over all procedures.
-  -- An edge proc → callee means proc's body/contracts contain a StaticCall to callee.
+  -- An edge proc → callee means proc's body/contracts contain a static call to callee.
   let procsArr : Array Procedure := orderedProcs.toArray
   let nameToIdx : Std.HashMap String Nat :=
     procsArr.foldl (fun (acc : Std.HashMap String Nat × Nat) proc =>
@@ -86,7 +86,7 @@ public def computeSccDecls (program : LaurelProgram) : List (List Procedure × B
       | .Transparent b => [b]
       | .Opaque postconds impl modifies =>
         -- A modifies group contributes both its targets and its guard as expressions
-        -- that may hold `StaticCall`s.
+        -- that may hold static `Call`s.
         let modifiesExprs := modifies.flatMap (fun g => g.targets ++ g.guard.toList)
         postconds.map (·.condition) ++ impl.toList ++ modifiesExprs
       | .Abstract postconds => postconds.map (·.condition)

@@ -67,6 +67,18 @@ theorem typeCheckWith_const_isSome (F : Lambda.Factory CoreLParams) (m : Express
   simp only [LExpr.typeCheckWith, LExpr.opsConsistent, LExpr.typeCheck, ↓reduceIte]
   cases c.wt <;> rfl
 
+/-- `InterpLang.Denotes` is invariant under a root-metadata replacement of the runtime value:
+the metadata does not affect whether it is a value, type checks, or its denotation. -/
+theorem Denotes_replaceMetadata1 {F : Expression.Factory} (m : ExpressionMetadata)
+    {r : Expression.Expr} {v : Expression.Val} (h : InterpLang.Denotes F r v) :
+    InterpLang.Denotes F (LExpr.replaceMetadata1 m r) v := by
+  rw [denotes_iff] at h ⊢
+  obtain ⟨hiv, htc, hde⟩ := h
+  refine ⟨?_, ?_, ?_⟩
+  · rw [isValue_replaceMetadata1 (e := r)]; exact hiv
+  · rw [LExpr.typeCheckWith_replaceMetadata1]; exact htc
+  · rw [LExpr.denoteEval_replaceMetadata1 (e := r)]; exact hde
+
 /-- A well-typed literal (`LConst.wt`) type checks against every factory (`typeCheckWith`). -/
 theorem typeCheckWith_const (F : Lambda.Factory CoreLParams) (m : ExpressionMetadata)
     (c : LConst) (hc : c.wt = true) :
@@ -110,7 +122,7 @@ theorem isGroundTy_iff {τ : LMonoTy} : isGroundTy τ = true ↔ τ.IsGround := 
   simp [isGroundTy, LMonoTy.IsGround]
 
 /-- A well-typed literal (`LConst.wt`) is in the evaluation domain on every runtime store. -/
-theorem evalTypedDomain_const (σr : RStore Expression) (m : Unit) (c : LConst)
+theorem evalTypedDomain_const (σr : RStore Expression) (m : ExpressionMetadata) (c : LConst)
     (hc : c.wt = true) : evalTypedDomain σr (.const m c) = true := by
   unfold evalTypedDomain
   simp only [LExpr.LExpr.getVars, List.all_nil, LExpr.annotateFvars, LExpr.typeCheck, hc,
@@ -119,7 +131,7 @@ theorem evalTypedDomain_const (σr : RStore Expression) (m : Unit) (c : LConst)
 
 /-- A variable bound in the runtime store to a value that type checks at a ground type is in
     the evaluation domain. -/
-theorem evalTypedDomain_fvar {σr : RStore Expression} {m : Unit} {x : CoreIdent}
+theorem evalTypedDomain_fvar {σr : RStore Expression} {m : ExpressionMetadata} {x : CoreIdent}
     {ty : Option LMonoTy} {r : Expression.Expr} (hx : σr x = some r)
     (hr : (r.typeCheck []).any isGroundTy = true) : evalTypedDomain σr (.fvar m x ty) = true := by
   obtain ⟨τ, hτ, hg⟩ := (Option.any_eq_true _ _).1 hr

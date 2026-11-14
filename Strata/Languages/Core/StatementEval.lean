@@ -24,6 +24,9 @@ public section
 
 namespace Core
 
+/-- Location of expressions this file builds itself. -/
+abbrev evalLoc : ExprSourceLoc := ExprSourceLoc.synthesized "eval"
+
 namespace Statement
 
 open Std (ToFormat Format format)
@@ -92,7 +95,7 @@ def mkReturnSubst (proc : Procedure) (lhs : List Expression.Ident) (E : Env) :
   -- leaving the fresh var untyped (`none`), which would fail to encode.
   let output_tys := proc.header.outputs.values
   let lhs_tys := lhs.mapIdx fun i l =>
-    (E.exprEnv.state.findD l (none, .fvar () l none)).fst.orElse fun _ => output_tys[i]?
+    (E.exprEnv.state.findD l (none, .fvar evalLoc l none)).fst.orElse fun _ => output_tys[i]?
   let lhs_typed := lhs.zip lhs_tys
   let (lhs_fvars, E') := E.genFVars lhs_typed
   let return_tys := proc.header.outputs.keys.map
@@ -136,7 +139,7 @@ private def computeTypeSubst (input_tys output_tys: List Lambda.LMonoTy)
   Lambda.Subst :=
   let actual_tys := args.filterMap getExprType
   let lhs_tys := lhs.filterMap (fun l =>
-    (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
+    (E.exprEnv.state.findD l (none, .fvar evalLoc l none)).fst)
   let input_constraints := actual_tys.zip input_tys
   let output_constraints := lhs_tys.zip output_tys
   let constraints := input_constraints ++ output_constraints
@@ -321,7 +324,7 @@ private def createUnreachableCoverObligations
     Imperative.ProofObligations Expression :=
   covers.toArray.map
     (fun (label, md) =>
-      (Imperative.ProofObligation.mk label .cover pathConditions (Lambda.LExpr.false ()) md))
+      (Imperative.ProofObligation.mk label .cover pathConditions (Lambda.LExpr.false evalLoc) md))
 
 /--
 Create assert obligations for asserts in an unreachable (dead) branch, including
@@ -335,7 +338,7 @@ private def createUnreachableAssertObligations
   asserts.toArray.map
     (fun (label, md) =>
       let propType := Imperative.convertMetaDataPropertyType md
-      (Imperative.ProofObligation.mk label propType pathConditions (Lambda.LExpr.true ()) md))
+      (Imperative.ProofObligation.mk label propType pathConditions (Lambda.LExpr.true evalLoc) md))
 
 /--
 An environment with an optional exit label.
@@ -370,7 +373,7 @@ private def collectDeadBranchDeferred
     Imperative.ProofObligations Expression :=
   if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
     let deadLabel := toString (f!"<dead_branch: {cond.eraseTypes}>")
-    let deadPathConds := pathConditions.push [.assumption deadLabel (Lambda.LExpr.false ())]
+    let deadPathConds := pathConditions.push [.assumption deadLabel (Lambda.LExpr.false evalLoc)]
     createUnreachableCoverObligations deadPathConds (Statements.collectCovers ss_f) ++
     createUnreachableAssertObligations deadPathConds (Statements.collectAsserts ss_f)
   else
@@ -686,7 +689,8 @@ def processIteBranches (steps : Nat) (Ewn : EnvWithNext)
   let label_false := toString (f!"<label_ite_cond_false: !({cond.eraseTypes})>")
   let path_conds_true := Ewn.env.pathConditions.push [.assumption label_true cond']
   let path_conds_false := Ewn.env.pathConditions.push
-                            [.assumption label_false (Lambda.LExpr.ite () cond' (Lambda.LExpr.false ()) (Lambda.LExpr.true ()))]
+                            [.assumption label_false (Lambda.LExpr.ite evalLoc cond'
+                                (Lambda.LExpr.false evalLoc) (Lambda.LExpr.true evalLoc))]
   have : 1 <= Imperative.Block.sizeOf then_ss := by
    unfold Imperative.Block.sizeOf; split <;> omega
   have : 1 <= Imperative.Block.sizeOf else_ss := by
@@ -798,13 +802,16 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
           else
             let outputBindings : List (CoreIdent × (Option Lambda.LMonoTy × Expression.Expr)) :=
               proc.header.outputs.keys.zip proc.header.outputs.values
-              |>.map fun (name, ty) => (name, (some ty, Lambda.LExpr.fvar () name none))
+              |>.map fun (name, ty) => (name, (some ty, Lambda.LExpr.fvar evalLoc name none))
             let callEnv : Env := { E with
               exprEnv := { E.exprEnv with
                 state := [formalBindings ++ outputBindings] } }
             let ops : Imperative.RunOps Expression Command Env := {
+              -- Guards are compared with `HasBool.tt` by `==`, so the result's
+              -- locations are normalized to `valueLoc` (metadata does not affect
+              -- the value, only the `==` with the located literal `HasBool.tt`).
               evalExpr := fun E e =>
-                some (Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv e).fst
+                some ((Lambda.LExpr.evalWithLState E.exprEnv.config.fuel E.exprEnv e).fst.replaceMetadata (fun _ => valueLoc))
               evalCmd := Command.run fuel'
               pushScope := fun E => E.pushEmptyScope
               popScope := fun E => E.popScope
@@ -829,7 +836,8 @@ def Command.runCall (lhs : List Expression.Ident) (procName : String) (args : Li
                   CmdEval.updateError E (.Misc s!"procedure '{procName}': expected {proc.header.outputs.keys.length} output arguments, got {lhs.length}")
                 else
                   let outputVals := proc.header.outputs.keys.map fun name =>
-                    (callEnv'.exprEnv.state.findD name (none, Lambda.LExpr.fvar () name none)).snd
+                    (callEnv'.exprEnv.state.findD name (none,
+                        Lambda.LExpr.fvar evalLoc name none)).snd
                   lhs.zip outputVals |>.foldl (fun env (name, val) =>
                     env.insertInContext (name, none) val) E
             | cfg => CmdEval.updateError

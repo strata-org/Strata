@@ -359,11 +359,11 @@ section SeqBoundsObligations
 open Strata Core Lambda Core.PrecondElim Imperative
 
 /-- Shared fvar fixtures so each per-op case below is a one-liner. -/
-private def fxS : Core.Expression.Expr := .fvar () ⟨"s", ()⟩ (some (Core.seqTy .int))
-private def fxI : Core.Expression.Expr := .fvar () ⟨"i", ()⟩ (some .int)
-private def fxV : Core.Expression.Expr := .fvar () ⟨"v", ()⟩ (some .int)
-private def fxN : Core.Expression.Expr := .fvar () ⟨"n", ()⟩ (some .int)
-private def fxJ : Core.Expression.Expr := .fvar () ⟨"j", ()⟩ (some .int)
+private def fxS : Core.Expression.Expr := .fvar Core.coreLoc ⟨"s", ()⟩ (some (Core.seqTy .int))
+private def fxI : Core.Expression.Expr := .fvar Core.coreLoc ⟨"i", ()⟩ (some .int)
+private def fxV : Core.Expression.Expr := .fvar Core.coreLoc ⟨"v", ()⟩ (some .int)
+private def fxN : Core.Expression.Expr := .fvar Core.coreLoc ⟨"n", ()⟩ (some .int)
+private def fxJ : Core.Expression.Expr := .fvar Core.coreLoc ⟨"j", ()⟩ (some .int)
 
 /-- Check that `collectPrecondAsserts` produces exactly `expectedCount`
     obligations from `expr`, each tagged with `outOfBoundsAccess`. -/
@@ -377,20 +377,20 @@ private def assertOutOfBoundsObligations
     assert! md.getPropertyType == some MetaData.outOfBoundsAccess
 
 -- Sequence.select / update / take / drop each emit one out-of-bounds obligation.
-#eval assertOutOfBoundsObligations (LExpr.mkApp () Core.seqSelectOp [fxS, fxI]) 1
-#eval assertOutOfBoundsObligations (LExpr.mkApp () Core.seqUpdateOp [fxS, fxI, fxV]) 1
-#eval assertOutOfBoundsObligations (LExpr.mkApp () Core.seqTakeOp   [fxS, fxN]) 1
-#eval assertOutOfBoundsObligations (LExpr.mkApp () Core.seqDropOp   [fxS, fxN]) 1
+#eval assertOutOfBoundsObligations (LExpr.mkApp Core.coreLoc Core.seqSelectOp [fxS, fxI]) 1
+#eval assertOutOfBoundsObligations (LExpr.mkApp Core.coreLoc Core.seqUpdateOp [fxS, fxI, fxV]) 1
+#eval assertOutOfBoundsObligations (LExpr.mkApp Core.coreLoc Core.seqTakeOp   [fxS, fxN]) 1
+#eval assertOutOfBoundsObligations (LExpr.mkApp Core.coreLoc Core.seqDropOp   [fxS, fxN]) 1
 
 -- Nested: `Sequence.select(Sequence.update(s, i, v), j)` emits two
 -- obligations (one per partial call), both tagged `outOfBoundsAccess`.
 #eval assertOutOfBoundsObligations
-  (LExpr.mkApp () Core.seqSelectOp [LExpr.mkApp () Core.seqUpdateOp [fxS, fxI, fxV], fxJ]) 2
+  (LExpr.mkApp Core.coreLoc Core.seqSelectOp [LExpr.mkApp Core.coreLoc Core.seqUpdateOp [fxS, fxI, fxV], fxJ]) 2
 
 -- Sequence.length is total: no precondition obligations generated.
 #eval do
   let stmts := collectPrecondAsserts Core.Factory
-    (LExpr.mkApp () Core.seqLengthOp [fxS]) "test" #[]
+    (LExpr.mkApp Core.coreLoc Core.seqLengthOp [fxS]) "test" #[]
   assert! stmts.isEmpty
 
 /-! #### Test 10a: Pretty-printed obligation shape per partial op
@@ -408,19 +408,19 @@ private def printFirstObligation (expr : Core.Expression.Expr) : IO Unit := do
 
 /-- info: int.le(0, i) && int.lt(i, Sequence.length(s)) -/
 #guard_msgs in
-#eval printFirstObligation (LExpr.mkApp () Core.seqSelectOp [fxS, fxI])
+#eval printFirstObligation (LExpr.mkApp Core.coreLoc Core.seqSelectOp [fxS, fxI])
 
 /-- info: int.le(0, i) && int.lt(i, Sequence.length(s)) -/
 #guard_msgs in
-#eval printFirstObligation (LExpr.mkApp () Core.seqUpdateOp [fxS, fxI, fxV])
+#eval printFirstObligation (LExpr.mkApp Core.coreLoc Core.seqUpdateOp [fxS, fxI, fxV])
 
 /-- info: int.le(0, n) && int.le(n, Sequence.length(s)) -/
 #guard_msgs in
-#eval printFirstObligation (LExpr.mkApp () Core.seqTakeOp [fxS, fxN])
+#eval printFirstObligation (LExpr.mkApp Core.coreLoc Core.seqTakeOp [fxS, fxN])
 
 /-- info: int.le(0, n) && int.le(n, Sequence.length(s)) -/
 #guard_msgs in
-#eval printFirstObligation (LExpr.mkApp () Core.seqDropOp [fxS, fxN])
+#eval printFirstObligation (LExpr.mkApp Core.coreLoc Core.seqDropOp [fxS, fxN])
 
 end SeqBoundsObligations
 

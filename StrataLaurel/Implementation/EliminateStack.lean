@@ -23,7 +23,7 @@ private def writesNonLocal (globals : List String) (v : VariableMd) : Bool :=
 
 private def impureNode (globals : List String) (e : StmtExprMd) : Bool :=
   match e.val with
-  | .Assert .. | .Assume _ | .New .. | .InstanceCall .. | .Hole .. | .While ..
+  | .Assert .. | .Assume _ | .New .. | .Call (some _) .. | .Hole .. | .While ..
   | .Throw _ | .Try .. | .Yield | .Resume .. | .HasNext _ | .Snapshot _ => true
   | .Assign targets _ => targets.any (writesNonLocal globals)
   | .IncrDecr _ _ target | .CompoundAssign _ target _ => writesNonLocal globals target
@@ -31,7 +31,7 @@ private def impureNode (globals : List String) (e : StmtExprMd) : Bool :=
 
 private def calleesOf (e : StmtExprMd) : List String :=
   collectStmtExprList (fun n => match n.val with
-    | .StaticCall callee _ _ => [callee.text]
+    | .Call none callee _ _ => [callee.text]
     | _ => []) e
 
 private def pureCallees (procs : List Procedure) (globals composites : List String) :
@@ -203,16 +203,16 @@ private def literalStackAssign (s : StmtExprMd) : Bool :=
 
 private partial def negOf (c : StmtExprMd) (source : FileRange) : StmtExprMd :=
   match c.val with
-  | .StaticCall op [inner] _ => if op.text == Operation.Not.procName then inner else notMd source c
-  | .StaticCall op [a, b] _ =>
-    if op.text == Operation.AndThen.procName then ⟨.StaticCall (mkId Operation.OrElse.procName) [negOf a source, negOf b source] [], source⟩
-    else if op.text == Operation.OrElse.procName then ⟨.StaticCall (mkId Operation.AndThen.procName) [negOf a source, negOf b source] [], source⟩
+  | .Call none op [inner] _ => if op.text == Operation.Not.procName then inner else notMd source c
+  | .Call none op [a, b] _ =>
+    if op.text == Operation.AndThen.procName then ⟨.Call none (mkId Operation.OrElse.procName) [negOf a source, negOf b source] [], source⟩
+    else if op.text == Operation.OrElse.procName then ⟨.Call none (mkId Operation.AndThen.procName) [negOf a source, negOf b source] [], source⟩
     else notMd source c
   | _ => notMd source c
 
 private def boolIte (c x y : StmtExprMd) (source : FileRange) : StmtExprMd :=
-  let andThen (a b : StmtExprMd) : StmtExprMd := ⟨.StaticCall (mkId Operation.AndThen.procName) [a, b] [], source⟩
-  let orElse (a b : StmtExprMd) : StmtExprMd := ⟨.StaticCall (mkId Operation.OrElse.procName) [a, b] [], source⟩
+  let andThen (a b : StmtExprMd) : StmtExprMd := ⟨.Call none (mkId Operation.AndThen.procName) [a, b] [], source⟩
+  let orElse (a b : StmtExprMd) : StmtExprMd := ⟨.Call none (mkId Operation.OrElse.procName) [a, b] [], source⟩
   match x.val, y.val with
   | .LiteralBool true, .LiteralBool false => c
   | .LiteralBool false, .LiteralBool true => negOf c source
@@ -262,10 +262,10 @@ private def ArmShape.pred (source : FileRange) : ArmShape → StmtExprMd
 
 private def callLike (pure : String → Bool) (e : StmtExprMd) : Bool :=
   !pure "$quantifierBody" && anyStmtExpr (fun n => match n.val with
-    | .StaticCall callee _ _ => !(callee.text.startsWith "$" && pure callee.text)
+    | .Call none callee _ _ => !(callee.text.startsWith "$" && pure callee.text)
     | .Assign [⟨.Declare _, _⟩] _ => false
     | .Block _ none [] none => false
-    | .InstanceCall .. | .New .. | .Assign .. | .IncrDecr .. | .CompoundAssign .. | .Quantifier ..
+    | .Call (some _) .. | .New .. | .Assign .. | .IncrDecr .. | .CompoundAssign .. | .Quantifier ..
     | .AsType .. | .Hole .. | .Assert .. | .Assume .. | .Block .. | .Return .. | .Throw .. => true
     | _ => false) e
 
@@ -613,8 +613,8 @@ private def writesHeap (writers : Option (Std.HashSet Nat)) (e : StmtExprMd) : B
   anyStmtExpr (fun n => match n.val with
     | .Assign targets _ => targets.any (·.val matches .Field ..)
     | .IncrDecr _ _ ⟨.Field .., _⟩ | .CompoundAssign _ ⟨.Field .., _⟩ _ => true
-    | .StaticCall callee _ _ => !callee.text.startsWith "$" && writer callee
-    | .InstanceCall _ callee _ _ => writer callee
+    | .Call none callee _ _ => !callee.text.startsWith "$" && writer callee
+    | .Call (some _) callee _ _ => writer callee
     | _ => false) e
 
 private def callsHeapWriter (writers : Option (Std.HashSet Nat)) (e : StmtExprMd) : Bool :=
@@ -622,8 +622,8 @@ private def callsHeapWriter (writers : Option (Std.HashSet Nat)) (e : StmtExprMd
     | some ws, some id => ws.contains id
     | _, _ => true
   anyStmtExpr (fun n => match n.val with
-    | .StaticCall callee _ _ => !callee.text.startsWith "$" && writer callee
-    | .InstanceCall _ callee _ _ => writer callee
+    | .Call none callee _ _ => !callee.text.startsWith "$" && writer callee
+    | .Call (some _) callee _ _ => writer callee
     | _ => false) e
 
 private def substLocal (name : String) (v : StmtExprMd) (e : StmtExprMd) : StmtExprMd :=
@@ -651,7 +651,7 @@ private def stableAcross (writers : Option (Std.HashSet Nat)) (globals : Std.Has
 
 private def usedAsReceiver (name : String) (u : StmtExprMd) : Bool :=
   anyStmtExpr (fun n => match n.val with
-    | .InstanceCall ⟨.Var (.Local x), _⟩ _ _ _ => x.text == name
+    | .Call (some ⟨.Var (.Local x), _⟩) _ _ _ => x.text == name
     | _ => false) u
 
 private def receiverValue (v : StmtExprMd) : Bool :=

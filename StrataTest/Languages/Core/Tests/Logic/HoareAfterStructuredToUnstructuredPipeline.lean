@@ -102,16 +102,16 @@ private def stepId : Core.Expression.Ident := ⟨"step", ()⟩
 private def gId : Core.Expression.Ident := ⟨"$__ndelim_ite$_0", ()⟩
 
 /-- The loop guard `int.gt(r, 0)`. -/
-private abbrev gtE : Core.Expression.Expr := .app () (.app () Core.intGtOp (v rId)) (.intConst () 0)
+private abbrev gtE : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc Core.intGtOp (v rId)) (.intConst Core.valueLoc 0)
 /-- `int.sub(r, step)`. -/
 private abbrev subE : Core.Expression.Expr :=
-  .app () (.app () Core.intSubOp (v rId)) (v stepId)
+  .app Core.valueLoc (.app Core.valueLoc Core.intSubOp (v rId)) (v stepId)
 
 /-- The translated body. -/
 private abbrev drainBody : Core.Statements :=
   [Core.Statement.set rId (v nId) (loc 713 720),
    .loop (.det gtE) none []
-     [Core.Statement.init stepId intLTy (.det (.intConst () 1)) (loc 750 770),
+     [Core.Statement.init stepId intLTy (.det (.intConst Core.valueLoc 1)) (loc 750 770),
       .ite .nondet [Core.Statement.set rId subE (loc 788 810)] [] (loc 775 816)]
      (loc 723 820)]
 
@@ -127,7 +127,7 @@ private abbrev initStep : Core.Command := .cmd (.init stepId intLTy .nondet (loc
 /-- The declaration of the fresh guard. -/
 private abbrev initG : Core.Command := .cmd (.init gId HasBool.boolTy .nondet (loc 775 816))
 /-- `step := 1`, what is left of the declaration of `step` in the loop body. -/
-private abbrev setStep : Core.Command := .cmd (.set stepId (.det (.intConst () 1)) (loc 750 770))
+private abbrev setStep : Core.Command := .cmd (.set stepId (.det (.intConst Core.valueLoc 1)) (loc 750 770))
 /-- The havoc of the fresh guard. -/
 private abbrev havocG : Core.Command := .cmd (.set gId .nondet (loc 775 816))
 /-- `r := int.sub(r, step)`. -/

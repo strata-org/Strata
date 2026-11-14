@@ -22,13 +22,13 @@ namespace InterpreterCFGTest
 open Core Lambda Imperative
 
 private def id (name : String) : CoreIdent := ⟨name, ()⟩
-private def int (n : Int) : Expression.Expr := .intConst () n
+private def int (n : Int) : Expression.Expr := .intConst default n
 private def md : MetaData Expression := #[]
-private def xVar : Expression.Expr := .fvar () (id "x") (some .int)
+private def xVar : Expression.Expr := .fvar default (id "x") (some .int)
 
 /-- A `CmdExt`-wrapped base command. -/
 private def setX (v : Int) : Command := .cmd (.set (id "x") (.det (int v)) md)
-private def coverX (label : String) : Command := .cmd (.cover label (.eq () xVar (int 2)) md)
+private def coverX (label : String) : Command := .cmd (.cover label (.eq default xVar (int 2)) md)
 
 /-- Start store with `x` predefined to `1`. -/
 private def store0 : RStore Expression :=
@@ -60,7 +60,7 @@ event of `b1`, and halts at `.terminal` with `x = 2`. -/
 private def cfg : CFG String (DetBlock String Command Expression) :=
   { entry := "b0",
     blocks :=
-      [("b0", ⟨[setX 2], .condGoto (.eq () xVar (int 2)) "b1" "b2" md⟩),
+      [("b0", ⟨[setX 2], .condGoto (.eq default xVar (int 2)) "b1" "b2" md⟩),
        ("b1", ⟨[coverX "reached"], .finish md⟩),
        ("b2", ⟨[], .finish md⟩)] }
 

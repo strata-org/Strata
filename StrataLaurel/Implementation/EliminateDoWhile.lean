@@ -59,7 +59,7 @@ public def freshExitLabel : ElimM String :=
   | .While cond invs dec body true =>
     let source := node.source
     let exitLabel ← freshExitLabel
-    let notCond : StmtExprMd := ⟨.StaticCall (mkId Operation.Not.procName) [cond] [], source⟩
+    let notCond : StmtExprMd := ⟨.Call none (mkId Operation.Not.procName) [cond] [], source⟩
     let exitStmt : StmtExprMd := ⟨.Goto exitLabel .blockEnd, source⟩
     let guardCheck : StmtExprMd := ⟨.IfThenElse notCond exitStmt none, source⟩
     let loopBody : StmtExprMd := ⟨.Block [body, guardCheck] none [] none, source⟩
@@ -98,7 +98,7 @@ public def eliminateDoWhilePass : LaurelPass where
       NodeKind.StmtExpr.Block,
       NodeKind.StmtExpr.Goto,
       NodeKind.StmtExpr.IfThenElse,
-      NodeKind.StmtExpr.StaticCall,
+      NodeKind.StmtExpr.Call,
       NodeKind.StmtExpr.LiteralBool
     ]
   removes := [NodeKind.StmtExpr.While.postTest.true]

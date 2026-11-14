@@ -9,7 +9,7 @@ meta import StrataLaurel.Tests.Util.TestLaurel
 open StrataTest.Util
 open Strata
 
-#eval testCortexVerification <|
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 procedure inc(x: int) returns (r: int)
@@ -18,7 +18,7 @@ procedure inc(x: int) returns (r: int)
     r := x + 1
 };
 
-procedure loops()
+procedure loops() entry
   opaque
 {
     var i: int := 0;
@@ -36,7 +36,7 @@ procedure loops()
 };
 #end
 
-#eval testCortexVerification <|
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 composite Exn { var code: int }
@@ -45,10 +45,11 @@ composite Other extends Exn { }
 composite Node { var value: int }
 constrained pos = x: int where x > 0 witness 1
 
-procedure heapAndExceptions(p: Node)
+procedure heapAndExceptions() entry
   opaque
   modifies *
 {
+    var p: Node := new Node;
     var a: Node := new Node;
     var b: Node := new Node;
     a#value := 3;
@@ -76,8 +77,9 @@ procedure heapAndExceptions(p: Node)
 //  ^^^^^^^^^^ error: assertion does not hold
 };
 
-procedure uncaught()
+procedure uncaught() entry
   opaque
+  modifies *
 {
     var e: Exn := new Exn;
     throw e
@@ -85,26 +87,31 @@ procedure uncaught()
 };
 #end
 
-#eval testCortexVerification <|
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
 #strata
 program Laurel;
 composite Animal { var age: int }
 composite Dog extends Animal { }
 composite Cat extends Animal { }
 
-procedure declaredTypePinsTag(d: Dog, a: Animal)
+procedure typeTests() entry
   opaque
+  modifies *
 {
+    var d: Dog := new Dog;
+    var a: Animal := new Cat;
     assert d is Dog;
     assert d is Animal;
     assert a is Dog
 //  ^^^^^^^^^^^^^^^ error: assertion does not hold
 };
 
-procedure downcast(a: Animal) returns (r: Dog)
+procedure downcast() entry
   opaque
+  modifies *
 {
-    r := a as Dog
-//       ^^^^^^^^ error: assertion does not hold
+    var a: Animal := new Cat;
+    var r: Dog := a as Dog
+//                ^^^^^^^^ error: assertion does not hold
 };
 #end

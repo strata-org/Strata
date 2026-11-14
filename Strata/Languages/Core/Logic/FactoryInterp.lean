@@ -1363,15 +1363,17 @@ and truth. -/
 private theorem AxHolds.rename {«from» to : String} (hop : opInterp to = opInterp «from»)
     {e : LExpr T.mono} (he : AxHolds e) :
     AxHolds (e.substOps (Strata.Util.HMap.ofList
-      [((⟨«from», ()⟩ : T.Identifier), fun ty => (.op () ⟨to, ()⟩ ty : LExpr T.mono))])) := by
+      [((⟨«from», ()⟩ : T.Identifier), fun ty => (.op (ExprSourceLoc.synthesized "factory") ⟨to,
+          ()⟩ ty : LExpr T.mono))])) := by
   have hsm : OpRenaming opInterp (Strata.Util.HMap.ofList
-      [((⟨«from», ()⟩ : T.Identifier), fun ty => (.op () ⟨to, ()⟩ ty : LExpr T.mono))]) := by
+      [((⟨«from», ()⟩ : T.Identifier), fun ty => (.op (ExprSourceLoc.synthesized "factory") ⟨to,
+          ()⟩ ty : LExpr T.mono))]) := by
     intro name mk hf oty
     have hk := Strata.Util.HMap.mem_keys_ofList _ _ (Strata.Util.HMap.find?_mem_keys _ hf)
     have hv := Strata.Util.HMap.mem_values_ofList _ _ (Strata.Util.HMap.find?_mem_values _ hf)
     simp only [List.map_cons, List.map_nil, List.mem_singleton] at hk hv
     subst hk hv
-    exact ⟨(), _, rfl, hop⟩
+    exact ⟨ExprSourceLoc.synthesized "factory", _, rfl, hop⟩
   refine ⟨HasTypeA_substOps hsm he.1, fun vt fv h' => ?_⟩
   rw [denote_substOps hsm .nil (HasTypeA_of_substOps hsm h') h']
   exact he.2 vt fv _

@@ -534,7 +534,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
       -- expression — preserved to match prior behavior).
       match callee.val with
       | .Var (.Field target fieldName) =>
-        return mkStmtExprMd (.InstanceCall target fieldName argsList []) src
+        return mkStmtExprMd (.Call (some target) fieldName argsList []) src
       | .Var (.Local name) =>
         -- `resume(target [, value])` and `has_next(target)` flow through the
         -- same `Laurel.call` production; special-case them by callee text
@@ -550,9 +550,9 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
           | [target] => return mkStmtExprMd (.HasNext target) src
           | _ => TransM.error s!"has_next expects 1 argument, got {argsList.length}"
         else
-          return mkStmtExprMd (.StaticCall name argsList []) src
+          return mkStmtExprMd (.Call none name argsList []) src
       | _ =>
-        return mkStmtExprMd (.StaticCall (mkId "") argsList []) src
+        return mkStmtExprMd (.Call none (mkId "") argsList []) src
     | q`Laurel.return, #[arg0, moreArg] =>
       let value ← match arg0 with
         | .option _ (some valArg) => some <$> translateStmtExpr valArg
@@ -640,13 +640,13 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExprMd := do
     | _, #[arg0] => match getUnaryOp? op.name with
       | some primOp =>
         let inner ← translateStmtExpr arg0
-        return mkStmtExprMd (.StaticCall (mkId primOp.procName) [inner] []) src
+        return mkStmtExprMd (.Call none (mkId primOp.procName) [inner] []) src
       | none => TransM.error s!"Unknown unary operation: {op.name}"
     | _, #[arg0, arg1] => match getBinaryOp? op.name with
       | some primOp =>
         let lhs ← translateStmtExpr arg0
         let rhs ← translateStmtExpr arg1
-        return mkStmtExprMd (.StaticCall (mkId primOp.procName) [lhs, rhs] []) src
+        return mkStmtExprMd (.Call none (mkId primOp.procName) [lhs, rhs] []) src
       | none => TransM.error s!"Unknown operation: {op.name}"
     | _, _ => TransM.error s!"Unknown operation: {op.name}"
   | _ => TransM.error s!"translateStmtExpr expects operation"

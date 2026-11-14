@@ -217,8 +217,8 @@ theorem distinctPairExpr_holds_iff {f : Expression.Factory} {σ : CoreStore}
     (hs : va.sort = vb.sort) :
     Expression.eval f σ (distinctPairExpr a b) = some (HasBool.ttVal f) ↔
       Expression.eval f σ a ≠ Expression.eval f σ b := by
-  have hF := eval_boolConst f (m := ()) σ Bool.false
-  have hT := eval_boolConst f (m := ()) σ Bool.true
+  have hF := eval_boolConst f (m := Core.valueLoc) σ Bool.false
+  have hT := eval_boolConst f (m := Core.valueLoc) σ Bool.true
   unfold distinctPairExpr
   rw [ha, hb]
   by_cases hab : va = vb

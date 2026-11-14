@@ -25,12 +25,12 @@ namespace DeadDefElimTest
 open Core Core.DeadDefElim Lambda Imperative Imperative.DeadDefElim
 
 def id' (name : String) : CoreIdent := ⟨name, ()⟩
-def int (n : Int) : Expression.Expr := .intConst () n
+def int (n : Int) : Expression.Expr := .intConst Core.valueLoc n
 def md : MetaData Expression := #[]
-def iv (n : String) : Expression.Expr := .fvar () (id' n) (some .int)
-def gt (a b : Expression.Expr) : Expression.Expr := .app () (.app () intGtOp a) b
-def add (a b : Expression.Expr) : Expression.Expr := .app () (.app () intAddOp a) b
-def div' (a b : Expression.Expr) : Expression.Expr := .app () (.app () intDivOp a) b
+def iv (n : String) : Expression.Expr := .fvar Core.valueLoc (id' n) (some .int)
+def gt (a b : Expression.Expr) : Expression.Expr := .app Core.valueLoc (.app Core.valueLoc intGtOp a) b
+def add (a b : Expression.Expr) : Expression.Expr := .app Core.valueLoc (.app Core.valueLoc intAddOp a) b
+def div' (a b : Expression.Expr) : Expression.Expr := .app Core.valueLoc (.app Core.valueLoc intDivOp a) b
 def assert' (l : String) (e : Expression.Expr) : Statement := .cmd (.cmd (.assert l e md))
 def assume' (l : String) (e : Expression.Expr) : Statement := .cmd (.cmd (.assume l e md))
 def block' (l : String) (ss : Statements) : Statement := .block l ss md
@@ -41,24 +41,24 @@ def lines (ls : List String) : String := "\n".intercalate ls
 
 /-- The printed list after the dead-definition phase. -/
 def dd (ss : Statements) : String := toString (Std.format (deadDefElimH [] ss))
-def bv' (n : String) : Expression.Expr := .fvar () (id' n) (some .bool)
-def mv (n : String) : Expression.Expr := .fvar () (id' n) (some (mapTy .int .int))
+def bv' (n : String) : Expression.Expr := .fvar Core.valueLoc (id' n) (some .bool)
+def mv (n : String) : Expression.Expr := .fvar Core.valueLoc (id' n) (some (mapTy .int .int))
 def initT (x : String) (ty : Lambda.LMonoTy) (e : Expression.Expr) : Statement :=
   .cmd (.cmd (.init (id' x) (.forAll [] ty) (.det e) md))
 def havocT (x : String) (ty : Lambda.LMonoTy) : Statement :=
   .cmd (.cmd (.init (id' x) (.forAll [] ty) .nondet md))
-def lam : Expression.Expr := .abs () "" (some .int) (.bvar () 0)
-def u8 : Expression.Expr := .fvar () (id' "u@1") (some (.bitvec 8))
-def opApp (o : Expression.Expr) (a : Expression.Expr) : Expression.Expr := .app () o a
-def fOp : Expression.Expr := .op () (id' "f") (some (.arrow .int .int))
+def lam : Expression.Expr := .abs Core.valueLoc "" (some .int) (.bvar Core.valueLoc 0)
+def u8 : Expression.Expr := .fvar Core.valueLoc (id' "u@1") (some (.bitvec 8))
+def opApp (o : Expression.Expr) (a : Expression.Expr) : Expression.Expr := .app Core.valueLoc o a
+def fOp : Expression.Expr := .op Core.valueLoc (id' "f") (some (.arrow .int .int))
 
 -- Unread copies, merges, operator applications, `==` at `int`, and nondeterministic
 -- `int`/`bool` inits are erased, to the fixpoint (`a@1` once `a@2` is erased).
 def erasedDefs : Statements := [initT "x@3" .int (iv "y@1"),
-  initT "y@9" .int (.ite () (bv' "g") (iv "y@7") (iv "y@8")),
+  initT "y@9" .int (.ite Core.valueLoc (bv' "g") (iv "y@7") (iv "y@8")),
   initT "s@1" .int (add (iv "y@1") (int 1)), havocT "z@2" .int, havocT "b@2" .bool,
   initT "a@1" .int (iv "y@1"), initT "a@2" .int (iv "a@1"),
-  initT "e@1" .bool (.eq () (iv "y@1") (int 3))]
+  initT "e@1" .bool (.eq Core.valueLoc (iv "y@1") (int 3))]
 #guard dd (erasedDefs ++ [assert' "a" (gt (iv "y@1") (int 0))]) == lines [
     "{",
     "  assert [a]: int.gt(y@1, 0);",
@@ -68,12 +68,12 @@ def erasedDefs : Statements := [initT "x@3" .int (iv "y@1"),
 -- lambda, a beta-redex, `==` at a map type, a bit-vector shift, a program-defined function,
 -- an unannotated variable, a nondeterministic map.
 def otherDefs : Statements := [initT "d@1" .int (div' (iv "y@1") (int 2)),
-  initT "q@1" .bool (.quant () .all "" (some .int) (.bvar () 0)
-    (.eq () (.bvar () 0) (.bvar () 0))),
-  initT "l@1" (.arrow .int .int) lam, initT "r@1" .int (.app () lam (int 1)),
-  initT "e@1" .bool (.eq () (mv "m@1") (mv "m@2")),
-  initT "h@1" (.bitvec 8) (.app () (opApp bv8ShlOp u8) u8),
-  initT "f@1" .int (opApp fOp (iv "y@1")), initT "c@1" .int (.fvar () (id' "y@1") none),
+  initT "q@1" .bool (.quant Core.valueLoc .all "" (some .int) (.bvar Core.valueLoc 0)
+    (.eq Core.valueLoc (.bvar Core.valueLoc 0) (.bvar Core.valueLoc 0))),
+  initT "l@1" (.arrow .int .int) lam, initT "r@1" .int (.app Core.valueLoc lam (int 1)),
+  initT "e@1" .bool (.eq Core.valueLoc (mv "m@1") (mv "m@2")),
+  initT "h@1" (.bitvec 8) (.app Core.valueLoc (opApp bv8ShlOp u8) u8),
+  initT "f@1" .int (opApp fOp (iv "y@1")), initT "c@1" .int (.fvar Core.valueLoc (id' "y@1") none),
   havocT "m@3" (mapTy .int .int)]
 #guard otherDefs.all fun s =>
   dd [s, assert' "a" (gt (iv "y@1") (int 0))] == lines [
@@ -230,7 +230,7 @@ partial def symTraces (σ : SStore) : Statements → List (List SEvent)
   | .cmd (.cmd (.init x _ (.det e) _)) :: rest =>
     symTraces ((x, LExpr.substFvars e σ) :: σ) rest
   | .cmd (.cmd (.init x _ .nondet _)) :: rest =>
-    symTraces ((x, .fvar () (id' ("?" ++ x.name)) none) :: σ) rest
+    symTraces ((x, .fvar Core.valueLoc (id' ("?" ++ x.name)) none) :: σ) rest
   | .cmd (.cmd (.assume l e _)) :: rest => (symTraces σ rest).map (("assume", l, e, σ) :: ·)
   | .cmd (.cmd (.assert l e _)) :: rest => (symTraces σ rest).map (("assert", l, e, σ) :: ·)
   | .cmd (.cmd (.cover l e _)) :: rest => (symTraces σ rest).map (("cover", l, e, σ) :: ·)

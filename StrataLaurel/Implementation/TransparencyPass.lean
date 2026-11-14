@@ -72,7 +72,7 @@ private def functionCopyCallee (asFunctionNames : Std.HashSet String) (callee : 
   else adjustSafeOperatorName (adjustSelectorName callee)
 
 /-- Make an expression pure: drop its proof steps and point its calls at the
-    `$asFunction` twins. A `StaticCall` to a procedure with a twin is renamed (other
+    `$asFunction` twins. A static `Call` to a procedure with a twin is renamed (other
     callees get their selector/checked-operator adjustment).
 
     Every position that reaches Core as a function body or as a spec expression goes
@@ -120,9 +120,9 @@ private def functionalize (asFunctionNames : Std.HashSet String)
           let decl : StmtExprMd :=
             ⟨.Assign [⟨.Declare ⟨mkId "$assertCondition", none⟩, e.source⟩] cond, e.source⟩
           [⟨.Block [decl] none [] none, e.source⟩]
-      | .StaticCall callee args tyArgs =>
+      | .Call none callee args tyArgs =>
         if !resultUsed then []
-        else [⟨.StaticCall (functionCopyCallee asFunctionNames callee) args tyArgs, e.source⟩]
+        else [⟨.Call none (functionCopyCallee asFunctionNames callee) args tyArgs, e.source⟩]
       | _ => [e])
     true expr
 
@@ -131,10 +131,10 @@ private def functionalize (asFunctionNames : Std.HashSet String)
 def functionalizeChanges (asFunctionNames : Std.HashSet String) (expr : StmtExprMd) : Bool :=
   anyStmtExpr (fun e => match e.val with
     | .Assert .. | .Assume _ => true
-    | .StaticCall callee _ _ => (functionCopyCallee asFunctionNames callee).text != callee.text
+    | .Call none callee _ _ => (functionCopyCallee asFunctionNames callee).text != callee.text
     | _ => false) expr
 
-/-- Narrowly redirect `StaticCall` callees whose names are in `redirectNames`
+/-- Narrowly redirect static `Call` callees whose names are in `redirectNames`
     to their `$asFunction` versions, leaving everything else (selectors,
     operator calls, non-redirected calls) untouched. Unlike
     `functionalize`, this does not adjust selector names or swap
@@ -150,10 +150,10 @@ def functionalizeChanges (asFunctionNames : Std.HashSet String) (expr : StmtExpr
 private def redirectCallsToFunctional (redirectNames : Std.HashSet String) (expr : StmtExprMd) : StmtExprMd :=
   mapStmtExpr (fun e =>
     match e.val with
-    | .StaticCall callee args tyArgs =>
+    | .Call none callee args tyArgs =>
       if redirectNames.contains callee.text then
         let funcCallee := { callee with text := callee.text ++ "$asFunction" }
-        ⟨.StaticCall funcCallee args tyArgs, e.source⟩
+        ⟨.Call none funcCallee args tyArgs, e.source⟩
       else e
     | _ => e) expr
 
@@ -177,7 +177,7 @@ private def redirectCallsInProc (redirectNames : Std.HashSet String) (proc : Pro
 
     Uses the generic `anyStmtExpr` combinator so every constructor is traversed
     automatically. A hand-rolled recursion here would miss nodes like
-    `Quantifier`, `InstanceCall`, `Old`, and `Fresh`: since the contract pass now
+    `Quantifier`, instance `Call`, `Old`, and `Fresh`: since the contract pass now
     instruments every contract-bearing procedure, a `requires`-bearing helper
     called from inside such a node produces an `Assert` that a partial traversal
     would not see, so no procedural twin would be generated and the schema pass
@@ -418,9 +418,9 @@ private def mkFreePostcondition (proc : Procedure) : StmtExprMd :=
   let source := proc.name.source
   let funcName := { proc.name with text := proc.name.text ++ "$asFunction", uniqueId := none }
   let inputArgs := proc.inputs.map fun p => (⟨ .Var (.Local p.name), source ⟩ : StmtExprMd)
-  let funcCall: StmtExprMd := ⟨ .StaticCall funcName inputArgs [], source ⟩
+  let funcCall: StmtExprMd := ⟨ .Call none funcName inputArgs [], source ⟩
   match proc.outputs with
-  | [out] => ⟨ .StaticCall (mkId Operation.Eq.procName) [⟨ .Var (.Local out.name), source⟩, funcCall] [], source ⟩
+  | [out] => ⟨ .Call none (mkId Operation.Eq.procName) [⟨ .Var (.Local out.name), source⟩, funcCall] [], source ⟩
   | _ => ⟨ .LiteralBool true, source ⟩
 
 /-- Create the function copy of a procedure (suffixed `$asFunction`).
@@ -522,7 +522,7 @@ def createFunctionsForTransparentBodies (program : LaurelProgram) (options : Lau
     let scanExprForTwins (e : StmtExprMd) : StateM (Std.HashSet String) Unit :=
       foldStmtExprM (fun e =>
         match e.val with
-        | .StaticCall callee _ _ =>
+        | .Call none callee _ _ =>
           if callee.text.endsWith "$asFunction" then
             modify (·.insert (callee.text.dropEnd "$asFunction".length).toString)
           else pure ()
@@ -569,7 +569,7 @@ public def transparencyPass : LaurelPass := .onUnordered {
   creates := [
       NodeKind.Pseudo.asFunctionTwin,
       NodeKind.Condition.mode.Assume,
-      NodeKind.StmtExpr.StaticCall,
+      NodeKind.StmtExpr.Call,
       NodeKind.LaurelProgram.staticFunctions.cons,
       NodeKind.Pseudo.statementExpression,
       NodeKind.Pseudo.letExpr,

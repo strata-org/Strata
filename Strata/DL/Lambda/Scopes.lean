@@ -84,7 +84,11 @@ def Scope.merge (cond : LExpr T.mono) (m1 m2 : Scope T) : Scope T :=
         (k, (ty1, mkIte cond e1 e2)) ::
       Scope.merge cond rest m2'
   where mkIte (cond tru fals : LExpr T.mono) : LExpr T.mono :=
-    if tru == fals then tru
+    -- Compare branches ignoring metadata (as CSE does), so branches that are
+    -- equal apart from their source locations still collapse. Comparing with
+    -- metadata-sensitive `==` would keep an `ite` whenever the two sides carry
+    -- different locations, making sequential same-value `if`s blow up.
+    if tru.beqIgnoringMetadata fals then tru
     else (LExpr.ite (default : T.Metadata) cond tru fals)
 
 

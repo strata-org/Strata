@@ -64,7 +64,7 @@ procedure p(x : int)
 private def repeated : Core.Program := translateCore repeatedPgm
 
 #guard (assertExprsOf repeated "p").length == 2
-#guard (assertExprsOf repeated "p")[0]! == (assertExprsOf repeated "p")[1]!
+#guard Core.eraseLocs (assertExprsOf repeated "p")[0]! == Core.eraseLocs (assertExprsOf repeated "p")[1]!
 #guard (idsOf repeated "p").length == 2
 #guard (idsOf repeated "p")[0]!.1 == (idsOf repeated "p")[1]!.1
 #guard (idsOf repeated "p")[0]! != (idsOf repeated "p")[1]!
@@ -108,8 +108,8 @@ private def invProv (start : Nat) : Provenance :=
   .loc (.file "loop.core") { start := ⟨start⟩, stop := ⟨start + 5⟩ }
 
 private def locatedLoop : Core.Statement :=
-  .loop (.det (Lambda.LExpr.boolConst () true)) none
-    [("", Lambda.LExpr.boolConst () true), ("", Lambda.LExpr.boolConst () true)] []
+  .loop (.det (Lambda.LExpr.boolConst Core.valueLoc true)) none
+    [("", Lambda.LExpr.boolConst Core.valueLoc true), ("", Lambda.LExpr.boolConst Core.valueLoc true)] []
     (Imperative.MetaData.pushInvariantProvenance
       (Imperative.MetaData.pushInvariantProvenance #[] (invProv 10)) (invProv 20))
 
@@ -222,8 +222,8 @@ private def callArgs : Core.Program := callArgs?.toOption.getD default
 #guard (assertExprsOf callArgs "p")[0]! != (assertExprsOf callArgs "p")[1]!
 
 private def unlocated : List Core.Statement :=
-  [Core.Statement.assert "L" (Lambda.LExpr.boolConst () true) #[],
-   Core.Statement.assert "L" (Lambda.LExpr.boolConst () false) #[]]
+  [Core.Statement.assert "L" (Lambda.LExpr.boolConst Core.valueLoc true) #[],
+   Core.Statement.assert "L" (Lambda.LExpr.boolConst Core.valueLoc false) #[]]
 
 #guard (Core.Statements.collectAssertIds unlocated).map (fun a => (a.label, a.md)) ==
   [("L", #[]), ("L", #[])]

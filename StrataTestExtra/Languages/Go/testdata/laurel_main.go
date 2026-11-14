@@ -93,10 +93,10 @@ func bigLit(s string) l.StmtExpr {
 }
 
 // op builds one of Laurel's built-in operator wrappers. Laurel has no separate
-// binary-operator node: `x + y` is a StaticCall to `$add` (Operation.procName),
+// binary-operator node: `x + y` is a static Call to `$add` (Operation.procName),
 // and the pretty-printer turns it back into infix syntax.
 func op(wrapper string, args ...l.AstNode[l.StmtExpr]) l.StmtExpr {
-	return l.StmtExprStaticCall{Callee: id(wrapper), Arguments: args}
+	return l.StmtExprCall{Callee: id(wrapper), Arguments: args}
 }
 
 // sumTo builds

@@ -18,14 +18,14 @@ namespace InterpreterEvalTest
 open Core Lambda Imperative
 
 private def id (name : String) : CoreIdent := ⟨name, ()⟩
-private def int (n : Int) : Expression.Expr := .intConst () n
+private def int (n : Int) : Expression.Expr := .intConst default n
 private def md : MetaData Expression := #[]
-private def xVar : Expression.Expr := .fvar () (id "x") (some .int)
+private def xVar : Expression.Expr := .fvar default (id "x") (some .int)
 
 private def setX (v : Int) : Statement :=
   .cmd (.cmd (.set (id "x") (.det (int v)) md))
 private def assertX (label : String) (rhs : Int) : Statement :=
-  .cmd (.cmd (.assert label (.eq () xVar (int rhs)) md))
+  .cmd (.cmd (.assert label (.eq default xVar (int rhs)) md))
 
 /-- Caller env with `x` predefined to `1`. -/
 private def env0 : Imperative.IEnv Expression :=
@@ -52,9 +52,9 @@ private def finalX (stmts : List Statement) : Option Expression.Expr :=
 /-! ## The four `assertPolicy × assumePolicy` configurations -/
 
 private def assumeX (label : String) (rhs : Int) : Statement :=
-  .cmd (.cmd (.assume label (.eq () xVar (int rhs)) md))
+  .cmd (.cmd (.assume label (.eq default xVar (int rhs)) md))
 private def coverX (label : String) : Statement :=
-  .cmd (.cmd (.cover label (.eq () xVar (int 1)) md))
+  .cmd (.cmd (.cover label (.eq default xVar (int 1)) md))
 
 private def opts (ap : AssertPolicy) (sp : AssumePolicy) : EvalOpts :=
   { fuel := 100, assertPolicy := ap, assumePolicy := sp }

@@ -59,9 +59,17 @@ open StrataDDM (Program)
 
 namespace Strata.HoareAfterInsertLoopInvTest
 
+/-- Expression source locations are normalized to `Core.valueLoc` so the tests' exact
+    structural comparisons hold; execution ignores locations, so this changes nothing the
+    evaluator observes. -/
+private def eraseProgLocs (pr : Core.Program) : Core.Program :=
+  { pr with decls := pr.decls.map fun d => match d with
+      | .proc proc md => .proc (Core.Procedure.mapExprs Core.eraseLocs proc) md
+      | other => other }
+
 /-- Translate a DDM concrete-syntax program to the Core AST. -/
 private def cstToAST (p : Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram p)).fst
+  eraseProgLocs (TransM.run Inhabited.default (translateProgram p)).fst
 
 /-- Gate parameters: no reserved fresh-prefixes, and every name counts as declared. -/
 private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
@@ -128,7 +136,7 @@ private def parts : Parts :=
 
 /-- The initialisation `y := 0`. -/
 private abbrev countInit : Core.Statement :=
-  Core.Statement.set countY (Lambda.LExpr.const () (.intConst 0)) parts.md0
+  Core.Statement.set countY (Lambda.LExpr.const Core.valueLoc (.intConst 0)) parts.md0
 
 /-- The body's assignment `y := int.add(y, 1)`. -/
 private abbrev countSet : Core.Statement := Core.Statement.set countY parts.rhs parts.md2
@@ -219,23 +227,23 @@ private abbrev intMono : Lambda.LMonoTy := .tcons "int" []
 
 /-- The guard is `int.le(y, 9)` in `Core.Factory`'s operator form. -/
 private theorem guard_shape :
-    parts.guard = .app () (.app () Core.intLeOp (.fvar () countY (some intMono)))
-      (.intConst () 9) := by native_decide
+    parts.guard = .app Core.valueLoc (.app Core.valueLoc Core.intLeOp (.fvar Core.valueLoc countY (some intMono)))
+      (.intConst Core.valueLoc 9) := by native_decide
 
 /-- The invariant is `int.le(y, 10)` in `Core.Factory`'s operator form. -/
 private theorem inv_shape :
-    parts.inv = .app () (.app () Core.intLeOp (.fvar () countY (some intMono)))
-      (.intConst () 10) := by native_decide
+    parts.inv = .app Core.valueLoc (.app Core.valueLoc Core.intLeOp (.fvar Core.valueLoc countY (some intMono)))
+      (.intConst Core.valueLoc 10) := by native_decide
 
 /-- The measure is `int.sub(10, y)` in `Core.Factory`'s operator form. -/
 private theorem measure_shape :
-    parts.measure = .app () (.app () Core.intSubOp (.intConst () 10))
-      (.fvar () countY (some intMono)) := by native_decide
+    parts.measure = .app Core.valueLoc (.app Core.valueLoc Core.intSubOp (.intConst Core.valueLoc 10))
+      (.fvar Core.valueLoc countY (some intMono)) := by native_decide
 
 /-- The increment is `int.add(y, 1)` in `Core.Factory`'s operator form. -/
 private theorem rhs_shape :
-    parts.rhs = .app () (.app () Core.intAddOp (.fvar () countY (some intMono)))
-      (.intConst () 1) := by native_decide
+    parts.rhs = .app Core.valueLoc (.app Core.valueLoc Core.intAddOp (.fvar Core.valueLoc countY (some intMono)))
+      (.intConst Core.valueLoc 1) := by native_decide
 
 /-- The runtime factory's functions are those of `Core.Factory`. -/
 private abbrev Pinned (ρ : Env Core.Expression) : Prop := ρ.factory.factory = Core.Factory
@@ -417,9 +425,9 @@ private theorem tgtBody_triple :
 
 /-- The postcondition `!(int.le(y, 9))` is the negated guard. -/
 private theorem count_post_expr :
-    ∀ lc ∈ countProc.spec.postconditions.toList, lc.2.expr = HasBoolOps.not parts.guard := by
+    ∀ lc ∈ countProc.spec.postconditions.toList, Core.eraseLocs lc.2.expr = Core.eraseLocs (HasBoolOps.not parts.guard) := by
   have h : countProc.spec.postconditions.toList.all
-      (fun lc => decide (lc.2.expr = HasBoolOps.not parts.guard)) = Bool.true := by
+      (fun lc => decide (Core.eraseLocs lc.2.expr = Core.eraseLocs (HasBoolOps.not parts.guard))) = Bool.true := by
     native_decide
   intro lc hlc
   simpa using (List.all_eq_true.1 h) lc hlc
@@ -435,7 +443,7 @@ private theorem countTgt_triple :
       (fun ρ₀ σ' v hρ hev hup => ?_)
     cases hup with
     | update _ hnew _ =>
-      rw [show (Lambda.LExpr.const () (.intConst 0) : Core.Expression.Expr) = .intConst () 0
+      rw [show (Lambda.LExpr.const Core.valueLoc (.intConst 0) : Core.Expression.Expr) = .intConst Core.valueLoc 0
         from rfl, Core.eval_intConst] at hev
       cases hev
       exact ⟨hρ.2.1, hnew⟩
@@ -461,7 +469,7 @@ private theorem countTgt_triple :
   refine Core.Logic.Hoare.seq π testParams (assume_keep _ _ _) ?_ (by covered)
   refine assume_rule _ _ _ (fun _ h => h.1.1) fun ρ ⟨⟨hp, _⟩, _⟩ he => ?_
   intro label check hmem _ _
-  exact .inl ⟨hp, by rw [count_post_expr _ hmem]; exact he⟩
+  exact .inl ⟨hp, by rw [← Core.Expression.eval_eraseLocs, count_post_expr _ hmem, Core.Expression.eval_eraseLocs]; exact he⟩
 
 /-! ## Back to the loop -/
 

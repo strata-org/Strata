@@ -81,13 +81,13 @@ private abbrev assertMd : MetaData Core.Expression :=
 
 /-- `int.add(a, b)` of two variables or a variable and a literal. -/
 private abbrev addE (a b : Core.Expression.Expr) : Core.Expression.Expr :=
-  .app () (.app () Core.intAddOp a) b
+  .app Core.valueLoc (.app Core.valueLoc Core.intAddOp a) b
 
 /-- The translated body. -/
 private abbrev growBody : Core.Statements :=
-  [Core.Statement.set yId (addE (v xId) (.intConst () 1)) (loc 598 617),
+  [Core.Statement.set yId (addE (v xId) (.intConst Core.valueLoc 1)) (loc 598 617),
    Core.Statement.set yId (addE (v yId) (v yId)) (loc 620 639),
-   Core.Statement.assert "grow" (.app () (.app () Core.intGtOp (v yId)) (v xId)) assertMd]
+   Core.Statement.assert "grow" (.app Core.valueLoc (.app Core.valueLoc Core.intGtOp (v yId)) (v xId)) assertMd]
 
 /-- The translated body really is the two assignments followed by the assertion. -/
 private theorem grow_body_eq : growProc.body = .structured growBody := by native_decide
@@ -101,7 +101,7 @@ private def y2 : Core.Expression.Ident := ⟨"y@2", ()⟩
 private def y3 : Core.Expression.Ident := ⟨"y@3", ()⟩
 
 /-- The assertion of the SSA form. -/
-private abbrev growCond : Core.Expression.Expr := .app () (.app () Core.intGtOp (v y3)) (v x0)
+private abbrev growCond : Core.Expression.Expr := .app Core.valueLoc (.app Core.valueLoc Core.intGtOp (v y3)) (v x0)
 
 /-- The parameter types, parameters and aliases of the procedure. -/
 private abbrev tys := growProc.paramTys
@@ -129,7 +129,7 @@ private def tgtMd : MetaData Core.Expression × MetaData Core.Expression :=
 
 /-- The SSA form of the body. -/
 private abbrev growTgt : Core.Statements :=
-  [Core.Statement.init y2 intLTy (.det (addE (v x0) (.intConst () 1))) tgtMd.1] ++
+  [Core.Statement.init y2 intLTy (.det (addE (v x0) (.intConst Core.valueLoc 1))) tgtMd.1] ++
   ([Core.Statement.init y3 intLTy (.det (addE (v y2) (v y2))) tgtMd.2] ++
   [Core.Statement.assert "grow" growCond assertMd])
 

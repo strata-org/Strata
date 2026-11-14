@@ -52,24 +52,31 @@ meta def program : Wire.Program :=
             blk "b0" [.init "e" (.named "Exn") none (at_ 32), .init "x" (.named "Exn") none (at_ 32), .new "x" "Exn" (at_ 32), .throw (.var "x") none (at_ 33)] (.finish (at_ 34)),
             blk "h" [.assert "a4" (.bool true) (some "handler reached") (at_ 35)] (.finish (at_ 36))] } }] }
 
-meta def run (p : Wire.Program) : IO Unit := do
-  let options : Laurel.LaurelVerifyOptions := { verifyOptions := Core.VerifyOptions.quiet }
-  for m in ← Cortex.verifyWireToMessages p options do
-    IO.println s!"{m.fileRange.range.start.byteIdx}: {m.message}"
+/-- Translate `p` to Core, whose procedure bodies are CFGs, and type-check the
+Core program. Print which step rejected `p`, or that the type check passed. -/
+meta def typeCheck (p : Wire.Program) : IO Unit :=
+  match Cortex.wireToCortex p with
+  | .error e => IO.println s!"invalid Cortex program: {e}"
+  | .ok m => match Cortex.toCoreProgram m with
+    | .error e => IO.println s!"Cortex lowering failed: {e}"
+    | .ok core => match Core.typeCheck .quiet core with
+      | .error e => IO.println s!"Core type checking failed: {e}"
+      | .ok _ => IO.println "Core type checking succeeded."
 
 /--
-info: 15: assertion does not hold
-1: assertion does not hold
-13: assertion does not hold
+info: Core type checking succeeded.
 -/
 #guard_msgs in
-#eval run program
+#eval typeCheck program
 
 meta def entryProgram : Wire.Program :=
-  { composites := [], constrained := [int32],
+  { composites := [{ name := "Box", extending := [], fields := [{ name := "v", ty := i32 }] }],
+    constrained := [int32],
     procedures := [
       { name := "lib", inputs := [], outputs := [{ name := "r", ty := i32 }], throws := none, requires := [], body := none,
         entry := false, source := at_ 40 },
+      { name := "libBox", inputs := [], outputs := [{ name := "b", ty := .named "Box" }], throws := none, requires := [],
+        body := none, entry := false, source := at_ 40 },
       { name := "run", inputs := [], outputs := [], throws := none, requires := [], entry := true, source := at_ 41,
         body := some { entry := "b0", handlers := [], blocks := [
           blk "b0" [.init "x" i32 (some (.int 2)) (at_ 42),
@@ -78,23 +85,50 @@ meta def entryProgram : Wire.Program :=
                     .assert "bad" (.eq (.var "x") (.int 4)) none (at_ 45)] (.finish (at_ 46))] } },
       { name := "callsLib", inputs := [], outputs := [], throws := none, requires := [], entry := true, source := at_ 50,
         body := some { entry := "b0", handlers := [], blocks := [
-          blk "b0" [.init "y" i32 none (at_ 51), .call ["y"] "lib" [] (at_ 52)] (.finish (at_ 53))] } }] }
+          blk "b0" [.init "y" i32 none (at_ 51), .call ["y"] "lib" [] (at_ 52),
+                    .assert "libResult" (.eq (.var "y") (.int 0)) none (at_ 53),
+                    .init "b" (.named "Box") none (at_ 54), .call ["b"] "libBox" [] (at_ 55),
+                    .writeField (.var "b") "Box" "v" (.int 7) (at_ 56),
+                    .init "t" i32 none (at_ 57),
+                    .readField "t" (.var "b") "Box" "v" (at_ 57),
+                    .assert "written" (.eq (.var "t") (.int 7)) none (at_ 58),
+                    .assert "afterCalls" (.eq (.var "t") (.int 8)) none (at_ 59)] (.finish (at_ 60))] } }] }
 
 meta def interpret (p : Wire.Program) : IO Unit :=
   match Cortex.interpretWire p 1000 with
   | .error e => IO.println s!"error: {e}"
-  | .ok (diags, errors) => do
-    for m in diags do
+  | .ok outcome => do
+    for m in outcome.diagnostics do
       IO.println s!"{m.fileRange.range.start.byteIdx}: {m.message}"
-    for e in errors do
-      IO.println s!"stopped: {e}"
+    for (name, reason) in outcome.errors do
+      IO.println s!"stopped: '{name}': {reason}"
 
 /--
 info: 45: assertion does not hold
-stopped: 'callsLib': call to procedure lib, which has no body
+59: assertion does not hold
 -/
 #guard_msgs in
 #eval interpret entryProgram
+
+/--
+info: Core type checking succeeded.
+-/
+#guard_msgs in
+#eval typeCheck entryProgram
+
+/-- `p` with every procedure that takes no input marked as an entry. -/
+meta def runParameterless (p : Wire.Program) : Wire.Program :=
+  { p with procedures := p.procedures.map fun q => { q with entry := q.inputs.isEmpty } }
+
+/-- `p` with exactly the procedures in `names` marked as entries. -/
+meta def runOnly (names : List String) (p : Wire.Program) : Wire.Program :=
+  { p with procedures := p.procedures.map fun q => { q with entry := names.contains q.name } }
+
+/--
+info: 15: assertion does not hold
+-/
+#guard_msgs in
+#eval interpret (runParameterless program)
 
 meta def noLoc : FileRange := { file := .file "", range := { start := ⟨0⟩, stop := ⟨0⟩ } }
 
@@ -139,15 +173,10 @@ info: 62: no int overflow on '+' does not hold
 #eval interpret helperProgram
 
 /--
-info: 82: no int overflow on '+' does not hold
+info: Core type checking succeeded.
 -/
 #guard_msgs in
-#eval run { helperProgram with procedures := helperProgram.procedures.take 1 ++
-  [{ name := "caller", inputs := [{ name := "a", ty := i32 }], outputs := [], throws := none, requires := [],
-     entry := false, source := at_ 80,
-     body := some { entry := "b0", handlers := [], blocks := [
-       blk "b0" [.init "z" i32 (some (.int 0)) (at_ 81),
-                 .call ["z"] "add" [.var "a", .int 1] (at_ 82)] (.finish (at_ 83))] } }] }
+#eval typeCheck helperProgram
 
 meta def arityCaller (lhs : List String) (args : List Wire.Expr) : Wire.Program :=
   { helperProgram with procedures := helperProgram.procedures.take 1 ++
@@ -157,16 +186,16 @@ meta def arityCaller (lhs : List String) (args : List Wire.Expr) : Wire.Program 
          blk "b0" [.init "z" i32 (some (.int 0)) (at_ 85), .call lhs "add" args (at_ 86)] (.finish (at_ 87))] } }] }
 
 /--
-info: 0: invalid Cortex program: 'caller': call to 'add' passes 1 arguments, but it takes 2
+info: invalid Cortex program: 'caller': call to 'add' passes 1 arguments, but it takes 2
 -/
 #guard_msgs in
-#eval run (arityCaller ["z"] [.int 1])
+#eval typeCheck (arityCaller ["z"] [.int 1])
 
 /--
-info: 0: invalid Cortex program: 'caller': call to 'add' assigns 0 results, but it returns 1
+info: invalid Cortex program: 'caller': call to 'add' assigns 0 results, but it returns 1
 -/
 #guard_msgs in
-#eval run (arityCaller [] [.int 1, .int 2])
+#eval typeCheck (arityCaller [] [.int 1, .int 2])
 
 meta def assignsInput : Wire.Program :=
   { composites := [], constrained := [],
@@ -175,21 +204,22 @@ meta def assignsInput : Wire.Program :=
         source := noLoc, requires := [{ cond := .op "Int.Gt" [.var "x", .int 0], summary := some "x is positive" }],
         body := some { entry := "b0", handlers := [], blocks := [
           blk "b0" [.set "x" (some (.op "Int.Sub" [.var "x", .int 1])) noLoc] (.finish noLoc)] } },
-      { name := "caller", inputs := [], outputs := [], throws := none, requires := [], entry := false,
+      { name := "caller", inputs := [], outputs := [], throws := none, requires := [], entry := true,
         source := at_ 88,
         body := some { entry := "b0", handlers := [], blocks := [
           blk "b0" [.call [] "dec" [.int 1] (at_ 89), .call [] "dec" [.int 0] (at_ 90)] (.finish (at_ 91))] } }] }
 
 /--
-info:
-
-Obligation callElimAssert_requires_0_3: failed!
-
-Result obtained during evaluation.
-90: x is positive does not hold
+info: 90: x is positive does not hold
 -/
 #guard_msgs in
-#eval run assignsInput
+#eval interpret assignsInput
+
+/--
+info: Core type checking succeeded.
+-/
+#guard_msgs in
+#eval typeCheck assignsInput
 
 meta def ae : String := "java.lang.ArithmeticException"
 
@@ -218,8 +248,14 @@ info: 92: no int overflow on '+' does not hold
 #guard_msgs in
 #eval interpret preludeProgram
 
-/-! Globals: an entry procedure starts from the initializers; any other procedure starts with
-arbitrary values. A flag-guarded initializer is seen by the caller only when it is inlined. -/
+/--
+info: Core type checking succeeded.
+-/
+#guard_msgs in
+#eval typeCheck preludeProgram
+
+/-! Globals: an entry procedure starts from the initializers, and sees what the procedures it
+calls write. -/
 
 meta def i32v (n : Int) : Wire.Expr := .int n
 
@@ -248,26 +284,15 @@ meta def globalsProgram : Wire.Program :=
                       .set "C:ready" (some (.bool true)) (at_ 83)] (.goto "use" (at_ 83)),
           blk "use" [.assert "initialized" (.eq (.var "C:x") (i32v 5)) none (at_ 84)] (.finish (at_ 85))] } }] }
 
--- Without inlining, the caller knows nothing about `C:x` after the call.
+-- `main` and `reader` each start from the initializers and run the flag-guarded initializer.
+#guard_msgs in
+#eval interpret (runOnly ["main", "reader"] globalsProgram)
+
 /--
-info: 74: assertion does not hold
-84: assertion does not hold
+info: Core type checking succeeded.
 -/
 #guard_msgs in
-#eval run globalsProgram
-
-meta def runInlining (p : Wire.Program) (inline : List String) : IO Unit := do
-  let options : Laurel.LaurelVerifyOptions := { verifyOptions := Core.VerifyOptions.quiet }
-  for m in ← Cortex.verifyWireToMessages p options inline do
-    IO.println s!"{m.fileRange.range.start.byteIdx}: {m.message}"
-
--- With the initializer inlined, the entry procedure sees the value it assigns; `reader` still
--- starts with an arbitrary `C:x` and an arbitrary flag.
-/--
-info: 74: assertion does not hold
--/
-#guard_msgs in
-#eval runInlining globalsProgram ["C:<clinit>"]
+#eval typeCheck globalsProgram
 
 -- The interpreter starts the entry procedure from the initializers.
 /--
@@ -288,11 +313,10 @@ meta def entryLabelledGlobalsEntry : Wire.Program :=
           if blk.label == "b0" then { blk with label := "$globalsEntry" } else blk } } }
 
 /--
-info: 74: assertion does not hold
-84: assertion does not hold
+info: Core type checking succeeded.
 -/
 #guard_msgs in
-#eval run entryLabelledGlobalsEntry
+#eval typeCheck entryLabelledGlobalsEntry
 
 #guard_msgs in
 #eval interpret entryLabelledGlobalsEntry
@@ -313,16 +337,15 @@ meta def callResultClash : Wire.Program :=
                     .assert "result" (.eq (.var "g") (i32v 8)) none (at_ 97)] (.finish (at_ 98))] } }] }
 
 /--
-info: 97: assertion does not hold
+info: Core type checking succeeded.
 -/
 #guard_msgs in
-#eval run callResultClash
+#eval typeCheck callResultClash
 
 #guard_msgs in
 #eval interpret callResultClash
 
--- `dec` has a precondition. Without inlining, Core checks it at the call, and the caller knows
--- nothing about `y` afterwards.
+-- `dec` has a precondition, which is checked at each call.
 meta def requiresProgram : Wire.Program :=
   { composites := [], constrained := [int32],
     procedures := [
@@ -340,18 +363,16 @@ meta def requiresProgram : Wire.Program :=
           blk "b0" [.init "y" i32 none (at_ 107), .call ["y"] "dec" [i32v 0] (at_ 107)] (.finish (at_ 108))] } }] }
 
 /--
-info: 104: assertion does not hold
-107: x is positive does not hold
--/
-#guard_msgs in
-#eval run requiresProgram
-
--- With `dec` inlined, its precondition is still checked at the call, and `good` sees the body.
-/--
 info: 107: x is positive does not hold
 -/
 #guard_msgs in
-#eval runInlining requiresProgram ["dec"]
+#eval interpret (runParameterless requiresProgram)
+
+/--
+info: Core type checking succeeded.
+-/
+#guard_msgs in
+#eval typeCheck requiresProgram
 
 -- A precondition may mention a global the body does not use.
 meta def requiresGlobal : Wire.Program :=
@@ -372,13 +393,13 @@ meta def requiresGlobal : Wire.Program :=
 info: 124: g is positive does not hold
 -/
 #guard_msgs in
-#eval run requiresGlobal
+#eval interpret requiresGlobal
 
 /--
-info: 124: g is positive does not hold
+info: Core type checking succeeded.
 -/
 #guard_msgs in
-#eval runInlining requiresGlobal ["f"]
+#eval typeCheck requiresGlobal
 
 -- Lowering matches variables to globals by name, so a parameter or local may not have a global's name.
 meta def paramClash : Wire.Program :=
@@ -391,16 +412,16 @@ meta def paramClash : Wire.Program :=
           blk "b0" [.set "r" (some (.var "g")) (at_ 112)] (.finish (at_ 112))] } }] }
 
 /--
-info: 0: invalid Cortex program: 'f': parameter 'g' has the name of a global
+info: invalid Cortex program: 'f': parameter 'g' has the name of a global
 -/
 #guard_msgs in
-#eval run paramClash
+#eval typeCheck paramClash
 
 /--
-info: 0: invalid Cortex program: 'f': local 'g' has the name of a global
+info: invalid Cortex program: 'f': local 'g' has the name of a global
 -/
 #guard_msgs in
-#eval run { paramClash with procedures := paramClash.procedures.map fun q =>
+#eval typeCheck { paramClash with procedures := paramClash.procedures.map fun q =>
   { q with inputs := [], body := q.body.map fun b => { b with blocks := b.blocks.map fun blk =>
       { blk with cmds := .init "g" i32 (some (i32v 1)) (at_ 112) :: blk.cmds } } } }
 
@@ -414,19 +435,22 @@ meta def orderedInit : Wire.Program :=
         body := some { entry := "b0", handlers := [], blocks := [
           blk "b0" [.assert "a3" (.eq (.var "a") (i32v 3)) none (at_ 133)] (.finish (at_ 134))] } }] }
 
+/--
+info: Core type checking succeeded.
+-/
 #guard_msgs in
-#eval run orderedInit
+#eval typeCheck orderedInit
 
 #guard_msgs in
 #eval interpret orderedInit
 
 /--
-info: 0: invalid Cortex program: global 'a': initializer refers to 'b', which is not a global declared before it
+info: invalid Cortex program: global 'a': initializer refers to 'b', which is not a global declared before it
 -/
 #guard_msgs in
-#eval run { orderedInit with globals := orderedInit.globals.reverse }
+#eval typeCheck { orderedInit with globals := orderedInit.globals.reverse }
 
--- A call that throws assigns none of its results, also when the callee is inlined.
+-- A call that throws assigns none of its results.
 meta def throwingResult (expected : Int) : Wire.Program :=
   { composites := [{ name := "Throwable", extending := [], fields := [] },
                    { name := "Exn", extending := ["Throwable"], fields := [] }],
@@ -444,16 +468,13 @@ meta def throwingResult (expected : Int) : Wire.Program :=
             blk "h" [.assert "kept" (.eq (.var "y") (i32v expected)) none (at_ 150)] (.finish (at_ 151))] } }] }
 
 #guard_msgs in
-#eval runInlining (throwingResult 1) ["f"]
-
-#guard_msgs in
 #eval interpret (throwingResult 1)
 
 /--
-info: 150: assertion does not hold
+info: Core type checking succeeded.
 -/
 #guard_msgs in
-#eval runInlining (throwingResult 8) ["f"]
+#eval typeCheck (throwingResult 1)
 
 /--
 info: 150: assertion does not hold
@@ -461,32 +482,12 @@ info: 150: assertion does not hold
 #guard_msgs in
 #eval interpret (throwingResult 8)
 
--- A failed precondition is reported once: the inlined body has the precondition as a fact.
-meta def requiresAssumed : Wire.Program :=
-  { composites := [], constrained := [int32],
-    procedures := [
-      { name := "f", inputs := [{ name := "x", ty := i32 }], outputs := [], throws := none,
-        requires := [{ cond := .op "Int.Lt" [i32v 0, .var "x"], summary := some "x is positive" }], entry := false,
-        source := at_ 160,
-        body := some { entry := "b0", handlers := [], blocks := [
-          blk "b0" [.assert "nonzero" (.op "Bool.Not" [.eq (.var "x") (i32v 0)]) none (at_ 161)] (.finish (at_ 162))] } },
-      { name := "caller", inputs := [{ name := "a", ty := i32 }], outputs := [], throws := none, requires := [],
-        entry := false, source := at_ 163,
-        body := some { entry := "b0", handlers := [], blocks := [
-          blk "b0" [.call [] "f" [.var "a"] (at_ 164)] (.finish (at_ 165))] } }] }
-
+-- An entry procedure's precondition over a global is refused.
 /--
-info: 164: x is positive does not hold
+info: invalid Cortex program: 'main': the precondition of an entry procedure reads global 'g', which starts at its initializer there
 -/
 #guard_msgs in
-#eval runInlining requiresAssumed ["f"]
-
--- An entry procedure's precondition is assumed, like any procedure's; one over a global is refused.
-/--
-info: 0: invalid Cortex program: 'main': the precondition of an entry procedure reads global 'g', which starts at its initializer there
--/
-#guard_msgs in
-#eval run { requiresGlobal with procedures := requiresGlobal.procedures.map fun q =>
+#eval typeCheck { requiresGlobal with procedures := requiresGlobal.procedures.map fun q =>
   if q.name != "main" then q else
   { q with requires := [{ cond := .op "Int.Le" [i32v 0, .var "g"], summary := none }] } }
 
@@ -498,8 +499,18 @@ meta def entryInputPrecondition : Wire.Program :=
         body := some { entry := "b0", handlers := [], blocks := [
           blk "b0" [.assert "nonneg" (.op "Int.Le" [i32v 0, .var "a"]) none (at_ 191)] (.finish (at_ 192))] } }] }
 
+/--
+info: Core type checking succeeded.
+-/
 #guard_msgs in
-#eval run entryInputPrecondition
+#eval typeCheck entryInputPrecondition
+
+-- The interpreter has no value for the input of an entry procedure, so it stops there.
+/--
+info: stopped: 'main': an assertion could not be evaluated
+-/
+#guard_msgs in
+#eval interpret entryInputPrecondition
 
 -- A value of a constrained type over a composite is a reference: a fresh allocation is not it.
 meta def constrainedComposite : Wire.Program :=
@@ -528,7 +539,47 @@ meta def constrainedComposite : Wire.Program :=
                     .init "y" (.named "Box") none (at_ 182), .new "y" "Box" (at_ 182),
                     .assert "fresh" (.op "Bool.Not" [.eq (.var "t") (.var "y")]) none (at_ 183)] (.finish (at_ 184))] } }] }
 
+/--
+info: Core type checking succeeded.
+-/
 #guard_msgs in
-#eval run constrainedComposite
+#eval typeCheck constrainedComposite
+
+#guard_msgs in
+#eval interpret (runOnly ["fieldRead", "callOut"] constrainedComposite)
+
+-- A call to a procedure without a body leaves every global as it is, also one that holds an object.
+meta def bodilessKeepsGlobals : Wire.Program :=
+  { composites := [{ name := "Box", extending := [], fields := [{ name := "v", ty := i32 }] }],
+    constrained := [int32],
+    globals := [{ name := "n", ty := i32, init := some (i32v 4), source := at_ 200 },
+                { name := "box", ty := .named "Box", init := none, source := at_ 201 }],
+    procedures := [
+      { name := "lib", inputs := [], outputs := [], throws := none, requires := [], body := none,
+        entry := false, source := at_ 202 },
+      { name := "main", inputs := [], outputs := [], throws := none, requires := [], entry := true, source := at_ 203,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.init "b" (.named "Box") none (at_ 204), .new "b" "Box" (at_ 204),
+                    .writeField (.var "b") "Box" "v" (i32v 7) (at_ 205),
+                    .set "box" (some (.var "b")) (at_ 206),
+                    .call [] "lib" [] (at_ 207),
+                    .init "t" i32 none (at_ 208),
+                    .readField "t" (.var "box") "Box" "v" (at_ 208),
+                    .assert "sameObject" (.eq (.var "box") (.var "b")) none (at_ 209),
+                    .assert "fieldKept" (.eq (.var "t") (i32v 7)) none (at_ 210),
+                    .assert "intKept" (.eq (.var "n") (i32v 4)) none (at_ 211),
+                    .assert "intChanged" (.eq (.var "n") (i32v 5)) none (at_ 212)] (.finish (at_ 213))] } }] }
+
+/--
+info: 212: assertion does not hold
+-/
+#guard_msgs in
+#eval interpret bodilessKeepsGlobals
+
+/--
+info: Core type checking succeeded.
+-/
+#guard_msgs in
+#eval typeCheck bodilessKeepsGlobals
 
 end Cortex.WireTest

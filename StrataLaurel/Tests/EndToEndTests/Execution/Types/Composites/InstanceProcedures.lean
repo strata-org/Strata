@@ -11,8 +11,8 @@ Each instance procedure declared inside a `composite` block is lifted to a
 top-level static procedure named `<CompositeName>$<methodName>` by the
 `LiftInstanceProcedures` pass. Resolution registers the instance proc in
 global scope under the lifted key, so two composites can share a method
-name without colliding. `c#m(args)` parses as `InstanceCall c m args` and
-the lifting pass rewrites it to `StaticCall Counter$m (c :: args)`.
+name without colliding. `c#m(args)` parses as `Call (some c) m args` and
+the lifting pass rewrites it to `Call none Counter$m (c :: args)`.
 -/
 
 meta import StrataLaurel.Tests.Util.TestLaurel

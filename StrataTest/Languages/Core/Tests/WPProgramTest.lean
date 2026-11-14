@@ -30,11 +30,11 @@ open Core Core.WP Core.DeadDefElim Lambda Imperative Imperative.BigStep Imperati
   Imperative.DeadDefElim Strata.WPTestUtils
 
 def id' (name : String) : CoreIdent := ⟨name, ()⟩
-def int (n : Int) : Expression.Expr := .intConst () n
+def int (n : Int) : Expression.Expr := .intConst Core.valueLoc n
 def md : MetaData Expression := #[]
-def iv (n : String) : Expression.Expr := .fvar () (id' n) (some .int)
-def gt (a b : Expression.Expr) : Expression.Expr := .app () (.app () intGtOp a) b
-def add (a b : Expression.Expr) : Expression.Expr := .app () (.app () intAddOp a) b
+def iv (n : String) : Expression.Expr := .fvar Core.valueLoc (id' n) (some .int)
+def gt (a b : Expression.Expr) : Expression.Expr := .app Core.valueLoc (.app Core.valueLoc intGtOp a) b
+def add (a b : Expression.Expr) : Expression.Expr := .app Core.valueLoc (.app Core.valueLoc intAddOp a) b
 def intTy : Expression.Ty := .forAll [] .int
 
 def assert' (l : String) (e : Expression.Expr) : Statement := .cmd (.cmd (.assert l e md))
@@ -165,9 +165,9 @@ def ex6 : Statements :=
 def ex7 : Statements :=
   [assert' "a" (gt (iv "x") (int 0)), set' "x" (int 1), assume' "z" (gt (iv "x") (int 0))]
 -- 8. a partial expression in a branch that a path skips, the `ite` ending the list
-def div' (a b : Expression.Expr) : Expression.Expr := .app () (.app () intDivOp a) b
+def div' (a b : Expression.Expr) : Expression.Expr := .app Core.valueLoc (.app Core.valueLoc intDivOp a) b
 def ex8 : Statements := [ite' (gt (iv "g") (int 0)) [set' "x" (div' (iv "y") (int 0))]
-  [assert' "a" (.boolConst () false)]]
+  [assert' "a" (.boolConst Core.valueLoc false)]]
 -- 8b. the same `ite` followed by an obligation
 def ex8b : Statements := ex8 ++ [assert' "b" (gt (iv "y") (int 0))]
 -- 9. a local of a laid-out branch
@@ -179,8 +179,8 @@ def ex9 : Statements := [ite' (gt (iv "x") (int 0))
 def ex10 : Statements := [assert' "a1" (gt (iv "x") (int 0)), assert' "a2" (gt (iv "x") (int 1)),
   set' "x" (add (iv "x") (int 1)), assert' "a3" (gt (iv "x") (int 2))]
 -- 11. the reference example: a laid-out branch with a local, joined by a lazy merge
-def mul (a b : Expression.Expr) : Expression.Expr := .app () (.app () intMulOp a) b
-def ge (a b : Expression.Expr) : Expression.Expr := .app () (.app () intGeOp a) b
+def mul (a b : Expression.Expr) : Expression.Expr := .app Core.valueLoc (.app Core.valueLoc intMulOp a) b
+def ge (a b : Expression.Expr) : Expression.Expr := .app Core.valueLoc (.app Core.valueLoc intGeOp a) b
 def ex11 : Statements := [.cmd (.cmd (.init (id' "z") intTy .nondet md)),
   ite' (gt (iv "x") (int 0)) [set' "z" (add (iv "x") (int 1)), set' "y" (mul (iv "z") (int 2))]
     [set' "y" (int 0)],
@@ -557,7 +557,7 @@ def procNames (p : Program) : List String :=
 -- procedure is preceded by (axioms are kept in place, not hoisted before every procedure).
 def procAxProc : Program :=
   { decls := [.proc (namedProc "P" [assert' "p1" (gt (iv "x") (int 0))]) .empty,
-              .ax { name := "A", e := .true () } .empty,
+              .ax { name := "A", e := .true Core.valueLoc } .empty,
               .proc (namedProc "Q" [assert' "q1" (gt (iv "x") (int 1))]) .empty] }
 
 #guard match wpSSAProgramWith [] { decls := [] } [] procAxProc with
@@ -597,8 +597,8 @@ and restored after it, so the else arm's definitions read the entry values, and 
 definitions they would otherwise read are erased. -/
 
 def havocInit (x : String) : Statement := .cmd (.cmd (.init (id' x) intTy .nondet md))
-def eq' (a b : Expression.Expr) : Expression.Expr := .eq () a b
-def le' (a b : Expression.Expr) : Expression.Expr := .app () (.app () intLeOp a) b
+def eq' (a b : Expression.Expr) : Expression.Expr := .eq Core.valueLoc a b
+def le' (a b : Expression.Expr) : Expression.Expr := .app Core.valueLoc (.app Core.valueLoc intLeOp a) b
 def c0 (c : String) : Expression.Expr := gt (iv c) (int 0)
 
 /-- Does an identifier of `ss` equal `x`? -/
@@ -1046,7 +1046,7 @@ def saveLocal : Statements := [init' "z" (iv "x"),
     "}"]
 
 def oldRead : Statements := [set' "x" (add (iv "x") (int 1)),
-  assert' "a" (gt (iv "x") (.fvar () (CoreIdent.mkOld "x") (some .int)))]
+  assert' "a" (gt (iv "x") (.fvar Core.valueLoc (CoreIdent.mkOld "x") (some .int)))]
 #guard show' (do
     let (_, _, so) ← wpSSALoopFree (IdSet.ofList []) (IdSet.ofList []) inoutProc oldRead
     pure (deadDefElim [] so.out)) == lines [
@@ -1069,13 +1069,13 @@ def ssa (lay : Statements) : Except String Statements := do
   let (_, so) ← ssaEntry (P := Expression) (IdSet.ofList []) [] [] [] lay
   pure so.out
 
-def bv (n : String) : Expression.Expr := .fvar () (id' n) (some .bool)
+def bv (n : String) : Expression.Expr := .fvar Core.valueLoc (id' n) (some .bool)
 def initB (x : String) (e : Expression.Expr) : Statement :=
   .cmd (.cmd (.init (id' x) (.forAll [] .bool) (.det e) md))
-def tt' : Expression.Expr := .boolConst () true
-def ff' : Expression.Expr := .boolConst () false
+def tt' : Expression.Expr := .boolConst Core.valueLoc true
+def ff' : Expression.Expr := .boolConst Core.valueLoc false
 
-#guard show' (ssa [init' "y" (.ite () tt' (iv "a") (iv "b")), assert' "p" (gt (iv "y") (int 0))])
+#guard show' (ssa [init' "y" (.ite Core.valueLoc tt' (iv "a") (iv "b")), assert' "p" (gt (iv "y") (int 0))])
   == lines [
     "{",
     "  assert [p]: int.gt(a, 0);",
@@ -1084,7 +1084,7 @@ def ff' : Expression.Expr := .boolConst () false
     "{",
     "  assert [p]: int.gt(a, 0);",
     "}"]
-#guard show' (ssa [assume' "i" (.ite () ff' (gt (iv "a") (int 0)) tt'),
+#guard show' (ssa [assume' "i" (.ite Core.valueLoc ff' (gt (iv "a") (int 0)) tt'),
   assert' "p" (gt (iv "a") (int 0))]) == lines [
     "{",
     "  assert [p]: int.gt(a, 0);",
@@ -1110,7 +1110,7 @@ def ff' : Expression.Expr := .boolConst () false
     "  var c@1 : bool := true;",
     "  assert [p]: c@1 == true;",
     "}"]
-#guard show' (ssa [initB "g" (.ite () (bv "q") ff' ff'), assume' "r" (bv "g"),
+#guard show' (ssa [initB "g" (.ite Core.valueLoc (bv "q") ff' ff'), assume' "r" (bv "g"),
   assert' "p" (gt (iv "a") (int 0))]) == lines [
     "{",
     "  var g@0 : bool := false;",
@@ -1128,7 +1128,7 @@ def ff' : Expression.Expr := .boolConst () false
     "}"]
 -- A copy from a name without an annotation, or annotated with another type than the declared
 -- type of the copy, is not propagated: a fresh `init` defines the copy.
-#guard show' (ssa [init' "y" (.fvar () (id' "a") none), assert' "p" (gt (iv "y") (int 0))]) ==
+#guard show' (ssa [init' "y" (.fvar Core.valueLoc (id' "a") none), assert' "p" (gt (iv "y") (int 0))]) ==
   lines [
     "{",
     "  var y@0 : int := a;",

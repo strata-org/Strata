@@ -1015,7 +1015,7 @@ procedure heapWriterInLoopCondition(c: C)
 
 -- A multi-output *instance* method called via `self#...` from a transparent
 -- instance body, binding one target per output: supported, and exercising the
--- `.InstanceCall` arm of `destructuredCallSources` and the container-scoped
+-- instance `.Call` arm of `destructuredCallSources` and the container-scoped
 -- `refToDef` lookup — a static-call test can't reach either.
 #eval testLaurelResolution <|
 #strata

@@ -280,7 +280,8 @@ private theorem substFvarsFromEnv_type_preserved
         obtain ⟨ty', h_ty'⟩ := hEnvTy.cover name v henv
         have h_annot_eq : τ = ty' := hAnnot ty' h_ty'
         rw [h_annot_eq]
-        exact HasTypeA_weaken (hEnvTy.wt name v ty' henv h_ty') (hEnvLC name v henv)
+        exact HasTypeA_replaceMetadata1 m
+          (HasTypeA_weaken (hEnvTy.wt name v ty' henv h_ty') (hEnvLC name v henv))
   | abs m nm aty body ih =>
     simp only [LExpr.substFvarsFromEnv]
     cases h with
@@ -343,8 +344,9 @@ private theorem substFvarsFromEnv_denote_preservedAt
         subst h_annot_eq
         have h_wt := hEnvTy.wt name v τ henv h_ty'
         have h_lc := hEnvLC name v henv
-        rw [← hEnv name v τ henv h_wt]
-        exact denote_irrel_of_lcAt tcInterp opInterp fvarVal vt h_lc h_wt h₂ .nil bvarVal
+        rw [← hEnv name v τ henv h_wt, denote_replaceMetadata1 _ _ _ _ _ m h₂]
+        exact denote_irrel_of_lcAt tcInterp opInterp fvarVal vt h_lc h_wt
+          (HasTypeA_of_replaceMetadata1 m h₂) .nil bvarVal
       · rename_i henv
         simp only [LExpr.substFvarsFromEnv, henv]
   | abs m nm aty body ih =>
@@ -476,7 +478,10 @@ theorem Step.denote_preservedAt
   induction hstep generalizing τ with
   | expand_fvar x e henv =>
     cases h₁ with
-    | fvar => simp only [LExpr.denote]; exact (hEnv x _ _ henv h₂).symm
+    | fvar =>
+      simp only [LExpr.denote]
+      rw [denote_replaceMetadata1]
+      exact (hEnv x _ _ henv (HasTypeA_of_replaceMetadata1 _ h₂)).symm
   | beta e1 v2 eres heq =>
     subst heq
     cases h₁
@@ -848,7 +853,7 @@ theorem Step.type_preserved
       have ⟨ty, hty⟩ := hEnvTy.cover x e henv
       have hty_eq : τ = ty := hAnnot ty hty
       subst hty_eq
-      exact hEnvTy.wt x e τ henv hty
+      exact HasTypeA_replaceMetadata1 _ (hEnvTy.wt x e τ henv hty)
   | beta e1 v2 eres heq =>
     subst heq
     have ⟨aty, h_fn, h_arg⟩ := HasTypeA.app_inv h₁
@@ -1023,7 +1028,7 @@ private theorem substFvarsFromEnv_fvars_annotated [DecidableEq T.IDMeta]
     simp only [LExpr.substFvarsFromEnv]
     cases henv : env name with
     | none => exact h
-    | some v => exact hEnvAnnot name v henv
+    | some v => exact fvars_annotated_by_replaceMetadata1 m (hEnvAnnot name v henv)
   | abs m nm ty body ih =>
     simp only [LExpr.substFvarsFromEnv]
     exact ih h
@@ -1059,7 +1064,7 @@ private theorem substFvarsFromEnv_OpsConsistent
     simp only [LExpr.substFvarsFromEnv]
     cases henv : env name with
     | none => exact hOps
-    | some v => exact hEnvOps name v henv
+    | some v => exact OpsConsistent_replaceMetadata1 m (hEnvOps name v henv)
   | abs m nm ty body ih =>
     simp only [LExpr.substFvarsFromEnv, OpsConsistent]
     exact ih hOps
@@ -1090,7 +1095,7 @@ theorem Step.OpsConsistent_preservedOn
     (hFEvalOps : Factory.EvalOpsConsistentOn F)
     : OpsConsistent F e₂ := by
   induction hstep with
-  | expand_fvar x e henv => exact hEnvOps x e henv
+  | expand_fvar x e henv => exact OpsConsistent_replaceMetadata1 _ (hEnvOps x e henv)
   | beta e1 v2 eres heq =>
     subst heq
     simp only [LExpr.subst]
@@ -1179,7 +1184,7 @@ theorem Step.fvars_annotated_preservedOn
     (hFEvalAnnot : Factory.EvalAnnotatedOn F hEnvTy.tyMap)
     : fvars_annotated_by hEnvTy.tyMap e₂ := by
   induction hstep with
-  | expand_fvar x e henv => exact hEnvAnnot x e henv
+  | expand_fvar x e henv => exact fvars_annotated_by_replaceMetadata1 _ (hEnvAnnot x e henv)
   | beta e1 v2 eres heq =>
     subst heq
     simp only [LExpr.subst]

@@ -227,29 +227,26 @@ where
           | return [⟨ .Hole, source ⟩]
         let valTy := heapField.type
         let selectTarget' ← recurseOne selectTarget
-        let readExpr := ⟨ .StaticCall readFieldName [mkMd (.Var (.Local heapVar)) source, selectTarget', mkMd (.StaticCall heapField.location.text [] []) source] [], source ⟩
+        let readExpr := ⟨ .Call none readFieldName [mkMd (.Var (.Local heapVar)) source, selectTarget', mkMd (.Call none heapField.location.text [] []) source] [], source ⟩
         -- Unwrap Box: apply the appropriate destructor
         recordBoxConstructor valTy.val
-        return [mkMd (.StaticCall (boxDestructorName valTy.val) [readExpr] []) source]
-    | .StaticCall callee [] _ =>
+        return [mkMd (.Call none (boxDestructorName valTy.val) [readExpr] []) source]
+    | .Call none callee [] _ =>
         if callee.text == allocateProcName then
           let ref ← freshVarName "$allocated"
           let heapRead := mkMd (.Var (.Local heapVar)) source
           let saveRef := mkMd (.Assign [mkVarMd (.Declare ⟨ref, some ⟨.TInt, source⟩⟩) source]
-            (mkMd (.StaticCall heapNextReferenceAccessor [heapRead] []) source)) source
+            (mkMd (.Call none heapNextReferenceAccessor [heapRead] []) source)) source
           let updateHeap := mkMd (.Assign [mkVarMd (.Local heapVar) source]
-            (mkMd (.StaticCall incrementName [heapRead] []) source)) source
+            (mkMd (.Call none incrementName [heapRead] []) source)) source
           return [mkMd (.Block [saveRef, updateHeap, mkMd (.Var (.Local ref)) source] none [] none) source]
         else
           return [exprMd]
-    | .StaticCall callee args tyArgs =>
+    | .Call receiver? callee args tyArgs =>
+        let receiver?' ← match receiver? with | some r => some <$> recurseOne r | none => pure none
         let args' ← args.mapM (recurseOne ·)
         -- No heap threading: handled by `GlobalParameterization` (see `heapGlobalField`).
-        return [⟨ .StaticCall callee args' tyArgs, source ⟩]
-    | .InstanceCall callTarget callee args tys =>
-        let t ← recurseOne callTarget
-        let args' ← args.mapM (recurseOne ·)
-        return [⟨ .InstanceCall t callee args' tys, source ⟩]
+        return [⟨ .Call receiver?' callee args' tyArgs, source ⟩]
     | .IfThenElse c t e =>
         let e' ← match e with | some x => some <$> recurseOne x valueUsed | none => pure none
         return [⟨ .IfThenElse (← recurseOne c) (← recurseOne t valueUsed) e', source ⟩]
@@ -291,9 +288,9 @@ where
               recordBoxConstructor valTy.val
               let freshVar ← freshVarName "$writeValue"
               let target' ← recurseOne target
-              let boxedVal := mkMd (.StaticCall (boxConstructorName valTy.val) [mkMd (.Var (.Local freshVar)) source] []) source
+              let boxedVal := mkMd (.Call none (boxConstructorName valTy.val) [mkMd (.Var (.Local freshVar)) source] []) source
               let updateStmt : StmtExprMd := ⟨ .Assign [mkVarMd (.Local heapVar) source]
-                (mkMd (.StaticCall updateFieldName [mkMd (.Var (.Local heapVar)) source, target', mkMd (.StaticCall heapField.location.text [] []) source, boxedVal] []) source), source ⟩
+                (mkMd (.Call none updateFieldName [mkMd (.Var (.Local heapVar)) source, target', mkMd (.Call none heapField.location.text [] []) source, boxedVal] []) source), source ⟩
               return (accTargets ++ [mkVarMd (.Declare ⟨freshVar, some valTy⟩) source], accStmts ++ [updateStmt])
           | _ => return (accTargets ++ [t], accStmts)
 
@@ -392,10 +389,10 @@ private def heapWellFormednessPreconds
     if isCompositeParam p then
       let src := p.name.source
       let pRead := { val := .Var (.Local p.name), source := src }
-      let pRef := { val := .StaticCall compositeRefAccessor [pRead] [], source := src }
+      let pRef := { val := .Call none compositeRefAccessor [pRead] [], source := src }
       let heapRead := { val := .Var (.Local heapVar), source := src }
-      let counter := { val := .StaticCall heapNextReferenceAccessor [heapRead] [], source := src }
-      let allocated := { val := .StaticCall "$intLt" [pRef, counter] [], source := src }
+      let counter := { val := .Call none heapNextReferenceAccessor [heapRead] [], source := src }
+      let allocated := { val := .Call none "$intLt" [pRef, counter] [], source := src }
       some { condition := allocated, summary := some "input is allocated on the heap", mode := .Assume }
     else none
 
@@ -405,10 +402,10 @@ private def heapWellFormednessPreconds
 private def heapMonotonicityPostcond (source : FileRange)
     (heapVar : Identifier) : Condition :=
   let heapRead := { val := .Var (.Local heapVar), source }
-  let nextRef := { val := .StaticCall heapNextReferenceAccessor [heapRead] [], source }
+  let nextRef := { val := .Call none heapNextReferenceAccessor [heapRead] [], source }
   let inCounter := { val := .Old nextRef, source }
   let outCounter := nextRef
-  { condition := { val := .StaticCall "$intLe" [inCounter, outCounter] [], source },
+  { condition := { val := .Call none "$intLe" [inCounter, outCounter] [], source },
     summary := some "monotonic heap pointer", mode := .Assume }
 
 /-- For each composite output `o`, the free postcondition
@@ -420,10 +417,10 @@ private def heapOutputAllocationPostconds
     if isCompositeParam o then
       let src := o.name.source
       let oRead := { val := .Var (.Local o.name), source := src }
-      let oRef := { val := .StaticCall compositeRefAccessor [oRead] [], source := src }
+      let oRef := { val := .Call none compositeRefAccessor [oRead] [], source := src }
       let heapRead := { val := .Var (.Local heapOutVar), source := src }
-      let counter := { val := .StaticCall heapNextReferenceAccessor [heapRead] [], source := src }
-      some { condition := { val := .StaticCall "$intLt" [oRef, counter] [], source := src },
+      let counter := { val := .Call none heapNextReferenceAccessor [heapRead] [], source := src }
+      some { condition := { val := .Call none "$intLt" [oRef, counter] [], source := src },
              summary := some "output is allocated on the heap", mode := .Assume }
     else none
 
@@ -638,7 +635,7 @@ private def emptyHeapInitializer : StmtExprMd :=
   let innerTy : HighTypeMd := ⟨.TMap ⟨.UserDefined "Field", src⟩ boxTy, src⟩
   let outerTy : HighTypeMd := ⟨.TMap ⟨.TInt, src⟩ innerTy, src⟩
   let mapHole : StmtExprMd := ⟨.Hole (deterministic := false) (type := some outerTy), src⟩
-  mkMd (.StaticCall heapCtorName [mapHole, mkMd (.LiteralInt 0) src] []) src
+  mkMd (.Call none heapCtorName [mapHole, mkMd (.LiteralInt 0) src] []) src
 
 /-- `$heap` as a file-scope global, threaded through signatures and call sites by
     `GlobalParameterization` like any other global. -/
@@ -707,7 +704,7 @@ def heapParameterization (program : LaurelProgram) : Except String LaurelProgram
 public def heapParameterizationPass : LaurelPass := .onUnordered {
   name := "HeapParameterization"
   creates := [
-      NodeKind.StmtExpr.StaticCall,
+      NodeKind.StmtExpr.Call,
       NodeKind.Procedure.inputs.cons,
       NodeKind.Pseudo.totalMap,
       NodeKind.Pseudo.box,

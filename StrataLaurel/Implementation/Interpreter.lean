@@ -787,12 +787,12 @@ private partial def liftExpr (e : StmtExprMd) : LiftM (List StmtExprMd × StmtEx
   | .Yield => do
       let t ← liftFresh
       pure ([liftDecl t e], liftVar t src)
-  | .StaticCall callee [a, b] tys =>
+  | .Call none callee [a, b] tys =>
     match Operation.ofProcName? callee.text with
     | some .AndThen | some .OrElse | some .Implies =>
       if !hasYield b then do
         let (pa, a') ← liftExpr a
-        pure (pa, ⟨.StaticCall callee [a', b] tys, src⟩)
+        pure (pa, ⟨.Call none callee [a', b] tys, src⟩)
       else do
         let (pa, a') ← liftExpr a
         let t ← liftFresh
@@ -808,14 +808,14 @@ private partial def liftExpr (e : StmtExprMd) : LiftM (List StmtExprMd × StmtEx
         pure (pa ++ [liftDecl t a', branch], tv)
     | _ => do
       let (pre, args') ← liftArgs [a, b]
-      pure (pre, ⟨.StaticCall callee args' tys, src⟩)
-  | .StaticCall callee args tys => do
+      pure (pre, ⟨.Call none callee args' tys, src⟩)
+  | .Call none callee args tys => do
       let (pre, args') ← liftArgs args
-      pure (pre, ⟨.StaticCall callee args' tys, src⟩)
-  | .InstanceCall target callee args tys => do
+      pure (pre, ⟨.Call none callee args' tys, src⟩)
+  | .Call (some target) callee args tys => do
       let (pre, all') ← liftArgs (target :: args)
       match all' with
-      | t' :: args' => pure (pre, ⟨.InstanceCall t' callee args' tys, src⟩)
+      | t' :: args' => pure (pre, ⟨.Call (some t') callee args' tys, src⟩)
       | [] => pure (pre, e)
   | .Var (.Field target field) => do
       let (pre, t') ← liftExpr target
@@ -831,7 +831,7 @@ private partial def liftExpr (e : StmtExprMd) : LiftM (List StmtExprMd × StmtEx
       let old ← liftFresh
       let (pre, rhs') ← liftExpr rhs
       let next : StmtExprMd :=
-        ⟨.StaticCall { text := op.procName } [liftVar old src, rhs'] [], src⟩
+        ⟨.Call none { text := op.procName } [liftVar old src, rhs'] [], src⟩
       pure ([liftDecl old ⟨.Var (.Local x), tsrc⟩] ++ pre,
         ⟨.Assign [⟨.Local x, tsrc⟩] next, src⟩)
   | .CompoundAssign op (⟨.Field target field, tsrc⟩) rhs => do
@@ -841,7 +841,7 @@ private partial def liftExpr (e : StmtExprMd) : LiftM (List StmtExprMd × StmtEx
       let (pre, rhs') ← liftExpr rhs
       let slot : Variable := .Field (liftVar recv src) field
       let next : StmtExprMd :=
-        ⟨.StaticCall { text := op.procName } [liftVar old src, rhs'] [], src⟩
+        ⟨.Call none { text := op.procName } [liftVar old src, rhs'] [], src⟩
       pure (pt ++ [liftDecl recv t', liftDecl old ⟨.Var slot, tsrc⟩] ++ pre,
         ⟨.Assign [⟨slot, tsrc⟩] next, src⟩)
   | .IfThenElse c thn els => do
@@ -949,7 +949,7 @@ private partial def liftStmt (s : StmtExprMd) : LiftM (List StmtExprMd) := do
       -- that leaves through a labelled block when the condition is false.
       let label ← liftFresh
       let (pc, c') ← liftExpr c
-      let notC : StmtExprMd := ⟨.StaticCall { text := Operation.Not.procName } [c'] [], c.source⟩
+      let notC : StmtExprMd := ⟨.Call none { text := Operation.Not.procName } [c'] [], c.source⟩
       -- The invariants are checked where the `while` case checks them: after the
       -- condition for a `while`, before each run of the body for a `do`/`while`.
       let invChecks := invs.map fun inv => (⟨.Assert inv none, inv.source⟩ : StmtExprMd)
@@ -1000,11 +1000,11 @@ private def literalValue? : StmtExpr → Option Value
   | .LiteralString str => some (.string ⟨str⟩)
   | .LiteralDecimal d => some (.real (StrataDDM.Decimal.toRat d))
   | .LiteralBv v w => some (.bv w (v % 2 ^ w))
-  | .StaticCall callee [⟨.LiteralInt n, _⟩] _ =>
+  | .Call none callee [⟨.LiteralInt n, _⟩] _ =>
     match Operation.ofProcName? callee.text with
     | some .Neg => some (.int ⟨-n⟩)
     | _ => none
-  | .StaticCall callee [⟨.LiteralDecimal d, _⟩] _ =>
+  | .Call none callee [⟨.LiteralDecimal d, _⟩] _ =>
     match Operation.ofProcName? callee.text with
     | some .Neg => some (.real (-(StrataDDM.Decimal.toRat d)))
     | _ => none
@@ -1291,7 +1291,7 @@ partial def evalScopedStmt (cfg : ExternalBackend) (s : StmtExprMd) : EvalM Unit
     there. Only calls pay for the write. -/
 partial def evalExprMd (cfg : ExternalBackend) (e : StmtExprMd) : EvalM Value := do
   match e.val with
-  | .StaticCall .. | .InstanceCall .. =>
+  | .Call none .. | .Call (some _) .. =>
       modify fun s => { s with callSite := e.source }
       evalExpr cfg e.val
   -- An `assert` in expression position is checked as the statement it is, at its
@@ -1396,17 +1396,17 @@ partial def evalExpr (cfg : ExternalBackend) : StmtExpr → EvalM Value
       let tv ← evalExprMd cfg target
       let (_, co) ← coroInstance tv "has_next"
       pure (.bool ⟨!co.finished⟩)
-  | .ContractOf .Precondition ⟨.StaticCall callee args _, _⟩ => do
+  | .ContractOf .Precondition ⟨.Call none callee args _, _⟩ => do
       let argVals ← args.mapM (evalExprMd cfg)
       match lookupCallee (← get).index callee with
       | some proc => preconditionValue cfg proc argVals
       | none => evalError s!"unknown procedure '{callee.text}'"
-  | .ContractOf .Precondition ⟨.InstanceCall target callee args _, _⟩ => do
+  | .ContractOf .Precondition ⟨.Call (some target) callee args _, _⟩ => do
       let tv ← evalExprMd cfg target
       let argVals ← args.mapM (evalExprMd cfg)
       let proc ← resolveMethod tv callee.text
       preconditionValue cfg proc (tv :: argVals)
-  | .StaticCall callee args typeArgs => do
+  | .Call none callee args typeArgs => do
       let site := (← get).callSite
       -- `coroCompletion(co)`: the reserved reader for a coroutine's completion
       -- value, recognized before operators, builtins and procedures alike (see
@@ -1585,7 +1585,7 @@ partial def evalExpr (cfg : ExternalBackend) : StmtExpr → EvalM Value
       let new ← liftM (evalOp cfg op [old, r])
       write new
       pure new
-  | .InstanceCall target callee args _ => do
+  | .Call (some target) callee args _ => do
       let site := (← get).callSite
       let tv ← evalExprMd cfg target
       let argVals ← args.mapM (evalExprMd cfg)
@@ -1774,7 +1774,7 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
       | [t] => do
           if let some order := stackPermutation targets value then
             let vals ← match value.val with
-              | .StaticCall _ args _ => args.mapM (evalExprMd cfg)
+              | .Call none _ args _ => args.mapM (evalExprMd cfg)
               | _ => pure []
             (← assignTarget cfg t.val) (vals.getD (order.headD 0) .unset)
             return
@@ -1786,7 +1786,7 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
       | _ => do
           if let some order := stackPermutation targets value then
             let vals ← match value.val with
-              | .StaticCall _ args _ => args.mapM (evalExprMd cfg)
+              | .Call none _ args _ => args.mapM (evalExprMd cfg)
               | _ => pure []
             for (t, i) in targets.zip order do
               (← assignTarget cfg t.val) (vals.getD i .unset)
@@ -2016,7 +2016,7 @@ partial def evalStmt (cfg : ExternalBackend) : Strata.Laurel.StmtExprMd → Eval
       -- outputs `(p, q)` swaps them rather than reading an overwritten `p`.
       let vs ← values.mapM (evalExprMd cfg)
       throw (.return_ vs)
-  | stmt@⟨.StaticCall .., _⟩ => do
+  | stmt@⟨.Call none .., _⟩ => do
       -- Bare `foo(args)` as a statement — discard the return value.
       let _ ← evalExprMd cfg stmt
       pure ()
@@ -2196,7 +2196,7 @@ partial def resumeCoroutine (cfg : ExternalBackend) (target : Value) (sent : Val
     `StaticCall` can produce more than one, so anything else yields a singleton. -/
 partial def evalCallOutputs (cfg : ExternalBackend) (e : StmtExpr) : EvalM (Array Value) := do
   match e with
-  | .StaticCall callee args typeArgs =>
+  | .Call none callee args typeArgs =>
     match Operation.ofProcName? callee.text with
     | some _ => do let v ← evalExpr cfg e; pure #[v]
     | none => do
@@ -2212,7 +2212,7 @@ partial def evalCallOutputs (cfg : ExternalBackend) (e : StmtExpr) : EvalM (Arra
       match callBuiltin callee.text argVals absent with
       | some act => do let v ← liftM act; pure #[v]
       | none => invokeCallee cfg site callee argVals
-  | .InstanceCall target callee args _ => do
+  | .Call (some target) callee args _ => do
     let site := (← get).callSite
     let tv ← evalExprMd cfg target
     let argVals ← args.mapM (evalExprMd cfg)

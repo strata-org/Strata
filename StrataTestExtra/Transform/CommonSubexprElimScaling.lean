@@ -75,4 +75,56 @@ def timedCse (n : Nat) : IO (String × Nat) := do
   let (verdict, ms) ← timedCse 400
   IO.println s!"{verdict}, within the time bound: {decide (ms < 9000)}"
 
+/-! ## Common subexpression elimination on a doubling chain
+
+`doublingProg k` repeats `x := int.add(x, x)` `k` times. Symbolic evaluation
+inlines each assignment, so the asserted value is a term whose logical size is
+`2^k` while its shared DAG has `O(k)` nodes, and the two occurrences of a reused
+subterm differ only in a root metadata node. CSE's structural comparison ignores
+metadata and short-circuits on the shared children, so its `commonSubexprElim`
+phase stays linear in the DAG rather than the `2^k` logical tree; this test holds
+that phase under a bound at k=24 and k=26. `betaReduce` on the same term is
+super-linear and is not read here: the test reads only the `commonSubexprElim`
+phase time, isolating CSE. -/
+
+/-- `x := int.add(x, x)` repeated `k` times, then an assert. -/
+def doublingProg (k : Nat) : String := Id.run do
+  let mut lines := #["program Core;",
+    "procedure Dbl(x0 : int, out x : int)",
+    "spec { ensures [pos]: int.gt(x, 0); }",
+    "{", "  x := x0;"]
+  for _ in [0:k] do
+    lines := lines.push "  x := int.add(x, x);"
+  lines := lines ++ #["  assert [a]: int.gt(x, 0);", "};"]
+  return "\n".intercalate lines.toList
+
+/-- The `commonSubexprElim` phase time (ms) for `src`, fastest of three runs. -/
+def cseMillisOf (src : String) : IO Nat := do
+  unless ← strataLaurelExe.pathExists do
+    throw <| IO.userError s!"{strataLaurelExe} has not been built; run `lake build`."
+  let dir ← IO.FS.createTempDir
+  let file := dir / "CSEDoubling.core.st"
+  IO.FS.writeFile file src
+  let mut best := 0
+  for i in [0:3] do
+    let r ← IO.Process.output
+      { cmd := strataLaurelExe.toString, args := #["verify", "--profile", file.toString] }
+    let some ms := cseMillis r.stdout
+      | IO.FS.removeDirAll dir
+        throw <| IO.userError s!"no commonSubexprElim time (exit {r.exitCode}):\n{r.stdout}\n{r.stderr}"
+    best := if i == 0 then ms else min best ms
+  IO.FS.removeDirAll dir
+  return best
+
+/-- info: CSE phase on the doubling chain within the bound: k=24 true, k=26 true -/
+#guard_msgs in
+#eval show IO Unit from do
+  let ms24 ← cseMillisOf (doublingProg 24)
+  let ms26 ← cseMillisOf (doublingProg 26)
+  -- The bound is far above the linear-time CSE cost (a few ms) and well below
+  -- what a comparison super-linear in the DAG would take, so it catches a
+  -- regression without flaking on a loaded host.
+  IO.println s!"CSE phase on the doubling chain within the bound: \
+    k=24 {decide (ms24 < 1000)}, k=26 {decide (ms26 < 1000)}"
+
 end Strata.CSEScaling

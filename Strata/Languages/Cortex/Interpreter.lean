@@ -49,6 +49,10 @@ abbrev Trace := List Event
 
 @[expose] def exprFuel : Nat := 1000
 
+/-- The longest array the interpreter allocates. A `newArray` of a greater length stops the run:
+all the elements are allocated in one step, so the fuel does not bound their number. -/
+@[expose] def maxArrayLength : Nat := 65536
+
 @[expose] def evalPure (f : LFactory) (σ : Store) (e : Expr) : Option Expr :=
   match LExpr.eval exprFuel f σ e with
   | (v, .value true) => some v
@@ -77,6 +81,12 @@ inductive StopReason where
   | exceptionWithoutType
   | calleeDidNotTerminate (name : ProcName)
   | invalidDatatypes (msg : String)
+  | notAnArray
+  | unknownArrayType (name : TypeName)
+  | negativeArrayLength (len : Int)
+  | arrayLengthOverLimit (len : Int) (limit : Nat)
+  | indexOutOfRange (index : Int) (length : Nat)
+  | elementTypeMismatch (elemTy : Core.Expression.Ty) (array : TypeName)
   deriving Repr, Inhabited
 
 class Effects (m : Type → Type) where
@@ -140,6 +150,7 @@ inductive IConfig where
   | .cmd (.cover _ _ md) => md
   | .cast _ _ _ _ md | .new _ _ md | .readField _ _ _ md | .writeField _ _ _ md | .instanceOf _ _ _ md
   | .call _ _ _ md | .virtualCall _ _ _ _ md | .throw _ md => md
+  | .newArray _ _ _ md | .readElem _ _ _ _ md | .writeElem _ _ _ _ md | .arrayLength _ _ md => md
 
 structure CmdResult where
   store : Store
@@ -200,6 +211,27 @@ variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
     match h a with
     | some o => pure (a, o)
     | none => throw .danglingReference
+
+/-- The elements of the array that `v` refers to, with the object and its address. The run
+stops when the object is not an array, or when its array type does not declare `elemTy` as
+its element type. -/
+@[expose] def derefArray (prog : UnorderedProgram) (h : Heap) (v : Expr) (elemTy : Option Core.Expression.Ty) :
+    m (Nat × Obj × Array Expr) := do
+  let (a, o) ← deref h v
+  match o.elems, prog.arrayElem? o.type with
+  | some elts, some declared =>
+    match elemTy with
+    | some t =>
+      if LTy.toMonoType? (t : LTy) == LTy.toMonoType? (declared : LTy) then pure (a, o, elts)
+      else throw (.elementTypeMismatch t o.type)
+    | none => pure (a, o, elts)
+  | _, _ => throw .notAnArray
+
+/-- The `int` that `v` is, as an array index or length. -/
+@[expose] def intValue (v : Expr) : m Int :=
+  match v with
+  | .const _ (.intConst k) => pure k
+  | _ => throw .illTypedValue
 
 @[expose] def objectFieldRefs (prog : UnorderedProgram) (ty : TypeName) : List FieldRef :=
   prog.composites.flatMap fun c =>
@@ -307,8 +339,8 @@ variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
   | .inBlock b _ [] (.condGoto e lt lf _) ρ =>
     match evalPure ρ.factory ρ.store e with
     | some v =>
-      if v = HasBool.tt (P := Core.Expression) then pure (.atBlock b lt ρ)
-      else if v = HasBool.ff (P := Core.Expression) then pure (.atBlock b lf ρ)
+      if Core.eraseLocs v = HasBool.tt (P := Core.Expression) then pure (.atBlock b lt ρ)
+      else if Core.eraseLocs v = HasBool.ff (P := Core.Expression) then pure (.atBlock b lf ρ)
       else throw .expressionWasNotBoolean
     | none => throw .expressionDidNotEvaluate
   | .inBlock _ _ [] (.finish _) ρ => pure (.terminal ρ)
@@ -322,35 +354,88 @@ with the precondition's property summary. -/
   | some s => callMd.pushElem Imperative.MetaData.propertySummary (.msg s)
   | none => callMd
 
+/-- Give each output of composite type a fresh object, allocated as `new`
+allocates it, and each output of array type a fresh array without elements.
+The other outputs keep their values. -/
+@[expose] def freshOutputs (prog : UnorderedProgram) (ρ : IEnv) :
+    List (Core.Expression.Ident × Core.Expression.Ty) → m IEnv
+  | [] => pure ρ
+  | (x, ty) :: rest =>
+    match (ty : LTy) with
+    | .forAll [] (.tcons n []) =>
+      if (prog.findComposite? n).isSome then do
+        let o ← freshObject prog ρ.factory n
+        let o := if (prog.arrayElem? n).isSome then { o with elems := some #[] } else o
+        let σ' ← setVar ρ.store x (mkRef ρ.next)
+        freshOutputs prog { ρ with store := σ', heap := ρ.heap.update ρ.next o, next := ρ.next + 1 } rest
+      else freshOutputs prog ρ rest
+    | _ => freshOutputs prog ρ rest
+
+/-- Call procedure `n`. The callee starts in the frame that `callFrame` builds,
+in which every output holds a value from `Effects.choose`. Its preconditions
+are checked in that frame, each located at the call.
+
+A procedure without a body returns from that frame at once, with one change:
+each output of composite type that is not also an input gets a fresh object, so
+the caller can read and write the fields of the result, and each such output of
+array type gets a fresh array of length 0. Every other output
+keeps its value: the chosen one, or the argument for an output that is also an
+input, which is how a lowered global passes through the call. That includes an
+output of an `$Any` type, which names no composite to allocate.
+The objects that exist before the call and the globals are left as they are.
+This is one of the behaviours such a procedure can have, not all of them: a
+real callee could return other values, write the heap or throw, so what the
+caller computes from the results can differ from a run against the real
+callee. -/
 @[expose] def callProc (prog : UnorderedProgram) (runBody : IConfig → m (IConfig)) (ρ : IEnv)
     (lhs : List Core.Expression.Ident) (n : ProcName) (args : List Expr) (callMd : MD) : m CmdResult := do
   match prog.findProcedure? n with
   | none => throw (.unknownProcedure n)
   | some p =>
-    match p.body with
-    | none => throw (.procedureWithoutBody n)
-    | some body =>
-      let σ₀ ← callFrame prog ρ.factory ρ.store p args
-      for pre in p.requires do
-        Effects.emit (emittedEvents (.assert s!"requires_{p.name}" pre.cond (preconditionMd callMd pre)) ρ.factory σ₀)
-      let final ← runBody (.atBlock body body.cfg.entry
-        { store := σ₀, heap := ρ.heap, factory := ρ.factory, next := ρ.next, tys := paramTys p })
-      match final with
-      | .terminal ρE =>
-        if lhs.Nodup then
-          let outs ← readValues ρ.factory ρE.store (p.outputs.map Prod.fst)
-          let σL ← updateStates ρ.store lhs outs
-          let σ' ← globalsBack prog ρ.factory σL ρE.store
-          pure ⟨σ', ρE.heap, ρE.next, .normal⟩
-        else throw .aliasedResults
-      | .raised ρE v _ =>
-        unless lhs.Nodup do throw .aliasedResults
-        let σ' ← globalsBack prog ρ.factory ρ.store ρE.store
-        let inouts := (lhs.zip (p.outputs.map Prod.fst)).filter fun (_, o) => p.inputs.any (·.1 == o)
-        let vals ← readValues ρ.factory ρE.store (inouts.map Prod.snd)
-        let σ' ← updateStates σ' (inouts.map Prod.fst) vals
-        pure ⟨σ', ρE.heap, ρE.next, .exn v⟩
-      | _ => throw (.calleeDidNotTerminate n)
+    let σ₀ ← callFrame prog ρ.factory ρ.store p args
+    for pre in p.requires do
+      Effects.emit (emittedEvents (.assert s!"requires_{p.name}" pre.cond (preconditionMd callMd pre)) ρ.factory σ₀)
+    let ρ₀ : IEnv :=
+      { store := σ₀, heap := ρ.heap, factory := ρ.factory, next := ρ.next, tys := paramTys p }
+    let final ← match p.body with
+      | some body => runBody (.atBlock body body.cfg.entry ρ₀)
+      | none => do
+        let ρ₁ ← freshOutputs prog ρ₀ (p.outputs.filter fun (x, _) => !p.inputs.any (·.1 == x))
+        pure (.terminal ρ₁)
+    match final with
+    | .terminal ρE =>
+      if lhs.Nodup then
+        let outs ← readValues ρ.factory ρE.store (p.outputs.map Prod.fst)
+        let σL ← updateStates ρ.store lhs outs
+        let σ' ← globalsBack prog ρ.factory σL ρE.store
+        pure ⟨σ', ρE.heap, ρE.next, .normal⟩
+      else throw .aliasedResults
+    | .raised ρE v _ =>
+      unless lhs.Nodup do throw .aliasedResults
+      let σ' ← globalsBack prog ρ.factory ρ.store ρE.store
+      let inouts := (lhs.zip (p.outputs.map Prod.fst)).filter fun (_, o) => p.inputs.any (·.1 == o)
+      let vals ← readValues ρ.factory ρE.store (inouts.map Prod.snd)
+      let σ' ← updateStates σ' (inouts.map Prod.fst) vals
+      pure ⟨σ', ρE.heap, ρE.next, .exn v⟩
+    | _ => throw (.calleeDidNotTerminate n)
+
+def datatypeDefault (prog : UnorderedProgram) (n : String) : Option Expr :=
+  prog.datatypes.find? (·.name == n) >>= fun d =>
+    if d.typeArgs.isEmpty then
+      (d.constrs.find? (·.args.isEmpty)).map fun c => (constrFunc (T := Core.CoreLParams) c d).opExpr
+    else none
+
+def defaultValue (prog : UnorderedProgram) (_f : LFactory) (ty : Core.Expression.Ty) (_n : Nat) : Option Expr :=
+  match (ty : LTy) with
+  | .forAll [] (.tcons "int" []) => some (.const Core.valueLoc (.intConst 0) : Core.Expression.Expr)
+  | .forAll [] (.tcons "bool" []) => some (.const Core.valueLoc (.boolConst false) : Core.Expression.Expr)
+  | .forAll [] (.tcons "string" []) => some (.const Core.valueLoc (.strConst "") : Core.Expression.Expr)
+  | .forAll [] (.tcons "real" []) => some (.const Core.valueLoc (.rationalConst 0) : Core.Expression.Expr)
+  | .forAll [] (.bitvec n) => some (.const Core.valueLoc (.bitvecConst n 0) : Core.Expression.Expr)
+  | t@(.forAll [] (.tcons n [])) =>
+    if isRefTy prog t then some (.const Core.valueLoc (.intConst (-1)) : Core.Expression.Expr)
+    else datatypeDefault prog n
+  | _ => none
 
 mutual
 
@@ -400,6 +485,41 @@ mutual
     let (_, o) ← deref ρ.heap v
     let σ' ← setVar ρ.store x (if prog.isSubtype o.type ty then HasBool.tt (P := Core.Expression) else HasBool.ff (P := Core.Expression))
     pure ⟨σ', ρ.heap, ρ.next, .normal⟩
+  | _, ρ, .newArray x ty len _ => do
+    match prog.arrayElem? ty with
+    | none => throw (.unknownArrayType ty)
+    | some et =>
+      let k ← intValue (← evalExpr ρ.factory ρ.store len)
+      if k < 0 then throw (.negativeArrayLength k) else
+      if k > maxArrayLength then throw (.arrayLengthOverLimit k maxArrayLength) else
+      -- Every element starts at the default of the element type, whatever the choice oracle is.
+      match defaultValue prog ρ.factory et 0 with
+      | none => throw .noChoice
+      | some d =>
+        let o ← freshObject prog ρ.factory ty
+        let σ' ← setVar ρ.store x (mkRef ρ.next)
+        pure ⟨σ', ρ.heap.update ρ.next { o with elems := some (Array.replicate k.toNat d) }, ρ.next + 1, .normal⟩
+  | _, ρ, .readElem x arr i ty _ => do
+    let (_, _, elts) ← derefArray prog ρ.heap (← evalExpr ρ.factory ρ.store arr) (some ty)
+    let k ← intValue (← evalExpr ρ.factory ρ.store i)
+    match (if 0 ≤ k then elts[k.toNat]? else none) with
+    | some w =>
+      let σ' ← setVar ρ.store x w
+      pure ⟨σ', ρ.heap, ρ.next, .normal⟩
+    | none => throw (.indexOutOfRange k elts.size)
+  | _, ρ, .writeElem arr i rhs ty _ => do
+    let (a, o, elts) ← derefArray prog ρ.heap (← evalExpr ρ.factory ρ.store arr) (some ty)
+    let k ← intValue (← evalExpr ρ.factory ρ.store i)
+    if 0 ≤ k && k.toNat < elts.size then
+      let w ← evalExpr ρ.factory ρ.store rhs
+      if hasType prog ρ.factory w ty then
+        pure ⟨ρ.store, ρ.heap.update a { o with elems := some (elts.setIfInBounds k.toNat w) }, ρ.next, .normal⟩
+      else throw .illTypedValue
+    else throw (.indexOutOfRange k elts.size)
+  | _, ρ, .arrayLength x arr _ => do
+    let (_, _, elts) ← derefArray prog ρ.heap (← evalExpr ρ.factory ρ.store arr) none
+    let σ' ← setVar ρ.store x (intLit elts.size)
+    pure ⟨σ', ρ.heap, ρ.next, .normal⟩
   | _, ρ, .throw e _ => do
     let v ← evalExpr ρ.factory ρ.store e
     pure ⟨ρ.store, ρ.heap, ρ.next, .exn v⟩
@@ -446,23 +566,6 @@ def programFactory (prog : UnorderedProgram) : Except Strata.Message LFactory :=
     let bf ← Lambda.genBlockFactory (T := Core.CoreLParams) [d]
     Lambda.Factory.addFactory F bf
 
-def datatypeDefault (prog : UnorderedProgram) (n : String) : Option Expr :=
-  prog.datatypes.find? (·.name == n) >>= fun d =>
-    if d.typeArgs.isEmpty then
-      (d.constrs.find? (·.args.isEmpty)).map fun c => (constrFunc (T := Core.CoreLParams) c d).opExpr
-    else none
-
-def defaultValue (prog : UnorderedProgram) (_f : LFactory) (ty : Core.Expression.Ty) (_n : Nat) : Option Expr :=
-  match (ty : LTy) with
-  | .forAll [] (.tcons "int" []) => some (.const () (.intConst 0) : Core.Expression.Expr)
-  | .forAll [] (.tcons "bool" []) => some (.const () (.boolConst false) : Core.Expression.Expr)
-  | .forAll [] (.tcons "string" []) => some (.const () (.strConst "") : Core.Expression.Expr)
-  | .forAll [] (.tcons "real" []) => some (.const () (.rationalConst 0) : Core.Expression.Expr)
-  | .forAll [] (.bitvec n) => some (.const () (.bitvecConst n 0) : Core.Expression.Expr)
-  | t@(.forAll [] (.tcons n [])) =>
-    if isRefTy prog t then some (.const () (.intConst (-1)) : Core.Expression.Expr)
-    else datatypeDefault prog n
-  | _ => none
 
 def isEntry (p : Procedure) : Bool :=
   match p.md.findElem Imperative.MetaData.interpretEntry with
@@ -495,7 +598,7 @@ def runEntry (prog : UnorderedProgram) (fuel : Nat) (p : Procedure) :
 
 def evalsTo (a : EventArg) (b : Bool) : Bool :=
   match evalPure a.factory a.store a.expr with
-  | some v => decide (v = if b then HasBool.tt (P := Core.Expression) else HasBool.ff (P := Core.Expression))
+  | some v => decide (Core.eraseLocs v = if b then HasBool.tt (P := Core.Expression) else HasBool.ff (P := Core.Expression))
   | none => false
 
 def unevaluated : Trace → Nat

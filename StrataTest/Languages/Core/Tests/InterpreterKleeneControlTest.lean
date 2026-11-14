@@ -102,7 +102,7 @@ private def cfgBody (n : String) : DetCFG Expression Command :=
 /-- The Core identifier `name`. -/
 private def id (name : String) : CoreIdent := ⟨name, ()⟩
 /-- The integer literal `n`. -/
-private def int (n : Int) : Expression.Expr := .intConst () n
+private def int (n : Int) : Expression.Expr := .intConst default n
 
 /-- The environment with the single binding `x ↦ v`, at `Core.Factory`. -/
 private def envX (v : Int) : IEnv Expression :=
@@ -137,9 +137,9 @@ private def blockLoop : KleeneStmt Expression Command :=
   .loop (.block (.seq (kcmd "loopBody" 0) (kcmd "loopBody" 1)))
 
 -- Two iterations: `x` is `2`, the local `t` is gone, three oracle values were consumed.
-#guard kleeneRun blockLoop [HasBool.tt, HasBool.tt, HasBool.ff] == some (some (int 2), none, 3)
+#guard kleeneRun blockLoop [HasBool.tt, HasBool.tt, HasBool.ff] =ₘ some (some (int 2), none, 3)
 -- No iteration.
-#guard kleeneRun blockLoop [HasBool.ff] == some (some (int 0), none, 1)
+#guard kleeneRun blockLoop [HasBool.ff] =ₘ some (some (int 0), none, 1)
 -- The oracle runs out at the third decision.
 #guard kleeneError blockLoop [HasBool.tt, HasBool.tt] == some .oracleExhausted
 
@@ -149,9 +149,9 @@ private def flatLoop : KleeneStmt Expression Command :=
 
 -- Each iteration runs in the loop's own iteration block, which drops `t` on exit, so the second
 -- iteration's `init t` succeeds and `t` is gone after the loop.
-#guard kleeneRun flatLoop [HasBool.tt, HasBool.tt, HasBool.ff] == some (some (int 2), none, 3)
+#guard kleeneRun flatLoop [HasBool.tt, HasBool.tt, HasBool.ff] =ₘ some (some (int 2), none, 3)
 -- Outside a block, `t` survives its `init` ...
-#guard kleeneRun (.seq (kcmd "loopBody" 0) (kcmd "loopBody" 1)) [] ==
+#guard kleeneRun (.seq (kcmd "loopBody" 0) (kcmd "loopBody" 1)) [] =ₘ
   some (some (int 1), some (int 1), 0)
 -- ... and a second `init t` fails.
 #guard kleeneError (.seq (kcmd "loopBody" 0) (kcmd "loopBody" 0)) [] ==
@@ -162,11 +162,25 @@ private def flatLoop : KleeneStmt Expression Command :=
 /-- `choice { x := 1 } { x := 2 }`. -/
 private def arms : KleeneStmt Expression Command := .choice (kcmd "arms" 0) (kcmd "arms" 1)
 
-#guard kleeneRun arms [HasBool.tt] == some (some (int 1), none, 1)
-#guard kleeneRun arms [HasBool.ff] == some (some (int 2), none, 1)
+#guard kleeneRun arms [HasBool.tt] =ₘ some (some (int 1), none, 1)
+#guard kleeneRun arms [HasBool.ff] =ₘ some (some (int 2), none, 1)
 -- A sequence of two choices consumes two oracle values; the second choice decides `x`.
-#guard kleeneRun (.seq arms arms) [HasBool.ff, HasBool.tt] == some (some (int 1), none, 2)
-#guard kleeneRun (.seq arms arms) [HasBool.tt, HasBool.ff] == some (some (int 2), none, 2)
+#guard kleeneRun (.seq arms arms) [HasBool.ff, HasBool.tt] =ₘ some (some (int 1), none, 2)
+#guard kleeneRun (.seq arms arms) [HasBool.tt, HasBool.ff] =ₘ some (some (int 2), none, 2)
+
+-- `=ₘ` ignores metadata but never a value: two results that differ only in a value
+-- (here `int 1` vs `int 2`, both at the default location) compare `false`.
+#guard !((some (some (int 1), none, 3) : Option (Option Expression.Expr × Option Expression.Expr × Nat))
+          =ₘ some (some (int 2), none, 3))
+
+-- Location coverage (metadata-sensitive, exact `==`): a read variable carries the
+-- reference's location at the evaluator's output, not the stored value's. Removing the
+-- fvar read re-tag in `LExpr.evalCore` would make this fail.
+#guard
+  (let refLoc : ExprSourceLoc := .synthesized "ref"
+   let env : Lambda.Env CoreLParams :=
+     fun y => if y == id "x" then some (.intConst (.synthesized "val") 7) else none
+   ((LExpr.evalCore 1 Core.Factory env (.fvar refLoc (id "x") (some .int))).fst).metadata == refLoc)
 
 /-! ## A CFG back-edge -/
 
@@ -178,14 +192,14 @@ private def cfgX (n : String) (env : IEnv Expression) : Option Expression.Expr :
   | _ => none
 
 -- The back-edge runs three times from `x ↦ 0`, and the loop exits at `x ↦ 3`.
-#guard cfgX "counted" (envX 0) == some (int 3)
+#guard cfgX "counted" (envX 0) =ₘ some (int 3)
 -- From `x ↦ 5` the guard is false at once.
-#guard cfgX "counted" (envX 5) == some (int 5)
+#guard cfgX "counted" (envX 5) =ₘ some (int 5)
 
 /-! ## A CFG callee that declares a local -/
 
 -- The caller ends at `x ↦ 5`.
-#guard cfgX "caller" (envX 7) == some (int 5)
+#guard cfgX "caller" (envX 7) =ₘ some (int 5)
 
 -- The callee's local `t` does not reach the caller's store.
 #guard match replayRun (runCoreInterpCFG (m := ReplayM Expression) π 100
@@ -204,7 +218,7 @@ private def calleeExit : Option (RStore Expression) :=
   | _ => none
 
 -- `r` holds the callee's result, and the callee's local `t` is projected away.
-#guard (calleeExit.bind (· (id "r"))) == some (int 5)
+#guard (calleeExit.bind (· (id "r"))) =ₘ some (int 5)
 #guard (calleeExit.map fun σ => (σ (id "t")).isNone) == some true
 
 

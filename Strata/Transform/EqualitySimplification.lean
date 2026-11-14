@@ -101,7 +101,7 @@ def insertUnique (m : Std.HashMap CoreIdent (Option Expression.Expr)) (x : CoreI
     (v : Expression.Expr) : Std.HashMap CoreIdent (Option Expression.Expr) :=
   match m.get? x with
   | none => m.insert x (some v)
-  | some (some v') => if v' == v then m else m.insert x none
+  | some (some v') => if v'.beqIgnoringMetadata v then m else m.insert x none
   | some none => m
 
 /-- Record `v` as a candidate witness for `f` from the fact `f(v) ↦ true`. -/
@@ -124,18 +124,18 @@ def insert (fs : Facts) (lhs rhs : Expression.Expr) : Facts :=
     let fs := fs.addHint lhs rhs
     let h := LExpr.hashExpr lhs
     let bucket := fs.terms.getD h []
-    match bucket.find? (·.1 == lhs) with
+    match bucket.find? (·.1.beqIgnoringMetadata lhs) with
     | none => { fs with terms := fs.terms.insert h ((lhs, some rhs) :: bucket) }
     | some (_, some v) =>
-      if v == rhs then fs
+      if v.beqIgnoringMetadata rhs then fs
       else
-        let bucket := bucket.map fun (k, v) => if k == lhs then (k, none) else (k, v)
+        let bucket := bucket.map fun (k, v) => if k.beqIgnoringMetadata lhs then (k, none) else (k, v)
         { fs with terms := fs.terms.insert h bucket }
     | some (_, none) => fs
 
 /-- The value recorded for the term `e`, whose hash is `h`. -/
 def lookupTerm (fs : Facts) (e : Expression.Expr) (h : UInt64) : Option Expression.Expr :=
-  (fs.terms.get? h).bind fun bucket => (bucket.find? (·.1 == e)).bind (·.2)
+  (fs.terms.get? h).bind fun bucket => (bucket.find? (·.1.beqIgnoringMetadata e)).bind (·.2)
 
 /-- `fs` without the facts that mention one of `xs`: their values, definitions
     and recorded terms, as on either side. -/
@@ -211,25 +211,25 @@ def addAssumption (fs : Facts) (n : Nat) (e : Expression.Expr) : Facts :=
     match orient F l r (see l) (see r) with
     | some (lhs, lhs', rhs) =>
       let fs := fs.insert lhs rhs
-      if lhs' == lhs then fs else fs.insert lhs' rhs
-    | none => fs.insert e (.true ())
+      if lhs'.beqIgnoringMetadata lhs then fs else fs.insert lhs' rhs
+    | none => fs.insert e (.true valueLoc)
   | .app _ (.app _ (.op _ o _) a) b =>
     if FoldConnectives.boolOpOf? o.name == some .And then
       addAssumption (addAssumption fs n a) n b
-    else fs.insert e (.true ())
+    else fs.insert e (.true valueLoc)
   | .app _ (.op _ o _) a =>
     if FoldConnectives.boolOpOf? o.name == some .Not then
-      let fs := fs.insert a (.false ())
+      let fs := fs.insert a (.false valueLoc)
       let a' := fs.seeThrough defDepth a
-      if a' == a then fs else fs.insert a' (.false ())
-    else fs.insert e (.true ())
+      if a'.beqIgnoringMetadata a then fs else fs.insert a' (.false valueLoc)
+    else fs.insert e (.true valueLoc)
   | .fvar _ x _ =>
-    let fs := fs.insert e (.true ())
+    let fs := fs.insert e (.true valueLoc)
     match n, fs.defOf? x with
     | n + 1, some d => addAssumption fs n d
     | _, _ => fs
   | .const _ _ | .abs _ _ _ _ | .quant _ _ _ _ _ _ | .bvar _ _ => fs
-  | _ => fs.insert e (.true ())
+  | _ => fs.insert e (.true valueLoc)
   termination_by (n, sizeOf e)
 
 /-- The value of `o(c, other)` when `o` is the factory's bitvector `and`: `c`
@@ -346,7 +346,7 @@ def addValues : Nat → List Expression.Expr → List Expression.Expr →
     List Expression.Expr
   | 0, _, acc | _, [], acc => acc
   | n + 1, v :: vs, acc =>
-    if LExpr.isValue F v && !acc.contains v then addValues n vs (v :: acc)
+    if LExpr.isValue F v && !acc.any (·.beqIgnoringMetadata v) then addValues n vs (v :: acc)
     else addValues (n + 1) vs acc
 
 /-- Candidate witnesses for an existential over `ty` with trigger functions
@@ -371,7 +371,7 @@ def witnessRule (fs : Facts) (fuel : Nat) : Simplify.NodeRule
       (Simplify.evalAndRewrite (Simplify.fold F fuel) (factFreeRules F)
         foldRounds (LExpr.betaReduce v body)).isTrue
     if (witnessCandidates F fs ty (triggerFunctions tr)).any proves then
-      some (.true ())
+      some (.true valueLoc)
     else none
   | _ => none
 

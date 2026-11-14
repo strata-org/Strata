@@ -31,7 +31,7 @@ def compositeBinder : String := "$composite"
 
 def tagConstraint (p : UnorderedProgram) (c : TypeName) : Expr :=
   let tag := typeTagOf (mkFvar compositeBinder)
-  match (descendants p c).map (fun d => (Lambda.LExpr.eq () tag (tagOf d) : Expr)) with
+  match (descendants p c).map (fun d => (Lambda.LExpr.eq Core.coreLoc tag (tagOf d) : Expr)) with
   | [] => ff
   | e :: es => es.foldl (fun acc x => mkCall "Bool.Or" [acc, x]) e
 

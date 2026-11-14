@@ -187,12 +187,13 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
   | .CompoundAssign op _ _ =>
     NodeKind.StmtExpr.CompoundAssign :: NodeKind.ofOperation op
   | .PureFieldUpdate .. => [NodeKind.StmtExpr.PureFieldUpdate]
-  | .StaticCall callee _ _ => NodeKind.StmtExpr.StaticCall :: NodeKind.ofCallee callee
+  | .Call none callee _ _ => NodeKind.StmtExpr.Call :: NodeKind.ofCallee callee
   | .New .. => [NodeKind.StmtExpr.New]
   | .This => [NodeKind.StmtExpr.This]
   | .AsType .. => [NodeKind.StmtExpr.AsType]
   | .IsType .. => [NodeKind.StmtExpr.IsType]
-  | .InstanceCall .. => [NodeKind.StmtExpr.InstanceCall]
+  | .Call (some _) callee _ _ =>
+    NodeKind.StmtExpr.Call :: NodeKind.StmtExpr.Call.receiver?.some :: NodeKind.ofCallee callee
   | .Old value label? =>
     (if label?.isSome then [NodeKind.StmtExpr.Old.label?.some] else [])
       ++ (if isVarLocal value then [NodeKind.StmtExpr.Old.value.Var.Local] else [])
@@ -249,11 +250,10 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
   | .IncrDecr _ _ target => variableChildren target.val
   | .CompoundAssign _ target rhs => variableChildren target.val ++ [rhs]
   | .PureFieldUpdate target _ newValue => [target, newValue]
-  | .StaticCall _ arguments _ => arguments
+  | .Call receiver? _ arguments _ => receiver?.toList ++ arguments
   | .ReferenceEquals lhs rhs => [lhs, rhs]
   | .AsType target _ => [target]
   | .IsType target _ => [target]
-  | .InstanceCall target _ arguments _ => [target] ++ arguments
   | .Quantifier _ _ trigger body => trigger.toList ++ [body]
   | .Assigned name => [name]
   | .Old value _ => [value]
@@ -274,7 +274,7 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
 
 /-- The type annotations a node carries directly. -/
 @[expose] def stmtExprTypes : StmtExpr → List HighTypeMd
-  | .StaticCall _ _ typeArgs => typeArgs
+  | .Call _ _ _ typeArgs => typeArgs
   | .New _ typeArgs => typeArgs
   | .AsType _ targetType => [targetType]
   | .IsType _ type => [type]
@@ -357,6 +357,20 @@ private theorem ofCallee_subset {c : Identifier} {k : NodeKind} (hk : k ∈ Node
   · exact ⟨_, hk⟩
   · simp at hk
 
+/-- A call's kinds are `Call`, `Call.receiver?.some`, and its callee's operator kinds. -/
+private theorem ofCall_mem {r : Option StmtExprMd} {c : Identifier} {a : List StmtExprMd}
+    {t : List HighTypeMd} {k : NodeKind} (hk : k ∈ NodeKind.ofStmtExpr (.Call r c a t)) :
+    k = NodeKind.StmtExpr.Call ∨ k = NodeKind.StmtExpr.Call.receiver?.some ∨
+      ∃ op, k ∈ NodeKind.ofOperation op := by
+  cases r <;> simp only [NodeKind.ofStmtExpr, List.mem_cons] at hk
+  · rcases hk with h | h
+    · exact .inl h
+    · exact .inr (.inr (ofCallee_subset h))
+  · rcases hk with h | h | h
+    · exact .inl h
+    · exact .inr (.inl h)
+    · exact .inr (.inr (ofCallee_subset h))
+
 /-- An operator contributes only its own two kinds. -/
 theorem ofOperation_mem {op : Operation} {k : NodeKind} (hk : k ∈ NodeKind.ofOperation op) :
     k = NodeKind.Operation.AndThen ∨ k = NodeKind.Operation.OrElse := by
@@ -377,12 +391,11 @@ theorem ofStmtExpr_postTest_true {v : StmtExpr}
     rcases h with h | h
     · exact absurd h (by simp)
     · rcases ofOperation_mem h with h1 | h1 <;> exact absurd h1 (by simp)
-  case StaticCall callee args =>
-    simp only [NodeKind.ofStmtExpr, List.mem_cons] at h
-    rcases h with h | h
-    · exact absurd h (by simp)
-    · obtain ⟨op, hop⟩ := ofCallee_subset h
-      rcases ofOperation_mem hop with h1 | h1 <;> exact absurd h1 (by simp)
+  case Call receiver? callee args typeArgs =>
+    rcases ofCall_mem h with h1 | h1 | ⟨op, hop⟩
+    · exact absurd h1 (by simp)
+    · exact absurd h1 (by simp)
+    · rcases ofOperation_mem hop with h1 | h1 <;> exact absurd h1 (by simp)
   case Block _ _ invs dec => cases invs <;> cases dec <;> simp [NodeKind.ofStmtExpr] at h
   case Goto _ d => cases d <;> simp [NodeKind.ofStmtExpr] at h
   all_goals
@@ -402,12 +415,11 @@ theorem ofStmtExpr_incrDecr {v : StmtExpr}
     rcases h with h | h
     · exact absurd h (by simp)
     · rcases ofOperation_mem h with h1 | h1 <;> exact absurd h1 (by simp)
-  case StaticCall callee args =>
-    simp only [NodeKind.ofStmtExpr, List.mem_cons] at h
-    rcases h with h | h
-    · exact absurd h (by simp)
-    · obtain ⟨op, hop⟩ := ofCallee_subset h
-      rcases ofOperation_mem hop with h1 | h1 <;> exact absurd h1 (by simp)
+  case Call receiver? callee args typeArgs =>
+    rcases ofCall_mem h with h1 | h1 | ⟨op, hop⟩
+    · exact absurd h1 (by simp)
+    · exact absurd h1 (by simp)
+    · rcases ofOperation_mem hop with h1 | h1 <;> exact absurd h1 (by simp)
   case Block _ _ invs dec => cases invs <;> cases dec <;> simp [NodeKind.ofStmtExpr] at h
   case Goto _ d => cases d <;> simp [NodeKind.ofStmtExpr] at h
   all_goals
@@ -422,12 +434,11 @@ theorem ofStmtExpr_compoundAssign {v : StmtExpr}
   cases v
   case CompoundAssign op target rhs => exact ⟨op, target, rhs, rfl⟩
   case Var var => cases var <;> simp [NodeKind.ofStmtExpr, NodeKind.ofVariable] at h
-  case StaticCall callee args =>
-    simp only [NodeKind.ofStmtExpr, List.mem_cons] at h
-    rcases h with h | h
-    · exact absurd h (by simp)
-    · obtain ⟨op, hop⟩ := ofCallee_subset h
-      rcases ofOperation_mem hop with h1 | h1 <;> exact absurd h1 (by simp)
+  case Call receiver? callee args typeArgs =>
+    rcases ofCall_mem h with h1 | h1 | ⟨op, hop⟩
+    · exact absurd h1 (by simp)
+    · exact absurd h1 (by simp)
+    · rcases ofOperation_mem hop with h1 | h1 <;> exact absurd h1 (by simp)
   case Block _ _ invs dec => cases invs <;> cases dec <;> simp [NodeKind.ofStmtExpr] at h
   case Goto _ d => cases d <;> simp [NodeKind.ofStmtExpr] at h
   all_goals

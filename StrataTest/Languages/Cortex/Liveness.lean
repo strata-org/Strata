@@ -88,6 +88,23 @@ h: in [a] out [r] handlers []
    blk "h" [.set "r" (some (v "a")) (at_ 5)] (.finish (at_ 6))]
   [handler ["b0"] "e" "h"]]
 
+/-! An array command reads the variables of its operands and assigns its result. In `b1`
+the array `a`, the index `i` and the stored value `x` are read, so they are live on entry;
+`n`, `t` and `r` are assigned before they are read, so they are not. `newArray` reads its length
+and assigns `a`. -/
+
+/--
+info: b0: in [i, k, x] out [a, i, x] handlers []
+b1: in [a, i, x] out [r] handlers []
+-/
+#guard_msgs in
+#eval showLive [proc "arrays" [("k", int), ("i", int), ("x", int)] [("r", int)]
+  [blk "b0" [.init "a" (.named "Ints") none (at_ 1), decl "n" 2, decl "t" 3,
+             .newArray "a" "Ints" (v "k") (at_ 4)] (.goto "b1" (at_ 5)),
+   blk "b1" [.writeElem (v "a") (v "i") (v "x") int (at_ 6), .arrayLength "n" (v "a") (at_ 7),
+             .readElem "t" (v "a") (v "i") int (at_ 8),
+             .set "r" (some (.op "Int.Add" [v "n", v "t"])) (at_ 9)] (.finish (at_ 10))]]
+
 end Cortex.LivenessTest
 
 end

@@ -1953,8 +1953,8 @@ is linear in the depth. -/
 public def elseIfChain : Nat → List Statement
   | 0 => []
   | n + 1 =>
-    [.ite (.det (.fvar () ⟨s!"c{n + 1}", ()⟩ none))
-      [Statement.set ⟨"x", ()⟩ (.intConst () (n + 1)) .empty] (elseIfChain n) .empty]
+    [.ite (.det (.fvar Core.valueLoc ⟨s!"c{n + 1}", ()⟩ none))
+      [Statement.set ⟨"x", ()⟩ (.intConst Core.valueLoc (n + 1)) .empty] (elseIfChain n) .empty]
 
 /-- The chain of the given depth, branching on `c₁, c₂, …`, whose level `k` declares
     `tₖ` without a value and writes it to `x`. -/
@@ -1962,9 +1962,9 @@ public def freshVarChain : Nat → List Statement
   | 0 => []
   | n + 1 =>
     let t : CoreIdent := ⟨s!"t{n + 1}", ()⟩
-    [.ite (.det (.fvar () ⟨s!"c{n + 1}", ()⟩ none))
+    [.ite (.det (.fvar Core.valueLoc ⟨s!"c{n + 1}", ()⟩ none))
       [Statement.init t (.forAll [] .int) .nondet .empty,
-       Statement.set ⟨"x", ()⟩ (.fvar () t none) .empty] (freshVarChain n) .empty]
+       Statement.set ⟨"x", ()⟩ (.fvar Core.valueLoc t none) .empty] (freshVarChain n) .empty]
 
 /-- Whether simplifying `ss` and sweeping its dead definitions leaves it unchanged. -/
 public def simplifiesUnchanged (ss : List Statement) : Bool :=
@@ -1990,8 +1990,8 @@ length. -/
 /-- The branches `if cᵢ { assert pᵢ } else {}` for `i < n`, in sequence. -/
 public def writeFreeIfs (n : Nat) : List Statement :=
   (List.range n).map fun i =>
-    .ite (.det (.fvar () ⟨s!"c{i}", ()⟩ none))
-      [Statement.assert s!"a{i}" (.fvar () ⟨s!"p{i}", ()⟩ none) .empty] [] .empty
+    .ite (.det (.fvar Core.valueLoc ⟨s!"c{i}", ()⟩ none))
+      [Statement.assert s!"a{i}" (.fvar Core.valueLoc ⟨s!"p{i}", ()⟩ none) .empty] [] .empty
 
 /-- info: true -/
 #guard_msgs in
@@ -2002,11 +2002,11 @@ public def writeFreeIfs (n : Nat) : List Statement :=
 A variable one arm reads does not keep the other arm's dead definition of the same
 name, whichever arm is swept first. -/
 
-private def tRead : Statement := Statement.assert "a" (.fvar () ⟨"t", ()⟩ none) .empty
+private def tRead : Statement := Statement.assert "a" (.fvar Core.valueLoc ⟨"t", ()⟩ none) .empty
 private def tDef : Statement :=
-  Statement.init ⟨"t", ()⟩ (.forAll [] .int) (.det (.intConst () 1)) .empty
-private def noRead : Statement := Statement.assert "b" (.boolConst () true) .empty
-private def cGuard : Imperative.ExprOrNondet Expression := .det (.fvar () ⟨"c", ()⟩ none)
+  Statement.init ⟨"t", ()⟩ (.forAll [] .int) (.det (.intConst Core.valueLoc 1)) .empty
+private def noRead : Statement := Statement.assert "b" (.boolConst Core.valueLoc true) .empty
+private def cGuard : Imperative.ExprOrNondet Expression := .det (.fvar Core.valueLoc ⟨"c", ()⟩ none)
 
 #guard dropDeadDefs Core.Factory {} {} [.ite cGuard [tRead] [tDef] .empty] =
   [.ite cGuard [tRead] [] .empty]
@@ -2021,7 +2021,7 @@ in the factory and is not a value of type `bool`. The semantics cannot run its `
 so the phase keeps the dead definition. -/
 
 /-- `Bool.Not` annotated with the type `bool`. -/
-private def notAsBool : Expression.Expr := .op () ⟨"Bool.Not", ()⟩ (some .bool)
+private def notAsBool : Expression.Expr := .op Core.coreLoc ⟨"Bool.Not", ()⟩ (some .bool)
 
 /-- info: false -/
 #guard_msgs in
@@ -2105,5 +2105,31 @@ procedure p ()
 }; -/
 #guard_msgs in
 #eval simplifyAndPrint quantInit
+
+/-! ### Agreement across branches is up to source location
+
+Both arms of the undecided `if` set `a := 7`; the two `7` literals carry distinct
+source ranges, so `agreedDefs` (the context join in `Ctx.join`) must compare the
+values ignoring location to carry `a = 7` past the branch, after which the assert
+reads the agreed value and `int.ge(a, 7)` is substituted away. Under plain `==` the
+arms would disagree (the ranges differ), `a` would be forgotten, and the assert would
+keep the unsubstituted `int.ge(a, 7)` — so this guard would fail, pinning the
+`beqIgnoringMetadata` comparison in `agreedDefs`. -/
+private def agreedBranches :=
+#strata
+program Core;
+procedure p (x : int)
+{
+  var a : int := 0;
+  if (int.gt(x, 0)) {
+    a := 7;
+  } else {
+    a := 7;
+  }
+  assert [agreed]: int.ge(a, 7);
+};
+#end
+
+#guard ((Core.formatProgram (simplifyProgram agreedBranches)).pretty.splitOn "int.ge(a, 7)").length == 1
 
 end Core.Simplify.Tests

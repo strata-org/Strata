@@ -14,7 +14,7 @@ public section
 
 open Imperative
 
-@[expose] def mkRef (a : Nat) : Expr := .const () (.intConst a)
+@[expose] def mkRef (a : Nat) : Expr := .const Core.valueLoc (.intConst a)
 
 @[expose] def getRef? : Expr → Option Nat
   | .const _ (.intConst n) => if 0 ≤ n then some n.toNat else none
@@ -23,6 +23,8 @@ open Imperative
 structure Obj where
   type : TypeName
   fields : FieldRef → Option Expr
+  /-- The elements of an array; `none` for an object that is not an array. -/
+  elems : Option (Array Expr) := none
 
 abbrev Heap := Nat → Option Obj
 
