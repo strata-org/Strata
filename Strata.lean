@@ -97,6 +97,7 @@ import Strata.Languages.Core.Logic.Hoare
 import Strata.Languages.Core.Logic.HoareCall
 import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
+import Strata.Languages.Core.Logic.InterpreterHoareRelation
 
 /- Strata Languages — additional -/
 import Strata.Languages.B3
@@ -222,6 +223,7 @@ import Strata.Languages.Core.InterpreterReach
 import Strata.Languages.Core.InterpreterReachBridge
 import Strata.Languages.Core.InterpreterReachBuiltins
 import Strata.Languages.Core.InterpreterReachCheck
+import Strata.Languages.Core.InterpreterReachProps
 import Strata.Languages.Core.InterpreterObs
 import Strata.Languages.Core.InterpreterObsProps
 import Strata.Languages.Core.InterpreterSound

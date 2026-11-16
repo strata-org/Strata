@@ -123,3 +123,36 @@ procedure readsMapAtNondetHole()
   assert !b
 };
 #end
+
+/-! A total map keyed by a datatype: `mapConst(0)` evaluates to a map literal, and a
+constructor key is not a literal, so the Core interpreter reads the literal's default
+through the map walk rather than through `select`'s literal evaluator. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+datatype Color { Red(), Green() }
+procedure datatypeKey()
+  entry
+  opaque
+{
+  var m: TotalMap Color int := mapConst(0);
+  assert select(m, Red()) == 0
+};
+#end
+
+/-! The twin: the read is `0`, so asserting it is `1` must fail under every runner. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+datatype Color { Red(), Green() }
+procedure datatypeKeyTwin()
+  entry
+  opaque
+{
+  var m: TotalMap Color int := mapConst(0);
+  assert select(m, Red()) == 1
+//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion
+};
+#end

@@ -107,6 +107,11 @@ def LMonoTy.mkArrow' (mty : LMonoTy) (mtys : LMonoTys) : LMonoTy :=
     LMonoTy.mkArrow' τ (m :: ms) = .arrow m (LMonoTy.mkArrow' τ ms) := by
   simp [LMonoTy.mkArrow']
 
+/-- The result type of the type of a function of `n` arguments. -/
+@[expose] def LMonoTy.arrowResult : Nat → LMonoTy → LMonoTy
+  | n + 1, .tcons "arrow" [_, t] => LMonoTy.arrowResult n t
+  | _, t => t
+
 mutual
 def LMonoTy.destructArrow (mty : LMonoTy) : LMonoTys :=
   match mty with

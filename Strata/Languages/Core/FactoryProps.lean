@@ -19,7 +19,8 @@ import Strata.Util.Tactics
 Key theorems: `Factory_opTypes_wellKinded` (every `Core.Factory` operator type
 is well kinded under the builtin table), `wellKinded_of_knownArityOkB`, and
 `Factory_all_of_WFFactoryArray` (a check holding on the builtin array holds on
-`Core.Factory`). -/
+`Core.Factory`), and `mapConstFunc_eval_ground` / `seqEmptyFunc_eval_ground` (the
+evaluators that read the operator's type annotation evaluate only at a ground one). -/
 
 public section
 
@@ -137,6 +138,72 @@ theorem Factory_opTypes_wellKinded {T : LExprParams} (C : LContext T)
       hall f hf)
   simp only [LContext.WellKindedTy, hC]
   exact hwk
+
+/-! ### Evaluators that read the operator's type annotation
+
+`mapConst` and `Sequence.empty` read their sorts from the annotation, so, following the
+convention of `ConcreteEval`, they evaluate only at a ground annotation. -/
+
+/-- The literal evaluator of `mapConst` returns a literal only at a ground annotation. -/
+private theorem AggregateLitEval.mapConst_ground {ty : Option LMonoTy} {cs : List LConst}
+    {r : LConst} (h : AggregateLitEval.mapConst ty cs = some r) :
+    ∃ t s, ty = some t ∧ t.toSort? = some s := by
+  unfold AggregateLitEval.mapConst at h
+  split at h
+  · rename_i t _
+    split at h
+    · rename_i hts
+      exact ⟨t, _, rfl, hts⟩
+    · cases h
+  · cases h
+
+/-- The literal evaluator of `Sequence.empty` returns a literal only at a ground annotation. -/
+private theorem AggregateLitEval.seqEmpty_ground {ty : Option LMonoTy} {cs : List LConst}
+    {r : LConst} (h : AggregateLitEval.seqEmpty ty cs = some r) :
+    ∃ t s, ty = some t ∧ t.toSort? = some s := by
+  unfold AggregateLitEval.seqEmpty at h
+  split at h
+  · rename_i t
+    split at h
+    · rename_i hts
+      exact ⟨t, _, rfl, hts⟩
+    · cases h
+  · cases h
+
+/-- A `polyLitOp` evaluator returns a result only where its literal evaluator does, at the
+    same annotation. -/
+private theorem polyLitOp_eval_some {n : CoreLParams.Identifier} {ta inputs output ev axs pre}
+    {h1 h2 h3 h4 h5 h6} {ceval : ConcreteEval CoreLParams}
+    (hce : (polyLitOp n ta inputs output ev axs pre h1 h2 h3 h4 h5 h6).func.concreteEval =
+      some ceval)
+    {md : CoreLParams.Metadata} {ty : Option LMonoTy} {args : List (LExpr CoreLParams.mono)}
+    {r : LExpr CoreLParams.mono} (h : ceval md ty args = some r) :
+    ∃ cs c, ev ty cs = some c := by
+  cases hce
+  simp only at h
+  split at h
+  · obtain ⟨c, hc, -⟩ := Option.bind_eq_some_iff.mp h
+    obtain ⟨cs, -, hev⟩ := Option.bind_eq_some_iff.mp hc
+    exact ⟨cs, c, hev⟩
+  · cases h
+
+/-- **`mapConst` evaluates only at a ground annotation**: its concrete evaluator returns a
+    result only when the operator's annotation is a type without type variables. -/
+theorem mapConstFunc_eval_ground {ceval : ConcreteEval CoreLParams}
+    (hce : mapConstFunc.func.concreteEval = some ceval) {md : CoreLParams.Metadata}
+    {ty : Option LMonoTy} {args : List (LExpr CoreLParams.mono)} {r : LExpr CoreLParams.mono}
+    (h : ceval md ty args = some r) : ∃ t s, ty = some t ∧ t.toSort? = some s := by
+  obtain ⟨cs, c, hev⟩ := polyLitOp_eval_some hce h
+  exact AggregateLitEval.mapConst_ground hev
+
+/-- **`Sequence.empty` evaluates only at a ground annotation**: its concrete evaluator returns
+    a result only when the operator's annotation is a type without type variables. -/
+theorem seqEmptyFunc_eval_ground {ceval : ConcreteEval CoreLParams}
+    (hce : seqEmptyFunc.func.concreteEval = some ceval) {md : CoreLParams.Metadata}
+    {ty : Option LMonoTy} {args : List (LExpr CoreLParams.mono)} {r : LExpr CoreLParams.mono}
+    (h : ceval md ty args = some r) : ∃ t s, ty = some t ∧ t.toSort? = some s := by
+  obtain ⟨cs, c, hev⟩ := polyLitOp_eval_some hce h
+  exact AggregateLitEval.seqEmpty_ground hev
 
 end Core
 

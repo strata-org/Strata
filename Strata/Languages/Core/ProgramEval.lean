@@ -204,13 +204,13 @@ def runEntry (E : Env) (proc : Procedure) (fuel : Nat) : Env :=
 
     `inline` rather than `inlineIfAllValues`, because the latter unfolds a body
     only once *every* argument satisfies `isInlineArg` (a value in which
-    closed quantifiers may also appear), and a `Map` argument does not:
-    a map value is a stack of `update`s over a `mapConst`, a saturated call of an
-    uninterpreted function rather than a constructor application, which
-    `isValue` rejects. That gate blocks every call taking a map, such as
-    Laurel's `readField(heap, obj, field)`. Unfolding unconditionally is safe here
-    because these functions are non-recursive, so the chain of unfoldings is
-    bounded by the call graph.
+    closed quantifiers may also appear), and a `Map` argument often does not:
+    besides a map literal, a map value can be a stack of `update`s over a `mapConst`
+    or a symbolic base, a saturated call of a factory function rather than a
+    constructor application, which `isValue` rejects. That gate blocks every call taking
+    such a map, for example Laurel's `readField(heap, obj, field)`. Unfolding
+    unconditionally is safe here because these functions are non-recursive, so the
+    chain of unfoldings is bounded by the call graph.
 
     Shared by the `laurelInterpret` CLI command and the Laurel E2E execute tests. -/
 def inlineBodiedFunctions (prog : Program) : Program :=
@@ -227,16 +227,18 @@ def inlineBodiedFunctions (prog : Program) : Program :=
 
 /-! ### Interpreting `Map` operations
 
-`mapConst`, `update` and `select` are uninterpreted in `Core.Factory`: the
-verifier discharges them through the axioms attached to `mapConstFunc` and
-`mapUpdateFunc`, so a `select` never reduces during symbolic evaluation.
-Concrete execution has to reduce one — a Laurel field read lowers to
-`select(select(Heap..data!(heap), obj), field)`, so without this every program
-that touches a field gets stuck on the first read.
+In `Core.Factory`, `mapConst`, `update` and `select` reduce only on literal
+arguments (`AggregateLitEval`); on anything else the verifier discharges them
+through the axioms attached to `mapConstFunc` and `mapUpdateFunc`. Concrete
+execution has to reduce more than that — a Laurel field read lowers to
+`select(select(Heap..data!(heap), obj), field)`, where the heap is a stack of
+`update`s over a symbolic base and the keys are object references, so without
+this every program that touches a field gets stuck on the first read.
 
 So the interpreter runs those same axioms as a rewrite, by giving `select` a
-`concreteEval` in its *own* copy of the factory. Verification keeps the
-uninterpreted `select` and its axioms untouched. -/
+`concreteEval` in its *own* copy of the factory that first tries the literal
+evaluator and then walks the stack of `update`s. Verification keeps `select`'s
+literal evaluator and its axioms untouched. -/
 
 private def mapConstName : String := Core.mapConstFunc.func.name.name
 private def mapUpdateName : String := Core.mapUpdateFunc.func.name.name
@@ -247,7 +249,10 @@ private def mapSelectName : String := Core.mapSelectFunc.func.name.name
     A map value is a stack of `update`s over some base, so a selection is decided by
     walking the stack from the top: `update m' k v` answers `v` at `k` and defers to
     `m'` elsewhere (`mapUpdateFunc`'s `updateSelect` / `updatePreserve`), and a
-    `mapConst d` base answers `d` (`mapConstFunc`'s axiom). A base that is neither --
+    `mapConst d` base answers `d` (`mapConstFunc`'s axiom). A map literal base answers
+    the value of its first entry at `i`'s key and its default elsewhere; `select`'s own
+    evaluator decides the literal case unless the key is not a literal (a datatype
+    constructor application, say). A base that is none of these --
     the heap's initial hole, a symbolic map parameter -- leaves a residual `select`,
     which is only reached for a key no `update` in the stack covers.
 
@@ -268,9 +273,13 @@ private def selectFromMapTerm (m i : Expression.Expr) : Option Expression.Expr :
         (.app coreLoc (.app coreLoc Core.mapSelectOp m') i)
       some (.ite coreLoc (.eq coreLoc i k) v rest)
     else none
+  | .const _ (.mapConst _ _ d ⟨xs⟩) =>
+    some (xs.foldr (fun (k, v) rest =>
+        .ite coreLoc (.eq coreLoc i (.const coreLoc k)) (.const coreLoc v) rest)
+      (.const coreLoc d))
   | _ => none
 
-/-- `Core.Factory`'s uninterpreted `select`, with `selectFromMapTerm` attached.
+/-- `Core.Factory`'s `select`, with `selectFromMapTerm` attached after its literal evaluator.
 
     `evalIfValue 1` is what turns it on: the map argument (index 0) is an
     `update`/`mapConst` application, which is not a value, so the
@@ -280,10 +289,14 @@ private def selectFromMapTerm (m i : Expression.Expr) : Option Expression.Expr :
 private def interpretSelect (f : Lambda.LFunc CoreLParams) : Lambda.LFunc CoreLParams :=
   if f.name.name == mapSelectName then
     { f with
-      concreteEval := some (fun _ _ args =>
-        match args with
-        | [m, i] => selectFromMapTerm m i
-        | _ => none)
+      -- A literal map is selected by `select`'s own evaluator; a stack of `update`s is walked.
+      concreteEval := some (fun md opTy args =>
+        match f.concreteEval.bind (fun ce => ce md opTy args) with
+        | some r => some r
+        | none =>
+          match args with
+          | [m, i] => selectFromMapTerm m i
+          | _ => none)
       attr := f.attr.push (.evalIfValue 1) }
   else f
 

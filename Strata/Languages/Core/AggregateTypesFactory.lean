@@ -13,6 +13,7 @@ import all Strata.DL.Lambda.LTy
 import all Strata.DL.Lambda.LExpr
 import all Strata.DL.Lambda.Factory
 import all Strata.DL.Lambda.FactoryWF
+import Strata.DL.Lambda.LExprProps
 
 /-! # Core's factory functions over aggregate types
 
@@ -20,6 +21,8 @@ The functions of `Core.Factory` over `Map`, `Set` and `Sequence`, which are all 
 the types of their keys, values or elements. `Core.Factory` collects them with the others.
 
 - `mapTy`, `seqTy`, `setTy` — the aggregate types.
+- `polyLitOp` — the combinator for a polymorphic function whose concrete evaluator computes on
+  literals; the `Map` and `Sequence` operations use it, with the evaluators in `AggregateLitEval`.
 - `litToOpExpr` — a collection literal as the operator expression that builds it.
 - The `Map` operations (`mapConstFunc`, `mapSelectFunc`, `mapUpdateFunc`), the `Set`
   operations (`setEmptyFunc`, `setContainsFunc`, ...) and the `Sequence` operations
@@ -52,6 +55,192 @@ def seqTy (elemTy : LMonoTy) : LMonoTy :=
 @[expose, match_pattern]
 def setTy (elemTy : LMonoTy) : LMonoTy :=
   .tcons "Set" [elemTy]
+
+/-! ## Literal combinator
+
+`polyLitOp` builds a well-formed `WFLFunc` whose concrete evaluator computes on
+literals: it applies to calls whose arguments are all constants, and returns a
+constant. -/
+
+/-- The largest literal, counted in constants (`LConst.size`), that a `polyLitOp` evaluator
+    returns. The SMT encoding spells a collection literal out constant by constant, so a large
+    one encodes much larger than the operations that built it, whose repeated subterms the
+    encoding shares (sequences doubled by appends, for example). Past this size the call is
+    left as it is, to the solver and the function's axioms. -/
+@[expose] def maxLitSize : Nat := 64
+
+/-- A polymorphic function with a concrete evaluator on literals: on a call whose
+    `inputs.length` arguments are all constants, it returns the constant `eval`
+    computes from the operator's type annotation and the argument literals, if
+    any, provided it is well typed (`LConst.wt`) at the output type of the
+    operator's type annotation and has at most `maxLitSize` constants. -/
+@[inline]
+def polyLitOp (n : CoreLParams.Identifier) (typeArgs : List String)
+    (inputs : List (CoreLParams.Identifier × LMonoTy)) (output : LMonoTy)
+    (eval : Option LMonoTy → List LConst → Option LConst)
+    (axioms : List (LExpr CoreLParams.mono) := [])
+    (preconditions :
+      List (FuncPrecondition (LExpr CoreLParams.mono) CoreLParams.Metadata) := [])
+    (h_nodup : List.Nodup (inputs.map (·.1.name)) := by first | decide | grind)
+    (h_ta_nodup : List.Nodup typeArgs := by grind)
+    (h_inputs : ∀ ty, ty ∈ ListMap.values inputs →
+      ty.freeVars ⊆ typeArgs := by first | decide | grind)
+    (h_output : output.freeVars ⊆ typeArgs
+      := by first | decide | grind)
+    (h_precond : ∀ p, p ∈ preconditions →
+      (LExpr.freeVars p.expr).map (·.1.name) ⊆ inputs.map (·.1.name)
+      := by first | decide | grind)
+    (h_ta_no_gen : ∀ ta, ta ∈ typeArgs → ¬ (genTyPrefix.toList.isPrefixOf ta.toList = true)
+      := by first | decide | grind) : WFLFunc CoreLParams :=
+  ⟨{ name := n, typeArgs := typeArgs, inputs := inputs, output := output,
+     axioms := axioms, preconditions := preconditions,
+     concreteEval := some (fun md opTy args =>
+       if args.length = inputs.length then
+         ((LExpr.constArgs? args).bind (eval opTy)).bind fun r =>
+           if r.wt && decide (opTy.map (LMonoTy.arrowResult inputs.length) = some r.ty) &&
+               decide (r.size ≤ maxLitSize) then
+             some (LExpr.const md r)
+           else none
+       else none) }, {
+    arg_nodup := h_nodup
+    concreteEval_argmatch := by
+      intro fn md opTy args res hfn heval
+      simp only [Option.some.injEq] at hfn; subst hfn
+      simp only at heval
+      split at heval
+      · assumption
+      · cases heval
+    body_or_concreteEval := by simp
+    constr_no_eval := by simp
+    typeArgs_nodup := h_ta_nodup
+    inputs_typevars_in_typeArgs := h_inputs
+    output_typevars_in_typeArgs := h_output
+    typeArgs_no_gen_prefix := h_ta_no_gen
+    body_freevars := by intro b hb; simp at hb
+    precond_freevars := h_precond
+    concreteEval_eraseMetadata := by
+      intro ceval h md1 md2 opTy args1 args2 res1 hmap heval
+      simp only [Option.some.injEq] at h; subst h
+      have hlen : args1.length = args2.length := by
+        have hl := congrArg List.length hmap; simpa using hl
+      have hc := LExpr.constArgs?_eraseMetadata hmap
+      simp only at heval ⊢
+      split at heval
+      · rename_i hl
+        rw [ite_eq_left (hlen ▸ hl), ← hc]
+        obtain ⟨r, hr, hres⟩ := Option.bind_eq_some_iff.mp heval
+        split at hres
+        · rename_i hchk
+          simp only [Option.some.injEq] at hres; subst hres
+          exact ⟨LExpr.const md2 r, by rw [hr]; simp only [Option.bind_some, hchk, ↓reduceIte],
+            by simp [LExpr.eraseMetadata, LExpr.replaceMetadata]⟩
+        · cases hres
+      · cases heval
+    concreteEval_freeVars := by
+      intro ceval h md opTy args res heval z hz
+      simp only [Option.some.injEq] at h; subst h
+      simp only at heval
+      split at heval
+      · obtain ⟨r, _, hres⟩ := Option.bind_eq_some_iff.mp heval
+        split at hres
+        · simp only [Option.some.injEq] at hres; subst hres
+          simp [LExpr.LExpr.getVars] at hz
+        · cases hres
+      · cases heval
+  }⟩
+
+/-! ## Concrete evaluation of `Map` and `Sequence` operations
+
+The `Map` and `Sequence` operations evaluate calls whose arguments are literals
+(`LConst.mapConst`, `LConst.sequenceConst` and primitive literals), building
+literals. `mapConst` and `Sequence.empty` read the key, value or element sort from
+the type annotation of their operator, since their arguments do not determine it.
+
+An evaluator compares keys (`select`, `update`) or elements (`Sequence.contains`)
+syntactically, which decides their equality only at a sort without `Map`
+(`LSort.hasMap`), so it declines at a sort with `Map`. The partial `Sequence`
+operations, and their unchecked `!` variants, evaluate only within bounds. -/
+
+namespace AggregateLitEval
+
+/-- `mapConst(d)` at operator type `v → Map k v`: the map literal sending every key
+    to `d`. It reads the annotation, so it returns `none` unless the annotation is ground
+    (`ConcreteEval`, `mapConstFunc_eval_ground`). Like the other evaluators it leaves typing
+    to `polyLitOp`, which rejects the literal unless `d` is well typed at the value sort. -/
+@[expose] def mapConst : Option LMonoTy → List LConst → Option LConst
+  | some t, [d] =>
+    match t.toSort? with
+    | some (.tcons "arrow" [_, .tcons "Map" [ks, vs]]) => some (.mapConst ks vs d #[])
+    | _ => none
+  | _, _ => none
+
+/-- `select(m, key)` on a map literal: the value of `key` (`LConst.mapSelect`). -/
+@[expose] def mapSelect : Option LMonoTy → List LConst → Option LConst
+  | _, [.mapConst k _ d xs, key] => if k.hasMap then none else some (LConst.mapSelect d xs key)
+  | _, _ => none
+
+/-- `update(m, key, x)` on a map literal (`LConst.mapUpdate`). -/
+@[expose] def mapUpdate : Option LMonoTy → List LConst → Option LConst
+  | _, [.mapConst k v d xs, key, x] =>
+    if k.hasMap then none else some (.mapConst k v d (LConst.mapUpdate d xs key x))
+  | _, _ => none
+
+/-- `Sequence.empty()` at operator type `Sequence a`. It reads the annotation, so it returns
+    `none` unless the annotation is ground (`ConcreteEval`, `seqEmptyFunc_eval_ground`). -/
+@[expose] def seqEmpty : Option LMonoTy → List LConst → Option LConst
+  | some t, [] =>
+    match t.toSort? with
+    | some (.tcons "Sequence" [a]) => some (.sequenceConst a #[])
+    | _ => none
+  | _, _ => none
+
+/-- `Sequence.length(s)`. -/
+@[expose] def seqLength : Option LMonoTy → List LConst → Option LConst
+  | _, [.sequenceConst _ xs] => some (.intConst xs.size)
+  | _, _ => none
+
+/-- `Sequence.append(s, t)`. -/
+@[expose] def seqAppend : Option LMonoTy → List LConst → Option LConst
+  | _, [.sequenceConst a xs, .sequenceConst _ xs'] => some (.sequenceConst a (xs ++ xs'))
+  | _, _ => none
+
+/-- `Sequence.select(s, i)` (and `Sequence.select!`) for `0 ≤ i < length(s)`. -/
+@[expose] def seqSelect : Option LMonoTy → List LConst → Option LConst
+  | _, [.sequenceConst _ xs, .intConst i] =>
+    if h : 0 ≤ i ∧ i.toNat < xs.size then some xs[i.toNat] else none
+  | _, _ => none
+
+/-- `Sequence.build(s, x)`: `s` with `x` appended. -/
+@[expose] def seqBuild : Option LMonoTy → List LConst → Option LConst
+  | _, [.sequenceConst a xs, x] => some (.sequenceConst a (xs.push x))
+  | _, _ => none
+
+/-- `Sequence.update(s, i, x)` (and `Sequence.update!`) for `0 ≤ i < length(s)`. -/
+@[expose] def seqUpdate : Option LMonoTy → List LConst → Option LConst
+  | _, [.sequenceConst a xs, .intConst i, x] =>
+    if h : 0 ≤ i ∧ i.toNat < xs.size then some (.sequenceConst a (xs.set i.toNat x h.2))
+    else none
+  | _, _ => none
+
+/-- `Sequence.contains(s, x)`, at an element sort without `Map`. -/
+@[expose] def seqContains : Option LMonoTy → List LConst → Option LConst
+  | _, [.sequenceConst a xs, x] => if a.hasMap then none else some (.boolConst (xs.contains x))
+  | _, _ => none
+
+/-- `Sequence.take(s, n)` (and `Sequence.take!`) for `0 ≤ n ≤ length(s)`. -/
+@[expose] def seqTake : Option LMonoTy → List LConst → Option LConst
+  | _, [.sequenceConst a xs, .intConst n] =>
+    if 0 ≤ n ∧ n.toNat ≤ xs.size then some (.sequenceConst a (xs.extract 0 n.toNat)) else none
+  | _, _ => none
+
+/-- `Sequence.drop(s, n)` (and `Sequence.drop!`) for `0 ≤ n ≤ length(s)`. -/
+@[expose] def seqDrop : Option LMonoTy → List LConst → Option LConst
+  | _, [.sequenceConst a xs, .intConst n] =>
+    if 0 ≤ n ∧ n.toNat ≤ xs.size then some (.sequenceConst a (xs.extract n.toNat xs.size))
+    else none
+  | _, _ => none
+
+end AggregateLitEval
 
 mutual
 /-- A collection literal as the expression that builds it from operators:
@@ -96,9 +285,10 @@ end
    declaration keyword in the Core grammar, which would otherwise make
    pretty-printed programs fail to re-parse. -/
 def mapConstFunc : WFLFunc CoreLParams :=
-  polyUneval "mapConst" ["k", "v"]
+  polyLitOp "mapConst" ["k", "v"]
     [("d", mty[%v])]
     (mapTy mty[%k] mty[%v])
+    AggregateLitEval.mapConst
     (axioms := [
       eb[∀ (%v): -- %1 d
           (∀ (%k): -- %0 kk
@@ -110,14 +300,16 @@ def mapConstFunc : WFLFunc CoreLParams :=
 
 /- A `Map` selection function with type `∀k, v. Map k v → k → v`. -/
 def mapSelectFunc : WFLFunc CoreLParams :=
-  polyUneval "select" ["k", "v"]
+  polyLitOp "select" ["k", "v"]
     [("m", mapTy mty[%k] mty[%v]), ("i", mty[%k])] mty[%v]
+    AggregateLitEval.mapSelect
 
 /- A `Map` update function with type `∀k, v. Map k v → k → v → Map k v`. -/
 def mapUpdateFunc : WFLFunc CoreLParams :=
-  polyUneval "update" ["k", "v"]
+  polyLitOp "update" ["k", "v"]
     [("m", mapTy mty[%k] mty[%v]), ("i", mty[%k]), ("x", mty[%v])]
     (mapTy mty[%k] mty[%v])
+    AggregateLitEval.mapUpdate
     (axioms := [
       -- updateSelect: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv
       eb[∀(Map %k %v):
@@ -280,8 +472,9 @@ def setDifferenceFunc : WFLFunc CoreLParams :=
 
 /- A `Sequence` length function with type `∀a. Sequence a → int`. -/
 def seqLengthFunc : WFLFunc CoreLParams :=
-  polyUneval "Sequence.length" ["a"]
+  polyLitOp "Sequence.length" ["a"]
     [("s", seqTy mty[%a])] mty[int]
+    AggregateLitEval.seqLength
     (axioms := [
       -- length(s) >= 0
       eb[∀ (Sequence %a): -- %0 s
@@ -296,7 +489,8 @@ def seqLengthFunc : WFLFunc CoreLParams :=
    The `<A>` is surface syntax produced by Grammar.lean and consumed by
    Translate.lean; this function itself takes no value parameters. -/
 def seqEmptyFunc : WFLFunc CoreLParams :=
-  polyUneval "Sequence.empty" ["a"] [] (seqTy mty[%a])
+  polyLitOp "Sequence.empty" ["a"] [] (seqTy mty[%a])
+    AggregateLitEval.seqEmpty
     (axioms := [
       -- length(empty()) == 0
       eb[((~Sequence.length : (Sequence %a) → int)
@@ -317,9 +511,10 @@ private def withSelectBang (axs : List Expression.Expr) : List Expression.Expr :
 
 /- A `Sequence` append function with type `∀a. Sequence a → Sequence a → Sequence a`. -/
 def seqAppendFunc : WFLFunc CoreLParams :=
-  polyUneval "Sequence.append" ["a"]
+  polyLitOp "Sequence.append" ["a"]
     [("s1", seqTy mty[%a]), ("s2", seqTy mty[%a])]
     (seqTy mty[%a])
+    AggregateLitEval.seqAppend
     (axioms :=
       -- length(append(s0, s1)) == length(s0) + length(s1)
       [ eb[∀ (Sequence %a): -- %1 s0
@@ -434,8 +629,9 @@ private def mkSeqBoundsPrecond
    else. It is triggered on the unchecked call, so a query using only
    `Sequence.select` never instantiates it. -/
 def seqSelectFunc : WFLFunc CoreLParams :=
-  polyUneval "Sequence.select" ["a"]
+  polyLitOp "Sequence.select" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
+    AggregateLitEval.seqSelect
     (axioms := [
       -- 0 <= i < length(s) ==> select!(s, i) == select(s, i)
       eb[∀ (Sequence %a): -- %1 s
@@ -458,15 +654,17 @@ def seqSelectFunc : WFLFunc CoreLParams :=
    unconstrained. Shares `Sequence.select`'s interaction axioms (mirrored on the
    constructor functions), so it reasons through constructors identically. -/
 def seqSelectUnsafeFunc : WFLFunc CoreLParams :=
-  polyUneval "Sequence.select!" ["a"]
+  polyLitOp "Sequence.select!" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int])] mty[%a]
+    AggregateLitEval.seqSelect
 
 /- A `Sequence` build (snoc) function with type `∀a. Sequence a → a → Sequence a`.
    `build(s, v)` appends a single element `v` to the end of `s`. -/
 def seqBuildFunc : WFLFunc CoreLParams :=
-  polyUneval "Sequence.build" ["a"]
+  polyLitOp "Sequence.build" ["a"]
     [("s", seqTy mty[%a]), ("v", mty[%a])]
     (seqTy mty[%a])
+    AggregateLitEval.seqBuild
     (axioms :=
       -- length(build(s, v)) == 1 + length(s)
       [ eb[∀ (Sequence %a): -- %1 s
@@ -514,9 +712,10 @@ def seqBuildFunc : WFLFunc CoreLParams :=
    `update(s, i, v)` returns a sequence identical to `s` except at index `i` where the value is `v`.
    Partial: requires `0 <= i && i < Sequence.length(s)`. -/
 def seqUpdateFunc : WFLFunc CoreLParams :=
-  polyUneval "Sequence.update" ["a"]
+  polyLitOp "Sequence.update" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int]), ("v", mty[%a])]
     (seqTy mty[%a])
+    AggregateLitEval.seqUpdate
     (axioms :=
       -- length(update(s, i, v)) == length(s)
       [ eb[∀ (Sequence %a): -- %2 s
@@ -573,17 +772,19 @@ def seqUpdateFunc : WFLFunc CoreLParams :=
    out-of-bounds obligation per call site. The length axiom holds for any index, and
    the select-of-update axioms stay guarded by their own bounds. -/
 def seqUpdateUnsafeFunc : WFLFunc CoreLParams :=
-  polyUneval "Sequence.update!" ["a"]
+  polyLitOp "Sequence.update!" ["a"]
     [("s", seqTy mty[%a]), ("i", mty[int]), ("v", mty[%a])]
     (seqTy mty[%a])
+    AggregateLitEval.seqUpdate
     (axioms :=
       renameOpIn "Sequence.update" "Sequence.update!" seqUpdateFunc.func.axioms)
 
 /- A `Sequence` contains function with type `∀a. Sequence a → a → bool`.
    `contains(s, v)` is true iff there exists an index `i` such that `select(s, i) == v`. -/
 def seqContainsFunc : WFLFunc CoreLParams :=
-  polyUneval "Sequence.contains" ["a"]
+  polyLitOp "Sequence.contains" ["a"]
     [("s", seqTy mty[%a]), ("v", mty[%a])] mty[bool]
+    AggregateLitEval.seqContains
     (axioms := [
       -- contains(s, v) <==> exists i :: 0 <= i < length(s) && select(s, i) == v
       eb[∀ (Sequence %a): -- %1 s
@@ -604,9 +805,10 @@ def seqContainsFunc : WFLFunc CoreLParams :=
    `take(s, n)` returns the first `n` elements of `s`.
    Partial: requires `0 <= n && n <= Sequence.length(s)`. -/
 def seqTakeFunc : WFLFunc CoreLParams :=
-  polyUneval "Sequence.take" ["a"]
+  polyLitOp "Sequence.take" ["a"]
     [("s", seqTy mty[%a]), ("n", mty[int])]
     (seqTy mty[%a])
+    AggregateLitEval.seqTake
     (axioms :=
       -- 0 <= n <= length(s) ==> length(take(s, n)) == n
       [ eb[∀ (Sequence %a): -- %1 s
@@ -646,9 +848,10 @@ def seqTakeFunc : WFLFunc CoreLParams :=
    as non-negative, so an unguarded `length(take!(s, n)) == n` would be false for a
    negative `n` and make every goal provable. Out of range, `take!` is unconstrained. -/
 def seqTakeUnsafeFunc : WFLFunc CoreLParams :=
-  polyUneval "Sequence.take!" ["a"]
+  polyLitOp "Sequence.take!" ["a"]
     [("s", seqTy mty[%a]), ("n", mty[int])]
     (seqTy mty[%a])
+    AggregateLitEval.seqTake
     (axioms :=
       renameOpIn "Sequence.take" "Sequence.take!" seqTakeFunc.func.axioms)
 
@@ -656,9 +859,10 @@ def seqTakeUnsafeFunc : WFLFunc CoreLParams :=
    `drop(s, n)` returns the sequence with the first `n` elements removed.
    Partial: requires `0 <= n && n <= Sequence.length(s)`. -/
 def seqDropFunc : WFLFunc CoreLParams :=
-  polyUneval "Sequence.drop" ["a"]
+  polyLitOp "Sequence.drop" ["a"]
     [("s", seqTy mty[%a]), ("n", mty[int])]
     (seqTy mty[%a])
+    AggregateLitEval.seqDrop
     (axioms :=
       -- 0 <= n <= length(s) ==> length(drop(s, n)) == length(s) - n
       [ eb[∀ (Sequence %a): -- %1 s
@@ -703,9 +907,10 @@ def seqDropFunc : WFLFunc CoreLParams :=
 /- An *unsafe* total variant of `Sequence.drop`, keeping `Sequence.drop`'s bounds
    guard on the length axiom for the reason given on `seqTakeUnsafeFunc`. -/
 def seqDropUnsafeFunc : WFLFunc CoreLParams :=
-  polyUneval "Sequence.drop!" ["a"]
+  polyLitOp "Sequence.drop!" ["a"]
     [("s", seqTy mty[%a]), ("n", mty[int])]
     (seqTy mty[%a])
+    AggregateLitEval.seqDrop
     (axioms :=
       renameOpIn "Sequence.drop" "Sequence.drop!" seqDropFunc.func.axioms)
 

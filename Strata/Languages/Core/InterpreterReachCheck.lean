@@ -920,7 +920,8 @@ private theorem evalCmdE_inFragment {F : Expression.Factory} (hF : FragmentFacto
     (hc : CmdInFragment (InFragment F.factory) (.cmd c)) :
     LitStore F σ' ∧ ∀ ev ∈ evs, EventInFragment F ev := by
   have hcomp : ∀ e, InFragment F.factory e → ComputableEval F σ e :=
-    fun e he => computableEval_of_inFragment hF he fun x _ v hx => (hσ x v hx).imp fun _ h => ⟨h.1, h.2.2⟩
+    fun e he => computableEval_of_inFragment hF he fun x _ v hx =>
+      (hσ x v hx).imp fun _ h => ⟨h.1, h.2.2⟩
   cases h with
   | eval_init he i _ _ =>
     exact ⟨hσ.init (litVal_of_computable hσ (hcomp _ (hc.2 _ rfl)) (hc.2 _ rfl).2 he) i, nofun⟩

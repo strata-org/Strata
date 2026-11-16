@@ -10,6 +10,7 @@ public import Strata.Languages.Core
 public import Strata.Languages.Core.StatementSemantics
 public import Strata.Languages.Core.Logic.TraceInterpUsingDenote
 public import Strata.Languages.Core.Logic.ContractToHoareTripleProps
+public import Strata.Languages.Core.Logic.InterpreterHoareRelation
 public import Strata.Languages.Core.ProgramProps
 public import Strata.Languages.Core.InstWellFormedSemanticsEval
 public import Strata.Languages.Core.IntEvalProps
@@ -28,7 +29,11 @@ about them in `Core.Logic.Hoare`. This file holds the fixtures they share; lemma
 about these fixtures belong in the library's `*Props` files.
 
 * Programs: `cstToAST` translates a program, normalizing its expression locations
-  (`eraseProgLocs`).
+  (`eraseProgLocs`), `typeCheckedAST` also type-checks it, and
+  `procOf`/`bodyOf` read a procedure and its body; `fuel` is the concrete evaluator's fuel for
+  the bodies `Core.runLits` runs.
+* Running bodies: `contract_by_run` proves a contract by running the body, and
+  `BodyTerminates`/`bodyTerminates_of_progresses` state and prove that a body terminates.
 * Gates and models: the gate parameters `testParams`, the runtime factory of a model
   (`boolFactory`) and a world over any factory (`someValuation`).
 * Spelled-out terms: the source-location metadata `loc` the translation attaches to a node, with
@@ -61,6 +66,25 @@ namespace Strata.HoareUtils
 @[expose] def cstToAST (p : Program) : Core.Program :=
   eraseProgLocs (TransM.run Inhabited.default (translateProgram p)).fst
 
+/-- The type-checked Core program of `p`, whose operators carry their instantiated types. -/
+@[expose] def typeCheckedAST (p : Program) : Core.Program :=
+  match Core.typeCheck { Core.VerifyOptions.default with verbose := .quiet } (cstToAST p) with
+  | .ok p => p
+  | .error _ => default
+
+/-- The procedure of `p` named `n`. -/
+@[expose] def procOf (p : Core.Program) (n : String) : Core.Procedure :=
+  (p.findProcByString? n).get!
+
+/-- The body of the procedure of `p` named `n`. -/
+@[expose] def bodyOf (p : Core.Program) (n : String) : Core.Statements :=
+  match (procOf p n).body with
+  | .structured ss => ss
+  | .cfg _ => []
+
+/-- Fuel for the concrete evaluator, ample for the tests' bodies. -/
+@[expose] def fuel : Nat := 200
+
 /-! ## Gates and models -/
 
 /-- Gate parameters: no reserved fresh-prefixes, and every name counts as declared. -/
@@ -76,6 +100,38 @@ abbrev boolFactory {F : Lambda.Factory Core.CoreLParams} (model : Lambda.Interp 
 @[expose] def someValuation (factory : Lambda.Factory Core.CoreLParams) :
     Core.Logic.DenoteValuation factory where
   offFactoryHolds := fun _ => False
+
+/-! ## Running straight-line bodies
+
+The `HoareUsing*` tests prove a body's contract and its termination by running it with
+`Core.runLits`; `contract_by_run` and `bodyTerminates_of_progresses` package those proofs. -/
+
+/-- The body of procedure `n` of `p` terminates from every environment over `Core.Factory`
+    whose store binds every output to a value of its type and leaves undeclared the names the
+    body declares. -/
+abbrev BodyTerminates (p : Core.Program) (n : String) : Prop :=
+  ∀ (π : String → Option Core.Procedure) (ρ : Env Core.Expression),
+    ρ.factory.factory = Core.Factory →
+    Core.LitDecls.Holds ρ.factory ρ.store (procOf p n).header.outputs →
+    (∀ x ∈ Block.definedVars (bodyOf p n) true, ρ.store x = none) →
+    (Core.Logic.EventLang.coreBlock π).Terminates (bodyOf p n) ρ
+
+/-- A body that `Core.runLits` runs with every write at the type of its target terminates. -/
+theorem bodyTerminates_of_progresses {p : Core.Program} {n : String}
+    (h : Core.runLitsProgresses fuel [] (procOf p n).header.outputs (bodyOf p n) = true) :
+    BodyTerminates p n :=
+  fun π _ hF hout hlocals => Core.runLits_terminates π h hF hout hlocals
+
+/-- `contract_by_run p n` proves `Procedure.contractTriple p testParams n` by running the body
+    of procedure `n` with `Core.runLits`, deciding each premise of
+    `Procedure.contractTriple_of_meetsContractOnLits` by `native_decide`. -/
+macro "contract_by_run " p:term:max n:term:max : term =>
+  `(Core.Logic.Hoare.Procedure.contractTriple_of_meetsContractOnLits $p
+      Strata.HoareUtils.testParams $n (Strata.HoareUtils.procOf $p $n)
+      (Strata.HoareUtils.bodyOf $p $n) Strata.HoareUtils.fuel
+      (by native_decide) (by native_decide) (by native_decide)
+      (Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide))
+      (by native_decide))
 
 /-! ## Spelled-out terms -/
 

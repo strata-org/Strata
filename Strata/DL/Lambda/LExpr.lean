@@ -467,6 +467,26 @@ def LConst.wtElems (s : LSort) : List LConst → Bool
   | a :: rest => a.wt && decide (a.sort = s) && LConst.wtElems s rest
 end
 
+mutual
+/-- The number of constants a constant is built from: itself and, for a collection literal,
+those of its default, keys, values and elements. -/
+@[expose]
+def LConst.size : LConst → Nat
+  | .intConst _ | .strConst _ | .rationalConst _ | .bitvecConst _ _ | .boolConst _ => 1
+  | .mapConst _ _ d ⟨es⟩ => 1 + d.size + LConst.sizeEntries es
+  | .sequenceConst _ ⟨es⟩ => 1 + LConst.sizeElems es
+/-- The number of constants the keys and values of map entries are built from. -/
+@[expose]
+def LConst.sizeEntries : List (LConst × LConst) → Nat
+  | [] => 0
+  | (a, b) :: rest => a.size + b.size + LConst.sizeEntries rest
+/-- The number of constants the elements of a sequence are built from. -/
+@[expose]
+def LConst.sizeElems : List LConst → Nat
+  | [] => 0
+  | a :: rest => a.size + LConst.sizeElems rest
+end
+
 /--
 Get type of a constant `c`.
 
@@ -671,6 +691,12 @@ def isConst {T : LExprParamsT} (e : LExpr T) : Bool :=
   match e with
   | .const _ _ => true
   | _ => false
+
+/-- The literals of `args`, when every argument is a constant. -/
+@[expose] def constArgs? {T : LExprParamsT} : List (LExpr T) → Option (List LConst)
+  | [] => some []
+  | .const _ c :: rest => (constArgs? rest).map (c :: ·)
+  | _ :: _ => none
 
 def isOp (e : LExpr T) : Bool :=
   match e with
