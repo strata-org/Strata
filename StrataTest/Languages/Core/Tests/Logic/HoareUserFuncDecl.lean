@@ -6,8 +6,9 @@
 
 import Strata.Languages.Core
 import Strata.Languages.Core.IntEvalProps
+import Strata.DL.Lambda.Denote.LExprDenoteSubst
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
-import StrataTest.Languages.Core.Tests.Logic.HoareTestSupport
+import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import StrataDDM.Integration.Lean.HashCommands
 
 /-! # Hoare contracts with user-defined function declarations
@@ -84,6 +85,17 @@ private abbrev xId : Core.Expression.Ident := ⟨"x", ()⟩
 private abbrev yId : Core.Expression.Ident := ⟨"y", ()⟩
 private abbrev zId : Core.Expression.Ident := ⟨"z", ()⟩
 private abbrev intTy : Option Lambda.LMonoTy := some .int
+
+/-- Overriding `fv` with `x ↦ a` and `y ↦ b` reads `a` at `x` and `b` at `y`. -/
+private theorem withArgs_xy {tc : Lambda.TyConstrInterp}
+    (fv : Lambda.FreeVarVal Core.CoreLParams tc) (a b : Int) :
+    Lambda.IdentInterp.withArgs fv [(xId, .int), (yId, .int)] (.cons a (.cons b .nil))
+        xId .int = a ∧
+      Lambda.IdentInterp.withArgs fv [(xId, .int), (yId, .int)] (.cons a (.cons b .nil))
+        yId .int = b :=
+  ⟨Lambda.IdentInterp.withArgs_cons_self fv xId .int _ a _,
+   (Lambda.IdentInterp.withArgs_cons_of_ne fv (name := xId) (s₁ := .int) .int _ a _
+      (by decide)).trans (Lambda.IdentInterp.withArgs_cons_self fv yId .int [] b .nil)⟩
 
 private def fBody : Core.Expression.Expr :=
   Lambda.LExpr.mkApp Core.valueLoc Core.intMulOp [
@@ -256,14 +268,11 @@ private theorem f_opInterp (model : Lambda.Interp visibleFactory) (a b : Int) :
   have fv : Lambda.FreeVarVal Core.CoreLParams model.tcInterp := fun _ s =>
     @default _ (@Lambda.SortDenote.instInhabited model.tcInterp model.allInhabited s)
   let vt : Lambda.TyVarVal := fun _ => .int
-  let argVal := CoreHoareTestSupport.withTwoIntArgs fv xId yId a b
+  let argVal := Lambda.IdentInterp.withArgs fv [(xId, .int), (yId, .int)] (.cons a (.cons b .nil))
   have heq := hconsistent' vt fv hbodyTy (.cons a (.cons b .nil))
   change (model.opInterp "f" (Lambda.LSort.mkArrow .int [.int, .int]) a b : Int) =
     Lambda.LExpr.denote model.tcInterp model.opInterp argVal vt .nil fBody .int hbodyTy at heq
-  have hfx : argVal xId Lambda.LSort.int = a :=
-    CoreHoareTestSupport.withTwoIntArgs_left fv xId yId a b
-  have hfy : argVal yId Lambda.LSort.int = b :=
-    CoreHoareTestSupport.withTwoIntArgs_right fv xId yId a b (by decide)
+  have ⟨hfx, hfy⟩ := withArgs_xy fv a b
   exact heq.trans (denote_fBody model visibleFactory_intAdd visibleFactory_intSub
     visibleFactory_intMul argVal vt a b hfx hfy hbodyTy)
 
@@ -375,7 +384,7 @@ private theorem tc_of_reqXY (factory : Lambda.Factory Core.CoreLParams)
     (hexpr : check.expr = reqXY)
     (hcheck : Core.Logic.Hoare.Procedure.checkAsPredicate factory ρ label check) :
     vx.tc = ρ.factory.model.tcInterp ∧ vy.tc = ρ.factory.model.tcInterp := by
-  rcases hcheck (CoreHoareTestSupport.someValuation _) with ⟨_, hex⟩ | ⟨hne, _⟩
+  rcases hcheck (HoareUtils.someValuation _) with ⟨_, hex⟩ | ⟨hne, _⟩
   · change Core.Expression.eval ρ.factory ρ.store check.expr =
       some (Imperative.HasBool.ttVal ρ.factory) at hex
     rw [hexpr] at hex
@@ -405,7 +414,7 @@ private theorem check_reqXY_implies (factory : Lambda.Factory Core.CoreLParams)
     (hy : ρ.store yId = some (intV ρ.factory b))
     (hexpr : check.expr = reqXY)
     (hcheck : Core.Logic.Hoare.Procedure.checkAsPredicate factory ρ label check) : a > b := by
-  rcases hcheck (CoreHoareTestSupport.someValuation _) with ⟨_, hex⟩ | ⟨hne, _⟩
+  rcases hcheck (HoareUtils.someValuation _) with ⟨_, hex⟩ | ⟨hne, _⟩
   · change Core.Expression.eval ρ.factory ρ.store check.expr =
       some (Imperative.HasBool.ttVal ρ.factory) at hex
     rw [hexpr] at hex
@@ -432,7 +441,7 @@ private theorem check_reqSum_implies (factory : Lambda.Factory Core.CoreLParams)
     (hexpr : check.expr = reqSum)
     (hcheck : Core.Logic.Hoare.Procedure.checkAsPredicate factory ρ label check) :
     a + b > 0 := by
-  rcases hcheck (CoreHoareTestSupport.someValuation _) with ⟨_, hex⟩ | ⟨hne, _⟩
+  rcases hcheck (HoareUtils.someValuation _) with ⟨_, hex⟩ | ⟨hne, _⟩
   · change Core.Expression.eval ρ.factory ρ.store check.expr =
       some (Imperative.HasBool.ttVal ρ.factory) at hex
     rw [hexpr] at hex
@@ -705,14 +714,11 @@ private theorem fSpec_opInterp (model : Lambda.Interp specFactory)
   simp only [Lambda.LFuncDefined.toLFunc] at hconsistent'
   have hbodyTy : Lambda.LExpr.HasTypeA (T := Core.CoreLParams) [] fBody .int :=
     Lambda.LExpr.typeCheck_to_HasTypeA (by native_decide)
-  let argVal := CoreHoareTestSupport.withTwoIntArgs fv xId yId a b
+  let argVal := Lambda.IdentInterp.withArgs fv [(xId, .int), (yId, .int)] (.cons a (.cons b .nil))
   have heq := hconsistent' vt fv hbodyTy (.cons a (.cons b .nil))
   change (model.opInterp "fSpec" (Lambda.LSort.mkArrow .int [.int, .int]) a b : Int) =
     Lambda.LExpr.denote model.tcInterp model.opInterp argVal vt .nil fBody .int hbodyTy at heq
-  have hfx : argVal xId Lambda.LSort.int = a :=
-    CoreHoareTestSupport.withTwoIntArgs_left fv xId yId a b
-  have hfy : argVal yId Lambda.LSort.int = b :=
-    CoreHoareTestSupport.withTwoIntArgs_right fv xId yId a b (by decide)
+  have ⟨hfx, hfy⟩ := withArgs_xy fv a b
   have hbodyDenote := denote_fBody model specFactory_intAdd specFactory_intSub
     specFactory_intMul argVal vt a b hfx hfy hbodyTy
   exact heq.trans hbodyDenote

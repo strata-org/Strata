@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Languages.Core.Tests.Logic.HoareAfterSupport
+import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import Strata.Transform.SSA.SSACoreCorrect
 
 open Imperative
@@ -12,7 +12,7 @@ open StrataDDM (Program)
 
 namespace Strata.HoareAfterSSATest
 
-open HoareAfterSupport
+open HoareUtils
 
 /-- The program.  It comes first in the file: the translation records the byte offsets of its
     statements in their metadata, which `growBody` spells out with `loc`, so an edit above it
@@ -77,7 +77,7 @@ private def yId : Core.Expression.Ident := ⟨"y", ()⟩
 
 /-- The metadata of the assertion: its source location and its label as the property summary. -/
 private abbrev assertMd : MetaData Core.Expression :=
-  (loc 642 670).push ⟨.label "propertySummary", .msg "grow"⟩
+  (loc 628 656).push ⟨.label "propertySummary", .msg "grow"⟩
 
 /-- `int.add(a, b)` of two variables or a variable and a literal. -/
 private abbrev addE (a b : Core.Expression.Expr) : Core.Expression.Expr :=
@@ -85,8 +85,8 @@ private abbrev addE (a b : Core.Expression.Expr) : Core.Expression.Expr :=
 
 /-- The translated body. -/
 private abbrev growBody : Core.Statements :=
-  [Core.Statement.set yId (addE (v xId) (.intConst Core.valueLoc 1)) (loc 598 617),
-   Core.Statement.set yId (addE (v yId) (v yId)) (loc 620 639),
+  [Core.Statement.set yId (addE (v xId) (.intConst Core.valueLoc 1)) (loc 584 603),
+   Core.Statement.set yId (addE (v yId) (v yId)) (loc 606 625),
    Core.Statement.assert "grow" (.app Core.valueLoc (.app Core.valueLoc Core.intGtOp (v yId)) (v xId)) assertMd]
 
 /-- The translated body really is the two assignments followed by the assertion. -/

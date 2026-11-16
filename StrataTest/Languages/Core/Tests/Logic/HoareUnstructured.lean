@@ -5,7 +5,7 @@
 -/
 
 module
-import StrataTest.Languages.Core.Tests.Logic.HoareTestSupport
+import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import Strata.Languages.Core.IntEvalProps
 
 import Strata.Languages.Core
@@ -78,7 +78,7 @@ cfg entry {
 
 namespace Strata
 
-open CoreHoareTestSupport
+open Strata.HoareUtils (boolFactory someValuation)
 
 private def eraseTransfer
     (tr : Imperative.DetTransferCmd String Core.Expression) :

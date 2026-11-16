@@ -13,7 +13,7 @@ import Strata.DL.Imperative.Analysis.Verdict
 import Strata.DL.Imperative.Logic.ProgramEntries
 import Strata.DL.Imperative.StmtSemanticsProps
 import Strata.Languages.Core.Logic.TraceInterpUsingDenote
-import StrataTest.Languages.Core.Tests.Logic.HoareTestSupport
+import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import StrataDDM.Integration.Lean.HashCommands
 
 /-! # Divergence and termination of Core programs
@@ -631,7 +631,7 @@ theorem fail_failed (π : String → Option Core.Procedure)
       .inr ⟨_, _, [], .step_seq_inner (.step_cmd (.cmd_sem .eval_assert)), ⟨rfl, rfl⟩,
         rfl⟩, rfl⟩
   refine ⟨hρ, 2, _, ⟨_, hrun⟩, fun hvalid => ?_⟩
-  have hholds := hvalid.1 ⟨rfl, rfl⟩ (CoreHoareTestSupport.someValuation _)
+  have hholds := hvalid.1 ⟨rfl, rfl⟩ (HoareUtils.someValuation _)
     (fun _ h => by simp at h)
   rcases hholds with ⟨_, he⟩ | ⟨_, hoff⟩
   · have hff : Core.Expression.eval ρ.factory ρ.store failParts.1 =

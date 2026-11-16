@@ -193,7 +193,7 @@ public abbrev FreeVarVal := IdentInterp
 /-- Update an identifier interpretation so that the names in `bindings` map to
 the corresponding values from `vals`. Names not in `bindings` keep their
 original interpretation. -/
-def IdentInterp.withArgs [DecidableEq T.IDMeta]
+public def IdentInterp.withArgs [DecidableEq T.IDMeta]
     {tcInterp : TyConstrInterp}
     (fvarVal : IdentInterp T tcInterp)
     (bindings : List (Identifier T.IDMeta × LSort))

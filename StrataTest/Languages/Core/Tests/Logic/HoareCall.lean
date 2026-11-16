@@ -5,7 +5,7 @@
 -/
 
 import Strata.Languages.Core
-import StrataTest.Languages.Core.Tests.Logic.HoareTestSupport
+import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import Strata.Languages.Core.Logic.HoareCall
 import Strata.Languages.Core.ProcedureProps
 import Strata.Languages.Core.ProgramProps
@@ -35,7 +35,7 @@ open Lambda.LExpr.SyntaxMono
 
 namespace Strata
 
-open CoreHoareTestSupport
+open Strata.HoareUtils (someValuation)
 
 
 /-- Replace the real source locations of every procedure expression by `valueLoc`,

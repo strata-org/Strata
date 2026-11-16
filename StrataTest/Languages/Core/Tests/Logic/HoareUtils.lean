@@ -4,55 +4,84 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Logic.ContractToHoareTripleProps
-import Strata.Languages.Core.ProgramProps
-import Strata.Languages.Core
-import Strata.Languages.Core.InstWellFormedSemanticsEval
-import Strata.Languages.Core.IntEvalProps
-import Strata.DL.Imperative.CFGSemanticsProps
-import Strata.DL.Imperative.StmtCFGCallSemanticsProps
-import Strata.Util.ListUtilsProps
-import Strata.Util.RelationsProps
-import StrataDDM.Integration.Lean.HashCommands
+module
 
-/-! # Shared helpers of the `HoareAfter*` tests
+public import Strata.Languages.Core
+public import Strata.Languages.Core.StatementSemantics
+public import Strata.Languages.Core.Logic.TraceInterpUsingDenote
+public import Strata.Languages.Core.Logic.ContractToHoareTripleProps
+public import Strata.Languages.Core.ProgramProps
+public import Strata.Languages.Core.InstWellFormedSemanticsEval
+public import Strata.Languages.Core.IntEvalProps
+public import Strata.DL.Imperative.CFGSemanticsProps
+public import Strata.DL.Imperative.StmtSemanticsProps
+public import Strata.DL.Imperative.StmtCFGCallSemanticsProps
+public import Strata.DL.Lambda.FactoryProps
+public import Strata.Util.ListUtilsProps
+public import Strata.Util.RelationsProps
+public import StrataDDM.Integration.Lean.HashCommands
 
-The `HoareAfter<Pass>` tests run a Core pass on a translated program, prove a Hoare triple of
-its output and transport it back with the pass's `triple` theorem.  This file holds what they
-share:
+/-! # Shared fixtures of the Core Hoare-logic tests
 
-* `cstToAST`, the gate parameters `testParams`, and the source-location metadata `loc` the
-  translation attaches to a statement, with which a test spells out the translated body as a
-  closed Core term (so that facts about the pass's output on it are decided by the kernel);
-* store facts (`Pinned`, `intOf`, the condition `ge0`) and the contract facts they give
-  (`nonneg_of_pre`, `post_ge0`);
-* the `covered` tactic for the `exitsCoveredByBlocks` side condition of the sequencing rule.
+The tests under `Tests/Logic/` write Core programs in DDM syntax, translate them, and prove facts
+about them in `Core.Logic.Hoare`. This file holds the fixtures they share; lemmas that are not
+about these fixtures belong in the library's `*Props` files.
+
+* Programs: `cstToAST` translates a program, normalizing its expression locations
+  (`eraseProgLocs`).
+* Gates and models: the gate parameters `testParams`, the runtime factory of a model
+  (`boolFactory`) and a world over any factory (`someValuation`).
+* Spelled-out terms: the source-location metadata `loc` the translation attaches to a node, with
+  which a test spells out a translated body as a closed Core term (so that facts about a pass's
+  output on it are decided by the kernel), and `intMono`, `intLTy`, `v`.
+* Store and contract facts: `Pinned`, `intOf`, the condition `ge0`, its value (`ge0_eval`) and
+  the contract facts it gives (`nonneg_of_pre`, `post_ge0`).
+* The `covered` tactic for the `exitsCoveredByBlocks` side condition of the sequencing rule.
 -/
+
+public section
 
 open Imperative
 open StrataDDM (Program)
 
-namespace Strata.HoareAfterSupport
+namespace Strata.HoareUtils
+
+/-! ## Programs -/
 
 /-- Expression source locations are normalized to `Core.valueLoc` so the tests' exact
     structural comparisons hold; execution ignores locations, so this changes nothing the
     evaluator observes. -/
-def eraseProgLocs (pr : Core.Program) : Core.Program :=
+@[expose] def eraseProgLocs (pr : Core.Program) : Core.Program :=
   { pr with decls := pr.decls.map fun d => match d with
       | .proc proc md => .proc (Core.Procedure.mapExprs Core.eraseLocs proc) md
       | other => other }
 
 /-- Translate a DDM concrete-syntax program to the Core AST, with expression source
     locations normalized to `Core.valueLoc`. -/
-def cstToAST (p : Program) : Core.Program :=
+@[expose] def cstToAST (p : Program) : Core.Program :=
   eraseProgLocs (TransM.run Inhabited.default (translateProgram p)).fst
 
+/-! ## Gates and models -/
+
 /-- Gate parameters: no reserved fresh-prefixes, and every name counts as declared. -/
-def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
+@[expose] def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
+
+/-- The runtime factory of the model `model`, reading every residual type variable at
+`bool`. -/
+abbrev boolFactory {F : Lambda.Factory Core.CoreLParams} (model : Lambda.Interp F) :
+    Core.Expression.Factory :=
+  { factory := F, model := model, tyVarVal := fun _ => .bool }
+
+/-- A world over any Core expression factory: off-factory conditions never hold. -/
+@[expose] def someValuation (factory : Lambda.Factory Core.CoreLParams) :
+    Core.Logic.DenoteValuation factory where
+  offFactoryHolds := fun _ => False
+
+/-! ## Spelled-out terms -/
 
 /-- The metadata the translation attaches to a node spanning the bytes `a` to `b` of the test
     file. -/
-def loc (a b : Nat) : MetaData Core.Expression :=
+@[expose] def loc (a b : Nat) : MetaData Core.Expression :=
   #[⟨.label "provenance", .provenance (.loc (.file "") ⟨⟨a⟩, ⟨b⟩⟩)⟩]
 
 /-- The integer type, as variables are annotated with it. -/
@@ -62,7 +91,10 @@ abbrev intMono : Lambda.LMonoTy := .tcons "int" []
 abbrev intLTy : Lambda.LTy := .forAll [] intMono
 
 /-- An integer-annotated variable. -/
-abbrev v (x : Core.Expression.Ident) : Core.Expression.Expr := .fvar Core.valueLoc x (some intMono)
+abbrev v (x : Core.Expression.Ident) : Core.Expression.Expr :=
+  .fvar Core.valueLoc x (some intMono)
+
+/-! ## Store and contract facts -/
 
 /-- `int.ge(x, 0)`. -/
 abbrev ge0 (x : Core.Expression.Ident) : Core.Expression.Expr :=
@@ -74,12 +106,6 @@ abbrev Pinned (ρ : Env Core.Expression) : Prop := ρ.factory.factory = Core.Fac
 /-- The integer `k` under the runtime factory `f`. -/
 abbrev intOf (f : Core.Expression.Factory) (k : Int) : Core.Expression.Val :=
   Lambda.SemValue.ofInt f.model.tcInterp k
-
-/-- The statements before the next ones exit to no label. -/
-macro "covered" : tactic =>
-  `(tactic| simp [Block.exitsCoveredByBlocks, Stmt.exitsCoveredByBlocks])
-
-/-! ## Contract facts -/
 
 /-- With `x ↦ k` under a factory over `Core.Factory`, `int.ge(x, 0)` evaluates to `k ≥ 0`. -/
 theorem ge0_eval {f : Core.Expression.Factory} (hf : f.factory = Core.Factory)
@@ -124,4 +150,12 @@ theorem post_ge0 {proc : Core.Procedure} {ρ : Env Core.Expression} {x : Core.Ex
   rw [hpost _ hmem, ge0_eval hp hx, decide_eq_true hk]
   rfl
 
-end Strata.HoareAfterSupport
+/-! ## Tactics -/
+
+/-- The statements before the next ones exit to no label. -/
+macro "covered" : tactic =>
+  `(tactic| simp [Block.exitsCoveredByBlocks, Stmt.exitsCoveredByBlocks])
+
+end Strata.HoareUtils
+
+end -- public section
