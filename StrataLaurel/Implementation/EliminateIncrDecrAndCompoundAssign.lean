@@ -8,6 +8,7 @@ module
 public import StrataLaurel.Implementation.LaurelAST
 public import StrataLaurel.Implementation.LaurelPass
 import StrataLaurel.Implementation.MapStmtExpr
+import StrataLaurel.Implementation.ConstrainedTypeElim
 import Strata.Util.Tactics
 
 /-!
@@ -39,7 +40,16 @@ Compound assignment `x op= e` lowers to `x := x op e` — always new-valued, so
 unlike postfix `IncrDecr` it needs no old-value recovery. Both share the same
 core (`lowerOpAssign`), with `IncrDecr` supplying `rhs = 1`.
 
-The pass uses the generic `mapStmtExpr` bottom-up traversal from
+A field target `o#f` first binds its receiver to a fresh local, so the receiver is
+evaluated once and before `e`, as the interpreter evaluates it:
+```
+o#f op= e  ⇝  { var $recv_n: T := o; $recv_n#f := $recv_n#f op e }
+o#f++      ⇝  { var $recv_n: T := o; ($recv_n#f := $recv_n#f + 1) - 1 }
+```
+Duplicating `o` instead would run its effects twice, and an `e` that reassigns a
+local `o` would redirect the write.
+
+The pass uses the generic `mapStmtExprM` bottom-up traversal from
 `MapStmtExpr.lean`. The only constructors that change are `.IncrDecr` and
 `.CompoundAssign`; all other nodes are left as-is by the traversal's default
 recursion.
@@ -61,11 +71,9 @@ namespace EliminateIncrDecr
 /-- Reconstruct the read-side `StmtExprMd` for a `Variable`.
 
     A `.Field` target duplicates the object subtree into the read operand (the lowering
-    emits `target op rhs`). For a receiver of known type outside a loop's condition this costs
-    term size only, because such a receiver may be repeated (`Pseudo.unstableFieldReceiver`) and a
-    field read lowers to the pure, obligation-free `readField` lookup, so both copies read the same
-    `$heap` at the same point; any other receiver is evaluated twice. (Revisit if field reads ever
-    gain a precondition.) -/
+    emits `target op rhs`). `rewriteNode` only builds such a target after
+    `withReceiverBound` has replaced the object with a fresh local, so the duplicate is a
+    plain local read. -/
 @[expose] public def targetAsRead (target : VariableMd) : StmtExprMd :=
   let source := target.source
   match target.val with
@@ -109,7 +117,32 @@ namespace EliminateIncrDecr
     let one : StmtExprMd := ⟨.LiteralInt 1, source⟩
     ⟨.Call none (mkId inverseOp.procName) [assign, one] [], source⟩
 
-/-- The rewrite step applied bottom-up by `mapStmtExpr`. Replaces `.IncrDecr`
+public structure ElimState where
+  freshCounter : Nat := 0
+
+public abbrev ElimM := StateM ElimState
+
+public def freshReceiver : ElimM Identifier :=
+  modifyGet fun s => (mkId s!"$recv_{s.freshCounter}", { s with freshCounter := s.freshCounter + 1 })
+
+/-- Lower a field target `o#f` as `{ var $recv_n: T := o; lower ($recv_n#f) }`, so `o` is
+    evaluated once; any other target is lowered as is. `T` is `recvType o`, the
+    receiver's composite type with any constraint stripped. Left untyped, `$recv_n`
+    would be resolved to the receiver's constrained type, and `ConstrainedTypeElim`
+    would check the constraint at the binding, a check the source never makes there. -/
+@[expose] public def withReceiverBound (recvType : StmtExprMd → Option Identifier)
+    (target : VariableMd) (lower : VariableMd → StmtExprMd)
+    (source : FileRange) : ElimM StmtExprMd :=
+  match target.val with
+  | .Field tgt fieldName => do
+    let recv ← freshReceiver
+    let ty := (recvType tgt).map fun n => (⟨.UserDefined n, tgt.source⟩ : HighTypeMd)
+    let bindRecv : StmtExprMd := ⟨.Assign [⟨.Declare ⟨recv, ty⟩, tgt.source⟩] tgt, tgt.source⟩
+    let target' : VariableMd := ⟨.Field ⟨.Var (.Local recv), tgt.source⟩ fieldName, target.source⟩
+    pure ⟨.Block [bindRecv, lower target'] none [] none, source⟩
+  | _ => pure (lower target)
+
+/-- The rewrite step applied bottom-up by `mapStmtExprM`. Replaces `.IncrDecr`
     and `.CompoundAssign` with their lowered forms; all other nodes pass through.
 
     `IncrDecr` and `CompoundAssign` share one lowering, `x := x ⊕ rhs` via
@@ -118,11 +151,14 @@ namespace EliminateIncrDecr
     shared lowering, one fewer traversal. Prefix `++x` is exactly that
     assignment; only postfix `x++` adds an inverse-op wrapper to recover the
     old value. -/
-@[expose] public def rewriteNode (node : StmtExprMd) : StmtExprMd :=
+@[expose] public def rewriteNode (recvType : StmtExprMd → Option Identifier) (node : StmtExprMd) :
+    ElimM StmtExprMd :=
   match node.val with
-  | .IncrDecr mode op target => lowerIncrDecr mode op target node.source
-  | .CompoundAssign op target rhs => lowerOpAssign op target rhs node.source
-  | _ => node
+  | .IncrDecr mode op target =>
+    withReceiverBound recvType target (fun t => lowerIncrDecr mode op t node.source) node.source
+  | .CompoundAssign op target rhs =>
+    withReceiverBound recvType target (fun t => lowerOpAssign op t rhs node.source) node.source
+  | _ => pure node
 
 end EliminateIncrDecr
 
@@ -130,7 +166,7 @@ end EliminateIncrDecr
 Eliminate every `.IncrDecr` and `.CompoundAssign` node in a Laurel program by
 lowering it to existing constructs. After this pass, neither node remains.
 
-The walk is `mapProgramStmtExpr`, which reaches every expression position in a
+The walk is `mapProgramStmtExprM`, which reaches every expression position in a
 program, not only the procedures: a constant's initializer, a constrained type's
 constraint and a coroutine's `relies`/`guarantees` are lowered too.
 `EliminateIncrDecrAndCompoundAssignProps` proves the `removes` declaration below
@@ -138,14 +174,26 @@ against this walk, which needs the walk to be total. No source program puts an
 `x++` in one of the extra positions: each is required to be effect-free, and
 resolution rejects a destructive assignment there.
 -/
-def eliminateIncrDecrAndCompoundAssign (program : Program) : Program :=
-  mapProgramStmtExpr EliminateIncrDecr.rewriteNode program
+def eliminateIncrDecrAndCompoundAssign (program : Program)
+    (recvType : StmtExprMd → Option Identifier := fun _ => none) : Program :=
+  (mapProgramStmtExprM (EliminateIncrDecr.rewriteNode recvType) program |>.run {}).fst
+
+def receiverBaseType (program : Program) (model : SemanticModel) (tgt : StmtExprMd) :
+    Option Identifier :=
+  let types := match program with
+    | .Unordered p => p.types
+    | .Ordered _ => []
+  match resolveBaseType (buildConstrainedTypeMap types) (computeExprType model tgt).val with
+  | .UserDefined n => some n
+  | _ => none
 
 /-- Pipeline pass: eliminate increment/decrement and compound-assignment operators. -/
 public def eliminateIncrDecrAndCompoundAssignPass : LaurelPass where
   name := "EliminateIncrDecrAndCompoundAssign"
   creates := [
       NodeKind.StmtExpr.Assign,
+      -- a field target's receiver is bound in `{ var $recv_n: T := o; … }`
+      NodeKind.StmtExpr.Block,
       NodeKind.StmtExpr.Call,
       NodeKind.StmtExpr.Var,
       -- a field target's read side is `o#f`, a `Var.var.Field`
@@ -153,8 +201,9 @@ public def eliminateIncrDecrAndCompoundAssignPass : LaurelPass where
     ]
   removes := [NodeKind.StmtExpr.IncrDecr, NodeKind.StmtExpr.CompoundAssign]
   unsupported := [NodeKind.Pseudo.unstableFieldReceiver]
-  documentation := "Lowers Java-style increment/decrement operators (`++x`, `x++`, `--x`, `x--`) and C-style compound assignments (`x += e`, `-=`, `*=`, `/=`, `%=`, `^=`) into existing Laurel assignment and arithmetic constructs. Prefix `++`/`--` and compound assignment yield the new value; postfix `++`/`--` yield the old value. Runs early so that no later pass observes an `.IncrDecr` or `.CompoundAssign` node."
-  run := fun _ p _m => (eliminateIncrDecrAndCompoundAssign p, [], {})
+  documentation := "Lowers Java-style increment/decrement operators (`++x`, `x++`, `--x`, `x--`) and C-style compound assignments (`x += e`, `-=`, `*=`, `/=`, `%=`, `^=`) into existing Laurel assignment and arithmetic constructs. Prefix `++`/`--` and compound assignment yield the new value; postfix `++`/`--` yield the old value. A field target's receiver is bound to a fresh local first, so it is evaluated once. Runs early so that no later pass observes an `.IncrDecr` or `.CompoundAssign` node."
+  needsResolves := true
+  run := fun _ p m => (eliminateIncrDecrAndCompoundAssign p (receiverBaseType p m), [], {})
 
 end -- public section
 end Strata.Laurel

@@ -42,12 +42,12 @@ termination_by sizeOf t
 decreasing_by exact highTypeChildren_sizeOf_lt t c hc
 
 
-private theorem variableChildren_sizeOf_lt (v : Variable) (c : StmtExprMd)
+theorem variableChildren_sizeOf_lt (v : Variable) (c : StmtExprMd)
     (h : c ∈ variableChildren v) : sizeOf c < sizeOf v := by
   cases v <;> simp only [variableChildren, List.mem_cons, List.not_mem_nil, or_false] at h
   subst h; simp <;> omega
 
-private theorem stmtExprChildren_sizeOf_lt (e c : StmtExprMd) (h : c ∈ stmtExprChildren e.val) :
+theorem stmtExprChildren_sizeOf_lt (e c : StmtExprMd) (h : c ∈ stmtExprChildren e.val) :
     sizeOf c < sizeOf e := by
   have he := AstNode.sizeOf_val_lt e
   rcases e with ⟨v, src⟩

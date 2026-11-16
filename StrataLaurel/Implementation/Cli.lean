@@ -79,7 +79,7 @@ private def normalizeEntryName (s : String) : String :=
     solver-oriented flags in `verifyOptionsFlags` — the interpreter never
     invokes a solver, so those would be silently ignored. -/
 private def laurelInterpretFlags : List Flag :=
-  [{ name := "fuel", help := "Maximum execution steps.", takesArg := .arg "n" },
+  [{ name := "fuel", help := "Maximum execution steps (default 10000; 100000 with `--interpreter laurel`, where it also bounds how deeply calls and blocks can nest).", takesArg := .arg "n" },
    { name := "entry",
      help := "Override the entry point to execute, by the name of a static procedure. \
               Defaults to the procedure(s) the producer marked with `entry` \
@@ -155,13 +155,9 @@ private def runLaurelInterpretDirect (ionBytes : ByteArray) (pflags : ParsedFlag
         unless seen.contains f do
           failures := failures.push f
           seen := seen.insert f
-      match outcome with
-      | .completed => pure ()
-      | .escaped v => errors := errors.push (p.name.text, s!"uncaught throw of {v.display}")
-      | .outOfFuel => errors := errors.push (p.name.text, "out of fuel")
-      | .refused reason =>
-        errors := errors.push (p.name.text, reason)
-        refusals := refusals + 1
+      if let some msg := outcome.errorMessage? then
+        errors := errors.push (p.name.text, msg)
+        if outcome matches .refused _ then refusals := refusals + 1
     catch e =>
       errors := errors.push (p.name.text, toString e)
   IO.println s!"==== DIAGNOSTICS ===="

@@ -300,7 +300,7 @@ def dispatchCastName (overriderName : Identifier) : Identifier :=
 
 /-- The name of a Liskov refinement checker / its child-spec companion for `child.m`.
     `suffix` is `"refines$pre"`, `"refines$post"`, or `"childspec"`. -/
-def refinementProcName (childTypeName methodName : Identifier) (suffix : String) : Identifier :=
+@[expose] def refinementProcName (childTypeName methodName : Identifier) (suffix : String) : Identifier :=
   {mkId s!"{childTypeName.text}${methodName.text}${suffix}" with source := methodName.source}
 
 /-- The non-`free` conditions of `cs`. A `free` (`ConditionMode.Assume`) condition is
@@ -346,6 +346,105 @@ def renameProcLocals (source target : Procedure) : StmtExprMd → StmtExprMd :=
       | none => n
     | _ => n)
 
+def flattenCollapse (results : List StmtExprMd) (src : FileRange) : StmtExprMd :=
+  match results with
+  | [single] => single
+  | many => ⟨.Block many none [] none, src⟩
+
+def mapStmtExprFlattenGoR [Monad m]
+    (pre : (e : StmtExprMd) → ((x : StmtExprMd) → sizeOf x < sizeOf e → Bool → m (List StmtExprMd)) →
+      Bool → m (Option (List StmtExprMd)))
+    (post : Bool → StmtExprMd → m (List StmtExprMd)) (used : Bool) (e : StmtExprMd) : m (List StmtExprMd) := do
+  match ← pre e (fun x _ u => mapStmtExprFlattenGoR pre post u x) used with
+  | some results => return results
+  | none =>
+  let source := e.source
+  let rebuilt ← match _h : e.val with
+  | .IfThenElse cond th el =>
+    pure ⟨.IfThenElse (flattenCollapse (← mapStmtExprFlattenGoR pre post true cond) cond.source) (flattenCollapse (← mapStmtExprFlattenGoR pre post used th) th.source)
+      (← el.attach.mapM fun ⟨x, _⟩ => do pure (flattenCollapse (← mapStmtExprFlattenGoR pre post used x) x.source)), source⟩
+  | .Block stmts label invs dec =>
+    let invs' ← invs.attach.mapM fun ⟨x, _⟩ => do pure (flattenCollapse (← mapStmtExprFlattenGoR pre post true x) x.source)
+    let dec' ← dec.attach.mapM fun ⟨x, _⟩ => do pure (flattenCollapse (← mapStmtExprFlattenGoR pre post true x) x.source)
+    let nested ← stmts.attach.mapIdxM fun i ⟨x, _⟩ => mapStmtExprFlattenGoR pre post (used && i + 1 == stmts.length) x
+    pure ⟨.Block nested.flatten label invs' dec', source⟩
+  | .While cond invs dec body postTest =>
+    pure ⟨.While (flattenCollapse (← mapStmtExprFlattenGoR pre post true cond) cond.source)
+      (← invs.attach.mapM fun ⟨x, _⟩ => do pure (flattenCollapse (← mapStmtExprFlattenGoR pre post true x) x.source))
+      (← dec.attach.mapM fun ⟨x, _⟩ => do pure (flattenCollapse (← mapStmtExprFlattenGoR pre post true x) x.source))
+      (flattenCollapse (← mapStmtExprFlattenGoR pre post false body) body.source) postTest, source⟩
+  | .Return v =>
+    pure ⟨.Return (← v.attach.mapM fun ⟨x, _⟩ => do pure (flattenCollapse (← mapStmtExprFlattenGoR pre post true x) x.source)), source⟩
+  | .Yield => pure e
+  | .Resume target v =>
+    pure ⟨.Resume (flattenCollapse (← mapStmtExprFlattenGoR pre post true target) target.source)
+      (← v.attach.mapM fun ⟨x, _⟩ => do pure (flattenCollapse (← mapStmtExprFlattenGoR pre post true x) x.source)), source⟩
+  | .HasNext target =>
+    pure ⟨.HasNext (flattenCollapse (← mapStmtExprFlattenGoR pre post true target) target.source), source⟩
+  | .Assign targets value =>
+    let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
+      match (dependent := true) v with
+      | ⟨.Field target fieldName, vs⟩ =>
+        pure ⟨Variable.Field (flattenCollapse (← mapStmtExprFlattenGoR pre post true target) target.source) fieldName, vs⟩
+      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure v
+    pure ⟨.Assign targets' (flattenCollapse (← mapStmtExprFlattenGoR pre post true value) value.source), source⟩
+  | .Var (.Field target fieldName) =>
+    pure ⟨.Var (.Field (flattenCollapse (← mapStmtExprFlattenGoR pre post true target) target.source) fieldName), source⟩
+  | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
+    pure ⟨.IncrDecr mode op ⟨.Field (flattenCollapse (← mapStmtExprFlattenGoR pre post true tgt) tgt.source) fieldName, vs⟩, source⟩
+  | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ | .IncrDecr _ _ ⟨.Stack _, _⟩ => pure e
+  | .CompoundAssign op ⟨.Field tgt fieldName, vs⟩ rhs =>
+    pure ⟨.CompoundAssign op ⟨.Field (flattenCollapse (← mapStmtExprFlattenGoR pre post true tgt) tgt.source) fieldName, vs⟩
+      (flattenCollapse (← mapStmtExprFlattenGoR pre post true rhs) rhs.source), source⟩
+  | .CompoundAssign op target rhs =>
+    pure ⟨.CompoundAssign op target (flattenCollapse (← mapStmtExprFlattenGoR pre post true rhs) rhs.source), source⟩
+  | .PureFieldUpdate target fieldName newValue =>
+    pure ⟨.PureFieldUpdate (flattenCollapse (← mapStmtExprFlattenGoR pre post true target) target.source) fieldName
+      (flattenCollapse (← mapStmtExprFlattenGoR pre post true newValue) newValue.source), source⟩
+  | .Call receiver? callee args tyArgs =>
+    pure ⟨.Call (← receiver?.attach.mapM fun ⟨x, _⟩ => do pure (flattenCollapse (← mapStmtExprFlattenGoR pre post true x) x.source)) callee
+      (← args.attach.mapM fun ⟨x, _⟩ => do pure (flattenCollapse (← mapStmtExprFlattenGoR pre post true x) x.source)) tyArgs, source⟩
+  | .ReferenceEquals lhs rhs =>
+    pure ⟨.ReferenceEquals (flattenCollapse (← mapStmtExprFlattenGoR pre post true lhs) lhs.source) (flattenCollapse (← mapStmtExprFlattenGoR pre post true rhs) rhs.source), source⟩
+  | .AsType target ty =>
+    pure ⟨.AsType (flattenCollapse (← mapStmtExprFlattenGoR pre post true target) target.source) ty, source⟩
+  | .IsType target ty =>
+    pure ⟨.IsType (flattenCollapse (← mapStmtExprFlattenGoR pre post true target) target.source) ty, source⟩
+  | .Quantifier mode param trigger body =>
+    pure ⟨.Quantifier mode param (← trigger.attach.mapM fun ⟨x, _⟩ => do pure (flattenCollapse (← mapStmtExprFlattenGoR pre post true x) x.source))
+      (flattenCollapse (← mapStmtExprFlattenGoR pre post true body) body.source), source⟩
+  | .Assigned name => pure ⟨.Assigned (flattenCollapse (← mapStmtExprFlattenGoR pre post false name) name.source), source⟩
+  | .Old value label? => pure ⟨.Old (flattenCollapse (← mapStmtExprFlattenGoR pre post true value) value.source) label?, source⟩
+  | .OldGuarantee value => pure ⟨.OldGuarantee (flattenCollapse (← mapStmtExprFlattenGoR pre post true value) value.source), source⟩
+  | .OldRelies value => pure ⟨.OldRelies (flattenCollapse (← mapStmtExprFlattenGoR pre post true value) value.source), source⟩
+  | .Fresh value => pure ⟨.Fresh (flattenCollapse (← mapStmtExprFlattenGoR pre post true value) value.source), source⟩
+  | .Assert cond summary =>
+    pure ⟨.Assert (flattenCollapse (← mapStmtExprFlattenGoR pre post true cond) cond.source) summary, source⟩
+  | .Assume cond => pure ⟨.Assume (flattenCollapse (← mapStmtExprFlattenGoR pre post true cond) cond.source), source⟩
+  | .Throw value => pure ⟨.Throw (flattenCollapse (← mapStmtExprFlattenGoR pre post true value) value.source), source⟩
+  | .Try body catches finally? =>
+    pure ⟨.Try (flattenCollapse (← mapStmtExprFlattenGoR pre post false body) body.source)
+      (← catches.attach.mapM fun ⟨c, _⟩ => do
+        pure { c with
+          predicate := (← c.predicate.attach.mapM fun ⟨x, _⟩ => do pure (flattenCollapse (← mapStmtExprFlattenGoR pre post true x) x.source))
+          body := flattenCollapse (← mapStmtExprFlattenGoR pre post false c.body) c.body.source })
+      (← finally?.attach.mapM fun ⟨x, _⟩ => do pure (flattenCollapse (← mapStmtExprFlattenGoR pre post false x) x.source)), source⟩
+  | .ProveBy value proof =>
+    pure ⟨.ProveBy (flattenCollapse (← mapStmtExprFlattenGoR pre post true value) value.source) (flattenCollapse (← mapStmtExprFlattenGoR pre post false proof) proof.source), source⟩
+  | .ContractOf ty func => pure ⟨.ContractOf ty (flattenCollapse (← mapStmtExprFlattenGoR pre post true func) func.source), source⟩
+  | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
+  | .Var (.Local _) | .Var (.Declare _) | .Var (.Stack _) | .New .. | .This | .Abstract | .All | .Hole ..
+  | .Snapshot _ => pure e
+  post used rebuilt
+termination_by sizeOf e
+decreasing_by
+  all_goals (try (simp_wf; assumption))
+  map_stmt_expr_decreasing e
+
+def mapStmtExprFlattenGo [Monad m] (pre : Bool → StmtExprMd → m (Option (List StmtExprMd)))
+    (post : Bool → StmtExprMd → m (List StmtExprMd)) (used : Bool) (e : StmtExprMd) : m (List StmtExprMd) :=
+  mapStmtExprFlattenGoR (fun e _ u => pre u e) post used e
+
 /--
 Bottom-up monadic traversal where `post` returns a list of statements, and both
 callbacks are told whether the node's *result is used* (`resultUsed`, threaded
@@ -363,99 +462,7 @@ exactly as in `mapStmtExprUsedM`).
 -/
 def mapStmtExprFlattenM [Monad m] (pre : Bool → StmtExprMd → m (Option (List StmtExprMd)))
     (post : Bool → StmtExprMd → m (List StmtExprMd)) (resultUsed : Bool) (expr : StmtExprMd) : m StmtExprMd := do
-  let collapse (results : List StmtExprMd) (src : FileRange) : StmtExprMd :=
-    match results with
-    | [single] => single
-    | many => ⟨.Block many none [] none, src⟩
-  -- `go` returns the (post-expanded) statement list for `e`. Value-position
-  -- children collapse that list into a single node (a value-block when it has
-  -- multiple statements); `Block` children keep their lists and splice them.
-  let rec go (used : Bool) (e : StmtExprMd) : m (List StmtExprMd) := do
-    match ← pre used e with
-    | some results => return results
-    | none =>
-    let source := e.source
-    let rebuilt ← match _h : e.val with
-    | .IfThenElse cond th el =>
-      pure ⟨.IfThenElse (collapse (← go true cond) cond.source) (collapse (← go used th) th.source)
-        (← el.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go used x) x.source)), source⟩
-    | .Block stmts label invs dec =>
-      let invs' ← invs.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)
-      let dec' ← dec.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)
-      let nested ← stmts.attach.mapIdxM fun i ⟨x, _⟩ => go (used && i + 1 == stmts.length) x
-      pure ⟨.Block nested.flatten label invs' dec', source⟩
-    | .While cond invs dec body postTest =>
-      pure ⟨.While (collapse (← go true cond) cond.source)
-        (← invs.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source))
-        (← dec.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source))
-        (collapse (← go false body) body.source) postTest, source⟩
-    | .Return v =>
-      pure ⟨.Return (← v.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)), source⟩
-    | .Yield => pure e
-    | .Resume target v =>
-      pure ⟨.Resume (collapse (← go true target) target.source)
-        (← v.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)), source⟩
-    | .HasNext target =>
-      pure ⟨.HasNext (collapse (← go true target) target.source), source⟩
-    | .Assign targets value =>
-      let targets' ← targets.attach.mapM fun ⟨v, _⟩ => do
-        match (dependent := true) v with
-        | ⟨.Field target fieldName, vs⟩ =>
-          pure ⟨Variable.Field (collapse (← go true target) target.source) fieldName, vs⟩
-        | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure v
-      pure ⟨.Assign targets' (collapse (← go true value) value.source), source⟩
-    | .Var (.Field target fieldName) =>
-      pure ⟨.Var (.Field (collapse (← go true target) target.source) fieldName), source⟩
-    | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
-      pure ⟨.IncrDecr mode op ⟨.Field (collapse (← go true tgt) tgt.source) fieldName, vs⟩, source⟩
-    | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ | .IncrDecr _ _ ⟨.Stack _, _⟩ => pure e
-    -- `.CompoundAssign` carries an `rhs` that must be traversed even for Local/Declare targets.
-    | .CompoundAssign op ⟨.Field tgt fieldName, vs⟩ rhs =>
-      pure ⟨.CompoundAssign op ⟨.Field (collapse (← go true tgt) tgt.source) fieldName, vs⟩
-        (collapse (← go true rhs) rhs.source), source⟩
-    | .CompoundAssign op target rhs =>
-      pure ⟨.CompoundAssign op target (collapse (← go true rhs) rhs.source), source⟩
-    | .PureFieldUpdate target fieldName newValue =>
-      pure ⟨.PureFieldUpdate (collapse (← go true target) target.source) fieldName
-        (collapse (← go true newValue) newValue.source), source⟩
-    | .Call receiver? callee args tyArgs =>
-      pure ⟨.Call (← receiver?.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)) callee
-        (← args.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source)) tyArgs, source⟩
-    | .ReferenceEquals lhs rhs =>
-      pure ⟨.ReferenceEquals (collapse (← go true lhs) lhs.source) (collapse (← go true rhs) rhs.source), source⟩
-    | .AsType target ty =>
-      pure ⟨.AsType (collapse (← go true target) target.source) ty, source⟩
-    | .IsType target ty =>
-      pure ⟨.IsType (collapse (← go true target) target.source) ty, source⟩
-    | .Quantifier mode param trigger body =>
-      pure ⟨.Quantifier mode param (← trigger.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source))
-        (collapse (← go true body) body.source), source⟩
-    | .Assigned name => pure ⟨.Assigned (collapse (← go false name) name.source), source⟩
-    | .Old value label? => pure ⟨.Old (collapse (← go true value) value.source) label?, source⟩
-    | .OldGuarantee value => pure ⟨.OldGuarantee (collapse (← go true value) value.source), source⟩
-    | .OldRelies value => pure ⟨.OldRelies (collapse (← go true value) value.source), source⟩
-    | .Fresh value => pure ⟨.Fresh (collapse (← go true value) value.source), source⟩
-    | .Assert cond summary =>
-      pure ⟨.Assert (collapse (← go true cond) cond.source) summary, source⟩
-    | .Assume cond => pure ⟨.Assume (collapse (← go true cond) cond.source), source⟩
-    | .Throw value => pure ⟨.Throw (collapse (← go true value) value.source), source⟩
-    | .Try body catches finally? =>
-      pure ⟨.Try (collapse (← go false body) body.source)
-        (← catches.attach.mapM fun ⟨c, _⟩ => do
-          pure { c with
-            predicate := (← c.predicate.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go true x) x.source))
-            body := collapse (← go false c.body) c.body.source })
-        (← finally?.attach.mapM fun ⟨x, _⟩ => do pure (collapse (← go false x) x.source)), source⟩
-    | .ProveBy value proof =>
-      pure ⟨.ProveBy (collapse (← go true value) value.source) (collapse (← go false proof) proof.source), source⟩
-    | .ContractOf ty func => pure ⟨.ContractOf ty (collapse (← go true func) func.source), source⟩
-    | .Goto _ _ | .LiteralInt _ | .LiteralBool _ | .LiteralString _ | .LiteralDecimal _ | .LiteralBv _ _
-    | .Var (.Local _) | .Var (.Declare _) | .Var (.Stack _) | .New .. | .This | .Abstract | .All | .Hole ..
-    | .Snapshot _ => pure e
-    post used rebuilt
-  termination_by sizeOf e
-  decreasing_by map_stmt_expr_decreasing e
-  return collapse (← go resultUsed expr) expr.source
+  return flattenCollapse (← mapStmtExprFlattenGo pre post resultUsed expr) expr.source
 
 /-- Pure `resultUsed`-aware bottom-up traversal (see `mapStmtExprUsedM`). -/
 def mapStmtExprUsed (f : Bool → StmtExprMd → StmtExprMd) (resultUsed : Bool) (expr : StmtExprMd) : StmtExprMd :=

@@ -20,10 +20,10 @@ Chained aliases are resolved transitively. Runs after the first resolution.
 namespace Strata.Laurel
 
 -- An alias entry: its type parameters (empty for a monomorphic alias) and target type.
-private abbrev AliasMap := Std.HashMap String (List Identifier × HighTypeMd)
+public abbrev AliasMap := Std.HashMap String (List Identifier × HighTypeMd)
 
 /-- Build a map from alias name to `(typeArgs, target)`. -/
-def buildAliasMap (types : List TypeDefinition) : AliasMap :=
+@[expose] public def buildAliasMap (types : List TypeDefinition) : AliasMap :=
   types.foldl (init := {}) fun m td =>
     match td with | .Alias ta => m.insert ta.name.text (ta.typeArgs, ta.target) | _ => m
 
@@ -40,38 +40,40 @@ def buildAliasMap (types : List TypeDefinition) : AliasMap :=
 
     Key invariant: for a non-cyclic alias map, the result contains no `UserDefined` reference
     whose name is a key in `amap`, except an arity-wrong one (left unfolded, per above). -/
-partial def resolveAliasType (amap : AliasMap) (ty : HighTypeMd)
-    (visited : Std.HashSet String := {}) : HighTypeMd :=
-  match ty.val with
-  | .UserDefined name =>
+@[expose] public def resolveAliasType (amap : AliasMap) (ty : HighTypeMd)
+    (visited : Std.HashSet String := {}) (fuel : Nat := amap.size) : HighTypeMd :=
+  match ty with
+  | ⟨.UserDefined name, _⟩ =>
     if visited.contains name.text then ty
-    else match amap.get? name.text with
-      | some ([], target) => resolveAliasType amap target (visited.insert name.text)
-      | _ => ty   -- not an alias, or a bare generic alias (0 args) left unfolded (see docstring)
-  | .TSet et => { val := .TSet (resolveAliasType amap et visited), source := ty.source }
-  | .TMap kt vt =>
-    { val := .TMap (resolveAliasType amap kt visited) (resolveAliasType amap vt visited), source := ty.source }
-  | .Applied base args =>
-    let args' := args.map (resolveAliasType amap · visited)
+    else match amap.get? name.text, fuel with
+      | some ([], target), fuel + 1 => resolveAliasType amap target (visited.insert name.text) fuel
+      | _, _ => ty
+  | ⟨.TSet et, src⟩ => { val := .TSet (resolveAliasType amap et visited fuel), source := src }
+  | ⟨.TMap kt vt, src⟩ =>
+    { val := .TMap (resolveAliasType amap kt visited fuel) (resolveAliasType amap vt visited fuel), source := src }
+  | ⟨.Applied base args, src⟩ =>
+    let args' := args.attach.map fun ⟨a, _⟩ => resolveAliasType amap a visited fuel
     match base.val with
     | .UserDefined name =>
-      match (if visited.contains name.text then none else amap.get? name.text) with
-      | some (params, target) =>
-        -- Shared `applyAliasArgs` (LaurelAST) binds params↦args + substitutes — the SAME kernel
-        -- `TypeLattice.unfold` uses, so the consistency relation agrees with elimination.
+      match (if visited.contains name.text then none else amap.get? name.text), fuel with
+      | some (params, target), fuel + 1 =>
         match applyAliasArgs params args' target with
-        | some t => resolveAliasType amap t (visited.insert name.text)
-        | none => { val := .Applied base args', source := ty.source }   -- wrong arity (see docstring)
-      | none => { val := .Applied base args', source := ty.source }
-    | _ => { val := .Applied (resolveAliasType amap base visited) args', source := ty.source }
-  | .Intersection tys =>
-    { val := .Intersection (tys.map (resolveAliasType amap · visited)), source := ty.source }
+        | some t => resolveAliasType amap t (visited.insert name.text) fuel
+        | none => { val := .Applied base args', source := src }
+      | _, _ => { val := .Applied base args', source := src }
+    | _ => { val := .Applied (resolveAliasType amap base visited fuel) args', source := src }
+  | ⟨.Intersection tys, src⟩ =>
+    { val := .Intersection (tys.attach.map fun ⟨t, _⟩ => resolveAliasType amap t visited fuel), source := src }
   | _ => ty
+termination_by (fuel, ty)
+
+@[expose] public def unaliasWith (amap : AliasMap) (t : HighType) : HighType :=
+  (resolveAliasType amap { val := t, source := default }).val
 
 /-- Eliminate all type aliases from a program. Replaces every `UserDefined`
     reference (in any type position, via `mapLaurelProgramHighTypes`) with the alias
     target (transitively) and removes `.Alias` entries from `program.types`. -/
-public def typeAliasElim (_model : SemanticModel) (program : LaurelProgram) : LaurelProgram :=
+@[expose] public def typeAliasElim (_model : SemanticModel) (program : LaurelProgram) : LaurelProgram :=
   let amap := buildAliasMap program.types
   if amap.isEmpty then program else
   let program := mapLaurelProgramHighTypes (resolveAliasType amap) program
