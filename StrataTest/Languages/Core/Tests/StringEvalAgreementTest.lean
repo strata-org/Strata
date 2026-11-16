@@ -40,6 +40,9 @@ and pairs whose order by code point differs from their order by UTF-16 code unit
 Lean strings cannot hold a surrogate code point (`0xD800`-`0xDFFF`), so no Core
 literal contains one; the string cases use the code points on either side of that range, and
 `str.from_code` is probed on the integers of the range itself.
+
+`CoreEvalAgreementTest.lean` reuses this file's private `Case`, `Case.render`, `verdicts`,
+`comparison` and `who` through `meta import all`: a change to one of them changes that test too.
 -/
 
 namespace Core.StringEvalAgreementTest
