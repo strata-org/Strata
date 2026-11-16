@@ -100,7 +100,6 @@ import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 import Strata.Languages.Core.Logic.InterpreterHoareRelation
 
 /- Strata Languages — additional -/
-import Strata.Languages.B3
 import Strata.Languages.Cortex
 import Strata.Languages.Core.EntryPoint
 import Strata.Languages.Core.IncrementalSolve
