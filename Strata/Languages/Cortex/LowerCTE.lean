@@ -56,7 +56,7 @@ def callChecks (ctx : Ctx) (c : IRCmd) (lhs : List Core.Expression.Ident) (p : P
 
 def lowerCmd (ctx : Ctx) : IRCmd → List IRCmd
   | c@(.instanceOf x o t md) =>
-    match pred ctx.cs t o with
+    match conTyName? t >>= fun n => pred ctx.cs n o with
     | some test => .cmd (.set x (.det test) md) :: checkVar ctx true x.name md
     | none => [c]
   | c@(.cmd (.init x _ (.det _) md)) | c@(.cmd (.set x (.det _) md)) => c :: checkVar ctx true x.name md
@@ -120,6 +120,39 @@ def lowerProcedure (witnessHavoc : Bool) (cs : List ConstrainedDecl)
     { b with cfg := { entry, blocks := numberLabels blocks } }
   { p with body }
 
+/-- The type names that `t` mentions inside the element type of an array type; `inElem` says
+that `t` is itself part of one. -/
+private partial def elemTyNames (inElem : Bool) (t : LMonoTy) : List String :=
+  match t with
+  | .tcons n [] => if inElem then [n] else []
+  | .tcons _ args => args.flatMap (elemTyNames (inElem || (arrayElem? t).isSome))
+  | _ => []
+
+/-- The type names that the declarations and commands of `p` mention inside the element type of
+an array type or as the element type of an array command. -/
+private def arrayElemTyNames (p : UnorderedProgram) : List String :=
+  let ty := fun (t : LTy) => match t with | .forAll _ m => elemTyNames false m
+  let elem := fun (t : LTy) => match t with | .forAll _ m => elemTyNames true m
+  let params := fun (ps : List (Core.Expression.Ident × LTy)) => ps.flatMap (ty ·.2)
+  let base : Cmd Core.Expression → List String := fun
+    | .init _ t _ _ => ty t
+    | _ => []
+  let cmd : IRCmd → List String := fun
+    | .cmd c => base c
+    | .instanceOf _ _ t _ => ty t
+    | .newArray _ t _ _ | .readElem _ _ _ t _ | .writeElem _ _ _ t _ => elem t
+    | _ => []
+  p.composites.flatMap (·.fields.flatMap (ty ·.ty)) ++ p.constrained.flatMap (ty ·.base)
+    ++ p.datatypes.flatMap (·.constrs.flatMap (·.args.flatMap (elemTyNames false ·.2)))
+    ++ params p.globals ++ p.globalInit.flatMap base
+    ++ p.procedures.flatMap fun pr =>
+      params pr.inputs ++ params pr.outputs
+        ++ (pr.body.map (·.cfg.blocks.flatMap (·.2.cmds.flatMap cmd))).getD []
+
+/-- Makes the checks of constrained types explicit and replaces each constrained type by its
+base type. The element type of an array type stays as written, because it identifies the array
+type (`valueTy`), and the constrained types that such element types name stay declared. A
+program without array types ends with no constrained type. -/
 def runWith (witnessHavoc : Bool) (p : UnorderedProgram) : Except String UnorderedProgram :=
   let cs := p.constrained
   if cs.isEmpty then .ok p else
@@ -127,9 +160,9 @@ def runWith (witnessHavoc : Bool) (p : UnorderedProgram) : Except String Unorder
   let procs : Std.HashMap String (List (Option String) × List (Option String)) :=
     p.procedures.foldl (fun s pr => s.insert pr.name (pr.inputs.map (isCon ·.2), pr.outputs.map (isCon ·.2))) {}
   let q := p.mapProcedures (lowerProcedure witnessHavoc cs procs)
-  let names : Std.HashSet String := cs.foldl (fun s c => s.insert c.name) {}
-  let q := q.mapTys fun n => if names.contains n then baseOf cs n else none
-  .ok { q with constrained := [] }
+  let q := q.mapMonoTys (valueTy cs) (elem := id)
+  let kept : Std.HashSet String := Std.HashSet.ofList (arrayElemTyNames q)
+  .ok { q with constrained := q.constrained.filter (kept.contains ·.name) }
 
 def run (p : UnorderedProgram) : Except String UnorderedProgram := runWith false p
 

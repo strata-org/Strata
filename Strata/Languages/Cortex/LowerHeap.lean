@@ -39,6 +39,13 @@ def isComposite (p : UnorderedProgram) : LMonoTy → Bool
       | _ => false
   | _ => false
 
+/-- Whether `t` is an array type, whose objects have no Core form. -/
+def isArrayTy : LTy → Bool
+  | .forAll [] t => (arrayElem? t).isSome
+  | _ => false
+
+def arrayTypeError : String := "Cortex array types are not lowered to Core"
+
 def freshAssume (e : Expr) (md : MD) : IRCmd :=
   .cmd (.assume "allocated" (mkCall "Int.Lt" [refOf e, heapNext heap]) md)
 
@@ -93,8 +100,9 @@ def lowerCmd (p : UnorderedProgram) (outs : Std.HashMap String (List Bool)) (wri
             .cmd (.assume "heapMonotone" (mkCall "Int.Le" [mkFvar snapVar, heapNext heap]) md)] ++ post)
     else .ok (c :: post)
   | .virtualCall .. => .error "Cortex `virtualCall` must be lowered by LowerDispatch before LowerHeap"
-  | .newArray .. | .readElem .. | .writeElem .. | .arrayLength .. =>
+  | .newArray .. | .readElem .. | .writeElem .. | .arrayLength .. | .instanceOfComponent .. =>
     .error "Cortex array commands are not lowered to Core"
+  | c@(.cmd (.init _ ty _ _)) | c@(.instanceOf _ _ ty _) => if isArrayTy ty then .error arrayTypeError else .ok [c]
   | c => .ok [c]
 
 def lowerBody (p : UnorderedProgram) (outs : Std.HashMap String (List Bool)) (writers : Std.HashSet String) (inputs : List (Core.Expression.Ident × LTy))
@@ -129,6 +137,9 @@ def heapInit (mapTy : LMonoTy → LMonoTy → LMonoTy) : List (Cmd Core.Expressi
    .init (ident heapVar) (mono (tcon heapTy)) (.det (mkCall heapCtor [mkFvar "$heapData$init", intLit 0])) .empty]
 
 def run (p : UnorderedProgram) : Except String UnorderedProgram := do
+  let declared := p.globals ++ p.procedures.flatMap fun pr => pr.inputs ++ pr.outputs
+  if declared.any (isArrayTy ·.2) || p.composites.any (·.fields.any (isArrayTy ·.ty)) then
+    throw arrayTypeError
   let fields : List FieldRef := p.composites.flatMap fun c => c.fields.map fun f => { owner := c.name, field := f.name }
   let fieldDt := mkDatatype fieldTy (fields.map fun f => { name := ⟨fieldCtor f, ()⟩, args := [] }) "$NoField"
   let mapTy := fun (k v : LMonoTy) => LMonoTy.tcons "Map" [k, v]

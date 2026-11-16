@@ -82,11 +82,11 @@ inductive StopReason where
   | calleeDidNotTerminate (name : ProcName)
   | invalidDatatypes (msg : String)
   | notAnArray
-  | unknownArrayType (name : TypeName)
   | negativeArrayLength (len : Int)
   | arrayLengthOverLimit (len : Int) (limit : Nat)
   | indexOutOfRange (index : Int) (length : Nat)
-  | elementTypeMismatch (elemTy : Core.Expression.Ty) (array : TypeName)
+  | elementTypeMismatch (elemTy : Core.Expression.Ty) (array : LMonoTy)
+  | elementNotAReference (array : LMonoTy)
   deriving Repr, Inhabited
 
 class Effects (m : Type → Type) where
@@ -101,10 +101,21 @@ class Effects (m : Type → Type) where
   | .const _ (.intConst _) => true
   | _ => false
 
+/-- Whether the values of type `ty` are references: an `$Any` type, a composite or an array
+type. -/
 @[expose] def isRefTy (prog : UnorderedProgram) (ty : Core.Expression.Ty) : Bool :=
   match (ty : LTy) with
   | .forAll [] (.tcons n []) => n.startsWith "$Any" || (prog.findComposite? n).isSome
+  | .forAll [] t => (arrayElem? t).isSome
   | _ => false
+
+/-- The type of the objects that a variable of type `ty` refers to, when `ty` is a composite
+or an array type. -/
+@[expose] def objectTy? (prog : UnorderedProgram) (ty : Core.Expression.Ty) : Option LMonoTy :=
+  match (ty : LTy) with
+  | .forAll [] (.tcons n []) => if (prog.findComposite? n).isSome then some (.tcons n []) else none
+  | .forAll [] t => if (arrayElem? t).isSome then some t else none
+  | _ => none
 
 @[expose] def coreHasType (f : LFactory) (v : Expr) (ty : Core.Expression.Ty) : Bool :=
   isValue f v &&
@@ -150,7 +161,8 @@ inductive IConfig where
   | .cmd (.cover _ _ md) => md
   | .cast _ _ _ _ md | .new _ _ md | .readField _ _ _ md | .writeField _ _ _ md | .instanceOf _ _ _ md
   | .call _ _ _ md | .virtualCall _ _ _ _ md | .throw _ md => md
-  | .newArray _ _ _ md | .readElem _ _ _ _ md | .writeElem _ _ _ _ md | .arrayLength _ _ md => md
+  | .newArray _ _ _ md | .readElem _ _ _ _ md | .writeElem _ _ _ _ md | .arrayLength _ _ md
+  | .instanceOfComponent _ _ _ md => md
 
 structure CmdResult where
   store : Store
@@ -212,20 +224,25 @@ variable {m : Type → Type} [Monad m] [Effects m] [MonadExcept StopReason m]
     | some o => pure (a, o)
     | none => throw .danglingReference
 
+/-- The monomorphic type that `ty` is. -/
+@[expose] def monoTy (ty : Core.Expression.Ty) : m LMonoTy :=
+  match LTy.toMonoType? (ty : LTy) with
+  | some t => pure t
+  | none => throw .illTypedValue
+
 /-- The elements of the array that `v` refers to, with the object and its address. The run
-stops when the object is not an array, or when its array type does not declare `elemTy` as
-its element type. -/
+stops when the object is not an array, or when its type is not a subtype of `Array elemTy`. -/
 @[expose] def derefArray (prog : UnorderedProgram) (h : Heap) (v : Expr) (elemTy : Option Core.Expression.Ty) :
     m (Nat × Obj × Array Expr) := do
   let (a, o) ← deref h v
-  match o.elems, prog.arrayElem? o.type with
-  | some elts, some declared =>
+  match o.elems with
+  | some elts =>
     match elemTy with
     | some t =>
-      if LTy.toMonoType? (t : LTy) == LTy.toMonoType? (declared : LTy) then pure (a, o, elts)
+      if prog.isSubtypeTy o.type (arrayTy (← monoTy t)) then pure (a, o, elts)
       else throw (.elementTypeMismatch t o.type)
     | none => pure (a, o, elts)
-  | _, _ => throw .notAnArray
+  | none => throw .notAnArray
 
 /-- The `int` that `v` is, as an array index or length. -/
 @[expose] def intValue (v : Expr) : m Int :=
@@ -233,9 +250,10 @@ its element type. -/
   | .const _ (.intConst k) => pure k
   | _ => throw .illTypedValue
 
-@[expose] def objectFieldRefs (prog : UnorderedProgram) (ty : TypeName) : List FieldRef :=
+/-- The fields of an object of type `ty`: those of every composite that `ty` is a subtype of. -/
+@[expose] def objectFieldRefs (prog : UnorderedProgram) (ty : LMonoTy) : List FieldRef :=
   prog.composites.flatMap fun c =>
-    if prog.isSubtype ty c.name then c.fields.map fun fd => ⟨c.name, fd.name⟩ else []
+    if prog.isSubtypeTy ty (tcon c.name) then c.fields.map fun fd => ⟨c.name, fd.name⟩ else []
 
 @[expose] def chooseFields (prog : UnorderedProgram) (f : LFactory) :
     List FieldRef → m (List (FieldRef × Expr))
@@ -248,11 +266,11 @@ its element type. -/
       pure ((r, v) :: vs)
     | none => throw (.unknownField r)
 
-@[expose] def freshObject (prog : UnorderedProgram) (f : LFactory) (ty : TypeName) : m (Obj) := do
+@[expose] def freshObject (prog : UnorderedProgram) (f : LFactory) (ty : LMonoTy) : m (Obj) := do
   let vals ← chooseFields prog f (objectFieldRefs prog ty)
   pure { type := ty
          fields := fun r =>
-           if prog.isSubtype ty r.owner && (prog.findField? r).isSome then vals.lookup r else none }
+           if prog.isSubtypeTy ty (tcon r.owner) && (prog.findField? r).isSome then vals.lookup r else none }
 
 @[expose] def evalArgs (f : LFactory) (σ : Store) : List Expr → m (List Expr)
   | [] => pure []
@@ -361,15 +379,13 @@ The other outputs keep their values. -/
     List (Core.Expression.Ident × Core.Expression.Ty) → m IEnv
   | [] => pure ρ
   | (x, ty) :: rest =>
-    match (ty : LTy) with
-    | .forAll [] (.tcons n []) =>
-      if (prog.findComposite? n).isSome then do
-        let o ← freshObject prog ρ.factory n
-        let o := if (prog.arrayElem? n).isSome then { o with elems := some #[] } else o
-        let σ' ← setVar ρ.store x (mkRef ρ.next)
-        freshOutputs prog { ρ with store := σ', heap := ρ.heap.update ρ.next o, next := ρ.next + 1 } rest
-      else freshOutputs prog ρ rest
-    | _ => freshOutputs prog ρ rest
+    match objectTy? prog ty with
+    | some t => do
+      let o ← freshObject prog ρ.factory t
+      let o := if (arrayElem? t).isSome then { o with elems := some #[] } else o
+      let σ' ← setVar ρ.store x (mkRef ρ.next)
+      freshOutputs prog { ρ with store := σ', heap := ρ.heap.update ρ.next o, next := ρ.next + 1 } rest
+    | none => freshOutputs prog ρ rest
 
 /-- Call procedure `n`. The callee starts in the frame that `callFrame` builds,
 in which every output holds a value from `Effects.choose`. Its preconditions
@@ -435,7 +451,7 @@ def defaultValue (prog : UnorderedProgram) (_f : LFactory) (ty : Core.Expression
   | t@(.forAll [] (.tcons n [])) =>
     if isRefTy prog t then some (.const Core.valueLoc (.intConst (-1)) : Core.Expression.Expr)
     else datatypeDefault prog n
-  | _ => none
+  | t => if isRefTy prog t then some (.const Core.valueLoc (.intConst (-1)) : Core.Expression.Expr) else none
 
 mutual
 
@@ -456,7 +472,7 @@ mutual
     pure ⟨σ', ρ.heap, ρ.next, .normal⟩
   | _, ρ, .new x ty _ => do
     if (prog.findComposite? ty).isSome then
-      let o ← freshObject prog ρ.factory ty
+      let o ← freshObject prog ρ.factory (tcon ty)
       let σ' ← setVar ρ.store x (mkRef ρ.next)
       pure ⟨σ', ρ.heap.update ρ.next o, ρ.next + 1, .normal⟩
     else throw (.unknownComposite ty)
@@ -481,24 +497,24 @@ mutual
       | none => throw (.unknownField r)
     else throw (.missingObjectField r)
   | _, ρ, .instanceOf x obj ty _ => do
+    let t ← monoTy ty
     let v ← evalExpr ρ.factory ρ.store obj
     let (_, o) ← deref ρ.heap v
-    let σ' ← setVar ρ.store x (if prog.isSubtype o.type ty then HasBool.tt (P := Core.Expression) else HasBool.ff (P := Core.Expression))
+    let σ' ← setVar ρ.store x (if prog.isSubtypeTy o.type t then HasBool.tt (P := Core.Expression) else HasBool.ff (P := Core.Expression))
     pure ⟨σ', ρ.heap, ρ.next, .normal⟩
-  | _, ρ, .newArray x ty len _ => do
-    match prog.arrayElem? ty with
-    | none => throw (.unknownArrayType ty)
-    | some et =>
-      let k ← intValue (← evalExpr ρ.factory ρ.store len)
-      if k < 0 then throw (.negativeArrayLength k) else
-      if k > maxArrayLength then throw (.arrayLengthOverLimit k maxArrayLength) else
-      -- Every element starts at the default of the element type, whatever the choice oracle is.
-      match defaultValue prog ρ.factory et 0 with
-      | none => throw .noChoice
-      | some d =>
-        let o ← freshObject prog ρ.factory ty
-        let σ' ← setVar ρ.store x (mkRef ρ.next)
-        pure ⟨σ', ρ.heap.update ρ.next { o with elems := some (Array.replicate k.toNat d) }, ρ.next + 1, .normal⟩
+  | _, ρ, .newArray x ety len _ => do
+    let et ← monoTy ety
+    let k ← intValue (← evalExpr ρ.factory ρ.store len)
+    if k < 0 then throw (.negativeArrayLength k) else
+    if k > maxArrayLength then throw (.arrayLengthOverLimit k maxArrayLength) else
+    -- Every element starts at the default of the element type's values, whatever the choice
+    -- oracle is.
+    match defaultValue prog ρ.factory (mono (valueTy prog.constrained et)) 0 with
+    | none => throw .noChoice
+    | some d =>
+      let o ← freshObject prog ρ.factory (arrayTy et)
+      let σ' ← setVar ρ.store x (mkRef ρ.next)
+      pure ⟨σ', ρ.heap.update ρ.next { o with elems := some (Array.replicate k.toNat d) }, ρ.next + 1, .normal⟩
   | _, ρ, .readElem x arr i ty _ => do
     let (_, _, elts) ← derefArray prog ρ.heap (← evalExpr ρ.factory ρ.store arr) (some ty)
     let k ← intValue (← evalExpr ρ.factory ρ.store i)
@@ -512,7 +528,7 @@ mutual
     let k ← intValue (← evalExpr ρ.factory ρ.store i)
     if 0 ≤ k && k.toNat < elts.size then
       let w ← evalExpr ρ.factory ρ.store rhs
-      if hasType prog ρ.factory w ty then
+      if hasType prog ρ.factory w (mono (valueTy prog.constrained (← monoTy ty))) then
         pure ⟨ρ.store, ρ.heap.update a { o with elems := some (elts.setIfInBounds k.toNat w) }, ρ.next, .normal⟩
       else throw .illTypedValue
     else throw (.indexOutOfRange k elts.size)
@@ -520,6 +536,16 @@ mutual
     let (_, _, elts) ← derefArray prog ρ.heap (← evalExpr ρ.factory ρ.store arr) none
     let σ' ← setVar ρ.store x (intLit elts.size)
     pure ⟨σ', ρ.heap, ρ.next, .normal⟩
+  | _, ρ, .instanceOfComponent x obj arr _ => do
+    let (_, a, _) ← derefArray prog ρ.heap (← evalExpr ρ.factory ρ.store arr) none
+    match arrayElem? a.type with
+    | none => throw .notAnArray
+    | some et =>
+      if isRefTy prog (mono et) then
+        let (_, o) ← deref ρ.heap (← evalExpr ρ.factory ρ.store obj)
+        let σ' ← setVar ρ.store x (if prog.isSubtypeTy o.type et then HasBool.tt (P := Core.Expression) else HasBool.ff (P := Core.Expression))
+        pure ⟨σ', ρ.heap, ρ.next, .normal⟩
+      else throw (.elementNotAReference a.type)
   | _, ρ, .throw e _ => do
     let v ← evalExpr ρ.factory ρ.store e
     pure ⟨ρ.store, ρ.heap, ρ.next, .exn v⟩

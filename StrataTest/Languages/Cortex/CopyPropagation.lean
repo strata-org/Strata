@@ -252,12 +252,12 @@ b0:
   var n: int := 0  @1
   var i: int := 0  @2
   var t: int := 0  @3
-  var a: Ints  @4
-  var b: Ints  @5
+  var a: (Array int)  @4
+  var b: (Array int)  @5
   call n := id(k)  @6
   i := 0  @7
   t := x  @8
-  a := newArray Ints[n]  @9
+  a := newArray int[n]  @9
   b := a  @10
   a[0] := x : int  @11
   t := a[0] : int  @12
@@ -272,14 +272,38 @@ b0:
 -/
 #guard_msgs in
 #eval show_ [proc "arrays" [("k", int), ("x", int)] [("r", int), ("s", int)]
-  [blk "b0" [decl "n" 1, decl "i" 2, decl "t" 3, .init "a" (.named "Ints") none (at_ 4),
-             .init "b" (.named "Ints") none (at_ 5), .call ["n"] "id" [v "k"] (at_ 6),
+  [blk "b0" [decl "n" 1, decl "i" 2, decl "t" 3, .init "a" (ints) none (at_ 4),
+             .init "b" (ints) none (at_ 5), .call ["n"] "id" [v "k"] (at_ 6),
              .set "i" (some (.int 0)) (at_ 7), .set "t" (some (v "x")) (at_ 8),
-             .newArray "a" "Ints" (v "n") (at_ 9), .set "b" (some (v "a")) (at_ 10),
+             .newArray "a" int (v "n") (at_ 9), .set "b" (some (v "a")) (at_ 10),
              .writeElem (v "b") (v "i") (v "t") int (at_ 11),
              .readElem "t" (v "b") (v "i") int (at_ 12), .set "r" (some (v "t")) (at_ 13),
              .arrayLength "i" (v "b") (at_ 14), .set "s" (some (v "i")) (at_ 15)] (.finish (at_ 16))],
   idProc]
+
+/-! A copy is propagated into both operands of an `instanceOfComponent`, the object and the
+array. The command assigns its result, which ends the fact that `c` is `f`, so `r := c`
+stays. -/
+
+/--
+info: procedure component(a: (Array Box), o: Box, f: bool) returns (r: bool)
+b0:
+  var b: (Array Box)  @1
+  var p: Box  @2
+  var c: bool  @3
+  b := a  @4
+  p := o  @5
+  c := f  @6
+  c := o instanceof component of a  @7
+  r := c  @8
+  finish  @9
+-/
+#guard_msgs in
+#eval show_ [proc "component" [("a", boxes), ("o", .named "Box"), ("f", .bool)] [("r", .bool)]
+  [blk "b0" [.init "b" (boxes) none (at_ 1), .init "p" (.named "Box") none (at_ 2),
+             .init "c" .bool none (at_ 3), .set "b" (some (v "a")) (at_ 4), .set "p" (some (v "o")) (at_ 5),
+             .set "c" (some (v "f")) (at_ 6), .instanceOfComponent "c" (v "p") (v "b") (at_ 7),
+             .set "r" (some (v "c")) (at_ 8)] (.finish (at_ 9))]]
 
 end Cortex.CopyPropagationTest
 
