@@ -19,6 +19,8 @@ Key results:
 - `Procedure.Header.keys_getInoutParams`, `Procedure.Header.keys_getOutputOnlyParams` —
   the keys of Core's inout and output-only formals are the generic
   `Calls.inoutParams` / `Calls.outputOnlyParams`.
+- `Procedure.renameTypeArgs_names` — renaming type parameters keeps a
+  procedure's name and parameter names.
 - `Procedure.oldAliases_mem` — every alias `(old x, x)` has `x` among the parameters.
 -/
 
@@ -42,6 +44,13 @@ theorem Procedure.Header.mem_keys_getInoutParams (h : Procedure.Header) (g : Cor
 theorem Procedure.Header.keys_getOutputOnlyParams (h : Procedure.Header) :
     ListMap.keys h.getOutputOnlyParams = Imperative.Calls.outputOnlyParams (P := Expression) h :=
   listMap_keys_filter (fun _ => !_) _
+
+/-- Renaming type parameters keeps a procedure's name and parameter names. -/
+theorem Procedure.renameTypeArgs_names (proc : Procedure) (ren : List (String × String)) :
+    (proc.renameTypeArgs ren).header.name = proc.header.name ∧
+    (proc.renameTypeArgs ren).header.inputs.keys = proc.header.inputs.keys ∧
+    (proc.renameTypeArgs ren).header.outputs.keys = proc.header.outputs.keys :=
+  ⟨rfl, ListMap.keys_map_values _ _, ListMap.keys_map_values _ _⟩
 
 /-- `Procedure.mapExprs` with the identity is the identity. -/
 theorem Procedure.mapExprs_id (p : Procedure) : Procedure.mapExprs id p = p := by

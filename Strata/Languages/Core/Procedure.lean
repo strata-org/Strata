@@ -332,12 +332,36 @@ instance : Imperative.ProcedureHeader Expression Procedure.Header where
   inputParams  h := h.inputs.keys
   outputParams h := h.outputs.keys
 
-def DetCFG.eraseTypes (cfg : DetCFG) : DetCFG :=
+/-- Apply `fc` to every command and `fe` to every branch guard of a control-flow graph,
+    keeping its labels and shape. -/
+def DetCFG.mapCmdsGuards (cfg : DetCFG) (fc : Command → Command)
+    (fe : Expression.Expr → Expression.Expr) : DetCFG :=
   { cfg with blocks := cfg.blocks.map fun (lbl, blk) =>
-      (lbl, { blk with cmds := blk.cmds.map Command.eraseTypes,
-                        transfer := match blk.transfer with
-                          | .condGoto p lt lf md => .condGoto p.eraseTypes lt lf md
-                          | .finish md => .finish md }) }
+      (lbl, { cmds := blk.cmds.map fc,
+              transfer := match blk.transfer with
+                | .condGoto p lt lf md => .condGoto (fe p) lt lf md
+                | .finish md => .finish md }) }
+
+def DetCFG.eraseTypes (cfg : DetCFG) : DetCFG :=
+  DetCFG.mapCmdsGuards cfg Command.eraseTypes (·.eraseTypes)
+
+/-- `proc` with its type parameters renamed by `ren` throughout, as
+    `renameTyArgList` does to the parameter list. -/
+def Procedure.renameTypeArgs (proc : Procedure) (ren : List (String × String)) :
+    Procedure :=
+  let f := LMonoTy.subst (Subst.ofRenaming ren)
+  let renameChecks (cs : ListMap CoreLabel Procedure.Check) :=
+    cs.map fun p => (p.1, { p.2 with expr := mapExprTys f p.2.expr })
+  { header := { proc.header with
+      typeArgs := renameTyArgList ren proc.header.typeArgs,
+      inputs := proc.header.inputs.map fun p => (p.1, f p.2),
+      outputs := proc.header.outputs.map fun p => (p.1, f p.2) },
+    spec := { proc.spec with
+      preconditions := renameChecks proc.spec.preconditions,
+      postconditions := renameChecks proc.spec.postconditions },
+    body := match proc.body with
+      | .structured ss => .structured (mapStmtsTys f ss)
+      | .cfg c => .cfg (DetCFG.mapCmdsGuards c (mapCmdTys f) (mapExprTys f)) }
 
 -- Only transfer metadata is stripped because command metadata (on assert,
 -- assume, init, set, cover) is not included in formatted output — formatCmd

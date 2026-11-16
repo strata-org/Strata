@@ -13,9 +13,10 @@ public import Strata.DL.Lambda.LTyWFSpec
 
 /-! ## Typing relation: well-typedness of commands, statements, procedures, functions and programs
 
-The annotated program typing rules of `ProgramTypeSpec` restated over variable scopes alone,
-without the reserved-name and cross-kind name conditions; datatype blocks are registered with
-`LContext.addMutualBlock`. -/
+The program typing rules of `ProgramTypeSpec` restated over variable scopes
+alone, with expressions typed by the annotated relation `LExpr.HasTypeA` and
+without the reserved-type-parameter and cross-kind name conditions; datatype
+blocks are registered with `LContext.addMutualBlock`. -/
 
 namespace Core
 namespace TypeSpec

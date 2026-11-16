@@ -665,7 +665,7 @@ theorem SourceTyWF.of_renaming {T : LExprParams} {C : LContext T}
 theorem SourceTyWF.of_subst {T : LExprParams} {C : LContext T} {aliases : List TypeAlias}
     (S : Subst) {t r' : LMonoTy}
     (h : SourceTyWF C TyVarAdmissibility.all aliases (LMonoTy.subst S t) r') :
-    ∃ r, SourceTyWF C TyVarAdmissibility.all aliases t r :=
+    ValidWrittenTy C aliases t :=
   SourceTyWF.of_renaming S (fun _ _ => Or.inl rfl) h
 
 mutual

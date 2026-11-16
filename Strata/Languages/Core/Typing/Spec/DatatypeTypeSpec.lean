@@ -7,13 +7,14 @@ module
 
 public import Strata.DL.Lambda.DatatypeWF
 public import Strata.Languages.Core.Expressions
+public import Strata.DL.Lambda.LExprTypeSpec
 
-/-! ## Declarative Well-Formedness of a Mutual Datatype Block (Core view)
+/-! ## Datatype blocks (Core view)
 
-Bundles the `Lambda`-level datatype relations (`Strata.DL.Lambda.DatatypeWF`)
-into `MutualADTWF`, the Core-facing well-formedness predicate for a mutual
-datatype block in an ambient `LContext CoreLParams`.
--/
+A resolved constructor, datatype or mutual datatype block corresponds to its source when names
+and type parameters agree and argument types are alias-equivalent.
+`MutualADTWF` bundles the `Lambda`-level datatype relations into the well-formedness of a mutual
+datatype block in an ambient `LContext CoreLParams`. -/
 
 namespace Core
 namespace TypeSpec
@@ -21,6 +22,25 @@ namespace TypeSpec
 open Lambda
 
 public section
+
+/-- A resolved constructor matches its source: the same name, tester name and argument names,
+    with argument types alias-equivalent in `Γ`. -/
+def ConstrTyCompat (Γ : TContext Unit)
+    (c_r c : LConstr Unit) : Prop :=
+  c_r.name = c.name ∧ c_r.testerName = c.testerName ∧
+  List.Rel₂ (fun ar a => ar.1 = a.1 ∧ AliasEquiv Γ.aliases ar.2 a.2) c_r.args c.args
+
+/-- A resolved datatype corresponds to its source: the same name and type parameters, with
+    constructors related pointwise. -/
+def DatatypeTyCompat (Γ : TContext Unit)
+    (d_r d : LDatatype Unit) : Prop :=
+  d_r.name = d.name ∧ d_r.typeArgs = d.typeArgs ∧
+  List.Rel₂ (ConstrTyCompat Γ) d_r.constrs d.constrs
+
+/-- `block_r` is an alias-equivalent copy of `block`: they correspond datatype by datatype. -/
+def MutualBlockTyCompat (Γ : TContext Unit)
+    (block_r block : List (LDatatype Unit)) : Prop :=
+  List.Rel₂ (DatatypeTyCompat Γ) block_r block
 
 /--
 Declarative well-formedness of a mutual datatype block `block` in ambient
