@@ -17,6 +17,7 @@ public import Strata.Languages.Cortex.LowerHeapExec
 public import Strata.Languages.Cortex.LowerGlobals
 public import Strata.Languages.Cortex.LowerCTE
 public import Strata.Languages.Core.Factory
+public import Strata.Languages.Cortex.FloatFactory
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Interpreter
 public import Strata.Languages.Core.StatementSemantics
@@ -307,8 +308,11 @@ structure RunResult where
   final : Config
   trace : Trace
 
+/-- The functions an expression of `prog` may call: Core's, the floating-point ones, those of
+the program's datatypes and the program's own. -/
 def programFactory (prog : UnorderedProgram) : Except Strata.Message LFactory := do
-  let F ← prog.datatypes.foldlM (init := Core.Factory) fun F d => do
+  let F ← Lambda.Factory.addFactory Core.Factory FloatFactory.factory
+  let F ← prog.datatypes.foldlM (init := F) fun F d => do
     let bf ← Lambda.genBlockFactory (T := Core.CoreLParams) [d]
     Lambda.Factory.addFactory F bf
   Lambda.Factory.addFactory F (Lambda.Factory.ofArray prog.functions.toArray)
