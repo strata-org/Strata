@@ -3292,18 +3292,25 @@ def evalProgramWithOutcome (cfg : ExternalBackend) (opts : Options) (p : LaurelP
   finally
     cfg.cleanup
 
-/-- `evalProgramWithOutcome`, dropping the outcome: an escaping `throw`,
-    exhausted fuel or a refused call becomes an `IO` error, and only the display
+/-- The error a run with this outcome reports, or `none` when it completed. Shared by
+    `evalProgram` and the `laurelInterpret --interpreter laurel` command, so both report
+    the same thing. -/
+def Outcome.errorMessage? : Outcome → Option String
+  | .completed => none
+  | .infeasible => some "the run stopped on an infeasible path (a false `assume` or an undeclared `throw`), so the rest was not run"
+  | .escaped v => some s!"uncaught throw of {v.display}"
+  | .outOfFuel => some "out of fuel"
+  | .refused r => some r
+
+/-- `evalProgramWithOutcome`, dropping the outcome: an infeasible run, an escaping
+    `throw`, exhausted fuel or a refused call becomes an `IO` error, and only the display
     state and assertion failures are returned. -/
 def evalProgram (cfg : ExternalBackend) (opts : Options) (p : LaurelProgram)
     : IO (DisplayEvalState × Array Strata.Message) := do
   let (display, failures, outcome) ← evalProgramWithOutcome cfg opts p
-  match outcome with
-  | .completed => pure (display, failures)
-  | .infeasible => throw (IO.userError "the run stopped on an infeasible path (a false `assume` or an undeclared `throw`), so the rest was not run")
-  | .escaped v => throw (IO.userError s!"uncaught throw of {v.display}")
-  | .outOfFuel => throw (IO.userError "out of fuel")
-  | .refused r => throw (IO.userError r)
+  match outcome.errorMessage? with
+  | none => pure (display, failures)
+  | some msg => throw (IO.userError msg)
 
 def runInternalLaurel (opts : Options) (filePath : String) : IO Unit := do
   let path : System.FilePath := filePath

@@ -155,14 +155,9 @@ private def runLaurelInterpretDirect (ionBytes : ByteArray) (pflags : ParsedFlag
         unless seen.contains f do
           failures := failures.push f
           seen := seen.insert f
-      match outcome with
-      | .completed => pure ()
-      | .infeasible => errors := errors.push (p.name.text, "the run stopped on an infeasible path (a false `assume` or an undeclared `throw`), so the rest was not run")
-      | .escaped v => errors := errors.push (p.name.text, s!"uncaught throw of {v.display}")
-      | .outOfFuel => errors := errors.push (p.name.text, "out of fuel")
-      | .refused reason =>
-        errors := errors.push (p.name.text, reason)
-        refusals := refusals + 1
+      if let some msg := outcome.errorMessage? then
+        errors := errors.push (p.name.text, msg)
+        if outcome matches .refused _ then refusals := refusals + 1
     catch e =>
       errors := errors.push (p.name.text, toString e)
   IO.println s!"==== DIAGNOSTICS ===="
