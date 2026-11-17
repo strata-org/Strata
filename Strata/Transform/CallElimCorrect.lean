@@ -6,6 +6,7 @@
 module
 
 public import Strata.Transform.CoreTransform
+import Strata.Languages.Core.CoreGenProps
 
 /-! # Call Elimination Correctness Proof (DEPRECATED)
 

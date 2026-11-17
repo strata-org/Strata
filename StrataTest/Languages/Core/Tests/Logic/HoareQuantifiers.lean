@@ -261,7 +261,7 @@ private theorem forallExpr_ty : Lambda.LExpr.HasTypeA [] forallExpr .bool :=
   Lambda.LExpr.typeCheck_to_HasTypeA (by rfl)
 
 /-- Gate parameters: no reserved prefixes, every operator counts as declared. -/
-private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
+private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], [], fun _ => true⟩
 
 /-! ## Operational run inversions over the event semantics -/
 

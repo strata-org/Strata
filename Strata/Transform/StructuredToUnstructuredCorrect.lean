@@ -6637,9 +6637,9 @@ theorem overapproximatesTraces {P : PureExpr}
       (· = ·)
       (Specification.Transform.EnvStoreAgree (P := P))
       (EventLang.imperativeBlockE P (Cmd P) (EvalCmdE P)
-        ⟨InitEnvWFParams P, BlockInitEnvWF⟩)
+        BlockInitEnvWF)
       (EventLang.cfgE P (Cmd P) (EvalCmdE P)
-        (InitEnvWFParams P) CFGInitEnvWF)
+        CFGInitEnvWF)
       (fun statements => some (stmtsToCFG statements))
       (fun statements =>
         Block.noNondetGuards statements = true

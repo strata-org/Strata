@@ -111,6 +111,7 @@ import Strata.Languages.Core.ProgramFactSet
 import Strata.Languages.Core.ProgramFactSetProps
 import Strata.Languages.Core.PipelinePhaseProps
 import Strata.Languages.Core.VerifierProofs
+import Strata.Languages.Core.CoreGenProps
 import Strata.Languages.GOTO
 
 /- DDM -/

@@ -88,7 +88,7 @@ namespace Strata.HoareUtils
 /-! ## Gates and models -/
 
 /-- Gate parameters: no reserved fresh-prefixes, and every name counts as declared. -/
-@[expose] def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
+@[expose] def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], [], fun _ => true⟩
 
 /-- The runtime factory of the model `model`, reading every residual type variable at
 `bool`. -/

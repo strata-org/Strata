@@ -65,7 +65,7 @@ private def cstToAST (p : Program) : Core.Program :=
   eraseProgLocs (TransM.run Inhabited.default (translateProgram p)).fst
 
 /-- Gate parameters: no reserved fresh-prefixes, and every name counts as declared. -/
-private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
+private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], [], fun _ => true⟩
 
 private def countPgm : Program :=
 #strata

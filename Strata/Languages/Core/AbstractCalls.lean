@@ -7,7 +7,6 @@ module
 
 public import Strata.Languages.Core.Axiom
 public import Strata.Languages.Core.Function
-public import Strata.DL.Lambda.NamePrefixes
 import Strata.Util.Name
 
 /-! # Abstracting calls in generated lemmas
@@ -49,6 +48,12 @@ public section
 namespace Core
 
 open Lambda
+
+/-- Prefix of the type variables that instantiate a polymorphic function's type parameters
+    where a generated lemma abstracts a call to it.
+    Kept as a literal copy in `Lambda.reservedNamePrefixes`, so type checking still
+    rejects or renames program names that use it. -/
+@[expose] def abstractTyPrefix : String := "$__abs_"
 
 private structure AbstractState where
   /-- The monomorphic functions replaced so far with the variable standing for

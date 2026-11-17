@@ -2296,9 +2296,9 @@ theorem NondetElim.Internal.overapproximates_upto_base {P : PureExpr}
       (fun x y => x = y)
       (Env.ExtendsWith (IdentOfStringKind NondetElim.isGeneratedName))
       (EventLang.imperativeBlockE P (Cmd P) (EvalCmdE P)
-        ⟨InitEnvWFParams P, BlockInitEnvWF⟩)
+        BlockInitEnvWF)
       (EventLang.imperativeBlockE P (Cmd P) (EvalCmdE P)
-        ⟨InitEnvWFParams P, BlockInitEnvWF⟩)
+        BlockInitEnvWF)
       (fun ss => some (Block.nondetElim ss))
       (fun ss => SrcNoGenWrites NondetElim.isGeneratedName ss
         ∧ Block.exprsShapeFree NondetElim.isGeneratedName ss)

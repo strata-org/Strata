@@ -58,7 +58,7 @@ private theorem procOf_eq {p : Core.Program} {nm : String} {proc : Core.Procedur
   rfl
 
 /-- Test gate with no reserved prefixes and every function name declared. -/
-private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
+private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], [], fun _ => true⟩
 
 /-! ## Pure bitvector absorption (the fact in Run's postcondition) -/
 

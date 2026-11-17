@@ -19,6 +19,7 @@ import Strata.Transform.WP.WPOutDecls
 import Strata.Transform.WP.WPCoreOps
 import Strata.Util.ExceptProps
 import all Strata.Languages.Core.Verifier
+import all Strata.Transform.WP.WPCoreProgram
 import all Strata.Languages.Core.PipelinePhase
 import all Strata.Transform.CoreTransform
 

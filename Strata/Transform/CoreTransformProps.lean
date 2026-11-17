@@ -9,6 +9,7 @@ public import Strata.DL.Imperative.StmtSemanticsProps
 public import Strata.Transform.CoreTransform
 import all Strata.Transform.CoreTransform
 import all Strata.Languages.Core.CoreGen
+public import Strata.Languages.Core.CoreGenProps
 
 public section
 
@@ -65,8 +66,8 @@ state satisfying `Q`). Key results:
   `Subst.empty` without touching the generator: an exact no-op.
 
 The theorems are generic in the prefix string; call elimination and procedure
-inlining instantiate it with `Lambda.callElimTyPrefix` and
-`Lambda.inlineTyPrefix`.
+inlining instantiate it with `Core.CallElim.callElimTyPrefix` and
+`Core.ProcedureInlining.inlineTyPrefix`.
 
 Key definitions the reader needs: `freshenTypeArgsSubst`, `genTyVarName(s)`
 (in `CoreTransform.lean`), and `CoreGenState.WF` (in `CoreGen.lean`).
