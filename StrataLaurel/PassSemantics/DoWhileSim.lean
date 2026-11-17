@@ -1,3 +1,8 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
 import StrataLaurel.PassSemantics.ProgTrav
 import StrataLaurel.Implementation.EliminateDoWhile
 import StrataLaurel.PassSemantics.EntryAt

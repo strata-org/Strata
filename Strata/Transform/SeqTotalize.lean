@@ -52,18 +52,22 @@ private def totalizeFunction (f : Function) : Function :=
     preconditions := f.preconditions.map fun pc => { pc with expr := totalize pc.expr }
     measure := f.measure.map totalize }
 
-/-- Rewrite every expression of the program. CFG bodies are not traversed; the
-    phase requires `noCFGBodies`. -/
-def totalizeProgram (p : Program) : Program :=
-  { decls := p.decls.map fun decl =>
-      match decl with
-      | .proc proc md => .proc (proc.mapExprs totalize) md
-      | .func f md => .func (totalizeFunction f) md
-      | .recFuncBlock fs md => .recFuncBlock (fs.map totalizeFunction) md
-      | .ax a md => .ax { a with e := totalize a.e } md
-      | .lemma l md => .lemma { l with e := totalize l.e } md
-      | .distinct n es md => .distinct n (es.map totalize) md
-      | d => d }
+/-- Rewrite every expression of the program, and report whether anything changed.
+    It leaves the transform state, cached analyses included, as it is: renaming an
+    operator adds or removes no call, so a cached call graph stays valid. CFG bodies
+    are not traversed; the phase requires `noCFGBodies`. -/
+def totalizeProgram (p : Program) : Transform.CoreTransformM (Bool × Program) :=
+  let p' : Program :=
+    { decls := p.decls.map fun decl =>
+        match decl with
+        | .proc proc md => .proc (proc.mapExprs totalize) md
+        | .func f md => .func (totalizeFunction f) md
+        | .recFuncBlock fs md => .recFuncBlock (fs.map totalizeFunction) md
+        | .ax a md => .ax { a with e := totalize a.e } md
+        | .lemma l md => .lemma { l with e := totalize l.e } md
+        | .distinct n es md => .distinct n (es.map totalize) md
+        | d => d }
+  return (decide (p' ≠ p), p')
 
 end Core.SeqTotalize
 
@@ -82,7 +86,6 @@ def Core.seqTotalizePipelinePhase : Core.PipelinePhase :=
                          .noNondetGuards, .hasObligationForm, .noProcedureContracts,
                          .noPolymorphicProcedures, .noPolymorphicFunctions, .typeAnnotated,
                          .noInits, .treeForm, .exitsCovered, .armsHaveObligations])
-    fun prog => do
-      return (true, Core.SeqTotalize.totalizeProgram prog)
+    Core.SeqTotalize.totalizeProgram
 
 end -- public section
