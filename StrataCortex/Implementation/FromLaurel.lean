@@ -127,7 +127,7 @@ partial def unfoldAlias (model : SemanticModel) (t : HighTypeMd) (fuel : Nat := 
   | .TMap k v => { t with val := .TMap (unfoldAlias model k fuel) (unfoldAlias model v fuel) }
   | _ => t
 
-def lty (t : HighTypeMd) : CM LTy := do
+partial def lty (t : HighTypeMd) : CM LTy := do
   let model := (← getThe TranslateState).model
   let t := unfoldAlias model t
   match t.val with
@@ -147,7 +147,17 @@ def lty (t : HighTypeMd) : CM LTy := do
         return .forAll [] (.tcons n.text [])
       | _ => return .forAll [] (← translateType t)
     | _ => return .forAll [] (← translateType t)
+  | .TArray elem =>
+    match ← lty elem with
+    | .forAll _ m => return .forAll [] (Cortex.arrayTy m)
   | _ => return .forAll [] (← translateType t)
+
+def elemTyOf (arrayTy : HighTypeMd) (src : FileRange) : CM LTy := do
+  match arrayTy.val with
+  | .TArray elem => lty elem
+  | _ =>
+    unsupported src "an array whose element type is not known"
+    return .forAll [] .int
 
 def declLocal (name : String) (ty : LTy) : CM Unit := do
   let s ← get
@@ -203,6 +213,7 @@ def headImpure (model : SemanticModel) (procNames : Std.HashSet String) (prelude
   match e.val with
   | .Call none c _ _ => isProcCallee model procNames c || (preludePre? model prelude c).isSome
   | .New .. | .Var (.Field ..) | .Var (.Declare ..) | .IsType .. | .AsType .. | .Assign .. | .IncrDecr ..
+  | .Var (.ArrayElement ..) | .NewArray .. | .ArrayLength ..
   | .CompoundAssign .. | .Block .. | .Hole .. | .Call (some _) .. | .Throw .. | .Return ..
   | .Goto .. | .While .. | .Try .. | .Assert .. | .Assume .. => true
   | _ => false
@@ -418,6 +429,24 @@ partial def purify (e : StmtExprMd) : CM StmtExprMd := do
     let r ← freshTemp (← typeOf e) src
     emit (.readField ⟨r.text, ()⟩ o ref md)
     return varNode r src
+  | .Var (.ArrayElement array index) =>
+    let elemTy ← elemTyOf (← typeOf array) src
+    let a ← expr array
+    let i ← expr index
+    let r ← freshTemp (← typeOf e) src
+    emit (.readElem ⟨r.text, ()⟩ a i elemTy md)
+    return varNode r src
+  | .ArrayLength array =>
+    let a ← expr array
+    let r ← freshTemp ⟨.TInt, src⟩ src
+    emit (.arrayLength ⟨r.text, ()⟩ a md)
+    return varNode r src
+  | .NewArray elementType length =>
+    let elemTy ← lty elementType
+    let n ← expr length
+    let r ← freshTemp ⟨.TArray elementType, src⟩ src
+    emit (.newArray ⟨r.text, ()⟩ elemTy n md)
+    return varNode r src
   | .New ref tyArgs =>
     unless tyArgs.isEmpty do unsupported src "generic composite allocation"
     let r ← freshTemp ⟨.UserDefined ref, src⟩ src
@@ -457,6 +486,7 @@ partial def purify (e : StmtExprMd) : CM StmtExprMd := do
       | .Local i => return varNode i src
       | .Declare p => return varNode p.name src
       | .Field o f => return { e with val := .Var (.Field o f) } |> fun n => n
+      | .ArrayElement a i => purify { e with val := .Var (.ArrayElement a i) }
       | .Stack _ =>
         unsupported src "a stack value"
         return e
@@ -527,6 +557,7 @@ partial def readVar (v : AstNode Variable) : CM Expr := do
   match v.val with
   | .Local i => pureExpr (varNode i v.source)
   | .Field o f => expr { val := .Var (.Field o f), source := v.source }
+  | .ArrayElement a i => expr { val := .Var (.ArrayElement a i), source := v.source }
   | .Declare p => return mkFvar p.name.text
   | .Stack _ =>
     unsupported v.source "a stack value"
@@ -541,6 +572,11 @@ partial def writeVar (v : AstNode Variable) (val : Expr) (md : MD) : CM Unit := 
   | .Field o f =>
     let o' ← expr o
     emit (.writeField o' (← fieldRefOf f) val md)
+  | .ArrayElement a i =>
+    let elemTy ← elemTyOf (← typeOf a) v.source
+    let a' ← expr a
+    let i' ← expr i
+    emit (.writeElem a' i' val elemTy md)
   | .Stack _ => unsupported v.source "a stack push"
 
 partial def incrDecrExpr (op : IncrDecrOp) (x : Expr) : Expr :=
@@ -667,10 +703,11 @@ partial def stmt (e : StmtExprMd) : CM Unit := do
     match value.val with
     | .Call none callee args _ =>
       if isProcCallee (← getThe TranslateState).model (← get).procNames callee then
-        assignCall targets md src fun lhs => callStmt callee args (some lhs) md src
+        assignCall targets md src fun lhs =>
+          callStmt callee args (some lhs) (astNodeToCoreMd value) value.source
       else assignValue targets value md src
     | .Call (some target) callee args _ =>
-      let temps ← virtualCallOf target callee args md src none
+      let temps ← virtualCallOf target callee args (astNodeToCoreMd value) src none
       for (t, tv) in targets.zip temps do
         writeVar t (mkFvar tv.text) md
     | _ => assignValue targets value md src
@@ -725,12 +762,14 @@ partial def assignCall (targets : List (AstNode Variable)) (md : MD) (src : File
         declLocal p.name.text (← lty (p.type.getD ⟨.Unknown, src⟩))
         pure p.name.text
       | .Field _ f => pure f.text
+      | .ArrayElement .. => pure "$arrayElement"
       | .Stack _ => pure "$stack"
     k names
   else
     let temps ← targets.mapM fun t => do
       let ty ← match t.val with
         | .Field o f => typeOf { val := .Var (.Field o f), source := t.source }
+        | .ArrayElement a i => typeOf { val := .Var (.ArrayElement a i), source := t.source }
         | .Local i => typeOf (varNode i t.source)
         | .Declare p => pure (p.type.getD ⟨.Unknown, src⟩)
         | .Stack _ => pure ⟨.Unknown, src⟩
@@ -866,7 +905,7 @@ def renameVar (r : Std.HashMap Nat String) (v : AstNode Variable) : AstNode Vari
   match v.val with
   | .Local i => { v with val := .Local (renameId r i) }
   | .Declare p => { v with val := .Declare { p with name := renameId r p.name } }
-  | .Field .. | .Stack _ => v
+  | .Field .. | .Stack _ | .ArrayElement .. => v
 
 def renameShadowed (params : List Identifier) (body : StmtExprMd) : StmtExprMd :=
   let r := shadowRenames params body
@@ -879,7 +918,8 @@ def renameShadowed (params : List Identifier) (body : StmtExprMd) : StmtExprMd :
     | .Try b cs f => { n with val := .Try b (cs.map fun c => { c with binding := renameId r c.binding }) f }
     | _ => n) body
 
-def translateBody (proc : Strata.Laurel.Procedure) (body : StmtExprMd) : CM Cortex.Body := do
+def translateBody (proc : Strata.Laurel.Procedure) (body : StmtExprMd) (posts : List Condition := []) :
+    CM Cortex.Body := do
   modify fun s => { s with
     sealed := #[], cur := { label := "$start" }, frames := [], finals := [], handlers := #[],
     locals := #[], outputs := proc.outputs.map (·.name.text) }
@@ -889,6 +929,8 @@ def translateBody (proc : Strata.Laurel.Procedure) (body : StmtExprMd) : CM Cort
   stmt (renameShadowed ((← get).globals ++ (proc.inputs ++ proc.outputs).map (·.name)) body)
   jumpTo "$return"
   switchTo "$return"
+  for c in posts do
+    stmt { c.condition with val := .Assert c.condition (c.summary.orElse fun _ => some "postcondition") }
   sealWith (.finish .empty) "$unused"
   let s ← get
   let inits : List IRCmd := s.locals.toList.filterMap fun (x, ty) =>
@@ -948,9 +990,27 @@ def translateProcedure (cortexName : String) (proc : Strata.Laurel.Procedure) : 
     | .Transparent b => some b
     | .Opaque _ impl _ => impl
     | _ => none
-  if hasContract proc then
+  let interpreting := !(← get).uncheck && impl.isSome
+  let runWithoutBody := !(← get).uncheck && impl.isNone && !(proc.body matches .External)
+
+  let posts := match proc.body with
+    | .Opaque posts _ _ => posts.filter (·.mode != .Assume)
+    | _ => []
+  let mut requires : List Cortex.Precondition := []
+  if interpreting && proc.throwsOn.isEmpty then
+    for c in proc.preconditions do
+      if c.mode == .Assume then continue
+      if ← isImpure c.condition then
+        unsupported c.condition.source s!"a precondition of procedure '{proc.name.text}' that reads the heap, calls a procedure or tests a type"
+      let md := (astNodeToCoreMd c.condition).pushElem Imperative.MetaData.propertySummary
+        (.msg (c.summary.getD "precondition"))
+      requires := requires ++ [{ cond := ← pureExpr c.condition, md }]
+    for c in posts do
+      if anyStmtExpr (fun e => e.val matches .Old ..) c.condition then
+        unsupported c.condition.source s!"a postcondition of procedure '{proc.name.text}' that uses old"
+  else if hasContract proc && !runWithoutBody then
     unsupported proc.name.source s!"the contract of procedure '{proc.name.text}'"
-  if hasFrame (← getThe TranslateState).model (← get).composites proc then
+  if !interpreting && !runWithoutBody && hasFrame (← getThe TranslateState).model (← get).composites proc then
     unsupported proc.name.source s!"the frame of procedure '{proc.name.text}'"
   let throws ← match proc.throwsType with
     | none => pure none
@@ -966,10 +1026,10 @@ def translateProcedure (cortexName : String) (proc : Strata.Laurel.Procedure) : 
       unsupported p.name.source s!"the parameter '{p.name.text}', which has the name of a global variable"
   let inputs ← translateParams proc.inputs
   let outputs ← translateParams proc.outputs
-  let body ← impl.mapM (translateBody proc)
+  let body ← impl.mapM fun b => translateBody proc b (if interpreting then posts else [])
   let md := identifierToCoreMd proc.name
   let md := if proc.isInterpretEntry then md.pushElem Imperative.MetaData.interpretEntry (.switch true) else md
-  return { name := cortexName, inputs, outputs, throws, body, md }
+  return { name := cortexName, inputs, outputs, throws, body, md, requires }
 
 def translateComposite (c : CompositeType) : CM Cortex.CompositeDecl := do
   unless c.typeArgs.isEmpty do unsupported c.name.source "generic composite types"
@@ -1003,7 +1063,59 @@ def translateGlobal (f : Field) : CM ((Core.Expression.Ident × LTy) × Imperati
       else .det <$> pureExpr e
   return ((x, ty), .init x ty init md)
 
+def calleeNames (e : StmtExprMd) : List String :=
+  collectStmtExprList (fun n => match n.val with
+    | .Call _ callee _ _ => [callee.text]
+    | _ => []) e
+
+def procedureCallees (p : Strata.Laurel.Procedure) : List String :=
+  ((foldProcedureExprsM (m := StateM (List String)) (fun e => modify (· ++ calleeNames e)) p).run []).2
+
+/-- The names of the procedures that the entry procedures of `program` can reach through calls,
+    including the instance procedures named by an instance call on any composite, and every
+    procedure that a global initializer or a constraint calls. `none` when the program marks no
+    entry procedure. -/
+def reachableProcedures (program : LaurelProgram) : Option (Std.HashSet String) := Id.run do
+  let entries := program.staticProcedures.filter (·.isInterpretEntry)
+  if entries.isEmpty then return none
+  let composites := program.types.filterMap fun | .Composite c => some c | _ => none
+  let instanceProcs := composites.flatMap fun c =>
+    c.instanceProcedures.map fun p => (p.name.text, s!"{c.name.text}${p.name.text}", p)
+  let roots := entries.map (·.name.text) ++
+    program.staticFields.flatMap (fun f => f.initializer.toList.flatMap calleeNames) ++
+    program.types.flatMap (fun | .Constrained c => calleeNames c.constraint ++ calleeNames c.witness | _ => [])
+  let mut seen : Std.HashSet String := {}
+  let mut work := roots
+  let mut steps := 0
+  while !work.isEmpty && steps < 1000000 do
+    steps := steps + 1
+    match work with
+    | [] => pure ()
+    | n :: rest =>
+      work := rest
+      if seen.contains n then continue
+      seen := seen.insert n
+      for p in program.staticProcedures do
+        if p.name.text == n then work := procedureCallees p ++ work
+      for (short, full, p) in instanceProcs do
+        if short == n || full == n then
+          seen := seen.insert full
+          work := procedureCallees p ++ work
+  return some seen
+
 def translateProgram (prelude : Std.HashSet String) (program : LaurelProgram) : CM Cortex.UnorderedProgram := do
+  let reachable? := reachableProcedures program
+  let isReachable (n : String) : Bool := reachable?.all (·.contains n)
+  let program : LaurelProgram := { program with
+    staticProcedures := program.staticProcedures.filter fun p =>
+      prelude.contains p.name.text || isReachable p.name.text
+    types := program.types.filterMap fun (t : TypeDefinition) => match t with
+      | .Composite c =>
+        if !c.typeArgs.isEmpty && reachable?.isSome then none
+        else
+          let keep := c.instanceProcedures.filter fun p => isReachable s!"{c.name.text}${p.name.text}"
+          some (TypeDefinition.Composite { c with instanceProcedures := keep })
+      | t => some t }
   unless program.staticFunctions.isEmpty do unsupported .unknown "static functions"
   unless program.constants.isEmpty do unsupported .unknown "constants"
   let composites := program.types.filterMap fun | .Composite c => some c | _ => none

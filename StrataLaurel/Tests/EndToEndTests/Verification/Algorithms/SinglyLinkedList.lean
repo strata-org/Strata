@@ -46,10 +46,10 @@ procedure reverse(nx: Sequence<int>, head: int, len: int) returns (res: Sequence
 // desired: verifies
   {
     var nxt: int := seqSelect(m, cur);
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                  ^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
     m := seqUpdate(m, cur, prev);
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//       ^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
     prev := cur;
     cur := nxt;
@@ -97,9 +97,9 @@ procedure reverse(nx: Sequence<int>, head: int, len: int) returns (res: Sequence
 //            ^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion could not be proved
   {
     var nxt: int := seqSelect(m, cur);
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                  ^^^^^^^^^^^^^^^^^ error: precondition could not be proved
     m := seqUpdate(m, cur, nxt);
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//       ^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
     prev := cur;
     cur := nxt;
     done := done + 1

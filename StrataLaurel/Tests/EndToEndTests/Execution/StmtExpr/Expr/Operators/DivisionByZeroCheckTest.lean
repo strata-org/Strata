@@ -58,7 +58,7 @@ procedure unsafeDivision(x: int)
   opaque
 {
   var z: int := 10 / x
-//^^^^^^^^^^^^^^^^^^^^ error: divisor is non-zero does not hold
+//              ^^^^^^ error: divisor is non-zero does not hold
 };
 
 procedure runAll() entry opaque {
@@ -92,7 +92,7 @@ procedure callPureDivUnsafe(x: int)
   opaque
 {
   var z: int := pureDiv(10, x)
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//              ^^^^^^^^^^^^^^ error: precondition does not hold
 };
 
 procedure root() entry opaque callPureDivUnsafe(0);

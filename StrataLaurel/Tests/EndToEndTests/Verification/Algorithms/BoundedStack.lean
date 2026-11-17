@@ -70,7 +70,7 @@ procedure push(s: Stack, v: int)
   modifies s
 {
   s#buf := seqUpdate(s#buf, s#size - 1, v);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: error: precondition does not hold
   s#size := s#size + 1
 };

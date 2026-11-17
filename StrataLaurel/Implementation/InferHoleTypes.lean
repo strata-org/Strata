@@ -287,6 +287,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
           | .Field _ fieldName => computeExprType model ⟨.Var (.Field ⟨.Hole, target.source⟩ fieldName), target.source⟩
           | .Declare param => param.type.getD ⟨ .Unknown, target.source ⟩
           | .Stack t => t.getD ⟨ .Unknown, target.source ⟩
+          | .ArrayElement .. => ⟨ .Unknown, target.source ⟩
         | _ => ⟨ .Unknown, source ⟩
       -- An unmodeled field-write target yields `targetType = .Unknown`. The RHS of an assignment whose
       -- target type is Unknown is a sound gradual hole: annotate it `.Unknown` directly so hole
@@ -304,6 +305,9 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
             return ⟨.Field
               (← inferExpr receiver (fieldOwnerType model fieldName receiver.source) outputType)
               fieldName, target.source⟩
+        | .ArrayElement a i =>
+            return ⟨.ArrayElement (← inferExpr a ⟨.Unknown, a.source⟩ outputType)
+              (← inferExpr i ⟨.TInt, i.source⟩ outputType), target.source⟩
         | .Local _ | .Declare _ | .Stack _ => pure target
       return ⟨.Assign targets' value', source⟩
   | .Var (.Field receiver fieldName) =>
@@ -316,7 +320,7 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
             pure ⟨.Field
               (← inferExpr receiver (fieldOwnerType model fieldName receiver.source) outputType)
               fieldName, target.source⟩
-        | .Local _ | .Declare _ | .Stack _ => pure target
+        | .Local _ | .Declare _ | .Stack _ | .ArrayElement .. => pure target
       return ⟨.IncrDecr mode op target', source⟩
   | .CompoundAssign op target rhs =>
       let targetType := match target.val with
@@ -324,12 +328,13 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
         | .Field _ fieldName => computeExprType model ⟨.Var (.Field ⟨.Hole, target.source⟩ fieldName), target.source⟩
         | .Declare param => param.type.getD ⟨ .Unknown, target.source ⟩
         | .Stack t => t.getD ⟨ .Unknown, target.source ⟩
+        | .ArrayElement .. => ⟨ .Unknown, target.source ⟩
       let target' ← match _targetEq : target.val with
         | .Field receiver fieldName =>
             pure ⟨.Field
               (← inferExpr receiver (fieldOwnerType model fieldName receiver.source) outputType)
               fieldName, target.source⟩
-        | .Local _ | .Declare _ | .Stack _ => pure target
+        | .Local _ | .Declare _ | .Stack _ | .ArrayElement .. => pure target
       return ⟨.CompoundAssign op target' (← inferExpr rhs targetType outputType), source⟩
   | .PureFieldUpdate target fieldName newValue =>
       let valueType := computeExprType model ⟨.Var (.Field target fieldName), source⟩
@@ -382,6 +387,11 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
   | .Goto _ _ | .Return [] | .LiteralInt _ | .LiteralBool _ | .LiteralString _
   | .LiteralDecimal _ | .LiteralBv _ _ | .Var (.Local _) | .Var (.Declare _) | .Var (.Stack _)
   | .New .. | .This | .Abstract | .All | .Yield | .Snapshot _ => return expr
+  | .Var (.ArrayElement a i) =>
+      return ⟨.Var (.ArrayElement (← inferExpr a ⟨.Unknown, a.source⟩ outputType)
+        (← inferExpr i ⟨.TInt, i.source⟩ outputType)), source⟩
+  | .NewArray t n => return ⟨.NewArray t (← inferExpr n ⟨.TInt, n.source⟩ outputType), source⟩
+  | .ArrayLength a => return ⟨.ArrayLength (← inferExpr a ⟨.Unknown, a.source⟩ outputType), source⟩
   termination_by sizeOf expr
   decreasing_by
     all_goals simp_wf
@@ -394,6 +404,14 @@ private def inferExpr (expr : StmtExprMd) (expectedType : HighTypeMd)
     all_goals (try (
       have hmember := List.sizeOf_lt_of_mem ‹_›
       have hfield := Variable.sizeOf_field_target_lt_of_eq (by assumption)
+      omega))
+    all_goals (try (
+      have hmember := List.sizeOf_lt_of_mem ‹_›
+      have harr := Variable.sizeOf_arrayElement_array_lt_of_eq (by assumption)
+      omega))
+    all_goals (try (
+      have hmember := List.sizeOf_lt_of_mem ‹_›
+      have hidx := Variable.sizeOf_arrayElement_index_lt_of_eq (by assumption)
       omega))
 end
 

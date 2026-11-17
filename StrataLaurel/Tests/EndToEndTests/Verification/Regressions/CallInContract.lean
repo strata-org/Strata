@@ -158,7 +158,7 @@ procedure violatedInBody() returns (r: int)
   opaque
 {
   var s: int := needsBig(0);
-//^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//              ^^^^^^^^^^^ error: precondition does not hold
   r := 0
 };
 

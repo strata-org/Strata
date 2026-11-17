@@ -178,7 +178,7 @@ private def rewriteNode (naming : FieldNaming) (expr : StmtExprMd) : StmtExprMd 
         match promotedFieldName naming name with
         | some fieldName => selfFieldTarget fieldName t.source
         | none => t
-      | .Field .. | .Stack _ => t  -- inner target already rewritten by the recursion
+      | .Field .. | .Stack _ | .ArrayElement .. => t  -- inner target already rewritten by the recursion
     { expr with val := .Assign targets' value }
   | .Block stmts label invs dec =>
     let stmts' := stmts.filter fun s =>

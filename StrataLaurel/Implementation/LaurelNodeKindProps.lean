@@ -125,6 +125,7 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
 /-- A `HighType`'s immediate component types. -/
 @[expose] def highTypeChildren : HighType → List HighTypeMd
   | .TSet e => [e]
+  | .TArray e => [e]
   | .TMap k v => [k, v]
   | .Applied base args => base :: args
   | .Intersection tys => tys
@@ -136,6 +137,7 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
 @[expose] def NodeKind.ofVariable : Variable → List NodeKind
   | .Field .. => [NodeKind.StmtExpr.Var.var.Field]
   | .Stack _ => [NodeKind.StmtExpr.Var.var.Stack]
+  | .ArrayElement .. => [NodeKind.StmtExpr.Var.var.ArrayElement]
   | _ => []
 
 /-- The kinds an operator denotes. Only the two short-circuit operators have a kind
@@ -189,6 +191,8 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
   | .PureFieldUpdate .. => [NodeKind.StmtExpr.PureFieldUpdate]
   | .Call none callee _ _ => NodeKind.StmtExpr.Call :: NodeKind.ofCallee callee
   | .New .. => [NodeKind.StmtExpr.New]
+  | .NewArray .. => [NodeKind.StmtExpr.NewArray]
+  | .ArrayLength .. => [NodeKind.StmtExpr.ArrayLength]
   | .This => [NodeKind.StmtExpr.This]
   | .AsType .. => [NodeKind.StmtExpr.AsType]
   | .IsType .. => [NodeKind.StmtExpr.IsType]
@@ -228,13 +232,14 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
 /-- The `StmtExprMd` a `Variable` holds (only a field read holds one). -/
 @[expose] def variableChildren : Variable → List StmtExprMd
   | .Field target _ => [target]
+  | .ArrayElement a i => [a, i]
   | .Local _ | .Declare _ | .Stack _ => []
 
 /-- The declared type a `Variable` carries (only a `Declare` carries one). -/
 @[expose] def variableTypes : Variable → List HighTypeMd
   | .Declare p => p.type.toList
   | .Stack t => t.toList
-  | .Local _ | .Field .. => []
+  | .Local _ | .Field .. | .ArrayElement .. => []
 
 /-- A node's immediate `StmtExprMd` children. -/
 @[expose] def stmtExprChildren : StmtExpr → List StmtExprMd
@@ -252,6 +257,8 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
   | .PureFieldUpdate target _ newValue => [target, newValue]
   | .Call receiver? _ arguments _ => receiver?.toList ++ arguments
   | .ReferenceEquals lhs rhs => [lhs, rhs]
+  | .NewArray _ length => [length]
+  | .ArrayLength array => [array]
   | .AsType target _ => [target]
   | .IsType target _ => [target]
   | .Quantifier _ _ trigger body => trigger.toList ++ [body]
@@ -276,6 +283,7 @@ theorem KindSet.mem_ofList {l : List NodeKind} {k : NodeKind} :
 @[expose] def stmtExprTypes : StmtExpr → List HighTypeMd
   | .Call _ _ _ typeArgs => typeArgs
   | .New _ typeArgs => typeArgs
+  | .NewArray elementType _ => [elementType]
   | .AsType _ targetType => [targetType]
   | .IsType _ type => [type]
   | .Hole _ type => type.toList

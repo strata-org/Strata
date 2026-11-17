@@ -49,7 +49,7 @@ procedure mult(a: int, b: int) returns (r: int)
 {
   if a == 0 then { r := 0 } else {
     var rest: int := mult(a - 1, b - 1);
-//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//                   ^^^^^^^^^^^^^^^^^^ error: precondition does not hold
     r := b + rest
   }
 };

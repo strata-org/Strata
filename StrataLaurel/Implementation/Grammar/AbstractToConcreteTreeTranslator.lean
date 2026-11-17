@@ -56,6 +56,7 @@ def highTypeValToArg : HighType → Arg
   | .TVoid => laurelOp "compositeType" #[ident "void"]
   -- Type parameters discarded; the grammar cannot represent Set[T]
   | .TSet _et => laurelOp "compositeType" #[ident "Set"]
+  | .TArray et => laurelOp "arrayType" #[highTypeToArg et]
   | .Applied base args =>
     -- Emit `Base<arg…>` as the grammar's `appliedType` op (whose name slot is an `Ident`,
     -- so peel the base to its name — mirrors `newTypeArgs`/`isType` emission). Emitting the
@@ -123,16 +124,6 @@ private def operationOfDelegate? : String → Option Operation
   | "$bv1SGe" | "$bv8SGe" | "$bv16SGe" | "$bv32SGe" | "$bv64SGe" => some .Geq
   | _ => none
 
-/-- Emit a chained-field-write target as a `FieldPath` op-chain, inverse of
-    `translateFieldPath`. A pure identifier / field-access chain (`w#b#val`) maps to
-    `fieldPathStep (… (fieldPathRoot w) …)`; returns `none` for any other shape (the
-    caller falls back). -/
-partial def fieldPathToArg : StmtExprMd → Option Arg
-  | ⟨.Var (.Local name), _⟩ => some (laurelOp "fieldPathRoot" #[ident name.text])
-  | ⟨.Var (.Field obj field), _⟩ => (fieldPathToArg obj).map fun o =>
-      laurelOp "fieldPathStep" #[o, ident field.text]
-  | _ => none
-
 -- Internal-only: public because `partial` prevents `private` in this section
 -- Printing never consults source locations, so this is defined on the bare
 -- `StmtExpr`; `stmtExprToArg` below is the `StmtExprMd` wrapper.
@@ -142,6 +133,12 @@ partial def stmtExprValToArg (e : StmtExpr) (mapDelegates : Bool := true) : Arg 
   go e
 where
   stmtExprToArg (s : StmtExprMd) : Arg := go s.val
+  fieldPathToArg (s : StmtExprMd) : Arg :=
+    match s.val with
+    | .Var (.Local name) => laurelOp "fieldPathRoot" #[ident name.text]
+    | .Var (.Field obj field) => laurelOp "fieldPathStep" #[fieldPathToArg obj, ident field.text]
+    | .Var (.ArrayElement a i) => laurelOp "fieldPathElement" #[fieldPathToArg a, stmtExprToArg i]
+    | _ => laurelOp "fieldPathParen" #[stmtExprToArg s]
   variableToArg : Variable → Arg
     | .Local name => laurelOp "identifier" #[ident name.text]
     | .Field target field => laurelOp "fieldAccess" #[stmtExprToArg target, ident field.text]
@@ -149,6 +146,7 @@ where
     -- This fallback drops the type; it should not be reached in normal operation.
     | .Declare param => laurelOp "identifier" #[ident param.name.text]
     | .Stack _ => laurelOp "identifier" #[ident "$stack"]
+    | .ArrayElement a i => laurelOp "arrayElement" #[stmtExprToArg a, stmtExprToArg i]
   go : StmtExpr → Arg
     | .LiteralBool b => laurelOp "literalBool" #[boolToArg b]
     | .LiteralInt n =>
@@ -162,6 +160,9 @@ where
     | .Hole false _ => laurelOp "nondetHole"
     | .Var (.Local name) => laurelOp "identifier" #[ident name.text]
     | .Var (.Stack _) => laurelOp "identifier" #[ident "$stack"]
+    | .Var (.ArrayElement a i) => laurelOp "arrayElement" #[stmtExprToArg a, stmtExprToArg i]
+    | .NewArray t n => laurelOp "newArray" #[highTypeToArg t, stmtExprToArg n]
+    | .ArrayLength a => go (.Call (some a) (mkId "length") [] [])
     | .Block stmts label invs _decreases =>
       let stmtArgs := stmts.map stmtExprToArg |>.toArray
       let invArgs := invs.map (fun i => laurelOp "invariantClause" #[stmtExprToArg i]) |>.toArray
@@ -183,15 +184,11 @@ where
           | .Declare ⟨name, ty?⟩ =>
             let typeOpt := optionArg (ty?.map fun t => laurelOp "typeAnnotation" #[highTypeToArg t])
             laurelOp "assignTargetDecl" #[ident name.text, typeOpt]
-          | .Local name => laurelOp "assignTargetVar" #[ident name.text]
-          | .Stack _ => laurelOp "assignTargetVar" #[ident "$stack"]
+          | .Local name => laurelOp "assignTargetPath" #[laurelOp "fieldPathRoot" #[ident name.text]]
+          | .Stack _ => laurelOp "assignTargetPath" #[laurelOp "fieldPathRoot" #[ident "$stack"]]
+          | .ArrayElement a i => laurelOp "assignTargetPath" #[laurelOp "fieldPathElement" #[fieldPathToArg a, stmtExprToArg i]]
           | .Field target fieldName =>
-            -- `obj` is a FieldPath: emit the path chain. A `w#b#val` target
-            -- round-trips; a non-path object (shouldn't occur for a write target) falls
-            -- back to the placeholder, as before.
-            match fieldPathToArg target with
-            | some pathArg => laurelOp "assignTargetField" #[pathArg, ident fieldName.text]
-            | none => laurelOp "assignTargetVar" #[ident "_"]
+            laurelOp "assignTargetPath" #[laurelOp "fieldPathStep" #[fieldPathToArg target, ident fieldName.text]]
         laurelOp "multiAssign" #[commaSep targetArgs.toArray, stmtExprToArg value]
       else
         let targetArg := match targets with
@@ -212,6 +209,7 @@ where
         | .Local name => laurelOp "identifier" #[ident name.text]
         | .Declare param => laurelOp "identifier" #[ident param.name.text]
         | .Stack _ => laurelOp "identifier" #[ident "$stack"]
+        | .ArrayElement a i => laurelOp "arrayElement" #[stmtExprToArg a, stmtExprToArg i]
       laurelOp opName #[targetArg]
     | .CompoundAssign op target rhs =>
       -- `op` is invariably Add/Sub/Mul/Div/Mod/StrConcat (the C2A translator only
@@ -227,6 +225,7 @@ where
         | .Local name => laurelOp "identifier" #[ident name.text]
         | .Declare param => laurelOp "identifier" #[ident param.name.text]
         | .Stack _ => laurelOp "identifier" #[ident "$stack"]
+        | .ArrayElement a i => laurelOp "arrayElement" #[stmtExprToArg a, stmtExprToArg i]
       laurelOp opName #[targetArg, stmtExprToArg rhs]
     -- The inferred `typeArgs` are DROPPED when printing: the grammar's `call` op has no
     -- type-argument slot (unlike `new`), so there is nothing to print them as. Nothing is lost —

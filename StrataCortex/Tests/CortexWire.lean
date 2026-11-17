@@ -101,7 +101,8 @@ meta def interpret (p : Wire.Program) : IO Unit :=
 
 /--
 info: 45: assertion does not hold
-59: assertion does not hold
+52: the interpreter fails here: a call to 'lib', which has no body to run
+stopped: 'callsLib': a call to 'lib', which has no body to run
 -/
 #guard_msgs in
 #eval interpret entryProgram
@@ -564,7 +565,9 @@ meta def constrainedComposite : Wire.Program :=
     constrained := [int32, { name := "NB", base := .named "Box", binder := "$v", constraint := .bool true, witness := none }],
     procedures := [
       { name := "mk", inputs := [], outputs := [{ name := "r", ty := .named "NB" }], throws := none, requires := [],
-        entry := false, source := at_ 170, body := none },
+        entry := false, source := at_ 170,
+        body := some { entry := "b0", handlers := [], blocks := [
+          blk "b0" [.new "r" "Box" (at_ 170)] (.finish (at_ 170))] } },
       { name := "input", inputs := [{ name := "x", ty := .named "NB" }], outputs := [], throws := none, requires := [],
         entry := false, source := at_ 171,
         body := some { entry := "b0", handlers := [], blocks := [
@@ -592,40 +595,6 @@ info: Core type checking succeeded.
 
 #guard_msgs in
 #eval interpret (runOnly ["fieldRead", "callOut"] constrainedComposite)
-
--- A call to a procedure without a body leaves every global as it is, also one that holds an object.
-meta def bodilessKeepsGlobals : Wire.Program :=
-  { composites := [{ name := "Box", extending := [], fields := [{ name := "v", ty := i32 }] }],
-    constrained := [int32],
-    globals := [{ name := "n", ty := i32, init := some (i32v 4), source := at_ 200 },
-                { name := "box", ty := .named "Box", init := none, source := at_ 201 }],
-    procedures := [
-      { name := "lib", inputs := [], outputs := [], throws := none, requires := [], body := none,
-        entry := false, source := at_ 202 },
-      { name := "main", inputs := [], outputs := [], throws := none, requires := [], entry := true, source := at_ 203,
-        body := some { entry := "b0", handlers := [], blocks := [
-          blk "b0" [.init "b" (.named "Box") none (at_ 204), .new "b" "Box" (at_ 204),
-                    .writeField (.var "b") "Box" "v" (i32v 7) (at_ 205),
-                    .set "box" (some (.var "b")) (at_ 206),
-                    .call [] "lib" [] (at_ 207),
-                    .init "t" i32 none (at_ 208),
-                    .readField "t" (.var "box") "Box" "v" (at_ 208),
-                    .assert "sameObject" (.eq (.var "box") (.var "b")) none (at_ 209),
-                    .assert "fieldKept" (.eq (.var "t") (i32v 7)) none (at_ 210),
-                    .assert "intKept" (.eq (.var "n") (i32v 4)) none (at_ 211),
-                    .assert "intChanged" (.eq (.var "n") (i32v 5)) none (at_ 212)] (.finish (at_ 213))] } }] }
-
-/--
-info: 212: assertion does not hold
--/
-#guard_msgs in
-#eval interpret bodilessKeepsGlobals
-
-/--
-info: Core type checking succeeded.
--/
-#guard_msgs in
-#eval typeCheck bodilessKeepsGlobals
 
 -- An entry procedure cannot be called, also one that uses only the heap.
 meta def callsEntry : Wire.Program :=

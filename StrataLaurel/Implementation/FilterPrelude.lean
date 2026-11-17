@@ -75,6 +75,7 @@ private def collectHighTypeNames (ty : HighTypeMd) : CollectM Unit := do
   -- A type variable references no prelude type name.
   | .TVar _ => pure ()
   | .TSet et => collectHighTypeNames et
+  | .TArray et => collectHighTypeNames et
   | .TMap kt vt => collectHighTypeNames kt; collectHighTypeNames vt
   | .Applied base args =>
     collectHighTypeNames base; args.attach.forM (fun ⟨a, _⟩ => collectHighTypeNames a)
@@ -99,24 +100,25 @@ private def collectExprNames (expr : StmtExprMd) : CollectM Unit :=
     -- `New` gained a `typeArgs` field with polymorphism; collect any explicit
     -- instantiation type names (`new Box<int>`) as well as the composite name.
     | .New ref typeArgs => addTypeName ref.text; typeArgs.forM collectHighTypeNames
+    | .NewArray elementType _ => collectHighTypeNames elementType
     | .Assign targets _ =>
       for ⟨t, _⟩ in targets.attach do
         match t.val with
         | .Declare param => param.type.forM collectHighTypeNames
         | .Stack t => t.forM collectHighTypeNames
-        | .Field _ _ | .Local _ => pure ()
+        | .Field _ _ | .Local _ | .ArrayElement .. => pure ()
     | .IncrDecr _ _ target =>
       match target.val with
       | .Declare param => param.type.forM collectHighTypeNames
       | .Stack t => t.forM collectHighTypeNames
-      | .Field _ _ | .Local _ => pure ()
+      | .Field _ _ | .Local _ | .ArrayElement .. => pure ()
     | .CompoundAssign _ target _ =>
       -- `rhs` and any `.Field` object subtree are recursed into by `foldStmtExprM`;
       -- only a `.Declare` target directly introduces a type name here.
       match target.val with
       | .Declare param => param.type.forM collectHighTypeNames
       | .Stack t => t.forM collectHighTypeNames
-      | .Field _ _ | .Local _ => pure ()
+      | .Field _ _ | .Local _ | .ArrayElement .. => pure ()
     | .Var (.Declare param) => param.type.forM collectHighTypeNames
     | .Var (.Stack t) => t.forM collectHighTypeNames
     | .Quantifier _ param _ _ => collectHighTypeNames param.type

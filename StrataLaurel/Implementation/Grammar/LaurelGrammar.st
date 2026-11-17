@@ -31,6 +31,9 @@ op compositeType (name: Ident): LaurelType => name;
 // re-parse and applied types would never round-trip. Mirrors `StmtExpr`'s
 // `parenthesis`; the concrete-to-abstract translator unwraps it to the inner type.
 op parenType (inner: LaurelType): LaurelType => "(" inner ")";
+// A native array. `Array<` is a single token, like `old(`, so `Array` alone stays an
+// identifier and `Array<int>` does not parse as an `appliedType`.
+op arrayType (elementType: LaurelType): LaurelType => "Array<" elementType ">";
 
 category StmtExpr;
 op literalBool (b: Bool): StmtExpr => b;
@@ -61,11 +64,16 @@ op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr =>
 category NewTypeArgs;
 op newTypeArgs (args: CommaSepBy LaurelType): NewTypeArgs => @[prec(80)] "<" args ">";
 op new(name: Ident, typeArgs: Option NewTypeArgs): StmtExpr => "new " name typeArgs:0;
+// Array allocation `new Array<T>(n)`. It shares the leading `new` with `new` above, but
+// `Array<` is a token and not an identifier, so only one of the two parses.
+op newArray(elementType: LaurelType, length: StmtExpr): StmtExpr => "new " "Array<" elementType ">" "(" length ")";
 
 // Field access. prec coupled to `call` (also 95, via its `callee:89`): keep them
 // equal or `a#b(x)` parsing shifts. prec 95 > postfix `++`/`--` (90) is what lets
 // `c#n++` parse paren-free as `(c#n)++`.
 op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(95), leftassoc] obj "#" field;
+// Array element `a[i]`, read or assignment target, at the precedence of `fieldAccess`.
+op arrayElement (array: StmtExpr, index: StmtExpr): StmtExpr => @[prec(95)] array:94 "[" index "]";
 
 // Identifiers/Variables - must come after fieldAccess so c.value parses as fieldAccess not identifier
 op identifier (name: Ident): StmtExpr => name;
@@ -89,16 +97,19 @@ op strConcatAssign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10), 
 // The declared target's annotation is optional, like varDecl's.
 category AssignTarget;
 op assignTargetDecl (name: Ident, targetType: Option TypeAnnotation): AssignTarget => @[prec(0)] "var " name targetType;
-op assignTargetVar (name: Ident): AssignTarget => name;
-// A chained field-write target `w#b#val`. `obj` is a dedicated `FieldPath`
-// category — a left-recursive identifier/field chain — NOT the full `StmtExpr`
-// category. Using `StmtExpr` for `obj` made it compete with `multiAssign`'s VALUE
+// A write target other than a declaration: a variable `x`, a field `w#b#val` or an
+// element `a[i]`, `w#arr[i]#f[j]`, `(e)[i]`. The target is a `FieldPath` — a dedicated
+// left-recursive category of variable, field, element and parenthesized steps — NOT the
+// full `StmtExpr` category. Using `StmtExpr` made it compete with `multiAssign`'s VALUE
 // (also a StmtExpr), so `assign t := f()` mis-parsed (`f()` was tried as a field
-// object → "expected '#'"). A separate category cannot collide with the value.
+// object → "expected '#'"). A separate category cannot collide with the value. The
+// concrete-to-abstract translator takes the kind of target from the path's last step.
 category FieldPath;
 op fieldPathRoot (name: Ident): FieldPath => name;
 op fieldPathStep (obj: FieldPath, field: Ident): FieldPath => @[leftassoc] obj "#" field;
-op assignTargetField (obj: FieldPath, field: Ident): AssignTarget => obj "#" field;
+op fieldPathElement (array: FieldPath, index: StmtExpr): FieldPath => @[leftassoc] array "[" index:0 "]";
+op fieldPathParen (inner: StmtExpr): FieldPath => "(" inner:0 ")";
+op assignTargetPath (path: FieldPath): AssignTarget => path;
 
 op multiAssign (targets: CommaSepBy AssignTarget, value: StmtExpr): StmtExpr
   => @[prec(0)] "assign " targets " := " value:0;

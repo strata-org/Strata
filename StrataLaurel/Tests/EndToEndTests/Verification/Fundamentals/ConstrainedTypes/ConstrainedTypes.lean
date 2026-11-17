@@ -211,7 +211,7 @@ procedure argInvalid() returns (r: int)
   opaque
 {
   var x: int := takesNat(-1);
-//^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//              ^^^^^^^^^^^^ error: precondition does not hold
   return x
 };
 
@@ -387,7 +387,7 @@ procedure badDoubleArgCaught(n: nat) returns (r: int)
   opaque
 {
   var x: int := takesNat(badDouble(n));
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
+//              ^^^^^^^^^^^^^^^^^^^^^^ error: precondition does not hold
   return x
 };
 

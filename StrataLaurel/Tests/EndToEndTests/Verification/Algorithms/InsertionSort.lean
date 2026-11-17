@@ -74,10 +74,10 @@ procedure insertionSort(a: Sequence<int>) returns (res: Sequence<int>)
 // desired: verifies
     {
       var tmp: int := seqSelect(s, j - 1);
-//    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                    ^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
       s := seqUpdate(s, j - 1, seqSelect(s, j));
-//    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
       s := seqUpdate(s, j, tmp);
       j := j - 1
@@ -153,9 +153,9 @@ procedure insertionSort(a: Sequence<int>) returns (res: Sequence<int>)
 //              ^^^^^^^^^^^^^^^^^ error: assertion could not be proved
     {
       var tmp: int := seqSelect(s, j - 1);
-//    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//                    ^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
       s := seqUpdate(s, j - 1, seqSelect(s, j));
-//    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
       s := seqUpdate(s, j, tmp);
       j := j - 1
     };

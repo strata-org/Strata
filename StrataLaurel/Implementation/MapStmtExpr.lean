@@ -59,6 +59,7 @@ def HighType.mapType (f : HighType → HighType) (ty : HighType) : HighType :=
     f (.Intersection (tys.map fun t => ⟨HighType.mapType f t.val, t.source⟩))
   | .MultiValuedExpr tys =>
     f (.MultiValuedExpr (tys.map fun t => ⟨HighType.mapType f t.val, t.source⟩))
+  | .TArray e => f (.TArray ⟨HighType.mapType f e.val, e.source⟩)
   | ty => f ty
   termination_by SizeOf.sizeOf ty
   decreasing_by
@@ -126,16 +127,26 @@ def mapStmtExprUsedM [Monad m] (f : Bool → StmtExprMd → m StmtExprMd)
       match (dependent := true) v with
       | ⟨.Field target fieldName, vs⟩ =>
         pure ⟨Variable.Field (← mapStmtExprUsedM f true target) fieldName, vs⟩
+      | ⟨.ArrayElement a i, vs⟩ =>
+        pure ⟨Variable.ArrayElement (← mapStmtExprUsedM f true a) (← mapStmtExprUsedM f true i), vs⟩
       | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure v
     pure ⟨.Assign targets' (← mapStmtExprUsedM f true value), source⟩
   | .Var (.Field target fieldName) =>
     pure ⟨.Var (.Field (← mapStmtExprUsedM f true target) fieldName), source⟩
+  | .Var (.ArrayElement a i) =>
+    pure ⟨.Var (.ArrayElement (← mapStmtExprUsedM f true a) (← mapStmtExprUsedM f true i)), source⟩
+  | .NewArray t n => pure ⟨.NewArray t (← mapStmtExprUsedM f true n), source⟩
+  | .ArrayLength a => pure ⟨.ArrayLength (← mapStmtExprUsedM f true a), source⟩
   | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
     pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprUsedM f true tgt) fieldName, vs⟩, source⟩
+  | .IncrDecr mode op ⟨.ArrayElement a i, vs⟩ =>
+    pure ⟨.IncrDecr mode op ⟨.ArrayElement (← mapStmtExprUsedM f true a) (← mapStmtExprUsedM f true i), vs⟩, source⟩
   | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ | .IncrDecr _ _ ⟨.Stack _, _⟩ => pure expr
   -- `.CompoundAssign` carries an `rhs` that must be traversed even for Local/Declare targets.
   | .CompoundAssign op ⟨.Field tgt fieldName, vs⟩ rhs =>
     pure ⟨.CompoundAssign op ⟨.Field (← mapStmtExprUsedM f true tgt) fieldName, vs⟩ (← mapStmtExprUsedM f true rhs), source⟩
+  | .CompoundAssign op ⟨.ArrayElement a i, vs⟩ rhs =>
+    pure ⟨.CompoundAssign op ⟨.ArrayElement (← mapStmtExprUsedM f true a) (← mapStmtExprUsedM f true i), vs⟩ (← mapStmtExprUsedM f true rhs), source⟩
   | .CompoundAssign op target rhs =>
     pure ⟨.CompoundAssign op target (← mapStmtExprUsedM f true rhs), source⟩
   | .PureFieldUpdate target fieldName newValue =>
@@ -386,10 +397,20 @@ def mapStmtExprFlattenGoR [Monad m]
       match (dependent := true) v with
       | ⟨.Field target fieldName, vs⟩ =>
         pure ⟨Variable.Field (flattenCollapse (← mapStmtExprFlattenGoR pre post true target) target.source) fieldName, vs⟩
+      | ⟨.ArrayElement a i, vs⟩ =>
+        pure ⟨Variable.ArrayElement (flattenCollapse (← mapStmtExprFlattenGoR pre post true a) a.source) (flattenCollapse (← mapStmtExprFlattenGoR pre post true i) i.source), vs⟩
       | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure v
     pure ⟨.Assign targets' (flattenCollapse (← mapStmtExprFlattenGoR pre post true value) value.source), source⟩
   | .Var (.Field target fieldName) =>
     pure ⟨.Var (.Field (flattenCollapse (← mapStmtExprFlattenGoR pre post true target) target.source) fieldName), source⟩
+  | .Var (.ArrayElement a i) =>
+    pure ⟨.Var (.ArrayElement (flattenCollapse (← mapStmtExprFlattenGoR pre post true a) a.source) (flattenCollapse (← mapStmtExprFlattenGoR pre post true i) i.source)), source⟩
+  | .NewArray t n => pure ⟨.NewArray t (flattenCollapse (← mapStmtExprFlattenGoR pre post true n) n.source), source⟩
+  | .ArrayLength a => pure ⟨.ArrayLength (flattenCollapse (← mapStmtExprFlattenGoR pre post true a) a.source), source⟩
+  | .IncrDecr mode op ⟨.ArrayElement a i, vs⟩ =>
+    pure ⟨.IncrDecr mode op ⟨.ArrayElement (flattenCollapse (← mapStmtExprFlattenGoR pre post true a) a.source) (flattenCollapse (← mapStmtExprFlattenGoR pre post true i) i.source), vs⟩, source⟩
+  | .CompoundAssign op ⟨.ArrayElement a i, vs⟩ rhs =>
+    pure ⟨.CompoundAssign op ⟨.ArrayElement (flattenCollapse (← mapStmtExprFlattenGoR pre post true a) a.source) (flattenCollapse (← mapStmtExprFlattenGoR pre post true i) i.source), vs⟩ (flattenCollapse (← mapStmtExprFlattenGoR pre post true rhs) rhs.source), source⟩
   | .IncrDecr mode op ⟨.Field tgt fieldName, vs⟩ =>
     pure ⟨.IncrDecr mode op ⟨.Field (flattenCollapse (← mapStmtExprFlattenGoR pre post true tgt) tgt.source) fieldName, vs⟩, source⟩
   | .IncrDecr _ _ ⟨.Local _, _⟩ | .IncrDecr _ _ ⟨.Declare _, _⟩ | .IncrDecr _ _ ⟨.Stack _, _⟩ => pure e
@@ -507,12 +528,21 @@ def mapStmtExprPrePostM [Monad m] (pre : StmtExprMd → m (Option StmtExprMd))
       match (dependent := true) v with
       | ⟨.Field target fieldName, vs⟩ =>
         pure ⟨Variable.Field (← mapStmtExprPrePostM pre post target) fieldName, vs⟩
+      | ⟨.ArrayElement a i, vs⟩ =>
+        pure ⟨Variable.ArrayElement (← mapStmtExprPrePostM pre post a) (← mapStmtExprPrePostM pre post i), vs⟩
       | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure v
     pure ⟨.Assign targets' (← mapStmtExprPrePostM pre post value), source⟩
   | .Var (.Field target fieldName) =>
     pure ⟨.Var (.Field (← mapStmtExprPrePostM pre post target) fieldName), source⟩
+  | .Var (.ArrayElement a i) =>
+    pure ⟨.Var (.ArrayElement (← mapStmtExprPrePostM pre post a) (← mapStmtExprPrePostM pre post i)), source⟩
+  | .NewArray t n => pure ⟨.NewArray t (← mapStmtExprPrePostM pre post n), source⟩
+  | .ArrayLength a => pure ⟨.ArrayLength (← mapStmtExprPrePostM pre post a), source⟩
+  | .CompoundAssign op ⟨.ArrayElement a i, vs⟩ rhs =>
+    pure ⟨.CompoundAssign op ⟨.ArrayElement (← mapStmtExprPrePostM pre post a) (← mapStmtExprPrePostM pre post i), vs⟩ (← mapStmtExprPrePostM pre post rhs), source⟩
   | .IncrDecr mode op target => match (dependent := true) target with
     | ⟨.Field tgt fieldName, vs⟩ => pure ⟨.IncrDecr mode op ⟨.Field (← mapStmtExprPrePostM pre post tgt) fieldName, vs⟩, source⟩
+    | ⟨.ArrayElement a i, vs⟩ => pure ⟨.IncrDecr mode op ⟨.ArrayElement (← mapStmtExprPrePostM pre post a) (← mapStmtExprPrePostM pre post i), vs⟩, source⟩
     | ⟨.Local _, _⟩
     | ⟨.Declare _, _⟩
     | ⟨.Stack _, _⟩ => pure expr
@@ -616,16 +646,22 @@ def foldStmtExprM [Monad m] (f : StmtExprMd → m Unit) (expr : StmtExprMd) : m 
     targets.attach.forM fun ⟨v, _⟩ =>
       match v with
       | ⟨.Field target _, _⟩ => foldStmtExprM f target
+      | ⟨.ArrayElement a i, _⟩ => do foldStmtExprM f a; foldStmtExprM f i
       | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure ()
     foldStmtExprM f value
   | .Var (.Field target _) =>
     foldStmtExprM f target
+  | .Var (.ArrayElement a i) => do foldStmtExprM f a; foldStmtExprM f i
+  | .NewArray _ n => foldStmtExprM f n
+  | .ArrayLength a => foldStmtExprM f a
   | .IncrDecr _ _ target => match (dependent := true) target with
     | ⟨.Field tgt _, _⟩ => foldStmtExprM f tgt
+    | ⟨.ArrayElement a i, _⟩ => do foldStmtExprM f a; foldStmtExprM f i
     | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure ()
   | .CompoundAssign _ target rhs =>
     (match target with
      | ⟨.Field tgt _, _⟩ => foldStmtExprM f tgt
+     | ⟨.ArrayElement a i, _⟩ => do foldStmtExprM f a; foldStmtExprM f i
      | ⟨.Local _, _⟩ | ⟨.Declare _, _⟩ | ⟨.Stack _, _⟩ => pure ())
     foldStmtExprM f rhs
   | .PureFieldUpdate target _ newValue =>
@@ -728,7 +764,7 @@ def boundNamesOfNode (e : StmtExprMd) : List Identifier :=
   let ofVariable (v : Variable) : List Identifier :=
     match v with
     | .Declare param => [param.name]
-    | .Local _ | .Field _ _ | .Stack _ => []
+    | .Local _ | .Field _ _ | .Stack _ | .ArrayElement .. => []
   match e.val with
   | .Assign targets _ => targets.flatMap (ofVariable ·.val)
   | .IncrDecr _ _ target | .CompoundAssign _ target _ => ofVariable target.val
@@ -960,14 +996,14 @@ def mapVariableHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (v : Varia
   match v with
   | .Declare param => pure (.Declare { param with type := ← param.type.mapM f })
   | .Stack t => pure (.Stack (← t.mapM f))
-  | .Local _ | .Field _ _ => pure v
+  | .Local _ | .Field _ _ | .ArrayElement .. => pure v
 
 /--
 Apply `f` to every `HighType` annotation carried *directly* by a single
 `StmtExpr` node: local declarations (in `Var`, `Assign` targets, and `IncrDecr`
 targets), quantifier binders, `AsType`/`IsType` type arguments, a generic
-call's inferred type arguments, the type a `new` allocates, and typed
-`Hole`s. Does **not** recurse into child expressions — compose with
+call's inferred type arguments, the type a `new` allocates, the element type of a
+`new Array<T>(n)`, and typed `Hole`s. Does **not** recurse into child expressions — compose with
 `mapStmtExprM` (see `mapStmtExprHighTypesM`) for a whole-tree traversal.
 -/
 def mapNodeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (expr : StmtExprMd) : m StmtExprMd := do
@@ -998,6 +1034,7 @@ def mapNodeHighTypesM [Monad m] (f : HighTypeMd → m HighTypeMd) (expr : StmtEx
     | .Applied ⟨.UserDefined ref', _⟩ tyArgs' => pure ⟨.New ref' tyArgs', source⟩
     | .UserDefined ref' => pure ⟨.New ref' [], source⟩
     | _ => pure expr
+  | .NewArray ty length => pure ⟨.NewArray (← f ty) length, source⟩
   | .Hole det (some ty) => pure ⟨.Hole det (some (← f ty)), source⟩
   | _ => pure expr
 
@@ -1210,9 +1247,11 @@ private def covCtorKey : StmtExpr → Nat
   | .Throw ..         => 38
   | .Try ..           => 39
   | .Snapshot ..      => 40
+  | .NewArray ..      => 41
+  | .ArrayLength ..   => 42
 
 /-- The total number of `StmtExpr` constructors. Bump this when adding one. -/
-private def covCtorCount : Nat := 40
+private def covCtorCount : Nat := 42
 
 /-- One representative per constructor, paired with the number of sentinels it
     places in `StmtExprMd` child positions. -/
@@ -1253,6 +1292,12 @@ private def covProbes : List (StmtExprMd × Nat) := [
   (covMd (.IncrDecr .Pre .Incr (covVmd (.Field covS (covId "x")))), 1),
   (covMd (.CompoundAssign .Add (covVmd (.Field covS (covId "x"))) covS), 2),
   (covMd .Yield, 0),
+  (covMd (.NewArray covTy covS), 1),
+  (covMd (.Var (.ArrayElement covS covS)), 2),
+  (covMd (.Assign [covVmd (.ArrayElement covS covS)] covS), 3),
+  (covMd (.IncrDecr .Pre .Incr (covVmd (.ArrayElement covS covS))), 2),
+  (covMd (.CompoundAssign .Add (covVmd (.ArrayElement covS covS)) covS), 3),
+  (covMd (.ArrayLength covS), 1),
   -- `Resume target (some value)` places two sentinels (both `StmtExprMd` children).
   (covMd (.Resume covS (some covS)), 2),
   (covMd (.HasNext covS), 1),

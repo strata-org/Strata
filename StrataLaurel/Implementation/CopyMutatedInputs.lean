@@ -150,6 +150,20 @@ private def substitute (ren : Std.HashMap Nat Identifier) (body : StmtExprMd) : 
             | none => t
           | _ => t
         pure { n with val := .Assign targets' value }
+      | .IncrDecr mode op t =>
+        match t.val with
+        | .Local name =>
+          match renamed name with
+          | some fresh => pure { n with val := .IncrDecr mode op { t with val := Variable.Local fresh } }
+          | none => pure n
+        | _ => pure n
+      | .CompoundAssign op t rhs =>
+        match t.val with
+        | .Local name =>
+          match renamed name with
+          | some fresh => pure { n with val := .CompoundAssign op { t with val := Variable.Local fresh } rhs }
+          | none => pure n
+        | _ => pure n
       | _ => pure n)
     body
 
@@ -221,6 +235,18 @@ private def transformProc (proc : Procedure) : CopyM Procedure := do
 end CopyMutatedInputs
 
 public section
+
+/-- `copyMutatedInputs` on a resolved `LaurelProgram`, and whether it copied an input. -/
+def copyMutatedInputsLaurel (program : LaurelProgram) : LaurelProgram × Bool × List Message :=
+  let (program', state) := mapLaurelProgramProceduresM CopyMutatedInputs.transformProc program |>.run {}
+  let copies (p : Procedure) : Bool := match p.body with
+    | .Transparent b | .Opaque _ (some b) _ => anyStmtExpr (fun e => match e.val with
+        | .Assign [⟨.Declare param, _⟩] _ => param.name.text.startsWith "$mutable_"
+        | _ => false) b
+    | _ => false
+  let changed := program'.staticProcedures.any copies ||
+    program'.types.any fun | .Composite c => c.instanceProcedures.any copies | _ => false
+  (program', changed, state.diagnostics)
 
 /-- Copy every mutated input into a fresh mutable local (see the module header). -/
 def copyMutatedInputs (program : Program) : Program × List Message :=

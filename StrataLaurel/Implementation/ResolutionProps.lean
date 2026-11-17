@@ -192,7 +192,9 @@ theorem fold_hasEmits {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd) 
       | (solve | (intro x; solve_by_elim [x.property]))
       | (solve | (rintro ⟨⟨v, vsrc⟩, hmem⟩
                   cases v <;> dsimp only <;>
-                    solve_by_elim [hasEmits_pure, hmem]))
+                    first
+                    | solve_by_elim [hasEmits_pure, hmem]
+                    | (apply hasEmits_seq <;> solve_by_elim [hasEmits_pure, hmem])))
       -- A `Try`'s catch clause is a structure rather than an `AstNode`, so the
       -- element pattern above does not fit: destructure the clause and discharge
       -- its optional guard and its handler body separately.
@@ -201,7 +203,7 @@ theorem fold_hasEmits {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd) 
                   · refine hasEmits_option_attach_forM _ _ ?_
                     rintro ⟨e, he⟩
                     solve_by_elim [hasEmits_pure, hmem, he]
-                  · solve_by_elim [hasEmits_pure, hmem]))
+                  · solve_by_elim [hasEmits_pure, hasEmits_seq, hmem]))
       | split
       | solve_by_elim
 
@@ -242,15 +244,21 @@ def childCollect {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd) : Lis
   | .Assign targets value =>
     targets.flatMap (fun v => match v with
       | ⟨.Field target _, _⟩ => collectStmtExprList g target
+      | ⟨.ArrayElement a i, _⟩ => collectStmtExprList g a ++ collectStmtExprList g i
       | _ => []) ++ collectStmtExprList g value
   | .Var (.Field target _) => collectStmtExprList g target
+  | .Var (.ArrayElement a i) => collectStmtExprList g a ++ collectStmtExprList g i
+  | .NewArray _ n => collectStmtExprList g n
+  | .ArrayLength a => collectStmtExprList g a
   | .IncrDecr _ _ target =>
     (match target with
      | ⟨.Field tgt _, _⟩ => collectStmtExprList g tgt
+     | ⟨.ArrayElement a i, _⟩ => collectStmtExprList g a ++ collectStmtExprList g i
      | _ => [])
   | .CompoundAssign _ target rhs =>
     (match target with
      | ⟨.Field tgt _, _⟩ => collectStmtExprList g tgt
+     | ⟨.ArrayElement a i, _⟩ => collectStmtExprList g a ++ collectStmtExprList g i
      | _ => []) ++ collectStmtExprList g rhs
   | .PureFieldUpdate target _ newValue =>
     collectStmtExprList g target ++ collectStmtExprList g newValue
@@ -307,7 +315,8 @@ theorem collect_unfold {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd)
              cases v <;> dsimp only <;>
                first
                | exact emits_pure
-               | exact fold_emits g _))
+               | exact fold_emits g _
+               | (apply emits_seq <;> exact fold_emits g _)))
       -- A `Try`'s catch clauses: each element is a structure whose traversal is
       -- itself a sequence (optional guard, then handler body), so it needs its own
       -- alternative rather than the single-fold element cases above.
@@ -323,7 +332,8 @@ theorem collect_unfold {β : Type} (g : StmtExprMd → List β) (e : StmtExprMd)
           | (split <;> dsimp only <;>
                first
                | exact emits_pure
-               | exact fold_emits g _))
+               | exact fold_emits g _
+               | (apply emits_seq <;> exact fold_emits g _)))
 
 
 /-! Clean corollaries -/

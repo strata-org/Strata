@@ -77,6 +77,7 @@ inductive StopReason where
   | exceptionsUnsupported
   | inoutArgumentMismatch (name : ProcName)
   | procedureWithoutBody (name : ProcName)
+  | callWithoutBody (name : ProcName)
   | invalidDatatypes (msg : String)
   /-- A stop that a frontend placed where it has no model (`stopSummary?`). -/
   | stop (summary : String)
@@ -175,6 +176,10 @@ where
         | _, _ => none
       | none => (merge is os).map (CallArg.inArg (P := CortexExpression) a :: ·)
 
+/-- Whether a call to `p` fails the run at once: `p` has no body to run, and no precondition of it marks a stop. -/
+@[expose] def callsWithoutBody (p : Procedure) : Bool :=
+  p.body.isNone && (p.requires.findSome? fun pre => stopSummary? pre.cond pre.md).isNone
+
 @[expose] def view (prog : UnorderedProgram) : IRCmd → CmdView CortexExpression IRCmd Hdr m
   | .cmd c =>
     -- A stop ends the run here, rather than continuing on values a frontend invented.
@@ -188,6 +193,7 @@ where
     | none => .call n (args.map (CallArg.inArg (P := CortexExpression)) ++
         lhs.map (CallArg.outArg (P := CortexExpression))) md some
     | some p =>
+      if callsWithoutBody p then .ext fun _ _ => throwThe StopReason (.callWithoutBody n) else
       match callArgs p lhs args with
       | some cas => .call n cas md some
       | none => .ext fun _ _ => throwThe StopReason (.inoutArgumentMismatch n)
@@ -195,29 +201,6 @@ where
   | .throw _ _ => .ext fun _ _ => throwThe StopReason .exceptionsUnsupported
   | c => .ext fun fuel env => do
     pure (.done (← extCmd fuel env.factory env.store c))
-
-@[expose] def stubBody (tyProg prog : UnorderedProgram) (p : Procedure) : Except String Body := do
-  let declared := ((tyProg.findProcedure? p.name).map (·.outputs)).getD p.outputs
-  let cmds ← (p.outputs.filter fun (x, _) => !p.inputs.any (·.1 == x)).flatMapM fun (x, ty) =>
-    match ((declared.lookup x).getD ty : LTy) with
-    | .forAll [] t =>
-      match arrayElem? t, t with
-      | some e, _ => LowerHeapExec.lowerCmd (LowerHeapExec.info prog) (.newArray x (mono e) (intLit 0) .empty)
-      | none, .tcons n [] =>
-        if (prog.findComposite? n).isSome then LowerHeapExec.lowerCmd (LowerHeapExec.info prog) (.new x n .empty)
-        else pure (stubChoice x ty)
-      | none, _ => pure (stubChoice x ty)
-    | _ => pure (stubChoice x ty)
-  return { cfg := { entry := "$stub", blocks := [("$stub", { cmds, transfer := .finish .empty })] },
-           handlers := [] }
-where
-  stubChoice (x : Core.Expression.Ident) (ty : Core.Expression.Ty) : List IRCmd :=
-    let tmp : Core.Expression.Ident := ⟨s!"$stub${x.name}", ()⟩
-    [.cmd (.init tmp ty .nondet .empty), .cmd (.set x (.det (mkFvar tmp.name)) .empty)]
-
-@[expose] def withStubBodies (tyProg prog : UnorderedProgram) : Except String UnorderedProgram := do
-  return { prog with procedures := ← prog.procedures.mapM fun p => do
-      if p.body.isSome then pure p else pure { p with body := some (← stubBody tyProg prog p) } }
 
 @[expose] def calleeTable (prog : UnorderedProgram) (n : String) : Option IProcedure :=
   (prog.findProcedure? n).map fun p =>
@@ -361,7 +344,6 @@ def lower (prog : UnorderedProgram) : Except String UnorderedProgram := do
     | .unordered p => pure p
     | .ordered _ => throw "the shared passes gave an ordered program"
   let prog ← (LowerCTE.runWith true typed).mapError (s!"LowerCTE: {·}")
-  let prog ← (withStubBodies typed prog).mapError (s!"stub bodies: {·}")
   return LowerHeapExec.eraseArrays prog
 
 def prepare (prog : UnorderedProgram) : Except StopReason UnorderedProgram := do

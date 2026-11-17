@@ -81,7 +81,7 @@ procedure collect(lf: Sequence<int>, rt: Sequence<int>, root: int)
 //       ^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
         f := seqUpdate(f, a, seqLength(l));
-//      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
         from := seqBuild(from, a);
         l := seqBuild(l, seqSelect(lf, a));
@@ -101,7 +101,7 @@ procedure collect(lf: Sequence<int>, rt: Sequence<int>, root: int)
 //       ^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
         f := seqUpdate(f, b, seqLength(l));
-//      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
 // desired: verifies
         from := seqBuild(from, b);
         l := seqBuild(l, seqSelect(lf, b));
@@ -193,7 +193,7 @@ procedure collect(lf: Sequence<int>, rt: Sequence<int>, root: int)
       if seqSelect(f, a) == -1 then {
 //       ^^^^^^^^^^^^^^^ error: precondition could not be proved
         f := seqUpdate(f, a, seqLength(l));
-//      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
         from := seqBuild(from, a);
         l := seqBuild(l, seqSelect(lf, a));
 //                       ^^^^^^^^^^^^^^^^ error: precondition could not be proved
@@ -207,7 +207,7 @@ procedure collect(lf: Sequence<int>, rt: Sequence<int>, root: int)
       if seqSelect(f, b) == -1 then {
 //       ^^^^^^^^^^^^^^^ error: precondition could not be proved
         f := seqUpdate(f, b, seqLength(l));
-//      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
+//           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: precondition could not be proved
         from := seqBuild(from, b);
         l := seqBuild(l, seqSelect(lf, b));
 //                       ^^^^^^^^^^^^^^^^ error: precondition could not be proved

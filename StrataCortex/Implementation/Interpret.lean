@@ -6,6 +6,8 @@
 module
 
 public import StrataLaurel.Implementation.LaurelCompilationPipeline
+public import StrataLaurel.Implementation.RestructureGotos
+public import StrataLaurel.Implementation.CopyMutatedInputs
 public import StrataCortex.Implementation.Pipeline
 public import Strata.Languages.Cortex.Interpreter
 public import Strata.Languages.Cortex.DirectInterpreter
@@ -34,6 +36,7 @@ def cortexStopMessage : StopReason → String
   | .exceptionsUnsupported => "exceptions are not supported"
   | .inoutArgumentMismatch n => s!"call of {n}: an inout argument is not the variable its result is assigned to"
   | .procedureWithoutBody n => s!"entry procedure {n} has no body"
+  | .callWithoutBody n => s!"a call to '{n}', which has no body to run"
   | .invalidDatatypes msg => s!"invalid datatypes: {msg}"
   | .at _ r => cortexStopMessage r
 
@@ -217,10 +220,25 @@ as `interpretProgram` does. The error is the reason the program could not be
 run at all: it does not resolve, Cortex does not accept it, or it has no
 `entry` procedure. -/
 def interpretEntries (program : LaurelProgram) (fuel : Nat := 10000)
-    (options : LaurelTranslateOptions := {}) : Except String InterpretOutcome := do
+    (options : LaurelTranslateOptions := {}) :
+    Except String InterpretOutcome := do
   let (resolved, model, _) ← match resolveLaurel options program with
     | .ok r => pure r
     | .error ds => throw s!"Laurel resolution failed: {ds.map (·.message)}"
+  let (copied, changed, copyDiags) := copyMutatedInputsLaurel resolved
+  if copyDiags.any (·.kind != .warning) then
+    throw s!"Laurel to Cortex translation failed: {copyDiags.map (·.message)}"
+  let (resolved, model) ← if !changed then pure (resolved, model) else
+    let again := resolveWithInferredThrows copied
+      (realizeCoercion := options.realizeCoercion) (toBool := options.toBool)
+      (reservedNames := options.reservedNames) (entryConstrainedGlobals := true)
+    if again.errors.any (·.kind != .warning) then
+      throw s!"Laurel resolution failed: {again.errors.toList.map (·.message)}"
+    pure (again.program, again.model)
+  let (resolved, st) :=
+    (mapLaurelProgramProceduresM (mapProcedureBodiesM RestructureGotos.structureBody) resolved).run {}
+  if st.diags.any (·.kind != .warning) then
+    throw s!"Laurel to Cortex translation failed: {st.diags.map (·.message)}"
   let (mod?, diags) := FromLaurel.run model resolved options.overflowChecks (uncheck := false)
   let some m := mod?
     | throw s!"Laurel to Cortex translation failed: {diags.map (·.message)}"
