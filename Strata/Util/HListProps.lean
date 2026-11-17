@@ -18,6 +18,7 @@ import all Strata.Util.HList
 * `HList.get_cast` — `get` commutes with `cast`
 * `HList.get_append_left`, `HList.get_append_cons_self`, `HList.get_append_right`
   — `get` on an appended `HList`
+* `HList.All.imp` — `HList.All` is monotone in its predicate
 -/
 
 public section
@@ -94,3 +95,12 @@ theorem HList.get_append_right {f : α → Type} {xs ys : List α} {a : α}
       simp only [List.cons_append, append, List.append_eq, get_cons_succ, List.length_cons, Nat.reduceSubDiff]
       exact ih n (by simpa using h) (by simpa using h') (by grind)
 
+/-- If every component satisfies `P`, and `P` implies `Q` componentwise, then
+every component satisfies `Q`. -/
+theorem HList.All.imp {α : Type} {f : α → Type} {P Q : (a : α) → f a → Prop}
+    (hPQ : ∀ a (x : f a), P a x → Q a x) :
+    ∀ {as : List α} {xs : HList f as}, HList.All P xs → HList.All Q xs
+  | _, .nil, _ => trivial
+  | _, .cons x xs, hall => by
+    simp only [HList.All] at hall ⊢
+    exact ⟨hPQ _ x hall.1, HList.All.imp hPQ hall.2⟩

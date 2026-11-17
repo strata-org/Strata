@@ -22,6 +22,11 @@ Typing and denotation results for ADT constructor applications.
 - `constr_callOfLFunc_argTys_eq` — constructor calls at the same result type have equal arg type lists
 - `callOfLFunc_constr_disjoint_denote` — different constructors at the same type denote to different values
 - `callOfLFunc_constr_injective_denote` — same constructor, equal denotation implies pointwise equal arguments
+- `constr_induction_on` — induction over any set of datatype sorts (for example, one datatype
+  instance or one mutual block), derived from `ConstrInterpConsistent.constr_induction`
+- `ConstrInterpConsistent.constr_inversion` — every value of a datatype sort is
+  a constructor application, derived from
+  `ConstrInterpConsistent.constr_induction`
 -/
 
 namespace Lambda
@@ -451,5 +456,64 @@ theorem callOfLFunc_constr_injective_denote
   subst hσ_eq
   exact denoteArgs_eq_implies_denote_eq tcInterp opInterp fvarVal vt .nil
     h_args₁ h_args₂ hdArgs_eq i a₁ a₂ σ₁ ha₁ ha₂ hσ₁ hta₁ hta₂
+
+section ConstrInduction
+
+variable {T : LExprParams} {tcInterp : TyConstrInterp} {opInterp : OpInterp tcInterp}
+  {F : @Factory T}
+
+/-- Induction over a chosen set `S` of datatype sorts, for instance the sort of
+one datatype instance or the sorts of one mutually recursive block. A family of
+predicates holds of every value of every sort in `S` if it is preserved by each
+constructor whose result sort is in `S`: when every argument whose sort is in
+`S` satisfies its predicate, so does the constructor application. Constructors
+with result sort outside `S` need no case. -/
+theorem constr_induction_on
+    (hcic : ConstrInterpConsistent tcInterp opInterp F)
+    (S : LSort → Prop) (hS : ∀ s, S s → F.IsDatatypeSort s)
+    (P : (s : LSort) → SortDenote tcInterp s → Prop)
+    (hstep : ∀ f ∈ F.toArray, f.isConstr = true → ∀ (vt : TyVarVal)
+      (args : HList (SortDenote tcInterp) (f.inputs.values.map (LMonoTy.substTyVars vt))),
+        S (LMonoTy.substTyVars vt f.output) →
+        HList.All (fun s x => S s → P s x) args →
+        P _ (constrApp tcInterp opInterp f vt args)) :
+    ∀ (s : LSort) (v : SortDenote tcInterp s), S s → P s v := by
+  have hind := hcic.constr_induction (fun s x => S s → P s x)
+  have hstep' : ∀ f ∈ F.toArray, f.isConstr = true → ∀ (vt : TyVarVal)
+      (args : HList (SortDenote tcInterp) (f.inputs.values.map (LMonoTy.substTyVars vt))),
+        HList.All (fun s x => F.IsDatatypeSort s → S s → P s x) args →
+        S (LMonoTy.substTyVars vt f.output) →
+        P _ (constrApp tcInterp opInterp f vt args) := by
+    intro f hf hfc vt args hall hSout
+    have hall' : HList.All (fun s x => S s → P s x) args := by
+      apply HList.All.imp _ hall
+      intro s x hx hSs
+      exact hx (hS s hSs) hSs
+    exact hstep f hf hfc vt args hSout hall'
+  intro s v hSs
+  exact hind hstep' s v (hS s hSs) hSs
+
+/-- Constructor inversion: every value of a datatype sort is a constructor
+applied to arguments, with the type variables instantiated so that the
+constructor's result sort is the value's sort. Proved by induction, taking the
+conclusion itself as the predicate. -/
+theorem ConstrInterpConsistent.constr_inversion
+    (hcic : ConstrInterpConsistent tcInterp opInterp F) :
+    ∀ (s : LSort) (v : SortDenote tcInterp s), F.IsDatatypeSort s →
+      ∃ f ∈ F.toArray, f.isConstr = true ∧
+        ∃ (vt : TyVarVal) (hs : LMonoTy.substTyVars vt f.output = s)
+          (args : HList (SortDenote tcInterp)
+            (f.inputs.values.map (LMonoTy.substTyVars vt))),
+          v = hs ▸ constrApp tcInterp opInterp f vt args := by
+  refine hcic.constr_induction
+    (fun s v => ∃ f ∈ F.toArray, f.isConstr = true ∧
+      ∃ (vt : TyVarVal) (hs : LMonoTy.substTyVars vt f.output = s)
+        (args : HList (SortDenote tcInterp)
+          (f.inputs.values.map (LMonoTy.substTyVars vt))),
+        v = hs ▸ constrApp tcInterp opInterp f vt args) ?_
+  intro f hf hfc vt args _
+  exact ⟨f, hf, hfc, vt, rfl, args, rfl⟩
+
+end ConstrInduction
 
 end Lambda

@@ -1460,9 +1460,16 @@ private theorem eval_consistent :
 /-- `ConstrInterpConsistent`: vacuous, since no factory function is a
 constructor. -/
 private theorem constr_consistent : ConstrInterpConsistent tcInterp opInterp Core.Factory := by
+  have hnc : ∀ f ∈ Core.Factory.toArray, ¬ f.isConstr = true := by
+    intro f hf hc
+    rw [all_not_constr f hf] at hc
+    cases hc
   constructor
-  · intro f1 _ hf1 _ hc1 _ _ _; exact absurd hc1 (by rw [all_not_constr f1 hf1]; simp)
-  · intro f hf hc; exact absurd hc (by rw [all_not_constr f hf]; simp)
+  · intro f1 _ hf1 _ hc1 _ _ _; exact absurd hc1 (hnc f1 hf1)
+  · intro f hf hc; exact absurd hc (hnc f hf)
+  · intro P _ s v hs
+    obtain ⟨f, hf, hc, -⟩ := hs
+    exact absurd hc (hnc f hf)
 
 /-! ### The axioms of `Core.Factory` hold in the model
 

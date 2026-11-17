@@ -422,17 +422,27 @@ private theorem FnInstance.concreteEval_eq {g g' : LFunc T} (hrel : FnInstance g
     c md opTy args = some res →
     c md opTy (args.map (·.renameOps demangleRen)) = some (res.renameOps demangleRen)
 
+/-- A constructor whose name demangles to itself has the same application under the demangled
+    interpretation as under the original. -/
+private theorem constrApp_demangledOpInterp {tc : TyConstrInterp} (op : OpInterp tc)
+    (f : LFunc T) (vt : TyVarVal)
+    (args : HList (SortDenote tc) (f.inputs.values.map (LMonoTy.substTyVars vt)))
+    (hname : demangleName f.name.name = f.name.name) :
+    constrApp tc (demangledOpInterp op) f vt args = constrApp tc op f vt args := by
+  simp only [constrApp, demangledOpInterp, hname]
+
 /-- **A model of a factory of instances.** If every function of `F'` is an instance of a
     function of `F`, `F`'s concrete evaluators commute with demangling, and every
-    constructor of `F'` is a constructor of `F` with a name that demangles to itself, then
-    reading every operator `n` as a model of `F` reads `demangleName n` is a model of `F'`,
-    with the same carriers. -/
+    constructor of `F'` is a constructor of `F` with a name that demangles to itself and every
+    constructor of `F` is in `F'`, then `F'` has a model with the same carriers. That model
+    reads each operator `n` as the model of `F` reads `demangleName n`. -/
 @[expose] noncomputable def Interp.ofInstances [DecidableEq T.IDMeta] {F F' : Lambda.Factory T}
     (I : Interp F)
     (hrel : ∀ n (hn : n ∈ F'), ∃ o, ∃ ho : o ∈ F, FnInstance (F[o]'ho) (F'[n]'hn))
     (hnat : ConcreteEvalsCommuteDemangle F)
     (hconstr : ∀ f' ∈ F'.toArray, f'.isConstr = true →
-      f' ∈ F.toArray ∧ demangleName f'.name.name = f'.name.name) : Interp F' where
+      f' ∈ F.toArray ∧ demangleName f'.name.name = f'.name.name)
+    (hcover : ∀ f ∈ F.toArray, f.isConstr = true → f ∈ F'.toArray) : Interp F' where
   tcInterp := I.tcInterp
   opInterp := demangledOpInterp I.opInterp
   allInhabited := I.allInhabited
@@ -448,7 +458,7 @@ private theorem FnInstance.concreteEval_eq {g g' : LFunc T} (hrel : FnInstance g
     obtain ⟨o, ho, hr⟩ := hrel n hn
     exact hr.axiomsSatisfied (I.axiomsSatisfied o ho)
   constrConsistent := by
-    refine ⟨fun f1 f2 h1 h2 c1 c2 hne vt => ?_, fun f h c vt => ?_⟩
+    refine ⟨fun f1 f2 h1 h2 c1 c2 hne vt => ?_, fun f h c vt => ?_, ?_⟩
     · have hold := I.constrConsistent.constr_disjoint f1 f2 (hconstr f1 h1 c1).1
         (hconstr f2 h2 c2).1 c1 c2 hne vt
       unfold demangledOpInterp
@@ -458,6 +468,20 @@ private theorem FnInstance.concreteEval_eq {g g' : LFunc T} (hrel : FnInstance g
       unfold demangledOpInterp
       rw [(hconstr f h c).2]
       exact hold
+    · intro P hstep sort v hs
+      obtain ⟨f', hf', hc', vt', hs'⟩ := hs
+      have hsF : F.IsDatatypeSort sort := ⟨f', (hconstr f' hf' hc').1, hc', vt', hs'⟩
+      refine I.constrConsistent.constr_induction P ?_ sort v hsF
+      intro f hf hc vt args hall
+      have hf' : f ∈ F'.toArray := hcover f hf hc
+      have hall' : HList.All (fun s x => F'.IsDatatypeSort s → P s x) args := by
+        refine HList.All.imp ?_ hall
+        intro s x hx hsF'
+        obtain ⟨g, hg, hgc, vtg, hsg⟩ := hsF'
+        exact hx ⟨g, (hconstr g hg hgc).1, hgc, vtg, hsg⟩
+      have hres := hstep f hf' hc vt args hall'
+      rw [constrApp_demangledOpInterp I.opInterp f vt args (hconstr f hf' hc).2] at hres
+      exact hres
 
 end Core.MonomorphizeFunctions
 
