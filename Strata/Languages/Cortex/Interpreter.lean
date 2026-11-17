@@ -87,7 +87,15 @@ inductive StopReason where
   | indexOutOfRange (index : Int) (length : Nat)
   | elementTypeMismatch (elemTy : Core.Expression.Ty) (array : LMonoTy)
   | elementNotAReference (array : LMonoTy)
+  /-- `r`, located at `md` (`StopReason.locate`). -/
+  | at (md : MD) (r : StopReason)
   deriving Repr, Inhabited
+
+/-- `r`, located at `md` unless it is already located at a command with a source range: an error in a callee
+keeps the callee's command. -/
+@[expose] def StopReason.locate (md : MD) : StopReason → StopReason
+  | r@(.at m inner) => if (Imperative.getFileRange m).isSome then r else .at md inner
+  | r => .at md r
 
 class Effects (m : Type → Type) where
   emit : Trace → m Unit
@@ -333,13 +341,17 @@ stops when the object is not an array, or when its type is not a subtype of `Arr
 @[expose] def paramTys (p : Procedure) (x : Core.Expression.Ident) : Option Core.Expression.Ty :=
   (p.inputs ++ p.outputs).lookup x
 
+/-- `x`, whose error is located at `md` (`StopReason.locate`). -/
+@[expose] def locatedAt {α : Type} (md : MD) (x : m α) : m α :=
+  tryCatch x fun e => throw (e.locate md)
+
 @[expose] def stepWith (prog : UnorderedProgram) (evalCmd : IEnv → IRCmd → m CmdResult) :
     IConfig → m (IConfig)
   | .atBlock b t ρ =>
     match List.lookup t b.cfg.blocks with
     | some blk => pure (.inBlock b t blk.cmds blk.transfer ρ)
     | none => throw (.missingBlock t)
-  | .inBlock b t (c :: cs) tr ρ => do
+  | .inBlock b t (c :: cs) tr ρ => locatedAt (IRCmd.md c) do
     let r ← evalCmd ρ c
     let tys := match c with
       | .cmd (.init x ty _ _) => fun y => if y = x then some ty else ρ.tys y
@@ -354,7 +366,7 @@ stops when the object is not an array, or when its type is not a subtype of `Arr
         match b.handlerFor? prog t ty with
         | some hd => pure (.atBlock b hd.target { ρ' with store := r.store.update hd.binder v })
         | none => pure (.raised ρ' v (IRCmd.md c))
-  | .inBlock b _ [] (.condGoto e lt lf _) ρ =>
+  | .inBlock b _ [] (.condGoto e lt lf md) ρ => locatedAt md do
     match evalPure ρ.factory ρ.store e with
     | some v =>
       if Core.eraseLocs v = HasBool.tt (P := Core.Expression) then pure (.atBlock b lt ρ)

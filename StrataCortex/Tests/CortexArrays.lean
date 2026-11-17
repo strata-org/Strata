@@ -240,7 +240,10 @@ meta def withBytes (cmds : List Cmd) : List Cmd :=
    .init "x" bv32 none (at_ 2)] ++ cmds
 
 /--
-info: stopped: 'readAtOtherConstrained': array type (Array byte) is not a subtype of (Array bit)
+info: 3: the interpreter fails here: array type (Array byte) is not a subtype of (Array bit)
+3: the interpreter fails here: array type (Array byte) is not a subtype of (Array bv32)
+3: the interpreter fails here: ill-typed value
+stopped: 'readAtOtherConstrained': array type (Array byte) is not a subtype of (Array bit)
 stopped: 'readAtBase': array type (Array byte) is not a subtype of (Array bv32)
 stopped: 'writeAtOtherConstrained': array type (Array byte) is not a subtype of (Array bit)
 stopped: 'writeAtBase': array type (Array byte) is not a subtype of (Array bv32)
@@ -293,7 +296,8 @@ x: bv32, n: int
 an object that is not an array, at an element type that the array's type is not an array of,
 at a written value that is not of the element type, and at an element type that has no
 default value. The default element of an array of references is no object, so reading a
-field of it stops the run too. -/
+field of it stops the run too. Each is also reported at the command that raised it, once for
+each message and place. -/
 
 meta def withInts (cmds : List Cmd) : List Cmd :=
   [.init "a" ints none (at_ 1), .newArray "a" bv32 (.int 3) (at_ 1),
@@ -301,7 +305,16 @@ meta def withInts (cmds : List Cmd) : List Cmd :=
    .init "o" (.named "Box") none (at_ 2), .new "o" "Box" (at_ 2)] ++ cmds
 
 /--
-info: stopped: 'negativeLength': array length -1 is negative
+info: 3: the interpreter fails here: array length -1 is negative
+3: the interpreter fails here: index 3 is out of range for an array of length 3
+3: the interpreter fails here: index -1 is out of range for an array of length 3
+3: the interpreter fails here: index -2 is out of range for an array of length 3
+3: the interpreter fails here: not an array
+3: the interpreter fails here: array type (Array bv32) is not a subtype of (Array bv64)
+3: the interpreter fails here: ill-typed value
+3: the interpreter fails here: no value to choose
+5: the interpreter fails here: not a reference
+stopped: 'negativeLength': array length -1 is negative
 stopped: 'readAtLength': index 3 is out of range for an array of length 3
 stopped: 'readBelowZero': index -1 is out of range for an array of length 3
 stopped: 'writeAtLength': index 3 is out of range for an array of length 3
@@ -354,6 +367,8 @@ meta def atLengthLimit : Wire.Procedure :=
 /--
 info: 10: assertion does not hold
 11: assertion does not hold
+3: the interpreter fails here: array length 65537 is over the interpreter's limit of 65536
+3: the interpreter fails here: array length 2147483647 is over the interpreter's limit of 65536
 stopped: 'oneOverLengthLimit': array length 65537 is over the interpreter's limit of 65536
 stopped: 'greatestJavaLength': array length 2147483647 is over the interpreter's limit of 65536
 -/
@@ -383,7 +398,8 @@ meta def compositeNamedArray : Wire.Program :=
                    { name := "Array", extending := ["Object"], fields := [] }] }
 
 /--
-info: stopped: 'compositeNamedArray': not an array
+info: 12: the interpreter fails here: not an array
+stopped: 'compositeNamedArray': not an array
 -/
 #guard_msgs in
 #eval interpret compositeNamedArray
@@ -468,6 +484,7 @@ field of it. -/
 info: 5: assertion does not hold
 6: assertion does not hold
 11: assertion does not hold
+12: the interpreter fails here: object has no field Base.tag
 stopped: 'parentField': object has no field Base.tag
 -/
 #guard_msgs in
@@ -698,7 +715,9 @@ stops the run. With or without them, an `Array A` is not read at the element typ
 subtype. -/
 
 /--
-info: stopped: 'throughParentVariable': array type (Array B) is not a subtype of (Array A)
+info: 4: the interpreter fails here: array type (Array B) is not a subtype of (Array A)
+2: the interpreter fails here: array type (Array A) is not a subtype of (Array B)
+stopped: 'throughParentVariable': array type (Array B) is not a subtype of (Array A)
 stopped: 'readAsChildElement': array type (Array A) is not a subtype of (Array B)
 -/
 #guard_msgs in
@@ -709,7 +728,8 @@ stopped: 'readAsChildElement': array type (Array A) is not a subtype of (Array B
     .init "x" (.named "B") none (at_ 2), .readElem "x" (.var "a") (.int 0) (.named "B") (at_ 2)]])
 
 /--
-info: stopped: 'readAsChildElement': array type (Array A) is not a subtype of (Array B)
+info: 2: the interpreter fails here: array type (Array A) is not a subtype of (Array B)
+stopped: 'readAsChildElement': array type (Array A) is not a subtype of (Array B)
 -/
 #guard_msgs in
 #eval interpret (refProgram [
@@ -877,7 +897,11 @@ whose elements are not references, and on a reference to no object. The default 
 an array of references is no object, so it has to be told apart before the check. -/
 
 /--
-info: stopped: 'arrayIsObject': not an array
+info: 3: the interpreter fails here: not an array
+4: the interpreter fails here: the elements of array type (Array bv32) are not references
+4: the interpreter fails here: dangling reference
+4: the interpreter fails here: not a reference
+stopped: 'arrayIsObject': not an array
 stopped: 'primitiveArray': the elements of array type (Array bv32) are not references
 stopped: 'danglingArray': dangling reference
 stopped: 'danglingObject': dangling reference
