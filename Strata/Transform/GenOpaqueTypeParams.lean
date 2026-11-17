@@ -58,13 +58,15 @@ For each procedure whose `header.typeArgs` is `x₁, …, xₖ`:
 2. A type substitution mapping each `xᵢ` to its opaque nullary type constructor
    is applied to the whole procedure: input/output signatures, precondition and
    postcondition expressions, and every expression *and local declaration type*
-   in the body (`LExpr.applyTypeSubst` for expression annotations, `LMonoTy.subst`
-   for signature and declaration types).
+   in the body, structured or CFG (`LExpr.applyTypeSubst` for expression
+   annotations and branch guards, `LMonoTy.subst` for signature and declaration
+   types).
 3. `header.typeArgs` is cleared, so the procedure is now monomorphic.
 
 The statement-level substitution reuses the type checker's `Core.Statement.subst`
-(`StatementType.lean`, which in turn uses `Command.subst` and `Lambda.LTy.subst`).
-Only structured bodies are supported: a CFG body is reported as an error.
+(`StatementType.lean`, which in turn uses `Command.subst` and `Lambda.LTy.subst`); a CFG
+body is substituted block by block with `Statement.DetBlock.subst`, the substitution the CFG
+type checker applies to its blocks.
 -/
 
 public section
@@ -85,15 +87,15 @@ whole-procedure substitution on top of it. -/
 open Core.Transform
 
 /-- Apply `S` to a whole procedure: its signature, spec clauses, and body, and
-    clear `header.typeArgs`.  Throws if the body is a CFG (unsupported).  The
-    body substitution reuses `Statement.subst`. -/
-def substProc (S : Subst) (proc : Procedure) : CoreTransformM Procedure := do
-  let body ← match proc.body with
-    | .structured ss => pure (Procedure.Body.structured (ss.map (Core.Statement.Statement.subst S)))
-    | .cfg _ =>
-      throw (Strata.Message.fromString
-        "GenOpaqueTypeParams: CFG procedure bodies are not supported")
-  return { proc with
+    clear `header.typeArgs`.  The body substitution reuses `Statement.subst` for a
+    structured body and `Statement.DetBlock.subst` for each block of a CFG body. -/
+def substProc (S : Subst) (proc : Procedure) : Procedure :=
+  let body := match proc.body with
+    | .structured ss => Procedure.Body.structured (ss.map (Core.Statement.Statement.subst S))
+    | .cfg g =>
+      Procedure.Body.cfg
+        { g with blocks := g.blocks.map fun (l, b) => (l, Core.Statement.DetBlock.subst S b) }
+  { proc with
     header := { proc.header with
       typeArgs := [],
       inputs := proc.header.inputs.map (fun (id, mty) => (id, LMonoTy.subst S mty)),
@@ -165,7 +167,7 @@ def genOpaqueProc (taken : Std.HashSet String) (proc : Procedure) (md : MetaData
     return [Decl.proc proc md]
   else
     let (opaqueDecls, S) ← mkOpaqueSubst taken proc.header.name.name tyVars
-    let proc' ← substProc S proc
+    let proc' := substProc S proc
     return opaqueDecls ++ [Decl.proc proc' md]
 
 /-- Replace the type parameters of a lemma by opaque types: a lemma holds at every instantiation of its type
@@ -189,25 +191,18 @@ def run (p : Program) : CoreTransformM Program := do
     match decl with
     | .proc proc md =>
       if proc.header.typeArgs.isEmpty then
-        -- Skip: nothing to substitute.  The structural guards (`.noCalls`,
-        -- `.noCFGBodies`) protect the substitution step, which is only applied
-        -- to polymorphic procedures; passing a non-polymorphic procedure through
-        -- unchanged is always safe regardless of its body or call sites.
+        -- Skip: nothing to substitute.  The no-call check below protects the
+        -- substitution step, which is only applied to polymorphic procedures;
+        -- passing a non-polymorphic procedure through unchanged is always safe
+        -- regardless of its body or call sites.
         pure (acc.push decl)
+      else if !(proc.body.allStatements Statements.noCalls) then
+        throw (Strata.Message.fromFormat
+          f!"❌ GenOpaqueTypeParams: procedure {proc.header.name.name} still \
+             contains a call; eliminate calls before running this pass.")
       else
-        match proc.body with
-        | .cfg _ =>
-          throw (Strata.Message.fromFormat
-            f!"❌ GenOpaqueTypeParams: procedure {proc.header.name.name} has a CFG \
-               body; only structured bodies are supported.")
-        | .structured ss =>
-          if !(Statements.noCalls ss) then
-            throw (Strata.Message.fromFormat
-              f!"❌ GenOpaqueTypeParams: procedure {proc.header.name.name} still \
-                 contains a call; eliminate calls before running this pass.")
-          else
-            let contrib ← genOpaqueProc taken proc md
-            pure (acc ++ contrib.toArray)
+        let contrib ← genOpaqueProc taken proc md
+        pure (acc ++ contrib.toArray)
     | .lemma l md => do
       let contrib ← genOpaqueLemma taken l md
       pure (acc ++ contrib.toArray)
@@ -284,7 +279,7 @@ def genOpaqueTypeParamsPipelinePhase : PipelinePhase :=
   -- contains a call, which is why `noCalls` is required and not merely
   -- convenient.
   modelPreservingPipelinePhase "genOpaqueTypeParams"
-    (requires := factSet![.noCFGBodies, .noCalls])
+    (requires := factSet![.noCalls])
     (establishes := factSet![.noPolymorphicProcedures])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,

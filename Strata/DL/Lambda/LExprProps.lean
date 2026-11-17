@@ -160,6 +160,10 @@ theorem hasBVarCached_eq {T : LExprParamsT} (e : LExpr T) :
     hasBVarCached e = hasBVar e :=
   run'_output_eq (hasBVarPtrCache e) PtrCache.empty
 
+/-- The pointer-address-memoized `sizeCached` computes exactly the tree size `size`. -/
+theorem sizeCached_eq {T : LExprParamsT} (e : LExpr T) : sizeCached e = size T e :=
+  run'_output_eq (sizePtrCache e) PtrCache.empty
+
 /-- Every expression equals itself when metadata is ignored. -/
 theorem beqIgnoringMetadata_refl {T : LExprParamsT} [BEq T.TypeType] [LawfulBEq T.TypeType]
     [BEq (Identifier T.base.IDMeta)] [LawfulBEq (Identifier T.base.IDMeta)] (e : LExpr T) :

@@ -21,6 +21,7 @@ meta import Strata.Transform.FilterProcedures
 meta import Strata.Transform.PrecondElim
 meta import Strata.Transform.ProcedureInlining
 meta import Strata.Transform.TerminationCheck
+meta import Strata.Transform.NondetElim
 meta import Strata.Transform.CommonSubexprElim
 meta import Strata.Transform.FunctionInlining
 meta import Strata.Transform.UnrollBoundedQuantifiers
@@ -32,6 +33,7 @@ import Strata.Transform.FilterProcedures
 import Strata.Transform.PrecondElim
 import Strata.Transform.ProcedureInlining
 import Strata.Transform.TerminationCheck
+import Strata.Transform.NondetElim
 import Strata.Transform.CommonSubexprElim
 import Strata.Transform.FunctionInlining
 import Strata.Transform.UnrollBoundedQuantifiers
@@ -576,16 +578,16 @@ LI: noLoopInvariants   LM: noLoopMeasures   UI: uniqueInits   LB: loopBodyNoInit
 phase                           CF  Lo  LM  LB  BR  NG  PC  Po  In  EC
  1 assertWellFormedCalls      V : : : : : : : : : : : : : : : : : : : :
  2 assertNoCFGBodies          | V : : : : : : : : : : : : : : : : : : :
- 3 callElim                   + + V : : :         : :   : : :
- 4 termCheck                  ' + | : : :     :   : :   :   : : :
- 5 precondElim                  + | : : :     :   V :   :   : : :
- 6 insertLoopInvariantAsserts   + | : V V     : : | :   : : : :
- 7 loopElim                     + | V + +       : | :   : : : :
- 8 genOpaqueTypeParams          + + | | |     : : | :   : V : : :
+ 3 callElim                   + | V : : :         : :   : : :
+ 4 termCheck                  ' | | : : :     :   : :   :   : : :
+ 5 precondElim                  | | : : :     :   V :   :   : : :
+ 6 insertLoopInvariantAsserts   | | : V V     : : | :   : : : :
+ 7 loopElim                     | | V + +       : | :   : : : :
+ 8 genOpaqueTypeParams          | + | | |     : : | :   : V : : :
  9 typeCheck                    | | | | |     : : | :   : | : V :   V
 10 monomorphizeFunctions        | | | | |     : : | :   : + V | :   |
-11 simplify                     + + | | |     :   + : : : | | | : : |
-12 nondetElim                   + + | | |       : | V   : | | |     |
+11 simplify                     | + | | |     :   + : : : | | | : : |
+12 nondetElim                   | + | | |       : | V   : | | |     |
 13 symbolicEval                 + V + | |     V   | - V V | | | V   |
 14 betaReduce                   | | | | |     | V | : | | | | | | : | :
 15 commonSubexprElim            + | | | |     + | | : | | | | | -   |
@@ -1166,7 +1168,7 @@ LI: noLoopInvariants   LM: noLoopMeasures   UI: uniqueInits   LB: loopBodyNoInit
 
                              WF  Ca  LI  UI  SS  PF  HO  PP  TA  TF  AH
 phase                          CF  Lo  LM  LB  BR  NG  PC  Po  In  EC
- 1 callElim                  # # V : : :         : :   : : :
+ 1 callElim                  # : V : : :         : :   : : :
  2 betaReduce                  : | : : :     : V : : : : : : : : : : :
    the verification back end   # + #         # + #   # # # # #
 -/
@@ -1212,17 +1214,17 @@ the offending construct. A caller invoking a phase directly, or a broken
 `establishes` claim upstream, therefore gets an error naming the phase and the
 construct. -/
 
-/-- info: rejected: ❌ PrecondElim: procedure cfgProc has a CFG body; preconditions can only be eliminated from structured bodies. -/
-#guard_msgs in
-#eval IO.println (runAsserter precondElimPipelinePhase cfgBodiedProgram)
-
 /-- info: rejected: ❌ CommonSubexprElim: procedure cfgProc has a CFG body; common subexpressions can only be eliminated from structured bodies. -/
 #guard_msgs in
 #eval IO.println (runAsserter commonSubexprElimPhase cfgBodiedProgram)
 
-/-- info: rejected: ❌ TerminationCheck: procedure cfgProc has a CFG body; termination is only checked on structured bodies. -/
+/-! The phases that do not require `noCFGBodies` accept a CFG body: call elimination and
+    precondition elimination rewrite the commands of its blocks, and the others keep it. -/
+/-- info: [accepted, accepted, accepted, accepted, accepted, accepted] -/
 #guard_msgs in
-#eval IO.println (runAsserter termCheckPipelinePhase cfgBodiedProgram)
+#eval IO.println ([callElimPipelinePhase, precondElimPipelinePhase, termCheckPipelinePhase,
+  insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase,
+  NondetElim.nondetElimPipelinePhase].map (runAsserter · cfgBodiedProgram))
 
 /-! A non-polymorphic procedure with a CFG body is passed through unchanged:
     there is nothing to monomorphize, so structural checks are skipped. -/
@@ -1230,18 +1232,28 @@ construct. -/
 #guard_msgs in
 #eval IO.println (runAsserter genOpaqueTypeParamsPipelinePhase cfgBodiedProgram)
 
-/-! For a *polymorphic* procedure the CFG-body and noCalls checks still fire,
-    because the substitution cannot be applied without a structured body, and
-    monomorphization per procedure is only sound once calls are gone. -/
+/-! For a *polymorphic* procedure the noCalls check fires, in a structured body and in the
+    blocks of a CFG body, because monomorphization per procedure is only sound once calls are
+    gone. A polymorphic CFG body without calls is substituted block by block. -/
 
 private def polyProgOf (typeArgs : List String) (body : Procedure.Body) : Program :=
   { decls := [.proc { (default : Procedure) with header.typeArgs := typeArgs, body := body }
       default] }
 
-/-- info: rejected: ❌ GenOpaqueTypeParams: procedure _ has a CFG body; only structured bodies are supported. -/
+/-- info: accepted -/
 #guard_msgs in
 #eval IO.println (runAsserter genOpaqueTypeParamsPipelinePhase
   (polyProgOf ["T"] (.cfg { entry := "entry", blocks := [] })))
+
+/-- A CFG body whose one block calls `f`. -/
+private def cfgCallBody : Procedure.Body :=
+  .cfg {
+    entry := "entry"
+    blocks := [("entry", { cmds := [.call "f" [] #[]], transfer := .finish #[] })] }
+
+/-- info: rejected: ❌ GenOpaqueTypeParams: procedure _ still contains a call; eliminate calls before running this pass. -/
+#guard_msgs in
+#eval IO.println (runAsserter genOpaqueTypeParamsPipelinePhase (polyProgOf ["T"] cfgCallBody))
 
 /-- info: rejected: ❌ GenOpaqueTypeParams: procedure _ still contains a call; eliminate calls before running this pass. -/
 #guard_msgs in

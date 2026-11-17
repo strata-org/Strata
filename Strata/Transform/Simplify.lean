@@ -32,10 +32,10 @@ declined is left for the SMT encoder to emit once as a shared definition.
 
 The phase carries a variable's value forward from its definition and folds under
 it, which is what lets `int.add(a, 1)` become `4` when `a` is `3`. It is
-model-preserving and establishes no `ProgramFact`. It asks three things of the
-program it runs on — structured bodies, no procedure call, and no function
-carrying a precondition (`noCFGBodies`, `noCalls`, `noPrecondsFromFuncs`) — so a
-pipeline can place it anywhere past those where it wants smaller terms.
+model-preserving and establishes no `ProgramFact`. It asks two things of the
+program it runs on — no procedure call, and no function carrying a precondition
+(`noCalls`, `noPrecondsFromFuncs`) — so a pipeline can place it anywhere past those
+where it wants smaller terms.
 -/
 
 public section
@@ -528,6 +528,7 @@ end Core.Simplify
     over-approximated, so no obligation becomes easier than it was.
 
     It requires bodies without calls; every pipeline that runs it eliminates them first.
+    It keeps a CFG body as it is and simplifies its procedure's contract.
     It accepts loops: a loop body is simplified knowing nothing about the variables it
     writes, and the unit tests pin that behavior. Its correctness theorem covers
     loop-free bodies only, and states that as a hypothesis. It also requires that
@@ -556,7 +557,7 @@ end Core.Simplify
     formals with the caller's variables, and why that phase cannot claim the fact. -/
 def Core.simplifyPhase : Core.PipelinePhase :=
   Core.modelPreservingPipelinePhase "simplify" Core.Simplify.runSimplify
-    (requires := factSet![.noCFGBodies, .noCalls, .noPrecondsFromFuncs])
+    (requires := factSet![.noCalls, .noPrecondsFromFuncs])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,

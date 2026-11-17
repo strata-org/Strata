@@ -121,6 +121,57 @@ spec {
 #guard typeChecks (monoBeforeTypeCheck idPgm)
 
 ---------------------------------------------------------------------
+/-! ### Example 1b: a CFG body, with a local declaration and a branch guard at `T` -/
+
+private def pickPgm :=
+#strata
+program Core;
+procedure pick<T>(c : bool, x : T, y : T, out r : T)
+spec {
+  ensures (r == x) || (r == y);
+}
+cfg entry {
+  entry: { var z : T := y; branch (x == z) goto a else goto b; }
+  a: { r := x; goto done; }
+  b: { r := z; goto done; }
+  done: { return; }
+};
+#end
+
+/--
+info: program Core;
+
+type $__opaque_pick_T_0;
+procedure pick (c : bool, x : $__opaque_pick_T_0, y : $__opaque_pick_T_0,
+  out r : $__opaque_pick_T_0)
+spec {
+  ensures [pick_ensures_0]: r == x || r == y;
+  } cfg entry {
+  entry: {
+    var z : $__opaque_pick_T_0 := y;
+    branch (x == z) goto a else goto b;
+  }
+  a: {
+    r := x;
+    goto done;
+  }
+  b: {
+    r := z;
+    goto done;
+  }
+  done: {
+    return;
+  }
+};
+-/
+#guard_msgs (whitespace := lax) in
+#eval fmtMono pickPgm
+
+#guard allProcsMonomorphic (monoBeforeTypeCheck pickPgm)
+#guard opaqueTypeCount (monoBeforeTypeCheck pickPgm) == 1
+#guard typeChecks (monoBeforeTypeCheck pickPgm)
+
+---------------------------------------------------------------------
 /-! ### Example 2: a monomorphic procedure is left unchanged -/
 
 private def incPgm :=

@@ -165,6 +165,33 @@ inductive VCGenMode where
   | wp
   deriving Repr, DecidableEq, Inhabited
 
+/-- When symbolic execution (`--vcgen symexec`) merges the two branches of an `if` where they meet
+    (`SymExec.MergePolicy.ofMode`). -/
+inductive MergeMode where
+  /-- Never merge: one path per way through the procedure. -/
+  | never
+  /-- Merge at every join. -/
+  | always
+  /-- Merge whenever more than `n` paths would exist (`SymExec.MergePolicy.pathsAbove`). -/
+  | pathsAbove (n : Nat)
+  deriving Repr, DecidableEq, Inhabited
+
+/-- The merge mode symbolic execution uses when none is named: `always` (`merged`). -/
+def MergeMode.default : MergeMode := .always
+
+/-- The modes by name: `per-path` (`never`), `merged` (`always`), `merge-above:N` with `N ≥ 1`
+    (`pathsAbove N`; as for `--path-cap`, a bound of 0 is refused). -/
+def MergeMode.ofString? (s : String) : Option MergeMode :=
+  match s with
+  | "per-path" => some .never
+  | "merged" => some .always
+  | _ =>
+    if s.startsWith "merge-above:" then
+      match (s.drop 12).toString.toNat? with
+      | some n => if n == 0 then none else some (.pathsAbove n)
+      | none => none
+    else none
+
 /-- Options controlling the verification pipeline.
     When adding or removing fields, keep `verifyOptionsFlags` and
     `parseVerifyOptions` in StrataMain.lean in sync. -/
@@ -227,10 +254,18 @@ structure VerifyOptions where
       together. This bounds both the total path count and the
       evaluation work. Paths with active exit labels are left
       untouched — they skip remaining statements and accumulate at
-      most linearly. -/
+      most linearly. Symbolic execution (`symExec`) does not read it: its
+      merging is set by its merge mode (`pathsAbove n`). -/
   pathCap : Option Nat := .none
   /-- Verification-condition generation mode (`--vcgen`); see `VCGenMode`. -/
   vcgen : VCGenMode := .symbolic
+  /-- Experimental: `some m` generates obligations by symbolic execution on the monadic
+      interpreter (`Core.SymExec`) instead of the legacy symbolic evaluator, with merge mode `m`:
+      when to merge the two branches of a fork where they meet (`never`, `always`, or above `n`
+      paths; see `MergeMode`). `none` runs the legacy
+      symbolic evaluator. Ignored unless `vcgen` is `.symbolic`; `pathCap` does not apply to
+      symbolic execution. -/
+  symExec : Option MergeMode := none
   -- Output
   /-- Output results in SARIF format. -/
   outputSarif : Bool
@@ -318,6 +353,11 @@ def VerifyOptions.default : VerifyOptions := {
 
 instance : Inhabited VerifyOptions where
   default := .default
+
+/-- The merge mode symbolic execution runs under: the one `symExec` names, `MergeMode.default`
+    when `symExec` is `none` (a pipeline can name the symbolic execution phase without
+    `--vcgen symexec`). -/
+def VerifyOptions.symExecMode (o : VerifyOptions) : MergeMode := o.symExec.getD .default
 
 def VerifyOptions.quiet : VerifyOptions :=
   { VerifyOptions.default with verbose := .quiet }

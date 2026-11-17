@@ -337,6 +337,73 @@ procedure measureOnly (n : int)
 #guard_msgs in
 #eval IO.println (toString (runInsert (translate measureOnlyPgm)).2.eraseTypes)
 
+/-- Run the pipeline phase with a fresh transform state, formatting the transformed program on
+    success or the diagnostic on failure. -/
+private def runInsertPhase (p : Core.Program) : String :=
+  match run p insertLoopInvariantAssertsPipelinePhase.transform with
+  | .ok (_, res) => (Std.format res.eraseTypes).pretty 96
+  | .error e => s!"error: {e}"
+
+/-- A structured procedure with an invariant and a CFG procedure. -/
+private def mixedInvPgm :=
+#strata
+program Core;
+procedure L(n : int, out i : int)
+spec { requires [n_nneg]: int.ge(n, 0); }
+{
+  i := 0;
+  while (int.lt(i, n))
+    invariant int.le(i, n)
+  {
+    i := int.add(i, 1);
+  }
+};
+procedure C(x : int, out y : int)
+cfg entry {
+  entry: { y := x; branch (int.gt(x, 0)) goto pos else goto done; }
+  pos: { y := int.add(y, 1); goto done; }
+  done: { return; }
+};
+#end
+
+-- The phase decorates the structured procedure's loop and keeps the CFG body as it is.
+/--
+info: program Core;
+
+procedure L (n : int, out i : int)
+spec {
+  requires [n_nneg]: int.ge(n, 0);
+  } {
+  i := 0;
+  assert [insertLoopInvAssert_entry_invariant_loop_0_0]: int.le(i, n);
+  assume [insertLoopInvAssume_entry_invariant_loop_0_0]: int.le(i, n);
+  while (int.lt(i, n))
+  {
+    assume [insertLoopInvAssume_invariant_loop_0_0]: int.le(i, n);
+    i := int.add(i, 1);
+    assert [insertLoopInvAssert_arbitrary_iter_maintain_invariant_loop_0_0]: int.le(i, n);
+  }
+  assume [insertLoopInvAssume_exit_invariant_loop_0_0]: int.le(i, n);
+  assume [insertLoopInvAssume_exit_not_guard_loop_0]: !(int.lt(i, n));
+};
+procedure C (x : int, out y : int)
+cfg entry {
+  entry: {
+    y := x;
+    branch (int.gt(x, 0)) goto pos else goto done;
+  }
+  pos: {
+    y := int.add(y, 1);
+    goto done;
+  }
+  done: {
+    return;
+  }
+};
+-/
+#guard_msgs (whitespace := lax) in
+#eval IO.println (runInsertPhase (translate mixedInvPgm))
+
 end InsertLoopInvariantAssertsExamples
 
 /-! ## InsertLoopInvariantAsserts pipeline phase obligation tests -/

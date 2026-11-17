@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Languages.Core
+meta import Strata.Transform.TerminationCheck
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -848,6 +849,59 @@ Property: assert
 Result: ✅ pass -/
 #guard_msgs in
 #eval Core.verify quantInConstrArgUnfoldPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- The termination check keeps a CFG procedure as it is and generates the lemmas of the
+-- program's recursive functions.
+---------------------------------------------------------------------
+
+private def recWithCFGPgm : Program :=
+#strata
+program Core;
+
+rec function down (n : int) : int
+  decreases n
+{
+  if int.le(n, 0) then 0 else down(int.sub(n, 1))
+};
+procedure P(x : int, out y : int)
+cfg entry {
+  entry: { y := down(x); branch (int.gt(y, 0)) goto pos else goto done; }
+  pos: { y := 0; goto done; }
+  done: { return; }
+};
+#end
+
+/--
+info: program Core;
+
+lemma [down_terminates_0] (n : int): !(int.le(n, 0)) ==> int.le(0, int.sub(n, 1));
+lemma [down_terminates_1] (n : int): !(int.le(n, 0)) ==> int.lt(int.sub(n, 1), n);
+rec function down (n : int) : int
+decreases n
+  {
+  if int.le(n, 0) then 0 else down(int.sub(n, 1))
+};
+procedure P (x : int, out y : int)
+cfg entry {
+  entry: {
+    y := down(x);
+    branch (int.gt(y, 0)) goto pos else goto done;
+  }
+  pos: {
+    y := 0;
+    goto done;
+  }
+  done: {
+    return;
+  }
+};
+-/
+#guard_msgs (whitespace := lax) in
+#eval IO.println (match (Core.termCheckPipelinePhase.transform
+    (TransM.run Inhabited.default (translateProgram recWithCFGPgm)).fst).run .emp with
+  | (.ok (_, p), _) => (Std.format p).pretty 96
+  | (.error e, _) => s!"error: {e.message}")
 
 end Strata.IntRecursionTermCheckTest
 

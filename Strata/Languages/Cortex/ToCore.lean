@@ -15,9 +15,9 @@ public import Strata.Languages.Core.Procedure
 `programToCore` turns an ordered Cortex program into a Core program.
 Each procedure body becomes a Core CFG body (`.cfg`), block for block: labels,
 commands and transfers are kept, so no control flow is rebuilt. Core can
-type-check and print the result. The verifier (`Core.verify`) and the evaluator
-behind `Core.Program.interpretEntries` accept only structured bodies, so they
-do not run it.
+type-check and print the result. The evaluator behind
+`Core.Program.interpretEntries` accepts only structured bodies, and the verifier
+(`Core.verify`) accepts CFG bodies only under `--vcgen symexec`, and only without loops.
 
 Core's CFG type checker puts two requirements on the Cortex CFG:
 * Every `init` sits in a block that dominates the uses of its variable and

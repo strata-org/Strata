@@ -258,6 +258,22 @@ def createInitVars (trips : List ((Expression.Ident × Expression.Ty) × Express
   : List Statement :=
   trips.map (createInitVar · md)
 
+/-- turns a list of preconditions into assert commands with substitution -/
+def createAssertCmds
+    (conds : ListMap CoreLabel Procedure.Check)
+    (subst : Map Expression.Ident Expression.Expr)
+    (md : (Imperative.MetaData Expression))
+    (labelPrefix : String := "assert_")
+    : CoreTransformM (List Command)
+    := conds.mapM (fun (l, check) => do
+          let newLabel ← genIdent l (fun s => s!"{labelPrefix}{s}")
+          -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
+          -- Use the call site as the primary file range, preserving the requires
+          -- clause location as a related file range for richer diagnostics.
+          let assertMd := check.md.setCallSiteFileRange md
+          return .cmd (.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst)
+            assertMd))
+
 /-- turns a list of preconditions into asserts with substitution -/
 def createAsserts
     (conds : ListMap CoreLabel Procedure.Check)
@@ -265,21 +281,15 @@ def createAsserts
     (md : (Imperative.MetaData Expression))
     (labelPrefix : String := "assert_")
     : CoreTransformM (List Statement)
-    := conds.mapM (fun (l, check) => do
-          let newLabel ← genIdent l (fun s => s!"{labelPrefix}{s}")
-          -- Non-lifting: the replacement expressions must be closed (no dangling bvars).
-          -- Use the call site as the primary file range, preserving the requires
-          -- clause location as a related file range for richer diagnostics.
-          let assertMd := check.md.setCallSiteFileRange md
-          return Statement.assert newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) assertMd)
+    := (·.map .cmd) <$> createAssertCmds conds subst md labelPrefix
 
-/-- turns a list of preconditions into assumes with substitution -/
-def createAssumes
+/-- turns a list of postconditions into assume commands with substitution -/
+def createAssumeCmds
     (conds : ListMap CoreLabel Procedure.Check)
     (subst : Map Expression.Ident Expression.Expr)
     (md : (Imperative.MetaData Expression))
     (labelPrefix : String := "assume_")
-    : CoreTransformM (List Statement)
+    : CoreTransformM (List Command)
     :=
     conds.mapM (fun (l, check) => do
       let newLabel ← genIdent l (fun s => s!"{labelPrefix}{s}")
@@ -287,7 +297,56 @@ def createAssumes
       -- Use the call site as the primary file range, preserving the ensures
       -- clause location as a related file range for richer diagnostics.
       let assumeMd := check.md.setCallSiteFileRange md
-      return Statement.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst) assumeMd)
+      return .cmd (.assume newLabel.toPretty (Lambda.LExpr.substFvars check.expr subst)
+        assumeMd))
+
+/-- turns a list of postconditions into assumes with substitution -/
+def createAssumes
+    (conds : ListMap CoreLabel Procedure.Check)
+    (subst : Map Expression.Ident Expression.Expr)
+    (md : (Imperative.MetaData Expression))
+    (labelPrefix : String := "assume_")
+    : CoreTransformM (List Statement)
+    := (·.map .cmd) <$> createAssumeCmds conds subst md labelPrefix
+
+/-! ## Command-level builders
+
+`Command` counterparts of the statement builders above, for transforms that rewrite one command
+into a sequence of commands in a structured body or a CFG block. Each statement builder is the
+corresponding command builder followed by `.cmd` (`createHavocs_eq_cmds`, `createInits_eq_cmds`,
+`createInitVars_eq_cmds`, in `CoreTransformProps.lean`). -/
+
+/-- A command that havocs `ident`. -/
+def createHavocCmd (ident : Expression.Ident) (md : Imperative.MetaData Expression) : Command :=
+  .cmd (.set ident .nondet md)
+
+/-- Commands that havoc each of `ident`. -/
+def createHavocCmds (ident : List Expression.Ident) (md : Imperative.MetaData Expression) :
+    List Command :=
+  ident.map (createHavocCmd · md)
+
+/-- A command that declares `v'` of type `ty` with value `e`, for `((v', ty), e)`. -/
+def createInitCmd (trip : (Expression.Ident × Expression.Ty) × Expression.Expr)
+    (md : Imperative.MetaData Expression) : Command :=
+  match trip with
+  | ((v', ty), e) => .cmd (.init v' ty (.det e) md)
+
+/-- `createInitCmd` on each of `trips`. -/
+def createInitCmds (trips : List ((Expression.Ident × Expression.Ty) × Expression.Expr))
+    (md : Imperative.MetaData Expression) : List Command :=
+  trips.map (createInitCmd · md)
+
+/-- A command that declares `v'` of type `ty` with the value of variable `v`, for
+    `((v', ty), v)`. -/
+def createInitVarCmd (trip : (Expression.Ident × Expression.Ty) × Expression.Ident)
+    (md : Imperative.MetaData Expression) : Command :=
+  match trip with
+  | ((v', ty), v) => .cmd (.init v' ty (.det (createFvar v)) md)
+
+/-- `createInitVarCmd` on each of `trips`. -/
+def createInitVarCmds (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
+    (md : Imperative.MetaData Expression) : List Command :=
+  trips.map (createInitVarCmd · md)
 
 /--
 Generate the substitution pairs needed for the body of the procedure
@@ -363,26 +422,51 @@ def runStmtsRec (f : Statement → CoreTransformM (Option (List Statement)))
     return ⟨changed || changed0, (sres ++ ss'')⟩
 
 /--
+Run `f` on each command of each block of `g`, in the order of `g.blocks`. When `f c` returns
+`some cs`, `cs` replaces `c` in its block; when it returns `none`, `c` is kept. Labels, transfers
+and branch conditions are kept: a branch condition is an expression, and holds no command.
+The returned boolean is true if `f` returned `some` for at least one command.
+-/
+def runCFGCmds (f : Command → CoreTransformM (Option (List Command))) (g : DetCFG)
+    : CoreTransformM (Bool × DetCFG) := do
+  let mut changed := false
+  let mut blocks := #[]
+  for (lbl, b) in g.blocks do
+    let mut cmds : Array Command := #[]
+    for c in b.cmds do
+      match ← f c with
+      | some cs =>
+        changed := true
+        cmds := cmds ++ cs.toArray
+      | none => cmds := cmds.push c
+    blocks := blocks.push (lbl, { b with cmds := cmds.toList })
+  return (changed, { g with blocks := blocks.toList })
+
+/--
 Run f on each statement of the program.
 Returns (has the program updated?, the updated program).
 If targetProcList is .none, apply f to all statements in every procedure.
 If targetProcList is .some l, apply f to statements that are in procedures
 listed in l only.
+A CFG body is rewritten whole by `cfgBody` when it is `some k` (`k proc g` returns whether it
+changed `g` and the new graph), else command by command by `cfgCmd` when it is `some h` (`h`
+is run on each command of its blocks, `runCFGCmds`), with the current procedure and program set
+as for a structured body; `cfgCmd` is not used when `cfgBody` is given. When both are `none`, a
+CFG body in a listed procedure is an error.
 
-The returned boolean is false if `f` has been never applied to any procedure
-which is in program `p` and a member of `targetProcList` (if it is `.some ..`).
-The requirement on `f` is exactly equivalent to the requirement on `f` of
-`runStmtsRec`.
-If the returned boolean value of `runProgram` is `false`, the returned `Program`
-and `CoreTransformState.factory` is exactly identical to the input `p` and
-that of the input state.
-However, `runProgram` can still conservatively return `true` if `f` was
-conservatively implemented in that way.
+The returned boolean is false if neither `f`, `cfgCmd` nor `cfgBody` reported a change in any
+procedure of `p` that is a member of `targetProcList` (if it is `.some ..`). The requirement on
+`f` is exactly equivalent to the requirement on `f` of `runStmtsRec`. If the returned boolean is
+`false`, the returned `Program` and `CoreTransformState.factory` are the input `p` and that of
+the input state, provided each of `f`, `cfgCmd` and `cfgBody` reports a change whenever it makes
+one. `runProgram` can still return `true` for a rewrite that reports a change conservatively.
 -/
 def runProgram
     (f : Statement → CoreTransformM (Option (List Statement)))
     (p : Program)
     (targetProcList : Option (List String) := .none)
+    (cfgCmd : Option (Command → CoreTransformM (Option (List Command))) := none)
+    (cfgBody : Option (Procedure → DetCFG → CoreTransformM (Bool × DetCFG)) := none)
   : CoreTransformM (Bool × Program) := do
   modify (fun σ => { σ with currentProgram := .some p })
 
@@ -401,14 +485,21 @@ def runProgram
           currentProcedureName := .some proc.header.name.1
         })
 
-        let bodyStmts ← match proc.body with
-          | .structured ss => pure ss
-          | .cfg _ => throw (Strata.Message.fromString
+        let (changed, newBody) ← match proc.body, cfgBody, cfgCmd with
+          | .structured ss, _, _ => do
+            let (changed, ss') ← runStmtsRec f ss
+            pure (changed, Procedure.Body.structured ss')
+          | .cfg g, some k, _ => do
+            let (changed, g') ← k proc g
+            pure (changed, Procedure.Body.cfg g')
+          | .cfg _, none, none => throw (Strata.Message.fromString
               s!"runProgram: cannot apply statement-level transform to CFG body (procedure '{proc.header.name.1}')")
-        let (changed, new_body) ← runStmtsRec f bodyStmts
+          | .cfg g, none, some h => do
+            let (changed, g') ← runCFGCmds h g
+            pure (changed, Procedure.Body.cfg g')
 
         if changed then
-          newDecls := newDecls.set i (Decl.proc { proc with body := .structured new_body } md)
+          newDecls := newDecls.set i (Decl.proc { proc with body := newBody } md)
           anyChanged := true
           modify (fun σ => { σ with
             currentProgram := .some { decls := newDecls }
@@ -426,21 +517,22 @@ def runProgram
     - `maxIters = none`: repeat until a fixed point (no changes).
     - `maxIters = some n`: run up to `n` iterations, stopping early if no change.
 
-    The requirement on `f` and meaning of returned boolean value is exactly
-    same as `runProgram`.
+    The requirement on `f`, the treatment of CFG bodies (`cfgCmd`) and the meaning of the
+    returned boolean value are exactly those of `runProgram`.
 -/
 def runProgramUntil
     (f : Statement → CoreTransformM (Option (List Statement)))
     (p : Program)
     (maxIters : Option Nat := none)
     (targetProcList : Option (List String) := .none)
+    (cfgCmd : Option (Command → CoreTransformM (Option (List Command))) := none)
   : CoreTransformM (Bool × Program) := do
   match maxIters with
   | some n =>
     let mut prog := p
     let mut anyChanged := false
     for _ in List.range n do
-      let (changed, prog') ← runProgram f prog targetProcList
+      let (changed, prog') ← runProgram f prog targetProcList cfgCmd
       prog := prog'
       if changed then anyChanged := true
       if !changed then break
@@ -449,7 +541,7 @@ def runProgramUntil
     let mut prog := p
     let mut anyChanged := false
     repeat
-      let (changed, prog') ← runProgram f prog targetProcList
+      let (changed, prog') ← runProgram f prog targetProcList cfgCmd
       prog := prog'
       if changed then anyChanged := true
       if !changed then break
