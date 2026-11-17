@@ -418,6 +418,10 @@ theorem drain_meets_contract :
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨drainProc, by native_decide, by native_decide, ?_⟩
   rw [drain_body_eq]
+  -- The body proof does not use the axioms visible to the procedure.
+  refine Core.Logic.Hoare.consequence _ _
+    (Pre := Core.Logic.Hoare.Procedure.contractPre Core.Factory drainProc) ?_
+    (fun _ h => h.1) (fun _ h => h)
   refine Core.Logic.Hoare.of_forall_entryFactory π _ fun E => ?_
   by_cases hE : E.factory = Core.Factory
   case neg =>

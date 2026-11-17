@@ -6,6 +6,7 @@
 
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 import Strata.Languages.Core.ProgramProps
+import Strata.Transform.CoreSpecificationProps
 import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core
@@ -636,9 +637,10 @@ theorem noReq_violates_contract :
   have htbm := htb
   rw [hbody] at htbm
   have ⟨_hvalid, hpostF⟩ := htbm (xIs1Env model) (xIs1Env model) []
-    ⟨preAsPredicate_of_no_pre _ noReqProc (xIs1Env model) (by native_decide), rfl,
+    ⟨⟨preAsPredicate_of_no_pre _ noReqProc (xIs1Env model) (by native_decide), rfl,
       oldInoutAsPredicate_of_no_inout noReqProc (xIs1Env model) (by native_decide),
-      inputAsPredicate_xIs1 model noReqProc (by native_decide)⟩
+      inputAsPredicate_xIs1 model noReqProc (by native_decide)⟩,
+      Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by decide +kernel) _⟩
     (blockWF_nil (xIs1Env model) rfl (xIs1Env_storeWellDefined model))
     (.inl (run_procBlock_nil _ (xIs1Env model) "" #[]))
   have hpost : Core.Logic.Hoare.Procedure.postAsPredicate Core.Factory noReqProc (xIs1Env model) :=
@@ -702,12 +704,13 @@ theorem offByOne_violates_contract :
   have htbm := htb
   rw [hbody] at htbm
   have ⟨_hvalid, hpostF⟩ := htbm (xIs1Env model) (xIs1Env model) []
-    ⟨preAsPredicate_of_binds _ offByOneProc (xIs1Env model)
+    ⟨⟨preAsPredicate_of_binds _ offByOneProc (xIs1Env model)
         [(⟨"x", ()⟩, some (Lambda.LMonoTy.tcons "int" []), Lambda.LConst.intConst 1)] rfl
         (by native_decide)
         (fun b hb => by simp only [List.mem_singleton] at hb; subst hb; simp [xIs1Env]), rfl,
       oldInoutAsPredicate_of_no_inout offByOneProc (xIs1Env model) (by native_decide),
-      inputAsPredicate_xIs1 model offByOneProc (by native_decide)⟩
+      inputAsPredicate_xIs1 model offByOneProc (by native_decide)⟩,
+      Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by decide +kernel) _⟩
     (blockWF_nil (xIs1Env model) rfl (xIs1Env_storeWellDefined model))
     (.inl (run_procBlock_nil _ (xIs1Env model) "" #[]))
   have hpost : Core.Logic.Hoare.Procedure.postAsPredicate Core.Factory offByOneProc
@@ -1906,6 +1909,10 @@ theorem loopTerm_meets_contract :
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨loopTermProc, by native_decide, by native_decide, ?_⟩
   rw [loopTerm_body_eq]
+  -- The body proof does not use the axioms visible to the procedure.
+  refine Core.Logic.Hoare.consequence _ _
+    (Pre := Core.Logic.Hoare.Procedure.contractPre Core.Factory loopTermProc) ?_
+    (fun _ h => h.1) (fun _ h => h)
   refine (Core.Logic.Hoare.block loopTermPgmAST.findProcByString? testParams
     ?_ (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by native_decide)))
   refine Core.Logic.Hoare.seq loopTermPgmAST.findProcByString? testParams

@@ -239,6 +239,10 @@ theorem max_meets_contract :
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨maxProc, by native_decide, by native_decide, ?_⟩
   rw [max_body_eq]
+  -- The body proof does not use the axioms visible to the procedure.
+  refine Core.Logic.Hoare.consequence _ _
+    (Pre := Core.Logic.Hoare.Procedure.contractPre Core.Factory maxProc) ?_
+    (fun _ h => h.1) (fun _ h => h)
   have hsrc := Core.DeadDefElim.deadDefElim_triple π testParams (ss := maxBody)
     (by decide +kernel)
     (by simp [Core.Statements.noCalls, Block.allSubstmts_cons, Stmt.allSubstmts_ite,

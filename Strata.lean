@@ -34,6 +34,7 @@ import Strata.Languages.Core.SeqModel
 import Strata.Languages.Core.SMTEncoderProps
 import Strata.Languages.Core.SMTEmitter
 import Strata.Languages.Core.StatementProps
+import Strata.Languages.Core.AxiomsBeforeProcedure
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Core.WFProps

@@ -25,6 +25,10 @@ procedure-entry environment.
   `mem_procVerifyInitIdents_of_oldInout` identify required procedure-entry slots.
 - `ProcEnvWF.storeDefined`, `ProcEnvWF.inputTyped`, `ProcEnvWF.outputTyped`, and
   `ProcEnvWF.oldInoutTyped` project definedness and typed values from `ProcEnvWF`.
+- `axiomsBeforeProcedureDecl_of_noAxioms`: a procedure preceded by no axiom or
+  `distinct` declaration has no axiom assumption at its entry.
+- `AxiomsBeforeProcedureDecl.eval_of_mem`: each axiom declared before a procedure
+  evaluates to `true` at an entry satisfying `AxiomsBeforeProcedureDecl`.
 - `ProcEnvWF.of_sameSignature` — an entry environment carries over to a
   procedure with the same header and specification.
 -/
@@ -103,6 +107,46 @@ theorem ProcEnvWF.oldInoutTyped {params : InitEnvWFParams} {proc : Procedure}
   h.storeDefinedAndWellTyped (CoreIdent.mkOld id.name) ty
     (mem_procVerifyInitIdents_of_oldInout hm)
 
+
+/-! ### Axioms visible to a procedure -/
+
+/-- If no axiom or `distinct` declaration precedes `entryProcName`, every environment
+    satisfies `AxiomsBeforeProcedureDecl`. -/
+theorem axiomsBeforeProcedureDecl_of_noAxioms {entryProcName : String} {p : Program}
+    (h : (p.declsBeforeProcedure entryProcName).all fun d =>
+      match d with
+      | .ax _ _ | .distinct _ _ _ => false
+      | _ => true)
+    (ρ₀ : Imperative.Env Expression) :
+    AxiomsBeforeProcedureDecl entryProcName p ρ₀ := by
+  simp only [List.all_eq_true] at h
+  unfold AxiomsBeforeProcedureDecl
+  generalize p.declsBeforeProcedure entryProcName = decls at h
+  induction decls with
+  | nil => trivial
+  | cons d ds ih =>
+      rw [List.foldr_cons]
+      have hd := h d List.mem_cons_self
+      have hds := ih fun d hdmem => h d (List.mem_cons_of_mem _ hdmem)
+      cases d <;> simp at hd
+      all_goals exact hds
+
+/-- Each axiom declared before `entryProcName` evaluates to `true` in an environment
+    satisfying `AxiomsBeforeProcedureDecl`. -/
+theorem AxiomsBeforeProcedureDecl.eval_of_mem {entryProcName : String} {p : Program}
+    {ρ₀ : Imperative.Env Expression}
+    (h : AxiomsBeforeProcedureDecl entryProcName p ρ₀)
+    {a : Axiom} {md : Imperative.MetaData Expression}
+    (ha : Decl.ax a md ∈ p.declsBeforeProcedure entryProcName) :
+    Expression.eval ρ₀.factory ρ₀.store a.e = some (HasBool.ttVal ρ₀.factory) := by
+  unfold AxiomsBeforeProcedureDecl at h
+  generalize p.declsBeforeProcedure entryProcName = decls at h ha
+  induction decls with
+  | nil => cases ha
+  | cons d ds ih =>
+    rcases List.mem_cons.mp ha with rfl | hm
+    · exact h.1
+    · cases d <;> simp only [List.foldr_cons] at h <;> first | exact ih h.2 hm | exact ih h hm
 
 /-- `ProcEnvWF` reads only a procedure's header, its specification and the
     well-formedness of its body. So an entry environment of `proc` is one of any

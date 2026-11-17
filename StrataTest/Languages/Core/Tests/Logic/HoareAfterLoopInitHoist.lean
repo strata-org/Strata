@@ -321,6 +321,10 @@ theorem sum_meets_contract :
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨sumProc, by native_decide, by native_decide, ?_⟩
   rw [sum_body_eq]
+  -- The body proof does not use the axioms visible to the procedure.
+  refine Core.Logic.Hoare.consequence _ _
+    (Pre := Core.Logic.Hoare.Procedure.contractPre Core.Factory sumProc) ?_
+    (fun _ h => h.1) (fun _ h => h)
   refine Core.Logic.Hoare.of_forall_entryFactory π _ fun E => ?_
   by_cases hE : E.factory = Core.Factory
   case neg =>
