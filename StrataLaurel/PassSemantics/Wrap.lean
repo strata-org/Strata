@@ -1,3 +1,8 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
 import StrataLaurel.PassSemantics.Fund
 
 /-!
@@ -59,20 +64,23 @@ theorem fsh_sm0 {T U : SimRel} {A : α → β → Prop} {x : EvalM PM α} {y : E
 /-- A body `X` simulates the same statements `ss'` wrapped in a block labelled with the pass's return
 label `L`. If `X` is simulated by running `ss'` in a block scope, where a source `return` may become
 `exit L`, then `runB X` is simulated by `runB` of the labelled block, which catches that `exit L`.
-Escaping signals are related by `Sm0`, which has no return label. `L` must not be an exit label
+Escaping signals are related by `Sm0`, which has no return label. `L` must be reserved and not an exit label
 that may escape (`¬ Gl L`) and the pass has no valued return. -/
 theorem body_wrap {cfg : ExternalBackendM PM} {M : Nat} {X : EvalM PM Unit} {ss' : List StmtExprMd} {s' : FileRange}
     {L : String} {G : StackFrame} (hL : Reserved.retLabel = some L) (hGl : ¬ Gl L) (hvn : Reserved.vret = none)
+    (hres : Reserved.resLabel L)
     (hin : FS (Sm E Gl G) (fun _ _ => True) X (withBlockScope ss' (evalStmtList cfg M ss' false))) :
     FSH (Sm E Gl G) (Sm E Gl G) (Sm0 E Gl G) Eq (runB X)
       (runB (evalStmt cfg (M + 1) ⟨.Block ss' (some L) [] none, s'⟩)) := by
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
   have hs' : StRel G (IxRel E) σ σ' := hs
-  simp only [runB, evalStmt, List.forIn_nil, pure_bind, run_tryCatch, run_bind, run_get] at hn ⊢
-  have r0 := hin.sim σ σ' τ τ' hs ht
-  rcases r : run X σ τ with e | ⟨⟨c | a, σ1⟩, τ1⟩ <;>
-    rw [r] at r0 hn <;>
-    rcases r' : run (withBlockScope ss' (evalStmtList cfg M ss' false)) σ' τ' with e' | ⟨⟨c' | b, σ1'⟩, τ1'⟩ <;>
+  have hkeep : KeepsOL (withBlockScope ss' (evalStmtList cfg M ss' false)) :=
+    fun o => OLKeep.withBlockScope ((keepsAt cfg M).list ss' false o)
+  simp only [runB, evalStmt, List.forIn_nil, pure_bind, run_tryCatch, run_bind, run_get, run_withOpenLabel] at hn ⊢
+  have r0 := hin.sim σ { σ' with openLabels := L :: σ'.openLabels } τ τ' (hs'.pushOL hres) ht
+  rcases r : run X σ τ with e | ⟨⟨c | a, σ1⟩, τ1⟩ <;> rw [r] at r0 hn <;>
+    rcases r' : run (withBlockScope ss' (evalStmtList cfg M ss' false)) { σ' with openLabels := L :: σ'.openLabels } τ' with
+      e' | ⟨⟨c' | b, σ1'⟩, τ1'⟩ <;>
     rw [r'] at r0 <;> dsimp only at hn ⊢
   · first | trivial | exact r0 not_OOF_error
   · first | exact RR.ofStuck (r0 not_OOF_error) _ | exact RV.ofStuck (r0 not_OOF_error) _ | exact r0 not_OOF_error
@@ -84,39 +92,48 @@ theorem body_wrap {cfg : ExternalBackendM PM} {M : Nat} {X : EvalM PM Unit} {ss'
       rw [OOF_err]; rintro rfl; exact hn (by simp [run_throw, OOF])
     obtain ⟨hsg, ht1⟩ := r0 hn0
     obtain ⟨hcr, hok, hs1⟩ := hsg.same (fun v => Sm.noWin _ (not_free_none hvn _) v)
+    have hk := (hkeep (L :: σ'.openLabels)).keep _ _ _ _ _ rfl r'
+    have hs2 : StRel G (IxRel E) σ1 { σ1' with openLabels := σ'.openLabels } := (hs1 : StRel G (IxRel E) σ1 σ1').restoreOL hk hres
     rcases hcr with rfl | ⟨L', hL', rfl, rfl⟩ | ⟨_, _, rfl, rfl⟩
     · cases c with
       | exit_ l =>
         have hne : (l == L) = false := by
           simp only [beq_eq_false_iff_ne]; rintro rfl; exact hGl hok
         simp only [hne, Bool.false_eq_true, ite_false, run_throw]
-        exact ⟨.inl ⟨.inl rfl, hok, hs1⟩, ht1⟩
+        exact ⟨.inl ⟨.inl rfl, hok, hs2⟩, ht1⟩
       | return_ v =>
         rcases v with _ | ⟨w, _ | ⟨_, _⟩⟩
         · simp only [run_throw, run_pure, RR, ExRel]
-          exact ⟨trivial, hs1, ht1⟩
+          exact ⟨trivial, hs2, ht1⟩
         · simp only [run_throw, run_pure, RR, ExRel]
-          exact ⟨trivial, hs1, ht1⟩
+          exact ⟨trivial, hs2, ht1⟩
         · exact (hok : False).elim
-      | goto_ l => exact (hok : False).elim
+      | goto_ l =>
+        have hne : (l == L) = false := by
+          simp only [beq_eq_false_iff_ne]; rintro rfl; exact hGl hok
+        simp only [hne, Bool.false_eq_true, ite_false, run_throw]
+        exact ⟨.inl ⟨.inl rfl, hok, hs2⟩, ht1⟩
       | _ =>
         simp only [run_throw, RR, ExRel]
-        exact ⟨.inl ⟨.inl rfl, hok, hs1⟩, ht1⟩
+        exact ⟨.inl ⟨.inl rfl, hok, hs2⟩, ht1⟩
     · have : L' = L := Option.some.inj (hL'.symm.trans hL)
       subst this
       simp only [beq_self_eq_true, ite_true, run_modify, run_pure, RR, ExRel]
-      have hs1' : StRel G (IxRel E) σ1 σ1' := hs1
-      exact ⟨trivial, by strel hs1', ht1⟩
+      have hs3 : StRel G (IxRel E) σ1 { σ1' with cursor := σ'.cursor, seek := none } := by
+        strel (hs1 : StRel G (IxRel E) σ1 σ1')
+      exact ⟨trivial, hs3.restoreOL hk hres, ht1⟩
     · simp only [run_throw, RR, ExRel] at *
-      exact ⟨.inl ⟨.inr (.inr ⟨_, _, rfl, rfl⟩), ‹_›, ‹_›⟩, ‹_›⟩
+      exact ⟨.inl ⟨.inr (.inr ⟨_, _, rfl, rfl⟩), hok, hs2⟩, ht1⟩
   · have hn0 : ¬ OOF (Except.ok ((Except.error c, σ1), τ1) : R Unit) := by
       rw [OOF_err]; rintro rfl; exact hn (by simp [run_throw, OOF])
     exact absurd (r0 hn0) (by simp [RR, ExRel])
   · exact absurd (r0 not_OOF_ok) (by simp [RR])
   · exact absurd (r0 not_OOF_ok) (by simp [RR, ExRel])
   · obtain ⟨-, hs1, ht1⟩ := r0 not_OOF_ok
+    have hk := (hkeep (L :: σ'.openLabels)).keep _ _ _ _ _ rfl r'
+    have hs2 : StRel G (IxRel E) σ1 { σ1' with openLabels := σ'.openLabels } := (hs1 : StRel G (IxRel E) σ1 σ1').restoreOL hk hres
     simp only [run_pure, RR, ExRel]
-    exact ⟨trivial, hs1, ht1⟩
+    exact ⟨trivial, hs2, ht1⟩
 
 omit [Reserved] in
 theorem withBlockScope_nil {l : List StmtExprMd} (h : blockDeclarations l = []) (act : EvalM PM α) :
@@ -150,24 +167,89 @@ theorem fs_wrapBlock_inner {cfg : ExternalBackendM PM} {n M : Nat} {ss ss' : Lis
       simp only [RR, ExRel, false_and, imp_self, run_pure]
     exact fun ⟨_, h1, h2⟩ => ⟨trivial, h1, h2⟩
 
+omit [Reserved] in
+/-- A statement list none of whose statements holds a label never lands a jump, so running it is running its
+statements one after the other: the handler for jumps only rethrows. -/
+theorem evalStmtList_plain {cfg : ExternalBackendM PM} {m : Nat} {ss : List StmtExprMd}
+    (hl : ∀ s ∈ ss, statementLabels s = []) :
+    evalStmtList cfg (m + 1) ss false =
+      (get >>= fun st => if st.coroSelf.isNone = true then
+        (ss.forM (fun s => do
+            modify fun (st : EvalState) => { st with stmtSite := s.source }
+            if (stackAnnotation? s).isNone then withOperandWindow s (evalStmt cfg m s)) >>= fun _ => pure default)
+      else
+        evalStmtListGo cfg m false st.cursor (seekEntry st.seek).1 (seekEntry st.seek).2 (seekEntry st.seek).1
+          (ss.drop (seekEntry st.seek).1)) := by
+  have hnone : ∀ l, ss.findIdx? (fun t => (statementLabels t).contains l) = none := by
+    intro l
+    rw [List.findIdx?_eq_none_iff]
+    intro t ht
+    rw [hl t ht]
+    rfl
+  refine ext_run (fun σ τ => ?_)
+  unfold evalStmtList
+  simp only [run_bind, run_get, Bool.false_eq_true, ite_false]
+  split
+  · simp only [run_bind, run_tryCatch]
+    rcases hr : run (ss.forM fun s => do
+        modify fun (st : EvalState) => { st with stmtSite := s.source }
+        if (stackAnnotation? s).isNone then withOperandWindow s (evalStmt cfg m s)) σ τ with e | ⟨⟨c | a, σ1⟩, τ1⟩
+    · rfl
+    · cases c with
+      | jump_ l d => simp only [hnone l, run_throw]
+      | _ => simp [run_throw]
+    · rfl
+  · rfl
+
 theorem fs_wrapOther_inner {cfg : ExternalBackendM PM} {n M : Nat} {b b' : StmtExprMd} {G : StackFrame}
-    (hd : blockDeclarations [b'] = []) (hb : FS (Sm E Gl G) Eq (evalStmt cfg n b) (evalStmt cfg M b')) :
+    (hd : blockDeclarations [b'] = []) (hl : ∀ l, Gl l → l ∉ statementLabels b')
+    (hann : (stackAnnotation? b').isNone = true)
+    (hb : FS (Sm E Gl G) Eq (evalStmt cfg n b) (evalStmt cfg M b')) :
     FS (Sm E Gl G) (fun _ _ => True) (evalStmt cfg n b)
       (withBlockScope [b'] (evalStmtList cfg (M + 1) [b'] false)) := by
   rw [withBlockScope_nil hd]
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
   have hs' : StRel G (IxRel E) σ σ' := hs
   simp only [evalStmtList, run_bind, run_get, hs'.coroSelf', Option.isNone_none, ite_true, Bool.false_eq_true,
-    ite_false, List.forM_eq_forM, List.forM_cons, List.forM_nil, bind_assoc, pure_bind, run_modify,
-    run_wow_nil, hs'.ops']
+    ite_false, List.forM_eq_forM, List.forM_cons, List.forM_nil, bind_assoc, pure_bind, run_modify, hann,
+    run_tryCatch]
   have r0 := hb.sim σ { σ' with stmtSite := b'.source } τ τ' (by strel hs') ht hn
   simp only [hs'.coroSelf', hs'.ops'] at r0
+  simp only [run_wow_nil, hs'.ops']
   revert r0
   generalize run (evalStmt cfg M b') _ τ' = y
   rcases run (evalStmt cfg n b) σ τ with e | ⟨⟨c | a, σ1⟩, τ1⟩ <;>
-    rcases y with e' | ⟨⟨c' | b, σ1'⟩, τ1'⟩ <;>
-    simp only [RR, ExRel, false_and, imp_self, run_pure]
-
+    rcases y with e' | ⟨⟨c' | b1, σ1'⟩, τ1'⟩ <;> intro r0 <;> simp only [run_pure]
+  · exact r0
+  · exact RR.ofStuck r0 _
+  · exact RR.ofStuck r0 _
+  · exact (r0 : False).elim
+  · cases c' with
+    | jump_ l d =>
+      obtain ⟨hsg, ht1⟩ := r0
+      rcases hsg with ⟨hcr, hok, hs1⟩ | ⟨v, h1, h2, h3⟩
+      · rcases hcr with rfl | ⟨L, -, -, h⟩ | ⟨_, _, -, h⟩
+        · have hf : List.findIdx? (fun t => (statementLabels t).contains l) [b'] = none := by
+            rw [List.findIdx?_eq_none_iff]
+            intro t ht
+            rw [List.mem_singleton.mp ht]
+            cases hc : (statementLabels b').contains l
+            · rfl
+            · exact absurd (List.contains_iff_mem.mp hc) (hl l hok)
+          simp only [hf, run_throw]
+          exact ⟨.inl ⟨.inl rfl, hok, hs1⟩, ht1⟩
+        · cases h
+        · cases h
+      · cases h2
+    | _ =>
+      first
+        | exact r0
+        | (simp only [run_throw]; exact r0)
+  · exact (r0.1 : False).elim
+  · exact (r0 : False).elim
+  · exact (r0.1 : False).elim
+  · obtain ⟨-, hs1, ht1⟩ := r0
+    exact ⟨trivial, hs1, ht1⟩
 
 def RV (T U : SimRel) (A : α → β → EvalState → EvalState → Prop) : R α → R β → Prop
   | .error e, .error e' => Stuck e' → Stuck e
@@ -342,22 +424,38 @@ on top of a related stack. The pass has the return label `L`, which may not esca
 `noGlobals`, and has no valued return. -/
 theorem body_valued_gen {cfg : ExternalBackendM PM} {n M : Nat} {e e' a x : StmtExprMd} {o : Parameter}
     {s s' : FileRange} {L : String} (hL : Reserved.retLabel = some L) (hGl : ¬ Gl L) (hng : Reserved.noGlobals)
-    (hvn : Reserved.vret = none)
+    (hvn : Reserved.vret = none) (hres : Reserved.resLabel L)
     (ha : evalStmt cfg (M + 2) a = (evalExprMd cfg (M + 1) e' >>= fun v => assignLocal o.name v))
-    (hx : evalStmt cfg (M + 2) x = throw (.exit_ L)) (hd : blockDeclarations [a, x] = [])
+    (hx : x.val = .Goto L .blockEnd) (hd : blockDeclarations [a, x] = [])
+    (hann : (stackAnnotation? a).isNone = true) (hla : statementLabels a = [])
     (hexp : FS (Sm E Gl {}) Eq (evalExprMd cfg n e) (evalExprMd cfg (M + 1) e')) :
     FSV (Sm E Gl {}) (Sm E Gl {}) (Sm0 E Gl {}) (VA E o) (runB (evalStmt cfg (n + 1) ⟨.Return [e], s⟩))
       (runB (evalStmt cfg (M + 4) ⟨.Block [a, x] (some L) [] none, s'⟩)) := by
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
   have hs' : StRel {} (IxRel E) σ σ' := hs
-  simp only [runB, evalStmt, List.forIn_nil, pure_bind, List.mapM_cons, List.mapM_nil, withBlockScope_nil hd, evalStmtList, bind_assoc,
-    pure_bind, run_tryCatch, run_bind, run_get, hs'.coroSelf', Option.isNone_none, ite_true, Bool.false_eq_true,
-    ite_false, List.forM_eq_forM, List.forM_cons, List.forM_nil, run_modify, ha, hx, run_wow_nil, hs'.ops'] at hn ⊢
-  have r0 := hexp.sim σ { σ' with stmtSite := a.source } τ τ' (by strel hs') ht
+  rcases x with ⟨xv, xs⟩
+  dsimp only at hx
+  subst hx
+  have hkeep : KeepsOL (evalExprMd cfg (M + 1) e') := (keepsAt cfg (M + 1)).exprMd e'
+  have hlx : statementLabels (⟨.Goto L .blockEnd, xs⟩ : StmtExprMd) = [] :=
+    statementLabels_other _ _ (by intros; nofun) (by intros; nofun)
+  have hl' : ∀ t ∈ [a, (⟨.Goto L .blockEnd, xs⟩ : StmtExprMd)], statementLabels t = [] := by
+    intro t ht
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at ht
+    rcases ht with rfl | rfl
+    · exact hla
+    · exact hlx
+  have hxa : (stackAnnotation? (⟨.Goto L .blockEnd, xs⟩ : StmtExprMd)).isNone = true := by simp [stackAnnotation?]
+  simp only [runB, evalStmt, List.forIn_nil, pure_bind, List.mapM_cons, List.mapM_nil, withBlockScope_nil hd,
+    evalStmtList_plain hl', bind_assoc, pure_bind, run_tryCatch, run_bind, run_get, hs'.coroSelf', Option.isNone_none,
+    ite_true, List.forM_eq_forM, List.forM_cons, List.forM_nil, run_modify, ha,
+    run_wow_nil, hs'.ops', run_withOpenLabel, hann, hxa] at hn ⊢
+  have r0 := hexp.sim σ { σ' with openLabels := L :: σ'.openLabels, stmtSite := a.source } τ τ'
+    (StRel.site (hs'.pushOL hres) a.source) ht
   simp only [hs'.coroSelf', hs'.ops'] at r0
   rcases r : run (evalExprMd cfg n e) σ τ with e0 | ⟨⟨c | v, σ1⟩, τ1⟩ <;> rw [r] at r0 hn <;>
     revert r0 <;>
-    generalize run (evalExprMd cfg (M + 1) e') _ τ' = Y <;> intro r0 <;>
+    generalize hY : run (evalExprMd cfg (M + 1) e') _ τ' = Y <;> intro r0 <;>
     rcases Y with e1 | ⟨⟨c' | v', σ1'⟩, τ1'⟩ <;> dsimp only at hn ⊢
   · first | trivial | exact r0 not_OOF_error
   · first | exact RR.ofStuck (r0 not_OOF_error) _ | exact RV.ofStuck (r0 not_OOF_error) _ | exact r0 not_OOF_error
@@ -370,30 +468,37 @@ theorem body_valued_gen {cfg : ExternalBackendM PM} {n M : Nat} {e e' a x : Stmt
     obtain ⟨hsg, ht1⟩ := r0 hn0
     obtain ⟨hcr, hok, hs1⟩ := hsg.same (fun v => Sm.noWin _ (not_free_none hvn _) v)
     have hs1' : StRel {} (IxRel E) σ1 σ1' := hs1
+    have hk := (hkeep (L :: σ'.openLabels)).keep _ _ _ _ _ rfl hY
+    have hs2 : StRel {} (IxRel E) σ1 { σ1' with openLabels := σ'.openLabels } := hs1'.restoreOL hk hres
     rcases hcr with rfl | ⟨L', hL', rfl, rfl⟩ | ⟨_, _, rfl, rfl⟩
     · cases c with
       | exit_ l =>
         have hne : (l == L) = false := by
           simp only [beq_eq_false_iff_ne]; rintro rfl; exact hGl hok
         simp only [hne, Bool.false_eq_true, ite_false, run_throw]
-        exact ⟨.inl ⟨.inl rfl, hok, hs1⟩, ht1⟩
+        exact ⟨.inl ⟨.inl rfl, hok, hs2⟩, ht1⟩
       | return_ w =>
         rcases w with _ | ⟨_, _ | ⟨_, _⟩⟩
         · simp only [run_throw, run_pure, RV]
-          exact ⟨.inl ⟨rfl, hs1'⟩, ht1⟩
+          exact ⟨.inl ⟨rfl, hs2⟩, ht1⟩
         · simp only [run_throw, run_pure, RV]
-          exact ⟨.inl ⟨rfl, hs1'⟩, ht1⟩
+          exact ⟨.inl ⟨rfl, hs2⟩, ht1⟩
         · first | exact (hok : False).elim | exact (h : False).elim | exact (hc : False).elim
-      | goto_ l => exact (hok : False).elim
+      | goto_ l =>
+        have hne : (l == L) = false := by
+          simp only [beq_eq_false_iff_ne]; rintro rfl; exact hGl hok
+        simp only [hne, Bool.false_eq_true, ite_false, run_throw]
+        exact ⟨.inl ⟨.inl rfl, hok, hs2⟩, ht1⟩
       | _ =>
         simp only [run_throw, RV]
-        exact ⟨.inl ⟨.inl rfl, hok, hs1⟩, ht1⟩
+        exact ⟨.inl ⟨.inl rfl, hok, hs2⟩, ht1⟩
     · have : L' = L := Option.some.inj (hL'.symm.trans hL)
       subst this
       simp only [beq_self_eq_true, ite_true, run_modify, run_pure, RV]
-      exact ⟨.inl ⟨rfl, by strel hs1'⟩, ht1⟩
+      have hs3 : StRel {} (IxRel E) σ1 { σ1' with cursor := σ'.cursor, seek := none } := by strel hs1'
+      exact ⟨.inl ⟨rfl, hs3.restoreOL hk hres⟩, ht1⟩
     · simp only [run_throw, RR, ExRel] at *
-      exact ⟨.inl ⟨.inr (.inr ⟨_, _, rfl, rfl⟩), ‹_›, ‹_›⟩, ‹_›⟩
+      exact ⟨.inl ⟨.inr (.inr ⟨_, _, rfl, rfl⟩), hok, hs2⟩, ht1⟩
   · have hn0 : ¬ OOF (Except.ok ((Except.error c, σ1), τ1) : R Value) := by
       rw [OOF_err]; rintro rfl; exact hn (by simp [run_throw, OOF])
     exact absurd (r0 hn0) (by simp [RR, ExRel])
@@ -401,10 +506,15 @@ theorem body_valued_gen {cfg : ExternalBackendM PM} {n M : Nat} {e e' a x : Stmt
   · exact absurd (r0 not_OOF_ok) (by simp [RR, ExRel])
   · obtain ⟨rfl, hs1, ht1⟩ := r0 not_OOF_ok
     have hs1' : StRel {} (IxRel E) σ1 σ1' := hs1
+    have hk := (hkeep (L :: σ'.openLabels)).keep _ _ _ _ _ rfl hY
     have hgl : σ1'.globals.contains o.name.text = false := hs1'.gk' _ (.inl hng)
-    simp only [run_assignLocal hgl, run_wow_nil, hs1'.ops', run_throw, beq_self_eq_true, ite_true, run_modify,
-      run_pure, RV]
-    refine ⟨.inr ⟨v, σ1'.stack, rfl, rfl, rfl, by strel hs1'⟩, ht1⟩
+    simp only [run_assignLocal hgl, run_wow_nil, hs1'.ops', run_bind, run_get, hk, List.contains_cons,
+      beq_self_eq_true, Bool.true_or, ite_true, run_throw, run_modify, run_pure, RV]
+    have hs3 : StRel {} (IxRel E) σ1 { σ1' with cursor := σ'.cursor, seek := none, stmtSite := xs } := by strel hs1'
+    refine ⟨.inr ⟨v, σ1'.stack, rfl, rfl, rfl, ?_⟩, ht1⟩
+    have h4 := hs3.restoreOL hk hres
+    rw [← hs1'.ops'] at ⊢
+    exact h4
 
 /-- A source block containing only `return e` simulates a target block labelled with the return label
 `L` that contains an unlabelled block of `a`, which evaluates `e'` and assigns it to the output `o`,
@@ -414,28 +524,60 @@ values. The results are related by `VA E o`: equal results in related states, or
 which may not escape, sets `noGlobals`, and has no valued return. -/
 theorem body_valuedB_gen {cfg : ExternalBackendM PM} {n M : Nat} {e e' a x : StmtExprMd} {o : Parameter}
     {s s' s0 s4 : FileRange} {L : String} (hL : Reserved.retLabel = some L) (hGl : ¬ Gl L) (hng : Reserved.noGlobals)
-    (hvn : Reserved.vret = none)
+    (hvn : Reserved.vret = none) (hres : Reserved.resLabel L)
     (ha : evalStmt cfg (M + 2) a = (evalExprMd cfg (M + 1) e' >>= fun v => assignLocal o.name v))
-    (hx : evalStmt cfg (M + 2) x = throw (.exit_ L)) (hd : blockDeclarations [a, x] = [])
+    (hx : x.val = .Goto L .blockEnd) (hd : blockDeclarations [a, x] = [])
+    (hann : (stackAnnotation? a).isNone = true) (hla : statementLabels a = [])
     (hexp : FS (Sm E Gl {}) Eq (evalExprMd cfg n e) (evalExprMd cfg (M + 1) e')) :
     FSV (Sm E Gl {}) (Sm E Gl {}) (Sm0 E Gl {}) (VA E o)
       (runB (evalStmt cfg (n + 3) ⟨.Block [⟨.Return [e], s0⟩] none [] none, s⟩))
       (runB (evalStmt cfg (M + 6) ⟨.Block [⟨.Block [a, x] none [] none, s4⟩] (some L) [] none, s'⟩)) := by
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
   have hs' : StRel {} (IxRel E) σ σ' := hs
+  rcases x with ⟨xv, xs⟩
+  dsimp only at hx
+  subst hx
+  have hkeep : KeepsOL (evalExprMd cfg (M + 1) e') := (keepsAt cfg (M + 1)).exprMd e'
+  have hlx : statementLabels (⟨.Goto L .blockEnd, xs⟩ : StmtExprMd) = [] :=
+    statementLabels_other _ _ (by intros; nofun) (by intros; nofun)
+  have hl' : ∀ t ∈ [a, (⟨.Goto L .blockEnd, xs⟩ : StmtExprMd)], statementLabels t = [] := by
+    intro t ht
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at ht
+    rcases ht with rfl | rfl
+    · exact hla
+    · exact hlx
+  have hxa : (stackAnnotation? (⟨.Goto L .blockEnd, xs⟩ : StmtExprMd)).isNone = true := by simp [stackAnnotation?]
   have hd0 : blockDeclarations [(⟨.Return [e], s0⟩ : StmtExprMd)] = [] := by simp [blockDeclarations]
-  have hd4 : blockDeclarations [(⟨.Block [a, x] none [] none, s4⟩ : StmtExprMd)] = [] := by simp [blockDeclarations]
-  simp only [runB, evalStmt, List.forIn_nil, pure_bind, List.mapM_cons, List.mapM_nil, withBlockScope_nil hd, withBlockScope_nil hd0, withBlockScope_nil hd4,
-    run_chargeStep, hs'.steps, hs'.steps', evalStmtList, bind_assoc,
-    pure_bind, run_tryCatch, run_bind, run_get, hs'.coroSelf', hs'.coroSelf, Option.isNone_none, ite_true, Bool.false_eq_true,
-    ite_false, List.forM_eq_forM, List.forM_cons, List.forM_nil, run_modify, ha, hx, run_wow_nil, hs'.ops, hs'.ops'] at hn ⊢
-  have r0 := hexp.sim { σ with stmtSite := s0 } { σ' with stmtSite := a.source } τ τ' (by strel hs') ht
-  simp only [hs'.coroSelf', hs'.coroSelf, hs'.steps, hs'.steps', hs'.ops, hs'.ops'] at r0
+  have hd4 : blockDeclarations [(⟨.Block [a, ⟨.Goto L .blockEnd, xs⟩] none [] none, s4⟩ : StmtExprMd)] = [] := by
+    simp [blockDeclarations]
+  have hl0 : ∀ t ∈ [(⟨.Return [e], s0⟩ : StmtExprMd)], statementLabels t = [] := by
+    intro t ht
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at ht
+    subst ht
+    exact statementLabels_other _ _ (by intros; nofun) (by intros; nofun)
+  have hl4 : ∀ t ∈ [(⟨.Block [a, ⟨.Goto L .blockEnd, xs⟩] none [] none, s4⟩ : StmtExprMd)], statementLabels t = [] := by
+    intro t ht
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at ht
+    subst ht
+    rw [statementLabels_block]
+    simp [hla, hlx]
+  have hra : (stackAnnotation? (⟨.Return [e], s0⟩ : StmtExprMd)).isNone = true := by simp [stackAnnotation?]
+  have hba : (stackAnnotation? (⟨.Block [a, ⟨.Goto L .blockEnd, xs⟩] none [] none, s4⟩ : StmtExprMd)).isNone = true := by
+    simp [stackAnnotation?]
+  simp only [runB, evalStmt, List.forIn_nil, pure_bind, List.mapM_cons, List.mapM_nil, withBlockScope_nil hd,
+    withBlockScope_nil hd0, withBlockScope_nil hd4, evalStmtList_plain hl', evalStmtList_plain hl0,
+    evalStmtList_plain hl4, run_chargeStep, hs'.steps, hs'.steps', bind_assoc, pure_bind, run_tryCatch, run_bind,
+    run_get, hs'.coroSelf, hs'.coroSelf', Option.isNone_none, ite_true, List.forM_eq_forM, List.forM_cons,
+    List.forM_nil, run_modify, ha, run_wow_nil, hs'.ops, hs'.ops', run_withOpenLabel, hann, hxa, hra, hba] at hn ⊢
+  have r0 := hexp.sim { σ with stmtSite := s0 } { σ' with openLabels := L :: σ'.openLabels, stmtSite := a.source } τ τ'
+    (StRel.site (StRel.pushOL (by strel hs' : StRel {} (IxRel E) { σ with stmtSite := s0 } σ') hres) a.source) ht
+  simp only [hs'.coroSelf, hs'.coroSelf', hs'.ops, hs'.ops', hs'.steps, hs'.steps'] at r0
   revert r0 hn
   generalize run (evalExprMd cfg n e) _ τ = X
-  generalize run (evalExprMd cfg (M + 1) e') _ τ' = Y
   intro hn r0
   rcases X with e0 | ⟨⟨c | v, σ1⟩, τ1⟩ <;>
+    revert r0 <;>
+    generalize hY : run (evalExprMd cfg (M + 1) e') _ τ' = Y <;> intro r0 <;>
     rcases Y with e1 | ⟨⟨c' | v', σ1'⟩, τ1'⟩ <;> dsimp only at hn ⊢
   · first | trivial | exact r0 not_OOF_error
   · first | exact RR.ofStuck (r0 not_OOF_error) _ | exact RV.ofStuck (r0 not_OOF_error) _ | exact r0 not_OOF_error
@@ -448,30 +590,37 @@ theorem body_valuedB_gen {cfg : ExternalBackendM PM} {n M : Nat} {e e' a x : Stm
     obtain ⟨hsg, ht1⟩ := r0 hn0
     obtain ⟨hcr, hok, hs1⟩ := hsg.same (fun v => Sm.noWin _ (not_free_none hvn _) v)
     have hs1' : StRel {} (IxRel E) σ1 σ1' := hs1
+    have hk := (hkeep (L :: σ'.openLabels)).keep _ _ _ _ _ rfl hY
+    have hs2 : StRel {} (IxRel E) σ1 { σ1' with openLabels := σ'.openLabels } := hs1'.restoreOL hk hres
     rcases hcr with rfl | ⟨L', hL', rfl, rfl⟩ | ⟨_, _, rfl, rfl⟩
     · cases c with
       | exit_ l =>
         have hne : (l == L) = false := by
           simp only [beq_eq_false_iff_ne]; rintro rfl; exact hGl hok
         simp only [hne, Bool.false_eq_true, ite_false, run_throw]
-        exact ⟨.inl ⟨.inl rfl, hok, hs1⟩, ht1⟩
+        exact ⟨.inl ⟨.inl rfl, hok, hs2⟩, ht1⟩
       | return_ w =>
         rcases w with _ | ⟨_, _ | ⟨_, _⟩⟩
         · simp only [run_throw, run_pure, RV]
-          exact ⟨.inl ⟨rfl, hs1'⟩, ht1⟩
+          exact ⟨.inl ⟨rfl, hs2⟩, ht1⟩
         · simp only [run_throw, run_pure, RV]
-          exact ⟨.inl ⟨rfl, hs1'⟩, ht1⟩
+          exact ⟨.inl ⟨rfl, hs2⟩, ht1⟩
         · first | exact (hok : False).elim | exact (h : False).elim | exact (hc : False).elim
-      | goto_ l => exact (hok : False).elim
+      | goto_ l =>
+        have hne : (l == L) = false := by
+          simp only [beq_eq_false_iff_ne]; rintro rfl; exact hGl hok
+        simp only [hne, Bool.false_eq_true, ite_false, run_throw]
+        exact ⟨.inl ⟨.inl rfl, hok, hs2⟩, ht1⟩
       | _ =>
         simp only [run_throw, RV]
-        exact ⟨.inl ⟨.inl rfl, hok, hs1⟩, ht1⟩
+        exact ⟨.inl ⟨.inl rfl, hok, hs2⟩, ht1⟩
     · have : L' = L := Option.some.inj (hL'.symm.trans hL)
       subst this
       simp only [beq_self_eq_true, ite_true, run_modify, run_pure, RV]
-      exact ⟨.inl ⟨rfl, by strel hs1'⟩, ht1⟩
+      have hs3 : StRel {} (IxRel E) σ1 { σ1' with cursor := σ'.cursor, seek := none } := by strel hs1'
+      exact ⟨.inl ⟨rfl, hs3.restoreOL hk hres⟩, ht1⟩
     · simp only [run_throw, RR, ExRel] at *
-      exact ⟨.inl ⟨.inr (.inr ⟨_, _, rfl, rfl⟩), ‹_›, ‹_›⟩, ‹_›⟩
+      exact ⟨.inl ⟨.inr (.inr ⟨_, _, rfl, rfl⟩), hok, hs2⟩, ht1⟩
   · have hn0 : ¬ OOF (Except.ok ((Except.error c, σ1), τ1) : R Value) := by
       rw [OOF_err]; rintro rfl; exact hn (by simp [run_throw, OOF])
     exact absurd (r0 hn0) (by simp [RR, ExRel])
@@ -479,10 +628,15 @@ theorem body_valuedB_gen {cfg : ExternalBackendM PM} {n M : Nat} {e e' a x : Stm
   · exact absurd (r0 not_OOF_ok) (by simp [RR, ExRel])
   · obtain ⟨rfl, hs1, ht1⟩ := r0 not_OOF_ok
     have hs1' : StRel {} (IxRel E) σ1 σ1' := hs1
+    have hk := (hkeep (L :: σ'.openLabels)).keep _ _ _ _ _ rfl hY
     have hgl : σ1'.globals.contains o.name.text = false := hs1'.gk' _ (.inl hng)
-    simp only [run_assignLocal hgl, run_wow_nil, hs1'.ops', run_throw, beq_self_eq_true, ite_true, run_modify,
-      run_pure, RV]
-    refine ⟨.inr ⟨v, σ1'.stack, rfl, rfl, rfl, by strel hs1'⟩, ht1⟩
+    simp only [run_assignLocal hgl, run_wow_nil, hs1'.ops', run_bind, run_get, hk, List.contains_cons,
+      beq_self_eq_true, Bool.true_or, ite_true, run_throw, run_modify, run_pure, RV]
+    have hs3 : StRel {} (IxRel E) σ1 { σ1' with cursor := σ'.cursor, seek := none, stmtSite := xs } := by strel hs1'
+    refine ⟨.inr ⟨v, σ1'.stack, rfl, rfl, rfl, ?_⟩, ht1⟩
+    have h4 := hs3.restoreOL hk hres
+    rw [← hs1'.ops'] at ⊢
+    exact h4
 
 omit [Reserved] in
 /-- `tryCatch` rule for `FSV`: if `x` is simulated by `y`, the handlers `h c` and `h' c` simulate for

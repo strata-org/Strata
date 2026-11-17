@@ -287,6 +287,13 @@ def Core.passSSA (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.d
 def Core.passDeadDefElim : Core.PipelinePhase :=
   Core.deadDefElimPipelinePhase
 
+/-- Generate obligations by symbolic execution (`--vcgen symexec`), in place of
+    `passSymbolicEval`. -/
+def Core.passSymExec (options : Core.VerifyOptions := Core.VerifyOptions.default)
+    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
+    Core.PipelinePhase :=
+  _root_.Core.symExecPipelinePhase options moreFns
+
 /-- Extract common subexpressions introduced by partial evaluation. -/
 def Core.passCommonSubexprElim : Core.PipelinePhase :=
   Core.commonSubexprElimPhase
@@ -312,19 +319,19 @@ def Core.passUnrollBoundedQuantifiers : Core.PipelinePhase :=
     from them, and resolution hands back the phase values this list holds, so a vocabulary
     built from the defaults would run those two under the defaults.
 
-    The same phases are nameable under every `options.vcgen`. The phases `passDeclObligations`,
-    `passWP`, `passSSA` and `passDeadDefElim` are in the default order when `options.vcgen` is
-    `.wp`, and `passSymbolicEval` and `passCommonSubexprElim` when it is `.symbolic`; the phases
-    of the other mode are listed after it. -/
+    The same phases are nameable in every mode (`options.vcgen`, `options.symExec`): the
+    default order, then each phase in `others` it leaves out, each name once. Among these are
+    `assertNoCFGBodies`, which `--vcgen symexec` drops, and the VC generation phases outside the
+    mode's order. -/
 def Core.nameablePhases (options : Core.VerifyOptions := Core.VerifyOptions.default) :
     List Core.PipelinePhase :=
-  Core.corePipelinePhases options
-    ++ [Core.passInlineAll, Core.passUnrollBoundedQuantifiers, Core.passFunctionInlining,
-        Core.passFoldAxioms, Core.passEqualitySimplification]
-    ++ (match options.vcgen with
-        | .symbolic => [Core.passDeclObligations options, Core.passWP, Core.passSSA,
-                        Core.passDeadDefElim]
-        | .wp => [Core.passSymbolicEval options, Core.passCommonSubexprElim])
+  let defaults := Core.corePipelinePhases options
+  let others := [Core.passInlineAll, Core.passUnrollBoundedQuantifiers, Core.passFunctionInlining,
+      Core.passFoldAxioms, Core.passEqualitySimplification, Core.passDeclObligations options,
+      _root_.Core.ProgramFact.assertPhase .noCFGBodies,
+      Core.passWP, Core.passSSA, Core.passDeadDefElim, Core.passSymbolicEval options,
+      Core.passSymExec options, Core.passCommonSubexprElim]
+  defaults ++ others.filter fun p => !defaults.any (·.phase.name == p.phase.name)
 
 /-! ### Standard Core verification pipeline phases
 

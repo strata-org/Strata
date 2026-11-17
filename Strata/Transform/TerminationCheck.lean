@@ -444,17 +444,7 @@ where
       | .type (.data block) _md => do
         tf := tf.push block
         acc := acc.push d
-      | .proc proc _ => do
-        -- A CFG body is not walked here, and the recursive calls inside one
-        -- would go unchecked. `noCFGBodies` is declared as a requirement; this
-        -- is where it is enforced.
-        match proc.body with
-        | .cfg _ =>
-          throw (Strata.Message.fromFormat
-            f!"❌ TerminationCheck: procedure {proc.header.name.name} has a CFG body; \
-               termination is only checked on structured bodies.")
-        | .structured _ => acc := acc.push d
-      | .func _ _ | .ax _ _ | .lemma _ _ | .distinct _ _ _
+      | .proc _ _ | .func _ _ | .ax _ _ | .lemma _ _ | .distinct _ _ _
       | .type (.con _) _ | .type (.syn _) _ => do
         acc := acc.push d
       remaining := rest
@@ -464,13 +454,13 @@ end TermCheck
 
 /-- TermCheck pipeline phase: generates termination-checking lemmas for
     recursive functions. Model-preserving because it only adds new lemmas,
-    adtRank functions and their axioms. -/
+    adtRank functions and their axioms. It keeps every procedure as it is, whatever its
+    body. -/
 def termCheckPipelinePhase : PipelinePhase :=
   -- `noBetaRedexes` is not claimed because a call's measure is instantiated by
   -- substituting the call's arguments, and a function-typed parameter applied to
   -- an abstraction argument leaves a redex behind.
   modelPreservingPipelinePhase "termCheck"
-    (requires := factSet![.noCFGBodies])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,

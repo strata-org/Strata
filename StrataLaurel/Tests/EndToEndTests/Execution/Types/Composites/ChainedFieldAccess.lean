@@ -324,3 +324,32 @@ procedure genericChainedUnknownField()
 //           ^^^^ error: Resolution failed: 'nope' is not defined
 };
 #end
+
+/-! An instance call through a field whose type is a generic composite: the
+receiver `h#c` resolves through the field's `Cell<int>` to `Cell`. -/
+
+#eval testLaurelExecution {} <|
+#strata
+program Laurel;
+composite Cell<T> {
+  var v: T
+  procedure get(self: Cell<T>) returns (r: T) opaque ensures r == self#v { r := self#v };
+}
+
+composite Holder {
+  var c: Cell<int>
+}
+
+procedure appliedFieldReceiver()
+  entry
+  opaque
+  modifies *
+{
+  var h: Holder := new Holder;
+  var c: Cell<int> := new Cell<int>;
+  c#v := 3;
+  h#c := c;
+  var r: int := h#c#get();
+  assert r == 3
+};
+#end

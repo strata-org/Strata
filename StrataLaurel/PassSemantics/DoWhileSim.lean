@@ -1,6 +1,12 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
 import StrataLaurel.PassSemantics.ProgTrav
 import StrataLaurel.Implementation.EliminateDoWhile
 import StrataLaurel.PassSemantics.EntryAt
+import StrataLaurel.PassSemantics.Landing
 
 /-!
 # Correctness of `EliminateDoWhile`
@@ -27,9 +33,9 @@ namespace Strata.Laurel.PassSemantics.DoWhileSim
 open Strata.Laurel
 open Strata.Laurel.Interpreter
 
-local instance : Reserved := Reserved.none
+local instance : Reserved := Reserved.none (fun l => "$dowhile_exit_".isPrefixOf l)
 
-variable {G : StackFrame}
+variable {G : StackFrame} {ol : List String}
 open EliminateDoWhile
 
 def Gl (l : String) : Prop := ¬ "$dowhile_exit_".isPrefixOf l
@@ -77,6 +83,14 @@ private theorem rewriteNode_notYield (u : Bool) (r : StmtExprMd) (st : ElimState
       StateT.modifyGet, pure, StateT.pure]
   · exact h
 
+private theorem sl_while (c : StmtExprMd) (invs : List StmtExprMd) (dec : Option StmtExprMd) (body : StmtExprMd)
+    (pt : Bool) (src : FileRange) : statementLabels ⟨.While c invs dec body pt, src⟩ = [] :=
+  statementLabels_other _ _ (by intros; nofun) (by intros; nofun)
+
+private theorem target_labels (c : StmtExprMd) (invs : List StmtExprMd) (dec : Option StmtExprMd) (body : StmtExprMd)
+    (src : FileRange) (L : String) : statementLabels (target c invs dec body src L) = [L] := by
+  simp [target, loopW, statementLabels_block, sl_while]
+
 private theorem rewriteNode_other (r : StmtExprMd) (st : ElimState)
     (h : ∀ c invs dec body, r.val ≠ .While c invs dec body true) : ((rewriteNode r).run st).1 = r := by
   unfold rewriteNode
@@ -84,6 +98,24 @@ private theorem rewriteNode_other (r : StmtExprMd) (st : ElimState)
   · rename_i c invs dec body heq
     exact absurd heq (h c invs dec body)
   · rfl
+
+private theorem rewriteNode_labels (u : Bool) (r : StmtExprMd) (st : ElimState) (l : String)
+    (hl : ¬ "$dowhile_exit_".isPrefixOf l) :
+    (l ∈ statementLabels ((fDW u r).run st).1 ↔ l ∈ statementLabels r) := by
+  show l ∈ statementLabels ((rewriteNode r).run st).1 ↔ _
+  by_cases hw : ∃ c invs dec body, r.val = .While c invs dec body true
+  · obtain ⟨c, invs, dec, body, hv⟩ := hw
+    rcases r with ⟨v, src⟩
+    dsimp only at hv
+    subst hv
+    rw [rewriteNode_while, target_labels, sl_while]
+    simp only [List.mem_singleton, List.not_mem_nil, iff_false]
+    rintro rfl
+    exact hl (by
+      simp only [String.isPrefixOf, Nat.toString_eq_repr, String.startsWith_string_iff, String.reduceToList,
+        String.toList_append, Nat.toList_repr, ↓Char.isValue]
+      exact List.prefix_append _ _)
+  · rw [rewriteNode_other _ _ (fun c invs dec body h => hw ⟨c, invs, dec, body, h⟩)]
 
 private theorem shape_while_true {s r : StmtExprMd} (h : Shape E s r) {c invs dec body}
     (hr : r.val = .While c invs dec body true) : ∃ c invs dec body, s.val = .While c invs dec body true := by
@@ -132,6 +164,24 @@ private theorem closed (s t : StmtExprMd) (h : E s t) : NR E Rw Gl s t := by
     rw [rewriteNode_other _ _ (fun c invs dec body hr => hw (shape_while_true hsh hr))]
     exact ⟨hsh, hs.here.2.1, valKids_triv (fun _ _ => trivial) (fun _ _ => trivial) hsh⟩
 
+
+/-- Every pair of terms related by `E` holds the same statement-position labels that are not reserved. -/
+private theorem labE (s t : StmtExprMd) (h : E s t) (l : String) (hl : ¬ "$dowhile_exit_".isPrefixOf l) :
+    (l ∈ statementLabels s ↔ l ∈ statementLabels t) := by
+  obtain ⟨⟨u, st, rfl⟩, hs⟩ := h
+  exact (trav_labels (f := fDW) (P := PDW) (fun e he => he.1) (fun e _ => namesOK_none e) rewriteNode_notYield
+    (fun u r st l hl => rewriteNode_labels u r st l hl) (fun l hl a ts h => h.elim) l hl s u st hs).symm
+
+/-- A rewrite step of `EliminateDoWhile` holds only reserved labels and neither side is a stack annotation. -/
+private theorem rwLab (s t : StmtExprMd) (hrw : Rw s t) :
+    (∀ l, ¬ "$dowhile_exit_".isPrefixOf l → l ∉ statementLabels s ∧ l ∉ statementLabels t) ∧
+      (stackAnnotation? s).isNone = true ∧ (stackAnnotation? t).isNone = true := by
+  obtain ⟨c, invs, dec, body, src, c', invs', dec', body', src', L, rfl, rfl, -, -, -, hL, -⟩ := hrw
+  refine ⟨fun l hl => ⟨by simp [sl_while], ?_⟩, by simp [stackAnnotation?], by simp [target, stackAnnotation?]⟩
+  rw [target_labels]
+  simp only [List.mem_singleton]
+  rintro rfl
+  exact hl hL
 
 /-- For a term `w` with `Hered PDW w`, the traversal's result is a term `r` with `Shape E w r`, or the
 rewritten loop `target c invs dec body src L` when `r` is a post-test loop
@@ -219,9 +269,9 @@ private theorem run_tryCatch_bind' (a : EvalM PM α) (f : α → EvalM PM Unit) 
   · rfl
   · exact (run_tryCatch _ _ _ _).symm
 
-private theorem fsc_bind {x a : EvalM PM α} {g f : α → EvalM PM Unit} (hx : FS (Sm E Gl G) Eq x a)
-    (hg : ∀ v, FS (Sm E Gl G) Eq (g v) (tryCatch (f v) h)) :
-    FS (Sm E Gl G) Eq (x >>= g) (tryCatch (a >>= f) h) := by
+private theorem fsc_bind {x a : EvalM PM α} {g f : α → EvalM PM Unit} (hx : FS (SmO E Gl G ol) Eq x a)
+    (hg : ∀ v, FS (SmO E Gl G ol) Eq (g v) (tryCatch (f v) h)) :
+    FS (SmO E Gl G ol) Eq (x >>= g) (tryCatch (a >>= f) h) := by
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
   have h0 := hx.sim σ σ' τ τ' hs ht (not_oof_bind hn)
   rw [run_tryCatch_bind']
@@ -231,7 +281,7 @@ private theorem fsc_bind {x a : EvalM PM α} {g f : α → EvalM PM Unit} (hx : 
     simp only [RR, ExRel, false_and] at h0
   all_goals try (first | exact h0 | exact RR.ofStuck h0 _)
   · obtain ⟨hsg, ht1⟩ := h0
-    obtain ⟨hcr, hok, hs1⟩ := hsg.same (fun v => Sm.noWin _ (not_free_none rfl _) v)
+    obtain ⟨hcr, hok, hs1⟩ := hsg.same (fun v => SmO.noWin (not_free_none rfl _) v)
     rcases CtlR.eq hcr with rfl | ⟨_, _, rfl, rfl⟩
     · dsimp only
       rw [hh c hok, run_throw]
@@ -242,8 +292,8 @@ private theorem fsc_bind {x a : EvalM PM α} {g f : α → EvalM PM Unit} (hx : 
   · obtain ⟨rfl, hs1, ht1⟩ := h0
     exact (hg v).sim σ1 σ1' τ1 τ1' hs1 ht1 hn
 
-private theorem fsc_lift {x y : EvalM PM Unit} (hx : FS (Sm E Gl G) Eq x y) :
-    FS (Sm E Gl G) Eq x (tryCatch y h) := by
+private theorem fsc_lift {x y : EvalM PM Unit} (hx : FS (SmO E Gl G ol) Eq x y) :
+    FS (SmO E Gl G ol) Eq x (tryCatch y h) := by
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
   have h0 := hx.sim σ σ' τ τ' hs ht hn
   rw [run_tryCatch]
@@ -252,7 +302,7 @@ private theorem fsc_lift {x y : EvalM PM Unit} (hx : FS (Sm E Gl G) Eq x y) :
     simp only [RR, ExRel, false_and] at h0
   all_goals try (first | exact h0 | exact RR.ofStuck h0 _)
   · obtain ⟨hsg, ht1⟩ := h0
-    obtain ⟨hcr, hok, hs1⟩ := hsg.same (fun v => Sm.noWin _ (not_free_none rfl _) v)
+    obtain ⟨hcr, hok, hs1⟩ := hsg.same (fun v => SmO.noWin (not_free_none rfl _) v)
     rcases CtlR.eq hcr with rfl | ⟨_, _, rfl, rfl⟩
     · dsimp only
       rw [hh c hok, run_throw]
@@ -265,51 +315,51 @@ private theorem fsc_lift {x y : EvalM PM Unit} (hx : FS (Sm E Gl G) Eq x y) :
 
 omit hh in
 private theorem fsc_get_r {x : EvalM PM Unit} {f : EvalState → EvalM PM Unit}
-    (hf : ∀ s, s.coroSelf = none → s.steps = none → FS (Sm E Gl G) Eq x (tryCatch (f s) h)) :
-    FS (Sm E Gl G) Eq x (tryCatch (get >>= f) h) := by
+    (hf : ∀ s, s.coroSelf = none → s.steps = none → FS (SmO E Gl G ol) Eq x (tryCatch (f s) h)) :
+    FS (SmO E Gl G ol) Eq x (tryCatch (get >>= f) h) := by
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
-  have hs' : StRel G (IxRel E) σ σ' := hs
+  have hs' : StRel G (IxRel E) σ σ' := hs.1
   rw [run_tryCatch_bind', run_get]
   exact (hf σ' hs'.coroSelf' hs'.steps').sim σ σ' τ τ' hs ht hn
 
 omit hh in
 private theorem fsc_modify_r {x : EvalM PM Unit} {g : EvalState → EvalState} {f : PUnit → EvalM PM Unit}
-    (hg : ∀ σ σ', StRel G (IxRel E) σ σ' → StRel G (IxRel E) σ (g σ'))
-    (hf : FS (Sm E Gl G) Eq x (tryCatch (f ()) h)) :
-    FS (Sm E Gl G) Eq x (tryCatch (modify g >>= f) h) := by
+    (hg : ∀ σ σ', (SmO E Gl G ol).st σ σ' → (SmO E Gl G ol).st σ (g σ'))
+    (hf : FS (SmO E Gl G ol) Eq x (tryCatch (f ()) h)) :
+    FS (SmO E Gl G ol) Eq x (tryCatch (modify g >>= f) h) := by
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
   rw [run_tryCatch_bind', run_modify]
   exact hf.sim σ (g σ') τ τ' (hg σ σ' hs) ht hn
 
 omit hh in
 private theorem fsc_wow_r {x : EvalM PM Unit} {t : StmtExprMd} {y : EvalM PM β} {f : β → EvalM PM Unit}
-    (hf : FS (Sm E Gl G) Eq x (tryCatch (y >>= f) h)) :
-    FS (Sm E Gl G) Eq x (tryCatch (withOperandWindow t y >>= f) h) := by
+    (hf : FS (SmO E Gl G ol) Eq x (tryCatch (y >>= f) h)) :
+    FS (SmO E Gl G ol) Eq x (tryCatch (withOperandWindow t y >>= f) h) := by
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
-  have hs' : StRel G (IxRel E) σ σ' := hs
+  have hs' : StRel G (IxRel E) σ σ' := hs.1
   rw [run_tryCatch_bind', run_wow_nil hs'.ops', ← run_tryCatch_bind']
   exact hf.sim σ σ' τ τ' hs ht hn
 
 omit hh in
 private theorem fsc_pure_r {x : EvalM PM Unit} {a : α} {f : α → EvalM PM Unit}
-    (hf : FS (Sm E Gl G) Eq x (tryCatch (f a) h)) :
-    FS (Sm E Gl G) Eq x (tryCatch (pure a >>= f) h) := by
+    (hf : FS (SmO E Gl G ol) Eq x (tryCatch (f a) h)) :
+    FS (SmO E Gl G ol) Eq x (tryCatch (pure a >>= f) h) := by
   simpa only [pure_bind] using hf
 
 end Catch
 
 private theorem fs_get_l {g : EvalState → EvalM PM α} {y : EvalM PM α}
-    (hg : ∀ s, s.coroSelf = none → s.steps = none → s.seek = none → FS (Sm E Gl G) Eq (g s) y) :
-    FS (Sm E Gl G) Eq (get >>= g) y := by
+    (hg : ∀ s, s.coroSelf = none → s.steps = none → s.seek = none → FS (SmO E Gl G ol) Eq (g s) y) :
+    FS (SmO E Gl G ol) Eq (get >>= g) y := by
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
-  have hs' : StRel G (IxRel E) σ σ' := hs
+  have hs' : StRel G (IxRel E) σ σ' := hs.1
   rw [run_bind, run_get] at hn ⊢
   exact (hg σ hs'.coroSelf hs'.steps hs'.seek).sim σ σ' τ τ' hs ht hn
 
 private theorem fs_charge_l {b : StmtExprMd} {g : Unit → EvalM PM α} {y : EvalM PM α}
-    (hg : FS (Sm E Gl G) Eq (g ()) y) : FS (Sm E Gl G) Eq (chargeIteration b >>= g) y := by
+    (hg : FS (SmO E Gl G ol) Eq (g ()) y) : FS (SmO E Gl G ol) Eq (chargeIteration b >>= g) y := by
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
-  have hs' : StRel G (IxRel E) σ σ' := hs
+  have hs' : StRel G (IxRel E) σ σ' := hs.1
   rw [run_bind, run_chargeIteration b hs'.steps] at hn ⊢
   exact hg.sim σ σ' τ τ' hs ht hn
 
@@ -355,7 +405,7 @@ private theorem isTrue_not_fails {v : Value} (hv : ¬ ∃ b, v = .bool ⟨b⟩) 
 omit hc hext ihs in
 private theorem fsc_fail_both {X : PM α} {Y : PM β} {g : α → EvalM PM Unit} {f : β → EvalM PM Unit}
     (hXY : ∀ τ τ', ∃ e e', X τ = .error e ∧ Y τ' = .error e' ∧ (Stuck e' → Stuck e)) :
-    FS (Sm E Gl G) Eq (liftM X >>= g) (tryCatch (liftM Y >>= f) h) := by
+    FS (SmO E Gl G ol) Eq (liftM X >>= g) (tryCatch (liftM Y >>= f) h) := by
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
   rw [run_tryCatch_bind', run_bind, run_lift, run_lift]
   obtain ⟨e, e', he, he', hs⟩ := hXY τ τ'
@@ -363,14 +413,27 @@ private theorem fsc_fail_both {X : PM α} {Y : PM β} {g : α → EvalM PM Unit}
   exact hs
 
 omit hc hext ihs hh in
-private theorem fsc_exit {L : String} {rest : Unit → EvalM PM Unit}
+private theorem fsc_exit {L : String} {src : FileRange} {j : Nat} (hL0 : L ∈ ol) {rest : Unit → EvalM PM Unit}
     (hexit : ∀ σ τ, ∃ σ'', run (h (.exit_ L)) σ τ = .ok ((.ok (), σ''), τ) ∧
-      ∀ s, StRel G (IxRel E) s σ → StRel G (IxRel E) s σ'') :
-    FS (Sm E Gl G) Eq (pure ()) (tryCatch (throw (.exit_ L) >>= rest) h) := by
+      ∀ s, (SmO E Gl G ol).st s σ → (SmO E Gl G ol).st s σ'') :
+    FS (SmO E Gl G ol) Eq (pure ()) (tryCatch (evalScopedStmt cfg (j + 2) (exitL src L) >>= rest) h) := by
   refine ⟨fun σ σ' τ τ' hs ht _ => ?_⟩
-  rw [run_tryCatch_bind', run_throw]
-  obtain ⟨σ'', he, hst⟩ := hexit σ' τ'
+  have hs' : StRel G (IxRel E) σ σ' := hs.1
+  have e1 : (evalScopedStmt cfg (j + 2) (exitL src L) : EvalM PM Unit) =
+      withOperandWindow (exitL src L) (evalStmt cfg (j + 1) (exitL src L)) := by
+    show withBlockScope [exitL src L] (withOperandWindow (exitL src L) (evalStmt cfg (j + 1) (exitL src L))) = _
+    exact withBlockScope_nil rfl _
+  have hco : σ'.openLabels.contains L = true := by
+    rw [hs.2]
+    exact List.contains_iff_mem.mpr hL0
+  have e2 : run (withOperandWindow (exitL src L) (evalStmt cfg (j + 1) (exitL src L))) σ' τ' =
+      .ok ((.error (.exit_ L), σ'), τ') := by
+    rw [run_wow_nil hs'.ops']
+    simp only [exitL, evalStmt, run_bind, run_get, hco, ite_true]
+    rfl
+  rw [e1, run_tryCatch_bind', e2]
   dsimp only
+  obtain ⟨σ'', he, hst⟩ := hexit σ' τ'
   rw [he, run_pure]
   exact ⟨rfl, hst σ hs, ht⟩
 
@@ -395,6 +458,141 @@ private theorem decl_block {body : StmtExprMd} (hb : ∃ ss lab, body.val = .Blo
   obtain ⟨ss, lab, hv⟩ := hb
   simp [blockDeclarations, hv]
 
+omit hext ihs hh in
+include hc in
+/-- Negating a condition is an operator call: it lets no `jump_` out, so the boundary of the expression
+evaluation around it changes nothing. -/
+private theorem exprMd_notC (k : Nat) (c : StmtExprMd) (src : FileRange) :
+    evalExprMd cfg (k + 2) (notC c src) =
+      ((modify fun (s : EvalState) => { s with callSite := src }) >>= fun _ =>
+        evalExpr cfg (k + 1) (.Call none (mkId Operation.Not.procName) [c] [])) := by
+  rw [evalExprMd]
+  simp only [notC]
+  refine jumpBoundary_noJ (NoJ.bind (NoJ.modify _) (fun _ => ?_))
+  simp only [evalExpr, not_coro, of_not, Bool.false_eq_true, ite_false, List.mapM_cons, List.mapM_nil, hc.strict,
+    isPartialOp, bind_assoc]
+  repeat' (first
+    | exact noJ_evalExprMd cfg _ _
+    | with_unfolding_none exact NoJ.liftM _
+    | with_unfolding_none exact NoJ.pure _
+    | with_unfolding_none exact NoJ.get
+    | with_reducible apply NoJ.bind
+    | refine fun _ => ?_)
+
+omit hc hext ihs hh in
+/-- The exit `exitL src L` run with `L` open leaves `L`: it returns no `jump_`. -/
+private theorem exitL_noJ {m : Nat} {src : FileRange} {L : String} {σ : EvalState} (hL : L ∈ σ.openLabels) :
+    NoJAt (evalStmt cfg m (exitL src L)) σ := by
+  cases m with
+  | zero => rw [evalStmt]; exact NoJAt.ofNoJ (NoJ.throw (fun _ _ h => by cases h))
+  | succ m =>
+    simp only [exitL, evalStmt]
+    refine NoJAt.bind (NoJAt.ofNoJ NoJ.get) (fun τ a σ1 τ1 h => ?_)
+    rw [run_get] at h
+    cases h
+    have hco : σ.openLabels.contains L = true := List.contains_iff_mem.mpr hL
+    simp only [hco, ite_true]
+    exact NoJAt.ofNoJ (NoJ.throw (fun _ _ h => by cases h))
+
+omit hc hext ihs hh in
+/-- The guard `guard c' src L` run outside a coroutine body with `L` open returns no `jump_`: its condition is
+an expression, which lets none out, and its exit leaves the open block `L`. -/
+private theorem guard_noJ {m : Nat} {c' : StmtExprMd} {src : FileRange} {L : String} {σ : EvalState}
+    (hco : σ.coroSelf = none) (hL : L ∈ σ.openLabels) : NoJAt (evalStmt cfg m (guard c' src L)) σ := by
+  cases m with
+  | zero => rw [evalStmt]; exact NoJAt.ofNoJ (NoJ.throw (fun _ _ h => by cases h))
+  | succ m =>
+    simp only [guard]
+    rw [evalStmt]
+    refine NoJAt.bind (NoJAt.ofNoJ NoJ.get) (fun τ a σ1 τ1 h => ?_)
+    rw [run_get] at h
+    cases h
+    simp only [hco, Option.isNone_none, ite_true]
+    refine NoJAt.bind (NoJAt.ofNoJ (noJ_evalExprMd cfg m _)) (fun τ v σ3 τ3 h3 => ?_)
+    have hol3 : σ3.openLabels = σ.openLabels := ((keepsAt cfg m).exprMd _ σ.openLabels).keep _ _ _ _ _ rfl h3
+    refine NoJAt.bind (NoJAt.ofNoJ (NoJ.liftM _)) (fun τ b σ4 τ4 h4 => ?_)
+    have e4 : σ4 = σ3 := by
+      rw [run_lift] at h4
+      split at h4
+      · cases h4
+      · simp only [Except.ok.injEq, Prod.mk.injEq] at h4
+        exact h4.1.2.symm
+    subst e4
+    split
+    · cases m with
+      | zero => exact NoJAt.ofNoJ (NoJ.throw (fun _ _ h => by cases h))
+      | succ m =>
+        show NoJAt (withBlockScope [exitL src L] (withOperandWindow (exitL src L) (evalStmt cfg m (exitL src L)))) σ4
+        rw [wbs_nil rfl]
+        exact NoJAt.withOperandWindow (fun σ' hol _ => exitL_noJ (by rw [hol, hol3]; exact hL))
+    · exact NoJAt.ofNoJ (NoJ.pure _)
+
+omit hc hext ihs hh in
+/-- Running the statements `[body', guard c' src L]` of the rewritten loop's body one after the other, outside a
+coroutine body with `L` open, returns no `jump_` to a label they hold: the body's own statement list lands those,
+and the guard returns no `jump_`. -/
+private theorem loopBody_noLand {m : Nat} {body' c' : StmtExprMd} {src : FileRange} {L : String}
+    (hB' : ∃ ss lab, body'.val = .Block ss lab [] none) {σ : EvalState} (hco : σ.coroSelf = none)
+    (hL : L ∈ σ.openLabels) (τ : Trace) (l : String) (d : GotoDestination) (σ1 : EvalState) (τ1 : Trace)
+    (h : run ([body', guard c' src L].forM fun s => do
+        modify fun (st : EvalState) => { st with stmtSite := s.source }
+        if (stackAnnotation? s).isNone then withOperandWindow s (evalStmt cfg (m + 1) s)) σ τ =
+          .ok ((.error (.jump_ l d), σ1), τ1)) : l ∉ flatLabels [body', guard c' src L] := by
+  obtain ⟨ss, lab, hv⟩ := hB'
+  rcases body' with ⟨bv, bs⟩
+  dsimp only at hv
+  subst hv
+  have hgl : statementLabels (guard c' src L) = [] := by
+    simp only [guard]
+    rw [statementLabels_ite]
+    simp [exitL, statementLabels_other]
+  have hfl : flatLabels [⟨.Block ss lab [] none, bs⟩, guard c' src L] = statementLabels ⟨.Block ss lab [] none, bs⟩ := by
+    simp [flatLabels, hgl]
+  rw [hfl]
+  have hab : (stackAnnotation? (⟨.Block ss lab [] none, bs⟩ : StmtExprMd)).isNone = true := by simp [stackAnnotation?]
+  have hag : (stackAnnotation? (guard c' src L)).isNone = true := by simp [guard, stackAnnotation?]
+  have hcn := cnAt cfg (m + 1)
+  have hkp := keepsAt cfg (m + 1)
+  simp only [List.forM_eq_forM, List.forM_cons, List.forM_nil, hab, hag, ite_true, bind_assoc] at h
+  rw [run_bind, run_modify] at h
+  dsimp only at h
+  rw [run_bind] at h
+  rcases hr : run (withOperandWindow ⟨.Block ss lab [] none, bs⟩ (evalStmt cfg (m + 1) ⟨.Block ss lab [] none, bs⟩))
+    { σ with stmtSite := bs } τ with e | ⟨⟨c | u, σ2⟩, τ2⟩ <;> rw [hr] at h
+  · cases h
+  · simp only [Except.ok.injEq, Prod.mk.injEq, Except.error.injEq] at h
+    obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
+    exact LandFree.withOperandWindow (landFree_block cfg m ss lab bs) (hcn.stmt _) { σ with stmtSite := bs }
+      _ _ _ _ _ hco hr
+  · have hco2 : σ2.coroSelf = none :=
+      (CN.withOperandWindow (hcn.stmt _)).keep { σ with stmtSite := bs } _ _ σ2 _ hco hr
+    have hol2 : σ2.openLabels = σ.openLabels :=
+      (OLKeep.withOperandWindow (hkp.stmt _ σ.openLabels)).keep { σ with stmtSite := bs } _ _ σ2 _ rfl hr
+    dsimp only at h
+    rw [run_bind, run_modify] at h
+    dsimp only at h
+    rw [run_bind] at h
+    exfalso
+    rcases hg : run (withOperandWindow (guard c' src L) (evalStmt cfg (m + 1) (guard c' src L)))
+      { σ2 with stmtSite := (guard c' src L).source } τ2 with e | ⟨⟨c | u, σ3⟩, τ3⟩ <;> rw [hg] at h
+    · cases h
+    · simp only [Except.ok.injEq, Prod.mk.injEq, Except.error.injEq] at h
+      obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h
+      exact NoJAt.withOperandWindow (σ := { σ2 with stmtSite := (guard c' src L).source })
+        (fun σ' hol hc' => guard_noJ (hc'.trans hco2) (by rw [hol]; show L ∈ σ2.openLabels; rw [hol2]; exact hL))
+        _ _ _ _ _ hg
+    · dsimp only at h
+      rw [run_pure] at h
+      cases h
+
+omit hc hext ihs hh in
+private theorem fsc_list_eq {X : EvalM PM Unit} {Y Y' : EvalM PM α} {R : α → EvalM PM Unit}
+    (heq : ∀ σ σ' τ', (SmO E Gl G ol).st σ σ' → run Y σ' τ' = run Y' σ' τ')
+    (hf : FS (SmO E Gl G ol) Eq X (tryCatch (Y' >>= R) h)) : FS (SmO E Gl G ol) Eq X (tryCatch (Y >>= R) h) := by
+  refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
+  rw [run_tryCatch_bind', heq σ σ' τ' hs, ← run_tryCatch_bind']
+  exact hf.sim σ σ' τ τ' hs ht hn
+
 include hc hext ihs hh in
 /-- The iterations of a source post-test loop are simulated by the iterations of the target's
 `while true` loop inside a `tryCatch` handler `h`. If the condition and body are related by `E`,
@@ -406,11 +604,11 @@ for every `j ≥ 6 * fb + 2`. It needs `FundAt` for every fuel up to `n`, a back
 private theorem loop {c c' body body' : StmtExprMd} {src : FileRange} {L : String}
     (hcc : E c c') (hbb : E body body') (hB : ∃ ss lab, body.val = .Block ss lab [] none)
     (hB' : ∃ ss lab, body'.val = .Block ss lab [] none)
-    (hexit : ∀ σ τ, ∃ σ'', run (h (.exit_ L)) σ τ = .ok ((.ok (), σ''), τ) ∧
-      ∀ s, StRel G (IxRel E) s σ → StRel G (IxRel E) s σ'')
-    {ci ci' : EvalM PM Unit} (hci : FS (Sm E Gl G) Eq ci ci') (rest : Unit → EvalM PM Unit) (fb j : Nat)
+    (hL0 : L ∈ ol) (hexit : ∀ σ τ, ∃ σ'', run (h (.exit_ L)) σ τ = .ok ((.ok (), σ''), τ) ∧
+      ∀ s, (SmO E Gl G ol).st s σ → (SmO E Gl G ol).st s σ'')
+    {ci ci' : EvalM PM Unit} (hci : FS (SmO E Gl G ol) Eq ci ci') (rest : Unit → EvalM PM Unit) (fb j : Nat)
     (hfb : fb ≤ n) (hj : 6 * fb + 2 ≤ j) :
-    FS (Sm E Gl G) Eq
+    FS (SmO E Gl G ol) Eq
       (ci >>= fun _ => evalScopedStmt cfg fb body >>= fun _ => evalWhileIter cfg c body true ci (pure ()) fb)
       (tryCatch (evalWhileIter cfg (trueE src) (loopBody c' body' src L) false ci' (pure ()) (j + 1) >>= rest)
         h) := by
@@ -432,28 +630,34 @@ private theorem loop {c c' body body' : StmtExprMd} {src : FileRange} {L : Strin
   unfold chargeStep
   simp only [bind_assoc]
   refine fsc_get_r (fun s _ hst => ?_)
-  simp only [hst, pure_bind, evalStmtList, bind_assoc]
-  refine fsc_get_r (fun s hco _ => ?_)
-  simp only [hco, Option.isNone_none, ite_true, Bool.false_eq_true, ite_false, List.forM_eq_forM, List.forM_cons,
-    List.forM_nil, bind_assoc, pure_bind]
+  simp only [hst, pure_bind]
+  refine fsc_list_eq (fun σ σ' τ' hs => run_evalStmtList_noLand cfg hs.1.coroSelf'
+    (loopBody_noLand hB' hs.1.coroSelf' (by rw [hs.2]; exact hL0) τ')) ?_
+  have hab' : (stackAnnotation? body').isNone = true := by
+    obtain ⟨ss, lab, hv⟩ := hB'
+    simp [stackAnnotation?, hv]
+  have hag : (stackAnnotation? (guard c' src L)).isNone = true := by simp [guard, stackAnnotation?]
+  simp only [List.forM_eq_forM, List.forM_cons, List.forM_nil, bind_assoc, pure_bind, hab', hag, ite_true]
   refine fsc_modify_r (fun σ σ' hs => ?_) ?_
-  · strel hs
+  · exact ⟨by strel hs.1, hs.2⟩
   refine fsc_wow_r ?_
-  refine fsc_bind hh ((ihs fb (by omega)).stmt _ _ (closed _ _ hbb) (ovOK_none rfl _ _) _ (by omega)) (fun _ => ?_)
+  refine fsc_bind hh (FSH.toO ((keepsAt cfg _).stmt _) ol
+    ((ihs fb (by omega)).stmt _ _ (closed _ _ hbb) (ovOK_none rfl _ _) _ (by omega))) (fun _ => ?_)
   refine fsc_modify_r (fun σ σ' hs => ?_) ?_
-  · strel hs
+  · exact ⟨by strel hs.1, hs.2⟩
   refine fsc_wow_r ?_
   conv => lhs; rw [evalWhileIter]
   simp only [guard, evalStmt, bind_assoc]
   refine fs_charge_l ?_
   refine fsc_get_r (fun s hco _ => ?_)
-  simp only [pure_bind, hco, Option.isNone_none, ite_true,
-    notC, evalExprMd, evalExpr, bind_assoc, not_coro, of_not, Bool.false_eq_true, ite_false,
+  simp only [pure_bind, hco, Option.isNone_none, ite_true, exprMd_notC hc]
+  simp only [evalExpr, bind_assoc, not_coro, of_not, Bool.false_eq_true, ite_false,
     isPartialOp, List.mapM_cons, List.mapM_nil, hc.strict]
   refine fsc_modify_r (fun σ σ' hs => ?_) ?_
-  · strel hs
+  · exact ⟨by strel hs.1, hs.2⟩
   refine fsc_get_r (fun _ _ _ => ?_)
-  refine fsc_bind hh ((ihs fb (by omega)).exprMdT (fun _ _ => trivial) _ _ (closed _ _ hcc) (ovOK_none rfl _ _) _ (by omega)) (fun v => ?_)
+  refine fsc_bind hh (FSH.toO ((keepsAt cfg _).exprMd _) ol
+    ((ihs fb (by omega)).exprMdT (fun _ _ => trivial) _ _ (closed _ _ hcc) (ovOK_none rfl _ _) _ (by omega))) (fun v => ?_)
   by_cases hv : ∃ b, v = .bool ⟨b⟩
   · obtain ⟨b, rfl⟩ := hv
     have e1 : (liftM (Interpreter.isTrue cfg (.bool ⟨b⟩)) : EvalM PM Bool) = pure b := rfl
@@ -462,10 +666,7 @@ private theorem loop {c c' body body' : StmtExprMd} {src : FileRange} {L : Strin
     simp only [e1, e2, e3, pure_bind]
     cases b
     · simp only [Bool.not_false, ite_true, Bool.false_eq_true, ite_false]
-      have e4 : (evalScopedStmt cfg (j + 2) (exitL src L) : EvalM PM Unit) =
-          withOperandWindow (exitL src L) (throw (.exit_ L)) := rfl
-      rw [e4]
-      exact fsc_wow_r (fsc_exit hexit)
+      exact fsc_exit hL0 hexit
     · simp only [Bool.not_true, Bool.false_eq_true, ite_false, ite_true, pure_bind]
       exact ih (j + 5) (by omega) (by omega)
   · exact fsc_fail_both (X := Interpreter.isTrue cfg v) (Y := opCall cfg .Not [v])
@@ -474,49 +675,61 @@ private theorem loop {c c' body body' : StmtExprMd} {src : FileRange} {L : Strin
 omit hc hext ihs hh in
 private theorem fs_target_eq {x y y' : EvalM PM α} {g : EvalState → EvalState}
     (heq : ∀ σ' τ', σ'.coroSelf = none → σ'.seek = none → run y σ' τ' = run y' (g σ') τ')
-    (hg : ∀ σ σ', StRel G (IxRel E) σ σ' → StRel G (IxRel E) σ (g σ')) (h : FS (Sm E Gl G) Eq x y') :
-    FS (Sm E Gl G) Eq x y := by
+    (hg : ∀ σ σ', (SmO E Gl G ol).st σ σ' → (SmO E Gl G ol).st σ (g σ')) (h : FS (SmO E Gl G ol) Eq x y') :
+    FS (SmO E Gl G ol) Eq x y := by
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
-  have hs' : StRel G (IxRel E) σ σ' := hs
+  have hs' : StRel G (IxRel E) σ σ' := hs.1
   rw [heq σ' τ' hs'.coroSelf' hs'.seek']
   exact h.sim σ (g σ') τ τ' (hg σ σ' hs) ht hn
 
 omit hc hext ihs in
 private theorem fsc_stmtList1 {X : EvalM PM Unit} (x : StmtExprMd) (m : Nat) (k : Value → EvalM PM Unit)
-    (hf : FS (Sm E Gl G) Eq X (tryCatch (evalStmt cfg m x >>= fun _ => k default) h)) :
-    FS (Sm E Gl G) Eq X (tryCatch (evalStmtList cfg (m + 1) [x] false >>= k) h) := by
-  simp only [evalStmtList, bind_assoc]
+    (hlab : statementLabels x = []) (hann : (stackAnnotation? x).isNone = true)
+    (hf : FS (SmO E Gl G ol) Eq X (tryCatch (evalStmt cfg m x >>= fun _ => k default) h)) :
+    FS (SmO E Gl G ol) Eq X (tryCatch (evalStmtList cfg (m + 1) [x] false >>= k) h) := by
+  rw [evalStmtList_plain (fun t ht => by
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at ht
+    subst ht
+    exact hlab)]
+  simp only [bind_assoc]
   refine fsc_get_r (fun s hco _ => ?_)
-  simp only [hco, Option.isNone_none, ite_true, Bool.false_eq_true, ite_false, List.forM_eq_forM,
-    List.forM_cons, List.forM_nil, bind_assoc, pure_bind]
+  simp only [hco, Option.isNone_none, ite_true, List.forM_eq_forM,
+    List.forM_cons, List.forM_nil, bind_assoc, pure_bind, hann]
   refine fsc_modify_r (fun σ σ' hs => ?_) (fsc_wow_r hf)
-  strel hs
+  exact ⟨by strel hs.1, hs.2⟩
 
 omit hc hext ihs in
 private theorem fsc_loopW {X : EvalM PM Unit} {c' : StmtExprMd} {invs' : List StmtExprMd}
     {dec' : Option StmtExprMd} {body' : StmtExprMd} {src : FileRange} {L : String} (m : Nat)
     (k : Unit → EvalM PM Unit)
-    (hf : FS (Sm E Gl G) Eq X (tryCatch (evalWhileIter cfg (trueE src) (loopBody c' body' src L) false
+    (hf : FS (SmO E Gl G ol) Eq X (tryCatch (evalWhileIter cfg (trueE src) (loopBody c' body' src L) false
       (do
         forIn invs' PUnit.unit fun inv _ => do
           evalStmt cfg m ⟨.Assert inv none, inv.source⟩
           pure (ForInStep.yield PUnit.unit)
         pure PUnit.unit) (pure ()) m >>= k) h)) :
-    FS (Sm E Gl G) Eq X (tryCatch (evalStmt cfg (m + 1) (loopW c' invs' dec' body' src L) >>= k) h) := by
+    FS (SmO E Gl G ol) Eq X (tryCatch (evalStmt cfg (m + 1) (loopW c' invs' dec' body' src L) >>= k) h) := by
   simp only [loopW, evalStmt, bind_assoc]
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
-  have hs' : StRel G (IxRel E) σ σ' := hs
+  have hs' : StRel G (IxRel E) σ σ' := hs.1
   rw [run_tryCatch_bind', run_get]
   simp only [hs'.coroSelf', hs'.seek', Option.isSome_none, Bool.false_eq_true, ite_false, Bool.false_and,
     pure_bind]
   exact hf.sim σ σ' τ τ' hs ht hn
 
 omit hc hext ihs hh in
-private theorem fs_get_r {x : EvalM PM α} {f : EvalState → EvalM PM α}
-    (hf : ∀ s, s.coroSelf = none → s.seek = none → FS (Sm E Gl G) Eq x (f s)) :
+private theorem fs_get_rS {x : EvalM PM α} {f : EvalState → EvalM PM α} (hf : ∀ s, FS (Sm E Gl G) Eq x (f s)) :
     FS (Sm E Gl G) Eq x (get >>= f) := by
   refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
-  have hs' : StRel G (IxRel E) σ σ' := hs
+  rw [run_bind, run_get]
+  exact (hf σ').sim σ σ' τ τ' hs ht hn
+
+omit hc hext ihs hh in
+private theorem fs_get_r {x : EvalM PM α} {f : EvalState → EvalM PM α}
+    (hf : ∀ s, s.coroSelf = none → s.seek = none → FS (SmO E Gl G ol) Eq x (f s)) :
+    FS (SmO E Gl G ol) Eq x (get >>= f) := by
+  refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
+  have hs' : StRel G (IxRel E) σ σ' := hs.1
   rw [run_bind, run_get]
   exact (hf σ' hs'.coroSelf' hs'.seek').sim σ σ' τ τ' hs ht hn
 
@@ -530,10 +743,11 @@ private theorem dw_stmt {s t : StmtExprMd} (hrw : Rw s t) (M : Nat) (hM : 6 * (n
   obtain ⟨c, invs, dec, body, src, c', invs', dec', body', src', L, rfl, rfl, hcc, his, hbb, hL, hB, hB'⟩ := hrw
   obtain ⟨M, rfl⟩ : ∃ m, M = m + 4 := ⟨M - 4, by omega⟩
   simp only [evalStmt, target]
+  refine fs_get_rS (fun s' => ?_)
+  refine fs_openR L hL (fun ol hol => ?_)
   refine fs_get_l (fun s hco _ hsk => ?_)
   simp only [hco, hsk, Option.isNone_none, Option.isSome_none, Bool.and_self, ite_true,
     Bool.false_eq_true, ite_false]
-  refine fs_get_r (fun s' _ _ => ?_)
   rw [wbs_nil rfl]
   have hL' : ∀ l, Gl l → (l == L) = false := by
     intro l hl
@@ -542,9 +756,10 @@ private theorem dw_stmt {s t : StmtExprMd} (hrw : Rw s t) (M : Nat) (hM : 6 * (n
     · simp only [beq_iff_eq] at hb
       subst hb
       exact absurd hL hl
-  refine fsc_stmtList1 _ _ _ ?_
+  refine fsc_stmtList1 _ _ _ (statementLabels_other _ _ (by intros; nofun) (by intros; nofun))
+    (by simp [loopW, stackAnnotation?]) ?_
   refine fsc_loopW _ _ ?_
-  have hci : FS (Sm E Gl G) Eq
+  have hci : FS (SmO E Gl G ol) Eq
       (do
         forIn invs PUnit.unit fun inv _ => do
           evalStmt cfg n ⟨.Assert inv none, inv.source⟩
@@ -555,16 +770,18 @@ private theorem dw_stmt {s t : StmtExprMd} (hrw : Rw s t) (M : Nat) (hM : 6 * (n
           evalStmt cfg (M + 1) ⟨.Assert inv none, inv.source⟩
           pure (ForInStep.yield PUnit.unit)
         pure PUnit.unit) :=
-    fs_bind (fs_forIn his (fun a a' ha _ => fs_bind ((ihs n (Nat.le_refl n)).stmt _ _
-      (nr_triv (fun _ _ => trivial) (fun _ _ => trivial) (.assert ha) (fun _ h => by cases h)) (ovOK_none rfl _ _) _ (by omega)) (fun _ _ _ => fs_pure rfl)))
-      (fun _ _ _ => fs_pure rfl)
-  refine loop hc hext ihs (fun c hc => ?_) hcc hbb hB hB' (fun σ τ => ?_) hci _ n M (Nat.le_refl n) (by omega)
+    FSH.toO (fun o => by have ih := keepsAt cfg (M + 1); keep_tac) ol
+      (fs_bind (fs_forIn his (fun a a' ha _ => fs_bind ((ihs n (Nat.le_refl n)).stmt _ _
+        (nr_triv (fun _ _ => trivial) (fun _ _ => trivial) (.assert ha) (fun _ _ h => by cases h)) (ovOK_none rfl _ _) _
+          (by omega)) (fun _ _ _ => fs_pure rfl)))
+        (fun _ _ _ => fs_pure rfl))
+  refine loop hc hext ihs (fun c hc => ?_) hcc hbb hB hB' hol (fun σ τ => ?_) hci _ n M (Nat.le_refl n) (by omega)
   · cases c with
     | exit_ l => simp only [hL' l hc, Bool.false_eq_true, ite_false]
-    | goto_ l => exact (hc : False).elim
+    | goto_ l => simp only [hL' l hc, Bool.false_eq_true, ite_false]
     | _ => rfl
   · refine ⟨_, by simp only [beq_self_eq_true, ite_true]; exact run_modify _ _ _, fun s0 hs0 => ?_⟩
-    strel hs0
+    exact ⟨by strel hs0.1, hs0.2⟩
 
 include ihs in
 /-- A rewrite step of `EliminateDoWhile` simulates as a scoped statement: if `Rw s t`, then
@@ -623,6 +840,12 @@ theorem dw_rel {cfg : ExternalBackendM PM} (hc : CfgB cfg)
   retHook := fun _ _ _ => trivial
   retPlain := fun _ _ => ⟨fun _ h => h, fun _ => rfl⟩
   retGl := fun _ h => by cases h
+  retRes := fun _ h => by cases h
+  glRes := fun _ h h' => h h'
+  labE := fun s t h l hl => labE s t h l hl
+  rwLab := fun s t hrw => rwLab s t hrw
+  exLab := fun _ _ h => h.elim
+  renAnn := fun _ _ h => h.elim
   retK := fun h => absurd rfl h
   retNG := fun h => absurd rfl h
   retVok := fun h => absurd rfl h
@@ -644,7 +867,7 @@ open Strata.Laurel
 open Strata.Laurel.Interpreter
 open EliminateDoWhile
 
-local instance : Reserved := Reserved.none
+local instance : Reserved := Reserved.none (fun l => "$dowhile_exit_".isPrefixOf l)
 
 private theorem pass_run (opts : LaurelTranslateOptions) (p : LaurelProgram) (m : SemanticModel) :
     eliminateDoWhilePass.run opts (.Unordered p) m =

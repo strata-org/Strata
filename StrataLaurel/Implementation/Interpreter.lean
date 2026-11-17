@@ -8,6 +8,7 @@ public import Std.Data.HashMap
 public import StrataLaurel.Implementation
 public import StrataLaurel.Implementation.LiftInstanceProcedures
 public import StrataLaurel.Implementation.TypeAliasElim
+public import StrataLaurel.Implementation.LabelledJumps
 
 namespace Strata.Laurel.Interpreter
 
@@ -442,6 +443,12 @@ structure EvalState where
   /-- Set while an `old(e)` is being evaluated, so a read of an object the
       procedure allocated can say so. -/
   inOld : Bool := false
+  /-- The labels of the labelled blocks being run in the current procedure, innermost
+      first. A jump to one of them leaves or restarts it, and a jump to any other
+      labelled block of the procedure is a `jump_`. A call runs its callee with none open,
+      since labels such as `bb3` repeat across procedures, and a `jump_` never leaves a
+      call or an expression (`jumpBoundary`). -/
+  openLabels : List String := []
   operands : List Value := []
   operandWindow : Option (List Value) := none
   deriving Inhabited
@@ -471,6 +478,10 @@ inductive Control where
   /-- `goto L` — go back to the start of the enclosing block labelled `L`.
       Caught by that block, which re-runs itself. -/
   | goto_ (label : String)
+  /-- A jump to the start or past the end of a labelled block that does not enclose it.
+      Caught by the innermost statement list holding that block, which carries on from
+      there. -/
+  | jump_ (label : String) (destination : GotoDestination)
   /-- `throw v` — the exceptional channel. Caught by an enclosing `catch` whose
       predicate holds, and otherwise propagates through the call boundary, unlike
       `return_`. -/
@@ -1535,6 +1546,21 @@ def withBlockScope (stmts : List StmtExprMd) (act : EvalM m α) : EvalM m α := 
   pure r
 
 
+/-- Run `act` with the labels open on entry replaced by `f` of them. The labels open on entry are
+    restored on the way out, whether `act` finished or left by a signal. -/
+def withLabels (f : List String → List String) (act : EvalM m α) : EvalM m α := do
+  let saved := (← get).openLabels
+  modify fun s => { s with openLabels := f saved }
+  let r ← tryCatch act fun sig => do
+    modify fun s => { s with openLabels := saved }
+    throw sig
+  modify fun s => { s with openLabels := saved }
+  pure r
+
+/-- Run `act` with the labelled block `label` open: a jump to it from inside `act` leaves or
+    restarts it rather than being a non-enclosing jump. -/
+def withOpenLabel (label : String) (act : EvalM m α) : EvalM m α :=
+  withLabels (label :: ·) act
 
 /-- Fail with `msg`, naming the procedures that led here. -/
 def evalError (msg : String) : EvalM m α := do
@@ -1543,6 +1569,15 @@ def evalError (msg : String) : EvalM m α := do
     if st.callStack.isEmpty then ""
     else s!" [in {String.intercalate " <- " (st.callStack.take 8)}]"
   (hostFail ( (msg ++ where_)))
+
+/-- Run `act`, turning a `jump_` that escapes it into the error of a jump with no block
+    to land in. A jump only ever lands in the procedure body it is in, and a jump inside
+    an expression only ever leaves or restarts an enclosing block, so a call and an
+    expression are boundaries a `jump_` does not cross. -/
+def jumpBoundary (act : EvalM m α) : EvalM m α :=
+  tryCatch act fun
+    | .jump_ l _ => evalError s!"no block labelled '{l}' to jump to"
+    | c => throw c
 
 /-- Refuse with `msg` (`Control.refused`), naming the procedures that led here. -/
 def refuse (msg : String) : EvalM m α := do
@@ -1981,7 +2016,7 @@ def evalScopedStmt (cfg : ExternalBackendM m) (fuel : Nat) (s : StmtExprMd) : Ev
 def evalExprMd (cfg : ExternalBackendM m) (fuel : Nat) (e : StmtExprMd) : EvalM m Value :=
   match fuel with
   | 0 => throw .outOfFuel
-  | fuel + 1 => do
+  | fuel + 1 => jumpBoundary do
     match e.val with
     | .Call none .. | .Call (some _) .. =>
         modify fun s => { s with callSite := e.source }
@@ -2339,22 +2374,27 @@ def evalStmt (cfg : ExternalBackendM m) : Nat → Strata.Laurel.StmtExprMd → E
       let _ ← withBlockScope stmts (evalStmtList cfg fuel stmts (asExpr := false))
   | fuel + 1, ⟨.Block stmts (some label) invariants _, _⟩ => do
       let base := (← get).cursor
-      for inv in invariants do
-        evalStmt cfg fuel ⟨.Assert inv none, inv.source⟩
-      tryCatch (do let _ ← withBlockScope stmts (evalStmtList cfg fuel stmts (asExpr := false))) fun
-        | .exit_ l =>
-            if l == label then
-              modify fun s => { s with cursor := base, seek := none }
-            else throw (.exit_ l)
-        | .goto_ l =>
-            if l == label then do
-              modify fun s => { s with cursor := base, seek := none }
-              chargeStep
-              evalBlockLoop cfg fuel stmts label invariants base
-            else throw (.goto_ l)
-        | other => throw other
-  | _ + 1, ⟨.Goto target .blockEnd, _⟩ => throw (.exit_ target)
-  | _ + 1, ⟨.Goto target .blockStart, _⟩ => throw (.goto_ target)
+      withOpenLabel label (do
+        for inv in invariants do
+          evalStmt cfg fuel ⟨.Assert inv none, inv.source⟩
+        tryCatch (do let _ ← withBlockScope stmts (evalStmtList cfg fuel stmts (asExpr := false))) fun
+          | .exit_ l =>
+              if l == label then
+                modify fun s => { s with cursor := base, seek := none }
+              else throw (.exit_ l)
+          | .goto_ l =>
+              if l == label then do
+                modify fun s => { s with cursor := base, seek := none }
+                chargeStep
+                evalBlockLoop cfg fuel stmts label invariants base
+              else throw (.goto_ l)
+          | other => throw other)
+  | _ + 1, ⟨.Goto target destination, _⟩ => do
+      if (← get).openLabels.contains target then
+        match destination with
+        | .blockEnd => throw (.exit_ target)
+        | .blockStart => throw (.goto_ target)
+      else throw (.jump_ target destination)
   | fuel + 1, ⟨.Assign targets value, _⟩ => do
       match (if isStackPushTarget targets then stackPermutation targets value else none) with
       | some order => do
@@ -2604,6 +2644,90 @@ def evalBlockLoop (cfg : ExternalBackendM m) (fuel : Nat) (stmts : List StmtExpr
       | other => throw other
 termination_by structural fuel
 
+/-- Run the statements of the block `bl`, landed in at the statement `k`, as `stmts` and
+    carry on from there. `bl` is open while they run; a jump out of the block or back to
+    its start is caught as it would be by the block run from the top, but its invariants
+    are not checked on the way in, since they belong to the block's start. -/
+def evalBlockFrom (cfg : ExternalBackendM m) (fuel : Nat) (stmts : List StmtExprMd) (bl : String)
+    (invariants : List StmtExprMd) (k : Nat) (label : String) (destination : GotoDestination) :
+    EvalM m Unit :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => do
+    let base := (← get).cursor
+    withOpenLabel bl (tryCatch (withBlockScope stmts (runFrom cfg fuel stmts k label destination)) fun
+      | .exit_ l =>
+          if l == bl then
+            modify fun s => { s with cursor := base, seek := none }
+          else throw (.exit_ l)
+      | .goto_ l =>
+          if l == bl then do
+            modify fun s => { s with cursor := base, seek := none }
+            chargeStep
+            evalBlockLoop cfg fuel stmts bl invariants base
+          else throw (.goto_ l)
+      | other => throw other)
+termination_by structural fuel
+
+/-- Run `s` from the labelled block `label` nested in it, landing at its start or just past
+    its end: the statements before it in each enclosing statement list are skipped, those
+    after it run as usual. -/
+def evalStmtFrom (cfg : ExternalBackendM m) (fuel : Nat) (s : StmtExprMd) (label : String)
+    (destination : GotoDestination) : EvalM m Unit :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 =>
+    match s.val with
+    | .Block stmts bl invariants _ =>
+      if bl == some label then
+        match destination with
+        | .blockStart => evalStmt cfg fuel s
+        | .blockEnd => pure ()
+      else
+        let k := stmts.findIdx (fun t => (statementLabels t).contains label)
+        match bl with
+        | some bl => evalBlockFrom cfg fuel stmts bl invariants k label destination
+        | none => withBlockScope stmts (runFrom cfg fuel stmts k label destination)
+    | .IfThenElse _ th el =>
+      if (statementLabels th).contains label then evalStmtFrom cfg fuel th label destination
+      else
+        match el with
+        | some e => evalStmtFrom cfg fuel e label destination
+        | none => evalError s!"no block labelled '{label}' to jump to"
+    | _ => evalError s!"no block labelled '{label}' to jump to"
+termination_by structural fuel
+
+/-- Run `stmts` from index `k`, entering that statement at the jump target `label` and
+    running the ones after it as usual. A jump to a block held by one of `stmts` that does
+    not enclose the jump lands here and carries on from that statement. Landing is charged
+    to the step budget and uses one unit of fuel. -/
+def runFrom (cfg : ExternalBackendM m) (fuel : Nat) (stmts : List StmtExprMd) (k : Nat)
+    (label : String) (destination : GotoDestination) : EvalM m Unit :=
+  match fuel with
+  | 0 => throw .outOfFuel
+  | fuel + 1 => do
+    let landed ← tryCatch (do
+        match stmts.drop k with
+        | [] => pure ()
+        | s :: rest => do
+            modify fun st => { st with stmtSite := s.source }
+            evalStmtFrom cfg fuel s label destination
+            rest.forM fun s => do
+              modify fun st => { st with stmtSite := s.source }
+              if (stackAnnotation? s).isNone then withOperandWindow s (evalStmt cfg fuel s)
+        pure (none : Option (Nat × String × GotoDestination))) fun
+      | .jump_ l d =>
+          match stmts.findIdx? (fun t => (statementLabels t).contains l) with
+          | some j => pure (some (j, l, d))
+          | none => throw (.jump_ l d)
+      | other => throw other
+    match landed with
+    | none => pure ()
+    | some (j, l, d) => do
+      chargeStep
+      runFrom cfg fuel stmts j l d
+termination_by structural fuel
+
 /-- `finally` runs on every exit path, including an unwinding one, so the signal is
     re-thrown only after it has run. -/
 def runTryFinally (cfg : ExternalBackendM m) (fuel : Nat) (finally? : Option StmtExprMd)
@@ -2698,7 +2822,10 @@ termination_by structural fuel
     it says `some (i :: rest)` the statements before index `i` are skipped —
     they ran in an earlier step — statement `i` is entered with `rest`, and
     everything after it runs normally. Outside a coroutine body neither the
-    position nor the seek means anything, and the walk is a plain `forM`.
+    position nor the seek means anything, and the walk is a plain `forM`, except that
+    in statement position a jump to a labelled block held by one of the statements, from
+    one that does not enclose it, lands in that statement and carries on from there
+    (`runFrom`). A stack annotation (`stackAnnotation?`) is skipped, not run.
 
     `asExpr` selects the value: with `asExpr := true` the trailing statement is
     evaluated as an expression and its value returned, which is what a
@@ -2710,7 +2837,7 @@ def evalStmtList (cfg : ExternalBackendM m) (fuel : Nat) (stmts : List Strata.La
   | fuel + 1 => do
     let runStmt (s : Strata.Laurel.StmtExprMd) : EvalM m Unit := do
       modify fun st => { st with stmtSite := s.source }
-      withOperandWindow s (evalStmt cfg fuel s)
+      if (stackAnnotation? s).isNone then withOperandWindow s (evalStmt cfg fuel s)
     let st ← get
     if st.coroSelf.isNone then
       if asExpr then
@@ -2721,8 +2848,20 @@ def evalStmtList (cfg : ExternalBackendM m) (fuel : Nat) (stmts : List Strata.La
             modify fun s => { s with stmtSite := last.source }
             withOperandWindow last (evalExprMd cfg fuel last)
       else do
-        stmts.forM (fun s => runStmt s)
-        pure default
+        let landed ← tryCatch (do
+            stmts.forM (fun s => runStmt s)
+            pure (none : Option (Nat × String × GotoDestination))) fun
+          | .jump_ l d =>
+              match stmts.findIdx? (fun t => (statementLabels t).contains l) with
+              | some j => pure (some (j, l, d))
+              | none => throw (.jump_ l d)
+          | other => throw other
+        match landed with
+        | none => pure default
+        | some (j, l, d) => do
+            chargeStep
+            runFrom cfg fuel stmts j l d
+            pure default
     else
       let base := st.cursor
       let (start, inner) := seekEntry st.seek
@@ -3003,7 +3142,7 @@ def invokeProc (cfg : ExternalBackendM m) (fuel : Nat) (site : FileRange) (proc 
     (argVals : List Value) (top : Bool := false) : EvalM m (Array Value) :=
   match fuel with
   | 0 => throw .outOfFuel
-  | fuel + 1 => do
+  | fuel + 1 => jumpBoundary do
     let name := proc.name.text
     if argVals.length != proc.inputs.length then
       (hostFail (
@@ -3059,54 +3198,55 @@ def invokeProc (cfg : ExternalBackendM m) (fuel : Nat) (site : FileRange) (proc 
         proc.outputs.foldl (init := withParams) fun acc o =>
           if acc.contains o.name.text then acc
           else acc.insert o.name.text (defaultValue index o.type.val)
-      let caller ← get
-      let saved := caller.stack
-      let savedCalls := caller.callStack
-      let restoreCaller : EvalM m Unit := modify fun st =>
-        { st with stack := saved, callStack := savedCalls, cursor := caller.cursor,
-                  seek := caller.seek, coroSelf := caller.coroSelf, stmtSite := caller.stmtSite,
-                  callSite := caller.callSite, entryState := caller.entryState,
-                  operands := caller.operands, operandWindow := caller.operandWindow }
-      -- A `yield` suspends the coroutine whose body lexically contains it, so a
-      -- procedure called *from* a coroutine body is not part of that coroutine:
-      -- clearing `coroSelf` turns a `yield` in the callee into a reported error
-      -- instead of a suspension recorded against a position in the wrong body. It
-      -- also switches the callee's position bookkeeping off, which is what keeps the
-      -- ordinary (coroutine-free) call path free of it.
-      modify fun st => { st with stack := calleeStack, callStack := name :: st.callStack,
-                                 cursor := [], seek := none, coroSelf := none, entryState := none,
-                                 operands := [], operandWindow := none }
-      let posts := proc.body.postconditions
-      -- Holding the entry heap keeps it shared, so the callee's first write copies
-      -- it; only a procedure with postconditions pays for that.
-      let cur ← get
-      let frames := procFrames proc
-      let skip := (cfg.modular && !top) || (posts.isEmpty && frames.isEmpty)
-      let entry := entrySnapshot skip cur
-      let returned : Option Value ←
-        tryCatch (do evalStmt cfg fuel body; pure none) fun
-          | .return_ vs => returnedValues proc restoreCaller vs
-          | other => do
-              -- Restore the caller's frame before the signal leaves, or an enclosing
-              -- `catch` would run against the callee's locals.
-              restoreCaller
-              throw other
-      let calleeFrame := (← get).stack
-      if cfg.strict.isSome && !strictOutputsOK (← get) proc returned calleeFrame then
-        hostFail s!"strict: '{proc.name.text}' returns a non-reference composite output"
-      unless skip do
-        tryCatch (checkPostconditions cfg fuel proc posts frames calleeStack entry calleeFrame returned)
-          fun sig => do restoreCaller; throw sig
-      restoreCaller
-      match returned with
-      | some v =>
-          -- `return e` in a single-output procedure supplies the value directly.
-          pure #[v]
-      | none =>
-          -- Otherwise the outputs were assigned by name. A void procedure has none,
-          -- and an output the body never assigned is arbitrary, so it comes back
-          -- `unset` and only a use of it is an error.
-          pure (proc.outputs.toArray.map fun o => calleeFrame[o.name.text]?.getD .unset)
+      withLabels (fun _ => []) do
+        let caller ← get
+        let saved := caller.stack
+        let savedCalls := caller.callStack
+        let restoreCaller : EvalM m Unit := modify fun st =>
+          { st with stack := saved, callStack := savedCalls, cursor := caller.cursor,
+                    seek := caller.seek, coroSelf := caller.coroSelf, stmtSite := caller.stmtSite,
+                    callSite := caller.callSite, entryState := caller.entryState,
+                    operands := caller.operands, operandWindow := caller.operandWindow }
+        -- A `yield` suspends the coroutine whose body lexically contains it, so a
+        -- procedure called *from* a coroutine body is not part of that coroutine:
+        -- clearing `coroSelf` turns a `yield` in the callee into a reported error
+        -- instead of a suspension recorded against a position in the wrong body. It
+        -- also switches the callee's position bookkeeping off, which is what keeps the
+        -- ordinary (coroutine-free) call path free of it.
+        modify fun st => { st with stack := calleeStack, callStack := name :: st.callStack,
+                                   cursor := [], seek := none, coroSelf := none, entryState := none,
+                                   operands := [], operandWindow := none }
+        let posts := proc.body.postconditions
+        -- Holding the entry heap keeps it shared, so the callee's first write copies
+        -- it; only a procedure with postconditions pays for that.
+        let cur ← get
+        let frames := procFrames proc
+        let skip := (cfg.modular && !top) || (posts.isEmpty && frames.isEmpty)
+        let entry := entrySnapshot skip cur
+        let returned : Option Value ←
+          tryCatch (do evalStmt cfg fuel body; pure none) fun
+            | .return_ vs => returnedValues proc restoreCaller vs
+            | other => do
+                -- Restore the caller's frame before the signal leaves, or an enclosing
+                -- `catch` would run against the callee's locals.
+                restoreCaller
+                throw other
+        let calleeFrame := (← get).stack
+        if cfg.strict.isSome && !strictOutputsOK (← get) proc returned calleeFrame then
+          hostFail s!"strict: '{proc.name.text}' returns a non-reference composite output"
+        unless skip do
+          tryCatch (checkPostconditions cfg fuel proc posts frames calleeStack entry calleeFrame returned)
+            fun sig => do restoreCaller; throw sig
+        restoreCaller
+        match returned with
+        | some v =>
+            -- `return e` in a single-output procedure supplies the value directly.
+            pure #[v]
+        | none =>
+            -- Otherwise the outputs were assigned by name. A void procedure has none,
+            -- and an output the body never assigned is arbitrary, so it comes back
+            -- `unset` and only a use of it is an error.
+            pure (proc.outputs.toArray.map fun o => calleeFrame[o.name.text]?.getD .unset)
 
 end
 
@@ -3237,6 +3377,8 @@ def runEntry (cfg : ExternalBackendM m) (opts : Options) (p : LaurelProgram)
             InterpHost.fail s!"`exit {l}` with no enclosing block labelled '{l}'"
         | (.error (.goto_ l),      _)  =>
             InterpHost.fail s!"`goto {l}` with no enclosing block labelled '{l}'"
+        | (.error (.jump_ l _),    _)  =>
+            InterpHost.fail s!"no block labelled '{l}' to jump to"
         | (.error .suspended,      _)  =>
             InterpHost.fail "`yield` with no coroutine to suspend"
     | none => pure (Outcome.completed, initState)
@@ -3270,6 +3412,8 @@ def runProcAt (cfg : ExternalBackendM m) (opts : Options) (p : LaurelProgram) (p
       InterpHost.fail s!"`exit {l}` with no enclosing block labelled '{l}'"
   | (.error (.goto_ l),      _)  =>
       InterpHost.fail s!"`goto {l}` with no enclosing block labelled '{l}'"
+  | (.error (.jump_ l _),    _)  =>
+      InterpHost.fail s!"no block labelled '{l}' to jump to"
   | (.error .suspended,      _)  =>
       InterpHost.fail "`yield` with no coroutine to suspend"
 

@@ -45,7 +45,8 @@ successful run of `m` from a generator state satisfying `P` ends with a value an
 state satisfying `Q`). Key results:
 
 - `runProgram_post` — `runProgram f p` replaces each structured procedure body by the result
-  of a run of `runStmtsRec f` on it when that run reports a change (`DeclStep`), and reports a
+  of a run of `runStmtsRec f` on it when that run reports a change, keeps a CFG body when its
+  rewrite reports no change (`DeclStep`, `runCFGCmds_keep`), and reports a
   change exactly when one of these runs does.
 - `runProgramUntil_post` — `runProgramUntil f p (some n)` keeps any invariant that each pass
   keeps, and returns a program of measure zero when the measure of `p` is below `n` and each
@@ -264,32 +265,67 @@ theorem Post.postGen {α : Type} {m : CoreTransformM α} {Q : α → Prop} (h : 
     (P : CoreGenState → Prop) : PostGen P m fun a _ => Q a :=
   fun σ a σ' _ hr => h σ a σ' hr
 
+/-- `runCFGCmds` with a rewrite that changes no command reports no change and keeps the
+    generator state. -/
+theorem runCFGCmds_keep (g : DetCFG) (γ : CoreGenState) :
+    PostGen (· = γ) (runCFGCmds (fun _ => pure none) g) fun r γ' => r.1 = false ∧ γ' = γ := by
+  -- A fold whose step keeps the first component keeps it.
+  have hfold : ∀ {α δ : Type} (F : Bool × δ → α → Bool × δ), (∀ b a, (F b a).1 = b.1) →
+      ∀ (l : List α) (b : Bool × δ), (l.foldl F b).1 = b.1 := by
+    intro α δ F hF l
+    induction l with
+    | nil => intro; rfl
+    | cons x _ ih => intro b; rw [List.foldl_cons, ih, hF]
+  intro σ a σ' hP hr
+  unfold runCFGCmds at hr
+  simp only [pure_bind, bind_pure_comp, map_pure, List.forIn_pure_yield_eq_foldl] at hr
+  obtain ⟨rfl, rfl⟩ := ok_pair_inj hr
+  refine ⟨?_, hP⟩
+  dsimp only
+  rw [hfold]
+  intro b _
+  dsimp only
+  rw [hfold]
+  intros; rfl
+
 /-- `r` is what `runProgram` makes of the declaration `d`, with its change flag, when every
     successful run of `runStmtsRec` on a list `ss` returning `(c, ss')` satisfies
-    `Q ss (c, ss')`: a procedure with a structured body `ss` gets the body `ss'` when `c` is set
-    and is kept otherwise; any other declaration is kept, with no change. -/
+    `Q ss (c, ss')` and the rewrite of CFG bodies reports no change: a procedure with a
+    structured body `ss` gets the body `ss'` when `c` is set and is kept otherwise; a procedure
+    with a CFG body and any other declaration are kept, with no change. -/
 @[expose] def DeclStep (Q : Statements → Bool × Statements → Prop) (d : Decl)
     (r : Bool × Decl) : Prop :=
   match d with
-  | .proc proc md => ∃ ss ss', proc.body = .structured ss ∧ Q ss (r.1, ss') ∧
-      r.2 = if r.1 then .proc { proc with body := .structured ss' } md else .proc proc md
+  | .proc proc md => (∃ ss ss', proc.body = .structured ss ∧ Q ss (r.1, ss') ∧
+      r.2 = if r.1 then .proc { proc with body := .structured ss' } md else .proc proc md) ∨
+    (∃ g, proc.body = .cfg g ∧ r = (false, d))
   | _ => r = (false, d)
 
 /-- **What `runProgram` does to each declaration, tracking the generator state.**  Let `le` be
     a preorder on generator states, and let every successful run of `runStmtsRec f` on a list
     `ss` from a generator state `γ` end in a generator state `γ'` with `le γ γ'` and return a
-    value `r` with `Q ss γ r γ'`, a property kept by any wider pair of generator states.  A
-    successful run of `runProgram f p` from `γ₀` ends in some `γ₁` with `le γ₀ γ₁`, and returns
-    the program of the declarations `rs` makes of those of `p` (`DeclStep (Q · γ₀ · γ₁)`),
-    reporting a change exactly when one of them does. -/
+    value `r` with `Q ss γ r γ'`, a property kept by any wider pair of generator states.  Let
+    the rewrites of CFG bodies, `cfgCmd` (per command) and `cfgBody` (whole graph), when there
+    are any, report no change and keep the generator state.  A successful run of
+    `runProgram f p` from `γ₀` ends in some `γ₁` with `le γ₀ γ₁`, and returns the program of the
+    declarations `rs` makes of those of `p` (`DeclStep (Q · γ₀ · γ₁)`), reporting a change
+    exactly when one of them does. -/
 theorem runProgram_postGen {f : Statement → CoreTransformM (Option (List Statement))}
     {le : CoreGenState → CoreGenState → Prop} (hrefl : ∀ γ, le γ γ)
     (htrans : ∀ {γ₁ γ₂ γ₃}, le γ₁ γ₂ → le γ₂ γ₃ → le γ₁ γ₃)
     {Q : Statements → CoreGenState → Bool × Statements → CoreGenState → Prop}
     (hQ : ∀ {ss γ₀ γ r γ' γ₁}, le γ₀ γ → le γ' γ₁ → Q ss γ r γ' → Q ss γ₀ r γ₁)
     (hf : ∀ ss γ, PostGen (· = γ) (runStmtsRec f ss) fun r γ' => le γ γ' ∧ Q ss γ r γ')
+    {cfgCmd : Option (Command → CoreTransformM (Option (List Command)))}
+    (hcfg : ∀ h, cfgCmd = some h → ∀ g γ,
+      PostGen (· = γ) (runCFGCmds h g) fun r γ' => r.1 = false ∧ γ' = γ)
+    {cfgBody : Option (Procedure → DetCFG → CoreTransformM (Bool × DetCFG))}
+    (hwhole : ∀ k, cfgBody = some k → ∀ proc g γ,
+      PostGen (· = γ) (k proc g) fun r γ' => r.1 = false ∧ γ' = γ)
     (p : Program) (γ₀ : CoreGenState) :
-    PostGen (· = γ₀) (runProgram f p) fun r γ₁ => le γ₀ γ₁ ∧ ∃ rs : List (Bool × Decl),
+    PostGen (· = γ₀) (runProgram f p (cfgCmd := cfgCmd) (cfgBody := cfgBody)) fun r γ₁ =>
+      le γ₀ γ₁ ∧
+      ∃ rs : List (Bool × Decl),
       List.Rel₂ (DeclStep fun ss r => Q ss γ₀ r γ₁) p.decls rs ∧ r.2.decls = rs.map (·.2) ∧
       r.1 = rs.any (·.1) := by
   -- The declarations made so far keep their property in a wider generator state.
@@ -299,8 +335,9 @@ theorem runProgram_postGen {f : Statement → CoreTransformM (Option (List State
     h.imp fun {d r} hd => by
       cases d
       case proc proc md =>
-        obtain ⟨ss, ss', hb, hq, hr⟩ := hd
-        exact ⟨ss, ss', hb, hQ (hrefl _) hle hq, hr⟩
+        rcases hd with ⟨ss, ss', hb, hq, hr⟩ | hd
+        · exact .inl ⟨ss, ss', hb, hQ (hrefl _) hle hq, hr⟩
+        · exact .inr hd
       all_goals exact hd
   unfold runProgram
   refine PostGen.bind (PostGen.modify (Q := fun _ γ => γ = γ₀) (by intro; rfl) fun _ h => h)
@@ -358,30 +395,59 @@ theorem runProgram_postGen {f : Statement → CoreTransformM (Option (List State
         fun _ h => h) fun _ => ?_
       split
       · rename_i ss hbody
-        refine PostGen.bind (PostGen.pure (a := ss) (Q := fun a γ' => a = ss ∧ γ' = γ)
-          fun _ h => ⟨rfl, h⟩) fun a => ?_
-        refine PostGen.of_forall fun γ' ⟨hss, hγ⟩ => ?_
-        rw [hss, hγ]
         refine PostGen.bind (hf ss γ) fun r => ?_
         obtain ⟨c, ss'⟩ := r
+        refine PostGen.bind (PostGen.pure (Q := fun a γ' => a = (c, .structured ss') ∧
+          le γ γ' ∧ Q ss γ (c, ss') γ') fun _ h => ⟨rfl, h⟩) fun a => ?_
+        refine PostGen.of_forall fun γ' ⟨ha, hle', hq⟩ => ?_
+        subst ha
         cases c
-        · refine PostGen.pure fun γ' ⟨hle', hq⟩ => ?_
-          obtain ⟨k', rs', h₁, h₂, h₃, h₄, h₅⟩ := hnext γ' (false, .proc proc md) hle'
-            ⟨ss, ss', hbody, hQ hle (hrefl _) hq, by simp⟩
+        · refine PostGen.pure fun γ₂ hγ => ?_
+          subst hγ
+          obtain ⟨k', rs', h₁, h₂, h₃, h₄, h₅⟩ := hnext γ₂ (false, .proc proc md) hle'
+            (.inl ⟨ss, ss', hbody, hQ hle (hrefl _) hq, by simp⟩)
           exact ⟨htrans hle hle', k', rs', h₁, h₂, h₃, by rw [h2, hdrop]; exact h₄,
             by simpa using h₅⟩
-        · refine PostGen.bind (PostGen.modify (Q := fun _ γ' => le γ γ' ∧ Q ss γ (true, ss') γ')
-            (by intro; rfl) fun _ h => h) fun _ => PostGen.pure fun γ' ⟨hle', hq⟩ => ?_
+        · refine PostGen.bind (PostGen.modify (Q := fun _ γ'' => γ'' = γ') (by intro; rfl)
+            fun _ h => h) fun _ => PostGen.pure fun γ₂ hγ => ?_
+          subst hγ
           have hset : s.2.set k (.proc { proc with body := .structured ss' } md) =
               rs.map (·.2) ++ .proc { proc with body := .structured ss' } md ::
                 p.decls.drop (k + 1) := by
             rw [h2, hdrop, List.set_append_right _ _ (by simp [hlen])]
             simp [hlen]
           obtain ⟨k', rs', h₁, h₂, h₃, h₄, h₅⟩ :=
-            hnext γ' (true, .proc { proc with body := .structured ss' } md) hle'
-              ⟨ss, ss', hbody, hQ hle (hrefl _) hq, by simp⟩
+            hnext γ₂ (true, .proc { proc with body := .structured ss' } md) hle'
+              (.inl ⟨ss, ss', hbody, hQ hle (hrefl _) hq, by simp⟩)
           exact ⟨htrans hle hle', k', rs', h₁, h₂, h₃, hset.trans h₄, by simpa using h₅⟩
+      · -- A CFG body rewritten whole: the rewrite reports no change, so the declaration is
+        -- kept.
+        rename_i g k hbody'
+        refine PostGen.bind (hwhole k rfl proc g γ) fun r => ?_
+        obtain ⟨c, g'⟩ := r
+        refine PostGen.bind (PostGen.pure (Q := fun a γ' => a = (c, .cfg g') ∧
+          c = false ∧ γ' = γ) fun _ h => ⟨rfl, h⟩) fun a => ?_
+        refine PostGen.of_forall fun γ' ⟨ha, hc, hγ'⟩ => ?_
+        subst ha hc hγ'
+        refine PostGen.pure fun γ₂ hγ => ?_
+        subst hγ
+        obtain ⟨k', rs', h₁, h₂, h₃, h₄, h₅⟩ :=
+          hnext _ (false, .proc proc md) (hrefl _) (.inr ⟨g, hbody', rfl⟩)
+        exact ⟨hle, k', rs', h₁, h₂, h₃, by rw [h2, hdrop]; exact h₄, by simpa using h₅⟩
       · exact PostGen.bind (Q₁ := fun _ _ => False) PostGen.throw fun _ _ _ _ h _ => h.elim
+      · -- A CFG body: the rewrite reports no change, so the declaration is kept.
+        rename_i g h hbody
+        refine PostGen.bind (hcfg h rfl g γ) fun r => ?_
+        obtain ⟨c, g'⟩ := r
+        refine PostGen.bind (PostGen.pure (Q := fun a γ' => a = (c, .cfg g') ∧
+          c = false ∧ γ' = γ) fun _ h => ⟨rfl, h⟩) fun a => ?_
+        refine PostGen.of_forall fun γ' ⟨ha, hc, hγ'⟩ => ?_
+        subst ha hc hγ'
+        refine PostGen.pure fun γ₂ hγ => ?_
+        subst hγ
+        obtain ⟨k', rs', h₁, h₂, h₃, h₄, h₅⟩ :=
+          hnext _ (false, .proc proc md) (hrefl _) (.inr ⟨g, hbody, rfl⟩)
+        exact ⟨hle, k', rs', h₁, h₂, h₃, by rw [h2, hdrop]; exact h₄, by simpa using h₅⟩
     all_goals
       refine PostGen.pure fun _ h => ?_
       rw [h]
@@ -389,18 +455,27 @@ theorem runProgram_postGen {f : Statement → CoreTransformM (Option (List State
       exact ⟨hle, k', rs', h₁, h₂, h₃, by rw [h2, hdrop]; exact h₄, by simpa using h₅⟩
 
 /-- **What `runProgram` does to each declaration.**  When every successful run of
-    `runStmtsRec f` on a list `ss` returns a value satisfying `Q ss`, a successful run of
-    `runProgram f p` (over every procedure) returns the program of the declarations `rs` makes of
-    those of `p` (`DeclStep Q`), and reports a change exactly when one of them does. -/
+    `runStmtsRec f` on a list `ss` returns a value satisfying `Q ss`, and the rewrites of CFG
+    bodies (`cfgCmd`, `cfgBody`), when there are any, report no change and keep the generator
+    state, a successful run of `runProgram f p` (over every procedure) returns the program of the
+    declarations `rs` makes of those of `p` (`DeclStep Q`), and reports a change exactly when one
+    of them does. -/
 theorem runProgram_post {f : Statement → CoreTransformM (Option (List Statement))}
     {Q : Statements → Bool × Statements → Prop} (hf : ∀ ss, Post (runStmtsRec f ss) (Q ss))
+    {cfgCmd : Option (Command → CoreTransformM (Option (List Command)))}
+    (hcfg : ∀ h, cfgCmd = some h → ∀ g γ,
+      PostGen (· = γ) (runCFGCmds h g) fun r γ' => r.1 = false ∧ γ' = γ)
+    {cfgBody : Option (Procedure → DetCFG → CoreTransformM (Bool × DetCFG))}
+    (hwhole : ∀ k, cfgBody = some k → ∀ proc g γ,
+      PostGen (· = γ) (k proc g) fun r γ' => r.1 = false ∧ γ' = γ)
     (p : Program) :
-    Post (runProgram f p) fun r => ∃ rs : List (Bool × Decl),
+    Post (runProgram f p (cfgCmd := cfgCmd) (cfgBody := cfgBody)) fun r =>
+      ∃ rs : List (Bool × Decl),
       List.Rel₂ (DeclStep Q) p.decls rs ∧ r.2.decls = rs.map (·.2) ∧ r.1 = rs.any (·.1) :=
   fun σ a σ' hr => (runProgram_postGen (le := fun _ _ => True) (Q := fun ss _ r _ => Q ss r)
     (fun _ => trivial) (fun _ _ => trivial) (fun _ _ h => h)
     (fun ss _ => ((hf ss).postGen _).mono (fun _ h => h) fun _ _ h => ⟨trivial, h⟩)
-    p σ.genState σ a σ' rfl hr).2
+    hcfg hwhole p σ.genState σ a σ' rfl hr).2
 
 /-- **Bounded iteration of a statement-level transformation reaches measure zero, tracking the
     generator state.**  Let every successful run of `runProgram f q` from a generator state with
@@ -410,10 +485,12 @@ theorem runProgram_post {f : Statement → CoreTransformM (Option (List Statemen
     one with `Inv` of the program it returns, of measure zero. -/
 theorem runProgramUntil_postGen {f : Statement → CoreTransformM (Option (List Statement))}
     {Inv : Program → CoreGenState → Prop} {μ : Program → Nat}
-    (hstep : ∀ q, PostGen (Inv q) (runProgram f q) fun r γ =>
+    {cfgCmd : Option (Command → CoreTransformM (Option (List Command)))}
+    (hstep : ∀ q, PostGen (Inv q) (runProgram f q (cfgCmd := cfgCmd)) fun r γ =>
       Inv r.2 γ ∧ (r.1 = true → μ r.2 < μ q) ∧ (r.1 = false → μ r.2 = 0))
     {p : Program} {n : Nat} (hn : μ p < n) :
-    PostGen (Inv p) (runProgramUntil f p (some n)) fun r γ => Inv r.2 γ ∧ μ r.2 = 0 := by
+    PostGen (Inv p) (runProgramUntil f p (some n) (cfgCmd := cfgCmd)) fun r γ =>
+      Inv r.2 γ ∧ μ r.2 = 0 := by
   simp only [runProgramUntil]
   refine PostGen.bind (Q₁ := fun s γ => Inv s.1 γ ∧ μ s.1 = 0) ?_ fun _ =>
     PostGen.pure fun _ h => h
@@ -442,10 +519,11 @@ theorem runProgramUntil_postGen {f : Statement → CoreTransformM (Option (List 
     with `μ p < n`, returns a program satisfying `Inv` of measure zero. -/
 theorem runProgramUntil_post {f : Statement → CoreTransformM (Option (List Statement))}
     {Inv : Program → Prop} {μ : Program → Nat}
-    (hstep : ∀ q, Inv q → Post (runProgram f q) fun r =>
+    {cfgCmd : Option (Command → CoreTransformM (Option (List Command)))}
+    (hstep : ∀ q, Inv q → Post (runProgram f q (cfgCmd := cfgCmd)) fun r =>
       Inv r.2 ∧ (r.1 = true → μ r.2 < μ q) ∧ (r.1 = false → μ r.2 = 0))
     {p : Program} {n : Nat} (hp : Inv p) (hn : μ p < n) :
-    Post (runProgramUntil f p (some n)) fun r => Inv r.2 ∧ μ r.2 = 0 :=
+    Post (runProgramUntil f p (some n) (cfgCmd := cfgCmd)) fun r => Inv r.2 ∧ μ r.2 = 0 :=
   fun σ a σ' hr => runProgramUntil_postGen (Inv := fun q _ => Inv q)
     (fun q σ a σ' hq hr => hstep q hq σ a σ' hr) hn σ a σ' hp hr
 
@@ -662,6 +740,29 @@ theorem freshenTypeArgsSubst_disjoint {S1 S2 : Lambda.Subst}
   have hgg : g = g' := by rw [hveq] at hveq'; injection hveq'
   rw [hgg] at hg_in1
   exact hg'_notin1 hg_in1
+
+/-! ## Statement builders and command builders -/
+
+/-- The havoc statements are the havoc commands, each as a statement. -/
+theorem createHavocs_eq_cmds (ids : List Expression.Ident) (md : Imperative.MetaData Expression) :
+    createHavocs ids md = (createHavocCmds ids md).map .cmd := by
+  simp [createHavocs, createHavocCmds, createHavoc, createHavocCmd, Function.comp_def]
+
+/-- The init statements are the init commands, each as a statement. -/
+theorem createInits_eq_cmds
+    (trips : List ((Expression.Ident × Expression.Ty) × Expression.Expr))
+    (md : Imperative.MetaData Expression) :
+    createInits trips md = (createInitCmds trips md).map .cmd := by
+  simp only [createInits, createInitCmds, List.map_map]
+  congr 1
+
+/-- The variable-init statements are the variable-init commands, each as a statement. -/
+theorem createInitVars_eq_cmds
+    (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
+    (md : Imperative.MetaData Expression) :
+    createInitVars trips md = (createInitVarCmds trips md).map .cmd := by
+  simp only [createInitVars, createInitVarCmds, List.map_map]
+  congr 1
 
 end Transform
 

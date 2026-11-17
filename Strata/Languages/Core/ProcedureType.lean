@@ -443,11 +443,7 @@ def typeCheck (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
   let mut carryEnv := resolveEnv.updateContext Env.context
   -- Apply a substitution to a block's annotated commands and branch guard.
   let substBlock := fun (S : type_of% Env.stateSubstInfo.subst)
-      (blk' : Imperative.DetBlock String Command Expression) =>
-    ({ cmds := blk'.cmds.map (Statement.Command.subst S),
-       transfer := match blk'.transfer with
-         | .condGoto p lt lf md => .condGoto (LExpr.applyTypeSubst p S) lt lf md
-         | .finish md => .finish md } : Imperative.DetBlock String Command Expression)
+      (blk' : Imperative.DetBlock String Command Expression) => Statement.DetBlock.subst S blk'
   -- A reachable block's annotated body is stored unsubstituted; the final
   -- whole-body substitution is applied to it after the per-block loop. A block
   -- with a polymorphic op, constructor, `init`, or `call` whose type variables

@@ -1,3 +1,8 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
 import StrataLaurel.PassSemantics.Entry
 import StrataLaurel.Implementation.LaurelNodeKindProps
 
@@ -8,7 +13,7 @@ Most passes rewrite nodes with `mapStmtExprUsedM`. This file proves that this tr
 relates each input term to the output by `Shape`, with children related by `TE`, when the
 input only uses supported constructs.
 
-* `Basic e`: `e` is not a coroutine construct or a jump to a block start, returns at most
+* `Basic e`: `e` is not a coroutine construct, returns at most
   one value, has no block invariants or block decreases clause, does not read, push or update
   the operand stack (`Stack`), and is not a `contractOf(precondition, …)`.
 * `NamesOK e`: `e` does not bind or call reserved names.
@@ -39,7 +44,6 @@ def Basic (e : StmtExprMd) : Prop :=
   | .ContractOf ty _ => ty ≠ .Precondition
   | .Return (_ :: _ :: _) => False
   | .Block _ _ (_ :: _) _ | .Block _ _ _ (some _) => False
-  | .Goto _ .blockStart => False
   | _ => True
 
 theorem basic_ret_len {v : List StmtExprMd} {s : FileRange} (h : Basic ⟨.Return v, s⟩) : v.length ≤ 1 := by
@@ -71,8 +75,9 @@ def NamesOK (e : StmtExprMd) : Prop :=
   | _ => True
 
 omit [Reserved] in
-@[reducible] def Reserved.none : Reserved where
+@[reducible] def Reserved.none (rl : String → Prop := fun _ => False) : Reserved where
   res := fun _ => False
+  resLabel := rl
   shadow := fun _ h => h
   shadow_res := fun _ h => h
   resProc := fun _ => False
@@ -84,18 +89,18 @@ omit [Reserved] in
   vret_noret := fun _ h => (by cases h)
   ex := fun _ _ _ => False
 
-instance : @TyEqC Reserved.none := @TyEqC.mk Reserved.none (fun _ _ => Iff.rfl)
+instance {rl : String → Prop} : @TyEqC (Reserved.none rl) := @TyEqC.mk (Reserved.none rl) (fun _ _ => Iff.rfl)
 
 omit [Reserved] in
-theorem varOK_none (v : Variable) : @VarOK Reserved.none v := by
-  cases v <;> first | exact fun h => h | trivial | exact ⟨fun h => h, @notV_none Reserved.none rfl _⟩
+theorem varOK_none {rl : String → Prop} (v : Variable) : @VarOK (Reserved.none rl) v := by
+  cases v <;> first | exact fun h => h | trivial | exact ⟨fun h => h, @notV_none (Reserved.none rl) rfl _⟩
 
 omit [Reserved] in
-theorem wOK_none (v : Variable) : @WOK Reserved.none v := by
-  cases v <;> first | trivial | exact @notV_none Reserved.none rfl _
+theorem wOK_none {rl : String → Prop} (v : Variable) : @WOK (Reserved.none rl) v := by
+  cases v <;> first | trivial | exact @notV_none (Reserved.none rl) rfl _
 
 omit [Reserved] in
-theorem namesOK_none (e : StmtExprMd) : @NamesOK Reserved.none e := by
+theorem namesOK_none {rl : String → Prop} (e : StmtExprMd) : @NamesOK (Reserved.none rl) e := by
   rcases e with ⟨v, src⟩
   unfold NamesOK
   cases v
@@ -106,9 +111,9 @@ theorem namesOK_none (e : StmtExprMd) : @NamesOK Reserved.none e := by
     | exact fun t _ => ⟨varOK_none _, wOK_none _⟩
     | exact ⟨varOK_none _, wOK_none _⟩
     | exact ⟨varOK_none _, wOK_none _, fun h => h⟩
-    | exact ⟨fun c _ => ⟨fun h => h, @notV_none Reserved.none rfl _⟩,
-        fun x _ => @finP_none Reserved.none rfl x (fun _ _ => trivial)⟩
-    | exact ⟨fun h => h, @notV_none Reserved.none rfl _⟩
+    | exact ⟨fun c _ => ⟨fun h => h, @notV_none (Reserved.none rl) rfl _⟩,
+        fun x _ => @finP_none (Reserved.none rl) rfl x (fun _ _ => trivial)⟩
+    | exact ⟨fun h => h, @notV_none (Reserved.none rl) rfl _⟩
     | exact fun h => h
     | exact ⟨fun h => h, fun h => h⟩
     | exact fun _ h => by cases h
@@ -259,10 +264,7 @@ theorem trav_shape {P : StmtExprMd → Prop} [TyEqC] (hP : ∀ e, P e → Basic 
     refine ⟨_, _, rfl, Shape.while_ (trav_kid (kid c (by simp [stmtExprChildren])) _ _)
       (attach_mapM_te is _ _ (fun c hc => kid c (by simp only [stmtExprChildren]; simp [hc])))
       (trav_kid (kid b (by simp [stmtExprChildren])) _ _)⟩
-  case Goto l d =>
-    cases d
-    · exact absurd hb (by simp [Basic])
-    · exact ⟨_, _, rfl, Shape.exit⟩
+  case Goto l d => exact ⟨_, _, rfl, Shape.jump⟩
   case Return v =>
     exact ⟨_, _, rfl, Shape.ret (basic_ret_len hb) (attach_mapM_te v _ _ (fun c hc => kid c (by simpa [stmtExprChildren] using hc)))⟩
   case LiteralInt => exact ⟨_, _, rfl, Shape.litInt⟩
@@ -369,6 +371,24 @@ theorem trav_shape {P : StmtExprMd → Prop} [TyEqC] (hP : ∀ e, P e → Basic 
   all_goals first
     | exact ⟨_, _, rfl, Shape.unsup trivial trivial⟩
 
+/-- The traversal keeps the statement-position labels that are not reserved, given that the node function `f`
+does and that no expansion the pass makes (`Reserved.ex`) carries one. For every term `s` with `Hered P s`, a
+label `l` that is not reserved is held by the traversal's result on `s` exactly when it is held by `s`. -/
+theorem trav_labels {P : StmtExprMd → Prop} [TyEqC] (hP : ∀ e, P e → Basic e) (hN : ∀ e, P e → NamesOK e)
+    (hf : ∀ u r st, NotYield r → NotYield ((f u r).run st).1)
+    (hfl : ∀ u r st l, ¬ Reserved.resLabel l → (l ∈ statementLabels ((f u r).run st).1 ↔ l ∈ statementLabels r))
+    (hX : ∀ l, ¬ Reserved.resLabel l → ExLabFree (TE f P) l) (l : String) (hl : ¬ Reserved.resLabel l)
+    (s : StmtExprMd) (u : Bool) (st : σ) (hs : Hered P s) :
+    (l ∈ statementLabels ((mapStmtExprUsedM f u s).run st).1 ↔ l ∈ statementLabels s) := by
+  obtain ⟨r, st1, heq, hsh⟩ := trav_shape hP hN hf u s st hs
+  rw [heq]
+  refine (hfl u r st1 l hl).trans ?_
+  refine (Shape.labels _ (hX l hl) hsh (fun a b hab hmem => ?_)).symm
+  obtain ⟨⟨u', st', rfl⟩, hha⟩ := hab
+  exact (trav_labels hP hN hf hfl hX l hl a u' st' hha).symm
+termination_by sizeOf s
+decreasing_by exact stmtExprChildren_sizeOf_lt s a hmem
+
 def Same (P : StmtExprMd → Prop) (a b : StmtExprMd) : Prop := a = b ∧ Hered P a
 
 theorem constRel_same {P : StmtExprMd → Prop} {E : StmtExprMd → StmtExprMd → Prop} {c : Constant}
@@ -423,10 +443,7 @@ theorem shape_refl {P : StmtExprMd → Prop} [TyEqC] (hP : ∀ e, P e → Basic 
     exact Shape.while_ ⟨rfl, kid c (by simp [stmtExprChildren])⟩
       (L2.same is (fun c hc => kid c (by simp only [stmtExprChildren]; simp [hc])))
       ⟨rfl, kid b (by simp [stmtExprChildren])⟩
-  case Goto l d =>
-    cases d
-    · exact absurd hb (by simp [Basic])
-    · exact Shape.exit
+  case Goto l d => exact Shape.jump
   case Return v =>
     exact Shape.ret (basic_ret_len hb) (L2.same v (fun c hc => kid c (by simpa [stmtExprChildren] using hc)))
   case LiteralInt => exact Shape.litInt

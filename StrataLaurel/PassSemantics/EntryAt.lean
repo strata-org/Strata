@@ -1,3 +1,8 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
 import StrataLaurel.PassSemantics.Entry
 
 /-!
@@ -58,6 +63,8 @@ theorem runProcAt_eq (o : Options) (p : LaurelProgram) (P : Procedure) :
           InterpHost.fail s!"`exit {l}` with no enclosing block labelled '{l}'"
       | (.error (.goto_ l),      _)  =>
           InterpHost.fail s!"`goto {l}` with no enclosing block labelled '{l}'"
+      | (.error (.jump_ l _),    _)  =>
+          InterpHost.fail s!"no block labelled '{l}' to jump to"
       | (.error .suspended,      _)  =>
           InterpHost.fail "`yield` with no coroutine to suspend") := rfl
 

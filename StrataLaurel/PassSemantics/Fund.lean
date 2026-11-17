@@ -1,4 +1,9 @@
-import StrataLaurel.PassSemantics.Sim
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+import StrataLaurel.PassSemantics.Jumps
 import StrataLaurel.Implementation.LaurelNodeKindProps
 
 /-!
@@ -10,10 +15,11 @@ theorem built on them, `fund`, is in `FundProof.lean`.
 
 * `Reserved`: a class that fixes the names, procedures and labels a pass reserves for its
   own use, plus hooks a pass can use to relate stack frames. `Reserved.none` (in
-  `Trav.lean`) reserves nothing.
+  `Trav.lean`) reserves no name and no procedure, and the labels it is given.
 * `SR G gs s s'`: the target stack agrees with the source stack on every name that is not
   reserved. `StRel G IR σ σ'` extends this to whole interpreter states, with the program
-  indices related by `IR`.
+  indices related by `IR`, and with the same open labelled blocks (`openLabels`) except for
+  the labels the pass reserves (`Reserved.resLabel`).
 * `Shape E s t`: `s` and `t` have the same constructor and their children are related by
   `E`.
 * `ImplRel`, `BodyRel`, `ProcRel E P P'`, `IxRel E ix ix'`: procedure bodies, procedures and
@@ -21,7 +27,13 @@ theorem built on them, `fund`, is in `FundProof.lean`.
 * `EvRel E`: events related by `E` and `StRel`. `CtlOK Gl G`: the control signals that may
   escape; `Gl` holds of the exit labels that may escape.
 * `Sm E Gl G`: the `SimRel` built from `StRel`, `EvRel` and `CtlOK`. Every pass theorem is
-  stated with it.
+  stated with it. `SmO E Gl G ol` is `Sm` for target states whose open labels are exactly `ol`.
+* `Corr E l ss ss' j j'`: the statement at index `j` of `ss` and the one at `j'` of `ss'` hold
+  the label `l` and are related, and the statements before and after them are related as well.
+  `LX.find` says that the first statement of two related lists holding a label that is not
+  reserved are at such indices.
+* `fs_withLabels`, `fs_withOpenLabel`, `fs_openR`: `FS` for running with other open labels,
+  and for a target block that the pass adds around code.
 * `CfgB cfg`: every action of the external backend gives the same result for every trace
   (`PConst`).
 * `fs_wbs`, `fs_readField`, `fs_writeField`, `fs_assignLocal`, `fs_resolveMethod`: `FS`
@@ -186,6 +198,7 @@ class Reserved where
   resCall : Identifier → Prop := fun c => resProc c.text
   resCall_text : ∀ c, resProc c.text → resCall c := by intro _ h; exact h
   retLabel : Option String
+  resLabel : String → Prop := fun _ => False
   noGlobals : Prop
   ren : Identifier → Identifier → Prop
   vret : Option String
@@ -960,6 +973,24 @@ structure StRel [Reserved] (G : StackFrame) (IR : ProgramIndex → ProgramIndex 
   gk : ∀ k, NG k → σ.globals.contains k = false
   gk' : ∀ k, NG k → σ'.globals.contains k = false
   egk : ∀ h g i, σ.entryState = some (h, g, i) → ∀ k, NG k → g.contains k = false
+  openLabels : ∀ l, ¬ Reserved.resLabel l → (l ∈ σ.openLabels ↔ l ∈ σ'.openLabels)
+
+/-- Opening a reserved label in the target keeps the states related. -/
+theorem StRel.pushOL [Reserved] {G : StackFrame} {IR : ProgramIndex → ProgramIndex → Prop} {σ σ' : EvalState} {L : String}
+    (h : StRel G IR σ σ') (hL : Reserved.resLabel L) : StRel G IR σ { σ' with openLabels := L :: σ'.openLabels } := by
+  have hk : ∀ k, ¬ Reserved.resLabel k → (k ∈ σ.openLabels ↔ k ∈ L :: σ'.openLabels) := fun k hk => by
+    rw [h.openLabels k hk, List.mem_cons]
+    exact (or_iff_right (fun (e : k = L) => hk (e ▸ hL))).symm
+  exact { h with openLabels := hk }
+
+/-- Closing a reserved label in the target keeps the states related. -/
+theorem StRel.restoreOL [Reserved] {G : StackFrame} {IR : ProgramIndex → ProgramIndex → Prop} {σ σ' : EvalState}
+    {L : String} {ol : List String} (h : StRel G IR σ σ') (hk : σ'.openLabels = L :: ol) (hL : Reserved.resLabel L) :
+    StRel G IR σ { σ' with openLabels := ol } := by
+  have hk' : ∀ k, ¬ Reserved.resLabel k → (k ∈ σ.openLabels ↔ k ∈ ol) := fun k hk' => by
+    rw [h.openLabels k hk', hk, List.mem_cons]
+    exact or_iff_right (fun (e : k = L) => hk' (e ▸ hL))
+  exact { h with openLabels := hk' }
 
 
 section
@@ -1007,6 +1038,11 @@ inductive LXv (X : StmtExprMd → List StmtExprMd → Prop) : List StmtExprMd �
   | snoc_x {i i' ts : List StmtExprMd} {x : StmtExprMd} : LX E X i i' → X x ts → Reserved.vokX E x ts →
       LXv X (i ++ [x]) (i' ++ ts)
 
+def Corr (l : String) (ss ss' : List StmtExprMd) (j j' : Nat) : Prop :=
+  ∃ pre a post pre' b post', ss = pre ++ a :: post ∧ ss' = pre' ++ b :: post' ∧ j = pre.length ∧
+    j' = pre'.length ∧ LX E (Reserved.ex E) pre pre' ∧ E a b ∧ LX E (Reserved.ex E) post post' ∧
+    l ∈ statementLabels a
+
 def CallRel (f f' : Identifier) : Prop := (f = f' ∧ ¬ Reserved.resCall f) ∨ Reserved.ren f f'
 
 def RenProc (P P' : Procedure) : Prop :=
@@ -1031,7 +1067,7 @@ inductive Shape : StmtExprMd → StmtExprMd → Prop where
   | while_ {c c' b b' : StmtExprMd} {is is' : List StmtExprMd} {d d' : Option StmtExprMd} {p : Bool}
       {s s' : FileRange} :
       E c c' → L2 E is is' → E b b' → Shape ⟨.While c is d b p, s⟩ ⟨.While c' is' d' b' p, s'⟩
-  | exit {l : String} {s s' : FileRange} : Shape ⟨.Goto l .blockEnd, s⟩ ⟨.Goto l .blockEnd, s'⟩
+  | jump {l : String} {d : GotoDestination} {s s' : FileRange} : Shape ⟨.Goto l d, s⟩ ⟨.Goto l d, s'⟩
   | ret {v v' : List StmtExprMd} {s s' : FileRange} :
       v.length ≤ 1 → L2 E v v' → Shape ⟨.Return v, s⟩ ⟨.Return v', s'⟩
   | litInt {n : Int} {s s' : FileRange} : Shape ⟨.LiteralInt n, s⟩ ⟨.LiteralInt n, s'⟩
@@ -1082,6 +1118,132 @@ inductive Shape : StmtExprMd → StmtExprMd → Prop where
       p.name.text = p'.name.text → Reserved.tyR p.type.val p'.type.val → ¬ Reserved.res p.name.text →
       NotV p.name.text → E b b' → Shape ⟨.Quantifier m p tr b, s⟩ ⟨.Quantifier m p' tr' b', s'⟩
   | unsup {v v' : StmtExpr} {s s' : FileRange} : Unsup v → Unsup v' → Shape ⟨v, s⟩ ⟨v', s'⟩
+
+omit [Reserved] in
+theorem LX.append {X : StmtExprMd → List StmtExprMd → Prop} {l₁ l₂ l₁' l₂' : List StmtExprMd}
+    (h₁ : LX E X l₁ l₁') (h₂ : LX E X l₂ l₂') : LX E X (l₁ ++ l₂) (l₁' ++ l₂') := by
+  induction h₁ with
+  | nil => exact h₂
+  | cons hab _ ih => exact .cons hab ih
+  | expand hab _ ih => rw [List.append_assoc]; exact .expand hab ih
+
+def LabAgree (l : String) : Prop := ∀ a b, E a b → (l ∈ statementLabels a ↔ l ∈ statementLabels b)
+
+def ExLabFree (l : String) : Prop :=
+  ∀ a ts, Reserved.ex E a ts → l ∉ statementLabels a ∧ ∀ t ∈ ts, l ∉ statementLabels t
+
+theorem LX.flatLabels {l : String} (hX : ExLabFree E l) {ss ss' : List StmtExprMd}
+    (h : LX E (Reserved.ex E) ss ss') (hE : ∀ a b, E a b → a ∈ ss → (l ∈ statementLabels a ↔ l ∈ statementLabels b)) :
+    (l ∈ (ss.map statementLabels).flatten ↔ l ∈ (ss'.map statementLabels).flatten) := by
+  induction h with
+  | nil => exact Iff.rfl
+  | cons hab _ ih =>
+    simp only [List.map_cons, List.flatten_cons, List.mem_append]
+    exact or_congr (hE _ _ hab (List.mem_cons_self ..)) (ih (fun a b h hm => hE a b h (List.mem_cons_of_mem _ hm)))
+  | @expand a ts as bs hab _ ih =>
+    have ih := ih (fun a b h hm => hE a b h (List.mem_cons_of_mem _ hm))
+    obtain ⟨h1, h2⟩ := hX a ts hab
+    simp only [List.map_cons, List.flatten_cons, List.map_append, List.flatten_append, List.mem_append] at ih ⊢
+    have : l ∉ (ts.map statementLabels).flatten := by
+      simp only [List.mem_flatten, List.mem_map, not_exists, not_and]
+      rintro _ ⟨t, ht, rfl⟩
+      exact h2 t ht
+    exact ⟨fun h => h.elim (fun h => absurd h h1) (fun h => Or.inr (ih.mp h)),
+      fun h => h.elim (fun h => absurd h this) (fun h => Or.inr (ih.mpr h))⟩
+
+theorem LX.find {l : String} (hE : LabAgree E l) (hX : ExLabFree E l) {ss ss' : List StmtExprMd}
+    (h : LX E (Reserved.ex E) ss ss') :
+    ORel (Corr E l ss ss') (ss.findIdx? (fun t => (statementLabels t).contains l))
+      (ss'.findIdx? (fun t => (statementLabels t).contains l)) := by
+  induction h with
+  | nil => trivial
+  | @cons a b as bs hab hr ih =>
+    have hp : (statementLabels a).contains l = (statementLabels b).contains l :=
+      Bool.eq_iff_iff.mpr (by rw [List.contains_iff_mem, List.contains_iff_mem]; exact hE _ _ hab)
+    simp only [List.findIdx?_cons, ← hp]
+    rcases hcv : (statementLabels a).contains l with _ | _
+    · simp only [Bool.false_eq_true, ite_false]
+      revert ih
+      cases as.findIdx? (fun t => (statementLabels t).contains l) <;>
+        cases bs.findIdx? (fun t => (statementLabels t).contains l) <;> simp only [Option.map_some, Option.map_none, ORel]
+      all_goals first
+        | exact id
+        | (rintro ⟨pre, a', post, pre', b', post', e1, e2, e3, e4, e5, e6, e7, e8⟩
+           exact ⟨a :: pre, a', post, b :: pre', b', post', by simp [e1], by simp [e2], by simp [e3], by simp [e4],
+             .cons hab e5, e6, e7, e8⟩)
+    · simp only [ite_true]
+      exact ⟨[], a, as, [], b, bs, rfl, rfl, rfl, rfl, .nil, hab, hr, List.contains_iff_mem.mp hcv⟩
+  | @expand a ts as bs hab hr ih =>
+    obtain ⟨h1, h2⟩ := hX a ts hab
+    have hpa : (statementLabels a).contains l = false := by
+      cases hc : (statementLabels a).contains l
+      · rfl
+      · exact absurd (List.contains_iff_mem.mp hc) h1
+    have hts : ts.findIdx? (fun t => (statementLabels t).contains l) = none := by
+      rw [List.findIdx?_eq_none_iff]
+      intro t ht
+      cases hc : (statementLabels t).contains l
+      · rfl
+      · exact absurd (List.contains_iff_mem.mp hc) (h2 t ht)
+    simp only [List.findIdx?_cons, hpa, Bool.false_eq_true, ite_false, List.findIdx?_append, hts, Option.none_or]
+    revert ih
+    cases as.findIdx? (fun t => (statementLabels t).contains l) <;>
+      cases bs.findIdx? (fun t => (statementLabels t).contains l) <;> simp only [Option.map_some, Option.map_none, ORel]
+    all_goals first
+      | exact id
+      | (rintro ⟨pre, a', post, pre', b', post', e1, e2, e3, e4, e5, e6, e7, e8⟩
+         exact ⟨a :: pre, a', post, ts ++ pre', b', post', by simp [e1], by simp [e2], by simp [e3], by simp [e4]; omega,
+           .expand hab e5, e6, e7, e8⟩)
+
+theorem Shape.labels {l : String} (hX : ExLabFree E l) {s t : StmtExprMd} (h : Shape E s t)
+    (hE : ∀ a b, E a b → a ∈ stmtExprChildren s.val → (l ∈ statementLabels a ↔ l ∈ statementLabels b)) :
+    (l ∈ statementLabels s ↔ l ∈ statementLabels t) := by
+  cases h with
+  | @ite c th c' th' el el' _ _ h1 h2 h3 =>
+    rw [statementLabels_ite, statementLabels_ite]
+    simp only [List.mem_append]
+    refine or_congr (hE _ _ h2 (by simp [stmtExprChildren])) ?_
+    cases el with
+    | none =>
+      cases el' with
+      | none => simp only [Option.map_none, Option.getD_none]
+      | some e' => exact (h3 : False).elim
+    | some e =>
+      cases el' with
+      | none => exact (h3 : False).elim
+      | some e' =>
+        simp only [Option.map_some, Option.getD_some]
+        exact hE _ _ h3 (by simp [stmtExprChildren])
+  | block hss _ =>
+    rw [statementLabels_block, statementLabels_block]
+    simp only [List.mem_append]
+    exact or_congr Iff.rfl (LX.flatLabels E hX hss (fun a b h hm => hE a b h (by simp [stmtExprChildren, hm])))
+  | unsup hu hu' =>
+    rename_i v v'
+    rename_i w w'
+    rw [statementLabels_other w v (by intros; rintro rfl; exact hu) (by intros; rintro rfl; exact hu),
+      statementLabels_other w' v' (by intros; rintro rfl; exact hu') (by intros; rintro rfl; exact hu')]
+  | _ =>
+    rw [statementLabels_other _ _ (by intros; nofun) (by intros; nofun),
+      statementLabels_other _ _ (by intros; nofun) (by intros; nofun)]
+
+theorem Shape.ann (hren : ∀ f f', Reserved.ren f f' → f.text ≠ stackShapeName ∧ f'.text ≠ stackShapeName)
+    {s t : StmtExprMd} (h : Shape E s t) : (stackAnnotation? s).isNone = (stackAnnotation? t).isNone := by
+  cases h with
+  | @call f f' as as' ta ta' _ _ has _ hcr =>
+    cases has with
+    | nil =>
+      simp only [stackAnnotation?]
+      rcases hcr with ⟨rfl, -⟩ | hr
+      · cases f.text == stackShapeName <;> simp
+      · simp [(hren _ _ hr).1, (hren _ _ hr).2]
+    | cons _ _ => simp [stackAnnotation?]
+  | unsup hu hu' =>
+    have h1 : ∀ v : StmtExpr, Unsup v → ∀ src, stackAnnotation? ⟨v, src⟩ = none := by
+      intro v hv src
+      cases v <;> simp_all [Unsup, stackAnnotation?]
+    simp only [h1 _ hu, h1 _ hu', Option.isNone_none]
+  | _ => simp [stackAnnotation?]
 
 theorem allocName_refl (hte : TyEq) {ix ix' : ProgramIndex}
     (hu : ∀ t t', Reserved.tyR t t' → ix'.unalias t' = ix.unalias t) (r : Identifier) (o : List HighTypeMd) :
@@ -1148,6 +1310,7 @@ inductive ImplRel (outs : List Parameter) : StmtExprMd → StmtExprMd → Prop w
       ImplRel outs ⟨.Block ss none [] none, s⟩ ⟨.Block ss' (some L) [] none, s'⟩
   | wrapOther {b b' : StmtExprMd} {s' : FileRange} {L : String} :
       Reserved.retLabel = some L → E b b' → blockDeclarations [b] = [] →
+      (∀ l, ¬ Reserved.resLabel l → l ∉ statementLabels b) → (stackAnnotation? b).isNone = true →
       ImplRel outs b ⟨.Block [b'] (some L) [] none, s'⟩
   | valued {e e' : StmtExprMd} {o : Parameter} {s s' s1 s2 s3 : FileRange} {L : String} :
       Reserved.retLabel = some L → outs = [o] → E e e' → NotYield e' →
@@ -1332,7 +1495,8 @@ theorem evRel_fail : ∀ e e', EvRel E e e' → failOf e = failOf e' := by
 
 def CtlOK (Gl : String → Prop) (G : StackFrame) : Control → Prop
   | .exit_ l => Gl l
-  | .goto_ _ => False
+  | .goto_ l => Gl l
+  | .jump_ l _ => Gl l
   | .suspended => False
   | .return_ [] => Strict G ∧ ¬ NoRet G
   | .return_ [_] => ¬ NoRet G
@@ -1872,8 +2036,10 @@ open Strata.Laurel.Interpreter
 section Helpers
 
 macro "strel" h:term : tactic => `(tactic|
-  (refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (try dsimp only) <;>
+  (refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (try dsimp only) <;>
     first
+    | exact StRel.openLabels $h
+    | exact fun _ _ => Iff.rfl
     | exact StRel.gk $h
     | exact StRel.gk' $h
     | exact StRel.egk $h
@@ -1907,8 +2073,10 @@ macro "strel" h:term : tactic => `(tactic|
     | exact gk_ins (StRel.gk' $h) (by assumption) (by assumption) _))
 
 macro "strelw" h:ident " [" ls:Lean.Parser.Tactic.simpLemma,* "]" : tactic => `(tactic|
-  (refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (try dsimp only) <;>
+  (refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (try dsimp only) <;>
     first
+    | exact StRel.openLabels $h
+    | exact fun _ _ => Iff.rfl
     | exact StRel.gk $h
     | exact StRel.gk' $h
     | exact StRel.egk $h
@@ -1955,6 +2123,10 @@ macro "strelw" h:ident " [" ls:Lean.Parser.Tactic.simpLemma,* "]" : tactic => `(
     | exact gk_ins (StRel.gk' $h) (by assumption) (by assumption) _))
 
 variable {E : StmtExprMd → StmtExprMd → Prop} {Gl : String → Prop} {G : StackFrame} {U : SimRel}
+
+theorem StRel.site [Reserved] {G : StackFrame} {IR : ProgramIndex → ProgramIndex → Prop} {σ σ' : EvalState}
+    (h : StRel G IR σ σ') (s : FileRange) : StRel G IR σ { σ' with stmtSite := s } := by
+  strel h
 
 theorem fuel_split {K n M' : Nat} (hK : 1 ≤ K) (h : K * (n + 1) ≤ M') :
     ∃ M, M' = M + 1 ∧ K * n ≤ M := by
@@ -2664,6 +2836,96 @@ theorem fs_wbs {l l' : List StmtExprMd} (hn : blockDeclarations l = blockDeclara
         exact ⟨hv m hm o hvo, (Reserved.vret_ok o hvo).2.2 m⟩
     · exact fs_bind (fs_modifyRel (fun a a' ha => ha.with_stack (SR.unwind _ hr hv hσ.stack ha.stack)))
         (fun _ _ _ => fs_pure hr')
+
+omit [Reserved] in
+theorem keepsOOF_restore_labels (saved : List String) :
+    KeepsOOF (fun (sig : Control) => (do
+      modify fun (s : EvalState) => { s with openLabels := saved }
+      throw sig : EvalM PM α)) := by
+  intro σ τ
+  simp [run_bind, run_throw, run_modify, OOF]
+
+/-- Running related actions with the open labels replaced preserves `FS`: if `x` is simulated by `y`, and `f`
+and `g` take lists of open labels that agree on every label that is not reserved to lists that do, then
+`withLabels f x` is simulated by `withLabels g y`. Each side restores its own list on the way out, so the
+two lists keep agreeing on every label that is not reserved. -/
+theorem fs_withLabels (f g : List String → List String)
+    (hfg : ∀ A B : List String, (∀ l, ¬ Reserved.resLabel l → (l ∈ A ↔ l ∈ B)) →
+      ∀ l, ¬ Reserved.resLabel l → (l ∈ f A ↔ l ∈ g B))
+    {A : α → α → Prop} {x y : EvalM PM α} (h : FS (Sm E Gl G) A x y) :
+    FS (Sm E Gl G) A (withLabels f x) (withLabels g y) := by
+  unfold withLabels
+  refine fs_bind fs_get (fun σ σ' hσ => ?_)
+  have hσ : StRel G (IxRel E) σ σ' := hσ
+  refine fs_bind (fs_modifyRel (fun a a' ha => ?_)) (fun _ _ _ => ?_)
+  · exact { ha with openLabels := hfg _ _ hσ.openLabels }
+  refine fs_bind (fs_tryCatch h (fun c hc => ?_) (keepsOOF_restore_labels _) (fun L hL hok => ?_)
+    (fun w => ?_)) (fun r r' hr' => ?_)
+  · exact fs_bind (fs_modifyRel (fun a a' ha => { ha with openLabels := hσ.openLabels })) (fun _ _ _ => fs_throw _ hc)
+  · exact fs_bind (fs_modifyRel (fun a a' ha => { ha with openLabels := hσ.openLabels })) (fun _ _ _ => fs_throwM hL hok)
+  · exact fs_bind (fs_modify (S := (Sm E Gl G).atWin w) (fun a a' ⟨hf, ha, ho⟩ =>
+      ⟨hf, { ha with openLabels := hσ.openLabels }, ho⟩)) (fun _ _ _ => fs_throwW w)
+  · exact fs_bind (fs_modifyRel (fun a a' ha => { ha with openLabels := hσ.openLabels })) (fun _ _ _ => fs_pure hr')
+
+/-- Running related actions with a labelled block open preserves `FS`: if `x` is simulated by `y`, then
+`withOpenLabel l x` is simulated by `withOpenLabel l y`. -/
+theorem fs_withOpenLabel (l : String) {A : α → α → Prop} {x y : EvalM PM α} (h : FS (Sm E Gl G) A x y) :
+    FS (Sm E Gl G) A (withOpenLabel l x) (withOpenLabel l y) :=
+  fs_withLabels (l :: ·) (l :: ·) (fun _ _ hAB k hk => by simp only [List.mem_cons]; exact or_congr Iff.rfl (hAB k hk)) h
+
+/-- The simulation relation `Sm` for states whose target has exactly the labels `ol` open. -/
+def SmO (E : StmtExprMd → StmtExprMd → Prop) (Gl : String → Prop) (G : StackFrame) (ol : List String) : SimRel :=
+  { Sm E Gl G with
+    st := fun σ σ' => StRel G (IxRel E) σ σ' ∧ σ'.openLabels = ol
+    win := fun v σ σ' => (Sm E Gl G).win v σ σ' ∧ σ'.openLabels = ol }
+
+theorem SmO.noWin {ol : List String} (hf : ¬ Free G) (v : Value) {σ σ' : EvalState} :
+    ¬ (SmO E Gl G ol).win v σ σ' := fun h => hf h.1.1
+
+/-- A simulation by `Sm` of a target action that keeps the open labels is a simulation by `SmO ol` for every
+list `ol` of open labels of the target. -/
+theorem FSH.toO {A : α → β → Prop} {x : EvalM PM α} {y : EvalM PM β} (hy : KeepsOL y) (ol : List String)
+    (h : FS (Sm E Gl G) A x y) : FS (SmO E Gl G ol) A x y := by
+  refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
+  have r0 := h.sim σ σ' τ τ' hs.1 ht hn
+  rcases hr : run y σ' τ' with e | ⟨⟨c | b, σ1'⟩, τ1'⟩ <;> rw [hr] at r0 <;>
+    rcases hx : run x σ τ with e0 | ⟨⟨c0 | a0, σ1⟩, τ1⟩ <;> rw [hx] at r0 <;> simp only [RR, ExRel] at r0 ⊢
+  all_goals try exact r0
+  all_goals try exact r0.1.elim
+  · have hk := (hy ol).keep _ _ _ _ _ hs.2 hr
+    obtain ⟨hsg, ht1⟩ := r0
+    refine ⟨?_, ht1⟩
+    rcases hsg with ⟨h1, h2, h3⟩ | ⟨v, h1, h2, h3⟩
+    · exact .inl ⟨h1, h2, h3, hk⟩
+    · exact .inr ⟨v, h1, h2, h3, hk⟩
+  · have hk := (hy ol).keep _ _ _ _ _ hs.2 hr
+    obtain ⟨h1, h2, h3⟩ := r0
+    exact ⟨h1, ⟨h2, hk⟩, h3⟩
+
+/-- A simulation by `SmO ol`, for every list `ol` containing the reserved label `L`, is a simulation by `Sm` of the
+same target action run with `L` open. -/
+theorem fs_openR (L : String) (hL : Reserved.resLabel L) {A : α → α → Prop} {x y : EvalM PM α}
+    (h : ∀ ol, L ∈ ol → FS (SmO E Gl G ol) A x y) :
+    FS (Sm E Gl G) A x (withOpenLabel L y) := by
+  refine ⟨fun σ σ' τ τ' hs ht hn => ?_⟩
+  have hs' : StRel G (IxRel E) σ σ' := hs
+  have hst : (SmO E Gl G (L :: σ'.openLabels)).st σ { σ' with openLabels := L :: σ'.openLabels } :=
+    ⟨hs'.pushOL hL, rfl⟩
+  have r0 := (h (L :: σ'.openLabels) (List.mem_cons_self ..)).sim σ _ τ τ' hst ht hn
+  rw [run_withOpenLabel]
+  have hrestore : ∀ (a a' : EvalState), StRel G (IxRel E) a a' → a'.openLabels = L :: σ'.openLabels →
+      StRel G (IxRel E) a { a' with openLabels := σ'.openLabels } := fun a a' ha he => ha.restoreOL he hL
+  rcases hr : run y { σ' with openLabels := L :: σ'.openLabels } τ' with e | ⟨⟨c | b, σ1'⟩, τ1'⟩ <;> rw [hr] at r0 <;>
+    rcases hx : run x σ τ with e0 | ⟨⟨c0 | a0, σ1⟩, τ1⟩ <;> rw [hx] at r0 <;> simp only [RR, ExRel] at r0 ⊢
+  all_goals try exact r0
+  all_goals try exact r0.1.elim
+  · obtain ⟨hsg, ht1⟩ := r0
+    refine ⟨?_, ht1⟩
+    rcases hsg with ⟨h1, h2, h3, h4⟩ | ⟨v, h1, h2, ⟨hf, h3, ho⟩, h4⟩
+    · exact .inl ⟨h1, h2, hrestore _ _ h3 h4⟩
+    · exact .inr ⟨v, h1, h2, hf, hrestore _ _ h3 h4, ho⟩
+  · obtain ⟨h1, ⟨h2, h4⟩, h3⟩ := r0
+    exact ⟨h1, hrestore _ _ h2 h4, h3⟩
 
 omit [Reserved] in
 theorem FSH.congrL {S T U : SimRel} {A : α → β → Prop} {x x' : EvalM PM α} {y : EvalM PM β} (h : FSH S T U A x' y)

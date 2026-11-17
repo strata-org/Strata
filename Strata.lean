@@ -199,7 +199,8 @@ import Strata.Transform.FoldAxiomsEntry
 
 /- The monadic interpreter: the monad-generic engine, its soundness and completeness against
    the reference event semantics, Core's instantiation, the `EvalM`
-   instance and its soundness and completeness, and counterexample replay -/
+   instance and its soundness and completeness, counterexample replay, and symbolic execution
+   on it -/
 import Strata.DL.Imperative.InterpreterFuelMono
 import Strata.DL.Imperative.InterpreterTowerProps
 import Strata.Languages.Core.ConfigWF
@@ -227,6 +228,13 @@ import Strata.Languages.Core.InterpreterReachProps
 import Strata.Languages.Core.InterpreterObs
 import Strata.Languages.Core.InterpreterObsProps
 import Strata.Languages.Core.InterpreterSound
+import Strata.Languages.Core.SymExec
+import Strata.Languages.Core.PathExplorer
+import Strata.Languages.Core.PathExplorerProps
+import Strata.Languages.Core.SymExecProps
+import Strata.Languages.Core.SymExecReplay
+import Strata.Languages.Core.SymExecReplayProps
+import Strata.Languages.Core.SymExecTree
 import Strata.Languages.Core.StmtCallFree
 
  -- deletion candidates: nothing imports these modules:

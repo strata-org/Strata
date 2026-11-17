@@ -215,6 +215,83 @@ info: true
 
 end CallElimExamples
 
+/-! ## Call elimination in CFG bodies
+
+A call in a block is replaced in place by the commands that declare its temporaries, check the
+callee's preconditions, havoc its results and assume its postconditions. The block's other
+commands and its transfer are kept. -/
+section CallElimCFG
+
+/-- The program `callElim'` makes of `t`, printed at width 96, or the error. -/
+private def callElimShown (t : StrataDDM.SourcedProgram) : String :=
+  match run (translate t) callElim' with
+  | .ok (_, p) => (Std.format p.eraseTypes).pretty 96
+  | .error e => s!"error: {e}"
+
+/-- Two calls in one block between other commands, and a call in a block ending in a branch. -/
+private def cfgCallsPgm :=
+#strata
+program Core;
+procedure Inc(x : int, out y : int)
+spec { requires [inc_pre]: int.ge(x, 0); ensures [inc_post]: y == int.add(x, 1); };
+procedure P(a : int, out b : int, out c : int)
+cfg entry {
+  entry: { b := a; call Inc(b, out c); call Inc(c, out b); assert [b_big]: int.gt(b, a);
+    goto check; }
+  check: { call Inc(b, out c); branch (int.gt(c, b)) goto up else goto down; }
+  up: { return; }
+  down: { return; }
+};
+#end
+
+/--
+info: program Core;
+
+procedure Inc (x : int, out y : int)
+spec {
+  requires [inc_pre]: int.ge(x, 0);
+  ensures [inc_post]: y == int.add(x, 1);
+  } {
+
+};
+procedure P (a : int, out b : int, out c : int)
+cfg entry {
+  entry: {
+    b := a;
+    var tmp_arg_0 : int := b;
+    var tmp_c_1 : int := c;
+    assert [callElimAssert_inc_pre_2]: int.ge(tmp_arg_0, 0);
+    havoc c;
+    assume [callElimAssume_inc_post_3]: c == int.add(tmp_arg_0, 1);
+    var tmp_arg_4 : int := c;
+    var tmp_b_5 : int := b;
+    assert [callElimAssert_inc_pre_6]: int.ge(tmp_arg_4, 0);
+    havoc b;
+    assume [callElimAssume_inc_post_7]: b == int.add(tmp_arg_4, 1);
+    assert [b_big]: int.gt(b, a);
+    goto check;
+  }
+  check: {
+    var tmp_arg_8 : int := b;
+    var tmp_c_9 : int := c;
+    assert [callElimAssert_inc_pre_10]: int.ge(tmp_arg_8, 0);
+    havoc c;
+    assume [callElimAssume_inc_post_11]: c == int.add(tmp_arg_8, 1);
+    branch (int.gt(c, b)) goto up else goto down;
+  }
+  up: {
+    return;
+  }
+  down: {
+    return;
+  }
+};
+-/
+#guard_msgs (whitespace := lax) in
+#eval IO.println (callElimShown cfgCallsPgm)
+
+end CallElimCFG
+
 /-! ## Call-elimination pipeline phase obligation tests -/
 section CallElimPhaseTests
 open Strata.SMT

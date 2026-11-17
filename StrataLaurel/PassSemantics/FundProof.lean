@@ -1,3 +1,8 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
 import StrataLaurel.PassSemantics.Wrap
 
 /-!
@@ -15,7 +20,11 @@ or the pass rewrote one into the other (`Rw`). The proof is one induction on `n`
 * `NR E Rw Gl s t`: `Shape E s t` with allowed exits (`ExitOK`) and related value children
   (`ValKids`), or `Rw s t`.
 * `FundAt cfg E Rw K Gl n`: the simulation statement for fuel `n`, one field per
-  interpreter function.
+  interpreter function, including those that run a statement list from the labelled block a
+  jump lands in (`runFrom`, `stmtFrom`, `blockFrom`) and that restart a labelled block
+  (`blockLoop`).
+* `LandRel`: the relation between the jump a source statement list catches and the one its
+  target catches.
 * `fund_le`, `fund`: `FundAt` holds for every `n`.
 -/
 
@@ -41,7 +50,7 @@ section
 variable [Reserved] (cfg : ExternalBackendM PM) (E Rw : StmtExprMd → StmtExprMd → Prop) (K : Nat)
   (Gl : String → Prop)
 
-def ExitOK (s : StmtExprMd) : Prop := ∀ l, s.val = .Goto l .blockEnd → Gl l
+def ExitOK (s : StmtExprMd) : Prop := ∀ l d, s.val = .Goto l d → Gl l
 
 def NR (s t : StmtExprMd) : Prop := (Shape E s t ∧ ExitOK Gl s ∧ ValKids E s t) ∨ Rw s t
 
@@ -70,6 +79,16 @@ structure FundAt (n : Nat) : Prop where
   iter : ∀ {G : StackFrame} c c' b b' p ci ci' eb eb', E c c' → Reserved.vok E c c' → E b b' → OvOK G c → OvOK G b →
     FS (Sm E Gl G) Eq ci ci' → FS (Sm E Gl G) Eq eb eb' →
     ∀ M, K * n ≤ M → FS (Sm E Gl G) Eq (evalWhileIter cfg c b p ci eb n) (evalWhileIter cfg c' b' p ci' eb' M)
+  blockLoop : ∀ {G : StackFrame} ss ss' lab base base', LX E (Reserved.ex E) ss ss' → LabOK (some lab) →
+    (∀ x ∈ ss, OvOK G x) → ∀ M, K * n ≤ M →
+    FS (Sm E Gl G) Eq (evalBlockLoop cfg n ss lab [] base) (evalBlockLoop cfg M ss' lab [] base')
+  blockFrom : ∀ {G : StackFrame} ss ss' bl k k' l d, Corr E l ss ss' k k' → LabOK (some bl) →
+    (∀ x ∈ ss, OvOK G x) → Gl l → ∀ M, K * n ≤ M →
+    FS (Sm E Gl G) Eq (evalBlockFrom cfg n ss bl [] k l d) (evalBlockFrom cfg M ss' bl [] k' l d)
+  stmtFrom : ∀ {G : StackFrame} s t l d, NR E Rw Gl s t → OvOK G s → Gl l → l ∈ statementLabels s → ∀ M, K * n ≤ M →
+    FS (Sm E Gl G) Eq (evalStmtFrom cfg n s l d) (evalStmtFrom cfg M t l d)
+  runFrom : ∀ {G : StackFrame} ss ss' k k' l d, Corr E l ss ss' k k' → (∀ x ∈ ss, OvOK G x) → Gl l → ∀ M, K * n ≤ M →
+    FS (Sm E Gl G) Eq (runFrom cfg n ss k l d) (runFrom cfg M ss' k' l d)
   fin : ∀ {G : StackFrame} f f' base base' k, ORel E f f' → OvO G f → ∀ M, K * n ≤ M →
     FS (Sm E Gl G) Eq (runTryFinally cfg n f false base k) (runTryFinally cfg M f' false base' k)
   finish : ∀ {G : StackFrame} f f' base base' k c c', ORel E f f' → CatchRel E c c' → FinOK f → OvO G f →
@@ -116,7 +135,7 @@ theorem FundAt.outputsT {n : Nat} (ih : FundAt cfg E Rw K Gl n) (hv : ∀ a b, R
 
 def runSt (cfg : ExternalBackendM PM) (n : Nat) (s : StmtExprMd) : EvalM PM Unit := do
   modify fun (st : EvalState) => { st with stmtSite := s.source }
-  withOperandWindow s (evalStmt cfg n s)
+  if (stackAnnotation? s).isNone then withOperandWindow s (evalStmt cfg n s)
 
 structure RwStep (n : Nat) : Prop where
   scoped_ : ∀ {G : StackFrame} s t, Rw s t → OvOK G s → ∀ M, K * (n + 1) ≤ M →
@@ -147,6 +166,13 @@ structure PassRel : Prop where
   exDecl : ∀ G s ts, Reserved.ex E s ts → LooseExt G (blockDeclarations [s]) (blockDeclarations ts)
   exDeclOK : ∀ s ts, Reserved.ex E s ts → ∀ x ∈ blockDeclarations [s], ¬ Reserved.res x ∧ NotV x
   retGl : ∀ L, Reserved.retLabel = some L → ¬ Gl L
+  retRes : ∀ L, Reserved.retLabel = some L → Reserved.resLabel L
+  glRes : ∀ l, Gl l → ¬ Reserved.resLabel l
+  labE : ∀ s t, E s t → ∀ l, ¬ Reserved.resLabel l → (l ∈ statementLabels s ↔ l ∈ statementLabels t)
+  rwLab : ∀ s t, Rw s t → (∀ l, ¬ Reserved.resLabel l → l ∉ statementLabels s ∧ l ∉ statementLabels t) ∧
+    (stackAnnotation? s).isNone ∧ (stackAnnotation? t).isNone
+  exLab : ∀ s ts, Reserved.ex E s ts → ∀ l, ¬ Reserved.resLabel l → l ∉ statementLabels s ∧ ∀ t ∈ ts, l ∉ statementLabels t
+  renAnn : ∀ f f', Reserved.ren f f' → f.text ≠ stackShapeName ∧ f'.text ≠ stackShapeName
   retK : Reserved.retLabel ≠ none → 3 ≤ K
   retNG : Reserved.retLabel ≠ none → Reserved.noGlobals
   retV : Reserved.retLabel ≠ none → Reserved.vret = none
@@ -375,7 +401,7 @@ theorem unsup_expr {v : StmtExpr} (hu : Unsup v) (n : Nat) :
 
 omit [Reserved] hp in
 theorem unsup_exprMd {v : StmtExpr} (hu : Unsup v) (n : Nat) (src : FileRange) :
-    evalExprMd cfg (n + 1) ⟨v, src⟩ = evalExpr cfg n v := by
+    evalExprMd cfg (n + 1) ⟨v, src⟩ = jumpBoundary (evalExpr cfg n v) := by
   cases v <;> simp only [Unsup] at hu <;> rfl
 
 omit [Reserved] hp in
@@ -425,9 +451,10 @@ theorem fstep_exprMd {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n,
     cases hsh
     case unsup hu hu' =>
       rw [unsup_exprMd hu, unsup_exprMd hu']
-      exact ih.expr _ _ hN hov M hM
+      exact fs_jumpBoundary (ih.expr _ _ hN hov M hM)
     all_goals
       simp only [evalExprMd]
+      refine fs_jumpBoundary ?_
       first
       | exact fs_bind (fs_modifyRel (fun a a' ha => by strel ha)) (fun _ _ _ => ih.expr _ _ hN hov M hM)
       | exact fs_bind (ih.stmt _ _ hN hov M hM) (fun _ _ _ => fs_pure (fun _ => rfl))
@@ -770,20 +797,83 @@ theorem nr_triv (hv : ∀ a b, Reserved.vok E a b) (hx : ∀ a ts, Reserved.vokX
     (h : Shape E s t) (he : ExitOK Gl s) : NR E Rw Gl s t :=
   .inl ⟨h, he, valKids_triv hv hx h⟩
 
+omit hp in
+def LandRel (Gl : String → Prop) (ss ss' : List StmtExprMd) :
+    Option (Nat × String × GotoDestination) → Option (Nat × String × GotoDestination) → Prop
+  | none, none => True
+  | some (j, l, d), some (j', l', d') => Gl l ∧ l = l' ∧ d = d' ∧ Corr E l ss ss' j j'
+  | _, _ => False
+
+theorem NR.ann {s t : StmtExprMd} (h : NR E Rw Gl s t) : (stackAnnotation? s).isNone = (stackAnnotation? t).isNone := by
+  rcases h with ⟨hsh, -, -⟩ | hrw
+  · exact Shape.ann _ hp.renAnn hsh
+  · have := hp.rwLab _ _ hrw
+    exact this.2.1.trans this.2.2.symm
+
+theorem NR.labels {s t : StmtExprMd} (h : NR E Rw Gl s t) {l : String} (hl : ¬ Reserved.resLabel l) :
+    (l ∈ statementLabels s ↔ l ∈ statementLabels t) := by
+  rcases h with ⟨hsh, -, -⟩ | hrw
+  · exact Shape.labels _ (fun a ts h => hp.exLab a ts h l hl) hsh (fun a b hab _ => hp.labE a b hab l hl)
+  · have := (hp.rwLab _ _ hrw).1 l hl
+    exact iff_of_false this.1 this.2
+
+theorem fs_run1 {n M : Nat} (ih : FundAt cfg E Rw K Gl n) (hM : K * n ≤ M) :
+    ∀ x y, E x y → OvOK G x → FS (Sm E Gl G) Eq
+      (do modify fun (st : EvalState) => { st with stmtSite := x.source }
+          if (stackAnnotation? x).isNone then withOperandWindow x (evalStmt cfg n x))
+      (do modify fun (st : EvalState) => { st with stmtSite := y.source }
+          if (stackAnnotation? y).isNone then withOperandWindow y (evalStmt cfg M y)) := by
+  intro x y hxy hox
+  have hann := (hp.closed x y hxy).ann hp
+  refine fs_bind (fs_modifyRel (fun a a' ha => by strel ha)) (fun _ _ _ => ?_)
+  by_cases h : (stackAnnotation? x).isNone = true
+  · have h' : (stackAnnotation? y).isNone = true := hann ▸ h
+    simp only [h, h', ite_true]
+    exact fs_wow (ih.stmt _ _ (hp.closed _ _ hxy) hox M hM)
+  · have h' : ¬ (stackAnnotation? y).isNone = true := hann ▸ h
+    simp only [h, h']
+    exact fs_pure rfl
+
+theorem fs_landHandler {ss ss' : List StmtExprMd} (hss : LX E (Reserved.ex E) ss ss') (c : Control)
+    (hc : CtlOK Gl G c) :
+    FS (Sm E Gl G) (LandRel (E := E) Gl ss ss')
+      ((fun (c : Control) => match c with
+        | .jump_ l d =>
+          (match ss.findIdx? (fun t => (statementLabels t).contains l) with
+            | some j => pure (some (j, l, d))
+            | none => throw (.jump_ l d) : EvalM PM (Option (Nat × String × GotoDestination)))
+        | other => throw other) c)
+      ((fun (c : Control) => match c with
+        | .jump_ l d =>
+          (match ss'.findIdx? (fun t => (statementLabels t).contains l) with
+            | some j => pure (some (j, l, d))
+            | none => throw (.jump_ l d) : EvalM PM (Option (Nat × String × GotoDestination)))
+        | other => throw other) c) := by
+  cases c with
+  | jump_ l d =>
+    have hnr := hp.glRes l hc
+    have hf := LX.find (E := E) (fun a b h => hp.labE a b h l hnr) (fun a ts h => hp.exLab a ts h l hnr) hss
+    dsimp only
+    cases h1 : ss.findIdx? (fun t => (statementLabels t).contains l) <;>
+      cases h2 : ss'.findIdx? (fun t => (statementLabels t).contains l) <;>
+      rw [h1, h2] at hf <;> simp only [ORel] at hf
+    · exact fs_throw _ hc
+    · exact fs_pure ⟨hc, rfl, rfl, hf⟩
+  | _ => exact fs_throw _ hc
+
 theorem fstep_list {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, FundAt cfg E Rw K Gl k) :
     ∀ ss ss' a, LX E (Reserved.ex E) ss ss' → (∀ x ∈ ss, OvOK G x) → ∀ M, K * (n + 1) ≤ M →
       FS (Sm E Gl G) (VRel (a = true → LXv E (Reserved.ex E) ss ss')) (evalStmtList cfg (n + 1) ss a)
         (evalStmtList cfg M ss' a) := by
   intro ss ss' a hss hov M' hM'
   obtain ⟨M, rfl, hM⟩ := fuel_split hp.K_pos hM'
-  have run1 : ∀ x y, E x y → OvOK G x → FS (Sm E Gl G) Eq
-      (do modify fun (st : EvalState) => { st with stmtSite := x.source }; withOperandWindow x (evalStmt cfg n x))
-      (do modify fun (st : EvalState) => { st with stmtSite := y.source }; withOperandWindow y (evalStmt cfg M y)) :=
-    fun x y hxy hox => fs_bind (fs_modifyRel (fun a a' ha => by strel ha))
-      (fun _ _ _ => fs_wow (ih.stmt _ _ (hp.closed _ _ hxy) hox M hM))
+  have run1 := fs_run1 hp ih hM (G := G)
   have runX : ∀ x ts, Reserved.ex E x ts → OvOK G x → FS (Sm E Gl G) Eq
-      (do modify fun (st : EvalState) => { st with stmtSite := x.source }; withOperandWindow x (evalStmt cfg n x))
-      (ts.forM fun y => do modify fun (st : EvalState) => { st with stmtSite := y.source }; withOperandWindow y (evalStmt cfg M y)) :=
+      (do modify fun (st : EvalState) => { st with stmtSite := x.source }
+          if (stackAnnotation? x).isNone then withOperandWindow x (evalStmt cfg n x))
+      (ts.forM fun y => do
+        modify fun (st : EvalState) => { st with stmtSite := y.source }
+        if (stackAnnotation? y).isNone then withOperandWindow y (evalStmt cfg M y)) :=
     fun x ts hx hox => (hp.step n ihs).exStmt x ts hx hox M hM
   simp only [evalStmtList]
   refine fs_bind fs_get (fun σ σ' hσ => ?_)
@@ -791,7 +881,17 @@ theorem fstep_list {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, F
   simp only [hσ.coroSelf, hσ.coroSelf', Option.isNone_none, ite_true]
   cases a
   · simp only [Bool.false_eq_true, ite_false]
-    exact fs_bind (fs_forM_LX hss hov run1 runX) (fun _ _ _ => fs_pure (fun _ => rfl))
+    refine fs_bind (fs_tryCatch (A := LandRel (E := E) Gl ss ss')
+      (fs_bind (fs_forM_LX hss hov run1 runX) (fun _ _ _ => fs_pure trivial))
+      (fun c hc => fs_landHandler hp hss c hc) ?_ (fun L hL hok => fs_throwTM hL hok) (fun w => fs_throwW w))
+      (fun x y hxy => ?_)
+    · intro σ τ
+      simp [run_throw, OOF]
+    · rcases x with _ | ⟨j, l, d⟩ <;> rcases y with _ | ⟨j', l', d'⟩ <;> simp only [LandRel] at hxy
+      · exact fs_pure (fun _ => rfl)
+      · obtain ⟨hGl, rfl, rfl, hc⟩ := hxy
+        exact fs_bind fs_chargeStep (fun _ _ _ => fs_bind (ih.runFrom ss ss' j j' l d hc hov hGl M hM)
+          (fun _ _ _ => fs_pure (fun _ => rfl)))
   · simp only [ite_true]
     by_cases hv : LXv E (Reserved.ex E) ss ss'
     · cases hv with
@@ -834,6 +934,218 @@ theorem fstep_list {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, F
         rw [lforM_append]
         simp only [bind_assoc]
         exact fs_bind (fs_forM_LX hi hoi run1 runX) (fun _ _ _ => hl.weaken (fun _ _ _ h => absurd (h (by simp)) hv))
+
+omit [Reserved] hp in
+theorem blockDeclarations_append (l l' : List StmtExprMd) :
+    blockDeclarations (l ++ l') = blockDeclarations l ++ blockDeclarations l' := by
+  simp [Interpreter.blockDeclarations]
+
+theorem LX.decls_ext {G : StackFrame} {ss ss' : List StmtExprMd} (h : LX E (Reserved.ex E) ss ss') :
+    LooseExt G (Interpreter.blockDeclarations ss) (Interpreter.blockDeclarations ss') := by
+  induction h with
+  | nil => exact .nil
+  | @cons a b as bs hab _ ih =>
+    rw [blockDeclarations_cons a as, blockDeclarations_cons b bs]
+    exact ((hp.closed _ _ hab).decl hp G).append ih
+  | @expand a ts as bs hx _ ih =>
+    rw [blockDeclarations_cons a as, blockDeclarations_append]
+    exact (hp.exDecl G _ _ hx).append ih
+
+theorem LX.decls_ok {ss ss' : List StmtExprMd} (h : LX E (Reserved.ex E) ss ss') :
+    ∀ x ∈ Interpreter.blockDeclarations ss, ¬ Reserved.res x ∧ NotV x := by
+  induction h with
+  | nil => simp [Interpreter.blockDeclarations]
+  | @cons a b as bs hab _ ih =>
+    intro x hx
+    rw [blockDeclarations_cons, List.mem_append] at hx
+    rcases hx with hx | hx
+    · exact (hp.closed _ _ hab).declOK hp x hx
+    · exact ih x hx
+  | @expand a ts as bs hx _ ih =>
+    intro x hm
+    rw [blockDeclarations_cons, List.mem_append] at hm
+    rcases hm with hm | hm
+    · exact hp.exDeclOK _ _ hx x hm
+    · exact ih x hm
+
+theorem fs_blockBody {n M : Nat} (ih : FundAt cfg E Rw K Gl n) (hM : K * n ≤ M) {ss ss' : List StmtExprMd}
+    (hss : LX E (Reserved.ex E) ss ss') (hos : ∀ x ∈ ss, OvOK G x) :
+    FS (Sm E Gl G) Eq (do let _ ← withBlockScope ss (evalStmtList cfg n ss (asExpr := false)); pure ())
+      (do let _ ← withBlockScope ss' (evalStmtList cfg M ss' (asExpr := false)); pure ()) :=
+  fs_bind (fs_wbs' (LX.decls_ext hp hss) (LX.decls_ok hp hss) ((ih.list _ _ _ hss (fun x hx => (hos x hx).relax _) M hM).weaken
+    (fun _ _ h => h (fun e => absurd e (by decide))))) (fun _ _ _ => fs_pure rfl)
+
+omit hp in
+theorem fs_blockHandler {n M : Nat} (ih : FundAt cfg E Rw K Gl n) (hM : K * n ≤ M) {ss ss' : List StmtExprMd}
+    (hss : LX E (Reserved.ex E) ss ss') (hlab : LabOK (some lab)) (hos : ∀ x ∈ ss, OvOK G x) (base base' : List Nat)
+    (c : Control) (hc : CtlOK Gl G c) :
+    FS (Sm E Gl G) Eq
+      ((fun (c : Control) => match c with
+        | .exit_ l =>
+            if l == lab then
+              modify fun (s : EvalState) => { s with cursor := base, seek := none }
+            else throw (.exit_ l)
+        | .goto_ l =>
+            if l == lab then do
+              modify fun (s : EvalState) => { s with cursor := base, seek := none }
+              chargeStep
+              evalBlockLoop cfg n ss lab [] base
+            else throw (.goto_ l)
+        | other => throw other : Control → EvalM PM Unit) c)
+      ((fun (c : Control) => match c with
+        | .exit_ l =>
+            if l == lab then
+              modify fun (s : EvalState) => { s with cursor := base', seek := none }
+            else throw (.exit_ l)
+        | .goto_ l =>
+            if l == lab then do
+              modify fun (s : EvalState) => { s with cursor := base', seek := none }
+              chargeStep
+              evalBlockLoop cfg M ss' lab [] base'
+            else throw (.goto_ l)
+        | other => throw other : Control → EvalM PM Unit) c) := by
+  cases c with
+  | exit_ l => exact fs_ite (fun _ => fs_modifyRel (fun a a' ha => by strel ha)) (fun _ => fs_throw _ hc)
+  | goto_ l =>
+    exact fs_ite (fun _ => fs_bind (fs_modifyRel (fun a a' ha => by strel ha)) (fun _ _ _ =>
+      fs_bind fs_chargeStep (fun _ _ _ => ih.blockLoop ss ss' lab base base' hss hlab hos M hM))) (fun _ => fs_throw _ hc)
+  | _ => exact fs_throw _ hc
+
+theorem fstep_blockLoop {n : Nat} (ih : FundAt cfg E Rw K Gl n) :
+    ∀ ss ss' lab base base', LX E (Reserved.ex E) ss ss' → LabOK (some lab) → (∀ x ∈ ss, OvOK G x) → ∀ M, K * (n + 1) ≤ M →
+      FS (Sm E Gl G) Eq (evalBlockLoop cfg (n + 1) ss lab [] base) (evalBlockLoop cfg M ss' lab [] base') := by
+  intro ss ss' lab base base' hss hlab hos M' hM'
+  obtain ⟨M, rfl, hM⟩ := fuel_split hp.K_pos hM'
+  simp only [evalBlockLoop, List.forIn_nil, pure_bind]
+  refine fs_tryCatch (fs_blockBody hp ih hM hss hos) (fun c hc => fs_blockHandler ih hM hss hlab hos base base' c hc)
+    ?_ (fun L hL hok => ?_) (fun w => fs_throwW w)
+  · intro σ τ
+    simp [run_throw, OOF]
+  · have hne : (L == lab) = false := by
+      have := hlab L hL
+      simp only [beq_eq_false_iff_ne]
+      exact fun h => this (by rw [h])
+    simp only [hne, Bool.false_eq_true, ite_false]
+    exact fs_throwM hL hok
+
+theorem fstep_blockFrom {n : Nat} (ih : FundAt cfg E Rw K Gl n) :
+    ∀ ss ss' bl k k' l d, Corr E l ss ss' k k' → LabOK (some bl) → (∀ x ∈ ss, OvOK G x) → Gl l → ∀ M, K * (n + 1) ≤ M →
+      FS (Sm E Gl G) Eq (evalBlockFrom cfg (n + 1) ss bl [] k l d) (evalBlockFrom cfg M ss' bl [] k' l d) := by
+  intro ss ss' bl k k' l d hc hlab hos hGl M' hM'
+  obtain ⟨M, rfl, hM⟩ := fuel_split hp.K_pos hM'
+  have hss : LX E (Reserved.ex E) ss ss' := by
+    obtain ⟨pre, a, post, pre', b, post', rfl, rfl, -, -, h1, h2, h3, -⟩ := hc
+    exact LX.append E h1 (.cons h2 h3)
+  simp only [evalBlockFrom]
+  refine fs_bind fs_get (fun σ σ' hσ => ?_)
+  refine fs_withOpenLabel bl (fs_tryCatch (fs_wbs' (LX.decls_ext hp hss) (LX.decls_ok hp hss)
+    (ih.runFrom ss ss' k k' l d hc (fun x hx => (hos x hx).relax _) hGl M hM))
+    (fun c hc' => fs_blockHandler ih hM hss hlab hos σ.cursor σ'.cursor c hc') ?_ (fun L hL hok => ?_)
+    (fun w => fs_throwW w))
+  · intro σ τ
+    simp [run_throw, OOF]
+  · have hne : (L == bl) = false := by
+      have := hlab L hL
+      simp only [beq_eq_false_iff_ne]
+      exact fun h => this (by rw [h])
+    simp only [hne, Bool.false_eq_true, ite_false]
+    exact fs_throwM hL hok
+
+theorem fstep_runFrom {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, FundAt cfg E Rw K Gl k) :
+    ∀ ss ss' k k' l d, Corr E l ss ss' k k' → (∀ x ∈ ss, OvOK G x) → Gl l → ∀ M, K * (n + 1) ≤ M →
+      FS (Sm E Gl G) Eq (runFrom cfg (n + 1) ss k l d) (runFrom cfg M ss' k' l d) := by
+  intro ss ss' k k' l d hc hov hGl M' hM'
+  obtain ⟨M, rfl, hM⟩ := fuel_split hp.K_pos hM'
+  have hc0 := hc
+  obtain ⟨pre, a, post, pre', b, post', rfl, rfl, rfl, rfl, hpre, hab, hpost, hla⟩ := hc
+  have hss : LX E (Reserved.ex E) (pre ++ a :: post) (pre' ++ b :: post') := LX.append E hpre (.cons hab hpost)
+  have run1 := fs_run1 hp ih hM (G := G)
+  have runX : ∀ x ts, Reserved.ex E x ts → OvOK G x → FS (Sm E Gl G) Eq
+      (do modify fun (st : EvalState) => { st with stmtSite := x.source }
+          if (stackAnnotation? x).isNone then withOperandWindow x (evalStmt cfg n x))
+      (ts.forM fun y => do
+        modify fun (st : EvalState) => { st with stmtSite := y.source }
+        if (stackAnnotation? y).isNone then withOperandWindow y (evalStmt cfg M y)) :=
+    fun x ts hx hox => (hp.step n ihs).exStmt x ts hx hox M hM
+  simp only [runFrom, List.drop_left]
+  refine fs_bind (fs_tryCatch (A := LandRel (E := E) Gl (pre ++ a :: post) (pre' ++ b :: post'))
+    (fs_bind (fs_modifyRel (fun a a' ha => by strel ha)) (fun _ _ _ =>
+      fs_bind (ih.stmtFrom a b _ _ (hp.closed _ _ hab) (hov a (by simp)) hGl hla M hM) (fun _ _ _ =>
+        fs_bind (fs_forM_LX hpost (fun x hx => hov x (by simp [hx])) run1 runX) (fun _ _ _ => fs_pure trivial))))
+    (fun c hc => fs_landHandler hp hss c hc) ?_ (fun L hL hok => fs_throwM hL hok) (fun w => fs_throwW w))
+    (fun x y hxy => ?_)
+  · intro σ τ
+    simp [run_throw, OOF]
+  · rcases x with _ | ⟨j, l', d'⟩ <;> rcases y with _ | ⟨j', l'', d''⟩ <;> simp only [LandRel] at hxy
+    · exact fs_pure rfl
+    · obtain ⟨hGl', rfl, rfl, hc⟩ := hxy
+      exact fs_bind fs_chargeStep (fun _ _ _ => ih.runFrom _ _ j j' l' d' hc hov hGl' M hM)
+
+theorem fstep_stmtFrom {n : Nat} (ih : FundAt cfg E Rw K Gl n) :
+    ∀ s t l d, NR E Rw Gl s t → OvOK G s → Gl l → l ∈ statementLabels s → ∀ M, K * (n + 1) ≤ M →
+      FS (Sm E Gl G) Eq (evalStmtFrom cfg (n + 1) s l d) (evalStmtFrom cfg M t l d) := by
+  intro s t l d hst hov hGl hl M' hM'
+  obtain ⟨M, rfl, hM⟩ := fuel_split hp.K_pos hM'
+  have hnr := hp.glRes l hGl
+  rcases hst with ⟨hsh, hex, hvk⟩ | hrw
+  · have hN : NR E Rw Gl s t := .inl ⟨hsh, hex, hvk⟩
+    cases hsh with
+    | @block ss ss' lab _ _ hss hlab =>
+      have hos : ∀ x ∈ ss, OvOK G x := fun x hx => Hered.kid hov (by simp [stmtExprChildren, hx])
+      simp only [evalStmtFrom]
+      by_cases hb : (lab == some l) = true
+      · simp only [hb, ite_true]
+        cases d
+        · exact ih.stmt _ _ hN hov M hM
+        · exact fs_pure rfl
+      · simp only [hb, Bool.false_eq_true, ite_false]
+        have hf := LX.find (E := E) (fun a b h => hp.labE a b h l hnr) (fun a ts h => hp.exLab a ts h l hnr) hss
+        have hmem : l ∈ (ss.map statementLabels).flatten := by
+          rw [statementLabels_block, List.mem_append] at hl
+          rcases hl with hl | hl
+          · exact absurd (by cases lab <;> simp_all) hb
+          · exact hl
+        have hsome : (ss.findIdx? (fun t => (statementLabels t).contains l)).isSome = true := by
+          rw [List.findIdx?_isSome]
+          simp only [List.mem_flatten, List.mem_map] at hmem
+          obtain ⟨_, ⟨t, ht, rfl⟩, hlt⟩ := hmem
+          simp only [List.any_eq_true, List.contains_iff_mem]
+          exact ⟨t, ht, hlt⟩
+        revert hf hsome
+        rcases h1 : ss.findIdx? (fun t => (statementLabels t).contains l) with _ | k <;>
+          rcases h2 : ss'.findIdx? (fun t => (statementLabels t).contains l) with _ | k' <;> intro hc hsome <;>
+          simp only [ORel, Option.isSome_none, Bool.false_eq_true] at hc hsome
+        · simp only [List.findIdx_eq_getD_findIdx?, h1, h2, Option.getD_some]
+          cases lab with
+          | none =>
+            exact fs_wbs' (LX.decls_ext hp hss) (LX.decls_ok hp hss)
+              (ih.runFrom ss ss' k k' l d hc (fun x hx => (hos x hx).relax _) hGl M hM)
+          | some bl => exact ih.blockFrom ss ss' bl k k' l d hc hlab hos hGl M hM
+    | @ite c th c' th' el el' _ _ h1 h2 h3 =>
+      have hth : (statementLabels th).contains l = (statementLabels th').contains l := by
+        exact Bool.eq_iff_iff.mpr (by rw [List.contains_iff_mem, List.contains_iff_mem]; exact hp.labE _ _ h2 l hnr)
+      simp only [evalStmtFrom, hth]
+      split
+      · rename_i hc
+        exact ih.stmtFrom th th' l d (hp.closed _ _ h2) (Hered.kid hov (by simp [stmtExprChildren])) hGl
+          ((hp.labE _ _ h2 l hnr).mpr (by simpa [List.contains_iff_mem] using hc)) M hM
+      · rename_i hc
+        rw [statementLabels_ite] at hl
+        have hl' : l ∈ (el.map statementLabels).getD [] := by
+          rcases List.mem_append.mp hl with h | h
+          · exact absurd (by simpa [List.contains_iff_mem] using (hp.labE _ _ h2 l hnr).mp h) hc
+          · exact h
+        cases el <;> cases el' <;> simp only [ORel] at h3
+        · simp at hl'
+        · exact ih.stmtFrom _ _ l d (hp.closed _ _ h3) (Hered.kid hov (by simp [stmtExprChildren])) hGl
+            (by simpa using hl') M hM
+    | @unsup v v' _ _ hu hu' =>
+      rw [statementLabels_other v _ (by intros; rintro rfl; exact hu) (by intros; rintro rfl; exact hu)] at hl
+      cases hl
+    | _ =>
+      rw [statementLabels_other _ _ (by intros; nofun) (by intros; nofun)] at hl
+      cases hl
+  · exact absurd hl ((hp.rwLab s t hrw).1 l hnr).1
 
 theorem fs_const {n M : Nat} (ih : FundAt cfg E Rw K Gl n) (hM : K * n ≤ M) {i i' : StmtExprMd} (hi : E i i')
     (hov : OvOK condG i) (hv : Reserved.vok E i i') :
@@ -1255,39 +1567,6 @@ theorem decls_ok {ss ss' : List StmtExprMd} (h : L2 E ss ss') :
     · exact (hp.closed _ _ hab).declOK hp x hx
     · exact ih x hx
 
-omit [Reserved] hp in
-theorem blockDeclarations_append (l l' : List StmtExprMd) :
-    blockDeclarations (l ++ l') = blockDeclarations l ++ blockDeclarations l' := by
-  simp [Interpreter.blockDeclarations]
-
-theorem LX.decls_ext {G : StackFrame} {ss ss' : List StmtExprMd} (h : LX E (Reserved.ex E) ss ss') :
-    LooseExt G (Interpreter.blockDeclarations ss) (Interpreter.blockDeclarations ss') := by
-  induction h with
-  | nil => exact .nil
-  | @cons a b as bs hab _ ih =>
-    rw [blockDeclarations_cons a as, blockDeclarations_cons b bs]
-    exact ((hp.closed _ _ hab).decl hp G).append ih
-  | @expand a ts as bs hx _ ih =>
-    rw [blockDeclarations_cons a as, blockDeclarations_append]
-    exact (hp.exDecl G _ _ hx).append ih
-
-theorem LX.decls_ok {ss ss' : List StmtExprMd} (h : LX E (Reserved.ex E) ss ss') :
-    ∀ x ∈ Interpreter.blockDeclarations ss, ¬ Reserved.res x ∧ NotV x := by
-  induction h with
-  | nil => simp [Interpreter.blockDeclarations]
-  | @cons a b as bs hab _ ih =>
-    intro x hx
-    rw [blockDeclarations_cons, List.mem_append] at hx
-    rcases hx with hx | hx
-    · exact (hp.closed _ _ hab).declOK hp x hx
-    · exact ih x hx
-  | @expand a ts as bs hx _ ih =>
-    intro x hm
-    rw [blockDeclarations_cons, List.mem_append] at hm
-    rcases hm with hm | hm
-    · exact hp.exDeclOK _ _ hx x hm
-    · exact ih x hm
-
 theorem wrap_block {n : Nat} (ihs : ∀ k ≤ n, FundAt cfg E Rw K Gl k) {ss ss' : List StmtExprMd}
     {s s' : FileRange} {L : String} (hL : Reserved.retLabel = some L) (hss : L2 E ss ss') :
     ∀ M, K * (n + 1) ≤ M + 1 →
@@ -1301,12 +1580,13 @@ theorem wrap_block {n : Nat} (ihs : ∀ k ≤ n, FundAt cfg E Rw K Gl k) {ss ss'
     simp only [Nat.mul_succ] at hM
     obtain ⟨M1, rfl⟩ : ∃ M1, M = M1 + 1 := ⟨M - 1, by omega⟩
     have hvn := hp.retV (by rw [hL]; simp)
-    refine body_wrap hL (hp.retGl L hL) hvn (fs_wrapBlock_inner (fs_wbs' (.ofEq (decls_eq hp (by rw [hL]; simp) hss)) (decls_ok hp hss)
+    refine body_wrap hL (hp.retGl L hL) hvn (hp.retRes L hL) (fs_wrapBlock_inner (fs_wbs' (.ofEq (decls_eq hp (by rw [hL]; simp) hss)) (decls_ok hp hss)
       (((ihs n1 (by omega)).list _ _ _ (LX.ofL2 _ hss) (fun x _ => ovOK_none hvn _ x (hp.retHook (by rw [hL]; simp))) M1 (by omega)).weaken
         (fun _ _ h => h (fun e => absurd e (by decide))))))
 
 theorem wrap_other {n : Nat} (ih : FundAt cfg E Rw K Gl n) {b b' : StmtExprMd} {s' : FileRange} {L : String}
-    (hL : Reserved.retLabel = some L) (hb : E b b') (hd : blockDeclarations [b] = []) :
+    (hL : Reserved.retLabel = some L) (hb : E b b') (hd : blockDeclarations [b] = [])
+    (hlb : ∀ l, ¬ Reserved.resLabel l → l ∉ statementLabels b) (hann : (stackAnnotation? b).isNone = true) :
     ∀ M, K * (n + 1) ≤ M + 1 →
       FSH (Sm E Gl {}) (Sm E Gl {}) (Sm0 E Gl {}) Eq (runB (evalStmt cfg n b))
         (runB (evalStmt cfg M ⟨.Block [b'] (some L) [] none, s'⟩)) := by
@@ -1316,8 +1596,11 @@ theorem wrap_other {n : Nat} (ih : FundAt cfg E Rw K Gl n) {b b' : StmtExprMd} {
   obtain ⟨M2, rfl⟩ : ∃ M2, M = M2 + 2 := ⟨M - 2, by omega⟩
   have hd' : blockDeclarations [b'] = [] := by rw [← NR.declEq hp (by rw [hL]; simp) (hp.closed _ _ hb)]; exact hd
   have hvn := hp.retV (by rw [hL]; simp)
-  exact body_wrap hL (hp.retGl L hL) hvn
-    (fs_wrapOther_inner hd' (ih.stmt _ _ (hp.closed _ _ hb) (ovOK_none hvn _ _ (hp.retHook (by rw [hL]; simp))) M2 (by omega)))
+  have hl' : ∀ l, Gl l → l ∉ statementLabels b' := fun l hl h =>
+    hlb l (hp.glRes l hl) (((hp.closed _ _ hb).labels hp (hp.glRes l hl)).mpr h)
+  have hann' : (stackAnnotation? b').isNone = true := ((hp.closed _ _ hb).ann hp) ▸ hann
+  exact body_wrap hL (hp.retGl L hL) hvn (hp.retRes L hL) (cfg := cfg) (fs_wrapOther_inner hd' hl' hann'
+    (ih.stmt _ _ (hp.closed _ _ hb) (ovOK_none hvn _ _ (hp.retHook (by rw [hL]; simp))) M2 (by omega)))
 
 theorem wrap_valued {n : Nat} (ihs : ∀ k ≤ n, FundAt cfg E Rw K Gl k) {e e' : StmtExprMd} {o : Parameter}
     {s s' s1 s2 s3 : FileRange} {L : String} (hL : Reserved.retLabel = some L) (he : E e e') (hy : NotYield e') :
@@ -1333,7 +1616,8 @@ theorem wrap_valued {n : Nat} (ihs : ∀ k ≤ n, FundAt cfg E Rw K Gl k) {e e' 
     simp only [Nat.mul_succ] at hM
     obtain ⟨M4, rfl⟩ : ∃ M4, M = M4 + 4 := ⟨M - 4, by omega⟩
     have hvn := hp.retV (by rw [hL]; simp)
-    refine body_valued_gen hL (hp.retGl L hL) (hp.retNG (by rw [hL]; simp)) hvn ?_ rfl (by simp [blockDeclarations])
+    refine body_valued_gen hL (hp.retGl L hL) (hp.retNG (by rw [hL]; simp)) hvn (hp.retRes L hL) ?_ rfl (by simp [blockDeclarations])
+      (by simp [stackAnnotation?]) (statementLabels_other _ _ (by intros; nofun) (by intros; nofun))
       (exprMdE hp (ihs n1 (by omega)) he (hp.retVok (by rw [hL]; simp) _ _) (ovOK_none hvn _ _ (hp.retHook (by rw [hL]; simp))) (by omega))
     rw [evalStmt_assign1 hy _ rfl]
     simp only [assignTarget, writeUpdate, pure_bind]
@@ -1354,21 +1638,22 @@ theorem wrap_valuedB {n : Nat} (ihs : ∀ k ≤ n, FundAt cfg E Rw K Gl k) {e e'
       have hs' : StRel {} (IxRel E) σ σ' := hs
       have hd0 : blockDeclarations [(⟨.Return [e], s0⟩ : StmtExprMd)] = [] := by simp [blockDeclarations]
       simp [runB, evalStmt, run_tryCatch, run_throw, run_bind, run_get, evalStmtList, run_chargeStep hs'.steps,
-        hs'.coroSelf, withBlockScope_nil hd0, run_modify, withOperandWindow, hs'.ops, OOF]) hn⟩
+        hs'.coroSelf, withBlockScope_nil hd0, run_modify, withOperandWindow, hs'.ops, stackAnnotation?, OOF]) hn⟩
   · exact ⟨fun σ σ' τ _ hs _ hn => absurd (by
       have hs' : StRel {} (IxRel E) σ σ' := hs
       have hd0 : blockDeclarations [(⟨.Return [e], s0⟩ : StmtExprMd)] = [] := by simp [blockDeclarations]
       simp [runB, evalStmt, run_tryCatch, run_throw, run_bind, run_get, evalStmtList, run_chargeStep hs'.steps,
-        hs'.coroSelf, withBlockScope_nil hd0, run_modify, withOperandWindow, hs'.ops, OOF]) hn⟩
+        hs'.coroSelf, withBlockScope_nil hd0, run_modify, withOperandWindow, hs'.ops, stackAnnotation?, OOF]) hn⟩
   · exact ⟨fun σ σ' τ _ hs _ hn => absurd (by
       have hs' : StRel {} (IxRel E) σ σ' := hs
       have hd0 : blockDeclarations [(⟨.Return [e], s0⟩ : StmtExprMd)] = [] := by simp [blockDeclarations]
       simp [runB, evalStmt, run_tryCatch, run_throw, run_bind, run_get, evalStmtList, run_chargeStep hs'.steps,
-        hs'.coroSelf, withBlockScope_nil hd0, run_modify, withOperandWindow, hs'.ops, OOF]) hn⟩
+        hs'.coroSelf, withBlockScope_nil hd0, run_modify, withOperandWindow, hs'.ops, stackAnnotation?, OOF]) hn⟩
   simp only [Nat.mul_succ] at hM
   obtain ⟨M6, rfl⟩ : ∃ M6, M = M6 + 6 := ⟨M - 6, by omega⟩
   have hvn := hp.retV (by rw [hL]; simp)
-  refine body_valuedB_gen hL (hp.retGl L hL) (hp.retNG (by rw [hL]; simp)) hvn ?_ rfl (by simp [blockDeclarations])
+  refine body_valuedB_gen hL (hp.retGl L hL) (hp.retNG (by rw [hL]; simp)) hvn (hp.retRes L hL) ?_ rfl (by simp [blockDeclarations])
+      (by simp [stackAnnotation?]) (statementLabels_other _ _ (by intros; nofun) (by intros; nofun))
     (exprMdE hp (ihs n1 (by omega)) he (hp.retVok (by rw [hL]; simp) _ _) (ovOK_none hvn _ _ (hp.retHook (by rw [hL]; simp))) (by omega))
   rw [evalStmt_assign1 hy _ rfl]
   simp only [assignTarget, writeUpdate, pure_bind]
@@ -1466,6 +1751,7 @@ set_option hygiene false in
 macro "proc_rest" hn:ident h:ident hps:term:max hov:term:max hbo:term:max hvo:term:max : tactic => `(tactic| (
   refine fs_bind (fs_pure (A := fun a b => E a b ∧ OvOK {} a) ⟨$h, $hbo⟩) (fun y y' hy => ?_)
   refine fs_bind fs_get (fun s0 s0' h0 => ?_)
+  refine fs_withLabels (fun _ => []) (fun _ => []) (fun _ _ _ _ _ => Iff.rfl) ?_
   refine fs_getAt (fun c c' hc => ?_)
   have h0 : StRel G (IxRel E) s0 s0' := h0
   have hc : StRel G (IxRel E) c c' := hc
@@ -1522,6 +1808,7 @@ macro "proc_restE" hn:ident h:ident hps:term:max hov:term:max hbo:term:max hnc:t
     tactic => `(tactic| (
   refine fs_bind (fs_pure (A := fun a b => E a b ∧ OvOK freeG a ∧ NC a) ⟨$h, $hbo, $hnc⟩) (fun y y' hy => ?_)
   refine fs_bind fs_get (fun s0 s0' h0 => ?_)
+  refine fs_withLabels (fun _ => []) (fun _ => []) (fun _ _ _ _ _ => Iff.rfl) ?_
   refine fs_getAt (fun c c' hc => ?_)
   have h0 : StRel G (IxRel E) s0 s0' := h0
   have hc : StRel G (IxRel E) c c' := hc
@@ -1611,6 +1898,7 @@ macro "proc_restW" hbody:term:max hps:term:max hov:term:max : tactic => `(tactic
   refine fs_bind (fs_pure (A := fun a b => a = _ ∧ b = _) ⟨rfl, rfl⟩) (fun y y' hy => ?_)
   obtain ⟨rfl, rfl⟩ := hy
   refine fs_bind fs_get (fun s0 s0' h0 => ?_)
+  refine fs_withLabels (fun _ => []) (fun _ => []) (fun _ _ _ _ _ => Iff.rfl) ?_
   refine fs_bind fs_get (fun c c' hc => ?_)
   have h0 : StRel G (IxRel E) s0 s0' := h0
   have hc : StRel G (IxRel E) c c' := hc
@@ -1639,6 +1927,7 @@ macro "proc_restV" hbody:term:max hps:term:max ho:term:max hov:term:max : tactic
   refine fs_bind (fs_pure (A := fun a b => a = _ ∧ b = _) ⟨rfl, rfl⟩) (fun y y' hy => ?_)
   obtain ⟨rfl, rfl⟩ := hy
   refine fs_bind fs_get (fun s0 s0' h0 => ?_)
+  refine fs_withLabels (fun _ => []) (fun _ => []) (fun _ _ _ _ _ => Iff.rfl) ?_
   refine fs_bind fs_get (fun c c' hc => ?_)
   have h0 : StRel G (IxRel E) s0 s0' := h0
   have hc : StRel G (IxRel E) c c' := hc
@@ -1704,6 +1993,7 @@ theorem fstep_procT {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, 
   intro site site' P P' args hP M' hM'
   obtain ⟨M, rfl, hM⟩ := fuel_split hp.K_pos hM'
   simp only [invokeProc]
+  refine fs_jumpBoundary ?_
   simp only [hp.cfg_ok.strict, Option.isSome_none, Bool.false_and,
     Bool.false_eq_true, ite_false, get_bind_ignore]
   simp only [L2.paramR_length hP.inputs, extract_sig hP.outputs, hP.coro, hP.coro',
@@ -1743,10 +2033,10 @@ theorem fstep_procT {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, 
         have hvn := hp.retV (by rw [hL]; simp)
         have hplG : Plain G := hp.retPlain (by rw [hL]; simp) G
         proc_restW (wrap_block hp ihs hL hss M hM') (L2.nil : L2 (CondRel E) [] []) (fun c hc => by simp at hc)
-      | wrapOther hL hb hd =>
+      | wrapOther hL hb hd hlb hann =>
         have hvn := hp.retV (by rw [hL]; simp)
         have hplG : Plain G := hp.retPlain (by rw [hL]; simp) G
-        proc_restW (wrap_other hp ih hL hb hd M hM') (L2.nil : L2 (CondRel E) [] []) (fun c hc => by simp at hc)
+        proc_restW (wrap_other hp ih hL hb hd hlb hann M hM') (L2.nil : L2 (CondRel E) [] []) (fun c hc => by simp at hc)
       | valued hL ho he hy =>
         have hvn := hp.retV (by rw [hL]; simp)
         have hplG : Plain G := hp.retPlain (by rw [hL]; simp) G
@@ -1778,10 +2068,10 @@ theorem fstep_procT {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, 
           have hvn := hp.retV (by rw [hL]; simp)
           have hplG : Plain G := hp.retPlain (by rw [hL]; simp) G
           proc_restW (wrap_block hp ihs hL hss M hM') hps hPO'
-        | wrapOther hL hb hd =>
+        | wrapOther hL hb hd hlb hann =>
           have hvn := hp.retV (by rw [hL]; simp)
           have hplG : Plain G := hp.retPlain (by rw [hL]; simp) G
-          proc_restW (wrap_other hp ih hL hb hd M hM') hps hPO'
+          proc_restW (wrap_other hp ih hL hb hd hlb hann M hM') hps hPO'
         | valued hL ho he hy =>
           have hvn := hp.retV (by rw [hL]; simp)
           have hplG : Plain G := hp.retPlain (by rw [hL]; simp) G
@@ -1903,16 +2193,17 @@ theorem fstep_stmt {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, F
             (fun _ _ h => h (fun e => absurd e (by decide)))))
             (fun _ _ _ => fs_pure rfl))
       | some lab =>
-        simp only [evalStmt]
+        simp only [evalStmt, List.forIn_nil, pure_bind]
         refine fs_bind fs_get (fun σ σ' hσ => ?_)
         have hσ : StRel G (IxRel E) σ σ' := hσ
-        refine fs_tryCatch (fs_bind (fs_wbs' (LX.decls_ext hp hss) (LX.decls_ok hp hss) ((ih.list _ _ _ hss (fun x hx => (hos x hx).relax _) M hM).weaken
-            (fun _ _ h => h (fun e => absurd e (by decide)))))
-            (fun _ _ _ => fs_pure rfl))
-          (fun c hc => ?_) ?_ (fun L hL hok => ?_) (fun w => fs_throwW w)
+        refine fs_withOpenLabel lab (fs_tryCatch (fs_blockBody hp ih hM hss hos)
+          (fun c hc => ?_) ?_ (fun L hL hok => ?_) (fun w => fs_throwW w))
         · cases c with
           | exit_ l => exact fs_ite (fun _ => fs_modifyRel (fun a a' ha => by strel ha)) (fun _ => fs_throw _ hc)
-          | goto_ l => exact (hc : False).elim
+          | goto_ l =>
+            exact fs_ite (fun _ => fs_bind (fs_modifyRel (fun a a' ha => by strel ha)) (fun _ _ _ =>
+              fs_bind fs_chargeStep (fun _ _ _ =>
+                ih.blockLoop ss ss' lab σ.cursor σ'.cursor hss hlab hos M hM))) (fun _ => fs_throw _ hc)
           | _ => exact fs_throw _ hc
         · intro σ τ
           simp [run_throw, OOF]
@@ -1922,7 +2213,18 @@ theorem fstep_stmt {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, F
             exact fun h => this (by rw [h])
           simp only [hne, Bool.false_eq_true, ite_false]
           exact fs_throwM hL hok
-    | exit => simp only [evalStmt]; exact fs_throw _ (hex _ rfl)
+    | @jump l d _ _ =>
+      simp only [evalStmt]
+      refine fs_bind fs_get (fun σ σ' hσ => ?_)
+      have hσ : StRel G (IxRel E) σ σ' := hσ
+      have hGl := hex l d rfl
+      have hct : σ'.openLabels.contains l = σ.openLabels.contains l := by
+        exact Bool.eq_iff_iff.mpr (by
+          rw [List.contains_iff_mem, List.contains_iff_mem]; exact (hσ.openLabels l (hp.glRes l hGl)).symm)
+      rw [hct]
+      split
+      · cases d <;> exact fs_throw _ hGl
+      · exact fs_throw _ hGl
     | @assign ts ts' v v' _ _ hts hv hy hy' =>
       have hov' : OvOK G v := Hered.kid hov (by simp [stmtExprChildren])
       have hot : ∀ t ∈ ts, OvV G t.val := fun t ht c hc =>
@@ -2037,7 +2339,7 @@ theorem fstep_stmt {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, F
           (forIn is' PUnit.unit fun inv _ => do
             evalStmt cfg M ⟨.Assert inv none, inv.source⟩
             pure (ForInStep.yield PUnit.unit)) :=
-        fs_forIn (his.and hvk.2).withMem (fun a a' ha _ => fs_bind (ih.stmt _ _ (.inl ⟨.assert ha.1.1, (fun _ h => by cases h), ha.1.2⟩)
+        fs_forIn (his.and hvk.2).withMem (fun a a' ha _ => fs_bind (ih.stmt _ _ (.inl ⟨.assert ha.1.1, (fun _ _ h => by cases h), ha.1.2⟩)
           (.node _ ⟨trivial, hov.here.1 a ha.2⟩ (fun x hx => by
             simp only [stmtExprChildren, List.mem_singleton] at hx
             subst hx
@@ -2498,12 +2800,12 @@ theorem fstep_expr {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, F
     | @assert c c' m m' _ _ hc =>
       refine FS.vr ?_
       simp only [evalExpr]
-      exact fs_bind (ih.stmt _ _ (.inl ⟨.assert hc, (fun _ h => by cases h), by exact hvk⟩) (hov.resrc _) M hM)
+      exact fs_bind (ih.stmt _ _ (.inl ⟨.assert hc, (fun _ _ h => by cases h), by exact hvk⟩) (hov.resrc _) M hM)
         (fun _ _ _ => fs_pure rfl)
     | @assume c c' _ _ hc =>
       refine FS.vr ?_
       simp only [evalExpr]
-      exact fs_bind (ih.stmt _ _ (.inl ⟨.assume hc, (fun _ h => by cases h), by exact hvk⟩) (hov.resrc _) M hM)
+      exact fs_bind (ih.stmt _ _ (.inl ⟨.assume hc, (fun _ _ h => by cases h), by exact hvk⟩) (hov.resrc _) M hM)
         (fun _ _ _ => fs_pure rfl)
     | @old v v' l _ _ hv =>
       refine FS.vr ?_
@@ -2549,7 +2851,7 @@ theorem fstep_expr {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, F
       cases hts with
       | nil =>
         simp only [evalExpr]
-        exact fs_bind (ih.stmt _ _ (.inl ⟨.assign .nil hv hy hy', (fun _ h => by cases h), by exact hvk0⟩) (hov.resrc _) M hM)
+        exact fs_bind (ih.stmt _ _ (.inl ⟨.assign .nil hv hy hy', (fun _ _ h => by cases h), by exact hvk0⟩) (hov.resrc _) M hM)
           (fun _ _ _ => fs_pure rfl)
       | cons ht hr =>
         cases hr with
@@ -2562,7 +2864,7 @@ theorem fstep_expr {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, F
             exact fs_bind (fs_writeUpdate _ _ hu _) (fun _ _ _ => fs_pure rfl))
         | cons ht2 hr2 =>
           simp only [evalExpr]
-          exact fs_bind (ih.stmt _ _ (.inl ⟨.assign (.cons ht (.cons ht2 hr2)) hv hy hy', (fun _ h => by cases h), by exact hvk0⟩)
+          exact fs_bind (ih.stmt _ _ (.inl ⟨.assign (.cons ht (.cons ht2 hr2)) hv hy hy', (fun _ _ h => by cases h), by exact hvk0⟩)
             (hov.resrc _) M hM)
             (fun _ _ _ => fs_pure rfl)
     | @incr md o t t' _ _ ht hw =>
@@ -2692,12 +2994,12 @@ theorem fstep_expr {n : Nat} (ih : FundAt cfg E Rw K Gl n) (ihs : ∀ k ≤ n, F
     | @ret v v' _ _ hl hv =>
       refine FS.vr ?_
       simp only [evalExpr]
-      exact fs_bind (ih.stmt ⟨.Return v, .unknown⟩ ⟨.Return v', .unknown⟩ (.inl ⟨.ret hl hv, ⟨(fun l h => by simp at h), hvk⟩⟩)
+      exact fs_bind (ih.stmt ⟨.Return v, .unknown⟩ ⟨.Return v', .unknown⟩ (.inl ⟨.ret hl hv, ⟨(fun l d h => by simp at h), hvk⟩⟩)
         (OvOK.resrc hov _) M hM) (fun _ _ _ => fs_pure rfl)
-    | @exit l _ _ =>
+    | @jump l d _ _ =>
       refine FS.vr ?_
       simp only [evalExpr]
-      exact fs_bind (ih.stmt ⟨.Goto l .blockEnd, .unknown⟩ ⟨.Goto l .blockEnd, .unknown⟩ (.inl ⟨.exit, ⟨(fun l' h => hex l' h), trivial⟩⟩)
+      exact fs_bind (ih.stmt ⟨.Goto l d, .unknown⟩ ⟨.Goto l d, .unknown⟩ (.inl ⟨.jump, ⟨(fun l' d' h => hex l' d' h), trivial⟩⟩)
         (OvOK.resrc hov _) M hM) (fun _ _ _ => fs_pure rfl)
     | _ => simp only [evalExpr]; exact fs_evalError _ _
   · exact (hp.step n ihs).expr s t hrw hov M' hM'
@@ -2721,6 +3023,10 @@ theorem fund_le : ∀ n, ∀ k ≤ n, FundAt cfg E Rw K Gl k
         assign := fun _ _ _ _ _ _ _ _ => fs_vac rfl
         update := fun _ _ _ _ _ _ _ _ _ => fs_vac rfl
         iter := fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => fs_vac rfl
+        blockLoop := fun _ _ _ _ _ _ _ _ _ _ => fs_vac rfl
+        blockFrom := fun _ _ _ _ _ _ _ _ _ _ _ _ _ => fs_vac rfl
+        stmtFrom := fun _ _ _ _ _ _ _ _ _ _ => fs_vac rfl
+        runFrom := fun _ _ _ _ _ _ _ _ _ _ _ => fs_vac rfl
         fin := fun _ _ _ _ _ _ _ _ _ => fs_vac rfl
         finish := fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ => fs_vac rfl
         clauses := fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => fs_vac rfl
@@ -2744,6 +3050,10 @@ theorem fund_le : ∀ n, ∀ k ≤ n, FundAt cfg E Rw K Gl k
         assign := fstep_assign hp ih
         update := fstep_update hp ih
         iter := fstep_iter hp ih
+        blockLoop := fstep_blockLoop hp ih
+        blockFrom := fstep_blockFrom hp ih
+        stmtFrom := fstep_stmtFrom hp ih
+        runFrom := fstep_runFrom hp ih ihs
         fin := fstep_fin hp ih
         finish := fstep_finish hp ih
         clauses := fstep_clauses hp ih
