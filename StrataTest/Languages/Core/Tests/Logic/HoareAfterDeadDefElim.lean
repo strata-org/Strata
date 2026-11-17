@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import StrataTest.Languages.Core.Tests.Logic.HoareAfterSupport
+import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import Strata.Transform.DeadDefElimCoreCorrect
 
 open Imperative
@@ -12,7 +12,7 @@ open StrataDDM (Program)
 
 namespace Strata.HoareAfterDeadDefElimTest
 
-open HoareAfterSupport
+open HoareUtils
 
 /-- The program.  It comes first in the file: the translation records the byte offsets of its
     statements in their metadata, which `maxBody` spells out with `loc`, so an edit above it
@@ -76,15 +76,15 @@ private abbrev geE (x y : Core.Expression.Ident) : Core.Expression.Expr :=
 
 /-- The `if` of the body. -/
 private abbrev maxIte : Core.Statement :=
-  .ite (.det (geE aId bId)) [Core.Statement.set mId (v aId) (loc 762 769)]
-    [Core.Statement.set mId (v bId) (loc 785 792)] (loc 738 796)
+  .ite (.det (geE aId bId)) [Core.Statement.set mId (v aId) (loc 748 755)]
+    [Core.Statement.set mId (v bId) (loc 771 778)] (loc 724 782)
 
 /-- The translated body. -/
 private abbrev maxBody : Core.Statements :=
   [Core.Statement.init dId intLTy (.det (.app Core.valueLoc (.app Core.valueLoc Core.intSubOp (v aId)) (v bId)))
-      (loc 673 702),
+      (loc 659 688),
    Core.Statement.init sqId intLTy (.det (.app Core.valueLoc (.app Core.valueLoc Core.intMulOp (v dId)) (v dId)))
-      (loc 705 735),
+      (loc 691 721),
    maxIte]
 
 /-- The translated body really is the two definitions followed by the `if`. -/

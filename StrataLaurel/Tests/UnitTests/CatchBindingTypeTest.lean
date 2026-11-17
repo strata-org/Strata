@@ -587,4 +587,43 @@ procedure u() returns (r: int) opaque {
 #guard_msgs in
 #eval report widerGuardRethrow
 
+/-! ## A binding type the front end states
+
+A body that throws nothing types its binding `Unknown`, so the handler is discarded.
+Resolution warns about that, unless every clause states its binding type: a front end
+that places a catch-all for whatever the body may throw knows it may throw nothing. -/
+
+private def stating (ty : HighType) (p : LaurelProgram) : LaurelProgram :=
+  mapLaurelProgramProcedures (fun proc => mapProcedureM (m := Id) (mapStmtExpr fun e => match e.val with
+    | .Try b cs f => ⟨.Try b (cs.map fun c => { c with bindingType := ⟨ty, c.bindingType.source⟩ }) f, e.source⟩
+    | _ => e) proc) p
+
+private def reportStating (ty : HighType) (src : String) : IO Unit := do
+  let parsed ← (Strata.parseLaurelText "<catch-binding-type-test>" src : IO LaurelProgram)
+  let resolved := resolve (withBuiltins (stating ty parsed))
+  for p in resolved.program.staticProcedures do
+    let tys := catchBindingTypes p
+    unless tys.isEmpty do
+      IO.println s!"{p.name.text}: {", ".intercalate tys}"
+  for d in resolved.errors do
+    IO.println s!"{d.kind}: {d.message}"
+
+private def throwsNothing := r"
+procedure demo() returns (r: int) opaque {
+  r := 0;
+  try { r := 1 } catch c { r := 2 }
+};
+"
+
+/-- info: demo: Unknown -/
+#guard_msgs in
+#eval reportStating (.UserDefined (mkId "Throwable")) throwsNothing
+
+/--
+info: demo: Unknown
+warning: the `catch` clause(s) of this `try` can never fire: no exception type could be determined for the `try` body, so they are discarded and the body is verified as if no handler were present
+-/
+#guard_msgs in
+#eval reportStating .Unknown throwsNothing
+
 end Strata.Laurel

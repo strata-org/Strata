@@ -977,6 +977,16 @@ public def TyVarAdmissibility.notGeneratedOrRigid : TyVarAdmissibility :=
   fun v => !(genTyPrefix.toList.isPrefixOf v.toList) &&
     !(skolemPrefix.toList.isPrefixOf v.toList)
 
+/-- The single-scope substitution sending each free type variable of `m` to `g` of it. -/
+def restrictTo (g : TyIdentifier → LMonoTy) (m : LMonoTy) : SubstOne :=
+  LExpr.buildSubstFromFunction (LMonoTy.freeVars m) g
+
+/-- `readTyVar Δ v` is `Δ`'s binding of `v` when `v` is user-writable and bound, otherwise `v`
+    itself. -/
+def readTyVar (Δ : TyIdentifier → Option LMonoTy) (v : TyIdentifier) :
+    LMonoTy :=
+  if TyVarAdmissibility.notGeneratedOrRigid v then (Δ v).getD (.ftvar v) else .ftvar v
+
 mutual
 /--
 Is `ty` an instance of a known type in `ks`? We expect `ty` to be

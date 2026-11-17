@@ -97,9 +97,9 @@ import Strata.Languages.Core.Logic.Hoare
 import Strata.Languages.Core.Logic.HoareCall
 import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
+import Strata.Languages.Core.Logic.InterpreterHoareRelation
 
 /- Strata Languages — additional -/
-import Strata.Languages.B3
 import Strata.Languages.Cortex
 import Strata.Languages.Core.EntryPoint
 import Strata.Languages.Core.IncrementalSolve
@@ -222,6 +222,7 @@ import Strata.Languages.Core.InterpreterReach
 import Strata.Languages.Core.InterpreterReachBridge
 import Strata.Languages.Core.InterpreterReachBuiltins
 import Strata.Languages.Core.InterpreterReachCheck
+import Strata.Languages.Core.InterpreterReachProps
 import Strata.Languages.Core.InterpreterObs
 import Strata.Languages.Core.InterpreterObsProps
 import Strata.Languages.Core.InterpreterSound
@@ -264,15 +265,18 @@ import Strata.Util.HMapsProps
 import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementWF
 import Strata.DL.Lambda.DatatypeWF
-import Strata.Languages.Core.ProcedureTypeSpec
+import Strata.Languages.Core.TypeSkolem
+import Strata.Languages.Core.Typing.Spec.ProcedureTypeSpec
 import Strata.Languages.Core.ProcedureTypeProps
-import Strata.Languages.Core.DatatypeTypeSpec
-import Strata.Languages.Core.DatatypeTypeSpecProps
-import Strata.Languages.Core.ProgramTypeSpec
+import Strata.Languages.Core.Typing.Spec.DatatypeTypeSpec
+import Strata.Languages.Core.Typing.Spec.ProgramTypeSpec
+import Strata.Languages.Core.Typing.Spec.NamesWF
 import Strata.Languages.Core.Typing.Spec.TypeSpecShared
 import Strata.Languages.Core.Typing.Spec.TypingSpec
 import Strata.Languages.Core.FactoryProps
+import Strata.Languages.Core.Typing.Props.DatatypeTypeProps
 import Strata.Languages.Core.Typing.Props.FactoryRegistrationProps
+import Strata.Languages.Core.Typing.Props.NamesWFProps
 import Strata.Languages.Core.Typing.Props.ProcSigAgreementProps
 import Strata.Languages.Core.Typing.Props.TypingSpecProps
 import Strata.Util.Random

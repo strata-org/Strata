@@ -6,7 +6,7 @@
 
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 import Strata.Languages.Core.ProgramProps
-import StrataTest.Languages.Core.Tests.Logic.HoareTestSupport
+import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core
 import Strata.Languages.Core.InstWellFormedSemanticsEval
@@ -55,7 +55,7 @@ open Lambda.LExpr.SyntaxMono
 
 namespace Strata
 
-open CoreHoareTestSupport
+open Strata.HoareUtils (boolFactory someValuation)
 
 private def trueCondition (model : Lambda.Interp Core.Factory) : EventArg Core.Expression :=
   { factory := boolFactory model

@@ -45,9 +45,10 @@ def prog : UnorderedProgram :=
 #guard prog.isSubtype "IOExn" "Exn"
 #guard !prog.isSubtype "Exn" "IOExn"
 #guard !prog.isSubtype "Other" "Exn"
-#guard (body.handlerFor? prog "try" "IOExn").map (·.target) == some "handler"
-#guard (body.handlerFor? prog "try" "Other").isNone
-#guard (body.handlerFor? prog "handler" "IOExn").isNone
+#guard (body.handlerFor? prog "try" (.tcons "IOExn" [])).map (·.target) == some "handler"
+#guard (body.handlerFor? prog "try" (.tcons "Other" [])).isNone
+#guard (body.handlerFor? prog "handler" (.tcons "IOExn" [])).isNone
+#guard (body.handlerFor? prog "try" (arrayTy (.tcons "IOExn" []))).isNone
 #guard (prog.findField? ⟨"IOExn", "code"⟩).map (·.name) == some "code"
 #guard (prog.findField? ⟨"IOExn", "nope"⟩).isNone
 #guard (prog.findField? ⟨"Other", "code"⟩).isNone
@@ -140,8 +141,8 @@ def runMain (m : UnorderedProgram) : Option Core.Expression.Expr :=
   | [] => none
 
 #guard (vcallProgram "Sub").overriders "Base" "get" == ["Sub"]
-#guard (vcallProgram "Sub").dispatch "Base" "get" "Sub" == "Sub$get"
-#guard (vcallProgram "Sub").dispatch "Base" "get" "Base" == "Base$get"
+#guard (vcallProgram "Sub").dispatch "Base" "get" (.tcons "Sub" []) == "Sub$get"
+#guard (vcallProgram "Sub").dispatch "Base" "get" (.tcons "Base" []) == "Base$get"
 #guard runMain (vcallProgram "Sub") == some (intC 2)
 #guard runMain (vcallProgram "Base") == some (intC 1)
 

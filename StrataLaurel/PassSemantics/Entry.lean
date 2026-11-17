@@ -310,7 +310,8 @@ theorem entryInitState_rel {p q : LaurelProgram} (hr : ProgRel E p q) {o o' : Op
     StRel {} (IxRel E) (entryInitState o p) (entryInitState o' q) := by
   refine ⟨SR.fresh Clean.empty, WFG.empty, fun _ _ _ h => by simp [entryInitState] at h, rfl, ?_, ?_, ?_, rfl,
     fun _ _ => rfl, rfl, rfl, rfl, rfl, rfl, True.intro, rfl, rfl, rfl, hr.index, fun k _ => by simp [entryInitState],
-    fun k _ => by simp [entryInitState], fun _ _ _ h => by simp [entryInitState] at h⟩
+    fun k _ => by simp [entryInitState], fun _ _ _ h => by simp [entryInitState] at h,
+    fun _ _ => by simp [entryInitState]⟩
   · simp [entryInitState, hl]
   · simp [entryInitState, hl']
   · simp [entryInitState, hq]
@@ -339,7 +340,7 @@ theorem runB_not_oof {x : EvalM PM Unit} {σ : EvalState} {τ : Trace} (h : ¬ O
   revert h
   rcases run x σ τ with e | ⟨⟨c | a, σ1⟩, τ1⟩ <;> intro h
   · exact not_OOF_error
-  · rcases c with (_ | ⟨_, _ | ⟨_, _⟩⟩) | _ | _ | _ | _ | _ | _ <;> first | exact not_OOF_ok | exact h
+  · rcases c with (_ | ⟨_, _ | ⟨_, _⟩⟩) | _ | _ | _ | _ | _ | _ | _ <;> first | exact not_OOF_ok | exact h
   · exact not_OOF_ok
 
 def ECls : Except Control Unit → Option Outcome
@@ -459,8 +460,8 @@ theorem eb_of_runB {x y : EvalM PM Unit} {σ σ' : EvalState} {τ τ' : Trace}
   rw [run_runB, run_runB] at h
   revert h
   rcases run x σ τ with e | ⟨⟨c | a, σ1⟩, τ1⟩ <;> rcases run y σ' τ' with e' | ⟨⟨c' | b, σ1'⟩, τ1'⟩ <;>
-    (try rcases c with (_ | ⟨_, _ | ⟨_, _⟩⟩) | _ | _ | _ | _ | _ | _) <;>
-    (try rcases c' with (_ | ⟨_, _ | ⟨_, _⟩⟩) | _ | _ | _ | _ | _ | _) <;>
+    (try rcases c with (_ | ⟨_, _ | ⟨_, _⟩⟩) | _ | _ | _ | _ | _ | _ | _) <;>
+    (try rcases c' with (_ | ⟨_, _ | ⟨_, _⟩⟩) | _ | _ | _ | _ | _ | _ | _) <;>
     simp only [RR, ExRel, EB, ECls, false_and, imp_self] <;>
     first
       | (intro h; exact ⟨rfl, h.2⟩)
@@ -493,8 +494,8 @@ theorem entry_body {n M : Nat} (hW : Reserved.retLabel ≠ none → K * (n + 1) 
   | wrapBlock hL hss =>
     exact eb_of_runB ((wrap_block hp (fund_le hp n) hL hss M (hW (by rw [hL]; simp))).sim _ _ _ _ hs ht
       (runB_not_oof hn))
-  | wrapOther hL hb hd =>
-    exact eb_of_runB ((wrap_other hp (fund hp n) hL hb hd M (hW (by rw [hL]; simp))).sim _ _ _ _ hs ht
+  | wrapOther hL hb hd hlb hann =>
+    exact eb_of_runB ((wrap_other hp (fund hp n) hL hb hd hlb hann M (hW (by rw [hL]; simp))).sim _ _ _ _ hs ht
       (runB_not_oof hn))
   | valued hL =>
     exact absurd rfl ((hV (by rw [hL]; simp)).1 _ _)

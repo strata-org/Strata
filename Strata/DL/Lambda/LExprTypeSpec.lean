@@ -89,15 +89,9 @@ theorem AnnotCompat.of_eq {aliases : List TypeAlias} {ann : LMonoTy} :
     AnnotCompat aliases ann ann :=
   ⟨HMap.empty, by rw [LMonoTy.subst_single_empty]; exact AliasEquiv.refl⟩
 
-/-- Like `AnnotCompat` but the existential substitution must be identity on rigid
-    type variables. When `rigidVars = []` this reduces to `AnnotCompat`.
-    When all free vars of `ann` are rigid this forces `AliasEquiv ann mty` directly
-    (since σ is identity on all free vars, `subst [σ] ann = ann`). -/
-def RigidAnnotCompat (aliases : List TypeAlias) (rigidVars : List TyIdentifier)
-    (ann mty : LMonoTy) : Prop :=
-  ∃ (σ : SubstOne),
-    (∀ v, v ∈ rigidVars → LMonoTy.subst [σ] (.ftvar v) = .ftvar v) ∧
-    AliasEquiv aliases (LMonoTy.subst [σ] ann) mty
+/-- `σ` fixes every rigid type variable in `rigid`. -/
+abbrev SubstFixesRigid (rigid : List TyIdentifier) (σ : SubstOne) : Prop :=
+  ∀ v ∈ rigid, LMonoTy.subst [σ] (.ftvar v) = .ftvar v
 
 -- `AnnotCompat_subst` is defined later (after `AliasEquiv_subst` which it depends on).
 -- See the actual definition below the `AliasEquiv_subst` theorem.
@@ -185,8 +179,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] [Hashable T.IDMeta] (C
             (he : LTy.isMonoType e_ty) →
             HasType C { Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x e) e_ty →
             (o = none ∨ ∃ t, o = some t ∧ AnnotCompat Γ.aliases t (x_ty.toMonoType hx)) →
-            (∀ t, o = some t →
-              ∃ r, SourceTyWF C TyVarAdmissibility.all Γ.aliases t r) →
+            (∀ t, o = some t → ValidWrittenTy C Γ.aliases t) →
             HasType C Γ (.abs m name o e)
                       (.forAll [] (.tcons "arrow" [(LTy.toMonoType x_ty hx),
                                                    (LTy.toMonoType e_ty he)]))
@@ -250,8 +243,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] [Hashable T.IDMeta] (C
             HasType C { Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x e) (.forAll [] .bool) →
             HasType C {Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x tr) tr_ty →
             (o = none ∨ ∃ t, o = some t ∧ AnnotCompat Γ.aliases t (x_ty.toMonoType hx)) →
-            (∀ t, o = some t →
-              ∃ r, SourceTyWF C TyVarAdmissibility.all Γ.aliases t r) →
+            (∀ t, o = some t → ValidWrittenTy C Γ.aliases t) →
             HasType C Γ (.quant m k name o tr e) (.forAll [] .bool)
 
   /--
@@ -3295,7 +3287,7 @@ private theorem typeBoundVar_sourceTyWF
     (xv : T.Identifier) (xty : LMonoTy) (Env' : TEnv T.IDMeta)
     (haWF : TContext.AliasesWF Env.context)
     (h : typeBoundVar C Env (some bty_val) = .ok (xv, xty, Env')) :
-    ∃ r, SourceTyWF C TyVarAdmissibility.all Env.context.aliases bty_val r := by
+    ValidWrittenTy C Env.context.aliases bty_val := by
   simp only [typeBoundVar, Bind.bind, Except.bind] at h
   elim_err h
   rename_i v_gen h_gen
@@ -4938,7 +4930,7 @@ def BinderFits (C : LContext T) (aliases : List TypeAlias) (S : Subst)
     (o o' : Option LMonoTy) (d : Option LMonoTy) : Prop :=
   o' = o ∨ ∃ t', o' = some t' ∧ ∀ dty, d = some dty →
     AnnotCompat aliases t' (LMonoTy.subst S dty) ∧
-      ∃ r, SourceTyWF C TyVarAdmissibility.all aliases t' r
+      ValidWrittenTy C aliases t'
 
 /-- `e'` is `e` with free-variable annotations replaced by ones compatible with
     the substituted types `et` records, and binder annotations replaced as
@@ -5706,8 +5698,7 @@ private theorem typeBoundVar_binderFits_subst {C : LContext T}
     (o' = none ∨ ∃ t, o' = some t ∧
         AnnotCompat (TContext.subst Env.context S).aliases t
           (LMonoTy.subst S xty)) ∧
-      ∀ t, o' = some t → ∃ r, SourceTyWF C TyVarAdmissibility.all
-        (TContext.subst Env.context S).aliases t r := by
+      ∀ t, o' = some t → ValidWrittenTy C (TContext.subst Env.context S).aliases t := by
   rw [TContext.subst_aliases Env.context S]
   rcases hbind with rfl | ⟨t', rfl, hall⟩
   · refine ⟨?_, ?_⟩

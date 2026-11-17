@@ -44,6 +44,49 @@ theorem LFuncDefined.applyTypeSubst_inputs_keys {T : LExprParams} (f : LFuncDefi
     (S : Subst) : (LFuncDefined.applyTypeSubst f S).inputs.keys = f.inputs.keys :=
   ListMap.keys_map_values _ _
 
+/-- The type variables of the signature of `f`: its type parameters and the free type
+variables of its output and input types. -/
+def LFuncDefined.sigTyVars {T : LExprParams} (f : LFuncDefined T) : List String :=
+  f.typeArgs ++ f.output.freeVars ++ f.inputs.flatMap (fun (_, mty) => mty.freeVars)
+
+/-- The types written in the annotations of `f`'s expressions. -/
+def LFuncDefined.annotTys {T : LExprParams} (f : LFuncDefined T) :
+    List LMonoTy :=
+  f.exprs.flatMap exprAnnotTys
+
+/-- The type variables `f` mentions, given the types `annot` it writes:
+those of its signature (`sigTyVars`) and those of `annot`. -/
+def LFuncDefined.mentionedTyVarsIn {T : LExprParams} (f : LFuncDefined T)
+    (annot : List LMonoTy) : List String :=
+  f.sigTyVars ++ annot.flatMap LMonoTy.freeVars
+
+/-- The type variables `f` mentions in its signature and annotations. -/
+def LFuncDefined.mentionedTyVars {T : LExprParams} (f : LFuncDefined T) : List String :=
+  f.mentionedTyVarsIn f.annotTys
+
+/-- The type parameters `typeArgs` with `a` renamed to `n` for each pair `(a, n)` of `ren`; a
+parameter `ren` does not list keeps its name. -/
+def renameTyArgList (ren : List (String × String)) (typeArgs : List String) : List String :=
+  typeArgs.map fun a => (ren.lookup a).getD a
+
+/-- `f` with its type parameters renamed by `ren` throughout, as
+`renameTyArgList` does to the parameter list. -/
+def LFuncDefined.renameTypeArgs {T : LExprParams} (f : LFuncDefined T)
+    (ren : List (String × String)) : LFuncDefined T :=
+  { LFuncDefined.applyTypeSubst f (Subst.ofRenaming ren) with
+    typeArgs := renameTyArgList ren f.typeArgs }
+
+/-- Renaming type parameters keeps a function's name. -/
+theorem LFuncDefined.renameTypeArgs_name {T : LExprParams} (f : LFuncDefined T)
+    (ren : List (String × String)) : (f.renameTypeArgs ren).name = f.name := by
+  unfold LFuncDefined.renameTypeArgs LFuncDefined.applyTypeSubst
+  rfl
+
+/-- Renaming type parameters keeps a function's input names. -/
+theorem LFuncDefined.renameTypeArgs_inputs_keys {T : LExprParams} (f : LFuncDefined T)
+    (ren : List (String × String)) : (f.renameTypeArgs ren).inputs.keys = f.inputs.keys :=
+  LFuncDefined.applyTypeSubst_inputs_keys _ _
+
 /-- Typecheck an annotated `LExpr`, returning `some τ` if well-typed, `none`
 otherwise. `ctx` maps de Bruijn indices to their types from enclosing
 binders. -/

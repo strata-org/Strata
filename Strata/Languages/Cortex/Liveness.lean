@@ -81,6 +81,7 @@ def cmdExprs : IRCmd → List Expr
   | .readElem _ a i _ _ => [a, i]
   | .writeElem a i v _ _ => [a, i, v]
   | .arrayLength _ a _ => [a]
+  | .instanceOfComponent _ o a _ => [o, a]
   | .call _ _ args _ | .virtualCall _ _ _ args _ => args
   | .throw e _ => [e]
 

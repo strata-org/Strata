@@ -21,7 +21,9 @@ open Imperative
   | _ => none
 
 structure Obj where
-  type : TypeName
+  /-- The type the object was allocated at: a composite, or an array type, whose element type
+  is the one the array was allocated with. -/
+  type : Lambda.LMonoTy
   fields : FieldRef → Option Expr
   /-- The elements of an array; `none` for an object that is not an array. -/
   elems : Option (Array Expr) := none
@@ -38,7 +40,7 @@ inductive Outcome where
   | normal
   | exn (v : Expr)
 
-@[expose] def dynType (h : Heap) (v : Expr) : Option TypeName :=
+@[expose] def dynType (h : Heap) (v : Expr) : Option Lambda.LMonoTy :=
   ((getRef? v).bind h).map (·.type)
 
 

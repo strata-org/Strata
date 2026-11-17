@@ -44,7 +44,7 @@ def chain (origin : Label) (lhs : List Core.Expression.Ident) (owner : TypeName)
     let yes ← freshLabel origin "$dispatch"
     addBlock yes { cmds := [.call lhs (implName d meth) args md], transfer := .goto join }
     let test ← freshLabel origin "$dispatch_test"
-    addBlock test { cmds := [.instanceOf (ident testVar) (args.headD (mkFvar "")) d md],
+    addBlock test { cmds := [.instanceOf (ident testVar) (args.headD (mkFvar "")) (mono (tcon d)) md],
                     transfer := .condGoto (mkFvar testVar) yes next md }
     return test
 

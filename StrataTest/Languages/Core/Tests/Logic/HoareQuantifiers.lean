@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 import Strata.Languages.Core
-import StrataTest.Languages.Core.Tests.Logic.HoareTestSupport
+import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import StrataDDM.Integration.Lean.HashCommands
 import Strata.Languages.Core.Logic.Hoare
 import Strata.Languages.Core.Logic.ContractToHoareTriple
@@ -61,7 +61,7 @@ namespace CoreHoareQuantifiersTest
 open Imperative
 open Core (Expression Command Statement Statements)
 
-open CoreHoareTestSupport
+open Strata.HoareUtils (boolFactory someValuation)
 
 /-! ## Typed Core syntax fixtures
 

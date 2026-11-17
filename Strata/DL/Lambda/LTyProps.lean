@@ -19,7 +19,8 @@ operations). Definitions, instances, the `@[induction_eliminator]`, and
 ### Arrow types (`mkArrow'` / `destructArrow` / `isArrow`)
 `mkArrow'` is injective in its return type and argument list
 (`mkArrow'_injective`), an arrow chain equal to a longer one ends in the longer one's
-tail (`mkArrow'_eq_drop`), `destructArrow` never returns the empty list
+tail (`mkArrow'_eq_drop`), its result type after its inputs is its return type
+(`arrowResult_mkArrow'`), `destructArrow` never returns the empty list
 (`destructArrow_non_empty`), and `isArrow` reflects back into the `arrow`
 constructor (`isArrow_some`).
 
@@ -69,6 +70,14 @@ public theorem LMonoTy.mkArrow'_eq_drop {a b : LMonoTy} :
     simp only [LMonoTy.mkArrow'_cons, LMonoTy.arrow, LMonoTy.tcons.injEq, List.cons.injEq] at h
     obtain ⟨-, -, heq, -⟩ := h
     simpa using mkArrow'_eq_drop heq (by simpa using hl)
+
+/-- The result type of `mkArrow' out ins` after `ins.length` arguments is `out`. -/
+public theorem LMonoTy.arrowResult_mkArrow' (out : LMonoTy) :
+    ∀ (ins : List LMonoTy), LMonoTy.arrowResult ins.length (LMonoTy.mkArrow' out ins) = out
+  | [] => by cases out <;> simp [LMonoTy.arrowResult, LMonoTy.mkArrow']
+  | _ :: ins => by
+    simp only [List.length_cons, LMonoTy.mkArrow', LMonoTy.arrow, LMonoTy.arrowResult]
+    exact LMonoTy.arrowResult_mkArrow' out ins
 
 /-- An iterated arrow has a property that arrows build when its result type and every argument
     type have it. -/

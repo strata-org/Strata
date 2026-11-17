@@ -317,7 +317,7 @@ The rule applies recursively. Strata today uses
   Laurel.
 
 This does not imply a _total_ order on dialects. A dialect like
-SMT or B3 may legitimately appear at multiple positions in
+SMT may legitimately appear at multiple positions in
 different pipelines (front-end-like in some contexts,
 analysis-like in others; see "An IR can be both producer and
 consumer" below). The DAG just needs to remain a DAG — there is
@@ -378,9 +378,7 @@ prototypical case:
   again imports Core and owns `SMT.toCore`.
 
 Both roles satisfy the rule: the SMT side imports Core in both
-directions; Core imports neither. There is no contradiction. B3
-is another dialect that may legitimately appear at multiple
-pipeline positions.
+directions; Core imports neither. There is no contradiction.
 
 ## 10. Standalone translation modules
 

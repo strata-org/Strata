@@ -493,22 +493,22 @@ VCs:
 Label: empty_length
 Property: assert
 Obligation:
-Sequence.length(Sequence.empty<int>()) == 0
+true
 
 Label: build_on_empty_length
 Property: assert
 Obligation:
-Sequence.length(Sequence.build(Sequence.empty<int>(), 42)) == 1
+true
 
 Label: assert_build_on_empty_elem_calls_Sequence.select_0
 Property: out-of-bounds access check
 Obligation:
-int.lt(0, Sequence.length(Sequence.build(Sequence.empty<int>(), 42)))
+true
 
 Label: build_on_empty_elem
 Property: assert
 Obligation:
-Sequence.select!(Sequence.build(Sequence.empty<int>(), 42), 0) == 42
+true
 
 ---
 info:
@@ -585,17 +585,17 @@ VCs:
 Label: bool_len
 Property: assert
 Obligation:
-Sequence.length(Sequence.empty<bool>()) == 0
+true
 
 Label: seq_seq_len
 Property: assert
 Obligation:
-Sequence.length(Sequence.empty<Sequence int>()) == 0
+true
 
 Label: seq_map_len
 Property: assert
 Obligation:
-Sequence.length(Sequence.empty<Map int bool>()) == 0
+true
 
 ---
 info:

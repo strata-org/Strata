@@ -6,15 +6,23 @@
 module
 
 public import Strata.Languages.Core.Typing.Spec.TypingSpec
+public import Strata.Languages.Core.Typing.Spec.StatementTypeSpec
+public import Strata.Languages.Core.CallWFProps
+import all Strata.DL.Lambda.LExprTypeSpec
 import all Strata.DL.Lambda.LExprTypeEnv
 import Strata.DL.Lambda.LExprTypeEnvProps
+import all Strata.Languages.Core.Statement
+import all Strata.Languages.Core.Procedure
+import all Strata.Languages.Core.Program
+import all Strata.DL.Imperative.Procedure
+import all Strata.Languages.Core.Typing.Spec.CmdTypeSpec
 
-/-! ## Properties of the typing relation
+/-! ## Properties of the typechecker spec and of well-typedness
 
-Typing does not read the rigid type variables of the context: replacing them
-keeps statements, statement lists and procedure bodies well typed
-(`StatementWellTyped.withRigid`, `StatementsWellTyped.withRigid`,
-`ProcBodyWellTyped.withRigid`). -/
+A well-typed program with structured bodies has well-formed calls:
+`ProgramWellTyped.callsWellFormed`. The `withRigid` theorems, such as
+`StatementsWellTyped.withRigid`, say well-typedness ignores the context's rigid type
+variables. -/
 
 namespace Core
 namespace TypeSpec
@@ -22,6 +30,8 @@ namespace TypeSpec
 open Lambda LExpr Imperative
 
 public section
+
+/-! ### Typing does not read the rigid type variables -/
 
 /-- Expression typing does not read the rigid type variables of the context. -/
 private theorem exprWellTyped_withRigid (C : LContext CoreLParams)
@@ -117,6 +127,91 @@ theorem ProcBodyWellTyped.withRigid {P : Program} {C : LContext CoreLParams}
   | .structured _ _ _ hss =>
     .structured _ _ _ (StatementsWellTyped.withRigid r hss)
   | .cfg c => .cfg c
+
+/-! ### Well-typed programs have well-formed calls -/
+
+mutual
+
+/-- Every call in a well-typed statement is well-formed in `P`. -/
+private theorem StatementWellTyped.callsWF {P : Program} {C C' : LContext CoreLParams}
+    {ts ts' : TypeScopes} {L : List String} {s : Statement}
+    (h : StatementWellTyped P C ts L s C' ts') :
+    ∀ c ∈ Statement.callSites s, WF.WFcallProp P c.procName c.args :=
+  match h with
+  | .cmd _ _ _ _ _ hc =>
+    match hc with
+    | .cmd _ _ _ _ => by simp [Statement.callSites, Command.callSites]
+    | .call _ _ _ _ _ _ _ _ hwf _ _ _ _ => by
+      intro c hc
+      simp only [Statement.callSites, Command.callSites, List.mem_singleton] at hc
+      subst hc
+      exact hwf
+  | .block _ _ _ _ _ _ _ _ _ _ hb _ => by
+    simpa only [Statement.callSites] using StatementsWellTyped.callsWF hb
+  | .ite_det _ _ _ _ _ _ _ _ _ _ _ _ _ ht he _ => by
+    intro c hc
+    simp only [Statement.callSites, List.mem_append] at hc
+    exact hc.elim (StatementsWellTyped.callsWF ht c) (StatementsWellTyped.callsWF he c)
+  | .ite_nondet _ _ _ _ _ _ _ _ _ _ _ ht he _ => by
+    intro c hc
+    simp only [Statement.callSites, List.mem_append] at hc
+    exact hc.elim (StatementsWellTyped.callsWF ht c) (StatementsWellTyped.callsWF he c)
+  | .loop _ _ _ _ _ _ _ _ _ _ _ _ _ _ hb _ => by
+    simpa only [Statement.callSites] using StatementsWellTyped.callsWF hb
+  | .exit _ _ _ _ _ _ _ _ => by simp [Statement.callSites]
+  | .typeDecl _ _ _ _ _ _ _ _ _ _ => by simp [Statement.callSites]
+
+/-- Every call in a well-typed statement list is well-formed in `P`. -/
+private theorem StatementsWellTyped.callsWF {P : Program} {C C' : LContext CoreLParams}
+    {ts ts' : TypeScopes} {L : List String} {ss : List Statement}
+    (h : StatementsWellTyped P C ts L ss C' ts') :
+    ∀ c ∈ Statements.callSites ss, WF.WFcallProp P c.procName c.args :=
+  match h with
+  | .nil _ _ _ _ _ => by simp [Statements.callSites]
+  | .cons _ _ _ _ _ _ _ _ _ hs hss => by
+    intro c hc
+    simp only [Statements.callSites, List.mem_append] at hc
+    exact hc.elim (StatementWellTyped.callsWF hs c) (StatementsWellTyped.callsWF hss c)
+
+end
+
+/-- Every call in a well-typed declaration list is well-formed in `P`, given that every call of
+    its CFG bodies is. -/
+private theorem DeclsWellTyped.callsWF {P : Program} {C C' : LContext CoreLParams}
+    {ts : TypeScopes} {ds : List Decl} (h : DeclsWellTyped P C ts ds C')
+    (hcfg : ∀ q md (g : DetCFG), Decl.proc q md ∈ ds → q.body = .cfg g →
+      ∀ c ∈ q.callSites, WF.WFcallProp P c.procName c.args) :
+    ∀ c ∈ ds.flatMap Decl.callSites, WF.WFcallProp P c.procName c.args := by
+  induction h with
+  | nil => simp
+  | cons _ _ _ _ _ _ hd _ ih =>
+    intro c hc
+    simp only [List.flatMap_cons, List.mem_append] at hc
+    refine hc.elim (fun hc => ?_)
+      (ih (fun q md g hmem => hcfg q md g (List.mem_cons_of_mem _ hmem)) c)
+    cases hd with
+    | proc _ proc md hp =>
+      simp only [Decl.callSites] at hc
+      cases hbody : proc.body with
+      | cfg g => exact hcfg proc md g (List.mem_cons_self ..) hbody c hc
+      | structured _ =>
+        simp only [Procedure.callSites] at hc
+        rw [hbody] at hc
+        have hbt := hp.bodyTyped
+        rw [hbody] at hbt
+        cases hbt with
+        | structured _ _ _ hss => exact StatementsWellTyped.callsWF hss c hc
+    | _ => simp [Decl.callSites] at hc
+
+/-- A well-typed program has only well-formed calls, given that every call of its CFG bodies is
+    well-formed. -/
+theorem ProgramWellTyped.callsWellFormed {C : LContext CoreLParams} {ts : TypeScopes}
+    {P : Program} (h : ProgramWellTyped C ts P)
+    (hcfg : ∀ q md (g : DetCFG), Decl.proc q md ∈ P.decls → q.body = .cfg g →
+      ∀ c ∈ q.callSites, WF.WFcallProp P c.procName c.args) :
+    P.callsWellFormed := by
+  obtain ⟨-, _, hds⟩ := h
+  exact DeclsWellTyped.callsWF hds hcfg
 
 end -- public section
 

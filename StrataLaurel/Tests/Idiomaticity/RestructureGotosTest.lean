@@ -128,3 +128,92 @@ procedure noBackwardJump()
     invariant i == 0
 };
 #end
+
+-- Two forward jumps whose ranges overlap without nesting: each target becomes
+-- the code after a block that the jumps to it leave.
+/--
+info: procedure overlapping(p: bool, q: bool)
+  opaque
+{
+  var r: int;
+  r := 0;
+  {
+    {
+      if p
+        then {
+          exit $goto_join_2
+        }
+        else {
+          r := r + 1;
+          if q
+            then {
+              exit $goto_join_1
+            }
+            else {
+              r := r + 10;
+              exit $goto_join_2
+            }
+        }
+    }$goto_join_2;
+    r := r + 100
+  }$goto_join_1;
+  assert r >= 0
+};
+-/
+#guard_msgs in
+#eval runPassForIdiomaticity Strata.Laurel.restructureGotosPass <|
+#strata
+program Laurel;
+procedure overlapping(p: bool, q: bool)
+  opaque
+{
+  var r: int := 0;
+  { if (p) then { goto c }; r := r + 1 } a;
+  { if (q) then { goto d }; r := r + 10 } b;
+  { r := r + 100 } c;
+  { assert r >= 0 } d
+};
+#end
+
+-- A loop entered by falling into `head` and closed by a jump back to it from a
+-- block nested in a later sibling: `head` becomes the loop's block.
+/--
+info: procedure closedFromNested()
+  opaque
+{
+  var i: int;
+  i := 0;
+  {
+    {
+      while(true)
+        invariant 0 <= i {
+        i := i + 1;
+        if i < 3
+          then {
+            exit $goto_start_2
+          }
+          else {
+            exit $goto_join_1
+          }
+      }$goto_start_2
+    }head
+  }$goto_join_1;
+  assert i >= 3
+};
+-/
+#guard_msgs in
+#eval runPassForIdiomaticity Strata.Laurel.restructureGotosPass <|
+#strata
+program Laurel;
+procedure closedFromNested()
+  opaque
+{
+  var i: int := 0;
+  { i := i + 1 } head
+    invariant 0 <= i;
+  {
+    { if (i < 3) then { goto head } } inner
+  } tail;
+  assert i >= 3
+};
+#end

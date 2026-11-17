@@ -1260,6 +1260,12 @@ theorem lookup_of_mem_nodup
       simp only [lookup, h_neq]
       exact ih h_nodup_tl h_tl
 
+/-- A key `lookup` finds is paired with the value it returns by an entry of the list. -/
+theorem mem_of_lookup_eq_some {α β : Type} [BEq α] [LawfulBEq α] {l : List (α × β)} {k : α}
+    {v : β} (h : l.lookup k = some v) : (k, v) ∈ l := by
+  obtain ⟨l₁, l₂, rfl, -⟩ := List.lookup_eq_some_iff.mp h
+  simp
+
 /-- The `nodupB` worker started from the set `seen` accepts `l` exactly when `l`
 has no duplicates and no element of `l` is in `seen`. -/
 private theorem nodupB_go_iff {α : Type} [BEq α] [Hashable α] [LawfulBEq α]

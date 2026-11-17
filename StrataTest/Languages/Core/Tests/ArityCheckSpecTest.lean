@@ -5,21 +5,20 @@
 -/
 module
 
-import Strata.Languages.Core.DatatypeTypeSpec
-import all Strata.Languages.Core.DatatypeTypeSpec
-import Strata.Languages.Core.FunctionTypeSpec
-import all Strata.Languages.Core.FunctionTypeSpec
+import Strata.Languages.Core.Typing.Spec.TypingSpec
 import Strata.Languages.Core.Factory
 import all Strata.Languages.Core.Factory
 import all Strata.DL.Lambda.LExprTypeEnv
 import all Strata.DL.Lambda.TypeFactory
+import Strata.DL.Lambda.LTyWFCheckSound
 
 /-! ## Arity-check spec tests
 
-Proof-level counterparts to `ArityCheckTest.lean`: the declarative typing specs
-carry a well-kindedness (correct-arity) obligation, so a type that applies a
-known constructor at the wrong arity (`Sequence a a`, `Sequence` being arity 1)
-is rejected. Correct-arity types (`Sequence a`) remain well-kinded.
+Proof-level counterparts to `ArityCheckTest.lean`: a type that applies a known
+constructor at the wrong arity (`Sequence a a`, `Sequence` being arity 1) is
+rejected, both by the typing relation (`FuncWellTyped`) and by the typechecker
+spec (`ValidWrittenTy`, which `FuncHasType'` requires of written types), with or
+without an alias in between. Correct-arity types (`Sequence a`) are accepted.
 -/
 
 namespace Core.ArityCheckSpecTest
@@ -38,66 +37,95 @@ private theorem head_mem_getTypeConsArities (n : String) (args : List LMonoTy) :
     (n, args.length) ∈ getTypeConsArities (.tcons n args) := by
   simp [getTypeConsArities]
 
+/-- Core's known types are the hash map built from its known type list. -/
+private theorem knownTypes_eq : Core.KnownTypes = Std.HashMap.ofList
+    ((Core.KnownLTys.map (fun ty => ty.toKnownType!)).map (fun x => (x.name, x.arity))) := by
+  simp only [Core.KnownTypes, makeKnownTypes]
+
 /-- `Sequence` is registered with arity 1 in Core's known types. -/
 private theorem knownSequenceArity : Core.KnownTypes["Sequence"]? = some 1 := by
-  have h : Core.KnownTypes = Std.HashMap.ofList
-      ((Core.KnownLTys.map (fun ty => ty.toKnownType!)).map (fun x => (x.name, x.arity))) := by
-    simp only [Core.KnownTypes, makeKnownTypes]
-  rw [h]
+  rw [knownTypes_eq]
   exact Std.HashMap.getElem?_ofList_of_mem (k := "Sequence") (v := 1) (by decide)
     (by decide) (by decide)
 
-/-- `Sequence a a` is NOT well-kinded: `Sequence` has arity 1, not 2. -/
-example : ¬ C.WellKindedTy (.tcons "Sequence" [.ftvar "a", .ftvar "a"]) := by
+/-- `MySeq` is not a known type in Core. -/
+private theorem knownMySeqNone : Core.KnownTypes["MySeq"]? = none := by
+  rw [knownTypes_eq]
+  exact Std.HashMap.getElem?_ofList_of_contains_eq_false (by decide)
+
+/-- `Sequence a a` is not well kinded: `Sequence` has arity 1, not 2. -/
+private theorem sequence_twice_not_wellKinded :
+    ¬ C.WellKindedTy (.tcons "Sequence" [.ftvar "a", .ftvar "a"]) := by
   intro h
   have hlookup := h "Sequence" 2 (head_mem_getTypeConsArities "Sequence" [.ftvar "a", .ftvar "a"])
   simp only [C, knownSequenceArity] at hlookup
   exact absurd hlookup (by decide)
 
-/-- `Sequence a` (correct arity) IS well-kinded. -/
-example : C.WellKindedTy (.tcons "Sequence" [.ftvar "a"]) := by
+/-- A valid written type that alias resolution leaves unchanged is well kinded. -/
+private theorem wellKinded_of_valid_unchanged {aliases : List TypeAlias} {ty : LMonoTy}
+    (hres : SourceTyResolves aliases ty ty) (h : ValidWrittenTy C aliases ty) :
+    C.WellKindedTy ty := by
+  obtain ⟨r, hr, hwf⟩ := h
+  have heq := SourceTyResolves.unique hr hres
+  subst heq
+  exact hwf.wellKinded
+
+/-- With no aliases, the written type `Sequence a a` is not valid: it resolves to
+    itself, and `Sequence` has arity 1. -/
+example : ¬ ValidWrittenTy C [] (.tcons "Sequence" [.ftvar "a", .ftvar "a"]) := by
+  intro h
+  have hres : SourceTyResolves [] (.tcons "Sequence" [.ftvar "a", .ftvar "a"])
+      (.tcons "Sequence" [.ftvar "a", .ftvar "a"]) :=
+    .tcons (.cons .ftvar (.cons .ftvar .nil)) rfl
+  exact sequence_twice_not_wellKinded (wellKinded_of_valid_unchanged hres h)
+
+/-- `Sequence a` (correct arity) is well kinded. -/
+private theorem sequence_wellKinded : C.WellKindedTy (.tcons "Sequence" [.ftvar "a"]) := by
   intro ref n hmem
   simp only [getTypeConsArities, List.flatMap_cons, List.flatMap_nil,
     List.append_nil, List.mem_cons, List.not_mem_nil, or_false] at hmem
   obtain ⟨rfl, rfl⟩ := hmem
   exact knownSequenceArity
 
-/-- The `FuncHasTypeA` signature obligation rejects `f<a>(x : Sequence a a) : int`:
+/-- The `FuncWellTyped` signature obligation rejects `f<a>(x : Sequence a a) : int`:
     no proof exists, since `signatureWellKinded` is unsatisfiable. -/
-example (h : FuncHasTypeA C default
+example (h : FuncWellTyped C default
     { name := ⟨"f", ()⟩, typeArgs := ["a"],
       inputs := [(⟨"x", ()⟩, .tcons "Sequence" [.ftvar "a", .ftvar "a"])],
       output := .int }) : False := by
-  obtain ⟨ty', hEq, hwk⟩ := h.signatureWellKinded (.tcons "Sequence" [.ftvar "a", .ftvar "a"])
+  have hwk := h.signatureWellKinded (.tcons "Sequence" [.ftvar "a", .ftvar "a"])
     (by simp [ListMap.values])
-  -- Annotated `tyCompat` is equality, so `ty'` is the (bad-arity) type itself.
-  subst hEq
-  have hlookup := hwk "Sequence" 2 (head_mem_getTypeConsArities "Sequence" [.ftvar "a", .ftvar "a"])
-  simp only [C, knownSequenceArity] at hlookup
-  exact absurd hlookup (by decide)
+  exact sequence_twice_not_wellKinded hwk
 
 /-- Alias `MySeq a := Sequence a`. -/
 private def mySeqAlias : TypeAlias :=
   { name := "MySeq", typeArgs := ["a"], type := .tcons "Sequence" [.ftvar "a"] }
 
-/-- `MySeq a` expands to `Sequence a` under `[mySeqAlias]`. -/
-private theorem mySeq_expandsTo :
-    TypeAlias.expandsTo [mySeqAlias] "MySeq" [.ftvar "a"] (.tcons "Sequence" [.ftvar "a"]) :=
-  ⟨mySeqAlias, by
-    simp [mySeqAlias, TypeAlias.expand, LMonoTy.openVars, LMonoTys.openVars,
-      List.zip, List.zipWith]⟩
+/-- Polymorphic path: the signature type `MySeq a` names an unknown constructor, but it is a
+    valid written type, since it resolves through `mySeqAlias` to the well-kinded `Sequence a`. -/
+example : ValidWrittenTy C [mySeqAlias] (.tcons "MySeq" [.ftvar "a"]) := by
+  have hfind : [mySeqAlias].find? (fun a => a.name == "MySeq" && a.typeArgs.length == 1)
+      = some mySeqAlias := by decide
+  have hres : SourceTyResolves [mySeqAlias] (.tcons "MySeq" [.ftvar "a"])
+      (mySeqAlias.expand [.ftvar "a"]) := .alias (.cons .ftvar .nil) hfind
+  have hexp : mySeqAlias.expand [.ftvar "a"] = .tcons "Sequence" [.ftvar "a"] := by
+    simp [mySeqAlias, TypeAlias.expand, LMonoTy.openVars, LMonoTys.openVars, List.zip,
+      List.zipWith]
+  rw [hexp] at hres
+  exact ⟨_, hres, ResolvedTyWF.of_wellKinded sequence_wellKinded (fun _ _ => rfl)⟩
 
-/-- Polymorphic path: the signature type `MySeq a` is not well-kinded as written
-    (`MySeq` is unknown), but `instHasType.tyCompat` (alias-equivalence) matches it
-    to the well-kinded `Sequence a`, so the obligation is satisfiable. -/
-example :
-    ∃ ty', instHasType.tyCompat [mySeqAlias] (.tcons "MySeq" [.ftvar "a"]) ty' ∧
-      C.WellKindedTy ty' := by
-  refine ⟨.tcons "Sequence" [.ftvar "a"], AliasEquiv.expand mySeq_expandsTo, ?_⟩
-  intro ref n hmem
-  simp only [getTypeConsArities, List.flatMap_cons, List.flatMap_nil,
-    List.append_nil, List.mem_cons, List.not_mem_nil, or_false] at hmem
-  obtain ⟨rfl, rfl⟩ := hmem
-  exact knownSequenceArity
+/-- An alias applied at the wrong arity is not a valid written type: `MySeq a a`
+    matches no alias, since `mySeqAlias` takes one argument, and `MySeq` is not a
+    known type. -/
+example : ¬ ValidWrittenTy C [mySeqAlias] (.tcons "MySeq" [.ftvar "a", .ftvar "a"]) := by
+  intro h
+  have hfind : [mySeqAlias].find? (fun a => a.name == "MySeq" && a.typeArgs.length == 2)
+      = none := by decide
+  have hres : SourceTyResolves [mySeqAlias] (.tcons "MySeq" [.ftvar "a", .ftvar "a"])
+      (.tcons "MySeq" [.ftvar "a", .ftvar "a"]) := .tcons (.cons .ftvar (.cons .ftvar .nil)) hfind
+  have hlookup := wellKinded_of_valid_unchanged hres h "MySeq" 2
+    (head_mem_getTypeConsArities "MySeq" [.ftvar "a", .ftvar "a"])
+  simp only [C, knownMySeqNone] at hlookup
+  exact absurd hlookup (by decide)
 
 end Core.ArityCheckSpecTest

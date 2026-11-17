@@ -427,7 +427,7 @@ partial def purify (e : StmtExprMd) : CM StmtExprMd := do
     let o ← expr target
     let r ← freshTemp ⟨.TBool, src⟩ src
     match compositeNameOf ty with
-    | some n => emit (.instanceOf ⟨r.text, ()⟩ o n md)
+    | some n => emit (.instanceOf ⟨r.text, ()⟩ o (mono (tcon n)) md)
     | none => unsupported src "a type test against a non-composite type"
     return varNode r src
   | .AsType target ty =>
@@ -439,7 +439,7 @@ partial def purify (e : StmtExprMd) : CM StmtExprMd := do
     match compositeNameOf ty with
     | some n =>
       let b ← freshTemp ⟨.TBool, src⟩ src
-      emit (.instanceOf ⟨b.text, ()⟩ (← pureExpr t') n md)
+      emit (.instanceOf ⟨b.text, ()⟩ (← pureExpr t') (mono (tcon n)) md)
       emit (.cmd (.assert "cast" (mkFvar b.text) md))
     | none => unsupported src "a cast to a non-composite type"
     return t'

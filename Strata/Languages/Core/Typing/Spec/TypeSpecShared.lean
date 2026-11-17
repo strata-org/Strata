@@ -88,6 +88,24 @@ structure FactoryExtendedBy (agrees : LFunc CoreLParams → LFunc CoreLParams �
       functions. -/
   no_other : ∀ nm ∈ C'.functions, nm ∈ C.functions ∨ nm ∈ newFuncs.map (·.name.name)
 
+/-- `ren` renames distinct type parameters among `typeArgs` to distinct new names, none of
+    them among `mentioned`, the type variables of the declaration. So the renamed declaration
+    means the same, and no type parameter turns into another type variable of the
+    declaration. -/
+def TyArgRenamingCore (typeArgs mentioned : List String) (ren : List (String × String)) : Prop :=
+  (ren.map Prod.fst).Nodup ∧ (ren.map Prod.snd).Nodup ∧
+    ∀ p ∈ ren, p.1 ∈ typeArgs ∧ p.2 ∉ mentioned
+
+/-- An injective renaming of type parameters to names the declaration does not
+    mention (`TyArgRenamingCore`) that renames only type parameters with a
+    reserved prefix, to names that are neither rigid in `C` nor free in the type
+    of a variable of `Γ`. -/
+def TyArgRenaming (C : LContext CoreLParams) (Γ : TContext Unit)
+    (typeArgs mentioned : List String) (ren : List (String × String)) : Prop :=
+  TyArgRenamingCore typeArgs mentioned ren ∧
+    ∀ p ∈ ren, isAllowedName p.1 = false ∧ p.2 ∉ C.rigidTypeVars ∧
+      TContext.isFresh (T := CoreLParams) p.2 Γ
+
 end TypeSpec
 
 end Core

@@ -32,6 +32,11 @@ Also defines interpretation structures (`OpInterp`, `IdentInterp`,
   (with `constValEntries_isSome` / `constValElems_isSome`) — every well-typed literal has a value
   at its sort; `denoteConst` / `denoteCollection` — the denotation of a literal. Their
   equations and laws are in `LExprDenoteConsts`.
+- `ConstrInterpConsistent` — the datatype properties assumed of constructor interpretations:
+  disjointness, injectivity and induction (`constr_induction`), with inversion
+  derived as `ConstrInterpConsistent.constr_inversion`;
+  stated with `constrApp` (a constructor applied to arguments) and `Factory.IsDatatypeSort`
+  (a sort that a constructor of the factory returns)
 - `Interp` / `Satisfiable` / `Valid` / `LogConseq` — semantic notions over consistent interpretations
 -/
 
@@ -193,7 +198,7 @@ public abbrev FreeVarVal := IdentInterp
 /-- Update an identifier interpretation so that the names in `bindings` map to
 the corresponding values from `vals`. Names not in `bindings` keep their
 original interpretation. -/
-def IdentInterp.withArgs [DecidableEq T.IDMeta]
+public def IdentInterp.withArgs [DecidableEq T.IDMeta]
     {tcInterp : TyConstrInterp}
     (fvarVal : IdentInterp T tcInterp)
     (bindings : List (Identifier T.IDMeta × LSort))
@@ -1248,14 +1253,7 @@ variable (opInterp : OpInterp tcInterp)
 
 These properties express that the semantic interpretation (`opInterp`) of
 datatype constructors satisfies the standard algebraic datatype axioms:
-disjointness and injectivity. Note that this is NOT complete: there are two
-other properties ADT interpretations should have:
-1. an inversion principle asserting that we can produce the constructor and
-arguments that give rise to a given ADT interpretation instance
-2. a generalized induction principle (this justifies recursive functions
-over these types)
-
-TODO: add these properties as they are needed
+disjointness, injectivity and induction (inversion follows from induction).
 
 Note that this approach involves axiomatizing ADTs rather than representing
 them as inductive types in Lean. See Section 5 of
@@ -1263,8 +1261,31 @@ https://dl.acm.org/doi/10.1145/3632902 for an explanation of this method
 and a demonstration of how one could provide models for the axioms.
 -/
 
-/-- ADT interpretation consistency: the semantic interpretation of constructors
-satisfies disjointness and injectivity.-/
+/-- The value of the constructor function `f` applied to `args`, with its type
+variables instantiated by `vt`. -/
+public noncomputable def constrApp (f : LFunc T) (vt : TyVarVal)
+    (args : HList (SortDenote tcInterp) (f.inputs.values.map (LMonoTy.substTyVars vt))) :
+    SortDenote tcInterp (LMonoTy.substTyVars vt f.output) :=
+  SortDenote.applyArgs tcInterp
+    (opInterp f.name.name
+      (LSort.mkArrow (LMonoTy.substTyVars vt f.output)
+        (f.inputs.values.map (LMonoTy.substTyVars vt)))) args
+
+/-- A sort is a datatype sort of `F` when some constructor of `F` has it as
+its result sort under some type-variable valuation. Datatype instances such as
+`List int` and `List (List int)` are distinct datatype sorts. -/
+public def Factory.IsDatatypeSort (F : @Factory T) (s : LSort) : Prop :=
+  ∃ f ∈ F.toArray, f.isConstr = true ∧ ∃ vt : TyVarVal, LMonoTy.substTyVars vt f.output = s
+
+/-- Datatype properties of an interpretation of the factory's constructors:
+disjointness, injectivity and induction. Inversion follows from induction
+(`ConstrInterpConsistent.constr_inversion`). Induction contradicts any nonempty
+interpretation of an uninhabited datatype such as `Foo := Mk (x : Foo)`, and
+injectivity rules out non-strictly-positive ones such as
+`Foo := Mk (f : Foo → bool)`. `TypeFactory.checkMutualBlockInhab` and
+`checkConstructorArgsWF` reject such datatypes, but `TypeFactoryWF` records
+neither. Without them no interpretation may satisfy this structure, and
+statements assuming it hold vacuously. -/
 public structure ConstrInterpConsistent
     (F : @Factory T) : Prop where
   /-- Constructor disjointness (global): two constructor functions with
@@ -1304,6 +1325,20 @@ public structure ConstrInterpConsistent
           SortDenote.applyArgs tcInterp (opInterp f.name.name fullSort) args1 =
           SortDenote.applyArgs tcInterp (opInterp f.name.name fullSort) args2 →
           args1 = args2
+  /-- Induction over all datatype sorts at once. A family of predicates `P`,
+  one for each datatype sort, holds of every value of every datatype sort if it
+  is preserved by every constructor: whenever all arguments of datatype sort
+  satisfy their predicate, so does the constructor application. Arguments of
+  other sorts (integers, functions, `Map`, `Sequence`, ...) carry no
+  hypothesis. This covers mutually recursive datatypes, and datatypes instantiated at other
+  datatypes (such as `List (List int)`), in a single principle. -/
+  constr_induction :
+    ∀ (P : (s : LSort) → SortDenote tcInterp s → Prop),
+      (∀ f ∈ F.toArray, f.isConstr = true → ∀ (vt : TyVarVal)
+        (args : HList (SortDenote tcInterp) (f.inputs.values.map (LMonoTy.substTyVars vt))),
+          HList.All (fun s x => F.IsDatatypeSort s → P s x) args →
+          P _ (constrApp tcInterp opInterp f vt args)) →
+      ∀ (s : LSort) (v : SortDenote tcInterp s), F.IsDatatypeSort s → P s v
 
 end ConstrConsistent
 
@@ -1314,8 +1349,8 @@ end ConstrConsistent
 An `Interp` bundles a type-constructor interpretation and an operator
 interpretation together with proofs that the interpretation is consistent
 with a given factory: function bodies denote correctly, the factory's axioms
-hold, and constructor axioms (disjointness, injectivity) hold. Satisfiability
-and validity are defined over consistent interpretations. -/
+hold, and the constructor properties (disjointness, injectivity, induction)
+hold. Satisfiability and validity are defined over consistent interpretations. -/
 
 /-- A consistent interpretation of a factory: bundles `tcInterp` and
 `opInterp` with proofs that the interpretation is inhabited, consistent

@@ -52,6 +52,7 @@ function of the output and of the new factory is an instance of an input functio
 
 - `run_ok` — what a successful run computes, on a program without procedures.
 - `MonoPre` — what the phase needs of its input.
+- `runtime_constr_cover` — every constructor of the input's runtime factory is in the output's.
 - `newFn_source` — every new function is a copy of a function of the input or the factory.
 - `passMono_runs` — the phase's run in the form the pipeline uses.
 -/
@@ -806,6 +807,88 @@ theorem mem_progFns {decls : List Decl} {d : Decl} (hd : d ∈ decls) {f : Funct
     (hf : f ∈ progFns d) : f ∈ decls.flatMap progFns :=
   List.mem_flatMap.mpr ⟨d, hd, hf⟩
 
+/-- Every constructor of the input's runtime factory is in the output's. A constructor comes
+    from a datatype declaration, which the pass keeps; the output function of the
+    constructor's name is an instance of the function of that name, hence the constructor
+    itself. -/
+theorem runtime_constr_cover {s s' : Transform.CoreTransformState} {p p' : Program}
+    (hpre : MonoPre s p) {g : CoreIdent → Option LMonoTy → CoreIdent}
+    {m : Std.HashMap (Nat × String) (Array (FuncSpecialization × Function))}
+    (hdecls : p'.decls = (p.decls.map (topDecl g)).zipIdx.flatMap (updDecl g m))
+    (hdist : ((contributed s.factory p.decls).map (·.name.name)).Nodup)
+    (hsrc : ∀ f', f' ∈
+      (Core.Specification.Analysis.runtimeFactoryOf s'.factory p'.decls).toArray →
+      ∃ lf ∈ contributed s.factory p.decls, FnInstance lf f' ∧
+        ((f'.isConstr = true → f' = lf) ∧ (lf.isConstr = true → f' = lf))) :
+    ∀ f ∈ (Core.Specification.Analysis.runtimeFactoryOf s.factory p.decls).toArray,
+      f.isConstr = true →
+      f ∈ (Core.Specification.Analysis.runtimeFactoryOf s'.factory p'.decls).toArray := by
+  intro f hf hfc
+  have hcon : f ∈ contributed s.factory p.decls := mem_contributed_of_runtimeFactoryOf hf
+  -- A constructor of the runtime factory comes from a datatype declaration.
+  have hdecl : ∃ d ∈ p.decls, f ∈ declFns d := by
+    rcases List.mem_append.mp hcon with hb | hd
+    · have hnc := hpre.noConstr.1 f (Array.mem_toList_iff.mp hb)
+      rw [hnc] at hfc
+      cases hfc
+    · obtain ⟨d, hd, hfd⟩ := List.mem_flatMap.mp hd
+      exact ⟨d, hd, hfd⟩
+  obtain ⟨d, hd, hfd⟩ := hdecl
+  have hd' : d ∈ p'.decls := by
+    cases d with
+    | func f0 md =>
+      have hpf : f0 ∈ progFns (.func f0 md) := by simp [progFns]
+      have hnc := hpre.noConstr.2 f0 (mem_progFns hd hpf)
+      simp only [declFns, List.mem_singleton] at hfd
+      subst hfd
+      simp [LFuncDefined.toLFunc, hnc] at hfc
+    | recFuncBlock fs md =>
+      simp only [declFns, List.mem_map] at hfd
+      obtain ⟨f0, hf0, rfl⟩ := hfd
+      have hpf : f0 ∈ progFns (.recFuncBlock fs md) := by simpa [progFns] using hf0
+      have hnc := hpre.noConstr.2 f0 (mem_progFns hd hpf)
+      simp [LFuncDefined.toLFunc, hnc] at hfc
+    | type t md =>
+      obtain ⟨j, hj⟩ := List.mem_iff_getElem?.mp hd
+      have hjm : (p.decls.map (topDecl g))[j]? = some (.type t md) := by
+        simp [hj, topDecl]
+      have hz : ((.type t md : Decl), j) ∈ (p.decls.map (topDecl g)).zipIdx :=
+        List.mem_zipIdx_iff_getElem?.mpr hjm
+      have hup : (.type t md : Decl) ∈ updDecl g m (.type t md, j) := by simp [updDecl]
+      rw [hdecls]
+      exact List.mem_flatMap.mpr ⟨_, hz, hup⟩
+    | _ => simp [declFns] at hfd
+  have hfL : f ∈ p'.decls.flatMap declFns := List.mem_flatMap.mpr ⟨d, hd', hfd⟩
+  -- Some function of the new runtime factory has the constructor's name.
+  have hsome :
+      ((Core.Specification.Analysis.runtimeFactoryOf s'.factory p'.decls)[f.name.name]?).isSome =
+        true := by
+    rw [runtimeFactoryOf_eq, Lambda.Factory.getElem?_foldl_pushIfNew]
+    have hfname : (f.name.name == f.name.name) = true := by simp
+    have hfind : ((p'.decls.flatMap declFns).find? (fun h => h.name.name == f.name.name)).isSome =
+        true := List.find?_isSome.mpr ⟨f, hfL, hfname⟩
+    cases s'.factory[f.name.name]?
+    · rw [Option.none_or]
+      exact hfind
+    · rw [Option.some_or]
+      rfl
+  obtain ⟨h, hh⟩ := Option.isSome_iff_exists.mp hsome
+  have hhmem : h ∈ (Core.Specification.Analysis.runtimeFactoryOf s'.factory p'.decls).toArray :=
+    Lambda.Factory.getElem?_is_some_implies_mem hh
+  have hhname : h.name.name = f.name.name := Lambda.Factory.getElem?_name hh
+  -- That function is an instance of a function with the same name, hence of `f` itself.
+  obtain ⟨lf, hlf, hinst, -, hlfc⟩ := hsrc h hhmem
+  obtain ⟨S, r, hdem, -⟩ := hinst
+  have hlfname : lf.name.name = f.name.name := by
+    rw [← hdem, hhname]
+    exact demangleName_of_not_hash (hpre.unmangled f hcon).1
+  have hlff : lf = f :=
+    List.nodup_map_injOn hdist hlf hcon hlfname
+  subst hlff
+  have hhf : h = lf := hlfc hfc
+  rw [← hhf]
+  exact hhmem
+
 /-- A function a declaration before index `i` contributes is among those the declarations before
     `i` contribute. -/
 theorem mem_declPart_take {decls : List Decl} {i j : Nat}
@@ -814,7 +897,7 @@ theorem mem_declPart_take {decls : List Decl} {i j : Nat}
   List.mem_flatMap.mpr ⟨d, mem_take_of_getElem? hj hd, hf⟩
 
 /-- Every function of the new state's factory is an instance of a function of the old one, and
-    the same constructor if it is a constructor. -/
+    the same constructor if either is a constructor. -/
 theorem newFn_source_base {s : Transform.CoreTransformState} {p : Program} (hpre : MonoPre s p)
     {P : PolymorphicFuncDecls} {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK g)
     {st : MonoWorklistState}
@@ -822,7 +905,8 @@ theorem newFn_source_base {s : Transform.CoreTransformState} {p : Program} (hpre
     (i : Nat) {f' : LFunc CoreLParams}
     (hb : f' ∈ (Lambda.Factory.ofArray (keptOf P s.factory g ++ copiesOf s.factory g
           st.specializedFnsInFactory).toArray).toArray.toList) :
-    ∃ lf ∈ s.factory.toArray.toList, FnInstance lf f' ∧ (f'.isConstr = true → f' = lf) := by
+    ∃ lf ∈ s.factory.toArray.toList, FnInstance lf f' ∧
+      ((f'.isConstr = true → f' = lf) ∧ (lf.isConstr = true → f' = lf)) := by
   have hsub := contributed_take_sublist s.factory p.decls i
   have hun : ∀ lf ∈ contributed s.factory (p.decls.take i), FnUnmangled lf :=
     fun lf h => hpre.unmangled lf (hsub.subset h)
@@ -832,8 +916,10 @@ theorem newFn_source_base {s : Transform.CoreTransformState} {p : Program} (hpre
   · obtain ⟨lf, hlf, rfl⟩ := mem_keptOf hk
     have hlf' : lf ∈ contributed s.factory (p.decls.take i) :=
       List.mem_append_left _ (Array.mem_toList_iff.mpr hlf)
-    refine ⟨lf, Array.mem_toList_iff.mpr hlf, fnInstance_renFn hg lf (hun lf hlf'), fun hc => ?_⟩
     have hnc := hpre.noConstr.1 lf hlf
+    have hncT : ¬ lf.isConstr = true := by simp [hnc]
+    refine ⟨lf, Array.mem_toList_iff.mpr hlf, fnInstance_renFn hg lf (hun lf hlf'),
+      fun hc => ?_, fun hc => absurd hc hncT⟩
     simp only [renFn] at hc
     rw [hnc] at hc; cases hc
   · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hc
@@ -846,15 +932,16 @@ theorem newFn_source_base {s : Transform.CoreTransformState} {p : Program} (hpre
       change (s.factory[x.1.name]?.bind (·.concreteEval)) = _
       rw [hlf]; rfl
     rw [hce, hx2, ← hname]
+    have hnc := hpre.noConstr.1 lf hlfm
+    have hncT : ¬ lf.isConstr = true := by simp [hnc]
     refine ⟨lf, Array.mem_toList_iff.mpr hlfm, fnInstance_copy hg lf (hun lf hlf') _ (hpre.typed.1
         lf hlfm).1
-      (hpre.typed.1 lf hlfm).2, fun hc => ?_⟩
-    have hnc := hpre.noConstr.1 lf hlfm
+      (hpre.typed.1 lf hlfm).2, fun hc => ?_, fun hc => absurd hc hncT⟩
     simp only [renFn, monomorphizeFunction, Lambda.LFuncDefined.applyTypeSubst] at hc
     rw [hnc] at hc; cases hc
 
 /-- Every function the output's declarations before index `i` contribute is an instance of one
-    the input's declarations before `i` contribute, and the same constructor if it is a
+    the input's declarations before `i` contribute, and the same constructor if either is a
     constructor. -/
 theorem newFn_source_decls {s : Transform.CoreTransformState} {p : Program} (hpre : MonoPre s p)
     {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK g)
@@ -864,7 +951,7 @@ theorem newFn_source_decls {s : Transform.CoreTransformState} {p : Program} (hpr
     (hd : f' ∈ (((p.decls.map (topDecl g)).zipIdx.take i).flatMap
           (updDecl g (specsByFnOf st.specializedFnsInProg))).flatMap declFns) :
     ∃ lf ∈ (p.decls.take i).flatMap declFns, FnInstance lf f' ∧
-      (f'.isConstr = true → f' = lf) := by
+      ((f'.isConstr = true → f' = lf) ∧ (lf.isConstr = true → f' = lf)) := by
   have hsub := contributed_take_sublist s.factory p.decls i
   have hun : ∀ lf ∈ contributed s.factory (p.decls.take i), FnUnmangled lf :=
     fun lf h => hpre.unmangled lf (hsub.subset h)
@@ -888,8 +975,9 @@ theorem newFn_source_decls {s : Transform.CoreTransformState} {p : Program} (hpr
       subst hd'u
       simp only [declFns, List.mem_singleton] at hf'd
       subst hf'd
+      have hncT : ¬ f.toLFunc.isConstr = true := by simp [LFuncDefined.toLFunc, hnc]
       refine ⟨f.toLFunc, hlf, fnInstance_renFn hg f.toLFunc (hun _ (List.mem_append_right _ hlf)),
-          fun hc => ?_⟩
+          fun hc => ?_, fun hc => absurd hc hncT⟩
       simp [renFn, LFuncDefined.toLFunc, hnc] at hc
     · obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hd'u
       obtain ⟨hyS, hysrc, hyname⟩ := mem_specsByFnOf hy
@@ -898,8 +986,9 @@ theorem newFn_source_decls {s : Transform.CoreTransformState} {p : Program} (hpr
       simp only [declFns, List.mem_singleton] at hf'd
       subst hf'd
       rw [hy2, hyname]
+      have hncT : ¬ f.toLFunc.isConstr = true := by simp [LFuncDefined.toLFunc, hnc]
       refine ⟨f.toLFunc, hlf, fnInstance_copy hg f.toLFunc (hun _ (List.mem_append_right _ hlf)) _
-        (hpre.typed.2 f hfp).1 (hpre.typed.2 f hfp).2, fun hc => ?_⟩
+        (hpre.typed.2 f hfp).1 (hpre.typed.2 f hfp).2, fun hc => ?_, fun hc => absurd hc hncT⟩
       simp [renFn, monomorphizeFunction, Lambda.LFuncDefined.applyTypeSubst, LFuncDefined.toLFunc,
         hnc] at hc
   | recFuncBlock fs md =>
@@ -919,8 +1008,10 @@ theorem newFn_source_decls {s : Transform.CoreTransformState} {p : Program} (hpr
       · simp only [List.mem_singleton] at hmf
         subst hmf
         obtain ⟨hlf, hfp⟩ := mk f hf
+        have hncT : ¬ f.toLFunc.isConstr = true := by
+          simp [LFuncDefined.toLFunc, hpre.noConstr.2 f hfp]
         refine ⟨f.toLFunc, hlf, fnInstance_renFn hg f.toLFunc (hun _ (List.mem_append_right _
-            hlf)), fun hc => ?_⟩
+            hlf)), fun hc => ?_, fun hc => absurd hc hncT⟩
         simp [renFn, LFuncDefined.toLFunc, hpre.noConstr.2 f hfp] at hc
       · obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hmf
         obtain ⟨hyS, hysrc, -⟩ := mem_specsByFnOf hy
@@ -928,23 +1019,26 @@ theorem newFn_source_decls {s : Transform.CoreTransformState} {p : Program} (hpr
         obtain ⟨f0, hf0, hname, hy2⟩ := copy_rec hysrc hcopy hp1
         obtain ⟨hlf, hfp⟩ := mk f0 hf0
         rw [hy2, ← hname]
+        have hncT : ¬ f0.toLFunc.isConstr = true := by
+          simp [LFuncDefined.toLFunc, hpre.noConstr.2 f0 hfp]
         refine ⟨f0.toLFunc, hlf, fnInstance_copy hg f0.toLFunc (hun _ (List.mem_append_right _
             hlf)) _
-          (hpre.typed.2 f0 hfp).1 (hpre.typed.2 f0 hfp).2, fun hc => ?_⟩
+          (hpre.typed.2 f0 hfp).1 (hpre.typed.2 f0 hfp).2, fun hc => ?_, fun hc => absurd hc hncT⟩
         simp [renFn, monomorphizeFunction, Lambda.LFuncDefined.applyTypeSubst,
           LFuncDefined.toLFunc, hpre.noConstr.2 f0 hfp] at hc
   | type t md =>
     simp only [topDecl, updDecl, List.mem_singleton] at hd'u
     subst hd'u
     have hlf : f' ∈ (p.decls.take i).flatMap declFns := mem_declPart_take hj hd0 hf'd
-    exact ⟨f', hlf, fnInstance_self f' (hun _ (List.mem_append_right _ hlf)), fun _ => rfl⟩
+    exact ⟨f', hlf, fnInstance_self f' (hun _ (List.mem_append_right _ hlf)),
+      fun _ => rfl, fun _ => rfl⟩
   | _ =>
     simp only [topDecl, updDecl, List.mem_singleton] at hd'u
     subst hd'u
     simp [declFns] at hf'd
 
 /-- Every function of the output's runtime factory before index `i` is an instance of a function
-    of the input's, and the same constructor if it is a constructor. -/
+    of the input's, and the same constructor if either is a constructor. -/
 theorem newFn_source {s : Transform.CoreTransformState} {p : Program} (hpre : MonoPre s p)
     {P : PolymorphicFuncDecls} {g : CoreIdent → Option LMonoTy → CoreIdent} (hg : RenOK g)
     {st : MonoWorklistState}
@@ -956,7 +1050,7 @@ theorem newFn_source {s : Transform.CoreTransformState} {p : Program} (hpre : Mo
         (((p.decls.map (topDecl g)).zipIdx.take i).flatMap
           (updDecl g (specsByFnOf st.specializedFnsInProg)))) :
     ∃ lf ∈ contributed s.factory (p.decls.take i), FnInstance lf f' ∧
-      (f'.isConstr = true → f' = lf) := by
+      ((f'.isConstr = true → f' = lf) ∧ (lf.isConstr = true → f' = lf)) := by
   rcases List.mem_append.mp hf' with hb | hd
   · obtain ⟨lf, hlf, h1, h2⟩ := newFn_source_base hpre hg hinv i hb
     exact ⟨lf, List.mem_append_left _ hlf, h1, h2⟩
