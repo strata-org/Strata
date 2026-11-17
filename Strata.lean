@@ -34,7 +34,6 @@ import Strata.Languages.Core.SeqModel
 import Strata.Languages.Core.SMTEncoderProps
 import Strata.Languages.Core.SMTEmitter
 import Strata.Languages.Core.StatementProps
-import Strata.Languages.Core.AxiomsBeforeProcedure
 import Strata.Languages.Core.StatementSemantics
 import Strata.Languages.Core.SarifOutput
 import Strata.Languages.Core.WFProps
@@ -46,6 +45,7 @@ import Strata.Transform.CoreSpecification
 import Strata.Transform.CoreSpecificationProps
 import Strata.Languages.Core.Analysis.ProcedureCorrectness
 import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
+import Strata.Languages.Core.Analysis.ProcedureCorrectnessHoareConnection
 import Strata.Languages.Core.Analysis.DeductiveVerification
 import Strata.Languages.Core.Analysis.DeductiveVerificationProps
 import Strata.Languages.Core.Analysis.FragmentFactory

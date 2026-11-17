@@ -9,7 +9,7 @@ import StrataTest.Languages.Core.Tests.Logic.HoareUtils
 import Strata.Languages.Core.Logic.HoareCall
 import Strata.Languages.Core.ProcedureProps
 import Strata.Languages.Core.ProgramProps
-import Strata.Transform.CoreSpecificationProps
+import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Strata.Languages.Core.BitVecEvalProps
 import Strata.Languages.Core.InstWellFormedSemanticsEval
 import Strata.DL.Lambda.LExprEvalProps

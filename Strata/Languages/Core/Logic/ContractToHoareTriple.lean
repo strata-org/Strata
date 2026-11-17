@@ -8,7 +8,7 @@ module
 public import Strata.Languages.Core.Logic.FactoryInterp
 public import Strata.Languages.Core.Logic.HoareUnstructured
 public import Strata.Languages.Core.Program
-public import Strata.Languages.Core.AxiomsBeforeProcedure
+public import Strata.Languages.Core.Analysis.ProcedureCorrectness
 import Strata.DL.Lambda.LExprType
 import all Strata.Languages.Core.Logic.Hoare
 

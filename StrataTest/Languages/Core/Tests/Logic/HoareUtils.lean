@@ -41,6 +41,9 @@ about these fixtures belong in the library's `*Props` files.
   output on it are decided by the kernel), and `intMono`, `intLTy`, `v`.
 * Store and contract facts: `Pinned`, `intOf`, the condition `ge0`, its value (`ge0_eval`) and
   the contract facts it gives (`nonneg_of_pre`, `post_ge0`).
+* Empty bodies: `blockWF_nil`, `run_procBlock_nil` and `reachable_nil` run an empty body, and
+  `oldInoutAsPredicate_of_no_inout`, `preAsPredicate_of_no_pre` discharge the parts of a
+  contract precondition a procedure has no clause for.
 * The `covered` tactic for the `exitsCoveredByBlocks` side condition of the sequencing rule.
 -/
 
@@ -59,6 +62,8 @@ namespace Strata.HoareUtils
 @[expose] def eraseProgLocs (pr : Core.Program) : Core.Program :=
   { pr with decls := pr.decls.map fun d => match d with
       | .proc proc md => .proc (Core.Procedure.mapExprs Core.eraseLocs proc) md
+      | .ax a md => .ax { a with e := Core.eraseLocs a.e } md
+      | .distinct name es md => .distinct name (es.map Core.eraseLocs) md
       | other => other }
 
 /-- Translate a DDM concrete-syntax program to the Core AST, with expression source
@@ -205,6 +210,60 @@ theorem post_ge0 {proc : Core.Procedure} {ρ : Env Core.Expression} {x : Core.Ex
   change Core.Expression.eval ρ.factory ρ.store check.expr = some (HasBool.ttVal ρ.factory)
   rw [hpost _ hmem, ge0_eval hp hx, decide_eq_true hk]
   rfl
+
+/-! ## Empty bodies and contracts without clauses
+
+What the tests that refute a contract need of an empty body: it runs, from any
+well-formed environment over `Core.Factory`, back to that environment with no event. -/
+
+/-- The block condition is immediate for an empty body: every clause that mentions
+    the statements is vacuous, a runtime factory over `Core.Factory` is well-formed, and
+    the store holds only values. -/
+theorem blockWF_nil (ρ : Imperative.Env Core.Expression)
+    (hfac : ρ.factory.factory = Core.Factory)
+    (hsv : Imperative.WellFormedStore ρ.store ρ.factory) :
+    Core.Logic.BlockInitEnvWF testParams [Imperative.Stmt.block "" [] #[]] ρ :=
+  Core.Logic.blockInitEnvWF_procBlock_nil (Core.coreFactory_WellFormedSemanticEval _ hfac)
+    hsv rfl (fun _ _ => rfl)
+
+/-- An empty body, wrapped as the procedure block a body actually runs in, returns to
+    its own environment: entering and leaving the block projects the store through
+    itself.  Stated over the *event* step relation, the run emits no events. -/
+theorem run_procBlock_nil (π : String → Option Core.Procedure)
+    (ρ : Imperative.Env Core.Expression) (l : String)
+    (md : Imperative.MetaData Core.Expression) :
+    Imperative.StepStmtStarE Core.Expression (Core.EvalCommandE π)
+      (.stmts [Imperative.Stmt.block l [] md] ρ) [] (.terminal ρ) := by
+  have heq : ({ ρ with store := Imperative.projectStore ρ.store ρ.store }
+      : Imperative.Env Core.Expression) = ρ := by
+    simp [Imperative.projectStore_self]
+  refine .step _ [] _ [] _ .step_stmts_cons ?_
+  refine .step _ [] _ [] _ (.step_seq_inner .step_block) ?_
+  refine .step _ [] _ [] _ (.step_seq_inner (.step_block_body .step_stmts_nil)) ?_
+  refine .step _ [] _ [] _ (.step_seq_inner .step_block_done) ?_
+  refine .step _ [] _ [] _ .step_seq_done ?_
+  rw [heq]
+  exact .step _ [] _ [] _ .step_stmts_nil (.refl _)
+
+/-- The empty trace is reachable. -/
+theorem reachable_nil (F : Lambda.Factory Core.CoreLParams) :
+    Trace.Reachable Core.Expression (Core.Logic.DenoteBasedInterp F) [] :=
+  ⟨someValuation F, fun _ hc => absurd hc (by simp)⟩
+
+/-- A procedure with no inout parameters satisfies `oldInoutAsPredicate` vacuously: its
+    `getInoutParams` keys are empty, so there is no `old`/current pair to relate. -/
+theorem oldInoutAsPredicate_of_no_inout (proc : Core.Procedure)
+    (ρ : Imperative.Env Core.Expression)
+    (h : ListMap.keys proc.header.getInoutParams = []) :
+    Core.Logic.Hoare.Procedure.oldInoutAsPredicate proc ρ := by
+  intro id hid; rw [h] at hid; simp at hid
+
+/-- A procedure with no `requires` satisfies the semantic precondition vacuously. -/
+theorem preAsPredicate_of_no_pre (factory : Lambda.Factory Core.CoreLParams)
+    (proc : Core.Procedure) (ρ : Imperative.Env Core.Expression)
+    (h : proc.spec.preconditions.toList = []) :
+    Core.Logic.Hoare.Procedure.preAsPredicate factory proc ρ := by
+  intro label check hmem; rw [h] at hmem; simp at hmem
 
 /-! ## Tactics -/
 

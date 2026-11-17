@@ -6,7 +6,6 @@
 module
 
 public import Strata.Languages.Core.StatementSemantics
-public import Strata.Languages.Core.AxiomsBeforeProcedure
 public import Strata.Languages.Core.Logic.LangDef
 public import Strata.Transform.Specification
 public import Strata.Languages.Core.WF
@@ -22,10 +21,11 @@ public section
 
 /-! # Core-Level Specification
 
-The entry conditions of a Core procedure: `ProcEnvWF`, the well-formed program
-state at its entry, and `AxiomsBeforeProcedureDecl`, the axioms and distincts
-visible to it (defined in `Strata.Languages.Core.AxiomsBeforeProcedure`). What it means for a procedure to be correct, and for Core's
-verifier to be correct, is in `Strata.Languages.Core.Analysis.ProcedureCorrectness`.
+The entry condition of a Core procedure: `ProcEnvWF`, the well-formed program
+state at its entry. The axioms and distincts visible to a procedure
+(`AxiomsBeforeProcedureDecl`), what it means for a procedure to be correct, and for
+Core's verifier to be correct, are in
+`Strata.Languages.Core.Analysis.ProcedureCorrectness`.
 The `EventLang` bundles themselves (`EventLang.core`, `EventLang.coreBlock`,
 `EventLang.coreCFG`) and their gates (`InitEnvWFParams`, `InitEnvWF`,
 `BlockInitEnvWF`, `CFGInitEnvWF`) live in `Strata.Languages.Core.Logic.LangDef`.

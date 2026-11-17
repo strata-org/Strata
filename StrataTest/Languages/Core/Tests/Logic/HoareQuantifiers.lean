@@ -10,7 +10,7 @@ import Strata.Languages.Core.Logic.Hoare
 import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 import Strata.Languages.Core.ProgramProps
-import Strata.Transform.CoreSpecificationProps
+import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Strata.Languages.Core.InstWellFormedSemanticsEval
 import Strata.DL.Lambda.Denote.LExprAnnotated
 import Strata.Languages.Core.Logic.TraceInterpUsingDenote

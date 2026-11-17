@@ -11,7 +11,7 @@ import Strata.Languages.Core.IntEvalProps
 import Strata.Languages.Core
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 import Strata.Languages.Core.ProgramProps
-import Strata.Transform.CoreSpecificationProps
+import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Strata.Languages.Core.Logic.HoareCall
 import Strata.DL.Imperative.CFGSemanticsProps
 import Strata.DL.Imperative.Logic.HoareTemplate

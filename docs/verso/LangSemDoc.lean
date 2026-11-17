@@ -598,8 +598,8 @@ a proved `Procedure.contractTriple` gives the contract part of that property
 (`contract_of_contractTriple`).
 `StrataTest/Languages/Core/Tests/Logic/Hoare.lean` has examples of Hoare triples
 derived from procedure contracts and their proofs, and
-`StrataTest/Languages/Core/Tests/Logic/HoareAxioms.lean` has a contract that holds
-by an axiom.
+`StrataTest/Languages/Core/Tests/Logic/HoareAxioms.lean` has contracts that rest on
+an axiom or a `distinct` declaration.
 
 ## Satisfiability and Validity of Assertions
 
