@@ -834,7 +834,7 @@ info: some { finished := 2, stopped := 0, unmatchedExits := 0, obligations := 2,
 #eval mergeSummary (.pathsAbove 2) nested
 /-- A join view with `pending` pending paths. -/
 private def view (pending : Nat) : JoinView :=
-  { proc := "", depth := 0, pending := pending, finished := 0, differing := 0 }
+  { proc := "", depth := 0, pending := pending, finished := 0, differing := Thunk.pure 0 }
 #guard ((MergeMode.ofString? "merge-above:3").map fun m => (MergePolicy.ofMode m (view 1),
   MergePolicy.ofMode m (view 4))) == some (false, true)
 #guard (MergeMode.ofString? "per-path").map (MergePolicy.ofMode · (view 0)) == some false
@@ -1134,15 +1134,24 @@ procedure P(x : int, b0 : bool, b1 : bool, b2 : bool, b3 : bool,
   (r.finished, r.obligations.length, r.reached.fold (fun n _ mds => n + mds.size) 0,
     r.reached.size, r.unreached.map (·.label))
 
-/-! ## Joins open only at forks of the form merging assumes
+/-! ## Merging needs the path conditions the engine builds
 
-Merging assumes that each side of a fork adds exactly one entry to the path condition: the guard
-on the then-branch and its negation on the else-branch (`mergeEnvs_pc`). The explorer opens a join
-only at such a fork. Below, a step that adds one more entry at each fork (`extraAtFork`) gets no
-join, so its two paths are not merged. -/
+A merge is correct only if, at the join, the then-branch's path condition is the fork's path
+condition plus the guard (and whatever the branch assumed after it), and the else-branch's is the
+fork's path condition plus the negated guard (and the same). The engine always builds them that
+way, so no Core program can break it. To test that the explorer refuses to merge when they are
+built differently, each test below replaces the engine's step by one that tampers with the path
+condition, and runs `twoBranches`:
 
-/-- `structuredShape`, except that at a fork each side's path condition gets one more entry,
-    `extra: true`, after the guard. -/
+```
+if (x > 0) { r := 1 } else { r := 2 }; assert r > 0
+```
+
+Each run reports (paths finished, merges): `(1, 1)` means the two branches merged into one path,
+`(2, 0)` that they stayed apart. -/
+
+/-- The engine's step, except that at the fork each side's path condition gets a second new fact,
+    `extra: true`, on top of the guard. -/
 private def extraAtFork : ProcBodyShape {} (StmtConfig {}) :=
   { structuredShape {} with
     step := fun fuel c cfg st =>
@@ -1151,9 +1160,35 @@ private def extraAtFork : ProcBodyShape {} (StmtConfig {}) :=
         outs.map fun (o, st') => (o, { st' with pc := ("extra", Core.true) :: st'.pc })
       else outs }
 
-/-- `twoBranches`'s body run by `sh` under `merged` from a store binding `x` and `r` to
-    symbols: the paths finished and the merges. -/
-private def runShape (sh : ProcBodyShape {} (StmtConfig {})) : Option (Nat × Nat) :=
+/-- The engine's step, except that at the fork both sides' oldest fact (the one the fork started
+    with) is replaced by `pre: false`. Each side still has exactly one new fact, so the lengths
+    look right, but the part both share is no longer the fork's path condition. -/
+private def tailAtFork : ProcBodyShape {} (StmtConfig {}) :=
+  { structuredShape {} with
+    step := fun fuel c cfg st =>
+      let outs := (structuredShape {}).step fuel c cfg st
+      if outs.length == 2 then
+        outs.map fun (o, st') => (o, { st' with pc := st'.pc.dropLast ++ [("pre", Core.false)] })
+      else outs }
+
+/-- The engine's step, except that after the fork, on the else-branch only, each step replaces
+    the oldest fact by `pre: false`. The fork itself looks right, so the join opens; at the join
+    the two branches no longer share the fork's facts. -/
+private def rewriteBaseOnElse : ProcBodyShape {} (StmtConfig {}) :=
+  { structuredShape {} with
+    step := fun fuel c cfg st =>
+      let outs := (structuredShape {}).step fuel c cfg st
+      -- The engine labels the else-branch's entry `<label_ite_cond_false: ...>`
+      -- (`forkEffects`, SymExec.lean).
+      let onElse := (st.pc.head?.map (·.1.startsWith "<label_ite_cond_false")).getD false
+      if onElse then
+        outs.map fun (o, st') => (o, { st' with pc := st'.pc.dropLast ++ [("pre", Core.false)] })
+      else outs }
+
+/-- `twoBranches`'s body run by `sh` under the policy `pol` from a store binding `x` and `r` to
+    symbols and the path condition `pc`. -/
+private def runShapeResult (sh : ProcBodyShape {} (StmtConfig {}))
+    (pc : List (String × Expression.Expr) := []) (pol : MergePolicy := .always) : Option Result :=
   letI := symLang {}
   twoBranches.bind fun p => match p.body with
     | .structured ss =>
@@ -1161,15 +1196,53 @@ private def runShape (sh : ProcBodyShape {} (StmtConfig {})) : Option (Nat × Na
         (mkSym "$__s" 0 .int "x") |>.update (⟨"r", ()⟩ : CoreIdent) (mkSym "$__s" 1 .int "r")
       let env : IEnv Expression := { store := σ, factory := Core.Factory }
       let start : Entry (StmtConfig {}) :=
-        { cfg := .stmts ss env, st := { next := 2 }, node := 0, budget := 1000 }
-      let r := explore sh 10000 start (MergePolicy.ofMode .always)
-      some (r.finished, r.merges)
+        { cfg := .stmts ss env, st := { next := 2, pc }, node := 0, budget := 1000 }
+      some (explore sh 10000 start pol)
     | .cfg _ => none
 
--- The structured shape merges the two branches: one path.
+/-- `runShapeResult`'s paths finished and merges. -/
+private def runShape (sh : ProcBodyShape {} (StmtConfig {}))
+    (pc : List (String × Expression.Expr) := []) (pol : MergePolicy := .always) :
+    Option (Nat × Nat) :=
+  (runShapeResult sh pc pol).map fun r => (r.finished, r.merges)
+
+-- The engine's own step merges, starting from no facts and from one fact `pre: true`.
 #guard runShape (structuredShape {}) == some (1, 1)
--- With an extra entry at the fork, no join opens: two paths, no merge.
+#guard runShape (structuredShape {}) [("pre", Core.true)] == some (1, 1)
+-- Two new facts per side at the fork: the explorer opens no join, so no merge.
 #guard runShape extraAtFork == some (2, 0)
+-- Shared facts changed at the fork: no join opens (`openJoin`), so no merge.
+#guard runShape tailAtFork [("pre", Core.true)] == some (2, 0)
+-- Shared facts changed later on one branch: the join opens, the merge refuses
+-- (`mergeShapeOk`), so the branches stay apart.
+#guard runShape rewriteBaseOnElse [("pre", Core.true)] == some (2, 0)
+
+/-! ## A step with no outcome
+
+If a step returns no outcome, the path stops, so the run is reported as not analysed instead of
+complete. -/
+
+/-- The engine's step, except that it returns no outcome. -/
+private def noOutcome : ProcBodyShape {} (StmtConfig {}) :=
+  { structuredShape {} with step := fun _ _ _ _ => [] }
+
+/--
+info: some (Core.SymExec.Completeness.notAnalyzed
+  ["a path stopped: run interrupted: a step had no outcome"])
+-/
+#guard_msgs (whitespace := lax) in
+#eval (runShapeResult noOutcome).map (·.completeness)
+
+/-! ## A merge policy that reads how many variables differ
+
+The policy is asked before the merge is computed; the number of variables whose values differ
+(`JoinView.differing`) is computed only if the policy reads it. In `twoBranches`, one variable,
+`r`, differs (1 against 2). -/
+
+-- At most 0 differing variables: no merge.
+#guard runShape (structuredShape {}) (pol := fun v => v.differing.get ≤ 0) == some (2, 0)
+-- At most 1: merge.
+#guard runShape (structuredShape {}) (pol := fun v => v.differing.get ≤ 1) == some (1, 1)
 
 end SymExecTest
 

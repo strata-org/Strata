@@ -170,6 +170,49 @@ theorem beqIgnoringMetadata_refl {T : LExprParamsT} [BEq T.TypeType] [LawfulBEq 
     LExpr.beqIgnoringMetadata e e = true := by
   induction e <;> simp_all [LExpr.beqIgnoringMetadata]
 
+/-- Expressions equal when metadata is ignored (`LExpr.beqIgnoringMetadata`) have equal
+    metadata erasures. -/
+theorem eraseMetadata_eq_of_beqIgnoringMetadata {T : LExprParamsT} [BEq T.TypeType]
+    [LawfulBEq T.TypeType] [BEq (Identifier T.base.IDMeta)] [LawfulBEq (Identifier T.base.IDMeta)] :
+    ∀ {a b : LExpr T}, a.beqIgnoringMetadata b = true →
+      a.eraseMetadata = b.eraseMetadata := by
+  intro a
+  induction a with
+  | const | op | bvar | fvar =>
+    intro b h
+    cases b <;>
+      simp_all [LExpr.beqIgnoringMetadata, LExpr.eraseMetadata, LExpr.replaceMetadata]
+  | abs m n ty e ih =>
+    intro b h
+    cases b <;> simp only [LExpr.beqIgnoringMetadata, Bool.and_eq_true, beq_iff_eq,
+      reduceCtorEq] at h
+    obtain ⟨⟨rfl, rfl⟩, h⟩ := h
+    have := ih h; simp only [LExpr.eraseMetadata] at this
+    simp [LExpr.eraseMetadata, LExpr.replaceMetadata, this]
+  | quant m k n ty tr e iht ihe =>
+    intro b h
+    cases b <;> simp only [LExpr.beqIgnoringMetadata, Bool.and_eq_true, beq_iff_eq,
+      reduceCtorEq] at h
+    obtain ⟨⟨⟨⟨rfl, rfl⟩, rfl⟩, h1⟩, h2⟩ := h
+    have h1 := iht h1; have h2 := ihe h2; simp only [LExpr.eraseMetadata] at h1 h2
+    simp [LExpr.eraseMetadata, LExpr.replaceMetadata, h1, h2]
+  | app m f x ihf ihx =>
+    intro b h
+    cases b <;> simp only [LExpr.beqIgnoringMetadata, Bool.and_eq_true, reduceCtorEq] at h
+    have h1 := ihf h.1; have h2 := ihx h.2; simp only [LExpr.eraseMetadata] at h1 h2
+    simp [LExpr.eraseMetadata, LExpr.replaceMetadata, h1, h2]
+  | ite m c t e ihc iht ihe =>
+    intro b h
+    cases b <;> simp only [LExpr.beqIgnoringMetadata, Bool.and_eq_true, reduceCtorEq] at h
+    have h1 := ihc h.1.1; have h2 := iht h.1.2; have h3 := ihe h.2
+    simp only [LExpr.eraseMetadata] at h1 h2 h3
+    simp [LExpr.eraseMetadata, LExpr.replaceMetadata, h1, h2, h3]
+  | eq m x y ihx ihy =>
+    intro b h
+    cases b <;> simp only [LExpr.beqIgnoringMetadata, Bool.and_eq_true, reduceCtorEq] at h
+    have h1 := ihx h.1; have h2 := ihy h.2; simp only [LExpr.eraseMetadata] at h1 h2
+    simp [LExpr.eraseMetadata, LExpr.replaceMetadata, h1, h2]
+
 end LExpr
 
 /-- Two lists are pointwise equal up to metadata iff their metadata erasures are equal. -/

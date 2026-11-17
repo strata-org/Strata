@@ -10,6 +10,7 @@ public import Strata.Languages.Core.StatementEval
 public import Strata.Languages.Core.Options
 public import Strata.DL.Imperative.InterpreterCFG
 public import Strata.DL.Imperative.CFGDominators
+public import Strata.Languages.Core.WF
 public import Std.Data.HashSet
 
 /-! # The path explorer
@@ -25,8 +26,9 @@ That lets the explorer
   `MergePolicy` (any Lean function of a `JoinView`) decide whether to merge them (`placeF`,
   `joinBranchesF`, `mergeBranches`, `mergeEnvs`). The branches meet at the end of an `if`, or,
   when one branch always exits, at the end of the labelled block that catches its `exit`s; in a
-  CFG with no cycle, at the first block both successors of the forking block reach; in a CFG
-  with a cycle, at the forking block's immediate post-dominator (`cfgShape` has the details);
+  CFG with no cycle, at the block of those both successors of the forking block reach that has
+  no predecessor among them (a path may bypass it); in a CFG with a cycle, at the forking block's
+  immediate post-dominator (`cfgShape` has the details);
 * record the `assert`s and `cover`s that no path reaches in `Result.unreached`. A check is told
   apart by its label and metadata (`Imperative.AssertId`), and the run records the checks some
   path reaches (`Result.reached`). A check in an `if` branch that no path entered at a decided
@@ -184,13 +186,14 @@ structure JoinView where
   pending : Nat
   /-- Paths that have finished so far. -/
   finished : Nat
-  /-- Variables whose values differ between the two branches. -/
-  differing : Nat
+  /-- Variables whose values differ between the two branches, computed only if the policy reads
+      it; 0 if the branches cannot be merged. -/
+  differing : Thunk Nat
 
-/-- Decides, at a join, whether to merge the two branches. It is consulted only where the
-    branches can be merged: each branch reached the join as a single path (none left the
-    branches, stopped, or forked without merging) and both bind the same variables once each
-    has left out what it brings to no merge (`ProcBodyShape.forMerge`). -/
+/-- Decides, at a join, whether to merge the two branches. It is consulted where each branch
+    reached the join as a single path (none left the branches, stopped, or forked without
+    merging), before the merge is computed; the branches are merged only if it agrees and they
+    can be merged (`mergeBranches`). -/
 abbrev MergePolicy := JoinView → Bool
 
 /-- Never merge: one path per way through the procedure (per-path obligations). -/
@@ -257,8 +260,11 @@ structure ProcBodyShape (scfg : ExploreCfg) (C : Type) where
   ended : C → Option NodeStatus
   /-- Where the branches meet if the step at this configuration forks into two continuing
       paths, given the path's innermost open join (`none` if it has none); `none` if such a
-      fork opens no join. A path's open joins are innermost first, and each lies at or inside
-      the next one: `placeF` tests only the innermost. -/
+      fork opens no join. A path's open joins are innermost first. `placeF` tests only the
+      innermost, which suffices when each lies at or inside the next one, as in structured
+      bodies and acyclic CFGs (`cfgShape` clamps a join to the innermost open one). In a CFG
+      with a cycle a path can reach an outer join while an inner one is open; it is not stopped
+      there, so the outer fork's branches are not merged. -/
   forkSite : Option JoinSite → C → Option JoinSite
   /-- Whether a path at this configuration has reached the join at the site. -/
   atJoin : JoinSite → C → Bool
@@ -366,7 +372,9 @@ private def deadBranchObls {scfg : ExploreCfg} (c : StmtConfig scfg)
       | .ok c' => match deepest c' with | .stmts l _ => some l | _ => none
       | _ => none
     if taken.isEmpty then [] else
-    let dead := [t, e].filter (fun branch => !taken.contains branch)
+    -- A taken branch's statements are normally the `if`'s own list, so `ptrFastEq` usually
+    -- decides by pointer identity.
+    let dead := [t, e].filter (fun branch => !taken.any (ptrFastEq · branch))
     let pc := (toString f!"<dead_branch: {g.eraseTypes}>", Core.false) :: pc
     dead.flatMap fun branch =>
       (Statement.Statements.collectCovers branch).map (fun (label, md) =>
@@ -485,23 +493,22 @@ def structuredShape (scfg : ExploreCfg) : ProcBodyShape scfg (StmtConfig scfg) :
 abbrev BlockConfig (scfg : ExploreCfg) : Type :=
   @ICFGConfig String Command Expression (symLang scfg)
 
-/-- The variables block `b` declares (`init`). -/
-def blockInits (b : DetBlock String Command Expression) : List CoreIdent :=
-  b.cmds.filterMap fun
-    | .cmd (.init x _ _ _) => some x
-    | _ => none
-
 /-- The locals declared in the blocks of `decls` (each block's label with the variables it
-    declares) that do not dominate block `j`, given the dominators `dom` (`computeDominators`). -/
+    declares) that no block dominating block `j` declares, given the dominators `dom`
+    (`computeDominators`). A local declared both in a block that dominates `j` and in one that
+    does not is still in scope at `j`. -/
 private def localsOutOfScope (dom : Std.HashMap String (List String))
     (decls : List (String × List CoreIdent)) (j : String) : List CoreIdent :=
   if decls.isEmpty then [] else
   let doms : Std.HashSet String := .ofList (dom.getD j [])
-  decls.flatMap fun (d, xs) => if doms.contains d then [] else xs
+  let kept : Std.HashSet CoreIdent :=
+    .ofList (decls.flatMap fun p => bif doms.contains p.1 then p.2 else [])
+  decls.flatMap fun p => bif doms.contains p.1 then [] else p.2.filter (!kept.contains ·)
 
-/-- The first block both successors `t` and `e` of a fork reach: with `R` the blocks both reach
+/-- Where the branches of a fork to `t` and `e` first meet: with `R` the blocks both reach
     (each counting as reaching itself), the one block of `R` none of whose predecessors (`preds`)
-    is in `R`; `none` if `R` has no such block or several. `succs` and `preds` are the CFG's
+    is in `R`; `none` if `R` has no such block or several. A path from `t` or `e` may bypass
+    it. `succs` and `preds` are the CFG's
     successor and predecessor maps, `n` its number of blocks. -/
 private def firstCommonBlock (succs preds : Std.HashMap String (List String)) (n : Nat)
     (t e : String) : Option String :=
@@ -543,7 +550,8 @@ private def nestJoin (reaches : String → String → Bool) (acyclic : Bool) (he
 /-- CFG configurations of the CFG `g`: `stepInterpCFG` steps. Where a fork at the end of block
     `B`, with successors `t` and `e`, joins:
 
-    * In an acyclic CFG, at the first block both `t` and `e` reach (`firstCommonBlock`), or, if
+    * In an acyclic CFG, at the one block of those both `t` and `e` reach that has no
+      predecessor among them (`firstCommonBlock`; a path from `t` or `e` may bypass it), or, if
       there is no single such block, at `B`'s immediate post-dominator (`computePostIdoms`).
       A join never lies outside the path's innermost open join: if the chosen block neither is
       that join's block nor reaches it, the fork joins at that join's block instead, so each
@@ -553,15 +561,15 @@ private def nestJoin (reaches : String → String → Bool) (acyclic : Bool) (he
       by ending.
     * A fork for which neither rule gives a block opens no join.
 
-    At a merge at block `J`, each branch leaves out the locals declared in blocks that do not
-    dominate `J` (`computeDominators`): the CFG type checker (`CFG.typeCheck`) scopes each local
-    to the blocks its declaring block dominates and refuses a declaration on a cycle, so no
-    step from `J` on reads them. -/
+    At a merge at block `J`, each branch leaves out the locals that no block dominating `J`
+    declares (`computeDominators`): the CFG type checker (`CFG.typeCheck`) scopes each local to
+    the blocks its declaring block dominates and refuses a declaration on a cycle, so no step
+    from `J` on reads them. -/
 def cfgShape (scfg : ExploreCfg) (g : Core.DetCFG) : ProcBodyShape scfg (BlockConfig scfg) :=
   letI := symLang scfg
   let ipdoms := g.computePostIdoms
   let dom := g.computeDominators
-  let decls := (g.blocks.map fun (d, b) => (d, blockInits b)).filter (!·.2.isEmpty)
+  let decls := (g.blocks.map fun (d, b) => (d, WF.blockInitVars b)).filter (!·.2.isEmpty)
   -- Per block, the locals a merge there leaves out, computed at the first merge there.
   let outAt : Std.HashMap String (Thunk (List CoreIdent)) := g.blocks.foldl
     (fun m (j, _) => m.insert j (Thunk.mk fun _ => localsOutOfScope dom decls j)) {}
@@ -625,6 +633,33 @@ def mergeChoices (j : Join) (ma mb : List Choice) : List Choice :=
   | [], [] => base
   | ta, tb => .merge j.guard ta tb :: base
 
+/-- Whether `ng` is `negate g`, comparing `g` by pointer first (`ptrFastEq`) instead of
+    building `negate g`. -/
+private def isNegationOf (ng g : Expression.Expr) : Bool :=
+  match ng with
+  | .ite m c t e =>
+    ptrFastEq c g && ptrFastEq m symExecLoc && ptrFastEq t Core.false && ptrFastEq e Core.true
+  | _ => false
+
+/-- Whether the path conditions of the two branches of fork `j` still have the form merging
+    relies on (`mergeEnvs_pc`): the then-branch's ends in `(_, j.guard) :: base` and the
+    else-branch's in `(_, negate j.guard) :: base`, with one `base` of length `j.basePcLen` (at
+    a join the explorer opened, the fork's path condition). The length test on `base` also
+    rejects a path condition shorter than `j.basePcLen + 1`, which `drop` would keep whole. Both
+    bases are normally one list, so `ptrFastEq` usually decides them by pointer identity.
+
+    The engine's steps only add entries at the front of a path condition (`forkEffects`), so this
+    holds at every join the explorer opens. A step that changed an entry already there, even to
+    an equivalent one, would make it fail: the two branches then continue as separate paths,
+    each with its own path condition, so merging is lost but no result changes. -/
+private def mergeShapeOk (j : Join) (sa sb : PathState) : Bool :=
+  match sa.pc.drop (sa.pc.length - (j.basePcLen + 1)),
+      sb.pc.drop (sb.pc.length - (j.basePcLen + 1)) with
+  | (_, ga) :: ba, (_, gb) :: bb =>
+    ba.length == j.basePcLen && ptrFastEq ga j.guard && isNegationOf gb j.guard &&
+      ptrFastEq ba bb
+  | _, _ => false
+
 /-- Merge the environments `ea` (then-branch, path state `sa`) and `eb` (else-branch, path
     state `sb`) of the two branches of fork `j` at its join: values that differ, ignoring source
     locations (`LExpr.beqIgnoringMetadata`), become `if g then va else vb`; the path condition
@@ -632,12 +667,13 @@ def mergeChoices (j : Join) (ma mb : List Choice) : List Choice :=
     by `g` (then-branch `if g then e else true`, else-branch
     `if g then true else e`) and keeping their labels; the record of choices keeps both
     branches' (`mergeChoices`). Returns the merged environment and path state, and the number of
-    differing variables. `none` if the branches bind different variables, or if either
-    branch's path condition is shorter than the shared prefix plus the fork's guard entry. -/
+    differing variables. `none` if the branches bind different variables, or if their path
+    conditions do not have the form `mergeShapeOk` checks. -/
 def mergeEnvs {scfg : ExploreCfg} (j : Join) (ea eb : @IEnv Expression (symLang scfg))
     (sa sb : PathState) : Option (@IEnv Expression (symLang scfg) × PathState × Nat) :=
   letI := symLang scfg
-  if sa.pc.length < j.basePcLen + 1 || sb.pc.length < j.basePcLen + 1 then none else
+  if sa.pc.length < j.basePcLen + 1 || sb.pc.length < j.basePcLen + 1 || !mergeShapeOk j sa sb
+  then none else
   let wa : StoreWrites := ea.store.writes
   let wb : StoreWrites := eb.store.writes
   let keys := (wa.keys ++ wb.keys).eraseDups
@@ -745,14 +781,16 @@ private def joinBranchesF {scfg : ExploreCfg} {C : Type} (sh : ProcBodyShape scf
     | some jp, some jq =>
       let (a, b) := if jp.side then (p, q) else (q, p)
       if jp.side == jq.side then release s else
-      match mergeBranches sh jp a b with
+      let merged := Thunk.mk fun _ => mergeBranches sh jp a b
+      -- `s.waitingCount` excludes `ps`: their fork's entry is cleared above.
+      let view : JoinView := { proc, depth := a.joins.length - 1,
+                               pending := s.work.length + s.waitingCount,
+                               finished := s.finished,
+                               differing := Thunk.mk fun _ => (merged.get.map (·.2)).getD 0 }
+      if !pol view then release s else
+      match merged.get with
       | none => release s
-      | some (m, differing) =>
-        -- `s.waitingCount` excludes `ps`: their fork's entry is cleared above.
-        let view : JoinView := { proc, depth := m.joins.length,
-                                 pending := s.work.length + s.waitingCount,
-                                 finished := s.finished, differing }
-        if !pol view then release s else
+      | some (m, _) =>
         let i := s.nodes.size
         let nodes := s.nodes.push { parent := none, cond := none, startPc := m.st.pc }
         let nodes := setStatus (setStatus nodes a.node .joined) b.node .joined
@@ -842,16 +880,17 @@ private def openJoin {scfg : ExploreCfg} {C : Type} (sh : ProcBodyShape scfg C) 
   let inBranches := e.joins.foldl (fun l j => l.modify j.fork (· + (outs.length - 1)))
     s.inBranches
   let s := { s with inBranches }
-  -- A join opens only where merging's assumption holds (`mergeEnvs_pc`): each side's path
-  -- condition is the entry's with one entry added, the guard `g` on the then-branch and
-  -- `negate g` on the else-branch. At any other fork the two paths are not merged.
-  let base := e.st.pc.length
+  -- A join opens only at a fork whose two paths a merge could accept (`mergeShapeOk`): each
+  -- side's path condition is the entry's with one entry added, the guard `g` on the
+  -- then-branch and `negate g` on the else-branch. At any other fork no join opens, so its paths
+  -- never wait for each other. Each tail is normally the entry's list itself, so `ptrFastEq`
+  -- usually decides it by pointer identity.
   let shaped? : Option Expression.Expr := match outs with
     | [(_, sa), (_, sb)] =>
       match sa.pc, sb.pc with
-      | (_, g) :: _, (_, ng) :: _ =>
-        if sa.pc.length == base + 1 && sb.pc.length == base + 1 &&
-            ng.beqIgnoringMetadata (negate g) then some g else none
+      | (_, g) :: ta, (_, ng) :: tb =>
+        if ptrFastEq ta e.st.pc && ptrFastEq tb e.st.pc && isNegationOf ng g then some g
+        else none
       | _, _ => none
     | _ => none
   if okCount != 2 then (s, fun _ => e.joins) else
@@ -886,7 +925,7 @@ private def placeInTree {C : Type} (nodes : Array Node) (e : Entry C) (outs : Ou
 def failedCheckStatus (scfg : ExploreCfg) (before : List (String × Expression.Expr))
     (st : PathState) : Option NodeStatus :=
   if !scfg.endOnFailedChecks then none else
-  let isFalse (e : Expression.Expr) : Bool := e.beqIgnoringMetadata Core.false
+  let isFalse (e : Expression.Expr) : Bool := LExpr.isFalse _ e
   match st.segment.reverse.find? (fun o => o.kind == .assert && isFalse o.cond) with
   | some o => some (.assertFailed o.label)
   | none =>
@@ -925,6 +964,11 @@ private def stepPath {scfg : ExploreCfg} {C : Type} (sh : ProcBodyShape scfg C) 
     | b + 1 =>
       let st0 := { e.st with segment := [], next := s.next }
       let outs := sh.step (b + 1) e.cfg scfg st0
+      -- A step with no outcome leaves the rest of the path unexplored: the path stops, which
+      -- makes the run incomplete (`NodeStatus.incompleteReason?`).
+      if outs.isEmpty then
+        endPath sh pol proc s e (.stopped (.interrupted "a step had no outcome"))
+      else
       let next := outs.foldl (fun n (_, st) => max n st.next) s.next
       let reached := outs.foldl (fun r (_, st) =>
         st.segment.foldl (fun r o => addCheck r (checkOf o)) r) s.reached
@@ -971,11 +1015,13 @@ private def procNames (p : Procedure) : List String :=
 /-- The CFG a run of a CFG body `g` executes: a new entry block running `pre` (the
     precondition assumes) and jumping to `g`'s entry, `g`'s blocks with every `finish` replaced
     by a jump to a new exit block, and that exit block, running `post` (the checked
-    postcondition asserts) and finishing. The new labels are not labels of `g`
-    (`Imperative.CFG.freshLabel`). -/
+    postcondition asserts) and finishing. The new labels are not labels, branch targets or the
+    entry of `g`, nor each other (`Strata.Name.freshName` over the keys of `predMap` and `g`'s
+    entry). -/
 private def wrapCFG (g : Core.DetCFG) (pre post : List Command) : Core.DetCFG :=
-  let entry := Imperative.CFG.freshLabel g.labels "$__symexec_entry"
-  let exit := Imperative.CFG.freshLabel (entry :: g.labels) "$__symexec_exit"
+  let used : Std.HashSet String := (Std.HashSet.ofList g.predMap.keys).insert g.entry
+  let entry := Strata.Name.freshName used "$__symexec_entry"
+  let exit := Strata.Name.freshName (used.insert entry) "$__symexec_exit"
   let blocks : List (String × DetBlock String Command Expression) := g.blocks.map fun (l, b) =>
     (l, match b.transfer with
       | .finish md => { b with transfer := .goto exit md }

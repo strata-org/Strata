@@ -213,7 +213,7 @@ def pcExprs (pc : List (String × Expression.Expr)) : List Expression.Expr := pc
     end the path: later checks are still recorded, under a path condition that implies `false`
     (an assert holds, a cover fails). -/
 def assumeCond (label : String) (c : Expression.Expr) : ForkM Unit := fun _ st =>
-  if c.beqIgnoringMetadata Core.true ||
+  if LExpr.isTrue _ c ||
       st.pc.any (fun (l, d) => l == label && d.beqIgnoringMetadata c) then [(.ok (), st)]
   else [(.ok (), { st with pc := (label, c) :: st.pc })]
 
