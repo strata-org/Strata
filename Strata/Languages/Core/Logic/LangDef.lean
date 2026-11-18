@@ -135,7 +135,7 @@ structure CFGInitEnvWF (params : InitEnvWFParams)
     Strata.Logic.EventLang Expression (Event Expression) :=
   Imperative.Logic.EventLang.imperativeE
     Expression Command (EvalCommandE π)
-    InitEnvWFParams InitEnvWF
+    InitEnvWF
 
 /-- Core event language for statement lists, gated by `BlockInitEnvWF`. -/
 @[expose] def EventLang.coreBlock
@@ -143,7 +143,7 @@ structure CFGInitEnvWF (params : InitEnvWFParams)
     Strata.Logic.EventLang Expression (Event Expression) :=
   Imperative.Logic.EventLang.imperativeBlockE
     Expression Command (EvalCommandE π)
-    ⟨InitEnvWFParams, BlockInitEnvWF⟩
+    BlockInitEnvWF
 
 /-- Core event language for deterministic CFG procedure bodies, gated by
 `CFGInitEnvWF`. -/
@@ -151,7 +151,7 @@ structure CFGInitEnvWF (params : InitEnvWFParams)
     (π : String → Option Procedure) :
     Strata.Logic.EventLang Expression (Event Expression) :=
   Imperative.Logic.EventLang.cfgE
-    Expression Command (EvalCommandE π) InitEnvWFParams CFGInitEnvWF
+    Expression Command (EvalCommandE π) CFGInitEnvWF
 
 end Core.Logic
 

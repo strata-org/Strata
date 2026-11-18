@@ -6,6 +6,10 @@
 module
 
 meta import Strata.Languages.Core
+meta import Strata.Transform.CallElim
+meta import Strata.Transform.ProcedureInlining
+meta import Strata.Transform.GenOpaqueTypeParams
+meta import Strata.Languages.Core.AbstractCalls
 import StrataDDM.Integration.Lean.HashCommands
 
 /-! # Program names with reserved prefixes
@@ -20,6 +24,14 @@ name is taken for a generated one.
 
 meta section
 namespace Strata.ReservedTypeNamesTest
+
+/-! The prefixes the Core passes generate are copied into `Lambda.reservedNamePrefixes`,
+which cannot import those passes; these checks keep the copies in sync. -/
+
+#guard Lambda.reservedNamePrefixes.contains Core.CallElim.callElimTyPrefix
+#guard Lambda.reservedNamePrefixes.contains Core.ProcedureInlining.inlineTyPrefix
+#guard Lambda.reservedNamePrefixes.contains Core.GenOpaqueTypeParams.freeTyPrefix
+#guard Lambda.reservedNamePrefixes.contains Core.abstractTyPrefix
 
 def typeCheckMessage (p : Core.Program) : String :=
   match _root_.Core.typeCheck .quiet p with

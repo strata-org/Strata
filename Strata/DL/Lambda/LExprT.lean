@@ -9,6 +9,7 @@ import all Strata.DL.Lambda.LExprWFProps
 public import Strata.DL.Lambda.LExprTypeEnv
 import all Strata.DL.Lambda.LExprTypeEnv
 import all Strata.DL.Lambda.LExprWF
+import Strata.DL.Lambda.LTyUnifyProps
 
 /-! ## Type Inference Transform for Lambda Expressions.
 

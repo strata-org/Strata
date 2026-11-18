@@ -10,6 +10,7 @@ import all Strata.DL.Lambda.LExprType
 public import Strata.Util.ListUtils
 public import Strata.DL.Lambda.TypeFactory
 import Strata.Util.ListUtilsProps
+import Strata.DL.Lambda.LTyUnifyProps
 
 /-!
 ## Properties of `Lambda.Factory`

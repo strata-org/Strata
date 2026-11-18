@@ -77,6 +77,12 @@ namespace GenOpaqueTypeParams
 open Lambda Imperative
 open Strata.Util (HMap)
 
+/-- Prefix of the opaque types that replace a type-checked lemma's remaining type
+    variables.
+    Kept as a literal copy in `Lambda.reservedNamePrefixes`, so type checking still
+    rejects or renames program names that use it. -/
+@[expose] def freeTyPrefix : String := "$__free_"
+
 /-! ### Applying the type substitution
 
 The statement / command / declared-type substitution is the type checker's
@@ -110,7 +116,7 @@ def substProc (S : Subst) (proc : Procedure) : Procedure :=
 /-! ### The transformation -/
 
 /-- Prefix for generated opaque type names, in the `$__` internal namespace as
-    `Lambda.callElimTyPrefix := "$__cety"` is, so that generated names stand out.
+    `Core.CallElim.callElimTyPrefix := "$__cety"` is, so that generated names stand out.
     It does not make them fresh: `genOpaqueTypeName` skips the names the
     program declares with it. -/
 private def opaqueTypePrefix : String := "$__opaque"

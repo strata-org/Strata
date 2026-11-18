@@ -432,14 +432,14 @@ and trailing skip assertion are semantically true target-only instrumentation.
 The exiting case is ruled out because the transform returns `none` for `.exit`
 sub-statements. The unrestricted factory predicate keeps this top-level theorem
 a generic illustration of `OverapproximatesTraces` and the `EventLang` packages. -/
-theorem detToKleene_overapproximates [LawfulHasVal P] :
+theorem detToKleene_overapproximates [LawfulHasVal P] (params : InitEnvWFParams P) :
     Transform.OverapproximatesTraces
       (Trace.StuttersEnv (P := P) (fun _ : P.Ident => False) (fun _ => True))
-      (EventLang.imperativeE P (Cmd P) (EvalCmdE P) Unit
+      (EventLang.imperativeE P (Cmd P) (EvalCmdE P)
         (fun _ _ ρ => WellFormedSemanticEval (P := P) ρ.factory))
-      (EventLang.kleeneE P Unit
+      (EventLang.kleeneE P
         (fun _ _ ρ => WellFormedSemanticEval (P := P) ρ.factory))
-      (StmtToKleeneStmt (P := P)) () () := by
+      (StmtToKleeneStmt (P := P)) params params := by
   intro st ns ht _ ρ₀ ρ₀' heq hwf
   subst heq
   refine ⟨?_, ?_, ?_, hwf⟩

@@ -9,6 +9,7 @@ public import Strata.Pipeline.Messages
 public import Strata.Languages.Core.SMTEncoder
 public import Strata.DL.Lambda.RecursiveAxioms
 public import Strata.Languages.Core.PipelinePhase
+public import Strata.Transform.CoreTypeCheck
 public import Strata.Transform.WP.WPCoreProgram
 public import Strata.Transform.SSA.SSACoreProgram
 public import Strata.Transform.DeadDefElim
@@ -703,27 +704,6 @@ open Strata
 
 public section
 
-def typeCheck (options : VerifyOptions) (program : Program)
-    (factory : Lambda.Factory CoreLParams := Core.Factory) :
-    Except Message Program := do
-  let T := Lambda.TEnv.default
-  -- Callers past `MonomorphizeFunctions` pass the transformed factory (poly
-  -- Factory originals dropped, specialized copies added) rather than the default.
-  let C := { Lambda.LContext.default with
-                functions := factory,
-                knownTypes := Core.KnownTypes }
-  match Factory.typeCheck C T with
-  | .error k =>
-    -- TODO: Message for functions defined in Factory?
-    throw (Message.fromFormat k)
-  | .ok T =>
-    let (program, _T) ← Program.typeCheck C T program
-    GenOpaqueTypeParams.checkClosedLemmaNames program
-    let program := GenOpaqueTypeParams.closeLemmaTypeVars program
-    -- dbg_trace f!"[Strata.Core] Annotated program:\n{program}"
-    if options.verbose >= .normal then dbg_trace f!"[Strata.Core] Type checking succeeded.\n"
-    return program
-
 def formatProofObligation (ob : Imperative.ProofObligation Expression) :
     Std.Format :=
   let flatEntries := ob.assumptions.flatten
@@ -926,29 +906,6 @@ def declObligationsProgram (options : VerifyOptions) (program : Program)
   let (decls, lemmaObls, stats) ← evalProgramDecls options lemmaSource moreFns
   match WP.declObligationsProgramWith { decls := decls } lemmaObls.toList program with
   | .ok p => return (p, stats)
-  | .error e => throw (Message.fromString e)
-
-/-- **The WP phase of a program** (`Core.WP.wpProcsProgram`): each procedure that is not an
-    obligation unit becomes a guarded procedure of the same name and header; every other
-    declaration is kept.  The names the procedures introduce avoid the names of the factory's
-    functions and those the program declares. -/
-def wpProgram (program : Program)
-    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) : Except Message Program := do
-  let factory ← Core.Factory.addFactory moreFns
-  let reserved := factory.toArray.toList.map (·.name)
-  match WP.wpProcsProgram reserved program with
-  | .ok p => return p
-  | .error e => throw (Message.fromString e)
-
-/-- **The SSA phase of a program** (`Core.WP.ssaProgram`): each guarded procedure becomes an
-    obligation procedure of the same name; the names it introduces avoid the names of the
-    factory's functions and those the program declares. -/
-def ssaProgramOf (program : Program)
-    (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) : Except Message Program := do
-  let factory ← Core.Factory.addFactory moreFns
-  let reserved := factory.toArray.toList.map (·.name)
-  match WP.ssaProgram reserved program with
-  | .ok p => return p
   | .error e => throw (Message.fromString e)
 
 /-- The declaration phase of a program, then its WP phase, then its SSA phase. -/
@@ -2006,29 +1963,6 @@ def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
     [callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
-/-- Type-checking pipeline phase: runs `Core.typeCheck` on the program against
-    `factory` (the full function set to type-check against; defaults to the
-    pristine `Core.Factory`). -/
-def typeCheckPipelinePhase
-    (options : VerifyOptions := VerifyOptions.default)
-    (factory : @Lambda.Factory CoreLParams := Core.Factory) : PipelinePhase :=
-  -- Type checking annotates expressions and leaves every statement where it
-  -- is, so it carries all facts across. Annotation does not change which
-  -- constructor an expression is, so a redex-free program stays redex-free.
-  -- It rejects an `exit` whose label names no enclosing block, so every body of
-  -- its output has its exits covered.
-  modelPreservingPipelinePhase "typeCheck"
-    (establishes := factSet![.typeAnnotated, .exitsCovered])
-    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
-                         .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
-                         .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
-                         .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .noInits])
-    fun prog => do
-      match Core.typeCheck options prog factory with
-      | .ok prog' => return (true, prog')
-      | .error err => throw { err with message := s!"❌ Type checking error.\n{err.message}" }
-
 /-- Symbolic-evaluation pipeline phase: partially evaluates the program into
     the passive proof-obligation form consumed by obligation extraction.
 
@@ -2079,54 +2013,6 @@ def declObligationsPipelinePhase
         (Core.declObligationsProgram options prog moreFns |>.mapError fun err =>
           { err with message := s!"❌ Declaration error.\n{err.message}" })
       modify fun σ => { σ with statistics := σ.statistics.merge stats }
-      return (true, prog')
-
-/-- The WP pipeline phase: each procedure that is not an obligation unit becomes a guarded
-    procedure, every other declaration is kept (`--vcgen wp` runs it after
-    `declObligationsPipelinePhase`, then `ssaPipelinePhase`). It requires a program without
-    calls, since it rejects every call, and bodies whose every `exit` targets an enclosing
-    block, which it checks of each procedure again (`WP.checkLoopFree`). It empties every
-    contract, emits only guarded-form bodies whose every `ite` arm contains an obligation
-    (`Imperative.WP.wpEntry_armsHaveObl`; each obligation unit it keeps is one `assert` or
-    `cover`), emits no loop and no `exit`, keeps headers, touches no function and builds only
-    annotated variables, literals and `ite`s. -/
-def wpPipelinePhase
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
-  modelPreservingPipelinePhase "wp"
-    (requires := factSet![.noCFGBodies, .noCalls, .noLoops, .noNondetGuards, .exitsCovered])
-    (establishes := factSet![.noProcedureContracts, .treeForm, .armsHaveObligations])
-    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
-                         .noPrecondsFromFuncs,
-                         .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered])
-    fun prog => do
-      let prog' ← Transform.liftDiag
-        (Core.wpProgram prog moreFns |>.mapError fun err =>
-          { err with message := s!"❌ WP error.\n{err.message}" })
-      return (true, prog')
-
-/-- The SSA pipeline phase: each guarded procedure becomes an obligation procedure. It emits
-    only `init`, `assume`, `assert`, `cover` and `ite *`, and no `set`; it drops the
-    procedures' specifications, so it requires none. The obligation program declares its
-    variables in place, so it does not establish `noInits`, and `commonSubexprElim`, which
-    requires `noInits`, cannot follow it. It requires every `ite` arm to contain an obligation:
-    it drops an arm without one and inlines the other arm, so a run through the dropped arm
-    would be replayed by running the other arm's definitions. It keeps every obligation and
-    emits an `ite *` only when both arms are nonempty, so its output keeps that fact. -/
-def ssaPipelinePhase
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
-  modelPreservingPipelinePhase "ssa"
-    (requires := factSet![.noCFGBodies, .noProcedureContracts, .treeForm, .armsHaveObligations])
-    (establishes := factSet![.staticSingleAssignment, .hasObligationForm])
-    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
-                         .noLoopMeasures, .noPrecondsFromFuncs, .noProcedureContracts,
-                         .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered,
-                         .armsHaveObligations])
-    fun prog => do
-      let prog' ← Transform.liftDiag
-        (Core.ssaProgramOf prog moreFns |>.mapError fun err =>
-          { err with message := s!"❌ SSA error.\n{err.message}" })
       return (true, prog')
 
 /-- The phases `--vcgen wp` runs in place of `symbolicEvalPipelinePhase`: the declaration phase,

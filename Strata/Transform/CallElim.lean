@@ -27,6 +27,11 @@ inductive Stats where
 
 #derive_prefixed_toString Stats "CallElim"
 
+/-- Prefix of the type variables call elimination uses to instantiate a callee's contract.
+    Kept as a literal copy in `Lambda.reservedNamePrefixes`, so type checking still
+    rejects or renames program names that use it. -/
+@[expose] def callElimTyPrefix : String := "$__cety"
+
 /-- Label prefix for call-elimination assert statements. -/
 def callElimAssertPrefix : String := "callElimAssert_"
 
@@ -57,7 +62,7 @@ def callElimCall (procName : String) (callArgs : List (CallArg Expression))
   -- Instantiate the contract at each call site with globally fresh type variables, so calls at
   -- different types do not share the callee's type variables; for a monomorphic callee
   -- (`typeArgs = []`) the substitution is empty.
-  let tySubst ← freshenTypeArgsSubst Lambda.callElimTyPrefix proc.header.typeArgs
+  let tySubst ← freshenTypeArgsSubst callElimTyPrefix proc.header.typeArgs
   let instantiatedTy (ty : Lambda.LMonoTy) : Lambda.LMonoTy := Lambda.LMonoTy.subst tySubst ty
   let instantiatedExpr (e : Expression.Expr) : Expression.Expr :=
     Lambda.LExpr.applyTypeSubst e tySubst

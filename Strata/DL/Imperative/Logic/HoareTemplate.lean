@@ -161,17 +161,15 @@ variable [HasFvar P] [HasFvars P] [HasBool P] [HasBoolOps P]
     [HasSubstFvar P] [HasInt P] [HasIntOps P]
 variable {CmdT : Type}
 variable (evalCmd : EvalCmdParamE P CmdT (Event P))
-variable {ParamsTy : Type}
-variable (initEnvWF : ParamsTy → Stmt P CmdT → Env P → Prop)
-variable {BParamsTy : Type}
-variable (blockInitEnvWF : BParamsTy → List (Stmt P CmdT) → Env P → Prop)
-variable (bparams : BParamsTy)
+variable (initEnvWF : InitEnvWFParams P → Stmt P CmdT → Env P → Prop)
+variable (blockInitEnvWF : InitEnvWFParams P → List (Stmt P CmdT) → Env P → Prop)
+variable (bparams : InitEnvWFParams P)
 
 /-- Empty statement list is skip.  Holds at every block condition: the empty list
     cannot step anywhere but its own terminal. -/
 theorem skip_block (Pre : Env P → Prop) :
     Triple (EventLang.imperativeBlockE P CmdT evalCmd
-      ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre [] Pre := by
+      blockInitEnvWF) bparams Pre [] Pre := by
   intro ρ₀ ρ' trace hpre _ hrun
   rcases hrun with hterm | ⟨label, hexit⟩
   · obtain ⟨htrace, hcfg⟩ := stmts_nil_runE evalCmd hterm
@@ -193,7 +191,7 @@ variable [HasIdent P] [DecidableEq P.Ident] [HasVarsImp P CmdT]
 private theorem while_genE
     {guard : P.Expr} {measure : Option P.Expr} {inv : List (String × P.Expr)}
     {body : List (Stmt P CmdT)} {md : MetaData P}
-    {Inv : Env P → Prop} (params : ParamsTy)
+    {Inv : Env P → Prop} (params : InitEnvWFParams P)
     (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : Trace P} {y : P.Ident},
       evalCmd f σ c σ' emitted → σ y = none →
       y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
@@ -206,7 +204,7 @@ private theorem while_genE
       initEnvWF params (.loop (.det guard) measure inv body md)
         { ρ_inner with store := projectStore ρ.store ρ_inner.store })
     (hbody : Triple (EventLang.imperativeBlockE P CmdT evalCmd
-      ⟨BParamsTy, blockInitEnvWF⟩) bparams
+      blockInitEnvWF) bparams
       (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some (HasBool.ttVal ρ.factory)) body Inv)
     (hcov : Block.exitsCoveredByBlocks (P := P) (CmdT := CmdT) [] body)
     (hInv_proj : PostWF body Inv)
@@ -297,7 +295,7 @@ end
     postcondition holds of the resulting store.  It receives the
     language's well-formedness condition unchanged, which is where an evaluator-based
     semantics finds what it needs to step at all. -/
-theorem cmd (params : ParamsTy) (c : CmdT)
+theorem cmd (params : InitEnvWFParams P) (c : CmdT)
     (Pre Post : Env P → Prop)
     (h : ∀ ρ₀ σ' emitted,
       Pre ρ₀ → initEnvWF params (.cmd c) ρ₀ →
@@ -305,7 +303,7 @@ theorem cmd (params : ParamsTy) (c : CmdT)
       Trace.AssertionsValid P I emitted ∧
         (Trace.Reachable P I emitted → Post { ρ₀ with store := σ' })) :
     Triple (EventLang.imperativeE P CmdT evalCmd
-      ParamsTy initEnvWF) params Pre (.cmd c) Post := by
+      initEnvWF) params Pre (.cmd c) Post := by
   intro ρ₀ ρ' trace hpre hinit hrun
   rcases hrun with hterm | ⟨label, hexit⟩
   · cases hterm with
@@ -338,12 +336,12 @@ theorem seq_append
       StepStmtStarE P evalCmd (.stmts ss₁ ρ) tr (.terminal ρ') →
       blockInitEnvWF bparams ss₂ ρ')
     (h₁ : Triple (EventLang.imperativeBlockE P CmdT evalCmd
-      ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre ss₁ Mid)
+      blockInitEnvWF) bparams Pre ss₁ Mid)
     (h₂ : Triple (EventLang.imperativeBlockE P CmdT evalCmd
-      ⟨BParamsTy, blockInitEnvWF⟩) bparams Mid ss₂ Post)
+      blockInitEnvWF) bparams Mid ss₂ Post)
     (hSs1NoExit : Block.exitsCoveredByBlocks [] ss₁) :
     Triple (EventLang.imperativeBlockE P CmdT evalCmd
-      ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre (ss₁ ++ ss₂) Post := by
+      blockInitEnvWF) bparams Pre (ss₁ ++ ss₂) Post := by
   intro ρ₀ ρ' trace hpre hinit hrun
   rcases stmts_append_doneE evalCmd ss₁ ss₂ ρ₀ ρ' hrun with
     ⟨lbl, hexit₁⟩ | ⟨ρ₁, tr₁, tr₂, htr, hterm₁, htail⟩
@@ -373,7 +371,7 @@ theorem seq_append
 theorem exit_cons {lbl : String} {md : MetaData P} {ss : List (Stmt P CmdT)}
     {Pre : Env P → Prop} :
     Triple (EventLang.imperativeBlockE P CmdT evalCmd
-      ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre (.exit lbl md :: ss) Pre := by
+      blockInitEnvWF) bparams Pre (.exit lbl md :: ss) Pre := by
   intro ρ₀ ρ' trace hpre _hinit hrun
   rcases hrun with hterm | ⟨elbl, hexit⟩
   · rcases stmts_cons_headE evalCmd hterm with hinitial | hseq
@@ -422,7 +420,7 @@ variable [HasIdent P] [DecidableEq P.Ident] [HasVarsImp P CmdT]
     on the body `ss`, and `hbodyDefs` extracts from it that those names start undefined —
     which is what makes leaving the block a *drop*.  No statement step mutates the
     factory, so the exit restores nothing. -/
-theorem block (params : ParamsTy)
+theorem block (params : InitEnvWFParams P)
     {ss : List (Stmt P CmdT)} {l : String} {md : MetaData P}
     {Pre Post : Env P → Prop}
     (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : Trace P} {y : P.Ident},
@@ -432,10 +430,10 @@ theorem block (params : ParamsTy)
     (hbodyDefs : ∀ ρ, initEnvWF params (.block l ss md) ρ →
       ∀ x ∈ Block.definedVars (P := P) (C := CmdT) ss true, ρ.store x = none)
     (h : Triple (EventLang.imperativeBlockE P CmdT evalCmd
-      ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre ss Post)
+      blockInitEnvWF) bparams Pre ss Post)
     (hpost_proj : PostWF ss Post) :
     Triple (EventLang.imperativeE P CmdT evalCmd
-      ParamsTy initEnvWF) params Pre (.block l ss md) Post := by
+      initEnvWF) params Pre (.block l ss md) Post := by
   intro ρ₀ ρ' trace hpre hinit hrun
   obtain ⟨ρ_inner, hrun_inner, heq⟩ := stmt_block_reaches_doneE hrun
   have ⟨hvalid, hpost⟩ := h ρ₀ ρ_inner trace hpre (hbodyWF ρ₀ hinit) hrun_inner
@@ -455,14 +453,14 @@ omit [HasIdent P] [DecidableEq P.Ident] [HasVarsImp P CmdT] in
     `[s]`.  Every statement-shaped rule reaches the list judgement through this.
 
     `hstmtWF` lowers the block condition on `[s]` to the statement condition on `s`. -/
-theorem singleton (params : ParamsTy)
+theorem singleton (params : InitEnvWFParams P)
     {s : Stmt P CmdT}
     {Pre Post : Env P → Prop}
     (hstmtWF : ∀ ρ, blockInitEnvWF bparams [s] ρ → initEnvWF params s ρ)
     (h : Triple (EventLang.imperativeE P CmdT evalCmd
-      ParamsTy initEnvWF) params Pre s Post) :
+      initEnvWF) params Pre s Post) :
     Triple (EventLang.imperativeBlockE P CmdT evalCmd
-      ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre [s] Post := by
+      blockInitEnvWF) bparams Pre [s] Post := by
   intro ρ₀ ρ' trace hpre hinit hrun
   rcases hrun with hterm | ⟨label, hexit⟩
   · rcases stmts_cons_headE evalCmd hterm with hinitial | hseq
@@ -486,22 +484,22 @@ theorem singleton (params : ParamsTy)
 
 /-- Empty block is skip.  No well-formedness side condition: `skip_block` holds
     at *every* block condition, so this instantiates it at the trivial one. -/
-theorem skip (params : ParamsTy)
+theorem skip (params : InitEnvWFParams P)
     (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : Trace P} {y : P.Ident},
       evalCmd f σ c σ' emitted → σ y = none →
       y ∉ HasVarsImp.definedVars (P := P) c true → σ' y = none)
     (l : String) (md : MetaData P) (Pre : Env P → Prop) :
     Triple (EventLang.imperativeE P CmdT evalCmd
-      ParamsTy initEnvWF) params Pre (.block l [] md) Pre :=
-  block evalCmd initEnvWF (fun (_ : Unit) _ _ => True) () params
+      initEnvWF) params Pre (.block l [] md) Pre :=
+  block evalCmd initEnvWF (fun _ _ _ => True) params params
     h_cmd (fun _ _ => trivial)
     (fun _ _ x hx => absurd hx (by simp))
-    (skip_block evalCmd (fun (_ : Unit) _ _ => True) () Pre)
+    (skip_block evalCmd (fun _ _ _ => True) params Pre)
     (postWF_of_definedVars_nil Pre (by simp))
 
 /-- If-then-else rule.  `hthenWF`/`helseWF` lower the statement condition on the
     `ite` to the block condition on each branch. -/
-theorem ite (params : ParamsTy)
+theorem ite (params : InitEnvWFParams P)
     {cond : P.Expr} {tss ess : List (Stmt P CmdT)} {md : MetaData P}
     {Pre Post : Env P → Prop}
     (h_cmd : ∀ {f : P.Factory} {σ σ' : SemanticStore P} {c : CmdT} {emitted : Trace P} {y : P.Ident},
@@ -516,14 +514,14 @@ theorem ite (params : ParamsTy)
     (helseDefs : ∀ ρ, initEnvWF params (.ite (.det cond) tss ess md) ρ →
       ∀ x ∈ Block.definedVars (P := P) (C := CmdT) ess true, ρ.store x = none)
     (ht : Triple (EventLang.imperativeBlockE P CmdT evalCmd
-      ⟨BParamsTy, blockInitEnvWF⟩) bparams
+      blockInitEnvWF) bparams
       (fun ρ => Pre ρ ∧ P.eval ρ.factory ρ.store cond = some (HasBool.ttVal ρ.factory)) tss Post)
     (he : Triple (EventLang.imperativeBlockE P CmdT evalCmd
-      ⟨BParamsTy, blockInitEnvWF⟩) bparams
+      blockInitEnvWF) bparams
       (fun ρ => Pre ρ ∧ P.eval ρ.factory ρ.store cond = some (HasBool.ffVal ρ.factory)) ess Post)
     (hthen_proj : PostWF tss Post) (helse_proj : PostWF ess Post) :
     Triple (EventLang.imperativeE P CmdT evalCmd
-      ParamsTy initEnvWF) params Pre (.ite (.det cond) tss ess md) Post := by
+      initEnvWF) params Pre (.ite (.det cond) tss ess md) Post := by
   intro ρ₀ ρ' trace hpre hinit hrun
   -- Both branches, and both ways the `ite`'s block finishes, reduce to the same
   -- shape: the taken branch ran to terminal-or-exiting and the block projected.
@@ -532,7 +530,7 @@ theorem ite (params : ParamsTy)
       (∀ x ∈ Block.definedVars (P := P) (C := CmdT) bss true, ρ₀.store x = none) →
       PostWF bss Post →
       Triple (EventLang.imperativeBlockE P CmdT evalCmd
-        ⟨BParamsTy, blockInitEnvWF⟩) bparams Pre' bss Post →
+        blockInitEnvWF) bparams Pre' bss Post →
       (StepStmtStarE P evalCmd
           (.block .none ρ₀.store (.stmts bss ρ₀)) tr (.terminal ρ') ∨
        ∃ lbl, StepStmtStarE P evalCmd
@@ -583,7 +581,7 @@ theorem ite (params : ParamsTy)
     The conclusion is the invariant *together with a false guard* — the loop only
     finishes by failing its guard.  Every completed trace also has valid assertions.
     Partial correctness, so a loop that never terminates satisfies any conclusion. -/
-theorem while_rule (params : ParamsTy)
+theorem while_rule (params : InitEnvWFParams P)
     {guard : P.Expr} {measure : Option P.Expr} {inv : List (String × P.Expr)}
     {body : List (Stmt P CmdT)} {md : MetaData P}
     {Inv : Env P → Prop}
@@ -599,12 +597,12 @@ theorem while_rule (params : ParamsTy)
       initEnvWF params (.loop (.det guard) measure inv body md)
         { ρ_inner with store := projectStore ρ.store ρ_inner.store })
     (hbody : Triple (EventLang.imperativeBlockE P CmdT evalCmd
-      ⟨BParamsTy, blockInitEnvWF⟩) bparams
+      blockInitEnvWF) bparams
       (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some (HasBool.ttVal ρ.factory)) body Inv)
     (hcov : Block.exitsCoveredByBlocks (P := P) (CmdT := CmdT) [] body)
     (hInv_proj : PostWF body Inv) :
     Triple (EventLang.imperativeE P CmdT evalCmd
-      ParamsTy initEnvWF) params Inv (.loop (.det guard) measure inv body md)
+      initEnvWF) params Inv (.loop (.det guard) measure inv body md)
       (fun ρ => Inv ρ ∧ P.eval ρ.factory ρ.store guard = some (HasBool.ffVal ρ.factory)) := by
   intro ρ₀ ρ' trace hInv hinit hrun
   rcases hrun with hterm | ⟨lbl, hexit⟩

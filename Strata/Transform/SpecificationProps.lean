@@ -543,16 +543,15 @@ private theorem overapproximatesTraces_stmts_aux
     (happend_full : ∀ a a' b b', Rtrace_full a a' → Rtrace_full b b' →
       Rtrace_full (a ++ b) (a' ++ b'))
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    {SParams : Type}
-    (swf : SParams → Stmt P CmdT → Env P → Prop)
-    (sp₁ sp₂ : SParams)
+    (swf : InitEnvWFParams P → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : InitEnvWFParams P)
     (Inv : Env P → Prop)
     (hPres : ∀ {s : Stmt P CmdT} {ρ ρ' : Env P} {tr : List EventT}, Inv ρ →
        StepStmtStarE P evalCmdE (.stmt s ρ) tr (.terminal ρ') → Inv ρ')
     (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
     (hsem : OverapproximatesTraces2UptoWhen Rtrace Rtrace_full (· = ·) (· = ·)
-      (EventLang.imperativeE P CmdT evalCmdE SParams swf)
-      (EventLang.imperativeE P CmdT evalCmdE SParams swf) T (fun _ => True) sp₁ sp₂)
+      (EventLang.imperativeE P CmdT evalCmdE swf)
+      (EventLang.imperativeE P CmdT evalCmdE swf) T (fun _ => True) sp₁ sp₂)
     (ss : List (Stmt P CmdT)) :
     ∀ (ss' : List (Stmt P CmdT)), ss.mapM T = some ss' →
       ∀ (ρ₀ ρ' : Env P) (tr : List EventT), Inv ρ₀ →
@@ -640,16 +639,15 @@ private theorem overapproximatesTraces_stmts_prefix
     (hnil : Rtrace [] [])
     (happend : ∀ a a' b b', Rtrace_full a a' → Rtrace b b' → Rtrace (a ++ b) (a' ++ b'))
     (T : Stmt P CmdT → Option (Stmt P CmdT))
-    {SParams : Type}
-    (swf : SParams → Stmt P CmdT → Env P → Prop)
-    (sp₁ sp₂ : SParams)
+    (swf : InitEnvWFParams P → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : InitEnvWFParams P)
     (Inv : Env P → Prop)
     (hPres : ∀ {s : Stmt P CmdT} {ρ ρ' : Env P} {tr : List EventT}, Inv ρ →
        StepStmtStarE P evalCmdE (.stmt s ρ) tr (.terminal ρ') → Inv ρ')
     (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
     (hsem : OverapproximatesTraces2UptoWhen Rtrace Rtrace_full (· = ·) (· = ·)
-      (EventLang.imperativeE P CmdT evalCmdE SParams swf)
-      (EventLang.imperativeE P CmdT evalCmdE SParams swf) T (fun _ => True) sp₁ sp₂)
+      (EventLang.imperativeE P CmdT evalCmdE swf)
+      (EventLang.imperativeE P CmdT evalCmdE swf) T (fun _ => True) sp₁ sp₂)
     (ss : List (Stmt P CmdT)) :
     ∀ (ss' : List (Stmt P CmdT)), ss.mapM T = some ss' →
       ∀ (ρ₀ : Env P) (cfg : Config P CmdT) (tr : List EventT), Inv ρ₀ →
@@ -709,12 +707,10 @@ theorem overapproximatesTraces2UptoWhen_stmts
     (happend : ∀ a a' b b', Rtrace_full a a' → Rtrace b b' → Rtrace (a ++ b) (a' ++ b'))
     (happend_full : ∀ a a' b b', Rtrace_full a a' → Rtrace_full b b' →
       Rtrace_full (a ++ b) (a' ++ b'))
-    {Params : Type}
-    (wf : Params → List (Stmt P CmdT) → Env P → Prop)
-    (p₁ p₂ : Params)
-    {SParams : Type}
-    (swf : SParams → Stmt P CmdT → Env P → Prop)
-    (sp₁ sp₂ : SParams)
+    (wf : InitEnvWFParams P → List (Stmt P CmdT) → Env P → Prop)
+    (p₁ p₂ : InitEnvWFParams P)
+    (swf : InitEnvWFParams P → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : InitEnvWFParams P)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
     (Inv : Env P → Prop)
     (hGround : ∀ ss ρ, wf p₁ ss ρ → Inv ρ)
@@ -723,11 +719,11 @@ theorem overapproximatesTraces2UptoWhen_stmts
     (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
     (hWF : ∀ ss ss' ρ, ss.mapM T = some ss' → wf p₁ ss ρ → wf p₂ ss' ρ)
     (hsem : OverapproximatesTraces2UptoWhen Rtrace Rtrace_full (· = ·) (· = ·)
-      (EventLang.imperativeE P CmdT evalCmdE SParams swf)
-      (EventLang.imperativeE P CmdT evalCmdE SParams swf) T (fun _ => True) sp₁ sp₂) :
+      (EventLang.imperativeE P CmdT evalCmdE swf)
+      (EventLang.imperativeE P CmdT evalCmdE swf) T (fun _ => True) sp₁ sp₂) :
     OverapproximatesTraces2UptoWhen Rtrace Rtrace_full (· = ·) (· = ·)
-      (EventLang.imperativeBlockE P CmdT evalCmdE ⟨Params, wf⟩)
-      (EventLang.imperativeBlockE P CmdT evalCmdE ⟨Params, wf⟩)
+      (EventLang.imperativeBlockE P CmdT evalCmdE wf)
+      (EventLang.imperativeBlockE P CmdT evalCmdE wf)
       (fun ss => ss.mapM T) (fun _ => True) p₁ p₂ := by
   intro ss ss' hmap _ ρ₀ ρ₀' heq hwf
   subst heq
@@ -759,12 +755,10 @@ theorem overapproximatesTraces_stmts
     (Rtrace : Relation (List EventT))
     (hnil : Rtrace [] [])
     (happend : ∀ a a' b b', Rtrace a a' → Rtrace b b' → Rtrace (a ++ b) (a' ++ b'))
-    {Params : Type}
-    (wf : Params → List (Stmt P CmdT) → Env P → Prop)
-    (p₁ p₂ : Params)
-    {SParams : Type}
-    (swf : SParams → Stmt P CmdT → Env P → Prop)
-    (sp₁ sp₂ : SParams)
+    (wf : InitEnvWFParams P → List (Stmt P CmdT) → Env P → Prop)
+    (p₁ p₂ : InitEnvWFParams P)
+    (swf : InitEnvWFParams P → Stmt P CmdT → Env P → Prop)
+    (sp₁ sp₂ : InitEnvWFParams P)
     (T : Stmt P CmdT → Option (Stmt P CmdT))
     (Inv : Env P → Prop)
     (hGround : ∀ ss ρ, wf p₁ ss ρ → Inv ρ)
@@ -773,11 +767,11 @@ theorem overapproximatesTraces_stmts
     (hGate : ∀ {s : Stmt P CmdT} {ρ : Env P}, Inv ρ → swf sp₁ s ρ)
     (hWF : ∀ ss ss' ρ, ss.mapM T = some ss' → wf p₁ ss ρ → wf p₂ ss' ρ)
     (hsem : OverapproximatesTraces Rtrace
-      (EventLang.imperativeE P CmdT evalCmdE SParams swf)
-      (EventLang.imperativeE P CmdT evalCmdE SParams swf) T sp₁ sp₂) :
+      (EventLang.imperativeE P CmdT evalCmdE swf)
+      (EventLang.imperativeE P CmdT evalCmdE swf) T sp₁ sp₂) :
     OverapproximatesTraces Rtrace
-      (EventLang.imperativeBlockE P CmdT evalCmdE ⟨Params, wf⟩)
-      (EventLang.imperativeBlockE P CmdT evalCmdE ⟨Params, wf⟩)
+      (EventLang.imperativeBlockE P CmdT evalCmdE wf)
+      (EventLang.imperativeBlockE P CmdT evalCmdE wf)
       (fun ss => ss.mapM T) p₁ p₂ :=
   overapproximatesTraces2UptoWhen_stmts evalCmdE Rtrace Rtrace hnil hnil happend happend wf p₁ p₂
     swf sp₁ sp₂ T Inv hGround hPres hGate hWF hsem
