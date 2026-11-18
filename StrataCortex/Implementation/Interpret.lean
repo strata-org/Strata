@@ -8,6 +8,7 @@ module
 public import StrataLaurel.Implementation.LaurelCompilationPipeline
 public import StrataCortex.Implementation.Pipeline
 public import Strata.Languages.Cortex.Interpreter
+public import Strata.Languages.Cortex.DirectInterpreter
 public import Strata.Languages.Cortex.LowerCTE
 public import Strata.Languages.Cortex.Cleanup
 public import Strata.Languages.Cortex.LowerDispatch
@@ -23,6 +24,65 @@ open Cortex.Interp
 public section
 
 def cortexStopMessage : StopReason → String
+  | .engine r => r.describe
+  | .lowering msg => s!"lowering: {msg}"
+  | .typeError msg => s!"type error: {msg}"
+  | .notLowered c => s!"`{c}` was not lowered"
+  | .exceptionsUnsupported => "exceptions are not supported"
+  | .inoutArgumentMismatch n => s!"call of {n}: an inout argument is not the variable its result is assigned to"
+  | .procedureWithoutBody n => s!"entry procedure {n} has no body"
+  | .invalidDatatypes msg => s!"invalid datatypes: {msg}"
+  | .at _ r => cortexStopMessage r
+
+/-- Where a run stopped (`StopReason.locate`), when that has a source location. -/
+def stopLocation : StopReason → Option Strata.FileRange
+  | .at md _ => Imperative.getFileRange md
+  | _ => none
+
+/-- What running the `entry` procedures of a program on the Cortex interpreter
+produced. -/
+structure InterpretOutcome where
+  /-- The failed assertions, the uncaught exceptions and the places of the interpreter errors, each reported once. -/
+  diagnostics : Array Message := #[]
+  /-- The entry procedures that ended on an interpreter error, could not evaluate an assertion, or failed without a
+  source location, each with the reason. -/
+  errors : Array (String × String) := #[]
+
+/-- Run every `entry` procedure of `m` on the Cortex interpreter, after the
+cleanup passes and the lowerings of `Cortex.Interp.lower`, giving
+each procedure and each call `fuel` steps. With `cleanup := false` the cleanup
+passes are skipped, for comparing the two runs. The error is the reason a pass
+rejected the program. -/
+def interpretProgram (m : Cortex.UnorderedProgram) (fuel : Nat) (cleanup : Bool := true) :
+    Except String InterpretOutcome := do
+  let m ← if cleanup then (Cortex.Cleanup.run m).mapError (s!"Cleanup: {·}") else pure m
+  let entries := m.procedures.filter isEntry
+  let prepared ← match prepare m with
+    | .ok m => pure (some m)
+    | .error (.lowering e) => throw s!"lowering: {e}"
+    | .error _ => pure none
+  let mut out : Array Message := #[]
+  let mut errors : Array (String × String) := #[]
+  for p in entries do
+    let r := if p.body.isNone then .error (.procedureWithoutBody p.name) else
+      match prepared with
+      | some m => runPrepared m fuel p.name
+      | none => runEntry m fuel p
+    match r with
+    | .error e =>
+      errors := errors.push (p.name, cortexStopMessage e)
+      if let some fr := stopLocation e then
+        out := out.push (Message.withRange fr s!"the interpreter fails here: {cortexStopMessage e}")
+    | .ok { trace, .. } =>
+      if unevaluated trace > 0 then
+        errors := errors.push (p.name, "an assertion could not be evaluated")
+      for (md, summary) in failures trace do
+        match Imperative.getFileRange md with
+        | some fr => out := out.push (Message.withRange fr s!"{summary} does not hold")
+        | none => errors := errors.push (p.name, s!"{summary} does not hold, at a check with no source location")
+  return { diagnostics := out.toList.eraseDups.toArray, errors := errors.toList.eraseDups.toArray }
+
+def directStopMessage : DirectInterp.StopReason → String
   | .fuelExhausted => "out of fuel"
   | .noChoice => "no value to choose"
   | .missingBlock l => s!"missing block {l}"
@@ -52,28 +112,18 @@ def cortexStopMessage : StopReason → String
   | .elementTypeMismatch t a =>
     s!"array type {Std.format a} is not a subtype of (Array {Std.format (t : Lambda.LTy)})"
   | .elementNotAReference a => s!"the elements of array type {Std.format a} are not references"
-  | .at _ r => cortexStopMessage r
+  | .at _ r => directStopMessage r
 
-/-- Where a run stopped (`StopReason.locate`), when that has a source location. -/
-def stopLocation : StopReason → Option Strata.FileRange
+/-- Where a run of the direct interpreter stopped (`DirectInterp.StopReason.locate`), when that has a source
+location. -/
+def directStopLocation : DirectInterp.StopReason → Option Strata.FileRange
   | .at md _ => Imperative.getFileRange md
   | _ => none
 
-/-- What running the `entry` procedures of a program on the Cortex interpreter
-produced. -/
-structure InterpretOutcome where
-  /-- The failed assertions, the uncaught exceptions and the places of the interpreter errors, each reported once. -/
-  diagnostics : Array Message := #[]
-  /-- The entry procedures that ended on an interpreter error, could not evaluate an assertion, or failed without a
-  source location, each with the reason. -/
-  errors : Array (String × String) := #[]
-
-/-- Run every `entry` procedure of `m` on the Cortex interpreter, after the
-cleanup passes, LowerDispatch, LowerGlobals, FieldCasts and LowerCTE, giving
-each procedure and each call `fuel` steps. With `cleanup := false` the cleanup
-passes are skipped, for comparing the two runs. The error is the reason a pass
-rejected the program. -/
-def interpretProgram (m : Cortex.UnorderedProgram) (fuel : Nat) (cleanup : Bool := true) :
+/-- Run every `entry` procedure of `m` on the direct Cortex interpreter (`Cortex.DirectInterp`),
+after the cleanup, LowerDispatch, LowerGlobals, FieldCasts and LowerCTE: a debugging aid, to
+compare with `interpretProgram`. -/
+def interpretProgramDirect (m : Cortex.UnorderedProgram) (fuel : Nat) (cleanup : Bool := true) :
     Except String InterpretOutcome := do
   let m ← if cleanup then (Cortex.Cleanup.run m).mapError (s!"Cleanup: {·}") else pure m
   let m ← (Cortex.LowerDispatch.run m >>= Cortex.LowerGlobals.run >>= Cortex.FieldCasts.run
@@ -81,15 +131,15 @@ def interpretProgram (m : Cortex.UnorderedProgram) (fuel : Nat) (cleanup : Bool 
   let mut out : Array Message := #[]
   let mut errors : Array (String × String) := #[]
   for p in m.procedures do
-    unless isEntry p do continue
-    match runEntry m fuel p with
+    unless DirectInterp.isEntry p do continue
+    match DirectInterp.runEntry m fuel p with
     | .error e =>
-      errors := errors.push (p.name, cortexStopMessage e)
+      errors := errors.push (p.name, directStopMessage e)
       -- An interpreter error is also reported where it happened, when that has a source range.
-      if let some fr := stopLocation e then
-        out := out.push (Message.withRange fr s!"the interpreter fails here: {cortexStopMessage e}")
+      if let some fr := directStopLocation e then
+        out := out.push (Message.withRange fr s!"the interpreter fails here: {directStopMessage e}")
     | .ok (final, trace) =>
-      if unevaluated trace > 0 then
+      if DirectInterp.unevaluated trace > 0 then
         errors := errors.push (p.name, "an assertion could not be evaluated")
       let escaped := match final with
         | .raised ρ v md =>
@@ -100,7 +150,7 @@ def interpretProgram (m : Cortex.UnorderedProgram) (fuel : Nat) (cleanup : Bool 
         | _ => []
       -- A failure without a source range cannot be reported where it is, and dropping it would end the run as a pass:
       -- it ends the entry as an error.
-      for (md, summary) in failures trace ++ escaped do
+      for (md, summary) in DirectInterp.failures trace ++ escaped do
         match Imperative.getFileRange md with
         | some fr => out := out.push (Message.withRange fr s!"{summary} does not hold")
         | none => errors := errors.push (p.name, s!"{summary} does not hold, at a check with no source location")

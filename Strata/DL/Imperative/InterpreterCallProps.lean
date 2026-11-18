@@ -57,7 +57,15 @@ variable [HasBool P] [DecidableEq P.Expr] [InterpLang P] [HasFvar P]
     (fuel : Nat) (env : IEnv P) (base : Cmd P) :
     stepCmd (m := m) π depth fuel env (.cmd base)
       = (stepBaseCmdStore fuel env.factory env.store base >>=
-          fun store => pure (.terminal { env with store := store })) := by rw [stepCmd]
+          fun store => pure (.terminal { env with store := store })) := by rw [stepCmd, stepCmdWith]; rfl
+
+omit [DecidableEq P.Ident] [HasOldIdent P] [HasBool P] [DecidableEq P.Expr] [HasFvar P]
+    [ProcedureHeader P Hdr] in
+/-- A `CmdExt` command is never an extension command: its view is a base command or a call. -/
+theorem CmdExt.view_ne_ext {m : Type → Type} (c : CmdExt P)
+    (run : Nat → IEnv P → m (IConfig P (CmdExt P))) :
+    CmdExt.view (Hdr := Hdr) (m := m) c ≠ CmdView.ext run := by
+  cases c <;> simp [CmdExt.view]
 
 /-- The call-aware driver `runCallInterp` is `runInterp` over the stepper `stepCmd π d`. -/
 @[simp] theorem runCallInterp_eq {m : Type → Type} [Monad m] [InterpEffects P m]

@@ -133,6 +133,7 @@ def programToCore : Program → Except String Core.Program
     let decls ← prog.decls.mapM fun
       | .datatypes ds => pure (Core.Decl.type (.data ds) .empty)
       | .opaqueType tc => pure (Core.Decl.type (.con tc) .empty)
+      | .function f => pure (Core.Decl.recFuncBlock [f.toFunc] .empty)
       | .procedure p => do return Core.Decl.proc (← procedureToCore sigs p) p.md
     return { decls }
 

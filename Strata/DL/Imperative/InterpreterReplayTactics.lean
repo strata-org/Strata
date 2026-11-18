@@ -75,14 +75,14 @@ macro "bridge_ind " b:ident : tactic => `(tactic| first
      done)
   | (intro k
      induction k with
-     | zero => intro _ _ c _ _; cases c <;> simp only [stepCmd] <;> bridge_close $b
+     | zero => intro _ _ c _ _; cases c <;> (rw [stepCmd, stepCmdWith]; simp only [CmdExt.view]) <;> bridge_close $b
      | succ k ih =>
        intro d _ c _ _
        cases c
-       · simp only [stepCmd]; bridge_close $b
+       · (rw [stepCmd, stepCmdWith]; simp only [CmdExt.view]); bridge_close $b
        · cases d
-         · simp only [stepCmd]; bridge_close $b
-         · rename_i d; simp only [stepCmd]; have ih := ih d; bridge_close $b))
+         · (rw [stepCmd, stepCmdWith]; simp only [CmdExt.view]); bridge_close $b
+         · rename_i d; (rw [stepCmd, stepCmdWith]; simp only [CmdExt.view]); have ih := ih d; bridge_close $b))
 
 set_option hygiene false in
 /-- `eff_simp [l] at loc`: `simp` unfolding `choose`/`emit`/`branch` and the `replayRun`

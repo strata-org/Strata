@@ -218,7 +218,7 @@ procedure allocatesOnly()
     var a: Node := new Node
 };
 
-procedure wildcardWithoutHeap() entry
+procedure wildcardWithoutHeap()
   opaque
   modifies *
 {
@@ -510,5 +510,232 @@ procedure threadedWrong() entry
     set(a);
     assert a#value == 0
 //  ^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
+#strata
+program Laurel;
+composite Exn { var code: int }
+
+procedure inc(x: int) returns (x: int)
+  throws (e: Exn)
+  opaque
+{
+    x := x + 1;
+    if x > 100 then { var ex: Exn := new Exn; throw ex }
+};
+
+procedure main() entry
+  opaque
+  modifies *
+{
+    var y: int := 1;
+    while (y < 3) {
+      try { y := inc(y) } catch err { assert false }
+    };
+    assert y == 3;
+    assert y == 4
+//  ^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
+#strata
+program Laurel;
+composite Exn { var code: int }
+
+procedure incT(x: int) returns (x: int)
+  throws (e: Exn)
+  opaque
+{
+    x := x + 1;
+    if x > 1 then { var ex: Exn := new Exn; throw ex }
+};
+
+procedure main() entry
+  opaque
+  modifies *
+{
+    var y: int := 1;
+    try { y := incT(y) } catch err { };
+    assert y == 1;
+    assert y == 2
+//  ^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
+#strata
+program Laurel;
+composite Exn { var code: int }
+
+procedure incT(x: int) returns (x: int)
+  throws (e: Exn)
+  opaque
+{
+    x := x + 1;
+    if x > 1 then { var ex: Exn := new Exn; throw ex }
+};
+
+procedure main() entry
+  opaque
+  modifies *
+{
+    var z: int := 1;
+    var y: int := 0;
+    try { y := incT(z) } catch err { };
+    assert y == 0;
+    assert y == 1
+//  ^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
+#strata
+program Laurel;
+procedure inc(x: int) returns (x: int)
+  opaque
+{
+    x := x + 1
+};
+
+procedure main() entry
+  opaque
+{
+    var y: int := 1;
+    y := inc(y);
+    assert y == 2;
+    assert y == 3
+//  ^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
+#strata
+program Laurel;
+procedure inc(x: int) returns (x: int)
+  opaque
+{
+    x := x + 1
+};
+
+procedure main() entry
+  opaque
+{
+    var z: int := 1;
+    var y: int := 0;
+    y := inc(z);
+    assert y == 2;
+    assert y == 3
+//  ^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
+#strata
+program Laurel;
+procedure inc(x: int) returns (x: int)
+  opaque
+{
+    x := x + 1
+};
+
+procedure main() entry
+  opaque
+{
+    var y: int := 1;
+    y := inc(y + 1);
+    assert y == 3;
+    assert y == 4
+//  ^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
+#strata
+program Laurel;
+procedure inc(x: int) returns (x: int)
+  opaque
+{
+    x := x + 1
+};
+
+procedure main() entry
+  opaque
+{
+    var z: int := 1;
+    var y: int := 0;
+    var i: int := 0;
+    while (i < 2) {
+      y := inc(z);
+      z := y;
+      i := i + 1
+    };
+    assert y == 3;
+    assert y == 4
+//  ^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
+#strata
+program Laurel;
+procedure inc(x: int) returns (x: int)
+  opaque
+{
+    x := x + 1
+};
+
+procedure main() entry
+  opaque
+{
+    var y: int := 1;
+    var i: int := 0;
+    while (i < 2) {
+      y := inc(y + 1);
+      i := i + 1
+    };
+    assert y == 5;
+    assert y == 6
+//  ^^^^^^^^^^^^^ error: assertion does not hold
+};
+#end
+
+#guard_msgs in
+#eval testLaurelExecution { skipVerification := true, skipCoreInterpreter := true, skipLaurelInterpreter := true, skipCortexInterpreter := false } <|
+#strata
+program Laurel;
+composite Exn { var code: int }
+
+procedure q() throws (e: Exn)
+  opaque
+{
+    var ex: Exn := new Exn;
+    throw ex
+};
+
+procedure p()
+  opaque
+  modifies *
+{
+    q()
+};
+
+procedure main() entry
+  opaque
+  modifies *
+{
+    var y: int := 0;
+    try { p(); y := 1 } catch err { y := 2 };
+    assert y == 2
 };
 #end
