@@ -118,6 +118,19 @@ def mkProc (name : String) (typeArgs : List TyIdentifier)
                     postconditions := conds "ensures" post },
           body := .structured body } .empty
 
+/-- The polymorphic procedure `Identity<T>(x : T, out y : T)` that sets `y := x`. -/
+def identityDecl : Decl :=
+  mkProc "Identity" ["T"] [("x", .ftvar "T")] [("y", .ftvar "T")]
+    [Statement.set "y" (.fvar Core.coreLoc ⟨"x", ()⟩ none) .empty]
+
+/-- The procedure `name(inputs, out outputs)` with the control-flow graph body `blocks`, whose
+    entry is `entry`, and no conditions. -/
+def cfgProc (name : String) (inputs outputs : @LMonoTySignature Unit)
+    (blocks : Imperative.DetBlocks String Command Expression) : Decl :=
+  .proc { header := { name := ⟨name, ()⟩, typeArgs := [], inputs, outputs },
+          spec := { preconditions := [], postconditions := [] },
+          body := .cfg { entry := "entry", blocks } } .empty
+
 /-- `datatype List (a : Type) { Nil(), Cons(hd : a, tl : List a) }`. -/
 def listDecl : Decl :=
   .type (.data [{
@@ -170,6 +183,47 @@ def idfAnnots : List (Option LMonoTy) :=
 def printIdfVerdicts (build : Option LMonoTy → Program)
     (C : Expression.TyContext := initTyContext) : IO Unit :=
   printEach (idfAnnots.map fun ann => programVerdict (build ann) C)
+
+mutual
+/-- The type arguments stored on each call in a statement, in program order. -/
+private def stmtCallTyArgs : Statement → List (Option (List Expression.Ty))
+  | .cmd (.call _ tyArgs _ _) => [tyArgs]
+  | .cmd (.cmd _) => []
+  | .block _ bss _ => stmtsCallTyArgs bss
+  | .ite _ tss ess _ => stmtsCallTyArgs tss ++ stmtsCallTyArgs ess
+  | .loop _ _ _ bss _ => stmtsCallTyArgs bss
+  | .exit _ _ => []
+  | .typeDecl _ _ => []
+/-- The type arguments stored on each call in a statement list, in program order. -/
+private def stmtsCallTyArgs : List Statement → List (Option (List Expression.Ty))
+  | [] => []
+  | s :: rest => stmtCallTyArgs s ++ stmtsCallTyArgs rest
+end
+
+/-- The type arguments stored on each call of a program, in program order, each shown as text. -/
+def callTyArgs (pgm : Program) : List (Option (List String)) :=
+  (pgm.decls.flatMap fun
+    | .proc p _ =>
+      match p.body with
+      | .structured ss => stmtsCallTyArgs ss
+      | .cfg g => g.blocks.flatMap fun (_, blk) => blk.cmds.flatMap fun
+        | .call _ tyArgs _ _ => [tyArgs]
+        | .cmd _ => []
+    | _ => []).map (·.map (List.map fun ty => toString (Std.format ty)))
+
+/-- The type arguments stored on each call of the program a check or transform returns, in program
+    order, each shown as text; empty when it fails. -/
+def tyArgsOfResult {ε : Type} (result : Except ε Program) : List (Option (List String)) :=
+  match result with
+  | .ok pgm => callTyArgs pgm
+  | .error _ => []
+
+/-- The program a check or transform returns, formatted at width 96; `transform failed` when it
+    fails. -/
+def programText {ε : Type} (result : Except ε Program) : String :=
+  match result with
+  | .ok pgm => (Strata.Core.formatProgram pgm).pretty 96
+  | .error _ => "transform failed"
 
 end Core.TestUtil
 

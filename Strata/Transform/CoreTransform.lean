@@ -125,20 +125,20 @@ def callArgType? (vt : TypeSpec.TypeScopes) : Expression.Expr → Option Lambda.
   | .fvar _ x none => vt.monoType? x
   | e => e.typeCheck []
 
-/-- The type instance of a call to `proc`: one-way matching of `proc`'s formal types against the
-    known types of the call's arguments and result variables gives each type parameter it
-    determines; every other parameter gets a fresh opaque type at `prefixStr` that is not in
-    `taken`, and so does every parameter when the matching fails. On a type-checked program
-    the matching cannot fail; the fallback serves callers that pass a program that was not
-    type-checked. -/
+/-- The type instance of a call to `proc` whose stored type arguments are `tyArgs`: the instance
+    `Procedure.callTypeArgs?` gives; every other parameter gets a fresh opaque type at
+    `prefixStr` that is not in `taken`, and so does every parameter when the matching fails. On a
+    type-checked program the matching cannot fail; the fallback serves callers that pass a
+    program that was not type-checked. The stored `tyArgs` must satisfy the
+    precondition of `Procedure.callTypeArgs?`. -/
 def callTypeSubst (prefixStr : String) (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes)
-    (proc : Procedure) (callArgs : List (Imperative.CallArg Expression)) :
-    CoreGenM Lambda.Subst := do
+    (proc : Procedure) (callArgs : List (Imperative.CallArg Expression))
+    (tyArgs : Option (List Expression.Ty)) : CoreGenM Lambda.Subst := do
   let typeArgs := proc.header.typeArgs
   let argTy : Imperative.CallArg Expression → Option Lambda.LMonoTy
     | .inArg e => callArgType? vt e
     | .inoutArg x | .outArg x => vt.monoType? x
-  match proc.matchCall? ((Imperative.CallArg.inputArgs callArgs).map argTy)
+  match proc.callTypeArgs? tyArgs ((Imperative.CallArg.inputArgs callArgs).map argTy)
       ((Imperative.CallArg.resultArgs callArgs).map argTy) with
   | none =>
     -- TODO: prove that the transformations preserve typing; then this branch is provably

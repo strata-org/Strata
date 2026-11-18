@@ -111,8 +111,8 @@ def unboundAnnotMsg? (writable : Bool) (rigid : List TyIdentifier) (m : ScopeMap
   (es.findSome? (unboundAnnotVar? writable rigid m)).map
     fun v => f!"type variable `{v}` is not in scope"
 
-/-- The type variables of the declared types and of the free-variable and binder annotations in a
-    list of statements. -/
+/-- The type variables of the declared types, the type arguments of calls, and the free-variable
+    and binder annotations in a list of statements. -/
 def stmtsTyVars (ss : List Statement) : List TyIdentifier :=
   stmtsCollect exprTyVars LMonoTy.freeVars ss
 

@@ -11,6 +11,7 @@ meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.Languages.Core.ProgramType
 meta import Strata.Transform.PrecondElim
 meta import Strata.Transform.GenOpaqueTypeParams
+meta import StrataTest.Languages.Core.Tests.TestUtil
 
 meta section
 
@@ -968,6 +969,86 @@ spec {
 -/
 #guard_msgs (whitespace := lax) in
 #eval IO.println ((Std.format (transformProgram divInCFGPgm)).pretty 96)
+
+/-! ### Test: a call keeps the type arguments it stores
+
+The argument `int.safeDiv(10, a)` makes the transform emit an assertion in front of the call; the
+call itself, in a structured body and in a control-flow graph block, keeps its stored type
+argument `int`. -/
+
+section StoredTyArgs
+
+open Lambda Lambda.LExpr.SyntaxMono Core.Syntax
+open Core.TestUtil (cfgProc identityDecl mkProc programText tyArgsOfResult)
+
+/-- The argument `int.safeDiv(10, a)`, whose precondition `a != 0` the transform asserts. -/
+private def safeDivArg : Expression.Expr := eb[((~Int.SafeDiv #10) a)]
+
+/-- A structured `Caller` that calls `Identity` with the stored type argument `int`. -/
+private def storedTyArgsStructured : Core.Program := { decls :=
+  [identityDecl,
+   mkProc "Caller" [] [("a", .int)] [("m", .int)]
+     [Statement.call "Identity" (some [.forAll [] .int]) [.inArg safeDivArg, .outArg "m"]
+        .empty]] }
+
+/-- A `Caller` with a control-flow graph body that calls `Identity` with the stored type
+    argument `int`. -/
+private def storedTyArgsCfg : Core.Program := { decls :=
+  [identityDecl,
+   cfgProc "Caller" [("a", .int)] [("m", .int)]
+     [("entry",
+       { cmds := [.call "Identity" (some [.forAll [] .int])
+                    [.inArg safeDivArg, .outArg "m"] .empty],
+         transfer := .finish .empty })]] }
+
+/-- The program that `precondElim` produces for `pgm`. -/
+private def precondElimResult (pgm : Core.Program) :=
+  (Core.Transform.run pgm PrecondElim.precondElim coreFactoryState).map (·.2)
+
+/-- info: [some ["int"]] -/
+#guard_msgs in
+#eval tyArgsOfResult (precondElimResult storedTyArgsStructured)
+
+/-- info: [some ["int"]] -/
+#guard_msgs in
+#eval tyArgsOfResult (precondElimResult storedTyArgsCfg)
+
+/--
+info: program Core;
+
+procedure Identity<T> (x : T, out y : T)
+{
+  y := x;
+};
+procedure Caller (a : int, out m : int)
+{
+  assert [call_Identity_arg_calls_Int.SafeDiv_0]: !(a == 0);
+  call Identity(int.safeDiv(10, a), out m);
+};
+-/
+#guard_msgs in
+#eval IO.println (programText (precondElimResult storedTyArgsStructured))
+
+/--
+info: program Core;
+
+procedure Identity<T> (x : T, out y : T)
+{
+  y := x;
+};
+procedure Caller (a : int, out m : int)
+cfg entry {
+  entry: {
+    assert [call_Identity_arg_calls_Int.SafeDiv_0]: !(a == 0);
+    call Identity(int.safeDiv(10, a), out m);
+    return;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (programText (precondElimResult storedTyArgsCfg))
+
+end StoredTyArgs
 
 end PrecondElimTests
 end

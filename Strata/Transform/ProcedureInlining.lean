@@ -210,7 +210,7 @@ def inlineCallCmd (taken : Std.HashSet String)
   : CoreTransformM (Option (List Statement)) :=
     open Lambda in do
     match s with
-      | .cmd (.call procName _ callArgs md) =>
+      | .cmd (.call procName tyArgs callArgs md) =>
         let lhs := CallArg.getLhs callArgs
         incrementStat s!"{Stats.visitedCalls}"
 
@@ -234,7 +234,7 @@ def inlineCallCmd (taken : Std.HashSet String)
 
         -- Instantiate the callee at this call's type instance. Keep only the
         -- signature (inputs/outputs), not a full `Procedure.Header`.
-        let tySubst ← callTypeSubst inlineTyPrefix taken vt proc callArgs
+        let tySubst ← callTypeSubst inlineTyPrefix taken vt proc callArgs tyArgs
         let inputs : @Lambda.LMonoTySignature Unit :=
           proc.header.inputs.map (fun (id, ty) => (id, Lambda.LMonoTy.subst tySubst ty))
         let outputs : @Lambda.LMonoTySignature Unit :=

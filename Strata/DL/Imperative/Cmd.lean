@@ -350,9 +350,10 @@ inductive CmdExt (P : PureExpr) where
       is not.  Each type argument is a monotype (for Core, `.forAll [] _`), which
       may mention the caller's own type variables.  Only the type checker
       annotates a call: front ends and transforms that build a call pass `none`,
-      and the type checker ignores the `tyArgs` it is given.  Printing and
-      parsing ignore `tyArgs`, as they do the other annotations the type checker
-      infers, so a printed checked program reads back with `none`. -/
+      and the checker overwrites any `tyArgs` it is given with one monotype per
+      callee type parameter, in order.  Printing and parsing ignore `tyArgs`, as
+      they do the other annotations the type checker infers, so a printed checked
+      program reads back with `none`. -/
   | call (procName : String) (tyArgs : Option (List P.Ty)) (args : List (CallArg P))
          (md : MetaData P)
 

@@ -130,30 +130,31 @@ private def getExprType (e : Expression.Expr) : Option Lambda.LMonoTy :=
     if ty1 == getExprType e2 then ty1 else none
   | .bvar _ _ => none
 
-/-- The instance of `proc` at a call, matched one-way against the known types of `args` and `lhs`;
-    an unbound `i`-th type parameter is `callTyVarPrefix ++ toString i`, and so is every
-    parameter when the matching fails. On a type-checked program the matching cannot fail; the
-    fallback serves callers that pass a program that was not type-checked. -/
+/-- The instance of `proc` at a call that stores `tyArgs`: the type arguments
+    `Procedure.callTypeArgs?` gives; an unbound `i`-th type parameter is
+    `callTyVarPrefix ++ toString i`, and so is every parameter when the matching fails. -/
 private def computeTypeSubst (proc : Procedure) (args : List Expression.Expr)
-    (lhs : List Expression.Ident) (E : Env) : Lambda.Subst :=
+    (lhs : List Expression.Ident) (tyArgs : Option (List Expression.Ty)) (E : Env) :
+    Lambda.Subst :=
   let lhs_tys := lhs.map fun l => (E.exprEnv.state.findD l (none, .fvar evalLoc l none)).fst
   -- TODO: prove that the transformations preserve typing; then this branch is provably
   -- unreachable on pipeline input.
   [Lambda.SubstOne.completeParams proc.header.typeArgs Lambda.callTyVarPrefix
-    ((proc.matchCall? (args.map getExprType) lhs_tys).getD Strata.Util.HMap.empty)]
+    ((proc.callTypeArgs? tyArgs (args.map getExprType) lhs_tys).getD Strata.Util.HMap.empty)]
 
 /--
 Evaluate a procedure call by inlining its contract.
 `args` and `lhs` are matched positionally against
 `proc.header.inputs` and `proc.header.outputs` respectively.  The call's type
-arguments `tyArgs` are kept on the returned command.
+arguments `tyArgs` are kept on the returned command and give the callee's type instance when
+present.
 -/
 def Command.inlineCallContract (E : Env)
     (lhs : List Expression.Ident) (pname : String) (tyArgs : Option (List Expression.Ty))
     (args : List Expression.Expr) (md : Imperative.MetaData Expression) : Command × Env :=
   match Program.Procedure.find? E.program pname with
   | some proc =>
-    let tySubst := computeTypeSubst proc args lhs E
+    let tySubst := computeTypeSubst proc args lhs tyArgs E
 
     -- positional: formal_arg_subst zips header.inputs.keys with args
     let formal_arg_subst := mkFormalArgSubst proc args E

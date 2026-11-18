@@ -369,7 +369,8 @@ end
 /-! ## Collectors over commands and statements
 
 Each collector lists, in syntax order, what `fe` gives for the expressions of a command or
-statement and what `ft` gives for the declared types of its `init`s. -/
+statement and what `ft` gives for the declared types of its `init`s and the type arguments of its
+calls. -/
 
 namespace Statement
 

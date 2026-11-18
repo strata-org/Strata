@@ -63,8 +63,8 @@ private theorem CmdExtWellTyped.withRigid {C : LContext CoreLParams}
     CmdExtWellTyped { C with rigidTypeVars := r } P ts c ts' := by
   cases h with
   | cmd _ _ hc => exact .cmd _ _ _ (hc.withRigid r)
-  | call _ _ _ _ _ _ _ hfind hwf hlhs hargs hlhsTy hequiv =>
-    refine .call _ _ _ _ _ _ _ _ hfind hwf hlhs ?_ hlhsTy hequiv
+  | call _ _ _ _ _ _ _ hfind hwf hlhs hargs hlhsTy hinst hequiv =>
+    refine .call _ _ _ _ _ _ _ _ hfind hwf hlhs ?_ hlhsTy hinst hequiv
     rw [exprWellTyped_withRigid]
     exact hargs
 
@@ -141,7 +141,7 @@ private theorem StatementWellTyped.callsWF {P : Program} {C C' : LContext CoreLP
   | .cmd _ _ _ _ _ hc =>
     match hc with
     | .cmd _ _ _ _ => by simp [Statement.callSites, Command.callSites]
-    | .call _ _ _ _ _ _ _ _ _ hwf _ _ _ _ => by
+    | .call _ _ _ _ _ _ _ _ _ hwf _ _ _ _ _ => by
       intro c hc
       simp only [Statement.callSites, Command.callSites, List.mem_singleton] at hc
       subst hc

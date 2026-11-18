@@ -50,6 +50,10 @@ inductive CmdExtHasType (C : LContext CoreLParams) (P : Program) :
       - Each LHS variable's context type is alias-equivalent to the instantiated formal output
         type.
 
+      The type arguments stored in the call are not constrained here: the
+      checker ignores them and stores the instance `σ`, which
+      `CmdExtWellTyped.call` requires of its output.
+
       A call leaves the context unchanged; the output `Γ'` is up to
       `TContext.Equiv` (see `CmdHasType`). -/
   | call : ∀ Δ Γ (pname : String) tyArgs callArgs proc md

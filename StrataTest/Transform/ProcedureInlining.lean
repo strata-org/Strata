@@ -774,6 +774,103 @@ procedure Caller ()
 #eval IO.println (toString (runInlineCall (rProg rP)))
 #guard (runInlineCall (rProg rP)).allExprs LExpr.fullyAnnotated
 
+-- Stored type arguments give the type of a parameter that the call's arguments do not determine,
+-- so no opaque type is declared.
+/--
+info: program Core;
+
+procedure q<a> ()
+{
+  assume [refl]: forall y : a :: y == y;
+};
+procedure Caller ()
+{
+  $__inline1_q$inlined: {
+    assume [$__inline1_refl]: forall y : int :: y == y;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall (qTyArgsProg qP (some [.forAll [] .int]))))
+#guard (runInlineCall (qTyArgsProg qP (some [.forAll [] .int]))).allExprs LExpr.fullyAnnotated
+
+-- A stored type that still contains a generated type variable is not used: `b` gets an opaque
+-- type, while `a` is read from the stored type arguments.
+/--
+info: program Core;
+
+type $__inlinety_0;
+procedure r<a, b> (x : a)
+{
+  assert [refl]: x == x;
+  assume [reflB]: forall y : b :: y == y;
+};
+procedure Caller ()
+{
+  $__inline1_r$inlined: {
+    var $__inline1_x : int := 7;
+    assert [$__inline1_refl]: $__inline1_x == $__inline1_x;
+    assume [$__inline1_reflB]: forall y : $__inlinety_0 :: y == y;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall
+  (rTyArgsProg rP (some [.forAll [] .int, .forAll [] (.ftvar "$__ty3")]))))
+#guard (runInlineCall
+  (rTyArgsProg rP (some [.forAll [] .int, .forAll [] (.ftvar "$__ty3")]))).allExprs
+  LExpr.fullyAnnotated
+
+-- Stored type arguments that are not one entry per type parameter are ignored, and the call's
+-- arguments determine the types as for a program that was not type-checked.
+/--
+info: program Core;
+
+type $__inlinety_0;
+procedure r<a, b> (x : a)
+{
+  assert [refl]: x == x;
+  assume [reflB]: forall y : b :: y == y;
+};
+procedure Caller ()
+{
+  $__inline1_r$inlined: {
+    var $__inline1_x : int := 7;
+    assert [$__inline1_refl]: $__inline1_x == $__inline1_x;
+    assume [$__inline1_reflB]: forall y : $__inlinety_0 :: y == y;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall (rTyArgsProg rP (some [.forAll [] .bool]))))
+#guard (runInlineCall (rTyArgsProg rP (some [.forAll [] .bool]))).allExprs LExpr.fullyAnnotated
+
+-- Stored type arguments with more entries than type parameters are ignored likewise.
+/--
+info: program Core;
+
+type $__inlinety_0;
+procedure r<a, b> (x : a)
+{
+  assert [refl]: x == x;
+  assume [reflB]: forall y : b :: y == y;
+};
+procedure Caller ()
+{
+  $__inline1_r$inlined: {
+    var $__inline1_x : int := 7;
+    assert [$__inline1_refl]: $__inline1_x == $__inline1_x;
+    assume [$__inline1_reflB]: forall y : $__inlinety_0 :: y == y;
+  }
+};
+-/
+#guard_msgs in
+#eval IO.println (toString (runInlineCall
+  (rTyArgsProg rP (some [.forAll [] .int, .forAll [] .bool, .forAll [] .int]))))
+#guard (runInlineCall
+  (rTyArgsProg rP (some [.forAll [] .int, .forAll [] .bool, .forAll [] .int]))).allExprs
+  LExpr.fullyAnnotated
+
 /--
 info: program Core;
 

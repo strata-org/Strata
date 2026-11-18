@@ -47,8 +47,8 @@ call in a structured body or in a CFG block alike. `vt` gives the declared types
 variables in scope at the call, and `taken` the type names the callee's opaque types must avoid.
 -/
 def callElimCall (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (procName : String)
-    (callArgs : List (CallArg Expression)) (md : Imperative.MetaData Expression) :
-    CoreTransformM (List Command) := do
+    (tyArgs : Option (List Expression.Ty)) (callArgs : List (CallArg Expression))
+    (md : Imperative.MetaData Expression) : CoreTransformM (List Command) := do
   let lhs := CallArg.getLhs callArgs
   incrementStat s!"{Stats.visitedCalls}"
 
@@ -61,7 +61,7 @@ def callElimCall (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (procNa
     throw (wellFormedCallsBreach "Call elimination" md msg)
 
   -- Instantiates the callee's contract at this call's type instance.
-  let tySubst ← callTypeSubst callElimTyPrefix taken vt proc callArgs
+  let tySubst ← callTypeSubst callElimTyPrefix taken vt proc callArgs tyArgs
   let instantiatedTy (ty : Lambda.LMonoTy) : Lambda.LMonoTy := Lambda.LMonoTy.subst tySubst ty
   let instantiatedExpr (e : Expression.Expr) : Expression.Expr :=
     Lambda.LExpr.applyTypeSubst e tySubst
@@ -199,7 +199,8 @@ def callElimCall (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (procNa
 def callElimCommand (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (c : Command) :
     CoreTransformM (Option (List Command)) :=
   match c with
-  | .call procName _ callArgs md => .some <$> callElimCall taken vt procName callArgs md
+  | .call procName tyArgs callArgs md =>
+    .some <$> callElimCall taken vt procName tyArgs callArgs md
   | _ => return .none
 
 /--

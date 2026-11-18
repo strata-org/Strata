@@ -10,6 +10,7 @@ meta import Strata.Languages.Core
 import Strata.Languages.Core.Factory
 import StrataDDM.Integration.Lean.HashCommands
 meta import StrataTest.Languages.Core.Tests.TestUtil
+meta import StrataTest.Transform.CallFixtures
 
 meta section
 
@@ -20,7 +21,8 @@ namespace Core
 section Tests
 open Std (ToFormat Format format)
 open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
-open Core.TestUtil (anyFunction coreVerdict listDecl mkProc translate verdictOf)
+open Core.TestUtil (anyFunction callTyArgs cfgProc coreVerdict identityDecl listDecl mkProc
+  translate tyArgsOfResult verdictOf)
 
 /--
 info: ok: (procedure P (x : int, out y : int)
@@ -170,8 +172,7 @@ info: error: Procedure 'Foo': Rigid type variable 'a' was refined to '(List _)'
 
 -- A call instantiates `T` once, so an `int` input with a `bool` output is rejected.
 private def inconsistentCallInstantiationPgm : Program := { decls :=
-  [mkProc "Identity" ["T"] [("x", .ftvar "T")] [("y", .ftvar "T")]
-     [Statement.set "y" eb[x] .empty],
+  [identityDecl,
    mkProc "Bad" [] [] [("result", .bool)]
      [Statement.init "n" (.forAll [] .int) (.det eb[#42]) .empty,
       Statement.init "b" (.forAll [] .bool) (.det eb[#true]) .empty,
@@ -196,6 +197,163 @@ info: error: Procedure 'Bad': [call F]: argument types [_] and return types [boo
 -/
 #guard_msgs (whitespace := lax) in
 #eval Std.format (Core.typeCheck .default openArgumentCallPgm)
+
+/-! ## Stored call type arguments -/
+
+/-- The type arguments stored on each call of `pgm` after type checking, in program order. -/
+private def checkedTyArgs (pgm : Program) : List (Option (List String)) :=
+  tyArgsOfResult (Core.typeCheck .default pgm)
+
+-- `Caller` calls `Identity<T>` with an `int`, so the checked call stores `int` for `T`.
+private def tyArgsStoredPgm : Program := { decls :=
+  [identityDecl,
+   mkProc "Caller" [] [] [("m", .int)]
+     [Statement.init "n" (.forAll [] .int) (.det eb[#42]) .empty,
+      Statement.call "Identity" none [.inArg eb[n], .outArg "m"] .empty]] }
+
+/-- info: [none] -/
+#guard_msgs in
+#eval callTyArgs tyArgsStoredPgm
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: [some ["int"]]
+-/
+#guard_msgs in
+#eval checkedTyArgs tyArgsStoredPgm
+
+-- The checker computes the type arguments itself and ignores a value the call already carries.
+private def tyArgsBogusPgm : Program := { decls :=
+  [identityDecl,
+   mkProc "Caller" [] [] [("m", .int)]
+     [Statement.init "n" (.forAll [] .int) (.det eb[#42]) .empty,
+      Statement.call "Identity" (some [.forAll [] .bool]) [.inArg eb[n], .outArg "m"]
+        .empty]] }
+
+/-- info: [some ["bool"]] -/
+#guard_msgs in
+#eval callTyArgs tyArgsBogusPgm
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: [some ["int"]]
+-/
+#guard_msgs in
+#eval checkedTyArgs tyArgsBogusPgm
+
+-- `Wrap<U>` calls `Identity<T>` with its own type parameter `U`, so the call stores `U`.
+private def tyArgsRigidPgm : Program := { decls :=
+  [identityDecl,
+   mkProc "Wrap" ["U"] [("a", .ftvar "U")] [("b", .ftvar "U")]
+     [Statement.call "Identity" none [.inArg eb[a], .outArg "b"] .empty]] }
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: [some ["U"]]
+-/
+#guard_msgs in
+#eval checkedTyArgs tyArgsRigidPgm
+
+-- `Pair<A, B>` and `Swap<A, B>` list their type parameters in the same order but use them in
+-- opposite orders in the formals, so each call stores `[int, bool]`, in parameter order.
+private def tyArgsTwoParamPgm : Program := { decls :=
+  [mkProc "Pair" ["A", "B"] [("x", .ftvar "A"), ("y", .ftvar "B")] [("r", .ftvar "A")]
+     [Statement.set "r" eb[x] .empty],
+   mkProc "Swap" ["A", "B"] [("x", .ftvar "B"), ("y", .ftvar "A")] [("r", .ftvar "A")]
+     [Statement.set "r" eb[y] .empty],
+   mkProc "Caller" [] [] [("m", .int)]
+     [Statement.init "n" (.forAll [] .int) (.det eb[#42]) .empty,
+      Statement.init "b" (.forAll [] .bool) (.det eb[#true]) .empty,
+      Statement.call "Pair" none [.inArg eb[n], .inArg eb[b], .outArg "m"] .empty,
+      Statement.call "Swap" none [.inArg eb[b], .inArg eb[n], .outArg "m"] .empty]] }
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: [some ["int", "bool"], some ["int", "bool"]]
+-/
+#guard_msgs in
+#eval checkedTyArgs tyArgsTwoParamPgm
+
+-- A call to a callee without type parameters stores the empty list.
+private def tyArgsMonomorphicPgm : Program := { decls :=
+  [mkProc "Inc" [] [("x", .int)] [("y", .int)] [Statement.set "y" eb[x] .empty],
+   mkProc "Caller" [] [] [("m", .int)]
+     [Statement.init "n" (.forAll [] .int) (.det eb[#42]) .empty,
+      Statement.call "Inc" none [.inArg eb[n], .outArg "m"] .empty]] }
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: [some []]
+-/
+#guard_msgs in
+#eval checkedTyArgs tyArgsMonomorphicPgm
+
+-- Calls inside a block, both branches of a conditional and a loop body each store their own
+-- type arguments.
+private def tyArgsNestedPgm : Program := { decls :=
+  [identityDecl,
+   mkProc "Caller" [] [] [("m", .int), ("c", .bool)]
+     [Statement.init "n" (.forAll [] .int) (.det eb[#42]) .empty,
+      Statement.init "b" (.forAll [] .bool) (.det eb[#true]) .empty,
+      .block "blk" [Statement.call "Identity" none [.inArg eb[n], .outArg "m"] .empty] .empty,
+      .ite (.det eb[b])
+        [Statement.call "Identity" none [.inArg eb[b], .outArg "c"] .empty]
+        [Statement.call "Identity" none [.inArg eb[n], .outArg "m"] .empty] .empty,
+      .loop (.det eb[b]) none []
+        [Statement.call "Identity" none [.inArg eb[b], .outArg "c"] .empty] .empty]] }
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: [some ["int"], some ["bool"], some ["int"], some ["bool"]]
+-/
+#guard_msgs in
+#eval checkedTyArgs tyArgsNestedPgm
+
+-- Calls in two blocks of a control-flow graph body each store their own type arguments.
+private def tyArgsCfgPgm : Program := { decls :=
+  [identityDecl,
+   cfgProc "Caller" [] [("m", .int), ("c", .bool)]
+     [("entry",
+       { cmds :=
+           [.cmd (.init "n" (.forAll [] .int) (.det eb[#42]) .empty),
+            .cmd (.init "b" (.forAll [] .bool) (.det eb[#true]) .empty),
+            .call "Identity" none [.inArg eb[n], .outArg "m"] .empty],
+         transfer := .goto "next" .empty }),
+      ("next",
+       { cmds := [.call "Identity" none [.inArg eb[b], .outArg "c"] .empty],
+         transfer := .finish .empty })]] }
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: [some ["int"], some ["bool"]]
+-/
+#guard_msgs in
+#eval checkedTyArgs tyArgsCfgPgm
+
+-- `q<a>()` has no arguments, so the call does not determine `a`. The checker stores a generated
+-- type variable for it and accepts the program.
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: [some ["$__ty0"]]
+-/
+#guard_msgs in
+#eval checkedTyArgs (Core.CallFixtures.qProg Core.CallFixtures.qReflDecl)
 
 /-! ## Distinct call results -/
 
