@@ -730,6 +730,7 @@ all claims hold
 /--
 info: noCFGBodies required: holds
 staticSingleAssignment required: holds
+typeAnnotated required: no check
 noInits required: holds
 noCFGBodies preserved: holds -> holds
 noCalls preserved: holds -> holds
@@ -754,6 +755,7 @@ all claims hold
 /--
 info: noCFGBodies required: holds
 staticSingleAssignment required: holds
+typeAnnotated required: no check
 noInits required: holds
 noCFGBodies preserved: holds -> holds
 noCalls preserved: holds -> holds
@@ -822,14 +824,13 @@ procedure Q(x : int, out s : int) {
 #end
 
 /--
-info: assertWellFormedCalls: all claims hold
+info: typeCheck: all claims hold
 callElim: all claims hold
 termCheck: all claims hold
 precondElim: all claims hold
 insertLoopInvariantAsserts: all claims hold
 loopElim: all claims hold
 genOpaqueTypeParams: all claims hold
-typeCheck: all claims hold
 monomorphizeFunctions: all claims hold
 simplify: all claims hold
 nondetElim: all claims hold
@@ -841,14 +842,13 @@ commonSubexprElim: all claims hold
 #eval allClaims (parse cfgFactsPgm) .never
 
 /--
-info: assertWellFormedCalls: all claims hold
+info: typeCheck: all claims hold
 callElim: all claims hold
 termCheck: all claims hold
 precondElim: all claims hold
 insertLoopInvariantAsserts: all claims hold
 loopElim: all claims hold
 genOpaqueTypeParams: all claims hold
-typeCheck: all claims hold
 monomorphizeFunctions: all claims hold
 simplify: all claims hold
 nondetElim: all claims hold
@@ -860,14 +860,13 @@ commonSubexprElim: all claims hold
 #eval allClaims (parse cfgFactsPgm) .always
 
 /--
-info: assertWellFormedCalls: all claims hold
+info: typeCheck: all claims hold
 callElim: all claims hold
 termCheck: all claims hold
 precondElim: all claims hold
 insertLoopInvariantAsserts: all claims hold
 loopElim: all claims hold
 genOpaqueTypeParams: all claims hold
-typeCheck: all claims hold
 monomorphizeFunctions: all claims hold
 simplify: all claims hold
 nondetElim: all claims hold

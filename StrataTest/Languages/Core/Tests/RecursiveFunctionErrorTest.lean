@@ -64,7 +64,7 @@ rec function bad (n : int) : int
 #end
 
 /-- error: ❌ Type checking error.
-recursive function 'bad': non-variable decreases expression must have type int, got 'bool'. For structural recursion, use a parameter name-/
+recursive function 'bad': decreases expression must have type int or be a parameter of a datatype type, got 'bool'-/
 #guard_msgs in
 #eval Core.verify decreasesNonIntPgm (options := .quiet)
 
@@ -135,6 +135,28 @@ function countdown (n : int) : int
 /-- error: mutual recursive block mixes structural and int-valued termination measures; all functions in a mutual block must use the same kind of measure -/
 #guard_msgs in
 #eval Core.verify mixedMutualPgm (options := .quiet)
+
+-- Test 6: error — a function call used as a measure must return int
+
+def measureCallNonIntPgm : Program :=
+#strata
+program Core;
+
+function isEven (n : int) : bool;
+
+rec function countdown (n : int) : int
+  decreases isEven(n)
+{
+  if int.le(n, 0) then 0 else countdown(int.sub(n, 1))
+};
+#end
+
+/--
+error: ❌ Type checking error.
+recursive function 'countdown': decreases expression must have type int or be a parameter of a datatype type, got 'bool'
+-/
+#guard_msgs in
+#eval Core.verify measureCallNonIntPgm (options := .quiet)
 
 end Strata.RecursiveFunctionErrorTest
 

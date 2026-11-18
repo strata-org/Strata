@@ -1675,6 +1675,41 @@ theorem LMonoTy.subst_ftvar_congr {S1 S2 : Subst} (x : TyIdentifier)
   | none => rw [LMonoTy.subst_ftvar_of_none hf, LMonoTy.subst_ftvar_of_none (h ▸ hf)]
   | some w => rw [LMonoTy.subst_ftvar_of_some hf, LMonoTy.subst_ftvar_of_some (h ▸ hf)]
 
+/-- Instantiating a type with a one-scope substitution gives the binding of a
+    type variable, or the variable itself when it is unbound. -/
+theorem LMonoTy.subst_one_ftvar (S : SubstOne) (a : TyIdentifier) :
+    LMonoTy.subst [S] (.ftvar a) =
+      match S.find? a with | some t => t | none => .ftvar a := by
+  rw [LMonoTy.subst_unfold]
+  simp only [HMaps.find?_single_scope]
+  rfl
+
+/-- If a map `S2` extends `S1`, binds only parameters beyond `S1`'s keys, and
+    `S1` binds every parameter occurring in `t`, then `S2` and `S1` instantiate
+    `t` alike. -/
+theorem LMonoTy.subst_one_extend (params : List TyIdentifier)
+    (S1 S2 : SubstOne) (t : LMonoTy)
+    (hext : ∀ a v, S1.find? a = some v → S2.find? a = some v)
+    (hnew : ∀ a, S1.find? a = none → S2.find? a ≠ none → a ∈ params)
+    (hbound : ∀ a ∈ t.freeVars, a ∈ params → ∃ v, S1.find? a = some v) :
+    LMonoTy.subst [S2] t = LMonoTy.subst [S1] t := by
+  apply LMonoTy.subst_ext
+  intro a ha
+  rw [HMaps.find?_single_scope, HMaps.find?_single_scope]
+  cases hf : S1.find? a with
+  | some v => exact hext a v hf
+  | none =>
+    cases hf2 : S2.find? a with
+    | none => rfl
+    | some w =>
+      have hne : S2.find? a ≠ none := by
+        rw [hf2]
+        exact Option.some_ne_none w
+      have hmem : a ∈ params := hnew a hf hne
+      obtain ⟨v, hv⟩ := hbound a ha hmem
+      rw [hf] at hv
+      cases hv
+
 /-- Substitution maps over constructor arguments. -/
 theorem LMonoTy.subst_tcons_map (S : Subst) (nm : String) (args : LMonoTys) :
     LMonoTy.subst S (.tcons nm args) = .tcons nm (args.map (LMonoTy.subst S)) := by
@@ -1946,8 +1981,7 @@ private theorem Constraint.unifyOne_ground_left_complete
     exact ⟨_, rfl, h_keys_rest, h_val_rest⟩
 
 /-- **Unifying a ground instance with its pattern succeeds**, in the orientation
-    `[(instance, pattern)]` that `LFunc.opTypeSubst` uses, and the result maps the pattern to
-    the instance. -/
+    `[(instance, pattern)]`, and the result maps the pattern to the instance. -/
 theorem Constraints_unify_ground_instance_complete
     (τ pat : LMonoTy) (S : Lambda.Subst) (hτ : τ.freeVars = [])
     (hmatch : LMonoTy.subst S pat = τ) :
@@ -2084,6 +2118,17 @@ theorem LTy.openFull_eq_subst_ofZip (vars : List TyIdentifier) (mty : LMonoTy)
     (vals : List LMonoTy) :
     LTy.openFull (.forAll vars mty) vals = LMonoTy.subst (Subst.ofZip vars vals) mty := by
   simp only [LTy.openFull, LTy.boundVars, LTy.toMonoTypeUnsafe, Subst.ofZip]
+
+/-- Every value of `Subst.ofNullaryConsts` is the nullary constant named by one of the pairs. -/
+theorem Subst.mem_values_ofNullaryConsts {pairs : List (TyIdentifier × String)}
+    {v : LMonoTy} (h : v ∈ HMaps.values (Subst.ofNullaryConsts pairs)) :
+    ∃ p ∈ pairs, v = LMonoTy.tcons p.2 [] := by
+  obtain ⟨m, hm, hvm⟩ := (HMaps.mem_values_iff_exists_scope _ v).mp h
+  simp only [Subst.ofNullaryConsts, List.mem_singleton] at hm
+  subst hm
+  obtain ⟨q, hq, hqv⟩ := List.mem_map.mp (HMap.mem_values_ofList _ v hvm)
+  obtain ⟨p, hp, hpq⟩ := List.mem_map.mp hq
+  exact ⟨p, List.mem_reverse.mp hp, by rw [← hqv, ← hpq]⟩
 
 /-- A lookup in `Subst.ofZip` is a lookup in the zipped list. -/
 private theorem Subst.find?_ofZip (vars : List TyIdentifier) (vals : List LMonoTy)
@@ -3117,6 +3162,15 @@ private theorem Subst.ofRenaming_WF (ρ : List (TyIdentifier × TyIdentifier))
   obtain ⟨q, hq, rfl⟩ := List.mem_map.mp (Subst.mem_freeVars_ofRenaming hkfv)
   exact h q hq (Subst.mem_keys_ofRenaming hk)
 
+/-- `ambientSubst` is `S` when there is no ambient key, and otherwise `S` renamed by
+    `ambientRenaming` with the keys `ambientReps` removed. -/
+theorem ambientSubst_eq (gen : TyIdentifier → Bool) (S : Subst) :
+    ambientSubst gen S =
+      if (ambientKeys gen S).isEmpty then S else
+        Subst.removeKeys (Subst.renameAfter S (ambientRenaming gen S)) (ambientReps gen S) := by
+  simp only [ambientSubst, ambientRenaming, ambientReps, ambientRenamingOf, ambientRepsOf,
+    ambientTargets]
+
 /-- The ambient renaming sends each target to its representative. -/
 private theorem find?_ambientRenaming {gen : TyIdentifier → Bool} {S : Subst} {g : TyIdentifier}
     (hg : g ∈ ambientTargets gen S) :
@@ -3131,7 +3185,8 @@ private theorem find?_ambientRenaming {gen : TyIdentifier → Bool} {S : Subst} 
 private theorem mem_freeVars_ambientRenaming {gen : TyIdentifier → Bool} {S : Subst}
     {x : TyIdentifier} (hx : x ∈ Subst.freeVars (ambientRenaming gen S)) :
     x ∈ ambientReps gen S := by
-  simpa only [ambientReps, List.map_map, Function.comp_def] using Subst.mem_freeVars_ofRenaming hx
+  simpa only [ambientReps, List.map_map, Function.comp_def] using
+    Subst.mem_freeVars_ofRenaming hx
 
 /-- Each representative is bound by `S` to a target the ambient renaming sends back to it. -/
 private theorem ambientRenaming_spec (gen : TyIdentifier → Bool) (S : Subst) :
@@ -3153,7 +3208,7 @@ private theorem ambientRenaming_WF (gen : TyIdentifier → Bool) (S : Subst) :
 /-- The ambient substitution is `S` followed by a renaming. -/
 private theorem ambientSubst_comp (gen : TyIdentifier → Bool) (S : Subst) :
     ∃ ρ, ∀ t, LMonoTy.subst (ambientSubst gen S) t = LMonoTy.subst ρ (LMonoTy.subst S t) := by
-  unfold ambientSubst
+  rw [ambientSubst_eq]
   split
   · exact ⟨[], fun t => (LMonoTy.subst_nil _).symm⟩
   · exact ⟨ambientRenaming gen S,
@@ -3168,7 +3223,7 @@ theorem ambientSubst_absorbs (gen : TyIdentifier → Bool) (S X : Subst)
 /-- The ambient substitution of a well-formed substitution is well formed. -/
 theorem ambientSubst_WF (gen : TyIdentifier → Bool) (S : Subst) (hS : SubstWF S) :
     SubstWF (ambientSubst gen S) := by
-  unfold ambientSubst
+  rw [ambientSubst_eq]
   split
   · exact hS
   · exact Subst.renameAfter_removeKeys_WF S _ _ hS (ambientRenaming_WF gen S)

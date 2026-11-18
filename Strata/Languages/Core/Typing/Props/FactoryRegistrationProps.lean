@@ -107,6 +107,22 @@ theorem FactoryExtendedBy.mono
       let ⟨g, hg, hagree⟩ := h.contains_new f hf
       ⟨g, hg, himp f g hagree⟩ }
 
+/-- A factory extension keeps the function names of the old context. -/
+theorem FactoryExtendedBy.mem_old {agrees : LFunc CoreLParams → LFunc CoreLParams → Prop}
+    {C C' : LContext CoreLParams} {newFuncs : List (LFunc CoreLParams)}
+    (h : FactoryExtendedBy agrees C C' newFuncs) {n : String} (hn : n ∈ C.functions) :
+    n ∈ C'.functions := by
+  obtain ⟨g, hg⟩ := Option.isSome_iff_exists.mp ((Factory.mem_iff_getElem?_isSome _ _).mp hn)
+  exact Factory.getElem?_some_implies_mem (h.preserves_old n g hg)
+
+/-- A factory extension holds the name of each new function. -/
+theorem FactoryExtendedBy.mem_new {agrees : LFunc CoreLParams → LFunc CoreLParams → Prop}
+    {C C' : LContext CoreLParams} {newFuncs : List (LFunc CoreLParams)}
+    (h : FactoryExtendedBy agrees C C' newFuncs) {f : LFunc CoreLParams} (hf : f ∈ newFuncs) :
+    f.name.name ∈ C'.functions := by
+  obtain ⟨g, hg, -⟩ := h.contains_new f hf
+  exact Factory.getElem?_some_implies_mem hg
+
 /-- Factory extension is transitive, with the newly added function lists
     concatenated. -/
 theorem factoryExtendedBy_append

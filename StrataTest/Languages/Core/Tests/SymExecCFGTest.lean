@@ -584,11 +584,12 @@ cfg entry {
 };
 #end
 
--- A call in a block on a cycle: call elimination puts its `init`s in that block, and the type
--- checker refuses them before symbolic execution would refuse the loop.
+-- A call in a block on a cycle: type checking runs first and accepts the call, call elimination
+-- puts its `init`s in that block without checking them again, and `--vcgen symexec` rejects the
+-- loop.
 /--
-info: "error: ❌ Type checking error.\n[P]: a CFG-local is declared in a block that lies on a cycle;
-  a loop-carried declaration would be re-initialized on re-entry."
+info: "error: ❌ Symbolic execution error.\nsymExec: procedure 'P': its CFG body has a loop (through
+  blocks [loop, body]), which --vcgen symexec does not analyze"
 -/
 #guard_msgs (whitespace := lax) in
 #eval verifyCFG <|

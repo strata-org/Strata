@@ -205,8 +205,10 @@ def transformCommand (dialects : LoadedDialects) : Command where
     | .error msg =>
       exitFailure msg
     | .ok initProgram =>
-      -- Validate and convert pass configs to TransformPass values.
-      let mut passes : List Core.PipelinePhase := []
+      -- Validate and convert pass configs to TransformPass values. The program is
+      -- type-checked first: every pass relies on its annotations.
+      let mut passes : List Core.PipelinePhase :=
+        [Strata.Core.passTypeCheck Core.VerifyOptions.quiet]
       for pc in passConfigs do
         if pc.name == inlineProceduresPass then
           if pc.procedures.isEmpty then

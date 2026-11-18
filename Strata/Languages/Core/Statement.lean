@@ -296,17 +296,22 @@ section TypeAnnotations
 
 open Lambda
 
-/-- Apply `f` to every type annotation in a command. -/
-def mapCmdTys (f : LMonoTy → LMonoTy) (c : Command) : Command :=
+/-- Apply `fe` to every expression of a command and `ft` to the declared type of an `init`. -/
+def mapCmdWith (fe : Expression.Expr → Expression.Expr) (ft : LMonoTy → LMonoTy)
+    (c : Command) : Command :=
   match c with
   | .cmd cc =>
     match cc with
-    | .init x ty e md => .cmd (.init x (mapLTyTys f ty) (e.map (mapExprTys f ·)) md)
-    | .set x e md => .cmd (.set x (e.map (mapExprTys f ·)) md)
-    | .assert l b md => .cmd (.assert l (mapExprTys f b) md)
-    | .assume l b md => .cmd (.assume l (mapExprTys f b) md)
-    | .cover l b md => .cmd (.cover l (mapExprTys f b) md)
-  | .call pname args md => .call pname (args.map (CallArg.mapInput (mapExprTys f))) md
+    | .init x ty e md => .cmd (.init x (mapLTyTys ft ty) (e.map fe) md)
+    | .set x e md => .cmd (.set x (e.map fe) md)
+    | .assert l b md => .cmd (.assert l (fe b) md)
+    | .assume l b md => .cmd (.assume l (fe b) md)
+    | .cover l b md => .cmd (.cover l (fe b) md)
+  | .call pname args md => .call pname (args.map (CallArg.mapInput fe)) md
+
+/-- Apply `f` to every type annotation in a command. -/
+def mapCmdTys (f : LMonoTy → LMonoTy) (c : Command) : Command :=
+  mapCmdWith (mapExprTys f) f c
 
 /-- Apply `f` to every type annotation in a statement. -/
 def mapStmtTys (f : LMonoTy → LMonoTy) (s : Statement) : Statement :=
@@ -358,6 +363,60 @@ def allStmtsTys (p : LMonoTy → Bool) (ss : List Statement) : Bool :=
   | [] => true
   | s :: rest => allStmtTys p s && allStmtsTys p rest
 end
+
+/-! ## Collectors over commands and statements
+
+Each collector lists, in syntax order, what `fe` gives for the expressions of a command or
+statement and what `ft` gives for the declared types of its `init`s. -/
+
+namespace Statement
+
+/-- The guard, measure and invariants of a loop. -/
+def loopExprs (guard : ExprOrNondet Expression) (measure : Option Expression.Expr)
+    (invariant : List (String × Expression.Expr)) : List Expression.Expr :=
+  guard.toList ++ measure.toList ++ invariant.map (·.2)
+
+/-- The expressions a command reads. -/
+def cmdExprs (c : Command) : List Expression.Expr :=
+  match c with
+  | .cmd c => c.readExprs
+  | .call _ args _ => CallArg.getInputExprs args
+
+end Statement
+
+section Collect
+
+variable {β : Type} (fe : Expression.Expr → List β) (ft : LMonoTy → List β)
+
+/-- What `fe` and `ft` collect from a command: `ft` of a declared variable type, then `fe` of
+    each expression the command reads. -/
+def cmdCollect (c : Command) : List β :=
+  (CmdExt.initTypes c).flatMap (fun ty => ft ty.toMonoTypeUnsafe) ++
+    (Statement.cmdExprs c).flatMap fe
+
+/-- What `fe` and `ft` collect from `s` itself, outside any statement list nested in `s`. -/
+def stmtOwnCollect : Statement → List β
+  | .cmd c => cmdCollect fe ft c
+  | .ite cond _ _ _ => cond.toList.flatMap fe
+  | .loop g m i _ _ => (Statement.loopExprs g m i).flatMap fe
+  | .block _ _ _ | .exit _ _ | .typeDecl _ _ => []
+
+mutual
+/-- What `fe` and `ft` collect from a statement and the statement lists nested in it. -/
+def stmtCollect (s : Statement) : List β :=
+  stmtOwnCollect fe ft s ++
+    match s with
+    | .block _ bss _ | .loop _ _ _ bss _ => stmtsCollect bss
+    | .ite _ tss ess _ => stmtsCollect tss ++ stmtsCollect ess
+    | .cmd _ | .exit _ _ | .typeDecl _ _ => []
+/-- What `fe` and `ft` collect from a list of statements. -/
+def stmtsCollect (ss : List Statement) : List β :=
+  match ss with
+  | [] => []
+  | s :: rest => stmtCollect s ++ stmtsCollect rest
+end
+
+end Collect
 
 end TypeAnnotations
 

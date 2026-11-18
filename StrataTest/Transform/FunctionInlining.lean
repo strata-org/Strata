@@ -8,6 +8,7 @@ import Strata.Languages.Core
 import Strata.Languages.Core.Verifier
 import Strata.Transform.FunctionInlining
 import StrataDDM.Integration.Lean.HashCommands
+import StrataTest.DL.Lambda.RenamingFixtures
 
 open Core
 open Strata
@@ -108,12 +109,12 @@ inline within them. -/
 
 /-! ### Test: type-substitution failure leaves the call unchanged
 
-`tryInlineCall` bails out (`computeTypeSubst = none`) when a polymorphic
+`tryInlineCall` bails out (`instantiateBody? = none`) when a polymorphic
 function is called with an unannotated `.op` and no argument carries a type to
-infer from — there is no constraint to unify against the type argument `a`.
+infer from — there is no type to match against the type argument `a`.
 The transform must gracefully leave such a call untouched rather than inline
 with an unresolved type variable. (A typed argument, by contrast, lets the
-fallback unifier succeed — second check.) -/
+fallback matching succeed — second check.) -/
 
 #guard
   let m : Core.ExpressionMetadata := default
@@ -125,17 +126,42 @@ fallback unifier succeed — second check.) -/
       (body := some (.fvar m ⟨"x", ()⟩ (some (Lambda.LMonoTy.ftvar "a"))))
   match Lambda.Factory.tryAddAll Core.Factory #[polyLF] with
   | .ok factory =>
-    -- Unannotated op + untyped argument: no type constraint, `computeTypeSubst`
+    -- Unannotated op + untyped argument: no type constraint, `instantiateBody?`
     -- fails, and the call is left exactly as-is.
     let callUntyped : Lambda.LExpr Core.CoreLParams.mono :=
       .app m (.op m ⟨"poly", ()⟩ none) (.fvar m ⟨"y", ()⟩ none)
     (inlineFuncDefs factory id callUntyped == callUntyped) &&
-    -- Control: a typed argument gives the fallback unifier a constraint, so the
+    -- Control: a typed argument gives the fallback matching a type, so the
     -- same function DOES inline (to the substituted body, i.e. the argument).
     let callTyped : Lambda.LExpr Core.CoreLParams.mono :=
       .app m (.op m ⟨"poly", ()⟩ none) (.const m (.intConst 42))
     (inlineFuncDefs factory id callTyped == .const m (.intConst 42))
   | .error _ => false
+
+/-! ### Test: instantiation does not depend on type variable names
+
+`wrapPair<a, b>(x : a, y : b) : bool` calls `opPair<a, b>`, which has no body. Inlining
+`wrapPair(u, v)` annotated `b → a → bool`, and the same call with the caller's `b` and `a`
+renamed to `d` and `c`, gives the same call to `opPair` up to that renaming. -/
+
+private def inlineRenamed (tyX tyY : Lambda.LMonoTy) : Std.Format :=
+  let m : Core.ExpressionMetadata := default
+  match Lambda.Factory.tryAddAll Core.Factory
+      #[Lambda.RenamingFixtures.opPair, Lambda.RenamingFixtures.wrapPair m] with
+  | .ok factory =>
+    let call : Lambda.LExpr Core.CoreLParams.mono :=
+      .app m (.app m (.op m ⟨"wrapPair", ()⟩ (some (.arrow tyX (.arrow tyY .bool))))
+        (.fvar m ⟨"u", ()⟩ (some tyX))) (.fvar m ⟨"v", ()⟩ (some tyY))
+    (Lambda.LExpr.instToFormatLExpr Core.CoreLParams.mono).format (inlineFuncDefs factory id call)
+  | .error _ => "factory error"
+
+/-- info: ((~opPair : (arrow b (arrow a bool))) (u : b) (v : a)) -/
+#guard_msgs in
+#eval inlineRenamed (.ftvar "b") (.ftvar "a")
+
+/-- info: ((~opPair : (arrow d (arrow c bool))) (u : d) (v : c)) -/
+#guard_msgs in
+#eval inlineRenamed (.ftvar "d") (.ftvar "c")
 
 /-! ### Test: inlining descends under quantifiers (`.quant`)
 
@@ -422,13 +448,13 @@ private def assertsThroughPrecondElim (phases : List Core.PipelinePhase) : Std.F
 /-- The default order with function inlining after it, so a goal carries the bodies it
     substitutes. -/
 private def inliningAtEnd : List Core.PipelinePhase :=
-  Core.corePipelinePhases ++ [Core.functionInliningPipelinePhase]
+  Core.corePipelinePhases (options := .quiet) ++ [Core.functionInliningPipelinePhase]
 
-/-- The default order with function inlining spliced directly after the entry
-    assertion, which is the earliest a caller can place it. -/
+/-- The default order with function inlining spliced directly after the type check, which
+    is the earliest a caller can place it. -/
 private def inliningSplicedEarly : List Core.PipelinePhase :=
-  match Core.splicePhasesAfter "assertNoCFGBodies" [Core.functionInliningPipelinePhase]
-          Core.corePipelinePhases with
+  match Core.splicePhasesAfter "typeCheck" [Core.functionInliningPipelinePhase]
+          (Core.corePipelinePhases (options := .quiet)) with
   | .ok phases => phases
   | .error _ => []
 
@@ -451,7 +477,9 @@ obligation can be raised. -/
 
 /-! No caller can run that ordering, though: the pipeline validator refuses it. -/
 
-/-- info: phase #3 `functionInlining` requires `noPrecondsFromFuncs` but preceding phases only guarantee `wellFormedCalls, noCFGBodies` — phase #6 `precondElim` later in this pipeline establishes it, so it may be ordered too late -/
+/--
+info: phase #2 `functionInlining` requires `noPrecondsFromFuncs` but preceding phases only guarantee `wellFormedCalls, typeAnnotated, exitsCovered` — phase #6 `precondElim` later in this pipeline establishes it, so it may be ordered too late
+-/
 #guard_msgs in
 #eval match Core.validatePipeline inliningSplicedEarly with
       | .ok _ => Std.Format.text "accepted"

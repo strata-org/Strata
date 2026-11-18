@@ -35,7 +35,7 @@ spec {
 #end
 
 /--
-info: error: (642-686) Impossible to unify (arrow int bool) with (arrow bool $__ty0).
+info: error: (642-686) Procedure 'TestHaveBad': Impossible to unify (arrow int bool) with (arrow bool _).
 First mismatch: int with bool.
 -/
 #guard_msgs in

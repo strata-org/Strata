@@ -12,10 +12,12 @@ meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.Languages.Core.Analysis.DeductiveVerification
 meta import Strata.Transform.PrecondElim
 meta import Strata.Transform.TerminationCheck
+meta import StrataTest.Languages.Core.Tests.TestUtil
 
 meta section
 
 open Strata
+open Core.TestUtil (translateWithMetaData)
 
 /-! # Exactly one result per lemma
 
@@ -31,9 +33,6 @@ dropped `l2` does not keep the names of the lemmas (`LemmaLabelsKept`).
 namespace Strata.ResultsCoverTests
 
 open Core.Specification.Analysis
-
-private def translate (t : StrataDDM.Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram t)).fst
 
 /-- The program `lemma l1: true; lemma l2: false`. -/
 private def twoLemmas :=
@@ -65,25 +64,29 @@ private def lems (p : Core.Program) : Core.VCResults :=
   (lemmaIds p.decls).toArray.map fun (n, md) => pass n md
 
 -- The program has the two lemmas, and dropping `l2` leaves `l1`.
-#guard lemmaLabels (translate twoLemmas).decls == ["l1", "l2"]
-#guard lemmaLabels (dropL2 (translate twoLemmas)).decls == ["l1"]
+#guard lemmaLabels (translateWithMetaData twoLemmas).decls == ["l1", "l2"]
+#guard lemmaLabels (dropL2 (translateWithMetaData twoLemmas)).decls == ["l1"]
 
 -- One passing result for `l1` covers the program with `l2` dropped.
-#guard decide (ResultsCover (dropL2 (translate twoLemmas)) #[lem (translate twoLemmas) "l1"])
+#guard decide (ResultsCover (dropL2 (translateWithMetaData twoLemmas))
+  #[lem (translateWithMetaData twoLemmas) "l1"])
 
 -- It does not cover the program: `l2` has no result. Its verdict is `unknown`, which the
 -- verdicts alone do not tell apart from a lemma the back end could not prove.
-#guard !decide (ResultsCover (translate twoLemmas) #[lem (translate twoLemmas) "l1"])
+#guard !decide (ResultsCover (translateWithMetaData twoLemmas)
+  #[lem (translateWithMetaData twoLemmas) "l1"])
 #guard (vcResultsVerdict (Entry := Unit) #[pass "l1"] ⟨"l2", {}⟩ matches .unknown _)
 
 -- Dropping `l2` does not keep the names of the lemmas, so no phase that does it meets
 -- `PhaseKeepsLemmaLabels`.
-#guard !decide (LemmaLabelsKept (translate twoLemmas).decls (dropL2 (translate twoLemmas)).decls)
-#guard decide (LemmaLabelsKept (translate twoLemmas).decls (translate twoLemmas).decls)
+#guard !decide (LemmaLabelsKept (translateWithMetaData twoLemmas).decls
+  (dropL2 (translateWithMetaData twoLemmas)).decls)
+#guard decide (LemmaLabelsKept (translateWithMetaData twoLemmas).decls
+  (translateWithMetaData twoLemmas).decls)
 
 -- Exactly one: two results for `l1` do not cover it.
-#guard !decide (ResultsCover (dropL2 (translate twoLemmas))
-  #[lem (translate twoLemmas) "l1", lem (translate twoLemmas) "l1"])
+#guard !decide (ResultsCover (dropL2 (translateWithMetaData twoLemmas))
+  #[lem (translateWithMetaData twoLemmas) "l1", lem (translateWithMetaData twoLemmas) "l1"])
 
 -- Two lemmas with one name are not covered, even with one result for the name: one result
 -- would stand for both. Dropping one of them keeps the name once, but not the lemma.
@@ -101,8 +104,8 @@ private def sameNameDropped : Core.Program := { decls := sameName.decls.take 1 }
 #guard (_root_.Core.typeCheck .quiet sameName) matches .error _
 
 -- Results under other labels, such as those of procedure assertions, are allowed.
-#guard decide (ResultsCover (translate twoLemmas)
-  (lems (translate twoLemmas) |>.push (pass "P_ensures_0")))
+#guard decide (ResultsCover (translateWithMetaData twoLemmas)
+  (lems (translateWithMetaData twoLemmas) |>.push (pass "P_ensures_0")))
 
 /-- The program `lemma l1: true; lemma l2: false`, built directly, so that the kernel can
     evaluate its lemma names. -/
@@ -111,7 +114,7 @@ private def twoLemmasDirect : Core.Program :=
       .lemma { name := "l1", e := .boolConst Core.valueLoc true } .empty,
       .lemma { name := "l2", e := .boolConst Core.valueLoc false } .empty] }
 
-#guard lemmaLabels twoLemmasDirect.decls == lemmaLabels (translate twoLemmas).decls
+#guard lemmaLabels twoLemmasDirect.decls == lemmaLabels (translateWithMetaData twoLemmas).decls
 
 /-- **The results of the program with `l2` dropped are not deductive verification of the
     program**, over any base factory and for any entry points. -/
@@ -127,8 +130,8 @@ example (base : Lambda.Factory Core.CoreLParams) (entryPoints : List String) :
 Results for the program the back end verifies are each for one of its lemmas
 (`ResultsWithin`); a result under a label the program has no lemma for is not. -/
 
-#guard decide (ResultsWithin (translate twoLemmas) #[pass "l1", pass "l2"])
-#guard !decide (ResultsWithin (translate twoLemmas) #[pass "l1", pass "l2", pass "l3"])
+#guard decide (ResultsWithin (translateWithMetaData twoLemmas) #[pass "l1", pass "l2"])
+#guard !decide (ResultsWithin (translateWithMetaData twoLemmas) #[pass "l1", pass "l2", pass "l3"])
 
 /-! ## The lemmas of the repaired program
 
@@ -158,7 +161,8 @@ lemma [listLen_body_calls_IntList..tl_0]: true;
 private def repaired : Except String Core.Program := do
   let s : Core.Transform.CoreTransformState :=
     { Core.Transform.CoreTransformState.emp with factory := Core.Factory }
-  let (r1, s1) := Core.Transform.runWith (translate generatedNames) Core.TermCheck.termCheck s
+  let (r1, s1) := Core.Transform.runWith (translateWithMetaData generatedNames)
+    Core.TermCheck.termCheck s
   let (_, p1) ← r1.mapError fun _ => "termination checking failed"
   let (r2, _) := Core.Transform.runWith p1 Core.PrecondElim.precondElim s1
   let (_, p2) ← r2.mapError fun _ => "precondition elimination failed"
@@ -173,12 +177,12 @@ private def generatedNamesLabels : Except String (List String) :=
   | .ok ls => ls.length == 4 && ls.contains "listLen_terminates_0" &&
       ls.contains "listLen_body_calls_IntList..tl_0" && ls.eraseDups.length == ls.length
   | .error _ => false
-#guard lemmaLabels (translate generatedNames).decls ==
+#guard lemmaLabels (translateWithMetaData generatedNames).decls ==
   ["listLen_terminates_0", "listLen_body_calls_IntList..tl_0"]
 
 -- The source's lemma names are each the name of exactly one lemma of the repaired program.
 #guard match repaired with
-  | .ok q => decide (LemmaLabelsKept (translate generatedNames).decls q.decls)
+  | .ok q => decide (LemmaLabelsKept (translateWithMetaData generatedNames).decls q.decls)
   | .error _ => false
 
 -- The termination lemma the repair adds needs a result: results for the user's lemmas alone
@@ -205,7 +209,7 @@ procedure P() spec { ensures true; } { assert [l1]: true; };
 /-- `assertNamedLikeLemma` as a program built without locations would have it: the lemma
     and the assertion `l1` both have no metadata. -/
 private def assertLikeLemmaNoLocations : Core.Program :=
-  { decls := (translate assertNamedLikeLemma).decls.map fun
+  { decls := (translateWithMetaData assertNamedLikeLemma).decls.map fun
       | .lemma l _ => .lemma l .empty
       | .proc p md =>
         let body : List Core.Statement := [.cmd (.cmd (.assert "l1" (.boolConst Core.valueLoc true) .empty))]
@@ -217,7 +221,7 @@ private def assertLikeLemmaNoLocations : Core.Program :=
 #guard #[pass "l1"].countP (·.isForLemma "l1" .empty) == 1
 #guard decide (ResultsCover assertLikeLemmaNoLocations #[pass "l1"])
 #guard decide (ResultsCover assertLikeLemmaNoLocations #[])
-#guard decide (ResultsCover (translate assertNamedLikeLemma) #[])
+#guard decide (ResultsCover (translateWithMetaData assertNamedLikeLemma) #[])
 
 -- Without a procedure, the only obligations are the lemmas'. A second result with `l1`'s
 -- name and metadata beside `l1`'s own leaves the program uncovered, and so does `l1`'s
@@ -248,7 +252,7 @@ The results `Core.verify` returns cover the program it was given, read as
 /-- Whether `Core.verify`'s results on `t` cover the type-checked program. -/
 private def coveredByVerify (t : StrataDDM.Program) : IO Unit := do
   let results ← Strata.Core.verify t (options := .quiet)
-  match _root_.Core.typeCheck .quiet (translate t) with
+  match _root_.Core.typeCheck .quiet (translateWithMetaData t) with
   | .ok p => IO.println s!"{decide (ResultsCover p results)}"
   | .error e => IO.println s!"type checking failed: {e}"
 

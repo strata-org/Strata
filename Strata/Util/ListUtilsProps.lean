@@ -1410,6 +1410,13 @@ theorem mem_orderedPairs {α : Type _} :
     · obtain ⟨ha, hb⟩ := mem_orderedPairs h
       exact ⟨List.mem_cons_of_mem _ ha, List.mem_cons_of_mem _ hb⟩
 
+/-- A failed `any` test for name `n` means every element's name differs from `n`. -/
+theorem names_ne_of_not_any {α β : Type} [BEq β] [LawfulBEq β] {name : α → β}
+    {xs : List α} {n : β} (h : ¬ ((xs.any fun x => name x == n) = true)) :
+    ∀ x ∈ xs, name x ≠ n := by
+  intro x hx heq
+  exact absurd (List.any_eq_true.mpr ⟨x, hx, by simp [heq]⟩) h
+
 end List
 
 theorem List.Rel₂.head {R : α → β → Prop} (h : Rel₂ R (a :: as) (b :: bs)) : R a b := by
@@ -1629,6 +1636,18 @@ theorem List.Rel₂.map_eq {α β γ : Type _} {R : α → β → Prop} {l1 : Li
   induction h with
   | nil => rfl
   | cons hab _ ih => rw [List.map_cons, List.map_cons, hfg _ _ hab, ih]
+
+/-- Every element of the right list of a pointwise relation is related to an element of the
+    left list. -/
+theorem List.Rel₂.exists_of_mem_right {α β : Type _} {R : α → β → Prop} {l1 : List α}
+    {l2 : List β} (h : Rel₂ R l1 l2) {b : β} (hb : b ∈ l2) : ∃ a ∈ l1, R a b := by
+  induction h with
+  | nil => cases hb
+  | cons hab _ ih =>
+    rcases List.mem_cons.mp hb with rfl | hmem
+    · exact ⟨_, List.mem_cons_self, hab⟩
+    · obtain ⟨a, ha, hr⟩ := ih hmem
+      exact ⟨a, List.mem_cons_of_mem _ ha, hr⟩
 
 /-- Reversing both lists preserves a pointwise relation. -/
 theorem List.Rel₂.reverse {α β : Type _} {R : α → β → Prop} {a : List α} {b : List β}

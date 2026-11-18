@@ -6,14 +6,23 @@
 module
 public import Strata.Pipeline.Messages
 
+public import Strata.Languages.Core.AxiomType
+public import Strata.Languages.Core.LemmaType
+public import Strata.Languages.Core.DistinctType
 public import Strata.Languages.Core.FunctionType
+public import Strata.Languages.Core.RecFuncBlockType
 public import Strata.Languages.Core.ProcedureType
 public import Strata.DL.Lambda.LExprT
 public import Strata.Languages.Core.Factory
-public import Strata.DL.Lambda.LTyWF
-public import Strata.Util.Name
 
 public section
+
+/-!
+# Type checking Core programs
+
+TODO: add the soundness theorem `Core.typeCheck_sound_output`: the program
+the checker returns satisfies `ProgramWellTyped` and `ProgramNamesWF`.
+-/
 
 ---------------------------------------------------------------------
 
@@ -23,208 +32,235 @@ open Std (ToFormat Format format)
 open Lambda
 open Strata (Message FileRange)
 
+/-- The type context with the built-in functions and known types. -/
+def initTyContext : Expression.TyContext :=
+  { Lambda.LContext.default with
+      functions := Core.Factory,
+      knownTypes := Core.KnownTypes }
+
 namespace Factory
 
+/-- Check `func` against `C` at `Env`, with rigid constants that avoid the names of `scope`,
+    returning the environment. -/
+def checkFunction (scope : Thunk (Std.HashSet String)) (C : Expression.TyContext)
+    (Env : Expression.TyEnv) (func : LFunc CoreLParams) : Except Format Expression.TyEnv := do
+  let _ ← Function.typeCheckIn scope C Env func.toFunc
+  .ok Env
+
+/-- Check `func` of the factory of `C` against `C` at `Env`, with rigid constants that avoid
+    the names of `scope`. The factory is used as given, so the type parameters of `func` must
+    not start with a reserved prefix. -/
+def checkFactoryFunction (scope : Thunk (Std.HashSet String)) (C : Expression.TyContext)
+    (Env : Expression.TyEnv) (func : LFunc CoreLParams) : Except Format Expression.TyEnv := do
+  checkTypeArgsAllowed s!"Factory function '{func.name.name}'" func.typeArgs
+  checkFunction scope C Env func
+
+/-- Check every function of `C` in order, threading the environment, with rigid constants that
+    avoid the names of `scope`. -/
+def typeCheckIn (scope : Thunk (Std.HashSet String)) (C : Expression.TyContext)
+    (T : Expression.TyEnv) : Except Format Expression.TyEnv :=
+  C.functions.toArray.foldlM (checkFactoryFunction scope C) T
+
+/-- `typeCheckIn` against the set of the type names in scope in `C` and `T`, built at most once,
+    when a function is polymorphic. -/
 def typeCheck (C : Expression.TyContext) (T : Expression.TyEnv)
     : Except Format Expression.TyEnv :=
-  C.functions.toArray.foldlM (fun Env func => do
-    match func.body with
-    | none => .ok Env
-    | some body =>
-      if body.freeVars.idents.all (fun k => k ∈ func.inputs.keys) then
-        -- Temporarily add formals in the context.
-        let Env := Env.pushEmptyContext
-        let Env := Env.addInNewestContext (Strata.Util.HMap.ofList func.inputPolyTypes)
-        -- Type check the body and ensure that it unifies with the return type.
-        -- let (bodyty, Env) ← infer Env body
-        let (body_typed, Env) ← LExpr.resolve C Env body
-        let bodyty := body_typed.toLMonoTy
-        let (retty, Env) ← func.outputPolyType.instantiateWithCheck C Env
-        let S ← Constraints.unify [(retty, bodyty)] Env.stateSubstInfo |>.mapError format
-        let Env := Env.updateSubst S
-        let Env := Env.popContext
-        .ok Env
-      else
-        .error f!"Function body contains free variables!\n\
-                  {func}") T
+  typeCheckIn (scopeTyNameThunk C T) C T
+
+/-- Check `func` against `C` at `Env`, with rigid constants that avoid the names of `S`, then
+    add it to `C` with its reserved type parameters renamed, and add the type names of its
+    signature to `S`. -/
+def checkThenAddOne (Env : Expression.TyEnv)
+    (acc : Expression.TyContext × Std.HashSet String) (func : LFunc CoreLParams) :
+    Except Message (Expression.TyContext × Std.HashSet String) := do
+  let (C, S) := acc
+  let (renamed, _) ← Function.typeCheckIn (Thunk.pure S) C Env func.toFunc
+    |>.mapError Message.fromFormat
+  let func' := { func with toFunc := renamed }
+  let functions ← C.functions.tryPush func'
+  .ok ({ C with functions }, S.insertMany (funcSigTyNames func'))
+
+/-- Check each function of `fns` in order at `Env` against `C` extended by the functions before
+    it, adding each function once checked; `S` holds the type names in scope and grows with
+    the signatures of the added functions. -/
+def checkThenAddIn (S : Std.HashSet String) (C : Expression.TyContext) (Env : Expression.TyEnv)
+    (fns : Array (LFunc CoreLParams)) :
+    Except Message (Expression.TyContext × Std.HashSet String) :=
+  fns.foldlM (checkThenAddOne Env) (C, S)
+
+/-- `checkThenAddIn` started from the set of the type names in scope in `C` and `Env`, returning
+    only the context. -/
+def checkThenAdd (C : Expression.TyContext) (Env : Expression.TyEnv)
+    (fns : Array (LFunc CoreLParams)) : Except Message Expression.TyContext :=
+  Prod.fst <$> checkThenAddIn (scopeTyNameThunk C Env).get C Env fns
+
+/-- The number of functions in the factory of `C`. Kept out of line so the size is read before a
+    later call extends `C`'s factory, which can then extend it in place rather than copy it. -/
+@[noinline] def numFunctions (C : Expression.TyContext) : Nat :=
+  C.functions.toArray.size
 
 end Factory
 
+/-- The proposition check of an axiom or a lemma declaration against a set of the type names
+    in scope, returning the checked declaration (a lemma comes back with its reserved type
+    parameters renamed); `none` for other declarations. -/
+def Decl.propCheck? (d : Decl) (C : Expression.TyContext) :
+    Option (Std.HashSet String → Expression.TyEnv → Except Format (Decl × Expression.TyEnv)) :=
+  match d with
+  | .ax a md => some fun _ Env => do
+    let (e, Env') ← Axiom.typeCheckIn C Env a
+    .ok (.ax { a with e } md, Env')
+  | .lemma l md => some fun S Env => do
+    let (l', Env') ← Lemma.typeCheckIn (Thunk.pure S) C Env l
+    .ok (.lemma l' md, Env')
+  | _ => none
+
+/-- Check an axiom or a lemma declaration against the set `S` of the type names in scope,
+    returning it with its checked proposition; `none` for other declarations. -/
+def Decl.routePropBeforeRegistration (d : Decl) (S : Std.HashSet String)
+    (C : Expression.TyContext) (Env : Expression.TyEnv) (fileRange : FileRange) :
+    Except Message (Option Decl × Expression.TyEnv) :=
+  match d.propCheck? C with
+  | some check => do
+    let (d', Env') ← check S Env.pushEmptySubstScope
+      |>.mapError (fun e => Message.withRange fileRange e)
+    .ok (some d', Env'.popSubstScope)
+  | none => .ok (none, Env)
+
+/-- Check a distinct declaration, returning its checked expressions; `none` for other
+    declarations. -/
+def Decl.routeDistinctBeforeRegistration (d : Decl) (C : Expression.TyContext)
+    (Env : Expression.TyEnv) (fileRange : FileRange) :
+    Except Message (Option (List Expression.Expr) × Expression.TyEnv) :=
+  match d with
+  | .distinct name es _ => do
+    let Env0 := Env
+    let Env := Env.pushEmptyContext.pushEmptySubstScope
+    let (es, Env) ← Distinct.typeCheck C Env name es
+      |>.mapError (fun e => Message.withRange fileRange
+        (hideUnifierGeneratedNames C.knownTypes (toString e)))
+    let Env := Env.popSubstScope.popContext
+    .ok (some es, Env.updateContext Env0.context)
+  | _ => .ok (none, Env)
+
 namespace Program
 
-/-- Type check the proposition of an axiom or a lemma, described by `what` in
-the error message, and return it with its types resolved. -/
-@[expose] def typeCheckProp (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
-    (fileRange : FileRange) (what : String) (e : Expression.Expr) :
-    Except Message (Expression.Expr × Core.Expression.TyEnv) := do
-  let Env := Env.pushEmptySubstScope
-  let (ae, Env) ← LExpr.resolve C Env e |>.mapError (fun e => Message.withRange fileRange e)
-  let Env := Env.popSubstScope
-  match ae.toLMonoTy with
-  | .bool => .ok (ae.unresolved, Env)
-  | _ => .error <| Message.withRange fileRange f!"{what} has non-boolean type."
-
-/-- Type check a function declaration or a recursive function block, and add
-its functions to the context. The caller must already have checked that the
-declared names are unique and not yet declared, as `typeCheck.go` does. -/
-@[expose] def typeCheckFuncDecl (C : Core.Expression.TyContext) (Env : Core.Expression.TyEnv)
-    (fileRange : FileRange) :
-    Decl → Except Message (Decl × Core.Expression.TyContext × Core.Expression.TyEnv)
-  | .func func md => try
-    if func.isRecursive then
-      .error (Message.withRange fileRange <|
-        f!"Decl.func does not allow recursive functions. Use recFuncBlock instead: '{func.name}'")
-    if func.name.name ∈ C.functions then
-      .error (Message.withRange fileRange <|
-        f!"Error in function {func.name}: a function of this name already exists.")
-    let Env := Env.pushEmptySubstScope
-    let (func', Env) ← Function.typeCheck C Env func |>.mapError (fun e => Message.withRange fileRange e)
-    let C := C.addFactoryFunction func'.toLFunc
-    let Env := Env.popSubstScope
-    .ok (Decl.func func' md, C, Env)
-      catch e =>
-        .error (e.withRangeIfUnknown fileRange)
-
-  | .recFuncBlock funcs md => try
-    let Env := Env.pushEmptySubstScope
-    -- Validate: non-empty
-    if funcs.isEmpty then
-      .error (Message.withRange fileRange <|
-        f!"recursive function block must contain at least one function")
-    -- Validate: no inline functions in the block
-    let _ ← funcs.foldlM (fun _ func => do
-      if func.attr.any (· == .inline) then
-        .error (Message.withRange fileRange <|
-          f!"recursive function '{func.name}' cannot be marked inline")
-      else pure ()) ()
-    -- Validate: no function reuses a name already in the factory
-    let _ ← funcs.foldlM (fun _ func => do
-      if func.name.name ∈ C.functions then
-        .error (Message.withRange fileRange <|
-          f!"Error in function {func.name}: a function of this name already exists.")
-      else pure ()) ()
-    -- Phase 1: Add ALL function signatures as stubs so mutual calls resolve.
-    -- The caller has already checked with `addListWithError` that the block's
-    -- function names are unique.
-    let C' := funcs.foldl (fun C func =>
-      C.addFactoryFunction { name := func.name, typeArgs := func.typeArgs,
-                             inputs := func.inputs, output := func.output }) C
-    -- Phase 2: Type-check each function body against C'
-    let (funcs', Env) ← funcs.foldlM (fun (acc, Env) func => do
-      let (func', Env) ← Function.typeCheck C' Env func
+/-- One iteration of `Program.typeCheck.goWith` on `decl`, continuing with `k` on its results
+    and on the scope type-name set `S` extended with the type names `decl` adds to the scope;
+    for a recursive function block, `k` receives the set its checker returns. The
+    declaration checkers use `S` as the set of the type names in scope, and `PS` as the set
+    of the type names of the procedure signatures. -/
+def typeCheck.stepThen {α : Type} (program : Program) (PS : Thunk (Std.HashSet String))
+    (S : Std.HashSet String) (C : Expression.TyContext) (Env : Expression.TyEnv) (decl : Decl)
+    (k : Decl → Expression.TyContext → Expression.TyEnv → Std.HashSet String →
+      Except Message α) :
+    Except Message α := do
+  let fileRange := Imperative.getFileRange decl.metadata |>.getD FileRange.unknown
+  let (checkedProp, Env) ← decl.routePropBeforeRegistration S C Env fileRange
+  let (checkedDistinct, Env) ← decl.routeDistinctBeforeRegistration C Env fileRange
+  let idents ← C.idents.addListWithError decl.names (fun n =>
+    Message.withRange fileRange
+      f!"Error in {decl.kind} {n}: a declaration of this name already exists.")
+  let C := {C with idents}
+  let (decl', C, Env, S) ←
+    match decl with
+    | .type td md => try
+        match td with
+        | .con tc =>
+          let C ← TypeConstructor.typeCheck tc .program C Env
+          .ok (Decl.type td md, C, Env, S)
+        | .syn ts =>
+          let (ts', Env) ← TypeSynonym.typeCheck ts C Env
+             |>.mapError (fun e => Message.withRange fileRange e)
+          .ok (.type (.syn ts') md, C, Env,
+            S.insertMany (ts'.name :: getTypeRefs ts'.type))
+        | .data block =>
+          let n := Factory.numFunctions C
+          let (block, C, Env) ← MutualDatatype.typeCheck block C Env
+          .ok (.type (.data block) md, C, Env,
+            S.insertMany (Factory.tyNamesFrom n C.functions))
+        catch e =>
+          .error (e.withRangeIfUnknown fileRange)
+    | .ax .. | .lemma .. =>
+      .ok (checkedProp.getD decl, C, Env, S)
+    | .distinct l es md =>
+      .ok (Decl.distinct l (checkedDistinct.getD es) md, C, Env, S)
+    | .proc proc md => try
+      let Env := Env.pushEmptySubstScope
+      let (proc', Env) ← Procedure.typeCheckIn (Thunk.pure S) PS C Env program proc md
+      let Env := Env.popSubstScope
+      .ok (Decl.proc proc' md, C, Env, S)
+        catch e =>
+          .error (e.withRangeIfUnknown fileRange)
+    | .func func md => try
+      if func.isRecursive then
+        throw (Message.fromFormat
+          f!"Decl.func does not allow recursive functions. Use recFuncBlock instead: \
+             '{func.name}'")
+      (Function.checkNameFresh C func).mapError Message.fromFormat
+      let Env := Env.pushEmptySubstScope
+      let (_, func') ←
+        Function.typeCheckIn (Thunk.pure S) C Env func
         |>.mapError (fun e => Message.withRange fileRange e)
-      pure (acc ++ [func'], Env)) ([], Env)
-    -- Phase 3: Add all type-checked functions to the real context
-    let C := funcs'.foldl (fun C func => C.addFactoryFunction func.toLFunc) C
-    let Env := Env.popSubstScope
-    .ok (Decl.recFuncBlock funcs' md, C, Env)
-      catch e =>
-        .error (e.withRangeIfUnknown fileRange)
-  | d => .ok (d, C, Env)
+      let lfunc := func'.toLFunc
+      let C := C.addFactoryFunction lfunc
+      let Env := Env.popSubstScope
+      .ok (Decl.func func' md, C, Env, S.insertMany (funcSigTyNames lfunc))
+        catch e =>
+          .error (e.withRangeIfUnknown fileRange)
+    | .recFuncBlock funcs md => try
+      let Env := Env.pushEmptySubstScope
+      let (funcs', C, Env, S) ← RecFuncBlock.typeCheckIn S C Env funcs
+        |>.mapError (fun e => Message.withRange fileRange e)
+      let Env := Env.popSubstScope
+      .ok (Decl.recFuncBlock funcs' md, C, Env, S)
+        catch e =>
+          .error (e.withRangeIfUnknown fileRange)
+  k decl' C Env S
+
+/-- Check the declarations `remaining` in order with `stepThen`, threading the context, the
+    environment and the scope type-name set `S`. Returns `acc` reversed, followed by the
+    checked declarations of `remaining`, and the final environment. The thunk `PS` is the set
+    of the type names of the procedure signatures. -/
+def typeCheck.goWith (program : Program) (PS : Thunk (Std.HashSet String))
+    (S : Std.HashSet String) (C : Expression.TyContext) (Env : Expression.TyEnv) :
+    List Decl → Decls → Except Message (Decls × Expression.TyEnv)
+  | [], acc => .ok (acc.reverse, Env)
+  | decl :: drest, acc =>
+    stepThen program PS S C Env decl fun decl' C Env S =>
+      goWith program PS S C Env drest (decl' :: acc)
+
+/-- `Env` with its type substitution replaced by one empty scope, which holds the global type
+    variables. -/
+def typeCheck.startEnv (Env : Expression.TyEnv) : Expression.TyEnv :=
+  Env.updateSubst { subst := Subst.empty.push (Strata.Util.HMap.empty : SubstOne),
+                    isWF := SubstWF_of_pushEmptyScope _ SubstWF_of_empty }
+
+/-- Run the declaration walk `walk` from `Env` with a pushed global type substitution scope,
+    and return the program of the checked declarations with the final environment. -/
+def typeCheck.withStart (Env : Expression.TyEnv)
+    (walk : Expression.TyEnv → Except Message (Decls × Expression.TyEnv)) :
+    Except Message (Program × Expression.TyEnv) := do
+  let (decls, Env) ← walk (typeCheck.startEnv Env)
+  .ok ({ decls }, Env)
 
 /--
 Type check the program. The function assumes that all functions registered to
-C are already well-typed.
+C are already type checked.
 -/
 @[expose] def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (program : Program) :
-  Except Message (Program × Core.Expression.TyEnv) := do
-    -- Push a type substitution scope to store global type variables.
-    let Env := Env.updateSubst { subst := Subst.empty.push (Strata.Util.HMap.empty : SubstOne),
-                                 isWF := SubstWF_of_pushEmptyScope _ SubstWF_of_empty }
-    let (decls, Env) ← go C Env program.decls []
-    .ok ({ decls }, Env)
+  Except Message (Program × Core.Expression.TyEnv) :=
+    typeCheck.withStart Env fun Env => go C Env program.decls []
 
   where go C Env remaining acc : Except Message (Decls × Core.Expression.TyEnv) :=
-  match remaining with
-  | [] => .ok (acc.reverse, Env)
-  | decl :: drest => do
-    let fileRange := Imperative.getFileRange decl.metadata |>.getD FileRange.unknown
-    -- Add all names from the declaration (multiple for mutual datatypes)
-    let idents ← C.idents.addListWithError decl.names (fun n =>
-      (Message.withRange fileRange f!"Error in {decl.kind} {n}: a declaration of this name already exists."))
-    let C := {C with idents}
-    let (decl', C, Env) ←
-      match decl with
+    let PS := procSigTyNameThunk program
+    typeCheck.goWith program PS (scopeTyNameThunk C Env).get C Env remaining acc
 
-      | .type td md => try
-          match td with
-          | .con tc =>
-            let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs } (Message.withRange fileRange f!"This type declaration's name is reserved!\n\
-                      {td}\n\
-                      KnownTypes' names:\n\
-                      {C.knownTypes.keywords}")
-            .ok (Decl.type td md, C, Env)
-          | .syn ts =>
-            let Env ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C Env
-               |>.mapError (fun e => Message.withRange fileRange e)
-            .ok (.type td md, C, Env)
-          | .data block =>
-            let (block, Env) ← MutualDatatype.resolveAliases block Env |>.mapError (fun e => Message.withRange fileRange e)
-            let C ← C.addMutualBlock block
-            .ok (.type (.data block) md, C, Env)
-          catch e =>
-            .error (e.withRangeIfUnknown fileRange)
-
-      | .ax a md => try
-        let (e, Env) ← typeCheckProp C Env fileRange s!"Axiom {a.name}" a.e
-        .ok (Decl.ax { a with e } md, C, Env)
-          catch e =>
-            .error (e.withRangeIfUnknown fileRange)
-
-      | .lemma l md => try
-        -- A lemma must hold at every type, so its formula may not constrain a
-        -- type parameter: it is first checked with each one replaced by a
-        -- fresh opaque type.
-        unless l.typeArgs.isEmpty do
-          -- The opaque types skip the names already known as types or type
-          -- synonyms, so that none of them is a type the program declares.
-          -- Almost no program declares one, so the set of known names is built
-          -- only when a candidate is taken.
-          let candidates := l.typeArgs.map fun a => s!"{skolemPrefix}{l.name}_{a}"
-          let isTaken n := C.knownTypes.containsName n || Env.context.aliases.any (·.name == n)
-          let rigidNames :=
-            if candidates.any isTaken then
-              (Strata.Name.freshNames (Std.HashSet.ofList
-                (C.knownTypes.keywords ++ Env.context.aliases.map (·.name))) candidates).1
-            else candidates
-          let rigid := l.typeArgs.zip rigidNames
-          let C' ← rigid.foldlM (init := C) fun C (_, n) =>
-            C.addKnownTypeWithError { name := n, metadata := 0 }
-              (Message.withRange fileRange f!"Error in lemma {l.name}: type {n} already exists.")
-          let S := Strata.Util.HMaps.ofScopes [rigid.map fun (a, n) => (a, LMonoTy.tcons n [])]
-          let _ ← typeCheckProp C' Env fileRange s!"Lemma {l.name}" (l.e.applyTypeSubst S)
-        let (e, Env) ← typeCheckProp C Env fileRange s!"Lemma {l.name}" l.e
-        .ok (Decl.lemma { l with e } md, C, Env)
-          catch e =>
-            -- A generated lemma precedes the function that lists it, and is
-            -- ill-typed when that function is. Report the function's error,
-            -- which says what to fix.
-            let owner := drest.find? (·.lemmaNames.contains l.name)
-            let ownerError := owner.bind fun d =>
-              let range := Imperative.getFileRange d.metadata |>.getD FileRange.unknown
-              match typeCheckFuncDecl C Env range d with
-              | .error e => some e
-              | .ok _ => none
-            .error ((ownerError.getD e).withRangeIfUnknown fileRange)
-
-      | .distinct l es md => try
-        let Env := Env.pushEmptySubstScope
-        let es' ← es.mapM (LExpr.resolve C Env) |>.mapError (fun e => Message.withRange fileRange e)
-        let Env := Env.popSubstScope
-        .ok (Decl.distinct l (es'.map (λ e => e.fst.unresolved)) md, C, Env)
-        catch e =>
-          .error (e.withRangeIfUnknown fileRange)
-
-      | .proc proc md =>
-        -- Already reports source locations.
-        let Env := Env.pushEmptySubstScope
-        let (proc', Env) ← Procedure.typeCheck C Env program proc md
-        let Env := Env.popSubstScope
-        .ok (Decl.proc proc' md, C, Env)
-
-      | .func _ _ | .recFuncBlock _ _ => typeCheckFuncDecl C Env fileRange decl
-
-    go C Env drest (decl' :: acc)
+/-- `typeCheck` with `S` as the set of the type names in scope in `C` and `Env`. -/
+def typeCheckIn (S : Std.HashSet String) (C : Expression.TyContext) (Env : Expression.TyEnv)
+    (program : Program) : Except Message (Program × Expression.TyEnv) :=
+  typeCheck.withStart Env fun Env =>
+    typeCheck.goWith program (procSigTyNameThunk program) S C Env program.decls []
 
 end Program
 end Core

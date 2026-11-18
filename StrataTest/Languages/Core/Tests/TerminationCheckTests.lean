@@ -6,6 +6,7 @@
 module
 
 meta import Strata.Languages.Core
+meta import Strata.Transform.TerminationCheck
 import StrataDDM.Integration.Lean.HashCommands
 
 meta section
@@ -771,6 +772,30 @@ Result: ✅ pass
 #eval Core.verify decreasesNonADTPgm (options := .quiet)
 
 ---------------------------------------------------------------------
+-- An ill-typed recursive function, whose termination lemmas would be generated, is
+-- reported by the first type check: the result of `bad` is `bool` but its type is `int`.
+---------------------------------------------------------------------
+
+def illTypedRecPgm : Program :=
+#strata
+program Core;
+
+datatype IntList { Nil(), Cons(hd: int, tl: IntList) };
+
+rec function bad (@[cases] xs : IntList) : int
+{
+  if IntList..isNil(xs) then true else bad(IntList..tl(xs))
+};
+#end
+
+/--
+error: ❌ Type checking error.
+Impossible to unify bool with int.
+-/
+#guard_msgs in
+#eval Core.verify illTypedRecPgm (options := .quiet)
+
+---------------------------------------------------------------------
 -- Test 14: mutual recursion over different mutual datatypes
 -- treeSize recurses on RoseTree, listSize on RoseList
 ---------------------------------------------------------------------
@@ -1233,7 +1258,7 @@ rec function bad (@[cases] xs : IntList) : int
 #end
 
 /-- error: ❌ Type checking error.
-recursive function 'bad': non-variable decreases expression must have type int, got 'IntList'. For structural recursion, use a parameter name -/
+recursive function 'bad': decreases expression must have type int or be a parameter of a datatype type, got 'IntList' -/
 #guard_msgs in
 #eval Core.verify decreasesNonVarPgm (options := .quiet)
 
@@ -1334,6 +1359,291 @@ Property: assert
 Result: ❓ unknown -/
 #guard_msgs in
 #eval Core.verify constLambdaEraseRecCallPgm (options := .quiet)
+
+---------------------------------------------------------------------
+-- Direct-AST tests: the callee's measure in a decrease obligation is
+-- annotated at the call's type instance.
+---------------------------------------------------------------------
+
+section CallInstance
+
+open Lambda
+
+/-- `List a` with constructors `Nil()` and `Cons(hd : a, tl : List a)`. -/
+private def listDt : LDatatype Unit :=
+  { name := "List", typeArgs := ["a"],
+    constrs := [
+      { name := ⟨"Nil", ()⟩, args := [] },
+      { name := ⟨"Cons", ()⟩,
+        args := [(⟨"hd", ()⟩, .ftvar "a"), (⟨"tl", ()⟩, .tcons "List" [.ftvar "a"])] }
+    ], constrs_ne := rfl }
+
+private def listTy (t : LMonoTy) : LMonoTy := .tcons "List" [t]
+
+private def opE (n : String) (ty : Option LMonoTy) : Core.Expression.Expr :=
+  .op Core.coreLoc ⟨n, ()⟩ ty
+
+private def listVar (x tv : String) : Core.Expression.Expr :=
+  .fvar Core.coreLoc ⟨x, ()⟩ (some (listTy (.ftvar tv)))
+
+/-- `if List..isNil(x) then 0 else callee(List..tl(x))` with `x : List tv`; the
+    operator `callee` carries the annotation `calleeTy`. -/
+private def recBody (x tv callee : String) (calleeTy : Option LMonoTy) :
+    Core.Expression.Expr :=
+  let t := listTy (.ftvar tv)
+  .ite Core.coreLoc (.app Core.coreLoc (opE "List..isNil" (some (.arrow t .bool))) (listVar x tv))
+    (.intConst Core.coreLoc 0)
+    (.app Core.coreLoc (opE callee calleeTy)
+      (.app Core.coreLoc (opE "List..tl" (some (.arrow t t))) (listVar x tv)))
+
+/-- `name<tv>(x : List tv) : int` with body `recBody`, recursive on `x` by
+    `@[cases]`, or by `decreases len(x)` when `intMeasure` holds. -/
+private def recFn (name tv x callee : String) (calleeTy : Option LMonoTy)
+    (intMeasure : Bool) : Core.Function :=
+  { name := ⟨name, ()⟩, typeArgs := [tv], isRecursive := true,
+    inputs := [(⟨x, ()⟩, listTy (.ftvar tv))], output := .int,
+    body := some (recBody x tv callee calleeTy),
+    attr := if intMeasure then #[] else #[.inlineIfConstr 0],
+    measure := if intMeasure then
+        some (.app Core.coreLoc (opE "len" (some (.arrow (listTy (.ftvar tv)) .int)))
+          (listVar x tv))
+      else none }
+
+/-- `f<tv>(xs : List tv)` calling `g<a>(ys : List a)` and back; each call is
+    annotated `List c → int` for the caller's type variable `c` when
+    `annotated` holds, and unannotated otherwise. -/
+private def fgPgm (tv : String) (annotated intMeasure : Bool) : Core.Program :=
+  let callTy (v : String) : Option LMonoTy :=
+    if annotated then some (.arrow (listTy (.ftvar v)) .int) else none
+  { decls := [
+    .type (.data [listDt]) .empty,
+    .recFuncBlock [
+      recFn "f" tv "xs" "g" (callTy tv) intMeasure,
+      recFn "g" "a" "ys" "f" (callTy "a") intMeasure] .empty] }
+
+/-- The conclusion of `e` after its leading quantifiers and implications. -/
+private def conclusion : Core.Expression.Expr → Core.Expression.Expr
+  | .quant _ _ _ _ _ body => conclusion body
+  | .app _ (.app _ (.op _ ⟨"Bool.Implies", _⟩ _) _) body => conclusion body
+  | e => e
+
+/-- Run `termCheck` and show each generated lemma's conclusion with its type
+    annotations. -/
+private def termObligations (p : Core.Program) : Std.Format :=
+  let init :=
+    { Core.Transform.CoreTransformState.emp with factory := Core.Factory }
+  let fmt := (LExpr.instToFormatLExpr Core.CoreLParams.mono).format
+  match Core.Transform.run p Core.TermCheck.termCheck init with
+  | .error e => f!"transform failed: {e}"
+  | .ok (_, p) =>
+    Std.Format.joinSep (p.decls.filterMap fun
+      | .lemma l _ => some f!"{l.name}: {fmt (conclusion l.e)}"
+      | _ => none) Std.Format.line
+
+-- Structural recursion on `List` with annotated calls: in `f<b>`, `g`'s rank
+-- is taken at `List b → int`.
+/--
+info: f_terminates_0: ((~Int.Lt : (arrow int (arrow int bool)))
+ ((~List..adtRank : (arrow (List b) int)) ((~List..tl : (arrow (List b) (List b))) %0))
+ ((~List..adtRank : (arrow (List b) int)) %0))
+g_terminates_0: ((~Int.Lt : (arrow int (arrow int bool)))
+ ((~List..adtRank : (arrow (List a) int)) ((~List..tl : (arrow (List a) (List a))) %0))
+ ((~List..adtRank : (arrow (List a) int)) %0))
+-/
+#guard_msgs in
+#eval termObligations (fgPgm "b" true false)
+
+-- The same block with unannotated calls: the callee's rank is unannotated.
+/--
+info: f_terminates_0: ((~Int.Lt : (arrow int (arrow int bool)))
+ (~List..adtRank ((~List..tl : (arrow (List b) (List b))) %0))
+ ((~List..adtRank : (arrow (List b) int)) %0))
+g_terminates_0: ((~Int.Lt : (arrow int (arrow int bool)))
+ (~List..adtRank ((~List..tl : (arrow (List a) (List a))) %0))
+ ((~List..adtRank : (arrow (List a) int)) %0))
+-/
+#guard_msgs in
+#eval termObligations (fgPgm "b" false false)
+
+-- Int-valued measures `len(x)` with annotated calls: in `f<b>`, `g`'s measure
+-- is taken at `List b → int`.
+/--
+info: f_terminates_0: ((~Int.Le : (arrow int (arrow int bool)))
+ #0
+ ((~len : (arrow (List b) int)) ((~List..tl : (arrow (List b) (List b))) %0)))
+f_terminates_1: ((~Int.Lt : (arrow int (arrow int bool)))
+ ((~len : (arrow (List b) int)) ((~List..tl : (arrow (List b) (List b))) %0))
+ ((~len : (arrow (List b) int)) %0))
+g_terminates_0: ((~Int.Le : (arrow int (arrow int bool)))
+ #0
+ ((~len : (arrow (List a) int)) ((~List..tl : (arrow (List a) (List a))) %0)))
+g_terminates_1: ((~Int.Lt : (arrow int (arrow int bool)))
+ ((~len : (arrow (List a) int)) ((~List..tl : (arrow (List a) (List a))) %0))
+ ((~len : (arrow (List a) int)) %0))
+-/
+#guard_msgs in
+#eval termObligations (fgPgm "b" true true)
+
+-- In `f<a>`, the call of `g` is annotated at `g`'s declared type `List a → int`.
+/--
+info: f_terminates_0: ((~Int.Lt : (arrow int (arrow int bool)))
+ ((~List..adtRank : (arrow (List a) int)) ((~List..tl : (arrow (List a) (List a))) %0))
+ ((~List..adtRank : (arrow (List a) int)) %0))
+g_terminates_0: ((~Int.Lt : (arrow int (arrow int bool)))
+ ((~List..adtRank : (arrow (List a) int)) ((~List..tl : (arrow (List a) (List a))) %0))
+ ((~List..adtRank : (arrow (List a) int)) %0))
+-/
+#guard_msgs in
+#eval termObligations (fgPgm "a" true false)
+
+-- The same block with `f`'s type parameter named `c`: the same lemmas with
+-- `f`'s `a` renamed to `c`.
+/--
+info: f_terminates_0: ((~Int.Lt : (arrow int (arrow int bool)))
+ ((~List..adtRank : (arrow (List c) int)) ((~List..tl : (arrow (List c) (List c))) %0))
+ ((~List..adtRank : (arrow (List c) int)) %0))
+g_terminates_0: ((~Int.Lt : (arrow int (arrow int bool)))
+ ((~List..adtRank : (arrow (List a) int)) ((~List..tl : (arrow (List a) (List a))) %0))
+ ((~List..adtRank : (arrow (List a) int)) %0))
+-/
+#guard_msgs in
+#eval termObligations (fgPgm "c" true false)
+
+/-- `f<tv>(xs : List tv)` and `g<a, ph>(ys : List a)` calling each other at the caller's type
+    variable; `g`'s measure is `len(ys)` under an `ite` on `forall z : ph :: true`. -/
+private def fgPhantomPgm (tv ph : String) : Core.Program :=
+  let callTy (v : String) : Option LMonoTy := some (.arrow (listTy (.ftvar v)) .int)
+  let lenYs : Core.Expression.Expr :=
+    .app Core.coreLoc (opE "len" (some (.arrow (listTy (.ftvar "a")) .int))) (listVar "ys" "a")
+  let trueE : Core.Expression.Expr := .const Core.coreLoc (.boolConst true)
+  let g : Core.Function :=
+    { recFn "g" "a" "ys" "f" (callTy "a") true with
+      typeArgs := ["a", ph],
+      measure := some (.ite Core.coreLoc
+                       (.quant Core.coreLoc .all "z" (some (.ftvar ph)) trueE trueE)
+        lenYs lenYs) }
+  { decls := [
+    .type (.data [listDt]) .empty,
+    .recFuncBlock [recFn "f" tv "xs" "g" (callTy tv) true, g] .empty] }
+
+-- The type checker rejects `g`, whose type parameter `b` is in neither its
+-- input types nor its output type.
+/--
+info: error: Function 'g': type parameters [b] occur in neither an input type nor the output type,
+so a call could not determine them
+-/
+#guard_msgs in
+#eval Std.format (Core.typeCheck .default (fgPhantomPgm "b" "b"))
+
+-- Without type checking, the call of `g` in `f<b>` leaves `g`'s `b` unbound:
+-- the lemma names it with a reserved prefix, so `f`'s own `b` cannot capture it.
+/--
+info: f_terminates_0: ((~Int.Le : (arrow int (arrow int bool)))
+ #0
+ (if (∀ (bvar:$__termty1) #true) then ((~len : (arrow (List b) int))
+   ((~List..tl : (arrow (List b) (List b)))
+    %0)) else ((~len : (arrow (List b) int)) ((~List..tl : (arrow (List b) (List b))) %0))))
+f_terminates_1: ((~Int.Lt : (arrow int (arrow int bool)))
+ (if (∀ (bvar:$__termty1) #true) then ((~len : (arrow (List b) int))
+   ((~List..tl : (arrow (List b) (List b)))
+    %0)) else ((~len : (arrow (List b) int)) ((~List..tl : (arrow (List b) (List b))) %0)))
+ ((~len : (arrow (List b) int)) %0))
+g_terminates_0: ((~Int.Le : (arrow int (arrow int bool)))
+ #0
+ ((~len : (arrow (List a) int)) ((~List..tl : (arrow (List a) (List a))) %0)))
+g_terminates_1: ((~Int.Lt : (arrow int (arrow int bool)))
+ ((~len : (arrow (List a) int)) ((~List..tl : (arrow (List a) (List a))) %0))
+ (if (∀ (bvar:b) #true) then ((~len : (arrow (List a) int)) %0) else ((~len : (arrow (List a) int))
+%0)))
+-/
+#guard_msgs in
+#eval termObligations (fgPhantomPgm "b" "b")
+
+-- The same block with `f`'s type parameter named `c`: the same lemmas with
+-- `f`'s `b` renamed to `c`.
+/--
+info: f_terminates_0: ((~Int.Le : (arrow int (arrow int bool)))
+ #0
+ (if (∀ (bvar:$__termty1) #true) then ((~len : (arrow (List c) int))
+   ((~List..tl : (arrow (List c) (List c)))
+    %0)) else ((~len : (arrow (List c) int)) ((~List..tl : (arrow (List c) (List c))) %0))))
+f_terminates_1: ((~Int.Lt : (arrow int (arrow int bool)))
+ (if (∀ (bvar:$__termty1) #true) then ((~len : (arrow (List c) int))
+   ((~List..tl : (arrow (List c) (List c)))
+    %0)) else ((~len : (arrow (List c) int)) ((~List..tl : (arrow (List c) (List c))) %0)))
+ ((~len : (arrow (List c) int)) %0))
+g_terminates_0: ((~Int.Le : (arrow int (arrow int bool)))
+ #0
+ ((~len : (arrow (List a) int)) ((~List..tl : (arrow (List a) (List a))) %0)))
+g_terminates_1: ((~Int.Lt : (arrow int (arrow int bool)))
+ ((~len : (arrow (List a) int)) ((~List..tl : (arrow (List a) (List a))) %0))
+ (if (∀ (bvar:b) #true) then ((~len : (arrow (List a) int)) %0) else ((~len : (arrow (List a) int))
+%0)))
+-/
+#guard_msgs in
+#eval termObligations (fgPhantomPgm "c" "b")
+
+-- The same block with `g`'s phantom type parameter named `d`: only `g`'s own
+-- lemma changes `b` to `d`; `f`'s lemmas still use the reserved name.
+/--
+info: f_terminates_0: ((~Int.Le : (arrow int (arrow int bool)))
+ #0
+ (if (∀ (bvar:$__termty1) #true) then ((~len : (arrow (List b) int))
+   ((~List..tl : (arrow (List b) (List b)))
+    %0)) else ((~len : (arrow (List b) int)) ((~List..tl : (arrow (List b) (List b))) %0))))
+f_terminates_1: ((~Int.Lt : (arrow int (arrow int bool)))
+ (if (∀ (bvar:$__termty1) #true) then ((~len : (arrow (List b) int))
+   ((~List..tl : (arrow (List b) (List b)))
+    %0)) else ((~len : (arrow (List b) int)) ((~List..tl : (arrow (List b) (List b))) %0)))
+ ((~len : (arrow (List b) int)) %0))
+g_terminates_0: ((~Int.Le : (arrow int (arrow int bool)))
+ #0
+ ((~len : (arrow (List a) int)) ((~List..tl : (arrow (List a) (List a))) %0)))
+g_terminates_1: ((~Int.Lt : (arrow int (arrow int bool)))
+ ((~len : (arrow (List a) int)) ((~List..tl : (arrow (List a) (List a))) %0))
+ (if (∀ (bvar:d) #true) then ((~len : (arrow (List a) int)) %0) else ((~len : (arrow (List a) int))
+%0)))
+-/
+#guard_msgs in
+#eval termObligations (fgPhantomPgm "b" "d")
+
+/-- `IntList` with constructors `Nil()` and `Cons(hd : int, tl : IntList)`. -/
+private def intListDt : LDatatype Unit :=
+  { name := "IntList", typeArgs := [],
+    constrs := [
+      { name := ⟨"Nil", ()⟩, args := [] },
+      { name := ⟨"Cons", ()⟩,
+        args := [(⟨"hd", ()⟩, .int), (⟨"tl", ()⟩, .tcons "IntList" [])] }
+    ], constrs_ne := rfl }
+
+/-- `g(@[cases] ys : IntList) : int` with
+    `if IntList..isNil(ys) then 0 else g(IntList..tl(ys))`, the recursive call
+    unannotated. -/
+private def monoPgm : Core.Program :=
+  let t : LMonoTy := .tcons "IntList" []
+  let ys : Core.Expression.Expr := .fvar Core.coreLoc ⟨"ys", ()⟩ (some t)
+  let g : Core.Function :=
+    { name := ⟨"g", ()⟩, isRecursive := true,
+      inputs := [(⟨"ys", ()⟩, t)], output := .int,
+      body := some (.ite Core.coreLoc
+                    (.app Core.coreLoc (opE "IntList..isNil" (some (.arrow t .bool))) ys)
+        (.intConst Core.coreLoc 0)
+        (.app Core.coreLoc (opE "g" none)
+          (.app Core.coreLoc (opE "IntList..tl" (some (.arrow t t))) ys))),
+      attr := #[.inlineIfConstr 0] }
+  { decls := [.type (.data [intListDt]) .empty, .recFuncBlock [g] .empty] }
+
+-- A monomorphic callee with an unannotated call: its rank is taken at
+-- `IntList → int`.
+/--
+info: g_terminates_0: ((~Int.Lt : (arrow int (arrow int bool)))
+ ((~IntList..adtRank : (arrow IntList int)) ((~IntList..tl : (arrow IntList IntList)) %0))
+ ((~IntList..adtRank : (arrow IntList int)) %0))
+-/
+#guard_msgs in
+#eval termObligations monoPgm
+
+end CallInstance
 
 end Strata.TerminationCheckTest
 

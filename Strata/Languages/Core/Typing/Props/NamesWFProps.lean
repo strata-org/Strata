@@ -11,6 +11,7 @@ import Strata.DL.Lambda.LExprTypeEnvProps
 import Strata.DL.Lambda.LTyWFCheckSound
 import all Strata.DL.Lambda.LExprTypeEnv
 import Strata.DL.Lambda.TypeFactoryProps
+import Strata.Languages.Core.Typing.Props.FactoryRegistrationProps
 import Strata.DL.Lambda.DatatypeFactoryWFProps
 import all Strata.DL.Lambda.FactoryProps
 import all Strata.DL.Lambda.Factory
@@ -92,22 +93,6 @@ theorem addMutualBlock_mem_functions {C C' : LContext CoreLParams}
     refine Array.mem_map.mpr ⟨g, ?_, hgn⟩
     rw [Array.mem_def, hlist]
     exact List.mem_append_right _ hg
-
-/-- A factory extension keeps the function names of the old context. -/
-theorem FactoryExtendedBy.mem_old {agrees : LFunc CoreLParams → LFunc CoreLParams → Prop}
-    {C C' : LContext CoreLParams} {newFuncs : List (LFunc CoreLParams)}
-    (h : FactoryExtendedBy agrees C C' newFuncs) {n : String} (hn : n ∈ C.functions) :
-    n ∈ C'.functions := by
-  obtain ⟨g, hg⟩ := Option.isSome_iff_exists.mp ((Factory.mem_iff_getElem?_isSome _ _).mp hn)
-  exact Factory.getElem?_some_implies_mem (h.preserves_old n g hg)
-
-/-- A factory extension holds the name of each new function. -/
-theorem FactoryExtendedBy.mem_new {agrees : LFunc CoreLParams → LFunc CoreLParams → Prop}
-    {C C' : LContext CoreLParams} {newFuncs : List (LFunc CoreLParams)}
-    (h : FactoryExtendedBy agrees C C' newFuncs) {f : LFunc CoreLParams} (hf : f ∈ newFuncs) :
-    f.name.name ∈ C'.functions := by
-  obtain ⟨g, hg, -⟩ := h.contains_new f hf
-  exact Factory.getElem?_some_implies_mem hg
 
 /-- A renaming of a function's type parameters keeps its name. -/
 private theorem FuncAlphaVariant.name_eq {C : LContext CoreLParams} {Γ : TContext Unit}
@@ -269,7 +254,7 @@ private theorem StatementsNamesWF.of_mapStmtsTys {P : Program} {fns : String →
     rename_i h
     rw [mapStmtTys_cmd] at h
     cases c with
-    | cmd cc => cases cc <;> simp_all [mapCmdTys, StatementNamesWF, CmdNamesWF]
+    | cmd cc => cases cc <;> simp_all [mapCmdTys, mapCmdWith, StatementNamesWF, CmdNamesWF]
     | call => trivial
   | _ =>
     simp_all [mapStmtTys_block, mapStmtTys_ite, mapStmtTys_loop, mapStmtTys_exit,
@@ -285,7 +270,7 @@ private theorem ProcNamesWF.of_alphaVariant {P : Program} {fns : String → Prop
   obtain ⟨-, hin, hout⟩ := Procedure.renameTypeArgs_names proc ren
   obtain ⟨hkeys, hbody⟩ := h
   have hformals : ∀ x ∈ proc.header.inputs.keys ++ proc.header.outputs.keys,
-      VarNameWF fns x := by
+      VarNotFunc fns x := by
     rw [← hin, ← hout]
     exact hkeys
   refine ⟨hformals, ?_⟩

@@ -7,6 +7,7 @@ module
 
 public import Strata.DL.Lambda.IntBoolFactory
 import Strata.DL.Lambda.LExprType
+import Strata.DL.Lambda.LTyMatch
 
 /-! # Function Precondition Obligation Collection
 
@@ -16,6 +17,7 @@ from expressions that call functions with preconditions.
 
 namespace Lambda
 open Std (ToFormat Format format)
+open Strata.Util (HMap)
 
 public section
 
@@ -52,6 +54,17 @@ def substitutePrecondition
   let substitution := formals.zip actuals |>.map fun ((name, _), actual) => (name, actual)
   LExpr.substFvarsLifting precond substitution
 
+/-- The callee's type arguments at a call, given by `LFuncDefined.callInstance?`; an unbound
+    `i`-th type argument is `precondTyVarPrefix ++ toString i`, and so is every argument when
+    the matching fails. On a type-checked program the matching cannot fail; the fallback
+    serves callers that pass a program that was not type-checked. -/
+private def callInstance (fn : LFunc T) (callee : LExpr T.mono)
+    (args : List (LExpr T.mono)) : SubstOne :=
+  -- TODO: prove that the transformations preserve typing; then this branch is provably
+  -- unreachable on pipeline input.
+  SubstOne.completeParams fn.typeArgs precondTyVarPrefix
+    ((LFuncDefined.callInstance? fn.toFunc callee args).getD HMap.empty)
+
 /--
 Type substitution instantiating a polymorphic precondition at a call site.
 Returns `Subst.empty` for monomorphic functions.
@@ -59,20 +72,7 @@ Returns `Subst.empty` for monomorphic functions.
 private def callSiteTypeSubst (fn : LFunc T) (callee : LExpr T.mono)
     (args : List (LExpr T.mono)) : Subst :=
   if fn.typeArgs.isEmpty then Subst.empty
-  else
-    let opSubst := (fn.opTypeSubst callee).getD Subst.empty
-    let argConstraints := (args.zip fn.inputs.values).filterMap
-      (fun (arg, formal) => (LExpr.typeCheck [] arg).map (·, formal))
-    let argSubst :=
-      if argConstraints.isEmpty then Subst.empty
-      else match Constraints.unify argConstraints SubstInfo.empty with
-        | .ok substInfo => substInfo.subst
-        | .error _ => Subst.empty
-    -- Resolve `opSubst` into `argSubst`'s values before merging: `LMonoTy.subst`
-    -- is single-pass, so a binding like `%a ↦ Sequence %b` would otherwise leave
-    -- a residual `%b` that only `opSubst` binds. `opSubst` then fills any type
-    -- variable `argSubst` does not bind.
-    argSubst.mapValues (LMonoTy.subst opSubst) ++ opSubst
+  else [callInstance fn callee args]
 
 /--
 Collect all WF obligations from an expression by traversing it and finding
@@ -99,8 +99,9 @@ where
           -- Instantiate the precondition's type variables at this call site
           let tySubst := callSiteTypeSubst func op args
           func.preconditions.map fun precond =>
-            let substedPrecond := substitutePrecondition precond.expr func.inputs args
-            let substedPrecond := substedPrecond.applyTypeSubst tySubst
+            let substedPrecond :=
+              substitutePrecondition (precond.expr.applyTypeSubst tySubst)
+                func.inputs args
             { funcName := func.name.name
               obligation := wrapImplications implications substedPrecond
               callSiteMetadata := md

@@ -63,9 +63,8 @@ structure Lemma where
   e : LExpr CoreLParams.mono
   deriving BEq, DecidableEq
 
-/-- Replace each free variable named `x` by the bound variable of a binder `k`
-levels up. Unlike `LExpr.varClose`, the match ignores type annotations, which
-are not yet resolved when lemmas are generated before type checking. -/
+/-- Replace each free variable named `x` by the bound variable of a binder `k` levels up,
+whatever its type annotation. -/
 private def closeVarByName (k : Nat) (x : CoreIdent) :
     LExpr CoreLParams.mono → LExpr CoreLParams.mono
   | .fvar m y ty => if y == x then .bvar m k else .fvar m y ty

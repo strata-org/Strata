@@ -572,8 +572,7 @@ Composable building blocks for translating Core programs to GOTO.
 public def typeCheckCore (program : Core.Program)
     (factory : @Lambda.Factory Core.CoreLParams := Core.Factory)
     : Except String (Core.Program × Core.Expression.TyEnv) := do
-  let Ctx := { Lambda.LContext.default with
-    functions := factory, knownTypes := Core.KnownTypes }
+  let Ctx := { Core.initTyContext with functions := factory }
   let Env := Lambda.TEnv.default
   match Core.Program.typeCheck Ctx Env program with
   | .ok (tcPgm, Env') => return (tcPgm, Env')
@@ -661,7 +660,7 @@ private def mkVerificationHarness (entry : Core.Procedure) : Core.Procedure :=
     body := .structured (inDecls ++ outOnlyDecls ++ assumes ++ [callStmt]) }
 
 /--
-Inline procedures, type-check, and emit CProver GOTO JSON files.
+Type-check, inline procedures, and emit CProver GOTO JSON files.
 -/
 public def inlineCoreToGotoFiles (program : Core.Program)
     (baseName : String)
@@ -681,16 +680,16 @@ public def inlineCoreToGotoFiles (program : Core.Program)
         { program with decls := program.decls ++ [.proc (mkVerificationHarness p) #[]] }
       else program
     | _ => program
+  let (tcPgm, Env) ← match typeCheckCore program factory with
+    | .ok r => pure r
+    | .error msg => throw msg
   let phase := Core.procedureInliningPipelinePhase
     { doInline := (fun _caller callee _ => callee ≠ "main"), maxIters := some 10 }
-  let inlined ← match Core.Transform.run program (fun prog => do
+  let inlined ← match Core.Transform.run tcPgm (fun prog => do
       let (_, prog') ← phase.transform prog; return prog') with
     | .ok r => pure r
     | .error msg => throw (toString msg)
-  let (tcPgm, Env) ← match typeCheckCore inlined factory with
-    | .ok r => pure r
-    | .error msg => throw msg
-  coreToGotoFiles tcPgm Env baseName sourceText entryPoints
+  coreToGotoFiles inlined Env baseName sourceText entryPoints
     (hoistRecursive := hoistRecursive)
 
 end -- public section

@@ -33,7 +33,7 @@ procedure P () {
 -- `FooAlias bool` = `Foo bool bool` does not unify with `Foo int bool`.
 /--
 error: ❌ Type checking error.
-Impossible to unify (Foo int bool) with (Foo bool bool).
+Procedure 'P': Impossible to unify (Foo int bool) with (Foo bool bool).
 First mismatch: int with bool.
 -/
 #guard_msgs in

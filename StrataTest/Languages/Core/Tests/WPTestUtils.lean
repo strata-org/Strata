@@ -33,13 +33,17 @@ open _root_.Core Imperative Imperative.BigStep Imperative.WP
 def modes : List (String × Core.VerifyOptions) :=
   [("symbolic", Core.VerifyOptions.quiet), ("wp", { Core.VerifyOptions.quiet with vcgen := .wp })]
 
-/-- Prints one line `pre label: proved` or `pre label: not proved` per obligation of `pgm`,
-    verified with `opts` and, when given, `pipeline`. -/
+/-- The line `pre label: proved` or `pre label: not proved` for the obligation result `r`. -/
+def provedLine (pre : String) (r : Core.VCResult) : String :=
+  s!"{pre}{r.obligation.label}: {if r.isSuccess then "proved" else "not proved"}"
+
+/-- Prints `provedLine pre r` for each obligation result `r` of `pgm`, verified with `opts` and,
+    when given, `pipeline`. -/
 def printProved (pgm : StrataDDM.SourcedProgram) (opts : Core.VerifyOptions := .quiet)
     (pipeline : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) := none)
     (pre : String := "") : IO Unit := do
   for r in ← Core.verify pgm (options := opts) (pipeline := pipeline) do
-    IO.println s!"{pre}{r.obligation.label}: {if r.isSuccess then "proved" else "not proved"}"
+    IO.println (provedLine pre r)
 
 /-- Prints, for each of the two `modes`, the lines of `printProved` on `pgm`, each prefixed
     by the mode's name. -/

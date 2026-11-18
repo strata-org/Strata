@@ -7,6 +7,7 @@ module
 
 meta import Strata.Languages.Core
 import StrataDDM.Integration.Lean.HashCommands
+meta import StrataTest.Languages.Core.Tests.TestUtil
 
 meta section
 open StrataDDM (Program)
@@ -16,7 +17,8 @@ open StrataDDM (Program)
 
 Tests recursive functions over algebraic datatypes using the `recursive function`
 concrete syntax with `decreases` clauses. Verifies parsing, translation,
-axiom-based SMT encoding, and end-to-end verification.
+axiom-based SMT encoding, and end-to-end verification, then the type checker's
+inferred measures and its requirements on recursive function blocks.
 -/
 
 namespace Strata.RecursiveFunctionTest
@@ -614,6 +616,280 @@ Result: ✅ pass
 #guard_msgs in
 #eval Core.verify polyRecPgm (options := .quiet)
 
+/-! ## Measures inferred from the integer requirement -/
+
+/-- The measure the type checker stored for the recursive function `name`. -/
+private def storedMeasure (p : Core.Program) (name : String) :
+    Option Core.Expression.Expr :=
+  p.decls.findSome? fun d =>
+    match d with
+    | .func f _ => if f.name.name == name then f.measure else none
+    | .recFuncBlock fs _ => (fs.find? (·.name.name == name)).bind (·.measure)
+    | _ => none
+
+open Core.TestUtil (translateWithMetaData)
+
+/-- The type-checked program, or `none` if type checking rejected it. -/
+private def checked (p : StrataDDM.Program) : Option Core.Program :=
+  (Core.typeCheck .quiet (translateWithMetaData p)).toOption
+
+-- A measure `unconstrained()`, typed only by the requirement that measures be `int`, is accepted.
+def measureSolvedByIntPgm : Program :=
+#strata
+program Core;
+
+function unconstrained<a>() : a;
+
+rec function countdown (n : int) : int
+  decreases unconstrained()
+{
+  if int.le(n, 0) then 0 else countdown(int.sub(n, 1))
+};
+#end
+
+/-- info: ok: program Core;
+
+function unconstrained<a> () : a;
+rec function countdown (n : int) : int
+decreases unconstrained
+  {
+  if int.le(n, 0) then 0 else countdown(int.sub(n, 1))
+};
+-/
+#guard_msgs (whitespace := lax) in
+#eval Core.typeCheck .quiet (translateWithMetaData measureSolvedByIntPgm)
+
+-- The stored measure records the inferred integer result type.
+/--
+info: some (LExpr.op () { name := "unconstrained", metadata := () } (some Lambda.LMonoTy.tcons "int" []))
+-/
+#guard_msgs (whitespace := lax) in
+#eval repr (((checked measureSolvedByIntPgm).bind (storedMeasure · "countdown")).map
+  Lambda.LExpr.eraseMetadata)
+
+-- A concrete integer measure is accepted.
+def measureIntExprPgm : Program :=
+#strata
+program Core;
+
+rec function countdown (n : int) : int
+  decreases int.add(n, 1)
+{
+  if int.le(n, 0) then 0 else countdown(int.sub(n, 1))
+};
+#end
+
+/-- info: ok: program Core;
+
+rec function countdown (n : int) : int
+decreases int.add(n, 1)
+  {
+  if int.le(n, 0) then 0 else countdown(int.sub(n, 1))
+};
+-/
+#guard_msgs (whitespace := lax) in
+#eval Core.typeCheck .quiet (translateWithMetaData measureIntExprPgm)
+
 end Strata.RecursiveFunctionTest
+
+/-! ## Recursive function block type checking -/
+
+namespace Core
+section RecFuncBlock
+
+open Lambda
+open Std (Format ToFormat format)
+open Core.TestUtil (programVerdict verdictOf xId)
+
+/-- A non-recursive function record with a well-typed body. -/
+private def plainMember : Function :=
+  { name := ⟨"f", ()⟩, typeArgs := [],
+    inputs := [(xId, LMonoTy.int)], output := LMonoTy.int,
+    body := some (.fvar Core.coreLoc xId none) }
+
+/-- A program containing exactly one recursive function block. -/
+private def blockProgram (funcs : List Function) : Core.Program :=
+  { decls := [.recFuncBlock funcs .empty] }
+
+-- Repeated reserved member names are rejected as duplicate declarations.
+private def duplicateReservedMember : Function :=
+  { plainMember with name := ⟨"$__rigid_f", ()⟩, isRecursive := true }
+
+/--
+info: REJECTED: Error in recursive functions $__rigid_f: a declaration of this name already exists.
+-/
+#guard_msgs in
+#eval programVerdict (blockProgram [duplicateReservedMember, duplicateReservedMember])
+
+-- A block with no members is rejected.
+/-- info: REJECTED: recursive function block must contain at least one function -/
+#guard_msgs in
+#eval verdictOf (RecFuncBlock.typeCheck initTyContext TEnv.default [])
+
+/-! ## Every member carries the recursion flag -/
+
+-- A member without the recursion flag is rejected.
+/-- info: REJECTED: recursive function block member 'f' must be marked recursive -/
+#guard_msgs in
+#eval programVerdict (blockProgram [plainMember])
+
+-- A flagged member need not call itself.
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval programVerdict (blockProgram [{ plainMember with isRecursive := true }])
+
+/-- A one-member block may call itself. -/
+private def selfRecursiveMember : Function :=
+  { name := ⟨"f", ()⟩, typeArgs := [], isRecursive := true,
+    inputs := [(xId, LMonoTy.int)], output := LMonoTy.int,
+    body := some (.app Core.coreLoc (.op Core.coreLoc ⟨"f", ()⟩ none) (.fvar Core.coreLoc xId none))
+        }
+
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval programVerdict (blockProgram [selfRecursiveMember])
+
+/-! ## Inline members are rejected -/
+
+-- An inline member without the recursion flag is rejected for being inline.
+private def inlineUnflaggedMember : Function :=
+  { plainMember with attr := #[.inline] }
+
+/--
+info: REJECTED: recursive function 'f' cannot be marked inline
+-/
+#guard_msgs (whitespace := lax) in
+#eval programVerdict (blockProgram [inlineUnflaggedMember])
+
+/-! ## Invalid member signatures are rejected -/
+
+/-- The first member calls `g`; the second member's duplicate formals make its signature invalid. -/
+private def invalidLaterSignature : Core.Program :=
+  blockProgram
+    [{ name := ⟨"f", ()⟩, typeArgs := [], isRecursive := true,
+       inputs := [(xId, LMonoTy.int)], output := LMonoTy.int,
+       body := some (.app Core.coreLoc (.op Core.coreLoc ⟨"g", ()⟩ none)
+                     (.fvar Core.coreLoc xId none)) },
+     { name := ⟨"g", ()⟩, typeArgs := [], isRecursive := true,
+       inputs := [(xId, LMonoTy.int), (xId, LMonoTy.int)], output := LMonoTy.int,
+       body := some (.fvar Core.coreLoc xId none) }]
+
+/--
+info: REJECTED: Function 'g': duplicate parameter names [x, x]
+-/
+#guard_msgs (whitespace := lax) in
+#eval programVerdict invalidLaterSignature
+
+/-! Type aliases are accepted in mutually recursive signatures and calls. -/
+
+/-- `AliasInt` names `int`; both members use it in their signatures and call each other. -/
+private def aliasMutualProgram : Core.Program :=
+  let aliasTy := LMonoTy.tcons "AliasInt" []
+  { decls :=
+      [.type (.syn { name := "AliasInt", typeArgs := [], type := LMonoTy.int }) .empty,
+       .recFuncBlock
+        [{ name := ⟨"f", ()⟩, typeArgs := [], isRecursive := true,
+           inputs := [(xId, aliasTy)], output := aliasTy,
+           body := some (.app Core.coreLoc (.op Core.coreLoc ⟨"g", ()⟩ none)
+                         (.fvar Core.coreLoc xId none)) },
+         { name := ⟨"g", ()⟩, typeArgs := [], isRecursive := true,
+           inputs := [(xId, aliasTy)], output := aliasTy,
+           body := some (.app Core.coreLoc (.op Core.coreLoc ⟨"f", ()⟩ none)
+                         (.fvar Core.coreLoc xId none)) }] .empty] }
+
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval programVerdict aliasMutualProgram
+
+/-- Does `es` carry at least one type annotation, with every annotation the type `int`? -/
+private def clausesAtInt (es : List Core.Expression.Expr) : Bool :=
+  Lambda.allExprsTys (fun mty => mty == LMonoTy.int) es &&
+    !Lambda.allExprsTys (fun mty => mty != LMonoTy.int) es
+
+/-! ## Recursive function clauses use the formal's type -/
+
+/-- A recursive function with formal `y : int` whose precondition and measure compare `y`,
+    annotated `ann`, with itself. -/
+private def clauseRecPgmWith (ann : Option LMonoTy) : Core.Program :=
+  let yOcc : Core.Expression.Expr := LExpr.fvar Core.coreLoc "y" ann
+  { decls := [
+    .recFuncBlock
+      [{ name := "f", typeArgs := [], isRecursive := true,
+         inputs := [("y", LMonoTy.int)], output := LMonoTy.int,
+         body := some (LExpr.fvar Core.coreLoc "y" none),
+         preconditions := [{ expr := LExpr.eq Core.coreLoc yOcc yOcc, md := Core.coreLoc }],
+         measure := some (LExpr.ite Core.coreLoc (LExpr.eq Core.coreLoc yOcc yOcc)
+           (LExpr.intConst Core.coreLoc 0) (LExpr.intConst Core.coreLoc 1)) }] .empty ]}
+
+/-- Whether every recursive member's precondition and measure are annotated at `int`. -/
+private def clauseRecVerdict (pgm : Core.Program) : Format :=
+  match Core.Program.typeCheck initTyContext Lambda.TEnv.default pgm with
+  | .error e => Std.format e
+  | .ok (p', _) =>
+    let funcs := p'.decls.flatMap fun
+      | .recFuncBlock fs _ => fs
+      | _ => []
+    f!"precondition at int: {funcs.all (fun d => clausesAtInt (d.preconditions.map (·.expr)))}\n\
+       measure at int: {funcs.all (fun d => clausesAtInt d.measure.toList)}"
+
+/--
+info: precondition at int: true
+measure at int: true
+-/
+#guard_msgs (whitespace := lax) in
+#eval clauseRecVerdict (clauseRecPgmWith none)
+
+-- An annotation at a type variable the member does not declare is not in scope.
+/--
+info: Function 'f': type variable `a` is not in scope
+-/
+#guard_msgs (whitespace := lax) in
+#eval clauseRecVerdict (clauseRecPgmWith (some (.ftvar "a")))
+
+/-! ## A renamed type parameter avoids the type variables of the member's body
+
+A member's type parameter with a reserved prefix is renamed for its signature stub as for the
+full member, so the new name avoids a type variable written only in the body. -/
+
+/-- A declared function with type parameter `a`. -/
+private def polyIdDecl : Core.Decl :=
+  .func { name := ⟨"polyId", ()⟩, typeArgs := ["a"], inputs := [(xId, .ftvar "a")],
+          output := .ftvar "a" } .empty
+
+/-- A recursive member with type parameter `$__ty0` that calls itself on `polyId x`, where the
+    call of `polyId` is annotated `a → a`. -/
+private def reservedParamMember : Function :=
+  { name := ⟨"f", ()⟩, typeArgs := ["$__ty0"], isRecursive := true,
+    inputs := [(xId, .ftvar "$__ty0")], output := .ftvar "$__ty0",
+    body := some (.app Core.coreLoc (.op Core.coreLoc ⟨"f", ()⟩ none)
+      (.app Core.coreLoc (.op Core.coreLoc ⟨"polyId", ()⟩ (some (.arrow (.ftvar "a") (.ftvar "a"))))
+        (.fvar Core.coreLoc xId none))) }
+
+/-- The type parameters and signature of each checked recursive member, or the error. -/
+private def recMemberSignatures (pgm : Core.Program) : Format :=
+  match Core.Program.typeCheck initTyContext Lambda.TEnv.default pgm with
+  | .error e => Std.format e
+  | .ok (p', _) =>
+    Std.Format.joinSep (p'.decls.flatMap fun
+      | .recFuncBlock fs _ =>
+        fs.map fun f => f!"{f.name}<{f.typeArgs}> : {f.inputs.values} → {f.output}"
+      | _ => []) Std.Format.line
+
+/-- info: f<[a_1]> : [a_1] → a_1 -/
+#guard_msgs (whitespace := lax) in
+#eval recMemberSignatures { decls := [polyIdDecl, .recFuncBlock [reservedParamMember] .empty] }
+
+-- The signature stub of the member has the same type parameter.
+/-- info: f<[a_1]> : [a_1] → a_1 -/
+#guard_msgs (whitespace := lax) in
+#eval match RecFuncBlock.checkSignature initTyContext TEnv.default [reservedParamMember]
+    reservedParamMember with
+  | .error e => IO.println e
+  | .ok sig =>
+    let stub := sig.stub
+    IO.println f!"{stub.name}<{stub.typeArgs}> : {stub.inputs.values} → {stub.output}"
+
+end RecFuncBlock
+end Core
 
 end

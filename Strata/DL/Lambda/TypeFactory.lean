@@ -623,8 +623,9 @@ private def mkDestructorFunc {T} [BEq T.Identifier] [Inhabited T.IDMeta]
   (i : Nat) (name : Identifier T.IDMeta) (ty : LMonoTy) (safe : Bool) :
   LFunc T :=
   let arg := genArgName
-  let argExpr : LExpr T.mono := .fvar default arg .none
-  let testerExpr : LExpr T.mono := .app default (.op default c.testerName .none) argExpr
+  let argExpr : LExpr T.mono := .fvar default arg (some (dataDefault d))
+  let testerExpr : LExpr T.mono :=
+    .app default (.op default c.testerName (some (.arrow (dataDefault d) .bool))) argExpr
   { name :=
     if safe then destructorFuncName d name else unsafeDestructorFuncName d name,
     typeArgs := d.typeArgs,

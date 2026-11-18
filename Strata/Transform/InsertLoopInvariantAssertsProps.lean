@@ -1518,13 +1518,13 @@ private theorem runStmtsRec_insert_aux : ∀ (fuel : Nat) (ss : List Statement) 
       GenLe γ γ' ∧ PassPost ss γ r γ'
   | 0, _, _, h => absurd h (Nat.not_lt_zero _)
   | _ + 1, [], γ, _ => by
-    simp only [Transform.runStmtsRec]
+    rw [Transform.runStmtsRec_eq]
     exact Transform.PostGen.pure fun _ h => h ▸ ⟨GenLe.refl _, fun _ =>
       ⟨.nil, Nat.le_refl _, by simp, fun _ => rfl⟩⟩
   | fuel + 1, s :: rest, γ, hsz => by
     have ih := runStmtsRec_insert_aux fuel
     simp only [List.cons.sizeOf_spec] at hsz
-    rw [Transform.runStmtsRec.eq_def]
+    rw [Transform.runStmtsRec_eq]
     dsimp only
     refine Transform.PostGen.bind (Q₁ := fun r γ₁ => GenLe γ γ₁ ∧ (γ.WF →
         StmtRelStep (Drawn γ) (Drawn γ₁) s r.2 ∧
