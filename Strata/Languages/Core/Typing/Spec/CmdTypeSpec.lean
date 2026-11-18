@@ -97,7 +97,7 @@ def WrittenEnv.bindFirst (Δ : WrittenEnv) (rigid : List TyIdentifier)
     annotations are rigid or bound in `Δ`. A declaration instantiates its type consistently with
     `Δ` and binds the variables it uses first, which its initializer sees; every other command
     leaves `Δ` unchanged. -/
-inductive CmdHasTypeΔ' (C : LContext CoreLParams) :
+inductive CmdHasType (C : LContext CoreLParams) :
     WrittenEnv → TContext Unit → Cmd Expression → TContext Unit → WrittenEnv → Prop where
   /-- `var x : T := e` — `x` must be fresh, not named like a function, `T` a valid declared
       monotype `T₀` (user-writable type variables only) admitting the stored monotype `mty`
@@ -118,7 +118,7 @@ inductive CmdHasTypeΔ' (C : LContext CoreLParams) :
       WrittenAnnotsOk C Γ e →
       AnnotsInScope C.rigidTypeVars (Δ.bindFirst C.rigidTypeVars mty₀ σ) e →
       TContext.Equiv (T := CoreLParams) Γ' { Γ with types := Γ.types.insert x (.forAll [] mty) } →
-      CmdHasTypeΔ' C Δ Γ (.init x xty (.det e) md) Γ' (Δ.bindFirst C.rigidTypeVars mty₀ σ)
+      CmdHasType C Δ Γ (.init x xty (.det e) md) Γ' (Δ.bindFirst C.rigidTypeVars mty₀ σ)
   /-- `var x : T := *` — as `init_det`, with no initializer. -/
   | init_nondet : ∀ Δ Γ x (xty : LTy) mty mty₀ σ md Γ',
       Γ.types.find? x = none →
@@ -128,7 +128,7 @@ inductive CmdHasTypeΔ' (C : LContext CoreLParams) :
         ValidDeclaredTy C Γ.aliases mty₀ →
       C.WellKindedTy mty →
       TContext.Equiv (T := CoreLParams) Γ' { Γ with types := Γ.types.insert x (.forAll [] mty) } →
-      CmdHasTypeΔ' C Δ Γ (.init x xty .nondet md) Γ' (Δ.bindFirst C.rigidTypeVars mty₀ σ)
+      CmdHasType C Δ Γ (.init x xty .nondet md) Γ' (Δ.bindFirst C.rigidTypeVars mty₀ σ)
   /-- `x := e` — `x` must exist with mono type `mty`, and `e` must have that type.
       Output up to `Equiv` with the (unchanged) input context. -/
   | set_det : ∀ Δ Γ x mty e md Γ',
@@ -137,33 +137,33 @@ inductive CmdHasTypeΔ' (C : LContext CoreLParams) :
       WrittenAnnotsOk C Γ e →
       AnnotsInScope C.rigidTypeVars Δ e →
       TContext.Equiv (T := CoreLParams) Γ' Γ →
-      CmdHasTypeΔ' C Δ Γ (.set x (.det e) md) Γ' Δ
+      CmdHasType C Δ Γ (.set x (.det e) md) Γ' Δ
   /-- `x := *` — `x` must exist in context with a mono type. Output up to `Equiv`. -/
   | set_nondet : ∀ Δ Γ x mty md Γ',
       Γ.types.find? x = some (.forAll [] mty) →
       TContext.Equiv (T := CoreLParams) Γ' Γ →
-      CmdHasTypeΔ' C Δ Γ (.set x .nondet md) Γ' Δ
+      CmdHasType C Δ Γ (.set x .nondet md) Γ' Δ
   /-- `assert l e` — `e` must have type `bool`. Output up to `Equiv`. -/
   | assert : ∀ Δ Γ l e md Γ',
       HasType C Γ (instAnnots Δ e) (.forAll [] .bool) →
       WrittenAnnotsOk C Γ e →
       AnnotsInScope C.rigidTypeVars Δ e →
       TContext.Equiv (T := CoreLParams) Γ' Γ →
-      CmdHasTypeΔ' C Δ Γ (.assert l e md) Γ' Δ
+      CmdHasType C Δ Γ (.assert l e md) Γ' Δ
   /-- `assume l e` — `e` must have type `bool`. Output up to `Equiv`. -/
   | assume : ∀ Δ Γ l e md Γ',
       HasType C Γ (instAnnots Δ e) (.forAll [] .bool) →
       WrittenAnnotsOk C Γ e →
       AnnotsInScope C.rigidTypeVars Δ e →
       TContext.Equiv (T := CoreLParams) Γ' Γ →
-      CmdHasTypeΔ' C Δ Γ (.assume l e md) Γ' Δ
+      CmdHasType C Δ Γ (.assume l e md) Γ' Δ
   /-- `cover l e` — `e` must have type `bool`. Output up to `Equiv`. -/
   | cover : ∀ Δ Γ l e md Γ',
       HasType C Γ (instAnnots Δ e) (.forAll [] .bool) →
       WrittenAnnotsOk C Γ e →
       AnnotsInScope C.rigidTypeVars Δ e →
       TContext.Equiv (T := CoreLParams) Γ' Γ →
-      CmdHasTypeΔ' C Δ Γ (.cover l e md) Γ' Δ
+      CmdHasType C Δ Γ (.cover l e md) Γ' Δ
 
 end -- public section
 

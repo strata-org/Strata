@@ -17,7 +17,7 @@ import Strata.DL.Lambda.LTyWFCheckSound
 Proof-level counterparts to `ArityCheckTest.lean`: a type that applies a known
 constructor at the wrong arity (`Sequence a a`, `Sequence` being arity 1) is
 rejected, both by the typing relation (`FuncWellTyped`) and by the typechecker
-spec (`ValidWrittenTy`, which `FuncHasType'` requires of written types), with or
+spec (`ValidWrittenTy`, which `FuncHasTypeExact` requires of written types), with or
 without an alias in between. Correct-arity types (`Sequence a`) are accepted.
 -/
 

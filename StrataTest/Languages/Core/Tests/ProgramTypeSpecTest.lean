@@ -133,7 +133,7 @@ private theorem idAt_rename :
 /-- `f<a>(x : a) : a := x` satisfies the typechecker spec for functions in the
     empty type scope, when `x` is not a function of `C`. -/
 private theorem idAt_a_hasType {C : LContext CoreLParams}
-    (hx : "x" ∉ C.functions) : FuncHasType' C {} (idAt "a") := by
+    (hx : "x" ∉ C.functions) : FuncHasTypeExact C {} (idAt "a") := by
   have hfv : LMonoTy.freeVars
       (LMonoTy.mkArrow' (idAt "a").output (idAt "a").inputs.values) =
         ["a", "a"] := by rfl

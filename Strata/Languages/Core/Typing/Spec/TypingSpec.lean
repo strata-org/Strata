@@ -13,10 +13,35 @@ public import Strata.DL.Lambda.LTyWFSpec
 
 /-! ## Typing relation: well-typedness of commands, statements, procedures, functions and programs
 
-The program typing rules of `ProgramTypeSpec` restated over variable scopes
-alone, with expressions typed by the annotated relation `LExpr.HasTypeA` and
-without the reserved-type-parameter and cross-kind name conditions; datatype
-blocks are registered with `LContext.addMutualBlock`. -/
+These relations describe the annotated program that type checking outputs. The
+typechecker spec in `ProgramTypeSpec` and the files beside it describes the
+program as the user wrote it, which is the checker's input.
+Each level pairs its typechecker spec relations with one typing relation:
+
+| Level | Typechecker spec (input) | Typing relation (output) |
+|---|---|---|
+| Expression | `HasType C Γ (instAnnots Δ e)` | `ExprWellTyped` |
+| Command | `CmdHasType` | `CmdWellTyped` |
+| Command with calls | `CmdExtHasType` | `CmdExtWellTyped` |
+| Statement | `StatementHasType` | `StatementWellTyped` |
+| Statements | `StatementsHasType` | `StatementsWellTyped` |
+| Procedure body | `ProcBodyHasType` | `ProcBodyWellTyped` |
+| Procedure | `ProcHasTypeExact`, `ProcHasType` | `ProcWellTyped` |
+| Function | `FuncHasTypeExact`, `FuncHasType` | `FuncWellTyped` |
+| Declaration | `DeclHasType` | `DeclWellTyped` |
+| Declarations | `DeclsHasType` | `DeclsWellTyped` |
+| Program | `ProgramHasType` | `ProgramWellTyped` |
+
+The two kinds differ in what they type and in what they check:
+* The spec types the program as written, with Lambda's `HasType`, in a
+  `TContext` that has type synonyms, and threads `Δ`,
+  the written type variables in scope. The typing relation types the annotated
+  output with `HasTypeA`, over `TypeScopes` only, with no synonyms and no `Δ`.
+* Only the spec checks what the user wrote: `WrittenAnnotsOk`, `AnnotsInScope`,
+  and the renaming of reserved type parameters (the `*AlphaVariant` relations).
+  The typing relation also leaves out the cross-kind name conditions.
+
+Datatype blocks are registered with `LContext.addMutualBlock`. -/
 
 namespace Core
 namespace TypeSpec

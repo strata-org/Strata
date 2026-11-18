@@ -356,17 +356,17 @@ the name conditions.
 
 Core's commands are the imperative commands plus a procedure `call`. Procedure
 bodies are typed by
-{name Core.TypeSpec.CmdExtHasTypeΔ'}`CmdExtHasTypeΔ'`, which extends the
-imperative commands' relation {name Core.TypeSpec.CmdHasTypeΔ'}`CmdHasTypeΔ'`
+{name Core.TypeSpec.CmdExtHasType}`CmdExtHasType`, which extends the
+imperative commands' relation {name Core.TypeSpec.CmdHasType}`CmdHasType`
 with `call`. Both relations read each expression's annotations through the
 environment of written type variables in scope. A type variable written in a
 variable declaration's type denotes one type until the end of its block, branch
 or loop body: after `var x : a := …`, a later annotation `a` in the same block
 means the same type.
 
-{docstring Core.TypeSpec.CmdExtHasTypeΔ'}
+{docstring Core.TypeSpec.CmdExtHasType}
 
-{docstring Core.TypeSpec.CmdHasTypeΔ'}
+{docstring Core.TypeSpec.CmdHasType}
 
 ### Datatypes
 
@@ -380,22 +380,22 @@ is compatible with the written one
 ### Functions
 
 Function declarations (recursive or not) are governed by
-{name Core.TypeSpec.FuncHasType'}`FuncHasType'`, applied to a renaming of their
-reserved type parameters
+{name Core.TypeSpec.FuncHasTypeExact}`FuncHasTypeExact`, applied to a renaming
+of their reserved type parameters
 ({name Core.TypeSpec.FuncAlphaVariant}`FuncAlphaVariant`).
 
-{docstring Core.TypeSpec.FuncHasType'}
+{docstring Core.TypeSpec.FuncHasTypeExact}
 
 ### Procedures
 
 Procedure declarations are governed by
-{name Core.TypeSpec.ProcHasType'}`ProcHasType'`, applied to a renaming of their
-reserved type parameters
+{name Core.TypeSpec.ProcHasTypeExact}`ProcHasTypeExact`, applied to a renaming
+of their reserved type parameters
 ({name Core.TypeSpec.ProcAlphaVariant}`ProcAlphaVariant`); its `bodyTyped` field
-defers to {name Core.TypeSpec.ProcBodyHasType'}`ProcBodyHasType'`,
-which accepts only structured bodies (CFG bodies carry no typing obligation).
+defers to {name Core.TypeSpec.ProcBodyHasType}`ProcBodyHasType`,
+which types structured bodies and places no obligation on CFG bodies.
 
-{docstring Core.TypeSpec.ProcHasType'}
+{docstring Core.TypeSpec.ProcHasTypeExact}
 
 ### Programs
 
