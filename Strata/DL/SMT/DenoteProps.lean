@@ -99,7 +99,8 @@ abbrev lookupVar {ctx : Context} {v : TermVar} {i : Nat} {h : (denoteSort ctx.sc
   Option.get_congr (vs_findIdx_ty hi tdi) ▸ (tdi.tΓ.vs[i]'(vs_findIdx_lt hi tdi)).varΓ
 
 /-- The empty sort environment is well-formed for the empty sort context. -/
-theorem sortEnv_nil_wf (iss : ISContext) : SortEnvironment.WF ⟨[], iss, []⟩ [] :=
+theorem sortEnv_nil_wf (iss : ISContext) {dts : DT.Decls} :
+    SortEnvironment.WF ⟨[], iss, dts⟩ [] :=
   { h := rfl, ha := fun _ hi => nomatch hi }
 
 /-- The empty term environment is well-formed for the empty term context. -/
@@ -212,21 +213,19 @@ end
 /-! ## Closing the context -/
 
 /-- Reduce `denoteQuery` to `denoteBoolTermFromContext` on the implication of
-the axioms and assumptions over the conclusion, given that the datatype
-machinery of the context is empty. Only `hs` is needed: with no datatype seen,
-the datatype list is empty and every datatype check passes trivially. The other
-two are kept so that callers state the same facts as before. -/
+the axioms and assumptions over the conclusion, given that the query uses no
+datatype: the datatype list is then empty and every datatype check passes. -/
 theorem denoteQuery_of (ctx : Core.SMT.Context) (assums : List Term) (conc : Term) (P : Prop)
-    (_hdt : ctx.datatypes.factory.isEmpty = true) (hs : ctx.seenDatatypes.isEmpty = true)
-    (_hf : ctx.datatypeFuns.isEmpty = true)
+    (hs : ctx.seenDatatypes.isEmpty = true)
     (h : denoteBoolTermFromContext ctx.sorts.toList.reverse (mkISContext ctx.tySubst).reverse
           ctx.ufs.toList.reverse ctx.ifs.toList.reverse
           (ctx.axms.toList.foldr (.app .implies [·, ·] (.prim .bool))
             (assums.foldr (.app .implies [·, ·] (.prim .bool)) conc)) = some (PLift.up P)) :
     denoteQuery ctx assums conc = some P := by
   simp only [denoteQuery, hs, ↓reduceIte, bind, Option.bind, dtSubstituteIS, List.map_nil,
-    dtFieldsDenotable, dtAllInhabited, dtUnspecUFs, List.all_nil, List.flatMap_nil, List.any_nil,
-    List.nil_append, Bool.not_true, Bool.or_false, Bool.false_eq_true]
+    dtDeclsOK, dtNamesDistinct, dtFieldsDenotable, dtAllInhabited, dtUnspecUFs, List.all_nil,
+    List.flatMap_nil, List.any_nil, List.nodup_nil, decide_true, Bool.and_self,
+    List.nil_append]
   rw [h]
   rfl
 
@@ -240,28 +239,28 @@ and evaluate in the empty environment. The substituted declarations and term
 (`ufs'`, `ifs'`, `t'`) are supplied by the caller.
 -/
 theorem denoteBoolTermFromContext_of (uss : USContext) (iss : ISContext) (ufs : UFContext)
-    (ifs : List IF) (t : Term) (ufs' : UFContext) (ifs' : List IF) (t' : Term)
-    (h : (denoteSort ⟨uss, iss, []⟩ (.prim .bool)).isSome)
-    (ft : TermDenoteInput ⟨⟨uss, iss, []⟩, ⟨[], ifs'.map IF.toUF ++ ufs'⟩⟩ → Prop)
-    (ft₁ : TermDenoteInput ⟨⟨uss, iss, []⟩, ⟨[], ufs'⟩⟩ → Prop)
-    (ft₂ : TermDenoteInput ⟨⟨uss, iss, []⟩, ⟨[], []⟩⟩ → Prop)
-    (ft₃ : SortDenoteInput ⟨[], [], []⟩ → Prop)
+    (ifs : List IF) (t : Term) (ufs' : UFContext) (ifs' : List IF) (t' : Term) (dts : DT.Decls)
+    (h : (denoteSort ⟨uss, iss, dts⟩ (.prim .bool)).isSome)
+    (ft : TermDenoteInput ⟨⟨uss, iss, dts⟩, ⟨[], ifs'.map IF.toUF ++ ufs'⟩⟩ → Prop)
+    (ft₁ : TermDenoteInput ⟨⟨uss, iss, dts⟩, ⟨[], ufs'⟩⟩ → Prop)
+    (ft₂ : TermDenoteInput ⟨⟨uss, iss, dts⟩, ⟨[], []⟩⟩ → Prop)
+    (ft₃ : SortDenoteInput ⟨[], [], dts⟩ → Prop)
     (hufs : (if iss.isEmpty then ufs else ufs.map (substituteUFIS iss)) = ufs')
     (hifs : (if iss.isEmpty then ifs else ifs.map (substituteIFIS iss)) = ifs')
     (htt : substituteTermIS iss t = t')
-    (ht : denoteTerm ⟨⟨uss, iss, []⟩, ⟨[], ifs'.map IF.toUF ++ ufs'⟩⟩ t' = some ⟨.prim .bool, h, ft⟩)
-    (hif : denoteBoolTermFromContext.bindIFs ⟨uss, iss, []⟩ [] ufs' ifs' ft = some ft₁)
-    (huf : denoteBoolTermFromContext.bindUFs ⟨uss, iss, []⟩ [] ufs' ft₁ = some ft₂)
+    (ht : denoteTerm ⟨⟨uss, iss, dts⟩, ⟨[], ifs'.map IF.toUF ++ ufs'⟩⟩ t' = some ⟨.prim .bool, h, ft⟩)
+    (hif : denoteBoolTermFromContext.bindIFs ⟨uss, iss, dts⟩ [] ufs' ifs' ft = some ft₁)
+    (huf : denoteBoolTermFromContext.bindUFs ⟨uss, iss, dts⟩ [] ufs' ft₁ = some ft₂)
     (hus : denoteBoolTermFromContext.bindUSs uss []
       (fun sdi => ft₂ ⟨sdi.sΓ, sdi.hsΓ, ⟨[], []⟩, termEnv_nil_wf _⟩) = some ft₃) :
-    denoteBoolTermFromContext uss iss ufs ifs t = some (PLift.up (ft₃ ⟨[], sortEnv_nil_wf []⟩)) := by
+    denoteBoolTermFromContext uss iss ufs ifs t dts = some (PLift.up (ft₃ ⟨[], sortEnv_nil_wf []⟩)) := by
   subst hufs hifs htt
   rw [denoteBoolTermFromContext]
-  show Option.bind (denoteTerm ⟨⟨uss, iss, []⟩, ⟨[], _⟩⟩ _) _ = _
+  show Option.bind (denoteTerm ⟨⟨uss, iss, dts⟩, ⟨[], _⟩⟩ _) _ = _
   rw [ht, Option.bind_some]
-  show Option.bind (denoteBoolTermFromContext.bindIFs ⟨uss, iss, []⟩ [] _ _ ft) _ = _
+  show Option.bind (denoteBoolTermFromContext.bindIFs ⟨uss, iss, dts⟩ [] _ _ ft) _ = _
   rw [hif, Option.bind_some]
-  show Option.bind (denoteBoolTermFromContext.bindUFs ⟨uss, iss, []⟩ [] _ ft₁) _ = _
+  show Option.bind (denoteBoolTermFromContext.bindUFs ⟨uss, iss, dts⟩ [] _ ft₁) _ = _
   rw [huf, Option.bind_some]
   show Option.bind (denoteBoolTermFromContext.bindISs uss iss _) _ = _
   rw [denoteBoolTermFromContext.bindISs, Option.pure_def, Option.bind_some]
@@ -281,7 +280,8 @@ theorem usEnv_cons_wf {uss : USContext} {Γ : USEnvironment} (h : USEnvironment.
 
 /-- Closing over an empty list of uninterpreted sorts leaves the predicate
 unchanged. -/
-theorem bindUSs_nil (iss : ISContext) (ft : SortDenoteInput ⟨[], iss, []⟩ → Prop) :
+theorem bindUSs_nil (iss : ISContext) (dts : DT.Decls)
+    (ft : SortDenoteInput ⟨[], iss, dts⟩ → Prop) :
     denoteBoolTermFromContext.bindUSs [] iss ft = some ft := by
   simp [denoteBoolTermFromContext.bindUSs]
 
@@ -291,7 +291,8 @@ set_option checkBinderAnnotations false
 /-- Closing over `us :: uss` universally quantifies the realization of `us`
 (and its nonemptiness witness) before closing over the rest. -/
 theorem bindUSs_cons (us : Strata.DL.SMT.Sort) (uss : USContext) (iss : ISContext)
-    (ft : SortDenoteInput ⟨us :: uss, iss, []⟩ → Prop) (ft' : SortDenoteInput ⟨[], iss, []⟩ → Prop)
+    (dts : DT.Decls)
+    (ft : SortDenoteInput ⟨us :: uss, iss, dts⟩ → Prop) (ft' : SortDenoteInput ⟨[], iss, dts⟩ → Prop)
     (h : denoteBoolTermFromContext.bindUSs uss iss
       (fun sdi => ∀ (α : mkTypeFunType us.arity) [inst : mkNonemptyPred α],
         ft ⟨⟨us, α, inst⟩ :: sdi.sΓ, usEnv_cons_wf sdi.hsΓ ⟨us, α, inst⟩⟩) = some ft') :
@@ -1120,6 +1121,155 @@ theorem bindIF_eq (iF : IF) (ctx : Context)
   erw [hb]
   simp
   rfl
+
+/-! ## Datatypes
+
+What the checks of `denoteQuery` on the datatype declarations give, and what a selector
+denotes on a value built by its own constructor. -/
+
+/-- A value of the payload type of each primitive sort. -/
+def dtPayloadDefault (sctx : SortContext) (sΓ : SortDenoteInput sctx) :
+    (pty : TermPrimType) → (denotePrimSort sctx pty).elim Unit (fun f => f sΓ)
+  | .bool => True
+  | .int => (0 : Int)
+  | .real => ()
+  | .bitvec n => (0 : BitVec n)
+  | .string => ""
+  | .regex => ()
+
+/-- The lists a `flatMap` joins have no duplicates if the result has none. -/
+theorem nodup_of_nodup_flatMap {α β : Type} {l : List α} {f : α → List β}
+    (h : (l.flatMap f).Nodup) {x : α} (hx : x ∈ l) : (f x).Nodup := by
+  induction l with
+  | nil => cases hx
+  | cons a l ih =>
+    rw [List.flatMap_cons, List.nodup_append] at h
+    rcases List.mem_cons.mp hx with rfl | hm
+    · exact h.1
+    · exact ih h.2.1 hm
+
+/-- Arguments exist for field sorts that are primitive or name an inhabited datatype. -/
+theorem wsArgs_exists {sctx : SortContext} {sΓ : SortDenoteInput sctx} (ts : List TermType)
+    (h : ∀ t ∈ ts, (∃ pty, t = .prim pty) ∨
+      ∃ d, t = .constr d [] ∧ Nonempty (DT.Carrier sctx.dts (dtSorted sctx sΓ) d)) :
+    ∃ args, DT.WSArgs sctx.dts (dtSorted sctx sΓ) ts args := by
+  induction ts with
+  | nil => exact ⟨[], .nil⟩
+  | cons t ts ih =>
+    obtain ⟨rest, hrest⟩ := ih fun t ht => h t (List.mem_cons_of_mem _ ht)
+    rcases h t List.mem_cons_self with ⟨pty, rfl⟩ | ⟨d, rfl, ⟨v⟩⟩
+    · exact ⟨.prim ⟨pty, dtPayloadDefault sctx sΓ pty⟩ :: rest, .prim rfl rfl hrest⟩
+    · obtain ⟨cs, _, hcs, _, _⟩ := v.2.ctor_mem
+      have hds : DT.isDtSort sctx.dts (.constr d []) = some d := by
+        simp [DT.isDtSort, DT.declared_of_ctorsOf hcs]
+      exact ⟨.dt v.1 :: rest, .dt hds v.2 hrest⟩
+
+/-- Every datatype `dtInhabited` lists has a value, when datatype and constructor names
+are declared once. -/
+theorem carrier_nonempty_of_mem_dtInhabited {sctx : SortContext} {sΓ : SortDenoteInput sctx}
+    (hds : (sctx.dts.map (·.1)).Nodup)
+    (hcs : ∀ d cs, (d, cs) ∈ sctx.dts → (cs.map (·.name)).Nodup) (n : Nat) :
+    ∀ d ∈ dtInhabited sctx n, Nonempty (DT.Carrier sctx.dts (dtSorted sctx sΓ) d) := by
+  induction n with
+  | zero => intro d hd; simp [dtInhabited] at hd
+  | succ n ih =>
+    intro d hd
+    simp only [dtInhabited, List.mem_filterMap] at hd
+    obtain ⟨⟨d', cs⟩, hmem, hsome⟩ := hd
+    split at hsome
+    · next hany =>
+      obtain rfl : d' = d := Option.some.inj hsome
+      obtain ⟨c, hc, hall⟩ := List.any_eq_true.mp hany
+      have hfields : ∀ t ∈ c.args.map (·.2), (∃ pty, t = .prim pty) ∨
+          ∃ d, t = .constr d [] ∧ Nonempty (DT.Carrier sctx.dts (dtSorted sctx sΓ) d) := by
+        intro t ht
+        obtain ⟨⟨s, t'⟩, hf, rfl⟩ := List.mem_map.mp ht
+        have hfield := List.all_eq_true.mp hall (s, t') hf
+        match t', hfield with
+        | .prim pty, _ => exact .inl ⟨pty, rfl⟩
+        | .constr d'' [], hin => exact .inr ⟨d'', rfl, ih d'' (by simpa using hin)⟩
+        | .constr _ (_ :: _), hin => simp at hin
+        | .option _, hin => simp at hin
+      obtain ⟨args, hargs⟩ := wsArgs_exists (sΓ := sΓ) _ hfields
+      exact ⟨⟨.mk c.name args,
+        .mk (DT.ctorsOf_of_mem hds hmem) (DT.ctorNamed_of_mem (hcs _ _ hmem) hc) hargs⟩⟩
+    · cases hsome
+
+/-- **No declared carrier is empty.** When the declarations pass the checks of
+`denoteQuery` (`dtNamesDistinct` and `dtAllInhabited`), every declared datatype has a
+value, so a goal quantified over a datatype is not vacuous. -/
+theorem carrier_nonempty_of_dtAllInhabited {sctx : SortContext} {sΓ : SortDenoteInput sctx}
+    {d : String} (hdist : dtNamesDistinct sctx = true) (hinh : dtAllInhabited sctx = true)
+    (hd : sctx.isDatatype d = true) :
+    Nonempty (DT.Carrier sctx.dts (dtSorted sctx sΓ) d) := by
+  simp only [dtNamesDistinct, Bool.and_eq_true, decide_eq_true_eq] at hdist
+  obtain ⟨⟨⟨hds, hcs⟩, -⟩, -⟩ := hdist
+  have hcs' : ∀ d cs, (d, cs) ∈ sctx.dts → (cs.map (·.name)).Nodup := fun d cs hmem =>
+    nodup_of_nodup_flatMap hcs hmem
+  obtain ⟨cs, hcsd⟩ := Option.isSome_iff_exists.mp (DT.ctorsOf_isSome_of_declared hd)
+  have hmem := DT.ctorsOf_mem hcsd
+  simp only [dtAllInhabited, List.all_eq_true] at hinh
+  have := hinh (d, cs) hmem
+  exact carrier_nonempty_of_mem_dtInhabited hds hcs' _ d (by simpa using this)
+
+/-- A query that uses datatypes takes their declarations from the context when no list
+is passed. -/
+theorem denoteQuery_of_seen (ctx : Core.SMT.Context) (assums : List Term) (conc : Term)
+    (hs : ctx.seenDatatypes.isEmpty = false) :
+    denoteQuery ctx assums conc =
+      ctx.denotedDatatypes.bind fun dts => denoteQuery ctx assums conc (some dts) := by
+  cases h : ctx.denotedDatatypes <;> simp [denoteQuery, hs, h]
+
+/-- **A selector applied to its own constructor denotes the field**, for a field of
+primitive sort. When the selector reads the argument `x` from `v` (`DT.selField`, which
+`DT.selField_mk` computes on a value built by a constructor), its denotation is `x`. -/
+theorem dtSelect_prim {sctx : SortContext} {sΓ : SortDenoteInput sctx} {d : String}
+    {cs : List SMTConstructor} (hcs : DT.ctorsOf sctx.dts d = some cs) (sel : String)
+    {pty : TermPrimType} (hTy : (denoteSort sctx (.prim pty)).isSome)
+    (unspec : (denoteSort sctx (.prim pty)).get hTy sΓ)
+    (v : DT.Carrier sctx.dts (dtSorted sctx sΓ) d)
+    (x : (denotePrimSort sctx pty).elim Unit (fun f => f sΓ))
+    (h : DT.selField cs v.1 sel = some (.prim ⟨pty, x⟩, .prim pty)) :
+    dtSelect sctx sΓ hcs sel (.prim pty) hTy unspec v = cast (denoteSortPrim_Some hTy).symm x := by
+  unfold dtSelect
+  split
+  · next hsf => rw [h] at hsf; cases hsf
+  · next a t hsf =>
+    rw [h] at hsf
+    cases hsf
+    simp only [↓reduceDIte]
+
+/-- **A selector applied to its own constructor denotes the field**, for a field of
+datatype sort: its denotation is the argument `w` the selector reads, as a value of the
+field's datatype. -/
+theorem dtSelect_dt {sctx : SortContext} {sΓ : SortDenoteInput sctx} {d d' : String}
+    {cs : List SMTConstructor} (hcs : DT.ctorsOf sctx.dts d = some cs) (sel : String)
+    (hd' : sctx.isDatatype d' = true) (hTy : (denoteSort sctx (.constr d' [])).isSome)
+    (unspec : (denoteSort sctx (.constr d' [])).get hTy sΓ)
+    (v : DT.Carrier sctx.dts (dtSorted sctx sΓ) d)
+    (w : DT.DVal (DtPayload sctx sΓ))
+    (h : DT.selField cs v.1 sel = some (.dt w, .constr d' [])) :
+    ∃ hw : DT.WS sctx.dts (dtSorted sctx sΓ) d' w,
+      dtSelect sctx sΓ hcs sel (.constr d' []) hTy unspec v =
+        cast (denoteSortDt_Some hd' hTy).symm ⟨w, hw⟩ := by
+  have hds : DT.isDtSort sctx.dts (.constr d' []) = some d' := by
+    simpa [DT.isDtSort, SortContext.isDatatype] using hd'
+  obtain ⟨d'', hd'', hw''⟩ := DT.selField_ws v.2 hcs h
+  have hdd : d'' = d' := Option.some.inj (hd''.symm.trans hds)
+  have hw : DT.WS sctx.dts (dtSorted sctx sΓ) d' w := hdd ▸ hw''
+  refine ⟨hw, ?_⟩
+  unfold dtSelect
+  split
+  · next hsf => rw [h] at hsf; cases hsf
+  · next a t hsf =>
+    rw [h] at hsf
+    cases hsf
+    simp only [↓reduceDIte]
+    split
+    · next hnone => rw [hds] at hnone; cases hnone
+    · next d₂ hsome =>
+      obtain rfl : d₂ = d' := Option.some.inj (hsome.symm.trans hds)
+      rfl
 
 end Strata.SMT.DenoteProps
 

@@ -623,6 +623,47 @@ info: (declare-datatype Container (
   [containerWithMapDatatype] true
 
 
+/-! ## The datatypes handed to the denotation
+
+`SMT.Context.denotedDatatypes` lists the datatypes a query uses for
+`Strata.SMT.denoteQuery`: name, constructors, selector symbols and field sorts. -/
+
+/-- IntBox = Box(v : int) -/
+def intBoxDatatype : LDatatype Unit :=
+  { name := "IntBox"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"Box", ()⟩, args := [(⟨"v", ()⟩, .int)], testerName := "IntBox..isBox" }
+    ]
+    constrs_ne := by decide }
+
+/-- The denoted datatypes of a context that knows `known` and has used `used`, shown as
+    names with constructors and fields. -/
+def denotedOf (known used : List (LDatatype Unit)) :
+    Except String (Option (List (String × List (String × List (String × Strata.SMT.TermType))))) :=
+  match Env.init.addDatatypes (known.map ([·])) with
+  | .error msg => .error s!"{msg}"
+  | .ok env =>
+    let ctx := used.foldl (·.addDatatype ·) (SMT.Context.default.withTypeFactory env.datatypes)
+    .ok (ctx.denotedDatatypes.map (·.map fun (d, cs) => (d, cs.map fun c => (c.name, c.args))))
+
+-- A used monomorphic datatype is listed, with its selector symbol and field sort.
+/--
+info: Except.ok (some [("IntBox", [("Box", [("IntBox..v", Strata.SMT.TermType.prim (Strata.SMT.TermPrimType.int))])])])
+-/
+#guard_msgs in
+#eval denotedOf [intBoxDatatype, optionDatatype] [intBoxDatatype]
+
+-- A datatype the query does not use is not listed.
+/-- info: Except.ok (some []) -/
+#guard_msgs in
+#eval denotedOf [intBoxDatatype, optionDatatype] []
+
+-- A used parametric datatype has no denotation: the list is refused.
+/-- info: Except.ok none -/
+#guard_msgs in
+#eval denotedOf [intBoxDatatype, optionDatatype] [intBoxDatatype, optionDatatype]
+
 end DatatypeTests
 
 end Core

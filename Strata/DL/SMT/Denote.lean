@@ -171,7 +171,7 @@ other sorts (uninterpreted sorts, arrays, options) are not denoted yet. -/
 
 /-- Is `id` a datatype declared in `sctx`? -/
 @[expose] def SortContext.isDatatype (sctx : SortContext) (id : String) : Bool :=
-  sctx.dts.any (·.1 == id)
+  DT.declared sctx.dts id
 
 /-- The denotation of a declared datatype sort: the well-sorted carrier values. -/
 @[expose] def denoteDtSort (sctx : SortContext) (id : String) : SortDenoteResult sctx :=
@@ -321,10 +321,12 @@ theorem denoteSortArray_Some :
              Option.get_of_eq_some _ kp,
              Option.get_of_eq_some _ vp]
 
+/-- A declared datatype sort denotes. -/
 theorem denoteSortDt_isSome (hd : sctx.isDatatype d = true) :
     (denoteSort sctx (.constr d [])).isSome := by
   simp [denoteSort, hd]
 
+/-- A declared datatype sort denotes its carrier. -/
 theorem denoteSortDt_Some (hd : sctx.isDatatype d = true)
     (h : (denoteSort sctx (.constr d [])).isSome) :
     (denoteSort sctx (.constr d [])).get h sΓ = DT.Carrier sctx.dts (dtSorted sctx sΓ) d := by
@@ -347,17 +349,36 @@ or a declared datatype sort? -/
   | .constr d [] => sctx.isDatatype d
   | _ => false
 
-/-- Are two sorts the same, compared by shape: primitives by their primitive, datatype
-sorts by their name? `TermType`'s own equality goes through `TermType.beq`, which the
-kernel does not reduce, and the denotation must reduce. -/
-@[expose] def dtSameSort : TermType → TermType → Bool
-  | .prim p, .prim q => p == q
-  | .constr d [], .constr d' [] => d == d'
-  | _, _ => false
-
-theorem dtSameSort_eq {a b : TermType} (h : dtSameSort a b = true) : a = b := by
-  unfold dtSameSort at h
-  split at h <;> simp_all
+/-- The value selector `sel` reads from the datatype value `v`, at sort `ty`: the field of
+`v`'s own constructor that `sel` names, when its declared sort is `ty`, and `unspec`
+otherwise. The field's value is well sorted (`DT.selField_ws`), so it is a value of the
+denotation of `ty`. -/
+@[expose] def dtSelect (sctx : SortContext) (sΓ : SortDenoteInput sctx) {d : String}
+    {cs : List SMTConstructor} (hcs : DT.ctorsOf sctx.dts d = some cs) (sel : String)
+    (ty : TermType) (hTy : (denoteSort sctx ty).isSome)
+    (unspec : (denoteSort sctx ty).get hTy sΓ)
+    (v : DT.Carrier sctx.dts (dtSorted sctx sΓ) d) : (denoteSort sctx ty).get hTy sΓ :=
+  match hsf : DT.selField cs v.1 sel with
+  | none => unspec
+  | some (a, t) =>
+    if hty : ty = t then
+      have hws : DT.ArgWS sctx.dts (dtSorted sctx sΓ) t a := DT.selField_ws v.2 hcs hsf
+      match a, hws with
+      | .prim ⟨pty, x⟩, hws =>
+        have hp : ty = .prim pty := hty.trans hws.2
+        cast (by subst hp; exact (denoteSortPrim_Some hTy).symm) x
+      | .dt w, hws =>
+        match hds : DT.isDtSort sctx.dts ty with
+        | none => unspec
+        | some d' =>
+          have hw : DT.WS sctx.dts (dtSorted sctx sΓ) d' w := by
+            obtain ⟨d'', hd'', hw⟩ := hws
+            have hdd : d'' = d' := Option.some.inj ((hty ▸ hd'').symm.trans hds)
+            exact hdd ▸ hw
+          have hshape := DT.isDtSort_eq_some hds
+          cast (by obtain ⟨rfl, hd'⟩ := hshape; exact (denoteSortDt_Some hd' hTy).symm)
+            (⟨w, hw⟩ : DT.Carrier sctx.dts (dtSorted sctx sΓ) d')
+    else unspec
 
 theorem denoteFunSortCons_isSome (h : (denoteFunSort sctx (a :: as) out).isSome) :
     (denoteSort sctx a).isSome ∧ (denoteFunSort sctx as out).isSome := by
@@ -1072,104 +1093,65 @@ and semantics when successful.
   -- Datatypes: tester `is-c` on a value of a declared datatype sort
   | .app (.datatype_op .tester c) [a] _ =>
     let ⟨.constr d [], h, a⟩ ← denoteTerm ctx a | none
-    if hd : ctx.sctx.isDatatype d then
-      match ctx.sctx.dts.find? (·.1 == d) with
-      | none => none
-      | some (_, cs) =>
-        if cs.any (·.name == c) then
-          return ⟨.prim .bool, rfl, fun Γ => DT.tester c (denoteSortDt_Some hd h ▸ a Γ)⟩
-        else none
-    else
-      none
+    match hcs : DT.ctorsOf ctx.sctx.dts d with
+    | none => none
+    | some cs =>
+      if (DT.ctorNamed cs c).isSome then
+        return ⟨.prim .bool, rfl, fun Γ =>
+          DT.tester c (denoteSortDt_Some (DT.declared_of_ctorsOf hcs) h ▸ a Γ)⟩
+      else none
   -- Datatypes: constructor application, at the declared field sorts
   | .app (.datatype_op .constructor c) as (.constr d []) =>
-    if hd : ctx.sctx.isDatatype d then
-      let as ← denoteTerms ctx as
-      match hfd : ctx.sctx.dts.find? (·.1 == d) with
+    match hcs : DT.ctorsOf ctx.sctx.dts d with
+    | none => none
+    | some cs =>
+      match hc : DT.ctorNamed cs c with
       | none => none
-      | some (d', cs) =>
-        match hfc : cs.find? (·.name == c) with
-        | none => none
-        | some ctor =>
-          if hok : dtArgsOK ctx as (ctor.args.map (·.2)) = true then
-              have hd' : d' = d := by
-                have := List.find?_some hfd; simpa using this
-              have hc' : ctor.name = c := by
-                have := List.find?_some hfc; simpa using this
-              have hmem : (d, cs) ∈ ctx.sctx.dts := hd' ▸ List.mem_of_find?_eq_some hfd
-              have hcm : (⟨c, ctor.args⟩ : SMTConstructor) ∈ cs := by
-                have := List.mem_of_find?_eq_some hfc; rwa [← hc']
-              return ⟨.constr d [], denoteSortDt_isSome hd, fun Γ =>
-                let ⟨args, hargs⟩ := dtArgs ctx Γ as (ctor.args.map (·.2)) hok
-                (denoteSortDt_Some hd (denoteSortDt_isSome hd)).symm ▸
-                  (⟨.mk c args, .mk hmem hcm hargs⟩ :
-                    DT.Carrier ctx.sctx.dts (dtSorted ctx.sctx ⟨Γ.sΓ, Γ.hsΓ⟩) d)⟩
-          else none
-    else
-      none
+      | some ctor =>
+        let as ← denoteTerms ctx as
+        if hok : dtArgsOK ctx as (ctor.args.map (·.2)) = true then
+          have hd : ctx.sctx.isDatatype d = true := DT.declared_of_ctorsOf hcs
+          return ⟨.constr d [], denoteSortDt_isSome hd, fun Γ =>
+            let ⟨args, hargs⟩ := dtArgs ctx Γ as (ctor.args.map (·.2)) hok
+            (denoteSortDt_Some hd (denoteSortDt_isSome hd)).symm ▸
+              (⟨.mk c args, .mk hcs hc hargs⟩ :
+                DT.Carrier ctx.sctx.dts (dtSorted ctx.sctx ⟨Γ.sΓ, Γ.hsΓ⟩) d)⟩
+        else none
   -- Datatypes: selector, reading the field back at its sort; on another constructor the
   -- value is that of the uninterpreted function `<sel>$unspec`, declared per selector
   | .app (.datatype_op .selector sel) [a] ty =>
     let ⟨.constr d [], h, a⟩ ← denoteTerm ctx a | none
-    if hd : ctx.sctx.isDatatype d then
-      match ctx.sctx.dts.find? (·.1 == d) with
+    match hcs : DT.ctorsOf ctx.sctx.dts d with
+    | none => none
+    | some cs =>
+      match DT.findSel cs sel with
       | none => none
-      | some (_, cs) =>
-        match DT.findSel cs sel with
-        | none => none
-        | some (ctor, k, fty) =>
-          if hty' : dtSameSort ty fty = true then
-            have hty : ty = fty := dtSameSort_eq hty'
-            if hTy : (denoteSort ctx.sctx ty).isSome then
-              let uf : UF := { id := sel ++ "$unspec", args := [.constr d []], out := ty }
-              if hTys : (denoteFunSort ctx.sctx uf.args uf.out).isSome then
-                match hu : ctx.tctx.ufs.findIdx? (· == uf) with
-                | none => none
-                | some i =>
-                  have hi := (List.findIdx?_eq_some_iff_findIdx_eq.mp hu).left
-                  have hiuf := of_decide_eq_true (List.getElem_of_findIdx?_eq_some hu)
-                  let aRes : TermDenoteResult ctx := ⟨.constr d [], h, a⟩
-                  have hufas : argTypesAlign [aRes] uf.args = true := argTypesAlign_self aRes
-                  return ⟨ty, hTy, fun Γ =>
-                      -- the unspecified value: the UF applied to the argument
-                      let unspec : (denoteSort ctx.sctx ty).get hTy ⟨Γ.sΓ, Γ.hsΓ⟩ :=
-                        have _ : i < Γ.tΓ.ufs.length := Γ.htΓ.huf.h ▸ hi
-                        have hufΓ : denoteFunSort ctx.sctx uf.args uf.out =
-                            denoteFunSort ctx.sctx Γ.tΓ.ufs[i].uf.args Γ.tΓ.ufs[i].uf.out :=
-                          hiuf.symm ▸ Γ.htΓ.huf.ha i hi ▸ rfl
-                        @applyUF ctx uf.args uf.out hTys Γ
-                          (Option.get_congr hufΓ ▸ Γ.tΓ.ufs[i].ufΓ) [aRes] hufas
-                      let v : DT.Carrier ctx.sctx.dts (dtSorted ctx.sctx ⟨Γ.sΓ, Γ.hsΓ⟩) d :=
-                        denoteSortDt_Some hd h ▸ a Γ
-                      if v.1.ctor = ctor.name then
-                        match v.1.args[k]? with
-                        | some (.prim ⟨pty, x⟩) =>
-                          if hp : fty = .prim pty then
-                            have hcast : (denotePrimSort ctx.sctx pty).elim Unit (fun f => f ⟨Γ.sΓ, Γ.hsΓ⟩)
-                                = (denoteSort ctx.sctx ty).get hTy ⟨Γ.sΓ, Γ.hsΓ⟩ := by
-                              subst hty; subst hp; exact (denoteSortPrim_Some hTy).symm
-                            cast hcast x
-                          else unspec
-                        | some (.dt w) =>
-                          match hfty : fty with
-                          | .constr d'' [] =>
-                            if hd'' : ctx.sctx.isDatatype d'' then
-                              @dite _ (DT.WS ctx.sctx.dts (dtSorted ctx.sctx ⟨Γ.sΓ, Γ.hsΓ⟩) d'' w)
-                                (Classical.propDecidable _) (fun hw =>
-                                have hcast : DT.Carrier ctx.sctx.dts (dtSorted ctx.sctx ⟨Γ.sΓ, Γ.hsΓ⟩) d''
-                                    = (denoteSort ctx.sctx ty).get hTy ⟨Γ.sΓ, Γ.hsΓ⟩ := by
-                                  subst hty; subst hfty; exact (denoteSortDt_Some hd'' hTy).symm
-                                cast hcast (⟨w, hw⟩ : DT.Carrier _ _ d''))
-                                (fun _ => unspec)
-                            else unspec
-                          | _ => unspec
-                        | none => unspec
-                      else unspec⟩
-              else none
+      | some (_, _, fty) =>
+        if ty = fty then
+          if hTy : (denoteSort ctx.sctx ty).isSome then
+            let uf : UF := { id := sel ++ "$unspec", args := [.constr d []], out := ty }
+            if hTys : (denoteFunSort ctx.sctx uf.args uf.out).isSome then
+              match hu : ctx.tctx.ufs.findIdx? (· == uf) with
+              | none => none
+              | some i =>
+                have hi := (List.findIdx?_eq_some_iff_findIdx_eq.mp hu).left
+                have hiuf := of_decide_eq_true (List.getElem_of_findIdx?_eq_some hu)
+                let aRes : TermDenoteResult ctx := ⟨.constr d [], h, a⟩
+                have hufas : argTypesAlign [aRes] uf.args = true := argTypesAlign_self aRes
+                return ⟨ty, hTy, fun Γ =>
+                    -- the unspecified value: the UF applied to the argument
+                    let unspec : (denoteSort ctx.sctx ty).get hTy ⟨Γ.sΓ, Γ.hsΓ⟩ :=
+                      have _ : i < Γ.tΓ.ufs.length := Γ.htΓ.huf.h ▸ hi
+                      have hufΓ : denoteFunSort ctx.sctx uf.args uf.out =
+                          denoteFunSort ctx.sctx Γ.tΓ.ufs[i].uf.args Γ.tΓ.ufs[i].uf.out :=
+                        hiuf.symm ▸ Γ.htΓ.huf.ha i hi ▸ rfl
+                      @applyUF ctx uf.args uf.out hTys Γ
+                        (Option.get_congr hufΓ ▸ Γ.tΓ.ufs[i].ufΓ) [aRes] hufas
+                    dtSelect ctx.sctx ⟨Γ.sΓ, Γ.hsΓ⟩ hcs sel ty hTy unspec
+                      (denoteSortDt_Some (DT.declared_of_ctorsOf hcs) h ▸ a Γ)⟩
             else none
           else none
-    else
-      none
+        else none
   | _ => none
 
 -- Note: Using `List.mapM` breaks definitional equality for some reason, so we use a recursive function instead.
@@ -1560,6 +1542,16 @@ def dtUnspecUFs (ds : DT.Decls) : List UF :=
   ds.flatMap fun (d, cs) => cs.flatMap fun c => c.args.map fun (sel, fty) =>
     { id := sel ++ "$unspec", args := [.constr d []], out := fty }
 
+/-- Do the declarations introduce each name once, as SMT-LIB requires? No datatype is
+declared twice, or under the name of an uninterpreted sort or of a sort alias; no
+constructor and no selector is declared twice. A lookup takes the first declaration of
+a name, so a repeated name would leave a declaration unused. -/
+def dtNamesDistinct (sctx : SortContext) : Bool :=
+  decide (sctx.dts.map (·.1)).Nodup &&
+  decide (sctx.dts.flatMap fun (_, cs) => cs.map (·.name)).Nodup &&
+  decide (sctx.dts.flatMap fun (_, cs) => cs.flatMap fun c => c.args.map (·.1)).Nodup &&
+  sctx.dts.all fun (d, _) => !sctx.uss.any (·.name == d) && (sctx.iss.find? d).isNone
+
 /-- Are the field sorts of these datatypes ones the carrier can hold: primitive sorts
 that denote, and declared datatype sorts? -/
 def dtFieldsDenotable (sctx : SortContext) : Bool :=
@@ -1584,6 +1576,16 @@ def dtAllInhabited (sctx : SortContext) : Bool :=
   let inh := dtInhabited sctx (sctx.dts.length + 1)
   sctx.dts.all fun (d, _) => inh.contains d
 
+/-- The checks `denoteQuery` runs on the datatype declarations before it denotes a term:
+each name declared once (`dtNamesDistinct`), fields the carrier can hold
+(`dtFieldsDenotable`), no empty carrier (`dtAllInhabited`), and no function of the
+query, declared or defined, under the name of a selector's unspecified value
+(`dtUnspecUFs`). A function under that name would be found in place of the value the
+denotation quantifies over. -/
+def dtDeclsOK (sctx : SortContext) (fnNames : List String) : Bool :=
+  dtNamesDistinct sctx && dtFieldsDenotable sctx && dtAllInhabited sctx &&
+  !(dtUnspecUFs sctx.dts).any fun u => fnNames.contains u.id
+
 /-- Field sorts with the type aliases substituted, as the terms are. -/
 def dtSubstituteIS (iss : ISContext) (ds : DT.Decls) : DT.Decls :=
   ds.map fun (d, cs) => (d, cs.map fun c => { c with args := c.args.map fun (s, t) => (s, substituteIS iss t) })
@@ -1598,6 +1600,8 @@ noncomputable def denoteQuery (ctx : Core.SMT.Context) (assums : List Term) (con
   -- holds them as a plain list (one that must reduce in the kernel) passes `dts?`; like
   -- `ctx.sorts` and `ctx.ufs`, that list is part of what the caller is trusted to state
   -- faithfully, and it goes through the same checks as the context's own.
+  -- With no datatype in use the answer is given here, without consulting the registry,
+  -- which the kernel cannot reduce.
   let dts ← match dts? with
     | some dts => some dts
     | none => if ctx.seenDatatypes.isEmpty then some [] else ctx.denotedDatatypes
@@ -1607,10 +1611,7 @@ noncomputable def denoteQuery (ctx : Core.SMT.Context) (assums : List Term) (con
   let iss := (mkISContext ctx.tySubst).reverse
   let dts := dtSubstituteIS iss dts
   let sctx : SortContext := ⟨uss, iss, dts⟩
-  -- fields the carrier can hold, no empty carrier, and the selector functions' names free
-  if !dtFieldsDenotable sctx || !dtAllInhabited sctx then none
-  let unspec := dtUnspecUFs dts
-  if unspec.any (fun u => ctx.ufs.toList.any (·.id == u.id)) then none
-  let ufs := unspec ++ ctx.ufs.toList.reverse
+  if !dtDeclsOK sctx (ctx.ufs.toList.map (·.id) ++ ctx.ifs.toList.map (·.id)) then none
+  let ufs := dtUnspecUFs dts ++ ctx.ufs.toList.reverse
   let ifs := ctx.ifs.toList.reverse
   (denoteBoolTermFromContext uss iss ufs ifs t dts).map PLift.down
