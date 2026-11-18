@@ -301,62 +301,6 @@ procedure inMap<U>(m: Box<Map<int, U>>)
 };
 #end
 
-/-! The same at a gradual type argument, here a frontend's `Any`. `m`'s `Pair<U, int>` stays
-against a less precise `Pair<Any, Any>`, and against a `Pair<int, Any>`, which is neither more nor
-less precise. A more precise `Pair<bool, int>` replaces a receiver's `Pair<Any, int>`. -/
-
-#eval testLaurelResolution (gradualTypes := ({} : Std.HashSet String).insert "Any") <|
-#strata
-program Laurel;
-composite Any { }
-composite Pair<A, B> {
-  var a: A
-  var b: B
-}
-composite Box<T> {
-  var v: T
-  procedure pair<V>(self: Box<T>, a: T, c: T, b: V)
-    returns (r: T)
-    opaque
-    ensures r == a
-  { r := a };
-}
-
-procedure gradualReceiver()
-  opaque
-{
-  var b: Box<Any> := new Box<Any>;
-  var p: Any := b#pair(1, 2, 5);
-  var q: Any := b#pair(1, true, 5);
-//              ^^^^^^^^^^^^^^^^^^ error: cannot infer type argument 'T' of 'pair': 'int' and 'bool' disagree
-  assert 1 == 1
-};
-
-procedure gradualArgument<U>(m: Box<Pair<U, int>>, x: Pair<Any, Any>)
-  opaque
-{
-  var y: Pair<bool, bool> := m#pair(x, x, 5);
-//                           ^^^^^^^^^^^^^^^ error: expected 'Pair<bool, bool>', got 'Pair<U, int>'
-  assert 1 == 1
-};
-
-procedure gradualInstantiation<U>(m: Box<Pair<U, int>>, x: Pair<int, Any>)
-  opaque
-{
-  var y: Pair<int, bool> := m#pair(x, x, 5);
-//                          ^^^^^^^^^^^^^^^ error: expected 'Pair<int, bool>', got 'Pair<U, int>'
-  assert 1 == 1
-};
-
-procedure gradualReceiverPart(m: Box<Pair<Any, int>>, x: Pair<bool, int>)
-  opaque
-{
-  var y: Pair<int, int> := m#pair(x, x, 5);
-//                         ^^^^^^^^^^^^^^^ error: expected 'Pair<int, int>', got 'Pair<bool, int>'
-  assert 1 == 1
-};
-#end
-
 /-! ## In a static call, an instance call's inferred type reaches only the arguments after it
 
 `bs#put(s)` is a `Set<int>`, so `same2`'s `U` is determined and `setEmpty()` after it typed, but

@@ -67,7 +67,7 @@ private theorem wellKinded_ftvar (v : TyIdentifier) : ctx.WellKindedTy (.ftvar v
 
 /-- `var x : a := *` declares `x` at `a` and binds `a` to itself. -/
 private theorem declA_typed :
-    StatementHasTypeΔ' prog ctx emptyScope (fun _ => none) [] (declX aTy)
+    StatementHasType prog ctx emptyScope (fun _ => none) [] (declX aTy)
       ctx (scopeX aTy) envA := by
   have hfind : emptyScope.types.find? xId = none := rfl
   have hfun : xId.name ∉ ctx.functions := Factory.default_empty _
@@ -142,7 +142,7 @@ private theorem scoped_eqXX :
 
 /-- The assumption after `var x : a := *` is typed and its type variable is in scope. -/
 private theorem assumeXX_typed :
-    StatementHasTypeΔ' prog ctx (scopeX aTy) envA [] assumeXX
+    StatementHasType prog ctx (scopeX aTy) envA [] assumeXX
       ctx (scopeX aTy) envA := by
   have htype : LExpr.HasType ctx (scopeX aTy) (instAnnots envA eqXX) (.forAll [] .bool) := by
     rw [instAnnots_eqXX]
@@ -154,7 +154,7 @@ private theorem assumeXX_typed :
 
 /-- The block `var x : a := *; assume l ((x : a) == (x : a))` is accepted. -/
 example : ∃ C' Γ' Δ',
-    StatementsHasTypeΔ' prog ctx emptyScope (fun _ => none) []
+    StatementsHasType prog ctx emptyScope (fun _ => none) []
       [declX aTy, assumeXX] C' Γ' Δ' :=
   ⟨ctx, scopeX aTy, envA,
     .cons _ _ _ _ _ _ _ _ _ _ _ _ declA_typed
@@ -164,7 +164,7 @@ example : ∃ C' Γ' Δ',
     bound. -/
 private theorem declInt_binds_nothing {C1 : LContext CoreLParams} {Γ1 : TContext Unit}
     {Δ1 : WrittenEnv}
-    (h : StatementHasTypeΔ' prog ctx emptyScope (fun _ => none) [] (declX .int) C1 Γ1 Δ1) :
+    (h : StatementHasType prog ctx emptyScope (fun _ => none) [] (declX .int) C1 Γ1 Δ1) :
     C1 = ctx ∧ ∀ v, (Δ1 v).isSome = false :=
   match h with
   | .cmd _ _ _ _ _ _ _ _
@@ -177,7 +177,7 @@ private theorem declInt_binds_nothing {C1 : LContext CoreLParams} {Γ1 : TContex
     is impossible. -/
 private theorem assumeXX_unbound {C2 : LContext CoreLParams} {Γ1 Γ2 : TContext Unit}
     {Δ1 Δ2 : WrittenEnv} (hnone : ∀ v, (Δ1 v).isSome = false)
-    (h : StatementHasTypeΔ' prog ctx Γ1 Δ1 [] assumeXX C2 Γ2 Δ2) : False :=
+    (h : StatementHasType prog ctx Γ1 Δ1 [] assumeXX C2 Γ2 Δ2) : False :=
   match h with
   | .cmd _ _ _ _ _ _ _ _ (.cmd _ _ _ _ _ (.assume _ _ _ _ _ _ _ _ hscope _)) _ => by
     have hann : aTy ∈ LExpr.fvarAnnotations eqXX ++ LExpr.binderAnnotations eqXX := by
@@ -190,7 +190,7 @@ private theorem assumeXX_unbound {C2 : LContext CoreLParams} {Γ1 Γ2 : TContext
 /-- The block `var x : int := *; assume l ((x : a) == (x : a))` is rejected: the annotation `a`
     is bound by no declaration. -/
 example : ¬ ∃ C' Γ' Δ',
-    StatementsHasTypeΔ' prog ctx emptyScope (fun _ => none) []
+    StatementsHasType prog ctx emptyScope (fun _ => none) []
       [declX .int, assumeXX] C' Γ' Δ' := by
   rintro ⟨C', Γ', Δ', h⟩
   match h with
@@ -209,7 +209,7 @@ private def rigidTy : LMonoTy := .ftvar "$__rigid_a"
 private theorem declReserved_untypable {v : TyIdentifier}
     (hreserved : TyVarAdmissibility.notGeneratedOrRigid v = false)
     {C1 : LContext CoreLParams} {Γ1 : TContext Unit} {Δ1 : WrittenEnv}
-    (h : StatementHasTypeΔ' prog ctx emptyScope (fun _ => none) [] (declX (.ftvar v))
+    (h : StatementHasType prog ctx emptyScope (fun _ => none) [] (declX (.ftvar v))
       C1 Γ1 Δ1) :
     False :=
   match h with
@@ -225,13 +225,13 @@ private theorem declReserved_untypable {v : TyIdentifier}
 /-- `var x : $__ty0 := *` is rejected: a declared type may not use a generated type
     variable. -/
 example : ¬ ∃ C' Γ' Δ',
-    StatementHasTypeΔ' prog ctx emptyScope (fun _ => none) [] (declX genTy) C' Γ' Δ' :=
+    StatementHasType prog ctx emptyScope (fun _ => none) [] (declX genTy) C' Γ' Δ' :=
   fun ⟨_, _, _, h⟩ => declReserved_untypable (v := "$__ty0") (by decide) h
 
 /-- `var x : $__rigid_a := *` is rejected: a declared type may not use a rigid type
     variable. -/
 example : ¬ ∃ C' Γ' Δ',
-    StatementHasTypeΔ' prog ctx emptyScope (fun _ => none) [] (declX rigidTy) C' Γ' Δ' :=
+    StatementHasType prog ctx emptyScope (fun _ => none) [] (declX rigidTy) C' Γ' Δ' :=
   fun ⟨_, _, _, h⟩ => declReserved_untypable (v := "$__rigid_a") (by decide) h
 
 end Core.WrittenTyVarSpecTest

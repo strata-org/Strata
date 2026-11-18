@@ -17,7 +17,7 @@ public import Strata.Languages.Core.Typing.Spec.ProcSigAgreement
 /-! ## The Typechecker Spec for Programs
 
 Specifies when a whole `Program` satisfies the typechecker spec, reusing the
-per-declaration specs (`FuncHasType'`, `ProcHasType`) for functions and
+per-declaration specs (`FuncHasTypeExact`, `ProcHasType`) for functions and
 procedures. A datatype block is typed by registering an alias-equivalent copy of
 it with `LContext.addMutualBlock`.
 
@@ -25,10 +25,10 @@ The specification is layered:
 
 * `DeclHasType` — a single declaration, threading both the ambient `LContext`
   `C` (known types / functions / datatypes) and the `TContext` `Γ` (type
-  aliases). This is the declaration-level analogue of `StatementHasTypeΔ'`, which
+  aliases). This is the declaration-level analogue of `StatementHasType`, which
   threads `C` across a statement list.
 * `DeclsHasType` / `ProgramHasType` — the declaration list and the whole
-  program, threading `DeclHasType` (analogue of `StatementsHasTypeΔ'`).
+  program, threading `DeclHasType` (analogue of `StatementsHasType`).
 
 The checker renames each type parameter of a function, procedure or lemma that starts with a
 reserved prefix, so a declaration is typed through a renaming of its type parameters
@@ -85,7 +85,7 @@ The typechecker spec for a single declaration.
 
 `DeclHasType P C Γ decl C' Γ'` reads: "under program `P`, in ambient context
 `C` and type-scope `Γ`, declaration `decl` is typed and yields output
-context `C'` and type-scope `Γ'`." `P` is threaded to `ProcHasType'` (so
+context `C'` and type-scope `Γ'`." `P` is threaded to `ProcHasTypeExact` (so
 procedure bodies can resolve `call`s).
 
 Only `type` synonyms extend `Γ` (with a new alias); type constructors/datatypes
@@ -159,7 +159,7 @@ inductive DeclHasType (P : Program) :
       ¬ func.isRecursive →
       func.name.name ∉ C.functions →
       FuncAlphaVariant C Γ func f' →
-      FuncHasType' C Γ f' →
+      FuncHasTypeExact C Γ f' →
       FactoryExtendedBy (FuncEntryOk Γ) C C' [f'.toLFunc] →
       DeclHasType P C Γ (.func func md) C' Γ
 
@@ -177,13 +177,14 @@ inductive DeclHasType (P : Program) :
       fullFuncs = funcs'.map (·.toLFunc) →
       FactoryExtendedBy (FuncEntryOk Γ) C Cstub stubs →
       FactoryExtendedBy (FuncEntryOk Γ) C C' fullFuncs →
-      (∀ f ∈ funcs', FuncHasType' Cstub Γ f) →
+      (∀ f ∈ funcs', FuncHasTypeExact Cstub Γ f) →
       (∀ f ∈ funcs, f.isRecursive = true) →
       DeclHasType P C Γ (.recFuncBlock funcs md) C' Γ
 
 /--
 The typechecker spec for a list of declarations, threading `C` and `Γ`
-(analogue of `StatementsHasTypeΔ'`). `P` is fixed across the list (it is the enclosing program).
+(analogue of `StatementsHasType`). `P` is fixed across the list (it is the
+enclosing program).
 -/
 inductive DeclsHasType (P : Program) :
     LContext CoreLParams → TContext Unit → List Decl →

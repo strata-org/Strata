@@ -1204,17 +1204,16 @@ include masterSynth masterCheck in
     the two master facts (see the commented `master` lemma below): given that
     every tree the `Synth`/`Check` dispatchers emit is `Clean`, the resolved
     program passes `validateFullyAnnotated` with no diagnostics. Holds for any
-    lattice configuration (`gradualTypes`/`realizeCoercion`/`toBool`), since
+    lattice configuration (`realizeCoercion`/`toBool`), since
     `PostM` quantifies over the entire resolve state. -/
 public theorem resolve_fullyAnnotated' (p : LaurelProgram)
     (existingModel : Option SemanticModel := none)
-    (gradualTypes : Std.HashSet String := {})
     (realizeCoercion : Option (Coercion → StmtExprMd → StmtExprMd) := none)
     (toBool : Option (HighType → StmtExprMd → StmtExprMd) := none) :
     validateFullyAnnotated
-      (resolve p existingModel gradualTypes realizeCoercion toBool).program = [] := by
+      (resolve p existingModel realizeCoercion toBool).program = [] := by
   apply validate_nil_of_cleanProgram
-  show CleanProgram (resolve p existingModel gradualTypes realizeCoercion toBool).program
+  show CleanProgram (resolve p existingModel realizeCoercion toBool).program
   unfold resolve
   simp only []
   exact phase1_clean masterSynth masterCheck _ _

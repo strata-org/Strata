@@ -14,10 +14,11 @@ public import Strata.Languages.Core.WF
 This file gives the typechecker spec for a `Command` (= `CmdExt Expression`).
 `Command` extends imperative `Cmd` with a procedure `call` instruction.
 
-Expressions are typed as read through the environment of written type variables, as in
-`CmdHasTypeΔ'`. The `call` constructor requires that there exists a type instantiation `σ` such
-that the actual argument types and LHS variable types match the procedure's
-formal parameter types after applying `σ`.
+Expressions are typed as read through the environment of
+written type variables, as in `CmdHasType`. The `call` constructor requires
+that there exists a type instantiation `σ` such that the actual argument types
+and LHS variable types match the procedure's formal parameter types after
+applying `σ`.
 -/
 
 namespace Core
@@ -30,12 +31,12 @@ public section
 /-- The typechecker spec for extended commands, threading the environment `Δ` of written type
     variables. A call leaves `Δ` unchanged; its inputs are read through `Δ` and their annotation
     type variables are rigid or bound in `Δ`. -/
-inductive CmdExtHasTypeΔ' (C : LContext CoreLParams) (P : Program) :
+inductive CmdExtHasType (C : LContext CoreLParams) (P : Program) :
     WrittenEnv → TContext Unit → Command → TContext Unit → WrittenEnv → Prop where
-  /-- A standard imperative command delegates to `CmdHasTypeΔ'`. -/
+  /-- A standard imperative command delegates to `CmdHasType`. -/
   | cmd : ∀ Δ Γ c Γ' Δ',
-      CmdHasTypeΔ' C Δ Γ c Γ' Δ' →
-      CmdExtHasTypeΔ' C P Δ Γ (.cmd c) Γ' Δ'
+      CmdHasType C Δ Γ c Γ' Δ' →
+      CmdExtHasType C P Δ Γ (.cmd c) Γ' Δ'
   /-- A procedure call.
 
       There exists a type instantiation `σ` (mapping the procedure's type
@@ -50,7 +51,7 @@ inductive CmdExtHasTypeΔ' (C : LContext CoreLParams) (P : Program) :
         type.
 
       A call leaves the context unchanged; the output `Γ'` is up to
-      `TContext.Equiv` (see `CmdHasTypeΔ'`). -/
+      `TContext.Equiv` (see `CmdHasType`). -/
   | call : ∀ Δ Γ (pname : String) callArgs proc md
       (σ : List (TyIdentifier × LMonoTy)) Γ',
       Program.Procedure.find? P pname = some proc →
@@ -73,7 +74,7 @@ inductive CmdExtHasTypeΔ' (C : LContext CoreLParams) (P : Program) :
             (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ]) (proc.header.outputs.values[i])) ∧
           Γ.types.find? ((CallArg.getLhs callArgs)[i]) = some (.forAll [] mty)) →
       TContext.Equiv (T := CoreLParams) Γ' Γ →
-      CmdExtHasTypeΔ' C P Δ Γ (.call pname callArgs md) Γ' Δ
+      CmdExtHasType C P Δ Γ (.call pname callArgs md) Γ' Δ
 
 end -- public section
 

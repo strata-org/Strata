@@ -345,8 +345,12 @@ def strIndexOfFunc : WFLFunc CoreLParams :=
 def strReplaceFunc : WFLFunc CoreLParams :=
   ternaryFuncUneval "Str.Replace" mty[string] mty[string] mty[string]
 
+/-- `Str.At(s, i)`: the one-character string at code-point index `i` of `s`, and `""` when `i`
+    is out of range, as SMT-LIB's `str.at`. Evaluated on literals so interpreters can read
+    characters; the two inputs have different types, hence `heteroBinaryOp`. -/
 def strAtFunc : WFLFunc CoreLParams :=
-  binaryFuncUneval "Str.At" mty[string] mty[int] mty[string]
+  heteroBinaryOp "Str.At" (fun (s : String) (i : Int) =>
+    if 0 ≤ i ∧ i < s.length then (s.toList[i.toNat]!).toString else "")
 
 -- `Str.Lt`/`Str.Le` carry concrete evaluators so the interpreter can reduce
 -- string comparisons. The evaluators use code-point lexicographic order and
@@ -356,6 +360,39 @@ def strLtFunc : WFLFunc CoreLParams :=
 
 def strLeFunc : WFLFunc CoreLParams :=
   binaryOp "Str.Le" (fun (s t : String) => decide (s ≤ t))
+
+-- Conversions between one-character strings and code points, and between strings and
+-- non-negative integers, as SMT-LIB's `str.to_code`, `str.from_code`, `str.from_int` and
+-- `str.to_int`. All four evaluate on literals, with SMT-LIB's conventions for the cases
+-- outside their domain, so the interpreter and the solver agree.
+
+/-- `Str.ToCode(s)`: the code point of `s` when `s` has exactly one character, else `-1`. -/
+def strToCodeFunc : WFLFunc CoreLParams :=
+  unaryOp "Str.ToCode" (fun (s : String) =>
+    match s.toList with
+    | [c] => Int.ofNat c.toNat
+    | _ => -1)
+
+/-- `Str.FromCode(n)`: the one-character string with code point `n` when `0 ≤ n ≤ 0x2FFFF`,
+    else `""`. A Lean `Char` cannot hold a surrogate (`0xD800`-`0xDFFF`), which SMT-LIB's
+    alphabet contains, so the evaluator does not fold those: the guard leaves the term to the
+    solver, which gives it a one-character string. -/
+def strFromCodeFunc : WFLFunc CoreLParams :=
+  unaryOp "Str.FromCode" (fun (n : Int) =>
+    if 0 ≤ n ∧ n ≤ 0x2FFFF ∧ n.toNat.isValidChar then (Char.ofNat n.toNat).toString else "")
+    (guard := fun n => !(0xD800 ≤ n ∧ n ≤ 0xDFFF))
+
+/-- `Str.FromInt(n)`: the decimal digits of `n` when `n ≥ 0`, else `""`. -/
+def strFromIntFunc : WFLFunc CoreLParams :=
+  unaryOp "Str.FromInt" (fun (n : Int) => if 0 ≤ n then toString n else "")
+
+/-- `Str.ToInt(s)`: the value of `s` read as decimal digits (`0`-`9` only, leading zeros
+    allowed) when `s` is non-empty and all digits, else `-1`. Not `String.toNat?`, which
+    accepts `_` separators. -/
+def strToIntFunc : WFLFunc CoreLParams :=
+  unaryOp "Str.ToInt" (fun (s : String) =>
+    if s.isEmpty ∨ !s.all Char.isDigit then -1
+    else Int.ofNat (s.foldl (fun acc c => 10 * acc + (c.toNat - '0'.toNat)) 0))
 
 def reAllCharFunc : WFLFunc CoreLParams :=
   nullaryUneval "Re.AllChar" mty[regex]
@@ -552,6 +589,10 @@ def WFFactoryArray : Array (Lambda.WFLFunc CoreLParams) := #[
   strAtFunc,
   strLtFunc,
   strLeFunc,
+  strToCodeFunc,
+  strFromCodeFunc,
+  strFromIntFunc,
+  strToIntFunc,
   reAllFunc,
   reAllCharFunc,
   reRangeFunc,
@@ -807,6 +848,10 @@ def strReplaceOp : Expression.Expr := strReplaceFunc.opExpr
 def strAtOp : Expression.Expr := strAtFunc.opExpr
 def strLtOp : Expression.Expr := strLtFunc.opExpr
 def strLeOp : Expression.Expr := strLeFunc.opExpr
+def strToCodeOp : Expression.Expr := strToCodeFunc.opExpr
+def strFromCodeOp : Expression.Expr := strFromCodeFunc.opExpr
+def strFromIntOp : Expression.Expr := strFromIntFunc.opExpr
+def strToIntOp : Expression.Expr := strToIntFunc.opExpr
 def reAllOp : Expression.Expr := reAllFunc.opExpr
 def reAllCharOp : Expression.Expr := reAllCharFunc.opExpr
 def reRangeOp : Expression.Expr := reRangeFunc.opExpr

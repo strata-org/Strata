@@ -53,7 +53,6 @@ def ORel (R : α → β → Prop) : Option α → Option β → Prop
 
 
 structure CfgB (cfg : ExternalBackendM PM) : Prop where
-  truthy : ∀ e, PConst (cfg.externalTruthy e)
   int : ∀ e, PConst (cfg.valueInt e)
   bool : ∀ e, PConst (cfg.valueBool e)
   string : ∀ e, PConst (cfg.valueString e)
@@ -67,7 +66,7 @@ structure CfgOK (cfg : ExternalBackendM PM) : Prop extends CfgB cfg where
 instance {cfg : ExternalBackendM PM} : CoeOut (CfgOK cfg) (CfgB cfg) := ⟨CfgOK.toCfgB⟩
 
 theorem CfgOK.default : CfgOK ({} : ExternalBackendM PM) :=
-  ⟨⟨fun _ => pconst_stuck _, fun _ => pconst_fail _, fun _ => pconst_fail _, fun _ => pconst_fail _,
+  ⟨⟨fun _ => pconst_fail _, fun _ => pconst_fail _, fun _ => pconst_fail _,
     fun _ _ => pconst_fail _, fun _ => pconst_fail _, rfl⟩, rfl⟩
 
 theorem pconst_bind {x : PM α} {f : α → PM β} (hx : PConst x) (hf : ∀ a, PConst (f a)) :
@@ -95,18 +94,17 @@ macro "pconst_tac" : tactic => `(tactic|
     | assumption
     | split))
 
-section
-variable {cfg : ExternalBackendM PM} (hc : CfgB cfg)
-include hc
-
-/-- For a backend that satisfies `CfgB`, deciding whether a value is true (`Interpreter.isTrue`) gives
+/-- Deciding whether a value is true (`Interpreter.isTrue`) gives
 the same result for every trace and leaves the trace unchanged (`PConst`). -/
-theorem isTrue_pconst (v : Value) : PConst (Interpreter.isTrue cfg v) := by
+theorem isTrue_pconst {cfg : ExternalBackendM PM} (v : Value) : PConst (Interpreter.isTrue cfg v) := by
   unfold Interpreter.isTrue
   split
   · exact pconst_pure _
-  · exact hc.truthy _
   · exact pconst_stuck _
+
+section
+variable {cfg : ExternalBackendM PM} (hc : CfgB cfg)
+include hc
 
 theorem primEq_pconst (a b : Value) : PConst (primEq cfg a b) := by
   unfold primEq

@@ -14,7 +14,7 @@ public import Strata.Languages.Core.Typing.Spec.TypeSpecShared
 Specifies when a `Function` (i.e., `LFunc CoreLParams`) satisfies the
 typechecker spec.
 
-`FuncHasType'` holds when:
+`FuncHasTypeExact` holds when:
 1. Its signature is well-formed (no duplicate inputs, no duplicate typeArgs,
    no undeclared or unused type parameters, no type parameter with a reserved
    prefix).
@@ -47,10 +47,11 @@ def funcContext (Γ : TContext Unit) (func : Function) : TContext Unit :=
   { Γ with types := funcScopes Γ.types func }
 
 /--
-The typechecker spec for functions.
+The typechecker spec for functions, with the type parameters taken as given
+(`FuncHasType` also allows renaming them).
 The `Γ` is the ambient context the function was type-checked in.
 -/
-structure FuncHasType' (C : LContext CoreLParams) (Γ : TContext Unit) (func : Function) :
+structure FuncHasTypeExact (C : LContext CoreLParams) (Γ : TContext Unit) (func : Function) :
     Prop where
   /-- The function's formal parameter names are distinct. -/
   inputsNodup : func.inputs.keys.Nodup
@@ -107,9 +108,9 @@ def FuncAlphaVariant (C : LContext CoreLParams) (Γ : TContext Unit) (func f' : 
     TyArgRenaming C Γ func.typeArgs func.mentionedTyVars ren ∧ f' = func.renameTypeArgs ren
 
 /-- The typechecker spec for functions: some renaming of the type parameters of `func`
-    (`FuncAlphaVariant`) satisfies `FuncHasType'`. -/
+    (`FuncAlphaVariant`) satisfies `FuncHasTypeExact`. -/
 def FuncHasType (C : LContext CoreLParams) (Γ : TContext Unit) (func : Function) : Prop :=
-  ∃ f', FuncAlphaVariant C Γ func f' ∧ FuncHasType' C Γ f'
+  ∃ f', FuncAlphaVariant C Γ func f' ∧ FuncHasTypeExact C Γ f'
 
 end -- public section
 

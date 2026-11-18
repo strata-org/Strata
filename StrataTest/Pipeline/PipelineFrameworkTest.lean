@@ -852,6 +852,16 @@ info: rejected: phase #1 `deadDefElim` requires:
 #guard_msgs in
 #eval report (Strata.Core.validatePipeline (Strata.Core.passDeadDefElim :: corePipelinePhases))
 
+/-! A phase that can delete ill-typed code requires `typeAnnotated`, so it is
+rejected before `typeCheck`. -/
+
+/--
+info: rejected: phase #1 `filterProcedures` requires `typeAnnotated` but no preceding phase guarantees it — phase #2 `typeCheck` later in this pipeline establishes it, so it may be ordered too late
+-/
+#guard_msgs in
+#eval report (Strata.Core.validatePipeline
+  (Core.filterProceduresPipelinePhase ["main"] :: corePipelinePhases))
+
 /-! After `callElim`, `noCalls` holds, but `noLoops` and `noPrecondsFromFuncs` do not yet. -/
 
 /--

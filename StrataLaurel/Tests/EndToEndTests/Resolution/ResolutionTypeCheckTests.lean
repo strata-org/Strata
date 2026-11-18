@@ -431,47 +431,6 @@ procedure equallyPrecise() opaque {
 };
 #end
 
-/-! ### A gradual type registered by a frontend does not become the inferred type
-
-The two sections below are the only ones that need `gradualTypes`; a Laurel program cannot register a
-type itself. `Any` is consistent with everything, so inferring it would leave the `Dog`/`Cat`
-disagreement unreported. -/
-
-#eval testLaurelResolution (gradualTypes := ({} : Std.HashSet String).insert "Any") <|
-#strata
-program Laurel;
-composite Any { }
-composite Animal { }
-composite Dog extends Animal { }
-composite Cat extends Animal { }
-procedure both3<T>(a: T, b: T, c: T) opaque;
-procedure gradualHidesNothing() opaque {
-  var g: Any := new Any;
-  var d: Dog := new Dog;
-  var k: Cat := new Cat;
-  both3(g, d, k)
-//^^^^^^^^^^^^^^ error: cannot infer type argument 'T' of 'both3': 'Dog' and 'Cat' disagree
-};
-#end
-
-/-! ### The same when the registered type is reached through an alias
-
-`G` names `Any`, so this is the case above with the gradual type one step away. The `int`/`bool`
-disagreement must still be the one reported. -/
-
-#eval testLaurelResolution (gradualTypes := ({} : Std.HashSet String).insert "Any") <|
-#strata
-program Laurel;
-composite Any { }
-composite Box<T> { var v: T }
-type G = Any
-procedure both3B<T>(a: Box<T>, b: Box<T>, c: Box<T>) opaque;
-procedure gradualBehindAnAlias(bg: Box<G>, bi: Box<int>, bb: Box<bool>) opaque {
-  both3B(bg, bi, bb)
-//^^^^^^^^^^^^^^^^^^ error: cannot infer type argument 'T' of 'both3B': 'int' and 'bool' disagree
-};
-#end
-
 /-! A consequence for `==`, whose operands share one `T` via `$eq<T>(x: T, y: T)`: comparing
 values of related composite types resolves. Reference equality between a subtype and its
 supertype is meaningful, so this is the intended reading; unrelated types (`1 == true`,

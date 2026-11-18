@@ -50,6 +50,23 @@ procedure main() {
     assert [lt_concrete_true]: str.lt("abc", "abd");
     assert [le_concrete_true]: str.le("abc", "abc");
 
+    // Characters and decimal numbers (`str.at` evaluates since it got an evaluator; these
+    // all-literal rows fold to `true` and pin the EVALUATOR against SMT-LIB's conventions:
+    // out of range gives `""` or `-1`).
+    assert [to_code_concrete]: str.to_code("a") == 97;
+    assert [to_code_two_chars]: str.to_code("ab") == int.neg(1);
+    assert [from_code_concrete]: str.from_code(97) == "a";
+    assert [from_code_negative]: str.from_code(int.neg(1)) == "";
+    assert [from_int_concrete]: str.from_int(12345) == "12345";
+    assert [from_int_negative]: str.from_int(int.neg(3)) == "";
+    assert [to_int_concrete]: str.to_int("007") == 7;
+    assert [to_int_separator]: str.to_int("1_2") == int.neg(1);
+    assert [to_int_empty]: str.to_int("") == int.neg(1);
+    // The same operators over SYMBOLIC operands reach the backend.
+    assert [at_symbolic_of_concat]: str.at(str.concat(s1, s2), 0) == str.at(s1, 0);
+    assert [from_code_to_code_symbolic]: str.len(s1) == 1 ==> str.from_code(str.to_code(s1)) == s1;
+    assert [from_int_to_int_symbolic]: str.to_int(s1) == 7 ==> str.from_int(str.to_int(s1)) == "7";
+
     // `str.lt`/`str.le` over a SYMBOLIC operand. The three literal rows above
     // (and `lt_irrefl` below) are folded to `true` by `Str.Lt`/`Str.Le`'s
     // concrete evaluator before the solver is reached — their obligation prints
@@ -187,7 +204,7 @@ s1_len: str.len(s1@1) == 3
 s2_len: str.len(s2@1) == 3
 s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
-str.at("abc", 0) == "a"
+true
 
 Label: replace_concrete
 Property: assert
@@ -215,6 +232,114 @@ s2_len: str.len(s2@1) == 3
 s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
 true
+
+Label: to_code_concrete
+Property: assert
+Assumptions:
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
+Obligation:
+true
+
+Label: to_code_two_chars
+Property: assert
+Assumptions:
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
+Obligation:
+true
+
+Label: from_code_concrete
+Property: assert
+Assumptions:
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
+Obligation:
+true
+
+Label: from_code_negative
+Property: assert
+Assumptions:
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
+Obligation:
+true
+
+Label: from_int_concrete
+Property: assert
+Assumptions:
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
+Obligation:
+true
+
+Label: from_int_negative
+Property: assert
+Assumptions:
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
+Obligation:
+true
+
+Label: to_int_concrete
+Property: assert
+Assumptions:
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
+Obligation:
+true
+
+Label: to_int_separator
+Property: assert
+Assumptions:
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
+Obligation:
+true
+
+Label: to_int_empty
+Property: assert
+Assumptions:
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
+Obligation:
+true
+
+Label: at_symbolic_of_concat
+Property: assert
+Assumptions:
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
+Obligation:
+str.at(str.concat(s1@1, s2@1), 0) == str.at(s1@1, 0)
+
+Label: from_code_to_code_symbolic
+Property: assert
+Assumptions:
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
+Obligation:
+str.len(s1@1) == 1 ==> str.from_code(str.to_code(s1@1)) == s1@1
+
+Label: from_int_to_int_symbolic
+Property: assert
+Assumptions:
+s1_len: str.len(s1@1) == 3
+s2_len: str.len(s2@1) == 3
+s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
+Obligation:
+str.to_int(s1@1) == 7 ==> str.from_int(str.to_int(s1@1)) == "7"
 
 Label: lt_symbolic_irrefl
 Property: assert
@@ -259,7 +384,7 @@ s1_len: str.len(s1@1) == 3
 s2_len: str.len(s2@1) == 3
 s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
-str.at("abc", 5) == ""
+true
 
 Label: at_neg
 Property: assert
@@ -268,7 +393,7 @@ s1_len: str.len(s1@1) == 3
 s2_len: str.len(s2@1) == 3
 s1_s2_concat_eq_s3: str.concat(s1@1, s2@1) == s3@1
 Obligation:
-str.at("abc", int.neg(1)) == ""
+true
 
 Label: replace_absent
 Property: assert
@@ -383,6 +508,54 @@ Property: assert
 Result: ✅ pass
 
 Obligation: le_concrete_true
+Property: assert
+Result: ✅ pass
+
+Obligation: to_code_concrete
+Property: assert
+Result: ✅ pass
+
+Obligation: to_code_two_chars
+Property: assert
+Result: ✅ pass
+
+Obligation: from_code_concrete
+Property: assert
+Result: ✅ pass
+
+Obligation: from_code_negative
+Property: assert
+Result: ✅ pass
+
+Obligation: from_int_concrete
+Property: assert
+Result: ✅ pass
+
+Obligation: from_int_negative
+Property: assert
+Result: ✅ pass
+
+Obligation: to_int_concrete
+Property: assert
+Result: ✅ pass
+
+Obligation: to_int_separator
+Property: assert
+Result: ✅ pass
+
+Obligation: to_int_empty
+Property: assert
+Result: ✅ pass
+
+Obligation: at_symbolic_of_concat
+Property: assert
+Result: ✅ pass
+
+Obligation: from_code_to_code_symbolic
+Property: assert
+Result: ✅ pass
+
+Obligation: from_int_to_int_symbolic
 Property: assert
 Result: ✅ pass
 

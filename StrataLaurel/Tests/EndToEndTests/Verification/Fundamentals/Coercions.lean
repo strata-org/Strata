@@ -22,10 +22,6 @@ dispatcher, and §6 pins that a position needing a runtime term is rejected rath
 losing it. §3 covers the `toBool` truthiness hook, which is a boolean-CONTEXT coercion (not
 subtyping, so not part of `coerce`): native Laurel leaves it `none`, so it is exercised here by
 installing a hook via `translateOptions.toBool`, exactly as a language frontend (e.g. Python) does.
-
-The gradual-top `inject`/`project` verdicts are decided at resolution level in
-`Resolution/Types/Coercions.lean`; realizing the box/unbox is the frontend's job (Python's `Any`
-prelude), out of scope for native Laurel.
 -/
 
 import StrataLaurel.Tests.Util.TestLaurel

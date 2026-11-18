@@ -16,8 +16,9 @@ open Strata
 
 /-! # Core's string evaluators agree with cvc5
 
-Core evaluates `Str.Length`, `Str.Concat`, `Str.PrefixOf`, `Str.SuffixOf`, `Str.Lt`
-and `Str.Le` on literals itself, while the solver gives them their SMT-LIB meaning.
+Core evaluates `Str.Length`, `Str.Concat`, `Str.PrefixOf`, `Str.SuffixOf`, `Str.At`, `Str.Lt`,
+`Str.Le`, `Str.ToCode`, `Str.FromCode`, `Str.FromInt` and `Str.ToInt` on literals itself,
+while the solver gives them their SMT-LIB meaning.
 A lemma that Core's evaluator decides one way and the solver the other would be
 proved or refuted depending on whether evaluation reached it first.
 
@@ -37,7 +38,8 @@ points beyond the Basic Multilingual Plane up to `0x2FFFF`, the last code point 
 SMT-LIB's string alphabet, equal strings, strings that are prefixes of each other,
 and pairs whose order by code point differs from their order by UTF-16 code unit.
 Lean strings cannot hold a surrogate code point (`0xD800`-`0xDFFF`), so no Core
-literal contains one; the cases use the code points on either side of that range.
+literal contains one; the string cases use the code points on either side of that range, and
+`str.from_code` is probed on the integers of the range itself.
 -/
 
 namespace Core.StringEvalAgreementTest
@@ -225,6 +227,109 @@ le_not: evaluator ✅ pass, cvc5 ✅ pass
   ⟨"le_empty", "str.le($0, $1)", ["", ""]⟩,
   ⟨"le_not", "!str.le($0, $1)", [cp 0x2FFFF, cp 0xD7FF]⟩]
 
+/-! ## Characters: `str.at`, `str.to_code`, `str.from_code`
+
+Indices and code points are those of SMT-LIB: `str.at` indexes code points (not UTF-16 units)
+and is `""` out of range; `str.to_code` is `-1` unless the string has exactly one character;
+`str.from_code` is `""` outside `0`-`0x2FFFF`. The integer arguments are computed from string
+parameters (`str.to_code($0)`) so that the solver, not the evaluator, computes them on the
+parameter side. -/
+
+/--
+info: at_first: evaluator ✅ pass, cvc5 ✅ pass
+at_last: evaluator ✅ pass, cvc5 ✅ pass
+at_after_astral: evaluator ✅ pass, cvc5 ✅ pass
+at_out_of_range: evaluator ✅ pass, cvc5 ✅ pass
+at_negative: evaluator ✅ pass, cvc5 ✅ pass
+at_empty: evaluator ✅ pass, cvc5 ✅ pass
+to_code_ascii: evaluator ✅ pass, cvc5 ✅ pass
+to_code_nul: evaluator ✅ pass, cvc5 ✅ pass
+to_code_astral: evaluator ✅ pass, cvc5 ✅ pass
+to_code_last_plane: evaluator ✅ pass, cvc5 ✅ pass
+to_code_empty: evaluator ✅ pass, cvc5 ✅ pass
+to_code_two_chars: evaluator ✅ pass, cvc5 ✅ pass
+from_code_roundtrip: evaluator ✅ pass, cvc5 ✅ pass
+from_code_roundtrip_bmp_edge: evaluator ✅ pass, cvc5 ✅ pass
+from_code_of_minus_one: evaluator ✅ pass, cvc5 ✅ pass
+-/
+#guard_msgs in
+#eval check [
+  ⟨"at_first", "str.at($0, 0) == $1", ["abc", "a"]⟩,
+  ⟨"at_last", "str.at($0, 2) == $1", ["abc", "c"]⟩,
+  ⟨"at_after_astral", "str.at($0, 1) == $1", [cp 0x1F600 ++ "x", "x"]⟩,
+  ⟨"at_out_of_range", "str.at($0, 3) == $1", ["abc", ""]⟩,
+  ⟨"at_negative", "str.at($0, int.neg(1)) == $1", ["abc", ""]⟩,
+  ⟨"at_empty", "str.at($0, 0) == $1", ["", ""]⟩,
+  ⟨"to_code_ascii", "str.to_code($0) == 97", ["a"]⟩,
+  ⟨"to_code_nul", "str.to_code($0) == 0", ["\x00"]⟩,
+  ⟨"to_code_astral", "str.to_code($0) == 128512", [cp 0x1F600]⟩,
+  ⟨"to_code_last_plane", "str.to_code($0) == 196607", [cp 0x2FFFF]⟩,
+  ⟨"to_code_empty", "str.to_code($0) == int.neg(1)", [""]⟩,
+  ⟨"to_code_two_chars", "str.to_code($0) == int.neg(1)", ["ab"]⟩,
+  ⟨"from_code_roundtrip", "str.from_code(str.to_code($0)) == $0", [cp 0x1F600]⟩,
+  ⟨"from_code_roundtrip_bmp_edge", "str.from_code(str.to_code($0)) == $0", [cp 0xE000]⟩,
+  ⟨"from_code_of_minus_one", "str.from_code(str.to_code($0)) == $1", ["ab", ""]⟩]
+
+/-! ### Surrogate code points
+
+A Lean `Char` cannot hold a surrogate (`0xD800`-`0xDFFF`), while SMT-LIB's alphabet contains
+them, so `Str.FromCode`'s evaluator is guarded there: it folds a code point on either side of
+the range (`evaluator` on the left), and leaves a surrogate to the solver (`cvc5` on the left
+too), which gives it a one-character string, as it does for every code point of the alphabet.
+Without the guard, the evaluator would fold it to `""` and refute what the solver proves. The
+code point is written `int.add(n, str.len($0))` with `$0 = ""` so that the parameter lemma keeps a
+parameter, and the literal lemma still folds `str.len` and the sum before `str.from_code`.
+
+The two surrogate rows record the solver's verdict, which is the verdict over SMT-LIB's alphabet
+(`0`-`0x2FFFF`). Whether Core's `string` sort means that alphabet or Lean's (which has no
+surrogate) is still open; these rows do not settle it, and would flip if it settles on Lean's. -/
+
+/--
+info: from_code_before_surrogates: evaluator ✅ pass, cvc5 ✅ pass
+from_code_low_surrogate: cvc5 ✅ pass, cvc5 ✅ pass
+from_code_high_surrogate: cvc5 ✅ pass, cvc5 ✅ pass
+from_code_after_surrogates: evaluator ✅ pass, cvc5 ✅ pass
+-/
+#guard_msgs in
+#eval check [
+  ⟨"from_code_before_surrogates", "str.len(str.from_code(int.add(55295, str.len($0)))) == 1", [""]⟩,
+  ⟨"from_code_low_surrogate", "str.len(str.from_code(int.add(55296, str.len($0)))) == 1", [""]⟩,
+  ⟨"from_code_high_surrogate", "str.len(str.from_code(int.add(57343, str.len($0)))) == 1", [""]⟩,
+  ⟨"from_code_after_surrogates", "str.len(str.from_code(int.add(57344, str.len($0)))) == 1", [""]⟩]
+
+/-! ## Decimal numbers: `str.to_int`, `str.from_int`
+
+`str.to_int` reads a non-empty string of ASCII digits `0`-`9` and is `-1` for anything else:
+empty, a sign, a separator, a digit of another script. `str.from_int` prints a non-negative
+integer and is `""` for a negative one. -/
+
+/--
+info: to_int_digits: evaluator ✅ pass, cvc5 ✅ pass
+to_int_zero: evaluator ✅ pass, cvc5 ✅ pass
+to_int_leading_zeros: evaluator ✅ pass, cvc5 ✅ pass
+to_int_empty: evaluator ✅ pass, cvc5 ✅ pass
+to_int_sign: evaluator ✅ pass, cvc5 ✅ pass
+to_int_separator: evaluator ✅ pass, cvc5 ✅ pass
+to_int_other_script_digit: evaluator ✅ pass, cvc5 ✅ pass
+to_int_trailing_letter: evaluator ✅ pass, cvc5 ✅ pass
+from_int_roundtrip: evaluator ✅ pass, cvc5 ✅ pass
+from_int_drops_leading_zeros: evaluator ✅ pass, cvc5 ✅ pass
+from_int_of_minus_one: evaluator ✅ pass, cvc5 ✅ pass
+-/
+#guard_msgs in
+#eval check [
+  ⟨"to_int_digits", "str.to_int($0) == 12345", ["12345"]⟩,
+  ⟨"to_int_zero", "str.to_int($0) == 0", ["0"]⟩,
+  ⟨"to_int_leading_zeros", "str.to_int($0) == 7", ["007"]⟩,
+  ⟨"to_int_empty", "str.to_int($0) == int.neg(1)", [""]⟩,
+  ⟨"to_int_sign", "str.to_int($0) == int.neg(1)", ["-1"]⟩,
+  ⟨"to_int_separator", "str.to_int($0) == int.neg(1)", ["1_2"]⟩,
+  ⟨"to_int_other_script_digit", "str.to_int($0) == int.neg(1)", [cp 0x0663]⟩,
+  ⟨"to_int_trailing_letter", "str.to_int($0) == int.neg(1)", ["12x"]⟩,
+  ⟨"from_int_roundtrip", "str.from_int(str.to_int($0)) == $0", ["12345"]⟩,
+  ⟨"from_int_drops_leading_zeros", "str.from_int(str.to_int($0)) == $1", ["007", "7"]⟩,
+  ⟨"from_int_of_minus_one", "str.from_int(str.to_int($0)) == $1", ["x", ""]⟩]
+
 /-! ## Known divergence: characters outside SMT-LIB's alphabet
 
 SMT-LIB strings hold code points `0x0`-`0x2FFFF`, while a Core string literal can
@@ -238,11 +343,13 @@ encoder's error is printed, so rewording its message does not break this test.
 /--
 info: len_beyond_alphabet: evaluator ✅ pass, cvc5 🚨 SMT Encoding Error! fail-closed
 concat_beyond_alphabet: evaluator ✅ pass, cvc5 🚨 SMT Encoding Error! fail-closed
+from_code_beyond_alphabet: evaluator ✅ pass, cvc5 🚨 SMT Encoding Error! fail-closed
 -/
 #guard_msgs in
 #eval check [
   ⟨"len_beyond_alphabet", "str.len($0) == 1", [cp 0x30000]⟩,
-  ⟨"concat_beyond_alphabet", "str.concat($0, $1) == $1", ["", cp 0x10FFFF]⟩]
+  ⟨"concat_beyond_alphabet", "str.concat($0, $1) == $1", ["", cp 0x10FFFF]⟩,
+  ⟨"from_code_beyond_alphabet", "str.from_code(str.to_code($0)) == $1", [cp 0x30000, ""]⟩]
 
 /-! ## Soundness gap: a lemma true in SMT-LIB and false in Core
 

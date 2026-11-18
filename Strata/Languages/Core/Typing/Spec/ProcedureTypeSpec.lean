@@ -11,10 +11,10 @@ public import Strata.Languages.Core.TypeSkolem
 
 /-! ## The Typechecker Spec for Procedures
 
-Specifies when a `Procedure` satisfies the typechecker spec, reusing `StatementsHasTypeΔ'` for
+Specifies when a `Procedure` satisfies the typechecker spec, reusing `StatementsHasType` for
 the body.
 
-`ProcHasType'` holds when: its parameter, return and
+`ProcHasTypeExact` holds when: its parameter, return and
 type-argument names are distinct, no type parameter has a reserved prefix, and
 its signature has no undeclared type variables; every variable the body
 modifies is an output or body-local; each pre/postcondition is a `bool`
@@ -60,20 +60,21 @@ The typechecker spec for a procedure body, in ambient context `C` and body-scope
   variable bound.
 * `cfg`: a CFG body carries no obligation.
 -/
-inductive ProcBodyHasType' (P : Program) (C : LContext CoreLParams) (Γ_body : TContext Unit) :
+inductive ProcBodyHasType (P : Program) (C : LContext CoreLParams) (Γ_body : TContext Unit) :
     Procedure.Body → Prop where
   | structured : ∀ ss C' Γ' Δ',
-      StatementsHasTypeΔ' P C Γ_body (fun _ => none) [] ss C' Γ' Δ' →
-      ProcBodyHasType' P C Γ_body (.structured ss)
-  | cfg : ∀ c, ProcBodyHasType' P C Γ_body (.cfg c)
+      StatementsHasType P C Γ_body (fun _ => none) [] ss C' Γ' Δ' →
+      ProcBodyHasType P C Γ_body (.structured ss)
+  | cfg : ∀ c, ProcBodyHasType P C Γ_body (.cfg c)
 
 /--
-The typechecker spec for procedures.
-`P` is the enclosing program (threaded to the body's `StatementsHasTypeΔ'` for
+The typechecker spec for procedures, with the type parameters taken as given
+(`ProcHasType` also allows renaming them).
+`P` is the enclosing program (threaded to the body's `StatementsHasType` for
 command typing); `C` and `Γ` are the ambient context and type-scope the procedure
 declaration is checked in.
 -/
-structure ProcHasType' (P : Program) (C : LContext CoreLParams) (Γ : TContext Unit)
+structure ProcHasTypeExact (P : Program) (C : LContext CoreLParams) (Γ : TContext Unit)
     (proc : Procedure) : Prop where
   /-- The procedure's input parameter names are distinct. -/
   inputsNodup : proc.header.inputs.keys.Nodup
@@ -116,7 +117,7 @@ structure ProcHasType' (P : Program) (C : LContext CoreLParams) (Γ : TContext U
   postconditionsInScope : ∀ c ∈ proc.spec.postconditions.values,
     AnnotsInScope proc.header.typeArgs (fun _ => none) c.expr
   /-- The body is typed in the body context, with the procedure's type arguments rigid. -/
-  bodyTyped : ProcBodyHasType' P
+  bodyTyped : ProcBodyHasType P
     { C with rigidTypeVars := C.rigidTypeVars ++ proc.header.typeArgs }
     (procBodyContext Γ proc) proc.body
   /-- No input or output parameter is named like an in-scope function. -/
@@ -132,10 +133,10 @@ def ProcAlphaVariant (C : LContext CoreLParams) (Γ : TContext Unit) (proc proc'
       proc' = proc.renameTypeArgs ren
 
 /-- The typechecker spec for procedures: some renaming of the type parameters of `proc`
-    (`ProcAlphaVariant`) satisfies `ProcHasType'`. -/
+    (`ProcAlphaVariant`) satisfies `ProcHasTypeExact`. -/
 def ProcHasType (P : Program) (C : LContext CoreLParams) (Γ : TContext Unit)
     (proc : Procedure) : Prop :=
-  ∃ proc', ProcAlphaVariant C Γ proc proc' ∧ ProcHasType' P C Γ proc'
+  ∃ proc', ProcAlphaVariant C Γ proc proc' ∧ ProcHasTypeExact P C Γ proc'
 
 end -- public section
 
