@@ -147,7 +147,8 @@ def wpProgram (program : Program)
 def wpPipelinePhase
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
   modelPreservingPipelinePhase "wp"
-    (requires := factSet![.noCFGBodies, .noCalls, .noLoops, .noNondetGuards, .exitsCovered])
+    (requires := factSet![.noCFGBodies, .noCalls, .noLoops, .noNondetGuards, .typeAnnotated,
+      .exitsCovered])
     (establishes := factSet![.noProcedureContracts, .treeForm, .armsHaveObligations])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
                          .noPrecondsFromFuncs,

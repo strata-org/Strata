@@ -84,7 +84,8 @@ def ssaProgramOf (program : Program)
 def ssaPipelinePhase
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
   modelPreservingPipelinePhase "ssa"
-    (requires := factSet![.noCFGBodies, .noProcedureContracts, .treeForm, .armsHaveObligations])
+    (requires := factSet![.noCFGBodies, .noProcedureContracts, .typeAnnotated, .treeForm,
+      .armsHaveObligations])
     (establishes := factSet![.staticSingleAssignment, .hasObligationForm])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .noPrecondsFromFuncs, .noProcedureContracts,

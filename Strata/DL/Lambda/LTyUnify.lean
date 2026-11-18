@@ -15,6 +15,7 @@ public import Strata.Util.HMaps
 import all Strata.Util.HMaps
 import all Strata.Util.HMap
 import Std.Tactic.BVDecide.Normalize.BitVec
+import Strata.DL.Lambda.NamePrefixes
 
 /-!
 ## Type Substitution and Unification
@@ -53,6 +54,11 @@ def Subst.removeKeys (S : Subst) : List TyIdentifier → Subst
     position in `vals`. -/
 def Subst.ofZip (vars : List TyIdentifier) (vals : List LMonoTy) : Subst :=
   HMaps.ofScopes [List.zip vars vals]
+
+/-- The one-scope substitution sending each type variable of `pairs` to the nullary type
+    constant named by its partner. When a variable occurs in several pairs, the first wins. -/
+def Subst.ofNullaryConsts (pairs : List (TyIdentifier × String)) : Subst :=
+  [HMap.ofList (pairs.reverse.map fun p => (p.1, LMonoTy.tcons p.2 []))]
 
 namespace LExpr
 
@@ -202,6 +208,16 @@ Apply substitution `S` to monotypes `mtys`.
 -/
 @[expose] def LMonoTys.subst (S : Subst) (mtys : LMonoTys) : LMonoTys :=
   if Subst.hasEmptyScopes S then mtys else LMonoTys.substCore S mtys
+
+/-- Apply `S` to `mty` and write each remaining generated type variable as `_`. -/
+def displayTy (S : Subst) (mty : LMonoTy) : LMonoTy :=
+  let mty := LMonoTy.subst S mty
+  let generated := (LMonoTy.freeVars mty).filter (fun v => !isAllowedName v)
+  LMonoTy.subst (Subst.ofZip generated (generated.map fun _ => .ftvar "_")) mty
+
+/-- `displayTy` on each of `mtys`. -/
+def displayTys (S : Subst) (mtys : LMonoTys) : LMonoTys :=
+  mtys.map (displayTy S)
 
 mutual
 /-- Bindings for the type variables of `pat` that make `pat` equal to `ty`, read off position by
@@ -436,9 +452,13 @@ def ambientTarget (S : Subst) (k : TyIdentifier) : Option TyIdentifier :=
 def ambientKeys (gen : TyIdentifier → Bool) (S : Subst) : List TyIdentifier :=
   (HMaps.keys S).filter fun k => !gen k && (ambientTarget S k).any gen
 
+/-- The generated variables the keys `ks` are bound to, each once. -/
+def ambientTargetsOf (S : Subst) (ks : List TyIdentifier) : List TyIdentifier :=
+  (ks.filterMap (ambientTarget S)).eraseDups
+
 /-- The generated variables some ambient key is bound to, each once. -/
 def ambientTargets (gen : TyIdentifier → Bool) (S : Subst) : List TyIdentifier :=
-  ((ambientKeys gen S).filterMap (ambientTarget S)).eraseDups
+  ambientTargetsOf S (ambientKeys gen S)
 
 /-- The representative of a generated variable: the first key in `ks` bound to it. -/
 def ambientRep (S : Subst) (ks : List TyIdentifier) (g : TyIdentifier) : TyIdentifier :=
@@ -447,6 +467,14 @@ def ambientRep (S : Subst) (ks : List TyIdentifier) (g : TyIdentifier) : TyIdent
 /-- The single-scope substitution sending `p.1` to the variable `p.2` for each pair `p` of `ρ`. -/
 def Subst.ofRenaming (ρ : List (TyIdentifier × TyIdentifier)) : Subst :=
   [HMap.ofList (ρ.map fun p => (p.1, LMonoTy.ftvar p.2))]
+
+/-- The renaming sending each variable of `ts` to its representative among the keys `ks`. -/
+def ambientRenamingOf (S : Subst) (ks ts : List TyIdentifier) : Subst :=
+  Subst.ofRenaming (ts.map fun g => (g, ambientRep S ks g))
+
+/-- The representatives among the keys `ks` of the variables `ts`. -/
+def ambientRepsOf (S : Subst) (ks ts : List TyIdentifier) : List TyIdentifier :=
+  ts.map (ambientRep S ks)
 
 /-- The renaming sending each generated target to its representative. -/
 def ambientRenaming (gen : TyIdentifier → Bool) (S : Subst) : Subst :=
@@ -459,8 +487,10 @@ def ambientReps (gen : TyIdentifier → Bool) (S : Subst) : List TyIdentifier :=
 /-- `S` with each representative's binding to a generated variable flipped, renaming that
     variable to the representative throughout. -/
 def ambientSubst (gen : TyIdentifier → Bool) (S : Subst) : Subst :=
-  if (ambientKeys gen S).isEmpty then S else
-    Subst.removeKeys (Subst.renameAfter S (ambientRenaming gen S)) (ambientReps gen S)
+  let ks := ambientKeys gen S
+  if ks.isEmpty then S else
+    let ts := ambientTargetsOf S ks
+    Subst.removeKeys (Subst.renameAfter S (ambientRenamingOf S ks ts)) (ambientRepsOf S ks ts)
 
 /-- `apply` preserves the key set (as membership). -/
 theorem Subst.mem_keys_apply_iff

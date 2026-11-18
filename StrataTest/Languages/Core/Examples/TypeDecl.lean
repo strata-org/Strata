@@ -73,7 +73,7 @@ procedure P () {
 -- checking again, this could instead be caught at DDM parse time.
 /--
 error: ❌ Type checking error.
-Impossible to unify (Foo bool bool) with (Foo int bool).
+Procedure 'P': Impossible to unify (Foo bool bool) with (Foo int bool).
 First mismatch: bool with int.
 -/
 #guard_msgs in

@@ -39,6 +39,8 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
           let (expr, ety, τ) ← TC.inferType ctx τ c expr
           let τ ← TC.unifyTypes τ [(xty, ety)]
           let (xty, τ) ← TC.postprocess ctx τ xty
+          -- Apply to the initializer the solution `postprocess` applied to the annotation.
+          let expr := TC.substExpr ctx τ expr
           let τ := TC.update τ x xty
           let c := Cmd.init x xty (.det expr) md
           .ok (c, τ)
@@ -62,7 +64,12 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
         let c := Cmd.set x (.det expr) md
         .ok (c, τ)
       | .nondet =>
-        .ok (c, τ)
+        if TC.isMonoType xty then
+          .ok (c, τ)
+        else
+          .error <| md.toDiagnosticF
+            f!"Cannot set variable {x} of type {xty}. \
+              Polymorphic variable assignments are not allowed."
 
   | .assert label e md =>
     let (e, ety, τ) ← TC.inferType ctx τ c e

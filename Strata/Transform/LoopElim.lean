@@ -263,13 +263,13 @@ def loopElimPipelinePhase : PipelinePhase where
   -- Iterating to a fixed point dissolves nested loops as well, so a successful
   -- run leaves none; what replaces them havocs, which is why
   -- `staticSingleAssignment` is not claimed.
-  requires := factSet![.noLoopInvariants, .noLoopMeasures]
+  requires := factSet![.noLoopInvariants, .noLoopMeasures, .typeAnnotated]
   establishes := factSet![.noLoops]
   preserves := factSet![.noCFGBodies, .noCalls, .noLoopInvariants,
                       .noLoopMeasures, .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                       .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated]
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered]
 
 end -- public section
 

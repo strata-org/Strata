@@ -1205,7 +1205,7 @@ private theorem Subst.ofRenaming_varsAvoid {ps : List TyIdentifier}
 theorem ambientSubst_varsAvoid {ps : List TyIdentifier} (gen : TyIdentifier → Bool) (S : Subst)
     (hgen : ∀ g, gen g = true → g ∉ ps) (hS : Subst.VarsAvoid S ps) :
     Subst.VarsAvoid (ambientSubst gen S) ps := by
-  unfold ambientSubst
+  rw [ambientSubst_eq]
   split
   · exact hS
   · refine (hS.renameAfter (Subst.ofRenaming_varsAvoid _ ?_)).removeKeys _

@@ -26,7 +26,7 @@ procedure Test(g : int)
 
 /--
 error: ❌ Type checking error.
-Variable g of type int already in context.
+Procedure 'Test': Variable g of type int already in context.
 -/
 #guard_msgs in
 #eval Core.verify noShadowPgm1 (options := .quiet)
@@ -43,7 +43,7 @@ procedure Test()
 
 /--
 error: ❌ Type checking error.
-Variable g of type bool already in context.
+Procedure 'Test': Variable g of type bool already in context.
 -/
 #guard_msgs in
 #eval Core.verify noShadowPgm2 (options := .quiet)

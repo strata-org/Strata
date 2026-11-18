@@ -97,12 +97,13 @@ def filterProceduresPipelinePhase (procs : List String)
   -- holds because the filter keeps every callee of a procedure it keeps: every call
   -- in the input names a declared procedure, so the callee closure is complete.
   modelPreservingPipelinePhase "filterProcedures"
+    (requires := factSet![.typeAnnotated])
     (preserves := factSet![.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                          .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .noInits])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered])
     fun prog => do
       let (changed, filtered) ← FilterProcedures.run prog procs (keepUnlistedLemmas := keepUnlistedLemmas)
       return (changed, filtered)

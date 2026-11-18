@@ -13,10 +13,10 @@ import StrataLaurel.Implementation.MapStmtExpr
 # Copy Mutated Inputs
 
 Laurel permits a procedure body to assign to its input parameters (the Laurel
-interpreter executes such programs), but Core does not: Core's
-`checkModificationRights` allows writes only to outputs and body-declared
-locals, so a body write to an input fails Core type checking — and a pipeline
-type-check failure aborts the whole program, not just the offending procedure.
+interpreter executes such programs), but Core does not: Core's procedure type
+checker allows writes only to outputs and body-declared locals, so a body
+write to an input fails Core type checking — and a pipeline type-check failure
+aborts the whole program, not just the offending procedure.
 
 This pass closes that gap. For every input parameter `x` that the body assigns
 to (and that is not also an output, i.e. not an inout), it declares a fresh

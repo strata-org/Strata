@@ -295,8 +295,8 @@ rec function f (@[cases] t : T) : bool
 #eval Core.verify recursiveConstrBoundArgPgm (options := .quiet)
 
 /-! A field could only contain the datatype inside another datatype if nested
-datatypes were allowed. They are not: the type checker rejects `Wrap`. Here
-termination checking rejects the call first. -/
+datatypes were allowed. They are not: the type checker rejects `Wrap` before
+termination checking runs. -/
 
 def nestedConstrBoundArgPgm :=
 #strata
@@ -311,7 +311,10 @@ rec function f (@[cases] t : T) : bool
 };
 #end
 
-/-- error: termination checking 'f': decreasing argument contains a bound variable -/
+/--
+error: ❌ Type checking error.
+Error in constructor Wrap: Datatype T appears nested inside (MyList T). Nested datatypes are not supported in Strata Core.
+-/
 #guard_msgs in
 #eval Core.verify nestedConstrBoundArgPgm (options := .quiet)
 
@@ -349,11 +352,8 @@ Result: ❌ fail
 /-! The same guard over a call on `t` itself, which does not decrease: the
 termination lemma is not proved. Without leaving the guard out, its `y` would be
 captured as `k`, and the lemma would hold vacuously. `bogus` still passes, from
-`g`'s contradictory definition: an unproved termination lemma does not stop a
-function's definition from being assumed.
-
-TODO: assume a function's definition only once its termination lemmas are
-proved, so that `bogus` is not proved. -/
+`g`'s contradictory definition: a function's definition is assumed even when
+its termination lemma is not proved. -/
 
 def boundGuardNoDecreasePgm :=
 #strata
@@ -833,8 +833,10 @@ Result: ✅ pass
 #guard_msgs in
 #eval Core.verify polymorphicCallsAtTwoTypesPgm (options := .quiet)
 
-/-! `g`'s type parameter appears only in its output, so nothing fixes it in
-`f`'s lemmas: it becomes a fresh opaque type. -/
+/-! `g`'s type parameter appears only in its output. In `f`'s body, `int.add`
+fixes it to `int` at the call inside `MyList..hd(...)`, but nothing fixes it at
+the call in `MyList..isCons(g(MyList..tl(xs)))`:
+the type checker rejects `f`. -/
 
 def outputOnlyTypeParamPgm :=
 #strata
@@ -855,54 +857,8 @@ function g<b> (@[cases] ys : MyList int) : MyList b
 #end
 
 /--
-info:
-Obligation: f_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: f_terminates_1
-Property: assert
-Result: ✅ pass
-
-Obligation: f_terminates_2
-Property: assert
-Result: ✅ pass
-
-Obligation: f_terminates_3
-Property: assert
-Result: ✅ pass
-
-Obligation: g_terminates_0
-Property: assert
-Result: ✅ pass
-
-Obligation: g_terminates_1
-Property: assert
-Result: ✅ pass
-
-Obligation: f_body_calls_MyList..tl_0
-Property: assert
-Result: ✅ pass
-
-Obligation: f_body_calls_MyList..tl_1
-Property: assert
-Result: ✅ pass
-
-Obligation: f_body_calls_MyList..hd_2
-Property: assert
-Result: ❌ fail
-
-Obligation: f_body_calls_MyList..tl_3
-Property: assert
-Result: ✅ pass
-
-Obligation: f_body_calls_MyList..tl_4
-Property: assert
-Result: ✅ pass
-
-Obligation: g_body_calls_MyList..tl_0
-Property: assert
-Result: ✅ pass
+error: ❌ Type checking error.
+Function 'f': the body, the decreases expression, a precondition or an axiom is typed at a generated type variable that is not declared. Nothing fixes the type of a polymorphic instance there; annotate it, or use a type parameter the signature mentions
 -/
 #guard_msgs in
 #eval Core.verify outputOnlyTypeParamPgm (options := .quiet)

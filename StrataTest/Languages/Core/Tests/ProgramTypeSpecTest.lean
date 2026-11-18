@@ -112,7 +112,7 @@ private def procAt (t : String) : Procedure :=
     the structured body's variable. -/
 example : (procAt "$__ty0").renameTypeArgs ren0 = procAt "a" := by
   simp [Procedure.renameTypeArgs, procAt, xAt, ren0, renameTyArgList,
-    mapExprTys, mapStmtsTys_cons, mapStmtsTys_nil, mapStmtTys_cmd, mapCmdTys,
+    mapExprTys, mapStmtsTys_cons, mapStmtsTys_nil, mapStmtTys_cmd, mapCmdTys, mapCmdWith,
     mapLTyTys, ExprOrNondet.map, LExpr.replaceUserProvidedType, subst_ren0]
 
 /-- The function `f<t>(x : t) : t := x`. -/

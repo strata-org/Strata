@@ -54,11 +54,15 @@ abbrev CoreGenM := StateM CoreGenState
     `CoreGenState.gen`, which knows only the names it generated, until the name
     avoids `taken`. `taken.size + 1` calls suffice. -/
 def CoreGenState.genAvoiding (taken : Std.HashSet String) (pf : CoreIdent) :
-    CoreGenM CoreIdent := do
-  let mut n ← CoreGenState.gen pf
-  for _ in [0:taken.size] do
-    if taken.contains n.name then n ← CoreGenState.gen pf else break
-  return n
+    CoreGenM CoreIdent :=
+  go taken.size
+where
+  /-- Draw a name, and draw again, at most `fuel` more times, while it is in `taken`. -/
+  go : Nat → CoreGenM CoreIdent
+    | 0 => CoreGenState.gen pf
+    | fuel + 1 => do
+      let n ← CoreGenState.gen pf
+      if taken.contains n.name then go fuel else pure n
 
 end
 end Core

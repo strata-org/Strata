@@ -33,9 +33,8 @@ preconditions of any partial functions called within the body.
 
 See StrataTest/Transform/PrecondElim.lean for examples.
 
-Note that this transformation must be called BEFORE typechecking, since
-in the presence of polymorphic preconditions, the resulting assertions
-have type variables that must be unified.
+A polymorphic precondition is instantiated at each call's type instance, as far
+as the call's operator annotation and argument types determine it.
 -/
 
 public section
@@ -240,8 +239,8 @@ def mkContractWFLemmas (F : @Lambda.Factory CoreLParams) (taken : Std.HashSet St
   let name := proc.header.name.name
   let inouts := proc.header.getInoutParams.toList
   let atEntry (e : Expression.Expr) : Expression.Expr :=
-    inouts.foldl (init := e) fun e (x, _) =>
-      LExpr.substFvar e x (.fvar coreLoc (CoreIdent.mkOld x.name) none)
+    inouts.foldl (init := e) fun e (x, ty) =>
+      LExpr.substFvar e x (.fvar coreLoc (CoreIdent.mkOld x.name) (some ty))
   let precondStmts := proc.spec.preconditions.flatMap fun (label, check) =>
     processCondition F (atEntry check.expr) s!"{name}_pre_{label}" label check.md
   let postcondStmts := proc.spec.postconditions.flatMap fun (label, check) =>
@@ -522,11 +521,12 @@ def precondElimPipelinePhase : PipelinePhase :=
   -- and a function-typed parameter applied to an abstraction argument would
   -- leave a redex behind.
   modelPreservingPipelinePhase "precondElim"
+    (requires := factSet![.typeAnnotated])
     (establishes := factSet![.noPrecondsFromFuncs])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noNondetGuards,
                          .noProcedureContracts,
-                         .noPolymorphicFunctions, .typeAnnotated, .noInits])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered])
     fun prog => do
       PrecondElim.precondElim prog
 

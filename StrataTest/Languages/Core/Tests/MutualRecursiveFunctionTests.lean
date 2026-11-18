@@ -500,12 +500,10 @@ end Strata.PolyMutualStructTest
 
 /-! ## Mutual functions that order their type parameters differently
 
-The termination lemma of a call into another function of the block annotates
-the callee's measure with the callee's own type-parameter names, read in the
-caller's scope. When the two functions order their type parameters
-differently, a well-typed block is rejected by the type checking of that
-lemma. The error below is that bug, not the intended behavior: once it is
-fixed, this block verifies. -/
+The termination lemma of a call into another function of the block reads the
+callee's measure at the caller's instance of the callee's type parameters. Two
+functions that order their type parameters differently get the instances that
+match, so this block verifies. -/
 
 namespace Strata.SwappedTypeParamsTest
 
@@ -520,30 +518,42 @@ function g2<q, p> (@[cases] xs : MyList q, y : p) : p
 #end
 
 /--
-error: ❌ Type checking error.
-Impossible to unify (arrow (MyList $__ty40) int) with (arrow (MyList $__opaque_g_terminates_0_p_0) $__ty45).
-First mismatch: $__opaque_g_terminates_0_q_1 with $__opaque_g_terminates_0_p_0.
+info:
+Obligation: g_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: g2_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: g_body_calls_MyList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: g2_body_calls_MyList..tl_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval Core.verify swappedStructPgm (options := .quiet)
 
-/-! The same bug cannot make a termination obligation easier from source: a
-measure cannot name the instance of a type parameter that the swap gets wrong.
-The obligations below are those of the matching order, and every block whose
-measure does not decrease is rejected. A front end that builds Core directly
-with explicit instance annotations is not covered by these tests. -/
+/-! A swapped order does not make a termination obligation easier: every block
+below has a measure that does not decrease, and none of them verifies. Each
+function takes an argument of each of its type parameters, since a type
+parameter must occur in the signature. -/
 
-/-! A measure that does not decrease, with type parameters used nowhere. -/
+/-! A measure that does not decrease and does not depend on the type parameters. -/
 
 def swappedUnusedPgm : Program :=
 #strata
 program Core;
-rec function g<p, q> (x : int) : int
+rec function g<p, q> (x : int, s : p, k : q) : int
   decreases x
-{ g2(x) }
-function g2<q, p> (x : int) : int
+{ g2(x, s, k) }
+function g2<q, p> (x : int, s : q, k : p) : int
   decreases x
-{ g(x) };
+{ g(x, s, k) };
 #end
 
 /--
@@ -567,19 +577,19 @@ Result: ❌ fail
 #guard_msgs in
 #eval Core.verify swappedUnusedPgm (options := .quiet)
 
-/-! A measure through a function whose type parameter is phantom: its instance
-is not fixed by its arguments, so it cannot depend on `p` or `q`. -/
+/-! A measure through an uninterpreted function at the first type parameter of
+each function: `p` in `g` and `q` in `g2`. -/
 
 def swappedPhantomPgm : Program :=
 #strata
 program Core;
-function c<t> () : int;
-rec function g<p, q> (x : int) : int
-  decreases int.add(x, c())
-{ g2(x) }
-function g2<q, p> (x : int) : int
-  decreases int.add(x, c())
-{ g(x) };
+function c<t> (z : t) : int;
+rec function g<p, q> (x : int, s : p, k : q) : int
+  decreases int.add(x, c(s))
+{ g2(x, s, k) }
+function g2<q, p> (x : int, s : q, k : p) : int
+  decreases int.add(x, c(s))
+{ g(x, s, k) };
 #end
 
 /--
@@ -603,29 +613,28 @@ Result: ❌ fail
 #guard_msgs in
 #eval Core.verify swappedPhantomPgm (options := .quiet)
 
-/-! The same with two phantom measures and an axiom relating them at matching
-instances: the call back with a larger argument does not decrease, so the
-block is rejected. -/
+/-! The same with `m2` defined as `m1` minus one, which relates the two measures
+at every instance of their type parameters: the call from `g` decreases, but the
+call back with a larger argument does not, so the block is rejected. -/
 
 def swappedLinkedPgm : Program :=
 #strata
 program Core;
-function m1<a, b> (n : int) : int;
-function m2<a, b> (n : int) : int;
-axiom [link]: forall n : int :: int.lt(m2(n), m1(n));
-rec function g<p, q> (x : int) : int
-  decreases m1(x)
-{ g2(x) }
-function g2<q, p> (x : int) : int
-  decreases m2(x)
-{ g(int.add(x, 1)) };
+function m1<a, b> (n : int, y : a, z : b) : int;
+function m2<a, b> (n : int, y : a, z : b) : int { int.sub(m1(n, y, z), 1) }
+rec function g<p, q> (x : int, s : p, k : q) : int
+  decreases m1(x, s, k)
+{ g2(x, s, k) }
+function g2<q, p> (x : int, s : q, k : p) : int
+  decreases m2(x, s, k)
+{ g(int.add(x, 1), s, k) };
 #end
 
 /--
 info:
 Obligation: g_terminates_0
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 
 Obligation: g_terminates_1
 Property: assert
@@ -633,34 +642,73 @@ Result: ✅ pass
 
 Obligation: g2_terminates_0
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 
 Obligation: g2_terminates_1
 Property: assert
-Result: ❓ unknown
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval Core.verify swappedLinkedPgm (options := .quiet)
 
 /-! A measure that depends on a type parameter through a quantifier is rejected
-outright: a measure may not contain bound variables. -/
+by termination checking: a measure may not contain bound variables. -/
 
 def swappedQuantifiedPgm : Program :=
 #strata
 program Core;
-rec function g<p, q> (x : int) : int
+rec function g<p, q> (x : int, s : p, k : q) : int
   decreases (if (forall w : q, v : q :: w == v) then 1 else 0)
-{ g2(x) }
-function g2<q, p> (x : int) : int
+{ g2(x, s, k) }
+function g2<q, p> (x : int, s : q, k : p) : int
   decreases (if (forall w : p, v : p :: w == v) then 0 else 1)
-{ g(x) };
+{ g(x, s, k) };
+#end
+
+/-- error: termination checking 'g': decreasing argument contains a bound variable -/
+#guard_msgs in
+#eval Core.verify swappedQuantifiedPgm (options := .quiet)
+
+/-! A polymorphic datatype with two type parameters, and mutual functions that
+order them differently: each call passes the arguments to the callee's parameters
+in the callee's order. -/
+
+def swappedDatatypePgm : Program :=
+#strata
+program Core;
+datatype PList (a : Type, b : Type) { PNil(), PCons(x: a, y: b, tl: PList a b) };
+rec function evenLenP<a, b>(@[cases] xs : PList a b) : bool
+{ if PList..isPNil(xs) then true else oddLenP(PList..tl(xs)) }
+function oddLenP<b, a>(@[cases] xs : PList a b) : bool
+{ if PList..isPNil(xs) then false else evenLenP(PList..tl(xs)) };
+procedure TestPolyMutualOrder(out r : bool) spec { ensures true; }
+{ var xs : PList int bool; xs := PCons(1, true, PCons(2, false, PNil())); r := evenLenP(xs); };
 #end
 
 /--
-error: termination checking 'g': decreasing argument contains a bound variable
+info:
+Obligation: evenLenP_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: oddLenP_terminates_0
+Property: assert
+Result: ✅ pass
+
+Obligation: evenLenP_body_calls_PList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: oddLenP_body_calls_PList..tl_0
+Property: assert
+Result: ✅ pass
+
+Obligation: TestPolyMutualOrder_ensures_0
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
-#eval Core.verify swappedQuantifiedPgm (options := .quiet)
+#eval Core.verify swappedDatatypePgm (options := .quiet)
 
 end Strata.SwappedTypeParamsTest
 

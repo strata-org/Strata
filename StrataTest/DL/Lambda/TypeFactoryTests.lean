@@ -340,7 +340,11 @@ info: ((~List..tl : (arrow (List $__ty1) (List $__ty1))) (~Nil : (List $__ty1)))
 #eval format $ tupTy.constrs.map fun c =>
   (destructorFuncs (T := TestParams) tupTy c).map fun f => f.preconditions.map (·.expr)
 
-/-- info: [[], [[(~isCons $__tvar0)], [(~isCons $__tvar0)]]] -/
+/--
+info: [[],
+ [[((~isCons : (arrow (List a) bool)) ($__tvar0 : (List a)))],
+  [((~isCons : (arrow (List a) bool)) ($__tvar0 : (List a)))]]]
+-/
 #guard_msgs in
 #eval format $ listTy.constrs.map fun c =>
   (destructorFuncs (T := TestParams) listTy c).map fun f => f.preconditions.map (·.expr)
@@ -1435,6 +1439,10 @@ def paramTy (tyArgs : List TyIdentifier) (fieldTy : LMonoTy) : LDatatype Unit :=
 #guard_msgs in
 #eval IO.println (validateMsg [paramTy ["$__inlinety_0"] (.ftvar "$__inlinety_0")])
 
+/-- info: Datatype 'Pa': type parameter '$__precond_b' is a reserved name -/
+#guard_msgs in
+#eval IO.println (validateMsg [paramTy ["$__precond_b"] (.ftvar "$__precond_b")])
+
 /-- info: Datatype 'Pa': duplicates found in the type arguments!
 Type Arguments: [x, x] -/
 #guard_msgs in
@@ -1539,10 +1547,10 @@ func Fa..f :  (($__tvar0 : Fa)) → bool;
 info: A function of name Fa..f already exists! Redefinitions are not allowed.
 Existing Function: @[evalIfConstr 0]
 func Fa..f :  (($__tvar0 : Fa)) → int
-  requires (~isMkFa1 $__tvar0);
+  requires ((~isMkFa1 : (arrow Fa bool)) ($__tvar0 : Fa));
 New Function:@[evalIfConstr 0]
 func Fa..f :  (($__tvar0 : Fa)) → bool
-  requires (~isMkFa2 $__tvar0);
+  requires ((~isMkFa2 : (arrow Fa bool)) ($__tvar0 : Fa));
 -/
 #guard_msgs in
 #eval IO.println

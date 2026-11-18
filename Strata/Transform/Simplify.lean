@@ -552,12 +552,10 @@ end Core.Simplify
     `typeAnnotated` has no executable check, so preserving it rests on an argument
     rather than on a test. Every expression this phase emits is built from annotated
     subterms of its input: a body substituted for a call and a value substituted for
-    a variable both come from the program, and folding yields constants. No variable
-    reference is minted, which is what `CallElim` does when it replaces a callee's
-    formals with the caller's variables, and why that phase cannot claim the fact. -/
+    a variable both come from the program, and folding yields constants. -/
 def Core.simplifyPhase : Core.PipelinePhase :=
   Core.modelPreservingPipelinePhase "simplify" Core.Simplify.runSimplify
-    (requires := factSet![.noCalls, .noPrecondsFromFuncs])
+    (requires := factSet![.noCalls, .noPrecondsFromFuncs, .typeAnnotated])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,

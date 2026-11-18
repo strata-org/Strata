@@ -14,10 +14,12 @@ meta import Strata.Transform.GenOpaqueTypeParams
 meta import Strata.Transform.PrecondElim
 meta import Strata.Transform.TerminationCheck
 meta import StrataTest.Languages.Core.Tests.ReparseTestUtils
+meta import StrataTest.Languages.Core.Tests.TestUtil
 
 meta section
 
 open Strata
+open Core.TestUtil (translateWithMetaData)
 
 /-! ## `MonomorphizeFunctions` tests
 
@@ -33,18 +35,14 @@ program.
 
 section MonomorphizeFunctionsTests
 
-private def translate (t : StrataDDM.Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram t)).fst
-
 private def quietOpts : Core.VerifyOptions :=
   { Core.VerifyOptions.default with verbose := .quiet }
 
 /-- Translate `t`, type-check, then run `MonomorphizeFunctions`.  Returns the
     transformed program AND the final `Factory` (extracted from the
     `CoreTransformState`). -/
-private def monoFns (t : StrataDDM.Program) :
+private def monoProgram (prog : Core.Program) :
     Except Message (Core.Program × Lambda.Factory Core.CoreLParams) := do
-  let prog := translate t
   let tc ← Core.typeCheck quietOpts prog
   let seedState : Core.Transform.CoreTransformState :=
     { Core.Transform.CoreTransformState.emp with factory := Core.Factory }
@@ -54,28 +52,31 @@ private def monoFns (t : StrataDDM.Program) :
   | .ok p => return (p, finalState.factory)
   | .error msg => throw msg
 
-/-- Fuller-pipeline runner: `precondElim` + `termCheck` +
-    `genOpaqueTypeParams` + `typeCheck` + `MonomorphizeFunctions`,
-    matching the order in `corePipelinePhases`.  Each upstream pass can
-    change the set of reachable polymorphic-function callsites:
+private def monoFns (t : StrataDDM.Program) :
+    Except Message (Core.Program × Lambda.Factory Core.CoreLParams) :=
+  monoProgram (translateWithMetaData t)
+
+/-- Fuller-pipeline runner: `typeCheck` + `precondElim` + `termCheck` +
+    `genOpaqueTypeParams` + `MonomorphizeFunctions`.
+    Each upstream pass can change the set of reachable polymorphic-function callsites:
     `precondElim` inlines `requires` clauses as fresh `assert`s (and
     emits well-formedness lemmas), `termCheck` emits termination lemmas +
     `D..adtRank` axioms for every recursive-function block, and
     `genOpaqueTypeParams` substitutes a polymorphic procedure's type
-    variables with fresh opaque types before type-checking. -/
+    variables with fresh opaque types. -/
 private def monoFnsFullPipeline (t : StrataDDM.Program) :
     Except Message (Core.Program × Lambda.Factory Core.CoreLParams) := do
   let initState : Core.Transform.CoreTransformState :=
     { Core.Transform.CoreTransformState.emp with factory := Core.Factory }
+  let tc ← Core.typeCheck quietOpts (translateWithMetaData t)
   let (r1, s1) :=
-    Core.Transform.runWith (translate t) Core.PrecondElim.precondElim initState
+    Core.Transform.runWith tc Core.PrecondElim.precondElim initState
   let (_, p1) ← r1
   let (r2, s2) := Core.Transform.runWith p1 Core.TermCheck.termCheck s1
   let (_, p2) ← r2
   let (r3, s3) := Core.Transform.runWith p2 Core.genOpaqueTypeParams s2
   let (_, p3) ← r3
-  let tc ← Core.typeCheck quietOpts p3
-  let (r4, sFinal) := Core.Transform.runWith tc Core.MonomorphizeFunctions.run s3
+  let (r4, sFinal) := Core.Transform.runWith p3 Core.MonomorphizeFunctions.run s3
   let p4 ← r4
   return (p4, sFinal.factory)
 
@@ -86,7 +87,7 @@ private def fmtMonoFns (t : StrataDDM.Program) : IO Std.Format :=
   | .ok (p, _fac) => return (Std.format p.stripMetaData)
 
 /-- Format the monomorphized program produced by the full pipeline
-    (`precondElim` + `termCheck` + `genOpaqueTypeParams` + `typeCheck` +
+    (`typeCheck` + `precondElim` + `termCheck` + `genOpaqueTypeParams` +
     `MonomorphizeFunctions`) as surface syntax. -/
 private def fmtMonoFnsFullPipeline (t : StrataDDM.Program) : IO Std.Format :=
   match monoFnsFullPipeline t with
@@ -148,7 +149,7 @@ private def typeChecks (t : StrataDDM.Program) : Bool :=
   match monoFns t with
   | .error _ => false
   | .ok (p, fac) =>
-    match Core.typeCheck quietOpts p (factory := fac) with
+    match Core.typeCheck quietOpts p (factory := some fac) with
     | .ok _ => true
     | .error _ => false
 
@@ -367,7 +368,7 @@ spec {
 
 private def verifyMono (t : StrataDDM.Program)
     (options : Core.VerifyOptions := .default) : IO Core.VCResults :=
-  EIO.toIO (fun s => IO.userError s) (Core.verifyProgram (translate t) options)
+  EIO.toIO (fun s => IO.userError s) (Core.verifyProgram (translateWithMetaData t) options)
 
 /--
 info:
@@ -758,18 +759,13 @@ spec {
 #guard typeChecks mutualDiffAritiesPgm
 
 ---------------------------------------------------------------------
-/-! ### Example 12: iteration cap on non-uniform polymorphic recursion
+/-! ### Example 12: polymorphic recursion and the specialization cap
 
-Non-uniform polymorphic recursion produces an unbounded family of ground
-type instantiations — here `f<a>` calls itself at `MyList a`, generating
-`f<int>`, `f<MyList int>`, `f<MyList (MyList int)>`, …  The worklist would
-never drain, so the pass caps the number of specializations it will
-process and aborts with a documented error.
+The pass caps the number of specializations it processes. Type checking rejects only a
+self-call annotated at the function's own type parameters. Monomorphization specializes calls
+at ground types, and stops a self-call whose argument type grows at its specialization cap. -/
 
-Runs with a tiny cap (`10`) so the test triggers the cap quickly instead
-of the production default. -/
-
-private def unboundedRecPgm :=
+private def refiningRecPgm :=
 #strata
 program Core;
 datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
@@ -783,10 +779,9 @@ spec {
 };
 #end
 
-/-- Type-check `t`, then run `MonomorphizeFunctions` with a small cap.
+/-- Type-check `prog`, then run `MonomorphizeFunctions` with a small cap.
     Returns the transform's `Except`-shaped error/success message. -/
-private def monoFnsCappedMsg (t : StrataDDM.Program) (cap : Nat) : String :=
-  let prog := translate t
+private def monoProgramCappedMsg (prog : Core.Program) (cap : Nat) : String :=
   match Core.typeCheck quietOpts prog with
   | .error e => toString e.message
   | .ok tc =>
@@ -794,11 +789,113 @@ private def monoFnsCappedMsg (t : StrataDDM.Program) (cap : Nat) : String :=
     | .ok _ => "OK"
     | .error m => toString m
 
+/-- `monoProgramCappedMsg` on a translated `#strata` program. -/
+private def monoFnsCappedMsg (t : StrataDDM.Program) (cap : Nat) : String :=
+  monoProgramCappedMsg (translateWithMetaData t) cap
+
+-- Type checking rejects the program: the recursive call refines the rigid type parameter `a`.
+/--
+info: "Rigid type variable 'a' was refined to '(MyList a)'"
+-/
+#guard_msgs in
+#eval monoFnsCappedMsg refiningRecPgm 10
+
+/-! ### Non-uniform recursion that type checking accepts
+
+Only a self-call annotated at the function's own type parameters is rejected. A self-call at a
+ground type, whether directly or around a mutual block, is accepted, and the pass specializes it
+at that type. A self-call whose operator is unannotated and whose argument has a type that grows
+(here `int -> a`) is also accepted by the checker; the pass stops it at the specialization cap. -/
+
+/-- The application of the operator `fn`, with no type annotation, to `arg`. -/
+private def callOf (fn : String) (arg : Core.Expression.Expr) : Core.Expression.Expr :=
+  .app Core.coreLoc (.op Core.coreLoc ⟨fn, ()⟩ none) arg
+
+/-- `rec function name<typeArg>(x : typeArg) : int { body }`. -/
+private def recFn (name : String) (typeArg : String)
+    (body : Core.Expression.Expr) : Core.Function :=
+  { name := ⟨name, ()⟩, typeArgs := [typeArg], isRecursive := true,
+    inputs := [(⟨"x", ()⟩, .ftvar typeArg)], output := .int, body := some body }
+
+/-- A procedure that calls `f` at `int`. -/
+private def callsF : Core.Decl :=
+  .proc { (default : Core.Procedure) with
+    header := { (default : Core.Procedure.Header) with name := ⟨"P", ()⟩ }
+    body := .structured [Core.Statement.init ⟨"r", ()⟩ (.forAll [] .int)
+      (.det (callOf "f" (.const Core.coreLoc (.intConst 5)))) .empty] } .empty
+
+/-- The integer literal `42`. -/
+private def intLit : Core.Expression.Expr := .const Core.coreLoc (.intConst 42)
+
+/-- `rec function f<a>(x : a) : int { f(42) }`, the self-call operator unannotated. -/
+private def unannotatedSelfCall : Core.Program :=
+  { decls := [.recFuncBlock [recFn "f" "a" (callOf "f" intLit)] .empty, callsF] }
+
+/-- `f<a>(x : a) : int { g(42) }` and `g<b>(x : b) : int { f(x) }`, mutually recursive. -/
+private def mutualNonUniform : Core.Program :=
+  { decls := [
+      .recFuncBlock [recFn "f" "a" (callOf "g" intLit),
+                     recFn "g" "b" (callOf "f" (.fvar Core.coreLoc ⟨"x", ()⟩ none))] .empty,
+      callsF] }
+
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval Core.TestUtil.coreVerdict unannotatedSelfCall
+
+/--
+info: ok: program Core;
+
+rec function |$__mono#f#int| (x : int) : int
+{
+  |$__mono#f#int|(42)
+};
+procedure P ()
+{
+  var r : int := |$__mono#f#int|(5);
+};
+-/
+#guard_msgs in
+#eval (monoProgram unannotatedSelfCall).map (fun (p, _) => Std.format p.stripMetaData)
+
+/-- `rec function f<a>(x : a) : int { f(fun z : int => x) }`, the self-call operator unannotated. -/
+private def growingSelfCall : Core.Program :=
+  { decls := [
+      .recFuncBlock [recFn "f" "a" (callOf "f"
+        (.abs Core.coreLoc "z" (some .int) (.fvar Core.coreLoc ⟨"x", ()⟩ none)))] .empty,
+      callsF] }
+
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval Core.TestUtil.coreVerdict growingSelfCall
+
 /--
 info: "MonomorphizeFunctions: too many specializations (non-uniform polymorphic recursion is not supported)"
 -/
 #guard_msgs in
-#eval monoFnsCappedMsg unboundedRecPgm 10
+#eval monoProgramCappedMsg growingSelfCall 10
+
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval Core.TestUtil.coreVerdict mutualNonUniform
+
+/--
+info: ok: program Core;
+
+rec function |$__mono#f#int| (x : int) : int
+{
+  |$__mono#g#int|(42)
+}
+function |$__mono#g#int| (x : int) : int
+{
+  |$__mono#f#int|(x)
+};
+procedure P ()
+{
+  var r : int := |$__mono#f#int|(5);
+};
+-/
+#guard_msgs in
+#eval (monoProgram mutualNonUniform).map (fun (p, _) => Std.format p.stripMetaData)
 
 -- Cap boundary: a program that drains in *exactly* `cap` specializations still
 -- succeeds (pins the `0`-fuel `pending.isEmpty` off-by-one fix in `Worklist`).
@@ -808,6 +905,21 @@ info: "OK"
 -/
 #guard_msgs in
 #eval monoFnsCappedMsg idPgm 1
+
+-- `idTwoPgm` needs two specializations of `id`, so a cap of `1` fails. The pass gives
+-- the same message whenever the cap is exceeded, though this program has no recursion.
+/--
+info: "MonomorphizeFunctions: too many specializations (non-uniform polymorphic recursion is not supported)"
+-/
+#guard_msgs in
+#eval monoFnsCappedMsg idTwoPgm 1
+
+-- The same program succeeds with a cap of `2`.
+/--
+info: "OK"
+-/
+#guard_msgs in
+#eval monoFnsCappedMsg idTwoPgm 2
 
 ---------------------------------------------------------------------
 /-! ### Example 13: `MonomorphizeFunctions` after `PrecondElim` / `TermCheck`
@@ -1035,6 +1147,27 @@ spec {
 #guard factoryIsMonomorphic (monoFns mapConstPgm)
 #guard typeChecks mapConstPgm
 
+/-! ### A call's instantiation does not depend on type variable names
+
+`pair<a, b>(x : a, y : b) : bool` referenced at `b → a → bool` is instantiated at `[b, a]`;
+the same reference with the caller's `b` and `a` renamed to `d` and `c` gives `[d, c]`. -/
+
+private def pairGivenTypes (ty : Lambda.LMonoTy) : Std.Format :=
+  let pair : Core.Function :=
+    { name := ⟨"pair", ()⟩, typeArgs := ["a", "b"],
+      inputs := [(⟨"x", ()⟩, .ftvar "a"), (⟨"y", ()⟩, .ftvar "b")], output := .bool }
+  match Core.MonomorphizeFunctions.getTypeSubstitution pair (some ty) with
+  | some ts => Std.format ts.givenTypes
+  | none => "none"
+
+/-- info: [b, a] -/
+#guard_msgs in
+#eval pairGivenTypes (.arrow (.ftvar "b") (.arrow (.ftvar "a") .bool))
+
+/-- info: [d, c] -/
+#guard_msgs in
+#eval pairGivenTypes (.arrow (.ftvar "d") (.arrow (.ftvar "c") .bool))
+
 ---------------------------------------------------------------------
 /-! ### Full Verification Example 1: Procedure opaque types + Function monomorphization, poly pre/post
 
@@ -1070,7 +1203,7 @@ Obligation: keep_ensures_1
 Property: assert
 Result: ✅ pass
 
-Obligation: callElimAssert_keep_requires_0_3
+Obligation: callElimAssert_keep_requires_0_2
 Property: assert
 Result: ✅ pass
 

@@ -1075,21 +1075,22 @@ def toSymExecObligationProgram (options : VerifyOptions) (program : Program)
     ((#[] : Array (String × Expression.Expr)), 0, (#[] : Array (List Statement)), stats)
   return (obligationProgram program decls (lemmaBlocks ++ procBlocks.toList), stats)
 
-/-- Convenience: type check then build obligation program. -/
+/-- Convenience: type check then build obligation program. The program's lemmas keep their
+    type parameters; the verification pipeline's opaque-type phase closes them. -/
 def typeCheckAndBuildObligationProgram (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except Message (Program × Statistics) := do
-  let factory ← Core.Factory.addFactory moreFns
-  let program ← typeCheck options program factory
+  let program ← typeCheck options program (moreFns := moreFns)
   toCoreProofObligationProgram options program moreFns
 
 /-- Convenience: type check then symbolic eval. Returns the list of
-    evaluation environments and statistics. -/
+    evaluation environments and statistics. The program's lemmas keep their type parameters;
+    the verification pipeline's opaque-type phase closes them. -/
 def typeCheckAndEval (options : VerifyOptions) (program : Program)
     (moreFns : Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except Message ((List Env) × Statistics) := do
   let factory ← Core.Factory.addFactory moreFns
-  let program ← typeCheck options program factory
+  let program ← typeCheck options program (moreFns := moreFns)
   let (E, declStats) ← buildEnv options program factory
   let (pEs, evalStats) ← Program.eval E
   let stats := declStats.merge evalStats
@@ -1939,13 +1940,15 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     during evaluation (not as a program-to-program pass), making it the
     closest phase to SMT.
 
-    `assertWellFormedCalls` comes first, so an ill-formed call is reported in
-    every procedure, including ones the procedure filter then drops. The filter
+    `typeCheck` comes first and checks the whole program as written, so an ill-typed
+    procedure or ill-formed call is reported even when the filter then drops it. Every later
+    phase relies on its annotations and on the well-formed calls it establishes. The filter
     follows. Without `--vcgen symexec`, `assertNoCFGBodies` comes next, so a CFG body is refused
     by a message naming the fact. Under `--vcgen symexec` CFG bodies go on to symbolic
     execution: call elimination and precondition elimination rewrite the commands of their
     blocks, and the other phases keep them as they are. -/
-def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
+def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default)
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     List PipelinePhase :=
   let procs := options.proceduresToVerify
   let filterPhases := match procs with
@@ -1959,7 +1962,7 @@ def transformPipelinePhases (options : VerifyOptions := VerifyOptions.default) :
     else [ProgramFact.assertPhase .noCFGBodies]
   -- The filter runs before `assertNoCFGBodies`, so a caller naming structured
   -- procedures to verify is not refused for an excluded CFG body.
-  [ProgramFact.assertPhase .wellFormedCalls] ++ filterPhases ++ cfgCheck ++
+  [typeCheckPipelinePhase options (moreFns := moreFns)] ++ filterPhases ++ cfgCheck ++
     [callElimPipelinePhase, termCheckPipelinePhase, precondElimPipelinePhase]
     ++ postFilterPhases ++ [insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
 
@@ -1977,7 +1980,7 @@ def symbolicEvalPipelinePhase
   -- re-establishes them. `noNondetGuards` is not preserved: the output separates
   -- obligations with `ite *`.
   modelPreservingPipelinePhase "symbolicEval"
-    (requires := factSet![.noCFGBodies, .noLoops, .noNondetGuards])
+    (requires := factSet![.noCFGBodies, .noLoops, .noNondetGuards, .typeAnnotated])
     (establishes := factSet![.noCalls, .staticSingleAssignment, .hasObligationForm,
                              .noProcedureContracts, .noInits])
     (preserves := factSet![.noCFGBodies, .noLoops, .noLoopInvariants, .noLoopMeasures,
@@ -1994,15 +1997,15 @@ def symbolicEvalPipelinePhase
     declarations symbolic evaluation produces for the program without its procedures (type
     declarations, functions, `distinct` declarations) replace the program's, every axiom and
     every procedure is kept unchanged, and each lemma becomes an obligation unit (a procedure
-    asserting its obligation). It evaluates no procedure, so it requires nothing of them; it
-    keeps every procedure, emits obligation units without loops, calls, contracts, type
-    parameters or nondeterministic guards, and its functions are those symbolic evaluation
-    emits. -/
+    asserting its obligation). It evaluates no procedure, so it requires of them only the
+    annotations the back end reads; it keeps every procedure, emits obligation units without
+    loops, calls, contracts, type parameters or nondeterministic guards, and its functions are
+    those symbolic evaluation emits. -/
 def declObligationsPipelinePhase
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : PipelinePhase :=
   modelPreservingPipelinePhase "declObligations"
-    (requires := factSet![])
+    (requires := factSet![.typeAnnotated])
     (establishes := factSet![])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants, .noLoopMeasures,
                          .noPrecondsFromFuncs, .noNondetGuards,
@@ -2048,20 +2051,10 @@ def symExecPipelinePhase
       return (true, prog')
 
 /-- The phases that run between `transformPipelinePhases` and `symbolicEvalPipelinePhase`:
-    replace procedure and lemma type parameters by opaque types, type-check, monomorphize functions, and eliminate
-    nondeterminism.
-
-    Factored out so `genVCs` in `MetaVerifier` can reuse them without pulling in
-    the full `transformPipelinePhases` prefix (call elimination, precondition
-    lifting, etc.), which is unnecessary for programs that already arrive
-    call-free from the Boole→Core translation. -/
-def preSymbolicEvalPipelinePhases (options : VerifyOptions := .default)
-    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
-  -- `verify` pre-validates `Core.Factory.addFactory moreFns`, so the `getD`
-  -- fallback here is only a totality safety net.
-  let typeCheckFactory := (Core.Factory.addFactory moreFns).toOption.getD Core.Factory
+    replace procedure and lemma type parameters by opaque types, monomorphize functions,
+    simplify, and eliminate nondeterminism. -/
+def preSymbolicEvalPipelinePhases : List PipelinePhase :=
   [genOpaqueTypeParamsPipelinePhase,
-   typeCheckPipelinePhase options typeCheckFactory,
    monomorphizeFunctionsPipelinePhase,
    simplifyPhase,
    NondetElim.nondetElimPipelinePhase]
@@ -2084,8 +2077,8 @@ def symExecPerPathCSETreeSize : Nat := 100000
 def corePipelinePhases
     (options : VerifyOptions := VerifyOptions.default)
     (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) : List PipelinePhase :=
-  transformPipelinePhases options
-    ++ preSymbolicEvalPipelinePhases options moreFns
+  transformPipelinePhases options moreFns
+    ++ preSymbolicEvalPipelinePhases
     ++ (match options.vcgen with
         | .symbolic =>
           if options.symExec.isSome then
@@ -3003,7 +2996,7 @@ def typeCheck (ictx : InputContext) (env : Program) (options : Core.VerifyOption
   Except Message Core.Program := do
   let (program, errors) := TransM.run ictx (translateProgram env)
   if errors.isEmpty then
-    Core.Factory.addFactory moreFns >>= (Core.typeCheck options program ·)
+    Core.typeCheck options program (moreFns := moreFns)
   else
     .error <| Message.fromFormat s!"DDM Transform Error: {repr errors}"
 

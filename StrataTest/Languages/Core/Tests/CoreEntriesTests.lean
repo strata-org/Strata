@@ -11,10 +11,12 @@ meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.Languages.Core.ObligationExtraction
 meta import Strata.Languages.Core.Analysis.DeductiveVerification
+meta import StrataTest.Languages.Core.Tests.TestUtil
 
 meta section
 
 open Strata
+open Core.TestUtil (translateWithMetaData)
 
 /-! # The entries of a Core program
 
@@ -35,9 +37,6 @@ of entries. These tests pin what they are on small programs.
 
 namespace Strata.CoreEntriesTests
 
-private def translate (t : StrataDDM.Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram t)).fst
-
 /-- A datatype declared before a procedure. -/
 private def dtBeforeProc :=
 #strata
@@ -47,15 +46,17 @@ procedure P() spec { ensures true; } { assert [a]: true; };
 #end
 
 -- `P` is found, and the only declaration before it is the datatype.
-#guard ((translate dtBeforeProc).findProcByString? "P").map (·.header.name.name) == some "P"
-#guard ((translate dtBeforeProc).declsBeforeProcedure "P").length == 1
+#guard ((translateWithMetaData dtBeforeProc).findProcByString? "P").map (·.header.name.name)
+  == some "P"
+#guard ((translateWithMetaData dtBeforeProc).declsBeforeProcedure "P").length == 1
 
 -- The factory a procedure entry of `P` must have (`factoryBeforeProcedure`) has no function
 -- generated for the datatype; the runtime factory over Core's has them.
-#guard !(((translate dtBeforeProc).factoryBeforeProcedure "P").toArray.any
+#guard !(((translateWithMetaData dtBeforeProc).factoryBeforeProcedure "P").toArray.any
   (·.name.name == "Some"))
 #guard (Core.Specification.Analysis.runtimeFactoryOf Core.Factory
-  ((translate dtBeforeProc).declsBeforeProcedure "P")).toArray.any (·.name.name == "Some")
+  ((translateWithMetaData dtBeforeProc).declsBeforeProcedure "P")).toArray.any
+  (·.name.name == "Some")
 
 /-- The constant `n`, as an operator. -/
 private def cst (n : String) : Core.Expression.Expr := .op Core.coreLoc ⟨n, ()⟩ none
@@ -102,26 +103,31 @@ example (ρ : Imperative.Env Core.Expression) : declsWalk ρ declsProg =
 private def mixedDistinctPgm :=
 #strata
 program Core;
-const c : int;
+const a : int;
 const b : bool;
-distinct [mix]: [c, b];
-lemma [after]: c == c;
+distinct [ab]: [a, b];
+lemma [after]: a == a;
 #end
 
-/-- The elaboration of `mixedDistinctPgm` by type checking, if any. -/
-private def mixedDistinctElab : Option Core.Program :=
-  (Core.typeCheck .quiet (translate mixedDistinctPgm)).toOption
+-- Type checking requires one type for a `distinct` declaration's expressions, so it rejects
+-- this program and names the two types.
+/-- info: REJECTED: Distinct 'ab': a has type int but b has type bool -/
+#guard_msgs in
+#eval Core.TestUtil.coreVerdict (translateWithMetaData mixedDistinctPgm)
 
--- Type checking accepts an ill-sorted `distinct` declaration today, and `declFormulasTyped`
--- rejects it, so `TypeCheckDeclFormulasTyped` is false. Once type checking requires one type
--- for a `distinct` declaration's expressions, this program is rejected and the first check
--- flips.
-#guard mixedDistinctElab.isSome
-#guard mixedDistinctElab.all fun p => !Core.Specification.Analysis.Program.formulasTypedB p
-#guard mixedDistinctElab.all fun p => p.decls.any fun d =>
-  match d with
-  | .distinct .. => !Core.Specification.Analysis.declFormulasTyped d
-  | _ => false
+/-- A `distinct` declaration over three constants of one type. -/
+private def sameTypeDistinctPgm :=
+#strata
+program Core;
+const a : int;
+const b : int;
+const c : int;
+distinct [abc]: [a, b, c];
+#end
+
+/-- info: ACCEPTED -/
+#guard_msgs in
+#eval Core.TestUtil.coreVerdict (translateWithMetaData sameTypeDistinctPgm)
 
 /-- A lemma before the `distinct` declaration it needs. -/
 private def distinctAfterLemmaPgm :=
@@ -144,8 +150,10 @@ lemma [late]: !(c == d);
 #end
 
 -- The premise theorems take: it fails on the first program and holds on the second.
-#guard !Core.Specification.Analysis.Program.distinctsBeforeLemmasB (translate distinctAfterLemmaPgm)
-#guard Core.Specification.Analysis.Program.distinctsBeforeLemmasB (translate distinctBeforeLemmaPgm)
+#guard !Core.Specification.Analysis.Program.distinctsBeforeLemmasB
+  (translateWithMetaData distinctAfterLemmaPgm)
+#guard Core.Specification.Analysis.Program.distinctsBeforeLemmasB
+  (translateWithMetaData distinctBeforeLemmaPgm)
 
 /-- `Core.verify`'s verdict on each obligation of `p`. -/
 private def verdicts (p : StrataDDM.Program) : IO Unit := do

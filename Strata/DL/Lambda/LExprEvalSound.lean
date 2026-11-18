@@ -295,10 +295,11 @@ theorem eval_StepStar
           have h_body_some : lfunc.body.isSome = true := by
             have h_and := Bool.and_eq_true_iff.mp h_inline; exact h_and.1
           obtain ⟨body, h_body_eq⟩ := Option.isSome_iff_exists.mp h_body_some
-          -- Split on computeTypeSubst in the eval result
+          -- Split on instantiateBody? in the eval result
           split
-          · -- computeTypeSubst = some tySubst
-            rename_i tySubst h_tySubst
+          · -- instantiateBody? = some new_e
+            rename_i new_e h_inst
+            obtain ⟨tySubst, h_tySubst, rfl⟩ := LFunc.instantiateBody?_eq_some.mp h_inst
             obtain ⟨h_get, m_op, name_op, ty_op, h_op_eq⟩ := callOfLFunc_getLFuncCall_op h_call
             let stepped_args := args.map (fun a => (ih a).choose)
             have h_stepped_len : args.length = stepped_args.length := by simp [stepped_args]
@@ -362,7 +363,7 @@ theorem eval_StepStar
             show _ = ((LExpr.eval fuel F env _).fst).eraseMetadata
             rw [h_body_get, show (fun a => (LExpr.eval fuel F env a).fst) = (fun a => (LExpr.eval fuel F env a).fst) from rfl]
             exact h_ve_s.trans (eval_eraseMetadata_invariant F env _ _ fuel hWF h_subst_eM)
-          · -- computeTypeSubst = none: eval returns the call on the evaluated arguments
+          · -- instantiateBody? = none: eval returns the call on the evaluated arguments
             exact eval_StepStar_factory_terminal F env e fuel op_expr args lfunc h_call ih
         · -- Non-inline
           rename_i h_not_inline

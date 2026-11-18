@@ -483,12 +483,14 @@ private theorem eval_call_body {F : Lambda.Factory CoreLParams} {σr : RStore Ex
     rw [hb]
     revert hinl
     cases fn.attr.contains .inline <;> simp <;> grind
+  have hinst : fn.instantiateBody? body op ls =
+      some ((body.applyTypeSubst S).substFvarsLifting (fn.inputs.keys.zip ls)) :=
+    (LFunc.instantiateBody?_eq_some (fn := fn)).mpr ⟨S, hS, rfl⟩
   simp only [LExpr.eval, isValue_call hcall hc, hcall, hsc, LExpr.List_map_fst_map_eval,
-    LExpr.List_all_snd_isValueTrue_map_eval, hmap, hall, Bool.false_eq_true, ↓reduceIte,
-    hS]
+    LExpr.List_all_snd_isValueTrue_map_eval, hmap, hall, Bool.false_eq_true, ↓reduceIte]
   have hg : ∀ h', fn.body.get h' = body := by rw [hb]; intro; rfl
   split
-  · simp only [hg, hres, LExpr.combineEvalResValueFlag_eq_pair]
+  · simp only [hg, hinst, hres, LExpr.combineEvalResValueFlag_eq_pair]
     rfl
   · rename_i h
     exact absurd hcond h
@@ -784,7 +786,7 @@ theorem computableEval_userFn (F : Expression.Factory) (hF : EvalFactoryWF F.fac
     (evalBounded_of_eval hS hd (hct ▸ hty) hops ?_ (LConst.wt_of_isPrimitive hcd))
       fun _ => hcd
   refine eval_call_body (S := Subst.empty) hcall hc hb (by simp [LExpr.shortCircuitCall?, hce])
-    ?_ (by simp [LFunc.computeTypeSubst, LFunc.opTypeSubst, hmono]) (hk _ (by omega)) ?_
+    ?_ (by simp [LFunc.computeTypeSubst, hmono]) (hk _ (by omega)) ?_
   · have hia : ls.all (LExpr.isInlineArg F.factory) = true := List.all_eq_true.2 fun l hl => by
       obtain ⟨m, c, rfl, -, -⟩ := hls.mem hl
       simp [LExpr.isInlineArg]

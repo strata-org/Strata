@@ -29,25 +29,12 @@ without the other proves nothing.
 /-! ## Valid in every interpretation
 
 `y == y` holds whatever `T` turns out to be, so this case is purely about ENCODABILITY: the
-binder's sort has to be declared at all.
-
-TRANSITIONAL. This does not yet encode cleanly. `GenOpaqueTypeParams` substitutes a fresh
-opaque type for the type variable in place, but the procedure's own body-VC is emitted at the
-caller site under the ORIGINAL type variable, which then reaches the encoder ungrounded. The
-resulting `strata-bug` is pinned below rather than hidden, so the gap is visible in the test
-suite instead of living only in a comment.
-
-The pin is self-clearing: when the body-VC emitter is tightened the diagnostic stops firing,
-this annotation reports "expected but never fired", and the build fails until it is deleted —
-which is exactly when the case should become an ordinary clean verification. Only the stable
-part of the message is matched; the `$__tyNN` name in the full text is generated and would
-otherwise churn. -/
+binder's sort has to be declared at all. -/
 
 #eval testLaurelVerification <|
 #strata
 program Laurel;
 procedure allEq<T>(x: T) returns (r: bool) opaque ensures forall(y: T) => (y == y) { r := true };
-//                                                        ^^^^^^^^^^^^^^^^^^^^^^^^ strata-bug: SMT encoding: unexpected type variable
 
 procedure callsAllEq() opaque {
   var b: bool := allEq(5);

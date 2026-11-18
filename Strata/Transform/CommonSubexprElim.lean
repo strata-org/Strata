@@ -553,7 +553,7 @@ def Core.commonSubexprElimPhase (minTreeSize : Option Nat := none) : Core.Pipeli
     -- between the definition and the uses, which is what
     -- `staticSingleAssignment` gives. The abbreviations are prepended to the
     -- body, so the body must declare no variable they could read: `noInits`.
-    (requires := factSet![.noCFGBodies, .staticSingleAssignment, .noInits])
+    (requires := factSet![.noCFGBodies, .staticSingleAssignment, .typeAnnotated, .noInits])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,

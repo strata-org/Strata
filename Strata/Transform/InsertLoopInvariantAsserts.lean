@@ -310,11 +310,12 @@ def insertLoopInvariantAssertsPipelinePhase : PipelinePhase where
   -- The measure snapshot is an `init`, which declares rather than reassigns, so
   -- `staticSingleAssignment` survives; the invariants, measure and guard are
   -- relocated unchanged, so no redex appears.
+  requires := factSet![.typeAnnotated]
   establishes := factSet![.noLoopInvariants, .noLoopMeasures]
   preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment,
                       .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .typeAnnotated]
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered]
 
 end -- public section
 

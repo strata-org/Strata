@@ -314,13 +314,14 @@ end IrrelevantAxioms
 def irrelevantAxiomsPipelinePhase (functions : List String) : PipelinePhase :=
   -- No statement is read or written, so every fact survives.
   modelPreservingPipelinePhase "removeIrrelevantAxioms"
-    (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
-                         .noLoopMeasures, .staticSingleAssignment,
+    (requires := factSet![.typeAnnotated])
+    (preserves := factSet![.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops,
+                         .noLoopInvariants, .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
-                         .noProcedureContracts,
+                         .hasObligationForm, .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions, .noInits, .treeForm, .exitsCovered,
-                         .armsHaveObligations])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .treeForm,
+                         .exitsCovered, .armsHaveObligations])
     fun prog => do
       let pruned ← IrrelevantAxioms.run prog functions
       return (true, pruned)

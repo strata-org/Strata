@@ -30,21 +30,13 @@ the original at every instantiation.
 
 ## Where it runs
 
-This pass runs in `corePipelinePhases` immediately *before* `typeCheckPhase`
-(and therefore after `CallElim` in `transformPipelinePhases`).  Two consequences
-of this position matter:
+This pass runs in `corePipelinePhases` after `typeCheckPipelinePhase` and `CallElim`.
+Two consequences of this position matter:
 
 * `CallElim` has already run, so no procedure body contains a `call` and each
   procedure can be processed independently of the others.
-* `typeCheckPhase` which runs after `GenOpaqueTypeParams` clears `header.typeArgs`
-  and instantiates the signature to fresh internal type variables such as
-  `$__ty0`, so running before it lets each procedure still carry its declared
-  type parameters in `header.typeArgs` under their original source names
-  (e.g. `a`).
-
-The subsequent `typeCheckPhase` then re-checks the now-monomorphic procedure
-against its opaque-typed signature, propagating the opaque types through the
-body.
+* Type checking keeps each procedure's `header.typeArgs` under their source names
+  (e.g. `a`), so the substitution rewrites them directly to the opaque types.
 
 ## How it works
 
@@ -133,8 +125,7 @@ private def genOpaqueTypeName (taken : Std.HashSet String) (procName tyVar : Str
     `n`, and the substitution mapping each type variable `tv` to its opaque
     type. -/
 def opaqueTypes (names : List (TyIdentifier × String)) : List Decl × Subst :=
-  (names.map fun (_, n) => Decl.type (.con { name := n, params := [] }) .empty,
-   [HMap.ofList (names.map fun (tv, n) => (tv, LMonoTy.tcons n []))])
+  (names.map fun p => Decl.opaqueType p.2, Subst.ofNullaryConsts names)
 
 /-- Reject the first of `names` containing `Core.NameMangling.monoDelim`, naming it. The
     names opaque types are built from are checked here, so the error names what the user
@@ -188,11 +179,10 @@ def genOpaqueLemma (taken : Std.HashSet String) (l : Lemma) (md : MetaData Expre
     return opaqueDecls ++ [Decl.lemma { l with typeArgs := [], e := l.e.applyTypeSubst S } md]
 
 /-- Introduce opaque types for the type parameters of every polymorphic
-    procedure and lemma in the program. -/
-def run (p : Program) : CoreTransformM Program := do
-  -- Only a declared type with the opaque prefix can equal a generated name; for
-  -- most programs there is none, and nothing is hashed or retried.
-  let taken := Std.HashSet.ofList (p.typeNames.filter (·.startsWith opaqueTypePrefix))
+    procedure and lemma in the program, avoiding the type names in `taken`: the
+    program's type names with the opaque prefix. -/
+def runAvoiding (taken : Std.HashSet String) (p : Program) :
+    CoreTransformM Program := do
   let out ← p.decls.foldlM (init := (#[] : Array Decl)) fun acc decl => do
     match decl with
     | .proc proc md =>
@@ -215,25 +205,33 @@ def run (p : Program) : CoreTransformM Program := do
     | _ => pure (acc.push decl)
   return { decls := out.toList }
 
-/-- Replace every type variable that a type-checked lemma still has by a fresh
+/-- `runAvoiding` with the program's own `$__opaque`-prefixed type names. -/
+def run (p : Program) : CoreTransformM Program :=
+  -- Only a declared type with the opaque prefix can equal a generated name; for
+  -- most programs there is none, and nothing is hashed or retried.
+  runAvoiding (p.typeNamesWithPrefix opaqueTypePrefix) p
+
+/-- Replace every type variable that a lemma still has by a fresh
     opaque type, declared just before it, and drop the lemma's type parameters.
-    This covers the type variables that type checking introduces for the
-    lemma's declared type parameters, and those that nothing in its formula
-    fixes, such as the element type of `Nil()` in `adtRank(Nil())`, which the
-    SMT encoder would otherwise reject. Unlike `genOpaqueLemma`, which runs
-    before type checking, this closes the type variables of the formula's
-    annotations, not the lemma's declared type parameters.
+    The fresh names avoid the type names in `taken`: the program's type names
+    with the free-type prefix.
+    This covers a type variable that is neither a type parameter of the lemma
+    nor fixed by its formula, such as a type left open in a termination lemma
+    built without a type check, which the SMT encoder would otherwise reject.
+    It runs after `genOpaqueLemma`, which replaces the lemma's declared type
+    parameters, and closes the type variables left in the formula's
+    annotations.
 
     TODO: prove what this relies on: if the closed lemma holds, the original
     lemma holds at every instantiation of its type variables, since nothing
     constrains an opaque type. This is the argument by which
     `genOpaqueTypeParams` is model-preserving. -/
-def closeLemmaTypeVars (p : Program) : Program :=
+def closeLemmaTypeVarsAvoiding (taken : Std.HashSet String) (p : Program) :
+    Program :=
   -- Only a declared type with the free-type prefix can clash with a generated
   -- name. The base names `{lemma}_{i}` of different lemmas differ, since lemma
   -- names are distinct and the index after the last `_` has no `_`. So when no
   -- declared type has the prefix, the base names are used as they are.
-  let taken := Std.HashSet.ofList (p.typeNames.filter (·.startsWith freeTyPrefix))
   let close (taken : Std.HashSet String) (l : Lemma) (md : MetaData Expression) :
       List Decl × Std.HashSet String :=
     match (annotTyVars l.e).eraseDups with
@@ -253,7 +251,7 @@ def closeLemmaTypeVars (p : Program) : Program :=
     | d => (acc.push d, taken)
   { p with decls := decls.toList }
 
-/-- Reject a lemma that `closeLemmaTypeVars` would build an opaque type name from (one
+/-- Reject a lemma that `closeLemmaTypeVarsAvoiding` would build an opaque type name from (one
     whose formula's annotations have type variables) when its name contains
     `Core.NameMangling.monoDelim`, naming the lemma: `MonomorphizeFunctions` would reject
     the generated `$__free_L#1_0` anyway. A lemma it closes nothing in keeps its name. -/
@@ -271,9 +269,16 @@ end GenOpaqueTypeParams
 open Core.Transform in
 /-- `CoreTransformM` runner for `GenOpaqueTypeParams`, suitable for use with
     `Core.Transform.run`.  Reports whether any opaque type declaration was
-    introduced (which happens iff some procedure or lemma had type parameters). -/
+    introduced, which happens iff some procedure or lemma had type parameters or a
+    lemma had a type variable left in its annotations. -/
 def genOpaqueTypeParams (p : Program) : CoreTransformM (Bool × Program) := do
-  let p' ← GenOpaqueTypeParams.run p
+  -- `runAvoiding` declares only opaque-prefixed types, so the free-prefixed
+  -- type names of its output are those of `p`.
+  let names := p.typeNames
+  let withOpaque ← GenOpaqueTypeParams.runAvoiding
+    (namesWithPrefix names GenOpaqueTypeParams.opaqueTypePrefix) p
+  let p' := GenOpaqueTypeParams.closeLemmaTypeVarsAvoiding
+    (namesWithPrefix names GenOpaqueTypeParams.freeTyPrefix) withOpaque
   return (p'.decls.length != p.decls.length, p')
 
 /-- Pipeline phase for `GenOpaqueTypeParams`.  Model-preserving: replacing an
@@ -285,13 +290,13 @@ def genOpaqueTypeParamsPipelinePhase : PipelinePhase :=
   -- contains a call, which is why `noCalls` is required and not merely
   -- convenient.
   modelPreservingPipelinePhase "genOpaqueTypeParams"
-    (requires := factSet![.noCalls])
+    (requires := factSet![.noCalls, .typeAnnotated])
     (establishes := factSet![.noPolymorphicProcedures])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noBetaRedexes, .noPrecondsFromFuncs, .noNondetGuards,
                          .noProcedureContracts,
-                         .noPolymorphicFunctions, .typeAnnotated, .noInits])
+                         .noPolymorphicFunctions, .typeAnnotated, .noInits, .exitsCovered])
     fun prog =>
       genOpaqueTypeParams prog
 

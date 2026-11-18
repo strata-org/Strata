@@ -95,7 +95,7 @@ end Core
 def Core.recursiveAxiomsPhase (options : VerifyOptions := VerifyOptions.default) :
     Core.PipelinePhase :=
   Core.modelPreservingPipelinePhase "recursiveAxioms" (Core.RecursiveAxioms.run options)
-    (requires := factSet![])
+    (requires := factSet![.typeAnnotated])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment,
                          .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,

@@ -761,12 +761,12 @@ private theorem runStmtsRec_removeLoop_aux : ∀ (fuel : Nat) (ss : List Stateme
     sizeOf ss < fuel → Transform.Post (Transform.runStmtsRec removeLoop ss) (PassPost ss)
   | 0, _, h => absurd h (Nat.not_lt_zero _)
   | _ + 1, [], _ => by
-    simp only [Transform.runStmtsRec]
+    rw [Transform.runStmtsRec_eq]
     exact Transform.Post.pure ⟨.nil, Nat.le_refl _, by simp, fun _ => rfl⟩
   | fuel + 1, s :: rest, hsz => by
     have ih := runStmtsRec_removeLoop_aux fuel
     simp only [List.cons.sizeOf_spec] at hsz
-    rw [Transform.runStmtsRec.eq_def]
+    rw [Transform.runStmtsRec_eq]
     dsimp only
     refine Transform.Post.bind (Q₁ := fun r => ∃ s', r.2 = [s'] ∧ StmtRelPartial s s' ∧
         Stmt.numLoops s' ≤ Stmt.numLoops s ∧

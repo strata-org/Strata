@@ -182,7 +182,8 @@ Result: ❌ fail
 #guard_msgs in
 #eval Core.verify functionNamedLikeUnknown (options := quiet)
 
-/-- The local `c` is not the function `c`: the assertion fails. -/
+/-- A local may not be named like a function: the type checker rejects a local `c` beside the
+    function `c`. -/
 private def localNamedLikeFunction :=
 #strata
 program Core;
@@ -196,10 +197,8 @@ procedure P()
 #end
 
 /--
-info:
-Obligation: a
-Property: assert
-Result: ❌ fail
+error: ❌ Type checking error.
+Procedure 'P': Local variable 'c' collides with a function or constant of the same name
 -/
 #guard_msgs in
 #eval Core.verify localNamedLikeFunction (options := quiet)
@@ -440,7 +439,7 @@ procedure P(inout x : int)
 
 /--
 error: ❌ Type checking error.
-Variable old x of type int already in context.
+Procedure 'P': Variable old x of type int already in context.
 -/
 #guard_msgs in
 #eval Core.verify localNamedOld (options := quiet)
@@ -500,23 +499,45 @@ private def programVarNames (p : Core.Program) : List String :=
         d.statements false).map (·.name)
     | _ => []
 
+/-- The names of the type-annotated program `tp` that symbolic evaluation's output mentions as
+    free variables. -/
+private def leakedNamesOf (tp : Core.Program) : List String :=
+  match Core.toCoreProofObligationProgram .quiet (elimNondet tp) with
+  | .error _ => ["<symbolic evaluation failed>"]
+  | .ok (out, _) =>
+    let names := programVarNames tp
+    ((out.decls.flatMap fun d => Core.Statements.allExprs d.statements ++ d.ownExprs).flatMap
+      fun e => e.freeVars.map (·.1.name)).filter names.contains |>.eraseDups
+
 /-- The program names that symbolic evaluation's output mentions as free variables. -/
 private def leakedNames (p : StrataDDM.Program) : List String :=
   match Core.typeCheck .quiet (translateCore p) with
   | .error _ => ["<type checking failed>"]
-  | .ok tp =>
-    match Core.toCoreProofObligationProgram .quiet (elimNondet tp) with
-    | .error _ => ["<symbolic evaluation failed>"]
-    | .ok (out, _) =>
-      let names := programVarNames tp
-      ((out.decls.flatMap fun d => Core.Statements.allExprs d.statements ++ d.ownExprs).flatMap
-        fun e => e.freeVars.map (·.1.name)).filter names.contains |>.eraseDups
+  | .ok tp => leakedNamesOf tp
 
 #guard [destructorOfStored, mergeThenDeclare, pathCapMerge, localNamedLikeUnknown,
-        oldNamedLikeUnknown, functionNamedLikeUnknown, localNamedLikeFunction,
+        oldNamedLikeUnknown, functionNamedLikeUnknown,
         branchLocalsOfTwoTypes, doubling, initFromOld,
         guardReadsOld, inoutBothBranches, oldAfterExitMerge,
         localNamedLikeOld].all (leakedNames · == [])
+
+/-- `localNamedLikeFunction` as a type-annotated AST: the function `c`, the axiom `c() == 5`,
+    and a procedure whose local `c` is asserted to be `5`. The type checker rejects the local's
+    name, so symbolic evaluation runs on the AST directly. -/
+private def localNamedLikeFunctionAst : Core.Program :=
+  { decls := [
+      .func { name := "c", inputs := [], output := .int } .empty,
+      .ax { name := "ax", e := .eq Core.coreLoc (.op Core.coreLoc "c" (some .int))
+             (.intConst Core.coreLoc 5) } .empty,
+      .proc { header := { name := "P", typeArgs := [], inputs := [], outputs := [] },
+              spec := { preconditions := [], postconditions := [] },
+              body := .structured [
+                .cmd (.cmd (.init "c" (.forAll [] .int) .nondet .empty)),
+                .cmd (.cmd (.assert "a" (.eq Core.coreLoc (.fvar Core.coreLoc "c" (some .int))
+                                         (.intConst Core.coreLoc 5))
+                  .empty))] } .empty] }
+
+#guard leakedNamesOf localNamedLikeFunctionAst == []
 
 /-- The obligations symbolic evaluation produces for `p`. -/
 private def obligations (p : StrataDDM.Program) : Std.Format :=

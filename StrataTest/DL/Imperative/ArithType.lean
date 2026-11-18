@@ -103,6 +103,8 @@ Instantiation of `TypeContext` for `ArithPrograms`.
 -/
 instance : TypeContext PureExpr Unit TEnv Message where
   isBoolType := Arith.TypeCheck.isBoolType
+  -- ArithPrograms types have no type variables.
+  isMonoType := fun _ => true
   freeVars := (fun e => (Arith.Expr.freeVars e).map (fun (v, _) => v))
   preprocess := fun _ => Arith.TypeCheck.preprocess
   postprocess := fun _ => Arith.TypeCheck.postprocess
@@ -110,6 +112,7 @@ instance : TypeContext PureExpr Unit TEnv Message where
   lookup := Arith.TypeCheck.lookup
   inferType := fun _ => Arith.TypeCheck.inferType
   unifyTypes := Arith.TypeCheck.unifyTypes
+  substExpr := fun _ _ e => e
   typeErrorFmt := fun dm => f!"{dm.message}"
 
 instance : ToFormat (Cmds PureExpr × TEnv) where
