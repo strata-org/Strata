@@ -42,6 +42,7 @@ under the shared semantic event relation `EventArg.WithWF`), `brun_append`, `bru
 `fails_iff_claim`, `claim_prepend`, `claim_split`, `reach_cmd_claim`, `failsAt_transfer`,
 `brun_fv`, `breach_fv`, `fails_fv`, `brun_dom`, `brun_sub`, `brun_frame`,
 `brun_typed`, `brunS_normal_isSome`, `brun_exit_label`, `brun_exit_covered`,
+`Outcome.block_store`,
 `Event.WeakensAssume.assume`,
 `Event.WeakensAssume.check`. -/
 
@@ -377,7 +378,7 @@ private theorem Outcome.proj_store (σp : SemanticStore P) (o : Outcome P) :
 
 omit [HasBool P] [HasFvar P] [HasFvars P] in
 /-- The store of the outcome of a block is the projected store. -/
-private theorem Outcome.block_store (l : String) (σp : SemanticStore P) (o : Outcome P) :
+theorem Outcome.block_store (l : String) (σp : SemanticStore P) (o : Outcome P) :
     (o.block l σp).store = projectStore σp o.store := by
   cases o <;> simp only [Outcome.block] <;> (try split) <;> rfl
 

@@ -7,6 +7,7 @@ module
 
 public import Strata.Languages.Core.Logic.FactoryInterp
 public import Strata.Languages.Core.Logic.HoareUnstructured
+public import Strata.Languages.Core.Logic.HoareTotal
 public import Strata.Languages.Core.Program
 public import Strata.Languages.Core.Analysis.ProcedureCorrectness
 import Strata.DL.Lambda.LExprType
@@ -49,6 +50,11 @@ pair.  Kept separate because none of it is part of the logic proper.
   Its precondition also assumes the axioms and `distinct` declarations visible to the
   procedure (`Core.Specification.AxiomsBeforeProcedureDecl`), as
   `Core.Specification.ProcEntryEnv` does.
+- `Procedure.contractTripleTotal` — the total-correctness counterpart of `contractTriple`,
+  with the same precondition and postcondition: the body also terminates with valid assertions from
+  every admitted entry satisfying the precondition.
+- `Procedure.bodyTerminatesAndAssertsValid` — that termination on its own, for either body
+  kind.
 - `Procedure.ensuresAmongRequires` — the structural check that every non-`free`
   postcondition also occurs among the preconditions.
 - `Procedure.contractChecksTyped` — a conjunct of `contractTriple` requiring every
@@ -133,11 +139,15 @@ precondition, body trace interpretation, and postcondition. -/
   ∀ id ty, (id, ty) ∈ proc.header.outputs.toList →
     ∃ v, ρ.store id = some v ∧ Procedure.valueHasType ty v
 
-/-- Entry condition shared by structured and CFG readings of a procedure contract. -/
+/-- Entry condition shared by structured and CFG readings of a procedure contract: the
+    preconditions hold, the runtime factory is over `factory`, the inout formals match their
+    `old` snapshots, and the input, inout and output formals hold values of their declared
+    types. -/
 @[expose] def Procedure.contractPre (factory : Lambda.Factory CoreLParams)
     (proc : Procedure) (ρ : Imperative.Env Expression) : Prop :=
   Procedure.preAsPredicate factory proc ρ ∧ ρ.factory.factory = factory ∧
-    Procedure.oldInoutAsPredicate proc ρ ∧ Procedure.inputAsPredicate proc ρ
+    Procedure.oldInoutAsPredicate proc ρ ∧ Procedure.inputAsPredicate proc ρ ∧
+    Procedure.outputAsPredicate proc ρ
 
 /-- Exit condition shared by structured and CFG readings of a procedure contract. -/
 @[expose] def Procedure.contractPost (factory : Lambda.Factory CoreLParams)
@@ -174,11 +184,12 @@ precondition, body trace interpretation, and postcondition. -/
 
     The precondition pins the initial environment's runtime factory to one over
     `p.factoryBeforeProcedure procName` (with any model of it), carries the entry
-    snapshots of inout parameters, and requires every input value to match its
-    declared type. It also assumes the axioms and `distinct` declarations that
-    precede the procedure in `p` (`Core.Specification.AxiomsBeforeProcedureDecl`),
-    the entry assumption of `Core.Specification.ProcEntryEnv`, so a body proof may
-    use them and the triple quantifies over the models that satisfy them.
+    snapshots of inout parameters, and requires every input and output value to match its
+    declared type, as the entries of deductive verification do (`ProcEnvWF`). It also
+    assumes the axioms and `distinct` declarations that precede the procedure in `p`
+    (`Core.Specification.AxiomsBeforeProcedureDecl`), the entry assumption of
+    `Core.Specification.ProcEntryEnv`, so a body proof may use them and the triple
+    quantifies over the models that satisfy them.
     On a well-formed program, the factory contains Core's built-ins and exactly
     the user-defined functions declared before the procedure. Partial correctness
     means a diverging body satisfies any postcondition. -/
@@ -202,6 +213,60 @@ precondition, body trace interpretation, and postcondition. -/
             (fun ρ' => Procedure.contractPost (p.factoryBeforeProcedure procName) proc
               { ρ' with store := Imperative.projectStore ρEntry.store ρ'.store })
             (factory := p.factoryBeforeProcedure procName)
+
+/-- **The total-correctness Hoare triple a procedure's contract asserts about its body.**
+
+    The counterpart of `Procedure.contractTriple`, with the same precondition and
+    postcondition, and `HoareTotal.Triple` and `HoareTotal.TripleUnstructured` in place of
+    `Triple` and `TripleUnstructured`: it is `contractTriple` together with termination
+    with valid assertions of the body from every admitted entry satisfying the precondition
+    (`Procedure.contractTripleTotal_iff`).  The output typing in the precondition matters
+    here: an assignment to an output steps only to a value of the type of the value the
+    output holds, so a body writing an output that holds a value of another type would get
+    stuck. -/
+@[expose] def Procedure.contractTripleTotal (p : Core.Program) (params : InitEnvWFParams)
+    (procName : String) : Prop :=
+  ∃ proc, p.findProcByString? procName = some proc ∧
+    Procedure.contractChecksTyped proc ∧
+      match proc.body with
+      | .structured bss =>
+          HoareTotal.Triple p.findProcByString? params
+            (fun ρ => Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧
+              Core.Specification.AxiomsBeforeProcedureDecl procName p ρ)
+            [Imperative.Stmt.block "" bss #[]]
+            (Procedure.contractPost (p.factoryBeforeProcedure procName) proc)
+            (factory := p.factoryBeforeProcedure procName)
+      | .cfg cfg =>
+          ∀ ρEntry, HoareTotal.TripleUnstructured p.findProcByString? params
+            (fun ρ => (Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧
+              Core.Specification.AxiomsBeforeProcedureDecl procName p ρ) ∧
+              ρ = ρEntry) cfg
+            (fun ρ' => Procedure.contractPost (p.factoryBeforeProcedure procName) proc
+              { ρ' with store := Imperative.projectStore ρEntry.store ρ'.store })
+            (factory := p.factoryBeforeProcedure procName)
+
+/-- **The body of the procedure named `procName` in `p` terminates with valid assertions** from
+    every entry admitted by the body's gate that satisfies `contractTriple`'s precondition:
+    in every world, every execution of the body whose assumptions hold there terminates and
+    has its assertions hold there.  With
+    `contractTriple`, it makes up `contractTripleTotal` (`Procedure.contractTripleTotal_iff`). -/
+@[expose] def Procedure.bodyTerminatesAndAssertsValid (p : Core.Program)
+    (params : InitEnvWFParams) (procName : String) : Prop :=
+  ∃ proc, p.findProcByString? procName = some proc ∧
+      match proc.body with
+      | .structured bss =>
+          ∀ ρ, Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧
+              Core.Specification.AxiomsBeforeProcedureDecl procName p ρ →
+            BlockInitEnvWF params [Imperative.Stmt.block "" bss #[]] ρ →
+            (EventLang.coreBlock p.findProcByString?).TerminatesAndAssertsValid
+              (DenoteBasedInterp (p.factoryBeforeProcedure procName))
+              [Imperative.Stmt.block "" bss #[]] ρ
+      | .cfg cfg =>
+          ∀ ρ, Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧
+              Core.Specification.AxiomsBeforeProcedureDecl procName p ρ →
+            CFGInitEnvWF params cfg ρ →
+            (EventLang.coreCFG p.findProcByString?).TerminatesAndAssertsValid
+              (DenoteBasedInterp (p.factoryBeforeProcedure procName)) cfg ρ
 
 /-- Every non-`free` `ensures` expression also occurs among the `requires`. -/
 @[expose] def Procedure.ensuresAmongRequires (proc : Procedure) : Bool :=

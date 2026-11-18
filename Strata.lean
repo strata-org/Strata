@@ -90,11 +90,13 @@ import Strata.Transform.StructuredToUnstructuredPipelineCoreCorrect
 
 /- Program Logics -/
 import Strata.DL.Imperative.Logic.HoareTemplate
+import Strata.DL.Imperative.Logic.HoareTotalTemplate
 import Strata.Languages.Core.Logic.LangDefProps
 import Strata.Languages.Core.Logic.FactoryInterp
 import Strata.Languages.Core.Logic.TraceInterpUsingDenote
 import Strata.Languages.Core.Logic.TraceInterpUsingDenoteProps
 import Strata.Languages.Core.Logic.Hoare
+import Strata.Languages.Core.Logic.HoareTotal
 import Strata.Languages.Core.Logic.HoareCall
 import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps

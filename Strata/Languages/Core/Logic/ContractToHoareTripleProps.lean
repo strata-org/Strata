@@ -27,12 +27,21 @@ procedure's contract decidable. The definitions being established live in
   contract whose non-`free` `ensures` clauses are all among its `requires`.
 - `Procedure.contractTriple_singleton_cmd` — a one-command body, reduced to a single
   obligation about that command's `EvalCommandE` step.
+- `Procedure.contractTripleTotal_of_core_typed` — supplies the procedure and body of a
+  total-correctness contract, discharging the name lookup and the `.structured` obligation.
+- `Procedure.contractTriple_of_contractTripleTotal` — a total-correctness contract gives the
+  partial-correctness one.
+- `Procedure.contractTripleTotal_iff` — a total-correctness contract is a partial-correctness
+  contract and termination with valid assertions of the body
+  (`Procedure.bodyTerminatesAndAssertsValid`), for either body kind.
 - `Procedure.checkAsPredicate_of_exprEq` — transfers the reading of a captured check to
   another clause with the same expression.
 - `assertionsValid_defaultAssertEvents` — turns non-`free` contract clauses that hold in
   every world into a valid assertion-event trace.
-- `Procedure.inputAsPredicate_int` — an `int` input holds an integer at a well-formed
-  entry satisfying the input typing.
+- `Procedure.inputAsPredicate_int`, `Procedure.outputAsPredicate_int` — an `int` input or
+  output holds an integer at a well-formed entry satisfying the input or output typing;
+  `Procedure.outputAsPredicate_of_no_outputs` — a procedure without outputs has its output
+  typing everywhere.
 -/
 
 public section
@@ -99,9 +108,9 @@ theorem Procedure.checkAsPredicate_of_exprEq
   · exact absurd hfac hne
 
 /-- Build a `contractTriple` from the name lookup, body, and body judgement.
-    The factory, old-inout, input-typing and axiom clauses of `contractTriple`'s
-    precondition are discarded by weakening, so the body proof needs only the
-    preconditions. -/
+    The factory, old-inout, input- and output-typing, and axiom clauses of
+    `contractTriple`'s precondition are discarded by weakening, so the body proof needs
+    only the preconditions. -/
 theorem Procedure.contractTriple_of (p : Core.Program) (params : InitEnvWFParams)
     (procName : String) (proc : Procedure) (bss : Statements)
     (hproc : p.findProcByString? procName = some proc)
@@ -119,7 +128,7 @@ theorem Procedure.contractTriple_of (p : Core.Program) (params : InitEnvWFParams
       h (fun _ hc => hc.1.1) (fun _ hpost => hpost)⟩
 
 /-- Build a `contractTriple` whose body proof may assume the concrete factory and
-    old-inout relation but does not need runtime input-value typing. The separate
+    old-inout relation but does not need runtime input- or output-value typing. The separate
     `hchecksTyped` argument discharges `contractTriple`'s static requirement that each
     contract clause type-check as `bool`. -/
 theorem Procedure.contractTriple_of_core (p : Core.Program) (params : InitEnvWFParams)
@@ -141,8 +150,8 @@ theorem Procedure.contractTriple_of_core (p : Core.Program) (params : InitEnvWFP
       h (fun _ hc => ⟨hc.1.1, hc.1.2.1, hc.1.2.2.1⟩) (fun _ hpost => hpost)⟩
 
 /-- Build a `contractTriple` while retaining every entry fact: the contract
-    precondition, including values matching the types of the procedure's input and
-    inout formals, and the axioms and `distinct` declarations visible to the
+    precondition, including values matching the types of the procedure's input, inout and
+    output formals, and the axioms and `distinct` declarations visible to the
     procedure. -/
 theorem Procedure.contractTriple_of_core_typed_axioms (p : Core.Program)
     (params : InitEnvWFParams) (procName : String) (proc : Procedure)
@@ -160,8 +169,8 @@ theorem Procedure.contractTriple_of_core_typed_axioms (p : Core.Program)
   ⟨proc, hproc, hchecksTyped, by rw [hbody]; exact h⟩
 
 /-- Build a `contractTriple` while retaining every fact of the contract
-    precondition, including values matching the types of the procedure's input and
-    inout formals. The axioms visible to the procedure are discarded by weakening;
+    precondition, including values matching the types of the procedure's input, inout and
+    output formals. The axioms visible to the procedure are discarded by weakening;
     `Procedure.contractTriple_of_core_typed_axioms` retains them. -/
 theorem Procedure.contractTriple_of_core_typed (p : Core.Program)
     (params : InitEnvWFParams) (procName : String) (proc : Procedure)
@@ -179,6 +188,77 @@ theorem Procedure.contractTriple_of_core_typed (p : Core.Program)
     hchecksTyped
     (Strata.Logic.Hoare.consequence (EventLang.coreBlock p.findProcByString?) params
       h (fun _ hc => hc.1) (fun _ hpost => hpost))
+
+/-- Build a `contractTripleTotal` for a structured body from the name lookup, the body, and
+    the body's total triple from entries satisfying the contract precondition. The axioms
+    visible to the procedure are discarded by weakening. -/
+theorem Procedure.contractTripleTotal_of_core_typed (p : Core.Program)
+    (params : InitEnvWFParams) (procName : String) (proc : Procedure)
+    (bss : Statements)
+    (hproc : p.findProcByString? procName = some proc)
+    (hbody : proc.body = .structured bss)
+    (hchecksTyped : Procedure.contractChecksTyped proc)
+    (h : HoareTotal.Triple p.findProcByString? params
+        (Procedure.contractPre (p.factoryBeforeProcedure procName) proc)
+        [Imperative.Stmt.block "" bss #[]]
+        (Procedure.contractPost (p.factoryBeforeProcedure procName) proc)
+        (factory := p.factoryBeforeProcedure procName)) :
+    Procedure.contractTripleTotal p params procName :=
+  ⟨proc, hproc, hchecksTyped, by
+    rw [hbody]
+    exact HoareTotal.consequence p.findProcByString? params
+      h (fun _ hc => hc.1) (fun _ hpost => hpost)⟩
+
+/-- **A total-correctness contract gives the partial-correctness contract.**  Both read
+    the same precondition and postcondition, and a total triple gives the partial one. -/
+theorem Procedure.contractTriple_of_contractTripleTotal {p : Core.Program}
+    {params : InitEnvWFParams} {procName : String}
+    (h : Procedure.contractTripleTotal p params procName) :
+    Procedure.contractTriple p params procName := by
+  obtain ⟨proc, hproc, hchecksTyped, htriple⟩ := h
+  refine ⟨proc, hproc, hchecksTyped, ?_⟩
+  cases hbody : proc.body with
+  | structured bss =>
+    rw [hbody] at htriple
+    exact Strata.Logic.HoareTotal.TripleWith.to_partial htriple
+  | cfg cfg =>
+    rw [hbody] at htriple
+    exact fun ρEntry => Strata.Logic.HoareTotal.TripleWith.to_partial (htriple ρEntry)
+
+/-- **A total-correctness contract is a partial-correctness contract and termination.**
+    For either body kind, `contractTripleTotal` holds exactly when `contractTriple` does and
+    the body terminates with valid assertions from every admitted entry satisfying the
+    precondition. -/
+theorem Procedure.contractTripleTotal_iff (p : Core.Program) (params : InitEnvWFParams)
+    (procName : String) :
+    Procedure.contractTripleTotal p params procName ↔
+      Procedure.contractTriple p params procName ∧
+        Procedure.bodyTerminatesAndAssertsValid p params procName := by
+  constructor
+  · intro h
+    refine ⟨Procedure.contractTriple_of_contractTripleTotal h, ?_⟩
+    obtain ⟨proc, hproc, _, htriple⟩ := h
+    refine ⟨proc, hproc, ?_⟩
+    cases hbody : proc.body with
+    | structured bss =>
+      rw [hbody] at htriple
+      exact fun ρ hpre hinit => (htriple ρ hpre hinit).1
+    | cfg cfg =>
+      rw [hbody] at htriple
+      exact fun ρ hpre hinit => (htriple ρ ρ ⟨hpre, rfl⟩ hinit).1
+  · rintro ⟨⟨proc, hproc, hchecksTyped, htriple⟩, proc', hproc', hterm⟩
+    obtain rfl : proc' = proc := Option.some.inj (hproc'.symm.trans hproc)
+    refine ⟨proc', hproc, hchecksTyped, ?_⟩
+    cases hbody : proc'.body with
+    | structured bss =>
+      rw [hbody] at htriple hterm
+      exact fun ρ hpre hinit =>
+        ⟨hterm ρ hpre hinit, fun ρ' trace hrun => (htriple ρ ρ' trace hpre hinit hrun).2⟩
+    | cfg cfg =>
+      rw [hbody] at htriple hterm
+      exact fun ρEntry ρ hpre hinit =>
+        ⟨hterm ρ hpre.1 hinit, fun ρ' trace hrun =>
+          (htriple ρEntry ρ ρ' trace hpre hinit hrun).2⟩
 
 /-- A contract whose every non-`free` `ensures` is literally one of the
     `requires` is met by an empty body: nothing runs, so the precondition still
@@ -290,6 +370,24 @@ theorem Procedure.inputAsPredicate_int {proc : Procedure} {ρ : Imperative.Env E
     (hx : (x, Lambda.LMonoTy.int) ∈ proc.header.inputs.toList) :
     ∃ k, ρ.store x = some (Lambda.SemValue.ofInt ρ.factory.model.tcInterp k) := by
   obtain ⟨w, hw, hty⟩ := hin x _ hx
+  obtain ⟨k, hk⟩ := Lambda.SemValue.exists_ofInt hty
+  exact ⟨k, by rw [hw, hk, hwf x w hw]⟩
+
+/-- A procedure without outputs has its output typing in every environment. -/
+theorem Procedure.outputAsPredicate_of_no_outputs {proc : Procedure}
+    (ρ : Imperative.Env Expression) (h : proc.header.outputs.toList = []) :
+    Procedure.outputAsPredicate proc ρ := fun _ _ hmem => by
+  rw [h] at hmem
+  cases hmem
+
+/-- An output of type `int` holds an integer of the runtime factory in an environment with a
+    well-formed store satisfying the procedure's output typing. -/
+theorem Procedure.outputAsPredicate_int {proc : Procedure} {ρ : Imperative.Env Expression}
+    (hwf : Imperative.WellFormedStore ρ.store ρ.factory)
+    (hout : Procedure.outputAsPredicate proc ρ) (x : Expression.Ident)
+    (hx : (x, Lambda.LMonoTy.int) ∈ proc.header.outputs.toList) :
+    ∃ k, ρ.store x = some (Lambda.SemValue.ofInt ρ.factory.model.tcInterp k) := by
+  obtain ⟨w, hw, hty⟩ := hout x _ hx
   obtain ⟨k, hk⟩ := Lambda.SemValue.exists_ofInt hty
   exact ⟨k, by rw [hw, hk, hwf x w hw]⟩
 

@@ -669,7 +669,7 @@ theorem sum_to_n_meets_contract :
   rw [sumToN_body]
   intro ρEntry ρ₀ ρ' trace hpre hinit hterm
   obtain ⟨⟨hpre, _haxioms⟩, rfl⟩ := hpre
-  obtain ⟨hpreP, hfac, _hold, hinput⟩ := hpre
+  obtain ⟨hpreP, hfac, _hold, hinput, -⟩ := hpre
   obtain ⟨vn, hvn, invn⟩ := hinput nId Lambda.LMonoTy.int (by native_decide)
   obtain ⟨nv, hvi⟩ := Lambda.SemValue.exists_ofInt invn
   have htc : vn.tc = ρ₀.factory.model.tcInterp := hinit.storeWellDefined nId vn hvn
@@ -765,23 +765,28 @@ private theorem falseEns_entry_lookup :
       some { cmds := [falseEnsInitT],
              transfer := .finish (transferMdOf falseEnsCFG "entry") } := by native_decide
 
-/-- The entry environment for the `false_ens` run: the empty store over the runtime
-    factory of `model`. -/
+/-- The entry store for the `false_ens` run: the output `result` holds `0`, as the contract's
+    output typing asks, and nothing else is bound. -/
+private def σ0N (model : Lambda.Interp Core.Factory) : Core.CoreStore :=
+  fun i => if i = resultId then some (intV (boolFactory model) 0) else Imperative.emptyStore i
+
+/-- The entry environment for the `false_ens` run: `σ0N` over the runtime factory of
+    `model`. -/
 private def ρ0N (model : Lambda.Interp Core.Factory) : Imperative.Env Core.Expression :=
-  { store := Imperative.emptyStore,
+  { store := σ0N model,
     factory := boolFactory model }
 
 /-- The store after the body-local `var t : int := *` chooses `0`. -/
 private def σ2N (model : Lambda.Interp Core.Factory) : Core.CoreStore :=
   fun i => if i = tId then
       some (intV (boolFactory model) 0)
-    else Imperative.emptyStore i
+    else σ0N model i
 
-/-- Declaring `t := 0` from the empty store is a valid `InitState`. -/
+/-- Declaring `t := 0` from the entry store is a valid `InitState`. -/
 private theorem hinitN (model : Lambda.Interp Core.Factory) :
-    Imperative.InitState Core.Expression Imperative.emptyStore tId
+    Imperative.InitState Core.Expression (σ0N model) tId
       (intV (boolFactory model) 0) (σ2N model) :=
-  .init rfl (by simp [σ2N])
+  .init (by simp [σ0N, Imperative.emptyStore, tId, resultId]) (by simp [σ2N])
     (fun y hy => by
       have hne : y ≠ tId := fun h => hy h.symm
       simp [σ2N, hne])
@@ -791,7 +796,13 @@ private theorem hinitN (model : Lambda.Interp Core.Factory) :
 private theorem false_ens_initEnvWF (model : Lambda.Interp Core.Factory) :
     Core.Logic.CFGInitEnvWF testParams falseEnsCFG (ρ0N model) where
   toWellFormedSemanticEval := Core.coreFactory_WellFormedSemanticEval _ rfl
-  storeWellDefined := by intro x v h; simp [ρ0N, Imperative.emptyStore] at h
+  storeWellDefined := by
+    intro x v h
+    by_cases hx : x = resultId
+    · simp only [ρ0N, σ0N, hx, ite_true, Option.some.injEq] at h
+      subst h
+      rfl
+    · simp [ρ0N, σ0N, hx, Imperative.emptyStore] at h
   readWritesDefined := by
     intro n hn hnd
     have key : ∀ m ∈ (HasVarsImp.modifiedVars (P := Core.Expression) falseEnsCFG ++
@@ -799,7 +810,13 @@ private theorem false_ens_initEnvWF (model : Lambda.Interp Core.Factory) :
         HasVarsImp.readVars (P := Core.Expression) falseEnsCFG),
         m ∈ HasVarsImp.definedVars (P := Core.Expression) falseEnsCFG false := by native_decide
     exact absurd (key n hn) hnd
-  defsUndefined := by intro n _; simp [ρ0N, Imperative.emptyStore]
+  defsUndefined := by
+    intro n hn
+    rw [show HasVarsImp.definedVars (P := Core.Expression) falseEnsCFG false = [tId]
+      from by native_decide] at hn
+    simp only [List.mem_singleton] at hn
+    subst hn
+    simp [ρ0N, σ0N, Imperative.emptyStore, tId, resultId]
   definedVarsNotReserved := by intro n _ name _ p hp; simp [testParams] at hp
   reservedFresh := by intro n _ name _ p hp; simp [testParams] at hp
   factoryDeclared := by intro nm _; rfl
@@ -849,8 +866,15 @@ theorem false_ens_contract_refuted :
   subst hpe
   have hbody : falseEnsProc.body = .cfg falseEnsCFG := falseEns_body
   rw [hbody] at htriple
+  have hout : Core.Logic.Hoare.Procedure.outputAsPredicate falseEnsProc (ρ0N model) := by
+    intro id ty hmem
+    rw [show falseEnsProc.header.outputs.toList = [(resultId, Lambda.LMonoTy.int)]
+      from by native_decide] at hmem
+    simp only [List.mem_singleton] at hmem
+    obtain ⟨rfl, rfl⟩ := hmem
+    exact ⟨intV (boolFactory model) 0, by simp [ρ0N, σ0N], rfl⟩
   have hpre : Core.Logic.Hoare.Procedure.contractPre Core.Factory falseEnsProc (ρ0N model) := by
-    refine ⟨?_, rfl, ?_, ?_⟩
+    refine ⟨?_, rfl, ?_, ?_, hout⟩
     · intro label check hmem
       rw [show falseEnsProc.spec.preconditions.toList = [] from by native_decide] at hmem
       simp at hmem
@@ -1038,7 +1062,7 @@ theorem copy_meets_contract :
   rw [copy_body]
   intro ρEntry ρ₀ ρ' trace hpre hinit hterm
   obtain ⟨⟨hpre, _haxioms⟩, rfl⟩ := hpre
-  obtain ⟨_hpreP, hfac, _hold, hinput⟩ := hpre
+  obtain ⟨_hpreP, hfac, _hold, hinput, -⟩ := hpre
   obtain ⟨vx, hvx, hvt⟩ := hinput xIdC Lambda.LMonoTy.int (by native_decide)
   obtain ⟨a, hvi⟩ := Lambda.SemValue.exists_ofInt hvt
   have htc : vx.tc = ρ₀.factory.model.tcInterp := hinit.storeWellDefined xIdC vx hvx
@@ -1280,11 +1304,11 @@ private theorem copy_body_outputs_typed :
 private def copyCall : List (Imperative.CallArg Core.Expression) :=
   [.inArg (Lambda.LExpr.fvar Core.valueLoc aIdC intTy), .outArg zIdC]
 
-/-- Caller precondition: the runtime factory is over `Core.Factory`, `a` holds an
-    integer of it, and `z` is allocated. -/
+/-- Caller precondition: the runtime factory is over `Core.Factory`, and `a` and `z` hold
+    integers of it. -/
 private def CopyCallPre (ρ : Env Core.Expression) : Prop :=
   ρ.factory.factory = Core.Factory ∧ (∃ av, ρ.store aIdC = some (intV ρ.factory av)) ∧
-    (ρ.store zIdC).isSome
+    ∃ zv, ρ.store zIdC = some (intV ρ.factory zv)
 
 /-- Caller postcondition: after the call returns, `z == a` evaluates to `true`.
     The callee output `result`, which is written back into `z`, is an integer
@@ -1325,7 +1349,7 @@ private theorem copy_callentry_facts
     (ha : ρ₀.store aIdC = some (intV ρ₀.factory av))
     (h : Core.CallEntry ρ₀.factory ρ₀.store copyProc copyCall σAO) :
     σAO xIdC = some (intV ρ₀.factory av) ∧
-      (∃ vz, σAO resultId = some vz ∧ HasVal.value ρ₀.factory vz) ∧
+      (∃ vz, σAO resultId = some vz ∧ ρ₀.store zIdC = some vz ∧ HasVal.value ρ₀.factory vz) ∧
       Imperative.WellFormedStore σAO ρ₀.factory := by
   obtain ⟨inputVals, outOnlyVals, hEE, hRV, σA, σIO, hIA, hIO, hSnap⟩ := h
   rw [show Imperative.Calls.getInputExprs copyCall = [Lambda.LExpr.fvar Core.valueLoc aIdC intTy] from rfl]
@@ -1345,7 +1369,7 @@ private theorem copy_callentry_facts
     have hv1 := eval_fvar_inv ha he1
     subst hv1
     cases hRV with
-    | read_some _hz hvz hRV2 =>
+    | read_some hzv hvz hRV2 =>
       cases hRV2
       have hwfA : Imperative.WellFormedStore σA ρ₀.factory :=
         Imperative.initStates_preserves_wf hIA
@@ -1366,7 +1390,7 @@ private theorem copy_callentry_facts
           | init _ hix2 _ =>
             cases hiy with
             | init _ hiy2 hiyoth =>
-              refine ⟨?_, ⟨_, ?_, hvz⟩, hAOeq ▸ hwfIO⟩
+              refine ⟨?_, ⟨_, ?_, hzv, hvz⟩, hAOeq ▸ hwfIO⟩
               · rw [hAOeq, hiyoth xIdC (ident_ne (by decide)), hix2]
               · rw [hAOeq]; exact hiy2
 
@@ -1387,11 +1411,11 @@ theorem copy_call_triple :
   · -- hentry
     intro ρ₀ proc σAO hpre hwf hlk hce
     obtain rfl : proc = copyProc := Option.some.inj (hlk.symm.trans copy_find)
-    obtain ⟨hfac, ⟨av, ha⟩, _hz⟩ := hpre
-    obtain ⟨hAOx, ⟨vz, hAOr, hvzval⟩, hwfAO⟩ :=
+    obtain ⟨hfac, ⟨av, ha⟩, ⟨zv, hz⟩⟩ := hpre
+    obtain ⟨hAOx, ⟨vz, hAOr, hzvz, hvzval⟩, hwfAO⟩ :=
       copy_callentry_facts ha hce
     rw [copy_body]
-    refine ⟨⟨?_, hfac.trans hfactory.symm, ?_, ?_⟩, ?_⟩
+    refine ⟨⟨?_, hfac.trans hfactory.symm, ?_, ?_, ?_⟩, ?_⟩
     · intro label check hmem
       rw [show copyProc.spec.preconditions.toList = [] from by native_decide] at hmem
       simp at hmem
@@ -1404,6 +1428,14 @@ theorem copy_call_triple :
       simp only [List.mem_cons, List.not_mem_nil, or_false] at hmem
       obtain ⟨rfl, rfl⟩ := hmem
       exact ⟨intV ρ₀.factory av, hAOx, rfl⟩
+    · intro id ty hmem
+      rw [show copyProc.header.outputs.toList = [(resultId, Lambda.LMonoTy.int)]
+        from by native_decide] at hmem
+      simp only [List.mem_singleton] at hmem
+      obtain ⟨rfl, rfl⟩ := hmem
+      rw [hz] at hzvz
+      obtain rfl := Option.some.inj hzvz
+      exact ⟨_, hAOr, rfl⟩
     · exact
         { toWellFormedSemanticEval := Core.coreFactory_WellFormedSemanticEval _ hfac
           storeWellDefined := hwfAO
