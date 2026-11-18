@@ -12,8 +12,8 @@ public import Strata.DL.Lambda.LExprType
 /-! # The formulas of a declaration
 
 The formulas each declaration contributes to the declarations entry (`declFormulas`), and the
-per-program checks on them that the deductive-verification theorems take as hypotheses
-(`Program.formulasTypedB`, `Program.distinctsBeforeLemmasB`). They depend only on the
+per-program check on them that the deductive-verification theorems take as a hypothesis
+(`Program.formulasTypedB`). They depend only on the
 program's syntax, so they are stated apart from the deductive-verification statements and
 can be used by modules those statements import.
 -/
@@ -50,14 +50,6 @@ open Core
     (`declFormulasTyped`), as a check on the program. -/
 @[expose] def Program.formulasTypedB (p : Program) : Bool :=
   p.decls.all declFormulasTyped
-
-/-- **Every `distinct` declaration of `p` comes before every lemma.** On such a program the
-    declarations entry and `Core.verify` assume the same `distinct` facts for each lemma.
-    `Core.verify` assumes every `distinct` declaration for every lemma, also the later ones,
-    so a theorem that reads its lemma verdicts as deductive verification over the
-    declarations entry takes this as a hypothesis. -/
-@[expose] def Program.distinctsBeforeLemmasB (p : Program) : Bool :=
-  (p.decls.dropWhile fun d => d.kind != .lemma).all fun d => d.kind != .distinct
 
 end Core.Specification.Analysis
 

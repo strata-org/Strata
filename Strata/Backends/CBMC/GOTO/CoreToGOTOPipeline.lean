@@ -25,6 +25,11 @@ Translates Core procedures and functions into CProver GOTO contexts.
   procedure body.
 - **`Decl.distinct`**: Emitted as pairwise `!=` ASSUME instructions at the
   start of each procedure body.
+- Both are emitted into every procedure, wherever they are declared. `Core.verify`
+  instead scopes them by position (a lemma or procedure is checked only under the axioms
+  and `distinct` declarations before it, as the language reference states), so a
+  procedure that needs an axiom or `distinct` declared after it is not proved by
+  `Core.verify` but can pass here.
 
 #### Procedure contracts (`Core.Procedure.Spec`)
 Preconditions and postconditions are emitted as `#spec_requires` and

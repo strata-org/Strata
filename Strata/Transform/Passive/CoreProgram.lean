@@ -156,13 +156,14 @@ private theorem eventsOf_scopesOf (E : List (Option Decl × String))
 
 /-- **The declaration phase of a program.**  `declProgram` supplies the program-level
     declarations (type declarations, evaluation-added functions with their pre-computed recursive
-    axioms, `distinct` declarations — what `toCoreProofObligationProgram` produces for a program
-    without procedures and lemmas); `lemmaObls` supplies the obligations symbolic evaluation
+    axioms — what `toCoreProofObligationProgram` produces for a program without procedures,
+    lemmas and `distinct` groups); `lemmaObls` supplies the obligations symbolic evaluation
     states for the lemmas of the input program.  They are followed by the input program's axioms,
-    its procedures unchanged, and one obligation unit per input lemma (`lemmaUnit` of the first
-    obligation of `lemmaObls` labelled with the lemma's name), **in the input's relative order**,
-    so each procedure and each obligation unit is in the scope of exactly the axioms declared
-    before its source procedure or lemma (`axiomScopesAgree`, checked).  Hoisting every axiom
+    its `distinct` declarations, its procedures unchanged, and one obligation unit per input
+    lemma (`lemmaUnit` of the first obligation of `lemmaObls` labelled with the lemma's name),
+    **in the input's relative order**, so each procedure and each obligation unit is in the scope
+    of exactly the axioms and `distinct` groups declared before its source procedure or lemma
+    (`axiomScopesAgree`, checked, for the axioms).  Hoisting every axiom
     before every procedure would let a procedure's obligations assume axioms declared after it —
     e.g. the axiom an `invokeOn` procedure contributes, which states that procedure's own
     postcondition. -/
@@ -173,7 +174,7 @@ private theorem eventsOf_scopesOf (E : List (Option Decl × String))
     lemmaObls.foldr (fun ob m => m.insert ob.label ob) {}
   let decls ← program.decls.foldlM (init := ([] : List Decl)) fun acc d => do
       match d with
-      | .ax _ _ | .proc _ _ => pure (d :: acc)
+      | .ax _ _ | .proc _ _ | .distinct _ _ _ => pure (d :: acc)
       | .lemma l _ =>
         match lemmas[l.name]? with
         | some ob => pure (lemmaUnit l.name ob :: acc)
