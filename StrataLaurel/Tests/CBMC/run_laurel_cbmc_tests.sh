@@ -44,7 +44,7 @@ for lr_file in "$TESTS_DIR"/*.lr.st; do
 
   # Run the pipeline
   output=$(lake -d "$PROJECT_ROOT" env lean --run "$PROJECT_ROOT/StrataLaurel/Scripts/LaurelToCBMC.lean" "$lr_file" 2>&1)
-  if [ $? -ne 0 ] && ! echo "$output" | grep -q "VERIFICATION"; then
+  if [ $? -ne 0 ] && ! grep -q "VERIFICATION" <<<"$output"; then
     echo "ERR:  $bn (pipeline error)"
     echo "$output" | tail -3
     failed=$((failed + 1))

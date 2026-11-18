@@ -44,7 +44,7 @@ fail=0
 # check <cbmc output> <property description> <verdict>
 check() {
   local out="$1" description="$2" verdict="$3"
-  if echo "$out" | grep -qF -- "$description: $verdict"; then
+  if grep -qF -- "$description: $verdict" <<<"$out"; then
     echo "CBMC: '$description' $verdict"
   else
     echo "FAIL: expected '$description: $verdict'"
@@ -55,7 +55,9 @@ check() {
 # (a check on a constant index inside the bounds leaves no property at all).
 no_failure() {
   local out="$1" access="$2"
-  if echo "$out" | grep -F -- " in $access: " | grep -q FAILURE; then
+  local lines
+  lines=$(grep -F -- " in $access: " <<<"$out" || true)
+  if grep -q FAILURE <<<"$lines"; then
     echo "FAIL: a bounds check on $access fails"
     fail=1
   else

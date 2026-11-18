@@ -29,7 +29,7 @@ cbmc_out=$(lake -d "$PROJECT_ROOT" env lean --run "$PROJECT_ROOT/StrataLaurel/Sc
 
 # Verify CBMC output contains property summaries
 for summary in "addition equals eight" "difference equals two"; do
-  if echo "$cbmc_out" | grep -q "$summary"; then
+  if grep -q "$summary" <<<"$cbmc_out"; then
     echo "CBMC output: '$summary' found"
   else
     echo "FAIL: '$summary' not in CBMC output"
@@ -39,7 +39,7 @@ for summary in "addition equals eight" "difference equals two"; do
 done
 
 # Verify CBMC says SUCCESSFUL
-if echo "$cbmc_out" | grep -q "VERIFICATION SUCCESSFUL"; then
+if grep -q "VERIFICATION SUCCESSFUL" <<<"$cbmc_out"; then
   echo "CBMC: VERIFICATION SUCCESSFUL"
 else
   echo "FAIL: CBMC did not report VERIFICATION SUCCESSFUL"
