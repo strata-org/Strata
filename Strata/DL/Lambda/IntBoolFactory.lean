@@ -220,13 +220,15 @@ def binaryParam2Name : String := "y"
 
 /-! #### Unary -/
 
-/-- Unary operation with mixed input/output types and concrete evaluation.
-    Types are resolved via `LambdaLeanType` instances. -/
+/-- Unary operation with mixed input/output types, optional guard, and concrete evaluation.
+    Types are resolved via `LambdaLeanType` instances. The guard is checked on the
+    argument; `none` is returned if it fails, so the term is left to the solver. -/
 @[inline]
 def unaryOp (n : T.Identifier)
     {inTy outTy InValTy OutValTy} [ToString OutValTy]
     [hIn : LambdaLeanType inTy InValTy] [hOut : LambdaLeanType outTy OutValTy]
     (op : InValTy → OutValTy)
+    (guard : InValTy → Bool := fun _ => true)
     (preconditions :
       List (FuncPrecondition (LExpr T.mono) T.Metadata) := [])
     (hInTy : inTy.freeVars = [] := by decide)
@@ -242,7 +244,7 @@ def unaryOp (n : T.Identifier)
      preconditions := preconditions,
      concreteEval := some (fun md _ args => match args with
        | [x] => match cevalInTy x with
-         | some a => .some (mkConst md (op a))
+         | some a => if guard a then .some (mkConst md (op a)) else .none
          | _ => .none
        | _ => none) }, {
     arg_nodup := by simp
@@ -268,8 +270,11 @@ def unaryOp (n : T.Identifier)
         match hc : cevalInTy x with
         | none => simp [hc] at heval
         | some a =>
-          simp only [hc, Option.some.injEq] at heval; subst heval
-          rw [hOut.mkConst_closed] at hz; simp at hz
+          simp only [hc] at heval
+          split at heval
+          · simp only [Option.some.injEq] at heval; subst heval
+            rw [hOut.mkConst_closed] at hz; simp at hz
+          · simp at heval
     concreteEval_eraseMetadata := by
       intro ceval h md1 md2 _ args1 args2 res1 hmap heval
       simp only [Option.some.injEq] at h; subst h
@@ -288,8 +293,12 @@ def unaryOp (n : T.Identifier)
           have hc2 : cevalInTy x2 = some a := by
             change LambdaLeanType.cevalTy T x2 = some a; rw [← hceq]; exact hc1
           simp only [hc2]
-          simp only [hc1, Option.some.injEq] at heval; subst heval
-          exact ⟨mkConst md2 (op a), rfl, hOut.mkConst_eraseMetadata T md1 md2 (op a)⟩
+          simp only [hc1] at heval
+          split at heval
+          · rename_i hg
+            simp only [Option.some.injEq] at heval; subst heval
+            exact ⟨mkConst md2 (op a), by simp [hg], hOut.mkConst_eraseMetadata T md1 md2 (op a)⟩
+          · simp at heval
     body_freevars := by intro b hb; simp at hb
     precond_freevars := by
       intro p hp
@@ -379,6 +388,102 @@ def binaryOp (n : T.Identifier)
             have hcx2 : cevalInTy x2 = some a := by
               change LambdaLeanType.cevalTy T x2 = some a; rw [← hcx]; exact hcx1
             have hcy2 : cevalInTy y2 = some b := by
+              change LambdaLeanType.cevalTy T y2 = some b; rw [← hcy]; exact hcy1
+            simp only [hcx2, hcy2]
+            simp only [hcx1, hcy1] at heval
+            split at heval
+            · rename_i hg
+              simp only [Option.some.injEq] at heval; subst heval
+              exact ⟨mkConst md2 (op a b), by simp [hg], hOut.mkConst_eraseMetadata T md1 md2 (op a b)⟩
+            · simp at heval
+    body_freevars := by intro b hb; simp at hb
+    precond_freevars := h_precond
+  }⟩
+
+/-- A binary operator whose two inputs have different primitive types, such as
+    `Str.At : string → int → string`; otherwise as `binaryOp`. The optional `guard` on the
+    second argument blocks evaluation when it is false. -/
+def heteroBinaryOp (n : T.Identifier)
+    {inTy1 inTy2 outTy InValTy1 InValTy2 OutValTy} [ToString OutValTy]
+    [hIn1 : LambdaLeanType inTy1 InValTy1]
+    [hIn2 : LambdaLeanType inTy2 InValTy2]
+    [hOut : LambdaLeanType outTy OutValTy]
+    (op : InValTy1 → InValTy2 → OutValTy)
+    (guard : InValTy2 → Bool := fun _ => true)
+    (preconditions :
+      List (FuncPrecondition (LExpr T.mono) T.Metadata) := [])
+    (hInTy1 : inTy1.freeVars = [] := by decide)
+    (hInTy2 : inTy2.freeVars = [] := by decide)
+    (hOutTy : outTy.freeVars = [] := by decide)
+    (h_precond : ∀ p, p ∈ preconditions →
+      (LExpr.freeVars p.expr).map (·.1.name) ⊆ [binaryParam1Name, binaryParam2Name]
+      := by simp [binaryParam1Name, binaryParam2Name]) : WFLFunc T :=
+  let mkConst := LambdaLeanType.mkConst (ValTy := OutValTy) T
+  let cevalInTy1 := LambdaLeanType.cevalTy (ValTy := InValTy1) T
+  let cevalInTy2 := LambdaLeanType.cevalTy (ValTy := InValTy2) T
+  ⟨{ name := n,
+     inputs := [(binaryParam1Name, inTy1), (binaryParam2Name, inTy2)],
+     output := outTy,
+     preconditions := preconditions,
+     concreteEval := some (fun md _ args => match args with
+       | [x, y] => match cevalInTy1 x, cevalInTy2 y with
+         | some a, some b =>
+           if guard b then mkConst md (op a b) else .none
+         | _, _ => .none
+       | _ => none) }, {
+    arg_nodup := by simp [binaryParam1Name, binaryParam2Name]
+    concreteEval_argmatch := by
+      intro fn md _ args res hfn heval
+      simp only [Option.some.injEq] at hfn; subst hfn
+      match args with
+      | [] | [_] | _ :: _ :: _ :: _ => simp at heval
+      | [_, _] => rfl
+    body_or_concreteEval := by simp
+    typeArgs_nodup := by simp
+    inputs_typevars_in_typeArgs := by
+      intro ity hity; simp only [ListMap.values, List.mem_cons, List.not_mem_nil, or_false] at hity
+      rcases hity with rfl | rfl
+      · simp [hInTy1]
+      · simp [hInTy2]
+    output_typevars_in_typeArgs := by simp [hOutTy]
+    typeArgs_no_gen_prefix := by simp
+    constr_no_eval := by simp
+    concreteEval_freeVars := by
+      intro ceval h md _ args res heval z hz
+      simp only [Option.some.injEq] at h; subst h
+      match args, heval with
+      | [x, y], heval =>
+        simp only [] at heval
+        match hcx : cevalInTy1 x, hcy : cevalInTy2 y with
+        | none, _ => simp [hcx] at heval
+        | some a, none => simp [hcx, hcy] at heval
+        | some a, some b =>
+          simp only [hcx, hcy] at heval
+          split at heval
+          · simp only [Option.some.injEq] at heval; subst heval
+            rw [hOut.mkConst_closed] at hz; simp at hz
+          · simp at heval
+    concreteEval_eraseMetadata := by
+      intro ceval h md1 md2 _ args1 args2 res1 hmap heval
+      simp only [Option.some.injEq] at h; subst h
+      match args1, heval with
+      | [x1, y1], heval =>
+        have hlen : args2.length = 2 := by
+          have := congrArg List.length hmap; simp at this; omega
+        match args2, hlen with
+        | [x2, y2], _ =>
+          simp only [List.map, List.cons.injEq, and_true] at hmap
+          obtain ⟨hxeq, hyeq⟩ := hmap
+          have hcx := hIn1.cevalTy_eraseMetadata T x1 x2 hxeq
+          have hcy := hIn2.cevalTy_eraseMetadata T y1 y2 hyeq
+          simp only [] at heval ⊢
+          match hcx1 : cevalInTy1 x1, hcy1 : cevalInTy2 y1 with
+          | none, _ => simp [hcx1] at heval
+          | some _, none => simp [hcy1] at heval
+          | some a, some b =>
+            have hcx2 : cevalInTy1 x2 = some a := by
+              change LambdaLeanType.cevalTy T x2 = some a; rw [← hcx]; exact hcx1
+            have hcy2 : cevalInTy2 y2 = some b := by
               change LambdaLeanType.cevalTy T y2 = some b; rw [← hcy]; exact hcy1
             simp only [hcx2, hcy2]
             simp only [hcx1, hcy1] at heval

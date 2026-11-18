@@ -984,6 +984,10 @@ private def translateFnTable : Std.HashMap QualifiedIdent Core.Expression.Expr :
   (q`Core.str_at, Core.strAtOp),
   (q`Core.str_lt, Core.strLtOp),
   (q`Core.str_le, Core.strLeOp),
+  (q`Core.str_to_code, Core.strToCodeOp),
+  (q`Core.str_from_code, Core.strFromCodeOp),
+  (q`Core.str_from_int, Core.strFromIntOp),
+  (q`Core.str_to_int, Core.strToIntOp),
   (q`Core.re_all, Core.reAllOp),
   (q`Core.re_allchar, Core.reAllCharOp),
   (q`Core.re_range, Core.reRangeOp),
@@ -1267,6 +1271,10 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | q`Core.bvextract_31_0_64
     | q`Core.str_len
     | q`Core.str_toregex
+    | q`Core.str_to_code
+    | q`Core.str_from_code
+    | q`Core.str_from_int
+    | q`Core.str_to_int
     | q`Core.re_star
     | q`Core.re_plus
     | q`Core.re_comp => do
