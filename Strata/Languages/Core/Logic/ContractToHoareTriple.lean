@@ -8,6 +8,7 @@ module
 public import Strata.Languages.Core.Logic.FactoryInterp
 public import Strata.Languages.Core.Logic.HoareUnstructured
 public import Strata.Languages.Core.Program
+public import Strata.Languages.Core.Analysis.ProcedureCorrectness
 import Strata.DL.Lambda.LExprType
 import all Strata.Languages.Core.Logic.Hoare
 
@@ -45,6 +46,9 @@ pair.  Kept separate because none of it is part of the logic proper.
   the environment a `call` resolves against is `p`'s own `findProcByString?` by
   construction, and dispatches on the resolved procedure's body so neither an
   unresolvable name nor either body representation makes the obligation vacuous.
+  Its precondition also assumes the axioms and `distinct` declarations visible to the
+  procedure (`Core.Specification.AxiomsBeforeProcedureDecl`), as
+  `Core.Specification.ProcEntryEnv` does.
 - `Procedure.ensuresAmongRequires` — the structural check that every non-`free`
   postcondition also occurs among the preconditions.
 - `Procedure.contractChecksTyped` — a conjunct of `contractTriple` requiring every
@@ -171,7 +175,10 @@ precondition, body trace interpretation, and postcondition. -/
     The precondition pins the initial environment's runtime factory to one over
     `p.factoryBeforeProcedure procName` (with any model of it), carries the entry
     snapshots of inout parameters, and requires every input value to match its
-    declared type.
+    declared type. It also assumes the axioms and `distinct` declarations that
+    precede the procedure in `p` (`Core.Specification.AxiomsBeforeProcedureDecl`),
+    the entry assumption of `Core.Specification.ProcEntryEnv`, so a body proof may
+    use them and the triple quantifies over the models that satisfy them.
     On a well-formed program, the factory contains Core's built-ins and exactly
     the user-defined functions declared before the procedure. Partial correctness
     means a diverging body satisfies any postcondition. -/
@@ -182,13 +189,15 @@ precondition, body trace interpretation, and postcondition. -/
       match proc.body with
       | .structured bss =>
           Triple p.findProcByString? params
-            (Procedure.contractPre (p.factoryBeforeProcedure procName) proc)
+            (fun ρ => Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧
+              Core.Specification.AxiomsBeforeProcedureDecl procName p ρ)
             [Imperative.Stmt.block "" bss #[]]
             (Procedure.contractPost (p.factoryBeforeProcedure procName) proc)
             (factory := p.factoryBeforeProcedure procName)
       | .cfg cfg =>
           ∀ ρEntry, TripleUnstructured p.findProcByString? params
-            (fun ρ => Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧
+            (fun ρ => (Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧
+              Core.Specification.AxiomsBeforeProcedureDecl procName p ρ) ∧
               ρ = ρEntry) cfg
             (fun ρ' => Procedure.contractPost (p.factoryBeforeProcedure procName) proc
               { ρ' with store := Imperative.projectStore ρEntry.store ρ'.store })

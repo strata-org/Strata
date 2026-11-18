@@ -57,7 +57,7 @@ end Core.FoldAxioms
     discarded. -/
 def Core.foldAxiomsPhase : Core.PipelinePhase :=
   Core.modelPreservingPipelinePhase "foldAxioms" Core.FoldAxioms.runFoldAxioms
-    (requires := factSet![.noPrecondsFromFuncs])
+    (requires := factSet![.noPrecondsFromFuncs, .typeAnnotated])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,
                          .noPrecondsFromFuncs, .noNondetGuards, .hasObligationForm,

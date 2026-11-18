@@ -8,6 +8,7 @@ module
 meta import all Strata.DL.Lambda.LExprEvalSound
 meta import all Strata.DL.Lambda.LExprEval
 meta import Strata.DL.Lambda.IntBoolFactory
+meta import StrataTest.DL.Lambda.RenamingFixtures
 
 ---------------------------------------------------------------------
 
@@ -704,6 +705,132 @@ def test_poly_tysubst_distinct := TestCase.new
 
 example: steps_well test_poly_tysubst_distinct := by
   prove_steps_well test_poly_tysubst_distinct polyPairState_wf
+
+/-! ### Instantiation does not depend on type variable names
+
+Renaming the caller's type variables renames the instance and the inlined body; renaming the
+callee's type parameters renames only the instance's domain. -/
+
+private def tvA : LMonoTy := .ftvar "a"
+private def tvB : LMonoTy := .ftvar "b"
+private def tvC : LMonoTy := .ftvar "c"
+private def tvD : LMonoTy := .ftvar "d"
+
+open RenamingFixtures (opPair wrapPair)
+
+-- `opId<a>(x : a) : a` and `opPair<a, b>(x : a, y : b) : bool` have no body, so a call to
+-- them stays and shows its annotation; `wrapId` and `wrapPair` inline to such calls.
+private def wrapId : LFunc TestParams :=
+  LFunc.mk (name := "wrapId") (typeArgs := ["a"]) (inputs := [("x", tvA)]) (output := tvA)
+    (attr := #[.inline])
+    (body := some (.app () (.op () "opId" (some (.arrow tvA tvA))) (.fvar () "x" (some tvA))))
+
+-- `wrapPair` with its type parameters named `b` and `a`, the names a caller also uses.
+private def wrapPairBA : LFunc TestParams := wrapPair () "wrapPairBA" "b" "a"
+
+-- `phantom<a, b>(x : a) : int`, whose `b` no call determines.
+private def phantom : LFunc TestParams :=
+  LFunc.mk (name := "phantom") (typeArgs := ["a", "b"]) (inputs := [("x", tvA)])
+    (output := .int)
+
+private def renameFuncs : Array (LFunc TestParams) :=
+  #[LFunc.mk (name := "opId") (typeArgs := ["a"]) (inputs := [("x", tvA)]) (output := tvA),
+    opPair, wrapId, wrapPair (), wrapPairBA]
+
+private def renameState : LState TestParams :=
+  { (LState.init : LState TestParams) with
+    config := { (LState.init : LState TestParams).config with
+      factory := .ofArray renameFuncs } }
+
+private def showSubst : Option Subst → Format
+  | some S => format S
+  | none => "none"
+
+-- `wrapId` annotated `a → a` and `c → c`: the instance is the caller's `a`, resp. `c`.
+/-- info: [[(a, a)]] -/
+#guard_msgs in
+#eval showSubst (wrapId.opTypeSubst (.op () "wrapId" (some (.arrow tvA tvA))))
+
+/-- info: [[(a, c)]] -/
+#guard_msgs in
+#eval showSubst (wrapId.opTypeSubst (.op () "wrapId" (some (.arrow tvC tvC))))
+
+-- `wrapPair` annotated `b → a → bool` and `d → c → bool`: two distinct types stay distinct.
+/-- info: [[(a, b), (b, a)]] -/
+#guard_msgs in
+#eval showSubst ((wrapPair ()).opTypeSubst
+                 (.op () "wrapPair" (some (.arrow tvB (.arrow tvA .bool)))))
+
+/-- info: [[(a, d), (b, c)]] -/
+#guard_msgs in
+#eval showSubst ((wrapPair ()).opTypeSubst
+                 (.op () "wrapPair" (some (.arrow tvD (.arrow tvC .bool)))))
+
+-- `wrapPair` unannotated, with arguments typed `b`, `a` and `d`, `c`: the instance comes from
+-- the argument types.
+/-- info: [[(a, b), (b, a)]] -/
+#guard_msgs in
+#eval showSubst ((wrapPair ()).computeTypeSubst (.op () "wrapPair" none)
+  [.fvar () "u" (some tvB), .fvar () "v" (some tvA)])
+
+/-- info: [[(a, d), (b, c)]] -/
+#guard_msgs in
+#eval showSubst ((wrapPair ()).computeTypeSubst (.op () "wrapPair" none)
+  [.fvar () "u" (some tvD), .fvar () "v" (some tvC)])
+
+-- `wrapPairBA`, `wrapPair` with its parameters renamed, unannotated with arguments typed `b`, `a`.
+/-- info: [[(a, a), (b, b)]] -/
+#guard_msgs in
+#eval showSubst (wrapPairBA.computeTypeSubst (.op () "wrapPairBA" none)
+  [.fvar () "u" (some tvB), .fvar () "v" (some tvA)])
+
+-- `phantom` annotated `c → int`: its `b`, at position 1, becomes `$__callty1`.
+/-- info: [[(a, c), (b, $__callty1)]] -/
+#guard_msgs in
+#eval showSubst (phantom.opTypeSubst (.op () "phantom" (some (.arrow tvC .int))))
+
+-- The same with the callee's `b` renamed to `d`.
+/-- info: [[(a, c), (d, $__callty1)]] -/
+#guard_msgs in
+#eval showSubst ({ phantom with typeArgs := ["a", "d"] }.opTypeSubst
+  (.op () "phantom" (some (.arrow tvC .int))))
+
+-- Evaluating `wrapId(y)` annotated `a → a` and `c → c` inlines `opId` at `a`, resp. `c`.
+/-- info: ((~opId : (arrow a a)) (y : a)) -/
+#guard_msgs in
+#eval format (LExpr.evalWithLState 100 renameState
+  (.app () (.op () "wrapId" (some (.arrow tvA tvA))) (.fvar () "y" (some tvA)))).fst
+
+/-- info: ((~opId : (arrow c c)) (y : c)) -/
+#guard_msgs in
+#eval format (LExpr.evalWithLState 100 renameState
+  (.app () (.op () "wrapId" (some (.arrow tvC tvC))) (.fvar () "y" (some tvC)))).fst
+
+-- Evaluating `wrapPair(u, v)` annotated `b → a → bool` and `d → c → bool`.
+/-- info: ((~opPair : (arrow b (arrow a bool))) (u : b) (v : a)) -/
+#guard_msgs in
+#eval format (LExpr.evalWithLState 100 renameState
+  (.app () (.app () (.op () "wrapPair" (some (.arrow tvB (.arrow tvA .bool))))
+    (.fvar () "u" (some tvB))) (.fvar () "v" (some tvA)))).fst
+
+/-- info: ((~opPair : (arrow d (arrow c bool))) (u : d) (v : c)) -/
+#guard_msgs in
+#eval format (LExpr.evalWithLState 100 renameState
+  (.app () (.app () (.op () "wrapPair" (some (.arrow tvD (.arrow tvC .bool))))
+    (.fvar () "u" (some tvD))) (.fvar () "v" (some tvC)))).fst
+
+-- `wrapPairBA`, `wrapPair` with its parameters renamed, inlines to the same body.
+/-- info: ((~opPair : (arrow b (arrow a bool))) (u : b) (v : a)) -/
+#guard_msgs in
+#eval format (LExpr.evalWithLState 100 renameState
+  (.app () (.app () (.op () "wrapPairBA" (some (.arrow tvB (.arrow tvA .bool))))
+    (.fvar () "u" (some tvB))) (.fvar () "v" (some tvA)))).fst
+
+/-- info: ((~opPair : (arrow d (arrow c bool))) (u : d) (v : c)) -/
+#guard_msgs in
+#eval format (LExpr.evalWithLState 100 renameState
+  (.app () (.app () (.op () "wrapPairBA" (some (.arrow tvD (.arrow tvC .bool))))
+    (.fvar () "u" (some tvD))) (.fvar () "v" (some tvC)))).fst
 
 ---------------------------------------------------------------------
 -- Tests for evalIfValue attribute (Issue #812)

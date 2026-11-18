@@ -31,7 +31,7 @@ procedure test () {
 
 /--
 error: ❌ Type checking error.
-Block label "foo" shadows an enclosing block.
+Procedure 'test': Block label "foo" shadows an enclosing block.
 -/
 #guard_msgs in
 #eval Core.verify blockLabelUniqueTestPgm1
@@ -59,6 +59,31 @@ info:
 -/
 #guard_msgs in
 #eval Core.verify blockLabelUniqueTestPgm2
+
+---------------------------------------------------------------------
+
+def blockLabelUniqueTestPgm3 :=
+#strata
+program Core;
+
+procedure test () {
+  a: { b: { exit b; } }
+  c: { b: { exit b; } }
+};
+#end
+
+-- A label may recur in blocks that are not nested in one another.
+/--
+info: [Strata.Core] Type checking succeeded.
+
+
+VCs:
+
+---
+info:
+-/
+#guard_msgs in
+#eval Core.verify blockLabelUniqueTestPgm3
 
 end Strata
 

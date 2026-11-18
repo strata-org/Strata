@@ -27,6 +27,11 @@ inductive Stats where
 
 #derive_prefixed_toString Stats "CallElim"
 
+/-- Prefix of the type variables call elimination uses to instantiate a callee's contract.
+    Kept as a literal copy in `Lambda.reservedNamePrefixes`, so type checking still
+    rejects or renames program names that use it. -/
+@[expose] def callElimTyPrefix : String := "$__cety"
+
 /-- Label prefix for call-elimination assert statements. -/
 def callElimAssertPrefix : String := "callElimAssert_"
 
@@ -38,12 +43,13 @@ The call elimination kernel: replace the call `procName(callArgs)` (with call-si
 by the callee's contract, as a flat sequence of commands: `init`s for the argument, output and
 `old` temporaries, `assert`s of the (non-free) preconditions, `havoc`s of the call's outputs, and
 `assume`s of the postconditions. It introduces no control flow, so the result can replace the
-call in a structured body or in a CFG block alike.
+call in a structured body or in a CFG block alike. `vt` gives the declared types of the
+variables in scope at the call, and `taken` the type names the callee's opaque types must avoid.
 -/
-def callElimCall (procName : String) (callArgs : List (CallArg Expression))
-    (md : Imperative.MetaData Expression) : CoreTransformM (List Command) := do
+def callElimCall (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (procName : String)
+    (callArgs : List (CallArg Expression)) (md : Imperative.MetaData Expression) :
+    CoreTransformM (List Command) := do
   let lhs := CallArg.getLhs callArgs
-  let args := CallArg.getInputExprs callArgs
   incrementStat s!"{Stats.visitedCalls}"
 
   let some p := (← get).currentProgram | throw (md.toDiagnostic "program not available")
@@ -54,10 +60,8 @@ def callElimCall (procName : String) (callArgs : List (CallArg Expression))
   if let some msg := callArgsError? procName proc callArgs then
     throw (wellFormedCallsBreach "Call elimination" md msg)
 
-  -- Instantiate the contract at each call site with globally fresh type variables, so calls at
-  -- different types do not share the callee's type variables; for a monomorphic callee
-  -- (`typeArgs = []`) the substitution is empty.
-  let tySubst ← freshenTypeArgsSubst Lambda.callElimTyPrefix proc.header.typeArgs
+  -- Instantiates the callee's contract at this call's type instance.
+  let tySubst ← callTypeSubst callElimTyPrefix taken vt proc callArgs
   let instantiatedTy (ty : Lambda.LMonoTy) : Lambda.LMonoTy := Lambda.LMonoTy.subst tySubst ty
   let instantiatedExpr (e : Expression.Expr) : Expression.Expr :=
     Lambda.LExpr.applyTypeSubst e tySubst
@@ -69,6 +73,7 @@ def callElimCall (procName : String) (callArgs : List (CallArg Expression))
     proc.header.inputs.map (fun (id, ty) => (id, instantiatedTy ty))
   let instantiatedOutputs : @Lambda.LMonoTySignature Unit :=
     proc.header.outputs.map (fun (id, ty) => (id, instantiatedTy ty))
+  let args := typedInputExprs instantiatedInputs callArgs
 
   -- Identify output parameters that also appear as input parameters
   -- and are referenced via "old" in postconditions. (Safe to scan the
@@ -150,9 +155,10 @@ def callElimCall (procName : String) (callArgs : List (CallArg Expression))
 
   -- construct substitutions for argument and return
   let arg_subst : List (Expression.Ident × Expression.Expr)
-                := (ListMap.keys instantiatedInputs).zip $ createFvars argTrips.unzip.fst.unzip.fst
+                := (ListMap.keys instantiatedInputs).zip $ createTypedFvars argTrips.unzip.fst
   let ret_subst : List (Expression.Ident × Expression.Expr)
-                := (ListMap.keys instantiatedOutputs).zip $ createFvars lhs
+                := (ListMap.keys instantiatedOutputs).zip $
+                    createTypedFvars (outTrips.map fun ((_, ty), x) => (x, ty))
 
   -- construct assumes and asserts in place of pre/post conditions.
   -- Instantiate type variables in the precondition expressions with the same
@@ -190,33 +196,40 @@ def callElimCall (procName : String) (callArgs : List (CallArg Expression))
 
 /-- Call elimination on a single command: a `call` is replaced by its callee's contract
     (`callElimCall`); every other command is declined (`.none`). -/
-def callElimCommand (c : Command) : CoreTransformM (Option (List Command)) :=
+def callElimCommand (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (c : Command) :
+    CoreTransformM (Option (List Command)) :=
   match c with
-  | .call procName callArgs md => .some <$> callElimCall procName callArgs md
+  | .call procName callArgs md => .some <$> callElimCall taken vt procName callArgs md
   | _ => return .none
 
 /--
-Call elimination on a single statement: a `call` statement is rewritten by `callElimCommand`;
-every other statement returns `.none` so that `runStmtsRec` traverses into it.
+Call elimination on a single statement, given the declared types `vt` of the variables in scope
+and the type names `taken` the opaque types of a call must avoid: a `call` statement is
+rewritten by `callElimCommand`; every other statement returns `.none` so that `runStmtsRecTyped`
+traverses into it.
 -/
-def callElimCmd (s : Statement)
+def callElimCmd (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (s : Statement)
   : CoreTransformM (Option (List Statement)) := do
     match s with
-      | .cmd c => return (← callElimCommand c).map (·.map .cmd)
+      | .cmd c => return (← callElimCommand taken vt c).map (·.map .cmd)
       | _ => return .none
 
 /-- Call Elimination for an entire program by walking through all procedure
 bodies, structured ones and the blocks of CFG ones. -/
 def callElim' (p : Program) : CoreTransformM (Bool × Program) :=
-  runProgram (targetProcList := .none) callElimCmd p (cfgCmd := some callElimCommand)
+  let taken := p.typeNamesWithPrefix callElimTyPrefix
+  declareGeneratedTypes callElimTyPrefix taken
+    (runProgramTyped (targetProcList := .none) (callElimCmd taken) p
+      (cfgCmd := some (callElimCommand taken)))
 
 end CallElim
 
 /-- Call-elimination pipeline phase: the transform replaces procedure calls
     with assert/havoc/assume sequences, in structured bodies and in CFG blocks. If the
     obligation's path includes labels from call elimination, the callee body was replaced by
-    its contract, which is an over-approximation. A call in a CFG block on a cycle becomes
-    `init`s there, which `CFG.typeCheck` rejects (`checkNoLoopInits`). -/
+    its contract, which is an over-approximation. The `init`s that replace a call in a CFG block
+    on a cycle are rejected by `CFG.typeCheck` (`checkNoLoopInits`) if the body is checked
+    again. -/
 def callElimPipelinePhase : PipelinePhase where
   transform := CallElim.callElim'
   phase.name := "callElim"
@@ -242,16 +255,15 @@ def callElimPipelinePhase : PipelinePhase where
   -- function-typed formal is given one.
   -- `wellFormedCalls`, because the replacement pairs each argument with the
   -- callee's parameter at its position.
-  requires := factSet![.wellFormedCalls]
+  -- `typeAnnotated` is required and preserved: the replacement uses the annotated variables and
+  -- argument expressions of the call.
+  requires := factSet![.wellFormedCalls, .typeAnnotated]
   establishes := factSet![.noCalls]
-  -- `typeAnnotated` is absent: the substitutions that replace a callee's
-  -- parameters with the caller's variables build those references unannotated,
-  -- so a fully annotated input does not stay one.
   -- `wellFormedCalls` holds of the output, which has no calls.
   preserves := factSet![.wellFormedCalls, .noCFGBodies, .noLoops, .noLoopInvariants,
                       .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards, .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions]
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered]
 
 end Core
 

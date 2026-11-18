@@ -65,7 +65,7 @@ private def cstToAST (p : Program) : Core.Program :=
   eraseProgLocs (TransM.run Inhabited.default (translateProgram p)).fst
 
 /-- Gate parameters: no reserved fresh-prefixes, and every name counts as declared. -/
-private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
+private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], [], fun _ => true⟩
 
 private def countPgm : Program :=
 #strata
@@ -318,6 +318,10 @@ theorem count_meets_contract :
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨countProc, by native_decide, by native_decide, ?_⟩
   rw [count_body_eq]
+  -- The body proof does not use the axioms visible to the procedure.
+  refine Core.Logic.Hoare.consequence _ _
+    (Pre := Core.Logic.Hoare.Procedure.contractPre Core.Factory countProc) ?_
+    (fun _ h => h.1) (fun _ h => h)
   obtain ⟨σ', hrun⟩ := count_run
   obtain ⟨ss', hd, htriple⟩ := Core.LoopElim.triple_coreProgram π testParams hrun count_decl
     count_body_eq

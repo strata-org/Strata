@@ -2117,8 +2117,7 @@ session 0: 2 checks, 1 contexts
 /-! ### Parameters named like a function, and contracts
 
 A pipeline that runs `simplify` in place of symbolic evaluation leaves procedures their
-parameters. A parameter named like a function is then renamed apart, so `c == 5` is a question
-about the argument, which `ax` says nothing about: both goals are refuted. A procedure
+parameters. The type checker rejects a program with a parameter named like a function. A procedure
 that still has a contract is refused, as by `extractObligations`. -/
 
 private def paramNamedLikeFunction :=
@@ -2375,8 +2374,25 @@ nosuch: wrong 🚨 SMT Solver Crash, lo1 🚨 SMT Solver Crash, hi1 🚨 SMT Sol
     if seen[0]! == seen[1]! then IO.println s!"{head}: {", ".intercalate seen[0]!.toList}"
     else IO.println s!"{head} differs:\n  per-obligation: {seen[0]!}\n  incremental: {seen[1]!}"
 
+private def cParam : Core.Expression.Expr := .fvar Core.coreLoc "c" (some .int)
+
+/-- `function c() : int`, `axiom [ax]: c() == 5`, and a procedure `P` whose
+    parameter `c` is named like the function and which asserts `c == 5` twice,
+    as `g` and `g2`. -/
+private def paramNamedLikeFunctionAst : Core.Program := { decls := [
+  .func { name := "c", inputs := [], output := .int } .empty,
+  .ax { name := "ax", e := .eq Core.coreLoc (.op Core.coreLoc "c" (some .int))
+         (.intConst Core.coreLoc 5) } .empty,
+  .proc { header := { name := "P", typeArgs := [], inputs := [("c", .int)], outputs := [] },
+          spec := { preconditions := [], postconditions := [] },
+          body := .structured
+            [Core.Statement.assert "g" (.eq Core.coreLoc cParam (.intConst Core.coreLoc 5)) .empty,
+             Core.Statement.assert "g2" (.eq Core.coreLoc cParam (.intConst Core.coreLoc 5)) .empty]
+                 }
+    .empty] }
+
 /-! Through a pipeline that runs `simplify` in place of symbolic evaluation, the procedures keep
-their parameters, and both modes refute the goals on a parameter named like a constant. -/
+their parameters, and in both modes the type checker rejects a parameter named like a function. -/
 
 private def withoutSymbolicEval : Option (Core.ValidatedPipeline Core.ProgramFactSet.empty) := do
   let ho ← Core.assertPhaseFor (Core.assertPhaseName .hasObligationForm)
@@ -2384,22 +2400,49 @@ private def withoutSymbolicEval : Option (Core.ValidatedPipeline Core.ProgramFac
   let entry ← [.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment, .noNondetGuards].mapM
     (fun f => Core.assertPhaseFor (Core.assertPhaseName f))
   (Core.validatePipeline
-    (entry ++ [Core.passTermCheck, Core.passPrecondElim, Core.passGenOpaqueTypeParams,
-      Core.passTypeCheck .quiet, Core.passMonomorphizeFunctions, Core.passSimplify,
+    (entry ++ [Core.passTypeCheck .quiet, Core.passTermCheck, Core.passPrecondElim,
+      Core.passGenOpaqueTypeParams, Core.passMonomorphizeFunctions, Core.passSimplify,
       ho, pc, Core.passFunctionInlining, Core.passBetaReduce])).toOption
 
 /--
-info: g ❌ fail, g2 ❌ fail
-g ❌ fail, g2 ❌ fail
+info: error: ❌ Type checking error.
+Procedure 'P': parameter 'c' collides with a function or constant of the same name
+error: ❌ Type checking error.
+Procedure 'P': parameter 'c' collides with a function or constant of the same name
 -/
 #guard_msgs in
 #eval show IO Unit from do
   for incremental in [false, true] do
-    match ← (Strata.Core.verifyProgram (parse paramNamedLikeFunction)
+    match ← (Strata.Core.verifyProgram paramNamedLikeFunctionAst
         { VerifyOptions.quiet with incremental } (pipeline := withoutSymbolicEval)).toBaseIO with
     | .ok rs => IO.println (", ".intercalate (rs.toList.map fun r =>
         s!"{r.obligation.label} {r.formatOutcome}"))
     | .error e => IO.println s!"error: {e}"
+
+/-! The same program, given to the back end directly so the type checker does not run. The
+parameter `c` is renamed apart from the function `c`, so the axiom does not prove the goals. -/
+
+/--
+info: {
+  assert [g]: c@1 == 5;
+  assert [g2]: c@1 == 5;
+}
+g: session 0 REFUTED
+g2: session 0 REFUTED
+session 0: 2 checks, 1 contexts
+-/
+#guard_msgs in
+#eval show IO Unit from do
+  let p := paramNamedLikeFunctionAst
+  for d in p.decls do
+    if let .proc proc _ := d then
+      match ObligationExtraction.procedureStatements p.funcNames
+          proc with
+      | .ok ss => IO.println (Std.format ss)
+      | .error e => IO.println s!"error: {e}"
+  match ← Core.IncrementalSolve.verifyProgram p 1 with
+  | .ok (results, _, trace) => IO.println (trace.format results)
+  | .error e => IO.println s!"error: {e}"
 
 /-! The same pipeline leaves a node every assertion it had, so through it the programs below put
 several goals on one session, and the walk is compared with the per-obligation path on them. -/

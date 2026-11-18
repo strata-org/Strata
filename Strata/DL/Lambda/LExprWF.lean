@@ -628,21 +628,29 @@ where
 
 
 /--
-Replace all user-provided type annotations in an `LExpr` using `f`.
+Replace all user-provided type annotations in an `LExpr` using `f`. The annotation of an
+operator `o` is replaced by `opAnnot o` instead, which by default maps `f`, so that a caller can
+keep the annotations of chosen operators.
 -/
-@[expose] def replaceUserProvidedType {T : LExprParamsT} (e : LExpr T) (f : T.TypeType → T.TypeType) : LExpr T :=
+@[expose] def replaceUserProvidedType {T : LExprParamsT} (e : LExpr T) (f : T.TypeType → T.TypeType)
+    (opAnnot : Identifier T.base.IDMeta → Option T.TypeType → Option T.TypeType :=
+      fun _ => Option.map f) : LExpr T :=
   match e with
   | .const m c => .const m c
-  | .op m o uty => .op m o (uty.map f)
+  | .op m o uty => .op m o (opAnnot o uty)
   | .bvar m b => .bvar m b
   | .fvar m x uty => .fvar m x (uty.map f)
-  | .app m e1 e2 => .app m (replaceUserProvidedType e1 f) (replaceUserProvidedType e2 f)
-  | .abs m name uty e => .abs m name (uty.map f) (replaceUserProvidedType e f)
+  | .app m e1 e2 =>
+    .app m (replaceUserProvidedType e1 f opAnnot) (replaceUserProvidedType e2 f opAnnot)
+  | .abs m name uty e => .abs m name (uty.map f) (replaceUserProvidedType e f opAnnot)
   | .quant m qk name argTy tr e =>
-    .quant m qk name (argTy.map f) (replaceUserProvidedType tr f) (replaceUserProvidedType e f)
+    .quant m qk name (argTy.map f) (replaceUserProvidedType tr f opAnnot)
+      (replaceUserProvidedType e f opAnnot)
   | .ite m c t f_expr =>
-    .ite m (replaceUserProvidedType c f) (replaceUserProvidedType t f) (replaceUserProvidedType f_expr f)
-  | .eq m e1 e2 => .eq m (replaceUserProvidedType e1 f) (replaceUserProvidedType e2 f)
+    .ite m (replaceUserProvidedType c f opAnnot) (replaceUserProvidedType t f opAnnot)
+      (replaceUserProvidedType f_expr f opAnnot)
+  | .eq m e1 e2 =>
+    .eq m (replaceUserProvidedType e1 f opAnnot) (replaceUserProvidedType e2 f opAnnot)
 
 /-- Whether every user-provided type annotation in `e` satisfies `p`. -/
 @[expose] def allUserProvidedTypes {T : LExprParamsT} (e : LExpr T) (p : T.TypeType → Bool) :

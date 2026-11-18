@@ -189,7 +189,7 @@ def PolymorphicFuncDecls.lookup (self : PolymorphicFuncDecls)
     else none
 
 /-- Return the type-variable substitution implied by an `.op f (some ty)`
-    reference, or `none` if unification fails.  Relies on the pass running after
+    reference, or `none` if matching fails.  Relies on the pass running after
     `typeCheckPipelinePhase` so `ty` is the concrete instantiation (see the
     module header). -/
 def getTypeSubstitution (f : Function) (ty : Option LMonoTy)
@@ -614,7 +614,7 @@ def monomorphizeFunctionsPipelinePhase : PipelinePhase :=
     -- A call inside a polymorphic procedure can instantiate a function at that
     -- procedure's type parameter, which is not a concrete type to specialize at,
     -- so the procedures must be monomorphic first.
-    (requires := factSet![.noPolymorphicProcedures])
+    (requires := factSet![.noPolymorphicProcedures, .typeAnnotated])
     (establishes := factSet![.noPolymorphicFunctions])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noBetaRedexes,

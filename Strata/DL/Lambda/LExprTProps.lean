@@ -551,13 +551,9 @@ theorem resolve_getVars_mem_knownVars (C) (Env Env' : TEnv T.IDMeta) (e) (et)
 
 omit [ToString T.IDMeta] [Std.ToFormat (LFunc T)] [Std.ToFormat T.Metadata] in
 /-- Every known variable of `resolve`'s output context was already a known
-    variable of the input context.  Direct consequence of
-    `resolve_preserves_context` (`Env'.context.Equiv Env.context`, which is
-    symmetric in `knownVars`): stated as a subset for the common use-case of
-    transporting an "every known var satisfies `P`"-style invariant across a
-    successful `resolve` call — e.g. when repeatedly resolving expressions
-    against the previous call's output env, as `typeCheckConditions` does for
-    successive procedure pre/postconditions. -/
+    variable of the input context, since `resolve` leaves the context
+    equivalent. This carries an invariant over all known variables across
+    successive `resolve` calls, each starting from the previous output. -/
 theorem resolve_knownVars_subset (C) (Env Env' : TEnv T.IDMeta) (e) (et)
     (h : LExpr.resolve C Env e = .ok (et, Env'))
     (h_envwf : TEnvWF Env) (h_ne : Env.context.types ≠ [])

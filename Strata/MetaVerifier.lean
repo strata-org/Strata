@@ -82,18 +82,18 @@ abbrev coreVCs := List (Env × Imperative.ProofObligation Expression)
     message), symbolic evaluation, or obligation extraction. -/
 def genVCsWithError (program : Program) (options : VerifyOptions := .default) :
     Except String coreVCs := do
-  -- Boole programs arrive with structured bodies and no calls. Mirror the
-  -- prefix of `transformPipelinePhases` that still applies to them: termination
-  -- checks for recursive functions and well-formedness checks for function
-  -- preconditions (both add obligations the full `Core.verify` pipeline emits),
-  -- then the loop phases, then the shared preSymbolicEvalPipelinePhases.
+  -- Boole programs arrive with structured bodies and no calls. Type-check them,
+  -- then mirror the prefix of `transformPipelinePhases` that still applies:
+  -- termination checks for recursive functions and well-formedness checks for
+  -- function preconditions (both add obligations the full `Core.verify` pipeline
+  -- emits), then the loop phases, then `preSymbolicEvalPipelinePhases`.
   -- Without `precondElimPipelinePhase`, any function declared with a
   -- `requires` makes `extractObligations` fail ("still carries a
   -- precondition"), so `gen_smt_vcs` silently produced no goals for such
   -- programs.
-  let phases := [termCheckPipelinePhase, precondElimPipelinePhase,
-                 insertLoopInvariantAssertsPipelinePhase, loopElimPipelinePhase]
-                  ++ preSymbolicEvalPipelinePhases options
+  let phases := [typeCheckPipelinePhase options, termCheckPipelinePhase,
+                 precondElimPipelinePhase, insertLoopInvariantAssertsPipelinePhase,
+                 loopElimPipelinePhase] ++ preSymbolicEvalPipelinePhases
   -- Validate phase composition from Boole's guaranteed invariants (structured
   -- bodies, no calls).
   let _ ← (ValidatedPipeline.ofListFrom

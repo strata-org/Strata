@@ -131,6 +131,7 @@ def Core.betaReducePipelinePhase : Core.PipelinePhase :=
   -- normalizes, such as an ill-typed self-application, comes back with a
   -- redex intact: that is the one way the claim can fail.
   Core.modelPreservingPipelinePhase "betaReduce"
+    (requires := factSet![.typeAnnotated])
     (establishes := factSet![.noBetaRedexes])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .staticSingleAssignment, .noPrecondsFromFuncs, .noNondetGuards,

@@ -278,8 +278,9 @@ def VerifyConfig.verify (cfg : VerifyConfig) (input : CoreVerifierInput) :=
     `Program.formulasTypedB` (`TypeCheckDeclFormulasTyped` is false today). -/
 @[expose] def TypeCheckAnnotates : Prop :=
   ∀ (options : VerifyOptions) (program program' : Program)
-    (factory : Lambda.Factory CoreLParams),
-    Core.typeCheck options program factory = .ok program' →
+    (factory : Option (Lambda.Factory CoreLParams))
+    (moreFns : Lambda.Factory CoreLParams),
+    Core.typeCheck options program factory moreFns = .ok program' →
       program'.allExprs Lambda.LExpr.fullyAnnotated = Bool.true
 
 /-- **Type inference produces expressions that evaluate.**  `Expression.HasType`
@@ -292,8 +293,9 @@ def VerifyConfig.verify (cfg : VerifyConfig) (input : CoreVerifierInput) :=
     program does not get stuck evaluating an expression. -/
 @[expose] def TypeCheckWellTypes : Prop :=
   ∀ (options : VerifyOptions) (program program' : Program)
-    (factory : Lambda.Factory CoreLParams),
-    Core.typeCheck options program factory = .ok program' →
+    (factory : Option (Lambda.Factory CoreLParams))
+    (moreFns : Lambda.Factory CoreLParams),
+    Core.typeCheck options program factory moreFns = .ok program' →
     program'.noPolymorphicProcedures = Bool.true →
     ∀ d ∈ program'.decls, ∀ e ∈ Statements.allExprs d.statements,
       ∃ ty, Core.Expression.HasType (Core.Expression.annotationTyping e) e ty
@@ -310,8 +312,9 @@ def VerifyConfig.verify (cfg : VerifyConfig) (input : CoreVerifierInput) :=
     rejects. -/
 @[expose] def TypeCheckDeclFormulasTyped : Prop :=
   ∀ (options : VerifyOptions) (program program' : Program)
-    (factory : Lambda.Factory CoreLParams),
-    Core.typeCheck options program factory = .ok program' →
+    (factory : Option (Lambda.Factory CoreLParams))
+    (moreFns : Lambda.Factory CoreLParams),
+    Core.typeCheck options program factory moreFns = .ok program' →
     ∀ d ∈ program'.decls, declFormulasTyped d = Bool.true
 
 /-- **Type inference agrees with its annotations.**  The well-formedness condition of an entry
@@ -327,8 +330,9 @@ def VerifyConfig.verify (cfg : VerifyConfig) (input : CoreVerifierInput) :=
     the typing at each program point, which no definition provides yet. -/
 @[expose] def TypeCheckAnnotationsAgree : Prop :=
   ∀ (options : VerifyOptions) (program program' : Program)
-    (factory : Lambda.Factory CoreLParams),
-    Core.typeCheck options program factory = .ok program' →
+    (factory : Option (Lambda.Factory CoreLParams))
+    (moreFns : Lambda.Factory CoreLParams),
+    Core.typeCheck options program factory moreFns = .ok program' →
     ∀ q md, Decl.proc q md ∈ program'.decls →
       Block.fvarTypesWellAnnotated (fun x => q.paramTys.lookup x) q.body.statements
 
@@ -611,7 +615,7 @@ instance (q : Program) (results : VCResults) : Decidable (ResultsWithin q result
     verification conditions are discharged (`parseOnly`, `typeCheckOnly`, `checkOnly`). -/
 @[expose] def DeductiveVerificationOnElaborated
     (input : CoreVerifierInput) (results : VCResults) : Prop :=
-  ∀ prog', Core.typeCheck .default input.prog Core.Factory = .ok prog' →
+  ∀ prog', Core.typeCheck .default input.prog none = .ok prog' →
     DeductiveVerificationOnCoreWith Core.Factory ⟨input.entryPoints, prog'⟩ results
 
 /-- `analyze` is a deductive verifier for Core: on every input, its results are

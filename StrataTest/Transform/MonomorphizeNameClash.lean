@@ -10,10 +10,12 @@ meta import Strata.Languages.Core
 meta import Strata.Languages.Core.DDMTransform.Translate
 meta import Strata.Languages.Core.ProgramType
 meta import Strata.Transform.MonomorphizeFunctions
+meta import StrataTest.Languages.Core.Tests.TestUtil
 
 meta section
 
 open Strata
+open Core.TestUtil (translateWithMetaData)
 
 /-! ## `MonomorphizeFunctions` rejects input names that look mangled
 
@@ -24,14 +26,11 @@ postcondition `r == 6`, false of the input (`id(5) = 5`), would then hold of the
 The pass therefore rejects any program with a name or operator containing `#`.
 -/
 
-private def translate (t : StrataDDM.Program) : Core.Program :=
-  (TransM.run Inhabited.default (translateProgram t)).fst
-
 private def quietOpts : Core.VerifyOptions :=
   { Core.VerifyOptions.default with verbose := .quiet }
 
 private def fmtMonoFns (t : StrataDDM.Program) : IO Std.Format := do
-  let prog := translate t
+  let prog := translateWithMetaData t
   match Core.typeCheck quietOpts prog with
   | .error msg => throw (IO.userError s!"{msg}")
   | .ok tc =>
@@ -180,7 +179,7 @@ spec {
 
 /-- Run the pass on `t` with a Factory that also has a function named `name`. -/
 private def monoWithFactoryFn (t : StrataDDM.Program) (name : String) : String :=
-  match Core.typeCheck quietOpts (translate t), Core.Factory.toArray[0]? with
+  match Core.typeCheck quietOpts (translateWithMetaData t), Core.Factory.toArray[0]? with
   | .error msg, _ => s!"{msg}"
   | _, none => "empty Factory"
   | .ok tc, some f =>
@@ -237,24 +236,26 @@ spec {
 error: GenOpaqueTypeParams: the name 'P#1' contains '#', which is reserved for monomorphized copies
 -/
 #guard_msgs in
-#eval EIO.toIO (fun s => IO.userError s) (Core.verifyProgram (translate hashProcPgm) quietOpts)
+#eval EIO.toIO (fun s => IO.userError s)
+  (Core.verifyProgram (translateWithMetaData hashProcPgm) quietOpts)
 
-/-- A lemma whose name contains `#` is rejected with that name when an opaque type is built
-    from it, even without type parameters: the element type of `Nil()` would otherwise become
-    `$__free_L#1_0`. -/
-private def hashLemmaPgm :=
-#strata
-program Core;
-datatype List (a : Type) { Nil(), Cons(hd : a, tl : List a) };
-lemma [|L#1|]: List..isNil(Nil());
-#end
+/-- `datatype List (a : Type) { Nil(), Cons(hd : a, tl : List a) }` and the
+    lemma `L#1 : List..isNil(Nil())`. The formula leaves the element type of
+    `Nil()` undetermined, so type checking rejects the lemma under the name the
+    user wrote, and no opaque type such as `$__free_L#1_0` is built from a name
+    containing `#`. -/
+private def hashLemmaPgm : Core.Program :=
+  { decls := [Core.TestUtil.listDecl,
+      .lemma { name := "L#1", typeArgs := [],
+               e := .app Core.coreLoc (.op Core.coreLoc "List..isNil" none)
+                   (.op Core.coreLoc "Nil" none) } .empty] }
 
 /--
 error: ❌ Type checking error.
-GenOpaqueTypeParams: the name 'L#1' contains '#', which is reserved for monomorphized copies
+Lemma 'L#1' is typed at a generated type variable that is not declared
 -/
 #guard_msgs in
-#eval EIO.toIO (fun s => IO.userError s) (Core.verifyProgram (translate hashLemmaPgm) quietOpts)
+#eval EIO.toIO (fun s => IO.userError s) (Core.verifyProgram hashLemmaPgm quietOpts)
 
 /-- A lemma whose name contains `#` but from which no opaque type is built is accepted, and
     is verified under its own name. -/
@@ -268,13 +269,13 @@ lemma [|L#1|]: true;
 #guard_msgs in
 #eval do
   let r ← EIO.toIO (fun s => IO.userError s)
-    (Core.verifyProgram (translate hashLabelLemmaPgm) quietOpts)
+    (Core.verifyProgram (translateWithMetaData hashLabelLemmaPgm) quietOpts)
   return r.map fun (v : Core.VCResult) => (v.obligation.label, v.isSuccess)
 
 /-- A pipeline that runs the pass twice is rejected by the second run, which finds the first
     one's copies, and the error says so: it never yields a verdict. -/
 private def twiceMsg : String :=
-  match Core.typeCheck quietOpts (translate factoryClashPgm) with
+  match Core.typeCheck quietOpts (translateWithMetaData factoryClashPgm) with
   | .error msg => s!"{msg}"
   | .ok tc =>
     let seedState : Core.Transform.CoreTransformState :=

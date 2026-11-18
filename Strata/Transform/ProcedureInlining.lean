@@ -81,32 +81,34 @@ def inlinePrefix (n : Nat) : String := s!"$__inline{n}"
 
 def inlineCounterKey : String := "inlineProcedures"
 
+/-- Prefix of the type variables procedure inlining uses to instantiate a callee.
+    Kept as a literal copy in `Lambda.reservedNamePrefixes`, so type checking still
+    rejects or renames program names that use it. -/
+@[expose] def inlineTyPrefix : String := "$__inlinety"
+
 /-- Rename every variable and label occurrence in the callee's `inputs`,
     `outputs`, and `bodyStmts` according to the explicit `var_map` (variables) and
-    `label_map` (block/assert/assume/cover labels). `var_map` also carries the
-    inout `old x` → snapshot rewrites, so all `Statement.substFvar` happens here in
-    one pass. -/
+    `label_map` (block/assert/assume/cover labels), keeping each variable's type
+    annotation. `var_map` also carries the inout `old x` → snapshot rewrites. -/
 private def renameAllLocalNames
     (inputs outputs : @Lambda.LMonoTySignature Unit) (bodyStmts : List Statement)
     (var_map : HMap Expression.Ident Expression.Ident)
     (label_map : HMap String String)
     : @Lambda.LMonoTySignature Unit × @Lambda.LMonoTySignature Unit × List Statement :=
-  let new_body := bodyStmts.map (fun (s0 : Statement) =>
-    let s := var_map.toList.foldl (fun (s : Statement) (old_id, new_id) =>
-        let s := Statement.substFvar s old_id (.fvar (ExprSourceLoc.synthesized "inlining")
-            new_id .none)
-        Statement.renameLhs s old_id new_id)
-      s0
-    Statement.replaceLabelsOfBlocksAndAssertAssumes s label_map)
   let renameId (id : Expression.Ident) : Expression.Ident :=
     (var_map.find? id).getD id
+  let new_body := bodyStmts.map (fun (s0 : Statement) =>
+    let s := var_map.toList.foldl (fun (s : Statement) (old_id, new_id) =>
+        Statement.renameLhs s old_id new_id)
+      (Statement.mapExprs (·.mapFvarNames renameId) s0)
+    Statement.replaceLabelsOfBlocksAndAssertAssumes s label_map)
   let new_inputs := inputs.map (fun (id, ty) => (renameId id, ty))
   let new_outputs := outputs.map (fun (id, ty) => (renameId id, ty))
   (new_inputs, new_outputs, new_body)
 
 /-- Build the pre-state snapshots for a callee's inout parameters. Returns the
     snapshot `init` statements together with the `old x → snapshot` variable
-    rewrites (this helper performs no `Statement.substFvar` itself).
+    rewrites.
 
     In each `inoutParams` entry `(origName, renamedId, ty)`, `origName` is what
     `old origName` in the body matches against.
@@ -196,20 +198,20 @@ Procedure Inlining.
 
 If st is a call statement, inline the contents of the callee procedure.
 To avoid conflicts between duplicated variable names in caller and callee,
-every variables in callee are renamed.
+every variables in callee are renamed. The opaque types a call's instance gets avoid the
+type names `taken`.
 This function does not update the specification because inlineCallStmt will not
 use the specification. This will have to change if Strata also wants to support
 the reachability query.
 -/
-def inlineCallCmd
+def inlineCallCmd (taken : Std.HashSet String)
     (doInline: Option String -> String -> CachedAnalyses -> Bool := λ _caller _callee _analyses => true)
-    (s: Statement)
+    (vt : TypeSpec.TypeScopes) (s: Statement)
   : CoreTransformM (Option (List Statement)) :=
     open Lambda in do
     match s with
       | .cmd (.call procName callArgs md) =>
         let lhs := CallArg.getLhs callArgs
-        let args := CallArg.getInputExprs callArgs
         incrementStat s!"{Stats.visitedCalls}"
 
         let st ← get
@@ -230,13 +232,14 @@ def inlineCallCmd
         let pfx := inlinePrefix n
         let freshen (name : String) : Expression.Ident := ⟨s!"{pfx}_{name}", ()⟩
 
-        -- Freshen the callee's type parameters per inlining site. Keep only the
+        -- Instantiate the callee at this call's type instance. Keep only the
         -- signature (inputs/outputs), not a full `Procedure.Header`.
-        let tySubst ← freshenTypeArgsSubst Lambda.inlineTyPrefix proc.header.typeArgs
+        let tySubst ← callTypeSubst inlineTyPrefix taken vt proc callArgs
         let inputs : @Lambda.LMonoTySignature Unit :=
           proc.header.inputs.map (fun (id, ty) => (id, Lambda.LMonoTy.subst tySubst ty))
         let outputs : @Lambda.LMonoTySignature Unit :=
           proc.header.outputs.map (fun (id, ty) => (id, Lambda.LMonoTy.subst tySubst ty))
+        let args := typedInputExprs inputs callArgs
 
         let bodyStmts : List Statement ← match proc.body with
           | .structured ss => pure (ss.map (Core.Statement.Statement.subst tySubst))
@@ -287,13 +290,8 @@ def inlineCallCmd
         let outputInits := sigOutputOnly.map (fun (id, ty) => Statement.init id ty .nondet md)
 
         let outputSetStmts :=
-          let out_vars := sigOutputs.unzip.fst
-          let outs_lhs_and_sig := List.zip lhs out_vars
-          List.map
-            (fun (lhs_var,out_var) =>
-              Statement.set lhs_var (.fvar (ExprSourceLoc.synthesized "inlining") out_var
-                  (.none)) md)
-            outs_lhs_and_sig
+          (lhs.zip (createTypedFvars sigOutputs)).map
+            (fun (lhs_var, out_var) => Statement.set lhs_var out_var md)
 
         let stmts:List (Imperative.Stmt Core.Expression Core.Command)
           := inputInits ++ oldInoutInits ++ outputInits
@@ -350,22 +348,28 @@ def procedureInliningPipelinePhase
     (opts : InlineTransformOptions := {})
     : PipelinePhase :=
   open Transform in
-  -- `runProgramUntil` throws on a CFG body, and a callee with a CFG body
+  -- `runProgramUntilTyped` throws on a CFG body, and a callee with a CFG body
   -- cannot be inlined into structured code. Which calls are inlined is up to
   -- `doInline`, so the phase cannot claim `noCalls`, and the callee's `init`s
   -- are why it cannot claim `staticSingleAssignment` either. It requires
   -- `wellFormedCalls` because it pairs each argument with the callee's parameter at
   -- its position, and preserves it because the calls it copies in were well-formed
-  -- in the callee and its renaming is one-to-one.
+  -- in the callee and its renaming is one-to-one. It preserves `exitsCovered` because
+  -- it wraps the callee body in a fresh block and renames block labels and exit
+  -- targets with the same map.
   modelPreservingPipelinePhase "inlineProcedures"
-    (requires := factSet![.wellFormedCalls, .noCFGBodies])
+    (requires := factSet![.wellFormedCalls, .noCFGBodies, .typeAnnotated])
     (preserves := factSet![.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .noPrecondsFromFuncs, .noNondetGuards,
                          .noProcedureContracts,
                          .noPolymorphicProcedures,
-                         .noPolymorphicFunctions])
+                         .noPolymorphicFunctions, .typeAnnotated, .exitsCovered])
     fun prog =>
-      runProgramUntil (ProcedureInlining.inlineCallCmd (doInline := opts.doInline)) prog opts.maxIters
+      let taken := prog.typeNamesWithPrefix ProcedureInlining.inlineTyPrefix
+      declareGeneratedTypes ProcedureInlining.inlineTyPrefix taken
+        (runProgramUntilTyped
+          (ProcedureInlining.inlineCallCmd taken (doInline := opts.doInline))
+          prog opts.maxIters)
 
 end Core
 

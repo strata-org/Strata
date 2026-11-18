@@ -11,7 +11,8 @@ import all Strata.Util.HMaps
 /-! ## Properties of `HMaps` scope stacks
 
 Lookup through pushes and concatenations, the keys and values of combined stacks, and
-scope-wise equivalence of stacks (`Equiv`). -/
+scope-wise equivalence of stacks (`Equiv`), and lookup after inserting bindings that agree
+with a map into an `HMap`. -/
 
 namespace Strata.Util
 
@@ -179,5 +180,48 @@ public theorem mem_values_addInNewest_single [LawfulBEq α] [LawfulHashable α]
       exact Or.inl h_mem
 
 end HMaps
+
+namespace HMap
+
+variable {α : Type u} {β : Type v} [BEq α] [Hashable α]
+
+/-- If every binding in `bs` agrees with `S'`, then inserting `bs` into `m`
+    keeps each lookup that was already `S'`'s answer, and the inserted keys also
+    return `S'`'s answer. -/
+public theorem foldl_insert_find?_of_agree [LawfulBEq α] [LawfulHashable α]
+    (S' : HMap α β) (bs : List (α × β))
+    (hbs : ∀ b ∈ bs, S'.find? b.1 = some b.2) :
+    ∀ (m : HMap α β) (x : α) (t : β),
+      S'.find? x = some t →
+      ((∃ b ∈ bs, b.1 = x) ∨ m.find? x = some t) →
+      (bs.foldl (fun m b => m.insert b.1 b.2) m).find? x = some t := by
+  induction bs with
+  | nil =>
+    intro m x t _ hcov
+    rcases hcov with ⟨b, hb, _⟩ | hm
+    · cases hb
+    · exact hm
+  | cons b rest ih =>
+    intro m x t hx hcov
+    have hbrest : ∀ b' ∈ rest, S'.find? b'.1 = some b'.2 :=
+      fun b' hb' => hbs b' (List.mem_cons_of_mem b hb')
+    have hbb : S'.find? b.1 = some b.2 := hbs b List.mem_cons_self
+    simp only [List.foldl_cons]
+    apply ih hbrest (m.insert b.1 b.2) x t hx
+    by_cases hbx : b.1 = x
+    · right
+      rw [← hbx, HMap.find?_insert_self]
+      rw [← hbx, hbb] at hx
+      exact hx
+    · rcases hcov with ⟨b', hb', hb'x⟩ | hm
+      · rcases List.mem_cons.mp hb' with hh | hh
+        · rw [hh] at hb'x
+          exact absurd hb'x hbx
+        · exact Or.inl ⟨b', hh, hb'x⟩
+      · right
+        rw [HMap.find?_insert_ne _ _ _ _ (bne_iff_ne.mpr (Ne.symm hbx))]
+        exact hm
+
+end HMap
 
 end Strata.Util

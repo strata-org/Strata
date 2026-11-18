@@ -592,8 +592,14 @@ over the body — the `requires` clauses (including `free` ones, which the calle
 guarantees) as precondition, and the checked, non-`free` `ensures` clauses as
 postcondition (`free` postconditions are assumed at call sites, not proved by the
 body) — so that "this procedure meets its contract" is a single Hoare judgement.
+The precondition also assumes the axioms and `distinct` declarations that precede
+the procedure, as the entry environments of `ProcedureAssertsValidOnTraces` do, and
+a proved `Procedure.contractTriple` gives the contract part of that property
+(`contract_of_contractTriple`).
 `StrataTest/Languages/Core/Tests/Logic/Hoare.lean` has examples of Hoare triples
-derived from procedure contracts and their proofs.
+derived from procedure contracts and their proofs, and
+`StrataTest/Languages/Core/Tests/Logic/HoareAxioms.lean` has contracts that rest on
+an axiom or a `distinct` declaration.
 
 ## Satisfiability and Validity of Assertions
 

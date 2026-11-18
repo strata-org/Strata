@@ -72,7 +72,7 @@ private def cstToAST (p : Program) : Core.Program :=
   eraseProgLocs (TransM.run Inhabited.default (translateProgram p)).fst
 
 /-- Gate parameters: no reserved fresh-prefixes, and every name counts as declared. -/
-private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], fun _ => true⟩
+private def testParams : Core.Logic.InitEnvWFParams := ⟨[], [], [], fun _ => true⟩
 
 /-- The gate parameters of the source: `testParams` with the prefix of the measure snapshot
     variables reserved. -/
@@ -495,6 +495,10 @@ theorem count_meets_contract :
     exact hb.symm
   subst hss'
   rw [count_body_eq]
+  -- The body proof does not use the axioms visible to the procedure.
+  refine Core.Logic.Hoare.consequence _ _
+    (Pre := Core.Logic.Hoare.Procedure.contractPre Core.Factory countProc) ?_
+    (fun _ h => h.1) (fun _ h => h)
   exact Core.Logic.Hoare.block π srcParams (htriple (fun _ hpre => hpre.2.1) countTgt_triple)
     (Imperative.Logic.Hoare.postWF_of_definedVars_nil _ (by decide +kernel))
 

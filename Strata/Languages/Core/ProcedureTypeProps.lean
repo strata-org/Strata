@@ -9,9 +9,15 @@ public import Strata.Languages.Core.WF
 public import Strata.Languages.Core.ProcedureType
 public import Strata.Util.ExceptProps
 import Strata.Util.ListUtilsProps
+import Strata.Util.ListMapProps
 import all Strata.DL.Imperative.CFG
 import all Strata.Languages.Core.ProcedureType
 import Strata.Languages.Core.IdentifiersProps
+import Strata.Util.Tactics
+public import Strata.Languages.Core.StatementType
+import all Strata.Languages.Core.TypeSkolem
+import Strata.Languages.Core.Typing.Props.TypeSkolemProps
+import all Strata.Languages.Core.Procedure
 
 /-! # Well-formedness established by the CFG type checker
 
@@ -218,20 +224,67 @@ private theorem checkNoLoopInits_sound
   exact hl
 
 /-- No parameter of a procedure that passes `checkParamNames` is named `old x`. -/
-private theorem checkParamNames_ioNotOld {proc : Procedure} {sourceLoc : FileRange}
-    (h : checkParamNames proc sourceLoc = .ok ()) :
+private theorem checkParamNames_ioNotOld {proc : Procedure} {sourceLoc : FileRange} {u : Unit}
+    (h : checkParamNames proc sourceLoc = .ok u) :
     ∀ id ∈ proc.header.inputs.keys ++ proc.header.outputs.keys,
       ∀ x, id ≠ CoreIdent.mkOld x := by
   intro id hid x heq
   unfold checkParamNames at h
-  simp only [bind, Except.bind, pure, Except.pure] at h
-  split at h <;> try contradiction
-  split at h <;> try contradiction
   split at h
   · contradiction
   · rename_i hnone
     have hnot := List.find?_eq_none.mp hnone id hid
     exact hnot ((isOldIdent_iff_exists_mkOld id).2 ⟨x, heq⟩)
+
+/-- Renaming a procedure's reserved type parameters keeps its parameter names. -/
+private theorem renameReservedTypeArgs_paramKeys (avoid : Unit → List String)
+    (proc : Procedure) (annot : Unit → List Lambda.LMonoTy) :
+    (proc.renameReservedTypeArgs avoid annot).header.inputs.keys ++
+        (proc.renameReservedTypeArgs avoid annot).header.outputs.keys =
+      proc.header.inputs.keys ++ proc.header.outputs.keys := by
+  unfold Procedure.renameReservedTypeArgs
+  rcases renameReservedWith_cases proc.header.typeArgs
+      (fun u => proc.mentionedTyVarsIn (annot u) ++ avoid u) proc.renameTypeArgs proc with
+    ⟨heq, -⟩ | heq
+  · rw [heq]
+  · rw [heq]
+    simp only [Procedure.renameTypeArgs, ListMap.keys_map_values]
+
+/-- No parameter of a procedure that passes the checker proper (`typeCheckCore`) is named
+    `old x`. -/
+theorem typeCheckCore_ioNotOld
+    (h : typeCheckCore scope progSigs C Env p proc md tyNames = .ok r) :
+    ∀ id ∈ proc.header.inputs.keys ++ proc.header.outputs.keys,
+      ∀ x, id ≠ CoreIdent.mkOld x := by
+  unfold typeCheckCore at h
+  simp only [bind, Except.bind, pure, Except.pure] at h
+  elim_err h
+  elim_err h
+  elim_err h with _ hold
+  exact checkParamNames_ioNotOld hold
+
+/-- A procedure `typeCheckIn` accepts passes the checker proper (`typeCheckCore`) after its
+    reserved type parameters are renamed, with rigid constants avoiding the type names the
+    procedure mentions. -/
+theorem typeCheckIn_core_ok (h : typeCheckIn scope progSigs C Env p proc md = .ok r) :
+    typeCheckCore scope progSigs C Env p
+      (proc.renameReservedTypeArgs (fun _ => Statement.substTyVars Env ++ scopeTyVars C Env)
+        fun _ => procAnnotTys proc) md (fun _ => procTyNames proc (procAnnotTys proc)) =
+      .ok r := by
+  unfold typeCheckIn at h
+  obtain ⟨_, -, hcore⟩ := (Except.bind_is_ok _ _ _).mp h
+  exact hcore
+
+/-- A procedure `typeCheck` accepts passes the checker proper (`typeCheckCore`) after its
+    reserved type parameters are renamed, with rigid constants avoiding the type names in scope,
+    those of the procedure signatures of `p` and those the procedure mentions. -/
+theorem typeCheck_core_ok (h : typeCheck C Env p proc md = .ok r) :
+    typeCheckCore (scopeTyNameThunk C Env)
+      (procSigTyNameThunk p) C Env p
+      (proc.renameReservedTypeArgs (fun _ => Statement.substTyVars Env ++ scopeTyVars C Env)
+        fun _ => procAnnotTys proc) md (fun _ => procTyNames proc (procAnnotTys proc)) =
+      .ok r :=
+  typeCheckIn_core_ok h
 
 /-- No parameter of a procedure that passes type checking is named `old x`
     (`WF.WFProcedureProp.ioNotOld`). -/
@@ -239,12 +292,8 @@ theorem typeCheck_ioNotOld
     (h : typeCheck C Env p proc md = .ok r) :
     ∀ id ∈ proc.header.inputs.keys ++ proc.header.outputs.keys,
       ∀ x, id ≠ CoreIdent.mkOld x := by
-  unfold typeCheck at h
-  simp only [bind, Except.bind] at h
-  split at h
-  · contradiction
-  · rename_i hc
-    exact checkParamNames_ioNotOld hc
+  rw [← renameReservedTypeArgs_paramKeys]
+  exact typeCheckCore_ioNotOld (typeCheck_core_ok h)
 
 /-- A procedure that passes type checking has no parameter named `old g` for an in-out
     parameter `g`. -/

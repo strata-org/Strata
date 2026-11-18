@@ -153,7 +153,7 @@ def nondetElimPipelinePhase : PipelinePhase :=
   -- `staticSingleAssignment` is not claimed because the loop case `havoc`s the
   -- fresh boolean at the end of the body.
   modelPreservingPipelinePhase "nondetElim" nondetElim
-    (requires := factSet![.noCalls])
+    (requires := factSet![.noCalls, .typeAnnotated])
     (establishes := factSet![.noNondetGuards])
     (preserves := factSet![.noCFGBodies, .noCalls, .noLoops, .noLoopInvariants,
                          .noLoopMeasures, .noBetaRedexes, .noPrecondsFromFuncs,

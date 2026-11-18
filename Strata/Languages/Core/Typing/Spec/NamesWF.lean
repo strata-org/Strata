@@ -34,14 +34,14 @@ namespace TypeSpec
 
 open Lambda Imperative
 
-/-- A variable name that is not a function of `fns`. -/
-def VarNameWF (fns : String → Prop) (x : Expression.Ident) : Prop :=
-  ¬ fns x.name
+/-- A variable name that is not a function of `isFunc`. -/
+def VarNotFunc (isFunc : String → Prop) (x : Expression.Ident) : Prop :=
+  ¬ isFunc x.name
 
 /-- The names an imperative command introduces are valid: a declared variable is a valid
     variable name. -/
 def CmdNamesWF (fns : String → Prop) : Cmd Expression → Prop
-  | .init x _ _ _ => VarNameWF fns x
+  | .init x _ _ _ => VarNotFunc fns x
   | .set _ _ _ => True
   | .assert _ _ _ => True
   | .assume _ _ _ => True
@@ -70,12 +70,12 @@ end
 
 /-- The names in a function are valid: its formals are not functions of `fns`. -/
 def FuncNamesWF (fns : String → Prop) (f : Function) : Prop :=
-  ∀ x ∈ f.inputs.keys, VarNameWF fns x
+  ∀ x ∈ f.inputs.keys, VarNotFunc fns x
 
 /-- The names in a procedure are valid: its formals are not functions of `fns`, and the names
     in a structured body are valid. -/
 def ProcNamesWF (P : Program) (fns : String → Prop) (p : Procedure) : Prop :=
-  (∀ x ∈ p.header.inputs.keys ++ p.header.outputs.keys, VarNameWF fns x) ∧
+  (∀ x ∈ p.header.inputs.keys ++ p.header.outputs.keys, VarNotFunc fns x) ∧
   match p.body with
   | .structured ss => StatementsNamesWF P fns ss
   | .cfg _ => True

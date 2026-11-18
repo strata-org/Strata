@@ -25,6 +25,12 @@ import all Strata.Util.ListMap
 - `procedureAssertsValidOnTraces_of_overapproximates` — a transformation that
   overapproximates a procedure body's traces preserves
   `ProcedureAssertsValidOnTraces` backwards.
+- `axiomsBeforeProcedureDecl_of_noAxioms`: a procedure preceded by no axiom or
+  `distinct` declaration has no axiom assumption at its entry.
+- `AxiomsBeforeProcedureDecl.eval_of_mem`, `AxiomsBeforeProcedureDecl.pairwise_of_mem`:
+  at an entry satisfying `AxiomsBeforeProcedureDecl`, each axiom declared before the
+  procedure evaluates to `true`, and the expressions of each `distinct` declared
+  before it evaluate pairwise differently.
 -/
 
 public section
@@ -32,6 +38,65 @@ public section
 namespace Core.Specification
 
 open Core Core.Logic Imperative Strata.Logic Imperative.Logic
+
+/-! ## Axioms and distincts visible to a procedure -/
+
+/-- If no axiom or `distinct` declaration precedes `entryProcName`, every environment
+    satisfies `AxiomsBeforeProcedureDecl`. -/
+theorem axiomsBeforeProcedureDecl_of_noAxioms {entryProcName : String} {p : Program}
+    (h : (p.declsBeforeProcedure entryProcName).all fun d =>
+      match d with
+      | .ax _ _ | .distinct _ _ _ => false
+      | _ => true)
+    (ρ₀ : Imperative.Env Expression) :
+    AxiomsBeforeProcedureDecl entryProcName p ρ₀ := by
+  simp only [List.all_eq_true] at h
+  unfold AxiomsBeforeProcedureDecl
+  generalize p.declsBeforeProcedure entryProcName = decls at h
+  induction decls with
+  | nil => trivial
+  | cons d ds ih =>
+      rw [List.foldr_cons]
+      have hd := h d List.mem_cons_self
+      have hds := ih fun d hdmem => h d (List.mem_cons_of_mem _ hdmem)
+      cases d <;> simp at hd
+      all_goals exact hds
+
+/-- Each axiom declared before `entryProcName` evaluates to `true` in an environment
+    satisfying `AxiomsBeforeProcedureDecl`. -/
+theorem AxiomsBeforeProcedureDecl.eval_of_mem {entryProcName : String} {p : Program}
+    {ρ₀ : Imperative.Env Expression}
+    (h : AxiomsBeforeProcedureDecl entryProcName p ρ₀)
+    {a : Axiom} {md : Imperative.MetaData Expression}
+    (ha : Decl.ax a md ∈ p.declsBeforeProcedure entryProcName) :
+    Expression.eval ρ₀.factory ρ₀.store a.e = some (HasBool.ttVal ρ₀.factory) := by
+  unfold AxiomsBeforeProcedureDecl at h
+  generalize p.declsBeforeProcedure entryProcName = decls at h ha
+  induction decls with
+  | nil => cases ha
+  | cons d ds ih =>
+    rcases List.mem_cons.mp ha with rfl | hm
+    · exact h.1
+    · cases d <;> simp only [List.foldr_cons] at h <;> first | exact ih h.2 hm | exact ih h hm
+
+/-- The expressions of each `distinct` declaration before `entryProcName` evaluate
+    pairwise differently in an environment satisfying `AxiomsBeforeProcedureDecl`. -/
+theorem AxiomsBeforeProcedureDecl.pairwise_of_mem {entryProcName : String} {p : Program}
+    {ρ₀ : Imperative.Env Expression}
+    (h : AxiomsBeforeProcedureDecl entryProcName p ρ₀)
+    {name : Expression.Ident} {es : List Expression.Expr}
+    {md : Imperative.MetaData Expression}
+    (hd : Decl.distinct name es md ∈ p.declsBeforeProcedure entryProcName) :
+    List.Pairwise (fun e₁ e₂ =>
+      Expression.eval ρ₀.factory ρ₀.store e₁ ≠ Expression.eval ρ₀.factory ρ₀.store e₂) es := by
+  unfold AxiomsBeforeProcedureDecl at h
+  generalize p.declsBeforeProcedure entryProcName = decls at h hd
+  induction decls with
+  | nil => cases hd
+  | cons d ds ih =>
+    rcases List.mem_cons.mp hd with rfl | hm
+    · exact h.1
+    · cases d <;> simp only [List.foldr_cons] at h <;> first | exact ih h.2 hm | exact ih h hm
 
 /-! ## Postconditions checked on the trace
 

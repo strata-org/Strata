@@ -72,6 +72,8 @@ specified by its signature. -/
     respects the output write set and declared output types, the call satisfies a
     `Triple`. `hentry` establishes the contract precondition shared by both body kinds
     and, depending on the resolved body, the structured block gate or the CFG gate.
+    `haxioms` establishes, at the callee's entry, the axioms and `distinct`
+    declarations visible to the callee, which its `contractTriple` assumes.
     `hexit` receives caller command well-formedness, `CallEntry`, the callee entry
     store, output typing, `Procedure.storeFrame`, and restoration of the entry factory,
     so it may relate caller actuals to preserved input-only formals before deriving the
@@ -102,6 +104,13 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
         | .cfg cfg =>
             CFGInitEnvWF params cfg
               { store := σAO, factory := ρ₀.factory })
+    (haxioms : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure)
+        (σAO : CoreStore),
+      Pre ρ₀ → InitEnvWF params (Statement.call procName callArgs md) ρ₀ →
+      p.findProcByString? procName = some proc →
+      CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
+      Core.Specification.AxiomsBeforeProcedureDecl procName p
+        { store := σAO, factory := ρ₀.factory })
     (hexit : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (ρ' : Imperative.Env Expression) (σ' σAO : CoreStore),
       Pre ρ₀ → InitEnvWF params (Statement.call procName callArgs md) ρ₀ →
@@ -128,6 +137,7 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
     have hframeRel := hframe cproc hcproc _ _ _ _ hbodyE
     obtain ⟨hcontractPre, hbodyWF⟩ :=
       hentry ρ₀ cproc _ hpre hwf hcproc hcallentry
+    have hax := haxioms ρ₀ cproc _ hpre hwf hcproc hcallentry
     have houtputsRel := houtputs cproc hcproc _ _ _ _ hcontractPre.2.1
       hcontractPre.2.2.2 hbodyE
     -- The precondition assertions are valid once, independent of the body kind.
@@ -191,7 +201,7 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
           (EvalCommandE p.findProcByString?) hrun
         have htb := htriple
           { store := σAO, factory := ρ₀.factory }
-          ρ' _ hcontractPre hbodyWF (Or.inl hrun')
+          ρ' _ ⟨hcontractPre, hax⟩ hbodyWF (Or.inl hrun')
         exact finish ρ' _ hρ'fac houtputsRel hframeRel hcallexit htb
     | cfg cfg =>
       rw [hcbody] at hbodyE htriple hbodyWF
@@ -203,7 +213,7 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
         have htb := htriple
           { store := σAO, factory := ρ₀.factory }
           { store := σAO, factory := ρ₀.factory }
-          ρ' _ ⟨hcontractPre, rfl⟩ hbodyWF (Or.inl hrun)
+          ρ' _ ⟨⟨hcontractPre, hax⟩, rfl⟩ hbodyWF (Or.inl hrun)
         exact finish { ρ' with store := Imperative.projectStore σAO ρ'.store } _
           hρ'fac houtputsRel hframeRel hcallexit htb
 

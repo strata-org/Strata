@@ -7,6 +7,7 @@ module
 
 
 public import Strata.DL.Lambda.TypeConstructor
+public import Strata.DL.Lambda.LTyWF
 public import Strata.Languages.Core.Expressions
 
 ---------------------------------------------------------------------
@@ -16,6 +17,7 @@ public section
 
 open Std (ToFormat Format format)
 open Lambda
+open Strata (Message)
 
 /-! # Strata Core Type Declarations -/
 
@@ -23,13 +25,6 @@ open Lambda
 
 structure TypeSynonym where
   name     : String
-  -- Unlike in `TypeConstructor` above, the arguments are relevant
-  -- here. E.g., for a type declared like so:
-  -- `type Foo _ _;`
-  -- the type synonym
-  -- `type Bar x y = Foo x x;`
-  -- is legal, where `y` is ignored.
-  -- Note also that the `typeArgs` may not contain duplicates.
   typeArgs : List TyIdentifier
   type     : LMonoTy
   deriving Repr, DecidableEq
@@ -48,6 +43,66 @@ def TypeSynonym.toLHSLTy (t : TypeSynonym) : LTy :=
 
 def TypeSynonym.toRHSLTy (t : TypeSynonym) : LTy :=
   .forAll t.typeArgs t.type
+
+/-- `ts` with the body of the newest alias of `aliases`, if any. -/
+def TypeSynonym.withStoredBody (ts : TypeSynonym) : List TypeAlias → TypeSynonym
+  | al :: _ => { ts with type := al.type }
+  | [] => ts
+
+/-- Check a type synonym and register it as a type alias, returning the synonym with the
+    alias-resolved body the alias stores. -/
+def TypeSynonym.typeCheck (ts : TypeSynonym) (C : Expression.TyContext)
+    (Env : Expression.TyEnv) : Except Format (TypeSynonym × Expression.TyEnv) := do
+  let Env' ← Lambda.TEnv.addTypeAlias
+    { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C Env
+  return (ts.withStoredBody Env'.context.aliases, Env')
+
+/-- Where an opaque type declaration was written. -/
+inductive TypeConstructor.Site where
+  /-- A declaration among a program's top-level declarations. -/
+  | program
+  /-- A declaration inside a procedure or function body, carrying the program-level
+      declaration names it may not reuse. -/
+  | bodyLocal (programNames : List Expression.Ident)
+
+/-- The program-level declaration names a declaration at this site may not
+    reuse. -/
+def TypeConstructor.Site.programNames :
+    TypeConstructor.Site → List Expression.Ident
+  | .program => []
+  | .bodyLocal ns => ns
+
+/-- Whether the site is inside a procedure or function body. -/
+def TypeConstructor.Site.isBodyLocal : TypeConstructor.Site → Bool
+  | .program => false
+  | .bodyLocal _ => true
+
+/-- The word a reported message uses for a declaration at this site. -/
+def TypeConstructor.Site.what : TypeConstructor.Site → Format
+  | .program => f!"Type"
+  | .bodyLocal _ => f!"Local type"
+
+/-- Check an opaque type declaration and register it as a known type. Its name is not a
+    forbidden program-level name, a known type at any arity, or, inside a body, a type
+    synonym. -/
+def TypeConstructor.typeCheck (tc : TypeConstructor) (site : TypeConstructor.Site)
+    (C : Expression.TyContext) (Env : Expression.TyEnv) : Except Message Expression.TyContext := do
+  if site.programNames.any (fun n => n.name == tc.name) then
+    throw <| Message.fromFormat f!"Type '{tc.name}' is already declared at the program level"
+  if site.isBodyLocal && Env.context.aliases.any (fun al => al.name == tc.name) then
+    throw <| Message.fromFormat f!"{site.what} '{tc.name}' is already a type synonym"
+  C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs }
+    (Message.fromFormat f!"Type '{tc.name}' is already declared")
+
+/-- Check a mutual datatype block and register its alias-resolved form. -/
+def MutualDatatype.typeCheck (block : Lambda.MutualDatatype Unit)
+    (C : Expression.TyContext) (Env : Expression.TyEnv) :
+    Except Message
+      (Lambda.MutualDatatype Unit × Expression.TyContext × Expression.TyEnv) := do
+  let (resolved, Env') ← Lambda.MutualDatatype.resolveAliases block Env
+    |>.mapError Message.fromFormat
+  let C' ← C.addMutualBlock resolved
+  .ok (resolved, C', Env')
 
 /-! # Strata Core Type Declarations -/
 

@@ -60,7 +60,7 @@ Block `B` is on the cycle `H ⇄ B` and declares `t`. Core's CFG type checker
 rejects a declaration on a cycle. -/
 
 /--
-info: type check: [loopInit]: a CFG-local is declared in a block that lies on a cycle; a loop-carried declaration would be re-initialized on re-entry.
+info: type check: Procedure 'loopInit': [loopInit]: a CFG-local is declared in a block that lies on a cycle; a loop-carried declaration would be re-initialized on re-entry.
 -/
 #guard_msgs in
 #eval report <| mkProg "loopInit" [("c", .bool)] [("r", .int)] "E"
@@ -93,7 +93,7 @@ cfg E {
   }
 };
 
-type check: [r := t] No free variables are allowed here!
+type check: Procedure 'dead': [r := t] No free variables are allowed here!
 Free Variables: [t]
 -/
 #guard_msgs in

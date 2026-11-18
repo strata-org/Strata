@@ -88,7 +88,7 @@ const x : int := true;
 
 /--
 error: ❌ Type checking error.
-Impossible to unify int with bool.
+Impossible to unify bool with int.
 -/
 #guard_msgs in
 #eval Core.verify constValueIllTypedPgm

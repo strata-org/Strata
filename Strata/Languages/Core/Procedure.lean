@@ -10,6 +10,7 @@ public import Strata.DL.Imperative.HasVars
 public import Strata.DL.Imperative.BasicBlock
 public import Strata.DL.Imperative.Procedure
 public import Strata.Languages.Core.Statement
+public import Strata.DL.Lambda.LTyMatch
 
 ---------------------------------------------------------------------
 
@@ -305,23 +306,38 @@ abbrev Procedure := Imperative.Procedure Expression Command Procedure.Header
       | .structured ss => .structured (Statements.mapExprs f ss)
       | .cfg c => .cfg c }
 
+section Collect
+
+variable {β : Type} (fe : Expression.Expr → List β) (ft : LMonoTy → List β)
+
+/-- What `fe` and `ft` collect from a procedure body, which is either a statement list or the
+    blocks of a control flow graph. -/
+def bodyCollect (body : Procedure.Body) : List β :=
+  match body with
+  | .structured ss => stmtsCollect fe ft ss
+  | .cfg c => c.blocks.flatMap fun (_, blk) =>
+      blk.cmds.flatMap (cmdCollect fe ft) ++
+        match blk.transfer with
+        | .condGoto g _ _ _ => fe g
+        | .finish _ => []
+
+/-- What `fe` and `ft` collect from a procedure's conditions and body. -/
+def procCollect (proc : Procedure) : List β :=
+  proc.spec.preconditions.values.flatMap (fun chk => fe chk.expr) ++
+    proc.spec.postconditions.values.flatMap (fun chk => fe chk.expr) ++
+    bodyCollect fe ft proc.body
+
+end Collect
+
 /-- Does every type annotation in a procedure body, including control-flow graph guards,
     satisfy `p`? -/
 def Procedure.allBodyTys (p : LMonoTy → Bool) (body : Procedure.Body) : Bool :=
-  match body with
-  | .structured ss => allStmtsTys p ss
-  | .cfg c => c.blocks.all fun (_, blk) =>
-      blk.cmds.all (allCmdTys p) &&
-      (match blk.transfer with
-       | .condGoto g _ _ _ => allExprTys p g
-       | .finish _ => true)
+  (bodyCollect exprAnnotTys ([·]) body).all p
 
 /-- Does every type annotation in a procedure's preconditions, postconditions, and body
     satisfy `p`? -/
 def Procedure.allTys (p : LMonoTy → Bool) (proc : Procedure) : Bool :=
-  proc.spec.preconditions.values.all (fun chk => allExprTys p chk.expr) &&
-  proc.spec.postconditions.values.all (fun chk => allExprTys p chk.expr) &&
-  Procedure.allBodyTys p proc.body
+  (procCollect exprAnnotTys ([·]) proc).all p
 
 ---------------------------------------------------------------------
 
@@ -390,6 +406,31 @@ def Procedure.callSites (p : Procedure) : List CallSite :=
   match p.body with
   | .structured ss => Statements.callSites ss
   | .cfg g => g.blocks.flatMap fun (_, blk) => blk.cmds.flatMap Command.callSites
+
+/-- The type arguments of `proc` at a call, matched one-way against the known types of the
+    call's inputs `inTys` and outputs `outTys`; `none` on a mismatch. -/
+def Procedure.matchCall? (proc : Procedure) (inTys outTys : List (Option LMonoTy)) :
+    Option SubstOne :=
+  LMonoTys.matchKnown? proc.header.typeArgs
+    (proc.header.inputs.values.zip inTys ++ proc.header.outputs.values.zip outTys)
+
+namespace Transform
+
+/-- A reference to the variable `ident`, annotated with `ty` when given. -/
+def createFvar (ident : Expression.Ident) (ty : Option Lambda.LMonoTy := none)
+  : Expression.Expr
+  := Lambda.LExpr.fvar (ExprSourceLoc.synthesized "transform") ident ty
+
+/-- The expressions a call passes for the callee inputs `inputs`, each `inout` variable annotated
+    with its input's type. -/
+def typedInputExprs (inputs : @Lambda.LMonoTySignature Unit)
+    (callArgs : List (Imperative.CallArg Expression)) : List Expression.Expr :=
+  ((Imperative.CallArg.inputArgs callArgs).zip inputs.values).filterMap fun
+    | (.inArg e, _) => some e
+    | (.inoutArg x, ty) => some (createFvar x (some ty))
+    | (.outArg _, _) => none
+
+end Transform
 
 /-! ## The variables of a procedure
 

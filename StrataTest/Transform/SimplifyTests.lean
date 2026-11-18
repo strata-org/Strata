@@ -10,6 +10,7 @@ meta import Strata.Languages.Core.DDMTransform.Translate
 public meta import Strata.Transform.Simplify
 meta import Strata.Transform.PrecondElim
 import StrataDDM.Integration.Lean.HashCommands
+meta import StrataTest.DL.Lambda.RenamingFixtures
 
 meta section
 
@@ -104,6 +105,29 @@ procedure p (x : int)
 }; -/
 #guard_msgs in
 #eval simplifyAndPrint expandWhenSmaller
+
+/-! ### Expansion does not depend on type variable names
+
+`wrapPair<b, a>(x : b, y : a) : bool` calls `opPair`. Expanding `wrapPair(u, v)` with
+`u : a` and `v : b` swaps the two type parameters, and the same call with the caller's `a` and
+`b` renamed to `d` and `c` gives the same call to `opPair` up to that renaming. -/
+
+private def expandRenamed (tyX tyY : Lambda.LMonoTy) : Std.Format :=
+  let m : Core.ExpressionMetadata := default
+  let opExpr : Core.Expression.Expr :=
+    .op m ⟨"wrapPair", ()⟩ (some (.arrow tyX (.arrow tyY .bool)))
+  match Strata.inlineCallBody (Lambda.RenamingFixtures.wrapPair m "wrapPair" "b" "a") opExpr
+      [.fvar m ⟨"u", ()⟩ (some tyX), .fvar m ⟨"v", ()⟩ (some tyY)] with
+  | some e => (Lambda.LExpr.instToFormatLExpr Core.CoreLParams.mono).format e
+  | none => "not expanded"
+
+/-- info: ((~opPair : (arrow a (arrow b bool))) (u : a) (v : b)) -/
+#guard_msgs in
+#eval expandRenamed (.ftvar "a") (.ftvar "b")
+
+/-- info: ((~opPair : (arrow d (arrow c bool))) (u : d) (v : c)) -/
+#guard_msgs in
+#eval expandRenamed (.ftvar "d") (.ftvar "c")
 
 /-! ### Growth of the nested case
 

@@ -130,22 +130,17 @@ private def getExprType (e : Expression.Expr) : Option Lambda.LMonoTy :=
     if ty1 == getExprType e2 then ty1 else none
   | .bvar _ _ => none
 
-/--
-Compute type substitution by unifying actual argument types with input types
-and LHS types with output types.
--/
-private def computeTypeSubst (input_tys output_tys: List Lambda.LMonoTy)
-  (args : List Expression.Expr) (lhs : List Expression.Ident) (E : Env) :
-  Lambda.Subst :=
-  let actual_tys := args.filterMap getExprType
-  let lhs_tys := lhs.filterMap (fun l =>
-    (E.exprEnv.state.findD l (none, .fvar evalLoc l none)).fst)
-  let input_constraints := actual_tys.zip input_tys
-  let output_constraints := lhs_tys.zip output_tys
-  let constraints := input_constraints ++ output_constraints
-  match Lambda.Constraints.unify constraints Lambda.SubstInfo.empty with
-  | .ok substInfo => substInfo.subst
-  | .error _ => Lambda.Subst.empty
+/-- The instance of `proc` at a call, matched one-way against the known types of `args` and `lhs`;
+    an unbound `i`-th type parameter is `callTyVarPrefix ++ toString i`, and so is every
+    parameter when the matching fails. On a type-checked program the matching cannot fail; the
+    fallback serves callers that pass a program that was not type-checked. -/
+private def computeTypeSubst (proc : Procedure) (args : List Expression.Expr)
+    (lhs : List Expression.Ident) (E : Env) : Lambda.Subst :=
+  let lhs_tys := lhs.map fun l => (E.exprEnv.state.findD l (none, .fvar evalLoc l none)).fst
+  -- TODO: prove that the transformations preserve typing; then this branch is provably
+  -- unreachable on pipeline input.
+  [Lambda.SubstOne.completeParams proc.header.typeArgs Lambda.callTyVarPrefix
+    ((proc.matchCall? (args.map getExprType) lhs_tys).getD Strata.Util.HMap.empty)]
 
 /--
 Evaluate a procedure call by inlining its contract.
@@ -157,8 +152,7 @@ def Command.inlineCallContract (E : Env)
     (md : Imperative.MetaData Expression) : Command × Env :=
   match Program.Procedure.find? E.program pname with
   | some proc =>
-    let tySubst := computeTypeSubst proc.header.inputs.values
-      proc.header.outputs.values args lhs E
+    let tySubst := computeTypeSubst proc args lhs E
 
     -- positional: formal_arg_subst zips header.inputs.keys with args
     let formal_arg_subst := mkFormalArgSubst proc args E

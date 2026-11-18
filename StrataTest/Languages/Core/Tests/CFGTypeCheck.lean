@@ -13,6 +13,7 @@ meta import StrataDDM.BuiltinDialects.Init
 import all Strata.DL.Imperative.CFGDominators
 import all Strata.Languages.Core.ProcedureType
 import StrataDDM.Integration.Lean.HashCommands
+meta import StrataTest.Languages.Core.Tests.TestUtil
 
 meta section
 
@@ -40,6 +41,8 @@ program.
   pre-loop `checkInitsIncomparable` guard (reachable blocks only),
 * a local declared twice within one block — rejected by the pre-loop
   `checkBlockInitsNodup` guard,
+* a branch guard resolved like a structured guard: an undeclared free variable is rejected, so
+  a quantifier binder cannot capture it,
 * a block-level declaration on a block that lies on a cycle, through a self-loop
   or through two blocks, including the hidden declaration of a nondeterministic
   `goto` — rejected by the pre-loop `checkNoLoopInits` guard (a loop-carried
@@ -53,8 +56,10 @@ program.
 * a CFG-local that shadows a formal — rejected by `checkInitsNotHeader`,
 * a local declared at different types in two blocks, in either block order or
   with one block unreachable — rejected by `checkInitTypesAgree`,
-* a polymorphic formal used at conflicting types in two reachable blocks —
-  rejected by unification in the per-block loop, and
+* a local of a written type variable used at conflicting types in two reachable
+  blocks — rejected by unification in the per-block loop,
+* a procedure type parameter that a CFG body would refine — rejected because
+  type parameters are rigid, and
 * an unreachable block reading a local declared in another unreachable block —
   rejected by the per-block check.
 
@@ -74,14 +79,14 @@ annotated program it returns:
 * locals are inherited across several dominator-tree levels, through a block
   that declares nothing and a merge whose immediate dominator is not one of its
   predecessors,
-* a polymorphic formal used at a conflicting type only in an unreachable block
+* a written type variable used at a conflicting type only in an unreachable block
   is accepted,
 * a local declared as an alias on one arm and as its underlying type on the
   other is accepted,
 * a loop with two back edges is accepted,
 * three declarers of one local, none reachable from another, are accepted, and
-* a branch condition whose type another block solves is accepted in either
-  block order.
+* a branch on a local of a written type variable that another block uses at
+  `bool` is accepted in either block order.
 
 ## Type annotations
 
@@ -139,7 +144,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: Duplicate block labels in CFG: [done]
+info: error: Procedure 'P': [P]: Duplicate block labels in CFG: [done]
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm dupLabelPgm).stripMetaData))
@@ -160,7 +165,7 @@ cfg start {
 #end
 
 /--
-info: error: [P]: Entry label "start" not found in CFG blocks. Available labels: [entry]
+info: error: Procedure 'P': [P]: Entry label "start" not found in CFG blocks. Available labels: [entry]
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm missingEntryPgm).stripMetaData))
@@ -181,7 +186,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: Block "entry" branches to unknown label "nowhere". Available labels: [entry]
+info: error: Procedure 'P': [P]: Block "entry" branches to unknown label "nowhere". Available labels: [entry]
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm badGotoPgm).stripMetaData))
@@ -202,7 +207,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: Block "entry" branches to unknown label "nowhere". Available labels: [entry]
+info: error: Procedure 'P': [P]: Block "entry" branches to unknown label "nowhere". Available labels: [entry]
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm badElsePgm).stripMetaData))
@@ -241,7 +246,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: a CFG-local is read or assigned on a path where its declaration does not dominate.
+info: error: Procedure 'P': [P]: a CFG-local is read or assigned on a path where its declaration does not dominate.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm nonDomUsePgm).stripMetaData))
@@ -282,7 +287,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: a CFG-local is read or assigned on a path where its declaration does not dominate.
+info: error: Procedure 'P': [P]: a CFG-local is read or assigned on a path where its declaration does not dominate.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm symDiamondPgm).stripMetaData))
@@ -309,7 +314,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: Branch condition in block "entry" is not of type bool, got int
+info: error: Procedure 'P': [P]: Branch condition in block "entry" is not of type bool, got int
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm nonBoolGuardPgm).stripMetaData))
@@ -345,7 +350,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: a CFG-local is declared in two dominance-comparable blocks.
+info: error: Procedure 'P': [P]: a CFG-local is declared in two dominance-comparable blocks.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm comparableDeclPgm).stripMetaData))
@@ -372,7 +377,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: a block declares the same local more than once.
+info: error: Procedure 'P': [P]: a block declares the same local more than once.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm dupInitInBlockPgm).stripMetaData))
@@ -721,7 +726,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: a CFG-local is declared in a block that lies on a cycle; a loop-carried declaration would be re-initialized on re-entry.
+info: error: Procedure 'P': [P]: a CFG-local is declared in a block that lies on a cycle; a loop-carried declaration would be re-initialized on re-entry.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm loopInitPgm).stripMetaData))
@@ -760,7 +765,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: a CFG-local is declared in two blocks where one is reachable from the other; a single path would re-initialize it.
+info: error: Procedure 'P': [P]: a CFG-local is declared in two blocks where one is reachable from the other; a single path would re-initialize it.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm reachComparableInitPgm).stripMetaData))
@@ -795,7 +800,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: a CFG-local is declared in a block that lies on a cycle; a loop-carried declaration would be re-initialized on re-entry.
+info: error: Procedure 'P': [P]: a CFG-local is declared in a block that lies on a cycle; a loop-carried declaration would be re-initialized on re-entry.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm loopInitTwoBlockPgm).stripMetaData))
@@ -831,7 +836,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: a CFG-local is declared in two blocks where one is reachable from the other; a single path would re-initialize it.
+info: error: Procedure 'P': [P]: a CFG-local is declared in two blocks where one is reachable from the other; a single path would re-initialize it.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm reachComparableFarPgm).stripMetaData))
@@ -884,7 +889,7 @@ cfg a0 {
 #end
 
 /--
-info: error: [P]: a CFG-local is read or assigned on a path where its declaration does not dominate.
+info: error: Procedure 'P': [P]: a CFG-local is read or assigned on a path where its declaration does not dominate.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm chainedDiamondPgm).stripMetaData))
@@ -986,7 +991,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: CFG-local `x` is declared at different types in different blocks.
+info: error: Procedure 'P': [P]: CFG-local `x` is declared at different types in different blocks.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm typeConflictBeforeUsePgm).stripMetaData))
@@ -1018,7 +1023,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: CFG-local `x` is declared at different types in different blocks.
+info: error: Procedure 'P': [P]: CFG-local `x` is declared at different types in different blocks.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm typeConflictAfterUsePgm).stripMetaData))
@@ -1054,7 +1059,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: CFG-local `x` is declared at different types in different blocks.
+info: error: Procedure 'P': [P]: CFG-local `x` is declared at different types in different blocks.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm typeConflictDeadPgm).stripMetaData))
@@ -1142,20 +1147,30 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: a CFG-local shadows a procedure formal, output, or `old` binding.
+info: error: Procedure 'P': [P]: a CFG-local shadows a procedure formal, output, or `old` binding.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm shadowFormalPgm).stripMetaData))
 
-/-! ## A polymorphic formal used at conflicting types across blocks is rejected.
+/-- The variable `x`, unannotated. -/
+private def xVar : Core.Expression.Expr := Lambda.LExpr.fvar Core.coreLoc "x" none
 
-`P<a>` takes `x : a`; `entry` assigns `x` to the `int` output `y`, and `n`
-assigns `x` to the `bool` output `b`. Each use constrains the type parameter
-`a`, and because the type substitution is threaded from one block to the next,
-the two uses unify `a` to both `int` and `bool` and the procedure is rejected —
-exactly as the structured path rejects the same body. The conflict spans two
-blocks, so catching it exercises the cross-block substitution threading rather
-than a single block's local unification. -/
+/-- A procedure `P` with no type parameters, the inputs `inputs`, the outputs `outputs`, and the
+    CFG body `blocks` entered at `entry`. -/
+private def cfgProgram (outputs : @Lambda.LMonoTySignature Unit)
+    (blocks : List (String × Imperative.DetBlock String Core.Command Core.Expression))
+    (inputs : @Lambda.LMonoTySignature Unit := []) :
+    Core.Program :=
+  { decls := [.proc
+      { header := { name := "P", typeArgs := [], inputs, outputs },
+        spec := { preconditions := [], postconditions := [] },
+        body := .cfg { entry := "entry", blocks } } .empty] }
+
+/-! ## Conflicting uses of one type variable across blocks are rejected.
+
+`P<a>` takes `x : a` and assigns `x` to the `int` output `y`. The type
+parameter `a` is rigid in the body, so the first use already rejects the
+procedure. -/
 
 private def polyConflictPgm :=
 #strata
@@ -1175,30 +1190,44 @@ cfg entry {
 #end
 
 /-- The format carries a volatile `(lo-hi)` byte-range prefix; drop it and pin
-the concrete message so the test fails if the body is rejected for a different
-reason than the cross-block type conflict. Only the leading `(lo-hi) ` segment
-is dropped: every later `) `-separated segment is rejoined, so a message that
-itself contains `) ` is preserved in full. -/
+the message, so a rejection for any other reason fails the test. Only the leading
+`(lo-hi) ` segment is dropped: every later `) `-separated segment is rejoined, so a
+message that itself contains `) ` is preserved in full. -/
 private def errorTail (s : String) : String :=
   match s.splitOn ") " with
   | _ :: rest@(_ :: _) => ") ".intercalate rest
   | _ => s
 
 /--
-info: "Impossible to unify bool with int."
+info: "Procedure 'P': Rigid type variable 'a' was refined to 'int'"
 -/
 #guard_msgs in
 #eval errorTail
   (Std.format (Core.typeCheck .default (translatePgm polyConflictPgm).stripMetaData)).pretty
 
-/-! ## A conflicting use inside an *unreachable* block does not poison unification.
+/-- `entry` declares `x` at the written type variable `b` and assigns it to the `int` output
+    `y`; the reachable block `n` assigns it to the `bool` output `z`. The type substitution is
+    threaded from one block to the next, so the two uses solve `b` to both `int` and `bool` and
+    the body is rejected. -/
+private def polyConflictAst : Core.Program :=
+  cfgProgram [("y", .int), ("z", .bool)]
+    [("entry", { cmds := [.cmd (.init "x" (.forAll [] (.ftvar "b")) .nondet .empty),
+                          .cmd (.set "y" (.det xVar) .empty)],
+                 transfer := .goto "n" }),
+     ("n", { cmds := [.cmd (.set "z" (.det xVar) .empty)], transfer := .finish .empty })]
 
-Same polymorphic formal `P<a>` as `polyConflictPgm`, but the `bool` use lives in
-`dead`, a block with no incoming edge (`entry` just returns). Because `dead` is
-unreachable, its unification of `a` to `bool` must be isolated: it is checked
-locally but not folded back into the carried substitution, so it neither
-conflicts with the reachable `int` use nor leaks `bool` into the reachable
-blocks' annotated output. The procedure is therefore accepted. -/
+/--
+info: "error: Procedure 'P': Impossible to unify bool with int."
+-/
+#guard_msgs in
+#eval errorTail (Std.format (Core.typeCheck .default polyConflictAst)).pretty
+
+/-! ## Unification across blocks, with and without an unreachable block
+
+With the formal `x : a` of `P<a>`, the reachable `int` use in `entry` refines the
+rigid `a` and is rejected whatever the unreachable block does. An unreachable block
+cannot read another block's locals, so below each block declares its own local at the
+same written type variable; an unreachable block does not poison unification. -/
 
 private def deadPolyConflictPgm :=
 #strata
@@ -1218,32 +1247,67 @@ cfg entry {
 #end
 
 /--
+info: "Procedure 'P': Rigid type variable 'a' was refined to 'int'"
+-/
+#guard_msgs in
+#eval errorTail
+  (Std.format (Core.typeCheck .default (translatePgm deadPolyConflictPgm).stripMetaData)).pretty
+
+/-- `entry` declares `x` at the written type variable `b` and assigns it to the `int` output
+    `y`, then goes to `next`; `dead` declares `w` at `b` and assigns it to the `bool` output
+    `z`. `dead` is unreachable when `next` is `exit` and reachable when it is `dead`. Unreachable,
+    its solution of `b` stays out of the carried substitution, so the body is accepted with
+    `w : bool`; reachable, the two solutions conflict. -/
+private def sharedVarAst (next : String) : Core.Program :=
+  cfgProgram [("y", .int), ("z", .bool)]
+    [("entry", { cmds := [.cmd (.init "x" (.forAll [] (.ftvar "b")) .nondet .empty),
+                          .cmd (.set "y" (.det xVar) .empty)],
+                 transfer := .goto next }),
+     ("dead", { cmds := [.cmd (.init "w" (.forAll [] (.ftvar "b")) .nondet .empty),
+                         .cmd (.set "z" (.det (.fvar Core.coreLoc "w" none)) .empty)],
+                transfer := .finish .empty }),
+     ("exit", { cmds := [], transfer := .finish .empty })]
+
+/--
 info: [Strata.Core] Type checking succeeded.
 
 ---
 info: ok: program Core;
 
-procedure P (x : $__ty0, out y : int, out b : bool)
+procedure P (out y : int, out z : bool)
 cfg entry {
   entry: {
+    var x : int;
     y := x;
-    return;
+    goto exit;
   }
   dead: {
-    b := x;
+    var w : bool;
+    z := w;
+    return;
+  }
+  exit: {
     return;
   }
 };
 -/
 #guard_msgs in
-#eval (Std.format (Core.typeCheck .default (translatePgm deadPolyConflictPgm).stripMetaData))
+#eval Std.format (Core.typeCheck .default (sharedVarAst "exit"))
 
-/-! ## A branch condition whose type a later block solves.
+/--
+info: "error: Procedure 'P': Impossible to unify bool with int."
+-/
+#guard_msgs in
+#eval errorTail (Std.format (Core.typeCheck .default (sharedVarAst "dead"))).pretty
 
-`c : a` is a polymorphic formal. `entry` branches on `c`, which requires `a` to
-be `bool`; `t` uses `c` at `bool` too. The condition's type is unified with
-`bool`, so the body is accepted whether `t` is listed after `entry` or before
-it. -/
+/-! ## A branch condition whose type is not yet known.
+
+With `c : a` a formal of `P<a>`, the rigid `a` is rejected in either block order: with
+`entry` listed first, its guard check finds that `c` is not of type `bool`; with `t`
+listed first, its use of `c` at `bool` would refine `a`. With `c` a local of a written
+type variable `b` instead, the body is accepted in both orders: with `entry` listed
+first, its guard check unifies `b` with `bool`; with `t` listed first, its use solves `b`
+to `bool` before the guard is checked. -/
 
 private def guardSolvedLaterPgm :=
 #strata
@@ -1263,22 +1327,7 @@ cfg entry {
 #end
 
 /--
-info: [Strata.Core] Type checking succeeded.
-
----
-info: ok: program Core;
-
-procedure P (c : $__ty0, out y : int)
-cfg entry {
-  entry: {
-    branch (c) goto t else goto t;
-  }
-  t: {
-    assume [assume_0]: c == true;
-    y := 0;
-    return;
-  }
-};
+info: error: Procedure 'P': [P]: Branch condition in block "entry" is not of type bool, got a
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm guardSolvedLaterPgm).stripMetaData))
@@ -1301,25 +1350,73 @@ cfg entry {
 #end
 
 /--
+info: "Procedure 'P': Rigid type variable 'a' was refined to 'bool'"
+-/
+#guard_msgs in
+#eval errorTail
+  (Std.format (Core.typeCheck .default (translatePgm guardSolvedEarlierPgm).stripMetaData)).pretty
+
+/-- The local `c`, unannotated. -/
+private def cVar : Core.Expression.Expr := Lambda.LExpr.fvar Core.coreLoc "c" none
+
+/-- `entry` declares `c` at the written type variable `b` and branches on it; the guard check
+    unifies `b` with `bool`. -/
+private def guardEntryBlock : String × Imperative.DetBlock String Core.Command Core.Expression :=
+  ("entry", { cmds := [.cmd (.init "c" (.forAll [] (.ftvar "b")) .nondet .empty)],
+              transfer := .condGoto cVar "t" "t" .empty })
+
+/-- The block `t`: assume `c == true`, then set `y`. -/
+private def guardUseBlock : String × Imperative.DetBlock String Core.Command Core.Expression :=
+  ("t", { cmds := [.cmd (.assume "c_true" (.eq Core.coreLoc cVar (.boolConst Core.coreLoc true))
+                         .empty),
+                   .cmd (.set "y" (.det (.intConst Core.coreLoc 0)) .empty)],
+          transfer := .finish .empty })
+
+/--
 info: [Strata.Core] Type checking succeeded.
 
 ---
 info: ok: program Core;
 
-procedure P (c : $__ty0, out y : int)
+procedure P (out y : int)
+cfg entry {
+  entry: {
+    var c : bool;
+    branch (c) goto t else goto t;
+  }
+  t: {
+    assume [c_true]: c == true;
+    y := 0;
+    return;
+  }
+};
+-/
+#guard_msgs in
+#eval Std.format
+  (Core.typeCheck .default (cfgProgram [("y", .int)] [guardEntryBlock, guardUseBlock]))
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+procedure P (out y : int)
 cfg entry {
   t: {
-    assume [assume_0]: c == true;
+    assume [c_true]: c == true;
     y := 0;
     return;
   }
   entry: {
+    var c : bool;
     branch (c) goto t else goto t;
   }
 };
 -/
 #guard_msgs in
-#eval (Std.format (Core.typeCheck .default (translatePgm guardSolvedEarlierPgm).stripMetaData))
+#eval Std.format
+  (Core.typeCheck .default (cfgProgram [("y", .int)] [guardUseBlock, guardEntryBlock]))
 
 /-! ## A nondeterministic `goto` on a cycle is rejected.
 
@@ -1347,7 +1444,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: a CFG-local is declared in a block that lies on a cycle; a loop-carried declaration would be re-initialized on re-entry.
+info: error: Procedure 'P': [P]: a CFG-local is declared in a block that lies on a cycle; a loop-carried declaration would be re-initialized on re-entry.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm nondetLoopPgm).stripMetaData))
@@ -1381,7 +1478,7 @@ cfg entry {
 #end
 
 /--
-info: "[y := (x : int)] No free variables are allowed here!\nFree Variables: [x]"
+info: "Procedure 'P': [y := (x : int)] No free variables are allowed here!\nFree Variables: [x]"
 -/
 #guard_msgs in
 #eval errorTail
@@ -1440,9 +1537,9 @@ private def annotatedTypes (p : Core.Program) :
 
 /-! ### A type variable solved by a later block resolves an earlier block.
 
-`entry` only compares `x : a` with itself, which leaves its type variable
-unsolved; `n` then solves it to `int`. The final substitution is applied to every
-block, so `entry`'s annotations read `int` too. -/
+With `x : a` a formal of `P<a>`, `n`'s `int` use refines the rigid `a`, so the
+body is rejected. With `x` a local of a written type variable, the later block's
+solution resolves the earlier block's annotations. -/
 
 private def laterSolvesEarlierPgm :=
 #strata
@@ -1462,13 +1559,29 @@ cfg entry {
 #end
 
 /--
+info: Except.error "Procedure 'P': Rigid type variable 'a' was refined to 'int'"
+-/
+#guard_msgs in
+#eval annotatedTypes (translatePgm laterSolvesEarlierPgm)
+
+/-- `entry` declares `x` at the written type variable `b` and only compares `x` with itself,
+    which leaves `b` unsolved; `n` assigns `x` to the `int` output `y`, solving `b` to `int`.
+    The final substitution is applied to every block, so `entry`'s annotations read `int`. -/
+private def laterSolvesEarlierAst : Core.Program :=
+  cfgProgram [("y", .int)]
+    [("entry", { cmds := [.cmd (.init "x" (.forAll [] (.ftvar "b")) .nondet .empty),
+                          .cmd (.assert "x_eq" (.eq Core.coreLoc xVar xVar) .empty)],
+                 transfer := .goto "n" }),
+     ("n", { cmds := [.cmd (.set "y" (.det xVar) .empty)], transfer := .finish .empty })]
+
+/--
 info: [Strata.Core] Type checking succeeded.
 
 ---
 info: Except.ok [("entry", [("x", "some int"), ("x", "some int")]), ("n", [("x", "some int")])]
 -/
 #guard_msgs in
-#eval annotatedTypes (translatePgm laterSolvesEarlierPgm)
+#eval annotatedTypes laterSolvesEarlierAst
 
 /-! ### An unreachable block does not share fresh type variables.
 
@@ -1510,6 +1623,96 @@ info: Except.ok [("entry", []),
 -/
 #guard_msgs in
 #eval annotatedTypes (translatePgm deadThenLivePolyPgm)
+
+/-! ## Calls inside a CFG body.
+
+A `.call` in a block is checked against the callee's signature, as in a
+structured body. -/
+
+/-- `program` with the procedure `name` declared first: type parameters
+    `typeArgs`, inputs `inputs`, outputs `outputs`, and an empty body. -/
+private def withCallee (name : String) (typeArgs : List String)
+    (inputs outputs : @Lambda.LMonoTySignature Unit) (program : Core.Program) :
+    Core.Program :=
+  { decls := Core.TestUtil.mkProc name typeArgs inputs outputs :: program.decls }
+
+/-- `P` with the output `y : int` and the single block `entry`, which runs
+    `call` and returns. -/
+private def callBody (call : Core.Command) : Core.Program :=
+  cfgProgram [("y", .int)]
+    [("entry", { cmds := [call], transfer := .finish .empty })]
+
+/-- `procedure Q (x : int, out r : int)`, called from `P` by `call`. -/
+private def callQ (call : Core.Command) : Core.Program :=
+  withCallee "Q" [] [("x", .int)] [("r", .int)] (callBody call)
+
+-- A call with an input argument missing is rejected.
+/--
+info: "error: Procedure 'P': [call Q(out y);]: Ill-formed call: the call to Q passes 0 input
+arguments, but Q has 1 input parameter (x)"
+-/
+#guard_msgs (whitespace := lax) in
+#eval (Std.format (Core.typeCheck .default
+  (callQ (.call "Q" [.outArg "y"] .empty)))).pretty
+
+-- A call to a procedure the program does not declare is rejected.
+/--
+info: "error: Procedure 'P': [call R(1, out y);]: Ill-formed call: no procedure named R is
+declared"
+-/
+#guard_msgs (whitespace := lax) in
+#eval (Std.format (Core.typeCheck .default
+  (callBody
+    (.call "R" [.inArg (.intConst Core.coreLoc 1), .outArg "y"] .empty)))).pretty
+
+-- A call that passes `y` for both outputs of `Q2` is rejected.
+/--
+info: "error: Procedure 'P': [call Q2(out y, out y);]: Ill-formed call: the call to Q2 passes
+the variable y for more than one out parameter; the results of a call must be
+distinct variables"
+-/
+#guard_msgs (whitespace := lax) in
+#eval (Std.format (Core.typeCheck .default
+  (withCallee "Q2" [] [] [("r", .int), ("s", .int)]
+    (callBody (.call "Q2" [.outArg "y", .outArg "y"] .empty))))).pretty
+
+/-- `procedure Id<t> (x : t, out r : t)`, called from `P` by `call`. -/
+private def callId (call : Core.Command) : Core.Program :=
+  withCallee "Id" ["t"] [("x", .ftvar "t")] [("r", .ftvar "t")] (callBody call)
+
+-- A call to `Id` at `int` is accepted.
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: ok: program Core;
+
+procedure Id<t> (x : t, out r : t)
+{
+  
+};
+procedure P (out y : int)
+cfg entry {
+  entry: {
+    call Id(1, out y);
+    return;
+  }
+};
+-/
+#guard_msgs in
+#eval Std.format (Core.typeCheck .default
+  (callId
+    (.call "Id" [.inArg (.intConst Core.coreLoc 1), .outArg "y"] .empty)))
+
+-- A call to `Id` with a `bool` input and an `int` output is rejected.
+/--
+info: "error: Procedure 'P': [call Id]: argument types [bool] and return types [int] are
+incompatible with signature ([t]) → ([t])"
+-/
+#guard_msgs (whitespace := lax) in
+#eval (Std.format (Core.typeCheck .default
+  (callId
+    (.call "Id" [.inArg (.boolConst Core.coreLoc true), .outArg "y"] .empty)))).pretty
 
 /-! ## A branch condition reads the right variables after the block's own declarations.
 
@@ -1637,7 +1840,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: a CFG-local is declared in two blocks where one is reachable from the other; a single path would re-initialize it.
+info: error: Procedure 'P': [P]: a CFG-local is declared in two blocks where one is reachable from the other; a single path would re-initialize it.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm threeDeclReachPgm).stripMetaData))
@@ -1755,7 +1958,7 @@ cfg entry {
 #end
 
 /--
-info: error: [P]: a CFG-local is declared in two blocks where one is reachable from the other; a single path would re-initialize it.
+info: error: Procedure 'P': [P]: a CFG-local is declared in two blocks where one is reachable from the other; a single path would re-initialize it.
 -/
 #guard_msgs in
 #eval (Std.format (Core.typeCheck .default (translatePgm fourDeclMergePgm).stripMetaData))
@@ -1820,8 +2023,7 @@ private def allCFGBodies (p : Core.Program) :
       | .structured _ => []
     | _ => []
 
-/-- Every test program above, translated; both differential checks run on all
-of them. -/
+/-- Every test program above; both differential checks run on all of them. -/
 private def allPgms : List Core.Program :=
   [ translatePgm dupLabelPgm, translatePgm missingEntryPgm, translatePgm badGotoPgm,
     translatePgm badElsePgm,
@@ -1843,10 +2045,13 @@ private def allPgms : List Core.Program :=
     translatePgm fourDeclMergePgm,
     translatePgm guardSolvedLaterPgm, translatePgm guardSolvedEarlierPgm,
     translatePgm nondetLoopPgm, translatePgm deadReadsDeadPgm,
-    translatePgm guardAfterLocalPgm, translatePgm guardOnOwnLocalPgm ]
+    translatePgm guardAfterLocalPgm, translatePgm guardOnOwnLocalPgm,
+    polyConflictAst, sharedVarAst "exit", sharedVarAst "dead",
+    cfgProgram [("y", .int)] [guardEntryBlock, guardUseBlock],
+    cfgProgram [("y", .int)] [guardUseBlock, guardEntryBlock], laterSolvesEarlierAst ]
 
 /-- `computeDominators` and the set-dataflow reference agree on every CFG body
-of the already-translated program `p`. -/
+of the program `p`. -/
 private def domsAgreeOnPgm (p : Core.Program) : Bool :=
   (allCFGBodies p).all fun cfg =>
     domMapsAgree cfg cfg.computeDominators (computeDominatorsFullFuel cfg)
@@ -2002,6 +2207,8 @@ spec {
 };
 
 symbolic evaluation: toCoreProofObligationProgram: procedure 'Max' has a CFG body; symbolic evaluation supports only structured bodies.
+[Strata.Core] Type checking succeeded.
+
 verify: ❌ Expected every procedure body to be structured, but found procedure Max with a CFG body.
 -/
 #guard_msgs in
@@ -2033,10 +2240,93 @@ spec {
 };
 
 symbolic evaluation: toCoreProofObligationProgram: procedure 'NondetChoice' has a CFG body; symbolic evaluation supports only structured bodies.
+[Strata.Core] Type checking succeeded.
+
 verify: ❌ Expected every procedure body to be structured, but found procedure NondetChoice with a CFG body.
 -/
 #guard_msgs in
 #eval runExample "CFGNondet.core.st"
+
+/-! ## A branch guard may not capture an undeclared free variable.
+
+A branch guard is resolved as a structured guard is. In
+`∀ z. ($__var0 == $__var0)`, the free variable `$__var0` is undeclared, and
+the binder `z` can be renamed to that same generated name. Resolution rejects
+the guard, as it rejects any undeclared variable. A guard over a declared
+variable is accepted. -/
+
+/-- A procedure `P` with the single `bool` input `x` and the CFG body `blocks`. -/
+private def guardBlocksProgram
+    (blocks : List (String × Imperative.DetBlock String Core.Command Core.Expression)) :
+    Core.Program :=
+  cfgProgram [] blocks (inputs := [("x", .tcons "bool" [])])
+
+/-- A CFG whose entry block branches on `guard`. -/
+private def guardProgram (guard : Core.Expression.Expr) : Core.Program :=
+  guardBlocksProgram
+    [("entry", { cmds := [], transfer := .condGoto guard "a" "a" .empty }),
+     ("a", { cmds := [], transfer := .finish .empty })]
+
+/-- `∀ z. (v == v)` for the free variable `v`. -/
+private def forallEqGuard (v : String) : Core.Expression.Expr :=
+  let fv : Core.Expression.Expr := .fvar Core.coreLoc ⟨v, ()⟩ none
+  .quant Core.coreLoc .all "z" none (.bvar Core.coreLoc 0) (.eq Core.coreLoc fv fv)
+
+/--
+info: error: Procedure 'P': [P] No free variables are allowed here!
+Free Variables: [$__var0, $__var0]
+-/
+#guard_msgs in
+#eval Std.format
+  (Core.typeCheck .default (guardProgram (forallEqGuard "$__var0")))
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: "ok"
+-/
+#guard_msgs in
+#eval (match Core.typeCheck .default (guardProgram (forallEqGuard "x")) with
+  | .ok _ => "ok"
+  | .error e => s!"{Std.format e}")
+
+/-- A binder named `x` that shadows the declared input `x` in `∀ x. (x == x)`. -/
+private def shadowGuard : Core.Expression.Expr :=
+  .quant Core.coreLoc .all "x" none (.bvar Core.coreLoc 0)
+      (.eq Core.coreLoc (.bvar Core.coreLoc 0) (.bvar Core.coreLoc 0))
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: "ok"
+-/
+#guard_msgs in
+#eval (match Core.typeCheck .default (guardProgram shadowGuard) with
+  | .ok _ => "ok"
+  | .error e => s!"{Std.format e}")
+
+/-- The block `b` declares `y` and then branches on `y == y`. -/
+private def initGuardProgram : Core.Program :=
+  guardBlocksProgram
+    [("entry", { cmds := [], transfer := .goto "b" }),
+     ("b", { cmds := [.cmd (.init "y" (.forAll [] (.tcons "bool" [])) (.det xVar) .empty)],
+             transfer := .condGoto (.eq Core.coreLoc (.fvar Core.coreLoc "y" none)
+                                    (.fvar Core.coreLoc "y" none)) "a" "a"
+               .empty }),
+     ("a", { cmds := [], transfer := .finish .empty })]
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+---
+info: "ok"
+-/
+#guard_msgs in
+#eval (match Core.typeCheck .default initGuardProgram with
+  | .ok _ => "ok"
+  | .error e => s!"{Std.format e}")
 
 end Strata.CFGTypeCheck
 

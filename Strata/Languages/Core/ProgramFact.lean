@@ -49,7 +49,8 @@ public section
 inductive ProgramFact where
   /-- Every call is well-formed (`Program.callsWellFormed`): it names a declared
       procedure, its arguments match the procedure's signature in number and mode,
-      and its result variables are distinct. Established by `assertWellFormedCalls`. -/
+      and its result variables are distinct. Established by `typeCheck` and by
+      `assertWellFormedCalls`. -/
   | wellFormedCalls
   /-- Every procedure body is `.structured _` (not `.cfg _`).
       Required by the phases that handle only structured bodies. -/

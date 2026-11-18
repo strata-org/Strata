@@ -6,7 +6,7 @@
 module
 
 public import Strata.Transform.FoldAxiomsCorrect
-public import Strata.Transform.CoreSpecification
+public import Strata.Languages.Core.Analysis.ProcedureCorrectness
 public import Strata.Languages.Core.ProgramProps
 
 /-! # The axiom premises from a procedure's entry environment

@@ -47,8 +47,8 @@ private def withoutSymbolicEval (axioms : Bool)
   let entry ← [.noCFGBodies, .noCalls, .noLoops, .staticSingleAssignment, .noNondetGuards].mapM
     (fun f => Core.assertPhaseFor (Core.assertPhaseName f))
   (Core.validatePipeline
-    (entry ++ [Core.passTermCheck, Core.passPrecondElim, Core.passGenOpaqueTypeParams,
-      Core.passTypeCheck .quiet, Core.passMonomorphizeFunctions, Core.passSimplify] ++
+    (entry ++ [Core.passTypeCheck .quiet, Core.passTermCheck, Core.passPrecondElim,
+      Core.passGenOpaqueTypeParams, Core.passMonomorphizeFunctions, Core.passSimplify] ++
      (if axioms then [Core.passRecursiveAxioms axiomOptions] else []) ++
      [ho, pc, Core.passFunctionInlining, Core.passBetaReduce])).toOption
 
@@ -58,11 +58,11 @@ private def phaseNames (axioms : Bool) : String :=
   | some vp => ", ".intercalate (vp.phases.map (·.phase.name))
   | none => "does not compose"
 
-/-- info: "assertNoCFGBodies, assertNoCalls, assertNoLoops, assertStaticSingleAssignment, assertNoNondetGuards, termCheck, precondElim, genOpaqueTypeParams, typeCheck, monomorphizeFunctions, simplify, recursiveAxioms, assertHasObligationForm, assertNoProcedureContracts, functionInlining, betaReduce" -/
+/-- info: "assertNoCFGBodies, assertNoCalls, assertNoLoops, assertStaticSingleAssignment, assertNoNondetGuards, typeCheck, termCheck, precondElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, recursiveAxioms, assertHasObligationForm, assertNoProcedureContracts, functionInlining, betaReduce" -/
 #guard_msgs in
 #eval phaseNames true
 
-/-- info: "assertNoCFGBodies, assertNoCalls, assertNoLoops, assertStaticSingleAssignment, assertNoNondetGuards, termCheck, precondElim, genOpaqueTypeParams, typeCheck, monomorphizeFunctions, simplify, assertHasObligationForm, assertNoProcedureContracts, functionInlining, betaReduce" -/
+/-- info: "assertNoCFGBodies, assertNoCalls, assertNoLoops, assertStaticSingleAssignment, assertNoNondetGuards, typeCheck, termCheck, precondElim, genOpaqueTypeParams, monomorphizeFunctions, simplify, assertHasObligationForm, assertNoProcedureContracts, functionInlining, betaReduce" -/
 #guard_msgs in
 #eval phaseNames false
 

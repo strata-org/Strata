@@ -112,9 +112,8 @@ Type-check a Core program. Returns the annotated program on success, or a
 -/
 def Core.typeCheck (options : Core.VerifyOptions) (program : Core.Program)
     (moreFns : Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
-    Except Message Core.Program := do
-  let factory ← Core.Factory.addFactory moreFns
-  _root_.Core.typeCheck options program factory
+    Except Message Core.Program :=
+  _root_.Core.typeCheck options program (moreFns := moreFns)
 
 /--
 Type-check a Core program, then run symbolic evaluation. Returns the list of
@@ -341,13 +340,12 @@ may assume about the program they are handed. `coreAbstractedPhases` exposes
 only the abstracted (model-validation) view used downstream.
 -/
 
-/-- The program-to-program transform phases applied before type checking.
-    Shape assertions, inlining/loop-elim/call-elim/filtering, in the order
-    required by the verification pipeline. See the underlying definition for
-    ordering rationale. -/
+/-- The program-to-program transform phases that start the verification pipeline, from type
+    checking through loop elimination. See the underlying definition for ordering rationale. -/
 def Core.transformPipelinePhases (options : Core.VerifyOptions := Core.VerifyOptions.default)
+    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     : List Core.PipelinePhase :=
-  _root_.Core.transformPipelinePhases options
+  _root_.Core.transformPipelinePhases options moreFns
 
 /-- The full pipeline phases for program-to-program transforms, including
     type checking, symbolic evaluation, and common subexpression elim. -/

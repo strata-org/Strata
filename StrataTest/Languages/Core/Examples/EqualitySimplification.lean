@@ -283,8 +283,8 @@ discharge calls: 4
 
 The fact pins `g(t)`, but the goal mentions `g(Option..val(Some(t)))`, which is
 `g(t)` only after the selector reduces. The phase folds the goal before
-substituting, so it still decides it. Placed right after type checking, before
-`simplify` would fold the selector itself. -/
+substituting, so it still decides it. Placed before `simplify`, which would fold
+the selector itself. -/
 
 private def foldFirstPgm :=
 #strata
@@ -304,7 +304,7 @@ foldFirst: pass
 discharge calls: 0
 -/
 #guard_msgs in
-#eval countedDischarge foldFirstPgm (after := "typeCheck")
+#eval countedDischarge foldFirstPgm (after := "genOpaqueTypeParams")
 
 /-! ## An axiom whose value appears once it is folded
 
@@ -517,7 +517,7 @@ discharge calls: 0
 
 An equality is oriented by reading up to `defDepth` definitions: `d15` is read back
 to `Some(3)`, but `d16` is one definition too deep, so `beyondDepth` reaches the
-solver. Placed right after type checking, before `simplify` would shorten the chain.
+solver. Placed before `simplify`, which would shorten the chain.
 Without the phase both goals reach the solver. -/
 
 private def depthPgm :=
@@ -560,32 +560,39 @@ discharge calls: 2
 -/
 #guard_msgs in
 #eval do
-  countedDischarge depthPgm (after := "typeCheck")
-  countedDischarge depthPgm (after := "typeCheck") (phase := false)
+  countedDischarge depthPgm (after := "genOpaqueTypeParams")
+  countedDischarge depthPgm (after := "genOpaqueTypeParams") (phase := false)
 
 /-! ## A parameter named like an axiom's variable
 
-The axiom constrains the constant `g`; the parameter `g` of `P` is another
-name, so the phase must not rewrite it with the axiom's value: the goal
-reaches the solver. -/
+The axiom constrains the constant `g`, and `P` declares a parameter also named `g`. The
+phase runs directly on the program and leaves `P`'s assertion about the parameter as it is. -/
 
-private def shadowPgm :=
-#strata
-program Core;
-const g : int;
-axiom [gOne]: g == 1;
-procedure P(g : int)
-{
-  assert [paramNotGlobal]: g == 1;
-};
-#end
+private def gInt : Core.Expression.Expr := .fvar Core.coreLoc "g" (some .int)
+
+private def shadowProg : Core.Program := { decls := [
+  .func { name := "g", typeArgs := [], inputs := [], output := .int } .empty,
+  .ax { name := "gOne", e := .eq Core.coreLoc gInt (.intConst Core.coreLoc 1) } .empty,
+  .proc { header := { name := "P", typeArgs := [], inputs := [("g", .int)], outputs := [] },
+          spec := { preconditions := [], postconditions := [] },
+          body := .structured
+            [Core.Statement.assert "paramNotGlobal"
+              (.eq Core.coreLoc gInt (.intConst Core.coreLoc 1)) .empty] }
+    .empty] }
 
 /--
-info: paramNotGlobal: pass
-discharge calls: 1
+info: {
+  assert [paramNotGlobal]: g == 1;
+}
 -/
 #guard_msgs in
-#eval countedDischarge shadowPgm
+#eval
+  match Core.Transform.run shadowProg Core.EqualitySimplification.runEqualitySimplification
+      { Core.Transform.CoreTransformState.emp with factory := Core.Factory } with
+  | .error e => IO.println s!"failed: {e}"
+  | .ok (_, q) =>
+    for d in q.decls do
+      if let .proc { body := .structured ss, .. } _ := d then IO.println (Std.format ss)
 
 /-! ## An axiom declared after the procedure
 
@@ -779,11 +786,11 @@ private def agreesWithSolver (checkMode : Core.VerificationMode) (p : StrataDDM.
     `checkMode`. -/
 private def allAgreeWithSolver (checkMode : Core.VerificationMode) : IO Unit := do
   for p in [literalPgm, constructorPgm, applicationPgm, booleanPgm, coverPgm, residualPgm,
-      unusedPgm, foldAxiomsPgm, axiomPgm, conjunctionPgm, definitionPgm, shadowPgm,
+      unusedPgm, foldAxiomsPgm, axiomPgm, conjunctionPgm, definitionPgm,
       axiomAfterPgm, contradictionPgm, opaqueEqPgm] do
     agreesWithSolver checkMode p
-  agreesWithSolver checkMode foldFirstPgm (after := "typeCheck")
-  agreesWithSolver checkMode depthPgm (after := "typeCheck")
+  agreesWithSolver checkMode foldFirstPgm (after := "genOpaqueTypeParams")
+  agreesWithSolver checkMode depthPgm (after := "genOpaqueTypeParams")
 
 /-- Every program in `ps`, verified by `agreesWithSolver` in both modes. -/
 private def agreeInBothModes (ps : List StrataDDM.Program) : IO Unit := do
@@ -817,7 +824,6 @@ expanded: pass
 oriented: pass
 defDropped: fail
 boolDef: pass
-paramNotGlobal: fail
 cIsOne: fail
 vacuous: pass
 vacuousBySubstitution: pass
@@ -864,7 +870,6 @@ expanded: pass
 oriented: pass
 defDropped: fail
 boolDef: pass
-paramNotGlobal: fail
 cIsOne: fail
 vacuous: pass
 vacuousBySubstitution: pass
@@ -3000,7 +3005,6 @@ private def fixtures : List (String × StrataDDM.Program) :=
    ("definitionPgm", (definitionPgm : StrataDDM.Program)),
    ("opaqueEqPgm", (opaqueEqPgm : StrataDDM.Program)),
    ("depthPgm", (depthPgm : StrataDDM.Program)),
-   ("shadowPgm", (shadowPgm : StrataDDM.Program)),
    ("axiomAfterPgm", (axiomAfterPgm : StrataDDM.Program)),
    ("contradictionPgm", (contradictionPgm : StrataDDM.Program)),
    ("unseenContradictionPgm", (unseenContradictionPgm : StrataDDM.Program)),
@@ -3038,9 +3042,7 @@ private def fixtures : List (String × StrataDDM.Program) :=
    ("hintFlowPgm", (hintFlowPgm : StrataDDM.Program)),
    ("hintLimitPgm", (hintLimitPgm : StrataDDM.Program))]
 
-/--
-info: before: 224 of 224 typed at bool; after: 224 of 224
--/
+/-- info: before: 222 of 222 typed at bool; after: 222 of 222 -/
 #guard_msgs in
 #eval show IO Unit from do
   let ps := fixtures
@@ -3109,9 +3111,9 @@ private def showCounts (label : String) (c : Nat × Nat × Nat × Nat) : String 
   s!"{label}: {c.2.1} of {c.1} consistent, {c.2.2.2} of {c.2.2.1} operators known"
 
 /--
-info: program: 260 of 260 consistent, 518 of 518 operators known
-after axiom folding: 260 of 260 consistent, 516 of 516 operators known
-after the phase: 260 of 260 consistent, 251 of 251 operators known
+info: program: 258 of 258 consistent, 517 of 517 operators known
+after axiom folding: 258 of 258 consistent, 515 of 515 operators known
+after the phase: 258 of 258 consistent, 250 of 250 operators known
 -/
 #guard_msgs in
 #eval show IO Unit from do
@@ -3291,7 +3293,7 @@ This counts them on every program of this file that type checks, as type checkin
 and after axiom folding. -/
 
 /--
-info: typed: 90 of 90, after axiom folding: 90 of 90
+info: typed: 89 of 89, after axiom folding: 89 of 89
 -/
 #guard_msgs in
 #eval show IO Unit from do

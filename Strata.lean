@@ -45,6 +45,7 @@ import Strata.Transform.CoreSpecification
 import Strata.Transform.CoreSpecificationProps
 import Strata.Languages.Core.Analysis.ProcedureCorrectness
 import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
+import Strata.Languages.Core.Analysis.ProcedureCorrectnessHoareConnection
 import Strata.Languages.Core.Analysis.DeductiveVerification
 import Strata.Languages.Core.Analysis.DeductiveVerificationProps
 import Strata.Languages.Core.Analysis.FragmentFactory
@@ -111,6 +112,7 @@ import Strata.Languages.Core.ProgramFactSet
 import Strata.Languages.Core.ProgramFactSetProps
 import Strata.Languages.Core.PipelinePhaseProps
 import Strata.Languages.Core.VerifierProofs
+import Strata.Languages.Core.CoreGenProps
 import Strata.Languages.GOTO
 
 /- DDM -/
@@ -259,6 +261,7 @@ import Strata.DL.Lambda.LExprTProps
 import Strata.DL.Lambda.LExprTypeSpec
 import Strata.DL.Lambda.LExprTraversal
 import Strata.DL.Lambda.LExprTraversalProps
+import Strata.DL.Lambda.LTyMatchProps
 import Strata.DL.Lambda.NamePrefixesProps
 import Strata.DL.Lambda.Reflect
 import Strata.DL.Lambda.OperationalSemantics
@@ -274,6 +277,7 @@ import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.StatementWF
 import Strata.DL.Lambda.DatatypeWF
 import Strata.Languages.Core.TypeSkolem
+import Strata.Languages.Core.WrittenTyVarScope
 import Strata.Languages.Core.Typing.Spec.ProcedureTypeSpec
 import Strata.Languages.Core.ProcedureTypeProps
 import Strata.Languages.Core.Typing.Spec.DatatypeTypeSpec
@@ -284,8 +288,10 @@ import Strata.Languages.Core.Typing.Spec.TypingSpec
 import Strata.Languages.Core.FactoryProps
 import Strata.Languages.Core.Typing.Props.DatatypeTypeProps
 import Strata.Languages.Core.Typing.Props.FactoryRegistrationProps
+import Strata.Languages.Core.Typing.Props.FunctionTypeProps
 import Strata.Languages.Core.Typing.Props.NamesWFProps
 import Strata.Languages.Core.Typing.Props.ProcSigAgreementProps
+import Strata.Languages.Core.Typing.Props.TypeSkolemProps
 import Strata.Languages.Core.Typing.Props.TypingSpecProps
 import Strata.Util.Random
 

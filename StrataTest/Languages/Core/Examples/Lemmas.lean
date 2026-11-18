@@ -169,14 +169,14 @@ lemma [bad] <a> (x : a): x == 0;
 
 /--
 error: ❌ Type checking error.
-Impossible to unify $__opaque_bad_a_0 with int.
+Error in lemma bad: Rigid type variable 'a' was refined to 'int'
 -/
 #guard_msgs in
 #eval Core.verify badPolyLemmaPgm
 
 /-! Type checking alone rejects it too, rather than fixing `a` to `int`. -/
 
-/-- info: Impossible to unify $__rigid_bad_a with int. -/
+/-- info: Error in lemma bad: Rigid type variable 'a' was refined to 'int' -/
 #guard_msgs in
 #eval match Core.typeCheck .quiet (TransM.run Inhabited.default (translateProgram badPolyLemmaPgm)).fst with
   | .ok _ => IO.println "accepted"
@@ -406,13 +406,9 @@ Result: ❌ fail
 /-! A lemma's variables are opened under fresh names, so a parameter named like a
 global constant does not inherit the constant's axioms. -/
 
-def shadowConstPgm :=
+def shadowConstLemmaPgm :=
 #strata
 program Core;
-
-const n : int;
-axiom [n_one]: n == 1;
-function f(n : int) : int { int.safeDiv(1, n) }
 
 const x : int;
 axiom [x_one]: x == 1;
@@ -422,13 +418,28 @@ lemma [lx] (x : int): x == 1;
 
 /--
 info:
-Obligation: f_body_calls_Int.SafeDiv_0
-Property: division by zero check
-Result: ❌ fail
-
 Obligation: lx
 Property: assert
 Result: ❌ fail
+-/
+#guard_msgs in
+#eval Core.verify shadowConstLemmaPgm (options := .quiet)
+
+/-! A function parameter named like a global constant is rejected. -/
+
+def shadowConstPgm :=
+#strata
+program Core;
+
+const n : int;
+axiom [n_one]: n == 1;
+function f(n : int) : int { int.safeDiv(1, n) }
+
+#end
+
+/--
+error: ❌ Type checking error.
+Function 'f': parameter 'n' collides with a function or constant of the same name
 -/
 #guard_msgs in
 #eval Core.verify shadowConstPgm (options := .quiet)

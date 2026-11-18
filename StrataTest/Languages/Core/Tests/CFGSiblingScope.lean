@@ -6,7 +6,9 @@
 module
 
 meta import Strata.Languages.Core
+meta import Strata.Languages.Core.DDMTransform.Translate
 import StrataDDM.Integration.Lean.HashCommands
+meta import StrataTest.Languages.Core.Tests.TestUtil
 
 meta section
 
@@ -16,8 +18,8 @@ meta section
 `@[scope(b)]` on the `rest` argument of `cfg_blocks_cons` makes a declaration
 introduced in a CFG block visible to every textually-later block. The contract
 is purely left-to-right in source order: it is not goto/dominance aware. These
-tests pin both directions of that boundary, plus the silent shadowing that
-falls out of ordinary nested-scope resolution.
+tests pin both directions of that boundary, plus the type checker's rejection
+of a local redeclared in a later block.
 
 The shipped CFG examples (`Examples/CFGSimple.core.st`, `CFGNondet.core.st`)
 declare no `var` locals, so nothing else in the tree exercises this path.
@@ -108,18 +110,9 @@ cfg entry {
 };
 #end
 
-/-! ## A later block re-declaring a propagated name silently shadows it.
+/-! ## Local names are unique within a control-flow graph body
 
-Both blocks declare `w`; the later declaration shadows the one propagated from
-the earlier block rather than colliding. This is ordinary nested-scope
-shadowing — pinned here because CFG blocks are semantically siblings, so a
-future translator may want to reject it instead.
-
-The two `w`s have different types (`bool` in `entry`, `int` in `next`) so the
-test discriminates: `w := 2` and `y := w` in `next` only type-check if the
-local `int` `w` shadows the propagated `bool` `w`. If the shadow leaked, the
-propagated `bool` `w` would be visible and both assignments would be a type
-mismatch, so a clean elaboration is evidence the shadow is effective. -/
+The parser accepts a local redeclared in a later block; the Core type checker rejects it. -/
 
 private def siblingShadow :=
 #strata
@@ -140,6 +133,94 @@ cfg entry {
   }
 };
 #end
+
+/--
+info: REJECTED: Procedure 'R': [R]: a CFG-local is declared in two dominance-comparable blocks.
+-/
+#guard_msgs in
+#eval Core.TestUtil.coreVerdict <| Core.TestUtil.translate siblingShadow
+
+/-! Distinct local names in sibling blocks are accepted. -/
+
+private def siblingDistinct :=
+#strata
+program Core;
+
+procedure T(out y : int)
+cfg entry {
+  entry: {
+    var w : bool;
+    w := true;
+    goto next;
+  }
+  next: {
+    var v : int;
+    v := 2;
+    y := v;
+    return;
+  }
+};
+#end
+
+/--
+info: ACCEPTED
+-/
+#guard_msgs in
+#eval Core.TestUtil.coreVerdict <| Core.TestUtil.translate siblingDistinct
+
+/-! Two sibling branches, neither dominating the other, may each declare a local `w`. -/
+
+private def siblingBranchesShareName :=
+#strata
+program Core;
+
+procedure V(out y : int)
+cfg entry {
+  entry: {
+    goto left, right;
+  }
+  left: {
+    var w : int;
+    w := 1;
+    y := w;
+    return;
+  }
+  right: {
+    var w : int;
+    w := 2;
+    y := w;
+    return;
+  }
+};
+#end
+
+/--
+info: ACCEPTED
+-/
+#guard_msgs in
+#eval Core.TestUtil.coreVerdict <| Core.TestUtil.translate siblingBranchesShareName
+
+/-! A local may not reuse the name of a procedure parameter. -/
+
+private def localShadowsParam :=
+#strata
+program Core;
+
+procedure U(out y : int)
+cfg entry {
+  entry: {
+    var y : int;
+    y := 2;
+    return;
+  }
+};
+#end
+
+/--
+info: REJECTED: Procedure 'U': [U]: a CFG-local shadows a procedure formal, output, or `old` binding.
+-/
+#guard_msgs in
+#eval Core.TestUtil.coreVerdict <| Core.TestUtil.translate localShadowsParam
 
 end Strata.CFGSiblingScope
 

@@ -23,12 +23,14 @@ namespace Strata
 private def opts : Core.VerifyOptions := Core.VerifyOptions.quiet
 
 /-- The phases of a pipeline for programs whose checks are top-level lemmas, with or
-    without unrolling. The entry facts the later phases require are asserted first. -/
+    without unrolling. Type checking runs first, then the entry facts the later phases
+    require are asserted. -/
 private def lemmaPhases (unroll : Bool) : List Core.PipelinePhase :=
-  [Core.assertPhase .noCFGBodies, Core.assertPhase .noCalls, Core.assertPhase .noLoops,
+  [Core.passTypeCheck opts,
+   Core.assertPhase .noCFGBodies, Core.assertPhase .noCalls, Core.assertPhase .noLoops,
    Core.assertPhase .staticSingleAssignment, Core.assertPhase .noNondetGuards,
    Core.assertPhase .wellFormedCalls, Core.passTermCheck, Core.passPrecondElim,
-   Core.passGenOpaqueTypeParams, Core.passTypeCheck opts, Core.passMonomorphizeFunctions,
+   Core.passGenOpaqueTypeParams, Core.passMonomorphizeFunctions,
    Core.passSimplify, Core.passRecursiveAxioms opts, Core.assertPhase .hasObligationForm,
    Core.assertPhase .noProcedureContracts, Core.passFunctionInlining, Core.passBetaReduce]
   ++ (if unroll then [Core.passUnrollBoundedQuantifiers] else [])

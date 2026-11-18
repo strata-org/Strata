@@ -14,8 +14,8 @@ public import Strata.Util.HMaps
 
 /-! ## Definitions shared by the typing relation and the typing rules of `ProgramTypeSpec`
 
-Variable scopes, the conditions on expression annotations, and the condition on factory
-extensions. -/
+Variable scopes (with `TypeScopes.addInits`, `addCFGInits` and `monoType?`), the conditions
+on expression annotations, and the condition on factory extensions. -/
 
 public section
 
@@ -33,6 +33,34 @@ open LExpr
 
 /-- The stack of variable scopes of a type scope. -/
 abbrev TypeScopes := Strata.Util.HMaps (Lambda.Identifier Unit) LTy
+
+/-- `vt` with the variable `x` of type `ty` added to the newest scope. -/
+def TypeScopes.addInit (vt : TypeScopes) (x : Expression.Ident) (ty : LTy) : TypeScopes :=
+  vt.pop.push (vt.newest.insert x ty)
+
+/-- `vt` with each variable an `init` of `ss` declares added to the newest scope. -/
+def TypeScopes.addInits (vt : TypeScopes) (ss : List Statement) :
+    TypeScopes :=
+  ss.foldl (init := vt) fun vt s =>
+    match s with
+    | .init x ty _ _ => vt.addInit x ty
+    | _ => vt
+
+/-- `vt` with each variable an `init` command of any block of `g` declares added to the newest
+    scope. A CFG has no nested scopes, and its checker rejects a local declared at two types or
+    with the name of a header variable, so the one flat scope gives each variable exactly its
+    declared type. -/
+def TypeScopes.addCFGInits (vt : TypeScopes) (g : DetCFG) : TypeScopes :=
+  g.blocks.foldl (init := vt) fun vt (_, b) =>
+    b.cmds.foldl (init := vt) fun vt c =>
+      match c with
+      | .cmd (.init x ty _ _) => vt.addInit x ty
+      | _ => vt
+
+/-- The monotype `vt` declares for the variable `x`. -/
+def TypeScopes.monoType? (vt : TypeScopes) (x : Expression.Ident) :
+    Option Lambda.LMonoTy :=
+  (vt.find? x).bind Lambda.LTy.toMonoType?
 
 /-- Every binder annotation in `e` applies only type constructors registered at their arity. -/
 @[expose] def BinderAnnotsKnown (C : LContext CoreLParams) (e : Expression.Expr) : Prop :=

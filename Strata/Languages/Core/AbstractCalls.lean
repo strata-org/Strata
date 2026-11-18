@@ -7,7 +7,6 @@ module
 
 public import Strata.Languages.Core.Axiom
 public import Strata.Languages.Core.Function
-public import Strata.DL.Lambda.NamePrefixes
 import Strata.Util.Name
 
 /-! # Abstracting calls in generated lemmas
@@ -23,19 +22,19 @@ equal arguments give equal results, so a check on `f(n - 1)` still covers
 `f((n - 2) + 1)`.
 
 A polymorphic function cannot become a single variable, since its calls may
-stand at different instantiations, which are not known before the lemma is type
-checked. Each occurrence of it gets a variable of its own, of the function's
-declared type with its type parameters renamed apart, so that type checking
-infers the instantiation of each call from its arguments, even when nothing
-else in the lemma constrains the result. Two calls to a polymorphic function
-are then not known to agree, even on identical arguments. This loses
-precision, never soundness: a lemma that needs two such calls to agree, such
-as a division by `plen(tl(xs))` guarded by `plen(tl(xs)) > 0`, cannot be
-proved, but no invalid lemma is proved.
+stand at different instantiations. Each occurrence of it gets a variable of its
+own, whose type is the occurrence's annotation, which type checking sets to the
+call's instantiation. An unannotated occurrence, which only input that is not
+type checked contains, gets the function's declared type with its type
+parameters renamed apart. Two calls to a polymorphic function are then not
+known to agree, even on identical arguments. This loses precision, never
+soundness: a lemma that needs two such calls to agree, such as a division by
+`plen(tl(xs))` guarded by `plen(tl(xs)) > 0`, cannot be proved, but no invalid
+lemma is proved.
 
 TODO: give each polymorphic function one variable per type instantiation, as
-monomorphic functions get one variable, by abstracting after type checking or
-by sharing variables on the inferred instantiation.
+monomorphic functions get one variable, by sharing variables on the annotated
+instantiation.
 
 A lemma that does not mention the functions of `fns` can be declared before
 them, so that their definitions never reach the solver when it is checked.
@@ -50,6 +49,12 @@ namespace Core
 
 open Lambda
 
+/-- Prefix of the type variables that instantiate a polymorphic function's type parameters
+    where a generated lemma abstracts a call to it.
+    Kept as a literal copy in `Lambda.reservedNamePrefixes`, so type checking still
+    rejects or renames program names that use it. -/
+@[expose] def abstractTyPrefix : String := "$__abs_"
+
 private structure AbstractState where
   /-- The monomorphic functions replaced so far with the variable standing for
       each. -/
@@ -59,23 +64,27 @@ private structure AbstractState where
   /-- Names that a new variable must avoid. -/
   used : Std.HashSet String
 
-/-- The type of `func`. For a polymorphic function, its type parameters are
-    renamed apart, fresh for each occurrence of it, so that type checking infers
-    each occurrence's instantiation on its own. -/
-private def functionType (func : Function) : StateM AbstractState LMonoTy := do
+/-- The type of an occurrence of `func` annotated `ty`. A monomorphic function
+    has its declared type. A polymorphic one has the annotation, and without
+    one its declared type with its type parameters renamed apart, fresh for each
+    occurrence. -/
+private def functionType (func : Function) (ty : Option LMonoTy) :
+    StateM AbstractState LMonoTy := do
   let declared := LMonoTy.mkArrow' func.output func.inputs.values
   if func.typeArgs.isEmpty then return declared
+  if let some ty := ty then return ty
   let k := (← get).vars.length
   let S : Subst := [Strata.Util.HMap.ofList (func.typeArgs.map fun a =>
     (a, LMonoTy.ftvar s!"{abstractTyPrefix}{k}_{a}"))]
   return LMonoTy.subst S declared
 
-/-- The variable standing for an occurrence of `func`: for a monomorphic
-    function, the one already introduced for it, if any, and otherwise a new one
-    named after `func` and of its type. -/
-private def varFor (func : Function) : StateM AbstractState (LExpr CoreLParams.mono) := do
+/-- The variable standing for an occurrence of `func` annotated `ty`: for a
+    monomorphic function, the one already introduced for it, if any, and
+    otherwise a new one named after `func` and of its type. -/
+private def varFor (func : Function) (ty : Option LMonoTy) :
+    StateM AbstractState (LExpr CoreLParams.mono) := do
   let f := func.name.name
-  let ty ← functionType func
+  let ty ← functionType func ty
   let st ← get
   match if func.typeArgs.isEmpty then st.shared.lookup f else none with
   | some x => return .fvar coreLoc x (some ty)
@@ -92,7 +101,7 @@ private def abstractFunctions (fns : List Function) :
     LExpr CoreLParams.mono → StateM AbstractState (LExpr CoreLParams.mono)
   | .op m f ty =>
     match fns.find? (·.name.name == f.name) with
-    | some func => varFor func
+    | some func => varFor func ty
     | none => pure (.op m f ty)
   | .app m fn arg => return .app m (← abstractFunctions fns fn) (← abstractFunctions fns arg)
   | .abs m n ty b => return .abs m n ty (← abstractFunctions fns b)

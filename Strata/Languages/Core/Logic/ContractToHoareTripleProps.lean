@@ -20,6 +20,8 @@ procedure's contract decidable. The definitions being established live in
   name lookup and the `.structured` obligation once.
 - `Procedure.contractTriple_of_core` and `Procedure.contractTriple_of_core_typed` —
   retain the concrete Core entry facts needed by evaluator-sensitive body proofs.
+- `Procedure.contractTriple_of_core_typed_axioms`: also retains the axioms and
+  `distinct` declarations visible to the procedure.
 - `Procedure.contractTriple_nil` and
   `Procedure.contractTriple_nil_of_ensuresAmongRequires` — an empty body meets a
   contract whose non-`free` `ensures` clauses are all among its `requires`.
@@ -97,7 +99,7 @@ theorem Procedure.checkAsPredicate_of_exprEq
   · exact absurd hfac hne
 
 /-- Build a `contractTriple` from the name lookup, body, and body judgement.
-    The factory, old-inout, and input-typing clauses of `contractTriple`'s
+    The factory, old-inout, input-typing and axiom clauses of `contractTriple`'s
     precondition are discarded by weakening, so the body proof needs only the
     preconditions. -/
 theorem Procedure.contractTriple_of (p : Core.Program) (params : InitEnvWFParams)
@@ -114,7 +116,7 @@ theorem Procedure.contractTriple_of (p : Core.Program) (params : InitEnvWFParams
   ⟨proc, hproc, hchecksTyped, by
     rw [hbody]
     exact Strata.Logic.Hoare.consequence (EventLang.coreBlock p.findProcByString?) params
-      h (fun _ hc => hc.1) (fun _ hpost => hpost)⟩
+      h (fun _ hc => hc.1.1) (fun _ hpost => hpost)⟩
 
 /-- Build a `contractTriple` whose body proof may assume the concrete factory and
     old-inout relation but does not need runtime input-value typing. The separate
@@ -136,10 +138,31 @@ theorem Procedure.contractTriple_of_core (p : Core.Program) (params : InitEnvWFP
   ⟨proc, hproc, hchecksTyped, by
     rw [hbody]
     exact Strata.Logic.Hoare.consequence (EventLang.coreBlock p.findProcByString?) params
-      h (fun _ hc => ⟨hc.1, hc.2.1, hc.2.2.1⟩) (fun _ hpost => hpost)⟩
+      h (fun _ hc => ⟨hc.1.1, hc.1.2.1, hc.1.2.2.1⟩) (fun _ hpost => hpost)⟩
 
-/-- Build a `contractTriple` while retaining every entry fact, including values
-    matching the types of the procedure's input and inout formals. -/
+/-- Build a `contractTriple` while retaining every entry fact: the contract
+    precondition, including values matching the types of the procedure's input and
+    inout formals, and the axioms and `distinct` declarations visible to the
+    procedure. -/
+theorem Procedure.contractTriple_of_core_typed_axioms (p : Core.Program)
+    (params : InitEnvWFParams) (procName : String) (proc : Procedure)
+    (bss : Statements)
+    (hproc : p.findProcByString? procName = some proc)
+    (hbody : proc.body = .structured bss)
+    (hchecksTyped : Procedure.contractChecksTyped proc)
+    (h : Triple p.findProcByString? params
+        (fun ρ => Procedure.contractPre (p.factoryBeforeProcedure procName) proc ρ ∧
+          Core.Specification.AxiomsBeforeProcedureDecl procName p ρ)
+        [Imperative.Stmt.block "" bss #[]]
+        (Procedure.contractPost (p.factoryBeforeProcedure procName) proc)
+        (factory := p.factoryBeforeProcedure procName)) :
+    Procedure.contractTriple p params procName :=
+  ⟨proc, hproc, hchecksTyped, by rw [hbody]; exact h⟩
+
+/-- Build a `contractTriple` while retaining every fact of the contract
+    precondition, including values matching the types of the procedure's input and
+    inout formals. The axioms visible to the procedure are discarded by weakening;
+    `Procedure.contractTriple_of_core_typed_axioms` retains them. -/
 theorem Procedure.contractTriple_of_core_typed (p : Core.Program)
     (params : InitEnvWFParams) (procName : String) (proc : Procedure)
     (bss : Statements)
@@ -152,7 +175,10 @@ theorem Procedure.contractTriple_of_core_typed (p : Core.Program)
         (Procedure.contractPost (p.factoryBeforeProcedure procName) proc)
         (factory := p.factoryBeforeProcedure procName)) :
     Procedure.contractTriple p params procName :=
-  ⟨proc, hproc, hchecksTyped, by rw [hbody]; exact h⟩
+  Procedure.contractTriple_of_core_typed_axioms p params procName proc bss hproc hbody
+    hchecksTyped
+    (Strata.Logic.Hoare.consequence (EventLang.coreBlock p.findProcByString?) params
+      h (fun _ hc => hc.1) (fun _ hpost => hpost))
 
 /-- A contract whose every non-`free` `ensures` is literally one of the
     `requires` is met by an empty body: nothing runs, so the precondition still

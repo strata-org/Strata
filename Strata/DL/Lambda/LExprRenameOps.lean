@@ -17,6 +17,8 @@ import all Strata.DL.Lambda.LExprType
 import all Strata.DL.Lambda.LTyUnifyProps
 import Strata.DL.Lambda.LExprDenoteEvalProps
 import Strata.Util.ListMapProps
+import all Strata.DL.Lambda.LTyProps
+import Strata.DL.Lambda.LTyMatchProps
 
 /-! # Renaming the operators of an expression
 
@@ -28,8 +30,8 @@ evaluation.
 - `LExpr.typeCheck_renameOps`, `LExpr.HasTypeA_renameOps_iff` — renaming keeps typing.
 - `denote_renameOps`, `LExpr.denoteEval_renameOps` — a renamed expression denotes and
   evaluates, under the renamed model, as the original does.
-- `opsConsistent_op_of_ground_instance`, `opsConsistent_op_of_mono` — an operator annotated
-  with a ground instance of its function's signature, or with the signature of a monomorphic
+- `opsConsistent_op_of_instance`, `opsConsistent_op_of_mono` — an operator annotated
+  with an instance of its function's signature, or with the signature of a monomorphic
   function, is `OpsConsistent`.
 -/
 
@@ -222,27 +224,66 @@ end -- public section
 
 namespace Lambda
 
-/-- **An operator annotated with a ground instance of its function's signature is
-    `OpsConsistent`**, for a polymorphic function. -/
-theorem opsConsistent_op_of_ground_instance {T : LExprParams} {F : Factory T} {m :
-    T.mono.base.Metadata}
+/-- **An operator annotated with an instance of its function's signature is
+    `OpsConsistent`**, for a function whose input and output types mention
+    only its type parameters. -/
+theorem opsConsistent_op_of_instance {T : LExprParams} {F : Factory T}
+    {m : T.mono.base.Metadata}
     {o : T.Identifier} {ty : LMonoTy} {fn : LFunc T} (hfn : F[o.name]? = some fn)
-    (hpoly : fn.typeArgs ≠ []) (hty : ty.freeVars = [])
+    (hins : ∀ t, t ∈ fn.inputs.values → t.freeVars ⊆ fn.typeArgs)
+    (hout : fn.output.freeVars ⊆ fn.typeArgs)
     (hinst : ∃ σ : Subst, ty = LMonoTy.subst σ (LMonoTy.mkArrow' fn.output (fn.inputs.map
         Prod.snd))) :
     OpsConsistent F (.op m o (some ty)) := by
   obtain ⟨σ, hσ⟩ := hinst
-  have hv : fn.inputs.values = fn.inputs.map Prod.snd := ListMap.values_eq_map_snd _
-  obtain ⟨si, hu, hsi⟩ := Constraints_unify_ground_instance_complete ty
-    (LMonoTy.mkArrow' fn.output (fn.inputs.map Prod.snd)) σ hty hσ.symm
+  have hv : fn.inputs.values = fn.inputs.map Prod.snd :=
+    ListMap.values_eq_map_snd _
+  have hinsv : ∀ t ∈ fn.inputs.map Prod.snd, ∀ v ∈ t.freeVars,
+      v ∈ fn.typeArgs := by
+    intro t ht v hvt
+    rw [← hv] at ht
+    exact hins t ht hvt
+  have hdecl : (LMonoTy.mkArrow' fn.output (fn.inputs.map Prod.snd)).freeVars
+      ⊆ fn.typeArgs :=
+    freeVars_mkArrow'_subset fn.output _ fn.typeArgs hout hinsv
   unfold OpsConsistent
   rw [hfn]
   simp only
-  have hts : LFunc.opTypeSubst fn (.op m o (some ty)) = some si.subst := by
-    unfold LFunc.opTypeSubst
-    simp only [List.isEmpty_iff, hpoly, ↓reduceIte, hv, hu]
-  rw [hts]
-  exact hsi.symm
+  by_cases hpoly : fn.typeArgs = []
+  · have hts : LFunc.opTypeSubst fn (.op m o (some ty)) = some Subst.empty := by
+      unfold LFunc.opTypeSubst
+      simp only [hpoly, List.isEmpty_nil, ↓reduceIte]
+    rw [hts, hσ]
+    apply agree_on_freeVars_implies_subst_eq
+    intro v hvd
+    have hvargs : v ∈ fn.typeArgs := hdecl hvd
+    rw [hpoly] at hvargs
+    cases hvargs
+  · have hempty : ∀ a t, (Strata.Util.HMap.empty : SubstOne).find? a = some t →
+        t = LMonoTy.subst σ (.ftvar a) := by
+      intro a t h
+      rw [Strata.Util.HMap.find?_empty] at h
+      cases h
+    obtain ⟨si, hm, -, -, hbound⟩ :=
+      LMonoTy.matchTy?_subst_complete fn.typeArgs σ _ hdecl _ hempty
+    have hts : LFunc.opTypeSubst fn (.op m o (some ty)) =
+        some (fn.instanceSubst si) := by
+      have hmv : LMonoTy.matchTy? fn.typeArgs Strata.Util.HMap.empty
+          (LMonoTy.mkArrow' fn.output fn.inputs.values) ty = some si := by
+        rw [hv, hσ]
+        exact hm
+      unfold LFunc.opTypeSubst LFuncDefined.opInstance?
+      simp only [List.isEmpty_iff, hpoly, ↓reduceIte, Option.bind_eq_bind,
+        Option.bind_some, hmv, Option.map_some]
+    rw [hts, hσ]
+    apply agree_on_freeVars_implies_subst_eq
+    intro v hvd
+    have hfind :
+        (SubstOne.completeParams fn.typeArgs callTyVarPrefix si).find? v =
+          some (LMonoTy.subst σ (.ftvar v)) :=
+      SubstOne.completeParams_find?_of_find? _ _ _ _ _ (hbound v hvd)
+    rw [LMonoTy.subst_unfold (LFunc.instanceSubst fn si)]
+    simp only [LFunc.instanceSubst, Strata.Util.HMaps.find?_single_scope, hfind]
 
 /-- **An operator of a monomorphic function annotated with its signature is
     `OpsConsistent`.** -/

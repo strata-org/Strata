@@ -9,6 +9,7 @@ public import Strata.DL.Imperative.StmtSemanticsProps
 public import Strata.Transform.CoreTransform
 import all Strata.Transform.CoreTransform
 import all Strata.Languages.Core.CoreGen
+public import Strata.Languages.Core.CoreGenProps
 
 public section
 
@@ -38,7 +39,7 @@ end Imperative
 
 /-! # Core Transform — Theorems
 
-Properties of the per-call-site type-variable freshening in
+Properties of the per-call-site opaque types of `freshenTypeArgsSubst` in
 `Strata.Transform.CoreTransform`, and of the successful runs of the generic runners
 (`Post m Q`: every successful run of `m` returns a value satisfying `Q`; `PostGen P m Q`: every
 successful run of `m` from a generator state satisfying `P` ends with a value and a generator
@@ -55,33 +56,20 @@ state satisfying `Q`). Key results:
   so that a transformation can show that the names it draws in different passes differ; the
   two results above are their instances.
 
-- `freshenTypeArgsSubst_fresh` — mechanism freshness: every type in the
-  substitution's range is a fresh `<prefix>_<n>` variable, present in the output
+- `freshenTypeArgsSubst_fresh` — every type in the substitution's range is a
+  nullary type constant with a fresh `<prefix>_<n>` name, present in the output
   generator state and absent from the input's.
-- `freshenTypeArgsSubst_disjoint` — cross-call-site disjointness: two successive
-  call sites draw disjoint fresh ranges, which is what stops one inlined
-  contract from unifying with another's.
+- `freshenTypeArgsSubst_disjoint` — two successive call sites draw disjoint
+  ranges, so facts about one call's types say nothing about another's.
 - `freshenTypeArgsSubst_empty` — monomorphic callees (`typeArgs = []`) yield
-  `Subst.empty` without touching the generator: an exact no-op.
+  `Subst.empty` without touching the generator.
 
 The theorems are generic in the prefix string; call elimination and procedure
-inlining instantiate it with `Lambda.callElimTyPrefix` and
-`Lambda.inlineTyPrefix`.
-
-Key definitions the reader needs: `freshenTypeArgsSubst`, `genTyVarName(s)`
-(in `CoreTransform.lean`), and `CoreGenState.WF` (in `CoreGen.lean`).
-
-Proven against `StringGenState`'s counter monotonicity (`CoreGenState.WFMono`),
-independent of the `CallElimCorrect` correctness proof; the whole-program
-"emitted program type-checks" theorem is out of scope for this file.
-
-Scope note: `freshenTypeArgsSubst_fresh` proves each fresh name carries the
-reserved `<prefix>_<n>` shape, so the names are structurally in the prefix's
-namespace. The counter does not ingest existing program identifiers, so a
-written `<prefix>_<n>` type variable is kept apart from the fresh names only by
-the prefix being reserved (`Lambda.isAllowedName`). Freshness and
-disjointness across call sites — the property that actually prevents
-cross-site unification — is fully proven here.
+inlining instantiate it with `Core.CallElim.callElimTyPrefix` and
+`Core.ProcedureInlining.inlineTyPrefix`.
+The counter does not ingest existing program identifiers, so both passes give the
+generator the program's type names that start with the prefix, and a drawn name
+among them is drawn again.
 -/
 
 
@@ -265,6 +253,83 @@ theorem Post.postGen {α : Type} {m : CoreTransformM α} {Q : α → Prop} (h : 
     (P : CoreGenState → Prop) : PostGen P m fun a _ => Q a :=
   fun σ a σ' _ hr => h σ a σ' hr
 
+/-- A run of `runStmtsRecTyped` whose step ignores the variable types does not depend on the
+    variable types it starts from. -/
+private theorem runStmtsRecTyped_const (f : Statement → CoreTransformM (Option (List Statement)))
+    (vt vt' : TypeSpec.TypeScopes) (ss : List Statement) :
+    runStmtsRecTyped (fun _ => f) vt ss = runStmtsRecTyped (fun _ => f) vt' ss := by
+  induction vt, ss using runStmtsRecTyped.induct generalizing vt' with
+  | case1 vt => simp only [runStmtsRecTyped]
+  | case2 vt s ss' hsub htail =>
+    have htail' : ∀ sres, runStmtsRecTyped (fun _ => f) (vt.addInits sres) ss' =
+        runStmtsRecTyped (fun _ => f) (vt'.addInits sres) ss' := fun sres => htail sres _
+    cases s with
+    | cmd c => simp only [runStmtsRecTyped, htail']
+    | block lbl b md =>
+      have hb : ∀ v, runStmtsRecTyped (fun _ => f) (vt.push .empty) b =
+          runStmtsRecTyped (fun _ => f) v b := hsub
+      simp only [runStmtsRecTyped, htail', hb (vt'.push .empty)]
+    | ite c thenb elseb md =>
+      have ht : ∀ v, runStmtsRecTyped (fun _ => f) (vt.push .empty) thenb =
+          runStmtsRecTyped (fun _ => f) v thenb := hsub.1
+      have he : ∀ v, runStmtsRecTyped (fun _ => f) (vt.push .empty) elseb =
+          runStmtsRecTyped (fun _ => f) v elseb := hsub.2
+      simp only [runStmtsRecTyped, htail', ht (vt'.push .empty), he (vt'.push .empty)]
+    | loop guard measure invariant body md =>
+      have hb : ∀ v, runStmtsRecTyped (fun _ => f) (vt.push .empty) body =
+          runStmtsRecTyped (fun _ => f) v body := hsub
+      simp only [runStmtsRecTyped, htail', hb (vt'.push .empty)]
+    | typeDecl tc md => simp only [runStmtsRecTyped, htail']
+    | exit label md => simp only [runStmtsRecTyped, htail']
+
+/-- A run of `runStmtsRecTyped` whose step ignores the variable types is `runStmtsRec`. -/
+private theorem runStmtsRecTyped_eq_runStmtsRec
+    (f : Statement → CoreTransformM (Option (List Statement))) (vt : TypeSpec.TypeScopes)
+    (ss : List Statement) : runStmtsRecTyped (fun _ => f) vt ss = runStmtsRec f ss :=
+  runStmtsRecTyped_const f vt [] ss
+
+/-- `runStmtsRec f` unfolds as a recursion over the statement list: it runs `f` on each
+    statement and, where `f` declines, on the statement's bodies. -/
+theorem runStmtsRec_eq (f : Statement → CoreTransformM (Option (List Statement)))
+    (ss : List Statement) :
+    runStmtsRec f ss = (do
+      match ss with
+      | [] => return (false, [])
+      | s :: ss' =>
+        let (changed, sres) ← (do
+          match ← f s with
+          | .some s' => return (true, s')
+          | .none =>
+            match s with
+            | .cmd _ => return (false, [s])
+            | .block lbl b md => do
+              let (changed, b') ← runStmtsRec f b
+              return (changed, [.block lbl b' md])
+            | .ite c thenb elseb md => do
+              let (changed, thenb') ← runStmtsRec f thenb
+              let (changed', elseb') ← runStmtsRec f elseb
+              return (changed || changed', [.ite c thenb' elseb' md])
+            | .loop guard measure invariant body md => do
+              let (changed, body') ← runStmtsRec f body
+              return (changed, [.loop guard measure invariant body' md])
+            | .typeDecl _ _ => return (false, [s])
+            | .exit _ _ => return (false, [s]))
+        let (changed0, ss'') ← runStmtsRec f ss'
+        return ⟨changed || changed0, sres ++ ss''⟩ : CoreTransformM (Bool × List Statement)) := by
+  show runStmtsRecTyped (fun _ => f) [] ss = _
+  rw [runStmtsRecTyped.eq_def]
+  cases ss with
+  | nil => rfl
+  | cons s ss' =>
+    simp only [runStmtsRecTyped_eq_runStmtsRec]
+    rfl
+
+/-- `runCFGCmdsTyped` with a step that ignores the variable types does not depend on them. -/
+theorem runCFGCmdsTyped_const (f : Command → CoreTransformM (Option (List Command)))
+    (vt : TypeSpec.TypeScopes) (g : DetCFG) :
+    runCFGCmdsTyped (fun _ => f) vt g = runCFGCmds f g := by
+  simp only [runCFGCmds, runCFGCmdsTyped]
+
 /-- `runCFGCmds` with a rewrite that changes no command reports no change and keeps the
     generator state. -/
 theorem runCFGCmds_keep (g : DetCFG) (γ : CoreGenState) :
@@ -277,7 +342,7 @@ theorem runCFGCmds_keep (g : DetCFG) (γ : CoreGenState) :
     | nil => intro; rfl
     | cons x _ ih => intro b; rw [List.foldl_cons, ih, hF]
   intro σ a σ' hP hr
-  unfold runCFGCmds at hr
+  unfold runCFGCmds runCFGCmdsTyped at hr
   simp only [pure_bind, bind_pure_comp, map_pure, List.forIn_pure_yield_eq_foldl] at hr
   obtain ⟨rfl, rfl⟩ := ok_pair_inj hr
   refine ⟨?_, hP⟩
@@ -339,7 +404,7 @@ theorem runProgram_postGen {f : Statement → CoreTransformM (Option (List State
         · exact .inl ⟨ss, ss', hb, hQ (hrefl _) hle hq, hr⟩
         · exact .inr hd
       all_goals exact hd
-  unfold runProgram
+  unfold runProgram runProgramTyped
   refine PostGen.bind (PostGen.modify (Q := fun _ γ => γ = γ₀) (by intro; rfl) fun _ h => h)
     fun _ => ?_
   refine PostGen.bind (Q₁ := fun (s : Bool × List Decl) γ => le γ₀ γ ∧
@@ -395,6 +460,7 @@ theorem runProgram_postGen {f : Statement → CoreTransformM (Option (List State
         fun _ h => h) fun _ => ?_
       split
       · rename_i ss hbody
+        rw [runStmtsRecTyped_eq_runStmtsRec]
         refine PostGen.bind (hf ss γ) fun r => ?_
         obtain ⟨c, ss'⟩ := r
         refine PostGen.bind (PostGen.pure (Q := fun a γ' => a = (c, .structured ss') ∧
@@ -436,8 +502,10 @@ theorem runProgram_postGen {f : Statement → CoreTransformM (Option (List State
         exact ⟨hle, k', rs', h₁, h₂, h₃, by rw [h2, hdrop]; exact h₄, by simpa using h₅⟩
       · exact PostGen.bind (Q₁ := fun _ _ => False) PostGen.throw fun _ _ _ _ h _ => h.elim
       · -- A CFG body: the rewrite reports no change, so the declaration is kept.
-        rename_i g h hbody
-        refine PostGen.bind (hcfg h rfl g γ) fun r => ?_
+        rename_i g gf hbody hmap
+        obtain ⟨h0, hc, rfl⟩ := Option.map_eq_some_iff.mp hmap
+        rw [runCFGCmdsTyped_const]
+        refine PostGen.bind (hcfg h0 hc g γ) fun r => ?_
         obtain ⟨c, g'⟩ := r
         refine PostGen.bind (PostGen.pure (Q := fun a γ' => a = (c, .cfg g') ∧
           c = false ∧ γ' = γ) fun _ h => ⟨rfl, h⟩) fun a => ?_
@@ -498,7 +566,9 @@ theorem runProgramUntil_postGen {f : Statement → CoreTransformM (Option (List 
     (I := fun rest s γ => Inv s.1 γ ∧ μ s.1 + (n - rest.length) ≤ μ p) ?_ ?_ _ _)
     (fun _ h => ⟨h, by simp⟩) (fun _ _ h => h)
   · rintro s γ ⟨hi, hμ⟩
-    exact ⟨hi, by simp only [List.length_nil, Nat.sub_zero] at hμ; omega⟩
+    refine ⟨hi, ?_⟩
+    simp only [List.length_nil, Nat.sub_zero] at hμ
+    omega
   · intro x rest s
     refine PostGen.of_forall fun γ ⟨hi, hμ⟩ => ?_
     refine PostGen.bind ((hstep s.1).mono (fun _ h => h ▸ hi) fun _ _ h => h) fun r => ?_
@@ -529,71 +599,48 @@ theorem runProgramUntil_post {f : Statement → CoreTransformM (Option (List Sta
 
 variable (prefixStr : String)
 
-/-- `genTyVarName` is `CoreGenState.gen` at the fresh type-var prefix, with the
-    generated string reified back into the `CoreIdent`. -/
-private theorem genTyVarName_gen (γ γ' : CoreGenState) (f : Lambda.TyIdentifier)
-    (h : genTyVarName prefixStr γ = (f, γ')) :
-    CoreGenState.gen (⟨prefixStr, ()⟩ : CoreIdent) γ = (⟨f, ()⟩, γ') := by
+variable (taken : Std.HashSet String)
+
+/-- A name `CoreGenState.gen` draws at the prefix `prefixStr` has the `<prefix>_<n>` shape. -/
+private theorem gen_form (γ : CoreGenState) :
+    ∃ n : Nat, (CoreGenState.gen (⟨prefixStr, ()⟩ : CoreIdent) γ).1.name =
+      prefixStr ++ "_" ++ toString n := by
+  have hname : (CoreGenState.gen (⟨prefixStr, ()⟩ : CoreIdent) γ).1.name =
+      prefixStr ++ "_" ++ toString (Counter.genCounter γ.cs.cs).1 := by
+    simp only [CoreGenState.gen, StringGenState.gen]
+  exact ⟨_, hname⟩
+
+/-- A drawn type-var name is new, has the `<prefix>_<n>` shape, and lands in the output
+    generator state, which is well formed and keeps every name of the input state. -/
+private theorem genTyVarName_spec (γ γ' : CoreGenState) (f : Lambda.TyIdentifier)
+    (hwf : γ.WF) (h : genTyVarName prefixStr taken γ = (f, γ')) :
+    γ'.WF ∧ (⟨f, ()⟩ : CoreIdent) ∈ γ'.generated ∧ (⟨f, ()⟩ : CoreIdent) ∉ γ.generated ∧
+      γ.generated ⊆ γ'.generated ∧ ∃ n : Nat, f = prefixStr ++ "_" ++ toString n := by
   unfold genTyVarName at h
   simp only [bind, StateT.bind, pure, StateT.pure] at h
-  obtain ⟨hf, hγ⟩ := h
-  simp only [CoreGenState.gen, StringGenState.gen]
+  generalize hg : CoreGenState.genAvoiding taken ⟨prefixStr, ()⟩ γ = r at h
+  obtain ⟨id, γ1⟩ := r
+  obtain ⟨rfl, rfl⟩ := Prod.mk.inj h
+  obtain ⟨hwf', hmem, hnot, hsub, -, γ₀, hγ₀⟩ := CoreGenState.genAvoiding_spec taken _ hwf hg
+  obtain ⟨n, hn⟩ := gen_form prefixStr γ₀
+  rw [hγ₀] at hn
+  exact ⟨hwf', hmem, hnot, hsub, n, hn⟩
 
-/-- One type-var draw grows `generated` by exactly the fresh ident. -/
-private theorem genTyVarName_generated (γ γ' : CoreGenState) (f : Lambda.TyIdentifier)
-    (h : genTyVarName prefixStr γ = (f, γ')) :
-    γ'.generated = (⟨f, ()⟩ : CoreIdent) :: γ.generated := by
-  have hg := genTyVarName_gen prefixStr γ γ' f h
-  simp only [CoreGenState.gen, Prod.mk.injEq, Lambda.Identifier.mk.injEq, and_true] at hg; rw [← hg.2, ← hg.1]
-
-/-- One type-var draw preserves generator well-formedness. -/
-private theorem genTyVarName_wf (γ γ' : CoreGenState) (f : Lambda.TyIdentifier)
-    (hwf : γ.WF) (h : genTyVarName prefixStr γ = (f, γ')) : γ'.WF :=
-  CoreGenState.WFMono' hwf (genTyVarName_gen prefixStr γ γ' f h)
-
-/-- A drawn type-var name has the `<prefix>_<n>` shape — witnessing that it
-    lives in the prefix's namespace (stronger than `startsWith`). -/
-private theorem genTyVarName_form (γ γ' : CoreGenState) (f : Lambda.TyIdentifier)
-    (h : genTyVarName prefixStr γ = (f, γ')) :
-    ∃ n : Nat, f = prefixStr ++ "_" ++ toString n := by
-  refine ⟨(Counter.genCounter γ.cs.cs).1, ?_⟩
-  unfold genTyVarName at h
-  simp only [bind, StateT.bind, pure, StateT.pure] at h
-  have h1 : (CoreGenState.gen (⟨prefixStr, ()⟩ : CoreIdent) γ).fst.name = f :=
-    congrArg Prod.fst h
-  rw [← h1]; simp only [CoreGenState.gen, StringGenState.gen]
-
-/-- Generating `n` type-var names grows `generated` by exactly those idents. -/
-private theorem genTyVarNames_generated (n : Nat) :
+/-- Every name `genTyVarNames` draws is new, has the `<prefix>_<n>` shape, and lands in the
+    output generator state, which is well formed and keeps every name of the input state. -/
+private theorem genTyVarNames_spec (n : Nat) :
     ∀ (γ γ' : CoreGenState) (fs : List Lambda.TyIdentifier),
-    genTyVarNames prefixStr n γ = (fs, γ') →
-    γ'.generated = (fs.reverse.map (fun f => (⟨f, ()⟩ : CoreIdent))) ++ γ.generated := by
-  induction n with
-  | zero =>
-    intro γ γ' fs h
-    simp only [genTyVarNames, List.replicate, List.mapM_nil, pure, StateT.pure] at h
-    injection h with hfs hγ; subst hfs hγ; simp
-  | succ k ih =>
-    intro γ γ' fs h
-    simp only [genTyVarNames, List.replicate, List.mapM_cons, bind, StateT.bind,
-      pure, StateT.pure] at h
-    split at h
-    next f γ1 h1 =>
-      split at h
-      next fs' γ2 h2 =>
-        injection h with hfs hγ; subst hfs hγ
-        rw [ih γ1 γ2 fs' h2, genTyVarName_generated prefixStr γ γ1 f h1]
-        simp [List.reverse_cons, List.map_append]
-
-/-- Generating `n` type-var names preserves generator well-formedness. -/
-private theorem genTyVarNames_wf (n : Nat) :
-    ∀ (γ γ' : CoreGenState) (fs : List Lambda.TyIdentifier),
-    γ.WF → genTyVarNames prefixStr n γ = (fs, γ') → γ'.WF := by
+    γ.WF → genTyVarNames prefixStr taken n γ = (fs, γ') →
+    γ'.WF ∧ γ.generated ⊆ γ'.generated ∧
+      ∀ f ∈ fs, (⟨f, ()⟩ : CoreIdent) ∈ γ'.generated ∧ (⟨f, ()⟩ : CoreIdent) ∉ γ.generated ∧
+        ∃ k : Nat, f = prefixStr ++ "_" ++ toString k := by
   induction n with
   | zero =>
     intro γ γ' fs hwf h
     simp only [genTyVarNames, List.replicate, List.mapM_nil, pure, StateT.pure] at h
-    injection h with hfs hγ; subst hγ; exact hwf
+    injection h with hfs hγ
+    subst hfs hγ
+    exact ⟨hwf, fun _ hx => hx, fun f hf => absurd hf List.not_mem_nil⟩
   | succ k ih =>
     intro γ γ' fs hwf h
     simp only [genTyVarNames, List.replicate, List.mapM_cons, bind, StateT.bind,
@@ -602,70 +649,31 @@ private theorem genTyVarNames_wf (n : Nat) :
     next f γ1 h1 =>
       split at h
       next fs' γ2 h2 =>
-        injection h with _ hγ; subst hγ
-        exact ih γ1 _ fs' (genTyVarName_wf prefixStr γ γ1 f hwf h1) h2
-
-/-- Every generated type-var name lands in the output generator state. -/
-private theorem genTyVarNames_mem (n : Nat) (γ γ' : CoreGenState) (fs : List Lambda.TyIdentifier)
-    (h : genTyVarNames prefixStr n γ = (fs, γ')) :
-    ∀ f ∈ fs, (⟨f, ()⟩ : CoreIdent) ∈ γ'.generated := by
-  intro f hf
-  rw [genTyVarNames_generated prefixStr n γ γ' fs h]
-  apply List.mem_append_left
-  rw [List.map_reverse, List.mem_reverse]
-  exact List.mem_map_of_mem hf
-
-/-- Every generated type-var name is absent from the input generator state. -/
-private theorem genTyVarNames_fresh (n : Nat) (γ γ' : CoreGenState) (fs : List Lambda.TyIdentifier)
-    (hwf : γ.WF) (h : genTyVarNames prefixStr n γ = (fs, γ')) :
-    ∀ f ∈ fs, (⟨f, ()⟩ : CoreIdent) ∉ γ.generated := by
-  intro f hf
-  have hnd : γ'.generated.Nodup := (genTyVarNames_wf prefixStr n γ γ' fs hwf h).2.2
-  rw [genTyVarNames_generated prefixStr n γ γ' fs h] at hnd
-  have hdisj := (List.nodup_append.mp hnd).2.2
-  have hin_pref : (⟨f, ()⟩ : CoreIdent) ∈ (fs.reverse.map (fun f => (⟨f, ()⟩ : CoreIdent))) := by
-    rw [List.map_reverse, List.mem_reverse]; exact List.mem_map_of_mem hf
-  intro hmem
-  exact hdisj _ hin_pref _ hmem rfl
-
-/-- Every generated type-var name has the `<prefix>_<n>` shape. -/
-private theorem genTyVarNames_form (n : Nat) :
-    ∀ (γ γ' : CoreGenState) (fs : List Lambda.TyIdentifier),
-    genTyVarNames prefixStr n γ = (fs, γ') →
-    ∀ f ∈ fs, ∃ k : Nat, f = prefixStr ++ "_" ++ toString k := by
-  induction n with
-  | zero =>
-    intro γ γ' fs h f hf
-    simp only [genTyVarNames, List.replicate, List.mapM_nil, pure, StateT.pure] at h
-    injection h with hfs _; subst hfs; simp at hf
-  | succ k ih =>
-    intro γ γ' fs h f hf
-    simp only [genTyVarNames, List.replicate, List.mapM_cons, bind, StateT.bind,
-      pure, StateT.pure] at h
-    split at h
-    next f0 γ1 h1 =>
-      split at h
-      next fs' γ2 h2 =>
-        injection h with hfs hγ; subst hfs
-        rw [List.mem_cons] at hf
-        cases hf with
-        | inl hh => subst hh; exact genTyVarName_form prefixStr γ γ1 f h1
-        | inr hh => exact ih γ1 γ2 fs' h2 f hh
+        injection h with hfs hγ
+        subst hfs hγ
+        obtain ⟨hwf1, hmem1, hnot1, hsub1, hform1⟩ :=
+          genTyVarName_spec prefixStr taken γ γ1 f hwf h1
+        obtain ⟨hwf2, hsub2, hall⟩ := ih γ1 γ2 fs' hwf1 h2
+        refine ⟨hwf2, fun x hx => hsub2 (hsub1 hx), ?_⟩
+        intro g hg
+        rcases List.mem_cons.mp hg with rfl | hg'
+        · exact ⟨hsub2 hmem1, hnot1, hform1⟩
+        · obtain ⟨hm, hn, hf⟩ := hall g hg'
+          exact ⟨hm, fun hγ => hn (hsub1 hγ), hf⟩
 
 /-- A monomorphic callee (`typeArgs = []`) yields the empty substitution and does
     not touch the generator — the exact no-op the docstring promises. -/
 theorem freshenTypeArgsSubst_empty (γ : CoreGenState) :
-    freshenTypeArgsSubst prefixStr [] γ = (Lambda.Subst.empty, γ) := by
+    freshenTypeArgsSubst prefixStr taken [] γ = (Lambda.Subst.empty, γ) := by
   simp [freshenTypeArgsSubst, pure, StateT.pure]
 
 /-- A polymorphic callee yields one substitution scope pairing each declared
-    type variable with a name drawn from `genTyVarNames`. -/
+    type variable with a type constant named by `genTyVarNames`. -/
 private theorem freshenTypeArgsSubst_nonempty {S : Lambda.Subst}
     (typeArgs : List Lambda.TyIdentifier) (γ γ' : CoreGenState)
-    (hne : typeArgs ≠ []) (h : freshenTypeArgsSubst prefixStr typeArgs γ = (S, γ')) :
-    ∃ fresh, genTyVarNames prefixStr typeArgs.length γ = (fresh, γ') ∧
-      S = [Strata.Util.HMap.ofList
-        ((typeArgs.zip fresh).map (fun tf => (tf.1, Lambda.LMonoTy.ftvar tf.2)))] := by
+    (hne : typeArgs ≠ []) (h : freshenTypeArgsSubst prefixStr taken typeArgs γ = (S, γ')) :
+    ∃ fresh, genTyVarNames prefixStr taken typeArgs.length γ = (fresh, γ') ∧
+      S = Lambda.Subst.ofNullaryConsts (typeArgs.zip fresh) := by
   unfold freshenTypeArgsSubst at h
   rw [ite_eq_right (by simp [hne])] at h
   simp only [bind, StateT.bind, pure, StateT.pure] at h
@@ -674,69 +682,63 @@ private theorem freshenTypeArgsSubst_nonempty {S : Lambda.Subst}
     injection h with hS hγ
     exact ⟨fresh, by rw [← hγ]; exact hgen, hS.symm⟩
 
-/-- Every type in the substitution's range is a fresh type variable produced by
-    the generator for this call site. -/
+/-- Every type in the substitution's range is a type constant whose name the generator
+    produced for this call site. -/
 private theorem freshenTypeArgsSubst_range {S : Lambda.Subst}
     (typeArgs : List Lambda.TyIdentifier) (γ γ' : CoreGenState)
-    (hne : typeArgs ≠ []) (h : freshenTypeArgsSubst prefixStr typeArgs γ = (S, γ')) :
-    ∃ fresh, genTyVarNames prefixStr typeArgs.length γ = (fresh, γ') ∧
-      ∀ v ∈ S.values, ∃ f ∈ fresh, v = Lambda.LMonoTy.ftvar f := by
-  obtain ⟨fresh, hgen, hS⟩ := freshenTypeArgsSubst_nonempty prefixStr typeArgs γ γ' hne h
+    (hne : typeArgs ≠ []) (h : freshenTypeArgsSubst prefixStr taken typeArgs γ = (S, γ')) :
+    ∃ fresh, genTyVarNames prefixStr taken typeArgs.length γ = (fresh, γ') ∧
+      ∀ v ∈ S.values, ∃ f ∈ fresh, v = Lambda.LMonoTy.tcons f [] := by
+  obtain ⟨fresh, hgen, hS⟩ :=
+    freshenTypeArgsSubst_nonempty prefixStr taken typeArgs γ γ' hne h
   refine ⟨fresh, hgen, ?_⟩
   intro v hv
   subst hS
-  obtain ⟨m, hm, hvm⟩ := (Strata.Util.HMaps.mem_values_iff_exists_scope _ v).mp hv
-  simp only [List.mem_singleton] at hm; subst hm
-  have hv' := Strata.Util.HMap.mem_values_ofList _ v hvm
-  simp only [List.map_map, List.mem_map] at hv'
-  obtain ⟨tf, htf, hveq⟩ := hv'
-  exact ⟨tf.2, (List.of_mem_zip htf).2, hveq.symm⟩
+  obtain ⟨tf, htf, hveq⟩ := Lambda.Subst.mem_values_ofNullaryConsts hv
+  exact ⟨tf.2, (List.of_mem_zip htf).2, hveq⟩
 
 /-- Freshness: for a polymorphic callee, every type in the range of the
-    per-call-site substitution is a fresh type variable that (a) carries the
-    `<prefix>_<n>` shape (so it lies in the prefix's namespace),
-    (b) is present in the output generator state, and (c) is absent from the input
-    state — and the generator stays well-formed. This is the mechanism that keeps
-    one call site's contract from unifying with another's. -/
+    per-call-site substitution is a nullary type constant whose name (a) has the
+    `<prefix>_<n>` shape, (b) is in the output generator state, and (c) is absent from
+    the input state; the generator stays well-formed. -/
 theorem freshenTypeArgsSubst_fresh {S : Lambda.Subst}
     (typeArgs : List Lambda.TyIdentifier) (γ γ' : CoreGenState)
-    (hwf : γ.WF) (h : freshenTypeArgsSubst prefixStr typeArgs γ = (S, γ')) :
+    (hwf : γ.WF) (h : freshenTypeArgsSubst prefixStr taken typeArgs γ = (S, γ')) :
     γ'.WF ∧
-    ∀ v ∈ S.values, ∃ f, v = Lambda.LMonoTy.ftvar f ∧
+    ∀ v ∈ S.values, ∃ f, v = Lambda.LMonoTy.tcons f [] ∧
       (∃ n : Nat, f = prefixStr ++ "_" ++ toString n) ∧
       (⟨f, ()⟩ : CoreIdent) ∈ γ'.generated ∧ (⟨f, ()⟩ : CoreIdent) ∉ γ.generated := by
   by_cases hne : typeArgs = []
   · subst hne
-    have := freshenTypeArgsSubst_empty prefixStr γ
-    rw [h] at this; injection this with hS hγ; subst hS hγ
+    have hempty := freshenTypeArgsSubst_empty prefixStr taken γ
+    rw [h] at hempty; injection hempty with hS hγ; subst hS hγ
     refine ⟨hwf, fun v hv => ?_⟩
     obtain ⟨m, hm, _⟩ := (Strata.Util.HMaps.mem_values_iff_exists_scope _ v).mp hv
     simp at hm
-  obtain ⟨fresh, hgen, hrange⟩ := freshenTypeArgsSubst_range prefixStr typeArgs γ γ' hne h
-  refine ⟨genTyVarNames_wf prefixStr _ γ γ' fresh hwf hgen, ?_⟩
+  obtain ⟨fresh, hgen, hrange⟩ :=
+    freshenTypeArgsSubst_range prefixStr taken typeArgs γ γ' hne h
+  obtain ⟨hwf', -, hall⟩ := genTyVarNames_spec prefixStr taken _ γ γ' fresh hwf hgen
+  refine ⟨hwf', ?_⟩
   intro v hv
   obtain ⟨f, hf_mem, hveq⟩ := hrange v hv
-  exact ⟨f, hveq,
-    genTyVarNames_form prefixStr _ γ γ' fresh hgen f hf_mem,
-    genTyVarNames_mem prefixStr _ γ γ' fresh hgen f hf_mem,
-    genTyVarNames_fresh prefixStr _ γ γ' fresh hwf hgen f hf_mem⟩
+  obtain ⟨hm, hn, hform⟩ := hall f hf_mem
+  exact ⟨f, hveq, hform, hm, hn⟩
 
 /-- Cross-call-site disjointness: the substitutions from two successive call
     sites (the second threaded through the first's output generator state) have
-    disjoint fresh type-variable ranges. A fresh variable from site 2 is absent
-    from `γ1.generated`, while every fresh variable from site 1 is present in it —
-    so no name is shared, which is exactly what stops the two sites' contracts
-    from unifying. -/
+    disjoint ranges. -/
 theorem freshenTypeArgsSubst_disjoint {S1 S2 : Lambda.Subst}
     (ta1 ta2 : List Lambda.TyIdentifier) (γ γ1 γ2 : CoreGenState)
     (hwf : γ.WF)
-    (h1 : freshenTypeArgsSubst prefixStr ta1 γ = (S1, γ1))
-    (h2 : freshenTypeArgsSubst prefixStr ta2 γ1 = (S2, γ2)) :
+    (h1 : freshenTypeArgsSubst prefixStr taken ta1 γ = (S1, γ1))
+    (h2 : freshenTypeArgsSubst prefixStr taken ta2 γ1 = (S2, γ2)) :
     ∀ v ∈ S1.values, v ∉ S2.values := by
-  have hwf1 : γ1.WF := (freshenTypeArgsSubst_fresh prefixStr ta1 γ γ1 hwf h1).1
+  have hwf1 : γ1.WF := (freshenTypeArgsSubst_fresh prefixStr taken ta1 γ γ1 hwf h1).1
   intro v hv1 hv2
-  obtain ⟨g, hveq, _, hg_in1, _⟩ := (freshenTypeArgsSubst_fresh prefixStr ta1 γ γ1 hwf h1).2 v hv1
-  obtain ⟨g', hveq', _, _, hg'_notin1⟩ := (freshenTypeArgsSubst_fresh prefixStr ta2 γ1 γ2 hwf1 h2).2 v hv2
+  obtain ⟨g, hveq, _, hg_in1, _⟩ :=
+    (freshenTypeArgsSubst_fresh prefixStr taken ta1 γ γ1 hwf h1).2 v hv1
+  obtain ⟨g', hveq', _, _, hg'_notin1⟩ :=
+    (freshenTypeArgsSubst_fresh prefixStr taken ta2 γ1 γ2 hwf1 h2).2 v hv2
   have hgg : g = g' := by rw [hveq] at hveq'; injection hveq'
   rw [hgg] at hg_in1
   exact hg'_notin1 hg_in1
