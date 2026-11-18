@@ -64,7 +64,7 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
     -- locations.
     let (c, Env) ← Imperative.Cmd.typeCheck C Env c
     .ok (.cmd c, Env)
-  | .call pname callArgs md => try
+  | .call pname _ callArgs md => try
     let lhs := CallArg.getLhs callArgs
     let args := CallArg.getInputExprs callArgs
     -- `try`: to augment any errors with source location info.
@@ -111,7 +111,8 @@ def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Unit) (P : Program) (c : 
                     ({proc.header.inputs.values}) → ({proc.header.outputs.values})")
            let Env := Env.updateSubst S
            let newCallArgs := CallArg.replaceInArgs callArgs args'
-           let s' := .call pname newCallArgs md
+           -- The incoming type arguments are not trusted: only the checker annotates a call.
+           let s' := .call pname none newCallArgs md
            .ok (s', Env)
       catch e =>
         -- Add source location to error messages if not already present.
@@ -171,8 +172,9 @@ where
           let rc := WrittenTyVarScope.renameCmd C.rigidTypeVars m st cmd
           let cmdMd := match cmd with
             | .cmd c => c.getMetaData
-            | .call _ _ md => md
-          -- An annotation reads the scope after a declaration's own bindings.
+            | .call _ _ _ md => md
+          -- An annotation reads the scope after a declaration's own bindings. A call's `tyArgs`
+          -- are not checked: `typeCheckCmd` discards them.
           let _ ← (checkAnnotsInScope false C.rigidTypeVars rc.2.1 (cmdExprs cmd)).mapError
             (errorWithSourceLoc · cmdMd)
           let (c', Env) ← typeCheckCmd C Env P rc.1
@@ -312,7 +314,8 @@ Apply type substitution `S` to a command.
 def Command.subst (S : Subst) (c : Command) : Command :=
   match c with
   | .cmd c => .cmd (Cmd.subst S c)
-  | .call pname callArgs md => .call pname (callArgs.map (CallArg.subst S)) md
+  | .call pname tyArgs callArgs md =>
+    .call pname (tyArgs.map (·.map (LTy.subst S))) (callArgs.map (CallArg.subst S)) md
 
 /--
 Apply type substitution `S` to a statement.

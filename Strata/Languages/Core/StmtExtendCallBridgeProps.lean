@@ -59,7 +59,7 @@ theorem projectStmt_some_of_allSubstmts {s : Statement}
   | cmd c =>
       cases c with
       | cmd cc => exact ⟨.cmd cc, by simp [projectStmt, projectCommand]⟩
-      | call pn as md => simp [Stmt.allSubstmts, Statement.isNotCall] at h
+      | call pn _ as md => simp [Stmt.allSubstmts, Statement.isNotCall] at h
   | block label ss md =>
       simp only [Stmt.allSubstmts, Statement.isNotCall, Bool.true_and] at h
       obtain ⟨bs, hbs⟩ := projectStmts_some_of_allSubstmts h

@@ -111,7 +111,7 @@ private def envX (v : Int) : IEnv Expression :=
 
 /-- The `i`-th command of the structured body of `n`, as a Kleene command. -/
 private def kcmd (n : String) (i : Nat) : KleeneStmt Expression Command :=
-  .cmd ((bodyCmds n)[i]?.getD (.call "" [] #[]))
+  .cmd ((bodyCmds n)[i]?.getD (.call "" none [] #[]))
 
 /-- The values of `x` and `t` in the terminal store of a Kleene replay run, and the oracle
     values the run consumed; `none` for a run that does not reach `.terminal`. -/

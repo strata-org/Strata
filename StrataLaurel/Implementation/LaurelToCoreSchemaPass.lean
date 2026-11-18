@@ -1190,7 +1190,7 @@ def translateStmt (stmt : StmtExprMd)
           callArgs := callArgs.set i (.inoutArg temp)
           copyBacks := copyBacks ++ [Core.Statement.set target (.fvar laurelLoc temp (some coreTy))
               md]
-        return inits ++ tempInits ++ [Core.Statement.call calleeId.text (callArgs ++ outArgs) md] ++ copyBacks
+        return inits ++ tempInits ++ [Core.Statement.call calleeId.text none (callArgs ++ outArgs) md] ++ copyBacks
       -- Match on the value to decide how to translate
       match _hv : value.val with
       | .Call none callee args _ =>
@@ -1259,7 +1259,7 @@ def translateStmt (stmt : StmtExprMd)
           let coreType := LTy.forAll [] (← translateType out.type)
           inits := inits ++ [Core.Statement.init ident coreType .nondet md]
           outArgs := outArgs ++ [.outArg ident]
-        return inits ++ [Core.Statement.call callee.text (callArgs ++ outArgs) md]
+        return inits ++ [Core.Statement.call callee.text none (callArgs ++ outArgs) md]
   | .Call (some _) .. => throwStmtDiagnostic (unliftedInstanceCall stmt.source)
   | .Return _ =>
       let d := md.toDiagnostic "Return statement should have been eliminated by EliminateReturnStatements pass" MessageKind.strataBug

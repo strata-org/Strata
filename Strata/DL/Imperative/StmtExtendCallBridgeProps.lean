@@ -232,7 +232,7 @@ theorem embedStmt_projectStmt {s : Stmt P (CmdExt P)} {b : Stmt P (Cmd P)}
       | cmd cc =>
           simp only [projectStmt, projectCommand, Option.map_some, Option.some.injEq] at h
           subst h; simp [embedStmt]
-      | call procName args md => simp [projectStmt, projectCommand] at h
+      | call procName _ args md => simp [projectStmt, projectCommand] at h
   | block label ss md =>
       simp only [projectStmt, Option.map_eq_some_iff] at h
       obtain ⟨ss', hss, hb⟩ := h

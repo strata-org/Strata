@@ -99,7 +99,7 @@ private def calleeEnv : String → Option Procedure :=
   fun n => if n = "callee" then some callee else none
 
 /-- The call command `call callee(out x)`. -/
-private def callCmd : Command := .call "callee" [.outArg xId] .empty
+private def callCmd : Command := .call "callee" none [.outArg xId] .empty
 
 /-- The `body` assertion event, captured at the store `σ2` and factory `fac`. -/
 private def bodyEvent (fac : Expression.Factory) : Event Expression :=
@@ -131,7 +131,8 @@ private theorem callCmd_sem (fac : Expression.Factory) :
       (projectStore (frame fac) (σ2 fac))
       [bodyEvent fac] :=
     .cfg (calleeCFG_run fac)
-  have h := EvalCmdExtE.call_sem (n := "callee") (callArgs := [.outArg xId]) (md := .empty)
+  have h := EvalCmdExtE.call_sem (n := "callee") (tyArgs := none) (callArgs := [.outArg xId])
+    (md := .empty)
     (π := calleeEnv) (fac := fac) (σ := (σ0 fac)) (σAO := (frame fac))
     (by simp [calleeEnv])
     ⟨[], [(ffV fac)], .eval_none,
@@ -223,7 +224,7 @@ private def eraseCmdMd (c : Command) : Command :=
   | .cmd (.assert l b _) => .cmd (.assert l b .empty)
   | .cmd (.assume l b _) => .cmd (.assume l b .empty)
   | .cmd (.cover l b _) => .cmd (.cover l b .empty)
-  | .call f args _ => .call f args .empty
+  | .call f tyArgs args _ => .call f tyArgs args .empty
 
 /-- A procedure body with the metadata of its commands, its transfers and its
     top-level statements erased. -/

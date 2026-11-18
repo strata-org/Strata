@@ -1376,7 +1376,7 @@ private theorem copy_callentry_facts
     with an explicit `CFGInitEnvWF`. -/
 theorem copy_call_triple :
     Core.Logic.Hoare.Triple copyPgm.findProcByString? testParams CopyCallPre
-      [Core.Statement.call "copy" copyCall .empty] CopyCallPost
+      [Core.Statement.call "copy" none copyCall .empty] CopyCallPost
       (factory := copyPgm.factoryBeforeProcedure "copy") := by
   have hfactory : copyPgm.factoryBeforeProcedure "copy" = Core.Factory :=
     Core.Program.factoryBeforeProcedure_eq_core_of_noFunctions (by native_decide)

@@ -1750,7 +1750,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
         callArgs := callArgs ++ [.inArg (← translateExpr p bindings bargs[0]!)]
       | _ => TransM.error s!"translateCallArg: unexpected op {repr aop.name}"
     let md ← getMetaDataWithAnn op annotsArg
-    return ([.call f callArgs md], bindings)
+    return ([.call f none callArgs md], bindings)
   | q`Core.block_statement, #[annotsArg, la, ba] =>
     let l ← translateIdent String la
     let (ss, innerBindings) ← translateBlock p bindings ba

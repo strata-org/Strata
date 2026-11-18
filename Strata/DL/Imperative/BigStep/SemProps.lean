@@ -263,7 +263,7 @@ private theorem brunS_fv : ∀ {s : PStmt P} {σ : SemanticStore P}
     {evs : List (Event P)} {o : Outcome P}, BRunS F s σ evs o →
     ∀ ev ∈ evs, ∀ y ∈ exprFV ev.condition.expr, y ∈ Stmt.idents s
   | _, _, _, _, .cmd (c := .cmd _) h => evalE_fv h
-  | _, _, _, _, .cmd (c := .call _ _ _) h => h.elim
+  | _, _, _, _, .cmd (c := .call _ _ _ _) h => h.elim
   | _, _, _, _, .ite_true _ h | _, _, _, _, .ite_nondet_true h | _, _, _, _, .ite_false _ h
   | _, _, _, _, .ite_nondet_false h => fun ev hev y hy => by
     simp [Stmt.idents, brun_fv h ev hev y hy, ExprOrNondet.getVars_det,
@@ -291,7 +291,7 @@ theorem breach_fv : ∀ {ss : PStmts P} {σ : SemanticStore P} {evs : List (Even
 private theorem breachS_fv : ∀ {s : PStmt P} {σ : SemanticStore P} {evs : List (Event P)},
     BReachS F s σ evs → ∀ ev ∈ evs, ∀ y ∈ exprFV ev.condition.expr, y ∈ Stmt.idents s
   | _, _, _, .cmd (c := .cmd _) h _ => evalE_fv h
-  | _, _, _, .cmd (c := .call _ _ _) h _ => h.elim
+  | _, _, _, .cmd (c := .call _ _ _ _) h _ => h.elim
   | _, _, _, .ite_true _ h | _, _, _, .ite_nondet_true h | _, _, _, .ite_false _ h
   | _, _, _, .ite_nondet_false h => fun ev hev y hy => by
     simp [Stmt.idents, breach_fv h ev hev y hy, ExprOrNondet.getVars_det,

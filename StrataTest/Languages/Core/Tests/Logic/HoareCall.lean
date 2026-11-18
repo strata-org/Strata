@@ -253,19 +253,19 @@ private def maxABInitStmt : Core.Statement :=
 
 private def cArgs1 : List (Imperative.CallArg Core.Expression) :=
   match mmRunProc.body with
-  | .structured (_ :: Core.Statement.call _ a _ :: _) => a
+  | .structured (_ :: Core.Statement.call _ _ a _ :: _) => a
   | _ => []
 private def cMd1 : Imperative.MetaData Core.Expression :=
   match mmRunProc.body with
-  | .structured (_ :: Core.Statement.call _ _ m :: _) => m
+  | .structured (_ :: Core.Statement.call _ _ _ m :: _) => m
   | _ => #[]
 private def cArgs2 : List (Imperative.CallArg Core.Expression) :=
   match mmRunProc.body with
-  | .structured (_ :: _ :: Core.Statement.call _ a _ :: _) => a
+  | .structured (_ :: _ :: Core.Statement.call _ _ a _ :: _) => a
   | _ => []
 private def cMd2 : Imperative.MetaData Core.Expression :=
   match mmRunProc.body with
-  | .structured (_ :: _ :: Core.Statement.call _ _ m :: _) => m
+  | .structured (_ :: _ :: Core.Statement.call _ _ _ m :: _) => m
   | _ => #[]
 private def minABInitTy : Core.Expression.Ty :=
   match mmRunProc.body with
@@ -280,30 +280,30 @@ private def minABInitStmt : Core.Statement :=
 
 private def cArgs3 : List (Imperative.CallArg Core.Expression) :=
   match mmRunProc.body with
-  | .structured (_ :: _ :: _ :: _ :: Core.Statement.call _ a _ :: _) => a
+  | .structured (_ :: _ :: _ :: _ :: Core.Statement.call _ _ a _ :: _) => a
   | _ => []
 private def cMd3 : Imperative.MetaData Core.Expression :=
   match mmRunProc.body with
-  | .structured (_ :: _ :: _ :: _ :: Core.Statement.call _ _ m :: _) => m
+  | .structured (_ :: _ :: _ :: _ :: Core.Statement.call _ _ _ m :: _) => m
   | _ => #[]
 private def cArgs4 : List (Imperative.CallArg Core.Expression) :=
   match mmRunProc.body with
-  | .structured (_ :: _ :: _ :: _ :: _ :: Core.Statement.call _ a _ :: _) => a
+  | .structured (_ :: _ :: _ :: _ :: _ :: Core.Statement.call _ _ a _ :: _) => a
   | _ => []
 private def cMd4 : Imperative.MetaData Core.Expression :=
   match mmRunProc.body with
-  | .structured (_ :: _ :: _ :: _ :: _ :: Core.Statement.call _ _ m :: _) => m
+  | .structured (_ :: _ :: _ :: _ :: _ :: Core.Statement.call _ _ _ m :: _) => m
   | _ => #[]
 
 /-- The translated Run body interleaves two local declarations with its four calls. -/
 private theorem mm_run_body_eq :
     mmRunProc.body = .structured
       [maxABInitStmt,
-       Core.Statement.call "Max16" cArgs1 cMd1,
-       Core.Statement.call "Min16" cArgs2 cMd2,
+       Core.Statement.call "Max16" none cArgs1 cMd1,
+       Core.Statement.call "Min16" none cArgs2 cMd2,
        minABInitStmt,
-       Core.Statement.call "Min16" cArgs3 cMd3,
-       Core.Statement.call "Max16" cArgs4 cMd4] := by native_decide
+       Core.Statement.call "Min16" none cArgs3 cMd3,
+       Core.Statement.call "Max16" none cArgs4 cMd4] := by native_decide
 
 /-! ### Body-frame lemmas for Max16 / Min16 -/
 
@@ -576,7 +576,7 @@ private theorem setBlockWF (setE : Core.Expression.Expr)
     from the semantic contract and output typing; `hActuals` then establishes `Ppost`
     after writeback while preserving every other caller slot. -/
 private theorem bv16_call_triple
-    (procName : String) (proc : Core.Procedure)
+    (procName : String) {tyArgs : Option (List Core.Expression.Ty)} (proc : Core.Procedure)
     (callArgs : List (Imperative.CallArg Core.Expression))
     (md bmd : Imperative.MetaData Core.Expression)
     (bodyE : Core.Expression.Expr)
@@ -616,7 +616,7 @@ private theorem bv16_call_triple
         ρ'.store xId = some (bvV F va) → ρ'.store yId = some (bvV F vb) →
         ρ'.store resultId = some (bvV F (fval va vb)))
     (hActuals : ∀ ρ : Imperative.Env Core.Expression, Ppre ρ →
-        Core.Logic.InitEnvWF testParams (Core.Statement.call procName callArgs md) ρ →
+        Core.Logic.InitEnvWF testParams (Core.Statement.call procName tyArgs callArgs md) ρ →
         ρ.factory.factory = Core.Factory →
         ∃ va vb, Core.Expression.eval ρ.factory ρ.store exX = some (bvV ρ.factory va) ∧
           Core.Expression.eval ρ.factory ρ.store exY = some (bvV ρ.factory vb) ∧
@@ -626,7 +626,7 @@ private theorem bv16_call_triple
     (hfactory : mmAST.factoryBeforeProcedure procName = Core.Factory)
     (haxioms : ∀ ρ, Core.Specification.AxiomsBeforeProcedureDecl procName mmAST ρ) :
     Core.Logic.Hoare.Triple mmAST.findProcByString? testParams Ppre
-      [Core.Statement.call procName callArgs md] Ppost := by
+      [Core.Statement.call procName tyArgs callArgs md] Ppost := by
   rw [← hfactory]
   refine Core.Logic.Hoare.Procedure.call_of_contract mmAST testParams procName
     callArgs md Ppre Ppost hcontract hframe houtputs ?_ (fun _ _ _ _ _ _ _ => haxioms _) ?_
@@ -1210,7 +1210,7 @@ private theorem mm_run_ensures_shape :
 /-- The first call establishes `maxAB = max(a, b)`. -/
 private theorem call1_triple :
     Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA0
-      [Core.Statement.call "Max16" cArgs1 cMd1] PA1 := by
+      [Core.Statement.call "Max16" none cArgs1 cMd1] PA1 := by
   refine bv16_call_triple "Max16" maxProc cArgs1 cMd1 maxSetMd maxSetExpr
     (.fvar Core.valueLoc aId bv16Ty) (.fvar Core.valueLoc bId bv16Ty) maxABId vMax PA0 PA1
     max16_meets_contract (max_body_frame) (max_body_outputs) (by native_decide) max_body_eq
@@ -1234,7 +1234,7 @@ private theorem call1_triple :
 /-- The second call establishes `minMaxA = min(max(a, b), a)`. -/
 private theorem call2_triple :
     Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA1
-      [Core.Statement.call "Min16" cArgs2 cMd2] PA2 := by
+      [Core.Statement.call "Min16" none cArgs2 cMd2] PA2 := by
   refine bv16_call_triple "Min16" minProc cArgs2 cMd2 minSetMd minSetExpr
     (.fvar Core.valueLoc maxABId bv16Ty) (.fvar Core.valueLoc aId bv16Ty) minMaxAId vMin PA1 PA2
     min16_meets_contract (min_body_frame) (min_body_outputs) (by native_decide) min_body_eq
@@ -1249,7 +1249,7 @@ private theorem call2_triple :
 /-- The third call establishes `minAB = min(a, b)`. -/
 private theorem call3_triple :
     Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA2
-      [Core.Statement.call "Min16" cArgs3 cMd3] PA3 := by
+      [Core.Statement.call "Min16" none cArgs3 cMd3] PA3 := by
   refine bv16_call_triple "Min16" minProc cArgs3 cMd3 minSetMd minSetExpr
     (.fvar Core.valueLoc aId bv16Ty) (.fvar Core.valueLoc bId bv16Ty) minABId vMin PA2 PA3
     min16_meets_contract (min_body_frame) (min_body_outputs) (by native_decide) min_body_eq
@@ -1265,7 +1265,7 @@ private theorem call3_triple :
 /-- The fourth call establishes `maxMinA = max(min(a, b), a)`. -/
 private theorem call4_triple :
     Core.Logic.Hoare.Triple mmAST.findProcByString? testParams PA3
-      [Core.Statement.call "Max16" cArgs4 cMd4] PA4 := by
+      [Core.Statement.call "Max16" none cArgs4 cMd4] PA4 := by
   refine bv16_call_triple "Max16" maxProc cArgs4 cMd4 maxSetMd maxSetExpr
     (.fvar Core.valueLoc minABId bv16Ty) (.fvar Core.valueLoc aId bv16Ty) maxMinAId vMax PA3 PA4
     max16_meets_contract (max_body_frame) (max_body_outputs) (by native_decide) max_body_eq
@@ -1336,18 +1336,18 @@ private theorem minAB_init_triple :
 /-- The final output facts survive when the procedure block drops local intermediates. -/
 private theorem mm_run_PA4_postWF :
     Imperative.Logic.Hoare.PostWF
-      [maxABInitStmt, Core.Statement.call "Max16" cArgs1 cMd1,
-       Core.Statement.call "Min16" cArgs2 cMd2, minABInitStmt,
-       Core.Statement.call "Min16" cArgs3 cMd3,
-       Core.Statement.call "Max16" cArgs4 cMd4] PA4 := by
+      [maxABInitStmt, Core.Statement.call "Max16" none cArgs1 cMd1,
+       Core.Statement.call "Min16" none cArgs2 cMd2, minABInitStmt,
+       Core.Statement.call "Min16" none cArgs3 cMd3,
+       Core.Statement.call "Max16" none cArgs4 cMd4] PA4 := by
   intro ρ hpost
   obtain ⟨hfac, va, vb, hmm, hmma⟩ := hpost
   have hdefs : Imperative.Block.definedVars
       (P := Core.Expression) (C := Core.Command)
-      [maxABInitStmt, Core.Statement.call "Max16" cArgs1 cMd1,
-       Core.Statement.call "Min16" cArgs2 cMd2, minABInitStmt,
-       Core.Statement.call "Min16" cArgs3 cMd3,
-       Core.Statement.call "Max16" cArgs4 cMd4] true = [maxABId, minABId] := by
+      [maxABInitStmt, Core.Statement.call "Max16" none cArgs1 cMd1,
+       Core.Statement.call "Min16" none cArgs2 cMd2, minABInitStmt,
+       Core.Statement.call "Min16" none cArgs3 cMd3,
+       Core.Statement.call "Max16" none cArgs4 cMd4] true = [maxABId, minABId] := by
     native_decide
   rw [hdefs]
   refine ⟨hfac, va, vb, ?_, ?_⟩

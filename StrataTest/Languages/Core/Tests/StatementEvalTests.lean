@@ -394,7 +394,7 @@ private def contractRenamed (tyU tyV : Lambda.LMonoTy) : Format :=
                   inputs := [("x", tvA), ("y", tvB)], outputs := [] },
       spec := { preconditions := [("pre", ⟨pre, .Default, #[]⟩)], postconditions := [] } }
   let E := { Env.init with program := { decls := [.proc proc .empty] } }
-  let (_, E) := Command.inlineCallContract E [] "p"
+  let (_, E) := Command.inlineCallContract E [] "p" none
     [.fvar Core.coreLoc "u" (some tyU), .fvar Core.coreLoc "v" (some tyV)] .empty
   Format.joinSep (E.deferred.toList.map fun ob =>
     (Lambda.LExpr.instToFormatLExpr CoreLParams.mono).format ob.obligation) Format.line
@@ -428,7 +428,7 @@ private def contractRenamedOut (tyV tyW : Lambda.LMonoTy) : Format :=
       spec := { preconditions := [("pre", ⟨pre, .Default, #[]⟩)], postconditions := [] } }
   let E := { Env.init with program := { decls := [.proc proc .empty] } }
   let E := E.insertInContext ("w", some tyW) (.fvar Core.coreLoc "w" (some tyW))
-  let (_, E) := Command.inlineCallContract E ["w"] "q"
+  let (_, E) := Command.inlineCallContract E ["w"] "q" none
     [.fvar Core.coreLoc "u" none, .fvar Core.coreLoc "v" (some tyV)] .empty
   Format.joinSep (E.deferred.toList.map fun ob =>
     (Lambda.LExpr.instToFormatLExpr CoreLParams.mono).format ob.obligation) Format.line

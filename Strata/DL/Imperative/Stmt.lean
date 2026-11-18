@@ -1305,7 +1305,7 @@ mutual
   | .cmd (.cmd (.init x _ .nondet _)) | .cmd (.cmd (.set x .nondet _)) => [x]
   | .cmd (.cmd (.assume _ e _)) | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) =>
     HasFvars.getFvars e
-  | .cmd (.call _ args _) =>
+  | .cmd (.call _ _ args _) =>
     (CallArg.getInArgs args).flatMap HasFvars.getFvars ++ CallArg.getLhs args
   | .block _ ss _ => Block.idents ss
   | .ite c tss ess _ => c.getVars ++ Block.idents tss ++ Block.idents ess
@@ -1432,7 +1432,7 @@ mutual
   | .cmd (.cmd (.set x .nondet _)) => [x]
   | .cmd (.cmd (.assume _ e _)) | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) =>
     exprFV e
-  | .cmd (.call _ _ _) => []
+  | .cmd (.call _ _ _ _) => []
   | .block _ ss _ => Block.freeVars ss
   | .ite c tss ess _ =>
     (match c with | .det c => exprFV c | .nondet => []) ++ Block.freeVars tss ++ Block.freeVars ess
@@ -1562,7 +1562,7 @@ mutual
   | .cmd (.cmd (.set x .nondet _)) => (b, ScopeCount.emitFree b [x] acc)
   | .cmd (.cmd (.assume _ e _)) | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) =>
     (b, ScopeCount.emitFree b (exprFV e) acc)
-  | .cmd (.call _ _ _) => (b, acc)
+  | .cmd (.call _ _ _ _) => (b, acc)
   | .block _ ss _ => Block.freeVarsWalk b acc ss
   | .ite c tss ess _ =>
     let acc := ScopeCount.emitFree b (match c with | .det c => exprFV c | .nondet => []) acc

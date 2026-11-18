@@ -97,7 +97,7 @@ private theorem shS_transfer : ∀ {s : PStmt P} {σ σ' : SemanticStore P}
       | exact shL_transfer hP ‹_›
   | .block l _ _, σ, σ', _, _, hK, h =>
     shL_transfer (fun o o' ho => hK _ _ (OSame.block l σ σ' ho)) h
-  | .cmd (.call _ _ _), _, _, _, _, _, h | .ite .nondet _ _ _, _, _, _, _, _, h
+  | .cmd (.call _ _ _ _), _, _, _, _, _, h | .ite .nondet _ _ _, _, _, _, _, _, h
   | .loop _ _ _ _ _, _, _, _, _, _, h => h.elim
 end
 
@@ -150,7 +150,7 @@ private theorem drunS_agr [BEq P.Ident] [LawfulBEq P.Ident] [LawfulHasVal P] (hE
     ∃ evs' o', DRunS F X' s σ' evs' o' ∧ evs'.map Event.obs = evs.map Event.obs ∧ OAgree F live o o'
   | _, _, _, _, _, .cmd (c := .cmd c) h, _, _, _, _, hC, hA =>
     (cmd_sim hE h hC hA).elim fun _ ⟨evs', h', hm, hO⟩ => ⟨evs', _, .cmd h', hm.map_obs hE, hO⟩
-  | _, _, _, _, _, .cmd (c := .call _ _ _) h, _, _, _, _, _, _ => h.elim
+  | _, _, _, _, _, .cmd (c := .call _ _ _ _) h, _, _, _, _, _, _ => h.elim
   | X, _, σ, _, _, .ite_true (ess := B) hc h hsh, X', live, σ', hX, hC, hA
   | X, _, σ, _, _, .ite_false (tss := B) hc h hsh, X', live, σ', hX, hC, hA => by
     simp only [Stmt.idents, List.append_assoc, ExprOrNondet.getVars_det] at hA
@@ -199,7 +199,7 @@ private theorem dreachS_agr (hE : EvCongr F) :
   | _, _, _, .cmd (c := .cmd c) h, _, hC, hA => by
     obtain ⟨_, evs', h', hm, -⟩ := cmd_sim hE (N := []) h hC (by simpa using hA)
     exact ⟨evs', .cmd h', hm.map_obs hE⟩
-  | _, _, _, .cmd (c := .call _ _ _) h, _, _, _ => h.elim
+  | _, _, _, .cmd (c := .call _ _ _ _) h, _, _, _ => h.elim
   | _, _, _, .ite_true hc h, _, hC, hA | _, _, _, .ite_false hc h hsh, _, hC, hA => by
     simp only [Stmt.idents, List.append_assoc, ExprOrNondet.getVars_det] at hA
     obtain ⟨evs', h', hm⟩ := dreach_agr hE h hC (hA.mono fun y hy => by simp [hy])

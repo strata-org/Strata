@@ -124,7 +124,7 @@ private partial def coreStmtsToGoto
   | [] => return trans
   | stmt :: rest =>
     let trans ← match stmt with
-      | .cmd (.call procName callArgs _md) =>
+      | .cmd (.call procName _ callArgs _md) =>
         let lhs := Imperative.CallArg.getLhs callArgs
         let args := Core.CallArg.getInputExprs callArgs
         let renamedLhs := lhs.map (renameIdent rn)
@@ -654,7 +654,7 @@ private def mkVerificationHarness (entry : Core.Procedure) : Core.Procedure :=
     (entry.header.outputs.toList.filter (fun (id, _) => id ∉ inKeys)).map (fun (id, _) =>
       .outArg id)
   let callStmt : Core.Statement :=
-    .call (Core.CoreIdent.toPretty entry.header.name) (inArgs ++ outArgs) md
+    .call (Core.CoreIdent.toPretty entry.header.name) none (inArgs ++ outArgs) md
   { header := { name := ⟨"main", ()⟩, typeArgs := [], inputs := [], outputs := [] },
     spec := { preconditions := [], postconditions := [] },
     body := .structured (inDecls ++ outOnlyDecls ++ assumes ++ [callStmt]) }

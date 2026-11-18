@@ -81,8 +81,8 @@ specified by its signature. -/
     postcondition on the projected final store, so no separate projection
     hypothesis is needed. -/
 theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
-    (procName : String) (callArgs : List (Imperative.CallArg Expression))
-    (md : Imperative.MetaData Expression)
+    (procName : String) {tyArgs : Option (List Expression.Ty)}
+    (callArgs : List (Imperative.CallArg Expression)) (md : Imperative.MetaData Expression)
     (Pre Post : Imperative.Env Expression → Prop)
     (hcontract : Procedure.contractTriple p params procName)
     (hframe : ∀ proc, p.findProcByString? procName = some proc →
@@ -92,7 +92,7 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
         p.findProcByString? proc)
     (hentry : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (σAO : CoreStore),
-      Pre ρ₀ → InitEnvWF params (Statement.call procName callArgs md) ρ₀ →
+      Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
       p.findProcByString? procName = some proc →
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
       Procedure.contractPre (p.factoryBeforeProcedure procName) proc
@@ -106,14 +106,14 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
               { store := σAO, factory := ρ₀.factory })
     (haxioms : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (σAO : CoreStore),
-      Pre ρ₀ → InitEnvWF params (Statement.call procName callArgs md) ρ₀ →
+      Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
       p.findProcByString? procName = some proc →
       CallEntry ρ₀.factory ρ₀.store proc callArgs σAO →
       Core.Specification.AxiomsBeforeProcedureDecl procName p
         { store := σAO, factory := ρ₀.factory })
     (hexit : ∀ (ρ₀ : Imperative.Env Expression) (proc : Procedure)
         (ρ' : Imperative.Env Expression) (σ' σAO : CoreStore),
-      Pre ρ₀ → InitEnvWF params (Statement.call procName callArgs md) ρ₀ →
+      Pre ρ₀ → InitEnvWF params (Statement.call procName tyArgs callArgs md) ρ₀ →
       p.findProcByString? procName = some proc →
       Procedure.contractPost (p.factoryBeforeProcedure procName) proc ρ' →
       Procedure.outputAsPredicate proc ρ' →
@@ -123,16 +123,16 @@ theorem Procedure.call_of_contract (p : Core.Program) (params : InitEnvWFParams)
       CallExit ρ₀.factory ρ₀.store proc callArgs ρ'.store σ' →
       Post { ρ₀ with store := σ' }) :
     Triple p.findProcByString? params Pre
-      [Statement.call procName callArgs md] Post
+      [Statement.call procName tyArgs callArgs md] Post
       (factory := p.factoryBeforeProcedure procName) := by
   obtain ⟨cproc, hcproc, _hctyped, htriple⟩ := hcontract
   refine cmd (factory := p.factoryBeforeProcedure procName)
     p.findProcByString? params
-    (Imperative.CmdExt.call procName callArgs md)
+    (Imperative.CmdExt.call procName tyArgs callArgs md)
     Pre Post (fun ρ₀ σ' emitted hpre hwf hstep => ?_)
   let I := DenoteBasedInterp (p.factoryBeforeProcedure procName)
   cases hstep with
-  | @call_sem _ _ _ _ _ _ _ _ _ σAO hlookup hcallentry hbodyE hcallexit =>
+  | @call_sem _ _ _ _ _ _ _ _ _ _ σAO hlookup hcallentry hbodyE hcallexit =>
     obtain rfl : cproc = _ := Option.some.inj (hcproc.symm.trans hlookup)
     have hframeRel := hframe cproc hcproc _ _ _ _ hbodyE
     obtain ⟨hcontractPre, hbodyWF⟩ :=

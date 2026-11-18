@@ -2463,7 +2463,7 @@ theorem Stmt.definedVars_subset_idents :
       Stmt.idents]
   | .cmd (.cmd (.set _ _ _)), _, x, hx | .cmd (.cmd (.assert _ _ _)), _, x, hx
   | .cmd (.cmd (.assume _ _ _)), _, x, hx | .cmd (.cmd (.cover _ _ _)), _, x, hx
-  | .cmd (.call _ _ _), _, x, hx => by
+  | .cmd (.call _ _ _ _), _, x, hx => by
     simp [HasVarsImp.definedVars, CmdExt.definedVars, Cmd.definedVars] at hx
   | .block _ bss _, b, x, hx => by
     cases b <;> simp only [Stmt.definedVars, Bool.false_eq_true, ite_false, ite_true,
@@ -2516,7 +2516,7 @@ theorem Stmt.idents_subset_vars :
   | .cmd (.cmd (.assert _ _ _)), x, hx | .cmd (.cmd (.assume _ _ _)), x, hx
   | .cmd (.cmd (.cover _ _ _)), x, hx => by
     simp_all [Stmt.idents, Stmt.getVars, HasVarsImp.readVars, CmdExt.readVars, Cmd.getVars]
-  | .cmd (.call _ args _), x, hx => by
+  | .cmd (.call _ _ args _), x, hx => by
     simp only [Stmt.idents, List.mem_append, List.mem_flatMap] at hx
     simp only [Stmt.getVars, Stmt.modifiedVars, HasVarsImp.readVars, CmdExt.readVars,
       HasVarsImp.modifiedVars, CmdExt.modifiedVars, List.mem_flatMap]
@@ -2687,7 +2687,7 @@ theorem Stmt.mem_idents_of_mem_freeVars :
   | .cmd (.cmd (.cover _ _ _)), _, h => by
     simp only [Stmt.freeVars, Stmt.idents, List.mem_cons, mem_exprFV] at h ⊢
     first | exact h | exact .inr h
-  | .cmd (.cmd (.init _ _ .nondet _)), _, h | .cmd (.call _ _ _), _, h
+  | .cmd (.cmd (.init _ _ .nondet _)), _, h | .cmd (.call _ _ _ _), _, h
   | .exit _ _, _, h | .typeDecl _ _, _, h => by simp [Stmt.freeVars] at h
   | .cmd (.cmd (.set _ .nondet _)), _, h => by simpa [Stmt.freeVars, Stmt.idents] using h
   | .block _ ss _, _, h => Block.mem_idents_of_mem_freeVars ss h

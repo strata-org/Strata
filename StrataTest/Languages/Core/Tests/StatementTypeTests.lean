@@ -1210,7 +1210,7 @@ info: error: [call Foo(x == x, out x, out y);]: Ill-formed call: the call to Foo
   let env := TEnv.default.updateContext
     { types := Strata.Util.HMaps.ofScopes [[("x", t[int]), ("y", t[int])]] }
   let ans ← Statement.typeCheck LContext.default env testProgram none
-    [.cmd (.call "Foo" [.inArg eb[x == x], .outArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
+    [.cmd (.call "Foo" none [.inArg eb[x == x], .outArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
   return format ans
 
 -- The same holds when the input value is the variable `x` itself.
@@ -1221,7 +1221,7 @@ info: error: [call Foo(x, out x, out y);]: Ill-formed call: the call to Foo pass
 #eval do
   let env := TEnv.default.updateContext { types := Strata.Util.HMaps.ofScopes [[("x", t[int]), ("y", t[int])]] }
   let ans ← Statement.typeCheck LContext.default env testProgram none
-    [.cmd (.call "Foo" [.inArg eb[x], .outArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
+    [.cmd (.call "Foo" none [.inArg eb[x], .outArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
   return format ans
 
 -- Passing `x` as an `inout` argument succeeds.
@@ -1231,7 +1231,7 @@ info: error: [call Foo(x, out x, out y);]: Ill-formed call: the call to Foo pass
   let env := TEnv.default.updateContext
     { types := Strata.Util.HMaps.ofScopes [[("x", t[int]), ("y", t[int])]] }
   let _ ← Statement.typeCheck LContext.default env testProgram none
-    [.cmd (.call "Foo" [.inoutArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
+    [.cmd (.call "Foo" none [.inoutArg ⟨"x", ()⟩, .outArg ⟨"y", ()⟩] .empty)]
   return format ()
 
 end CallOutArgTests

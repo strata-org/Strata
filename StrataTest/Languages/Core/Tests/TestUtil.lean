@@ -135,7 +135,7 @@ def setS (x : String) (e : Expression.Expr) : Statement := Statement.set x e .em
 
 /-- `call p(args)`. -/
 def callS (p : String) (args : List (Imperative.CallArg Expression)) : Statement :=
-  Statement.call p args .empty
+  Statement.call p none args .empty
 
 /-- An unannotated occurrence of the variable `x`. -/
 def var (x : String) : Expression.Expr := LExpr.fvar Core.coreLoc x none

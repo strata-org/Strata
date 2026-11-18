@@ -1199,7 +1199,7 @@ def specStmtIdents : Statement → List CoreIdent
   | .cmd (.cmd (.init x _ .nondet _)) | .cmd (.cmd (.set x .nondet _)) => [x]
   | .cmd (.cmd (.assume _ e _)) | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) =>
     HasFvars.getFvars e
-  | .cmd (.call _ args _) =>
+  | .cmd (.call _ _ args _) =>
     (CallArg.getInArgs args).flatMap HasFvars.getFvars ++ CallArg.getLhs args
   | .block _ ss _ => specStmtsIdents ss
   | .ite c tss ess _ =>
@@ -1228,7 +1228,7 @@ def specStmtFV : Statement → List CoreIdent
   | .cmd (.cmd (.set x .nondet _)) => [x]
   | .cmd (.cmd (.assume _ e _)) | .cmd (.cmd (.assert _ e _)) | .cmd (.cmd (.cover _ e _)) =>
     specExprFV e
-  | .cmd (.call _ _ _) => []
+  | .cmd (.call _ _ _ _) => []
   | .block _ ss _ => specStmtsFV ss
   | .ite c tss ess _ =>
     (match c with | .det c => specExprFV c | .nondet => []) ++ specStmtsFV tss ++ specStmtsFV ess

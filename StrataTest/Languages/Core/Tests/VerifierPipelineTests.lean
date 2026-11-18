@@ -125,7 +125,7 @@ private def reflexive : Expression.Expr :=
 private def undetermined : Program :=
   { decls := [
       proc "q" [] (typeArgs := ["a"]) (pre := [reflexive]),
-      proc "caller" [Statement.call "q" [] md, Statement.call "q" [] md]] }
+      proc "caller" [Statement.call "q" none [] md, Statement.call "q" none [] md]] }
 
 private def checkThenCallElim : List PipelinePhase :=
   [ProgramFact.assertPhase .noCFGBodies, typeCheckPipelinePhase .quiet, callElimPipelinePhase]
@@ -199,7 +199,7 @@ private def identity : Program :=
                   (.fvar Core.coreLoc (ident "x") none)]),
       proc "caller"
         [Statement.init (ident "z") (.forAll [] .int) .nondet md,
-         Statement.call "id" [.inArg (intConst 5), .outArg (ident "z")] md]] }
+         Statement.call "id" none [.inArg (intConst 5), .outArg (ident "z")] md]] }
 
 /--
 info: program Core;
@@ -237,7 +237,7 @@ private def exitingLoop (label : String) (pre : List Statement := []) : Statemen
 private def exiting : Program :=
   { decls := [
       proc "callee" [.block "b" [exitingLoop "b"] md],
-      proc "caller" [.block "c" [exitingLoop "c" [Statement.call "callee" [] md]] md]] }
+      proc "caller" [.block "c" [exitingLoop "c" [Statement.call "callee" none [] md]] md]] }
 
 /-- The phase that asserts every `exit` is inside a block that catches it. -/
 private def covered : PipelinePhase := ProgramFact.assertPhase .exitsCovered

@@ -199,7 +199,7 @@ def callElimCall (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (procNa
 def callElimCommand (taken : Std.HashSet String) (vt : TypeSpec.TypeScopes) (c : Command) :
     CoreTransformM (Option (List Command)) :=
   match c with
-  | .call procName callArgs md => .some <$> callElimCall taken vt procName callArgs md
+  | .call procName _ callArgs md => .some <$> callElimCall taken vt procName callArgs md
   | _ => return .none
 
 /--

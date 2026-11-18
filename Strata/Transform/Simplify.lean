@@ -154,12 +154,12 @@ def simpStmt (ctx : Ctx) (s : Statement) : List Statement × Ctx × (Writes → 
   | .cmd (.cmd c) =>
     let (c, ctx) := simpCmd ctx c
     ([.cmd (.cmd c)], ctx, .insertStmt s)
-  | .cmd (.call pname args md) =>
+  | .cmd (.call pname tyArgs args md) =>
     let args := args.map fun a =>
       match a with
       | .inArg e => CallArg.inArg (simplifyExpr ctx e)
       | other => other
-    ([Statement.call pname args md], forgetAssigned ctx [s], .insertStmt s)
+    ([Statement.call pname tyArgs args md], forgetAssigned ctx [s], .insertStmt s)
   | .block label ss md =>
     let (ss, inner, w) := simpStmts ctx ss
     -- Declarations inside the block leave scope with it; values that were known

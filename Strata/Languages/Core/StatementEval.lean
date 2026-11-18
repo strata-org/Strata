@@ -145,11 +145,12 @@ private def computeTypeSubst (proc : Procedure) (args : List Expression.Expr)
 /--
 Evaluate a procedure call by inlining its contract.
 `args` and `lhs` are matched positionally against
-`proc.header.inputs` and `proc.header.outputs` respectively.
+`proc.header.inputs` and `proc.header.outputs` respectively.  The call's type
+arguments `tyArgs` are kept on the returned command.
 -/
 def Command.inlineCallContract (E : Env)
-    (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
-    (md : Imperative.MetaData Expression) : Command × Env :=
+    (lhs : List Expression.Ident) (pname : String) (tyArgs : Option (List Expression.Ty))
+    (args : List Expression.Expr) (md : Imperative.MetaData Expression) : Command × Env :=
   match Program.Procedure.find? E.program pname with
   | some proc =>
     let tySubst := computeTypeSubst proc args lhs E
@@ -195,12 +196,12 @@ def Command.inlineCallContract (E : Env)
         (fun ((old, _), new) => Imperative.MetaDataElem.mk (.var old) (.expr new))
     let md' := md ++ post_vars_mdata.toArray
     let callArgs := args.map .inArg ++ lhs.map .outArg
-    let c' := CmdExt.call pname callArgs md'
+    let c' := CmdExt.call pname tyArgs callArgs md'
     let E := E.addToContext lhs_post_subst
     (c', E)
   | _ =>
     let callArgs := args.map .inArg ++ lhs.map .outArg
-    let c' := CmdExt.call pname callArgs md
+    let c' := CmdExt.call pname tyArgs callArgs md
     let E := { E with error := some (.Misc f!"Procedure {pname} not found!") }
     (c', E)
 
@@ -209,13 +210,13 @@ def Command.eval (E : Env) (c : Command) : Command × Env :=
   | .cmd c =>
     let (c, E) := Imperative.Cmd.eval E c
     (.cmd c, E)
-  | .call pname callArgs md =>
+  | .call pname tyArgs callArgs md =>
     if let some msg := callError? E.program pname callArgs then
       (c, CmdEval.updateError E (.Misc (illFormedCallText msg)))
     else
     let lhs := CallArg.getLhs callArgs
     let inArgs := CallArg.getInputExprs callArgs
-    Command.inlineCallContract E lhs pname inArgs md
+    Command.inlineCallContract E lhs pname tyArgs inArgs md
 
 ---------------------------------------------------------------------
 
@@ -842,7 +843,7 @@ def Command.run (fuel : Nat) (E : Env) (c : Command) : Env :=
   match c with
   | .cmd c =>
     Imperative.Cmd.run E c
-  | .call pname args _md =>
+  | .call pname _ args _md =>
     if let some msg := callError? E.program pname args then
       CmdEval.updateError E (.Misc (illFormedCallText msg))
     else

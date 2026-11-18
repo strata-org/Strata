@@ -291,7 +291,7 @@ def symStepCmd (cfg : ExploreCfg) : @StepCmdM Expression (symLang cfg) Command F
     | .cmd base => do
       let store ← stepBase cfg fuel env base
       return .terminal { env with store }
-    | .call _ _ _ => throw (.interrupted "call (eliminate calls first)")
+    | .call _ _ _ _ => throw (.interrupted "call (eliminate calls first)")
 
 end -- public section
 

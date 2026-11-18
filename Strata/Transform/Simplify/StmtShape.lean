@@ -205,14 +205,14 @@ theorem simpStmt_cmd (c : Imperative.Cmd Expression) :
   rw [simpStmt]
 
 /-- A procedure call simplifies its input arguments and forgets what it writes. -/
-theorem simpStmt_call (pname : String) (args : List (CallArg Expression))
-    (md : MetaData Expression) :
-    simpStmt ctx (.cmd (.call pname args md)) =
-      ([Statement.call pname (args.map fun a => match a with
+theorem simpStmt_call (pname : String) (tyArgs : Option (List Expression.Ty))
+    (args : List (CallArg Expression)) (md : MetaData Expression) :
+    simpStmt ctx (.cmd (.call pname tyArgs args md)) =
+      ([Statement.call pname tyArgs (args.map fun a => match a with
           | .inArg e => CallArg.inArg (simplifyExpr ctx e)
           | other => other) md],
-        forgetAssigned ctx [.cmd (.call pname args md)],
-        .insertStmt (.cmd (.call pname args md))) := by
+        forgetAssigned ctx [.cmd (.call pname tyArgs args md)],
+        .insertStmt (.cmd (.call pname tyArgs args md))) := by
   rw [simpStmt]; rfl
 
 /-- A block simplifies its body; the values known after it are the body's, less those
@@ -304,7 +304,7 @@ theorem simpStmt_writes (ctx : Ctx) (s : Statement) {w : Writes} {vars defined :
       (Stmt.modifiedOrDefinedVars s false ++ vars) (Stmt.definedVars s false ++ defined) := by
   match s with
   | .cmd (.cmd c) => rw [simpStmt_cmd]; exact h.insertStmt _
-  | .cmd (.call pname args md) => rw [simpStmt_call]; exact h.insertStmt _
+  | .cmd (.call pname tyArgs args md) => rw [simpStmt_call]; exact h.insertStmt _
   | .block l ss md =>
     rw [simpStmt_block_eq]
     refine ((simpStmts_writes ctx ss).union h).of_iff (fun n => ?_) (fun n => ?_) <;>
@@ -560,7 +560,7 @@ theorem simpStmt_values_sub (ctx : Ctx) (s : Statement) {y : CoreIdent} {v : Exp
   | .cmd (.cmd c) =>
     rw [simpStmt_cmd] at hmem
     exact simpCmd_values_sub ctx c hmem hkey
-  | .cmd (.call pname args md) =>
+  | .cmd (.call pname tyArgs args md) =>
     rw [simpStmt_call, forgetAssigned] at hmem
     exact (mem_invalidate hmem).1
   | .block l ss md =>
@@ -686,7 +686,7 @@ theorem simpStmt_nodupKeys {ctx : Ctx} (h : ctx.NodupKeys) (s : Statement) :
     (simpStmt ctx s).2.1.NodupKeys := by
   match s with
   | .cmd (.cmd c) => rw [simpStmt_cmd]; exact simpCmd_nodupKeys h c
-  | .cmd (.call pname args md) => rw [simpStmt_call]; exact h.invalidate _
+  | .cmd (.call pname tyArgs args md) => rw [simpStmt_call]; exact h.invalidate _
   | .block l ss md =>
     rw [simpStmt_block_eq]
     exact Ctx.NodupKeys.invalidate (ctx := { ctx with values := (simpStmts ctx ss).2.1.values })

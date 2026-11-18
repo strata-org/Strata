@@ -113,7 +113,7 @@ inductive CmdExtWellTyped (C : LContext CoreLParams) (P : Program) :
       CmdExtWellTyped C P ts (.cmd c) ts'
   /-- A well-formed call (`WF.WFcallProp`) of a procedure of `P` whose formals, instantiated by
       `σ`, are the types of its arguments and of its declared left-hand sides. -/
-  | call : ∀ ts (pname : String) callArgs proc md (σ : List (TyIdentifier × LMonoTy)) ts',
+  | call : ∀ ts (pname : String) tyArgs callArgs proc md (σ : List (TyIdentifier × LMonoTy)) ts',
       Program.Procedure.find? P pname = some proc →
       WF.WFcallProp P pname callArgs →
       (∀ v, v ∈ CallArg.getLhs callArgs → (ts.find? v).isSome) →
@@ -129,7 +129,7 @@ inductive CmdExtWellTyped (C : LContext CoreLParams) (P : Program) :
         ts.find? ((CallArg.getLhs callArgs)[i]) =
           some (.forAll [] (LMonoTy.subst (HMaps.ofScopes [σ]) (proc.header.outputs.values[i])))) →
       HMaps.Equiv ts' ts →
-      CmdExtWellTyped C P ts (.call pname callArgs md) ts'
+      CmdExtWellTyped C P ts (.call pname tyArgs callArgs md) ts'
 
 /-- The kind of a declaration, counting a recursive function block as functions. -/
 @[expose] def declNameKind (d : Decl) : DeclKind :=

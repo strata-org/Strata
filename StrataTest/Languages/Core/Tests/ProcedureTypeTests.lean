@@ -89,7 +89,7 @@ spec {
 private def callFooAtBool : Decl :=
   mkProc "Test" [] [] []
     [Statement.init "y" (.forAll [] .bool) (.det eb[#true]) .empty,
-     Statement.call "Foo" [.outArg "y"] .empty]
+     Statement.call "Foo" none [.outArg "y"] .empty]
 
 private def xAndTrue : Expression.Expr := eb[((~Bool.And x) #true)]
 
@@ -111,7 +111,7 @@ info: error: Procedure 'Foo': Rigid type variable 'a' was refined to 'int'
 private def rigidCallOutputRefinementPgm : Program := { decls :=
   [mkProc "Bar" [] [] [("r", .int)] [Statement.set "r" eb[#0] .empty],
    mkProc "Foo" ["a"] [] [("x", .ftvar "a")]
-     [Statement.call "Bar" [.outArg "x"] .empty],
+     [Statement.call "Bar" none [.outArg "x"] .empty],
    callFooAtBool] }
 
 /--
@@ -160,7 +160,7 @@ private def rigidCallUnsolvedListRefinementPgm : Program := { decls :=
    mkProc "Mk" ["c"] [] [("r", .tcons "List" [.ftvar "c"])]
      [Statement.set "r" nilExpr .empty],
    mkProc "Foo" ["a"] [] [("x", .ftvar "a")]
-     [Statement.call "Mk" [.outArg "x"] .empty]] }
+     [Statement.call "Mk" none [.outArg "x"] .empty]] }
 
 /--
 info: error: Procedure 'Foo': Rigid type variable 'a' was refined to '(List _)'
@@ -175,7 +175,7 @@ private def inconsistentCallInstantiationPgm : Program := { decls :=
    mkProc "Bad" [] [] [("result", .bool)]
      [Statement.init "n" (.forAll [] .int) (.det eb[#42]) .empty,
       Statement.init "b" (.forAll [] .bool) (.det eb[#true]) .empty,
-      Statement.call "Identity" [.inArg eb[n], .outArg "b"] .empty,
+      Statement.call "Identity" none [.inArg eb[n], .outArg "b"] .empty,
       Statement.set "result" eb[b] .empty]] }
 
 /--
@@ -189,7 +189,7 @@ private def openArgumentCallPgm : Program := { decls :=
   [.func anyFunction .empty,
    mkProc "F" [] [("x", .int)] [("y", .int)] [Statement.set "y" eb[x] .empty],
    mkProc "Bad" [] [] [("b", .bool)]
-     [Statement.call "F" [.inArg (.op Core.coreLoc "any" none), .outArg "b"] .empty]] }
+     [Statement.call "F" none [.inArg (.op Core.coreLoc "any" none), .outArg "b"] .empty]] }
 
 /--
 info: error: Procedure 'Bad': [call F]: argument types [_] and return types [bool] are incompatible with signature ([int]) → ([int])
@@ -209,7 +209,7 @@ private def repeatedOutCallPgm : Program := { decls :=
   [threeOutputs,
    mkProc "Caller" [] [] []
      [Statement.init "x" (.forAll [] .int) (.det eb[#0]) .empty,
-      Statement.call "three" [.outArg "x", .outArg "x", .outArg "x"] .empty]] }
+      Statement.call "three" none [.outArg "x", .outArg "x", .outArg "x"] .empty]] }
 
 /--
 info: error: Procedure 'Caller': [call three(out x, out x, out x);]: Ill-formed call: the call to three passes the variable x for more than one out parameter; the results of a call must be distinct variables
@@ -223,7 +223,7 @@ private def repeatedInoutOutCallPgm : Program := { decls :=
      [Statement.set "a" eb[#1] .empty, Statement.set "b" eb[#0] .empty],
    mkProc "Caller" [] [] []
      [Statement.init "g" (.forAll [] .int) (.det eb[#0]) .empty,
-      Statement.call "P" [.inoutArg "g", .outArg "g"] .empty]] }
+      Statement.call "P" none [.inoutArg "g", .outArg "g"] .empty]] }
 
 /--
 info: error: Procedure 'Caller': [call P(inout g, out g);]: Ill-formed call: the call to P passes the inout argument g for more than one inout or out parameter; an inout argument must not alias another result of the call
@@ -1485,7 +1485,7 @@ private def callerOfReservedSignature : Procedure :=
         inputs := [("x", .ftvar "a")], outputs := [] },
     spec := { preconditions := [], postconditions := [] },
     body := .structured [
-      Statement.call "reservedCallee"
+      Statement.call "reservedCallee" none
         [.inArg (LExpr.fvar Core.coreLoc "x" none)] .empty
     ] }
 

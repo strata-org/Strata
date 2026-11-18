@@ -210,7 +210,7 @@ def inlineCallCmd (taken : Std.HashSet String)
   : CoreTransformM (Option (List Statement)) :=
     open Lambda in do
     match s with
-      | .cmd (.call procName callArgs md) =>
+      | .cmd (.call procName _ callArgs md) =>
         let lhs := CallArg.getLhs callArgs
         incrementStat s!"{Stats.visitedCalls}"
 

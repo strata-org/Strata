@@ -81,7 +81,7 @@ mutual
   | .block l ss _, σ, K => ShL F ss σ (fun o => K (o.block l σ))
   | .exit l _, σ, K => K (.exit l σ)
   | .typeDecl _ _, σ, K => K (.normal σ)
-  | .cmd (.call _ _ _), _, _ => False
+  | .cmd (.call _ _ _ _), _, _ => False
   | .ite .nondet _ _ _, _, _ => False
   | .loop _ _ _ _ _, _, _ => False
 end

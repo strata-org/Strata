@@ -165,7 +165,7 @@ def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
 
   | .cmd c1, .cmd c2 =>
     match c1, c2 with
-    | .call procName1 callArgs1 _, .call procName2 callArgs2 _ =>
+    | .call procName1 _ callArgs1 _, .call procName2 _ callArgs2 _ =>
       let lhs1 := Imperative.CallArg.getLhs callArgs1
       let lhs2 := Imperative.CallArg.getLhs callArgs2
       let args1 := Imperative.CallArg.getInArgs callArgs1

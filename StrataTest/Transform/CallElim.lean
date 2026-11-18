@@ -595,7 +595,7 @@ private def outTyP : Decl := mkProc "p" ["a", "b"] [("x", tv "a")] [("y", tv "b"
 private def cfgOutTyProg : Program :=
   let blk : Imperative.DetBlock String Command Expression :=
     { cmds := [.cmd (.init "r" (.forAll [] .bool) (.det (.boolConst Core.coreLoc true)) .empty),
-               .call "p" [.inArg (v "n" .int), .outArg "r"] .empty],
+               .call "p" none [.inArg (v "n" .int), .outArg "r"] .empty],
       transfer := .condGoto (v "r" .bool) "up" "down" .empty }
   let fin : Imperative.DetBlock String Command Expression :=
     { cmds := [], transfer := .finish .empty }

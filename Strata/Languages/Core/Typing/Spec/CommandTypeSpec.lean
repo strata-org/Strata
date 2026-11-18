@@ -52,7 +52,7 @@ inductive CmdExtHasType (C : LContext CoreLParams) (P : Program) :
 
       A call leaves the context unchanged; the output `Γ'` is up to
       `TContext.Equiv` (see `CmdHasType`). -/
-  | call : ∀ Δ Γ (pname : String) callArgs proc md
+  | call : ∀ Δ Γ (pname : String) tyArgs callArgs proc md
       (σ : List (TyIdentifier × LMonoTy)) Γ',
       Program.Procedure.find? P pname = some proc →
       WF.WFcallProp P pname callArgs →
@@ -74,7 +74,7 @@ inductive CmdExtHasType (C : LContext CoreLParams) (P : Program) :
             (LMonoTy.subst (Strata.Util.HMaps.ofScopes [σ]) (proc.header.outputs.values[i])) ∧
           Γ.types.find? ((CallArg.getLhs callArgs)[i]) = some (.forAll [] mty)) →
       TContext.Equiv (T := CoreLParams) Γ' Γ →
-      CmdExtHasType C P Δ Γ (.call pname callArgs md) Γ' Δ
+      CmdExtHasType C P Δ Γ (.call pname tyArgs callArgs md) Γ' Δ
 
 end -- public section
 

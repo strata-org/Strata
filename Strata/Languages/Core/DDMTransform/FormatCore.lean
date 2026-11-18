@@ -1279,7 +1279,7 @@ partial def stmtToCST {M} [Inhabited M] (s : Core.Statement)
     let exprCST ← lexprToExpr expr 0
     let annotsAnn ← metadataToAnn md (← get).annFilter
     pure (.cover default annotsAnn labelAnn exprCST)
-  | .call pname coreCallArgs md => do
+  | .call pname _ coreCallArgs md => do
     let pnameAnn : Ann String M := ⟨default, pname⟩
     let mut callArgs : Array (CoreDDM.CallArg M) := #[]
     for a in coreCallArgs do
