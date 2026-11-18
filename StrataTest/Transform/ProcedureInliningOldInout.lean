@@ -31,7 +31,7 @@ private def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 private def runInlineCall (p : Core.Program) : Core.Program :=
-  match (runProgram (targetProcList := .none) inlineCallCmd p .emp) with
+  match ((runProgram (targetProcList := .none) inlineCallCmd p) .emp) with
   | ⟨.ok (_, res), _⟩ => res
   | ⟨.error e, _⟩ => panic! (toString e) -- nopanic:ok
 

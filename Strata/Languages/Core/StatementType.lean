@@ -262,6 +262,16 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
     | [] => acc.reverse
     | s :: srest => go S srest ((Statement.subst S s) :: acc)
 
+/-- Apply type substitution `S` to a CFG block: its commands and its branch guard. The block's
+    other fields are kept. -/
+def DetBlock.subst (S : Subst) (blk : DetBlock String Command Expression) :
+    DetBlock String Command Expression :=
+  { blk with
+    cmds := blk.cmds.map (Command.subst S),
+    transfer := match blk.transfer with
+      | .condGoto p lt lf md => .condGoto (LExpr.applyTypeSubst p S) lt lf md
+      | .finish md => .finish md }
+
 /--
 Type checker and annotater for Statements.
 

@@ -52,15 +52,31 @@ private def totalizeFunction (f : Function) : Function :=
     preconditions := f.preconditions.map fun pc => { pc with expr := totalize pc.expr }
     measure := f.measure.map totalize }
 
+/-- Rewrite the commands and the branch conditions of a CFG body. -/
+private def totalizeCFG (g : DetCFG) : DetCFG :=
+  { g with blocks := g.blocks.map fun (l, b) =>
+      (l, { b with
+        cmds := b.cmds.map (Command.mapExpr totalize)
+        transfer := match b.transfer with
+          | .condGoto e lt lf md => .condGoto (totalize e) lt lf md
+          | t => t }) }
+
+/-- Rewrite the contract and the body of a procedure, whether the body is structured
+    or a CFG. -/
+private def totalizeProcedure (proc : Procedure) : Procedure :=
+  let proc := proc.mapExprs totalize
+  match proc.body with
+  | .cfg g => { proc with body := .cfg (totalizeCFG g) }
+  | .structured _ => proc
+
 /-- Rewrite every expression of the program, and report whether anything changed.
     It leaves the transform state, cached analyses included, as it is: renaming an
-    operator adds or removes no call, so a cached call graph stays valid. CFG bodies
-    are not traversed; the phase requires `noCFGBodies`. -/
+    operator adds or removes no call, so a cached call graph stays valid. -/
 def totalizeProgram (p : Program) : Transform.CoreTransformM (Bool × Program) :=
   let p' : Program :=
     { decls := p.decls.map fun decl =>
         match decl with
-        | .proc proc md => .proc (proc.mapExprs totalize) md
+        | .proc proc md => .proc (totalizeProcedure proc) md
         | .func f md => .func (totalizeFunction f) md
         | .recFuncBlock fs md => .recFuncBlock (fs.map totalizeFunction) md
         | .ax a md => .ax { a with e := totalize a.e } md
@@ -79,7 +95,7 @@ end Core.SeqTotalize
     already be in place when the checked form disappears. -/
 def Core.seqTotalizePipelinePhase : Core.PipelinePhase :=
   Core.modelPreservingPipelinePhase "seqTotalize"
-    (requires := factSet![.noCFGBodies, .noPrecondsFromFuncs])
+    (requires := factSet![.noPrecondsFromFuncs])
     (preserves := factSet![.wellFormedCalls, .noCFGBodies, .noCalls, .noLoops,
                          .noLoopInvariants, .noLoopMeasures, .uniqueInits, .loopBodyNoInits,
                          .staticSingleAssignment, .noBetaRedexes, .noPrecondsFromFuncs,

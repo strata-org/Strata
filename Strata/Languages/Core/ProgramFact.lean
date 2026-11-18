@@ -52,9 +52,7 @@ inductive ProgramFact where
       and its result variables are distinct. Established by `assertWellFormedCalls`. -/
   | wellFormedCalls
   /-- Every procedure body is `.structured _` (not `.cfg _`).
-      Required by every statement-level transform, because
-      `Transform.runProgram` throws on a CFG body, and by symbolic
-      evaluation, which reports "CFG bodies not supported yet". -/
+      Required by the phases that handle only structured bodies. -/
   | noCFGBodies
   /-- No procedure body contains a `call` command, in a statement or in a
       CFG block. Established by call elimination, which replaces each call

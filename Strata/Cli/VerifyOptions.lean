@@ -80,12 +80,23 @@ def verifyOptionsFlags : List Flag := [
   { name := "incremental",
     help := "Check the assertions of a Core program that share assumptions in long-lived solvers that keep the shared context. Other front ends (such as Laurel) keep one live solver per obligation. Ignored when SMT files are kept, which the per-obligation path writes." },
   { name := "path-cap",
-    help := "Maximum continuing paths between statements. 'none' (default) disables; N merges paths when count exceeds N.",
+    help := "Maximum continuing paths between statements of the legacy symbolic evaluator. "
+      ++ "'none' (default) disables; N merges paths when count exceeds N. Refused under "
+      ++ "--vcgen symexec, where --vcgen symexec:merge-above:N sets when to merge.",
     takesArg := .arg "N|none" },
   { name := "vcgen",
-    help := "(experimental) Verification-condition generation: 'symbolic' (default, symbolic "
-      ++ "evaluation) or 'wp' (the WP phase, the SSA phase and dead-definition elimination).",
-    takesArg := .arg "symbolic|wp" },
+    help := "(experimental) Verification-condition generation: 'symbolic' (default, the legacy "
+      ++ "symbolic evaluator), 'wp' (the WP phase, the SSA phase and dead-definition "
+      ++ "elimination), or 'symexec[:MODE]' (symbolic execution by the path explorer, in place "
+      ++ "of the legacy evaluator). MODE says when to merge the two branches of an if where they "
+      ++ "meet: 'merged' (the default: merge at every join), 'per-path' (no merging, up to "
+      ++ "10,000 paths), or 'merge-above:N' (merge whenever more than N paths would exist; a "
+      ++ "join whose branches cannot be merged keeps them apart, so N is not a hard bound). "
+      ++ "In every mode, if a procedure cannot be fully explored (for example more than 10,000 "
+      ++ "paths, a path that stopped, or a loop in a CFG body), the run stops with an error "
+      ++ "naming the procedure and the reason, and no results are reported. Given more than "
+      ++ "once, the last --vcgen counts.",
+    takesArg := .arg "symbolic|wp|symexec[:per-path|merged|merge-above:N]" },
   { name := "parallel",
     help := "Number of parallel solver workers (default: 1, sequential).",
     takesArg := .arg "N" },
@@ -138,23 +149,60 @@ def keepAllFilesBaseName : Option String → String
     else
       comps.headD name
 
-/-- The options that only symbolic evaluation reads, set for a pipeline that does not run it,
-    each with the reason it is refused: a path cap (`--path-cap N`) bounds the paths symbolic
-    evaluation keeps, and a pipeline without a symbolic evaluation phase (such as the default
-    order of `--vcgen wp`, whose WP and SSA phases keep no paths) never reads it.
+/-- The options that only one VC generation phase reads, set for a pipeline that does not run
+    it, each with the reason it is refused: a path cap (`--path-cap N`) bounds the paths the
+    legacy symbolic evaluator keeps, so it is refused under symbolic execution, whose merging
+    `--vcgen symexec:merge-above:N` sets, and for a pipeline with neither phase (such as the
+    default order of `--vcgen wp`, whose WP and SSA phases keep no paths); `--vcgen symexec`
+    selects how the symbolic execution phase merges, so an explicit pipeline without one never
+    reads it.
     `--path-cap none` sets no cap, so it is accepted. `phases` is the pipeline the run executes,
     `none` for the default order of `opts`, which runs symbolic evaluation exactly when
-    `opts.vcgen` is `.symbolic`. -/
+    `opts.vcgen` is `.symbolic` and `opts.symExec` is `none`, and symbolic execution exactly
+    when `opts.vcgen` is `.symbolic` and `opts.symExec` is `some`. -/
 def vcgenFlagIssues (opts : Core.VerifyOptions)
     (phases : Option (List Core.PipelinePhase) := none) : List String :=
-  let runsSymbolicEval := match phases with
-    | none => opts.vcgen == .symbolic
-    | some ps => ps.any (·.phase.name == Core.symbolicEvalPipelinePhase.phase.name)
-  if opts.pathCap.isSome && !runsSymbolicEval then
-    ["--path-cap applies only to a pipeline that runs symbolic evaluation, such as the default \
-      order of --vcgen symbolic: it bounds the paths symbolic evaluation keeps, and the \
-      pipeline of this run keeps none."]
-  else []
+  let runs (name : String) (default : Bool) : Bool := match phases with
+    | none => default
+    | some ps => ps.any (·.phase.name == name)
+  let runsSymbolicEval := runs Core.symbolicEvalPipelinePhase.phase.name
+    (opts.vcgen == .symbolic && opts.symExec.isNone)
+  let runsSymExec := runs Core.symExecPipelinePhase.phase.name
+    (opts.vcgen == .symbolic && opts.symExec.isSome)
+  (if opts.pathCap.isSome && runsSymExec then
+    ["--path-cap bounds the legacy symbolic evaluator's paths; under --vcgen symexec, use \
+      --vcgen symexec:merge-above:N (merge whenever more than N paths would exist)."]
+  else if opts.pathCap.isSome && !runsSymbolicEval then
+    ["--path-cap applies only to a pipeline that runs symbolic evaluation, such as the \
+      default order of --vcgen symbolic: it bounds the paths symbolic evaluation keeps, and \
+      the pipeline of this run keeps none."]
+  else [])
+  ++ (if opts.symExec.isSome && !runsSymExec then
+    ["--vcgen symexec applies only to a pipeline that runs symbolic execution, such as the \
+      default order of --vcgen symexec: it selects how symbolic execution merges paths, and the \
+      pipeline of this run has no symbolic execution phase."]
+  else [])
+
+/-- The `--vcgen` flag's value, if given, read against `base`: the generator it names and the
+    merge mode of symbolic execution, `some` for `symexec` and `symexec:MODE` and `none` for
+    `symbolic` and `wp` (which clear a mode `base` sets); `base`'s generator and mode when the
+    flag is absent; `.error` for a value that names no generator, or `symexec:` followed by a
+    value that names no merge mode. `symexec` alone means `symexec:merged`. -/
+def parseVCGenFlag (value : Option String) (base : VerifyOptions) :
+    Except String (Core.VCGenMode × Option Core.MergeMode) :=
+  match value with
+  | none => .ok (base.vcgen, base.symExec)
+  | some "symbolic" => .ok (.symbolic, none)
+  | some "wp" => .ok (.wp, none)
+  | some "symexec" => .ok (.symbolic, some .default)
+  | some v =>
+    match v.dropPrefix? "symexec:" with
+    | some m => match Core.MergeMode.ofString? m.toString with
+      | some mode => .ok (.symbolic, some mode)
+      | none => .error s!"Invalid vcgen: '{v}'. The merge mode after 'symexec:' must be \
+        'per-path', 'merged' or 'merge-above:N' (N ≥ 1)."
+    | none => .error s!"Invalid vcgen: '{v}'. Must be 'symbolic', 'wp' or \
+      'symexec[:per-path|merged|merge-above:N]'."
 
 /-- Build a VerifyOptions from parsed CLI flags, starting from a base config.
     Fields not present in the flags keep their base values.
@@ -199,11 +247,11 @@ def parseVerifyOptions (pflags : ParsedFlags)
       | .some n => if n == 0 then exitFailure "--path-cap must be at least 1 or 'none'."
                    else pure (.some n)
       | .none => exitFailure s!"Invalid path-cap: '{s}'. Must be a positive number or 'none'."
-  let vcgen ← match pflags.getString "vcgen" with
-    | .none => pure base.vcgen
-    | .some "symbolic" => pure .symbolic
-    | .some "wp" => pure .wp
-    | .some s => exitFailure s!"Invalid vcgen: '{s}'. Must be 'symbolic' or 'wp'."
+  -- A `--vcgen symexec` the pipeline does not read (an explicit pipeline without a symbolic
+  -- execution phase) is refused by `vcgenFlagIssues`, against the pipeline the run executes.
+  let (vcgen, symExec) ← match parseVCGenFlag (pflags.getString "vcgen") base with
+    | .ok r => pure r
+    | .error msg => exitFailure msg
   let parallelWorkers ← match pflags.getString "parallel" with
     | .none => pure base.parallelWorkers
     | .some s => match s.toNat? with
@@ -263,6 +311,7 @@ def parseVerifyOptions (pflags : ParsedFlags)
         || base.removeIrrelevantDatatypes,
     outputSarif := pflags.getBool "sarif" || base.outputSarif,
     profile := pflags.getBool "profile" || base.profile,
+    symExec,
     incremental := if noSolve then false else pflags.getBool "incremental" || base.incremental,
     solverOptions,
     skipSolver,

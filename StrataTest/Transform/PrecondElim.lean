@@ -647,5 +647,54 @@ function g<b> (@[cases] ys : MyList b) : MyList b
 #guard_msgs in
 #eval (Std.format (transformProgram polymorphicCallsAtTwoTypesPgm))
 
+/-! ### Partial functions in a CFG body
+
+A call in a block command gets its precondition check right before the command; a call in a
+branch condition gets its check after the block's last command. The contract's
+well-formedness lemma is generated as for a structured body. -/
+
+private def divInCFGPgm :=
+#strata
+program Core;
+
+procedure test(a : int, b : int, out r : int)
+spec { requires [b_ok]: int.gt(int.safeDiv(10, b), 0); }
+cfg entry {
+  entry: { r := int.safeDiv(10, a);
+    branch (int.gt(int.safeDiv(r, b), 0)) goto pos else goto done; }
+  pos: { r := int.add(r, 1); goto done; }
+  done: { return; }
+};
+
+#end
+
+/--
+info: [Strata.Core] Type checking succeeded.
+
+program Core;
+
+lemma [test_pre_b_ok_calls_Int.SafeDiv_0] (a : int, b : int, r : int): !(b == 0);
+procedure test (a : int, b : int, out r : int)
+spec {
+  requires [b_ok]: int.gt(int.safeDiv(10, b), 0);
+  } cfg entry {
+  entry: {
+    assert [set_r_calls_Int.SafeDiv_0]: !(a == 0);
+    r := int.safeDiv(10, a);
+    assert [branch_cond_calls_Int.SafeDiv_0]: !(b == 0);
+    branch (int.gt(int.safeDiv(r, b), 0)) goto pos else goto done;
+  }
+  pos: {
+    r := int.add(r, 1);
+    goto done;
+  }
+  done: {
+    return;
+  }
+};
+-/
+#guard_msgs (whitespace := lax) in
+#eval IO.println ((Std.format (transformProgram divInCFGPgm)).pretty 96)
+
 end PrecondElimTests
 end

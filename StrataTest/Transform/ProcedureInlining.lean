@@ -238,7 +238,7 @@ def translate (t : StrataDDM.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 def runInlineCall (p : Core.Program) : Core.Program :=
-  match (runProgram (targetProcList := .none) inlineCallCmd p .emp) with
+  match ((runProgram (targetProcList := .none) inlineCallCmd p) .emp) with
   | ⟨.ok (_,res), _⟩ => res
   | ⟨.error e, _⟩ => panic! (toString e) -- nopanic:ok
 
@@ -538,6 +538,51 @@ procedure Caller ()
 -/
 #guard_msgs in
 #eval Core.typeCheck .quiet (runInlineCall (translate TestPolyTwoTypes))
+
+/-- Inline the calls of the procedures `procs` of `p`, formatting the result or the error. -/
+private def inlineShown (p : Core.Program) (procs : List String) : String :=
+  match (runProgram (targetProcList := some procs) inlineCallCmd p) .emp with
+  | ⟨.ok (_, res), _⟩ => toString res.eraseTypes
+  | ⟨.error e, _⟩ => s!"error: {e}"
+
+/-- A structured caller of a CFG callee. -/
+private def TestCFGCallee :=
+#strata
+program Core;
+procedure leaf(x : int, out y : int)
+cfg entry {
+  entry: { y := int.add(x, 1); return; }
+};
+procedure top(n : int, out r : int) {
+  call leaf(n, out r);
+};
+#end
+
+-- A CFG callee is not inlined into structured code.
+/-- info: error: cannot inline procedure with CFG body into structured code -/
+#guard_msgs in
+#eval IO.println (inlineShown (translate TestCFGCallee) ["top"])
+
+/-- A CFG caller of a structured callee. -/
+private def TestCFGCaller :=
+#strata
+program Core;
+procedure leaf(x : int, out y : int) {
+  y := int.add(x, 1);
+};
+procedure top(n : int, out r : int)
+cfg entry {
+  entry: { call leaf(n, out r); return; }
+};
+#end
+
+-- A CFG caller is not walked.
+/--
+info: error: runProgram: cannot apply statement-level transform to CFG body
+  (procedure 'top')
+-/
+#guard_msgs (whitespace := lax) in
+#eval IO.println (inlineShown (translate TestCFGCaller) ["top"])
 
 end ProcedureInliningExamples
 end
