@@ -45,6 +45,7 @@ import Strata.Transform.CoreSpecification
 import Strata.Transform.CoreSpecificationProps
 import Strata.Languages.Core.Analysis.ProcedureCorrectness
 import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
+import Strata.Languages.Core.Analysis.ProcedureCorrectnessHoareConnection
 import Strata.Languages.Core.Analysis.DeductiveVerification
 import Strata.Languages.Core.Analysis.DeductiveVerificationProps
 import Strata.Languages.Core.Analysis.FragmentFactory

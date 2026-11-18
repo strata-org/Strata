@@ -374,6 +374,10 @@ theorem walk_meets_contract :
   rw [Core.Logic.Hoare.Procedure.contractTriple, hfactory]
   refine ⟨walkProc, by native_decide, by native_decide, ?_⟩
   rw [walk_body_eq]
+  -- The body proof does not use the axioms visible to the procedure.
+  refine Core.Logic.Hoare.consequence _ _
+    (Pre := Core.Logic.Hoare.Procedure.contractPre Core.Factory walkProc) ?_
+    (fun _ h => h.1) (fun _ h => h)
   have hvars : Block.definedVars (C := Core.Command) walkBody false ++
       Block.modifiedVars (C := Core.Command) walkBody = [rId, rId, rId] := by decide +kernel
   have hsrc := Core.NondetElim.triple π testParams (ss := walkBody)

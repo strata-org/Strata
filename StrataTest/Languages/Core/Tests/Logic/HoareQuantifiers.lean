@@ -10,6 +10,7 @@ import Strata.Languages.Core.Logic.Hoare
 import Strata.Languages.Core.Logic.ContractToHoareTriple
 import Strata.Languages.Core.Logic.ContractToHoareTripleProps
 import Strata.Languages.Core.ProgramProps
+import Strata.Languages.Core.Analysis.ProcedureCorrectnessProps
 import Strata.Languages.Core.InstWellFormedSemanticsEval
 import Strata.DL.Lambda.Denote.LExprAnnotated
 import Strata.Languages.Core.Logic.TraceInterpUsingDenote
@@ -597,7 +598,8 @@ theorem pNoAssume_contract_refuted :
       simp only [List.mem_singleton] at hmem
       obtain ⟨rfl, rfl⟩ := hmem
       exact ⟨_, rfl, rfl⟩
-  have hres := htriple (xFalseEnv model) (xFalseEnv model) _ hpre (xFalseEnv_blockWF model)
+  have hres := htriple (xFalseEnv model) (xFalseEnv model) _
+    ⟨hpre, Core.Specification.axiomsBeforeProcedureDecl_of_noAxioms (by native_decide) _⟩ (xFalseEnv_blockWF model)
     (.inl (xFalseEnv_blockrun model examplePgmAST.findProcByString?))
   have hfalse := hres.1.1 trivial (someValuation _)
     (by intro condition hmem; simp at hmem)
