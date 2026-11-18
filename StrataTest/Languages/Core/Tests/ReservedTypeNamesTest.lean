@@ -305,6 +305,81 @@ lemma [nil_refl]: Nil() == Nil();
 #guard_msgs in
 #eval typeCheckAfterPipeline (Core.getProgram declaredFreeName).fst
 
+/-! A type a procedure body declares with the name of the opaque type that
+replaces the procedure's type parameter keeps its name, and the opaque type gets
+another one, whether the declaration is in a nested block or in a branch of a
+conditional. -/
+
+def blockOpaqueName :=
+#strata
+program Core;
+procedure P<a> (x : a) {
+  inner: {
+    type $__opaque_P_a_0;
+    var y : $__opaque_P_a_0;
+    assert [refl]: (x == x);
+  }
+};
+#end
+
+/--
+info:
+Obligation: refl
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify blockOpaqueName (options := .quiet)
+
+/-- info: "[$__opaque_P_a_1]" -/
+#guard_msgs in
+#eval typeCheckAfterPipeline (Core.getProgram blockOpaqueName).fst
+
+def iteOpaqueName :=
+#strata
+program Core;
+procedure P<a> (x : a, b : bool) {
+  if (b) {
+    type $__opaque_P_a_0;
+    var y : $__opaque_P_a_0;
+    assert [refl]: (x == x);
+  }
+};
+#end
+
+/--
+info:
+Obligation: refl
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Core.verify iteOpaqueName (options := .quiet)
+
+/-- info: "[$__opaque_P_a_1]" -/
+#guard_msgs in
+#eval typeCheckAfterPipeline (Core.getProgram iteOpaqueName).fst
+
+/-! The same holds for a type a procedure body declares with the name of the
+type that closes a lemma's free type variable, as the names after the pipeline
+show. -/
+
+def bodyFreeName :=
+#strata
+program Core;
+datatype MyList (a : Type) { Nil(), Cons(hd: a, tl: MyList a) };
+lemma [nil_refl]: Nil() == Nil();
+procedure Q () {
+  type $__free_nil_refl_0;
+  var z : $__free_nil_refl_0;
+  assert [z_refl]: (z == z);
+};
+#end
+
+/-- info: "[MyList, $__free_nil_refl_0_1]" -/
+#guard_msgs in
+#eval typeCheckAfterPipeline (Core.getProgram bodyFreeName).fst
+
 /-! A type declared twice is rejected, whatever kinds the two declarations
 have. The parser already rejects a source program that does this, so these
 programs are built directly, as a front end or a pass would. -/
@@ -617,6 +692,135 @@ info: REJECTED: Error in lemma l: Rigid type variable 'a' was refined to
     .lemma { name := "l", typeArgs := ["a"],
              e := .all Core.coreLoc "m" (some mapAInt)
                     (.eq Core.coreLoc (.bvar Core.coreLoc 0) (rigidLit "l")) } .empty] }
+
+/-! A type named like the rigid type for a lemma's type parameter is not taken for it, whether
+it is declared before or after the lemma: the lemma keeps its own parameter `a`. -/
+
+/-- `lemma [L] <a>: (forall x : a, y : a :: x == y) ==> (forall u : a, v : a :: u == v)`. -/
+def oneTypeLemma : Core.Decl :=
+  match (Core.getProgram
+    #strata
+    program Core;
+    lemma [L] <a>: (forall x : a, y : a :: x == y) ==> (forall u : a, v : a :: u == v);
+    #end).fst.decls with
+  | [d] => d
+  | _ => .type (.con { name := "unexpected", params := [] }) .empty
+
+/-- The program `Core.typeCheck` returns for `p`, or its error message. -/
+def printProgram (p : Core.Program) : IO Unit :=
+  match _root_.Core.typeCheck .quiet p with
+  | .ok q => IO.println (toString (Std.format q))
+  | .error e => IO.println s!"error: {e.message}"
+
+/--
+info: program Core;
+
+type $__rigid_L_a;
+lemma [L] <a>: (forall x : a :: forall y : a :: x == y) ==> (forall u : a :: forall v : a :: u == v);
+-/
+#guard_msgs in
+#eval printProgram { decls := [rigidDeclared "L", oneTypeLemma] }
+
+/--
+info: program Core;
+
+lemma [L] <a>: (forall x : a :: forall y : a :: x == y) ==> (forall u : a :: forall v : a :: u == v);
+type $__rigid_L_a;
+-/
+#guard_msgs in
+#eval printProgram { decls := [oneTypeLemma, rigidDeclared "L"] }
+
+/-! The verdict shows it too. A one-value datatype named like the rigid type for `a` would make
+`forall x : a, y : a :: x == y` hold if it were taken for `a`; the lemma stays unproved at an
+arbitrary `a`, whether the datatype is declared before or after it. -/
+
+def singletonBeforeLemma :=
+#strata
+program Core;
+datatype $__rigid_L_a () { C() };
+lemma [L] <a>: forall x : a, y : a :: x == y;
+#end
+
+/--
+info:
+Obligation: L
+Property: assert
+Result: ❌ fail
+-/
+#guard_msgs in
+#eval Core.verify singletonBeforeLemma (options := .quiet)
+
+def singletonAfterLemma :=
+#strata
+program Core;
+lemma [L] <a>: forall x : a, y : a :: x == y;
+datatype $__rigid_L_a () { C() };
+#end
+
+/--
+info:
+Obligation: L
+Property: assert
+Result: ❌ fail
+-/
+#guard_msgs in
+#eval Core.verify singletonAfterLemma (options := .quiet)
+
+/-! Rigid type names are built from a lemma's label and type parameters, which a front end may
+write with `#` (the parser accepts no `#` there, so these lemmas are built directly). Two type
+parameters whose names differ only by `#` and `_` (`Lb`), and two lemmas whose labels differ so
+(`L#a`, `L_a`), still each keep their own types. These outputs depend on how rigid names are built
+from names that contain `#`; a change to that naming, such as escaping `#` instead of replacing
+it, may change them. -/
+
+/-- `oneTypeLemma` labeled `name`. -/
+def oneTypeLemmaNamed (name : String) : Core.Decl :=
+  match oneTypeLemma with
+  | .lemma l md => .lemma { l with name := name } md
+  | d => d
+
+/-- `lemma [Lb] <x#y, x_y>: (forall p : x#y, q : x_y :: p == p && q == q)`, from a parsed
+    `<x, y>` lemma with its type parameters renamed. -/
+def hashTyParamsLemma : Core.Decl :=
+  match (Core.getProgram
+    #strata
+    program Core;
+    lemma [Lb] <x, y>: (forall p : x, q : y :: p == p && q == q);
+    #end).fst.decls with
+  | [.lemma l md] =>
+    let S : Lambda.Subst :=
+      Strata.Util.HMaps.ofScopes [[("x", .ftvar "x#y"), ("y", .ftvar "x_y")]]
+    .lemma { l with typeArgs := ["x#y", "x_y"], e := l.e.applyTypeSubst S } md
+  | _ => .type (.con { name := "unexpected", params := [] }) .empty
+
+/-- The program `Core.Program.typeCheck` returns for `p`, before `Core.typeCheck` checks the
+    names its later passes build from lemma labels. -/
+def printCheckerOutput (p : Core.Program) : IO Unit :=
+  let C := { Lambda.LContext.default with
+                functions := _root_.Core.Factory, knownTypes := _root_.Core.KnownTypes }
+  match _root_.Core.Program.typeCheck C Lambda.TEnv.default p with
+  | .ok (q, _) => IO.println (toString (Std.format q))
+  | .error e => IO.println s!"error: {e.message}"
+
+/--
+info: program Core;
+
+lemma [|L#a|] <a>: (forall x : a :: forall y : a :: x == y) ==> (forall u : a :: forall v : a :: u == v);
+lemma [Lb] <|x#y|, x_y>(p : |x#y|, q : x_y): p == p && q == q;
+lemma [L_a] <a>: (forall x : a :: forall y : a :: x == y) ==> (forall u : a :: forall v : a :: u == v);
+-/
+#guard_msgs in
+#eval printCheckerOutput
+  { decls := [oneTypeLemmaNamed "L#a", hashTyParamsLemma, oneTypeLemmaNamed "L_a"] }
+
+-- `Core.typeCheck` accepts `Lb`, whose label has no `#`, with its two type parameters apart.
+/--
+info: program Core;
+
+lemma [Lb] <|x#y|, x_y>(p : |x#y|, q : x_y): p == p && q == q;
+-/
+#guard_msgs in
+#eval printProgram { decls := [hashTyParamsLemma] }
 
 /-! A supplied factory is used as given, so a function in it whose type
 parameter has a reserved prefix is rejected. -/

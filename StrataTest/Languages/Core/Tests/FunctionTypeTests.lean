@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.Languages.Core
 import Strata.Languages.Core.Verifier
 import StrataTest.Languages.Core.Tests.TestUtil
 
@@ -479,6 +480,42 @@ info: error: Function 'isSingleton': type parameters [a] occur in neither an inp
 #guard_msgs (whitespace := lax) in
 #eval
   Std.format (Core.typeCheck .default (translate binderOnlyTypeArgPgm))
+
+-- A binder annotated with the function's own type parameter denotes that parameter, so
+-- `forall y : a :: y == y` in a function body is checked and verified at every `a`.
+open Strata in
+private def binderAtTypeParamPgm :=
+#strata
+program Core;
+
+function allEq<a>(x : a) : bool { forall y : a :: y == y }
+procedure P() { assert [allEqInt]: allEq(1); };
+#end
+
+/--
+info:
+Obligation: allEqInt
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval Strata.Core.verify binderAtTypeParamPgm (options := .quiet)
+
+-- Such a binder cannot be used at another type: `y == 5` would refine `a` to `int`.
+open Strata in
+private def binderAtTypeParamRefinedPgm :=
+#strata
+program Core;
+
+function allFive<a>(x : a) : bool { forall y : a :: y == 5 }
+#end
+
+/--
+info: error: Rigid type variable 'a' was refined to 'int'
+-/
+#guard_msgs (whitespace := lax) in
+#eval
+  Std.format (Core.typeCheck .default (translate binderAtTypeParamRefinedPgm))
 
 -- A type parameter mentioned nowhere is rejected.
 open Strata in
