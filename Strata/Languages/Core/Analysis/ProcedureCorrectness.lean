@@ -61,6 +61,16 @@ program. -/
       | _ => acc)
     True
 
+/-- Do the axioms and `distinct` declarations before `entryProcName` read no variable?
+    Such declarations hold or fail in an environment by its factory alone, whatever its
+    store (`AxiomsBeforeProcedureDecl.of_closed`). -/
+@[expose] def axiomsClosedBeforeProcedureDecl (entryProcName : String) (p : Program) : Bool :=
+  (p.declsBeforeProcedure entryProcName).all fun d =>
+    match d with
+    | .ax a _ => a.e.freeVars.isEmpty
+    | .distinct _ es _ => es.all (·.freeVars.isEmpty)
+    | _ => true
+
 /-! ## Procedure correctness -/
 
 

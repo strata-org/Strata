@@ -73,7 +73,9 @@ specified by its signature. -/
     `Triple`. `hentry` establishes the contract precondition shared by both body kinds
     and, depending on the resolved body, the structured block gate or the CFG gate.
     `haxioms` establishes, at the callee's entry, the axioms and `distinct`
-    declarations visible to the callee, which its `contractTriple` assumes.
+    declarations visible to the callee, which its `contractTriple` assumes;
+    `Core.Specification.AxiomsBeforeProcedureDecl.callee` gives it from the caller's
+    entry when they read no variable and the callee is declared no later.
     `hexit` receives caller command well-formedness, `CallEntry`, the callee entry
     store, output typing, `Procedure.storeFrame`, and restoration of the entry factory,
     so it may relate caller actuals to preserved input-only formals before deriving the
